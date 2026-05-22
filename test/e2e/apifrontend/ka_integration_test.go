@@ -328,13 +328,13 @@ var _ = Describe("KA Integration (AF -> KA -> DS -> mock-LLM)", Label("e2e", "ph
 
 		It("TC-E2E-METRICS-02: af_tool_calls_total has observations after tool calls", func() {
 			// Make a tool call via the standard mcpToolCall helper to trigger the metric
-			mcpToolCall("e2e-metrics-seed", "af_list_events", map[string]interface{}{
+			mcpToolCall("e2e-metrics-seed", "kubernaut_list_remediations", map[string]interface{}{
 				"namespace": "kubernaut-system",
 			})
 
 			body := scrapeMetrics()
 			// CounterVec only appears after at least one observation. If KA/DS tools
-			// were all skipped and af_list_events didn't reach the bridge (no session),
+			// were all skipped and kubernaut_list_remediations didn't reach the bridge (no session),
 			// the counter won't exist. This is expected without full MCP session lifecycle.
 			if !strings.Contains(body, "af_tool_calls_total") {
 				Skip("af_tool_calls_total not present — no tool calls reached the bridge dispatcher (KA/DS not deployed)")

@@ -475,16 +475,18 @@ func personaToolClusterRolesYAML() string {
 		{"sre", []string{
 			"kubernaut_list_remediations", "kubernaut_get_remediation", "kubernaut_approve",
 			"kubernaut_cancel_remediation", "kubernaut_watch", "kubernaut_start_investigation",
-			"kubernaut_poll_investigation", "kubernaut_select_workflow", "kubernaut_present_decision",
-			"kubernaut_list_workflows", "kubernaut_get_remediation_history", "kubernaut_get_effectiveness",
-			"kubernaut_get_audit_trail", "af_list_events", "af_get_pods", "af_get_workloads",
-			"af_resolve_owner", "af_check_existing_rr", "af_create_rr",
+			"kubernaut_poll_investigation", "kubernaut_discover_workflows", "kubernaut_select_workflow",
+			"kubernaut_present_decision", "kubernaut_list_workflows", "kubernaut_get_remediation_history",
+			"kubernaut_get_effectiveness", "kubernaut_get_audit_trail",
+			"kubectl_get", "kubectl_list", "kubectl_list_events",
+			"af_check_existing_rr", "af_create_rr",
 		}},
 		{"ai-orchestrator", []string{
 			"kubernaut_list_remediations", "kubernaut_get_remediation", "kubernaut_approve",
 			"kubernaut_cancel_remediation", "kubernaut_watch", "kubernaut_start_investigation",
-			"kubernaut_poll_investigation", "kubernaut_select_workflow", "kubernaut_present_decision",
-			"af_list_events", "af_get_pods", "af_get_workloads", "af_resolve_owner",
+			"kubernaut_poll_investigation", "kubernaut_discover_workflows", "kubernaut_select_workflow",
+			"kubernaut_present_decision",
+			"kubectl_get", "kubectl_list", "kubectl_list_events",
 			"af_check_existing_rr", "af_create_rr",
 		}},
 		{"cicd", []string{
@@ -493,7 +495,7 @@ func personaToolClusterRolesYAML() string {
 		{"observability", []string{
 			"kubernaut_list_remediations", "kubernaut_get_remediation", "kubernaut_watch",
 			"kubernaut_get_effectiveness", "kubernaut_list_workflows",
-			"af_list_events", "af_get_pods", "af_get_workloads",
+			"kubectl_get", "kubectl_list", "kubectl_list_events",
 		}},
 		{"l3-audit", []string{
 			"kubernaut_list_remediations", "kubernaut_get_remediation", "kubernaut_list_workflows",

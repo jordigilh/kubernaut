@@ -2,6 +2,7 @@ package launcher
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -25,10 +26,9 @@ var toolStatusMessages = map[string]string{
 	"kubernaut_watch":                 "Watching remediation progress...",
 	"af_create_rr":                    "Creating remediation request...",
 	"af_check_existing_rr":            "Checking for existing remediation...",
-	"af_list_events":                  "Fetching cluster events...",
-	"af_get_pods":                     "Fetching pod status...",
-	"af_get_workloads":                "Fetching workload details...",
-	"af_resolve_owner":                "Resolving resource ownership...",
+	"kubectl_list_events":             "Fetching cluster events...",
+	"kubectl_get":                     "Fetching resource details...",
+	"kubectl_list":                    "Listing cluster resources...",
 	"kubernaut_list_remediations":     "Listing remediations...",
 	"kubernaut_get_remediation":       "Getting remediation details...",
 	"kubernaut_approve":               "Approving remediation...",
@@ -195,11 +195,11 @@ func summarizeWatch(resp map[string]any) string {
 }
 
 func summarizeCreateRR(resp map[string]any) string {
-	rrID, _ := resp["rr_id"].(string)
-	if rrID != "" {
-		return fmt.Sprintf("Remediation request created: %s", rrID)
+	data, err := json.Marshal(resp)
+	if err != nil {
+		return "Remediation request created."
 	}
-	return "Remediation request created."
+	return string(data)
 }
 
 func stringArg(args map[string]any, key string) string {

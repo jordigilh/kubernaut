@@ -4,6 +4,7 @@ package agent
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/client-go/dynamic"
 
 	"google.golang.org/adk/model"
@@ -12,6 +13,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ds"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 )
 
 // AgentConfig holds the configuration for creating the ADK root agent.
@@ -51,6 +53,12 @@ type AgentConfig struct {
 	// ImpersonatingClientFactory creates per-request impersonated dynamic clients
 	// for read-only triage tools (SEC-05). If nil, triage tools fall back to K8sClient.
 	ImpersonatingClientFactory auth.DynamicClientFactory
+	// RESTMapper resolves Kind strings to GVR for generic kubectl tools.
+	// If nil, only statically-known kinds are supported.
+	RESTMapper meta.RESTMapper
+	// Triager performs severity triage for af_create_rr. If nil, severity
+	// defaults to "medium" without source attribution.
+	Triager *severity.Triager
 	// LLMModel is the model backend for the ADK agent. When non-nil, the agent
 	// uses this model for generateContent calls. When nil, the agent is created
 	// without a model (tools-only mode for MCP bridge).

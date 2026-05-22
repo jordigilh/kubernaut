@@ -1,19 +1,23 @@
 package fullpipeline
 
 import (
-	"encoding/json"
+	"context"
+	"crypto/sha256"
+	"fmt"
 	"net/http"
+	"os/exec"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
 
-// E2E-FP-1189-001: MCP Path — AF creates a RemediationRequest via MCP tools/call,
-// triggering the full downstream pipeline (RO → SP → AA → KA → WE → Notification).
+// E2E-FP-1189-001: RR CRD fixture triggers the full downstream pipeline
+// (RO → SP → AA → KA → WE → Notification).
 var _ = Describe("AF MCP Path Full Pipeline [E2E-FP-1189-001]", Label("fp", "af", "mcp", "issue-1189"), func() {
 
-	It("should create RR via MCP and trigger full pipeline execution", func() {
+	It("should create RR via kubectl and trigger full pipeline execution", func() {
 		By("Verifying AF is reachable")
 		resp, err := afHTTPClient.Get(afBaseURL + "/healthz")
 		if err != nil || resp.StatusCode == http.StatusBadGateway || resp.StatusCode == http.StatusServiceUnavailable {
@@ -21,30 +25,43 @@ var _ = Describe("AF MCP Path Full Pipeline [E2E-FP-1189-001]", Label("fp", "af"
 		}
 		_ = resp.Body.Close()
 
-		By("Initializing MCP session")
-		sessionID, err := fpInitMCPSession()
-		Expect(err).NotTo(HaveOccurred())
-		Expect(sessionID).NotTo(BeEmpty(), "MCP session ID must not be empty")
-
-		By("Creating RemediationRequest via MCP tools/call af_create_rr")
-		respBody, status, err := fpMCPCall(sessionID, "af_create_rr", map[string]interface{}{
-			"namespace":   namespace,
-			"kind":        "Deployment",
-			"name":        "memory-eater",
-			"description": "E2E-FP-1189-001: MCP path full pipeline",
+		rrName := "e2e-fp-mcp-rr-001"
+		By("Creating RemediationRequest via kubectl CRD fixture")
+		fp := fmt.Sprintf("%x", sha256.Sum256([]byte(fmt.Sprintf("e2e-%s-Deployment-memory-eater", namespace))))
+		manifest := fmt.Sprintf(`apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationRequest
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  signalName: "E2ETestAlert"
+  signalFingerprint: "%s"
+  signalType: "prometheus"
+  severity: "warning"
+  firingTime: "2026-01-01T00:00:00Z"
+  receivedTime: "2026-01-01T00:00:01Z"
+  targetType: "kubernetes"
+  targetResource:
+    kind: Deployment
+    name: memory-eater
+`, rrName, namespace, fp)
+		cmd := exec.CommandContext(context.Background(), "kubectl",
+			"--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+		cmd.Stdin = strings.NewReader(manifest)
+		out, err := cmd.CombinedOutput()
+		Expect(err).NotTo(HaveOccurred(), "kubectl apply RR: %s", string(out))
+		DeferCleanup(func() {
+			_, _ = exec.CommandContext(context.Background(), "kubectl",
+				"--kubeconfig", kubeconfigPath,
+				"delete", "remediationrequest", rrName, "-n", namespace, "--ignore-not-found").CombinedOutput()
 		})
-		Expect(err).NotTo(HaveOccurred())
-		Expect(status).To(Equal(http.StatusOK), "MCP tools/call should return 200, got body: %s", string(respBody))
-		var rpc fpRPCResponse
-		Expect(json.Unmarshal(respBody, &rpc)).To(Succeed())
-		Expect(rpc.Error).To(BeNil(), "MCP tools/call should not return JSON-RPC error")
 
 		By("Waiting for full pipeline execution (RR → WE completion)")
-		rrName := fpWaitForRR("memory-eater", 120*time.Second)
-		Expect(rrName).NotTo(BeEmpty())
-		GinkgoWriter.Printf("  RemediationRequest created: %s\n", rrName)
+		foundRR := fpWaitForRR("memory-eater", 120*time.Second)
+		Expect(foundRR).NotTo(BeEmpty())
+		GinkgoWriter.Printf("  RemediationRequest created: %s\n", foundRR)
 
-		fpWaitForWEComplete(rrName, 5*time.Minute)
-		GinkgoWriter.Printf("  WorkflowExecution completed for %s\n", rrName)
+		fpWaitForWEComplete(foundRR, 5*time.Minute)
+		GinkgoWriter.Printf("  WorkflowExecution completed for %s\n", foundRR)
 	})
 })

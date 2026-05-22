@@ -79,19 +79,23 @@ Tools access the Kubernetes API through two distinct client scopes, determined a
 │                 Tool Registration                     │
 ├─────────────────────────────────────────────────────┤
 │                                                     │
-│  ┌───────────────────────┐  ┌─────────────────────┐│
-│  │ Triage Tools (read)   │  │ CRD Tools (write)   ││
-│  │ af_list_events        │  │ kubernaut_*          ││
-│  │ af_get_pods           │  │ af_check_existing_rr ││
-│  │ af_get_workloads      │  │ af_create_rr         ││
-│  │ af_resolve_owner      │  │                      ││
-│  └──────────┬────────────┘  └──────────┬───────────┘│
-│             │                           │            │
-│             ▼                           ▼            │
-│  DynamicClientFactory         Static dynamic.Interface│
-│  (per-request impersonation)  (AF ServiceAccount)    │
+│  ┌─────────────────────────────────────────────────┐│
+│  │ Internal Tools (AF SA)                          ││
+│  │ kubectl_get, kubectl_list, kubectl_list_events  ││
+│  │ af_check_existing_rr, af_create_rr              ││
+│  └──────────────────────┬──────────────────────────┘│
+│                         │                            │
+│                         ▼                            │
+│           Static dynamic.Interface                   │
+│           (AF ServiceAccount)                        │
+│                                                     │
+│  Access gated by MCP RBAC: if a user has permission │
+│  to invoke kubernaut_start_investigation, AF         │
+│  investigates on their behalf using its own SA.      │
 └─────────────────────────────────────────────────────┘
 ```
+
+MCP bridge domain tools (`kubernaut_*`) use `DynamicClientFactory` with per-request impersonation so external MCP clients operate with their own K8s identity.
 
 ### DynamicClientFactory (Impersonated)
 
@@ -135,10 +139,9 @@ Every tool validates inputs before making K8s API calls. Validation is centraliz
 
 | Tool | Validated Fields | Additional Checks |
 |------|-----------------|-------------------|
-| af_list_events | namespace | — |
-| af_get_pods | namespace | label_selector format |
-| af_get_workloads | namespace | — |
-| af_resolve_owner | namespace, pod_name | — |
+| kubectl_get | kind, name, namespace | Kind validation (PascalCase) |
+| kubectl_list | kind, namespace | label_selector format |
+| kubectl_list_events | namespace | — |
 | af_check_existing_rr | namespace, kind, name | — |
 | af_create_rr | namespace, kind, name | Description truncated at 2048 chars |
 | kubernaut_submit_signal | namespace/name via ParseRRID | — |
@@ -175,9 +178,9 @@ func TrimSliceToFit[T any](items []T) ([]T, bool)
 
 | Tool | Output Type | Truncation Signal |
 |------|------------|-------------------|
-| af_list_events | `[]EventSummary` | `"truncated": true` in result |
-| af_get_pods | `[]PodSummary` | `"truncated": true` in result |
-| af_get_workloads | `[]WorkloadSummary` | `"truncated": true` in result |
+| kubectl_get | `KubectlGetResult` (single object) | N/A (single resource) |
+| kubectl_list | `[]map[string]interface{}` | `"truncated": true` in result |
+| kubectl_list_events | `[]EventSummary` | `"truncated": true` in result |
 
 ### Error Translation
 

@@ -1,14 +1,18 @@
 package e2e_test
 
 import (
+	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -327,8 +331,37 @@ func parseJSONStringField(jsonStr, field string) string {
 	return v
 }
 
-// fetchDEXToken performs an OAuth2 Resource Owner Password Credentials grant
-// against DEX to obtain a valid ID token for E2E testing.
+// extractA2AToolJSON scans A2A task result artifacts for the first text part
+// that is valid JSON containing the given marker key. This allows tests to
+// extract structured tool output (e.g. af_create_rr result with severity_source)
+// from the A2A task envelope.
+func extractA2AToolJSON(raw json.RawMessage, markerKey string) string {
+	var task struct {
+		Artifacts []struct {
+			Parts []struct {
+				Text string `json:"text"`
+			} `json:"parts"`
+		} `json:"artifacts"`
+	}
+	if err := json.Unmarshal(raw, &task); err != nil {
+		return string(raw)
+	}
+	for _, a := range task.Artifacts {
+		for _, p := range a.Parts {
+			if p.Text == "" {
+				continue
+			}
+			var obj map[string]interface{}
+			if json.Unmarshal([]byte(p.Text), &obj) == nil {
+				if _, ok := obj[markerKey]; ok {
+					return p.Text
+				}
+			}
+		}
+	}
+	return string(raw)
+}
+
 func fetchDEXToken(dexURL, clientID, clientSecret, username, password string) (string, error) {
 	tokenURL := dexURL + "/token"
 	data := url.Values{
@@ -364,4 +397,37 @@ func fetchDEXToken(dexURL, clientID, clientSecret, username, password string) (s
 		return "", fmt.Errorf("id_token not found in response: %s", body)
 	}
 	return tokenResp.IDToken, nil
+}
+
+func rrManifest(namespace, rrName, targetKind, targetName string) string {
+	h := sha256.Sum256([]byte(fmt.Sprintf("e2e-%s-%s-%s", namespace, targetKind, targetName)))
+	fp := hex.EncodeToString(h[:])
+	return fmt.Sprintf(`apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationRequest
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  signalName: "E2ETestAlert"
+  signalFingerprint: "%s"
+  signalType: "prometheus"
+  severity: "warning"
+  firingTime: "2026-01-01T00:00:00Z"
+  receivedTime: "2026-01-01T00:00:01Z"
+  targetType: "kubernetes"
+  targetResource:
+    kind: %s
+    name: %s
+`, rrName, namespace, fp, targetKind, targetName)
+}
+
+func kubectlCreateRR(namespace, rrName, targetKind, targetName string) error {
+	return kubectlApplyYAML(rrManifest(namespace, rrName, targetKind, targetName))
+}
+
+func kubectlDeleteRR(namespace, rrName string) {
+	kubeconfigPath := os.Getenv("HOME") + "/.kube/apifrontend-e2e-config"
+	_, _ = exec.CommandContext(context.Background(), "kubectl",
+		"--kubeconfig", kubeconfigPath,
+		"delete", "remediationrequest", rrName, "-n", namespace, "--ignore-not-found").CombinedOutput()
 }

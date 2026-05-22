@@ -96,16 +96,9 @@ var _ = Describe("DS Audit Sink (G8)", Label("e2e", "phase4", "g8"), func() {
 			_ = body
 		}()
 
-		marker := fmt.Sprintf("g8-audit-01-%d", time.Now().UnixNano())
-		_, err := mcpToolCall("af_get_pods", map[string]interface{}{
-			"namespace":     "default",
-			"labelSelector": fmt.Sprintf("e2e-audit=%s", marker),
+		_, err := mcpToolCall("kubernaut_list_remediations", map[string]interface{}{
+			"namespace": "default",
 		})
-		if err != nil {
-			_, err = mcpToolCall("af_get_pods", map[string]interface{}{
-				"namespace": "default",
-			})
-		}
 		Expect(err).NotTo(HaveOccurred())
 
 		Eventually(func() bool {
@@ -113,8 +106,8 @@ var _ = Describe("DS Audit Sink (G8)", Label("e2e", "phase4", "g8"), func() {
 			if rerr != nil || code != http.StatusOK {
 				return false
 			}
-			return auditBodyContainsTool(body, "af_get_pods")
-		}, 60*time.Second, 2*time.Second).Should(BeTrue(), "DS audit API should list an event referencing af_get_pods")
+			return auditBodyContainsTool(body, "kubernaut_list_remediations")
+		}, 60*time.Second, 2*time.Second).Should(BeTrue(), "DS audit API should list an event referencing kubernaut_list_remediations")
 	})
 
 	It("TC-E2E-AUDIT-04: Audit events contain redacted Detail (no raw secrets)", func() {

@@ -16,7 +16,7 @@ import (
 )
 
 var _ = Describe("Severity Triage Pipeline (G12)", Label("e2e", "phase4", "g12"), func() {
-	var authToken, mcpSessionID string
+	var authToken string
 	var prometheusReachable, prometheusAlertsReady bool
 
 	BeforeEach(func() {
@@ -24,9 +24,6 @@ var _ = Describe("Severity Triage Pipeline (G12)", Label("e2e", "phase4", "g12")
 		authToken, err = fetchDEXTokenForPersona("sre")
 		Expect(err).NotTo(HaveOccurred(), "SRE DEX token")
 		Expect(authToken).NotTo(BeEmpty())
-
-		mcpSessionID, err = initMCPSession(authToken)
-		Expect(err).NotTo(HaveOccurred(), "MCP initialize")
 
 		kubeconfigPath := os.Getenv("HOME") + "/.kube/apifrontend-e2e-config"
 		for _, ns := range []string{"sev-tier2-ns", "no-data-ns", "no-rules-ns"} {
@@ -69,41 +66,30 @@ var _ = Describe("Severity Triage Pipeline (G12)", Label("e2e", "phase4", "g12")
 		}
 	}
 
-	mcpToolCall := func(toolName string, args map[string]interface{}) (string, error) {
-		callBody := buildJSONRPC(fmt.Sprintf("g12-%s-%d", toolName, time.Now().UnixNano()),
-			"tools/call", map[string]interface{}{
-				"name":      toolName,
-				"arguments": args,
-			})
-		raw, code, err := mcpPOST(authToken, mcpSessionID, callBody)
+	a2aCreateRR := func(namespace, deployName string, extraFields map[string]interface{}) (string, error) {
+		severity := ""
+		if s, ok := extraFields["severity"].(string); ok {
+			severity = fmt.Sprintf(" with severity %s", s)
+		}
+		prompt := fmt.Sprintf("Create a remediation request for deployment %s in %s namespace%s", deployName, namespace, severity)
+		resp, err := a2aInvoke(httpClient, baseURL, authToken, a2aTasksSend(
+			fmt.Sprintf("g12-sev-%s-%d", deployName, time.Now().UnixNano()), prompt))
 		if err != nil {
 			return "", err
 		}
-		if code >= http.StatusBadRequest {
-			return "", fmt.Errorf("HTTP %d: %s", code, string(raw))
+		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			return "", fmt.Errorf("A2A %d: %s", resp.StatusCode, string(body))
 		}
-		payload := unwrapSSEDataLine(raw)
-		text, toolErr, parseErr := parseMCPToolPayload(payload)
-		if parseErr != nil {
-			return text, parseErr
+		rpc, err := parseRPCResponse(resp)
+		if err != nil {
+			return "", err
 		}
-		if toolErr {
-			return text, fmt.Errorf("%s", text)
+		if rpc.Error != nil {
+			return "", fmt.Errorf("A2A error %d: %s", rpc.Error.Code, rpc.Error.Message)
 		}
-		return text, nil
-	}
-
-	createRRArgs := func(namespace, deployName string, extra map[string]interface{}) map[string]interface{} {
-		args := map[string]interface{}{
-			"namespace":   namespace,
-			"name":        deployName,
-			"kind":        "Deployment",
-			"description": fmt.Sprintf("E2E G12 severity triage — %s/%s", namespace, deployName),
-		}
-		for k, v := range extra {
-			args[k] = v
-		}
-		return args
+		return extractA2AToolJSON(rpc.Result, "rr_id"), nil
 	}
 
 	expectSeverityAndSource := func(text, wantSeverity, wantSource string) {
@@ -122,19 +108,15 @@ var _ = Describe("Severity Triage Pipeline (G12)", Label("e2e", "phase4", "g12")
 
 	It("TC-E2E-SEV-01: Tier 1 — Firing alert", func() {
 		skipIfNoAlerts()
-		text, err := mcpToolCall("af_create_rr", createRRArgs("default", "test-firing-target", nil))
+		text, err := a2aCreateRR("default", "test-firing-target", nil)
 		Expect(err).NotTo(HaveOccurred(), text)
 		expectSeverityAndSource(text, "critical", "firing_alert")
 	})
 
 	It("TC-E2E-SEV-02: Tier 1.5 — Pending alert", func() {
 		skipIfNoAlerts()
-		text, err := mcpToolCall("af_create_rr", createRRArgs("default", "test-pending-target", nil))
+		text, err := a2aCreateRR("default", "test-pending-target", nil)
 		Expect(err).NotTo(HaveOccurred(), text)
-		// HighMemory rule targets test-pending-target but is inactive (no metric
-		// injected, so for:1h never starts). Depending on rule evaluation timing,
-		// triage may return pending_alert, llm_rule_informed (Tier 2.5), or
-		// llm_triage if GetRules returns empty due to Prometheus rule load timing.
 		src := parseJSONStringField(text, "severity_source")
 		Expect(src).To(BeElementOf("pending_alert", "firing_alert", "llm_rule_informed", "llm_triage"),
 			"expected Prometheus-informed source, got: %s (full: %s)", src, text)
@@ -155,7 +137,7 @@ var _ = Describe("Severity Triage Pipeline (G12)", Label("e2e", "phase4", "g12")
 			Skip("Could not inject disk metric for Tier 2 test: " + err.Error())
 		}
 
-		text, toolErr := mcpToolCall("af_create_rr", createRRArgs("sev-tier2-ns", "test-inactive-target", nil))
+		text, toolErr := a2aCreateRR("sev-tier2-ns", "test-inactive-target", nil)
 		Expect(toolErr).NotTo(HaveOccurred(), text)
 		src := parseJSONStringField(text, "severity_source")
 		Expect(src).To(BeElementOf("rule_evaluation", "llm_rule_informed", "llm_triage"),
@@ -164,25 +146,23 @@ var _ = Describe("Severity Triage Pipeline (G12)", Label("e2e", "phase4", "g12")
 
 	It("TC-E2E-SEV-04: Tier 2.5 — Inactive rule, no data", func() {
 		skipIfNoAlerts()
-		text, err := mcpToolCall("af_create_rr", createRRArgs("no-data-ns", "test-nodata-target", nil))
+		text, err := a2aCreateRR("no-data-ns", "test-nodata-target", nil)
 		Expect(err).NotTo(HaveOccurred(), text)
-		// When GetRules returns empty (Prometheus rule load timing), pipeline
-		// falls through to Tier 3 (llm_triage). Both are acceptable.
 		src := parseJSONStringField(text, "severity_source")
 		Expect(src).To(BeElementOf("llm_rule_informed", "llm_triage"),
 			"expected Tier 2.5 or Tier 3 source, got: %s (full: %s)", src, text)
 	})
 
 	It("TC-E2E-SEV-05: Tier 3 — No rules", func() {
-		text, err := mcpToolCall("af_create_rr", createRRArgs("no-rules-ns", "test-norules-target", nil))
+		text, err := a2aCreateRR("no-rules-ns", "test-norules-target", nil)
 		Expect(err).NotTo(HaveOccurred(), text)
 		expectSeveritySource(text, "llm_triage")
 	})
 
 	It("TC-E2E-SEV-06: User-supplied severity bypasses triage", func() {
-		text, err := mcpToolCall("af_create_rr", createRRArgs("default", "test-user-severity-bypass", map[string]interface{}{
+		text, err := a2aCreateRR("default", "test-user-severity-bypass", map[string]interface{}{
 			"severity": "low",
-		}))
+		})
 		Expect(err).NotTo(HaveOccurred(), text)
 
 		var parsed map[string]interface{}

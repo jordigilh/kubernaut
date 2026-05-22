@@ -218,39 +218,31 @@ data:
           arguments:
             remediation_id: "rr-audit"
 
-      - name: "af_list_events"
+      - name: "kubectl_list_events"
         keywords: ["list events", "list kubernetes events"]
         match_last_only: true
         tool_call:
-          name: "af_list_events"
+          name: "kubectl_list_events"
           arguments:
             namespace: "kubernaut-system"
 
-      - name: "af_get_pods"
+      - name: "kubectl_list_pods"
         keywords: ["get pods", "get all pods"]
         match_last_only: true
         tool_call:
-          name: "af_get_pods"
+          name: "kubectl_list"
           arguments:
+            kind: "Pod"
             namespace: "default"
 
-      - name: "af_get_workloads"
+      - name: "kubectl_list_workloads"
         keywords: ["get workloads"]
         match_last_only: true
         tool_call:
-          name: "af_get_workloads"
+          name: "kubectl_list"
           arguments:
+            kind: "Deployment"
             namespace: "default"
-
-      - name: "af_resolve_owner"
-        keywords: ["resolve owner", "resolve the owner"]
-        match_last_only: true
-        tool_call:
-          name: "af_resolve_owner"
-          arguments:
-            namespace: "default"
-            kind: "Pod"
-            name: "nginx-abc123"
 
       - name: "af_check_existing_rr"
         keywords: ["check existing", "remediation already exists", "check if a remediation"]
@@ -261,17 +253,6 @@ data:
             namespace: "prod"
             kind: "Deployment"
             name: "web"
-
-      - name: "af_create_rr"
-        keywords: ["create a remediation request", "create remediation"]
-        match_last_only: true
-        tool_call:
-          name: "af_create_rr"
-          arguments:
-            namespace: "kubernaut-system"
-            kind: "Deployment"
-            name: "memory-eater"
-            description: "E2E test remediation request"
 ---
 apiVersion: v1
 kind: Service

@@ -16,7 +16,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
 )
 
-// ListEventsArgs defines the input for af_list_events.
+// ListEventsArgs defines the input for kubectl_list_events.
 type ListEventsArgs struct {
 	Namespace string `json:"namespace"`
 	Reason    string `json:"reason,omitempty"`
@@ -33,7 +33,7 @@ type EventSummary struct {
 	LastTimestamp string `json:"last_timestamp,omitempty"`
 }
 
-// ListEventsResult is the output of af_list_events.
+// ListEventsResult is the output of kubectl_list_events.
 type ListEventsResult struct {
 	Events    []EventSummary `json:"events"`
 	Count     int            `json:"count"`
@@ -42,7 +42,7 @@ type ListEventsResult struct {
 
 var eventsGVR = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "events"}
 
-// HandleListEvents implements the af_list_events logic.
+// HandleListEvents implements the kubectl_list_events logic.
 func HandleListEvents(ctx context.Context, client dynamic.Interface, args ListEventsArgs) (ListEventsResult, error) {
 	if client == nil {
 		return ListEventsResult{}, ErrK8sUnavailable
@@ -93,11 +93,11 @@ func HandleListEvents(ctx context.Context, client dynamic.Interface, args ListEv
 	}, nil
 }
 
-// NewListEventsTool creates the af_list_events tool.
+// NewKubectlListEventsTool creates the kubectl_list_events tool.
 // Uses DynamicClientFactory to obtain a per-request impersonated client (SEC-05).
-func NewListEventsTool(factory auth.DynamicClientFactory) (tool.Tool, error) {
+func NewKubectlListEventsTool(factory auth.DynamicClientFactory) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
-		Name:        "af_list_events",
+		Name:        "kubectl_list_events",
 		Description: "List Kubernetes Events in a namespace, optionally filtered by reason or involved resource kind",
 	}, func(ctx tool.Context, args ListEventsArgs) (ListEventsResult, error) {
 		client, err := factory(ctx)

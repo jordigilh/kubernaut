@@ -116,6 +116,9 @@ func newFakeDynamicClient(objects ...runtime.Object) *dynamicfake.FakeDynamicCli
 	return dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, map[schema.GroupVersionResource]string{
 		{Group: "", Version: "v1", Resource: "events"}:                                        "EventList",
 		{Group: "", Version: "v1", Resource: "pods"}:                                          "PodList",
+		{Group: "", Version: "v1", Resource: "services"}:                                      "ServiceList",
+		{Group: "", Version: "v1", Resource: "secrets"}:                                       "SecretList",
+		{Group: "", Version: "v1", Resource: "endpoints"}:                                     "EndpointsList",
 		{Group: "apps", Version: "v1", Resource: "deployments"}:                               "DeploymentList",
 		{Group: "apps", Version: "v1", Resource: "statefulsets"}:                              "StatefulSetList",
 		{Group: "apps", Version: "v1", Resource: "replicasets"}:                               "ReplicaSetList",
@@ -440,7 +443,7 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 	})
 
 	Context("Tool registration", func() {
-		It("UT-AF-B-023: RegisterTools registers exactly 20 tools on the server", func() {
+		It("UT-AF-B-023: RegisterTools registers exactly 14 domain tools on the server", func() {
 			listReq := map[string]any{
 				"jsonrpc": "2.0",
 				"id":      3,
@@ -451,7 +454,7 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 			Expect(rec.Code).To(Equal(http.StatusOK))
 			body := rec.Body.String()
 			count := countToolsInResponse(body)
-			Expect(count).To(Equal(20))
+			Expect(count).To(Equal(14))
 		})
 	})
 
@@ -561,50 +564,9 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 		})
 	})
 
-	Context("AF triage tools dispatch", func() {
-		It("UT-AF-B-015: af_list_events dispatches correctly", func() {
-			_, body := mcpCallTool(h, sessionID, "af_list_events",
-				map[string]any{"namespace": "default"}, testUser)
-			text := extractTextContent(body)
-			Expect(text).To(ContainSubstring("events"))
-		})
-
-		It("UT-AF-B-016: af_get_pods dispatches correctly", func() {
-			_, body := mcpCallTool(h, sessionID, "af_get_pods",
-				map[string]any{"namespace": "default"}, testUser)
-			text := extractTextContent(body)
-			Expect(text).To(ContainSubstring("pods"))
-		})
-
-		It("UT-AF-B-017: af_get_workloads dispatches correctly", func() {
-			_, body := mcpCallTool(h, sessionID, "af_get_workloads",
-				map[string]any{"namespace": "default"}, testUser)
-			text := extractTextContent(body)
-			Expect(text).To(ContainSubstring("workloads"))
-		})
-
-		It("UT-AF-B-018: af_resolve_owner dispatches correctly", func() {
-			_, body := mcpCallTool(h, sessionID, "af_resolve_owner",
-				map[string]any{"namespace": "default", "kind": "Pod", "name": "nginx-pod-1"}, testUser)
-			text := extractTextContent(body)
-			// Pod has no ownerReferences, so chain is just the pod itself
-			Expect(text).To(ContainSubstring("chain"))
-		})
-
-		It("UT-AF-B-019: af_check_existing_rr dispatches correctly", func() {
-			_, body := mcpCallTool(h, sessionID, "af_check_existing_rr",
-				map[string]any{"namespace": "default", "kind": "Deployment", "name": "nginx"}, testUser)
-			text := extractTextContent(body)
-			Expect(text).To(ContainSubstring("exists"))
-		})
-
-		It("UT-AF-B-020: af_create_rr dispatches correctly", func() {
-			_, body := mcpCallTool(h, sessionID, "af_create_rr",
-				map[string]any{"namespace": "default", "kind": "StatefulSet", "name": "redis", "description": "test rr"}, testUser)
-			text := extractTextContent(body)
-			Expect(text).To(ContainSubstring("rr_id"))
-		})
-	})
+	// AF triage tools (kubectl_get, kubectl_list, kubectl_list_events,
+	// af_check_existing_rr, af_create_rr) are internal to AF's LLM agent
+	// (ADK path only) and not exposed via MCP — no bridge dispatch tests needed.
 
 	Context("Error paths", func() {
 		It("UT-AF-B-021: tool call with nil DynFactory returns error", func() {
@@ -625,7 +587,7 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 			Expect(err).NotTo(HaveOccurred())
 			sid := mcpInitialize(nilH, testUser)
 
-			_, body := mcpCallTool(nilH, sid, "af_list_events",
+			_, body := mcpCallTool(nilH, sid, "kubernaut_list_remediations",
 				map[string]any{"namespace": "default"}, testUser)
 			Expect(isErrorResult(body)).To(BeTrue())
 			text := extractTextContent(body)
@@ -687,9 +649,8 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 			h, err := handler.NewMCPHandler(cfg)
 			Expect(err).NotTo(HaveOccurred())
 
-			// Initialize and call without user identity (nil)
 			sid := mcpInitialize(h, nil)
-			_, body := mcpCallTool(h, sid, "af_list_events", map[string]any{"namespace": "default"}, nil)
+			_, body := mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, nil)
 			Expect(isErrorResult(body)).To(BeTrue())
 			text := extractTextContent(body)
 			Expect(text).To(ContainSubstring("authentication required"))
@@ -716,7 +677,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 			noUser := &auth.UserIdentity{Username: "anon", Groups: []string{"viewer"}, Issuer: "test"}
 			sid := mcpInitialize(h, noUser)
 
-			_, body := mcpCallTool(h, sid, "af_list_events", map[string]any{"namespace": "default"}, noUser)
+			_, body := mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, noUser)
 			Expect(isErrorResult(body)).To(BeTrue())
 			text := extractTextContent(body)
 			Expect(text).To(ContainSubstring("permission denied"))
@@ -730,7 +691,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 				Bridge: &handler.MCPBridgeConfig{
 					DynFactory:         auth.StaticDynamicFactory(fakeK8s),
 					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
-					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"af_list_events", "af_get_pods"}}},
+					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"kubernaut_list_remediations"}}},
 					Auditor:            auditor,
 					ToolTimeout:        2 * time.Second,
 					MaxConcurrentTools: 5,
@@ -742,7 +703,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 			user := &auth.UserIdentity{Username: "operator", Groups: []string{"sre"}, Issuer: "test"}
 			sid := mcpInitialize(h, user)
 
-			_, body := mcpCallTool(h, sid, "af_list_events", map[string]any{"namespace": "default"}, user)
+			_, body := mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
 			Expect(isErrorResult(body)).To(BeFalse())
 		})
 
@@ -754,7 +715,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 				Bridge: &handler.MCPBridgeConfig{
 					DynFactory:         auth.StaticDynamicFactory(fakeK8s),
 					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
-					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"af_list_events"}}},
+					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"kubernaut_list_remediations"}}},
 					Auditor:            auditor,
 					Metrics:            metrics,
 					ToolTimeout:        2 * time.Second,
@@ -767,7 +728,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 			user := &auth.UserIdentity{Username: "dev", Groups: []string{"developer"}, Issuer: "test"}
 			sid := mcpInitialize(h, user)
 
-			_, body := mcpCallTool(h, sid, "af_list_events", map[string]any{"namespace": "default"}, user)
+			_, body := mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
 			Expect(isErrorResult(body)).To(BeTrue())
 			text := extractTextContent(body)
 			Expect(text).To(ContainSubstring("permission denied"))
@@ -793,7 +754,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 			user := &auth.UserIdentity{Username: "admin", Groups: []string{"admin"}, Issuer: "test"}
 			sid := mcpInitialize(h, user)
 
-			_, body := mcpCallTool(h, sid, "af_list_events", map[string]any{"namespace": "default"}, user)
+			_, body := mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
 			Expect(isErrorResult(body)).To(BeFalse())
 		})
 
@@ -817,7 +778,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 			user := &auth.UserIdentity{Username: "anyone", Groups: []string{"unknown"}, Issuer: "test"}
 			sid := mcpInitialize(h, user)
 
-			_, body := mcpCallTool(h, sid, "af_list_events", map[string]any{"namespace": "default"}, user)
+			_, body := mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
 			Expect(isErrorResult(body)).To(BeFalse())
 		})
 
@@ -829,7 +790,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 				Bridge: &handler.MCPBridgeConfig{
 					DynFactory:         auth.StaticDynamicFactory(fakeK8s),
 					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
-					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"af_list_events"}}},
+					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"kubernaut_list_remediations"}}},
 					Auditor:            auditor,
 					Metrics:            metrics,
 					ToolTimeout:        2 * time.Second,
@@ -843,12 +804,12 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 			sid := mcpInitialize(h, user)
 			auditor.Reset()
 
-			mcpCallTool(h, sid, "af_list_events", map[string]any{"namespace": "default"}, user)
+			mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
 
 			events := auditor.Events()
 			Expect(events).NotTo(BeEmpty())
 			Expect(events[0].Type).To(Equal(audit.EventAuthAccessDenied))
-			Expect(events[0].Detail["tool_name"]).To(Equal("af_list_events"))
+			Expect(events[0].Detail["tool_name"]).To(Equal("kubernaut_list_remediations"))
 		})
 
 		It("UT-AF-B-032: RBAC denial increments af_tool_calls_total{result=denied}", func() {
@@ -859,7 +820,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 				Bridge: &handler.MCPBridgeConfig{
 					DynFactory:         auth.StaticDynamicFactory(fakeK8s),
 					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
-					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"af_list_events"}}},
+					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"kubernaut_list_remediations"}}},
 					Auditor:            auditor,
 					Metrics:            metrics,
 					ToolTimeout:        2 * time.Second,
@@ -872,9 +833,9 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 			user := &auth.UserIdentity{Username: "blocked", Groups: []string{"viewer"}, Issuer: "test"}
 			sid := mcpInitialize(h, user)
 
-			mcpCallTool(h, sid, "af_list_events", map[string]any{"namespace": "default"}, user)
+			mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
 
-			val := getCounterValue(metrics.ToolCallsTotal, prometheus.Labels{"tool": "af_list_events", "result": "denied"})
+			val := getCounterValue(metrics.ToolCallsTotal, prometheus.Labels{"tool": "kubernaut_list_remediations", "result": "denied"})
 			Expect(val).To(BeNumerically(">=", 1))
 		})
 	})
@@ -902,7 +863,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 
 			user := &auth.UserIdentity{Username: "test", Groups: []string{"sre"}, Issuer: "test"}
 			sid := mcpInitialize(h, user)
-			_, body := mcpCallTool(h, sid, "af_list_events", map[string]any{"namespace": "default"}, user)
+			_, body := mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
 			text := extractTextContent(body)
 			Expect(text).NotTo(ContainSubstring("eyJ"))
 			Expect(text).To(ContainSubstring("REDACTED"))
@@ -930,7 +891,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 
 			user := &auth.UserIdentity{Username: "test", Groups: []string{"sre"}, Issuer: "test"}
 			sid := mcpInitialize(h, user)
-			_, body := mcpCallTool(h, sid, "af_list_events", map[string]any{"namespace": "default"}, user)
+			_, body := mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
 			text := extractTextContent(body)
 			Expect(text).NotTo(ContainSubstring("/etc/kubernetes"))
 			Expect(text).To(ContainSubstring("REDACTED"))
@@ -938,7 +899,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 	})
 
 	Context("tools/list shows all tools regardless of RBAC", func() {
-		It("UT-AF-B-040: viewer sees all 20 tools in tools/list", func() {
+		It("UT-AF-B-040: viewer sees all 14 tools in tools/list", func() {
 			cfg := handler.MCPConfig{
 				ServerName:    "kubernaut-apifrontend",
 				ServerVersion: "v0.1.0-test",
@@ -967,7 +928,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 			rec := mcpPost(h, sid, listReq, viewer)
 			Expect(rec.Code).To(Equal(http.StatusOK))
 			count := countToolsInResponse(rec.Body.String())
-			Expect(count).To(Equal(20))
+			Expect(count).To(Equal(14))
 		})
 	})
 })
@@ -1017,9 +978,9 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 			user := &auth.UserIdentity{Username: "user", Groups: []string{"sre"}, Issuer: "test"}
 			sid := mcpInitialize(h, user)
 
-			mcpCallTool(h, sid, "af_list_events", map[string]any{"namespace": "default"}, user)
+			mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
 
-			val := getCounterValue(metrics.ToolCallsTotal, prometheus.Labels{"tool": "af_list_events", "result": "success"})
+			val := getCounterValue(metrics.ToolCallsTotal, prometheus.Labels{"tool": "kubernaut_list_remediations", "result": "success"})
 			Expect(val).To(BeNumerically(">=", 1))
 		})
 
@@ -1044,9 +1005,9 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 			user := &auth.UserIdentity{Username: "nobody", Groups: []string{"viewer"}, Issuer: "test"}
 			sid := mcpInitialize(h, user)
 
-			mcpCallTool(h, sid, "af_list_events", map[string]any{"namespace": "default"}, user)
+			mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
 
-			val := getCounterValue(metrics.ToolCallsTotal, prometheus.Labels{"tool": "af_list_events", "result": "denied"})
+			val := getCounterValue(metrics.ToolCallsTotal, prometheus.Labels{"tool": "kubernaut_list_remediations", "result": "denied"})
 			Expect(val).To(BeNumerically(">=", 1))
 		})
 
@@ -1074,9 +1035,9 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 			user := &auth.UserIdentity{Username: "user", Groups: []string{"sre"}, Issuer: "test"}
 			sid := mcpInitialize(h, user)
 
-			mcpCallTool(h, sid, "af_list_events", map[string]any{"namespace": "default"}, user)
+			mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
 
-			val := getCounterValue(metrics.ToolCallsTotal, prometheus.Labels{"tool": "af_list_events", "result": "error"})
+			val := getCounterValue(metrics.ToolCallsTotal, prometheus.Labels{"tool": "kubernaut_list_remediations", "result": "error"})
 			Expect(val).To(BeNumerically(">=", 1))
 		})
 
@@ -1101,9 +1062,9 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 			user := &auth.UserIdentity{Username: "user", Groups: []string{"sre"}, Issuer: "test"}
 			sid := mcpInitialize(h, user)
 
-			mcpCallTool(h, sid, "af_list_events", map[string]any{"namespace": "default"}, user)
+			mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
 
-			obs, err := metrics.ToolCallDuration.GetMetricWith(prometheus.Labels{"tool": "af_list_events", "type": "mcp"})
+			obs, err := metrics.ToolCallDuration.GetMetricWith(prometheus.Labels{"tool": "kubernaut_list_remediations", "type": "mcp"})
 			Expect(err).NotTo(HaveOccurred())
 			hist, ok := obs.(prometheus.Histogram)
 			Expect(ok).To(BeTrue())
@@ -1136,13 +1097,13 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 			sid := mcpInitialize(h, user)
 			auditor.Reset()
 
-			mcpCallTool(h, sid, "af_list_events", map[string]any{"namespace": "default"}, user)
+			mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
 
 			events := auditor.Events()
 			Expect(events).NotTo(BeEmpty())
 			found := false
 			for _, e := range events {
-				if e.Type == audit.EventToolExecuted && e.Detail["tool_name"] == "af_list_events" {
+				if e.Type == audit.EventToolExecuted && e.Detail["tool_name"] == "kubernaut_list_remediations" {
 					found = true
 					Expect(e.UserID).To(Equal("sre-user"))
 					break
@@ -1176,7 +1137,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 			sid := mcpInitialize(h, user)
 			auditor.Reset()
 
-			mcpCallTool(h, sid, "af_list_events", map[string]any{"namespace": "default"}, user)
+			mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
 
 			events := auditor.Events()
 			Expect(events).NotTo(BeEmpty())
@@ -1212,7 +1173,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 			sid := mcpInitialize(h, user)
 
 			Expect(func() {
-				mcpCallTool(h, sid, "af_list_events", map[string]any{"namespace": "default"}, user)
+				mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
 			}).NotTo(Panic())
 		})
 	})
@@ -1247,7 +1208,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 			user := &auth.UserIdentity{Username: "user", Groups: []string{"sre"}, Issuer: "test"}
 			sid := mcpInitialize(h, user)
 
-			_, body := mcpCallTool(h, sid, "af_list_events", map[string]any{"namespace": "default"}, user)
+			_, body := mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
 			Expect(isErrorResult(body)).To(BeTrue())
 			text := extractTextContent(body)
 			Expect(text).To(ContainSubstring("deadline"))
@@ -1279,15 +1240,15 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 
 			user := &auth.UserIdentity{Username: "user", Groups: []string{"sre"}, Issuer: "test"}
 			sid := mcpInitialize(h, user)
-			mcpCallTool(h, sid, "af_list_events", map[string]any{"namespace": "default"}, user)
+			mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
 
-			val := getCounterValue(localMetrics.ToolCallsTotal, prometheus.Labels{"tool": "af_list_events", "result": "timeout"})
+			val := getCounterValue(localMetrics.ToolCallsTotal, prometheus.Labels{"tool": "kubernaut_list_remediations", "result": "timeout"})
 			Expect(val).To(BeNumerically(">=", 1))
 
 			events := localAuditor.Events()
 			var foundFailed bool
 			for _, ev := range events {
-				if ev.Type == audit.EventMCPToolFailed && ev.Detail["tool_name"] == "af_list_events" {
+				if ev.Type == audit.EventMCPToolFailed && ev.Detail["tool_name"] == "kubernaut_list_remediations" {
 					foundFailed = true
 					break
 				}
@@ -1348,7 +1309,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 					defer GinkgoRecover()
 					defer wg.Done()
 					<-barrier
-					body := mcpCallToolHTTP(ts.URL, sessions[idx], "af_list_events", map[string]any{"namespace": "default"}, user)
+					body := mcpCallToolHTTP(ts.URL, sessions[idx], "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
 					results <- body
 				}(i)
 			}
@@ -1376,7 +1337,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 			Expect(throttled).To(BeNumerically(">=", 1),
 				"expected at least one throttled response out of 6 concurrent calls")
 
-			metricVal := getCounterValue(localMetrics.ToolCallsTotal, prometheus.Labels{"tool": "af_list_events", "result": "throttled"})
+			metricVal := getCounterValue(localMetrics.ToolCallsTotal, prometheus.Labels{"tool": "kubernaut_list_remediations", "result": "throttled"})
 			Expect(metricVal).To(BeNumerically(">=", 1))
 		})
 	})
@@ -1440,7 +1401,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 					defer GinkgoRecover()
 					defer wg.Done()
 					sid := mcpInitializeHTTP(ts.URL, user)
-					mcpCallToolHTTP(ts.URL, sid, "af_list_events", map[string]any{"namespace": "default"}, user)
+					mcpCallToolHTTP(ts.URL, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
 				}()
 			}
 
@@ -1485,7 +1446,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 
 			user := &auth.UserIdentity{Username: "sre", Groups: []string{"sre"}, Issuer: "test"}
 			sid := mcpInitialize(h, user)
-			_, body := mcpCallTool(h, sid, "af_list_events", map[string]any{"namespace": "default"}, user)
+			_, body := mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
 			Expect(isErrorResult(body)).To(BeTrue())
 			text := extractTextContent(body)
 			Expect(text).To(ContainSubstring("internal error"))
@@ -1517,15 +1478,15 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 
 			user := &auth.UserIdentity{Username: "sre", Groups: []string{"sre"}, Issuer: "test"}
 			sid := mcpInitialize(h, user)
-			mcpCallTool(h, sid, "af_list_events", map[string]any{"namespace": "default"}, user)
+			mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
 
-			val := getCounterValue(localMetrics.ToolCallsTotal, prometheus.Labels{"tool": "af_list_events", "result": "panic"})
+			val := getCounterValue(localMetrics.ToolCallsTotal, prometheus.Labels{"tool": "kubernaut_list_remediations", "result": "panic"})
 			Expect(val).To(BeNumerically(">=", 1))
 
 			events := localAuditor.Events()
 			var foundPanicAudit bool
 			for _, ev := range events {
-				if ev.Type == audit.EventMCPToolFailed && ev.Detail["tool_name"] == "af_list_events" && ev.Detail["error"] == "internal error" {
+				if ev.Type == audit.EventMCPToolFailed && ev.Detail["tool_name"] == "kubernaut_list_remediations" && ev.Detail["error"] == "internal error" {
 					foundPanicAudit = true
 					break
 				}
@@ -1596,24 +1557,17 @@ var _ = Describe("MCP Bridge - Tier 4: Adversarial Inputs", Label("tier4", "brid
 
 	Context("Empty string parameters", func() {
 		It("UT-AF-B-070: af_list_events with empty namespace returns error", func() {
-			_, body := mcpCallTool(h, sessionID, "af_list_events",
+			_, body := mcpCallTool(h, sessionID, "kubernaut_list_remediations",
 				map[string]any{"namespace": ""}, testUser)
 			Expect(isErrorResult(body)).To(BeTrue())
 			text := extractTextContent(body)
 			Expect(text).To(ContainSubstring("invalid"))
 		})
 
-		It("UT-AF-B-071: af_get_pods with empty namespace returns error", func() {
-			_, body := mcpCallTool(h, sessionID, "af_get_pods",
+		It("UT-AF-B-071: kubernaut_list_remediations with empty namespace returns error", func() {
+			_, body := mcpCallTool(h, sessionID, "kubernaut_list_remediations",
 				map[string]any{"namespace": ""}, testUser)
 			Expect(isErrorResult(body)).To(BeTrue())
-		})
-
-		It("UT-AF-B-073: af_create_rr with empty description still succeeds (optional-ish)", func() {
-			_, body := mcpCallTool(h, sessionID, "af_create_rr",
-				map[string]any{"namespace": "default", "kind": "Deployment", "name": "test-empty-desc", "description": ""}, testUser)
-			// Empty description is allowed — the tool doesn't reject it
-			Expect(isErrorResult(body)).To(BeFalse())
 		})
 
 		It("UT-AF-B-074: kubernaut_approve with empty decision returns error", func() {
@@ -1625,7 +1579,7 @@ var _ = Describe("MCP Bridge - Tier 4: Adversarial Inputs", Label("tier4", "brid
 
 	Context("Path traversal inputs", func() {
 		It("UT-AF-B-075: af_list_events with path traversal namespace is rejected", func() {
-			_, body := mcpCallTool(h, sessionID, "af_list_events",
+			_, body := mcpCallTool(h, sessionID, "kubernaut_list_remediations",
 				map[string]any{"namespace": "../../etc/passwd"}, testUser)
 			Expect(isErrorResult(body)).To(BeTrue())
 		})
@@ -1636,25 +1590,24 @@ var _ = Describe("MCP Bridge - Tier 4: Adversarial Inputs", Label("tier4", "brid
 			Expect(isErrorResult(body)).To(BeTrue())
 		})
 
-		It("UT-AF-B-077: af_check_existing_rr with path traversal kind is rejected", func() {
-			_, body := mcpCallTool(h, sessionID, "af_check_existing_rr",
-				map[string]any{"namespace": "default", "kind": "../../etc", "name": "test"}, testUser)
+		It("UT-AF-B-077: kubernaut_get_remediation with path traversal rr_id is rejected", func() {
+			_, body := mcpCallTool(h, sessionID, "kubernaut_get_remediation",
+				map[string]any{"rr_id": "../../etc/test"}, testUser)
 			Expect(isErrorResult(body)).To(BeTrue())
 		})
 	})
 
 	Context("Max-length inputs", func() {
-		It("UT-AF-B-078: af_create_rr with description > 2048 chars is truncated, not rejected", func() {
-			longDesc := strings.Repeat("A", 3000)
-			_, body := mcpCallTool(h, sessionID, "af_create_rr",
-				map[string]any{"namespace": "default", "kind": "Deployment", "name": "test-long", "description": longDesc}, testUser)
-			// af_create_rr truncates at 2048 chars, does not reject
-			Expect(isErrorResult(body)).To(BeFalse())
+		It("UT-AF-B-078: kubernaut_list_remediations with very long namespace is rejected", func() {
+			longNs := strings.Repeat("b", 300)
+			_, body := mcpCallTool(h, sessionID, "kubernaut_list_remediations",
+				map[string]any{"namespace": longNs}, testUser)
+			Expect(isErrorResult(body)).To(BeTrue())
 		})
 
 		It("UT-AF-B-079: af_list_events with very long namespace is rejected", func() {
 			longNs := strings.Repeat("a", 300)
-			_, body := mcpCallTool(h, sessionID, "af_list_events",
+			_, body := mcpCallTool(h, sessionID, "kubernaut_list_remediations",
 				map[string]any{"namespace": longNs}, testUser)
 			Expect(isErrorResult(body)).To(BeTrue())
 		})
@@ -1662,13 +1615,13 @@ var _ = Describe("MCP Bridge - Tier 4: Adversarial Inputs", Label("tier4", "brid
 
 	Context("Unicode edge cases", func() {
 		It("UT-AF-B-080: af_list_events with unicode namespace is rejected", func() {
-			_, body := mcpCallTool(h, sessionID, "af_list_events",
+			_, body := mcpCallTool(h, sessionID, "kubernaut_list_remediations",
 				map[string]any{"namespace": "default-日本語"}, testUser)
 			Expect(isErrorResult(body)).To(BeTrue())
 		})
 
-		It("UT-AF-B-082: af_get_pods with null-byte namespace is rejected", func() {
-			_, body := mcpCallTool(h, sessionID, "af_get_pods",
+		It("UT-AF-B-082: kubernaut_list_remediations with null-byte namespace is rejected", func() {
+			_, body := mcpCallTool(h, sessionID, "kubernaut_list_remediations",
 				map[string]any{"namespace": "default\x00injected"}, testUser)
 			Expect(isErrorResult(body)).To(BeTrue())
 		})
@@ -1691,12 +1644,10 @@ var _ = Describe("MCP Bridge - Tier 4: Adversarial Inputs", Label("tier4", "brid
 	})
 
 	Context("Invalid severity values", func() {
-		It("UT-AF-B-085: af_create_rr with invalid severity is rejected", func() {
-			_, body := mcpCallTool(h, sessionID, "af_create_rr",
-				map[string]any{"namespace": "default", "kind": "Deployment", "name": "test-sev", "description": "test", "severity": "CATASTROPHIC"}, testUser)
+		It("UT-AF-B-085: kubernaut_approve with invalid decision is rejected", func() {
+			_, body := mcpCallTool(h, sessionID, "kubernaut_approve",
+				map[string]any{"namespace": "default", "rar_name": "test-rar", "decision": "CATASTROPHIC"}, testUser)
 			Expect(isErrorResult(body)).To(BeTrue())
-			text := extractTextContent(body)
-			Expect(text).To(ContainSubstring("severity"))
 		})
 	})
 })
@@ -1744,7 +1695,7 @@ var _ = Describe("MCP Bridge - Tier 5: Cross-Cutting", Label("tier5", "bridge"),
 			for i := 0; i < 55; i++ {
 				sid := mcpInitialize(h, user)
 				Expect(sid).NotTo(BeEmpty())
-				mcpCallTool(h, sid, "af_list_events", map[string]any{"namespace": "default"}, user)
+				mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
 			}
 		})
 
@@ -1770,7 +1721,7 @@ var _ = Describe("MCP Bridge - Tier 5: Cross-Cutting", Label("tier5", "bridge"),
 			user := &auth.UserIdentity{Username: "sre", Groups: []string{"sre"}, Issuer: "test"}
 			sid := mcpInitialize(h, user)
 			for i := 0; i < 55; i++ {
-				mcpCallTool(h, sid, "af_list_events", map[string]any{"namespace": "default"}, user)
+				mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
 			}
 			// fakeAuditor should have recorded all events without panic
 			Expect(len(auditor.Events())).To(BeNumerically(">=", 55))
@@ -1790,7 +1741,7 @@ var _ = Describe("MCP Bridge - Tier 5: Cross-Cutting", Label("tier5", "bridge"),
 					KAClient:   ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
 					DSClient:   newFakeDSClient(),
 					Authorizer: &mapAuthorizer{roles: map[string][]string{
-						"sre": {"af_list_events", "af_get_pods"},
+						"sre": {"kubernaut_list_remediations", "kubernaut_get_remediation"},
 					}},
 					Auditor:            auditor,
 					Metrics:            metrics,
@@ -1814,13 +1765,13 @@ var _ = Describe("MCP Bridge - Tier 5: Cross-Cutting", Label("tier5", "bridge"),
 					defer GinkgoRecover()
 					defer wg.Done()
 					sid := mcpInitializeHTTP(ts.URL, allowedUser)
-					mcpCallToolHTTP(ts.URL, sid, "af_list_events", map[string]any{"namespace": "default"}, allowedUser)
+					mcpCallToolHTTP(ts.URL, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, allowedUser)
 				}()
 				go func() {
 					defer GinkgoRecover()
 					defer wg.Done()
 					sid := mcpInitializeHTTP(ts.URL, deniedUser)
-					mcpCallToolHTTP(ts.URL, sid, "af_list_events", map[string]any{"namespace": "default"}, deniedUser)
+					mcpCallToolHTTP(ts.URL, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, deniedUser)
 				}()
 			}
 			wg.Wait()
@@ -1851,7 +1802,7 @@ var _ = Describe("MCP Bridge - Tier 5: Cross-Cutting", Label("tier5", "bridge"),
 			sid := mcpInitialize(h, user)
 
 			// CRD tools should still work
-			_, body := mcpCallTool(h, sid, "af_list_events", map[string]any{"namespace": "default"}, user)
+			_, body := mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
 			Expect(isErrorResult(body)).To(BeFalse())
 		})
 
@@ -1905,7 +1856,7 @@ var _ = Describe("MCP Bridge - Tier 5: Cross-Cutting", Label("tier5", "bridge"),
 			sid := mcpInitialize(h, user)
 
 			Expect(func() {
-				mcpCallTool(h, sid, "af_list_events", map[string]any{"namespace": "default"}, user)
+				mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
 			}).NotTo(Panic())
 		})
 
@@ -2353,11 +2304,11 @@ var _ = Describe("MCP Bridge - Metrics Wiring", Label("metrics", "wiring"), func
 	})
 
 	It("UT-AF-MET-W04: error tool call increments af_tool_calls_total{result=error}", func() {
-		before := getCounterValue(metricsReg.ToolCallsTotal, prometheus.Labels{"tool": "af_get_pods", "result": "error"})
+		before := getCounterValue(metricsReg.ToolCallsTotal, prometheus.Labels{"tool": "kubernaut_list_remediations", "result": "error"})
 
-		mcpCallTool(h, sessionID, "af_get_pods", map[string]any{"namespace": ""}, testUser)
+		mcpCallTool(h, sessionID, "kubernaut_list_remediations", map[string]any{"namespace": ""}, testUser)
 
-		after := getCounterValue(metricsReg.ToolCallsTotal, prometheus.Labels{"tool": "af_get_pods", "result": "error"})
+		after := getCounterValue(metricsReg.ToolCallsTotal, prometheus.Labels{"tool": "kubernaut_list_remediations", "result": "error"})
 		Expect(after - before).To(BeNumerically(">=", float64(1)))
 	})
 })

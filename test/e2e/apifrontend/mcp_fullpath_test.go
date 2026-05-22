@@ -78,42 +78,18 @@ var _ = Describe("MCP Full-Path Validation (G1)", Label("e2e", "phase2", "g1"), 
 		return mcpPOST(authToken, mcpSessionID, callBody)
 	}
 
-	It("TC-E2E-MCP-FULL-01: MCP tools/call -> af_get_pods returns pod data for kubernaut-system", func() {
-		text, err := mcpToolCall("mcp-full-01", "af_get_pods", map[string]interface{}{
-			"namespace": "kubernaut-system",
-		})
-		Expect(err).NotTo(HaveOccurred(), "af_get_pods: %s", text)
-
-		lower := strings.ToLower(text)
-		Expect(lower).To(Or(
-			ContainSubstring("apifrontend"),
-			ContainSubstring("mock-llm"),
-			ContainSubstring("dex"),
-		), "expected AF stack pod data in result: %s", text)
-	})
+	// TC-E2E-MCP-FULL-01 deleted: af_get_pods covered by A2A T15.
 
 	// TC-E2E-MCP-FULL-02 + 04 collapsed: create RR → approve it
-	It("TC-E2E-MCP-FULL-02+04: af_create_rr then kubernaut_approve lifecycle", func() {
-		By("TC-E2E-MCP-FULL-02: af_create_rr succeeds")
-		text, err := mcpToolCall("mcp-full-02", "af_create_rr", map[string]interface{}{
-			"namespace":   "default",
-			"name":        g1RRDeployName,
-			"kind":        "Deployment",
-			"description": "MCP E2E test",
-		})
-		Expect(err).NotTo(HaveOccurred(), "af_create_rr: %s", text)
-		Expect(strings.ToLower(text)).To(Or(
-			ContainSubstring("created"),
-			ContainSubstring("remediationrequest"),
-			ContainSubstring("exists"),
-		))
-		g1RRID := parseJSONStringField(text, "rr_id")
-		Expect(g1RRID).NotTo(BeEmpty())
+	It("TC-E2E-MCP-FULL-02+04: RR fixture then kubernaut_approve lifecycle", func() {
+		const rrNamespace = "default"
+		const rrName = "e2e-rr-mcp-full-02"
+
+		By("TC-E2E-MCP-FULL-02: Create RR via kubectl CRD fixture")
+		Expect(kubectlCreateRR(rrNamespace, rrName, "Deployment", g1RRDeployName)).To(Succeed())
+		DeferCleanup(func() { kubectlDeleteRR(rrNamespace, rrName) })
 
 		By("TC-E2E-MCP-FULL-04: kubernaut_approve after RR exists")
-		rrNamespace := "default"
-		rrName := rrNameFromRRID(g1RRID)
-		Expect(rrName).NotTo(BeEmpty())
 		rarName := fmt.Sprintf("e2e-rar-g1-%d", time.Now().UnixNano())
 		Expect(kubectlApplyYAML(remediationApprovalManifest(rrNamespace, rarName, rrName))).To(Succeed())
 		DeferCleanup(func() {
@@ -160,7 +136,7 @@ var _ = Describe("MCP Full-Path Validation (G1)", Label("e2e", "phase2", "g1"), 
 		}
 	})
 
-	It("TC-E2E-MCP-FULL-05: MCP tools/list returns exactly 20 tools", func() {
+	It("TC-E2E-MCP-FULL-05: MCP tools/list returns exactly 14 domain tools", func() {
 		root, err := mcpToolsList("mcp-full-05")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(root).NotTo(HaveKey("error"))
@@ -170,7 +146,7 @@ var _ = Describe("MCP Full-Path Validation (G1)", Label("e2e", "phase2", "g1"), 
 
 		toolsRaw, ok := res["tools"].([]interface{})
 		Expect(ok).To(BeTrue(), "result.tools should be an array: %#v", res)
-		Expect(len(toolsRaw)).To(Equal(20))
+		Expect(len(toolsRaw)).To(Equal(14))
 
 		for _, t := range toolsRaw {
 			tm, ok := t.(map[string]interface{})
@@ -198,38 +174,5 @@ var _ = Describe("MCP Full-Path Validation (G1)", Label("e2e", "phase2", "g1"), 
 		Expect(toolIsErr).To(BeTrue(), "expected tool error for unknown tool; text=%q", text)
 	})
 
-	It("TC-E2E-MCP-FULL-07: MCP tools/call af_create_rr without required name yields validation error", func() {
-		raw, code, err := mcpToolCallRaw("mcp-full-07", "af_create_rr", map[string]interface{}{
-			"namespace":   "default",
-			"kind":        "Deployment",
-			"description": "missing name field",
-		})
-		Expect(err).NotTo(HaveOccurred())
-		Expect(code).To(BeNumerically("<", http.StatusBadRequest))
-
-		payload := unwrapSSEDataLine(raw)
-		text, toolIsErr, perr := parseMCPToolPayload(payload)
-
-		var root map[string]interface{}
-		_ = json.Unmarshal([]byte(payload), &root)
-		rpcErr, rpcErrSet := root["error"]
-		hasRPCError := rpcErrSet && rpcErr != nil
-
-		Expect(hasRPCError || perr != nil || toolIsErr).To(BeTrue(), "expected JSON-RPC error or tool/validation error, payload=%q", payload)
-
-		diag := strings.ToLower(payload)
-		if text != "" {
-			diag += " " + strings.ToLower(text)
-		}
-		if perr != nil {
-			diag += " " + strings.ToLower(perr.Error())
-		}
-		Expect(diag).To(Or(
-			ContainSubstring("invalid"),
-			ContainSubstring("required"),
-			ContainSubstring("validation"),
-			ContainSubstring("parameter"),
-			ContainSubstring("name"),
-		))
-	})
+	// TC-E2E-MCP-FULL-07 deleted: af_create_rr validation (internal tool) — covered by UT.
 })

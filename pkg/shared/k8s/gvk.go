@@ -47,6 +47,22 @@ func ResolveGVKForKind(mapper meta.RESTMapper, kind string) (schema.GroupVersion
 		return schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Service"}, nil
 	case "ConfigMap":
 		return schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"}, nil
+	case "Secret":
+		return schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Secret"}, nil
+	case "Endpoints":
+		return schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Endpoints"}, nil
+	case "Namespace":
+		return schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"}, nil
+	case "Job":
+		return schema.GroupVersionKind{Group: "batch", Version: "v1", Kind: "Job"}, nil
+	case "CronJob":
+		return schema.GroupVersionKind{Group: "batch", Version: "v1", Kind: "CronJob"}, nil
+	case "Ingress":
+		return schema.GroupVersionKind{Group: "networking.k8s.io", Version: "v1", Kind: "Ingress"}, nil
+	case "NetworkPolicy":
+		return schema.GroupVersionKind{Group: "networking.k8s.io", Version: "v1", Kind: "NetworkPolicy"}, nil
+	case "PersistentVolumeClaim":
+		return schema.GroupVersionKind{Group: "", Version: "v1", Kind: "PersistentVolumeClaim"}, nil
 	case "Node":
 		return schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Node"}, nil
 	case "HorizontalPodAutoscaler":

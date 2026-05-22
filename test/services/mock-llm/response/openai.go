@@ -186,12 +186,16 @@ func buildToolArguments(toolName string, cfg scenarios.MockScenarioConfig) map[s
 	case "kubernaut_list_remediations":
 		return map[string]interface{}{"namespace": cfg.ResourceNS}
 	case "af_create_rr":
-		return map[string]interface{}{
+		args := map[string]interface{}{
 			"namespace":   cfg.ResourceNS,
 			"kind":        cfg.ResourceKind,
 			"name":        cfg.ResourceName,
 			"description": "Auto-remediation triggered by AI analysis",
 		}
+		if cfg.Severity != "" {
+			args["severity"] = cfg.Severity
+		}
+		return args
 	default:
 		return map[string]interface{}{}
 	}

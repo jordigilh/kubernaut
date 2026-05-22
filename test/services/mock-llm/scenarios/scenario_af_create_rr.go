@@ -15,7 +15,12 @@ limitations under the License.
 */
 package scenarios
 
-import "strings"
+import (
+	"regexp"
+	"strings"
+
+	"github.com/jordigilh/kubernaut/test/services/mock-llm/conversation"
+)
 
 // afCreateRRConfig returns a config that instructs the mock LLM to call
 // af_create_rr when the AF ADK agent sends a Gemini request whose user
@@ -36,16 +41,49 @@ func afCreateRRConfig() MockScenarioConfig {
 	}
 }
 
-func afCreateRRScenario() *configScenario {
-	cfg := afCreateRRConfig()
-	return &configScenario{
-		config: cfg,
-		matchFunc: func(ctx *DetectionContext) (bool, float64) {
-			combined := strings.ToLower(ctx.Content + " " + ctx.AllText)
-			if strings.Contains(combined, "create a remediation request") {
-				return true, 0.9
-			}
-			return false, 0
-		},
+var severityRe = regexp.MustCompile(`with severity (\w+)`)
+var deployNSRe = regexp.MustCompile(`deployment (\S+) in (\S+) namespace`)
+
+func afCreateRRScenario() *afCreateRRDynScenario {
+	return &afCreateRRDynScenario{baseConfig: afCreateRRConfig()}
+}
+
+// afCreateRRDynScenario is a dynamic scenario that extracts target resource
+// and severity from the user prompt to forward as af_create_rr tool args.
+type afCreateRRDynScenario struct {
+	baseConfig MockScenarioConfig
+	lastCtx    *DetectionContext
+}
+
+func (s *afCreateRRDynScenario) Name() string { return s.baseConfig.ScenarioName }
+
+func (s *afCreateRRDynScenario) Metadata() ScenarioMetadata {
+	return ScenarioMetadata{Name: s.baseConfig.ScenarioName, Description: "Dynamic af_create_rr with severity extraction"}
+}
+
+func (s *afCreateRRDynScenario) DAG() *conversation.DAG { return nil }
+
+func (s *afCreateRRDynScenario) Match(ctx *DetectionContext) (bool, float64) {
+	combined := strings.ToLower(ctx.Content + " " + ctx.AllText)
+	if strings.Contains(combined, "create a remediation request") {
+		s.lastCtx = ctx
+		return true, 0.9
 	}
+	return false, 0
+}
+
+func (s *afCreateRRDynScenario) Config() MockScenarioConfig {
+	cfg := s.baseConfig
+	if s.lastCtx == nil {
+		return cfg
+	}
+	text := s.lastCtx.Content
+	if m := deployNSRe.FindStringSubmatch(text); len(m) == 3 {
+		cfg.ResourceName = m[1]
+		cfg.ResourceNS = m[2]
+	}
+	if m := severityRe.FindStringSubmatch(text); len(m) == 2 {
+		cfg.Severity = m[1]
+	}
+	return cfg
 }

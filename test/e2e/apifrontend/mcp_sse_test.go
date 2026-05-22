@@ -26,7 +26,7 @@ var _ = Describe("MCP SSE Responses (G2)", Label("e2e", "phase4", "g2"), func() 
 
 	It("TC-E2E-MCP-SSE-01: Accept negotiation — text/event-stream preferred", func() {
 		callBody := buildJSONRPC("neg-01", "tools/call", map[string]interface{}{
-			"name": "af_get_pods",
+			"name": "kubernaut_list_remediations",
 			"arguments": map[string]interface{}{
 				"namespace": "kubernaut-system",
 			},

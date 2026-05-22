@@ -558,7 +558,7 @@ var _ = Describe("CRDSessionService", func() {
 				Parts: []*genai.Part{
 					{
 						FunctionResponse: &genai.FunctionResponse{
-							Name:     "af_get_pods",
+							Name:     "kubectl_list",
 							Response: largeResponse,
 						},
 					},

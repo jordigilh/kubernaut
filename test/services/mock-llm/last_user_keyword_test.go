@@ -238,10 +238,10 @@ keyword_scenarios:
       name: "kubernaut_start_investigation"
       arguments:
         namespace: "default"
-  - name: "af_get_pods"
+  - name: "kubectl_list_pods"
     keywords: ["get pods"]
     tool_call:
-      name: "af_get_pods"
+      name: "kubectl_list"
 `
 			tmpFile := filepath.Join(GinkgoT().TempDir(), "overrides.yaml")
 			Expect(os.WriteFile(tmpFile, []byte(yamlContent), 0644)).To(Succeed())

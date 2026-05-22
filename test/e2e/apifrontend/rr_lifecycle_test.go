@@ -84,56 +84,24 @@ var _ = Describe("RR CRD Lifecycle (G4)", Label("e2e", "phase2", "g4"), func() {
 		return text, nil
 	}
 
-	// TC-E2E-RR-01..05 collapsed: create → check existing → cancel → list → get detail
-	It("TC-E2E-RR-01..05: RR create → check → cancel → list → get lifecycle", func() {
+	// TC-E2E-RR-01..05 collapsed: create → cancel → list → get detail
+	It("TC-E2E-RR-01..05: RR create → cancel → list → get lifecycle", func() {
 		authToken, err := fetchDEXTokenForPersona("sre")
 		Expect(err).NotTo(HaveOccurred())
 		mcpSessionID, err := initMCPSession(authToken)
 		Expect(err).NotTo(HaveOccurred())
 
-		By("TC-E2E-RR-01: af_create_rr creates RR")
-		text, err := mcpToolCallWith(authToken, mcpSessionID, "af_create_rr", map[string]interface{}{
-			"namespace":   "default",
-			"name":        "test-deploy-rr01",
-			"kind":        "Deployment",
-			"description": "E2E test RR",
-		})
-		Expect(err).NotTo(HaveOccurred(), "af_create_rr: %s", text)
-		Expect(strings.ToLower(text)).To(Or(
-			ContainSubstring("created"),
-			ContainSubstring("remediationrequest"),
-		))
-		Expect(text).To(ContainSubstring("rr_id"))
-		rr01RRID := parseJSONStringField(text, "rr_id")
-		Expect(rr01RRID).NotTo(BeEmpty())
+		const rrName = "e2e-rr-lifecycle-01"
+		const rrNamespace = "default"
+		rrID := rrNamespace + "/" + rrName
 
-		var parsed map[string]interface{}
-		Expect(json.Unmarshal([]byte(text), &parsed)).To(Succeed())
-		tr, _ := parsed["targetResource"].(map[string]interface{})
-		if tr != nil {
-			Expect(tr["name"]).To(Equal("test-deploy-rr01"))
-			Expect(tr["kind"]).To(Equal("Deployment"))
-		} else {
-			Expect(text).To(ContainSubstring("test-deploy-rr01"))
-		}
-
-		By("TC-E2E-RR-02: af_check_existing_rr finds RR for same fingerprint")
-		text, err = mcpToolCallWith(authToken, mcpSessionID, "af_check_existing_rr", map[string]interface{}{
-			"namespace": "default",
-			"kind":      "Deployment",
-			"name":      "test-deploy-rr01",
-		})
-		Expect(err).NotTo(HaveOccurred(), text)
-		var out map[string]interface{}
-		Expect(json.Unmarshal([]byte(text), &out)).To(Succeed())
-		Expect(out["exists"]).To(BeTrue(), "non-terminal RR should exist for fingerprint")
-		Expect(out["rr_id"]).To(Equal(rr01RRID))
+		By("TC-E2E-RR-01: Create RR via kubectl CRD fixture")
+		Expect(kubectlCreateRR(rrNamespace, rrName, "Deployment", "test-deploy-rr01")).To(Succeed())
+		DeferCleanup(func() { kubectlDeleteRR(rrNamespace, rrName) })
 
 		By("TC-E2E-RR-03: kubernaut_cancel_remediation sets RR to Cancelled")
-		rrName := rrNameFromRRID(rr01RRID)
-		Expect(rrName).NotTo(BeEmpty())
-		text, err = mcpToolCallWith(authToken, mcpSessionID, "kubernaut_cancel_remediation", map[string]interface{}{
-			"namespace": "default",
+		text, err := mcpToolCallWith(authToken, mcpSessionID, "kubernaut_cancel_remediation", map[string]interface{}{
+			"namespace": rrNamespace,
 			"name":      rrName,
 		})
 		Expect(err).NotTo(HaveOccurred(), text)
@@ -143,19 +111,20 @@ var _ = Describe("RR CRD Lifecycle (G4)", Label("e2e", "phase2", "g4"), func() {
 		))
 
 		By("TC-E2E-RR-04: kubernaut_list_remediations returns the RR")
+		var out map[string]interface{}
 		text, err = mcpToolCallWith(authToken, mcpSessionID, "kubernaut_list_remediations", map[string]interface{}{
-			"namespace": "default",
+			"namespace": rrNamespace,
 		})
 		Expect(err).NotTo(HaveOccurred(), text)
 		Expect(json.Unmarshal([]byte(text), &out)).To(Succeed())
 		rem, ok := out["remediations"].([]interface{})
 		Expect(ok).To(BeTrue(), "list result should include remediations array")
 		Expect(len(rem)).To(BeNumerically(">=", 1))
-		Expect(strings.ToLower(text)).To(ContainSubstring(strings.ToLower(rrNameFromRRID(rr01RRID))))
+		Expect(strings.ToLower(text)).To(ContainSubstring(strings.ToLower(rrName)))
 
 		By("TC-E2E-RR-05: kubernaut_get_remediation returns detail for RR")
 		text, err = mcpToolCallWith(authToken, mcpSessionID, "kubernaut_get_remediation", map[string]interface{}{
-			"rr_id": rr01RRID,
+			"rr_id": rrID,
 		})
 		Expect(err).NotTo(HaveOccurred(), text)
 		Expect(json.Unmarshal([]byte(text), &out)).To(Succeed())
@@ -169,40 +138,21 @@ var _ = Describe("RR CRD Lifecycle (G4)", Label("e2e", "phase2", "g4"), func() {
 		Expect(target).NotTo(BeEmpty())
 	})
 
-	// TC-E2E-RR-06..07 collapsed: create twice (idempotent) → watch
-	It("TC-E2E-RR-06..07: idempotent create → watch", func() {
+	// TC-E2E-RR-06 deleted: idempotency tests af_create_rr (internal tool) — covered by UT.
+	// TC-E2E-RR-07: kubernaut_watch with kubectl-seeded RR
+	It("TC-E2E-RR-07: kubernaut_watch returns structured watch result", func() {
 		authToken, err := fetchDEXTokenForPersona("sre")
 		Expect(err).NotTo(HaveOccurred())
 		mcpSessionID, err := initMCPSession(authToken)
 		Expect(err).NotTo(HaveOccurred())
 
-		By("TC-E2E-RR-06: af_create_rr twice is idempotent")
-		args := map[string]interface{}{
-			"namespace":   "default",
-			"name":        "test-deploy-rr06",
-			"kind":        "Deployment",
-			"description": "E2E idempotent RR",
-		}
-		first, err := mcpToolCallWith(authToken, mcpSessionID, "af_create_rr", args)
-		Expect(err).NotTo(HaveOccurred(), first)
-		second, err := mcpToolCallWith(authToken, mcpSessionID, "af_create_rr", args)
-		Expect(err).NotTo(HaveOccurred(), second)
-		id1 := parseJSONStringField(first, "rr_id")
-		id2 := parseJSONStringField(second, "rr_id")
-		Expect(id1).NotTo(BeEmpty())
-		Expect(id2).NotTo(BeEmpty())
-		Expect(id1).To(Equal(id2), "second create should return the same rr_id")
-		var s2 map[string]interface{}
-		_ = json.Unmarshal([]byte(second), &s2)
-		if already, ok := s2["already_exists"].(bool); ok {
-			Expect(already).To(BeTrue())
-		}
+		const rrName = "e2e-rr-watch-07"
+		Expect(kubectlCreateRR("default", rrName, "Deployment", "test-deploy-rr07")).To(Succeed())
+		DeferCleanup(func() { kubectlDeleteRR("default", rrName) })
 
-		By("TC-E2E-RR-07: kubernaut_watch returns structured watch result")
-		name := rrNameFromRRID(id1)
 		text, err := mcpToolCallWith(authToken, mcpSessionID, "kubernaut_watch", map[string]interface{}{
 			"namespace": "default",
-			"name":      name,
+			"name":      rrName,
 		})
 		Expect(err).NotTo(HaveOccurred(), text)
 		var out map[string]interface{}
@@ -211,69 +161,8 @@ var _ = Describe("RR CRD Lifecycle (G4)", Label("e2e", "phase2", "g4"), func() {
 		Expect(out).To(HaveKey("status"))
 	})
 
-	It("TC-E2E-RR-08: af_create_rr with empty name returns validation error", func() {
-		authToken, err := fetchDEXTokenForPersona("sre")
-		Expect(err).NotTo(HaveOccurred())
-		mcpSessionID, err := initMCPSession(authToken)
-		Expect(err).NotTo(HaveOccurred())
-
-		raw, code, err := mcpPOST(authToken, mcpSessionID,
-			buildJSONRPC(fmt.Sprintf("g4-invalid-%d", time.Now().UnixNano()), "tools/call",
-				map[string]interface{}{
-					"name": "af_create_rr",
-					"arguments": map[string]interface{}{
-						"namespace":   "default",
-						"name":        "",
-						"kind":        "Deployment",
-						"description": "invalid",
-					},
-				}))
-		Expect(err).NotTo(HaveOccurred())
-		Expect(code).To(BeNumerically("<", 400))
-
-		payload := unwrapSSEDataLine(raw)
-		text, toolErr, perr := parseMCPToolPayload(payload)
-		Expect(perr).NotTo(HaveOccurred())
-		Expect(toolErr).To(BeTrue())
-		Expect(strings.ToLower(text)).To(Or(
-			ContainSubstring("name must not be empty"),
-			ContainSubstring("invalid"),
-			ContainSubstring("error"),
-		))
-	})
-
-	It("TC-E2E-RR-09: af_create_rr denied for observability (read-only) persona", func() {
-		obsToken, err := fetchDEXTokenForPersona("observability")
-		Expect(err).NotTo(HaveOccurred())
-
-		obsSession, err := initMCPSession(obsToken)
-		Expect(err).NotTo(HaveOccurred())
-
-		raw, code, err := mcpPOST(obsToken, obsSession, buildJSONRPC(
-			fmt.Sprintf("g4-rbac-%d", time.Now().UnixNano()), "tools/call",
-			map[string]interface{}{
-				"name": "af_create_rr",
-				"arguments": map[string]interface{}{
-					"namespace":   "default",
-					"name":        "test-deploy-rr09",
-					"kind":        "Deployment",
-					"description": "should be denied",
-				},
-			}))
-		Expect(err).NotTo(HaveOccurred())
-		Expect(code).To(BeNumerically("<", 400))
-
-		payload := unwrapSSEDataLine(raw)
-		text, toolErr, perr := parseMCPToolPayload(payload)
-		Expect(perr).NotTo(HaveOccurred())
-		Expect(toolErr).To(BeTrue())
-		Expect(strings.ToLower(text)).To(Or(
-			ContainSubstring("denied"),
-			ContainSubstring("permission"),
-			ContainSubstring("forbidden"),
-			ContainSubstring("not allowed"),
-		))
-	})
+	// TC-E2E-RR-08 deleted: af_create_rr validation (internal tool) — covered by UT.
+	// TC-E2E-RR-09 deleted: af_create_rr RBAC denial — covered by A2A RBAC-06.
 })
 
 var _ = Describe("RAR Flow (G5)", Label("e2e", "phase2", "g5"), func() {
@@ -281,28 +170,9 @@ var _ = Describe("RAR Flow (G5)", Label("e2e", "phase2", "g5"), func() {
 	const rrNamespace = "default"
 
 	It("TC-E2E-RAR-01: kubernaut_approve succeeds for RAR referencing existing RR", func() {
-		sreTok, err := fetchDEXTokenForPersona("sre")
-		Expect(err).NotTo(HaveOccurred())
-		sreSession, err := initMCPSession(sreTok)
-		Expect(err).NotTo(HaveOccurred())
-
-		createBody := buildJSONRPC("g5-01-create", "tools/call", map[string]interface{}{
-			"name": "af_create_rr",
-			"arguments": map[string]interface{}{
-				"namespace":   rrNamespace,
-				"name":        "test-deploy-rar01",
-				"kind":        "Deployment",
-				"description": "E2E RAR flow — RR",
-			},
-		})
-		raw, code, err := mcpPOST(sreTok, sreSession, createBody)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(code).To(BeNumerically("<", 400))
-		text, _, perr := parseMCPToolPayload(unwrapSSEDataLine(raw))
-		Expect(perr).NotTo(HaveOccurred())
-		rrID := parseJSONStringField(text, "rr_id")
-		Expect(rrID).NotTo(BeEmpty())
-		rrName := rrNameFromRRID(rrID)
+		const rrName = "e2e-rr-rar01"
+		Expect(kubectlCreateRR(rrNamespace, rrName, "Deployment", "test-deploy-rar01")).To(Succeed())
+		DeferCleanup(func() { kubectlDeleteRR(rrNamespace, rrName) })
 
 		rarName := "e2e-rar-g5-01"
 		Expect(kubectlApplyYAML(remediationApprovalManifest(rrNamespace, rarName, rrName))).To(Succeed())
@@ -367,28 +237,14 @@ var _ = Describe("RAR Flow (G5)", Label("e2e", "phase2", "g5"), func() {
 	})
 
 	It("TC-E2E-RAR-03: sre persona may kubernaut_approve (RBAC includes tool)", func() {
+		const rrName = "e2e-rr-rar03"
+		Expect(kubectlCreateRR(rrNamespace, rrName, "Deployment", "test-deploy-rar03")).To(Succeed())
+		DeferCleanup(func() { kubectlDeleteRR(rrNamespace, rrName) })
+
 		sreTok, err := fetchDEXTokenForPersona("sre")
 		Expect(err).NotTo(HaveOccurred())
 		sreSession, err := initMCPSession(sreTok)
 		Expect(err).NotTo(HaveOccurred())
-
-		createBody := buildJSONRPC("g5-03-create", "tools/call", map[string]interface{}{
-			"name": "af_create_rr",
-			"arguments": map[string]interface{}{
-				"namespace":   rrNamespace,
-				"name":        "test-deploy-rar03",
-				"kind":        "Deployment",
-				"description": "E2E SRE approve path",
-			},
-		})
-		raw, code, err := mcpPOST(sreTok, sreSession, createBody)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(code).To(BeNumerically("<", 400))
-		text, _, perr := parseMCPToolPayload(unwrapSSEDataLine(raw))
-		Expect(perr).NotTo(HaveOccurred())
-		rrID := parseJSONStringField(text, "rr_id")
-		Expect(rrID).NotTo(BeEmpty())
-		rrName := rrNameFromRRID(rrID)
 
 		rarName := "e2e-rar-g5-03"
 		Expect(kubectlApplyYAML(remediationApprovalManifest(rrNamespace, rarName, rrName))).To(Succeed())

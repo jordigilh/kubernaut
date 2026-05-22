@@ -162,10 +162,10 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(tp.Text).To(ContainSubstring("Starting investigation"))
 		})
 
-		It("UT-AF-1189-109: af_get_pods -> fetching pod status", func() {
+		It("UT-AF-1189-109: kubectl_list -> listing cluster resources", func() {
 			part := &genai.Part{
 				FunctionCall: &genai.FunctionCall{
-					Name: "af_get_pods",
+					Name: "kubectl_list",
 					Args: map[string]any{"namespace": "production"},
 				},
 			}
@@ -173,13 +173,13 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(ContainSubstring("Fetching pod status"))
+			Expect(tp.Text).To(ContainSubstring("Listing cluster resources"))
 		})
 
-		It("UT-AF-1189-110: af_list_events -> fetching cluster events", func() {
+		It("UT-AF-1189-110: kubectl_list_events -> fetching cluster events", func() {
 			part := &genai.Part{
 				FunctionCall: &genai.FunctionCall{
-					Name: "af_list_events",
+					Name: "kubectl_list_events",
 					Args: map[string]any{"namespace": "kube-system"},
 				},
 			}
@@ -274,7 +274,6 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(ContainSubstring("Remediation request created"))
 			Expect(tp.Text).To(ContainSubstring("rr-disk-pressure-abc123"))
 		})
 
@@ -556,7 +555,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(tp.Text).To(Equal("Watching remediation..."))
 		})
 
-		It("UT-AF-1189-161: af_create_rr response without rr_id -> generic fallback", func() {
+		It("UT-AF-1189-161: af_create_rr response without rr_id -> JSON output", func() {
 			part := &genai.Part{
 				FunctionResponse: &genai.FunctionResponse{
 					Name:     "af_create_rr",
@@ -567,7 +566,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal("Remediation request created."))
+			Expect(tp.Text).To(ContainSubstring("created"))
 		})
 	})
 
