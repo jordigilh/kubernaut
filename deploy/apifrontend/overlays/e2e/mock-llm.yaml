@@ -253,17 +253,6 @@ data:
             namespace: "prod"
             kind: "Deployment"
             name: "web"
-
-      - name: "af_create_rr"
-        keywords: ["create a remediation request", "create remediation"]
-        match_last_only: true
-        tool_call:
-          name: "af_create_rr"
-          arguments:
-            namespace: "kubernaut-system"
-            kind: "Deployment"
-            name: "memory-eater"
-            description: "E2E test remediation request"
 ---
 apiVersion: v1
 kind: Service
