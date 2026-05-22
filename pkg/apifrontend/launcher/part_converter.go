@@ -33,7 +33,7 @@ var toolStatusMessages = map[string]string{
 	"kubernaut_get_remediation":       "Getting remediation details...",
 	"kubernaut_approve":               "Approving remediation...",
 	"kubernaut_cancel_remediation":    "Cancelling remediation...",
-	"present_decision":                "Presenting decision to user...",
+	"kubernaut_present_decision":      "Presenting decision to user...",
 	"kubernaut_list_workflows":        "Listing available workflows...",
 	"kubernaut_get_remediation_history": "Getting remediation history...",
 	"kubernaut_get_effectiveness":     "Getting effectiveness data...",

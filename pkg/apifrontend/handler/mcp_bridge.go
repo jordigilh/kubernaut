@@ -33,6 +33,7 @@ type MCPBridgeConfig struct {
 	K8sClient          dynamic.Interface
 	KAClient           *ka.Client
 	KAMCPClient        ka.MCPClient
+	Pool               *ka.KASessionPool
 	DSClient           ds.Client
 	Triager            *severity.Triager
 	Authorizer         auth.ToolAuthorizer
@@ -40,6 +41,7 @@ type MCPBridgeConfig struct {
 	Logger             logr.Logger
 	Metrics            *MCPBridgeMetrics
 	ToolTimeout        time.Duration
+	ToolTimeouts       map[string]time.Duration
 	MaxConcurrentTools int64
 	UserLimiter        *ratelimit.UserLimiter
 }
@@ -58,6 +60,17 @@ func (c *MCPBridgeConfig) GetToolTimeout() time.Duration {
 	return defaultToolTimeout
 }
 
+// GetToolTimeoutFor returns the timeout for a specific tool, falling back
+// to the global ToolTimeout if no per-tool override exists.
+func (c *MCPBridgeConfig) GetToolTimeoutFor(toolName string) time.Duration {
+	if c.ToolTimeouts != nil {
+		if t, ok := c.ToolTimeouts[toolName]; ok && t > 0 {
+			return t
+		}
+	}
+	return c.GetToolTimeout()
+}
+
 // GetMaxConcurrentTools returns the configured max concurrency or the default.
 func (c *MCPBridgeConfig) GetMaxConcurrentTools() int64 {
 	if c.MaxConcurrentTools > 0 {
@@ -66,7 +79,7 @@ func (c *MCPBridgeConfig) GetMaxConcurrentTools() int64 {
 	return defaultMaxConcurrentTool
 }
 
-// RegisterTools registers all 14 MCP domain tools on the server with the real dispatch handlers.
+// RegisterTools registers all 21 MCP domain tools on the server with the real dispatch handlers.
 func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 	if cfg == nil {
 		panic("RegisterTools: cfg must not be nil")
@@ -173,6 +186,43 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 			return tools.HandleGetAuditTrail(ctx, cfg.DSClient, args)
 		})
 
+	// Interactive investigation tools (G1: 4-phase journey)
+	registerTool(srv, cfg, sem, "kubernaut_takeover", "Take over an existing investigation session",
+		func(ctx context.Context, args tools.InteractiveActionArgs) (any, error) {
+			return tools.HandleTakeover(ctx, cfg.KAMCPClient, args, cfg.Auditor)
+		})
+
+	registerTool(srv, cfg, sem, "kubernaut_message", "Send a message to an active investigation session",
+		func(ctx context.Context, args tools.InteractiveActionArgs) (any, error) {
+			return tools.HandleMessage(ctx, cfg.KAMCPClient, args, cfg.Auditor)
+		})
+
+	registerTool(srv, cfg, sem, "kubernaut_complete", "Complete an investigation session",
+		func(ctx context.Context, args tools.InteractiveActionArgs) (any, error) {
+			return tools.HandleComplete(ctx, cfg.KAMCPClient, args, cfg.Auditor)
+		})
+
+	registerTool(srv, cfg, sem, "kubernaut_cancel", "Cancel an active investigation session",
+		func(ctx context.Context, args tools.InteractiveActionArgs) (any, error) {
+			return tools.HandleCancel(ctx, cfg.KAMCPClient, args, cfg.Auditor)
+		})
+
+	registerTool(srv, cfg, sem, "kubernaut_status", "Get the current status of an investigation session",
+		func(ctx context.Context, args tools.InteractiveActionArgs) (any, error) {
+			return tools.HandleStatus(ctx, cfg.KAMCPClient, args, cfg.Auditor)
+		})
+
+	registerTool(srv, cfg, sem, "kubernaut_reconnect", "Reconnect to a disconnected investigation session",
+		func(ctx context.Context, args tools.InteractiveActionArgs) (any, error) {
+			return tools.HandleReconnect(ctx, cfg.KAMCPClient, args, cfg.Auditor)
+		})
+
+	// Stream investigation tool (G5: SSE stream bridge)
+	registerTool(srv, cfg, sem, "kubernaut_stream_investigation", "Stream investigation events in real time",
+		func(ctx context.Context, args tools.StreamInvestigationArgs) (any, error) {
+			return tools.HandleStreamInvestigation(ctx, cfg.KAClient, args)
+		})
+
 	// Internal triage tools (kubectl_get, kubectl_list, kubectl_list_events,
 	// af_check_existing_rr, af_create_rr) are available only to AF's LLM
 	// agent (ADK path) and are not exposed via MCP.
@@ -245,7 +295,7 @@ func wrapTool[In any](cfg *MCPBridgeConfig, sem *semaphore.Weighted, toolName st
 		}
 
 		// Timeout enforcement — covers semaphore wait + tool execution
-		toolCtx, cancel := context.WithTimeout(ctx, cfg.GetToolTimeout())
+		toolCtx, cancel := context.WithTimeout(ctx, cfg.GetToolTimeoutFor(toolName))
 		defer cancel()
 
 		// Semaphore for per-session concurrency limiting
@@ -272,7 +322,9 @@ func wrapTool[In any](cfg *MCPBridgeConfig, sem *semaphore.Weighted, toolName st
 			}
 			recordMetrics(cfg, toolName, resultLabel, start)
 			redacted := security.RedactError(err)
-			emitAudit(ctx, cfg, toolName, audit.EventMCPToolFailed, map[string]string{"error": redacted})
+			errDetail := map[string]string{"error": redacted}
+			enrichAuditFromArgs(errDetail, input)
+			emitAudit(ctx, cfg, toolName, audit.EventMCPToolFailed, errDetail)
 			cfg.Logger.Error(err, "tool call failed",
 				"tool", toolName, "result", resultLabel, "user", usernameFromCtx(ctx))
 			return &mcp.CallToolResult{
@@ -297,10 +349,12 @@ func wrapTool[In any](cfg *MCPBridgeConfig, sem *semaphore.Weighted, toolName st
 
 		durationMs := fmt.Sprintf("%d", time.Since(start).Milliseconds())
 		recordMetrics(cfg, toolName, resultLabel, start)
-		emitAudit(ctx, cfg, toolName, audit.EventToolExecuted, map[string]string{
-			"tool_outcome":        "success",
+		auditDetail := map[string]string{
+			"tool_outcome":          "success",
 			"execution_duration_ms": durationMs,
-		})
+		}
+		enrichAuditFromArgs(auditDetail, input)
+		emitAudit(ctx, cfg, toolName, audit.EventToolExecuted, auditDetail)
 		cfg.Logger.Info("tool call succeeded",
 			"tool", toolName,
 			"user", usernameFromCtx(ctx),
@@ -366,6 +420,28 @@ func emitAudit(ctx context.Context, cfg *MCPBridgeConfig, toolName string, event
 		UserID:    username,
 		Detail:    detail,
 	})
+}
+
+// enrichAuditFromArgs extracts known fields (session_id, rr_id) from tool
+// args and adds them to the audit detail map. Uses JSON round-trip to inspect
+// the generic In type without reflection.
+func enrichAuditFromArgs[In any](detail map[string]string, input In) {
+	raw, err := json.Marshal(input)
+	if err != nil {
+		return
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return
+	}
+	for _, key := range []string{"session_id", "rr_id"} {
+		if v, ok := fields[key]; ok {
+			var s string
+			if json.Unmarshal(v, &s) == nil && s != "" {
+				detail[key] = s
+			}
+		}
+	}
 }
 
 func usernameFromCtx(ctx context.Context) string {

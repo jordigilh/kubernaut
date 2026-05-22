@@ -60,11 +60,11 @@ var _ = Describe("Root Agent", func() {
 			Expect(tools).NotTo(BeEmpty())
 		})
 
-		It("UT-AF-100-002: registers all 20 tools", func() {
+		It("UT-AF-100-002: registers all 26 tools", func() {
 			cfg := agentpkg.DefaultTestConfig()
 			_, tools, err := agentpkg.NewRootAgent(cfg)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(tools).To(HaveLen(20))
+			Expect(tools).To(HaveLen(26))
 		})
 
 		It("UT-AF-100-003: with nil model config returns error", func() {
@@ -118,31 +118,31 @@ var _ = Describe("Root Agent", func() {
 			cfg := agentpkg.DefaultTestConfig()
 			_, tools, err := agentpkg.NewRootAgent(cfg)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(tools).To(HaveLen(20))
+			Expect(tools).To(HaveLen(26))
 		})
 
-		It("UT-AF-100-008: present_decision is marked IsLongRunning", func() {
+		It("UT-AF-100-008: kubernaut_present_decision is marked IsLongRunning", func() {
 			cfg := agentpkg.DefaultTestConfig()
 			_, tools, err := agentpkg.NewRootAgent(cfg)
 			Expect(err).NotTo(HaveOccurred())
 
 			var found bool
 			for _, t := range tools {
-				if t.Name() == "present_decision" {
+				if t.Name() == "kubernaut_present_decision" {
 					found = true
-					Expect(t.IsLongRunning()).To(BeTrue(), "present_decision must be IsLongRunning")
+					Expect(t.IsLongRunning()).To(BeTrue(), "kubernaut_present_decision must be IsLongRunning")
 				}
 			}
-			Expect(found).To(BeTrue(), "present_decision tool not found")
+			Expect(found).To(BeTrue(), "kubernaut_present_decision tool not found")
 		})
 
-		It("UT-AF-100-009: non-present_decision tools are NOT IsLongRunning", func() {
+		It("UT-AF-100-009: non-kubernaut_present_decision tools are NOT IsLongRunning", func() {
 			cfg := agentpkg.DefaultTestConfig()
 			_, tools, err := agentpkg.NewRootAgent(cfg)
 			Expect(err).NotTo(HaveOccurred())
 
 			for _, t := range tools {
-				if t.Name() != "present_decision" {
+				if t.Name() != "kubernaut_present_decision" {
 					Expect(t.IsLongRunning()).To(BeFalse(), "tool %q should not be IsLongRunning", t.Name())
 				}
 			}
@@ -159,7 +159,29 @@ var _ = Describe("Root Agent", func() {
 			cfg := agentpkg.DefaultTestConfig()
 			_, tools, err := agentpkg.NewRootAgent(cfg)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(tools).To(HaveLen(20), "AC 7: all 20 tools must be returned unfiltered")
+			Expect(tools).To(HaveLen(26), "AC 7: all 26 tools must be returned unfiltered")
+		})
+
+		It("IT-AF-1234-W08: buildToolList includes 6 interactive investigation tools", func() {
+			cfg := agentpkg.DefaultTestConfig()
+			_, tools, err := agentpkg.NewRootAgent(cfg)
+			Expect(err).NotTo(HaveOccurred())
+
+			toolNames := make(map[string]bool)
+			for _, t := range tools {
+				toolNames[t.Name()] = true
+			}
+
+			for _, expected := range []string{
+				"kubernaut_takeover",
+				"kubernaut_message",
+				"kubernaut_complete",
+				"kubernaut_cancel",
+				"kubernaut_status",
+				"kubernaut_reconnect",
+			} {
+				Expect(toolNames).To(HaveKey(expected), "missing interactive tool: "+expected)
+			}
 		})
 
 		It("UT-AF-100-012: agent creation with empty tool list returns error", func() {

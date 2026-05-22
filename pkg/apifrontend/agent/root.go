@@ -13,6 +13,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
+	v1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ratelimit"
@@ -43,7 +44,7 @@ func NewRootAgent(cfg AgentConfig, opts ...Option) (agent.Agent, []tool.Tool, er
 	}
 
 	beforeMetrics, afterMetrics := newMetricsToolCallbacks(cfg.ToolCallsTotal, cfg.ToolCallDuration)
-	afterAudit := newAuditToolCallback(cfg.Auditor)
+	afterAudit := newAuditToolCallback(cfg.Auditor, cfg.SessionService)
 
 	var beforeCallbacks []llmagent.BeforeToolCallback
 	if cfg.Authorizer != nil {
@@ -113,6 +114,13 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 		{"kubectl_get", func() (tool.Tool, error) { return tools.NewKubectlGetTool(saFactory, cfg.RESTMapper) }},
 		{"kubectl_list", func() (tool.Tool, error) { return tools.NewKubectlListTool(saFactory, cfg.RESTMapper) }},
 		{"kubectl_list_events", func() (tool.Tool, error) { return tools.NewKubectlListEventsTool(saFactory) }},
+		// Interactive investigation tools — KA MCP backed
+		{"takeover", func() (tool.Tool, error) { return tools.NewTakeoverTool(mcpC, cfg.Auditor) }},
+		{"message", func() (tool.Tool, error) { return tools.NewMessageTool(mcpC, cfg.Auditor) }},
+		{"complete", func() (tool.Tool, error) { return tools.NewCompleteTool(mcpC, cfg.Auditor) }},
+		{"cancel", func() (tool.Tool, error) { return tools.NewCancelInvestigationTool(mcpC, cfg.Auditor) }},
+		{"status", func() (tool.Tool, error) { return tools.NewStatusTool(mcpC, cfg.Auditor) }},
+		{"reconnect", func() (tool.Tool, error) { return tools.NewReconnectTool(mcpC, cfg.Auditor) }},
 		// RR tools — AF SA writes AF-owned CRDs
 		{"check_existing_rr", func() (tool.Tool, error) { return tools.NewCheckExistingRRTool(k8s) }},
 		{"create_rr", func() (tool.Tool, error) { return tools.NewCreateRRTool(k8s, cfg.Triager, cfg.Auditor) }},
@@ -285,7 +293,9 @@ func newMetricsToolCallbacks(toolCalls *prometheus.CounterVec, toolDuration *pro
 // The event includes tool name, result status, and user identity.
 // Issue #1189: when af_create_rr is called within an A2A task context, the
 // audit event includes a2a_task_id for bidirectional task-to-RR correlation.
-func newAuditToolCallback(auditor audit.Emitter) llmagent.AfterToolCallback {
+// G6: when sessionSvc is non-nil and af_create_rr produces a valid rr_id,
+// MaterializeCRD is called to create the deferred InvestigationSession CRD.
+func newAuditToolCallback(auditor audit.Emitter, sessionSvc *session.CRDSessionService) llmagent.AfterToolCallback {
 	return func(ctx tool.Context, t tool.Tool, input, output map[string]any, toolErr error) (map[string]any, error) {
 		if auditor == nil {
 			return nil, nil
@@ -318,13 +328,22 @@ func newAuditToolCallback(auditor audit.Emitter) llmagent.AfterToolCallback {
 		if t.Name() == "af_create_rr" && toolErr == nil && output != nil {
 			if rrID, ok := output["rr_id"].(string); ok && rrID != "" {
 				detail["rr_id"] = rrID
+				parts := strings.SplitN(rrID, "/", 2)
 				// AC 12: Store RR reference on the shared CreateContext pointer
 				// so AfterExecuteCallback can enrich EventA2ATaskCompleted.
 				if sc != nil {
-					parts := strings.SplitN(rrID, "/", 2)
 					if len(parts) == 2 {
 						sc.RRNamespace = parts[0]
 						sc.RRName = parts[1]
+					}
+				}
+				// G6: Materialize the deferred InvestigationSession CRD now
+				// that we have a real RR reference from af_create_rr.
+				if sessionSvc != nil && sc != nil && sc.SessionID != "" && len(parts) == 2 {
+					rrRef := v1alpha1.ObjectRef{Namespace: parts[0], Name: parts[1]}
+					if err := sessionSvc.MaterializeCRD(ctx, sc.SessionID, rrRef); err != nil {
+						log.Printf("[audit-tool-callback] MaterializeCRD failed for session=%q rr=%q: %v",
+							sc.SessionID, rrID, err)
 					}
 				}
 			}

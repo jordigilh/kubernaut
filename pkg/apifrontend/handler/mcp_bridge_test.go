@@ -495,7 +495,7 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 			Expect(rec.Code).To(Equal(http.StatusOK))
 			body := rec.Body.String()
 			count := countToolsInResponse(body)
-			Expect(count).To(Equal(14))
+			Expect(count).To(Equal(21))
 		})
 	})
 
@@ -946,7 +946,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 	})
 
 	Context("tools/list shows all tools regardless of RBAC", func() {
-		It("UT-AF-B-040: viewer sees all 14 tools in tools/list", func() {
+		It("UT-AF-B-040: viewer sees all 21 tools in tools/list", func() {
 			cfg := handler.MCPConfig{
 				ServerName:    "kubernaut-apifrontend",
 				ServerVersion: "v0.1.0-test",
@@ -975,7 +975,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 			rec := mcpPost(h, sid, listReq, viewer)
 			Expect(rec.Code).To(Equal(http.StatusOK))
 			count := countToolsInResponse(rec.Body.String())
-			Expect(count).To(Equal(14))
+			Expect(count).To(Equal(21))
 		})
 	})
 })

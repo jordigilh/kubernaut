@@ -163,6 +163,13 @@ var _ = Describe("RBAC tool name alignment", func() {
 		"kubernaut_get_remediation_history":  true,
 		"kubernaut_get_effectiveness":        true,
 		"kubernaut_get_audit_trail":          true,
+		"kubernaut_takeover":                true,
+		"kubernaut_message":                 true,
+		"kubernaut_complete":                true,
+		"kubernaut_cancel":                  true,
+		"kubernaut_status":                  true,
+		"kubernaut_reconnect":               true,
+		"kubernaut_stream_investigation":    true,
 	}
 
 	// A2A-only internal tools registered in pkg/apifrontend/agent/root.go.
@@ -174,7 +181,6 @@ var _ = Describe("RBAC tool name alignment", func() {
 		"kubectl_list_events":               true,
 		"check_existing_rr":                 true,
 		"create_rr":                         true,
-		"kubernaut_stream_investigation":    true,
 	}
 
 	allKnownTools := map[string]bool{}
