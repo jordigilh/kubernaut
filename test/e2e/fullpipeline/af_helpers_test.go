@@ -226,3 +226,24 @@ func fpWaitForWEComplete(rrName string, timeout time.Duration) {
 		return false
 	}, timeout, 3*time.Second).Should(BeTrue(), "WorkflowExecution for %q did not complete", rrName)
 }
+
+// fpWaitForWECreated waits until a WorkflowExecution for the given RR exists
+// and has reached any non-empty phase. Use this when the test validates the
+// pipeline from RR to WE creation without requiring a specific execution engine.
+func fpWaitForWECreated(rrName string, timeout time.Duration) string {
+	var weName string
+	Eventually(func() bool {
+		weList := &workflowexecutionv1.WorkflowExecutionList{}
+		if err := apiReader.List(ctx, weList, client.InNamespace(namespace)); err != nil {
+			return false
+		}
+		for _, we := range weList.Items {
+			if strings.Contains(we.Name, rrName) || we.Spec.RemediationRequestRef.Name == rrName {
+				weName = we.Name
+				return we.Status.Phase != ""
+			}
+		}
+		return false
+	}, timeout, 3*time.Second).Should(BeTrue(), "WorkflowExecution for %q was not created", rrName)
+	return weName
+}

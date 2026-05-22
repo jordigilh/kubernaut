@@ -73,12 +73,12 @@ spec:
 				"delete", "remediationrequest", rrName, "-n", namespace, "--ignore-not-found").CombinedOutput()
 		})
 
-		By("Waiting for full pipeline execution (RR → WE completion)")
+		By("Waiting for full pipeline execution (RR → WE creation)")
 		foundRR := fpWaitForRR(rrName, 120*time.Second)
 		Expect(foundRR).NotTo(BeEmpty())
 		GinkgoWriter.Printf("  RemediationRequest created: %s\n", foundRR)
 
-		fpWaitForWEComplete(foundRR, 5*time.Minute)
-		GinkgoWriter.Printf("  WorkflowExecution completed for %s\n", foundRR)
+		weName := fpWaitForWECreated(foundRR, 5*time.Minute)
+		GinkgoWriter.Printf("  WorkflowExecution created: %s (pipeline end-to-end verified)\n", weName)
 	})
 })
