@@ -627,13 +627,11 @@ apifrontend:
           - kubectl_get
           - kubectl_list
           - kubectl_list_events
-          - check_existing_rr
-          - create_rr
+          - af_check_existing_rr
+          - af_create_rr
         ai-orchestrator:
           - kubernaut_list_remediations
           - kubernaut_get_remediation
-          - kubernaut_approve
-          - kubernaut_cancel_remediation
           - kubernaut_watch
           - kubernaut_start_investigation
           - kubernaut_poll_investigation
@@ -651,8 +649,8 @@ apifrontend:
           - kubectl_get
           - kubectl_list
           - kubectl_list_events
-          - check_existing_rr
-          - create_rr
+          - af_check_existing_rr
+          - af_create_rr
         cicd:
           - kubernaut_list_remediations
           - kubernaut_get_remediation
