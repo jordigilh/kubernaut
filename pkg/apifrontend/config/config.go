@@ -128,9 +128,11 @@ type AgentConfig struct {
 	LLMEndpoint string `yaml:"llmEndpoint,omitempty"`
 	// LLMModel is the model name passed in generateContent requests.
 	LLMModel string `yaml:"llmModel,omitempty"`
-	// LLMAPIKey is the API key for the LLM endpoint, populated from the
-	// LLM_API_KEY environment variable during ResolveDefaults. Never persisted
-	// in config files.
+	// LLMApiKeyFile is the path to a mounted Secret file containing the LLM
+	// API key. ResolveDefaults reads the file and populates LLMAPIKey.
+	LLMApiKeyFile string `yaml:"llmApiKeyFile,omitempty"`
+	// LLMAPIKey is the API key for the LLM endpoint, populated from the file
+	// at LLMApiKeyFile during ResolveDefaults. Not serialized to YAML.
 	LLMAPIKey string `yaml:"-"`
 }
 
@@ -267,6 +269,9 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("agent.dsBearerTokenFile %q is not accessible: %w", c.Agent.DSBearerTokenFile, err)
 		}
 	}
+	if c.Agent.LLMApiKeyFile != "" && !filepath.IsAbs(c.Agent.LLMApiKeyFile) {
+		return fmt.Errorf("agent.llmApiKeyFile must be an absolute path, got %q", c.Agent.LLMApiKeyFile)
+	}
 	if err := c.validateAuth(); err != nil {
 		return err
 	}
@@ -394,14 +399,16 @@ func validateDependencyConfig(prefix string, cfg *DependencyConfig) error {
 
 // ResolveDefaults fills in derived fields that depend on other config values.
 // For example, AgentCard.URL is derived from Server.Port if left empty.
-// LLMAPIKey is populated from the LLM_API_KEY environment variable (never
-// persisted in config files — secrets stay out of YAML).
+// LLMAPIKey is populated from the file at LLMApiKeyFile (mounted Secret).
 func (c *Config) ResolveDefaults() {
 	if c.AgentCard.URL == "" {
 		c.AgentCard.URL = fmt.Sprintf("https://localhost:%d", c.Server.Port)
 	}
-	if c.Agent.LLMAPIKey == "" {
-		c.Agent.LLMAPIKey = os.Getenv("LLM_API_KEY")
+	if c.Agent.LLMAPIKey == "" && c.Agent.LLMApiKeyFile != "" {
+		data, err := os.ReadFile(c.Agent.LLMApiKeyFile)
+		if err == nil {
+			c.Agent.LLMAPIKey = strings.TrimSpace(string(data))
+		}
 	}
 }
 
