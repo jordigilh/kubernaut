@@ -170,12 +170,12 @@ contains all required fields for KA to make an informed decision.
 
 5. **Integration with SDK hook**: In the real OAS Runtime, the `PermissionGate` will
    be wired into `hooks.HookConfig.PermissionRequest`. The existing spike code in
-   `spikes/oas-runtime/internal/runtime/agent.go` already sets up the hook — it just
+   `docs/architecture/spikes/oas-runtime/internal/runtime/agent.go` already sets up the hook — it just
    needs to call `gate.RequestPermission()` instead of the inline closure.
 
 ## Files
 
-- `spikes/hitl-permission/permgate.go` — `PermissionGate` synchronization primitive
-- `spikes/hitl-permission/main.go` — Test harness with 5 test scenarios
-- `spikes/hitl-permission/go.mod` — Isolated Go module (only depends on `google/uuid`)
+- `hitl-permission/permgate.go` — `PermissionGate` synchronization primitive
+- `hitl-permission/main.go` — Test harness with 5 test scenarios
+- `hitl-permission/go.mod` — Isolated Go module (only depends on `google/uuid`)
 - `docs/architecture/spikes/SPIKE-HITL-PERMISSION.md` — This document

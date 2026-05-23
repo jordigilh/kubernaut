@@ -13,7 +13,7 @@ Validate that `open-agent-sdk-go` (v0.5.0) can serve as the execution engine for
 
 ## What Was Built
 
-A complete proof-of-concept binary in `spikes/oas-runtime/` consisting of:
+A complete proof-of-concept binary in `oas-runtime/` consisting of:
 
 ### 1. ACP Server (`internal/acp/`)
 
@@ -152,7 +152,7 @@ The ACP server is a thin HTTP layer (~250 lines) on top of the SDK. The total bi
 ## File Inventory
 
 ```
-spikes/oas-runtime/
+oas-runtime/
   go.mod, go.sum              -- Isolated Go module (does not pollute main project)
   main.go                     -- Entry point with CLI flags
   Dockerfile                  -- OpenShell BYOC compatible image
