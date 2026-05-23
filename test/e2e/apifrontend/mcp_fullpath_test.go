@@ -136,7 +136,7 @@ var _ = Describe("MCP Full-Path Validation (G1)", Label("e2e", "phase2", "g1"), 
 		}
 	})
 
-	It("TC-E2E-MCP-FULL-05: MCP tools/list returns exactly 21 domain tools", func() {
+	It("TC-E2E-MCP-FULL-05: MCP tools/list returns exactly 23 domain tools", func() {
 		root, err := mcpToolsList("mcp-full-05")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(root).NotTo(HaveKey("error"))
@@ -146,7 +146,7 @@ var _ = Describe("MCP Full-Path Validation (G1)", Label("e2e", "phase2", "g1"), 
 
 		toolsRaw, ok := res["tools"].([]interface{})
 		Expect(ok).To(BeTrue(), "result.tools should be an array: %#v", res)
-		Expect(len(toolsRaw)).To(Equal(21))
+		Expect(len(toolsRaw)).To(Equal(23))
 
 		for _, t := range toolsRaw {
 			tm, ok := t.(map[string]interface{})
