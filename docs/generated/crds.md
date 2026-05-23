@@ -1666,6 +1666,7 @@ _Appears in:_
 | `registeredBy`| _string_| RegisteredBy is the identity of the registrant|
 | `registeredAt`| _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_| RegisteredAt is the timestamp of initial registration|
 | `previouslyExisted`| _boolean_| PreviouslyExisted indicates if this workflow was re-registered after deletion|
+| `conditions`| _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#condition-v1-meta) array_| Conditions represent the latest available observations of the workflow's state.|
 
 
 ### ResourceIdentifier
