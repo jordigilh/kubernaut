@@ -39,7 +39,6 @@ type gracefulDSClient struct {
 	workflowErrors map[string]error // keyed by CRD name; nil means success
 	atResult       *authwebhook.ActionTypeRegistrationResult
 	rwResult       *authwebhook.WorkflowRegistrationResult
-	events         []string // records "audit:<name>" for audit calls
 }
 
 func (m *gracefulDSClient) CreateActionType(_ context.Context, name string, _ ogenclient.ActionTypeDescription, _ string) (*authwebhook.ActionTypeRegistrationResult, error) {
