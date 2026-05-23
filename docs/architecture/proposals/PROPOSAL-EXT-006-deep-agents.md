@@ -6,7 +6,7 @@
 **Confidence**: 96% (Follow-up Spike 3 validated: create_deep_agent with sub-agent delegation, real Vertex AI, tool scoping, budget tracking, and structured RCA)  
 **Related**: [PROPOSAL-EXT-004](PROPOSAL-EXT-004-goose-recipes.md) (Goose runtime), [PROPOSAL-EXT-005](PROPOSAL-EXT-005-oracle-agent-spec.md) (OAS runtime)  
 **Motivation**: [RHPDS Agentic AIOps Workshop](https://rhpds.github.io/agentic-aiops-showroom/modules/index.html) (long-horizon, exploratory investigations)  
-**Spike Code**: [spikes/pyagentspec-langgraph/05_deepagents_validation.py](../../../spikes/pyagentspec-langgraph/05_deepagents_validation.py) (sub-agent delegation + budget tracking validated)  
+**Spike Code**: [pyagentspec-langgraph/05_deepagents_validation.py](../spikes/pyagentspec-langgraph/05_deepagents_validation.py) (sub-agent delegation + budget tracking validated)  
 **Spike Summary**: [SPIKE-DEEP-AGENTS](../spikes/SPIKE-DEEP-AGENTS.md), [SPIKE-ACP-ENFORCEMENT](../spikes/SPIKE-ACP-ENFORCEMENT.md), [SPIKE-OCI-RUNTIME-CONTRACT](../spikes/SPIKE-OCI-RUNTIME-CONTRACT.md)  
 **Tracking**: [#1240](https://github.com/jordigilh/kubernaut/issues/1240) (umbrella)  
 **Target**: v1.6 milestone

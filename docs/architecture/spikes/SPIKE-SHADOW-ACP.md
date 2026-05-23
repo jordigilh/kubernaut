@@ -185,6 +185,6 @@ errors as `suspicious=true`.
 
 ## Files
 
-- `spikes/shadow-acp/main.go` — Test harness (mock ACP server + shadow integration tests)
-- `spikes/shadow-acp/go.mod` — Isolated Go module for the spike
+- `shadow-acp/main.go` — Test harness (mock ACP server + shadow integration tests)
+- `shadow-acp/go.mod` — Isolated Go module for the spike
 - `docs/architecture/spikes/SPIKE-SHADOW-ACP.md` — This document

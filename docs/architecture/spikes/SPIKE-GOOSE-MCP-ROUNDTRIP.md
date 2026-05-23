@@ -4,7 +4,7 @@
 **Status**: COMPLETED
 **Duration**: 1 session
 **Relates to**: [PROPOSAL-EXT-004](../proposals/PROPOSAL-EXT-004-goose-recipes.md)
-**Code**: [spikes/goose-mcp-roundtrip/](../../../spikes/goose-mcp-roundtrip/)
+**Code**: [goose-mcp-roundtrip/](goose-mcp-roundtrip/)
 
 ---
 

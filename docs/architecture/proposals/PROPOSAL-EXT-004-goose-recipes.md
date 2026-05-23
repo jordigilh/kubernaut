@@ -5,7 +5,7 @@
 **Author**: Kubernaut Architecture Team  
 **Confidence**: 96% (Follow-up Spike validated: Goose CLI `gcp_vertex_ai` provider -> MCP server -> tool calls -> structured RCA, end-to-end in 6.7s)  
 **Related**: [PROPOSAL-EXT-003](PROPOSAL-EXT-003-goose-runtime-evaluation.md) (superseded Goose-as-sole-runtime), [PROPOSAL-EXT-005](PROPOSAL-EXT-005-oracle-agent-spec.md) (OAS runtime), [PROPOSAL-EXT-006](PROPOSAL-EXT-006-deep-agents.md) (Deep Agents runtime)  
-**Spike Code**: [spikes/goose-mcp-roundtrip/](../../../spikes/goose-mcp-roundtrip/) (end-to-end MCP roundtrip with Vertex AI)  
+**Spike Code**: [goose-mcp-roundtrip/](../spikes/goose-mcp-roundtrip/) (end-to-end MCP roundtrip with Vertex AI)  
 **Spike Summary**: [SPIKE-GOOSE-MCP-ROUNDTRIP](../spikes/SPIKE-GOOSE-MCP-ROUNDTRIP.md), [SPIKE-ACP-ENFORCEMENT](../spikes/SPIKE-ACP-ENFORCEMENT.md), [SPIKE-OCI-RUNTIME-CONTRACT](../spikes/SPIKE-OCI-RUNTIME-CONTRACT.md)  
 **Tracking**: [#1240](https://github.com/jordigilh/kubernaut/issues/1240) (umbrella)  
 **Target**: v1.6 milestone

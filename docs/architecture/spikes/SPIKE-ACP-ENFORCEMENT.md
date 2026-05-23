@@ -4,7 +4,7 @@
 **Status**: COMPLETED
 **Duration**: 1 session
 **Relates to**: [PROPOSAL-EXT-004](../proposals/PROPOSAL-EXT-004-goose-recipes.md), [PROPOSAL-EXT-005](../proposals/PROPOSAL-EXT-005-oracle-agent-spec.md), [PROPOSAL-EXT-006](../proposals/PROPOSAL-EXT-006-deep-agents.md)
-**Code**: [spikes/acp-enforcement/](../../../spikes/acp-enforcement/)
+**Code**: [acp-enforcement/](acp-enforcement/)
 
 ---
 

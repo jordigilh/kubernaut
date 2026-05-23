@@ -3,7 +3,7 @@
 **Status**: SUPERSEDED (see [Addendum: OAS Runtime + ACP + OpenShell](#addendum-oas-runtime--acp--openshell-architecture))
 **Date**: April 15, 2026 (original); May 3, 2026 (Goose decision accepted); May 20, 2026 (Goose superseded by OAS Runtime + ACP)
 **Author**: Kubernaut Architecture Team
-**Confidence**: 82% (OAS Runtime spike validated, May 20 2026). The OAS Runtime spike (`spikes/oas-runtime/`) validates the complete architecture: `open-agent-sdk-go` v0.5.0 provides streaming agentic loop, MCP client, hook system, and multi-provider support in a 10MB Go binary. ACP server (6 endpoints, REST + SSE) is implemented and compiles. No upstream dependencies -- all components are under Kubernaut's control. Key risks: OAS Go SDK maturity (v0.5.0, 7 weeks old), provider matrix validation pending, OpenShell alpha status. Confidence rises to 90%+ when provider validation spike completes and first end-to-end investigation runs.
+**Confidence**: 82% (OAS Runtime spike validated, May 20 2026). The OAS Runtime spike (`docs/architecture/spikes/oas-runtime/`) validates the complete architecture: `open-agent-sdk-go` v0.5.0 provides streaming agentic loop, MCP client, hook system, and multi-provider support in a 10MB Go binary. ACP server (6 endpoints, REST + SSE) is implemented and compiles. No upstream dependencies -- all components are under Kubernaut's control. Key risks: OAS Go SDK maturity (v0.5.0, 7 weeks old), provider matrix validation pending, OpenShell alpha status. Confidence rises to 90%+ when provider validation spike completes and first end-to-end investigation runs.
 **Related**: [#711](https://github.com/jordigilh/kubernaut/issues/711) (Investigation Prompt Bundles), [#601](https://github.com/jordigilh/kubernaut/issues/601) (Shadow Agent), [#648](https://github.com/jordigilh/kubernaut/issues/648) (Multi-Agent Consensus / Dual Investigation), [#708](https://github.com/jordigilh/kubernaut/issues/708) (API Frontend Service), [#883](https://github.com/jordigilh/kubernaut/issues/883) (Goose Recipe Format Convergence -- to be updated), [PROPOSAL-EXT-001](PROPOSAL-EXT-001-external-integration-strategy.md) (External Integration Strategy), [PROPOSAL-EXT-002](PROPOSAL-EXT-002-investigation-prompt-bundles.md) (Investigation Prompt Bundles)
 **Upstream dependencies**: None. All components are Kubernaut-owned or use stable open-source Go libraries (open-agent-sdk-go v0.5.0 MIT, ACP spec v0.2.0 Apache 2.0).
 **Spike**: [SPIKE-OAS-RUNTIME](../spikes/SPIKE-OAS-RUNTIME.md) -- validates `open-agent-sdk-go` + ACP server in a 10MB Go binary
@@ -2403,7 +2403,7 @@ All KA-side architecture from the body of this proposal remains valid:
 
 ### Spike Results
 
-The [OAS Runtime Spike](../spikes/SPIKE-OAS-RUNTIME.md) (`spikes/oas-runtime/`) validates:
+The [OAS Runtime Spike](../spikes/SPIKE-OAS-RUNTIME.md) (`docs/architecture/spikes/oas-runtime/`) validates:
 
 - `open-agent-sdk-go` v0.5.0 compiles and provides the full API surface needed
 - ACP server (7 endpoints) is ~250 lines of Go code

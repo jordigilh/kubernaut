@@ -186,6 +186,6 @@ nothing and provides useful observability.
 
 ## Files
 
-- `spikes/run-state-persistence/main.go` — Test harness with 6 test scenarios
-- `spikes/run-state-persistence/go.mod` — Isolated Go module
+- `run-state-persistence/main.go` — Test harness with 6 test scenarios
+- `run-state-persistence/go.mod` — Isolated Go module
 - `docs/architecture/spikes/SPIKE-RUN-STATE-PERSISTENCE.md` — This document

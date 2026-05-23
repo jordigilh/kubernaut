@@ -5,7 +5,7 @@
 **Author**: Kubernaut Architecture Team  
 **Confidence**: 97% (Spike 1 + Follow-up Spike 2 validated: OAS YAML creation, LangGraph compilation, real Vertex AI invocation with 7 autonomous tool calls and structured RCA)  
 **Related**: [PROPOSAL-EXT-003](PROPOSAL-EXT-003-goose-runtime-evaluation.md) (OAS addendum), [PROPOSAL-EXT-004](PROPOSAL-EXT-004-goose-recipes.md) (Goose runtime), [PROPOSAL-EXT-006](PROPOSAL-EXT-006-deep-agents.md) (Deep Agents runtime)  
-**Spike Code**: [spikes/pyagentspec-langgraph/](../../../spikes/pyagentspec-langgraph/) (scripts 01-04, all pass)  
+**Spike Code**: [pyagentspec-langgraph/](../spikes/pyagentspec-langgraph/) (scripts 01-04, all pass)  
 **Spike Summary**: [SPIKE-PYAGENTSPEC-LANGGRAPH](../spikes/SPIKE-PYAGENTSPEC-LANGGRAPH.md), [SPIKE-ACP-ENFORCEMENT](../spikes/SPIKE-ACP-ENFORCEMENT.md), [SPIKE-OCI-RUNTIME-CONTRACT](../spikes/SPIKE-OCI-RUNTIME-CONTRACT.md)  
 **Tracking**: [#1240](https://github.com/jordigilh/kubernaut/issues/1240) (umbrella)  
 **Target**: v1.6 milestone
@@ -21,7 +21,7 @@ declarative agent definitions into executable LangGraph `CompiledStateGraph`
 instances.
 
 This supersedes the `open-agent-sdk-go` (Go-based) approach documented in
-PROPOSAL-EXT-003's addendum. That spike (`spikes/oas-runtime/`) validated
+PROPOSAL-EXT-003's addendum. That spike (`docs/architecture/spikes/oas-runtime/`) validated
 the Go SDK but required maintaining a custom OAS-to-Go adapter. The
 PyAgentSpec + LangGraph path uses upstream native tooling with zero
 custom format conversion.
@@ -98,7 +98,7 @@ ENTRYPOINT ["python", "-m", "kubernaut_oas", "/spec/agent.yaml"]
 ## 3. OAS Agent Definition
 
 The OAS YAML spec defines the investigation agent declaratively. Validated
-in Spike 1 (`spikes/pyagentspec-langgraph/kubernaut-rca-investigator.yaml`):
+in Spike 1 (`docs/architecture/spikes/pyagentspec-langgraph/kubernaut-rca-investigator.yaml`):
 
 ```yaml
 component_type: Agent

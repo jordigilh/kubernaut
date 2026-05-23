@@ -4,7 +4,7 @@
 **Status**: COMPLETED
 **Duration**: 1 session
 **Relates to**: [PROPOSAL-EXT-006](../proposals/PROPOSAL-EXT-006-deep-agents.md)
-**Code**: [spikes/pyagentspec-langgraph/05_deepagents_validation.py](../../../spikes/pyagentspec-langgraph/05_deepagents_validation.py)
+**Code**: [pyagentspec-langgraph/05_deepagents_validation.py](pyagentspec-langgraph/05_deepagents_validation.py)
 
 ---
 

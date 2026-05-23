@@ -4,7 +4,7 @@
 **Status**: COMPLETED
 **Duration**: 2 sessions
 **Relates to**: [PROPOSAL-EXT-005](../proposals/PROPOSAL-EXT-005-oracle-agent-spec.md)
-**Code**: [spikes/pyagentspec-langgraph/](../../../spikes/pyagentspec-langgraph/)
+**Code**: [pyagentspec-langgraph/](pyagentspec-langgraph/)
 
 ---
 
