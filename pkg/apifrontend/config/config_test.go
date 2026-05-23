@@ -13,8 +13,6 @@ func validConfig() *Config {
 	return &Config{
 		Server: ServerConfig{Port: 8443},
 		Agent: AgentConfig{
-			GCPProject:    "test-project",
-			GCPRegion:     "us-central1",
 			KABaseURL:     "http://localhost:8080",
 			KAMCPEndpoint: "http://localhost:8080/api/v1/mcp/",
 			DSBaseURL:     "http://localhost:9090",
@@ -47,11 +45,11 @@ func TestLoad_ValidFullYAML(t *testing.T) {
 	if cfg.Server.Port != 9090 {
 		t.Errorf("Server.Port = %d, want 9090", cfg.Server.Port)
 	}
-	if cfg.Agent.GCPProject != "my-project" {
-		t.Errorf("Agent.GCPProject = %q, want %q", cfg.Agent.GCPProject, "my-project")
+	if cfg.Agent.LLM.VertexProject != "my-project" {
+		t.Errorf("Agent.LLM.VertexProject = %q, want %q", cfg.Agent.LLM.VertexProject, "my-project")
 	}
-	if cfg.Agent.GCPRegion != "us-east1" {
-		t.Errorf("Agent.GCPRegion = %q, want %q", cfg.Agent.GCPRegion, "us-east1")
+	if cfg.Agent.LLM.VertexLocation != "us-east1" {
+		t.Errorf("Agent.LLM.VertexLocation = %q, want %q", cfg.Agent.LLM.VertexLocation, "us-east1")
 	}
 	if cfg.Agent.KABaseURL != "https://ka.example.com" {
 		t.Errorf("Agent.KABaseURL = %q, want %q", cfg.Agent.KABaseURL, "https://ka.example.com")
@@ -72,7 +70,7 @@ func TestLoad_ValidFullYAML(t *testing.T) {
 
 func TestLoad_AppliesDefaultsForOmittedFields(t *testing.T) {
 	// UT-AF-039-002
-	data := []byte("agent:\n  gcpProject: \"p\"\n")
+	data := []byte("agent:\n  llm:\n    vertexProject: \"p\"\n")
 	cfg, err := Load(data)
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
@@ -81,8 +79,8 @@ func TestLoad_AppliesDefaultsForOmittedFields(t *testing.T) {
 	if cfg.Server.Port != defaults.Server.Port {
 		t.Errorf("Server.Port = %d, want default %d", cfg.Server.Port, defaults.Server.Port)
 	}
-	if cfg.Agent.GCPRegion != defaults.Agent.GCPRegion {
-		t.Errorf("Agent.GCPRegion = %q, want default %q", cfg.Agent.GCPRegion, defaults.Agent.GCPRegion)
+	if cfg.Agent.LLM.VertexLocation != defaults.Agent.LLM.VertexLocation {
+		t.Errorf("Agent.LLM.VertexLocation = %q, want default %q", cfg.Agent.LLM.VertexLocation, defaults.Agent.LLM.VertexLocation)
 	}
 }
 
@@ -148,7 +146,7 @@ func TestLoad_PortAsInteger(t *testing.T) {
 
 func TestLoad_PartialYAMLMergesWithDefaults(t *testing.T) {
 	// UT-AF-039-008
-	data := []byte("server:\n  port: 7777\nagent:\n  gcpProject: \"partial\"\n")
+	data := []byte("server:\n  port: 7777\nagent:\n  llm:\n    vertexProject: \"partial\"\n")
 	cfg, err := Load(data)
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
@@ -156,12 +154,12 @@ func TestLoad_PartialYAMLMergesWithDefaults(t *testing.T) {
 	if cfg.Server.Port != 7777 {
 		t.Errorf("Server.Port = %d, want 7777", cfg.Server.Port)
 	}
-	if cfg.Agent.GCPProject != "partial" {
-		t.Errorf("Agent.GCPProject = %q, want %q", cfg.Agent.GCPProject, "partial")
+	if cfg.Agent.LLM.VertexProject != "partial" {
+		t.Errorf("Agent.LLM.VertexProject = %q, want %q", cfg.Agent.LLM.VertexProject, "partial")
 	}
 	defaults := DefaultConfig()
-	if cfg.Agent.GCPRegion != defaults.Agent.GCPRegion {
-		t.Errorf("Agent.GCPRegion = %q, want default %q", cfg.Agent.GCPRegion, defaults.Agent.GCPRegion)
+	if cfg.Agent.LLM.VertexLocation != defaults.Agent.LLM.VertexLocation {
+		t.Errorf("Agent.LLM.VertexLocation = %q, want default %q", cfg.Agent.LLM.VertexLocation, defaults.Agent.LLM.VertexLocation)
 	}
 }
 
@@ -319,7 +317,9 @@ func TestResolveDefaults_SetsAgentCardURLFromPort(t *testing.T) {
 	cfg := validConfig()
 	cfg.AgentCard.URL = ""
 	cfg.Server.Port = 8443
-	cfg.ResolveDefaults()
+	if err := cfg.ResolveDefaults(); err != nil {
+		t.Fatalf("ResolveDefaults() = %v", err)
+	}
 	want := "https://localhost:8443"
 	if cfg.AgentCard.URL != want {
 		t.Errorf("AgentCard.URL = %q, want %q", cfg.AgentCard.URL, want)
@@ -330,7 +330,9 @@ func TestResolveDefaults_PreservesExplicitURL(t *testing.T) {
 	// UT-AF-039-022
 	cfg := validConfig()
 	cfg.AgentCard.URL = "https://custom.example.com"
-	cfg.ResolveDefaults()
+	if err := cfg.ResolveDefaults(); err != nil {
+		t.Fatalf("ResolveDefaults() = %v", err)
+	}
 	if cfg.AgentCard.URL != "https://custom.example.com" {
 		t.Errorf("AgentCard.URL = %q, want preserved value", cfg.AgentCard.URL)
 	}
@@ -341,9 +343,13 @@ func TestResolveDefaults_Idempotent(t *testing.T) {
 	cfg := validConfig()
 	cfg.AgentCard.URL = ""
 	cfg.Server.Port = 9000
-	cfg.ResolveDefaults()
+	if err := cfg.ResolveDefaults(); err != nil {
+		t.Fatalf("ResolveDefaults() = %v", err)
+	}
 	first := cfg.AgentCard.URL
-	cfg.ResolveDefaults()
+	if err := cfg.ResolveDefaults(); err != nil {
+		t.Fatalf("ResolveDefaults() second call = %v", err)
+	}
 	if cfg.AgentCard.URL != first {
 		t.Errorf("second ResolveDefaults() changed URL: %q -> %q", first, cfg.AgentCard.URL)
 	}
@@ -354,7 +360,9 @@ func TestResolveDefaults_CalledBeforeValidate(t *testing.T) {
 	cfg := validConfig()
 	cfg.AgentCard.URL = ""
 	cfg.Server.Port = 8443
-	cfg.ResolveDefaults()
+	if err := cfg.ResolveDefaults(); err != nil {
+		t.Fatalf("ResolveDefaults() = %v", err)
+	}
 	if err := cfg.Validate(); err != nil {
 		t.Errorf("Validate() after ResolveDefaults() = %v, want nil", err)
 	}
@@ -1153,104 +1161,252 @@ func TestValidate_AuthOIDCCaFileEmptyIsOptional(t *testing.T) {
 	}
 }
 
-// --- Tier 9: LLM API Key File (Issue #1251) ---
+// --- Tier 9: LLM Config Validation (Issue #1252) ---
 
-func TestLoad_LLMApiKeyFile(t *testing.T) {
-	// UT-AF-1251-002: llmApiKeyFile field is parsed from YAML.
-	data := []byte(`
-agent:
-  gcpProject: "test"
-  llmApiKeyFile: "/etc/apifrontend/secrets/llm-api-key"
-`)
-	cfg, err := Load(data)
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	if cfg.Agent.LLMApiKeyFile != "/etc/apifrontend/secrets/llm-api-key" {
-		t.Errorf("Agent.LLMApiKeyFile = %q, want %q", cfg.Agent.LLMApiKeyFile, "/etc/apifrontend/secrets/llm-api-key")
-	}
-}
-
-func TestLoad_LLMApiKeyFileOmitted(t *testing.T) {
-	// UT-AF-1251-003: llmApiKeyFile defaults to empty when omitted.
-	data := []byte(`
-agent:
-  gcpProject: "test"
-`)
-	cfg, err := Load(data)
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	if cfg.Agent.LLMApiKeyFile != "" {
-		t.Errorf("Agent.LLMApiKeyFile = %q, want empty", cfg.Agent.LLMApiKeyFile)
-	}
-}
-
-func TestValidate_LLMApiKeyFileRelativePath(t *testing.T) {
-	// UT-AF-1251-004: Relative llmApiKeyFile path is rejected.
+func TestValidate_LLMEmptyProviderIsOptional(t *testing.T) {
 	cfg := validConfig()
-	cfg.Agent.LLMApiKeyFile = "relative/path/key"
+	cfg.Agent.LLM.Provider = ""
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("expected no error for empty LLM provider (A2A disabled), got: %v", err)
+	}
+}
+
+func TestValidate_LLMUnknownProviderRejected(t *testing.T) {
+	cfg := validConfig()
+	cfg.Agent.LLM.Provider = "openai"
+	cfg.Agent.LLM.Model = "gpt-4"
 	err := cfg.Validate()
 	if err == nil {
-		t.Fatal("expected error for relative llmApiKeyFile path")
+		t.Fatal("expected error for unknown provider")
 	}
-	if !strings.Contains(err.Error(), "llmApiKeyFile") {
-		t.Errorf("error = %q, want to contain 'llmApiKeyFile'", err.Error())
+	if !strings.Contains(err.Error(), "agent.llm.provider") {
+		t.Errorf("error = %q, want to contain 'agent.llm.provider'", err.Error())
 	}
 }
 
-func TestValidate_LLMApiKeyFileAbsolutePath(t *testing.T) {
-	// UT-AF-1251-005: Absolute llmApiKeyFile path passes validation.
+func TestValidate_LLMModelRequiredWhenProviderSet(t *testing.T) {
 	cfg := validConfig()
-	cfg.Agent.LLMApiKeyFile = "/etc/apifrontend/secrets/llm-api-key"
+	cfg.Agent.LLM.Provider = LLMProviderGemini
+	cfg.Agent.LLM.Model = ""
 	err := cfg.Validate()
-	if err != nil {
+	if err == nil {
+		t.Fatal("expected error for empty model with provider set")
+	}
+	if !strings.Contains(err.Error(), "agent.llm.model") {
+		t.Errorf("error = %q, want to contain 'agent.llm.model'", err.Error())
+	}
+}
+
+func TestValidate_LLMVertexAIRequiresProject(t *testing.T) {
+	cfg := validConfig()
+	cfg.Agent.LLM.Provider = LLMProviderVertexAI
+	cfg.Agent.LLM.Model = "claude-sonnet-4-20250514"
+	cfg.Agent.LLM.VertexProject = ""
+	cfg.Agent.LLM.VertexLocation = "us-central1"
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for vertex_ai without project")
+	}
+	if !strings.Contains(err.Error(), "vertexProject") {
+		t.Errorf("error = %q, want to contain 'vertexProject'", err.Error())
+	}
+}
+
+func TestValidate_LLMVertexAIRequiresLocation(t *testing.T) {
+	cfg := validConfig()
+	cfg.Agent.LLM.Provider = LLMProviderVertexAI
+	cfg.Agent.LLM.Model = "claude-sonnet-4-20250514"
+	cfg.Agent.LLM.VertexProject = "my-project"
+	cfg.Agent.LLM.VertexLocation = ""
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for vertex_ai without location")
+	}
+	if !strings.Contains(err.Error(), "vertexLocation") {
+		t.Errorf("error = %q, want to contain 'vertexLocation'", err.Error())
+	}
+}
+
+func TestValidate_LLMGeminiAccepted(t *testing.T) {
+	cfg := validConfig()
+	cfg.Agent.LLM.Provider = LLMProviderGemini
+	cfg.Agent.LLM.Model = "gemini-2.0-flash"
+	cfg.Agent.LLM.ApiKeyFile = "/etc/secrets/llm-key"
+	if err := cfg.Validate(); err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
 
-func TestValidate_LLMApiKeyFileEmptyIsOptional(t *testing.T) {
-	// UT-AF-1251-006: Empty llmApiKeyFile is valid (A2A disabled).
+func TestValidate_LLMAnthropicAccepted(t *testing.T) {
 	cfg := validConfig()
-	cfg.Agent.LLMApiKeyFile = ""
-	err := cfg.Validate()
-	if err != nil {
+	cfg.Agent.LLM.Provider = LLMProviderAnthropic
+	cfg.Agent.LLM.Model = "claude-sonnet-4-20250514"
+	cfg.Agent.LLM.ApiKeyFile = "/etc/secrets/llm-key"
+	if err := cfg.Validate(); err != nil {
 		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestValidate_LLMGeminiRequiresCredentials(t *testing.T) {
+	cfg := validConfig()
+	cfg.Agent.LLM.Provider = LLMProviderGemini
+	cfg.Agent.LLM.Model = "gemini-2.0-flash"
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for gemini without apiKeyFile or oauth2")
+	}
+	if !strings.Contains(err.Error(), "apiKeyFile") {
+		t.Errorf("error = %q, want to contain 'apiKeyFile'", err.Error())
+	}
+}
+
+func TestValidate_LLMApiKeyFileRelativeRejected(t *testing.T) {
+	cfg := validConfig()
+	cfg.Agent.LLM.Provider = LLMProviderGemini
+	cfg.Agent.LLM.Model = "gemini-2.0-flash"
+	cfg.Agent.LLM.ApiKeyFile = "relative/path/key"
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for relative apiKeyFile")
+	}
+	if !strings.Contains(err.Error(), "apiKeyFile") {
+		t.Errorf("error = %q, want to contain 'apiKeyFile'", err.Error())
+	}
+}
+
+func TestValidate_LLMOAuth2RequiresTokenURL(t *testing.T) {
+	cfg := validConfig()
+	cfg.Agent.LLM.Provider = LLMProviderGemini
+	cfg.Agent.LLM.Model = "gemini-2.0-flash"
+	cfg.Agent.LLM.OAuth2.Enabled = true
+	cfg.Agent.LLM.OAuth2.TokenURL = ""
+	cfg.Agent.LLM.OAuth2.CredentialsDir = "/etc/creds"
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for oauth2 without tokenURL")
+	}
+	if !strings.Contains(err.Error(), "tokenURL") {
+		t.Errorf("error = %q, want to contain 'tokenURL'", err.Error())
+	}
+}
+
+func TestValidate_LLMOAuth2RequiresCredentialsDir(t *testing.T) {
+	cfg := validConfig()
+	cfg.Agent.LLM.Provider = LLMProviderGemini
+	cfg.Agent.LLM.Model = "gemini-2.0-flash"
+	cfg.Agent.LLM.OAuth2.Enabled = true
+	cfg.Agent.LLM.OAuth2.TokenURL = "https://auth.example.com/token"
+	cfg.Agent.LLM.OAuth2.CredentialsDir = ""
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for oauth2 without credentialsDir")
+	}
+	if !strings.Contains(err.Error(), "credentialsDir") {
+		t.Errorf("error = %q, want to contain 'credentialsDir'", err.Error())
 	}
 }
 
 func TestResolveDefaults_LLMApiKeyFromFile(t *testing.T) {
-	// UT-AF-1251-007: ResolveDefaults reads LLMAPIKey from llmApiKeyFile.
 	dir := t.TempDir()
-	keyPath := filepath.Join(dir, "llm-key")
-	if err := os.WriteFile(keyPath, []byte("sk-test-key-12345\n"), 0o600); err != nil {
-		t.Fatalf("write key file: %v", err)
+	keyFile := filepath.Join(dir, "llm-api-key")
+	if err := os.WriteFile(keyFile, []byte("  secret-key-123  \n"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
 	}
 	cfg := validConfig()
-	cfg.Agent.LLMApiKeyFile = keyPath
-	cfg.ResolveDefaults()
-	if cfg.Agent.LLMAPIKey != "sk-test-key-12345" {
-		t.Errorf("LLMAPIKey = %q, want %q", cfg.Agent.LLMAPIKey, "sk-test-key-12345")
+	cfg.Agent.LLM.ApiKeyFile = keyFile
+	if err := cfg.ResolveDefaults(); err != nil {
+		t.Fatalf("ResolveDefaults() = %v", err)
+	}
+	if cfg.Agent.LLM.APIKey != "secret-key-123" {
+		t.Errorf("APIKey = %q, want %q", cfg.Agent.LLM.APIKey, "secret-key-123")
+	}
+}
+
+func TestResolveDefaults_LLMApiKeyFileNotFound(t *testing.T) {
+	cfg := validConfig()
+	cfg.Agent.LLM.ApiKeyFile = "/nonexistent/path/key"
+	err := cfg.ResolveDefaults()
+	if err == nil {
+		t.Fatalf("ResolveDefaults() = nil, want error for missing apiKeyFile")
+	}
+	if !strings.Contains(err.Error(), "/nonexistent/path/key") {
+		t.Errorf("error should reference path, got: %v", err)
 	}
 }
 
 func TestResolveDefaults_LLMApiKeyFileEmpty(t *testing.T) {
-	// UT-AF-1251-008: ResolveDefaults leaves LLMAPIKey empty when no file configured.
+	dir := t.TempDir()
+	keyFile := filepath.Join(dir, "llm-api-key")
+	if err := os.WriteFile(keyFile, []byte("   \n"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
 	cfg := validConfig()
-	cfg.Agent.LLMApiKeyFile = ""
-	cfg.Agent.LLMAPIKey = ""
-	cfg.ResolveDefaults()
-	if cfg.Agent.LLMAPIKey != "" {
-		t.Errorf("LLMAPIKey = %q, want empty when no file configured", cfg.Agent.LLMAPIKey)
+	cfg.Agent.LLM.ApiKeyFile = keyFile
+	err := cfg.ResolveDefaults()
+	if err == nil {
+		t.Fatalf("ResolveDefaults() = nil, want error for empty key file")
+	}
+	if !strings.Contains(err.Error(), "empty") {
+		t.Errorf("error should mention 'empty', got: %v", err)
 	}
 }
 
-func TestResolveDefaults_LLMApiKeyFileMissing(t *testing.T) {
-	// UT-AF-1251-009: ResolveDefaults leaves LLMAPIKey empty if file doesn't exist.
-	cfg := validConfig()
-	cfg.Agent.LLMApiKeyFile = "/nonexistent/llm-key"
-	cfg.ResolveDefaults()
-	if cfg.Agent.LLMAPIKey != "" {
-		t.Errorf("LLMAPIKey = %q, want empty when file missing", cfg.Agent.LLMAPIKey)
+func TestLoad_LLMConfigFromYAML(t *testing.T) {
+	data := []byte(`
+agent:
+  llm:
+    provider: anthropic
+    model: claude-sonnet-4-20250514
+    endpoint: "https://anthropic.example.com"
+    apiKeyFile: "/etc/secrets/anthropic-key"
+    tlsCaFile: "/etc/ca/custom.pem"
+    oauth2:
+      enabled: true
+      tokenURL: "https://auth.example.com/token"
+      scopes: ["llm:invoke"]
+      credentialsDir: "/etc/oauth2"
+    circuitBreaker:
+      enabled: true
+      maxRequests: 5
+      interval: 15s
+      timeout: 45s
+      failureThreshold: 3
+    customHeaders:
+      - name: X-Tenant-ID
+        value: "kubernaut"
+`)
+	cfg, err := Load(data)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Agent.LLM.Provider != LLMProviderAnthropic {
+		t.Errorf("Provider = %q, want %q", cfg.Agent.LLM.Provider, LLMProviderAnthropic)
+	}
+	if cfg.Agent.LLM.Model != "claude-sonnet-4-20250514" {
+		t.Errorf("Model = %q", cfg.Agent.LLM.Model)
+	}
+	if cfg.Agent.LLM.Endpoint != "https://anthropic.example.com" {
+		t.Errorf("Endpoint = %q", cfg.Agent.LLM.Endpoint)
+	}
+	if !cfg.Agent.LLM.OAuth2.Enabled {
+		t.Error("OAuth2.Enabled should be true")
+	}
+	if cfg.Agent.LLM.OAuth2.TokenURL != "https://auth.example.com/token" {
+		t.Errorf("OAuth2.TokenURL = %q", cfg.Agent.LLM.OAuth2.TokenURL)
+	}
+	if len(cfg.Agent.LLM.OAuth2.Scopes) != 1 || cfg.Agent.LLM.OAuth2.Scopes[0] != "llm:invoke" {
+		t.Errorf("OAuth2.Scopes = %v", cfg.Agent.LLM.OAuth2.Scopes)
+	}
+	if !cfg.Agent.LLM.CircuitBreaker.Enabled {
+		t.Error("CircuitBreaker.Enabled should be true")
+	}
+	if cfg.Agent.LLM.CircuitBreaker.MaxRequests != 5 {
+		t.Errorf("CircuitBreaker.MaxRequests = %d", cfg.Agent.LLM.CircuitBreaker.MaxRequests)
+	}
+	if len(cfg.Agent.LLM.CustomHeaders) != 1 {
+		t.Fatalf("CustomHeaders len = %d, want 1", len(cfg.Agent.LLM.CustomHeaders))
+	}
+	if cfg.Agent.LLM.CustomHeaders[0].Name != "X-Tenant-ID" {
+		t.Errorf("CustomHeaders[0].Name = %q", cfg.Agent.LLM.CustomHeaders[0].Name)
 	}
 }
