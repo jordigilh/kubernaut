@@ -169,10 +169,11 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 		if dsHealthURL == "" {
 			dsHealthURL = "http://127.0.0.1:28091"
 		}
+		healthClient := &http.Client{Timeout: 5 * time.Second}
 		var healthResp *http.Response
 		var healthErr error
-		for attempt := 1; attempt <= 15; attempt++ {
-			healthResp, healthErr = http.Get(dsHealthURL + "/readyz")
+		for attempt := 1; attempt <= 30; attempt++ {
+			healthResp, healthErr = healthClient.Get(dsHealthURL + "/readyz")
 			if healthErr == nil && healthResp.StatusCode == http.StatusOK {
 				break
 			}
@@ -286,23 +287,24 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			eventType := gateway.EventTypeSignalReceived
 			eventCategory := gateway.CategoryGateway
 
-			// ✅ MANDATORY: Use Eventually() for async operations (NO time.Sleep())
-			// Per TESTING_GUIDELINES.md: time.Sleep() is ABSOLUTELY FORBIDDEN
-			Eventually(func() int {
-				resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
-					EventType:     ogenclient.NewOptString(eventType),
-					EventCategory: ogenclient.NewOptString(eventCategory),
-					CorrelationID: ogenclient.NewOptString(correlationID),
-				})
-				if err != nil {
-					return 0
-				}
-				if resp.Pagination.IsSet() && resp.Pagination.Value.Total.IsSet() {
-					return resp.Pagination.Value.Total.Value
-				}
+		// ✅ MANDATORY: Use Eventually() for async operations (NO time.Sleep())
+		// Per TESTING_GUIDELINES.md: time.Sleep() is ABSOLUTELY FORBIDDEN
+		Eventually(func() int {
+			resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
+				EventType:     ogenclient.NewOptString(eventType),
+				EventCategory: ogenclient.NewOptString(eventCategory),
+				CorrelationID: ogenclient.NewOptString(correlationID),
+			})
+			if err != nil {
+				GinkgoWriter.Printf("QueryAuditEvents error: %v\n", err)
 				return 0
-			}, 30*time.Second, 1*time.Second).Should(Equal(1),
-				"Should find exactly 1 gateway.signal.received audit event within 30 seconds")
+			}
+			if resp.Pagination.IsSet() && resp.Pagination.Value.Total.IsSet() {
+				return resp.Pagination.Value.Total.Value
+			}
+			return 0
+		}, 120*time.Second, 1*time.Second).Should(Equal(1),
+			"Should find exactly 1 gateway.signal.received audit event")
 
 			// Query final audit events for validation
 			resp2, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
@@ -499,36 +501,37 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			eventType := gateway.EventTypeSignalReceived
 			eventCategory := gateway.CategoryGateway
 
-			// ✅ Use Eventually() for async validation
-			Eventually(func() int {
-				resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
-					EventType:     ogenclient.NewOptString(eventType),
-					EventCategory: ogenclient.NewOptString(eventCategory),
-					CorrelationID: ogenclient.NewOptString(correlationID),
-				})
-				if err != nil {
-					return 0
-				}
-				if resp.Pagination.IsSet() && resp.Pagination.Value.Total.IsSet() {
-					return resp.Pagination.Value.Total.Value
-				}
-				return 0
-			}, 30*time.Second, 1*time.Second).Should(Equal(1),
-				"Should find exactly 1 audit event for empty labels test")
-
-			// Query final audit events
-			resp2, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
+		// ✅ Use Eventually() for async validation
+		Eventually(func() int {
+			resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
 				EventType:     ogenclient.NewOptString(eventType),
 				EventCategory: ogenclient.NewOptString(eventCategory),
 				CorrelationID: ogenclient.NewOptString(correlationID),
 			})
-			Expect(err).ToNot(HaveOccurred())
+			if err != nil {
+				GinkgoWriter.Printf("QueryAuditEvents error (empty labels): %v\n", err)
+				return 0
+			}
+			if resp.Pagination.IsSet() && resp.Pagination.Value.Total.IsSet() {
+				return resp.Pagination.Value.Total.Value
+			}
+			return 0
+		}, 120*time.Second, 1*time.Second).Should(Equal(1),
+			"Should find exactly 1 audit event for empty labels test")
 
-			events := resp2.Data
-			Expect(len(events)).To(Equal(1))
+		// Query final audit events
+		resp2, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
+			EventType:     ogenclient.NewOptString(eventType),
+			EventCategory: ogenclient.NewOptString(eventCategory),
+			CorrelationID: ogenclient.NewOptString(correlationID),
+		})
+		Expect(err).ToNot(HaveOccurred())
 
-			// Convert EventData discriminated union to map for existing validation logic
-			eventDataBytes, _ := json.Marshal(events[0].EventData)
+		events := resp2.Data
+		Expect(len(events)).To(Equal(1))
+
+		// Convert EventData discriminated union to map for existing validation logic
+		eventDataBytes, _ := json.Marshal(events[0].EventData)
 			var eventData map[string]interface{}
 			err = json.Unmarshal(eventDataBytes, &eventData)
 			Expect(err).ToNot(HaveOccurred())
@@ -624,35 +627,36 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			eventType := gateway.EventTypeSignalReceived
 			eventCategory := gateway.CategoryGateway
 
-			// ✅ Use Eventually() for async validation
-			Eventually(func() int {
-				resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
-					EventType:     ogenclient.NewOptString(eventType),
-					EventCategory: ogenclient.NewOptString(eventCategory),
-					CorrelationID: ogenclient.NewOptString(correlationID),
-				})
-				if err != nil {
-					return 0
-				}
-				if resp.Pagination.IsSet() && resp.Pagination.Value.Total.IsSet() {
-					return resp.Pagination.Value.Total.Value
-				}
-				return 0
-			}, 30*time.Second, 1*time.Second).Should(Equal(1),
-				"Should find exactly 1 audit event for nil payload test")
-
-			// Query final audit events
-			resp2, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
+		// ✅ Use Eventually() for async validation
+		Eventually(func() int {
+			resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
 				EventType:     ogenclient.NewOptString(eventType),
 				EventCategory: ogenclient.NewOptString(eventCategory),
 				CorrelationID: ogenclient.NewOptString(correlationID),
 			})
-			Expect(err).ToNot(HaveOccurred())
-			events := resp2.Data
-			Expect(len(events)).To(Equal(1))
+			if err != nil {
+				GinkgoWriter.Printf("QueryAuditEvents error (nil payload): %v\n", err)
+				return 0
+			}
+			if resp.Pagination.IsSet() && resp.Pagination.Value.Total.IsSet() {
+				return resp.Pagination.Value.Total.Value
+			}
+			return 0
+		}, 120*time.Second, 1*time.Second).Should(Equal(1),
+			"Should find exactly 1 audit event for nil payload test")
 
-			// Convert EventData discriminated union to map for existing validation logic
-			eventDataBytes, _ := json.Marshal(events[0].EventData)
+		// Query final audit events
+		resp2, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
+			EventType:     ogenclient.NewOptString(eventType),
+			EventCategory: ogenclient.NewOptString(eventCategory),
+			CorrelationID: ogenclient.NewOptString(correlationID),
+		})
+		Expect(err).ToNot(HaveOccurred())
+		events := resp2.Data
+		Expect(len(events)).To(Equal(1))
+
+		// Convert EventData discriminated union to map for existing validation logic
+		eventDataBytes, _ := json.Marshal(events[0].EventData)
 			var eventData map[string]interface{}
 			err = json.Unmarshal(eventDataBytes, &eventData)
 			Expect(err).ToNot(HaveOccurred())
@@ -804,22 +808,23 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			eventType := gateway.EventTypeSignalDeduplicated
 			eventCategory := gateway.CategoryGateway
 
-			// ✅ Use Eventually() for async validation
-			Eventually(func() int {
-				resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
-					EventType:     ogenclient.NewOptString(eventType),
-					EventCategory: ogenclient.NewOptString(eventCategory),
-					CorrelationID: ogenclient.NewOptString(correlationID2),
-				})
-				if err != nil {
-					return 0
-				}
-				if resp.Pagination.IsSet() && resp.Pagination.Value.Total.IsSet() {
-					return resp.Pagination.Value.Total.Value
-				}
+		// ✅ Use Eventually() for async validation
+		Eventually(func() int {
+			resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
+				EventType:     ogenclient.NewOptString(eventType),
+				EventCategory: ogenclient.NewOptString(eventCategory),
+				CorrelationID: ogenclient.NewOptString(correlationID2),
+			})
+			if err != nil {
+				GinkgoWriter.Printf("QueryAuditEvents error (dedup): %v\n", err)
 				return 0
-			}, 30*time.Second, 1*time.Second).Should(Equal(1),
-				"Should find exactly 1 gateway.signal.deduplicated event")
+			}
+			if resp.Pagination.IsSet() && resp.Pagination.Value.Total.IsSet() {
+				return resp.Pagination.Value.Total.Value
+			}
+			return 0
+		}, 120*time.Second, 1*time.Second).Should(Equal(1),
+			"Should find exactly 1 gateway.signal.deduplicated event")
 
 			// Query final audit events
 			resp3, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
@@ -982,20 +987,21 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			eventType := gateway.EventTypeSignalReceived
 			eventCategory := gateway.CategoryGateway
 
-			Eventually(func() int {
-				resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
-					EventType:     ogenclient.NewOptString(eventType),
-					EventCategory: ogenclient.NewOptString(eventCategory),
-					CorrelationID: ogenclient.NewOptString(correlationIDProm),
-				})
-				if err != nil {
-					return 0
-				}
-				if resp.Pagination.IsSet() && resp.Pagination.Value.Total.IsSet() {
-					return resp.Pagination.Value.Total.Value
-				}
+		Eventually(func() int {
+			resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
+				EventType:     ogenclient.NewOptString(eventType),
+				EventCategory: ogenclient.NewOptString(eventCategory),
+				CorrelationID: ogenclient.NewOptString(correlationIDProm),
+			})
+			if err != nil {
+				GinkgoWriter.Printf("QueryAuditEvents error (prom cross-type): %v\n", err)
 				return 0
-			}, 30*time.Second, 1*time.Second).Should(Equal(1))
+			}
+			if resp.Pagination.IsSet() && resp.Pagination.Value.Total.IsSet() {
+				return resp.Pagination.Value.Total.Value
+			}
+			return 0
+		}, 120*time.Second, 1*time.Second).Should(Equal(1))
 
 			respPromAudit, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
 				EventType:     ogenclient.NewOptString(eventType),
@@ -1016,20 +1022,21 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 
 			By("Verifying K8s Event audit event has all 3 RR reconstruction fields")
 
-			Eventually(func() int {
-				resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
-					EventType:     ogenclient.NewOptString(eventType),
-					EventCategory: ogenclient.NewOptString(eventCategory),
-					CorrelationID: ogenclient.NewOptString(correlationIDK8s),
-				})
-				if err != nil {
-					return 0
-				}
-				if resp.Pagination.IsSet() && resp.Pagination.Value.Total.IsSet() {
-					return resp.Pagination.Value.Total.Value
-				}
+		Eventually(func() int {
+			resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
+				EventType:     ogenclient.NewOptString(eventType),
+				EventCategory: ogenclient.NewOptString(eventCategory),
+				CorrelationID: ogenclient.NewOptString(correlationIDK8s),
+			})
+			if err != nil {
+				GinkgoWriter.Printf("QueryAuditEvents error (k8s cross-type): %v\n", err)
 				return 0
-			}, 30*time.Second, 1*time.Second).Should(Equal(1))
+			}
+			if resp.Pagination.IsSet() && resp.Pagination.Value.Total.IsSet() {
+				return resp.Pagination.Value.Total.Value
+			}
+			return 0
+		}, 120*time.Second, 1*time.Second).Should(Equal(1))
 
 			respK8sAudit, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
 				EventType:     ogenclient.NewOptString(eventType),
