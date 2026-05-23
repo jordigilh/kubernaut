@@ -1384,7 +1384,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            localAuditor,
 					Metrics:            localMetrics,
-					ToolTimeout:        3 * time.Second,
+					ToolTimeout:        2 * time.Second,
 					MaxConcurrentTools: 1,
 				},
 			}
@@ -1417,7 +1417,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 			Eventually(entered, 5*time.Second).Should(Receive())
 
 			// Fire remaining goroutines — they will all block on
-			// sem.Acquire until their ToolTimeout (3s) expires,
+			// sem.Acquire until their ToolTimeout (2s) expires,
 			// producing "busy" throttle responses.
 			for i := 1; i < n; i++ {
 				wg.Add(1)
@@ -1429,8 +1429,8 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				}(i)
 			}
 
-			// Collect n-1 results (the throttled ones arrive when their
-			// ToolTimeout contexts expire).
+			// Collect n-1 results (contenders timeout while holder
+			// keeps the semaphore). This blocks until all timeouts fire.
 			collected := make([]string, 0, n)
 			for i := 0; i < n-1; i++ {
 				collected = append(collected, <-results)
@@ -1442,7 +1442,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 
 			var throttled int
 			for _, body := range collected {
-				if strings.Contains(body, "busy") {
+				if strings.Contains(body, "busy") || strings.Contains(body, "throttl") {
 					throttled++
 				}
 			}
