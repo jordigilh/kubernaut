@@ -8081,92 +8081,93 @@ func (s *AuditEventEventCategory) UnmarshalText(data []byte) error {
 // See DD-AUDIT-004 for structured type requirements.
 // AuditEventEventData represents sum type.
 type AuditEventEventData struct {
-	Type                                      AuditEventEventDataType // switch on this field
-	GatewayAuditPayload                       GatewayAuditPayload
-	RemediationOrchestratorAuditPayload       RemediationOrchestratorAuditPayload
-	SignalProcessingAuditPayload              SignalProcessingAuditPayload
-	AIAnalysisAuditPayload                    AIAnalysisAuditPayload
-	WorkflowExecutionAuditPayload             WorkflowExecutionAuditPayload
-	NotificationAuditPayload                  NotificationAuditPayload
-	WorkflowExecutionWebhookAuditPayload      WorkflowExecutionWebhookAuditPayload
-	RemediationApprovalAuditPayload           RemediationApprovalAuditPayload
-	RemediationApprovalDecisionPayload        RemediationApprovalDecisionPayload
-	WorkflowDiscoveryAuditPayload             WorkflowDiscoveryAuditPayload
-	WorkflowCatalogCreatedPayload             WorkflowCatalogCreatedPayload
-	WorkflowCatalogUpdatedPayload             WorkflowCatalogUpdatedPayload
-	AIAnalysisPhaseTransitionPayload          AIAnalysisPhaseTransitionPayload
-	AIAnalysisAIAgentCallPayload              AIAnalysisAIAgentCallPayload
-	AIAnalysisApprovalDecisionPayload         AIAnalysisApprovalDecisionPayload
-	AIAnalysisRegoEvaluationPayload           AIAnalysisRegoEvaluationPayload
-	AIAnalysisErrorPayload                    AIAnalysisErrorPayload
-	NotificationMessageSentPayload            NotificationMessageSentPayload
-	NotificationMessageFailedPayload          NotificationMessageFailedPayload
-	NotificationMessageAcknowledgedPayload    NotificationMessageAcknowledgedPayload
-	NotificationMessageEscalatedPayload       NotificationMessageEscalatedPayload
-	AIAgentResponsePayload                    AIAgentResponsePayload
-	AIAgentRCACompletePayload                 AIAgentRCACompletePayload
-	AIAgentResponseFailedPayload              AIAgentResponseFailedPayload
-	AIAgentEnrichmentCompletedPayload         AIAgentEnrichmentCompletedPayload
-	AIAgentEnrichmentFailedPayload            AIAgentEnrichmentFailedPayload
-	LLMRequestPayload                         LLMRequestPayload
-	LLMResponsePayload                        LLMResponsePayload
-	LLMToolCallPayload                        LLMToolCallPayload
-	WorkflowValidationPayload                 WorkflowValidationPayload
-	AIAgentSessionStartedPayload              AIAgentSessionStartedPayload
-	AIAgentSessionCompletedPayload            AIAgentSessionCompletedPayload
-	AIAgentSessionFailedPayload               AIAgentSessionFailedPayload
-	AIAgentSessionCancelledPayload            AIAgentSessionCancelledPayload
-	AIAgentSessionSuspendedPayload            AIAgentSessionSuspendedPayload
-	AIAgentSessionResumedPayload              AIAgentSessionResumedPayload
-	AIAgentInteractiveStartedPayload          AIAgentInteractiveStartedPayload
-	AIAgentInteractiveCompletedPayload        AIAgentInteractiveCompletedPayload
-	AIAgentInteractiveK8sCallPayload          AIAgentInteractiveK8sCallPayload
-	AIAgentSessionObservedPayload             AIAgentSessionObservedPayload
-	AIAgentSessionAccessDeniedPayload         AIAgentSessionAccessDeniedPayload
-	AIAgentInvestigationCancelledPayload      AIAgentInvestigationCancelledPayload
-	AIAgentAlignmentStepPayload               AIAgentAlignmentStepPayload
-	AIAgentAlignmentVerdictPayload            AIAgentAlignmentVerdictPayload
-	ShadowLLMRequestPayload                   ShadowLLMRequestPayload
-	ShadowLLMResponsePayload                  ShadowLLMResponsePayload
-	RemediationRequestWebhookAuditPayload     RemediationRequestWebhookAuditPayload
-	RemediationWorkflowWebhookAuditPayload    RemediationWorkflowWebhookAuditPayload
-	EffectivenessAssessmentAuditPayload       EffectivenessAssessmentAuditPayload
-	ActionTypeCatalogCreatedPayload           ActionTypeCatalogCreatedPayload
-	ActionTypeCatalogUpdatedPayload           ActionTypeCatalogUpdatedPayload
-	ActionTypeCatalogDisabledPayload          ActionTypeCatalogDisabledPayload
-	ActionTypeCatalogReenabledPayload         ActionTypeCatalogReenabledPayload
-	ActionTypeCatalogDisableDeniedPayload     ActionTypeCatalogDisableDeniedPayload
-	ActionTypeWebhookAuditPayload             ActionTypeWebhookAuditPayload
-	ApifrontendTriageStartedPayload           ApifrontendTriageStartedPayload
-	ApifrontendTriageCompletedPayload         ApifrontendTriageCompletedPayload
-	ApifrontendRRCreatedPayload               ApifrontendRRCreatedPayload
-	ApifrontendRRDeduplicatedPayload          ApifrontendRRDeduplicatedPayload
-	ApifrontendSessionCreatedPayload          ApifrontendSessionCreatedPayload
-	ApifrontendSessionCompletedPayload        ApifrontendSessionCompletedPayload
-	ApifrontendKADelegatedPayload             ApifrontendKADelegatedPayload
-	ApifrontendKAResultReceivedPayload        ApifrontendKAResultReceivedPayload
-	ApifrontendUserDecisionPayload            ApifrontendUserDecisionPayload
-	ApifrontendAuthAccessDeniedPayload        ApifrontendAuthAccessDeniedPayload
-	ApifrontendToolExecutedPayload            ApifrontendToolExecutedPayload
-	ApifrontendAuthSuccessPayload             ApifrontendAuthSuccessPayload
-	ApifrontendAuthFailurePayload             ApifrontendAuthFailurePayload
-	ApifrontendRatelimitDeniedPayload         ApifrontendRatelimitDeniedPayload
-	ApifrontendCircuitbreakerTripPayload      ApifrontendCircuitbreakerTripPayload
-	ApifrontendImpersonationCreatedPayload    ApifrontendImpersonationCreatedPayload
-	ApifrontendJWTDelegationPayload           ApifrontendJWTDelegationPayload
-	ApifrontendSessionPhaseChangedPayload     ApifrontendSessionPhaseChangedPayload
-	ApifrontendSessionDeletedPayload          ApifrontendSessionDeletedPayload
-	ApifrontendSessionAutoCancelledPayload    ApifrontendSessionAutoCancelledPayload
-	ApifrontendSessionRetentionDeletedPayload ApifrontendSessionRetentionDeletedPayload
-	ApifrontendA2ATaskStartedPayload          ApifrontendA2ATaskStartedPayload
-	ApifrontendA2ATaskCompletedPayload        ApifrontendA2ATaskCompletedPayload
-	ApifrontendA2ATaskFailedPayload           ApifrontendA2ATaskFailedPayload
-	ApifrontendMCPToolFailedPayload           ApifrontendMCPToolFailedPayload
-	ApifrontendMCPSessionInitPayload          ApifrontendMCPSessionInitPayload
-	ApifrontendSeverityTriageCompletedPayload ApifrontendSeverityTriageCompletedPayload
-	ApifrontendSeverityTriageFailedPayload    ApifrontendSeverityTriageFailedPayload
-	ApifrontendConfigReloadedPayload          ApifrontendConfigReloadedPayload
-	ApifrontendConfigRejectedPayload          ApifrontendConfigRejectedPayload
+	Type                                         AuditEventEventDataType // switch on this field
+	GatewayAuditPayload                          GatewayAuditPayload
+	RemediationOrchestratorAuditPayload          RemediationOrchestratorAuditPayload
+	SignalProcessingAuditPayload                 SignalProcessingAuditPayload
+	AIAnalysisAuditPayload                       AIAnalysisAuditPayload
+	WorkflowExecutionAuditPayload                WorkflowExecutionAuditPayload
+	NotificationAuditPayload                     NotificationAuditPayload
+	WorkflowExecutionWebhookAuditPayload         WorkflowExecutionWebhookAuditPayload
+	RemediationApprovalAuditPayload              RemediationApprovalAuditPayload
+	RemediationApprovalDecisionPayload           RemediationApprovalDecisionPayload
+	WorkflowDiscoveryAuditPayload                WorkflowDiscoveryAuditPayload
+	WorkflowCatalogCreatedPayload                WorkflowCatalogCreatedPayload
+	WorkflowCatalogUpdatedPayload                WorkflowCatalogUpdatedPayload
+	AIAnalysisPhaseTransitionPayload             AIAnalysisPhaseTransitionPayload
+	AIAnalysisAIAgentCallPayload                 AIAnalysisAIAgentCallPayload
+	AIAnalysisApprovalDecisionPayload            AIAnalysisApprovalDecisionPayload
+	AIAnalysisRegoEvaluationPayload              AIAnalysisRegoEvaluationPayload
+	AIAnalysisErrorPayload                       AIAnalysisErrorPayload
+	NotificationMessageSentPayload               NotificationMessageSentPayload
+	NotificationMessageFailedPayload             NotificationMessageFailedPayload
+	NotificationMessageAcknowledgedPayload       NotificationMessageAcknowledgedPayload
+	NotificationMessageEscalatedPayload          NotificationMessageEscalatedPayload
+	AIAgentResponsePayload                       AIAgentResponsePayload
+	AIAgentRCACompletePayload                    AIAgentRCACompletePayload
+	AIAgentResponseFailedPayload                 AIAgentResponseFailedPayload
+	AIAgentEnrichmentCompletedPayload            AIAgentEnrichmentCompletedPayload
+	AIAgentEnrichmentFailedPayload               AIAgentEnrichmentFailedPayload
+	LLMRequestPayload                            LLMRequestPayload
+	LLMResponsePayload                           LLMResponsePayload
+	LLMToolCallPayload                           LLMToolCallPayload
+	WorkflowValidationPayload                    WorkflowValidationPayload
+	AIAgentSessionStartedPayload                 AIAgentSessionStartedPayload
+	AIAgentSessionCompletedPayload               AIAgentSessionCompletedPayload
+	AIAgentSessionFailedPayload                  AIAgentSessionFailedPayload
+	AIAgentSessionCancelledPayload               AIAgentSessionCancelledPayload
+	AIAgentSessionSuspendedPayload               AIAgentSessionSuspendedPayload
+	AIAgentSessionResumedPayload                 AIAgentSessionResumedPayload
+	AIAgentInteractiveStartedPayload             AIAgentInteractiveStartedPayload
+	AIAgentInteractiveCompletedPayload           AIAgentInteractiveCompletedPayload
+	AIAgentInteractiveK8sCallPayload             AIAgentInteractiveK8sCallPayload
+	AIAgentSessionObservedPayload                AIAgentSessionObservedPayload
+	AIAgentSessionAccessDeniedPayload            AIAgentSessionAccessDeniedPayload
+	AIAgentInvestigationCancelledPayload         AIAgentInvestigationCancelledPayload
+	AIAgentAlignmentStepPayload                  AIAgentAlignmentStepPayload
+	AIAgentAlignmentVerdictPayload               AIAgentAlignmentVerdictPayload
+	ShadowLLMRequestPayload                      ShadowLLMRequestPayload
+	ShadowLLMResponsePayload                     ShadowLLMResponsePayload
+	RemediationRequestWebhookAuditPayload        RemediationRequestWebhookAuditPayload
+	RemediationWorkflowWebhookAuditPayload       RemediationWorkflowWebhookAuditPayload
+	AuthwebhookWorkflowRegistrationFailedPayload AuthwebhookWorkflowRegistrationFailedPayload
+	EffectivenessAssessmentAuditPayload          EffectivenessAssessmentAuditPayload
+	ActionTypeCatalogCreatedPayload              ActionTypeCatalogCreatedPayload
+	ActionTypeCatalogUpdatedPayload              ActionTypeCatalogUpdatedPayload
+	ActionTypeCatalogDisabledPayload             ActionTypeCatalogDisabledPayload
+	ActionTypeCatalogReenabledPayload            ActionTypeCatalogReenabledPayload
+	ActionTypeCatalogDisableDeniedPayload        ActionTypeCatalogDisableDeniedPayload
+	ActionTypeWebhookAuditPayload                ActionTypeWebhookAuditPayload
+	ApifrontendTriageStartedPayload              ApifrontendTriageStartedPayload
+	ApifrontendTriageCompletedPayload            ApifrontendTriageCompletedPayload
+	ApifrontendRRCreatedPayload                  ApifrontendRRCreatedPayload
+	ApifrontendRRDeduplicatedPayload             ApifrontendRRDeduplicatedPayload
+	ApifrontendSessionCreatedPayload             ApifrontendSessionCreatedPayload
+	ApifrontendSessionCompletedPayload           ApifrontendSessionCompletedPayload
+	ApifrontendKADelegatedPayload                ApifrontendKADelegatedPayload
+	ApifrontendKAResultReceivedPayload           ApifrontendKAResultReceivedPayload
+	ApifrontendUserDecisionPayload               ApifrontendUserDecisionPayload
+	ApifrontendAuthAccessDeniedPayload           ApifrontendAuthAccessDeniedPayload
+	ApifrontendToolExecutedPayload               ApifrontendToolExecutedPayload
+	ApifrontendAuthSuccessPayload                ApifrontendAuthSuccessPayload
+	ApifrontendAuthFailurePayload                ApifrontendAuthFailurePayload
+	ApifrontendRatelimitDeniedPayload            ApifrontendRatelimitDeniedPayload
+	ApifrontendCircuitbreakerTripPayload         ApifrontendCircuitbreakerTripPayload
+	ApifrontendImpersonationCreatedPayload       ApifrontendImpersonationCreatedPayload
+	ApifrontendJWTDelegationPayload              ApifrontendJWTDelegationPayload
+	ApifrontendSessionPhaseChangedPayload        ApifrontendSessionPhaseChangedPayload
+	ApifrontendSessionDeletedPayload             ApifrontendSessionDeletedPayload
+	ApifrontendSessionAutoCancelledPayload       ApifrontendSessionAutoCancelledPayload
+	ApifrontendSessionRetentionDeletedPayload    ApifrontendSessionRetentionDeletedPayload
+	ApifrontendA2ATaskStartedPayload             ApifrontendA2ATaskStartedPayload
+	ApifrontendA2ATaskCompletedPayload           ApifrontendA2ATaskCompletedPayload
+	ApifrontendA2ATaskFailedPayload              ApifrontendA2ATaskFailedPayload
+	ApifrontendMCPToolFailedPayload              ApifrontendMCPToolFailedPayload
+	ApifrontendMCPSessionInitPayload             ApifrontendMCPSessionInitPayload
+	ApifrontendSeverityTriageCompletedPayload    ApifrontendSeverityTriageCompletedPayload
+	ApifrontendSeverityTriageFailedPayload       ApifrontendSeverityTriageFailedPayload
+	ApifrontendConfigReloadedPayload             ApifrontendConfigReloadedPayload
+	ApifrontendConfigRejectedPayload             ApifrontendConfigRejectedPayload
 }
 
 // AuditEventEventDataType is oneOf type of AuditEventEventData.
@@ -8259,6 +8260,7 @@ const (
 	AuditEventEventDataRemediationworkflowAdmittedDeleteAuditEventEventData          AuditEventEventDataType = "remediationworkflow.admitted.delete"
 	AuditEventEventDataRemediationworkflowAdmittedDeniedAuditEventEventData          AuditEventEventDataType = "remediationworkflow.admitted.denied"
 	AuditEventEventDataRemediationworkflowAdmittedUpdateAuditEventEventData          AuditEventEventDataType = "remediationworkflow.admitted.update"
+	AuthwebhookWorkflowRegistrationFailedPayloadAuditEventEventData                  AuditEventEventDataType = "authwebhook.workflow.registration_failed"
 	AuditEventEventDataEffectivenessAlertAssessedAuditEventEventData                 AuditEventEventDataType = "effectiveness.alert.assessed"
 	AuditEventEventDataEffectivenessAlertDecayDetectedAuditEventEventData            AuditEventEventDataType = "effectiveness.alert_decay.detected"
 	AuditEventEventDataEffectivenessAssessmentCompletedAuditEventEventData           AuditEventEventDataType = "effectiveness.assessment.completed"
@@ -8592,6 +8594,11 @@ func (s AuditEventEventData) IsRemediationWorkflowWebhookAuditPayload() bool {
 	default:
 		return false
 	}
+}
+
+// IsAuthwebhookWorkflowRegistrationFailedPayload reports whether AuditEventEventData is AuthwebhookWorkflowRegistrationFailedPayload.
+func (s AuditEventEventData) IsAuthwebhookWorkflowRegistrationFailedPayload() bool {
+	return s.Type == AuthwebhookWorkflowRegistrationFailedPayloadAuditEventEventData
 }
 
 // IsEffectivenessAssessmentAuditPayload reports whether AuditEventEventData is EffectivenessAssessmentAuditPayload.
@@ -10092,6 +10099,27 @@ func NewAuditEventEventDataRemediationworkflowAdmittedUpdateAuditEventEventData(
 	return s
 }
 
+// SetAuthwebhookWorkflowRegistrationFailedPayload sets AuditEventEventData to AuthwebhookWorkflowRegistrationFailedPayload.
+func (s *AuditEventEventData) SetAuthwebhookWorkflowRegistrationFailedPayload(v AuthwebhookWorkflowRegistrationFailedPayload) {
+	s.Type = AuthwebhookWorkflowRegistrationFailedPayloadAuditEventEventData
+	s.AuthwebhookWorkflowRegistrationFailedPayload = v
+}
+
+// GetAuthwebhookWorkflowRegistrationFailedPayload returns AuthwebhookWorkflowRegistrationFailedPayload and true boolean if AuditEventEventData is AuthwebhookWorkflowRegistrationFailedPayload.
+func (s AuditEventEventData) GetAuthwebhookWorkflowRegistrationFailedPayload() (v AuthwebhookWorkflowRegistrationFailedPayload, ok bool) {
+	if !s.IsAuthwebhookWorkflowRegistrationFailedPayload() {
+		return v, false
+	}
+	return s.AuthwebhookWorkflowRegistrationFailedPayload, true
+}
+
+// NewAuthwebhookWorkflowRegistrationFailedPayloadAuditEventEventData returns new AuditEventEventData from AuthwebhookWorkflowRegistrationFailedPayload.
+func NewAuthwebhookWorkflowRegistrationFailedPayloadAuditEventEventData(v AuthwebhookWorkflowRegistrationFailedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetAuthwebhookWorkflowRegistrationFailedPayload(v)
+	return s
+}
+
 // SetEffectivenessAssessmentAuditPayload sets AuditEventEventData to EffectivenessAssessmentAuditPayload.
 // panics if `t` is not associated with EffectivenessAssessmentAuditPayload
 func (s *AuditEventEventData) SetEffectivenessAssessmentAuditPayload(t AuditEventEventDataType, v EffectivenessAssessmentAuditPayload) {
@@ -11425,92 +11453,93 @@ func (s *AuditEventRequestEventCategory) UnmarshalText(data []byte) error {
 // See DD-AUDIT-004 for structured type requirements.
 // AuditEventRequestEventData represents sum type.
 type AuditEventRequestEventData struct {
-	Type                                      AuditEventRequestEventDataType // switch on this field
-	GatewayAuditPayload                       GatewayAuditPayload
-	RemediationOrchestratorAuditPayload       RemediationOrchestratorAuditPayload
-	SignalProcessingAuditPayload              SignalProcessingAuditPayload
-	AIAnalysisAuditPayload                    AIAnalysisAuditPayload
-	WorkflowExecutionAuditPayload             WorkflowExecutionAuditPayload
-	NotificationAuditPayload                  NotificationAuditPayload
-	WorkflowExecutionWebhookAuditPayload      WorkflowExecutionWebhookAuditPayload
-	RemediationApprovalAuditPayload           RemediationApprovalAuditPayload
-	RemediationApprovalDecisionPayload        RemediationApprovalDecisionPayload
-	WorkflowDiscoveryAuditPayload             WorkflowDiscoveryAuditPayload
-	WorkflowCatalogCreatedPayload             WorkflowCatalogCreatedPayload
-	WorkflowCatalogUpdatedPayload             WorkflowCatalogUpdatedPayload
-	AIAnalysisPhaseTransitionPayload          AIAnalysisPhaseTransitionPayload
-	AIAnalysisAIAgentCallPayload              AIAnalysisAIAgentCallPayload
-	AIAnalysisApprovalDecisionPayload         AIAnalysisApprovalDecisionPayload
-	AIAnalysisRegoEvaluationPayload           AIAnalysisRegoEvaluationPayload
-	AIAnalysisErrorPayload                    AIAnalysisErrorPayload
-	NotificationMessageSentPayload            NotificationMessageSentPayload
-	NotificationMessageFailedPayload          NotificationMessageFailedPayload
-	NotificationMessageAcknowledgedPayload    NotificationMessageAcknowledgedPayload
-	NotificationMessageEscalatedPayload       NotificationMessageEscalatedPayload
-	AIAgentResponsePayload                    AIAgentResponsePayload
-	AIAgentRCACompletePayload                 AIAgentRCACompletePayload
-	AIAgentResponseFailedPayload              AIAgentResponseFailedPayload
-	AIAgentEnrichmentCompletedPayload         AIAgentEnrichmentCompletedPayload
-	AIAgentEnrichmentFailedPayload            AIAgentEnrichmentFailedPayload
-	LLMRequestPayload                         LLMRequestPayload
-	LLMResponsePayload                        LLMResponsePayload
-	LLMToolCallPayload                        LLMToolCallPayload
-	WorkflowValidationPayload                 WorkflowValidationPayload
-	AIAgentSessionStartedPayload              AIAgentSessionStartedPayload
-	AIAgentSessionCompletedPayload            AIAgentSessionCompletedPayload
-	AIAgentSessionFailedPayload               AIAgentSessionFailedPayload
-	AIAgentSessionCancelledPayload            AIAgentSessionCancelledPayload
-	AIAgentSessionSuspendedPayload            AIAgentSessionSuspendedPayload
-	AIAgentSessionResumedPayload              AIAgentSessionResumedPayload
-	AIAgentInteractiveStartedPayload          AIAgentInteractiveStartedPayload
-	AIAgentInteractiveCompletedPayload        AIAgentInteractiveCompletedPayload
-	AIAgentInteractiveK8sCallPayload          AIAgentInteractiveK8sCallPayload
-	AIAgentSessionObservedPayload             AIAgentSessionObservedPayload
-	AIAgentSessionAccessDeniedPayload         AIAgentSessionAccessDeniedPayload
-	AIAgentInvestigationCancelledPayload      AIAgentInvestigationCancelledPayload
-	AIAgentAlignmentStepPayload               AIAgentAlignmentStepPayload
-	AIAgentAlignmentVerdictPayload            AIAgentAlignmentVerdictPayload
-	ShadowLLMRequestPayload                   ShadowLLMRequestPayload
-	ShadowLLMResponsePayload                  ShadowLLMResponsePayload
-	RemediationRequestWebhookAuditPayload     RemediationRequestWebhookAuditPayload
-	RemediationWorkflowWebhookAuditPayload    RemediationWorkflowWebhookAuditPayload
-	EffectivenessAssessmentAuditPayload       EffectivenessAssessmentAuditPayload
-	ActionTypeCatalogCreatedPayload           ActionTypeCatalogCreatedPayload
-	ActionTypeCatalogUpdatedPayload           ActionTypeCatalogUpdatedPayload
-	ActionTypeCatalogDisabledPayload          ActionTypeCatalogDisabledPayload
-	ActionTypeCatalogReenabledPayload         ActionTypeCatalogReenabledPayload
-	ActionTypeCatalogDisableDeniedPayload     ActionTypeCatalogDisableDeniedPayload
-	ActionTypeWebhookAuditPayload             ActionTypeWebhookAuditPayload
-	ApifrontendTriageStartedPayload           ApifrontendTriageStartedPayload
-	ApifrontendTriageCompletedPayload         ApifrontendTriageCompletedPayload
-	ApifrontendRRCreatedPayload               ApifrontendRRCreatedPayload
-	ApifrontendRRDeduplicatedPayload          ApifrontendRRDeduplicatedPayload
-	ApifrontendSessionCreatedPayload          ApifrontendSessionCreatedPayload
-	ApifrontendSessionCompletedPayload        ApifrontendSessionCompletedPayload
-	ApifrontendKADelegatedPayload             ApifrontendKADelegatedPayload
-	ApifrontendKAResultReceivedPayload        ApifrontendKAResultReceivedPayload
-	ApifrontendUserDecisionPayload            ApifrontendUserDecisionPayload
-	ApifrontendAuthAccessDeniedPayload        ApifrontendAuthAccessDeniedPayload
-	ApifrontendToolExecutedPayload            ApifrontendToolExecutedPayload
-	ApifrontendAuthSuccessPayload             ApifrontendAuthSuccessPayload
-	ApifrontendAuthFailurePayload             ApifrontendAuthFailurePayload
-	ApifrontendRatelimitDeniedPayload         ApifrontendRatelimitDeniedPayload
-	ApifrontendCircuitbreakerTripPayload      ApifrontendCircuitbreakerTripPayload
-	ApifrontendImpersonationCreatedPayload    ApifrontendImpersonationCreatedPayload
-	ApifrontendJWTDelegationPayload           ApifrontendJWTDelegationPayload
-	ApifrontendSessionPhaseChangedPayload     ApifrontendSessionPhaseChangedPayload
-	ApifrontendSessionDeletedPayload          ApifrontendSessionDeletedPayload
-	ApifrontendSessionAutoCancelledPayload    ApifrontendSessionAutoCancelledPayload
-	ApifrontendSessionRetentionDeletedPayload ApifrontendSessionRetentionDeletedPayload
-	ApifrontendA2ATaskStartedPayload          ApifrontendA2ATaskStartedPayload
-	ApifrontendA2ATaskCompletedPayload        ApifrontendA2ATaskCompletedPayload
-	ApifrontendA2ATaskFailedPayload           ApifrontendA2ATaskFailedPayload
-	ApifrontendMCPToolFailedPayload           ApifrontendMCPToolFailedPayload
-	ApifrontendMCPSessionInitPayload          ApifrontendMCPSessionInitPayload
-	ApifrontendSeverityTriageCompletedPayload ApifrontendSeverityTriageCompletedPayload
-	ApifrontendSeverityTriageFailedPayload    ApifrontendSeverityTriageFailedPayload
-	ApifrontendConfigReloadedPayload          ApifrontendConfigReloadedPayload
-	ApifrontendConfigRejectedPayload          ApifrontendConfigRejectedPayload
+	Type                                         AuditEventRequestEventDataType // switch on this field
+	GatewayAuditPayload                          GatewayAuditPayload
+	RemediationOrchestratorAuditPayload          RemediationOrchestratorAuditPayload
+	SignalProcessingAuditPayload                 SignalProcessingAuditPayload
+	AIAnalysisAuditPayload                       AIAnalysisAuditPayload
+	WorkflowExecutionAuditPayload                WorkflowExecutionAuditPayload
+	NotificationAuditPayload                     NotificationAuditPayload
+	WorkflowExecutionWebhookAuditPayload         WorkflowExecutionWebhookAuditPayload
+	RemediationApprovalAuditPayload              RemediationApprovalAuditPayload
+	RemediationApprovalDecisionPayload           RemediationApprovalDecisionPayload
+	WorkflowDiscoveryAuditPayload                WorkflowDiscoveryAuditPayload
+	WorkflowCatalogCreatedPayload                WorkflowCatalogCreatedPayload
+	WorkflowCatalogUpdatedPayload                WorkflowCatalogUpdatedPayload
+	AIAnalysisPhaseTransitionPayload             AIAnalysisPhaseTransitionPayload
+	AIAnalysisAIAgentCallPayload                 AIAnalysisAIAgentCallPayload
+	AIAnalysisApprovalDecisionPayload            AIAnalysisApprovalDecisionPayload
+	AIAnalysisRegoEvaluationPayload              AIAnalysisRegoEvaluationPayload
+	AIAnalysisErrorPayload                       AIAnalysisErrorPayload
+	NotificationMessageSentPayload               NotificationMessageSentPayload
+	NotificationMessageFailedPayload             NotificationMessageFailedPayload
+	NotificationMessageAcknowledgedPayload       NotificationMessageAcknowledgedPayload
+	NotificationMessageEscalatedPayload          NotificationMessageEscalatedPayload
+	AIAgentResponsePayload                       AIAgentResponsePayload
+	AIAgentRCACompletePayload                    AIAgentRCACompletePayload
+	AIAgentResponseFailedPayload                 AIAgentResponseFailedPayload
+	AIAgentEnrichmentCompletedPayload            AIAgentEnrichmentCompletedPayload
+	AIAgentEnrichmentFailedPayload               AIAgentEnrichmentFailedPayload
+	LLMRequestPayload                            LLMRequestPayload
+	LLMResponsePayload                           LLMResponsePayload
+	LLMToolCallPayload                           LLMToolCallPayload
+	WorkflowValidationPayload                    WorkflowValidationPayload
+	AIAgentSessionStartedPayload                 AIAgentSessionStartedPayload
+	AIAgentSessionCompletedPayload               AIAgentSessionCompletedPayload
+	AIAgentSessionFailedPayload                  AIAgentSessionFailedPayload
+	AIAgentSessionCancelledPayload               AIAgentSessionCancelledPayload
+	AIAgentSessionSuspendedPayload               AIAgentSessionSuspendedPayload
+	AIAgentSessionResumedPayload                 AIAgentSessionResumedPayload
+	AIAgentInteractiveStartedPayload             AIAgentInteractiveStartedPayload
+	AIAgentInteractiveCompletedPayload           AIAgentInteractiveCompletedPayload
+	AIAgentInteractiveK8sCallPayload             AIAgentInteractiveK8sCallPayload
+	AIAgentSessionObservedPayload                AIAgentSessionObservedPayload
+	AIAgentSessionAccessDeniedPayload            AIAgentSessionAccessDeniedPayload
+	AIAgentInvestigationCancelledPayload         AIAgentInvestigationCancelledPayload
+	AIAgentAlignmentStepPayload                  AIAgentAlignmentStepPayload
+	AIAgentAlignmentVerdictPayload               AIAgentAlignmentVerdictPayload
+	ShadowLLMRequestPayload                      ShadowLLMRequestPayload
+	ShadowLLMResponsePayload                     ShadowLLMResponsePayload
+	RemediationRequestWebhookAuditPayload        RemediationRequestWebhookAuditPayload
+	RemediationWorkflowWebhookAuditPayload       RemediationWorkflowWebhookAuditPayload
+	AuthwebhookWorkflowRegistrationFailedPayload AuthwebhookWorkflowRegistrationFailedPayload
+	EffectivenessAssessmentAuditPayload          EffectivenessAssessmentAuditPayload
+	ActionTypeCatalogCreatedPayload              ActionTypeCatalogCreatedPayload
+	ActionTypeCatalogUpdatedPayload              ActionTypeCatalogUpdatedPayload
+	ActionTypeCatalogDisabledPayload             ActionTypeCatalogDisabledPayload
+	ActionTypeCatalogReenabledPayload            ActionTypeCatalogReenabledPayload
+	ActionTypeCatalogDisableDeniedPayload        ActionTypeCatalogDisableDeniedPayload
+	ActionTypeWebhookAuditPayload                ActionTypeWebhookAuditPayload
+	ApifrontendTriageStartedPayload              ApifrontendTriageStartedPayload
+	ApifrontendTriageCompletedPayload            ApifrontendTriageCompletedPayload
+	ApifrontendRRCreatedPayload                  ApifrontendRRCreatedPayload
+	ApifrontendRRDeduplicatedPayload             ApifrontendRRDeduplicatedPayload
+	ApifrontendSessionCreatedPayload             ApifrontendSessionCreatedPayload
+	ApifrontendSessionCompletedPayload           ApifrontendSessionCompletedPayload
+	ApifrontendKADelegatedPayload                ApifrontendKADelegatedPayload
+	ApifrontendKAResultReceivedPayload           ApifrontendKAResultReceivedPayload
+	ApifrontendUserDecisionPayload               ApifrontendUserDecisionPayload
+	ApifrontendAuthAccessDeniedPayload           ApifrontendAuthAccessDeniedPayload
+	ApifrontendToolExecutedPayload               ApifrontendToolExecutedPayload
+	ApifrontendAuthSuccessPayload                ApifrontendAuthSuccessPayload
+	ApifrontendAuthFailurePayload                ApifrontendAuthFailurePayload
+	ApifrontendRatelimitDeniedPayload            ApifrontendRatelimitDeniedPayload
+	ApifrontendCircuitbreakerTripPayload         ApifrontendCircuitbreakerTripPayload
+	ApifrontendImpersonationCreatedPayload       ApifrontendImpersonationCreatedPayload
+	ApifrontendJWTDelegationPayload              ApifrontendJWTDelegationPayload
+	ApifrontendSessionPhaseChangedPayload        ApifrontendSessionPhaseChangedPayload
+	ApifrontendSessionDeletedPayload             ApifrontendSessionDeletedPayload
+	ApifrontendSessionAutoCancelledPayload       ApifrontendSessionAutoCancelledPayload
+	ApifrontendSessionRetentionDeletedPayload    ApifrontendSessionRetentionDeletedPayload
+	ApifrontendA2ATaskStartedPayload             ApifrontendA2ATaskStartedPayload
+	ApifrontendA2ATaskCompletedPayload           ApifrontendA2ATaskCompletedPayload
+	ApifrontendA2ATaskFailedPayload              ApifrontendA2ATaskFailedPayload
+	ApifrontendMCPToolFailedPayload              ApifrontendMCPToolFailedPayload
+	ApifrontendMCPSessionInitPayload             ApifrontendMCPSessionInitPayload
+	ApifrontendSeverityTriageCompletedPayload    ApifrontendSeverityTriageCompletedPayload
+	ApifrontendSeverityTriageFailedPayload       ApifrontendSeverityTriageFailedPayload
+	ApifrontendConfigReloadedPayload             ApifrontendConfigReloadedPayload
+	ApifrontendConfigRejectedPayload             ApifrontendConfigRejectedPayload
 }
 
 // AuditEventRequestEventDataType is oneOf type of AuditEventRequestEventData.
@@ -11603,6 +11632,7 @@ const (
 	AuditEventRequestEventDataRemediationworkflowAdmittedDeleteAuditEventRequestEventData          AuditEventRequestEventDataType = "remediationworkflow.admitted.delete"
 	AuditEventRequestEventDataRemediationworkflowAdmittedDeniedAuditEventRequestEventData          AuditEventRequestEventDataType = "remediationworkflow.admitted.denied"
 	AuditEventRequestEventDataRemediationworkflowAdmittedUpdateAuditEventRequestEventData          AuditEventRequestEventDataType = "remediationworkflow.admitted.update"
+	AuthwebhookWorkflowRegistrationFailedPayloadAuditEventRequestEventData                         AuditEventRequestEventDataType = "authwebhook.workflow.registration_failed"
 	AuditEventRequestEventDataEffectivenessAlertAssessedAuditEventRequestEventData                 AuditEventRequestEventDataType = "effectiveness.alert.assessed"
 	AuditEventRequestEventDataEffectivenessAlertDecayDetectedAuditEventRequestEventData            AuditEventRequestEventDataType = "effectiveness.alert_decay.detected"
 	AuditEventRequestEventDataEffectivenessAssessmentCompletedAuditEventRequestEventData           AuditEventRequestEventDataType = "effectiveness.assessment.completed"
@@ -11936,6 +11966,11 @@ func (s AuditEventRequestEventData) IsRemediationWorkflowWebhookAuditPayload() b
 	default:
 		return false
 	}
+}
+
+// IsAuthwebhookWorkflowRegistrationFailedPayload reports whether AuditEventRequestEventData is AuthwebhookWorkflowRegistrationFailedPayload.
+func (s AuditEventRequestEventData) IsAuthwebhookWorkflowRegistrationFailedPayload() bool {
+	return s.Type == AuthwebhookWorkflowRegistrationFailedPayloadAuditEventRequestEventData
 }
 
 // IsEffectivenessAssessmentAuditPayload reports whether AuditEventRequestEventData is EffectivenessAssessmentAuditPayload.
@@ -13433,6 +13468,27 @@ func NewAuditEventRequestEventDataRemediationworkflowAdmittedDeniedAuditEventReq
 func NewAuditEventRequestEventDataRemediationworkflowAdmittedUpdateAuditEventRequestEventData(v RemediationWorkflowWebhookAuditPayload) AuditEventRequestEventData {
 	var s AuditEventRequestEventData
 	s.SetRemediationWorkflowWebhookAuditPayload(AuditEventRequestEventDataRemediationworkflowAdmittedUpdateAuditEventRequestEventData, v)
+	return s
+}
+
+// SetAuthwebhookWorkflowRegistrationFailedPayload sets AuditEventRequestEventData to AuthwebhookWorkflowRegistrationFailedPayload.
+func (s *AuditEventRequestEventData) SetAuthwebhookWorkflowRegistrationFailedPayload(v AuthwebhookWorkflowRegistrationFailedPayload) {
+	s.Type = AuthwebhookWorkflowRegistrationFailedPayloadAuditEventRequestEventData
+	s.AuthwebhookWorkflowRegistrationFailedPayload = v
+}
+
+// GetAuthwebhookWorkflowRegistrationFailedPayload returns AuthwebhookWorkflowRegistrationFailedPayload and true boolean if AuditEventRequestEventData is AuthwebhookWorkflowRegistrationFailedPayload.
+func (s AuditEventRequestEventData) GetAuthwebhookWorkflowRegistrationFailedPayload() (v AuthwebhookWorkflowRegistrationFailedPayload, ok bool) {
+	if !s.IsAuthwebhookWorkflowRegistrationFailedPayload() {
+		return v, false
+	}
+	return s.AuthwebhookWorkflowRegistrationFailedPayload, true
+}
+
+// NewAuthwebhookWorkflowRegistrationFailedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from AuthwebhookWorkflowRegistrationFailedPayload.
+func NewAuthwebhookWorkflowRegistrationFailedPayloadAuditEventRequestEventData(v AuthwebhookWorkflowRegistrationFailedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetAuthwebhookWorkflowRegistrationFailedPayload(v)
 	return s
 }
 
@@ -14955,6 +15011,163 @@ func (s *AuditExportResponseHashChainVerification) SetVerificationTimestamp(val 
 // SetTamperedEventIds sets the value of TamperedEventIds.
 func (s *AuditExportResponseHashChainVerification) SetTamperedEventIds(val []string) {
 	s.TamperedEventIds = val
+}
+
+// Audit payload emitted by AuthWebhook's StartupReconciler when a RemediationWorkflow
+// CRD fails to re-register with DataStorage during startup (Issue #1246).
+// Enables operators to identify which workflows are degraded and why.
+// Ref: #/components/schemas/AuthwebhookWorkflowRegistrationFailedPayload
+type AuthwebhookWorkflowRegistrationFailedPayload struct {
+	// Event type for discriminator.
+	EventType AuthwebhookWorkflowRegistrationFailedPayloadEventType `json:"event_type"`
+	// Name of the RemediationWorkflow CRD that failed registration.
+	WorkflowName string `json:"workflow_name"`
+	// Namespace of the RemediationWorkflow CRD.
+	Namespace OptString `json:"namespace"`
+	// Structured failure reason matching the Ready condition reason.
+	// - DependencyMissing: permanent error (e.g., referenced action type not found)
+	// - DataStorageError: transient error exhausted retries or context cancelled
+	// - ValidationFailed: CRD content could not be marshaled.
+	Reason AuthwebhookWorkflowRegistrationFailedPayloadReason `json:"reason"`
+	// Human-readable error message with remediation context.
+	Message string `json:"message"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *AuthwebhookWorkflowRegistrationFailedPayload) GetEventType() AuthwebhookWorkflowRegistrationFailedPayloadEventType {
+	return s.EventType
+}
+
+// GetWorkflowName returns the value of WorkflowName.
+func (s *AuthwebhookWorkflowRegistrationFailedPayload) GetWorkflowName() string {
+	return s.WorkflowName
+}
+
+// GetNamespace returns the value of Namespace.
+func (s *AuthwebhookWorkflowRegistrationFailedPayload) GetNamespace() OptString {
+	return s.Namespace
+}
+
+// GetReason returns the value of Reason.
+func (s *AuthwebhookWorkflowRegistrationFailedPayload) GetReason() AuthwebhookWorkflowRegistrationFailedPayloadReason {
+	return s.Reason
+}
+
+// GetMessage returns the value of Message.
+func (s *AuthwebhookWorkflowRegistrationFailedPayload) GetMessage() string {
+	return s.Message
+}
+
+// SetEventType sets the value of EventType.
+func (s *AuthwebhookWorkflowRegistrationFailedPayload) SetEventType(val AuthwebhookWorkflowRegistrationFailedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetWorkflowName sets the value of WorkflowName.
+func (s *AuthwebhookWorkflowRegistrationFailedPayload) SetWorkflowName(val string) {
+	s.WorkflowName = val
+}
+
+// SetNamespace sets the value of Namespace.
+func (s *AuthwebhookWorkflowRegistrationFailedPayload) SetNamespace(val OptString) {
+	s.Namespace = val
+}
+
+// SetReason sets the value of Reason.
+func (s *AuthwebhookWorkflowRegistrationFailedPayload) SetReason(val AuthwebhookWorkflowRegistrationFailedPayloadReason) {
+	s.Reason = val
+}
+
+// SetMessage sets the value of Message.
+func (s *AuthwebhookWorkflowRegistrationFailedPayload) SetMessage(val string) {
+	s.Message = val
+}
+
+// Event type for discriminator.
+type AuthwebhookWorkflowRegistrationFailedPayloadEventType string
+
+const (
+	AuthwebhookWorkflowRegistrationFailedPayloadEventTypeAuthwebhookWorkflowRegistrationFailed AuthwebhookWorkflowRegistrationFailedPayloadEventType = "authwebhook.workflow.registration_failed"
+)
+
+// AllValues returns all AuthwebhookWorkflowRegistrationFailedPayloadEventType values.
+func (AuthwebhookWorkflowRegistrationFailedPayloadEventType) AllValues() []AuthwebhookWorkflowRegistrationFailedPayloadEventType {
+	return []AuthwebhookWorkflowRegistrationFailedPayloadEventType{
+		AuthwebhookWorkflowRegistrationFailedPayloadEventTypeAuthwebhookWorkflowRegistrationFailed,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AuthwebhookWorkflowRegistrationFailedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case AuthwebhookWorkflowRegistrationFailedPayloadEventTypeAuthwebhookWorkflowRegistrationFailed:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AuthwebhookWorkflowRegistrationFailedPayloadEventType) UnmarshalText(data []byte) error {
+	switch AuthwebhookWorkflowRegistrationFailedPayloadEventType(data) {
+	case AuthwebhookWorkflowRegistrationFailedPayloadEventTypeAuthwebhookWorkflowRegistrationFailed:
+		*s = AuthwebhookWorkflowRegistrationFailedPayloadEventTypeAuthwebhookWorkflowRegistrationFailed
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Structured failure reason matching the Ready condition reason.
+// - DependencyMissing: permanent error (e.g., referenced action type not found)
+// - DataStorageError: transient error exhausted retries or context cancelled
+// - ValidationFailed: CRD content could not be marshaled.
+type AuthwebhookWorkflowRegistrationFailedPayloadReason string
+
+const (
+	AuthwebhookWorkflowRegistrationFailedPayloadReasonDependencyMissing AuthwebhookWorkflowRegistrationFailedPayloadReason = "DependencyMissing"
+	AuthwebhookWorkflowRegistrationFailedPayloadReasonDataStorageError  AuthwebhookWorkflowRegistrationFailedPayloadReason = "DataStorageError"
+	AuthwebhookWorkflowRegistrationFailedPayloadReasonValidationFailed  AuthwebhookWorkflowRegistrationFailedPayloadReason = "ValidationFailed"
+)
+
+// AllValues returns all AuthwebhookWorkflowRegistrationFailedPayloadReason values.
+func (AuthwebhookWorkflowRegistrationFailedPayloadReason) AllValues() []AuthwebhookWorkflowRegistrationFailedPayloadReason {
+	return []AuthwebhookWorkflowRegistrationFailedPayloadReason{
+		AuthwebhookWorkflowRegistrationFailedPayloadReasonDependencyMissing,
+		AuthwebhookWorkflowRegistrationFailedPayloadReasonDataStorageError,
+		AuthwebhookWorkflowRegistrationFailedPayloadReasonValidationFailed,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AuthwebhookWorkflowRegistrationFailedPayloadReason) MarshalText() ([]byte, error) {
+	switch s {
+	case AuthwebhookWorkflowRegistrationFailedPayloadReasonDependencyMissing:
+		return []byte(s), nil
+	case AuthwebhookWorkflowRegistrationFailedPayloadReasonDataStorageError:
+		return []byte(s), nil
+	case AuthwebhookWorkflowRegistrationFailedPayloadReasonValidationFailed:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AuthwebhookWorkflowRegistrationFailedPayloadReason) UnmarshalText(data []byte) error {
+	switch AuthwebhookWorkflowRegistrationFailedPayloadReason(data) {
+	case AuthwebhookWorkflowRegistrationFailedPayloadReasonDependencyMissing:
+		*s = AuthwebhookWorkflowRegistrationFailedPayloadReasonDependencyMissing
+		return nil
+	case AuthwebhookWorkflowRegistrationFailedPayloadReasonDataStorageError:
+		*s = AuthwebhookWorkflowRegistrationFailedPayloadReasonDataStorageError
+		return nil
+	case AuthwebhookWorkflowRegistrationFailedPayloadReasonValidationFailed:
+		*s = AuthwebhookWorkflowRegistrationFailedPayloadReasonValidationFailed
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // Ref: #/components/schemas/BatchAuditEventResponse
