@@ -124,6 +124,7 @@
 | PROPOSAL-EXT-004 | Goose Recipes as AgenticWorkflow Runtime (pluggable multi-runtime model) | 📋 Draft | 2026-05-19 | [PROPOSAL-EXT-004-goose-recipes.md](proposals/PROPOSAL-EXT-004-goose-recipes.md) |
 | PROPOSAL-EXT-005 | Oracle Agent Spec (PyAgentSpec + LangGraph) as AgenticWorkflow Runtime | 📋 Draft | 2026-05-19 | [PROPOSAL-EXT-005-oracle-agent-spec.md](proposals/PROPOSAL-EXT-005-oracle-agent-spec.md) |
 | PROPOSAL-EXT-006 | LangChain Deep Agents as AgenticWorkflow Runtime (specialist investigations) | 📋 Draft | 2026-05-19 | [PROPOSAL-EXT-006-deep-agents.md](proposals/PROPOSAL-EXT-006-deep-agents.md) |
+| PROPOSAL-EXT-007 | Pre-Investigation AgenticWorkflow Pipeline in SP (adaptive triage, multi-domain correlation) | 📋 Draft | 2026-05-23 | [PROPOSAL-EXT-007-pre-investigation-pipeline.md](proposals/PROPOSAL-EXT-007-pre-investigation-pipeline.md) |
 
 ---
 

@@ -20,6 +20,14 @@ This directory contains both spike summary documents and spike source code.
 | [SPIKE-GOOSE-MCP-ROUNDTRIP](SPIKE-GOOSE-MCP-ROUNDTRIP.md) | COMPLETED | 96% | [EXT-004](../proposals/PROPOSAL-EXT-004-goose-recipes.md) | [goose-mcp-roundtrip/](./goose-mcp-roundtrip/) |
 | [SPIKE-DEEP-AGENTS](SPIKE-DEEP-AGENTS.md) | COMPLETED | 96% | [EXT-006](../proposals/PROPOSAL-EXT-006-deep-agents.md) | [pyagentspec-langgraph/05_deepagents_validation.py](./pyagentspec-langgraph/05_deepagents_validation.py) |
 
+### v1.6 — Pre-Investigation Pipeline (planned)
+
+| Spike | Status | Confidence | Proposal | Code |
+|---|---|---|---|---|
+| SPIKE-ADAPTIVE-TRIAGE | PLANNED | — | [EXT-007](../proposals/PROPOSAL-EXT-007-pre-investigation-pipeline.md) | — |
+| SPIKE-PARALLEL-DOMAIN-AGENTS | PLANNED | — | [EXT-007](../proposals/PROPOSAL-EXT-007-pre-investigation-pipeline.md) | — |
+| SPIKE-CORRELATOR-CAUSAL-CHAIN | PLANNED | — | [EXT-007](../proposals/PROPOSAL-EXT-007-pre-investigation-pipeline.md) | — |
+
 ### v1.5 — Agent Runtime Evaluation
 
 | Spike | Status | Confidence | Proposal | Code |
