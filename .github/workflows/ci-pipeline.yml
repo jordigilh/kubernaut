@@ -20,7 +20,7 @@ name: CI Pipeline
 #   - detect-changes job uses dorny/paths-filter to detect code changes
 #   - Code PRs: all CI jobs run; merge-gate checks results
 #   - Docs-only PRs: all CI jobs skipped; merge-gate auto-passes
-#   - Spike/docs PRs (spikes/**, docs/**) excluded from code filter via negation
+#   - Spike/docs PRs (docs/**, spikes/**) don't match any positive pattern (no **.go glob)
 #   - Single required check in branch protection: "Merge Gate"
 #   - Push to main → always runs (full validation)
 #
@@ -77,25 +77,26 @@ jobs:
           # Note: dorny/paths-filter uses picomatch globs. Negation patterns
           # must appear AFTER the positive patterns they override. Files under
           # spikes/ and docs/ are non-production and should not trigger CI.
+          # NOTE: We use explicit directory globs instead of '**.go' because
+          # dorny/paths-filter's picomatch globstar matches at any depth,
+          # causing negation patterns (!spikes/**, !docs/**) to fail when a
+          # file like spikes/foo/main.go matches '**.go' positively.
           filters: |
             code:
-              - '**.go'
-              - 'go.mod'
-              - 'go.sum'
-              - 'test/**'
               - 'cmd/**'
               - 'pkg/**'
               - 'internal/**'
               - 'api/**'
+              - 'test/**'
               - 'migrations/**'
+              - 'go.mod'
+              - 'go.sum'
               - 'Makefile'
               - '.github/workflows/**'
               - 'docker/**'
               - 'charts/**'
               - 'scripts/helm-smoke-test.sh'
               - 'config/**'
-              - '!spikes/**'
-              - '!docs/**'
 
   # ========================================
   # STAGE 1: LINT, LICENSE SCAN & UNIT TESTS (ALL PARALLEL)
