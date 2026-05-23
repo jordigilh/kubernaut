@@ -2,10 +2,23 @@
 
 **Status**: ✅ **APPROVED** (Production Standard)
 **Date**: November 8, 2025
-**Last Reviewed**: May 19, 2026
-**Version**: 2.0
+**Last Reviewed**: May 23, 2026
+**Version**: 2.1
 **Confidence**: 95%
 **Authority Level**: SYSTEM-WIDE - Defines audit requirements for all 13 services
+
+**Recent Changes** (v2.1 - May 23, 2026):
+- **Auth Webhook**: Added RemediationWorkflow audit events per ADR-058 / Issue #1246:
+  - `remediationworkflow.admitted.create` — RW CREATE admitted by webhook
+  - `remediationworkflow.admitted.update` — RW UPDATE admitted by webhook
+  - `remediationworkflow.admitted.delete` — RW DELETE admitted by webhook (sets CatalogStatus=Disabled)
+  - `remediationworkflow.admitted.denied` — RW CREATE/UPDATE denied (validation/auth failure)
+  - `authwebhook.workflow.registration_failed` — Startup reconciler: RW registration failed (graceful degradation)
+- **Category**: `workflow` (per ADR-034 v1.8 event_category = business domain)
+- **Implementation**: `pkg/authwebhook/remediationworkflow_audit.go`, `pkg/authwebhook/startup_reconciler.go`
+- **Delivery**: Events batched via `pkg/audit.BufferedAuditStore` (non-blocking, best-effort)
+- **Expected Volume**: +100 events/day (RW admission lifecycle + startup re-registration)
+- **Authority**: ADR-058, Issue #1246 (graceful degradation), BR-WORKFLOW-007
 
 **Recent Changes** (v2.0 - May 19, 2026):
 - **API Frontend (AF)**: Added as P0 MUST service (8th P0, 13th overall) per Issue #1156 (SOC2 AU-2)
@@ -463,25 +476,46 @@ Kubernaut consists of 12 microservices with different responsibilities. Not all 
 
 **Audit Events**:
 
-| Event Type | Description | Priority |
-|------------|-------------|----------|
-| `actiontype.admitted.create` | ActionType CREATE admitted by webhook | P0 |
-| `actiontype.admitted.update` | ActionType UPDATE admitted by webhook | P0 |
-| `actiontype.admitted.delete` | ActionType DELETE admitted by webhook (soft-disable) | P0 |
-| `actiontype.denied.delete` | ActionType DELETE denied (active workflow dependencies) | P0 |
+| Event Type | Description | Category | Priority |
+|------------|-------------|----------|----------|
+| `actiontype.admitted.create` | ActionType CREATE admitted by webhook | `actiontype` | P0 |
+| `actiontype.admitted.update` | ActionType UPDATE admitted by webhook | `actiontype` | P0 |
+| `actiontype.admitted.delete` | ActionType DELETE admitted by webhook (soft-disable) | `actiontype` | P0 |
+| `actiontype.denied.create` | ActionType CREATE denied | `actiontype` | P0 |
+| `actiontype.denied.update` | ActionType UPDATE denied | `actiontype` | P0 |
+| `actiontype.denied.delete` | ActionType DELETE denied (active workflow dependencies) | `actiontype` | P0 |
+| `remediationworkflow.admitted.create` | RemediationWorkflow CREATE admitted by webhook | `workflow` | P0 |
+| `remediationworkflow.admitted.update` | RemediationWorkflow UPDATE admitted by webhook | `workflow` | P0 |
+| `remediationworkflow.admitted.delete` | RemediationWorkflow DELETE admitted by webhook | `workflow` | P0 |
+| `remediationworkflow.admitted.denied` | RemediationWorkflow CREATE/UPDATE denied | `workflow` | P0 |
+| `authwebhook.workflow.registration_failed` | Startup reconciler: RW re-registration failed (graceful degradation) | `workflow` | P0 |
 
-**Webhook Admission Events** (v1.7 - March 2026):
+**ActionType Webhook Admission Events** (v1.7 - March 2026):
 - **Authority**: BR-WORKFLOW-007.4, DD-ACTIONTYPE-001, Issue #300
 - **Compliance**: SOC2 Type II requires admission decision audit trail for taxonomy governance
 - **Implementation**: `pkg/authwebhook/actiontype_audit.go`
 - **Payload Structure**: Events carry ActionType spec, user identity, and DS result as typed payloads
 - **Delivery**: Events are batched and written to Data Storage audit API via async buffered store
 
+**RemediationWorkflow Webhook Admission Events** (ADR-058):
+- **Authority**: ADR-058, Issue #300
+- **Compliance**: SOC2 Type II requires admission decision audit trail for workflow governance
+- **Implementation**: `pkg/authwebhook/remediationworkflow_audit.go`
+- **Payload Structure**: Events carry RW name, workflow ID (when available), and DS registration result
+
+**Startup Reconciler Audit Events** (v2.1 - May 2026, Issue #1246):
+- **Authority**: Issue #1246 (graceful degradation for RW re-registration failures)
+- **Compliance**: AU-3 (audit content), SI-11 (error handling observability)
+- **Implementation**: `pkg/authwebhook/startup_reconciler.go`
+- **Actor**: `system:authwebhook-startup` (service account, not user-initiated)
+- **Trigger**: RW registration fails with permanent or deadline-exhausted error during startup sync
+- **Severity**: `high` (operational degradation requiring operator attention)
+
 **Industry Precedent**: Kubernetes Admission Audit Logs, OPA/Gatekeeper decision logs
 
-**Expected Volume**: 100 events/day, 3 MB/month
+**Expected Volume**: 200 events/day, 6 MB/month (ActionType + RemediationWorkflow admission + startup reconciliation)
 
-**Authority**: BR-WORKFLOW-007.4, `pkg/authwebhook/actiontype_audit.go`
+**Authority**: BR-WORKFLOW-007.4, ADR-058, Issue #1246, `pkg/authwebhook/actiontype_audit.go`, `pkg/authwebhook/remediationworkflow_audit.go`, `pkg/authwebhook/startup_reconciler.go`
 
 ---
 
@@ -810,7 +844,7 @@ context_api:
 | **Remediation Execution Controller** | 2,310 | 69,300 | 69.3 MB |
 | **Notification Service** | 550 | 16,500 | 16.5 MB |
 | **Data Storage Service** | 5,100 | 153,000 | 153 MB |
-| **Auth Webhook Service** | 100 | 3,000 | 3 MB |
+| **Auth Webhook Service** | 200 | 6,000 | 6 MB |
 | **Effectiveness Monitor Service** | 500 | 15,000 | 15 MB |
 | **Signal Processing Controller** | 1,000 | 30,000 | 30 MB |
 | **Remediation Orchestrator Controller** | 1,200 | 36,000 | 36 MB |
