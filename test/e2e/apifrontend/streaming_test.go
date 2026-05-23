@@ -38,18 +38,6 @@ var _ = Describe("Investigation Streaming (G3)", Label("e2e", "phase3", "g3"), f
 		return cmd.CombinedOutput()
 	}
 
-	sessionNameSnapshot := func(ctx context.Context) map[string]struct{} {
-		out, err := kubectlOut(ctx, "get", "investigationsessions", "-n", e2eNamespace,
-			"-o", "jsonpath={.items[*].metadata.name}")
-		Expect(err).NotTo(HaveOccurred(), string(out))
-		names := strings.Fields(strings.TrimSpace(string(out)))
-		m := make(map[string]struct{}, len(names))
-		for _, n := range names {
-			m[n] = struct{}{}
-		}
-		return m
-	}
-
 	type investigationSessionItem struct {
 		Metadata struct {
 			Name              string `json:"name"`
@@ -121,7 +109,8 @@ var _ = Describe("Investigation Streaming (G3)", Label("e2e", "phase3", "g3"), f
 		streamCtx, streamCancel := context.WithCancel(context.Background())
 		defer streamCancel()
 
-		resp, err := a2aSSEPost(streamCtx, a2aMessageStream("stream-02", "list pods in kubernaut-system"))
+		const taskID = "stream-02"
+		resp, err := a2aSSEPost(streamCtx, a2aMessageStream(taskID, "list pods in kubernaut-system"))
 		Expect(err).NotTo(HaveOccurred())
 		Expect(resp.StatusCode).To(Equal(http.StatusOK))
 		Expect(resp.Header.Get("Content-Type")).To(ContainSubstring("text/event-stream"))
@@ -135,12 +124,15 @@ var _ = Describe("Investigation Streaming (G3)", Label("e2e", "phase3", "g3"), f
 		// which a non-remediating prompt ("list pods") never triggers.
 		// The session exists in-memory only; CRD materialization occurs when
 		// the agent produces a real RemediationRequest via af_create_rr.
+		//
+		// Filter by this test's task ID to avoid false positives from CRDs
+		// created by prior tests (e.g. STREAM-01) that arrive with a delay.
 		kctlCtx := context.Background()
-		before := sessionNameSnapshot(kctlCtx)
 		Consistently(func() bool {
 			list := listInvestigationSessions(kctlCtx)
 			for _, it := range list.Items {
-				if _, seen := before[it.Metadata.Name]; !seen {
+				if it.Spec.A2ATaskID == taskID {
+					GinkgoWriter.Printf("unexpected CRD for task %s: %s\n", taskID, it.Metadata.Name)
 					return false
 				}
 			}

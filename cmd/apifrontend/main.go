@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"net/http"
 	"os"
@@ -760,6 +762,19 @@ func buildAuthMiddleware(cfg *config.Config, reg *metrics.Registry, auditor audi
 	}
 
 	var validatorOpts []auth.JWTValidatorOption
+	if cfg.Auth.OIDCCaFile != "" {
+		httpClient, err := buildOIDCHTTPClient(cfg.Auth.OIDCCaFile)
+		if err != nil {
+			logger.Error(err, "failed to build OIDC HTTP client with custom CA")
+			return func(next http.Handler) http.Handler {
+				return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					http.Error(w, "authentication system unavailable", http.StatusServiceUnavailable)
+				})
+			}, alwaysReady
+		}
+		validatorOpts = append(validatorOpts, auth.WithHTTPClient(httpClient))
+		logger.Info("OIDC JWKS fetcher configured with custom CA", "caFile", cfg.Auth.OIDCCaFile)
+	}
 	if cfg.Auth.EnableReplayProtection {
 		validatorOpts = append(validatorOpts, auth.WithReplayCache(auth.NewReplayCache(10*time.Minute)))
 	}
@@ -781,6 +796,32 @@ func buildAuthMiddleware(cfg *config.Config, reg *metrics.Registry, auditor audi
 		AuthDuration: reg.AuthDuration,
 	})
 	return mw, validator.Ready
+}
+
+// buildOIDCHTTPClient creates an HTTP client that trusts the system CAs plus
+// the additional CA bundle at caFile. Used to reach OIDC providers whose TLS
+// certificate is signed by a non-public CA (e.g., OpenShift ingress operator).
+func buildOIDCHTTPClient(caFile string) (*http.Client, error) {
+	caPEM, err := os.ReadFile(caFile) //nolint:gosec // path from trusted config
+	if err != nil {
+		return nil, fmt.Errorf("reading OIDC CA file %s: %w", caFile, err)
+	}
+	pool, err := x509.SystemCertPool()
+	if err != nil {
+		pool = x509.NewCertPool()
+	}
+	if !pool.AppendCertsFromPEM(caPEM) {
+		return nil, fmt.Errorf("no valid certificates found in %s", caFile)
+	}
+	return &http.Client{
+		Timeout: 10 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				RootCAs:    pool,
+				MinVersion: tls.VersionTLS12,
+			},
+		},
+	}, nil
 }
 
 func parseLogLevel(s string) (zapcore.Level, error) {
