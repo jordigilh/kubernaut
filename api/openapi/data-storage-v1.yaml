@@ -2733,6 +2733,7 @@ components:
             - $ref: '#/components/schemas/ShadowLLMResponsePayload'
             - $ref: '#/components/schemas/RemediationRequestWebhookAuditPayload'
             - $ref: '#/components/schemas/RemediationWorkflowWebhookAuditPayload'
+            - $ref: '#/components/schemas/AuthwebhookWorkflowRegistrationFailedPayload'
             - $ref: '#/components/schemas/EffectivenessAssessmentAuditPayload'
             - $ref: '#/components/schemas/ActionTypeCatalogCreatedPayload'
             - $ref: '#/components/schemas/ActionTypeCatalogUpdatedPayload'
@@ -2814,6 +2815,7 @@ components:
               'remediationworkflow.admitted.update': '#/components/schemas/RemediationWorkflowWebhookAuditPayload'
               'remediationworkflow.admitted.delete': '#/components/schemas/RemediationWorkflowWebhookAuditPayload'
               'remediationworkflow.admitted.denied': '#/components/schemas/RemediationWorkflowWebhookAuditPayload'
+              'authwebhook.workflow.registration_failed': '#/components/schemas/AuthwebhookWorkflowRegistrationFailedPayload'
               'workflow.catalog.actions_listed': '#/components/schemas/WorkflowDiscoveryAuditPayload'
               'workflow.catalog.workflows_listed': '#/components/schemas/WorkflowDiscoveryAuditPayload'
               'workflow.catalog.workflow_retrieved': '#/components/schemas/WorkflowDiscoveryAuditPayload'
@@ -4685,6 +4687,41 @@ components:
           type: string
           description: Reason for denial (only set when action=denied)
           example: "data storage registration failed"
+
+    AuthwebhookWorkflowRegistrationFailedPayload:
+      type: object
+      required: [event_type, workflow_name, reason, message]
+      description: |
+        Audit payload emitted by AuthWebhook's StartupReconciler when a RemediationWorkflow
+        CRD fails to re-register with DataStorage during startup (Issue #1246).
+        Enables operators to identify which workflows are degraded and why.
+      properties:
+        event_type:
+          type: string
+          enum:
+            - 'authwebhook.workflow.registration_failed'
+          description: Event type for discriminator
+        workflow_name:
+          type: string
+          description: Name of the RemediationWorkflow CRD that failed registration
+          example: "crashloop-rollback-v1"
+        namespace:
+          type: string
+          description: Namespace of the RemediationWorkflow CRD
+          example: "kubernaut-system"
+        reason:
+          type: string
+          enum: [DependencyMissing, DataStorageError, ValidationFailed]
+          description: |
+            Structured failure reason matching the Ready condition reason.
+            - DependencyMissing: permanent error (e.g., referenced action type not found)
+            - DataStorageError: transient error exhausted retries or context cancelled
+            - ValidationFailed: CRD content could not be marshaled
+          example: "DependencyMissing"
+        message:
+          type: string
+          description: Human-readable error message with remediation context
+          example: "action_type 'ScaleMemory' is not in the taxonomy"
 
     # ========================================
     # Effectiveness Monitor Audit Payloads

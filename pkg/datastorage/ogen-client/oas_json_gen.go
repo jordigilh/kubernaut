@@ -17723,6 +17723,30 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
+	case AuthwebhookWorkflowRegistrationFailedPayloadAuditEventEventData:
+		e.FieldStart("event_type")
+		e.Str("authwebhook.workflow.registration_failed")
+		{
+			s := s.AuthwebhookWorkflowRegistrationFailedPayload
+			{
+				e.FieldStart("workflow_name")
+				e.Str(s.WorkflowName)
+			}
+			{
+				if s.Namespace.Set {
+					e.FieldStart("namespace")
+					s.Namespace.Encode(e)
+				}
+			}
+			{
+				e.FieldStart("reason")
+				s.Reason.Encode(e)
+			}
+			{
+				e.FieldStart("message")
+				e.Str(s.Message)
+			}
+		}
 	case AuditEventEventDataEffectivenessAlertAssessedAuditEventEventData, AuditEventEventDataEffectivenessAlertDecayDetectedAuditEventEventData, AuditEventEventDataEffectivenessAssessmentCompletedAuditEventEventData, AuditEventEventDataEffectivenessAssessmentScheduledAuditEventEventData, AuditEventEventDataEffectivenessHashComputedAuditEventEventData, AuditEventEventDataEffectivenessHealthAssessedAuditEventEventData, AuditEventEventDataEffectivenessMetricsAssessedAuditEventEventData:
 		switch s.Type {
 		case AuditEventEventDataEffectivenessAlertAssessedAuditEventEventData:
@@ -19155,6 +19179,9 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 				case "remediationworkflow.admitted.update":
 					s.Type = AuditEventEventDataRemediationworkflowAdmittedUpdateAuditEventEventData
 					found = true
+				case "authwebhook.workflow.registration_failed":
+					s.Type = AuthwebhookWorkflowRegistrationFailedPayloadAuditEventEventData
+					found = true
 				case "effectiveness.alert.assessed":
 					s.Type = AuditEventEventDataEffectivenessAlertAssessedAuditEventEventData
 					found = true
@@ -19503,6 +19530,10 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 		}
 	case AuditEventEventDataRemediationworkflowAdmittedCreateAuditEventEventData, AuditEventEventDataRemediationworkflowAdmittedDeleteAuditEventEventData, AuditEventEventDataRemediationworkflowAdmittedDeniedAuditEventEventData, AuditEventEventDataRemediationworkflowAdmittedUpdateAuditEventEventData:
 		if err := s.RemediationWorkflowWebhookAuditPayload.Decode(d); err != nil {
+			return err
+		}
+	case AuthwebhookWorkflowRegistrationFailedPayloadAuditEventEventData:
+		if err := s.AuthwebhookWorkflowRegistrationFailedPayload.Decode(d); err != nil {
 			return err
 		}
 	case AuditEventEventDataEffectivenessAlertAssessedAuditEventEventData, AuditEventEventDataEffectivenessAlertDecayDetectedAuditEventEventData, AuditEventEventDataEffectivenessAssessmentCompletedAuditEventEventData, AuditEventEventDataEffectivenessAssessmentScheduledAuditEventEventData, AuditEventEventDataEffectivenessHashComputedAuditEventEventData, AuditEventEventDataEffectivenessHealthAssessedAuditEventEventData, AuditEventEventDataEffectivenessMetricsAssessedAuditEventEventData:
@@ -22439,6 +22470,30 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
+	case AuthwebhookWorkflowRegistrationFailedPayloadAuditEventRequestEventData:
+		e.FieldStart("event_type")
+		e.Str("authwebhook.workflow.registration_failed")
+		{
+			s := s.AuthwebhookWorkflowRegistrationFailedPayload
+			{
+				e.FieldStart("workflow_name")
+				e.Str(s.WorkflowName)
+			}
+			{
+				if s.Namespace.Set {
+					e.FieldStart("namespace")
+					s.Namespace.Encode(e)
+				}
+			}
+			{
+				e.FieldStart("reason")
+				s.Reason.Encode(e)
+			}
+			{
+				e.FieldStart("message")
+				e.Str(s.Message)
+			}
+		}
 	case AuditEventRequestEventDataEffectivenessAlertAssessedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessAlertDecayDetectedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessAssessmentCompletedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessAssessmentScheduledAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessHashComputedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessHealthAssessedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessMetricsAssessedAuditEventRequestEventData:
 		switch s.Type {
 		case AuditEventRequestEventDataEffectivenessAlertAssessedAuditEventRequestEventData:
@@ -23871,6 +23926,9 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 				case "remediationworkflow.admitted.update":
 					s.Type = AuditEventRequestEventDataRemediationworkflowAdmittedUpdateAuditEventRequestEventData
 					found = true
+				case "authwebhook.workflow.registration_failed":
+					s.Type = AuthwebhookWorkflowRegistrationFailedPayloadAuditEventRequestEventData
+					found = true
 				case "effectiveness.alert.assessed":
 					s.Type = AuditEventRequestEventDataEffectivenessAlertAssessedAuditEventRequestEventData
 					found = true
@@ -24219,6 +24277,10 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 		}
 	case AuditEventRequestEventDataRemediationworkflowAdmittedCreateAuditEventRequestEventData, AuditEventRequestEventDataRemediationworkflowAdmittedDeleteAuditEventRequestEventData, AuditEventRequestEventDataRemediationworkflowAdmittedDeniedAuditEventRequestEventData, AuditEventRequestEventDataRemediationworkflowAdmittedUpdateAuditEventRequestEventData:
 		if err := s.RemediationWorkflowWebhookAuditPayload.Decode(d); err != nil {
+			return err
+		}
+	case AuthwebhookWorkflowRegistrationFailedPayloadAuditEventRequestEventData:
+		if err := s.AuthwebhookWorkflowRegistrationFailedPayload.Decode(d); err != nil {
 			return err
 		}
 	case AuditEventRequestEventDataEffectivenessAlertAssessedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessAlertDecayDetectedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessAssessmentCompletedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessAssessmentScheduledAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessHashComputedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessHealthAssessedAuditEventRequestEventData, AuditEventRequestEventDataEffectivenessMetricsAssessedAuditEventRequestEventData:
@@ -25832,6 +25894,246 @@ func (s *AuditExportResponseHashChainVerification) MarshalJSON() ([]byte, error)
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *AuditExportResponseHashChainVerification) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *AuthwebhookWorkflowRegistrationFailedPayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *AuthwebhookWorkflowRegistrationFailedPayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		e.FieldStart("workflow_name")
+		e.Str(s.WorkflowName)
+	}
+	{
+		if s.Namespace.Set {
+			e.FieldStart("namespace")
+			s.Namespace.Encode(e)
+		}
+	}
+	{
+		e.FieldStart("reason")
+		s.Reason.Encode(e)
+	}
+	{
+		e.FieldStart("message")
+		e.Str(s.Message)
+	}
+}
+
+var jsonFieldsNameOfAuthwebhookWorkflowRegistrationFailedPayload = [5]string{
+	0: "event_type",
+	1: "workflow_name",
+	2: "namespace",
+	3: "reason",
+	4: "message",
+}
+
+// Decode decodes AuthwebhookWorkflowRegistrationFailedPayload from json.
+func (s *AuthwebhookWorkflowRegistrationFailedPayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AuthwebhookWorkflowRegistrationFailedPayload to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "workflow_name":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.WorkflowName = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"workflow_name\"")
+			}
+		case "namespace":
+			if err := func() error {
+				s.Namespace.Reset()
+				if err := s.Namespace.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"namespace\"")
+			}
+		case "reason":
+			requiredBitSet[0] |= 1 << 3
+			if err := func() error {
+				if err := s.Reason.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"reason\"")
+			}
+		case "message":
+			requiredBitSet[0] |= 1 << 4
+			if err := func() error {
+				v, err := d.Str()
+				s.Message = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"message\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode AuthwebhookWorkflowRegistrationFailedPayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00011011,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfAuthwebhookWorkflowRegistrationFailedPayload) {
+					name = jsonFieldsNameOfAuthwebhookWorkflowRegistrationFailedPayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *AuthwebhookWorkflowRegistrationFailedPayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AuthwebhookWorkflowRegistrationFailedPayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AuthwebhookWorkflowRegistrationFailedPayloadEventType as json.
+func (s AuthwebhookWorkflowRegistrationFailedPayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes AuthwebhookWorkflowRegistrationFailedPayloadEventType from json.
+func (s *AuthwebhookWorkflowRegistrationFailedPayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AuthwebhookWorkflowRegistrationFailedPayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch AuthwebhookWorkflowRegistrationFailedPayloadEventType(v) {
+	case AuthwebhookWorkflowRegistrationFailedPayloadEventTypeAuthwebhookWorkflowRegistrationFailed:
+		*s = AuthwebhookWorkflowRegistrationFailedPayloadEventTypeAuthwebhookWorkflowRegistrationFailed
+	default:
+		*s = AuthwebhookWorkflowRegistrationFailedPayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s AuthwebhookWorkflowRegistrationFailedPayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AuthwebhookWorkflowRegistrationFailedPayloadEventType) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AuthwebhookWorkflowRegistrationFailedPayloadReason as json.
+func (s AuthwebhookWorkflowRegistrationFailedPayloadReason) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes AuthwebhookWorkflowRegistrationFailedPayloadReason from json.
+func (s *AuthwebhookWorkflowRegistrationFailedPayloadReason) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AuthwebhookWorkflowRegistrationFailedPayloadReason to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch AuthwebhookWorkflowRegistrationFailedPayloadReason(v) {
+	case AuthwebhookWorkflowRegistrationFailedPayloadReasonDependencyMissing:
+		*s = AuthwebhookWorkflowRegistrationFailedPayloadReasonDependencyMissing
+	case AuthwebhookWorkflowRegistrationFailedPayloadReasonDataStorageError:
+		*s = AuthwebhookWorkflowRegistrationFailedPayloadReasonDataStorageError
+	case AuthwebhookWorkflowRegistrationFailedPayloadReasonValidationFailed:
+		*s = AuthwebhookWorkflowRegistrationFailedPayloadReasonValidationFailed
+	default:
+		*s = AuthwebhookWorkflowRegistrationFailedPayloadReason(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s AuthwebhookWorkflowRegistrationFailedPayloadReason) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AuthwebhookWorkflowRegistrationFailedPayloadReason) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

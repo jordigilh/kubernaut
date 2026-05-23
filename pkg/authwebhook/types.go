@@ -19,6 +19,9 @@ const (
 	EventTypeRWAdmittedDelete = "remediationworkflow.admitted.delete"
 	EventTypeRWAdmittedDenied = "remediationworkflow.admitted.denied"
 
+	// Issue #1246: Startup reconciler graceful degradation audit events
+	EventTypeRWRegistrationFailed = "authwebhook.workflow.registration_failed"
+
 	// ADR-059: ActionType CRD admission event types (BR-WORKFLOW-007)
 	EventTypeATAdmittedCreate = "actiontype.admitted.create"
 	EventTypeATAdmittedUpdate = "actiontype.admitted.update"

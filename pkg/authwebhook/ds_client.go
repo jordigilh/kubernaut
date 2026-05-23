@@ -105,13 +105,13 @@ func (a *DSClientAdapter) CreateWorkflowInline(ctx context.Context, content, sou
 		rw := (*ogenclient.RemediationWorkflow)(v)
 		return mapOgenWorkflowToResult(rw, true), nil
 	case *ogenclient.CreateWorkflowBadRequest:
-		return nil, rfc7807Error("workflow registration rejected", (*ogenclient.RFC7807Problem)(v))
+		return nil, NewPermanentError(rfc7807Error("workflow registration rejected", (*ogenclient.RFC7807Problem)(v)).Error())
 	case *ogenclient.CreateWorkflowConflict:
 		return nil, rfc7807Error("workflow already exists", (*ogenclient.RFC7807Problem)(v))
 	case *ogenclient.CreateWorkflowForbidden:
-		return nil, rfc7807Error("workflow registration forbidden", (*ogenclient.RFC7807Problem)(v))
+		return nil, NewPermanentError(rfc7807Error("workflow registration forbidden", (*ogenclient.RFC7807Problem)(v)).Error())
 	case *ogenclient.CreateWorkflowUnauthorized:
-		return nil, rfc7807Error("workflow registration unauthorized", (*ogenclient.RFC7807Problem)(v))
+		return nil, NewPermanentError(rfc7807Error("workflow registration unauthorized", (*ogenclient.RFC7807Problem)(v)).Error())
 	case *ogenclient.CreateWorkflowInternalServerError:
 		return nil, rfc7807Error("workflow registration server error", (*ogenclient.RFC7807Problem)(v))
 	default:

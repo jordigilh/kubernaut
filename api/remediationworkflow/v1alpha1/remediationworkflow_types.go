@@ -204,6 +204,10 @@ type RemediationWorkflowStatus struct {
 	// PreviouslyExisted indicates if this workflow was re-registered after deletion
 	// +optional
 	PreviouslyExisted bool `json:"previouslyExisted,omitempty"`
+
+	// Conditions represent the latest available observations of the workflow's state.
+	// +optional
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -238,3 +242,17 @@ type RemediationWorkflowList struct {
 func init() {
 	SchemeBuilder.Register(&RemediationWorkflow{}, &RemediationWorkflowList{})
 }
+
+// Condition type constants for RemediationWorkflow status.
+const (
+	// ConditionReady indicates whether the workflow is registered and active in DataStorage.
+	ConditionReady = "Ready"
+)
+
+// Condition reason constants for RemediationWorkflow status.
+const (
+	ReasonRegistered       = "Registered"
+	ReasonDependencyMissing = "DependencyMissing"
+	ReasonDataStorageError = "DataStorageError"
+	ReasonValidationFailed = "ValidationFailed"
+)
