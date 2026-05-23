@@ -120,7 +120,10 @@
 |---|---|---|---|---|
 | PROPOSAL-EXT-001 | External Integration Strategy (MCP, A2A, API Frontend) | 📋 Under Review | 2026-04-15 | [PROPOSAL-EXT-001-external-integration-strategy.md](proposals/PROPOSAL-EXT-001-external-integration-strategy.md) |
 | PROPOSAL-EXT-002 | Investigation Prompt Bundles (OCI-packaged prompts and skills) | 📋 Under Review | 2026-04-15 | [PROPOSAL-EXT-002-investigation-prompt-bundles.md](proposals/PROPOSAL-EXT-002-investigation-prompt-bundles.md) |
-| PROPOSAL-EXT-003 | Goose Runtime Evaluation and Phased Adoption (ACP Go SDK, 6-phase pipeline, KA-as-compiler) | 📋 Under Review | 2026-04-15 | [PROPOSAL-EXT-003-goose-runtime-evaluation.md](proposals/PROPOSAL-EXT-003-goose-runtime-evaluation.md) |
+| PROPOSAL-EXT-003 | Goose Runtime Evaluation and Phased Adoption (ACP Go SDK, 6-phase pipeline, KA-as-compiler) | ❌ Superseded | 2026-04-15 | [PROPOSAL-EXT-003-goose-runtime-evaluation.md](proposals/PROPOSAL-EXT-003-goose-runtime-evaluation.md) |
+| PROPOSAL-EXT-004 | Goose Recipes as AgenticWorkflow Runtime (pluggable multi-runtime model) | 📋 Draft | 2026-05-19 | [PROPOSAL-EXT-004-goose-recipes.md](proposals/PROPOSAL-EXT-004-goose-recipes.md) |
+| PROPOSAL-EXT-005 | Oracle Agent Spec (PyAgentSpec + LangGraph) as AgenticWorkflow Runtime | 📋 Draft | 2026-05-19 | [PROPOSAL-EXT-005-oracle-agent-spec.md](proposals/PROPOSAL-EXT-005-oracle-agent-spec.md) |
+| PROPOSAL-EXT-006 | LangChain Deep Agents as AgenticWorkflow Runtime (specialist investigations) | 📋 Draft | 2026-05-19 | [PROPOSAL-EXT-006-deep-agents.md](proposals/PROPOSAL-EXT-006-deep-agents.md) |
 
 ---
 
@@ -138,6 +141,7 @@ Create a new DD document for decisions that:
 ## 🔗 Related Documentation
 
 - **ADRs**: [docs/architecture/decisions/](decisions/) - Architectural Decision Records (ADR-001 through ADR-028)
+- **Spikes**: [docs/architecture/spikes/](spikes/) - Technical spike summaries and validation results
 - **Analysis**: [docs/architecture/analysis/](analysis/) - Supporting analysis for architectural decisions
 - **Service-Specific DDs**: Check individual service documentation in `docs/services/`
 - **Business Requirements**: [docs/requirements/](../requirements/)
@@ -145,5 +149,5 @@ Create a new DD document for decisions that:
 
 ---
 
-**Last Updated**: April 15, 2026
+**Last Updated**: May 23, 2026
 **Maintained By**: Kubernaut Architecture Team
