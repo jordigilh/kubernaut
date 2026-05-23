@@ -24,5 +24,7 @@ var mcpToolRegistry = []MCPToolDef{
 	{Name: "kubernaut_status", Description: "Get the current status of an investigation session"},
 	{Name: "kubernaut_reconnect", Description: "Reconnect to a disconnected investigation session"},
 	{Name: "kubernaut_stream_investigation", Description: "Stream investigation events in real time"},
+	{Name: "kubernaut_list_approval_requests", Description: "List remediation approval requests"},
+	{Name: "kubernaut_get_approval_request", Description: "Get details of a specific approval request"},
 	// af_check_existing_rr and af_create_rr are internal to AF's LLM agent (ADK path only).
 }

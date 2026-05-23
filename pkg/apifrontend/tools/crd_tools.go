@@ -158,6 +158,292 @@ func NewGetRemediationTool(client dynamic.Interface) (tool.Tool, error) {
 	})
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// kubernaut_list_approval_requests
+// ────────────────────────────────────────────────────────────────────────────
+
+// ListApprovalRequestsArgs defines the input for kubernaut_list_approval_requests.
+type ListApprovalRequestsArgs struct {
+	Namespace string `json:"namespace"`
+	Decision  string `json:"decision,omitempty"`
+}
+
+// AuditFields implements AuditableInput for audit enrichment.
+func (a ListApprovalRequestsArgs) AuditFields() map[string]string {
+	return map[string]string{"namespace": a.Namespace}
+}
+
+// ListApprovalRequestsResult is the output of kubernaut_list_approval_requests.
+type ListApprovalRequestsResult struct {
+	ApprovalRequests []ApprovalRequestSummary `json:"approval_requests"`
+	Count            int                      `json:"count"`
+}
+
+// ApprovalRequestSummary is a compact view of a RemediationApprovalRequest.
+type ApprovalRequestSummary struct {
+	Name                string  `json:"name"`
+	Namespace           string  `json:"namespace"`
+	Decision            string  `json:"decision"`
+	RemediationRequest  string  `json:"remediation_request"`
+	Confidence          float64 `json:"confidence"`
+	ConfidenceLevel     string  `json:"confidence_level"`
+	TimeRemaining       string  `json:"time_remaining,omitempty"`
+	RequiredBy          string  `json:"required_by,omitempty"`
+}
+
+// HandleListApprovalRequests implements the kubernaut_list_approval_requests logic.
+func HandleListApprovalRequests(ctx context.Context, client dynamic.Interface, args ListApprovalRequestsArgs) (ListApprovalRequestsResult, error) {
+	if client == nil {
+		return ListApprovalRequestsResult{}, ErrK8sUnavailable
+	}
+	if err := validate.Namespace(args.Namespace); err != nil {
+		return ListApprovalRequestsResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+	}
+
+	list, err := client.Resource(rarGVR).Namespace(args.Namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return ListApprovalRequestsResult{}, ToUserFriendlyError(err)
+	}
+
+	result := make([]ApprovalRequestSummary, 0)
+	for _, item := range list.Items {
+		decision, _, _ := unstructured.NestedString(item.Object, "status", "decision")
+		if !matchesDecisionFilter(decision, args.Decision) {
+			continue
+		}
+
+		rrName, _, _ := unstructured.NestedString(item.Object, "spec", "remediationRequestRef", "name")
+		confidence, _, _ := unstructured.NestedFloat64(item.Object, "spec", "confidence")
+		confidenceLevel, _, _ := unstructured.NestedString(item.Object, "spec", "confidenceLevel")
+		timeRemaining, _, _ := unstructured.NestedString(item.Object, "status", "timeRemaining")
+		requiredBy, _, _ := unstructured.NestedString(item.Object, "spec", "requiredBy")
+
+		displayDecision := decision
+		if displayDecision == "" {
+			displayDecision = "Pending"
+		}
+
+		result = append(result, ApprovalRequestSummary{
+			Name:               item.GetName(),
+			Namespace:          item.GetNamespace(),
+			Decision:           displayDecision,
+			RemediationRequest: rrName,
+			Confidence:         confidence,
+			ConfidenceLevel:    confidenceLevel,
+			TimeRemaining:      timeRemaining,
+			RequiredBy:         requiredBy,
+		})
+	}
+
+	return ListApprovalRequestsResult{
+		ApprovalRequests: result,
+		Count:            len(result),
+	}, nil
+}
+
+// matchesDecisionFilter checks if a RAR's decision matches the requested filter.
+// Empty filter means all. "pending" matches empty decision (no decision yet).
+func matchesDecisionFilter(actual, filter string) bool {
+	if filter == "" {
+		return true
+	}
+	normalized := strings.ToLower(filter)
+	if normalized == "pending" {
+		return actual == ""
+	}
+	return strings.EqualFold(actual, filter)
+}
+
+// NewListApprovalRequestsTool creates the kubernaut_list_approval_requests tool.
+func NewListApprovalRequestsTool(client dynamic.Interface) (tool.Tool, error) {
+	return functiontool.New(functiontool.Config{
+		Name:        "kubernaut_list_approval_requests",
+		Description: "List remediation approval requests with optional filtering by decision status (pending, approved, rejected, expired)",
+	}, func(ctx tool.Context, args ListApprovalRequestsArgs) (ListApprovalRequestsResult, error) {
+		return HandleListApprovalRequests(ctx, client, args)
+	})
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// kubernaut_get_approval_request
+// ────────────────────────────────────────────────────────────────────────────
+
+// GetApprovalRequestArgs defines the input for kubernaut_get_approval_request.
+type GetApprovalRequestArgs struct {
+	Namespace string `json:"namespace,omitempty"`
+	Name      string `json:"name,omitempty"`
+	RARID     string `json:"rar_id,omitempty"`
+}
+
+// AuditFields implements AuditableInput for audit enrichment.
+func (a GetApprovalRequestArgs) AuditFields() map[string]string {
+	fields := map[string]string{}
+	if a.RARID != "" {
+		fields["resource_id"] = a.RARID
+	} else {
+		if a.Namespace != "" {
+			fields["namespace"] = a.Namespace
+		}
+		if a.Name != "" {
+			fields["resource_name"] = a.Name
+		}
+	}
+	return fields
+}
+
+// GetApprovalRequestResult is the detailed output of kubernaut_get_approval_request.
+type GetApprovalRequestResult struct {
+	Name                   string                      `json:"name"`
+	Namespace              string                      `json:"namespace"`
+	RemediationRequest     string                      `json:"remediation_request"`
+	AIAnalysis             string                      `json:"ai_analysis"`
+	Confidence             float64                     `json:"confidence"`
+	ConfidenceLevel        string                      `json:"confidence_level"`
+	Reason                 string                      `json:"reason"`
+	InvestigationSummary   string                      `json:"investigation_summary"`
+	WhyApprovalRequired    string                      `json:"why_approval_required"`
+	RecommendedWorkflow    RecommendedWorkflowInfo     `json:"recommended_workflow"`
+	RecommendedActions     []RecommendedActionSummary  `json:"recommended_actions"`
+	EvidenceCollected      []string                    `json:"evidence_collected"`
+	AlternativesConsidered []AlternativeSummary        `json:"alternatives_considered"`
+	RequiredBy             string                      `json:"required_by,omitempty"`
+	Decision               string                      `json:"decision"`
+	DecidedBy              string                      `json:"decided_by,omitempty"`
+	DecidedAt              string                      `json:"decided_at,omitempty"`
+	TimeRemaining          string                      `json:"time_remaining,omitempty"`
+	Expired                bool                        `json:"expired"`
+}
+
+// RecommendedWorkflowInfo is a compact view of a recommended workflow in an approval request.
+type RecommendedWorkflowInfo struct {
+	Name    string `json:"name"`
+	Version string `json:"version,omitempty"`
+}
+
+// RecommendedActionSummary is a compact view of a recommended action.
+type RecommendedActionSummary struct {
+	Action    string `json:"action"`
+	Rationale string `json:"rationale,omitempty"`
+}
+
+// AlternativeSummary is a compact view of an alternative considered.
+type AlternativeSummary struct {
+	Approach string `json:"approach"`
+	ProsCons string `json:"pros_cons,omitempty"`
+}
+
+// HandleGetApprovalRequest implements the kubernaut_get_approval_request logic.
+func HandleGetApprovalRequest(ctx context.Context, client dynamic.Interface, args GetApprovalRequestArgs) (GetApprovalRequestResult, error) {
+	if client == nil {
+		return GetApprovalRequestResult{}, ErrK8sUnavailable
+	}
+
+	ns, name, err := ParseResourceID(args.RARID, args.Namespace, args.Name)
+	if err != nil {
+		return GetApprovalRequestResult{}, err
+	}
+	if errV := validate.Namespace(ns); errV != nil {
+		return GetApprovalRequestResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, errV)
+	}
+	if errV := validate.ResourceName(name); errV != nil {
+		return GetApprovalRequestResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, errV)
+	}
+
+	obj, err := client.Resource(rarGVR).Namespace(ns).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return GetApprovalRequestResult{}, ToUserFriendlyError(err)
+	}
+
+	// Spec fields
+	rrName, _, _ := unstructured.NestedString(obj.Object, "spec", "remediationRequestRef", "name")
+	aiaName, _, _ := unstructured.NestedString(obj.Object, "spec", "aiAnalysisRef", "name")
+	confidence, _, _ := unstructured.NestedFloat64(obj.Object, "spec", "confidence")
+	confidenceLevel, _, _ := unstructured.NestedString(obj.Object, "spec", "confidenceLevel")
+	reason, _, _ := unstructured.NestedString(obj.Object, "spec", "reason")
+	investigationSummary, _, _ := unstructured.NestedString(obj.Object, "spec", "investigationSummary")
+	whyApprovalRequired, _, _ := unstructured.NestedString(obj.Object, "spec", "whyApprovalRequired")
+	requiredBy, _, _ := unstructured.NestedString(obj.Object, "spec", "requiredBy")
+
+	// Recommended workflow
+	wfName, _, _ := unstructured.NestedString(obj.Object, "spec", "recommendedWorkflow", "workflowId")
+	wfVersion, _, _ := unstructured.NestedString(obj.Object, "spec", "recommendedWorkflow", "version")
+
+	// Evidence
+	evidenceRaw, _, _ := unstructured.NestedStringSlice(obj.Object, "spec", "evidenceCollected")
+	if evidenceRaw == nil {
+		evidenceRaw = []string{}
+	}
+
+	// Recommended actions
+	actionsRaw, _, _ := unstructured.NestedSlice(obj.Object, "spec", "recommendedActions")
+	actions := make([]RecommendedActionSummary, 0, len(actionsRaw))
+	for _, a := range actionsRaw {
+		if m, ok := a.(map[string]interface{}); ok {
+			action, _ := m["action"].(string)
+			rationale, _ := m["rationale"].(string)
+			actions = append(actions, RecommendedActionSummary{Action: action, Rationale: rationale})
+		}
+	}
+
+	// Alternatives
+	altsRaw, _, _ := unstructured.NestedSlice(obj.Object, "spec", "alternativesConsidered")
+	alternatives := make([]AlternativeSummary, 0, len(altsRaw))
+	for _, a := range altsRaw {
+		if m, ok := a.(map[string]interface{}); ok {
+			approach, _ := m["approach"].(string)
+			prosCons, _ := m["prosCons"].(string)
+			alternatives = append(alternatives, AlternativeSummary{
+				Approach: approach,
+				ProsCons: prosCons,
+			})
+		}
+	}
+
+	// Status fields
+	decision, _, _ := unstructured.NestedString(obj.Object, "status", "decision")
+	decidedBy, _, _ := unstructured.NestedString(obj.Object, "status", "decidedBy")
+	decidedAt, _, _ := unstructured.NestedString(obj.Object, "status", "decidedAt")
+	timeRemaining, _, _ := unstructured.NestedString(obj.Object, "status", "timeRemaining")
+	expired, _, _ := unstructured.NestedBool(obj.Object, "status", "expired")
+
+	displayDecision := decision
+	if displayDecision == "" {
+		displayDecision = "Pending"
+	}
+
+	return GetApprovalRequestResult{
+		Name:                   obj.GetName(),
+		Namespace:              obj.GetNamespace(),
+		RemediationRequest:     rrName,
+		AIAnalysis:             aiaName,
+		Confidence:             confidence,
+		ConfidenceLevel:        confidenceLevel,
+		Reason:                 reason,
+		InvestigationSummary:   investigationSummary,
+		WhyApprovalRequired:    whyApprovalRequired,
+		RecommendedWorkflow:    RecommendedWorkflowInfo{Name: wfName, Version: wfVersion},
+		RecommendedActions:     actions,
+		EvidenceCollected:      evidenceRaw,
+		AlternativesConsidered: alternatives,
+		RequiredBy:             requiredBy,
+		Decision:               displayDecision,
+		DecidedBy:              decidedBy,
+		DecidedAt:              decidedAt,
+		TimeRemaining:          timeRemaining,
+		Expired:                expired,
+	}, nil
+}
+
+// NewGetApprovalRequestTool creates the kubernaut_get_approval_request tool.
+func NewGetApprovalRequestTool(client dynamic.Interface) (tool.Tool, error) {
+	return functiontool.New(functiontool.Config{
+		Name:        "kubernaut_get_approval_request",
+		Description: "Get full details of a specific remediation approval request for review before deciding",
+	}, func(ctx tool.Context, args GetApprovalRequestArgs) (GetApprovalRequestResult, error) {
+		return HandleGetApprovalRequest(ctx, client, args)
+	})
+}
+
 // ApproveArgs defines the input for kubernaut_approve.
 type ApproveArgs struct {
 	Namespace        string `json:"namespace"`

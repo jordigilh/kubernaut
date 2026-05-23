@@ -60,11 +60,11 @@ var _ = Describe("Root Agent", func() {
 			Expect(tools).NotTo(BeEmpty())
 		})
 
-		It("UT-AF-100-002: registers all 26 tools", func() {
+		It("UT-AF-100-002: registers all 28 tools", func() {
 			cfg := agentpkg.DefaultTestConfig()
 			_, tools, err := agentpkg.NewRootAgent(cfg)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(tools).To(HaveLen(26))
+			Expect(tools).To(HaveLen(28))
 		})
 
 		It("UT-AF-100-003: with nil model config returns error", func() {
@@ -118,7 +118,7 @@ var _ = Describe("Root Agent", func() {
 			cfg := agentpkg.DefaultTestConfig()
 			_, tools, err := agentpkg.NewRootAgent(cfg)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(tools).To(HaveLen(26))
+			Expect(tools).To(HaveLen(28))
 		})
 
 		It("UT-AF-100-008: kubernaut_present_decision is marked IsLongRunning", func() {
@@ -159,7 +159,7 @@ var _ = Describe("Root Agent", func() {
 			cfg := agentpkg.DefaultTestConfig()
 			_, tools, err := agentpkg.NewRootAgent(cfg)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(tools).To(HaveLen(26), "AC 7: all 26 tools must be returned unfiltered")
+			Expect(tools).To(HaveLen(28), "AC 7: all 28 tools must be returned unfiltered")
 		})
 
 		It("IT-AF-1234-W08: buildToolList includes 6 interactive investigation tools", func() {

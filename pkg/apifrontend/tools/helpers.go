@@ -10,6 +10,13 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
+// AuditableInput is an opt-in interface that tool argument types can implement
+// to enrich audit events with resource-specific context (e.g., namespace, resource name).
+// Fields returned by AuditFields are merged into the audit event detail map on success.
+type AuditableInput interface {
+	AuditFields() map[string]string
+}
+
 // ErrNotFound indicates the requested resource was not found.
 var ErrNotFound = errors.New("not found")
 
@@ -45,6 +52,22 @@ func ParseRRID(rrID, namespace, name string) (ns, n string, err error) {
 	return namespace, name, nil
 }
 
+// ParseResourceID parses a resource ID shorthand (namespace/name) into its components.
+// If resourceID is empty, namespace and name are returned as-is.
+func ParseResourceID(resourceID, namespace, name string) (ns, n string, err error) {
+	if resourceID != "" {
+		parts := strings.SplitN(resourceID, "/", 2)
+		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+			return "", "", fmt.Errorf("invalid resource_id format %q: expected namespace/name", resourceID)
+		}
+		return parts[0], parts[1], nil
+	}
+	if namespace == "" || name == "" {
+		return "", "", fmt.Errorf("namespace and name are required when resource_id is not provided")
+	}
+	return namespace, name, nil
+}
+
 // ToUserFriendlyError translates K8s API errors into user-friendly messages.
 // Internal details (namespace paths, resource versions, field paths) are not exposed.
 func ToUserFriendlyError(err error) error {
@@ -62,7 +85,7 @@ func ToUserFriendlyError(err error) error {
 		case http.StatusConflict:
 			return fmt.Errorf("operation conflict — the resource was modified concurrently, please retry")
 		default:
-			return fmt.Errorf("operation failed (code %d): %s", statusErr.ErrStatus.Code, statusErr.ErrStatus.Message)
+			return fmt.Errorf("operation failed (code %d): the server could not process the request", statusErr.ErrStatus.Code)
 		}
 	}
 	return err
