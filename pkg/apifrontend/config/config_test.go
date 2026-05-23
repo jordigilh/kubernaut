@@ -536,6 +536,67 @@ auth:
 	}
 }
 
+func TestLoad_AuthAllowInsecureIssuers(t *testing.T) {
+	// UT-AF-1247-001: allowInsecureIssuers field is parsed from YAML.
+	data := []byte(`
+auth:
+  issuerURL: "https://sso.example.com/realms/kubernaut"
+  audience: "apifrontend"
+  allowInsecureIssuers: true
+`)
+	cfg, err := Load(data)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.Auth.AllowInsecureIssuers {
+		t.Error("allowInsecureIssuers should be true")
+	}
+}
+
+func TestLoad_AuthAllowInsecureIssuersDefaultsFalse(t *testing.T) {
+	// UT-AF-1247-002: allowInsecureIssuers defaults to false when omitted.
+	data := []byte(`
+auth:
+  issuerURL: "https://sso.example.com/realms/kubernaut"
+  audience: "apifrontend"
+`)
+	cfg, err := Load(data)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Auth.AllowInsecureIssuers {
+		t.Error("allowInsecureIssuers should default to false")
+	}
+}
+
+func TestLoad_AuthAllFieldsCombined(t *testing.T) {
+	// UT-AF-1247-003: All three #1247 fields parsed together.
+	data := []byte(`
+auth:
+  issuerURL: "https://sso.example.com/realms/kubernaut"
+  jwksURL: "https://sso.example.com/realms/kubernaut/protocol/openid-connect/certs"
+  audience: "apifrontend"
+  oidcCaFile: "/etc/apifrontend/ingress-ca/ca.crt"
+  allowInsecureIssuers: false
+`)
+	cfg, err := Load(data)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Auth.JWKSURL != "https://sso.example.com/realms/kubernaut/protocol/openid-connect/certs" {
+		t.Errorf("jwksURL = %q", cfg.Auth.JWKSURL)
+	}
+	if cfg.Auth.OIDCCaFile != "/etc/apifrontend/ingress-ca/ca.crt" {
+		t.Errorf("oidcCaFile = %q", cfg.Auth.OIDCCaFile)
+	}
+	if cfg.Auth.AllowInsecureIssuers {
+		t.Error("allowInsecureIssuers should be false")
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("Validate: %v", err)
+	}
+}
+
 func TestLoad_LoggingLevel(t *testing.T) {
 	// UT-AF-039-032
 	for _, level := range []string{"debug", "DEBUG", "info", "INFO", "warn", "WARN", "error", "ERROR"} {
