@@ -500,9 +500,10 @@ func TestBuildA2AHandler_WithLLMEndpoint_ReturnsHandler(t *testing.T) {
 	t.Cleanup(mockLLM.Close)
 
 	cfg := &config.Config{}
-	cfg.Agent.LLMEndpoint = mockLLM.URL
-	cfg.Agent.LLMModel = "mock-model"
-	cfg.Agent.LLMAPIKey = "test-key"
+	cfg.Agent.LLM.Provider = config.LLMProviderGemini
+	cfg.Agent.LLM.Endpoint = mockLLM.URL
+	cfg.Agent.LLM.Model = "mock-model"
+	cfg.Agent.LLM.APIKey = "test-key"
 	reg := metrics.NewRegistry()
 
 	h, err := buildA2AHandler(context.Background(), cfg, testBackendDeps(), nil, reg, nil, nil, logr.Discard(), nil)
@@ -524,9 +525,10 @@ func TestBuildA2AHandler_WithSessionInfra_UsesDecorator(t *testing.T) {
 	t.Cleanup(mockLLM.Close)
 
 	cfg := &config.Config{}
-	cfg.Agent.LLMEndpoint = mockLLM.URL
-	cfg.Agent.LLMModel = "mock-model"
-	cfg.Agent.LLMAPIKey = "test-key"
+	cfg.Agent.LLM.Provider = config.LLMProviderGemini
+	cfg.Agent.LLM.Endpoint = mockLLM.URL
+	cfg.Agent.LLM.Model = "mock-model"
+	cfg.Agent.LLM.APIKey = "test-key"
 	reg := metrics.NewRegistry()
 
 	infra := buildSessionInfra(cfg, reg, nil, logr.Discard())
@@ -552,9 +554,10 @@ func TestBuildA2AHandler_ThreadsK8sClient(t *testing.T) {
 	t.Cleanup(mockLLM.Close)
 
 	cfg := &config.Config{}
-	cfg.Agent.LLMEndpoint = mockLLM.URL
-	cfg.Agent.LLMModel = "mock-model"
-	cfg.Agent.LLMAPIKey = "test-key"
+	cfg.Agent.LLM.Provider = config.LLMProviderGemini
+	cfg.Agent.LLM.Endpoint = mockLLM.URL
+	cfg.Agent.LLM.Model = "mock-model"
+	cfg.Agent.LLM.APIKey = "test-key"
 	reg := metrics.NewRegistry()
 
 	deps := testBackendDeps()
@@ -583,9 +586,10 @@ func TestBuildA2AHandler_ThreadsKAClient(t *testing.T) {
 	t.Cleanup(mockLLM.Close)
 
 	cfg := &config.Config{}
-	cfg.Agent.LLMEndpoint = mockLLM.URL
-	cfg.Agent.LLMModel = "mock-model"
-	cfg.Agent.LLMAPIKey = "test-key"
+	cfg.Agent.LLM.Provider = config.LLMProviderGemini
+	cfg.Agent.LLM.Endpoint = mockLLM.URL
+	cfg.Agent.LLM.Model = "mock-model"
+	cfg.Agent.LLM.APIKey = "test-key"
 	reg := metrics.NewRegistry()
 
 	deps := testBackendDeps()
@@ -616,9 +620,10 @@ func TestBuildA2AHandler_ThreadsDSClient(t *testing.T) {
 	t.Cleanup(dsBackend.Close)
 
 	cfg := &config.Config{}
-	cfg.Agent.LLMEndpoint = mockLLM.URL
-	cfg.Agent.LLMModel = "mock-model"
-	cfg.Agent.LLMAPIKey = "test-key"
+	cfg.Agent.LLM.Provider = config.LLMProviderGemini
+	cfg.Agent.LLM.Endpoint = mockLLM.URL
+	cfg.Agent.LLM.Model = "mock-model"
+	cfg.Agent.LLM.APIKey = "test-key"
 	reg := metrics.NewRegistry()
 
 	dsClient, dsErr := ds.NewOgenClient(ds.OgenClientConfig{BaseURL: dsBackend.URL})
@@ -649,9 +654,10 @@ func TestBuildA2AHandler_ThreadsUserLimiter(t *testing.T) {
 	t.Cleanup(mockLLM.Close)
 
 	cfg := &config.Config{}
-	cfg.Agent.LLMEndpoint = mockLLM.URL
-	cfg.Agent.LLMModel = "mock-model"
-	cfg.Agent.LLMAPIKey = "test-key"
+	cfg.Agent.LLM.Provider = config.LLMProviderGemini
+	cfg.Agent.LLM.Endpoint = mockLLM.URL
+	cfg.Agent.LLM.Model = "mock-model"
+	cfg.Agent.LLM.APIKey = "test-key"
 	reg := metrics.NewRegistry()
 
 	limiter := ratelimit.NewUserLimiter(ratelimit.PerUserConfig{
