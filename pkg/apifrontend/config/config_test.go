@@ -447,20 +447,24 @@ func TestLoadFromFile_PathCleaned(t *testing.T) {
 }
 
 func TestNoEnvVarsInCodebase(t *testing.T) {
-	// UT-AF-039-030
-	// This test verifies the architectural constraint: no envOr/os.Getenv in production code.
-	// It reads cmd/apifrontend/main.go and checks for the banned patterns.
-	mainPath := filepath.Join("..", "..", "cmd", "apifrontend", "main.go")
-	data, err := os.ReadFile(mainPath)
-	if err != nil {
-		t.Skipf("cannot read main.go from test context: %v", err)
+	// UT-AF-039-030 + UT-AF-1251-001
+	// Verifies the architectural constraint: no envOr/os.Getenv in production code.
+	bannedFiles := map[string]string{
+		filepath.Join("..", "..", "..", "cmd", "apifrontend", "main.go"): "main.go",
+		"config.go": "config.go",
 	}
-	content := string(data)
-	if strings.Contains(content, "os.Getenv") {
-		t.Error("main.go contains os.Getenv — env vars are banned per architectural constraint")
-	}
-	if strings.Contains(content, "envOr") {
-		t.Error("main.go contains envOr — env vars are banned per architectural constraint")
+	for path, label := range bannedFiles {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Skipf("cannot read %s from test context: %v", label, err)
+		}
+		content := string(data)
+		if strings.Contains(content, "os.Getenv") {
+			t.Errorf("%s contains os.Getenv — env vars are banned per architectural constraint", label)
+		}
+		if strings.Contains(content, "envOr") {
+			t.Errorf("%s contains envOr — env vars are banned per architectural constraint", label)
+		}
 	}
 }
 
@@ -1146,5 +1150,107 @@ func TestValidate_AuthOIDCCaFileEmptyIsOptional(t *testing.T) {
 	err := cfg.Validate()
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+// --- Tier 9: LLM API Key File (Issue #1251) ---
+
+func TestLoad_LLMApiKeyFile(t *testing.T) {
+	// UT-AF-1251-002: llmApiKeyFile field is parsed from YAML.
+	data := []byte(`
+agent:
+  gcpProject: "test"
+  llmApiKeyFile: "/etc/apifrontend/secrets/llm-api-key"
+`)
+	cfg, err := Load(data)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Agent.LLMApiKeyFile != "/etc/apifrontend/secrets/llm-api-key" {
+		t.Errorf("Agent.LLMApiKeyFile = %q, want %q", cfg.Agent.LLMApiKeyFile, "/etc/apifrontend/secrets/llm-api-key")
+	}
+}
+
+func TestLoad_LLMApiKeyFileOmitted(t *testing.T) {
+	// UT-AF-1251-003: llmApiKeyFile defaults to empty when omitted.
+	data := []byte(`
+agent:
+  gcpProject: "test"
+`)
+	cfg, err := Load(data)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Agent.LLMApiKeyFile != "" {
+		t.Errorf("Agent.LLMApiKeyFile = %q, want empty", cfg.Agent.LLMApiKeyFile)
+	}
+}
+
+func TestValidate_LLMApiKeyFileRelativePath(t *testing.T) {
+	// UT-AF-1251-004: Relative llmApiKeyFile path is rejected.
+	cfg := validConfig()
+	cfg.Agent.LLMApiKeyFile = "relative/path/key"
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for relative llmApiKeyFile path")
+	}
+	if !strings.Contains(err.Error(), "llmApiKeyFile") {
+		t.Errorf("error = %q, want to contain 'llmApiKeyFile'", err.Error())
+	}
+}
+
+func TestValidate_LLMApiKeyFileAbsolutePath(t *testing.T) {
+	// UT-AF-1251-005: Absolute llmApiKeyFile path passes validation.
+	cfg := validConfig()
+	cfg.Agent.LLMApiKeyFile = "/etc/apifrontend/secrets/llm-api-key"
+	err := cfg.Validate()
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestValidate_LLMApiKeyFileEmptyIsOptional(t *testing.T) {
+	// UT-AF-1251-006: Empty llmApiKeyFile is valid (A2A disabled).
+	cfg := validConfig()
+	cfg.Agent.LLMApiKeyFile = ""
+	err := cfg.Validate()
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestResolveDefaults_LLMApiKeyFromFile(t *testing.T) {
+	// UT-AF-1251-007: ResolveDefaults reads LLMAPIKey from llmApiKeyFile.
+	dir := t.TempDir()
+	keyPath := filepath.Join(dir, "llm-key")
+	if err := os.WriteFile(keyPath, []byte("sk-test-key-12345\n"), 0o600); err != nil {
+		t.Fatalf("write key file: %v", err)
+	}
+	cfg := validConfig()
+	cfg.Agent.LLMApiKeyFile = keyPath
+	cfg.ResolveDefaults()
+	if cfg.Agent.LLMAPIKey != "sk-test-key-12345" {
+		t.Errorf("LLMAPIKey = %q, want %q", cfg.Agent.LLMAPIKey, "sk-test-key-12345")
+	}
+}
+
+func TestResolveDefaults_LLMApiKeyFileEmpty(t *testing.T) {
+	// UT-AF-1251-008: ResolveDefaults leaves LLMAPIKey empty when no file configured.
+	cfg := validConfig()
+	cfg.Agent.LLMApiKeyFile = ""
+	cfg.Agent.LLMAPIKey = ""
+	cfg.ResolveDefaults()
+	if cfg.Agent.LLMAPIKey != "" {
+		t.Errorf("LLMAPIKey = %q, want empty when no file configured", cfg.Agent.LLMAPIKey)
+	}
+}
+
+func TestResolveDefaults_LLMApiKeyFileMissing(t *testing.T) {
+	// UT-AF-1251-009: ResolveDefaults leaves LLMAPIKey empty if file doesn't exist.
+	cfg := validConfig()
+	cfg.Agent.LLMApiKeyFile = "/nonexistent/llm-key"
+	cfg.ResolveDefaults()
+	if cfg.Agent.LLMAPIKey != "" {
+		t.Errorf("LLMAPIKey = %q, want empty when file missing", cfg.Agent.LLMAPIKey)
 	}
 }

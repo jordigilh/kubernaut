@@ -154,10 +154,11 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 		if dsHealthURL == "" {
 			dsHealthURL = "http://127.0.0.1:28091"
 		}
+		healthClient := &http.Client{Timeout: 5 * time.Second}
 		var healthResp *http.Response
 		var healthErr error
-		for attempt := 1; attempt <= 15; attempt++ {
-			healthResp, healthErr = http.Get(dsHealthURL + "/readyz")
+		for attempt := 1; attempt <= 30; attempt++ {
+			healthResp, healthErr = healthClient.Get(dsHealthURL + "/readyz")
 			if healthErr == nil && healthResp.StatusCode == http.StatusOK {
 				break
 			}
@@ -496,6 +497,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			Eventually(func() int {
 				resp, err := dsClient.QueryAuditEvents(ctx, params2)
 				if err != nil {
+					GinkgoWriter.Printf("DS query error (deduplicated): %v\n", err)
 					return 0
 				}
 
@@ -673,6 +675,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			Eventually(func() int {
 				resp, err := dsClient.QueryAuditEvents(ctx, params3)
 				if err != nil {
+					GinkgoWriter.Printf("DS query error (crd.created): %v\n", err)
 					return 0
 				}
 

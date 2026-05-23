@@ -1242,7 +1242,16 @@ data:
 	if os.Getenv("IMAGE_REGISTRY") != "" {
 		pullPolicy = "Always"
 	}
-	deployManifest := fmt.Sprintf(`apiVersion: apps/v1
+	deployManifest := fmt.Sprintf(`apiVersion: v1
+kind: Secret
+metadata:
+  name: apifrontend-llm-key
+  namespace: %[1]s
+type: Opaque
+stringData:
+  llm-api-key: "mock-key"
+---
+apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: apifrontend
@@ -1279,8 +1288,6 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
-            - name: LLM_API_KEY
-              value: "mock-key"
           volumeMounts:
             - name: config
               mountPath: /etc/apifrontend
@@ -1290,6 +1297,9 @@ spec:
               readOnly: true
             - name: inter-service-ca
               mountPath: /etc/apifrontend/inter-service-ca
+              readOnly: true
+            - name: llm-key
+              mountPath: /etc/apifrontend/secrets
               readOnly: true
           readinessProbe:
             httpGet:
@@ -1324,6 +1334,9 @@ spec:
         - name: inter-service-ca
           configMap:
             name: inter-service-ca
+        - name: llm-key
+          secret:
+            secretName: apifrontend-llm-key
 ---
 apiVersion: v1
 kind: Service

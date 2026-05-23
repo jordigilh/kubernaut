@@ -570,19 +570,28 @@ func deployAPIFrontendService(ctx context.Context, kubeconfigPath, namespace, af
 	}
 
 	manifest := fmt.Sprintf(`apiVersion: v1
+kind: Secret
+metadata:
+  name: apifrontend-llm-key
+  namespace: %[1]s
+type: Opaque
+stringData:
+  llm-api-key: "mock-key"
+---
+apiVersion: v1
 kind: ConfigMap
 metadata:
   name: apifrontend-config
-  namespace: %s
+  namespace: %[1]s
 data:
   config.yaml: |
-%s
+%[2]s
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: apifrontend
-  namespace: %s
+  namespace: %[1]s
 spec:
   replicas: 1
   selector:
@@ -600,7 +609,7 @@ spec:
         runAsGroup: 0
       containers:
         - name: apifrontend
-          image: %s
+          image: %[3]s
           imagePullPolicy: IfNotPresent
           ports:
             - name: https
@@ -618,8 +627,6 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
-            - name: LLM_API_KEY
-              value: "mock-key"
             - name: GOCOVERDIR
               value: /coverdata
           volumeMounts:
@@ -631,6 +638,9 @@ spec:
               readOnly: true
             - name: inter-service-ca
               mountPath: /etc/apifrontend/inter-service-ca
+              readOnly: true
+            - name: llm-key
+              mountPath: /etc/apifrontend/secrets
               readOnly: true
             - name: coverdata
               mountPath: /coverdata
@@ -667,6 +677,9 @@ spec:
         - name: inter-service-ca
           configMap:
             name: inter-service-ca
+        - name: llm-key
+          secret:
+            secretName: apifrontend-llm-key
         - name: coverdata
           hostPath:
             path: /coverdata
@@ -676,7 +689,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: apifrontend
-  namespace: %s
+  namespace: %[1]s
 spec:
   type: NodePort
   ports:
@@ -693,8 +706,7 @@ spec:
       nodePort: 30081
   selector:
     app: apifrontend
-`, namespace, indentYAML(string(configData), 4),
-		namespace, afImage, namespace)
+`, namespace, indentYAML(string(configData), 4), afImage)
 	return kubectlApplyStdin(ctx, kubeconfigPath, manifest, writer)
 }
 

@@ -16,6 +16,7 @@ agent:
   dsTlsCaFile: /etc/apifrontend/inter-service-ca/ca.crt
   llmEndpoint: "http://mock-llm.kubernaut-system.svc:8080"
   llmModel: "mock-model"
+  llmApiKeyFile: "/etc/apifrontend/secrets/llm-api-key"
 
 session:
   namespace: kubernaut-system
