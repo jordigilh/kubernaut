@@ -38,9 +38,11 @@ description: "Core development rules: APDC methodology, TDD workflow, AI assista
 
 **Phases**:
 1. **Analysis** (5-15 min): Context + business alignment + risk assessment
-2. **Plan** (10-20 min): Strategy + TDD mapping + **user approval required**
-3. **Do** (Variable): RED → GREEN → REFACTOR with validation checkpoints
+2. **Plan** (10-20 min): Strategy + TDD mapping + **Wiring Manifest** + **user approval required**
+3. **Do** (Variable): RED → GREEN (with CHECKPOINT W) → REFACTOR with validation checkpoints
 4. **Check** (5-10 min): Validation + confidence assessment (60-100%)
+
+**Plan Phase Requirement**: Plans introducing new components MUST include a Wiring Manifest table mapping each component to its production entry point, wiring code location, and IT test ID. See [10-wiring-verification.mdc](mdc:.cursor/rules/10-wiring-verification.mdc).
 
 **See**: [Complete APDC Framework](mdc:docs/development/methodology/APDC_FRAMEWORK.md)
 **Quick Ref**: [APDC Quick Reference](mdc:docs/development/methodology/APDC_QUICK_REFERENCE.md)
@@ -50,12 +52,15 @@ description: "Core development rules: APDC methodology, TDD workflow, AI assista
 ### 4. TDD Workflow (All Development)
 **MANDATORY**: RED → GREEN → REFACTOR (tests first, always)
 
-1. **RED**: Write failing tests defining business contract
-2. **GREEN**: Minimal implementation + MANDATORY main app integration
+1. **RED**: Write failing tests defining business contract (UT for logic + IT for wiring)
+2. **GREEN**: Minimal implementation + MANDATORY main app integration + **CHECKPOINT W** (wiring verification)
 3. **REFACTOR**: Enhance existing code with sophisticated logic
+
+**Pyramid Invariant**: UT proves logic. IT proves wiring. E2E proves the journey. A component with only UT coverage is prototyped, not implemented. GREEN is not complete until the IT test for every wiring point passes. See [10-wiring-verification.mdc](mdc:.cursor/rules/10-wiring-verification.mdc).
 
 **NEVER**: Use `Skip()` to avoid test failures
 **NEVER**: Skip REFACTOR phase
+**NEVER**: Declare GREEN based on UT alone when new wiring points exist
 
 ---
 
@@ -242,6 +247,9 @@ grep -r "New.*Optimizer\|New.*Engine\|New.*Builder" cmd/ --include="*.go"
 **Violation**: Component not integrated in GREEN
 **Rule**: MANDATORY integration in GREEN phase
 
+### UT-Only GREEN
+**Violation**: Declaring GREEN complete when only UT passes but wiring IT does not exist or fails
+**Rule**: GREEN requires both UT (logic) and IT (wiring) to pass for every component in the Wiring Manifest. See [10-wiring-verification.mdc](mdc:.cursor/rules/10-wiring-verification.mdc).
 
 ### Refactoring Without Build Validation
 **Violation**: Refactoring code (renaming, field type changes, etc.) without checking for lingering build failures
@@ -321,6 +329,7 @@ make lint-tdd-compliance           # TDD and BDD framework
 
 ### Testing
 - **[Testing Strategy](mdc:.cursor/rules/03-testing-strategy.mdc)** - Defense-in-depth testing approach
+- **[Wiring Verification](mdc:.cursor/rules/10-wiring-verification.mdc)** - Wiring Manifest, CHECKPOINT W, Pyramid Invariant
 - **[Testing Patterns](mdc:docs/testing/TESTING_PATTERNS_QUICK_REFERENCE.md)** - Daily development reference
 - **[Anti-Pattern Detection](mdc:docs/testing/ANTI_PATTERN_DETECTION.md)** - Violation detection guide
 
@@ -339,10 +348,12 @@ Before any code submission:
 - [ ] Business requirement mapped (BR-[CATEGORY]-[NUMBER])
 - [ ] Critical decisions escalated with recommendations
 - [ ] APDC phases executed for complex tasks (Analysis → Plan → Do → Check)
+- [ ] Wiring Manifest included in plan for new components ([10-wiring-verification.mdc](mdc:.cursor/rules/10-wiring-verification.mdc))
 
 **TDD Workflow**:
-- [ ] Tests written first (RED phase)
+- [ ] Tests written first (RED phase) -- including IT tests for wiring points
 - [ ] Minimal implementation passes tests (GREEN phase)
+- [ ] CHECKPOINT W passed: all wiring points have production callers + passing ITs
 - [ ] Code enhanced and refactored (REFACTOR phase)
 - [ ] All tests use Ginkgo/Gomega BDD framework
 

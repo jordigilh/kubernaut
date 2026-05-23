@@ -112,9 +112,13 @@ func buildBeforeExecuteCallback(userCb func(ctx context.Context) (context.Contex
 
 		// Inject session creation context for the ServiceDecorator.
 		// The decorator reads this to build CreateConfig with task/user metadata.
+		// SessionID = ContextID because ADK maps A2A ContextID to ADK session ID
+		// (see adka2a.Executor.prepareSession). The callback for af_create_rr
+		// reads SessionID to drive deferred CRD materialization (G6).
 		if reqCtx != nil {
 			sc := &session.CreateContext{
-				TaskID: string(reqCtx.TaskID),
+				TaskID:    string(reqCtx.TaskID),
+				SessionID: reqCtx.ContextID,
 			}
 			ctx = session.WithCreateContext(ctx, sc)
 		}

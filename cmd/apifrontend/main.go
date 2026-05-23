@@ -320,6 +320,11 @@ func run() int {
 	if tracker := routerCfg.SSETracker; tracker != nil {
 		tracker.DrainAll(shutCtx)
 	}
+	if deps.Pool != nil {
+		if err := deps.Pool.DrainAll(shutCtx); err != nil {
+			logger.Error(err, "failed to drain KA session pool on shutdown")
+		}
+	}
 	shutdownServer(shutCtx, httpServer, "API", logger)
 	shutdownServer(shutCtx, healthServer, "health", logger)
 	shutdownServer(shutCtx, metricsServer, "metrics", logger)
@@ -400,6 +405,7 @@ type backendDeps struct {
 	DSClient             ds.Client
 	KAClient             *ka.Client
 	MCPClient            ka.MCPClient
+	Pool                 *ka.KASessionPool
 	Triager              *severity.Triager
 	DSResilientTransport *resilience.CircuitBreakerTransport
 	CAWatchers           []caWatcherEntry
@@ -470,17 +476,32 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 		deps.CAWatchers = append(deps.CAWatchers, caWatcherEntry{name: "ka-ca", watcher: kaWatcher})
 	}
 
-	var jwtDelegation http.RoundTripper = &auth.ContextJWTDelegationTransport{}
-	if kaTransport != nil {
-		jwtDelegation = &auth.ContextJWTDelegationTransport{Base: kaTransport}
-	}
+	kaMCPResilient := buildResilientTransport(kaTransport, &cfg.Resilience.KA, "ka-mcp", metricsReg, auditor)
+	var jwtDelegation http.RoundTripper = &auth.ContextJWTDelegationTransport{Base: kaMCPResilient}
 	jwtDelegation = &auth.AuditingJWTDelegationTransport{Base: jwtDelegation, Auditor: auditor}
 	kaMCPHTTPClient := &http.Client{Transport: jwtDelegation}
-	deps.MCPClient = ka.NewSDKMCPClient(
+	mcpClient := ka.NewSDKMCPClient(
 		cfg.Agent.KAMCPEndpoint,
 		kaMCPHTTPClient,
 		logger,
 	)
+	mcpClient.WithDownstreamDuration(metricsReg.DownstreamDuration)
+	deps.MCPClient = mcpClient
+
+	// G2 (deferred): Pool is constructed for shutdown wiring (DrainAll) but
+	// interactive tools currently use session-per-call via SDKMCPClient.
+	// The factory is a placeholder until G2 persistent sessions are
+	// implemented. Calling Pool.Acquire will fail until a real factory
+	// is provided. See pkg/apifrontend/ka/mcp_sdk_client.go for the
+	// session-per-call rationale (P2 Architect finding, DD-AUTH-MCP-001 v2.0).
+	deps.Pool = ka.NewKASessionPool(ka.PoolConfig{
+		Factory: func(ctx context.Context) (ka.PoolSession, error) {
+			return nil, fmt.Errorf("pool session factory not yet configured (G2 deferred)")
+		},
+		MaxEntries: 100,
+		IdleTTL:    10 * time.Minute,
+		Logger:     logger.WithName("ka-session-pool"),
+	})
 
 	if cfg.SeverityTriage.Enabled {
 		promTransport, promWatcher, promErr := tlswiring.CAReloadableTransport(cfg.SeverityTriage.PrometheusTLSCaFile, logger.WithName("prom-ca"))
@@ -556,13 +577,15 @@ func buildMCPHandler(cfg *config.Config, deps *backendDeps, metricsReg *metrics.
 		K8sClient:          deps.K8sClient(),
 		KAClient:           deps.KAClient,
 		KAMCPClient:        deps.MCPClient,
+		Pool:               deps.Pool,
 		DSClient:           deps.DSClient,
 		Triager:            deps.Triager,
 		Authorizer:         authorizer,
 		Auditor:            auditor,
 		Logger:             logger.WithName("bridge"),
 		Metrics:            bridgeMetricsFrom(metricsReg),
-		ToolTimeout:        30 * time.Second,
+		ToolTimeout:        cfg.MCP.ToolTimeout,
+		ToolTimeouts:       cfg.MCP.ToolTimeouts,
 		MaxConcurrentTools: 10,
 		UserLimiter:        userLimiter,
 	}
@@ -612,6 +635,10 @@ func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps,
 		return nil, fmt.Errorf("create LLM model: %w", err)
 	}
 
+	var sessionSvcForAgent *session.CRDSessionService
+	if sessInfra != nil {
+		sessionSvcForAgent = sessInfra.SessionService
+	}
 	rootAgent, _, err := agentpkg.NewRootAgent(agentpkg.AgentConfig{
 		Instruction:      agentpkg.DefaultTestConfig().Instruction,
 		LLMModel:         llmModel,
@@ -622,6 +649,7 @@ func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps,
 		Authorizer:       authorizer,
 		Auditor:          auditor,
 		Triager:          deps.Triager,
+		SessionService:   sessionSvcForAgent,
 		ToolCallsTotal:   metricsReg.ToolCallsTotal,
 		ToolCallDuration: metricsReg.ToolCallDuration,
 		UserLimiter:      userLimiter,

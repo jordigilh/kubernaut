@@ -7,6 +7,7 @@ type MCPClient interface {
 	SelectWorkflow(ctx context.Context, args SelectWorkflowArgs) (*SelectWorkflowResult, error)
 	Investigate(ctx context.Context, args InvestigateArgs) (*InvestigateResult, error)
 	DiscoverWorkflows(ctx context.Context, args DiscoverWorkflowsArgs) (*DiscoverWorkflowsResult, error)
+	InvokeAction(ctx context.Context, args InvokeActionArgs) (*InvokeActionResult, error)
 }
 
 // MockMCPClient is a test double for MCPClient.
@@ -14,6 +15,7 @@ type MockMCPClient struct {
 	SelectWorkflowFn    func(ctx context.Context, args SelectWorkflowArgs) (*SelectWorkflowResult, error)
 	InvestigateFn       func(ctx context.Context, args InvestigateArgs) (*InvestigateResult, error)
 	DiscoverWorkflowsFn func(ctx context.Context, args DiscoverWorkflowsArgs) (*DiscoverWorkflowsResult, error)
+	InvokeActionFn      func(ctx context.Context, args InvokeActionArgs) (*InvokeActionResult, error)
 	Token               string
 }
 
@@ -40,6 +42,14 @@ func (m *MockMCPClient) Investigate(ctx context.Context, args InvestigateArgs) (
 func (m *MockMCPClient) DiscoverWorkflows(ctx context.Context, args DiscoverWorkflowsArgs) (*DiscoverWorkflowsResult, error) {
 	if m.DiscoverWorkflowsFn != nil {
 		return m.DiscoverWorkflowsFn(ctx, args)
+	}
+	return nil, ErrMCPUnavailable
+}
+
+// InvokeAction calls the mock function.
+func (m *MockMCPClient) InvokeAction(ctx context.Context, args InvokeActionArgs) (*InvokeActionResult, error) {
+	if m.InvokeActionFn != nil {
+		return m.InvokeActionFn(ctx, args)
 	}
 	return nil, ErrMCPUnavailable
 }

@@ -167,6 +167,22 @@ type InvestigationEvent struct {
 	Data  json.RawMessage `json:"data,omitempty"`
 }
 
+// InvokeActionArgs is the input for the generic kubernaut_investigate action dispatch.
+// The acting_user and acting_user_groups are extracted from context by the
+// implementation and added to the MCP args map automatically.
+type InvokeActionArgs struct {
+	RRID    string `json:"rr_id"`
+	Action  string `json:"action"`
+	Message string `json:"message,omitempty"`
+}
+
+// InvokeActionResult is the response from a generic kubernaut_investigate action.
+type InvokeActionResult struct {
+	SessionID string          `json:"session_id,omitempty"`
+	Status    string          `json:"status"`
+	Data      json.RawMessage `json:"data,omitempty"`
+}
+
 // SSE event type constants matching KA's wire format.
 const (
 	EventTypeReasoningDelta = "reasoning_delta"

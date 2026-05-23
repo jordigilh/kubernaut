@@ -28,6 +28,9 @@ var _ = Describe("Audit event emission – session (PR2 wiring)", func() {
 		_, err := svc.Create(ctx, &req)
 		Expect(err).NotTo(HaveOccurred())
 
+		err = svc.MaterializeCRD(ctx, "sess-completed-audit", v1alpha1.ObjectRef{Name: "rr-audit", Namespace: "test-ns"})
+		Expect(err).NotTo(HaveOccurred())
+
 		err = svc.UpdatePhase(ctx, "sess-completed-audit", v1alpha1.SessionPhaseCompleted, "investigation complete", "jane.doe")
 		Expect(err).NotTo(HaveOccurred())
 
@@ -55,6 +58,9 @@ var _ = Describe("Audit event emission – session (PR2 wiring)", func() {
 
 		req := createRequestWithDefaults("sess-nonterminal", "jane.doe", createConfigState())
 		_, err := svc.Create(ctx, &req)
+		Expect(err).NotTo(HaveOccurred())
+
+		err = svc.MaterializeCRD(ctx, "sess-nonterminal", v1alpha1.ObjectRef{Name: "rr-nt", Namespace: "test-ns"})
 		Expect(err).NotTo(HaveOccurred())
 
 		err = svc.UpdatePhase(ctx, "sess-nonterminal", v1alpha1.SessionPhaseDisconnected, "SSE dropped", "jane.doe")

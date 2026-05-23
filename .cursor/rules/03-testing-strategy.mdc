@@ -24,6 +24,22 @@ description: "Testing strategy and patterns for kubernaut's defense-in-depth app
 
 ## 📊 **Defense-in-Depth Testing Pyramid**
 
+### The Pyramid Invariant
+
+> **UT proves logic. IT proves wiring. E2E proves the journey.**
+
+Each tier of the test pyramid has a distinct purpose that cannot be replaced by another tier:
+
+| Tier | Proves | Example |
+|------|--------|---------|
+| **UT** | Component logic works in isolation | `MaterializeCRD` correctly creates a K8s resource from a pending config |
+| **IT** | Component is wired into production code and reachable | `af_create_rr` after-callback triggers `MaterializeCRD` through the real agent dispatch path |
+| **E2E** | Full user journey works end-to-end | Interactive session creates IS CRD only after first remediation request |
+
+**A component with only UT coverage is NOT implemented -- it is prototyped.** GREEN phase is not complete until the IT test for every wiring point passes.
+
+**See**: [Wiring Verification Rule](mdc:.cursor/rules/10-wiring-verification.mdc) for the full Wiring Manifest, CHECKPOINT W, and Wiring-First TDD methodology.
+
 ### Coverage Targets: Per-Tier Testable Code Coverage (>=80%)
 
 **TDD Mandate**: Every business requirement MUST have a corresponding test. If a feature has no test, it risks not being implemented. Coverage is measured **per tier against the tier-specific code subset**.
@@ -271,6 +287,7 @@ make lint-tdd-compliance           # Check BDD framework, BR references
 ## 📚 **Complete Documentation**
 
 - **[Testing Strategy Guide](mdc:docs/testing/README.md)** - Complete testing documentation index
+- **[Wiring Verification](mdc:.cursor/rules/10-wiring-verification.mdc)** - Wiring Manifest, CHECKPOINT W, Pyramid Invariant
 - **[Pyramid Migration Guide](mdc:docs/testing/PYRAMID_TEST_MIGRATION_GUIDE.md)** - 8-week migration plan
 - **[Testing Patterns Quick Reference](mdc:docs/testing/TESTING_PATTERNS_QUICK_REFERENCE.md)** - Daily development reference
 - **[Anti-Pattern Detection](mdc:docs/testing/ANTI_PATTERN_DETECTION.md)** - Violation detection and remediation
@@ -288,4 +305,4 @@ make lint-tdd-compliance           # Check BDD framework, BR references
 | **E2E** | <10% | >=80% of full service | Ginkgo/Gomega + KIND | Zero internal mocks |
 | **All Tiers** | — | >=80% merged | — | — |
 
-**Remember**: Mock external dependencies, use real business logic, validate business outcomes. **If a feature has no test, it risks not being implemented.**
+**Remember**: Mock external dependencies, use real business logic, validate business outcomes. **If a feature has no test, it risks not being implemented.** UT proves logic, IT proves wiring, E2E proves the journey -- a component with only UT is prototyped, not implemented.

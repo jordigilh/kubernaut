@@ -22,7 +22,7 @@ var _ = Describe("Tool Constructors", func() {
 		{"kubernaut_start_investigation", func() (interface{ Name() string }, error) { return tools.NewStartInvestigationTool(nil, nil) }},
 		{"kubernaut_poll_investigation", func() (interface{ Name() string }, error) { return tools.NewPollInvestigationTool(nil, nil) }},
 		{"kubernaut_select_workflow", func() (interface{ Name() string }, error) { return tools.NewSelectWorkflowTool(nil, nil) }},
-		{"present_decision", func() (interface{ Name() string }, error) { return tools.NewPresentDecisionTool() }},
+		{"kubernaut_present_decision", func() (interface{ Name() string }, error) { return tools.NewPresentDecisionTool() }},
 		{"kubernaut_list_workflows", func() (interface{ Name() string }, error) { return tools.NewListWorkflowsTool(nil) }},
 		{"kubernaut_get_remediation_history", func() (interface{ Name() string }, error) { return tools.NewGetRemediationHistoryTool(nil) }},
 		{"kubernaut_get_effectiveness", func() (interface{ Name() string }, error) { return tools.NewGetEffectivenessTool(nil) }},

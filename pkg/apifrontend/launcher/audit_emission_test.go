@@ -14,6 +14,7 @@ import (
 	"google.golang.org/genai"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
+	afsession "github.com/jordigilh/kubernaut/pkg/apifrontend/session"
 )
 
 type auditSpy struct {
@@ -110,5 +111,31 @@ func TestAfterExecuteCallback_EmitsTriageCompleted(t *testing.T) {
 	}
 	if events[0].Detail["task_id"] != "task-triage-done" {
 		t.Errorf("task_id = %q, want %q", events[0].Detail["task_id"], "task-triage-done")
+	}
+}
+
+// IT-AF-1234-W40: BeforeExecuteCallback populates CreateContext.SessionID from ContextID
+func TestBeforeExecuteCallback_SetsSessionIDFromContextID(t *testing.T) {
+	t.Parallel()
+	cb := buildBeforeExecuteCallback(nil, nil)
+
+	reqCtx := &a2asrv.RequestContext{
+		TaskID:    "task-sid-test",
+		ContextID: "ctx-abc-123",
+	}
+	ctx, err := cb(context.Background(), reqCtx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	sc := afsession.CreateContextFromContext(ctx)
+	if sc == nil {
+		t.Fatal("IT-AF-1234-W40: CreateContext should be injected into context")
+	}
+	if sc.TaskID != "task-sid-test" {
+		t.Errorf("IT-AF-1234-W40: TaskID = %q, want %q", sc.TaskID, "task-sid-test")
+	}
+	if sc.SessionID != "ctx-abc-123" {
+		t.Errorf("IT-AF-1234-W40: SessionID = %q, want %q (from ContextID)", sc.SessionID, "ctx-abc-123")
 	}
 }

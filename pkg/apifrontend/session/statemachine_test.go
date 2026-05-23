@@ -79,7 +79,10 @@ var _ = Describe("State Machine", func() {
 			svc = newTestService(k8s, scheme)
 			createSession("sess-phase")
 
-			err := svc.UpdatePhase(ctx, "sess-phase", v1alpha1.SessionPhaseCompleted, "investigation done", "test-user")
+			err := svc.MaterializeCRD(ctx, "sess-phase", v1alpha1.ObjectRef{Name: "rr-phase", Namespace: "test-ns"})
+			Expect(err).NotTo(HaveOccurred())
+
+			err = svc.UpdatePhase(ctx, "sess-phase", v1alpha1.SessionPhaseCompleted, "investigation done", "test-user")
 			Expect(err).NotTo(HaveOccurred())
 
 			var crd v1alpha1.InvestigationSession
@@ -95,7 +98,10 @@ var _ = Describe("State Machine", func() {
 			svc = newTestService(k8s, scheme)
 			createSession("sess-terminal")
 
-			err := svc.UpdatePhase(ctx, "sess-terminal", v1alpha1.SessionPhaseCompleted, "done", "test-user")
+			err := svc.MaterializeCRD(ctx, "sess-terminal", v1alpha1.ObjectRef{Name: "rr-terminal", Namespace: "test-ns"})
+			Expect(err).NotTo(HaveOccurred())
+
+			err = svc.UpdatePhase(ctx, "sess-terminal", v1alpha1.SessionPhaseCompleted, "done", "test-user")
 			Expect(err).NotTo(HaveOccurred())
 
 			var crd v1alpha1.InvestigationSession
@@ -109,8 +115,10 @@ var _ = Describe("State Machine", func() {
 			svc = newTestService(k8s, scheme)
 			createSession("sess-disconnect")
 
-			// Disconnect
-			err := svc.UpdatePhase(ctx, "sess-disconnect", v1alpha1.SessionPhaseDisconnected, "SSE dropped", "test-user")
+			err := svc.MaterializeCRD(ctx, "sess-disconnect", v1alpha1.ObjectRef{Name: "rr-disc", Namespace: "test-ns"})
+			Expect(err).NotTo(HaveOccurred())
+
+			err = svc.UpdatePhase(ctx, "sess-disconnect", v1alpha1.SessionPhaseDisconnected, "SSE dropped", "test-user")
 			Expect(err).NotTo(HaveOccurred())
 
 			var crd v1alpha1.InvestigationSession

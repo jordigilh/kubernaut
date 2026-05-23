@@ -18,8 +18,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
-
 	adksession "google.golang.org/adk/session"
 	"google.golang.org/genai"
 
@@ -103,13 +101,16 @@ var _ = Describe("CRDSessionService", func() {
 			Expect(resp.Session.UserID()).To(Equal("jane.doe"))
 		})
 
-		It("UT-AF-200-002: creates InvestigationSession CRD with ownerRef", func() {
+		It("UT-AF-200-002: MaterializeCRD creates InvestigationSession CRD with ownerRef", func() {
 			resp, err := svc.Create(ctx, &adksession.CreateRequest{
 				AppName:   "kubernaut-apifrontend",
 				UserID:    "jane.doe",
 				SessionID: "sess-1",
 				State:     createConfigState(),
 			})
+			Expect(err).NotTo(HaveOccurred())
+
+			err = svc.MaterializeCRD(ctx, "sess-1", v1alpha1.ObjectRef{Name: "rr-payment-api", Namespace: "test-ns"})
 			Expect(err).NotTo(HaveOccurred())
 
 			var crd v1alpha1.InvestigationSession
@@ -121,13 +122,16 @@ var _ = Describe("CRDSessionService", func() {
 			_ = resp
 		})
 
-		It("UT-AF-200-003: sets standard labels", func() {
+		It("UT-AF-200-003: sets standard labels after MaterializeCRD", func() {
 			_, err := svc.Create(ctx, &adksession.CreateRequest{
 				AppName:   "kubernaut-apifrontend",
 				UserID:    "jane.doe",
 				SessionID: "sess-labels",
 				State:     createConfigState(),
 			})
+			Expect(err).NotTo(HaveOccurred())
+
+			err = svc.MaterializeCRD(ctx, "sess-labels", v1alpha1.ObjectRef{Name: "rr-payment-api", Namespace: "test-ns"})
 			Expect(err).NotTo(HaveOccurred())
 
 			var crd v1alpha1.InvestigationSession
@@ -150,13 +154,16 @@ var _ = Describe("CRDSessionService", func() {
 			Expect(resp.Session.ID()).To(Equal("my-custom-id"))
 		})
 
-		It("UT-AF-200-005: populates CRD spec from request state", func() {
+		It("UT-AF-200-005: populates CRD spec from request state after MaterializeCRD", func() {
 			_, err := svc.Create(ctx, &adksession.CreateRequest{
 				AppName:   "kubernaut-apifrontend",
 				UserID:    "jane.doe",
 				SessionID: "sess-spec",
 				State:     createConfigState(),
 			})
+			Expect(err).NotTo(HaveOccurred())
+
+			err = svc.MaterializeCRD(ctx, "sess-spec", v1alpha1.ObjectRef{Name: "rr-payment-api", Namespace: "test-ns"})
 			Expect(err).NotTo(HaveOccurred())
 
 			var crd v1alpha1.InvestigationSession
@@ -171,7 +178,7 @@ var _ = Describe("CRDSessionService", func() {
 			Expect(crd.Status.StartedAt).NotTo(BeNil())
 		})
 
-		It("UT-AF-200-006: rolls back CRD if delegate fails", func() {
+		It("UT-AF-200-006: duplicate create fails without corrupting first session", func() {
 			_, err := svc.Create(ctx, &adksession.CreateRequest{
 				AppName:   "kubernaut-apifrontend",
 				UserID:    "jane.doe",
@@ -180,7 +187,6 @@ var _ = Describe("CRDSessionService", func() {
 			})
 			Expect(err).NotTo(HaveOccurred())
 
-			// second create with same ID should fail (delegate rejects duplicates)
 			_, err = svc.Create(ctx, &adksession.CreateRequest{
 				AppName:   "kubernaut-apifrontend",
 				UserID:    "jane.doe",
@@ -189,10 +195,13 @@ var _ = Describe("CRDSessionService", func() {
 			})
 			Expect(err).To(HaveOccurred())
 
-			// CRD from first create should still exist (not rolled back)
-			var crd v1alpha1.InvestigationSession
-			err = k8s.Get(ctx, types.NamespacedName{Name: "sess-dup", Namespace: "test-ns"}, &crd)
+			resp, err := svc.Get(ctx, &adksession.GetRequest{
+				AppName:   "kubernaut-apifrontend",
+				UserID:    "jane.doe",
+				SessionID: "sess-dup",
+			})
 			Expect(err).NotTo(HaveOccurred())
+			Expect(resp.Session.ID()).To(Equal("sess-dup"))
 		})
 	})
 
@@ -224,15 +233,20 @@ var _ = Describe("CRDSessionService", func() {
 
 	Describe("PruneTerminalEntries", func() {
 		It("removes index entries for CRDs in terminal phase", func() {
+			rrRef := v1alpha1.ObjectRef{Name: "rr-prune", Namespace: "test-ns"}
+
 			req1 := createRequestWithDefaults("prune-active", "jane.doe", createConfigState())
 			_, err := svc.Create(ctx, &req1)
+			Expect(err).NotTo(HaveOccurred())
+			err = svc.MaterializeCRD(ctx, "prune-active", rrRef)
 			Expect(err).NotTo(HaveOccurred())
 
 			req2 := createRequestWithDefaults("prune-done", "jane.doe", createConfigState())
 			_, err = svc.Create(ctx, &req2)
 			Expect(err).NotTo(HaveOccurred())
+			err = svc.MaterializeCRD(ctx, "prune-done", rrRef)
+			Expect(err).NotTo(HaveOccurred())
 
-			// Simulate external transition (TTL controller) by updating CRD directly
 			var crd v1alpha1.InvestigationSession
 			err = k8s.Get(ctx, types.NamespacedName{Name: "prune-done", Namespace: "test-ns"}, &crd)
 			Expect(err).NotTo(HaveOccurred())
@@ -243,7 +257,6 @@ var _ = Describe("CRDSessionService", func() {
 			pruned := svc.PruneTerminalEntries(ctx)
 			Expect(pruned).To(Equal(1))
 
-			// Active session should still be accessible via GetSessionPhase
 			phase, err := svc.GetSessionPhase(ctx, "prune-active")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(phase).To(Equal(v1alpha1.SessionPhaseActive))
@@ -253,8 +266,9 @@ var _ = Describe("CRDSessionService", func() {
 			req := createRequestWithDefaults("prune-idem", "jane.doe", createConfigState())
 			_, err := svc.Create(ctx, &req)
 			Expect(err).NotTo(HaveOccurred())
+			err = svc.MaterializeCRD(ctx, "prune-idem", v1alpha1.ObjectRef{Name: "rr-idem", Namespace: "test-ns"})
+			Expect(err).NotTo(HaveOccurred())
 
-			// Simulate external terminal transition
 			var crd v1alpha1.InvestigationSession
 			err = k8s.Get(ctx, types.NamespacedName{Name: "prune-idem", Namespace: "test-ns"}, &crd)
 			Expect(err).NotTo(HaveOccurred())
@@ -412,6 +426,9 @@ var _ = Describe("CRDSessionService", func() {
 			})
 			Expect(err).NotTo(HaveOccurred())
 
+			err = svc.MaterializeCRD(ctx, "sess-del", v1alpha1.ObjectRef{Name: "rr-del", Namespace: "test-ns"})
+			Expect(err).NotTo(HaveOccurred())
+
 			err = svc.Delete(ctx, &adksession.DeleteRequest{
 				AppName:   "kubernaut-apifrontend",
 				UserID:    "jane.doe",
@@ -419,7 +436,6 @@ var _ = Describe("CRDSessionService", func() {
 			})
 			Expect(err).NotTo(HaveOccurred())
 
-			// delegate should not have session
 			_, err = svc.Get(ctx, &adksession.GetRequest{
 				AppName:   "kubernaut-apifrontend",
 				UserID:    "jane.doe",
@@ -427,7 +443,6 @@ var _ = Describe("CRDSessionService", func() {
 			})
 			Expect(err).To(HaveOccurred())
 
-			// CRD should not exist
 			var crd v1alpha1.InvestigationSession
 			err = k8s.Get(ctx, types.NamespacedName{Name: "sess-del", Namespace: "test-ns"}, &crd)
 			Expect(err).To(HaveOccurred())
@@ -444,7 +459,6 @@ var _ = Describe("CRDSessionService", func() {
 		})
 
 		It("UT-AF-203-003: removes CRD even if delegate has no state", func() {
-			// create session normally
 			_, err := svc.Create(ctx, &adksession.CreateRequest{
 				AppName:   "kubernaut-apifrontend",
 				UserID:    "jane.doe",
@@ -453,14 +467,15 @@ var _ = Describe("CRDSessionService", func() {
 			})
 			Expect(err).NotTo(HaveOccurred())
 
-			// simulate restart (new service loses delegate state, but CRD exists)
+			err = svc.MaterializeCRD(ctx, "sess-orphan", v1alpha1.ObjectRef{Name: "rr-orphan", Namespace: "test-ns"})
+			Expect(err).NotTo(HaveOccurred())
+
 			svc2 := session.NewCRDSessionService(
 				adksession.InMemoryService(),
 				k8s,
 				scheme,
 				"test-ns",
 			)
-			// delete should still clean up CRD
 			_ = svc2.Delete(ctx, &adksession.DeleteRequest{
 				AppName:   "kubernaut-apifrontend",
 				UserID:    "jane.doe",
@@ -583,17 +598,19 @@ var _ = Describe("CRDSessionService", func() {
 		})
 
 		It("UT-AF-204-005: updates CRD status lastUpdateTime", func() {
+			err := svc.MaterializeCRD(ctx, "sess-append", v1alpha1.ObjectRef{Name: "rr-append", Namespace: "test-ns"})
+			Expect(err).NotTo(HaveOccurred())
+
 			evt := adksession.NewEvent("inv-1")
 			evt.Author = "agent"
 			evt.Content = genai.NewContentFromText("update", genai.RoleModel)
 
-			err := svc.AppendEvent(ctx, sess, evt)
+			err = svc.AppendEvent(ctx, sess, evt)
 			Expect(err).NotTo(HaveOccurred())
 
 			var crd v1alpha1.InvestigationSession
 			err = k8s.Get(ctx, types.NamespacedName{Name: "sess-append", Namespace: "test-ns"}, &crd)
 			Expect(err).NotTo(HaveOccurred())
-			// CRD metadata should reflect recent activity
 			Expect(crd.Status.Phase).To(Equal(v1alpha1.SessionPhaseActive))
 		})
 
@@ -628,42 +645,26 @@ var _ = Describe("CRDSessionService", func() {
 		})
 	})
 
-	Describe("Create rollback logging", func() {
-		It("UT-AF-200-007: logs Warn when CRD rollback fails after status update error", func() {
-			statusUpdateFail := true
-			deleteFail := true
-			k8s = fake.NewClientBuilder().
-				WithScheme(scheme).
-				WithStatusSubresource(&v1alpha1.InvestigationSession{}).
-				WithInterceptorFuncs(interceptor.Funcs{
-					SubResourceUpdate: func(ctx context.Context, c client.Client, subResourceName string, obj client.Object, opts ...client.SubResourceUpdateOption) error {
-						if statusUpdateFail {
-							return fmt.Errorf("simulated status update failure")
-						}
-						return c.SubResource(subResourceName).Update(ctx, obj, opts...)
-					},
-					Delete: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
-						if deleteFail {
-							return fmt.Errorf("simulated delete failure")
-						}
-						return c.Delete(ctx, obj, opts...)
-					},
-				}).
-				Build()
-			svc = session.NewCRDSessionService(
-				adksession.InMemoryService(), k8s, scheme, "test-ns",
-			)
-
-			// Create will succeed at CRD creation, fail at Status Update,
-			// then attempt rollback Delete which also fails (triggering Warn log).
+	Describe("Create deferred lifecycle", func() {
+		It("UT-AF-200-007: Create does not produce CRD until MaterializeCRD", func() {
 			_, err := svc.Create(ctx, &adksession.CreateRequest{
 				AppName:   "kubernaut-apifrontend",
 				UserID:    "jane.doe",
-				SessionID: "sess-rollback",
+				SessionID: "sess-deferred-check",
 				State:     createConfigState(),
 			})
+			Expect(err).NotTo(HaveOccurred())
+
+			var crd v1alpha1.InvestigationSession
+			err = k8s.Get(ctx, types.NamespacedName{Name: "sess-deferred-check", Namespace: "test-ns"}, &crd)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("set InvestigationSession initial status"))
+			Expect(err.Error()).To(ContainSubstring("not found"))
+
+			err = svc.MaterializeCRD(ctx, "sess-deferred-check", v1alpha1.ObjectRef{Name: "rr-payment-api", Namespace: "test-ns"})
+			Expect(err).NotTo(HaveOccurred())
+
+			err = k8s.Get(ctx, types.NamespacedName{Name: "sess-deferred-check", Namespace: "test-ns"}, &crd)
+			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 
@@ -686,7 +687,9 @@ var _ = Describe("CRDSessionService", func() {
 			})
 			Expect(err).NotTo(HaveOccurred())
 
-			// Transition to Disconnected
+			err = svc.MaterializeCRD(ctx, "sess-gauge", v1alpha1.ObjectRef{Name: "rr-gauge", Namespace: "test-ns"})
+			Expect(err).NotTo(HaveOccurred())
+
 			err = svc.UpdatePhase(ctx, "sess-gauge", v1alpha1.SessionPhaseDisconnected, "SSE dropped", "jane.doe")
 			Expect(err).NotTo(HaveOccurred())
 
@@ -712,6 +715,7 @@ var _ = Describe("CRDSessionService", func() {
 		It("UT-AF-205-001: prunes all entries when every indexed CRD is terminal", func() {
 			k8s = newFakeClient(scheme)
 			svc = newTestService(k8s, scheme)
+			rrRef := v1alpha1.ObjectRef{Name: "rr-terminal", Namespace: "test-ns"}
 
 			for i := 0; i < 3; i++ {
 				id := fmt.Sprintf("sess-all-terminal-%d", i)
@@ -719,8 +723,9 @@ var _ = Describe("CRDSessionService", func() {
 				_, err := svc.Create(ctx, &req)
 				Expect(err).NotTo(HaveOccurred())
 
-				// Externally transition the CRD to terminal (bypasses UpdatePhase
-				// to simulate orphan scenario where crdIndex is not cleaned).
+				err = svc.MaterializeCRD(ctx, id, rrRef)
+				Expect(err).NotTo(HaveOccurred())
+
 				var crd v1alpha1.InvestigationSession
 				err = k8s.Get(ctx, types.NamespacedName{Name: id, Namespace: "test-ns"}, &crd)
 				Expect(err).NotTo(HaveOccurred())
@@ -732,7 +737,6 @@ var _ = Describe("CRDSessionService", func() {
 			pruned := svc.PruneTerminalEntries(ctx)
 			Expect(pruned).To(Equal(3))
 
-			// Idempotent: second call prunes nothing
 			pruned = svc.PruneTerminalEntries(ctx)
 			Expect(pruned).To(Equal(0))
 		})
@@ -749,6 +753,9 @@ var _ = Describe("CRDSessionService", func() {
 
 			req := createRequestWithDefaults("sess-audit", "jane.doe", createConfigState())
 			_, err := svc.Create(ctx, &req)
+			Expect(err).NotTo(HaveOccurred())
+
+			err = svc.MaterializeCRD(ctx, "sess-audit", v1alpha1.ObjectRef{Name: "rr-audit", Namespace: "test-ns"})
 			Expect(err).NotTo(HaveOccurred())
 
 			err = svc.UpdatePhase(ctx, "sess-audit", v1alpha1.SessionPhaseCompleted, "done", "test-actor")

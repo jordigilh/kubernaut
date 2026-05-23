@@ -3,8 +3,10 @@ package handler_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -463,6 +465,170 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 		})
 	})
 
+	Describe("Interactive Tool Wiring (G1)", func() {
+
+		var invokedAction string
+
+		setupInteractiveStack := func() {
+			invokedAction = ""
+			mockMCP := &ka.MockMCPClient{
+				SelectWorkflowFn: func(_ context.Context, _ ka.SelectWorkflowArgs) (*ka.SelectWorkflowResult, error) {
+					return &ka.SelectWorkflowResult{Status: "selected"}, nil
+				},
+				InvokeActionFn: func(_ context.Context, args ka.InvokeActionArgs) (*ka.InvokeActionResult, error) {
+					invokedAction = args.Action
+					return &ka.InvokeActionResult{SessionID: "interactive-sess", Status: "ok"}, nil
+				},
+			}
+			kaStreamHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if strings.HasSuffix(r.URL.Path, "/stream") {
+					w.Header().Set("Content-Type", "text/event-stream")
+					w.WriteHeader(http.StatusOK)
+					_, _ = fmt.Fprintf(w, "event: complete\ndata: {\"type\":\"complete\",\"summary\":\"done\"}\n\n")
+					return
+				}
+				w.WriteHeader(http.StatusNotFound)
+			})
+			setupStackWithKAHandler(kaStreamHandler, newFakeDSClient())
+			kaServer.Close()
+			kaServer = httptest.NewServer(kaStreamHandler)
+
+			kaClient := ka.NewClient(ka.Config{
+				BaseURL:            kaServer.URL,
+				Timeout:            5 * time.Second,
+				CBFailureThreshold: 5,
+				CBMaxRequests:      3,
+				CBInterval:         10 * time.Second,
+				CBTimeout:          100 * time.Millisecond,
+				RetryMax:           1,
+				RetryInitBackoff:   1 * time.Millisecond,
+				RetryMaxBackoff:    5 * time.Millisecond,
+				RetryableStatuses:  []int{503},
+			})
+
+			auditor = &fakeAuditor{}
+			testUser = &auth.UserIdentity{Username: "sre@kubernaut.ai", Groups: []string{"sre"}}
+
+			cfg := handler.MCPConfig{
+				ServerName:    "af-it",
+				ServerVersion: "0.0.1-test",
+				Enabled:       true,
+				Bridge: &handler.MCPBridgeConfig{
+					K8sClient:          newFakeDynamicClient(),
+					KAClient:           kaClient,
+					KAMCPClient:        mockMCP,
+					DSClient:           newFakeDSClient(),
+					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"*"}}},
+					Logger:             logr.Discard(),
+					Auditor:            auditor,
+					Metrics:            newBridgeMetrics(),
+					ToolTimeout:        5 * time.Second,
+					MaxConcurrentTools: 10,
+				},
+			}
+
+			var err error
+			h, err = handler.NewMCPHandler(cfg)
+			Expect(err).NotTo(HaveOccurred())
+			sessionID = mcpInitialize(h, testUser)
+		}
+
+		It("IT-AF-1234-W01: kubernaut_takeover dispatches to KA MCP via InvokeAction", func() {
+			setupInteractiveStack()
+
+			status, body := mcpCallTool(h, sessionID, "kubernaut_takeover", map[string]any{
+				"rr_id": "production/api-gw",
+			}, testUser)
+
+			Expect(status).To(Equal(http.StatusOK))
+			text := extractTextContent(body)
+			Expect(text).To(ContainSubstring("ok"))
+			Expect(invokedAction).To(Equal("takeover"))
+		})
+
+		It("IT-AF-1234-W02: kubernaut_message dispatches with message payload", func() {
+			setupInteractiveStack()
+
+			status, body := mcpCallTool(h, sessionID, "kubernaut_message", map[string]any{
+				"rr_id":   "production/api-gw",
+				"message": "increase memory to 512Mi",
+			}, testUser)
+
+			Expect(status).To(Equal(http.StatusOK))
+			text := extractTextContent(body)
+			Expect(text).To(ContainSubstring("ok"))
+			Expect(invokedAction).To(Equal("message"))
+		})
+
+		It("IT-AF-1234-W03: kubernaut_complete dispatches complete action", func() {
+			setupInteractiveStack()
+
+			status, body := mcpCallTool(h, sessionID, "kubernaut_complete", map[string]any{
+				"rr_id": "production/api-gw",
+			}, testUser)
+
+			Expect(status).To(Equal(http.StatusOK))
+			text := extractTextContent(body)
+			Expect(text).To(ContainSubstring("ok"))
+			Expect(invokedAction).To(Equal("complete"))
+		})
+
+		It("IT-AF-1234-W04: kubernaut_cancel dispatches cancel action", func() {
+			setupInteractiveStack()
+
+			status, body := mcpCallTool(h, sessionID, "kubernaut_cancel", map[string]any{
+				"rr_id": "production/api-gw",
+			}, testUser)
+
+			Expect(status).To(Equal(http.StatusOK))
+			text := extractTextContent(body)
+			Expect(text).To(ContainSubstring("ok"))
+			Expect(invokedAction).To(Equal("cancel"))
+		})
+
+		It("IT-AF-1234-W05: kubernaut_status dispatches status action", func() {
+			setupInteractiveStack()
+
+			status, body := mcpCallTool(h, sessionID, "kubernaut_status", map[string]any{
+				"rr_id": "production/api-gw",
+			}, testUser)
+
+			Expect(status).To(Equal(http.StatusOK))
+			text := extractTextContent(body)
+			Expect(text).To(ContainSubstring("ok"))
+			Expect(invokedAction).To(Equal("status"))
+		})
+
+		It("IT-AF-1234-W06: kubernaut_reconnect dispatches reconnect action", func() {
+			setupInteractiveStack()
+
+			status, body := mcpCallTool(h, sessionID, "kubernaut_reconnect", map[string]any{
+				"rr_id": "production/api-gw",
+			}, testUser)
+
+			Expect(status).To(Equal(http.StatusOK))
+			text := extractTextContent(body)
+			Expect(text).To(ContainSubstring("ok"))
+			Expect(invokedAction).To(Equal("reconnect"))
+		})
+
+		It("IT-AF-1234-W07: kubernaut_stream_investigation dispatches to KA SSE stream", func() {
+			setupInteractiveStack()
+
+			status, body := mcpCallTool(h, sessionID, "kubernaut_stream_investigation", map[string]any{
+				"session_id": "sess-stream-001",
+			}, testUser)
+
+			Expect(status).To(Equal(http.StatusOK))
+			text := extractTextContent(body)
+			Expect(text).To(SatisfyAny(
+				ContainSubstring("completed"),
+				ContainSubstring("done"),
+				ContainSubstring("status"),
+			))
+		})
+	})
+
 	Describe("KA Circuit Breaker Through Bridge", func() {
 
 		It("IT-BRIDGE-013: CB trips after N failures, subsequent tool calls fail fast with friendly error", func() {
@@ -489,6 +655,70 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 			Expect(text).To(ContainSubstring("unavailable"))
 			Expect(callCount.Load()).To(Equal(beforeCount),
 				"should not have made additional HTTP call when CB is open")
+		})
+	})
+
+	Describe("Observability Enrichment (G11/G12/G18)", func() {
+
+		It("IT-AF-1234-W30: per-tool timeout overrides global for stream tool", func() {
+			setupStackWithKAHandler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusNotFound)
+			}), newFakeDSClient())
+
+			cfg := handler.MCPBridgeConfig{
+				ToolTimeout: 5 * time.Second,
+				ToolTimeouts: map[string]time.Duration{
+					"kubernaut_stream_investigation": 120 * time.Second,
+				},
+			}
+
+			streamTimeout := cfg.GetToolTimeoutFor("kubernaut_stream_investigation")
+			defaultTimeout := cfg.GetToolTimeoutFor("kubernaut_list_remediations")
+
+			Expect(streamTimeout).To(Equal(120 * time.Second))
+			Expect(defaultTimeout).To(Equal(5 * time.Second))
+		})
+
+		It("IT-AF-1234-W31: audit emits session_id and rr_id from interactive tool args", func() {
+			setupStackWithKAHandler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusNotFound)
+			}), newFakeDSClient())
+			auditor.Reset()
+
+			mcpCallTool(h, sessionID, "kubernaut_takeover", map[string]any{
+				"rr_id": "production/api-gw",
+			}, testUser)
+
+			events := auditor.Events()
+			var hasRRID bool
+			for _, e := range events {
+				if e.Detail["rr_id"] == "production/api-gw" {
+					hasRRID = true
+				}
+			}
+			Expect(hasRRID).To(BeTrue(), "audit event should include rr_id from tool args")
+		})
+
+		It("IT-AF-1234-W32: audit emits execution_duration_ms on success", func() {
+			setupStackWithKAHandler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusNotFound)
+			}), newFakeDSClient())
+			auditor.Reset()
+
+			mcpCallTool(h, sessionID, "kubernaut_present_decision", map[string]any{
+				"session_id": "sess-obs-001",
+				"summary":    "test summary",
+				"options":    []any{},
+			}, testUser)
+
+			events := auditor.Events()
+			var hasDuration bool
+			for _, e := range events {
+				if e.Detail["execution_duration_ms"] != "" {
+					hasDuration = true
+				}
+			}
+			Expect(hasDuration).To(BeTrue(), "audit event should include execution_duration_ms")
 		})
 	})
 })

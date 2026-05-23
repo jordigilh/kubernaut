@@ -22,6 +22,9 @@ session:
 mcp:
   enabled: true
   sessionIdleTimeout: 30m
+  toolTimeout: 30s
+  toolTimeouts:
+    kubernaut_stream_investigation: 15m
 
 agentCard:
   url: "https://apifrontend.kubernaut-system.svc:8443"
