@@ -639,8 +639,8 @@ spec:
             - name: inter-service-ca
               mountPath: /etc/apifrontend/inter-service-ca
               readOnly: true
-            - name: llm-key
-              mountPath: /etc/apifrontend/secrets
+            - name: llm-credentials
+              mountPath: /etc/apifrontend/llm-credentials
               readOnly: true
             - name: coverdata
               mountPath: /coverdata
@@ -677,7 +677,7 @@ spec:
         - name: inter-service-ca
           configMap:
             name: inter-service-ca
-        - name: llm-key
+        - name: llm-credentials
           secret:
             secretName: apifrontend-llm-key
         - name: coverdata
@@ -706,7 +706,17 @@ spec:
       nodePort: 30081
   selector:
     app: apifrontend
-`, namespace, indentYAML(string(configData), 4), afImage)
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: apifrontend-llm-key
+  namespace: %s
+type: Opaque
+stringData:
+  llm-api-key: "mock-key"
+`, namespace, indentYAML(string(configData), 4),
+		namespace, afImage, namespace, namespace)
 	return kubectlApplyStdin(ctx, kubeconfigPath, manifest, writer)
 }
 

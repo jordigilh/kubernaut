@@ -9,10 +9,6 @@ spec:
       containers:
         - name: apifrontend
           imagePullPolicy: IfNotPresent
-          volumeMounts:
-            - name: llm-key
-              mountPath: /etc/apifrontend/secrets
-              readOnly: true
           resources:
             requests:
               cpu: 50m
@@ -20,3 +16,11 @@ spec:
             limits:
               cpu: 250m
               memory: 256Mi
+          volumeMounts:
+            - name: llm-credentials
+              mountPath: /etc/apifrontend/llm-credentials
+              readOnly: true
+      volumes:
+        - name: llm-credentials
+          secret:
+            secretName: apifrontend-llm-key
