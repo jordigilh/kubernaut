@@ -295,6 +295,13 @@ func (h *RemediationWorkflowHandler) updateCRDStatus(namespace, name, registered
 		rw.Status.RegisteredBy = registeredBy
 		rw.Status.RegisteredAt = &now
 		rw.Status.PreviouslyExisted = result.PreviouslyExisted
+		setCondition(&rw.Status.Conditions, metav1.Condition{
+			Type:               rwv1alpha1.ConditionReady,
+			Status:             metav1.ConditionTrue,
+			Reason:             rwv1alpha1.ReasonRegistered,
+			Message:            "Workflow registered successfully in DataStorage catalog",
+			LastTransitionTime: now,
+		})
 
 		return h.k8sClient.Status().Update(ctx, rw)
 	})

@@ -253,14 +253,15 @@ func main() {
 	setupLog.Info("Registered ActionType webhook handler with DS client and audit store")
 
 	// Issue #548: Startup reconciler syncs existing CRDs with DataStorage on boot.
-	// Fail-closed: if DS is unreachable within the timeout, the manager won't start,
-	// blocking readiness probes and preventing stale state.
+	// Issue #1246: Graceful degradation — individual RW failures don't crash the pod.
 	startupReconciler := &authwebhook.StartupReconciler{
-		K8sClient:    mgr.GetClient(),
-		DSWorkflow:   rwDSClient,
-		DSActionType: rwDSClient,
-		Logger:       ctrl.Log.WithName("startup-reconciler"),
-		Timeout:      cfg.DataStorage.Timeout,
+		K8sClient:     mgr.GetClient(),
+		DSWorkflow:    rwDSClient,
+		DSActionType:  rwDSClient,
+		Logger:        ctrl.Log.WithName("startup-reconciler"),
+		Timeout:       cfg.DataStorage.Timeout,
+		EventRecorder: mgr.GetEventRecorderFor("authwebhook-startup"),
+		AuditStore:    auditStore,
 	}
 	if err := mgr.Add(startupReconciler); err != nil {
 		setupLog.Error(err, "unable to add startup reconciler")

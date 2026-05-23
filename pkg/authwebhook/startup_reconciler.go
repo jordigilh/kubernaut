@@ -24,9 +24,12 @@ import (
 	"github.com/go-logr/logr"
 	atv1alpha1 "github.com/jordigilh/kubernaut/api/actiontype/v1alpha1"
 	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -47,6 +50,7 @@ type ActionTypeDSClient interface {
 // controller manager blocks readiness until the reconciliation completes.
 //
 // Issue #548: Ensures PVC-wipe resilience by re-registering CRDs on startup.
+// Issue #1246: Graceful degradation — individual RW failures don't crash the pod.
 // Ordering: ActionType CRDs are synced first, then RemediationWorkflow CRDs,
 // because workflows reference action types.
 type StartupReconciler struct {
@@ -56,6 +60,8 @@ type StartupReconciler struct {
 	Logger         logr.Logger
 	Timeout        time.Duration
 	InitialBackoff time.Duration
+	EventRecorder  record.EventRecorder
+	AuditStore     audit.AuditStore
 }
 
 // NeedLeaderElection returns false so the reconciler runs on every replica,
@@ -165,11 +171,20 @@ func (r *StartupReconciler) syncWorkflows(ctx context.Context, logger logr.Logge
 
 	logger.Info("Syncing RemediationWorkflow CRDs with DS", "count", len(rwList.Items))
 
+	var succeeded, failed int
 	for i := range rwList.Items {
 		rw := &rwList.Items[i]
 		if err := r.syncWorkflowCRD(ctx, logger, rw, deadline); err != nil {
-			return err
+			failed++
+		} else {
+			succeeded++
 		}
+	}
+
+	if failed > 0 {
+		logger.Error(fmt.Errorf("%d workflow(s) failed registration", failed),
+			"Startup reconciliation completed with degraded workflows",
+			"succeeded", succeeded, "failed", failed)
 	}
 	return nil
 }
@@ -179,42 +194,144 @@ func (r *StartupReconciler) syncWorkflowCRD(ctx context.Context, logger logr.Log
 
 	content, err := marshalCleanCRDContent(rw)
 	if err != nil {
-		return fmt.Errorf("failed to marshal workflow %q for DS: %w", rw.Name, err)
+		r.markWorkflowFailed(ctx, rwLogger, rw, rwv1alpha1.ReasonValidationFailed,
+			fmt.Sprintf("failed to marshal workflow: %v", err))
+		return err
 	}
 
 	backoff := r.InitialBackoff
 	for {
-		result, err := r.DSWorkflow.CreateWorkflowInline(ctx, string(content), "crd-startup-reconcile", startupRegisteredBy)
+		result, err := r.DSWorkflow.CreateWorkflowInline(ctx, string(content), rw.Name, startupRegisteredBy)
 		if err == nil {
 			rwLogger.Info("Workflow synced with DS",
 				"workflow_id", result.WorkflowID,
 				"status", result.Status,
 				"previously_existed", result.PreviouslyExisted,
 			)
-
-			rw.Status.WorkflowID = result.WorkflowID
-			rw.Status.CatalogStatus = sharedtypes.CatalogStatus(result.Status)
-			rw.Status.RegisteredBy = startupRegisteredBy
-			now := metav1.Now()
-			rw.Status.RegisteredAt = &now
-			rw.Status.PreviouslyExisted = result.PreviouslyExisted
-
-			if statusErr := r.K8sClient.Status().Update(ctx, rw); statusErr != nil {
-				rwLogger.Error(statusErr, "Failed to update RemediationWorkflow CRD status")
-			}
+			r.markWorkflowSucceeded(ctx, rwLogger, rw, result)
 			return nil
 		}
 
+		if IsPermanentError(err) {
+			rwLogger.Error(err, "Workflow registration permanently failed — marking as Disabled",
+				"remediation", "fix the referenced dependency and re-apply the RW CR")
+			r.markWorkflowFailed(ctx, rwLogger, rw, rwv1alpha1.ReasonDependencyMissing, err.Error())
+			return err
+		}
+
 		if time.Now().Add(backoff).After(deadline) {
-			return fmt.Errorf("DS unavailable for Workflow %q after retries: %w", rw.Name, err)
+			rwLogger.Error(err, "DS unavailable for workflow after retries — marking as Disabled",
+				"remediation", "ensure DataStorage is reachable and re-apply the RW CR")
+			r.markWorkflowFailed(ctx, rwLogger, rw, rwv1alpha1.ReasonDataStorageError,
+				fmt.Sprintf("DS unavailable after retries: %v", err))
+			return err
 		}
 
 		rwLogger.Info("DS unavailable, retrying", "backoff", backoff, "error", err)
 		select {
 		case <-ctx.Done():
+			r.markWorkflowFailed(ctx, rwLogger, rw, rwv1alpha1.ReasonDataStorageError, "context cancelled")
 			return fmt.Errorf("context cancelled while syncing Workflow %q: %w", rw.Name, ctx.Err())
 		case <-time.After(backoff):
 			backoff *= 2
 		}
 	}
+}
+
+func (r *StartupReconciler) markWorkflowSucceeded(ctx context.Context, logger logr.Logger, rw *rwv1alpha1.RemediationWorkflow, result *WorkflowRegistrationResult) {
+	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		fresh := &rwv1alpha1.RemediationWorkflow{}
+		if getErr := r.K8sClient.Get(ctx, client.ObjectKeyFromObject(rw), fresh); getErr != nil {
+			return getErr
+		}
+
+		now := metav1.Now()
+		fresh.Status.WorkflowID = result.WorkflowID
+		fresh.Status.CatalogStatus = sharedtypes.CatalogStatus(result.Status)
+		fresh.Status.RegisteredBy = startupRegisteredBy
+		fresh.Status.RegisteredAt = &now
+		fresh.Status.PreviouslyExisted = result.PreviouslyExisted
+		setCondition(&fresh.Status.Conditions, metav1.Condition{
+			Type:               rwv1alpha1.ConditionReady,
+			Status:             metav1.ConditionTrue,
+			Reason:             rwv1alpha1.ReasonRegistered,
+			Message:            "Workflow registered successfully in DataStorage catalog",
+			LastTransitionTime: now,
+		})
+		return r.K8sClient.Status().Update(ctx, fresh)
+	})
+	if err != nil {
+		logger.Error(err, "Failed to update RemediationWorkflow CRD status")
+	}
+}
+
+func (r *StartupReconciler) markWorkflowFailed(ctx context.Context, logger logr.Logger, rw *rwv1alpha1.RemediationWorkflow, reason, message string) {
+	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		fresh := &rwv1alpha1.RemediationWorkflow{}
+		if getErr := r.K8sClient.Get(ctx, client.ObjectKeyFromObject(rw), fresh); getErr != nil {
+			return getErr
+		}
+
+		now := metav1.Now()
+		fresh.Status.CatalogStatus = sharedtypes.CatalogStatusDisabled
+		setCondition(&fresh.Status.Conditions, metav1.Condition{
+			Type:               rwv1alpha1.ConditionReady,
+			Status:             metav1.ConditionFalse,
+			Reason:             reason,
+			Message:            message,
+			LastTransitionTime: now,
+		})
+		return r.K8sClient.Status().Update(ctx, fresh)
+	})
+	if err != nil {
+		logger.Error(err, "Failed to update RemediationWorkflow CRD status to Disabled")
+	}
+
+	if r.EventRecorder != nil {
+		r.EventRecorder.Eventf(rw, "Warning", "RegistrationFailed",
+			"Workflow registration failed: %s", message)
+	}
+
+	r.emitRegistrationFailedAudit(ctx, rw, reason, message)
+}
+
+// setCondition adds or updates a condition in the slice by type.
+func setCondition(conditions *[]metav1.Condition, cond metav1.Condition) {
+	for i, existing := range *conditions {
+		if existing.Type == cond.Type {
+			(*conditions)[i] = cond
+			return
+		}
+	}
+	*conditions = append(*conditions, cond)
+}
+
+// emitRegistrationFailedAudit emits an audit event when a workflow fails registration
+// during startup reconciliation. Uses best-effort semantics (audit failure doesn't
+// block startup). Category: "workflow", EventType: "authwebhook.workflow.registration_failed".
+func (r *StartupReconciler) emitRegistrationFailedAudit(ctx context.Context, rw *rwv1alpha1.RemediationWorkflow, reason, message string) {
+	if r.AuditStore == nil {
+		return
+	}
+
+	event := audit.NewAuditEventRequest()
+	audit.SetEventType(event, EventTypeRWRegistrationFailed)
+	audit.SetEventCategory(event, EventCategoryWorkflow)
+	audit.SetEventAction(event, "registration_failed")
+	audit.SetEventOutcome(event, ogenclient.AuditEventRequestEventOutcomeFailure)
+	audit.SetActor(event, "system", startupRegisteredBy)
+	audit.SetResource(event, "RemediationWorkflow", rw.Name)
+	audit.SetNamespace(event, rw.Namespace)
+	audit.SetSeverity(event, "high")
+
+	payload := ogenclient.AuthwebhookWorkflowRegistrationFailedPayload{
+		EventType:    ogenclient.AuthwebhookWorkflowRegistrationFailedPayloadEventTypeAuthwebhookWorkflowRegistrationFailed,
+		WorkflowName: rw.Name,
+		Reason:       ogenclient.AuthwebhookWorkflowRegistrationFailedPayloadReason(reason),
+		Message:      message,
+	}
+	payload.Namespace.SetTo(rw.Namespace)
+	event.EventData = ogenclient.NewAuthwebhookWorkflowRegistrationFailedPayloadAuditEventRequestEventData(payload)
+
+	storeAuditBestEffort(ctx, r.AuditStore, event, "startup-reconciler", EventTypeRWRegistrationFailed)
 }
