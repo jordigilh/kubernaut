@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -75,6 +76,7 @@ type AuthConfig struct {
 	IssuerURL              string `yaml:"issuerURL"`
 	JWKSURL                string `yaml:"jwksURL,omitempty"`
 	Audience               string `yaml:"audience"`
+	OIDCCaFile             string `yaml:"oidcCaFile,omitempty"`
 	EnableReplayProtection bool   `yaml:"enableReplayProtection,omitempty"`
 	AllowInsecureIssuers   bool   `yaml:"allowInsecureIssuers,omitempty"`
 }
@@ -313,6 +315,9 @@ func (c *Config) validateAuth() error {
 		if err := validateURL("auth.jwksURL", c.Auth.JWKSURL); err != nil {
 			return err
 		}
+	}
+	if c.Auth.OIDCCaFile != "" && !filepath.IsAbs(c.Auth.OIDCCaFile) {
+		return fmt.Errorf("auth.oidcCaFile must be an absolute path, got %q", c.Auth.OIDCCaFile)
 	}
 	return nil
 }

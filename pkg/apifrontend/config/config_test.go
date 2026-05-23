@@ -1016,3 +1016,74 @@ func TestValidate_SessionNamespaceRequiredWhenTTLsSet(t *testing.T) {
 		})
 	}
 }
+
+// --- Tier 8: OIDC CA File (Issue #1245) ---
+
+func TestLoad_AuthOIDCCaFile(t *testing.T) {
+	// UT-AF-1245-010: oidcCaFile field is parsed from YAML.
+	data := []byte(`
+auth:
+  issuerURL: "https://sso.example.com/realms/kubernaut"
+  audience: "apifrontend"
+  oidcCaFile: "/etc/apifrontend/ingress-ca/ca.crt"
+`)
+	cfg, err := Load(data)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Auth.OIDCCaFile != "/etc/apifrontend/ingress-ca/ca.crt" {
+		t.Errorf("Auth.OIDCCaFile = %q, want %q", cfg.Auth.OIDCCaFile, "/etc/apifrontend/ingress-ca/ca.crt")
+	}
+}
+
+func TestLoad_AuthOIDCCaFileOmitted(t *testing.T) {
+	// UT-AF-1245-011: oidcCaFile defaults to empty when omitted.
+	data := []byte(`
+auth:
+  issuerURL: "https://sso.example.com/realms/kubernaut"
+  audience: "apifrontend"
+`)
+	cfg, err := Load(data)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Auth.OIDCCaFile != "" {
+		t.Errorf("Auth.OIDCCaFile = %q, want empty", cfg.Auth.OIDCCaFile)
+	}
+}
+
+func TestValidate_AuthOIDCCaFileRelativePath(t *testing.T) {
+	// UT-AF-1245-012: Relative oidcCaFile path is rejected.
+	cfg := validConfig()
+	cfg.Auth.IssuerURL = "https://sso.example.com/realms/kubernaut"
+	cfg.Auth.OIDCCaFile = "relative/path/ca.crt"
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for relative oidcCaFile path")
+	}
+	if !strings.Contains(err.Error(), "oidcCaFile") {
+		t.Errorf("error = %q, want to contain 'oidcCaFile'", err.Error())
+	}
+}
+
+func TestValidate_AuthOIDCCaFileAbsolutePath(t *testing.T) {
+	// UT-AF-1245-013: Absolute oidcCaFile path passes validation.
+	cfg := validConfig()
+	cfg.Auth.IssuerURL = "https://sso.example.com/realms/kubernaut"
+	cfg.Auth.OIDCCaFile = "/etc/apifrontend/ingress-ca/ca.crt"
+	err := cfg.Validate()
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestValidate_AuthOIDCCaFileEmptyIsOptional(t *testing.T) {
+	// UT-AF-1245-014: Empty oidcCaFile is valid (use system CAs).
+	cfg := validConfig()
+	cfg.Auth.IssuerURL = "https://sso.example.com/realms/kubernaut"
+	cfg.Auth.OIDCCaFile = ""
+	err := cfg.Validate()
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
