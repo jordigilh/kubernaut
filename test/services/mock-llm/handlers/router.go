@@ -27,6 +27,8 @@ import (
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/tracker"
 )
 
+const templatePrefix = "$from_tool:"
+
 // NewRouter creates the HTTP mux with all Mock LLM endpoints registered.
 func NewRouter(registry *scenarios.Registry, forceText bool, mode string) http.Handler {
 	return NewFullRouter(registry, forceText, mode, "", nil)

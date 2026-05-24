@@ -83,6 +83,13 @@ type MockScenarioConfig struct {
 	// listed tool calls in a single assistant message on the first request.
 	// Takes precedence over ToolCallName. Enables #970 parallel execution.
 	MultiToolCalls []MultiToolCallEntry
+
+	// RepeatToolCall, when true, causes the handler to emit ToolCallName /
+	// MultiToolCalls even when prior tool results exist in the conversation.
+	// Without this flag the handler only emits them on the first request
+	// (before any tool/function results appear). Required for multi-turn
+	// keyword scenarios where each turn must trigger a distinct tool call.
+	RepeatToolCall bool
 }
 
 // BoolPtr is a helper for creating *bool literals in scenario configs.

@@ -102,6 +102,8 @@ func (h *handler) handleOpenAI(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	resolveOpenAITemplateArgs(req.Messages, &cfg)
+
 	scenarioName := cfg.ScenarioName
 	h.recordScenarioMetric(scenarioName, result.Method)
 
@@ -197,7 +199,7 @@ func (h *handler) handleFullDAG(
 	hasSplit, resolved bool,
 	notifySubmit func(),
 ) {
-	if len(cfg.MultiToolCalls) > 0 && !hasToolResults(req.Messages) {
+	if len(cfg.MultiToolCalls) > 0 && (!hasToolResults(req.Messages) || cfg.RepeatToolCall) {
 		for _, tc := range cfg.MultiToolCalls {
 			h.trackToolCall(tc.Name)
 		}
@@ -205,7 +207,7 @@ func (h *handler) handleFullDAG(
 		return
 	}
 
-	if cfg.ToolCallName != "" && !hasToolResults(req.Messages) {
+	if cfg.ToolCallName != "" && (!hasToolResults(req.Messages) || cfg.RepeatToolCall) {
 		h.trackToolCall(cfg.ToolCallName)
 		writeJSON(w, http.StatusOK, response.BuildToolCallResponse(model, cfg.ToolCallName, cfg))
 		return
@@ -307,4 +309,29 @@ func msgString(m openai.Message) string {
 		parts = append(parts, tc.Function.Name, tc.Function.Arguments)
 	}
 	return strings.Join(parts, " ")
+}
+
+// resolveOpenAITemplateArgs scans cfg.ToolCallArgs for template placeholders
+// of the form "$from_tool:<toolName>:<field>" and replaces them with values
+// extracted from prior tool result messages in the OpenAI conversation.
+// The map is cloned before mutation to avoid data races and state leaks
+// across concurrent requests sharing the same scenario singleton.
+func resolveOpenAITemplateArgs(messages []openai.Message, cfg *scenarios.MockScenarioConfig) {
+	if len(cfg.ToolCallArgs) == 0 {
+		return
+	}
+	cfg.ToolCallArgs = cloneStringMap(cfg.ToolCallArgs)
+	for k, v := range cfg.ToolCallArgs {
+		if !strings.HasPrefix(v, templatePrefix) {
+			continue
+		}
+		parts := strings.SplitN(v[len(templatePrefix):], ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		toolName, field := parts[0], parts[1]
+		if resolved := response.ExtractFieldFromToolResult(messages, toolName, field); resolved != "" {
+			cfg.ToolCallArgs[k] = resolved
+		}
+	}
 }
