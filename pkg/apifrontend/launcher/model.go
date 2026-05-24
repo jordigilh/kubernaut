@@ -55,7 +55,12 @@ func NewModelFromConfig(ctx context.Context, cfg config.LLMConfig) (model.LLM, e
 	}
 }
 
-func newVertexAIModel(ctx context.Context, cfg config.LLMConfig) (model.LLM, error) {
+func newVertexAIModel(ctx context.Context, cfg config.LLMConfig) (m model.LLM, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("vertex_ai: GCP ADC unavailable — set GOOGLE_APPLICATION_CREDENTIALS or provide credentials: %v", r)
+		}
+	}()
 	adkCfg := &adkanthropic.Config{
 		Variant:         adkanthropic.VariantVertexAI,
 		VertexProjectID: cfg.VertexProject,

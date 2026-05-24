@@ -52,8 +52,7 @@ var _ = Describe("Model Factory", func() {
 			}
 			_, err := launcher.NewModelFromConfig(context.Background(), cfg)
 			if err != nil {
-				// Without real GCP ADC, the SDK returns a specific ADC error.
-				Expect(err.Error()).To(ContainSubstring("could not find default credentials"))
+				Expect(err.Error()).To(ContainSubstring("GCP ADC unavailable"))
 			}
 		})
 	})
