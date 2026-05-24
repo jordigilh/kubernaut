@@ -179,6 +179,33 @@ func HasFunctionResponse(contents []GeminiContent) bool {
 	return false
 }
 
+// ExtractFieldFromFunctionResponse scans Gemini contents for a FunctionResponse
+// with the given tool name and extracts a top-level string field from its JSON
+// response object. Returns empty string if not found.
+func ExtractFieldFromFunctionResponse(contents []GeminiContent, toolName, field string) string {
+	for _, c := range contents {
+		for _, p := range c.Parts {
+			if p.FunctionResponse == nil || p.FunctionResponse.Name != toolName {
+				continue
+			}
+			raw, err := json.Marshal(p.FunctionResponse.Response)
+			if err != nil {
+				continue
+			}
+			var obj map[string]interface{}
+			if err := json.Unmarshal(raw, &obj); err != nil {
+				continue
+			}
+			if val, ok := obj[field]; ok {
+				if s, ok := val.(string); ok {
+					return s
+				}
+			}
+		}
+	}
+	return ""
+}
+
 // ExtractTextFromContents extracts all text parts from Gemini contents,
 // returning the last user text (for Content field) and all text joined (for AllText field).
 func ExtractTextFromContents(contents []GeminiContent, systemInstruction *GeminiContent) (lastUserText string, allText string) {

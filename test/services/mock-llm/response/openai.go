@@ -20,6 +20,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	openai "github.com/jordigilh/kubernaut/pkg/shared/types/openai"
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/scenarios"
@@ -352,4 +353,43 @@ func randomHex(n int) string {
 	b := make([]byte, n)
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+// ExtractFieldFromToolResult scans OpenAI messages for a tool result that
+// corresponds to the given function name and extracts a top-level string
+// field from its JSON content. Tool results are correlated with function
+// names via the preceding assistant message's ToolCalls ordering.
+func ExtractFieldFromToolResult(messages []openai.Message, toolName, field string) string {
+	var pendingCalls []string
+	for _, m := range messages {
+		if m.Role == "assistant" && len(m.ToolCalls) > 0 {
+			pendingCalls = pendingCalls[:0]
+			for _, tc := range m.ToolCalls {
+				pendingCalls = append(pendingCalls, tc.Function.Name)
+			}
+			continue
+		}
+		if m.Role == "tool" && m.Content != nil && len(pendingCalls) > 0 {
+			callName := pendingCalls[0]
+			pendingCalls = pendingCalls[1:]
+			if callName != toolName {
+				continue
+			}
+			content := *m.Content
+			idx := strings.Index(content, "{")
+			if idx < 0 {
+				continue
+			}
+			var obj map[string]interface{}
+			if err := json.Unmarshal([]byte(content[idx:]), &obj); err != nil {
+				continue
+			}
+			if val, ok := obj[field]; ok {
+				if s, ok := val.(string); ok {
+					return s
+				}
+			}
+		}
+	}
+	return ""
 }
