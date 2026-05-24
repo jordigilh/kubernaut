@@ -467,9 +467,10 @@ func TestNoEnvVarsInCodebase(t *testing.T) {
 	}
 
 	// BR-PLATFORM-1262 permits exactly one os.Getenv in config.go for PORT override.
+	// main.go also reads PORT for the operator warning log (F-2 auditability).
 	allowedGetenvCounts := map[string]int{
 		"config.go": 1,
-		"main.go":   0,
+		"main.go":   1,
 	}
 
 	for path, label := range bannedFiles {
