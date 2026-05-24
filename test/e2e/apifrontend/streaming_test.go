@@ -368,7 +368,7 @@ var _ = Describe("Progressive A2A Streaming (issue #1258)", Label("e2e", "phase3
 			return
 		}
 
-		resp2, err := a2aSSEPost(streamCtx, a2aMessageStream("progressive-05-t2", "stream the investigation"))
+		resp2, err := a2aSSEPost(streamCtx, a2aMessageStream("progressive-05-t2", "progressive stream the investigation"))
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp2.Body.Close() }()
 		Expect(resp2.StatusCode).To(Equal(http.StatusOK), "turn 2 HTTP status")
