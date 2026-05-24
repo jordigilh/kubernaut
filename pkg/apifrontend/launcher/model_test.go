@@ -50,17 +50,10 @@ var _ = Describe("Model Factory", func() {
 				VertexProject:  "test-project",
 				VertexLocation: "us-central1",
 			}
-			// This will fail in CI without real GCP ADC, but should not panic
 			_, err := launcher.NewModelFromConfig(context.Background(), cfg)
-			// Accept both success (if ADC is available) and specific auth error
 			if err != nil {
-				Expect(err.Error()).To(SatisfyAny(
-					ContainSubstring("credentials"),
-					ContainSubstring("auth"),
-					ContainSubstring("token"),
-					ContainSubstring("transport"),
-					ContainSubstring("could not find"),
-				))
+				// Without real GCP ADC, the SDK returns a specific ADC error.
+				Expect(err.Error()).To(ContainSubstring("could not find default credentials"))
 			}
 		})
 	})

@@ -124,6 +124,12 @@ func buildLLMHTTPClient(cfg config.LLMConfig) (*http.Client, error) {
 // buildTransportChain composes the HTTP transport stack from config.
 // Chain order (outermost first): CircuitBreaker -> CustomHeaders -> OAuth2 -> TLS/base
 // Returns (nil, nil) when no custom transport is needed.
+//
+// NOTE: This transport chain is currently only applied to the Gemini provider
+// (via buildLLMHTTPClient). Vertex AI uses GCP-managed auth (ADC) and the
+// Anthropic ADK wrapper does not expose HTTP client injection. If support is
+// added for Anthropic transport in the future, validateLLM() must be updated
+// to allow it, and newAnthropicModel must call buildLLMHTTPClient.
 func buildTransportChain(cfg config.LLMConfig) (http.RoundTripper, error) {
 	base := http.DefaultTransport
 	needsCustom := false
@@ -144,7 +150,9 @@ func buildTransportChain(cfg config.LLMConfig) (http.RoundTripper, error) {
 			Scopes:         cfg.OAuth2.Scopes,
 			CredentialsDir: cfg.OAuth2.CredentialsDir,
 		}
-		resolveOAuth2Secrets(&oauth2Cfg)
+		if err := resolveOAuth2Secrets(&oauth2Cfg); err != nil {
+			return nil, fmt.Errorf("resolve OAuth2 secrets: %w", err)
+		}
 		base = internaltransport.NewOAuth2ClientCredentialsTransport(oauth2Cfg, base)
 		needsCustom = true
 	}
@@ -182,14 +190,20 @@ func buildTransportChain(cfg config.LLMConfig) (http.RoundTripper, error) {
 
 // resolveOAuth2Secrets reads client-id and client-secret from the mounted
 // secrets directory (same layout as KA: <credentialsDir>/client-id, client-secret).
-func resolveOAuth2Secrets(cfg *kaconfig.OAuth2Config) {
+func resolveOAuth2Secrets(cfg *kaconfig.OAuth2Config) error {
 	if cfg.CredentialsDir == "" {
-		return
+		return nil
 	}
-	if data, err := os.ReadFile(cfg.CredentialsDir + "/client-id"); err == nil {
-		cfg.ClientID = strings.TrimSpace(string(data))
+	data, err := os.ReadFile(cfg.CredentialsDir + "/client-id")
+	if err != nil {
+		return fmt.Errorf("read oauth2 client-id from %s: %w", cfg.CredentialsDir, err)
 	}
-	if data, err := os.ReadFile(cfg.CredentialsDir + "/client-secret"); err == nil {
-		cfg.ClientSecret = strings.TrimSpace(string(data))
+	cfg.ClientID = strings.TrimSpace(string(data))
+
+	data, err = os.ReadFile(cfg.CredentialsDir + "/client-secret")
+	if err != nil {
+		return fmt.Errorf("read oauth2 client-secret from %s: %w", cfg.CredentialsDir, err)
 	}
+	cfg.ClientSecret = strings.TrimSpace(string(data))
+	return nil
 }

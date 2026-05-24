@@ -130,7 +130,7 @@ type LLMConfig struct {
 	Provider       string            `yaml:"provider"`
 	Model          string            `yaml:"model"`
 	Endpoint       string            `yaml:"endpoint,omitempty"`
-	ApiKeyFile     string            `yaml:"apiKeyFile,omitempty"`
+	APIKeyFile     string            `yaml:"apiKeyFile,omitempty"`
 	VertexProject  string            `yaml:"vertexProject,omitempty"`
 	VertexLocation string            `yaml:"vertexLocation,omitempty"`
 	TLSCaFile      string            `yaml:"tlsCaFile,omitempty"`
@@ -138,7 +138,7 @@ type LLMConfig struct {
 	OAuth2         LLMOAuth2Config   `yaml:"oauth2,omitempty"`
 	CircuitBreaker LLMCircuitBreaker `yaml:"circuitBreaker,omitempty"`
 	CustomHeaders  []LLMHeader       `yaml:"customHeaders,omitempty"`
-	// APIKey is resolved from ApiKeyFile at startup. Not serialized.
+	// APIKey is resolved from APIKeyFile at startup. Not serialized.
 	APIKey string `yaml:"-"`
 }
 
@@ -370,11 +370,11 @@ func (c *Config) validateLLM() error {
 			return fmt.Errorf("agent.llm.vertexLocation is required for provider %q", llm.Provider)
 		}
 	}
-	if (llm.Provider == LLMProviderGemini || llm.Provider == LLMProviderAnthropic) && llm.ApiKeyFile == "" && !llm.OAuth2.Enabled {
+	if (llm.Provider == LLMProviderGemini || llm.Provider == LLMProviderAnthropic) && llm.APIKeyFile == "" && !llm.OAuth2.Enabled {
 		return fmt.Errorf("agent.llm.apiKeyFile (or oauth2) is required for provider %q", llm.Provider)
 	}
-	if llm.ApiKeyFile != "" && !filepath.IsAbs(llm.ApiKeyFile) {
-		return fmt.Errorf("agent.llm.apiKeyFile must be an absolute path, got %q", llm.ApiKeyFile)
+	if llm.APIKeyFile != "" && !filepath.IsAbs(llm.APIKeyFile) {
+		return fmt.Errorf("agent.llm.apiKeyFile must be an absolute path, got %q", llm.APIKeyFile)
 	}
 	if llm.TLSCaFile != "" && !filepath.IsAbs(llm.TLSCaFile) {
 		return fmt.Errorf("agent.llm.tlsCaFile must be an absolute path, got %q", llm.TLSCaFile)
@@ -515,20 +515,20 @@ func validateDependencyConfig(prefix string, cfg *DependencyConfig) error {
 
 // ResolveDefaults fills in derived fields that depend on other config values.
 // For example, AgentCard.URL is derived from Server.Port if left empty.
-// LLM API key is resolved from the mounted Secret file at ApiKeyFile.
+// LLM API key is resolved from the mounted Secret file at APIKeyFile.
 // Returns an error if a required credential file is configured but unreadable/empty.
 func (c *Config) ResolveDefaults() error {
 	if c.AgentCard.URL == "" {
 		c.AgentCard.URL = fmt.Sprintf("https://localhost:%d", c.Server.Port)
 	}
-	if c.Agent.LLM.APIKey == "" && c.Agent.LLM.ApiKeyFile != "" {
-		data, err := os.ReadFile(c.Agent.LLM.ApiKeyFile)
+	if c.Agent.LLM.APIKey == "" && c.Agent.LLM.APIKeyFile != "" {
+		data, err := os.ReadFile(c.Agent.LLM.APIKeyFile)
 		if err != nil {
-			return fmt.Errorf("agent.llm.apiKeyFile %q: %w", c.Agent.LLM.ApiKeyFile, err)
+			return fmt.Errorf("agent.llm.apiKeyFile %q: %w", c.Agent.LLM.APIKeyFile, err)
 		}
 		key := strings.TrimSpace(string(data))
 		if key == "" {
-			return fmt.Errorf("agent.llm.apiKeyFile %q: file is empty", c.Agent.LLM.ApiKeyFile)
+			return fmt.Errorf("agent.llm.apiKeyFile %q: file is empty", c.Agent.LLM.APIKeyFile)
 		}
 		c.Agent.LLM.APIKey = key
 	}

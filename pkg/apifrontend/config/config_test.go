@@ -1231,7 +1231,7 @@ func TestValidate_LLMGeminiAccepted(t *testing.T) {
 	cfg := validConfig()
 	cfg.Agent.LLM.Provider = LLMProviderGemini
 	cfg.Agent.LLM.Model = "gemini-2.0-flash"
-	cfg.Agent.LLM.ApiKeyFile = "/etc/secrets/llm-key"
+	cfg.Agent.LLM.APIKeyFile = "/etc/secrets/llm-key"
 	if err := cfg.Validate(); err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
@@ -1241,7 +1241,7 @@ func TestValidate_LLMAnthropicAccepted(t *testing.T) {
 	cfg := validConfig()
 	cfg.Agent.LLM.Provider = LLMProviderAnthropic
 	cfg.Agent.LLM.Model = "claude-sonnet-4-20250514"
-	cfg.Agent.LLM.ApiKeyFile = "/etc/secrets/llm-key"
+	cfg.Agent.LLM.APIKeyFile = "/etc/secrets/llm-key"
 	if err := cfg.Validate(); err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
@@ -1260,11 +1260,11 @@ func TestValidate_LLMGeminiRequiresCredentials(t *testing.T) {
 	}
 }
 
-func TestValidate_LLMApiKeyFileRelativeRejected(t *testing.T) {
+func TestValidate_LLMAPIKeyFileRelativeRejected(t *testing.T) {
 	cfg := validConfig()
 	cfg.Agent.LLM.Provider = LLMProviderGemini
 	cfg.Agent.LLM.Model = "gemini-2.0-flash"
-	cfg.Agent.LLM.ApiKeyFile = "relative/path/key"
+	cfg.Agent.LLM.APIKeyFile = "relative/path/key"
 	err := cfg.Validate()
 	if err == nil {
 		t.Fatal("expected error for relative apiKeyFile")
@@ -1313,7 +1313,7 @@ func TestResolveDefaults_LLMApiKeyFromFile(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 	cfg := validConfig()
-	cfg.Agent.LLM.ApiKeyFile = keyFile
+	cfg.Agent.LLM.APIKeyFile = keyFile
 	if err := cfg.ResolveDefaults(); err != nil {
 		t.Fatalf("ResolveDefaults() = %v", err)
 	}
@@ -1322,9 +1322,9 @@ func TestResolveDefaults_LLMApiKeyFromFile(t *testing.T) {
 	}
 }
 
-func TestResolveDefaults_LLMApiKeyFileNotFound(t *testing.T) {
+func TestResolveDefaults_LLMAPIKeyFileNotFound(t *testing.T) {
 	cfg := validConfig()
-	cfg.Agent.LLM.ApiKeyFile = "/nonexistent/path/key"
+	cfg.Agent.LLM.APIKeyFile = "/nonexistent/path/key"
 	err := cfg.ResolveDefaults()
 	if err == nil {
 		t.Fatalf("ResolveDefaults() = nil, want error for missing apiKeyFile")
@@ -1334,14 +1334,14 @@ func TestResolveDefaults_LLMApiKeyFileNotFound(t *testing.T) {
 	}
 }
 
-func TestResolveDefaults_LLMApiKeyFileEmpty(t *testing.T) {
+func TestResolveDefaults_LLMAPIKeyFileEmpty(t *testing.T) {
 	dir := t.TempDir()
 	keyFile := filepath.Join(dir, "llm-api-key")
 	if err := os.WriteFile(keyFile, []byte("   \n"), 0o600); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 	cfg := validConfig()
-	cfg.Agent.LLM.ApiKeyFile = keyFile
+	cfg.Agent.LLM.APIKeyFile = keyFile
 	err := cfg.ResolveDefaults()
 	if err == nil {
 		t.Fatalf("ResolveDefaults() = nil, want error for empty key file")

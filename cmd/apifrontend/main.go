@@ -622,6 +622,10 @@ func buildMCPHandler(cfg *config.Config, deps *backendDeps, metricsReg *metrics.
 // buildA2AHandler creates the A2A JSON-RPC handler when an LLM provider is
 // configured. Returns a 501 stub when provider is empty, preserving backward
 // compatibility for deployments that don't set it.
+//
+// The LLM model and transport chain are built once at startup and are NOT
+// reloaded when the ConfigMap changes. Changes to agent.llm fields require
+// a pod restart (consistent with KA's LLM wiring pattern).
 func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps, sessInfra *sessionInfra, metricsReg *metrics.Registry, authorizer auth.ToolAuthorizer, auditor audit.Emitter, logger logr.Logger, userLimiter *ratelimit.UserLimiter) (http.Handler, error) {
 	if cfg.Agent.LLM.Provider == "" {
 		logger.Info("LLM provider not configured — A2A handler returns 501")

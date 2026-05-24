@@ -2,11 +2,14 @@ package launcher
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"google.golang.org/adk/server/adka2a"
 	"google.golang.org/adk/session"
 	"google.golang.org/genai"
+
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/config"
 )
 
 // EnrichRRDetailForTest exports enrichRRDetail for unit testing.
@@ -33,4 +36,14 @@ func BuiltConverterIsNonNil() bool {
 // ExpectedOutputMode returns the OutputMode constant wired in the ExecutorConfig.
 func ExpectedOutputMode() adka2a.OutputMode {
 	return adka2a.OutputArtifactPerEvent
+}
+
+// BuildTransportChainForTest exports buildTransportChain for unit testing.
+func BuildTransportChainForTest(cfg config.LLMConfig) (http.RoundTripper, error) {
+	return buildTransportChain(cfg)
+}
+
+// BuildLLMHTTPClientForTest exports buildLLMHTTPClient for unit testing.
+func BuildLLMHTTPClientForTest(cfg config.LLMConfig) (*http.Client, error) {
+	return buildLLMHTTPClient(cfg)
 }
