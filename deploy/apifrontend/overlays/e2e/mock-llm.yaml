@@ -117,7 +117,7 @@ data:
         tool_call:
           name: "kubernaut_poll_investigation"
           arguments:
-            session_id: "$from_tool:kubernaut_start_investigation:session_id"
+            session_id: "e2e-static-session-id"
 
       - name: "af_discover_workflows"
         keywords: ["discover available workflows", "discover workflows"]
