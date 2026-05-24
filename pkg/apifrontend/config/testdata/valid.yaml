@@ -12,5 +12,4 @@ agent:
 mcp:
   enabled: true
 agentCard:
-  name: "Kubernaut Agent"
   url: "https://af.example.com"
