@@ -1298,8 +1298,8 @@ spec:
             - name: inter-service-ca
               mountPath: /etc/apifrontend/inter-service-ca
               readOnly: true
-            - name: llm-key
-              mountPath: /etc/apifrontend/secrets
+            - name: llm-credentials
+              mountPath: /etc/apifrontend/llm-credentials
               readOnly: true
           readinessProbe:
             httpGet:
@@ -1334,7 +1334,7 @@ spec:
         - name: inter-service-ca
           configMap:
             name: inter-service-ca
-        - name: llm-key
+        - name: llm-credentials
           secret:
             secretName: apifrontend-llm-key
 ---

@@ -706,17 +706,7 @@ spec:
       nodePort: 30081
   selector:
     app: apifrontend
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: apifrontend-llm-key
-  namespace: %s
-type: Opaque
-stringData:
-  llm-api-key: "mock-key"
-`, namespace, indentYAML(string(configData), 4),
-		namespace, afImage, namespace, namespace)
+`, namespace, indentYAML(string(configData), 4), afImage)
 	return kubectlApplyStdin(ctx, kubeconfigPath, manifest, writer)
 }
 
