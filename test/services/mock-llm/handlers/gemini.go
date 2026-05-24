@@ -109,6 +109,8 @@ func (h *handler) handleGemini(w http.ResponseWriter, r *http.Request) {
 	}
 	cfg := scenarioWithCfg.Config()
 
+	resolveGeminiTemplateArgs(req.Contents, &cfg)
+
 	scenarioName := cfg.ScenarioName
 	h.recordScenarioMetric(scenarioName, result.Method)
 
@@ -153,7 +155,7 @@ func (h *handler) handleGeminiToolResponse(
 	tools []response.GeminiToolDecl,
 	hasFunctionResults, hasSplit, resolved bool,
 ) {
-	if len(cfg.MultiToolCalls) > 0 && !hasFunctionResults {
+	if len(cfg.MultiToolCalls) > 0 && (!hasFunctionResults || cfg.RepeatToolCall) {
 		for _, tc := range cfg.MultiToolCalls {
 			h.trackToolCall(tc.Name)
 		}
@@ -161,7 +163,7 @@ func (h *handler) handleGeminiToolResponse(
 		return
 	}
 
-	if cfg.ToolCallName != "" && !hasFunctionResults {
+	if cfg.ToolCallName != "" && (!hasFunctionResults || cfg.RepeatToolCall) {
 		h.trackToolCall(cfg.ToolCallName)
 		writeJSON(w, http.StatusOK, response.BuildGeminiToolCallResponse(cfg.ToolCallName, cfg))
 		return
@@ -217,5 +219,38 @@ func firstDeclaredTool(tools []response.GeminiToolDecl) string {
 		}
 	}
 	return ""
+}
+
+// resolveGeminiTemplateArgs scans cfg.ToolCallArgs for template placeholders
+// of the form "$from_tool:<toolName>:<field>" and replaces them with values
+// extracted from prior FunctionResponse parts in the conversation.
+// The map is cloned before mutation to avoid data races and state leaks
+// across concurrent requests sharing the same scenario singleton.
+func resolveGeminiTemplateArgs(contents []response.GeminiContent, cfg *scenarios.MockScenarioConfig) {
+	if len(cfg.ToolCallArgs) == 0 {
+		return
+	}
+	cfg.ToolCallArgs = cloneStringMap(cfg.ToolCallArgs)
+	for k, v := range cfg.ToolCallArgs {
+		if !strings.HasPrefix(v, templatePrefix) {
+			continue
+		}
+		parts := strings.SplitN(v[len(templatePrefix):], ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		toolName, field := parts[0], parts[1]
+		if resolved := response.ExtractFieldFromFunctionResponse(contents, toolName, field); resolved != "" {
+			cfg.ToolCallArgs[k] = resolved
+		}
+	}
+}
+
+func cloneStringMap(m map[string]string) map[string]string {
+	c := make(map[string]string, len(m))
+	for k, v := range m {
+		c[k] = v
+	}
+	return c
 }
 

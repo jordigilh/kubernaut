@@ -127,10 +127,11 @@ func DefaultRegistryFull(overrides *config.Overrides, goldenDir string) *Registr
 		// ADK agent conversations.
 		for _, ks := range overrides.KeywordScenarios {
 			cfg := MockScenarioConfig{
-				ScenarioName: ks.Name,
-				ToolCallName: ks.ToolCall.Name,
-				ToolCallArgs: ks.ToolCall.Arguments,
-				ForceText:    BoolPtr(false),
+				ScenarioName:   ks.Name,
+				ToolCallName:   ks.ToolCall.Name,
+				ToolCallArgs:   ks.ToolCall.Arguments,
+				ForceText:      BoolPtr(false),
+				RepeatToolCall: ks.RepeatToolCall,
 			}
 			if ks.MatchLastOnly {
 				r.Register(lastUserKeywordScenarioMulti(ks.Name, ks.Keywords, cfg))

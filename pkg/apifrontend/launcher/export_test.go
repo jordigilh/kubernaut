@@ -28,6 +28,14 @@ func BuildPartConverterForTest() PartConverterFunc {
 	}
 }
 
+// BuildStreamingPartConverterForTest exports buildStreamingPartConverter for unit testing.
+func BuildStreamingPartConverterForTest() PartConverterFunc {
+	fn := buildStreamingPartConverter()
+	return func(ctx context.Context, adkEvent *session.Event, part *genai.Part) (a2a.Part, error) {
+		return fn(ctx, adkEvent, part)
+	}
+}
+
 // BuiltConverterIsNonNil verifies buildPartConverter returns a non-nil function.
 func BuiltConverterIsNonNil() bool {
 	return buildPartConverter() != nil
@@ -46,4 +54,14 @@ func BuildTransportChainForTest(cfg config.LLMConfig) (http.RoundTripper, error)
 // BuildLLMHTTPClientForTest exports buildLLMHTTPClient for unit testing.
 func BuildLLMHTTPClientForTest(cfg config.LLMConfig) (*http.Client, error) {
 	return buildLLMHTTPClient(cfg)
+}
+
+// SanitizeBridgeTextForTest exports sanitizeBridgeText for unit testing.
+func SanitizeBridgeTextForTest(text string) string {
+	return sanitizeBridgeText(text)
+}
+
+// ResolveA2AMethodForTest exports resolveA2AMethod for unit testing.
+func ResolveA2AMethodForTest(ctx context.Context) string {
+	return resolveA2AMethod(ctx)
 }

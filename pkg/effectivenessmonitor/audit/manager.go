@@ -185,7 +185,7 @@ func (m *Manager) RecordComponentAssessed(ctx context.Context, ea *eav1.Effectiv
 		return err
 	}
 
-	m.logger.V(1).Info("Component audit event stored",
+	m.logger.V(2).Info("Component audit event stored",
 		"component", component,
 		"correlationID", ea.Spec.CorrelationID)
 	return nil
@@ -358,7 +358,7 @@ func (m *Manager) RecordAlertDecayDetected(ctx context.Context, ea *eav1.Effecti
 		return err
 	}
 
-	m.logger.V(1).Info("Alert decay detected audit event stored",
+	m.logger.V(2).Info("Alert decay detected audit event stored",
 		"correlationID", ea.Spec.CorrelationID,
 		"healthScore", decayData.HealthScore,
 		"alertScore", decayData.AlertScore,
@@ -458,7 +458,7 @@ func (m *Manager) storeEvent(ctx context.Context, cfg componentEventConfig, ea *
 		return err
 	}
 
-	m.logger.V(1).Info("Component audit event stored (typed sub-object)",
+	m.logger.V(2).Info("Component audit event stored (typed sub-object)",
 		"component", string(cfg.component),
 		"correlationID", ea.Spec.CorrelationID)
 	return nil
@@ -538,7 +538,7 @@ func (m *Manager) RecordHashComputed(ctx context.Context, ea *eav1.Effectiveness
 		return err
 	}
 
-	m.logger.V(1).Info("Hash computed audit event stored",
+	m.logger.V(2).Info("Hash computed audit event stored",
 		"correlationID", ea.Spec.CorrelationID,
 		"postHash", hashData.PostHash,
 		"preHash", hashData.PreHash,
@@ -609,7 +609,7 @@ func (m *Manager) RecordAssessmentScheduled(ctx context.Context, ea *eav1.Effect
 		return err
 	}
 
-	m.logger.V(1).Info("Assessment scheduled audit event stored",
+	m.logger.V(2).Info("Assessment scheduled audit event stored",
 		"correlationID", ea.Spec.CorrelationID)
 	return nil
 }
@@ -702,7 +702,7 @@ func (m *Manager) RecordAssessmentCompleted(ctx context.Context, ea *eav1.Effect
 		return err
 	}
 
-	m.logger.V(1).Info("Assessment completed audit event stored",
+	m.logger.V(2).Info("Assessment completed audit event stored",
 		"correlationID", ea.Spec.CorrelationID,
 		"reason", reason,
 		"signalName", ea.Spec.SignalName,

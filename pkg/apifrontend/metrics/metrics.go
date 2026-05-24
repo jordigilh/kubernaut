@@ -31,7 +31,7 @@ import (
 // All collectors are created here and injected into components that need them,
 // avoiding package-level Prometheus vars that silently use the default registry.
 //
-// GA metric set (13 metrics): only things that require real-time aggregation
+// GA metric set (14 metrics): only things that require real-time aggregation
 // or threshold-based alerting. Everything extractable from logs or audit trail
 // is deliberately excluded.
 type Registry struct {
@@ -49,6 +49,9 @@ type Registry struct {
 	SSEActiveConnections prometheus.Gauge
 	LLMTokensTotal       *prometheus.CounterVec
 	SessionsActive       *prometheus.GaugeVec
+
+	A2ABridgeEventsTotal       prometheus.Counter
+	A2ABridgeWriteFailures     prometheus.Counter
 }
 
 // NewRegistry creates and registers all AF Prometheus metrics.
@@ -119,6 +122,18 @@ func NewRegistry() *Registry {
 			Name:      "sessions_active",
 			Help:      "Number of currently active InvestigationSessions by phase.",
 		}, []string{"phase"}),
+		A2ABridgeEventsTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: "af",
+			Subsystem: "a2a",
+			Name:      "bridge_events_total",
+			Help:      "Total progressive reasoning artifacts emitted via the A2A EventBridge.",
+		}),
+		A2ABridgeWriteFailures: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: "af",
+			Subsystem: "a2a",
+			Name:      "bridge_write_failures_total",
+			Help:      "Total failures writing to the A2A event queue via the EventBridge.",
+		}),
 	}
 
 	reg.MustRegister(r.HTTPRequestsTotal)
@@ -133,6 +148,8 @@ func NewRegistry() *Registry {
 	reg.MustRegister(r.SSEActiveConnections)
 	reg.MustRegister(r.LLMTokensTotal)
 	reg.MustRegister(r.SessionsActive)
+	reg.MustRegister(r.A2ABridgeEventsTotal)
+	reg.MustRegister(r.A2ABridgeWriteFailures)
 
 	return r
 }
@@ -142,6 +159,16 @@ func (r *Registry) Handler() http.Handler {
 	return promhttp.HandlerFor(r.registry, promhttp.HandlerOpts{
 		EnableOpenMetrics: true,
 	})
+}
+
+// IncBridgeEvents increments the total bridge events counter.
+func (r *Registry) IncBridgeEvents() {
+	r.A2ABridgeEventsTotal.Inc()
+}
+
+// IncBridgeWriteFailures increments the bridge write failure counter.
+func (r *Registry) IncBridgeWriteFailures() {
+	r.A2ABridgeWriteFailures.Inc()
 }
 
 // Gather collects all metric families from the underlying Prometheus registry.

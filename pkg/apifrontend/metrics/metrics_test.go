@@ -165,7 +165,7 @@ var _ = Describe("AF Metrics Registry (DD-TEST-005 Compliant — GA Set)", func(
 	})
 
 	Context("Registry Completeness — all 13 GA metrics wired after construction", func() {
-		It("UT-AF-MET-014: Gather returns exactly 13 af_* metric families after observation", func() {
+		It("UT-AF-MET-014: Gather returns exactly 14 af_* metric families after observation", func() {
 			reg.HTTPRequestsTotal.WithLabelValues("GET", "/", "200").Inc()
 			reg.HTTPRequestDuration.WithLabelValues("GET", "/", "200").Observe(0.01)
 			reg.HTTPPanicsTotal.Inc()
@@ -178,6 +178,8 @@ var _ = Describe("AF Metrics Registry (DD-TEST-005 Compliant — GA Set)", func(
 			reg.SSEActiveConnections.Set(1)
 			reg.LLMTokensTotal.WithLabelValues("i", "m").Inc()
 			reg.SessionsActive.WithLabelValues("Active").Set(1)
+			reg.A2ABridgeEventsTotal.Inc()
+			reg.A2ABridgeWriteFailures.Inc()
 
 			families, err := reg.Gather()
 			Expect(err).NotTo(HaveOccurred())
@@ -191,6 +193,8 @@ var _ = Describe("AF Metrics Registry (DD-TEST-005 Compliant — GA Set)", func(
 			}
 
 			expected := []string{
+				"af_a2a_bridge_events_total",
+				"af_a2a_bridge_write_failures_total",
 				"af_http_requests_total",
 				"af_http_request_duration_seconds",
 				"af_http_panics_total",

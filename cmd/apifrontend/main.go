@@ -675,6 +675,7 @@ func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps,
 		SessionService: sessionSvc,
 		AppName:        "kubernaut-apifrontend",
 		Auditor:        auditor,
+		BridgeMetrics:  metricsReg,
 	}
 
 	h, err := launcher.NewA2AHandler(a2aCfg)

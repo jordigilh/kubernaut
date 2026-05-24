@@ -163,11 +163,17 @@ func (s *CRDSessionService) Create(ctx context.Context, req *adksession.CreateRe
 		"crd_name", crdName,
 		"user", req.UserID,
 	)
-	s.emitAudit(ctx, audit.EventSessionCreated, req.UserID, map[string]string{
+	auditDetail := map[string]string{
 		"session_id": resp.Session.ID(),
 		"crd_name":   crdName,
 		"phase":      string(v1alpha1.SessionPhaseActive),
-	})
+	}
+	if cfg != nil {
+		auditDetail["a2a_task_id"] = cfg.A2ATaskID
+		auditDetail["join_mode"] = string(cfg.JoinMode)
+		auditDetail["user_identity"] = cfg.UserIdentity.Username
+	}
+	s.emitAudit(ctx, audit.EventSessionCreated, req.UserID, auditDetail)
 	s.incSessionGauge(string(v1alpha1.SessionPhaseActive))
 	return resp, nil
 }

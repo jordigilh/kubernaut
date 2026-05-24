@@ -202,6 +202,32 @@ func summarizeCreateRR(resp map[string]any) string {
 	return string(data)
 }
 
+// buildStreamingPartConverter returns a GenAIPartConverter for streaming mode
+// that suppresses kubernaut_stream_investigation FunctionResponse parts (since
+// the EventBridge already delivered the reasoning progressively). All other
+// behavior is identical to the standard converter.
+func buildStreamingPartConverter() adka2a.GenAIPartConverter {
+	return func(_ context.Context, _ *session.Event, part *genai.Part) (a2a.Part, error) {
+		if part == nil {
+			return nil, nil
+		}
+
+		if part.FunctionCall != nil {
+			return convertFunctionCall(part.FunctionCall), nil
+		}
+		if part.FunctionResponse != nil {
+			if part.FunctionResponse.Name == "kubernaut_stream_investigation" {
+				return nil, nil
+			}
+			return convertFunctionResponse(part.FunctionResponse), nil
+		}
+		if part.Thought {
+			return &a2a.TextPart{Text: "Analyzing..."}, nil
+		}
+		return &a2a.TextPart{Text: part.Text}, nil
+	}
+}
+
 func stringArg(args map[string]any, key string) string {
 	v, ok := args[key].(string)
 	if !ok {

@@ -192,7 +192,7 @@ var _ = Describe("Agent Card Handler", func() {
 		_ = json.Unmarshal(rec.Body.Bytes(), &card)
 		capabilities, ok := card["capabilities"].(map[string]any)
 		Expect(ok).To(BeTrue())
-		Expect(capabilities["streaming"]).To(BeFalse())
+		Expect(capabilities["streaming"]).To(BeTrue())
 	})
 
 	It("UT-AF-230-011: card includes protocolVersion", func() {
@@ -271,6 +271,26 @@ var _ = Describe("Agent Card Handler", func() {
 			h.ServeHTTP(rec, req)
 			Expect(rec.Code).To(Equal(http.StatusOK))
 		})
+	})
+
+	It("UT-AF-1258-040: agent card advertises streaming: true", func() {
+		h, err := handler.NewAgentCardHandler(handler.AgentCardConfig{
+			Name:    "kubernaut-apifrontend",
+			URL:     "https://kubernaut.example.com",
+			Version: "0.1.0",
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		req := httptest.NewRequest("GET", "/.well-known/agent-card.json", http.NoBody)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		var card map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &card)
+		capabilities, ok := card["capabilities"].(map[string]any)
+		Expect(ok).To(BeTrue())
+		Expect(capabilities["streaming"]).To(BeTrue(),
+			"agent card must advertise streaming: true for A2A progressive streaming (BR-INT-029)")
 	})
 })
 

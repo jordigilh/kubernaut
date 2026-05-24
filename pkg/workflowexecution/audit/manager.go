@@ -188,7 +188,7 @@ func (m *Manager) RecordWorkflowSelectionCompleted(ctx context.Context, wfe *wor
 		return fmt.Errorf("mandatory audit write failed per ADR-032: %w", err)
 	}
 
-	m.logger.V(1).Info("Audit event recorded",
+	m.logger.V(2).Info("Audit event recorded",
 		"action", EventTypeSelectionCompleted,
 		"wfe", wfe.Name,
 		"outcome", "success",
@@ -274,7 +274,7 @@ func (m *Manager) RecordExecutionWorkflowStarted(
 		return fmt.Errorf("mandatory audit write failed per ADR-032: %w", err)
 	}
 
-	m.logger.V(1).Info("Audit event recorded",
+	m.logger.V(2).Info("Audit event recorded",
 		"action", EventTypeExecutionStarted,
 		"wfe", wfe.Name,
 		"pipelineRun", pipelineRunName,
@@ -404,7 +404,7 @@ func (m *Manager) recordAuditEvent(
 		return fmt.Errorf("mandatory audit write failed per ADR-032: %w", err)
 	}
 
-	m.logger.V(1).Info("Audit event recorded",
+	m.logger.V(2).Info("Audit event recorded",
 		"action", action,
 		"wfe", wfe.Name,
 		"outcome", outcome,
@@ -552,7 +552,7 @@ func (m *Manager) recordFailureAuditWithDetails(ctx context.Context, wfe *workfl
 		return fmt.Errorf("mandatory audit write failed per ADR-032: %w", err)
 	}
 
-	m.logger.V(1).Info("Failure audit event recorded with error_details",
+	m.logger.V(2).Info("Failure audit event recorded with error_details",
 		"wfe", wfe.Name,
 		"error_code", errorDetails.Code,
 	)

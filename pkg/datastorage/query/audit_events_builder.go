@@ -174,7 +174,7 @@ func (b *AuditEventsQueryBuilder) Build() (string, []interface{}, error) {
 		return "", nil, err
 	}
 
-	b.logger.V(1).Info("Building audit_events SQL query",
+	b.logger.V(2).Info("Building audit_events SQL query",
 		"correlation_id", b.correlationID,
 		"event_type", b.eventType,
 		"event_category", b.eventCategory,
@@ -201,7 +201,7 @@ func (b *AuditEventsQueryBuilder) Build() (string, []interface{}, error) {
 	sql += fmt.Sprintf(" LIMIT $%d OFFSET $%d", argIndex, argIndex+1)
 	args = append(args, b.limit, b.offset)
 
-	b.logger.V(1).Info("SQL query built successfully",
+	b.logger.V(2).Info("SQL query built successfully",
 		"filter_count", len(args)-2,
 		"arg_count", len(args),
 		"limit", b.limit,
@@ -214,7 +214,7 @@ func (b *AuditEventsQueryBuilder) Build() (string, []interface{}, error) {
 // BuildCount builds a COUNT(*) SQL query with filters (no pagination, ordering)
 // Returns the total count of matching records for pagination metadata
 func (b *AuditEventsQueryBuilder) BuildCount() (string, []interface{}, error) {
-	b.logger.V(1).Info("Building audit_events COUNT query")
+	b.logger.V(2).Info("Building audit_events COUNT query")
 
 	if err := b.validateEventDataFilter(); err != nil {
 		return "", nil, err
@@ -224,7 +224,7 @@ func (b *AuditEventsQueryBuilder) BuildCount() (string, []interface{}, error) {
 	args := make([]interface{}, 0, 8)
 	sql, args = b.appendFilters(sql, args)
 
-	b.logger.V(1).Info("COUNT query built successfully", "filter_count", len(args))
+	b.logger.V(2).Info("COUNT query built successfully", "filter_count", len(args))
 
 	return sql, args, nil
 }

@@ -51,7 +51,7 @@ func (h *Handler) ReconstructRemediationRequest(
 ) (ogenclient.ReconstructRemediationRequestRes, error) {
 	correlationID := params.CorrelationID
 
-	h.logger.V(1).Info("Handling RemediationRequest reconstruction via ogen handler",
+	h.logger.V(2).Info("Handling RemediationRequest reconstruction via ogen handler",
 		"correlation_id", correlationID)
 
 	// Step 1: Query audit events from database
@@ -182,7 +182,7 @@ func (h *Handler) ReconstructRemediationRequest(
 		CorrelationID:   ogenclient.NewOptString(correlationID),
 	}
 
-	h.logger.V(1).Info("RemediationRequest reconstruction successful (ogen handler)",
+	h.logger.V(2).Info("RemediationRequest reconstruction successful (ogen handler)",
 		"correlation_id", correlationID,
 		"completeness", validationResult.Completeness,
 		"warnings", len(validationResult.Warnings),

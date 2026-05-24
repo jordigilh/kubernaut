@@ -19,12 +19,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 )
 
 // StreamInvestigationArgs defines the input for kubernaut_stream_investigation.
@@ -85,6 +87,10 @@ func HandleStreamInvestigation(ctx context.Context, kaClient *ka.Client, args St
 			text := extractTextFromData(event.Data)
 			digest.Text = text
 			narrative.WriteString(text)
+			// Emit reasoning_delta (not token_delta) via bridge for progressive streaming
+			if event.Type == ka.EventTypeReasoningDelta {
+				emitViaBridge(ctx, text)
+			}
 		case ka.EventTypeToolCallStart, ka.EventTypeToolCall:
 			text := extractTextFromData(event.Data)
 			digest.Text = text
@@ -97,6 +103,7 @@ func HandleStreamInvestigation(ctx context.Context, kaClient *ka.Client, args St
 		case ka.EventTypeComplete:
 			finalSummary = extractSummaryFromComplete(event.Data)
 			events = append(events, digest)
+			emitViaBridge(ctx, finalSummary)
 			return StreamInvestigationResult{
 				Status:   "completed",
 				Summary:  finalSummary,
@@ -152,6 +159,12 @@ func extractTextFromData(data json.RawMessage) string {
 		if content, ok := obj["content"].(string); ok {
 			return content
 		}
+		if preview, ok := obj["content_preview"].(string); ok {
+			return preview
+		}
+		if delta, ok := obj["delta"].(string); ok {
+			return delta
+		}
 		if summary, ok := obj["summary"].(string); ok {
 			return summary
 		}
@@ -177,10 +190,11 @@ func extractSummaryFromComplete(data json.RawMessage) string {
 }
 
 func truncateForLLM(s string, maxLen int) string {
-	if len(s) <= maxLen {
+	runes := []rune(s)
+	if len(runes) <= maxLen {
 		return s
 	}
-	return s[:maxLen] + "... (truncated)"
+	return string(runes[:maxLen]) + "... (truncated)"
 }
 
 // NewStreamInvestigationTool creates the kubernaut_stream_investigation tool.
@@ -191,4 +205,15 @@ func NewStreamInvestigationTool(kaClient *ka.Client) (tool.Tool, error) {
 	}, func(ctx tool.Context, args StreamInvestigationArgs) (StreamInvestigationResult, error) {
 		return HandleStreamInvestigation(ctx, kaClient, args)
 	})
+}
+
+// emitViaBridge sends text to the A2A event bridge if present in context.
+// Bridge write errors are logged but do not interrupt the tool execution.
+func emitViaBridge(ctx context.Context, text string) {
+	if text == "" {
+		return
+	}
+	if err := launcher.EmitReasoningSafe(ctx, text); err != nil {
+		slog.WarnContext(ctx, "bridge emit failed", "error", err)
+	}
 }
