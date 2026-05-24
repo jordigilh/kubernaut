@@ -18,9 +18,7 @@ import (
 	"github.com/go-logr/zapr"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
-	"google.golang.org/adk/model/gemini"
 	adksession "google.golang.org/adk/session"
-	"google.golang.org/genai"
 	"gopkg.in/yaml.v3"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/dynamic"
@@ -69,7 +67,11 @@ func run() int {
 		z.Error("failed to load config", zap.Error(err))
 		return 1
 	}
-	cfg.ResolveDefaults()
+	if err := cfg.ResolveDefaults(); err != nil {
+		z, _ := zap.NewProduction()
+		z.Error("failed to resolve config defaults", zap.Error(err))
+		return 1
+	}
 
 	logLevel, _ := parseLogLevel(cfg.Logging.Level)
 	zapLogger := newZapLogger(logLevel)
@@ -177,7 +179,9 @@ func run() int {
 		if err := yaml.Unmarshal(newContent, &newCfg); err != nil {
 			return fmt.Errorf("parse config: %w", err)
 		}
-		newCfg.ResolveDefaults()
+		if err := newCfg.ResolveDefaults(); err != nil {
+			return fmt.Errorf("resolve defaults: %w", err)
+		}
 		return newCfg.Validate()
 	}, config.WithAuditor(auditor))
 	if err != nil {
@@ -615,24 +619,22 @@ func buildMCPHandler(cfg *config.Config, deps *backendDeps, metricsReg *metrics.
 	return h, depsReady, nil
 }
 
-// buildA2AHandler creates the A2A JSON-RPC handler when an LLM endpoint is
-// configured. Returns a 501 stub when LLMEndpoint is empty, preserving backward
+// buildA2AHandler creates the A2A JSON-RPC handler when an LLM provider is
+// configured. Returns a 501 stub when provider is empty, preserving backward
 // compatibility for deployments that don't set it.
+//
+// The LLM model and transport chain are built once at startup and are NOT
+// reloaded when the ConfigMap changes. Changes to agent.llm fields require
+// a pod restart (consistent with KA's LLM wiring pattern).
 func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps, sessInfra *sessionInfra, metricsReg *metrics.Registry, authorizer auth.ToolAuthorizer, auditor audit.Emitter, logger logr.Logger, userLimiter *ratelimit.UserLimiter) (http.Handler, error) {
-	if cfg.Agent.LLMEndpoint == "" {
-		logger.Info("LLM endpoint not configured — A2A handler returns 501")
+	if cfg.Agent.LLM.Provider == "" {
+		logger.Info("LLM provider not configured — A2A handler returns 501")
 		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			http.Error(w, "A2A not configured", http.StatusNotImplemented)
 		}), nil
 	}
 
-	llmModel, err := gemini.NewModel(ctx, cfg.Agent.LLMModel, &genai.ClientConfig{
-		APIKey:  cfg.Agent.LLMAPIKey,
-		Backend: genai.BackendGeminiAPI,
-		HTTPOptions: genai.HTTPOptions{
-			BaseURL: cfg.Agent.LLMEndpoint,
-		},
-	})
+	llmModel, err := launcher.NewModelFromConfig(ctx, cfg.Agent.LLM)
 	if err != nil {
 		return nil, fmt.Errorf("create LLM model: %w", err)
 	}
@@ -680,8 +682,8 @@ func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps,
 	}
 
 	logger.Info("A2A handler wired with LLM backend",
-		"endpoint", cfg.Agent.LLMEndpoint,
-		"model", cfg.Agent.LLMModel,
+		"provider", cfg.Agent.LLM.Provider,
+		"model", cfg.Agent.LLM.Model,
 	)
 	return h, nil
 }

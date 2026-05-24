@@ -114,27 +114,67 @@ type ServerTLSConfig struct {
 
 // AgentConfig holds ADK agent and backend connectivity settings.
 type AgentConfig struct {
-	GCPProject        string `yaml:"gcpProject"`
-	GCPRegion         string `yaml:"gcpRegion"`
-	KABaseURL         string `yaml:"kaBaseURL"`
-	KAMCPEndpoint     string `yaml:"kaMCPEndpoint"`
-	DSBaseURL         string `yaml:"dsBaseURL"`
-	DSBearerTokenFile string `yaml:"dsBearerTokenFile,omitempty"`
-	KATLSCaFile       string `yaml:"kaTlsCaFile,omitempty"`
-	DSTLSCaFile       string `yaml:"dsTlsCaFile,omitempty"`
-	// LLMEndpoint is the base URL of a Gemini-compatible LLM endpoint.
-	// When set, AF wires the A2A handler with a real ADK agent backed by this
-	// endpoint. When empty, POST /a2a/invoke returns 501.
-	LLMEndpoint string `yaml:"llmEndpoint,omitempty"`
-	// LLMModel is the model name passed in generateContent requests.
-	LLMModel string `yaml:"llmModel,omitempty"`
-	// LLMApiKeyFile is the path to a mounted Secret file containing the LLM
-	// API key. ResolveDefaults reads the file and populates LLMAPIKey.
-	LLMApiKeyFile string `yaml:"llmApiKeyFile,omitempty"`
-	// LLMAPIKey is the API key for the LLM endpoint, populated from the file
-	// at LLMApiKeyFile during ResolveDefaults. Not serialized to YAML.
-	LLMAPIKey string `yaml:"-"`
+	KABaseURL         string    `yaml:"kaBaseURL"`
+	KAMCPEndpoint     string    `yaml:"kaMCPEndpoint"`
+	DSBaseURL         string    `yaml:"dsBaseURL"`
+	DSBearerTokenFile string    `yaml:"dsBearerTokenFile,omitempty"`
+	KATLSCaFile       string    `yaml:"kaTlsCaFile,omitempty"`
+	DSTLSCaFile       string    `yaml:"dsTlsCaFile,omitempty"`
+	LLM               LLMConfig `yaml:"llm"`
 }
+
+// LLMConfig holds LLM provider settings for the A2A handler. The schema
+// mirrors KA's ai.llm section so operators use one config style across services.
+// When Provider is empty, the A2A handler returns 501 (not configured).
+type LLMConfig struct {
+	Provider       string            `yaml:"provider"`
+	Model          string            `yaml:"model"`
+	Endpoint       string            `yaml:"endpoint,omitempty"`
+	APIKeyFile     string            `yaml:"apiKeyFile,omitempty"`
+	VertexProject  string            `yaml:"vertexProject,omitempty"`
+	VertexLocation string            `yaml:"vertexLocation,omitempty"`
+	TLSCaFile      string            `yaml:"tlsCaFile,omitempty"`
+	TimeoutSeconds int               `yaml:"timeoutSeconds,omitempty"`
+	OAuth2         LLMOAuth2Config   `yaml:"oauth2,omitempty"`
+	CircuitBreaker LLMCircuitBreaker `yaml:"circuitBreaker,omitempty"`
+	CustomHeaders  []LLMHeader       `yaml:"customHeaders,omitempty"`
+	// APIKey is resolved from APIKeyFile at startup. Not serialized.
+	APIKey string `yaml:"-"`
+}
+
+// LLMOAuth2Config holds OAuth2 client credentials for auth-gated LLM gateways.
+type LLMOAuth2Config struct {
+	Enabled        bool     `yaml:"enabled"`
+	TokenURL       string   `yaml:"tokenURL"`
+	Scopes         []string `yaml:"scopes,omitempty"`
+	CredentialsDir string   `yaml:"credentialsDir"`
+}
+
+// LLMCircuitBreaker configures resilience for LLM HTTP calls.
+type LLMCircuitBreaker struct {
+	Enabled          bool          `yaml:"enabled"`
+	MaxRequests      uint32        `yaml:"maxRequests"`
+	Interval         time.Duration `yaml:"interval"`
+	Timeout          time.Duration `yaml:"timeout"`
+	FailureThreshold uint32        `yaml:"failureThreshold"`
+}
+
+// LLMHeader describes a custom HTTP header injected into outbound LLM requests.
+type LLMHeader struct {
+	Name     string `yaml:"name"`
+	Value    string `yaml:"value,omitempty"`
+	FilePath string `yaml:"filePath,omitempty"`
+}
+
+// DefaultLLMTimeoutSeconds is the fallback HTTP timeout for LLM requests.
+const DefaultLLMTimeoutSeconds = 120
+
+// Supported LLM provider values.
+const (
+	LLMProviderVertexAI  = "vertex_ai"
+	LLMProviderGemini    = "gemini"
+	LLMProviderAnthropic = "anthropic"
+)
 
 // MCPConfig holds Model Context Protocol feature flags.
 type MCPConfig struct {
@@ -163,10 +203,12 @@ func DefaultConfig() *Config {
 			Port: 8443,
 		},
 		Agent: AgentConfig{
-			GCPRegion:     "us-central1",
 			KABaseURL:     "http://localhost:8080",
 			KAMCPEndpoint: "http://localhost:8080/api/v1/mcp/",
 			DSBaseURL:     "http://localhost:9090",
+			LLM: LLMConfig{
+				VertexLocation: "us-central1",
+			},
 		},
 		MCP: MCPConfig{
 			Enabled:     false,
@@ -269,8 +311,8 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("agent.dsBearerTokenFile %q is not accessible: %w", c.Agent.DSBearerTokenFile, err)
 		}
 	}
-	if c.Agent.LLMApiKeyFile != "" && !filepath.IsAbs(c.Agent.LLMApiKeyFile) {
-		return fmt.Errorf("agent.llmApiKeyFile must be an absolute path, got %q", c.Agent.LLMApiKeyFile)
+	if err := c.validateLLM(); err != nil {
+		return err
 	}
 	if err := c.validateAuth(); err != nil {
 		return err
@@ -302,6 +344,80 @@ func (c *Config) Validate() error {
 func (c *Config) validateSession() error {
 	if c.Session.Namespace == "" && (c.Session.DisconnectTTL > 0 || c.Session.RetentionTTL > 0) {
 		return fmt.Errorf("session.namespace must be set when session TTLs are configured")
+	}
+	return nil
+}
+
+func (c *Config) validateLLM() error {
+	llm := &c.Agent.LLM
+	if llm.Provider == "" {
+		return nil
+	}
+	switch llm.Provider {
+	case LLMProviderVertexAI, LLMProviderGemini, LLMProviderAnthropic:
+	default:
+		return fmt.Errorf("agent.llm.provider must be one of %q, %q, %q; got %q",
+			LLMProviderVertexAI, LLMProviderGemini, LLMProviderAnthropic, llm.Provider)
+	}
+	if llm.Model == "" {
+		return fmt.Errorf("agent.llm.model is required when provider is set")
+	}
+	if llm.Provider == LLMProviderVertexAI {
+		if llm.VertexProject == "" {
+			return fmt.Errorf("agent.llm.vertexProject is required for provider %q", llm.Provider)
+		}
+		if llm.VertexLocation == "" {
+			return fmt.Errorf("agent.llm.vertexLocation is required for provider %q", llm.Provider)
+		}
+	}
+	if (llm.Provider == LLMProviderGemini || llm.Provider == LLMProviderAnthropic) && llm.APIKeyFile == "" && !llm.OAuth2.Enabled {
+		return fmt.Errorf("agent.llm.apiKeyFile (or oauth2) is required for provider %q", llm.Provider)
+	}
+	if llm.APIKeyFile != "" && !filepath.IsAbs(llm.APIKeyFile) {
+		return fmt.Errorf("agent.llm.apiKeyFile must be an absolute path, got %q", llm.APIKeyFile)
+	}
+	if llm.TLSCaFile != "" && !filepath.IsAbs(llm.TLSCaFile) {
+		return fmt.Errorf("agent.llm.tlsCaFile must be an absolute path, got %q", llm.TLSCaFile)
+	}
+	if llm.Endpoint != "" {
+		if err := validateURL("agent.llm.endpoint", llm.Endpoint); err != nil {
+			return err
+		}
+	}
+	if llm.OAuth2.Enabled {
+		if llm.OAuth2.TokenURL == "" {
+			return fmt.Errorf("agent.llm.oauth2.tokenURL is required when oauth2 is enabled")
+		}
+		if err := validateURL("agent.llm.oauth2.tokenURL", llm.OAuth2.TokenURL); err != nil {
+			return err
+		}
+		if llm.OAuth2.CredentialsDir == "" {
+			return fmt.Errorf("agent.llm.oauth2.credentialsDir is required when oauth2 is enabled")
+		}
+		if !filepath.IsAbs(llm.OAuth2.CredentialsDir) {
+			return fmt.Errorf("agent.llm.oauth2.credentialsDir must be an absolute path, got %q", llm.OAuth2.CredentialsDir)
+		}
+	}
+	if llm.CircuitBreaker.Enabled {
+		if llm.CircuitBreaker.FailureThreshold == 0 || llm.CircuitBreaker.FailureThreshold > 100 {
+			return fmt.Errorf("agent.llm.circuitBreaker.failureThreshold must be 1-100, got %d", llm.CircuitBreaker.FailureThreshold)
+		}
+		if llm.CircuitBreaker.Timeout <= 0 {
+			return fmt.Errorf("agent.llm.circuitBreaker.timeout must be positive")
+		}
+	}
+	if llm.Provider != LLMProviderGemini {
+		hasTransportConfig := llm.TLSCaFile != "" || llm.OAuth2.Enabled || len(llm.CustomHeaders) > 0 || llm.CircuitBreaker.Enabled
+		if hasTransportConfig && llm.Provider == LLMProviderVertexAI {
+			return fmt.Errorf("agent.llm: transport options (tlsCaFile, oauth2, customHeaders, circuitBreaker) "+
+				"are not applicable for provider %q — Vertex AI uses GCP-managed authentication",
+				LLMProviderVertexAI)
+		}
+		if hasTransportConfig && llm.Provider == LLMProviderAnthropic {
+			return fmt.Errorf("agent.llm: transport options (tlsCaFile, oauth2, customHeaders, circuitBreaker) "+
+				"are not yet supported for provider %q — use apiKeyFile and endpoint instead",
+				LLMProviderAnthropic)
+		}
 	}
 	return nil
 }
@@ -399,17 +515,37 @@ func validateDependencyConfig(prefix string, cfg *DependencyConfig) error {
 
 // ResolveDefaults fills in derived fields that depend on other config values.
 // For example, AgentCard.URL is derived from Server.Port if left empty.
-// LLMAPIKey is populated from the file at LLMApiKeyFile (mounted Secret).
-func (c *Config) ResolveDefaults() {
+// LLM API key is resolved from the mounted Secret file at APIKeyFile.
+// Returns an error if a required credential file is configured but unreadable/empty.
+func (c *Config) ResolveDefaults() error {
 	if c.AgentCard.URL == "" {
 		c.AgentCard.URL = fmt.Sprintf("https://localhost:%d", c.Server.Port)
 	}
-	if c.Agent.LLMAPIKey == "" && c.Agent.LLMApiKeyFile != "" {
-		data, err := os.ReadFile(c.Agent.LLMApiKeyFile)
-		if err == nil {
-			c.Agent.LLMAPIKey = strings.TrimSpace(string(data))
+	if c.Agent.LLM.APIKey == "" && c.Agent.LLM.APIKeyFile != "" {
+		data, err := os.ReadFile(c.Agent.LLM.APIKeyFile)
+		if err != nil {
+			return fmt.Errorf("agent.llm.apiKeyFile %q: %w", c.Agent.LLM.APIKeyFile, err)
+		}
+		key := strings.TrimSpace(string(data))
+		if key == "" {
+			return fmt.Errorf("agent.llm.apiKeyFile %q: file is empty", c.Agent.LLM.APIKeyFile)
+		}
+		c.Agent.LLM.APIKey = key
+	}
+	if c.Agent.LLM.OAuth2.Enabled && c.Agent.LLM.OAuth2.CredentialsDir != "" {
+		dir := c.Agent.LLM.OAuth2.CredentialsDir
+		for _, f := range []string{"client-id", "client-secret"} {
+			p := filepath.Join(dir, f)
+			data, err := os.ReadFile(p)
+			if err != nil {
+				return fmt.Errorf("agent.llm.oauth2.credentialsDir/%s: %w", f, err)
+			}
+			if strings.TrimSpace(string(data)) == "" {
+				return fmt.Errorf("agent.llm.oauth2.credentialsDir/%s: file is empty", f)
+			}
 		}
 	}
+	return nil
 }
 
 func (c *Config) validateSeverityTriage() error {

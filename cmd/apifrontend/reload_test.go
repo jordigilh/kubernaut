@@ -31,7 +31,9 @@ rateLimit:
 	if err != nil {
 		t.Fatalf("config.Load: %v", err)
 	}
-	cfg.ResolveDefaults()
+	if err := cfg.ResolveDefaults(); err != nil {
+		t.Fatalf("config.ResolveDefaults: %v", err)
+	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("config.Validate: %v", err)
 	}

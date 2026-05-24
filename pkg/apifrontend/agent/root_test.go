@@ -49,8 +49,6 @@ var _ = Describe("Root Agent", func() {
 	Describe("NewRootAgent", func() {
 		It("UT-AF-100-001: returns configured agent with model", func() {
 			cfg := agentpkg.AgentConfig{
-				GCPProject:  "test-project",
-				GCPRegion:   "us-central1",
 				Instruction: "You are a test agent",
 			}
 			a, tools, err := agentpkg.NewRootAgent(cfg)
@@ -186,8 +184,6 @@ var _ = Describe("Root Agent", func() {
 
 		It("UT-AF-100-012: agent creation with empty tool list returns error", func() {
 			cfg := agentpkg.AgentConfig{
-				GCPProject:  "test-project",
-				GCPRegion:   "us-central1",
 				Instruction: "You are a test agent",
 				SkipTools:   true,
 			}
@@ -345,18 +341,6 @@ var _ = Describe("Root Agent", func() {
 	})
 
 	Describe("Functional Options", func() {
-		It("WithGCPProject overrides project", func() {
-			cfg := agentpkg.DefaultTestConfig()
-			cfg = cfg.Apply(agentpkg.WithGCPProject("new-project"))
-			Expect(cfg.GCPProject).To(Equal("new-project"))
-		})
-
-		It("WithGCPRegion overrides region", func() {
-			cfg := agentpkg.DefaultTestConfig()
-			cfg = cfg.Apply(agentpkg.WithGCPRegion("eu-west1"))
-			Expect(cfg.GCPRegion).To(Equal("eu-west1"))
-		})
-
 		It("WithInstruction overrides instruction", func() {
 			cfg := agentpkg.DefaultTestConfig()
 			cfg = cfg.Apply(agentpkg.WithInstruction("Custom prompt"))
@@ -383,7 +367,7 @@ var _ = Describe("Root Agent", func() {
 
 		It("NewRootAgent accepts functional options", func() {
 			cfg := agentpkg.DefaultTestConfig()
-			a, _, err := agentpkg.NewRootAgent(cfg, agentpkg.WithGCPProject("override-project"))
+			a, _, err := agentpkg.NewRootAgent(cfg, agentpkg.WithInstruction("custom prompt"))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(a).NotTo(BeNil())
 		})

@@ -6,17 +6,17 @@ server:
     required: true
 
 agent:
-  gcpProject: ""
-  gcpRegion: "us-central1"
   kaBaseURL: "https://kubernaut-agent.kubernaut-system.svc:8080"
   kaMCPEndpoint: "https://kubernaut-agent.kubernaut-system.svc:8080/api/v1/mcp/"
   dsBaseURL: "https://data-storage-service.kubernaut-system.svc:8080"
   dsBearerTokenFile: "/var/run/secrets/kubernetes.io/serviceaccount/token"
   kaTlsCaFile: /etc/apifrontend/inter-service-ca/ca.crt
   dsTlsCaFile: /etc/apifrontend/inter-service-ca/ca.crt
-  llmEndpoint: "http://mock-llm.kubernaut-system.svc:8080"
-  llmModel: "mock-model"
-  llmApiKeyFile: "/etc/apifrontend/secrets/llm-api-key"
+  llm:
+    provider: gemini
+    model: mock-model
+    endpoint: "http://mock-llm.kubernaut-system.svc:8080"
+    apiKeyFile: "/etc/apifrontend/llm-credentials/llm-api-key"
 
 session:
   namespace: kubernaut-system

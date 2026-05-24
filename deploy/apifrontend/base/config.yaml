@@ -5,8 +5,6 @@ server:
     required: true
 
 agent:
-  gcpProject: ""
-  gcpRegion: "us-central1"
   kaBaseURL: "https://kubernaut-agent:8443"
   kaMCPEndpoint: "https://kubernaut-agent:8443/api/v1/mcp/"
   dsBaseURL: "https://data-storage:8443"

@@ -22,10 +22,6 @@ import (
 //
 //nolint:revive // stutters with package name but preferred for clarity across the codebase
 type AgentConfig struct {
-	// GCPProject is the Vertex AI project for the Claude model.
-	GCPProject string
-	// GCPRegion is the Vertex AI region.
-	GCPRegion string
 	// Instruction is the system prompt guiding agent behavior.
 	Instruction string
 	// SkipTools disables tool registration (for testing error paths).
@@ -73,16 +69,6 @@ type AgentConfig struct {
 // Option applies a configuration override to AgentConfig.
 type Option func(*AgentConfig)
 
-// WithGCPProject sets the Vertex AI project.
-func WithGCPProject(project string) Option {
-	return func(c *AgentConfig) { c.GCPProject = project }
-}
-
-// WithGCPRegion sets the Vertex AI region.
-func WithGCPRegion(region string) Option {
-	return func(c *AgentConfig) { c.GCPRegion = region }
-}
-
 // WithInstruction sets the system prompt.
 func WithInstruction(instruction string) Option {
 	return func(c *AgentConfig) { c.Instruction = instruction }
@@ -106,8 +92,6 @@ func WithDSBaseURL(url string) Option {
 // DefaultTestConfig returns a config suitable for unit tests with placeholder values.
 func DefaultTestConfig() AgentConfig {
 	return AgentConfig{
-		GCPProject:    "test-project",
-		GCPRegion:     "us-central1",
 		Instruction:   defaultInstruction(),
 		KABaseURL:     "http://localhost:8080",
 		KAMCPEndpoint: "http://localhost:8080/api/v1/mcp/",
