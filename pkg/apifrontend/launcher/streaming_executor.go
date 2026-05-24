@@ -17,12 +17,12 @@ package launcher
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 
-	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 )
 
@@ -31,29 +31,42 @@ import (
 // to emit progressive reasoning artifacts directly to the A2A event queue.
 type StreamingExecutor struct {
 	inner         a2asrv.AgentExecutor
-	auditor       audit.Emitter
+	logger        *slog.Logger
 	bridgeMetrics BridgeMetrics
 }
 
 // NewStreamingExecutor creates a StreamingExecutor that wraps the given executor.
-func NewStreamingExecutor(inner a2asrv.AgentExecutor, auditor audit.Emitter, m BridgeMetrics) *StreamingExecutor {
-	return &StreamingExecutor{inner: inner, auditor: auditor, bridgeMetrics: m}
+func NewStreamingExecutor(inner a2asrv.AgentExecutor, logger *slog.Logger, m BridgeMetrics) *StreamingExecutor {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &StreamingExecutor{inner: inner, logger: logger, bridgeMetrics: m}
 }
 
 // Execute injects the EventBridge into the context and delegates to the inner executor.
-// Emits a2a.stream_opened / a2a.stream_closed audit events (AU-6 compliance).
+// Stream lifecycle is logged (not audited) because a2a.stream_opened/closed lack
+// OpenAPI payload schemas in data-storage-v1.yaml. The A2A task lifecycle is
+// already audited by buildBeforeExecuteCallback / buildAfterExecuteCallback.
 func (s *StreamingExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestContext, queue eventqueue.Queue) error {
 	ctx = WithEventBridge(ctx, queue, reqCtx.TaskID, s.bridgeMetrics)
 
-	s.emitLifecycleEvent(ctx, reqCtx, audit.EventA2AStreamOpened)
+	user := auth.UserIdentityFromContext(ctx)
+	username := ""
+	if user != nil {
+		username = user.Username
+	}
+	s.logger.InfoContext(ctx, "a2a stream opened",
+		"task_id", string(reqCtx.TaskID),
+		"user", username,
+	)
 
 	err := s.inner.Execute(ctx, reqCtx, queue)
 
-	detail := map[string]string{"task_id": string(reqCtx.TaskID)}
-	if err != nil {
-		detail["error"] = "true"
-	}
-	s.emitLifecycleAudit(ctx, reqCtx, audit.EventA2AStreamClosed, detail)
+	s.logger.InfoContext(ctx, "a2a stream closed",
+		"task_id", string(reqCtx.TaskID),
+		"user", username,
+		"error", err != nil,
+	)
 
 	return err
 }
@@ -68,24 +81,4 @@ func (s *StreamingExecutor) Cleanup(ctx context.Context, reqCtx *a2asrv.RequestC
 	if cleaner, ok := s.inner.(a2asrv.AgentExecutionCleaner); ok {
 		cleaner.Cleanup(ctx, reqCtx, result, err)
 	}
-}
-
-func (s *StreamingExecutor) emitLifecycleEvent(ctx context.Context, reqCtx *a2asrv.RequestContext, eventType audit.EventType) {
-	s.emitLifecycleAudit(ctx, reqCtx, eventType, map[string]string{"task_id": string(reqCtx.TaskID)})
-}
-
-func (s *StreamingExecutor) emitLifecycleAudit(ctx context.Context, _ *a2asrv.RequestContext, eventType audit.EventType, detail map[string]string) {
-	if s.auditor == nil {
-		return
-	}
-	user := auth.UserIdentityFromContext(ctx)
-	username := ""
-	if user != nil {
-		username = user.Username
-	}
-	s.auditor.Emit(ctx, &audit.Event{
-		Type:   eventType,
-		UserID: username,
-		Detail: detail,
-	})
 }

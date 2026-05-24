@@ -177,14 +177,14 @@ var _ = Describe("A2A Progressive Streaming Integration (issue #1258)", func() {
 	})
 
 	// ===================================================================
-	// FedRAMP AU-6: Stream Lifecycle Audit
-	// Verifies that the StreamingExecutor emits stream_opened at the start
-	// and stream_closed at the end of a streaming execution, enabling
-	// security monitoring of active A2A streaming sessions.
+	// FedRAMP AU-6: A2A Task Lifecycle Audit
+	// Stream lifecycle (open/close) is logged, not audited, because no OpenAPI
+	// payload schema exists for stream events yet. The A2A task lifecycle
+	// (task_started/completed/failed) IS audited and provides the forensic trail.
 	// ===================================================================
 
-	Describe("IT-AF-1258-003: AU-6 stream request emits stream_opened and stream_closed", func() {
-		It("should emit both lifecycle events for a successful stream", func() {
+	Describe("IT-AF-1258-003: AU-6 stream request emits task_started and task audit events", func() {
+		It("should emit task lifecycle audit events for a successful stream", func() {
 			localAuditor.Reset()
 
 			resp, err := invokeA2A(buildStreamRPC("lifecycle-01", "hello"))
@@ -193,21 +193,19 @@ var _ = Describe("A2A Progressive Streaming Integration (issue #1258)", func() {
 			_, _ = io.ReadAll(resp.Body)
 
 			Eventually(func() []*audit.Event {
-				return localAuditor.EventsOfType(audit.EventA2AStreamClosed)
+				completed := localAuditor.EventsOfType(audit.EventA2ATaskCompleted)
+				failed := localAuditor.EventsOfType(audit.EventA2ATaskFailed)
+				return append(completed, failed...)
 			}, 10*time.Second, 100*time.Millisecond).ShouldNot(BeEmpty())
 
-			opened := localAuditor.EventsOfType(audit.EventA2AStreamOpened)
-			closed := localAuditor.EventsOfType(audit.EventA2AStreamClosed)
-			Expect(opened).NotTo(BeEmpty(), "stream_opened must be emitted")
-			Expect(closed).NotTo(BeEmpty(), "stream_closed must be emitted")
-
-			Expect(opened[0].Detail).To(HaveKeyWithValue("task_id", Not(BeEmpty())))
-			Expect(closed[0].Detail).To(HaveKeyWithValue("task_id", Not(BeEmpty())))
+			started := localAuditor.EventsOfType(audit.EventA2ATaskStarted)
+			Expect(started).NotTo(BeEmpty(), "task_started must be emitted")
+			Expect(started[0].Detail).To(HaveKeyWithValue("task_id", Not(BeEmpty())))
 		})
 	})
 
-	Describe("IT-AF-1258-004: AU-6 stream_closed emitted even on LLM failure (graceful lifecycle)", func() {
-		It("should emit stream_closed when LLM returns 500", func() {
+	Describe("IT-AF-1258-004: AU-6 task_failed emitted on LLM failure (graceful lifecycle)", func() {
+		It("should emit task_failed when LLM returns 500", func() {
 			if mockLLMSrv != nil {
 				mockLLMSrv.Close()
 			}
@@ -255,13 +253,13 @@ var _ = Describe("A2A Progressive Streaming Integration (issue #1258)", func() {
 			_, _ = io.ReadAll(resp.Body)
 
 			Eventually(func() []*audit.Event {
-				return failAuditor.EventsOfType(audit.EventA2AStreamClosed)
+				return failAuditor.EventsOfType(audit.EventA2ATaskFailed)
 			}, 10*time.Second, 100*time.Millisecond).ShouldNot(BeEmpty())
 
-			closed := failAuditor.EventsOfType(audit.EventA2AStreamClosed)
-			Expect(closed).NotTo(BeEmpty(), "stream_closed must be emitted even on LLM failure")
-			Expect(closed[0].Detail).To(HaveKeyWithValue("task_id", Not(BeEmpty())),
-				"AU-6: stream lifecycle tracked regardless of execution outcome")
+			failed := failAuditor.EventsOfType(audit.EventA2ATaskFailed)
+			Expect(failed).NotTo(BeEmpty(), "task_failed must be emitted on LLM failure")
+			Expect(failed[0].Detail).To(HaveKeyWithValue("task_id", Not(BeEmpty())),
+				"AU-6: task lifecycle tracked regardless of execution outcome")
 		})
 	})
 })

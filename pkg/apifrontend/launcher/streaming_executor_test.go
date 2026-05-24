@@ -1,7 +1,9 @@
 package launcher_test
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv"
@@ -9,7 +11,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 )
 
@@ -116,16 +117,17 @@ func (m *mockExecutorWithCleaner) Cleanup(_ context.Context, _ *a2asrv.RequestCo
 	m.cleanupCalled = true
 }
 
-// BR-AUDIT-AU6: Audit Review — the audit trail MUST record stream lifecycle
-// events (open/close) so that security analysts can reconstruct the timeline
-// of an A2A streaming session during incident forensics. Without these events,
-// there is no way to determine when a stream was active or whether it terminated
-// normally vs. due to error.
-var _ = Describe("StreamingExecutor — AU-6 Audit Lifecycle", func() {
-	It("UT-AF-1258-040: stream_opened is audited when execution begins (forensic timeline start)", func() {
+// BR-AUDIT-AU6: Audit Review — stream lifecycle events (open/close) are logged
+// for forensic timeline reconstruction. These use structured logging (not audit
+// store) because no OpenAPI payload schema exists yet in data-storage-v1.yaml.
+// The A2A task lifecycle is already audited by buildBeforeExecuteCallback /
+// buildAfterExecuteCallback.
+var _ = Describe("StreamingExecutor — AU-6 Lifecycle Logging", func() {
+	It("UT-AF-1258-040: stream opened is logged when execution begins (forensic timeline start)", func() {
 		inner := &mockExecutor{}
-		spy := &auditSpy{}
-		executor := launcher.NewStreamingExecutor(inner, spy, nil)
+		var buf bytes.Buffer
+		logger := slog.New(slog.NewTextHandler(&buf, nil))
+		executor := launcher.NewStreamingExecutor(inner, logger, nil)
 
 		reqCtx := &a2asrv.RequestContext{TaskID: "task-forensic-001"}
 		queue := &fakeQueue{}
@@ -133,17 +135,16 @@ var _ = Describe("StreamingExecutor — AU-6 Audit Lifecycle", func() {
 		err := executor.Execute(context.Background(), reqCtx, queue)
 		Expect(err).NotTo(HaveOccurred())
 
-		openEvents := spy.eventsOfType(audit.EventA2AStreamOpened)
-		Expect(openEvents).To(HaveLen(1),
-			"AU-6 violation: no stream_opened event — analysts cannot determine session start time")
-		Expect(openEvents[0].Detail["task_id"]).To(Equal("task-forensic-001"),
-			"AU-6: audit event must identify the A2A task for correlation")
+		logOutput := buf.String()
+		Expect(logOutput).To(ContainSubstring("a2a stream opened"))
+		Expect(logOutput).To(ContainSubstring("task-forensic-001"))
 	})
 
-	It("UT-AF-1258-041: stream_closed is audited after normal completion (forensic timeline end)", func() {
+	It("UT-AF-1258-041: stream closed is logged after normal completion (forensic timeline end)", func() {
 		inner := &mockExecutor{}
-		spy := &auditSpy{}
-		executor := launcher.NewStreamingExecutor(inner, spy, nil)
+		var buf bytes.Buffer
+		logger := slog.New(slog.NewTextHandler(&buf, nil))
+		executor := launcher.NewStreamingExecutor(inner, logger, nil)
 
 		reqCtx := &a2asrv.RequestContext{TaskID: "task-forensic-002"}
 		queue := &fakeQueue{}
@@ -151,18 +152,17 @@ var _ = Describe("StreamingExecutor — AU-6 Audit Lifecycle", func() {
 		err := executor.Execute(context.Background(), reqCtx, queue)
 		Expect(err).NotTo(HaveOccurred())
 
-		closeEvents := spy.eventsOfType(audit.EventA2AStreamClosed)
-		Expect(closeEvents).To(HaveLen(1),
-			"AU-6 violation: no stream_closed event — analysts cannot confirm session ended cleanly")
-		Expect(closeEvents[0].Detail["task_id"]).To(Equal("task-forensic-002"))
-		Expect(closeEvents[0].Detail).NotTo(HaveKey("error"),
-			"successful completion should not carry an error flag")
+		logOutput := buf.String()
+		Expect(logOutput).To(ContainSubstring("a2a stream closed"))
+		Expect(logOutput).To(ContainSubstring("task-forensic-002"))
+		Expect(logOutput).To(ContainSubstring("error=false"))
 	})
 
-	It("UT-AF-1258-042: stream_closed records error disposition for failure analysis", func() {
+	It("UT-AF-1258-042: stream closed records error disposition for failure analysis", func() {
 		inner := &mockExecutorFailing{}
-		spy := &auditSpy{}
-		executor := launcher.NewStreamingExecutor(inner, spy, nil)
+		var buf bytes.Buffer
+		logger := slog.New(slog.NewTextHandler(&buf, nil))
+		executor := launcher.NewStreamingExecutor(inner, logger, nil)
 
 		reqCtx := &a2asrv.RequestContext{TaskID: "task-forensic-003"}
 		queue := &fakeQueue{}
@@ -170,25 +170,23 @@ var _ = Describe("StreamingExecutor — AU-6 Audit Lifecycle", func() {
 		err := executor.Execute(context.Background(), reqCtx, queue)
 		Expect(err).To(HaveOccurred())
 
-		closeEvents := spy.eventsOfType(audit.EventA2AStreamClosed)
-		Expect(closeEvents).To(HaveLen(1),
-			"AU-6 violation: stream_closed must be emitted even on failure for forensics")
-		Expect(closeEvents[0].Detail["error"]).To(Equal("true"),
-			"AU-6: error flag enables analysts to filter abnormal terminations in SIEM queries")
+		logOutput := buf.String()
+		Expect(logOutput).To(ContainSubstring("a2a stream closed"))
+		Expect(logOutput).To(ContainSubstring("error=true"))
 	})
 
-	It("UT-AF-1258-043: nil auditor does not prevent execution (graceful degradation)", func() {
+	It("UT-AF-1258-043: nil logger does not prevent execution (graceful degradation)", func() {
 		inner := &mockExecutor{}
 		executor := launcher.NewStreamingExecutor(inner, nil, nil)
 
-		reqCtx := &a2asrv.RequestContext{TaskID: "task-no-auditor"}
+		reqCtx := &a2asrv.RequestContext{TaskID: "task-no-logger"}
 		queue := &fakeQueue{}
 
 		Expect(func() {
 			_ = executor.Execute(context.Background(), reqCtx, queue)
 		}).NotTo(Panic())
 		Expect(inner.executeCalled).To(BeTrue(),
-			"execution must proceed regardless of auditor availability")
+			"execution must proceed regardless of logger availability")
 	})
 })
 
@@ -225,22 +223,3 @@ func (m *mockExecutorFailing) Cancel(_ context.Context, _ *a2asrv.RequestContext
 }
 
 var errMockFailure = context.DeadlineExceeded
-
-// auditSpy captures emitted audit events for behavioral assertion.
-type auditSpy struct {
-	events []*audit.Event
-}
-
-func (s *auditSpy) Emit(_ context.Context, event *audit.Event) {
-	s.events = append(s.events, event)
-}
-
-func (s *auditSpy) eventsOfType(t audit.EventType) []*audit.Event {
-	var result []*audit.Event
-	for _, e := range s.events {
-		if e.Type == t {
-			result = append(result, e)
-		}
-	}
-	return result
-}
