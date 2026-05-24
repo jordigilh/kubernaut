@@ -194,7 +194,7 @@ func run() int {
 		}
 	}
 
-	agentCardHandler, err := handler.NewAgentCardHandler(handler.AgentCardConfig{
+	agentCardBase, err := handler.NewAgentCardHandler(handler.AgentCardConfig{
 		Name:        cfg.AgentCard.Name,
 		Description: "Kubernaut AI-driven remediation API Frontend",
 		URL:         cfg.AgentCard.URL,
@@ -205,6 +205,7 @@ func run() int {
 		logger.Error(err, "failed to create agent card handler")
 		return 1
 	}
+	agentCardHandler := handler.WithAgentCardAudit(agentCardBase, auditor)
 
 	a2aHandler, err := buildA2AHandler(ctx, cfg, deps, sessInfra, metricsReg, sarChecker, auditor, logger, userLimiter)
 	if err != nil {

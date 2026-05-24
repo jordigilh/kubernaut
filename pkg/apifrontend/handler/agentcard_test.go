@@ -1,13 +1,16 @@
 package handler_test
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/handler"
 )
 
@@ -228,4 +231,64 @@ var _ = Describe("Agent Card Handler", func() {
 		Expect(ok).To(BeTrue(), "skills should be an array, not null")
 		Expect(skills).To(BeEmpty())
 	})
+
+	Describe("WithAgentCardAudit (AU-2/AU-3)", func() {
+		It("UT-AF-1259-011: emits discovery.agent_card_accessed audit event", func() {
+			base, err := handler.NewAgentCardHandler(handler.AgentCardConfig{
+				Name:    "Kubernaut Agent",
+				URL:     "https://kubernaut.example.com",
+				Version: "0.1.0",
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			auditor := &spyAuditor{}
+			h := handler.WithAgentCardAudit(base, auditor)
+
+			req := httptest.NewRequest("GET", "/.well-known/agent-card.json", http.NoBody)
+			req.RemoteAddr = "10.0.0.1:54321"
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+
+			Expect(rec.Code).To(Equal(http.StatusOK))
+			events := auditor.Events()
+			Expect(events).To(HaveLen(1))
+			Expect(events[0].Type).To(Equal(audit.EventAgentCardAccessed))
+			Expect(events[0].SourceIP).To(Equal("10.0.0.1:54321"))
+		})
+
+		It("UT-AF-1259-012: nil auditor still serves the card without panic", func() {
+			base, err := handler.NewAgentCardHandler(handler.AgentCardConfig{
+				Name:    "Kubernaut Agent",
+				URL:     "https://kubernaut.example.com",
+				Version: "0.1.0",
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			h := handler.WithAgentCardAudit(base, nil)
+
+			req := httptest.NewRequest("GET", "/.well-known/agent-card.json", http.NoBody)
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+			Expect(rec.Code).To(Equal(http.StatusOK))
+		})
+	})
 })
+
+type spyAuditor struct {
+	mu     sync.Mutex
+	events []*audit.Event
+}
+
+func (s *spyAuditor) Emit(_ context.Context, e *audit.Event) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.events = append(s.events, e)
+}
+
+func (s *spyAuditor) Events() []*audit.Event {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cp := make([]*audit.Event, len(s.events))
+	copy(cp, s.events)
+	return cp
+}
