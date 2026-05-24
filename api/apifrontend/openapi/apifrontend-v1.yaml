@@ -129,6 +129,45 @@ paths:
         "413":
           description: Request body exceeds 1 MiB limit
 
+  /:
+    post:
+      operationId: postA2ARoot
+      summary: A2A JSON-RPC 2.0 root alias (issue #1268)
+      description: |
+        Compatibility alias for POST /a2a/invoke. Identical behavior, auth, and
+        rate limiting. Added for kagenti and A2A ecosystem clients that POST
+        JSON-RPC messages to the root path per de facto convention.
+      tags: [a2a]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JsonRpcRequest"
+      responses:
+        "200":
+          description: JSON-RPC 2.0 response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JsonRpcResponse"
+        "401":
+          description: Missing or invalid Bearer token
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+        "413":
+          description: Request body exceeds 1 MiB limit
+
   /mcp:
     post:
       operationId: postMCP
