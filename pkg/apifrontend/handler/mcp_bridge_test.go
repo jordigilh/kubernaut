@@ -1360,17 +1360,13 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 			gate := make(chan struct{})
 			blockingClient := &hookDynamicClient{
 				Interface: dynamicfake.NewSimpleDynamicClient(runtime.NewScheme()),
-				hook: func(ctx context.Context) error {
+				hook: func(_ context.Context) error {
 					select {
 					case entered <- struct{}{}:
 					default:
 					}
-					select {
-					case <-gate:
-						return nil
-					case <-ctx.Done():
-						return ctx.Err()
-					}
+					<-gate
+					return nil
 				},
 			}
 
