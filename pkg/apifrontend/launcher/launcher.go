@@ -77,7 +77,7 @@ func NewA2AHandler(cfg A2AConfig) (http.Handler, error) { //nolint:gocritic // h
 	}
 
 	inner := adka2a.NewExecutor(execCfg)
-	executor := NewStreamingExecutor(inner, cfg.Auditor, cfg.BridgeMetrics)
+	executor := NewStreamingExecutor(inner, log, cfg.BridgeMetrics)
 	reqHandler := a2asrv.NewHandler(executor)
 	httpHandler := a2asrv.NewJSONRPCHandler(reqHandler)
 
@@ -105,10 +105,18 @@ func buildBeforeExecuteCallback(userCb func(ctx context.Context) (context.Contex
 				UserID: username,
 				Detail: detail,
 			})
+
+			triageDetail := map[string]string{
+				"persona": resolvePersona(user),
+			}
+			if reqCtx != nil {
+				triageDetail["task_id"] = string(reqCtx.TaskID)
+				triageDetail["session_id"] = reqCtx.ContextID
+			}
 			auditor.Emit(ctx, &audit.Event{
 				Type:   audit.EventTriageStarted,
 				UserID: username,
-				Detail: detail,
+				Detail: triageDetail,
 			})
 		}
 
@@ -179,10 +187,18 @@ func buildAfterExecuteCallback(log *slog.Logger, auditor audit.Emitter) adka2a.A
 				UserID: username,
 				Detail: detail,
 			})
+
+			triageOutcome := "no_issue_found"
+			if detail["rr_name"] != "" {
+				triageOutcome = "rr_created"
+			}
 			auditor.Emit(ctx, &audit.Event{
 				Type:   audit.EventTriageCompleted,
 				UserID: username,
-				Detail: map[string]string{"task_id": taskID},
+				Detail: map[string]string{
+					"task_id":       taskID,
+					"triage_outcome": triageOutcome,
+				},
 			})
 		}
 		return nil
@@ -197,6 +213,31 @@ func enrichRRDetail(ctx context.Context, detail map[string]string) {
 		detail["rr_name"] = sc.RRName
 		detail["rr_namespace"] = sc.RRNamespace
 	}
+}
+
+// resolvePersona maps the authenticated user's group membership to the
+// OpenAPI persona enum used in triage audit events.
+func resolvePersona(user *auth.UserIdentity) string {
+	if user == nil {
+		return "sre"
+	}
+	for _, g := range user.Groups {
+		switch g {
+		case "sre":
+			return "sre"
+		case "ai-orchestrator":
+			return "orchestrator"
+		case "cicd":
+			return "cicd"
+		case "observability":
+			return "dashboard"
+		case "l3-audit":
+			return "audit"
+		case "remediation-approver":
+			return "approver"
+		}
+	}
+	return "sre"
 }
 
 // resolveA2AMethod maps the a2asrv CallContext method name to the corresponding
