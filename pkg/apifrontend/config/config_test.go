@@ -459,19 +459,29 @@ func TestLoadFromFile_PathCleaned(t *testing.T) {
 
 func TestNoEnvVarsInCodebase(t *testing.T) {
 	// UT-AF-039-030 + UT-AF-1251-001
-	// Verifies the architectural constraint: no envOr/os.Getenv in production code.
+	// Verifies the architectural constraint: no envOr/os.Getenv in production code,
+	// except the PORT env override mandated by BR-PLATFORM-1262 (ApplyPortEnvOverride).
 	bannedFiles := map[string]string{
 		filepath.Join("..", "..", "..", "cmd", "apifrontend", "main.go"): "main.go",
 		"config.go": "config.go",
 	}
+
+	// BR-PLATFORM-1262 permits exactly one os.Getenv in config.go for PORT override.
+	allowedGetenvCounts := map[string]int{
+		"config.go": 1,
+		"main.go":   0,
+	}
+
 	for path, label := range bannedFiles {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			t.Skipf("cannot read %s from test context: %v", label, err)
 		}
 		content := string(data)
-		if strings.Contains(content, "os.Getenv") {
-			t.Errorf("%s contains os.Getenv — env vars are banned per architectural constraint", label)
+		count := strings.Count(content, "os.Getenv")
+		allowed := allowedGetenvCounts[label]
+		if count > allowed {
+			t.Errorf("%s contains %d os.Getenv calls (allowed %d) — env vars are banned per architectural constraint (exception: BR-PLATFORM-1262 PORT override)", label, count, allowed)
 		}
 		if strings.Contains(content, "envOr") {
 			t.Errorf("%s contains envOr — env vars are banned per architectural constraint", label)
