@@ -61,6 +61,13 @@ func RedactError(err error) string {
 	return msg
 }
 
+// RedactText applies value-level pattern matching to detect and redact embedded
+// secrets (JWTs, bearer tokens, base64 strings) from arbitrary text output.
+// Use for outbound data flowing to external agents or clients.
+func RedactText(v string) string {
+	return redactValue(v)
+}
+
 // redactValue applies value-level pattern matching to detect and redact
 // embedded secrets regardless of the map key.
 func redactValue(v string) string {
