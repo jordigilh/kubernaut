@@ -18,7 +18,7 @@ var _ = Describe("ApplyPortEnvOverride (BR-PLATFORM-1262)", Label("config", "cm-
 				Expect(os.Setenv("PORT", envValue)).To(Succeed())
 				DeferCleanup(os.Unsetenv, "PORT")
 			} else {
-				os.Unsetenv("PORT")
+				Expect(os.Unsetenv("PORT")).To(Succeed())
 			}
 			config.ApplyPortEnvOverride(cfg)
 			Expect(cfg.Server.Port).To(Equal(expectedPort))
