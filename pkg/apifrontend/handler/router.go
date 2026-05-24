@@ -98,6 +98,7 @@ func NewRouter(cfg RouterConfig) (http.Handler, error) { //nolint:gocritic // hu
 	}
 
 	mux.Handle("POST /a2a/invoke", a2aChain)
+	mux.Handle("POST /{$}", a2aChain)
 	mux.Handle("POST /mcp", mcpChain)
 
 	recoverLogger := cfg.Logger

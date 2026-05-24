@@ -33,7 +33,7 @@ func normalizePath(p string) string {
 	switch {
 	case p == "/healthz", p == "/readyz", p == "/metrics":
 		return p
-	case strings.HasPrefix(p, "/a2a/"):
+	case p == "/" || strings.HasPrefix(p, "/a2a/"):
 		return "/a2a/invoke"
 	case p == "/mcp":
 		return "/mcp"

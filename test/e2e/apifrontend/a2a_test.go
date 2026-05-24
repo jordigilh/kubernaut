@@ -516,6 +516,50 @@ var _ = Describe("A2A Handler (E2E)", Label("e2e", "a2a"), func() {
 	})
 
 	// ===================================================================
+	// Category 8: Root Alias Compatibility (issue #1268)
+	// ===================================================================
+	Context("Category 8: Root Alias Compatibility (issue #1268)", func() {
+
+		It("E2E-AF-1268-001: POST / dispatches to A2A handler (kagenti compat)", func() {
+			body := a2aTasksSend("1268-001", "List all remediations in the default namespace")
+			req, err := http.NewRequest(http.MethodPost, baseURL+"/", strings.NewReader(body))
+			Expect(err).NotTo(HaveOccurred())
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", "Bearer "+sreToken)
+
+			resp, err := httpClient.Do(req)
+			Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = resp.Body.Close() }()
+
+			Expect(resp.StatusCode).To(Equal(http.StatusOK), "POST / should reach A2A handler")
+
+			rpc, err := parseRPCResponse(resp)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rpc.Error).To(BeNil(), "1268-001: unexpected JSON-RPC error: %+v", rpc.Error)
+			Expect(rpc.Result).NotTo(BeNil())
+
+			task, err := extractTaskFromResult(rpc.Result)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(task.ID).NotTo(BeEmpty(), "1268-001: task ID must not be empty")
+			Expect(task.Status.State).To(BeElementOf("completed", "working", "failed"),
+				"1268-001: task should reach a valid state")
+		})
+
+		It("E2E-AF-1268-002: POST / returns 401 without auth", func() {
+			req, err := http.NewRequest(http.MethodPost, baseURL+"/", strings.NewReader(`{"jsonrpc":"2.0","method":"message/send","id":"1268-unauth"}`))
+			Expect(err).NotTo(HaveOccurred())
+			req.Header.Set("Content-Type", "application/json")
+
+			resp, err := httpClient.Do(req)
+			Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = resp.Body.Close() }()
+
+			Expect(resp.StatusCode).To(Equal(http.StatusUnauthorized),
+				"POST / without auth must be rejected")
+		})
+	})
+
+	// ===================================================================
 	// Category 6: Session Lifecycle (3 tests)
 	// ===================================================================
 	Context("Category 6: Session Lifecycle", func() {
