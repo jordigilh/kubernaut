@@ -67,6 +67,8 @@ func run() int {
 		z.Error("failed to load config", zap.Error(err))
 		return 1
 	}
+	origPort := cfg.Server.Port
+	config.ApplyPortEnvOverride(cfg)
 	if err := cfg.ResolveDefaults(); err != nil {
 		z, _ := zap.NewProduction()
 		z.Error("failed to resolve config defaults", zap.Error(err))
@@ -77,6 +79,12 @@ func run() int {
 	zapLogger := newZapLogger(logLevel)
 	defer func() { _ = zapLogger.Sync() }()
 	logger := zapr.NewLogger(zapLogger).WithName("apifrontend")
+
+	if cfg.Server.Port != origPort {
+		logger.Info("PORT env override applied", "original", origPort, "effective", cfg.Server.Port)
+	} else if p := os.Getenv("PORT"); p != "" {
+		logger.Info("PORT env var ignored (invalid or out-of-range)", "value", p)
+	}
 
 	if err := cfg.Validate(); err != nil {
 		logger.Error(err, "invalid config")

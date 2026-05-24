@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -616,4 +617,15 @@ func validateURL(field, raw string) error {
 		return fmt.Errorf("%s must include a scheme (http:// or https://), got %q", field, raw)
 	}
 	return nil
+}
+
+// ApplyPortEnvOverride overrides cfg.Server.Port from the PORT environment
+// variable when set to a valid port number (1–65535). Invalid or out-of-range
+// values are silently ignored, preserving the config-file default.
+func ApplyPortEnvOverride(c *Config) {
+	if p := os.Getenv("PORT"); p != "" {
+		if port, err := strconv.Atoi(p); err == nil && port >= 1 && port <= 65535 {
+			c.Server.Port = port
+		}
+	}
 }
