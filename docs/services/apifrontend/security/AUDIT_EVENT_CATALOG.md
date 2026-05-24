@@ -2,17 +2,18 @@
 
 Authoritative reference for all structured audit events emitted by the kubernaut-apifrontend service.
 
-**Source of truth:** `internal/audit/audit.go` (EventType constants)
+**Source of truth:** `pkg/apifrontend/audit/audit.go` (EventType constants)
 **Schema:** All events conform to the `audit.Event` struct:
 
 ```go
 type Event struct {
-    Timestamp time.Time         `json:"timestamp"`
-    Type      EventType         `json:"type"`
-    RequestID string            `json:"request_id,omitempty"`
-    UserID    string            `json:"user_id,omitempty"`
-    SourceIP  string            `json:"source_ip,omitempty"`
-    Detail    map[string]string `json:"detail,omitempty"`
+    Timestamp     time.Time         `json:"timestamp"`
+    Type          EventType         `json:"type"`
+    CorrelationID string            `json:"correlation_id,omitempty"`
+    RequestID     string            `json:"request_id,omitempty"`
+    UserID        string            `json:"user_id,omitempty"`
+    SourceIP      string            `json:"source_ip,omitempty"`
+    Detail        map[string]string `json:"detail,omitempty"`
 }
 ```
 
@@ -24,11 +25,10 @@ type Event struct {
 |-----------|----------|-------------|---------|---------------|
 | `auth.success` | `EventAuthSuccess` | AU-2, AC-7 | JWT validated or TokenReview accepted | `issuer`, `groups` |
 | `auth.failure` | `EventAuthFailure` | AU-2, AC-7 | JWT rejected or TokenReview denied | `reason` |
-| `rbac.denied` | `EventRBACDenied` | AC-3, AC-6 | Tool call blocked by RBAC guard | `tool`, `role`, `reason` |
-| ~~`impersonation.created`~~ | ~~`EventImpersonation`~~ | — | **Removed** (ADR-022: impersonation deprecated; user attribution via `tool.executed` events) | — |
+| `auth.access_denied` | `EventAuthAccessDenied` | AC-3, AC-6 | Tool call blocked by RBAC guard (consolidated from `rbac.denied` + `mcp.tool_denied`, Issue #1156) | `tool_name`, `user_role`, `endpoint`, `reason` |
 | `jwt.delegation` | `EventJWTDelegation` | AC-3, AU-12 | Original JWT forwarded to downstream service (KA) | `target_service` |
 
-**Emitted from:** `internal/auth/middleware.go`, `internal/agent/root.go` (RBAC guard)
+**Emitted from:** `pkg/apifrontend/auth/middleware.go`, `pkg/apifrontend/agent/root.go` (RBAC guard), `pkg/apifrontend/handler/mcp_bridge.go`
 
 ---
 
@@ -36,10 +36,12 @@ type Event struct {
 
 | Event Type | Constant | NIST Control | Trigger | Detail Fields |
 |-----------|----------|-------------|---------|---------------|
-| `tool.invoked` | `EventToolInvoked` | AU-12, AU-2 | Any ADK tool call completes (success or error) | `tool`, `result` (`success`/`error`), `namespace` (if applicable), `error` (on failure) |
-| `mcp.tool_invoked` | `EventMCPToolInvoked` | AU-12 | MCP protocol tool/call request handled | `tool`, `session_id` |
+| `tool.executed` | `EventToolExecuted` | AU-12, AU-2 | Any tool call completes (consolidated from `tool.invoked` + `mcp.tool_invoked`, Issue #1156) | `tool_name`, `tool_outcome` (`success`/`error`), `session_id`, `execution_duration_ms`, `namespace` (if applicable), `error` (on failure) |
+| `mcp.tool_failed` | `EventMCPToolFailed` | AU-12 | MCP tool/call request fails (panic, rate limit, throttle, error, marshal failure) | `tool_name`, `error` |
+| `mcp.session_init` | `EventMCPSessionInit` | AU-12 | MCP `initialize` JSON-RPC request handled (first per session) | `mcp_session_id`, `protocol_version` |
+| `workflow.discovery` | `EventWorkflowDiscovery` | AU-12 | `kubernaut_discover_workflows` tool returns workflow list | `workflow_count` |
 
-**Emitted from:** `internal/agent/root.go` (afterAudit callback), `internal/handler/mcp.go`
+**Emitted from:** `pkg/apifrontend/agent/root.go` (afterAudit callback), `pkg/apifrontend/handler/mcp.go`, `pkg/apifrontend/handler/mcp_bridge.go`, `pkg/apifrontend/tools/ka_interactive.go`
 
 ---
 
@@ -49,11 +51,12 @@ type Event struct {
 |-----------|----------|-------------|---------|---------------|
 | `session.created` | `EventSessionCreated` | AU-2, SC-4 | InvestigationSession CRD created | `session_id`, `user`, `rr_ref` |
 | `session.deleted` | `EventSessionDeleted` | AU-2 | Session CRD deleted (user or TTL) | `session_id`, `reason` |
-| `session.phase_changed` | `EventSessionPhaseChanged` | AU-2 | Session transitions state (e.g. active → completed) | `session_id`, `from`, `to` |
+| `session.phase_changed` | `EventSessionPhaseChanged` | AU-2 | Session transitions state (e.g. active -> completed) | `session_id`, `from`, `to` |
+| `session.completed` | `EventSessionCompleted` | AU-2 | Session reaches terminal phase (Completed/Failed/Cancelled) | `session_id`, `terminal_phase`, `total_duration_ms` |
 | `session.auto_cancelled` | `EventSessionAutoCancelled` | AU-2 | Session cancelled due to inactivity timeout | `session_id`, `idle_duration` |
 | `session.retention_deleted` | `EventSessionRetentionDeleted` | AU-2, SC-28 | Session deleted by retention policy (TTL controller) | `session_id`, `age` |
 
-**Emitted from:** `internal/session/service.go`, `internal/controller/ttl.go`
+**Emitted from:** `pkg/apifrontend/session/statemachine.go`, `pkg/apifrontend/session/service.go`, `pkg/apifrontend/controller/ttl.go`
 
 ---
 
@@ -61,11 +64,59 @@ type Event struct {
 
 | Event Type | Constant | NIST Control | Trigger | Detail Fields |
 |-----------|----------|-------------|---------|---------------|
-| `a2a.task_started` | `EventA2ATaskStarted` | AU-2 | A2A `message/send` begins execution | `task_id`, `user` |
+| `a2a.task_started` | `EventA2ATaskStarted` | AU-2 | A2A `message/send` begins execution | `task_id`, `user`, `session_id` |
 | `a2a.task_completed` | `EventA2ATaskCompleted` | AU-2 | A2A task finishes successfully | `task_id`, `duration_ms` |
 | `a2a.task_failed` | `EventA2ATaskFailed` | AU-2 | A2A task fails with error | `task_id`, `error` |
+| `a2a.stream_opened` | `EventA2AStreamOpened` | AU-2 | SSE stream opened for `message/stream` | *(defined; not yet emitted — logged only, see `streaming_executor.go`)* |
+| `a2a.stream_closed` | `EventA2AStreamClosed` | AU-2 | SSE stream closed | *(defined; not yet emitted — logged only, see `streaming_executor.go`)* |
 
-**Emitted from:** `internal/launcher/launcher.go` (BeforeExecute/AfterExecute callbacks)
+**Emitted from:** `pkg/apifrontend/launcher/launcher.go` (BeforeExecute/AfterExecute callbacks)
+
+---
+
+## Triage & Remediation
+
+| Event Type | Constant | NIST Control | Trigger | Detail Fields |
+|-----------|----------|-------------|---------|---------------|
+| `triage.started` | `EventTriageStarted` | AU-2, AU-12 | Triage pipeline begins for a session | `session_id`, `persona` |
+| `triage.completed` | `EventTriageCompleted` | AU-2, AU-12 | Triage pipeline completes | `session_id`, `triage_outcome`, `triage_duration_ms` |
+| `severity_triage.completed` | `EventSeverityTriageCompleted` | AU-2, AU-12 | Severity triage pipeline determines severity | `tier`, `severity`, `source`, `duration_ms`, `alert_name` (if Tier 1), `rule_name` (if Tier 1.5/2/2.5) |
+| `severity_triage.failed` | `EventSeverityTriageFailed` | AU-2 | All severity triage tiers fail or LLM error | `error` (redacted), `tier` (last attempted), `namespace`, `kind`, `name` |
+| `rr.created` | `EventRRCreated` | AU-2 | RemediationRequest CRD created | `session_id`, `rr_name`, `rr_namespace`, `fingerprint` |
+| `rr.deduplicated` | `EventRRDeduplicated` | AU-2 | Duplicate RemediationRequest detected, creation skipped | `session_id`, `fingerprint`, `existing_rr_name` |
+
+**Emitted from:** `pkg/apifrontend/launcher/launcher.go`, `pkg/apifrontend/tools/af_create_rr.go`
+
+---
+
+## KubernautAgent Delegation
+
+| Event Type | Constant | NIST Control | Trigger | Detail Fields |
+|-----------|----------|-------------|---------|---------------|
+| `ka.delegated` | `EventKADelegated` | AU-2, AU-12 | Work delegated to KubernautAgent (takeover, reconnect, REST) | `session_id`, `ka_correlation_id`, `delegation_type` |
+| `ka.result_received` | `EventKAResultReceived` | AU-2, AU-12 | Result received from KubernautAgent (complete, cancel, REST) | `session_id`, `ka_correlation_id`, `result_type` |
+
+**Emitted from:** `pkg/apifrontend/tools/ka_tools.go`, `pkg/apifrontend/tools/ka_interactive.go`
+
+---
+
+## User Interaction
+
+| Event Type | Constant | NIST Control | Trigger | Detail Fields |
+|-----------|----------|-------------|---------|---------------|
+| `user.decision` | `EventUserDecision` | AU-2 | User accepts/rejects a remediation workflow | `session_id`, `decision`, `workflow_id` |
+
+**Emitted from:** `pkg/apifrontend/tools/ka_tools.go`
+
+---
+
+## Discovery
+
+| Event Type | Constant | NIST Control | Trigger | Detail Fields |
+|-----------|----------|-------------|---------|---------------|
+| `discovery.agent_card_accessed` | `EventAgentCardAccessed` | AU-2, AU-3 | Agent card endpoint queried (Issue #1259) | `source_ip`, `user_agent` |
+
+**Emitted from:** `pkg/apifrontend/handler/agentcard.go`
 
 ---
 
@@ -76,7 +127,7 @@ type Event struct {
 | `ratelimit.denied` | `EventRateLimitDenied` | SC-5 | Request rejected by rate limiter | `client_ip`, `limit`, `window` |
 | `circuitbreaker.trip` | `EventCircuitBreakerTrip` | SI-17 | Circuit breaker opens (dependency unhealthy) | `dependency`, `failures` |
 
-**Emitted from:** `internal/ratelimit/ratelimit.go`, (circuit breaker state change)
+**Emitted from:** `pkg/apifrontend/ratelimit/ratelimit.go`, (circuit breaker state change)
 
 ---
 
@@ -84,10 +135,10 @@ type Event struct {
 
 | Event Type | Constant | NIST Control | Trigger | Detail Fields |
 |-----------|----------|-------------|---------|---------------|
-| `config.reloaded` | `EventConfigReloaded` | CM-3 | Hot-reload applied new configuration successfully | `source`, `keys_changed` |
+| `config.reloaded` | `EventConfigReloaded` | CM-3 | Hot-reload applied new configuration successfully | `source`, `keys_changed`, `config_version` |
 | `config.rejected` | `EventConfigRejected` | CM-3 | Hot-reload rejected invalid configuration | `source`, `reason` |
 
-**Emitted from:** `internal/config/hotreload.go`
+**Emitted from:** `pkg/apifrontend/config/hotreload.go`
 
 ---
 
@@ -97,31 +148,20 @@ Events are delivered through the `audit.Emitter` interface. Two implementations 
 
 | Implementation | Package | Behavior |
 |---------------|---------|----------|
-| `LogEmitter` | `internal/audit` | Writes structured log entries via `logr` (stdout/stderr) |
-| `BufferedEmitter` | `internal/audit` | Batches events and flushes to `audit.Writer` (Data Store API) with overflow protection |
+| `LogEmitter` | `pkg/apifrontend/audit` | Writes structured log entries via `logr` (stdout/stderr) |
+| `StoreAdapter` | `pkg/apifrontend/audit` | Normalizes events to `apifrontend.<event_type>` format, classifies severity, and forwards to Data Store API with correlation-ID enrichment |
 
-**Buffering contract (ADR-019):** The `BufferedEmitter` holds up to `MaxPending` events in memory. If the buffer overflows, oldest events are dropped and `af_audit_buffer_overflow_total` metric increments. On graceful shutdown, `Close()` flushes remaining events with a context deadline.
-
----
-
-## Severity Triage
-
-| Event Type | Constant | NIST Control | Trigger | Detail Fields |
-|-----------|----------|-------------|---------|---------------|
-| `severity.triage.completed` | `EventSeverityTriageCompleted` | AU-2, AU-12 | Triage pipeline determines severity | `tier`, `severity`, `source`, `duration_ms`, `alert_name` (if Tier 1), `rule_name` (if Tier 1.5/2/2.5) |
-| `severity.triage.failed` | `EventSeverityTriageFailed` | AU-2 | All triage tiers fail or LLM error | `error` (redacted), `tier` (last attempted), `namespace`, `kind`, `name` |
-
-**Emitted from:** `internal/severity/triage.go` (via tool handler integration in `internal/tools/af_create_rr.go`)
+**Buffering contract (ADR-019):** The `StoreAdapter` holds up to `MaxPending` events in memory. If the buffer overflows, oldest events are dropped and `af_audit_buffer_overflow_total` metric increments. On graceful shutdown, `Close()` flushes remaining events with a context deadline.
 
 ---
 
 ## Adding New Events
 
-1. Define the `EventType` constant in `internal/audit/audit.go`
+1. Define the `EventType` constant in `pkg/apifrontend/audit/audit.go`
 2. Add the emit call at the appropriate location with `Detail` fields
 3. Update this catalog with the new event's trigger, fields, and NIST mapping
 4. Ensure tests verify emission (check `Emit` call count or captured events)
 
 ---
 
-*Last updated: 2026-05-10 | Covers v1.5 milestone (issues #52, #56, #92)*
+*Last updated: 2026-05-19 | Covers v1.5 milestone (issues #52, #56, #92, #1156, #1259, #1268)*

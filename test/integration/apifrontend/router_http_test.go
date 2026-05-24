@@ -67,6 +67,51 @@ var _ = Describe("Router HTTP Integration (handler/)", func() {
 		})
 	})
 
+	Describe("AC-9: Root alias for kagenti compatibility (issue #1268)", func() {
+		It("IT-AF-1268-001: dispatches authenticated POST / to A2A handler", func() {
+			token := signValidToken("it-user-1268-001")
+			req, err := http.NewRequest(http.MethodPost, routerServer.URL+"/", strings.NewReader(`{"jsonrpc":"2.0","method":"message/send","id":"1268"}`))
+			Expect(err).NotTo(HaveOccurred())
+			req.Header.Set("Authorization", "Bearer "+token)
+			req.Header.Set("Content-Type", "application/json")
+
+			resp, err := http.DefaultClient.Do(req)
+			Expect(err).NotTo(HaveOccurred())
+			defer resp.Body.Close()
+
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			body, err := io.ReadAll(resp.Body)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(string(body)).To(ContainSubstring(`"result"`))
+		})
+
+		It("IT-AF-1268-002: POST / rejects request without auth", func() {
+			req, err := http.NewRequest(http.MethodPost, routerServer.URL+"/", strings.NewReader(`{}`))
+			Expect(err).NotTo(HaveOccurred())
+			req.Header.Set("Content-Type", "application/json")
+
+			resp, err := http.DefaultClient.Do(req)
+			Expect(err).NotTo(HaveOccurred())
+			defer resp.Body.Close()
+
+			Expect(resp.StatusCode).To(Equal(http.StatusUnauthorized))
+		})
+
+		It("IT-AF-1268-003: POST /unknown-subpath returns 404 (not catch-all)", func() {
+			token := signValidToken("it-user-1268-003")
+			req, err := http.NewRequest(http.MethodPost, routerServer.URL+"/not-a-real-path", strings.NewReader(`{}`))
+			Expect(err).NotTo(HaveOccurred())
+			req.Header.Set("Authorization", "Bearer "+token)
+			req.Header.Set("Content-Type", "application/json")
+
+			resp, err := http.DefaultClient.Do(req)
+			Expect(err).NotTo(HaveOccurred())
+			defer resp.Body.Close()
+
+			Expect(resp.StatusCode).To(Equal(http.StatusNotFound))
+		})
+	})
+
 	Describe("AC-2: Public endpoints serve without auth", func() {
 		It("IT-AF-1195-003: /healthz returns 200 ok", func() {
 			resp, err := http.Get(routerServer.URL + "/healthz")

@@ -40,7 +40,7 @@ var _ = Describe("Router", func() {
 	})
 
 	It("UT-AF-200-001: NewRouter returns mux with all expected routes", func() {
-		routes := []string{"/healthz", "/readyz", "/metrics", "/a2a/invoke", "/mcp", "/.well-known/agent-card.json"}
+		routes := []string{"/healthz", "/readyz", "/metrics", "/a2a/invoke", "/mcp", "/.well-known/agent-card.json", "/"}
 		for _, path := range routes {
 			req := httptest.NewRequest("GET", path, http.NoBody)
 			req.Header.Set("Authorization", "Bearer test-token")
@@ -125,6 +125,42 @@ var _ = Describe("Router", func() {
 		metricsRec := httptest.NewRecorder()
 		router.ServeHTTP(metricsRec, metricsReq)
 		Expect(metricsRec.Body.String()).To(ContainSubstring("af_http_request_duration_seconds"))
+	})
+
+	It("UT-AF-1268-001: POST / returns 401 without bearer token (BR-INTEGRATION-1268)", func() {
+		req := httptest.NewRequest("POST", "/", http.NoBody)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		Expect(rec.Code).To(Equal(http.StatusUnauthorized))
+	})
+
+	It("UT-AF-1268-002: POST / reaches A2A handler with valid auth (BR-INTEGRATION-1268)", func() {
+		req := httptest.NewRequest("POST", "/", http.NoBody)
+		req.Header.Set("Authorization", "Bearer test-token")
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		Expect(rec.Code).To(Equal(http.StatusOK))
+	})
+
+	It("UT-AF-1268-004: POST / metrics labeled as /a2a/invoke not unknown (BR-INTEGRATION-1268)", func() {
+		req := httptest.NewRequest("POST", "/", http.NoBody)
+		req.Header.Set("Authorization", "Bearer test-token")
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		metricsReq := httptest.NewRequest("GET", "/metrics", http.NoBody)
+		metricsRec := httptest.NewRecorder()
+		router.ServeHTTP(metricsRec, metricsReq)
+		body := metricsRec.Body.String()
+		Expect(body).To(ContainSubstring(`af_http_requests_total{method="POST",path="/a2a/invoke",status="200"}`))
+	})
+
+	It("UT-AF-1268-003: POST /unknown-path still returns 404 (BR-INTEGRATION-1268)", func() {
+		req := httptest.NewRequest("POST", "/unknown-path", http.NoBody)
+		req.Header.Set("Authorization", "Bearer test-token")
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		Expect(rec.Code).To(Equal(http.StatusNotFound))
 	})
 
 	It("UT-AF-200-010: Unknown path returns 404", func() {
