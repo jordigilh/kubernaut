@@ -553,23 +553,28 @@ jobs:
           VERSION: ${{ needs.prepare.outputs.version }}
           IS_PRERELEASE: ${{ needs.prepare.outputs.is_prerelease }}
         run: |
-          PRERELEASE_FLAG=""
-          if [ "$IS_PRERELEASE" = "true" ]; then
-            PRERELEASE_FLAG="--prerelease"
+          if gh release view "${TAG}" &>/dev/null; then
+            echo "Release ${TAG} already exists — skipping creation."
+          else
+            PRERELEASE_FLAG=""
+            if [ "$IS_PRERELEASE" = "true" ]; then
+              PRERELEASE_FLAG="--prerelease"
+            fi
+
+            gh release create "${TAG}" \
+              --title "Kubernaut ${TAG}" \
+              --generate-notes \
+              ${PRERELEASE_FLAG} \
+              --notes-start-tag "$(git tag --sort=-creatordate | grep '^v' | sed -n '2p')" || \
+            gh release create "${TAG}" \
+              --title "Kubernaut ${TAG}" \
+              --generate-notes \
+              ${PRERELEASE_FLAG}
+
+            echo ""
+            echo "Release created: https://github.com/${{ github.repository }}/releases/tag/${TAG}"
           fi
 
-          gh release create "${TAG}" \
-            --title "Kubernaut ${TAG}" \
-            --generate-notes \
-            ${PRERELEASE_FLAG} \
-            --notes-start-tag "$(git tag --sort=-creatordate | grep '^v' | sed -n '2p')" || \
-          gh release create "${TAG}" \
-            --title "Kubernaut ${TAG}" \
-            --generate-notes \
-            ${PRERELEASE_FLAG}
-
-          echo ""
-          echo "Release created: https://github.com/${{ github.repository }}/releases/tag/${TAG}"
           echo ""
           echo "Install with:"
           echo "  helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut --version ${VERSION}"
