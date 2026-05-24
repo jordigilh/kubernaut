@@ -713,3 +713,124 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 		})
 	})
 })
+
+var _ = Describe("GenAIPartConverter — Streaming Mode (TP-1258)", func() {
+	var convertStreaming launcher.PartConverterFunc
+
+	BeforeEach(func() {
+		convertStreaming = launcher.BuildStreamingPartConverterForTest()
+	})
+
+	Describe("FunctionResponse suppression when streaming", func() {
+		It("UT-AF-1258-030: stream_investigation FunctionResponse -> nil when streaming mode", func() {
+			part := &genai.Part{
+				FunctionResponse: &genai.FunctionResponse{
+					Name: "kubernaut_stream_investigation",
+					Response: map[string]any{
+						"status":  "completed",
+						"summary": "OOM kill detected",
+					},
+				},
+			}
+			result, err := convertStreaming(context.Background(), nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(BeNil(), "stream_investigation FunctionResponse should be suppressed in streaming mode")
+		})
+
+		It("UT-AF-1258-031: discover_workflows FunctionResponse -> brief summary", func() {
+			part := &genai.Part{
+				FunctionResponse: &genai.FunctionResponse{
+					Name: "kubernaut_discover_workflows",
+					Response: map[string]any{
+						"workflows": []any{
+							map[string]any{"id": "wf-1", "confidence": 0.95},
+							map[string]any{"id": "wf-2", "confidence": 0.72},
+						},
+					},
+				},
+			}
+			result, err := convertStreaming(context.Background(), nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			tp, ok := result.(*a2a.TextPart)
+			Expect(ok).To(BeTrue())
+			Expect(tp.Text).To(ContainSubstring("workflow"))
+		})
+
+		It("UT-AF-1258-032: select_workflow FunctionResponse -> brief status", func() {
+			part := &genai.Part{
+				FunctionResponse: &genai.FunctionResponse{
+					Name: "kubernaut_select_workflow",
+					Response: map[string]any{
+						"status":  "selected",
+						"message": "Workflow wf-increase-memory selected",
+					},
+				},
+			}
+			result, err := convertStreaming(context.Background(), nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			tp, ok := result.(*a2a.TextPart)
+			Expect(ok).To(BeTrue())
+			Expect(tp.Text).NotTo(BeEmpty())
+		})
+
+		It("UT-AF-1258-033: af_create_rr FunctionResponse -> brief status", func() {
+			part := &genai.Part{
+				FunctionResponse: &genai.FunctionResponse{
+					Name: "af_create_rr",
+					Response: map[string]any{
+						"rr_id":     "rr-oom-001",
+						"namespace": "prod",
+						"status":    "created",
+					},
+				},
+			}
+			result, err := convertStreaming(context.Background(), nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			tp, ok := result.(*a2a.TextPart)
+			Expect(ok).To(BeTrue())
+			Expect(tp.Text).NotTo(BeEmpty())
+		})
+
+		It("UT-AF-1258-034: kubectl_* FunctionResponse -> nil (unchanged behavior)", func() {
+			part := &genai.Part{
+				FunctionResponse: &genai.FunctionResponse{
+					Name:     "kubectl_get_pods",
+					Response: map[string]any{"output": "NAME READY STATUS\npod-1 1/1 Running"},
+				},
+			}
+			result, err := convertStreaming(context.Background(), nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(BeNil(), "kubectl FunctionResponse should still be nil in streaming mode")
+		})
+
+		It("UT-AF-1258-035: FunctionCall parts unchanged in streaming mode", func() {
+			part := &genai.Part{
+				FunctionCall: &genai.FunctionCall{
+					Name: "kubernaut_stream_investigation",
+					Args: map[string]any{"session_id": "sess-42"},
+				},
+			}
+			result, err := convertStreaming(context.Background(), nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			tp, ok := result.(*a2a.TextPart)
+			Expect(ok).To(BeTrue())
+			Expect(tp.Text).To(ContainSubstring("Streaming live investigation events"))
+		})
+
+		It("UT-AF-1258-036: Thought parts unchanged in streaming mode", func() {
+			part := &genai.Part{
+				Text:    "Analyzing the disk usage patterns...",
+				Thought: true,
+			}
+			result, err := convertStreaming(context.Background(), nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			tp, ok := result.(*a2a.TextPart)
+			Expect(ok).To(BeTrue())
+			Expect(tp.Text).To(Equal("Analyzing..."))
+		})
+	})
+})
