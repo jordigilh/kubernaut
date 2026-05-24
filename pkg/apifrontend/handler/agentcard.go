@@ -6,6 +6,9 @@ import (
 	"net/http"
 
 	"github.com/a2aproject/a2a-go/a2a"
+
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/requestid"
 )
 
 // AgentSkill represents a skill in the agent card.
@@ -112,6 +115,23 @@ func NewAgentCardHandler(cfg AgentCardConfig) (http.Handler, error) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(cardBytes)
 	}), nil
+}
+
+// WithAgentCardAudit wraps an agent card handler to emit an AU-2/AU-3 audit
+// event on every read. The endpoint is public (no auth), so the event captures
+// source IP and request ID for forensic correlation.
+func WithAgentCardAudit(h http.Handler, auditor audit.Emitter) http.Handler {
+	if auditor == nil {
+		return h
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auditor.Emit(r.Context(), &audit.Event{
+			Type:      audit.EventAgentCardAccessed,
+			RequestID: requestid.FromContext(r.Context()),
+			SourceIP:  r.RemoteAddr,
+		})
+		h.ServeHTTP(w, r)
+	})
 }
 
 // DefaultAgentSkills returns the agent skills corresponding to the MCP tools.

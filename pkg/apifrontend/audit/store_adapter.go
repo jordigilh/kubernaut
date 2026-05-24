@@ -154,6 +154,7 @@ var actionMap = map[EventType]string{
 	EventKADelegated:             "delegated",
 	EventKAResultReceived:        "received",
 	EventUserDecision:            "decided",
+	EventAgentCardAccessed:       "accessed",
 }
 
 func eventAction(t EventType) string {

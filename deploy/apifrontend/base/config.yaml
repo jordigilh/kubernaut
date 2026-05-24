@@ -25,6 +25,7 @@ mcp:
     kubernaut_stream_investigation: 15m
 
 agentCard:
+  name: "Kubernaut Agent"
   url: "https://apifrontend.kubernaut-system.svc:8443"
 
 auth:

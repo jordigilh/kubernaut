@@ -42,6 +42,9 @@ const (
 	// Consolidated from tool.invoked + mcp.tool_invoked (Issue #1156)
 	EventToolExecuted EventType = "tool.executed"
 
+	// AU-2/AU-3: Agent card discovery audit (Issue #1259)
+	EventAgentCardAccessed EventType = "discovery.agent_card_accessed"
+
 	// New from Issue #1021 catalog (Issue #1156)
 	EventSessionCompleted EventType = "session.completed"
 	EventTriageStarted    EventType = "triage.started"

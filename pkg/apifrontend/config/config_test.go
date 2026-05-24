@@ -66,6 +66,9 @@ func TestLoad_ValidFullYAML(t *testing.T) {
 	if cfg.AgentCard.URL != "https://af.example.com" {
 		t.Errorf("AgentCard.URL = %q, want %q", cfg.AgentCard.URL, "https://af.example.com")
 	}
+	if cfg.AgentCard.Name != "Kubernaut Agent" {
+		t.Errorf("AgentCard.Name = %q, want %q", cfg.AgentCard.Name, "Kubernaut Agent")
+	}
 }
 
 func TestLoad_AppliesDefaultsForOmittedFields(t *testing.T) {
@@ -1087,6 +1090,126 @@ func TestValidate_SessionNamespaceRequiredWhenTTLsSet(t *testing.T) {
 				t.Errorf("error = %q, want to contain 'session.namespace'", err.Error())
 			}
 		})
+	}
+}
+
+// --- Tier 7b: Agent Card Config (Issue #1259) ---
+
+func TestLoad_AgentCardName(t *testing.T) {
+	// UT-AF-1259-001: agentCard.name field is parsed from YAML.
+	data := []byte(`
+agentCard:
+  name: "Kubernaut Agent"
+  url: "https://af.example.com"
+`)
+	cfg, err := Load(data)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.AgentCard.Name != "Kubernaut Agent" {
+		t.Errorf("AgentCard.Name = %q, want %q", cfg.AgentCard.Name, "Kubernaut Agent")
+	}
+}
+
+func TestLoad_AgentCardNameOmitted(t *testing.T) {
+	// UT-AF-1259-002: agentCard.name defaults to empty when omitted.
+	data := []byte(`
+agentCard:
+  url: "https://af.example.com"
+`)
+	cfg, err := Load(data)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.AgentCard.Name != "" {
+		t.Errorf("AgentCard.Name = %q, want empty", cfg.AgentCard.Name)
+	}
+}
+
+func TestValidate_AgentCardNameTooLong(t *testing.T) {
+	// UT-AF-1259-003: names > 128 characters are rejected.
+	cfg := validConfig()
+	cfg.AgentCard.Name = strings.Repeat("a", 129)
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for name > 128 chars")
+	}
+	if !strings.Contains(err.Error(), "agentCard.name") {
+		t.Errorf("error = %q, want to contain 'agentCard.name'", err.Error())
+	}
+}
+
+func TestValidate_AgentCardNameAtLimit(t *testing.T) {
+	// UT-AF-1259-004: name exactly 128 chars is accepted.
+	cfg := validConfig()
+	cfg.AgentCard.Name = strings.Repeat("a", 128)
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("unexpected error for 128-char name: %v", err)
+	}
+}
+
+func TestValidate_AgentCardNameEmptyIsValid(t *testing.T) {
+	// UT-AF-1259-005: empty name is valid (falls back to default at wiring).
+	cfg := validConfig()
+	cfg.AgentCard.Name = ""
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("unexpected error for empty agentCard.name: %v", err)
+	}
+}
+
+func TestValidate_AgentCardNameWhitespaceOnlyRejected(t *testing.T) {
+	// UT-AF-1259-009: whitespace-only name is rejected.
+	cfg := validConfig()
+	cfg.AgentCard.Name = "   \t\n"
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for whitespace-only name")
+	}
+	if !strings.Contains(err.Error(), "agentCard.name") {
+		t.Errorf("error = %q, want to contain 'agentCard.name'", err.Error())
+	}
+}
+
+func TestValidate_AgentCardNameRuneLength(t *testing.T) {
+	// UT-AF-1259-010: length is measured in runes, not bytes.
+	// 128 CJK characters = 384 bytes in UTF-8, but should pass the 128-rune limit.
+	cfg := validConfig()
+	cfg.AgentCard.Name = strings.Repeat("あ", 128)
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("unexpected error for 128-rune CJK name: %v", err)
+	}
+
+	cfg.AgentCard.Name = strings.Repeat("あ", 129)
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for 129-rune CJK name")
+	}
+	if !strings.Contains(err.Error(), "agentCard.name") {
+		t.Errorf("error = %q, want to contain 'agentCard.name'", err.Error())
+	}
+}
+
+func TestResolveDefaults_AgentCardNameFallback(t *testing.T) {
+	// UT-AF-1259-006: empty name is set to "kubernaut-apifrontend" by ResolveDefaults.
+	cfg := validConfig()
+	cfg.AgentCard.Name = ""
+	if err := cfg.ResolveDefaults(); err != nil {
+		t.Fatalf("ResolveDefaults() = %v", err)
+	}
+	if cfg.AgentCard.Name != "Kubernaut Agent" {
+		t.Errorf("AgentCard.Name = %q, want %q", cfg.AgentCard.Name, "Kubernaut Agent")
+	}
+}
+
+func TestResolveDefaults_AgentCardNamePreservesExplicit(t *testing.T) {
+	// UT-AF-1259-007: explicit name is preserved by ResolveDefaults.
+	cfg := validConfig()
+	cfg.AgentCard.Name = "Kubernaut Agent"
+	if err := cfg.ResolveDefaults(); err != nil {
+		t.Fatalf("ResolveDefaults() = %v", err)
+	}
+	if cfg.AgentCard.Name != "Kubernaut Agent" {
+		t.Errorf("AgentCard.Name = %q, want %q", cfg.AgentCard.Name, "Kubernaut Agent")
 	}
 }
 
