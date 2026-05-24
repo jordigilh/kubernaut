@@ -316,8 +316,14 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("agent.dsBearerTokenFile %q is not accessible: %w", c.Agent.DSBearerTokenFile, err)
 		}
 	}
-	if len(c.AgentCard.Name) > MaxAgentCardNameLength {
-		return fmt.Errorf("agentCard.name must be at most %d characters, got %d", MaxAgentCardNameLength, len(c.AgentCard.Name))
+	if c.AgentCard.Name != "" {
+		trimmed := strings.TrimSpace(c.AgentCard.Name)
+		if trimmed == "" {
+			return fmt.Errorf("agentCard.name must not be whitespace-only")
+		}
+		if runeCount := len([]rune(c.AgentCard.Name)); runeCount > MaxAgentCardNameLength {
+			return fmt.Errorf("agentCard.name must be at most %d characters, got %d", MaxAgentCardNameLength, runeCount)
+		}
 	}
 	if err := c.validateLLM(); err != nil {
 		return err

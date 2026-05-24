@@ -1157,6 +1157,38 @@ func TestValidate_AgentCardNameEmptyIsValid(t *testing.T) {
 	}
 }
 
+func TestValidate_AgentCardNameWhitespaceOnlyRejected(t *testing.T) {
+	// UT-AF-1259-009: whitespace-only name is rejected.
+	cfg := validConfig()
+	cfg.AgentCard.Name = "   \t\n"
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for whitespace-only name")
+	}
+	if !strings.Contains(err.Error(), "agentCard.name") {
+		t.Errorf("error = %q, want to contain 'agentCard.name'", err.Error())
+	}
+}
+
+func TestValidate_AgentCardNameRuneLength(t *testing.T) {
+	// UT-AF-1259-010: length is measured in runes, not bytes.
+	// 128 CJK characters = 384 bytes in UTF-8, but should pass the 128-rune limit.
+	cfg := validConfig()
+	cfg.AgentCard.Name = strings.Repeat("あ", 128)
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("unexpected error for 128-rune CJK name: %v", err)
+	}
+
+	cfg.AgentCard.Name = strings.Repeat("あ", 129)
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for 129-rune CJK name")
+	}
+	if !strings.Contains(err.Error(), "agentCard.name") {
+		t.Errorf("error = %q, want to contain 'agentCard.name'", err.Error())
+	}
+}
+
 func TestResolveDefaults_AgentCardNameFallback(t *testing.T) {
 	// UT-AF-1259-006: empty name is set to "kubernaut-apifrontend" by ResolveDefaults.
 	cfg := validConfig()
