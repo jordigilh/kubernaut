@@ -69,8 +69,8 @@ var _ = Describe("Agent Card Handler", func() {
 
 	It("UT-AF-230-005: card includes name and description", func() {
 		h, err := handler.NewAgentCardHandler(handler.AgentCardConfig{
-			Name:        "kubernaut-apifrontend",
-			Description: "Kubernaut API Frontend agent for incident triage",
+			Name:        "Kubernaut Agent",
+			Description: "Kubernaut AI-driven remediation agent",
 			URL:         "https://kubernaut.example.com",
 			Version:     "0.1.0",
 		})
@@ -82,11 +82,11 @@ var _ = Describe("Agent Card Handler", func() {
 
 		var card map[string]any
 		_ = json.Unmarshal(rec.Body.Bytes(), &card)
-		Expect(card["name"]).To(Equal("kubernaut-apifrontend"))
-		Expect(card["description"]).To(Equal("Kubernaut API Frontend agent for incident triage"))
+		Expect(card["name"]).To(Equal("Kubernaut Agent"))
+		Expect(card["description"]).To(Equal("Kubernaut AI-driven remediation agent"))
 	})
 
-	It("UT-AF-1259-008: card reflects operator-configured name", func() {
+	It("UT-AF-1264-001: card shows hardcoded brand name", func() {
 		h, err := handler.NewAgentCardHandler(handler.AgentCardConfig{
 			Name:    "Kubernaut Agent",
 			URL:     "https://kubernaut.example.com",
