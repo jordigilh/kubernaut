@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestPortOverrideSuite(t *testing.T) {
+func TestConfigSuite(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Config Port Override Suite")
+	RunSpecs(t, "Config Suite")
 }
