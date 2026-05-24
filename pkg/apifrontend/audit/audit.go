@@ -26,6 +26,8 @@ const (
 	EventA2ATaskStarted   EventType = "a2a.task_started"
 	EventA2ATaskCompleted EventType = "a2a.task_completed"
 	EventA2ATaskFailed    EventType = "a2a.task_failed"
+	EventA2AStreamOpened  EventType = "a2a.stream_opened"
+	EventA2AStreamClosed  EventType = "a2a.stream_closed"
 	EventMCPToolFailed    EventType = "mcp.tool_failed"
 	EventMCPSessionInit   EventType = "mcp.session_init"
 
