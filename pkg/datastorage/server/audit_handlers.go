@@ -57,7 +57,7 @@ import (
 // DLQ Fallback Response: 202 Accepted (async processing)
 // Error Responses: 400 Bad Request, 409 Conflict, 500 Internal Server Error (RFC 7807)
 func (s *Server) handleCreateNotificationAudit(w http.ResponseWriter, r *http.Request) {
-	s.logger.V(1).Info("handleCreateNotificationAudit called",
+	s.logger.V(2).Info("handleCreateNotificationAudit called",
 		"method", r.Method,
 		"path", r.URL.Path,
 		"remote_addr", r.RemoteAddr)
@@ -67,7 +67,7 @@ func (s *Server) handleCreateNotificationAudit(w http.ResponseWriter, r *http.Re
 	defer cancel()
 
 	// 1. Parse request body
-	s.logger.V(1).Info("Parsing request body...")
+	s.logger.V(2).Info("Parsing request body...")
 	var audit models.NotificationAudit
 	if err := json.NewDecoder(r.Body).Decode(&audit); err != nil {
 		if dsmiddleware.IsMaxBytesError(err) {
@@ -84,12 +84,12 @@ func (s *Server) handleCreateNotificationAudit(w http.ResponseWriter, r *http.Re
 		), s)
 		return
 	}
-	s.logger.V(1).Info("Request body parsed successfully",
+	s.logger.V(2).Info("Request body parsed successfully",
 		"notification_id", audit.NotificationID,
 		"remediation_id", audit.RemediationID)
 
 	// 2. Validate input using validator
-	s.logger.V(1).Info("Validating audit record...")
+	s.logger.V(2).Info("Validating audit record...")
 	if err := s.validator.Validate(&audit); err != nil {
 		s.logger.Info("Validation failed",
 			"error", err,
@@ -113,7 +113,7 @@ func (s *Server) handleCreateNotificationAudit(w http.ResponseWriter, r *http.Re
 	}
 
 	// 3. Attempt database write via repository
-	s.logger.V(1).Info("Writing audit record to database...")
+	s.logger.V(2).Info("Writing audit record to database...")
 	// GAP-10: Measure write duration
 	writeStart := time.Now()
 	created, err := s.repository.Create(ctx, &audit)

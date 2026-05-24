@@ -183,7 +183,7 @@ func NewBufferedStore(client DataStorageClient, config Config, serviceName strin
 // - The event fails validation (missing required fields)
 // - The buffer is full (event is dropped, but service continues)
 func (s *BufferedAuditStore) StoreAudit(ctx context.Context, event *ogenclient.AuditEventRequest) error {
-	s.logger.V(1).Info("StoreAudit called",
+	s.logger.V(2).Info("StoreAudit called",
 		"event_type", event.EventType,
 		"event_action", event.EventAction,
 		"correlation_id", event.CorrelationID,
@@ -216,7 +216,7 @@ func (s *BufferedAuditStore) StoreAudit(ctx context.Context, event *ogenclient.A
 		return nil // Silently drop event during graceful shutdown
 	}
 
-	s.logger.V(1).Info("Validation passed, attempting to buffer event",
+	s.logger.V(2).Info("Validation passed, attempting to buffer event",
 		"event_type", event.EventType,
 		"buffer_size_before", len(s.buffer))
 
@@ -225,7 +225,7 @@ func (s *BufferedAuditStore) StoreAudit(ctx context.Context, event *ogenclient.A
 		// ✅ Event buffered successfully
 		newCount := atomic.AddInt64(&s.bufferedCount, 1)
 
-		s.logger.V(1).Info("Event buffered successfully",
+		s.logger.V(2).Info("Event buffered successfully",
 			"event_type", event.EventType,
 			"correlation_id", event.CorrelationID,
 			"buffer_size_after", len(s.buffer),
@@ -274,7 +274,7 @@ func (s *BufferedAuditStore) Flush(ctx context.Context) error {
 		return fmt.Errorf("audit store is closed")
 	}
 
-	s.logger.V(1).Info("🔄 Explicit flush requested")
+	s.logger.V(2).Info("🔄 Explicit flush requested")
 
 	// Create response channel
 	done := make(chan error, 1)
@@ -294,7 +294,7 @@ func (s *BufferedAuditStore) Flush(ctx context.Context) error {
 			s.logger.Error(err, "❌ Flush failed")
 			return fmt.Errorf("flush failed: %w", err)
 		}
-		s.logger.V(1).Info("✅ Explicit flush completed")
+		s.logger.V(2).Info("✅ Explicit flush completed")
 		return nil
 	case <-ctx.Done():
 		return fmt.Errorf("flush timeout: %w", ctx.Err())
@@ -411,17 +411,17 @@ func (s *BufferedAuditStore) backgroundWriter() {
 				bufferUtilizationBeforeFlush := len(s.buffer)
 				timeSinceLastFlush := time.Since(lastFlushTime)
 
-				s.logger.V(1).Info("📦 Batch-full flush triggered",
-					"batch_size", batchSizeBeforeFlush,
-					"buffer_utilization", bufferUtilizationBeforeFlush,
-					"time_since_last_flush", timeSinceLastFlush)
-				s.writeBatchWithRetry(batch)
-				lastFlushTime = time.Now()
-				batch = batch[:0] // Reset batch
-				s.logger.V(1).Info("✅ Batch-full flush completed",
-					"flushed_count", batchSizeBeforeFlush,
-					"batch_size_after_flush", len(batch),
-					"buffer_utilization_after_flush", len(s.buffer))
+			s.logger.V(2).Info("📦 Batch-full flush triggered",
+				"batch_size", batchSizeBeforeFlush,
+				"buffer_utilization", bufferUtilizationBeforeFlush,
+				"time_since_last_flush", timeSinceLastFlush)
+			s.writeBatchWithRetry(batch)
+			lastFlushTime = time.Now()
+			batch = batch[:0] // Reset batch
+			s.logger.V(2).Info("✅ Batch-full flush completed",
+				"flushed_count", batchSizeBeforeFlush,
+				"batch_size_after_flush", len(batch),
+				"buffer_utilization_after_flush", len(s.buffer))
 			}
 
 		case tickTime := <-ticker.C:
@@ -435,9 +435,9 @@ func (s *BufferedAuditStore) backgroundWriter() {
 			batchSizeBeforeFlush := len(batch)
 			bufferUtilizationBeforeFlush := len(s.buffer)
 
-			// V(1): Reduced from Info to avoid log noise in production (Issue #616).
-			// Enable with -v=1 when diagnosing flush timing delays.
-			s.logger.V(1).Info("⏰ Timer tick received",
+			// V(2): Demoted from V(1) — per-second ticks drown real signals in
+			// E2E/debug logs. Enable with -v=2 when diagnosing flush timing delays.
+			s.logger.V(2).Info("⏰ Timer tick received",
 				"tick_number", tickCount,
 				"batch_size_before_flush", batchSizeBeforeFlush,
 				"buffer_utilization", bufferUtilizationBeforeFlush,
@@ -457,14 +457,14 @@ func (s *BufferedAuditStore) backgroundWriter() {
 
 			// Flush partial batch periodically
 			if batchSizeBeforeFlush > 0 {
-				s.logger.V(1).Info("⏱️  Timer-based flush triggered",
+				s.logger.V(2).Info("⏱️  Timer-based flush triggered",
 					"batch_size", batchSizeBeforeFlush,
 					"buffer_utilization", bufferUtilizationBeforeFlush,
 					"time_since_last_flush", timeSinceLastFlush)
 				s.writeBatchWithRetry(batch)
 				lastFlushTime = time.Now()
 				batch = batch[:0]
-				s.logger.V(1).Info("✅ Timer-based flush completed",
+				s.logger.V(2).Info("✅ Timer-based flush completed",
 					"flushed_count", batchSizeBeforeFlush,
 					"batch_size_after_flush", len(batch),
 					"buffer_utilization_after_flush", len(s.buffer))
@@ -481,7 +481,7 @@ func (s *BufferedAuditStore) backgroundWriter() {
 			initialBatchSize := len(batch)
 			initialBufferSize := len(s.buffer)
 
-			s.logger.V(1).Info("🔄 Processing explicit flush request",
+			s.logger.V(2).Info("🔄 Processing explicit flush request",
 				"batch_size_before_drain", initialBatchSize,
 				"buffer_size_before_drain", initialBufferSize)
 
@@ -502,7 +502,7 @@ func (s *BufferedAuditStore) backgroundWriter() {
 			}
 
 			if drainedCount > 0 {
-				s.logger.V(1).Info("🔄 Drained buffer channel into batch",
+				s.logger.V(2).Info("🔄 Drained buffer channel into batch",
 					"drained_count", drainedCount,
 					"batch_size_after_drain", len(batch),
 					"buffer_size_after_drain", len(s.buffer))
@@ -513,13 +513,13 @@ func (s *BufferedAuditStore) backgroundWriter() {
 				s.writeBatchWithRetry(batch)
 				lastFlushTime = time.Now()
 				batch = batch[:0] // Reset batch
-				s.logger.V(1).Info("✅ Explicit flush completed",
+				s.logger.V(2).Info("✅ Explicit flush completed",
 					"flushed_count", batchSizeBeforeFlush,
 					"drained_from_buffer", drainedCount,
 					"buffer_size_after", len(s.buffer))
 				done <- nil // Signal success
 			} else {
-				s.logger.V(1).Info("✅ Explicit flush completed (no events to flush)",
+				s.logger.V(2).Info("✅ Explicit flush completed (no events to flush)",
 					"buffer_was_empty", initialBufferSize == 0)
 				done <- nil // Signal success (nothing to flush)
 			}
@@ -615,7 +615,7 @@ func (s *BufferedAuditStore) writeBatchWithRetry(batch []*ogenclient.AuditEventR
 		atomic.AddInt64(&s.writtenCount, int64(len(batch)))
 
 		writeDuration := time.Since(start)
-		s.logger.V(1).Info("✅ Wrote audit batch",
+		s.logger.V(2).Info("✅ Wrote audit batch",
 			"batch_size", len(batch),
 			"attempt", attempt,
 			"write_duration", writeDuration)

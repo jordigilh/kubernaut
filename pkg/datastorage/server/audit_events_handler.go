@@ -89,7 +89,7 @@ type AuditEventsQueryResponse struct {
 // Success Response: 201 Created with event_id (UUID) and created_at
 // Error Responses: 400 Bad Request, 500 Internal Server Error (RFC 7807)
 func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) {
-	s.logger.V(1).Info("handleCreateAuditEvent called",
+	s.logger.V(2).Info("handleCreateAuditEvent called",
 		"method", r.Method,
 		"path", r.URL.Path,
 		"remote_addr", r.RemoteAddr)
@@ -99,7 +99,7 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 	defer cancel()
 
 	// 1. Parse request body using OpenAPI type (type-safe, no manual parsing)
-	s.logger.V(1).Info("Parsing request body with OpenAPI types...")
+	s.logger.V(2).Info("Parsing request body with OpenAPI types...")
 	var req dsclient.AuditEventRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		if dsmiddleware.IsMaxBytesError(err) {
@@ -114,7 +114,7 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 
 	// 2. Validate business rules (OpenAPI already validated required fields, types, and enums)
 	// Gap 1.2 REFACTOR: Enhanced validation (timestamp bounds, field lengths)
-	s.logger.V(1).Info("Validating business rules...")
+	s.logger.V(2).Info("Validating business rules...")
 	if err := helpers.ValidateAuditEventRequest(&req); err != nil {
 		s.logger.Info("Business validation failed", "error", err)
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "validation-error", "Validation Error", "audit event request failed validation", s.logger)
@@ -122,7 +122,7 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// 3. Convert OpenAPI request to internal audit event (trusted actor from oauth-proxy header)
-	s.logger.V(1).Info("Converting OpenAPI request to internal type...")
+	s.logger.V(2).Info("Converting OpenAPI request to internal type...")
 	authenticatedActorID := r.Header.Get("X-Auth-Request-User")
 	auditEvent, err := helpers.ConvertAuditEventRequest(req, authenticatedActorID)
 	if err != nil {
@@ -161,7 +161,7 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// 5. Convert to repository type
-	s.logger.V(1).Info("Converting to repository type...")
+	s.logger.V(2).Info("Converting to repository type...")
 	repositoryEvent, err := helpers.ConvertToRepositoryAuditEvent(auditEvent)
 	if err != nil {
 		// Conversion errors are client-side validation errors (e.g., invalid event_data JSON)
@@ -172,13 +172,13 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	s.logger.V(1).Info("Request parsed and validated successfully",
+	s.logger.V(2).Info("Request parsed and validated successfully",
 		"event_type", req.EventType,
 		"event_category", string(req.EventCategory),
 		"correlation_id", req.CorrelationID)
 
 	// 6. Persist to database via repository
-	s.logger.V(1).Info("Writing audit event to database...")
+	s.logger.V(2).Info("Writing audit event to database...")
 
 	// Record write duration metric (BR-STORAGE-019)
 	start := time.Now()
@@ -292,7 +292,7 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 // BR-STORAGE-023: Pagination Validation
 // DD-STORAGE-010: Offset-based pagination
 func (s *Server) handleQueryAuditEvents(w http.ResponseWriter, r *http.Request) {
-	s.logger.V(1).Info("handleQueryAuditEvents called",
+	s.logger.V(2).Info("handleQueryAuditEvents called",
 		"method", r.Method,
 		"path", r.URL.Path,
 		"query", r.URL.RawQuery,
