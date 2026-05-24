@@ -45,8 +45,7 @@ var _ = Describe("InvestigationSession CRD (E2E)", Label("e2e", "phase1", "sessi
 		Expect(podName).NotTo(BeEmpty(), "no AF pod found with label app=apifrontend")
 
 		out, err := kubectl("logs", "-n", namespace, podName,
-			"--all-containers",
-			"--since=10m")
+			"--all-containers")
 		Expect(err).NotTo(HaveOccurred(), "kubectl logs failed: %s", out)
 		Expect(out).To(ContainSubstring("session controller manager started"),
 			"AF pod should log that the session controller manager started")
