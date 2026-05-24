@@ -26,6 +26,7 @@ type A2AConfig struct {
 	AppName        string
 	Logger         *slog.Logger
 	Auditor        audit.Emitter
+	BridgeMetrics  BridgeMetrics
 
 	// BeforeExecute is called before each A2A execution with the request context.
 	// The context already contains the UserIdentity from auth middleware.
@@ -71,11 +72,12 @@ func NewA2AHandler(cfg A2AConfig) (http.Handler, error) { //nolint:gocritic // h
 		},
 		BeforeExecuteCallback: buildBeforeExecuteCallback(cfg.BeforeExecute, cfg.Auditor),
 		AfterExecuteCallback:  buildAfterExecuteCallback(log, cfg.Auditor),
-		GenAIPartConverter:    buildPartConverter(),
+		GenAIPartConverter:    buildStreamingPartConverter(),
 		OutputMode:            adka2a.OutputArtifactPerEvent,
 	}
 
-	executor := adka2a.NewExecutor(execCfg)
+	inner := adka2a.NewExecutor(execCfg)
+	executor := NewStreamingExecutor(inner, cfg.Auditor, cfg.BridgeMetrics)
 	reqHandler := a2asrv.NewHandler(executor)
 	httpHandler := a2asrv.NewJSONRPCHandler(reqHandler)
 
@@ -94,7 +96,7 @@ func buildBeforeExecuteCallback(userCb func(ctx context.Context) (context.Contex
 		}
 
 		if auditor != nil {
-			detail := map[string]string{"method": "message/send"}
+			detail := map[string]string{"method": resolveA2AMethod(ctx)}
 			if reqCtx != nil {
 				detail["task_id"] = string(reqCtx.TaskID)
 			}
@@ -194,5 +196,22 @@ func enrichRRDetail(ctx context.Context, detail map[string]string) {
 	if sc != nil && sc.RRName != "" {
 		detail["rr_name"] = sc.RRName
 		detail["rr_namespace"] = sc.RRNamespace
+	}
+}
+
+// resolveA2AMethod maps the a2asrv CallContext method name to the corresponding
+// A2A JSON-RPC method string for audit events (AU-2/AU-3 compliance).
+func resolveA2AMethod(ctx context.Context) string {
+	callCtx, ok := a2asrv.CallContextFrom(ctx)
+	if !ok {
+		return "message/send"
+	}
+	switch callCtx.Method() {
+	case "OnSendMessageStream":
+		return "message/stream"
+	case "OnSendMessage":
+		return "message/send"
+	default:
+		return "message/send"
 	}
 }

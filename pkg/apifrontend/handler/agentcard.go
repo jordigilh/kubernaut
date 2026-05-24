@@ -96,7 +96,7 @@ func NewAgentCardHandler(cfg AgentCardConfig) (http.Handler, error) {
 			Schemes: []authScheme{{Scheme: "bearer"}},
 		},
 		Capabilities: agentCaps{
-			Streaming:    false,
+			Streaming:    true,
 			PushNotify:   false,
 			StateTransit: true,
 		},
