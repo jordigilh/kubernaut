@@ -83,6 +83,23 @@ var _ = Describe("Agent Card Handler", func() {
 		Expect(card["description"]).To(Equal("Kubernaut API Frontend agent for incident triage"))
 	})
 
+	It("UT-AF-1259-008: card reflects operator-configured name", func() {
+		h, err := handler.NewAgentCardHandler(handler.AgentCardConfig{
+			Name:    "Kubernaut Agent",
+			URL:     "https://kubernaut.example.com",
+			Version: "0.1.0",
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		req := httptest.NewRequest("GET", "/.well-known/agent-card.json", http.NoBody)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		var card map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &card)
+		Expect(card["name"]).To(Equal("Kubernaut Agent"))
+	})
+
 	It("UT-AF-230-006: card includes version", func() {
 		h, err := handler.NewAgentCardHandler(handler.AgentCardConfig{
 			Name:    "kubernaut-apifrontend",

@@ -184,9 +184,14 @@ type MCPConfig struct {
 	ToolTimeouts       map[string]time.Duration   `yaml:"toolTimeouts,omitempty"`
 }
 
+// MaxAgentCardNameLength is the upper bound for the agent card display name.
+// The A2A spec does not mandate a limit; 128 is a sensible cap for UI/log contexts.
+const MaxAgentCardNameLength = 128
+
 // AgentCardConfig holds the agent card endpoint configuration.
 type AgentCardConfig struct {
-	URL string `yaml:"url"`
+	Name string `yaml:"name,omitempty"`
+	URL  string `yaml:"url"`
 }
 
 // RBACConfig holds SAR-based RBAC authorization configuration.
@@ -310,6 +315,9 @@ func (c *Config) Validate() error {
 		if _, err := os.Stat(c.Agent.DSBearerTokenFile); err != nil {
 			return fmt.Errorf("agent.dsBearerTokenFile %q is not accessible: %w", c.Agent.DSBearerTokenFile, err)
 		}
+	}
+	if len(c.AgentCard.Name) > MaxAgentCardNameLength {
+		return fmt.Errorf("agentCard.name must be at most %d characters, got %d", MaxAgentCardNameLength, len(c.AgentCard.Name))
 	}
 	if err := c.validateLLM(); err != nil {
 		return err
@@ -518,6 +526,9 @@ func validateDependencyConfig(prefix string, cfg *DependencyConfig) error {
 // LLM API key is resolved from the mounted Secret file at APIKeyFile.
 // Returns an error if a required credential file is configured but unreadable/empty.
 func (c *Config) ResolveDefaults() error {
+	if c.AgentCard.Name == "" {
+		c.AgentCard.Name = "Kubernaut Agent"
+	}
 	if c.AgentCard.URL == "" {
 		c.AgentCard.URL = fmt.Sprintf("https://localhost:%d", c.Server.Port)
 	}

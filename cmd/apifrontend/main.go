@@ -195,7 +195,7 @@ func run() int {
 	}
 
 	agentCardHandler, err := handler.NewAgentCardHandler(handler.AgentCardConfig{
-		Name:        "kubernaut-apifrontend",
+		Name:        cfg.AgentCard.Name,
 		Description: "Kubernaut AI-driven remediation API Frontend",
 		URL:         cfg.AgentCard.URL,
 		Version:     version(),
