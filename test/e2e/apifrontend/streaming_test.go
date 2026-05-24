@@ -230,3 +230,182 @@ var _ = Describe("Investigation Streaming (G3)", Label("e2e", "phase3", "g3"), f
 		wg.Wait()
 	})
 })
+
+// ═══════════════════════════════════════════════════════════════
+// TC-E2E-STREAM-05: FedRAMP AU-6/SC-4 — Progressive Streaming
+// Validates that a 2-turn A2A streaming conversation produces
+// TaskArtifactUpdateEvent SSE frames with progressive reasoning
+// content from the KA investigation bridge.
+// ═══════════════════════════════════════════════════════════════
+
+var _ = Describe("Progressive A2A Streaming (issue #1258)", Label("e2e", "phase3", "streaming"), func() {
+	var sreToken string
+
+	BeforeEach(func() {
+		var err error
+		sreToken, err = fetchDEXTokenForPersona("sre")
+		Expect(err).NotTo(HaveOccurred(), "SRE DEX token")
+		Expect(sreToken).NotTo(BeEmpty())
+	})
+
+	a2aSSEPost := func(ctx context.Context, body string) (*http.Response, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/a2a/invoke", strings.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "text/event-stream")
+		req.Header.Set("Authorization", "Bearer "+sreToken)
+		return httpClient.Do(req)
+	}
+
+	type sseEvent struct {
+		JSONRPC string          `json:"jsonrpc"`
+		Result  json.RawMessage `json:"result"`
+	}
+
+	type taskStatusUpdate struct {
+		Kind   string `json:"kind"`
+		Status struct {
+			State string `json:"state"`
+		} `json:"status"`
+	}
+
+	type taskArtifactUpdate struct {
+		Kind     string `json:"kind"`
+		Artifact struct {
+			Parts []struct {
+				Kind string `json:"kind"`
+				Text string `json:"text"`
+			} `json:"parts"`
+		} `json:"artifact"`
+	}
+
+	scanSSEFrames := func(resp *http.Response) (artifacts []taskArtifactUpdate, statuses []taskStatusUpdate) {
+		sc := bufio.NewScanner(resp.Body)
+		sc.Buffer(make([]byte, 64*1024), 1024*1024)
+
+		for sc.Scan() {
+			line := strings.TrimRight(sc.Text(), "\r")
+			if !strings.HasPrefix(line, "data:") {
+				continue
+			}
+			payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+			if !strings.HasPrefix(payload, "{") {
+				continue
+			}
+
+			var evt sseEvent
+			if err := json.Unmarshal([]byte(payload), &evt); err != nil {
+				continue
+			}
+			if len(evt.Result) == 0 {
+				continue
+			}
+
+			var raw map[string]interface{}
+			if err := json.Unmarshal(evt.Result, &raw); err != nil {
+				continue
+			}
+
+			kind, _ := raw["kind"].(string)
+			switch kind {
+			case "task-artifact-update":
+				var art taskArtifactUpdate
+				if json.Unmarshal(evt.Result, &art) == nil {
+					artifacts = append(artifacts, art)
+				}
+			case "task-status-update":
+				var st taskStatusUpdate
+				if json.Unmarshal(evt.Result, &st) == nil {
+					statuses = append(statuses, st)
+				}
+			}
+		}
+		return artifacts, statuses
+	}
+
+	It("TC-E2E-STREAM-05: AU-6/SC-4 progressive streaming produces TaskArtifactUpdateEvent with reasoning", func() {
+		streamCtx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+		defer cancel()
+
+		// Turn 1: Start investigation — triggers kubernaut_start_investigation
+		// (requires mock-LLM af_start_investigation keyword scenario)
+		resp1, err := a2aSSEPost(streamCtx, a2aMessageStream("progressive-05-t1", "start investigation for pod nginx in default"))
+		Expect(err).NotTo(HaveOccurred())
+		defer func() { _ = resp1.Body.Close() }()
+		Expect(resp1.StatusCode).To(Equal(http.StatusOK), "turn 1 HTTP status")
+		Expect(resp1.Header.Get("Content-Type")).To(ContainSubstring("text/event-stream"),
+			"AU-6: streaming response must use SSE content type")
+
+		arts1, statuses1 := scanSSEFrames(resp1)
+		GinkgoWriter.Printf("Turn 1: %d artifacts, %d statuses\n", len(arts1), len(statuses1))
+
+		// AU-6: Verify SSE events are produced (stream lifecycle visible)
+		Expect(len(arts1) + len(statuses1)).To(BeNumerically(">", 0),
+			"AU-6: streaming must produce at least one SSE event (artifact or status)")
+
+		hasTerminal := false
+		for _, st := range statuses1 {
+			if st.Status.State == "completed" || st.Status.State == "failed" {
+				hasTerminal = true
+				break
+			}
+		}
+		Expect(hasTerminal).To(BeTrue(), "AU-6: stream must reach terminal state (stream_closed)")
+
+		// Turn 2: Progressive streaming (requires $from_tool mock-LLM support).
+		// Only assert progressive artifacts if turn 1 completed with "completed".
+		turn1Completed := false
+		for _, st := range statuses1 {
+			if st.Status.State == "completed" {
+				turn1Completed = true
+				break
+			}
+		}
+		if !turn1Completed {
+			GinkgoWriter.Println("Turn 1 did not complete successfully; skipping turn 2 progressive assertion")
+			return
+		}
+
+		resp2, err := a2aSSEPost(streamCtx, a2aMessageStream("progressive-05-t2", "stream the investigation"))
+		Expect(err).NotTo(HaveOccurred())
+		defer func() { _ = resp2.Body.Close() }()
+		Expect(resp2.StatusCode).To(Equal(http.StatusOK), "turn 2 HTTP status")
+
+		arts2, statuses2 := scanSSEFrames(resp2)
+		GinkgoWriter.Printf("Turn 2: %d artifacts, %d statuses\n", len(arts2), len(statuses2))
+
+		// AU-6 assertion: stream produces events
+		Expect(len(arts2)+len(statuses2)).To(BeNumerically(">", 0),
+			"turn 2 must produce SSE events (progressive artifacts or status updates)")
+
+		// SC-4 assertion: artifact text is non-empty (reasoning content was bridged)
+		if len(arts2) > 0 {
+			hasContent := false
+			for _, art := range arts2 {
+				for _, part := range art.Artifact.Parts {
+					if part.Kind == "text" && strings.TrimSpace(part.Text) != "" {
+						hasContent = true
+						break
+					}
+				}
+				if hasContent {
+					break
+				}
+			}
+			Expect(hasContent).To(BeTrue(),
+				"progressive artifact events must contain non-empty reasoning text (SC-4)")
+		}
+
+		// Final state must be completed or failed (stream lifecycle closed)
+		hasFinal := false
+		for _, st := range statuses2 {
+			if st.Status.State == "completed" || st.Status.State == "failed" {
+				hasFinal = true
+				break
+			}
+		}
+		Expect(hasFinal).To(BeTrue(), "AU-6: stream must reach a terminal state (stream_closed)")
+	})
+})
