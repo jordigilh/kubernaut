@@ -50,6 +50,7 @@ var _ = Describe("Logger Wiring (#1274)", func() {
 		sess.Namespace = "default"
 		Expect(k8sClient.Create(ctx, sess)).To(Succeed())
 
+		sess.Status.Phase = v1alpha1.SessionPhaseDisconnected
 		sess.Status.DisconnectedAt = pastTime(20 * time.Minute)
 		Expect(k8sClient.Status().Update(ctx, sess)).To(Succeed())
 
@@ -58,6 +59,13 @@ var _ = Describe("Logger Wiring (#1274)", func() {
 				ObjectMeta: metav1.ObjectMeta{Name: sessionName, Namespace: "default"},
 			})
 		}()
+
+		Eventually(func(g Gomega) {
+			var fetched v1alpha1.InvestigationSession
+			g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sessionName, Namespace: "default"}, &fetched)).To(Succeed())
+			g.Expect(fetched.Status.Phase).To(Equal(v1alpha1.SessionPhaseDisconnected))
+			g.Expect(fetched.Status.DisconnectedAt).NotTo(BeNil(), "status update must propagate")
+		}, 10*time.Second, 200*time.Millisecond).Should(Succeed())
 
 		var buf bytes.Buffer
 		logger := newFuncrLogger(&buf)
@@ -97,10 +105,7 @@ var _ = Describe("Logger Wiring (#1274)", func() {
 	It("IT-AF-1274-003: A2A launcher accepts logr without panic [AU-3]", func() {
 		logger := newFuncrLogger(&bytes.Buffer{})
 
-		rootAgent, _, err := agentpkg.NewRootAgent(agentpkg.AgentConfig{
-			Instruction: "Test agent for logger wiring integration test.",
-			SkipTools:   true,
-		})
+		rootAgent, _, err := agentpkg.NewRootAgent(agentpkg.DefaultTestConfig())
 		Expect(err).NotTo(HaveOccurred())
 
 		cfg := launcher.A2AConfig{
