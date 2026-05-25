@@ -192,7 +192,7 @@ var _ = Describe("Session Controller Wiring (E2E)", Label("e2e", "phase1", "sess
 			"SI-4: /readyz must eventually return 200 after pod restart")
 
 		if !saw503 {
-			GinkgoWriter.Write([]byte("NOTE: 503 phase was too brief to observe — startup was very fast\n"))
+			_, _ = GinkgoWriter.Write([]byte("NOTE: 503 phase was too brief to observe — startup was very fast\n"))
 		}
 
 		logs := afPodLogs()
