@@ -97,7 +97,8 @@ var _ = SynchronizedBeforeSuite(
 		setupSucceeded = true
 		return []byte(kubeconfigPath)
 	},
-	func(_ []byte) {
+	func(data []byte) {
+		kubeconfigPath = string(data)
 		baseURL = "https://localhost:18443"
 		caCertPath = filepath.Join(os.TempDir(), "apifrontend-e2e-certs", "ca.crt")
 		dexURL = "http://localhost:5556/dex"
