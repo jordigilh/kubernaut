@@ -87,8 +87,8 @@ type MCPDeps struct {
 }
 
 // userFromContext extracts the authenticated user identity from the request
-// context (set by auth middleware). SEC-CRIT-02: uses GetUserInfoFromContext to
-// propagate group memberships for impersonation in interactive sessions.
+// context (set by auth middleware). Returns the SA identity for trusted
+// intermediary callers; tools.ResolveUser further resolves acting_user.
 func userFromContext(ctx context.Context) UserInfo {
 	info := sharedauth.GetUserInfoFromContext(ctx)
 	if info.Username != "" {
