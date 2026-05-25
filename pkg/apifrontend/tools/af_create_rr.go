@@ -226,6 +226,12 @@ func HandleCreateRR(ctx context.Context, client dynamic.Interface, namespace str
 //
 // The signal name is critical: KA uses it to drive investigation behavior.
 // Every tier above the fallback provides a meaningful infrastructure signal.
+//
+// Tier 3 uses DominantEventReason which filters out Normal lifecycle events
+// (F-SIG-08): ScalingReplicaSet, Scheduled, Pulled, Created, etc. are not
+// failure signals and would mislead KA's scenario detection. When only
+// lifecycle events exist (e.g., AF creates an RR before the target has
+// crashed), this tier returns "" and the cascade falls to "unknown".
 func deriveSignalName(ctx context.Context, client dynamic.Interface, namespace string, args *CreateRRArgs, triageResult *severity.TriageResult) string {
 	if triageResult != nil {
 		if triageResult.AlertName != "" {

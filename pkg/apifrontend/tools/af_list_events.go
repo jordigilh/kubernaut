@@ -98,6 +98,19 @@ func HandleListEvents(ctx context.Context, client dynamic.Interface, args ListEv
 
 // eventPriority maps K8s event reasons to severity priority tiers.
 // Higher value = more severe. Events not in the map default to priority 0.
+//
+// F-SIG-07 (#1282): Dominance ranking determines which event reason becomes
+// the signalName on AF-created RemediationRequests. KA uses this signal name
+// to drive its investigation, so only operationally significant events
+// (failures, degradation) should appear here.
+//
+// F-SIG-08 (#1282): Normal lifecycle events (ScalingReplicaSet, Scheduled,
+// Pulled, Created, Started) have priority 0 and are filtered out entirely.
+// This prevents misleading signal names when AF creates an RR before the
+// target resource has generated failure events. Without this filter,
+// DominantEventReason would return lifecycle noise like "ScalingReplicaSet",
+// which no mock-LLM scenario recognizes — causing the default fallback
+// (Tekton engine) and downstream WorkflowExecution failures.
 var eventPriority = map[string]int{
 	"OOMKilling":         100,
 	"OOMKilled":          100,
@@ -117,19 +130,27 @@ var eventPriority = map[string]int{
 // DominantEventReason selects the most operationally significant event reason
 // from a slice of EventSummary. Selection is based on a tiered priority map;
 // ties within the same priority are broken by event count.
+//
+// F-SIG-08 (#1282): Normal lifecycle events (priority 0, type "Normal") are
+// excluded. Only Warning events or events with an explicit priority entry
+// qualify. Returns "" when no operationally significant event exists, which
+// causes deriveSignalName to fall through to the "unknown" fallback.
 func DominantEventReason(events []EventSummary) string {
 	if len(events) == 0 {
 		return ""
 	}
 	bestReason := ""
-	bestPriority := -1
+	bestPriority := 0
 	var bestCount int64
 
 	for i := range events {
 		ev := &events[i]
 		p := eventPriority[ev.Reason]
-		if ev.Type == "Warning" && p == 0 {
+		if p == 0 && ev.Type == "Warning" {
 			p = 1
+		}
+		if p == 0 {
+			continue
 		}
 		if p > bestPriority || (p == bestPriority && ev.Count > bestCount) {
 			bestPriority = p

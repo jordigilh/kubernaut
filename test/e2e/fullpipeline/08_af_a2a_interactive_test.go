@@ -26,6 +26,9 @@ var _ = Describe("AF A2A Interactive 4-Phase Full Pipeline [E2E-FP-1189-003]", L
 		}
 		_ = resp.Body.Close()
 
+		By("Waiting for memory-eater pod to crash (F-SIG-08: ensures Warning events exist for DominantEventReason)")
+		fpWaitForPodCrash("memory-eater", 2*time.Minute)
+
 		By("Turn 1: start investigation")
 		body := fpA2ATasksSend("fp-int-1",
 			"start investigation for deployment memory-eater in kubernaut-system")

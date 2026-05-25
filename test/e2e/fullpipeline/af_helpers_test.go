@@ -7,7 +7,10 @@ import (
 	"strings"
 	"time"
 
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	corev1 "k8s.io/api/core/v1"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
@@ -142,5 +145,44 @@ func fpWaitForWEComplete(rrName string, timeout time.Duration) {
 		}
 		return false
 	}, timeout, 3*time.Second).Should(BeTrue(), "WorkflowExecution for %q did not complete", rrName)
+}
+
+// fpWaitForPodCrash waits until at least one pod matching the given label has
+// entered a crash state (OOMKilled or CrashLoopBackOff). AF's deriveSignalName
+// uses DominantEventReason to produce a grounded signal name; if called before
+// the pod crashes, only Normal lifecycle events (ScalingReplicaSet, Scheduled)
+// exist and DominantEventReason correctly returns "" (F-SIG-08). Waiting for a
+// crash ensures Warning events like BackOff are present, giving KA a meaningful
+// signal to drive investigation.
+func fpWaitForPodCrash(appLabel string, timeout time.Duration) {
+	Eventually(func() bool {
+		pods := &corev1.PodList{}
+		if err := apiReader.List(ctx, pods,
+			client.InNamespace(namespace),
+			client.MatchingLabels{"app": appLabel}); err != nil {
+			return false
+		}
+		for _, pod := range pods.Items {
+			for _, cs := range pod.Status.ContainerStatuses {
+				if cs.LastTerminationState.Terminated != nil &&
+					cs.LastTerminationState.Terminated.Reason == "OOMKilled" {
+					GinkgoWriter.Printf("  ✅ OOMKill detected for %s (restarts=%d)\n", appLabel, cs.RestartCount)
+					return true
+				}
+				if cs.State.Terminated != nil &&
+					cs.State.Terminated.Reason == "OOMKilled" {
+					GinkgoWriter.Printf("  ✅ OOMKill detected for %s\n", appLabel)
+					return true
+				}
+				if cs.RestartCount > 0 && cs.State.Waiting != nil &&
+					cs.State.Waiting.Reason == "CrashLoopBackOff" {
+					GinkgoWriter.Printf("  ✅ CrashLoopBackOff detected for %s\n", appLabel)
+					return true
+				}
+			}
+		}
+		return false
+	}, timeout, 2*time.Second).Should(BeTrue(),
+		"pod with label app=%s should crash (OOMKill or CrashLoopBackOff)", appLabel)
 }
 

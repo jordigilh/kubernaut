@@ -238,12 +238,21 @@ var _ = Describe("DominantEventReason (#1282 F-SIG)", func() {
 		Expect(tools.DominantEventReason(nil)).To(BeEmpty())
 	})
 
-	It("UT-AF-1282-SIG-005: only Normal events returns the highest-count one", func() {
+	It("UT-AF-1282-SIG-005: only Normal lifecycle events returns empty (not operationally significant)", func() {
 		events := []tools.EventSummary{
 			{Reason: "Pulled", Type: "Normal", Count: 1},
 			{Reason: "Created", Type: "Normal", Count: 5},
 		}
-		Expect(tools.DominantEventReason(events)).To(Equal("Created"))
+		Expect(tools.DominantEventReason(events)).To(BeEmpty())
+	})
+
+	It("UT-AF-1282-SIG-006: ScalingReplicaSet-only returns empty (FP E2E canary)", func() {
+		events := []tools.EventSummary{
+			{Reason: "ScalingReplicaSet", Type: "Normal", Count: 3},
+			{Reason: "Scheduled", Type: "Normal", Count: 2},
+			{Reason: "Pulling", Type: "Normal", Count: 1},
+		}
+		Expect(tools.DominantEventReason(events)).To(BeEmpty())
 	})
 
 	It("UT-AF-1282-SIG-007: 3-way priority: OOMKilling > BackOff > FailedScheduling count-ignored", func() {

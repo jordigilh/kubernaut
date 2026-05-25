@@ -105,7 +105,13 @@ AF = infrastructure expert (namespace, signal, severity, source).
 
 - F-EVT-01: EventSummary includes Type field (Normal/Warning)
 - F-EVT-02: HandleListEvents populates Type from K8s event object
-- F-EVT-03: dominantEventReason filters by Warning type
+- F-EVT-03: DominantEventReason excludes Normal lifecycle events (priority 0, type "Normal").
+  Events like ScalingReplicaSet, Scheduled, Pulled, Created, and Started are not failure signals
+  and carry no diagnostic value for KA. Returning them as signalName misleads KA's scenario
+  detection and causes the mock-LLM to fall through to the default fallback (Tekton engine),
+  triggering UnsupportedEngine failures in clusters that only register the job engine.
+  When only lifecycle events exist, DominantEventReason returns "" so deriveSignalName falls
+  through to "unknown" — an honest signal that no failure evidence was found at RR creation time.
 
 ## 7. Features Not to be Tested
 
