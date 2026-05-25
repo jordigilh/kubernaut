@@ -115,13 +115,14 @@ type ServerTLSConfig struct {
 
 // AgentConfig holds ADK agent and backend connectivity settings.
 type AgentConfig struct {
-	KABaseURL         string    `yaml:"kaBaseURL"`
-	KAMCPEndpoint     string    `yaml:"kaMCPEndpoint"`
-	DSBaseURL         string    `yaml:"dsBaseURL"`
-	DSBearerTokenFile string    `yaml:"dsBearerTokenFile,omitempty"`
-	KATLSCaFile       string    `yaml:"kaTlsCaFile,omitempty"`
-	DSTLSCaFile       string    `yaml:"dsTlsCaFile,omitempty"`
-	LLM               LLMConfig `yaml:"llm"`
+	KABaseURL          string    `yaml:"kaBaseURL"`
+	KAMCPEndpoint      string    `yaml:"kaMCPEndpoint"`
+	DSBaseURL          string    `yaml:"dsBaseURL"`
+	DSBearerTokenFile  string    `yaml:"dsBearerTokenFile,omitempty"`
+	KABearerTokenFile  string    `yaml:"kaBearerTokenFile,omitempty"`
+	KATLSCaFile        string    `yaml:"kaTlsCaFile,omitempty"`
+	DSTLSCaFile        string    `yaml:"dsTlsCaFile,omitempty"`
+	LLM                LLMConfig `yaml:"llm"`
 }
 
 // LLMConfig holds LLM provider settings for the A2A handler. The schema
@@ -310,6 +311,11 @@ func (c *Config) Validate() error {
 	if c.Agent.DSBearerTokenFile != "" {
 		if _, err := os.Stat(c.Agent.DSBearerTokenFile); err != nil {
 			return fmt.Errorf("agent.dsBearerTokenFile %q is not accessible: %w", c.Agent.DSBearerTokenFile, err)
+		}
+	}
+	if c.Agent.KABearerTokenFile != "" {
+		if _, err := os.Stat(c.Agent.KABearerTokenFile); err != nil {
+			return fmt.Errorf("agent.kaBearerTokenFile %q is not accessible: %w", c.Agent.KABearerTokenFile, err)
 		}
 	}
 	if err := c.validateLLM(); err != nil {

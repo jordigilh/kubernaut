@@ -16,8 +16,9 @@ import (
 )
 
 // SDKMCPClient implements MCPClient using the MCP Go SDK's StreamableClientTransport.
-// Each call creates a session-per-call to forward per-request JWT credentials
-// via the HTTPClient (Pattern B JWT delegation, DD-AUTH-MCP-001 v2.0).
+// AF authenticates to KA as itself using a SA bearer token injected by
+// bearerTokenTransport (trusted intermediary model, DD-AUTH-MCP-001 v3.0).
+// User identity is passed as acting_user/acting_user_groups in MCP args.
 //
 // Session-per-call overhead is acceptable for v1.5 volume (P2 Architect finding).
 type SDKMCPClient struct {
@@ -29,7 +30,7 @@ type SDKMCPClient struct {
 }
 
 // NewSDKMCPClient creates a new MCP client for KA communication.
-// The httpClient should include auth transport (e.g., ContextJWTDelegationTransport).
+// The httpClient should include auth transport (e.g., bearerTokenTransport for SA token).
 // WithDownstreamDuration injects the af_downstream_request_duration_seconds
 // histogram for MCP call latency instrumentation (G18).
 func (c *SDKMCPClient) WithDownstreamDuration(h *prometheus.HistogramVec) *SDKMCPClient {
@@ -55,9 +56,16 @@ func NewSDKMCPClient(endpoint string, httpClient *http.Client, logger logr.Logge
 //
 //nolint:gocritic // hugeParam: matches MCPClient interface contract
 func (c *SDKMCPClient) SelectWorkflow(ctx context.Context, args SelectWorkflowArgs) (*SelectWorkflowResult, error) {
+	identity := auth.UserIdentityFromContext(ctx)
+	if identity == nil {
+		return nil, fmt.Errorf("user identity required: no identity in context")
+	}
+
 	argsMap := map[string]any{
-		"rr_id":       args.RRID,
-		"workflow_id": args.WorkflowID,
+		"rr_id":              args.RRID,
+		"workflow_id":        args.WorkflowID,
+		"acting_user":        identity.Username,
+		"acting_user_groups": identity.Groups,
 	}
 	if args.Kind != "" {
 		argsMap["kind"] = args.Kind
@@ -165,9 +173,16 @@ func (c *SDKMCPClient) callTool(ctx context.Context, name string, args map[strin
 //
 //nolint:gocritic // hugeParam: matches MCPClient interface contract
 func (c *SDKMCPClient) DiscoverWorkflows(ctx context.Context, args DiscoverWorkflowsArgs) (*DiscoverWorkflowsResult, error) {
+	identity := auth.UserIdentityFromContext(ctx)
+	if identity == nil {
+		return nil, fmt.Errorf("user identity required: no identity in context")
+	}
+
 	argsMap := map[string]any{
-		"rr_id":  args.RRID,
-		"action": "discover_workflows",
+		"rr_id":              args.RRID,
+		"action":             "discover_workflows",
+		"acting_user":        identity.Username,
+		"acting_user_groups": identity.Groups,
 	}
 
 	result, err := c.callTool(ctx, "kubernaut_investigate", argsMap)

@@ -89,7 +89,7 @@ func NewEventEmitter(clientset kubernetes.Interface, podName, namespace string) 
 }
 
 // EmitInteractiveSoftDisabled emits a Warning event when interactive mode
-// is soft-disabled due to missing RBAC (impersonate verb denied).
+// is soft-disabled (e.g. MCP mount failure).
 func (e *EventEmitter) EmitInteractiveSoftDisabled(reason string) {
 	if e == nil {
 		return
@@ -98,13 +98,13 @@ func (e *EventEmitter) EmitInteractiveSoftDisabled(reason string) {
 }
 
 // EmitInteractiveEnabled emits a Normal event when interactive mode
-// starts successfully after passing the SSAR check.
+// starts successfully after MCP mount.
 func (e *EventEmitter) EmitInteractiveEnabled() {
 	if e == nil {
 		return
 	}
 	e.recorder.Event(e.podObj, corev1.EventTypeNormal, ReasonInteractiveEnabled,
-		"Interactive mode enabled: SA has impersonate permission")
+		"Interactive mode enabled: MCP tools mounted")
 }
 
 // Shutdown stops the event broadcaster. Call during graceful shutdown.

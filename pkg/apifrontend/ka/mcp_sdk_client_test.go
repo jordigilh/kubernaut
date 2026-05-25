@@ -417,6 +417,71 @@ var _ = Describe("SDKMCPClient", func() {
 			Expect(err.Error()).To(ContainSubstring("kubernaut agent"))
 		})
 	})
+
+	Describe("Trusted Intermediary Identity Injection (#1287)", func() {
+		It("UT-AF-1287-009: SelectWorkflow includes acting_user in args (AU-3)", func() {
+			var capturedArgs map[string]any
+			ts = buildTestServer(toolDef{
+				name: "kubernaut_select_workflow",
+				handler: func(_ context.Context, req *mcp.CallToolRequest, _ any) (*mcp.CallToolResult, any, error) {
+					_ = json.Unmarshal(req.Params.Arguments, &capturedArgs)
+					resp := map[string]string{"status": "accepted", "message": "ok"}
+					data, _ := json.Marshal(resp)
+					return &mcp.CallToolResult{
+						Content: []mcp.Content{&mcp.TextContent{Text: string(data)}},
+					}, nil, nil
+				},
+			})
+
+			httpClient := &http.Client{Transport: &authedRoundTripper{user: "alice@example.com"}}
+			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, logr.Discard())
+
+			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+				Username: "alice@example.com",
+				Groups:   []string{"sre", "admin"},
+				RawToken: "token-for-alice@example.com",
+			})
+
+			_, err := client.SelectWorkflow(ctx, ka.SelectWorkflowArgs{
+				RRID:       "rr-1287-sw",
+				WorkflowID: "wf-001",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(capturedArgs).To(HaveKeyWithValue("acting_user", "alice@example.com"))
+			Expect(capturedArgs).To(HaveKey("acting_user_groups"))
+		})
+
+		It("UT-AF-1287-010: DiscoverWorkflows includes acting_user in args (AU-3)", func() {
+			var capturedArgs map[string]any
+			ts = buildTestServer(toolDef{
+				name: "kubernaut_investigate",
+				handler: func(_ context.Context, req *mcp.CallToolRequest, _ any) (*mcp.CallToolResult, any, error) {
+					_ = json.Unmarshal(req.Params.Arguments, &capturedArgs)
+					resp := map[string]any{"workflows": []any{}, "count": 0}
+					data, _ := json.Marshal(resp)
+					return &mcp.CallToolResult{
+						Content: []mcp.Content{&mcp.TextContent{Text: string(data)}},
+					}, nil, nil
+				},
+			})
+
+			httpClient := &http.Client{Transport: &authedRoundTripper{user: "bob@example.com"}}
+			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, logr.Discard())
+
+			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+				Username: "bob@example.com",
+				Groups:   []string{"engineering"},
+				RawToken: "token-for-bob@example.com",
+			})
+
+			_, err := client.DiscoverWorkflows(ctx, ka.DiscoverWorkflowsArgs{
+				RRID: "rr-1287-dw",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(capturedArgs).To(HaveKeyWithValue("acting_user", "bob@example.com"))
+			Expect(capturedArgs).To(HaveKey("acting_user_groups"))
+		})
+	})
 })
 
 func fakeAuthMiddleware(next http.Handler) http.Handler {

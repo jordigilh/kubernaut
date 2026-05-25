@@ -16,14 +16,31 @@ limitations under the License.
 
 package mcp
 
-// Pattern B (delegated impersonation via apifrontend) uses JWT-based identity
-// delegation. The apifrontend forwards the user's original Keycloak JWT, and
-// KA's CompositeAuthenticator validates the signature via JWKS and extracts
-// identity from verified claims.
+// AF-to-KA Authentication: Trusted Intermediary Model (#1287)
 //
-// The previous SA-token + Impersonate-* header approach was superseded because
-// the middleware unconditionally strips Impersonate-* headers (#896), and
-// unsigned headers lack the cryptographic integrity of JWT claims.
+// AF authenticates to KA using its ServiceAccount token (same pattern as
+// AF-to-DS). KA validates the SA token via Kubernetes TokenReview (Pattern A).
+// User identity flows through the MCP tool payload as acting_user and
+// acting_user_groups fields, used for session ownership and audit attribution.
 //
-// Implementation: pkg/shared/auth/jwt_auth.go, pkg/shared/auth/composite_auth.go
-// Reference: DD-AUTH-MCP-001 v2.0, #895, #896, #1009.
+// This supersedes the JWT delegation model (DD-AUTH-MCP-001 v2.0, ADR-013)
+// where AF forwarded the user's Keycloak JWT for KA to validate. The trusted
+// intermediary model simplifies KA by removing external IDP integration:
+//   - AF handles user AuthN/AuthZ (OIDC, RBAC)
+//   - KA handles service AuthZ only (AF SA must have permission to call KA)
+//   - User identity in payload is audit-only, not used for KA authorization
+//
+// Identity resolution: tools.ResolveUser prefers acting_user from payload
+// when present, falling back to middleware-extracted identity for Pattern A.
+//
+// Rate limiting (F-03, SC-5 accepted risk): KA's per-user rate limiter keys
+// off the authenticated SA identity (the AF service account), not the human
+// acting_user. This is by design — AF already rate-limits per human user at
+// the external boundary (PostAuth user RL). KA's per-SA bucket prevents AF
+// from overwhelming KA (defense-in-depth against AF compromise). Propagating
+// acting_user into the rate limiter would require extracting user from the MCP
+// payload before tool dispatch, breaking the middleware-only pattern.
+//
+// History: SA+Impersonate (#891) → JWT delegation (#895, #896, #1009) →
+// Trusted intermediary (#1287).
+// Reference: #1287, #1288.

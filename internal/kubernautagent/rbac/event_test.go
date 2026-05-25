@@ -125,7 +125,7 @@ var _ = Describe("UT-KA-891-002: K8s Event emission for interactive mode (#891)"
 			event := eventActions[0].(k8stesting.CreateAction).GetObject().(*corev1.Event)
 			Expect(event.Reason).To(Equal(karbac.ReasonInteractiveEnabled))
 			Expect(event.Type).To(Equal(corev1.EventTypeNormal))
-			Expect(event.Message).To(ContainSubstring("impersonate"))
+			Expect(event.Message).To(ContainSubstring("MCP tools mounted"))
 			Expect(event.InvolvedObject.Name).To(Equal("ka-pod-abc"))
 
 			emitter.Shutdown()

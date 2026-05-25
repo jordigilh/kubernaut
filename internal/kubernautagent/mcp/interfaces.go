@@ -52,8 +52,8 @@ type NotificationBus interface {
 	Unsubscribe(correlationID, sessionID string)
 }
 
-// UserInfo represents a resolved user identity from TokenReview or impersonation.
-// DD-AUTH-MCP-001: Pattern A (TokenReview) or Pattern B (JWT delegation).
+// UserInfo represents a resolved user identity from TokenReview or trusted
+// intermediary payload (acting_user). DD-AUTH-MCP-001 v3.0.
 type UserInfo struct {
 	Username     string
 	Groups       []string

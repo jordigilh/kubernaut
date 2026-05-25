@@ -809,10 +809,8 @@ rules:
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
     verbs: ["get", "list", "create", "update", "delete"]
-  # Interactive mode: user impersonation (DD-AUTH-MCP-001)
-  - apiGroups: [""]
-    resources: ["users", "groups", "serviceaccounts"]
-    verbs: ["impersonate"]
+  # #1288: Impersonation RBAC removed — KA uses its own SA for all K8s API
+  # calls. User identity is passed in MCP tool arguments for audit only.
   - apiGroups: ["alpha.kubernaut-test.ai"]
     resources: ["testwidgets"]
     verbs: ["get", "list", "watch"]

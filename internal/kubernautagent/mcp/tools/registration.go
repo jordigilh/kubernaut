@@ -29,13 +29,18 @@ import (
 // mapping for disconnect detection (DD-INTERACTIVE-002).
 // When notifier is non-nil, successful start/takeover registers
 // ServerSession.Log as the session's notification callback (UX-01).
+//
+// Identity resolution (#1287): when acting_user is present in the tool input
+// (trusted intermediary model), it takes precedence over the middleware-extracted
+// identity. This supports the AF SA token pattern where AF authenticates as
+// itself and passes user identity in the payload.
 func InvestigateRegistration(tool *InvestigateTool, eventStore *mcpinternal.DelegatingEventStore, notifier *mcpinternal.SessionNotifier) mcpinternal.ToolRegistration {
 	return func(server *mcpsdk.Server, userFromCtx func(context.Context) mcpinternal.UserInfo) {
 		mcpsdk.AddTool(server, &mcpsdk.Tool{
 			Name:        "kubernaut_investigate",
 			Description: "Investigate a remediation request interactively. Actions: start, takeover, message, complete, cancel, status, reconnect, discover_workflows.",
 		}, func(ctx context.Context, req *mcpsdk.CallToolRequest, input InvestigateInput) (*mcpsdk.CallToolResult, InvestigateOutput, error) {
-			user := userFromCtx(ctx)
+			user := ResolveUser(userFromCtx(ctx), input.ActingUser, input.ActingUserGroups)
 			output, err := tool.Handle(ctx, input, user)
 			if err == nil && output.SessionID != "" {
 				if eventStore != nil {
@@ -65,7 +70,7 @@ func SelectWorkflowRegistration(tool *SelectWorkflowTool) mcpinternal.ToolRegist
 			Name:        "kubernaut_select_workflow",
 			Description: "Select a remediation workflow from the catalog during an interactive investigation. Requires a prior discover_workflows call.",
 		}, func(ctx context.Context, req *mcpsdk.CallToolRequest, input SelectWorkflowInput) (*mcpsdk.CallToolResult, SelectWorkflowOutput, error) {
-			user := userFromCtx(ctx)
+			user := ResolveUser(userFromCtx(ctx), input.ActingUser, input.ActingUserGroups)
 			output, err := tool.Handle(ctx, input, user)
 			return nil, output, err
 		})
@@ -80,7 +85,7 @@ func CompleteNoActionRegistration(tool *CompleteNoActionTool) mcpinternal.ToolRe
 			Name:        "kubernaut_complete_no_action",
 			Description: "Complete an interactive investigation without selecting a workflow. Use when no remediation action is needed.",
 		}, func(ctx context.Context, req *mcpsdk.CallToolRequest, input CompleteNoActionInput) (*mcpsdk.CallToolResult, CompleteNoActionOutput, error) {
-			user := userFromCtx(ctx)
+			user := ResolveUser(userFromCtx(ctx), input.ActingUser, input.ActingUserGroups)
 			output, err := tool.Handle(ctx, input, user)
 			return nil, output, err
 		})

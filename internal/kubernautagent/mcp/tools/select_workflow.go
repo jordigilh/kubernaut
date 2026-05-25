@@ -25,7 +25,6 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
-	"github.com/jordigilh/kubernaut/pkg/shared/transport"
 )
 
 // EnrichmentRunner abstracts the enrichment call for testability.
@@ -80,14 +79,16 @@ type PreSelectionHook func(ctx context.Context, input SelectWorkflowInput, user 
 
 // SelectWorkflowInput defines the input schema for the kubernaut_select_workflow MCP tool.
 type SelectWorkflowInput struct {
-	RRID       string `json:"rr_id"`
-	WorkflowID string `json:"workflow_id"`
-	Kind       string `json:"kind,omitempty"`
-	Name       string `json:"name,omitempty"`
-	Namespace  string `json:"namespace,omitempty"`
-	APIVersion string `json:"api_version,omitempty"`
-	SpecHash   string `json:"spec_hash,omitempty"`
-	IncidentID string `json:"incident_id,omitempty"`
+	RRID             string   `json:"rr_id"`
+	WorkflowID       string   `json:"workflow_id"`
+	Kind             string   `json:"kind,omitempty"`
+	Name             string   `json:"name,omitempty"`
+	Namespace        string   `json:"namespace,omitempty"`
+	APIVersion       string   `json:"api_version,omitempty"`
+	SpecHash         string   `json:"spec_hash,omitempty"`
+	IncidentID       string   `json:"incident_id,omitempty"`
+	ActingUser       string   `json:"acting_user,omitempty"`
+	ActingUserGroups []string `json:"acting_user_groups,omitempty"`
 }
 
 // SelectWorkflowOutput defines the output schema for the kubernaut_select_workflow MCP tool.
@@ -112,7 +113,6 @@ func WithEnrichmentRunner(runner EnrichmentRunner) SelectWorkflowOption {
 				t.logger.V(1).Info("enrichment skipped: kind not provided in select_workflow input")
 				return nil
 			}
-			ctx = transport.WithImpersonatedUser(ctx, user.Username, user.Groups)
 			result, err := runner.Enrich(ctx, input.Kind, input.Name, input.Namespace, input.APIVersion, input.SpecHash, input.IncidentID)
 			if err != nil {
 				if errors.Is(err, enrichment.ErrRBACForbidden) {

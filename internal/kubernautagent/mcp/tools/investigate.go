@@ -513,12 +513,7 @@ func (t *InvestigateTool) handleMessage(ctx context.Context, input InvestigateIn
 		t.timeoutTracker.ResetInactivity(sess.SessionID)
 	}
 
-	// SEC-06 (#703): Enrich context with session user identity so the
-	// ImpersonatingRoundTripper injects Impersonate-User/Group headers on
-	// K8s API calls, enforcing the user's RBAC during tool execution.
-	ctx = transport.WithImpersonatedUser(ctx, user.Username, user.Groups)
-	// #898-S5: Attach session ID so ImpersonatingRoundTripper can attribute
-	// K8s call audit events to this interactive session.
+	// #898-S5: Attach session ID for audit attribution on K8s API calls.
 	ctx = transport.WithAuditSessionID(ctx, sess.SessionID)
 
 	// Clear DiscoveryResult before the LLM call: any message after

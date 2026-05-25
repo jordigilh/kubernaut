@@ -338,7 +338,7 @@ kubernautAgent:
   replicas: 1
   # -- MCP interactive mode (#703): human-in-the-loop investigation sessions.
   # When enabled, KA exposes a Streamable HTTP MCP endpoint at POST /api/v1/mcp
-  # and provisions Lease RBAC + impersonate ClusterRole.
+  # and provisions Lease RBAC. (#1288: impersonate ClusterRole removed).
   interactive:
     # -- Enable MCP interactive mode endpoint and Lease-based session management.
     enabled: false

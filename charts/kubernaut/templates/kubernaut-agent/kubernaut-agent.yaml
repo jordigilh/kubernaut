@@ -22,7 +22,6 @@ rules:
     resources:
       - pods
       - pods/log
-      - events
       - services
       - endpoints
       - configmaps
@@ -35,6 +34,9 @@ rules:
       - resourcequotas
       - serviceaccounts
     verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list", "watch", "create", "patch"]
   - apiGroups: ["apps"]
     resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
     verbs: ["get", "list", "watch"]
@@ -88,17 +90,12 @@ rules:
   - apiGroups: ["monitoring.coreos.com"]
     resources: ["prometheusrules", "servicemonitors", "podmonitors", "probes"]
     verbs: ["get", "list", "watch"]
-  {{- if .Values.kubernautAgent.interactive.enabled }}
-  # ── Interactive Impersonation (#703, DD-AUTH-MCP-001) ──────────────────
-  # ACCEPTED RISK (SEC-06): Cluster-wide impersonate without resourceNames.
-  # Mitigation: Only granted when interactive.enabled=true; application-level
-  # identity validation in LeaseSessionManager.Takeover rejects empty usernames;
-  # per-user rate limiting bounds abuse surface. Future: scope via resourceNames
-  # if identity set is bounded.
-  - apiGroups: [""]
-    resources: ["users", "groups", "serviceaccounts"]
-    verbs: ["impersonate"]
-  {{- end }}
+  # ── Kubernaut CRDs (#1287) ──────────────────────────────────────────────
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["remediationrequests"]
+    verbs: ["get", "list"]
+  # #1288: Impersonation RBAC removed — KA uses its own SA for all K8s API
+  # calls. User identity is passed in MCP tool arguments for audit only.
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

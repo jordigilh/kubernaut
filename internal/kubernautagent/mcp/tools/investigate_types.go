@@ -20,9 +20,11 @@ import "errors"
 
 // InvestigateInput is the JSON schema for the kubernaut_investigate MCP tool.
 type InvestigateInput struct {
-	RRID    string `json:"rr_id"`
-	Action  string `json:"action"` // start, message, complete, cancel, takeover, status, reconnect, discover_workflows
-	Message string `json:"message,omitempty"`
+	RRID             string   `json:"rr_id"`
+	Action           string   `json:"action"` // start, message, complete, cancel, takeover, status, reconnect, discover_workflows
+	Message          string   `json:"message,omitempty"`
+	ActingUser       string   `json:"acting_user,omitempty"`
+	ActingUserGroups []string `json:"acting_user_groups,omitempty"`
 }
 
 // InvestigateOutput is the response returned by the kubernaut_investigate tool.

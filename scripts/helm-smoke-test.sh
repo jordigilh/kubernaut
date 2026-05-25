@@ -1493,24 +1493,23 @@ for d in docs:
       "coordination.k8s.io/leases RBAC not found under namespace-scoped Role when interactive enabled"
   fi
 
-  # HELM-03: interactive.enabled=true adds impersonate RBAC
-  if echo "$interactive_out" | grep -q "impersonate"; then
-    tap_ok "HELM-03: interactive.enabled=true adds impersonate verb RBAC"
+  # HELM-03: interactive.enabled=true does NOT include impersonate RBAC (#1288)
+  if ! echo "$interactive_out" | grep -q "impersonate"; then
+    tap_ok "HELM-03: interactive.enabled=true omits impersonate verb RBAC (#1288)"
   else
-    tap_not_ok "HELM-03: impersonate RBAC" \
-      "impersonate verb not found when interactive enabled"
+    tap_not_ok "HELM-03: impersonate RBAC still present" \
+      "impersonate verb found when interactive enabled — should have been removed by #1288"
   fi
 
-  # HELM-04: interactive.enabled=false omits interactive: block and RBAC
+  # HELM-04: interactive.enabled=false omits interactive: block
   local interactive_off
   interactive_off=$(helm template test "$CHART_PATH" "$tpl_flag" "$tpl_path" \
     $(template_common_args) $(template_llm_args) $(policy_flags) 2>&1)
-  if ! echo "$interactive_off" | grep -q "interactive:" && \
-     ! echo "$interactive_off" | grep -q "impersonate"; then
-    tap_ok "HELM-04: interactive disabled omits interactive: block and impersonate RBAC"
+  if ! echo "$interactive_off" | grep -q "interactive:"; then
+    tap_ok "HELM-04: interactive disabled omits interactive: block"
   else
     tap_not_ok "HELM-04: interactive disabled should omit" \
-      "interactive: or impersonate found when interactive.enabled is false/unset"
+      "interactive: found when interactive.enabled is false/unset"
   fi
 
   # HELM-05: custom sessionTTL and maxConcurrentSessions rendered
