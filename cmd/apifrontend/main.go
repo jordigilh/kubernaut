@@ -1002,7 +1002,7 @@ func buildSessionInfra(cfg *config.Config, reg *metrics.Registry, auditor audit.
 
 	restCfg, err := ctrl.GetConfig()
 	if err == nil {
-		preflightSessionChecks(restCfg, cfg.Session.Namespace, logger)
+		preflightSessionChecks(restCfg, cfg.Session.Namespace, auditor, logger)
 		mgr, mgrErr := ctrl.NewManager(restCfg, ctrl.Options{
 			Scheme: scheme,
 			Cache: cache.Options{
@@ -1048,8 +1048,8 @@ func buildSessionInfra(cfg *config.Config, reg *metrics.Registry, auditor audit.
 				healthy := &atomic.Bool{}
 				mgrCtx, mgrCancel := context.WithCancel(context.Background()) //nolint:gosec // G118 false positive: mgrCancel is assigned to stopFunc below
 				go func() {
+					defer healthy.Store(false)
 					if startErr := mgr.Start(mgrCtx); startErr != nil {
-						healthy.Store(false)
 						logger.Error(startErr, "session controller manager exited with error — health degraded")
 					}
 				}()
@@ -1117,9 +1117,9 @@ func buildSessionInfra(cfg *config.Config, reg *metrics.Registry, auditor audit.
 }
 
 // preflightSessionChecks runs diagnostic checks before starting the session
-// controller manager. These are log-only (non-blocking) so a misconfigured
-// cluster still boots the AF; SREs can diagnose from the log output.
-func preflightSessionChecks(restCfg *rest.Config, namespace string, logger logr.Logger) {
+// controller manager. These are non-blocking so a misconfigured cluster still
+// boots the AF; SREs can diagnose from the log output and audit trail.
+func preflightSessionChecks(restCfg *rest.Config, namespace string, auditor audit.Emitter, logger logr.Logger) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
@@ -1144,37 +1144,72 @@ func preflightSessionChecks(restCfg *rest.Config, namespace string, logger logr.
 	if !crdFound {
 		logger.Info("WARNING: InvestigationSession CRD not found — session controller may fail to start")
 	}
+	if auditor != nil {
+		auditor.Emit(ctx, &audit.Event{
+			Type: audit.EventPreflightCRDCheck,
+			Detail: map[string]string{
+				"gvr":       gvr,
+				"available": fmt.Sprintf("%t", crdFound),
+			},
+		})
+	}
 
 	k8s, err := kubernetes.NewForConfig(restCfg)
 	if err != nil {
 		logger.Error(err, "pre-flight: failed to create kubernetes client for SSAR")
 		return
 	}
-	ssar := &authorizationv1.SelfSubjectAccessReview{
-		Spec: authorizationv1.SelfSubjectAccessReviewSpec{
-			ResourceAttributes: &authorizationv1.ResourceAttributes{
-				Namespace: namespace,
-				Verb:      "watch",
-				Group:     "kubernaut.ai",
-				Resource:  "investigationsessions",
+
+	// AC-6: Check all verbs the session controller and CRDSessionService need.
+	requiredVerbs := []string{"get", "list", "watch", "create", "update", "delete"}
+	allAllowed := true
+	var deniedVerbs []string
+	for _, verb := range requiredVerbs {
+		ssar := &authorizationv1.SelfSubjectAccessReview{
+			Spec: authorizationv1.SelfSubjectAccessReviewSpec{
+				ResourceAttributes: &authorizationv1.ResourceAttributes{
+					Namespace: namespace,
+					Verb:      verb,
+					Group:     "kubernaut.ai",
+					Resource:  "investigationsessions",
+				},
 			},
-		},
+		}
+		result, err := k8s.AuthorizationV1().SelfSubjectAccessReviews().Create(
+			ctx, ssar, metav1.CreateOptions{},
+		)
+		if err != nil {
+			logger.Error(err, "pre-flight RBAC check failed", "verb", verb)
+			allAllowed = false
+			deniedVerbs = append(deniedVerbs, verb+"(error)")
+			continue
+		}
+		if !result.Status.Allowed {
+			allAllowed = false
+			deniedVerbs = append(deniedVerbs, verb)
+		}
+		logger.Info("pre-flight RBAC check",
+			"verb", verb,
+			"resource", "investigationsessions",
+			"namespace", namespace,
+			"allowed", result.Status.Allowed,
+		)
 	}
-	result, err := k8s.AuthorizationV1().SelfSubjectAccessReviews().Create(
-		ctx, ssar, metav1.CreateOptions{},
-	)
-	if err != nil {
-		logger.Error(err, "pre-flight RBAC check failed")
-		return
+	if !allAllowed {
+		logger.Info("WARNING: ServiceAccount lacks permissions on investigationsessions — session controller may fail",
+			"denied_verbs", strings.Join(deniedVerbs, ","),
+		)
 	}
-	logger.Info("pre-flight RBAC check",
-		"verb", "watch",
-		"resource", "investigationsessions",
-		"namespace", namespace,
-		"allowed", result.Status.Allowed,
-	)
-	if !result.Status.Allowed {
-		logger.Info("WARNING: ServiceAccount lacks 'watch' permission on investigationsessions — session controller may fail")
+	if auditor != nil {
+		auditor.Emit(ctx, &audit.Event{
+			Type: audit.EventPreflightRBACCheck,
+			Detail: map[string]string{
+				"resource":     "investigationsessions",
+				"namespace":    namespace,
+				"all_allowed":  fmt.Sprintf("%t", allAllowed),
+				"denied_verbs": strings.Join(deniedVerbs, ","),
+			},
+		})
 	}
 }
 

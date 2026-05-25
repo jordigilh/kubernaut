@@ -39,6 +39,10 @@ const (
 	EventConfigReloaded EventType = "config.reloaded"
 	EventConfigRejected EventType = "config.rejected"
 
+	// AU-2: Pre-flight startup diagnostics (SI-10 / AC-6)
+	EventPreflightCRDCheck  EventType = "preflight.crd_check"
+	EventPreflightRBACCheck EventType = "preflight.rbac_check"
+
 	// Consolidated from rbac.denied + mcp.tool_denied (Issue #1156)
 	EventAuthAccessDenied EventType = "auth.access_denied"
 	// Consolidated from tool.invoked + mcp.tool_invoked (Issue #1156)
