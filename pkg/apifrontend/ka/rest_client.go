@@ -13,7 +13,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	gobreaker "github.com/sony/gobreaker/v2"
 
-	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/requestid"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/resilience"
 )
@@ -46,9 +45,7 @@ func NewClient(cfg Config, metrics ...*ClientMetrics) *Client {
 	if underlying == nil {
 		underlying = http.DefaultTransport
 	}
-	var baseTransport http.RoundTripper = &auth.ContextJWTDelegationTransport{
-		Base: &requestid.Transport{Base: underlying},
-	}
+	var baseTransport http.RoundTripper = &requestid.Transport{Base: underlying}
 
 	// Build the resilience transport chain: CB -> Retry -> Auth/Base
 	var retryCounter *prometheus.CounterVec

@@ -28,8 +28,10 @@ import (
 
 // CompleteNoActionInput defines the input schema for the kubernaut_complete_no_action tool.
 type CompleteNoActionInput struct {
-	RRID   string `json:"rr_id"`
-	Reason string `json:"reason,omitempty"`
+	RRID             string   `json:"rr_id"`
+	Reason           string   `json:"reason,omitempty"`
+	ActingUser       string   `json:"acting_user,omitempty"`
+	ActingUserGroups []string `json:"acting_user_groups,omitempty"`
 }
 
 // CompleteNoActionOutput defines the output schema for the kubernaut_complete_no_action tool.

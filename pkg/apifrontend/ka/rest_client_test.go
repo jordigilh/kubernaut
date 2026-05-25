@@ -15,6 +15,18 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
 )
 
+// staticBearerTransport injects a fixed bearer token into outgoing requests,
+// simulating the SA token transport pattern used in production.
+type staticBearerTransport struct {
+	token string
+}
+
+func (t *staticBearerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	req = req.Clone(req.Context())
+	req.Header.Set("Authorization", "Bearer "+t.token)
+	return http.DefaultTransport.RoundTrip(req)
+}
+
 var _ = Describe("KA REST Client", func() {
 	var (
 		ctx    context.Context
@@ -89,7 +101,7 @@ var _ = Describe("KA REST Client", func() {
 		Expect(err).NotTo(HaveOccurred())
 	})
 
-	It("UT-AF-110-005: forwards context JWT via Authorization header (ADR-013)", func() {
+	It("UT-AF-110-005: does not inject context JWT (superseded by #1287 SA token model)", func() {
 		var capturedAuth string
 		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			capturedAuth = r.Header.Get("Authorization")
@@ -104,7 +116,8 @@ var _ = Describe("KA REST Client", func() {
 		})
 		_, err := client.Analyze(ctx, ka.AnalyzeRequest{})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(capturedAuth).To(Equal("Bearer jwt-alice-123"))
+		Expect(capturedAuth).To(BeEmpty(),
+			"REST client no longer injects context JWT — AF uses SA token transport")
 	})
 
 	It("UT-AF-110-005b: no Authorization header when no identity in context", func() {
@@ -120,12 +133,12 @@ var _ = Describe("KA REST Client", func() {
 		Expect(capturedAuth).To(BeEmpty())
 	})
 
-	It("UT-AF-110-005c: rejects expired JWT (fail-closed per ADR-013)", func() {
+	It("UT-AF-110-005c: request reaches KA even with expired JWT in context (SA token model)", func() {
 		var requestReachedKA bool
 		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			requestReachedKA = true
 			w.WriteHeader(http.StatusAccepted)
-			_ = json.NewEncoder(w).Encode(map[string]string{"session_id": "should-not-reach"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"session_id": "sess-ok"})
 		}))
 		client := ka.NewClient(ka.Config{BaseURL: server.URL})
 		ctx = auth.WithUserIdentity(ctx, &auth.UserIdentity{
@@ -134,11 +147,13 @@ var _ = Describe("KA REST Client", func() {
 			ExpiresAt: time.Now().Add(-1 * time.Minute),
 		})
 		_, err := client.Analyze(ctx, ka.AnalyzeRequest{})
-		Expect(err).To(HaveOccurred(), "expired JWT must be rejected")
-		Expect(requestReachedKA).To(BeFalse(), "request must NOT reach KA with expired token")
+		Expect(err).NotTo(HaveOccurred(),
+			"expired JWT in context should not block request — SA token is used")
+		Expect(requestReachedKA).To(BeTrue(),
+			"request should reach KA regardless of context JWT state")
 	})
 
-	It("UT-AF-110-005d: Status forwards context JWT", func() {
+	It("UT-AF-110-005d: Status does not forward context JWT", func() {
 		var capturedAuth string
 		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			capturedAuth = r.Header.Get("Authorization")
@@ -152,10 +167,11 @@ var _ = Describe("KA REST Client", func() {
 		})
 		_, err := client.Status(ctx, "sess-1")
 		Expect(err).NotTo(HaveOccurred())
-		Expect(capturedAuth).To(Equal("Bearer jwt-bob-456"))
+		Expect(capturedAuth).To(BeEmpty(),
+			"Status should not inject context JWT")
 	})
 
-	It("UT-AF-110-005e: StreamEvents forwards context JWT", func() {
+	It("UT-AF-110-005e: StreamEvents does not forward context JWT", func() {
 		var capturedAuth string
 		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			capturedAuth = r.Header.Get("Authorization")
@@ -170,10 +186,10 @@ var _ = Describe("KA REST Client", func() {
 		})
 		ch, err := client.StreamEvents(ctx, "sess-1")
 		Expect(err).NotTo(HaveOccurred())
-		// Drain channel to let the goroutine complete
 		for range ch {
 		}
-		Expect(capturedAuth).To(Equal("Bearer jwt-carol-789"))
+		Expect(capturedAuth).To(BeEmpty(),
+			"StreamEvents should not inject context JWT")
 	})
 
 	It("UT-AF-1189-050: StreamEvents rejects non-SSE Content-Type", func() {
@@ -204,5 +220,27 @@ var _ = Describe("KA REST Client", func() {
 		client := ka.NewClient(ka.Config{BaseURL: "http://127.0.0.1:1", CBMaxRequests: 1, CBFailureThreshold: 1})
 		_, err := client.Analyze(ctx, ka.AnalyzeRequest{})
 		Expect(err).To(HaveOccurred())
+	})
+
+	Describe("SA Token Transport (#1287)", func() {
+		It("UT-AF-1287-002: does NOT inject context JWT into Authorization header", func() {
+			var capturedAuth string
+			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				capturedAuth = r.Header.Get("Authorization")
+				w.WriteHeader(http.StatusAccepted)
+				_ = json.NewEncoder(w).Encode(map[string]string{"session_id": "sess-sa"})
+			}))
+
+			client := ka.NewClient(ka.Config{BaseURL: server.URL})
+			ctx = auth.WithUserIdentity(ctx, &auth.UserIdentity{
+				Username:  "alice@example.com",
+				RawToken:  "jwt-should-not-appear",
+				ExpiresAt: time.Now().Add(10 * time.Minute),
+			})
+			_, err := client.Analyze(ctx, ka.AnalyzeRequest{})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(capturedAuth).To(BeEmpty(),
+				"REST client should NOT inject context JWT — AF uses SA token transport configured by caller")
+		})
 	})
 })

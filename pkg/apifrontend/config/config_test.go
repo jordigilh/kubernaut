@@ -942,3 +942,62 @@ agent:
 		Expect(cfg.Agent.LLM.CustomHeaders[0].Name).To(Equal("X-Tenant-ID"))
 	})
 })
+
+var _ = Describe("AF SA Token Config (#1287)", func() {
+	It("UT-AF-1287-001: KABearerTokenFile parsed from YAML", func() {
+		data := []byte(`
+server:
+  port: 8443
+agent:
+  kaBaseURL: "http://ka:8080"
+  kaMCPEndpoint: "http://ka:8080/api/v1/mcp/"
+  dsBaseURL: "http://ds:9090"
+  kaBearerTokenFile: "/var/run/secrets/kubernetes.io/serviceaccount/token"
+logging:
+  level: INFO
+rateLimit:
+  ipRequestsPerSec: 100
+  userRequestsPerSec: 50
+shutdown:
+  drainSeconds: 15
+resilience:
+  ka:
+    cbFailureThreshold: 5
+  ds:
+    cbFailureThreshold: 3
+  k8s:
+    cbFailureThreshold: 5
+`)
+		cfg, err := config.Load(data)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.Agent.KABearerTokenFile).To(Equal("/var/run/secrets/kubernetes.io/serviceaccount/token"))
+	})
+
+	It("UT-AF-1287-003: missing KABearerTokenFile means empty (no auth)", func() {
+		data := []byte(`
+server:
+  port: 8443
+agent:
+  kaBaseURL: "http://ka:8080"
+  kaMCPEndpoint: "http://ka:8080/api/v1/mcp/"
+  dsBaseURL: "http://ds:9090"
+logging:
+  level: INFO
+rateLimit:
+  ipRequestsPerSec: 100
+  userRequestsPerSec: 50
+shutdown:
+  drainSeconds: 15
+resilience:
+  ka:
+    cbFailureThreshold: 5
+  ds:
+    cbFailureThreshold: 3
+  k8s:
+    cbFailureThreshold: 5
+`)
+		cfg, err := config.Load(data)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.Agent.KABearerTokenFile).To(BeEmpty())
+	})
+})
