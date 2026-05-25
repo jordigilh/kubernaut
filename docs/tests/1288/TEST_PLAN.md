@@ -137,8 +137,17 @@ KA's startup performs a `SelfSubjectAccessReview` for the `impersonate` verb. If
 
 ---
 
-## 16. Changelog
+## 16. FedRAMP Control Mapping
+
+| Test ID | Control | Behavior Verified |
+|---------|---------|-------------------|
+| UT-KA-1288-001 | AC-6 | MCP mounts unconditionally (no SSAR gate) |
+| UT-KA-1288-002 | AC-6 | No impersonation headers in enrichment hook |
+| UT-KA-1288-003 | AC-6 | No impersonation headers in interactive turns |
+
+## 17. Changelog
 
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-05-25 | Initial test plan |
+| 1.1 | 2026-05-25 | Added FedRAMP control mapping (F-10) |

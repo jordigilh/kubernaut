@@ -162,8 +162,29 @@ AF currently forwards the user's Keycloak JWT to KA via `ContextJWTDelegationTra
 
 ---
 
-## 16. Changelog
+## 16. FedRAMP Control Mapping
+
+| Test ID | Control | Behavior Verified |
+|---------|---------|-------------------|
+| UT-AF-1287-001 | IA-5 | KABearerTokenFile parsed from config |
+| UT-AF-1287-002 | IA-5 | REST client does NOT inject JWT from context |
+| UT-AF-1287-003 | IA-5 | Missing KABearerTokenFile means empty (no auth) |
+| UT-AF-1287-004 | IA-5 | bearerTokenTransport injects SA token from file |
+| UT-AF-1287-008 | IA-5 | Config rejects inaccessible token file |
+| UT-AF-1287-009 | AU-3 | SelectWorkflow includes acting_user in args |
+| UT-AF-1287-010 | AU-3 | DiscoverWorkflows includes acting_user in args |
+| UT-KA-1287-005 | AU-3 | KA schemas unmarshal acting_user |
+| UT-KA-1287-006 | AU-3 | KA prefers acting_user from payload |
+| UT-KA-1287-007 | AU-3 | KA falls back to middleware identity |
+| UT-KA-1287-011 | SC-5 | KA rate limiter accepts SA identity (accepted risk) |
+| IT-AF-1287-001 | IA-5, SC-7 | buildBackendDeps sends SA token to KA MCP mock |
+| IT-AF-1287-002 | IA-5 | REST client does NOT inject user JWT (SA token at transport layer) |
+| TC-E2E-SA-01 | IA-5 | AF authenticates to KA with SA token in live cluster |
+| TC-E2E-SA-02 | IA-5 | Expired caller JWT rejected at AF edge |
+
+## 17. Changelog
 
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-05-25 | Initial test plan |
+| 1.1 | 2026-05-25 | Added FedRAMP control mapping (F-10) |

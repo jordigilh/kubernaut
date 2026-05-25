@@ -1,8 +1,8 @@
-# DD-AUTH-MCP-001: MCP Endpoint Security and User Impersonation
+# DD-AUTH-MCP-001: MCP Endpoint Security — Trusted Intermediary Model
 
 **Status**: Accepted
 **Decision Date**: 2026-04-29
-**Version**: 2.0
+**Version**: 3.0
 **Confidence**: 95%
 **Deciders**: Architecture Team
 **Applies To**: kubernaut-agent, kubernaut-apifrontend
@@ -25,6 +25,7 @@
 |---------|------|--------|---------|
 | 1.0 | 2026-04-29 | AI-assisted | Initial design: Pattern B via SA token + Impersonate-* headers |
 | 2.0 | 2026-05-03 | AI-assisted | **BREAKING**: Pattern B rewritten for JWT-based identity delegation. Removed SA-token + Impersonate-header approach. Added multi-issuer architecture (KEP-3331 aligned). Forward-compatible with v1.6 SPIRE. PoC validated. AF team approved. |
+| 3.0 | 2026-05-25 | AI-assisted | **BREAKING**: JWT delegation replaced by SA token trusted intermediary (#1287). AF authenticates to KA using its own SA bearer token. User identity passed as `acting_user`/`acting_user_groups` in MCP tool payload for audit only, not KA authorization. Runtime K8s impersonation removed (#1288). |
 
 ---
 
