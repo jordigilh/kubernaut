@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -13,20 +14,39 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/go-logr/logr/funcr"
+	adksession "google.golang.org/adk/session"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
-	adksession "google.golang.org/adk/session"
 
 	v1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
-	agentpkg "github.com/jordigilh/kubernaut/pkg/apifrontend/agent"
 	controller "github.com/jordigilh/kubernaut/internal/controller/apifrontend"
+	agentpkg "github.com/jordigilh/kubernaut/pkg/apifrontend/agent"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/config"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
 )
 
-func newFuncrLogger(buf *bytes.Buffer) logr.Logger {
+// syncBuffer wraps bytes.Buffer with a mutex for concurrent access from
+// background goroutines (e.g. FileWatcher) and gomega Eventually pollers.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (s *syncBuffer) WriteString(str string) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.WriteString(str)
+}
+
+func (s *syncBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.String()
+}
+
+func newFuncrLogger(buf *syncBuffer) logr.Logger {
 	return funcr.New(func(prefix, args string) {
 		buf.WriteString(prefix + " " + args + "\n")
 	}, funcr.Options{Verbosity: 10})
@@ -67,7 +87,7 @@ var _ = Describe("Logger Wiring (#1274)", func() {
 			g.Expect(fetched.Status.DisconnectedAt).NotTo(BeNil(), "status update must propagate")
 		}, 10*time.Second, 200*time.Millisecond).Should(Succeed())
 
-		var buf bytes.Buffer
+		var buf syncBuffer
 		logger := newFuncrLogger(&buf)
 
 		r := controller.NewSessionCleanupReconciler(
@@ -84,7 +104,7 @@ var _ = Describe("Logger Wiring (#1274)", func() {
 	// log "session created" through logr so the JSON sink captures
 	// the sessionID, userID, and timestamp for compliance reporting.
 	It("IT-AF-1274-002: CRDSessionService emits create event through injected logr [AU-3]", func() {
-		var buf bytes.Buffer
+		var buf syncBuffer
 		logger := newFuncrLogger(&buf)
 
 		svc := session.NewCRDSessionService(
@@ -103,7 +123,7 @@ var _ = Describe("Logger Wiring (#1274)", func() {
 	// AU-3: A2A task launch is auditable. The launcher must accept a
 	// logr.Logger so task lifecycle events flow through the JSON sink.
 	It("IT-AF-1274-003: A2A launcher accepts logr without panic [AU-3]", func() {
-		logger := newFuncrLogger(&bytes.Buffer{})
+		logger := newFuncrLogger(&syncBuffer{})
 
 		rootAgent, _, err := agentpkg.NewRootAgent(agentpkg.DefaultTestConfig())
 		Expect(err).NotTo(HaveOccurred())
@@ -136,7 +156,7 @@ var _ = Describe("Logger Wiring (#1274)", func() {
 		initial := []byte("logging:\n  level: INFO\n")
 		Expect(os.WriteFile(cfgPath, initial, 0o644)).To(Succeed())
 
-		var buf bytes.Buffer
+		var buf syncBuffer
 		logger := newFuncrLogger(&buf)
 
 		w, err := config.NewFileWatcher(cfgPath, func([]byte) error { return nil }, config.WithLogger(logger))
