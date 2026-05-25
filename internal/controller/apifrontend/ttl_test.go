@@ -361,7 +361,7 @@ var _ = Describe("SessionCleanupReconciler audit emission", func() {
 		events := emitter.Events()
 		Expect(events).To(HaveLen(1))
 		Expect(events[0].Type).To(Equal(audit.EventSessionAutoCancelled))
-		Expect(events[0].Detail["session_name"]).To(Equal("sess-audit-disc"))
+		Expect(events[0].Detail["session_id"]).To(Equal("sess-audit-disc"))
 	})
 })
 

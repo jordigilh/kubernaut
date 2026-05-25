@@ -164,9 +164,9 @@ func (r *SessionCleanupReconciler) handleDisconnected(ctx context.Context, sess 
 		"elapsed", elapsed.String(),
 	)
 	r.emitAudit(ctx, audit.EventSessionAutoCancelled, map[string]string{
-		"session_name": sess.Name,
-		"phase":   string(v1alpha1.SessionPhaseCancelled),
-		"elapsed": elapsed.String(),
+		"session_id": sess.Name,
+		"phase":      string(v1alpha1.SessionPhaseCancelled),
+		"elapsed":    elapsed.String(),
 	})
 	r.incTTLAction("cancel")
 	return ctrl.Result{}, nil
@@ -196,9 +196,9 @@ func (r *SessionCleanupReconciler) handleTerminal(ctx context.Context, sess *v1a
 		"elapsed", elapsed.String(),
 	)
 	r.emitAudit(ctx, audit.EventSessionRetentionDeleted, map[string]string{
-		"session_name": sess.Name,
-		"phase":   string(sess.Status.Phase),
-		"elapsed": elapsed.String(),
+		"session_id": sess.Name,
+		"phase":      string(sess.Status.Phase),
+		"elapsed":    elapsed.String(),
 	})
 	r.incTTLAction("delete")
 

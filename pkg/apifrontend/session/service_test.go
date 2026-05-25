@@ -805,8 +805,8 @@ var _ = Describe("CRDSessionService", func() {
 			}
 			Expect(phaseEvent).NotTo(BeNil())
 			Expect(phaseEvent.UserID).To(Equal("test-actor"))
-			Expect(phaseEvent.Detail["from"]).To(Equal(string(v1alpha1.SessionPhaseActive)))
-			Expect(phaseEvent.Detail["to"]).To(Equal(string(v1alpha1.SessionPhaseCompleted)))
+			Expect(phaseEvent.Detail["from_phase"]).To(Equal(string(v1alpha1.SessionPhaseActive)))
+			Expect(phaseEvent.Detail["to_phase"]).To(Equal(string(v1alpha1.SessionPhaseCompleted)))
 		})
 	})
 })

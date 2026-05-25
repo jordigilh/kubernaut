@@ -33,6 +33,13 @@ type ReloadCallback func(newContent []byte) error
 // FileWatcher watches a mounted ConfigMap file and triggers callbacks on change.
 // Adapted from kubernaut DD-INFRA-001 pattern (pkg/shared/hotreload).
 //
+// CM-3(5) limitation (accepted): The current implementation is VALIDATE-ONLY.
+// On config change the callback parses and validates the new YAML, but the
+// running process keeps the original startup config. Full hot-apply would
+// require coordinated updates to the HTTP listener, auth pipeline, and rate
+// limiter — deferred to v1.6 (issue #TBD). The audit trail still records
+// every accepted or rejected reload for FedRAMP CM-3.
+//
 // Kubernetes ConfigMap volume mounts use a "..data" symlink that is atomically
 // swapped on update. The watcher monitors the parent directory and detects
 // both direct file writes and symlink rotation (CREATE on "..data").
@@ -175,11 +182,23 @@ func (w *FileWatcher) loadInitial() error {
 		return fmt.Errorf("callback rejected initial content: %w", err)
 	}
 
+	hash := computeHash(content)
 	w.mu.Lock()
 	w.lastContent = content
-	w.lastHash = computeHash(content)
+	w.lastHash = hash
 	w.lastReload = time.Now()
 	w.mu.Unlock()
+
+	if w.auditor != nil {
+		w.auditor.Emit(context.Background(), &audit.Event{
+			Type: audit.EventConfigReloaded,
+			Detail: map[string]string{
+				"path":           w.path,
+				"config_version": hash,
+				"trigger":        "initial_load",
+			},
+		})
+	}
 	return nil
 }
 
@@ -230,6 +249,15 @@ func (w *FileWatcher) handleFileChange(ctx context.Context) {
 	content, err := w.readFileLimited()
 	if err != nil {
 		w.logger.Info("WARNING: config reload: read file failed", "path", w.path, "error", err)
+		if w.auditor != nil {
+			w.auditor.Emit(ctx, &audit.Event{
+				Type: audit.EventConfigRejected,
+				Detail: map[string]string{
+					"path":             w.path,
+					"rejection_reason": security.RedactError(fmt.Errorf("read failed: %w", err)),
+				},
+			})
+		}
 		return
 	}
 
@@ -249,9 +277,9 @@ func (w *FileWatcher) handleFileChange(ctx context.Context) {
 			w.auditor.Emit(ctx, &audit.Event{
 				Type: audit.EventConfigRejected,
 				Detail: map[string]string{
-					"path":   w.path,
-					"hash":   newHash,
-					"reason": security.RedactError(err),
+					"path":             w.path,
+					"config_version":   newHash,
+					"rejection_reason": security.RedactError(err),
 				},
 			})
 		}
@@ -263,8 +291,8 @@ func (w *FileWatcher) handleFileChange(ctx context.Context) {
 		w.auditor.Emit(ctx, &audit.Event{
 			Type: audit.EventConfigReloaded,
 			Detail: map[string]string{
-				"path": w.path,
-				"hash": newHash,
+				"path":           w.path,
+				"config_version": newHash,
 			},
 		})
 	}
