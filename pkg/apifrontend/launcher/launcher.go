@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/go-logr/logr"
 
@@ -85,7 +86,9 @@ func NewA2AHandler(cfg A2AConfig) (http.Handler, error) { //nolint:gocritic // h
 	inner := adka2a.NewExecutor(execCfg)
 	executor := NewStreamingExecutor(inner, log, cfg.BridgeMetrics, cfg.SessionPhaseUpdater)
 	reqHandler := a2asrv.NewHandler(executor)
-	httpHandler := a2asrv.NewJSONRPCHandler(reqHandler)
+	httpHandler := a2asrv.NewJSONRPCHandler(reqHandler,
+		a2asrv.WithKeepAlive(1*time.Second),
+	)
 
 	return httpHandler, nil
 }
