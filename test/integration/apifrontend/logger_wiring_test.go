@@ -48,7 +48,7 @@ func (s *syncBuffer) String() string {
 
 func newFuncrLogger(buf *syncBuffer) logr.Logger {
 	return funcr.New(func(prefix, args string) {
-		buf.WriteString(prefix + " " + args + "\n")
+		_, _ = buf.WriteString(prefix + " " + args + "\n")
 	}, funcr.Options{Verbosity: 10})
 }
 
