@@ -29,7 +29,8 @@ var _ = Describe("Triage Orchestrator", func() {
 			Description: "High error rate on web-api",
 			Labels: map[string]string{
 				"namespace": "prod",
-				"pod":       "web-api-abc123",
+				"kind":      "Deployment",
+				"name":      "web-api",
 			},
 		}
 		defaultCfg = severity.DefaultConfig()
@@ -39,7 +40,7 @@ var _ = Describe("Triage Orchestrator", func() {
 		It("UT-AF-T-023: firing alert with severity=critical returns critical, source=firing_alert", func() {
 			mockProm := &mockPromClient{
 				alerts: []prom.Alert{
-					{Labels: map[string]string{"alertname": "HighCPU", "namespace": "prod", "severity": "critical"}, State: "firing"},
+					{Labels: map[string]string{"alertname": "HighCPU", "namespace": "prod", "kind": "Deployment", "name": "web-api", "severity": "critical"}, State: "firing"},
 				},
 			}
 			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
@@ -53,9 +54,9 @@ var _ = Describe("Triage Orchestrator", func() {
 		It("UT-AF-T-024: multiple firing alerts returns highest severity", func() {
 			mockProm := &mockPromClient{
 				alerts: []prom.Alert{
-					{Labels: map[string]string{"alertname": "LowDisk", "namespace": "prod", "severity": "low"}, State: "firing"},
-					{Labels: map[string]string{"alertname": "HighCPU", "namespace": "prod", "severity": "critical"}, State: "firing"},
-					{Labels: map[string]string{"alertname": "HighMem", "namespace": "prod", "severity": "high"}, State: "firing"},
+					{Labels: map[string]string{"alertname": "LowDisk", "namespace": "prod", "kind": "Deployment", "name": "web-api", "severity": "low"}, State: "firing"},
+					{Labels: map[string]string{"alertname": "HighCPU", "namespace": "prod", "kind": "Deployment", "name": "web-api", "severity": "critical"}, State: "firing"},
+					{Labels: map[string]string{"alertname": "HighMem", "namespace": "prod", "kind": "Deployment", "name": "web-api", "severity": "high"}, State: "firing"},
 				},
 			}
 			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
