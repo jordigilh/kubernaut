@@ -64,6 +64,24 @@ subjects:
     name: apifrontend
     namespace: {{ .Release.Namespace }}
 ---
+# RoleBinding granting AF SA access to KA service (trusted intermediary, #1287)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: apifrontend-kubernaut-agent-access
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: apifrontend
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kubernaut-agent-client
+subjects:
+  - kind: ServiceAccount
+    name: apifrontend
+    namespace: {{ .Release.Namespace }}
+---
 apiVersion: v1
 kind: ConfigMap
 metadata:

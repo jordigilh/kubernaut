@@ -22,5 +22,13 @@ spec:
         - podSelector:
             matchLabels:
               app: aianalysis-controller
+    # Trusted intermediary traffic from apifrontend (#1287)
+    - ports:
+        - port: 8443
+          protocol: TCP
+      from:
+        - podSelector:
+            matchLabels:
+              app: apifrontend
     {{- include "kubernaut.np.metricsIngress" $ | nindent 4 }}
 {{- end }}

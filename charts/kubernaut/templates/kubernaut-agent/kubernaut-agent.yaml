@@ -22,7 +22,6 @@ rules:
     resources:
       - pods
       - pods/log
-      - events
       - services
       - endpoints
       - configmaps
@@ -35,6 +34,9 @@ rules:
       - resourcequotas
       - serviceaccounts
     verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list", "watch", "create", "patch"]
   - apiGroups: ["apps"]
     resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
     verbs: ["get", "list", "watch"]
@@ -88,6 +90,10 @@ rules:
   - apiGroups: ["monitoring.coreos.com"]
     resources: ["prometheusrules", "servicemonitors", "podmonitors", "probes"]
     verbs: ["get", "list", "watch"]
+  # ── Kubernaut CRDs (#1287) ──────────────────────────────────────────────
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["remediationrequests"]
+    verbs: ["get", "list"]
   # #1288: Impersonation RBAC removed — KA uses its own SA for all K8s API
   # calls. User identity is passed in MCP tool arguments for audit only.
 ---
