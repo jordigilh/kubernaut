@@ -29,6 +29,11 @@ type A2AConfig struct {
 	Auditor        audit.Emitter
 	BridgeMetrics  BridgeMetrics
 
+	// SessionPhaseUpdater enables disconnect detection (BR-SESS-003).
+	// When set, StreamingExecutor transitions materialized sessions to
+	// Disconnected on client SSE disconnect.
+	SessionPhaseUpdater SessionPhaseUpdater
+
 	// BeforeExecute is called before each A2A execution with the request context.
 	// The context already contains the UserIdentity from auth middleware.
 	BeforeExecute func(ctx context.Context) (context.Context, error)
@@ -78,7 +83,7 @@ func NewA2AHandler(cfg A2AConfig) (http.Handler, error) { //nolint:gocritic // h
 	}
 
 	inner := adka2a.NewExecutor(execCfg)
-	executor := NewStreamingExecutor(inner, log, cfg.BridgeMetrics)
+	executor := NewStreamingExecutor(inner, log, cfg.BridgeMetrics, cfg.SessionPhaseUpdater)
 	reqHandler := a2asrv.NewHandler(executor)
 	httpHandler := a2asrv.NewJSONRPCHandler(reqHandler)
 

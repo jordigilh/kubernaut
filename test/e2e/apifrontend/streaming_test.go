@@ -142,12 +142,56 @@ var _ = Describe("Investigation Streaming (G3)", Label("e2e", "phase3", "g3"), f
 	})
 
 	It("TC-E2E-STREAM-03: Client disconnect -> session phase transitions to Disconnected", func() {
-		Skip("Active→Disconnected transition on client disconnect is not yet implemented (deferred to PR7 — session hydration)")
+		streamCtx, streamCancel := context.WithCancel(context.Background())
+
+		prompt := "Create a remediation request for deployment web in default namespace"
+		resp, err := a2aSSEPost(streamCtx, a2aMessageStream("stream-03-disconnect", prompt))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+		// Drain SSE frames until stream completes or times out.
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			_, _ = io.Copy(io.Discard, resp.Body)
+		}()
+
+		// Wait for the IS CRD to materialize in Active phase.
+		kctlCtx := context.Background()
+		var isName string
+		Eventually(func() string {
+			list := listInvestigationSessions(kctlCtx)
+			for _, it := range list.Items {
+				if it.Spec.A2ATaskID == "stream-03-disconnect" && it.Status.Phase == "Active" {
+					isName = it.Metadata.Name
+					return it.Status.Phase
+				}
+			}
+			return ""
+		}, 60*time.Second, 2*time.Second).Should(Equal("Active"),
+			"IS CRD must reach Active phase after af_create_rr")
+
+		// Simulate client disconnect by canceling the SSE context.
+		_ = resp.Body.Close()
+		streamCancel()
+		<-done
+
+		// Assert the IS CRD transitions to Disconnected.
+		Eventually(func() string {
+			list := listInvestigationSessions(kctlCtx)
+			for _, it := range list.Items {
+				if it.Metadata.Name == isName {
+					return it.Status.Phase
+				}
+			}
+			return ""
+		}, 30*time.Second, 2*time.Second).Should(Equal("Disconnected"),
+			"IS CRD must transition to Disconnected after SSE disconnect (BR-SESS-003, SI-4)")
 	})
 
 	It("TC-E2E-STREAM-04 / TC-E2E-SSE-CAP-01: Connection cap enforcement", func() {
-		Skip("Unreliable in ordered E2E suite: server-side A2A handlers from STREAM-01/02 hold tracker slots after client disconnect (cap enforcement is tested at unit/integration level)")
-
+		// STREAM-03 ensures handler slots are released promptly on client disconnect,
+		// making cap enforcement reliable in the ordered suite.
 		maxStr := getEnvOrDefault("AF_E2E_MAX_SSE", "5")
 		maxSSE := 5
 		var parsed int
