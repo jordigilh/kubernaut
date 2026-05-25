@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -159,6 +160,22 @@ func DominantEventReason(events []EventSummary) string {
 		}
 	}
 	return bestReason
+}
+
+// FilterRelatedPodEvents returns events whose InvolvedName starts with the
+// owner resource name followed by a dash. This captures pods owned by a
+// Deployment/StatefulSet/ReplicaSet (e.g., "memory-eater-abc123-xyz" belongs
+// to Deployment "memory-eater"). An exact name match without the dash suffix
+// is excluded because K8s pods always have a hash suffix.
+func FilterRelatedPodEvents(events []EventSummary, ownerName string) []EventSummary {
+	prefix := ownerName + "-"
+	var filtered []EventSummary
+	for i := range events {
+		if strings.HasPrefix(events[i].InvolvedName, prefix) {
+			filtered = append(filtered, events[i])
+		}
+	}
+	return filtered
 }
 
 // NewKubectlListEventsTool creates the kubectl_list_events tool.

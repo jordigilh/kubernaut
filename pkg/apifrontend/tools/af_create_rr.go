@@ -221,17 +221,23 @@ func HandleCreateRR(ctx context.Context, client dynamic.Interface, namespace str
 // deriveSignalName selects a grounded signal name using a priority cascade:
 //  1. Triager AlertName (from Prometheus firing/pending alert — most specific)
 //  2. Triager RuleName (from inactive rule match — known rule, not yet firing)
-//  3. Dominant K8s event reason for the target resource (observable cluster signal)
+//  3a. Dominant K8s event reason on the target resource (e.g., Deployment)
+//  3b. Dominant K8s event reason on Pods owned by the target (name-prefix match)
 //  4. Fallback: "unknown" (no grounded infrastructure signal found)
 //
 // The signal name is critical: KA uses it to drive investigation behavior.
 // Every tier above the fallback provides a meaningful infrastructure signal.
 //
-// Tier 3 uses DominantEventReason which filters out Normal lifecycle events
-// (F-SIG-08): ScalingReplicaSet, Scheduled, Pulled, Created, etc. are not
-// failure signals and would mislead KA's scenario detection. When only
-// lifecycle events exist (e.g., AF creates an RR before the target has
-// crashed), this tier returns "" and the cascade falls to "unknown".
+// Tier 3a queries events on the target resource kind (e.g., Deployment).
+// Tier 3b cascades to Pod-level events when 3a finds no operationally
+// significant signal. This is necessary because failure events like BackOff,
+// OOMKilled, and CrashLoopBackOff are emitted on Pods, not on the owning
+// Deployment. Pod events are filtered by name prefix (e.g., "memory-eater-")
+// to scope to pods belonging to the specific target resource.
+//
+// Both tiers use DominantEventReason which filters out Normal lifecycle
+// events (F-SIG-08): ScalingReplicaSet, Scheduled, Pulled, Created, etc.
+// are not failure signals and would mislead KA's scenario detection.
 func deriveSignalName(ctx context.Context, client dynamic.Interface, namespace string, args *CreateRRArgs, triageResult *severity.TriageResult) string {
 	if triageResult != nil {
 		if triageResult.AlertName != "" {
@@ -243,6 +249,7 @@ func deriveSignalName(ctx context.Context, client dynamic.Interface, namespace s
 	}
 
 	if client != nil {
+		// Tier 3a: events on the target resource itself (e.g., Deployment)
 		evResult, err := HandleListEvents(ctx, client, ListEventsArgs{
 			Namespace: namespace,
 			Kind:      args.Kind,
@@ -250,6 +257,23 @@ func deriveSignalName(ctx context.Context, client dynamic.Interface, namespace s
 		if err == nil && len(evResult.Events) > 0 {
 			if dominant := DominantEventReason(evResult.Events); dominant != "" {
 				return dominant
+			}
+		}
+
+		// Tier 3b: Pod-level events for pods owned by the target resource.
+		// BackOff, OOMKilled, CrashLoopBackOff are emitted on Pods, not on
+		// the owning Deployment/StatefulSet. Filter by name prefix to scope
+		// to pods belonging to this specific owner.
+		if args.Kind != "Pod" {
+			podResult, err := HandleListEvents(ctx, client, ListEventsArgs{
+				Namespace: namespace,
+				Kind:      "Pod",
+			})
+			if err == nil && len(podResult.Events) > 0 {
+				related := FilterRelatedPodEvents(podResult.Events, args.Name)
+				if dominant := DominantEventReason(related); dominant != "" {
+					return dominant
+				}
 			}
 		}
 	}

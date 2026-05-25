@@ -273,6 +273,38 @@ var _ = Describe("DominantEventReason (#1282 F-SIG)", func() {
 	})
 })
 
+var _ = Describe("FilterRelatedPodEvents (#1282 F-SIG)", func() {
+	It("UT-AF-1282-SIG-016: filters pods by owner name prefix", func() {
+		events := []tools.EventSummary{
+			{Reason: "BackOff", InvolvedName: "web-abc123-xyz", InvolvedKind: "Pod", Type: "Warning", Count: 3},
+			{Reason: "OOMKilling", InvolvedName: "database-def456", InvolvedKind: "Pod", Type: "Warning", Count: 1},
+			{Reason: "Pulled", InvolvedName: "web-abc123-xyz", InvolvedKind: "Pod", Type: "Normal", Count: 1},
+		}
+		filtered := tools.FilterRelatedPodEvents(events, "web")
+		Expect(filtered).To(HaveLen(2))
+		for _, ev := range filtered {
+			Expect(ev.InvolvedName).To(HavePrefix("web-"))
+		}
+	})
+
+	It("UT-AF-1282-SIG-017: returns empty when no pods match", func() {
+		events := []tools.EventSummary{
+			{Reason: "BackOff", InvolvedName: "database-abc", InvolvedKind: "Pod", Type: "Warning", Count: 1},
+		}
+		filtered := tools.FilterRelatedPodEvents(events, "web")
+		Expect(filtered).To(BeEmpty())
+	})
+
+	It("UT-AF-1282-SIG-018: exact name match without dash suffix is excluded", func() {
+		events := []tools.EventSummary{
+			{Reason: "BackOff", InvolvedName: "web", InvolvedKind: "Pod", Type: "Warning", Count: 1},
+		}
+		filtered := tools.FilterRelatedPodEvents(events, "web")
+		Expect(filtered).To(BeEmpty(),
+			"exact match 'web' should not match prefix 'web-' (pods always have hash suffix)")
+	})
+})
+
 var _ = Describe("EventSummary mixed types (#1282 F-EVT)", func() {
 	It("UT-AF-1282-EVT-003: mixed Warning/Normal events all have Type populated", func() {
 		evWarn := newUnstructuredEventWithType("prod", "ev-w", "OOMKilling", "killed", "Pod", "p1", "Warning")

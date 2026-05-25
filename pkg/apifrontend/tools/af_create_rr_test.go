@@ -349,6 +349,89 @@ var _ = Describe("af_create_rr (#1282 refactor)", func() {
 			"RuleName should take precedence over K8s events when AlertName is empty")
 	})
 
+	It("UT-AF-1282-SIG-013: Pod BackOff cascades when Deployment only has lifecycle events", func() {
+		deployEv := newUnstructuredEventWithType("prod", "ev-deploy", "ScalingReplicaSet", "Scaled up", "Deployment", "web", "Normal")
+		podEv := newUnstructuredEventWithType("prod", "ev-pod-bo", "BackOff", "Back-off restarting", "Pod", "web-abc123-xyz", "Warning")
+		client := newFakeClient(deployEv, podEv)
+
+		result, err := tools.HandleCreateRR(context.Background(), client, "prod", &tools.CreateRRArgs{
+			Kind: "Deployment", Name: "web", Description: "pod crash",
+		}, "user", nil, nil)
+		Expect(err).NotTo(HaveOccurred())
+
+		created, getErr := client.Resource(rrGVR).Namespace("prod").Get(
+			context.Background(), extractRRName(result.RRID), getOpts)
+		Expect(getErr).NotTo(HaveOccurred())
+
+		signalName, _, _ := unstructured.NestedString(created.Object, "spec", "signalName")
+		Expect(signalName).To(Equal("BackOff"),
+			"Pod-level BackOff should be found when Deployment only has Normal lifecycle events")
+	})
+
+	It("UT-AF-1282-SIG-014: Pod cascade skipped when target Kind is already Pod", func() {
+		podEv := newUnstructuredEventWithType("prod", "ev-pod", "Pulled", "image pulled", "Pod", "worker-1", "Normal")
+		client := newFakeClient(podEv)
+
+		result, err := tools.HandleCreateRR(context.Background(), client, "prod", &tools.CreateRRArgs{
+			Kind: "Pod", Name: "worker-1", Description: "pod check",
+		}, "user", nil, nil)
+		Expect(err).NotTo(HaveOccurred())
+
+		created, getErr := client.Resource(rrGVR).Namespace("prod").Get(
+			context.Background(), extractRRName(result.RRID), getOpts)
+		Expect(getErr).NotTo(HaveOccurred())
+
+		signalName, _, _ := unstructured.NestedString(created.Object, "spec", "signalName")
+		Expect(signalName).To(Equal("unknown"),
+			"Pod target with only lifecycle events should fall to unknown, not re-query Pod")
+	})
+
+	It("UT-AF-1282-SIG-015: Pod cascade filters unrelated pods by name prefix", func() {
+		deployEv := newUnstructuredEventWithType("prod", "ev-deploy", "ScalingReplicaSet", "Scaled up", "Deployment", "web", "Normal")
+		unrelatedPodEv := newUnstructuredEventWithType("prod", "ev-other", "OOMKilling", "killed", "Pod", "database-abc123", "Warning")
+		client := newFakeClient(deployEv, unrelatedPodEv)
+
+		result, err := tools.HandleCreateRR(context.Background(), client, "prod", &tools.CreateRRArgs{
+			Kind: "Deployment", Name: "web", Description: "check filter",
+		}, "user", nil, nil)
+		Expect(err).NotTo(HaveOccurred())
+
+		created, getErr := client.Resource(rrGVR).Namespace("prod").Get(
+			context.Background(), extractRRName(result.RRID), getOpts)
+		Expect(getErr).NotTo(HaveOccurred())
+
+		signalName, _, _ := unstructured.NestedString(created.Object, "spec", "signalName")
+		Expect(signalName).To(Equal("unknown"),
+			"OOMKilling on unrelated pod 'database-abc123' should not match Deployment 'web'")
+	})
+
+	It("UT-AF-1282-NS-008: triage matches firing alert when signal source is in different namespace", func() {
+		client := newFakeClient()
+		noopLLM := severity.NewNoopLLMTriager(logr.Discard())
+		cfg := severity.DefaultConfig()
+
+		mockProm := &alertOverridePromClient{
+			alerts: []prom.Alert{
+				{State: "firing", Labels: map[string]string{
+					"alertname": "HighCPU",
+					"namespace": "production",
+					"kind":      "Deployment",
+					"name":      "web-server",
+					"severity":  "critical",
+				}},
+			},
+		}
+		triager := severity.NewTriager(mockProm, noopLLM, cfg, logr.Discard())
+
+		result, err := tools.HandleCreateRR(context.Background(), client, "kubernaut-system", &tools.CreateRRArgs{
+			Kind: "Deployment", Name: "web-server", Description: "cross-ns triage",
+		}, "user", triager, nil)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Severity).To(Equal("critical"),
+			"triager should match alert by kind+name even when AF namespace differs from signal source namespace")
+		Expect(result.SeveritySource).To(Equal("firing_alert"))
+	})
+
 	It("UT-AF-1282-K8S: nil client returns ErrK8sUnavailable", func() {
 		_, err := tools.HandleCreateRR(context.Background(), nil, "prod", &tools.CreateRRArgs{
 			Kind: "Deployment", Name: "web", Description: "x",
