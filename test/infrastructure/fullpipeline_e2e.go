@@ -1083,17 +1083,16 @@ spec:
 // ============================================================================
 
 // deployAPIFrontendInFP deploys the API Frontend into the FP Kind cluster.
-// Reuses patterns from AF E2E infrastructure (test/e2e/apifrontend/infrastructure/setup.go)
-// but adapts for the FP cluster which already has KA, DataStorage, and mock-LLM deployed.
+// Delegates to shared AF deployment helpers in apifrontend_e2e.go.
 //
-// Deploys: DEX OIDC → AF CRDs → RBAC → ConfigMap (config) → Deployment + Service.
+// Deploys: DEX OIDC -> AF CRDs -> RBAC -> Deployment + Service (no coverage mount).
 // TLS cert (apifrontend-tls) is already created by GenerateInterServiceTLS in Phase 5.
 func deployAPIFrontendInFP(ctx context.Context, namespace, kubeconfigPath, afImageName string, writer io.Writer) error {
-	_, _ = fmt.Fprintln(writer, "  🌐 Deploying API Frontend (Issue #1189)...")
+	_, _ = fmt.Fprintln(writer, "  Deploying API Frontend (Issue #1189)...")
 	projectRoot := getProjectRoot()
 
-	// 1. Deploy DEX OIDC provider (reads from deploy/apifrontend/overlays/e2e/dex.yaml)
-	_, _ = fmt.Fprintln(writer, "    ├── DEX OIDC provider...")
+	// 1. Deploy DEX OIDC provider
+	_, _ = fmt.Fprintln(writer, "    DEX OIDC provider...")
 	dexPath := filepath.Join(projectRoot, "deploy", "apifrontend", "overlays", "e2e", "dex.yaml")
 	dexData, err := os.ReadFile(dexPath) //nolint:gosec // G304: test infrastructure path
 	if err != nil {
@@ -1108,7 +1107,7 @@ func deployAPIFrontendInFP(ctx context.Context, namespace, kubeconfigPath, afIma
 	}
 
 	// 2. Apply AF CRD
-	_, _ = fmt.Fprintln(writer, "    ├── AF CRDs...")
+	_, _ = fmt.Fprintln(writer, "    AF CRDs...")
 	crdPath := filepath.Join(projectRoot, "config", "crd", "bases", "kubernaut.ai_investigationsessions.yaml")
 	cmd = exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", crdPath)
 	cmd.Stdout = writer
@@ -1117,8 +1116,8 @@ func deployAPIFrontendInFP(ctx context.Context, namespace, kubeconfigPath, afIma
 		return fmt.Errorf("failed to apply AF CRD: %w", err)
 	}
 
-	// 3. RBAC (ServiceAccount, ClusterRole, ClusterRoleBinding, E2E user RBAC)
-	_, _ = fmt.Fprintln(writer, "    ├── RBAC...")
+	// 3. RBAC (ServiceAccount, ClusterRole, ClusterRoleBinding, personas, E2E users)
+	_, _ = fmt.Fprintln(writer, "    RBAC...")
 	afRBAC := fmt.Sprintf(`apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -1184,8 +1183,9 @@ subjects:
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to deploy AF RBAC: %w", err)
 	}
-	// Per-persona tool ClusterRoles + ClusterRoleBindings for SAR-based RBAC (ADR-021).
-	personaToolRBAC := fpPersonaToolClusterRolesYAML()
+
+	// Shared persona tool RBAC (ADR-021)
+	personaToolRBAC := PersonaToolClusterRolesYAML()
 	cmd = exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(personaToolRBAC)
 	cmd.Stdout = writer
@@ -1194,7 +1194,6 @@ subjects:
 		return fmt.Errorf("failed to deploy persona tool ClusterRoles: %w", err)
 	}
 
-	// E2E user RBAC for multi-role testing
 	userRBACPath := filepath.Join(projectRoot, "deploy", "apifrontend", "overlays", "e2e", "e2e-user-rbac.yaml")
 	userRBACData, err := os.ReadFile(userRBACPath) //nolint:gosec // G304
 	if err != nil {
@@ -1208,245 +1207,18 @@ subjects:
 		return fmt.Errorf("failed to deploy E2E user RBAC: %w", err)
 	}
 
-	// DataStorage client RoleBinding for AF audit trail writes
 	if err := CreateDataStorageAccessRoleBinding(ctx, namespace, kubeconfigPath, "apifrontend", writer); err != nil {
 		return fmt.Errorf("failed to create AF DataStorage RoleBinding: %w", err)
 	}
 
-	// 4. ConfigMap (AF config)
-	_, _ = fmt.Fprintln(writer, "    ├── ConfigMaps...")
-	configData, err := os.ReadFile(filepath.Join(projectRoot, "deploy", "apifrontend", "overlays", "e2e", "config.yaml")) //nolint:gosec // G304
-	if err != nil {
-		return fmt.Errorf("failed to read config.yaml: %w", err)
-	}
-	configManifest := fmt.Sprintf(`apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: apifrontend-config
-  namespace: %s
-data:
-  config.yaml: |
-%s
-`, namespace, indentYAMLLines(string(configData), 4))
-	cmd = exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
-	cmd.Stdin = strings.NewReader(configManifest)
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to create AF ConfigMaps: %w", err)
-	}
-
-	// 5. Deployment + Service (NodePort 30443)
-	_, _ = fmt.Fprintln(writer, "    ├── Deployment + Service...")
-	pullPolicy := "IfNotPresent"
-	if os.Getenv("IMAGE_REGISTRY") != "" {
-		pullPolicy = "Always"
-	}
-	deployManifest := fmt.Sprintf(`apiVersion: v1
-kind: Secret
-metadata:
-  name: apifrontend-llm-key
-  namespace: %[1]s
-type: Opaque
-stringData:
-  llm-api-key: "mock-key"
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: apifrontend
-  namespace: %[1]s
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: apifrontend
-  template:
-    metadata:
-      labels:
-        app: apifrontend
-    spec:
-      serviceAccountName: apifrontend
-      automountServiceAccountToken: true
-      containers:
-        - name: apifrontend
-          image: %[2]s
-          imagePullPolicy: %[3]s
-          ports:
-            - name: https
-              containerPort: 8443
-            - name: metrics
-              containerPort: 9090
-            - name: health
-              containerPort: 8081
-          env:
-            - name: POD_NAME
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.name
-            - name: POD_NAMESPACE
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.namespace
-          volumeMounts:
-            - name: config
-              mountPath: /etc/apifrontend
-              readOnly: true
-            - name: tls-certs
-              mountPath: /etc/apifrontend/tls
-              readOnly: true
-            - name: inter-service-ca
-              mountPath: /etc/apifrontend/inter-service-ca
-              readOnly: true
-            - name: llm-credentials
-              mountPath: /etc/apifrontend/llm-credentials
-              readOnly: true
-          readinessProbe:
-            httpGet:
-              path: /readyz
-              port: health
-            initialDelaySeconds: 10
-            periodSeconds: 5
-          livenessProbe:
-            httpGet:
-              path: /healthz
-              port: health
-            initialDelaySeconds: 30
-            periodSeconds: 15
-          resources:
-            requests:
-              memory: 64Mi
-              cpu: 50m
-            limits:
-              memory: 256Mi
-              cpu: 500m
-      volumes:
-        - name: config
-          configMap:
-            name: apifrontend-config
-            items:
-              - key: config.yaml
-                path: config.yaml
-        - name: tls-certs
-          secret:
-            secretName: apifrontend-tls
-            optional: false
-        - name: inter-service-ca
-          configMap:
-            name: inter-service-ca
-        - name: llm-credentials
-          secret:
-            secretName: apifrontend-llm-key
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: apifrontend
-  namespace: %[1]s
-spec:
-  type: NodePort
-  ports:
-    - name: https
-      port: 8443
-      targetPort: https
-      nodePort: 30443
-    - name: metrics
-      port: 9090
-      targetPort: metrics
-    - name: health
-      port: 8081
-      targetPort: health
-  selector:
-    app: apifrontend
-`, namespace, afImageName, pullPolicy)
-	cmd = exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
-	cmd.Stdin = strings.NewReader(deployManifest)
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-	if err := cmd.Run(); err != nil {
+	// 4. Deploy AF (shared function, no coverage mount in FP)
+	_, _ = fmt.Fprintln(writer, "    Deployment + Service...")
+	if err := DeployAPIFrontendService(ctx, kubeconfigPath, namespace, afImageName, false, writer); err != nil {
 		return fmt.Errorf("failed to deploy AF: %w", err)
 	}
 
-	_, _ = fmt.Fprintln(writer, "    └── ✅ API Frontend deployed")
+	_, _ = fmt.Fprintln(writer, "    API Frontend deployed")
 	return nil
-}
-
-// fpPersonaToolClusterRolesYAML generates the 6 per-persona ClusterRoles (with
-// kubernaut.ai/tools verb=use resourceNames) and 6 ClusterRoleBindings (mapping
-// DEX OIDC groups to the ClusterRoles). Mirrors the Helm chart template that
-// generates kubernaut-tool-{persona} ClusterRoles from values.yaml personas.
-func fpPersonaToolClusterRolesYAML() string {
-	type persona struct {
-		name  string
-		tools []string
-	}
-	personas := []persona{
-		{"sre", []string{
-			"kubernaut_list_remediations", "kubernaut_get_remediation", "kubernaut_approve",
-			"kubernaut_cancel_remediation", "kubernaut_watch", "kubernaut_start_investigation",
-			"kubernaut_poll_investigation", "kubernaut_discover_workflows", "kubernaut_select_workflow",
-			"kubernaut_present_decision", "kubernaut_list_workflows", "kubernaut_get_remediation_history",
-			"kubernaut_get_effectiveness", "kubernaut_get_audit_trail",
-			"kubectl_get", "kubectl_list", "kubectl_list_events",
-			"af_check_existing_rr", "af_create_rr",
-		}},
-		{"ai-orchestrator", []string{
-			"kubernaut_list_remediations", "kubernaut_get_remediation", "kubernaut_approve",
-			"kubernaut_cancel_remediation", "kubernaut_watch", "kubernaut_start_investigation",
-			"kubernaut_poll_investigation", "kubernaut_discover_workflows", "kubernaut_select_workflow",
-			"kubernaut_present_decision",
-			"kubectl_get", "kubectl_list", "kubectl_list_events",
-			"af_check_existing_rr", "af_create_rr",
-		}},
-		{"cicd", []string{
-			"kubernaut_list_remediations", "kubernaut_get_remediation", "kubernaut_watch",
-		}},
-		{"observability", []string{
-			"kubernaut_list_remediations", "kubernaut_get_remediation", "kubernaut_watch",
-			"kubernaut_get_effectiveness", "kubernaut_list_workflows",
-			"kubectl_get", "kubectl_list", "kubectl_list_events",
-		}},
-		{"l3-audit", []string{
-			"kubernaut_list_remediations", "kubernaut_get_remediation", "kubernaut_list_workflows",
-			"kubernaut_get_remediation_history", "kubernaut_get_effectiveness", "kubernaut_get_audit_trail",
-		}},
-		{"remediation-approver", []string{
-			"kubernaut_approve", "kubernaut_list_remediations", "kubernaut_get_remediation", "kubernaut_watch",
-		}},
-	}
-
-	var b strings.Builder
-	for _, p := range personas {
-		fmt.Fprintf(&b, `---
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: kubernaut-tool-%s
-rules:
-  - apiGroups: ["kubernaut.ai"]
-    resources: ["tools"]
-    verbs: ["use"]
-    resourceNames:
-`, p.name)
-		for _, t := range p.tools {
-			fmt.Fprintf(&b, "      - %q\n", t)
-		}
-		fmt.Fprintf(&b, `---
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: kubernaut-tool-%s-binding
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: kubernaut-tool-%s
-subjects:
-  - kind: Group
-    name: %s
-    apiGroup: rbac.authorization.k8s.io
-`, p.name, p.name, p.name)
-	}
-	return b.String()
 }
 
 // indentYAMLLines indents each non-empty line of s by the given number of spaces.
