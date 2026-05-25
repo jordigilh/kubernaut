@@ -2,7 +2,6 @@ package launcher
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -195,11 +194,17 @@ func summarizeWatch(resp map[string]any) string {
 }
 
 func summarizeCreateRR(resp map[string]any) string {
-	data, err := json.Marshal(resp)
-	if err != nil {
-		return "Remediation request created."
+	if exists, _ := resp["already_exists"].(bool); exists {
+		if rrid, ok := resp["rr_id"].(string); ok && rrid != "" {
+			return fmt.Sprintf("Remediation request already exists: %s", rrid)
+		}
+		return "Remediation request already exists."
 	}
-	return string(data)
+	msg, _ := resp["message"].(string)
+	if msg != "" {
+		return fmt.Sprintf("Remediation request created: %s", msg)
+	}
+	return "Remediation request created."
 }
 
 // buildStreamingPartConverter returns a GenAIPartConverter for streaming mode
