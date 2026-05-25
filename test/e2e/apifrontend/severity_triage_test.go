@@ -95,12 +95,15 @@ var _ = Describe("Severity Triage Pipeline (G12)", Label("e2e", "phase4", "g12")
 	}
 
 	// readRRFromCRD finds the most recently created RR whose name matches the
-	// pattern "rr-deployment-{deployName}-*" in the given namespace and returns
-	// severity, severitySource and signalName from its spec.
-	readRRFromCRD := func(namespace, deployName string) (severity, severitySource, signalName string, err error) {
+	// pattern "rr-deployment-{deployName}-*" and returns severity, severitySource
+	// and signalName from its spec.
+	// Post-#1282: AF always creates RRs in its resolved namespace (kubernaut-system),
+	// regardless of the namespace mentioned in the user prompt.
+	readRRFromCRD := func(deployName string) (severity, severitySource, signalName string, err error) {
+		afNamespace := "kubernaut-system"
 		prefix := fmt.Sprintf("rr-deployment-%s-", strings.ToLower(deployName))
 		rrList := &remediationv1alpha1.RemediationRequestList{}
-		if listErr := k8sClient.List(context.Background(), rrList, client.InNamespace(namespace)); listErr != nil {
+		if listErr := k8sClient.List(context.Background(), rrList, client.InNamespace(afNamespace)); listErr != nil {
 			return "", "", "", fmt.Errorf("list RemediationRequests failed: %w", listErr)
 		}
 
@@ -119,7 +122,7 @@ var _ = Describe("Severity Triage Pipeline (G12)", Label("e2e", "phase4", "g12")
 					nil
 			}
 		}
-		return "", "", "", fmt.Errorf("no RR matching prefix %q found in namespace %s", prefix, namespace)
+		return "", "", "", fmt.Errorf("no RR matching prefix %q found in namespace %s", prefix, afNamespace)
 	}
 
 	It("TC-E2E-SEV-01: Tier 1 — Firing alert", func() {
@@ -129,7 +132,7 @@ var _ = Describe("Severity Triage Pipeline (G12)", Label("e2e", "phase4", "g12")
 		Expect(strings.ToLower(text)).To(ContainSubstring("remediation request"),
 			"A2A response should confirm RR creation")
 
-		sev, src, _, rrErr := readRRFromCRD("default", "test-firing-target")
+		sev, src, _, rrErr := readRRFromCRD("test-firing-target")
 		Expect(rrErr).NotTo(HaveOccurred())
 		Expect(sev).To(Equal("critical"))
 		Expect(src).To(Equal("firing_alert"))
@@ -140,7 +143,7 @@ var _ = Describe("Severity Triage Pipeline (G12)", Label("e2e", "phase4", "g12")
 		text, err := a2aCreateRR("default", "test-pending-target")
 		Expect(err).NotTo(HaveOccurred(), text)
 
-		_, src, _, rrErr := readRRFromCRD("default", "test-pending-target")
+		_, src, _, rrErr := readRRFromCRD("test-pending-target")
 		Expect(rrErr).NotTo(HaveOccurred())
 		Expect(src).To(BeElementOf("pending_alert", "firing_alert", "llm_rule_informed", "llm_triage"),
 			"expected Prometheus-informed source, got: %s", src)
@@ -164,7 +167,7 @@ var _ = Describe("Severity Triage Pipeline (G12)", Label("e2e", "phase4", "g12")
 		text, toolErr := a2aCreateRR("sev-tier2-ns", "test-inactive-target")
 		Expect(toolErr).NotTo(HaveOccurred(), text)
 
-		_, src, _, rrErr := readRRFromCRD("sev-tier2-ns", "test-inactive-target")
+		_, src, _, rrErr := readRRFromCRD("test-inactive-target")
 		Expect(rrErr).NotTo(HaveOccurred())
 		Expect(src).To(BeElementOf("rule_evaluation", "llm_rule_informed", "llm_triage"),
 			"expected Tier 2 or Tier 2.5 source, got: %s", src)
@@ -175,7 +178,7 @@ var _ = Describe("Severity Triage Pipeline (G12)", Label("e2e", "phase4", "g12")
 		text, err := a2aCreateRR("no-data-ns", "test-nodata-target")
 		Expect(err).NotTo(HaveOccurred(), text)
 
-		_, src, _, rrErr := readRRFromCRD("no-data-ns", "test-nodata-target")
+		_, src, _, rrErr := readRRFromCRD("test-nodata-target")
 		Expect(rrErr).NotTo(HaveOccurred())
 		Expect(src).To(BeElementOf("llm_rule_informed", "llm_triage"),
 			"expected Tier 2.5 or Tier 3 source, got: %s", src)
@@ -185,7 +188,7 @@ var _ = Describe("Severity Triage Pipeline (G12)", Label("e2e", "phase4", "g12")
 		text, err := a2aCreateRR("no-rules-ns", "test-norules-target")
 		Expect(err).NotTo(HaveOccurred(), text)
 
-		_, src, _, rrErr := readRRFromCRD("no-rules-ns", "test-norules-target")
+		_, src, _, rrErr := readRRFromCRD("test-norules-target")
 		Expect(rrErr).NotTo(HaveOccurred())
 		Expect(src).To(Equal("llm_triage"))
 	})
