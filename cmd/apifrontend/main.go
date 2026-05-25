@@ -653,7 +653,8 @@ func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps,
 		sessionSvcForAgent = sessInfra.SessionService
 	}
 	rootAgent, _, err := agentpkg.NewRootAgent(agentpkg.AgentConfig{
-		Instruction:      agentpkg.DefaultTestConfig().Instruction,
+		Instruction:         agentpkg.BuildInstruction(cfg.Session.Namespace),
+		InstructionProvider: agentpkg.NewInstructionProvider(cfg.Session.Namespace),
 		LLMModel:         llmModel,
 		K8sClient:        deps.K8sClient(),
 		KAClient:         deps.KAClient,

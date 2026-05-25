@@ -7,6 +7,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/client-go/dynamic"
 
+	"google.golang.org/adk/agent/llmagent"
 	"google.golang.org/adk/model"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
@@ -23,7 +24,11 @@ import (
 //nolint:revive // stutters with package name but preferred for clarity across the codebase
 type AgentConfig struct {
 	// Instruction is the system prompt guiding agent behavior.
+	// Ignored when InstructionProvider is set.
 	Instruction string
+	// InstructionProvider dynamically generates per-request instructions.
+	// Takes priority over Instruction when set.
+	InstructionProvider llmagent.InstructionProvider
 	// SkipTools disables tool registration (for testing error paths).
 	SkipTools bool
 	// KABaseURL is the base URL for the Kubernaut Agent REST API.

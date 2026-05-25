@@ -61,6 +61,7 @@ func NewRootAgent(cfg AgentConfig, opts ...Option) (agent.Agent, []tool.Tool, er
 		Model:               cfg.LLMModel,
 		Tools:               allTools,
 		Instruction:         cfg.Instruction,
+		InstructionProvider: cfg.InstructionProvider,
 		BeforeToolCallbacks: beforeCallbacks,
 		AfterToolCallbacks:  []llmagent.AfterToolCallback{afterMetrics, afterAudit},
 	})
