@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,9 +11,12 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/go-logr/logr"
+	"github.com/go-logr/logr/funcr"
 )
 
-// syncBuffer is a thread-safe bytes.Buffer for use with slog in tests.
+// syncBuffer is a thread-safe bytes.Buffer for use with logr in tests.
 type syncBuffer struct {
 	mu  sync.Mutex
 	buf bytes.Buffer
@@ -33,6 +35,12 @@ func (sb *syncBuffer) String() string {
 }
 
 // --- Tier 3: FileWatcher ---
+
+func newTestLogr(buf *syncBuffer) logr.Logger {
+	return funcr.New(func(prefix, args string) {
+		_, _ = buf.Write([]byte(prefix + " " + args + "\n"))
+	}, funcr.Options{})
+}
 
 func TestNewFileWatcher_EmptyPath(t *testing.T) {
 	// UT-AF-039-043
@@ -337,7 +345,7 @@ func TestFileWatcher_WithLogger_Option(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	logger := newTestLogr(&syncBuffer{})
 	w, err := NewFileWatcher(cfgPath, func([]byte) error { return nil }, WithLogger(logger))
 	if err != nil {
 		t.Fatal(err)
@@ -347,18 +355,18 @@ func TestFileWatcher_WithLogger_Option(t *testing.T) {
 }
 
 func TestFileWatcher_WithLogger_NilIgnored(t *testing.T) {
-	// UT-AF-039-053: WithLogger(nil) does not override the default logger
+	// UT-AF-039-053: WithLogger zero-value logr does not override the default logger
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.yaml")
 	if err := os.WriteFile(cfgPath, []byte("x: 1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	w, err := NewFileWatcher(cfgPath, func([]byte) error { return nil }, WithLogger(nil))
+	w, err := NewFileWatcher(cfgPath, func([]byte) error { return nil }, WithLogger(logr.Logger{}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Should not panic — logger remains as slog.Default()
+	// Should not panic — logger remains as logr.Discard()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	if err := w.Start(ctx); err != nil {
@@ -468,7 +476,7 @@ func TestFileWatcher_DoubleStop_NoPanic(t *testing.T) {
 
 func TestFileWatcher_CallbackError_RedactsURLsInLog(t *testing.T) {
 	// UT-AF-039-058: Verifies that URLs in callback rejection errors are
-	// redacted in the slog output (security.RedactError applied).
+	// redacted in the logr output (security.RedactError applied).
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.yaml")
 	initial := []byte("x: 1\n")
@@ -477,7 +485,7 @@ func TestFileWatcher_CallbackError_RedactsURLsInLog(t *testing.T) {
 	}
 
 	logBuf := &syncBuffer{}
-	logger := slog.New(slog.NewTextHandler(logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	logger := newTestLogr(logBuf)
 
 	var callCount atomic.Int32
 	w, err := NewFileWatcher(cfgPath, func(data []byte) error {
@@ -539,5 +547,25 @@ func TestFileWatcher_GetLastHash(t *testing.T) {
 	hash := w.GetLastHash()
 	if hash == "" {
 		t.Error("expected non-empty hash from GetLastHash()")
+	}
+}
+
+func TestFileWatcher_UT_AF_1274_008_WithLoggerAcceptsLogr(t *testing.T) {
+	// UT-AF-1274-008: WithLogger accepts logr.Logger and wires it into FileWatcher (BR-SESS-013)
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte("x: 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	logBuf := &syncBuffer{}
+	testLogger := newTestLogr(logBuf)
+	w, err := NewFileWatcher(cfgPath, func([]byte) error { return nil }, WithLogger(testLogger))
+	if err != nil {
+		t.Fatal(err)
+	}
+	FileWatcherLoggerForTest(w).Info("wired logger")
+	if !strings.Contains(logBuf.String(), "wired logger") {
+		t.Fatal("expected WithLogger to wire provided logr.Logger")
 	}
 }

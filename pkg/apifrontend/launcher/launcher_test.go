@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 
+	"github.com/go-logr/logr/funcr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -156,6 +157,27 @@ var _ = Describe("Launcher", func() {
 			rec := httptest.NewRecorder()
 			h.ServeHTTP(rec, req)
 			Expect(rec.Code).To(Equal(http.StatusOK))
+		})
+	})
+
+	Describe("Logger options", func() {
+		It("UT-AF-1274-005: A2AConfig.Logger accepts logr.Logger (BR-SESS-013)", func() {
+			var logs []string
+			testLogger := funcr.New(func(prefix, args string) {
+				logs = append(logs, prefix+" "+args)
+			}, funcr.Options{})
+			cfg := launcher.A2AConfig{
+				Agent:          rootAgent,
+				SessionService: sessionSvc,
+				AppName:        "kubernaut-apifrontend",
+				Logger:         testLogger,
+			}
+			launcher.LoggerForTest(cfg).Info("logger wired")
+			Expect(logs).To(ContainElement(ContainSubstring("logger wired")))
+
+			h, err := launcher.NewA2AHandler(cfg)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(h).NotTo(BeNil())
 		})
 	})
 })

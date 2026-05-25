@@ -3,9 +3,10 @@ package launcher
 import (
 	"context"
 	"iter"
-	"log/slog"
 	"sync"
 	"testing"
+
+	"github.com/go-logr/logr"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv"
@@ -94,7 +95,7 @@ func TestBeforeExecuteCallback_EmitsTriageStarted(t *testing.T) {
 // UT-AF-1156-064: emits triage.completed in AfterExecuteCallback on success
 func TestAfterExecuteCallback_EmitsTriageCompleted(t *testing.T) {
 	spy := &auditSpy{}
-	log := slog.Default()
+	log := logr.Discard()
 	cb := buildAfterExecuteCallback(log, spy)
 
 	taskID := a2a.TaskID("task-triage-done")

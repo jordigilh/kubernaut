@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-logr/logr"
+	"github.com/go-logr/logr/funcr"
 	"github.com/a2aproject/a2a-go/a2a"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -569,6 +571,42 @@ var _ = Describe("HandleStreamInvestigation — A2A Bridge (TP-1258)", func() {
 		// Tool should succeed even though bridge writes fail
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).To(Equal("completed"))
+	})
+
+	It("UT-AF-1274-009: bridge failures logged through logr from context (BR-SESS-013)", func() {
+		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != sessionStreamPath("sess-bridge-logr") {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			_, _ = fmt.Fprint(w, sseObj("reasoning_delta", map[string]any{
+				"content_preview": "Analyzing cluster state...",
+			}))
+			_, _ = fmt.Fprint(w, sseObj("complete", map[string]any{"summary": "done"}))
+		}))
+
+		var logs []string
+		testLogger := funcr.New(func(prefix, args string) {
+			logs = append(logs, prefix+" "+args)
+		}, funcr.Options{})
+		logCtx := logr.NewContext(ctx, testLogger)
+
+		queue := &failingQueue{}
+		taskID := a2a.TaskID("bridge-task-logr")
+		bridgeCtx := launcher.WithEventBridge(logCtx, queue, taskID, nil)
+
+		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
+		result, err := tools.HandleStreamInvestigation(bridgeCtx, kaClient, tools.StreamInvestigationArgs{
+			SessionID: "sess-bridge-logr",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Status).To(Equal("completed"))
+
+		logOutput := strings.Join(logs, "\n")
+		Expect(logOutput).To(ContainSubstring("WARNING: bridge emit failed"))
+		Expect(logOutput).To(ContainSubstring("simulated queue write failure"))
 	})
 })
 

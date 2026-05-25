@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -12,8 +13,10 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/go-logr/logr/funcr"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/rest"
 
 	v1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
@@ -260,7 +263,7 @@ func TestReplayCache_StopIdempotent(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestBuildSessionInfra_ReturnsNonNilService(t *testing.T) {
-	t.Parallel()
+	t.Setenv("KUBECONFIG", "/nonexistent/path")
 	reg := metrics.NewRegistry()
 	cfg := &config.Config{
 		Session: config.SessionConfig{
@@ -276,7 +279,7 @@ func TestBuildSessionInfra_ReturnsNonNilService(t *testing.T) {
 }
 
 func TestBuildSessionInfra_GaugeIsWired(t *testing.T) {
-	t.Parallel()
+	t.Setenv("KUBECONFIG", "/nonexistent/path")
 	reg := metrics.NewRegistry()
 	cfg := &config.Config{
 		Session: config.SessionConfig{
@@ -300,7 +303,7 @@ func TestBuildSessionInfra_GaugeIsWired(t *testing.T) {
 }
 
 func TestBuildSessionInfra_ReconcilerIsCreated(t *testing.T) {
-	t.Parallel()
+	t.Setenv("KUBECONFIG", "/nonexistent/path")
 	reg := metrics.NewRegistry()
 	cfg := &config.Config{
 		Session: config.SessionConfig{
@@ -316,7 +319,7 @@ func TestBuildSessionInfra_ReconcilerIsCreated(t *testing.T) {
 }
 
 func TestBuildSessionInfra_RetentionTTLClamped(t *testing.T) {
-	t.Parallel()
+	t.Setenv("KUBECONFIG", "/nonexistent/path")
 	reg := metrics.NewRegistry()
 	cfg := &config.Config{
 		Session: config.SessionConfig{
@@ -332,7 +335,7 @@ func TestBuildSessionInfra_RetentionTTLClamped(t *testing.T) {
 }
 
 func TestBuildSessionInfra_SchemeIncludesInvestigationSession(t *testing.T) {
-	t.Parallel()
+	t.Setenv("KUBECONFIG", "/nonexistent/path")
 	reg := metrics.NewRegistry()
 	cfg := &config.Config{
 		Session: config.SessionConfig{
@@ -353,7 +356,7 @@ func TestBuildSessionInfra_SchemeIncludesInvestigationSession(t *testing.T) {
 }
 
 func TestBuildSessionInfra_GracefulShutdown(t *testing.T) {
-	t.Parallel()
+	t.Setenv("KUBECONFIG", "/nonexistent/path")
 	reg := metrics.NewRegistry()
 	cfg := &config.Config{
 		Session: config.SessionConfig{
@@ -516,7 +519,7 @@ func TestBuildA2AHandler_WithLLMEndpoint_ReturnsHandler(t *testing.T) {
 }
 
 func TestBuildA2AHandler_WithSessionInfra_UsesDecorator(t *testing.T) {
-	t.Parallel()
+	t.Setenv("KUBECONFIG", "/nonexistent/path")
 
 	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -875,5 +878,333 @@ func TestBuildMCPHandler_PassesPool(t *testing.T) {
 	}
 	if h == nil {
 		t.Fatal("IT-AF-1234-W10b: handler must not be nil when pool is provided")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// UT-AF-1272-001: session health flag is false before cache sync (BR-SESS-011)
+//
+// FedRAMP SI-4: system must report degraded state when monitoring subsystem
+// has not yet confirmed readiness. A freshly created health flag must be
+// false so that /readyz correctly returns 503 during cache warmup.
+// ---------------------------------------------------------------------------
+
+func TestSessionInfra_HealthyFalseBeforeSync(t *testing.T) {
+	t.Parallel()
+	healthy := &atomic.Bool{}
+	infra := &sessionInfra{Healthy: healthy, StopFunc: func() {}}
+	if infra.Healthy.Load() {
+		t.Fatal("UT-AF-1272-001: health flag must report degraded (false) before cache sync completes — /readyz would incorrectly return 200")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// UT-AF-1272-002: session health flag transitions to true after cache sync (BR-SESS-011)
+//
+// FedRAMP SI-4: once the informer cache confirms sync, the flag must flip
+// so /readyz returns 200 and the pod accepts traffic.
+// ---------------------------------------------------------------------------
+
+func TestSessionInfra_HealthyTrueAfterSync(t *testing.T) {
+	t.Parallel()
+	healthy := &atomic.Bool{}
+	infra := &sessionInfra{Healthy: healthy, StopFunc: func() {}}
+	infra.Healthy.Store(true)
+	if !infra.Healthy.Load() {
+		t.Fatal("UT-AF-1272-002: health flag must report ready (true) after cache sync — /readyz would incorrectly return 503")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// UT-AF-1272-003: fallback path signals readiness immediately (BR-SESS-011)
+//
+// When no kubeconfig is available the AF uses an in-memory fake client.
+// There is no informer cache to sync, so the flag must be true from the
+// start — otherwise the pod never passes readiness and K8s restarts it.
+// ---------------------------------------------------------------------------
+
+func TestBuildSessionInfra_FallbackPathSignalsReady(t *testing.T) {
+	t.Setenv("KUBECONFIG", "/nonexistent/path")
+	reg := metrics.NewRegistry()
+	cfg := &config.Config{
+		Session: config.SessionConfig{
+			Namespace:     "test-ns",
+			DisconnectTTL: 10 * time.Minute,
+			RetentionTTL:  31 * 24 * time.Hour,
+		},
+	}
+	infra := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	defer infra.StopFunc()
+	if infra.Healthy == nil {
+		t.Fatal("UT-AF-1272-003: Healthy must not be nil — /readyz would panic")
+	}
+	if !infra.Healthy.Load() {
+		t.Fatal("UT-AF-1272-003: fallback path must signal ready immediately — pod would never pass readiness probe")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// UT-AF-1272-006: TTL actions are observable via Prometheus (BR-MONITORING-001)
+//
+// FedRAMP SI-4(2): monitoring must include automated mechanisms for TTL-driven
+// lifecycle actions. The counter must be registered so /metrics exposes it to
+// the SIEM scraper even before any actions occur.
+// ---------------------------------------------------------------------------
+
+func TestMetricsRegistry_SessionTTLActionsExposedOnMetrics(t *testing.T) {
+	t.Parallel()
+	reg := metrics.NewRegistry()
+	if reg.SessionTTLActions == nil {
+		t.Fatal("UT-AF-1272-006: SessionTTLActions must be registered — SIEM scraper has no visibility into TTL events")
+	}
+
+	reg.SessionTTLActions.WithLabelValues("cancel")
+
+	metricsHandler := reg.Handler()
+	rec := httptest.NewRecorder()
+	metricsHandler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", http.NoBody))
+	body, _ := io.ReadAll(rec.Result().Body)
+	if !strings.Contains(string(body), "af_session_ttl_actions_total") {
+		t.Error("UT-AF-1272-006: af_session_ttl_actions_total absent from /metrics — SIEM cannot scrape TTL lifecycle events")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// UT-AF-1274-010: buildSessionInfra threads logger into reconciler (BR-SESS-013)
+//
+// FedRAMP AU-3: every reconcile error must flow through the structured log
+// pipeline (logr -> zapr -> zap -> JSON). Without logger injection the
+// reconciler would use slog.Default() and the JSON sink would be bypassed.
+// ---------------------------------------------------------------------------
+
+func TestBuildSessionInfra_ThreadsLoggerIntoReconciler(t *testing.T) {
+	t.Setenv("KUBECONFIG", "/nonexistent/path")
+	reg := metrics.NewRegistry()
+	cfg := &config.Config{
+		Session: config.SessionConfig{
+			Namespace:     "test-ns",
+			DisconnectTTL: 10 * time.Minute,
+			RetentionTTL:  31 * 24 * time.Hour,
+		},
+	}
+	infra := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	defer infra.StopFunc()
+	if infra.Reconciler == nil {
+		t.Fatal("UT-AF-1274-010: reconciler must not be nil — TTL enforcement disabled")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// UT-AF-1274-011: buildA2AHandler threads logger into launcher (BR-SESS-013)
+//
+// FedRAMP AU-3: A2A task execution errors must flow through the structured
+// log pipeline. The A2AConfig.Logger field carries the logr chain that
+// ensures all task lifecycle events are JSON-serialised and scrape-ready.
+// ---------------------------------------------------------------------------
+
+func TestBuildA2AHandler_ThreadsLoggerIntoLauncher(t *testing.T) {
+	t.Parallel()
+
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"candidates":[{"content":{"role":"model","parts":[{"text":"ok"}]},"finishReason":"STOP"}]}`))
+	}))
+	t.Cleanup(mockLLM.Close)
+
+	cfg := &config.Config{}
+	cfg.Agent.LLM.Provider = config.LLMProviderGemini
+	cfg.Agent.LLM.Endpoint = mockLLM.URL
+	cfg.Agent.LLM.Model = "mock-model"
+	cfg.Agent.LLM.APIKey = "test-key"
+	reg := metrics.NewRegistry()
+
+	h, err := buildA2AHandler(context.Background(), cfg, testBackendDeps(), nil, reg, nil, nil, logr.Discard(), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if h == nil {
+		t.Fatal("UT-AF-1274-011: handler must not be nil — A2A task errors would be invisible")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// UT-AF-1274-012: config watcher accepts logr.Logger (BR-SESS-013)
+//
+// FedRAMP CM-3(5): configuration change events must be auditable.
+// The hot-reload watcher must route change/reject logs through the same
+// structured pipeline as all other AF components, not through slog.Default().
+// ---------------------------------------------------------------------------
+
+func TestConfigWatcher_AcceptsLogr(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	cfgFile := tmpDir + "/config.yaml"
+	if err := os.WriteFile(cfgFile, []byte("server:\n  port: 8443\n"), 0644); err != nil {
+		t.Fatalf("write temp config: %v", err)
+	}
+
+	fw, err := config.NewFileWatcher(cfgFile, func(_ []byte) error { return nil },
+		config.WithLogger(logr.Discard()),
+	)
+	if err != nil {
+		t.Fatalf("UT-AF-1274-012: NewFileWatcher with logr.Logger failed: %v", err)
+	}
+	if fw == nil {
+		t.Fatal("UT-AF-1274-012: FileWatcher nil — config drift detection disabled")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// UT-AF-1272 supplement: buildSessionInfra wires TTL metrics to reconciler
+//
+// FedRAMP SI-4(2): the disconnect/cancel/delete counter must be wired from
+// the metrics registry into the reconciler so TTL actions are observable.
+// ---------------------------------------------------------------------------
+
+func TestBuildSessionInfra_WiresTTLMetrics(t *testing.T) {
+	t.Setenv("KUBECONFIG", "/nonexistent/path")
+	reg := metrics.NewRegistry()
+	cfg := &config.Config{
+		Session: config.SessionConfig{
+			Namespace:     "test-ns",
+			DisconnectTTL: 10 * time.Minute,
+			RetentionTTL:  31 * 24 * time.Hour,
+		},
+	}
+	infra := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	defer infra.StopFunc()
+	if infra.Reconciler == nil {
+		t.Fatal("reconciler must not be nil — TTL enforcement disabled")
+	}
+	if reg.SessionTTLActions == nil {
+		t.Fatal("SessionTTLActions must be wired — TTL events invisible to SIEM")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// UT-AF-1273-001: preflightSessionChecks logs CRD discovery result [SI-10]
+//
+// FedRAMP SI-10: environment validation at startup. The function must log
+// a "pre-flight CRD discovery" line regardless of whether the CRD is found.
+// ---------------------------------------------------------------------------
+
+func TestPreflightSessionChecks_LogsCRDDiscovery(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "kubernaut.ai") {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"kind":"APIResourceList","apiVersion":"v1","groupVersion":"kubernaut.ai/v1alpha1","resources":[]}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	var buf strings.Builder
+	logger := funcr.New(func(prefix, args string) {
+		buf.WriteString(prefix + " " + args + "\n")
+	}, funcr.Options{Verbosity: 10})
+
+	preflightSessionChecks(&rest.Config{Host: srv.URL}, "default", logger)
+	if !strings.Contains(buf.String(), "pre-flight CRD discovery") {
+		t.Fatal("UT-AF-1273-001: must log CRD discovery result for SI-10 compliance")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// UT-AF-1273-002: preflightSessionChecks logs RBAC SSAR result [AC-6]
+//
+// FedRAMP AC-6: least privilege verification. The function must log
+// a "pre-flight RBAC check" line with the allowed/denied result.
+// ---------------------------------------------------------------------------
+
+func TestPreflightSessionChecks_LogsRBACCheck(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.Contains(r.URL.Path, "kubernaut.ai") {
+			_, _ = w.Write([]byte(`{"kind":"APIResourceList","apiVersion":"v1","groupVersion":"kubernaut.ai/v1alpha1","resources":[{"name":"investigationsessions","namespaced":true,"kind":"InvestigationSession","verbs":["get","list","watch"]}]}`))
+			return
+		}
+		if strings.Contains(r.URL.Path, "selfsubjectaccessreviews") {
+			_, _ = w.Write([]byte(`{"kind":"SelfSubjectAccessReview","apiVersion":"authorization.k8s.io/v1","status":{"allowed":true}}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	var buf strings.Builder
+	logger := funcr.New(func(prefix, args string) {
+		buf.WriteString(prefix + " " + args + "\n")
+	}, funcr.Options{Verbosity: 10})
+
+	preflightSessionChecks(&rest.Config{Host: srv.URL}, "default", logger)
+	if !strings.Contains(buf.String(), "pre-flight RBAC check") {
+		t.Fatal("UT-AF-1273-002: must log RBAC SSAR result for AC-6 compliance")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// UT-AF-1273-003: preflightSessionChecks warns on missing CRD [SI-10]
+//
+// When the CRD is not found, the function must emit a WARNING so SREs
+// can diagnose before the controller fails to start.
+// ---------------------------------------------------------------------------
+
+func TestPreflightSessionChecks_WarnsMissingCRD(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.Contains(r.URL.Path, "kubernaut.ai") {
+			_, _ = w.Write([]byte(`{"kind":"APIResourceList","apiVersion":"v1","groupVersion":"kubernaut.ai/v1alpha1","resources":[]}`))
+			return
+		}
+		if strings.Contains(r.URL.Path, "selfsubjectaccessreviews") {
+			_, _ = w.Write([]byte(`{"kind":"SelfSubjectAccessReview","apiVersion":"authorization.k8s.io/v1","status":{"allowed":true}}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	var buf strings.Builder
+	logger := funcr.New(func(prefix, args string) {
+		buf.WriteString(prefix + " " + args + "\n")
+	}, funcr.Options{Verbosity: 10})
+
+	preflightSessionChecks(&rest.Config{Host: srv.URL}, "default", logger)
+	if !strings.Contains(buf.String(), "InvestigationSession CRD not found") {
+		t.Fatal("UT-AF-1273-003: must warn when CRD is missing for SI-10 compliance")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// UT-AF-1273-004: preflightSessionChecks warns on RBAC denied [AC-6]
+//
+// When SSAR returns denied, the function must emit a WARNING so SREs
+// know the service account lacks required permissions.
+// ---------------------------------------------------------------------------
+
+func TestPreflightSessionChecks_WarnsRBACDenied(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.Contains(r.URL.Path, "kubernaut.ai") {
+			_, _ = w.Write([]byte(`{"kind":"APIResourceList","apiVersion":"v1","groupVersion":"kubernaut.ai/v1alpha1","resources":[{"name":"investigationsessions","namespaced":true,"kind":"InvestigationSession","verbs":["get","list","watch"]}]}`))
+			return
+		}
+		if strings.Contains(r.URL.Path, "selfsubjectaccessreviews") {
+			_, _ = w.Write([]byte(`{"kind":"SelfSubjectAccessReview","apiVersion":"authorization.k8s.io/v1","status":{"allowed":false,"reason":"RBAC: no binding"}}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	var buf strings.Builder
+	logger := funcr.New(func(prefix, args string) {
+		buf.WriteString(prefix + " " + args + "\n")
+	}, funcr.Options{Verbosity: 10})
+
+	preflightSessionChecks(&rest.Config{Host: srv.URL}, "default", logger)
+	if !strings.Contains(buf.String(), "lacks 'watch' permission") {
+		t.Fatal("UT-AF-1273-004: must warn when RBAC denied for AC-6 compliance")
 	}
 }

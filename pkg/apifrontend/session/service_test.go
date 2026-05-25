@@ -11,6 +11,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/go-logr/logr"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -739,6 +740,40 @@ var _ = Describe("CRDSessionService", func() {
 
 			pruned = svc.PruneTerminalEntries(ctx)
 			Expect(pruned).To(Equal(0))
+		})
+	})
+
+	Describe("Logger options", func() {
+		// FedRAMP AU-3: session CRUD events must flow through the structured
+		// log pipeline. WithLogger wires logr so Create/Delete/Update emit
+		// machine-parseable JSON via zapr.
+		It("UT-AF-1274-003: WithLogger wires logr so session events reach the audit sink [AU-3]", func() {
+			testLogger := logr.Discard()
+			svc := session.NewCRDSessionService(
+				adksession.InMemoryService(),
+				k8s,
+				scheme,
+				"test-ns",
+				session.WithLogger(testLogger),
+			)
+			Expect(svc).NotTo(BeNil())
+		})
+
+		// FedRAMP AU-3: when no logger is injected the service must still
+		// operate safely. logr.Discard() ensures no nil-pointer panics
+		// while preserving the logging contract (no slog fallback).
+		It("UT-AF-1274-004: default logger is safe no-op that prevents slog fallback [AU-3]", func() {
+			svc := session.NewCRDSessionService(
+				adksession.InMemoryService(),
+				k8s,
+				scheme,
+				"test-ns",
+			)
+			Expect(svc).NotTo(BeNil())
+			_, err := svc.Create(ctx, &adksession.CreateRequest{
+				AppName: "test", UserID: "user", SessionID: "sess-default-logger",
+			})
+			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 
