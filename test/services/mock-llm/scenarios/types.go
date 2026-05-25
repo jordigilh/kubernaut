@@ -15,7 +15,11 @@ limitations under the License.
 */
 package scenarios
 
-import "github.com/jordigilh/kubernaut/test/services/mock-llm/conversation"
+import (
+	"time"
+
+	"github.com/jordigilh/kubernaut/test/services/mock-llm/conversation"
+)
 
 // MockAlternativeWorkflow mirrors real Claude behavior where the LLM returns
 // ranked alternatives alongside the primary workflow selection.
@@ -90,6 +94,13 @@ type MockScenarioConfig struct {
 	// (before any tool/function results appear). Required for multi-turn
 	// keyword scenarios where each turn must trigger a distinct tool call.
 	RepeatToolCall bool
+
+	// SecondTurnDelay, when > 0, causes the handler to sleep for the given
+	// duration on second-turn (tool-result-present) requests. The delay is
+	// context-aware: it aborts early if the HTTP client disconnects.
+	// Used by E2E tests (e.g. STREAM-03) that need to disconnect while the
+	// executor is blocked waiting for the LLM response.
+	SecondTurnDelay time.Duration
 }
 
 // BoolPtr is a helper for creating *bool literals in scenario configs.

@@ -202,6 +202,10 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	// the user message contains "create a remediation request" (priority 0.9).
 	r.Register(afCreateRRScenario())
 
+	// TC-E2E-STREAM-03: slow variant of af_create_rr that delays 5s on the
+	// second LLM turn, giving the test time to disconnect mid-execution.
+	r.Register(afCreateRRSlowScenario())
+
 	// Default fallback (lowest priority = 0.01)
 	r.Register(defaultFallbackScenario())
 
