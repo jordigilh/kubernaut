@@ -71,6 +71,24 @@ func ResolveGVKForKind(mapper meta.RESTMapper, kind string) (schema.GroupVersion
 		return schema.GroupVersionKind{Group: "policy", Version: "v1", Kind: "PodDisruptionBudget"}, nil
 	case "Certificate":
 		return schema.GroupVersionKind{Group: "cert-manager.io", Version: "v1", Kind: "Certificate"}, nil
+	case "RemediationRequest":
+		return schema.GroupVersionKind{Group: "kubernaut.ai", Version: "v1alpha1", Kind: "RemediationRequest"}, nil
+	case "RemediationWorkflow":
+		return schema.GroupVersionKind{Group: "kubernaut.ai", Version: "v1alpha1", Kind: "RemediationWorkflow"}, nil
+	case "InvestigationSession":
+		return schema.GroupVersionKind{Group: "kubernaut.ai", Version: "v1alpha1", Kind: "InvestigationSession"}, nil
+	case "AIAnalysis":
+		return schema.GroupVersionKind{Group: "kubernaut.ai", Version: "v1alpha1", Kind: "AIAnalysis"}, nil
+	case "SignalProcessing":
+		return schema.GroupVersionKind{Group: "kubernaut.ai", Version: "v1alpha1", Kind: "SignalProcessing"}, nil
+	case "EffectivenessAssessment":
+		return schema.GroupVersionKind{Group: "kubernaut.ai", Version: "v1alpha1", Kind: "EffectivenessAssessment"}, nil
+	case "WorkflowExecution":
+		return schema.GroupVersionKind{Group: "kubernaut.ai", Version: "v1alpha1", Kind: "WorkflowExecution"}, nil
+	case "ActionType":
+		return schema.GroupVersionKind{Group: "kubernaut.ai", Version: "v1alpha1", Kind: "ActionType"}, nil
+	case "NotificationRequest":
+		return schema.GroupVersionKind{Group: "kubernaut.ai", Version: "v1alpha1", Kind: "NotificationRequest"}, nil
 	}
 
 	if mapper != nil {

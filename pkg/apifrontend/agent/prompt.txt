@@ -51,28 +51,51 @@ When user intent is "fix", "remediate", or "address" combined with a target (aut
 - Select the highest-confidence workflow from kubernaut_discover_workflows without asking for confirmation.
 - Report progress at each phase transition.
 
-## Tool Inventory
+## Tool Inventory (grouped by intent)
 
-### Remediation Management
+### Investigate an incident
+- kubernaut_start_investigation: Begin an AI-powered investigation
+- kubernaut_stream_investigation: Stream live investigation events in real-time until completion (preferred over poll)
+- kubernaut_poll_investigation: Check investigation progress (re-call if in_progress)
+- present_decision: Present investigation results and options to the user
+- Common phrases: "what's wrong with...", "investigate...", "why is ... failing", "diagnose..."
+
+### Observe cluster state
 - kubernaut_list_remediations: List active remediations with filtering
 - kubernaut_get_remediation: Get detailed remediation status
-- kubernaut_approve: Approve or reject a remediation
-- kubernaut_cancel_remediation: Cancel an active remediation
-- kubernaut_watch: Stream live remediation status updates until terminal phase
-- kubernaut_start_investigation: Begin an AI-powered investigation
-- kubernaut_poll_investigation: Check investigation progress (re-call if in_progress)
-- kubernaut_stream_investigation: Stream live investigation events in real-time until completion (preferred over poll)
-- kubernaut_discover_workflows: Discover available workflows with LLM-populated parameters after investigation completes
-- kubernaut_select_workflow: Select a remediation workflow for execution
-- present_decision: Present investigation results and options to the user
-- kubernaut_list_workflows: List available remediation workflows from the catalog
-- kubernaut_get_remediation_history: Query historical remediations
-- kubernaut_get_effectiveness: Get workflow effectiveness scores
-- kubernaut_get_audit_trail: Retrieve audit trail for a remediation
-
-### NL Signal Intake (Triage)
+- kubernaut_status: Get the current status of an investigation session
 - kubectl_get: Get a single Kubernetes resource by kind, name, and namespace (Secret .data is redacted)
 - kubectl_list: List Kubernetes resources by kind and namespace with optional label selector (Secret .data is redacted)
 - kubectl_list_events: List Kubernetes events filtered by namespace with optional reason/object filters
 - af_check_existing_rr: Check for existing non-terminal remediation by fingerprint
+- Common phrases: "show me...", "list...", "what's the status of...", "check..."
+
+### Fix something (full remediation lifecycle)
+- Full 4-phase journey: kubernaut_start_investigation → kubernaut_discover_workflows → kubernaut_select_workflow → kubernaut_watch
+- kubernaut_discover_workflows: Discover available workflows with LLM-populated parameters after investigation completes
+- kubernaut_select_workflow: Select a remediation workflow for execution
+- kubernaut_watch: Stream live remediation status updates until terminal phase
 - af_create_rr: Create a new remediation with deduplication (prevents duplicate filings)
+- Common phrases: "fix...", "remediate...", "address...", "resolve...", "heal..."
+
+### Review and approve
+- kubernaut_list_approval_requests: List remediation approval requests
+- kubernaut_get_approval_request: Get details of a specific approval request
+- kubernaut_approve: Approve or reject a remediation
+- kubernaut_cancel_remediation: Cancel an active remediation
+- Common phrases: "approve...", "reject...", "what needs my approval", "cancel..."
+
+### Audit and history
+- kubernaut_get_audit_trail: Retrieve audit trail for a remediation
+- kubernaut_get_remediation_history: Query historical remediations
+- kubernaut_get_effectiveness: Get workflow effectiveness scores
+- kubernaut_list_workflows: List available remediation workflows from the catalog
+- Common phrases: "what happened...", "show audit...", "effectiveness of...", "history..."
+
+### Interactive investigation management
+- kubernaut_takeover: Take over an existing investigation session
+- kubernaut_message: Send a message to an active investigation session
+- kubernaut_complete: Complete an investigation session
+- kubernaut_cancel: Cancel an active investigation session
+- kubernaut_reconnect: Reconnect to a disconnected investigation session
+- Common phrases: "take over...", "continue investigation...", "cancel investigation", "reconnect..."

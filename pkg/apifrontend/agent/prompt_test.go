@@ -1,6 +1,7 @@
 package agent_test
 
 import (
+	"context"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -87,5 +88,161 @@ var _ = Describe("System Prompt", func() {
 
 	It("UT-AF-1189-035: prompt requires session_id/rr_id preservation across phases", func() {
 		Expect(instruction).To(ContainSubstring("Preserve session_id and rr_id across all phases"))
+	})
+
+	Describe("BuildInstruction (#1275)", func() {
+		It("UT-AF-1275-010: output contains core embedded prompt (SC-7 immutability)", func() {
+			result := agentpkg.BuildInstruction("kubernaut-system")
+			Expect(result).To(ContainSubstring("You are the Kubernaut API Frontend agent"))
+			Expect(result).To(ContainSubstring("Security Boundaries"))
+		})
+
+		It("UT-AF-1275-011: output contains deployment namespace (CM-6)", func() {
+			result := agentpkg.BuildInstruction("kubernaut-system")
+			Expect(result).To(ContainSubstring("kubernaut-system"))
+			Expect(result).To(ContainSubstring("Deployment Context"))
+		})
+
+		It("UT-AF-1275-012: empty namespace falls back to default (SI-10)", func() {
+			result := agentpkg.BuildInstruction("")
+			Expect(result).To(ContainSubstring("default"))
+			Expect(result).NotTo(ContainSubstring("``"))
+		})
+
+		It("UT-AF-1275-013: output contains kubernaut.ai CRD types (CM-6)", func() {
+			result := agentpkg.BuildInstruction("kubernaut-system")
+			Expect(result).To(ContainSubstring("RemediationRequest"))
+			Expect(result).To(ContainSubstring("InvestigationSession"))
+			Expect(result).To(ContainSubstring("WorkflowExecution"))
+		})
+
+		It("UT-AF-1275-014: intent group 'investigate' contains expected tools", func() {
+			result := agentpkg.BuildInstruction("ns")
+			Expect(result).To(ContainSubstring("kubernaut_start_investigation"))
+			Expect(result).To(ContainSubstring("kubernaut_stream_investigation"))
+		})
+
+		It("UT-AF-1275-015: intent group 'observe' contains kubectl tools", func() {
+			result := agentpkg.BuildInstruction("ns")
+			Expect(result).To(ContainSubstring("kubectl_get"))
+			Expect(result).To(ContainSubstring("kubectl_list"))
+		})
+
+		It("UT-AF-1275-016: intent group 'fix' references 4-phase journey", func() {
+			result := agentpkg.BuildInstruction("ns")
+			Expect(result).To(ContainSubstring("kubernaut_discover_workflows"))
+			Expect(result).To(ContainSubstring("kubernaut_select_workflow"))
+			Expect(result).To(ContainSubstring("kubernaut_watch"))
+		})
+
+		It("UT-AF-1275-017: intent group 'approve' contains approval tools", func() {
+			result := agentpkg.BuildInstruction("ns")
+			Expect(result).To(ContainSubstring("kubernaut_approve"))
+			Expect(result).To(ContainSubstring("kubernaut_list_approval_requests"))
+		})
+
+		It("UT-AF-1275-018: intent group 'audit' contains history tools", func() {
+			result := agentpkg.BuildInstruction("ns")
+			Expect(result).To(ContainSubstring("kubernaut_get_audit_trail"))
+			Expect(result).To(ContainSubstring("kubernaut_get_remediation_history"))
+		})
+
+		It("UT-AF-1275-019: intent group 'interactive' contains session tools", func() {
+			result := agentpkg.BuildInstruction("ns")
+			Expect(result).To(ContainSubstring("kubernaut_takeover"))
+			Expect(result).To(ContainSubstring("kubernaut_reconnect"))
+		})
+	})
+
+	Describe("InstructionProvider (#1276)", func() {
+		It("UT-AF-1276-001: preserves core prompt immutability (SC-7)", func() {
+			provider := agentpkg.NewInstructionProvider("kubernaut-system")
+			result, err := provider(nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(ContainSubstring("You are the Kubernaut API Frontend agent"))
+			Expect(result).To(ContainSubstring("Security Boundaries"))
+		})
+
+		It("UT-AF-1276-008: nil identity returns base instruction only (SC-7)", func() {
+			provider := agentpkg.NewInstructionProvider("kubernaut-system")
+			result, err := provider(nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(ContainSubstring("Your Role Context"))
+		})
+
+		It("UT-AF-1276-009: empty groups returns base instruction only", func() {
+			ctx := agentpkg.MockReadonlyContext(context.Background(), "alice", []string{})
+			provider := agentpkg.NewInstructionProvider("kubernaut-system")
+			result, err := provider(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(ContainSubstring("Your Role Context"))
+		})
+
+		It("UT-AF-1276-002: SRE group adds full-access guidance (AC-6)", func() {
+			ctx := agentpkg.MockReadonlyContext(context.Background(), "alice", []string{"sre"})
+			provider := agentpkg.NewInstructionProvider("kubernaut-system")
+			result, err := provider(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(ContainSubstring("Your Role Context"))
+			Expect(result).To(ContainSubstring("full operational access"))
+		})
+
+		It("UT-AF-1276-003: viewer group adds read-only guidance (AC-6)", func() {
+			ctx := agentpkg.MockReadonlyContext(context.Background(), "bob", []string{"observability"})
+			provider := agentpkg.NewInstructionProvider("kubernaut-system")
+			result, err := provider(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(ContainSubstring("read-only"))
+		})
+
+		It("UT-AF-1276-004: approver group adds approval guidance (AC-6)", func() {
+			ctx := agentpkg.MockReadonlyContext(context.Background(), "carol", []string{"remediation-approver"})
+			provider := agentpkg.NewInstructionProvider("kubernaut-system")
+			result, err := provider(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(ContainSubstring("approval"))
+		})
+
+		It("UT-AF-1276-005: CICD group adds automation guidance (AC-6)", func() {
+			ctx := agentpkg.MockReadonlyContext(context.Background(), "bot", []string{"cicd"})
+			provider := agentpkg.NewInstructionProvider("kubernaut-system")
+			result, err := provider(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(ContainSubstring("automation"))
+		})
+
+		It("UT-AF-1276-006: audit group adds compliance guidance (AC-6)", func() {
+			ctx := agentpkg.MockReadonlyContext(context.Background(), "auditor", []string{"l3-audit"})
+			provider := agentpkg.NewInstructionProvider("kubernaut-system")
+			result, err := provider(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(ContainSubstring("compliance"))
+		})
+
+		It("UT-AF-1276-007: multi-role user gets additive guidance (AC-6)", func() {
+			ctx := agentpkg.MockReadonlyContext(context.Background(), "multi", []string{"sre", "remediation-approver"})
+			provider := agentpkg.NewInstructionProvider("kubernaut-system")
+			result, err := provider(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(ContainSubstring("full operational access"))
+			Expect(result).To(ContainSubstring("approval"))
+		})
+
+		It("UT-AF-1276-010: unknown groups produce no extra guidance (SC-7)", func() {
+			ctx := agentpkg.MockReadonlyContext(context.Background(), "unknown", []string{"custom-team", "random"})
+			provider := agentpkg.NewInstructionProvider("kubernaut-system")
+			result, err := provider(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(ContainSubstring("Your Role Context"))
+		})
+
+		It("UT-AF-1276-011: raw group names not leaked into prompt (SC-7)", func() {
+			ctx := agentpkg.MockReadonlyContext(context.Background(), "alice", []string{"sre", "l3-audit"})
+			provider := agentpkg.NewInstructionProvider("kubernaut-system")
+			result, err := provider(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(ContainSubstring("\"sre\""))
+			Expect(result).NotTo(ContainSubstring("\"l3-audit\""))
+		})
 	})
 })

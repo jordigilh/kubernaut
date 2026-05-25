@@ -105,6 +105,17 @@ var _ = Describe("ResolveGVKForKind (#310)", func() {
 			Entry("HorizontalPodAutoscaler → autoscaling/v2", "HorizontalPodAutoscaler", "autoscaling", "v2"),
 			Entry("PodDisruptionBudget → policy/v1", "PodDisruptionBudget", "policy", "v1"),
 			Entry("Certificate → cert-manager.io/v1", "Certificate", "cert-manager.io", "v1"),
+
+		// Issue #1275: kubernaut.ai CRD kinds (CM-6)
+		Entry("UT-K8S-1275-001: RemediationRequest → kubernaut.ai/v1alpha1", "RemediationRequest", "kubernaut.ai", "v1alpha1"),
+		Entry("UT-K8S-1275-002: RemediationWorkflow → kubernaut.ai/v1alpha1", "RemediationWorkflow", "kubernaut.ai", "v1alpha1"),
+		Entry("UT-K8S-1275-003: InvestigationSession → kubernaut.ai/v1alpha1", "InvestigationSession", "kubernaut.ai", "v1alpha1"),
+		Entry("UT-K8S-1275-004: AIAnalysis → kubernaut.ai/v1alpha1", "AIAnalysis", "kubernaut.ai", "v1alpha1"),
+		Entry("UT-K8S-1275-005: SignalProcessing → kubernaut.ai/v1alpha1", "SignalProcessing", "kubernaut.ai", "v1alpha1"),
+		Entry("UT-K8S-1275-006: EffectivenessAssessment → kubernaut.ai/v1alpha1", "EffectivenessAssessment", "kubernaut.ai", "v1alpha1"),
+		Entry("UT-K8S-1275-007: WorkflowExecution → kubernaut.ai/v1alpha1", "WorkflowExecution", "kubernaut.ai", "v1alpha1"),
+		Entry("UT-K8S-1275-008: ActionType → kubernaut.ai/v1alpha1", "ActionType", "kubernaut.ai", "v1alpha1"),
+		Entry("UT-K8S-1275-009: NotificationRequest → kubernaut.ai/v1alpha1", "NotificationRequest", "kubernaut.ai", "v1alpha1"),
 		)
 
 		It("should resolve Node to core/v1 even when metrics-server registers metrics.k8s.io/v1beta1/Node", func() {
