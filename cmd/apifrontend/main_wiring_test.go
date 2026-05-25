@@ -1104,7 +1104,7 @@ func TestPreflightSessionChecks_LogsCRDDiscovery(t *testing.T) {
 		buf.WriteString(prefix + " " + args + "\n")
 	}, funcr.Options{Verbosity: 10})
 
-	preflightSessionChecks(&rest.Config{Host: srv.URL}, "default", logger)
+	preflightSessionChecks(&rest.Config{Host: srv.URL}, "default", nil, logger)
 	if !strings.Contains(buf.String(), "pre-flight CRD discovery") {
 		t.Fatal("UT-AF-1273-001: must log CRD discovery result for SI-10 compliance")
 	}
@@ -1137,7 +1137,7 @@ func TestPreflightSessionChecks_LogsRBACCheck(t *testing.T) {
 		buf.WriteString(prefix + " " + args + "\n")
 	}, funcr.Options{Verbosity: 10})
 
-	preflightSessionChecks(&rest.Config{Host: srv.URL}, "default", logger)
+	preflightSessionChecks(&rest.Config{Host: srv.URL}, "default", nil, logger)
 	if !strings.Contains(buf.String(), "pre-flight RBAC check") {
 		t.Fatal("UT-AF-1273-002: must log RBAC SSAR result for AC-6 compliance")
 	}
@@ -1170,7 +1170,7 @@ func TestPreflightSessionChecks_WarnsMissingCRD(t *testing.T) {
 		buf.WriteString(prefix + " " + args + "\n")
 	}, funcr.Options{Verbosity: 10})
 
-	preflightSessionChecks(&rest.Config{Host: srv.URL}, "default", logger)
+	preflightSessionChecks(&rest.Config{Host: srv.URL}, "default", nil, logger)
 	if !strings.Contains(buf.String(), "InvestigationSession CRD not found") {
 		t.Fatal("UT-AF-1273-003: must warn when CRD is missing for SI-10 compliance")
 	}
@@ -1203,8 +1203,164 @@ func TestPreflightSessionChecks_WarnsRBACDenied(t *testing.T) {
 		buf.WriteString(prefix + " " + args + "\n")
 	}, funcr.Options{Verbosity: 10})
 
-	preflightSessionChecks(&rest.Config{Host: srv.URL}, "default", logger)
-	if !strings.Contains(buf.String(), "lacks 'watch' permission") {
+	preflightSessionChecks(&rest.Config{Host: srv.URL}, "default", nil, logger)
+	if !strings.Contains(buf.String(), "lacks permissions") {
 		t.Fatal("UT-AF-1273-004: must warn when RBAC denied for AC-6 compliance")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// UT-AF-1273-005: preflightSessionChecks emits audit events [AU-2]
+//
+// When auditor is non-nil, preflight must emit EventPreflightCRDCheck
+// and EventPreflightRBACCheck events for the FedRAMP audit trail.
+// ---------------------------------------------------------------------------
+
+type collectingAuditor struct {
+	mu     sync.Mutex
+	events []*audit.Event
+}
+
+func (a *collectingAuditor) Emit(_ context.Context, e *audit.Event) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.events = append(a.events, e)
+}
+
+func (a *collectingAuditor) Events() []*audit.Event {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]*audit.Event(nil), a.events...)
+}
+
+func TestPreflightSessionChecks_EmitsAuditEvents(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.Contains(r.URL.Path, "kubernaut.ai") {
+			_, _ = w.Write([]byte(`{"kind":"APIResourceList","apiVersion":"v1","groupVersion":"kubernaut.ai/v1alpha1","resources":[{"name":"investigationsessions","namespaced":true,"kind":"InvestigationSession","verbs":["get","list","watch"]}]}`))
+			return
+		}
+		if strings.Contains(r.URL.Path, "selfsubjectaccessreviews") {
+			_, _ = w.Write([]byte(`{"kind":"SelfSubjectAccessReview","apiVersion":"authorization.k8s.io/v1","status":{"allowed":true}}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	auditor := &collectingAuditor{}
+	logger := funcr.New(func(_, _ string) {}, funcr.Options{})
+
+	preflightSessionChecks(&rest.Config{Host: srv.URL}, "default", auditor, logger)
+
+	events := auditor.Events()
+	var hasCRD, hasRBAC bool
+	for _, e := range events {
+		if e.Type == audit.EventPreflightCRDCheck {
+			hasCRD = true
+		}
+		if e.Type == audit.EventPreflightRBACCheck {
+			hasRBAC = true
+		}
+	}
+	if !hasCRD {
+		t.Error("AU-2: must emit EventPreflightCRDCheck audit event")
+	}
+	if !hasRBAC {
+		t.Error("AU-2: must emit EventPreflightRBACCheck audit event")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// UT-AF-1273-006: preflightSessionChecks checks all 6 verbs [AC-6]
+//
+// The SSAR loop must check get, list, watch, create, update, delete.
+// ---------------------------------------------------------------------------
+
+func TestPreflightSessionChecks_ChecksAllVerbs(t *testing.T) {
+	var ssarCount atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.Contains(r.URL.Path, "kubernaut.ai") {
+			_, _ = w.Write([]byte(`{"kind":"APIResourceList","apiVersion":"v1","groupVersion":"kubernaut.ai/v1alpha1","resources":[{"name":"investigationsessions","namespaced":true,"kind":"InvestigationSession","verbs":["get","list","watch"]}]}`))
+			return
+		}
+		if strings.Contains(r.URL.Path, "selfsubjectaccessreviews") {
+			ssarCount.Add(1)
+			_, _ = w.Write([]byte(`{"kind":"SelfSubjectAccessReview","apiVersion":"authorization.k8s.io/v1","status":{"allowed":true}}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	logger := funcr.New(func(_, _ string) {}, funcr.Options{})
+	preflightSessionChecks(&rest.Config{Host: srv.URL}, "default", nil, logger)
+
+	if count := ssarCount.Load(); count != 6 {
+		t.Errorf("AC-6: expected 6 SSAR checks (get,list,watch,create,update,delete), got %d", count)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// UT-AF-1273-007: preflightSessionChecks lists denied verbs [AC-6]
+//
+// When some verbs are denied, the warning message must list them.
+// ---------------------------------------------------------------------------
+
+func TestPreflightSessionChecks_ListsDeniedVerbs(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.Contains(r.URL.Path, "kubernaut.ai") {
+			_, _ = w.Write([]byte(`{"kind":"APIResourceList","apiVersion":"v1","groupVersion":"kubernaut.ai/v1alpha1","resources":[{"name":"investigationsessions","namespaced":true,"kind":"InvestigationSession","verbs":["get","list","watch"]}]}`))
+			return
+		}
+		if strings.Contains(r.URL.Path, "selfsubjectaccessreviews") {
+			body, _ := io.ReadAll(r.Body)
+			bodyStr := string(body)
+			ct := r.Header.Get("Content-Type")
+			// K8s client may send protobuf or JSON. For JSON bodies,
+			// deny verbs containing "delete" or "create".
+			denied := false
+			if strings.Contains(ct, "json") || strings.Contains(ct, "application/json") {
+				denied = strings.Contains(bodyStr, `"delete"`) || strings.Contains(bodyStr, `"create"`)
+			} else {
+				// Protobuf: check raw bytes for verb strings
+				denied = strings.Contains(bodyStr, "delete") || strings.Contains(bodyStr, "create")
+			}
+			if denied {
+				_, _ = w.Write([]byte(`{"kind":"SelfSubjectAccessReview","apiVersion":"authorization.k8s.io/v1","status":{"allowed":false}}`))
+			} else {
+				_, _ = w.Write([]byte(`{"kind":"SelfSubjectAccessReview","apiVersion":"authorization.k8s.io/v1","status":{"allowed":true}}`))
+			}
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	var buf strings.Builder
+	logger := funcr.New(func(prefix, args string) {
+		buf.WriteString(prefix + " " + args + "\n")
+	}, funcr.Options{Verbosity: 10})
+
+	auditor := &collectingAuditor{}
+	preflightSessionChecks(&rest.Config{Host: srv.URL}, "default", auditor, logger)
+
+	if !strings.Contains(buf.String(), "delete") {
+		t.Logf("full logs:\n%s", buf.String())
+		t.Error("AC-6: warning must list denied verb 'delete'")
+	}
+
+	events := auditor.Events()
+	for _, e := range events {
+		if e.Type == audit.EventPreflightRBACCheck {
+			if e.Detail["denied_verbs"] == "" || !strings.Contains(e.Detail["denied_verbs"], "delete") {
+				t.Errorf("AU-2: RBAC audit event must list denied_verbs containing 'delete', got %q", e.Detail["denied_verbs"])
+			}
+			if e.Detail["all_allowed"] != "false" {
+				t.Errorf("AU-2: all_allowed must be false when some verbs denied, got %q", e.Detail["all_allowed"])
+			}
+		}
 	}
 }
