@@ -22,44 +22,21 @@ var _ = Describe("KA Integration (AF -> KA -> DS -> mock-LLM)", Label("e2e", "ph
 		Expect(authToken).NotTo(BeEmpty())
 	})
 
-	authenticatedRequest := func(method, path string, body string) (*http.Response, error) {
-		var bodyReader io.Reader
-		if body != "" {
-			bodyReader = strings.NewReader(body)
-		}
-		req, err := http.NewRequest(method, baseURL+path, bodyReader)
-		if err != nil {
-			return nil, err
-		}
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", "Bearer "+authToken)
-		return httpClient.Do(req)
-	}
-
 	mcpToolCall := func(id, toolName string, arguments map[string]interface{}) (int, map[string]interface{}) {
-		payload := map[string]interface{}{
-			"jsonrpc": "2.0",
-			"method":  "tools/call",
-			"id":      id,
-			"params": map[string]interface{}{
-				"name":      toolName,
-				"arguments": arguments,
-			},
-		}
-		body, err := json.Marshal(payload)
-		ExpectWithOffset(1, err).NotTo(HaveOccurred())
+		sessionID, serr := initMCPSession(authToken)
+		ExpectWithOffset(1, serr).NotTo(HaveOccurred(), "MCP initialize handshake failed")
 
-		resp, err := authenticatedRequest(http.MethodPost, "/mcp", string(body))
-		ExpectWithOffset(1, err).NotTo(HaveOccurred())
-		defer func() { _ = resp.Body.Close() }()
-
-		respBody, err := io.ReadAll(resp.Body)
+		payload := buildJSONRPC(id, "tools/call", map[string]interface{}{
+			"name":      toolName,
+			"arguments": arguments,
+		})
+		respBody, statusCode, err := mcpPOST(authToken, sessionID, payload)
 		ExpectWithOffset(1, err).NotTo(HaveOccurred())
 
 		jsonStr := unwrapSSEDataLine(respBody)
 		var result map[string]interface{}
 		_ = json.Unmarshal([]byte(jsonStr), &result)
-		return resp.StatusCode, result
+		return statusCode, result
 	}
 
 	// -----------------------------------------------------------------------
