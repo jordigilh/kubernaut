@@ -52,6 +52,7 @@ type Registry struct {
 
 	A2ABridgeEventsTotal       prometheus.Counter
 	A2ABridgeWriteFailures     prometheus.Counter
+	SessionTTLActions          *prometheus.CounterVec
 }
 
 // NewRegistry creates and registers all AF Prometheus metrics.
@@ -134,6 +135,11 @@ func NewRegistry() *Registry {
 			Name:      "bridge_write_failures_total",
 			Help:      "Total failures writing to the A2A event queue via the EventBridge.",
 		}),
+		SessionTTLActions: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "af",
+			Name:      "session_ttl_actions_total",
+			Help:      "TTL-driven session lifecycle actions.",
+		}, []string{"action"}),
 	}
 
 	reg.MustRegister(r.HTTPRequestsTotal)
@@ -150,6 +156,7 @@ func NewRegistry() *Registry {
 	reg.MustRegister(r.SessionsActive)
 	reg.MustRegister(r.A2ABridgeEventsTotal)
 	reg.MustRegister(r.A2ABridgeWriteFailures)
+	reg.MustRegister(r.SessionTTLActions)
 
 	return r
 }

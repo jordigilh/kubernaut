@@ -121,6 +121,9 @@ func (s *CRDSessionService) UpdatePhase(ctx context.Context, sessionID string, t
 		if err := reader.Get(ctx, nn, &crd); err != nil {
 			return fmt.Errorf("re-read session for label update: %w", err)
 		}
+		if crd.Labels == nil {
+			crd.Labels = make(map[string]string)
+		}
 		crd.Labels[LabelPhase] = string(to)
 		return s.client.Update(ctx, &crd)
 	})
@@ -128,7 +131,7 @@ func (s *CRDSessionService) UpdatePhase(ctx context.Context, sessionID string, t
 		return err
 	}
 
-	s.logger.InfoContext(ctx, "session phase updated",
+	s.logger.Info("session phase updated",
 		"session_id", sessionID,
 		"from", from,
 		"to", to,

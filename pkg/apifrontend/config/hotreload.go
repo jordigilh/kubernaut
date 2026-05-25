@@ -6,8 +6,9 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
+
+	"github.com/go-logr/logr"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -38,7 +39,7 @@ type ReloadCallback func(newContent []byte) error
 type FileWatcher struct {
 	path     string
 	callback ReloadCallback
-	logger   *slog.Logger
+	logger   logr.Logger
 	auditor  audit.Emitter
 
 	mu          sync.RWMutex
@@ -64,7 +65,7 @@ func NewFileWatcher(path string, callback ReloadCallback, opts ...FileWatcherOpt
 	fw := &FileWatcher{
 		path:     path,
 		callback: callback,
-		logger:   slog.Default(),
+		logger:   logr.Discard(),
 		stopCh:   make(chan struct{}),
 		doneCh:   make(chan struct{}),
 	}
@@ -78,9 +79,9 @@ func NewFileWatcher(path string, callback ReloadCallback, opts ...FileWatcherOpt
 type FileWatcherOption func(*FileWatcher)
 
 // WithLogger sets the logger for the FileWatcher.
-func WithLogger(l *slog.Logger) FileWatcherOption {
+func WithLogger(l logr.Logger) FileWatcherOption {
 	return func(fw *FileWatcher) {
-		if l != nil {
+		if l.GetSink() != nil {
 			fw.logger = l
 		}
 	}
@@ -94,7 +95,13 @@ func WithAuditor(e audit.Emitter) FileWatcherOption {
 }
 
 // Start begins watching the file. Loads initial content, then watches for changes.
+// Not safe to call after Stop — returns an error in that case.
 func (w *FileWatcher) Start(ctx context.Context) error {
+	select {
+	case <-w.stopCh:
+		return fmt.Errorf("file watcher already stopped — cannot restart")
+	default:
+	}
 	if err := w.loadInitial(); err != nil {
 		return fmt.Errorf("initial load: %w", err)
 	}
@@ -214,7 +221,7 @@ func (w *FileWatcher) watchLoop(ctx context.Context) {
 			if !ok {
 				return
 			}
-			w.logger.Warn("fsnotify error", "path", w.path, "error", watchErr)
+			w.logger.Info("WARNING: fsnotify error", "path", w.path, "error", watchErr)
 		}
 	}
 }
@@ -222,7 +229,7 @@ func (w *FileWatcher) watchLoop(ctx context.Context) {
 func (w *FileWatcher) handleFileChange(ctx context.Context) {
 	content, err := w.readFileLimited()
 	if err != nil {
-		w.logger.Warn("config reload: read file failed", "path", w.path, "error", err)
+		w.logger.Info("WARNING: config reload: read file failed", "path", w.path, "error", err)
 		return
 	}
 
@@ -237,7 +244,7 @@ func (w *FileWatcher) handleFileChange(ctx context.Context) {
 	}
 
 	if err := w.callback(content); err != nil {
-		w.logger.Warn("config reload: callback rejected new content", "path", w.path, "error", security.RedactError(err))
+		w.logger.Info("WARNING: config reload: callback rejected new content", "path", w.path, "error", security.RedactError(err))
 		if w.auditor != nil {
 			w.auditor.Emit(ctx, &audit.Event{
 				Type: audit.EventConfigRejected,

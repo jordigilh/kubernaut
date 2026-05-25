@@ -3,13 +3,14 @@ package session
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"regexp"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/prometheus/client_golang/prometheus"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -61,7 +62,7 @@ type CRDSessionService struct {
 	apiReader      client.Reader
 	scheme         *runtime.Scheme
 	namespace      string
-	logger         *slog.Logger
+	logger         logr.Logger
 	auditor        audit.Emitter
 	sessionsActive *prometheus.GaugeVec
 
@@ -79,7 +80,7 @@ func NewCRDSessionService(delegate adksession.Service, c client.Client, scheme *
 		client:         c,
 		scheme:         scheme,
 		namespace:      ns,
-		logger:         slog.Default().With("component", "session-service"),
+		logger:         logr.Discard(),
 		crdIndex:       make(map[string]string),
 		pendingConfigs: make(map[string]*CreateConfig),
 	}
@@ -91,6 +92,15 @@ func NewCRDSessionService(delegate adksession.Service, c client.Client, scheme *
 
 // Option configures optional dependencies on CRDSessionService.
 type Option func(*CRDSessionService)
+
+// WithLogger injects a logr.Logger for structured diagnostics.
+func WithLogger(l logr.Logger) Option {
+	return func(s *CRDSessionService) {
+		if l.GetSink() != nil {
+			s.logger = l
+		}
+	}
+}
 
 // WithAuditor injects an audit.Emitter for FedRAMP AU-2/AU-12 compliance.
 func WithAuditor(e audit.Emitter) Option {
@@ -158,7 +168,7 @@ func (s *CRDSessionService) Create(ctx context.Context, req *adksession.CreateRe
 	}
 	s.mu.Unlock()
 
-	s.logger.InfoContext(ctx, "session created (CRD deferred until af_create_rr)",
+	s.logger.Info("session created (CRD deferred until af_create_rr)",
 		"session_id", resp.Session.ID(),
 		"crd_name", crdName,
 		"user", req.UserID,
@@ -218,7 +228,7 @@ func (s *CRDSessionService) Delete(ctx context.Context, req *adksession.DeleteRe
 		},
 	}
 	if err := s.client.Delete(ctx, crd); err != nil {
-		s.logger.WarnContext(ctx, "CRD delete failed",
+		s.logger.V(0).Info("CRD delete failed",
 			"session_id", req.SessionID,
 			"crd_name", crdName,
 			"error", security.RedactError(err),
@@ -323,6 +333,9 @@ func (s *CRDSessionService) PruneTerminalEntries(ctx context.Context) int {
 	for sessionID, crdName := range snapshot {
 		var crd v1alpha1.InvestigationSession
 		err := s.client.Get(ctx, types.NamespacedName{Name: crdName, Namespace: s.namespace}, &crd)
+		if err != nil && !apierrors.IsNotFound(err) {
+			continue
+		}
 		if err != nil || IsTerminal(crd.Status.Phase) {
 			s.mu.Lock()
 			delete(s.crdIndex, sessionID)
@@ -331,7 +344,7 @@ func (s *CRDSessionService) PruneTerminalEntries(ctx context.Context) int {
 		}
 	}
 	if pruned > 0 {
-		s.logger.InfoContext(ctx, "pruned terminal crdIndex entries", "count", pruned)
+		s.logger.Info("pruned terminal crdIndex entries", "count", pruned)
 	}
 	return pruned
 }
@@ -396,13 +409,13 @@ func (s *CRDSessionService) MaterializeCRD(ctx context.Context, sessionID string
 
 	crd.Status = desiredStatus
 	if err := s.client.Status().Update(ctx, crd); err != nil {
-		s.logger.WarnContext(ctx, "CRD status update failed after materialize",
+		s.logger.V(0).Info("CRD status update failed after materialize",
 			"session_id", sessionID,
 			"error", security.RedactError(err),
 		)
 	}
 
-	s.logger.InfoContext(ctx, "CRD materialized",
+	s.logger.Info("CRD materialized",
 		"session_id", sessionID,
 		"crd_name", crdName,
 		"rr_ref", rrRef.Name,

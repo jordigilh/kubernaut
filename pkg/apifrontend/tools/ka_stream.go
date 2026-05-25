@@ -19,14 +19,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"strings"
+
+	"github.com/go-logr/logr"
 
 	"google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/security"
 )
 
 // StreamInvestigationArgs defines the input for kubernaut_stream_investigation.
@@ -214,6 +216,6 @@ func emitViaBridge(ctx context.Context, text string) {
 		return
 	}
 	if err := launcher.EmitReasoningSafe(ctx, text); err != nil {
-		slog.WarnContext(ctx, "bridge emit failed", "error", err)
+		logr.FromContextOrDiscard(ctx).Info("WARNING: bridge emit failed", "error", security.RedactError(err))
 	}
 }
