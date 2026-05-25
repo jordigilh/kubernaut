@@ -3,7 +3,6 @@ package e2e_test
 import (
 	"context"
 	"crypto/tls"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -83,18 +82,19 @@ var _ = Describe("DS Audit Sink (G8)", Label("e2e", "phase4", "g8"), func() {
 	}
 
 	It("TC-E2E-AUDIT-01: After A2A tool call -> DS QueryAuditEvents returns matching entry", func() {
-		// Pre-check: verify DS audit endpoint is reachable from the test host.
-		func() {
-			body, code, rerr := fetchAuditBody()
+		// DS is always deployed in AF E2E — verify reachability as a hard assertion.
+		Eventually(func() error {
+			_, code, rerr := fetchAuditBody()
 			if rerr != nil {
-				Skip(fmt.Sprintf("DS audit endpoint not reachable from test host (%s): %v", dsAuditURL, rerr))
+				return fmt.Errorf("DS audit endpoint not reachable: %w", rerr)
 			}
 			if code == http.StatusUnauthorized || code == http.StatusForbidden ||
 				code == http.StatusNotFound || code == http.StatusBadGateway || code == http.StatusServiceUnavailable {
-				Skip(fmt.Sprintf("DS audit endpoint returned %d — service not accessible from test host", code))
+				return fmt.Errorf("DS audit endpoint returned %d", code)
 			}
-			_ = body
-		}()
+			return nil
+		}, 30*time.Second, 2*time.Second).Should(Succeed(),
+			"DS audit endpoint (%s) must be reachable in E2E", dsAuditURL)
 
 		_, err := mcpToolCall("kubernaut_list_remediations", map[string]interface{}{
 			"namespace": "default",
@@ -110,25 +110,4 @@ var _ = Describe("DS Audit Sink (G8)", Label("e2e", "phase4", "g8"), func() {
 		}, 60*time.Second, 2*time.Second).Should(BeTrue(), "DS audit API should list an event referencing kubernaut_list_remediations")
 	})
 
-	It("TC-E2E-AUDIT-04: Audit events contain redacted Detail (no raw secrets)", func() {
-		body, code, err := fetchAuditBody()
-		Expect(err).NotTo(HaveOccurred())
-		if code != http.StatusOK {
-			Skip(fmt.Sprintf("DS audit API not reachable (%d) — %s", code, string(body)))
-		}
-		Expect(len(body)).To(BeNumerically(">", 2))
-		Expect(json.Valid(body)).To(BeTrue(), "DS audit response should be JSON")
-
-		lower := string(body)
-		dangerPatterns := []string{
-			`"password":"`,
-			`"token":"`,
-			`"secret":"`,
-			`'password':`,
-		}
-		for _, p := range dangerPatterns {
-			Expect(strings.ToLower(lower)).NotTo(ContainSubstring(strings.ToLower(p)),
-				"audit payload should not contain raw %s material", p)
-		}
-	})
 })

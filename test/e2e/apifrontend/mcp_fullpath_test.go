@@ -131,9 +131,8 @@ var _ = Describe("MCP Full-Path Validation (G1)", Label("e2e", "phase2", "g1"), 
 		Expect(parsed).To(HaveKey("workflows"))
 		wf, ok := parsed["workflows"].([]interface{})
 		Expect(ok).To(BeTrue(), "workflows should be an array: %s", text)
-		if len(wf) == 0 {
-			Skip("DS has no seeded workflow entries — workflow catalog empty in this E2E environment")
-		}
+		Expect(wf).NotTo(BeEmpty(),
+			"DS must have seeded workflow entries in E2E — workflow catalog must not be empty")
 	})
 
 	It("TC-E2E-MCP-FULL-05: MCP tools/list returns exactly 23 domain tools", func() {

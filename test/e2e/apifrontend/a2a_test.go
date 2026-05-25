@@ -37,9 +37,8 @@ var _ = Describe("A2A Handler (E2E)", Label("e2e", "a2a"), func() {
 		resp, err := a2aInvoke(httpClient, baseURL, sreToken, a2aTasksSend("gate-check", "ping"))
 		Expect(err).NotTo(HaveOccurred())
 		_ = resp.Body.Close()
-		if resp.StatusCode == http.StatusNotImplemented {
-			Skip("A2A endpoint returns 501 — mock-LLM Gemini endpoint (kubernaut#1157) not yet available")
-		}
+		Expect(resp.StatusCode).NotTo(Equal(http.StatusNotImplemented),
+			"A2A endpoint must be available — mock-LLM Gemini endpoint is required for E2E")
 
 		orchestratorToken, err = fetchDEXTokenForPersona("ai-orchestrator")
 		Expect(err).NotTo(HaveOccurred())

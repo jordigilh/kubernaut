@@ -122,9 +122,8 @@ var _ = Describe("KA Integration (AF -> KA -> DS -> mock-LLM)", Label("e2e", "ph
 			})
 
 			sid := extractSessionID(startResult)
-			if sid == "" {
-				Skip("KA did not return a session_id — may not support this resource in E2E mode")
-			}
+			Expect(sid).NotTo(BeEmpty(),
+				"KA must return a session_id for poll_investigation to work")
 
 			time.Sleep(500 * time.Millisecond)
 
@@ -336,19 +335,14 @@ var _ = Describe("KA Integration (AF -> KA -> DS -> mock-LLM)", Label("e2e", "ph
 			// CounterVec only appears after at least one observation. If KA/DS tools
 			// were all skipped and kubernaut_list_remediations didn't reach the bridge (no session),
 			// the counter won't exist. This is expected without full MCP session lifecycle.
-			if !strings.Contains(body, "af_tool_calls_total") {
-				Skip("af_tool_calls_total not present — no tool calls reached the bridge dispatcher (KA/DS not deployed)")
-			}
-			Expect(body).To(ContainSubstring(`af_tool_calls_total`))
+			Expect(body).To(ContainSubstring("af_tool_calls_total"),
+				"af_tool_calls_total must be present after tool calls — KA/DS must be deployed in E2E")
 		})
 
 		It("TC-E2E-METRICS-03: af_tool_call_duration_seconds has observations", func() {
 			body := scrapeMetrics()
-			if !strings.Contains(body, "af_tool_call_duration_seconds") {
-				Skip("af_tool_call_duration_seconds not present — no tool calls reached the bridge dispatcher (KA/DS not deployed)")
-			}
-			Expect(body).To(ContainSubstring(`af_tool_call_duration_seconds`),
-				"TC-E2E-METRICS-03: tool call duration histogram should exist")
+			Expect(body).To(ContainSubstring("af_tool_call_duration_seconds"),
+				"af_tool_call_duration_seconds must be present after tool calls — KA/DS must be deployed in E2E")
 		})
 	})
 
