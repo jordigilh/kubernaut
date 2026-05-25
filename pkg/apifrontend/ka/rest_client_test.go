@@ -15,18 +15,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
 )
 
-// staticBearerTransport injects a fixed bearer token into outgoing requests,
-// simulating the SA token transport pattern used in production.
-type staticBearerTransport struct {
-	token string
-}
-
-func (t *staticBearerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	req = req.Clone(req.Context())
-	req.Header.Set("Authorization", "Bearer "+t.token)
-	return http.DefaultTransport.RoundTrip(req)
-}
-
 var _ = Describe("KA REST Client", func() {
 	var (
 		ctx    context.Context
