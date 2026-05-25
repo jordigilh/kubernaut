@@ -518,7 +518,7 @@ var _ = Describe("Triage Orchestrator", func() {
 		It("UT-AF-T-084: 10 goroutines calling Triage concurrently under -race", func() {
 			mockProm := &mockPromClient{
 				alerts: []prom.Alert{
-					{Labels: map[string]string{"alertname": "Test", "namespace": "prod", "severity": "high"}, State: "firing"},
+					{Labels: map[string]string{"alertname": "Test", "namespace": "prod", "kind": "Deployment", "name": "web-api", "severity": "high"}, State: "firing"},
 				},
 			}
 			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
@@ -584,6 +584,7 @@ func (m *mockPromClient) InstantQuery(_ context.Context, _ string) (*prom.QueryR
 }
 
 type mockLLM struct {
+	mu          sync.Mutex
 	ruleResult  severity.TriageResult
 	ruleErr     error
 	rulesCalled bool
@@ -593,11 +594,15 @@ type mockLLM struct {
 }
 
 func (m *mockLLM) TriageWithRules(_ context.Context, _ []prom.Rule, _ severity.TriageInput) (severity.TriageResult, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.rulesCalled = true
 	return m.ruleResult, m.ruleErr
 }
 
 func (m *mockLLM) TriagePure(_ context.Context, _ severity.TriageInput) (severity.TriageResult, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.pureCalled = true
 	return m.pureResult, m.pureErr
 }
