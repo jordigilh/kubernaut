@@ -391,17 +391,3 @@ func (m *mockSessionPhaseUpdater) UpdatePhase(_ context.Context, sessionID strin
 	return m.updatePhaseErr
 }
 
-// mockExecutorCanceled simulates the inner executor returning context.Canceled
-// to replicate client SSE disconnect behavior.
-type mockExecutorCanceled struct {
-	executeCalled bool
-}
-
-func (m *mockExecutorCanceled) Execute(_ context.Context, _ *a2asrv.RequestContext, _ eventqueue.Queue) error {
-	m.executeCalled = true
-	return context.Canceled
-}
-
-func (m *mockExecutorCanceled) Cancel(_ context.Context, _ *a2asrv.RequestContext, _ eventqueue.Queue) error {
-	return nil
-}
