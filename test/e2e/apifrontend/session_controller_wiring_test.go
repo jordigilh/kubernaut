@@ -2,6 +2,7 @@ package e2e_test
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -214,6 +215,25 @@ var _ = Describe("Session Controller Wiring (E2E)", Label("e2e", "phase1", "sess
 		if !saw503 {
 			_, _ = GinkgoWriter.Write([]byte("NOTE: 503 phase was too brief to observe — startup was very fast\n"))
 		}
+
+		// Drain stale TLS connections and confirm end-to-end NodePort routing
+		// for the HTTPS port. The /readyz check above uses the health port
+		// (18081) which doesn't exercise the shared httpClient's connection
+		// pool. Without this gate, subsequent tests reuse stale pooled
+		// connections to the deleted pod and get "connection reset by peer".
+		httpClient.CloseIdleConnections()
+		Eventually(func() error {
+			resp, err := httpClient.Get(baseURL + "/healthz")
+			if err != nil {
+				return err
+			}
+			_ = resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				return fmt.Errorf("TLS healthz returned %d", resp.StatusCode)
+			}
+			return nil
+		}, 30*time.Second, 1*time.Second).Should(Succeed(),
+			"SI-4: TLS connectivity on port 18443 must be restored after pod restart")
 
 		// Pod is Running and /readyz returned 200 — logs should be available.
 		Eventually(func() string {
