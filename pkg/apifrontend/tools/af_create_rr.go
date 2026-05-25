@@ -219,12 +219,21 @@ func HandleCreateRR(ctx context.Context, client dynamic.Interface, namespace str
 }
 
 // deriveSignalName selects a grounded signal name using a priority cascade:
-//  1. Triager AlertName (from Prometheus firing/pending alert)
-//  2. Dominant K8s event reason for the target resource
-//  3. Synthetic fallback: a2a-{Kind}-{Name}
+//  1. Triager AlertName (from Prometheus firing/pending alert — most specific)
+//  2. Triager RuleName (from inactive rule match — known rule, not yet firing)
+//  3. Dominant K8s event reason for the target resource (observable cluster signal)
+//  4. Fallback: "unknown" (no grounded infrastructure signal found)
+//
+// The signal name is critical: KA uses it to drive investigation behavior.
+// Every tier above the fallback provides a meaningful infrastructure signal.
 func deriveSignalName(ctx context.Context, client dynamic.Interface, namespace string, args *CreateRRArgs, triageResult *severity.TriageResult) string {
-	if triageResult != nil && triageResult.AlertName != "" {
-		return triageResult.AlertName
+	if triageResult != nil {
+		if triageResult.AlertName != "" {
+			return triageResult.AlertName
+		}
+		if triageResult.RuleName != "" {
+			return triageResult.RuleName
+		}
 	}
 
 	if client != nil {
@@ -239,7 +248,7 @@ func deriveSignalName(ctx context.Context, client dynamic.Interface, namespace s
 		}
 	}
 
-	return fmt.Sprintf("a2a-%s-%s", args.Kind, args.Name)
+	return "unknown"
 }
 
 // NewCreateRRTool creates the af_create_rr tool. Namespace is injected by AF

@@ -33,16 +33,21 @@ func (n *noopPromClient) InstantQuery(_ context.Context, _ string) (*prom.QueryR
 }
 
 type alertOverridePromClient struct {
-	alerts []prom.Alert
+	alerts      []prom.Alert
+	ruleGroups  []prom.RuleGroup
+	queryResult *prom.QueryResult
 }
 
 func (a *alertOverridePromClient) GetAlerts(_ context.Context) ([]prom.Alert, error) {
 	return a.alerts, nil
 }
 func (a *alertOverridePromClient) GetRules(_ context.Context) ([]prom.RuleGroup, error) {
-	return nil, nil
+	return a.ruleGroups, nil
 }
 func (a *alertOverridePromClient) InstantQuery(_ context.Context, _ string) (*prom.QueryResult, error) {
+	if a.queryResult != nil {
+		return a.queryResult, nil
+	}
 	return &prom.QueryResult{}, nil
 }
 
@@ -258,7 +263,7 @@ var _ = Describe("af_create_rr (#1282 refactor)", func() {
 			Expect(signalName).To(Equal("OOMKilling"))
 		})
 
-		It("UT-AF-1282-SIG-010: no events → synthetic a2a- fallback", func() {
+		It("UT-AF-1282-SIG-010: no events and no triager → unknown fallback", func() {
 			client := newFakeClient()
 
 			result, err := tools.HandleCreateRR(context.Background(), client, "prod", &tools.CreateRRArgs{
@@ -271,7 +276,7 @@ var _ = Describe("af_create_rr (#1282 refactor)", func() {
 			Expect(getErr).NotTo(HaveOccurred())
 
 			signalName, _, _ := unstructured.NestedString(created.Object, "spec", "signalName")
-			Expect(signalName).To(Equal("a2a-StatefulSet-db"))
+			Expect(signalName).To(Equal("unknown"))
 		})
 
 		It("UT-AF-1282-SIG-011: triager AlertName takes precedence over K8s events", func() {
@@ -305,6 +310,43 @@ var _ = Describe("af_create_rr (#1282 refactor)", func() {
 			signalName, _, _ := unstructured.NestedString(created.Object, "spec", "signalName")
 			Expect(signalName).To(Equal("HighErrorRate"))
 		})
+	})
+
+	It("UT-AF-1282-SIG-012: triager RuleName used when AlertName is empty", func() {
+		ev := newUnstructuredEventWithType("prod", "ev-bo", "BackOff", "crash", "Deployment", "api", "Warning")
+		client := newFakeClient(ev)
+		noopLLM := severity.NewNoopLLMTriager(logr.Discard())
+		cfg := severity.DefaultConfig()
+
+		mockProm := &alertOverridePromClient{
+			alerts: []prom.Alert{},
+			ruleGroups: []prom.RuleGroup{
+				{Name: "test-rules", Rules: []prom.Rule{
+					{Name: "HighMemoryUsage", State: "inactive",
+						Query:  `container_memory_usage_bytes{namespace="prod"}`,
+						Labels: map[string]string{"severity": "warning"}, Type: "alerting"},
+				}},
+			},
+			queryResult: &prom.QueryResult{
+				Samples: []prom.Sample{
+					{Value: 85, Metric: map[string]string{"namespace": "prod"}},
+				},
+			},
+		}
+		triager := severity.NewTriager(mockProm, noopLLM, cfg, logr.Discard())
+
+		result, err := tools.HandleCreateRR(context.Background(), client, "prod", &tools.CreateRRArgs{
+			Kind: "Deployment", Name: "api", Description: "rule-based",
+		}, "user", triager, nil)
+		Expect(err).NotTo(HaveOccurred())
+
+		created, getErr := client.Resource(rrGVR).Namespace("prod").Get(
+			context.Background(), extractRRName(result.RRID), getOpts)
+		Expect(getErr).NotTo(HaveOccurred())
+
+		signalName, _, _ := unstructured.NestedString(created.Object, "spec", "signalName")
+		Expect(signalName).To(Equal("HighMemoryUsage"),
+			"RuleName should take precedence over K8s events when AlertName is empty")
 	})
 
 	It("UT-AF-1282-K8S: nil client returns ErrK8sUnavailable", func() {

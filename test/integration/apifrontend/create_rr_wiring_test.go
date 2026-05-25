@@ -109,6 +109,8 @@ var _ = Describe("af_create_rr wiring (#1282)", func() {
 
 		signalName, _, _ := unstructured.NestedString(created.Object, "spec", "signalName")
 		Expect(signalName).NotTo(HavePrefix("af-manual-"))
+		Expect(signalName).To(Equal("unknown"),
+			"with no triager and no events, fallback should be unknown")
 
 		DeferCleanup(func() {
 			_ = dynamicClient.Resource(rrGVR).Namespace("default").Delete(ctx, rrName, metav1.DeleteOptions{})
