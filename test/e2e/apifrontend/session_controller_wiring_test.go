@@ -172,10 +172,30 @@ var _ = Describe("Session Controller Wiring (E2E)", Label("e2e", "phase1", "sess
 	// Approach: delete the AF pod, then poll /readyz observing 503→200.
 	// -------------------------------------------------------------------
 	It("E2E-AF-1272-003: /readyz transitions from 503 to 200 after pod restart [SI-4]", func() {
-		podName := afPodName()
+		oldPodName := afPodName()
 
-		_, err := kubectl("delete", "pod", "-n", namespace, podName, "--grace-period=0", "--force")
+		_, err := kubectl("delete", "pod", "-n", namespace, oldPodName, "--grace-period=0", "--force")
 		Expect(err).NotTo(HaveOccurred(), "SI-4: pod delete must succeed to trigger restart")
+
+		// Wait for the replacement pod to reach Running phase so that
+		// subsequent kubectl logs and downstream tests are not affected.
+		Eventually(func() string {
+			phase, _ := kubectl("get", "pods", "-n", namespace,
+				"-l", "app=apifrontend",
+				"-o", "jsonpath={.items[0].status.phase}")
+			return phase
+		}, 120*time.Second, 1*time.Second).Should(Equal("Running"),
+			"SI-4: replacement pod must reach Running phase")
+
+		// Wait for the replacement pod to differ from the deleted one
+		// (guards against stale pod-list cache returning the old name).
+		Eventually(func() string {
+			name, _ := kubectl("get", "pods", "-n", namespace,
+				"-l", "app=apifrontend",
+				"-o", "jsonpath={.items[0].metadata.name}")
+			return name
+		}, 30*time.Second, 1*time.Second).ShouldNot(Equal(oldPodName),
+			"SI-4: replacement pod must have a new name")
 
 		saw503 := false
 		Eventually(func() int {
@@ -195,8 +215,14 @@ var _ = Describe("Session Controller Wiring (E2E)", Label("e2e", "phase1", "sess
 			_, _ = GinkgoWriter.Write([]byte("NOTE: 503 phase was too brief to observe — startup was very fast\n"))
 		}
 
-		logs := afPodLogs()
-		Expect(logs).To(ContainSubstring("session controller cache synced"),
+		// Pod is Running and /readyz returned 200 — logs should be available.
+		Eventually(func() string {
+			out, err := kubectl("logs", "-n", namespace, afPodName(), "--all-containers")
+			if err != nil {
+				return ""
+			}
+			return out
+		}, 30*time.Second, 2*time.Second).Should(ContainSubstring("session controller cache synced"),
 			"SI-4: logs must confirm cache sync after restart")
 	})
 })
