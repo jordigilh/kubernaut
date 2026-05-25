@@ -44,16 +44,17 @@ func (s *spyEmitter) eventsByType(t audit.EventType) []*audit.Event {
 
 var _ = Describe("Audit event emission – tool handlers (PR2 wiring)", func() {
 	rrGVR := schema.GroupVersionResource{Group: "kubernaut.ai", Version: "v1alpha1", Resource: "remediationrequests"}
+	eventsGVR := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "events"}
 
 	Describe("HandleCreateRR", func() {
 		It("UT-AF-1156-050: emits rr.created on successful creation", func() {
 			scheme := runtime.NewScheme()
 			client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme,
-				map[schema.GroupVersionResource]string{rrGVR: "RemediationRequestList"})
+				map[schema.GroupVersionResource]string{rrGVR: "RemediationRequestList", eventsGVR: "EventList"})
 			spy := &spyEmitter{}
 
-			_, err := tools.HandleCreateRR(context.Background(), client, &tools.CreateRRArgs{
-				Namespace: "prod", Kind: "Deployment", Name: "web", Description: "test",
+			_, err := tools.HandleCreateRR(context.Background(), client, "prod", &tools.CreateRRArgs{
+				Kind: "Deployment", Name: "web", Description: "test",
 			}, "alice", nil, spy)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -69,11 +70,11 @@ var _ = Describe("Audit event emission – tool handlers (PR2 wiring)", func() {
 			rr := newUnstructuredRR("prod", "rr-deploy-web-existing", "Executing", "Deployment", "web")
 			scheme := runtime.NewScheme()
 			client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme,
-				map[schema.GroupVersionResource]string{rrGVR: "RemediationRequestList"}, rr)
+				map[schema.GroupVersionResource]string{rrGVR: "RemediationRequestList", eventsGVR: "EventList"}, rr)
 			spy := &spyEmitter{}
 
-			result, err := tools.HandleCreateRR(context.Background(), client, &tools.CreateRRArgs{
-				Namespace: "prod", Kind: "Deployment", Name: "web", Description: "dup",
+			result, err := tools.HandleCreateRR(context.Background(), client, "prod", &tools.CreateRRArgs{
+				Kind: "Deployment", Name: "web", Description: "dup",
 			}, "bob", nil, spy)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.AlreadyExists).To(BeTrue())

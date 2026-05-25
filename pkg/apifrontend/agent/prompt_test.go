@@ -2,6 +2,7 @@ package agent_test
 
 import (
 	"context"
+	"os"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -151,6 +152,62 @@ var _ = Describe("System Prompt", func() {
 			result := agentpkg.BuildInstruction("ns")
 			Expect(result).To(ContainSubstring("kubernaut_takeover"))
 			Expect(result).To(ContainSubstring("kubernaut_reconnect"))
+		})
+	})
+
+	Describe("ResolveNamespace (#1282)", func() {
+		It("UT-AF-1282-NS-001: reads namespace from downward API file", func() {
+			dir := GinkgoT().TempDir()
+			nsFile := dir + "/namespace"
+			Expect(os.WriteFile(nsFile, []byte("kubernaut-system"), 0o644)).To(Succeed())
+
+			ns := agentpkg.ResolveNamespace("", nsFile)
+			Expect(ns).To(Equal("kubernaut-system"))
+		})
+
+		It("UT-AF-1282-NS-002: config override takes precedence over downward API", func() {
+			dir := GinkgoT().TempDir()
+			nsFile := dir + "/namespace"
+			Expect(os.WriteFile(nsFile, []byte("from-downward-api"), 0o644)).To(Succeed())
+
+			ns := agentpkg.ResolveNamespace("custom-ns", nsFile)
+			Expect(ns).To(Equal("custom-ns"))
+		})
+
+		It("UT-AF-1282-NS-003: falls back to default when both sources absent", func() {
+			ns := agentpkg.ResolveNamespace("", "/nonexistent/path/namespace")
+			Expect(ns).To(Equal("default"))
+		})
+
+		It("UT-AF-1282-NS-004: trims whitespace and newlines from downward API file", func() {
+			dir := GinkgoT().TempDir()
+			nsFile := dir + "/namespace"
+			Expect(os.WriteFile(nsFile, []byte("  kubernaut-system\n"), 0o644)).To(Succeed())
+
+			ns := agentpkg.ResolveNamespace("", nsFile)
+			Expect(ns).To(Equal("kubernaut-system"))
+		})
+
+		It("UT-AF-1282-NS-005: empty config override falls through to downward API", func() {
+			dir := GinkgoT().TempDir()
+			nsFile := dir + "/namespace"
+			Expect(os.WriteFile(nsFile, []byte("from-api"), 0o644)).To(Succeed())
+
+			ns := agentpkg.ResolveNamespace("", nsFile)
+			Expect(ns).To(Equal("from-api"))
+		})
+	})
+
+	Describe("Prompt hardening (#1282 F-PROMPT)", func() {
+		It("UT-AF-1282-PROMPT-001: prompt mandates kubernaut MCP tools for investigation", func() {
+			result := agentpkg.BuildInstruction("kubernaut-system")
+			Expect(result).To(ContainSubstring("kubernaut MCP tools"))
+			Expect(result).To(ContainSubstring("NEVER use kubectl"))
+		})
+
+		It("UT-AF-1282-PROMPT-002: prompt instructs AF-resolved namespace for RR creation", func() {
+			result := agentpkg.BuildInstruction("kubernaut-system")
+			Expect(result).To(ContainSubstring("namespace is resolved automatically"))
 		})
 	})
 

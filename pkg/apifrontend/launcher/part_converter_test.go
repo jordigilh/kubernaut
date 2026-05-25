@@ -260,13 +260,13 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(tp.Text).To(ContainSubstring("restart-pod"))
 		})
 
-		It("UT-AF-1189-114: af_create_rr response with rr_id -> creation summary", func() {
+		It("UT-AF-1189-114: af_create_rr response with rr_id -> human-friendly summary", func() {
 			part := &genai.Part{
 				FunctionResponse: &genai.FunctionResponse{
 					Name: "af_create_rr",
 					Response: map[string]any{
-						"rr_id":  "rr-disk-pressure-abc123",
-						"status": "created",
+						"rr_id":   "prod/rr-disk-pressure-abc123",
+						"message": "RemediationRequest created for Deployment/web by alice",
 					},
 				},
 			}
@@ -274,7 +274,8 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(ContainSubstring("rr-disk-pressure-abc123"))
+			Expect(tp.Text).To(ContainSubstring("Remediation request created"))
+			Expect(tp.Text).NotTo(ContainSubstring(`"rr_id"`), "should not dump raw JSON keys")
 		})
 
 		It("UT-AF-1189-115: non-key tool response -> nil (dropped)", func() {
@@ -555,18 +556,19 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(tp.Text).To(Equal("Watching remediation..."))
 		})
 
-		It("UT-AF-1189-161: af_create_rr response without rr_id -> JSON output", func() {
+		It("UT-AF-1189-161: af_create_rr response without rr_id -> human-friendly fallback", func() {
 			part := &genai.Part{
 				FunctionResponse: &genai.FunctionResponse{
 					Name:     "af_create_rr",
-					Response: map[string]any{"status": "created"},
+					Response: map[string]any{"already_exists": true},
 				},
 			}
 			result, err := convert(context.Background(), nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(ContainSubstring("created"))
+			Expect(tp.Text).To(ContainSubstring("already exists"))
+			Expect(tp.Text).NotTo(ContainSubstring(`"`), "should not contain JSON syntax")
 		})
 	})
 
