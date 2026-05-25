@@ -541,6 +541,7 @@ spec:
     - name: health
       port: 8081
       targetPort: health
+      nodePort: 30081
   selector:
     app: apifrontend
 `, namespace, indentYAMLLines(string(configData), 4), securityCtx, afImage, pullPolicy,
