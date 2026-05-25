@@ -324,6 +324,55 @@ var _ = Describe("StreamingExecutor — STREAM-03 Disconnect Detection (BR-SESS-
 		logOutput := buf.String()
 		Expect(logOutput).To(ContainSubstring("failed to transition session to Disconnected"))
 	})
+
+	It("UT-AF-STREAM03-006: detects disconnect via SSE context value when execution ctx is detached", func() {
+		spu := &mockSessionPhaseUpdater{
+			materialized: map[string]bool{"sess-detached": true},
+		}
+		inner := &mockExecutor{}
+		exec := launcher.NewStreamingExecutor(inner, logr.Discard(), nil, spu)
+
+		// Simulate what a2a-go does: the HTTP request context is canceled
+		// (client disconnect) but the execution context is detached via
+		// context.WithoutCancel. The SSE context value survives.
+		httpCtx, httpCancel := context.WithCancel(context.Background())
+		httpCtx = launcher.WithSSEDisconnectCtx(httpCtx)
+
+		// Derive the detached execution context (as a2a-go does)
+		detachedCtx := context.WithoutCancel(httpCtx)
+		sc := &session.CreateContext{SessionID: "sess-detached", TaskID: "task-6"}
+		detachedCtx = session.WithCreateContext(detachedCtx, sc)
+
+		// Client disconnects
+		httpCancel()
+
+		reqCtx := &a2asrv.RequestContext{TaskID: "task-6", ContextID: "sess-detached"}
+		err := exec.Execute(detachedCtx, reqCtx, &fakeQueue{})
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(spu.updatePhaseCalls).To(HaveLen(1))
+		Expect(spu.updatePhaseCalls[0].Phase).To(Equal(string(isv1alpha1.SessionPhaseDisconnected)))
+		Expect(spu.updatePhaseCalls[0].SessionID).To(Equal("sess-detached"))
+	})
+
+	It("UT-AF-STREAM03-007: SSE context value present but NOT canceled does not trigger disconnect", func() {
+		spu := &mockSessionPhaseUpdater{
+			materialized: map[string]bool{"sess-ok2": true},
+		}
+		inner := &mockExecutor{}
+		exec := launcher.NewStreamingExecutor(inner, logr.Discard(), nil, spu)
+
+		// SSE context value is set but NOT canceled (normal completion)
+		httpCtx := context.Background()
+		httpCtx = launcher.WithSSEDisconnectCtx(httpCtx)
+		detachedCtx := context.WithoutCancel(httpCtx)
+		sc := &session.CreateContext{SessionID: "sess-ok2", TaskID: "task-7"}
+		detachedCtx = session.WithCreateContext(detachedCtx, sc)
+
+		reqCtx := &a2asrv.RequestContext{TaskID: "task-7", ContextID: "sess-ok2"}
+		_ = exec.Execute(detachedCtx, reqCtx, &fakeQueue{})
+		Expect(spu.updatePhaseCalls).To(BeEmpty())
+	})
 })
 
 // BR-AUDIT-AU2/AU3: Auditable Events — the audit trail MUST correctly

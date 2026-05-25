@@ -81,7 +81,18 @@ func (s *StreamingExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestC
 	// BR-SESS-003 / SI-4: On client SSE disconnect, transition materialized
 	// sessions to Disconnected phase so tracker slots are released promptly
 	// and the CRD reflects the actual connection state.
-	if ctx.Err() == context.Canceled && s.sessionSvc != nil {
+	//
+	// The a2a-go library runs executors in a detached context
+	// (context.WithoutCancel), so ctx.Err() won't reflect SSE disconnects.
+	// We stored the original HTTP request context as a value (values survive
+	// WithoutCancel). Go's net/http cancels r.Context() when the client's
+	// connection closes — before ServeHTTP returns — making it a reliable
+	// disconnect signal even from within the detached goroutine.
+	sseCtx := SSEDisconnectCtxFromContext(ctx)
+	disconnected := ctx.Err() == context.Canceled ||
+		(sseCtx != nil && sseCtx.Err() == context.Canceled)
+
+	if disconnected && s.sessionSvc != nil {
 		sc := session.CreateContextFromContext(ctx)
 		if sc != nil && sc.SessionID != "" && s.sessionSvc.IsMaterialized(sc.SessionID) {
 			if uerr := s.sessionSvc.UpdatePhase(

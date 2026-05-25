@@ -90,7 +90,13 @@ func NewA2AHandler(cfg A2AConfig) (http.Handler, error) { //nolint:gocritic // h
 		a2asrv.WithKeepAlive(1*time.Second),
 	)
 
-	return httpHandler, nil
+	// Wrap the handler to inject the SSE disconnect context before a2a-go
+	// detaches it with context.WithoutCancel. Context values survive the
+	// detachment, allowing StreamingExecutor to detect client disconnects.
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r = r.WithContext(WithSSEDisconnectCtx(r.Context()))
+		httpHandler.ServeHTTP(w, r)
+	}), nil
 }
 
 // buildBeforeExecuteCallback wraps the user-supplied callback and emits an
