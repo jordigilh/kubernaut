@@ -671,10 +671,12 @@ func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps,
 	if sessInfra != nil {
 		sessionSvcForAgent = sessInfra.SessionService
 	}
+	resolvedNS := agentpkg.ResolveNamespace(cfg.Session.Namespace, agentpkg.DefaultNamespaceFile)
 	rootAgent, _, err := agentpkg.NewRootAgent(agentpkg.AgentConfig{
-		Instruction:         agentpkg.BuildInstruction(cfg.Session.Namespace),
-		InstructionProvider: agentpkg.NewInstructionProvider(cfg.Session.Namespace),
+		Instruction:         agentpkg.BuildInstruction(resolvedNS),
+		InstructionProvider: agentpkg.NewInstructionProvider(resolvedNS),
 		LLMModel:         llmModel,
+		Namespace:        resolvedNS,
 		K8sClient:        deps.K8sClient(),
 		KAClient:         deps.KAClient,
 		DSClient:         deps.DSClient,

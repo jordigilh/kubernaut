@@ -58,6 +58,8 @@ type AgentConfig struct {
 	// RESTMapper resolves Kind strings to GVR for generic kubectl tools.
 	// If nil, only statically-known kinds are supported.
 	RESTMapper meta.RESTMapper
+	// Namespace is the resolved operational namespace for CRD creation.
+	Namespace string
 	// Triager performs severity triage for af_create_rr. If nil, severity
 	// defaults to "medium" without source attribution.
 	Triager *severity.Triager

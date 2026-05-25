@@ -23,21 +23,11 @@ import (
 // maxDescriptionLen is the maximum length for RR description (truncated, not rejected).
 const maxDescriptionLen = 2048
 
-// validSeverities is the allowlist of accepted severity values for RemediationRequests.
-var validSeverities = map[string]bool{
-	"critical": true,
-	"high":     true,
-	"medium":   true,
-	"low":      true,
-	"info":     true,
-}
-
-// CreateRRArgs defines the input for af_create_rr.
+// CreateRRArgs defines the LLM-supplied input for af_create_rr.
+// Namespace and severity are resolved by AF, not the LLM.
 type CreateRRArgs struct {
-	Namespace   string `json:"namespace"`
 	Kind        string `json:"kind"`
 	Name        string `json:"name"`
-	Severity    string `json:"severity,omitempty"`
 	Description string `json:"description"`
 }
 
@@ -64,13 +54,13 @@ func rrFingerprint(namespace, kind, name string) string {
 }
 
 // HandleCreateRR creates a RemediationRequest CRD with singleflight deduplication.
-// Concurrent calls with the same fingerprint are deduplicated — only one creation executes.
-// If severity is empty and a triager is available, severity is determined via triage pipeline.
-func HandleCreateRR(ctx context.Context, client dynamic.Interface, args *CreateRRArgs, username string, triager *severity.Triager, auditor audit.Emitter) (CreateRRResult, error) {
+// Namespace is resolved by AF (not the LLM). Severity is resolved via the triage
+// pipeline when a triager is available, otherwise defaults to "medium".
+func HandleCreateRR(ctx context.Context, client dynamic.Interface, namespace string, args *CreateRRArgs, username string, triager *severity.Triager, auditor audit.Emitter) (CreateRRResult, error) {
 	if client == nil {
 		return CreateRRResult{}, ErrK8sUnavailable
 	}
-	if err := validate.Namespace(args.Namespace); err != nil {
+	if err := validate.Namespace(namespace); err != nil {
 		return CreateRRResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
 	}
 	if args.Kind == "" {
@@ -79,42 +69,37 @@ func HandleCreateRR(ctx context.Context, client dynamic.Interface, args *CreateR
 	if args.Name == "" {
 		return CreateRRResult{}, fmt.Errorf("%w: name must not be empty", ErrInvalidInput)
 	}
-	if args.Severity != "" && !validSeverities[args.Severity] {
-		return CreateRRResult{}, fmt.Errorf("%w: severity must be one of critical, high, medium, low, info", ErrInvalidInput)
-	}
 
 	if len(args.Description) > maxDescriptionLen {
 		args.Description = args.Description[:maxDescriptionLen]
 	}
 
-	// Invoke triage pipeline when severity is not user-supplied
+	resolvedSeverity := "medium"
 	var triageResult *severity.TriageResult
-	if args.Severity == "" && triager != nil {
+	if triager != nil {
 		input := severity.TriageInput{
-			Namespace:   args.Namespace,
+			Namespace:   namespace,
 			Kind:        args.Kind,
 			Name:        args.Name,
 			Description: args.Description,
-			Labels:      map[string]string{"namespace": args.Namespace, "kind": args.Kind, "name": args.Name},
+			Labels:      map[string]string{"namespace": namespace, "kind": args.Kind, "name": args.Name},
 		}
 		result, err := triager.Triage(ctx, input)
 		if err != nil {
 			return CreateRRResult{}, fmt.Errorf("severity triage failed: %w", err)
 		}
 		if result.Severity != "" {
-			args.Severity = result.Severity
+			resolvedSeverity = result.Severity
 			triageResult = &result
 		}
 	}
-	if args.Severity == "" {
-		args.Severity = "medium"
-	}
 
-	fingerprint := rrFingerprint(args.Namespace, args.Kind, args.Name)
+	signalName := deriveSignalName(ctx, client, namespace, args, triageResult)
+	fingerprint := rrFingerprint(namespace, args.Kind, args.Name)
 
 	result, err, _ := rrCreateGroup.Do(fingerprint, func() (interface{}, error) {
 		existing, checkErr := HandleCheckExistingRR(ctx, client, CheckExistingRRArgs{
-			Namespace: args.Namespace,
+			Namespace: namespace,
 			Kind:      args.Kind,
 			Name:      args.Name,
 		})
@@ -137,17 +122,18 @@ func HandleCreateRR(ctx context.Context, client dynamic.Interface, args *CreateR
 		now := time.Now().UTC().Format(time.RFC3339)
 
 		spec := map[string]interface{}{
-			"signalName":        fmt.Sprintf("af-manual-%s-%s", args.Kind, args.Name),
+			"signalName":        signalName,
+			"signalSource":      "a2a-agent",
 			"signalType":        "alert",
 			"signalFingerprint": fingerprint,
-			"severity":          args.Severity,
+			"severity":          resolvedSeverity,
 			"firingTime":        now,
 			"receivedTime":      now,
 			"targetType":        "kubernetes",
 			"targetResource": map[string]interface{}{
 				"kind":      args.Kind,
 				"name":      args.Name,
-				"namespace": args.Namespace,
+				"namespace": namespace,
 			},
 		}
 
@@ -170,13 +156,13 @@ func HandleCreateRR(ctx context.Context, client dynamic.Interface, args *CreateR
 				"kind":       "RemediationRequest",
 				"metadata": map[string]interface{}{
 					"name":      rrName,
-					"namespace": args.Namespace,
+					"namespace": namespace,
 				},
 				"spec": spec,
 			},
 		}
 
-		created, createErr := client.Resource(rrGVR).Namespace(args.Namespace).Create(ctx, rrObj, metav1.CreateOptions{})
+		created, createErr := client.Resource(rrGVR).Namespace(namespace).Create(ctx, rrObj, metav1.CreateOptions{})
 		if createErr != nil {
 			return nil, ToUserFriendlyError(createErr)
 		}
@@ -188,8 +174,8 @@ func HandleCreateRR(ctx context.Context, client dynamic.Interface, args *CreateR
 		if triageResult != nil {
 			out.Severity = triageResult.Severity
 			out.SeveritySource = string(triageResult.Source)
-		} else if args.Severity != "" {
-			out.Severity = args.Severity
+		} else {
+			out.Severity = resolvedSeverity
 		}
 		return out, nil
 	})
@@ -208,7 +194,7 @@ func HandleCreateRR(ctx context.Context, client dynamic.Interface, args *CreateR
 				Type:   audit.EventRRDeduplicated,
 				UserID: username,
 				Detail: map[string]string{
-					"namespace":   args.Namespace,
+					"namespace":   namespace,
 					"kind":        args.Kind,
 					"name":        args.Name,
 					"existing_rr": res.RRID,
@@ -219,11 +205,11 @@ func HandleCreateRR(ctx context.Context, client dynamic.Interface, args *CreateR
 				Type:   audit.EventRRCreated,
 				UserID: username,
 				Detail: map[string]string{
-					"namespace": args.Namespace,
+					"namespace": namespace,
 					"kind":      args.Kind,
 					"name":      args.Name,
 					"rr_id":     res.RRID,
-					"severity":  args.Severity,
+					"severity":  resolvedSeverity,
 				},
 			})
 		}
@@ -232,12 +218,37 @@ func HandleCreateRR(ctx context.Context, client dynamic.Interface, args *CreateR
 	return *res, nil
 }
 
-// NewCreateRRTool creates the af_create_rr tool.
-func NewCreateRRTool(client dynamic.Interface, triager *severity.Triager, auditor audit.Emitter) (tool.Tool, error) {
+// deriveSignalName selects a grounded signal name using a priority cascade:
+//  1. Triager AlertName (from Prometheus firing/pending alert)
+//  2. Dominant K8s event reason for the target resource
+//  3. Synthetic fallback: a2a-{Kind}-{Name}
+func deriveSignalName(ctx context.Context, client dynamic.Interface, namespace string, args *CreateRRArgs, triageResult *severity.TriageResult) string {
+	if triageResult != nil && triageResult.AlertName != "" {
+		return triageResult.AlertName
+	}
+
+	if client != nil {
+		evResult, err := HandleListEvents(ctx, client, ListEventsArgs{
+			Namespace: namespace,
+			Kind:      args.Kind,
+		})
+		if err == nil && len(evResult.Events) > 0 {
+			if dominant := DominantEventReason(evResult.Events); dominant != "" {
+				return dominant
+			}
+		}
+	}
+
+	return fmt.Sprintf("a2a-%s-%s", args.Kind, args.Name)
+}
+
+// NewCreateRRTool creates the af_create_rr tool. Namespace is injected by AF
+// (resolved from downward API / config) and is not exposed to the LLM.
+func NewCreateRRTool(client dynamic.Interface, namespace string, triager *severity.Triager, auditor audit.Emitter) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "af_create_rr",
 		Description: "Create a RemediationRequest for a target resource with deduplication. Checks for existing non-terminal RRs before creating.",
 	}, func(ctx tool.Context, args CreateRRArgs) (CreateRRResult, error) {
-		return HandleCreateRR(ctx, client, &args, usernameFromContext(ctx), triager, auditor)
+		return HandleCreateRR(ctx, client, namespace, &args, usernameFromContext(ctx), triager, auditor)
 	})
 }

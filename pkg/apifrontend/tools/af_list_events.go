@@ -27,6 +27,7 @@ type ListEventsArgs struct {
 type EventSummary struct {
 	Reason        string `json:"reason"`
 	Message       string `json:"message"`
+	Type          string `json:"type,omitempty"`
 	InvolvedKind  string `json:"involved_kind"`
 	InvolvedName  string `json:"involved_name"`
 	Count         int64  `json:"count"`
@@ -70,6 +71,7 @@ func HandleListEvents(ctx context.Context, client dynamic.Interface, args ListEv
 		}
 
 		message, _, _ := unstructured.NestedString(item.Object, "message")
+		eventType, _, _ := unstructured.NestedString(item.Object, "type")
 		involvedName, _, _ := unstructured.NestedString(item.Object, "involvedObject", "name")
 		count, _, _ := unstructured.NestedInt64(item.Object, "count")
 		lastTS, _, _ := unstructured.NestedString(item.Object, "lastTimestamp")
@@ -77,6 +79,7 @@ func HandleListEvents(ctx context.Context, client dynamic.Interface, args ListEv
 		result = append(result, EventSummary{
 			Reason:        reason,
 			Message:       message,
+			Type:          eventType,
 			InvolvedKind:  involvedKind,
 			InvolvedName:  involvedName,
 			Count:         count,
@@ -91,6 +94,50 @@ func HandleListEvents(ctx context.Context, client dynamic.Interface, args ListEv
 		Count:     len(result),
 		Truncated: truncated,
 	}, nil
+}
+
+// eventPriority maps K8s event reasons to severity priority tiers.
+// Higher value = more severe. Events not in the map default to priority 0.
+var eventPriority = map[string]int{
+	"OOMKilling":         100,
+	"OOMKilled":          100,
+	"FailedScheduling":   90,
+	"Evicted":            85,
+	"FailedMount":        80,
+	"FailedAttachVolume": 80,
+	"NodeNotReady":       75,
+	"BackOff":            70,
+	"CrashLoopBackOff":   70,
+	"Unhealthy":          60,
+	"FailedCreate":       55,
+	"FailedPullImage":    50,
+	"ErrImagePull":       50,
+}
+
+// DominantEventReason selects the most operationally significant event reason
+// from a slice of EventSummary. Selection is based on a tiered priority map;
+// ties within the same priority are broken by event count.
+func DominantEventReason(events []EventSummary) string {
+	if len(events) == 0 {
+		return ""
+	}
+	bestReason := ""
+	bestPriority := -1
+	var bestCount int64
+
+	for i := range events {
+		ev := &events[i]
+		p := eventPriority[ev.Reason]
+		if ev.Type == "Warning" && p == 0 {
+			p = 1
+		}
+		if p > bestPriority || (p == bestPriority && ev.Count > bestCount) {
+			bestPriority = p
+			bestCount = ev.Count
+			bestReason = ev.Reason
+		}
+	}
+	return bestReason
 }
 
 // NewKubectlListEventsTool creates the kubectl_list_events tool.
