@@ -145,16 +145,19 @@ Every tool validates inputs before making K8s API calls. Validation is centraliz
 | kubectl_list | kind, namespace | label_selector format |
 | kubectl_list_events | namespace | — |
 | af_check_existing_rr | namespace, kind, name | — |
-| af_create_rr | namespace, kind, name | Description truncated at 2048 chars |
+| af_create_rr | kind, name | Description truncated at 2048 chars. Namespace is AF-resolved (K8s downward API), not an LLM arg (#1282) |
 | kubernaut_submit_signal | namespace/name via ParseRRID | — |
 | kubernaut_approve | namespace/name via ParseRRID | — |
 
 ### Error Wrapping Pattern
 
 ```go
+// For tools where namespace is an LLM arg (kubectl_*, af_check_existing_rr):
 if err := validate.Namespace(args.Namespace); err != nil {
     return Result{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
 }
+// For af_create_rr: namespace is AF-resolved and passed as a function parameter,
+// not from LLM args. Validation applies to the resolved namespace.
 ```
 
 The `ErrInvalidInput` sentinel allows callers to distinguish validation failures from runtime errors via `errors.Is`.
@@ -205,15 +208,19 @@ The `af_create_rr` tool uses `golang.org/x/sync/singleflight` to prevent duplica
 
 ```go
 fingerprint = SHA256(namespace + "/" + kind + "/" + name)[:16]  // hex-encoded
+// namespace is AF-resolved (not from LLM); kind and name are LLM-supplied
 ```
 
 ### Deduplication Flow
 
 ```
-af_create_rr(ns, kind, name)
+af_create_rr(kind, name, description)  // LLM args
     │
     ▼
-rrFingerprint(ns, kind, name) → key
+AF resolves namespace (downward API / config override)
+    │
+    ▼
+rrFingerprint(resolved_ns, kind, name) → key
     │
     ▼
 singleflight.Group.Do(key, func() {

@@ -317,7 +317,8 @@ sequenceDiagram
     AF->>K8s: Get Deployment (AF SA)
     K8s->>AF: Deployment/payment-api
     AF->>LLM: Tool result (owner: Deployment/payment-api)
-    LLM->>AF: tool_call: af_create_rr(namespace, kind, name, severity, description)
+    LLM->>AF: tool_call: af_create_rr(kind, name, description)
+    Note over AF: AF resolves: namespace (downward API),<br/>severity (triage pipeline),<br/>signalName (alerts/rules/events),<br/>signalSource = a2a-agent
     AF->>K8s: Acquire distributed lock (Lease by fingerprint)
     AF->>K8s: Create RemediationRequest
     AF->>K8s: Create InvestigationSession CRD (phase: Active)
@@ -489,7 +490,7 @@ AF-native tools (execute against K8s API directly):
 | `kubectl_list` | List K8s resources by kind/namespace with label selector (Secret .data/.stringData redacted) | K8s API (AF SA) |
 | `kubectl_list_events` | Query K8s Events in namespace with filters | K8s API (AF SA) |
 | `af_check_existing_rr` | Check if RR already exists for resource (dedup) | K8s API (AF SA) |
-| `af_create_rr` | Create RemediationRequest (with severity triage) | K8s API (AF SA) |
+| `af_create_rr` | Create RemediationRequest. LLM supplies `{kind, name, description}` only; AF auto-resolves namespace (K8s downward API), severity (triage pipeline), signalName (AlertName/RuleName/K8s events/"unknown"), signalSource (`a2a-agent`) | K8s API (AF SA) |
 
 kubernaut proxy tools (forwarded to KA REST/MCP or DataStorage):
 
@@ -665,8 +666,8 @@ AF ServiceAccount permissions:
 1. A2A request received (who, what, when)
 2. Triage started (session created)
 3. Tool call executed (which tool, params, result summary)
-4. Severity triage completed/failed (tier, source, severity, duration) — see `SEVERITY_TRIAGE.md`
-5. RR created (fingerprint, severity, target, signalLabels)
+4. Severity triage completed/failed (tier, source, severity, duration)
+5. RR created (fingerprint, severity, target, signalName, signalSource=a2a-agent)
 6. Investigation delegated (KA session ID)
 7. User decision (accept/reject/cancel)
 8. Session completed (outcome, duration)
@@ -953,9 +954,10 @@ East-west encryption satisfies SC-8 (Transmission Confidentiality and Integrity)
 
 ## References
 
-- GitHub Issues: #41-#56, #57-#71 (design comments), #92 (severity triage)
+- GitHub Issues: #41-#56, #57-#71 (design comments), #92 (severity triage), #1282 (AF agent quality)
 - ADRs: `docs/adr/ADR-001` through `ADR-021`
-- Design Documents: `SEVERITY_TRIAGE.md`, `DATA_FLOW.md`, `TOOL_EXECUTION_MODEL.md`, `CONTAINER_IMAGE.md`
+- Design Documents: `DATA_FLOW.md`, `TOOL_EXECUTION_MODEL.md`, `CONTAINER_IMAGE.md`
+- Test Plans: `docs/tests/1282/TEST_PLAN.md` (signal grounding, namespace resolution, output suppression)
 - kubernaut PROPOSAL-EXT-003 Appendix B (delegated authorization model)
 - MCP Spec: https://spec.modelcontextprotocol.io/specification/2025-03-26/
 - A2A Spec: https://google.github.io/A2A/specification/
