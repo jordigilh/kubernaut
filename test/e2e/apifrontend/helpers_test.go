@@ -213,21 +213,30 @@ func unwrapSSEDataLine(raw []byte) string {
 	if !strings.Contains(s, "data:") {
 		return strings.TrimSpace(s)
 	}
-	// Find the data: line containing JSON (starts with '{') — skip non-JSON
-	// SSE events like "data: ping" that precede the actual payload.
-	var lastData string
+	// MCP Streamable HTTP may return multiple SSE data lines: session
+	// notifications (e.g. tools_list_changed) followed by the actual
+	// JSON-RPC response. Prefer the line containing "result" (the
+	// JSON-RPC response), then fall back to the last JSON data line.
+	var lastJSON, resultLine string
 	for _, line := range strings.Split(s, "\n") {
 		line = strings.TrimRight(line, "\r")
-		if strings.HasPrefix(line, "data:") {
-			payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
-			if strings.HasPrefix(payload, "{") {
-				return payload
-			}
-			lastData = payload
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if !strings.HasPrefix(payload, "{") {
+			continue
+		}
+		lastJSON = payload
+		if strings.Contains(payload, `"result"`) {
+			resultLine = payload
 		}
 	}
-	if lastData != "" {
-		return lastData
+	if resultLine != "" {
+		return resultLine
+	}
+	if lastJSON != "" {
+		return lastJSON
 	}
 	return strings.TrimSpace(s)
 }

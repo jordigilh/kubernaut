@@ -56,8 +56,9 @@ var _ = Describe("KA Integration (AF -> KA -> DS -> mock-LLM)", Label("e2e", "ph
 		respBody, err := io.ReadAll(resp.Body)
 		ExpectWithOffset(1, err).NotTo(HaveOccurred())
 
+		jsonStr := unwrapSSEDataLine(respBody)
 		var result map[string]interface{}
-		_ = json.Unmarshal(respBody, &result)
+		_ = json.Unmarshal([]byte(jsonStr), &result)
 		return resp.StatusCode, result
 	}
 

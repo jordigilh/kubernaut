@@ -144,7 +144,7 @@ var _ = Describe("Investigation Streaming (G3)", Label("e2e", "phase3", "g3"), f
 	It("TC-E2E-STREAM-03: Client disconnect -> session phase transitions to Disconnected", func() {
 		streamCtx, streamCancel := context.WithCancel(context.Background())
 
-		prompt := "Create a remediation request for deployment web in default namespace"
+		prompt := "Create a remediation request for deployment web-slow-disconnect-test in default namespace"
 		resp, err := a2aSSEPost(streamCtx, a2aMessageStream("stream-03-disconnect", prompt))
 		Expect(err).NotTo(HaveOccurred())
 		Expect(resp.StatusCode).To(Equal(http.StatusOK))
@@ -243,9 +243,14 @@ var _ = Describe("Investigation Streaming (G3)", Label("e2e", "phase3", "g3"), f
 			maxSSE = parsed
 		}
 
+		type slotResult struct {
+			idx    int
+			status int
+			err    error
+		}
 		var mu sync.Mutex
 		cancels := make([]context.CancelFunc, maxSSE)
-		ready := make(chan int, maxSSE)
+		ready := make(chan slotResult, maxSSE)
 		var wg sync.WaitGroup
 
 		for i := 0; i < maxSSE; i++ {
@@ -257,10 +262,11 @@ var _ = Describe("Investigation Streaming (G3)", Label("e2e", "phase3", "g3"), f
 				cancels[idx] = scancel
 				mu.Unlock()
 
-				body := a2aMessageStream(fmt.Sprintf("stream-cap-%d", idx), "list pods in kubernaut-system")
+				body := a2aMessageStream(fmt.Sprintf("stream-cap-%d", idx),
+					fmt.Sprintf("Create a remediation request for deployment cap%d-slow-disconnect-test in default namespace", idx))
 				req, rerr := http.NewRequestWithContext(sctx, http.MethodPost, baseURL+"/a2a/invoke", strings.NewReader(body))
 				if rerr != nil {
-					ready <- -1
+					ready <- slotResult{idx: idx, status: -1, err: rerr}
 					scancel()
 					return
 				}
@@ -270,18 +276,19 @@ var _ = Describe("Investigation Streaming (G3)", Label("e2e", "phase3", "g3"), f
 
 				resp, derr := httpClient.Do(req)
 				if derr != nil {
-					ready <- -1
+					ready <- slotResult{idx: idx, status: -1, err: derr}
 					scancel()
 					return
 				}
 				if resp.StatusCode != http.StatusOK {
+					body, _ := io.ReadAll(resp.Body)
 					_ = resp.Body.Close()
-					ready <- -1
+					ready <- slotResult{idx: idx, status: resp.StatusCode, err: fmt.Errorf("body: %s", body)}
 					scancel()
 					return
 				}
 
-				ready <- idx
+				ready <- slotResult{idx: idx, status: resp.StatusCode}
 				_, _ = io.Copy(io.Discard, resp.Body)
 				_ = resp.Body.Close()
 				scancel()
@@ -289,7 +296,9 @@ var _ = Describe("Investigation Streaming (G3)", Label("e2e", "phase3", "g3"), f
 		}
 
 		for i := 0; i < maxSSE; i++ {
-			Expect(<-ready).To(BeNumerically(">=", 0), "expected concurrent SSE slot %d to connect", i)
+			sr := <-ready
+			Expect(sr.status).To(Equal(http.StatusOK),
+				"expected concurrent SSE slot %d (goroutine %d) to connect; err=%v", i, sr.idx, sr.err)
 		}
 
 		extraReq, err := http.NewRequestWithContext(context.Background(), http.MethodPost, baseURL+"/a2a/invoke",

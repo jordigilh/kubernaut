@@ -280,24 +280,29 @@ spec:
 		Expect(taskErr).NotTo(HaveOccurred())
 		Expect(taskA.ID).NotTo(BeEmpty(), "A2A must return a task ID")
 
-		// Wait for IS CRD to materialize with Active phase and leaseHolder populated
+		// Wait for IS CRD to materialize with Active phase
+		type isCRDItem struct {
+			Metadata struct{ Name string } `json:"metadata"`
+			Spec     struct {
+				A2ATaskID    string `json:"a2aTaskID"`
+				UserIdentity struct {
+					Username string `json:"username"`
+				} `json:"userIdentity"`
+			} `json:"spec"`
+			Status struct {
+				Phase       string `json:"phase"`
+				LeaseHolder string `json:"leaseHolder"`
+			} `json:"status"`
+		}
 		var isName string
+		var userAUsername string
 		Eventually(func() string {
 			out, kerr := kubectl(ctx, "get", "investigationsession", "-n", namespace, "-o", "json")
 			if kerr != nil {
 				return ""
 			}
 			var list struct {
-				Items []struct {
-					Metadata struct{ Name string } `json:"metadata"`
-					Spec     struct {
-						A2ATaskID string `json:"a2aTaskID"`
-					} `json:"spec"`
-					Status struct {
-						Phase       string `json:"phase"`
-						LeaseHolder string `json:"leaseHolder"`
-					} `json:"status"`
-				} `json:"items"`
+				Items []isCRDItem `json:"items"`
 			}
 			if json.Unmarshal([]byte(out), &list) != nil {
 				return ""
@@ -305,12 +310,14 @@ spec:
 			for _, it := range list.Items {
 				if it.Spec.A2ATaskID == taskA.ID && it.Status.Phase == "Active" {
 					isName = it.Metadata.Name
+					userAUsername = it.Spec.UserIdentity.Username
 					return it.Status.Phase
 				}
 			}
 			return ""
 		}, 60*time.Second, 2*time.Second).Should(Equal("Active"),
 			"User A's IS CRD must reach Active phase")
+		Expect(userAUsername).NotTo(BeEmpty(), "User A's username must be recorded in IS CRD")
 
 		DeferCleanup(func() {
 			_, _ = kubectl(context.Background(), "delete", "investigationsession", isName, "-n", namespace, "--ignore-not-found")
@@ -337,11 +344,13 @@ spec:
 			ContainSubstring("contention"),
 		), "User B's attempt must be rejected — single-driver enforcement (BR-INTERACTIVE-004)")
 
-		// Verify IS CRD still shows User A
-		out, kerr := kubectl(ctx, "get", "investigationsession", isName, "-n", namespace,
-			"-o", "jsonpath={.spec.userIdentity.username}")
+		// Verify IS CRD still shows User A (use JSON parse, not jsonpath,
+		// to avoid protobuf-encoded field issues with kubectl).
+		out, kerr := kubectl(ctx, "get", "investigationsession", isName, "-n", namespace, "-o", "json")
 		Expect(kerr).NotTo(HaveOccurred())
-		Expect(out).To(ContainSubstring(e2ePersonas["sre"].Email),
+		var afterItem isCRDItem
+		Expect(json.Unmarshal([]byte(out), &afterItem)).To(Succeed())
+		Expect(afterItem.Spec.UserIdentity.Username).To(Equal(userAUsername),
 			"IS CRD must still show User A as the session owner")
 	})
 })
