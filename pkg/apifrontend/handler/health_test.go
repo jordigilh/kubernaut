@@ -105,3 +105,27 @@ func TestAllReady_EmptyCheckers(t *testing.T) {
 		t.Error("AllReady() with no checkers should return true")
 	}
 }
+
+// UT-AF-1272-010: AllReady composition includes sessInfra.Healthy — SI-4 compliance.
+func TestAllReady_SessionHealthGatesReadiness(t *testing.T) {
+	var sessHealthy atomic.Bool
+	depsReady := func() bool { return true }
+	authReady := func() bool { return true }
+	notDraining := func() bool { return true }
+
+	checker := AllReady(notDraining, depsReady, authReady, sessHealthy.Load)
+
+	if checker() {
+		t.Error("SI-4: AllReady must return false before session cache sync (Healthy=false)")
+	}
+
+	sessHealthy.Store(true)
+	if !checker() {
+		t.Error("SI-4: AllReady must return true after session cache sync (Healthy=true)")
+	}
+
+	sessHealthy.Store(false)
+	if checker() {
+		t.Error("SI-4: AllReady must return false when session health degrades (Healthy reverts to false)")
+	}
+}
