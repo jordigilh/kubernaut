@@ -2,7 +2,6 @@ package fullpipeline
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -103,88 +102,6 @@ func fpExtractTask(raw json.RawMessage) (fpA2ATaskResult, error) {
 	var task fpA2ATaskResult
 	err := json.Unmarshal(raw, &task)
 	return task, err
-}
-
-// ────────────────────────────────────────────────────────────────────────────
-// MCP helpers
-// ────────────────────────────────────────────────────────────────────────────
-
-func fpInitMCPSession() (string, error) {
-	token := getAFToken()
-	body := fpBuildJSONRPC("init-1", "initialize", map[string]interface{}{
-		"protocolVersion": "2024-11-05",
-		"capabilities":    map[string]interface{}{},
-		"clientInfo": map[string]interface{}{
-			"name":    "fp-e2e",
-			"version": "1.0",
-		},
-	})
-	req, err := http.NewRequest(http.MethodPost, afBaseURL+"/mcp", strings.NewReader(body))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json, text/event-stream")
-	req.Header.Set("Authorization", "Bearer "+token)
-
-	resp, err := afHTTPClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	_, _ = io.Copy(io.Discard, resp.Body)
-
-	if resp.StatusCode >= http.StatusBadRequest {
-		return "", fmt.Errorf("MCP initialize: HTTP %d", resp.StatusCode)
-	}
-	return resp.Header.Get("Mcp-Session-Id"), nil
-}
-
-func fpMCPCall(sessionID, toolName string, args map[string]interface{}) ([]byte, int, error) {
-	token := getAFToken()
-	body := fpBuildJSONRPC("call-1", "tools/call", map[string]interface{}{
-		"name":      toolName,
-		"arguments": args,
-	})
-	req, err := http.NewRequest(http.MethodPost, afBaseURL+"/mcp", strings.NewReader(body))
-	if err != nil {
-		return nil, 0, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json, text/event-stream")
-	req.Header.Set("Authorization", "Bearer "+token)
-	if sessionID != "" {
-		req.Header.Set("Mcp-Session-Id", sessionID)
-	}
-	resp, err := afHTTPClient.Do(req)
-	if err != nil {
-		return nil, 0, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, resp.StatusCode, err
-	}
-	return []byte(fpUnwrapSSE(respBody)), resp.StatusCode, nil
-}
-
-// fpUnwrapSSE extracts the JSON payload from an SSE response body.
-// If the body is already plain JSON it is returned as-is.
-func fpUnwrapSSE(raw []byte) string {
-	s := string(raw)
-	if !strings.Contains(s, "data:") {
-		return strings.TrimSpace(s)
-	}
-	for _, line := range strings.Split(s, "\n") {
-		line = strings.TrimRight(line, "\r")
-		if strings.HasPrefix(line, "data:") {
-			payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
-			if strings.HasPrefix(payload, "{") {
-				return payload
-			}
-		}
-	}
-	return strings.TrimSpace(s)
 }
 
 // ────────────────────────────────────────────────────────────────────────────

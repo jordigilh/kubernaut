@@ -272,10 +272,3 @@ var _ = Describe("RAR Flow (G5)", Label("e2e", "phase2", "g5"), func() {
 	})
 })
 
-func rrNameFromRRID(rrid string) string {
-	parts := strings.SplitN(rrid, "/", 2)
-	if len(parts) != 2 {
-		return ""
-	}
-	return parts[1]
-}

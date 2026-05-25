@@ -152,7 +152,7 @@ func extractAllCRDEnums(dir string) (map[string][]string, error) {
 			continue
 		}
 
-		data, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		data, err := os.ReadFile(filepath.Join(dir, e.Name())) //nolint:gosec // G304: path built from trusted CLI args, not user input
 		if err != nil {
 			return nil, fmt.Errorf("reading %s: %w", e.Name(), err)
 		}
@@ -263,7 +263,7 @@ func collectEnum(fieldMap map[string]interface{}, filename, path string, result 
 func extractOpenAPIEnums(path string) (map[string][]string, error) {
 	result := make(map[string][]string)
 
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // G304: path from trusted CLI args
 	if err != nil {
 		return nil, fmt.Errorf("reading %s: %w", path, err)
 	}
@@ -335,7 +335,7 @@ func walkOpenAPIProperties(node interface{}, prefix string, result map[string][]
 }
 
 func loadMappings(path string) (*MappingFile, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // G304: path from trusted CLI args
 	if err != nil {
 		return nil, err
 	}

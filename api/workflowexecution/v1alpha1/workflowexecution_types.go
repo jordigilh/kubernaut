@@ -222,13 +222,13 @@ const (
 const (
 	// ConditionTokenTTLInsufficient is set when the K8s API server grants a
 	// shorter token TTL than the WFE execution timeout.
-	ConditionTokenTTLInsufficient = "TokenTTLInsufficient"
+	ConditionTokenTTLInsufficient = "TokenTTLInsufficient" //nolint:gosec // G101 false positive: Kubernetes condition name, not a credential
 
 	// ReasonTokenTTLShortened indicates the granted TTL was less than requested.
 	ReasonTokenTTLShortened = "TokenTTLShortened"
 
 	// ReasonTokenTTLSufficient indicates the granted TTL meets the timeout.
-	ReasonTokenTTLSufficient = "TokenTTLSufficient"
+	ReasonTokenTTLSufficient = "TokenTTLSufficient" //nolint:gosec // G101 false positive: Kubernetes event reason, not a credential
 
 	// EventTokenTTLShortened is the K8s event reason emitted when the API
 	// server shortens the token TTL below the execution timeout.
