@@ -73,8 +73,8 @@ var _ = Describe("Interactive Wiring E2E (W6)", Label("e2e", "phase4", "wiring")
 
 		It("E2E-AF-1234-W01b: kubernaut_takeover dispatches to KA and returns structured response", func() {
 			rrName := fmt.Sprintf("e2e-rr-w01b-%s", uuid.New().String()[:8])
-			Expect(kubectlCreateRR("default", rrName, "Deployment", "test-deploy-w01b")).To(Succeed())
-			DeferCleanup(func() { kubectlDeleteRR("default", rrName) })
+			Expect(createRR("default", rrName, "Deployment", "test-deploy-w01b")).To(Succeed())
+			DeferCleanup(func() { deleteRR("default", rrName) })
 
 			rpcID := fmt.Sprintf("w01b-%d", time.Now().UnixNano())
 			text, code, err := mcpToolCall(rpcID, "kubernaut_takeover", map[string]interface{}{

@@ -11,7 +11,13 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"k8s.io/client-go/kubernetes"
+	k8sscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/clientcmd"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	investigationsessionv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
+	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/test/e2e/apifrontend/infrastructure"
 	kinfra "github.com/jordigilh/kubernaut/test/infrastructure"
 )
@@ -30,6 +36,8 @@ var (
 	setupSucceeded bool
 	anyTestFailed  bool
 	kubeconfigPath string
+	k8sClient      client.Client
+	clientset      *kubernetes.Clientset
 )
 
 var _ = ReportAfterEach(func(report SpecReport) {
@@ -98,6 +106,19 @@ var _ = SynchronizedBeforeSuite(
 		username = "e2e-user@kubernaut.ai"
 		password = "password"
 		httpClient = newTLSClient(caCertPath)
+
+		By("Building Kubernetes clients from kubeconfig")
+		restCfg, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
+		Expect(err).NotTo(HaveOccurred(), "failed to build REST config from kubeconfig")
+
+		crScheme := k8sscheme.Scheme
+		Expect(remediationv1alpha1.AddToScheme(crScheme)).To(Succeed())
+		Expect(investigationsessionv1alpha1.AddToScheme(crScheme)).To(Succeed())
+
+		k8sClient, err = client.New(restCfg, client.Options{Scheme: crScheme})
+		Expect(err).NotTo(HaveOccurred(), "failed to create controller-runtime client")
+		clientset, err = kubernetes.NewForConfig(restCfg)
+		Expect(err).NotTo(HaveOccurred(), "failed to create kubernetes clientset")
 
 		healthURL := "http://localhost:18081"
 		Eventually(func() error {
