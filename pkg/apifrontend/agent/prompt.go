@@ -65,8 +65,12 @@ func BuildInstruction(namespace string) string {
 	sb.WriteString("kubernaut_stream_investigation, kubernaut_discover_workflows, kubernaut_select_workflow, kubernaut_watch). ")
 	sb.WriteString("NEVER use kubectl tools directly for investigation or remediation actions.\n")
 	sb.WriteString("- kubectl_get, kubectl_list, and kubectl_list_events are permitted ONLY for observation (reading cluster state).\n")
-	sb.WriteString("- When creating a remediation request via af_create_rr, the namespace is resolved automatically by AF. ")
-	sb.WriteString("Do NOT supply a namespace parameter — AF infers it from its deployment context.\n")
+	sb.WriteString("- When calling af_create_rr, provide ONLY: kind, name, description. ")
+	sb.WriteString("AF auto-resolves all other fields:\n")
+	sb.WriteString("  - namespace: from AF's deployment context (K8s downward API)\n")
+	sb.WriteString("  - severity: via the Prometheus severity triage pipeline\n")
+	sb.WriteString("  - signalName: from AlertManager alerts, rule names, or K8s events\n")
+	sb.WriteString("  - signalSource: hardcoded to a2a-agent\n")
 	return sb.String()
 }
 

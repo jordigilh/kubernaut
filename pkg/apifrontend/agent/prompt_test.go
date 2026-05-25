@@ -205,9 +205,13 @@ var _ = Describe("System Prompt", func() {
 			Expect(result).To(ContainSubstring("NEVER use kubectl"))
 		})
 
-		It("UT-AF-1282-PROMPT-002: prompt instructs AF-resolved namespace for RR creation", func() {
+		It("UT-AF-1282-PROMPT-002: prompt documents all AF auto-resolved fields", func() {
 			result := agentpkg.BuildInstruction("kubernaut-system")
-			Expect(result).To(ContainSubstring("namespace is resolved automatically"))
+			Expect(result).To(ContainSubstring("provide ONLY: kind, name, description"))
+			Expect(result).To(ContainSubstring("namespace: from AF's deployment context"))
+			Expect(result).To(ContainSubstring("severity: via the Prometheus severity triage pipeline"))
+			Expect(result).To(ContainSubstring("signalName: from AlertManager alerts"))
+			Expect(result).To(ContainSubstring("signalSource: hardcoded to a2a-agent"))
 		})
 	})
 
