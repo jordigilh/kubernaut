@@ -53,9 +53,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Two-tier session TTL eviction** — Terminal sessions (`Completed`/`Failed`) evicted after `ttl`; non-terminal (`Pending`/`Running`) after configurable `maxSessionAge` (default `2×ttl`).
 - **AA investigation timeout** — Wall-clock cap (`DefaultMaxInvestigationDuration = 25min`) prevents unbounded investigation sessions. Transitions to `PhaseFailed` with `Reason=TransientError`.
 
-#### Logging Migration (#885)
+#### Logging Migration (#885, #1274)
 
 - **slog-to-logr migration** — Kubernaut Agent migrated from `log/slog` to `logr.Logger` for consistency with controller-runtime services. All internal packages, tests, and wiring updated.
+- **AF slog-to-logr migration** (#1274) — API Frontend migrated from `slog.Default()` to injected `logr.Logger` across all production code (TTL reconciler, session service, A2A launcher, FileWatcher, ka_stream tool). Ensures all AF log output flows through the unified `zapr`-backed audit pipeline (FedRAMP AU-3).
+
+#### AF Session Controller Hardening (#1272, #1273)
+
+- **Graceful degradation** (#1272) — Session health flag (`atomic.Bool`) gated on informer cache sync; `/readyz` returns 503 until cache syncs. `af_session_ttl_actions_total` Prometheus counter for TTL cancel/delete actions (FedRAMP SI-4, SI-4(2)).
+- **Pre-flight diagnostics** (#1273) — CRD discovery and RBAC SSAR checks (all 6 verbs) logged at startup with structured JSON. `session controller manager started` log entry confirms controller is operational (FedRAMP SI-10).
+- **FedRAMP GA hardening** — Removed over-provisioned `patch` verb from RBAC (AC-6), enforced RetentionTTL ≥ 30d floor (AU-11), restricted ports to non-privileged range ≥1024 (SC-4), added audit emission for config hot-reload events (CM-3), seeded `apifrontend` in DB audit retention policies.
 
 #### Observability
 
