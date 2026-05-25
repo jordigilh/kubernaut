@@ -120,6 +120,10 @@ func (in *InvestigationSessionStatus) DeepCopyInto(out *InvestigationSessionStat
 		in, out := &in.ReconnectedAt, &out.ReconnectedAt
 		*out = (*in).DeepCopy()
 	}
+	if in.LeaseAcquiredAt != nil {
+		in, out := &in.LeaseAcquiredAt, &out.LeaseAcquiredAt
+		*out = (*in).DeepCopy()
+	}
 	if in.Conditions != nil {
 		in, out := &in.Conditions, &out.Conditions
 		*out = make([]v1.Condition, len(*in))

@@ -195,6 +195,15 @@ spec:
                 description: KACorrelationID is the correlation ID from KA's /analyze
                   response.
                 type: string
+              leaseAcquiredAt:
+                description: LeaseAcquiredAt is the timestamp when the lease was acquired.
+                format: date-time
+                type: string
+              leaseHolder:
+                description: |-
+                  LeaseHolder is the identity of the current session driver (from KA Lease holderIdentity).
+                  Empty when no lease is held.
+                type: string
               message:
                 description: Message is a human-readable description of the current
                   state.

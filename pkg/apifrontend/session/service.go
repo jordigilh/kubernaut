@@ -399,6 +399,31 @@ func (s *CRDSessionService) MaterializeCRD(ctx context.Context, sessionID string
 		}
 	}
 
+	// BR-INTERACTIVE-004: reject creation when an active IS CRD for the same
+	// RR already exists with a different user (single-driver enforcement).
+	// The Lease is authoritative; this is a best-effort guard (TOCTOU acceptable).
+	// Same-user re-creation is allowed for reconnection scenarios.
+	if rrRef.Name != "" && cfg != nil {
+		var existingList v1alpha1.InvestigationSessionList
+		if listErr := s.client.List(ctx, &existingList,
+			client.InNamespace(s.namespace),
+			client.MatchingLabels{LabelRRName: sanitizeLabelValue(rrRef.Name)},
+		); listErr == nil {
+			for i := range existingList.Items {
+				existing := &existingList.Items[i]
+				if existing.Status.Phase == v1alpha1.SessionPhaseActive &&
+					existing.Name != crdName &&
+					existing.Spec.UserIdentity.Username != cfg.UserIdentity.Username {
+					s.mu.Lock()
+					s.pendingConfigs[sessionID] = cfg
+					s.mu.Unlock()
+					return fmt.Errorf("session_active: an active investigation session already exists for RR %s/%s (held by %s)",
+						rrRef.Namespace, rrRef.Name, existing.Spec.UserIdentity.Username)
+				}
+			}
+		}
+	}
+
 	desiredStatus := crd.Status
 	if err := s.client.Create(ctx, crd); err != nil {
 		s.mu.Lock()
