@@ -42,7 +42,6 @@ func afCreateRRConfig() MockScenarioConfig {
 	}
 }
 
-var severityRe = regexp.MustCompile(`with severity (\w+)`)
 var deployNSRe = regexp.MustCompile(`deployment (\S+) in (\S+) namespace`)
 
 // afCreateRRSlowConfig returns an af_create_rr config with a 5-second
@@ -77,8 +76,10 @@ func afCreateRRScenario() *afCreateRRDynScenario {
 	return &afCreateRRDynScenario{baseConfig: afCreateRRConfig()}
 }
 
-// afCreateRRDynScenario is a dynamic scenario that extracts target resource
-// and severity from the user prompt to forward as af_create_rr tool args.
+// afCreateRRDynScenario is a dynamic scenario that extracts the target resource
+// from the user prompt to forward as af_create_rr tool args.
+// Post-#1282: namespace and severity are AF-resolved; only kind/name/description
+// are sent by the LLM.
 type afCreateRRDynScenario struct {
 	baseConfig    MockScenarioConfig
 	lastCtx       *DetectionContext
@@ -88,7 +89,7 @@ type afCreateRRDynScenario struct {
 func (s *afCreateRRDynScenario) Name() string { return s.baseConfig.ScenarioName }
 
 func (s *afCreateRRDynScenario) Metadata() ScenarioMetadata {
-	return ScenarioMetadata{Name: s.baseConfig.ScenarioName, Description: "Dynamic af_create_rr with severity extraction"}
+	return ScenarioMetadata{Name: s.baseConfig.ScenarioName, Description: "Dynamic af_create_rr with resource extraction"}
 }
 
 func (s *afCreateRRDynScenario) DAG() *conversation.DAG { return nil }
@@ -118,9 +119,6 @@ func (s *afCreateRRDynScenario) Config() MockScenarioConfig {
 	if m := deployNSRe.FindStringSubmatch(text); len(m) == 3 {
 		cfg.ResourceName = m[1]
 		cfg.ResourceNS = m[2]
-	}
-	if m := severityRe.FindStringSubmatch(text); len(m) == 2 {
-		cfg.Severity = m[1]
 	}
 	return cfg
 }

@@ -139,18 +139,9 @@ var _ = Describe("Severity Triage Pipeline (G12)", Label("e2e", "phase4", "g12")
 		expectSeveritySource(text, "llm_triage")
 	})
 
-	It("TC-E2E-SEV-06: User-supplied severity bypasses triage", func() {
-		text, err := a2aCreateRR("default", "test-user-severity-bypass", map[string]interface{}{
-			"severity": "low",
-		})
-		Expect(err).NotTo(HaveOccurred(), text)
-
-		var parsed map[string]interface{}
-		Expect(json.Unmarshal([]byte(text), &parsed)).To(Succeed())
-		Expect(parsed).To(HaveKey("severity"))
-		Expect(parsed["severity"]).To(Equal("low"))
-		Expect(parsed).NotTo(HaveKey("severity_source"))
-	})
+	// TC-E2E-SEV-06: Removed post-#1282. CreateRRArgs no longer accepts
+	// severity — AF always resolves severity via the triage pipeline.
+	// User-supplied severity bypass is no longer a supported path.
 
 })
 
