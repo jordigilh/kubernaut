@@ -25,7 +25,6 @@ import (
 
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
-	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
 )
 
 // SessionPhaseUpdater provides the subset of session.CRDSessionService needed
@@ -93,19 +92,24 @@ func (s *StreamingExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestC
 		(sseCtx != nil && sseCtx.Err() == context.Canceled)
 
 	if disconnected && s.sessionSvc != nil {
-		sc := session.CreateContextFromContext(ctx)
-		if sc != nil && sc.SessionID != "" && s.sessionSvc.IsMaterialized(sc.SessionID) {
+		// Use reqCtx.ContextID directly as the session ID. The
+		// BeforeExecuteCallback injects CreateContext inside the inner
+		// executor's scope, so session.CreateContextFromContext(ctx)
+		// would return nil here. reqCtx.ContextID is the A2A context ID
+		// that the ADK maps 1:1 to the session ID.
+		sessionID := reqCtx.ContextID
+		if sessionID != "" && s.sessionSvc.IsMaterialized(sessionID) {
 			if uerr := s.sessionSvc.UpdatePhase(
-				context.Background(), sc.SessionID,
+				context.Background(), sessionID,
 				isv1alpha1.SessionPhaseDisconnected,
 				"client SSE disconnect", username,
 			); uerr != nil {
 				s.logger.Error(uerr, "failed to transition session to Disconnected on SSE disconnect",
-					"session_id", sc.SessionID,
+					"session_id", sessionID,
 				)
 			} else {
 				s.logger.Info("session transitioned to Disconnected on SSE disconnect",
-					"session_id", sc.SessionID,
+					"session_id", sessionID,
 				)
 			}
 		}
