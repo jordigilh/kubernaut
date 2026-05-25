@@ -130,7 +130,10 @@ var _ = Describe("Tier 2: Config Validation — Validate()", func() {
 		Entry("port < 1", -1, true),
 		Entry("port = 0", 0, true),
 		Entry("port > 65535", 70000, true),
-		Entry("port = 1 (min valid)", 1, false),
+		Entry("port = 1 (privileged)", 1, true),
+		Entry("port = 80 (privileged)", 80, true),
+		Entry("port = 1023 (privileged)", 1023, true),
+		Entry("port = 1024 (min valid)", 1024, false),
 		Entry("port = 65535 (max valid)", 65535, false),
 		Entry("port = 8443 (typical)", 8443, false),
 	)
@@ -692,6 +695,27 @@ resilience:
 		Entry("empty namespace with both TTLs rejects", "", 10*time.Minute, 720*time.Hour, true),
 		Entry("set namespace with TTLs passes", "kubernaut-system", 10*time.Minute, 720*time.Hour, false),
 		Entry("empty namespace with zero TTLs passes", "", time.Duration(0), time.Duration(0), false),
+	)
+})
+
+var _ = Describe("Tier 7b: Retention TTL Floor (AU-11)", func() {
+	DescribeTable("UT-AF-1272-011 session.retentionTTL must be >= 30d",
+		func(ttl time.Duration, wantErr bool) {
+			cfg := validConfig()
+			cfg.Session.Namespace = "kubernaut-system"
+			cfg.Session.RetentionTTL = ttl
+			err := cfg.Validate()
+			if wantErr {
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("retentionTTL"))
+			} else {
+				Expect(err).NotTo(HaveOccurred())
+			}
+		},
+		Entry("zero TTL passes (not configured)", time.Duration(0), false),
+		Entry("29 days rejects", 29*24*time.Hour, true),
+		Entry("30 days passes", 30*24*time.Hour, false),
+		Entry("90 days passes", 90*24*time.Hour, false),
 	)
 })
 
