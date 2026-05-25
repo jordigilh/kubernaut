@@ -406,6 +406,11 @@ func DeployAPIFrontendService(ctx context.Context, kubeconfigPath, namespace, af
               mountPath: /coverdata`
 	}
 
+	healthNodePort := ""
+	if enableCoverage {
+		healthNodePort = "\n      nodePort: 30081"
+	}
+
 	coverageVolume := ""
 	if enableCoverage {
 		coverageVolume = `        - name: coverdata
@@ -540,12 +545,11 @@ spec:
       targetPort: metrics
     - name: health
       port: 8081
-      targetPort: health
-      nodePort: 30081
+      targetPort: health%[9]s
   selector:
     app: apifrontend
 `, namespace, indentYAMLLines(string(configData), 4), securityCtx, afImage, pullPolicy,
-		coverageEnv, coverageMount, coverageVolume)
+		coverageEnv, coverageMount, coverageVolume, healthNodePort)
 	return kubectlApplyStdinAF(ctx, kubeconfigPath, manifest, writer)
 }
 
