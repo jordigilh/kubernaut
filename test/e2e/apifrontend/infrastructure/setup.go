@@ -176,6 +176,24 @@ func SetupE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath, na
 		return fmt.Errorf("AF DS client RBAC failed: %w", err)
 	}
 
+	// Seed DS with action types + workflows so kubernaut_list_workflows is non-empty.
+	_, _ = fmt.Fprintln(writer, "  Seeding DS action types + workflows for AF E2E...")
+	saToken, err := kinfra.GetServiceAccountToken(ctx, namespace, "apifrontend", kubeconfigPath)
+	if err != nil {
+		return fmt.Errorf("get apifrontend SA token for DS seeding: %w", err)
+	}
+	seedClient, err := kinfra.CreateTLSAuthenticatedDataStorageClient("https://localhost:8089", saToken, kubeconfigPath)
+	if err != nil {
+		return fmt.Errorf("create DS seed client: %w", err)
+	}
+	if err := kinfra.SeedActionTypesViaAPI(seedClient, writer); err != nil {
+		return fmt.Errorf("seed action types: %w", err)
+	}
+	testWorkflows := kinfra.GetKAE2ETestWorkflows()
+	if _, err := kinfra.SeedWorkflowsInDataStorage(seedClient, testWorkflows, "AF E2E", writer); err != nil {
+		return fmt.Errorf("seed workflows: %w", err)
+	}
+
 	// Deploy mock-LLM (used by AF for LLM routing in E2E)
 	_, _ = fmt.Fprintln(writer, "  Deploying mock-LLM...")
 	if err := deployMockLLM(ctx, kubeconfigPath, namespace, images["mock-llm"], writer); err != nil {

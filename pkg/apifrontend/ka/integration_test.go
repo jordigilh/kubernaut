@@ -89,7 +89,7 @@ var _ = Describe("KA REST Client Integration (httptest)", func() {
 		})
 
 		It("IT-KA-002: request body JSON is correctly serialized and deserialized", func() {
-			var capturedBody ka.AnalyzeRequest
+			var capturedBody map[string]interface{}
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				Expect(r.Header.Get("Content-Type")).To(Equal("application/json"))
 				err := json.NewDecoder(r.Body).Decode(&capturedBody)
@@ -106,9 +106,12 @@ var _ = Describe("KA REST Client Integration (httptest)", func() {
 				Name:      "etcd",
 			})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(capturedBody.Namespace).To(Equal("kube-system"))
-			Expect(capturedBody.Kind).To(Equal("StatefulSet"))
-			Expect(capturedBody.Name).To(Equal("etcd"))
+			Expect(capturedBody).To(HaveKeyWithValue("resource_namespace", "kube-system"))
+			Expect(capturedBody).To(HaveKeyWithValue("resource_kind", "StatefulSet"))
+			Expect(capturedBody).To(HaveKeyWithValue("resource_name", "etcd"))
+			Expect(capturedBody).To(HaveKey("incident_id"))
+			Expect(capturedBody).To(HaveKey("remediation_id"))
+			Expect(capturedBody).To(HaveKeyWithValue("signal_source", "apifrontend"))
 		})
 	})
 

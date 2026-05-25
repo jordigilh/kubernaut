@@ -149,12 +149,56 @@ var _ = Describe("Investigation Streaming (G3)", Label("e2e", "phase3", "g3"), f
 		Expect(err).NotTo(HaveOccurred())
 		Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
-		// Drain SSE frames until stream completes or times out.
+		// Drain SSE frames, capturing the server-assigned task ID from the
+		// first status-update event. A2A assigns a UUID task ID (not the
+		// JSON-RPC request id) so we must parse it from the stream.
+		taskIDCh := make(chan string, 1)
 		done := make(chan struct{})
 		go func() {
 			defer close(done)
-			_, _ = io.Copy(io.Discard, resp.Body)
+			sc := bufio.NewScanner(resp.Body)
+			sc.Buffer(make([]byte, 64*1024), 1024*1024)
+			sent := false
+			for sc.Scan() {
+				line := strings.TrimRight(sc.Text(), "\r")
+				if !strings.HasPrefix(line, "data:") {
+					continue
+				}
+				payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+				if !strings.HasPrefix(payload, "{") {
+					continue
+				}
+				if !sent {
+					var evt struct {
+						Result json.RawMessage `json:"result"`
+					}
+					if json.Unmarshal([]byte(payload), &evt) == nil && len(evt.Result) > 0 {
+						var task struct {
+							ID string `json:"id"`
+						}
+						if json.Unmarshal(evt.Result, &task) == nil && task.ID != "" {
+							taskIDCh <- task.ID
+							sent = true
+						}
+					}
+				}
+			}
+			if !sent {
+				taskIDCh <- ""
+			}
 		}()
+
+		var taskID string
+		Eventually(func() string {
+			select {
+			case id := <-taskIDCh:
+				taskID = id
+				return id
+			default:
+				return ""
+			}
+		}, 60*time.Second, 500*time.Millisecond).ShouldNot(BeEmpty(),
+			"must capture A2A task ID from SSE stream")
 
 		// Wait for the IS CRD to materialize in Active phase.
 		kctlCtx := context.Background()
@@ -162,7 +206,7 @@ var _ = Describe("Investigation Streaming (G3)", Label("e2e", "phase3", "g3"), f
 		Eventually(func() string {
 			list := listInvestigationSessions(kctlCtx)
 			for _, it := range list.Items {
-				if it.Spec.A2ATaskID == "stream-03-disconnect" && it.Status.Phase == "Active" {
+				if it.Spec.A2ATaskID == taskID && it.Status.Phase == "Active" {
 					isName = it.Metadata.Name
 					return it.Status.Phase
 				}

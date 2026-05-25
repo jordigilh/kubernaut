@@ -116,9 +116,44 @@ func (c *Client) Healthy() bool {
 	return c.cbTransport.State() != gobreaker.StateOpen
 }
 
+// kaIncidentBody is the wire-format for POST /api/v1/incident/analyze,
+// matching the KA ogen IncidentRequest schema.
+type kaIncidentBody struct {
+	IncidentID        string `json:"incident_id"`
+	RemediationID     string `json:"remediation_id"`
+	SignalName        string `json:"signal_name"`
+	Severity          string `json:"severity"`
+	SignalSource      string `json:"signal_source"`
+	ResourceNamespace string `json:"resource_namespace"`
+	ResourceKind      string `json:"resource_kind"`
+	ResourceName      string `json:"resource_name"`
+	ErrorMessage      string `json:"error_message"`
+	Environment       string `json:"environment"`
+	Priority          string `json:"priority"`
+	RiskTolerance     string `json:"risk_tolerance"`
+	BusinessCategory  string `json:"business_category"`
+}
+
 // Analyze starts an investigation via POST /api/v1/incident/analyze.
+// The AnalyzeRequest is mapped to the full KA IncidentRequest schema
+// with sensible defaults for the fields AF does not expose.
 func (c *Client) Analyze(ctx context.Context, req AnalyzeRequest) (string, error) {
-	resp, err := c.doJSON(ctx, http.MethodPost, "/api/v1/incident/analyze", req)
+	body := kaIncidentBody{
+		IncidentID:        fmt.Sprintf("af-%d", time.Now().UnixNano()),
+		RemediationID:     fmt.Sprintf("af-rr-%d", time.Now().UnixNano()),
+		SignalName:        "ManualInvestigation",
+		Severity:          "medium",
+		SignalSource:      "apifrontend",
+		ResourceNamespace: req.Namespace,
+		ResourceKind:      req.Kind,
+		ResourceName:      req.Name,
+		ErrorMessage:      fmt.Sprintf("Investigation requested for %s/%s %s", req.Namespace, req.Kind, req.Name),
+		Environment:       "production",
+		Priority:          "P2",
+		RiskTolerance:     "medium",
+		BusinessCategory:  "infrastructure",
+	}
+	resp, err := c.doJSON(ctx, http.MethodPost, "/api/v1/incident/analyze", body)
 	if err != nil {
 		return "", kaToUserFriendlyError(err)
 	}

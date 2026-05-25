@@ -13,6 +13,8 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	"github.com/jordigilh/kubernaut/test/e2e/apifrontend/infrastructure"
 )
 
 var _ = Describe("Severity Triage Pipeline (G12)", Label("e2e", "phase4", "g12"), func() {
@@ -76,6 +78,22 @@ var _ = Describe("Severity Triage Pipeline (G12)", Label("e2e", "phase4", "g12")
 	}
 
 	It("TC-E2E-SEV-01: Tier 1 — Firing alert", func() {
+		// Re-inject the CPU metric to ensure it's fresh (OTLP gauge points can
+		// go stale between BeforeSuite injection and phase-4 test execution).
+		promURL := "http://localhost:9190"
+		if envProm := os.Getenv("AF_E2E_PROMETHEUS_URL"); envProm != "" {
+			promURL = envProm
+		}
+		ctx := context.Background()
+		Expect(injectMetricForTier2(ctx, promURL, "e2e_cpu_usage_percent", 95, map[string]string{
+			"namespace": "default", "kind": "Deployment", "name": "test-firing-target",
+		})).To(Succeed(), "CPU metric re-injection must succeed for Tier 1")
+
+		Eventually(func() error {
+			return infrastructure.WaitForPrometheusRuleState(ctx, promURL, "HighCPU", infrastructure.RuleStateFiring, 5*time.Second)
+		}, 60*time.Second, 2*time.Second).Should(Succeed(),
+			"HighCPU alert must be firing before RR creation")
+
 		text, err := a2aCreateRR("default", "test-firing-target", nil)
 		Expect(err).NotTo(HaveOccurred(), text)
 		expectSeverityAndSource(text, "critical", "firing_alert")

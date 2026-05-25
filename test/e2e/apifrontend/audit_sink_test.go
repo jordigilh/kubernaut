@@ -6,11 +6,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	kinfra "github.com/jordigilh/kubernaut/test/infrastructure"
+	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
 var _ = Describe("DS Audit Sink (G8)", Label("e2e", "phase4", "g8"), func() {
@@ -18,6 +22,7 @@ var _ = Describe("DS Audit Sink (G8)", Label("e2e", "phase4", "g8"), func() {
 		authToken    string
 		mcpSessionID string
 		dsAuditURL   string
+		dsClient     *http.Client
 	)
 
 	BeforeEach(func() {
@@ -28,6 +33,17 @@ var _ = Describe("DS Audit Sink (G8)", Label("e2e", "phase4", "g8"), func() {
 		Expect(err).NotTo(HaveOccurred())
 		mcpSessionID, err = initMCPSession(authToken)
 		Expect(err).NotTo(HaveOccurred())
+
+		kubeconfigPath := os.Getenv("HOME") + "/.kube/apifrontend-e2e-config"
+		saToken, saErr := kinfra.GetServiceAccountToken(context.Background(), e2eNamespace, "apifrontend", kubeconfigPath)
+		Expect(saErr).NotTo(HaveOccurred(), "SA token for DS audit auth")
+
+		dsClient = &http.Client{
+			Transport: testauth.NewServiceAccountTransportWithBase(saToken, &http.Transport{
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // E2E test only
+			}),
+			Timeout: 10 * time.Second,
+		}
 	})
 
 	mcpToolCall := func(toolName string, args map[string]interface{}) (string, error) {
@@ -52,11 +68,6 @@ var _ = Describe("DS Audit Sink (G8)", Label("e2e", "phase4", "g8"), func() {
 			return text, fmt.Errorf("%s", text)
 		}
 		return text, nil
-	}
-
-	dsClient := &http.Client{
-		Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}, //nolint:gosec // E2E test only
-		Timeout:   10 * time.Second,
 	}
 
 	fetchAuditBody := func() ([]byte, int, error) {

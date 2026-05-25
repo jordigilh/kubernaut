@@ -271,6 +271,15 @@ spec:
 		defer func() { _ = respA.Body.Close() }()
 		Expect(respA.StatusCode).To(Equal(http.StatusOK))
 
+		// Parse the server-assigned A2A task ID from the response (UUID, not
+		// the JSON-RPC request id "g19-join06-a").
+		rpcA, parseErr := parseRPCResponse(respA)
+		Expect(parseErr).NotTo(HaveOccurred())
+		Expect(rpcA.Error).To(BeNil(), "User A's A2A request must succeed")
+		taskA, taskErr := extractTaskFromResult(rpcA.Result)
+		Expect(taskErr).NotTo(HaveOccurred())
+		Expect(taskA.ID).NotTo(BeEmpty(), "A2A must return a task ID")
+
 		// Wait for IS CRD to materialize with Active phase and leaseHolder populated
 		var isName string
 		Eventually(func() string {
@@ -294,7 +303,7 @@ spec:
 				return ""
 			}
 			for _, it := range list.Items {
-				if it.Spec.A2ATaskID == "g19-join06-a" && it.Status.Phase == "Active" {
+				if it.Spec.A2ATaskID == taskA.ID && it.Status.Phase == "Active" {
 					isName = it.Metadata.Name
 					return it.Status.Phase
 				}
