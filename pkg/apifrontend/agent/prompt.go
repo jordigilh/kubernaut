@@ -23,7 +23,7 @@ func ResolveNamespace(configOverride, namespaceFile string) string {
 	if configOverride != "" {
 		return configOverride
 	}
-	data, err := os.ReadFile(namespaceFile)
+	data, err := os.ReadFile(namespaceFile) //nolint:gosec // G304: path is either DefaultNamespaceFile (constant) or config-supplied override, not user input
 	if err == nil {
 		ns := strings.TrimSpace(string(data))
 		if ns != "" {
