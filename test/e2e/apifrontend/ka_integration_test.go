@@ -17,7 +17,7 @@ var _ = Describe("KA Integration (AF -> KA -> DS -> mock-LLM)", Label("e2e", "ph
 
 	BeforeEach(func() {
 		var err error
-		authToken, err = fetchDEXToken(dexURL, clientID, clientSecret, username, password)
+		authToken, err = fetchDEXTokenForPersona("sre")
 		Expect(err).NotTo(HaveOccurred(), "Failed to obtain DEX token for KA integration tests")
 		Expect(authToken).NotTo(BeEmpty())
 	})
