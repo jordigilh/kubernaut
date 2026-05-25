@@ -20,9 +20,13 @@ import (
 	"go.uber.org/zap/zapcore"
 	adksession "google.golang.org/adk/session"
 	"gopkg.in/yaml.v3"
+	authorizationv1 "k8s.io/api/authorization/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -79,6 +83,7 @@ func run() int {
 	zapLogger := newZapLogger(logLevel)
 	defer func() { _ = zapLogger.Sync() }()
 	logger := zapr.NewLogger(zapLogger).WithName("apifrontend")
+	ctrl.SetLogger(logger.WithName("controller-runtime"))
 
 	if cfg.Server.Port != origPort {
 		logger.Info("PORT env override applied", "original", origPort, "effective", cfg.Server.Port)
@@ -162,7 +167,6 @@ func run() int {
 	userLimiter := ratelimit.NewUserLimiter(rlCfg.PerUser)
 
 	sessInfra := buildSessionInfra(cfg, metricsReg, auditor, logger)
-	defer sessInfra.StopFunc()
 
 	deps, err := buildBackendDeps(ctx, cfg, metricsReg, auditor, logger)
 	if err != nil {
@@ -191,7 +195,7 @@ func run() int {
 			return fmt.Errorf("resolve defaults: %w", err)
 		}
 		return newCfg.Validate()
-	}, config.WithAuditor(auditor))
+	}, config.WithLogger(logger.WithName("config-watcher")), config.WithAuditor(auditor))
 	if err != nil {
 		logger.Info("config file watcher unavailable", "error", err)
 	} else {
@@ -244,7 +248,7 @@ func run() int {
 		AuthMiddleware:     authMiddleware,
 		PreAuthMiddleware:  preAuthMW,
 		PostAuthMiddleware: postAuthMW,
-		ReadyChecker:       handler.AllReady(func() bool { return !draining.Load() }, depsReady, authReady),
+		ReadyChecker:       handler.AllReady(func() bool { return !draining.Load() }, depsReady, authReady, sessInfra.Healthy.Load),
 		SSETracker:         buildSSETracker(cfg, metricsReg),
 		Draining:           draining,
 	}
@@ -265,7 +269,7 @@ func run() int {
 		IdleTimeout:       120 * time.Second,
 	}
 
-	healthMux := buildHealthMux(handler.AllReady(depsReady, authReady), draining)
+	healthMux := buildHealthMux(handler.AllReady(depsReady, authReady, sessInfra.Healthy.Load), draining)
 	healthServer := &http.Server{
 		Addr:              defaultHealthz,
 		Handler:           healthMux,
@@ -327,6 +331,7 @@ func run() int {
 
 	<-ctx.Done()
 	draining.Store(true)
+	sessInfra.StopFunc()
 	logger.Info("shutting down...")
 
 	shutCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout(cfg))
@@ -683,6 +688,7 @@ func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps,
 		Agent:          rootAgent,
 		SessionService: sessionSvc,
 		AppName:        "kubernaut-apifrontend",
+		Logger:         logger.WithName("a2a-launcher"),
 		Auditor:        auditor,
 		BridgeMetrics:  metricsReg,
 	}
@@ -956,6 +962,7 @@ type sessionInfra struct {
 	SessionService *session.CRDSessionService
 	Reconciler     *controller.SessionCleanupReconciler
 	Scheme         *k8sruntime.Scheme
+	Healthy        *atomic.Bool
 	StopFunc       func()
 }
 
@@ -967,11 +974,27 @@ type sessionInfra struct {
 func buildSessionInfra(cfg *config.Config, reg *metrics.Registry, auditor audit.Emitter, logger logr.Logger) *sessionInfra {
 	scheme := k8sruntime.NewScheme()
 	if err := v1alpha1.AddToScheme(scheme); err != nil {
-		logger.Error(err, "failed to register InvestigationSession scheme — session features will be unavailable")
+		logger.Error(err, "failed to register InvestigationSession scheme — falling back to in-memory")
+		k8sClient, stopFunc := buildFakeSessionClient(scheme)
+		fakeHealthy := &atomic.Bool{}
+		fakeHealthy.Store(true)
+		return &sessionInfra{
+			SessionService: session.NewCRDSessionService(
+				adksession.InMemoryService(), k8sClient, scheme, cfg.Session.Namespace,
+				session.WithAuditor(auditor),
+				session.WithLogger(logger.WithName("session-service")),
+			),
+			Scheme:  scheme,
+			Healthy: fakeHealthy,
+			StopFunc: stopFunc,
+		}
 	}
 
 	for _, phase := range []string{"Active", "Disconnected", "Completed", "Cancelled", "Failed"} {
 		reg.SessionsActive.WithLabelValues(phase)
+	}
+	for _, action := range []string{"cancel", "delete"} {
+		reg.SessionTTLActions.WithLabelValues(action)
 	}
 
 	var k8sClient client.Client
@@ -979,6 +1002,7 @@ func buildSessionInfra(cfg *config.Config, reg *metrics.Registry, auditor audit.
 
 	restCfg, err := ctrl.GetConfig()
 	if err == nil {
+		preflightSessionChecks(restCfg, cfg.Session.Namespace, logger)
 		mgr, mgrErr := ctrl.NewManager(restCfg, ctrl.Options{
 			Scheme: scheme,
 			Cache: cache.Options{
@@ -996,33 +1020,47 @@ func buildSessionInfra(cfg *config.Config, reg *metrics.Registry, auditor audit.
 		} else {
 			k8sClient = mgr.GetClient()
 
-			svc := session.NewCRDSessionService(
-				adksession.InMemoryService(),
-				k8sClient,
-				scheme,
-				cfg.Session.Namespace,
-				session.WithAuditor(auditor),
-				session.WithSessionsActive(reg.SessionsActive),
-				session.WithAPIReader(mgr.GetAPIReader()),
-			)
+		svc := session.NewCRDSessionService(
+			adksession.InMemoryService(),
+			k8sClient,
+			scheme,
+			cfg.Session.Namespace,
+			session.WithAuditor(auditor),
+			session.WithSessionsActive(reg.SessionsActive),
+			session.WithAPIReader(mgr.GetAPIReader()),
+			session.WithLogger(logger.WithName("session-service")),
+		)
 
-			reconciler := controller.NewSessionCleanupReconciler(
-				k8sClient,
-				cfg.Session.DisconnectTTL,
-				cfg.Session.RetentionTTL,
-				auditor,
-				nil,
-				svc,
-			)
+		reconciler := controller.NewSessionCleanupReconciler(
+			k8sClient,
+			cfg.Session.DisconnectTTL,
+			cfg.Session.RetentionTTL,
+			logger.WithName("session-cleanup"),
+			auditor,
+			reg.SessionTTLActions,
+			svc,
+		)
 
 			if setupErr := reconciler.SetupWithManager(mgr); setupErr != nil {
 				logger.Error(setupErr, "failed to register session reconciler with manager")
 				k8sClient, stopFunc = buildFakeSessionClient(scheme)
 			} else {
+				healthy := &atomic.Bool{}
 				mgrCtx, mgrCancel := context.WithCancel(context.Background()) //nolint:gosec // G118 false positive: mgrCancel is assigned to stopFunc below
 				go func() {
 					if startErr := mgr.Start(mgrCtx); startErr != nil {
-						logger.Error(startErr, "session controller manager exited with error")
+						healthy.Store(false)
+						logger.Error(startErr, "session controller manager exited with error — health degraded")
+					}
+				}()
+				go func() {
+					syncCtx, syncCancel := context.WithTimeout(mgrCtx, 60*time.Second)
+					defer syncCancel()
+					if mgr.GetCache().WaitForCacheSync(syncCtx) {
+						healthy.Store(true)
+						logger.Info("session controller cache synced")
+					} else {
+						logger.Error(nil, "session controller cache sync failed — session health degraded")
 					}
 				}()
 				stopFunc = mgrCancel
@@ -1036,6 +1074,7 @@ func buildSessionInfra(cfg *config.Config, reg *metrics.Registry, auditor audit.
 					SessionService: svc,
 					Reconciler:     reconciler,
 					Scheme:         scheme,
+					Healthy:        healthy,
 					StopFunc:       stopFunc,
 				}
 			}
@@ -1053,22 +1092,89 @@ func buildSessionInfra(cfg *config.Config, reg *metrics.Registry, auditor audit.
 		cfg.Session.Namespace,
 		session.WithAuditor(auditor),
 		session.WithSessionsActive(reg.SessionsActive),
+		session.WithLogger(logger.WithName("session-service")),
 	)
 
 	reconciler := controller.NewSessionCleanupReconciler(
 		k8sClient,
 		cfg.Session.DisconnectTTL,
 		cfg.Session.RetentionTTL,
+		logger.WithName("session-cleanup"),
 		auditor,
-		nil,
+		reg.SessionTTLActions,
 		svc,
 	)
 
+	fakeHealthy := &atomic.Bool{}
+	fakeHealthy.Store(true)
 	return &sessionInfra{
 		SessionService: svc,
 		Reconciler:     reconciler,
 		Scheme:         scheme,
+		Healthy:        fakeHealthy,
 		StopFunc:       stopFunc,
+	}
+}
+
+// preflightSessionChecks runs diagnostic checks before starting the session
+// controller manager. These are log-only (non-blocking) so a misconfigured
+// cluster still boots the AF; SREs can diagnose from the log output.
+func preflightSessionChecks(restCfg *rest.Config, namespace string, logger logr.Logger) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	gvr := "investigationsessions.kubernaut.ai/v1alpha1"
+
+	dc, err := discovery.NewDiscoveryClientForConfig(restCfg)
+	if err != nil {
+		logger.Error(err, "pre-flight: failed to create discovery client")
+		return
+	}
+	resources, err := dc.ServerResourcesForGroupVersion("kubernaut.ai/v1alpha1")
+	crdFound := false
+	if err == nil {
+		for _, r := range resources.APIResources {
+			if r.Name == "investigationsessions" {
+				crdFound = true
+				break
+			}
+		}
+	}
+	logger.Info("pre-flight CRD discovery", "gvr", gvr, "available", crdFound)
+	if !crdFound {
+		logger.Info("WARNING: InvestigationSession CRD not found — session controller may fail to start")
+	}
+
+	k8s, err := kubernetes.NewForConfig(restCfg)
+	if err != nil {
+		logger.Error(err, "pre-flight: failed to create kubernetes client for SSAR")
+		return
+	}
+	ssar := &authorizationv1.SelfSubjectAccessReview{
+		Spec: authorizationv1.SelfSubjectAccessReviewSpec{
+			ResourceAttributes: &authorizationv1.ResourceAttributes{
+				Namespace: namespace,
+				Verb:      "watch",
+				Group:     "kubernaut.ai",
+				Resource:  "investigationsessions",
+			},
+		},
+	}
+	result, err := k8s.AuthorizationV1().SelfSubjectAccessReviews().Create(
+		ctx, ssar, metav1.CreateOptions{},
+	)
+	if err != nil {
+		logger.Error(err, "pre-flight RBAC check failed")
+		return
+	}
+	logger.Info("pre-flight RBAC check",
+		"verb", "watch",
+		"resource", "investigationsessions",
+		"namespace", namespace,
+		"allowed", result.Status.Allowed,
+	)
+	if !result.Status.Allowed {
+		logger.Info("WARNING: ServiceAccount lacks 'watch' permission on investigationsessions — session controller may fail")
 	}
 }
 
