@@ -572,6 +572,58 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 		})
 	})
 
+	Describe("Output suppression (#1282 F-OUT)", func() {
+		It("UT-AF-1282-OUT-001: af_create_rr new RR → human-friendly text, no raw JSON", func() {
+			part := &genai.Part{
+				FunctionResponse: &genai.FunctionResponse{
+					Name: "af_create_rr",
+					Response: map[string]any{
+						"rr_id":   "prod/rr-oom-abc",
+						"message": "RemediationRequest created for Deployment/web by sre-user",
+					},
+				},
+			}
+			result, err := convert(context.Background(), nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			tp, ok := result.(*a2a.TextPart)
+			Expect(ok).To(BeTrue())
+			Expect(tp.Text).To(ContainSubstring("Remediation request created"))
+			Expect(tp.Text).NotTo(ContainSubstring(`"rr_id"`))
+			Expect(tp.Text).NotTo(ContainSubstring(`"message"`))
+		})
+
+		It("UT-AF-1282-OUT-002: af_create_rr existing RR → human-friendly, no JSON syntax", func() {
+			part := &genai.Part{
+				FunctionResponse: &genai.FunctionResponse{
+					Name: "af_create_rr",
+					Response: map[string]any{
+						"already_exists": true,
+						"rr_id":          "prod/rr-existing",
+					},
+				},
+			}
+			result, err := convert(context.Background(), nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			tp, ok := result.(*a2a.TextPart)
+			Expect(ok).To(BeTrue())
+			Expect(tp.Text).To(ContainSubstring("already exists"))
+			Expect(tp.Text).To(ContainSubstring("prod/rr-existing"))
+			Expect(tp.Text).NotTo(ContainSubstring(`{`))
+		})
+
+		It("UT-AF-1282-OUT-003: non-key tool response → nil (payload suppressed)", func() {
+			part := &genai.Part{
+				FunctionResponse: &genai.FunctionResponse{
+					Name:     "kubectl_get",
+					Response: map[string]any{"data": "large payload"},
+				},
+			}
+			result, err := convert(context.Background(), nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(BeNil(), "non-key tool payloads must be suppressed")
+		})
+	})
+
 	Describe("Truncation edge cases", func() {
 		It("UT-AF-1189-162: multi-byte string over byte limit but within rune limit -> not truncated", func() {
 			// 400 CJK runes * 3 bytes each = 1200 bytes > maxSummaryLen(1024), but 400 runes < 1024

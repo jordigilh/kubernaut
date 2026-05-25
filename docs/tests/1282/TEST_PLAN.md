@@ -134,7 +134,7 @@ AF = infrastructure expert (namespace, signal, severity, source).
 | Red 2 | Write failing tests for F-SIG-*, F-EVT-* | -- | DONE |
 | Green 2 | Implement signal derivation + EventSummary.Type | -- | DONE |
 | Refactor 2 | 100 Go Mistakes audit on Phase 2 code | Checkpoint 2 | DONE |
-| Red 3 | Write failing tests for F-OUT-*, F-PRM-* | -- | DONE (F-PRM + F-OUT covered under UT-AF-1189-114/161) |
+| Red 3 | Write failing tests for F-OUT-*, F-PRM-* | -- | DONE (F-PRM: PROMPT-001/002; F-OUT: OUT-001/002/003) |
 | Green 3 | Implement part converter fix + prompt hardening | -- | DONE (summarizeCreateRR human-friendly; prompt documents auto-resolved fields) |
 | Refactor 3 | 100 Go Mistakes audit on Phase 3 code | Final Checkpoint | DONE |
 
@@ -154,9 +154,8 @@ AF = infrastructure expert (namespace, signal, severity, source).
 
 **Phase 3 — DONE** (prompt + output suppression):
 - `UT-AF-1282-PROMPT-001` (MCP tools mandate), `UT-AF-1282-PROMPT-002` (auto-resolved fields documented)
-- Output suppression: `UT-AF-1189-114` (new RR summary), `UT-AF-1189-161` (existing RR summary) — human-friendly text, no raw JSON
+- Output suppression: `UT-AF-1282-OUT-001` (new RR human-friendly), `UT-AF-1282-OUT-002` (existing RR human-friendly), `UT-AF-1282-OUT-003` (non-key tool suppressed)
 - `IT-AF-1282-W05` (BuildInstruction Tool Usage Rules with namespace)
-- F-OUT-* (output suppression): Not yet implemented
 
 ### Anti-Patterns Avoided
 
@@ -241,11 +240,9 @@ AF = infrastructure expert (namespace, signal, severity, source).
 
 | ID | Feature | Scenario | Expected |
 |---|---|---|---|
-| UT-AF-1282-OUT-001 | F-OUT-01 | af_create_rr FunctionResponse | Human-friendly text, no JSON |
-| UT-AF-1282-OUT-002 | F-OUT-02 | kubectl_get FunctionResponse | Suppressed (nil) |
-| UT-AF-1282-OUT-003 | F-OUT-03 | part.Thought with text | Text passes through |
-| UT-AF-1282-OUT-004 | F-OUT-04 | kubernaut_start_investigation FunctionCall | Status message emitted |
-| UT-AF-1282-OUT-005 | F-OUT-05 | af_create_rr result with rr_id, message, severity | No JSON keys visible in output |
+| UT-AF-1282-OUT-001 | F-OUT-01 | af_create_rr new RR FunctionResponse | Human-friendly text, no raw JSON keys |
+| UT-AF-1282-OUT-002 | F-OUT-01 | af_create_rr existing RR FunctionResponse | Human-friendly "already exists" text, no JSON syntax |
+| UT-AF-1282-OUT-003 | F-OUT-02 | kubectl_get FunctionResponse (non-key tool) | Suppressed (nil) — payload never reaches user |
 
 ### 11.6 Unit Test Scenarios — EventSummary Enhancement
 
