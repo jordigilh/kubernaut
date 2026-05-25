@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/go-logr/logr"
 	"github.com/a2aproject/a2a-go/a2a"
 	"google.golang.org/adk/server/adka2a"
 	"google.golang.org/adk/session"
@@ -64,4 +65,14 @@ func SanitizeBridgeTextForTest(text string) string {
 // ResolveA2AMethodForTest exports resolveA2AMethod for unit testing.
 func ResolveA2AMethodForTest(ctx context.Context) string {
 	return resolveA2AMethod(ctx)
+}
+
+// LoggerForTest exports A2AConfig.logger for unit testing.
+func LoggerForTest(cfg A2AConfig) logr.Logger {
+	return cfg.logger()
+}
+
+// StreamingExecutorLoggerForTest returns the logger stored in a StreamingExecutor.
+func StreamingExecutorLoggerForTest(se *StreamingExecutor) logr.Logger {
+	return se.logger
 }

@@ -121,6 +121,9 @@ func (s *CRDSessionService) UpdatePhase(ctx context.Context, sessionID string, t
 		if err := reader.Get(ctx, nn, &crd); err != nil {
 			return fmt.Errorf("re-read session for label update: %w", err)
 		}
+		if crd.Labels == nil {
+			crd.Labels = make(map[string]string)
+		}
 		crd.Labels[LabelPhase] = string(to)
 		return s.client.Update(ctx, &crd)
 	})
@@ -128,15 +131,15 @@ func (s *CRDSessionService) UpdatePhase(ctx context.Context, sessionID string, t
 		return err
 	}
 
-	s.logger.InfoContext(ctx, "session phase updated",
+	s.logger.Info("session phase updated",
 		"session_id", sessionID,
 		"from", from,
 		"to", to,
 	)
 	s.emitAudit(ctx, audit.EventSessionPhaseChanged, userID, map[string]string{
 		"session_id": sessionID,
-		"from":       string(from),
-		"to":         string(to),
+		"from_phase": string(from),
+		"to_phase":   string(to),
 	})
 
 	if IsTerminal(to) {
@@ -149,7 +152,7 @@ func (s *CRDSessionService) UpdatePhase(ctx context.Context, sessionID string, t
 		if err := s.getReader().Get(ctx, nn, &crdForDuration); err == nil {
 			created := crdForDuration.CreationTimestamp.Time
 			if !created.IsZero() {
-				detail["duration_ms"] = fmt.Sprintf("%d", time.Since(created).Milliseconds())
+				detail["total_duration_ms"] = fmt.Sprintf("%d", time.Since(created).Milliseconds())
 			}
 		}
 		s.emitAudit(ctx, audit.EventSessionCompleted, userID, detail)

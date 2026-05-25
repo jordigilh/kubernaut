@@ -17,8 +17,8 @@ package launcher
 
 import (
 	"context"
-	"log/slog"
 
+	"github.com/go-logr/logr"
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
@@ -31,14 +31,14 @@ import (
 // to emit progressive reasoning artifacts directly to the A2A event queue.
 type StreamingExecutor struct {
 	inner         a2asrv.AgentExecutor
-	logger        *slog.Logger
+	logger        logr.Logger
 	bridgeMetrics BridgeMetrics
 }
 
 // NewStreamingExecutor creates a StreamingExecutor that wraps the given executor.
-func NewStreamingExecutor(inner a2asrv.AgentExecutor, logger *slog.Logger, m BridgeMetrics) *StreamingExecutor {
-	if logger == nil {
-		logger = slog.Default()
+func NewStreamingExecutor(inner a2asrv.AgentExecutor, logger logr.Logger, m BridgeMetrics) *StreamingExecutor {
+	if logger.GetSink() == nil {
+		logger = logr.Discard()
 	}
 	return &StreamingExecutor{inner: inner, logger: logger, bridgeMetrics: m}
 }
@@ -55,14 +55,14 @@ func (s *StreamingExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestC
 	if user != nil {
 		username = user.Username
 	}
-	s.logger.InfoContext(ctx, "a2a stream opened",
+	s.logger.Info("a2a stream opened",
 		"task_id", string(reqCtx.TaskID),
 		"user", username,
 	)
 
 	err := s.inner.Execute(ctx, reqCtx, queue)
 
-	s.logger.InfoContext(ctx, "a2a stream closed",
+	s.logger.Info("a2a stream closed",
 		"task_id", string(reqCtx.TaskID),
 		"user", username,
 		"error", err != nil,

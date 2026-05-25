@@ -845,7 +845,7 @@ INSERT INTO oscillation_patterns (pattern_type, pattern_name, description, min_o
 ('cascading-failure', 'Cascading Failure Pattern', 'Actions that trigger more alerts than they resolve', 2, 60, '{"new_alerts_threshold": 1.5, "recurrence_rate_threshold": 0.4}', 'block-action', '{"block_duration_minutes": 60, "require_manual_override": true}');
 
 INSERT INTO audit_retention_policies (event_category, retention_days) VALUES
-('gateway', 2555), ('workflow', 2555), ('remediation', 2555), ('analysis', 2555), ('notification', 2555);
+('gateway', 2555), ('workflow', 2555), ('remediation', 2555), ('analysis', 2555), ('notification', 2555), ('apifrontend', 2555);
 
 -- =============================================================================
 -- GRANTS (optional - for slm_user if exists)

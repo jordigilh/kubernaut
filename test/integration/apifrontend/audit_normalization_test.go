@@ -165,10 +165,10 @@ var _ = Describe("IT-AF-1156: Audit Normalization Integration", func() {
 				}
 			}
 			g.Expect(completedEvents).To(HaveLen(1))
-			g.Expect(completedEvents[0].Detail).To(HaveKey("duration_ms"),
-				"with a real K8s API server, CreationTimestamp is set and duration_ms must be present")
+			g.Expect(completedEvents[0].Detail).To(HaveKey("total_duration_ms"),
+				"with a real K8s API server, CreationTimestamp is set and total_duration_ms must be present")
 
-			durationStr := completedEvents[0].Detail["duration_ms"]
+			durationStr := completedEvents[0].Detail["total_duration_ms"]
 			durationVal, parseErr := strconv.ParseInt(durationStr, 10, 64)
 			g.Expect(parseErr).NotTo(HaveOccurred())
 			g.Expect(durationVal).To(BeNumerically(">=", 0),

@@ -3,8 +3,9 @@ package launcher_test
 import (
 	"bytes"
 	"context"
-	"log/slog"
 
+	"github.com/go-logr/logr"
+	"github.com/go-logr/logr/funcr"
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
@@ -22,7 +23,7 @@ var _ = Describe("StreamingExecutor", func() {
 
 	BeforeEach(func() {
 		inner = &mockExecutor{}
-		executor = launcher.NewStreamingExecutor(inner, nil, nil)
+		executor = launcher.NewStreamingExecutor(inner, logr.Logger{}, nil)
 	})
 
 	Describe("Execute", func() {
@@ -66,7 +67,7 @@ var _ = Describe("StreamingExecutor", func() {
 	Describe("Cleanup", func() {
 		It("UT-AF-1258-004: delegates to inner executor when it implements AgentExecutionCleaner", func() {
 			cleanerInner := &mockExecutorWithCleaner{}
-			exec := launcher.NewStreamingExecutor(cleanerInner, nil, nil)
+			exec := launcher.NewStreamingExecutor(cleanerInner, logr.Logger{}, nil)
 
 			reqCtx := &a2asrv.RequestContext{TaskID: "task-cleanup-001"}
 
@@ -122,11 +123,19 @@ func (m *mockExecutorWithCleaner) Cleanup(_ context.Context, _ *a2asrv.RequestCo
 // store) because no OpenAPI payload schema exists yet in data-storage-v1.yaml.
 // The A2A task lifecycle is already audited by buildBeforeExecuteCallback /
 // buildAfterExecuteCallback.
+
+// captureLogr returns a logr.Logger that writes to buf.
+func captureLogr(buf *bytes.Buffer) logr.Logger {
+	return funcr.New(func(prefix, args string) {
+		_, _ = buf.WriteString(prefix + " " + args + "\n")
+	}, funcr.Options{})
+}
+
 var _ = Describe("StreamingExecutor — AU-6 Lifecycle Logging", func() {
 	It("UT-AF-1258-040: stream opened is logged when execution begins (forensic timeline start)", func() {
 		inner := &mockExecutor{}
 		var buf bytes.Buffer
-		logger := slog.New(slog.NewTextHandler(&buf, nil))
+		logger := captureLogr(&buf)
 		executor := launcher.NewStreamingExecutor(inner, logger, nil)
 
 		reqCtx := &a2asrv.RequestContext{TaskID: "task-forensic-001"}
@@ -143,7 +152,7 @@ var _ = Describe("StreamingExecutor — AU-6 Lifecycle Logging", func() {
 	It("UT-AF-1258-041: stream closed is logged after normal completion (forensic timeline end)", func() {
 		inner := &mockExecutor{}
 		var buf bytes.Buffer
-		logger := slog.New(slog.NewTextHandler(&buf, nil))
+		logger := captureLogr(&buf)
 		executor := launcher.NewStreamingExecutor(inner, logger, nil)
 
 		reqCtx := &a2asrv.RequestContext{TaskID: "task-forensic-002"}
@@ -155,13 +164,13 @@ var _ = Describe("StreamingExecutor — AU-6 Lifecycle Logging", func() {
 		logOutput := buf.String()
 		Expect(logOutput).To(ContainSubstring("a2a stream closed"))
 		Expect(logOutput).To(ContainSubstring("task-forensic-002"))
-		Expect(logOutput).To(ContainSubstring("error=false"))
+		Expect(logOutput).To(ContainSubstring(`"error"=false`))
 	})
 
 	It("UT-AF-1258-042: stream closed records error disposition for failure analysis", func() {
 		inner := &mockExecutorFailing{}
 		var buf bytes.Buffer
-		logger := slog.New(slog.NewTextHandler(&buf, nil))
+		logger := captureLogr(&buf)
 		executor := launcher.NewStreamingExecutor(inner, logger, nil)
 
 		reqCtx := &a2asrv.RequestContext{TaskID: "task-forensic-003"}
@@ -172,12 +181,12 @@ var _ = Describe("StreamingExecutor — AU-6 Lifecycle Logging", func() {
 
 		logOutput := buf.String()
 		Expect(logOutput).To(ContainSubstring("a2a stream closed"))
-		Expect(logOutput).To(ContainSubstring("error=true"))
+		Expect(logOutput).To(ContainSubstring(`"error"=true`))
 	})
 
-	It("UT-AF-1258-043: nil logger does not prevent execution (graceful degradation)", func() {
+	It("UT-AF-1258-043: zero-value logger does not prevent execution (graceful degradation)", func() {
 		inner := &mockExecutor{}
-		executor := launcher.NewStreamingExecutor(inner, nil, nil)
+		executor := launcher.NewStreamingExecutor(inner, logr.Logger{}, nil)
 
 		reqCtx := &a2asrv.RequestContext{TaskID: "task-no-logger"}
 		queue := &fakeQueue{}
@@ -187,6 +196,35 @@ var _ = Describe("StreamingExecutor — AU-6 Lifecycle Logging", func() {
 		}).NotTo(Panic())
 		Expect(inner.executeCalled).To(BeTrue(),
 			"execution must proceed regardless of logger availability")
+	})
+})
+
+var _ = Describe("StreamingExecutor logr injection", func() {
+	It("UT-AF-1274-006: constructor accepts logr.Logger and stores provided logger (BR-SESS-013)", func() {
+		inner := &mockExecutor{}
+		var logs []string
+		testLogger := funcr.New(func(prefix, args string) {
+			logs = append(logs, prefix+" "+args)
+		}, funcr.Options{})
+		exec := launcher.NewStreamingExecutor(inner, testLogger, nil)
+		launcher.StreamingExecutorLoggerForTest(exec).Info("stored logger")
+		Expect(logs).To(ContainElement(ContainSubstring("stored logger")))
+	})
+
+	It("UT-AF-1274-007: logs stream open/close through logr (BR-SESS-013)", func() {
+		inner := &mockExecutor{}
+		var buf bytes.Buffer
+		logger := captureLogr(&buf)
+		exec := launcher.NewStreamingExecutor(inner, logger, nil)
+
+		reqCtx := &a2asrv.RequestContext{TaskID: "task-logr-001"}
+		err := exec.Execute(context.Background(), reqCtx, &fakeQueue{})
+		Expect(err).NotTo(HaveOccurred())
+
+		logOutput := buf.String()
+		Expect(logOutput).To(ContainSubstring("a2a stream opened"))
+		Expect(logOutput).To(ContainSubstring("a2a stream closed"))
+		Expect(logOutput).To(ContainSubstring("task-logr-001"))
 	})
 })
 

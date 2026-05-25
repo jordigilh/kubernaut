@@ -7,13 +7,13 @@ kind: ClusterRole
 metadata:
   name: apifrontend
 rules:
-  # InvestigationSession controller (owned CRD)
+  # InvestigationSession controller (owned CRD) — AC-6 least privilege
   - apiGroups: ["kubernaut.ai"]
     resources: ["investigationsessions"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+    verbs: ["get", "list", "watch", "create", "update", "delete"]
   - apiGroups: ["kubernaut.ai"]
     resources: ["investigationsessions/status"]
-    verbs: ["get", "update", "patch"]
+    verbs: ["get", "update"]
   # RemediationRequest management (MCP bridge + A2A agent)
   - apiGroups: ["kubernaut.ai"]
     resources: ["remediationrequests"]

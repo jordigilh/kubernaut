@@ -58,6 +58,11 @@ func (a *StoreAdapter) Emit(ctx context.Context, e *Event) {
 		req.ActorIP.SetTo(e.SourceIP)
 	}
 
+	if !hasTypedPayload(e.Type) {
+		a.logger.V(2).Info("skipping store for event without typed payload schema (logged only)",
+			"event_type", req.EventType)
+		return
+	}
 	req.EventData = buildEventData(e)
 
 	if err := a.store.StoreAudit(ctx, req); err != nil {
@@ -100,6 +105,42 @@ func detailStrSlice(d map[string]string, key string) []string {
 		return nil
 	}
 	return []string{v}
+}
+
+var typedPayloadEvents = map[EventType]bool{
+	EventAuthSuccess:             true,
+	EventAuthFailure:             true,
+	EventRateLimitDenied:         true,
+	EventCircuitBreakerTrip:      true,
+	EventJWTDelegation:           true,
+	EventSessionCreated:          true,
+	EventSessionPhaseChanged:     true,
+	EventSessionDeleted:          true,
+	EventSessionAutoCancelled:    true,
+	EventSessionRetentionDeleted: true,
+	EventSessionCompleted:        true,
+	EventA2ATaskStarted:          true,
+	EventA2ATaskCompleted:        true,
+	EventA2ATaskFailed:           true,
+	EventMCPToolFailed:           true,
+	EventMCPSessionInit:          true,
+	EventConfigReloaded:          true,
+	EventConfigRejected:          true,
+	EventSeverityTriageCompleted: true,
+	EventSeverityTriageFailed:    true,
+	EventTriageStarted:           true,
+	EventTriageCompleted:         true,
+	EventRRCreated:               true,
+	EventRRDeduplicated:          true,
+	EventKADelegated:             true,
+	EventKAResultReceived:        true,
+	EventUserDecision:            true,
+	EventAuthAccessDenied:        true,
+	EventToolExecuted:            true,
+}
+
+func hasTypedPayload(t EventType) bool {
+	return typedPayloadEvents[t]
 }
 
 var failureEvents = map[EventType]bool{

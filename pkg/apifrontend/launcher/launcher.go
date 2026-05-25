@@ -3,8 +3,9 @@ package launcher
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net/http"
+
+	"github.com/go-logr/logr"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv"
@@ -24,7 +25,7 @@ type A2AConfig struct {
 	Agent          agent.Agent
 	SessionService adksession.Service
 	AppName        string
-	Logger         *slog.Logger
+	Logger         logr.Logger
 	Auditor        audit.Emitter
 	BridgeMetrics  BridgeMetrics
 
@@ -46,11 +47,11 @@ func (c A2AConfig) validate() error { //nolint:gocritic // hugeParam: value copy
 	return nil
 }
 
-func (c A2AConfig) logger() *slog.Logger { //nolint:gocritic // hugeParam: value copy intentional
-	if c.Logger != nil {
+func (c A2AConfig) logger() logr.Logger { //nolint:gocritic // hugeParam: value copy intentional
+	if c.Logger.GetSink() != nil {
 		return c.Logger
 	}
-	return slog.Default()
+	return logr.Discard()
 }
 
 // NewA2AHandler creates an http.Handler that serves the A2A JSON-RPC protocol.
@@ -61,7 +62,7 @@ func NewA2AHandler(cfg A2AConfig) (http.Handler, error) { //nolint:gocritic // h
 		return nil, fmt.Errorf("invalid A2A config: %w", err)
 	}
 
-	log := cfg.logger().With("component", "a2a-launcher")
+	log := cfg.logger().WithValues("component", "a2a-launcher")
 
 	execCfg := adka2a.ExecutorConfig{
 		RunnerConfig: runner.Config{
@@ -144,7 +145,7 @@ func buildBeforeExecuteCallback(userCb func(ctx context.Context) (context.Contex
 // SRE observability and emits audit events (AU-2 compliance).
 // Issue #1189 AC 12: enriches EventA2ATaskCompleted/Failed with rr_name and
 // rr_namespace if af_create_rr populated the shared CreateContext during the task.
-func buildAfterExecuteCallback(log *slog.Logger, auditor audit.Emitter) adka2a.AfterExecuteCallback {
+func buildAfterExecuteCallback(log logr.Logger, auditor audit.Emitter) adka2a.AfterExecuteCallback {
 	return func(ctx adka2a.ExecutorContext, finalEvent *a2a.TaskStatusUpdateEvent, err error) error {
 		user := auth.UserIdentityFromContext(ctx)
 		username := ""
@@ -158,7 +159,7 @@ func buildAfterExecuteCallback(log *slog.Logger, auditor audit.Emitter) adka2a.A
 		}
 
 		if err != nil {
-			log.ErrorContext(ctx, "a2a task execution failed",
+			log.Error(nil, "a2a task execution failed",
 				"error", security.RedactError(err),
 				"user", username,
 				"task_id", taskID,

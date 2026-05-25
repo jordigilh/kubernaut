@@ -9,6 +9,10 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"bytes"
+
+	"github.com/go-logr/logr"
+	"github.com/go-logr/logr/funcr"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -95,7 +99,7 @@ var _ = Describe("SessionCleanupReconciler", func() {
 	})
 
 	reconcile := func(k8s client.Client, name string) (ctrl.Result, error) {
-		r := controller.NewSessionCleanupReconciler(k8s, disconnectTTL, retentionTTL, nil, nil, nil)
+		r := controller.NewSessionCleanupReconciler(k8s, disconnectTTL, retentionTTL, logr.Discard(), nil, nil, nil)
 		return r.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: name, Namespace: "test-ns"},
 		})
@@ -271,7 +275,7 @@ var _ = Describe("SessionCleanupReconciler", func() {
 		err = k8s.Status().Update(ctx, &crd)
 		Expect(err).NotTo(HaveOccurred())
 
-		r := controller.NewSessionCleanupReconciler(k8s, disconnectTTL, retentionTTL, nil, nil, svc)
+		r := controller.NewSessionCleanupReconciler(k8s, disconnectTTL, retentionTTL, logr.Discard(), nil, nil, svc)
 		result, err := r.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: "sess-prune-target", Namespace: "test-ns"},
 		})
@@ -346,7 +350,7 @@ var _ = Describe("SessionCleanupReconciler audit emission", func() {
 
 		emitter := &testAuditEmitter{}
 		r := controller.NewSessionCleanupReconciler(
-			k8s, 15*time.Minute, 31*24*time.Hour, emitter, nil, nil,
+			k8s, 15*time.Minute, 31*24*time.Hour, logr.Discard(), emitter, nil, nil,
 		)
 
 		_, err := r.Reconcile(context.Background(), ctrl.Request{
@@ -357,7 +361,7 @@ var _ = Describe("SessionCleanupReconciler audit emission", func() {
 		events := emitter.Events()
 		Expect(events).To(HaveLen(1))
 		Expect(events[0].Type).To(Equal(audit.EventSessionAutoCancelled))
-		Expect(events[0].Detail["session"]).To(Equal("sess-audit-disc"))
+		Expect(events[0].Detail["session_id"]).To(Equal("sess-audit-disc"))
 	})
 })
 
@@ -379,7 +383,7 @@ var _ = Describe("SessionCleanupReconciler counter increment", func() {
 		}, []string{"action"})
 
 		r := controller.NewSessionCleanupReconciler(
-			k8s, 15*time.Minute, controller.MinRetentionTTL, nil, ttlActions, nil,
+			k8s, 15*time.Minute, controller.MinRetentionTTL, logr.Discard(), nil, ttlActions, nil,
 		)
 
 		_, err := r.Reconcile(context.Background(), ctrl.Request{
@@ -387,6 +391,104 @@ var _ = Describe("SessionCleanupReconciler counter increment", func() {
 		})
 		Expect(err).NotTo(HaveOccurred())
 
+		Expect(counterValue(ttlActions, "delete")).To(Equal(1.0))
+	})
+})
+
+// ---------------------------------------------------------------------------
+// UT-AF-1274: logr.Logger injection — FedRAMP AU-3 (content of audit records)
+//
+// AU-3 requires structured, machine-parseable audit records for all
+// security-relevant events. These tests verify that the reconciler routes
+// lifecycle events through the injected logr pipeline (logr -> zapr -> JSON)
+// rather than through slog.Default(), which would bypass the audit sink.
+// ---------------------------------------------------------------------------
+
+var _ = Describe("SessionCleanupReconciler logr injection", func() {
+	It("UT-AF-1274-001: reconcile cycle routes lifecycle events through injected logr pipeline [AU-3]", func() {
+		scheme := newScheme()
+		sess := makeSession("sess-logr-err", v1alpha1.SessionPhaseDisconnected, nil, pastTime(20*time.Minute))
+		k8s := newFakeClient(scheme, sess)
+		sess.Status.DisconnectedAt = pastTime(20 * time.Minute)
+		_ = k8s.Status().Update(context.Background(), sess)
+
+		var buf bytes.Buffer
+		testLogger := funcr.New(func(prefix, args string) {
+			buf.WriteString(prefix + " " + args + "\n")
+		}, funcr.Options{Verbosity: 10})
+
+		r := controller.NewSessionCleanupReconciler(k8s, 15*time.Minute, controller.MinRetentionTTL, testLogger, nil, nil, nil)
+		_, err := r.Reconcile(context.Background(), ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: "sess-logr-err", Namespace: "test-ns"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(buf.String()).To(ContainSubstring("session auto-cancelled"),
+			"AU-3: reconcile lifecycle event must flow through injected logr pipeline")
+	})
+
+	It("UT-AF-1274-002: NIST retention clamp emits warning through logr pipeline [AU-11, AU-3]", func() {
+		scheme := newScheme()
+		k8s := newFakeClient(scheme)
+
+		var buf bytes.Buffer
+		clampLogger := funcr.New(func(prefix, args string) {
+			buf.WriteString(prefix + " " + args + "\n")
+		}, funcr.Options{Verbosity: 10})
+
+		shortRetention := 1 * time.Hour
+		r := controller.NewSessionCleanupReconciler(k8s, 15*time.Minute, shortRetention, clampLogger, nil, nil, nil)
+		Expect(r).NotTo(BeNil())
+		Expect(buf.String()).To(ContainSubstring("retentionTTL below NIST AU-11 minimum"),
+			"AU-11: NIST clamp warning must flow through injected logr pipeline")
+	})
+})
+
+// ---------------------------------------------------------------------------
+// UT-AF-1272: TTL metrics — FedRAMP SI-4(2) (automated monitoring mechanisms)
+//
+// SI-4(2) requires automated mechanisms to alert when session lifecycle
+// thresholds are crossed. The af_session_ttl_actions_total counter feeds the
+// SIEM alerting pipeline; these tests verify the counter increments for each
+// distinct TTL action so Prometheus alerts fire correctly.
+// ---------------------------------------------------------------------------
+
+var _ = Describe("SessionCleanupReconciler TTL metrics", func() {
+	It("UT-AF-1272-004: disconnect-TTL cancellation emits observable metric [SI-4(2)]", func() {
+		scheme := newScheme()
+		sess := makeSession("sess-ttl-cancel", v1alpha1.SessionPhaseDisconnected, nil, pastTime(20*time.Minute))
+		k8s := newFakeClient(scheme, sess)
+		sess.Status.DisconnectedAt = pastTime(20 * time.Minute)
+		_ = k8s.Status().Update(context.Background(), sess)
+
+		ttlActions := prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "af_session_ttl_actions_total_test_cancel",
+		}, []string{"action"})
+
+		r := controller.NewSessionCleanupReconciler(k8s, 15*time.Minute, controller.MinRetentionTTL, logr.Discard(), nil, ttlActions, nil)
+		_, err := r.Reconcile(context.Background(), ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: "sess-ttl-cancel", Namespace: "test-ns"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(counterValue(ttlActions, "cancel")).To(Equal(1.0))
+	})
+
+	It("UT-AF-1272-005: retention-TTL deletion emits observable metric [SI-4(2)]", func() {
+		scheme := newScheme()
+		expired := controller.MinRetentionTTL + time.Hour
+		sess := makeSession("sess-ttl-del", v1alpha1.SessionPhaseCompleted, pastTime(expired), nil)
+		k8s := newFakeClient(scheme, sess)
+		sess.Status.CompletedAt = pastTime(expired)
+		_ = k8s.Status().Update(context.Background(), sess)
+
+		ttlActions := prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "af_session_ttl_actions_total_test_delete",
+		}, []string{"action"})
+
+		r := controller.NewSessionCleanupReconciler(k8s, 15*time.Minute, controller.MinRetentionTTL, logr.Discard(), nil, ttlActions, nil)
+		_, err := r.Reconcile(context.Background(), ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: "sess-ttl-del", Namespace: "test-ns"},
+		})
+		Expect(err).NotTo(HaveOccurred())
 		Expect(counterValue(ttlActions, "delete")).To(Equal(1.0))
 	})
 })

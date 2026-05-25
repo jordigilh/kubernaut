@@ -286,8 +286,8 @@ func Load(data []byte) (*Config, error) {
 // Validate checks required fields and value constraints. Returns the first
 // validation error encountered (fail-fast).
 func (c *Config) Validate() error {
-	if c.Server.Port < 1 || c.Server.Port > 65535 {
-		return fmt.Errorf("server.port must be 1-65535, got %d", c.Server.Port)
+	if c.Server.Port < 1024 || c.Server.Port > 65535 {
+		return fmt.Errorf("server.port must be 1024-65535 (non-privileged), got %d", c.Server.Port)
 	}
 	if c.Agent.KABaseURL == "" {
 		return fmt.Errorf("agent.kaBaseURL is required")
@@ -342,9 +342,16 @@ func (c *Config) Validate() error {
 	return nil
 }
 
+// MinRetentionTTL is the NIST AU-11 floor for audit record retention.
+const MinRetentionTTL = 30 * 24 * time.Hour
+
 func (c *Config) validateSession() error {
 	if c.Session.Namespace == "" && (c.Session.DisconnectTTL > 0 || c.Session.RetentionTTL > 0) {
 		return fmt.Errorf("session.namespace must be set when session TTLs are configured")
+	}
+	if c.Session.RetentionTTL > 0 && c.Session.RetentionTTL < MinRetentionTTL {
+		return fmt.Errorf("session.retentionTTL must be >= %s (NIST AU-11), got %s",
+			MinRetentionTTL, c.Session.RetentionTTL)
 	}
 	return nil
 }

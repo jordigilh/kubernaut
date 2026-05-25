@@ -9,6 +9,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/go-logr/logr"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -91,7 +92,7 @@ var _ = Describe("SessionCleanupReconciler", func() {
 	})
 
 	reconcile := func(k8s client.Client, name string) (ctrl.Result, error) {
-		r := controller.NewSessionCleanupReconciler(k8s, disconnectTTL, retentionTTL, nil, nil, nil)
+		r := controller.NewSessionCleanupReconciler(k8s, disconnectTTL, retentionTTL, logr.Discard(), nil, nil, nil)
 		return r.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: name, Namespace: "test-ns"},
 		})
@@ -189,7 +190,7 @@ var _ = Describe("SessionCleanupReconciler", func() {
 		crd.Status.CompletedAt = &past
 		Expect(k8s.Status().Update(ctx, &crd)).To(Succeed())
 
-		r := controller.NewSessionCleanupReconciler(k8s, disconnectTTL, retentionTTL, nil, nil, svc)
+		r := controller.NewSessionCleanupReconciler(k8s, disconnectTTL, retentionTTL, logr.Discard(), nil, nil, svc)
 		result, err := r.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: "sess-prune-target", Namespace: "test-ns"},
 		})
@@ -207,7 +208,7 @@ var _ = Describe("SessionCleanupReconciler", func() {
 		_ = k8s.Status().Update(ctx, sess)
 
 		emitter := &testAuditEmitter{}
-		r := controller.NewSessionCleanupReconciler(k8s, 15*time.Minute, 31*24*time.Hour, emitter, nil, nil)
+		r := controller.NewSessionCleanupReconciler(k8s, 15*time.Minute, 31*24*time.Hour, logr.Discard(), emitter, nil, nil)
 
 		_, err := r.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: "sess-audit-disc", Namespace: "test-ns"},
@@ -230,7 +231,7 @@ var _ = Describe("SessionCleanupReconciler", func() {
 			Name: "af_session_ttl_actions_total_it",
 		}, []string{"action"})
 
-		r := controller.NewSessionCleanupReconciler(k8s, 15*time.Minute, controller.MinRetentionTTL, nil, ttlActions, nil)
+		r := controller.NewSessionCleanupReconciler(k8s, 15*time.Minute, controller.MinRetentionTTL, logr.Discard(), nil, ttlActions, nil)
 
 		_, err := r.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: "sess-counter-del", Namespace: "test-ns"},
@@ -260,7 +261,7 @@ var _ = Describe("SessionCleanupReconciler SetupWithManager", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		r := controller.NewSessionCleanupReconciler(
-			mgr.GetClient(), 10*time.Minute, 31*24*time.Hour, nil, nil, nil,
+			mgr.GetClient(), 10*time.Minute, 31*24*time.Hour, logr.Discard(), nil, nil, nil,
 		)
 		Expect(r.SetupWithManager(mgr)).To(Succeed())
 	})

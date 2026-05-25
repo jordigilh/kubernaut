@@ -141,7 +141,6 @@ var _ = Describe("StoreAdapter", func() {
 			{audit.EventJWTDelegation, "delegated"},
 			{audit.EventSeverityTriageCompleted, "completed"},
 			{audit.EventSeverityTriageFailed, "failed"},
-			{audit.EventWorkflowDiscovery, "discovered"},
 			{audit.EventTriageStarted, "started"},
 			{audit.EventTriageCompleted, "completed"},
 			{audit.EventRRCreated, "created"},
@@ -168,7 +167,7 @@ var _ = Describe("StoreAdapter", func() {
 		successEvents := []audit.EventType{
 			audit.EventAuthSuccess, audit.EventSessionCreated, audit.EventSessionCompleted,
 			audit.EventA2ATaskStarted, audit.EventA2ATaskCompleted, audit.EventToolExecuted,
-			audit.EventConfigReloaded, audit.EventJWTDelegation, audit.EventWorkflowDiscovery,
+			audit.EventConfigReloaded, audit.EventJWTDelegation,
 		}
 		for _, et := range successEvents {
 			et := et

@@ -5,9 +5,9 @@ package controller
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/prometheus/client_golang/prometheus"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -33,7 +33,7 @@ type SessionCleanupReconciler struct {
 	client         client.Client
 	disconnectTTL  time.Duration
 	retentionTTL   time.Duration
-	logger         *slog.Logger
+	logger         logr.Logger
 	auditor        audit.Emitter
 	ttlActions     *prometheus.CounterVec
 	sessionService *session.CRDSessionService
@@ -44,10 +44,12 @@ type SessionCleanupReconciler struct {
 // The auditor may be nil to disable audit emission (e.g. in tests).
 // The sessionService may be nil; when provided, PruneTerminalEntries is called
 // after each successful terminal deletion to bound crdIndex growth.
-func NewSessionCleanupReconciler(c client.Client, disconnectTTL, retentionTTL time.Duration, auditor audit.Emitter, ttlActions *prometheus.CounterVec, sessionService *session.CRDSessionService) *SessionCleanupReconciler {
-	logger := slog.Default().With("component", "session-cleanup")
+func NewSessionCleanupReconciler(c client.Client, disconnectTTL, retentionTTL time.Duration, logger logr.Logger, auditor audit.Emitter, ttlActions *prometheus.CounterVec, sessionService *session.CRDSessionService) *SessionCleanupReconciler {
+	if logger.GetSink() == nil {
+		logger = logr.Discard()
+	}
 	if retentionTTL < MinRetentionTTL {
-		logger.Warn("retentionTTL below NIST AU-11 minimum, clamping",
+		logger.Info("WARNING: retentionTTL below NIST AU-11 minimum, clamping",
 			"configured", retentionTTL.String(),
 			"minimum", MinRetentionTTL.String(),
 		)
@@ -90,8 +92,8 @@ func (r *SessionCleanupReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	case v1alpha1.SessionPhaseDisconnected:
 		result, err := r.handleDisconnected(ctx, &sess)
 		if err != nil {
-			r.logger.ErrorContext(ctx, "disconnect TTL reconcile failed",
-				"session", sess.Name,
+			r.logger.Error(nil, "disconnect TTL reconcile failed",
+				"session_name", sess.Name,
 				"namespace", sess.Namespace,
 				"phase", sess.Status.Phase,
 				"error", security.RedactError(err),
@@ -102,8 +104,8 @@ func (r *SessionCleanupReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	case v1alpha1.SessionPhaseCompleted, v1alpha1.SessionPhaseCancelled, v1alpha1.SessionPhaseFailed:
 		result, err := r.handleTerminal(ctx, &sess)
 		if err != nil {
-			r.logger.ErrorContext(ctx, "retention TTL reconcile failed",
-				"session", sess.Name,
+			r.logger.Error(nil, "retention TTL reconcile failed",
+				"session_name", sess.Name,
 				"namespace", sess.Namespace,
 				"phase", sess.Status.Phase,
 				"error", security.RedactError(err),
@@ -157,14 +159,14 @@ func (r *SessionCleanupReconciler) handleDisconnected(ctx context.Context, sess 
 		}
 	}
 
-	r.logger.InfoContext(ctx, "session auto-cancelled",
-		"session", sess.Name,
+	r.logger.Info("session auto-cancelled",
+		"session_name", sess.Name,
 		"elapsed", elapsed.String(),
 	)
 	r.emitAudit(ctx, audit.EventSessionAutoCancelled, map[string]string{
-		"session": sess.Name,
-		"phase":   string(v1alpha1.SessionPhaseCancelled),
-		"elapsed": elapsed.String(),
+		"session_id": sess.Name,
+		"phase":      string(v1alpha1.SessionPhaseCancelled),
+		"elapsed":    elapsed.String(),
 	})
 	r.incTTLAction("cancel")
 	return ctrl.Result{}, nil
@@ -188,15 +190,15 @@ func (r *SessionCleanupReconciler) handleTerminal(ctx context.Context, sess *v1a
 		return ctrl.Result{}, fmt.Errorf("delete expired session: %w", err)
 	}
 
-	r.logger.InfoContext(ctx, "session deleted after retention TTL",
-		"session", sess.Name,
+	r.logger.Info("session deleted after retention TTL",
+		"session_name", sess.Name,
 		"phase", sess.Status.Phase,
 		"elapsed", elapsed.String(),
 	)
 	r.emitAudit(ctx, audit.EventSessionRetentionDeleted, map[string]string{
-		"session": sess.Name,
-		"phase":   string(sess.Status.Phase),
-		"elapsed": elapsed.String(),
+		"session_id": sess.Name,
+		"phase":      string(sess.Status.Phase),
+		"elapsed":    elapsed.String(),
 	})
 	r.incTTLAction("delete")
 
