@@ -200,7 +200,7 @@ var _ = Describe("af_create_rr wiring (#1282)", func() {
 		Expect(instruction).To(ContainSubstring("kubernaut MCP tools"))
 		Expect(instruction).To(ContainSubstring("NEVER use kubectl"))
 		Expect(instruction).To(ContainSubstring("it-namespace"))
-		Expect(instruction).To(ContainSubstring("namespace is resolved automatically"))
+		Expect(instruction).To(ContainSubstring("namespace: from AF's deployment context"))
 	})
 
 	It("IT-AF-1282-W06: audit events emitted on RR creation in envtest", func() {

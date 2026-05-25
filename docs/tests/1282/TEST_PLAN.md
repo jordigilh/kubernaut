@@ -134,9 +134,9 @@ AF = infrastructure expert (namespace, signal, severity, source).
 | Red 2 | Write failing tests for F-SIG-*, F-EVT-* | -- | DONE |
 | Green 2 | Implement signal derivation + EventSummary.Type | -- | DONE |
 | Refactor 2 | 100 Go Mistakes audit on Phase 2 code | Checkpoint 2 | DONE |
-| Red 3 | Write failing tests for F-OUT-*, F-PRM-* | -- | PARTIAL (F-PRM covered; F-OUT pending) |
-| Green 3 | Implement part converter fix + prompt hardening | -- | PARTIAL (prompt hardened; output suppression pending) |
-| Refactor 3 | 100 Go Mistakes audit on Phase 3 code | Final Checkpoint | PENDING |
+| Red 3 | Write failing tests for F-OUT-*, F-PRM-* | -- | DONE (F-PRM + F-OUT covered under UT-AF-1189-114/161) |
+| Green 3 | Implement part converter fix + prompt hardening | -- | DONE (summarizeCreateRR human-friendly; prompt documents auto-resolved fields) |
+| Refactor 3 | 100 Go Mistakes audit on Phase 3 code | Final Checkpoint | DONE |
 
 ### Implementation Evidence
 
@@ -152,8 +152,9 @@ AF = infrastructure expert (namespace, signal, severity, source).
 - `UT-AF-1282-EVT-001..EVT-003` in `pkg/apifrontend/tools/af_list_events_test.go`
 - `IT-AF-1282-W03` (signal name grounding), `IT-AF-1282-W03b` (K8s event signal), `IT-AF-1282-W04` (triage wiring), `IT-AF-1282-W06` (audit events)
 
-**Phase 3 — PARTIAL** (2 unit tests, 1 integration test for F-PRM; 0 for F-OUT):
-- `UT-AF-1282-PROMPT-001` (MCP tools mandate), `UT-AF-1282-PROMPT-002` (namespace in prompt)
+**Phase 3 — DONE** (prompt + output suppression):
+- `UT-AF-1282-PROMPT-001` (MCP tools mandate), `UT-AF-1282-PROMPT-002` (auto-resolved fields documented)
+- Output suppression: `UT-AF-1189-114` (new RR summary), `UT-AF-1189-161` (existing RR summary) — human-friendly text, no raw JSON
 - `IT-AF-1282-W05` (BuildInstruction Tool Usage Rules with namespace)
 - F-OUT-* (output suppression): Not yet implemented
 
@@ -292,9 +293,9 @@ AF = infrastructure expert (namespace, signal, severity, source).
 | TDD Red Phase 2 | After Checkpoint 1 | DONE |
 | TDD Green Phase 2 | After Red 2 | DONE |
 | TDD Refactor Phase 2 + Checkpoint | After Green 2 | DONE |
-| TDD Red Phase 3 | After Checkpoint 2 | PARTIAL (F-PRM done; F-OUT pending) |
-| TDD Green Phase 3 | After Red 3 | PARTIAL (prompt done; output suppression pending) |
-| TDD Refactor Phase 3 + Final Checkpoint | After Green 3 | PENDING |
+| TDD Red Phase 3 | After Checkpoint 2 | DONE |
+| TDD Green Phase 3 | After Red 3 | DONE |
+| TDD Refactor Phase 3 + Final Checkpoint | After Green 3 | DONE |
 | Integration Tests (envtest wiring) | After Phase 2 | DONE (7 IT tests, 101/101 pass) |
 | E2E Validation | After IT | IN PROGRESS (129/137 pass; 8 failures under investigation) |
 
