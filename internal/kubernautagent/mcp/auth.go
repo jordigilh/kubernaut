@@ -33,6 +33,14 @@ package mcp
 // Identity resolution: tools.ResolveUser prefers acting_user from payload
 // when present, falling back to middleware-extracted identity for Pattern A.
 //
+// Rate limiting (F-03, SC-5 accepted risk): KA's per-user rate limiter keys
+// off the authenticated SA identity (the AF service account), not the human
+// acting_user. This is by design — AF already rate-limits per human user at
+// the external boundary (PostAuth user RL). KA's per-SA bucket prevents AF
+// from overwhelming KA (defense-in-depth against AF compromise). Propagating
+// acting_user into the rate limiter would require extracting user from the MCP
+// payload before tool dispatch, breaking the middleware-only pattern.
+//
 // History: SA+Impersonate (#891) → JWT delegation (#895, #896, #1009) →
 // Trusted intermediary (#1287).
 // Reference: #1287, #1288.

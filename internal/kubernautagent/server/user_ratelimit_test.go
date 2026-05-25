@@ -88,6 +88,22 @@ var _ = Describe("UserRateLimiter — SEC-02", func() {
 		})
 	})
 
+	Describe("UT-KA-1287-011: SA identity is accepted by rate limiter (SC-5)", func() {
+		It("should rate-limit the AF service account as a single caller", func() {
+			saIdentity := "system:serviceaccount:kubernaut:apifrontend"
+			for i := 0; i < 2; i++ {
+				req := authedRequest(saIdentity)
+				rec := httptest.NewRecorder()
+				handler.ServeHTTP(rec, req)
+				Expect(rec.Code).To(Equal(http.StatusOK))
+			}
+			req := authedRequest(saIdentity)
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			Expect(rec.Code).To(Equal(http.StatusTooManyRequests))
+		})
+	})
+
 	Describe("UT-KA-SEC02-004: rate limits are per-user (isolation)", func() {
 		It("should not affect one user when another is rate limited", func() {
 			for i := 0; i < 3; i++ {

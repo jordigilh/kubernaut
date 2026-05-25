@@ -313,6 +313,11 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("agent.dsBearerTokenFile %q is not accessible: %w", c.Agent.DSBearerTokenFile, err)
 		}
 	}
+	if c.Agent.KABearerTokenFile != "" {
+		if _, err := os.Stat(c.Agent.KABearerTokenFile); err != nil {
+			return fmt.Errorf("agent.kaBearerTokenFile %q is not accessible: %w", c.Agent.KABearerTokenFile, err)
+		}
+	}
 	if err := c.validateLLM(); err != nil {
 		return err
 	}

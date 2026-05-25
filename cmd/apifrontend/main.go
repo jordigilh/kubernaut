@@ -497,9 +497,14 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 	}
 
 	kaMCPResilient := buildResilientTransport(kaTransport, &cfg.Resilience.KA, "ka-mcp", metricsReg, auditor)
-	var jwtDelegation http.RoundTripper = &auth.ContextJWTDelegationTransport{Base: kaMCPResilient}
-	jwtDelegation = &auth.AuditingJWTDelegationTransport{Base: jwtDelegation, Auditor: auditor}
-	kaMCPHTTPClient := &http.Client{Transport: jwtDelegation}
+	var kaMCPAuth http.RoundTripper = kaMCPResilient
+	if cfg.Agent.KABearerTokenFile != "" {
+		kaMCPAuth = &bearerTokenTransport{
+			base:      kaMCPResilient,
+			tokenFile: cfg.Agent.KABearerTokenFile,
+		}
+	}
+	kaMCPHTTPClient := &http.Client{Transport: kaMCPAuth}
 	mcpClient := ka.NewSDKMCPClient(
 		cfg.Agent.KAMCPEndpoint,
 		kaMCPHTTPClient,
@@ -513,7 +518,7 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 	// The factory is a placeholder until G2 persistent sessions are
 	// implemented. Calling Pool.Acquire will fail until a real factory
 	// is provided. See pkg/apifrontend/ka/mcp_sdk_client.go for the
-	// session-per-call rationale (P2 Architect finding, DD-AUTH-MCP-001 v2.0).
+	// session-per-call rationale (P2 Architect finding, DD-AUTH-MCP-001 v3.0).
 	deps.Pool = ka.NewKASessionPool(ka.PoolConfig{
 		Factory: func(ctx context.Context) (ka.PoolSession, error) {
 			return nil, fmt.Errorf("pool session factory not yet configured (G2 deferred)")
@@ -571,9 +576,17 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 		logger.Info("severity triage enabled", "prometheusURL", cfg.SeverityTriage.PrometheusURL)
 	}
 
+	kaRESTAuth := http.RoundTripper(kaTransport)
+	if cfg.Agent.KABearerTokenFile != "" {
+		kaRESTAuth = &bearerTokenTransport{
+			base:      kaTransport,
+			tokenFile: cfg.Agent.KABearerTokenFile,
+		}
+	}
+
 	deps.KAClient = ka.NewClient(ka.Config{
 		BaseURL:            cfg.Agent.KABaseURL,
-		BaseTransport:      kaTransport,
+		BaseTransport:      kaRESTAuth,
 		Timeout:            cfg.Resilience.KA.RequestTimeout,
 		CBMaxRequests:      cfg.Resilience.KA.CBMaxRequests,
 		CBInterval:         cfg.Resilience.KA.CBInterval,

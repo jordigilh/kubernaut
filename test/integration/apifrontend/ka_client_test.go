@@ -67,8 +67,8 @@ var _ = Describe("KA Client Integration (ka/)", func() {
 		})
 	})
 
-	Describe("AC-18: JWT delegation passes token to KA", func() {
-		It("IT-AF-1195-027: JWT delegation transport injects user token into KA request", func() {
+	Describe("AC-18: SA token model — no JWT delegation (#1287)", func() {
+		It("IT-AF-1287-002: REST client does NOT inject user JWT from context (IA-5)", func() {
 			var receivedAuth string
 			captureBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				receivedAuth = r.Header.Get("Authorization")
@@ -97,8 +97,8 @@ var _ = Describe("KA Client Integration (ka/)", func() {
 				Namespace: "test", Kind: "Deployment", Name: "test-app",
 			})
 
-			Expect(receivedAuth).To(Equal("Bearer " + token),
-				"JWT delegation should forward user's raw token to KA")
+			Expect(receivedAuth).To(BeEmpty(),
+				"REST client should NOT forward user JWT; SA token is injected at transport layer")
 		})
 	})
 })
