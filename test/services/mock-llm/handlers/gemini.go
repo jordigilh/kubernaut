@@ -121,6 +121,15 @@ func (h *handler) handleGemini(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[mock-llm/gemini] scenario=%s mode=%s outcome=%s workflowID=%q tools=%d hasSplitTool=%v hasFuncResults=%v",
 		scenarioName, h.mode, cfg.InvestigationOutcome, cfg.WorkflowID, len(req.Tools), hasSplit, hasFunctionResults)
 
+	if cfg.SecondTurnDelay > 0 && hasFunctionResults {
+		log.Printf("[mock-llm/gemini] scenario=%s applying %v second-turn delay", scenarioName, cfg.SecondTurnDelay)
+		select {
+		case <-r.Context().Done():
+			return
+		case <-time.After(cfg.SecondTurnDelay):
+		}
+	}
+
 	switch h.mode {
 	case config.ModeInteractive:
 		writeJSON(w, http.StatusOK, response.BuildGeminiTextResponse(cfg))

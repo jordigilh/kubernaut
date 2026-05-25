@@ -116,15 +116,17 @@ var _ = Describe("KA Integration (AF -> KA -> DS -> mock-LLM)", Label("e2e", "ph
 		})
 
 		It("TC-E2E-KA-FLOW-02: poll_investigation returns status for active investigation", func() {
-			_, startResult := mcpToolCall("e2e-ka-flow-02a", "kubernaut_start_investigation", map[string]interface{}{
+			startStatus, startResult := mcpToolCall("e2e-ka-flow-02a", "kubernaut_start_investigation", map[string]interface{}{
 				"namespace": "kubernaut-system",
 				"name":      "apifrontend",
 				"kind":      "Deployment",
 			})
 
+			GinkgoWriter.Printf("KA-FLOW-02: mcpToolCall status=%d result=%v\n", startStatus, startResult)
+
 			sid := extractSessionID(startResult)
 			Expect(sid).NotTo(BeEmpty(),
-				"KA must return a session_id for poll_investigation to work")
+				"KA must return a session_id for poll_investigation to work (status=%d, result=%v)", startStatus, startResult)
 
 			time.Sleep(500 * time.Millisecond)
 
