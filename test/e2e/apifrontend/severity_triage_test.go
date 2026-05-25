@@ -2,7 +2,6 @@ package e2e_test
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,6 +16,8 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	kinfra "github.com/jordigilh/kubernaut/test/infrastructure"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 )
@@ -153,7 +154,7 @@ var _ = Describe("Severity Triage Pipeline (G12)", Label("e2e", "phase4", "g12")
 			promURL = envProm
 		}
 		ctx := context.Background()
-		err := injectMetricForTier2(ctx, promURL, "e2e_disk_usage_percent", 80, map[string]string{
+		err := kinfra.AFInjectOTLPMetrics(ctx, promURL, "e2e_disk_usage_percent", 80, map[string]string{
 			"namespace": "sev-tier2-ns", "kind": "Deployment", "name": "test-inactive-target",
 		})
 		if err != nil {
@@ -195,67 +196,3 @@ var _ = Describe("Severity Triage Pipeline (G12)", Label("e2e", "phase4", "g12")
 
 })
 
-// injectMetricForTier2 injects a metric into Prometheus via OTLP for Tier 2 testing.
-func injectMetricForTier2(ctx context.Context, promURL, metricName string, value float64, labels map[string]string) error {
-	labelAttrs := make([]map[string]interface{}, 0, len(labels))
-	for k, v := range labels {
-		labelAttrs = append(labelAttrs, map[string]interface{}{
-			"key":   k,
-			"value": map[string]string{"stringValue": v},
-		})
-	}
-
-	payload := map[string]interface{}{
-		"resourceMetrics": []map[string]interface{}{
-			{
-				"resource": map[string]interface{}{
-					"attributes": []map[string]interface{}{
-						{"key": "service.name", "value": map[string]string{"stringValue": "e2e-sev-test"}},
-					},
-				},
-				"scopeMetrics": []map[string]interface{}{
-					{
-						"scope": map[string]interface{}{"name": "e2e-sev-test"},
-						"metrics": []map[string]interface{}{
-							{
-								"name": metricName,
-								"gauge": map[string]interface{}{
-									"dataPoints": []map[string]interface{}{
-										{
-											"asDouble":          value,
-											"timeUnixNano":      fmt.Sprintf("%d", time.Now().UnixNano()),
-											"startTimeUnixNano": fmt.Sprintf("%d", time.Now().Add(-10*time.Second).UnixNano()),
-											"attributes":        labelAttrs,
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-
-	jsonPayload, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		promURL+"/api/v1/otlp/v1/metrics", strings.NewReader(string(jsonPayload)))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("OTLP inject failed (%d): %s", resp.StatusCode, string(body))
-	}
-	return nil
-}
