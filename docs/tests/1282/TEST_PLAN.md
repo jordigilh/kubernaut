@@ -43,7 +43,7 @@ AF = infrastructure expert (namespace, signal, severity, source).
 | Risk | Impact | Mitigation |
 |---|---|---|
 | Downward API file absent in dev/test | Medium | Fallback to config.Session.Namespace; unit test both paths |
-| Triager disabled (severityTriage.enabled=false) | Medium | K8s events fallback provides signal name; "manual-investigation" last resort |
+| Triager disabled (severityTriage.enabled=false) | Medium | K8s events fallback provides signal name; "unknown" last resort |
 | LLM ignores hardened prompt constraints | Low | Prompt is best-effort; AF enforces namespace/signal server-side regardless |
 | EventSummary.Type addition ripples to existing tests | Low | Mechanical addition; spike confirmed 0 integration/E2E references |
 | Removing Namespace/Severity from CreateRRArgs | Medium | Spike confirmed: 15 test cases in 2 files; mock-LLM scenarios need update |
@@ -65,7 +65,7 @@ AF = infrastructure expert (namespace, signal, severity, source).
 - F-SIG-02: When Triager Tier 1.5/2 returns a rule match, signalName = TriageResult.RuleName
 - F-SIG-03: When Triager returns LLM-only (Tier 2.5/3), fall back to K8s events
 - F-SIG-04: K8s events fallback picks dominant Warning event reason (tier-ranked)
-- F-SIG-05: When no events exist, signalName = "manual-investigation"
+- F-SIG-05: When no events exist, signalName = "unknown"
 - F-SIG-06: Signal name is never synthetic (no "af-manual-*" prefix)
 - F-SIG-07: Event dominance ranks OOMKilling > BackOff > Unhealthy > Evicted > FailedScheduling
 - F-SIG-08: Normal events (Scheduled, Pulled, Created) are filtered out of dominance
@@ -209,12 +209,13 @@ AF = infrastructure expert (namespace, signal, severity, source).
 | UT-AF-1282-SIG-002 | F-SIG-02 | TriageResult has RuleName "HighMemoryUsage" | signalName = "HighMemoryUsage" |
 | UT-AF-1282-SIG-003 | F-SIG-03 | TriageResult LLM-only (no AlertName/RuleName), events have BackOff | signalName = "BackOff" |
 | UT-AF-1282-SIG-004 | F-SIG-04 | No Triager, events have OOMKilled + BackOff | signalName = "OOMKilled" (higher tier) |
-| UT-AF-1282-SIG-005 | F-SIG-05 | No Triager, no events | signalName = "manual-investigation" |
+| UT-AF-1282-SIG-005 | F-SIG-05 | No Triager, no events | signalName = "unknown" |
 | UT-AF-1282-SIG-006 | F-SIG-06 | Any path | signalName never starts with "af-manual-" |
 | UT-AF-1282-SIG-007 | F-SIG-07 | Events: OOMKilling, BackOff, FailedScheduling | OOMKilling wins |
 | UT-AF-1282-SIG-008 | F-SIG-08 | Events: Scheduled (Normal), BackOff (Warning) | BackOff wins; Scheduled filtered |
 | UT-AF-1282-SIG-009 | F-SIG-01 | TriageResult has both AlertName and RuleName | AlertName takes precedence |
-| UT-AF-1282-SIG-010 | F-SIG-04 | Events all Normal type | Falls through to "manual-investigation" |
+| UT-AF-1282-SIG-010 | F-SIG-04 | Events all Normal type, no triager | Falls through to "unknown" |
+| UT-AF-1282-SIG-012 | F-SIG-02 | TriageResult has RuleName but empty AlertName, K8s events present | RuleName takes precedence over events |
 
 ### 11.3 Unit Test Scenarios — CreateRRArgs Minimization
 
