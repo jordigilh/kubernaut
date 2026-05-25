@@ -206,36 +206,15 @@ func main() {
 	}
 
 	auditStore, auditCleanup := buildAuditStore(cfg, dsTokenSource, logger)
-	k8sCallAuditor := audit.NewK8sCallAuditor(auditStore, logger.WithName("k8s-call-audit"))
+	k8sInfra := initK8sInfra(logger)
 
-	k8sInfra := initK8sInfra(logger, k8sCallAuditor)
-
-	// #891: SSAR self-check for impersonate permission. Interactive mode
-	// requires KA's SA to impersonate users (DD-AUTH-MCP-001). If denied,
-	// interactive is soft-disabled rather than failing requests at runtime.
+	// #1288: SSAR impersonate gate removed — KA uses its own SA for all K8s
+	// API calls. Interactive readiness is no longer gated on impersonation RBAC.
 	interactiveReadiness := karbac.NewInteractiveReadiness()
 	var eventEmitter *karbac.EventEmitter
 	if cfg.Interactive.Enabled && k8sInfra != nil {
 		podName, podNS := karbac.DetectPodIdentity()
 		eventEmitter = karbac.NewEventEmitter(k8sInfra.clientset, podName, podNS)
-
-		ssarResult, ssarErr := karbac.CheckImpersonatePermission(context.Background(), k8sInfra.clientset)
-		if ssarErr != nil {
-			logger.Error(ssarErr, "SSAR check for impersonate failed; interactive mode soft-disabled")
-			interactiveReadiness.SetSoftDisabled("SSAR check failed: " + ssarErr.Error())
-			eventEmitter.EmitInteractiveSoftDisabled("SSAR check for impersonate failed: " + ssarErr.Error())
-		} else if !ssarResult.Allowed {
-			reason := "SA lacks impersonate permission"
-			if ssarResult.Reason != "" {
-				reason = ssarResult.Reason
-			}
-			logger.Info("interactive mode soft-disabled: SA lacks impersonate RBAC",
-				"reason", reason)
-			interactiveReadiness.SetSoftDisabled(reason)
-			eventEmitter.EmitInteractiveSoftDisabled(reason)
-		} else {
-			logger.Info("SSAR check passed: SA has impersonate permission")
-		}
 	}
 
 	ds := initDSClients(cfg, k8sInfra, dsTokenSource, logger)
@@ -417,7 +396,7 @@ func main() {
 			logger.Info("auth middleware DISABLED (no in-cluster K8s config)")
 		}
 
-		if cfg.Interactive.Enabled && interactiveReadiness.StatusString() != "soft_disabled" {
+		if cfg.Interactive.Enabled {
 			var mcpHandler http.Handler
 			mcpHandler, sessionDrainer = buildMCPHandler(cfg, k8sInfra, ds, inv, enricher, mgr, authMw, agentMetrics, instrumentedAudit, logger)
 			if mcpHandler != nil {
@@ -434,21 +413,20 @@ func main() {
 					mcpRouter.Handle("/*", kaserver.SSEHeadersMiddleware(mcpHandler))
 				})
 				interactiveReadiness.SetEnabled()
-				eventEmitter.EmitInteractiveEnabled()
+				if eventEmitter != nil {
+					eventEmitter.EmitInteractiveEnabled()
+				}
 				logger.Info("MCP interactive route mounted",
 					"path", "/api/v1/mcp",
 					"rateLimitPerUser", cfg.Interactive.RateLimitPerUser,
 				)
 			} else {
 				interactiveReadiness.SetSoftDisabled("handler construction failed (check preceding errors)")
-				eventEmitter.EmitInteractiveSoftDisabled("MCP handler construction failed")
+				if eventEmitter != nil {
+					eventEmitter.EmitInteractiveSoftDisabled("MCP handler construction failed")
+				}
 				logger.Error(nil, "MCP interactive mode enabled but handler construction failed (check preceding errors)")
 			}
-		} else if cfg.Interactive.Enabled {
-			logger.Info("MCP interactive mode soft-disabled (SSAR check failed)",
-				"interactive_status", interactiveReadiness.StatusString(),
-				"reason", interactiveReadiness.Reason(),
-			)
 		}
 
 		r.Handle("/*", kaserver.SSEHeadersMiddleware(ogenSrv))
@@ -721,24 +699,11 @@ type k8sInfra struct {
 
 // initK8sInfra creates the shared Kubernetes clients. Returns nil when
 // running outside a cluster (e.g. local development).
-func initK8sInfra(logger logr.Logger, auditor sharedtransport.K8sCallAuditor) *k8sInfra {
+func initK8sInfra(logger logr.Logger) *k8sInfra {
 	kubeConfig, err := ctrl.GetConfig()
 	if err != nil {
 		logger.Info("K8s config not available, K8s tools and enricher disabled", "error", err)
 		return nil
-	}
-
-	// SEC-06 (#703): Wrap transport so interactive-mode tool calls impersonate
-	// the authenticated user. In autonomous mode (no user in context), the
-	// wrapper is a no-op and KA SA credentials are used directly.
-	// #898: K8sCallAuditor emits audit events for each impersonated API call.
-	kubeConfig.WrapTransport = func(rt http.RoundTripper) http.RoundTripper {
-		var opts []sharedtransport.ImpersonateOption
-		if auditor != nil {
-			opts = append(opts, sharedtransport.WithAuditor(auditor))
-		}
-		opts = append(opts, sharedtransport.WithLogger(logger))
-		return sharedtransport.NewImpersonatingRoundTripper(rt, opts...)
 	}
 
 	k8sClient, err := kubernetes.NewForConfig(kubeConfig)
