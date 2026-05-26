@@ -720,7 +720,7 @@ type AwaitSessionResult struct {
 	Message   string `json:"message,omitempty"`
 }
 
-const awaitSessionTimeout = 2 * time.Minute
+const awaitSessionTimeout = 3 * time.Minute
 const awaitSessionPollInterval = 3 * time.Second
 
 // HandleAwaitSession waits for an AIAnalysis resource (matching the given RR) to have

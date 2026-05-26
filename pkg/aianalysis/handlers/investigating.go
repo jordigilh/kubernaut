@@ -737,6 +737,7 @@ func (h *InvestigatingHandler) handleSessionPollCancelled(ctx context.Context, a
 
 	now := metav1.Now()
 	analysis.Status.Phase = aianalysis.PhaseFailed
+	analysis.Status.Reason = aianalysisv1.ReasonInteractiveCancelled
 	analysis.Status.CompletedAt = &now
 	analysis.Status.ObservedGeneration = analysis.Generation
 	analysis.Status.Message = "Investigation cancelled (interactive session removed)"
