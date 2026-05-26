@@ -55,6 +55,9 @@ func (m *statusAutoMgr) CancelInvestigation(_ string) error                     
 func (m *statusAutoMgr) SuspendInvestigation(_ string) error                             { return nil }
 func (m *statusAutoMgr) TransitionToUserDriving(_ string, _ string, _ []string) error    { return nil }
 func (m *statusAutoMgr) ForceTransitionToUserDriving(_ string, _ string, _ []string) error { return nil }
+func (m *statusAutoMgr) FindPendingByRemediationID(_ string) (string, bool)              { return "", false }
+func (m *statusAutoMgr) LaunchDeferredInvestigation(_ string) error                       { return nil }
+func (m *statusAutoMgr) GetLatestRCASummaryByRemediationID(_ string) (string, bool)       { return "", false }
 
 var _ = Describe("action=status — PR4 PROD-01 BR-INTERACTIVE-002", func() {
 

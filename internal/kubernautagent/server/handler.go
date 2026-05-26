@@ -121,10 +121,20 @@ func (h *Handler) IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(
 		"signal_name":    signal.Name,
 		"severity":       signal.Severity,
 	}
-	sessionID, err := h.sessions.StartInvestigation(ctx, func(bgCtx context.Context) (*katypes.InvestigationResult, error) {
+	investigateFn := func(bgCtx context.Context) (*katypes.InvestigationResult, error) {
 		bgCtx = audit.WithActor(bgCtx, actor, "User")
 		return h.investigator.Investigate(bgCtx, signal)
-	}, metadata)
+	}
+
+	var (
+		sessionID string
+		err       error
+	)
+	if signal.Interactive {
+		sessionID, err = h.sessions.StartInteractiveSession(ctx, investigateFn, metadata)
+	} else {
+		sessionID, err = h.sessions.StartInvestigation(ctx, investigateFn, metadata)
+	}
 	if err != nil {
 		h.logger.Error(err, "failed to start investigation")
 		return &agentclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON{
@@ -406,6 +416,9 @@ func MapIncidentRequestToSignal(req *agentclient.IncidentRequest) katypes.Signal
 	}
 	if v, ok := req.LastSeen.Get(); ok {
 		sc.LastSeen = v
+	}
+	if v, ok := req.Interactive.Get(); ok {
+		sc.Interactive = v
 	}
 	return sc
 }

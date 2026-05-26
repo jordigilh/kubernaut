@@ -85,6 +85,10 @@ func (m *goldenPathAutoMgr) ForceTransitionToUserDriving(_ string, _ string, _ [
 	return nil
 }
 
+func (m *goldenPathAutoMgr) FindPendingByRemediationID(_ string) (string, bool)         { return "", false }
+func (m *goldenPathAutoMgr) LaunchDeferredInvestigation(_ string) error                  { return nil }
+func (m *goldenPathAutoMgr) GetLatestRCASummaryByRemediationID(_ string) (string, bool)  { return "", false }
+
 var _ = Describe("Golden Path Lifecycle — IT-KA-GOLDEN-001 BR-INTERACTIVE-001", func() {
 	var (
 		tool    *mcptools.InvestigateTool

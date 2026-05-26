@@ -496,6 +496,13 @@ func (m *mockSignalResolver) ResolveEnrichmentData(_ context.Context, _ string) 
 	return &prompt.EnrichmentData{}, m.enrichErr
 }
 
+func (m *mockSignalResolver) ResolvePostRCAEnrichment(_ context.Context, _, _, _, _ string) (*prompt.EnrichmentData, error) {
+	if m.enrich != nil {
+		return m.enrich, m.enrichErr
+	}
+	return &prompt.EnrichmentData{}, m.enrichErr
+}
+
 var _ = Describe("kubernaut_investigate — discover_workflows action", func() {
 
 	Describe("UT-KA-DW-001: discover_workflows stores RCA + DiscoveryResult", func() {

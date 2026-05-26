@@ -60,6 +60,11 @@ type InvestigatorRunner interface {
 type SignalContextResolver interface {
 	ResolveSignalContext(ctx context.Context, rrID string) (*katypes.SignalContext, error)
 	ResolveEnrichmentData(ctx context.Context, rrID string) (*prompt.EnrichmentData, error)
+	// ResolvePostRCAEnrichment performs Phase 2 re-enrichment using the
+	// RCA-identified remediation target. Returns enrichment data for the
+	// target kind/name/namespace. BR-INTERACTIVE-010: ensures discover_workflows
+	// matches the autonomous 3-phase pipeline.
+	ResolvePostRCAEnrichment(ctx context.Context, kind, name, namespace, incidentID string) (*prompt.EnrichmentData, error)
 }
 
 // HTTPSessionCompleter bridges MCP tool completion to the HTTP session store.
@@ -98,6 +103,13 @@ type AutonomousSessionManager interface {
 	SuspendInvestigation(id string) error
 	TransitionToUserDriving(id, username string, groups []string) error
 	ForceTransitionToUserDriving(rrID, username string, groups []string) error
+
+	// BR-INTERACTIVE-010: Find pending interactive session by remediation ID.
+	FindPendingByRemediationID(rrID string) (string, bool)
+	// BR-INTERACTIVE-010: Launch a deferred investigation for a pending session.
+	LaunchDeferredInvestigation(id string) error
+	// BR-INTERACTIVE-010: Get RCA summary from latest completed session for context reconstruction.
+	GetLatestRCASummaryByRemediationID(rrID string) (string, bool)
 }
 
 // RRExistenceChecker validates that a RemediationRequest exists before
@@ -125,11 +137,14 @@ type TimeoutTracker interface {
 // actions unrelated to autonomous session management (start, message, etc.).
 type NopAutonomousManager struct{}
 
-func (NopAutonomousManager) FindByRemediationID(string) (string, bool)                   { return "", false }
-func (NopAutonomousManager) CancelInvestigation(string) error                             { return nil }
-func (NopAutonomousManager) SuspendInvestigation(string) error                            { return nil }
-func (NopAutonomousManager) TransitionToUserDriving(string, string, []string) error       { return nil }
-func (NopAutonomousManager) ForceTransitionToUserDriving(string, string, []string) error  { return nil }
+func (NopAutonomousManager) FindByRemediationID(string) (string, bool)                  { return "", false }
+func (NopAutonomousManager) CancelInvestigation(string) error                            { return nil }
+func (NopAutonomousManager) SuspendInvestigation(string) error                           { return nil }
+func (NopAutonomousManager) TransitionToUserDriving(string, string, []string) error      { return nil }
+func (NopAutonomousManager) ForceTransitionToUserDriving(string, string, []string) error { return nil }
+func (NopAutonomousManager) FindPendingByRemediationID(string) (string, bool)            { return "", false }
+func (NopAutonomousManager) LaunchDeferredInvestigation(string) error                    { return nil }
+func (NopAutonomousManager) GetLatestRCASummaryByRemediationID(string) (string, bool)    { return "", false }
 
 // InvestigateTool handles the kubernaut_investigate MCP tool actions:
 // start, message, complete, cancel, takeover, discover_workflows.
@@ -312,6 +327,14 @@ func (t *InvestigateTool) handleStart(ctx context.Context, input InvestigateInpu
 		}
 		if !exists {
 			return InvestigateOutput{}, ErrCodeRRNotFound.WithDetail("rr_id", input.RRID)
+		}
+	}
+
+	// BR-INTERACTIVE-010: Check for pending interactive session and launch it.
+	if pendingID, hasPending := t.autoMgr.FindPendingByRemediationID(input.RRID); hasPending {
+		if launchErr := t.autoMgr.LaunchDeferredInvestigation(pendingID); launchErr != nil {
+			t.logger.Error(launchErr, "start: failed to launch deferred investigation",
+				"rr_id", input.RRID, "pending_session_id", pendingID)
 		}
 	}
 
@@ -722,6 +745,26 @@ func (t *InvestigateTool) handleDiscoverWorkflows(ctx context.Context, input Inv
 		} else {
 			enrichData = enrichResolved
 		}
+
+		// Phase 2 re-enrichment: use RCA-identified target if available.
+		if rcaResult != nil && rcaResult.RemediationTarget.Kind != "" {
+			postRCAEnrich, reEnrichErr := t.signalResolver.ResolvePostRCAEnrichment(
+				ctx,
+				rcaResult.RemediationTarget.Kind,
+				rcaResult.RemediationTarget.Name,
+				rcaResult.RemediationTarget.Namespace,
+				signal.IncidentID,
+			)
+			if reEnrichErr != nil {
+				t.logger.V(1).Info("post-RCA re-enrichment failed, using pre-RCA enrichment",
+					"rr_id", input.RRID, "error", reEnrichErr)
+			} else if postRCAEnrich != nil {
+				enrichData = postRCAEnrich
+				signal.ResourceKind = rcaResult.RemediationTarget.Kind
+				signal.ResourceName = rcaResult.RemediationTarget.Name
+				signal.Namespace = rcaResult.RemediationTarget.Namespace
+			}
+		}
 	}
 
 	// Step 3: Run Phase 3 workflow discovery using the structured RCA.
@@ -829,8 +872,20 @@ func (t *InvestigateTool) handleCancel(input InvestigateInput, user mcpinternal.
 }
 
 // storeReconstructedContext queries the reconstructor and caches prior turns
-// for the session's lifetime. Returns the number of turns stored.
+// for the session's lifetime. Prefers RCA summary from a prior completed
+// session (more concise, prevents token bloat) over full audit trail
+// reconstruction. Returns the number of turns stored.
 func (t *InvestigateTool) storeReconstructedContext(ctx context.Context, rrID, sessionID string) int {
+	// BR-INTERACTIVE-010: If a prior session produced an RCA summary, use it
+	// as a concise seed instead of reconstructing the full audit trail.
+	if rcaSummary, hasRCA := t.autoMgr.GetLatestRCASummaryByRemediationID(rrID); hasRCA {
+		history := []LLMMessage{
+			{Role: "assistant", Content: "Previous investigation RCA summary: " + rcaSummary},
+		}
+		t.reconHistory.Store(rrID, history)
+		return 1
+	}
+
 	turns, _ := t.recon.Reconstruct(ctx, rrID, sessionID)
 	if len(turns) == 0 {
 		return 0

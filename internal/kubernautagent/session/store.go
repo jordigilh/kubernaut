@@ -63,6 +63,11 @@ type Session struct {
 	cancel    context.CancelFunc
 	eventChan chan InvestigationEvent
 	lazySink  *LazySink
+
+	// deferredFn holds the investigation function for interactive sessions
+	// created in pending state (BR-INTERACTIVE-010). Consumed by
+	// LaunchDeferredInvestigation.
+	deferredFn InvestigateFunc
 }
 
 // ErrSessionNotFound is returned when a session ID does not exist in the store.

@@ -99,6 +99,10 @@ func (m *takeoverAutoMgr) ForceTransitionToUserDriving(_ string, _ string, _ []s
 	return nil
 }
 
+func (m *takeoverAutoMgr) FindPendingByRemediationID(_ string) (string, bool)         { return "", false }
+func (m *takeoverAutoMgr) LaunchDeferredInvestigation(_ string) error                  { return nil }
+func (m *takeoverAutoMgr) GetLatestRCASummaryByRemediationID(_ string) (string, bool)  { return "", false }
+
 // takeoverSessMgr mocks mcpinternal.SessionManager for takeover tests.
 type takeoverSessMgr struct {
 	takeoverSession *mcpinternal.InteractiveSession

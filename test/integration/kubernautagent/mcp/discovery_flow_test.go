@@ -61,6 +61,10 @@ func (d *discoverySignalResolver) ResolveEnrichmentData(_ context.Context, _ str
 	return &prompt.EnrichmentData{}, nil
 }
 
+func (d *discoverySignalResolver) ResolvePostRCAEnrichment(_ context.Context, _, _, _, _ string) (*prompt.EnrichmentData, error) {
+	return &prompt.EnrichmentData{}, nil
+}
+
 // discoveryHTTPCompleter captures CompleteUserDriving calls in-memory.
 // Retained as a stub (#1174): the production HTTPSessionCompleter is
 // session.Manager, which requires the full gateway HTTP long-poll bridge.
