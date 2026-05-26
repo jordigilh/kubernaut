@@ -330,7 +330,7 @@ func main() {
 		investigationRunner = wrapper
 	}
 
-	store := session.NewStore(cfg.Runtime.Session.TTL)
+	store := session.NewStore(cfg.Runtime.Session.TTL, session.WithLogger(logger.WithName("session-store")))
 	mgr := session.NewManager(store, logger, instrumentedAudit, agentMetrics)
 
 	handler := kaserver.NewHandler(mgr, investigationRunner, logger, agentMetrics)

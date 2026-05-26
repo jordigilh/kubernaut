@@ -260,6 +260,7 @@ func NewInvestigateTool(sessions mcpinternal.SessionManager, runner Investigator
 		runner:   runner,
 		recon:    recon,
 		autoMgr:  autoMgr,
+		logger:   logr.Discard(),
 	}
 	for _, opt := range opts {
 		opt(t)
@@ -886,7 +887,11 @@ func (t *InvestigateTool) storeReconstructedContext(ctx context.Context, rrID, s
 		return 1
 	}
 
-	turns, _ := t.recon.Reconstruct(ctx, rrID, sessionID)
+	turns, reconErr := t.recon.Reconstruct(ctx, rrID, sessionID)
+	if reconErr != nil {
+		t.logger.Error(reconErr, "context reconstruction from DS failed, proceeding with empty context",
+			"rr_id", rrID, "session_id", sessionID)
+	}
 	if len(turns) == 0 {
 		return 0
 	}
