@@ -202,8 +202,12 @@ var _ = Describe("Investigation Streaming (G3)", Ordered, Label("e2e", "phase3",
 	})
 
 	It("TC-E2E-STREAM-04 / TC-E2E-SSE-CAP-01: Connection cap enforcement", func() {
-		// STREAM-03 ensures handler slots are released promptly on client disconnect,
-		// making cap enforcement reliable in the ordered suite.
+		// Wait for all SSE slots from prior tests to drain before testing the cap.
+		Eventually(func() float64 {
+			return counterValue(scrapeMetrics(), "af_sse_active_connections")
+		}, 30*time.Second, 1*time.Second).Should(BeZero(),
+			"all SSE slots must be released before cap enforcement test")
+
 		maxStr := getEnvOrDefault("AF_E2E_MAX_SSE", "5")
 		maxSSE := 5
 		var parsed int
