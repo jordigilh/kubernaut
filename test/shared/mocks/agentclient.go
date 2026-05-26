@@ -80,6 +80,9 @@ type MockAgentClient struct {
 	// CancelErr is the error returned by CancelSession
 	CancelErr error
 
+	// CancelCallCount tracks how many times CancelSession was called
+	CancelCallCount int
+
 	// SubmitErr is the error returned by SubmitInvestigation
 	SubmitErr error
 
@@ -282,6 +285,7 @@ func (m *MockAgentClient) GetSessionResult(ctx context.Context, sessionID string
 func (m *MockAgentClient) CancelSession(_ context.Context, _ string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.CancelCallCount++
 	if m.CancelSessionFunc != nil {
 		return m.CancelSessionFunc()
 	}

@@ -900,9 +900,11 @@ var _ = Describe("InvestigatingHandler IS Mismatch Detection", func() {
 
 	Context("UT-AA-1293-005: Autonomous session + IS appears → cancel for takeover", func() {
 		It("should cancel the session and clear ID for re-submit", func() {
+			cancelClient := mocks.NewMockAgentClient()
+			cancelClient.WithSessionPollStatus("investigating")
 			isChecker := &mockISChecker{hasSession: true}
 			testMetrics := metrics.NewMetrics()
-			h := handlers.NewInvestigatingHandler(mockClient, ctrl.Log.WithName("test-takeover"), testMetrics, auditSpy,
+			h := handlers.NewInvestigatingHandler(cancelClient, ctrl.Log.WithName("test-takeover"), testMetrics, auditSpy,
 				handlers.WithSessionMode(), handlers.WithRecorder(recorder),
 				handlers.WithInvestigationSessionChecker(isChecker))
 
@@ -923,14 +925,17 @@ var _ = Describe("InvestigatingHandler IS Mismatch Detection", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Requeue).To(BeTrue())
 			Expect(analysis.Status.KASession.ID).To(BeEmpty())
+			Expect(cancelClient.CancelCallCount).To(Equal(1))
 		})
 	})
 
 	Context("UT-AA-1293-006: Interactive session + IS deleted → cancel for deletion", func() {
-		It("should cancel the session and requeue (poll will see cancelled)", func() {
+		It("should cancel the session, clear Interactive flag, and requeue", func() {
+			cancelClient := mocks.NewMockAgentClient()
+			cancelClient.WithSessionPollStatus("investigating")
 			isChecker := &mockISChecker{hasSession: false}
 			testMetrics := metrics.NewMetrics()
-			h := handlers.NewInvestigatingHandler(mockClient, ctrl.Log.WithName("test-deletion"), testMetrics, auditSpy,
+			h := handlers.NewInvestigatingHandler(cancelClient, ctrl.Log.WithName("test-deletion"), testMetrics, auditSpy,
 				handlers.WithSessionMode(), handlers.WithRecorder(recorder),
 				handlers.WithInvestigationSessionChecker(isChecker))
 
@@ -952,6 +957,9 @@ var _ = Describe("InvestigatingHandler IS Mismatch Detection", func() {
 			Expect(result.Requeue).To(BeTrue())
 			// Session ID NOT cleared — poll will detect "cancelled" and transition to PhaseFailed
 			Expect(analysis.Status.KASession.ID).To(Equal("session-456"))
+			// P0-1 fix: Interactive cleared to prevent requeue loop
+			Expect(analysis.Status.KASession.Interactive).To(BeFalse())
+			Expect(cancelClient.CancelCallCount).To(Equal(1))
 		})
 	})
 

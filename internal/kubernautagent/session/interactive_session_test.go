@@ -206,4 +206,43 @@ var _ = Describe("BR-INTERACTIVE-010: Interactive Session Lifecycle — #1293", 
 			Expect(found).To(BeFalse())
 		})
 	})
+
+	Describe("UT-KA-1293-019: FindPendingByRemediationID on real Manager", func() {
+		It("should find a pending session by remediation_id", func() {
+			fn := func(_ context.Context) (*katypes.InvestigationResult, error) {
+				return &katypes.InvestigationResult{InteractiveHold: true}, nil
+			}
+
+			id, err := manager.StartInteractiveSession(context.Background(), fn, map[string]string{
+				"remediation_id": "rem-pending-019",
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			foundID, found := manager.FindPendingByRemediationID("rem-pending-019")
+			Expect(found).To(BeTrue())
+			Expect(foundID).To(Equal(id))
+		})
+
+		It("should not find a session that has already been launched", func() {
+			fn := func(_ context.Context) (*katypes.InvestigationResult, error) {
+				return &katypes.InvestigationResult{InteractiveHold: true}, nil
+			}
+
+			id, err := manager.StartInteractiveSession(context.Background(), fn, map[string]string{
+				"remediation_id": "rem-launched-019",
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			err = manager.LaunchDeferredInvestigation(id)
+			Expect(err).NotTo(HaveOccurred())
+
+			_, found := manager.FindPendingByRemediationID("rem-launched-019")
+			Expect(found).To(BeFalse())
+		})
+
+		It("should return false for unknown remediation_id", func() {
+			_, found := manager.FindPendingByRemediationID("rem-unknown-019")
+			Expect(found).To(BeFalse())
+		})
+	})
 })
