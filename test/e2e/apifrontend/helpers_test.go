@@ -372,6 +372,42 @@ func fetchDEXToken(dexURL, clientID, clientSecret, username, password string) (s
 	return tokenResp.IDToken, nil
 }
 
+func parseJSONStringField(jsonStr, field string) string {
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte(jsonStr), &m); err != nil {
+		return ""
+	}
+	v, _ := m[field].(string)
+	return v
+}
+
+func extractA2AToolJSON(raw json.RawMessage, markerKey string) string {
+	var task struct {
+		Artifacts []struct {
+			Parts []struct {
+				Text string `json:"text"`
+			} `json:"parts"`
+		} `json:"artifacts"`
+	}
+	if err := json.Unmarshal(raw, &task); err != nil {
+		return string(raw)
+	}
+	for _, a := range task.Artifacts {
+		for _, p := range a.Parts {
+			if p.Text == "" {
+				continue
+			}
+			var obj map[string]interface{}
+			if json.Unmarshal([]byte(p.Text), &obj) == nil {
+				if _, ok := obj[markerKey]; ok {
+					return p.Text
+				}
+			}
+		}
+	}
+	return string(raw)
+}
+
 func buildRR(namespace, rrName, targetKind, targetName string) *remediationv1alpha1.RemediationRequest {
 	h := sha256.Sum256([]byte(fmt.Sprintf("e2e-%s-%s-%s", namespace, targetKind, targetName)))
 	fp := hex.EncodeToString(h[:])

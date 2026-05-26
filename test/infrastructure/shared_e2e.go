@@ -239,6 +239,7 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
         tool_call:
           name: "af_create_rr"
           arguments:
+            namespace: "kubernaut-system"
             kind: "Deployment"
             name: "memory-eater"
             description: "FP E2E test remediation request"
