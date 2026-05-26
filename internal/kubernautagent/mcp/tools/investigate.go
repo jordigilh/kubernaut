@@ -332,10 +332,16 @@ func (t *InvestigateTool) handleStart(ctx context.Context, input InvestigateInpu
 	}
 
 	// BR-INTERACTIVE-010: Check for pending interactive session and launch it.
+	// When launched, the investigation will self-transition to StatusUserDriving
+	// via InteractiveHold — skip TransitionToUserDriving below to avoid cancelling
+	// the RCA goroutine prematurely.
+	var launchedPending bool
 	if pendingID, hasPending := t.autoMgr.FindPendingByRemediationID(input.RRID); hasPending {
 		if launchErr := t.autoMgr.LaunchDeferredInvestigation(pendingID); launchErr != nil {
 			t.logger.Error(launchErr, "start: failed to launch deferred investigation",
 				"rr_id", input.RRID, "pending_session_id", pendingID)
+		} else {
+			launchedPending = true
 		}
 	}
 
@@ -373,23 +379,27 @@ func (t *InvestigateTool) handleStart(ctx context.Context, input InvestigateInpu
 	// complete_no_action / action:complete can find and close it via
 	// FindUserDrivingByRemediationID. Without this, the autonomous HTTP
 	// session keeps running after the MCP lease is released.
-	autoSessionID, found := t.autoMgr.FindByRemediationID(input.RRID)
-	if found {
-		if transErr := t.autoMgr.TransitionToUserDriving(autoSessionID, user.Username, user.Groups); transErr != nil {
-			if errors.Is(transErr, session.ErrSessionTerminal) {
-				if forceErr := t.autoMgr.ForceTransitionToUserDriving(input.RRID, user.Username, user.Groups); forceErr != nil {
-					t.logger.Error(forceErr, "start: force-transition to user-driving failed",
+	// Skip when we just launched a pending session — its RCA goroutine will
+	// self-transition via InteractiveHold once complete.
+	if !launchedPending {
+		autoSessionID, found := t.autoMgr.FindByRemediationID(input.RRID)
+		if found {
+			if transErr := t.autoMgr.TransitionToUserDriving(autoSessionID, user.Username, user.Groups); transErr != nil {
+				if errors.Is(transErr, session.ErrSessionTerminal) {
+					if forceErr := t.autoMgr.ForceTransitionToUserDriving(input.RRID, user.Username, user.Groups); forceErr != nil {
+						t.logger.Error(forceErr, "start: force-transition to user-driving failed",
+							"rr_id", input.RRID, "auto_session_id", autoSessionID)
+					}
+				} else {
+					t.logger.Error(transErr, "start: transition autonomous session to user-driving",
 						"rr_id", input.RRID, "auto_session_id", autoSessionID)
 				}
-			} else {
-				t.logger.Error(transErr, "start: transition autonomous session to user-driving",
-					"rr_id", input.RRID, "auto_session_id", autoSessionID)
 			}
-		}
-	} else {
-		if forceErr := t.autoMgr.ForceTransitionToUserDriving(input.RRID, user.Username, user.Groups); forceErr != nil {
-			t.logger.Error(forceErr, "start: force-transition to user-driving (no running session found)",
-				"rr_id", input.RRID)
+		} else {
+			if forceErr := t.autoMgr.ForceTransitionToUserDriving(input.RRID, user.Username, user.Groups); forceErr != nil {
+				t.logger.Error(forceErr, "start: force-transition to user-driving (no running session found)",
+					"rr_id", input.RRID)
+			}
 		}
 	}
 
