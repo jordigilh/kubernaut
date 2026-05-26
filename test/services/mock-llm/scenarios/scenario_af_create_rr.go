@@ -16,6 +16,7 @@ limitations under the License.
 package scenarios
 
 import (
+	"log"
 	"regexp"
 	"strings"
 	"time"
@@ -138,12 +139,22 @@ func (s *afCreateRRDynScenario) Config() MockScenarioConfig {
 	// includes the full conversation including system instructions.
 	// ADK's Gemini adapter may place the user message in a position
 	// that changes what ExtractTextFromContents returns as lastUserText.
-	for _, text := range []string{s.lastCtx.Content, s.lastCtx.AllText} {
+	for i, text := range []string{s.lastCtx.Content, s.lastCtx.AllText, s.lastCtx.LastUserContent} {
 		if m := deployNSRe.FindStringSubmatch(text); len(m) == 3 {
+			log.Printf("[mock-llm/af_create_rr] Config: regex matched on source[%d] name=%q ns=%q", i, m[1], m[2])
 			cfg.ResourceName = m[1]
 			cfg.ResourceNS = m[2]
 			break
 		}
+	}
+	if cfg.ResourceNS == s.baseConfig.ResourceNS {
+		contentLen := len(s.lastCtx.Content)
+		allTextLen := len(s.lastCtx.AllText)
+		snippet := s.lastCtx.Content
+		if len(snippet) > 300 {
+			snippet = snippet[:300]
+		}
+		log.Printf("[mock-llm/af_create_rr] Config: regex NOT matched. contentLen=%d allTextLen=%d contentSnippet=%q", contentLen, allTextLen, snippet)
 	}
 	return cfg
 }
