@@ -30,8 +30,6 @@ import (
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	k8sfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
@@ -167,7 +165,11 @@ func run() int {
 	ipLimiter := ratelimit.NewIPLimiter(rlCfg.PerIP)
 	userLimiter := ratelimit.NewUserLimiter(rlCfg.PerUser)
 
-	sessInfra := buildSessionInfra(cfg, metricsReg, auditor, logger)
+	sessInfra, err := buildSessionInfra(cfg, metricsReg, auditor, logger)
+	if err != nil {
+		logger.Error(err, "session infrastructure failed to initialize")
+		return 1
+	}
 
 	deps, err := buildBackendDeps(ctx, cfg, metricsReg, auditor, logger)
 	if err != nil {
@@ -985,29 +987,15 @@ type sessionInfra struct {
 
 // buildSessionInfra creates the CRDSessionService, registers the
 // InvestigationSession scheme, and instantiates the TTL reconciler.
-// When a kubeconfig is available (in-cluster or KUBECONFIG env), it creates a
-// real ctrl.Manager, registers the reconciler, and starts it in a goroutine.
-// When no kubeconfig is available (unit tests), it falls back to a fake client.
-func buildSessionInfra(cfg *config.Config, reg *metrics.Registry, auditor audit.Emitter, logger logr.Logger) *sessionInfra {
+// It creates a real ctrl.Manager, registers field indexes and reconcilers,
+// and starts the manager in a goroutine.
+func buildSessionInfra(cfg *config.Config, reg *metrics.Registry, auditor audit.Emitter, logger logr.Logger) (*sessionInfra, error) {
 	scheme := k8sruntime.NewScheme()
 	if err := coordinationv1.AddToScheme(scheme); err != nil {
-		logger.Error(err, "failed to register coordination scheme — lease sync unavailable")
+		return nil, fmt.Errorf("register coordination scheme: %w", err)
 	}
 	if err := v1alpha1.AddToScheme(scheme); err != nil {
-		logger.Error(err, "failed to register InvestigationSession scheme — falling back to in-memory")
-		k8sClient, stopFunc := buildFakeSessionClient(scheme)
-		fakeHealthy := &atomic.Bool{}
-		fakeHealthy.Store(true)
-		return &sessionInfra{
-			SessionService: session.NewCRDSessionService(
-				adksession.InMemoryService(), k8sClient, scheme, cfg.Session.Namespace,
-				session.WithAuditor(auditor),
-				session.WithLogger(logger.WithName("session-service")),
-			),
-			Scheme:  scheme,
-			Healthy: fakeHealthy,
-			StopFunc: stopFunc,
-		}
+		return nil, fmt.Errorf("register InvestigationSession scheme: %w", err)
 	}
 
 	for _, phase := range []string{"Active", "Disconnected", "Completed", "Cancelled", "Failed"} {
@@ -1017,102 +1005,33 @@ func buildSessionInfra(cfg *config.Config, reg *metrics.Registry, auditor audit.
 		reg.SessionTTLActions.WithLabelValues(action)
 	}
 
-	var k8sClient client.Client
-	var stopFunc func()
-
 	restCfg, err := ctrl.GetConfig()
-	if err == nil {
-		preflightSessionChecks(restCfg, cfg.Session.Namespace, auditor, logger)
-		mgr, mgrErr := ctrl.NewManager(restCfg, ctrl.Options{
-			Scheme: scheme,
-			Cache: cache.Options{
-				DefaultNamespaces: map[string]cache.Config{
-					cfg.Session.Namespace: {},
-				},
-			},
-			Metrics:                metricsserver.Options{BindAddress: "0"},
-			HealthProbeBindAddress: "",
-			LeaderElection:         false,
-		})
-		if mgrErr != nil {
-			logger.Error(mgrErr, "failed to create session controller manager — falling back to in-memory")
-			k8sClient, stopFunc = buildFakeSessionClient(scheme)
-		} else {
-			k8sClient = mgr.GetClient()
-
-		svc := session.NewCRDSessionService(
-			adksession.InMemoryService(),
-			k8sClient,
-			scheme,
-			cfg.Session.Namespace,
-			session.WithAuditor(auditor),
-			session.WithSessionsActive(reg.SessionsActive),
-			session.WithAPIReader(mgr.GetAPIReader()),
-			session.WithLogger(logger.WithName("session-service")),
-		)
-
-		reconciler := controller.NewSessionCleanupReconciler(
-			k8sClient,
-			cfg.Session.DisconnectTTL,
-			cfg.Session.RetentionTTL,
-			logger.WithName("session-cleanup"),
-			auditor,
-			reg.SessionTTLActions,
-			svc,
-		)
-
-		leaseSync := controller.NewLeaseSyncReconciler(
-			k8sClient,
-			cfg.Session.Namespace,
-			logger.WithName("lease-sync"),
-		)
-
-			if setupErr := reconciler.SetupWithManager(mgr); setupErr != nil {
-				logger.Error(setupErr, "failed to register session reconciler with manager")
-				k8sClient, stopFunc = buildFakeSessionClient(scheme)
-			} else if setupErr := leaseSync.SetupWithManager(mgr); setupErr != nil {
-				logger.Error(setupErr, "failed to register lease-sync reconciler with manager")
-				k8sClient, stopFunc = buildFakeSessionClient(scheme)
-			} else {
-				healthy := &atomic.Bool{}
-				mgrCtx, mgrCancel := context.WithCancel(context.Background()) //nolint:gosec // G118 false positive: mgrCancel is assigned to stopFunc below
-				go func() {
-					defer healthy.Store(false)
-					if startErr := mgr.Start(mgrCtx); startErr != nil {
-						logger.Error(startErr, "session controller manager exited with error — health degraded")
-					}
-				}()
-				go func() {
-					syncCtx, syncCancel := context.WithTimeout(mgrCtx, 60*time.Second)
-					defer syncCancel()
-					if mgr.GetCache().WaitForCacheSync(syncCtx) {
-						healthy.Store(true)
-						logger.Info("session controller cache synced")
-					} else {
-						logger.Error(nil, "session controller cache sync failed — session health degraded")
-					}
-				}()
-				stopFunc = mgrCancel
-				logger.Info("session controller manager started",
-					"namespace", cfg.Session.Namespace,
-					"disconnectTTL", cfg.Session.DisconnectTTL.String(),
-					"retentionTTL", cfg.Session.RetentionTTL.String(),
-				)
-
-				return &sessionInfra{
-					SessionService: svc,
-					Reconciler:     reconciler,
-					Scheme:         scheme,
-					Healthy:        healthy,
-					StopFunc:       stopFunc,
-				}
-			}
-		}
-	} else {
-		logger.Info("no kubeconfig available — session CRDs will use in-memory client",
-			"reason", err.Error())
-		k8sClient, stopFunc = buildFakeSessionClient(scheme)
+	if err != nil {
+		return nil, fmt.Errorf("get kubeconfig: %w", err)
 	}
+
+	preflightSessionChecks(restCfg, cfg.Session.Namespace, auditor, logger)
+
+	mgr, err := ctrl.NewManager(restCfg, ctrl.Options{
+		Scheme: scheme,
+		Cache: cache.Options{
+			DefaultNamespaces: map[string]cache.Config{
+				cfg.Session.Namespace: {},
+			},
+		},
+		Metrics:                metricsserver.Options{BindAddress: "0"},
+		HealthProbeBindAddress: "",
+		LeaderElection:         false,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create session controller manager: %w", err)
+	}
+
+	if err := session.RegisterFieldIndexes(context.Background(), mgr.GetFieldIndexer()); err != nil {
+		return nil, fmt.Errorf("register InvestigationSession field index: %w", err)
+	}
+
+	k8sClient := mgr.GetClient()
 
 	svc := session.NewCRDSessionService(
 		adksession.InMemoryService(),
@@ -1121,6 +1040,7 @@ func buildSessionInfra(cfg *config.Config, reg *metrics.Registry, auditor audit.
 		cfg.Session.Namespace,
 		session.WithAuditor(auditor),
 		session.WithSessionsActive(reg.SessionsActive),
+		session.WithAPIReader(mgr.GetAPIReader()),
 		session.WithLogger(logger.WithName("session-service")),
 	)
 
@@ -1134,15 +1054,51 @@ func buildSessionInfra(cfg *config.Config, reg *metrics.Registry, auditor audit.
 		svc,
 	)
 
-	fakeHealthy := &atomic.Bool{}
-	fakeHealthy.Store(true)
+	leaseSync := controller.NewLeaseSyncReconciler(
+		k8sClient,
+		cfg.Session.Namespace,
+		logger.WithName("lease-sync"),
+	)
+
+	if err := reconciler.SetupWithManager(mgr); err != nil {
+		return nil, fmt.Errorf("register session reconciler: %w", err)
+	}
+	if err := leaseSync.SetupWithManager(mgr); err != nil {
+		return nil, fmt.Errorf("register lease-sync reconciler: %w", err)
+	}
+
+	healthy := &atomic.Bool{}
+	mgrCtx, mgrCancel := context.WithCancel(context.Background()) //nolint:gosec // G118 false positive: mgrCancel is assigned to stopFunc below
+	go func() {
+		defer healthy.Store(false)
+		if startErr := mgr.Start(mgrCtx); startErr != nil {
+			logger.Error(startErr, "session controller manager exited with error — health degraded")
+		}
+	}()
+	go func() {
+		syncCtx, syncCancel := context.WithTimeout(mgrCtx, 60*time.Second)
+		defer syncCancel()
+		if mgr.GetCache().WaitForCacheSync(syncCtx) {
+			healthy.Store(true)
+			logger.Info("session controller cache synced")
+		} else {
+			logger.Error(nil, "session controller cache sync failed — session health degraded")
+		}
+	}()
+
+	logger.Info("session controller manager started",
+		"namespace", cfg.Session.Namespace,
+		"disconnectTTL", cfg.Session.DisconnectTTL.String(),
+		"retentionTTL", cfg.Session.RetentionTTL.String(),
+	)
+
 	return &sessionInfra{
 		SessionService: svc,
 		Reconciler:     reconciler,
 		Scheme:         scheme,
-		Healthy:        fakeHealthy,
-		StopFunc:       stopFunc,
-	}
+		Healthy:        healthy,
+		StopFunc:       mgrCancel,
+	}, nil
 }
 
 // preflightSessionChecks runs diagnostic checks before starting the session
@@ -1242,11 +1198,3 @@ func preflightSessionChecks(restCfg *rest.Config, namespace string, auditor audi
 	}
 }
 
-func buildFakeSessionClient(scheme *k8sruntime.Scheme) (c client.Client, cleanup func()) {
-	c = k8sfake.NewClientBuilder().
-		WithScheme(scheme).
-		WithStatusSubresource(&v1alpha1.InvestigationSession{}).
-		Build()
-	cleanup = func() {}
-	return c, cleanup
-}

@@ -36,6 +36,24 @@ const (
 	LabelManagedBy = "app.kubernetes.io/managed-by"
 )
 
+// FieldIndexRRName is the field index path for InvestigationSession's
+// spec.remediationRequestRef.name, used for MatchingFields queries.
+const FieldIndexRRName = "spec.remediationRequestRef.name"
+
+// RegisterFieldIndexes registers required field indexes on the given manager's
+// cache for InvestigationSession lookups by spec.remediationRequestRef.name.
+func RegisterFieldIndexes(ctx context.Context, indexer client.FieldIndexer) error {
+	return indexer.IndexField(ctx, &v1alpha1.InvestigationSession{}, FieldIndexRRName,
+		func(obj client.Object) []string {
+			is := obj.(*v1alpha1.InvestigationSession)
+			if is.Spec.RemediationRequestRef.Name == "" {
+				return nil
+			}
+			return []string{is.Spec.RemediationRequestRef.Name}
+		},
+	)
+}
+
 // StateKeyCreateConfig is the session state key used to pass CRD creation
 // parameters from the caller into the Create method. The value must be a
 // *CreateConfig. The key uses the "temp:" prefix so ADK strips it after
@@ -407,7 +425,7 @@ func (s *CRDSessionService) MaterializeCRD(ctx context.Context, sessionID string
 		var existingList v1alpha1.InvestigationSessionList
 		if listErr := s.client.List(ctx, &existingList,
 			client.InNamespace(s.namespace),
-			client.MatchingLabels{LabelRRName: sanitizeLabelValue(rrRef.Name)},
+			client.MatchingFields{FieldIndexRRName: rrRef.Name},
 		); listErr == nil {
 			for i := range existingList.Items {
 				existing := &existingList.Items[i]

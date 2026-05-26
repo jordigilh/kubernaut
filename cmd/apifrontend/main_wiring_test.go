@@ -272,7 +272,10 @@ func TestBuildSessionInfra_ReturnsNonNilService(t *testing.T) {
 			RetentionTTL:  31 * 24 * time.Hour,
 		},
 	}
-	infra := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	infra, err := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	if err != nil {
+		t.Skipf("HIGH-02b: skipping (no kubeconfig available): %v", err)
+	}
 	if infra.SessionService == nil {
 		t.Fatal("HIGH-02b: buildSessionInfra must return a non-nil SessionService")
 	}
@@ -288,7 +291,10 @@ func TestBuildSessionInfra_GaugeIsWired(t *testing.T) {
 			RetentionTTL:  31 * 24 * time.Hour,
 		},
 	}
-	infra := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	infra, err := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	if err != nil {
+		t.Skipf("skipping (no kubeconfig available): %v", err)
+	}
 	if infra.SessionService == nil {
 		t.Fatal("SessionService is nil")
 	}
@@ -312,7 +318,10 @@ func TestBuildSessionInfra_ReconcilerIsCreated(t *testing.T) {
 			RetentionTTL:  31 * 24 * time.Hour,
 		},
 	}
-	infra := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	infra, err := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	if err != nil {
+		t.Skipf("skipping (no kubeconfig available): %v", err)
+	}
 	if infra.Reconciler == nil {
 		t.Fatal("HIGH-02b: buildSessionInfra must return a non-nil Reconciler")
 	}
@@ -328,7 +337,10 @@ func TestBuildSessionInfra_RetentionTTLClamped(t *testing.T) {
 			RetentionTTL:  1 * time.Hour, // below NIST AU-11 minimum
 		},
 	}
-	infra := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	infra, err := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	if err != nil {
+		t.Skipf("skipping (no kubeconfig available): %v", err)
+	}
 	if infra.Reconciler == nil {
 		t.Fatal("Reconciler must not be nil even with sub-minimum retention TTL")
 	}
@@ -344,7 +356,10 @@ func TestBuildSessionInfra_SchemeIncludesInvestigationSession(t *testing.T) {
 			RetentionTTL:  31 * 24 * time.Hour,
 		},
 	}
-	infra := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	infra, err := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	if err != nil {
+		t.Skipf("skipping (no kubeconfig available): %v", err)
+	}
 	if infra.Scheme == nil {
 		t.Fatal("HIGH-02b: buildSessionInfra must return a non-nil Scheme")
 	}
@@ -365,7 +380,10 @@ func TestBuildSessionInfra_GracefulShutdown(t *testing.T) {
 			RetentionTTL:  31 * 24 * time.Hour,
 		},
 	}
-	infra := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	infra, err := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	if err != nil {
+		t.Skipf("skipping (no kubeconfig available): %v", err)
+	}
 	if infra.StopFunc == nil {
 		t.Fatal("HIGH-02b: buildSessionInfra must return a StopFunc for graceful shutdown")
 	}
@@ -534,7 +552,10 @@ func TestBuildA2AHandler_WithSessionInfra_UsesDecorator(t *testing.T) {
 	cfg.Agent.LLM.APIKey = "test-key"
 	reg := metrics.NewRegistry()
 
-	infra := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	infra, infraErr := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	if infraErr != nil {
+		t.Skipf("skipping (no kubeconfig available): %v", infraErr)
+	}
 	defer infra.StopFunc()
 
 	h, err := buildA2AHandler(context.Background(), cfg, testBackendDeps(), infra, reg, nil, nil, logr.Discard(), nil)
@@ -923,7 +944,7 @@ func TestSessionInfra_HealthyTrueAfterSync(t *testing.T) {
 // start — otherwise the pod never passes readiness and K8s restarts it.
 // ---------------------------------------------------------------------------
 
-func TestBuildSessionInfra_FallbackPathSignalsReady(t *testing.T) {
+func TestBuildSessionInfra_NoKubeconfigReturnsError(t *testing.T) {
 	t.Setenv("KUBECONFIG", "/nonexistent/path")
 	reg := metrics.NewRegistry()
 	cfg := &config.Config{
@@ -933,13 +954,9 @@ func TestBuildSessionInfra_FallbackPathSignalsReady(t *testing.T) {
 			RetentionTTL:  31 * 24 * time.Hour,
 		},
 	}
-	infra := buildSessionInfra(cfg, reg, nil, logr.Discard())
-	defer infra.StopFunc()
-	if infra.Healthy == nil {
-		t.Fatal("UT-AF-1272-003: Healthy must not be nil — /readyz would panic")
-	}
-	if !infra.Healthy.Load() {
-		t.Fatal("UT-AF-1272-003: fallback path must signal ready immediately — pod would never pass readiness probe")
+	_, err := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	if err == nil {
+		t.Fatal("UT-AF-1272-003: buildSessionInfra must return error when kubeconfig is unavailable")
 	}
 }
 
@@ -987,7 +1004,10 @@ func TestBuildSessionInfra_ThreadsLoggerIntoReconciler(t *testing.T) {
 			RetentionTTL:  31 * 24 * time.Hour,
 		},
 	}
-	infra := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	infra, err := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	if err != nil {
+		t.Skipf("skipping (no kubeconfig available): %v", err)
+	}
 	defer infra.StopFunc()
 	if infra.Reconciler == nil {
 		t.Fatal("UT-AF-1274-010: reconciler must not be nil — TTL enforcement disabled")
@@ -1071,7 +1091,10 @@ func TestBuildSessionInfra_WiresTTLMetrics(t *testing.T) {
 			RetentionTTL:  31 * 24 * time.Hour,
 		},
 	}
-	infra := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	infra, err := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	if err != nil {
+		t.Skipf("skipping (no kubeconfig available): %v", err)
+	}
 	defer infra.StopFunc()
 	if infra.Reconciler == nil {
 		t.Fatal("reconciler must not be nil — TTL enforcement disabled")

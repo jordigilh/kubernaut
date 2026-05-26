@@ -75,6 +75,12 @@ func (d *ServiceDecorator) Create(ctx context.Context, req *adksession.CreateReq
 		return nil, fmt.Errorf("session creation requires authenticated user identity")
 	}
 
+	// BR-INTERACTIVE-010: Only human users may create InvestigationSession CRDs.
+	// ServiceAccount callers (A2A agents) operate in autonomous mode only.
+	if identity.IsServiceAccount {
+		return nil, fmt.Errorf("interactive sessions cannot be created by service accounts (caller: %s)", identity.Username)
+	}
+
 	joinMode := v1alpha1.SessionJoinModeStart
 	rrRef := sc.RemediationRef
 	if rrRef.Name == "" {

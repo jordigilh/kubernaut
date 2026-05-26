@@ -7,11 +7,12 @@ import (
 
 // UserIdentity represents an authenticated user's identity extracted from a JWT.
 type UserIdentity struct {
-	Username  string    `json:"username"`
-	Groups    []string  `json:"groups,omitempty"`
-	Issuer    string    `json:"issuer"`
-	RawToken  string    `json:"-"`
-	ExpiresAt time.Time `json:"expiresAt,omitempty"`
+	Username         string    `json:"username"`
+	Groups           []string  `json:"groups,omitempty"`
+	Issuer           string    `json:"issuer"`
+	RawToken         string    `json:"-"`
+	ExpiresAt        time.Time `json:"expiresAt,omitempty"`
+	IsServiceAccount bool      `json:"isServiceAccount,omitempty"` // BR-INTERACTIVE-010: true for SA tokens (TokenReview path)
 }
 
 // String returns a safe representation that redacts the raw token (SEC-3).
