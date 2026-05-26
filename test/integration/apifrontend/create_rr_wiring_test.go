@@ -51,6 +51,7 @@ var _ = Describe("af_create_rr wiring (#1282)", func() {
 		})
 
 		result, err := tools.HandleCreateRR(ctx, dynamicClient, ns, &tools.CreateRRArgs{
+			Namespace:   ns,
 			Kind:        "Deployment",
 			Name:        "web-w01",
 			Description: "IT wiring test",
@@ -63,8 +64,11 @@ var _ = Describe("af_create_rr wiring (#1282)", func() {
 		created, getErr := dynamicClient.Resource(rrGVR).Namespace(ns).Get(ctx, rrName, metav1.GetOptions{})
 		Expect(getErr).NotTo(HaveOccurred())
 
+		metaNS := created.GetNamespace()
+		Expect(metaNS).To(Equal(ns), "CRD metadata.namespace = controllerNS (ADR-057)")
+
 		targetNS, _, _ := unstructured.NestedString(created.Object, "spec", "targetResource", "namespace")
-		Expect(targetNS).To(Equal(ns), "RR targetResource.namespace should match AF-resolved namespace")
+		Expect(targetNS).To(Equal(ns), "targetResource.namespace = workloadNS (same-NS case per ADR-057)")
 
 		DeferCleanup(func() {
 			_ = dynamicClient.Resource(rrGVR).Namespace(ns).Delete(ctx, rrName, metav1.DeleteOptions{})
@@ -75,6 +79,7 @@ var _ = Describe("af_create_rr wiring (#1282)", func() {
 		ctx := context.Background()
 
 		result, err := tools.HandleCreateRR(ctx, dynamicClient, "default", &tools.CreateRRArgs{
+			Namespace:   "default",
 			Kind:        "Deployment",
 			Name:        "web-w02",
 			Description: "signal source check",
@@ -93,10 +98,11 @@ var _ = Describe("af_create_rr wiring (#1282)", func() {
 		})
 	})
 
-	It("IT-AF-1282-W03: signalName is grounded (not af-manual-) in envtest", func() {
+	It("IT-AF-1282-W03: signalName falls back to unknown in envtest", func() {
 		ctx := context.Background()
 
 		result, err := tools.HandleCreateRR(ctx, dynamicClient, "default", &tools.CreateRRArgs{
+			Namespace:   "default",
 			Kind:        "Deployment",
 			Name:        "web-w03",
 			Description: "signal name check",
@@ -108,7 +114,6 @@ var _ = Describe("af_create_rr wiring (#1282)", func() {
 		Expect(getErr).NotTo(HaveOccurred())
 
 		signalName, _, _ := unstructured.NestedString(created.Object, "spec", "signalName")
-		Expect(signalName).NotTo(HavePrefix("af-manual-"))
 		Expect(signalName).To(Equal("unknown"),
 			"with no triager and no events, fallback should be unknown")
 
@@ -146,6 +151,7 @@ var _ = Describe("af_create_rr wiring (#1282)", func() {
 		})
 
 		result, err := tools.HandleCreateRR(ctx, dynamicClient, "default", &tools.CreateRRArgs{
+			Namespace:   "default",
 			Kind:        "Deployment",
 			Name:        "web-w03b",
 			Description: "OOM event in envtest",
@@ -171,6 +177,7 @@ var _ = Describe("af_create_rr wiring (#1282)", func() {
 		triager := severity.NewTriager(&noopPromClientIT{}, noopLLM, cfg, logr.Discard())
 
 		result, err := tools.HandleCreateRR(ctx, dynamicClient, "default", &tools.CreateRRArgs{
+			Namespace:   "default",
 			Kind:        "Deployment",
 			Name:        "web-w04",
 			Description: "triage wiring IT",
@@ -183,6 +190,63 @@ var _ = Describe("af_create_rr wiring (#1282)", func() {
 			rrName := result.RRID[len("default")+1:]
 			_ = dynamicClient.Resource(rrGVR).Namespace("default").Delete(ctx, rrName, metav1.DeleteOptions{})
 		})
+	})
+
+	It("IT-AF-1292-W01: envtest creates RR in controllerNS with targetResource in workloadNS (BR-PLATFORM-057)", func() {
+		ctx := context.Background()
+		controllerNS := "kubernaut-system"
+		workloadNS := "it-workload-ns"
+
+		ctrlNSObj := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: controllerNS}}
+		if err := k8sClient.Create(ctx, ctrlNSObj); err != nil {
+			GinkgoWriter.Printf("controllerNS create: %v (may already exist)\n", err)
+		}
+		DeferCleanup(func() {
+			_ = k8sClient.Delete(ctx, ctrlNSObj)
+		})
+
+		workloadNSObj := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: workloadNS}}
+		if err := k8sClient.Create(ctx, workloadNSObj); err != nil {
+			GinkgoWriter.Printf("workloadNS create: %v (may already exist)\n", err)
+		}
+		DeferCleanup(func() {
+			_ = k8sClient.Delete(ctx, workloadNSObj)
+		})
+
+		result, err := tools.HandleCreateRR(ctx, dynamicClient, controllerNS, &tools.CreateRRArgs{
+			Namespace:   workloadNS,
+			Kind:        "Deployment",
+			Name:        "web-1292-w01",
+			Description: "ADR-057 namespace split IT",
+		}, "it-user", nil, nil)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.RRID).To(HavePrefix(controllerNS + "/"))
+
+		rrName := result.RRID[len(controllerNS)+1:]
+		created, getErr := dynamicClient.Resource(rrGVR).Namespace(controllerNS).Get(ctx, rrName, metav1.GetOptions{})
+		Expect(getErr).NotTo(HaveOccurred())
+
+		metaNS := created.GetNamespace()
+		Expect(metaNS).To(Equal(controllerNS), "CRD metadata.namespace must be controllerNS")
+
+		targetNS, _, _ := unstructured.NestedString(created.Object, "spec", "targetResource", "namespace")
+		Expect(targetNS).To(Equal(workloadNS),
+			"spec.targetResource.namespace must be workloadNS (it-workload-ns), not controllerNS")
+
+		DeferCleanup(func() {
+			_ = dynamicClient.Resource(rrGVR).Namespace(controllerNS).Delete(ctx, rrName, metav1.DeleteOptions{})
+		})
+	})
+
+	It("IT-AF-1292-W02: prompt includes workload namespace instruction and rejects old single-NS wording (BR-PLATFORM-057, CM-6)", func() {
+		instruction := agentpkg.BuildInstruction("kubernaut-system")
+
+		Expect(instruction).To(ContainSubstring("provide: namespace, kind, name, description"),
+			"prompt must list namespace as an LLM-provided field for af_create_rr")
+		Expect(instruction).To(ContainSubstring("namespace is the workload namespace"),
+			"prompt must clarify that namespace is the workload namespace")
+		Expect(instruction).NotTo(ContainSubstring("namespace: from AF's deployment context"),
+			"old single-namespace wording must be removed (ADR-057)")
 	})
 
 	It("IT-AF-1282-W05: BuildInstruction contains Tool Usage Rules with resolved namespace", func() {
@@ -200,7 +264,7 @@ var _ = Describe("af_create_rr wiring (#1282)", func() {
 		Expect(instruction).To(ContainSubstring("kubernaut MCP tools"))
 		Expect(instruction).To(ContainSubstring("NEVER use kubectl"))
 		Expect(instruction).To(ContainSubstring("it-namespace"))
-		Expect(instruction).To(ContainSubstring("namespace: from AF's deployment context"))
+		Expect(instruction).To(ContainSubstring("namespace is the workload namespace"))
 	})
 
 	It("IT-AF-1282-W06: audit events emitted on RR creation in envtest", func() {
@@ -208,6 +272,7 @@ var _ = Describe("af_create_rr wiring (#1282)", func() {
 		auditRecorder.Reset()
 
 		result, err := tools.HandleCreateRR(ctx, dynamicClient, "default", &tools.CreateRRArgs{
+			Namespace:   "default",
 			Kind:        "Deployment",
 			Name:        "web-w06",
 			Description: "audit IT",

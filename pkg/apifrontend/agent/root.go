@@ -125,7 +125,7 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 		{"status", func() (tool.Tool, error) { return tools.NewStatusTool(mcpC, cfg.Auditor) }},
 		{"reconnect", func() (tool.Tool, error) { return tools.NewReconnectTool(mcpC, cfg.Auditor) }},
 		// RR tools — AF SA writes AF-owned CRDs
-		{"check_existing_rr", func() (tool.Tool, error) { return tools.NewCheckExistingRRTool(k8s) }},
+		{"check_existing_rr", func() (tool.Tool, error) { return tools.NewCheckExistingRRTool(k8s, cfg.Namespace) }},
 		{"create_rr", func() (tool.Tool, error) {
 			return tools.NewCreateRRTool(k8s, cfg.Namespace, cfg.Triager, cfg.Auditor)
 		}},

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -24,8 +25,10 @@ import (
 const maxDescriptionLen = 2048
 
 // CreateRRArgs defines the LLM-supplied input for af_create_rr.
-// Namespace and severity are resolved by AF, not the LLM.
+// Namespace is the workload namespace where the target resource lives (LLM-provided).
+// Severity is resolved by AF via the triage pipeline.
 type CreateRRArgs struct {
+	Namespace   string `json:"namespace"`
 	Kind        string `json:"kind"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
@@ -54,14 +57,21 @@ func rrFingerprint(namespace, kind, name string) string {
 }
 
 // HandleCreateRR creates a RemediationRequest CRD with singleflight deduplication.
-// Namespace is resolved by AF (not the LLM). Severity is resolved via the triage
-// pipeline when a triager is available, otherwise defaults to "medium".
-func HandleCreateRR(ctx context.Context, client dynamic.Interface, namespace string, args *CreateRRArgs, username string, triager *severity.Triager, auditor audit.Emitter) (CreateRRResult, error) {
+//
+// controllerNS is where the RR CRD is placed (metadata.namespace) — injected at
+// wiring time from AF's deployment context (ADR-057).
+// args.Namespace is the workload namespace where the target resource lives — provided
+// by the LLM. Severity is resolved via the triage pipeline when a triager is
+// available, otherwise defaults to "medium".
+func HandleCreateRR(ctx context.Context, client dynamic.Interface, controllerNS string, args *CreateRRArgs, username string, triager *severity.Triager, auditor audit.Emitter) (CreateRRResult, error) {
 	if client == nil {
 		return CreateRRResult{}, ErrK8sUnavailable
 	}
-	if err := validate.Namespace(namespace); err != nil {
-		return CreateRRResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+	if err := validate.Namespace(controllerNS); err != nil {
+		return CreateRRResult{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
+	}
+	if err := validate.Namespace(args.Namespace); err != nil {
+		return CreateRRResult{}, fmt.Errorf("%w: workload namespace: %w", ErrInvalidInput, err)
 	}
 	if args.Kind == "" {
 		return CreateRRResult{}, fmt.Errorf("%w: kind must not be empty", ErrInvalidInput)
@@ -78,11 +88,11 @@ func HandleCreateRR(ctx context.Context, client dynamic.Interface, namespace str
 	var triageResult *severity.TriageResult
 	if triager != nil {
 		input := severity.TriageInput{
-			Namespace:   namespace,
+			Namespace:   args.Namespace,
 			Kind:        args.Kind,
 			Name:        args.Name,
 			Description: args.Description,
-			Labels:      map[string]string{"namespace": namespace, "kind": args.Kind, "name": args.Name},
+			Labels:      map[string]string{"namespace": args.Namespace, "kind": args.Kind, "name": args.Name},
 		}
 		result, err := triager.Triage(ctx, input)
 		if err != nil {
@@ -94,12 +104,12 @@ func HandleCreateRR(ctx context.Context, client dynamic.Interface, namespace str
 		}
 	}
 
-	signalName := deriveSignalName(ctx, client, namespace, args, triageResult)
-	fingerprint := rrFingerprint(namespace, args.Kind, args.Name)
+	signalName := deriveSignalName(ctx, client, args.Namespace, args, triageResult)
+	fingerprint := rrFingerprint(args.Namespace, args.Kind, args.Name)
 
 	result, err, _ := rrCreateGroup.Do(fingerprint, func() (interface{}, error) {
-		existing, checkErr := HandleCheckExistingRR(ctx, client, CheckExistingRRArgs{
-			Namespace: namespace,
+		existing, checkErr := HandleCheckExistingRR(ctx, client, controllerNS, CheckExistingRRArgs{
+			Namespace: args.Namespace,
 			Kind:      args.Kind,
 			Name:      args.Name,
 		})
@@ -133,7 +143,7 @@ func HandleCreateRR(ctx context.Context, client dynamic.Interface, namespace str
 			"targetResource": map[string]interface{}{
 				"kind":      args.Kind,
 				"name":      args.Name,
-				"namespace": namespace,
+				"namespace": args.Namespace,
 			},
 		}
 
@@ -156,13 +166,13 @@ func HandleCreateRR(ctx context.Context, client dynamic.Interface, namespace str
 				"kind":       "RemediationRequest",
 				"metadata": map[string]interface{}{
 					"name":      rrName,
-					"namespace": namespace,
+					"namespace": controllerNS,
 				},
 				"spec": spec,
 			},
 		}
 
-		created, createErr := client.Resource(rrGVR).Namespace(namespace).Create(ctx, rrObj, metav1.CreateOptions{})
+		created, createErr := client.Resource(rrGVR).Namespace(controllerNS).Create(ctx, rrObj, metav1.CreateOptions{})
 		if createErr != nil {
 			return nil, ToUserFriendlyError(createErr)
 		}
@@ -181,11 +191,11 @@ func HandleCreateRR(ctx context.Context, client dynamic.Interface, namespace str
 	})
 
 	if err != nil {
-		return CreateRRResult{}, err
+		return CreateRRResult{}, fmt.Errorf("create RR for %s/%s: %w", args.Kind, args.Name, err)
 	}
 	res, ok := result.(*CreateRRResult)
 	if !ok {
-		return CreateRRResult{}, fmt.Errorf("unexpected singleflight result type")
+		return CreateRRResult{}, fmt.Errorf("create RR: unexpected singleflight result type")
 	}
 
 	if auditor != nil {
@@ -194,7 +204,7 @@ func HandleCreateRR(ctx context.Context, client dynamic.Interface, namespace str
 				Type:   audit.EventRRDeduplicated,
 				UserID: username,
 				Detail: map[string]string{
-					"namespace":   namespace,
+					"namespace":   controllerNS,
 					"kind":        args.Kind,
 					"name":        args.Name,
 					"existing_rr": res.RRID,
@@ -205,7 +215,7 @@ func HandleCreateRR(ctx context.Context, client dynamic.Interface, namespace str
 				Type:   audit.EventRRCreated,
 				UserID: username,
 				Detail: map[string]string{
-					"namespace": namespace,
+					"namespace": controllerNS,
 					"kind":      args.Kind,
 					"name":      args.Name,
 					"rr_id":     res.RRID,
@@ -254,7 +264,9 @@ func deriveSignalName(ctx context.Context, client dynamic.Interface, namespace s
 			Namespace: namespace,
 			Kind:      args.Kind,
 		})
-		if err == nil && len(evResult.Events) > 0 {
+		if err != nil {
+			log.Printf("[deriveSignalName] list %s events in %s: %v", args.Kind, namespace, err)
+		} else if len(evResult.Events) > 0 {
 			if dominant := DominantEventReason(evResult.Events); dominant != "" {
 				return dominant
 			}
@@ -269,7 +281,9 @@ func deriveSignalName(ctx context.Context, client dynamic.Interface, namespace s
 				Namespace: namespace,
 				Kind:      "Pod",
 			})
-			if err == nil && len(podResult.Events) > 0 {
+			if err != nil {
+				log.Printf("[deriveSignalName] list Pod events in %s: %v", namespace, err)
+			} else if len(podResult.Events) > 0 {
 				related := FilterRelatedPodEvents(podResult.Events, args.Name)
 				if dominant := DominantEventReason(related); dominant != "" {
 					return dominant
@@ -281,13 +295,14 @@ func deriveSignalName(ctx context.Context, client dynamic.Interface, namespace s
 	return "unknown"
 }
 
-// NewCreateRRTool creates the af_create_rr tool. Namespace is injected by AF
-// (resolved from downward API / config) and is not exposed to the LLM.
-func NewCreateRRTool(client dynamic.Interface, namespace string, triager *severity.Triager, auditor audit.Emitter) (tool.Tool, error) {
+// NewCreateRRTool creates the af_create_rr tool. controllerNS is injected by AF
+// (resolved from downward API / config) for CRD placement (ADR-057).
+// The LLM provides the workload namespace via args.Namespace.
+func NewCreateRRTool(client dynamic.Interface, controllerNS string, triager *severity.Triager, auditor audit.Emitter) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "af_create_rr",
 		Description: "Create a RemediationRequest for a target resource with deduplication. Checks for existing non-terminal RRs before creating.",
 	}, func(ctx tool.Context, args CreateRRArgs) (CreateRRResult, error) {
-		return HandleCreateRR(ctx, client, namespace, &args, usernameFromContext(ctx), triager, auditor)
+		return HandleCreateRR(ctx, client, controllerNS, &args, usernameFromContext(ctx), triager, auditor)
 	})
 }

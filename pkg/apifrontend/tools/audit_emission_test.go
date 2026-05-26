@@ -54,7 +54,7 @@ var _ = Describe("Audit event emission – tool handlers (PR2 wiring)", func() {
 			spy := &spyEmitter{}
 
 			_, err := tools.HandleCreateRR(context.Background(), client, "prod", &tools.CreateRRArgs{
-				Kind: "Deployment", Name: "web", Description: "test",
+				Namespace: "prod", Kind: "Deployment", Name: "web", Description: "test",
 			}, "alice", nil, spy)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -74,7 +74,7 @@ var _ = Describe("Audit event emission – tool handlers (PR2 wiring)", func() {
 			spy := &spyEmitter{}
 
 			result, err := tools.HandleCreateRR(context.Background(), client, "prod", &tools.CreateRRArgs{
-				Kind: "Deployment", Name: "web", Description: "dup",
+				Namespace: "prod", Kind: "Deployment", Name: "web", Description: "dup",
 			}, "bob", nil, spy)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.AlreadyExists).To(BeTrue())
