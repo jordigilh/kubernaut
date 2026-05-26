@@ -34,15 +34,6 @@ func scrapeMetrics() string {
 var _ = Describe("Operational Contract", Label("e2e", "phase1", "operational"), func() {
 
 	// -----------------------------------------------------------------------
-	// TC-A-01e: /readyz on health port must be dependency-aware
-	// -----------------------------------------------------------------------
-	Context("Readiness Probe Semantics (WIRE-01)", func() {
-		It("TC-A-01e: /readyz on health port should return 503 when deps unhealthy", func() {
-			Skip("DEFERRED: E2E harness cannot control dependency availability; unit coverage via TestHealthMuxReadyz_DepsUnhealthy in cmd/apifrontend/main_wiring_test.go")
-		})
-	})
-
-	// -----------------------------------------------------------------------
 	// TC-A-metrics: Metrics emission after authenticated request
 	// -----------------------------------------------------------------------
 	Context("Metrics Emission (WIRE-05/06/08)", func() {

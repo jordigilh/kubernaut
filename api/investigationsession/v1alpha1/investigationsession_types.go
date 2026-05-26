@@ -115,6 +115,13 @@ type InvestigationSessionStatus struct {
 	// ReconnectedAt is the last reconnect timestamp.
 	ReconnectedAt *metav1.Time `json:"reconnectedAt,omitempty"`
 
+	// LeaseHolder is the identity of the current session driver (from KA Lease holderIdentity).
+	// Empty when no lease is held.
+	LeaseHolder string `json:"leaseHolder,omitempty"`
+
+	// LeaseAcquiredAt is the timestamp when the lease was acquired.
+	LeaseAcquiredAt *metav1.Time `json:"leaseAcquiredAt,omitempty"`
+
 	// Message is a human-readable description of the current state.
 	Message string `json:"message,omitempty"`
 

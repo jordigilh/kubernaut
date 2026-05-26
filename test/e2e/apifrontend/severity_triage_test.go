@@ -13,11 +13,12 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	"github.com/jordigilh/kubernaut/test/e2e/apifrontend/infrastructure"
 )
 
 var _ = Describe("Severity Triage Pipeline (G12)", Label("e2e", "phase4", "g12"), func() {
 	var authToken string
-	var prometheusReachable, prometheusAlertsReady bool
 
 	BeforeEach(func() {
 		var err error
@@ -34,37 +35,7 @@ var _ = Describe("Severity Triage Pipeline (G12)", Label("e2e", "phase4", "g12")
 				_, _ = fmt.Fprintf(GinkgoWriter, "WARNING: failed to create namespace %s: %s\n", ns, string(out))
 			}
 		}
-
-		promURL := "http://localhost:9190"
-		if envProm := os.Getenv("AF_E2E_PROMETHEUS_URL"); envProm != "" {
-			promURL = envProm
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, promURL+"/api/v1/rules", http.NoBody)
-		if reqErr == nil {
-			resp, doErr := (&http.Client{Timeout: 5 * time.Second}).Do(req)
-			if doErr == nil {
-				body, _ := io.ReadAll(resp.Body)
-				_ = resp.Body.Close()
-				prometheusReachable = resp.StatusCode == http.StatusOK
-				prometheusAlertsReady = strings.Contains(string(body), `"firing"`) && strings.Contains(string(body), "HighCPU")
-			}
-		}
 	})
-
-	skipIfNoPrometheus := func() {
-		if !prometheusReachable {
-			Skip("Prometheus not reachable from test host — triage pipeline tests require Prometheus infrastructure")
-		}
-	}
-
-	skipIfNoAlerts := func() {
-		skipIfNoPrometheus()
-		if !prometheusAlertsReady {
-			Skip("Prometheus alerts not firing — OTLP metric injection timing issue")
-		}
-	}
 
 	a2aCreateRR := func(namespace, deployName string, extraFields map[string]interface{}) (string, error) {
 		severity := ""
@@ -107,14 +78,28 @@ var _ = Describe("Severity Triage Pipeline (G12)", Label("e2e", "phase4", "g12")
 	}
 
 	It("TC-E2E-SEV-01: Tier 1 — Firing alert", func() {
-		skipIfNoAlerts()
+		// Re-inject the CPU metric to ensure it's fresh (OTLP gauge points can
+		// go stale between BeforeSuite injection and phase-4 test execution).
+		promURL := "http://localhost:9190"
+		if envProm := os.Getenv("AF_E2E_PROMETHEUS_URL"); envProm != "" {
+			promURL = envProm
+		}
+		ctx := context.Background()
+		Expect(injectMetricForTier2(ctx, promURL, "e2e_cpu_usage_percent", 95, map[string]string{
+			"namespace": "default", "kind": "Deployment", "name": "test-firing-target",
+		})).To(Succeed(), "CPU metric re-injection must succeed for Tier 1")
+
+		Eventually(func() error {
+			return infrastructure.WaitForPrometheusRuleState(ctx, promURL, "HighCPU", infrastructure.RuleStateFiring, 5*time.Second)
+		}, 60*time.Second, 2*time.Second).Should(Succeed(),
+			"HighCPU alert must be firing before RR creation")
+
 		text, err := a2aCreateRR("default", "test-firing-target", nil)
 		Expect(err).NotTo(HaveOccurred(), text)
 		expectSeverityAndSource(text, "critical", "firing_alert")
 	})
 
 	It("TC-E2E-SEV-02: Tier 1.5 — Pending alert", func() {
-		skipIfNoAlerts()
 		text, err := a2aCreateRR("default", "test-pending-target", nil)
 		Expect(err).NotTo(HaveOccurred(), text)
 		src := parseJSONStringField(text, "severity_source")
@@ -123,8 +108,6 @@ var _ = Describe("Severity Triage Pipeline (G12)", Label("e2e", "phase4", "g12")
 	})
 
 	It("TC-E2E-SEV-03: Tier 2 — Inactive rule with live data", func() {
-		skipIfNoAlerts()
-
 		promURL := "http://localhost:9190"
 		if envProm := os.Getenv("AF_E2E_PROMETHEUS_URL"); envProm != "" {
 			promURL = envProm
@@ -133,9 +116,7 @@ var _ = Describe("Severity Triage Pipeline (G12)", Label("e2e", "phase4", "g12")
 		err := injectMetricForTier2(ctx, promURL, "e2e_disk_usage_percent", 80, map[string]string{
 			"namespace": "sev-tier2-ns", "kind": "Deployment", "name": "test-inactive-target",
 		})
-		if err != nil {
-			Skip("Could not inject disk metric for Tier 2 test: " + err.Error())
-		}
+		Expect(err).NotTo(HaveOccurred(), "disk metric injection must succeed for Tier 2 test")
 
 		text, toolErr := a2aCreateRR("sev-tier2-ns", "test-inactive-target", nil)
 		Expect(toolErr).NotTo(HaveOccurred(), text)
@@ -145,7 +126,6 @@ var _ = Describe("Severity Triage Pipeline (G12)", Label("e2e", "phase4", "g12")
 	})
 
 	It("TC-E2E-SEV-04: Tier 2.5 — Inactive rule, no data", func() {
-		skipIfNoAlerts()
 		text, err := a2aCreateRR("no-data-ns", "test-nodata-target", nil)
 		Expect(err).NotTo(HaveOccurred(), text)
 		src := parseJSONStringField(text, "severity_source")

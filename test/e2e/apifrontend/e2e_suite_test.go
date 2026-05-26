@@ -60,28 +60,27 @@ var _ = SynchronizedBeforeSuite(
 		if os.Getenv("AF_E2E_SKIP_PROMETHEUS") != "true" {
 			_, _ = fmt.Fprintln(GinkgoWriter, "\nDeploying Prometheus for severity triage testing...")
 			err = infrastructure.DeployPrometheusForSeverityTriage(ctx, e2eNamespace, kubeconfigPath, GinkgoWriter)
-			if err != nil {
-				_, _ = fmt.Fprintf(GinkgoWriter, "WARNING: Prometheus deployment failed (non-fatal for non-triage tests): %v\n", err)
-			} else {
-				promURL := "http://localhost:9190"
-				_, _ = fmt.Fprintln(GinkgoWriter, "  Injecting OTLP metrics for severity triage alerts...")
-				if ierr := infrastructure.InjectOTLPMetrics(ctx, promURL, "e2e_cpu_usage_percent", 95, map[string]string{
-					"namespace": "default", "kind": "Deployment", "name": "test-firing-target",
-				}); ierr != nil {
-					_, _ = fmt.Fprintf(GinkgoWriter, "  WARNING: CPU metric injection failed: %v\n", ierr)
-				}
-				if ierr := infrastructure.InjectOTLPMetrics(ctx, promURL, "e2e_memory_usage_percent", 90, map[string]string{
-					"namespace": "default", "kind": "Deployment", "name": "test-pending-target",
-				}); ierr != nil {
-					_, _ = fmt.Fprintf(GinkgoWriter, "  WARNING: Memory metric injection failed: %v\n", ierr)
-				}
-				// NOTE: e2e_disk_usage_percent is NOT injected here — injected at test
-				// time in TC-E2E-SEV-03 to exploit the rule evaluation timing window.
-				_, _ = fmt.Fprintln(GinkgoWriter, "  Waiting for HighCPU alert to fire...")
-				if werr := infrastructure.WaitForPrometheusRuleState(ctx, promURL, "HighCPU", infrastructure.RuleStateFiring, 60*time.Second); werr != nil {
-					_, _ = fmt.Fprintf(GinkgoWriter, "  WARNING: HighCPU did not reach firing state: %v\n", werr)
-				}
-			}
+			Expect(err).NotTo(HaveOccurred(), "Prometheus deployment must succeed for severity triage tests")
+
+			promURL := "http://localhost:9190"
+
+			_, _ = fmt.Fprintln(GinkgoWriter, "  Waiting for Prometheus readiness...")
+			Expect(kinfra.WaitForPrometheusReady(promURL, 90*time.Second, GinkgoWriter)).
+				To(Succeed(), "Prometheus must become ready within 90s")
+
+			_, _ = fmt.Fprintln(GinkgoWriter, "  Injecting OTLP metrics for severity triage alerts...")
+			Expect(infrastructure.InjectOTLPMetrics(ctx, promURL, "e2e_cpu_usage_percent", 95, map[string]string{
+				"namespace": "default", "kind": "Deployment", "name": "test-firing-target",
+			})).To(Succeed(), "CPU metric injection must succeed")
+			Expect(infrastructure.InjectOTLPMetrics(ctx, promURL, "e2e_memory_usage_percent", 90, map[string]string{
+				"namespace": "default", "kind": "Deployment", "name": "test-pending-target",
+			})).To(Succeed(), "Memory metric injection must succeed")
+
+			// NOTE: e2e_disk_usage_percent is NOT injected here — injected at test
+			// time in TC-E2E-SEV-03 to exploit the rule evaluation timing window.
+			_, _ = fmt.Fprintln(GinkgoWriter, "  Waiting for HighCPU alert to fire...")
+			Expect(infrastructure.WaitForPrometheusRuleState(ctx, promURL, "HighCPU", infrastructure.RuleStateFiring, 120*time.Second)).
+				To(Succeed(), "HighCPU alert must reach firing state within 120s")
 		}
 
 		_, _ = fmt.Fprintln(GinkgoWriter, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")

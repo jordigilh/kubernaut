@@ -46,7 +46,8 @@ type Config struct {
 	CBAuditFunc func(dependency string, from, to gobreaker.State)
 }
 
-// AnalyzeRequest is the request body for POST /api/v1/incident/analyze.
+// AnalyzeRequest is the AF-facing input for starting an investigation.
+// The Analyze method maps these fields to the full KA IncidentRequest schema.
 type AnalyzeRequest struct {
 	Namespace string `json:"namespace,omitempty"`
 	Kind      string `json:"kind,omitempty"`

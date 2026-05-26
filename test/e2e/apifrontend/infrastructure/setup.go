@@ -219,6 +219,25 @@ func SetupE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath, na
 		return fmt.Errorf("failed to deploy AF RBAC: %w", err)
 	}
 
+	// Seed DS with action types + workflows so kubernaut_list_workflows is non-empty.
+	// Must run after deployAFE2ERBAC (creates the apifrontend ServiceAccount).
+	_, _ = fmt.Fprintln(writer, "  Seeding DS action types + workflows for AF E2E...")
+	saToken, err := kinfra.GetServiceAccountToken(ctx, namespace, "apifrontend", kubeconfigPath)
+	if err != nil {
+		return fmt.Errorf("get apifrontend SA token for DS seeding: %w", err)
+	}
+	seedClient, err := kinfra.CreateTLSAuthenticatedDataStorageClient("https://localhost:8089", saToken, kubeconfigPath)
+	if err != nil {
+		return fmt.Errorf("create DS seed client: %w", err)
+	}
+	if err := kinfra.SeedActionTypesViaAPI(seedClient, writer); err != nil {
+		return fmt.Errorf("seed action types: %w", err)
+	}
+	testWorkflows := kinfra.GetKAE2ETestWorkflows()
+	if _, err := kinfra.SeedWorkflowsInDataStorage(seedClient, testWorkflows, "AF E2E", writer); err != nil {
+		return fmt.Errorf("seed workflows: %w", err)
+	}
+
 	afImage := images["apifrontend"]
 	if err := deployAPIFrontendService(ctx, kubeconfigPath, namespace, afImage, writer); err != nil {
 		return fmt.Errorf("failed to deploy AF service: %w", err)
@@ -439,6 +458,10 @@ rules:
     verbs: ["get"]
   - apiGroups: ["authorization.k8s.io"]
     resources: ["subjectaccessreviews"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["services"]
+    resourceNames: ["kubernaut-agent"]
     verbs: ["create"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1

@@ -210,7 +210,7 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 	}
 
 	dsURL := "https://localhost:8089"
-	seedClient, err := createTLSAuthenticatedDataStorageClient(dsURL, saToken, kubeconfigPath)
+	seedClient, err := CreateTLSAuthenticatedDataStorageClient(dsURL, saToken, kubeconfigPath)
 	if err != nil {
 		return fmt.Errorf("failed to create DS client: %w", err)
 	}

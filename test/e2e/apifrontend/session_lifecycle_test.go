@@ -100,45 +100,40 @@ spec:
 		if err == nil {
 			_ = resp.Body.Close()
 		}
-		if err != nil || resp.StatusCode == http.StatusNotImplemented {
-			Skip("A2A not available — cannot exercise live SSE disconnect/reconnect")
-		}
+		Expect(err).NotTo(HaveOccurred(), "A2A endpoint must be reachable")
+		Expect(resp.StatusCode).NotTo(Equal(http.StatusNotImplemented),
+			"A2A endpoint must be available for disconnect/reconnect tests")
 
-		prompt := "List pods in default namespace only"
+		prompt := "Create a remediation request for deployment test-deploy in default namespace"
 		resp2, err := a2aInvoke(httpClient, baseURL, authTokenA, a2aTasksSend("g19-reconnect", prompt))
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp2.Body.Close() }()
-		if resp2.StatusCode != http.StatusOK {
-			Skip("A2A task did not start — skipping reconnect assertions")
-		}
+		Expect(resp2.StatusCode).To(Equal(http.StatusOK),
+			"A2A task must start successfully for reconnect test")
 
 		rpc, err := parseRPCResponse(resp2)
 		Expect(err).NotTo(HaveOccurred())
-		if rpc.Error != nil || rpc.Result == nil {
-			Skip("A2A did not return a task — skipping reconnect assertions")
-		}
+		Expect(rpc.Error).To(BeNil(), "A2A must return a successful result, not an error")
+		Expect(rpc.Result).NotTo(BeNil(), "A2A must return a task result")
 		task, err := extractTaskFromResult(rpc.Result)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(task.ID).NotTo(BeEmpty())
 
-		// CRD creation is deferred until af_create_rr. A non-remediating prompt
-		// ("list pods") does not trigger af_create_rr, so no CRD will appear.
-		// Skip the reconnect assertions if no CRD materializes.
+		// The remediating prompt triggers af_create_rr -> MaterializeCRD.
+		// Poll for the InvestigationSession CRD to appear.
 		ctx := context.Background()
-		var crdFound bool
-		for attempt := 0; attempt < 15; attempt++ {
-			time.Sleep(2 * time.Second)
+		Eventually(func() bool {
 			out, kerr := kubectl(ctx, "get", "investigationsession", "-n", namespace, "-o", "json")
 			if kerr != nil {
-				continue
+				return false
 			}
 			var root map[string]interface{}
 			if json.Unmarshal([]byte(out), &root) != nil {
-				continue
+				return false
 			}
 			items, ok := root["items"].([]interface{})
 			if !ok {
-				continue
+				return false
 			}
 			for _, it := range items {
 				obj, ok := it.(map[string]interface{})
@@ -150,17 +145,12 @@ spec:
 					continue
 				}
 				if tid, _ := spec["a2aTaskID"].(string); tid == task.ID {
-					crdFound = true
-					break
+					return true
 				}
 			}
-			if crdFound {
-				break
-			}
-		}
-		if !crdFound {
-			Skip("No InvestigationSession CRD materialized (expected: deferred CRD creation requires af_create_rr)")
-		}
+			return false
+		}, 30*time.Second, 2*time.Second).Should(BeTrue(),
+			"InvestigationSession CRD must materialize after af_create_rr")
 
 		out, err := kubectl(ctx, "get", "investigationsession", "-n", namespace, "-o", "json")
 		Expect(err).NotTo(HaveOccurred())
@@ -271,6 +261,96 @@ spec:
 	})
 
 	It("TC-E2E-SESSION-JOIN-06: Lease-based takeover rejection", func() {
-		Skip("Lease-based takeover enforcement is not yet represented on InvestigationSession CRDs — defer to controller PR")
+		ctx := context.Background()
+
+		// User A starts an investigation that triggers af_create_rr -> MaterializeCRD
+		tokenA := authTokenA
+		promptA := "Create a remediation request for deployment web-join06 in default namespace"
+		respA, errA := a2aInvoke(httpClient, baseURL, tokenA, a2aTasksSend("g19-join06-a", promptA))
+		Expect(errA).NotTo(HaveOccurred())
+		defer func() { _ = respA.Body.Close() }()
+		Expect(respA.StatusCode).To(Equal(http.StatusOK))
+
+		// Parse the server-assigned A2A task ID from the response (UUID, not
+		// the JSON-RPC request id "g19-join06-a").
+		rpcA, parseErr := parseRPCResponse(respA)
+		Expect(parseErr).NotTo(HaveOccurred())
+		Expect(rpcA.Error).To(BeNil(), "User A's A2A request must succeed")
+		taskA, taskErr := extractTaskFromResult(rpcA.Result)
+		Expect(taskErr).NotTo(HaveOccurred())
+		Expect(taskA.ID).NotTo(BeEmpty(), "A2A must return a task ID")
+
+		// Wait for IS CRD to materialize with Active phase
+		type isCRDItem struct {
+			Metadata struct{ Name string } `json:"metadata"`
+			Spec     struct {
+				A2ATaskID    string `json:"a2aTaskID"`
+				UserIdentity struct {
+					Username string `json:"username"`
+				} `json:"userIdentity"`
+			} `json:"spec"`
+			Status struct {
+				Phase       string `json:"phase"`
+				LeaseHolder string `json:"leaseHolder"`
+			} `json:"status"`
+		}
+		var isName string
+		var userAUsername string
+		Eventually(func() string {
+			out, kerr := kubectl(ctx, "get", "investigationsession", "-n", namespace, "-o", "json")
+			if kerr != nil {
+				return ""
+			}
+			var list struct {
+				Items []isCRDItem `json:"items"`
+			}
+			if json.Unmarshal([]byte(out), &list) != nil {
+				return ""
+			}
+			for _, it := range list.Items {
+				if it.Spec.A2ATaskID == taskA.ID && it.Status.Phase == "Active" {
+					isName = it.Metadata.Name
+					userAUsername = it.Spec.UserIdentity.Username
+					return it.Status.Phase
+				}
+			}
+			return ""
+		}, 60*time.Second, 2*time.Second).Should(Equal("Active"),
+			"User A's IS CRD must reach Active phase")
+		Expect(userAUsername).NotTo(BeEmpty(), "User A's username must be recorded in IS CRD")
+
+		DeferCleanup(func() {
+			_, _ = kubectl(context.Background(), "delete", "investigationsession", isName, "-n", namespace, "--ignore-not-found")
+		})
+
+		// User B attempts to start investigation for the same RR
+		tokenB, errB := fetchDEXTokenForPersona("ai-orchestrator")
+		Expect(errB).NotTo(HaveOccurred())
+		promptB := "Create a remediation request for deployment web-join06 in default namespace"
+		respB, errB2 := a2aInvoke(httpClient, baseURL, tokenB, a2aTasksSend("g19-join06-b", promptB))
+		Expect(errB2).NotTo(HaveOccurred())
+		defer func() { _ = respB.Body.Close() }()
+
+		// The second request should either be rejected by AF (session_active)
+		// or by KA (lease contention). Read the response body.
+		bodyB, _ := io.ReadAll(respB.Body)
+		lower := strings.ToLower(string(bodyB))
+
+		// Accept either AF guard rejection or KA MCP session_active error
+		Expect(lower).To(Or(
+			ContainSubstring("session_active"),
+			ContainSubstring("already exists"),
+			ContainSubstring("lease"),
+			ContainSubstring("contention"),
+		), "User B's attempt must be rejected — single-driver enforcement (BR-INTERACTIVE-004)")
+
+		// Verify IS CRD still shows User A (use JSON parse, not jsonpath,
+		// to avoid protobuf-encoded field issues with kubectl).
+		out, kerr := kubectl(ctx, "get", "investigationsession", isName, "-n", namespace, "-o", "json")
+		Expect(kerr).NotTo(HaveOccurred())
+		var afterItem isCRDItem
+		Expect(json.Unmarshal([]byte(out), &afterItem)).To(Succeed())
+		Expect(afterItem.Spec.UserIdentity.Username).To(Equal(userAUsername),
+			"IS CRD must still show User A as the session owner")
 	})
 })

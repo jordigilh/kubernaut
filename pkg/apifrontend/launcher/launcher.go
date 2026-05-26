@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/go-logr/logr"
 
@@ -28,6 +29,11 @@ type A2AConfig struct {
 	Logger         logr.Logger
 	Auditor        audit.Emitter
 	BridgeMetrics  BridgeMetrics
+
+	// SessionPhaseUpdater enables disconnect detection (BR-SESS-003).
+	// When set, StreamingExecutor transitions materialized sessions to
+	// Disconnected on client SSE disconnect.
+	SessionPhaseUpdater SessionPhaseUpdater
 
 	// BeforeExecute is called before each A2A execution with the request context.
 	// The context already contains the UserIdentity from auth middleware.
@@ -78,11 +84,19 @@ func NewA2AHandler(cfg A2AConfig) (http.Handler, error) { //nolint:gocritic // h
 	}
 
 	inner := adka2a.NewExecutor(execCfg)
-	executor := NewStreamingExecutor(inner, log, cfg.BridgeMetrics)
+	executor := NewStreamingExecutor(inner, log, cfg.BridgeMetrics, cfg.SessionPhaseUpdater)
 	reqHandler := a2asrv.NewHandler(executor)
-	httpHandler := a2asrv.NewJSONRPCHandler(reqHandler)
+	httpHandler := a2asrv.NewJSONRPCHandler(reqHandler,
+		a2asrv.WithKeepAlive(1*time.Second),
+	)
 
-	return httpHandler, nil
+	// Wrap the handler to inject the SSE disconnect context before a2a-go
+	// detaches it with context.WithoutCancel. Context values survive the
+	// detachment, allowing StreamingExecutor to detect client disconnects.
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r = r.WithContext(WithSSEDisconnectCtx(r.Context()))
+		httpHandler.ServeHTTP(w, r)
+	}), nil
 }
 
 // buildBeforeExecuteCallback wraps the user-supplied callback and emits an

@@ -39,9 +39,19 @@ rules:
   - apiGroups: ["batch"]
     resources: ["jobs", "cronjobs"]
     verbs: ["get"]
+  # Lease observation: sync KA lease state to IS CRD status (SESSION-JOIN-06)
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch"]
   # SubjectAccessReview: SAR-based tool authorization (ADR-021)
   - apiGroups: ["authorization.k8s.io"]
     resources: ["subjectaccessreviews"]
+    verbs: ["create"]
+  # DD-AUTH-014: KA auth middleware SAR gate — AF SA must be authorized
+  # to invoke KA's API (virtual SAR resource, not an actual service create)
+  - apiGroups: [""]
+    resources: ["services"]
+    resourceNames: ["kubernaut-agent"]
     verbs: ["create"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1

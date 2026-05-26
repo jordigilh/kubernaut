@@ -17,48 +17,26 @@ var _ = Describe("KA Integration (AF -> KA -> DS -> mock-LLM)", Label("e2e", "ph
 
 	BeforeEach(func() {
 		var err error
-		authToken, err = fetchDEXToken(dexURL, clientID, clientSecret, username, password)
+		authToken, err = fetchDEXTokenForPersona("sre")
 		Expect(err).NotTo(HaveOccurred(), "Failed to obtain DEX token for KA integration tests")
 		Expect(authToken).NotTo(BeEmpty())
 	})
 
-	authenticatedRequest := func(method, path string, body string) (*http.Response, error) {
-		var bodyReader io.Reader
-		if body != "" {
-			bodyReader = strings.NewReader(body)
-		}
-		req, err := http.NewRequest(method, baseURL+path, bodyReader)
-		if err != nil {
-			return nil, err
-		}
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", "Bearer "+authToken)
-		return httpClient.Do(req)
-	}
-
 	mcpToolCall := func(id, toolName string, arguments map[string]interface{}) (int, map[string]interface{}) {
-		payload := map[string]interface{}{
-			"jsonrpc": "2.0",
-			"method":  "tools/call",
-			"id":      id,
-			"params": map[string]interface{}{
-				"name":      toolName,
-				"arguments": arguments,
-			},
-		}
-		body, err := json.Marshal(payload)
+		sessionID, serr := initMCPSession(authToken)
+		ExpectWithOffset(1, serr).NotTo(HaveOccurred(), "MCP initialize handshake failed")
+
+		payload := buildJSONRPC(id, "tools/call", map[string]interface{}{
+			"name":      toolName,
+			"arguments": arguments,
+		})
+		respBody, statusCode, err := mcpPOST(authToken, sessionID, payload)
 		ExpectWithOffset(1, err).NotTo(HaveOccurred())
 
-		resp, err := authenticatedRequest(http.MethodPost, "/mcp", string(body))
-		ExpectWithOffset(1, err).NotTo(HaveOccurred())
-		defer func() { _ = resp.Body.Close() }()
-
-		respBody, err := io.ReadAll(resp.Body)
-		ExpectWithOffset(1, err).NotTo(HaveOccurred())
-
+		jsonStr := unwrapSSEDataLine(respBody)
 		var result map[string]interface{}
-		_ = json.Unmarshal(respBody, &result)
-		return resp.StatusCode, result
+		_ = json.Unmarshal([]byte(jsonStr), &result)
+		return statusCode, result
 	}
 
 	// -----------------------------------------------------------------------
@@ -115,16 +93,17 @@ var _ = Describe("KA Integration (AF -> KA -> DS -> mock-LLM)", Label("e2e", "ph
 		})
 
 		It("TC-E2E-KA-FLOW-02: poll_investigation returns status for active investigation", func() {
-			_, startResult := mcpToolCall("e2e-ka-flow-02a", "kubernaut_start_investigation", map[string]interface{}{
+			startStatus, startResult := mcpToolCall("e2e-ka-flow-02a", "kubernaut_start_investigation", map[string]interface{}{
 				"namespace": "kubernaut-system",
 				"name":      "apifrontend",
 				"kind":      "Deployment",
 			})
 
+			GinkgoWriter.Printf("KA-FLOW-02: mcpToolCall status=%d result=%v\n", startStatus, startResult)
+
 			sid := extractSessionID(startResult)
-			if sid == "" {
-				Skip("KA did not return a session_id — may not support this resource in E2E mode")
-			}
+			Expect(sid).NotTo(BeEmpty(),
+				"KA must return a session_id for poll_investigation to work (status=%d, result=%v)", startStatus, startResult)
 
 			time.Sleep(500 * time.Millisecond)
 
@@ -336,19 +315,14 @@ var _ = Describe("KA Integration (AF -> KA -> DS -> mock-LLM)", Label("e2e", "ph
 			// CounterVec only appears after at least one observation. If KA/DS tools
 			// were all skipped and kubernaut_list_remediations didn't reach the bridge (no session),
 			// the counter won't exist. This is expected without full MCP session lifecycle.
-			if !strings.Contains(body, "af_tool_calls_total") {
-				Skip("af_tool_calls_total not present — no tool calls reached the bridge dispatcher (KA/DS not deployed)")
-			}
-			Expect(body).To(ContainSubstring(`af_tool_calls_total`))
+			Expect(body).To(ContainSubstring("af_tool_calls_total"),
+				"af_tool_calls_total must be present after tool calls — KA/DS must be deployed in E2E")
 		})
 
 		It("TC-E2E-METRICS-03: af_tool_call_duration_seconds has observations", func() {
 			body := scrapeMetrics()
-			if !strings.Contains(body, "af_tool_call_duration_seconds") {
-				Skip("af_tool_call_duration_seconds not present — no tool calls reached the bridge dispatcher (KA/DS not deployed)")
-			}
-			Expect(body).To(ContainSubstring(`af_tool_call_duration_seconds`),
-				"TC-E2E-METRICS-03: tool call duration histogram should exist")
+			Expect(body).To(ContainSubstring("af_tool_call_duration_seconds"),
+				"af_tool_call_duration_seconds must be present after tool calls — KA/DS must be deployed in E2E")
 		})
 	})
 

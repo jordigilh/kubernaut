@@ -17,7 +17,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("Investigation Streaming (G3)", Label("e2e", "phase3", "g3"), func() {
+var _ = Describe("Investigation Streaming (G3)", Ordered, Label("e2e", "phase3", "g3"), func() {
 	var (
 		sreToken       string
 		kubeconfigPath string
@@ -142,12 +142,100 @@ var _ = Describe("Investigation Streaming (G3)", Label("e2e", "phase3", "g3"), f
 	})
 
 	It("TC-E2E-STREAM-03: Client disconnect -> session phase transitions to Disconnected", func() {
-		Skip("Active→Disconnected transition on client disconnect is not yet implemented (deferred to PR7 — session hydration)")
+		streamCtx, streamCancel := context.WithCancel(context.Background())
+
+		prompt := "Create a remediation request for deployment web-slow-disconnect-test in default namespace"
+		resp, err := a2aSSEPost(streamCtx, a2aMessageStream("stream-03-disconnect", prompt))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+		// Drain SSE frames, capturing the server-assigned task ID from the
+		// first status-update event. A2A assigns a UUID task ID (not the
+		// JSON-RPC request id) so we must parse it from the stream.
+		taskIDCh := make(chan string, 1)
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			sc := bufio.NewScanner(resp.Body)
+			sc.Buffer(make([]byte, 64*1024), 1024*1024)
+			sent := false
+			for sc.Scan() {
+				line := strings.TrimRight(sc.Text(), "\r")
+				if !strings.HasPrefix(line, "data:") {
+					continue
+				}
+				payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+				if !strings.HasPrefix(payload, "{") {
+					continue
+				}
+				if !sent {
+					var evt struct {
+						Result json.RawMessage `json:"result"`
+					}
+					if json.Unmarshal([]byte(payload), &evt) == nil && len(evt.Result) > 0 {
+						var task struct {
+							ID string `json:"id"`
+						}
+						if json.Unmarshal(evt.Result, &task) == nil && task.ID != "" {
+							taskIDCh <- task.ID
+							sent = true
+						}
+					}
+				}
+			}
+			if !sent {
+				taskIDCh <- ""
+			}
+		}()
+
+		var taskID string
+		Eventually(func() string {
+			select {
+			case id := <-taskIDCh:
+				taskID = id
+				return id
+			default:
+				return ""
+			}
+		}, 60*time.Second, 500*time.Millisecond).ShouldNot(BeEmpty(),
+			"must capture A2A task ID from SSE stream")
+
+		// Wait for the IS CRD to materialize in Active phase.
+		kctlCtx := context.Background()
+		var isName string
+		Eventually(func() string {
+			list := listInvestigationSessions(kctlCtx)
+			for _, it := range list.Items {
+				if it.Spec.A2ATaskID == taskID && it.Status.Phase == "Active" {
+					isName = it.Metadata.Name
+					return it.Status.Phase
+				}
+			}
+			return ""
+		}, 60*time.Second, 2*time.Second).Should(Equal("Active"),
+			"IS CRD must reach Active phase after af_create_rr")
+
+		// Simulate client disconnect by canceling the SSE context.
+		_ = resp.Body.Close()
+		streamCancel()
+		<-done
+
+		// Assert the IS CRD transitions to Disconnected.
+		Eventually(func() string {
+			list := listInvestigationSessions(kctlCtx)
+			for _, it := range list.Items {
+				if it.Metadata.Name == isName {
+					return it.Status.Phase
+				}
+			}
+			return ""
+		}, 30*time.Second, 2*time.Second).Should(Equal("Disconnected"),
+			"IS CRD must transition to Disconnected after SSE disconnect (BR-SESS-003, SI-4)")
 	})
 
 	It("TC-E2E-STREAM-04 / TC-E2E-SSE-CAP-01: Connection cap enforcement", func() {
-		Skip("Unreliable in ordered E2E suite: server-side A2A handlers from STREAM-01/02 hold tracker slots after client disconnect (cap enforcement is tested at unit/integration level)")
-
+		// STREAM-03 ensures handler slots are released promptly on client disconnect,
+		// making cap enforcement reliable in the ordered suite.
 		maxStr := getEnvOrDefault("AF_E2E_MAX_SSE", "5")
 		maxSSE := 5
 		var parsed int
@@ -155,9 +243,14 @@ var _ = Describe("Investigation Streaming (G3)", Label("e2e", "phase3", "g3"), f
 			maxSSE = parsed
 		}
 
+		type slotResult struct {
+			idx    int
+			status int
+			err    error
+		}
 		var mu sync.Mutex
 		cancels := make([]context.CancelFunc, maxSSE)
-		ready := make(chan int, maxSSE)
+		ready := make(chan slotResult, maxSSE)
 		var wg sync.WaitGroup
 
 		for i := 0; i < maxSSE; i++ {
@@ -169,10 +262,11 @@ var _ = Describe("Investigation Streaming (G3)", Label("e2e", "phase3", "g3"), f
 				cancels[idx] = scancel
 				mu.Unlock()
 
-				body := a2aMessageStream(fmt.Sprintf("stream-cap-%d", idx), "list pods in kubernaut-system")
+				body := a2aMessageStream(fmt.Sprintf("stream-cap-%d", idx),
+					fmt.Sprintf("Create a remediation request for deployment cap%d-slow-disconnect-test in default namespace", idx))
 				req, rerr := http.NewRequestWithContext(sctx, http.MethodPost, baseURL+"/a2a/invoke", strings.NewReader(body))
 				if rerr != nil {
-					ready <- -1
+					ready <- slotResult{idx: idx, status: -1, err: rerr}
 					scancel()
 					return
 				}
@@ -182,18 +276,19 @@ var _ = Describe("Investigation Streaming (G3)", Label("e2e", "phase3", "g3"), f
 
 				resp, derr := httpClient.Do(req)
 				if derr != nil {
-					ready <- -1
+					ready <- slotResult{idx: idx, status: -1, err: derr}
 					scancel()
 					return
 				}
 				if resp.StatusCode != http.StatusOK {
+					body, _ := io.ReadAll(resp.Body)
 					_ = resp.Body.Close()
-					ready <- -1
+					ready <- slotResult{idx: idx, status: resp.StatusCode, err: fmt.Errorf("body: %s", body)}
 					scancel()
 					return
 				}
 
-				ready <- idx
+				ready <- slotResult{idx: idx, status: resp.StatusCode}
 				_, _ = io.Copy(io.Discard, resp.Body)
 				_ = resp.Body.Close()
 				scancel()
@@ -201,7 +296,9 @@ var _ = Describe("Investigation Streaming (G3)", Label("e2e", "phase3", "g3"), f
 		}
 
 		for i := 0; i < maxSSE; i++ {
-			Expect(<-ready).To(BeNumerically(">=", 0), "expected concurrent SSE slot %d to connect", i)
+			sr := <-ready
+			Expect(sr.status).To(Equal(http.StatusOK),
+				"expected concurrent SSE slot %d (goroutine %d) to connect; err=%v", i, sr.idx, sr.err)
 		}
 
 		extraReq, err := http.NewRequestWithContext(context.Background(), http.MethodPost, baseURL+"/a2a/invoke",

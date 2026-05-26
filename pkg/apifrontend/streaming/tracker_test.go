@@ -108,6 +108,44 @@ var _ = Describe("ConnectionTracker", func() {
 	})
 })
 
+var _ = Describe("ConnectionTracker — STREAM-04 Cap Enforcement (DOS-01, SC-5)", func() {
+	It("UT-AF-STREAM04-001: Add returns false when MaxConnections is reached", func() {
+		tracker := streaming.NewConnectionTracker(nil, 0)
+		tracker.MaxConnections = 2
+
+		_, c1 := context.WithCancel(context.Background())
+		ok1 := tracker.Add(&streaming.TrackedConnection{ID: "c1", Writer: httptest.NewRecorder(), Cancel: c1})
+		Expect(ok1).To(BeTrue())
+
+		_, c2 := context.WithCancel(context.Background())
+		ok2 := tracker.Add(&streaming.TrackedConnection{ID: "c2", Writer: httptest.NewRecorder(), Cancel: c2})
+		Expect(ok2).To(BeTrue())
+
+		_, c3 := context.WithCancel(context.Background())
+		ok3 := tracker.Add(&streaming.TrackedConnection{ID: "c3", Writer: httptest.NewRecorder(), Cancel: c3})
+		Expect(ok3).To(BeFalse(), "third connection must be rejected when cap is 2")
+
+		Expect(tracker.Count()).To(Equal(2))
+	})
+
+	It("UT-AF-STREAM04-002: Add succeeds again after Remove frees a slot", func() {
+		tracker := streaming.NewConnectionTracker(nil, 0)
+		tracker.MaxConnections = 1
+
+		_, c1 := context.WithCancel(context.Background())
+		Expect(tracker.Add(&streaming.TrackedConnection{ID: "c1", Writer: httptest.NewRecorder(), Cancel: c1})).To(BeTrue())
+
+		_, c2 := context.WithCancel(context.Background())
+		Expect(tracker.Add(&streaming.TrackedConnection{ID: "c2", Writer: httptest.NewRecorder(), Cancel: c2})).To(BeFalse())
+
+		tracker.Remove("c1")
+
+		_, c3 := context.WithCancel(context.Background())
+		Expect(tracker.Add(&streaming.TrackedConnection{ID: "c3", Writer: httptest.NewRecorder(), Cancel: c3})).To(BeTrue())
+		Expect(tracker.Count()).To(Equal(1))
+	})
+})
+
 func connID(i int) string {
 	return fmt.Sprintf("conn-%d", i)
 }

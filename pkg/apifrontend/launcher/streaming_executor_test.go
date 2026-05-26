@@ -12,7 +12,9 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
 )
 
 var _ = Describe("StreamingExecutor", func() {
@@ -23,7 +25,7 @@ var _ = Describe("StreamingExecutor", func() {
 
 	BeforeEach(func() {
 		inner = &mockExecutor{}
-		executor = launcher.NewStreamingExecutor(inner, logr.Logger{}, nil)
+		executor = launcher.NewStreamingExecutor(inner, logr.Logger{}, nil, nil)
 	})
 
 	Describe("Execute", func() {
@@ -67,7 +69,7 @@ var _ = Describe("StreamingExecutor", func() {
 	Describe("Cleanup", func() {
 		It("UT-AF-1258-004: delegates to inner executor when it implements AgentExecutionCleaner", func() {
 			cleanerInner := &mockExecutorWithCleaner{}
-			exec := launcher.NewStreamingExecutor(cleanerInner, logr.Logger{}, nil)
+			exec := launcher.NewStreamingExecutor(cleanerInner, logr.Logger{}, nil, nil)
 
 			reqCtx := &a2asrv.RequestContext{TaskID: "task-cleanup-001"}
 
@@ -136,7 +138,7 @@ var _ = Describe("StreamingExecutor — AU-6 Lifecycle Logging", func() {
 		inner := &mockExecutor{}
 		var buf bytes.Buffer
 		logger := captureLogr(&buf)
-		executor := launcher.NewStreamingExecutor(inner, logger, nil)
+		executor := launcher.NewStreamingExecutor(inner, logger, nil, nil)
 
 		reqCtx := &a2asrv.RequestContext{TaskID: "task-forensic-001"}
 		queue := &fakeQueue{}
@@ -153,7 +155,7 @@ var _ = Describe("StreamingExecutor — AU-6 Lifecycle Logging", func() {
 		inner := &mockExecutor{}
 		var buf bytes.Buffer
 		logger := captureLogr(&buf)
-		executor := launcher.NewStreamingExecutor(inner, logger, nil)
+		executor := launcher.NewStreamingExecutor(inner, logger, nil, nil)
 
 		reqCtx := &a2asrv.RequestContext{TaskID: "task-forensic-002"}
 		queue := &fakeQueue{}
@@ -171,7 +173,7 @@ var _ = Describe("StreamingExecutor — AU-6 Lifecycle Logging", func() {
 		inner := &mockExecutorFailing{}
 		var buf bytes.Buffer
 		logger := captureLogr(&buf)
-		executor := launcher.NewStreamingExecutor(inner, logger, nil)
+		executor := launcher.NewStreamingExecutor(inner, logger, nil, nil)
 
 		reqCtx := &a2asrv.RequestContext{TaskID: "task-forensic-003"}
 		queue := &fakeQueue{}
@@ -186,7 +188,7 @@ var _ = Describe("StreamingExecutor — AU-6 Lifecycle Logging", func() {
 
 	It("UT-AF-1258-043: zero-value logger does not prevent execution (graceful degradation)", func() {
 		inner := &mockExecutor{}
-		executor := launcher.NewStreamingExecutor(inner, logr.Logger{}, nil)
+		executor := launcher.NewStreamingExecutor(inner, logr.Logger{}, nil, nil)
 
 		reqCtx := &a2asrv.RequestContext{TaskID: "task-no-logger"}
 		queue := &fakeQueue{}
@@ -206,7 +208,7 @@ var _ = Describe("StreamingExecutor logr injection", func() {
 		testLogger := funcr.New(func(prefix, args string) {
 			logs = append(logs, prefix+" "+args)
 		}, funcr.Options{})
-		exec := launcher.NewStreamingExecutor(inner, testLogger, nil)
+		exec := launcher.NewStreamingExecutor(inner, testLogger, nil, nil)
 		launcher.StreamingExecutorLoggerForTest(exec).Info("stored logger")
 		Expect(logs).To(ContainElement(ContainSubstring("stored logger")))
 	})
@@ -215,7 +217,7 @@ var _ = Describe("StreamingExecutor logr injection", func() {
 		inner := &mockExecutor{}
 		var buf bytes.Buffer
 		logger := captureLogr(&buf)
-		exec := launcher.NewStreamingExecutor(inner, logger, nil)
+		exec := launcher.NewStreamingExecutor(inner, logger, nil, nil)
 
 		reqCtx := &a2asrv.RequestContext{TaskID: "task-logr-001"}
 		err := exec.Execute(context.Background(), reqCtx, &fakeQueue{})
@@ -225,6 +227,151 @@ var _ = Describe("StreamingExecutor logr injection", func() {
 		Expect(logOutput).To(ContainSubstring("a2a stream opened"))
 		Expect(logOutput).To(ContainSubstring("a2a stream closed"))
 		Expect(logOutput).To(ContainSubstring("task-logr-001"))
+	})
+})
+
+// BR-SESS-003 / SI-4: Disconnect detection — when the client's SSE connection
+// is canceled, the StreamingExecutor must transition materialized sessions to
+// Disconnected so the CRD reflects actual connection state.
+var _ = Describe("StreamingExecutor — STREAM-03 Disconnect Detection (BR-SESS-003, SI-4)", func() {
+	It("UT-AF-STREAM03-001: calls UpdatePhase(Disconnected) when ctx is canceled and session is materialized", func() {
+		spu := &mockSessionPhaseUpdater{
+			materialized: map[string]bool{"sess-abc": true},
+		}
+		inner := &mockExecutor{}
+		exec := launcher.NewStreamingExecutor(inner, logr.Discard(), nil, spu)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		sc := &session.CreateContext{SessionID: "sess-abc", TaskID: "task-1"}
+		ctx = session.WithCreateContext(ctx, sc)
+		cancel()
+
+		reqCtx := &a2asrv.RequestContext{TaskID: "task-1", ContextID: "sess-abc"}
+		err := exec.Execute(ctx, reqCtx, &fakeQueue{})
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(spu.updatePhaseCalls).To(HaveLen(1))
+		Expect(spu.updatePhaseCalls[0].Phase).To(Equal(string(isv1alpha1.SessionPhaseDisconnected)))
+		Expect(spu.updatePhaseCalls[0].SessionID).To(Equal("sess-abc"))
+		Expect(spu.updatePhaseCalls[0].Message).To(ContainSubstring("disconnect"))
+	})
+
+	It("UT-AF-STREAM03-002: does NOT call UpdatePhase when session is not materialized", func() {
+		spu := &mockSessionPhaseUpdater{
+			materialized: map[string]bool{},
+		}
+		inner := &mockExecutor{}
+		exec := launcher.NewStreamingExecutor(inner, logr.Discard(), nil, spu)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		sc := &session.CreateContext{SessionID: "sess-unmaterialized", TaskID: "task-2"}
+		ctx = session.WithCreateContext(ctx, sc)
+		cancel()
+
+		reqCtx := &a2asrv.RequestContext{TaskID: "task-2", ContextID: "sess-unmaterialized"}
+		_ = exec.Execute(ctx, reqCtx, &fakeQueue{})
+		Expect(spu.updatePhaseCalls).To(BeEmpty())
+	})
+
+	It("UT-AF-STREAM03-003: does NOT call UpdatePhase on normal (non-canceled) completion", func() {
+		spu := &mockSessionPhaseUpdater{
+			materialized: map[string]bool{"sess-ok": true},
+		}
+		inner := &mockExecutor{}
+		exec := launcher.NewStreamingExecutor(inner, logr.Discard(), nil, spu)
+
+		ctx := context.Background()
+		sc := &session.CreateContext{SessionID: "sess-ok", TaskID: "task-3"}
+		ctx = session.WithCreateContext(ctx, sc)
+
+		reqCtx := &a2asrv.RequestContext{TaskID: "task-3", ContextID: "sess-ok"}
+		_ = exec.Execute(ctx, reqCtx, &fakeQueue{})
+		Expect(spu.updatePhaseCalls).To(BeEmpty())
+	})
+
+	It("UT-AF-STREAM03-004: nil sessionSvc does not panic on disconnect", func() {
+		inner := &mockExecutor{}
+		exec := launcher.NewStreamingExecutor(inner, logr.Discard(), nil, nil)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		reqCtx := &a2asrv.RequestContext{TaskID: "task-4"}
+		Expect(func() {
+			_ = exec.Execute(ctx, reqCtx, &fakeQueue{})
+		}).NotTo(Panic())
+	})
+
+	It("UT-AF-STREAM03-005: UpdatePhase error is logged but does not change return value", func() {
+		spu := &mockSessionPhaseUpdater{
+			materialized:   map[string]bool{"sess-err": true},
+			updatePhaseErr: context.DeadlineExceeded,
+		}
+		inner := &mockExecutor{}
+		var buf bytes.Buffer
+		logger := captureLogr(&buf)
+		exec := launcher.NewStreamingExecutor(inner, logger, nil, spu)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		sc := &session.CreateContext{SessionID: "sess-err", TaskID: "task-5"}
+		ctx = session.WithCreateContext(ctx, sc)
+		cancel()
+
+		reqCtx := &a2asrv.RequestContext{TaskID: "task-5", ContextID: "sess-err"}
+		err := exec.Execute(ctx, reqCtx, &fakeQueue{})
+		Expect(err).NotTo(HaveOccurred(), "inner executor succeeded; UpdatePhase failure must not propagate")
+
+		logOutput := buf.String()
+		Expect(logOutput).To(ContainSubstring("failed to transition session to Disconnected"))
+	})
+
+	It("UT-AF-STREAM03-006: detects disconnect via SSE context value when execution ctx is detached", func() {
+		spu := &mockSessionPhaseUpdater{
+			materialized: map[string]bool{"sess-detached": true},
+		}
+		inner := &mockExecutor{}
+		exec := launcher.NewStreamingExecutor(inner, logr.Discard(), nil, spu)
+
+		// Simulate what a2a-go does: the HTTP request context is canceled
+		// (client disconnect) but the execution context is detached via
+		// context.WithoutCancel. The SSE context value survives.
+		httpCtx, httpCancel := context.WithCancel(context.Background())
+		httpCtx = launcher.WithSSEDisconnectCtx(httpCtx)
+
+		// Derive the detached execution context (as a2a-go does)
+		detachedCtx := context.WithoutCancel(httpCtx)
+		sc := &session.CreateContext{SessionID: "sess-detached", TaskID: "task-6"}
+		detachedCtx = session.WithCreateContext(detachedCtx, sc)
+
+		// Client disconnects
+		httpCancel()
+
+		reqCtx := &a2asrv.RequestContext{TaskID: "task-6", ContextID: "sess-detached"}
+		err := exec.Execute(detachedCtx, reqCtx, &fakeQueue{})
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(spu.updatePhaseCalls).To(HaveLen(1))
+		Expect(spu.updatePhaseCalls[0].Phase).To(Equal(string(isv1alpha1.SessionPhaseDisconnected)))
+		Expect(spu.updatePhaseCalls[0].SessionID).To(Equal("sess-detached"))
+	})
+
+	It("UT-AF-STREAM03-007: SSE context value present but NOT canceled does not trigger disconnect", func() {
+		spu := &mockSessionPhaseUpdater{
+			materialized: map[string]bool{"sess-ok2": true},
+		}
+		inner := &mockExecutor{}
+		exec := launcher.NewStreamingExecutor(inner, logr.Discard(), nil, spu)
+
+		// SSE context value is set but NOT canceled (normal completion)
+		httpCtx := context.Background()
+		httpCtx = launcher.WithSSEDisconnectCtx(httpCtx)
+		detachedCtx := context.WithoutCancel(httpCtx)
+		sc := &session.CreateContext{SessionID: "sess-ok2", TaskID: "task-7"}
+		detachedCtx = session.WithCreateContext(detachedCtx, sc)
+
+		reqCtx := &a2asrv.RequestContext{TaskID: "task-7", ContextID: "sess-ok2"}
+		_ = exec.Execute(detachedCtx, reqCtx, &fakeQueue{})
+		Expect(spu.updatePhaseCalls).To(BeEmpty())
 	})
 })
 
@@ -261,3 +408,35 @@ func (m *mockExecutorFailing) Cancel(_ context.Context, _ *a2asrv.RequestContext
 }
 
 var errMockFailure = context.DeadlineExceeded
+
+// mockSessionPhaseUpdater implements launcher.SessionPhaseUpdater for testing.
+type mockSessionPhaseUpdater struct {
+	materialized     map[string]bool
+	updatePhaseCalls []phaseUpdateCall
+	updatePhaseErr   error
+}
+
+type phaseUpdateCall struct {
+	SessionID string
+	Phase     string
+	Message   string
+	UserID    string
+}
+
+func (m *mockSessionPhaseUpdater) IsMaterialized(sessionID string) bool {
+	if m.materialized == nil {
+		return false
+	}
+	return m.materialized[sessionID]
+}
+
+func (m *mockSessionPhaseUpdater) UpdatePhase(_ context.Context, sessionID string, to isv1alpha1.SessionPhase, message, userID string) error {
+	m.updatePhaseCalls = append(m.updatePhaseCalls, phaseUpdateCall{
+		SessionID: sessionID,
+		Phase:     string(to),
+		Message:   message,
+		UserID:    userID,
+	})
+	return m.updatePhaseErr
+}
+

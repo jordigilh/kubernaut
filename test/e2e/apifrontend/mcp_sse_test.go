@@ -93,12 +93,16 @@ var _ = Describe("MCP SSE Responses (G2)", Label("e2e", "phase4", "g2"), func() 
 		}
 		Expect(scanner.Err()).NotTo(HaveOccurred())
 
-		if len(dataLines) < 2 {
-			if len(dataLines) == 1 {
-				_, _ = fmt.Fprintln(GinkgoWriter, "progress frames are not yet emitted (only one SSE data line received)")
-				Skip("progress frames are not yet emitted: received a single SSE data line only")
-			}
-			Fail(fmt.Sprintf("expected at least one SSE data line, got %d", len(dataLines)))
-		}
+		// AF does not implement MCP progress notifications — each tools/call
+		// returns exactly one SSE data frame containing the JSON-RPC response.
+		Expect(dataLines).To(HaveLen(1),
+			"AF returns a single SSE frame per tools/call (MCP progress notifications not implemented)")
+
+		firstPayload := strings.TrimPrefix(dataLines[0], "data:")
+		firstPayload = strings.TrimSpace(firstPayload)
+		var root map[string]interface{}
+		Expect(json.Unmarshal([]byte(firstPayload), &root)).To(Succeed(),
+			"SSE data frame must be valid JSON-RPC 2.0")
+		Expect(root).To(HaveKey("jsonrpc"))
 	})
 })

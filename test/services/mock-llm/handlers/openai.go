@@ -113,6 +113,15 @@ func (h *handler) handleOpenAI(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[mock-llm] scenario=%s mode=%s outcome=%s workflowID=%q tools=%d hasSplitTool=%v hasSubmitOnly=%v isResolved=%v",
 		scenarioName, h.mode, cfg.InvestigationOutcome, cfg.WorkflowID, len(req.Tools), hasSplit, hasSubmitOnly, resolved)
 
+	if cfg.SecondTurnDelay > 0 && ctx.CountToolResults() > 0 {
+		log.Printf("[mock-llm] scenario=%s applying %v second-turn delay", scenarioName, cfg.SecondTurnDelay)
+		select {
+		case <-r.Context().Done():
+			return
+		case <-time.After(cfg.SecondTurnDelay):
+		}
+	}
+
 	notifySubmit := func() {
 		if notifier, ok := result.Scenario.(scenarios.ScenarioWithSubmitNotify); ok {
 			notifier.MarkSubmitSent()

@@ -50,9 +50,8 @@ var _ = Describe("Resilience and Operational (G17/G20/G9/G10/G11)", Label("e2e",
 			Expect(err).NotTo(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
 
-			if resp.StatusCode == http.StatusNotFound {
-				Skip("/debug/panic not registered — AF image likely built without -tags e2e")
-			}
+			Expect(resp.StatusCode).NotTo(Equal(http.StatusNotFound),
+				"/debug/panic must be registered — AF image must be built with -tags e2e")
 
 			Expect(resp.StatusCode).To(Equal(http.StatusInternalServerError))
 			Expect(strings.ToLower(resp.Header.Get("Content-Type"))).To(ContainSubstring("application/problem+json"))

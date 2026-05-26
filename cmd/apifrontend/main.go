@@ -21,6 +21,7 @@ import (
 	adksession "google.golang.org/adk/session"
 	"gopkg.in/yaml.v3"
 	authorizationv1 "k8s.io/api/authorization/v1"
+	coordinationv1 "k8s.io/api/coordination/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/discovery"
@@ -698,12 +699,13 @@ func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps,
 	}
 
 	a2aCfg := launcher.A2AConfig{
-		Agent:          rootAgent,
-		SessionService: sessionSvc,
-		AppName:        "kubernaut-apifrontend",
-		Logger:         logger.WithName("a2a-launcher"),
-		Auditor:        auditor,
-		BridgeMetrics:  metricsReg,
+		Agent:               rootAgent,
+		SessionService:      sessionSvc,
+		AppName:             "kubernaut-apifrontend",
+		Logger:              logger.WithName("a2a-launcher"),
+		Auditor:             auditor,
+		BridgeMetrics:       metricsReg,
+		SessionPhaseUpdater: sessionSvcForAgent,
 	}
 
 	h, err := launcher.NewA2AHandler(a2aCfg)
@@ -986,6 +988,9 @@ type sessionInfra struct {
 // When no kubeconfig is available (unit tests), it falls back to a fake client.
 func buildSessionInfra(cfg *config.Config, reg *metrics.Registry, auditor audit.Emitter, logger logr.Logger) *sessionInfra {
 	scheme := k8sruntime.NewScheme()
+	if err := coordinationv1.AddToScheme(scheme); err != nil {
+		logger.Error(err, "failed to register coordination scheme — lease sync unavailable")
+	}
 	if err := v1alpha1.AddToScheme(scheme); err != nil {
 		logger.Error(err, "failed to register InvestigationSession scheme — falling back to in-memory")
 		k8sClient, stopFunc := buildFakeSessionClient(scheme)
@@ -1054,8 +1059,17 @@ func buildSessionInfra(cfg *config.Config, reg *metrics.Registry, auditor audit.
 			svc,
 		)
 
+		leaseSync := controller.NewLeaseSyncReconciler(
+			k8sClient,
+			cfg.Session.Namespace,
+			logger.WithName("lease-sync"),
+		)
+
 			if setupErr := reconciler.SetupWithManager(mgr); setupErr != nil {
 				logger.Error(setupErr, "failed to register session reconciler with manager")
+				k8sClient, stopFunc = buildFakeSessionClient(scheme)
+			} else if setupErr := leaseSync.SetupWithManager(mgr); setupErr != nil {
+				logger.Error(setupErr, "failed to register lease-sync reconciler with manager")
 				k8sClient, stopFunc = buildFakeSessionClient(scheme)
 			} else {
 				healthy := &atomic.Bool{}

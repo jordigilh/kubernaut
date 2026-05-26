@@ -91,10 +91,10 @@ func waitForDataStorageReady(ctx context.Context, namespace, kubeconfigPath stri
 	return fmt.Errorf("DataStorage pod not ready after 5 minutes")
 }
 
-// createTLSAuthenticatedDataStorageClient creates an ogen client that trusts the
+// CreateTLSAuthenticatedDataStorageClient creates an ogen client that trusts the
 // inter-service CA and injects a ServiceAccount Bearer token.
 // Issue #785: Required for E2E suites where DataStorage serves HTTPS.
-func createTLSAuthenticatedDataStorageClient(dataStorageURL, saToken, kubeconfigPath string) (*ogenclient.Client, error) {
+func CreateTLSAuthenticatedDataStorageClient(dataStorageURL, saToken, kubeconfigPath string) (*ogenclient.Client, error) {
 	tlsTransport, err := NewTLSAwareTransport(kubeconfigPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create TLS-aware transport: %w", err)
