@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/go-logr/logr"
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -194,21 +195,17 @@ var _ = Describe("af_create_rr wiring (#1282)", func() {
 
 	It("IT-AF-1292-W01: envtest creates RR in controllerNS with targetResource in workloadNS (BR-PLATFORM-057)", func() {
 		ctx := context.Background()
-		controllerNS := "kubernaut-system"
-		workloadNS := "it-workload-ns"
+		controllerNS := "it-ctrl-" + uuid.New().String()[:8]
+		workloadNS := "it-wl-" + uuid.New().String()[:8]
 
 		ctrlNSObj := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: controllerNS}}
-		if err := k8sClient.Create(ctx, ctrlNSObj); err != nil {
-			GinkgoWriter.Printf("controllerNS create: %v (may already exist)\n", err)
-		}
+		Expect(k8sClient.Create(ctx, ctrlNSObj)).To(Succeed())
 		DeferCleanup(func() {
 			_ = k8sClient.Delete(ctx, ctrlNSObj)
 		})
 
 		workloadNSObj := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: workloadNS}}
-		if err := k8sClient.Create(ctx, workloadNSObj); err != nil {
-			GinkgoWriter.Printf("workloadNS create: %v (may already exist)\n", err)
-		}
+		Expect(k8sClient.Create(ctx, workloadNSObj)).To(Succeed())
 		DeferCleanup(func() {
 			_ = k8sClient.Delete(ctx, workloadNSObj)
 		})
@@ -231,7 +228,7 @@ var _ = Describe("af_create_rr wiring (#1282)", func() {
 
 		targetNS, _, _ := unstructured.NestedString(created.Object, "spec", "targetResource", "namespace")
 		Expect(targetNS).To(Equal(workloadNS),
-			"spec.targetResource.namespace must be workloadNS (it-workload-ns), not controllerNS")
+			"spec.targetResource.namespace must be workloadNS, not controllerNS")
 
 		DeferCleanup(func() {
 			_ = dynamicClient.Resource(rrGVR).Namespace(controllerNS).Delete(ctx, rrName, metav1.DeleteOptions{})
