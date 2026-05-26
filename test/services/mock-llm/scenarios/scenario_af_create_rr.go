@@ -81,19 +81,35 @@ func afCreateRRScenario() *afCreateRRDynScenario {
 // with priority 0.95. Used by E2E-FP-1292-001 to test ADR-057: the workload namespace
 // is extracted dynamically from the prompt via deployNSRe, while the RR CRD is placed
 // in kubernaut-system (controllerNS injected at wiring time).
+//
+// Namespace extraction happens eagerly during Match() — not deferred to Config() —
+// because the ADK Gemini adapter may restructure the content between the Match and
+// Config phases (observed in CI run 26469769357).
 func afCreateRRCrossNSScenario() *afCreateRRDynScenario {
 	base := afCreateRRConfig()
 	base.ScenarioName = "af_create_rr_cross_ns"
-	return &afCreateRRDynScenario{
-		baseConfig: base,
-		matchOverride: func(ctx *DetectionContext) (bool, float64) {
-			combined := strings.ToLower(ctx.Content + " " + ctx.AllText)
-			if strings.Contains(combined, "cross-namespace remediation") {
-				return true, 0.95
-			}
+	s := &afCreateRRDynScenario{baseConfig: base}
+	s.matchOverride = func(ctx *DetectionContext) (bool, float64) {
+		combined := strings.ToLower(ctx.Content + " " + ctx.AllText)
+		if !strings.Contains(combined, "cross-namespace remediation") {
 			return false, 0
-		},
+		}
+		// Extract namespace eagerly during Match; store in extractedName/NS
+		// so Config() doesn't need to re-parse from a possibly stale context.
+		for _, text := range []string{ctx.Content, ctx.AllText, ctx.LastUserContent} {
+			if m := deployNSRe.FindStringSubmatch(text); len(m) == 3 {
+				s.extractedName = m[1]
+				s.extractedNS = m[2]
+				log.Printf("[mock-llm/af_create_rr_cross_ns] Match: extracted name=%q ns=%q", m[1], m[2])
+				break
+			}
+		}
+		if s.extractedNS == "" {
+			log.Printf("[mock-llm/af_create_rr_cross_ns] Match: keyword found but regex did NOT match. contentLen=%d allTextLen=%d", len(ctx.Content), len(ctx.AllText))
+		}
+		return true, 0.95
 	}
+	return s
 }
 
 // afCreateRRDynScenario is a dynamic scenario that extracts the target resource
@@ -104,6 +120,8 @@ type afCreateRRDynScenario struct {
 	baseConfig    MockScenarioConfig
 	lastCtx       *DetectionContext
 	matchOverride func(ctx *DetectionContext) (bool, float64)
+	extractedName string
+	extractedNS   string
 }
 
 func (s *afCreateRRDynScenario) Name() string { return s.baseConfig.ScenarioName }
@@ -132,29 +150,24 @@ func (s *afCreateRRDynScenario) Match(ctx *DetectionContext) (bool, float64) {
 
 func (s *afCreateRRDynScenario) Config() MockScenarioConfig {
 	cfg := s.baseConfig
+
+	// Prefer values extracted eagerly during Match() (cross-NS scenario).
+	if s.extractedNS != "" {
+		cfg.ResourceName = s.extractedName
+		cfg.ResourceNS = s.extractedNS
+		return cfg
+	}
+
 	if s.lastCtx == nil {
 		return cfg
 	}
-	// Try Content first (last user text); fall back to AllText which
-	// includes the full conversation including system instructions.
-	// ADK's Gemini adapter may place the user message in a position
-	// that changes what ExtractTextFromContents returns as lastUserText.
-	for i, text := range []string{s.lastCtx.Content, s.lastCtx.AllText, s.lastCtx.LastUserContent} {
+	// Fallback: try regex extraction from the detection context.
+	for _, text := range []string{s.lastCtx.Content, s.lastCtx.AllText, s.lastCtx.LastUserContent} {
 		if m := deployNSRe.FindStringSubmatch(text); len(m) == 3 {
-			log.Printf("[mock-llm/af_create_rr] Config: regex matched on source[%d] name=%q ns=%q", i, m[1], m[2])
 			cfg.ResourceName = m[1]
 			cfg.ResourceNS = m[2]
-			break
+			return cfg
 		}
-	}
-	if cfg.ResourceNS == s.baseConfig.ResourceNS {
-		contentLen := len(s.lastCtx.Content)
-		allTextLen := len(s.lastCtx.AllText)
-		snippet := s.lastCtx.Content
-		if len(snippet) > 300 {
-			snippet = snippet[:300]
-		}
-		log.Printf("[mock-llm/af_create_rr] Config: regex NOT matched. contentLen=%d allTextLen=%d contentSnippet=%q", contentLen, allTextLen, snippet)
 	}
 	return cfg
 }
