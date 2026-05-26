@@ -816,6 +816,21 @@ func buildAuthMiddleware(cfg *config.Config, reg *metrics.Registry, auditor audi
 	if cfg.Auth.EnableReplayProtection {
 		validatorOpts = append(validatorOpts, auth.WithReplayCache(auth.NewReplayCache(10*time.Minute)))
 	}
+	if cfg.Auth.KubernetesAuthEnabled {
+		authCfg.Kubernetes.Enabled = true
+		restCfg, k8sErr := ctrl.GetConfig()
+		if k8sErr != nil {
+			logger.Error(k8sErr, "kubernetes auth enabled but kubeconfig unavailable")
+		} else {
+			k8sClient, k8sErr := kubernetes.NewForConfig(restCfg)
+			if k8sErr != nil {
+				logger.Error(k8sErr, "failed to create kubernetes client for TokenReview")
+			} else {
+				validatorOpts = append(validatorOpts, auth.WithTokenReviewer(auth.NewTokenReviewer(k8sClient)))
+				logger.Info("kubernetes TokenReview auth enabled for ServiceAccount tokens")
+			}
+		}
+	}
 	validatorOpts = append(validatorOpts, auth.WithCBMetrics(reg.CircuitBreakerState))
 	validator, err := auth.NewJWTValidator(authCfg, validatorOpts...)
 	if err != nil {

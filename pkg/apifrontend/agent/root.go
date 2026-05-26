@@ -103,6 +103,7 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 		{"approve", func() (tool.Tool, error) { return tools.NewApproveTool(k8s) }},
 		{"cancel_remediation", func() (tool.Tool, error) { return tools.NewCancelRemediationTool(k8s) }},
 		{"watch", func() (tool.Tool, error) { return tools.NewWatchTool(k8s) }},
+		{"await_session", func() (tool.Tool, error) { return tools.NewAwaitSessionTool(k8s) }},
 		{"start_investigation", func() (tool.Tool, error) { return tools.NewStartInvestigationTool(kaC, cfg.Auditor) }},
 		{"poll_investigation", func() (tool.Tool, error) { return tools.NewPollInvestigationTool(kaC, cfg.Auditor) }},
 		{"stream_investigation", func() (tool.Tool, error) { return tools.NewStreamInvestigationTool(kaC) }},

@@ -129,6 +129,11 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 			return tools.HandleWatch(ctx, cfg.K8sClient, args)
 		})
 
+	registerTool(srv, cfg, sem, "kubernaut_await_session", "Wait for KA investigation session to become ready",
+		func(ctx context.Context, args tools.AwaitSessionArgs) (any, error) {
+			return tools.HandleAwaitSession(ctx, cfg.K8sClient, args)
+		})
+
 	// KA REST tools
 	registerTool(srv, cfg, sem, "kubernaut_start_investigation", "Start a new investigation session",
 		func(ctx context.Context, args tools.StartInvestigationArgs) (any, error) {

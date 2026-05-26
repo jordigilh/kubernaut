@@ -80,6 +80,7 @@ type AuthConfig struct {
 	OIDCCaFile             string `yaml:"oidcCaFile,omitempty"`
 	EnableReplayProtection bool   `yaml:"enableReplayProtection,omitempty"`
 	AllowInsecureIssuers   bool   `yaml:"allowInsecureIssuers,omitempty"`
+	KubernetesAuthEnabled  bool   `yaml:"kubernetesAuthEnabled,omitempty"`
 }
 
 // LoggingConfig holds structured logging settings.
@@ -217,6 +218,7 @@ func DefaultConfig() *Config {
 			ToolTimeout: 30 * time.Second,
 			ToolTimeouts: map[string]time.Duration{
 				"kubernaut_stream_investigation": 15 * time.Minute,
+				"kubernaut_await_session":        3 * time.Minute,
 			},
 		},
 		Logging: LoggingConfig{

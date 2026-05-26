@@ -20,7 +20,8 @@ func (u *UserIdentity) String() string {
 	if u == nil {
 		return "<nil>"
 	}
-	return fmt.Sprintf("UserIdentity{Username:%q, Groups:%v, Issuer:%q, RawToken:REDACTED}", u.Username, u.Groups, u.Issuer)
+	return fmt.Sprintf("UserIdentity{Username:%q, Groups:%v, Issuer:%q, IsServiceAccount:%t, RawToken:REDACTED}",
+		u.Username, u.Groups, u.Issuer, u.IsServiceAccount)
 }
 
 // contextKey is an unexported type for context keys in this package.
