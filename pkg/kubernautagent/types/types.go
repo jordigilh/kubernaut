@@ -115,6 +115,11 @@ type InvestigationResult struct {
 	// BR-AI-601, #1076: When CircuitBreakerActivated=true, the primary LLM results
 	// may be incomplete or compromised; shadow findings are the primary content.
 	AlignmentVerdict *AlignmentVerdictResult `json:"alignment_verdict,omitempty"`
+
+	// BR-INTERACTIVE-010: When true, the session transitions to StatusUserDriving
+	// instead of StatusCompleted. Set by the investigator when signal.Interactive=true
+	// and RCA completes (Phase 2+3 skipped).
+	InteractiveHold bool `json:"interactive_hold,omitempty"`
 }
 
 // TokenUsageSummary holds cumulative token counts. Mirrors
@@ -244,6 +249,10 @@ type SignalContext struct {
 	DeduplicationWindowMinutes *int   `json:"deduplication_window_minutes,omitempty"`
 	FirstSeen                  string `json:"first_seen,omitempty"`
 	LastSeen                   string `json:"last_seen,omitempty"`
+
+	// BR-INTERACTIVE-010: When true, KA creates the session in pending state
+	// without launching Investigate(). The session awaits MCP action=start.
+	Interactive bool `json:"interactive,omitempty"`
 }
 
 // ComponentGVK returns the fully-qualified apiVersion/Kind string for workflow
