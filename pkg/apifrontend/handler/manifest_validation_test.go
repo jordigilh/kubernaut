@@ -170,6 +170,7 @@ var _ = Describe("RBAC tool name alignment", func() {
 		"kubernaut_status":                  true,
 		"kubernaut_reconnect":               true,
 		"kubernaut_stream_investigation":    true,
+		"kubernaut_await_session":           true,
 	}
 
 	// A2A-only internal tools registered in pkg/apifrontend/agent/root.go.
