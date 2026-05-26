@@ -149,7 +149,7 @@ func fpWaitForWEComplete(rrName string, timeout time.Duration) {
 					Fail(fmt.Sprintf("WorkflowExecution %s failed (phase=Failed)", we.Name))
 				}
 				if phase != "" && !logged {
-					GinkgoWriter.Printf("  WE %s phase: %s, engine: %s\n", we.Name, phase, we.Spec.Engine)
+					GinkgoWriter.Printf("  WE %s phase: %s, engine: %s\n", we.Name, phase, we.Status.ExecutionEngine)
 					logged = true
 				}
 				return phase == "Completed"
