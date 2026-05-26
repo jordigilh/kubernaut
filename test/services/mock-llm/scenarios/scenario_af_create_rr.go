@@ -134,10 +134,16 @@ func (s *afCreateRRDynScenario) Config() MockScenarioConfig {
 	if s.lastCtx == nil {
 		return cfg
 	}
-	text := s.lastCtx.Content
-	if m := deployNSRe.FindStringSubmatch(text); len(m) == 3 {
-		cfg.ResourceName = m[1]
-		cfg.ResourceNS = m[2]
+	// Try Content first (last user text); fall back to AllText which
+	// includes the full conversation including system instructions.
+	// ADK's Gemini adapter may place the user message in a position
+	// that changes what ExtractTextFromContents returns as lastUserText.
+	for _, text := range []string{s.lastCtx.Content, s.lastCtx.AllText} {
+		if m := deployNSRe.FindStringSubmatch(text); len(m) == 3 {
+			cfg.ResourceName = m[1]
+			cfg.ResourceNS = m[2]
+			break
+		}
 	}
 	return cfg
 }
