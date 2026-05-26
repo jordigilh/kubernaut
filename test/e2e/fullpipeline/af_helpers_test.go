@@ -2,6 +2,7 @@ package fullpipeline
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -12,6 +13,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
+	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -132,7 +134,9 @@ func fpWaitForRR(nameSubstring string, timeout time.Duration) string {
 }
 
 // fpWaitForWEComplete waits until a WorkflowExecution for the given RR reaches Completed phase.
+// Fails fast if the WE enters Failed phase, and logs pipeline state periodically for diagnostics.
 func fpWaitForWEComplete(rrName string, timeout time.Duration) {
+	logged := false
 	Eventually(func() bool {
 		weList := &workflowexecutionv1.WorkflowExecutionList{}
 		if err := apiReader.List(ctx, weList, client.InNamespace(namespace)); err != nil {
@@ -140,7 +144,26 @@ func fpWaitForWEComplete(rrName string, timeout time.Duration) {
 		}
 		for _, we := range weList.Items {
 			if strings.Contains(we.Name, rrName) || we.Spec.RemediationRequestRef.Name == rrName {
-				return we.Status.Phase == "Completed"
+				phase := string(we.Status.Phase)
+				if phase == "Failed" {
+					Fail(fmt.Sprintf("WorkflowExecution %s failed (phase=Failed)", we.Name))
+				}
+				if phase != "" && !logged {
+					GinkgoWriter.Printf("  WE %s phase: %s, engine: %s\n", we.Name, phase, we.Spec.Engine)
+					logged = true
+				}
+				return phase == "Completed"
+			}
+		}
+		if !logged {
+			aaList := &aianalysisv1.AIAnalysisList{}
+			if err := apiReader.List(ctx, aaList, client.InNamespace(namespace)); err == nil {
+				for _, aa := range aaList.Items {
+					if strings.Contains(aa.Name, rrName) || aa.Spec.RemediationRequestRef.Name == rrName {
+						GinkgoWriter.Printf("  AA %s phase: %s (WE not yet created)\n", aa.Name, aa.Status.Phase)
+						break
+					}
+				}
 			}
 		}
 		return false
@@ -155,10 +178,16 @@ func fpWaitForWEComplete(rrName string, timeout time.Duration) {
 // crash ensures Warning events like BackOff are present, giving KA a meaningful
 // signal to drive investigation.
 func fpWaitForPodCrash(appLabel string, timeout time.Duration) {
+	fpWaitForPodCrashInNS(appLabel, namespace, timeout)
+}
+
+// fpWaitForPodCrashInNS waits until at least one pod matching the given label
+// in the specified namespace has entered a crash state (OOMKilled or CrashLoopBackOff).
+func fpWaitForPodCrashInNS(appLabel, ns string, timeout time.Duration) {
 	Eventually(func() bool {
 		pods := &corev1.PodList{}
 		if err := apiReader.List(ctx, pods,
-			client.InNamespace(namespace),
+			client.InNamespace(ns),
 			client.MatchingLabels{"app": appLabel}); err != nil {
 			return false
 		}
@@ -166,23 +195,23 @@ func fpWaitForPodCrash(appLabel string, timeout time.Duration) {
 			for _, cs := range pod.Status.ContainerStatuses {
 				if cs.LastTerminationState.Terminated != nil &&
 					cs.LastTerminationState.Terminated.Reason == "OOMKilled" {
-					GinkgoWriter.Printf("  ✅ OOMKill detected for %s (restarts=%d)\n", appLabel, cs.RestartCount)
+					GinkgoWriter.Printf("  OOMKill detected for %s in %s (restarts=%d)\n", appLabel, ns, cs.RestartCount)
 					return true
 				}
 				if cs.State.Terminated != nil &&
 					cs.State.Terminated.Reason == "OOMKilled" {
-					GinkgoWriter.Printf("  ✅ OOMKill detected for %s\n", appLabel)
+					GinkgoWriter.Printf("  OOMKill detected for %s in %s\n", appLabel, ns)
 					return true
 				}
 				if cs.RestartCount > 0 && cs.State.Waiting != nil &&
 					cs.State.Waiting.Reason == "CrashLoopBackOff" {
-					GinkgoWriter.Printf("  ✅ CrashLoopBackOff detected for %s\n", appLabel)
+					GinkgoWriter.Printf("  CrashLoopBackOff detected for %s in %s\n", appLabel, ns)
 					return true
 				}
 			}
 		}
 		return false
 	}, timeout, 2*time.Second).Should(BeTrue(),
-		"pod with label app=%s should crash (OOMKill or CrashLoopBackOff)", appLabel)
+		"pod with label app=%s in namespace %s should crash (OOMKill or CrashLoopBackOff)", appLabel, ns)
 }
 
