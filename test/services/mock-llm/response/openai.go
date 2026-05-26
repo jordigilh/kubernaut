@@ -188,6 +188,7 @@ func buildToolArguments(toolName string, cfg scenarios.MockScenarioConfig) map[s
 		return map[string]interface{}{"namespace": cfg.ResourceNS}
 	case "af_create_rr":
 		return map[string]interface{}{
+			"namespace":   cfg.ResourceNS,
 			"kind":        cfg.ResourceKind,
 			"name":        cfg.ResourceName,
 			"description": "Auto-remediation triggered by AI analysis",

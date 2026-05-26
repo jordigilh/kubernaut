@@ -76,6 +76,25 @@ func afCreateRRScenario() *afCreateRRDynScenario {
 	return &afCreateRRDynScenario{baseConfig: afCreateRRConfig()}
 }
 
+// afCreateRRCrossNSScenario matches prompts containing "cross-namespace remediation"
+// with priority 0.95. Used by E2E-FP-1292-001 to test ADR-057: the workload namespace
+// is extracted dynamically from the prompt via deployNSRe, while the RR CRD is placed
+// in kubernaut-system (controllerNS injected at wiring time).
+func afCreateRRCrossNSScenario() *afCreateRRDynScenario {
+	base := afCreateRRConfig()
+	base.ScenarioName = "af_create_rr_cross_ns"
+	return &afCreateRRDynScenario{
+		baseConfig: base,
+		matchOverride: func(ctx *DetectionContext) (bool, float64) {
+			combined := strings.ToLower(ctx.Content + " " + ctx.AllText)
+			if strings.Contains(combined, "cross-namespace remediation") {
+				return true, 0.95
+			}
+			return false, 0
+		},
+	}
+}
+
 // afCreateRRDynScenario is a dynamic scenario that extracts the target resource
 // from the user prompt to forward as af_create_rr tool args.
 // Post-#1282: namespace and severity are AF-resolved; only kind/name/description
