@@ -362,8 +362,62 @@ func (h *InvestigatingHandler) handleSessionBased(ctx context.Context, analysis 
 		return h.handleSessionSubmit(ctx, analysis)
 	}
 
+	// BR-INTERACTIVE-010: Detect IS state mismatch before polling.
+	// If IS appeared after autonomous submit → cancel for takeover.
+	// If IS disappeared after interactive submit → cancel for deletion.
+	if result, cancelled := h.checkISMismatchAndCancel(ctx, analysis); cancelled {
+		return result, nil
+	}
+
 	// POLL: Session exists with an active ID
 	return h.handleSessionPoll(ctx, analysis)
+}
+
+// checkISMismatchAndCancel detects when the InvestigationSession CRD state has changed
+// since the last submit and cancels the KA session to trigger re-submit or terminal failure.
+// Returns (result, true) if cancellation was initiated, (_, false) to proceed with normal polling.
+func (h *InvestigatingHandler) checkISMismatchAndCancel(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, bool) {
+	if h.isChecker == nil {
+		return ctrl.Result{}, false
+	}
+
+	session := analysis.Status.KASession
+	rrName := analysis.Spec.RemediationRequestRef.Name
+	if rrName == "" {
+		return ctrl.Result{}, false
+	}
+
+	hasIS, err := h.isChecker.HasActiveSession(ctx, rrName)
+	if err != nil {
+		h.log.Error(err, "IS mismatch check failed, proceeding with normal poll", "rrName", rrName)
+		return ctrl.Result{}, false
+	}
+
+	switch {
+	case hasIS && !session.Interactive:
+		// IS appeared after autonomous submit → cancel for interactive takeover
+		h.log.Info("IS CRD detected for autonomous session — cancelling for interactive takeover",
+			"sessionID", session.ID, "rrName", rrName)
+		if cancelErr := h.kaClient.CancelSession(ctx, session.ID); cancelErr != nil {
+			h.log.Error(cancelErr, "Failed to cancel session for takeover", "sessionID", session.ID)
+		}
+		session.ID = ""
+		return ctrl.Result{Requeue: true}, true
+
+	case !hasIS && session.Interactive:
+		// IS disappeared after interactive submit → cancel (user removed session)
+		h.log.Info("IS CRD removed for interactive session — cancelling investigation",
+			"sessionID", session.ID, "rrName", rrName)
+		if cancelErr := h.kaClient.CancelSession(ctx, session.ID); cancelErr != nil {
+			h.log.Error(cancelErr, "Failed to cancel session for IS deletion", "sessionID", session.ID)
+		}
+		// Clear Interactive so this branch doesn't re-fire on next reconcile;
+		// poll will observe "cancelled" and transition to PhaseFailed.
+		session.Interactive = false
+		return ctrl.Result{Requeue: true}, true
+	}
+
+	return ctrl.Result{}, false
 }
 
 // handleSessionSubmit submits a new investigation to KA and records the session ID.
@@ -403,15 +457,18 @@ func (h *InvestigatingHandler) handleSessionSubmit(ctx context.Context, analysis
 
 	// Initialize or update InvestigationSession in CRD status
 	now := metav1.Now()
+	interactive, _ := req.Interactive.Get()
 	if analysis.Status.KASession == nil {
 		analysis.Status.KASession = &aianalysisv1.KASession{
-			ID:         sessionID,
-			Generation: 0,
-			CreatedAt:  &now,
-			PollCount:  0,
+			ID:          sessionID,
+			Generation:  0,
+			Interactive: interactive,
+			CreatedAt:   &now,
+			PollCount:   0,
 		}
 	} else {
 		analysis.Status.KASession.ID = sessionID
+		analysis.Status.KASession.Interactive = interactive
 		analysis.Status.KASession.CreatedAt = &now
 		analysis.Status.KASession.PollCount = 0
 		analysis.Status.KASession.LastPolled = nil
@@ -653,14 +710,30 @@ func (h *InvestigatingHandler) handleSessionPollFailed(ctx context.Context, anal
 	return ctrl.Result{}, nil
 }
 
-// handleSessionPollCancelled handles the case where a KA session was cancelled
-// (e.g., because the InvestigationSession CRD was deleted while investigation was active).
-// BR-INTERACTIVE-010: Graceful cancellation path — transitions AIAnalysis to PhaseFailed
-// with a "Cancelled" reason so the RO does not retry.
+// handleSessionPollCancelled handles the case where a KA session was cancelled.
+// BR-INTERACTIVE-010: Two scenarios:
+//   - IS CRD still exists: takeover — re-submit with interactive=true
+//   - IS CRD gone: user cancelled — transition to PhaseFailed (terminal)
 func (h *InvestigatingHandler) handleSessionPollCancelled(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
 	h.log.Info("KA session cancelled",
 		"sessionID", analysis.Status.KASession.ID,
 	)
+
+	// Check if an IS CRD still exists — if so, this was a takeover cancel and we should re-submit.
+	if h.isChecker != nil {
+		rrName := analysis.Spec.RemediationRequestRef.Name
+		if rrName != "" {
+			if hasIS, checkErr := h.isChecker.HasActiveSession(ctx, rrName); checkErr != nil {
+				h.log.Error(checkErr, "Failed to check IS existence during cancellation, treating as terminal")
+			} else if hasIS {
+				h.log.Info("IS CRD still active after cancellation — re-submitting with interactive=true (takeover)",
+					"rrName", rrName)
+				// Clear the old session ID to trigger a fresh submit on next reconcile.
+				analysis.Status.KASession.ID = ""
+				return ctrl.Result{Requeue: true}, nil
+			}
+		}
+	}
 
 	now := metav1.Now()
 	analysis.Status.Phase = aianalysis.PhaseFailed

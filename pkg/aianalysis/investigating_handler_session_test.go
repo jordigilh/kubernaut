@@ -880,6 +880,110 @@ var _ = Describe("InvestigatingHandler Interactive Session Detection (BR-INTERAC
 	})
 })
 
+// ========================================
+// BR-INTERACTIVE-010: IS Mismatch Detection (Takeover + Deletion)
+// ========================================
+
+var _ = Describe("InvestigatingHandler IS Mismatch Detection", func() {
+	var (
+		mockClient *mocks.MockAgentClient
+		auditSpy   *sessionAuditSpy
+		recorder   record.EventRecorder
+	)
+
+	BeforeEach(func() {
+		mockClient = mocks.NewMockAgentClient()
+		mockClient.DefaultSessionStatus = &agentclient.SessionStatusResult{Status: "investigating"}
+		auditSpy = &sessionAuditSpy{}
+		recorder = record.NewFakeRecorder(10)
+	})
+
+	Context("UT-AA-1293-005: Autonomous session + IS appears → cancel for takeover", func() {
+		It("should cancel the session and clear ID for re-submit", func() {
+			isChecker := &mockISChecker{hasSession: true}
+			testMetrics := metrics.NewMetrics()
+			h := handlers.NewInvestigatingHandler(mockClient, ctrl.Log.WithName("test-takeover"), testMetrics, auditSpy,
+				handlers.WithSessionMode(), handlers.WithRecorder(recorder),
+				handlers.WithInvestigationSessionChecker(isChecker))
+
+			analysis := &aianalysisv1.AIAnalysis{
+				Spec: aianalysisv1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{Name: "rr-takeover", Namespace: "default"},
+				},
+				Status: aianalysisv1.AIAnalysisStatus{
+					Phase: aianalysis.PhaseInvestigating,
+					KASession: &aianalysisv1.KASession{
+						ID:          "session-123",
+						Interactive: false, // autonomous session
+					},
+				},
+			}
+
+			result, err := h.Handle(context.Background(), analysis)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Requeue).To(BeTrue())
+			Expect(analysis.Status.KASession.ID).To(BeEmpty())
+		})
+	})
+
+	Context("UT-AA-1293-006: Interactive session + IS deleted → cancel for deletion", func() {
+		It("should cancel the session and requeue (poll will see cancelled)", func() {
+			isChecker := &mockISChecker{hasSession: false}
+			testMetrics := metrics.NewMetrics()
+			h := handlers.NewInvestigatingHandler(mockClient, ctrl.Log.WithName("test-deletion"), testMetrics, auditSpy,
+				handlers.WithSessionMode(), handlers.WithRecorder(recorder),
+				handlers.WithInvestigationSessionChecker(isChecker))
+
+			analysis := &aianalysisv1.AIAnalysis{
+				Spec: aianalysisv1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{Name: "rr-deletion", Namespace: "default"},
+				},
+				Status: aianalysisv1.AIAnalysisStatus{
+					Phase: aianalysis.PhaseInvestigating,
+					KASession: &aianalysisv1.KASession{
+						ID:          "session-456",
+						Interactive: true, // interactive session
+					},
+				},
+			}
+
+			result, err := h.Handle(context.Background(), analysis)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Requeue).To(BeTrue())
+			// Session ID NOT cleared — poll will detect "cancelled" and transition to PhaseFailed
+			Expect(analysis.Status.KASession.ID).To(Equal("session-456"))
+		})
+	})
+
+	Context("UT-AA-1293-007: No mismatch → normal poll proceeds", func() {
+		It("should proceed to poll when autonomous session has no IS", func() {
+			isChecker := &mockISChecker{hasSession: false}
+			testMetrics := metrics.NewMetrics()
+			h := handlers.NewInvestigatingHandler(mockClient, ctrl.Log.WithName("test-no-mismatch"), testMetrics, auditSpy,
+				handlers.WithSessionMode(), handlers.WithRecorder(recorder),
+				handlers.WithInvestigationSessionChecker(isChecker))
+
+			analysis := &aianalysisv1.AIAnalysis{
+				Spec: aianalysisv1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{Name: "rr-normal", Namespace: "default"},
+				},
+				Status: aianalysisv1.AIAnalysisStatus{
+					Phase: aianalysis.PhaseInvestigating,
+					KASession: &aianalysisv1.KASession{
+						ID:          "session-789",
+						Interactive: false, // autonomous, no IS
+					},
+				},
+			}
+
+			result, err := h.Handle(context.Background(), analysis)
+			Expect(err).NotTo(HaveOccurred())
+			// Should have polled and requeued (not immediately requeued)
+			Expect(result.RequeueAfter).To(BeNumerically(">", 0))
+		})
+	})
+})
+
 // mockISChecker implements handlers.InvestigationSessionChecker for testing.
 type mockISChecker struct {
 	hasSession bool

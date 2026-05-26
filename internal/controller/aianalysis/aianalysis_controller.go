@@ -30,14 +30,19 @@ import (
 
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	aianalysispkg "github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
@@ -251,9 +256,66 @@ func (r *AIAnalysisReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&aianalysisv1.AIAnalysis{}).
+		WatchesRawSource(source.Kind(mgr.GetCache(), &isv1alpha1.InvestigationSession{},
+			handler.TypedEnqueueRequestsFromMapFunc(r.mapISToAIAnalysis),
+			isEventPredicate(),
+		)).
 		WithEventFilter(aiAnalysisUpdatePredicate()).
 		Complete(r)
 }
+
+// mapISToAIAnalysis maps an InvestigationSession event to the AIAnalysis that
+// references the same RemediationRequest. BR-INTERACTIVE-010: enables takeover/deletion detection.
+func (r *AIAnalysisReconciler) mapISToAIAnalysis(ctx context.Context, is *isv1alpha1.InvestigationSession) []reconcile.Request {
+	rrName := is.Spec.RemediationRequestRef.Name
+	if rrName == "" {
+		return nil
+	}
+
+	var list aianalysisv1.AIAnalysisList
+	if err := r.List(ctx, &list,
+		client.InNamespace(is.Namespace),
+		client.MatchingFields{aiAnalysisRRNameIndex: rrName},
+	); err != nil {
+		r.Log.Error(err, "failed to map IS to AIAnalysis", "is", is.Name, "rrName", rrName)
+		return nil
+	}
+
+	requests := make([]reconcile.Request, 0, len(list.Items))
+	for i := range list.Items {
+		aa := &list.Items[i]
+		if aa.Status.Phase == PhaseInvestigating {
+			requests = append(requests, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: aa.Name, Namespace: aa.Namespace},
+			})
+		}
+	}
+	return requests
+}
+
+// isEventPredicate filters IS events to only create and delete (phase changes are not relevant).
+func isEventPredicate() predicate.TypedPredicate[*isv1alpha1.InvestigationSession] {
+	return predicate.TypedFuncs[*isv1alpha1.InvestigationSession]{
+		CreateFunc: func(e event.TypedCreateEvent[*isv1alpha1.InvestigationSession]) bool {
+			return true
+		},
+		DeleteFunc: func(e event.TypedDeleteEvent[*isv1alpha1.InvestigationSession]) bool {
+			return true
+		},
+		UpdateFunc: func(e event.TypedUpdateEvent[*isv1alpha1.InvestigationSession]) bool {
+			return false
+		},
+		GenericFunc: func(e event.TypedGenericEvent[*isv1alpha1.InvestigationSession]) bool {
+			return false
+		},
+	}
+}
+
+// aiAnalysisRRNameIndex is the field index key for AIAnalysis's spec.remediationRequestRef.name.
+const aiAnalysisRRNameIndex = "spec.remediationRequestRef.name"
+
+// AIAnalysisRRNameIndex returns the field index key for external registration.
+func AIAnalysisRRNameIndex() string { return aiAnalysisRRNameIndex }
 
 // aiAnalysisUpdatePredicate returns a predicate that filters Update events.
 // Create, Delete, and Generic events always pass through.

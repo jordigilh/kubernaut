@@ -774,6 +774,11 @@ spec:
                     description: Session ID returned by Kubernaut Agent on submit
                       (cleared on session loss)
                     type: string
+                  interactive:
+                    description: |-
+                      Interactive indicates the session was submitted with interactive=true (IS CRD present at submit time).
+                      BR-INTERACTIVE-010: Used to detect takeover/deletion state mismatches during polling.
+                    type: boolean
                   lastPolled:
                     description: LastPolled timestamp of the last poll attempt
                     format: date-time

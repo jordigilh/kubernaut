@@ -77,6 +77,14 @@ rules:
   - patch
   - update
 - apiGroups:
+  - kubernaut.ai
+  resources:
+  - investigationsessions
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - networking.k8s.io
   resources:
   - networkpolicies

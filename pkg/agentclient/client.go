@@ -301,13 +301,13 @@ func (c *KubernautAgentClient) CancelSession(ctx context.Context, sessionID stri
 		return &APIError{StatusCode: 0, Message: fmt.Sprintf("cancel session failed: %v", err)}
 	}
 
-	switch v := res.(type) {
+	switch res.(type) {
 	case *CancelSessionResponse:
 		return nil
 	case *CancelSessionAPIV1IncidentSessionSessionIDCancelPostNotFound:
-		return &APIError{StatusCode: http.StatusNotFound, Message: fmt.Sprintf("session %s not found: %s", sessionID, v.Detail)}
+		return nil // idempotent: session already gone
 	case *CancelSessionAPIV1IncidentSessionSessionIDCancelPostConflict:
-		return &APIError{StatusCode: http.StatusConflict, Message: fmt.Sprintf("session %s cannot be cancelled: %s", sessionID, v.Detail)}
+		return nil // idempotent: session already in terminal state
 	default:
 		return &APIError{StatusCode: 0, Message: fmt.Sprintf("unexpected response type: %T", res)}
 	}
