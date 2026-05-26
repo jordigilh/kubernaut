@@ -132,6 +132,7 @@ type kaIncidentBody struct {
 	Priority          string `json:"priority"`
 	RiskTolerance     string `json:"risk_tolerance"`
 	BusinessCategory  string `json:"business_category"`
+	ClusterName       string `json:"cluster_name"`
 }
 
 // Analyze starts an investigation via POST /api/v1/incident/analyze.
@@ -152,6 +153,7 @@ func (c *Client) Analyze(ctx context.Context, req AnalyzeRequest) (string, error
 		Priority:          "P2",
 		RiskTolerance:     "medium",
 		BusinessCategory:  "infrastructure",
+		ClusterName:       "local",
 	}
 	resp, err := c.doJSON(ctx, http.MethodPost, "/api/v1/incident/analyze", body)
 	if err != nil {
