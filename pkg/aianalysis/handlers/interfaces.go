@@ -49,6 +49,9 @@ type AgentClientInterface interface {
 	SubmitInvestigation(ctx context.Context, req *agentclient.IncidentRequest) (string, error)
 	PollSession(ctx context.Context, sessionID string) (*agentclient.SessionStatusResult, error)
 	GetSessionResult(ctx context.Context, sessionID string) (*agentclient.IncidentResponse, error)
+
+	// BR-INTERACTIVE-010: Cancel a running KA session
+	CancelSession(ctx context.Context, sessionID string) error
 }
 
 // ========================================
@@ -101,6 +104,20 @@ type AnalyzingAuditClientInterface interface {
 	RecordAnalysisComplete(ctx context.Context, analysis *aianalysisv1.AIAnalysis)
 	// DD-AUDIT-003: Record analysis failure events
 	RecordAnalysisFailed(ctx context.Context, analysis *aianalysisv1.AIAnalysis, err error) error
+}
+
+// ========================================
+// INVESTIGATION SESSION CHECKER INTERFACE
+// BR-INTERACTIVE-010: Check IS CRD existence before submit
+// ========================================
+
+// InvestigationSessionChecker queries whether an InvestigationSession CRD exists
+// for a given RemediationRequest. Used by InvestigatingHandler to set interactive=true
+// on the KA IncidentRequest when an IS is present. BR-INTERACTIVE-010.
+type InvestigationSessionChecker interface {
+	// HasActiveSession returns true if an InvestigationSession CRD exists
+	// with spec.remediationRequestRef.name matching the given rrName.
+	HasActiveSession(ctx context.Context, rrName string) (bool, error)
 }
 
 // ========================================

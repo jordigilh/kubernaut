@@ -74,6 +74,12 @@ type MockAgentClient struct {
 	// DefaultSessionStatus is returned by PollSession when no func is set
 	DefaultSessionStatus *agentclient.SessionStatusResult
 
+	// CancelSessionFunc allows tests to customize CancelSession behavior
+	CancelSessionFunc func() error
+
+	// CancelErr is the error returned by CancelSession
+	CancelErr error
+
 	// SubmitErr is the error returned by SubmitInvestigation
 	SubmitErr error
 
@@ -269,6 +275,17 @@ func (m *MockAgentClient) GetSessionResult(ctx context.Context, sessionID string
 	}
 
 	return m.Response, m.Err
+}
+
+// CancelSession implements AgentClientInterface for session cancellation.
+// BR-INTERACTIVE-010: Allows tests to verify cancel behavior.
+func (m *MockAgentClient) CancelSession(_ context.Context, _ string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.CancelSessionFunc != nil {
+		return m.CancelSessionFunc()
+	}
+	return m.CancelErr
 }
 
 // ========================================

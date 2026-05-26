@@ -57,10 +57,11 @@ type InvestigatingHandler struct {
 	processor           *ResponseProcessor   // P1.1: Response processing logic
 	builder             *RequestBuilder      // P1.2: Request construction logic
 	errorClassifier     *ErrorClassifier     // P2.1: Error classification and retry logic
-	useSessionMode           bool                 // BR-AA-HAPI-064: Enable async session-based flow
-	sessionPollInterval      time.Duration        // BR-AA-HAPI-064.8: Constant interval between session polls
-	maxInvestigationDuration time.Duration        // #1078: Wall-clock cap on investigation before PhaseFailed
-	recorder                 record.EventRecorder // DD-EVENT-001: K8s event recorder for session lifecycle events
+	useSessionMode           bool                         // BR-AA-HAPI-064: Enable async session-based flow
+	sessionPollInterval      time.Duration                // BR-AA-HAPI-064.8: Constant interval between session polls
+	maxInvestigationDuration time.Duration                // #1078: Wall-clock cap on investigation before PhaseFailed
+	recorder                 record.EventRecorder         // DD-EVENT-001: K8s event recorder for session lifecycle events
+	isChecker                InvestigationSessionChecker  // BR-INTERACTIVE-010: Check IS CRD before submit
 }
 
 // InvestigatingHandlerOption is a functional option for InvestigatingHandler configuration.
@@ -98,6 +99,15 @@ func WithSessionPollInterval(d time.Duration) InvestigatingHandlerOption {
 func WithMaxInvestigationDuration(d time.Duration) InvestigatingHandlerOption {
 	return func(h *InvestigatingHandler) {
 		h.maxInvestigationDuration = d
+	}
+}
+
+// WithInvestigationSessionChecker injects the IS CRD checker for interactive mode detection.
+// BR-INTERACTIVE-010: When set, the handler checks for IS CRD existence before submitting
+// to KA and sets interactive=true on the IncidentRequest if found.
+func WithInvestigationSessionChecker(checker InvestigationSessionChecker) InvestigatingHandlerOption {
+	return func(h *InvestigatingHandler) {
+		h.isChecker = checker
 	}
 }
 
@@ -369,6 +379,22 @@ func (h *InvestigatingHandler) handleSessionSubmit(ctx context.Context, analysis
 		"isRegeneration", isRegeneration,
 	)
 	req := h.builder.BuildIncidentRequest(analysis)
+
+	// BR-INTERACTIVE-010: Check IS CRD existence and set interactive=true if found
+	if h.isChecker != nil {
+		rrName := analysis.Spec.RemediationRequestRef.Name
+		if rrName != "" {
+			if hasIS, checkErr := h.isChecker.HasActiveSession(ctx, rrName); checkErr != nil {
+				h.log.Error(checkErr, "Failed to check InvestigationSession existence, proceeding as autonomous",
+					"rrName", rrName)
+			} else if hasIS {
+				req.Interactive.SetTo(true)
+				h.log.Info("InvestigationSession detected, setting interactive=true",
+					"rrName", rrName)
+			}
+		}
+	}
+
 	sessionID, err := h.kaClient.SubmitInvestigation(ctx, req)
 
 	if err != nil {
@@ -447,6 +473,8 @@ func (h *InvestigatingHandler) handleSessionPoll(ctx context.Context, analysis *
 		return h.handleSessionPollCompleted(ctx, analysis)
 	case "failed":
 		return h.handleSessionPollFailed(ctx, analysis, status)
+	case "cancelled":
+		return h.handleSessionPollCancelled(ctx, analysis)
 	default:
 		// Unknown status: treat as pending (requeue for re-poll)
 		h.log.Info("Unknown session status, treating as pending", "status", status.Status)
@@ -622,6 +650,30 @@ func (h *InvestigatingHandler) handleSessionPollFailed(ctx context.Context, anal
 		msg = "Investigation failed on KA side"
 	}
 	aianalysis.SetInvestigationComplete(analysis, false, msg)
+	return ctrl.Result{}, nil
+}
+
+// handleSessionPollCancelled handles the case where a KA session was cancelled
+// (e.g., because the InvestigationSession CRD was deleted while investigation was active).
+// BR-INTERACTIVE-010: Graceful cancellation path — transitions AIAnalysis to PhaseFailed
+// with a "Cancelled" reason so the RO does not retry.
+func (h *InvestigatingHandler) handleSessionPollCancelled(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
+	h.log.Info("KA session cancelled",
+		"sessionID", analysis.Status.KASession.ID,
+	)
+
+	now := metav1.Now()
+	analysis.Status.Phase = aianalysis.PhaseFailed
+	analysis.Status.CompletedAt = &now
+	analysis.Status.ObservedGeneration = analysis.Generation
+	analysis.Status.Message = "Investigation cancelled (interactive session removed)"
+
+	cancelErr := fmt.Errorf("KA session cancelled: interactive session deleted")
+	if auditErr := h.auditClient.RecordAnalysisFailed(ctx, analysis, cancelErr); auditErr != nil {
+		h.log.V(1).Info("Failed to record cancellation audit", "error", auditErr)
+	}
+
+	aianalysis.SetInvestigationComplete(analysis, false, "Investigation cancelled")
 	return ctrl.Result{}, nil
 }
 

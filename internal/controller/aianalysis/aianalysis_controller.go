@@ -106,6 +106,7 @@ type AIAnalysisReconciler struct {
 // +kubebuilder:rbac:groups=kubernaut.ai,resources=aianalyses,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=kubernaut.ai,resources=aianalyses/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=kubernaut.ai,resources=aianalyses/finalizers,verbs=update
+// +kubebuilder:rbac:groups=kubernaut.ai,resources=investigationsessions,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
 

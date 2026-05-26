@@ -738,6 +738,159 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 })
 
 // ========================================
+// BR-INTERACTIVE-010: Interactive Mode Detection Tests
+// ========================================
+
+var _ = Describe("InvestigatingHandler Interactive Session Detection (BR-INTERACTIVE-010)", func() {
+	var (
+		mockClient *mocks.MockAgentClient
+		auditSpy   *sessionAuditSpy
+		recorder   *record.FakeRecorder
+		ctx        context.Context
+	)
+
+	createInteractiveTestAnalysis := func() *aianalysisv1.AIAnalysis {
+		return &aianalysisv1.AIAnalysis{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-interactive-analysis",
+				Namespace: "default",
+			},
+			Spec: aianalysisv1.AIAnalysisSpec{
+				RemediationRequestRef: corev1.ObjectReference{
+					Kind:      "RemediationRequest",
+					Name:      "rr-interactive-001",
+					Namespace: "default",
+				},
+				RemediationID: "test-remediation-interactive-001",
+				AnalysisRequest: aianalysisv1.AnalysisRequest{
+					SignalContext: aianalysisv1.SignalContextInput{
+						Fingerprint:      "test-fingerprint-interactive",
+						Severity:         "high",
+						SignalName:       "OOMKilled",
+						Environment:      "production",
+						BusinessPriority: "P0",
+						TargetResource: aianalysisv1.TargetResource{
+							Kind:      "Pod",
+							Name:      "test-pod",
+							Namespace: "default",
+						},
+					},
+					AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
+				},
+			},
+			Status: aianalysisv1.AIAnalysisStatus{
+				Phase: aianalysis.PhaseInvestigating,
+			},
+		}
+	}
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		mockClient = mocks.NewMockAgentClient()
+		auditSpy = &sessionAuditSpy{}
+		recorder = record.NewFakeRecorder(20)
+	})
+
+	Context("UT-AA-1293-001: IS CRD exists for RR → interactive=true on submit", func() {
+		It("should set interactive=true when InvestigationSessionChecker returns true", func() {
+			isChecker := &mockISChecker{hasSession: true}
+			testMetrics := metrics.NewMetrics()
+			handler := handlers.NewInvestigatingHandler(mockClient, ctrl.Log.WithName("test-interactive"), testMetrics, auditSpy,
+				handlers.WithSessionMode(), handlers.WithRecorder(recorder),
+				handlers.WithInvestigationSessionChecker(isChecker))
+
+			analysis := createInteractiveTestAnalysis()
+			mockClient.WithSessionSubmitResponse("session-interactive-001")
+
+			_, err := handler.Handle(ctx, analysis)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(mockClient.SubmitCallCount).To(Equal(1))
+			Expect(mockClient.LastRequest).NotTo(BeNil())
+			interactive, ok := mockClient.LastRequest.Interactive.Get()
+			Expect(ok).To(BeTrue())
+			Expect(interactive).To(BeTrue())
+		})
+	})
+
+	Context("UT-AA-1293-002: No IS CRD for RR → interactive not set", func() {
+		It("should not set interactive when InvestigationSessionChecker returns false", func() {
+			isChecker := &mockISChecker{hasSession: false}
+			testMetrics := metrics.NewMetrics()
+			handler := handlers.NewInvestigatingHandler(mockClient, ctrl.Log.WithName("test-no-interactive"), testMetrics, auditSpy,
+				handlers.WithSessionMode(), handlers.WithRecorder(recorder),
+				handlers.WithInvestigationSessionChecker(isChecker))
+
+			analysis := createInteractiveTestAnalysis()
+			mockClient.WithSessionSubmitResponse("session-no-interactive-001")
+
+			_, err := handler.Handle(ctx, analysis)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(mockClient.SubmitCallCount).To(Equal(1))
+			Expect(mockClient.LastRequest).NotTo(BeNil())
+			_, ok := mockClient.LastRequest.Interactive.Get()
+			Expect(ok).To(BeFalse())
+		})
+	})
+
+	Context("UT-AA-1293-003: No IS checker configured → autonomous (backward compat)", func() {
+		It("should submit without interactive flag when no checker is configured", func() {
+			testMetrics := metrics.NewMetrics()
+			handler := handlers.NewInvestigatingHandler(mockClient, ctrl.Log.WithName("test-no-checker"), testMetrics, auditSpy,
+				handlers.WithSessionMode(), handlers.WithRecorder(recorder))
+
+			analysis := createInteractiveTestAnalysis()
+			mockClient.WithSessionSubmitResponse("session-compat-001")
+
+			_, err := handler.Handle(ctx, analysis)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(mockClient.SubmitCallCount).To(Equal(1))
+			Expect(mockClient.LastRequest).NotTo(BeNil())
+			_, ok := mockClient.LastRequest.Interactive.Get()
+			Expect(ok).To(BeFalse())
+		})
+	})
+
+	Context("UT-AA-1293-004: Poll returns 'cancelled' → PhaseFailed with cancellation message", func() {
+		It("should transition to PhaseFailed when KA session is cancelled", func() {
+			testMetrics := metrics.NewMetrics()
+			handler := handlers.NewInvestigatingHandler(mockClient, ctrl.Log.WithName("test-cancelled"), testMetrics, auditSpy,
+				handlers.WithSessionMode(), handlers.WithRecorder(recorder))
+
+			analysis := createInteractiveTestAnalysis()
+			now := metav1.Now()
+			analysis.Status.KASession = &aianalysisv1.KASession{
+				ID:        "session-cancelled-001",
+				CreatedAt: &now,
+				PollCount: 2,
+			}
+
+			mockClient.WithSessionPollStatus("cancelled")
+
+			result, err := handler.Handle(ctx, analysis)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(BeZero())
+
+			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed))
+			Expect(analysis.Status.Message).To(ContainSubstring("cancelled"))
+			Expect(analysis.Status.CompletedAt).NotTo(BeNil())
+		})
+	})
+})
+
+// mockISChecker implements handlers.InvestigationSessionChecker for testing.
+type mockISChecker struct {
+	hasSession bool
+	err        error
+}
+
+func (m *mockISChecker) HasActiveSession(_ context.Context, _ string) (bool, error) {
+	return m.hasSession, m.err
+}
+
+// ========================================
 // Helper Functions
 // ========================================
 

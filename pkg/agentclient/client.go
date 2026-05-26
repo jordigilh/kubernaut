@@ -290,6 +290,29 @@ func (c *KubernautAgentClient) GetSessionResult(ctx context.Context, sessionID s
 	}
 }
 
+// CancelSession cancels a running investigation session on KA.
+// BR-INTERACTIVE-010: Used by AA to cancel a KA session when the InvestigationSession
+// CRD is deleted or when re-submitting with interactive=true after takeover.
+// POST /api/v1/incident/session/{session_id}/cancel
+func (c *KubernautAgentClient) CancelSession(ctx context.Context, sessionID string) error {
+	res, err := c.client.CancelSessionAPIV1IncidentSessionSessionIDCancelPost(ctx,
+		CancelSessionAPIV1IncidentSessionSessionIDCancelPostParams{SessionID: sessionID})
+	if err != nil {
+		return &APIError{StatusCode: 0, Message: fmt.Sprintf("cancel session failed: %v", err)}
+	}
+
+	switch v := res.(type) {
+	case *CancelSessionResponse:
+		return nil
+	case *CancelSessionAPIV1IncidentSessionSessionIDCancelPostNotFound:
+		return &APIError{StatusCode: http.StatusNotFound, Message: fmt.Sprintf("session %s not found: %s", sessionID, v.Detail)}
+	case *CancelSessionAPIV1IncidentSessionSessionIDCancelPostConflict:
+		return &APIError{StatusCode: http.StatusConflict, Message: fmt.Sprintf("session %s cannot be cancelled: %s", sessionID, v.Detail)}
+	default:
+		return &APIError{StatusCode: 0, Message: fmt.Sprintf("unexpected response type: %T", res)}
+	}
+}
+
 // ========================================
 // ERROR TYPES
 // ========================================
