@@ -43,9 +43,17 @@ rules:
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
     verbs: ["get", "list", "watch"]
+  # AIAnalysis read-only: kubernaut_await_session watches for KA session readiness
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["aianalyses"]
+    verbs: ["get", "list", "watch"]
   # SubjectAccessReview: SAR-based tool authorization (ADR-021)
   - apiGroups: ["authorization.k8s.io"]
     resources: ["subjectaccessreviews"]
+    verbs: ["create"]
+  # TokenReview: validate ServiceAccount tokens (BR-INTERACTIVE-010)
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["tokenreviews"]
     verbs: ["create"]
   # DD-AUTH-014: KA auth middleware SAR gate — AF SA must be authorized
   # to invoke KA's API (virtual SAR resource, not an actual service create)

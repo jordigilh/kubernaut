@@ -24,6 +24,7 @@ mcp:
   toolTimeout: 30s
   toolTimeouts:
     kubernaut_stream_investigation: 15m
+    kubernaut_await_session: 3m
 
 agentCard:
   url: "https://apifrontend.kubernaut-system.svc:8443"
@@ -31,6 +32,7 @@ agentCard:
 auth:
   issuerURL: "https://login.kubernaut.ai/realms/kubernaut"
   audience: "kubernaut-apifrontend"
+  kubernetesAuthEnabled: true
 
 rbac:
   sarCacheTTL: 30s

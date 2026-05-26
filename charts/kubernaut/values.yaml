@@ -607,6 +607,7 @@ apifrontend:
           - kubernaut_approve
           - kubernaut_cancel_remediation
           - kubernaut_watch
+          - kubernaut_await_session
           - kubernaut_start_investigation
           - kubernaut_poll_investigation
           - kubernaut_discover_workflows
@@ -633,6 +634,7 @@ apifrontend:
           - kubernaut_list_remediations
           - kubernaut_get_remediation
           - kubernaut_watch
+          - kubernaut_await_session
           - kubernaut_start_investigation
           - kubernaut_poll_investigation
           - kubernaut_discover_workflows
@@ -655,10 +657,12 @@ apifrontend:
           - kubernaut_list_remediations
           - kubernaut_get_remediation
           - kubernaut_watch
+          - kubernaut_await_session
         observability:
           - kubernaut_list_remediations
           - kubernaut_get_remediation
           - kubernaut_watch
+          - kubernaut_await_session
           - kubernaut_get_effectiveness
           - kubernaut_list_workflows
         l3-audit:
@@ -673,6 +677,7 @@ apifrontend:
           - kubernaut_list_remediations
           - kubernaut_get_remediation
           - kubernaut_watch
+          - kubernaut_await_session
   resources:
     requests:
       memory: 64Mi
