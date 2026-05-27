@@ -18,6 +18,8 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
 
+	adksession "google.golang.org/adk/session"
+
 	v1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
@@ -28,6 +30,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/metrics"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ratelimit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/resilience"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
 )
 
 // ---------------------------------------------------------------------------
@@ -899,6 +902,47 @@ func TestBuildMCPHandler_PassesPool(t *testing.T) {
 	}
 	if h == nil {
 		t.Fatal("IT-AF-1234-W10b: handler must not be nil when pool is provided")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// IT-AF-1293-W01: buildMCPHandler wires SessionInitializer from sessionInfra
+// ---------------------------------------------------------------------------
+
+func TestBuildMCPHandler_WiresSessionInitializer(t *testing.T) {
+	t.Parallel()
+
+	kaBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(kaBackend.Close)
+
+	cfg := &config.Config{}
+	cfg.MCP.Enabled = true
+	reg := metrics.NewRegistry()
+
+	deps := &backendDeps{
+		KAClient: ka.NewClient(ka.Config{BaseURL: kaBackend.URL}),
+		DSResilientTransport: resilience.NewCircuitBreakerTransport(
+			http.DefaultTransport,
+			&resilience.CircuitBreakerConfig{Name: "test-ds"},
+		),
+	}
+
+	sessInfra := &sessionInfra{
+		SessionService: session.NewCRDSessionService(
+			adksession.InMemoryService(), nil, nil, "test-ns",
+		),
+		Healthy:  &atomic.Bool{},
+		StopFunc: func() {},
+	}
+
+	h, _, err := buildMCPHandler(cfg, deps, sessInfra, reg, &allowAllToolAuthorizer{}, nil, logr.Discard(), nil)
+	if err != nil {
+		t.Fatalf("IT-AF-1293-W01: unexpected error: %v", err)
+	}
+	if h == nil {
+		t.Fatal("IT-AF-1293-W01: handler must not be nil when sessionInfra is provided")
 	}
 }
 

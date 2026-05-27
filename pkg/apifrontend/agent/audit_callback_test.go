@@ -176,7 +176,7 @@ var _ = Describe("newAuditToolCallback (#1189)", func() {
 
 var _ = Describe("Deferred CRD Materialization (G6)", func() {
 
-	It("IT-AF-1234-W20: MaterializeCRD called when af_create_rr succeeds with SessionService", func() {
+	It("IT-AF-1234-W20: af_create_rr no longer triggers MaterializeCRD (#1293 design)", func() {
 		k8sScheme := testCRDScheme()
 		k8sClient := newFakeCRDClient(k8sScheme)
 		svc := session.NewCRDSessionService(
@@ -216,10 +216,17 @@ var _ = Describe("Deferred CRD Materialization (G6)", func() {
 		_, err = cbWithSvc(tc, fakeTool{name: "af_create_rr"}, nil, output, nil)
 		Expect(err).NotTo(HaveOccurred())
 
-		Expect(svc.IsMaterialized("sess-deferred-w20")).To(BeTrue())
+		Expect(svc.IsMaterialized("sess-deferred-w20")).To(BeFalse())
+
+		var isList isv1alpha1.InvestigationSessionList
+		Expect(k8sClient.List(ctx, &isList)).To(Succeed())
+		Expect(isList.Items).To(BeEmpty(), "no IS CRD should exist after af_create_rr")
+
+		Expect(auditor.events).To(HaveLen(1))
+		Expect(auditor.events[0].Detail["rr_id"]).To(Equal("production/api-gw-oom"))
 	})
 
-	It("IT-AF-1234-W21: MaterializeCRD NOT called when SessionService is nil", func() {
+	It("IT-AF-1234-W21: af_create_rr audit emits rr_id even without SessionService (#1293)", func() {
 		auditor := &capturingAuditor{}
 		cbNoSvc := newAuditToolCallback(auditor, nil)
 
@@ -239,7 +246,7 @@ var _ = Describe("Deferred CRD Materialization (G6)", func() {
 		Expect(auditor.events[0].Detail["rr_id"]).To(Equal("production/api-gw-oom"))
 	})
 
-	It("IT-AF-1234-W22: MaterializeCRD skipped when af_create_rr fails", func() {
+	It("IT-AF-1234-W22: af_create_rr failure does not create IS CRD (#1293)", func() {
 		k8sScheme := testCRDScheme()
 		k8sClient := newFakeCRDClient(k8sScheme)
 		svc := session.NewCRDSessionService(
