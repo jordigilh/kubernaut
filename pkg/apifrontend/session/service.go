@@ -466,6 +466,30 @@ func (s *CRDSessionService) MaterializeCRD(ctx context.Context, sessionID string
 	return nil
 }
 
+// FinalizeSessionByRR looks up the active InvestigationSession for a given RR
+// and transitions it to the specified terminal phase. Best-effort: returns nil
+// if no active session exists. Enables MCP complete/cancel tools to update the
+// IS CRD (BR-INTERACTIVE-010 SC-1).
+func (s *CRDSessionService) FinalizeSessionByRR(ctx context.Context, rrNamespace, rrName string, phase v1alpha1.SessionPhase) error {
+	var list v1alpha1.InvestigationSessionList
+	if err := s.client.List(ctx, &list,
+		client.InNamespace(s.namespace),
+		client.MatchingFields{FieldIndexRRName: rrName},
+	); err != nil {
+		return fmt.Errorf("list sessions for RR %s/%s: %w", rrNamespace, rrName, err)
+	}
+
+	for i := range list.Items {
+		is := &list.Items[i]
+		if is.Status.Phase == v1alpha1.SessionPhaseActive || is.Status.Phase == v1alpha1.SessionPhaseDisconnected {
+			msg := fmt.Sprintf("user action: %s", string(phase))
+			userID := is.Spec.UserIdentity.Username
+			return s.UpdatePhase(ctx, is.Name, phase, msg, userID)
+		}
+	}
+	return nil
+}
+
 // IsMaterialized returns true if the session's CRD has been created in K8s.
 func (s *CRDSessionService) IsMaterialized(sessionID string) bool {
 	s.mu.RLock()

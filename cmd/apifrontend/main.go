@@ -182,7 +182,7 @@ func run() int {
 		}
 	}()
 
-	mcpHandler, depsReady, err := buildMCPHandler(cfg, deps, metricsReg, sarChecker, auditor, logger, userLimiter)
+	mcpHandler, depsReady, err := buildMCPHandler(cfg, deps, sessInfra, metricsReg, sarChecker, auditor, logger, userLimiter)
 	if err != nil {
 		logger.Error(err, "failed to create MCP handler")
 		return 1
@@ -608,7 +608,11 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 	return deps, nil
 }
 
-func buildMCPHandler(cfg *config.Config, deps *backendDeps, metricsReg *metrics.Registry, authorizer auth.ToolAuthorizer, auditor audit.Emitter, logger logr.Logger, userLimiter *ratelimit.UserLimiter) (http.Handler, func() bool, error) {
+func buildMCPHandler(cfg *config.Config, deps *backendDeps, sessInfra *sessionInfra, metricsReg *metrics.Registry, authorizer auth.ToolAuthorizer, auditor audit.Emitter, logger logr.Logger, userLimiter *ratelimit.UserLimiter) (http.Handler, func() bool, error) {
+	var sessFinalizer handler.ISPhaseFinalizer
+	if sessInfra != nil && sessInfra.SessionService != nil {
+		sessFinalizer = sessInfra.SessionService
+	}
 	bridgeCfg := &handler.MCPBridgeConfig{
 		K8sClient:          deps.K8sClient(),
 		KAClient:           deps.KAClient,
@@ -624,6 +628,7 @@ func buildMCPHandler(cfg *config.Config, deps *backendDeps, metricsReg *metrics.
 		ToolTimeouts:       cfg.MCP.ToolTimeouts,
 		MaxConcurrentTools: 10,
 		UserLimiter:        userLimiter,
+		SessionFinalizer:   sessFinalizer,
 	}
 
 	mcpSessionTimeout := cfg.MCP.SessionIdleTimeout

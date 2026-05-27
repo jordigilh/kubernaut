@@ -13,6 +13,7 @@ import (
 	"golang.org/x/sync/semaphore"
 	"k8s.io/client-go/dynamic"
 
+	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ds"
@@ -21,12 +22,19 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/security"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
 )
 
 const (
 	defaultToolTimeout       = 30 * time.Second
 	defaultMaxConcurrentTool = 10
 )
+
+// ISPhaseFinalizer updates the IS CRD phase after a terminal MCP action
+// (complete/cancel). Implemented by session.CRDSessionService.
+type ISPhaseFinalizer interface {
+	FinalizeSessionByRR(ctx context.Context, rrNamespace, rrName string, phase isv1alpha1.SessionPhase) error
+}
 
 // MCPBridgeConfig holds the configuration for the real MCP tool bridge.
 type MCPBridgeConfig struct {
@@ -44,6 +52,7 @@ type MCPBridgeConfig struct {
 	ToolTimeouts       map[string]time.Duration
 	MaxConcurrentTools int64
 	UserLimiter        *ratelimit.UserLimiter
+	SessionFinalizer   ISPhaseFinalizer
 }
 
 // MCPBridgeMetrics holds Prometheus collectors specific to MCP bridge operations.
@@ -214,12 +223,28 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 
 	registerTool(srv, cfg, sem, "kubernaut_complete", "Complete an investigation session",
 		func(ctx context.Context, args tools.InteractiveActionArgs) (any, error) {
-			return tools.HandleComplete(ctx, cfg.KAMCPClient, args, cfg.Auditor)
+			result, err := tools.HandleComplete(ctx, cfg.KAMCPClient, args, cfg.Auditor)
+			if err == nil && cfg.SessionFinalizer != nil {
+				if ns, name, pErr := validate.ParseRRID(args.RRID); pErr == nil {
+					if fErr := cfg.SessionFinalizer.FinalizeSessionByRR(ctx, ns, name, isv1alpha1.SessionPhaseCompleted); fErr != nil {
+						cfg.Logger.Error(fErr, "IS CRD phase finalization failed", "rr_id", args.RRID, "phase", "Completed")
+					}
+				}
+			}
+			return result, err
 		})
 
 	registerTool(srv, cfg, sem, "kubernaut_cancel", "Cancel an active investigation session",
 		func(ctx context.Context, args tools.InteractiveActionArgs) (any, error) {
-			return tools.HandleCancel(ctx, cfg.KAMCPClient, args, cfg.Auditor)
+			result, err := tools.HandleCancel(ctx, cfg.KAMCPClient, args, cfg.Auditor)
+			if err == nil && cfg.SessionFinalizer != nil {
+				if ns, name, pErr := validate.ParseRRID(args.RRID); pErr == nil {
+					if fErr := cfg.SessionFinalizer.FinalizeSessionByRR(ctx, ns, name, isv1alpha1.SessionPhaseCancelled); fErr != nil {
+						cfg.Logger.Error(fErr, "IS CRD phase finalization failed", "rr_id", args.RRID, "phase", "Cancelled")
+					}
+				}
+			}
+			return result, err
 		})
 
 	registerTool(srv, cfg, sem, "kubernaut_status", "Get the current status of an investigation session",

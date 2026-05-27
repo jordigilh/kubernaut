@@ -463,7 +463,7 @@ func TestBuildMCPHandler_ReturnsHandlerAndReadyChecker(t *testing.T) {
 		),
 	}
 
-	h, depsReady, err := buildMCPHandler(cfg, deps, reg, &allowAllToolAuthorizer{}, nil, logr.Discard(), nil)
+	h, depsReady, err := buildMCPHandler(cfg, deps, nil, reg, &allowAllToolAuthorizer{}, nil, logr.Discard(), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -893,7 +893,7 @@ func TestBuildMCPHandler_PassesPool(t *testing.T) {
 		),
 	}
 
-	h, _, err := buildMCPHandler(cfg, deps, reg, &allowAllToolAuthorizer{}, nil, logr.Discard(), nil)
+	h, _, err := buildMCPHandler(cfg, deps, nil, reg, &allowAllToolAuthorizer{}, nil, logr.Discard(), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
