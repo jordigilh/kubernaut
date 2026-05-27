@@ -361,20 +361,21 @@ var _ = Describe("HandleStreamInvestigation — A2A Bridge (TP-1258)", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).To(Equal("completed"))
 
-		// Bridge should NOT have emitted token_delta (GA policy: reasoning_delta only)
+		var bridgedTexts []string
 		for _, evt := range queue.events {
 			if artifact, ok := evt.(*a2a.TaskArtifactUpdateEvent); ok {
 				for _, part := range artifact.Artifact.Parts {
 					if tp, ok := part.(*a2a.TextPart); ok {
-						Expect(tp.Text).NotTo(ContainSubstring("some token fragment"),
-							"token_delta should NOT be relayed via bridge")
+						bridgedTexts = append(bridgedTexts, tp.Text)
 					}
 				}
 			}
 		}
+		Expect(strings.Join(bridgedTexts, "")).To(ContainSubstring("some token fragment"),
+			"token_delta MUST be relayed via bridge for real-time streaming (#1302)")
 	})
 
-	It("UT-AF-1258-022: tool_call NOT emitted via bridge", func() {
+	It("UT-AF-1258-022: tool_call emitted via bridge for live streaming (#1302)", func() {
 		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path != sessionStreamPath("sess-bridge-003") {
 				w.WriteHeader(http.StatusNotFound)
@@ -396,16 +397,18 @@ var _ = Describe("HandleStreamInvestigation — A2A Bridge (TP-1258)", func() {
 		})
 		Expect(err).NotTo(HaveOccurred())
 
+		var bridgedTexts []string
 		for _, evt := range queue.events {
 			if artifact, ok := evt.(*a2a.TaskArtifactUpdateEvent); ok {
 				for _, part := range artifact.Artifact.Parts {
 					if tp, ok := part.(*a2a.TextPart); ok {
-						Expect(tp.Text).NotTo(ContainSubstring("kubectl get pods"),
-							"tool_call should NOT be relayed via bridge")
+						bridgedTexts = append(bridgedTexts, tp.Text)
 					}
 				}
 			}
 		}
+		Expect(strings.Join(bridgedTexts, "")).To(ContainSubstring("kubectl get pods"),
+			"tool_call MUST be relayed via bridge for real-time streaming (#1302)")
 	})
 
 	It("UT-AF-1258-023: tool_result NOT emitted via bridge", func() {

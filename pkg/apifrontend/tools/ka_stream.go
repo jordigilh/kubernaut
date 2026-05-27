@@ -89,15 +89,13 @@ func HandleStreamInvestigation(ctx context.Context, kaClient *ka.Client, args St
 			text := extractTextFromData(event.Data)
 			digest.Text = text
 			narrative.WriteString(text)
-			// Emit reasoning_delta (not token_delta) via bridge for progressive streaming
-			if event.Type == ka.EventTypeReasoningDelta {
-				emitViaBridge(ctx, text)
-			}
+			emitViaBridge(ctx, text)
 		case ka.EventTypeToolCallStart, ka.EventTypeToolCall:
 			text := extractTextFromData(event.Data)
 			digest.Text = text
 			if text != "" {
 				narrative.WriteString(fmt.Sprintf("\n[Tool: %s]\n", text))
+				emitViaBridge(ctx, fmt.Sprintf("[Tool: %s]", text))
 			}
 		case ka.EventTypeToolResult:
 			text := extractTextFromData(event.Data)
