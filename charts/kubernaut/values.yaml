@@ -598,6 +598,10 @@ apifrontend:
     severityTriage:
       cacheTTLSeconds: 30
       llmConfidence: 0.7
+    auth:
+      issuerURL: ""
+      audience: ""
+      kubernetesAuthEnabled: true
     rbac:
       sarCacheTTL: "30s"
       personas:

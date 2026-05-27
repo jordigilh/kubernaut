@@ -47,8 +47,14 @@ rules:
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
     verbs: ["get", "list", "watch"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["aianalyses"]
+    verbs: ["get", "list", "watch"]
   - apiGroups: ["authorization.k8s.io"]
     resources: ["subjectaccessreviews"]
+    verbs: ["create"]
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["tokenreviews"]
     verbs: ["create"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -109,6 +115,14 @@ data:
     severityTriage:
       cacheTTLSeconds: {{ .Values.apifrontend.config.severityTriage.cacheTTLSeconds | default 30 }}
       llmConfidence: {{ .Values.apifrontend.config.severityTriage.llmConfidence | default 0.7 }}
+    auth:
+      kubernetesAuthEnabled: {{ .Values.apifrontend.config.auth.kubernetesAuthEnabled | default false }}
+      {{- with .Values.apifrontend.config.auth.issuerURL }}
+      issuerURL: {{ . | quote }}
+      {{- end }}
+      {{- with .Values.apifrontend.config.auth.audience }}
+      audience: {{ . | quote }}
+      {{- end }}
     rbac:
       sarCacheTTL: {{ .Values.apifrontend.config.rbac.sarCacheTTL | default "30s" }}
     logging:
