@@ -769,79 +769,25 @@ func afDeployDex(ctx context.Context, kubeconfigPath, namespace string, writer i
 }
 
 func afDeployE2ERBAC(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) error {
-	afRBAC := fmt.Sprintf(`apiVersion: v1
+	projectRoot := getProjectRoot()
+
+	saManifest := fmt.Sprintf(`apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: apifrontend
   namespace: %s
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: apifrontend
-rules:
-  - apiGroups: ["kubernaut.ai"]
-    resources: ["investigationsessions"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  - apiGroups: ["kubernaut.ai"]
-    resources: ["investigationsessions/status"]
-    verbs: ["get", "update", "patch"]
-  - apiGroups: ["kubernaut.ai"]
-    resources: ["remediationrequests"]
-    verbs: ["get", "list", "watch", "create", "update", "patch"]
-  - apiGroups: ["kubernaut.ai"]
-    resources: ["remediationrequests/status"]
-    verbs: ["get", "update", "patch"]
-  - apiGroups: ["kubernaut.ai"]
-    resources: ["remediationapprovalrequests"]
-    verbs: ["get", "list", "create", "update", "patch"]
-  - apiGroups: ["kubernaut.ai"]
-    resources: ["remediationapprovalrequests/status"]
-    verbs: ["get", "update", "patch"]
-  - apiGroups: [""]
-    resources: ["events"]
-    verbs: ["get", "list", "create", "patch"]
-  - apiGroups: [""]
-    resources: ["pods", "replicationcontrollers"]
-    verbs: ["get", "list"]
-  - apiGroups: ["apps"]
-    resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
-    verbs: ["get", "list"]
-  - apiGroups: ["batch"]
-    resources: ["jobs", "cronjobs"]
-    verbs: ["get"]
-  - apiGroups: ["coordination.k8s.io"]
-    resources: ["leases"]
-    verbs: ["get", "list", "watch"]
-  - apiGroups: ["kubernaut.ai"]
-    resources: ["aianalyses"]
-    verbs: ["get", "list", "watch"]
-  - apiGroups: ["authorization.k8s.io"]
-    resources: ["subjectaccessreviews"]
-    verbs: ["create"]
-  - apiGroups: ["authentication.k8s.io"]
-    resources: ["tokenreviews"]
-    verbs: ["create"]
-  - apiGroups: [""]
-    resources: ["services"]
-    resourceNames: ["kubernaut-agent"]
-    verbs: ["create"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: apifrontend
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: apifrontend
-subjects:
-  - kind: ServiceAccount
-    name: apifrontend
-    namespace: %s
-`, namespace, namespace)
-	if err := kubectlApplyStdinAF(ctx, kubeconfigPath, afRBAC, writer); err != nil {
-		return fmt.Errorf("failed to deploy AF RBAC: %w", err)
+`, namespace)
+	if err := kubectlApplyStdinAF(ctx, kubeconfigPath, saManifest, writer); err != nil {
+		return fmt.Errorf("failed to create AF ServiceAccount: %w", err)
+	}
+
+	rbacPath := filepath.Join(projectRoot, "deploy", "apifrontend", "base", "02-rbac.yaml")
+	rbacData, err := os.ReadFile(rbacPath) //nolint:gosec // G304: path from project constants
+	if err != nil {
+		return fmt.Errorf("failed to read 02-rbac.yaml: %w", err)
+	}
+	if err := kubectlApplyStdinAF(ctx, kubeconfigPath, string(rbacData), writer); err != nil {
+		return fmt.Errorf("failed to deploy AF RBAC from base: %w", err)
 	}
 
 	personaToolRBAC := PersonaToolClusterRolesYAML()
@@ -849,7 +795,6 @@ subjects:
 		return fmt.Errorf("failed to deploy persona tool ClusterRoles: %w", err)
 	}
 
-	projectRoot := getProjectRoot()
 	userRBACPath := filepath.Join(projectRoot, "deploy", "apifrontend", "overlays", "e2e", "e2e-user-rbac.yaml")
 	data, err := os.ReadFile(userRBACPath) //nolint:gosec // G304: path from test constants
 	if err != nil {

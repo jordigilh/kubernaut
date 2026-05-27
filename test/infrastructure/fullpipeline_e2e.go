@@ -1116,108 +1116,11 @@ func deployAPIFrontendInFP(ctx context.Context, namespace, kubeconfigPath, afIma
 		return fmt.Errorf("failed to apply AF CRD: %w", err)
 	}
 
-	// 3. RBAC (ServiceAccount, ClusterRole, ClusterRoleBinding, personas, E2E users)
+	// 3. RBAC — delegate to shared afDeployE2ERBAC (reads 02-rbac.yaml from
+	// deploy/apifrontend/base/ to prevent drift between base and E2E).
 	_, _ = fmt.Fprintln(writer, "    RBAC...")
-	afRBAC := fmt.Sprintf(`apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: apifrontend
-  namespace: %s
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: apifrontend
-rules:
-  - apiGroups: ["kubernaut.ai"]
-    resources: ["investigationsessions"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  - apiGroups: ["kubernaut.ai"]
-    resources: ["investigationsessions/status"]
-    verbs: ["get", "update", "patch"]
-  - apiGroups: ["kubernaut.ai"]
-    resources: ["remediationrequests"]
-    verbs: ["get", "list", "watch", "create", "update", "patch"]
-  - apiGroups: ["kubernaut.ai"]
-    resources: ["remediationrequests/status"]
-    verbs: ["get", "update", "patch"]
-  - apiGroups: ["kubernaut.ai"]
-    resources: ["remediationapprovalrequests"]
-    verbs: ["get", "list", "create", "update", "patch"]
-  - apiGroups: ["kubernaut.ai"]
-    resources: ["remediationapprovalrequests/status"]
-    verbs: ["get", "update", "patch"]
-  - apiGroups: [""]
-    resources: ["events"]
-    verbs: ["get", "list", "create", "patch"]
-  - apiGroups: [""]
-    resources: ["pods", "replicationcontrollers"]
-    verbs: ["get", "list"]
-  - apiGroups: ["apps"]
-    resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
-    verbs: ["get", "list"]
-  - apiGroups: ["batch"]
-    resources: ["jobs", "cronjobs"]
-    verbs: ["get"]
-  - apiGroups: ["coordination.k8s.io"]
-    resources: ["leases"]
-    verbs: ["get", "list", "watch"]
-  - apiGroups: ["kubernaut.ai"]
-    resources: ["aianalyses"]
-    verbs: ["get", "list", "watch"]
-  - apiGroups: ["authorization.k8s.io"]
-    resources: ["subjectaccessreviews"]
-    verbs: ["create"]
-  - apiGroups: ["authentication.k8s.io"]
-    resources: ["tokenreviews"]
-    verbs: ["create"]
-  - apiGroups: [""]
-    resources: ["services"]
-    resourceNames: ["kubernaut-agent"]
-    verbs: ["create"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: apifrontend
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: apifrontend
-subjects:
-  - kind: ServiceAccount
-    name: apifrontend
-    namespace: %s
-`, namespace, namespace)
-	cmd = exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
-	cmd.Stdin = strings.NewReader(afRBAC)
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to deploy AF RBAC: %w", err)
-	}
-
-	// Shared persona tool RBAC (ADR-021)
-	personaToolRBAC := PersonaToolClusterRolesYAML()
-	cmd = exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
-	cmd.Stdin = strings.NewReader(personaToolRBAC)
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to deploy persona tool ClusterRoles: %w", err)
-	}
-
-	userRBACPath := filepath.Join(projectRoot, "deploy", "apifrontend", "overlays", "e2e", "e2e-user-rbac.yaml")
-	userRBACData, err := os.ReadFile(userRBACPath) //nolint:gosec // G304
-	if err != nil {
-		return fmt.Errorf("failed to read e2e-user-rbac.yaml: %w", err)
-	}
-	cmd = exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
-	cmd.Stdin = strings.NewReader(string(userRBACData))
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to deploy E2E user RBAC: %w", err)
+	if err := afDeployE2ERBAC(ctx, kubeconfigPath, namespace, writer); err != nil {
+		return fmt.Errorf("AF RBAC: %w", err)
 	}
 
 	if err := CreateDataStorageAccessRoleBinding(ctx, namespace, kubeconfigPath, "apifrontend", writer); err != nil {

@@ -52,16 +52,8 @@ func invokeInteractiveAction(ctx context.Context, mcpClient ka.MCPClient, action
 
 	if auditor != nil {
 		auditor.Emit(ctx, &audit.Event{
-			Type: auditType,
-			Detail: map[string]string{
-				"rr_id":             args.RRID,
-				"action":            action,
-				"session_id":        result.SessionID,
-				"status":            result.Status,
-				"ka_correlation_id": result.SessionID,
-				"delegation_type":   "interactive",
-				"tool_outcome":      "success",
-			},
+			Type:   auditType,
+			Detail: interactiveAuditDetail(action, args.RRID, result, auditType),
 		})
 	}
 
@@ -69,6 +61,43 @@ func invokeInteractiveAction(ctx context.Context, mcpClient ka.MCPClient, action
 		SessionID: result.SessionID,
 		Status:    result.Status,
 	}, nil
+}
+
+// actionResultTypes maps interactive actions to their OpenAPI result_type enum
+// value for EventKAResultReceived (enum: rca_complete, rca_failed, timeout, cancelled).
+var actionResultTypes = map[string]string{
+	"complete": "rca_complete",
+	"cancel":   "cancelled",
+}
+
+// actionToolNames maps interactive actions to their canonical tool name for
+// EventToolExecuted (required by OpenAPI ApifrontendToolExecutedPayload).
+var actionToolNames = map[string]string{
+	"message": "kubernaut_message",
+	"status":  "kubernaut_status",
+}
+
+// interactiveAuditDetail builds the Detail map for an interactive action audit
+// event. Common fields are always present; type-specific fields (result_type for
+// EventKAResultReceived, tool_name for EventToolExecuted) are added only when
+// the audit schema requires them.
+func interactiveAuditDetail(action, rrID string, result *ka.InvokeActionResult, auditType audit.EventType) map[string]string {
+	d := map[string]string{
+		"rr_id":             rrID,
+		"action":            action,
+		"session_id":        result.SessionID,
+		"status":            result.Status,
+		"ka_correlation_id": result.SessionID,
+		"delegation_type":   "interactive",
+		"tool_outcome":      "success",
+	}
+	if rt, ok := actionResultTypes[action]; ok && auditType == audit.EventKAResultReceived {
+		d["result_type"] = rt
+	}
+	if tn, ok := actionToolNames[action]; ok && auditType == audit.EventToolExecuted {
+		d["tool_name"] = tn
+	}
+	return d
 }
 
 // HandleTakeover implements the kubernaut_takeover tool.
