@@ -49,7 +49,7 @@ This test plan covers the Interactive Investigation Architecture feature (#1293)
 | ~~TI-13~~ | ~~RO~~ | ~~IS field index + query~~ | ~~CANCELLED (SC-4)~~ |
 | ~~TI-14~~ | ~~RO~~ | ~~Cooldown bypass for IS-backed RRs~~ | ~~CANCELLED (SC-4)~~ |
 | TI-15 | AF | `UserIdentity.IsServiceAccount` detection | 1.5 |
-| TI-16 | AF | `MaterializeCRD` SA guard + field selector migration | 1.5 |
+| TI-16 | AF | IS CRD creation: `InitializeSessionByRR` on takeover, SA guard, field selector migration | 1.5 |
 | TI-17 | AF | KA readiness tool (AIAnalysis watch) | 1.5 |
 | TI-18 | AF | Prompt rewrite validation | 1.5 |
 
@@ -245,6 +245,27 @@ Each test item follows RED → GREEN → REFACTOR:
 | UT-AF-1293-SC8-004 | `kubernaut_await_session` returns error when namespace is empty | Error returned | TI-17 |
 | UT-AF-1293-SC8-005 | `kubernaut_await_session` returns error when `rr_name` is empty | Error returned | TI-17 |
 
+#### 7.6.5 IS CRD Takeover Initialization (`session/deferred_crd_test.go`, INIT prefix)
+
+> **Design change (#1293)**: IS CRD creation moved from `af_create_rr` callback
+> (`MaterializeCRD`) to explicit `kubernaut_takeover` via `InitializeSessionByRR`.
+> This prevents autonomous "investigate and fix" flows from creating IS CRDs.
+
+| ID | Scenario | Expected | TI |
+|----|----------|----------|-----|
+| UT-AF-1293-INIT-001 | Creates IS CRD with Active phase, takeover JoinMode, and A2ATaskID | CRD created with correct spec fields | TI-16 |
+| UT-AF-1293-INIT-002 | Idempotent when same user already has active session | No error, no duplicate CRD | TI-16 |
+| UT-AF-1293-INIT-003 | Different user rejected (single-driver guard) | Error: session_active (username redacted) | TI-16 |
+| UT-AF-1293-INIT-004 | Empty kaSessionID rejected | Error: kaSessionID is required | TI-16 |
+| UT-AF-1293-INIT-005 | Invalid CRD name falls back to generated name | CRD created with isess- prefix | TI-16 |
+| UT-AF-1293-INIT-006 | Emits EventSessionCreated audit event (FedRAMP AU-12) | Audit event with join_mode=takeover | TI-16 |
+
+#### 7.6.6 Wiring — `buildMCPHandler` (`cmd/apifrontend/main_wiring_test.go`)
+
+| ID | Scenario | Expected | TI |
+|----|----------|----------|-----|
+| IT-AF-1293-W01 | `buildMCPHandler` wires `SessionInitializer` from `sessionInfra` | Handler created, no error | TI-16 |
+
 ### 7.7 E2E Tests
 
 | ID | Scenario | Components | Expected | Status |
@@ -252,7 +273,7 @@ Each test item follows RED → GREEN → REFACTOR:
 | E2E-1293-001 | Interactive from start: full flow | AF → RO → AA → KA | IS created → KA session pending → MCP start → RCA → user_driving | Implemented |
 | E2E-1293-002 | Dynamic takeover: autonomous → interactive | AF → AA → KA | IS created mid-investigation → cancel → re-submit → pending | Implemented |
 | E2E-1293-003 | IS deletion cancels investigation | AF → AA → KA | IS deleted → KA cancelled → AIAnalysis PhaseFailed + ReasonInteractiveCancelled | Implemented |
-| E2E-1293-004 | SA caller blocked from IS creation | AF | SA token → af_create_rr → MaterializeCRD rejected | Implemented |
+| E2E-1293-004 | SA caller blocked from IS creation | AF | SA token → af_create_rr → ServiceDecorator.Create rejects SA | Implemented |
 | ~~E2E-1293-005~~ | ~~Cooldown bypass with IS~~ | ~~CANCELLED~~ | ~~SC-4 cancelled by design — AF bypasses RO cooldown~~ | Cancelled |
 | E2E-1293-006 | Context reconstruction from prior session | KA → DS | Prior completed session → new interactive session → context pre-loaded | Implemented |
 
