@@ -55,14 +55,15 @@ func NewRootAgent(cfg AgentConfig, opts ...Option) (agent.Agent, []tool.Tool, er
 	beforeCallbacks = append(beforeCallbacks, beforeMetrics)
 
 	a, err := llmagent.New(llmagent.Config{
-		Name:                "kubernaut-apifrontend",
-		Description:         "Kubernaut API Frontend agent for incident triage and remediation",
-		Model:               cfg.LLMModel,
-		Tools:               allTools,
-		Instruction:         cfg.Instruction,
-		InstructionProvider: cfg.InstructionProvider,
-		BeforeToolCallbacks: beforeCallbacks,
-		AfterToolCallbacks:  []llmagent.AfterToolCallback{afterMetrics, afterAudit},
+		Name:                 "kubernaut-apifrontend",
+		Description:          "Kubernaut API Frontend agent for incident triage and remediation",
+		Model:                cfg.LLMModel,
+		Tools:                allTools,
+		Instruction:          cfg.Instruction,
+		InstructionProvider:  cfg.InstructionProvider,
+		BeforeModelCallbacks: []llmagent.BeforeModelCallback{historySanitizer},
+		BeforeToolCallbacks:  beforeCallbacks,
+		AfterToolCallbacks:   []llmagent.AfterToolCallback{afterMetrics, afterAudit},
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("creating agent: %w", err)
