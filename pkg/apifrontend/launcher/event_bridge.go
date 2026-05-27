@@ -39,17 +39,18 @@ type BridgeMetrics interface {
 // SSE investigation events into the A2A stream without waiting for the tool to
 // return a FunctionResponse.
 type EventBridge struct {
-	queue   eventqueue.Writer
-	taskID  a2a.TaskID
-	metrics BridgeMetrics
+	queue     eventqueue.Writer
+	taskID    a2a.TaskID
+	contextID string
+	metrics   BridgeMetrics
 }
 
 const maxBridgeTextLen = 512
 
 // WithEventBridge attaches an EventBridge to the context, enabling
 // downstream tool handlers to emit progressive reasoning artifacts.
-func WithEventBridge(ctx context.Context, queue eventqueue.Writer, taskID a2a.TaskID, m BridgeMetrics) context.Context {
-	bridge := &EventBridge{queue: queue, taskID: taskID, metrics: m}
+func WithEventBridge(ctx context.Context, queue eventqueue.Writer, taskID a2a.TaskID, contextID string, m BridgeMetrics) context.Context {
+	bridge := &EventBridge{queue: queue, taskID: taskID, contextID: contextID, metrics: m}
 	return context.WithValue(ctx, contextKey{}, bridge)
 }
 
@@ -75,8 +76,9 @@ func (b *EventBridge) EmitReasoning(ctx context.Context, text string) error {
 	}
 
 	event := &a2a.TaskArtifactUpdateEvent{
-		TaskID: b.taskID,
-		Append: true,
+		TaskID:    b.taskID,
+		ContextID: b.contextID,
+		Append:    true,
 		Artifact: &a2a.Artifact{
 			Parts: []a2a.Part{
 				&a2a.TextPart{Text: text},

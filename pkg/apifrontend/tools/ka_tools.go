@@ -43,9 +43,11 @@ func HandleStartInvestigation(ctx context.Context, kaClient *ka.Client, args Sta
 		auditor.Emit(ctx, &audit.Event{
 			Type: audit.EventKADelegated,
 			Detail: map[string]string{
-				"namespace":  args.Namespace,
-				"rr_name":    args.Name,
-				"session_id": sessionID,
+				"namespace":         args.Namespace,
+				"rr_name":           args.Name,
+				"session_id":        sessionID,
+				"ka_correlation_id": sessionID,
+				"delegation_type":   "autonomous",
 			},
 		})
 	}

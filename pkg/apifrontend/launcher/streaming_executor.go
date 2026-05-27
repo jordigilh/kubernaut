@@ -57,7 +57,7 @@ func NewStreamingExecutor(inner a2asrv.AgentExecutor, logger logr.Logger, m Brid
 // OpenAPI payload schemas in data-storage-v1.yaml. The A2A task lifecycle is
 // already audited by buildBeforeExecuteCallback / buildAfterExecuteCallback.
 func (s *StreamingExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestContext, queue eventqueue.Queue) error {
-	ctx = WithEventBridge(ctx, queue, reqCtx.TaskID, s.bridgeMetrics)
+	ctx = WithEventBridge(ctx, queue, reqCtx.TaskID, reqCtx.ContextID, s.bridgeMetrics)
 
 	user := auth.UserIdentityFromContext(ctx)
 	username := ""

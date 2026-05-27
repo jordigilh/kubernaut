@@ -104,6 +104,8 @@ var _ = Describe("Audit event emission – tool handlers (PR2 wiring)", func() {
 			Expect(events).To(HaveLen(1), "expected exactly one ka.delegated event")
 			Expect(events[0].Detail).To(HaveKeyWithValue("namespace", "payments"))
 			Expect(events[0].Detail).To(HaveKeyWithValue("rr_name", "rr-1"))
+			Expect(events[0].Detail).To(HaveKeyWithValue("delegation_type", "autonomous"))
+			Expect(events[0].Detail).To(HaveKeyWithValue("ka_correlation_id", "sess-abc"))
 		})
 	})
 

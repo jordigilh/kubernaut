@@ -54,10 +54,12 @@ func invokeInteractiveAction(ctx context.Context, mcpClient ka.MCPClient, action
 		auditor.Emit(ctx, &audit.Event{
 			Type: auditType,
 			Detail: map[string]string{
-				"rr_id":      args.RRID,
-				"action":     action,
-				"session_id": result.SessionID,
-				"status":     result.Status,
+				"rr_id":             args.RRID,
+				"action":            action,
+				"session_id":        result.SessionID,
+				"status":            result.Status,
+				"ka_correlation_id": result.SessionID,
+				"delegation_type":   "interactive",
 			},
 		})
 	}

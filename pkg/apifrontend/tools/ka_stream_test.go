@@ -312,7 +312,7 @@ var _ = Describe("HandleStreamInvestigation — A2A Bridge (TP-1258)", func() {
 
 		queue := &testEventQueue{}
 		taskID := a2a.TaskID("bridge-task-001")
-		bridgeCtx := launcher.WithEventBridge(ctx, queue, taskID, nil)
+		bridgeCtx := launcher.WithEventBridge(ctx, queue, taskID, "", nil)
 
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
 		result, err := tools.HandleStreamInvestigation(bridgeCtx, kaClient, tools.StreamInvestigationArgs{
@@ -352,7 +352,7 @@ var _ = Describe("HandleStreamInvestigation — A2A Bridge (TP-1258)", func() {
 
 		queue := &testEventQueue{}
 		taskID := a2a.TaskID("bridge-task-002")
-		bridgeCtx := launcher.WithEventBridge(ctx, queue, taskID, nil)
+		bridgeCtx := launcher.WithEventBridge(ctx, queue, taskID, "", nil)
 
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
 		result, err := tools.HandleStreamInvestigation(bridgeCtx, kaClient, tools.StreamInvestigationArgs{
@@ -388,7 +388,7 @@ var _ = Describe("HandleStreamInvestigation — A2A Bridge (TP-1258)", func() {
 
 		queue := &testEventQueue{}
 		taskID := a2a.TaskID("bridge-task-003")
-		bridgeCtx := launcher.WithEventBridge(ctx, queue, taskID, nil)
+		bridgeCtx := launcher.WithEventBridge(ctx, queue, taskID, "", nil)
 
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
 		_, err := tools.HandleStreamInvestigation(bridgeCtx, kaClient, tools.StreamInvestigationArgs{
@@ -422,7 +422,7 @@ var _ = Describe("HandleStreamInvestigation — A2A Bridge (TP-1258)", func() {
 
 		queue := &testEventQueue{}
 		taskID := a2a.TaskID("bridge-task-004")
-		bridgeCtx := launcher.WithEventBridge(ctx, queue, taskID, nil)
+		bridgeCtx := launcher.WithEventBridge(ctx, queue, taskID, "", nil)
 
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
 		_, err := tools.HandleStreamInvestigation(bridgeCtx, kaClient, tools.StreamInvestigationArgs{
@@ -457,7 +457,7 @@ var _ = Describe("HandleStreamInvestigation — A2A Bridge (TP-1258)", func() {
 
 		queue := &testEventQueue{}
 		taskID := a2a.TaskID("bridge-task-005")
-		bridgeCtx := launcher.WithEventBridge(ctx, queue, taskID, nil)
+		bridgeCtx := launcher.WithEventBridge(ctx, queue, taskID, "", nil)
 
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
 		result, err := tools.HandleStreamInvestigation(bridgeCtx, kaClient, tools.StreamInvestigationArgs{
@@ -520,7 +520,7 @@ var _ = Describe("HandleStreamInvestigation — A2A Bridge (TP-1258)", func() {
 
 		queue := &testEventQueue{}
 		taskID := a2a.TaskID("bridge-task-007")
-		bridgeCtx := launcher.WithEventBridge(ctx, queue, taskID, nil)
+		bridgeCtx := launcher.WithEventBridge(ctx, queue, taskID, "", nil)
 
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
 		result, err := tools.HandleStreamInvestigation(bridgeCtx, kaClient, tools.StreamInvestigationArgs{
@@ -562,7 +562,7 @@ var _ = Describe("HandleStreamInvestigation — A2A Bridge (TP-1258)", func() {
 		// Use a queue that always fails
 		queue := &failingQueue{}
 		taskID := a2a.TaskID("bridge-task-008")
-		bridgeCtx := launcher.WithEventBridge(ctx, queue, taskID, nil)
+		bridgeCtx := launcher.WithEventBridge(ctx, queue, taskID, "", nil)
 
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
 		result, err := tools.HandleStreamInvestigation(bridgeCtx, kaClient, tools.StreamInvestigationArgs{
@@ -595,7 +595,7 @@ var _ = Describe("HandleStreamInvestigation — A2A Bridge (TP-1258)", func() {
 
 		queue := &failingQueue{}
 		taskID := a2a.TaskID("bridge-task-logr")
-		bridgeCtx := launcher.WithEventBridge(logCtx, queue, taskID, nil)
+		bridgeCtx := launcher.WithEventBridge(logCtx, queue, taskID, "", nil)
 
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
 		result, err := tools.HandleStreamInvestigation(bridgeCtx, kaClient, tools.StreamInvestigationArgs{
