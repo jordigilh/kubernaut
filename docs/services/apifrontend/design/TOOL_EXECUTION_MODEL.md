@@ -90,7 +90,7 @@ Tools access the Kubernetes API through two distinct client scopes, determined a
 │           (AF ServiceAccount)                        │
 │                                                     │
 │  Access gated by MCP RBAC: if a user has permission │
-│  to invoke kubernaut_start_investigation, AF         │
+│  to invoke kubernaut_investigate, AF                  │
 │  investigates on their behalf using its own SA.      │
 └─────────────────────────────────────────────────────┘
 ```

@@ -219,7 +219,7 @@ The severity triage pipeline (`internal/severity/triage.go`) queries Prometheus 
 | Rationale | Prometheus metrics/rules are cluster-wide data; user-scoped access is not applicable |
 | NIST | AC-6 (least privilege): AF only needs read access to `/api/v1/{alerts,rules,query}` |
 
-This is distinct from the internal triage tools (`kubectl_get`, `kubectl_list`, `kubectl_list_events`) which use AF's ServiceAccount. Access to these tools is gated by MCP RBAC at the tool level — if a user has permission to invoke `kubernaut_start_investigation`, AF investigates on their behalf using its own SA.
+This is distinct from the internal triage tools (`kubectl_get`, `kubectl_list`, `kubectl_list_events`) which use AF's ServiceAccount. Access to these tools is gated by MCP RBAC at the tool level — if a user has permission to invoke `kubernaut_investigate`, AF investigates on their behalf using its own SA.
 
 ---
 

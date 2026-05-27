@@ -502,8 +502,7 @@ kubernaut proxy tools (forwarded to KA REST/MCP or DataStorage):
 | `kubernaut_approve` | Approve a remediation action | KA REST |
 | `kubernaut_cancel_remediation` | Cancel active remediation | KA REST |
 | `kubernaut_watch` | Watch remediation state changes | KA REST |
-| `kubernaut_start_investigation` | Start investigation session | KA MCP |
-| `kubernaut_poll_investigation` | Poll investigation for updates | KA REST |
+| `kubernaut_investigate` | Investigate an infrastructure incident (start new or resume existing) | KA REST + SSE |
 | `kubernaut_select_workflow` | Select workflow for investigation | KA MCP |
 | `kubernaut_present_decision` | Present decision point to user | KA MCP |
 | `kubernaut_list_workflows` | List available workflows | KA REST |

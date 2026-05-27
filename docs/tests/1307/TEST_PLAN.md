@@ -32,7 +32,7 @@ in the 4-phase journey, and (C) tool description updates.
 - BR-ORDERING-002: `select_workflow` blocked without prior `takeover`
 - BR-ORDERING-003: `message`/`status`/`complete`/`cancel` blocked without prior `takeover`
 - BR-ORDERING-004: `takeover` always allowed (entry point for interactive flow)
-- BR-ORDERING-005: `start_investigation` always allowed (Phase 1, REST-based)
+- BR-ORDERING-005: `kubernaut_investigate` always allowed (Phase 1, merged tool)
 - BR-ORDERING-006: Guard returns LLM-guiding error message (not generic deny)
 - BR-ORDERING-007: Phase state resets across A2A sessions
 - BR-PROMPT-001: Prompt includes `kubernaut_takeover` in Phase 2 prerequisites
@@ -59,7 +59,7 @@ Testing Pyramid Invariant: UT proves logic. IT proves wiring. E2E proves the jou
 | UT-AF-1307-005 | cancel blocked without takeover | same deny pattern |
 | UT-AF-1307-006 | status blocked without takeover | same deny pattern |
 | UT-AF-1307-007 | takeover always allowed | returns `(nil, nil)` |
-| UT-AF-1307-008 | start_investigation always allowed | returns `(nil, nil)` |
+| UT-AF-1307-008 | kubernaut_investigate always allowed | returns `(nil, nil)` |
 | UT-AF-1307-009 | kubectl_get always allowed (not MCP-gated) | returns `(nil, nil)` |
 | UT-AF-1307-010 | After takeover succeeds, discover_workflows allowed | AfterTool sets state; BeforeTool reads state → allow |
 | UT-AF-1307-011 | Error message guides LLM to call takeover first | error string contains "kubernaut_takeover" |

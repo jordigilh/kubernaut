@@ -1437,7 +1437,7 @@ func TestPreflightSessionChecks_ListsDeniedVerbs(t *testing.T) {
 // Validates that prompt.txt documents the merged kubernaut_investigate tool.
 // ---------------------------------------------------------------------------
 
-func TestPromptContainsMandatoryStreamInvestigation(t *testing.T) {
+func TestPromptContainsMandatoryInvestigate(t *testing.T) {
 	prompt, err := os.ReadFile("../../pkg/apifrontend/agent/prompt.txt")
 	if err != nil {
 		t.Fatalf("WT-AF-1302-001: failed to read prompt.txt: %v", err)
