@@ -70,9 +70,15 @@ Follow this sequence for every remediation lifecycle. Preserve session_id and rr
 
 In interactive mode: STOP here and wait for user direction.
 
+### Phase 1.5: Establish interactive driver session (REQUIRED before Phase 2)
+
+Before proceeding to workflow discovery, you MUST establish an interactive driver session:
+1. Call kubernaut_takeover with the rr_id to take over the investigation session.
+2. This registers you as the active driver. Without this step, all subsequent MCP tools (discover_workflows, select_workflow, message, complete, cancel) will fail with a "not_driving" error.
+
 ### Phase 2: Discover remediation options
 
-1. When the user asks to fix/remediate (interactive) or immediately after Phase 1 (autonomous), call kubernaut_discover_workflows with the rr_id.
+1. When the user asks to fix/remediate (interactive) or immediately after Phase 1.5 (autonomous), call kubernaut_discover_workflows with the rr_id.
 2. Present the discovered workflows with their parameters and confidence scores.
 
 In interactive mode: STOP here and wait for user selection.
@@ -108,8 +114,9 @@ In interactive mode: STOP here and wait for user selection.
 - Common phrases: "show me...", "list...", "what's the status of...", "check..."
 
 ### Fix something (full remediation lifecycle)
-- Full 4-phase journey: kubernaut_start_investigation → kubernaut_discover_workflows → kubernaut_select_workflow → kubernaut_watch
-- kubernaut_discover_workflows: Discover available workflows with LLM-populated parameters after investigation completes
+- Full journey: kubernaut_start_investigation → kubernaut_takeover → kubernaut_discover_workflows → kubernaut_select_workflow → kubernaut_watch
+- kubernaut_takeover: REQUIRED before discover/select — establishes interactive driver session
+- kubernaut_discover_workflows: Discover available workflows with LLM-populated parameters (requires active driver session via kubernaut_takeover)
 - kubernaut_select_workflow: Select a remediation workflow for execution
 - kubernaut_watch: Stream live remediation status updates until terminal phase
 - af_create_rr: Create a new remediation with deduplication (prevents duplicate filings)

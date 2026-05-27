@@ -54,6 +54,9 @@ func NewRootAgent(cfg AgentConfig, opts ...Option) (agent.Agent, []tool.Tool, er
 	}
 	beforeCallbacks = append(beforeCallbacks, beforeMetrics)
 
+	beforePhase, afterPhase := newPhaseGuard()
+	beforeCallbacks = append(beforeCallbacks, beforePhase)
+
 	a, err := llmagent.New(llmagent.Config{
 		Name:                 "kubernaut-apifrontend",
 		Description:          "Kubernaut API Frontend agent for incident triage and remediation",
@@ -63,7 +66,7 @@ func NewRootAgent(cfg AgentConfig, opts ...Option) (agent.Agent, []tool.Tool, er
 		InstructionProvider:  cfg.InstructionProvider,
 		BeforeModelCallbacks: []llmagent.BeforeModelCallback{historySanitizer},
 		BeforeToolCallbacks:  beforeCallbacks,
-		AfterToolCallbacks:   []llmagent.AfterToolCallback{afterMetrics, afterAudit},
+		AfterToolCallbacks:   []llmagent.AfterToolCallback{afterMetrics, afterAudit, afterPhase},
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("creating agent: %w", err)
