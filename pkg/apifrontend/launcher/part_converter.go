@@ -70,7 +70,7 @@ func buildPartConverter() adka2a.GenAIPartConverter {
 		if part.Thought {
 			return &a2a.TextPart{Text: "Analyzing...\n"}, nil
 		}
-		return &a2a.TextPart{Text: part.Text}, nil
+		return &a2a.TextPart{Text: ensureTrailingNewline(part.Text)}, nil
 	}
 }
 
@@ -85,9 +85,13 @@ func convertFunctionCall(fc *genai.FunctionCall) a2a.Part {
 }
 
 func convertFunctionResponse(fr *genai.FunctionResponse) a2a.Part {
+	if errPart := toolErrorPart(fr); errPart != nil {
+		return errPart
+	}
+
 	summarizer, ok := keyToolSummarizers[fr.Name]
 	if !ok {
-		return toolErrorPart(fr)
+		return nil
 	}
 
 	resp := fr.Response
@@ -99,15 +103,20 @@ func convertFunctionResponse(fr *genai.FunctionResponse) a2a.Part {
 	return &a2a.TextPart{Text: truncate(text, maxSummaryLen) + "\n"}
 }
 
-// toolErrorPart returns an error text part when a non-key tool's response
-// contains an "error" field. This ensures tool failures surface on the SSE
-// stream instead of being silently dropped (#1302).
+// toolErrorPart returns an error text part when a tool response indicates
+// failure. Matches both simple {"error":"..."} and the KA MCP pattern
+// {"status":"error","error":"..."}. This ensures tool failures surface on the
+// SSE stream instead of being silently dropped (#1302).
 func toolErrorPart(fr *genai.FunctionResponse) a2a.Part {
 	if fr.Response == nil {
 		return nil
 	}
-	errMsg, ok := fr.Response["error"].(string)
-	if !ok || errMsg == "" {
+	errMsg, _ := fr.Response["error"].(string)
+	if errMsg == "" {
+		return nil
+	}
+	status, _ := fr.Response["status"].(string)
+	if status != "error" && status != "" {
 		return nil
 	}
 	text := fmt.Sprintf("Error: %s\n", truncate(errMsg, maxSummaryLen))
@@ -244,7 +253,7 @@ func buildStreamingPartConverter() adka2a.GenAIPartConverter {
 		if part.Thought {
 			return &a2a.TextPart{Text: "Analyzing...\n"}, nil
 		}
-		return &a2a.TextPart{Text: part.Text}, nil
+		return &a2a.TextPart{Text: ensureTrailingNewline(part.Text)}, nil
 	}
 }
 
@@ -254,6 +263,16 @@ func stringArg(args map[string]any, key string) string {
 		return ""
 	}
 	return v
+}
+
+// ensureTrailingNewline appends a newline to text that doesn't already end
+// with one. This prevents consecutive SSE chunks from being concatenated
+// into a single unreadable block in the UI.
+func ensureTrailingNewline(s string) string {
+	if s == "" || strings.HasSuffix(s, "\n") {
+		return s
+	}
+	return s + "\n"
 }
 
 func truncate(s string, maxLen int) string {

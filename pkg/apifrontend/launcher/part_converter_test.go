@@ -360,14 +360,15 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 	})
 
 	Describe("Text passthrough", func() {
-		It("UT-AF-1189-130: LLM reasoning text -> passed through unchanged", func() {
+		It("UT-AF-1189-130: LLM reasoning text -> passed through with trailing newline", func() {
 			reasoning := "Node shows DiskPressure, emptyDir usage at 72%. The PostgreSQL StatefulSet is consuming excessive disk."
 			part := &genai.Part{Text: reasoning}
 			result, err := convert(context.Background(), nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal(reasoning))
+			Expect(tp.Text).To(Equal(reasoning + "\n"),
+				"LLM text must get trailing newline so consecutive chunks are readable (#1301)")
 		})
 
 		It("UT-AF-1189-131: Text part with Thought=true -> activity indicator, not raw thought", func() {
@@ -753,7 +754,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(tp.Text).To(Equal("Analyzing...\n"))
 		})
 
-		It("UT-AF-1189-168: Thought=false with text -> text passes through unchanged", func() {
+		It("UT-AF-1189-168: Thought=false with text -> text gets trailing newline", func() {
 			text := "Based on the analysis, the root cause is disk pressure from emptyDir."
 			part := &genai.Part{
 				Text:    text,
@@ -763,7 +764,8 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal(text))
+			Expect(tp.Text).To(Equal(text + "\n"),
+				"LLM text must get trailing newline so consecutive chunks are readable (#1301)")
 		})
 	})
 })
@@ -815,15 +817,35 @@ var _ = Describe("Status message line breaks (#1301)", func() {
 			"tool response summaries must end with \\n for readability (#1301)")
 	})
 
-	It("UT-AF-1301-004: LLM text passthrough does NOT get extra newline", func() {
-		text := "The root cause is disk pressure."
+	It("UT-AF-1301-004: LLM text already ending with newline gets no double newline", func() {
+		text := "The root cause is disk pressure.\n"
 		part := &genai.Part{Text: text}
 		result, err := convert(context.Background(), nil, part)
 		Expect(err).NotTo(HaveOccurred())
 		tp, ok := result.(*a2a.TextPart)
 		Expect(ok).To(BeTrue())
 		Expect(tp.Text).To(Equal(text),
-			"LLM text must pass through unchanged — model controls its own formatting")
+			"text already ending with newline must NOT get a double newline")
+	})
+
+	It("UT-AF-1301-005: consecutive LLM text chunks are separated by newline", func() {
+		chunks := []string{
+			"I'll start by checking what's running in the demo-crashloop namespace.",
+			"Let me investigate the affected deployment.",
+		}
+		var results []string
+		for _, chunk := range chunks {
+			part := &genai.Part{Text: chunk}
+			result, err := convert(context.Background(), nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			tp, ok := result.(*a2a.TextPart)
+			Expect(ok).To(BeTrue())
+			results = append(results, tp.Text)
+		}
+		concatenated := strings.Join(results, "")
+		Expect(concatenated).To(ContainSubstring("namespace.\n"),
+			"LLM text chunks that don't end with newline must get one appended "+
+				"so consecutive chunks are not concatenated into an unreadable block (#1301)")
 	})
 })
 
@@ -863,7 +885,27 @@ var _ = Describe("Tool error surfacing (#1302)", func() {
 			"non-key tool success payloads must still be suppressed")
 	})
 
-	It("UT-AF-1302-003: key tool with error uses summarizer, not generic handler", func() {
+	It("UT-AF-1302-004: non-key tool with status=error JSON pattern emits error text", func() {
+		part := &genai.Part{
+			FunctionResponse: &genai.FunctionResponse{
+				Name: "kubernaut_discover_workflows",
+				Response: map[string]any{
+					"status": "error",
+					"error":  "not_driving: You must send action=takeover before sending messages",
+				},
+			},
+		}
+		result, err := convert(context.Background(), nil, part)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).NotTo(BeNil(),
+			"MCP tool errors with status=error must be surfaced on SSE stream (#1302)")
+		tp, ok := result.(*a2a.TextPart)
+		Expect(ok).To(BeTrue())
+		Expect(tp.Text).To(ContainSubstring("not_driving"),
+			"error message from MCP tool must be visible to the user")
+	})
+
+	It("UT-AF-1302-003: key tool with error surfaces error, not misleading summary", func() {
 		nonStreamConvert := launcher.BuildPartConverterForTest()
 		part := &genai.Part{
 			FunctionResponse: &genai.FunctionResponse{
@@ -873,11 +915,11 @@ var _ = Describe("Tool error surfacing (#1302)", func() {
 		}
 		result, err := nonStreamConvert(context.Background(), nil, part)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(result).NotTo(BeNil(), "key tool responses still go through their summarizer")
+		Expect(result).NotTo(BeNil(), "tool errors must always be surfaced (#1302)")
 		tp, ok := result.(*a2a.TextPart)
 		Expect(ok).To(BeTrue())
-		Expect(tp.Text).NotTo(ContainSubstring("Error:"),
-			"key tool errors use their dedicated summarizer, not the generic error handler")
+		Expect(tp.Text).To(ContainSubstring("connection refused"),
+			"even key tool errors must be surfaced so the user knows what failed (#1302)")
 	})
 })
 
