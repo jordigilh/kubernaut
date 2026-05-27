@@ -69,12 +69,6 @@ var _ = Describe("AF RBAC parity (UT-INFRA-RBAC-001)", func() {
 		Expect(rules).NotTo(BeEmpty(), "ClusterRole 'apifrontend' must have rules")
 	})
 
-	type requiredRule struct {
-		apiGroup string
-		resource string
-		verbs    []string
-	}
-
 	DescribeTable("required rule present",
 		func(apiGroup, resource string, verbs []string) {
 			for _, rule := range rules {
