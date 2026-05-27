@@ -72,17 +72,52 @@ var _ = Describe("EventBridge", func() {
 			Expect(string(evt.TaskID)).To(Equal("task-ctx-001"))
 		})
 
-		It("UT-AF-1258-015: sets Append=true on artifact", func() {
+		It("UT-AF-1298-001: first emission creates artifact (Append=false), subsequent appends", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-art-001", "ctx-art-001", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			Expect(bridge.EmitReasoning(ctx, "Step 1: checking pods")).To(Succeed())
+			Expect(bridge.EmitReasoning(ctx, "Step 2: analyzing logs")).To(Succeed())
+			Expect(bridge.EmitReasoning(ctx, "Step 3: root cause found")).To(Succeed())
+			Expect(queue.events).To(HaveLen(3))
+
+			first := queue.events[0].(*a2a.TaskArtifactUpdateEvent)
+			Expect(first.Append).To(BeFalse(),
+				"first bridge emission must create a new artifact (Append=false) per a2a-go contract")
+			Expect(first.Artifact).NotTo(BeNil())
+			Expect(string(first.Artifact.ID)).NotTo(BeEmpty(),
+				"first emission must assign an ArtifactID so subsequent appends can reference it")
+
+			artifactID := first.Artifact.ID
+
+			second := queue.events[1].(*a2a.TaskArtifactUpdateEvent)
+			Expect(second.Append).To(BeTrue(),
+				"subsequent emissions must append to the existing artifact")
+			Expect(second.Artifact.ID).To(Equal(artifactID),
+				"subsequent emissions must reference the same ArtifactID created by the first emission")
+
+			third := queue.events[2].(*a2a.TaskArtifactUpdateEvent)
+			Expect(third.Append).To(BeTrue())
+			Expect(third.Artifact.ID).To(Equal(artifactID))
+		})
+
+		It("UT-AF-1258-015: first emission creates artifact (Append=false), second appends", func() {
 			queue := &fakeQueue{}
 			taskID := a2a.TaskID("task-append-001")
 			ctx := launcher.WithEventBridge(context.Background(), queue, taskID, "", nil)
 			bridge := launcher.EventBridgeFromContext(ctx)
 
-			err := bridge.EmitReasoning(ctx, "some reasoning")
-			Expect(err).NotTo(HaveOccurred())
+			Expect(bridge.EmitReasoning(ctx, "first")).To(Succeed())
+			Expect(bridge.EmitReasoning(ctx, "second")).To(Succeed())
 
-			evt := queue.events[0].(*a2a.TaskArtifactUpdateEvent)
-			Expect(evt.Append).To(BeTrue())
+			first := queue.events[0].(*a2a.TaskArtifactUpdateEvent)
+			Expect(first.Append).To(BeFalse(), "first emission creates a new artifact")
+			Expect(string(first.Artifact.ID)).NotTo(BeEmpty())
+
+			second := queue.events[1].(*a2a.TaskArtifactUpdateEvent)
+			Expect(second.Append).To(BeTrue(), "subsequent emissions append")
+			Expect(second.Artifact.ID).To(Equal(first.Artifact.ID))
 		})
 
 		It("UT-AF-1258-011: nil-safe when bridge not in context", func() {
