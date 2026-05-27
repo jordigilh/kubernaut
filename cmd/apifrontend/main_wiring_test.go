@@ -1431,3 +1431,63 @@ func TestPreflightSessionChecks_ListsDeniedVerbs(t *testing.T) {
 		}
 	}
 }
+
+// ---------------------------------------------------------------------------
+// TP-1301-1302 §4.5: Prompt Compliance Wiring Tests — FedRAMP CM-3
+// Validates that prompt.txt contains the mandatory streaming sequence.
+// ---------------------------------------------------------------------------
+
+func TestPromptContainsMandatoryStreamInvestigation(t *testing.T) {
+	prompt, err := os.ReadFile("../../pkg/apifrontend/agent/prompt.txt")
+	if err != nil {
+		t.Fatalf("WT-AF-1302-001: failed to read prompt.txt: %v", err)
+	}
+	text := string(prompt)
+
+	if !strings.Contains(text, "kubernaut_stream_investigation") {
+		t.Error("WT-AF-1302-001 CM-3: prompt.txt must reference kubernaut_stream_investigation")
+	}
+	if !strings.Contains(text, "MANDATORY") {
+		t.Error("WT-AF-1302-001 CM-3: prompt.txt must mark stream_investigation as MANDATORY")
+	}
+	if !strings.Contains(text, "CRITICAL") {
+		t.Error("WT-AF-1302-001 CM-3: prompt.txt must contain CRITICAL instruction for streaming sequence")
+	}
+}
+
+func TestPromptFixJourneyStartsWithCreateRR(t *testing.T) {
+	prompt, err := os.ReadFile("../../pkg/apifrontend/agent/prompt.txt")
+	if err != nil {
+		t.Fatalf("WT-AF-1302-002: failed to read prompt.txt: %v", err)
+	}
+	text := string(prompt)
+
+	fixIdx := strings.Index(text, "### Fix something")
+	if fixIdx == -1 {
+		t.Fatal("WT-AF-1302-002 CM-3: prompt.txt must contain '### Fix something' section")
+	}
+	fixSection := text[fixIdx:]
+
+	journeyIdx := strings.Index(fixSection, "Full journey:")
+	if journeyIdx == -1 {
+		t.Fatal("WT-AF-1302-002 CM-3: Fix section must contain 'Full journey:' line")
+	}
+	journeyLine := fixSection[journeyIdx : journeyIdx+200]
+
+	if !strings.Contains(journeyLine, "af_create_rr") {
+		t.Error("WT-AF-1302-002 CM-3: Full journey must start with af_create_rr")
+	}
+	if !strings.Contains(journeyLine, "kubernaut_start_investigation") {
+		t.Error("WT-AF-1302-002 CM-3: Full journey must include kubernaut_start_investigation")
+	}
+	if !strings.Contains(journeyLine, "kubernaut_stream_investigation") {
+		t.Error("WT-AF-1302-002 CM-3: Full journey must include kubernaut_stream_investigation")
+	}
+
+	createIdx := strings.Index(journeyLine, "af_create_rr")
+	startIdx := strings.Index(journeyLine, "kubernaut_start_investigation")
+	streamIdx := strings.Index(journeyLine, "kubernaut_stream_investigation")
+	if createIdx > startIdx || startIdx > streamIdx {
+		t.Error("WT-AF-1302-002 CM-3: journey order must be af_create_rr → start → stream")
+	}
+}

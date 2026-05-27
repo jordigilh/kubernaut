@@ -290,3 +290,151 @@ var _ = Describe("A2A Progressive Streaming Integration (issue #1258)", func() {
 		})
 	})
 })
+
+// =============================================================================
+// TP-1301-1302: Paragraph Breaks & Full KA Event Bridging
+// =============================================================================
+
+var _ = Describe("A2A Streaming — Paragraph Breaks & Bridge Policy (TP-1301-1302)", func() {
+	var (
+		a2aServer    *httptest.Server
+		mockLLMSrv   *httptest.Server
+		localAuditor *recordingEmitter
+	)
+
+	BeforeEach(func() {
+		localAuditor = newRecordingEmitter()
+
+		mockLLMSrv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"candidates":[{"content":{"role":"model","parts":[{"text":"Root cause: OOM kill due to memory leak."}]},"finishReason":"STOP"}],"modelVersion":"mock-model"}`))
+		}))
+
+		ctx := context.Background()
+		llmModel, err := launcher.NewModelFromConfig(ctx, config.LLMConfig{
+			Provider: config.LLMProviderGemini,
+			Model:    "mock-model",
+			Endpoint: mockLLMSrv.URL,
+			APIKey:   "test-key",
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		rootAgent, _, err := agentpkg.NewRootAgent(agentpkg.AgentConfig{
+			Instruction: "You are a test agent. Respond concisely.",
+			LLMModel:    llmModel,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		sessionSvc := adksession.InMemoryService()
+		h, err := launcher.NewA2AHandler(launcher.A2AConfig{
+			Agent:          rootAgent,
+			SessionService: sessionSvc,
+			AppName:        "kubernaut-apifrontend-it-1301",
+			Auditor:        localAuditor,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		a2aServer = httptest.NewServer(h)
+	})
+
+	AfterEach(func() {
+		if a2aServer != nil {
+			a2aServer.Close()
+		}
+		if mockLLMSrv != nil {
+			mockLLMSrv.Close()
+		}
+	})
+
+	// ===================================================================
+	// FedRAMP SI-4: Progressive streaming readability
+	// IT proves that the part converter's paragraph breaks survive the full
+	// A2A handler pipeline and appear in SSE response bodies.
+	// ===================================================================
+
+	Describe("IT-AF-1301-001: SI-4 SSE artifacts contain paragraph breaks", func() {
+		It("should produce SSE artifact text ending with \\n\\n", func() {
+			body, _ := json.Marshal(map[string]any{
+				"jsonrpc": "2.0",
+				"id":      "para-break-01",
+				"method":  "message/stream",
+				"params": map[string]any{
+					"message": map[string]any{
+						"messageId": "msg-para-break-01",
+						"role":      "user",
+						"parts": []map[string]any{
+							{"kind": "text", "text": "what is wrong with the deployment?"},
+						},
+					},
+				},
+			})
+
+			req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, a2aServer.URL, bytes.NewReader(body))
+			Expect(err).NotTo(HaveOccurred())
+			req.Header.Set("Content-Type", "application/json")
+
+			resp, err := http.DefaultClient.Do(req)
+			Expect(err).NotTo(HaveOccurred())
+			defer resp.Body.Close()
+
+			respBody, err := io.ReadAll(resp.Body)
+			Expect(err).NotTo(HaveOccurred())
+			respText := string(respBody)
+
+			// The response should contain SSE data lines with artifact text.
+			// The LLM text "Root cause: OOM kill due to memory leak." should
+			// appear with a paragraph break (\n\n) appended by the part converter.
+			Expect(respText).To(ContainSubstring("OOM kill"),
+				"SI-4: LLM response text must appear in SSE stream")
+			Expect(respText).To(ContainSubstring("\\n\\n"),
+				"SI-4: paragraph breaks must survive the full A2A handler pipeline (#1301)")
+		})
+	})
+
+	// ===================================================================
+	// FedRAMP AU-2: Task lifecycle audit for streaming requests
+	// IT proves the A2A handler emits audit events for the full task lifecycle.
+	// ===================================================================
+
+	Describe("IT-AF-1302-001: AU-2 streaming request produces task lifecycle audit", func() {
+		It("should emit task_started and terminal audit event", func() {
+			localAuditor.Reset()
+
+			body, _ := json.Marshal(map[string]any{
+				"jsonrpc": "2.0",
+				"id":      "audit-bridge-01",
+				"method":  "message/stream",
+				"params": map[string]any{
+					"message": map[string]any{
+						"messageId": "msg-audit-bridge-01",
+						"role":      "user",
+						"parts": []map[string]any{
+							{"kind": "text", "text": "investigate the crash loop"},
+						},
+					},
+				},
+			})
+
+			req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, a2aServer.URL, bytes.NewReader(body))
+			Expect(err).NotTo(HaveOccurred())
+			req.Header.Set("Content-Type", "application/json")
+
+			resp, err := http.DefaultClient.Do(req)
+			Expect(err).NotTo(HaveOccurred())
+			defer resp.Body.Close()
+			_, _ = io.ReadAll(resp.Body)
+
+			Eventually(func() []*audit.Event {
+				completed := localAuditor.EventsOfType(audit.EventA2ATaskCompleted)
+				failed := localAuditor.EventsOfType(audit.EventA2ATaskFailed)
+				return append(completed, failed...)
+			}, 10*time.Second, 100*time.Millisecond).ShouldNot(BeEmpty())
+
+			started := localAuditor.EventsOfType(audit.EventA2ATaskStarted)
+			Expect(started).NotTo(BeEmpty(),
+				"AU-2: task_started audit event must be emitted for streaming request (#1302)")
+			Expect(started[0].Detail).To(HaveKeyWithValue("method", "message/stream"),
+				"AU-2: audit must record the A2A method")
+		})
+	})
+})

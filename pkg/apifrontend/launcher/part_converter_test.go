@@ -849,6 +849,33 @@ var _ = Describe("Status message line breaks (#1301)", func() {
 	})
 })
 
+// =============================================================================
+// TP-1301-1302 §4.1: ensureTrailingParagraphBreak helper — FedRAMP SI-4 / SC-4
+// Validates the paragraph-break normalization logic in isolation.
+// =============================================================================
+var _ = Describe("ensureTrailingParagraphBreak helper (TP-1301-1302)", func() {
+	It("UT-AF-1301-010: text without trailing newline gets \\n\\n (SI-4)", func() {
+		Expect(launcher.EnsureTrailingParagraphBreakForTest("hello")).To(Equal("hello\n\n"))
+	})
+
+	It("UT-AF-1301-011: text with single \\n gets upgraded to \\n\\n (SC-4)", func() {
+		Expect(launcher.EnsureTrailingParagraphBreakForTest("hello\n")).To(Equal("hello\n\n"))
+	})
+
+	It("UT-AF-1301-012: text already ending with \\n\\n is unchanged (SC-4)", func() {
+		Expect(launcher.EnsureTrailingParagraphBreakForTest("hello\n\n")).To(Equal("hello\n\n"))
+	})
+
+	It("UT-AF-1301-013: empty string is unchanged", func() {
+		Expect(launcher.EnsureTrailingParagraphBreakForTest("")).To(Equal(""))
+	})
+
+	It("UT-AF-1301-014: text already containing \\n\\n is left unchanged (SC-4)", func() {
+		Expect(launcher.EnsureTrailingParagraphBreakForTest("hello\n\n\n")).To(Equal("hello\n\n\n"),
+			"text already ending with \\n\\n should not be modified further")
+	})
+})
+
 var _ = Describe("Tool error surfacing (#1302)", func() {
 	var convert launcher.PartConverterFunc
 

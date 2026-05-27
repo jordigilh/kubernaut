@@ -613,6 +613,123 @@ var _ = Describe("HandleStreamInvestigation — A2A Bridge (TP-1258)", func() {
 	})
 })
 
+// =============================================================================
+// TP-1301-1302 §4.2: Bridge Relay Policy — FedRAMP AU-2, AU-12, SC-7
+// Validates that token_delta and tool_call events are bridged to the A2A stream
+// and that bridged text passes through sanitization.
+// =============================================================================
+var _ = Describe("KA bridge relay policy (TP-1301-1302)", func() {
+	var (
+		ctx    context.Context
+		server *httptest.Server
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+	})
+
+	AfterEach(func() {
+		if server != nil {
+			server.Close()
+		}
+	})
+
+	It("UT-AF-1302-010: token_delta text appears in bridge output (AU-2)", func() {
+		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			_, _ = fmt.Fprint(w, sseText("token_delta", "The pod is experiencing OOMKill events"))
+			_, _ = fmt.Fprint(w, sseObj("complete", map[string]any{"summary": "done"}))
+		}))
+
+		queue := &testEventQueue{}
+		bridgeCtx := launcher.WithEventBridge(ctx, queue, "task-1302-010", "", nil)
+
+		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
+		result, err := tools.HandleStreamInvestigation(bridgeCtx, kaClient, tools.StreamInvestigationArgs{
+			SessionID: "sess-1302-010",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Status).To(Equal("completed"))
+
+		var bridgedTexts []string
+		for _, evt := range queue.events {
+			if artifact, ok := evt.(*a2a.TaskArtifactUpdateEvent); ok {
+				for _, part := range artifact.Artifact.Parts {
+					if tp, ok := part.(*a2a.TextPart); ok {
+						bridgedTexts = append(bridgedTexts, tp.Text)
+					}
+				}
+			}
+		}
+		Expect(strings.Join(bridgedTexts, "")).To(ContainSubstring("OOMKill"),
+			"AU-2: token_delta must be bridged for real-time investigation monitoring (#1302)")
+	})
+
+	It("UT-AF-1302-011: tool_call emitted via bridge with [Tool: ...] format (AU-12)", func() {
+		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			_, _ = fmt.Fprint(w, sseText("tool_call", "kubectl describe pod/web-api -n prod"))
+			_, _ = fmt.Fprint(w, sseObj("complete", map[string]any{"summary": "done"}))
+		}))
+
+		queue := &testEventQueue{}
+		bridgeCtx := launcher.WithEventBridge(ctx, queue, "task-1302-011", "", nil)
+
+		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
+		_, err := tools.HandleStreamInvestigation(bridgeCtx, kaClient, tools.StreamInvestigationArgs{
+			SessionID: "sess-1302-011",
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		var bridgedTexts []string
+		for _, evt := range queue.events {
+			if artifact, ok := evt.(*a2a.TaskArtifactUpdateEvent); ok {
+				for _, part := range artifact.Artifact.Parts {
+					if tp, ok := part.(*a2a.TextPart); ok {
+						bridgedTexts = append(bridgedTexts, tp.Text)
+					}
+				}
+			}
+		}
+		joined := strings.Join(bridgedTexts, "")
+		Expect(joined).To(ContainSubstring("[Tool:"),
+			"AU-12: tool_call must be bridged with [Tool: ...] format for audit trail (#1302)")
+		Expect(joined).To(ContainSubstring("kubectl describe pod"),
+			"AU-12: tool name must appear in bridged text")
+	})
+
+	It("UT-AF-1302-012: bridged token_delta passes through sanitization (SC-7)", func() {
+		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			_, _ = fmt.Fprint(w, sseText("token_delta", "Auth with Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIn0.sig"))
+			_, _ = fmt.Fprint(w, sseObj("complete", map[string]any{"summary": "done"}))
+		}))
+
+		queue := &testEventQueue{}
+		bridgeCtx := launcher.WithEventBridge(ctx, queue, "task-1302-012", "", nil)
+
+		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
+		_, err := tools.HandleStreamInvestigation(bridgeCtx, kaClient, tools.StreamInvestigationArgs{
+			SessionID: "sess-1302-012",
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		for _, evt := range queue.events {
+			if artifact, ok := evt.(*a2a.TaskArtifactUpdateEvent); ok {
+				for _, part := range artifact.Artifact.Parts {
+					if tp, ok := part.(*a2a.TextPart); ok {
+						Expect(tp.Text).NotTo(ContainSubstring("eyJhbGci"),
+							"SC-7: JWT in bridged token_delta must be redacted by sanitizeBridgeText")
+					}
+				}
+			}
+		}
+	})
+})
+
 // testEventQueue records events for assertion.
 type testEventQueue struct {
 	events []a2a.Event
