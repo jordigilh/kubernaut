@@ -1491,3 +1491,18 @@ func TestPromptFixJourneyStartsWithCreateRR(t *testing.T) {
 		t.Error("WT-AF-1302-002 CM-3: journey order must be af_create_rr → start → stream")
 	}
 }
+
+func TestPromptPhase1RequiresStartBeforeStream(t *testing.T) {
+	prompt, err := os.ReadFile("../../pkg/apifrontend/agent/prompt.txt")
+	if err != nil {
+		t.Fatalf("WT-AF-1302-003: failed to read prompt.txt: %v", err)
+	}
+	text := string(prompt)
+
+	if !strings.Contains(text, "session_id MUST come from kubernaut_start_investigation") {
+		t.Error("WT-AF-1302-003 CM-3: prompt must warn that session_id must come from start_investigation")
+	}
+	if !strings.Contains(text, "Do NOT pass the A2A session ID") {
+		t.Error("WT-AF-1302-003 CM-3: prompt must explicitly warn against passing A2A session ID")
+	}
+}

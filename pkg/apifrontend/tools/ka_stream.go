@@ -56,7 +56,14 @@ type StreamEventDigest struct {
 // summary including the narrative of reasoning and tool execution events.
 func HandleStreamInvestigation(ctx context.Context, kaClient *ka.Client, args StreamInvestigationArgs) (StreamInvestigationResult, error) {
 	if args.SessionID == "" {
-		return StreamInvestigationResult{}, fmt.Errorf("session_id is required")
+		return StreamInvestigationResult{}, fmt.Errorf("session_id is required — call kubernaut_start_investigation first to obtain one")
+	}
+
+	if _, err := kaClient.Status(ctx, args.SessionID); err != nil {
+		return StreamInvestigationResult{}, fmt.Errorf(
+			"session %q does not exist on the investigation service — "+
+				"you must call kubernaut_start_investigation first to create a session, "+
+				"then pass the returned session_id to this tool", args.SessionID)
 	}
 
 	ch, err := kaClient.StreamEvents(ctx, args.SessionID)
@@ -201,7 +208,7 @@ func truncateForLLM(s string, maxLen int) string {
 func NewStreamInvestigationTool(kaClient *ka.Client) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_stream_investigation",
-		Description: "Stream live investigation events from the AI agent in real-time. Returns when investigation completes with a full summary. Use instead of kubernaut_poll_investigation for live narrative.",
+		Description: "Stream live investigation events from the AI agent in real-time. Returns when investigation completes with a full summary. REQUIRES a session_id returned by kubernaut_start_investigation — do NOT pass any other ID. Call kubernaut_start_investigation first, then pass its session_id here.",
 	}, func(ctx tool.Context, args StreamInvestigationArgs) (StreamInvestigationResult, error) {
 		return HandleStreamInvestigation(ctx, kaClient, args)
 	})

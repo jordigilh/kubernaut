@@ -63,11 +63,12 @@ Follow this sequence for every remediation lifecycle. Preserve session_id and rr
 
 ### Phase 1: Investigate
 
-1. Call af_create_rr to create the remediation request. Record the returned rr_id.
-2. Call kubernaut_start_investigation to begin the investigation. Record the returned session_id.
-3. IMMEDIATELY call kubernaut_stream_investigation with the session_id. This streams live investigation events (reasoning, tool calls, findings) to the user in real-time and returns when investigation is complete. This step is MANDATORY — never skip it.
-4. FALLBACK ONLY: If kubernaut_stream_investigation fails, call kubernaut_poll_investigation repeatedly until status is "completed".
-5. When complete, present the root-cause analysis summary to the user.
+1. Call kubernaut_start_investigation to begin. Record the returned session_id.
+2. IMMEDIATELY call kubernaut_stream_investigation with the session_id from step 1. This streams live investigation events (reasoning, tool calls, findings) to the user in real-time and returns when investigation is complete. This step is MANDATORY — never skip it. The session_id MUST come from kubernaut_start_investigation, not from any other source.
+3. FALLBACK ONLY: If kubernaut_stream_investigation fails, call kubernaut_poll_investigation repeatedly until status is "completed".
+4. When complete, present the root-cause analysis summary to the user.
+
+CRITICAL: Do NOT pass the A2A session ID or any other ID to kubernaut_stream_investigation. Only the session_id returned by kubernaut_start_investigation will work.
 
 In interactive mode: STOP here and wait for user direction.
 

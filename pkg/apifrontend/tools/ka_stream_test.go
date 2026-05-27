@@ -20,6 +20,28 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
 
+// kaSessionHandler returns an http.Handler that serves both the status
+// endpoint (GET /api/v1/incident/session/{id}) and the stream endpoint
+// (GET /api/v1/incident/session/{id}/stream). streamFn is called for the
+// stream path to write SSE data; all other paths return 404.
+func kaSessionHandler(sessionID string, streamFn func(w http.ResponseWriter)) http.Handler {
+	statusPath := fmt.Sprintf("/api/v1/incident/session/%s", sessionID)
+	streamPath := statusPath + "/stream"
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case statusPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"in_progress"}`))
+		case streamPath:
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			streamFn(w)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+}
+
 func sseLines(eventType, dataJSON string) string {
 	return fmt.Sprintf("event: %s\ndata: %s\n\n", eventType, dataJSON)
 }
@@ -50,10 +72,6 @@ var _ = Describe("HandleStreamInvestigation (G5)", func() {
 		}
 	})
 
-	sessionStreamPath := func(sessionID string) string {
-		return fmt.Sprintf("/api/v1/incident/session/%s/stream", sessionID)
-	}
-
 	It("UT-AF-1234-045: empty session_id rejected", func() {
 		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
@@ -67,13 +85,7 @@ var _ = Describe("HandleStreamInvestigation (G5)", func() {
 	})
 
 	It("UT-AF-1234-046: SSE reasoning_delta appended to narrative", func() {
-		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != sessionStreamPath("sess-001") {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.WriteHeader(http.StatusOK)
+		server = httptest.NewServer(kaSessionHandler("sess-001", func(w http.ResponseWriter) {
 			_, _ = fmt.Fprint(w, sseText("reasoning_delta", "Analyzing pod logs..."))
 			_, _ = fmt.Fprint(w, sseObj("complete", map[string]any{"summary": "OOM detected"}))
 		}))
@@ -87,13 +99,7 @@ var _ = Describe("HandleStreamInvestigation (G5)", func() {
 	})
 
 	It("UT-AF-1234-047: SSE token_delta appended to narrative", func() {
-		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != sessionStreamPath("sess-001") {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.WriteHeader(http.StatusOK)
+		server = httptest.NewServer(kaSessionHandler("sess-001", func(w http.ResponseWriter) {
 			_, _ = fmt.Fprint(w, sseText("token_delta", "The pod is"))
 			_, _ = fmt.Fprint(w, sseText("token_delta", " crashlooping"))
 			_, _ = fmt.Fprint(w, sseObj("complete", map[string]any{"summary": "done"}))
@@ -109,13 +115,7 @@ var _ = Describe("HandleStreamInvestigation (G5)", func() {
 	})
 
 	It("UT-AF-1234-048: SSE tool_call_start adds tool marker to narrative", func() {
-		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != sessionStreamPath("sess-001") {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.WriteHeader(http.StatusOK)
+		server = httptest.NewServer(kaSessionHandler("sess-001", func(w http.ResponseWriter) {
 			_, _ = fmt.Fprint(w, sseText("tool_call_start", "kubectl_get_pods"))
 			_, _ = fmt.Fprint(w, sseObj("complete", map[string]any{"summary": "done"}))
 		}))
@@ -129,13 +129,7 @@ var _ = Describe("HandleStreamInvestigation (G5)", func() {
 	})
 
 	It("UT-AF-1234-049: SSE tool_call records in event log", func() {
-		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != sessionStreamPath("sess-001") {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.WriteHeader(http.StatusOK)
+		server = httptest.NewServer(kaSessionHandler("sess-001", func(w http.ResponseWriter) {
 			_, _ = fmt.Fprint(w, sseText("tool_call", "kubectl get pods -n prod"))
 			_, _ = fmt.Fprint(w, sseObj("complete", map[string]any{"summary": "done"}))
 		}))
@@ -158,13 +152,7 @@ var _ = Describe("HandleStreamInvestigation (G5)", func() {
 
 	It("UT-AF-1234-050: SSE tool_result truncated to 500 chars", func() {
 		longResult := strings.Repeat("x", 600)
-		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != sessionStreamPath("sess-001") {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.WriteHeader(http.StatusOK)
+		server = httptest.NewServer(kaSessionHandler("sess-001", func(w http.ResponseWriter) {
 			_, _ = fmt.Fprint(w, sseText("tool_result", longResult))
 			_, _ = fmt.Fprint(w, sseObj("complete", map[string]any{"summary": "done"}))
 		}))
@@ -183,13 +171,7 @@ var _ = Describe("HandleStreamInvestigation (G5)", func() {
 	})
 
 	It("UT-AF-1234-051: SSE complete extracts summary, returns completed status", func() {
-		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != sessionStreamPath("sess-001") {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.WriteHeader(http.StatusOK)
+		server = httptest.NewServer(kaSessionHandler("sess-001", func(w http.ResponseWriter) {
 			_, _ = fmt.Fprint(w, sseObj("complete", map[string]any{"summary": "OOM kill detected in pod web-api"}))
 		}))
 
@@ -203,13 +185,7 @@ var _ = Describe("HandleStreamInvestigation (G5)", func() {
 	})
 
 	It("UT-AF-1234-052: SSE cancelled returns cancelled status", func() {
-		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != sessionStreamPath("sess-001") {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.WriteHeader(http.StatusOK)
+		server = httptest.NewServer(kaSessionHandler("sess-001", func(w http.ResponseWriter) {
 			_, _ = fmt.Fprint(w, sseLines("cancelled", `"user requested cancellation"`))
 		}))
 
@@ -222,13 +198,7 @@ var _ = Describe("HandleStreamInvestigation (G5)", func() {
 	})
 
 	It("UT-AF-1234-053: SSE error returns failed status", func() {
-		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != sessionStreamPath("sess-001") {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.WriteHeader(http.StatusOK)
+		server = httptest.NewServer(kaSessionHandler("sess-001", func(w http.ResponseWriter) {
 			_, _ = fmt.Fprint(w, sseText("error", "internal error occurred"))
 		}))
 
@@ -241,23 +211,16 @@ var _ = Describe("HandleStreamInvestigation (G5)", func() {
 	})
 
 	It("UT-AF-1234-054: Context cancel mid-stream returns cancelled with partial", func() {
-		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != sessionStreamPath("sess-001") {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "text/event-stream")
+		cancelCtx, cancel := context.WithCancel(ctx)
+		server = httptest.NewServer(kaSessionHandler("sess-001", func(w http.ResponseWriter) {
 			flusher, ok := w.(http.Flusher)
-			w.WriteHeader(http.StatusOK)
 			_, _ = fmt.Fprint(w, sseText("reasoning_delta", "Starting analysis..."))
 			if ok {
 				flusher.Flush()
 			}
 			// Block until the test context is cancelled
-			<-r.Context().Done()
+			<-cancelCtx.Done()
 		}))
-
-		cancelCtx, cancel := context.WithCancel(ctx)
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
 
 		go func() {
@@ -292,18 +255,8 @@ var _ = Describe("HandleStreamInvestigation — A2A Bridge (TP-1258)", func() {
 		}
 	})
 
-	sessionStreamPath := func(sessionID string) string {
-		return fmt.Sprintf("/api/v1/incident/session/%s/stream", sessionID)
-	}
-
 	It("UT-AF-1258-020: reasoning_delta emitted via bridge during stream", func() {
-		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != sessionStreamPath("sess-bridge-001") {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.WriteHeader(http.StatusOK)
+		server = httptest.NewServer(kaSessionHandler("sess-bridge-001", func(w http.ResponseWriter) {
 			_, _ = fmt.Fprint(w, sseObj("reasoning_delta", map[string]any{
 				"content_preview": "Checking pod health in namespace prod",
 			}))
@@ -339,13 +292,7 @@ var _ = Describe("HandleStreamInvestigation — A2A Bridge (TP-1258)", func() {
 	})
 
 	It("UT-AF-1258-021: token_delta NOT emitted via bridge (GA policy)", func() {
-		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != sessionStreamPath("sess-bridge-002") {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.WriteHeader(http.StatusOK)
+		server = httptest.NewServer(kaSessionHandler("sess-bridge-002", func(w http.ResponseWriter) {
 			_, _ = fmt.Fprint(w, sseText("token_delta", "some token fragment"))
 			_, _ = fmt.Fprint(w, sseObj("complete", map[string]any{"summary": "done"}))
 		}))
@@ -376,13 +323,7 @@ var _ = Describe("HandleStreamInvestigation — A2A Bridge (TP-1258)", func() {
 	})
 
 	It("UT-AF-1258-022: tool_call emitted via bridge for live streaming (#1302)", func() {
-		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != sessionStreamPath("sess-bridge-003") {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.WriteHeader(http.StatusOK)
+		server = httptest.NewServer(kaSessionHandler("sess-bridge-003", func(w http.ResponseWriter) {
 			_, _ = fmt.Fprint(w, sseText("tool_call", "kubectl get pods -n prod"))
 			_, _ = fmt.Fprint(w, sseObj("complete", map[string]any{"summary": "done"}))
 		}))
@@ -412,13 +353,7 @@ var _ = Describe("HandleStreamInvestigation — A2A Bridge (TP-1258)", func() {
 	})
 
 	It("UT-AF-1258-023: tool_result NOT emitted via bridge", func() {
-		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != sessionStreamPath("sess-bridge-004") {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.WriteHeader(http.StatusOK)
+		server = httptest.NewServer(kaSessionHandler("sess-bridge-004", func(w http.ResponseWriter) {
 			_, _ = fmt.Fprint(w, sseText("tool_result", "NAME READY STATUS\npod-1 1/1 Running"))
 			_, _ = fmt.Fprint(w, sseObj("complete", map[string]any{"summary": "done"}))
 		}))
@@ -446,13 +381,7 @@ var _ = Describe("HandleStreamInvestigation — A2A Bridge (TP-1258)", func() {
 	})
 
 	It("UT-AF-1258-024: complete event emits final summary via bridge", func() {
-		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != sessionStreamPath("sess-bridge-005") {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.WriteHeader(http.StatusOK)
+		server = httptest.NewServer(kaSessionHandler("sess-bridge-005", func(w http.ResponseWriter) {
 			_, _ = fmt.Fprint(w, sseObj("complete", map[string]any{
 				"summary": "Root cause: OOM kill due to memory leak in web-api container",
 			}))
@@ -485,13 +414,7 @@ var _ = Describe("HandleStreamInvestigation — A2A Bridge (TP-1258)", func() {
 	})
 
 	It("UT-AF-1258-025: bridge nil-safe when not in A2A streaming context", func() {
-		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != sessionStreamPath("sess-bridge-006") {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.WriteHeader(http.StatusOK)
+		server = httptest.NewServer(kaSessionHandler("sess-bridge-006", func(w http.ResponseWriter) {
 			_, _ = fmt.Fprint(w, sseText("reasoning_delta", "some reasoning"))
 			_, _ = fmt.Fprint(w, sseObj("complete", map[string]any{"summary": "done"}))
 		}))
@@ -507,13 +430,7 @@ var _ = Describe("HandleStreamInvestigation — A2A Bridge (TP-1258)", func() {
 	})
 
 	It("UT-AF-1258-026: structured content_preview extracted from reasoning_delta", func() {
-		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != sessionStreamPath("sess-bridge-007") {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.WriteHeader(http.StatusOK)
+		server = httptest.NewServer(kaSessionHandler("sess-bridge-007", func(w http.ResponseWriter) {
 			_, _ = fmt.Fprint(w, sseObj("reasoning_delta", map[string]any{
 				"content_preview": "Pod is OOMKilled, checking resource limits",
 				"tool_call_count": 3,
@@ -549,13 +466,7 @@ var _ = Describe("HandleStreamInvestigation — A2A Bridge (TP-1258)", func() {
 	})
 
 	It("UT-AF-1258-027: bridge write error logged but does not fail tool", func() {
-		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != sessionStreamPath("sess-bridge-008") {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.WriteHeader(http.StatusOK)
+		server = httptest.NewServer(kaSessionHandler("sess-bridge-008", func(w http.ResponseWriter) {
 			_, _ = fmt.Fprint(w, sseObj("reasoning_delta", map[string]any{
 				"content_preview": "Analyzing...",
 			}))
@@ -577,13 +488,7 @@ var _ = Describe("HandleStreamInvestigation — A2A Bridge (TP-1258)", func() {
 	})
 
 	It("UT-AF-1274-009: bridge failures logged through logr from context (BR-SESS-013)", func() {
-		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != sessionStreamPath("sess-bridge-logr") {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.WriteHeader(http.StatusOK)
+		server = httptest.NewServer(kaSessionHandler("sess-bridge-logr", func(w http.ResponseWriter) {
 			_, _ = fmt.Fprint(w, sseObj("reasoning_delta", map[string]any{
 				"content_preview": "Analyzing cluster state...",
 			}))
@@ -635,9 +540,7 @@ var _ = Describe("KA bridge relay policy (TP-1301-1302)", func() {
 	})
 
 	It("UT-AF-1302-010: token_delta text appears in bridge output (AU-2)", func() {
-		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.WriteHeader(http.StatusOK)
+		server = httptest.NewServer(kaSessionHandler("sess-1302-010", func(w http.ResponseWriter) {
 			_, _ = fmt.Fprint(w, sseText("token_delta", "The pod is experiencing OOMKill events"))
 			_, _ = fmt.Fprint(w, sseObj("complete", map[string]any{"summary": "done"}))
 		}))
@@ -667,9 +570,7 @@ var _ = Describe("KA bridge relay policy (TP-1301-1302)", func() {
 	})
 
 	It("UT-AF-1302-011: tool_call emitted via bridge with [Tool: ...] format (AU-12)", func() {
-		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.WriteHeader(http.StatusOK)
+		server = httptest.NewServer(kaSessionHandler("sess-1302-011", func(w http.ResponseWriter) {
 			_, _ = fmt.Fprint(w, sseText("tool_call", "kubectl describe pod/web-api -n prod"))
 			_, _ = fmt.Fprint(w, sseObj("complete", map[string]any{"summary": "done"}))
 		}))
@@ -701,9 +602,7 @@ var _ = Describe("KA bridge relay policy (TP-1301-1302)", func() {
 	})
 
 	It("UT-AF-1302-012: bridged token_delta passes through sanitization (SC-7)", func() {
-		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.WriteHeader(http.StatusOK)
+		server = httptest.NewServer(kaSessionHandler("sess-1302-012", func(w http.ResponseWriter) {
 			_, _ = fmt.Fprint(w, sseText("token_delta", "Auth with Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIn0.sig"))
 			_, _ = fmt.Fprint(w, sseObj("complete", map[string]any{"summary": "done"}))
 		}))
