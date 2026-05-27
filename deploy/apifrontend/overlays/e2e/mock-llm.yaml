@@ -92,39 +92,24 @@ data:
     # AF-specific keyword→tool_call mappings for E2E testing.
     # mock-LLM matches prompt keywords and returns the corresponding tool call.
     keyword_scenarios:
-      - name: "af_start_investigation"
-        keywords: ["start investigation"]
+      - name: "af_investigate"
+        keywords: ["start investigation", "investigate", "begin investigation"]
         match_last_only: true
         tool_call:
-          name: "kubernaut_start_investigation"
+          name: "kubernaut_investigate"
           arguments:
             namespace: "default"
-            pod_name: "nginx"
+            name: "nginx"
+            kind: "Pod"
 
-      - name: "af_stream_investigation"
-        keywords: ["stream investigation", "stream the investigation"]
-        match_last_only: true
-        tool_call:
-          name: "kubernaut_stream_investigation"
-          arguments:
-            session_id: "$from_tool:kubernaut_start_investigation:session_id"
-
-      - name: "af_stream_investigation_progressive"
-        keywords: ["progressive stream"]
+      - name: "af_investigate_resume"
+        keywords: ["stream the investigation", "resume investigation", "check investigation status"]
         match_last_only: true
         repeat_tool_call: true
         tool_call:
-          name: "kubernaut_stream_investigation"
+          name: "kubernaut_investigate"
           arguments:
-            session_id: "$from_tool:kubernaut_start_investigation:session_id"
-
-      - name: "af_poll_investigation"
-        keywords: ["investigation status", "check investigation", "poll investigation"]
-        match_last_only: true
-        tool_call:
-          name: "kubernaut_poll_investigation"
-          arguments:
-            session_id: "e2e-static-session-id"
+            session_id: "$from_tool:kubernaut_investigate:session_id"
 
       - name: "af_discover_workflows"
         keywords: ["discover available workflows", "discover workflows"]

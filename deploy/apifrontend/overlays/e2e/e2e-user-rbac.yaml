@@ -36,8 +36,7 @@ rules:
     resourceNames:
       - kubernaut_takeover
       - kubernaut_discover_workflows
-      - kubernaut_start_investigation
-      - kubernaut_poll_investigation
+      - kubernaut_investigate
       - kubernaut_select_workflow
       - kubernaut_present_decision
       - kubernaut_message
