@@ -530,7 +530,7 @@ func truncate(s string, maxLen int) string {
 }
 
 func toJxRaw(s string) jx.Raw {
-	if json.Valid([]byte(s)) {
+	if s != "null" && json.Valid([]byte(s)) {
 		return jx.Raw(s)
 	}
 	b, err := json.Marshal(s)
