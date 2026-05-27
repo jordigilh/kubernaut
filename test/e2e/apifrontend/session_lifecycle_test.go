@@ -16,6 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	investigationsessionv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
+	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 )
 
 var _ = Describe("Session Join/Takeover/Reconnect (G19)", Label("e2e", "phase4", "g19"), func() {
@@ -119,6 +120,39 @@ var _ = Describe("Session Join/Takeover/Reconnect (G19)", Label("e2e", "phase4",
 		Expect(task.ID).NotTo(BeEmpty())
 
 		ctx := context.Background()
+
+		// Wait for the RR created by af_create_rr to appear.
+		var rrName string
+		Eventually(func() bool {
+			list := &remediationv1alpha1.RemediationRequestList{}
+			if lerr := k8sClient.List(ctx, list, client.InNamespace("default")); lerr != nil {
+				return false
+			}
+			for _, rr := range list.Items {
+				if rr.Spec.TargetResource.Name == "test-deploy" {
+					rrName = rr.Name
+					return true
+				}
+			}
+			return false
+		}, 30*time.Second, 2*time.Second).Should(BeTrue(),
+			"af_create_rr must create the RemediationRequest")
+
+		// #1293: IS CRD creation moved to kubernaut_takeover.
+		// Invoke takeover via MCP to create the IS CRD through the production path.
+		mcpToken, mcpTokenErr := fetchDEXTokenForPersona("sre")
+		Expect(mcpTokenErr).NotTo(HaveOccurred())
+		mcpSessID, mcpSessErr := initMCPSession(mcpToken)
+		Expect(mcpSessErr).NotTo(HaveOccurred())
+
+		takeoverBody := buildJSONRPC("g19-reconnect-takeover", "tools/call", map[string]interface{}{
+			"name":      "kubernaut_takeover",
+			"arguments": map[string]interface{}{"rr_id": "default/" + rrName},
+		})
+		_, takeoverCode, takeoverErr := mcpPOST(mcpToken, mcpSessID, takeoverBody)
+		Expect(takeoverErr).NotTo(HaveOccurred())
+		Expect(takeoverCode).To(BeNumerically("<", 500), "kubernaut_takeover must not return 5xx")
+
 		var isName string
 		Eventually(func() bool {
 			list := &investigationsessionv1alpha1.InvestigationSessionList{}
@@ -126,18 +160,16 @@ var _ = Describe("Session Join/Takeover/Reconnect (G19)", Label("e2e", "phase4",
 				return false
 			}
 			for _, it := range list.Items {
-				if it.Spec.A2ATaskID == task.ID {
+				if it.Spec.RemediationRequestRef.Name == rrName {
 					isName = it.Name
 					return true
 				}
 			}
 			return false
 		}, 30*time.Second, 2*time.Second).Should(BeTrue(),
-			"InvestigationSession CRD must materialize after af_create_rr")
+			"kubernaut_takeover must create the InvestigationSession CRD")
+		DeferCleanup(func() { deleteInvestigationSession(context.Background(), isName) })
 
-		Expect(isName).NotTo(BeEmpty())
-
-		// Patch IS to Disconnected state via status subresource.
 		is := &investigationsessionv1alpha1.InvestigationSession{}
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: isName, Namespace: namespace}, is)).To(Succeed())
 		disconnectedAt := metav1.NewTime(time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC))
@@ -175,10 +207,6 @@ var _ = Describe("Session Join/Takeover/Reconnect (G19)", Label("e2e", "phase4",
 		Expect(is.Status.ReconnectedAt).NotTo(BeNil(),
 			"status.reconnectedAt should be set after Active transition from Disconnected")
 		Expect(string(is.Status.Phase)).To(Equal("Active"))
-
-		DeferCleanup(func() {
-			deleteInvestigationSession(context.Background(), isName)
-		})
 	})
 
 	It("TC-E2E-SESSION-JOIN-03: List sessions for reconnection", func() {
@@ -207,7 +235,7 @@ var _ = Describe("Session Join/Takeover/Reconnect (G19)", Label("e2e", "phase4",
 	It("TC-E2E-SESSION-JOIN-06: Lease-based takeover rejection", func() {
 		ctx := context.Background()
 
-		// User A starts an investigation that triggers af_create_rr -> MaterializeCRD
+		// User A starts an investigation that triggers af_create_rr (creates RR only).
 		tokenA := authTokenA
 		promptA := "Create a remediation request for deployment web-join06 in default namespace"
 		respA, errA := a2aInvoke(httpClient, baseURL, tokenA, a2aTasksSend("g19-join06-a", promptA))
@@ -222,6 +250,34 @@ var _ = Describe("Session Join/Takeover/Reconnect (G19)", Label("e2e", "phase4",
 		Expect(taskErr).NotTo(HaveOccurred())
 		Expect(taskA.ID).NotTo(BeEmpty(), "A2A must return a task ID")
 
+		// Wait for af_create_rr to create the RR.
+		var rrName string
+		Eventually(func() bool {
+			list := &remediationv1alpha1.RemediationRequestList{}
+			if lerr := k8sClient.List(ctx, list, client.InNamespace("default")); lerr != nil {
+				return false
+			}
+			for _, rr := range list.Items {
+				if rr.Spec.TargetResource.Name == "web-join06" {
+					rrName = rr.Name
+					return true
+				}
+			}
+			return false
+		}, 30*time.Second, 2*time.Second).Should(BeTrue(),
+			"af_create_rr must create the RemediationRequest for web-join06")
+
+		// #1293: User A invokes kubernaut_takeover via MCP to create the IS CRD.
+		mcpSessA, mcpSessErr := initMCPSession(tokenA)
+		Expect(mcpSessErr).NotTo(HaveOccurred())
+		takeoverBodyA := buildJSONRPC("g19-join06-takeover-a", "tools/call", map[string]interface{}{
+			"name":      "kubernaut_takeover",
+			"arguments": map[string]interface{}{"rr_id": "default/" + rrName},
+		})
+		_, codeA, takeoverErrA := mcpPOST(tokenA, mcpSessA, takeoverBodyA)
+		Expect(takeoverErrA).NotTo(HaveOccurred())
+		Expect(codeA).To(BeNumerically("<", 500))
+
 		var isName string
 		var userAUsername string
 		Eventually(func() string {
@@ -230,38 +286,39 @@ var _ = Describe("Session Join/Takeover/Reconnect (G19)", Label("e2e", "phase4",
 				return ""
 			}
 			for _, it := range list.Items {
-				if it.Spec.A2ATaskID == taskA.ID && string(it.Status.Phase) == "Active" {
+				if it.Spec.RemediationRequestRef.Name == rrName && string(it.Status.Phase) == "Active" {
 					isName = it.Name
 					userAUsername = it.Spec.UserIdentity.Username
 					return string(it.Status.Phase)
 				}
 			}
 			return ""
-		}, 60*time.Second, 2*time.Second).Should(Equal("Active"),
-			"User A's IS CRD must reach Active phase")
+		}, 30*time.Second, 2*time.Second).Should(Equal("Active"),
+			"User A's IS CRD must reach Active phase after kubernaut_takeover")
 		Expect(userAUsername).NotTo(BeEmpty(), "User A's username must be recorded in IS CRD")
 
 		DeferCleanup(func() {
 			deleteInvestigationSession(context.Background(), isName)
 		})
 
-		// User B attempts to start investigation for the same RR
+		// User B invokes kubernaut_takeover for the same RR — single-driver guard rejects.
 		tokenB, errB := fetchDEXTokenForPersona("ai-orchestrator")
 		Expect(errB).NotTo(HaveOccurred())
-		promptB := "Create a remediation request for deployment web-join06 in default namespace"
-		respB, errB2 := a2aInvoke(httpClient, baseURL, tokenB, a2aTasksSend("g19-join06-b", promptB))
-		Expect(errB2).NotTo(HaveOccurred())
-		defer func() { _ = respB.Body.Close() }()
+		mcpSessB, mcpSessBErr := initMCPSession(tokenB)
+		Expect(mcpSessBErr).NotTo(HaveOccurred())
+		takeoverBodyB := buildJSONRPC("g19-join06-takeover-b", "tools/call", map[string]interface{}{
+			"name":      "kubernaut_takeover",
+			"arguments": map[string]interface{}{"rr_id": "default/" + rrName},
+		})
+		rawB, _, takeoverErrB := mcpPOST(tokenB, mcpSessB, takeoverBodyB)
+		Expect(takeoverErrB).NotTo(HaveOccurred())
 
-		bodyB, _ := io.ReadAll(respB.Body)
-		lower := strings.ToLower(string(bodyB))
-
+		lower := strings.ToLower(string(rawB))
 		Expect(lower).To(Or(
 			ContainSubstring("session_active"),
 			ContainSubstring("already exists"),
-			ContainSubstring("lease"),
-			ContainSubstring("contention"),
-		), "User B's attempt must be rejected — single-driver enforcement (BR-INTERACTIVE-004)")
+			ContainSubstring("failed"),
+		), "User B's takeover must be rejected — single-driver enforcement (BR-INTERACTIVE-004)")
 
 		// Verify IS CRD still shows User A
 		var afterIS investigationsessionv1alpha1.InvestigationSession

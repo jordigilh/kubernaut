@@ -16,6 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	investigationsessionv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
+	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 )
 
 var _ = Describe("Investigation Streaming (G3)", Ordered, Label("e2e", "phase3", "g3"), func() {
@@ -88,10 +89,9 @@ var _ = Describe("Investigation Streaming (G3)", Ordered, Label("e2e", "phase3",
 			_, _ = io.Copy(io.Discard, resp.Body)
 		}()
 
-		// CRD is not created because deferred CRD creation requires af_create_rr
-		// which a non-remediating prompt ("list pods") never triggers.
-		// The session exists in-memory only; CRD materialization occurs when
-		// the agent produces a real RemediationRequest via af_create_rr.
+		// CRD is not created because IS CRD creation requires an explicit
+		// kubernaut_takeover call (#1293), which a non-remediating prompt
+		// ("list pods") never triggers.
 		//
 		// Filter by this test's task ID to avoid false positives from CRDs
 		// created by prior tests (e.g. STREAM-01) that arrive with a delay.
@@ -167,21 +167,51 @@ var _ = Describe("Investigation Streaming (G3)", Ordered, Label("e2e", "phase3",
 			}
 		}, 60*time.Second, 500*time.Millisecond).ShouldNot(BeEmpty(),
 			"must capture A2A task ID from SSE stream")
+		GinkgoWriter.Printf("STREAM-03: captured task ID %s\n", taskID)
 
-		// Wait for the IS CRD to materialize in Active phase.
+		// Wait for the RR created by af_create_rr.
 		kctlCtx := context.Background()
+		var rrName string
+		Eventually(func() bool {
+			list := &remediationv1alpha1.RemediationRequestList{}
+			if lerr := k8sClient.List(kctlCtx, list, client.InNamespace("default")); lerr != nil {
+				return false
+			}
+			for _, rr := range list.Items {
+				if rr.Spec.TargetResource.Name == "web-slow-disconnect-test" {
+					rrName = rr.Name
+					return true
+				}
+			}
+			return false
+		}, 30*time.Second, 2*time.Second).Should(BeTrue(),
+			"af_create_rr must create the RemediationRequest")
+
+		// #1293: invoke kubernaut_takeover via MCP to create IS CRD.
+		sreToken, tokenErr := fetchDEXTokenForPersona("sre")
+		Expect(tokenErr).NotTo(HaveOccurred())
+		mcpSess, mcpSessErr := initMCPSession(sreToken)
+		Expect(mcpSessErr).NotTo(HaveOccurred())
+		takeoverBody := buildJSONRPC("stream-03-takeover", "tools/call", map[string]interface{}{
+			"name":      "kubernaut_takeover",
+			"arguments": map[string]interface{}{"rr_id": "default/" + rrName},
+		})
+		_, takeoverCode, takeoverErr := mcpPOST(sreToken, mcpSess, takeoverBody)
+		Expect(takeoverErr).NotTo(HaveOccurred())
+		Expect(takeoverCode).To(BeNumerically("<", 500))
+
 		var isName string
 		Eventually(func() string {
 			list := listInvestigationSessions(kctlCtx)
 			for _, it := range list.Items {
-				if it.Spec.A2ATaskID == taskID && string(it.Status.Phase) == "Active" {
+				if it.Spec.RemediationRequestRef.Name == rrName && string(it.Status.Phase) == "Active" {
 					isName = it.Name
 					return string(it.Status.Phase)
 				}
 			}
 			return ""
-		}, 60*time.Second, 2*time.Second).Should(Equal("Active"),
-			"IS CRD must reach Active phase after af_create_rr")
+		}, 30*time.Second, 2*time.Second).Should(Equal("Active"),
+			"IS CRD must reach Active phase after kubernaut_takeover")
 
 		// Simulate client disconnect by canceling the SSE context.
 		_ = resp.Body.Close()
