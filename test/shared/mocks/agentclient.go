@@ -363,6 +363,34 @@ func (m *MockAgentClient) WithSessionPollFailThenRecover(failCount int, sessionL
 	return m
 }
 
+// GetPollCallCount returns PollCallCount in a thread-safe manner.
+func (m *MockAgentClient) GetPollCallCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.PollCallCount
+}
+
+// GetCancelCallCount returns CancelCallCount in a thread-safe manner.
+func (m *MockAgentClient) GetCancelCallCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.CancelCallCount
+}
+
+// GetSubmitCallCount returns SubmitCallCount in a thread-safe manner.
+func (m *MockAgentClient) GetSubmitCallCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.SubmitCallCount
+}
+
+// GetLastRequest returns LastRequest in a thread-safe manner.
+func (m *MockAgentClient) GetLastRequest() *agentclient.IncidentRequest {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.LastRequest
+}
+
 // Reset resets the mock's state (call count and last request).
 func (m *MockAgentClient) Reset() {
 	m.CallCount = 0

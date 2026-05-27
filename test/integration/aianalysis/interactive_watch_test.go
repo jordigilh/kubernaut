@@ -195,7 +195,7 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 
 			By("waiting for controller to start polling (proves reconcile loop is active)")
 			Eventually(func() int {
-				return mockClient.PollCallCount
+				return mockClient.GetPollCallCount()
 			}, timeout, interval).Should(BeNumerically(">=", 1))
 
 			By("creating Active InvestigationSession for the same RR")
@@ -205,7 +205,7 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			Eventually(func(g Gomega) {
 				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
 				g.Expect(analysis.Status.KASession).NotTo(BeNil())
-				g.Expect(mockClient.CancelCallCount).To(BeNumerically(">=", 1),
+				g.Expect(mockClient.GetCancelCallCount()).To(BeNumerically(">=", 1),
 					"CancelSession should be called when IS appears for autonomous session")
 			}, timeout, interval).Should(Succeed())
 		})
@@ -220,7 +220,7 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			mockClient.PollSessionFunc = func(_ context.Context, _ string) (*agentclient.SessionStatusResult, error) {
 				pollMu.Lock()
 				defer pollMu.Unlock()
-				if returnCancelled || mockClient.CancelCallCount > 0 {
+				if returnCancelled || mockClient.GetCancelCallCount() > 0 {
 					return &agentclient.SessionStatusResult{Status: "cancelled"}, nil
 				}
 				return &agentclient.SessionStatusResult{Status: "investigating"}, nil
@@ -234,7 +234,7 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 
 			By("waiting for controller to start polling (proves reconcile loop is active)")
 			Eventually(func() int {
-				return mockClient.PollCallCount
+				return mockClient.GetPollCallCount()
 			}, timeout, interval).Should(BeNumerically(">=", 1))
 
 			By("deleting the InvestigationSession")
@@ -276,7 +276,7 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 
 			By("waiting for controller to start polling (proves reconcile loop is active)")
 			Eventually(func() int {
-				return mockClient.PollCallCount
+				return mockClient.GetPollCallCount()
 			}, timeout, interval).Should(BeNumerically(">=", 1))
 
 			By("creating Active InvestigationSession mid-investigation")
@@ -285,7 +285,7 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			By("verifying cancel + re-submit with interactive=true")
 			Eventually(func(g Gomega) {
 				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
-				g.Expect(mockClient.CancelCallCount).To(BeNumerically(">=", 1))
+				g.Expect(mockClient.GetCancelCallCount()).To(BeNumerically(">=", 1))
 
 				submitMu.Lock()
 				sc := submitCount
@@ -295,8 +295,9 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 				g.Expect(analysis.Status.KASession).NotTo(BeNil())
 				g.Expect(analysis.Status.KASession.ID).To(Equal(newSessionID))
 				g.Expect(analysis.Status.KASession.Interactive).To(BeTrue())
-				g.Expect(mockClient.LastRequest).NotTo(BeNil())
-				interactive, ok := mockClient.LastRequest.Interactive.Get()
+				lastReq := mockClient.GetLastRequest()
+				g.Expect(lastReq).NotTo(BeNil())
+				interactive, ok := lastReq.Interactive.Get()
 				g.Expect(ok).To(BeTrue())
 				g.Expect(interactive).To(BeTrue())
 			}, timeout, interval).Should(Succeed())
