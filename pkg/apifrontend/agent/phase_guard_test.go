@@ -101,7 +101,7 @@ var _ = Describe("Phase Guard (#1307)", func() {
 				"%s must always be allowed (no takeover prerequisite)", toolName)
 		},
 		Entry("UT-AF-1307-007: takeover", "kubernaut_takeover"),
-		Entry("UT-AF-1307-008: start_investigation", "kubernaut_start_investigation"),
+		Entry("UT-AF-1307-008: investigate", "kubernaut_investigate"),
 		Entry("UT-AF-1307-009: kubectl_get", "kubectl_get"),
 		Entry("UT-AF-1307-012: reconnect", "kubernaut_reconnect"),
 	)

@@ -87,16 +87,26 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 
 	Describe("KA REST Tool Dispatch (real HTTP)", func() {
 
-		It("IT-BRIDGE-001: kubernaut_start_investigation dispatches POST to KA /analyze", func() {
+		It("IT-BRIDGE-001: kubernaut_investigate dispatches POST to KA /analyze", func() {
 			var capturedPath, capturedMethod string
 			setupStackWithKAHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				capturedPath = r.URL.Path
-				capturedMethod = r.Method
-				w.WriteHeader(http.StatusAccepted)
-				_ = json.NewEncoder(w).Encode(map[string]string{"session_id": "it-sess-001"})
+				if r.Method == http.MethodPost && r.URL.Path == "/api/v1/incident/analyze" {
+					capturedPath = r.URL.Path
+					capturedMethod = r.Method
+					w.WriteHeader(http.StatusAccepted)
+					_ = json.NewEncoder(w).Encode(map[string]string{"session_id": "it-sess-001"})
+					return
+				}
+				if strings.HasSuffix(r.URL.Path, "/stream") {
+					w.Header().Set("Content-Type", "text/event-stream")
+					w.WriteHeader(http.StatusOK)
+					_, _ = fmt.Fprintf(w, "event: complete\ndata: {\"type\":\"complete\",\"summary\":\"done\"}\n\n")
+					return
+				}
+				w.WriteHeader(http.StatusNotFound)
 			}), newFakeDSClient())
 
-			status, body := mcpCallTool(h, sessionID, "kubernaut_start_investigation", map[string]any{
+			status, body := mcpCallTool(h, sessionID, "kubernaut_investigate", map[string]any{
 				"namespace": "production",
 				"name":      "api-gw",
 				"kind":      "Deployment",
@@ -106,10 +116,14 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 			Expect(capturedPath).To(Equal("/api/v1/incident/analyze"))
 			Expect(capturedMethod).To(Equal(http.MethodPost))
 			text := extractTextContent(body)
-			Expect(text).To(ContainSubstring("it-sess-001"))
+			Expect(text).To(SatisfyAny(
+				ContainSubstring("it-sess-001"),
+				ContainSubstring("completed"),
+				ContainSubstring("done"),
+			))
 		})
 
-		It("IT-BRIDGE-002: kubernaut_poll_investigation with completed status returns summary", func() {
+		It("IT-BRIDGE-002: kubernaut_investigate with completed session_id returns summary", func() {
 			setupStackWithKAHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				switch r.URL.Path {
 				case "/api/v1/incident/session/sess-002":
@@ -121,7 +135,7 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 				}
 			}), newFakeDSClient())
 
-			status, body := mcpCallTool(h, sessionID, "kubernaut_poll_investigation", map[string]any{
+			status, body := mcpCallTool(h, sessionID, "kubernaut_investigate", map[string]any{
 				"session_id": "sess-002",
 			}, testUser)
 
@@ -130,23 +144,31 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 			Expect(text).To(ContainSubstring("completed"))
 		})
 
-		It("IT-BRIDGE-003: kubernaut_poll_investigation with in_progress is interrupted by tool timeout", func() {
+		It("IT-BRIDGE-003: kubernaut_investigate with in_progress is interrupted by tool timeout", func() {
 			setupStackWithKAHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if strings.HasSuffix(r.URL.Path, "/stream") {
+					w.Header().Set("Content-Type", "text/event-stream")
+					w.WriteHeader(http.StatusOK)
+					// Block without sending complete — tool timeout should fire.
+					<-r.Context().Done()
+					return
+				}
 				_ = json.NewEncoder(w).Encode(ka.SessionStatus{SessionID: "sess-003", Status: "investigating"})
 			}), newFakeDSClient())
 
-			status, body := mcpCallTool(h, sessionID, "kubernaut_poll_investigation", map[string]any{
+			status, body := mcpCallTool(h, sessionID, "kubernaut_investigate", map[string]any{
 				"session_id": "sess-003",
 			}, testUser)
 
 			Expect(status).To(Equal(http.StatusOK))
 			text := extractTextContent(body)
-			// Tool timeout (5s) fires before 5x3s polling completes,
-			// so we expect either a timeout error or in_progress
+			// Tool timeout (5s) interrupts the blocking SSE stream before completion.
 			Expect(text).To(SatisfyAny(
 				ContainSubstring("in_progress"),
 				ContainSubstring("deadline"),
 				ContainSubstring("timeout"),
+				ContainSubstring("investigation stream"),
+				ContainSubstring("investigation service"),
 			))
 		})
 	})
@@ -341,14 +363,24 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 				},
 			}
 
-			setupStackWithKAHandler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			setupStackWithKAHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				kaHit.Store(true)
-				w.WriteHeader(http.StatusAccepted)
-				_ = json.NewEncoder(w).Encode(map[string]string{"session_id": "cross-sess"})
+				if r.Method == http.MethodPost && r.URL.Path == "/api/v1/incident/analyze" {
+					w.WriteHeader(http.StatusAccepted)
+					_ = json.NewEncoder(w).Encode(map[string]string{"session_id": "cross-sess"})
+					return
+				}
+				if strings.HasSuffix(r.URL.Path, "/stream") {
+					w.Header().Set("Content-Type", "text/event-stream")
+					w.WriteHeader(http.StatusOK)
+					_, _ = fmt.Fprintf(w, "event: complete\ndata: {\"type\":\"complete\",\"summary\":\"done\"}\n\n")
+					return
+				}
+				w.WriteHeader(http.StatusNotFound)
 			}), mockDS)
 
 			// Call KA tool
-			status1, _ := mcpCallTool(h, sessionID, "kubernaut_start_investigation", map[string]any{
+			status1, _ := mcpCallTool(h, sessionID, "kubernaut_investigate", map[string]any{
 				"namespace": "default", "name": "test", "kind": "Pod",
 			}, testUser)
 			Expect(status1).To(Equal(http.StatusOK))
@@ -364,14 +396,24 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 		It("IT-BRIDGE-009: audit events emitted for both KA and DS tool calls", func() {
 			mockDS := newFakeDSClient()
 
-			setupStackWithKAHandler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				w.WriteHeader(http.StatusAccepted)
-				_ = json.NewEncoder(w).Encode(map[string]string{"session_id": "audit-sess"})
+			setupStackWithKAHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost && r.URL.Path == "/api/v1/incident/analyze" {
+					w.WriteHeader(http.StatusAccepted)
+					_ = json.NewEncoder(w).Encode(map[string]string{"session_id": "audit-sess"})
+					return
+				}
+				if strings.HasSuffix(r.URL.Path, "/stream") {
+					w.Header().Set("Content-Type", "text/event-stream")
+					w.WriteHeader(http.StatusOK)
+					_, _ = fmt.Fprintf(w, "event: complete\ndata: {\"type\":\"complete\",\"summary\":\"done\"}\n\n")
+					return
+				}
+				w.WriteHeader(http.StatusNotFound)
 			}), mockDS)
 
 			auditor.Reset()
 
-			mcpCallTool(h, sessionID, "kubernaut_start_investigation", map[string]any{
+			mcpCallTool(h, sessionID, "kubernaut_investigate", map[string]any{
 				"namespace": "ns", "name": "pod", "kind": "Pod",
 			}, testUser)
 			mcpCallTool(h, sessionID, "kubernaut_list_workflows", map[string]any{}, testUser)
@@ -388,7 +430,7 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 				w.WriteHeader(http.StatusInternalServerError)
 			}), newFakeDSClient())
 
-			status, body := mcpCallTool(h, sessionID, "kubernaut_start_investigation", map[string]any{
+			status, body := mcpCallTool(h, sessionID, "kubernaut_investigate", map[string]any{
 				"namespace": "ns", "name": "pod", "kind": "Pod",
 			}, testUser)
 
@@ -443,7 +485,7 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			sessionID = mcpInitialize(h, testUser)
 
-			status, body := mcpCallTool(h, sessionID, "kubernaut_start_investigation", map[string]any{
+			status, body := mcpCallTool(h, sessionID, "kubernaut_investigate", map[string]any{
 				"namespace": "ns", "name": "pod", "kind": "Pod",
 			}, testUser)
 
@@ -675,11 +717,27 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 			Expect(invokedAction).To(Equal("reconnect"))
 		})
 
-		It("IT-AF-1234-W07: kubernaut_stream_investigation dispatches to KA SSE stream", func() {
-			setupInteractiveStack()
+		It("IT-AF-1234-W07: kubernaut_investigate dispatches to KA SSE stream (namespace/name)", func() {
+			kaStreamHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost && r.URL.Path == "/api/v1/incident/analyze" {
+					w.WriteHeader(http.StatusAccepted)
+					_ = json.NewEncoder(w).Encode(map[string]string{"session_id": "sess-stream-001"})
+					return
+				}
+				if strings.HasSuffix(r.URL.Path, "/stream") {
+					w.Header().Set("Content-Type", "text/event-stream")
+					w.WriteHeader(http.StatusOK)
+					_, _ = fmt.Fprintf(w, "event: complete\ndata: {\"type\":\"complete\",\"summary\":\"done\"}\n\n")
+					return
+				}
+				w.WriteHeader(http.StatusNotFound)
+			})
+			setupStackWithKAHandler(kaStreamHandler, newFakeDSClient())
 
-			status, body := mcpCallTool(h, sessionID, "kubernaut_stream_investigation", map[string]any{
-				"session_id": "sess-stream-001",
+			status, body := mcpCallTool(h, sessionID, "kubernaut_investigate", map[string]any{
+				"namespace": "production",
+				"name":      "api-gw",
+				"kind":      "Deployment",
 			}, testUser)
 
 			Expect(status).To(Equal(http.StatusOK))
@@ -687,7 +745,7 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 			Expect(text).To(SatisfyAny(
 				ContainSubstring("completed"),
 				ContainSubstring("done"),
-				ContainSubstring("status"),
+				ContainSubstring("sess-stream-001"),
 			))
 		})
 	})
@@ -703,14 +761,14 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 
 			// Fire enough requests to trip the CB (threshold=5)
 			for i := 0; i < 6; i++ {
-				mcpCallTool(h, sessionID, "kubernaut_start_investigation", map[string]any{
+				mcpCallTool(h, sessionID, "kubernaut_investigate", map[string]any{
 					"namespace": "ns", "name": "pod", "kind": "Pod",
 				}, testUser)
 			}
 
 			// Next call should fail fast (CB open, no HTTP call to server)
 			beforeCount := callCount.Load()
-			_, body := mcpCallTool(h, sessionID, "kubernaut_start_investigation", map[string]any{
+			_, body := mcpCallTool(h, sessionID, "kubernaut_investigate", map[string]any{
 				"namespace": "ns", "name": "pod", "kind": "Pod",
 			}, testUser)
 
@@ -723,7 +781,7 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 
 	Describe("Observability Enrichment (G11/G12/G18)", func() {
 
-		It("IT-AF-1234-W30: per-tool timeout overrides global for stream tool", func() {
+		It("IT-AF-1234-W30: per-tool timeout overrides global for investigate tool", func() {
 			setupStackWithKAHandler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusNotFound)
 			}), newFakeDSClient())
@@ -731,11 +789,11 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 			cfg := handler.MCPBridgeConfig{
 				ToolTimeout: 5 * time.Second,
 				ToolTimeouts: map[string]time.Duration{
-					"kubernaut_stream_investigation": 120 * time.Second,
+					"kubernaut_investigate": 120 * time.Second,
 				},
 			}
 
-			streamTimeout := cfg.GetToolTimeoutFor("kubernaut_stream_investigation")
+			streamTimeout := cfg.GetToolTimeoutFor("kubernaut_investigate")
 			defaultTimeout := cfg.GetToolTimeoutFor("kubernaut_list_remediations")
 
 			Expect(streamTimeout).To(Equal(120 * time.Second))

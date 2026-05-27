@@ -12,8 +12,8 @@ import (
 // where the user investigates, discovers workflows, selects one, and creates an RR.
 // Depends on Phase 0 mock-LLM fix (match_last_only) for correct keyword resolution.
 //
-// Turn 1: "start investigation…"        → kubernaut_start_investigation
-// Turn 2: "stream the investigation…"   → kubernaut_stream_investigation
+// Turn 1: "start investigation…"        → kubernaut_investigate (namespace/name/kind)
+// Turn 2: "stream the investigation…"   → kubernaut_investigate (session_id resume)
 // Turn 3: "discover available workflows" → kubernaut_discover_workflows
 // Turn 4: "create a remediation request" → af_create_rr
 var _ = Describe("AF A2A Interactive 4-Phase Full Pipeline [E2E-FP-1189-003]", Label("fp", "af", "a2a", "interactive", "issue-1189"), func() {

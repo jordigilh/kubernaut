@@ -1434,7 +1434,7 @@ func TestPreflightSessionChecks_ListsDeniedVerbs(t *testing.T) {
 
 // ---------------------------------------------------------------------------
 // TP-1301-1302 §4.5: Prompt Compliance Wiring Tests — FedRAMP CM-3
-// Validates that prompt.txt contains the mandatory streaming sequence.
+// Validates that prompt.txt documents the merged kubernaut_investigate tool.
 // ---------------------------------------------------------------------------
 
 func TestPromptContainsMandatoryStreamInvestigation(t *testing.T) {
@@ -1444,14 +1444,11 @@ func TestPromptContainsMandatoryStreamInvestigation(t *testing.T) {
 	}
 	text := string(prompt)
 
-	if !strings.Contains(text, "kubernaut_stream_investigation") {
-		t.Error("WT-AF-1302-001 CM-3: prompt.txt must reference kubernaut_stream_investigation")
+	if !strings.Contains(text, "kubernaut_investigate") {
+		t.Error("WT-AF-1302-001 CM-3: prompt.txt must reference kubernaut_investigate")
 	}
-	if !strings.Contains(text, "MANDATORY") {
-		t.Error("WT-AF-1302-001 CM-3: prompt.txt must mark stream_investigation as MANDATORY")
-	}
-	if !strings.Contains(text, "CRITICAL") {
-		t.Error("WT-AF-1302-001 CM-3: prompt.txt must contain CRITICAL instruction for streaming sequence")
+	if !strings.Contains(text, "single call") {
+		t.Error("WT-AF-1302-001 CM-3: prompt.txt must describe kubernaut_investigate as a single-call investigation tool")
 	}
 }
 
@@ -1477,18 +1474,14 @@ func TestPromptFixJourneyStartsWithCreateRR(t *testing.T) {
 	if !strings.Contains(journeyLine, "af_create_rr") {
 		t.Error("WT-AF-1302-002 CM-3: Full journey must start with af_create_rr")
 	}
-	if !strings.Contains(journeyLine, "kubernaut_start_investigation") {
-		t.Error("WT-AF-1302-002 CM-3: Full journey must include kubernaut_start_investigation")
-	}
-	if !strings.Contains(journeyLine, "kubernaut_stream_investigation") {
-		t.Error("WT-AF-1302-002 CM-3: Full journey must include kubernaut_stream_investigation")
+	if !strings.Contains(journeyLine, "kubernaut_investigate") {
+		t.Error("WT-AF-1302-002 CM-3: Full journey must include kubernaut_investigate")
 	}
 
 	createIdx := strings.Index(journeyLine, "af_create_rr")
-	startIdx := strings.Index(journeyLine, "kubernaut_start_investigation")
-	streamIdx := strings.Index(journeyLine, "kubernaut_stream_investigation")
-	if createIdx > startIdx || startIdx > streamIdx {
-		t.Error("WT-AF-1302-002 CM-3: journey order must be af_create_rr → start → stream")
+	investigateIdx := strings.Index(journeyLine, "kubernaut_investigate")
+	if createIdx > investigateIdx {
+		t.Error("WT-AF-1302-002 CM-3: journey order must be af_create_rr → kubernaut_investigate")
 	}
 }
 
@@ -1499,10 +1492,19 @@ func TestPromptPhase1RequiresStartBeforeStream(t *testing.T) {
 	}
 	text := string(prompt)
 
-	if !strings.Contains(text, "session_id MUST come from kubernaut_start_investigation") {
-		t.Error("WT-AF-1302-003 CM-3: prompt must warn that session_id must come from start_investigation")
+	phase1Idx := strings.Index(text, "### Phase 1: Investigate")
+	if phase1Idx == -1 {
+		t.Fatal("WT-AF-1302-003 CM-3: prompt.txt must contain '### Phase 1: Investigate' section")
 	}
-	if !strings.Contains(text, "Do NOT pass the A2A session ID") {
-		t.Error("WT-AF-1302-003 CM-3: prompt must explicitly warn against passing A2A session ID")
+	phase1Section := text[phase1Idx:]
+	if phase15Idx := strings.Index(phase1Section, "### Phase 1.5"); phase15Idx != -1 {
+		phase1Section = phase1Section[:phase15Idx]
+	}
+
+	if !strings.Contains(phase1Section, "Call kubernaut_investigate") {
+		t.Error("WT-AF-1302-003 CM-3: Phase 1 must instruct a single kubernaut_investigate call")
+	}
+	if !strings.Contains(phase1Section, "all in a single call") {
+		t.Error("WT-AF-1302-003 CM-3: Phase 1 must describe investigation as all in a single call")
 	}
 }

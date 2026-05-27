@@ -20,15 +20,18 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
 
-// kaSessionHandler returns an http.Handler that serves both the status
-// endpoint (GET /api/v1/incident/session/{id}) and the stream endpoint
-// (GET /api/v1/incident/session/{id}/stream). streamFn is called for the
-// stream path to write SSE data; all other paths return 404.
+// kaSessionHandler returns an http.Handler that serves the analyze, status,
+// and stream endpoints. streamFn is called for the stream path to write SSE data.
 func kaSessionHandler(sessionID string, streamFn func(w http.ResponseWriter)) http.Handler {
+	analyzePath := "/api/v1/incident/analyze"
 	statusPath := fmt.Sprintf("/api/v1/incident/session/%s", sessionID)
 	streamPath := statusPath + "/stream"
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case analyzePath:
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = fmt.Fprintf(w, `{"session_id":%q}`, sessionID)
 		case statusPath:
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"status":"in_progress"}`))
@@ -56,7 +59,16 @@ func sseObj(eventType string, obj map[string]any) string {
 	return sseLines(eventType, string(b))
 }
 
-var _ = Describe("HandleStreamInvestigation (G5)", func() {
+// investigateNew starts a new investigation via HandleInvestigation.
+func investigateNew(ctx context.Context, kaClient *ka.Client, ns, name string) (tools.InvestigateResult, error) {
+	return tools.HandleInvestigation(ctx, kaClient, tools.InvestigateArgs{
+		Namespace: ns,
+		Name:      name,
+	}, nil)
+}
+
+
+var _ = Describe("HandleInvestigation streaming (G5)", func() {
 	var (
 		ctx    context.Context
 		server *httptest.Server
@@ -72,18 +84,6 @@ var _ = Describe("HandleStreamInvestigation (G5)", func() {
 		}
 	})
 
-	It("UT-AF-1234-045: empty session_id rejected", func() {
-		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.WriteHeader(http.StatusOK)
-		}))
-		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
-		_, err := tools.HandleStreamInvestigation(ctx, kaClient, tools.StreamInvestigationArgs{
-			SessionID: "",
-		})
-		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("session_id"))
-	})
-
 	It("UT-AF-1234-046: SSE reasoning_delta appended to narrative", func() {
 		server = httptest.NewServer(kaSessionHandler("sess-001", func(w http.ResponseWriter) {
 			_, _ = fmt.Fprint(w, sseText("reasoning_delta", "Analyzing pod logs..."))
@@ -91,9 +91,7 @@ var _ = Describe("HandleStreamInvestigation (G5)", func() {
 		}))
 
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
-		result, err := tools.HandleStreamInvestigation(ctx, kaClient, tools.StreamInvestigationArgs{
-			SessionID: "sess-001",
-		})
+		result, err := investigateNew(ctx, kaClient, "default", "test-pod")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.EventLog).To(ContainSubstring("Analyzing pod logs"))
 	})
@@ -106,9 +104,7 @@ var _ = Describe("HandleStreamInvestigation (G5)", func() {
 		}))
 
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
-		result, err := tools.HandleStreamInvestigation(ctx, kaClient, tools.StreamInvestigationArgs{
-			SessionID: "sess-001",
-		})
+		result, err := investigateNew(ctx, kaClient, "default", "test-pod")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.EventLog).To(ContainSubstring("The pod is"))
 		Expect(result.EventLog).To(ContainSubstring("crashlooping"))
@@ -121,9 +117,7 @@ var _ = Describe("HandleStreamInvestigation (G5)", func() {
 		}))
 
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
-		result, err := tools.HandleStreamInvestigation(ctx, kaClient, tools.StreamInvestigationArgs{
-			SessionID: "sess-001",
-		})
+		result, err := investigateNew(ctx, kaClient, "default", "test-pod")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.EventLog).To(ContainSubstring("kubectl_get_pods"))
 	})
@@ -135,9 +129,7 @@ var _ = Describe("HandleStreamInvestigation (G5)", func() {
 		}))
 
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
-		result, err := tools.HandleStreamInvestigation(ctx, kaClient, tools.StreamInvestigationArgs{
-			SessionID: "sess-001",
-		})
+		result, err := investigateNew(ctx, kaClient, "default", "test-pod")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Events).NotTo(BeEmpty())
 
@@ -158,9 +150,7 @@ var _ = Describe("HandleStreamInvestigation (G5)", func() {
 		}))
 
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
-		result, err := tools.HandleStreamInvestigation(ctx, kaClient, tools.StreamInvestigationArgs{
-			SessionID: "sess-001",
-		})
+		result, err := investigateNew(ctx, kaClient, "default", "test-pod")
 		Expect(err).NotTo(HaveOccurred())
 
 		for _, evt := range result.Events {
@@ -176,9 +166,7 @@ var _ = Describe("HandleStreamInvestigation (G5)", func() {
 		}))
 
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
-		result, err := tools.HandleStreamInvestigation(ctx, kaClient, tools.StreamInvestigationArgs{
-			SessionID: "sess-001",
-		})
+		result, err := investigateNew(ctx, kaClient, "default", "test-pod")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).To(Equal("completed"))
 		Expect(result.Summary).To(ContainSubstring("OOM"))
@@ -190,9 +178,7 @@ var _ = Describe("HandleStreamInvestigation (G5)", func() {
 		}))
 
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
-		result, err := tools.HandleStreamInvestigation(ctx, kaClient, tools.StreamInvestigationArgs{
-			SessionID: "sess-001",
-		})
+		result, err := investigateNew(ctx, kaClient, "default", "test-pod")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).To(Equal("cancelled"))
 	})
@@ -203,9 +189,7 @@ var _ = Describe("HandleStreamInvestigation (G5)", func() {
 		}))
 
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
-		result, err := tools.HandleStreamInvestigation(ctx, kaClient, tools.StreamInvestigationArgs{
-			SessionID: "sess-001",
-		})
+		result, err := investigateNew(ctx, kaClient, "default", "test-pod")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).To(Equal("failed"))
 	})
@@ -218,7 +202,6 @@ var _ = Describe("HandleStreamInvestigation (G5)", func() {
 			if ok {
 				flusher.Flush()
 			}
-			// Block until the test context is cancelled
 			<-cancelCtx.Done()
 		}))
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
@@ -228,9 +211,7 @@ var _ = Describe("HandleStreamInvestigation (G5)", func() {
 			cancel()
 		}()
 
-		result, err := tools.HandleStreamInvestigation(cancelCtx, kaClient, tools.StreamInvestigationArgs{
-			SessionID: "sess-001",
-		})
+		result, err := investigateNew(cancelCtx, kaClient, "default", "test-pod")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).To(SatisfyAny(
 			Equal("cancelled"),
@@ -239,7 +220,7 @@ var _ = Describe("HandleStreamInvestigation (G5)", func() {
 	})
 })
 
-var _ = Describe("HandleStreamInvestigation — A2A Bridge (TP-1258)", func() {
+var _ = Describe("HandleInvestigation — A2A Bridge (TP-1258)", func() {
 	var (
 		ctx    context.Context
 		server *httptest.Server
@@ -268,13 +249,12 @@ var _ = Describe("HandleStreamInvestigation — A2A Bridge (TP-1258)", func() {
 		bridgeCtx := launcher.WithEventBridge(ctx, queue, taskID, "", nil)
 
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
-		result, err := tools.HandleStreamInvestigation(bridgeCtx, kaClient, tools.StreamInvestigationArgs{
-			SessionID: "sess-bridge-001",
-		})
+		result, err := tools.HandleInvestigation(bridgeCtx, kaClient, tools.InvestigateArgs{
+			Namespace: "prod", Name: "test-pod",
+		}, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).To(Equal("completed"))
 
-		// Bridge should have emitted the reasoning_delta
 		Expect(queue.events).NotTo(BeEmpty())
 		var foundReasoning bool
 		for _, evt := range queue.events {
@@ -291,7 +271,7 @@ var _ = Describe("HandleStreamInvestigation — A2A Bridge (TP-1258)", func() {
 		Expect(foundReasoning).To(BeTrue(), "expected reasoning_delta to be emitted via bridge")
 	})
 
-	It("UT-AF-1258-021: token_delta NOT emitted via bridge (GA policy)", func() {
+	It("UT-AF-1258-021: token_delta emitted via bridge for real-time streaming (#1302)", func() {
 		server = httptest.NewServer(kaSessionHandler("sess-bridge-002", func(w http.ResponseWriter) {
 			_, _ = fmt.Fprint(w, sseText("token_delta", "some token fragment"))
 			_, _ = fmt.Fprint(w, sseObj("complete", map[string]any{"summary": "done"}))
@@ -302,9 +282,9 @@ var _ = Describe("HandleStreamInvestigation — A2A Bridge (TP-1258)", func() {
 		bridgeCtx := launcher.WithEventBridge(ctx, queue, taskID, "", nil)
 
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
-		result, err := tools.HandleStreamInvestigation(bridgeCtx, kaClient, tools.StreamInvestigationArgs{
-			SessionID: "sess-bridge-002",
-		})
+		result, err := tools.HandleInvestigation(bridgeCtx, kaClient, tools.InvestigateArgs{
+			Namespace: "default", Name: "test-pod",
+		}, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).To(Equal("completed"))
 
@@ -333,9 +313,9 @@ var _ = Describe("HandleStreamInvestigation — A2A Bridge (TP-1258)", func() {
 		bridgeCtx := launcher.WithEventBridge(ctx, queue, taskID, "", nil)
 
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
-		_, err := tools.HandleStreamInvestigation(bridgeCtx, kaClient, tools.StreamInvestigationArgs{
-			SessionID: "sess-bridge-003",
-		})
+		_, err := tools.HandleInvestigation(bridgeCtx, kaClient, tools.InvestigateArgs{
+			Namespace: "default", Name: "test-pod",
+		}, nil)
 		Expect(err).NotTo(HaveOccurred())
 
 		var bridgedTexts []string
@@ -363,9 +343,9 @@ var _ = Describe("HandleStreamInvestigation — A2A Bridge (TP-1258)", func() {
 		bridgeCtx := launcher.WithEventBridge(ctx, queue, taskID, "", nil)
 
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
-		_, err := tools.HandleStreamInvestigation(bridgeCtx, kaClient, tools.StreamInvestigationArgs{
-			SessionID: "sess-bridge-004",
-		})
+		_, err := tools.HandleInvestigation(bridgeCtx, kaClient, tools.InvestigateArgs{
+			Namespace: "default", Name: "test-pod",
+		}, nil)
 		Expect(err).NotTo(HaveOccurred())
 
 		for _, evt := range queue.events {
@@ -392,9 +372,9 @@ var _ = Describe("HandleStreamInvestigation — A2A Bridge (TP-1258)", func() {
 		bridgeCtx := launcher.WithEventBridge(ctx, queue, taskID, "", nil)
 
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
-		result, err := tools.HandleStreamInvestigation(bridgeCtx, kaClient, tools.StreamInvestigationArgs{
-			SessionID: "sess-bridge-005",
-		})
+		result, err := tools.HandleInvestigation(bridgeCtx, kaClient, tools.InvestigateArgs{
+			Namespace: "default", Name: "test-pod",
+		}, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).To(Equal("completed"))
 
@@ -419,11 +399,8 @@ var _ = Describe("HandleStreamInvestigation — A2A Bridge (TP-1258)", func() {
 			_, _ = fmt.Fprint(w, sseObj("complete", map[string]any{"summary": "done"}))
 		}))
 
-		// No bridge in context — should still work normally
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
-		result, err := tools.HandleStreamInvestigation(ctx, kaClient, tools.StreamInvestigationArgs{
-			SessionID: "sess-bridge-006",
-		})
+		result, err := investigateNew(ctx, kaClient, "default", "test-pod")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).To(Equal("completed"))
 		Expect(result.EventLog).To(ContainSubstring("some reasoning"))
@@ -443,13 +420,12 @@ var _ = Describe("HandleStreamInvestigation — A2A Bridge (TP-1258)", func() {
 		bridgeCtx := launcher.WithEventBridge(ctx, queue, taskID, "", nil)
 
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
-		result, err := tools.HandleStreamInvestigation(bridgeCtx, kaClient, tools.StreamInvestigationArgs{
-			SessionID: "sess-bridge-007",
-		})
+		result, err := tools.HandleInvestigation(bridgeCtx, kaClient, tools.InvestigateArgs{
+			Namespace: "default", Name: "test-pod",
+		}, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).To(Equal("completed"))
 
-		// Bridge should extract content_preview from structured payload
 		var emittedText string
 		for _, evt := range queue.events {
 			if artifact, ok := evt.(*a2a.TaskArtifactUpdateEvent); ok {
@@ -473,16 +449,14 @@ var _ = Describe("HandleStreamInvestigation — A2A Bridge (TP-1258)", func() {
 			_, _ = fmt.Fprint(w, sseObj("complete", map[string]any{"summary": "done"}))
 		}))
 
-		// Use a queue that always fails
 		queue := &failingQueue{}
 		taskID := a2a.TaskID("bridge-task-008")
 		bridgeCtx := launcher.WithEventBridge(ctx, queue, taskID, "", nil)
 
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
-		result, err := tools.HandleStreamInvestigation(bridgeCtx, kaClient, tools.StreamInvestigationArgs{
-			SessionID: "sess-bridge-008",
-		})
-		// Tool should succeed even though bridge writes fail
+		result, err := tools.HandleInvestigation(bridgeCtx, kaClient, tools.InvestigateArgs{
+			Namespace: "default", Name: "test-pod",
+		}, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).To(Equal("completed"))
 	})
@@ -506,9 +480,9 @@ var _ = Describe("HandleStreamInvestigation — A2A Bridge (TP-1258)", func() {
 		bridgeCtx := launcher.WithEventBridge(logCtx, queue, taskID, "", nil)
 
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
-		result, err := tools.HandleStreamInvestigation(bridgeCtx, kaClient, tools.StreamInvestigationArgs{
-			SessionID: "sess-bridge-logr",
-		})
+		result, err := tools.HandleInvestigation(bridgeCtx, kaClient, tools.InvestigateArgs{
+			Namespace: "default", Name: "test-pod",
+		}, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).To(Equal("completed"))
 
@@ -520,8 +494,6 @@ var _ = Describe("HandleStreamInvestigation — A2A Bridge (TP-1258)", func() {
 
 // =============================================================================
 // TP-1301-1302 §4.2: Bridge Relay Policy — FedRAMP AU-2, AU-12, SC-7
-// Validates that token_delta and tool_call events are bridged to the A2A stream
-// and that bridged text passes through sanitization.
 // =============================================================================
 var _ = Describe("KA bridge relay policy (TP-1301-1302)", func() {
 	var (
@@ -549,9 +521,9 @@ var _ = Describe("KA bridge relay policy (TP-1301-1302)", func() {
 		bridgeCtx := launcher.WithEventBridge(ctx, queue, "task-1302-010", "", nil)
 
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
-		result, err := tools.HandleStreamInvestigation(bridgeCtx, kaClient, tools.StreamInvestigationArgs{
-			SessionID: "sess-1302-010",
-		})
+		result, err := tools.HandleInvestigation(bridgeCtx, kaClient, tools.InvestigateArgs{
+			Namespace: "default", Name: "test-pod",
+		}, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).To(Equal("completed"))
 
@@ -579,9 +551,9 @@ var _ = Describe("KA bridge relay policy (TP-1301-1302)", func() {
 		bridgeCtx := launcher.WithEventBridge(ctx, queue, "task-1302-011", "", nil)
 
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
-		_, err := tools.HandleStreamInvestigation(bridgeCtx, kaClient, tools.StreamInvestigationArgs{
-			SessionID: "sess-1302-011",
-		})
+		_, err := tools.HandleInvestigation(bridgeCtx, kaClient, tools.InvestigateArgs{
+			Namespace: "default", Name: "test-pod",
+		}, nil)
 		Expect(err).NotTo(HaveOccurred())
 
 		var bridgedTexts []string
@@ -611,9 +583,9 @@ var _ = Describe("KA bridge relay policy (TP-1301-1302)", func() {
 		bridgeCtx := launcher.WithEventBridge(ctx, queue, "task-1302-012", "", nil)
 
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
-		_, err := tools.HandleStreamInvestigation(bridgeCtx, kaClient, tools.StreamInvestigationArgs{
-			SessionID: "sess-1302-012",
-		})
+		_, err := tools.HandleInvestigation(bridgeCtx, kaClient, tools.InvestigateArgs{
+			Namespace: "default", Name: "test-pod",
+		}, nil)
 		Expect(err).NotTo(HaveOccurred())
 
 		for _, evt := range queue.events {

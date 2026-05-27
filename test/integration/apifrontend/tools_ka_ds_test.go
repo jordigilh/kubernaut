@@ -21,15 +21,15 @@ var _ = Describe("KA/DS Tools Integration (tools/ via real containers)", func() 
 				CBFailureThreshold: 5,
 			})
 
-			result, err := tools.HandleStartInvestigation(
+			result, err := tools.HandleInvestigation(
 				context.Background(),
 				kaClient,
-				tools.StartInvestigationArgs{
+				tools.InvestigateArgs{
 					Namespace: "default",
 					Kind:      "Deployment",
 					Name:      "test-app",
 				},
-				nil, // no auditor needed for this test
+				nil,
 			)
 			// KA may return an error if the deployment doesn't exist,
 			// but the tool dispatch itself should work without panicking

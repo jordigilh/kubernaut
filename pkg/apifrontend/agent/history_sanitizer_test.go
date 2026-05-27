@@ -60,8 +60,8 @@ var _ = Describe("historySanitizer BeforeModelCallback (#1299)", func() {
 	It("UT-AF-1299-002: properly paired FunctionCall/FunctionResponse — contents unchanged", func() {
 		req := callReq(makeContents(
 			userText("investigate"),
-			modelWithCall("Starting", "toolu_vrtx_001", "kubernaut_start_investigation"),
-			toolResult("toolu_vrtx_001", "kubernaut_start_investigation", map[string]any{"status": "ok"}),
+			modelWithCall("Starting", "toolu_vrtx_001", "kubernaut_investigate"),
+			toolResult("toolu_vrtx_001", "kubernaut_investigate", map[string]any{"status": "ok"}),
 			modelText("Investigation complete."),
 		))
 		original := len(req.Contents)
@@ -76,7 +76,7 @@ var _ = Describe("historySanitizer BeforeModelCallback (#1299)", func() {
 	It("UT-AF-1299-003: single orphaned FunctionCall — synthetic FunctionResponse injected", func() {
 		req := callReq(makeContents(
 			userText("investigate"),
-			modelWithCall("Let me check", "toolu_vrtx_orphan", "kubernaut_start_investigation"),
+			modelWithCall("Let me check", "toolu_vrtx_orphan", "kubernaut_investigate"),
 			// Missing FunctionResponse for toolu_vrtx_orphan
 			userText("start the investigation again"),
 		))
@@ -92,7 +92,7 @@ var _ = Describe("historySanitizer BeforeModelCallback (#1299)", func() {
 			for _, p := range c.Parts {
 				if p.FunctionResponse != nil && p.FunctionResponse.ID == "toolu_vrtx_orphan" {
 					foundSyntheticResponse = true
-					Expect(p.FunctionResponse.Name).To(Equal("kubernaut_start_investigation"))
+					Expect(p.FunctionResponse.Name).To(Equal("kubernaut_investigate"))
 					Expect(p.FunctionResponse.Response).To(HaveKey("error"))
 				}
 			}
@@ -159,7 +159,7 @@ var _ = Describe("historySanitizer BeforeModelCallback (#1299)", func() {
 	It("UT-AF-1299-006: synthetic response is placed immediately after orphaned FunctionCall content", func() {
 		req := callReq(makeContents(
 			userText("investigate"),
-			modelWithCall("Calling tool", "orphan-pos", "kubernaut_start_investigation"),
+			modelWithCall("Calling tool", "orphan-pos", "kubernaut_investigate"),
 			userText("continue please"),
 		))
 

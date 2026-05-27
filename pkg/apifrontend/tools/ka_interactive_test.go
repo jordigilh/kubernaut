@@ -235,10 +235,10 @@ var _ = Describe("Interactive Action Handlers (G1)", func() {
 	})
 
 	Describe("Constructors (G1)", func() {
-		It("UT-AF-1234-060: NewStreamInvestigationTool constructor returns valid tool", func() {
-			t, err := tools.NewStreamInvestigationTool(nil)
+		It("UT-AF-1234-060: NewInvestigateTool constructor returns valid tool", func() {
+			t, err := tools.NewInvestigateTool(nil, nil)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(t.Name()).To(Equal("kubernaut_stream_investigation"))
+			Expect(t.Name()).To(Equal("kubernaut_investigate"))
 		})
 
 		It("UT-AF-1234-061: Interactive tool constructors return valid tools", func() {

@@ -86,18 +86,24 @@ var _ = Describe("Audit event emission – tool handlers (PR2 wiring)", func() {
 		})
 	})
 
-	Describe("HandleStartInvestigation", func() {
+	Describe("HandleInvestigation (new investigation)", func() {
 		It("UT-AF-1156-052: emits ka.delegated on successful delegation", func() {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			mux := http.NewServeMux()
+			mux.HandleFunc("/api/v1/incident/analyze", func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusAccepted)
 				_ = json.NewEncoder(w).Encode(map[string]string{"session_id": "sess-abc"})
-			}))
+			})
+			mux.HandleFunc("/api/v1/incident/session/sess-abc/stream", func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = w.Write([]byte("event: complete\ndata: {\"summary\":\"done\"}\n\n"))
+			})
+			server := httptest.NewServer(mux)
 			defer server.Close()
 
 			spy := &spyEmitter{}
 			kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
-			_, err := tools.HandleStartInvestigation(context.Background(), kaClient,
-				tools.StartInvestigationArgs{Namespace: "payments", Name: "rr-1"}, spy)
+			_, err := tools.HandleInvestigation(context.Background(), kaClient,
+				tools.InvestigateArgs{Namespace: "payments", Name: "rr-1"}, spy)
 			Expect(err).NotTo(HaveOccurred())
 
 			events := spy.eventsByType(audit.EventKADelegated)
@@ -109,20 +115,22 @@ var _ = Describe("Audit event emission – tool handlers (PR2 wiring)", func() {
 		})
 	})
 
-	Describe("HandlePollInvestigation", func() {
+	Describe("HandleInvestigation (resume completed)", func() {
 		It("UT-AF-1156-053: emits ka.result_received with result_type and ka_correlation_id on completed", func() {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				_ = json.NewEncoder(w).Encode(map[string]interface{}{
-					"status": "completed",
-					"result": map[string]string{"summary": "OOM Kill root cause"},
-				})
-			}))
+			mux := http.NewServeMux()
+			mux.HandleFunc("/api/v1/incident/session/sess-1", func(w http.ResponseWriter, _ *http.Request) {
+				_ = json.NewEncoder(w).Encode(ka.SessionStatus{SessionID: "sess-1", Status: "completed"})
+			})
+			mux.HandleFunc("/api/v1/incident/session/sess-1/result", func(w http.ResponseWriter, _ *http.Request) {
+				_ = json.NewEncoder(w).Encode(ka.IncidentResponse{SessionID: "sess-1", Summary: "OOM Kill root cause"})
+			})
+			server := httptest.NewServer(mux)
 			defer server.Close()
 
 			spy := &spyEmitter{}
 			kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
-			_, err := tools.HandlePollInvestigation(context.Background(), kaClient,
-				tools.PollInvestigationArgs{SessionID: "sess-1"}, 1, 0, spy)
+			_, err := tools.HandleInvestigation(context.Background(), kaClient,
+				tools.InvestigateArgs{SessionID: "sess-1"}, spy)
 			Expect(err).NotTo(HaveOccurred())
 
 			events := spy.eventsByType(audit.EventKAResultReceived)
@@ -144,8 +152,8 @@ var _ = Describe("Audit event emission – tool handlers (PR2 wiring)", func() {
 
 			spy := &spyEmitter{}
 			kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
-			_, err := tools.HandlePollInvestigation(context.Background(), kaClient,
-				tools.PollInvestigationArgs{SessionID: "sess-fail"}, 1, 0, spy)
+			_, err := tools.HandleInvestigation(context.Background(), kaClient,
+				tools.InvestigateArgs{SessionID: "sess-fail"}, spy)
 			Expect(err).NotTo(HaveOccurred())
 
 			events := spy.eventsByType(audit.EventKAResultReceived)

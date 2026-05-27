@@ -23,8 +23,8 @@ var _ = Describe("System Prompt", func() {
 		Expect(instruction).To(ContainSubstring("Never reference internal system names"))
 	})
 
-	It("UT-AF-131-002: prompt contains polling re-call instruction", func() {
-		Expect(instruction).To(ContainSubstring("kubernaut_poll_investigation"))
+	It("UT-AF-131-002: prompt contains investigate single-call instruction", func() {
+		Expect(instruction).To(ContainSubstring("kubernaut_investigate"))
 		Expect(instruction).To(ContainSubstring("MUST call"))
 	})
 
@@ -51,16 +51,16 @@ var _ = Describe("System Prompt", func() {
 		Expect(instruction).To(ContainSubstring("kubernaut_get_remediation"))
 		Expect(instruction).To(ContainSubstring("kubernaut_approve"))
 		Expect(instruction).To(ContainSubstring("kubernaut_watch"))
-		Expect(instruction).To(ContainSubstring("kubernaut_start_investigation"))
+		Expect(instruction).To(ContainSubstring("kubernaut_investigate"))
 		Expect(instruction).To(ContainSubstring("kubernaut_select_workflow"))
 		Expect(instruction).To(ContainSubstring("present_decision"))
 		Expect(instruction).To(ContainSubstring("kubernaut_list_workflows"))
 		Expect(instruction).To(ContainSubstring("kubernaut_get_audit_trail"))
 	})
 
-	It("UT-AF-1189-030: prompt includes kubernaut_stream_investigation tool", func() {
-		Expect(instruction).To(ContainSubstring("kubernaut_stream_investigation"))
-		Expect(instruction).To(ContainSubstring("Stream live investigation events"))
+	It("UT-AF-1189-030: prompt includes kubernaut_investigate tool", func() {
+		Expect(instruction).To(ContainSubstring("kubernaut_investigate"))
+		Expect(instruction).To(ContainSubstring("streams live events"))
 	})
 
 	It("UT-AF-1189-031: prompt includes kubernaut_discover_workflows tool", func() {
@@ -119,8 +119,7 @@ var _ = Describe("System Prompt", func() {
 
 		It("UT-AF-1275-014: intent group 'investigate' contains expected tools", func() {
 			result := agentpkg.BuildInstruction("ns")
-			Expect(result).To(ContainSubstring("kubernaut_start_investigation"))
-			Expect(result).To(ContainSubstring("kubernaut_stream_investigation"))
+			Expect(result).To(ContainSubstring("kubernaut_investigate"))
 		})
 
 		It("UT-AF-1275-015: intent group 'observe' contains kubectl tools", func() {

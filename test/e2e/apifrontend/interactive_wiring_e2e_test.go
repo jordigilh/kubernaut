@@ -113,11 +113,11 @@ var _ = Describe("Interactive Wiring E2E (W6)", Label("e2e", "phase4", "wiring")
 
 	Describe("E2E-AF-1234-W02: Deferred CRD lifecycle through MCP", func() {
 
-		It("E2E-AF-1234-W02a: kubernaut_stream_investigation is exposed in tools/list", func() {
+		It("E2E-AF-1234-W02a: kubernaut_investigate is exposed in tools/list", func() {
 			body, err := mcpToolsList()
 			Expect(err).NotTo(HaveOccurred())
-			Expect(body).To(ContainSubstring("kubernaut_stream_investigation"),
-				"tools/list should expose kubernaut_stream_investigation")
+			Expect(body).To(ContainSubstring("kubernaut_investigate"),
+				"tools/list should expose kubernaut_investigate")
 		})
 
 		It("E2E-AF-1234-W02b: audit trail includes execution_duration_ms after tool call", func() {
@@ -132,7 +132,7 @@ var _ = Describe("Interactive Wiring E2E (W6)", Label("e2e", "phase4", "wiring")
 				"tool call duration metric should be registered")
 		})
 
-		It("E2E-AF-1234-W02c: per-tool timeout is respected — stream tools do not use global timeout", func() {
+		It("E2E-AF-1234-W02c: per-tool timeout is respected — investigate tool does not use global timeout", func() {
 			body, err := mcpToolsList()
 			Expect(err).NotTo(HaveOccurred())
 
@@ -140,15 +140,15 @@ var _ = Describe("Interactive Wiring E2E (W6)", Label("e2e", "phase4", "wiring")
 			if err := json.Unmarshal([]byte(body), &parsed); err == nil {
 				if result, ok := parsed["result"].(map[string]interface{}); ok {
 					if tools, ok := result["tools"].([]interface{}); ok {
-						var hasStream bool
+						var hasInvestigate bool
 						for _, t := range tools {
 							if tm, ok := t.(map[string]interface{}); ok {
-								if strings.Contains(fmt.Sprintf("%v", tm["name"]), "stream") {
-									hasStream = true
+								if strings.Contains(fmt.Sprintf("%v", tm["name"]), "kubernaut_investigate") {
+									hasInvestigate = true
 								}
 							}
 						}
-						Expect(hasStream).To(BeTrue(), "stream tool should be in tools/list")
+						Expect(hasInvestigate).To(BeTrue(), "kubernaut_investigate should be in tools/list")
 					}
 				}
 			}

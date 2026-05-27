@@ -361,8 +361,8 @@ var _ = Describe("Progressive A2A Streaming (issue #1258)", Label("e2e", "phase3
 		streamCtx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 		defer cancel()
 
-		// Turn 1: Start investigation — triggers kubernaut_start_investigation
-		// (requires mock-LLM af_start_investigation keyword scenario)
+		// Turn 1: Start investigation — triggers kubernaut_investigate
+		// (requires mock-LLM af_investigate keyword scenario)
 		resp1, err := a2aSSEPost(streamCtx, a2aMessageStream("progressive-05-t1", "start investigation for pod nginx in default"))
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp1.Body.Close() }()

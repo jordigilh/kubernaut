@@ -20,10 +20,10 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 	})
 
 	Describe("FunctionCall transformation", func() {
-		It("UT-AF-1189-100: kubernaut_start_investigation -> status text with context", func() {
+		It("UT-AF-1189-100: kubernaut_investigate -> status text with context", func() {
 			part := &genai.Part{
 				FunctionCall: &genai.FunctionCall{
-					Name: "kubernaut_start_investigation",
+					Name: "kubernaut_investigate",
 					Args: map[string]any{
 						"namespace": "prod",
 						"kind":      "Deployment",
@@ -36,15 +36,15 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(result).NotTo(BeNil())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue(), "expected *a2a.TextPart")
-			Expect(tp.Text).To(ContainSubstring("Starting investigation"))
+			Expect(tp.Text).To(ContainSubstring("Investigating"))
 			Expect(tp.Text).To(ContainSubstring("prod"))
 			Expect(tp.Text).To(ContainSubstring("api-server"))
 		})
 
-		It("UT-AF-1189-101: kubernaut_stream_investigation -> streaming status", func() {
+		It("UT-AF-1189-101: kubernaut_investigate -> investigating status", func() {
 			part := &genai.Part{
 				FunctionCall: &genai.FunctionCall{
-					Name: "kubernaut_stream_investigation",
+					Name: "kubernaut_investigate",
 					Args: map[string]any{"session_id": "sess-42"},
 				},
 			}
@@ -53,7 +53,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(result).NotTo(BeNil())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(ContainSubstring("Streaming live investigation events"))
+			Expect(tp.Text).To(ContainSubstring("Investigating"))
 		})
 
 		It("UT-AF-1189-102: kubernaut_discover_workflows -> discovering status", func() {
@@ -149,7 +149,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 		It("UT-AF-1189-108: FunctionCall with malformed Args -> no panic, status without context", func() {
 			part := &genai.Part{
 				FunctionCall: &genai.FunctionCall{
-					Name: "kubernaut_start_investigation",
+					Name: "kubernaut_investigate",
 					Args: map[string]any{
 						"namespace": func() {}, // not JSON-serializable
 					},
@@ -159,7 +159,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(ContainSubstring("Starting investigation"))
+			Expect(tp.Text).To(ContainSubstring("Investigating"))
 		})
 
 		It("UT-AF-1189-109: kubectl_list -> listing cluster resources", func() {
@@ -206,10 +206,10 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 	})
 
 	Describe("FunctionResponse summarization", func() {
-		It("UT-AF-1189-111: kubernaut_stream_investigation response with summary -> extracted text", func() {
+		It("UT-AF-1189-111: kubernaut_investigate response with summary -> extracted text", func() {
 			part := &genai.Part{
 				FunctionResponse: &genai.FunctionResponse{
-					Name: "kubernaut_stream_investigation",
+					Name: "kubernaut_investigate",
 					Response: map[string]any{
 						"status":  "completed",
 						"summary": "Root cause: PostgreSQL uses emptyDir with 8Gi limit on node with 16Gi total disk",
@@ -225,10 +225,10 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(tp.Text).NotTo(ContainSubstring(`"summary"`))
 		})
 
-		It("UT-AF-1189-112: kubernaut_stream_investigation response with unknown structure -> fallback", func() {
+		It("UT-AF-1189-112: kubernaut_investigate response with unknown structure -> fallback", func() {
 			part := &genai.Part{
 				FunctionResponse: &genai.FunctionResponse{
-					Name:     "kubernaut_stream_investigation",
+					Name:     "kubernaut_investigate",
 					Response: map[string]any{"unexpected_field": 42},
 				},
 			}
@@ -328,7 +328,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 		It("UT-AF-1189-119: FunctionResponse with nil Response map -> fallback text, no panic", func() {
 			part := &genai.Part{
 				FunctionResponse: &genai.FunctionResponse{
-					Name:     "kubernaut_stream_investigation",
+					Name:     "kubernaut_investigate",
 					Response: nil,
 				},
 			}
@@ -340,10 +340,10 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(tp.Text).To(ContainSubstring("Investigation completed"))
 		})
 
-		It("UT-AF-1189-120: kubernaut_start_investigation response with session_id -> started summary", func() {
+		It("UT-AF-1189-120: kubernaut_investigate response with session_id -> started summary", func() {
 			part := &genai.Part{
 				FunctionResponse: &genai.FunctionResponse{
-					Name: "kubernaut_start_investigation",
+					Name: "kubernaut_investigate",
 					Response: map[string]any{
 						"session_id": "sess-abc-123",
 						"status":     "started",
@@ -408,7 +408,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			largeValue := strings.Repeat("x", 10*1024)
 			part := &genai.Part{
 				FunctionCall: &genai.FunctionCall{
-					Name: "kubernaut_start_investigation",
+					Name: "kubernaut_investigate",
 					Args: map[string]any{"namespace": largeValue},
 				},
 			}
@@ -416,7 +416,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(ContainSubstring("Starting investigation"))
+			Expect(tp.Text).To(ContainSubstring("Investigating"))
 			Expect(len(tp.Text)).To(BeNumerically("<", 1024), "status text should be bounded")
 		})
 
@@ -424,7 +424,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			largeValue := strings.Repeat("analysis data... ", 6000)
 			part := &genai.Part{
 				FunctionResponse: &genai.FunctionResponse{
-					Name: "kubernaut_stream_investigation",
+					Name: "kubernaut_investigate",
 					Response: map[string]any{
 						"summary": largeValue,
 					},
@@ -459,10 +459,10 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(result).To(BeNil())
 		})
 
-		It("UT-AF-1189-154: kubernaut_start_investigation response without session_id -> generic fallback", func() {
+		It("UT-AF-1189-154: kubernaut_investigate response without session_id -> generic fallback", func() {
 			part := &genai.Part{
 				FunctionResponse: &genai.FunctionResponse{
-					Name:     "kubernaut_start_investigation",
+					Name:     "kubernaut_investigate",
 					Response: map[string]any{"status": "pending"},
 				},
 			}
@@ -470,7 +470,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal("Investigation started.\n\n"))
+			Expect(tp.Text).To(Equal("Investigation completed.\n\n"))
 		})
 
 		It("UT-AF-1189-155: kubernaut_select_workflow response with message only -> message text", func() {
@@ -634,7 +634,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 
 			part := &genai.Part{
 				FunctionResponse: &genai.FunctionResponse{
-					Name:     "kubernaut_stream_investigation",
+					Name:     "kubernaut_investigate",
 					Response: map[string]any{"summary": multiByteStr},
 				},
 			}
@@ -651,7 +651,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 
 			part := &genai.Part{
 				FunctionResponse: &genai.FunctionResponse{
-					Name:     "kubernaut_stream_investigation",
+					Name:     "kubernaut_investigate",
 					Response: map[string]any{"summary": multiByteStr},
 				},
 			}
@@ -805,8 +805,8 @@ var _ = Describe("Status message line breaks (#1301)", func() {
 	It("UT-AF-1301-003: FunctionResponse summary ends with paragraph break", func() {
 		part := &genai.Part{
 			FunctionResponse: &genai.FunctionResponse{
-				Name:     "kubernaut_start_investigation",
-				Response: map[string]any{"session_id": "sess-42"},
+				Name:     "af_create_rr",
+				Response: map[string]any{"rr_id": "prod/rr-test-001"},
 			},
 		}
 		result, err := convert(context.Background(), nil, part)
@@ -936,7 +936,7 @@ var _ = Describe("Tool error surfacing (#1302)", func() {
 		nonStreamConvert := launcher.BuildPartConverterForTest()
 		part := &genai.Part{
 			FunctionResponse: &genai.FunctionResponse{
-				Name:     "kubernaut_start_investigation",
+				Name:     "kubernaut_investigate",
 				Response: map[string]any{"error": "connection refused"},
 			},
 		}
@@ -958,10 +958,10 @@ var _ = Describe("GenAIPartConverter — Streaming Mode (TP-1258)", func() {
 	})
 
 	Describe("FunctionResponse suppression when streaming", func() {
-		It("UT-AF-1258-030: stream_investigation FunctionResponse -> nil when streaming mode", func() {
+		It("UT-AF-1258-030: investigate FunctionResponse -> nil when streaming mode", func() {
 			part := &genai.Part{
 				FunctionResponse: &genai.FunctionResponse{
-					Name: "kubernaut_stream_investigation",
+					Name: "kubernaut_investigate",
 					Response: map[string]any{
 						"status":  "completed",
 						"summary": "OOM kill detected",
@@ -970,7 +970,7 @@ var _ = Describe("GenAIPartConverter — Streaming Mode (TP-1258)", func() {
 			}
 			result, err := convertStreaming(context.Background(), nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result).To(BeNil(), "stream_investigation FunctionResponse should be suppressed in streaming mode")
+			Expect(result).To(BeNil(), "kubernaut_investigate FunctionResponse should be suppressed in streaming mode")
 		})
 
 		It("UT-AF-1258-031: discover_workflows FunctionResponse -> brief summary", func() {
@@ -1045,7 +1045,7 @@ var _ = Describe("GenAIPartConverter — Streaming Mode (TP-1258)", func() {
 		It("UT-AF-1258-035: FunctionCall parts unchanged in streaming mode", func() {
 			part := &genai.Part{
 				FunctionCall: &genai.FunctionCall{
-					Name: "kubernaut_stream_investigation",
+					Name: "kubernaut_investigate",
 					Args: map[string]any{"session_id": "sess-42"},
 				},
 			}
@@ -1054,7 +1054,7 @@ var _ = Describe("GenAIPartConverter — Streaming Mode (TP-1258)", func() {
 			Expect(result).NotTo(BeNil())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(ContainSubstring("Streaming live investigation events"))
+			Expect(tp.Text).To(ContainSubstring("Investigating"))
 		})
 
 		It("UT-AF-1258-036: Thought parts unchanged in streaming mode", func() {
