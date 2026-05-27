@@ -5980,7 +5980,7 @@ type ApifrontendSessionCompletedPayload struct {
 	TotalTokensOutput OptInt `json:"total_tokens_output"`
 	// Total number of tool invocations.
 	TotalToolCalls OptInt `json:"total_tool_calls"`
-	// Number of poll_investigation calls during this session.
+	// Number of investigation status checks during this session.
 	PollsCount OptInt `json:"polls_count"`
 	// Final user decision (if session reached decision phase).
 	UserDecision OptApifrontendSessionCompletedPayloadUserDecision `json:"user_decision"`
