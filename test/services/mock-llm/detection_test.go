@@ -103,6 +103,41 @@ var _ = Describe("Scenario Detection Rules", func() {
 		})
 	})
 
+	Describe("UT-MOCK-1292-001: Cross-namespace af_create_rr scenario extracts workload namespace", func() {
+		DescribeTable("should select af_create_rr_cross_ns and extract the workload namespace",
+			func(prompt, expectedNS, expectedName string) {
+				ctx := &scenarios.DetectionContext{
+					Content:         prompt,
+					AllText:         prompt,
+					LastUserContent: prompt,
+				}
+				result := registry.Detect(ctx)
+				Expect(result).NotTo(BeNil())
+				Expect(result.Scenario.Name()).To(Equal("af_create_rr_cross_ns"),
+					"cross-namespace remediation prompt must match the cross-NS scenario")
+
+				cfgScenario, ok := result.Scenario.(scenarios.ScenarioWithConfig)
+				Expect(ok).To(BeTrue())
+				cfg := cfgScenario.Config()
+				Expect(cfg.ResourceNS).To(Equal(expectedNS),
+					"ResourceNS must be the workload namespace extracted from the prompt, not the default controller namespace")
+				Expect(cfg.ResourceName).To(Equal(expectedName))
+			},
+			Entry("UT-MOCK-1292-001a: single-line prompt with spaces",
+				"cross-namespace remediation for deployment memory-eater in demo-workload namespace",
+				"demo-workload", "memory-eater"),
+			Entry("UT-MOCK-1292-001b: newline before namespace (ADK Gemini restructure)",
+				"cross-namespace remediation for deployment memory-eater in\ndemo-workload namespace",
+				"demo-workload", "memory-eater"),
+			Entry("UT-MOCK-1292-001c: tab-separated tokens",
+				"cross-namespace remediation for deployment\tmemory-eater\tin\tdemo-workload\tnamespace",
+				"demo-workload", "memory-eater"),
+			Entry("UT-MOCK-1292-001d: dynamic namespace with digits and hyphens",
+				"cross-namespace remediation for deployment memory-eater in fp-e2e-1292-1779885620 namespace",
+				"fp-e2e-1292-1779885620", "memory-eater"),
+		)
+	})
+
 	Describe("UT-MOCK-025: Default fallback when no rule matches", func() {
 		It("should return default scenario for unrecognized content", func() {
 			ctx := &scenarios.DetectionContext{

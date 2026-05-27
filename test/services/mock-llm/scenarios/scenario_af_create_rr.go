@@ -43,7 +43,7 @@ func afCreateRRConfig() MockScenarioConfig {
 	}
 }
 
-var deployNSRe = regexp.MustCompile(`deployment (\S+) in (\S+) namespace`)
+var deployNSRe = regexp.MustCompile(`deployment\s+(\S+)\s+in\s+(\S+)\s+namespace`)
 
 // afCreateRRSlowConfig returns an af_create_rr config with a 5-second
 // second-turn delay. Used by TC-E2E-STREAM-03 to test client disconnect
