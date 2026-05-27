@@ -186,15 +186,25 @@ func WaitForPrometheusRuleState(ctx context.Context, prometheusURL, ruleName str
 // AFInjectOTLPMetrics sends a single gauge metric to Prometheus via the OTLP HTTP endpoint.
 // This is a convenience wrapper around InjectMetrics for AF E2E tests that inject one
 // metric at a time with simple label maps.
+//
+// Retries up to 5 times with 2s back-off to survive NodePort endpoint
+// propagation delays after Prometheus rolling restarts.
 func AFInjectOTLPMetrics(ctx context.Context, prometheusURL, metricName string, value float64, labels map[string]string) error {
-	_ = ctx // kept for API compatibility; InjectMetrics is context-free
-	return InjectMetrics(prometheusURL, []TestMetric{
-		{
-			Name:   metricName,
-			Value:  value,
-			Labels: labels,
-		},
-	})
+	metric := []TestMetric{{Name: metricName, Value: value, Labels: labels}}
+
+	var lastErr error
+	for attempt := range 5 {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if lastErr = InjectMetrics(prometheusURL, metric); lastErr == nil {
+			return nil
+		}
+		if attempt < 4 {
+			time.Sleep(2 * time.Second)
+		}
+	}
+	return fmt.Errorf("after 5 attempts: %w", lastErr)
 }
 
 // SeverityTriageAlertRulesYAML is the Prometheus alert rules YAML for seeding
