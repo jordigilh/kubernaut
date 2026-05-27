@@ -110,7 +110,7 @@ var _ = Describe("Audit event emission – tool handlers (PR2 wiring)", func() {
 	})
 
 	Describe("HandlePollInvestigation", func() {
-		It("UT-AF-1156-053: emits ka.result_received when final result returned", func() {
+		It("UT-AF-1156-053: emits ka.result_received with result_type and ka_correlation_id on completed", func() {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{
 					"status": "completed",
@@ -128,7 +128,30 @@ var _ = Describe("Audit event emission – tool handlers (PR2 wiring)", func() {
 			events := spy.eventsByType(audit.EventKAResultReceived)
 			Expect(events).To(HaveLen(1), "expected exactly one ka.result_received event")
 			Expect(events[0].Detail).To(HaveKeyWithValue("session_id", "sess-1"))
-			Expect(events[0].Detail).To(HaveKeyWithValue("status", "completed"))
+			Expect(events[0].Detail).To(HaveKeyWithValue("result_type", "rca_complete"),
+				"result_type is required by OpenAPI schema (data-storage-v1.yaml)")
+			Expect(events[0].Detail).To(HaveKeyWithValue("ka_correlation_id", "sess-1"),
+				"ka_correlation_id is required by OpenAPI schema")
+		})
+
+		It("UT-AF-1156-058: emits ka.result_received with result_type=rca_failed on failure", func() {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{
+					"status": "failed",
+				})
+			}))
+			defer server.Close()
+
+			spy := &spyEmitter{}
+			kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
+			_, err := tools.HandlePollInvestigation(context.Background(), kaClient,
+				tools.PollInvestigationArgs{SessionID: "sess-fail"}, 1, 0, spy)
+			Expect(err).NotTo(HaveOccurred())
+
+			events := spy.eventsByType(audit.EventKAResultReceived)
+			Expect(events).To(HaveLen(1))
+			Expect(events[0].Detail).To(HaveKeyWithValue("result_type", "rca_failed"))
+			Expect(events[0].Detail).To(HaveKeyWithValue("ka_correlation_id", "sess-fail"))
 		})
 	})
 

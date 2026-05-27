@@ -101,8 +101,9 @@ func HandlePollInvestigation(ctx context.Context, kaClient *ka.Client, args Poll
 				auditor.Emit(ctx, &audit.Event{
 					Type: audit.EventKAResultReceived,
 					Detail: map[string]string{
-						"session_id": args.SessionID,
-						"status":     "completed",
+						"session_id":        args.SessionID,
+						"ka_correlation_id": args.SessionID,
+						"result_type":       "rca_complete",
 					},
 				})
 			}
@@ -117,8 +118,9 @@ func HandlePollInvestigation(ctx context.Context, kaClient *ka.Client, args Poll
 				auditor.Emit(ctx, &audit.Event{
 					Type: audit.EventKAResultReceived,
 					Detail: map[string]string{
-						"session_id": args.SessionID,
-						"status":     "failed",
+						"session_id":        args.SessionID,
+						"ka_correlation_id": args.SessionID,
+						"result_type":       "rca_failed",
 					},
 				})
 			}
