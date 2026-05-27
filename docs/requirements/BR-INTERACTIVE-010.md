@@ -69,8 +69,8 @@ path that is not subject to cooldown. No RO changes are required.
 ### SC-5: Human-Only IS Creation
 
 1. AF's `UserIdentity` includes an `IsServiceAccount` boolean, set during TokenReview for SA tokens
-2. `MaterializeCRD` rejects IS creation when the caller is a ServiceAccount
-3. The single-driver guard in `MaterializeCRD` is migrated from label-based lookup to field selector (`spec.remediationRequestRef.name`)
+2. `ServiceDecorator.Create` rejects session creation when the caller is a ServiceAccount (before CRD materialization)
+3. The single-driver guard in `MaterializeCRD` uses field selector (`spec.remediationRequestRef.name`) to prevent concurrent sessions by different users
 
 ### SC-6: MCP discover_workflows Phase 2 Enrichment Fix
 
@@ -102,7 +102,7 @@ path that is not subject to cooldown. No RO changes are required.
 | IS created mid-flight (dynamic takeover) | AA cancels existing session, re-submits with `interactive=true` |
 | IS for terminal RR (resume) | New RR + IS created; AF path bypasses RO cooldown by design |
 | Multiple IS for same RR by same user | Allowed (reconnection); different user blocked (single-driver guard) |
-| SA attempts IS creation | Rejected by AF's `MaterializeCRD` |
+| SA attempts IS creation | Rejected by AF's `ServiceDecorator.Create` |
 | RR cancelled while IS active | Pre-existing gap: KA session continues until GC (follow-up) |
 | Chained sessions (multiple prior sessions) | Latest session used for reconstruction (contains all prior context) |
 

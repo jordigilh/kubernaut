@@ -54,8 +54,11 @@ const (
 // Named SessionUser (not UserIdentity) to avoid collision with internal/auth.UserIdentity.
 type SessionUser struct {
 	// Username from JWT sub claim.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
 	Username string `json:"username"`
 	// Groups from JWT groups claim (RBAC-relevant only).
+	// +kubebuilder:validation:MaxItems=64
 	Groups []string `json:"groups,omitempty"`
 }
 
@@ -83,8 +86,12 @@ type InvestigationSessionSpec struct {
 // ObjectRef is a reference to a namespaced Kubernetes object.
 type ObjectRef struct {
 	// Name of the referenced object.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
 	Name string `json:"name"`
 	// Namespace of the referenced object.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
 	Namespace string `json:"namespace"`
 }
 
