@@ -7248,7 +7248,7 @@ components:
           description: Total number of tool invocations
         polls_count:
           type: integer
-          description: Number of poll_investigation calls during this session
+          description: Number of investigation status checks during this session
         user_decision:
           type: string
           enum: [accept, reject, investigate_more, cancel, none]

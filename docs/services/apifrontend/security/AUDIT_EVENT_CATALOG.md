@@ -96,7 +96,7 @@ type Event struct {
 | `ka.delegated` | `EventKADelegated` | AU-2, AU-12 | Work delegated to KubernautAgent (takeover, reconnect, REST) | `session_id`, `ka_correlation_id`, `delegation_type` |
 | `ka.result_received` | `EventKAResultReceived` | AU-2, AU-12 | Result received from KubernautAgent (complete, cancel, REST) | `session_id`, `ka_correlation_id`, `result_type` |
 
-**Emitted from:** `pkg/apifrontend/tools/ka_tools.go`, `pkg/apifrontend/tools/ka_interactive.go`
+**Emitted from:** `pkg/apifrontend/tools/ka_investigate.go`, `pkg/apifrontend/tools/ka_interactive.go`
 
 ---
 
