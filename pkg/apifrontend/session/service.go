@@ -86,7 +86,7 @@ type CRDSessionService struct {
 
 	mu             sync.RWMutex
 	crdIndex       map[string]string        // sessionID -> CRD name
-	pendingConfigs map[string]*CreateConfig  // sessionID -> deferred CreateConfig (not yet materialized)
+	pendingConfigs map[string]*CreateConfig  // sessionID -> deferred CreateConfig; cleaned on Delete(). Since #1293, MaterializeCRD is deprecated so entries persist until session deletion (bounded by active session count).
 }
 
 // NewCRDSessionService creates a new CRDSessionService. The delegate should
@@ -367,10 +367,14 @@ func (s *CRDSessionService) PruneTerminalEntries(ctx context.Context) int {
 	return pruned
 }
 
+// Deprecated: MaterializeCRD is the legacy path that created the IS CRD on
+// af_create_rr. Since #1293, IS CRD creation is deferred to explicit
+// kubernaut_takeover via InitializeSessionByRR. This method is retained for
+// backward compatibility with any remaining callers but is not invoked in
+// the current production flow.
+//
 // MaterializeCRD creates the K8s InvestigationSession CRD for a previously
-// deferred session. It is called by the af_create_rr after-callback once a
-// real RemediationRequest reference is available. Idempotent: returns nil
-// if the CRD was already materialized.
+// deferred session. Idempotent: returns nil if the CRD was already materialized.
 func (s *CRDSessionService) MaterializeCRD(ctx context.Context, sessionID string, rrRef v1alpha1.ObjectRef) error {
 	s.mu.Lock()
 	cfg, isPending := s.pendingConfigs[sessionID]
@@ -487,6 +491,123 @@ func (s *CRDSessionService) FinalizeSessionByRR(ctx context.Context, rrNamespace
 			return s.UpdatePhase(ctx, is.Name, phase, msg, userID)
 		}
 	}
+	return nil
+}
+
+// InitializeSessionByRR creates an InvestigationSession CRD for a takeover
+// action. Unlike MaterializeCRD (which uses deferred A2A state), this builds
+// the CRD directly from MCP bridge context. Idempotent: returns nil if an
+// active IS CRD for this RR already exists for the same user.
+//
+// BR-INTERACTIVE-010 SC-1.3: enables dynamic takeover signal via IS CRD.
+// BR-INTERACTIVE-004: single-driver guard rejects a different user's takeover.
+//
+// Concurrency: the List→Create sequence has a TOCTOU window. This is accepted
+// because the Lease is authoritative for single-driver enforcement (same
+// trade-off as MaterializeCRD). AlreadyExists on Create provides idempotency
+// at the K8s layer for concurrent calls with the same CRD name.
+func (s *CRDSessionService) InitializeSessionByRR(ctx context.Context, rrNamespace, rrName, kaSessionID, username string, groups []string) error {
+	if kaSessionID == "" {
+		return fmt.Errorf("kaSessionID is required for IS CRD initialization")
+	}
+
+	rrRef := v1alpha1.ObjectRef{Namespace: rrNamespace, Name: rrName}
+
+	var existingList v1alpha1.InvestigationSessionList
+	if err := s.client.List(ctx, &existingList,
+		client.InNamespace(s.namespace),
+		client.MatchingFields{FieldIndexRRName: rrName},
+	); err != nil {
+		return fmt.Errorf("list sessions for RR %s/%s: %w", rrNamespace, rrName, err)
+	}
+	for i := range existingList.Items {
+		existing := &existingList.Items[i]
+		if existing.Status.Phase == v1alpha1.SessionPhaseActive ||
+			existing.Status.Phase == v1alpha1.SessionPhaseDisconnected {
+			if existing.Spec.UserIdentity.Username == username {
+				return nil
+			}
+			return fmt.Errorf("session_active: an active investigation session already exists for RR %s/%s",
+				rrNamespace, rrName)
+		}
+	}
+
+	crdName := kaSessionID
+	if !validCRDName.MatchString(crdName) {
+		crdName = fmt.Sprintf("isess-%d", time.Now().UnixNano())
+	}
+
+	now := metav1.Now()
+	crd := &v1alpha1.InvestigationSession{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      crdName,
+			Namespace: s.namespace,
+			Labels: map[string]string{
+				LabelPhase:     string(v1alpha1.SessionPhaseActive),
+				LabelManagedBy: "kubernaut-apifrontend",
+				LabelUser:      sanitizeLabelValue(username),
+				LabelRRName:    sanitizeLabelValue(rrName),
+			},
+		},
+		Spec: v1alpha1.InvestigationSessionSpec{
+			RemediationRequestRef: rrRef,
+			A2ATaskID:             kaSessionID,
+			UserIdentity: v1alpha1.SessionUser{
+				Username: username,
+				Groups:   groups,
+			},
+			JoinMode: v1alpha1.SessionJoinModeTakeover,
+		},
+		Status: v1alpha1.InvestigationSessionStatus{
+			Phase:           v1alpha1.SessionPhaseActive,
+			ConnectionState: v1alpha1.ConnectionStateConnected,
+			StartedAt:       &now,
+		},
+	}
+
+	if err := s.client.Create(ctx, crd); err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			return nil
+		}
+		return fmt.Errorf("create IS CRD for takeover: %w", err)
+	}
+
+	if err := s.client.Status().Update(ctx, crd); err != nil {
+		s.logger.V(0).Info("IS CRD status update failed after takeover initialize",
+			"crd_name", crdName,
+			"error", security.RedactError(err),
+		)
+	}
+
+	s.mu.Lock()
+	s.crdIndex[kaSessionID] = crdName
+	s.mu.Unlock()
+
+	// Note: sessionsActive gauge tracks in-memory session count. For
+	// InitializeSessionByRR the IS CRD is created directly (no ADK Create),
+	// so the gauge may under-count if the session was not also tracked via
+	// Create(). This is acceptable because the gauge's primary consumer is
+	// the TTL reconciler, which reads CRDs directly from the cache.
+	s.incSessionGauge(string(v1alpha1.SessionPhaseActive))
+
+	if s.auditor != nil {
+		s.auditor.Emit(ctx, &audit.Event{
+			Type:   audit.EventSessionCreated,
+			UserID: username,
+			Detail: map[string]string{
+				"session_id":    kaSessionID,
+				"join_mode":     string(v1alpha1.SessionJoinModeTakeover),
+				"user_identity": username,
+				"rr_ref":        rrNamespace + "/" + rrName,
+			},
+		})
+	}
+
+	s.logger.Info("IS CRD initialized for takeover",
+		"crd_name", crdName,
+		"rr_ref", rrName,
+		"user", username,
+	)
 	return nil
 }
 

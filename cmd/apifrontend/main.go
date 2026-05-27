@@ -610,8 +610,10 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 
 func buildMCPHandler(cfg *config.Config, deps *backendDeps, sessInfra *sessionInfra, metricsReg *metrics.Registry, authorizer auth.ToolAuthorizer, auditor audit.Emitter, logger logr.Logger, userLimiter *ratelimit.UserLimiter) (http.Handler, func() bool, error) {
 	var sessFinalizer handler.ISPhaseFinalizer
+	var sessInitializer handler.ISSessionInitializer
 	if sessInfra != nil && sessInfra.SessionService != nil {
 		sessFinalizer = sessInfra.SessionService
+		sessInitializer = sessInfra.SessionService
 	}
 	bridgeCfg := &handler.MCPBridgeConfig{
 		K8sClient:          deps.K8sClient(),
@@ -629,6 +631,7 @@ func buildMCPHandler(cfg *config.Config, deps *backendDeps, sessInfra *sessionIn
 		MaxConcurrentTools: 10,
 		UserLimiter:        userLimiter,
 		SessionFinalizer:   sessFinalizer,
+		SessionInitializer: sessInitializer,
 	}
 
 	mcpSessionTimeout := cfg.MCP.SessionIdleTimeout

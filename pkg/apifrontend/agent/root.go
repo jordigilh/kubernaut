@@ -13,7 +13,6 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
-	v1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ratelimit"
@@ -299,8 +298,9 @@ func newMetricsToolCallbacks(toolCalls *prometheus.CounterVec, toolDuration *pro
 // The event includes tool name, result status, and user identity.
 // Issue #1189: when af_create_rr is called within an A2A task context, the
 // audit event includes a2a_task_id for bidirectional task-to-RR correlation.
-// G6: when sessionSvc is non-nil and af_create_rr produces a valid rr_id,
-// MaterializeCRD is called to create the deferred InvestigationSession CRD.
+// G6 (revised #1293): IS CRD creation moved to kubernaut_takeover hook in
+// mcp_bridge.go. The sessionSvc parameter is retained for future use but
+// MaterializeCRD is no longer called from this callback.
 func newAuditToolCallback(auditor audit.Emitter, sessionSvc *session.CRDSessionService) llmagent.AfterToolCallback {
 	return func(ctx tool.Context, t tool.Tool, input, output map[string]any, toolErr error) (map[string]any, error) {
 		if auditor == nil {
@@ -343,15 +343,11 @@ func newAuditToolCallback(auditor audit.Emitter, sessionSvc *session.CRDSessionS
 						sc.RRName = parts[1]
 					}
 				}
-				// G6: Materialize the deferred InvestigationSession CRD now
-				// that we have a real RR reference from af_create_rr.
-				if sessionSvc != nil && sc != nil && sc.SessionID != "" && len(parts) == 2 {
-					rrRef := v1alpha1.ObjectRef{Namespace: parts[0], Name: parts[1]}
-					if err := sessionSvc.MaterializeCRD(ctx, sc.SessionID, rrRef); err != nil {
-						log.Printf("[audit-tool-callback] MaterializeCRD failed for session=%q rr=%q: %v",
-							sc.SessionID, rrID, err)
-					}
-				}
+				// G6 (revised by #1293): IS CRD creation is now deferred to
+				// explicit user takeover (kubernaut_takeover) rather than
+				// auto-materializing on af_create_rr. This prevents autonomous
+				// "investigate and fix" flows from creating IS CRDs that would
+				// force the AA into interactive mode.
 			}
 		}
 

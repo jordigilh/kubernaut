@@ -36,6 +36,14 @@ type ISPhaseFinalizer interface {
 	FinalizeSessionByRR(ctx context.Context, rrNamespace, rrName string, phase isv1alpha1.SessionPhase) error
 }
 
+// ISSessionInitializer creates an IS CRD when a user explicitly takes over
+// an investigation via kubernaut_takeover. Unlike MaterializeCRD (which uses
+// deferred A2A state), this creates the CRD directly from MCP context.
+// Implemented by session.CRDSessionService.
+type ISSessionInitializer interface {
+	InitializeSessionByRR(ctx context.Context, rrNamespace, rrName, kaSessionID, username string, groups []string) error
+}
+
 // MCPBridgeConfig holds the configuration for the real MCP tool bridge.
 type MCPBridgeConfig struct {
 	K8sClient          dynamic.Interface
@@ -52,7 +60,8 @@ type MCPBridgeConfig struct {
 	ToolTimeouts       map[string]time.Duration
 	MaxConcurrentTools int64
 	UserLimiter        *ratelimit.UserLimiter
-	SessionFinalizer   ISPhaseFinalizer
+	SessionFinalizer    ISPhaseFinalizer
+	SessionInitializer  ISSessionInitializer
 }
 
 // MCPBridgeMetrics holds Prometheus collectors specific to MCP bridge operations.
@@ -213,7 +222,25 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 	// Interactive investigation tools (G1: 4-phase journey)
 	registerTool(srv, cfg, sem, "kubernaut_takeover", "Take over an existing investigation session",
 		func(ctx context.Context, args tools.InteractiveActionArgs) (any, error) {
-			return tools.HandleTakeover(ctx, cfg.KAMCPClient, args, cfg.Auditor)
+			result, err := tools.HandleTakeover(ctx, cfg.KAMCPClient, args, cfg.Auditor)
+			if err != nil {
+				return result, err
+			}
+			if cfg.SessionInitializer != nil {
+				ns, name, pErr := validate.ParseRRID(args.RRID)
+				if pErr != nil {
+					return result, nil
+				}
+				identity := auth.UserIdentityFromContext(ctx)
+				if identity == nil {
+					return result, nil
+				}
+				if iErr := cfg.SessionInitializer.InitializeSessionByRR(ctx, ns, name, result.SessionID, identity.Username, identity.Groups); iErr != nil {
+					cfg.Logger.Error(iErr, "IS CRD initialization failed on takeover", "rr_id", args.RRID, "session_id", result.SessionID)
+					return nil, fmt.Errorf("takeover succeeded but IS CRD creation failed: %w", iErr)
+				}
+			}
+			return result, nil
 		})
 
 	registerTool(srv, cfg, sem, "kubernaut_message", "Send a message to an active investigation session",
