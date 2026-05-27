@@ -2,7 +2,7 @@
 
 **Business Requirement ID**: BR-INTERACTIVE-010
 **Priority**: P0
-**Status**: Proposed
+**Status**: Implementation Complete
 **Target Version**: v1.5
 **Date**: May 26, 2026
 **Related BRs**: BR-INTERACTIVE-001, BR-INTERACTIVE-004, BR-INTERACTIVE-008
@@ -16,7 +16,7 @@
 The platform requires a single, unified mechanism to signal interactive investigation intent across all pipeline components (AF, RO, AA, KA). The signal must:
 - Be detectable by AA before submitting to KA (pre-emptive interactive mode)
 - Be detectable by AA during a running investigation (dynamic takeover)
-- Allow RO to bypass cooldown blocking for human-initiated re-investigations
+- ~~Allow RO to bypass cooldown blocking for human-initiated re-investigations~~ (CANCELLED — AF inherently bypasses RO cooldown)
 - Prevent ServiceAccount abuse of cooldown bypass
 - Support signal withdrawal (cancellation via IS deletion)
 
@@ -31,7 +31,7 @@ The InvestigationSession CRD already exists and links to the RR via `spec.remedi
 1. AA registers a field index on `spec.remediationRequestRef.name` for InvestigationSession CRDs
 2. Before submitting to KA, AA queries IS by field selector — if an Active IS exists for the RR, `interactive=true` is set on the IncidentRequest
 3. AA watches InvestigationSession CRDs; creation of a new IS for an RR with an active KA session triggers cancel + re-submit with `interactive=true`
-4. AA watches InvestigationSession CRDs; deletion of an IS for an RR with an active KA session triggers cancel + AIAnalysis transition to `PhaseCancelled`
+4. AA watches InvestigationSession CRDs; deletion of an IS for an RR with an active KA session triggers cancel + AIAnalysis transition to `PhaseFailed` with `ReasonInteractiveCancelled`
 
 ### SC-2: KA Interactive Session Lifecycle
 
@@ -50,13 +50,21 @@ The InvestigationSession CRD already exists and links to the RR via `spec.remedi
 4. Reconstructed messages are fed as initial prompt to the LLM
 5. No external payload carries prior context (prevents prompt hijacking — KA retrieves from trusted DS only)
 
-### SC-4: RO Cooldown Bypass for IS-Backed RRs
+### SC-4: RO Cooldown Bypass for IS-Backed RRs — CANCELLED
 
-1. RO registers a field index on `spec.remediationRequestRef.name` for InvestigationSession CRDs
-2. In cooldown check logic (`CheckConsecutiveFailures`, `CheckExponentialBackoff`), RO queries IS for the RR
-3. If an Active IS exists, cooldown is bypassed (investigation proceeds)
-4. Dedup (`CheckDuplicateInProgress`) remains unaffected — two concurrent active investigations for the same alert are still prevented
-5. This enables "resume after terminal" scenarios: user creates new RR + IS for a completed/failed alert
+**Status**: CANCELLED BY DESIGN
+
+**Rationale**: AF inherently bypasses RO cooldown by design. When a human creates an
+InvestigationSession via AF, the resulting RR creation path does not pass through
+RO's cooldown/backoff logic. The cooldown is an RO-internal mechanism for autonomous
+re-investigations; interactive investigations initiated via AF operate on a separate
+path that is not subject to cooldown. No RO changes are required.
+
+~~1. RO registers a field index on `spec.remediationRequestRef.name` for InvestigationSession CRDs~~
+~~2. In cooldown check logic (`CheckConsecutiveFailures`, `CheckExponentialBackoff`), RO queries IS for the RR~~
+~~3. If an Active IS exists, cooldown is bypassed (investigation proceeds)~~
+~~4. Dedup (`CheckDuplicateInProgress`) remains unaffected — two concurrent active investigations for the same alert are still prevented~~
+~~5. This enables "resume after terminal" scenarios: user creates new RR + IS for a completed/failed alert~~
 
 ### SC-5: Human-Only IS Creation
 
@@ -73,7 +81,7 @@ The InvestigationSession CRD already exists and links to the RR via `spec.remedi
 
 1. AA's investigating handler explicitly handles `"cancelled"` poll status (currently falls to `default` → treated as pending)
 2. On `"cancelled"` with IS still Active: re-submit with `interactive=true` (session was cancelled for takeover)
-3. On `"cancelled"` with IS deleted: transition AIAnalysis to `PhaseCancelled`
+3. On `"cancelled"` with IS deleted: transition AIAnalysis to `PhaseFailed` with `ReasonInteractiveCancelled`
 
 ### SC-8: AF Interactive Flow Orchestration
 
@@ -90,9 +98,9 @@ The InvestigationSession CRD already exists and links to the RR via `spec.remedi
 | Case | Behavior |
 |------|----------|
 | Pending session abandoned (MCP start never arrives) | AA's 25m cap on `pending` status fails the investigation |
-| IS deleted during active investigation | AA cancels KA session, AIAnalysis → `PhaseCancelled` |
+| IS deleted during active investigation | AA cancels KA session, AIAnalysis → `PhaseFailed` + `ReasonInteractiveCancelled` |
 | IS created mid-flight (dynamic takeover) | AA cancels existing session, re-submits with `interactive=true` |
-| IS for terminal RR (resume) | New RR + IS created; RO bypasses cooldown |
+| IS for terminal RR (resume) | New RR + IS created; AF path bypasses RO cooldown by design |
 | Multiple IS for same RR by same user | Allowed (reconnection); different user blocked (single-driver guard) |
 | SA attempts IS creation | Rejected by AF's `MaterializeCRD` |
 | RR cancelled while IS active | Pre-existing gap: KA session continues until GC (follow-up) |
@@ -116,7 +124,7 @@ The InvestigationSession CRD already exists and links to the RR via `spec.remedi
 | SC-1 | AA | Unit + Integration | UT-AA-1293-001..008, IT-AA-1293-001..004 |
 | SC-2 | KA | Unit | UT-KA-1293-001..007, UT-KA-1293-012 |
 | SC-3 | KA | Unit | UT-KA-1293-008..010 |
-| SC-4 | RO | Unit + Integration | UT-RO-1293-001..004, IT-RO-1293-001..002 |
+| SC-4 | ~~RO~~ | ~~CANCELLED~~ | CANCELLED BY DESIGN — AF bypasses RO cooldown |
 | SC-5 | AF | Unit | UT-AF-1293-001..005 |
 | SC-6 | KA | Unit | UT-KA-1293-011 |
 | SC-7 | AA | Unit | UT-AA-1293-004..005 |
