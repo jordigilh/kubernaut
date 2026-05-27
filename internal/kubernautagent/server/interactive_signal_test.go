@@ -205,6 +205,33 @@ var _ = Describe("BR-INTERACTIVE-010: Interactive Signal Mapping — #1293", fun
 				"Investigate() must be called for autonomous sessions")
 		})
 	})
+
+	Describe("UT-KA-1293-012: mapSessionStatusToAPI returns pending for StatusPending", func() {
+		It("should return status 'pending' from the session status endpoint", func() {
+			store := session.NewStore(5 * time.Minute)
+			manager := session.NewManager(store, logr.Discard(), nil, nil)
+			handler := server.NewHandler(manager, nil, logr.Discard(), nil)
+
+			id, err := manager.StartInteractiveSession(context.Background(), func(_ context.Context) (*katypes.InvestigationResult, error) {
+				return &katypes.InvestigationResult{RCASummary: "test RCA", Confidence: 0.85}, nil
+			}, map[string]string{"remediation_id": "rem-pending-012"})
+			Expect(err).NotTo(HaveOccurred())
+
+			sess, sErr := manager.GetSession(id)
+			Expect(sErr).NotTo(HaveOccurred())
+			Expect(sess.Status).To(Equal(session.StatusPending),
+				"StartInteractiveSession must create session in StatusPending")
+
+			params := agentclient.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetParams{SessionID: id}
+			resp, err := handler.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(context.Background(), params)
+			Expect(err).NotTo(HaveOccurred())
+
+			ss, ok := resp.(*agentclient.SessionStatus)
+			Expect(ok).To(BeTrue(), "response should be *SessionStatus")
+			Expect(ss.Status).To(Equal("pending"),
+				"mapSessionStatusToAPI must map StatusPending to 'pending'")
+		})
+	})
 })
 
 // interactiveTestInvestigator implements the Investigator interface for testing

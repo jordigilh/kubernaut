@@ -834,7 +834,7 @@ var _ = Describe("InvestigatingHandler Interactive Session Detection (BR-INTERAC
 		})
 	})
 
-	Context("UT-AA-1293-003: No IS checker configured → autonomous (backward compat)", func() {
+	Context("UT-AA-1293-SC1-003: No IS checker configured → autonomous (backward compat)", func() {
 		It("should submit without interactive flag when no checker is configured", func() {
 			testMetrics := metrics.NewMetrics()
 			handler := handlers.NewInvestigatingHandler(mockClient, ctrl.Log.WithName("test-no-checker"), testMetrics, auditSpy,
@@ -853,7 +853,7 @@ var _ = Describe("InvestigatingHandler Interactive Session Detection (BR-INTERAC
 		})
 	})
 
-	Context("UT-AA-1293-004: Poll returns 'cancelled' → PhaseFailed with cancellation message", func() {
+	Context("UT-AA-1293-SC7-001: Poll returns 'cancelled' without checker → PhaseFailed baseline", func() {
 		It("should transition to PhaseFailed when KA session is cancelled", func() {
 			testMetrics := metrics.NewMetrics()
 			handler := handlers.NewInvestigatingHandler(mockClient, ctrl.Log.WithName("test-cancelled"), testMetrics, auditSpy,
@@ -898,7 +898,7 @@ var _ = Describe("InvestigatingHandler IS Mismatch Detection", func() {
 		recorder = record.NewFakeRecorder(10)
 	})
 
-	Context("UT-AA-1293-005: Autonomous session + IS appears → cancel for takeover", func() {
+	Context("UT-AA-1293-SC1-005: Autonomous session + IS appears → cancel for takeover", func() {
 		It("should cancel the session and clear ID for re-submit", func() {
 			cancelClient := mocks.NewMockAgentClient()
 			cancelClient.WithSessionPollStatus("investigating")
@@ -929,7 +929,7 @@ var _ = Describe("InvestigatingHandler IS Mismatch Detection", func() {
 		})
 	})
 
-	Context("UT-AA-1293-006: Interactive session + IS deleted → cancel for deletion", func() {
+	Context("UT-AA-1293-SC1-006: Interactive session + IS deleted → cancel for deletion", func() {
 		It("should cancel the session, clear Interactive flag, and requeue", func() {
 			cancelClient := mocks.NewMockAgentClient()
 			cancelClient.WithSessionPollStatus("investigating")
@@ -963,7 +963,7 @@ var _ = Describe("InvestigatingHandler IS Mismatch Detection", func() {
 		})
 	})
 
-	Context("UT-AA-1293-007: No mismatch → normal poll proceeds", func() {
+	Context("UT-AA-1293-SC1-007: No mismatch → normal poll proceeds", func() {
 		It("should proceed to poll when autonomous session has no IS", func() {
 			isChecker := &mockISChecker{hasSession: false}
 			testMetrics := metrics.NewMetrics()
@@ -988,6 +988,128 @@ var _ = Describe("InvestigatingHandler IS Mismatch Detection", func() {
 			Expect(err).NotTo(HaveOccurred())
 			// Should have polled and requeued (not immediately requeued)
 			Expect(result.RequeueAfter).To(BeNumerically(">", 0))
+		})
+	})
+})
+
+// ========================================
+// BR-INTERACTIVE-010: Canonical Plan Tests (003–005)
+// ========================================
+
+var _ = Describe("InvestigatingHandler Canonical Plan Tests [BR-INTERACTIVE-010]", func() {
+	var (
+		auditSpy *sessionAuditSpy
+		recorder record.EventRecorder
+		ctx      context.Context
+	)
+
+	BeforeEach(func() {
+		auditSpy = &sessionAuditSpy{}
+		recorder = record.NewFakeRecorder(10)
+		ctx = context.Background()
+	})
+
+	Context("UT-AA-1293-003: IS with non-Active phase ignored → interactive=false", func() {
+		It("should submit without interactive flag when IS exists but is Completed", func() {
+			mockClient := mocks.NewMockAgentClient()
+			mockClient.WithSessionSubmitResponse("session-nonactive-003")
+			isChecker := &mockISChecker{hasSession: false}
+			testMetrics := metrics.NewMetrics()
+			h := handlers.NewInvestigatingHandler(mockClient, ctrl.Log.WithName("test-nonactive"), testMetrics, auditSpy,
+				handlers.WithSessionMode(), handlers.WithRecorder(recorder),
+				handlers.WithInvestigationSessionChecker(isChecker))
+
+			analysis := &aianalysisv1.AIAnalysis{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-nonactive-003", Namespace: "default"},
+				Spec: aianalysisv1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						Kind: "RemediationRequest", Name: "rr-nonactive-003", Namespace: "default",
+					},
+				},
+			}
+
+			_, err := h.Handle(ctx, analysis)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(mockClient.SubmitCallCount).To(Equal(1))
+			Expect(mockClient.LastRequest).NotTo(BeNil())
+			interactiveVal, ok := mockClient.LastRequest.Interactive.Get()
+			if ok {
+				Expect(interactiveVal).To(BeFalse(),
+					"non-Active IS should result in interactive=false on submit")
+			}
+		})
+	})
+
+	Context("UT-AA-1293-004: Poll 'cancelled' + IS active → re-submit with interactive=true", func() {
+		It("should clear session ID and requeue for re-submit when IS still exists", func() {
+			cancelClient := mocks.NewMockAgentClient()
+			cancelClient.WithSessionPollStatus("cancelled")
+			isChecker := &mockISChecker{hasSession: true}
+			testMetrics := metrics.NewMetrics()
+			h := handlers.NewInvestigatingHandler(cancelClient, ctrl.Log.WithName("test-cancel-resubmit"), testMetrics, auditSpy,
+				handlers.WithSessionMode(), handlers.WithRecorder(recorder),
+				handlers.WithInvestigationSessionChecker(isChecker))
+
+			now := metav1.Now()
+			analysis := &aianalysisv1.AIAnalysis{
+				Spec: aianalysisv1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{Name: "rr-cancel-resubmit", Namespace: "default"},
+				},
+				Status: aianalysisv1.AIAnalysisStatus{
+					Phase: aianalysis.PhaseInvestigating,
+					KASession: &aianalysisv1.KASession{
+						ID:          "session-to-resubmit",
+						Interactive: true,
+						CreatedAt:   &now,
+						PollCount:   3,
+					},
+				},
+			}
+
+			result, err := h.Handle(ctx, analysis)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Requeue).To(BeTrue(), "should requeue for re-submit")
+			Expect(analysis.Status.KASession.ID).To(BeEmpty(),
+				"session ID should be cleared to trigger fresh submit")
+			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseInvestigating),
+				"should remain in PhaseInvestigating for re-submit")
+		})
+	})
+
+	Context("UT-AA-1293-005: Poll 'cancelled' + IS deleted → PhaseFailed + ReasonInteractiveCancelled", func() {
+		It("should transition to terminal PhaseFailed when IS no longer exists", func() {
+			cancelClient := mocks.NewMockAgentClient()
+			cancelClient.WithSessionPollStatus("cancelled")
+			isChecker := &mockISChecker{hasSession: false}
+			testMetrics := metrics.NewMetrics()
+			h := handlers.NewInvestigatingHandler(cancelClient, ctrl.Log.WithName("test-cancel-terminal"), testMetrics, auditSpy,
+				handlers.WithSessionMode(), handlers.WithRecorder(recorder),
+				handlers.WithInvestigationSessionChecker(isChecker))
+
+			now := metav1.Now()
+			analysis := &aianalysisv1.AIAnalysis{
+				Spec: aianalysisv1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{Name: "rr-cancel-terminal", Namespace: "default"},
+				},
+				Status: aianalysisv1.AIAnalysisStatus{
+					Phase: aianalysis.PhaseInvestigating,
+					KASession: &aianalysisv1.KASession{
+						ID:        "session-terminal",
+						Interactive: false, // already cleared by prior mismatch check reconcile
+						CreatedAt: &now,
+						PollCount: 5,
+					},
+				},
+			}
+
+			result, err := h.Handle(ctx, analysis)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(BeZero(), "terminal state should not requeue")
+			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed))
+			Expect(analysis.Status.Reason).To(Equal(aianalysisv1.ReasonInteractiveCancelled))
+			Expect(analysis.Status.CompletedAt).NotTo(BeNil())
+			Expect(analysis.Status.Message).To(ContainSubstring("cancelled"))
 		})
 	})
 })

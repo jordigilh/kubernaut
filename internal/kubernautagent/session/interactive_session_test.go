@@ -40,7 +40,7 @@ var _ = Describe("BR-INTERACTIVE-010: Interactive Session Lifecycle — #1293", 
 		manager = session.NewManager(store, logr.Discard(), nil, nil)
 	})
 
-	Describe("UT-KA-1293-006: StartInteractiveSession creates session in StatusPending", func() {
+	Describe("UT-KA-1293-SS-006: StartInteractiveSession creates session in StatusPending", func() {
 		It("should create session and remain in StatusPending without launching goroutine", func() {
 			fn := func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				Fail("investigation function should NOT be called for interactive session")
@@ -72,7 +72,7 @@ var _ = Describe("BR-INTERACTIVE-010: Interactive Session Lifecycle — #1293", 
 		})
 	})
 
-	Describe("UT-KA-1293-007: LaunchDeferredInvestigation transitions pending to running", func() {
+	Describe("UT-KA-1293-SS-007: LaunchDeferredInvestigation transitions pending to running", func() {
 		It("should launch the deferred investigation and transition to running/completed", func() {
 			investigated := make(chan struct{})
 			fn := func(ctx context.Context) (*katypes.InvestigationResult, error) {
@@ -114,7 +114,7 @@ var _ = Describe("BR-INTERACTIVE-010: Interactive Session Lifecycle — #1293", 
 		})
 	})
 
-	Describe("UT-KA-1293-008: LaunchDeferredInvestigation fails for non-pending session", func() {
+	Describe("UT-KA-1293-SS-008: LaunchDeferredInvestigation fails for non-pending session", func() {
 		It("should return error when session is already running", func() {
 			fn := func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				<-ctx.Done()
@@ -143,14 +143,14 @@ var _ = Describe("BR-INTERACTIVE-010: Interactive Session Lifecycle — #1293", 
 		})
 	})
 
-	Describe("UT-KA-1293-009: LaunchDeferredInvestigation fails for non-existent session", func() {
+	Describe("UT-KA-1293-SS-009: LaunchDeferredInvestigation fails for non-existent session", func() {
 		It("should return ErrSessionNotFound for unknown session ID", func() {
 			launchErr := manager.LaunchDeferredInvestigation("non-existent-id")
 			Expect(launchErr).To(MatchError(session.ErrSessionNotFound))
 		})
 	})
 
-	Describe("UT-KA-1293-010: StartInteractiveSession stores metadata and created_by", func() {
+	Describe("UT-KA-1293-SS-010: StartInteractiveSession stores metadata and created_by", func() {
 		It("should propagate user identity from context into metadata", func() {
 			fn := func(ctx context.Context) (*katypes.InvestigationResult, error) {
 				return nil, nil

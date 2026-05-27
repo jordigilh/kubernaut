@@ -30,7 +30,7 @@ import (
 
 var _ = Describe("BR-INTERACTIVE-010: InteractiveHold → StatusUserDriving — #1293", func() {
 
-	Describe("UT-KA-1293-011: Investigation returning InteractiveHold=true transitions to StatusUserDriving", func() {
+	Describe("UT-KA-1293-SH-011: Investigation returning InteractiveHold=true transitions to StatusUserDriving", func() {
 		It("should set session to StatusUserDriving instead of StatusCompleted", func() {
 			store := session.NewStore(5 * time.Minute)
 			manager := session.NewManager(store, logr.Discard(), nil, nil)
@@ -60,7 +60,7 @@ var _ = Describe("BR-INTERACTIVE-010: InteractiveHold → StatusUserDriving — 
 		})
 	})
 
-	Describe("UT-KA-1293-012: Investigation returning InteractiveHold=false transitions to StatusCompleted", func() {
+	Describe("UT-KA-1293-SH-012: Investigation returning InteractiveHold=false transitions to StatusCompleted", func() {
 		It("should set session to StatusCompleted as normal", func() {
 			store := session.NewStore(5 * time.Minute)
 			manager := session.NewManager(store, logr.Discard(), nil, nil)

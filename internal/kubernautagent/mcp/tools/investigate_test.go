@@ -19,6 +19,7 @@ package tools_test
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -61,8 +62,9 @@ func (m *mockSessionManager) IsDriverActive(_ string) bool {
 func (m *mockSessionManager) TouchActivity(_ string) {}
 
 type mockInvestigatorRunner struct {
-	response string
-	err      error
+	response  string
+	err       error
+	rcaResult *katypes.InvestigationResult
 }
 
 func (m *mockInvestigatorRunner) RunInteractiveTurn(_ context.Context, _ []mcptools.LLMMessage, _ string) (string, error) {
@@ -70,6 +72,9 @@ func (m *mockInvestigatorRunner) RunInteractiveTurn(_ context.Context, _ []mcpto
 }
 
 func (m *mockInvestigatorRunner) RunRCAExtraction(_ context.Context, _ []mcptools.LLMMessage, _ string) (*katypes.InvestigationResult, error) {
+	if m.rcaResult != nil {
+		return m.rcaResult, m.err
+	}
 	return &katypes.InvestigationResult{RCASummary: "mock RCA", Confidence: 0.9}, nil
 }
 
@@ -78,11 +83,13 @@ func (m *mockInvestigatorRunner) RunWorkflowDiscovery(_ context.Context, _ katyp
 }
 
 type mockContextReconstructor struct {
-	turns []mcpinternal.ConversationTurn
-	err   error
+	turns            []mcpinternal.ConversationTurn
+	err              error
+	reconstructCalls atomic.Int32
 }
 
 func (m *mockContextReconstructor) Reconstruct(_ context.Context, _, _ string) ([]mcpinternal.ConversationTurn, error) {
+	m.reconstructCalls.Add(1)
 	return m.turns, m.err
 }
 
@@ -472,6 +479,33 @@ var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func(
 			Expect(mcpErr.Code).To(Equal("session_active"))
 		})
 	})
+
+	Describe("UT-KA-1293-007: handleStart rejects when session is reconnected", func() {
+		It("should return MCPError session_active with driver identity when same user already holds lease", func() {
+			sessionMgr := &mockSessionManager{
+				takeoverSession: &mcpinternal.InteractiveSession{
+					SessionID:     "sess-reconnect-007",
+					CorrelationID: "rr-007",
+					ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+					Reconnected:   true,
+				},
+			}
+			runner := &mockInvestigatorRunner{}
+			recon := &mockContextReconstructor{}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{})
+			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-007",
+				Action: mcptools.ActionStart,
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).To(HaveOccurred())
+			var mcpErr *mcptools.MCPError
+			Expect(errors.As(err, &mcpErr)).To(BeTrue(), "error should be *MCPError")
+			Expect(mcpErr.Code).To(Equal("session_active"),
+				"reconnected session must reject action=start; use action=reconnect instead")
+			Expect(mcpErr.Details["driver"]).To(Equal("alice"))
+		})
+	})
 })
 
 // mockSignalResolver implements mcptools.SignalContextResolver for UTs.
@@ -501,6 +535,17 @@ func (m *mockSignalResolver) ResolvePostRCAEnrichment(_ context.Context, _, _, _
 		return m.enrich, m.enrichErr
 	}
 	return &prompt.EnrichmentData{}, m.enrichErr
+}
+
+// trackingPostRCASignalResolver records ResolvePostRCAEnrichment invocations.
+type trackingPostRCASignalResolver struct {
+	mockSignalResolver
+	postRCACalls atomic.Int32
+}
+
+func (m *trackingPostRCASignalResolver) ResolvePostRCAEnrichment(ctx context.Context, kind, name, namespace, incidentID string) (*prompt.EnrichmentData, error) {
+	m.postRCACalls.Add(1)
+	return m.mockSignalResolver.ResolvePostRCAEnrichment(ctx, kind, name, namespace, incidentID)
 }
 
 var _ = Describe("kubernaut_investigate — discover_workflows action", func() {
@@ -571,6 +616,52 @@ var _ = Describe("kubernaut_investigate — discover_workflows action", func() {
 				Action: mcptools.ActionDiscoverWorkflows,
 			}, mcpinternal.UserInfo{Username: "alice"})
 			Expect(err).To(HaveOccurred())
+		})
+	})
+
+	Describe("UT-KA-1293-011: discover_workflows calls ResolvePostRCAEnrichment when RCA has RemediationTarget", func() {
+		It("should invoke Phase 2 post-RCA enrichment before workflow selection", func() {
+			sess := &mcpinternal.InteractiveSession{
+				SessionID:     "sess-dw-011",
+				CorrelationID: "rr-dw-011",
+				ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+			}
+			sessionMgr := &mockSessionManager{
+				isActive:        true,
+				getDriverResult: sess,
+			}
+			runner := &mockInvestigatorRunner{
+				rcaResult: &katypes.InvestigationResult{
+					RCASummary: "OOM on api-server pod",
+					Confidence: 0.92,
+					RemediationTarget: katypes.RemediationTarget{
+						Kind:      "Pod",
+						Name:      "api-server",
+						Namespace: "prod",
+					},
+				},
+			}
+			recon := &mockContextReconstructor{turns: []mcpinternal.ConversationTurn{
+				{Role: "user", Content: "my pod is crashing"},
+				{Role: "assistant", Content: "I see OOM errors"},
+			}}
+			resolver := &trackingPostRCASignalResolver{
+				mockSignalResolver: mockSignalResolver{
+					signal: &katypes.SignalContext{IncidentID: "inc-011", Severity: "critical"},
+					enrich: &prompt.EnrichmentData{},
+				},
+			}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{},
+				mcptools.WithSignalContextResolver(resolver))
+			output, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-dw-011",
+				Action: mcptools.ActionDiscoverWorkflows,
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output.Status).To(Equal("workflows_discovered"))
+			Expect(resolver.postRCACalls.Load()).To(Equal(int32(1)),
+				"ResolvePostRCAEnrichment must be called when RCA identifies a RemediationTarget")
 		})
 	})
 })

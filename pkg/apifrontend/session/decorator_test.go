@@ -180,7 +180,7 @@ var _ = Describe("ServiceDecorator", func() {
 			Expect(err.Error()).To(ContainSubstring("authenticated user identity"))
 		})
 
-		It("UT-AF-1293-001: ServiceAccount caller is rejected from creating IS", func() {
+		It("UT-AF-1293-DEC-001: ServiceAccount caller is rejected from creating IS (decorator layer)", func() {
 			identity := &auth.UserIdentity{
 				Username:         "system:serviceaccount:ns:robot",
 				Groups:           []string{"system:serviceaccounts"},
@@ -200,7 +200,7 @@ var _ = Describe("ServiceDecorator", func() {
 			Expect(err.Error()).To(ContainSubstring("service accounts"))
 		})
 
-		It("UT-AF-1293-002: Human caller is allowed to create IS", func() {
+		It("UT-AF-1293-DEC-002: Human caller is allowed to create IS (decorator layer)", func() {
 			identity := &auth.UserIdentity{
 				Username:         "alice",
 				Groups:           []string{"sre"},

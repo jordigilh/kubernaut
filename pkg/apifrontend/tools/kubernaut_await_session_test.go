@@ -66,7 +66,7 @@ var _ = Describe("kubernaut_await_session", func() {
 	})
 
 	Describe("HandleAwaitSession validation", func() {
-		It("UT-AF-1293-003: returns error when client is nil", func() {
+		It("UT-AF-1293-SC8-003: returns error when client is nil", func() {
 			_, err := tools.HandleAwaitSession(ctx, nil, tools.AwaitSessionArgs{
 				Namespace: "default",
 				RRName:    "rr-test",
@@ -74,7 +74,7 @@ var _ = Describe("kubernaut_await_session", func() {
 			Expect(err).To(HaveOccurred())
 		})
 
-		It("UT-AF-1293-004: returns error when namespace is empty", func() {
+		It("UT-AF-1293-SC8-004: returns error when namespace is empty", func() {
 			client := newSeededAIAnalysisClient()
 			_, err := tools.HandleAwaitSession(ctx, client, tools.AwaitSessionArgs{
 				Namespace: "",
@@ -84,7 +84,7 @@ var _ = Describe("kubernaut_await_session", func() {
 			Expect(err.Error()).To(ContainSubstring("invalid input"))
 		})
 
-		It("UT-AF-1293-005: returns error when rr_name is empty", func() {
+		It("UT-AF-1293-SC8-005: returns error when rr_name is empty", func() {
 			client := newSeededAIAnalysisClient()
 			_, err := tools.HandleAwaitSession(ctx, client, tools.AwaitSessionArgs{
 				Namespace: "default",
