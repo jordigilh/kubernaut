@@ -94,6 +94,10 @@ func afCreateRRCrossNSScenario() *afCreateRRDynScenario {
 		if !strings.Contains(combined, "cross-namespace remediation") {
 			return false, 0
 		}
+		// Reset per-request state to prevent leaking a prior match's values
+		// into a subsequent Config() call if the regex fails this time.
+		s.extractedName = ""
+		s.extractedNS = ""
 		// Extract namespace eagerly during Match; store in extractedName/NS
 		// so Config() doesn't need to re-parse from a possibly stale context.
 		for _, text := range []string{ctx.Content, ctx.AllText, ctx.LastUserContent} {
