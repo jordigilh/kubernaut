@@ -289,5 +289,35 @@ var _ = Describe("Interactive Action Handlers (G1)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(spy.events).NotTo(BeEmpty())
 		})
+
+		It("UT-AF-1300-001: HandleStatus audit includes tool_outcome=success for OpenAPI compliance", func() {
+			mockMCP = &ka.MockMCPClient{
+				InvokeActionFn: func(_ context.Context, _ ka.InvokeActionArgs) (*ka.InvokeActionResult, error) {
+					return &ka.InvokeActionResult{Status: "active", SessionID: "s-001"}, nil
+				},
+			}
+			_, err := tools.HandleStatus(ctx, mockMCP, tools.InteractiveActionArgs{
+				RRID: "prod/rr-001",
+			}, spy)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(spy.events).To(HaveLen(1))
+			Expect(spy.events[0].Detail).To(HaveKeyWithValue("tool_outcome", "success"),
+				"EventToolExecuted audit must include tool_outcome for OpenAPI validation — missing field causes 'not one of allowed values' error")
+		})
+
+		It("UT-AF-1300-002: HandleMessage audit includes tool_outcome=success", func() {
+			mockMCP = &ka.MockMCPClient{
+				InvokeActionFn: func(_ context.Context, _ ka.InvokeActionArgs) (*ka.InvokeActionResult, error) {
+					return &ka.InvokeActionResult{Status: "active"}, nil
+				},
+			}
+			_, err := tools.HandleMessage(ctx, mockMCP, tools.InteractiveActionArgs{
+				RRID:    "prod/rr-001",
+				Message: "check logs",
+			}, spy)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(spy.events).To(HaveLen(1))
+			Expect(spy.events[0].Detail).To(HaveKeyWithValue("tool_outcome", "success"))
+		})
 	})
 })

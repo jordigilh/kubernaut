@@ -60,6 +60,7 @@ func invokeInteractiveAction(ctx context.Context, mcpClient ka.MCPClient, action
 				"status":            result.Status,
 				"ka_correlation_id": result.SessionID,
 				"delegation_type":   "interactive",
+				"tool_outcome":      "success",
 			},
 		})
 	}
