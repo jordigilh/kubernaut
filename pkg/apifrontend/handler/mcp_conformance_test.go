@@ -143,7 +143,7 @@ var _ = Describe("MCP Protocol Conformance", func() {
 			Expect(ok).To(BeTrue())
 			tools, ok := resultObj["tools"].([]any)
 			Expect(ok).To(BeTrue())
-			Expect(tools).To(HaveLen(23))
+			Expect(tools).To(HaveLen(24))
 		})
 
 		It("UT-AF-042-002: all tool names have kubernaut_ or af_ prefix", func() {

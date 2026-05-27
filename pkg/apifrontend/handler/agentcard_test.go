@@ -137,7 +137,7 @@ var _ = Describe("Agent Card Handler", func() {
 		_ = json.Unmarshal(rec.Body.Bytes(), &card)
 		skills, ok := card["skills"].([]any)
 		Expect(ok).To(BeTrue())
-		Expect(skills).To(HaveLen(23))
+		Expect(skills).To(HaveLen(24))
 	})
 
 	It("UT-AF-230-008: card declares authentication requirements", func() {

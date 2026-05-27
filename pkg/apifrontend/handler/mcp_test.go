@@ -91,9 +91,9 @@ var _ = Describe("MCP Handler", func() {
 		}
 	})
 
-	It("UT-AF-220-006: tools count matches 23 expected tools", func() {
+	It("UT-AF-220-006: tools count matches 24 expected tools", func() {
 		tools := handler.DefaultMCPTools()
-		Expect(tools).To(HaveLen(23))
+		Expect(tools).To(HaveLen(24))
 	})
 
 	It("UT-AF-220-007: MCP server info includes correct name and version", func() {
