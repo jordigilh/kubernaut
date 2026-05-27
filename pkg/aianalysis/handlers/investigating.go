@@ -399,7 +399,8 @@ func (h *InvestigatingHandler) checkISMismatchAndCancel(ctx context.Context, ana
 		h.log.Info("IS CRD detected for autonomous session — cancelling for interactive takeover",
 			"sessionID", session.ID, "rrName", rrName)
 		if cancelErr := h.kaClient.CancelSession(ctx, session.ID); cancelErr != nil {
-			h.log.Error(cancelErr, "Failed to cancel session for takeover", "sessionID", session.ID)
+			h.log.Error(cancelErr, "Failed to cancel session for takeover; will retry", "sessionID", session.ID)
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, true
 		}
 		session.ID = ""
 		return ctrl.Result{Requeue: true}, true
@@ -409,10 +410,9 @@ func (h *InvestigatingHandler) checkISMismatchAndCancel(ctx context.Context, ana
 		h.log.Info("IS CRD removed for interactive session — cancelling investigation",
 			"sessionID", session.ID, "rrName", rrName)
 		if cancelErr := h.kaClient.CancelSession(ctx, session.ID); cancelErr != nil {
-			h.log.Error(cancelErr, "Failed to cancel session for IS deletion", "sessionID", session.ID)
+			h.log.Error(cancelErr, "Failed to cancel session for IS deletion; will retry", "sessionID", session.ID)
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, true
 		}
-		// Clear Interactive so this branch doesn't re-fire on next reconcile;
-		// poll will observe "cancelled" and transition to PhaseFailed.
 		session.Interactive = false
 		return ctrl.Result{Requeue: true}, true
 	}

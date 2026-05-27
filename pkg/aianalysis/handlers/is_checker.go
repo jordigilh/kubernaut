@@ -28,6 +28,10 @@ import (
 // K8sInvestigationSessionChecker implements InvestigationSessionChecker by
 // querying InvestigationSession CRDs via a controller-runtime client using
 // a field index on spec.remediationRequestRef.name. BR-INTERACTIVE-010.
+//
+// Error policy: callers use fail-open semantics — on list errors, investigations
+// proceed in autonomous mode rather than blocking. This is deliberate: transient
+// K8s API failures must not prevent autonomous investigations from running.
 type K8sInvestigationSessionChecker struct {
 	client    client.Client
 	namespace string
