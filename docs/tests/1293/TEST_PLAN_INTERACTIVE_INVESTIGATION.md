@@ -254,7 +254,7 @@ Each test item follows RED → GREEN → REFACTOR:
 | E2E-1293-003 | IS deletion cancels investigation | AF → AA → KA | IS deleted → KA cancelled → AIAnalysis PhaseFailed + ReasonInteractiveCancelled | Implemented |
 | E2E-1293-004 | SA caller blocked from IS creation | AF | SA token → af_create_rr → MaterializeCRD rejected | Implemented |
 | ~~E2E-1293-005~~ | ~~Cooldown bypass with IS~~ | ~~CANCELLED~~ | ~~SC-4 cancelled by design — AF bypasses RO cooldown~~ | Cancelled |
-| E2E-1293-006 | Context reconstruction from prior session | KA → DS | Prior completed session → new interactive session → context pre-loaded | Gap: needs mock LLM scenario |
+| E2E-1293-006 | Context reconstruction from prior session | KA → DS | Prior completed session → new interactive session → context pre-loaded | Implemented |
 
 ## 8. Pass/Fail Criteria
 

@@ -230,4 +230,61 @@ var _ = Describe("E2E-1293: Interactive Investigation Architecture", Label("e2e"
 				"BR-INTERACTIVE-010 SC-7: Reason should be InteractiveCancelled")
 		}, 2*time.Minute, 2*time.Second).Should(Succeed())
 	})
+
+	It("[E2E-1293-006] Context reconstruction: takeover pre-loads prior session context", func() {
+		By("Setting up MCP session pre-RR")
+		setup, err := infrastructure.SetupMCPSession(ctx, namespace, "e2e-1293-006-sa", kubeconfigPath, GinkgoWriter)
+		Expect(err).NotTo(HaveOccurred())
+		defer setup.Cleanup()
+
+		By("Creating direct RR to trigger autonomous investigation")
+		rrName, err := infrastructure.CreateDirectRR(ctx, namespace, "e2e-1293-006")
+		Expect(err).NotTo(HaveOccurred())
+
+		By("Waiting for AA to reach Investigating with a KA session (autonomous)")
+		aaName := waitForAAInvestigating(rrName)
+		aa := &aianalysisv1.AIAnalysis{}
+		Eventually(func(g Gomega) {
+			g.Expect(apiReader.Get(ctx, client.ObjectKey{Name: aaName, Namespace: namespace}, aa)).To(Succeed())
+			g.Expect(aa.Status.KASession).NotTo(BeNil())
+			g.Expect(aa.Status.KASession.ID).NotTo(BeEmpty())
+		}, 60*time.Second, 1*time.Second).Should(Succeed())
+
+		By("Creating Active IS CRD to trigger dynamic takeover (autonomous → interactive)")
+		is := createISForRR("1293-006", rrName)
+		DeferCleanup(func() {
+			_ = client.IgnoreNotFound(k8sClient.Delete(ctx, is))
+		})
+
+		By("Performing MCP takeover and verifying context reconstruction")
+		callCtx, callCancel := context.WithTimeout(ctx, 30*time.Second)
+		defer callCancel()
+		result, err := infrastructure.CallInvestigate(callCtx, setup.Session, map[string]any{
+			"rr_id":  rrName,
+			"action": "takeover",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.IsError).To(BeFalse(), "takeover should succeed")
+
+		takeoverText := infrastructure.ExtractToolResultText(result)
+		GinkgoWriter.Printf("  Takeover response: %s\n", takeoverText)
+		Expect(takeoverText).To(MatchRegexp(`[1-9]\d* prior turns reconstructed`),
+			"BR-INTERACTIVE-010 SC-3: takeover should reconstruct at least 1 prior turn")
+
+		By("Sending message to verify context is usable by the LLM")
+		msgCtx, msgCancel := context.WithTimeout(ctx, 60*time.Second)
+		defer msgCancel()
+		result, err = infrastructure.CallInvestigate(msgCtx, setup.Session, map[string]any{
+			"rr_id":   rrName,
+			"action":  "message",
+			"message": "Based on the prior investigation, what was the root cause?",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.IsError).To(BeFalse(), "message should succeed after context reconstruction")
+
+		msgText := infrastructure.ExtractToolResultText(result)
+		Expect(msgText).NotTo(BeEmpty(),
+			"LLM should respond using reconstructed context from prior session")
+		GinkgoWriter.Printf("  Message response (first 200 chars): %.200s\n", msgText)
+	})
 })
