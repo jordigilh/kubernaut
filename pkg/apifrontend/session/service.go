@@ -572,6 +572,7 @@ func (s *CRDSessionService) InitializeSessionByRR(ctx context.Context, rrNamespa
 		setRROwnerReference(ctx, s.client, s.logger, crd, rrNamespace, rrName)
 	}
 
+	desiredStatus := crd.Status
 	if err := s.client.Create(ctx, crd); err != nil {
 		if apierrors.IsAlreadyExists(err) {
 			return nil
@@ -579,6 +580,7 @@ func (s *CRDSessionService) InitializeSessionByRR(ctx context.Context, rrNamespa
 		return fmt.Errorf("create IS CRD for takeover: %w", err)
 	}
 
+	crd.Status = desiredStatus
 	if err := s.client.Status().Update(ctx, crd); err != nil {
 		s.logger.V(0).Info("IS CRD status update failed after takeover initialize",
 			"crd_name", crdName,
