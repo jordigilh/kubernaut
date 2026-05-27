@@ -34,6 +34,7 @@ import (
 	aiaudit "github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/agentclient"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 	"github.com/jordigilh/kubernaut/test/shared/mocks"
@@ -158,13 +159,13 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 		)
 
 		swapMockHandler := func() {
-			savedHandler = reconciler.InvestigatingHandler
+			savedHandler = reconciler.InvestigatingHandler.Load()
 			mockClient = mocks.NewMockAgentClient()
 			mockClient.WithSessionPollStatus("investigating")
 
 			auditClient := aiaudit.NewAuditClient(auditStore, ctrl.Log.WithName("interactive-test-audit"))
 			isChecker := handlers.NewK8sInvestigationSessionChecker(k8sClient, testNamespace)
-			reconciler.InvestigatingHandler = handlers.NewInvestigatingHandler(
+			reconciler.InvestigatingHandler.Store(handlers.NewInvestigatingHandler(
 				mockClient,
 				ctrl.Log.WithName("interactive-mock-handler"),
 				testMetrics,
@@ -173,7 +174,7 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 				handlers.WithSessionPollInterval(100*time.Millisecond),
 				handlers.WithInvestigationSessionChecker(isChecker),
 				handlers.WithRecorder(k8sManager.GetEventRecorderFor("aianalysis-controller")),
-			)
+			))
 		}
 
 		BeforeEach(func() {
@@ -182,7 +183,7 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 
 		AfterEach(func() {
 			if savedHandler != nil {
-				reconciler.InvestigatingHandler = savedHandler
+				reconciler.InvestigatingHandler.Store(savedHandler)
 			}
 		})
 
@@ -254,6 +255,22 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 				g.Expect(analysis.Status.Phase).To(Equal(aianalysisv1.PhaseFailed))
 				g.Expect(analysis.Status.Reason).To(Equal(aianalysisv1.ReasonInteractiveCancelled))
 			}, timeout, interval).Should(Succeed())
+
+			By("verifying analysis.failed audit event was emitted (FedRAMP AU-2)")
+			if dsClients != nil && dsClients.OpenAPIClient != nil {
+				Eventually(func() bool {
+					_ = auditStore.Flush(ctx)
+					resp, err := dsClients.OpenAPIClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+						CorrelationID: ogenclient.NewOptString(rrName),
+						EventType:     ogenclient.NewOptString(aiaudit.EventTypeAnalysisFailed),
+					})
+					if err != nil {
+						return false
+					}
+					return len(resp.Data) >= 1
+				}, timeout, interval).Should(BeTrue(),
+					"FedRAMP AU-2: analysis.failed audit event must be emitted when IS deletion causes PhaseFailed")
+			}
 		})
 
 		It("IT-AA-1293-004: should cancel autonomous session and re-submit with interactive=true on takeover", func() {

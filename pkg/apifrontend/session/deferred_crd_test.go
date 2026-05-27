@@ -6,6 +6,8 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -573,5 +575,23 @@ var _ = Describe("InitializeSessionByRR (takeover IS CRD creation)", func() {
 			}
 		}
 		Expect(found).To(BeTrue(), "expected EventSessionCreated audit event")
+	})
+
+	It("UT-AF-1293-INIT-007: increments sessionsActive gauge on successful creation (FedRAMP SI-4)", func() {
+		k8s := newIndexedFakeClient()
+		gauge := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "af_sessions_active_init_test",
+		}, []string{"phase"})
+		svc := session.NewCRDSessionService(adksession.InMemoryService(), k8s, scheme, "test-ns",
+			session.WithSessionsActive(gauge),
+		)
+
+		err := svc.InitializeSessionByRR(ctx, "prod", "rr-oom-007", "ka-sess-007", "sre-alice", nil)
+		Expect(err).NotTo(HaveOccurred())
+
+		metric := &dto.Metric{}
+		Expect(gauge.WithLabelValues(string(v1alpha1.SessionPhaseActive)).Write(metric)).To(Succeed())
+		Expect(metric.GetGauge().GetValue()).To(Equal(float64(1)),
+			"sessionsActive gauge must be incremented for Active phase after InitializeSessionByRR")
 	})
 })

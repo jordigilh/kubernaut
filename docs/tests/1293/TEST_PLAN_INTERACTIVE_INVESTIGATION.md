@@ -77,7 +77,19 @@ This test plan covers the Interactive Investigation Architecture feature (#1293)
 | No token overflow on context reconstruction | High | Covered by UT-KA-1293-008..010 |
 | Cancel idempotency (race-safe) | High | Covered by UT-AA-1293-007/008 |
 | Field index performance (O(1) lookup) | Medium | Covered by IT-AA-1293-001 |
-| Audit trail completeness (FedRAMP AU-2) | Medium | **Known gap**: IT tests do not assert on audit events emitted during interactive transitions. Audit store is wired but not queried in assertions. Future work: query `auditStore` after IT-AA-1293-003 (PhaseFailed transition) and assert `analysis.failed` event is present with `ReasonInteractiveCancelled`. |
+| Audit trail completeness (FedRAMP AU-2) | Medium | Covered: IT-AA-1293-003 asserts `analysis.failed` audit event after PhaseFailed transition |
+
+### 4.3 FedRAMP Control Mapping
+
+| Control | Objective | #1293 Test Coverage |
+|---------|-----------|---------------------|
+| AC-3 (Access Enforcement) | Only authorized users can invoke interactive actions | UT-AF-1293-INIT-003 (single-driver guard), UT-AF-1293-DEC-001/002 (SA creation block), TC-E2E-SESSION-JOIN-06 (lease-based rejection), E2E-1293-004 (SA blocked) |
+| AU-2 (Auditable Events) | Session lifecycle events are logged | UT-AF-1293-INIT-006 (EventSessionCreated), IT-AA-1293-003 (analysis.failed on IS deletion), IT-AF-1234-W20 (af_create_rr audit) |
+| AU-12 (Audit Generation) | Audit records include user identity, timestamp, and action | IT-AF-1293-BRIDGE-001 (takeover error propagation to caller), UT-AF-1293-INIT-006 (audit detail includes session_id, join_mode, rr_ref) |
+| IA-2 (Identification & Authentication) | User identity is verified before session actions | UT-AF-1293-INIT-001 (UserIdentity stored in CRD), mcp_bridge.go `UserIdentityFromContext` guard |
+| SI-4 (Information System Monitoring) | IS CRD state is monitored and acted upon by AA | IT-AA-1293-001 (field index), IT-AA-1293-002 (IS creation triggers cancel), IT-AA-1293-003 (IS deletion triggers PhaseFailed), IT-AA-1293-004 (dynamic takeover), UT-AF-1293-INIT-007 (sessionsActive gauge) |
+| SI-11 (Error Handling) | Error messages do not leak sensitive info | UT-AF-1293-INIT-003 (username redacted from session_active error) |
+| CM-3 (Configuration Change Control) | CRD schema changes are validated | UT-AF-1293-INIT-001 (A2ATaskID set), UT-AF-1293-INIT-004 (empty sessionID rejected), UT-AF-1293-INIT-005 (invalid name fallback) |
 
 ## 5. Features Not to be Tested
 

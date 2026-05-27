@@ -294,17 +294,18 @@ func main() {
 	statusManager := aistatus.NewManager(mgr.GetClient(), mgr.GetAPIReader())
 	setupLog.Info("AIAnalysis status manager initialized (DD-PERF-001 + AA-HAPI-001)")
 
-	if err = (&aianalysis.AIAnalysisReconciler{
-		Client:               mgr.GetClient(),
-		Scheme:               mgr.GetScheme(),
-		Recorder:             eventRecorder,
-		Log:                  controllerLog,
-		Metrics:              aianalysisMetrics,    // DD-METRICS-001: Injected metrics (P0)
-		StatusManager:        statusManager,        // DD-PERF-001: Atomic status updates
-		InvestigatingHandler: investigatingHandler, // BR-AI-007: KA integration
-		AnalyzingHandler:     analyzingHandler,     // BR-AI-012: Rego policy evaluation
-		AuditClient:          auditClient,          // DD-AUDIT-003: P0 audit traces
-	}).SetupWithManager(mgr); err != nil {
+	aaReconciler := &aianalysis.AIAnalysisReconciler{
+		Client:           mgr.GetClient(),
+		Scheme:           mgr.GetScheme(),
+		Recorder:         eventRecorder,
+		Log:              controllerLog,
+		Metrics:          aianalysisMetrics, // DD-METRICS-001: Injected metrics (P0)
+		StatusManager:    statusManager,     // DD-PERF-001: Atomic status updates
+		AnalyzingHandler: analyzingHandler,  // BR-AI-012: Rego policy evaluation
+		AuditClient:      auditClient,       // DD-AUDIT-003: P0 audit traces
+	}
+	aaReconciler.InvestigatingHandler.Store(investigatingHandler) // BR-AI-007: KA integration
+	if err = aaReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "AIAnalysis")
 		os.Exit(1)
 	}

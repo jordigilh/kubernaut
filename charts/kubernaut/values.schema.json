@@ -1011,6 +1011,15 @@
                 "llmConfidence": { "type": "number", "default": 0.7 }
               }
             },
+            "auth": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "issuerURL": { "type": "string", "default": "", "description": "OIDC issuer URL for JWT validation" },
+                "audience": { "type": "string", "default": "", "description": "Expected JWT audience claim" },
+                "kubernetesAuthEnabled": { "type": "boolean", "default": true, "description": "Enable Kubernetes ServiceAccount token authentication" }
+              }
+            },
             "rbac": {
               "type": "object",
               "additionalProperties": false,

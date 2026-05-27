@@ -546,6 +546,69 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 			Expect(invokedAction).To(Equal("takeover"))
 		})
 
+		It("IT-AF-1293-BRIDGE-001: kubernaut_takeover propagates IS init failure to caller (FedRAMP AU-12)", func() {
+			invokedAction = ""
+			mockMCP := &ka.MockMCPClient{
+				InvokeActionFn: func(_ context.Context, args ka.InvokeActionArgs) (*ka.InvokeActionResult, error) {
+					invokedAction = args.Action
+					return &ka.InvokeActionResult{SessionID: "sess-fail", Status: "ok"}, nil
+				},
+			}
+			kaStreamHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusNotFound)
+			})
+			setupStackWithKAHandler(kaStreamHandler, newFakeDSClient())
+			kaServer.Close()
+			kaServer = httptest.NewServer(kaStreamHandler)
+
+			kaClient := ka.NewClient(ka.Config{
+				BaseURL: kaServer.URL, Timeout: 5 * time.Second,
+				CBFailureThreshold: 5, CBMaxRequests: 3, CBInterval: 10 * time.Second,
+				CBTimeout: 100 * time.Millisecond, RetryMax: 1,
+				RetryInitBackoff: 1 * time.Millisecond, RetryMaxBackoff: 5 * time.Millisecond,
+				RetryableStatuses: []int{503},
+			})
+
+			auditor = &fakeAuditor{}
+			testUser = &auth.UserIdentity{Username: "sre@kubernaut.ai", Groups: []string{"sre"}}
+
+			failingInitializer := &failingSessionInitializer{err: fmt.Errorf("simulated K8s API error")}
+
+			cfg := handler.MCPConfig{
+				ServerName:    "af-it",
+				ServerVersion: "0.0.1-test",
+				Enabled:       true,
+				Bridge: &handler.MCPBridgeConfig{
+					K8sClient:          newFakeDynamicClient(),
+					KAClient:           kaClient,
+					KAMCPClient:        mockMCP,
+					DSClient:           newFakeDSClient(),
+					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"*"}}},
+					Logger:             logr.Discard(),
+					Auditor:            auditor,
+					Metrics:            newBridgeMetrics(),
+					ToolTimeout:        5 * time.Second,
+					MaxConcurrentTools: 10,
+					SessionInitializer: failingInitializer,
+				},
+			}
+
+			var err error
+			h, err = handler.NewMCPHandler(cfg)
+			Expect(err).NotTo(HaveOccurred())
+			sessionID = mcpInitialize(h, testUser)
+
+			status, body := mcpCallTool(h, sessionID, "kubernaut_takeover", map[string]any{
+				"rr_id": "production/api-gw",
+			}, testUser)
+
+			Expect(status).To(Equal(http.StatusOK))
+			Expect(invokedAction).To(Equal("takeover"))
+			text := extractTextContent(body)
+			Expect(text).To(ContainSubstring("IS CRD creation failed"),
+				"error must propagate to caller so the MCP client can retry or alert the user")
+		})
+
 		It("IT-AF-1234-W02: kubernaut_message dispatches with message payload", func() {
 			setupInteractiveStack()
 
@@ -722,3 +785,11 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 		})
 	})
 })
+
+type failingSessionInitializer struct {
+	err error
+}
+
+func (f *failingSessionInitializer) InitializeSessionByRR(_ context.Context, _, _, _, _ string, _ []string) error {
+	return f.err
+}

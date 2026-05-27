@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/http"
+
 	"strings"
 	"time"
 
@@ -16,7 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	investigationsessionv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
-	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+
 )
 
 var _ = Describe("Session Join/Takeover/Reconnect (G19)", Label("e2e", "phase4", "g19"), func() {
@@ -96,47 +96,13 @@ var _ = Describe("Session Join/Takeover/Reconnect (G19)", Label("e2e", "phase4",
 	})
 
 	It("TC-E2E-SESSION-JOIN-02: Disconnect -> Reconnect cycle", func() {
-		resp, err := a2aInvoke(httpClient, baseURL, authTokenA, a2aTasksSend("g19-reconnect-gate", "ping"))
-		if err == nil {
-			_ = resp.Body.Close()
-		}
-		Expect(err).NotTo(HaveOccurred(), "A2A endpoint must be reachable")
-		Expect(resp.StatusCode).NotTo(Equal(http.StatusNotImplemented),
-			"A2A endpoint must be available for disconnect/reconnect tests")
-
-		prompt := "Create a remediation request for deployment test-deploy in default namespace"
-		resp2, err := a2aInvoke(httpClient, baseURL, authTokenA, a2aTasksSend("g19-reconnect", prompt))
-		Expect(err).NotTo(HaveOccurred())
-		defer func() { _ = resp2.Body.Close() }()
-		Expect(resp2.StatusCode).To(Equal(http.StatusOK),
-			"A2A task must start successfully for reconnect test")
-
-		rpc, err := parseRPCResponse(resp2)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(rpc.Error).To(BeNil(), "A2A must return a successful result, not an error")
-		Expect(rpc.Result).NotTo(BeNil(), "A2A must return a task result")
-		task, err := extractTaskFromResult(rpc.Result)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(task.ID).NotTo(BeEmpty())
-
 		ctx := context.Background()
 
-		// Wait for the RR created by af_create_rr to appear.
-		var rrName string
-		Eventually(func() bool {
-			list := &remediationv1alpha1.RemediationRequestList{}
-			if lerr := k8sClient.List(ctx, list, client.InNamespace("default")); lerr != nil {
-				return false
-			}
-			for _, rr := range list.Items {
-				if rr.Spec.TargetResource.Name == "test-deploy" {
-					rrName = rr.Name
-					return true
-				}
-			}
-			return false
-		}, 30*time.Second, 2*time.Second).Should(BeTrue(),
-			"af_create_rr must create the RemediationRequest")
+		// Create a prerequisite RR directly — this test validates session
+		// lifecycle (disconnect/reconnect), not RR creation by the LLM.
+		rrName := fmt.Sprintf("rr-join02-%d", time.Now().UnixNano())
+		Expect(createRR("default", rrName, "Deployment", "test-deploy")).To(Succeed())
+		DeferCleanup(func() { deleteRR("default", rrName) })
 
 		// #1293: IS CRD creation moved to kubernaut_takeover.
 		// Invoke takeover via MCP to create the IS CRD through the production path.
@@ -183,7 +149,7 @@ var _ = Describe("Session Join/Takeover/Reconnect (G19)", Label("e2e", "phase4",
 				"messageId": "msg-g19-reconnect",
 				"role":      "user",
 				"parts": []map[string]interface{}{
-					{"kind": "text", "text": prompt},
+					{"kind": "text", "text": "resume investigation for test-deploy"},
 				},
 			},
 		})
@@ -235,37 +201,12 @@ var _ = Describe("Session Join/Takeover/Reconnect (G19)", Label("e2e", "phase4",
 	It("TC-E2E-SESSION-JOIN-06: Lease-based takeover rejection", func() {
 		ctx := context.Background()
 
-		// User A starts an investigation that triggers af_create_rr (creates RR only).
+		// Create a prerequisite RR directly — this test validates single-driver
+		// guard (User B rejected when User A holds the session), not RR creation.
 		tokenA := authTokenA
-		promptA := "Create a remediation request for deployment web-join06 in default namespace"
-		respA, errA := a2aInvoke(httpClient, baseURL, tokenA, a2aTasksSend("g19-join06-a", promptA))
-		Expect(errA).NotTo(HaveOccurred())
-		defer func() { _ = respA.Body.Close() }()
-		Expect(respA.StatusCode).To(Equal(http.StatusOK))
-
-		rpcA, parseErr := parseRPCResponse(respA)
-		Expect(parseErr).NotTo(HaveOccurred())
-		Expect(rpcA.Error).To(BeNil(), "User A's A2A request must succeed")
-		taskA, taskErr := extractTaskFromResult(rpcA.Result)
-		Expect(taskErr).NotTo(HaveOccurred())
-		Expect(taskA.ID).NotTo(BeEmpty(), "A2A must return a task ID")
-
-		// Wait for af_create_rr to create the RR.
-		var rrName string
-		Eventually(func() bool {
-			list := &remediationv1alpha1.RemediationRequestList{}
-			if lerr := k8sClient.List(ctx, list, client.InNamespace("default")); lerr != nil {
-				return false
-			}
-			for _, rr := range list.Items {
-				if rr.Spec.TargetResource.Name == "web-join06" {
-					rrName = rr.Name
-					return true
-				}
-			}
-			return false
-		}, 30*time.Second, 2*time.Second).Should(BeTrue(),
-			"af_create_rr must create the RemediationRequest for web-join06")
+		rrName := fmt.Sprintf("rr-join06-%d", time.Now().UnixNano())
+		Expect(createRR("default", rrName, "Deployment", "web-join06")).To(Succeed())
+		DeferCleanup(func() { deleteRR("default", rrName) })
 
 		// #1293: User A invokes kubernaut_takeover via MCP to create the IS CRD.
 		mcpSessA, mcpSessErr := initMCPSession(tokenA)

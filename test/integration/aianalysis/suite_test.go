@@ -828,16 +828,16 @@ timeoutSeconds: 120
 	// Create per-process controller instance and STORE IT (WorkflowExecution pattern)
 	// Storing reconciler enables tests to access metrics via reconciler.Metrics
 	reconciler = &aianalysis.AIAnalysisReconciler{
-		Metrics:              testMetrics, // DD-METRICS-001: Per-process metrics
-		Client:               k8sManager.GetClient(),
-		Scheme:               k8sManager.GetScheme(),
-		Recorder:             eventRecorder,
-		Log:                  ctrl.Log.WithName("aianalysis-controller"),
-		StatusManager:        status.NewManager(k8sManager.GetClient(), k8sManager.GetAPIReader()), // DD-PERF-001 + AA-HAPI-001: Cache-bypassed refetch
-		InvestigatingHandler: investigatingHandler,
-		AnalyzingHandler:     analyzingHandler,
-		AuditClient:          auditClient,
+		Metrics:          testMetrics, // DD-METRICS-001: Per-process metrics
+		Client:           k8sManager.GetClient(),
+		Scheme:           k8sManager.GetScheme(),
+		Recorder:         eventRecorder,
+		Log:              ctrl.Log.WithName("aianalysis-controller"),
+		StatusManager:    status.NewManager(k8sManager.GetClient(), k8sManager.GetAPIReader()), // DD-PERF-001 + AA-HAPI-001: Cache-bypassed refetch
+		AnalyzingHandler: analyzingHandler,
+		AuditClient:      auditClient,
 	}
+	reconciler.InvestigatingHandler.Store(investigatingHandler)
 	err = reconciler.SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 

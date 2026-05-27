@@ -26,6 +26,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -100,8 +101,10 @@ type AIAnalysisReconciler struct {
 	// USAGE: r.StatusManager.AtomicStatusUpdate(ctx, analysis, func() { ... })
 	StatusManager *status.Manager
 
-	// Phase handlers (wired in via dependency injection)
-	InvestigatingHandler *handlers.InvestigatingHandler
+	// Phase handlers (wired in via dependency injection).
+	// InvestigatingHandler uses atomic.Pointer so integration tests can
+	// swap a mock handler while the controller manager is running.
+	InvestigatingHandler atomic.Pointer[handlers.InvestigatingHandler]
 	AnalyzingHandler     *handlers.AnalyzingHandler
 
 	// Audit client for recording audit events (DD-AUDIT-003)
@@ -223,7 +226,7 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 // logic (Rego evaluation, investigation) when handlers are nil.
 func (r *AIAnalysisReconciler) ValidateDependencies() error {
 	var errs []error
-	if r.InvestigatingHandler == nil {
+	if r.InvestigatingHandler.Load() == nil {
 		errs = append(errs, fmt.Errorf("investigatingHandler is nil: investigation phase will be skipped (BR-AI-023)"))
 	}
 	if r.AnalyzingHandler == nil {
