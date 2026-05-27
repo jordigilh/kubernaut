@@ -177,6 +177,33 @@ var _ = Describe("A2A Progressive Streaming Integration (issue #1258)", func() {
 	})
 
 	// ===================================================================
+	// Pyramid Invariant: EventBridge wiring (Issues #1297, #1298)
+	// IT proves that the A2A handler assigns a non-empty context_id to tasks,
+	// which the StreamingExecutor passes to WithEventBridge. This ensures
+	// the a2a-go taskupdate.Manager can validate artifact updates.
+	// ===================================================================
+
+	Describe("IT-AF-1297-001: ContextID propagates through A2A handler to triage audit", func() {
+		It("should record a non-empty session_id (= ContextID) in the triage.started audit event", func() {
+			localAuditor.Reset()
+
+			resp, err := invokeA2A(buildStreamRPC("ctx-id-01", "check memory usage"))
+			Expect(err).NotTo(HaveOccurred())
+			defer resp.Body.Close()
+			_, _ = io.ReadAll(resp.Body)
+
+			Eventually(func() []*audit.Event {
+				return localAuditor.EventsOfType(audit.EventTriageStarted)
+			}, 10*time.Second, 100*time.Millisecond).ShouldNot(BeEmpty())
+
+			started := localAuditor.EventsOfType(audit.EventTriageStarted)
+			Expect(started).NotTo(BeEmpty())
+			Expect(started[0].Detail).To(HaveKeyWithValue("session_id", Not(BeEmpty())),
+				"session_id (= reqCtx.ContextID) must be non-empty — StreamingExecutor passes it to WithEventBridge for a2a-go validation (#1297)")
+		})
+	})
+
+	// ===================================================================
 	// FedRAMP AU-6: A2A Task Lifecycle Audit
 	// Stream lifecycle (open/close) is logged, not audited, because no OpenAPI
 	// payload schema exists for stream events yet. The A2A task lifecycle
