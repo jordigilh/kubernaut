@@ -141,7 +141,7 @@ kubernaut-apifrontend/
 │   │   ├── router.go              # HTTP route registration
 │   │   ├── mcp.go                 # MCP Streamable HTTP handler
 │   │   ├── mcp_bridge.go          # MCP tool bridge (RBAC, dispatch, metrics)
-│   │   ├── mcptools.go            # MCP tool registry (20 tools)
+│   │   ├── mcptools.go            # MCP tool registry (22 tools)
 │   │   ├── agentcard.go           # /.well-known/agent-card.json
 │   │   ├── health.go              # /healthz, /readyz
 │   │   └── middleware.go          # HTTP middleware chain
@@ -480,9 +480,9 @@ stateDiagram-v2
 | `/mcp` | POST | JSON-RPC method dispatch (tools/list, tools/call) |
 | `/mcp` | POST + `Accept: text/event-stream` | Streaming tool execution |
 
-**Registered tools (20 total: 6 AF-native + 14 kubernaut proxy):**
+**Registered tools (27 ADK / 22 MCP-exposed): 5 AF-native + 22 kubernaut proxy**
 
-AF-native tools (execute against K8s API directly):
+AF-native tools (ADK agent path only, not exposed via MCP):
 
 | Tool | Purpose | Data source |
 |------|---------|-------------|
@@ -490,25 +490,34 @@ AF-native tools (execute against K8s API directly):
 | `kubectl_list` | List K8s resources by kind/namespace with label selector (Secret .data/.stringData redacted) | K8s API (AF SA) |
 | `kubectl_list_events` | Query K8s Events in namespace with filters | K8s API (AF SA) |
 | `af_check_existing_rr` | Check if RR already exists for resource (dedup) | K8s API (AF SA) |
-| `af_create_rr` | Create RemediationRequest. LLM supplies `{kind, name, description}` only; AF auto-resolves namespace (K8s downward API), severity (triage pipeline), signalName (AlertName/RuleName/K8s events/"unknown"), signalSource (`a2a-agent`) | K8s API (AF SA) |
+| `af_create_rr` | Create RemediationRequest. LLM supplies `{kind, name, description}` only; AF auto-resolves namespace, severity, signalName, signalSource | K8s API (AF SA) |
 
-kubernaut proxy tools (forwarded to KA REST/MCP or DataStorage):
+kubernaut proxy tools (forwarded to KA REST/MCP or DataStorage, exposed via MCP):
 
 | Tool | Purpose | Backend |
 |------|---------|---------|
 | `kubernaut_list_remediations` | List active and recent remediations | KA REST |
 | `kubernaut_get_remediation` | Get remediation details | KA REST |
-| `kubernaut_submit_signal` | Submit signal to active remediation | KA REST |
 | `kubernaut_approve` | Approve a remediation action | KA REST |
 | `kubernaut_cancel_remediation` | Cancel active remediation | KA REST |
 | `kubernaut_watch` | Watch remediation state changes | KA REST |
-| `kubernaut_investigate` | Investigate an infrastructure incident (start new or resume existing) | KA REST + SSE |
+| `kubernaut_investigate` | Investigate an infrastructure incident (start new or resume existing via session_id) | KA REST + SSE |
 | `kubernaut_select_workflow` | Select workflow for investigation | KA MCP |
+| `kubernaut_discover_workflows` | Discover available workflows with parameter schemas | KA MCP |
 | `kubernaut_present_decision` | Present decision point to user | KA MCP |
 | `kubernaut_list_workflows` | List available workflows | KA REST |
 | `kubernaut_get_remediation_history` | Get remediation execution history | DS REST |
 | `kubernaut_get_effectiveness` | Get effectiveness metrics | DS REST |
 | `kubernaut_get_audit_trail` | Get audit trail for remediations | DS REST |
+| `kubernaut_takeover` | Take over an existing investigation session (creates IS CRD) | KA MCP |
+| `kubernaut_message` | Send a message to an active investigation session | KA MCP |
+| `kubernaut_complete` | Complete an investigation session | KA MCP |
+| `kubernaut_cancel` | Cancel an active investigation session | KA MCP |
+| `kubernaut_status` | Get the current status of an investigation session | KA MCP |
+| `kubernaut_reconnect` | Reconnect to a disconnected investigation session | KA MCP |
+| `kubernaut_list_approval_requests` | List remediation approval requests | KA REST |
+| `kubernaut_get_approval_request` | Get details of a specific approval request | KA REST |
+| `kubernaut_await_session` | Wait for KA investigation session to become ready | KA REST |
 
 ### A2A Protocol (v0.3.0, JSON-RPC 2.0)
 
@@ -843,9 +852,10 @@ Nightly job runs against kubernaut `main` for early break detection.
 
 ## Configuration
 
-The API Frontend is configured exclusively via a YAML file mounted from a Kubernetes ConfigMap.
-**No environment variables are used** — this is an architectural constraint shared with the
-kubernaut project (DD-INFRA-001).
+The API Frontend is configured primarily via a YAML file mounted from a Kubernetes ConfigMap.
+The `PORT` environment variable is the sole exception — it overrides `server.port` at startup
+for Cloud Run / Knative compatibility (BR-PLATFORM-1262). All other configuration is YAML-only
+per the project convention (DD-INFRA-001).
 
 ### CLI Flag
 

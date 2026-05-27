@@ -35,8 +35,14 @@ These documents live at:
 | Development runtime | `registry.access.redhat.com/ubi10/ubi-minimal:latest` |
 | UID (production) | 65534 (nobody) |
 | UID (development) | 1001 |
-| Exposed ports | 8443 (API), 8081 (health), 9090 (metrics) |
+| Exposed ports | 8443 (API, overridable via `PORT` env), 8081 (health), 9090 (metrics) |
 | Entry point | `/apifrontend` |
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | (none — uses `server.port` from config.yaml, default 8443) | Overrides the main API listen port at startup. Valid range: 1024–65535. Invalid values are silently ignored with a warning log. Added per BR-PLATFORM-1262 for Cloud Run / Knative compatibility. |
 
 ## Build Targets
 
