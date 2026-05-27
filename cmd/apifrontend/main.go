@@ -16,6 +16,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	adksession "google.golang.org/adk/session"
@@ -514,22 +515,25 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 		logger,
 	)
 	mcpClient.WithDownstreamDuration(metricsReg.DownstreamDuration)
-	deps.MCPClient = mcpClient
 
-	// G2 (deferred): Pool is constructed for shutdown wiring (DrainAll) but
-	// interactive tools currently use session-per-call via SDKMCPClient.
-	// The factory is a placeholder until G2 persistent sessions are
-	// implemented. Calling Pool.Acquire will fail until a real factory
-	// is provided. See pkg/apifrontend/ka/mcp_sdk_client.go for the
-	// session-per-call rationale (P2 Architect finding, DD-AUTH-MCP-001 v3.0).
+	// G2: Persistent MCP sessions (#1306). The pool creates real MCP
+	// connections via StreamableClientTransport. Sessions are keyed by
+	// (rr_id, username) for user isolation (G9). PooledMCPClient wraps
+	// the pool to implement MCPClient, auto-releasing on terminal actions.
+	kaMCPEndpoint := cfg.Agent.KAMCPEndpoint
 	deps.Pool = ka.NewKASessionPool(ka.PoolConfig{
 		Factory: func(ctx context.Context) (ka.PoolSession, error) {
-			return nil, fmt.Errorf("pool session factory not yet configured (G2 deferred)")
+			transport := &mcp.StreamableClientTransport{
+				Endpoint:   kaMCPEndpoint,
+				HTTPClient: kaMCPHTTPClient,
+			}
+			return mcpClient.ConnectSession(ctx, transport)
 		},
 		MaxEntries: 100,
 		IdleTTL:    10 * time.Minute,
 		Logger:     logger.WithName("ka-session-pool"),
 	})
+	deps.MCPClient = ka.NewPooledMCPClient(deps.Pool, logger)
 
 	if cfg.SeverityTriage.Enabled {
 		promTransport, promWatcher, promErr := tlswiring.CAReloadableTransport(cfg.SeverityTriage.PrometheusTLSCaFile, logger.WithName("prom-ca"))
