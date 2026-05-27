@@ -916,11 +916,16 @@ func (t *InvestigateTool) storeReconstructedContext(ctx context.Context, rrID, s
 
 // buildMessagesWithContext prepends any cached reconstruction history to the
 // current user message, giving the LLM full prior context (PROD-02).
+// Copies the cached slice to avoid aliasing the sync.Map entry.
 func (t *InvestigateTool) buildMessagesWithContext(rrID, userMessage string) []LLMMessage {
-	var messages []LLMMessage
+	var history []LLMMessage
 	if raw, ok := t.reconHistory.Load(rrID); ok {
-		messages = append(messages, raw.([]LLMMessage)...)
+		cached := raw.([]LLMMessage)
+		history = make([]LLMMessage, len(cached))
+		copy(history, cached)
 	}
+	messages := make([]LLMMessage, 0, len(history)+1)
+	messages = append(messages, history...)
 	messages = append(messages, LLMMessage{Role: "user", Content: userMessage})
 	return messages
 }
