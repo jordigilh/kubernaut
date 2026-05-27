@@ -959,6 +959,7 @@ spec:
                 - RegoEvaluationError
                 - TransientError
                 - APIError
+                - InteractiveCancelled
                 type: string
               rootCause:
                 description: |-

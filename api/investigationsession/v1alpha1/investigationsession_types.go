@@ -134,6 +134,7 @@ type InvestigationSessionStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:storageversion
+// +kubebuilder:selectablefield:JSONPath=.spec.remediationRequestRef.name
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Task ID",type=string,JSONPath=`.spec.a2aTaskID`
 // +kubebuilder:printcolumn:name="User",type=string,JSONPath=`.spec.userIdentity.username`
