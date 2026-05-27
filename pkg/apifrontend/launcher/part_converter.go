@@ -68,20 +68,20 @@ func buildPartConverter() adka2a.GenAIPartConverter {
 			return convertFunctionResponse(part.FunctionResponse), nil
 		}
 		if part.Thought {
-			return &a2a.TextPart{Text: "Analyzing...\n"}, nil
+			return &a2a.TextPart{Text: "Analyzing...\n\n"}, nil
 		}
-		return &a2a.TextPart{Text: ensureTrailingNewline(part.Text)}, nil
+		return &a2a.TextPart{Text: ensureTrailingParagraphBreak(part.Text)}, nil
 	}
 }
 
 func convertFunctionCall(fc *genai.FunctionCall) a2a.Part {
 	template, ok := toolStatusMessages[fc.Name]
 	if !ok {
-		return &a2a.TextPart{Text: "Processing...\n"}
+		return &a2a.TextPart{Text: "Processing...\n\n"}
 	}
 
 	text := formatStatusWithContext(template, fc.Name, fc.Args)
-	return &a2a.TextPart{Text: truncate(text, maxStatusLen) + "\n"}
+	return &a2a.TextPart{Text: truncate(text, maxStatusLen) + "\n\n"}
 }
 
 func convertFunctionResponse(fr *genai.FunctionResponse) a2a.Part {
@@ -100,7 +100,7 @@ func convertFunctionResponse(fr *genai.FunctionResponse) a2a.Part {
 	}
 
 	text := summarizer(resp)
-	return &a2a.TextPart{Text: truncate(text, maxSummaryLen) + "\n"}
+	return &a2a.TextPart{Text: truncate(text, maxSummaryLen) + "\n\n"}
 }
 
 // toolErrorPart returns an error text part when a tool response indicates
@@ -119,7 +119,7 @@ func toolErrorPart(fr *genai.FunctionResponse) a2a.Part {
 	if status != "error" && status != "" {
 		return nil
 	}
-	text := fmt.Sprintf("Error: %s\n", truncate(errMsg, maxSummaryLen))
+	text := fmt.Sprintf("Error: %s\n\n", truncate(errMsg, maxSummaryLen))
 	return &a2a.TextPart{Text: text}
 }
 
@@ -251,9 +251,9 @@ func buildStreamingPartConverter() adka2a.GenAIPartConverter {
 			return convertFunctionResponse(part.FunctionResponse), nil
 		}
 		if part.Thought {
-			return &a2a.TextPart{Text: "Analyzing...\n"}, nil
+			return &a2a.TextPart{Text: "Analyzing...\n\n"}, nil
 		}
-		return &a2a.TextPart{Text: ensureTrailingNewline(part.Text)}, nil
+		return &a2a.TextPart{Text: ensureTrailingParagraphBreak(part.Text)}, nil
 	}
 }
 
@@ -265,14 +265,17 @@ func stringArg(args map[string]any, key string) string {
 	return v
 }
 
-// ensureTrailingNewline appends a newline to text that doesn't already end
-// with one. This prevents consecutive SSE chunks from being concatenated
-// into a single unreadable block in the UI.
-func ensureTrailingNewline(s string) string {
-	if s == "" || strings.HasSuffix(s, "\n") {
+// ensureTrailingParagraphBreak appends a double-newline paragraph break to
+// text that doesn't already end with one. A single \n is insufficient because
+// A2A clients (e.g. kagenti) strip trailing whitespace before concatenating
+// artifact text parts, collapsing single newlines. Double-newline survives
+// stripping and renders as a visible paragraph break in markdown UIs.
+func ensureTrailingParagraphBreak(s string) string {
+	if s == "" || strings.HasSuffix(s, "\n\n") {
 		return s
 	}
-	return s + "\n"
+	s = strings.TrimRight(s, "\n")
+	return s + "\n\n"
 }
 
 func truncate(s string, maxLen int) string {

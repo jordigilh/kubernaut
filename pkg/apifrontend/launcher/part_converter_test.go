@@ -360,15 +360,15 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 	})
 
 	Describe("Text passthrough", func() {
-		It("UT-AF-1189-130: LLM reasoning text -> passed through with trailing newline", func() {
+		It("UT-AF-1189-130: LLM reasoning text -> passed through with trailing paragraph break", func() {
 			reasoning := "Node shows DiskPressure, emptyDir usage at 72%. The PostgreSQL StatefulSet is consuming excessive disk."
 			part := &genai.Part{Text: reasoning}
 			result, err := convert(context.Background(), nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal(reasoning + "\n"),
-				"LLM text must get trailing newline so consecutive chunks are readable (#1301)")
+			Expect(tp.Text).To(Equal(reasoning + "\n\n"),
+				"LLM text must get trailing paragraph break so consecutive chunks are readable (#1301)")
 		})
 
 		It("UT-AF-1189-131: Text part with Thought=true -> activity indicator, not raw thought", func() {
@@ -380,7 +380,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal("Analyzing...\n"))
+			Expect(tp.Text).To(Equal("Analyzing...\n\n"))
 		})
 
 		It("UT-AF-1189-132: empty text part -> passed through (not dropped)", func() {
@@ -470,7 +470,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal("Investigation started.\n"))
+			Expect(tp.Text).To(Equal("Investigation started.\n\n"))
 		})
 
 		It("UT-AF-1189-155: kubernaut_select_workflow response with message only -> message text", func() {
@@ -484,7 +484,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal("Workflow selected for execution\n"))
+			Expect(tp.Text).To(Equal("Workflow selected for execution\n\n"))
 		})
 
 		It("UT-AF-1189-156: kubernaut_select_workflow response with status only -> formatted status", func() {
@@ -498,7 +498,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal("Workflow queued.\n"))
+			Expect(tp.Text).To(Equal("Workflow queued.\n\n"))
 		})
 
 		It("UT-AF-1189-157: kubernaut_select_workflow response with empty fields -> generic fallback", func() {
@@ -512,7 +512,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal("Workflow selection completed.\n"))
+			Expect(tp.Text).To(Equal("Workflow selection completed.\n\n"))
 		})
 
 		It("UT-AF-1189-158: kubernaut_watch response with phase only -> phase text", func() {
@@ -526,7 +526,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal("Phase: Executing\n"))
+			Expect(tp.Text).To(Equal("Phase: Executing\n\n"))
 		})
 
 		It("UT-AF-1189-159: kubernaut_watch response with status only -> status text", func() {
@@ -540,7 +540,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal("WorkflowRunning\n"))
+			Expect(tp.Text).To(Equal("WorkflowRunning\n\n"))
 		})
 
 		It("UT-AF-1189-160: kubernaut_watch response with empty fields -> generic fallback", func() {
@@ -554,7 +554,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal("Watching remediation...\n"))
+			Expect(tp.Text).To(Equal("Watching remediation...\n\n"))
 		})
 
 		It("UT-AF-1189-161: af_create_rr response without rr_id -> human-friendly fallback", func() {
@@ -642,7 +642,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal(multiByteStr+"\n"), "rune-safe truncation should preserve string when rune count is within limit")
+			Expect(tp.Text).To(Equal(multiByteStr+"\n\n"), "rune-safe truncation should preserve string when rune count is within limit")
 		})
 
 		It("UT-AF-1189-163: multi-byte string over both byte and rune limits -> rune-safe truncation", func() {
@@ -659,8 +659,8 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(HaveSuffix("...\n"))
-			Expect(len([]rune(tp.Text))).To(BeNumerically("<=", 1025))
+			Expect(tp.Text).To(HaveSuffix("...\n\n"))
+			Expect(len([]rune(tp.Text))).To(BeNumerically("<=", 1026))
 		})
 	})
 
@@ -718,7 +718,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal("No workflows discovered.\n"))
+			Expect(tp.Text).To(Equal("No workflows discovered.\n\n"))
 		})
 
 		It("UT-AF-1189-166: workflow entry with zero confidence -> name without percentage", func() {
@@ -751,10 +751,10 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal("Analyzing...\n"))
+			Expect(tp.Text).To(Equal("Analyzing...\n\n"))
 		})
 
-		It("UT-AF-1189-168: Thought=false with text -> text gets trailing newline", func() {
+		It("UT-AF-1189-168: Thought=false with text -> text gets trailing paragraph break", func() {
 			text := "Based on the analysis, the root cause is disk pressure from emptyDir."
 			part := &genai.Part{
 				Text:    text,
@@ -764,8 +764,8 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal(text + "\n"),
-				"LLM text must get trailing newline so consecutive chunks are readable (#1301)")
+			Expect(tp.Text).To(Equal(text + "\n\n"),
+				"LLM text must get trailing paragraph break so consecutive chunks are readable (#1301)")
 		})
 	})
 })
@@ -777,7 +777,7 @@ var _ = Describe("Status message line breaks (#1301)", func() {
 		convert = launcher.BuildStreamingPartConverterForTest()
 	})
 
-	It("UT-AF-1301-001: FunctionCall status text ends with newline", func() {
+	It("UT-AF-1301-001: FunctionCall status text ends with paragraph break", func() {
 		part := &genai.Part{
 			FunctionCall: &genai.FunctionCall{
 				Name: "kubectl_list",
@@ -788,21 +788,21 @@ var _ = Describe("Status message line breaks (#1301)", func() {
 		Expect(err).NotTo(HaveOccurred())
 		tp, ok := result.(*a2a.TextPart)
 		Expect(ok).To(BeTrue())
-		Expect(tp.Text).To(HaveSuffix("\n"),
-			"status messages must end with \\n so concatenated SSE frames are readable (#1301)")
+		Expect(tp.Text).To(HaveSuffix("\n\n"),
+			"status messages must end with \\n\\n so concatenated SSE frames are readable (#1301)")
 	})
 
-	It("UT-AF-1301-002: Thought activity indicator ends with newline", func() {
+	It("UT-AF-1301-002: Thought activity indicator ends with paragraph break", func() {
 		part := &genai.Part{Text: "thinking...", Thought: true}
 		result, err := convert(context.Background(), nil, part)
 		Expect(err).NotTo(HaveOccurred())
 		tp, ok := result.(*a2a.TextPart)
 		Expect(ok).To(BeTrue())
-		Expect(tp.Text).To(HaveSuffix("\n"),
-			"thought indicator must end with \\n for readability (#1301)")
+		Expect(tp.Text).To(HaveSuffix("\n\n"),
+			"thought indicator must end with \\n\\n for readability (#1301)")
 	})
 
-	It("UT-AF-1301-003: FunctionResponse summary ends with newline", func() {
+	It("UT-AF-1301-003: FunctionResponse summary ends with paragraph break", func() {
 		part := &genai.Part{
 			FunctionResponse: &genai.FunctionResponse{
 				Name:     "kubernaut_start_investigation",
@@ -813,22 +813,22 @@ var _ = Describe("Status message line breaks (#1301)", func() {
 		Expect(err).NotTo(HaveOccurred())
 		tp, ok := result.(*a2a.TextPart)
 		Expect(ok).To(BeTrue())
-		Expect(tp.Text).To(HaveSuffix("\n"),
-			"tool response summaries must end with \\n for readability (#1301)")
+		Expect(tp.Text).To(HaveSuffix("\n\n"),
+			"tool response summaries must end with \\n\\n for readability (#1301)")
 	})
 
-	It("UT-AF-1301-004: LLM text already ending with newline gets no double newline", func() {
-		text := "The root cause is disk pressure.\n"
+	It("UT-AF-1301-004: LLM text already ending with paragraph break gets no triple newline", func() {
+		text := "The root cause is disk pressure.\n\n"
 		part := &genai.Part{Text: text}
 		result, err := convert(context.Background(), nil, part)
 		Expect(err).NotTo(HaveOccurred())
 		tp, ok := result.(*a2a.TextPart)
 		Expect(ok).To(BeTrue())
 		Expect(tp.Text).To(Equal(text),
-			"text already ending with newline must NOT get a double newline")
+			"text already ending with \\n\\n must NOT get additional newlines")
 	})
 
-	It("UT-AF-1301-005: consecutive LLM text chunks are separated by newline", func() {
+	It("UT-AF-1301-005: consecutive LLM text chunks are separated by paragraph break", func() {
 		chunks := []string{
 			"I'll start by checking what's running in the demo-crashloop namespace.",
 			"Let me investigate the affected deployment.",
@@ -843,9 +843,9 @@ var _ = Describe("Status message line breaks (#1301)", func() {
 			results = append(results, tp.Text)
 		}
 		concatenated := strings.Join(results, "")
-		Expect(concatenated).To(ContainSubstring("namespace.\n"),
-			"LLM text chunks that don't end with newline must get one appended "+
-				"so consecutive chunks are not concatenated into an unreadable block (#1301)")
+		Expect(concatenated).To(ContainSubstring("namespace.\n\n"),
+			"LLM text chunks must get trailing paragraph break appended "+
+				"so consecutive chunks render as separate paragraphs (#1301)")
 	})
 })
 
@@ -1039,7 +1039,7 @@ var _ = Describe("GenAIPartConverter — Streaming Mode (TP-1258)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal("Analyzing...\n"))
+			Expect(tp.Text).To(Equal("Analyzing...\n\n"))
 		})
 	})
 })
