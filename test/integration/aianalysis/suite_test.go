@@ -81,6 +81,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/aianalysis"
 	aiaudit "github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
@@ -667,6 +668,10 @@ timeoutSeconds: 120
 	err = aianalysisv1alpha1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
+	By(fmt.Sprintf("[Process %d] Registering InvestigationSession CRD scheme (BR-INTERACTIVE-010)", processNum))
+	err = isv1alpha1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
 	By(fmt.Sprintf("[Process %d] Bootstrapping per-process envtest environment", processNum))
 	// DD-TEST-010: Each process gets its OWN Kubernetes API server (envtest)
 	testEnv = &envtest.Environment{
@@ -718,6 +723,37 @@ timeoutSeconds: 120
 		},
 	})
 	Expect(err).ToNot(HaveOccurred())
+
+	// BR-INTERACTIVE-010: Register field indexes for IS and AA RR name lookups.
+	// Note: Cache ByObject namespace restriction is omitted in integration tests because
+	// DD-TEST-002 uses per-test namespaces (testNamespace), not kubernaut-system only.
+	By(fmt.Sprintf("[Process %d] Registering InvestigationSession field index (BR-INTERACTIVE-010)", processNum))
+	err = k8sManager.GetFieldIndexer().IndexField(ctx,
+		&isv1alpha1.InvestigationSession{},
+		handlers.ISFieldIndexRRName,
+		func(obj client.Object) []string {
+			is := obj.(*isv1alpha1.InvestigationSession)
+			if is.Spec.RemediationRequestRef.Name == "" {
+				return nil
+			}
+			return []string{is.Spec.RemediationRequestRef.Name}
+		},
+	)
+	Expect(err).NotTo(HaveOccurred())
+
+	By(fmt.Sprintf("[Process %d] Registering AIAnalysis RR name field index (BR-INTERACTIVE-010)", processNum))
+	err = k8sManager.GetFieldIndexer().IndexField(ctx,
+		&aianalysisv1alpha1.AIAnalysis{},
+		aianalysis.AIAnalysisRRNameIndex(),
+		func(obj client.Object) []string {
+			aa := obj.(*aianalysisv1alpha1.AIAnalysis)
+			if aa.Spec.RemediationRequestRef.Name == "" {
+				return nil
+			}
+			return []string{aa.Spec.RemediationRequestRef.Name}
+		},
+	)
+	Expect(err).NotTo(HaveOccurred())
 
 	By(fmt.Sprintf("[Process %d] Creating per-process isolated metrics registry", processNum))
 	// DD-METRICS-001: Each process needs isolated Prometheus registry
@@ -775,10 +811,13 @@ timeoutSeconds: 120
 	By(fmt.Sprintf("[Process %d] Setting up per-process controller with handlers", processNum))
 	// Create handlers with REAL agent client, metrics, and REAL audit client
 	eventRecorder := k8sManager.GetEventRecorderFor("aianalysis-controller")
+	const controllerNS = "kubernaut-system"
+	isChecker := handlers.NewK8sInvestigationSessionChecker(k8sManager.GetClient(), controllerNS)
 	investigatingHandler := handlers.NewInvestigatingHandler(realAgentClient, ctrl.Log.WithName("investigating-handler"), testMetrics, auditClient,
 		handlers.WithRecorder(eventRecorder),                  // DD-EVENT-001: Session lifecycle events
 		handlers.WithSessionMode(),                            // BR-AA-HAPI-064: Async submit/poll/result flow
-		handlers.WithSessionPollInterval(2*time.Second))       // Fast polling for tests (production default: 15s)
+		handlers.WithSessionPollInterval(2*time.Second),       // Fast polling for tests (production default: 15s)
+		handlers.WithInvestigationSessionChecker(isChecker))   // BR-INTERACTIVE-010: IS CRD awareness
 	// #225: Mock LLM current_scenario persists across analyses (statefulness),
 	// so unrecognized signals inherit high confidence (e.g., 0.88 from crashloop).
 	// Threshold 0.9 ensures mock scenarios requiring approval stay below threshold.
