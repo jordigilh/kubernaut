@@ -68,7 +68,7 @@ func buildPartConverter() adka2a.GenAIPartConverter {
 			return convertFunctionResponse(part.FunctionResponse), nil
 		}
 		if part.Thought {
-			return &a2a.TextPart{Text: "Analyzing..."}, nil
+			return &a2a.TextPart{Text: "Analyzing...\n"}, nil
 		}
 		return &a2a.TextPart{Text: part.Text}, nil
 	}
@@ -77,17 +77,17 @@ func buildPartConverter() adka2a.GenAIPartConverter {
 func convertFunctionCall(fc *genai.FunctionCall) a2a.Part {
 	template, ok := toolStatusMessages[fc.Name]
 	if !ok {
-		return &a2a.TextPart{Text: "Processing..."}
+		return &a2a.TextPart{Text: "Processing...\n"}
 	}
 
 	text := formatStatusWithContext(template, fc.Name, fc.Args)
-	return &a2a.TextPart{Text: truncate(text, maxStatusLen)}
+	return &a2a.TextPart{Text: truncate(text, maxStatusLen) + "\n"}
 }
 
 func convertFunctionResponse(fr *genai.FunctionResponse) a2a.Part {
 	summarizer, ok := keyToolSummarizers[fr.Name]
 	if !ok {
-		return nil
+		return toolErrorPart(fr)
 	}
 
 	resp := fr.Response
@@ -96,7 +96,22 @@ func convertFunctionResponse(fr *genai.FunctionResponse) a2a.Part {
 	}
 
 	text := summarizer(resp)
-	return &a2a.TextPart{Text: truncate(text, maxSummaryLen)}
+	return &a2a.TextPart{Text: truncate(text, maxSummaryLen) + "\n"}
+}
+
+// toolErrorPart returns an error text part when a non-key tool's response
+// contains an "error" field. This ensures tool failures surface on the SSE
+// stream instead of being silently dropped (#1302).
+func toolErrorPart(fr *genai.FunctionResponse) a2a.Part {
+	if fr.Response == nil {
+		return nil
+	}
+	errMsg, ok := fr.Response["error"].(string)
+	if !ok || errMsg == "" {
+		return nil
+	}
+	text := fmt.Sprintf("Error: %s\n", truncate(errMsg, maxSummaryLen))
+	return &a2a.TextPart{Text: text}
 }
 
 func formatStatusWithContext(template, toolName string, args map[string]any) string {
@@ -227,7 +242,7 @@ func buildStreamingPartConverter() adka2a.GenAIPartConverter {
 			return convertFunctionResponse(part.FunctionResponse), nil
 		}
 		if part.Thought {
-			return &a2a.TextPart{Text: "Analyzing..."}, nil
+			return &a2a.TextPart{Text: "Analyzing...\n"}, nil
 		}
 		return &a2a.TextPart{Text: part.Text}, nil
 	}

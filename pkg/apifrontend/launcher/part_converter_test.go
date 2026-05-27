@@ -379,7 +379,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal("Analyzing..."))
+			Expect(tp.Text).To(Equal("Analyzing...\n"))
 		})
 
 		It("UT-AF-1189-132: empty text part -> passed through (not dropped)", func() {
@@ -469,7 +469,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal("Investigation started."))
+			Expect(tp.Text).To(Equal("Investigation started.\n"))
 		})
 
 		It("UT-AF-1189-155: kubernaut_select_workflow response with message only -> message text", func() {
@@ -483,7 +483,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal("Workflow selected for execution"))
+			Expect(tp.Text).To(Equal("Workflow selected for execution\n"))
 		})
 
 		It("UT-AF-1189-156: kubernaut_select_workflow response with status only -> formatted status", func() {
@@ -497,7 +497,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal("Workflow queued."))
+			Expect(tp.Text).To(Equal("Workflow queued.\n"))
 		})
 
 		It("UT-AF-1189-157: kubernaut_select_workflow response with empty fields -> generic fallback", func() {
@@ -511,7 +511,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal("Workflow selection completed."))
+			Expect(tp.Text).To(Equal("Workflow selection completed.\n"))
 		})
 
 		It("UT-AF-1189-158: kubernaut_watch response with phase only -> phase text", func() {
@@ -525,7 +525,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal("Phase: Executing"))
+			Expect(tp.Text).To(Equal("Phase: Executing\n"))
 		})
 
 		It("UT-AF-1189-159: kubernaut_watch response with status only -> status text", func() {
@@ -539,7 +539,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal("WorkflowRunning"))
+			Expect(tp.Text).To(Equal("WorkflowRunning\n"))
 		})
 
 		It("UT-AF-1189-160: kubernaut_watch response with empty fields -> generic fallback", func() {
@@ -553,7 +553,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal("Watching remediation..."))
+			Expect(tp.Text).To(Equal("Watching remediation...\n"))
 		})
 
 		It("UT-AF-1189-161: af_create_rr response without rr_id -> human-friendly fallback", func() {
@@ -641,7 +641,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal(multiByteStr), "rune-safe truncation should preserve string when rune count is within limit")
+			Expect(tp.Text).To(Equal(multiByteStr+"\n"), "rune-safe truncation should preserve string when rune count is within limit")
 		})
 
 		It("UT-AF-1189-163: multi-byte string over both byte and rune limits -> rune-safe truncation", func() {
@@ -658,8 +658,8 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(HaveSuffix("..."))
-			Expect(len([]rune(tp.Text))).To(BeNumerically("<=", 1024))
+			Expect(tp.Text).To(HaveSuffix("...\n"))
+			Expect(len([]rune(tp.Text))).To(BeNumerically("<=", 1025))
 		})
 	})
 
@@ -717,7 +717,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal("No workflows discovered."))
+			Expect(tp.Text).To(Equal("No workflows discovered.\n"))
 		})
 
 		It("UT-AF-1189-166: workflow entry with zero confidence -> name without percentage", func() {
@@ -750,7 +750,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal("Analyzing..."))
+			Expect(tp.Text).To(Equal("Analyzing...\n"))
 		})
 
 		It("UT-AF-1189-168: Thought=false with text -> text passes through unchanged", func() {
@@ -765,6 +765,119 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(ok).To(BeTrue())
 			Expect(tp.Text).To(Equal(text))
 		})
+	})
+})
+
+var _ = Describe("Status message line breaks (#1301)", func() {
+	var convert launcher.PartConverterFunc
+
+	BeforeEach(func() {
+		convert = launcher.BuildStreamingPartConverterForTest()
+	})
+
+	It("UT-AF-1301-001: FunctionCall status text ends with newline", func() {
+		part := &genai.Part{
+			FunctionCall: &genai.FunctionCall{
+				Name: "kubectl_list",
+				Args: map[string]any{"namespace": "demo"},
+			},
+		}
+		result, err := convert(context.Background(), nil, part)
+		Expect(err).NotTo(HaveOccurred())
+		tp, ok := result.(*a2a.TextPart)
+		Expect(ok).To(BeTrue())
+		Expect(tp.Text).To(HaveSuffix("\n"),
+			"status messages must end with \\n so concatenated SSE frames are readable (#1301)")
+	})
+
+	It("UT-AF-1301-002: Thought activity indicator ends with newline", func() {
+		part := &genai.Part{Text: "thinking...", Thought: true}
+		result, err := convert(context.Background(), nil, part)
+		Expect(err).NotTo(HaveOccurred())
+		tp, ok := result.(*a2a.TextPart)
+		Expect(ok).To(BeTrue())
+		Expect(tp.Text).To(HaveSuffix("\n"),
+			"thought indicator must end with \\n for readability (#1301)")
+	})
+
+	It("UT-AF-1301-003: FunctionResponse summary ends with newline", func() {
+		part := &genai.Part{
+			FunctionResponse: &genai.FunctionResponse{
+				Name:     "kubernaut_start_investigation",
+				Response: map[string]any{"session_id": "sess-42"},
+			},
+		}
+		result, err := convert(context.Background(), nil, part)
+		Expect(err).NotTo(HaveOccurred())
+		tp, ok := result.(*a2a.TextPart)
+		Expect(ok).To(BeTrue())
+		Expect(tp.Text).To(HaveSuffix("\n"),
+			"tool response summaries must end with \\n for readability (#1301)")
+	})
+
+	It("UT-AF-1301-004: LLM text passthrough does NOT get extra newline", func() {
+		text := "The root cause is disk pressure."
+		part := &genai.Part{Text: text}
+		result, err := convert(context.Background(), nil, part)
+		Expect(err).NotTo(HaveOccurred())
+		tp, ok := result.(*a2a.TextPart)
+		Expect(ok).To(BeTrue())
+		Expect(tp.Text).To(Equal(text),
+			"LLM text must pass through unchanged — model controls its own formatting")
+	})
+})
+
+var _ = Describe("Tool error surfacing (#1302)", func() {
+	var convert launcher.PartConverterFunc
+
+	BeforeEach(func() {
+		convert = launcher.BuildStreamingPartConverterForTest()
+	})
+
+	It("UT-AF-1302-001: non-key tool with error in response emits error text", func() {
+		part := &genai.Part{
+			FunctionResponse: &genai.FunctionResponse{
+				Name:     "kubectl_list",
+				Response: map[string]any{"error": "cannot resolve GVK for kind \"pods\""},
+			},
+		}
+		result, err := convert(context.Background(), nil, part)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).NotTo(BeNil(),
+			"tool errors must be surfaced on the SSE stream, not silently dropped (#1302)")
+		tp, ok := result.(*a2a.TextPart)
+		Expect(ok).To(BeTrue())
+		Expect(tp.Text).To(ContainSubstring("cannot resolve GVK"))
+	})
+
+	It("UT-AF-1302-002: non-key tool success response still nil (unchanged)", func() {
+		part := &genai.Part{
+			FunctionResponse: &genai.FunctionResponse{
+				Name:     "kubectl_get",
+				Response: map[string]any{"data": "large payload"},
+			},
+		}
+		result, err := convert(context.Background(), nil, part)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(BeNil(),
+			"non-key tool success payloads must still be suppressed")
+	})
+
+	It("UT-AF-1302-003: key tool with error uses summarizer, not generic handler", func() {
+		nonStreamConvert := launcher.BuildPartConverterForTest()
+		part := &genai.Part{
+			FunctionResponse: &genai.FunctionResponse{
+				Name:     "kubernaut_start_investigation",
+				Response: map[string]any{"error": "connection refused"},
+			},
+		}
+		result, err := nonStreamConvert(context.Background(), nil, part)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).NotTo(BeNil(), "key tool responses still go through their summarizer")
+		tp, ok := result.(*a2a.TextPart)
+		Expect(ok).To(BeTrue())
+		Expect(tp.Text).NotTo(ContainSubstring("Error:"),
+			"key tool errors use their dedicated summarizer, not the generic error handler")
 	})
 })
 
@@ -884,7 +997,7 @@ var _ = Describe("GenAIPartConverter — Streaming Mode (TP-1258)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal("Analyzing..."))
+			Expect(tp.Text).To(Equal("Analyzing...\n"))
 		})
 	})
 })
