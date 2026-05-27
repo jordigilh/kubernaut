@@ -12,8 +12,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	adksession "google.golang.org/adk/session"
@@ -565,6 +568,10 @@ func (s *CRDSessionService) InitializeSessionByRR(ctx context.Context, rrNamespa
 		},
 	}
 
+	if rrNamespace == s.namespace {
+		setRROwnerReference(ctx, s.client, s.logger, crd, rrNamespace, rrName)
+	}
+
 	if err := s.client.Create(ctx, crd); err != nil {
 		if apierrors.IsAlreadyExists(err) {
 			return nil
@@ -618,6 +625,32 @@ func (s *CRDSessionService) IsMaterialized(sessionID string) bool {
 	_, hasCRD := s.crdIndex[sessionID]
 	_, isPending := s.pendingConfigs[sessionID]
 	return hasCRD && !isPending
+}
+
+var rrGVK = schema.GroupVersionKind{Group: "kubernaut.ai", Version: "v1alpha1", Kind: "RemediationRequest"}
+
+// setRROwnerReference looks up the RemediationRequest and, if found, sets an
+// OwnerReference on the IS CRD so Kubernetes garbage-collects the IS when the
+// RR is deleted (#1300). Best-effort: a lookup failure is logged and the IS is
+// still created without an owner reference.
+func setRROwnerReference(ctx context.Context, c client.Client, logger logr.Logger, crd *v1alpha1.InvestigationSession, rrNamespace, rrName string) {
+	rr := &unstructured.Unstructured{}
+	rr.SetGroupVersionKind(rrGVK)
+	if err := c.Get(ctx, types.NamespacedName{Namespace: rrNamespace, Name: rrName}, rr); err != nil {
+		logger.V(1).Info("RR lookup for owner reference failed (IS will be created without cascade GC)",
+			"rr_namespace", rrNamespace, "rr_name", rrName, "error", err.Error())
+		return
+	}
+
+	crd.OwnerReferences = []metav1.OwnerReference{
+		{
+			APIVersion:         "kubernaut.ai/v1alpha1",
+			Kind:               "RemediationRequest",
+			Name:               rr.GetName(),
+			UID:                rr.GetUID(),
+			BlockOwnerDeletion: ptr.To(true),
+		},
+	}
 }
 
 var invalidLabelChars = regexp.MustCompile(`[^a-zA-Z0-9._-]`)
