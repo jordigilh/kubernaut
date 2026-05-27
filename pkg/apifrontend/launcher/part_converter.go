@@ -17,9 +17,7 @@ const (
 )
 
 var toolStatusMessages = map[string]string{
-	"kubernaut_start_investigation":   "Starting investigation for %s...",
-	"kubernaut_stream_investigation":  "Streaming live investigation events...",
-	"kubernaut_poll_investigation":    "Polling investigation status...",
+	"kubernaut_investigate":           "Investigating %s...",
 	"kubernaut_discover_workflows":    "Discovering available remediation workflows...",
 	"kubernaut_select_workflow":       "Selecting remediation workflow %s...",
 	"kubernaut_watch":                 "Watching remediation progress...",
@@ -43,8 +41,7 @@ var toolStatusMessages = map[string]string{
 // summary from FunctionResponse.Response. Tools not listed here have their
 // responses dropped (the LLM's subsequent reasoning covers the content).
 var keyToolSummarizers = map[string]func(map[string]any) string{
-	"kubernaut_stream_investigation": summarizeStreamInvestigation,
-	"kubernaut_start_investigation":  summarizeStartInvestigation,
+	"kubernaut_investigate": summarizeInvestigation,
 	"kubernaut_discover_workflows":   summarizeDiscoverWorkflows,
 	"kubernaut_select_workflow":      summarizeSelectWorkflow,
 	"kubernaut_watch":                summarizeWatch,
@@ -130,7 +127,7 @@ func formatStatusWithContext(template, toolName string, args map[string]any) str
 
 	if args != nil {
 		switch toolName {
-		case "kubernaut_start_investigation":
+		case "kubernaut_investigate":
 			ns := stringArg(args, "namespace")
 			name := stringArg(args, "name")
 			if ns != "" && name != "" {
@@ -147,18 +144,14 @@ func formatStatusWithContext(template, toolName string, args map[string]any) str
 	return strings.ReplaceAll(template, " %s", "")
 }
 
-func summarizeStreamInvestigation(resp map[string]any) string {
+func summarizeInvestigation(resp map[string]any) string {
 	if summary, ok := resp["summary"].(string); ok && summary != "" {
 		return summary
 	}
-	return "Investigation completed."
-}
-
-func summarizeStartInvestigation(resp map[string]any) string {
 	if sid, ok := resp["session_id"].(string); ok && sid != "" {
 		return fmt.Sprintf("Investigation started: %s", sid)
 	}
-	return "Investigation started."
+	return "Investigation completed."
 }
 
 func summarizeDiscoverWorkflows(resp map[string]any) string {
@@ -232,7 +225,7 @@ func summarizeCreateRR(resp map[string]any) string {
 }
 
 // buildStreamingPartConverter returns a GenAIPartConverter for streaming mode
-// that suppresses kubernaut_stream_investigation FunctionResponse parts (since
+// that suppresses kubernaut_investigate FunctionResponse parts (since
 // the EventBridge already delivered the reasoning progressively). All other
 // behavior is identical to the standard converter.
 func buildStreamingPartConverter() adka2a.GenAIPartConverter {
@@ -245,7 +238,7 @@ func buildStreamingPartConverter() adka2a.GenAIPartConverter {
 			return convertFunctionCall(part.FunctionCall), nil
 		}
 		if part.FunctionResponse != nil {
-			if part.FunctionResponse.Name == "kubernaut_stream_investigation" {
+			if part.FunctionResponse.Name == "kubernaut_investigate" {
 				return nil, nil
 			}
 			return convertFunctionResponse(part.FunctionResponse), nil

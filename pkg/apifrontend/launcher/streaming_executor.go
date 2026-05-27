@@ -35,7 +35,7 @@ type SessionPhaseUpdater interface {
 }
 
 // StreamingExecutor wraps an AgentExecutor to inject an EventBridge into the
-// execution context. This enables tool handlers (e.g., kubernaut_stream_investigation)
+// execution context. This enables tool handlers (e.g., kubernaut_investigate)
 // to emit progressive reasoning artifacts directly to the A2A event queue.
 type StreamingExecutor struct {
 	inner         a2asrv.AgentExecutor

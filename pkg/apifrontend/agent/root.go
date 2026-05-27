@@ -94,7 +94,7 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 
 	// All internal tools use AF ServiceAccount. Access control is enforced
 	// at the MCP tool level (RBAC guard): if the user has permission to invoke
-	// kubernaut_start_investigation, AF investigates on their behalf using its
+	// kubernaut_investigate, AF investigates on their behalf using its
 	// own SA. Users do not need direct K8s permissions for triage.
 	saFactory := auth.StaticDynamicFactory(k8s)
 
@@ -107,9 +107,7 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 		{"cancel_remediation", func() (tool.Tool, error) { return tools.NewCancelRemediationTool(k8s) }},
 		{"watch", func() (tool.Tool, error) { return tools.NewWatchTool(k8s) }},
 		{"await_session", func() (tool.Tool, error) { return tools.NewAwaitSessionTool(k8s) }},
-		{"start_investigation", func() (tool.Tool, error) { return tools.NewStartInvestigationTool(kaC, cfg.Auditor) }},
-		{"poll_investigation", func() (tool.Tool, error) { return tools.NewPollInvestigationTool(kaC, cfg.Auditor) }},
-		{"stream_investigation", func() (tool.Tool, error) { return tools.NewStreamInvestigationTool(kaC) }},
+		{"investigate", func() (tool.Tool, error) { return tools.NewInvestigateTool(kaC, cfg.Auditor) }},
 		{"discover_workflows", func() (tool.Tool, error) { return tools.NewDiscoverWorkflowsTool(mcpC) }},
 		{"select_workflow", func() (tool.Tool, error) { return tools.NewSelectWorkflowTool(mcpC, cfg.Auditor) }},
 		{"present_decision", func() (tool.Tool, error) { return tools.NewPresentDecisionTool() }},

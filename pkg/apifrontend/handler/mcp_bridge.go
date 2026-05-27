@@ -152,15 +152,10 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 			return tools.HandleAwaitSession(ctx, cfg.K8sClient, args)
 		})
 
-	// KA REST tools
-	registerTool(srv, cfg, sem, "kubernaut_start_investigation", "Start a new investigation session",
-		func(ctx context.Context, args tools.StartInvestigationArgs) (any, error) {
-			return tools.HandleStartInvestigation(ctx, cfg.KAClient, args, cfg.Auditor)
-		})
-
-	registerTool(srv, cfg, sem, "kubernaut_poll_investigation", "Poll an investigation session for updates",
-		func(ctx context.Context, args tools.PollInvestigationArgs) (any, error) {
-			return tools.HandlePollInvestigation(ctx, cfg.KAClient, args, 5, 3*time.Second, cfg.Auditor)
+	// KA investigation tool (merged start + stream + poll)
+	registerTool(srv, cfg, sem, "kubernaut_investigate", "Investigate an infrastructure incident",
+		func(ctx context.Context, args tools.InvestigateArgs) (any, error) {
+			return tools.HandleInvestigation(ctx, cfg.KAClient, args, cfg.Auditor)
 		})
 
 	// KA MCP tools
@@ -284,11 +279,7 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 			return tools.HandleReconnect(ctx, cfg.KAMCPClient, args, cfg.Auditor)
 		})
 
-	// Stream investigation tool (G5: SSE stream bridge)
-	registerTool(srv, cfg, sem, "kubernaut_stream_investigation", "Stream investigation events in real time",
-		func(ctx context.Context, args tools.StreamInvestigationArgs) (any, error) {
-			return tools.HandleStreamInvestigation(ctx, cfg.KAClient, args)
-		})
+	// Stream investigation tool removed — merged into kubernaut_investigate above.
 
 	// Internal triage tools (kubectl_get, kubectl_list, kubectl_list_events,
 	// af_check_existing_rr, af_create_rr) are available only to AF's LLM

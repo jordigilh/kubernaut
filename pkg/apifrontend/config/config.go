@@ -217,7 +217,7 @@ func DefaultConfig() *Config {
 			Enabled:     false,
 			ToolTimeout: 30 * time.Second,
 			ToolTimeouts: map[string]time.Duration{
-				"kubernaut_stream_investigation": 15 * time.Minute,
+				"kubernaut_investigate": 15 * time.Minute,
 				"kubernaut_await_session":        3 * time.Minute,
 			},
 		},
