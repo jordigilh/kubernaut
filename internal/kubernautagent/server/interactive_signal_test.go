@@ -18,6 +18,7 @@ package server_test
 
 import (
 	"context"
+	"sync/atomic"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -113,7 +114,7 @@ var _ = Describe("BR-INTERACTIVE-010: Interactive Signal Mapping — #1293", fun
 		It("should create session in StatusPending without launching investigation goroutine", func() {
 			store := session.NewStore(5 * time.Minute)
 			manager := session.NewManager(store, logr.Discard(), nil, nil)
-			investigator := &interactiveTestInvestigator{called: false}
+			investigator := &interactiveTestInvestigator{}
 			handler := server.NewHandler(manager, investigator, logr.Discard(), nil)
 
 			req := &agentclient.IncidentRequest{
@@ -150,7 +151,7 @@ var _ = Describe("BR-INTERACTIVE-010: Interactive Signal Mapping — #1293", fun
 
 			// Give time to confirm investigator was NOT called
 			Consistently(func() bool {
-				return investigator.called
+				return investigator.called.Load()
 			}, 200*time.Millisecond, 50*time.Millisecond).Should(BeFalse(),
 				"Investigate() must NOT be called for interactive sessions")
 		})
@@ -160,7 +161,7 @@ var _ = Describe("BR-INTERACTIVE-010: Interactive Signal Mapping — #1293", fun
 		It("should create session in StatusRunning and call Investigate for autonomous flow", func() {
 			store := session.NewStore(5 * time.Minute)
 			manager := session.NewManager(store, logr.Discard(), nil, nil)
-			investigator := &interactiveTestInvestigator{called: false}
+			investigator := &interactiveTestInvestigator{}
 			handler := server.NewHandler(manager, investigator, logr.Discard(), nil)
 
 			req := &agentclient.IncidentRequest{
@@ -200,7 +201,7 @@ var _ = Describe("BR-INTERACTIVE-010: Interactive Signal Mapping — #1293", fun
 				"autonomous session must transition to Running/Completed")
 
 			Eventually(func() bool {
-				return investigator.called
+				return investigator.called.Load()
 			}, 2*time.Second, 50*time.Millisecond).Should(BeTrue(),
 				"Investigate() must be called for autonomous sessions")
 		})
@@ -234,14 +235,12 @@ var _ = Describe("BR-INTERACTIVE-010: Interactive Signal Mapping — #1293", fun
 	})
 })
 
-// interactiveTestInvestigator implements the Investigator interface for testing
-// interactive vs autonomous session routing.
 type interactiveTestInvestigator struct {
-	called bool
+	called atomic.Bool
 }
 
 func (i *interactiveTestInvestigator) Investigate(_ context.Context, _ katypes.SignalContext) (*katypes.InvestigationResult, error) {
-	i.called = true
+	i.called.Store(true)
 	return &katypes.InvestigationResult{
 		RCASummary: "test RCA",
 		Confidence: 0.85,
