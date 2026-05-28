@@ -2,11 +2,11 @@ package agent
 
 import (
 	"fmt"
-	"log"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/go-logr/logr"
 	"google.golang.org/adk/agent"
 	"google.golang.org/adk/agent/llmagent"
 	"google.golang.org/adk/tool"
@@ -161,7 +161,7 @@ func newRBACGuard(authorizer auth.ToolAuthorizer, auditor audit.Emitter) llmagen
 	return func(ctx tool.Context, t tool.Tool, _ map[string]any) (map[string]any, error) {
 		identity := auth.UserIdentityFromContext(ctx)
 		if identity == nil {
-			log.Printf("[rbac-guard] DENIED tool=%q reason=no_identity_in_context", t.Name())
+			logr.FromContextOrDiscard(ctx).Info("rbac-guard denied tool", "tool", t.Name(), "reason", "no_identity_in_context")
 			if auditor != nil {
 				auditor.Emit(ctx, &audit.Event{
 					Type: audit.EventAuthAccessDenied,
@@ -178,7 +178,7 @@ func newRBACGuard(authorizer auth.ToolAuthorizer, auditor audit.Emitter) llmagen
 		toolName := t.Name()
 		allowed, err := authorizer.Check(ctx, identity.Username, identity.Groups, toolName)
 		if err != nil {
-			log.Printf("[rbac-guard] DENIED tool=%q user=%q reason=authorizer_error err=%v", toolName, identity.Username, err)
+			logr.FromContextOrDiscard(ctx).Error(err, "rbac-guard denied tool", "tool", toolName, "user", identity.Username, "reason", "authorizer_error")
 			if auditor != nil {
 				auditor.Emit(ctx, &audit.Event{
 					Type:   audit.EventAuthAccessDenied,
@@ -225,7 +225,7 @@ func newRateLimitGuard(limiter *ratelimit.UserLimiter, auditor audit.Emitter) ll
 		if limiter.AllowToolCall(identity.Username) {
 			return nil, nil
 		}
-		log.Printf("[rate-limit-guard] DENIED tool=%q user=%q reason=rate_limited", t.Name(), identity.Username)
+		logr.FromContextOrDiscard(ctx).Info("rate-limit-guard denied tool", "tool", t.Name(), "user", identity.Username, "reason", "rate_limited")
 		if auditor != nil {
 			auditor.Emit(ctx, &audit.Event{
 				Type:   audit.EventRateLimitDenied,
@@ -312,7 +312,7 @@ func newToolLoggingCallbacks() (llmagent.BeforeToolCallback, llmagent.AfterToolC
 
 	before := func(ctx tool.Context, t tool.Tool, _ map[string]any) (map[string]any, error) {
 		starts.Store(ctx.FunctionCallID(), time.Now())
-		log.Printf("[tool-log] START tool=%q call_id=%s", t.Name(), ctx.FunctionCallID())
+		logr.FromContextOrDiscard(ctx).Info("tool call started", "tool", t.Name(), "callID", ctx.FunctionCallID())
 		return nil, nil
 	}
 
@@ -327,8 +327,7 @@ func newToolLoggingCallbacks() (llmagent.BeforeToolCallback, llmagent.AfterToolC
 				durationMs = time.Since(start).Milliseconds()
 			}
 		}
-		log.Printf("[tool-log] COMPLETE tool=%q call_id=%s duration_ms=%d result=%s",
-			t.Name(), ctx.FunctionCallID(), durationMs, result)
+		logr.FromContextOrDiscard(ctx).Info("tool call completed", "tool", t.Name(), "callID", ctx.FunctionCallID(), "durationMs", durationMs, "result", result)
 		return nil, nil
 	}
 
@@ -352,7 +351,7 @@ func newAuditToolCallback(auditor audit.Emitter, sessionSvc *session.CRDSessionS
 		result := "success"
 		if toolErr != nil {
 			result = "failure"
-			log.Printf("[audit-tool-callback] tool=%q outcome=failure error=%v", t.Name(), toolErr)
+			logr.FromContextOrDiscard(ctx).Error(toolErr, "tool call failed", "tool", t.Name())
 		}
 
 		detail := map[string]string{

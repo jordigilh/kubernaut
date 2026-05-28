@@ -1,8 +1,7 @@
 package agent
 
 import (
-	"log"
-
+	"github.com/go-logr/logr"
 	"google.golang.org/adk/agent/llmagent"
 	"google.golang.org/adk/tool"
 )
@@ -46,7 +45,7 @@ func newPhaseGuard() (llmagent.BeforeToolCallback, llmagent.AfterToolCallback) {
 			}
 		}
 
-		log.Printf("[phase-guard] BLOCKED tool=%q reason=no_active_driver", t.Name())
+		logr.FromContextOrDiscard(ctx).Info("phase-guard blocked tool", "tool", t.Name(), "reason", "no_active_driver")
 		return map[string]any{
 			"error": "interactive session not active — you must call kubernaut_takeover first to establish a driver session before using this tool",
 		}, nil
@@ -68,7 +67,7 @@ func newPhaseGuard() (llmagent.BeforeToolCallback, llmagent.AfterToolCallback) {
 			return resp, callErr
 		}
 		if err := state.Set(stateKeyDriverActive, true); err != nil {
-			log.Printf("[phase-guard] failed to set driver state: %v", err)
+			logr.FromContextOrDiscard(ctx).Error(err, "phase-guard failed to set driver state")
 		}
 		return resp, callErr
 	}

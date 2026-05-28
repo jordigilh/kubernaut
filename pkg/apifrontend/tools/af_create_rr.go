@@ -4,10 +4,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
+	"github.com/go-logr/logr"
 	"golang.org/x/sync/singleflight"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -265,7 +265,7 @@ func deriveSignalName(ctx context.Context, client dynamic.Interface, namespace s
 			Kind:      args.Kind,
 		})
 		if err != nil {
-			log.Printf("[deriveSignalName] list %s events in %s: %v", args.Kind, namespace, err)
+			logr.FromContextOrDiscard(ctx).Error(err, "deriveSignalName failed to list events", "kind", args.Kind, "namespace", namespace)
 		} else if len(evResult.Events) > 0 {
 			if dominant := DominantEventReason(evResult.Events); dominant != "" {
 				return dominant
@@ -282,7 +282,7 @@ func deriveSignalName(ctx context.Context, client dynamic.Interface, namespace s
 				Kind:      "Pod",
 			})
 			if err != nil {
-				log.Printf("[deriveSignalName] list Pod events in %s: %v", namespace, err)
+				logr.FromContextOrDiscard(ctx).Error(err, "deriveSignalName failed to list Pod events", "namespace", namespace)
 			} else if len(podResult.Events) > 0 {
 				related := FilterRelatedPodEvents(podResult.Events, args.Name)
 				if dominant := DominantEventReason(related); dominant != "" {

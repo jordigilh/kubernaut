@@ -1,8 +1,7 @@
 package agent
 
 import (
-	"log"
-
+	"github.com/go-logr/logr"
 	"google.golang.org/adk/agent"
 	"google.golang.org/adk/model"
 	"google.golang.org/genai"
@@ -23,7 +22,7 @@ import (
 // that the prior tool call was interrupted and proceed normally.
 //
 // Issue: #1299
-func historySanitizer(_ agent.CallbackContext, req *model.LLMRequest) (*model.LLMResponse, error) {
+func historySanitizer(ctx agent.CallbackContext, req *model.LLMRequest) (*model.LLMResponse, error) {
 	if len(req.Contents) == 0 {
 		return nil, nil
 	}
@@ -50,7 +49,7 @@ func historySanitizer(_ agent.CallbackContext, req *model.LLMRequest) (*model.LL
 		return nil, nil
 	}
 
-	log.Printf("[history-sanitizer] patching %d orphaned FunctionCall(s) in session history (#1299)", len(orphans))
+	logr.FromContextOrDiscard(ctx).Info("history-sanitizer patching orphaned FunctionCalls", "count", len(orphans), "issue", "#1299")
 
 	// Group orphans by content index so we insert one synthetic Content per
 	// source Content, preserving Anthropic's requirement that all tool_results
