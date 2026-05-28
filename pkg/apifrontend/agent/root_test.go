@@ -23,6 +23,7 @@ import (
 
 	agentpkg "github.com/jordigilh/kubernaut/pkg/apifrontend/agent"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
 )
 
 // newMockToolContext returns a minimal tool.Context with a specific
@@ -421,6 +422,120 @@ var _ = Describe("Root Agent", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(a).NotTo(BeNil())
 			Expect(tools).NotTo(BeEmpty())
+		})
+	})
+
+	// =========================================================================
+	// AutonomousClient wiring — verifies kubernaut_investigate uses the
+	// dedicated SDKMCPClient when AutonomousClient is set, and falls back
+	// to MCPClient when nil.
+	// =========================================================================
+	Describe("AutonomousClient wiring for kubernaut_investigate", func() {
+		// runnableTool matches the unexported ADK runnableTool interface via
+		// structural typing so we can invoke the tool directly without the
+		// full runner/LLM stack.
+		type runnableTool interface {
+			Run(ctx tool.Context, args any) (map[string]any, error)
+		}
+
+		findTool := func(allTools []tool.Tool, name string) runnableTool {
+			for _, t := range allTools {
+				if t.Name() == name {
+					rt, ok := t.(runnableTool)
+					Expect(ok).To(BeTrue(), "tool %q must implement runnableTool", name)
+					return rt
+				}
+			}
+			Fail("tool " + name + " not found in tool list")
+			return nil
+		}
+
+		It("UT-AF-1326-030: kubernaut_investigate uses AutonomousClient when set", func() {
+			var autonomousCalled atomic.Int32
+			autonomousMock := &ka.MockMCPClient{
+				StartAutonomousFn: func(_ context.Context, args ka.StartAutonomousArgs) (*ka.StartAutonomousResult, error) {
+					autonomousCalled.Add(1)
+					return &ka.StartAutonomousResult{
+						SessionID: "sess-auto-030",
+						Status:    "autonomous_started",
+						Events:    make(chan ka.InvestigationEvent, 1),
+						Closer:    func() {},
+					}, nil
+				},
+			}
+
+			var pooledCalled atomic.Int32
+			pooledMock := &ka.MockMCPClient{
+				StartAutonomousFn: func(_ context.Context, _ ka.StartAutonomousArgs) (*ka.StartAutonomousResult, error) {
+					pooledCalled.Add(1)
+					return nil, fmt.Errorf("StartAutonomous requires a dedicated MCP session; use SDKMCPClient")
+				},
+			}
+
+			cfg := agentpkg.DefaultTestConfig()
+			cfg.MCPClient = pooledMock
+			cfg.AutonomousClient = autonomousMock
+
+			_, allTools, err := agentpkg.NewRootAgent(cfg)
+			Expect(err).NotTo(HaveOccurred())
+
+			investigateTool := findTool(allTools, "kubernaut_investigate")
+			ctx := newMockToolContext("call-auto-030")
+			_, _ = investigateTool.Run(ctx, map[string]any{"rr_id": "rr-wiring-030"})
+
+			Expect(autonomousCalled.Load()).To(Equal(int32(1)), "AutonomousClient.StartAutonomous must be called")
+			Expect(pooledCalled.Load()).To(Equal(int32(0)), "MCPClient.StartAutonomous must NOT be called")
+		})
+
+		It("UT-AF-1326-031: kubernaut_investigate falls back to MCPClient when AutonomousClient is nil", func() {
+			var pooledCalled atomic.Int32
+			pooledMock := &ka.MockMCPClient{
+				StartAutonomousFn: func(_ context.Context, _ ka.StartAutonomousArgs) (*ka.StartAutonomousResult, error) {
+					pooledCalled.Add(1)
+					return &ka.StartAutonomousResult{
+						SessionID: "sess-pool-031",
+						Status:    "autonomous_started",
+						Events:    make(chan ka.InvestigationEvent, 1),
+						Closer:    func() {},
+					}, nil
+				},
+			}
+
+			cfg := agentpkg.DefaultTestConfig()
+			cfg.MCPClient = pooledMock
+			// AutonomousClient intentionally nil — should fall back to MCPClient
+
+			_, allTools, err := agentpkg.NewRootAgent(cfg)
+			Expect(err).NotTo(HaveOccurred())
+
+			investigateTool := findTool(allTools, "kubernaut_investigate")
+			ctx := newMockToolContext("call-pool-031")
+			_, _ = investigateTool.Run(ctx, map[string]any{"rr_id": "rr-wiring-031"})
+
+			Expect(pooledCalled.Load()).To(Equal(int32(1)), "MCPClient.StartAutonomous must be called as fallback")
+		})
+
+		It("UT-AF-1326-032: kubernaut_investigate propagates AutonomousClient error", func() {
+			autonomousMock := &ka.MockMCPClient{
+				StartAutonomousFn: func(_ context.Context, _ ka.StartAutonomousArgs) (*ka.StartAutonomousResult, error) {
+					return nil, fmt.Errorf("connection refused")
+				},
+			}
+
+			cfg := agentpkg.DefaultTestConfig()
+			cfg.MCPClient = &ka.MockMCPClient{}
+			cfg.AutonomousClient = autonomousMock
+
+			_, allTools, err := agentpkg.NewRootAgent(cfg)
+			Expect(err).NotTo(HaveOccurred())
+
+			investigateTool := findTool(allTools, "kubernaut_investigate")
+			ctx := newMockToolContext("call-err-032")
+			result, err := investigateTool.Run(ctx, map[string]any{"rr_id": "rr-wiring-032"})
+
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("connection refused"))
+			Expect(result).To(BeNil())
 		})
 	})
 
