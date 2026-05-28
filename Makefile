@@ -38,7 +38,7 @@ SERVICES := $(filter-out README.md must-gather, $(notdir $(wildcard cmd/*)))
 TEST_PROCS ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 TEST_TIMEOUT_UNIT ?= 5m
 TEST_TIMEOUT_INTEGRATION ?= 15m
-TEST_TIMEOUT_E2E ?= 40m
+TEST_TIMEOUT_E2E ?= 18m
 
 # Race detector: enabled by default for unit and integration tests (#83 100go.co).
 # E2E targets test against a deployed binary so --race is not applicable.

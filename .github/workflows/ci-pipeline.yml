@@ -630,40 +630,40 @@ jobs:
         include:
           - service: signalprocessing
             service_name: "Signal Processing"
-            timeout: 35
+            timeout: 20
           - service: aianalysis
             service_name: "AI Analysis"
-            timeout: 40
+            timeout: 20
           - service: authwebhook
             service_name: "Auth Webhook"
-            timeout: 35
+            timeout: 20
           - service: workflowexecution
             service_name: "Workflow Execution"
-            timeout: 40
+            timeout: 20
           - service: remediationorchestrator
             service_name: "Remediation Orchestrator"
-            timeout: 40
+            timeout: 20
           - service: notification
             service_name: "Notification"
-            timeout: 35
+            timeout: 20
           - service: gateway
             service_name: "Gateway"
-            timeout: 45
+            timeout: 20
           - service: datastorage
             service_name: "Data Storage"
-            timeout: 35
+            timeout: 20
           - service: effectivenessmonitor
             service_name: "Effectiveness Monitor"
-            timeout: 40
+            timeout: 20
           - service: kubernautagent
             service_name: "Kubernaut Agent"
-            timeout: 35
+            timeout: 20
           - service: apifrontend
             service_name: "API Frontend"
-            timeout: 40
+            timeout: 20
           - service: fullpipeline
             service_name: "Full Pipeline"
-            timeout: 50
+            timeout: 20
     steps:
       - uses: actions/checkout@v6
         with:
