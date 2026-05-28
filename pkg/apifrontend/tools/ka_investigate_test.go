@@ -359,6 +359,228 @@ var _ = Describe("HandleInvestigation — merged tool (TP-1307-MERGE)", func() {
 })
 
 // =============================================================================
+// TP-1310 §4.2: Error Bridging During Investigation Streaming — FedRAMP SI-4
+// =============================================================================
+var _ = Describe("streamInvestigation — error bridging (TP-1310)", func() {
+	var (
+		ctx    context.Context
+		server *httptest.Server
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+	})
+
+	AfterEach(func() {
+		if server != nil {
+			server.Close()
+		}
+	})
+
+	It("UT-AF-1310-001: tool_result with error IS bridged via EventBridge (SI-4)", func() {
+		errPayload := struct {
+			Status string `json:"status"`
+			Error  string `json:"error"`
+		}{Status: "error", Error: "nodes.config.openshift.io not found"}
+		errJSON, _ := json.Marshal(errPayload)
+
+		server = httptest.NewServer(kaSessionHandler("sess-1310-001", func(w http.ResponseWriter) {
+			_, _ = fmt.Fprint(w, sseToolResult("kubectl_describe", string(errJSON)))
+			_, _ = fmt.Fprint(w, sseObj("complete", map[string]any{"summary": "investigation complete"}))
+		}))
+
+		queue := &testEventQueue{}
+		taskID := a2a.TaskID("task-1310-001")
+		bridgeCtx := launcher.WithEventBridge(ctx, queue, taskID, "", nil)
+
+		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
+		result, err := tools.HandleInvestigation(bridgeCtx, kaClient, tools.InvestigateArgs{
+			Namespace: "default", Name: "test-pod",
+		}, nil)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Status).To(Equal("completed"))
+
+		var bridgedTexts []string
+		for _, evt := range queue.events {
+			if artifact, ok := evt.(*a2a.TaskArtifactUpdateEvent); ok {
+				for _, part := range artifact.Artifact.Parts {
+					if tp, ok := part.(*a2a.TextPart); ok {
+						bridgedTexts = append(bridgedTexts, tp.Text)
+					}
+				}
+			}
+		}
+		joined := strings.Join(bridgedTexts, "\n")
+		Expect(joined).To(ContainSubstring("[Error: kubectl_describe"),
+			"SI-4: tool errors MUST be bridged for progressive monitoring")
+	})
+
+	It("UT-AF-1310-002: tool_result with success is NOT bridged as error (SI-4)", func() {
+		server = httptest.NewServer(kaSessionHandler("sess-1310-002", func(w http.ResponseWriter) {
+			inner := map[string]any{
+				"tool_name":      "kubectl_get_pods",
+				"tool_index":     0,
+				"result_preview": "NAME READY STATUS\npod-1 1/1 Running",
+			}
+			envelope := map[string]any{"type": "tool_result", "turn": 1, "data": inner}
+			b, _ := json.Marshal(envelope)
+			_, _ = fmt.Fprint(w, sseLines("tool_result", string(b)))
+			_, _ = fmt.Fprint(w, sseObj("complete", map[string]any{"summary": "done"}))
+		}))
+
+		queue := &testEventQueue{}
+		taskID := a2a.TaskID("task-1310-002")
+		bridgeCtx := launcher.WithEventBridge(ctx, queue, taskID, "", nil)
+
+		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
+		result, err := tools.HandleInvestigation(bridgeCtx, kaClient, tools.InvestigateArgs{
+			Namespace: "default", Name: "test-pod",
+		}, nil)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Status).To(Equal("completed"))
+
+		for _, evt := range queue.events {
+			if artifact, ok := evt.(*a2a.TaskArtifactUpdateEvent); ok {
+				for _, part := range artifact.Artifact.Parts {
+					if tp, ok := part.(*a2a.TextPart); ok {
+						Expect(tp.Text).NotTo(ContainSubstring("[Error:"),
+							"successful tool_result MUST NOT be bridged as error")
+					}
+				}
+			}
+		}
+	})
+
+	It("UT-AF-1310-003: multiple tool errors accumulated in ToolErrors (AU-3)", func() {
+		errJSON1, _ := json.Marshal(struct {
+			Status string `json:"status"`
+			Error  string `json:"error"`
+		}{Status: "error", Error: "Node not found"})
+		errJSON2, _ := json.Marshal(struct {
+			Status string `json:"status"`
+			Error  string `json:"error"`
+		}{Status: "error", Error: "permission denied"})
+
+		server = httptest.NewServer(kaSessionHandler("sess-1310-003", func(w http.ResponseWriter) {
+			_, _ = fmt.Fprint(w, sseToolResult("kubectl_describe", string(errJSON1)))
+			_, _ = fmt.Fprint(w, sseToolResult("kubectl_get_yaml", string(errJSON2)))
+			_, _ = fmt.Fprint(w, sseObj("complete", map[string]any{"summary": "partial"}))
+		}))
+
+		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
+		result, err := tools.HandleInvestigation(ctx, kaClient, tools.InvestigateArgs{
+			Namespace: "default", Name: "test-pod",
+		}, nil)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.ToolErrors).To(HaveLen(2))
+		Expect(result.ToolErrors[0]).To(ContainSubstring("kubectl_describe"))
+		Expect(result.ToolErrors[1]).To(ContainSubstring("kubectl_get_yaml"))
+	})
+
+	It("UT-AF-1310-004: zero tool errors means ToolErrors is empty", func() {
+		server = httptest.NewServer(kaSessionHandler("sess-1310-004", func(w http.ResponseWriter) {
+			inner := map[string]any{
+				"tool_name":      "kubectl_get_pods",
+				"tool_index":     0,
+				"result_preview": "pod-1 Running",
+			}
+			envelope := map[string]any{"type": "tool_result", "turn": 1, "data": inner}
+			b, _ := json.Marshal(envelope)
+			_, _ = fmt.Fprint(w, sseLines("tool_result", string(b)))
+			_, _ = fmt.Fprint(w, sseObj("complete", map[string]any{"summary": "done"}))
+		}))
+
+		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
+		result, err := tools.HandleInvestigation(ctx, kaClient, tools.InvestigateArgs{
+			Namespace: "default", Name: "test-pod",
+		}, nil)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.ToolErrors).To(BeEmpty())
+	})
+
+	It("UT-AF-1310-005: error event bridged with investigation error prefix (SI-4)", func() {
+		server = httptest.NewServer(kaSessionHandler("sess-1310-005", func(w http.ResponseWriter) {
+			_, _ = fmt.Fprint(w, sseText("error", "internal timeout from KA"))
+		}))
+
+		queue := &testEventQueue{}
+		taskID := a2a.TaskID("task-1310-005")
+		bridgeCtx := launcher.WithEventBridge(ctx, queue, taskID, "", nil)
+
+		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
+		result, err := tools.HandleInvestigation(bridgeCtx, kaClient, tools.InvestigateArgs{
+			Namespace: "default", Name: "test-pod",
+		}, nil)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Status).To(Equal("failed"))
+
+		var bridgedTexts []string
+		for _, evt := range queue.events {
+			if artifact, ok := evt.(*a2a.TaskArtifactUpdateEvent); ok {
+				for _, part := range artifact.Artifact.Parts {
+					if tp, ok := part.(*a2a.TextPart); ok {
+						bridgedTexts = append(bridgedTexts, tp.Text)
+					}
+				}
+			}
+		}
+		joined := strings.Join(bridgedTexts, "\n")
+		Expect(joined).To(ContainSubstring("[Investigation error:"),
+			"SI-4: error events MUST be bridged with [Investigation error:] prefix")
+	})
+
+	It("UT-AF-1310-006: ToolErrors populated on disconnected stream (AU-12)", func() {
+		errJSON, _ := json.Marshal(struct {
+			Status string `json:"status"`
+			Error  string `json:"error"`
+		}{Status: "error", Error: "connection refused"})
+
+		server = httptest.NewServer(kaSessionHandler("sess-1310-006", func(w http.ResponseWriter) {
+			_, _ = fmt.Fprint(w, sseToolResult("kubectl_describe", string(errJSON)))
+			// Stream ends without complete event — simulates disconnect
+		}))
+
+		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
+		result, err := tools.HandleInvestigation(ctx, kaClient, tools.InvestigateArgs{
+			Namespace: "default", Name: "test-pod",
+		}, nil)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Status).To(Equal("disconnected"))
+		Expect(result.ToolErrors).To(HaveLen(1))
+		Expect(result.ToolErrors[0]).To(ContainSubstring("kubectl_describe"))
+	})
+})
+
+// =============================================================================
+// TP-1310 §4.4: ToolErrors JSON Serialization (WT tier)
+// =============================================================================
+var _ = Describe("InvestigateResult.ToolErrors serialization (TP-1310)", func() {
+	It("WT-AF-1310-031: empty ToolErrors omitted from JSON with omitempty", func() {
+		result := tools.InvestigateResult{
+			SessionID: "sess-xyz",
+			Status:    "completed",
+			Summary:   "done",
+		}
+		b, err := json.Marshal(result)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(b)).NotTo(ContainSubstring("tool_errors"))
+	})
+
+	It("WT-AF-1310-031b: non-empty ToolErrors present in JSON output", func() {
+		result := tools.InvestigateResult{
+			SessionID:  "sess-xyz",
+			Status:     "completed",
+			Summary:    "done",
+			ToolErrors: []string{"kubectl_describe: Node not found"},
+		}
+		b, err := json.Marshal(result)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(b)).To(ContainSubstring("tool_errors"))
+		Expect(string(b)).To(ContainSubstring("Node not found"))
+	})
+})
+
+// =============================================================================
 // TP-1307-MERGE §4.2: Constructor and Tool Metadata
 // =============================================================================
 var _ = Describe("NewInvestigateTool constructor (TP-1307-MERGE)", func() {

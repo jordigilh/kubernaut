@@ -29,11 +29,12 @@ type InvestigateArgs struct {
 
 // InvestigateResult is the output of kubernaut_investigate.
 type InvestigateResult struct {
-	SessionID string              `json:"session_id"`
-	Status    string              `json:"status"`
-	Summary   string              `json:"summary,omitempty"`
-	Events    []StreamEventDigest `json:"events,omitempty"`
-	EventLog  string              `json:"event_log,omitempty"`
+	SessionID  string              `json:"session_id"`
+	Status     string              `json:"status"`
+	Summary    string              `json:"summary,omitempty"`
+	Events     []StreamEventDigest `json:"events,omitempty"`
+	EventLog   string              `json:"event_log,omitempty"`
+	ToolErrors []string            `json:"tool_errors,omitempty"`
 }
 
 // HandleInvestigation implements the merged kubernaut_investigate tool.
@@ -173,6 +174,8 @@ func emitResultReceivedIfTerminal(ctx context.Context, auditor audit.Emitter, se
 }
 
 func streamInvestigation(ctx context.Context, kaClient *ka.Client, sessionID string) (InvestigateResult, error) {
+	logger := logr.FromContextOrDiscard(ctx)
+
 	ch, err := kaClient.StreamEvents(ctx, sessionID)
 	if err != nil {
 		return InvestigateResult{}, fmt.Errorf("connecting to investigation stream: %w", err)
@@ -181,14 +184,21 @@ func streamInvestigation(ctx context.Context, kaClient *ka.Client, sessionID str
 	var events []StreamEventDigest
 	var narrative strings.Builder
 	var finalSummary string
+	var toolErrors []string
+	var bridgedCount int
+
+	logger.Info("investigation stream opened", "session_id", sessionID)
 
 	for event := range ch {
 		select {
 		case <-ctx.Done():
+			logger.Info("investigation stream cancelled",
+				"session_id", sessionID, "events_bridged", bridgedCount, "tool_errors", len(toolErrors))
 			return InvestigateResult{
-				Status:   "cancelled",
-				Events:   events,
-				EventLog: narrative.String(),
+				Status:     "cancelled",
+				Events:     events,
+				EventLog:   narrative.String(),
+				ToolErrors: toolErrors,
 			}, nil
 		default:
 		}
@@ -204,41 +214,62 @@ func streamInvestigation(ctx context.Context, kaClient *ka.Client, sessionID str
 			digest.Text = text
 			narrative.WriteString(text)
 			emitViaBridgeSafe(ctx, text)
+			bridgedCount++
 		case ka.EventTypeToolCallStart, ka.EventTypeToolCall:
 			text := extractTextFromData(event.Data)
 			digest.Text = text
 			if text != "" {
 				narrative.WriteString(fmt.Sprintf("\n[Tool: %s]\n", text))
 				emitViaBridgeSafe(ctx, fmt.Sprintf("[Tool: %s]", text))
+				bridgedCount++
 			}
 		case ka.EventTypeToolResult:
-			text := extractTextFromData(event.Data)
-			digest.Text = truncateForLLM(text, 500)
+			toolName, preview, isErr := ExtractToolResult(event.Data)
+			digest.Text = truncateForLLM(preview, 500)
+			if isErr {
+				errMsg := FormatToolError(toolName, preview)
+				toolErrors = append(toolErrors, errMsg)
+				emitViaBridgeSafe(ctx, fmt.Sprintf("[Error: %s]", errMsg))
+				bridgedCount++
+				logger.Info("tool error detected", "session_id", sessionID, "tool", toolName)
+			}
 		case ka.EventTypeComplete:
 			finalSummary = extractSummaryFromComplete(event.Data)
 			events = append(events, digest)
 			emitViaBridgeSafe(ctx, finalSummary)
+			bridgedCount++
+			logger.Info("investigation stream completed",
+				"session_id", sessionID, "events_bridged", bridgedCount, "tool_errors", len(toolErrors))
 			return InvestigateResult{
-				Status:   "completed",
-				Summary:  finalSummary,
-				Events:   events,
-				EventLog: narrative.String(),
+				Status:     "completed",
+				Summary:    finalSummary,
+				Events:     events,
+				EventLog:   narrative.String(),
+				ToolErrors: toolErrors,
 			}, nil
 		case ka.EventTypeCancelled:
 			events = append(events, digest)
+			logger.Info("investigation stream cancelled by KA",
+				"session_id", sessionID, "events_bridged", bridgedCount, "tool_errors", len(toolErrors))
 			return InvestigateResult{
-				Status:   "cancelled",
-				Events:   events,
-				EventLog: narrative.String(),
+				Status:     "cancelled",
+				Events:     events,
+				EventLog:   narrative.String(),
+				ToolErrors: toolErrors,
 			}, nil
 		case ka.EventTypeError:
 			text := extractTextFromData(event.Data)
 			digest.Text = text
 			events = append(events, digest)
+			emitViaBridgeSafe(ctx, fmt.Sprintf("[Investigation error: %s]", truncateForLLM(text, 200)))
+			bridgedCount++
+			logger.Info("investigation stream error",
+				"session_id", sessionID, "error", text, "events_bridged", bridgedCount, "tool_errors", len(toolErrors))
 			return InvestigateResult{
-				Status:   "failed",
-				Events:   events,
-				EventLog: narrative.String(),
+				Status:     "failed",
+				Events:     events,
+				EventLog:   narrative.String(),
+				ToolErrors: toolErrors,
 			}, nil
 		}
 
@@ -249,11 +280,14 @@ func streamInvestigation(ctx context.Context, kaClient *ka.Client, sessionID str
 	if finalSummary == "" {
 		status = "disconnected"
 	}
+	logger.Info("investigation stream closed",
+		"session_id", sessionID, "status", status, "events_bridged", bridgedCount, "tool_errors", len(toolErrors))
 	return InvestigateResult{
-		Status:   status,
-		Summary:  finalSummary,
-		Events:   events,
-		EventLog: narrative.String(),
+		Status:     status,
+		Summary:    finalSummary,
+		Events:     events,
+		EventLog:   narrative.String(),
+		ToolErrors: toolErrors,
 	}, nil
 }
 

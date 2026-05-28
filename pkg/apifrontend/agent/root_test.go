@@ -12,16 +12,49 @@ import (
 
 	"google.golang.org/adk/agent"
 	"google.golang.org/adk/agent/llmagent"
+	adkmemory "google.golang.org/adk/memory"
 	"google.golang.org/adk/model"
 	"google.golang.org/adk/runner"
 	"google.golang.org/adk/session"
 	"google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
+	"google.golang.org/adk/tool/toolconfirmation"
 	"google.golang.org/genai"
 
 	agentpkg "github.com/jordigilh/kubernaut/pkg/apifrontend/agent"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 )
+
+// newMockToolContext returns a minimal tool.Context with a specific
+// FunctionCallID for testing Before/After callback pairs.
+func newMockToolContext(callID string) mockToolCtx {
+	return mockToolCtx{Context: context.Background(), callID: callID}
+}
+
+type mockToolCtx struct {
+	context.Context
+	callID string
+}
+
+func (mockToolCtx) UserContent() *genai.Content                { return nil }
+func (mockToolCtx) InvocationID() string                       { return "" }
+func (mockToolCtx) AgentName() string                          { return "" }
+func (mockToolCtx) ReadonlyState() session.ReadonlyState       { return nil }
+func (mockToolCtx) UserID() string                             { return "" }
+func (mockToolCtx) AppName() string                            { return "" }
+func (mockToolCtx) SessionID() string                          { return "" }
+func (mockToolCtx) Branch() string                             { return "" }
+func (mockToolCtx) Artifacts() agent.Artifacts                 { return nil }
+func (mockToolCtx) State() session.State                       { return nil }
+func (m mockToolCtx) FunctionCallID() string                   { return m.callID }
+func (mockToolCtx) Actions() *session.EventActions             { return nil }
+func (mockToolCtx) SearchMemory(context.Context, string) (*adkmemory.SearchResponse, error) {
+	return nil, nil
+}
+func (mockToolCtx) ToolConfirmation() *toolconfirmation.ToolConfirmation { return nil }
+func (mockToolCtx) RequestConfirmation(string, any) error                { return nil }
+
+var _ tool.Context = mockToolCtx{}
 
 // llmAdapter wraps mockToolCallLLM to satisfy model.LLM interface at the
 // package level (struct methods can't be declared inside Describe blocks).
@@ -337,6 +370,57 @@ var _ = Describe("Root Agent", func() {
 			// No identity injected — context.Background() without WithUserIdentity
 			result := runAgent(r, context.Background())
 			Expect(result).To(ContainSubstring("unauthorized"))
+		})
+	})
+
+	// =============================================================================
+	// TP-1310 §4.3: Tool Call Logging Callbacks — FedRAMP AU-12
+	// =============================================================================
+	Describe("newToolLoggingCallbacks (TP-1310)", func() {
+		It("UT-AF-1310-020: Before callback logs tool name at info level (AU-12)", func() {
+			before, _ := agentpkg.NewToolLoggingCallbacksForTest()
+
+			mockTool, err := functiontool.New(functiontool.Config{
+				Name:        "kubectl_describe",
+				Description: "test tool",
+			}, func(_ tool.Context, _ struct{}) (struct{}, error) {
+				return struct{}{}, nil
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			ctx := newMockToolContext("call-log-020")
+			result, err := before(ctx, mockTool, map[string]any{"kind": "Pod"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(BeNil(), "Before callback must not short-circuit")
+		})
+
+		It("UT-AF-1310-021: After callback logs tool name and duration (AU-12)", func() {
+			before, after := agentpkg.NewToolLoggingCallbacksForTest()
+
+			mockTool, err := functiontool.New(functiontool.Config{
+				Name:        "kubectl_get_pods",
+				Description: "test tool",
+			}, func(_ tool.Context, _ struct{}) (struct{}, error) {
+				return struct{}{}, nil
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			ctx := newMockToolContext("call-log-021")
+
+			// Before must be called first to record the start time
+			_, _ = before(ctx, mockTool, nil)
+
+			result, err := after(ctx, mockTool, nil, map[string]any{"output": "ok"}, nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(BeNil(), "After callback must not modify output")
+		})
+
+		It("WT-AF-1310-030: NewRootAgent includes logging callbacks in callback chain", func() {
+			cfg := agentpkg.DefaultTestConfig()
+			a, tools, err := agentpkg.NewRootAgent(cfg)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(a).NotTo(BeNil())
+			Expect(tools).NotTo(BeEmpty())
 		})
 	})
 

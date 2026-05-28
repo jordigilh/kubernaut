@@ -57,6 +57,9 @@ func NewRootAgent(cfg AgentConfig, opts ...Option) (agent.Agent, []tool.Tool, er
 	beforePhase, afterPhase := newPhaseGuard()
 	beforeCallbacks = append(beforeCallbacks, beforePhase)
 
+	beforeLog, afterLog := newToolLoggingCallbacks()
+	beforeCallbacks = append(beforeCallbacks, beforeLog)
+
 	a, err := llmagent.New(llmagent.Config{
 		Name:                 "kubernaut-apifrontend",
 		Description:          "Kubernaut API Frontend agent for incident triage and remediation",
@@ -66,7 +69,7 @@ func NewRootAgent(cfg AgentConfig, opts ...Option) (agent.Agent, []tool.Tool, er
 		InstructionProvider:  cfg.InstructionProvider,
 		BeforeModelCallbacks: []llmagent.BeforeModelCallback{historySanitizer},
 		BeforeToolCallbacks:  beforeCallbacks,
-		AfterToolCallbacks:   []llmagent.AfterToolCallback{afterMetrics, afterAudit, afterPhase},
+		AfterToolCallbacks:   []llmagent.AfterToolCallback{afterMetrics, afterAudit, afterPhase, afterLog},
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("creating agent: %w", err)
@@ -289,6 +292,43 @@ func newMetricsToolCallbacks(toolCalls *prometheus.CounterVec, toolDuration *pro
 				}
 			}
 		}
+		return nil, nil
+	}
+
+	return before, after
+}
+
+// NewToolLoggingCallbacksForTest is an exported alias of newToolLoggingCallbacks
+// for unit testing. Production code should use the unexported constructor.
+func NewToolLoggingCallbacksForTest() (llmagent.BeforeToolCallback, llmagent.AfterToolCallback) {
+	return newToolLoggingCallbacks()
+}
+
+// newToolLoggingCallbacks returns Before/After callbacks that log tool call
+// start and completion at info level for operator observability (FedRAMP AU-12).
+// Uses sync.Map keyed by FunctionCallID to correlate start times.
+func newToolLoggingCallbacks() (llmagent.BeforeToolCallback, llmagent.AfterToolCallback) {
+	var starts sync.Map
+
+	before := func(ctx tool.Context, t tool.Tool, _ map[string]any) (map[string]any, error) {
+		starts.Store(ctx.FunctionCallID(), time.Now())
+		log.Printf("[tool-log] START tool=%q call_id=%s", t.Name(), ctx.FunctionCallID())
+		return nil, nil
+	}
+
+	after := func(ctx tool.Context, t tool.Tool, _, _ map[string]any, toolErr error) (map[string]any, error) {
+		result := "success"
+		if toolErr != nil {
+			result = "error"
+		}
+		var durationMs int64
+		if raw, ok := starts.LoadAndDelete(ctx.FunctionCallID()); ok {
+			if start, ok := raw.(time.Time); ok {
+				durationMs = time.Since(start).Milliseconds()
+			}
+		}
+		log.Printf("[tool-log] COMPLETE tool=%q call_id=%s duration_ms=%d result=%s",
+			t.Name(), ctx.FunctionCallID(), durationMs, result)
 		return nil, nil
 	}
 

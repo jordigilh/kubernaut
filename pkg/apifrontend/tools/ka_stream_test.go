@@ -601,6 +601,105 @@ var _ = Describe("KA bridge relay policy (TP-1301-1302)", func() {
 	})
 })
 
+// =============================================================================
+// TP-1310 §4.1: Tool Result Extraction and Error Detection — FedRAMP AU-3
+// =============================================================================
+
+// sseToolResult emits a production-format KA tool_result SSE event with nested
+// envelope: {"type":"tool_result","data":{"tool_name":...,"result_preview":...}}
+func sseToolResult(toolName, resultPreview string) string {
+	inner := map[string]any{
+		"tool_name":      toolName,
+		"tool_index":     0,
+		"result_preview": resultPreview,
+	}
+	envelope := map[string]any{
+		"type": "tool_result",
+		"turn": 1,
+		"data": inner,
+	}
+	b, _ := json.Marshal(envelope)
+	return sseLines("tool_result", string(b))
+}
+
+// toolErrorJSON mirrors KA's toolErrorJSON format for test data.
+func toolErrorJSON(msg string) string {
+	b, _ := json.Marshal(struct {
+		Status string `json:"status"`
+		Error  string `json:"error"`
+	}{Status: "error", Error: msg})
+	return string(b)
+}
+
+var _ = Describe("extractToolResult — KA wire format (TP-1310)", func() {
+	It("UT-AF-1310-010: production envelope with error extracts tool name, preview, isErr=true (AU-3)", func() {
+		inner := map[string]any{
+			"tool_name":      "kubectl_describe",
+			"tool_index":     0,
+			"result_preview": toolErrorJSON("get Node/dev-worker-1 in default: nodes.config.openshift.io \"dev-worker-1\" not found"),
+		}
+		envelope := map[string]any{
+			"type": "tool_result",
+			"turn": 2,
+			"data": inner,
+		}
+		data, _ := json.Marshal(envelope)
+
+		toolName, preview, isErr := tools.ExtractToolResult(json.RawMessage(data))
+		Expect(toolName).To(Equal("kubectl_describe"))
+		Expect(isErr).To(BeTrue(), "toolErrorJSON payload must be detected as error")
+		Expect(preview).To(ContainSubstring("not found"))
+	})
+
+	It("UT-AF-1310-011: test flat format (JSON string) with success returns isErr=false", func() {
+		b, _ := json.Marshal("pod/web 1/1 Running")
+		toolName, _, isErr := tools.ExtractToolResult(json.RawMessage(b))
+		Expect(toolName).To(BeEmpty(), "flat format has no tool_name")
+		Expect(isErr).To(BeFalse())
+	})
+
+	It("UT-AF-1310-012: production envelope with success returns isErr=false", func() {
+		inner := map[string]any{
+			"tool_name":      "kubectl_get_pods",
+			"tool_index":     0,
+			"result_preview": "NAME READY STATUS\npod-1 1/1 Running",
+		}
+		envelope := map[string]any{
+			"type": "tool_result",
+			"turn": 1,
+			"data": inner,
+		}
+		data, _ := json.Marshal(envelope)
+
+		toolName, _, isErr := tools.ExtractToolResult(json.RawMessage(data))
+		Expect(toolName).To(Equal("kubectl_get_pods"))
+		Expect(isErr).To(BeFalse())
+	})
+
+	It("UT-AF-1310-015: flat JSON string containing toolErrorJSON detected as error", func() {
+		errStr := toolErrorJSON("connection refused")
+		b, _ := json.Marshal(errStr)
+		_, _, isErr := tools.ExtractToolResult(json.RawMessage(b))
+		Expect(isErr).To(BeTrue(), "flat string with toolErrorJSON content must be detected")
+	})
+})
+
+var _ = Describe("FormatToolError (TP-1310)", func() {
+	It("UT-AF-1310-013: produces human-readable message truncated to 200 chars (AU-3)", func() {
+		longErr := strings.Repeat("x", 300)
+		msg := tools.FormatToolError("kubectl_describe", toolErrorJSON(longErr))
+		Expect(msg).To(HavePrefix("kubectl_describe: "))
+		Expect(len(msg)).To(BeNumerically("<=", 200))
+	})
+
+	It("UT-AF-1310-014: extracts human error from toolErrorJSON format", func() {
+		msg := tools.FormatToolError("kubectl_describe", toolErrorJSON("nodes.config.openshift.io not found"))
+		Expect(msg).To(ContainSubstring("kubectl_describe"))
+		Expect(msg).To(ContainSubstring("not found"))
+		Expect(msg).NotTo(ContainSubstring(`"status"`), "should not contain raw JSON keys")
+	})
+})
+
 // testEventQueue records events for assertion.
 type testEventQueue struct {
 	events []a2a.Event

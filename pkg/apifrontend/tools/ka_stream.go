@@ -55,6 +55,80 @@ func extractTextFromData(data json.RawMessage) string {
 	return string(data)
 }
 
+// ExtractToolResult parses a tool_result SSE event data payload and returns:
+//   - toolName: the tool that produced the result (empty for flat test format)
+//   - preview: the result preview text
+//   - isErr: true if the result contains a toolErrorJSON payload
+//
+// Handles two wire formats:
+//  1. Production KA envelope: {"type":"tool_result","turn":N,"data":{"tool_name":...,"result_preview":...}}
+//  2. Test flat format: JSON string (e.g. "pod-1 Running")
+func ExtractToolResult(data json.RawMessage) (toolName, preview string, isErr bool) {
+	if len(data) == 0 {
+		return "", "", false
+	}
+
+	// Try flat JSON string first (test format)
+	var str string
+	if err := json.Unmarshal(data, &str); err == nil {
+		return "", str, isToolErrorContent(str)
+	}
+
+	// Try production KA envelope
+	var envelope struct {
+		Data struct {
+			ToolName      string `json:"tool_name"`
+			ResultPreview string `json:"result_preview"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(data, &envelope); err == nil && envelope.Data.ToolName != "" {
+		return envelope.Data.ToolName, envelope.Data.ResultPreview, isToolErrorContent(envelope.Data.ResultPreview)
+	}
+
+	// Fallback: try as a simple object with tool_name/result_preview at top level
+	var obj map[string]any
+	if err := json.Unmarshal(data, &obj); err == nil {
+		if tn, ok := obj["tool_name"].(string); ok {
+			rp, _ := obj["result_preview"].(string)
+			return tn, rp, isToolErrorContent(rp)
+		}
+	}
+
+	return "", string(data), false
+}
+
+// isToolErrorContent checks if the content matches KA's toolErrorJSON format:
+// {"status":"error","error":"..."}
+func isToolErrorContent(s string) bool {
+	var errPayload struct {
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal([]byte(s), &errPayload); err == nil {
+		return errPayload.Status == "error"
+	}
+	return false
+}
+
+// FormatToolError produces a human-readable error message from a tool name
+// and its error content. The message is truncated to 200 characters.
+func FormatToolError(toolName, rawError string) string {
+	errText := rawError
+
+	// Try to extract the "error" field from toolErrorJSON
+	var errPayload struct {
+		Error string `json:"error"`
+	}
+	if json.Unmarshal([]byte(rawError), &errPayload) == nil && errPayload.Error != "" {
+		errText = errPayload.Error
+	}
+
+	msg := toolName + ": " + errText
+	if len(msg) > 200 {
+		msg = msg[:197] + "..."
+	}
+	return msg
+}
+
 func extractSummaryFromComplete(data json.RawMessage) string {
 	if len(data) == 0 {
 		return ""
