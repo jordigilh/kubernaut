@@ -159,7 +159,7 @@ type InvestigateResult struct {
 	Summary   string `json:"summary,omitempty"`
 }
 
-// InvestigationEvent represents a discrete event from KA's SSE stream.
+// InvestigationEvent represents a discrete event from KA's MCP LoggingMessage stream.
 // Wire-format compatible with internal/kubernautagent/session.InvestigationEvent.
 type InvestigationEvent struct {
 	Type  string          `json:"type"`
@@ -168,18 +168,18 @@ type InvestigationEvent struct {
 	Data  json.RawMessage `json:"data,omitempty"`
 }
 
-// StartAutonomousArgs is the input for starting an autonomous MCP investigation.
-type StartAutonomousArgs struct {
+// StartInvestigationArgs is the input for starting a dedicated MCP investigation session.
+type StartInvestigationArgs struct {
 	RRID string `json:"rr_id"`
 }
 
-// StartAutonomousResult holds the response from a start_autonomous call,
-// including the event channel for streaming and a closer for cleanup.
-type StartAutonomousResult struct {
-	SessionID string                    `json:"session_id"`
-	Status    string                    `json:"status"`
-	Events    <-chan InvestigationEvent  `json:"-"`
-	Closer    func()                    `json:"-"`
+// StartInvestigationResult holds the response from a dedicated MCP investigation
+// session, including the event channel for streaming and a closer for cleanup.
+type StartInvestigationResult struct {
+	SessionID string                   `json:"session_id"`
+	Status    string                   `json:"status"`
+	Events    <-chan InvestigationEvent `json:"-"`
+	Closer    func()                   `json:"-"`
 }
 
 // InvokeActionArgs is the input for the generic kubernaut_investigate action dispatch.

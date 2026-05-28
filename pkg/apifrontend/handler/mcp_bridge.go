@@ -46,9 +46,11 @@ type ISSessionInitializer interface {
 
 // MCPBridgeConfig holds the configuration for the real MCP tool bridge.
 type MCPBridgeConfig struct {
-	K8sClient          dynamic.Interface
-	KAMCPClient        ka.MCPClient
-	KAAutonomousClient ka.MCPClient
+	K8sClient             dynamic.Interface
+	Namespace             string
+	KAMCPClient           ka.MCPClient
+	KADedicatedClient     ka.MCPClient
+	InvestigationRegistry *tools.MonitorRegistry
 	Pool               *ka.KASessionPool
 	DSClient           ds.Client
 	Triager            *severity.Triager
@@ -153,15 +155,15 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 		})
 
 	// KA investigation tool (MCP-only, non-blocking).
-	// Uses KAAutonomousClient (SDKMCPClient) which creates dedicated non-pooled
-	// sessions for StartAutonomous. PooledMCPClient does not support StartAutonomous.
-	autonomousClient := cfg.KAAutonomousClient
-	if autonomousClient == nil {
-		autonomousClient = cfg.KAMCPClient
+	// Uses KADedicatedClient (SDKMCPClient) which creates dedicated non-pooled
+	// sessions for StartInvestigation. PooledMCPClient does not support StartInvestigation.
+	dedicatedClient := cfg.KADedicatedClient
+	if dedicatedClient == nil {
+		dedicatedClient = cfg.KAMCPClient
 	}
 	registerTool(srv, cfg, sem, "kubernaut_investigate", "Investigate an infrastructure incident",
 		func(ctx context.Context, args tools.InvestigateMCPArgs) (any, error) {
-			return tools.HandleInvestigationMCP(ctx, autonomousClient, args, cfg.Auditor)
+			return tools.HandleInvestigationMCPWithRegistry(ctx, dedicatedClient, cfg.K8sClient, cfg.Namespace, args, cfg.Auditor, cfg.InvestigationRegistry)
 		})
 
 	// KA MCP tools

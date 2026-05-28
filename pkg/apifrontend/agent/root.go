@@ -93,9 +93,9 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 	k8s := cfg.K8sClient
 	dsC := cfg.DSClient
 	mcpC := cfg.MCPClient
-	autonomousC := cfg.AutonomousClient
-	if autonomousC == nil {
-		autonomousC = mcpC
+	dedicatedC := cfg.DedicatedClient
+	if dedicatedC == nil {
+		dedicatedC = mcpC
 	}
 
 	// All internal tools use AF ServiceAccount. Access control is enforced
@@ -113,7 +113,9 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 		{"cancel_remediation", func() (tool.Tool, error) { return tools.NewCancelRemediationTool(k8s) }},
 		{"watch", func() (tool.Tool, error) { return tools.NewWatchTool(k8s) }},
 		{"await_session", func() (tool.Tool, error) { return tools.NewAwaitSessionTool(k8s) }},
-		{"investigate", func() (tool.Tool, error) { return tools.NewInvestigateMCPTool(autonomousC, cfg.Auditor) }},
+		{"investigate", func() (tool.Tool, error) {
+			return tools.NewInvestigateMCPTool(dedicatedC, k8s, cfg.Namespace, cfg.Auditor, cfg.InvestigationRegistry)
+		}},
 		{"discover_workflows", func() (tool.Tool, error) { return tools.NewDiscoverWorkflowsTool(mcpC) }},
 		{"select_workflow", func() (tool.Tool, error) { return tools.NewSelectWorkflowTool(mcpC, cfg.Auditor) }},
 		{"present_decision", func() (tool.Tool, error) { return tools.NewPresentDecisionTool() }},

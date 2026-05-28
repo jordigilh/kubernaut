@@ -52,6 +52,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/resilience"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/streaming"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tlswiring"
 )
@@ -344,6 +345,10 @@ func run() int {
 	if tracker := routerCfg.SSETracker; tracker != nil {
 		tracker.DrainAll(shutCtx)
 	}
+	if deps.InvestigationRegistry != nil {
+		deps.InvestigationRegistry.StopAll()
+		logger.Info("stopped active investigation sessions")
+	}
 	if deps.Pool != nil {
 		if err := deps.Pool.DrainAll(shutCtx); err != nil {
 			logger.Error(err, "failed to drain KA session pool on shutdown")
@@ -426,16 +431,17 @@ type caWatcherEntry struct {
 // backendDeps holds shared backend clients used by both the MCP and A2A handlers.
 // Created once by buildBackendDeps and consumed by buildMCPHandler / buildA2AHandler.
 type backendDeps struct {
-	DSClient             ds.Client
-	KAClient             *ka.Client
-	MCPClient            ka.MCPClient
-	AutonomousClient     ka.MCPClient
-	Pool                 *ka.KASessionPool
-	Triager              *severity.Triager
-	DSResilientTransport *resilience.CircuitBreakerTransport
-	CAWatchers           []caWatcherEntry
-	k8sDynClient         dynamic.Interface
-	K8sCB                *resilience.K8sCircuitBreaker
+	DSClient              ds.Client
+	KAClient              *ka.Client
+	MCPClient             ka.MCPClient
+	DedicatedClient       ka.MCPClient
+	Pool                  *ka.KASessionPool
+	Triager               *severity.Triager
+	DSResilientTransport  *resilience.CircuitBreakerTransport
+	CAWatchers            []caWatcherEntry
+	k8sDynClient          dynamic.Interface
+	K8sCB                 *resilience.K8sCircuitBreaker
+	InvestigationRegistry *tools.MonitorRegistry
 }
 
 // K8sClient returns the pod service-account scoped dynamic K8s client,
@@ -525,7 +531,8 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 		Logger:     logger.WithName("ka-session-pool"),
 	})
 	deps.MCPClient = ka.NewPooledMCPClient(deps.Pool, logger)
-	deps.AutonomousClient = mcpClient
+	deps.DedicatedClient = mcpClient
+	deps.InvestigationRegistry = tools.NewMonitorRegistry()
 
 	if cfg.SeverityTriage.Enabled {
 		promTransport, promWatcher, promErr := tlswiring.CAReloadableTransport(cfg.SeverityTriage.PrometheusTLSCaFile, logger.WithName("prom-ca"))
@@ -647,10 +654,12 @@ func buildMCPHandler(cfg *config.Config, deps *backendDeps, sessInfra *sessionIn
 		sessInitializer = sessInfra.SessionService
 	}
 	bridgeCfg := &handler.MCPBridgeConfig{
-		K8sClient:          deps.K8sClient(),
-		KAMCPClient:        deps.MCPClient,
-		KAAutonomousClient: deps.AutonomousClient,
-		Pool:               deps.Pool,
+		K8sClient:             deps.K8sClient(),
+		Namespace:             cfg.Session.Namespace,
+		KAMCPClient:           deps.MCPClient,
+		KADedicatedClient:     deps.DedicatedClient,
+		InvestigationRegistry: deps.InvestigationRegistry,
+		Pool:                  deps.Pool,
 		DSClient:           deps.DSClient,
 		Triager:            deps.Triager,
 		Authorizer:         authorizer,
@@ -721,8 +730,9 @@ func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps,
 		K8sClient:        deps.K8sClient(),
 		DSClient:         deps.DSClient,
 		MCPClient:        deps.MCPClient,
-		AutonomousClient: deps.AutonomousClient,
-		Authorizer:       authorizer,
+		DedicatedClient:       deps.DedicatedClient,
+		InvestigationRegistry: deps.InvestigationRegistry,
+		Authorizer:            authorizer,
 		Auditor:          auditor,
 		Triager:          deps.Triager,
 		SessionService:   sessionSvcForAgent,

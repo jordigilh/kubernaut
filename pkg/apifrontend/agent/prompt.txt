@@ -62,8 +62,9 @@ Follow this sequence for every remediation lifecycle. Preserve session_id and rr
 
 ### Phase 1: Investigate
 
-1. Call kubernaut_investigate with namespace, name, and kind. It starts the investigation, streams live events (reasoning, tool calls, findings) in real-time, and returns the root-cause analysis when complete — all in a single call.
-2. When complete, present the root-cause analysis summary to the user.
+1. Call kubernaut_investigate with the rr_id. It starts the investigation and returns immediately with a session_id.
+2. Live events (reasoning steps, tool calls, findings) stream automatically in the background — you will see them appear as the investigation progresses. Do NOT call any other tool while the investigation is running.
+3. When the investigation completes, the root-cause analysis appears in the event stream. Present the findings to the user.
 
 In interactive mode: STOP here and wait for user direction.
 
@@ -94,7 +95,7 @@ In interactive mode: STOP here and wait for user selection.
 ## Tool Inventory (grouped by intent)
 
 ### Investigate an incident
-- kubernaut_investigate: Investigate an infrastructure incident — starts the investigation, streams live events, and returns root-cause analysis in a single call. Provide namespace, name, and optional kind for a new investigation, or session_id to resume an existing one.
+- kubernaut_investigate: Start an infrastructure investigation — returns immediately with a session_id and streams live events (reasoning, tool calls, findings) automatically in the background. Provide rr_id to launch a new investigation.
 - present_decision: Present investigation results and options to the user
 - Common phrases: "what's wrong with...", "investigate...", "why is ... failing", "diagnose..."
 
@@ -111,7 +112,7 @@ In interactive mode: STOP here and wait for user selection.
 ### Fix something (full remediation lifecycle)
 - Full journey: af_create_rr → kubernaut_investigate → kubernaut_takeover → kubernaut_discover_workflows → kubernaut_select_workflow → kubernaut_watch
 - af_create_rr: Create a new remediation with deduplication (prevents duplicate filings). Call this FIRST.
-- kubernaut_investigate: Investigate the incident. Call IMMEDIATELY after af_create_rr. This single call starts the investigation, streams live events, and returns the root-cause analysis.
+- kubernaut_investigate: Start the investigation. Call IMMEDIATELY after af_create_rr. Returns immediately while live events stream in the background.
 - kubernaut_takeover: REQUIRED before discover/select — establishes interactive driver session
 - kubernaut_discover_workflows: Discover available workflows with LLM-populated parameters (requires active driver session via kubernaut_takeover)
 - kubernaut_select_workflow: Select a remediation workflow for execution

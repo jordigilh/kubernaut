@@ -15,8 +15,8 @@ var _ = Describe("KA/DS Tools Integration (tools/ via real containers)", func() 
 	Describe("AC-25: KA tools dispatch to real KA container", func() {
 		It("IT-AF-1195-038: investigate dispatches to real KA via MCP", func() {
 			mockMCP := &ka.MockMCPClient{
-				StartAutonomousFn: func(_ context.Context, args ka.StartAutonomousArgs) (*ka.StartAutonomousResult, error) {
-					return &ka.StartAutonomousResult{
+				StartInvestigationFn: func(_ context.Context, args ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					return &ka.StartInvestigationResult{
 						SessionID: "sess-it-1195",
 						Status:    "autonomous_started",
 					}, nil
@@ -26,6 +26,7 @@ var _ = Describe("KA/DS Tools Integration (tools/ via real containers)", func() 
 			result, err := tools.HandleInvestigationMCP(
 				context.Background(),
 				mockMCP,
+				nil, "",
 				tools.InvestigateMCPArgs{
 					RRID: "default/test-app",
 				},

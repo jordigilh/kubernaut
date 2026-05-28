@@ -470,9 +470,9 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 					SelectWorkflowFn: func(_ context.Context, _ ka.SelectWorkflowArgs) (*ka.SelectWorkflowResult, error) {
 						return &ka.SelectWorkflowResult{Status: "selected", Message: "workflow selected"}, nil
 					},
-					StartAutonomousFn: func(_ context.Context, args ka.StartAutonomousArgs) (*ka.StartAutonomousResult, error) {
+					StartInvestigationFn: func(_ context.Context, args ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
 						eventCh := make(chan ka.InvestigationEvent, 10)
-						return &ka.StartAutonomousResult{
+						return &ka.StartInvestigationResult{
 							SessionID: "test-session-123",
 							Status:    "autonomous_started",
 							Events:    eventCh,

@@ -229,19 +229,21 @@ func (c *SDKMCPClient) InvokeAction(ctx context.Context, args InvokeActionArgs) 
 	return &invResult, nil
 }
 
-// StartAutonomous connects to KA MCP, sends start_autonomous, and registers
-// a LoggingMessageHandler to stream events back to the caller. The caller
+// StartInvestigation connects to KA MCP, sends action=start to launch the
+// deferred investigation and acquire the interactive lease, and registers a
+// LoggingMessageHandler to stream events back to the caller. The caller
 // receives events on the returned channel and must call Closer when done.
-func (c *SDKMCPClient) StartAutonomous(ctx context.Context, args StartAutonomousArgs) (*StartAutonomousResult, error) {
+func (c *SDKMCPClient) StartInvestigation(ctx context.Context, args StartInvestigationArgs) (*StartInvestigationResult, error) {
 	identity := auth.UserIdentityFromContext(ctx)
 	if identity == nil {
 		return nil, fmt.Errorf("user identity required: no identity in context")
 	}
 
 	eventCh := make(chan InvestigationEvent, 64)
+	doneCh := make(chan struct{})
 
 	streamClient := mcp.NewClient(&mcp.Implementation{
-		Name:    "kubernaut-apifrontend-autonomous",
+		Name:    "kubernaut-apifrontend-dedicated",
 		Version: "0.1.0",
 	}, &mcp.ClientOptions{
 		LoggingMessageHandler: func(_ context.Context, req *mcp.LoggingMessageRequest) {
@@ -258,7 +260,13 @@ func (c *SDKMCPClient) StartAutonomous(ctx context.Context, args StartAutonomous
 			}
 
 			select {
+			case <-doneCh:
+				return
+			default:
+			}
+			select {
 			case eventCh <- evt:
+			case <-doneCh:
 			default:
 				c.logger.Info("event channel full, dropping event", "event_type", evt.Type)
 			}
@@ -272,19 +280,21 @@ func (c *SDKMCPClient) StartAutonomous(ctx context.Context, args StartAutonomous
 
 	session, err := streamClient.Connect(ctx, transport, nil)
 	if err != nil {
+		close(doneCh)
 		close(eventCh)
-		return nil, fmt.Errorf("MCP connect for autonomous: %w", err)
+		return nil, fmt.Errorf("MCP connect for investigation: %w", err)
 	}
 
 	if err := session.SetLoggingLevel(ctx, &mcp.SetLoggingLevelParams{Level: "info"}); err != nil {
 		_ = session.Close()
+		close(doneCh)
 		close(eventCh)
 		return nil, fmt.Errorf("set logging level: %w", err)
 	}
 
 	argsMap := map[string]any{
 		"rr_id":              args.RRID,
-		"action":             "start_autonomous",
+		"action":             "start",
 		"acting_user":        identity.Username,
 		"acting_user_groups": identity.Groups,
 	}
@@ -295,8 +305,9 @@ func (c *SDKMCPClient) StartAutonomous(ctx context.Context, args StartAutonomous
 	})
 	if err != nil {
 		_ = session.Close()
+		close(doneCh)
 		close(eventCh)
-		return nil, fmt.Errorf("start autonomous MCP call: %w", err)
+		return nil, fmt.Errorf("start investigation MCP call: %w", err)
 	}
 
 	if result.IsError {
@@ -324,12 +335,13 @@ func (c *SDKMCPClient) StartAutonomous(ctx context.Context, args StartAutonomous
 	var once sync.Once
 	closer := func() {
 		once.Do(func() {
+			close(doneCh)
 			_ = session.Close()
 			close(eventCh)
 		})
 	}
 
-	return &StartAutonomousResult{
+	return &StartInvestigationResult{
 		SessionID: invResult.SessionID,
 		Status:    invResult.Status,
 		Events:    eventCh,

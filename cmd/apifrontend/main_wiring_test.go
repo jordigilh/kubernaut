@@ -1508,8 +1508,8 @@ func TestPromptContainsMandatoryInvestigate(t *testing.T) {
 	if !strings.Contains(text, "kubernaut_investigate") {
 		t.Error("WT-AF-1302-001 CM-3: prompt.txt must reference kubernaut_investigate")
 	}
-	if !strings.Contains(text, "single call") {
-		t.Error("WT-AF-1302-001 CM-3: prompt.txt must describe kubernaut_investigate as a single-call investigation tool")
+	if !strings.Contains(text, "streams live events") {
+		t.Error("WT-AF-1302-001 CM-3: prompt.txt must describe kubernaut_investigate as streaming live events")
 	}
 }
 
@@ -1565,7 +1565,7 @@ func TestPromptPhase1RequiresStartBeforeStream(t *testing.T) {
 	if !strings.Contains(phase1Section, "Call kubernaut_investigate") {
 		t.Error("WT-AF-1302-003 CM-3: Phase 1 must instruct a single kubernaut_investigate call")
 	}
-	if !strings.Contains(phase1Section, "all in a single call") {
-		t.Error("WT-AF-1302-003 CM-3: Phase 1 must describe investigation as all in a single call")
+	if !strings.Contains(phase1Section, "returns immediately") {
+		t.Error("WT-AF-1302-003 CM-3: Phase 1 must describe investigation as returning immediately with streaming")
 	}
 }

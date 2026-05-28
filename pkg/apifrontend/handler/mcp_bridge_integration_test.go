@@ -47,9 +47,9 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 				SelectWorkflowFn: func(_ context.Context, _ ka.SelectWorkflowArgs) (*ka.SelectWorkflowResult, error) {
 					return &ka.SelectWorkflowResult{Status: "selected", Message: "workflow selected"}, nil
 				},
-				StartAutonomousFn: func(_ context.Context, args ka.StartAutonomousArgs) (*ka.StartAutonomousResult, error) {
+				StartInvestigationFn: func(_ context.Context, args ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
 					ch := make(chan ka.InvestigationEvent, 10)
-					return &ka.StartAutonomousResult{
+					return &ka.StartInvestigationResult{
 						SessionID: "mcp-sess-" + args.RRID,
 						Status:    "autonomous_started",
 						Events:    ch,

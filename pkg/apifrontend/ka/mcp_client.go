@@ -8,17 +8,17 @@ type MCPClient interface {
 	Investigate(ctx context.Context, args InvestigateArgs) (*InvestigateResult, error)
 	DiscoverWorkflows(ctx context.Context, args DiscoverWorkflowsArgs) (*DiscoverWorkflowsResult, error)
 	InvokeAction(ctx context.Context, args InvokeActionArgs) (*InvokeActionResult, error)
-	StartAutonomous(ctx context.Context, args StartAutonomousArgs) (*StartAutonomousResult, error)
+	StartInvestigation(ctx context.Context, args StartInvestigationArgs) (*StartInvestigationResult, error)
 }
 
 // MockMCPClient is a test double for MCPClient.
 type MockMCPClient struct {
-	SelectWorkflowFn    func(ctx context.Context, args SelectWorkflowArgs) (*SelectWorkflowResult, error)
-	InvestigateFn       func(ctx context.Context, args InvestigateArgs) (*InvestigateResult, error)
-	DiscoverWorkflowsFn func(ctx context.Context, args DiscoverWorkflowsArgs) (*DiscoverWorkflowsResult, error)
-	InvokeActionFn      func(ctx context.Context, args InvokeActionArgs) (*InvokeActionResult, error)
-	StartAutonomousFn   func(ctx context.Context, args StartAutonomousArgs) (*StartAutonomousResult, error)
-	Token               string
+	SelectWorkflowFn      func(ctx context.Context, args SelectWorkflowArgs) (*SelectWorkflowResult, error)
+	InvestigateFn         func(ctx context.Context, args InvestigateArgs) (*InvestigateResult, error)
+	DiscoverWorkflowsFn   func(ctx context.Context, args DiscoverWorkflowsArgs) (*DiscoverWorkflowsResult, error)
+	InvokeActionFn        func(ctx context.Context, args InvokeActionArgs) (*InvokeActionResult, error)
+	StartInvestigationFn  func(ctx context.Context, args StartInvestigationArgs) (*StartInvestigationResult, error)
+	Token                 string
 }
 
 // SelectWorkflow calls the mock function.
@@ -56,10 +56,10 @@ func (m *MockMCPClient) InvokeAction(ctx context.Context, args InvokeActionArgs)
 	return nil, ErrMCPUnavailable
 }
 
-// StartAutonomous calls the mock function.
-func (m *MockMCPClient) StartAutonomous(ctx context.Context, args StartAutonomousArgs) (*StartAutonomousResult, error) {
-	if m.StartAutonomousFn != nil {
-		return m.StartAutonomousFn(ctx, args)
+// StartInvestigation calls the mock function.
+func (m *MockMCPClient) StartInvestigation(ctx context.Context, args StartInvestigationArgs) (*StartInvestigationResult, error) {
+	if m.StartInvestigationFn != nil {
+		return m.StartInvestigationFn(ctx, args)
 	}
 	return nil, ErrMCPUnavailable
 }

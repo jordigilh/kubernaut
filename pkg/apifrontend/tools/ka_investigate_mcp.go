@@ -18,14 +18,17 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 
 	"google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
+	"k8s.io/client-go/dynamic"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 )
 
 // InvestigateMCPArgs defines the input for the MCP-based kubernaut_investigate tool.
@@ -39,25 +42,48 @@ type InvestigateMCPResult struct {
 	Status    string `json:"status"`
 }
 
-// HandleInvestigationMCP starts an autonomous MCP investigation and returns
-// immediately (non-blocking). The investigation runs in the background and
-// streams events via the MCP LoggingMessage channel.
-func HandleInvestigationMCP(ctx context.Context, mcpClient ka.MCPClient, args InvestigateMCPArgs, auditor audit.Emitter) (InvestigateMCPResult, error) {
-	return HandleInvestigationMCPWithRegistry(ctx, mcpClient, args, auditor, nil)
+// HandleInvestigationMCP starts a dedicated MCP investigation session. When a
+// K8s client and namespace are provided, it first polls the AIAnalysis CRD to
+// wait for AA to submit the investigation to KA (BR-INTERACTIVE-010). After
+// confirmation (or best-effort timeout), it calls action=start on KA via the
+// dedicated MCP session, starts a background goroutine that bridges
+// investigation events to the A2A stream, and returns immediately.
+//
+// Event streaming is conditional: events only flow when KA's deferred
+// investigation launches successfully (InvestigationSessionID is populated).
+// If no pending session exists, the MCP session still acquires the interactive
+// lease but the Events channel may be nil or empty.
+func HandleInvestigationMCP(ctx context.Context, mcpClient ka.MCPClient, k8sClient dynamic.Interface, namespace string, args InvestigateMCPArgs, auditor audit.Emitter) (InvestigateMCPResult, error) {
+	return HandleInvestigationMCPWithRegistry(ctx, mcpClient, k8sClient, namespace, args, auditor, nil)
 }
 
 // HandleInvestigationMCPWithRegistry is like HandleInvestigationMCP but also
 // registers the session in a MonitorRegistry for lifecycle management.
-func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPClient, args InvestigateMCPArgs, auditor audit.Emitter, registry *MonitorRegistry) (InvestigateMCPResult, error) {
+func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPClient, k8sClient dynamic.Interface, namespace string, args InvestigateMCPArgs, auditor audit.Emitter, registry *MonitorRegistry) (InvestigateMCPResult, error) {
 	if args.RRID == "" {
 		return InvestigateMCPResult{}, fmt.Errorf("rr_id is required for MCP investigation")
 	}
 
-	result, err := mcpClient.StartAutonomous(ctx, ka.StartAutonomousArgs{
+	// Poll AIA CRD to confirm AA has submitted the investigation to KA.
+	// On timeout, proceed anyway -- KA's handleStart is best-effort for
+	// the deferred launch and will still acquire the lease.
+	if k8sClient != nil && namespace != "" {
+		awaitResult, awaitErr := HandleAwaitSession(ctx, k8sClient, AwaitSessionArgs{
+			Namespace: namespace,
+			RRName:    args.RRID,
+		})
+		if awaitErr != nil {
+			_ = launcher.EmitReasoningSafe(ctx, "Waiting for investigation session...")
+		} else if awaitResult.Status == "ready" {
+			_ = launcher.EmitReasoningSafe(ctx, "Investigation session ready, connecting to KA...")
+		}
+	}
+
+	result, err := mcpClient.StartInvestigation(ctx, ka.StartInvestigationArgs{
 		RRID: args.RRID,
 	})
 	if err != nil {
-		return InvestigateMCPResult{}, fmt.Errorf("start autonomous MCP investigation: %w", err)
+		return InvestigateMCPResult{}, fmt.Errorf("start MCP investigation: %w", err)
 	}
 
 	if auditor != nil {
@@ -67,13 +93,40 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 				"rr_id":             args.RRID,
 				"session_id":        result.SessionID,
 				"ka_correlation_id": result.SessionID,
-				"delegation_type":   "autonomous_mcp",
+				"delegation_type":   "interactive_mcp",
 			},
 		})
 	}
 
+	// Track session in registry before starting goroutine so StopAll can
+	// force-close on SIGTERM. The goroutine deregisters on natural exit.
 	if registry != nil {
 		registry.Register(result.SessionID, result.Closer)
+	}
+
+	// Start background goroutine to bridge KA investigation events to the
+	// A2A stream via EmitReasoningSafe. The goroutine closes the dedicated
+	// MCP session when it exits (channel drain or context cancellation),
+	// preventing connection leaks.
+	if result.Events != nil {
+		closer := result.Closer
+		sessionID := result.SessionID
+		go func() {
+			defer func() {
+				if closer != nil {
+					closer()
+				}
+				if registry != nil {
+					registry.Deregister(sessionID)
+				}
+			}()
+			BridgeEventsToA2A(ctx, result.Events)
+		}()
+	} else if result.Closer != nil {
+		result.Closer()
+		if registry != nil {
+			registry.Deregister(result.SessionID)
+		}
 	}
 
 	return InvestigateMCPResult{
@@ -82,8 +135,69 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 	}, nil
 }
 
-// MonitorRegistry tracks active autonomous investigation sessions and their
-// cleanup functions. It provides lifecycle management for background goroutines.
+// BridgeEventsToA2A reads investigation events from the KA MCP session and
+// emits filtered reasoning artifacts to the A2A stream. Only user-visible
+// event types are bridged; raw tool output (tool_result, token_delta) is
+// suppressed per BR-MCP-008.
+func BridgeEventsToA2A(ctx context.Context, events <-chan ka.InvestigationEvent) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case evt, ok := <-events:
+			if !ok {
+				return
+			}
+			text := FormatEventForUser(evt)
+			if text != "" {
+				_ = launcher.EmitReasoningSafe(ctx, text)
+			}
+		}
+	}
+}
+
+// FormatEventForUser converts an investigation event into user-readable text.
+// Returns empty string for event types that should not be shown to the user.
+func FormatEventForUser(evt ka.InvestigationEvent) string {
+	switch evt.Type {
+	case ka.EventTypeReasoningDelta:
+		return extractJSONField(evt.Data, "text")
+	case ka.EventTypeToolCallStart:
+		toolName := extractJSONField(evt.Data, "tool")
+		if toolName != "" {
+			return "Calling " + toolName + "..."
+		}
+		return ""
+	case ka.EventTypeError:
+		errMsg := extractJSONField(evt.Data, "error")
+		if errMsg != "" {
+			return "Error: " + errMsg
+		}
+		return "Investigation error occurred"
+	case ka.EventTypeComplete:
+		return "Investigation complete."
+	default:
+		return ""
+	}
+}
+
+// extractJSONField extracts a string field from a JSON RawMessage.
+func extractJSONField(data json.RawMessage, field string) string {
+	if len(data) == 0 {
+		return ""
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal(data, &m); err != nil {
+		return ""
+	}
+	if v, ok := m[field].(string); ok {
+		return v
+	}
+	return ""
+}
+
+// MonitorRegistry tracks active investigation sessions and their cleanup
+// functions. It provides lifecycle management for background goroutines.
 type MonitorRegistry struct {
 	mu       sync.Mutex
 	sessions map[string]func()
@@ -101,6 +215,14 @@ func (r *MonitorRegistry) Register(sessionID string, closer func()) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.sessions[sessionID] = closer
+}
+
+// Deregister removes a session from the registry without calling its closer.
+// Safe to call if the session is not registered.
+func (r *MonitorRegistry) Deregister(sessionID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.sessions, sessionID)
 }
 
 // Active returns true if the session is tracked in the registry.
@@ -140,13 +262,17 @@ func (r *MonitorRegistry) StopAll() {
 }
 
 // NewInvestigateMCPTool creates the kubernaut_investigate tool backed by MCP.
-func NewInvestigateMCPTool(mcpClient ka.MCPClient, auditor audit.Emitter) (tool.Tool, error) {
+// k8sClient and namespace enable AIA CRD polling before starting the
+// investigation (BR-INTERACTIVE-010). Pass nil k8sClient to skip polling.
+// registry is optional; when provided, sessions are tracked for graceful shutdown.
+func NewInvestigateMCPTool(mcpClient ka.MCPClient, k8sClient dynamic.Interface, namespace string, auditor audit.Emitter, registry *MonitorRegistry) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name: "kubernaut_investigate",
 		Description: "Investigate an infrastructure incident via MCP. " +
-			"Provide rr_id to start an autonomous investigation. " +
-			"Returns the session ID when the investigation has started.",
+			"Provide rr_id to start a dedicated investigation session. " +
+			"Returns the session ID when the investigation has started. " +
+			"Live progress events stream automatically.",
 	}, func(ctx tool.Context, args InvestigateMCPArgs) (InvestigateMCPResult, error) {
-		return HandleInvestigationMCP(ctx, mcpClient, args, auditor)
+		return HandleInvestigationMCPWithRegistry(ctx, mcpClient, k8sClient, namespace, args, auditor, registry)
 	})
 }

@@ -426,11 +426,11 @@ var _ = Describe("Root Agent", func() {
 	})
 
 	// =========================================================================
-	// AutonomousClient wiring — verifies kubernaut_investigate uses the
-	// dedicated SDKMCPClient when AutonomousClient is set, and falls back
+	// DedicatedClient wiring — verifies kubernaut_investigate uses the
+	// dedicated SDKMCPClient when DedicatedClient is set, and falls back
 	// to MCPClient when nil.
 	// =========================================================================
-	Describe("AutonomousClient wiring for kubernaut_investigate", func() {
+	Describe("DedicatedClient wiring for kubernaut_investigate", func() {
 		// runnableTool matches the unexported ADK runnableTool interface via
 		// structural typing so we can invoke the tool directly without the
 		// full runner/LLM stack.
@@ -450,12 +450,12 @@ var _ = Describe("Root Agent", func() {
 			return nil
 		}
 
-		It("UT-AF-1326-030: kubernaut_investigate uses AutonomousClient when set", func() {
+		It("UT-AF-1326-030: kubernaut_investigate uses DedicatedClient when set", func() {
 			var autonomousCalled atomic.Int32
 			autonomousMock := &ka.MockMCPClient{
-				StartAutonomousFn: func(_ context.Context, args ka.StartAutonomousArgs) (*ka.StartAutonomousResult, error) {
+				StartInvestigationFn: func(_ context.Context, args ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
 					autonomousCalled.Add(1)
-					return &ka.StartAutonomousResult{
+					return &ka.StartInvestigationResult{
 						SessionID: "sess-auto-030",
 						Status:    "autonomous_started",
 						Events:    make(chan ka.InvestigationEvent, 1),
@@ -466,15 +466,15 @@ var _ = Describe("Root Agent", func() {
 
 			var pooledCalled atomic.Int32
 			pooledMock := &ka.MockMCPClient{
-				StartAutonomousFn: func(_ context.Context, _ ka.StartAutonomousArgs) (*ka.StartAutonomousResult, error) {
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
 					pooledCalled.Add(1)
-					return nil, fmt.Errorf("StartAutonomous requires a dedicated MCP session; use SDKMCPClient")
+					return nil, fmt.Errorf("StartInvestigation requires a dedicated MCP session; use SDKMCPClient")
 				},
 			}
 
 			cfg := agentpkg.DefaultTestConfig()
 			cfg.MCPClient = pooledMock
-			cfg.AutonomousClient = autonomousMock
+			cfg.DedicatedClient = autonomousMock
 
 			_, allTools, err := agentpkg.NewRootAgent(cfg)
 			Expect(err).NotTo(HaveOccurred())
@@ -483,16 +483,16 @@ var _ = Describe("Root Agent", func() {
 			ctx := newMockToolContext("call-auto-030")
 			_, _ = investigateTool.Run(ctx, map[string]any{"rr_id": "rr-wiring-030"})
 
-			Expect(autonomousCalled.Load()).To(Equal(int32(1)), "AutonomousClient.StartAutonomous must be called")
-			Expect(pooledCalled.Load()).To(Equal(int32(0)), "MCPClient.StartAutonomous must NOT be called")
+			Expect(autonomousCalled.Load()).To(Equal(int32(1)), "DedicatedClient.StartInvestigation must be called")
+			Expect(pooledCalled.Load()).To(Equal(int32(0)), "MCPClient.StartInvestigation must NOT be called")
 		})
 
-		It("UT-AF-1326-031: kubernaut_investigate falls back to MCPClient when AutonomousClient is nil", func() {
+		It("UT-AF-1326-031: kubernaut_investigate falls back to MCPClient when DedicatedClient is nil", func() {
 			var pooledCalled atomic.Int32
 			pooledMock := &ka.MockMCPClient{
-				StartAutonomousFn: func(_ context.Context, _ ka.StartAutonomousArgs) (*ka.StartAutonomousResult, error) {
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
 					pooledCalled.Add(1)
-					return &ka.StartAutonomousResult{
+					return &ka.StartInvestigationResult{
 						SessionID: "sess-pool-031",
 						Status:    "autonomous_started",
 						Events:    make(chan ka.InvestigationEvent, 1),
@@ -503,7 +503,7 @@ var _ = Describe("Root Agent", func() {
 
 			cfg := agentpkg.DefaultTestConfig()
 			cfg.MCPClient = pooledMock
-			// AutonomousClient intentionally nil — should fall back to MCPClient
+			// DedicatedClient intentionally nil — should fall back to MCPClient
 
 			_, allTools, err := agentpkg.NewRootAgent(cfg)
 			Expect(err).NotTo(HaveOccurred())
@@ -512,19 +512,19 @@ var _ = Describe("Root Agent", func() {
 			ctx := newMockToolContext("call-pool-031")
 			_, _ = investigateTool.Run(ctx, map[string]any{"rr_id": "rr-wiring-031"})
 
-			Expect(pooledCalled.Load()).To(Equal(int32(1)), "MCPClient.StartAutonomous must be called as fallback")
+			Expect(pooledCalled.Load()).To(Equal(int32(1)), "MCPClient.StartInvestigation must be called as fallback")
 		})
 
-		It("UT-AF-1326-032: kubernaut_investigate propagates AutonomousClient error", func() {
+		It("UT-AF-1326-032: kubernaut_investigate propagates DedicatedClient error", func() {
 			autonomousMock := &ka.MockMCPClient{
-				StartAutonomousFn: func(_ context.Context, _ ka.StartAutonomousArgs) (*ka.StartAutonomousResult, error) {
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
 					return nil, fmt.Errorf("connection refused")
 				},
 			}
 
 			cfg := agentpkg.DefaultTestConfig()
 			cfg.MCPClient = &ka.MockMCPClient{}
-			cfg.AutonomousClient = autonomousMock
+			cfg.DedicatedClient = autonomousMock
 
 			_, allTools, err := agentpkg.NewRootAgent(cfg)
 			Expect(err).NotTo(HaveOccurred())

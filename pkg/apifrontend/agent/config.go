@@ -17,6 +17,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ratelimit"
 	sessionpkg "github.com/jordigilh/kubernaut/pkg/apifrontend/session"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
 
 // AgentConfig holds the configuration for creating the ADK root agent.
@@ -43,10 +44,13 @@ type AgentConfig struct {
 	DSClient ds.Client
 	// MCPClient is the KA MCP client for interactive operations (pooled sessions).
 	MCPClient ka.MCPClient
-	// AutonomousClient is the KA MCP client for autonomous investigations.
-	// It must support StartAutonomous (SDKMCPClient). Falls back to MCPClient
+	// DedicatedClient is the KA MCP client for dedicated investigation sessions.
+	// It must support StartInvestigation (SDKMCPClient). Falls back to MCPClient
 	// when nil.
-	AutonomousClient ka.MCPClient
+	DedicatedClient ka.MCPClient
+	// InvestigationRegistry tracks active investigation sessions for graceful
+	// shutdown. If nil, sessions clean up via bridge goroutine defer only.
+	InvestigationRegistry *tools.MonitorRegistry
 	// Authorizer checks tool-level authorization via SAR.
 	Authorizer auth.ToolAuthorizer
 	// Auditor emits audit events for RBAC denials (FedRAMP SI-4).

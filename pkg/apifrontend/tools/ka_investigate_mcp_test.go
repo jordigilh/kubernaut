@@ -36,9 +36,9 @@ var _ = Describe("HandleInvestigationMCP — #1326 BR-MCP-002 non-blocking MCP i
 		It("should return session_id and autonomous_started status without blocking", func() {
 			eventCh := make(chan ka.InvestigationEvent, 10)
 			mockMCP := &ka.MockMCPClient{
-				StartAutonomousFn: func(_ context.Context, args ka.StartAutonomousArgs) (*ka.StartAutonomousResult, error) {
+				StartInvestigationFn: func(_ context.Context, args ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
 					Expect(args.RRID).To(Equal("rr-mcp-001"))
-					return &ka.StartAutonomousResult{
+					return &ka.StartInvestigationResult{
 						SessionID: "sess-mcp-001",
 						Status:    "autonomous_started",
 						Events:    eventCh,
@@ -47,7 +47,7 @@ var _ = Describe("HandleInvestigationMCP — #1326 BR-MCP-002 non-blocking MCP i
 				},
 			}
 
-			result, err := tools.HandleInvestigationMCP(context.Background(), mockMCP, tools.InvestigateMCPArgs{
+			result, err := tools.HandleInvestigationMCP(context.Background(), mockMCP, nil, "", tools.InvestigateMCPArgs{
 				RRID: "rr-mcp-001",
 			}, nil)
 
@@ -61,8 +61,8 @@ var _ = Describe("HandleInvestigationMCP — #1326 BR-MCP-002 non-blocking MCP i
 		It("should emit delegation audit event with session_id and rr_id", func() {
 			eventCh := make(chan ka.InvestigationEvent, 10)
 			mockMCP := &ka.MockMCPClient{
-				StartAutonomousFn: func(_ context.Context, _ ka.StartAutonomousArgs) (*ka.StartAutonomousResult, error) {
-					return &ka.StartAutonomousResult{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					return &ka.StartInvestigationResult{
 						SessionID: "sess-audit-001",
 						Status:    "autonomous_started",
 						Events:    eventCh,
@@ -72,27 +72,27 @@ var _ = Describe("HandleInvestigationMCP — #1326 BR-MCP-002 non-blocking MCP i
 			}
 
 			recorder := &auditRecorder{}
-			_, err := tools.HandleInvestigationMCP(context.Background(), mockMCP, tools.InvestigateMCPArgs{
+			_, err := tools.HandleInvestigationMCP(context.Background(), mockMCP, nil, "", tools.InvestigateMCPArgs{
 				RRID: "rr-audit-001",
 			}, recorder)
 			Expect(err).NotTo(HaveOccurred())
 
 			Expect(recorder.events).To(HaveLen(1))
 			Expect(recorder.events[0].Type).To(Equal(audit.EventKADelegated))
-			Expect(recorder.events[0].Detail["delegation_type"]).To(Equal("autonomous_mcp"))
+			Expect(recorder.events[0].Detail["delegation_type"]).To(Equal("interactive_mcp"))
 			Expect(recorder.events[0].Detail["session_id"]).To(Equal("sess-audit-001"))
 		})
 	})
 
 	Describe("UT-AF-1326-022: propagates MCP connection errors", func() {
-		It("should return error when MCPClient.StartAutonomous fails", func() {
+		It("should return error when MCPClient.StartInvestigation fails", func() {
 			mockMCP := &ka.MockMCPClient{
-				StartAutonomousFn: func(_ context.Context, _ ka.StartAutonomousArgs) (*ka.StartAutonomousResult, error) {
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
 					return nil, ka.ErrMCPUnavailable
 				},
 			}
 
-			_, err := tools.HandleInvestigationMCP(context.Background(), mockMCP, tools.InvestigateMCPArgs{
+			_, err := tools.HandleInvestigationMCP(context.Background(), mockMCP, nil, "", tools.InvestigateMCPArgs{
 				RRID: "rr-fail-001",
 			}, nil)
 			Expect(err).To(HaveOccurred())
@@ -104,7 +104,7 @@ var _ = Describe("HandleInvestigationMCP — #1326 BR-MCP-002 non-blocking MCP i
 		It("should return error when RRID is empty", func() {
 			mockMCP := &ka.MockMCPClient{}
 
-			_, err := tools.HandleInvestigationMCP(context.Background(), mockMCP, tools.InvestigateMCPArgs{
+			_, err := tools.HandleInvestigationMCP(context.Background(), mockMCP, nil, "", tools.InvestigateMCPArgs{
 				RRID: "",
 			}, nil)
 			Expect(err).To(HaveOccurred())
@@ -117,8 +117,8 @@ var _ = Describe("HandleInvestigationMCP — #1326 BR-MCP-002 non-blocking MCP i
 			eventCh := make(chan ka.InvestigationEvent, 10)
 			var closerCalled atomic.Int32
 			mockMCP := &ka.MockMCPClient{
-				StartAutonomousFn: func(_ context.Context, _ ka.StartAutonomousArgs) (*ka.StartAutonomousResult, error) {
-					return &ka.StartAutonomousResult{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					return &ka.StartInvestigationResult{
 						SessionID: "sess-monitor-001",
 						Status:    "autonomous_started",
 						Events:    eventCh,
@@ -128,7 +128,7 @@ var _ = Describe("HandleInvestigationMCP — #1326 BR-MCP-002 non-blocking MCP i
 			}
 
 			registry := tools.NewMonitorRegistry()
-			result, err := tools.HandleInvestigationMCPWithRegistry(context.Background(), mockMCP, tools.InvestigateMCPArgs{
+			result, err := tools.HandleInvestigationMCPWithRegistry(context.Background(), mockMCP, nil, "", tools.InvestigateMCPArgs{
 				RRID: "rr-monitor-001",
 			}, nil, registry)
 			Expect(err).NotTo(HaveOccurred())
@@ -143,8 +143,8 @@ var _ = Describe("HandleInvestigationMCP — #1326 BR-MCP-002 non-blocking MCP i
 			eventCh := make(chan ka.InvestigationEvent, 10)
 			var closerCalled atomic.Int32
 			mockMCP := &ka.MockMCPClient{
-				StartAutonomousFn: func(_ context.Context, _ ka.StartAutonomousArgs) (*ka.StartAutonomousResult, error) {
-					return &ka.StartAutonomousResult{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					return &ka.StartInvestigationResult{
 						SessionID: "sess-stop-001",
 						Status:    "autonomous_started",
 						Events:    eventCh,
@@ -154,7 +154,7 @@ var _ = Describe("HandleInvestigationMCP — #1326 BR-MCP-002 non-blocking MCP i
 			}
 
 			registry := tools.NewMonitorRegistry()
-			_, err := tools.HandleInvestigationMCPWithRegistry(context.Background(), mockMCP, tools.InvestigateMCPArgs{
+			_, err := tools.HandleInvestigationMCPWithRegistry(context.Background(), mockMCP, nil, "", tools.InvestigateMCPArgs{
 				RRID: "rr-stop-001",
 			}, nil, registry)
 			Expect(err).NotTo(HaveOccurred())
@@ -173,8 +173,8 @@ var _ = Describe("HandleInvestigationMCP — #1326 BR-MCP-002 non-blocking MCP i
 		It("should include session_id, ka_correlation_id, delegation_type, rr_id in audit detail", func() {
 			eventCh := make(chan ka.InvestigationEvent, 10)
 			mockMCP := &ka.MockMCPClient{
-				StartAutonomousFn: func(_ context.Context, _ ka.StartAutonomousArgs) (*ka.StartAutonomousResult, error) {
-					return &ka.StartAutonomousResult{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					return &ka.StartInvestigationResult{
 						SessionID: "sess-au3-001",
 						Status:    "autonomous_started",
 						Events:    eventCh,
@@ -184,7 +184,7 @@ var _ = Describe("HandleInvestigationMCP — #1326 BR-MCP-002 non-blocking MCP i
 			}
 
 			recorder := &auditRecorder{}
-			_, err := tools.HandleInvestigationMCP(context.Background(), mockMCP, tools.InvestigateMCPArgs{
+			_, err := tools.HandleInvestigationMCP(context.Background(), mockMCP, nil, "", tools.InvestigateMCPArgs{
 				RRID: "rr-au3-001",
 			}, recorder)
 			Expect(err).NotTo(HaveOccurred())
@@ -195,6 +195,169 @@ var _ = Describe("HandleInvestigationMCP — #1326 BR-MCP-002 non-blocking MCP i
 			Expect(evt.Detail).To(HaveKey("ka_correlation_id"))
 			Expect(evt.Detail).To(HaveKey("delegation_type"))
 			Expect(evt.Detail).To(HaveKey("rr_id"))
+		})
+	})
+})
+
+var _ = Describe("formatEventForUser — #1326 BR-MCP-008 event filtering", func() {
+
+	Describe("UT-AF-1326-040: reasoning_delta events produce text", func() {
+		It("should extract the text field from reasoning_delta events", func() {
+			evt := ka.InvestigationEvent{
+				Type: ka.EventTypeReasoningDelta,
+				Data: json.RawMessage(`{"text":"Analyzing pod crash..."}`),
+			}
+			result := tools.FormatEventForUser(evt)
+			Expect(result).To(Equal("Analyzing pod crash..."))
+		})
+	})
+
+	Describe("UT-AF-1326-041: tool_call_start events produce descriptive text", func() {
+		It("should format tool name with 'Calling ...' prefix", func() {
+			evt := ka.InvestigationEvent{
+				Type: ka.EventTypeToolCallStart,
+				Data: json.RawMessage(`{"tool":"kubectl_get"}`),
+			}
+			result := tools.FormatEventForUser(evt)
+			Expect(result).To(Equal("Calling kubectl_get..."))
+		})
+	})
+
+	Describe("UT-AF-1326-042: error events produce error text", func() {
+		It("should format error message", func() {
+			evt := ka.InvestigationEvent{
+				Type: ka.EventTypeError,
+				Data: json.RawMessage(`{"error":"LLM provider unavailable"}`),
+			}
+			result := tools.FormatEventForUser(evt)
+			Expect(result).To(Equal("Error: LLM provider unavailable"))
+		})
+	})
+
+	Describe("UT-AF-1326-043: complete events produce terminal text", func() {
+		It("should return 'Investigation complete.'", func() {
+			evt := ka.InvestigationEvent{
+				Type: ka.EventTypeComplete,
+			}
+			result := tools.FormatEventForUser(evt)
+			Expect(result).To(Equal("Investigation complete."))
+		})
+	})
+
+	Describe("UT-AF-1326-044: tool_result events are suppressed", func() {
+		It("should return empty string for tool_result events", func() {
+			evt := ka.InvestigationEvent{
+				Type: ka.EventTypeToolResult,
+				Data: json.RawMessage(`{"output":"lots of data"}`),
+			}
+			result := tools.FormatEventForUser(evt)
+			Expect(result).To(BeEmpty())
+		})
+	})
+
+	Describe("UT-AF-1326-045: token_delta events are suppressed", func() {
+		It("should return empty string for token_delta events", func() {
+			evt := ka.InvestigationEvent{
+				Type: ka.EventTypeTokenDelta,
+				Data: json.RawMessage(`{"token":"a"}`),
+			}
+			result := tools.FormatEventForUser(evt)
+			Expect(result).To(BeEmpty())
+		})
+	})
+
+	Describe("UT-AF-1326-046: unknown event types are suppressed", func() {
+		It("should return empty string for unknown event types", func() {
+			evt := ka.InvestigationEvent{
+				Type: "some_future_event",
+				Data: json.RawMessage(`{"foo":"bar"}`),
+			}
+			result := tools.FormatEventForUser(evt)
+			Expect(result).To(BeEmpty())
+		})
+	})
+
+	Describe("UT-AF-1326-047: error event with missing error field uses fallback", func() {
+		It("should return generic error message when error field is absent", func() {
+			evt := ka.InvestigationEvent{
+				Type: ka.EventTypeError,
+				Data: json.RawMessage(`{}`),
+			}
+			result := tools.FormatEventForUser(evt)
+			Expect(result).To(Equal("Investigation error occurred"))
+		})
+	})
+
+	Describe("UT-AF-1326-048: reasoning_delta with empty data returns empty", func() {
+		It("should return empty string when data is nil", func() {
+			evt := ka.InvestigationEvent{
+				Type: ka.EventTypeReasoningDelta,
+				Data: nil,
+			}
+			result := tools.FormatEventForUser(evt)
+			Expect(result).To(BeEmpty())
+		})
+	})
+})
+
+var _ = Describe("bridgeEventsToA2A — #1326 BR-MCP-003 event bridge goroutine", func() {
+
+	Describe("UT-AF-1326-050: bridge drains event channel on close", func() {
+		It("should exit cleanly when the event channel is closed", func() {
+			eventCh := make(chan ka.InvestigationEvent, 5)
+			eventCh <- ka.InvestigationEvent{Type: ka.EventTypeReasoningDelta, Data: json.RawMessage(`{"text":"step 1"}`)}
+			close(eventCh)
+
+			done := make(chan struct{})
+			go func() {
+				tools.BridgeEventsToA2A(context.Background(), eventCh)
+				close(done)
+			}()
+
+			Eventually(done, 2*time.Second).Should(BeClosed())
+		})
+	})
+
+	Describe("UT-AF-1326-051: bridge exits on context cancellation", func() {
+		It("should exit when context is cancelled", func() {
+			eventCh := make(chan ka.InvestigationEvent, 5)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			done := make(chan struct{})
+			go func() {
+				tools.BridgeEventsToA2A(ctx, eventCh)
+				close(done)
+			}()
+
+			cancel()
+			Eventually(done, 2*time.Second).Should(BeClosed())
+		})
+	})
+})
+
+var _ = Describe("HandleInvestigationMCP — delegation_type audit event", func() {
+
+	Describe("UT-AF-1326-060: audit event uses interactive_mcp delegation type", func() {
+		It("should emit interactive_mcp in the delegation_type field", func() {
+			eventCh := make(chan ka.InvestigationEvent, 10)
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					return &ka.StartInvestigationResult{
+						SessionID: "sess-delegate-060",
+						Status:    "started",
+						Events:    eventCh,
+						Closer:    func() { close(eventCh) },
+					}, nil
+				},
+			}
+
+			recorder := &auditRecorder{}
+			_, err := tools.HandleInvestigationMCP(context.Background(), mockMCP, nil, "", tools.InvestigateMCPArgs{
+				RRID: "rr-delegate-060",
+			}, recorder)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(recorder.events).To(HaveLen(1))
+			Expect(recorder.events[0].Detail["delegation_type"]).To(Equal("interactive_mcp"))
 		})
 	})
 })
@@ -211,5 +374,6 @@ func (r *auditRecorder) Emit(_ context.Context, e *audit.Event) {
 // Ensure auditRecorder satisfies audit.Emitter at compile time (if exported).
 var _ audit.Emitter = (*auditRecorder)(nil)
 
-// Suppress unused import warning for json
+// Suppress unused import warning for json and time
 var _ = json.Marshal
+var _ time.Duration

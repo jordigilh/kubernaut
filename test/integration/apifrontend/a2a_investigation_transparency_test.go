@@ -131,8 +131,8 @@ var _ = Describe("A2A Investigation Tool Error Transparency (TP-1310)", func() {
 		}))
 
 		mockMCP := &ka.MockMCPClient{
-			StartAutonomousFn: func(_ context.Context, args ka.StartAutonomousArgs) (*ka.StartAutonomousResult, error) {
-				return &ka.StartAutonomousResult{
+			StartInvestigationFn: func(_ context.Context, args ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+				return &ka.StartInvestigationResult{
 					SessionID: "sess-1310-mock",
 					Status:    "autonomous_started",
 				}, nil
