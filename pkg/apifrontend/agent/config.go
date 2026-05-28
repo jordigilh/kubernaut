@@ -41,9 +41,7 @@ type AgentConfig struct {
 	K8sClient dynamic.Interface
 	// DSClient is the Data Store client for workflow/history queries.
 	DSClient ds.Client
-	// KAClient is the Kubernaut Agent REST client for investigations.
-	KAClient *ka.Client
-	// MCPClient is the KA MCP client for workflow selection.
+	// MCPClient is the KA MCP client for investigations and interactive operations.
 	MCPClient ka.MCPClient
 	// Authorizer checks tool-level authorization via SAR.
 	Authorizer auth.ToolAuthorizer

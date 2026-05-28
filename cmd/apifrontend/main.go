@@ -646,7 +646,6 @@ func buildMCPHandler(cfg *config.Config, deps *backendDeps, sessInfra *sessionIn
 	}
 	bridgeCfg := &handler.MCPBridgeConfig{
 		K8sClient:          deps.K8sClient(),
-		KAClient:           deps.KAClient,
 		KAMCPClient:        deps.MCPClient,
 		Pool:               deps.Pool,
 		DSClient:           deps.DSClient,
@@ -717,7 +716,6 @@ func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps,
 		LLMModel:         llmModel,
 		Namespace:        resolvedNS,
 		K8sClient:        deps.K8sClient(),
-		KAClient:         deps.KAClient,
 		DSClient:         deps.DSClient,
 		MCPClient:        deps.MCPClient,
 		Authorizer:       authorizer,

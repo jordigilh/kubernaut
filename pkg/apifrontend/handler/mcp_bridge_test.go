@@ -460,18 +460,26 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 			Issuer:   "test",
 		}
 
-		kaClient := ka.NewClient(ka.Config{BaseURL: kaServer.URL})
-
 		cfg := handler.MCPConfig{
 			ServerName:    "kubernaut-apifrontend",
 			ServerVersion: "v0.1.0-test",
 			Enabled:       true,
 			Bridge: &handler.MCPBridgeConfig{
 				K8sClient: fakeK8s,
-				KAClient:   kaClient,
-				KAMCPClient: &ka.MockMCPClient{SelectWorkflowFn: func(_ context.Context, _ ka.SelectWorkflowArgs) (*ka.SelectWorkflowResult, error) {
-					return &ka.SelectWorkflowResult{Status: "selected", Message: "workflow selected"}, nil
-				}},
+				KAMCPClient: &ka.MockMCPClient{
+					SelectWorkflowFn: func(_ context.Context, _ ka.SelectWorkflowArgs) (*ka.SelectWorkflowResult, error) {
+						return &ka.SelectWorkflowResult{Status: "selected", Message: "workflow selected"}, nil
+					},
+					StartAutonomousFn: func(_ context.Context, args ka.StartAutonomousArgs) (*ka.StartAutonomousResult, error) {
+						eventCh := make(chan ka.InvestigationEvent, 10)
+						return &ka.StartAutonomousResult{
+							SessionID: "test-session-123",
+							Status:    "autonomous_started",
+							Events:    eventCh,
+							Closer:    func() { close(eventCh) },
+						}, nil
+					},
+				},
 				DSClient:           newFakeDSClient(),
 				Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"*"}}},
 				Auditor:            auditor,
@@ -544,23 +552,22 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 		})
 	})
 
-	Context("KA REST tools dispatch", func() {
-		It("UT-AF-B-007: kubernaut_investigate starts new investigation (namespace/name)", func() {
+	Context("KA MCP investigation dispatch", func() {
+		It("UT-AF-B-007: kubernaut_investigate starts MCP autonomous investigation (rr_id)", func() {
 			_, body := mcpCallTool(h, sessionID, "kubernaut_investigate",
-				map[string]any{"namespace": "default", "name": "nginx", "kind": "Deployment"}, testUser)
+				map[string]any{"rr_id": "default/test-rr"}, testUser)
 			text := extractTextContent(body)
 			Expect(text).To(SatisfyAny(
 				ContainSubstring("test-session-123"),
-				ContainSubstring("completed"),
-				ContainSubstring("investigation complete"),
+				ContainSubstring("autonomous_started"),
 			))
 		})
 
-		It("UT-AF-B-008: kubernaut_investigate polls completed session (session_id)", func() {
+		It("UT-AF-B-008: kubernaut_investigate requires rr_id", func() {
 			_, body := mcpCallTool(h, sessionID, "kubernaut_investigate",
-				map[string]any{"session_id": "test-session-123"}, testUser)
+				map[string]any{}, testUser)
 			text := extractTextContent(body)
-			Expect(text).To(ContainSubstring("completed"))
+			Expect(text).To(ContainSubstring("rr_id"))
 		})
 	})
 
@@ -628,7 +635,7 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         nil,
-					KAClient:           ka.NewClient(ka.Config{BaseURL: "http://localhost:9999"}),
+
 					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"*"}}},
 					Auditor:            auditor,
 					ToolTimeout:        2 * time.Second,
@@ -690,7 +697,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
-					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
+
 					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"*"}}},
 					Auditor:            auditor,
 					Metrics:            metrics,
@@ -715,7 +722,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
-					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
+
 					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"*"}}},
 					Auditor:            auditor,
 					Metrics:            metrics,
@@ -742,7 +749,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
-					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
+
 					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"kubernaut_list_remediations"}}},
 					Auditor:            auditor,
 					ToolTimeout:        2 * time.Second,
@@ -766,7 +773,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
-					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
+
 					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"kubernaut_list_remediations"}}},
 					Auditor:            auditor,
 					Metrics:            metrics,
@@ -793,7 +800,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
-					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
+
 					Authorizer:         &mapAuthorizer{roles: map[string][]string{"admin": {"*"}}},
 					Auditor:            auditor,
 					ToolTimeout:        2 * time.Second,
@@ -817,7 +824,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
-					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
+
 					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            auditor,
 					ToolTimeout:        2 * time.Second,
@@ -841,7 +848,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
-					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
+
 					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"kubernaut_list_remediations"}}},
 					Auditor:            auditor,
 					Metrics:            metrics,
@@ -871,7 +878,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
-					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
+
 					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"kubernaut_list_remediations"}}},
 					Auditor:            auditor,
 					Metrics:            metrics,
@@ -906,7 +913,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         jwtClient,
-					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
+
 					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            auditor,
 					ToolTimeout:        2 * time.Second,
@@ -937,7 +944,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         pathClient,
-					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
+
 					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            auditor,
 					ToolTimeout:        2 * time.Second,
@@ -964,7 +971,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
-					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
+
 					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"*"}}},
 					Auditor:            auditor,
 					ToolTimeout:        2 * time.Second,
@@ -1022,7 +1029,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
-					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
+
 					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            auditor,
 					Metrics:            metrics,
@@ -1049,7 +1056,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
-					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
+
 					Authorizer:         &mapAuthorizer{roles: map[string][]string{"admin": {"*"}}},
 					Auditor:            auditor,
 					Metrics:            metrics,
@@ -1082,7 +1089,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         errClient,
-					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
+
 					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            auditor,
 					Metrics:            metrics,
@@ -1109,7 +1116,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
-					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
+
 					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            auditor,
 					Metrics:            metrics,
@@ -1143,7 +1150,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
-					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
+
 					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            auditor,
 					Metrics:            metrics,
@@ -1180,7 +1187,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:          fakeK8s,
-					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
+
 					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            auditor,
 					Metrics:            metrics,
@@ -1222,7 +1229,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         errClient,
-					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
+
 					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            auditor,
 					Metrics:            metrics,
@@ -1259,7 +1266,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
-					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
+
 					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            nil,
 					ToolTimeout:        5 * time.Second,
@@ -1293,7 +1300,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         slowClient,
-					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
+
 					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            auditor,
 					Metrics:            metrics,
@@ -1329,7 +1336,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         slowClient,
-					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
+
 					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            localAuditor,
 					Metrics:            localMetrics,
@@ -1387,7 +1394,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         blockingClient,
-					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
+
 					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            localAuditor,
 					Metrics:            localMetrics,
@@ -1502,7 +1509,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         gatedClient,
-					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
+
 					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            auditor,
 					Metrics:            metrics,
@@ -1557,7 +1564,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         panicClient,
-					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
+
 					DSClient:           newFakeDSClient(),
 					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            auditor,
@@ -1592,7 +1599,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         panicClient,
-					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
+
 					DSClient:           newFakeDSClient(),
 					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            localAuditor,
@@ -1660,7 +1667,7 @@ var _ = Describe("MCP Bridge - Tier 4: Adversarial Inputs", Label("tier4", "brid
 			Enabled:       true,
 			Bridge: &handler.MCPBridgeConfig{
 				K8sClient: fakeK8s,
-				KAClient:   ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
+
 				KAMCPClient: &ka.MockMCPClient{SelectWorkflowFn: func(_ context.Context, _ ka.SelectWorkflowArgs) (*ka.SelectWorkflowResult, error) {
 					return &ka.SelectWorkflowResult{Status: "selected", Message: "ok"}, nil
 				}},
@@ -1808,7 +1815,7 @@ var _ = Describe("MCP Bridge - Tier 5: Cross-Cutting", Label("tier5", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
-					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
+
 					DSClient:           newFakeDSClient(),
 					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            auditor,
@@ -1835,7 +1842,7 @@ var _ = Describe("MCP Bridge - Tier 5: Cross-Cutting", Label("tier5", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
-					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
+
 					DSClient:           newFakeDSClient(),
 					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            auditor,
@@ -1866,7 +1873,7 @@ var _ = Describe("MCP Bridge - Tier 5: Cross-Cutting", Label("tier5", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient: fakeK8s,
-					KAClient:   ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
+	
 					DSClient:   newFakeDSClient(),
 					Authorizer: &mapAuthorizer{roles: map[string][]string{
 						"sre": {"kubernaut_list_remediations", "kubernaut_get_remediation"},
@@ -1915,7 +1922,7 @@ var _ = Describe("MCP Bridge - Tier 5: Cross-Cutting", Label("tier5", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
-					KAClient:           nil,
+
 					DSClient:           newFakeDSClient(),
 					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            auditor,
@@ -1942,7 +1949,7 @@ var _ = Describe("MCP Bridge - Tier 5: Cross-Cutting", Label("tier5", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
-					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
+
 					DSClient:           nil,
 					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            auditor,
@@ -1968,7 +1975,7 @@ var _ = Describe("MCP Bridge - Tier 5: Cross-Cutting", Label("tier5", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
-					KAClient:           ka.NewClient(ka.Config{BaseURL: kaServer.URL}),
+
 					DSClient:           newFakeDSClient(),
 					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            auditor,
@@ -2142,7 +2149,6 @@ var _ = Describe("MCP Bridge - discover_workflows (#1176)", Label("bridge", "dis
 		DeferCleanup(kaServer.Close)
 
 		fakeK8s := newFakeDynamicClient()
-		kaClient := ka.NewClient(ka.Config{BaseURL: kaServer.URL})
 
 		roles := map[string][]string{
 			"sre":             {"*"},
@@ -2156,7 +2162,6 @@ var _ = Describe("MCP Bridge - discover_workflows (#1176)", Label("bridge", "dis
 			Enabled:       true,
 			Bridge: &handler.MCPBridgeConfig{
 				K8sClient:         fakeK8s,
-				KAClient:           kaClient,
 				KAMCPClient:        mockMCP,
 				DSClient:           newFakeDSClient(),
 				Authorizer:         &mapAuthorizer{roles: roles},
@@ -2345,7 +2350,6 @@ var _ = Describe("MCP Bridge - Metrics Wiring", Label("metrics", "wiring"), func
 		DeferCleanup(kaServer.Close)
 
 		fakeK8s := newFakeDynamicClient()
-		kaClient := ka.NewClient(ka.Config{BaseURL: kaServer.URL})
 
 		mockMCP := &ka.MockMCPClient{
 			DiscoverWorkflowsFn: func(_ context.Context, args ka.DiscoverWorkflowsArgs) (*ka.DiscoverWorkflowsResult, error) {
@@ -2369,7 +2373,6 @@ var _ = Describe("MCP Bridge - Metrics Wiring", Label("metrics", "wiring"), func
 			Enabled:       true,
 			Bridge: &handler.MCPBridgeConfig{
 				K8sClient:         fakeK8s,
-				KAClient:           kaClient,
 				KAMCPClient:        mockMCP,
 				DSClient:           newFakeDSClient(),
 				Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"*"}, "cicd": {"kubernaut_list_remediations"}}},

@@ -235,8 +235,8 @@ var _ = Describe("Interactive Action Handlers (G1)", func() {
 	})
 
 	Describe("Constructors (G1)", func() {
-		It("UT-AF-1234-060: NewInvestigateTool constructor returns valid tool", func() {
-			t, err := tools.NewInvestigateTool(nil, nil)
+		It("UT-AF-1234-060: NewInvestigateMCPTool constructor returns valid tool", func() {
+			t, err := tools.NewInvestigateMCPTool(nil, nil)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(t.Name()).To(Equal("kubernaut_investigate"))
 		})

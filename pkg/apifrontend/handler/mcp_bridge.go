@@ -47,7 +47,6 @@ type ISSessionInitializer interface {
 // MCPBridgeConfig holds the configuration for the real MCP tool bridge.
 type MCPBridgeConfig struct {
 	K8sClient          dynamic.Interface
-	KAClient           *ka.Client
 	KAMCPClient        ka.MCPClient
 	Pool               *ka.KASessionPool
 	DSClient           ds.Client
@@ -152,10 +151,10 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 			return tools.HandleAwaitSession(ctx, cfg.K8sClient, args)
 		})
 
-	// KA investigation tool (merged start + stream + poll)
+	// KA investigation tool (MCP-only, non-blocking)
 	registerTool(srv, cfg, sem, "kubernaut_investigate", "Investigate an infrastructure incident",
-		func(ctx context.Context, args tools.InvestigateArgs) (any, error) {
-			return tools.HandleInvestigation(ctx, cfg.KAClient, args, cfg.Auditor)
+		func(ctx context.Context, args tools.InvestigateMCPArgs) (any, error) {
+			return tools.HandleInvestigationMCP(ctx, cfg.KAMCPClient, args, cfg.Auditor)
 		})
 
 	// KA MCP tools
