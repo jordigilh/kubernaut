@@ -101,16 +101,14 @@ var _ = Describe("E2E-1293: Interactive Investigation Architecture", Label("e2e"
 		rrName, err := infrastructure.CreateDirectRR(ctx, namespace, "e2e-1293-001")
 		Expect(err).NotTo(HaveOccurred())
 
-		By("Waiting for AIAnalysis to reach Investigating phase")
-		aaName := waitForAAInvestigating(rrName)
-
-		By("Creating Active IS CRD for the RR (human initiates interactive)")
+		By("Creating Active IS CRD immediately (interactive from start — IS exists before AA investigates)")
 		is := createISForRR("1293-001", rrName)
 		DeferCleanup(func() {
 			_ = client.IgnoreNotFound(k8sClient.Delete(ctx, is))
 		})
 
-		By("Verifying AA detects IS and enters interactive mode (KASession.Interactive=true)")
+		By("Waiting for AIAnalysis to reach Investigating phase with interactive=true")
+		aaName := waitForAAInvestigating(rrName)
 		aa := &aianalysisv1.AIAnalysis{}
 		Eventually(func(g Gomega) {
 			g.Expect(apiReader.Get(ctx, client.ObjectKey{Name: aaName, Namespace: namespace}, aa)).To(Succeed())
@@ -148,24 +146,21 @@ var _ = Describe("E2E-1293: Interactive Investigation Architecture", Label("e2e"
 		rrName, err := infrastructure.CreateDirectRR(ctx, namespace, "e2e-1293-002")
 		Expect(err).NotTo(HaveOccurred())
 
-		By("Waiting for AA to reach Investigating with a KA session (autonomous)")
-		aaName := waitForAAInvestigating(rrName)
-		aa := &aianalysisv1.AIAnalysis{}
-		var oldSessionID string
-		Eventually(func(g Gomega) {
-			g.Expect(apiReader.Get(ctx, client.ObjectKey{Name: aaName, Namespace: namespace}, aa)).To(Succeed())
-			g.Expect(aa.Status.KASession).NotTo(BeNil())
-			g.Expect(aa.Status.KASession.ID).NotTo(BeEmpty())
-			oldSessionID = aa.Status.KASession.ID
-		}, 60*time.Second, 1*time.Second).Should(Succeed())
-
-		GinkgoWriter.Printf("  Autonomous session ID: %s\n", oldSessionID)
-
-		By("Creating Active IS CRD mid-investigation (triggers dynamic takeover)")
+		By("Creating Active IS CRD immediately (before KA completes — mock-LLM responds instantly)")
 		is := createISForRR("1293-002", rrName)
 		DeferCleanup(func() {
 			_ = client.IgnoreNotFound(k8sClient.Delete(ctx, is))
 		})
+
+		By("Waiting for AA to reach Investigating with interactive=true")
+		aaName := waitForAAInvestigating(rrName)
+		aa := &aianalysisv1.AIAnalysis{}
+		Eventually(func(g Gomega) {
+			g.Expect(apiReader.Get(ctx, client.ObjectKey{Name: aaName, Namespace: namespace}, aa)).To(Succeed())
+			g.Expect(aa.Status.KASession).NotTo(BeNil())
+			g.Expect(aa.Status.KASession.Interactive).To(BeTrue(),
+				"BR-INTERACTIVE-010 SC-1: re-submitted session should have interactive=true")
+		}, 90*time.Second, 2*time.Second).Should(Succeed())
 
 		By("Performing MCP takeover")
 		callCtx, callCancel := context.WithTimeout(ctx, 30*time.Second)
@@ -176,14 +171,6 @@ var _ = Describe("E2E-1293: Interactive Investigation Architecture", Label("e2e"
 		})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.IsError).To(BeFalse(), "takeover should succeed")
-
-		By("Verifying AA cancelled old session and re-submitted with interactive=true")
-		Eventually(func(g Gomega) {
-			g.Expect(apiReader.Get(ctx, client.ObjectKey{Name: aaName, Namespace: namespace}, aa)).To(Succeed())
-			g.Expect(aa.Status.KASession).NotTo(BeNil())
-			g.Expect(aa.Status.KASession.Interactive).To(BeTrue(),
-				"BR-INTERACTIVE-010 SC-1: re-submitted session should have interactive=true")
-		}, 90*time.Second, 2*time.Second).Should(Succeed())
 	})
 
 	It("[E2E-1293-003] IS deletion cancels investigation → AIAnalysis PhaseFailed + ReasonInteractiveCancelled", func() {
