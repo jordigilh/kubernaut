@@ -20,10 +20,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"sync"
 	"time"
 
+	"github.com/go-logr/logr"
 	"google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
 	"k8s.io/client-go/dynamic"
@@ -108,11 +108,10 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 
 	if onStarted != nil && result.SessionID != "" {
 		if hookErr := onStarted(ctx, namespace, args.RRID, result.SessionID); hookErr != nil {
-			slog.Error("IS CRD creation failed after investigate",
+			logr.FromContextOrDiscard(ctx).Error(hookErr, "IS CRD creation failed after investigate",
 				"rr_id", args.RRID,
 				"session_id", result.SessionID,
 				"namespace", namespace,
-				"error", hookErr,
 			)
 			_ = launcher.EmitReasoningSafe(ctx, fmt.Sprintf("Warning: IS CRD creation failed (%v), investigation continues", hookErr))
 		}

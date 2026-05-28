@@ -4,10 +4,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/google/uuid"
 	"golang.org/x/sync/singleflight"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -124,10 +124,11 @@ func HandleCreateRR(ctx context.Context, client dynamic.Interface, controllerNS 
 			}, nil
 		}
 
-		rrName := fmt.Sprintf("rr-%s-%s-%d", strings.ToLower(args.Kind), strings.ToLower(args.Name), time.Now().UnixMilli())
-		if len(rrName) > 63 {
-			rrName = rrName[:63]
+		fpPrefix := fingerprint
+		if len(fpPrefix) > 12 {
+			fpPrefix = fpPrefix[:12]
 		}
+		rrName := fmt.Sprintf("rr-%s-%s", fpPrefix, uuid.New().String()[:8])
 
 		now := time.Now().UTC().Format(time.RFC3339)
 
