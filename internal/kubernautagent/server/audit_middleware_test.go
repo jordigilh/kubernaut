@@ -20,10 +20,11 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/go-logr/logr"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	kaserver "github.com/jordigilh/kubernaut/internal/kubernautagent/server"
@@ -33,14 +34,14 @@ var _ = Describe("AuditAuthMiddleware — SSE Flusher support", func() {
 
 	Describe("UT-KA-SSE-FLUSH-001: statusRecorder preserves http.Flusher for SSE streams", func() {
 		It("allows http.NewResponseController to flush through the audit wrapper [UT-KA-SSE-FLUSH-001]", func() {
-			flushed := false
+			var flushErr atomic.Value
 			inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "text/event-stream")
 				w.WriteHeader(http.StatusOK)
 				rc := http.NewResponseController(w)
-				err := rc.Flush()
-				Expect(err).NotTo(HaveOccurred(), "Flush must succeed through audit middleware wrapper")
-				flushed = true
+				if err := rc.Flush(); err != nil {
+					flushErr.Store(err)
+				}
 			})
 
 			store := &noopAuditStore{}
@@ -54,7 +55,7 @@ var _ = Describe("AuditAuthMiddleware — SSE Flusher support", func() {
 			defer resp.Body.Close()
 
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
-			Expect(flushed).To(BeTrue(), "inner handler must have flushed successfully")
+			Expect(flushErr.Load()).To(BeNil(), "Flush must succeed through audit middleware wrapper")
 		})
 	})
 
