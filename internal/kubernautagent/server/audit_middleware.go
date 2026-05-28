@@ -34,6 +34,13 @@ func (r *statusRecorder) WriteHeader(code int) {
 	r.ResponseWriter.WriteHeader(code)
 }
 
+// Unwrap returns the underlying ResponseWriter so that http.NewResponseController
+// can access http.Flusher and http.Hijacker on the real writer. Required for SSE
+// streams where the MCP SDK must flush response headers immediately.
+func (r *statusRecorder) Unwrap() http.ResponseWriter {
+	return r.ResponseWriter
+}
+
 // AuditAuthMiddleware wraps an HTTP handler and emits audit events for
 // 401 (auth failure) and 403 (auth denied) responses. This satisfies
 // FedRAMP AU-12 without modifying the shared auth middleware (H5).
