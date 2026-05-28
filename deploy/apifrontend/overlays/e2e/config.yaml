@@ -92,10 +92,10 @@ resilience:
   k8s:
     connectTimeout: 2s
     requestTimeout: 5s
-    cbMaxRequests: 3
-    cbInterval: 5s
-    cbTimeout: 10s
-    cbFailureThreshold: 3
+    cbMaxRequests: 5
+    cbInterval: 10s
+    cbTimeout: 30s
+    cbFailureThreshold: 10
     retryMax: 0
     retryableStatuses: []
   prometheus:

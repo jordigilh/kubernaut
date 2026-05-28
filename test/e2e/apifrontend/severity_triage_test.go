@@ -54,6 +54,20 @@ var _ = Describe("Severity Triage Pipeline (G12)", Label("e2e", "phase4", "g12")
 		if rpc.Error != nil {
 			Fail(fmt.Sprintf("A2A error %d: %s", rpc.Error.Code, rpc.Error.Message))
 		}
+
+		if rpc.Result != nil {
+			task, taskErr := extractTaskFromResult(rpc.Result)
+			if taskErr == nil && task.Status.State == "failed" {
+				Fail(fmt.Sprintf("A2A task failed: %s", string(task.Status.Message)))
+			}
+			if taskErr == nil && task.Status.Message != nil {
+				msgStr := string(task.Status.Message)
+				Expect(msgStr).NotTo(ContainSubstring("circuit breaker"),
+					"af_create_rr failed due to K8s circuit breaker — cluster not ready")
+				Expect(msgStr).NotTo(ContainSubstring("ErrK8sUnavailable"),
+					"af_create_rr failed — K8s client unavailable")
+			}
+		}
 	}
 
 	findRRByTarget := func(namespace, deployName string) *remediationv1alpha1.RemediationRequest {
