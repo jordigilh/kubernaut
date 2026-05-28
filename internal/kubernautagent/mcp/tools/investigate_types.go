@@ -50,14 +50,15 @@ type StatusOutput struct {
 
 // Valid actions for the kubernaut_investigate tool.
 const (
-	ActionStart     = "start"
-	ActionMessage   = "message"
-	ActionComplete  = "complete"
-	ActionCancel    = "cancel"
-	ActionTakeover  = "takeover"
-	ActionStatus    = "status"
+	ActionStart              = "start"
+	ActionMessage            = "message"
+	ActionComplete           = "complete"
+	ActionCancel             = "cancel"
+	ActionTakeover           = "takeover"
+	ActionStatus             = "status"
 	ActionReconnect          = "reconnect"
 	ActionDiscoverWorkflows  = "discover_workflows"
+	ActionStartAutonomous    = "start_autonomous"
 )
 
 var (
@@ -80,7 +81,7 @@ func ValidateInput(input InvestigateInput) error {
 		return ErrMissingRRID
 	}
 	switch input.Action {
-	case ActionStart, ActionComplete, ActionCancel, ActionTakeover, ActionStatus, ActionReconnect, ActionDiscoverWorkflows:
+	case ActionStart, ActionComplete, ActionCancel, ActionTakeover, ActionStatus, ActionReconnect, ActionDiscoverWorkflows, ActionStartAutonomous:
 		return nil
 	case ActionMessage:
 		if input.Message == "" {

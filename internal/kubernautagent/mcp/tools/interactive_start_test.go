@@ -26,6 +26,7 @@ import (
 
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	mcptools "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 )
 
 // interactiveAutoMgr extends takeoverAutoMgr with pending session support.
@@ -68,6 +69,12 @@ func (m *interactiveAutoMgr) LaunchDeferredInvestigation(_ string) error {
 	return m.launchErr
 }
 
+func (m *interactiveAutoMgr) StartInvestigation(_ context.Context, _ session.InvestigateFunc, _ map[string]string) (string, error) {
+	return "", nil
+}
+func (m *interactiveAutoMgr) Subscribe(_ context.Context, _ string) (<-chan session.InvestigationEvent, error) {
+	return nil, nil
+}
 func (m *interactiveAutoMgr) GetLatestRCASummaryByRemediationID(_ string) (string, bool) {
 	return "", false
 }

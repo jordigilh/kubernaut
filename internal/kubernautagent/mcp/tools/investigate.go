@@ -110,6 +110,11 @@ type AutonomousSessionManager interface {
 	LaunchDeferredInvestigation(id string) error
 	// BR-INTERACTIVE-010: Get RCA summary from latest completed session for context reconstruction.
 	GetLatestRCASummaryByRemediationID(rrID string) (string, bool)
+
+	// BR-MCP-002: Start an autonomous investigation and return the session ID.
+	StartInvestigation(ctx context.Context, fn session.InvestigateFunc, metadata map[string]string) (string, error)
+	// BR-MCP-003: Subscribe to the event channel for a running investigation, activating the LazySink.
+	Subscribe(ctx context.Context, id string) (<-chan session.InvestigationEvent, error)
 }
 
 // RRExistenceChecker validates that a RemediationRequest exists before
@@ -145,6 +150,12 @@ func (NopAutonomousManager) ForceTransitionToUserDriving(string, string, []strin
 func (NopAutonomousManager) FindPendingByRemediationID(string) (string, bool)            { return "", false }
 func (NopAutonomousManager) LaunchDeferredInvestigation(string) error                    { return nil }
 func (NopAutonomousManager) GetLatestRCASummaryByRemediationID(string) (string, bool)    { return "", false }
+func (NopAutonomousManager) StartInvestigation(context.Context, session.InvestigateFunc, map[string]string) (string, error) {
+	return "", nil
+}
+func (NopAutonomousManager) Subscribe(context.Context, string) (<-chan session.InvestigationEvent, error) {
+	return nil, nil
+}
 
 // InvestigateTool handles the kubernaut_investigate MCP tool actions:
 // start, message, complete, cancel, takeover, discover_workflows.
@@ -315,6 +326,8 @@ func (t *InvestigateTool) dispatch(ctx context.Context, input InvestigateInput, 
 		return t.handleReconnect(input, user)
 	case ActionDiscoverWorkflows:
 		return t.handleDiscoverWorkflows(ctx, input, user)
+	case ActionStartAutonomous:
+		return t.handleStartAutonomous(ctx, input, user)
 	default:
 		return InvestigateOutput{}, ErrInvalidAction
 	}
@@ -879,6 +892,46 @@ func (t *InvestigateTool) handleCancel(input InvestigateInput, user mcpinternal.
 	return InvestigateOutput{
 		SessionID: sess.SessionID,
 		Status:    "cancelled",
+	}, nil
+}
+
+func (t *InvestigateTool) handleStartAutonomous(ctx context.Context, input InvestigateInput, _ mcpinternal.UserInfo) (InvestigateOutput, error) {
+	if t.rrChecker != nil {
+		exists, err := t.rrChecker.RemediationRequestExists(ctx, input.RRID)
+		if err != nil {
+			return InvestigateOutput{}, fmt.Errorf("validate remediation request: %w", err)
+		}
+		if !exists {
+			return InvestigateOutput{}, ErrCodeRRNotFound.WithDetail("rr_id", input.RRID)
+		}
+	}
+
+	if existingID, found := t.autoMgr.FindByRemediationID(input.RRID); found {
+		return InvestigateOutput{
+			SessionID: existingID,
+			Status:    "already_running",
+		}, nil
+	}
+
+	metadata := map[string]string{
+		"remediation_id": input.RRID,
+	}
+
+	sessionID, err := t.autoMgr.StartInvestigation(ctx, func(ctx context.Context) (*katypes.InvestigationResult, error) {
+		return nil, ctx.Err()
+	}, metadata)
+	if err != nil {
+		return InvestigateOutput{}, fmt.Errorf("start autonomous investigation: %w", err)
+	}
+
+	if _, subErr := t.autoMgr.Subscribe(ctx, sessionID); subErr != nil {
+		t.logger.Error(subErr, "start_autonomous: Subscribe failed, events may be lost",
+			"session_id", sessionID, "rr_id", input.RRID)
+	}
+
+	return InvestigateOutput{
+		SessionID: sessionID,
+		Status:    "autonomous_started",
 	}, nil
 }
 
