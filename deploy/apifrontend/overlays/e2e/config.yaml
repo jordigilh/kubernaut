@@ -36,7 +36,6 @@ auth:
   jwksURL: "http://dex.kubernaut-system.svc:5556/dex/keys"
   audience: "kubernaut-apifrontend"
   allowInsecureIssuers: true
-  kubernetesAuthEnabled: true
 
 rbac:
   groupMapping:

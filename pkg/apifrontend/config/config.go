@@ -73,6 +73,9 @@ type DependencyConfig struct {
 }
 
 // AuthConfig holds OIDC authentication settings.
+// Auth mode is auto-detected from provider presence (#1309):
+//   - issuerURL set → OIDC/JWKS validation only
+//   - issuerURL empty → K8s TokenReview only
 type AuthConfig struct {
 	IssuerURL              string `yaml:"issuerURL"`
 	JWKSURL                string `yaml:"jwksURL,omitempty"`
@@ -80,7 +83,6 @@ type AuthConfig struct {
 	OIDCCaFile             string `yaml:"oidcCaFile,omitempty"`
 	EnableReplayProtection bool   `yaml:"enableReplayProtection,omitempty"`
 	AllowInsecureIssuers   bool   `yaml:"allowInsecureIssuers,omitempty"`
-	KubernetesAuthEnabled  bool   `yaml:"kubernetesAuthEnabled,omitempty"`
 }
 
 // LoggingConfig holds structured logging settings.

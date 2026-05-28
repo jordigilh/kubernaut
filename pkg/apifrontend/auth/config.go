@@ -52,15 +52,12 @@ type ValidationRule struct {
 }
 
 // Config is the top-level authentication configuration.
+// Auth mode is auto-detected from provider presence (#1309):
+//   - JWT providers present → OIDC/JWKS validation only
+//   - JWT providers empty + reviewer wired → K8s TokenReview only
 type Config struct {
-	JWT                  []ProviderConfig     `yaml:"jwt,omitempty"`
-	Kubernetes           KubernetesAuthConfig `yaml:"kubernetes,omitempty"`
-	AllowInsecureIssuers bool                 `yaml:"allowInsecureIssuers,omitempty"`
-}
-
-// KubernetesAuthConfig enables TokenReview-based authentication.
-type KubernetesAuthConfig struct {
-	Enabled bool `yaml:"enabled"`
+	JWT                  []ProviderConfig `yaml:"jwt,omitempty"`
+	AllowInsecureIssuers bool             `yaml:"allowInsecureIssuers,omitempty"`
 }
 
 // Validate checks the Config for structural errors.

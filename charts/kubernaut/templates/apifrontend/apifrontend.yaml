@@ -128,7 +128,6 @@ data:
       cacheTTLSeconds: {{ .Values.apifrontend.config.severityTriage.cacheTTLSeconds | default 30 }}
       llmConfidence: {{ .Values.apifrontend.config.severityTriage.llmConfidence | default 0.7 }}
     auth:
-      kubernetesAuthEnabled: {{ .Values.apifrontend.config.auth.kubernetesAuthEnabled | default false }}
       {{- with .Values.apifrontend.config.auth.issuerURL }}
       issuerURL: {{ . | quote }}
       {{- end }}

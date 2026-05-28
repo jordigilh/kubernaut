@@ -1015,9 +1015,8 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "issuerURL": { "type": "string", "default": "", "description": "OIDC issuer URL for JWT validation" },
-                "audience": { "type": "string", "default": "", "description": "Expected JWT audience claim" },
-                "kubernetesAuthEnabled": { "type": "boolean", "default": true, "description": "Enable Kubernetes ServiceAccount token authentication" }
+                "issuerURL": { "type": "string", "default": "", "description": "OIDC issuer URL for JWT validation. When set, OIDC/JWKS auth is used. When empty, K8s TokenReview is auto-detected." },
+                "audience": { "type": "string", "default": "", "description": "Expected JWT audience claim" }
               }
             },
             "rbac": {

@@ -32,7 +32,6 @@ agentCard:
 auth:
   issuerURL: "https://login.kubernaut.ai/realms/kubernaut"
   audience: "kubernaut-apifrontend"
-  kubernetesAuthEnabled: true
 
 rbac:
   sarCacheTTL: 30s

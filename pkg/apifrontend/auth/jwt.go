@@ -52,12 +52,15 @@ type providerRuntime struct {
 // It implements issuer-based deterministic routing (KEP-3331 pattern),
 // CEL-based claim validation, JWKS caching with circuit breaker, and optional
 // jti-based token replay protection.
+//
+// Auth mode is auto-detected from construction (#1309):
+//   - providers non-empty → OIDC/JWKS validation only (reviewer not called)
+//   - providers empty + reviewer set → TokenReview only
 type JWTValidator struct {
 	providers   map[string]*providerRuntime
 	cache       *JWKSCache
 	reviewer    *TokenReviewer
 	replayCache *ReplayCache
-	k8sEnabled  bool
 	httpClient  *http.Client
 	cbTimeout   time.Duration
 	cbGauge     *prometheus.GaugeVec
@@ -119,9 +122,8 @@ func NewJWTValidator(cfg Config, opts ...JWTValidatorOption) (*JWTValidator, err
 	}
 
 	v := &JWTValidator{
-		providers:  providers,
-		k8sEnabled: cfg.Kubernetes.Enabled,
-		cbTimeout:  30 * time.Second,
+		providers: providers,
+		cbTimeout: 30 * time.Second,
 	}
 
 	for _, opt := range opts {
@@ -140,6 +142,17 @@ func NewJWTValidator(cfg Config, opts ...JWTValidatorOption) (*JWTValidator, err
 	return v, nil
 }
 
+// AuthMethod returns "jwt" when OIDC providers are configured, or
+// "token_review" when the validator operates in TokenReview-only mode.
+// Used by the middleware to emit accurate audit events on auth failure
+// (AU-3: audit record content).
+func (v *JWTValidator) AuthMethod() string {
+	if len(v.providers) == 0 {
+		return "token_review"
+	}
+	return "jwt"
+}
+
 // Ready returns true if the validator's JWKS cache is healthy (no circuit
 // breakers open). Safe to call when no JWT providers are configured (returns true).
 func (v *JWTValidator) Ready() bool {
@@ -149,9 +162,10 @@ func (v *JWTValidator) Ready() bool {
 	return v.cache.Healthy()
 }
 
-// Validate validates a raw JWT token string and returns the authenticated UserIdentity.
-// It routes to the correct provider based on the token's issuer claim (deterministic, no fallthrough).
-// If the token is not a valid JWT and K8s auth is enabled, it falls through to TokenReview.
+// Validate validates a raw bearer token and returns the authenticated UserIdentity.
+// When OIDC providers are configured, tokens are routed by issuer claim (deterministic).
+// When no providers are configured and a TokenReviewer is wired, all tokens go through
+// K8s TokenReview. The two modes are mutually exclusive (#1309).
 func (v *JWTValidator) Validate(ctx context.Context, rawToken string) (*UserIdentity, error) {
 	token, err := josejwt.ParseSigned(rawToken, []jose.SignatureAlgorithm{jose.RS256, jose.ES256})
 	if err != nil {
@@ -215,7 +229,7 @@ func (v *JWTValidator) Validate(ctx context.Context, rawToken string) (*UserIden
 }
 
 func (v *JWTValidator) fallbackToTokenReview(ctx context.Context, rawToken string, origErr error) (*UserIdentity, error) {
-	if !v.k8sEnabled || v.reviewer == nil {
+	if v.reviewer == nil {
 		return nil, origErr
 	}
 	return v.reviewer.Validate(ctx, rawToken)

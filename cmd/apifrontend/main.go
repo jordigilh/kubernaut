@@ -792,10 +792,6 @@ func buildAuthMiddleware(cfg *config.Config, reg *metrics.Registry, auditor audi
 	alwaysReady := handler.ReadyChecker(func() bool { return true })
 
 	ac := buildAuthConfig(cfg)
-	if len(ac.JWT) == 0 || ac.JWT[0].Issuer.URL == "" {
-		logger.Info("WARNING: no auth issuer configured — using pass-through auth (not suitable for production)")
-		return func(next http.Handler) http.Handler { return next }, alwaysReady
-	}
 
 	authCfg := auth.Config{
 		JWT:                  make([]auth.ProviderConfig, 0, len(ac.JWT)),
@@ -812,36 +808,38 @@ func buildAuthMiddleware(cfg *config.Config, reg *metrics.Registry, auditor audi
 	}
 
 	var validatorOpts []auth.JWTValidatorOption
-	if cfg.Auth.OIDCCaFile != "" {
-		httpClient, err := buildOIDCHTTPClient(cfg.Auth.OIDCCaFile)
-		if err != nil {
-			logger.Error(err, "failed to build OIDC HTTP client with custom CA")
-			return func(next http.Handler) http.Handler {
-				return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-					http.Error(w, "authentication system unavailable", http.StatusServiceUnavailable)
-				})
-			}, alwaysReady
-		}
-		validatorOpts = append(validatorOpts, auth.WithHTTPClient(httpClient))
-		logger.Info("OIDC JWKS fetcher configured with custom CA", "caFile", cfg.Auth.OIDCCaFile)
-	}
-	if cfg.Auth.EnableReplayProtection {
-		validatorOpts = append(validatorOpts, auth.WithReplayCache(auth.NewReplayCache(10*time.Minute)))
-	}
-	if cfg.Auth.KubernetesAuthEnabled {
-		authCfg.Kubernetes.Enabled = true
+
+	if len(ac.JWT) == 0 {
 		restCfg, k8sErr := ctrl.GetConfig()
 		if k8sErr != nil {
-			logger.Error(k8sErr, "kubernetes auth enabled but kubeconfig unavailable")
-		} else {
-			k8sClient, k8sErr := kubernetes.NewForConfig(restCfg)
-			if k8sErr != nil {
-				logger.Error(k8sErr, "failed to create kubernetes client for TokenReview")
-			} else {
-				validatorOpts = append(validatorOpts, auth.WithTokenReviewer(auth.NewTokenReviewer(k8sClient)))
-				logger.Info("kubernetes TokenReview auth enabled for ServiceAccount tokens")
-			}
+			logger.Info("WARNING: no auth issuer configured and kubeconfig unavailable — using pass-through auth (not suitable for production)")
+			return func(next http.Handler) http.Handler { return next }, alwaysReady
 		}
+		k8sClient, k8sErr := kubernetes.NewForConfig(restCfg)
+		if k8sErr != nil {
+			logger.Error(k8sErr, "failed to create kubernetes client for TokenReview")
+			return func(next http.Handler) http.Handler { return next }, alwaysReady
+		}
+		validatorOpts = append(validatorOpts, auth.WithTokenReviewer(auth.NewTokenReviewer(k8sClient)))
+		logger.Info("auth mode: TokenReview (no OIDC issuer configured)")
+	} else {
+		if cfg.Auth.OIDCCaFile != "" {
+			httpClient, err := buildOIDCHTTPClient(cfg.Auth.OIDCCaFile)
+			if err != nil {
+				logger.Error(err, "failed to build OIDC HTTP client with custom CA")
+				return func(next http.Handler) http.Handler {
+					return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+						http.Error(w, "authentication system unavailable", http.StatusServiceUnavailable)
+					})
+				}, alwaysReady
+			}
+			validatorOpts = append(validatorOpts, auth.WithHTTPClient(httpClient))
+			logger.Info("OIDC JWKS fetcher configured with custom CA", "caFile", cfg.Auth.OIDCCaFile)
+		}
+		if cfg.Auth.EnableReplayProtection {
+			validatorOpts = append(validatorOpts, auth.WithReplayCache(auth.NewReplayCache(10*time.Minute)))
+		}
+		logger.Info("auth mode: OIDC/JWKS", "providers", len(ac.JWT))
 	}
 	validatorOpts = append(validatorOpts, auth.WithCBMetrics(reg.CircuitBreakerState))
 	validator, err := auth.NewJWTValidator(authCfg, validatorOpts...)
