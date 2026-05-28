@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"context"
+
 	"github.com/go-logr/logr"
 	"google.golang.org/adk/agent"
 	"google.golang.org/adk/model"
@@ -49,7 +51,11 @@ func historySanitizer(ctx agent.CallbackContext, req *model.LLMRequest) (*model.
 		return nil, nil
 	}
 
-	logr.FromContextOrDiscard(ctx).Info("history-sanitizer patching orphaned FunctionCalls", "count", len(orphans), "issue", "#1299")
+	var logCtx context.Context = context.Background()
+	if ctx != nil {
+		logCtx = ctx
+	}
+	logr.FromContextOrDiscard(logCtx).Info("history-sanitizer patching orphaned FunctionCalls", "count", len(orphans), "issue", "#1299")
 
 	// Group orphans by content index so we insert one synthetic Content per
 	// source Content, preserving Anthropic's requirement that all tool_results
