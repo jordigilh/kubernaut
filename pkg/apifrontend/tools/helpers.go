@@ -117,14 +117,17 @@ func IsTerminalPhase(phase string) bool {
 // and whether any trimming occurred. The marshal function should serialize
 // the slice to JSON bytes.
 func TrimSliceToFit[T any](items []T) ([]T, bool) {
-	output, _ := json.Marshal(items)
+	output, err := json.Marshal(items)
+	if err != nil {
+		return items, false
+	}
 	if len(output) <= maxToolOutputBytes {
 		return items, false
 	}
 	for len(items) > 1 {
 		items = items[:len(items)-1]
-		output, _ = json.Marshal(items)
-		if len(output) <= maxToolOutputBytes {
+		output, err = json.Marshal(items)
+		if err != nil || len(output) <= maxToolOutputBytes {
 			break
 		}
 	}
