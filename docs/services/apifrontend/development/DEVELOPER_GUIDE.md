@@ -42,7 +42,7 @@ pkg/apifrontend/
   ds/                         — DataStorage ogen client
   handler/                    — HTTP handlers (MCP bridge, Agent Card, router)
   httputil/                   — RFC 7807, IP extraction
-  ka/                         — KA REST + MCP SDK client
+  ka/                         — KA MCP SDK client (REST retained for health check only)
   launcher/                   — A2A JSON-RPC handler (ADK executor)
   logging/                    — logr/zap logger setup
   metrics/                    — Prometheus registry (af_* prefix)

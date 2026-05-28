@@ -750,35 +750,27 @@ AF imports from the kubernaut monorepo (`github.com/jordigilh/kubernaut`):
 |-----------|---------|---------|
 | controller-runtime | CRD management, reconcilers, leader election | v0.19+ |
 | LangChainGo (or direct Anthropic SDK) | LLM provider abstraction | Latest |
-| mcp-go | MCP client for KA interactive sessions (ADR-014) | Latest |
+| mcp-go | MCP client for all KA communication (autonomous, observer, interactive) | Latest |
 | go-jose/v4 | JWT validation, JWKS fetching | v4.x |
 | prometheus/client_golang | Metrics registration | v1.20+ |
 | zap | Structured logging | v1.27+ |
 
-### KA Communication (ADR-014: Hybrid REST + MCP)
+### KA Communication (MCP-only — supersedes ADR-014)
 
-#### Autonomous flow — REST API
+> **Migration note (2026-05-27):** ADR-014 (Hybrid REST + MCP) has been superseded
+> by MCP-only communication per kubernaut#1326. All investigation modes (autonomous,
+> observer, interactive) now use KA's MCP endpoint exclusively.
 
-All endpoints verified on `development/v1.5`:
+#### MCP client
 
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `/api/v1/incident/analyze` | POST | Start investigation session (returns session_id) |
-| `/api/v1/incident/session/{id}` | GET | Poll session status |
-| `/api/v1/incident/session/{id}/result` | GET | Get completed investigation result (RCA payload) |
-| `/api/v1/incident/session/{id}/cancel` | POST | Cancel active investigation (returns 409 if terminal) |
-| `/api/v1/incident/session/{id}/snapshot` | GET | Session snapshot for reconnection (returns 409 if in-progress) |
-| `/api/v1/incident/session/{id}/stream` | GET | SSE event stream of investigation progress (tool calls, reasoning) |
+AF connects to KA's MCP endpoint (`/api/v1/mcp/`) with the user's JWT for authentication.
 
-#### Interactive flow — MCP client
-
-AF connects to KA's MCP endpoint (`/api/v1/mcp/`) with the user's JWT. Two tools available:
-
-**`kubernaut_investigate` (6 actions):**
+**`kubernaut_investigate` tool actions:**
 
 | Action | Purpose | Output status |
 |--------|---------|---------------|
 | `start` | Begin new interactive investigation | `session_started` |
+| `start_autonomous` | Begin autonomous investigation (non-blocking) | `autonomous_started` |
 | `takeover` | Take over running autonomous investigation | `takeover_started` |
 | `message` | Send user follow-up to LLM | `message_sent` |
 | `complete` | End session, trigger workflow execution | `completed` |
@@ -789,28 +781,30 @@ AF connects to KA's MCP endpoint (`/api/v1/mcp/`) with the user's JWT. Two tools
 - Input: `{rr_id, workflow_id, kind, name, namespace}`
 - Enrichment runs internally before workflow selection
 
-Streaming during interactive sessions flows via MCP `ServerSession.Log` notifications on the same connection — no separate SSE subscription needed.
+**Streaming:** LLM responses, tool calls, and session events flow via MCP `ServerSession.Log`
+notifications on the same SSE connection — single connection for both request and response streaming.
+
+**Autonomous mode:** `HandleInvestigationMCP` calls `start_autonomous`, receives a session ID
+immediately (non-blocking), and registers the session in a `MonitorRegistry` for background
+lifecycle management. Events are streamed via `LoggingMessage` notifications.
+
+**Observer mode:** AF subscribes to the same MCP notification stream to show real-time reasoning
+and actions to the user, while KA runs autonomously.
+
+**Interactive mode:** User-driven session with streaming via MCP notifications per turn.
 
 #### CRD watches
 
 AF watches RR/AA/SP CRDs for pipeline state transitions (SP complete, AA created, RR phase changes). These provide context outside KA's visibility.
 
-#### Streaming strategy (tri-source)
+#### Streaming strategy
 
 | Source | What it provides | When used |
 |--------|-----------------|-----------|
-| KA REST `/stream` | Investigation tool calls, reasoning, findings | Autonomous observation |
-| KA MCP notifications | Interactive LLM responses, tool calls | Interactive session (takeover/message) |
+| KA MCP notifications | Investigation reasoning, tool calls, findings | All modes (autonomous, observer, interactive) |
 | CRD watches | Pipeline state (SP→AA→RR phases) | Always (pipeline context) |
-| KA `/snapshot` + status poll | Reconnection state reconstruction | After connection drop |
 
 AF authenticates to KA by forwarding the user's original Keycloak JWT in the `Authorization` header.
-
-**Poll configuration:**
-- Default interval: 5s (configurable via `kubernautAgent.pollInterval` in Helm values)
-- Circuit breaker: 5 consecutive failures → open (30s half-open timeout, 1 success to close)
-- Timeout per poll: 10s
-- Backoff on error: exponential (1s, 2s, 4s, 8s, capped at 30s)
 
 **Throughput ceiling:** With Tier 2 global concurrency = 10 and average triage duration = 15s, the system supports ~40 triages/minute at steady state. Exceeding this queues requests behind the semaphore (HTTP 429 after configurable wait timeout).
 
@@ -825,7 +819,7 @@ AF authenticates to KA by forwarding the user's original Keycloak JWT in the `Au
 | #1014 | `signal_mode=manual` in SP/AA enums | Open | Yes (E2E) |
 | #1015 | `severity=unknown` in DataStorage enum | Open | Yes (E2E) |
 | #1009 | Pattern B JWT trust-boundary (AF→KA identity delegation) | Open | Yes (E2E) |
-| #874 | KA interactive session (resolved via MCP endpoint per ADR-014; no new REST endpoints needed) | Open | No (MCP surface exists) |
+| #874 | KA interactive session (resolved via MCP endpoint; no REST endpoints needed) | Open | No (MCP surface exists) |
 | #1017 | LLM-derived severity as distinct field | Open | No (enhancement) |
 | #893 | KA NetworkPolicy allows AF ingress | Closed | N/A |
 
@@ -890,8 +884,8 @@ agentCard:
 | `server.port` | `8443` | No | HTTP listen port. TLS termination is handled by ingress/service mesh. |
 | `agent.gcpProject` | (empty) | Yes (prod) | GCP project for Vertex AI LLM calls. |
 | `agent.gcpRegion` | `us-central1` | No | GCP region for Vertex AI endpoints. |
-| `agent.kaBaseURL` | `http://localhost:8080` | Yes (prod) | Base URL of the Kubernaut Agent backend. |
-| `agent.kaMCPEndpoint` | `http://localhost:8080/api/v1/mcp/` | Yes (prod) | MCP endpoint for the Kubernaut Agent. |
+| `agent.kaBaseURL` | `http://localhost:8080` | Yes (prod) | Base URL of the Kubernaut Agent backend. **Deprecated** — retained for health-check readiness probes only; investigation flows now use MCP exclusively. |
+| `agent.kaMCPEndpoint` | `http://localhost:8080/api/v1/mcp/` | Yes (prod) | MCP endpoint for the Kubernaut Agent (primary communication channel). |
 | `agent.dsBaseURL` | `http://localhost:9090` | Yes (prod) | Base URL of the audit/data store service. |
 | `mcp.enabled` | `false` | No | Set to `true` to enable MCP tool stubs. When `false`, `/mcp` returns 501. |
 | `agentCard.url` | `https://localhost:{port}` | No | External-facing URL published in the agent card. Derived from `server.port` if left empty. |
