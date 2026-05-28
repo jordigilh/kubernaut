@@ -53,7 +53,7 @@ func NewEventLogBridge(events <-chan session.InvestigationEvent, logFn LogFunc, 
 }
 
 type logEnvelope struct {
-	EventType string          `json:"event_type"`
+	EventType string          `json:"type"`
 	Seq       int64           `json:"seq"`
 	Turn      int             `json:"turn"`
 	Phase     string          `json:"phase,omitempty"`

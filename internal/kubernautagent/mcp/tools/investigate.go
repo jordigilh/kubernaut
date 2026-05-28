@@ -279,6 +279,13 @@ func NewInvestigateTool(sessions mcpinternal.SessionManager, runner Investigator
 	return t
 }
 
+// SubscribeEvents activates the LazySink for the given investigation session
+// and returns the event channel. Used by registration.go to wire EventLogBridge
+// for live event streaming via MCP LoggingMessage (BR-MCP-003).
+func (t *InvestigateTool) SubscribeEvents(ctx context.Context, sessionID string) (<-chan session.InvestigationEvent, error) {
+	return t.autoMgr.Subscribe(ctx, sessionID)
+}
+
 // getSessionMutex returns a per-rrID mutex for serializing concurrent requests.
 func (t *InvestigateTool) getSessionMutex(rrID string) *sync.Mutex {
 	val, _ := t.sessionMu.LoadOrStore(rrID, &sync.Mutex{})
@@ -349,12 +356,14 @@ func (t *InvestigateTool) handleStart(ctx context.Context, input InvestigateInpu
 	// via InteractiveHold — skip TransitionToUserDriving below to avoid cancelling
 	// the RCA goroutine prematurely.
 	var launchedPending bool
+	var investigationSessionID string
 	if pendingID, hasPending := t.autoMgr.FindPendingByRemediationID(input.RRID); hasPending {
 		if launchErr := t.autoMgr.LaunchDeferredInvestigation(pendingID); launchErr != nil {
 			t.logger.Error(launchErr, "start: failed to launch deferred investigation",
 				"rr_id", input.RRID, "pending_session_id", pendingID)
 		} else {
 			launchedPending = true
+			investigationSessionID = pendingID
 		}
 	}
 
@@ -426,8 +435,9 @@ func (t *InvestigateTool) handleStart(ctx context.Context, input InvestigateInpu
 	t.storeReconstructedContext(ctx, input.RRID, sess.SessionID)
 
 	return InvestigateOutput{
-		SessionID: sess.SessionID,
-		Status:    "started",
+		SessionID:              sess.SessionID,
+		Status:                 "started",
+		InvestigationSessionID: investigationSessionID,
 	}, nil
 }
 

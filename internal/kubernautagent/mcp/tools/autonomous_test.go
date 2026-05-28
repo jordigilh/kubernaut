@@ -281,12 +281,12 @@ var _ = Describe("kubernaut_investigate — EventChannel→Log bridge (#1326 BR-
 
 			var envelope map[string]interface{}
 			Expect(json.Unmarshal(msg.Data, &envelope)).To(Succeed())
-			Expect(envelope["event_type"]).To(Equal("reasoning_delta"))
+			Expect(envelope["type"]).To(Equal("reasoning_delta"))
 		})
 	})
 
 	Describe("UT-KA-1326-011: tool_call_start event streamed as LoggingMessage (SI-4)", func() {
-		It("should call Log with data containing event_type tool_call_start", func() {
+		It("should call Log with data containing type tool_call_start", func() {
 			eventCh := make(chan session.InvestigationEvent, 10)
 			sink := &mockLogSink{}
 
@@ -306,12 +306,12 @@ var _ = Describe("kubernaut_investigate — EventChannel→Log bridge (#1326 BR-
 
 			var envelope map[string]interface{}
 			Expect(json.Unmarshal(sink.Messages()[0].Data, &envelope)).To(Succeed())
-			Expect(envelope["event_type"]).To(Equal("tool_call_start"))
+			Expect(envelope["type"]).To(Equal("tool_call_start"))
 		})
 	})
 
 	Describe("UT-KA-1326-012: tool_result event streamed as LoggingMessage (SI-4)", func() {
-		It("should call Log with data containing event_type tool_result", func() {
+		It("should call Log with data containing type tool_result", func() {
 			eventCh := make(chan session.InvestigationEvent, 10)
 			sink := &mockLogSink{}
 
@@ -331,7 +331,7 @@ var _ = Describe("kubernaut_investigate — EventChannel→Log bridge (#1326 BR-
 
 			var envelope map[string]interface{}
 			Expect(json.Unmarshal(sink.Messages()[0].Data, &envelope)).To(Succeed())
-			Expect(envelope["event_type"]).To(Equal("tool_result"))
+			Expect(envelope["type"]).To(Equal("tool_result"))
 		})
 	})
 
@@ -356,7 +356,7 @@ var _ = Describe("kubernaut_investigate — EventChannel→Log bridge (#1326 BR-
 
 			var envelope map[string]interface{}
 			Expect(json.Unmarshal(sink.Messages()[0].Data, &envelope)).To(Succeed())
-			Expect(envelope["event_type"]).To(Equal("complete"))
+			Expect(envelope["type"]).To(Equal("complete"))
 		})
 	})
 
@@ -383,7 +383,7 @@ var _ = Describe("kubernaut_investigate — EventChannel→Log bridge (#1326 BR-
 
 			var envelope map[string]interface{}
 			Expect(json.Unmarshal(msg.Data, &envelope)).To(Succeed())
-			Expect(envelope["event_type"]).To(Equal("error"))
+			Expect(envelope["type"]).To(Equal("error"))
 		})
 	})
 

@@ -29,9 +29,10 @@ type InvestigateInput struct {
 
 // InvestigateOutput is the response returned by the kubernaut_investigate tool.
 type InvestigateOutput struct {
-	SessionID string `json:"session_id"`
-	Status    string `json:"status"`
-	Response  string `json:"response,omitempty"`
+	SessionID              string `json:"session_id"`
+	Status                 string `json:"status"`
+	Response               string `json:"response,omitempty"`
+	InvestigationSessionID string `json:"investigation_session_id,omitempty"`
 }
 
 // Status mode constants for StatusOutput.Mode.
