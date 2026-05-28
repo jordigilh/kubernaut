@@ -53,9 +53,10 @@ type SeverityTriageConfig struct {
 
 // ResilienceConfig holds per-dependency circuit breaker and retry settings.
 type ResilienceConfig struct {
-	KA  DependencyConfig `yaml:"ka"`
-	DS  DependencyConfig `yaml:"ds"`
-	K8s DependencyConfig `yaml:"k8s"`
+	KA         DependencyConfig `yaml:"ka"`
+	DS         DependencyConfig `yaml:"ds"`
+	K8s        DependencyConfig `yaml:"k8s"`
+	Prometheus DependencyConfig `yaml:"prometheus"`
 }
 
 // DependencyConfig holds resilience parameters for a single downstream dependency.
@@ -267,6 +268,10 @@ func DefaultConfig() *Config {
 				CBFailureThreshold: 5,
 				RetryMax:           0,
 				RetryableStatuses:  []int{},
+			},
+			Prometheus: DependencyConfig{
+				ConnectTimeout: 5 * time.Second,
+				RequestTimeout: 10 * time.Second,
 			},
 		},
 		RBAC: RBACConfig{

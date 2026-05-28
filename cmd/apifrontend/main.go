@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -547,7 +548,17 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 			deps.CAWatchers = append(deps.CAWatchers, caWatcherEntry{name: "prom-ca", watcher: promWatcher})
 		}
 
-		promHTTPClient := &http.Client{Transport: promTransport}
+		if cfg.Resilience.Prometheus.ConnectTimeout > 0 {
+			if t, ok := promTransport.(*http.Transport); ok {
+				t = t.Clone()
+				t.DialContext = (&net.Dialer{Timeout: cfg.Resilience.Prometheus.ConnectTimeout}).DialContext
+				promTransport = t
+			}
+		}
+		promHTTPClient := &http.Client{
+			Transport: promTransport,
+			Timeout:   cfg.Resilience.Prometheus.RequestTimeout,
+		}
 		if cfg.SeverityTriage.PrometheusBearerTokenFile != "" {
 			promHTTPClient.Transport = &bearerTokenTransport{
 				base:      promTransport,
@@ -737,10 +748,18 @@ func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps,
 }
 
 // buildResilientTransport wraps a base transport with retry + circuit breaker.
+// ConnectTimeout is applied via net.Dialer on the underlying http.Transport.
 // Returns the CB transport for health checking.
 func buildResilientTransport(base http.RoundTripper, depCfg *config.DependencyConfig, name string, reg *metrics.Registry, auditor audit.Emitter) *resilience.CircuitBreakerTransport {
 	if base == nil {
 		base = http.DefaultTransport
+	}
+	if depCfg.ConnectTimeout > 0 {
+		if t, ok := base.(*http.Transport); ok {
+			t = t.Clone()
+			t.DialContext = (&net.Dialer{Timeout: depCfg.ConnectTimeout}).DialContext
+			base = t
+		}
 	}
 	retryRT := resilience.NewRetryTransport(base, &resilience.RetryConfig{
 		MaxAttempts:       depCfg.RetryMax + 1,
