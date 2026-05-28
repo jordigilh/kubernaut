@@ -178,10 +178,18 @@ func filterByAPIGroup(mappings []*meta.RESTMapping, kind, apiGroup string) ([]*m
 		return mappings, nil
 	}
 
+	quotedGroups := make([]string, len(groups))
+	for i, g := range groups {
+		if g == "" {
+			quotedGroups[i] = `"" (core API)`
+		} else {
+			quotedGroups[i] = `"` + g + `"`
+		}
+	}
 	return nil, fmt.Errorf(
-		"kind %q is ambiguous — it exists in %d API groups: [%s]. "+
-			"Retry with api_group set to the intended group",
-		kind, len(groups), strings.Join(groups, ", "))
+		"kind %q is ambiguous — it exists in %d API groups: %s. "+
+			"Retry with api_group set to one of these values",
+		kind, len(groups), strings.Join(quotedGroups, ", "))
 }
 
 func distinctGroups(mappings []*meta.RESTMapping) []string {
