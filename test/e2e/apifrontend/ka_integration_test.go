@@ -40,15 +40,13 @@ var _ = Describe("KA Integration (AF -> KA -> DS -> mock-LLM)", Label("e2e", "ph
 	}
 
 	// -----------------------------------------------------------------------
-	// AF -> KA Connectivity (REST)
+	// AF -> KA Connectivity (MCP-only)
 	// -----------------------------------------------------------------------
 	Context("TC-E2E-KA: AF -> KA Connectivity", func() {
 
 		It("TC-E2E-KA-01: kubernaut_investigate proxies to KA successfully", func() {
 			status, result := mcpToolCall("e2e-ka-01", "kubernaut_investigate", map[string]interface{}{
-				"namespace": "default",
-				"name":      "test-pod",
-				"kind":      "Pod",
+				"rr_id": "e2e-connectivity-test-rr",
 			})
 
 			Expect(status).NotTo(Equal(http.StatusBadGateway),
@@ -74,9 +72,7 @@ var _ = Describe("KA Integration (AF -> KA -> DS -> mock-LLM)", Label("e2e", "ph
 
 		It("TC-E2E-KA-FLOW-01: kubernaut_investigate returns session_id and status from KA", func() {
 			status, result := mcpToolCall("e2e-ka-flow-01", "kubernaut_investigate", map[string]interface{}{
-				"namespace": "kubernaut-system",
-				"name":      "apifrontend",
-				"kind":      "Deployment",
+				"rr_id": "e2e-flow-01-test-rr",
 			})
 
 			Expect(status).NotTo(Equal(http.StatusBadGateway))
@@ -94,9 +90,7 @@ var _ = Describe("KA Integration (AF -> KA -> DS -> mock-LLM)", Label("e2e", "ph
 
 		It("TC-E2E-KA-FLOW-02: kubernaut_investigate resume by session_id returns status", func() {
 			startStatus, startResult := mcpToolCall("e2e-ka-flow-02a", "kubernaut_investigate", map[string]interface{}{
-				"namespace": "kubernaut-system",
-				"name":      "apifrontend",
-				"kind":      "Deployment",
+				"rr_id": "e2e-flow-02-test-rr",
 			})
 
 			GinkgoWriter.Printf("KA-FLOW-02: mcpToolCall status=%d result=%v\n", startStatus, startResult)
@@ -334,9 +328,7 @@ var _ = Describe("KA Integration (AF -> KA -> DS -> mock-LLM)", Label("e2e", "ph
 		It("TC-E2E-MULTI-01: investigate -> list_workflows within single auth session", func() {
 			// Step 1: Run merged investigation via KA (start + stream in one call)
 			status1, startResult := mcpToolCall("e2e-multi-01a", "kubernaut_investigate", map[string]interface{}{
-				"namespace": "default",
-				"name":      "test-pod",
-				"kind":      "Pod",
+				"rr_id": "e2e-multi-01-test-rr",
 			})
 			Expect(status1).NotTo(Equal(http.StatusBadGateway), "Step 1 (kubernaut_investigate) returned 502")
 

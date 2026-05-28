@@ -63,9 +63,7 @@ var _ = Describe("MCP SSE Responses (G2)", Label("e2e", "phase4", "g2"), func() 
 		callBody := buildJSONRPC(fmt.Sprintf("sse-prog-02-%d", time.Now().UnixNano()), "tools/call", map[string]interface{}{
 			"name": "kubernaut_investigate",
 			"arguments": map[string]interface{}{
-				"namespace": "default",
-				"name":      "test-pod",
-				"kind":      "Pod",
+				"rr_id": "e2e-sse-prog-test-rr",
 			},
 		})
 		req, err := http.NewRequest(http.MethodPost, baseURL+"/mcp", strings.NewReader(callBody))
