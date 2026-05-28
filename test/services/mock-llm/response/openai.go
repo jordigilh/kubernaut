@@ -167,9 +167,13 @@ func buildToolArguments(toolName string, cfg scenarios.MockScenarioConfig) map[s
 			"kind": cfg.ResourceKind, "namespace": cfg.ResourceNS, "name": cfg.ResourceName,
 		}
 	case openai.ToolKubectlGetYAML, openai.ToolKubectlGetByName:
-		return map[string]interface{}{
+		args := map[string]interface{}{
 			"kind": cfg.ResourceKind, "name": cfg.ResourceName, "namespace": cfg.ResourceNS,
 		}
+		if cfg.APIGroup != "" {
+			args["api_group"] = cfg.APIGroup
+		}
+		return args
 	case openai.ToolSubmitResult:
 		return rcaOnlyJSON(cfg)
 	case openai.ToolSubmitResultWithWorkflow:
