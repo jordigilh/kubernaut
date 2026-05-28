@@ -136,6 +136,16 @@ func (h *Handler) IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(
 		sessionID, err = h.sessions.StartInvestigation(ctx, investigateFn, metadata)
 	}
 	if err != nil {
+		if errors.Is(err, session.ErrMaxInvestigationsReached) {
+			h.logger.Info("investigation rejected: max concurrent investigations reached")
+			return &agentclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON{
+				Type:     "https://kubernaut.ai/problems/capacity-exhausted",
+				Title:    "Capacity Exhausted",
+				Detail:   "maximum concurrent investigations reached, retry later",
+				Status:   500,
+				Instance: "/api/v1/incident/analyze",
+			}, nil
+		}
 		h.logger.Error(err, "failed to start investigation")
 		return &agentclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON{
 			Type:     "https://kubernaut.ai/problems/internal-error",

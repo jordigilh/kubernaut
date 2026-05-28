@@ -78,16 +78,21 @@ var ErrSessionNotFound = errors.New("session not found")
 // that has already reached a terminal state (completed, cancelled, or failed).
 var ErrSessionTerminal = errors.New("session is in terminal state")
 
+// ErrMaxInvestigationsReached is returned when the store has reached its
+// configured maximum number of concurrent (non-terminal) investigations (M2).
+var ErrMaxInvestigationsReached = errors.New("maximum concurrent investigations reached")
+
 // Store provides thread-safe session storage with TTL-based cleanup.
 // Terminal sessions (Completed, Failed, Cancelled) are evicted at TTL.
 // Non-terminal sessions (Pending, Running) are evicted at MaxSessionAge
 // as a safety net to prevent unbounded memory growth.
 type Store struct {
-	mu            sync.RWMutex
-	sessions      map[string]*Session
-	ttl           time.Duration
-	maxSessionAge time.Duration
-	logger        logr.Logger
+	mu             sync.RWMutex
+	sessions       map[string]*Session
+	ttl            time.Duration
+	maxSessionAge  time.Duration
+	maxConcurrent  int
+	logger         logr.Logger
 }
 
 // StoreOption configures optional Store behaviour.
@@ -102,6 +107,13 @@ func WithLogger(l logr.Logger) StoreOption {
 // Must be >= TTL. Defaults to 2 * TTL if not set.
 func WithMaxSessionAge(d time.Duration) StoreOption {
 	return func(s *Store) { s.maxSessionAge = d }
+}
+
+// WithMaxConcurrent sets the maximum number of concurrent (non-terminal)
+// investigations. When the cap is reached, Create returns
+// ErrMaxInvestigationsReached. A value of 0 disables the cap.
+func WithMaxConcurrent(n int) StoreOption {
+	return func(s *Store) { s.maxConcurrent = n }
 }
 
 // NewStore creates a new session store with the given TTL for cleanup.
@@ -123,6 +135,7 @@ func NewStore(ttl time.Duration, opts ...StoreOption) *Store {
 }
 
 // Create stores a new session and returns its ID.
+// Returns ErrMaxInvestigationsReached when the concurrent cap is hit.
 func (s *Store) Create() (string, error) {
 	id := uuid.New().String()
 	sess := &Session{
@@ -131,6 +144,18 @@ func (s *Store) Create() (string, error) {
 		CreatedAt: time.Now(),
 	}
 	s.mu.Lock()
+	if s.maxConcurrent > 0 {
+		active := 0
+		for _, existing := range s.sessions {
+			if !IsTerminal(existing.Status) {
+				active++
+			}
+		}
+		if active >= s.maxConcurrent {
+			s.mu.Unlock()
+			return "", ErrMaxInvestigationsReached
+		}
+	}
 	s.sessions[id] = sess
 	s.mu.Unlock()
 	return id, nil
