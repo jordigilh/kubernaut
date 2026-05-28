@@ -171,6 +171,7 @@ type ServerConfig struct {
 	HealthAddr            string              `yaml:"healthAddr"`
 	MetricsAddr           string              `yaml:"metricsAddr"`
 	DisableProfiling      bool                `yaml:"disableProfiling"`
+	DisableAdminEndpoints bool                `yaml:"disableAdminEndpoints"`
 	MaxConcurrentRequests int                 `yaml:"maxConcurrentRequests"`
 	TLS                   sharedtls.TLSConfig `yaml:"tls,omitempty"`
 	TLSProfile            string              `yaml:"tlsProfile,omitempty"`
@@ -183,6 +184,7 @@ type RateLimitConfig struct {
 	Burst             int           `yaml:"burst"`
 	CleanupInterval   time.Duration `yaml:"cleanupInterval"`
 	MaxAge            time.Duration `yaml:"maxAge"`
+	TrustedProxyCIDRs []string      `yaml:"trustedProxyCIDRs"`
 }
 
 type SessionConfig struct {
@@ -610,8 +612,10 @@ func DefaultConfig() *Config {
 		Runtime: RuntimeConfig{
 			Logging: internalconfig.DefaultLoggingConfig(),
 			Server: ServerConfig{
-				Address: "0.0.0.0", Port: 8080, HealthAddr: ":8081", MetricsAddr: ":9090",
-				MaxConcurrentRequests: 100,
+			Address: "0.0.0.0", Port: 8443, HealthAddr: ":8081", MetricsAddr: ":9090",
+			DisableProfiling:      true,
+			DisableAdminEndpoints: true,
+			MaxConcurrentRequests: 100,
 				RateLimit: RateLimitConfig{
 					RequestsPerSecond: 5,
 					Burst:             10,

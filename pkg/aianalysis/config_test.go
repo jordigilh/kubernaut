@@ -53,7 +53,7 @@ var _ = Describe("AIAnalysis Config - Unit Tests", Label("config", "validation",
 			cfg := config.DefaultConfig()
 			Expect(cfg.Controller.MetricsAddr).To(Equal(":9090"))
 			Expect(cfg.Controller.HealthProbeAddr).To(Equal(":8081"))
-			Expect(cfg.Agent.URL).To(Equal("http://kubernaut-agent:8080"))
+			Expect(cfg.Agent.URL).To(Equal("https://kubernaut-agent:8443"))
 			Expect(cfg.Agent.Timeout).To(Equal(180 * time.Second))
 			Expect(cfg.Agent.SessionPollInterval).To(Equal(15 * time.Second))
 			Expect(cfg.DataStorage.URL).To(Equal("http://data-storage-service:8080"))
@@ -77,7 +77,7 @@ var _ = Describe("AIAnalysis Config - Unit Tests", Label("config", "validation",
 			Expect(err).NotTo(HaveOccurred())
 			Expect(cfg).NotTo(BeNil())
 			Expect(cfg.Validate()).To(Succeed())
-			Expect(cfg.Agent.URL).To(Equal("http://kubernaut-agent:8080"))
+			Expect(cfg.Agent.URL).To(Equal("https://kubernaut-agent:8443"))
 		})
 
 		It("should return defaults when path is empty", func() {
@@ -90,7 +90,7 @@ var _ = Describe("AIAnalysis Config - Unit Tests", Label("config", "validation",
 		It("should return defaults gracefully when file does not exist", func() {
 			cfg, err := config.LoadFromFile("/nonexistent/path/config.yaml")
 			Expect(cfg).NotTo(BeNil())
-			Expect(cfg.Agent.URL).To(Equal("http://kubernaut-agent:8080"))
+			Expect(cfg.Agent.URL).To(Equal("https://kubernaut-agent:8443"))
 			_ = err
 		})
 

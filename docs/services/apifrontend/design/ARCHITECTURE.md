@@ -884,8 +884,8 @@ agentCard:
 | `server.port` | `8443` | No | HTTP listen port. TLS termination is handled by ingress/service mesh. |
 | `agent.gcpProject` | (empty) | Yes (prod) | GCP project for Vertex AI LLM calls. |
 | `agent.gcpRegion` | `us-central1` | No | GCP region for Vertex AI endpoints. |
-| `agent.kaBaseURL` | `http://localhost:8080` | Yes (prod) | Base URL of the Kubernaut Agent backend. **Deprecated** — retained for health-check readiness probes only; investigation flows now use MCP exclusively. |
-| `agent.kaMCPEndpoint` | `http://localhost:8080/api/v1/mcp/` | Yes (prod) | MCP endpoint for the Kubernaut Agent (primary communication channel). |
+| `agent.kaBaseURL` | `https://localhost:8443` | Yes (prod) | Base URL of the Kubernaut Agent backend. **Deprecated** — retained for health-check readiness probes only; investigation flows now use MCP exclusively. |
+| `agent.kaMCPEndpoint` | `https://localhost:8443/api/v1/mcp/` | Yes (prod) | MCP endpoint for the Kubernaut Agent (primary communication channel). |
 | `agent.dsBaseURL` | `http://localhost:9090` | Yes (prod) | Base URL of the audit/data store service. |
 | `mcp.enabled` | `false` | No | Set to `true` to enable MCP tool stubs. When `false`, `/mcp` returns 501. |
 | `agentCard.url` | `https://localhost:{port}` | No | External-facing URL published in the agent card. Derived from `server.port` if left empty. |
@@ -903,8 +903,8 @@ data:
       port: 8443
     agent:
       gcpProject: "prod-project"
-      kaBaseURL: "http://kubernaut-agent:8080"
-      kaMCPEndpoint: "http://kubernaut-agent:8080/api/v1/mcp/"
+      kaBaseURL: "https://kubernaut-agent:8443"
+      kaMCPEndpoint: "https://kubernaut-agent:8443/api/v1/mcp/"
       dsBaseURL: "http://data-storage:9090"
     mcp:
       enabled: true
