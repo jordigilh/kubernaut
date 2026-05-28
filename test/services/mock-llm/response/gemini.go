@@ -179,6 +179,23 @@ func HasFunctionResponse(contents []GeminiContent) bool {
 	return false
 }
 
+// LastContentIsFunctionResponse returns true if the final content entry in the
+// conversation is a FunctionResponse. This indicates the ADK just executed a
+// tool in the current iteration; the mock-LLM should stop repeating tool calls
+// to avoid an infinite loop (issue #1189).
+func LastContentIsFunctionResponse(contents []GeminiContent) bool {
+	if len(contents) == 0 {
+		return false
+	}
+	last := contents[len(contents)-1]
+	for _, p := range last.Parts {
+		if p.FunctionResponse != nil {
+			return true
+		}
+	}
+	return false
+}
+
 // ExtractFieldFromFunctionResponse scans Gemini contents for a FunctionResponse
 // with the given tool name and extracts a top-level string field from its JSON
 // response object. Returns empty string if not found.
