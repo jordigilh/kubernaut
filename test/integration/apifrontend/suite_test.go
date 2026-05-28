@@ -534,14 +534,11 @@ timeoutSeconds: 120
 				},
 			},
 		},
-		Kubernetes:           auth.KubernetesAuthConfig{Enabled: true},
 		AllowInsecureIssuers: true,
 	}
 
-	tokenReviewer := auth.NewTokenReviewer(k8sClientset)
 	jwtValidator, err = auth.NewJWTValidator(authCfg,
 		auth.WithHTTPClient(jwksServer.Client()),
-		auth.WithTokenReviewer(tokenReviewer),
 	)
 	Expect(err).NotTo(HaveOccurred())
 

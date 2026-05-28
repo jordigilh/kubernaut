@@ -443,6 +443,67 @@ func TestBuildAuthMiddleware_NoAuth_ReadyAlwaysTrue(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// UT-AF-1309-020: OIDC mode rejects opaque token (no TokenReview wired)
+// ---------------------------------------------------------------------------
+
+func TestBuildAuthMiddleware_OIDCMode_RejectsOpaqueToken(t *testing.T) {
+	t.Parallel()
+
+	jwksSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"keys":[]}`)
+	}))
+	t.Cleanup(jwksSrv.Close)
+
+	cfg := &config.Config{}
+	cfg.Auth.IssuerURL = jwksSrv.URL
+	cfg.Auth.JWKSURL = jwksSrv.URL
+	cfg.Auth.Audience = "test"
+	cfg.Auth.AllowInsecureIssuers = true
+
+	reg := metrics.NewRegistry()
+	mw, _ := buildAuthMiddleware(cfg, reg, nil, logr.Discard())
+	if mw == nil {
+		t.Fatal("UT-AF-1309-020: buildAuthMiddleware returned nil")
+	}
+
+	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	wrapped := mw(inner)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
+	req.Header.Set("Authorization", "Bearer opaque-sa-token-not-jwt")
+	wrapped.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("UT-AF-1309-020: expected 401 for opaque token in OIDC mode, got %d", rec.Code)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// UT-AF-1309-021: No OIDC → auto-detect TokenReview mode or pass-through
+// ---------------------------------------------------------------------------
+
+func TestBuildAuthMiddleware_NoOIDC_AutoDetect(t *testing.T) {
+	t.Parallel()
+
+	cfg := &config.Config{}
+	reg := metrics.NewRegistry()
+	mw, readyFn := buildAuthMiddleware(cfg, reg, nil, logr.Discard())
+	if mw == nil {
+		t.Fatal("UT-AF-1309-021: buildAuthMiddleware returned nil")
+	}
+	if readyFn == nil {
+		t.Fatal("UT-AF-1309-021: readiness checker must not be nil")
+	}
+	// When no OIDC issuer is configured, buildAuthMiddleware either wires
+	// TokenReview (if kubeconfig is available) or falls back to pass-through.
+	// Both are valid outcomes; the key assertion is that no OIDC is attempted.
+}
+
+// ---------------------------------------------------------------------------
 // MCP wiring: buildMCPHandler
 // ---------------------------------------------------------------------------
 

@@ -979,8 +979,7 @@ var _ = Describe("Auth", func() {
 				reviewer := auth.NewTokenReviewer(fakeClient)
 
 				cfg := auth.Config{
-					JWT:        []auth.ProviderConfig{},
-					Kubernetes: auth.KubernetesAuthConfig{Enabled: true},
+					JWT: []auth.ProviderConfig{},
 				}
 
 				validator, err := auth.NewJWTValidator(cfg, auth.WithTokenReviewer(reviewer))
@@ -1012,6 +1011,118 @@ var _ = Describe("Auth", func() {
 				Expect(json.Unmarshal(rec.Body.Bytes(), &body)).To(Succeed())
 				Expect(body.Username).To(ContainSubstring("system:serviceaccount:"))
 			})
+		})
+	})
+
+	Describe("Auto-detect auth mode (#1309)", func() {
+		It("UT-AF-1309-001: OIDC mode rejects opaque SA token without fallback", func() {
+			kp := newTestKeyPair("key-1309-001")
+			jwksSrv := newJWKSServer(kp.jwks())
+
+			cfg := auth.Config{
+				JWT: []auth.ProviderConfig{
+					{Issuer: auth.IssuerConfig{URL: jwksSrv.URL, JWKSURL: jwksSrv.URL, Audiences: []string{"test"}}},
+				},
+				AllowInsecureIssuers: true,
+			}
+			validator, err := auth.NewJWTValidator(cfg, auth.WithHTTPClient(jwksSrv.Client()))
+			Expect(err).NotTo(HaveOccurred())
+
+			_, err = validator.Validate(context.Background(), "opaque-sa-token-not-jwt")
+			Expect(err).To(MatchError(ContainSubstring("malformed token")))
+		})
+
+		It("UT-AF-1309-002: TokenReview mode accepts opaque SA token via reviewer", func() {
+			fakeClient := newFakeTokenReviewClient("opaque-sa-token", "system:serviceaccount:default:test-sa", []string{"system:serviceaccounts"})
+			reviewer := auth.NewTokenReviewer(fakeClient)
+
+			cfg := auth.Config{
+				JWT: []auth.ProviderConfig{},
+			}
+			validator, err := auth.NewJWTValidator(cfg, auth.WithTokenReviewer(reviewer))
+			Expect(err).NotTo(HaveOccurred())
+
+			identity, err := validator.Validate(context.Background(), "opaque-sa-token")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(identity).NotTo(BeNil())
+			Expect(identity.Username).To(ContainSubstring("system:serviceaccount:"))
+			Expect(identity.IsServiceAccount).To(BeTrue())
+		})
+
+		It("UT-AF-1309-003: TokenReview mode rejects malformed token when reviewer errors", func() {
+			fakeClient := newFakeTokenReviewClient("valid-token", "sa-user", nil)
+			reviewer := auth.NewTokenReviewer(fakeClient)
+
+			cfg := auth.Config{
+				JWT: []auth.ProviderConfig{},
+			}
+			validator, err := auth.NewJWTValidator(cfg, auth.WithTokenReviewer(reviewer))
+			Expect(err).NotTo(HaveOccurred())
+
+			_, err = validator.Validate(context.Background(), "wrong-token")
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("UT-AF-1309-004: OIDC mode returns ErrUnknownIssuer without fallback", func() {
+			kp := newTestKeyPair("key-1309-004")
+			jwksSrv := newJWKSServer(kp.jwks())
+
+			cfg := auth.Config{
+				JWT: []auth.ProviderConfig{
+					{Issuer: auth.IssuerConfig{URL: jwksSrv.URL, JWKSURL: jwksSrv.URL, Audiences: []string{"test"}}},
+				},
+				AllowInsecureIssuers: true,
+			}
+			validator, err := auth.NewJWTValidator(cfg, auth.WithHTTPClient(jwksSrv.Client()))
+			Expect(err).NotTo(HaveOccurred())
+
+			claims := map[string]interface{}{
+				"iss":                "https://unknown-issuer.example.com",
+				"sub":               "alice",
+				"aud":               []string{"test"},
+				"exp":               time.Now().Add(time.Hour).Unix(),
+				"iat":               time.Now().Unix(),
+				"preferred_username": "alice",
+			}
+			token := kp.signToken(claims)
+
+			_, err = validator.Validate(context.Background(), token)
+			Expect(err).To(MatchError(auth.ErrUnknownIssuer))
+		})
+
+		It("UT-AF-1309-005: neither mode returns error when no providers and no reviewer", func() {
+			cfg := auth.Config{
+				JWT: []auth.ProviderConfig{},
+			}
+			validator, err := auth.NewJWTValidator(cfg)
+			Expect(err).NotTo(HaveOccurred())
+
+			_, err = validator.Validate(context.Background(), "any-token")
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("UT-AF-1309-006: AuthMethod returns jwt when OIDC providers configured", func() {
+			kp := newTestKeyPair("key-1309-006")
+			jwksSrv := newJWKSServer(kp.jwks())
+
+			cfg := auth.Config{
+				JWT: []auth.ProviderConfig{{
+					Issuer: auth.IssuerConfig{URL: jwksSrv.URL, JWKSURL: jwksSrv.URL, Audiences: []string{"test"}},
+				}},
+				AllowInsecureIssuers: true,
+			}
+			validator, err := auth.NewJWTValidator(cfg, auth.WithHTTPClient(jwksSrv.Client()))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(validator.AuthMethod()).To(Equal("jwt"))
+		})
+
+		It("UT-AF-1309-007: AuthMethod returns token_review when no OIDC providers", func() {
+			cfg := auth.Config{
+				JWT: []auth.ProviderConfig{},
+			}
+			validator, err := auth.NewJWTValidator(cfg)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(validator.AuthMethod()).To(Equal("token_review"))
 		})
 	})
 })
