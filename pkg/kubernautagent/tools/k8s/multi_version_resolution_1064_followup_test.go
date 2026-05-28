@@ -143,7 +143,7 @@ var _ = Describe("Issue #1064 follow-up: multi-version kind resolution fallback"
 			// API group" or an empty list from the last version tried.
 			// The key assertion: the resolver does NOT return an "unsupported kind" error,
 			// which would indicate RESTMapping(gk) failed with AmbiguousKindError.
-			_, err := resolver.List(context.Background(), apKind, "test-ns")
+			_, err := resolver.List(context.Background(), apKind, "test-ns", "")
 			Expect(err).NotTo(HaveOccurred(),
 				"resolveMappings fallback should return mappings via RESTMappings, not fail with unsupported kind")
 		})
@@ -159,7 +159,7 @@ var _ = Describe("Issue #1064 follow-up: multi-version kind resolution fallback"
 			wrappedMapper := &failResourcesForMapper{delegate: mapper}
 
 			resolver := k8s.NewDynamicResolver(dynClient, wrappedMapper, kindIndex, logr.Discard())
-			result, err := resolver.List(context.Background(), apKind, "demo-mesh-failure")
+			result, err := resolver.List(context.Background(), apKind, "demo-mesh-failure", "")
 			Expect(err).NotTo(HaveOccurred(), "List should succeed via multi-version fallback")
 			data, _ := json.Marshal(result)
 			Expect(string(data)).To(ContainSubstring("deny-all-traffic"),
@@ -177,7 +177,7 @@ var _ = Describe("Issue #1064 follow-up: multi-version kind resolution fallback"
 			wrappedMapper := &failResourcesForMapper{delegate: mapper}
 
 			resolver := k8s.NewDynamicResolver(dynClient, wrappedMapper, kindIndex, logr.Discard())
-			result, err := resolver.Get(context.Background(), apKind, "deny-all-traffic", "demo-mesh-failure")
+			result, err := resolver.Get(context.Background(), apKind, "deny-all-traffic", "demo-mesh-failure", "")
 			Expect(err).NotTo(HaveOccurred(), "Get should succeed via multi-version fallback")
 			data, _ := json.Marshal(result)
 			Expect(string(data)).To(ContainSubstring("deny-all-traffic"),
@@ -195,7 +195,7 @@ var _ = Describe("Issue #1064 follow-up: multi-version kind resolution fallback"
 			wrappedMapper := &failResourcesForMapper{delegate: mapper}
 
 			resolver := k8s.NewDynamicResolver(dynClient, wrappedMapper, kindIndex, logr.Discard())
-			result, err := resolver.Get(context.Background(), apKind, "test-policy", "default")
+			result, err := resolver.Get(context.Background(), apKind, "test-policy", "default", "")
 			Expect(err).NotTo(HaveOccurred(),
 				"kindIndex should provide the security.istio.io group hint for RESTMappings")
 			data, _ := json.Marshal(result)
@@ -212,7 +212,7 @@ var _ = Describe("Issue #1064 follow-up: multi-version kind resolution fallback"
 			wrappedMapper := &failResourcesForMapper{delegate: mapper}
 
 			resolver := k8s.NewDynamicResolver(dynClient, wrappedMapper, emptyKindIndex, logr.Discard())
-			_, err := resolver.List(context.Background(), apKind, "test-ns")
+			_, err := resolver.List(context.Background(), apKind, "test-ns", "")
 			Expect(err).To(HaveOccurred(),
 				"empty kindIndex with failed ResourcesFor should produce an error for CRD kinds")
 			Expect(err.Error()).To(ContainSubstring("unsupported kind"),
@@ -220,8 +220,8 @@ var _ = Describe("Issue #1064 follow-up: multi-version kind resolution fallback"
 		})
 	})
 
-	Describe("UT-MVR-006: Multi-group resolution regression (Subscription)", func() {
-		It("should still resolve Subscription across operators.coreos.com and messaging.knative.dev", func() {
+	Describe("UT-MVR-006: Multi-group resolution with explicit api_group (Subscription, #1311)", func() {
+		It("should resolve Subscription with explicit api_group", func() {
 			scheme := newAmbiguousScheme()
 			olmSub := newOLMSubscription("etcd", "demo-operator")
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, olmSub)
@@ -229,8 +229,8 @@ var _ = Describe("Issue #1064 follow-up: multi-version kind resolution fallback"
 			kindIndex := buildAmbiguousKindIndex()
 
 			resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex, logr.Discard())
-			result, err := resolver.Get(context.Background(), "Subscription", "etcd", "demo-operator")
-			Expect(err).NotTo(HaveOccurred(), "multi-group resolution should still work")
+			result, err := resolver.Get(context.Background(), "Subscription", "etcd", "demo-operator", "operators.coreos.com")
+			Expect(err).NotTo(HaveOccurred(), "explicit api_group should resolve correctly")
 			data, _ := json.Marshal(result)
 			Expect(string(data)).To(ContainSubstring("etcd"),
 				"should find the OLM Subscription named etcd")
@@ -248,7 +248,7 @@ var _ = Describe("Issue #1064 follow-up: multi-version kind resolution fallback"
 			logger, logs := captureLogger()
 
 			resolver := k8s.NewDynamicResolver(dynClient, wrappedMapper, kindIndex, logger)
-			_, err := resolver.List(context.Background(), apKind, "ns")
+			_, err := resolver.List(context.Background(), apKind, "ns", "")
 			Expect(err).NotTo(HaveOccurred())
 
 			hasLog := false
@@ -290,7 +290,7 @@ var _ = Describe("Issue #1064 follow-up: multi-version kind resolution fallback"
 			wrappedMapper := &failResourcesForMapper{delegate: mapper}
 
 			resolver := k8s.NewDynamicResolver(dynClient, wrappedMapper, kindIndex, logr.Discard())
-			result, err := resolver.Get(context.Background(), "Deployment", "api-server", "default")
+			result, err := resolver.Get(context.Background(), "Deployment", "api-server", "default", "")
 			Expect(err).NotTo(HaveOccurred(),
 				"single-version fallback should work normally via RESTMappings")
 			data, _ := json.Marshal(result)
@@ -306,7 +306,7 @@ var _ = Describe("Issue #1064 follow-up: multi-version kind resolution fallback"
 			wrappedMapper := &failResourcesForMapper{delegate: mapper}
 
 			resolver := k8s.NewDynamicResolver(dynClient, wrappedMapper, nil, logr.Discard())
-			_, err := resolver.List(context.Background(), apKind, "test-ns")
+			_, err := resolver.List(context.Background(), apKind, "test-ns", "")
 			Expect(err).To(HaveOccurred(),
 				"nil kindIndex with failed ResourcesFor should produce an error for CRD kinds")
 		})

@@ -27,8 +27,8 @@ import (
 )
 
 var (
-	jqQueryParams = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string","description":"Kubernetes resource kind to query"},"jq_expr":{"type":"string","description":"jq expression to apply to the resource list"}},"required":["kind","jq_expr"]}`)
-	jqCountParams = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string","description":"Kubernetes resource kind to count"},"jq_expr":{"type":"string","description":"jq expression to filter resources before counting"}},"required":["kind","jq_expr"]}`)
+	jqQueryParams = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string","description":"Kubernetes resource kind to query"},"jq_expr":{"type":"string","description":"jq expression to apply to the resource list"},"api_group":{"type":"string","description":"` + apiGroupDesc + `"}},"required":["kind","jq_expr"]}`)
+	jqCountParams = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string","description":"Kubernetes resource kind to count"},"jq_expr":{"type":"string","description":"jq expression to filter resources before counting"},"api_group":{"type":"string","description":"` + apiGroupDesc + `"}},"required":["kind","jq_expr"]}`)
 )
 
 func newJQTools(resolver ResourceResolver) []tools.Tool {
@@ -49,14 +49,15 @@ func (t *jqQueryTool) Parameters() json.RawMessage { return jqQueryParams }
 
 func (t *jqQueryTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
 	var a struct {
-		Kind   string `json:"kind"`
-		JQExpr string `json:"jq_expr"`
+		Kind     string `json:"kind"`
+		JQExpr   string `json:"jq_expr"`
+		APIGroup string `json:"api_group,omitempty"`
 	}
 	if err := json.Unmarshal(args, &a); err != nil {
 		return "", fmt.Errorf("parsing args: %w", err)
 	}
 
-	return runJQ(ctx, t.resolver, a.Kind, a.JQExpr, false)
+	return runJQ(ctx, t.resolver, a.Kind, a.JQExpr, a.APIGroup, false)
 }
 
 // jqCountTool counts resources matching a jq filter expression.
@@ -70,14 +71,15 @@ func (t *jqCountTool) Parameters() json.RawMessage { return jqCountParams }
 
 func (t *jqCountTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
 	var a struct {
-		Kind   string `json:"kind"`
-		JQExpr string `json:"jq_expr"`
+		Kind     string `json:"kind"`
+		JQExpr   string `json:"jq_expr"`
+		APIGroup string `json:"api_group,omitempty"`
 	}
 	if err := json.Unmarshal(args, &a); err != nil {
 		return "", fmt.Errorf("parsing args: %w", err)
 	}
 
-	return runJQ(ctx, t.resolver, a.Kind, a.JQExpr, true)
+	return runJQ(ctx, t.resolver, a.Kind, a.JQExpr, a.APIGroup, true)
 }
 
 const maxJQResults = 10000
@@ -92,8 +94,8 @@ func TruncateJQOutput(output string, limit int) string {
 	return output[:limit] + fmt.Sprintf("\n... [TRUNCATED] JQ output exceeded %d character limit (%d total). Use a more specific jq expression or filter with select().", limit, len(output))
 }
 
-func runJQ(ctx context.Context, resolver ResourceResolver, kind, expr string, countMode bool) (string, error) {
-	resources, err := resolver.List(ctx, kind, "")
+func runJQ(ctx context.Context, resolver ResourceResolver, kind, expr, apiGroup string, countMode bool) (string, error) {
+	resources, err := resolver.List(ctx, kind, "", apiGroup)
 	if err != nil {
 		return "", err
 	}
