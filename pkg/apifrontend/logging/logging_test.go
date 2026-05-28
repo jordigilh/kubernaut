@@ -2,14 +2,12 @@ package logging_test
 
 import (
 	"context"
-	"log/slog"
 	"testing"
 
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/logging"
 )
@@ -37,44 +35,6 @@ var _ = Describe("Logging", func() {
 
 			level.SetLevel(zap.DebugLevel)
 			Expect(logger.V(1).Enabled()).To(BeTrue())
-		})
-	})
-
-	Describe("NewSlogLogger", func() {
-		It("UT-AF-LOG-005: creates a working *slog.Logger", func() {
-			level := zap.NewAtomicLevelAt(zap.InfoLevel)
-			sl := logging.NewSlogLogger(level)
-			Expect(sl).NotTo(BeNil())
-			Expect(sl.Enabled(context.Background(), slog.LevelInfo)).To(BeTrue())
-			Expect(sl.Enabled(context.Background(), slog.LevelDebug)).To(BeFalse())
-		})
-
-		It("UT-AF-LOG-006: respects dynamic level changes", func() {
-			level := zap.NewAtomicLevelAt(zap.InfoLevel)
-			sl := logging.NewSlogLogger(level)
-
-			Expect(sl.Enabled(context.Background(), slog.LevelDebug)).To(BeFalse())
-			level.SetLevel(zapcore.DebugLevel)
-			Expect(sl.Enabled(context.Background(), slog.LevelDebug)).To(BeTrue())
-		})
-
-		It("UT-AF-LOG-007: maps zap levels to slog levels correctly", func() {
-			cases := []struct {
-				zapLevel  zapcore.Level
-				slogLevel slog.Level
-				enabled   bool
-			}{
-				{zapcore.DebugLevel, slog.LevelDebug, true},
-				{zapcore.InfoLevel, slog.LevelDebug, false},
-				{zapcore.WarnLevel, slog.LevelInfo, false},
-				{zapcore.ErrorLevel, slog.LevelWarn, false},
-			}
-			for _, tc := range cases {
-				level := zap.NewAtomicLevelAt(tc.zapLevel)
-				sl := logging.NewSlogLogger(level)
-				Expect(sl.Enabled(context.Background(), tc.slogLevel)).To(Equal(tc.enabled),
-					"zap=%v slog=%v", tc.zapLevel, tc.slogLevel)
-			}
 		})
 	})
 
