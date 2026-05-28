@@ -241,8 +241,8 @@ var _ = Describe("Investigation Event Bridge Wiring (IT-AF-1326)", func() {
 			for _, e := range events {
 				if e.Event != nil && e.Event.Type == audit.EventKADelegated {
 					foundDelegation = true
-					Expect(e.Event.Detail).To(HaveKeyWithValue("delegation_type", "interactive_mcp"),
-						"AU-3: delegation_type must be interactive_mcp")
+					Expect(e.Event.Detail).To(HaveKeyWithValue("delegation_type", "interactive"),
+						"AU-3: delegation_type must be interactive")
 					Expect(e.Event.Detail).To(HaveKeyWithValue("rr_id", "rr-audit-070"),
 						"AU-3: rr_id must be present")
 					Expect(e.Event.Detail).To(HaveKey("session_id"),

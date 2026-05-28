@@ -79,7 +79,7 @@ var _ = Describe("HandleInvestigationMCP — #1326 BR-MCP-002 non-blocking MCP i
 
 			Expect(recorder.events).To(HaveLen(1))
 			Expect(recorder.events[0].Type).To(Equal(audit.EventKADelegated))
-			Expect(recorder.events[0].Detail["delegation_type"]).To(Equal("interactive_mcp"))
+			Expect(recorder.events[0].Detail["delegation_type"]).To(Equal("interactive"))
 			Expect(recorder.events[0].Detail["session_id"]).To(Equal("sess-audit-001"))
 		})
 	})
@@ -130,7 +130,7 @@ var _ = Describe("HandleInvestigationMCP — #1326 BR-MCP-002 non-blocking MCP i
 			registry := tools.NewMonitorRegistry()
 			result, err := tools.HandleInvestigationMCPWithRegistry(context.Background(), mockMCP, nil, "", tools.InvestigateMCPArgs{
 				RRID: "rr-monitor-001",
-			}, nil, registry)
+			}, nil, registry, nil)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.SessionID).To(Equal("sess-monitor-001"))
 
@@ -156,7 +156,7 @@ var _ = Describe("HandleInvestigationMCP — #1326 BR-MCP-002 non-blocking MCP i
 			registry := tools.NewMonitorRegistry()
 			_, err := tools.HandleInvestigationMCPWithRegistry(context.Background(), mockMCP, nil, "", tools.InvestigateMCPArgs{
 				RRID: "rr-stop-001",
-			}, nil, registry)
+			}, nil, registry, nil)
 			Expect(err).NotTo(HaveOccurred())
 
 			registry.Stop("sess-stop-001")
@@ -337,8 +337,8 @@ var _ = Describe("bridgeEventsToA2A — #1326 BR-MCP-003 event bridge goroutine"
 
 var _ = Describe("HandleInvestigationMCP — delegation_type audit event", func() {
 
-	Describe("UT-AF-1326-060: audit event uses interactive_mcp delegation type", func() {
-		It("should emit interactive_mcp in the delegation_type field", func() {
+	Describe("UT-AF-1326-060: audit event uses interactive delegation type", func() {
+		It("should emit interactive in the delegation_type field", func() {
 			eventCh := make(chan ka.InvestigationEvent, 10)
 			mockMCP := &ka.MockMCPClient{
 				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
@@ -357,7 +357,7 @@ var _ = Describe("HandleInvestigationMCP — delegation_type audit event", func(
 			}, recorder)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(recorder.events).To(HaveLen(1))
-			Expect(recorder.events[0].Detail["delegation_type"]).To(Equal("interactive_mcp"))
+			Expect(recorder.events[0].Detail["delegation_type"]).To(Equal("interactive"))
 		})
 	})
 })
@@ -395,7 +395,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — AIA polling timeout cap
 			result, err := tools.HandleInvestigationMCPWithRegistry(
 				context.Background(), mockMCP, client, "kubernaut-system",
 				tools.InvestigateMCPArgs{RRID: "rr-timeout-001"},
-				nil, registry,
+				nil, registry, nil,
 			)
 			elapsed := time.Since(start)
 
@@ -422,7 +422,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — AIA polling timeout cap
 			result, err := tools.HandleInvestigationMCPWithRegistry(
 				context.Background(), mockMCP, nil, "",
 				tools.InvestigateMCPArgs{RRID: "rr-nok8s-001"},
-				nil, nil,
+				nil, nil, nil,
 			)
 			elapsed := time.Since(start)
 
@@ -450,7 +450,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — AIA polling timeout cap
 			result, err := tools.HandleInvestigationMCPWithRegistry(
 				context.Background(), mockMCP, client, "",
 				tools.InvestigateMCPArgs{RRID: "rr-nons-001"},
-				nil, nil,
+				nil, nil, nil,
 			)
 			elapsed := time.Since(start)
 
@@ -481,7 +481,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — AIA polling timeout cap
 			result, err := tools.HandleInvestigationMCPWithRegistry(
 				context.Background(), mockMCP, client, "kubernaut-system",
 				tools.InvestigateMCPArgs{RRID: "rr-aia-001"},
-				nil, registry,
+				nil, registry, nil,
 			)
 			elapsed := time.Since(start)
 
@@ -512,7 +512,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — AIA polling timeout cap
 			result, err := tools.HandleInvestigationMCPWithRegistry(
 				ctx, mockMCP, client, "kubernaut-system",
 				tools.InvestigateMCPArgs{RRID: "rr-cancel-001"},
-				nil, nil,
+				nil, nil, nil,
 			)
 			elapsed := time.Since(start)
 
