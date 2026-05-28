@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"sync"
@@ -114,7 +115,7 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 		{"watch", func() (tool.Tool, error) { return tools.NewWatchTool(k8s) }},
 		{"await_session", func() (tool.Tool, error) { return tools.NewAwaitSessionTool(k8s) }},
 		{"investigate", func() (tool.Tool, error) {
-			return tools.NewInvestigateMCPTool(dedicatedC, k8s, cfg.Namespace, cfg.Auditor, cfg.InvestigationRegistry)
+			return tools.NewInvestigateMCPTool(dedicatedC, k8s, cfg.Namespace, cfg.Auditor, cfg.InvestigationRegistry, agentSessionStartedHook(cfg))
 		}},
 		{"discover_workflows", func() (tool.Tool, error) { return tools.NewDiscoverWorkflowsTool(mcpC) }},
 		{"select_workflow", func() (tool.Tool, error) { return tools.NewSelectWorkflowTool(mcpC, cfg.Auditor) }},
@@ -405,5 +406,20 @@ func newAuditToolCallback(auditor audit.Emitter, sessionSvc *session.CRDSessionS
 		})
 
 		return nil, nil
+	}
+}
+
+// agentSessionStartedHook returns a SessionStartedHook for the A2A agent path.
+// Returns nil when SessionService is not configured.
+func agentSessionStartedHook(cfg AgentConfig) tools.SessionStartedHook {
+	if cfg.SessionService == nil {
+		return nil
+	}
+	return func(ctx context.Context, namespace, rrID, sessionID string) error {
+		identity := auth.UserIdentityFromContext(ctx)
+		if identity == nil {
+			return nil
+		}
+		return cfg.SessionService.InitializeSessionByRR(ctx, namespace, rrID, sessionID, identity.Username, identity.Groups)
 	}
 }

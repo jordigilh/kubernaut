@@ -43,6 +43,11 @@ type InvestigateMCPResult struct {
 	Status    string `json:"status"`
 }
 
+// SessionStartedHook is called after a successful StartInvestigation with the
+// session context. Implementations typically create an InvestigationSession CRD.
+// Errors are logged but do not fail the investigation.
+type SessionStartedHook func(ctx context.Context, namespace, rrID, sessionID string) error
+
 // HandleInvestigationMCP starts a dedicated MCP investigation session. When a
 // K8s client and namespace are provided, it first polls the AIAnalysis CRD to
 // wait for AA to submit the investigation to KA (BR-INTERACTIVE-010). After
@@ -55,12 +60,13 @@ type InvestigateMCPResult struct {
 // If no pending session exists, the MCP session still acquires the interactive
 // lease but the Events channel may be nil or empty.
 func HandleInvestigationMCP(ctx context.Context, mcpClient ka.MCPClient, k8sClient dynamic.Interface, namespace string, args InvestigateMCPArgs, auditor audit.Emitter) (InvestigateMCPResult, error) {
-	return HandleInvestigationMCPWithRegistry(ctx, mcpClient, k8sClient, namespace, args, auditor, nil)
+	return HandleInvestigationMCPWithRegistry(ctx, mcpClient, k8sClient, namespace, args, auditor, nil, nil)
 }
 
 // HandleInvestigationMCPWithRegistry is like HandleInvestigationMCP but also
-// registers the session in a MonitorRegistry for lifecycle management.
-func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPClient, k8sClient dynamic.Interface, namespace string, args InvestigateMCPArgs, auditor audit.Emitter, registry *MonitorRegistry) (InvestigateMCPResult, error) {
+// registers the session in a MonitorRegistry for lifecycle management and
+// invokes onStarted (if provided) to create the IS CRD after a successful start.
+func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPClient, k8sClient dynamic.Interface, namespace string, args InvestigateMCPArgs, auditor audit.Emitter, registry *MonitorRegistry, onStarted SessionStartedHook) (InvestigateMCPResult, error) {
 	if args.RRID == "" {
 		return InvestigateMCPResult{}, fmt.Errorf("rr_id is required for MCP investigation")
 	}
@@ -94,9 +100,15 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 				"rr_id":             args.RRID,
 				"session_id":        result.SessionID,
 				"ka_correlation_id": result.SessionID,
-				"delegation_type":   "interactive_mcp",
+				"delegation_type":   "interactive",
 			},
 		})
+	}
+
+	if onStarted != nil && result.SessionID != "" {
+		if hookErr := onStarted(ctx, namespace, args.RRID, result.SessionID); hookErr != nil {
+			_ = launcher.EmitReasoningSafe(ctx, "Warning: IS CRD creation failed, investigation continues")
+		}
 	}
 
 	// Track session in registry before starting goroutine so StopAll can
@@ -266,7 +278,8 @@ func (r *MonitorRegistry) StopAll() {
 // k8sClient and namespace enable AIA CRD polling before starting the
 // investigation (BR-INTERACTIVE-010). Pass nil k8sClient to skip polling.
 // registry is optional; when provided, sessions are tracked for graceful shutdown.
-func NewInvestigateMCPTool(mcpClient ka.MCPClient, k8sClient dynamic.Interface, namespace string, auditor audit.Emitter, registry *MonitorRegistry) (tool.Tool, error) {
+// onStarted is called after a successful start to create the IS CRD.
+func NewInvestigateMCPTool(mcpClient ka.MCPClient, k8sClient dynamic.Interface, namespace string, auditor audit.Emitter, registry *MonitorRegistry, onStarted SessionStartedHook) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name: "kubernaut_investigate",
 		Description: "Investigate an infrastructure incident via MCP. " +
@@ -274,6 +287,6 @@ func NewInvestigateMCPTool(mcpClient ka.MCPClient, k8sClient dynamic.Interface, 
 			"Returns the session ID when the investigation has started. " +
 			"Live progress events stream automatically.",
 	}, func(ctx tool.Context, args InvestigateMCPArgs) (InvestigateMCPResult, error) {
-		return HandleInvestigationMCPWithRegistry(ctx, mcpClient, k8sClient, namespace, args, auditor, registry)
+		return HandleInvestigationMCPWithRegistry(ctx, mcpClient, k8sClient, namespace, args, auditor, registry, onStarted)
 	})
 }

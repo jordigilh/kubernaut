@@ -166,21 +166,10 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 	if dedicatedClient == nil {
 		dedicatedClient = cfg.KAMCPClient
 	}
+	onInvestigateStarted := buildSessionStartedHook(cfg)
 	registerTool(srv, cfg, sem, "kubernaut_investigate", "Investigate an infrastructure incident",
 		func(ctx context.Context, args tools.InvestigateMCPArgs) (any, error) {
-			result, err := tools.HandleInvestigationMCPWithRegistry(ctx, dedicatedClient, cfg.K8sClient, cfg.Namespace, args, cfg.Auditor, cfg.InvestigationRegistry)
-			if err != nil {
-				return result, err
-			}
-			if cfg.SessionInitializer != nil && result.SessionID != "" {
-				identity := auth.UserIdentityFromContext(ctx)
-				if identity != nil {
-					if iErr := cfg.SessionInitializer.InitializeSessionByRR(ctx, cfg.Namespace, args.RRID, result.SessionID, identity.Username, identity.Groups); iErr != nil {
-						cfg.Logger.Error(iErr, "IS CRD initialization failed on investigate", "rr_id", args.RRID, "session_id", result.SessionID)
-					}
-				}
-			}
-			return result, nil
+			return tools.HandleInvestigationMCPWithRegistry(ctx, dedicatedClient, cfg.K8sClient, cfg.Namespace, args, cfg.Auditor, cfg.InvestigationRegistry, onInvestigateStarted)
 		})
 
 	// KA MCP tools
@@ -531,4 +520,21 @@ func usernameFromCtx(ctx context.Context) string {
 		return identity.Username
 	}
 	return "system"
+}
+
+// buildSessionStartedHook returns a SessionStartedHook that creates an IS CRD
+// after a successful StartInvestigation. Returns nil if no SessionInitializer
+// is configured. Both the MCP bridge and A2A agent paths use this to consolidate
+// IS CRD creation in a single place (HandleInvestigationMCPWithRegistry).
+func buildSessionStartedHook(cfg *MCPBridgeConfig) tools.SessionStartedHook {
+	if cfg.SessionInitializer == nil {
+		return nil
+	}
+	return func(ctx context.Context, namespace, rrID, sessionID string) error {
+		identity := auth.UserIdentityFromContext(ctx)
+		if identity == nil {
+			return nil
+		}
+		return cfg.SessionInitializer.InitializeSessionByRR(ctx, namespace, rrID, sessionID, identity.Username, identity.Groups)
+	}
 }
