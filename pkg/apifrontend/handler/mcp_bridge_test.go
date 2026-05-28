@@ -166,6 +166,7 @@ func newFakeDynamicClient(objects ...runtime.Object) *dynamicfake.FakeDynamicCli
 		{Group: "kubernaut.ai", Version: "v1alpha1", Resource: "remediationrequests"}:         "RemediationRequestList",
 		{Group: "kubernaut.ai", Version: "v1alpha1", Resource: "remediationapprovalrequests"}: "RemediationApprovalRequestList",
 		{Group: "kubernaut.ai", Version: "v1alpha1", Resource: "signalprocessings"}:           "SignalProcessingList",
+		{Group: "kubernaut.ai", Version: "v1alpha1", Resource: "aianalyses"}:                  "AIAnalysisList",
 	}, objects...)
 }
 
@@ -524,7 +525,7 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 
 		It("UT-AF-B-002: kubernaut_get_remediation dispatches correctly", func() {
 			_, body := mcpCallTool(h, sessionID, "kubernaut_get_remediation",
-				map[string]any{"rr_id": "default/test-rr"}, testUser)
+				map[string]any{"namespace": "default", "name": "test-rr"}, testUser)
 			text := extractTextContent(body)
 			Expect(text).To(ContainSubstring("test-rr"))
 			Expect(text).To(ContainSubstring("Investigating"))
@@ -539,7 +540,7 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 
 		It("UT-AF-B-005: kubernaut_cancel_remediation dispatches correctly", func() {
 			_, body := mcpCallTool(h, sessionID, "kubernaut_cancel_remediation",
-				map[string]any{"rr_id": "default/test-rr"}, testUser)
+				map[string]any{"namespace": "default", "name": "test-rr"}, testUser)
 			text := extractTextContent(body)
 			Expect(text).To(ContainSubstring("Cancelled"))
 		})
@@ -555,7 +556,7 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 	Context("KA MCP investigation dispatch", func() {
 		It("UT-AF-B-007: kubernaut_investigate starts MCP autonomous investigation (rr_id)", func() {
 			_, body := mcpCallTool(h, sessionID, "kubernaut_investigate",
-				map[string]any{"rr_id": "default/test-rr"}, testUser)
+				map[string]any{"rr_id": "rr-test-001"}, testUser)
 			text := extractTextContent(body)
 			Expect(text).To(SatisfyAny(
 				ContainSubstring("test-session-123"),
@@ -1763,12 +1764,12 @@ var _ = Describe("MCP Bridge - Tier 4: Adversarial Inputs", Label("tier4", "brid
 	})
 
 	Context("Invalid rr_id format", func() {
-		It("UT-AF-B-083: kubernaut_get_remediation with malformed rr_id is rejected", func() {
+		It("UT-AF-B-083: kubernaut_get_remediation with empty args is rejected", func() {
 			_, body := mcpCallTool(h, sessionID, "kubernaut_get_remediation",
-				map[string]any{"rr_id": "no-slash-here"}, testUser)
+				map[string]any{}, testUser)
 			Expect(isErrorResult(body)).To(BeTrue())
 			text := extractTextContent(body)
-			Expect(text).To(ContainSubstring("invalid"))
+			Expect(text).To(ContainSubstring("required"))
 		})
 
 		It("UT-AF-B-084: kubernaut_cancel_remediation with empty rr_id and no namespace/name is rejected", func() {

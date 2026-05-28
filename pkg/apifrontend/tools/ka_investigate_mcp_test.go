@@ -374,6 +374,156 @@ func (r *auditRecorder) Emit(_ context.Context, e *audit.Event) {
 // Ensure auditRecorder satisfies audit.Emitter at compile time (if exported).
 var _ audit.Emitter = (*auditRecorder)(nil)
 
+var _ = Describe("HandleInvestigationMCPWithRegistry — AIA polling timeout cap (#E2E-FIX)", func() {
+
+	Describe("UT-AF-1326-070: investigate path uses ≤10s AIA poll, not 3-min global timeout", func() {
+		It("should complete well under 30s even when no AIA CRD exists", func() {
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, args ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					return &ka.StartInvestigationResult{
+						SessionID: "sess-fast-001",
+						Status:    "autonomous_started",
+						Closer:    func() {},
+					}, nil
+				},
+			}
+
+			client := newSeededAIAnalysisClient()
+			registry := tools.NewMonitorRegistry()
+
+			start := time.Now()
+			result, err := tools.HandleInvestigationMCPWithRegistry(
+				context.Background(), mockMCP, client, "kubernaut-system",
+				tools.InvestigateMCPArgs{RRID: "rr-timeout-001"},
+				nil, registry,
+			)
+			elapsed := time.Since(start)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.SessionID).To(Equal("sess-fast-001"))
+			Expect(elapsed).To(BeNumerically("<", 15*time.Second),
+				"investigate path must not block for 3 minutes when no AIA CRD exists")
+		})
+	})
+
+	Describe("UT-AF-1326-071: investigate with nil k8sClient skips AIA poll entirely", func() {
+		It("should proceed immediately without any AIA polling", func() {
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					return &ka.StartInvestigationResult{
+						SessionID: "sess-nok8s-001",
+						Status:    "autonomous_started",
+						Closer:    func() {},
+					}, nil
+				},
+			}
+
+			start := time.Now()
+			result, err := tools.HandleInvestigationMCPWithRegistry(
+				context.Background(), mockMCP, nil, "",
+				tools.InvestigateMCPArgs{RRID: "rr-nok8s-001"},
+				nil, nil,
+			)
+			elapsed := time.Since(start)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.SessionID).To(Equal("sess-nok8s-001"))
+			Expect(elapsed).To(BeNumerically("<", 2*time.Second),
+				"nil k8sClient must skip AIA polling entirely")
+		})
+	})
+
+	Describe("UT-AF-1326-072: investigate with empty namespace skips AIA poll", func() {
+		It("should proceed immediately when namespace is empty", func() {
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					return &ka.StartInvestigationResult{
+						SessionID: "sess-nons-001",
+						Status:    "autonomous_started",
+						Closer:    func() {},
+					}, nil
+				},
+			}
+
+			client := newDynamicFakeClient()
+			start := time.Now()
+			result, err := tools.HandleInvestigationMCPWithRegistry(
+				context.Background(), mockMCP, client, "",
+				tools.InvestigateMCPArgs{RRID: "rr-nons-001"},
+				nil, nil,
+			)
+			elapsed := time.Since(start)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.SessionID).To(Equal("sess-nons-001"))
+			Expect(elapsed).To(BeNumerically("<", 2*time.Second),
+				"empty namespace must skip AIA polling entirely")
+		})
+	})
+
+	Describe("UT-AF-1326-073: investigate with existing AIA CRD finds session immediately", func() {
+		It("should detect the AIA CRD and proceed without timeout", func() {
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					return &ka.StartInvestigationResult{
+						SessionID: "sess-aia-found-001",
+						Status:    "autonomous_started",
+						Closer:    func() {},
+					}, nil
+				},
+			}
+
+			aiaObj := newUnstructuredAIAnalysis("kubernaut-system", "aia-rr-aia-001", "rr-aia-001", "ka-sess-external")
+			client := newSeededAIAnalysisClient(aiaObj)
+			registry := tools.NewMonitorRegistry()
+
+			start := time.Now()
+			result, err := tools.HandleInvestigationMCPWithRegistry(
+				context.Background(), mockMCP, client, "kubernaut-system",
+				tools.InvestigateMCPArgs{RRID: "rr-aia-001"},
+				nil, registry,
+			)
+			elapsed := time.Since(start)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.SessionID).To(Equal("sess-aia-found-001"))
+			Expect(elapsed).To(BeNumerically("<", 2*time.Second),
+				"should find existing AIA immediately, no polling delay")
+		})
+	})
+
+	Describe("UT-AF-1326-074: parent context cancellation overrides 10s poll timeout", func() {
+		It("should honour parent context cancellation during AIA poll", func() {
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					return &ka.StartInvestigationResult{
+						SessionID: "sess-cancel-001",
+						Status:    "autonomous_started",
+						Closer:    func() {},
+					}, nil
+				},
+			}
+
+			client := newSeededAIAnalysisClient()
+			ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+			defer cancel()
+
+			start := time.Now()
+			result, err := tools.HandleInvestigationMCPWithRegistry(
+				ctx, mockMCP, client, "kubernaut-system",
+				tools.InvestigateMCPArgs{RRID: "rr-cancel-001"},
+				nil, nil,
+			)
+			elapsed := time.Since(start)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.SessionID).To(Equal("sess-cancel-001"))
+			Expect(elapsed).To(BeNumerically("<", 5*time.Second),
+				"parent context cancellation must abort AIA poll")
+		})
+	})
+})
+
 // Suppress unused import warning for json and time
 var _ = json.Marshal
 var _ time.Duration

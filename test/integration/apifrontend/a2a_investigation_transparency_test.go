@@ -108,7 +108,7 @@ var _ = Describe("A2A Investigation Tool Error Transparency (TP-1310)", func() {
 							"parts":[{
 								"functionCall":{
 									"name":"kubernaut_investigate",
-									"args":{"rr_id":"production/dev-worker-1"}
+									"args":{"rr_id":"rr-dev-worker-1"}
 								}
 							}]
 						},

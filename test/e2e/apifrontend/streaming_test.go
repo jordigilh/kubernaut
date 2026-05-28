@@ -124,7 +124,7 @@ var _ = Describe("Investigation Streaming (G3)", Ordered, Label("e2e", "phase3",
 		Expect(mcpSessErr).NotTo(HaveOccurred())
 		takeoverBody := buildJSONRPC("stream-03-takeover", "tools/call", map[string]interface{}{
 			"name":      "kubernaut_takeover",
-			"arguments": map[string]interface{}{"rr_id": "default/" + rrName},
+			"arguments": map[string]interface{}{"rr_id": rrName},
 		})
 		_, takeoverCode, takeoverErr := mcpPOST(sreToken, mcpSess, takeoverBody)
 		Expect(takeoverErr).NotTo(HaveOccurred())

@@ -88,13 +88,13 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 			}), newFakeDSClient())
 
 			status, body := mcpCallTool(h, sessionID, "kubernaut_investigate", map[string]any{
-				"rr_id": "production/api-gw",
+				"rr_id": "rr-api-gw-001",
 			}, testUser)
 
 			Expect(status).To(Equal(http.StatusOK))
 			text := extractTextContent(body)
 			Expect(text).To(SatisfyAny(
-				ContainSubstring("mcp-sess-production/api-gw"),
+				ContainSubstring("mcp-sess-rr-api-gw-001"),
 				ContainSubstring("autonomous_started"),
 			))
 		})
@@ -105,7 +105,7 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 			}), newFakeDSClient())
 
 			status, body := mcpCallTool(h, sessionID, "kubernaut_investigate", map[string]any{
-				"rr_id": "default/sess-002",
+				"rr_id": "rr-sess-002",
 			}, testUser)
 
 			Expect(status).To(Equal(http.StatusOK))
@@ -374,7 +374,7 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 			auditor.Reset()
 
 			mcpCallTool(h, sessionID, "kubernaut_investigate", map[string]any{
-				"rr_id": "ns/pod",
+				"rr_id": "rr-pod-001",
 			}, testUser)
 			mcpCallTool(h, sessionID, "kubernaut_list_workflows", map[string]any{}, testUser)
 
@@ -391,7 +391,7 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 			}), newFakeDSClient())
 
 			status, body := mcpCallTool(h, sessionID, "kubernaut_investigate", map[string]any{
-				"rr_id": "ns/pod",
+				"rr_id": "rr-pod-001",
 			}, testUser)
 
 			Expect(status).To(Equal(http.StatusOK))
@@ -432,7 +432,7 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 			sessionID = mcpInitialize(h, testUser)
 
 			status, body := mcpCallTool(h, sessionID, "kubernaut_investigate", map[string]any{
-				"rr_id": "ns/pod",
+				"rr_id": "rr-pod-001",
 			}, testUser)
 
 			Expect(status).To(Equal(http.StatusOK))
@@ -511,7 +511,7 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 			setupInteractiveStack()
 
 			status, body := mcpCallTool(h, sessionID, "kubernaut_takeover", map[string]any{
-				"rr_id": "production/api-gw",
+				"rr_id": "rr-api-gw-001",
 			}, testUser)
 
 			Expect(status).To(Equal(http.StatusOK))
@@ -564,7 +564,7 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 			sessionID = mcpInitialize(h, testUser)
 
 			status, body := mcpCallTool(h, sessionID, "kubernaut_takeover", map[string]any{
-				"rr_id": "production/api-gw",
+				"rr_id": "rr-api-gw-001",
 			}, testUser)
 
 			Expect(status).To(Equal(http.StatusOK))
@@ -574,11 +574,114 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 				"error must propagate to caller so the MCP client can retry or alert the user")
 		})
 
+		It("IT-AF-1326-IS-001: kubernaut_investigate triggers IS CRD creation via SessionInitializer", func() {
+			invokedAction = ""
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, args ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					return &ka.StartInvestigationResult{
+						SessionID: "sess-is-001",
+						Status:    "autonomous_started",
+						Closer:    func() {},
+					}, nil
+				},
+			}
+
+			recorder := &recordingSessionInitializer{}
+			auditor = &fakeAuditor{}
+			testUser = &auth.UserIdentity{Username: "sre@kubernaut.ai", Groups: []string{"sre"}}
+
+			cfg := handler.MCPConfig{
+				ServerName:    "af-it",
+				ServerVersion: "0.0.1-test",
+				Enabled:       true,
+				Bridge: &handler.MCPBridgeConfig{
+					K8sClient:          newFakeDynamicClient(),
+					KAMCPClient:        mockMCP,
+					DSClient:           newFakeDSClient(),
+					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"*"}}},
+					Logger:             logr.Discard(),
+					Auditor:            auditor,
+					Metrics:            newBridgeMetrics(),
+					Namespace:          "kubernaut-system",
+					ToolTimeout:        5 * time.Second,
+					MaxConcurrentTools: 10,
+					SessionInitializer: recorder,
+				},
+			}
+
+			var err error
+			h, err = handler.NewMCPHandler(cfg)
+			Expect(err).NotTo(HaveOccurred())
+			sessionID = mcpInitialize(h, testUser)
+
+			status, body := mcpCallTool(h, sessionID, "kubernaut_investigate", map[string]any{
+				"rr_id": "rr-api-gw-001",
+			}, testUser)
+
+			Expect(status).To(Equal(http.StatusOK))
+			text := extractTextContent(body)
+			Expect(text).To(ContainSubstring("sess-is-001"))
+
+			Expect(recorder.calls).To(HaveLen(1),
+				"kubernaut_investigate must trigger IS CRD creation")
+			Expect(recorder.calls[0].rrName).To(Equal("rr-api-gw-001"))
+			Expect(recorder.calls[0].sessionID).To(Equal("sess-is-001"))
+			Expect(recorder.calls[0].rrNamespace).To(Equal("kubernaut-system"))
+			Expect(recorder.calls[0].username).To(Equal("sre@kubernaut.ai"))
+		})
+
+		It("IT-AF-1326-IS-002: kubernaut_investigate skips IS CRD when SessionInitializer is nil", func() {
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					return &ka.StartInvestigationResult{
+						SessionID: "sess-nil-init",
+						Status:    "autonomous_started",
+						Closer:    func() {},
+					}, nil
+				},
+			}
+
+			auditor = &fakeAuditor{}
+			testUser = &auth.UserIdentity{Username: "sre@kubernaut.ai", Groups: []string{"sre"}}
+
+			cfg := handler.MCPConfig{
+				ServerName:    "af-it",
+				ServerVersion: "0.0.1-test",
+				Enabled:       true,
+				Bridge: &handler.MCPBridgeConfig{
+					K8sClient:          newFakeDynamicClient(),
+					KAMCPClient:        mockMCP,
+					DSClient:           newFakeDSClient(),
+					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"*"}}},
+					Logger:             logr.Discard(),
+					Auditor:            auditor,
+					Metrics:            newBridgeMetrics(),
+					Namespace:          "kubernaut-system",
+					ToolTimeout:        5 * time.Second,
+					MaxConcurrentTools: 10,
+				},
+			}
+
+			var err error
+			h, err = handler.NewMCPHandler(cfg)
+			Expect(err).NotTo(HaveOccurred())
+			sessionID = mcpInitialize(h, testUser)
+
+			status, body := mcpCallTool(h, sessionID, "kubernaut_investigate", map[string]any{
+				"rr_id": "rr-api-gw-002",
+			}, testUser)
+
+			Expect(status).To(Equal(http.StatusOK))
+			text := extractTextContent(body)
+			Expect(text).To(ContainSubstring("sess-nil-init"),
+				"should succeed even without SessionInitializer")
+		})
+
 		It("IT-AF-1234-W02: kubernaut_message dispatches with message payload", func() {
 			setupInteractiveStack()
 
 			status, body := mcpCallTool(h, sessionID, "kubernaut_message", map[string]any{
-				"rr_id":   "production/api-gw",
+				"rr_id":   "rr-api-gw-001",
 				"message": "increase memory to 512Mi",
 			}, testUser)
 
@@ -592,7 +695,7 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 			setupInteractiveStack()
 
 			status, body := mcpCallTool(h, sessionID, "kubernaut_complete", map[string]any{
-				"rr_id": "production/api-gw",
+				"rr_id": "rr-api-gw-001",
 			}, testUser)
 
 			Expect(status).To(Equal(http.StatusOK))
@@ -605,7 +708,7 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 			setupInteractiveStack()
 
 			status, body := mcpCallTool(h, sessionID, "kubernaut_cancel", map[string]any{
-				"rr_id": "production/api-gw",
+				"rr_id": "rr-api-gw-001",
 			}, testUser)
 
 			Expect(status).To(Equal(http.StatusOK))
@@ -618,7 +721,7 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 			setupInteractiveStack()
 
 			status, body := mcpCallTool(h, sessionID, "kubernaut_status", map[string]any{
-				"rr_id": "production/api-gw",
+				"rr_id": "rr-api-gw-001",
 			}, testUser)
 
 			Expect(status).To(Equal(http.StatusOK))
@@ -631,7 +734,7 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 			setupInteractiveStack()
 
 			status, body := mcpCallTool(h, sessionID, "kubernaut_reconnect", map[string]any{
-				"rr_id": "production/api-gw",
+				"rr_id": "rr-api-gw-001",
 			}, testUser)
 
 			Expect(status).To(Equal(http.StatusOK))
@@ -646,7 +749,7 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 			}), newFakeDSClient())
 
 			status, body := mcpCallTool(h, sessionID, "kubernaut_investigate", map[string]any{
-				"rr_id": "production/api-gw",
+				"rr_id": "rr-api-gw-001",
 			}, testUser)
 
 			Expect(status).To(Equal(http.StatusOK))
@@ -730,13 +833,13 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 			auditor.Reset()
 
 			mcpCallTool(h, sessionID, "kubernaut_takeover", map[string]any{
-				"rr_id": "production/api-gw",
+				"rr_id": "rr-api-gw-001",
 			}, testUser)
 
 			events := auditor.Events()
 			var hasRRID bool
 			for _, e := range events {
-				if e.Detail["rr_id"] == "production/api-gw" {
+				if e.Detail["rr_id"] == "rr-api-gw-001" {
 					hasRRID = true
 				}
 			}
@@ -773,4 +876,17 @@ type failingSessionInitializer struct {
 
 func (f *failingSessionInitializer) InitializeSessionByRR(_ context.Context, _, _, _, _ string, _ []string) error {
 	return f.err
+}
+
+type recordingSessionInitializer struct {
+	calls []initCall
+}
+type initCall struct {
+	rrNamespace, rrName, sessionID, username string
+	groups                                   []string
+}
+
+func (r *recordingSessionInitializer) InitializeSessionByRR(_ context.Context, rrNS, rrName, sessionID, user string, groups []string) error {
+	r.calls = append(r.calls, initCall{rrNamespace: rrNS, rrName: rrName, sessionID: sessionID, username: user, groups: groups})
+	return nil
 }

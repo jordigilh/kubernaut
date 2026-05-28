@@ -43,9 +43,9 @@ var _ = Describe("kubernaut_get_remediation", func() {
 		Expect(err.Error()).To(ContainSubstring("access denied"))
 	})
 
-	It("UT-AF-102-004: accepts rr_id shorthand", func() {
+	It("UT-AF-102-004: accepts rr_id with namespace", func() {
 		client := newDynamicFakeClient(newFakeRR("payments", "rr-1", "Pending"))
-		result, err := tools.HandleGetRemediation(ctx, client, tools.GetRemediationArgs{RRID: "payments/rr-1"})
+		result, err := tools.HandleGetRemediation(ctx, client, tools.GetRemediationArgs{RRID: "rr-1", Namespace: "payments"})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Namespace).To(Equal("payments"))
 		Expect(result.Name).To(Equal("rr-1"))

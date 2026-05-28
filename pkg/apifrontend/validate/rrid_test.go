@@ -9,45 +9,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
 )
 
-var _ = Describe("ParseRRID (G13)", func() {
-	It("UT-AF-1234-090: valid rr_id returns namespace and name", func() {
-		ns, name, err := validate.ParseRRID("prod/rr-web-api-oom")
-		Expect(err).NotTo(HaveOccurred())
-		Expect(ns).To(Equal("prod"))
-		Expect(name).To(Equal("rr-web-api-oom"))
-	})
-
-	It("UT-AF-1234-091: empty rr_id rejected", func() {
-		_, _, err := validate.ParseRRID("")
-		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("empty"))
-	})
-
-	It("UT-AF-1234-092: malformed rr_id (no slash) rejected", func() {
-		_, _, err := validate.ParseRRID("prodrr-web-api-oom")
-		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("namespace/name"))
-	})
-
-	It("UT-AF-1234-093: path traversal rr_id rejected", func() {
-		_, _, err := validate.ParseRRID("../etc/passwd")
-		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("path traversal"))
-	})
-
-	It("UT-AF-1234-094: invalid namespace in rr_id rejected", func() {
-		_, _, err := validate.ParseRRID("INVALID_NS/rr-001")
-		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("namespace"))
-	})
-
-	It("UT-AF-1234-095: invalid name in rr_id rejected", func() {
-		_, _, err := validate.ParseRRID("prod/INVALID NAME!!!")
-		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("name"))
-	})
-})
-
 var _ = Describe("Action validation (G13)", func() {
 	It("UT-AF-1234-097: invalid action string rejected", func() {
 		err := validate.Action("destroy")

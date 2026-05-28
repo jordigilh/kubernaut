@@ -15,11 +15,13 @@ var _ = Describe("Tool Constructors", func() {
 
 	entries := []constructorEntry{
 		{"kubernaut_list_remediations", func() (interface{ Name() string }, error) { return tools.NewListRemediationsTool(nil) }},
-		{"kubernaut_get_remediation", func() (interface{ Name() string }, error) { return tools.NewGetRemediationTool(nil) }},
+		{"kubernaut_get_remediation", func() (interface{ Name() string }, error) { return tools.NewGetRemediationTool(nil, "") }},
 		{"kubernaut_approve", func() (interface{ Name() string }, error) { return tools.NewApproveTool(nil) }},
-		{"kubernaut_cancel_remediation", func() (interface{ Name() string }, error) { return tools.NewCancelRemediationTool(nil) }},
+		{"kubernaut_cancel_remediation", func() (interface{ Name() string }, error) { return tools.NewCancelRemediationTool(nil, "") }},
 		{"kubernaut_watch", func() (interface{ Name() string }, error) { return tools.NewWatchTool(nil) }},
-		{"kubernaut_investigate", func() (interface{ Name() string }, error) { return tools.NewInvestigateMCPTool(nil, nil, "", nil, nil) }},
+		{"kubernaut_investigate", func() (interface{ Name() string }, error) {
+			return tools.NewInvestigateMCPTool(nil, nil, "", nil, nil)
+		}},
 		{"kubernaut_select_workflow", func() (interface{ Name() string }, error) { return tools.NewSelectWorkflowTool(nil, nil) }},
 		{"kubernaut_present_decision", func() (interface{ Name() string }, error) { return tools.NewPresentDecisionTool() }},
 		{"kubernaut_list_workflows", func() (interface{ Name() string }, error) { return tools.NewListWorkflowsTool(nil) }},

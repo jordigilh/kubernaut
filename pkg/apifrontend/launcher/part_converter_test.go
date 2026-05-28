@@ -265,7 +265,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 				FunctionResponse: &genai.FunctionResponse{
 					Name: "af_create_rr",
 					Response: map[string]any{
-						"rr_id":   "prod/rr-disk-pressure-abc123",
+						"rr_id":   "rr-disk-pressure-abc123",
 						"message": "RemediationRequest created for Deployment/web by alice",
 					},
 				},
@@ -579,7 +579,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 				FunctionResponse: &genai.FunctionResponse{
 					Name: "af_create_rr",
 					Response: map[string]any{
-						"rr_id":   "prod/rr-oom-abc",
+						"rr_id":   "rr-oom-abc",
 						"message": "RemediationRequest created for Deployment/web by sre-user",
 					},
 				},
@@ -599,7 +599,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 					Name: "af_create_rr",
 					Response: map[string]any{
 						"already_exists": true,
-						"rr_id":          "prod/rr-existing",
+						"rr_id":          "rr-existing",
 					},
 				},
 			}
@@ -608,7 +608,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
 			Expect(tp.Text).To(ContainSubstring("already exists"))
-			Expect(tp.Text).To(ContainSubstring("prod/rr-existing"))
+			Expect(tp.Text).To(ContainSubstring("rr-existing"))
 			Expect(tp.Text).NotTo(ContainSubstring(`{`))
 		})
 
@@ -806,7 +806,7 @@ var _ = Describe("Status message line breaks (#1301)", func() {
 		part := &genai.Part{
 			FunctionResponse: &genai.FunctionResponse{
 				Name:     "af_create_rr",
-				Response: map[string]any{"rr_id": "prod/rr-test-001"},
+				Response: map[string]any{"rr_id": "rr-test-001"},
 			},
 		}
 		result, err := convert(context.Background(), nil, part)

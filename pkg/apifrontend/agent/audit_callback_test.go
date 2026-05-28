@@ -86,7 +86,7 @@ var _ = Describe("newAuditToolCallback (#1189)", func() {
 
 	BeforeEach(func() {
 		auditor = &capturingAuditor{}
-		callback = newAuditToolCallback(auditor, nil)
+		callback = newAuditToolCallback(auditor, nil, "kubernaut-system")
 	})
 
 	It("UT-AF-1189-001: includes a2a_task_id when session CreateContext is present", func() {
@@ -203,7 +203,7 @@ var _ = Describe("Deferred CRD Materialization (G6)", func() {
 		Expect(svc.IsMaterialized("sess-deferred-w20")).To(BeFalse())
 
 		auditor := &capturingAuditor{}
-		cbWithSvc := newAuditToolCallback(auditor, svc)
+		cbWithSvc := newAuditToolCallback(auditor, svc, "kubernaut-system")
 
 		ctx = session.WithCreateContext(ctx, &session.CreateContext{
 			TaskID:    "task-w20",
@@ -211,7 +211,7 @@ var _ = Describe("Deferred CRD Materialization (G6)", func() {
 		})
 		ctx = auth.WithUserIdentity(ctx, &auth.UserIdentity{Username: "sre@kubernaut.ai"})
 
-		output := map[string]any{"rr_id": "production/api-gw-oom"}
+		output := map[string]any{"rr_id": "rr-api-gw-oom"}
 		tc := fakeToolContext{Context: ctx}
 		_, err = cbWithSvc(tc, fakeTool{name: "af_create_rr"}, nil, output, nil)
 		Expect(err).NotTo(HaveOccurred())
@@ -223,12 +223,12 @@ var _ = Describe("Deferred CRD Materialization (G6)", func() {
 		Expect(isList.Items).To(BeEmpty(), "no IS CRD should exist after af_create_rr")
 
 		Expect(auditor.events).To(HaveLen(1))
-		Expect(auditor.events[0].Detail["rr_id"]).To(Equal("production/api-gw-oom"))
+		Expect(auditor.events[0].Detail["rr_id"]).To(Equal("rr-api-gw-oom"))
 	})
 
 	It("IT-AF-1234-W21: af_create_rr audit emits rr_id even without SessionService (#1293)", func() {
 		auditor := &capturingAuditor{}
-		cbNoSvc := newAuditToolCallback(auditor, nil)
+		cbNoSvc := newAuditToolCallback(auditor, nil, "kubernaut-system")
 
 		ctx := context.Background()
 		ctx = session.WithCreateContext(ctx, &session.CreateContext{
@@ -237,13 +237,13 @@ var _ = Describe("Deferred CRD Materialization (G6)", func() {
 		})
 		ctx = auth.WithUserIdentity(ctx, &auth.UserIdentity{Username: "sre@kubernaut.ai"})
 
-		output := map[string]any{"rr_id": "production/api-gw-oom"}
+		output := map[string]any{"rr_id": "rr-api-gw-oom"}
 		tc := fakeToolContext{Context: ctx}
 		_, err := cbNoSvc(tc, fakeTool{name: "af_create_rr"}, nil, output, nil)
 		Expect(err).NotTo(HaveOccurred())
 
 		Expect(auditor.events).To(HaveLen(1))
-		Expect(auditor.events[0].Detail["rr_id"]).To(Equal("production/api-gw-oom"))
+		Expect(auditor.events[0].Detail["rr_id"]).To(Equal("rr-api-gw-oom"))
 	})
 
 	It("IT-AF-1234-W22: af_create_rr failure does not create IS CRD (#1293)", func() {
@@ -272,7 +272,7 @@ var _ = Describe("Deferred CRD Materialization (G6)", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		auditor := &capturingAuditor{}
-		cbWithSvc := newAuditToolCallback(auditor, svc)
+		cbWithSvc := newAuditToolCallback(auditor, svc, "kubernaut-system")
 
 		ctx = session.WithCreateContext(ctx, &session.CreateContext{
 			TaskID:    "task-w22",

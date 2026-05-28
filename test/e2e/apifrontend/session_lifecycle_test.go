@@ -113,7 +113,7 @@ var _ = Describe("Session Join/Takeover/Reconnect (G19)", Label("e2e", "phase4",
 
 		takeoverBody := buildJSONRPC("g19-reconnect-takeover", "tools/call", map[string]interface{}{
 			"name":      "kubernaut_takeover",
-			"arguments": map[string]interface{}{"rr_id": "default/" + rrName},
+			"arguments": map[string]interface{}{"rr_id": rrName},
 		})
 		_, takeoverCode, takeoverErr := mcpPOST(mcpToken, mcpSessID, takeoverBody)
 		Expect(takeoverErr).NotTo(HaveOccurred())
@@ -213,7 +213,7 @@ var _ = Describe("Session Join/Takeover/Reconnect (G19)", Label("e2e", "phase4",
 		Expect(mcpSessErr).NotTo(HaveOccurred())
 		takeoverBodyA := buildJSONRPC("g19-join06-takeover-a", "tools/call", map[string]interface{}{
 			"name":      "kubernaut_takeover",
-			"arguments": map[string]interface{}{"rr_id": "default/" + rrName},
+			"arguments": map[string]interface{}{"rr_id": rrName},
 		})
 		_, codeA, takeoverErrA := mcpPOST(tokenA, mcpSessA, takeoverBodyA)
 		Expect(takeoverErrA).NotTo(HaveOccurred())
@@ -249,7 +249,7 @@ var _ = Describe("Session Join/Takeover/Reconnect (G19)", Label("e2e", "phase4",
 		Expect(mcpSessBErr).NotTo(HaveOccurred())
 		takeoverBodyB := buildJSONRPC("g19-join06-takeover-b", "tools/call", map[string]interface{}{
 			"name":      "kubernaut_takeover",
-			"arguments": map[string]interface{}{"rr_id": "default/" + rrName},
+			"arguments": map[string]interface{}{"rr_id": rrName},
 		})
 		rawB, _, takeoverErrB := mcpPOST(tokenB, mcpSessB, takeoverBodyB)
 		Expect(takeoverErrB).NotTo(HaveOccurred())

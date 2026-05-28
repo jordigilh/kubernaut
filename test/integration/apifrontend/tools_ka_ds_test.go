@@ -28,7 +28,7 @@ var _ = Describe("KA/DS Tools Integration (tools/ via real containers)", func() 
 				mockMCP,
 				nil, "",
 				tools.InvestigateMCPArgs{
-					RRID: "default/test-app",
+					RRID: "rr-test-app",
 				},
 				nil,
 			)

@@ -78,7 +78,7 @@ var _ = Describe("Interactive Wiring E2E (W6)", Label("e2e", "phase4", "wiring")
 
 			rpcID := fmt.Sprintf("w01b-%d", time.Now().UnixNano())
 			text, code, err := mcpToolCall(rpcID, "kubernaut_takeover", map[string]interface{}{
-				"rr_id": "default/" + rrName,
+				"rr_id": rrName,
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(code).To(BeNumerically("<", 500),

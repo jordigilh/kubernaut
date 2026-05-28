@@ -217,10 +217,9 @@ var _ = Describe("af_create_rr wiring (#1282)", func() {
 			Description: "ADR-057 namespace split IT",
 		}, "it-user", nil, nil)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(result.RRID).To(HavePrefix(controllerNS + "/"))
+		Expect(result.RRID).To(HavePrefix("rr-"))
 
-		rrName := result.RRID[len(controllerNS)+1:]
-		created, getErr := dynamicClient.Resource(rrGVR).Namespace(controllerNS).Get(ctx, rrName, metav1.GetOptions{})
+		created, getErr := dynamicClient.Resource(rrGVR).Namespace(controllerNS).Get(ctx, result.RRID, metav1.GetOptions{})
 		Expect(getErr).NotTo(HaveOccurred())
 
 		metaNS := created.GetNamespace()
