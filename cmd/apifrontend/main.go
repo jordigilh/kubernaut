@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/signal"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -435,23 +434,13 @@ type backendDeps struct {
 	DSResilientTransport *resilience.CircuitBreakerTransport
 	CAWatchers           []caWatcherEntry
 	k8sDynClient         dynamic.Interface
-	k8sOnce              sync.Once
+	K8sCB                *resilience.K8sCircuitBreaker
 }
 
-// K8sClient returns the pod service-account scoped dynamic K8s client.
-// Created lazily on first call via the in-cluster config. Thread-safe via sync.Once.
+// K8sClient returns the pod service-account scoped dynamic K8s client,
+// wrapped with a circuit breaker. Returns nil if K8s API was unreachable
+// at startup; callers must check for nil (tools return a clear error).
 func (d *backendDeps) K8sClient() dynamic.Interface {
-	d.k8sOnce.Do(func() {
-		restCfg, err := ctrl.GetConfig()
-		if err != nil {
-			return
-		}
-		c, err := dynamic.NewForConfig(restCfg)
-		if err != nil {
-			return
-		}
-		d.k8sDynClient = c
-	})
 	return d.k8sDynClient
 }
 
@@ -619,6 +608,31 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 		StateGauge:   metricsReg.CircuitBreakerState,
 		DurationHist: metricsReg.DownstreamDuration,
 	})
+
+	// F7+F8: Eager K8s dynamic client init with circuit breaker (WIRE-03).
+	// Fail-fast: log clearly on failure instead of returning silent nil.
+	restCfg, err := ctrl.GetConfig()
+	if err != nil {
+		logger.Error(err, "K8s dynamic client unavailable — K8s tools will return errors at runtime")
+	} else {
+		inner, err := dynamic.NewForConfig(restCfg)
+		if err != nil {
+			logger.Error(err, "K8s dynamic client creation failed — K8s tools will return errors at runtime")
+		} else {
+			k8sCfg := cfg.Resilience.K8s
+			deps.K8sCB = resilience.NewK8sCircuitBreaker(resilience.K8sCBConfig{
+				Name:             "k8s",
+				MaxRequests:      k8sCfg.CBMaxRequests,
+				Interval:         k8sCfg.CBInterval,
+				Timeout:          k8sCfg.CBTimeout,
+				FailureThreshold: k8sCfg.CBFailureThreshold,
+				StateGauge:       metricsReg.CircuitBreakerState,
+				DependencyName:   "k8s",
+			})
+			deps.k8sDynClient = resilience.NewResilientDynamicClient(inner, deps.K8sCB)
+			logger.Info("K8s dynamic client initialized with circuit breaker")
+		}
+	}
 
 	return deps, nil
 }
