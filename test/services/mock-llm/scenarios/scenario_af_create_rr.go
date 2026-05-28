@@ -16,6 +16,7 @@ limitations under the License.
 package scenarios
 
 import (
+	"log"
 	"regexp"
 	"strings"
 	"time"
@@ -42,8 +43,7 @@ func afCreateRRConfig() MockScenarioConfig {
 	}
 }
 
-var severityRe = regexp.MustCompile(`with severity (\w+)`)
-var deployNSRe = regexp.MustCompile(`deployment (\S+) in (\S+) namespace`)
+var deployNSRe = regexp.MustCompile(`deployment\s+(\S+)\s+in\s+(\S+)\s+namespace`)
 
 // afCreateRRSlowConfig returns an af_create_rr config with a 5-second
 // second-turn delay. Used by TC-E2E-STREAM-03 to test client disconnect
@@ -77,18 +77,61 @@ func afCreateRRScenario() *afCreateRRDynScenario {
 	return &afCreateRRDynScenario{baseConfig: afCreateRRConfig()}
 }
 
-// afCreateRRDynScenario is a dynamic scenario that extracts target resource
-// and severity from the user prompt to forward as af_create_rr tool args.
+// afCreateRRCrossNSScenario matches prompts containing "cross-namespace remediation"
+// with priority 0.95. Used by E2E-FP-1292-001 to test ADR-057: the workload namespace
+// is extracted dynamically from the prompt via deployNSRe, while the RR CRD is placed
+// in kubernaut-system (controllerNS injected at wiring time).
+//
+// Namespace extraction happens eagerly during Match() — not deferred to Config() —
+// because the ADK Gemini adapter may restructure the content between the Match and
+// Config phases (observed in CI run 26469769357).
+func afCreateRRCrossNSScenario() *afCreateRRDynScenario {
+	base := afCreateRRConfig()
+	base.ScenarioName = "af_create_rr_cross_ns"
+	s := &afCreateRRDynScenario{baseConfig: base}
+	s.matchOverride = func(ctx *DetectionContext) (bool, float64) {
+		combined := strings.ToLower(ctx.Content + " " + ctx.AllText)
+		if !strings.Contains(combined, "cross-namespace remediation") {
+			return false, 0
+		}
+		// Reset per-request state to prevent leaking a prior match's values
+		// into a subsequent Config() call if the regex fails this time.
+		s.extractedName = ""
+		s.extractedNS = ""
+		// Extract namespace eagerly during Match; store in extractedName/NS
+		// so Config() doesn't need to re-parse from a possibly stale context.
+		for _, text := range []string{ctx.Content, ctx.AllText, ctx.LastUserContent} {
+			if m := deployNSRe.FindStringSubmatch(text); len(m) == 3 {
+				s.extractedName = m[1]
+				s.extractedNS = m[2]
+				log.Printf("[mock-llm/af_create_rr_cross_ns] Match: extracted name=%q ns=%q", m[1], m[2])
+				break
+			}
+		}
+		if s.extractedNS == "" {
+			log.Printf("[mock-llm/af_create_rr_cross_ns] Match: keyword found but regex did NOT match. contentLen=%d allTextLen=%d", len(ctx.Content), len(ctx.AllText))
+		}
+		return true, 0.95
+	}
+	return s
+}
+
+// afCreateRRDynScenario is a dynamic scenario that extracts the target resource
+// from the user prompt to forward as af_create_rr tool args.
+// Post-#1282: namespace and severity are AF-resolved; only kind/name/description
+// are sent by the LLM.
 type afCreateRRDynScenario struct {
 	baseConfig    MockScenarioConfig
 	lastCtx       *DetectionContext
 	matchOverride func(ctx *DetectionContext) (bool, float64)
+	extractedName string
+	extractedNS   string
 }
 
 func (s *afCreateRRDynScenario) Name() string { return s.baseConfig.ScenarioName }
 
 func (s *afCreateRRDynScenario) Metadata() ScenarioMetadata {
-	return ScenarioMetadata{Name: s.baseConfig.ScenarioName, Description: "Dynamic af_create_rr with severity extraction"}
+	return ScenarioMetadata{Name: s.baseConfig.ScenarioName, Description: "Dynamic af_create_rr with resource extraction"}
 }
 
 func (s *afCreateRRDynScenario) DAG() *conversation.DAG { return nil }
@@ -111,16 +154,24 @@ func (s *afCreateRRDynScenario) Match(ctx *DetectionContext) (bool, float64) {
 
 func (s *afCreateRRDynScenario) Config() MockScenarioConfig {
 	cfg := s.baseConfig
+
+	// Prefer values extracted eagerly during Match() (cross-NS scenario).
+	if s.extractedNS != "" {
+		cfg.ResourceName = s.extractedName
+		cfg.ResourceNS = s.extractedNS
+		return cfg
+	}
+
 	if s.lastCtx == nil {
 		return cfg
 	}
-	text := s.lastCtx.Content
-	if m := deployNSRe.FindStringSubmatch(text); len(m) == 3 {
-		cfg.ResourceName = m[1]
-		cfg.ResourceNS = m[2]
-	}
-	if m := severityRe.FindStringSubmatch(text); len(m) == 2 {
-		cfg.Severity = m[1]
+	// Fallback: try regex extraction from the detection context.
+	for _, text := range []string{s.lastCtx.Content, s.lastCtx.AllText, s.lastCtx.LastUserContent} {
+		if m := deployNSRe.FindStringSubmatch(text); len(m) == 3 {
+			cfg.ResourceName = m[1]
+			cfg.ResourceNS = m[2]
+			return cfg
+		}
 	}
 	return cfg
 }

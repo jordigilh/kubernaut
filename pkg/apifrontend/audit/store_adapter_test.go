@@ -88,7 +88,7 @@ var _ = Describe("StoreAdapter", func() {
 		{"UT-AF-1156-023", audit.EventTriageCompleted, map[string]string{"session_id": "sess-1", "triage_outcome": "delegated", "triage_duration_ms": "500"}, "apifrontend.triage.completed"},
 		{"UT-AF-1156-024", audit.EventRRCreated, map[string]string{"session_id": "sess-1", "rr_name": "rr-1", "rr_namespace": "default", "fingerprint": "fp1"}, "apifrontend.rr.created"},
 		{"UT-AF-1156-025", audit.EventRRDeduplicated, map[string]string{"session_id": "sess-1", "fingerprint": "abc123", "existing_rr_name": "rr-1"}, "apifrontend.rr.deduplicated"},
-		{"UT-AF-1156-026", audit.EventKADelegated, map[string]string{"session_id": "sess-1", "ka_correlation_id": "ka-1", "delegation_type": "rest"}, "apifrontend.ka.delegated"},
+		{"UT-AF-1156-026", audit.EventKADelegated, map[string]string{"session_id": "sess-1", "ka_correlation_id": "ka-1", "delegation_type": "autonomous"}, "apifrontend.ka.delegated"},
 		{"UT-AF-1156-027", audit.EventKAResultReceived, map[string]string{"session_id": "sess-1", "ka_correlation_id": "ka-1", "result_type": "rca_complete"}, "apifrontend.ka.result_received"},
 		{"UT-AF-1156-028", audit.EventUserDecision, map[string]string{"session_id": "sess-1", "decision": "accept", "workflow_id": "restart-pod"}, "apifrontend.user.decision"},
 		{"UT-AF-1156-029", audit.EventAuthAccessDenied, map[string]string{"tool_name": "kubectl_exec", "user_role": "viewer", "endpoint": "a2a"}, "apifrontend.auth.access_denied"},

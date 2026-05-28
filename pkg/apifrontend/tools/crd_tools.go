@@ -699,3 +699,126 @@ func NewWatchTool(client dynamic.Interface) (tool.Tool, error) {
 		return HandleWatch(ctx, client, args)
 	})
 }
+
+// ========================================
+// kubernaut_await_session: Wait for KA investigation session readiness
+// BR-INTERACTIVE-010: AF waits for AA to submit to KA before connecting
+// ========================================
+
+var aianalysisGVR = schema.GroupVersionResource{Group: "kubernaut.ai", Version: "v1alpha1", Resource: "aianalyses"}
+
+// AwaitSessionArgs defines the input for kubernaut_await_session.
+type AwaitSessionArgs struct {
+	Namespace string `json:"namespace"`
+	RRName    string `json:"rr_name"`
+}
+
+// AwaitSessionResult is the output of kubernaut_await_session.
+type AwaitSessionResult struct {
+	SessionID string `json:"session_id,omitempty"`
+	Status    string `json:"status"`
+	Message   string `json:"message,omitempty"`
+}
+
+const awaitSessionTimeout = 3 * time.Minute
+const awaitSessionPollInterval = 3 * time.Second
+
+// HandleAwaitSession waits for an AIAnalysis resource (matching the given RR) to have
+// a non-empty status.investigationSession.id. Returns the session ID when ready, or
+// times out after 2 minutes.
+func HandleAwaitSession(ctx context.Context, client dynamic.Interface, args AwaitSessionArgs) (AwaitSessionResult, error) {
+	if client == nil {
+		return AwaitSessionResult{}, ErrK8sUnavailable
+	}
+	if err := validate.Namespace(args.Namespace); err != nil {
+		return AwaitSessionResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+	}
+	if args.RRName == "" {
+		return AwaitSessionResult{}, fmt.Errorf("%w: rr_name is required", ErrInvalidInput)
+	}
+
+	// Check existing AIAnalysis first (may already have session).
+	if sessionID := findSessionIDByList(ctx, client, args); sessionID != "" {
+		return AwaitSessionResult{SessionID: sessionID, Status: "ready"}, nil
+	}
+
+	watchCtx, cancel := context.WithTimeout(ctx, awaitSessionTimeout)
+	defer cancel()
+
+	watcher, err := client.Resource(aianalysisGVR).Namespace(args.Namespace).Watch(watchCtx, metav1.ListOptions{
+		FieldSelector: "spec.remediationRequestRef.name=" + args.RRName,
+	})
+	if err != nil {
+		// Field selectors on custom fields may not be supported via dynamic client.
+		// Fall back to polling.
+		return pollForSessionID(watchCtx, client, args)
+	}
+	defer watcher.Stop()
+
+	for {
+		select {
+		case <-watchCtx.Done():
+			return AwaitSessionResult{Status: "timeout", Message: "KA session not ready within timeout"}, nil
+		case evt, ok := <-watcher.ResultChan():
+			if !ok {
+				return AwaitSessionResult{Status: "timeout", Message: "watch closed unexpectedly"}, nil
+			}
+			if evt.Type == watch.Modified || evt.Type == watch.Added {
+				obj, ok := evt.Object.(*unstructured.Unstructured)
+				if !ok {
+					continue
+				}
+				sessionID, _, _ := unstructured.NestedString(obj.Object, "status", "investigationSession", "id")
+				if sessionID != "" {
+					return AwaitSessionResult{SessionID: sessionID, Status: "ready"}, nil
+				}
+			}
+		}
+	}
+}
+
+// pollForSessionID is a fallback that polls AIAnalysis resources until session ID appears.
+func pollForSessionID(ctx context.Context, client dynamic.Interface, args AwaitSessionArgs) (AwaitSessionResult, error) {
+	ticker := time.NewTicker(awaitSessionPollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return AwaitSessionResult{Status: "timeout", Message: "KA session not ready within timeout"}, nil
+		case <-ticker.C:
+			if sessionID := findSessionIDByList(ctx, client, args); sessionID != "" {
+				return AwaitSessionResult{SessionID: sessionID, Status: "ready"}, nil
+			}
+		}
+	}
+}
+
+// findSessionIDByList lists AIAnalysis for the given RR and returns the first non-empty session ID.
+func findSessionIDByList(ctx context.Context, client dynamic.Interface, args AwaitSessionArgs) string {
+	list, err := client.Resource(aianalysisGVR).Namespace(args.Namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return ""
+	}
+	for _, item := range list.Items {
+		rrName, _, _ := unstructured.NestedString(item.Object, "spec", "remediationRequestRef", "name")
+		if rrName != args.RRName {
+			continue
+		}
+		sessionID, _, _ := unstructured.NestedString(item.Object, "status", "investigationSession", "id")
+		if sessionID != "" {
+			return sessionID
+		}
+	}
+	return ""
+}
+
+// NewAwaitSessionTool creates the kubernaut_await_session tool.
+func NewAwaitSessionTool(client dynamic.Interface) (tool.Tool, error) {
+	return functiontool.New(functiontool.Config{
+		Name:        "kubernaut_await_session",
+		Description: "Wait for the AI investigation session to become ready for a given remediation request. Returns the KA session ID when available.",
+	}, func(ctx tool.Context, args AwaitSessionArgs) (AwaitSessionResult, error) {
+		return HandleAwaitSession(ctx, client, args)
+	})
+}

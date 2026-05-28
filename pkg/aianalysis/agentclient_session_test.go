@@ -311,3 +311,105 @@ var _ = Describe("AgentClient Session Methods [BR-AA-HAPI-064]", func() {
 	})
 
 })
+
+// BR-INTERACTIVE-010: CancelSession client HTTP-level tests.
+// Verifies idempotent handling of 200, 404, and 409 responses.
+var _ = Describe("AgentClient CancelSession [BR-INTERACTIVE-010]", func() {
+	var (
+		mockServer *httptest.Server
+		hgClient   *agentclient.KubernautAgentClient
+		ctx        context.Context
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+	})
+
+	AfterEach(func() {
+		if mockServer != nil {
+			mockServer.Close()
+		}
+	})
+
+	Context("UT-AA-1293-006: calls correct endpoint with 200 OK", func() {
+		BeforeEach(func() {
+			mockServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				Expect(r.URL.Path).To(Equal("/api/v1/incident/session/sess-123/cancel"))
+				Expect(r.Method).To(Equal(http.MethodPost))
+
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"session_id":"sess-123","status":"cancelled"}`))
+			}))
+
+			var err error
+			hgClient, err = agentclient.NewKubernautAgentClient(agentclient.Config{BaseURL: mockServer.URL})
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("should return nil (success)", func() {
+			err := hgClient.CancelSession(ctx, "sess-123")
+			Expect(err).NotTo(HaveOccurred())
+		})
+	})
+
+	Context("UT-AA-1293-007: handles 404 gracefully (session already gone)", func() {
+		BeforeEach(func() {
+			mockServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				Expect(r.URL.Path).To(Equal("/api/v1/incident/session/sess-gone/cancel"))
+				w.Header().Set("Content-Type", "application/problem+json")
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = w.Write([]byte(`{"type":"https://kubernaut.ai/problems/not-found","title":"Session Not Found","detail":"session sess-gone not found","status":404,"instance":"/api/v1/incident/session/sess-gone/cancel"}`))
+			}))
+
+			var err error
+			hgClient, err = agentclient.NewKubernautAgentClient(agentclient.Config{BaseURL: mockServer.URL})
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("should return nil (idempotent)", func() {
+			err := hgClient.CancelSession(ctx, "sess-gone")
+			Expect(err).NotTo(HaveOccurred())
+		})
+	})
+
+	Context("UT-AA-1293-008: handles 409 gracefully (session already terminal)", func() {
+		BeforeEach(func() {
+			mockServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				Expect(r.URL.Path).To(Equal("/api/v1/incident/session/sess-terminal/cancel"))
+				w.Header().Set("Content-Type", "application/problem+json")
+				w.WriteHeader(http.StatusConflict)
+				_, _ = w.Write([]byte(`{"type":"https://kubernaut.ai/problems/session-terminal","title":"Session Terminal","detail":"session already in terminal state","status":409,"instance":"/api/v1/incident/session/sess-terminal/cancel"}`))
+			}))
+
+			var err error
+			hgClient, err = agentclient.NewKubernautAgentClient(agentclient.Config{BaseURL: mockServer.URL})
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("should return nil (idempotent)", func() {
+			err := hgClient.CancelSession(ctx, "sess-terminal")
+			Expect(err).NotTo(HaveOccurred())
+		})
+	})
+
+	Context("network failure returns APIError", func() {
+		BeforeEach(func() {
+			mockServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				mockServer.CloseClientConnections()
+			}))
+
+			var err error
+			hgClient, err = agentclient.NewKubernautAgentClient(agentclient.Config{BaseURL: mockServer.URL})
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("should return APIError", func() {
+			err := hgClient.CancelSession(ctx, "sess-network")
+
+			Expect(err).To(HaveOccurred())
+			var apiErr *agentclient.APIError
+			Expect(errors.As(err, &apiErr)).To(BeTrue())
+		})
+	})
+})

@@ -96,7 +96,7 @@ type Event struct {
 | `ka.delegated` | `EventKADelegated` | AU-2, AU-12 | Work delegated to KubernautAgent (takeover, reconnect, REST) | `session_id`, `ka_correlation_id`, `delegation_type` |
 | `ka.result_received` | `EventKAResultReceived` | AU-2, AU-12 | Result received from KubernautAgent (complete, cancel, REST) | `session_id`, `ka_correlation_id`, `result_type` |
 
-**Emitted from:** `pkg/apifrontend/tools/ka_tools.go`, `pkg/apifrontend/tools/ka_interactive.go`
+**Emitted from:** `pkg/apifrontend/tools/ka_investigate.go`, `pkg/apifrontend/tools/ka_interactive.go`
 
 ---
 
@@ -151,7 +151,7 @@ Events are delivered through the `audit.Emitter` interface. Two implementations 
 | `LogEmitter` | `pkg/apifrontend/audit` | Writes structured log entries via `logr` (stdout/stderr) |
 | `StoreAdapter` | `pkg/apifrontend/audit` | Normalizes events to `apifrontend.<event_type>` format, classifies severity, and forwards to Data Store API with correlation-ID enrichment |
 
-**Buffering contract (ADR-019):** The `StoreAdapter` holds up to `MaxPending` events in memory. If the buffer overflows, oldest events are dropped and `af_audit_buffer_overflow_total` metric increments. On graceful shutdown, `Close()` flushes remaining events with a context deadline.
+**Buffering contract (ADR-019):** The shared `pkg/audit.BufferedAuditStore` (default capacity 10,000) buffers events in memory. If the buffer is full, newest events are dropped and the platform-standard `audit_events_dropped_total{service="apifrontend"}` metric increments. On graceful shutdown, `Close()` flushes remaining events with a context deadline.
 
 ---
 

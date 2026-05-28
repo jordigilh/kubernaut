@@ -32,13 +32,14 @@ var _ = Describe("Keyword Scenarios YAML Override (issue #1160)", func() {
 		It("UT-MOCK-KW-001-001: should parse keyword_scenarios from YAML", func() {
 			yaml := `
 keyword_scenarios:
-  - name: "af_start_investigation"
+  - name: "af_investigate"
     keywords: ["start investigation", "begin investigation"]
     tool_call:
-      name: "kubernaut_start_investigation"
+      name: "kubernaut_investigate"
       arguments:
         namespace: "default"
-        pod_name: "nginx"
+        name: "nginx"
+        kind: "Pod"
   - name: "kubectl_list_pods"
     keywords: ["get pods"]
     tool_call:
@@ -53,11 +54,12 @@ keyword_scenarios:
 			overrides, err := config.LoadYAMLOverrides(tmpFile)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(overrides.KeywordScenarios).To(HaveLen(2))
-			Expect(overrides.KeywordScenarios[0].Name).To(Equal("af_start_investigation"))
+			Expect(overrides.KeywordScenarios[0].Name).To(Equal("af_investigate"))
 			Expect(overrides.KeywordScenarios[0].Keywords).To(ConsistOf("start investigation", "begin investigation"))
-			Expect(overrides.KeywordScenarios[0].ToolCall.Name).To(Equal("kubernaut_start_investigation"))
+			Expect(overrides.KeywordScenarios[0].ToolCall.Name).To(Equal("kubernaut_investigate"))
 			Expect(overrides.KeywordScenarios[0].ToolCall.Arguments).To(HaveKeyWithValue("namespace", "default"))
-			Expect(overrides.KeywordScenarios[0].ToolCall.Arguments).To(HaveKeyWithValue("pod_name", "nginx"))
+			Expect(overrides.KeywordScenarios[0].ToolCall.Arguments).To(HaveKeyWithValue("name", "nginx"))
+			Expect(overrides.KeywordScenarios[0].ToolCall.Arguments).To(HaveKeyWithValue("kind", "Pod"))
 		})
 
 		It("UT-MOCK-KW-001-002: should coexist with existing scenario overrides", func() {
@@ -103,10 +105,10 @@ scenarios:
 				Scenarios: map[string]config.ScenarioOverride{},
 				KeywordScenarios: []config.KeywordScenarioOverride{
 					{
-						Name:     "af_start_investigation",
+						Name:     "af_investigate",
 						Keywords: []string{"start investigation"},
 						ToolCall: config.ToolCallOverride{
-							Name:      "kubernaut_start_investigation",
+							Name:      "kubernaut_investigate",
 							Arguments: map[string]string{"namespace": "default"},
 						},
 					},
@@ -120,12 +122,12 @@ scenarios:
 			}
 			result := registry.Detect(detCtx)
 			Expect(result.Confidence).To(Equal(1.0))
-			Expect(result.Scenario.Name()).To(Equal("af_start_investigation"))
+			Expect(result.Scenario.Name()).To(Equal("af_investigate"))
 
 			scenarioWithCfg, ok := result.Scenario.(scenarios.ScenarioWithConfig)
 			Expect(ok).To(BeTrue())
 			cfg := scenarioWithCfg.Config()
-			Expect(cfg.ToolCallName).To(Equal("kubernaut_start_investigation"))
+			Expect(cfg.ToolCallName).To(Equal("kubernaut_investigate"))
 			Expect(cfg.ToolCallArgs).To(HaveKeyWithValue("namespace", "default"))
 		})
 
@@ -134,9 +136,9 @@ scenarios:
 				Scenarios: map[string]config.ScenarioOverride{},
 				KeywordScenarios: []config.KeywordScenarioOverride{
 					{
-						Name:     "af_start_investigation",
+						Name:     "af_investigate",
 						Keywords: []string{"start investigation"},
-						ToolCall: config.ToolCallOverride{Name: "kubernaut_start_investigation"},
+						ToolCall: config.ToolCallOverride{Name: "kubernaut_investigate"},
 					},
 				},
 			}
@@ -148,7 +150,7 @@ scenarios:
 			}
 			result := registry.Detect(detCtx)
 			// Should fall through to default fallback, not keyword scenario
-			Expect(result.Scenario.Name()).ToNot(Equal("af_start_investigation"))
+			Expect(result.Scenario.Name()).ToNot(Equal("af_investigate"))
 		})
 
 		It("UT-MOCK-KW-002-003: should support multiple keywords for same scenario", func() {

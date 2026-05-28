@@ -330,7 +330,7 @@ func main() {
 		investigationRunner = wrapper
 	}
 
-	store := session.NewStore(cfg.Runtime.Session.TTL)
+	store := session.NewStore(cfg.Runtime.Session.TTL, session.WithLogger(logger.WithName("session-store")))
 	mgr := session.NewManager(store, logger, instrumentedAudit, agentMetrics)
 
 	handler := kaserver.NewHandler(mgr, investigationRunner, logger, agentMetrics)
@@ -1318,11 +1318,14 @@ func buildMCPHandler(
 		go func() {
 			reconCtx, reconCancel := context.WithTimeout(context.Background(), 5*time.Minute)
 			defer reconCancel()
-			_ = reconSpawner.SpawnReconstruct(reconCtx, &mcpkg.ReconstructionContext{
+			if err := reconSpawner.SpawnReconstruct(reconCtx, &mcpkg.ReconstructionContext{
 				CorrelationID: rrID,
 				SessionID:     interactiveSessionID,
 				SignalMeta:    signalMeta,
-			})
+			}); err != nil {
+				logger.Error(err, "background reconstruction failed",
+					"correlationID", rrID, "sessionID", interactiveSessionID)
+			}
 		}()
 	}, logger)
 

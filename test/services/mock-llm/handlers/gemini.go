@@ -150,7 +150,7 @@ func (h *handler) handleGemini(w http.ResponseWriter, r *http.Request) {
 				writeJSON(w, http.StatusOK, response.BuildGeminiTextResponse(cfg))
 			}
 		} else {
-			h.handleGeminiToolResponse(w, cfg, req.Tools, hasFunctionResults, hasSplit, resolved)
+			h.handleGeminiToolResponse(w, cfg, req.Tools, req.Contents, hasFunctionResults, hasSplit, resolved)
 		}
 	}
 
@@ -162,9 +162,16 @@ func (h *handler) handleGeminiToolResponse(
 	w http.ResponseWriter,
 	cfg scenarios.MockScenarioConfig,
 	tools []response.GeminiToolDecl,
+	contents []response.GeminiContent,
 	hasFunctionResults, hasSplit, resolved bool,
 ) {
-	if len(cfg.MultiToolCalls) > 0 && (!hasFunctionResults || cfg.RepeatToolCall) {
+	// Guard against infinite tool-call loops (#1189): if RepeatToolCall is
+	// enabled but the last content in the conversation is already a
+	// FunctionResponse (meaning we just executed the tool in this iteration),
+	// fall through to text response instead of re-emitting the tool call.
+	repeatAllowed := cfg.RepeatToolCall && !response.LastContentIsFunctionResponse(contents)
+
+	if len(cfg.MultiToolCalls) > 0 && (!hasFunctionResults || repeatAllowed) {
 		for _, tc := range cfg.MultiToolCalls {
 			h.trackToolCall(tc.Name)
 		}
@@ -172,7 +179,7 @@ func (h *handler) handleGeminiToolResponse(
 		return
 	}
 
-	if cfg.ToolCallName != "" && (!hasFunctionResults || cfg.RepeatToolCall) {
+	if cfg.ToolCallName != "" && (!hasFunctionResults || repeatAllowed) {
 		h.trackToolCall(cfg.ToolCallName)
 		writeJSON(w, http.StatusOK, response.BuildGeminiToolCallResponse(cfg.ToolCallName, cfg))
 		return

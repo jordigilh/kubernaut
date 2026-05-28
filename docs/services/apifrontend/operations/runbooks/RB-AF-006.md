@@ -6,7 +6,7 @@
 
 ## Symptoms
 
-- `af_audit_buffer_overflow_total` counter incrementing
+- `audit_events_dropped_total{service="apifrontend"}` counter incrementing (from `pkg/audit.BufferedAuditStore`)
 - Audit events may be lost — FedRAMP AU-11 compliance at risk
 - Likely indicates DS connectivity issues
 
@@ -30,7 +30,7 @@
 
 4. Check AF buffer metrics:
    ```promql
-   rate(af_audit_buffer_overflow_total[5m])
+   rate(audit_events_dropped_total{service="apifrontend"}[5m])
    ```
 
 ## Resolution

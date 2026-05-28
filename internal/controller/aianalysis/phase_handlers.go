@@ -93,8 +93,8 @@ func (r *AIAnalysisReconciler) reconcileInvestigating(ctx context.Context, analy
 	log := r.Log.WithValues("phase", "Investigating", "name", analysis.Name)
 	log.Info("Processing Investigating phase")
 
-	// Use handler if wired in, otherwise stub for backward compatibility
-	if r.InvestigatingHandler != nil {
+	invHandler := r.InvestigatingHandler.Load()
+	if invHandler != nil {
 		// AA-BUG-007: Use optimistic locking with idempotency check
 
 		var phaseBefore string
@@ -131,7 +131,7 @@ func (r *AIAnalysisReconciler) reconcileInvestigating(ctx context.Context, analy
 			}
 
 			// Execute handler ONLY if phase check passed AND not already executed
-			result, handlerErr = r.InvestigatingHandler.Handle(ctx, analysis)
+			result, handlerErr = invHandler.Handle(ctx, analysis)
 			handlerExecuted = true
 			if handlerErr != nil {
 				return handlerErr

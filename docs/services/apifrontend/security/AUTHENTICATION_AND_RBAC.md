@@ -199,9 +199,12 @@ The Kustomize-managed ClusterRole (`deploy/apifrontend/base/02-rbac.yaml`) grant
 | `kubernaut.ai` | signalprocessings, investigationsessions | get, list, watch, create, update, patch, delete | Session lifecycle |
 | `kubernaut.ai` | */status | get, update, patch | Status subresource updates |
 | (core) | events | get, list, create, patch | Triage reads + event creation |
-| (core) | pods, replicationcontrollers | get, list | Triage tool reads |
+| (core) | pods, replicationcontrollers, services, endpoints, configmaps, secrets, namespaces, nodes, persistentvolumeclaims | get, list | Triage tool reads (#1308) |
 | `apps` | deployments, statefulsets, replicasets, daemonsets | get, list | Workload triage |
 | `batch` | jobs, cronjobs | get, list | Job triage |
+| `networking.k8s.io` | ingresses, networkpolicies | get, list | Network triage (#1308) |
+| `autoscaling` | horizontalpodautoscalers | get, list | HPA triage (#1308) |
+| `policy` | poddisruptionbudgets | get, list | PDB triage (#1308) |
 | `authentication.k8s.io` | tokenreviews | create | JWT fallback validation |
 | `authorization.k8s.io` | subjectaccessreviews | create | Authorization checks |
 
@@ -219,7 +222,7 @@ The severity triage pipeline (`internal/severity/triage.go`) queries Prometheus 
 | Rationale | Prometheus metrics/rules are cluster-wide data; user-scoped access is not applicable |
 | NIST | AC-6 (least privilege): AF only needs read access to `/api/v1/{alerts,rules,query}` |
 
-This is distinct from the internal triage tools (`kubectl_get`, `kubectl_list`, `kubectl_list_events`) which use AF's ServiceAccount. Access to these tools is gated by MCP RBAC at the tool level — if a user has permission to invoke `kubernaut_start_investigation`, AF investigates on their behalf using its own SA.
+This is distinct from the internal triage tools (`kubectl_get`, `kubectl_list`, `kubectl_list_events`) which use AF's ServiceAccount. Access to these tools is gated by MCP RBAC at the tool level — if a user has permission to invoke `kubernaut_investigate`, AF investigates on their behalf using its own SA.
 
 ---
 
@@ -237,7 +240,7 @@ This is distinct from the internal triage tools (`kubectl_get`, `kubectl_list`, 
 
 | ADR | Title | Relevance |
 |-----|-------|-----------|
-| ADR-013 | JWT Forwarding to KA | Original JWT forwarded byte-identical to downstream services |
+| ADR-013 | JWT Forwarding to KA | **Superseded by DD-AUTH-MCP-001 v3.0 (#1287)**: AF uses SA bearer token to KA/DS, not JWT delegation |
 | ADR-016 | JWKS Fail-Open Rationale | When circuit breaker opens, cached keys allow validation to continue |
 | ADR-018 | Impersonation Risk Acceptance | **Superseded by ADR-022** |
 | ADR-022 | AF SA Unified Security Model | All K8s operations use AF SA; MCP RBAC is the application-level gate |

@@ -10,7 +10,7 @@
 ## Symptoms
 
 - `af_severity_triage_errors_total` counter rising
-- `af_create_rr` or `kubernaut_submit_signal` returning errors when severity is not user-supplied
+- `af_create_rr` returning errors when the severity triage pipeline fails (severity is always AF-resolved via triage, never LLM-supplied — see #1282)
 - Audit events `severity.triage.failed` appearing in the audit trail
 - Users reporting "triage failed" errors when creating remediations without explicit severity
 
@@ -117,4 +117,4 @@ If both Prometheus and LLM are healthy but triage still fails:
 
 ---
 
-*Related: `docs/design/SEVERITY_TRIAGE.md`, `docs/adr/ADR-021-severity-triage.md`*
+*Related: `docs/tests/1282/TEST_PLAN.md` (signal grounding + triage), `docs/adr/ADR-021-severity-triage.md`*

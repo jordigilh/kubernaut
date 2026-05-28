@@ -1,13 +1,13 @@
 # RB-AF-013: SAR-based Tool Authorization Troubleshooting
 
 **Severity:** Medium
-**Alert:** `af_mcp_rbac_denied_total` increasing
+**Alert:** `af_tool_calls_total{result="denied"}` increasing
 **Component:** `pkg/apifrontend/auth/sar.go`, `pkg/apifrontend/handler/mcp_bridge.go`
 
 ## Symptom
 
 Users report "permission denied" errors when invoking MCP or A2A tools. The
-metric `af_mcp_rbac_denied_total` is incrementing.
+metric `af_tool_calls_total{result="denied"}` is incrementing.
 
 ## Diagnosis
 
@@ -70,5 +70,5 @@ Wait for the TTL to expire, or restart the AF pod to clear the cache.
 ## Prevention
 
 - Include ClusterRoleBindings in your deployment automation
-- Monitor `af_mcp_rbac_denied_total` with an alert threshold
+- Monitor `af_tool_calls_total{result="denied"}` with an alert threshold
 - Use `kubectl auth can-i` in CI to validate RBAC before deployment

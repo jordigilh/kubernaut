@@ -1011,6 +1011,14 @@
                 "llmConfidence": { "type": "number", "default": 0.7 }
               }
             },
+            "auth": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "issuerURL": { "type": "string", "default": "", "description": "OIDC issuer URL for JWT validation. When set, OIDC/JWKS auth is used. When empty, K8s TokenReview is auto-detected." },
+                "audience": { "type": "string", "default": "", "description": "Expected JWT audience claim" }
+              }
+            },
             "rbac": {
               "type": "object",
               "additionalProperties": false,

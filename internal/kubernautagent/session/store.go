@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/google/uuid"
 
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
@@ -63,6 +64,11 @@ type Session struct {
 	cancel    context.CancelFunc
 	eventChan chan InvestigationEvent
 	lazySink  *LazySink
+
+	// deferredFn holds the investigation function for interactive sessions
+	// created in pending state (BR-INTERACTIVE-010). Consumed by
+	// LaunchDeferredInvestigation.
+	deferredFn InvestigateFunc
 }
 
 // ErrSessionNotFound is returned when a session ID does not exist in the store.
@@ -81,10 +87,16 @@ type Store struct {
 	sessions      map[string]*Session
 	ttl           time.Duration
 	maxSessionAge time.Duration
+	logger        logr.Logger
 }
 
 // StoreOption configures optional Store behaviour.
 type StoreOption func(*Store)
+
+// WithLogger sets the logger for the Store.
+func WithLogger(l logr.Logger) StoreOption {
+	return func(s *Store) { s.logger = l }
+}
 
 // WithMaxSessionAge sets the hard eviction age for non-terminal sessions.
 // Must be >= TTL. Defaults to 2 * TTL if not set.
@@ -99,6 +111,7 @@ func NewStore(ttl time.Duration, opts ...StoreOption) *Store {
 		sessions:      make(map[string]*Session),
 		ttl:           ttl,
 		maxSessionAge: 2 * ttl,
+		logger:        logr.Discard(),
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -280,6 +293,12 @@ func (s *Store) Cleanup() int {
 			}
 		default:
 			if sess.CreatedAt.Before(nonTerminalCutoff) {
+				if sess.Status == StatusPending {
+					s.logger.Info("evicting pending interactive session (user never connected)",
+						"session_id", id,
+						"remediation_id", sess.Metadata["remediation_id"],
+						"age", now.Sub(sess.CreatedAt).String())
+				}
 				delete(s.sessions, id)
 				removed++
 			}

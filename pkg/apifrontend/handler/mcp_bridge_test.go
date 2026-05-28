@@ -281,23 +281,30 @@ func isErrorResult(body string) bool {
 	return isErr
 }
 
-// newKATestServer creates a fake KA REST API httptest server.
+// newKATestServer creates a fake KA REST API httptest server for kubernaut_investigate.
 func newKATestServer() *httptest.Server {
+	const sessionID = "test-session-123"
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/incident/analyze", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
-		_ = json.NewEncoder(w).Encode(map[string]string{"session_id": "test-session-123"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"session_id": sessionID})
 	})
 	mux.HandleFunc("/api/v1/incident/session/", func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/result") {
-			_ = json.NewEncoder(w).Encode(map[string]string{"session_id": "test-session-123", "summary": "test result"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"session_id": sessionID, "summary": "test result"})
 			return
 		}
 		if strings.HasSuffix(r.URL.Path, "/cancel") {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]string{"session_id": "test-session-123", "status": "completed"})
+		if strings.HasSuffix(r.URL.Path, "/stream") {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			_, _ = fmt.Fprintf(w, "event: complete\ndata: {\"type\":\"complete\",\"summary\":\"investigation complete\"}\n\n")
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]string{"session_id": sessionID, "status": "completed"})
 	})
 	return httptest.NewServer(mux)
 }
@@ -484,7 +491,7 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 	})
 
 	Context("Tool registration", func() {
-		It("UT-AF-B-023: RegisterTools registers exactly 16 domain tools on the server", func() {
+		It("UT-AF-B-023: RegisterTools registers exactly 22 domain tools on the server", func() {
 			listReq := map[string]any{
 				"jsonrpc": "2.0",
 				"id":      3,
@@ -495,7 +502,7 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 			Expect(rec.Code).To(Equal(http.StatusOK))
 			body := rec.Body.String()
 			count := countToolsInResponse(body)
-			Expect(count).To(Equal(23))
+			Expect(count).To(Equal(22))
 		})
 	})
 
@@ -538,15 +545,19 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 	})
 
 	Context("KA REST tools dispatch", func() {
-		It("UT-AF-B-007: kubernaut_start_investigation dispatches correctly", func() {
-			_, body := mcpCallTool(h, sessionID, "kubernaut_start_investigation",
+		It("UT-AF-B-007: kubernaut_investigate starts new investigation (namespace/name)", func() {
+			_, body := mcpCallTool(h, sessionID, "kubernaut_investigate",
 				map[string]any{"namespace": "default", "name": "nginx", "kind": "Deployment"}, testUser)
 			text := extractTextContent(body)
-			Expect(text).To(ContainSubstring("test-session-123"))
+			Expect(text).To(SatisfyAny(
+				ContainSubstring("test-session-123"),
+				ContainSubstring("completed"),
+				ContainSubstring("investigation complete"),
+			))
 		})
 
-		It("UT-AF-B-008: kubernaut_poll_investigation dispatches correctly", func() {
-			_, body := mcpCallTool(h, sessionID, "kubernaut_poll_investigation",
+		It("UT-AF-B-008: kubernaut_investigate polls completed session (session_id)", func() {
+			_, body := mcpCallTool(h, sessionID, "kubernaut_investigate",
 				map[string]any{"session_id": "test-session-123"}, testUser)
 			text := extractTextContent(body)
 			Expect(text).To(ContainSubstring("completed"))
@@ -946,7 +957,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 	})
 
 	Context("tools/list shows all tools regardless of RBAC", func() {
-		It("UT-AF-B-040: viewer sees all 23 tools in tools/list", func() {
+		It("UT-AF-B-040: viewer sees all 22 tools in tools/list", func() {
 			cfg := handler.MCPConfig{
 				ServerName:    "kubernaut-apifrontend",
 				ServerVersion: "v0.1.0-test",
@@ -975,7 +986,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 			rec := mcpPost(h, sid, listReq, viewer)
 			Expect(rec.Code).To(Equal(http.StatusOK))
 			count := countToolsInResponse(rec.Body.String())
-			Expect(count).To(Equal(23))
+			Expect(count).To(Equal(22))
 		})
 	})
 })

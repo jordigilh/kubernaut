@@ -235,10 +235,10 @@ var _ = Describe("Interactive Action Handlers (G1)", func() {
 	})
 
 	Describe("Constructors (G1)", func() {
-		It("UT-AF-1234-060: NewStreamInvestigationTool constructor returns valid tool", func() {
-			t, err := tools.NewStreamInvestigationTool(nil)
+		It("UT-AF-1234-060: NewInvestigateTool constructor returns valid tool", func() {
+			t, err := tools.NewInvestigateTool(nil, nil)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(t.Name()).To(Equal("kubernaut_stream_investigation"))
+			Expect(t.Name()).To(Equal("kubernaut_investigate"))
 		})
 
 		It("UT-AF-1234-061: Interactive tool constructors return valid tools", func() {
@@ -262,32 +262,56 @@ var _ = Describe("Interactive Action Handlers (G1)", func() {
 	})
 
 	Describe("Audit emission", func() {
-		It("UT-AF-1234-063: HandleTakeover emits EventKADelegated audit", func() {
+		// invokeForAudit is a test helper that invokes a handler and returns the emitted audit event.
+		invokeForAudit := func(
+			handler func(context.Context, ka.MCPClient, tools.InteractiveActionArgs, audit.Emitter) (tools.InteractiveActionResult, error),
+			args tools.InteractiveActionArgs,
+		) *audit.Event {
 			mockMCP = &ka.MockMCPClient{
 				InvokeActionFn: func(_ context.Context, _ ka.InvokeActionArgs) (*ka.InvokeActionResult, error) {
-					return &ka.InvokeActionResult{Status: "active"}, nil
+					return &ka.InvokeActionResult{Status: "active", SessionID: "s-001"}, nil
 				},
 			}
-			_, err := tools.HandleTakeover(ctx, mockMCP, tools.InteractiveActionArgs{
-				RRID: "prod/rr-001",
-			}, spy)
+			_, err := handler(ctx, mockMCP, args, spy)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(spy.events).NotTo(BeEmpty())
-			Expect(spy.events[0].Type).To(Equal(audit.EventKADelegated))
+			Expect(spy.events).To(HaveLen(1))
+			return spy.events[0]
+		}
+
+		It("UT-AF-1234-063: HandleTakeover emits EventKADelegated audit", func() {
+			ev := invokeForAudit(tools.HandleTakeover, tools.InteractiveActionArgs{RRID: "prod/rr-001"})
+			Expect(ev.Type).To(Equal(audit.EventKADelegated))
 		})
 
 		It("UT-AF-1234-064: HandleMessage emits EventToolExecuted audit", func() {
-			mockMCP = &ka.MockMCPClient{
-				InvokeActionFn: func(_ context.Context, _ ka.InvokeActionArgs) (*ka.InvokeActionResult, error) {
-					return &ka.InvokeActionResult{Status: "active"}, nil
-				},
-			}
-			_, err := tools.HandleMessage(ctx, mockMCP, tools.InteractiveActionArgs{
-				RRID:    "prod/rr-001",
-				Message: "test message",
-			}, spy)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(spy.events).NotTo(BeEmpty())
+			ev := invokeForAudit(tools.HandleMessage, tools.InteractiveActionArgs{RRID: "prod/rr-001", Message: "test message"})
+			Expect(ev.Type).To(Equal(audit.EventToolExecuted))
 		})
+
+		type auditDetailCase struct {
+			testID  string
+			handler func(context.Context, ka.MCPClient, tools.InteractiveActionArgs, audit.Emitter) (tools.InteractiveActionResult, error)
+			args    tools.InteractiveActionArgs
+			key     string
+			value   string
+		}
+
+		auditCases := []auditDetailCase{
+			{"UT-AF-1300-001", tools.HandleStatus, tools.InteractiveActionArgs{RRID: "prod/rr-001"}, "tool_outcome", "success"},
+			{"UT-AF-1300-002", tools.HandleMessage, tools.InteractiveActionArgs{RRID: "prod/rr-001", Message: "check logs"}, "tool_outcome", "success"},
+			{"UT-AF-AUDIT-001", tools.HandleComplete, tools.InteractiveActionArgs{RRID: "prod/rr-001"}, "result_type", "rca_complete"},
+			{"UT-AF-AUDIT-002", tools.HandleCancel, tools.InteractiveActionArgs{RRID: "prod/rr-001"}, "result_type", "cancelled"},
+			{"UT-AF-AUDIT-003", tools.HandleMessage, tools.InteractiveActionArgs{RRID: "prod/rr-001", Message: "check logs"}, "tool_name", "kubernaut_message"},
+			{"UT-AF-AUDIT-004", tools.HandleStatus, tools.InteractiveActionArgs{RRID: "prod/rr-001"}, "tool_name", "kubernaut_status"},
+		}
+
+		for _, tc := range auditCases {
+			tc := tc
+			It(tc.testID+": audit detail["+tc.key+"]="+tc.value, func() {
+				ev := invokeForAudit(tc.handler, tc.args)
+				Expect(ev.Detail).To(HaveKeyWithValue(tc.key, tc.value),
+					"OpenAPI schema requires %s=%s in audit event", tc.key, tc.value)
+			})
+		}
 	})
 })

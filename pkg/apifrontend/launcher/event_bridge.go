@@ -38,18 +38,26 @@ type BridgeMetrics interface {
 // artifacts) directly to the A2A event queue during execution. This bridges KA
 // SSE investigation events into the A2A stream without waiting for the tool to
 // return a FunctionResponse.
+//
+// The bridge manages a stable ArtifactID across emissions: the first emission
+// creates a new artifact (Append=false) and captures the ID; subsequent
+// emissions append to that artifact (Append=true) with the same ID. This
+// satisfies the a2a-go taskupdate.Manager contract that requires a matching
+// ArtifactID for append operations.
 type EventBridge struct {
-	queue   eventqueue.Writer
-	taskID  a2a.TaskID
-	metrics BridgeMetrics
+	queue      eventqueue.Writer
+	taskID     a2a.TaskID
+	contextID  string
+	metrics    BridgeMetrics
+	artifactID a2a.ArtifactID
 }
 
 const maxBridgeTextLen = 512
 
 // WithEventBridge attaches an EventBridge to the context, enabling
 // downstream tool handlers to emit progressive reasoning artifacts.
-func WithEventBridge(ctx context.Context, queue eventqueue.Writer, taskID a2a.TaskID, m BridgeMetrics) context.Context {
-	bridge := &EventBridge{queue: queue, taskID: taskID, metrics: m}
+func WithEventBridge(ctx context.Context, queue eventqueue.Writer, taskID a2a.TaskID, contextID string, m BridgeMetrics) context.Context {
+	bridge := &EventBridge{queue: queue, taskID: taskID, contextID: contextID, metrics: m}
 	return context.WithValue(ctx, contextKey{}, bridge)
 }
 
@@ -66,18 +74,29 @@ func EventBridgeFromContext(ctx context.Context) *EventBridge {
 
 // EmitReasoning writes a progressive reasoning artifact to the A2A event queue.
 // The text is sanitized (control characters stripped, secrets redacted) and
-// truncated to maxBridgeTextLen to prevent flooding. The artifact uses
-// Append=true so it extends the existing narrative rather than replacing.
+// truncated to maxBridgeTextLen to prevent flooding.
+//
+// On the first call the bridge creates a new artifact (Append=false) with a
+// generated ArtifactID. Subsequent calls append to that same artifact
+// (Append=true) so the a2a-go taskupdate.Manager can locate the existing
+// artifact by its ID.
 func (b *EventBridge) EmitReasoning(ctx context.Context, text string) error {
 	text = sanitizeBridgeText(text)
 	if text == "" {
 		return nil
 	}
 
+	isAppend := b.artifactID != ""
+	if !isAppend {
+		b.artifactID = a2a.NewArtifactID()
+	}
+
 	event := &a2a.TaskArtifactUpdateEvent{
-		TaskID: b.taskID,
-		Append: true,
+		TaskID:    b.taskID,
+		ContextID: b.contextID,
+		Append:    isAppend,
 		Artifact: &a2a.Artifact{
+			ID: b.artifactID,
 			Parts: []a2a.Part{
 				&a2a.TextPart{Text: text},
 			},

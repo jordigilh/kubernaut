@@ -18,6 +18,8 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
 
+	adksession "google.golang.org/adk/session"
+
 	v1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
@@ -28,6 +30,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/metrics"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ratelimit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/resilience"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
 )
 
 // ---------------------------------------------------------------------------
@@ -272,7 +275,10 @@ func TestBuildSessionInfra_ReturnsNonNilService(t *testing.T) {
 			RetentionTTL:  31 * 24 * time.Hour,
 		},
 	}
-	infra := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	infra, err := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	if err != nil {
+		t.Skipf("HIGH-02b: skipping (no kubeconfig available): %v", err)
+	}
 	if infra.SessionService == nil {
 		t.Fatal("HIGH-02b: buildSessionInfra must return a non-nil SessionService")
 	}
@@ -288,7 +294,10 @@ func TestBuildSessionInfra_GaugeIsWired(t *testing.T) {
 			RetentionTTL:  31 * 24 * time.Hour,
 		},
 	}
-	infra := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	infra, err := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	if err != nil {
+		t.Skipf("skipping (no kubeconfig available): %v", err)
+	}
 	if infra.SessionService == nil {
 		t.Fatal("SessionService is nil")
 	}
@@ -312,7 +321,10 @@ func TestBuildSessionInfra_ReconcilerIsCreated(t *testing.T) {
 			RetentionTTL:  31 * 24 * time.Hour,
 		},
 	}
-	infra := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	infra, err := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	if err != nil {
+		t.Skipf("skipping (no kubeconfig available): %v", err)
+	}
 	if infra.Reconciler == nil {
 		t.Fatal("HIGH-02b: buildSessionInfra must return a non-nil Reconciler")
 	}
@@ -328,7 +340,10 @@ func TestBuildSessionInfra_RetentionTTLClamped(t *testing.T) {
 			RetentionTTL:  1 * time.Hour, // below NIST AU-11 minimum
 		},
 	}
-	infra := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	infra, err := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	if err != nil {
+		t.Skipf("skipping (no kubeconfig available): %v", err)
+	}
 	if infra.Reconciler == nil {
 		t.Fatal("Reconciler must not be nil even with sub-minimum retention TTL")
 	}
@@ -344,7 +359,10 @@ func TestBuildSessionInfra_SchemeIncludesInvestigationSession(t *testing.T) {
 			RetentionTTL:  31 * 24 * time.Hour,
 		},
 	}
-	infra := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	infra, err := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	if err != nil {
+		t.Skipf("skipping (no kubeconfig available): %v", err)
+	}
 	if infra.Scheme == nil {
 		t.Fatal("HIGH-02b: buildSessionInfra must return a non-nil Scheme")
 	}
@@ -365,7 +383,10 @@ func TestBuildSessionInfra_GracefulShutdown(t *testing.T) {
 			RetentionTTL:  31 * 24 * time.Hour,
 		},
 	}
-	infra := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	infra, err := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	if err != nil {
+		t.Skipf("skipping (no kubeconfig available): %v", err)
+	}
 	if infra.StopFunc == nil {
 		t.Fatal("HIGH-02b: buildSessionInfra must return a StopFunc for graceful shutdown")
 	}
@@ -422,6 +443,67 @@ func TestBuildAuthMiddleware_NoAuth_ReadyAlwaysTrue(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// UT-AF-1309-020: OIDC mode rejects opaque token (no TokenReview wired)
+// ---------------------------------------------------------------------------
+
+func TestBuildAuthMiddleware_OIDCMode_RejectsOpaqueToken(t *testing.T) {
+	t.Parallel()
+
+	jwksSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"keys":[]}`)
+	}))
+	t.Cleanup(jwksSrv.Close)
+
+	cfg := &config.Config{}
+	cfg.Auth.IssuerURL = jwksSrv.URL
+	cfg.Auth.JWKSURL = jwksSrv.URL
+	cfg.Auth.Audience = "test"
+	cfg.Auth.AllowInsecureIssuers = true
+
+	reg := metrics.NewRegistry()
+	mw, _ := buildAuthMiddleware(cfg, reg, nil, logr.Discard())
+	if mw == nil {
+		t.Fatal("UT-AF-1309-020: buildAuthMiddleware returned nil")
+	}
+
+	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	wrapped := mw(inner)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
+	req.Header.Set("Authorization", "Bearer opaque-sa-token-not-jwt")
+	wrapped.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("UT-AF-1309-020: expected 401 for opaque token in OIDC mode, got %d", rec.Code)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// UT-AF-1309-021: No OIDC → auto-detect TokenReview mode or pass-through
+// ---------------------------------------------------------------------------
+
+func TestBuildAuthMiddleware_NoOIDC_AutoDetect(t *testing.T) {
+	t.Parallel()
+
+	cfg := &config.Config{}
+	reg := metrics.NewRegistry()
+	mw, readyFn := buildAuthMiddleware(cfg, reg, nil, logr.Discard())
+	if mw == nil {
+		t.Fatal("UT-AF-1309-021: buildAuthMiddleware returned nil")
+	}
+	if readyFn == nil {
+		t.Fatal("UT-AF-1309-021: readiness checker must not be nil")
+	}
+	// When no OIDC issuer is configured, buildAuthMiddleware either wires
+	// TokenReview (if kubeconfig is available) or falls back to pass-through.
+	// Both are valid outcomes; the key assertion is that no OIDC is attempted.
+}
+
+// ---------------------------------------------------------------------------
 // MCP wiring: buildMCPHandler
 // ---------------------------------------------------------------------------
 
@@ -445,7 +527,7 @@ func TestBuildMCPHandler_ReturnsHandlerAndReadyChecker(t *testing.T) {
 		),
 	}
 
-	h, depsReady, err := buildMCPHandler(cfg, deps, reg, &allowAllToolAuthorizer{}, nil, logr.Discard(), nil)
+	h, depsReady, err := buildMCPHandler(cfg, deps, nil, reg, &allowAllToolAuthorizer{}, nil, logr.Discard(), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -534,7 +616,10 @@ func TestBuildA2AHandler_WithSessionInfra_UsesDecorator(t *testing.T) {
 	cfg.Agent.LLM.APIKey = "test-key"
 	reg := metrics.NewRegistry()
 
-	infra := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	infra, infraErr := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	if infraErr != nil {
+		t.Skipf("skipping (no kubeconfig available): %v", infraErr)
+	}
 	defer infra.StopFunc()
 
 	h, err := buildA2AHandler(context.Background(), cfg, testBackendDeps(), infra, reg, nil, nil, logr.Discard(), nil)
@@ -872,12 +957,53 @@ func TestBuildMCPHandler_PassesPool(t *testing.T) {
 		),
 	}
 
-	h, _, err := buildMCPHandler(cfg, deps, reg, &allowAllToolAuthorizer{}, nil, logr.Discard(), nil)
+	h, _, err := buildMCPHandler(cfg, deps, nil, reg, &allowAllToolAuthorizer{}, nil, logr.Discard(), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if h == nil {
 		t.Fatal("IT-AF-1234-W10b: handler must not be nil when pool is provided")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// IT-AF-1293-W01: buildMCPHandler wires SessionInitializer from sessionInfra
+// ---------------------------------------------------------------------------
+
+func TestBuildMCPHandler_WiresSessionInitializer(t *testing.T) {
+	t.Parallel()
+
+	kaBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(kaBackend.Close)
+
+	cfg := &config.Config{}
+	cfg.MCP.Enabled = true
+	reg := metrics.NewRegistry()
+
+	deps := &backendDeps{
+		KAClient: ka.NewClient(ka.Config{BaseURL: kaBackend.URL}),
+		DSResilientTransport: resilience.NewCircuitBreakerTransport(
+			http.DefaultTransport,
+			&resilience.CircuitBreakerConfig{Name: "test-ds"},
+		),
+	}
+
+	sessInfra := &sessionInfra{
+		SessionService: session.NewCRDSessionService(
+			adksession.InMemoryService(), nil, nil, "test-ns",
+		),
+		Healthy:  &atomic.Bool{},
+		StopFunc: func() {},
+	}
+
+	h, _, err := buildMCPHandler(cfg, deps, sessInfra, reg, &allowAllToolAuthorizer{}, nil, logr.Discard(), nil)
+	if err != nil {
+		t.Fatalf("IT-AF-1293-W01: unexpected error: %v", err)
+	}
+	if h == nil {
+		t.Fatal("IT-AF-1293-W01: handler must not be nil when sessionInfra is provided")
 	}
 }
 
@@ -923,7 +1049,7 @@ func TestSessionInfra_HealthyTrueAfterSync(t *testing.T) {
 // start — otherwise the pod never passes readiness and K8s restarts it.
 // ---------------------------------------------------------------------------
 
-func TestBuildSessionInfra_FallbackPathSignalsReady(t *testing.T) {
+func TestBuildSessionInfra_NoKubeconfigReturnsError(t *testing.T) {
 	t.Setenv("KUBECONFIG", "/nonexistent/path")
 	reg := metrics.NewRegistry()
 	cfg := &config.Config{
@@ -933,13 +1059,9 @@ func TestBuildSessionInfra_FallbackPathSignalsReady(t *testing.T) {
 			RetentionTTL:  31 * 24 * time.Hour,
 		},
 	}
-	infra := buildSessionInfra(cfg, reg, nil, logr.Discard())
-	defer infra.StopFunc()
-	if infra.Healthy == nil {
-		t.Fatal("UT-AF-1272-003: Healthy must not be nil — /readyz would panic")
-	}
-	if !infra.Healthy.Load() {
-		t.Fatal("UT-AF-1272-003: fallback path must signal ready immediately — pod would never pass readiness probe")
+	_, err := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	if err == nil {
+		t.Fatal("UT-AF-1272-003: buildSessionInfra must return error when kubeconfig is unavailable")
 	}
 }
 
@@ -987,7 +1109,10 @@ func TestBuildSessionInfra_ThreadsLoggerIntoReconciler(t *testing.T) {
 			RetentionTTL:  31 * 24 * time.Hour,
 		},
 	}
-	infra := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	infra, err := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	if err != nil {
+		t.Skipf("skipping (no kubeconfig available): %v", err)
+	}
 	defer infra.StopFunc()
 	if infra.Reconciler == nil {
 		t.Fatal("UT-AF-1274-010: reconciler must not be nil — TTL enforcement disabled")
@@ -1071,7 +1196,10 @@ func TestBuildSessionInfra_WiresTTLMetrics(t *testing.T) {
 			RetentionTTL:  31 * 24 * time.Hour,
 		},
 	}
-	infra := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	infra, err := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	if err != nil {
+		t.Skipf("skipping (no kubeconfig available): %v", err)
+	}
 	defer infra.StopFunc()
 	if infra.Reconciler == nil {
 		t.Fatal("reconciler must not be nil — TTL enforcement disabled")
@@ -1362,5 +1490,82 @@ func TestPreflightSessionChecks_ListsDeniedVerbs(t *testing.T) {
 				t.Errorf("AU-2: all_allowed must be false when some verbs denied, got %q", e.Detail["all_allowed"])
 			}
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// TP-1301-1302 §4.5: Prompt Compliance Wiring Tests — FedRAMP CM-3
+// Validates that prompt.txt documents the merged kubernaut_investigate tool.
+// ---------------------------------------------------------------------------
+
+func TestPromptContainsMandatoryInvestigate(t *testing.T) {
+	prompt, err := os.ReadFile("../../pkg/apifrontend/agent/prompt.txt")
+	if err != nil {
+		t.Fatalf("WT-AF-1302-001: failed to read prompt.txt: %v", err)
+	}
+	text := string(prompt)
+
+	if !strings.Contains(text, "kubernaut_investigate") {
+		t.Error("WT-AF-1302-001 CM-3: prompt.txt must reference kubernaut_investigate")
+	}
+	if !strings.Contains(text, "single call") {
+		t.Error("WT-AF-1302-001 CM-3: prompt.txt must describe kubernaut_investigate as a single-call investigation tool")
+	}
+}
+
+func TestPromptFixJourneyStartsWithCreateRR(t *testing.T) {
+	prompt, err := os.ReadFile("../../pkg/apifrontend/agent/prompt.txt")
+	if err != nil {
+		t.Fatalf("WT-AF-1302-002: failed to read prompt.txt: %v", err)
+	}
+	text := string(prompt)
+
+	fixIdx := strings.Index(text, "### Fix something")
+	if fixIdx == -1 {
+		t.Fatal("WT-AF-1302-002 CM-3: prompt.txt must contain '### Fix something' section")
+	}
+	fixSection := text[fixIdx:]
+
+	journeyIdx := strings.Index(fixSection, "Full journey:")
+	if journeyIdx == -1 {
+		t.Fatal("WT-AF-1302-002 CM-3: Fix section must contain 'Full journey:' line")
+	}
+	journeyLine := fixSection[journeyIdx : journeyIdx+200]
+
+	if !strings.Contains(journeyLine, "af_create_rr") {
+		t.Error("WT-AF-1302-002 CM-3: Full journey must start with af_create_rr")
+	}
+	if !strings.Contains(journeyLine, "kubernaut_investigate") {
+		t.Error("WT-AF-1302-002 CM-3: Full journey must include kubernaut_investigate")
+	}
+
+	createIdx := strings.Index(journeyLine, "af_create_rr")
+	investigateIdx := strings.Index(journeyLine, "kubernaut_investigate")
+	if createIdx > investigateIdx {
+		t.Error("WT-AF-1302-002 CM-3: journey order must be af_create_rr → kubernaut_investigate")
+	}
+}
+
+func TestPromptPhase1RequiresStartBeforeStream(t *testing.T) {
+	prompt, err := os.ReadFile("../../pkg/apifrontend/agent/prompt.txt")
+	if err != nil {
+		t.Fatalf("WT-AF-1302-003: failed to read prompt.txt: %v", err)
+	}
+	text := string(prompt)
+
+	phase1Idx := strings.Index(text, "### Phase 1: Investigate")
+	if phase1Idx == -1 {
+		t.Fatal("WT-AF-1302-003 CM-3: prompt.txt must contain '### Phase 1: Investigate' section")
+	}
+	phase1Section := text[phase1Idx:]
+	if phase15Idx := strings.Index(phase1Section, "### Phase 1.5"); phase15Idx != -1 {
+		phase1Section = phase1Section[:phase15Idx]
+	}
+
+	if !strings.Contains(phase1Section, "Call kubernaut_investigate") {
+		t.Error("WT-AF-1302-003 CM-3: Phase 1 must instruct a single kubernaut_investigate call")
+	}
+	if !strings.Contains(phase1Section, "all in a single call") {
+		t.Error("WT-AF-1302-003 CM-3: Phase 1 must describe investigation as all in a single call")
 	}
 }

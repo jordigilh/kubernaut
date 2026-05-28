@@ -44,8 +44,8 @@ var _ = Describe("KA Integration (AF -> KA -> DS -> mock-LLM)", Label("e2e", "ph
 	// -----------------------------------------------------------------------
 	Context("TC-E2E-KA: AF -> KA Connectivity", func() {
 
-		It("TC-E2E-KA-01: kubernaut_start_investigation proxies to KA successfully", func() {
-			status, result := mcpToolCall("e2e-ka-01", "kubernaut_start_investigation", map[string]interface{}{
+		It("TC-E2E-KA-01: kubernaut_investigate proxies to KA successfully", func() {
+			status, result := mcpToolCall("e2e-ka-01", "kubernaut_investigate", map[string]interface{}{
 				"namespace": "default",
 				"name":      "test-pod",
 				"kind":      "Pod",
@@ -57,8 +57,8 @@ var _ = Describe("KA Integration (AF -> KA -> DS -> mock-LLM)", Label("e2e", "ph
 				"AF returned 503 — circuit breaker open or KA down. Response: %v", result)
 		})
 
-		It("TC-E2E-KA-02: kubernaut_poll_investigation reaches KA (error path: nonexistent session)", func() {
-			status, result := mcpToolCall("e2e-ka-02", "kubernaut_poll_investigation", map[string]interface{}{
+		It("TC-E2E-KA-02: kubernaut_investigate reaches KA (error path: nonexistent session_id)", func() {
+			status, result := mcpToolCall("e2e-ka-02", "kubernaut_investigate", map[string]interface{}{
 				"session_id": "nonexistent-session-id",
 			})
 
@@ -72,8 +72,8 @@ var _ = Describe("KA Integration (AF -> KA -> DS -> mock-LLM)", Label("e2e", "ph
 	// -----------------------------------------------------------------------
 	Context("TC-E2E-KA-FLOW: Investigation Lifecycle", func() {
 
-		It("TC-E2E-KA-FLOW-01: start_investigation returns a session ID from KA", func() {
-			status, result := mcpToolCall("e2e-ka-flow-01", "kubernaut_start_investigation", map[string]interface{}{
+		It("TC-E2E-KA-FLOW-01: kubernaut_investigate returns session_id and status from KA", func() {
+			status, result := mcpToolCall("e2e-ka-flow-01", "kubernaut_investigate", map[string]interface{}{
 				"namespace": "kubernaut-system",
 				"name":      "apifrontend",
 				"kind":      "Deployment",
@@ -92,8 +92,8 @@ var _ = Describe("KA Integration (AF -> KA -> DS -> mock-LLM)", Label("e2e", "ph
 			}
 		})
 
-		It("TC-E2E-KA-FLOW-02: poll_investigation returns status for active investigation", func() {
-			startStatus, startResult := mcpToolCall("e2e-ka-flow-02a", "kubernaut_start_investigation", map[string]interface{}{
+		It("TC-E2E-KA-FLOW-02: kubernaut_investigate resume by session_id returns status", func() {
+			startStatus, startResult := mcpToolCall("e2e-ka-flow-02a", "kubernaut_investigate", map[string]interface{}{
 				"namespace": "kubernaut-system",
 				"name":      "apifrontend",
 				"kind":      "Deployment",
@@ -103,23 +103,23 @@ var _ = Describe("KA Integration (AF -> KA -> DS -> mock-LLM)", Label("e2e", "ph
 
 			sid := extractSessionID(startResult)
 			Expect(sid).NotTo(BeEmpty(),
-				"KA must return a session_id for poll_investigation to work (status=%d, result=%v)", startStatus, startResult)
+				"KA must return a session_id for resume investigate to work (status=%d, result=%v)", startStatus, startResult)
 
 			time.Sleep(500 * time.Millisecond)
 
-			status, pollResult := mcpToolCall("e2e-ka-flow-02b", "kubernaut_poll_investigation", map[string]interface{}{
+			status, investigateResult := mcpToolCall("e2e-ka-flow-02b", "kubernaut_investigate", map[string]interface{}{
 				"session_id": sid,
 			})
 
 			Expect(status).NotTo(Equal(http.StatusBadGateway),
-				"TC-E2E-KA-FLOW-02: poll returned 502. Response: %v", pollResult)
+				"TC-E2E-KA-FLOW-02: investigate resume returned 502. Response: %v", investigateResult)
 
-			text := extractMCPResultText(pollResult)
+			text := extractMCPResultText(investigateResult)
 			if text != "" {
 				var parsed map[string]interface{}
 				if json.Unmarshal([]byte(text), &parsed) == nil {
 					Expect(parsed).To(HaveKey("status"),
-						"TC-E2E-KA-FLOW-02: poll result should contain status field")
+						"TC-E2E-KA-FLOW-02: investigate result should contain status field")
 				}
 			}
 		})
@@ -331,20 +331,23 @@ var _ = Describe("KA Integration (AF -> KA -> DS -> mock-LLM)", Label("e2e", "ph
 	// -----------------------------------------------------------------------
 	Context("TC-E2E-MULTI: Cross-Service Sequential Flow", func() {
 
-		It("TC-E2E-MULTI-01: start_investigation -> poll -> list_workflows within single auth session", func() {
-			// Step 1: Start investigation via KA
-			status1, _ := mcpToolCall("e2e-multi-01a", "kubernaut_start_investigation", map[string]interface{}{
+		It("TC-E2E-MULTI-01: investigate -> list_workflows within single auth session", func() {
+			// Step 1: Run merged investigation via KA (start + stream in one call)
+			status1, startResult := mcpToolCall("e2e-multi-01a", "kubernaut_investigate", map[string]interface{}{
 				"namespace": "default",
 				"name":      "test-pod",
 				"kind":      "Pod",
 			})
-			Expect(status1).NotTo(Equal(http.StatusBadGateway), "Step 1 (start_investigation) returned 502")
+			Expect(status1).NotTo(Equal(http.StatusBadGateway), "Step 1 (kubernaut_investigate) returned 502")
 
-			// Step 2: Poll investigation via KA
-			status2, _ := mcpToolCall("e2e-multi-01b", "kubernaut_poll_investigation", map[string]interface{}{
-				"session_id": "test-session-multi",
-			})
-			Expect(status2).NotTo(Equal(http.StatusBadGateway), "Step 2 (poll_investigation) returned 502")
+			// Step 2: Resume investigation by session_id when available
+			sid := extractSessionID(startResult)
+			if sid != "" {
+				status2, _ := mcpToolCall("e2e-multi-01b", "kubernaut_investigate", map[string]interface{}{
+					"session_id": sid,
+				})
+				Expect(status2).NotTo(Equal(http.StatusBadGateway), "Step 2 (kubernaut_investigate resume) returned 502")
+			}
 
 			// Step 3: List workflows via DS (different downstream)
 			status3, _ := mcpToolCall("e2e-multi-01c", "kubernaut_list_workflows", map[string]interface{}{})

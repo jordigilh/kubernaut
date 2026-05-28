@@ -4,12 +4,12 @@ import (
 	"context"
 	"io"
 	"net/http"
-	"os"
-	"os/exec"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // FedRAMP control mapping for this E2E suite:
@@ -21,37 +21,31 @@ import (
 
 var _ = Describe("Session Controller Wiring (E2E)", Label("e2e", "phase1", "session-wiring"), func() {
 
-	var (
-		namespace      string
-		kubeconfigPath string
-	)
+	var namespace string
 
 	BeforeEach(func() {
 		namespace = getEnvOrDefault("AF_E2E_NAMESPACE", "kubernaut-system")
-		kubeconfigPath = os.Getenv("HOME") + "/.kube/apifrontend-e2e-config"
 	})
 
-	kubectl := func(args ...string) (string, error) {
-		allArgs := append([]string{"--kubeconfig", kubeconfigPath}, args...)
-		cmd := exec.CommandContext(context.Background(), "kubectl", allArgs...)
-		out, err := cmd.CombinedOutput()
-		return strings.TrimSpace(string(out)), err
-	}
-
 	afPodName := func() string {
-		podName, err := kubectl("get", "pods", "-n", namespace,
-			"-l", "app=apifrontend",
-			"-o", "jsonpath={.items[0].metadata.name}")
-		Expect(err).NotTo(HaveOccurred(), "failed to resolve AF pod name: %s", podName)
-		Expect(podName).NotTo(BeEmpty(), "no AF pod found with label app=apifrontend")
-		return podName
+		ctx := context.Background()
+		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+			LabelSelector: "app=apifrontend",
+		})
+		Expect(err).NotTo(HaveOccurred(), "failed to list AF pods")
+		Expect(pods.Items).NotTo(BeEmpty(), "no AF pod found with label app=apifrontend")
+		return pods.Items[0].Name
 	}
 
 	afPodLogs := func() string {
+		ctx := context.Background()
 		podName := afPodName()
-		out, err := kubectl("logs", "-n", namespace, podName, "--all-containers")
-		Expect(err).NotTo(HaveOccurred(), "kubectl logs failed: %s", out)
-		return out
+		logStream, err := clientset.CoreV1().Pods(namespace).GetLogs(podName, &corev1.PodLogOptions{}).Stream(ctx)
+		Expect(err).NotTo(HaveOccurred(), "failed to stream AF pod logs")
+		defer func() { _ = logStream.Close() }()
+		logBytes, err := io.ReadAll(logStream)
+		Expect(err).NotTo(HaveOccurred(), "failed to read AF pod logs")
+		return string(logBytes)
 	}
 
 	e2eMetricsURL := func() string {

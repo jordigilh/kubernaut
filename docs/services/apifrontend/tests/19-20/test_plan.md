@@ -19,7 +19,7 @@ This test plan validates the MCP tool bridge layer that wires 20 stubbed MCP too
 - `tools/list` filtering by user groups (AC-6)
 - Nil-safety guards for DS and KA REST clients
 - Error redaction via `security.RedactError` before returning to MCP client
-- Per-tool metrics: `af_tool_calls_total{tool,outcome}`, `af_tool_call_duration_seconds{tool}`, `af_mcp_rbac_denied_total{tool,user}`
+- Per-tool metrics: `af_tool_calls_total{tool,outcome}`, `af_tool_call_duration_seconds{tool}` (RBAC denials tracked via `af_tool_calls_total{result="denied"}`)
 - Tool timeout: `context.WithTimeout(ctx, 30s)`
 - Per-session concurrency semaphore (max 5 in-flight tool calls)
 - Audit events: `EventMCPToolInvoked` (with session_id), `EventMCPToolDenied`, `EventMCPToolFailed`, `EventMCPSessionInit`
@@ -147,7 +147,7 @@ These SDK capabilities have been verified against `go-sdk v1.6.0` source and inf
 |----|---------|-------------------|
 | F-B.20 | `af_tool_calls_total{tool,outcome}` incremented on every call | Outcomes: `success`, `denied`, `error`, `timeout` |
 | F-B.21 | `af_tool_call_duration_seconds{tool}` records latency | Histogram observed for each call |
-| F-B.22 | `af_mcp_rbac_denied_total{tool,user}` on RBAC failure | Counter incremented on denial |
+| F-B.22 | ~~`af_mcp_rbac_denied_total`~~ superseded by `af_tool_calls_total{result="denied"}` | Denials tracked via unified counter |
 | F-B.23 | `EventMCPToolInvoked` emitted with `tool`, `session_id`, `duration_ms` | Success path |
 | F-B.24 | `EventMCPToolFailed` emitted with `tool`, `error` (redacted) | Error path |
 | F-B.25 | `EventMCPSessionInit` emitted on MCP initialize | Session lifecycle |
@@ -234,7 +234,7 @@ These SDK capabilities have been verified against `go-sdk v1.6.0` source and inf
 | UT-AF-B-049 | Timeout: `af_tool_calls_total{...,outcome="timeout"}` incremented | BAC-BRIDGE-04 | P0 |
 | UT-AF-B-050 | Duration histogram observed for successful call | BAC-BRIDGE-04 | P0 |
 | UT-AF-B-051 | Duration histogram observed for failed call | BAC-BRIDGE-04 | P0 |
-| UT-AF-B-052 | `af_mcp_rbac_denied_total{tool,user}` incremented on RBAC denial | BAC-BRIDGE-04 | P0 |
+| UT-AF-B-052 | ~~Discarded~~ — RBAC denials covered by `af_tool_calls_total{result="denied"}` (UT-AF-B-047) | BAC-BRIDGE-04 | N/A |
 | UT-AF-B-053 | Success emits `EventMCPToolInvoked` with tool, session_id, duration_ms | BAC-BRIDGE-05 | P0 |
 | UT-AF-B-054 | Failure emits `EventMCPToolFailed` with tool, redacted error | BAC-BRIDGE-05 | P0 |
 | UT-AF-B-055 | RBAC denial emits `EventMCPToolDenied` with tool, user, groups | BAC-BRIDGE-05 | P0 |

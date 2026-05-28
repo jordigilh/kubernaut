@@ -640,7 +640,7 @@ var _ = Describe("Kubernaut Agent K8s Kind Resolution — #433 Phase 2", func() 
 			}
 			resolver := k8s.NewDynamicResolver(dynClient, mapper, trimmedIndex, logr.Discard())
 
-			result, err := resolver.Get(context.Background(), "ConfigMap", "fallback-cm", "default")
+			result, err := resolver.Get(context.Background(), "ConfigMap", "fallback-cm", "default", "")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 			data, _ := json.Marshal(result)

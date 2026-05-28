@@ -20,10 +20,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/go-logr/logr"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/go-logr/logr"
 
 	"github.com/google/uuid"
 	coordinationv1 "k8s.io/api/coordination/v1"
@@ -459,7 +461,9 @@ func (m *LeaseSessionManager) ReconcileOrphanedLeases(ctx context.Context) int {
 }
 
 func leaseName(rrID string) string {
-	name := leasePrefix + rrID
+	// rrID may be namespace-qualified ("default/rr-name"); K8s metadata.name
+	// forbids '/', so replace with '-'.
+	name := leasePrefix + strings.ReplaceAll(rrID, "/", "-")
 	if len(name) > 63 {
 		name = name[:63]
 	}

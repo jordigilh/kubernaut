@@ -53,6 +53,7 @@ type MockScenarioConfig struct {
 	ResourceNS       string
 	ResourceName     string
 	APIVersion       string
+	APIGroup         string // optional; when set, included in kubectl tool call args for disambiguation (#1311)
 	IncludeAffected  bool
 	OverrideResource bool
 	Parameters       map[string]string

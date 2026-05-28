@@ -82,7 +82,10 @@ func parseSSEStream(ctx context.Context, body io.Reader, ch chan<- Investigation
 	}
 
 	if err := scanner.Err(); err != nil {
-		errMsg, _ := json.Marshal(map[string]string{"error": err.Error()})
+		errMsg, marshalErr := json.Marshal(map[string]string{"error": err.Error()})
+		if marshalErr != nil {
+			errMsg = []byte(`{"error":"stream scanner error"}`)
+		}
 		select {
 		case ch <- InvestigationEvent{Type: EventTypeError, Data: json.RawMessage(errMsg)}:
 		case <-ctx.Done():

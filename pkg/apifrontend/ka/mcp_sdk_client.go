@@ -228,5 +228,15 @@ func (c *SDKMCPClient) InvokeAction(ctx context.Context, args InvokeActionArgs) 
 	return &invResult, nil
 }
 
+// ConnectSession establishes a new MCP session without auto-closing it.
+// Used by the KASessionPool factory to create persistent sessions (#1306).
+func (c *SDKMCPClient) ConnectSession(ctx context.Context, transport *mcp.StreamableClientTransport) (PoolSession, error) {
+	session, err := c.client.Connect(ctx, transport, nil)
+	if err != nil {
+		return nil, fmt.Errorf("MCP connect: %w", err)
+	}
+	return session, nil
+}
+
 // Compile-time interface check.
 var _ MCPClient = (*SDKMCPClient)(nil)

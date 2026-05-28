@@ -179,6 +179,46 @@ var _ = Describe("ServiceDecorator", func() {
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("authenticated user identity"))
 		})
+
+		It("UT-AF-1293-DEC-001: ServiceAccount caller is rejected from creating IS (decorator layer)", func() {
+			identity := &auth.UserIdentity{
+				Username:         "system:serviceaccount:ns:robot",
+				Groups:           []string{"system:serviceaccounts"},
+				IsServiceAccount: true,
+			}
+			ctx = auth.WithUserIdentity(ctx, identity)
+			ctx = session.WithCreateContext(ctx, &session.CreateContext{
+				TaskID: "task-robot",
+			})
+
+			_, err := decorator.Create(ctx, &adksession.CreateRequest{
+				AppName: "test-app",
+				UserID:  "robot",
+			})
+
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("service accounts"))
+		})
+
+		It("UT-AF-1293-DEC-002: Human caller is allowed to create IS (decorator layer)", func() {
+			identity := &auth.UserIdentity{
+				Username:         "alice",
+				Groups:           []string{"sre"},
+				IsServiceAccount: false,
+			}
+			ctx = auth.WithUserIdentity(ctx, identity)
+			ctx = session.WithCreateContext(ctx, &session.CreateContext{
+				TaskID: "task-human",
+			})
+
+			resp, err := decorator.Create(ctx, &adksession.CreateRequest{
+				AppName: "test-app",
+				UserID:  "alice",
+			})
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resp).NotTo(BeNil())
+		})
 	})
 
 	Describe("Delegation", func() {

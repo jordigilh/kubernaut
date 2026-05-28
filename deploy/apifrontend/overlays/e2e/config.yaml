@@ -98,3 +98,6 @@ resilience:
     cbFailureThreshold: 3
     retryMax: 0
     retryableStatuses: []
+  prometheus:
+    connectTimeout: 2s
+    requestTimeout: 5s

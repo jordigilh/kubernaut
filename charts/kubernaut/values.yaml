@@ -598,6 +598,9 @@ apifrontend:
     severityTriage:
       cacheTTLSeconds: 30
       llmConfidence: 0.7
+    auth:
+      issuerURL: ""
+      audience: ""
     rbac:
       sarCacheTTL: "30s"
       personas:
@@ -607,8 +610,8 @@ apifrontend:
           - kubernaut_approve
           - kubernaut_cancel_remediation
           - kubernaut_watch
-          - kubernaut_start_investigation
-          - kubernaut_poll_investigation
+          - kubernaut_await_session
+          - kubernaut_investigate
           - kubernaut_discover_workflows
           - kubernaut_select_workflow
           - kubernaut_present_decision
@@ -622,7 +625,6 @@ apifrontend:
           - kubernaut_cancel
           - kubernaut_status
           - kubernaut_reconnect
-          - kubernaut_stream_investigation
           # A2A internal tools (ADR-022: AF SA runs these on behalf of the user)
           - kubectl_get
           - kubectl_list
@@ -633,8 +635,8 @@ apifrontend:
           - kubernaut_list_remediations
           - kubernaut_get_remediation
           - kubernaut_watch
-          - kubernaut_start_investigation
-          - kubernaut_poll_investigation
+          - kubernaut_await_session
+          - kubernaut_investigate
           - kubernaut_discover_workflows
           - kubernaut_select_workflow
           - kubernaut_present_decision
@@ -644,7 +646,6 @@ apifrontend:
           - kubernaut_cancel
           - kubernaut_status
           - kubernaut_reconnect
-          - kubernaut_stream_investigation
           # A2A internal tools (ADR-022: AF SA runs these on behalf of the user)
           - kubectl_get
           - kubectl_list
@@ -655,10 +656,12 @@ apifrontend:
           - kubernaut_list_remediations
           - kubernaut_get_remediation
           - kubernaut_watch
+          - kubernaut_await_session
         observability:
           - kubernaut_list_remediations
           - kubernaut_get_remediation
           - kubernaut_watch
+          - kubernaut_await_session
           - kubernaut_get_effectiveness
           - kubernaut_list_workflows
         l3-audit:
@@ -673,6 +676,7 @@ apifrontend:
           - kubernaut_list_remediations
           - kubernaut_get_remediation
           - kubernaut_watch
+          - kubernaut_await_session
   resources:
     requests:
       memory: 64Mi

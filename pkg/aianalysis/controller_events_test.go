@@ -151,10 +151,10 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 				Log:                  ctrl.Log.WithName("test"),
 				Metrics:              testMetrics,
 				StatusManager:        statusManager,
-				InvestigatingHandler: investigatingHandler,
 				AnalyzingHandler:     analyzingHandler,
 				AuditClient:          auditClient,
 			}
+			reconciler.InvestigatingHandler.Store(investigatingHandler)
 
 			req := ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "test-aa-evt-01", Namespace: "default"},
@@ -226,10 +226,10 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 				Log:                  ctrl.Log.WithName("test"),
 				Metrics:              testMetrics,
 				StatusManager:        statusManager,
-				InvestigatingHandler: investigatingHandler,
 				AnalyzingHandler:     analyzingHandler,
 				AuditClient:          auditClient,
 			}
+			reconciler.InvestigatingHandler.Store(investigatingHandler)
 
 			req := ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "test-aa-evt-02", Namespace: "default"},
@@ -299,10 +299,10 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 				Log:                  ctrl.Log.WithName("test"),
 				Metrics:              testMetrics,
 				StatusManager:        statusManager,
-				InvestigatingHandler: investigatingHandler,
 				AnalyzingHandler:     analyzingHandler,
 				AuditClient:          auditClient,
 			}
+			reconciler.InvestigatingHandler.Store(investigatingHandler)
 
 			req := ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "test-aa-evt-03", Namespace: "default"},
@@ -368,10 +368,10 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 				Log:                  ctrl.Log.WithName("test"),
 				Metrics:              testMetrics,
 				StatusManager:        statusManager,
-				InvestigatingHandler: investigatingHandler,
 				AnalyzingHandler:     analyzingHandler,
 				AuditClient:          auditClient,
 			}
+			reconciler.InvestigatingHandler.Store(investigatingHandler)
 
 			req := ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "test-aa-evt-04", Namespace: "default"},
@@ -442,10 +442,10 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 				Log:                  ctrl.Log.WithName("test"),
 				Metrics:              testMetrics,
 				StatusManager:        statusManager,
-				InvestigatingHandler: investigatingHandler,
 				AnalyzingHandler:     analyzingHandler,
 				AuditClient:          auditClient,
 			}
+			reconciler.InvestigatingHandler.Store(investigatingHandler)
 
 			req := ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "test-aa-evt-05", Namespace: "default"},
@@ -519,10 +519,10 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 				Log:                  ctrl.Log.WithName("test"),
 				Metrics:              testMetrics,
 				StatusManager:        statusManager,
-				InvestigatingHandler: investigatingHandler,
 				AnalyzingHandler:     analyzingHandler,
 				AuditClient:          auditClient,
 			}
+			reconciler.InvestigatingHandler.Store(investigatingHandler)
 
 			req := ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "test-aa-evt-06", Namespace: "default"},
@@ -588,10 +588,10 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 				Log:                  ctrl.Log.WithName("test"),
 				Metrics:              testMetrics,
 				StatusManager:        statusManager,
-				InvestigatingHandler: investigatingHandler,
 				AnalyzingHandler:     analyzingHandler,
 				AuditClient:          auditClient,
 			}
+			reconciler.InvestigatingHandler.Store(investigatingHandler)
 
 			req := ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "test-aa-evt-07", Namespace: "default"},
@@ -656,10 +656,10 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 				Log:                  ctrl.Log.WithName("test"),
 				Metrics:              testMetrics,
 				StatusManager:        statusManager,
-				InvestigatingHandler: investigatingHandler,
 				AnalyzingHandler:     analyzingHandler,
 				AuditClient:          auditClient,
 			}
+			reconciler.InvestigatingHandler.Store(investigatingHandler)
 
 			req := ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "test-aa-evt-08", Namespace: "default"},

@@ -338,7 +338,7 @@ ERROR: PostgreSQL version 15 is not supported. Required: PostgreSQL 16.x or high
 - See installation instructions above for your platform
 - Or use cloud provider's upgrade feature
 
-**Migration Guide**: See [POSTGRESQL_UPGRADE_GUIDE.md](./POSTGRESQL_UPGRADE_GUIDE.md)
+**Migration Guide**: Refer to your PostgreSQL provider's upgrade documentation for version-specific migration steps.
 
 ---
 

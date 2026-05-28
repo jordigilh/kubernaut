@@ -41,6 +41,11 @@ func MiddlewareWithConfig(cfg MiddlewareConfig) func(http.Handler) http.Handler 
 	}
 	logger = logger.WithName("auth")
 
+	authMethod := "jwt"
+	if cfg.Validator != nil {
+		authMethod = cfg.Validator.AuthMethod()
+	}
+
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			stripImpersonationHeaders(r)
@@ -57,7 +62,7 @@ func MiddlewareWithConfig(cfg MiddlewareConfig) func(http.Handler) http.Handler 
 			authHeader := r.Header.Get("Authorization")
 			if authHeader == "" {
 				reqLogger.V(1).Info("auth failed: missing authorization header")
-				emitAuthFailure(ctx, cfg.Auditor, "", httputil.ExtractClientIP(r), "missing_header")
+				emitAuthFailure(ctx, cfg.Auditor, "", httputil.ExtractClientIP(r), "missing_header", authMethod)
 				httputil.WriteProblem(w, http.StatusUnauthorized,
 					"Missing Authorization", "The Authorization header is required.")
 				return
@@ -65,7 +70,7 @@ func MiddlewareWithConfig(cfg MiddlewareConfig) func(http.Handler) http.Handler 
 
 			if err := security.ValidateHeaderValue(authHeader); err != nil {
 				reqLogger.V(1).Info("auth failed: invalid authorization header", "error", err)
-				emitAuthFailure(ctx, cfg.Auditor, "", httputil.ExtractClientIP(r), "control_chars")
+				emitAuthFailure(ctx, cfg.Auditor, "", httputil.ExtractClientIP(r), "control_chars", authMethod)
 				httputil.WriteProblem(w, http.StatusBadRequest,
 					"Invalid Authorization Header", "The Authorization header contains invalid characters.")
 				return
@@ -74,7 +79,7 @@ func MiddlewareWithConfig(cfg MiddlewareConfig) func(http.Handler) http.Handler 
 			token := strings.TrimPrefix(authHeader, "Bearer ")
 			if token == authHeader {
 				reqLogger.V(1).Info("auth failed: non-bearer scheme")
-				emitAuthFailure(ctx, cfg.Auditor, "", httputil.ExtractClientIP(r), "non_bearer")
+				emitAuthFailure(ctx, cfg.Auditor, "", httputil.ExtractClientIP(r), "non_bearer", authMethod)
 				httputil.WriteProblem(w, http.StatusUnauthorized,
 					"Invalid Scheme", "The Authorization header must use the Bearer scheme.")
 				return
@@ -84,7 +89,7 @@ func MiddlewareWithConfig(cfg MiddlewareConfig) func(http.Handler) http.Handler 
 			if err != nil {
 				reqLogger.V(1).Info("auth failed: token validation", "error", err)
 				observeAuthDuration(cfg.AuthDuration, start, "failure")
-				emitAuthFailure(ctx, cfg.Auditor, "", httputil.ExtractClientIP(r), classifyAuthError(err))
+				emitAuthFailure(ctx, cfg.Auditor, "", httputil.ExtractClientIP(r), classifyAuthError(err), authMethod)
 				httputil.WriteProblem(w, http.StatusUnauthorized,
 					"Authentication Failed", "The provided token could not be validated.")
 				return
@@ -138,7 +143,7 @@ func emitAuthSuccess(ctx context.Context, emitter audit.Emitter, identity *UserI
 	})
 }
 
-func emitAuthFailure(ctx context.Context, emitter audit.Emitter, userID, sourceIP, reason string) {
+func emitAuthFailure(ctx context.Context, emitter audit.Emitter, userID, sourceIP, reason, authMethod string) {
 	if emitter == nil {
 		return
 	}
@@ -147,7 +152,7 @@ func emitAuthFailure(ctx context.Context, emitter audit.Emitter, userID, sourceI
 		UserID:   userID,
 		SourceIP: sourceIP,
 		Detail: map[string]string{
-			"auth_method":    "jwt",
+			"auth_method":    authMethod,
 			"failure_reason": reason,
 		},
 	})

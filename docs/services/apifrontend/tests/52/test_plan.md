@@ -1,5 +1,10 @@
 # Test Plan: NL Signal Intake Tools (#52)
 
+> **Partially superseded by [#1282](https://github.com/jordigilh/kubernaut/issues/1282):**
+> `af_create_rr` `CreateRRArgs` reduced to `{Kind, Name, Description}`. LLM no longer
+> supplies namespace or severity. `signalName` is derived from AlertManager/K8s events,
+> `signalSource` is hardcoded to `a2a-agent`. See `docs/tests/1282/TEST_PLAN.md`.
+
 **Test Plan Identifier:** TP-AF-052
 **Issue:** #52
 **Version:** 1.0

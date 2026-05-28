@@ -48,10 +48,9 @@ graph TB
     A2A --> Agent
     MCP --> Agent
 
-    Agent -->|Impersonated — user scope| K8sAPI
     Agent -->|SA — AF scope| K8sAPI
-    Agent -->|REST + JWT delegation| KA
-    Agent -->|Audit events via REST| DS
+    Agent -->|REST + SA bearer token| KA
+    Agent -->|Audit events via REST + SA bearer| DS
     Agent -->|/api/v1/alerts,rules,query| Prom
     Agent -->|LLM inference| LLM
 ```
@@ -64,9 +63,9 @@ All ingress enters through a single HTTPS listener on the configured port (defau
 
 | Endpoint | Protocol | Auth Required | Purpose |
 |----------|----------|---------------|---------|
-| `POST /` | A2A JSON-RPC 2.0 | Yes (Bearer JWT) | Agent task execution |
-| `POST /mcp` | MCP Streamable HTTP | Yes (Bearer JWT) | MCP tool invocation |
-| `GET /mcp/sse` | Server-Sent Events | Yes (Bearer JWT) | Streaming MCP responses |
+| `POST /` | A2A JSON-RPC 2.0 | Yes (Bearer JWT or SA token) | Agent task execution (alias for `/a2a/invoke`, #1268) |
+| `POST /a2a/invoke` | A2A JSON-RPC 2.0 | Yes (Bearer JWT or SA token) | Agent task execution |
+| `POST /mcp` | MCP Streamable HTTP | Yes (Bearer JWT or SA token) | MCP tool invocation |
 | `GET /.well-known/agent-card.json` | HTTP GET | No | A2A Agent Card discovery |
 | `GET /healthz` | HTTP GET | No | Liveness probe (kubelet) |
 | `GET /readyz` | HTTP GET | No | Readiness probe (kubelet) |
@@ -89,11 +88,11 @@ All ingress enters through a single HTTPS listener on the configured port (defau
 | Destination | Protocol | Client Type | Auth Mechanism | Circuit Breaker |
 |-------------|----------|-------------|----------------|-----------------|
 | Kubernetes API Server | HTTPS (in-cluster TLS) | `dynamic.Interface` | ServiceAccount token (projected volume) | `k8s-api` CB |
-| Kubernaut Agent (KA) REST | HTTPS | Custom `ka.Client` | JWT delegation (original user token) | `ka` CB |
-| Kubernaut Agent (KA) MCP | HTTPS | `ka.SDKMCPClient` | JWT delegation (`ContextJWTDelegationTransport`) | — |
-| Data Store (DS) | HTTPS | ogen-generated client | ServiceAccount context | `ds-rest` CB |
+| Kubernaut Agent (KA) REST | HTTPS | Custom `ka.Client` | SA bearer token (`kaBearerTokenFile`, DD-AUTH-MCP-001 v3.0) | `ka` CB |
+| Kubernaut Agent (KA) MCP | HTTPS | `ka.PooledMCPClient` | SA bearer token (`kaBearerTokenFile`) | — |
+| Data Store (DS) | HTTPS | ogen-generated client | SA bearer token (`dsBearerTokenFile`) | `ds-rest` CB |
 | Prometheus (triage) | HTTP/HTTPS | `prometheus.Client` | Bearer token (SA projected volume) | Planned |
-| Vertex AI (LLM) | HTTPS | ADK genai client | GCP Workload Identity | — |
+| LLM Provider (Vertex AI / Gemini / Anthropic) | HTTPS | ADK genai client | Provider-specific (GCP WI / API key file) | — |
 
 ---
 

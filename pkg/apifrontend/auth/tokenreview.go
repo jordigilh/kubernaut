@@ -45,8 +45,9 @@ func (r *TokenReviewer) Validate(ctx context.Context, token string) (*UserIdenti
 		groups[i] = SanitizeClaimValue(g)
 	}
 	return &UserIdentity{
-		Username: SanitizeClaimValue(result.Status.User.Username),
-		Groups:   groups,
-		RawToken: token,
+		Username:         SanitizeClaimValue(result.Status.User.Username),
+		Groups:           groups,
+		RawToken:         token,
+		IsServiceAccount: true, // BR-INTERACTIVE-010: TokenReview path is exclusively for SA tokens
 	}, nil
 }

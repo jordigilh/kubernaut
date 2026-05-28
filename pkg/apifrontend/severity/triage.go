@@ -317,12 +317,21 @@ func (t *Triager) fetchRules(ctx context.Context) ([]prom.RuleGroup, error) {
 	return groups, nil
 }
 
-// labelsOverlap returns true if every key present in both maps has an equal
-// value and at least one such key exists. A single mismatched key rejects the
-// pair, preventing cross-namespace false positives (e.g. kind=Deployment alone).
+// labelsOverlap returns true if every key present in both maps (excluding
+// "namespace") has an equal value and at least one such key exists. A single
+// mismatched key rejects the pair.
+//
+// The "namespace" key is excluded from comparison because the signal source
+// (Prometheus alert) fires in the namespace where the resource lives (e.g.,
+// "default"), while the RR is created in AF's operational namespace (e.g.,
+// "kubernaut-system"). Correlation is based on kind + name; the alert's
+// namespace is the ground truth for where the problem is occurring.
 func labelsOverlap(alertLabels, targetLabels map[string]string) bool {
 	matched := 0
 	for k, v := range targetLabels {
+		if k == "namespace" {
+			continue
+		}
 		if alertVal, exists := alertLabels[k]; exists {
 			if alertVal != v {
 				return false

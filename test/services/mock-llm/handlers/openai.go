@@ -208,7 +208,12 @@ func (h *handler) handleFullDAG(
 	hasSplit, resolved bool,
 	notifySubmit func(),
 ) {
-	if len(cfg.MultiToolCalls) > 0 && (!hasToolResults(req.Messages) || cfg.RepeatToolCall) {
+	// Guard against infinite tool-call loops (#1189): if RepeatToolCall is
+	// enabled but the last message is already a tool result (meaning we just
+	// executed the tool in this iteration), fall through to DAG/text response.
+	repeatAllowed := cfg.RepeatToolCall && !lastMessageIsToolResult(req.Messages)
+
+	if len(cfg.MultiToolCalls) > 0 && (!hasToolResults(req.Messages) || repeatAllowed) {
 		for _, tc := range cfg.MultiToolCalls {
 			h.trackToolCall(tc.Name)
 		}
@@ -216,7 +221,7 @@ func (h *handler) handleFullDAG(
 		return
 	}
 
-	if cfg.ToolCallName != "" && (!hasToolResults(req.Messages) || cfg.RepeatToolCall) {
+	if cfg.ToolCallName != "" && (!hasToolResults(req.Messages) || repeatAllowed) {
 		h.trackToolCall(cfg.ToolCallName)
 		writeJSON(w, http.StatusOK, response.BuildToolCallResponse(model, cfg.ToolCallName, cfg))
 		return
@@ -263,6 +268,16 @@ func hasToolResults(messages []openai.Message) bool {
 		}
 	}
 	return false
+}
+
+// lastMessageIsToolResult returns true if the final message in the conversation
+// has role "tool", indicating we just received a tool result in this iteration.
+// Used to break infinite tool-call loops with RepeatToolCall (#1189).
+func lastMessageIsToolResult(messages []openai.Message) bool {
+	if len(messages) == 0 {
+		return false
+	}
+	return messages[len(messages)-1].Role == "tool"
 }
 
 func buildDetectionContext(ctx *conversation.Context) *scenarios.DetectionContext {

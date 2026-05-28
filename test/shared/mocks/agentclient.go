@@ -74,6 +74,15 @@ type MockAgentClient struct {
 	// DefaultSessionStatus is returned by PollSession when no func is set
 	DefaultSessionStatus *agentclient.SessionStatusResult
 
+	// CancelSessionFunc allows tests to customize CancelSession behavior
+	CancelSessionFunc func() error
+
+	// CancelErr is the error returned by CancelSession
+	CancelErr error
+
+	// CancelCallCount tracks how many times CancelSession was called
+	CancelCallCount int
+
 	// SubmitErr is the error returned by SubmitInvestigation
 	SubmitErr error
 
@@ -271,6 +280,18 @@ func (m *MockAgentClient) GetSessionResult(ctx context.Context, sessionID string
 	return m.Response, m.Err
 }
 
+// CancelSession implements AgentClientInterface for session cancellation.
+// BR-INTERACTIVE-010: Allows tests to verify cancel behavior.
+func (m *MockAgentClient) CancelSession(_ context.Context, _ string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.CancelCallCount++
+	if m.CancelSessionFunc != nil {
+		return m.CancelSessionFunc()
+	}
+	return m.CancelErr
+}
+
 // ========================================
 // Async Session Test Helpers (BR-AA-HAPI-064)
 // ========================================
@@ -340,6 +361,34 @@ func (m *MockAgentClient) WithSessionPollFailThenRecover(failCount int, sessionL
 		return &agentclient.SessionStatusResult{Status: "completed"}, nil
 	}
 	return m
+}
+
+// GetPollCallCount returns PollCallCount in a thread-safe manner.
+func (m *MockAgentClient) GetPollCallCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.PollCallCount
+}
+
+// GetCancelCallCount returns CancelCallCount in a thread-safe manner.
+func (m *MockAgentClient) GetCancelCallCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.CancelCallCount
+}
+
+// GetSubmitCallCount returns SubmitCallCount in a thread-safe manner.
+func (m *MockAgentClient) GetSubmitCallCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.SubmitCallCount
+}
+
+// GetLastRequest returns LastRequest in a thread-safe manner.
+func (m *MockAgentClient) GetLastRequest() *agentclient.IncidentRequest {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.LastRequest
 }
 
 // Reset resets the mock's state (call count and last request).

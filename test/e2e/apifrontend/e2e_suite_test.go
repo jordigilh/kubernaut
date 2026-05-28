@@ -11,8 +11,13 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"k8s.io/client-go/kubernetes"
+	k8sscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/clientcmd"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/jordigilh/kubernaut/test/e2e/apifrontend/infrastructure"
+	investigationsessionv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
+	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	kinfra "github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
@@ -30,6 +35,8 @@ var (
 	setupSucceeded bool
 	anyTestFailed  bool
 	kubeconfigPath string
+	k8sClient      client.Client
+	clientset      *kubernetes.Clientset
 )
 
 var _ = ReportAfterEach(func(report SpecReport) {
@@ -54,12 +61,12 @@ var _ = SynchronizedBeforeSuite(
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
 		defer cancel()
 
-		err = infrastructure.SetupE2EInfrastructure(ctx, e2eClusterName, kubeconfigPath, e2eNamespace, GinkgoWriter)
+		err = kinfra.SetupAPIFrontendE2EInfrastructure(ctx, e2eClusterName, kubeconfigPath, e2eNamespace, GinkgoWriter)
 		Expect(err).NotTo(HaveOccurred(), "E2E infrastructure setup failed")
 
 		if os.Getenv("AF_E2E_SKIP_PROMETHEUS") != "true" {
 			_, _ = fmt.Fprintln(GinkgoWriter, "\nDeploying Prometheus for severity triage testing...")
-			err = infrastructure.DeployPrometheusForSeverityTriage(ctx, e2eNamespace, kubeconfigPath, GinkgoWriter)
+			err = kinfra.DeployPrometheusForSeverityTriage(ctx, e2eNamespace, kubeconfigPath, GinkgoWriter)
 			Expect(err).NotTo(HaveOccurred(), "Prometheus deployment must succeed for severity triage tests")
 
 			promURL := "http://localhost:9190"
@@ -69,17 +76,17 @@ var _ = SynchronizedBeforeSuite(
 				To(Succeed(), "Prometheus must become ready within 90s")
 
 			_, _ = fmt.Fprintln(GinkgoWriter, "  Injecting OTLP metrics for severity triage alerts...")
-			Expect(infrastructure.InjectOTLPMetrics(ctx, promURL, "e2e_cpu_usage_percent", 95, map[string]string{
+			Expect(kinfra.AFInjectOTLPMetrics(ctx, promURL, "e2e_cpu_usage_percent", 95, map[string]string{
 				"namespace": "default", "kind": "Deployment", "name": "test-firing-target",
 			})).To(Succeed(), "CPU metric injection must succeed")
-			Expect(infrastructure.InjectOTLPMetrics(ctx, promURL, "e2e_memory_usage_percent", 90, map[string]string{
+			Expect(kinfra.AFInjectOTLPMetrics(ctx, promURL, "e2e_memory_usage_percent", 90, map[string]string{
 				"namespace": "default", "kind": "Deployment", "name": "test-pending-target",
 			})).To(Succeed(), "Memory metric injection must succeed")
 
 			// NOTE: e2e_disk_usage_percent is NOT injected here — injected at test
 			// time in TC-E2E-SEV-03 to exploit the rule evaluation timing window.
 			_, _ = fmt.Fprintln(GinkgoWriter, "  Waiting for HighCPU alert to fire...")
-			Expect(infrastructure.WaitForPrometheusRuleState(ctx, promURL, "HighCPU", infrastructure.RuleStateFiring, 120*time.Second)).
+			Expect(kinfra.WaitForPrometheusRuleState(ctx, promURL, "HighCPU", kinfra.RuleStateFiring, 120*time.Second)).
 				To(Succeed(), "HighCPU alert must reach firing state within 120s")
 		}
 
@@ -89,7 +96,8 @@ var _ = SynchronizedBeforeSuite(
 		setupSucceeded = true
 		return []byte(kubeconfigPath)
 	},
-	func(_ []byte) {
+	func(data []byte) {
+		kubeconfigPath = string(data)
 		baseURL = "https://localhost:18443"
 		caCertPath = filepath.Join(os.TempDir(), "apifrontend-e2e-certs", "ca.crt")
 		dexURL = "http://localhost:5556/dex"
@@ -98,6 +106,19 @@ var _ = SynchronizedBeforeSuite(
 		username = "e2e-user@kubernaut.ai"
 		password = "password"
 		httpClient = newTLSClient(caCertPath)
+
+		By("Building Kubernetes clients from kubeconfig")
+		restCfg, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
+		Expect(err).NotTo(HaveOccurred(), "failed to build REST config from kubeconfig")
+
+		crScheme := k8sscheme.Scheme
+		Expect(remediationv1alpha1.AddToScheme(crScheme)).To(Succeed())
+		Expect(investigationsessionv1alpha1.AddToScheme(crScheme)).To(Succeed())
+
+		k8sClient, err = client.New(restCfg, client.Options{Scheme: crScheme})
+		Expect(err).NotTo(HaveOccurred(), "failed to create controller-runtime client")
+		clientset, err = kubernetes.NewForConfig(restCfg)
+		Expect(err).NotTo(HaveOccurred(), "failed to create kubernetes clientset")
 
 		healthURL := "http://localhost:18081"
 		Eventually(func() error {
@@ -144,7 +165,7 @@ var _ = SynchronizedAfterSuite(
 		}
 
 		_, _ = fmt.Fprintln(GinkgoWriter, "\nCollecting E2E binary coverage data (DD-TEST-007)...")
-		if err := infrastructure.CollectE2EBinaryCoverage(e2eClusterName, GinkgoWriter); err != nil {
+		if err := kinfra.CollectAFE2EBinaryCoverage(e2eClusterName, GinkgoWriter); err != nil {
 			_, _ = fmt.Fprintf(GinkgoWriter, "WARNING: Coverage collection failed (non-fatal): %v\n", err)
 		}
 

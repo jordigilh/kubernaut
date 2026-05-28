@@ -91,6 +91,18 @@ func (m *mockAutoMgrIT) ForceTransitionToUserDriving(rrID, username string, grou
 	return m.mgr.ForceTransitionToUserDriving(rrID, username, groups)
 }
 
+func (m *mockAutoMgrIT) FindPendingByRemediationID(rrID string) (string, bool) {
+	return m.mgr.FindPendingByRemediationID(rrID)
+}
+
+func (m *mockAutoMgrIT) LaunchDeferredInvestigation(id string) error {
+	return m.mgr.LaunchDeferredInvestigation(id)
+}
+
+func (m *mockAutoMgrIT) GetLatestRCASummaryByRemediationID(rrID string) (string, bool) {
+	return m.mgr.GetLatestRCASummaryByRemediationID(rrID)
+}
+
 var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", func() {
 
 	Describe("IT-KA-TAKE-001: Takeover mid-LLM-turn — autonomous transitions to user_driving", func() {

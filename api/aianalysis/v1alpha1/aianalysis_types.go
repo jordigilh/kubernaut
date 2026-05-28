@@ -101,7 +101,7 @@ const (
 
 // AIAnalysisReason represents the umbrella failure or completion reason.
 // Per K8s convention, reasons cover all terminal states (success and failure).
-// +kubebuilder:validation:Enum=AnalysisCompleted;WorkflowResolutionFailed;WorkflowNotNeeded;NoWorkflowSelected;RegoEvaluationError;TransientError;APIError
+// +kubebuilder:validation:Enum=AnalysisCompleted;WorkflowResolutionFailed;WorkflowNotNeeded;NoWorkflowSelected;RegoEvaluationError;TransientError;APIError;InteractiveCancelled
 type AIAnalysisReason string
 
 const (
@@ -112,6 +112,7 @@ const (
 	ReasonRegoEvaluationError      AIAnalysisReason = "RegoEvaluationError"
 	ReasonTransientError           AIAnalysisReason = "TransientError"
 	ReasonAPIError                 AIAnalysisReason = "APIError"
+	ReasonInteractiveCancelled     AIAnalysisReason = "InteractiveCancelled"
 )
 
 // PolicyDecision represents the Rego policy evaluation outcome.
@@ -507,6 +508,10 @@ type KASession struct {
 	// Generation counter tracking session regenerations (0 = first session, incremented on 404)
 	// +kubebuilder:validation:Minimum=0
 	Generation int32 `json:"generation"`
+	// Interactive indicates the session was submitted with interactive=true (IS CRD present at submit time).
+	// BR-INTERACTIVE-010: Used to detect takeover/deletion state mismatches during polling.
+	// +optional
+	Interactive bool `json:"interactive,omitempty"`
 	// LastPolled timestamp of the last poll attempt
 	// +optional
 	LastPolled *metav1.Time `json:"lastPolled,omitempty"`

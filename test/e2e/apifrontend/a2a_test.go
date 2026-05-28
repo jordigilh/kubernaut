@@ -75,11 +75,11 @@ var _ = Describe("A2A Handler (E2E)", Label("e2e", "a2a"), func() {
 				"%s: task should reach a valid state", id)
 		}
 
-		It("TC-E2E-A2A-T01: kubernaut_start_investigation", func() {
-			toolTest("a2a-t01", "Start investigation on pod nginx in default namespace", "kubernaut_start_investigation")
+		It("TC-E2E-A2A-T01: kubernaut_investigate (new investigation)", func() {
+			toolTest("a2a-t01", "Start investigation on pod nginx in default namespace", "kubernaut_investigate")
 		})
-		It("TC-E2E-A2A-T02: kubernaut_poll_investigation", func() {
-			toolTest("a2a-t02", "Check investigation status for session sess-001", "kubernaut_poll_investigation")
+		It("TC-E2E-A2A-T02: kubernaut_investigate (resume by session_id)", func() {
+			toolTest("a2a-t02", "Check investigation status for session sess-001", "kubernaut_investigate")
 		})
 		It("TC-E2E-A2A-T03: kubernaut_select_workflow", func() {
 			toolTest("a2a-t03", "Select the restart workflow for remediation rr-001", "kubernaut_select_workflow")
@@ -146,8 +146,8 @@ var _ = Describe("A2A Handler (E2E)", Label("e2e", "a2a"), func() {
 		It("TC-E2E-A2A-T19: af_create_rr", func() {
 			toolTest("a2a-t19", "Create a remediation request for deployment web in prod namespace", "af_create_rr")
 		})
-		It("E2E-AF-1189-001: kubernaut_stream_investigation", func() {
-			toolTest("a2a-1189-001", "Stream the investigation for session sess-001", "kubernaut_stream_investigation")
+		It("E2E-AF-1189-001: kubernaut_investigate (session resume)", func() {
+			toolTest("a2a-1189-001", "Resume investigation for session sess-001", "kubernaut_investigate")
 		})
 		It("E2E-AF-1189-002: kubernaut_discover_workflows", func() {
 			toolTest("a2a-1189-002", "Discover available workflows for remediation kubernaut-system/rr-test", "kubernaut_discover_workflows")
@@ -197,16 +197,16 @@ var _ = Describe("A2A Handler (E2E)", Label("e2e", "a2a"), func() {
 		It("TC-E2E-A2A-RBAC-02: cicd denied kubectl_list", func() {
 			rbacDenialTest("rbac-02", cicdToken, "Get all pods in the default namespace", "kubectl_list")
 		})
-		It("TC-E2E-A2A-RBAC-03: cicd denied kubernaut_start_investigation", func() {
-			rbacDenialTest("rbac-03", cicdToken, "Start investigation on pod nginx in default namespace", "kubernaut_start_investigation")
+		It("TC-E2E-A2A-RBAC-03: cicd denied kubernaut_investigate", func() {
+			rbacDenialTest("rbac-03", cicdToken, "Start investigation on pod nginx in default namespace", "kubernaut_investigate")
 		})
 
 		// observability persona — denied tools
 		It("TC-E2E-A2A-RBAC-04: observability denied kubernaut_approve", func() {
 			rbacDenialTest("rbac-04", observabilityToken, "Approve the remediation rr-test in payments namespace", "kubernaut_approve")
 		})
-		It("TC-E2E-A2A-RBAC-05: observability denied kubernaut_start_investigation", func() {
-			rbacDenialTest("rbac-05", observabilityToken, "Start investigation on pod nginx in default namespace", "kubernaut_start_investigation")
+		It("TC-E2E-A2A-RBAC-05: observability denied kubernaut_investigate", func() {
+			rbacDenialTest("rbac-05", observabilityToken, "Start investigation on pod nginx in default namespace", "kubernaut_investigate")
 		})
 		It("TC-E2E-A2A-RBAC-06: observability denied af_create_rr", func() {
 			rbacDenialTest("rbac-06", observabilityToken, "Create a remediation request for deployment web in prod namespace", "af_create_rr")
@@ -219,13 +219,13 @@ var _ = Describe("A2A Handler (E2E)", Label("e2e", "a2a"), func() {
 		It("TC-E2E-A2A-RBAC-08: l3-audit denied kubectl_list", func() {
 			rbacDenialTest("rbac-08", auditorToken, "Get all pods in the default namespace", "kubectl_list")
 		})
-		It("TC-E2E-A2A-RBAC-09: l3-audit denied kubernaut_start_investigation", func() {
-			rbacDenialTest("rbac-09", auditorToken, "Start investigation on pod nginx in default namespace", "kubernaut_start_investigation")
+		It("TC-E2E-A2A-RBAC-09: l3-audit denied kubernaut_investigate", func() {
+			rbacDenialTest("rbac-09", auditorToken, "Start investigation on pod nginx in default namespace", "kubernaut_investigate")
 		})
 
 		// remediation-approver persona — denied tools
-		It("TC-E2E-A2A-RBAC-10: approver denied kubernaut_start_investigation", func() {
-			rbacDenialTest("rbac-10", approverToken, "Start investigation on pod nginx in default namespace", "kubernaut_start_investigation")
+		It("TC-E2E-A2A-RBAC-10: approver denied kubernaut_investigate", func() {
+			rbacDenialTest("rbac-10", approverToken, "Start investigation on pod nginx in default namespace", "kubernaut_investigate")
 		})
 		It("TC-E2E-A2A-RBAC-11: approver denied kubectl_list", func() {
 			rbacDenialTest("rbac-11", approverToken, "Get all pods in the default namespace", "kubectl_list")
@@ -326,8 +326,8 @@ var _ = Describe("A2A Handler (E2E)", Label("e2e", "a2a"), func() {
 	// ===================================================================
 	Context("Category 4: Multi-Tool Workflows", func() {
 
-		It("TC-E2E-A2A-WF-01: SRE full investigation flow (start -> poll -> list_workflows -> select -> present)", func() {
-			prompt := "Investigate pod nginx-crash in prod namespace: start the investigation, poll for results, list available workflows, select the best one, and present options"
+		It("TC-E2E-A2A-WF-01: SRE full investigation flow (investigate -> list_workflows -> select -> present)", func() {
+			prompt := "Investigate pod nginx-crash in prod namespace: run investigation, list available workflows, select the best one, and present options"
 			resp, err := a2aInvoke(httpClient, baseURL, sreToken, a2aTasksSend("wf-01", prompt))
 			Expect(err).NotTo(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
@@ -625,7 +625,7 @@ var _ = Describe("A2A Handler (E2E)", Label("e2e", "a2a"), func() {
 	})
 
 	// ===================================================================
-	// Category 7: Issue #1189 — stream_investigation / discover_workflows
+	// Category 7: Issue #1189 — investigate / discover_workflows
 	// non-happy paths (E2E-AF-1189-003..008)
 	// ===================================================================
 	Context("Category 7: Issue #1189 Non-Happy Paths", Label("issue-1189"), func() {
@@ -674,16 +674,16 @@ var _ = Describe("A2A Handler (E2E)", Label("e2e", "a2a"), func() {
 
 		Context("RBAC denial (low-privilege cicd persona)", func() {
 
-			It("E2E-AF-1189-003: RBAC denial for kubernaut_stream_investigation", func() {
+			It("E2E-AF-1189-003: RBAC denial for kubernaut_investigate", func() {
 				resp, err := a2aInvoke(httpClient, baseURL, cicdToken,
-					a2aTasksSend("1189-003", "stream the investigation events"))
+					a2aTasksSend("1189-003", "start investigation for pod nginx in default"))
 				Expect(err).NotTo(HaveOccurred())
 				defer func() { _ = resp.Body.Close() }()
 				Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
 				rpc, err := parseRPCResponse(resp)
 				Expect(err).NotTo(HaveOccurred())
-				expectA2ARBACEnforced(rpc, "kubernaut_stream_investigation")
+				expectA2ARBACEnforced(rpc, "kubernaut_investigate")
 			})
 
 			It("E2E-AF-1189-004: RBAC denial for kubernaut_discover_workflows", func() {

@@ -202,22 +202,23 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
 	// Issue #1189: Append AF keyword_scenarios with match_last_only so the FP
 	// mock-LLM can handle both KA signal scenarios AND AF multi-turn ADK conversations.
 	afKeywordYAML := `keyword_scenarios:
-      - name: "af_start_investigation"
-        keywords: ["start investigation"]
+      - name: "af_investigate"
+        keywords: ["start investigation", "investigate", "begin investigation"]
         match_last_only: true
         tool_call:
-          name: "kubernaut_start_investigation"
+          name: "kubernaut_investigate"
           arguments:
             namespace: "kubernaut-system"
             name: "memory-eater"
             kind: "Deployment"
-      - name: "af_stream_investigation"
-        keywords: ["stream investigation", "stream the investigation"]
+      - name: "af_investigate_resume"
+        keywords: ["stream the investigation", "resume investigation", "check investigation status"]
         match_last_only: true
+        repeat_tool_call: true
         tool_call:
-          name: "kubernaut_stream_investigation"
+          name: "kubernaut_investigate"
           arguments:
-            session_id: "sess-001"
+            session_id: "$from_tool:kubernaut_investigate:session_id"
       - name: "af_discover_workflows"
         keywords: ["discover available workflows", "discover workflows"]
         match_last_only: true

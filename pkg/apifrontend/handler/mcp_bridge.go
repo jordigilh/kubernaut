@@ -13,6 +13,7 @@ import (
 	"golang.org/x/sync/semaphore"
 	"k8s.io/client-go/dynamic"
 
+	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ds"
@@ -21,12 +22,27 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/security"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
 )
 
 const (
 	defaultToolTimeout       = 30 * time.Second
 	defaultMaxConcurrentTool = 10
 )
+
+// ISPhaseFinalizer updates the IS CRD phase after a terminal MCP action
+// (complete/cancel). Implemented by session.CRDSessionService.
+type ISPhaseFinalizer interface {
+	FinalizeSessionByRR(ctx context.Context, rrNamespace, rrName string, phase isv1alpha1.SessionPhase) error
+}
+
+// ISSessionInitializer creates an IS CRD when a user explicitly takes over
+// an investigation via kubernaut_takeover. Unlike MaterializeCRD (which uses
+// deferred A2A state), this creates the CRD directly from MCP context.
+// Implemented by session.CRDSessionService.
+type ISSessionInitializer interface {
+	InitializeSessionByRR(ctx context.Context, rrNamespace, rrName, kaSessionID, username string, groups []string) error
+}
 
 // MCPBridgeConfig holds the configuration for the real MCP tool bridge.
 type MCPBridgeConfig struct {
@@ -44,6 +60,8 @@ type MCPBridgeConfig struct {
 	ToolTimeouts       map[string]time.Duration
 	MaxConcurrentTools int64
 	UserLimiter        *ratelimit.UserLimiter
+	SessionFinalizer    ISPhaseFinalizer
+	SessionInitializer  ISSessionInitializer
 }
 
 // MCPBridgeMetrics holds Prometheus collectors specific to MCP bridge operations.
@@ -79,7 +97,7 @@ func (c *MCPBridgeConfig) GetMaxConcurrentTools() int64 {
 	return defaultMaxConcurrentTool
 }
 
-// RegisterTools registers all 21 MCP domain tools on the server with the real dispatch handlers.
+// RegisterTools registers all 22 MCP domain tools on the server with the real dispatch handlers.
 func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 	if cfg == nil {
 		panic("RegisterTools: cfg must not be nil")
@@ -129,15 +147,15 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 			return tools.HandleWatch(ctx, cfg.K8sClient, args)
 		})
 
-	// KA REST tools
-	registerTool(srv, cfg, sem, "kubernaut_start_investigation", "Start a new investigation session",
-		func(ctx context.Context, args tools.StartInvestigationArgs) (any, error) {
-			return tools.HandleStartInvestigation(ctx, cfg.KAClient, args, cfg.Auditor)
+	registerTool(srv, cfg, sem, "kubernaut_await_session", "Wait for KA investigation session to become ready",
+		func(ctx context.Context, args tools.AwaitSessionArgs) (any, error) {
+			return tools.HandleAwaitSession(ctx, cfg.K8sClient, args)
 		})
 
-	registerTool(srv, cfg, sem, "kubernaut_poll_investigation", "Poll an investigation session for updates",
-		func(ctx context.Context, args tools.PollInvestigationArgs) (any, error) {
-			return tools.HandlePollInvestigation(ctx, cfg.KAClient, args, 5, 3*time.Second, cfg.Auditor)
+	// KA investigation tool (merged start + stream + poll)
+	registerTool(srv, cfg, sem, "kubernaut_investigate", "Investigate an infrastructure incident",
+		func(ctx context.Context, args tools.InvestigateArgs) (any, error) {
+			return tools.HandleInvestigation(ctx, cfg.KAClient, args, cfg.Auditor)
 		})
 
 	// KA MCP tools
@@ -199,7 +217,25 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 	// Interactive investigation tools (G1: 4-phase journey)
 	registerTool(srv, cfg, sem, "kubernaut_takeover", "Take over an existing investigation session",
 		func(ctx context.Context, args tools.InteractiveActionArgs) (any, error) {
-			return tools.HandleTakeover(ctx, cfg.KAMCPClient, args, cfg.Auditor)
+			result, err := tools.HandleTakeover(ctx, cfg.KAMCPClient, args, cfg.Auditor)
+			if err != nil {
+				return result, err
+			}
+			if cfg.SessionInitializer != nil {
+				ns, name, pErr := validate.ParseRRID(args.RRID)
+				if pErr != nil {
+					return result, nil
+				}
+				identity := auth.UserIdentityFromContext(ctx)
+				if identity == nil {
+					return result, nil
+				}
+				if iErr := cfg.SessionInitializer.InitializeSessionByRR(ctx, ns, name, result.SessionID, identity.Username, identity.Groups); iErr != nil {
+					cfg.Logger.Error(iErr, "IS CRD initialization failed on takeover", "rr_id", args.RRID, "session_id", result.SessionID)
+					return nil, fmt.Errorf("takeover succeeded but IS CRD creation failed: %w", iErr)
+				}
+			}
+			return result, nil
 		})
 
 	registerTool(srv, cfg, sem, "kubernaut_message", "Send a message to an active investigation session",
@@ -209,12 +245,28 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 
 	registerTool(srv, cfg, sem, "kubernaut_complete", "Complete an investigation session",
 		func(ctx context.Context, args tools.InteractiveActionArgs) (any, error) {
-			return tools.HandleComplete(ctx, cfg.KAMCPClient, args, cfg.Auditor)
+			result, err := tools.HandleComplete(ctx, cfg.KAMCPClient, args, cfg.Auditor)
+			if err == nil && cfg.SessionFinalizer != nil {
+				if ns, name, pErr := validate.ParseRRID(args.RRID); pErr == nil {
+					if fErr := cfg.SessionFinalizer.FinalizeSessionByRR(ctx, ns, name, isv1alpha1.SessionPhaseCompleted); fErr != nil {
+						cfg.Logger.Error(fErr, "IS CRD phase finalization failed", "rr_id", args.RRID, "phase", "Completed")
+					}
+				}
+			}
+			return result, err
 		})
 
 	registerTool(srv, cfg, sem, "kubernaut_cancel", "Cancel an active investigation session",
 		func(ctx context.Context, args tools.InteractiveActionArgs) (any, error) {
-			return tools.HandleCancel(ctx, cfg.KAMCPClient, args, cfg.Auditor)
+			result, err := tools.HandleCancel(ctx, cfg.KAMCPClient, args, cfg.Auditor)
+			if err == nil && cfg.SessionFinalizer != nil {
+				if ns, name, pErr := validate.ParseRRID(args.RRID); pErr == nil {
+					if fErr := cfg.SessionFinalizer.FinalizeSessionByRR(ctx, ns, name, isv1alpha1.SessionPhaseCancelled); fErr != nil {
+						cfg.Logger.Error(fErr, "IS CRD phase finalization failed", "rr_id", args.RRID, "phase", "Cancelled")
+					}
+				}
+			}
+			return result, err
 		})
 
 	registerTool(srv, cfg, sem, "kubernaut_status", "Get the current status of an investigation session",
@@ -227,11 +279,7 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 			return tools.HandleReconnect(ctx, cfg.KAMCPClient, args, cfg.Auditor)
 		})
 
-	// Stream investigation tool (G5: SSE stream bridge)
-	registerTool(srv, cfg, sem, "kubernaut_stream_investigation", "Stream investigation events in real time",
-		func(ctx context.Context, args tools.StreamInvestigationArgs) (any, error) {
-			return tools.HandleStreamInvestigation(ctx, cfg.KAClient, args)
-		})
+	// Stream investigation tool removed — merged into kubernaut_investigate above.
 
 	// Internal triage tools (kubectl_get, kubectl_list, kubectl_list_events,
 	// af_check_existing_rr, af_create_rr) are available only to AF's LLM

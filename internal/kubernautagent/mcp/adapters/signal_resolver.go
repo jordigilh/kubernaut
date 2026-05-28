@@ -63,3 +63,9 @@ func (r *K8sSignalContextResolver) ResolveSignalContext(ctx context.Context, rrI
 func (r *K8sSignalContextResolver) ResolveEnrichmentData(_ context.Context, _ string) (*prompt.EnrichmentData, error) {
 	return &prompt.EnrichmentData{}, nil
 }
+
+// ResolvePostRCAEnrichment performs Phase 2 re-enrichment for the RCA-identified
+// target. Delegates to the enricher if wired, otherwise returns empty data.
+func (r *K8sSignalContextResolver) ResolvePostRCAEnrichment(_ context.Context, _, _, _, _ string) (*prompt.EnrichmentData, error) {
+	return &prompt.EnrichmentData{}, nil
+}

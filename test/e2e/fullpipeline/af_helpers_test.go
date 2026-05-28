@@ -2,13 +2,18 @@ package fullpipeline
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"time"
 
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	corev1 "k8s.io/api/core/v1"
+
+	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -78,6 +83,14 @@ type fpA2ATaskResult struct {
 
 // fpA2AInvoke sends a JSON-RPC request to POST /a2a/invoke.
 func fpA2AInvoke(body string) (*http.Response, error) {
+	return fpA2AInvokeWithTimeout(body, 0)
+}
+
+// fpA2AInvokeWithTimeout sends a JSON-RPC request to POST /a2a/invoke with a
+// custom timeout. Use for multi-turn conversations where the session may still
+// be processing a prior turn's tool chain (AF → MCP → KA → mock-LLM).
+// A zero timeout uses the default afHTTPClient (30s).
+func fpA2AInvokeWithTimeout(body string, timeout time.Duration) (*http.Response, error) {
 	token := getAFToken()
 	req, err := http.NewRequest(http.MethodPost, afBaseURL+"/a2a/invoke", strings.NewReader(body))
 	if err != nil {
@@ -85,6 +98,13 @@ func fpA2AInvoke(body string) (*http.Response, error) {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
+	if timeout > 0 {
+		client := &http.Client{
+			Transport: afHTTPClient.Transport,
+			Timeout:   timeout,
+		}
+		return client.Do(req)
+	}
 	return afHTTPClient.Do(req)
 }
 
@@ -128,8 +148,32 @@ func fpWaitForRR(nameSubstring string, timeout time.Duration) string {
 	return rrName
 }
 
+// fpWaitForRRWithTargetNS polls for a RemediationRequest containing nameSubstring in its
+// name AND whose spec.targetResource.namespace equals targetNS. This avoids picking up
+// RRs from parallel tests that share the same name pattern but target different namespaces.
+func fpWaitForRRWithTargetNS(nameSubstring, targetNS string, timeout time.Duration) string {
+	var rrName string
+	Eventually(func() bool {
+		rrList := &remediationv1.RemediationRequestList{}
+		if err := apiReader.List(ctx, rrList, client.InNamespace(namespace)); err != nil {
+			return false
+		}
+		for _, rr := range rrList.Items {
+			if strings.Contains(rr.Name, nameSubstring) && rr.Spec.TargetResource.Namespace == targetNS {
+				rrName = rr.Name
+				return true
+			}
+		}
+		return false
+	}, timeout, 2*time.Second).Should(BeTrue(),
+		"RemediationRequest with %q targeting namespace %q not found", nameSubstring, targetNS)
+	return rrName
+}
+
 // fpWaitForWEComplete waits until a WorkflowExecution for the given RR reaches Completed phase.
+// Fails fast if the WE enters Failed phase, and logs pipeline state periodically for diagnostics.
 func fpWaitForWEComplete(rrName string, timeout time.Duration) {
+	logged := false
 	Eventually(func() bool {
 		weList := &workflowexecutionv1.WorkflowExecutionList{}
 		if err := apiReader.List(ctx, weList, client.InNamespace(namespace)); err != nil {
@@ -137,10 +181,74 @@ func fpWaitForWEComplete(rrName string, timeout time.Duration) {
 		}
 		for _, we := range weList.Items {
 			if strings.Contains(we.Name, rrName) || we.Spec.RemediationRequestRef.Name == rrName {
-				return we.Status.Phase == "Completed"
+				phase := string(we.Status.Phase)
+				if phase == "Failed" {
+					Fail(fmt.Sprintf("WorkflowExecution %s failed (phase=Failed)", we.Name))
+				}
+				if phase != "" && !logged {
+					GinkgoWriter.Printf("  WE %s phase: %s, engine: %s\n", we.Name, phase, we.Status.ExecutionEngine)
+					logged = true
+				}
+				return phase == "Completed"
+			}
+		}
+		if !logged {
+			aaList := &aianalysisv1.AIAnalysisList{}
+			if err := apiReader.List(ctx, aaList, client.InNamespace(namespace)); err == nil {
+				for _, aa := range aaList.Items {
+					if strings.Contains(aa.Name, rrName) || aa.Spec.RemediationRequestRef.Name == rrName {
+						GinkgoWriter.Printf("  AA %s phase: %s (WE not yet created)\n", aa.Name, aa.Status.Phase)
+						break
+					}
+				}
 			}
 		}
 		return false
 	}, timeout, 3*time.Second).Should(BeTrue(), "WorkflowExecution for %q did not complete", rrName)
+}
+
+// fpWaitForPodCrash waits until at least one pod matching the given label has
+// entered a crash state (OOMKilled or CrashLoopBackOff). AF's deriveSignalName
+// uses DominantEventReason to produce a grounded signal name; if called before
+// the pod crashes, only Normal lifecycle events (ScalingReplicaSet, Scheduled)
+// exist and DominantEventReason correctly returns "" (F-SIG-08). Waiting for a
+// crash ensures Warning events like BackOff are present, giving KA a meaningful
+// signal to drive investigation.
+func fpWaitForPodCrash(appLabel string, timeout time.Duration) {
+	fpWaitForPodCrashInNS(appLabel, namespace, timeout)
+}
+
+// fpWaitForPodCrashInNS waits until at least one pod matching the given label
+// in the specified namespace has entered a crash state (OOMKilled or CrashLoopBackOff).
+func fpWaitForPodCrashInNS(appLabel, ns string, timeout time.Duration) {
+	Eventually(func() bool {
+		pods := &corev1.PodList{}
+		if err := apiReader.List(ctx, pods,
+			client.InNamespace(ns),
+			client.MatchingLabels{"app": appLabel}); err != nil {
+			return false
+		}
+		for _, pod := range pods.Items {
+			for _, cs := range pod.Status.ContainerStatuses {
+				if cs.LastTerminationState.Terminated != nil &&
+					cs.LastTerminationState.Terminated.Reason == "OOMKilled" {
+					GinkgoWriter.Printf("  OOMKill detected for %s in %s (restarts=%d)\n", appLabel, ns, cs.RestartCount)
+					return true
+				}
+				if cs.State.Terminated != nil &&
+					cs.State.Terminated.Reason == "OOMKilled" {
+					GinkgoWriter.Printf("  OOMKill detected for %s in %s\n", appLabel, ns)
+					return true
+				}
+				if cs.RestartCount > 0 && cs.State.Waiting != nil &&
+					cs.State.Waiting.Reason == "CrashLoopBackOff" {
+					GinkgoWriter.Printf("  CrashLoopBackOff detected for %s in %s\n", appLabel, ns)
+					return true
+				}
+			}
+		}
+		return false
+	}, timeout, 2*time.Second).Should(BeTrue(),
+		"pod with label app=%s in namespace %s should crash (OOMKill or CrashLoopBackOff)", appLabel, ns)
 }
 

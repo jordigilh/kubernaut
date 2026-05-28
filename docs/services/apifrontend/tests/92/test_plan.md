@@ -1,5 +1,10 @@
 # Test Plan: Three-Tier Severity Triage for Manual Signals
 
+> **Partially superseded by [#1282](https://github.com/jordigilh/kubernaut/issues/1282):**
+> `af_create_rr` no longer accepts user-supplied severity or namespace from the LLM.
+> Severity is always AF-resolved via the triage pipeline. Namespace is AF-resolved
+> via K8s downward API. See `docs/tests/1282/TEST_PLAN.md` for current behavior.
+
 **Test Plan Identifier:** TP-AF-092-SEVERITY-TRIAGE
 **Issue:** [#92](https://github.com/jordigilh/kubernaut-apifrontend/issues/92)
 **Version:** 1.0

@@ -76,6 +76,22 @@ var _ = Describe("LeaseSessionManager — #703 BR-INTERACTIVE-002", func() {
 		})
 	})
 
+	Describe("UT-KA-LEASE-001: Takeover with namespace-qualified rrID produces valid Lease name", func() {
+		It("should create a Lease even when rrID contains a slash (namespace/name format)", func() {
+			user := mcpinternal.UserInfo{Username: "alice@example.com", Groups: []string{"sre"}}
+			session, err := mgr.Takeover(ctx, "default/rr-join06-12345", user)
+			Expect(err).NotTo(HaveOccurred(), "namespace-qualified rrID must not produce invalid Lease name")
+			Expect(session).NotTo(BeNil())
+			Expect(session.CorrelationID).To(Equal("default/rr-join06-12345"))
+
+			leaseList := &coordinationv1.LeaseList{}
+			Expect(k8sClient.List(ctx, leaseList, client.InNamespace(namespace))).To(Succeed())
+			Expect(leaseList.Items).To(HaveLen(1))
+			Expect(leaseList.Items[0].Name).NotTo(ContainSubstring("/"),
+				"Lease metadata.name must not contain '/' — K8s rejects it")
+		})
+	})
+
 	Describe("UT-KA-703-I02: Takeover rejects when Lease held by another driver", func() {
 		It("should return ErrLeaseHeld when another user holds the Lease", func() {
 			user1 := mcpinternal.UserInfo{Username: "alice@example.com", Groups: []string{"sre"}}

@@ -16,133 +16,14 @@ limitations under the License.
 package tools
 
 import (
-	"context"
 	"encoding/json"
-	"fmt"
-	"strings"
-
-	"github.com/go-logr/logr"
-
-	"google.golang.org/adk/tool"
-	"google.golang.org/adk/tool/functiontool"
-
-	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
-	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
-	"github.com/jordigilh/kubernaut/pkg/apifrontend/security"
 )
-
-// StreamInvestigationArgs defines the input for kubernaut_stream_investigation.
-type StreamInvestigationArgs struct {
-	SessionID string `json:"session_id"`
-}
-
-// StreamInvestigationResult is the output of kubernaut_stream_investigation.
-type StreamInvestigationResult struct {
-	Status   string              `json:"status"`
-	Summary  string              `json:"summary,omitempty"`
-	Events   []StreamEventDigest `json:"events,omitempty"`
-	EventLog string              `json:"event_log,omitempty"`
-}
 
 // StreamEventDigest is a compact representation of an SSE event for the LLM.
 type StreamEventDigest struct {
 	Type  string `json:"type"`
 	Phase string `json:"phase,omitempty"`
 	Text  string `json:"text,omitempty"`
-}
-
-// HandleStreamInvestigation connects to KA's SSE stream and collects events
-// until the investigation reaches a terminal state. Returns a structured
-// summary including the narrative of reasoning and tool execution events.
-func HandleStreamInvestigation(ctx context.Context, kaClient *ka.Client, args StreamInvestigationArgs) (StreamInvestigationResult, error) {
-	if args.SessionID == "" {
-		return StreamInvestigationResult{}, fmt.Errorf("session_id is required")
-	}
-
-	ch, err := kaClient.StreamEvents(ctx, args.SessionID)
-	if err != nil {
-		return StreamInvestigationResult{}, fmt.Errorf("connecting to investigation stream: %w", err)
-	}
-
-	var events []StreamEventDigest
-	var narrative strings.Builder
-	var finalSummary string
-
-	for event := range ch {
-		select {
-		case <-ctx.Done():
-			return StreamInvestigationResult{
-				Status:   "cancelled",
-				Events:   events,
-				EventLog: narrative.String(),
-			}, nil
-		default:
-		}
-
-		digest := StreamEventDigest{
-			Type:  event.Type,
-			Phase: event.Phase,
-		}
-
-		switch event.Type {
-		case ka.EventTypeReasoningDelta, ka.EventTypeTokenDelta:
-			text := extractTextFromData(event.Data)
-			digest.Text = text
-			narrative.WriteString(text)
-			// Emit reasoning_delta (not token_delta) via bridge for progressive streaming
-			if event.Type == ka.EventTypeReasoningDelta {
-				emitViaBridge(ctx, text)
-			}
-		case ka.EventTypeToolCallStart, ka.EventTypeToolCall:
-			text := extractTextFromData(event.Data)
-			digest.Text = text
-			if text != "" {
-				narrative.WriteString(fmt.Sprintf("\n[Tool: %s]\n", text))
-			}
-		case ka.EventTypeToolResult:
-			text := extractTextFromData(event.Data)
-			digest.Text = truncateForLLM(text, 500)
-		case ka.EventTypeComplete:
-			finalSummary = extractSummaryFromComplete(event.Data)
-			events = append(events, digest)
-			emitViaBridge(ctx, finalSummary)
-			return StreamInvestigationResult{
-				Status:   "completed",
-				Summary:  finalSummary,
-				Events:   events,
-				EventLog: narrative.String(),
-			}, nil
-		case ka.EventTypeCancelled:
-			events = append(events, digest)
-			return StreamInvestigationResult{
-				Status:   "cancelled",
-				Events:   events,
-				EventLog: narrative.String(),
-			}, nil
-		case ka.EventTypeError:
-			text := extractTextFromData(event.Data)
-			digest.Text = text
-			events = append(events, digest)
-			return StreamInvestigationResult{
-				Status:   "failed",
-				Events:   events,
-				EventLog: narrative.String(),
-			}, nil
-		}
-
-		events = append(events, digest)
-	}
-
-	status := "completed"
-	if finalSummary == "" {
-		status = "disconnected"
-	}
-	return StreamInvestigationResult{
-		Status:   status,
-		Summary:  finalSummary,
-		Events:   events,
-		EventLog: narrative.String(),
-	}, nil
 }
 
 func extractTextFromData(data json.RawMessage) string {
@@ -174,6 +55,80 @@ func extractTextFromData(data json.RawMessage) string {
 	return string(data)
 }
 
+// ExtractToolResult parses a tool_result SSE event data payload and returns:
+//   - toolName: the tool that produced the result (empty for flat test format)
+//   - preview: the result preview text
+//   - isErr: true if the result contains a toolErrorJSON payload
+//
+// Handles two wire formats:
+//  1. Production KA envelope: {"type":"tool_result","turn":N,"data":{"tool_name":...,"result_preview":...}}
+//  2. Test flat format: JSON string (e.g. "pod-1 Running")
+func ExtractToolResult(data json.RawMessage) (toolName, preview string, isErr bool) {
+	if len(data) == 0 {
+		return "", "", false
+	}
+
+	// Try flat JSON string first (test format)
+	var str string
+	if err := json.Unmarshal(data, &str); err == nil {
+		return "", str, isToolErrorContent(str)
+	}
+
+	// Try production KA envelope
+	var envelope struct {
+		Data struct {
+			ToolName      string `json:"tool_name"`
+			ResultPreview string `json:"result_preview"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(data, &envelope); err == nil && envelope.Data.ToolName != "" {
+		return envelope.Data.ToolName, envelope.Data.ResultPreview, isToolErrorContent(envelope.Data.ResultPreview)
+	}
+
+	// Fallback: try as a simple object with tool_name/result_preview at top level
+	var obj map[string]any
+	if err := json.Unmarshal(data, &obj); err == nil {
+		if tn, ok := obj["tool_name"].(string); ok {
+			rp, _ := obj["result_preview"].(string)
+			return tn, rp, isToolErrorContent(rp)
+		}
+	}
+
+	return "", string(data), false
+}
+
+// isToolErrorContent checks if the content matches KA's toolErrorJSON format:
+// {"status":"error","error":"..."}
+func isToolErrorContent(s string) bool {
+	var errPayload struct {
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal([]byte(s), &errPayload); err == nil {
+		return errPayload.Status == "error"
+	}
+	return false
+}
+
+// FormatToolError produces a human-readable error message from a tool name
+// and its error content. The message is truncated to 200 characters.
+func FormatToolError(toolName, rawError string) string {
+	errText := rawError
+
+	// Try to extract the "error" field from toolErrorJSON
+	var errPayload struct {
+		Error string `json:"error"`
+	}
+	if json.Unmarshal([]byte(rawError), &errPayload) == nil && errPayload.Error != "" {
+		errText = errPayload.Error
+	}
+
+	msg := toolName + ": " + errText
+	if len(msg) > 200 {
+		msg = msg[:197] + "..."
+	}
+	return msg
+}
+
 func extractSummaryFromComplete(data json.RawMessage) string {
 	if len(data) == 0 {
 		return ""
@@ -197,25 +152,4 @@ func truncateForLLM(s string, maxLen int) string {
 		return s
 	}
 	return string(runes[:maxLen]) + "... (truncated)"
-}
-
-// NewStreamInvestigationTool creates the kubernaut_stream_investigation tool.
-func NewStreamInvestigationTool(kaClient *ka.Client) (tool.Tool, error) {
-	return functiontool.New(functiontool.Config{
-		Name:        "kubernaut_stream_investigation",
-		Description: "Stream live investigation events from the AI agent in real-time. Returns when investigation completes with a full summary. Use instead of kubernaut_poll_investigation for live narrative.",
-	}, func(ctx tool.Context, args StreamInvestigationArgs) (StreamInvestigationResult, error) {
-		return HandleStreamInvestigation(ctx, kaClient, args)
-	})
-}
-
-// emitViaBridge sends text to the A2A event bridge if present in context.
-// Bridge write errors are logged but do not interrupt the tool execution.
-func emitViaBridge(ctx context.Context, text string) {
-	if text == "" {
-		return
-	}
-	if err := launcher.EmitReasoningSafe(ctx, text); err != nil {
-		logr.FromContextOrDiscard(ctx).Info("WARNING: bridge emit failed", "error", security.RedactError(err))
-	}
 }

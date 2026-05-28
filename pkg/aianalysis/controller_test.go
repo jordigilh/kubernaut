@@ -153,10 +153,10 @@ var _ = Describe("AIAnalysis Controller", func() {
 				Recorder:             recorder,
 				Log:                  ctrl.Log.WithName("test"),
 				Metrics:              testMetrics,
-				InvestigatingHandler: investigatingHandler,
-				AnalyzingHandler:     analyzingHandler,
-				AuditClient:          auditClient,
+				AnalyzingHandler: analyzingHandler,
+				AuditClient:     auditClient,
 			}
+			reconciler.InvestigatingHandler.Store(investigatingHandler)
 
 			// Business scenario: AIAnalysis transitions through lifecycle phases
 			req := ctrl.Request{

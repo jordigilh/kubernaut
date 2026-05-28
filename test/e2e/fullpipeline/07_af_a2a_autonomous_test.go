@@ -21,6 +21,9 @@ var _ = Describe("AF A2A Autonomous Full Pipeline [E2E-FP-1189-002]", Label("fp"
 		}
 		_ = resp.Body.Close()
 
+		By("Waiting for memory-eater pod to crash (F-SIG-08: ensures Warning events exist for DominantEventReason)")
+		fpWaitForPodCrash("memory-eater", 2*time.Minute)
+
 		By("Creating RR via A2A message/send")
 		body := fpA2ATasksSend("fp-auto-1",
 			"create a remediation request for deployment memory-eater in kubernaut-system")

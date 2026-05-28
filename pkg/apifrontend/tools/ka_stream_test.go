@@ -20,6 +20,31 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
 
+// kaSessionHandler returns an http.Handler that serves the analyze, status,
+// and stream endpoints. streamFn is called for the stream path to write SSE data.
+func kaSessionHandler(sessionID string, streamFn func(w http.ResponseWriter)) http.Handler {
+	analyzePath := "/api/v1/incident/analyze"
+	statusPath := fmt.Sprintf("/api/v1/incident/session/%s", sessionID)
+	streamPath := statusPath + "/stream"
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case analyzePath:
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = fmt.Fprintf(w, `{"session_id":%q}`, sessionID)
+		case statusPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"in_progress"}`))
+		case streamPath:
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			streamFn(w)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+}
+
 func sseLines(eventType, dataJSON string) string {
 	return fmt.Sprintf("event: %s\ndata: %s\n\n", eventType, dataJSON)
 }
@@ -34,7 +59,16 @@ func sseObj(eventType string, obj map[string]any) string {
 	return sseLines(eventType, string(b))
 }
 
-var _ = Describe("HandleStreamInvestigation (G5)", func() {
+// investigateNew starts a new investigation via HandleInvestigation.
+func investigateNew(ctx context.Context, kaClient *ka.Client, ns, name string) (tools.InvestigateResult, error) {
+	return tools.HandleInvestigation(ctx, kaClient, tools.InvestigateArgs{
+		Namespace: ns,
+		Name:      name,
+	}, nil)
+}
+
+
+var _ = Describe("HandleInvestigation streaming (G5)", func() {
 	var (
 		ctx    context.Context
 		server *httptest.Server
@@ -50,100 +84,52 @@ var _ = Describe("HandleStreamInvestigation (G5)", func() {
 		}
 	})
 
-	sessionStreamPath := func(sessionID string) string {
-		return fmt.Sprintf("/api/v1/incident/session/%s/stream", sessionID)
-	}
-
-	It("UT-AF-1234-045: empty session_id rejected", func() {
-		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.WriteHeader(http.StatusOK)
-		}))
-		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
-		_, err := tools.HandleStreamInvestigation(ctx, kaClient, tools.StreamInvestigationArgs{
-			SessionID: "",
-		})
-		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("session_id"))
-	})
-
 	It("UT-AF-1234-046: SSE reasoning_delta appended to narrative", func() {
-		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != sessionStreamPath("sess-001") {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.WriteHeader(http.StatusOK)
+		server = httptest.NewServer(kaSessionHandler("sess-001", func(w http.ResponseWriter) {
 			_, _ = fmt.Fprint(w, sseText("reasoning_delta", "Analyzing pod logs..."))
 			_, _ = fmt.Fprint(w, sseObj("complete", map[string]any{"summary": "OOM detected"}))
 		}))
 
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
-		result, err := tools.HandleStreamInvestigation(ctx, kaClient, tools.StreamInvestigationArgs{
-			SessionID: "sess-001",
-		})
+		result, err := investigateNew(ctx, kaClient, "default", "test-pod")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.EventLog).To(ContainSubstring("Analyzing pod logs"))
 	})
 
 	It("UT-AF-1234-047: SSE token_delta appended to narrative", func() {
-		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != sessionStreamPath("sess-001") {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.WriteHeader(http.StatusOK)
+		server = httptest.NewServer(kaSessionHandler("sess-001", func(w http.ResponseWriter) {
 			_, _ = fmt.Fprint(w, sseText("token_delta", "The pod is"))
 			_, _ = fmt.Fprint(w, sseText("token_delta", " crashlooping"))
 			_, _ = fmt.Fprint(w, sseObj("complete", map[string]any{"summary": "done"}))
 		}))
 
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
-		result, err := tools.HandleStreamInvestigation(ctx, kaClient, tools.StreamInvestigationArgs{
-			SessionID: "sess-001",
-		})
+		result, err := investigateNew(ctx, kaClient, "default", "test-pod")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.EventLog).To(ContainSubstring("The pod is"))
 		Expect(result.EventLog).To(ContainSubstring("crashlooping"))
 	})
 
 	It("UT-AF-1234-048: SSE tool_call_start adds tool marker to narrative", func() {
-		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != sessionStreamPath("sess-001") {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.WriteHeader(http.StatusOK)
+		server = httptest.NewServer(kaSessionHandler("sess-001", func(w http.ResponseWriter) {
 			_, _ = fmt.Fprint(w, sseText("tool_call_start", "kubectl_get_pods"))
 			_, _ = fmt.Fprint(w, sseObj("complete", map[string]any{"summary": "done"}))
 		}))
 
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
-		result, err := tools.HandleStreamInvestigation(ctx, kaClient, tools.StreamInvestigationArgs{
-			SessionID: "sess-001",
-		})
+		result, err := investigateNew(ctx, kaClient, "default", "test-pod")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.EventLog).To(ContainSubstring("kubectl_get_pods"))
 	})
 
 	It("UT-AF-1234-049: SSE tool_call records in event log", func() {
-		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != sessionStreamPath("sess-001") {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.WriteHeader(http.StatusOK)
+		server = httptest.NewServer(kaSessionHandler("sess-001", func(w http.ResponseWriter) {
 			_, _ = fmt.Fprint(w, sseText("tool_call", "kubectl get pods -n prod"))
 			_, _ = fmt.Fprint(w, sseObj("complete", map[string]any{"summary": "done"}))
 		}))
 
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
-		result, err := tools.HandleStreamInvestigation(ctx, kaClient, tools.StreamInvestigationArgs{
-			SessionID: "sess-001",
-		})
+		result, err := investigateNew(ctx, kaClient, "default", "test-pod")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Events).NotTo(BeEmpty())
 
@@ -158,21 +144,13 @@ var _ = Describe("HandleStreamInvestigation (G5)", func() {
 
 	It("UT-AF-1234-050: SSE tool_result truncated to 500 chars", func() {
 		longResult := strings.Repeat("x", 600)
-		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != sessionStreamPath("sess-001") {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.WriteHeader(http.StatusOK)
+		server = httptest.NewServer(kaSessionHandler("sess-001", func(w http.ResponseWriter) {
 			_, _ = fmt.Fprint(w, sseText("tool_result", longResult))
 			_, _ = fmt.Fprint(w, sseObj("complete", map[string]any{"summary": "done"}))
 		}))
 
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
-		result, err := tools.HandleStreamInvestigation(ctx, kaClient, tools.StreamInvestigationArgs{
-			SessionID: "sess-001",
-		})
+		result, err := investigateNew(ctx, kaClient, "default", "test-pod")
 		Expect(err).NotTo(HaveOccurred())
 
 		for _, evt := range result.Events {
@@ -183,81 +161,49 @@ var _ = Describe("HandleStreamInvestigation (G5)", func() {
 	})
 
 	It("UT-AF-1234-051: SSE complete extracts summary, returns completed status", func() {
-		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != sessionStreamPath("sess-001") {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.WriteHeader(http.StatusOK)
+		server = httptest.NewServer(kaSessionHandler("sess-001", func(w http.ResponseWriter) {
 			_, _ = fmt.Fprint(w, sseObj("complete", map[string]any{"summary": "OOM kill detected in pod web-api"}))
 		}))
 
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
-		result, err := tools.HandleStreamInvestigation(ctx, kaClient, tools.StreamInvestigationArgs{
-			SessionID: "sess-001",
-		})
+		result, err := investigateNew(ctx, kaClient, "default", "test-pod")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).To(Equal("completed"))
 		Expect(result.Summary).To(ContainSubstring("OOM"))
 	})
 
 	It("UT-AF-1234-052: SSE cancelled returns cancelled status", func() {
-		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != sessionStreamPath("sess-001") {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.WriteHeader(http.StatusOK)
+		server = httptest.NewServer(kaSessionHandler("sess-001", func(w http.ResponseWriter) {
 			_, _ = fmt.Fprint(w, sseLines("cancelled", `"user requested cancellation"`))
 		}))
 
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
-		result, err := tools.HandleStreamInvestigation(ctx, kaClient, tools.StreamInvestigationArgs{
-			SessionID: "sess-001",
-		})
+		result, err := investigateNew(ctx, kaClient, "default", "test-pod")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).To(Equal("cancelled"))
 	})
 
 	It("UT-AF-1234-053: SSE error returns failed status", func() {
-		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != sessionStreamPath("sess-001") {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.WriteHeader(http.StatusOK)
+		server = httptest.NewServer(kaSessionHandler("sess-001", func(w http.ResponseWriter) {
 			_, _ = fmt.Fprint(w, sseText("error", "internal error occurred"))
 		}))
 
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
-		result, err := tools.HandleStreamInvestigation(ctx, kaClient, tools.StreamInvestigationArgs{
-			SessionID: "sess-001",
-		})
+		result, err := investigateNew(ctx, kaClient, "default", "test-pod")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).To(Equal("failed"))
 	})
 
 	It("UT-AF-1234-054: Context cancel mid-stream returns cancelled with partial", func() {
-		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != sessionStreamPath("sess-001") {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "text/event-stream")
+		cancelCtx, cancel := context.WithCancel(ctx)
+		server = httptest.NewServer(kaSessionHandler("sess-001", func(w http.ResponseWriter) {
 			flusher, ok := w.(http.Flusher)
-			w.WriteHeader(http.StatusOK)
 			_, _ = fmt.Fprint(w, sseText("reasoning_delta", "Starting analysis..."))
 			if ok {
 				flusher.Flush()
 			}
-			// Block until the test context is cancelled
-			<-r.Context().Done()
+			<-cancelCtx.Done()
 		}))
-
-		cancelCtx, cancel := context.WithCancel(ctx)
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
 
 		go func() {
@@ -265,9 +211,7 @@ var _ = Describe("HandleStreamInvestigation (G5)", func() {
 			cancel()
 		}()
 
-		result, err := tools.HandleStreamInvestigation(cancelCtx, kaClient, tools.StreamInvestigationArgs{
-			SessionID: "sess-001",
-		})
+		result, err := investigateNew(cancelCtx, kaClient, "default", "test-pod")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).To(SatisfyAny(
 			Equal("cancelled"),
@@ -276,7 +220,7 @@ var _ = Describe("HandleStreamInvestigation (G5)", func() {
 	})
 })
 
-var _ = Describe("HandleStreamInvestigation — A2A Bridge (TP-1258)", func() {
+var _ = Describe("HandleInvestigation — A2A Bridge (TP-1258)", func() {
 	var (
 		ctx    context.Context
 		server *httptest.Server
@@ -292,18 +236,8 @@ var _ = Describe("HandleStreamInvestigation — A2A Bridge (TP-1258)", func() {
 		}
 	})
 
-	sessionStreamPath := func(sessionID string) string {
-		return fmt.Sprintf("/api/v1/incident/session/%s/stream", sessionID)
-	}
-
 	It("UT-AF-1258-020: reasoning_delta emitted via bridge during stream", func() {
-		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != sessionStreamPath("sess-bridge-001") {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.WriteHeader(http.StatusOK)
+		server = httptest.NewServer(kaSessionHandler("sess-bridge-001", func(w http.ResponseWriter) {
 			_, _ = fmt.Fprint(w, sseObj("reasoning_delta", map[string]any{
 				"content_preview": "Checking pod health in namespace prod",
 			}))
@@ -312,16 +246,15 @@ var _ = Describe("HandleStreamInvestigation — A2A Bridge (TP-1258)", func() {
 
 		queue := &testEventQueue{}
 		taskID := a2a.TaskID("bridge-task-001")
-		bridgeCtx := launcher.WithEventBridge(ctx, queue, taskID, nil)
+		bridgeCtx := launcher.WithEventBridge(ctx, queue, taskID, "", nil)
 
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
-		result, err := tools.HandleStreamInvestigation(bridgeCtx, kaClient, tools.StreamInvestigationArgs{
-			SessionID: "sess-bridge-001",
-		})
+		result, err := tools.HandleInvestigation(bridgeCtx, kaClient, tools.InvestigateArgs{
+			Namespace: "prod", Name: "test-pod",
+		}, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).To(Equal("completed"))
 
-		// Bridge should have emitted the reasoning_delta
 		Expect(queue.events).NotTo(BeEmpty())
 		var foundReasoning bool
 		for _, evt := range queue.events {
@@ -338,96 +271,81 @@ var _ = Describe("HandleStreamInvestigation — A2A Bridge (TP-1258)", func() {
 		Expect(foundReasoning).To(BeTrue(), "expected reasoning_delta to be emitted via bridge")
 	})
 
-	It("UT-AF-1258-021: token_delta NOT emitted via bridge (GA policy)", func() {
-		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != sessionStreamPath("sess-bridge-002") {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.WriteHeader(http.StatusOK)
+	It("UT-AF-1258-021: token_delta emitted via bridge for real-time streaming (#1302)", func() {
+		server = httptest.NewServer(kaSessionHandler("sess-bridge-002", func(w http.ResponseWriter) {
 			_, _ = fmt.Fprint(w, sseText("token_delta", "some token fragment"))
 			_, _ = fmt.Fprint(w, sseObj("complete", map[string]any{"summary": "done"}))
 		}))
 
 		queue := &testEventQueue{}
 		taskID := a2a.TaskID("bridge-task-002")
-		bridgeCtx := launcher.WithEventBridge(ctx, queue, taskID, nil)
+		bridgeCtx := launcher.WithEventBridge(ctx, queue, taskID, "", nil)
 
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
-		result, err := tools.HandleStreamInvestigation(bridgeCtx, kaClient, tools.StreamInvestigationArgs{
-			SessionID: "sess-bridge-002",
-		})
+		result, err := tools.HandleInvestigation(bridgeCtx, kaClient, tools.InvestigateArgs{
+			Namespace: "default", Name: "test-pod",
+		}, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).To(Equal("completed"))
 
-		// Bridge should NOT have emitted token_delta (GA policy: reasoning_delta only)
+		var bridgedTexts []string
 		for _, evt := range queue.events {
 			if artifact, ok := evt.(*a2a.TaskArtifactUpdateEvent); ok {
 				for _, part := range artifact.Artifact.Parts {
 					if tp, ok := part.(*a2a.TextPart); ok {
-						Expect(tp.Text).NotTo(ContainSubstring("some token fragment"),
-							"token_delta should NOT be relayed via bridge")
+						bridgedTexts = append(bridgedTexts, tp.Text)
 					}
 				}
 			}
 		}
+		Expect(strings.Join(bridgedTexts, "")).To(ContainSubstring("some token fragment"),
+			"token_delta MUST be relayed via bridge for real-time streaming (#1302)")
 	})
 
-	It("UT-AF-1258-022: tool_call NOT emitted via bridge", func() {
-		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != sessionStreamPath("sess-bridge-003") {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.WriteHeader(http.StatusOK)
+	It("UT-AF-1258-022: tool_call emitted via bridge for live streaming (#1302)", func() {
+		server = httptest.NewServer(kaSessionHandler("sess-bridge-003", func(w http.ResponseWriter) {
 			_, _ = fmt.Fprint(w, sseText("tool_call", "kubectl get pods -n prod"))
 			_, _ = fmt.Fprint(w, sseObj("complete", map[string]any{"summary": "done"}))
 		}))
 
 		queue := &testEventQueue{}
 		taskID := a2a.TaskID("bridge-task-003")
-		bridgeCtx := launcher.WithEventBridge(ctx, queue, taskID, nil)
+		bridgeCtx := launcher.WithEventBridge(ctx, queue, taskID, "", nil)
 
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
-		_, err := tools.HandleStreamInvestigation(bridgeCtx, kaClient, tools.StreamInvestigationArgs{
-			SessionID: "sess-bridge-003",
-		})
+		_, err := tools.HandleInvestigation(bridgeCtx, kaClient, tools.InvestigateArgs{
+			Namespace: "default", Name: "test-pod",
+		}, nil)
 		Expect(err).NotTo(HaveOccurred())
 
+		var bridgedTexts []string
 		for _, evt := range queue.events {
 			if artifact, ok := evt.(*a2a.TaskArtifactUpdateEvent); ok {
 				for _, part := range artifact.Artifact.Parts {
 					if tp, ok := part.(*a2a.TextPart); ok {
-						Expect(tp.Text).NotTo(ContainSubstring("kubectl get pods"),
-							"tool_call should NOT be relayed via bridge")
+						bridgedTexts = append(bridgedTexts, tp.Text)
 					}
 				}
 			}
 		}
+		Expect(strings.Join(bridgedTexts, "")).To(ContainSubstring("kubectl get pods"),
+			"tool_call MUST be relayed via bridge for real-time streaming (#1302)")
 	})
 
 	It("UT-AF-1258-023: tool_result NOT emitted via bridge", func() {
-		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != sessionStreamPath("sess-bridge-004") {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.WriteHeader(http.StatusOK)
+		server = httptest.NewServer(kaSessionHandler("sess-bridge-004", func(w http.ResponseWriter) {
 			_, _ = fmt.Fprint(w, sseText("tool_result", "NAME READY STATUS\npod-1 1/1 Running"))
 			_, _ = fmt.Fprint(w, sseObj("complete", map[string]any{"summary": "done"}))
 		}))
 
 		queue := &testEventQueue{}
 		taskID := a2a.TaskID("bridge-task-004")
-		bridgeCtx := launcher.WithEventBridge(ctx, queue, taskID, nil)
+		bridgeCtx := launcher.WithEventBridge(ctx, queue, taskID, "", nil)
 
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
-		_, err := tools.HandleStreamInvestigation(bridgeCtx, kaClient, tools.StreamInvestigationArgs{
-			SessionID: "sess-bridge-004",
-		})
+		_, err := tools.HandleInvestigation(bridgeCtx, kaClient, tools.InvestigateArgs{
+			Namespace: "default", Name: "test-pod",
+		}, nil)
 		Expect(err).NotTo(HaveOccurred())
 
 		for _, evt := range queue.events {
@@ -443,13 +361,7 @@ var _ = Describe("HandleStreamInvestigation — A2A Bridge (TP-1258)", func() {
 	})
 
 	It("UT-AF-1258-024: complete event emits final summary via bridge", func() {
-		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != sessionStreamPath("sess-bridge-005") {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.WriteHeader(http.StatusOK)
+		server = httptest.NewServer(kaSessionHandler("sess-bridge-005", func(w http.ResponseWriter) {
 			_, _ = fmt.Fprint(w, sseObj("complete", map[string]any{
 				"summary": "Root cause: OOM kill due to memory leak in web-api container",
 			}))
@@ -457,12 +369,12 @@ var _ = Describe("HandleStreamInvestigation — A2A Bridge (TP-1258)", func() {
 
 		queue := &testEventQueue{}
 		taskID := a2a.TaskID("bridge-task-005")
-		bridgeCtx := launcher.WithEventBridge(ctx, queue, taskID, nil)
+		bridgeCtx := launcher.WithEventBridge(ctx, queue, taskID, "", nil)
 
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
-		result, err := tools.HandleStreamInvestigation(bridgeCtx, kaClient, tools.StreamInvestigationArgs{
-			SessionID: "sess-bridge-005",
-		})
+		result, err := tools.HandleInvestigation(bridgeCtx, kaClient, tools.InvestigateArgs{
+			Namespace: "default", Name: "test-pod",
+		}, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).To(Equal("completed"))
 
@@ -482,35 +394,20 @@ var _ = Describe("HandleStreamInvestigation — A2A Bridge (TP-1258)", func() {
 	})
 
 	It("UT-AF-1258-025: bridge nil-safe when not in A2A streaming context", func() {
-		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != sessionStreamPath("sess-bridge-006") {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.WriteHeader(http.StatusOK)
+		server = httptest.NewServer(kaSessionHandler("sess-bridge-006", func(w http.ResponseWriter) {
 			_, _ = fmt.Fprint(w, sseText("reasoning_delta", "some reasoning"))
 			_, _ = fmt.Fprint(w, sseObj("complete", map[string]any{"summary": "done"}))
 		}))
 
-		// No bridge in context — should still work normally
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
-		result, err := tools.HandleStreamInvestigation(ctx, kaClient, tools.StreamInvestigationArgs{
-			SessionID: "sess-bridge-006",
-		})
+		result, err := investigateNew(ctx, kaClient, "default", "test-pod")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).To(Equal("completed"))
 		Expect(result.EventLog).To(ContainSubstring("some reasoning"))
 	})
 
 	It("UT-AF-1258-026: structured content_preview extracted from reasoning_delta", func() {
-		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != sessionStreamPath("sess-bridge-007") {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.WriteHeader(http.StatusOK)
+		server = httptest.NewServer(kaSessionHandler("sess-bridge-007", func(w http.ResponseWriter) {
 			_, _ = fmt.Fprint(w, sseObj("reasoning_delta", map[string]any{
 				"content_preview": "Pod is OOMKilled, checking resource limits",
 				"tool_call_count": 3,
@@ -520,16 +417,15 @@ var _ = Describe("HandleStreamInvestigation — A2A Bridge (TP-1258)", func() {
 
 		queue := &testEventQueue{}
 		taskID := a2a.TaskID("bridge-task-007")
-		bridgeCtx := launcher.WithEventBridge(ctx, queue, taskID, nil)
+		bridgeCtx := launcher.WithEventBridge(ctx, queue, taskID, "", nil)
 
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
-		result, err := tools.HandleStreamInvestigation(bridgeCtx, kaClient, tools.StreamInvestigationArgs{
-			SessionID: "sess-bridge-007",
-		})
+		result, err := tools.HandleInvestigation(bridgeCtx, kaClient, tools.InvestigateArgs{
+			Namespace: "default", Name: "test-pod",
+		}, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).To(Equal("completed"))
 
-		// Bridge should extract content_preview from structured payload
 		var emittedText string
 		for _, evt := range queue.events {
 			if artifact, ok := evt.(*a2a.TaskArtifactUpdateEvent); ok {
@@ -546,41 +442,27 @@ var _ = Describe("HandleStreamInvestigation — A2A Bridge (TP-1258)", func() {
 	})
 
 	It("UT-AF-1258-027: bridge write error logged but does not fail tool", func() {
-		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != sessionStreamPath("sess-bridge-008") {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.WriteHeader(http.StatusOK)
+		server = httptest.NewServer(kaSessionHandler("sess-bridge-008", func(w http.ResponseWriter) {
 			_, _ = fmt.Fprint(w, sseObj("reasoning_delta", map[string]any{
 				"content_preview": "Analyzing...",
 			}))
 			_, _ = fmt.Fprint(w, sseObj("complete", map[string]any{"summary": "done"}))
 		}))
 
-		// Use a queue that always fails
 		queue := &failingQueue{}
 		taskID := a2a.TaskID("bridge-task-008")
-		bridgeCtx := launcher.WithEventBridge(ctx, queue, taskID, nil)
+		bridgeCtx := launcher.WithEventBridge(ctx, queue, taskID, "", nil)
 
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
-		result, err := tools.HandleStreamInvestigation(bridgeCtx, kaClient, tools.StreamInvestigationArgs{
-			SessionID: "sess-bridge-008",
-		})
-		// Tool should succeed even though bridge writes fail
+		result, err := tools.HandleInvestigation(bridgeCtx, kaClient, tools.InvestigateArgs{
+			Namespace: "default", Name: "test-pod",
+		}, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).To(Equal("completed"))
 	})
 
 	It("UT-AF-1274-009: bridge failures logged through logr from context (BR-SESS-013)", func() {
-		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != sessionStreamPath("sess-bridge-logr") {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.WriteHeader(http.StatusOK)
+		server = httptest.NewServer(kaSessionHandler("sess-bridge-logr", func(w http.ResponseWriter) {
 			_, _ = fmt.Fprint(w, sseObj("reasoning_delta", map[string]any{
 				"content_preview": "Analyzing cluster state...",
 			}))
@@ -595,18 +477,226 @@ var _ = Describe("HandleStreamInvestigation — A2A Bridge (TP-1258)", func() {
 
 		queue := &failingQueue{}
 		taskID := a2a.TaskID("bridge-task-logr")
-		bridgeCtx := launcher.WithEventBridge(logCtx, queue, taskID, nil)
+		bridgeCtx := launcher.WithEventBridge(logCtx, queue, taskID, "", nil)
 
 		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
-		result, err := tools.HandleStreamInvestigation(bridgeCtx, kaClient, tools.StreamInvestigationArgs{
-			SessionID: "sess-bridge-logr",
-		})
+		result, err := tools.HandleInvestigation(bridgeCtx, kaClient, tools.InvestigateArgs{
+			Namespace: "default", Name: "test-pod",
+		}, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).To(Equal("completed"))
 
 		logOutput := strings.Join(logs, "\n")
 		Expect(logOutput).To(ContainSubstring("WARNING: bridge emit failed"))
 		Expect(logOutput).To(ContainSubstring("simulated queue write failure"))
+	})
+})
+
+// =============================================================================
+// TP-1301-1302 §4.2: Bridge Relay Policy — FedRAMP AU-2, AU-12, SC-7
+// =============================================================================
+var _ = Describe("KA bridge relay policy (TP-1301-1302)", func() {
+	var (
+		ctx    context.Context
+		server *httptest.Server
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+	})
+
+	AfterEach(func() {
+		if server != nil {
+			server.Close()
+		}
+	})
+
+	It("UT-AF-1302-010: token_delta text appears in bridge output (AU-2)", func() {
+		server = httptest.NewServer(kaSessionHandler("sess-1302-010", func(w http.ResponseWriter) {
+			_, _ = fmt.Fprint(w, sseText("token_delta", "The pod is experiencing OOMKill events"))
+			_, _ = fmt.Fprint(w, sseObj("complete", map[string]any{"summary": "done"}))
+		}))
+
+		queue := &testEventQueue{}
+		bridgeCtx := launcher.WithEventBridge(ctx, queue, "task-1302-010", "", nil)
+
+		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
+		result, err := tools.HandleInvestigation(bridgeCtx, kaClient, tools.InvestigateArgs{
+			Namespace: "default", Name: "test-pod",
+		}, nil)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Status).To(Equal("completed"))
+
+		var bridgedTexts []string
+		for _, evt := range queue.events {
+			if artifact, ok := evt.(*a2a.TaskArtifactUpdateEvent); ok {
+				for _, part := range artifact.Artifact.Parts {
+					if tp, ok := part.(*a2a.TextPart); ok {
+						bridgedTexts = append(bridgedTexts, tp.Text)
+					}
+				}
+			}
+		}
+		Expect(strings.Join(bridgedTexts, "")).To(ContainSubstring("OOMKill"),
+			"AU-2: token_delta must be bridged for real-time investigation monitoring (#1302)")
+	})
+
+	It("UT-AF-1302-011: tool_call emitted via bridge with [Tool: ...] format (AU-12)", func() {
+		server = httptest.NewServer(kaSessionHandler("sess-1302-011", func(w http.ResponseWriter) {
+			_, _ = fmt.Fprint(w, sseText("tool_call", "kubectl describe pod/web-api -n prod"))
+			_, _ = fmt.Fprint(w, sseObj("complete", map[string]any{"summary": "done"}))
+		}))
+
+		queue := &testEventQueue{}
+		bridgeCtx := launcher.WithEventBridge(ctx, queue, "task-1302-011", "", nil)
+
+		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
+		_, err := tools.HandleInvestigation(bridgeCtx, kaClient, tools.InvestigateArgs{
+			Namespace: "default", Name: "test-pod",
+		}, nil)
+		Expect(err).NotTo(HaveOccurred())
+
+		var bridgedTexts []string
+		for _, evt := range queue.events {
+			if artifact, ok := evt.(*a2a.TaskArtifactUpdateEvent); ok {
+				for _, part := range artifact.Artifact.Parts {
+					if tp, ok := part.(*a2a.TextPart); ok {
+						bridgedTexts = append(bridgedTexts, tp.Text)
+					}
+				}
+			}
+		}
+		joined := strings.Join(bridgedTexts, "")
+		Expect(joined).To(ContainSubstring("[Tool:"),
+			"AU-12: tool_call must be bridged with [Tool: ...] format for audit trail (#1302)")
+		Expect(joined).To(ContainSubstring("kubectl describe pod"),
+			"AU-12: tool name must appear in bridged text")
+	})
+
+	It("UT-AF-1302-012: bridged token_delta passes through sanitization (SC-7)", func() {
+		server = httptest.NewServer(kaSessionHandler("sess-1302-012", func(w http.ResponseWriter) {
+			_, _ = fmt.Fprint(w, sseText("token_delta", "Auth with Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIn0.sig"))
+			_, _ = fmt.Fprint(w, sseObj("complete", map[string]any{"summary": "done"}))
+		}))
+
+		queue := &testEventQueue{}
+		bridgeCtx := launcher.WithEventBridge(ctx, queue, "task-1302-012", "", nil)
+
+		kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
+		_, err := tools.HandleInvestigation(bridgeCtx, kaClient, tools.InvestigateArgs{
+			Namespace: "default", Name: "test-pod",
+		}, nil)
+		Expect(err).NotTo(HaveOccurred())
+
+		for _, evt := range queue.events {
+			if artifact, ok := evt.(*a2a.TaskArtifactUpdateEvent); ok {
+				for _, part := range artifact.Artifact.Parts {
+					if tp, ok := part.(*a2a.TextPart); ok {
+						Expect(tp.Text).NotTo(ContainSubstring("eyJhbGci"),
+							"SC-7: JWT in bridged token_delta must be redacted by sanitizeBridgeText")
+					}
+				}
+			}
+		}
+	})
+})
+
+// =============================================================================
+// TP-1310 §4.1: Tool Result Extraction and Error Detection — FedRAMP AU-3
+// =============================================================================
+
+// sseToolResult emits a production-format KA tool_result SSE event with nested
+// envelope: {"type":"tool_result","data":{"tool_name":...,"result_preview":...}}
+func sseToolResult(toolName, resultPreview string) string {
+	inner := map[string]any{
+		"tool_name":      toolName,
+		"tool_index":     0,
+		"result_preview": resultPreview,
+	}
+	envelope := map[string]any{
+		"type": "tool_result",
+		"turn": 1,
+		"data": inner,
+	}
+	b, _ := json.Marshal(envelope)
+	return sseLines("tool_result", string(b))
+}
+
+// toolErrorJSON mirrors KA's toolErrorJSON format for test data.
+func toolErrorJSON(msg string) string {
+	b, _ := json.Marshal(struct {
+		Status string `json:"status"`
+		Error  string `json:"error"`
+	}{Status: "error", Error: msg})
+	return string(b)
+}
+
+var _ = Describe("extractToolResult — KA wire format (TP-1310)", func() {
+	It("UT-AF-1310-010: production envelope with error extracts tool name, preview, isErr=true (AU-3)", func() {
+		inner := map[string]any{
+			"tool_name":      "kubectl_describe",
+			"tool_index":     0,
+			"result_preview": toolErrorJSON("get Node/dev-worker-1 in default: nodes.config.openshift.io \"dev-worker-1\" not found"),
+		}
+		envelope := map[string]any{
+			"type": "tool_result",
+			"turn": 2,
+			"data": inner,
+		}
+		data, _ := json.Marshal(envelope)
+
+		toolName, preview, isErr := tools.ExtractToolResult(json.RawMessage(data))
+		Expect(toolName).To(Equal("kubectl_describe"))
+		Expect(isErr).To(BeTrue(), "toolErrorJSON payload must be detected as error")
+		Expect(preview).To(ContainSubstring("not found"))
+	})
+
+	It("UT-AF-1310-011: test flat format (JSON string) with success returns isErr=false", func() {
+		b, _ := json.Marshal("pod/web 1/1 Running")
+		toolName, _, isErr := tools.ExtractToolResult(json.RawMessage(b))
+		Expect(toolName).To(BeEmpty(), "flat format has no tool_name")
+		Expect(isErr).To(BeFalse())
+	})
+
+	It("UT-AF-1310-012: production envelope with success returns isErr=false", func() {
+		inner := map[string]any{
+			"tool_name":      "kubectl_get_pods",
+			"tool_index":     0,
+			"result_preview": "NAME READY STATUS\npod-1 1/1 Running",
+		}
+		envelope := map[string]any{
+			"type": "tool_result",
+			"turn": 1,
+			"data": inner,
+		}
+		data, _ := json.Marshal(envelope)
+
+		toolName, _, isErr := tools.ExtractToolResult(json.RawMessage(data))
+		Expect(toolName).To(Equal("kubectl_get_pods"))
+		Expect(isErr).To(BeFalse())
+	})
+
+	It("UT-AF-1310-015: flat JSON string containing toolErrorJSON detected as error", func() {
+		errStr := toolErrorJSON("connection refused")
+		b, _ := json.Marshal(errStr)
+		_, _, isErr := tools.ExtractToolResult(json.RawMessage(b))
+		Expect(isErr).To(BeTrue(), "flat string with toolErrorJSON content must be detected")
+	})
+})
+
+var _ = Describe("FormatToolError (TP-1310)", func() {
+	It("UT-AF-1310-013: produces human-readable message truncated to 200 chars (AU-3)", func() {
+		longErr := strings.Repeat("x", 300)
+		msg := tools.FormatToolError("kubectl_describe", toolErrorJSON(longErr))
+		Expect(msg).To(HavePrefix("kubectl_describe: "))
+		Expect(len(msg)).To(BeNumerically("<=", 200))
+	})
+
+	It("UT-AF-1310-014: extracts human error from toolErrorJSON format", func() {
+		msg := tools.FormatToolError("kubectl_describe", toolErrorJSON("nodes.config.openshift.io not found"))
+		Expect(msg).To(ContainSubstring("kubectl_describe"))
+		Expect(msg).To(ContainSubstring("not found"))
+		Expect(msg).NotTo(ContainSubstring(`"status"`), "should not contain raw JSON keys")
 	})
 })
 

@@ -113,15 +113,15 @@ var _ = Describe("AIAnalysis Controller Nil Safety (#1116)", func() {
 			)
 
 			reconciler := &aianalysis.AIAnalysisReconciler{
-				Client:               mgr.GetClient(),
-				Scheme:               scheme,
-				Log:                  ctrl.Log.WithName("test"),
-				Metrics:              testMetrics,
-				StatusManager:        aistatus.NewManager(mgr.GetClient(), mgr.GetAPIReader()),
-				InvestigatingHandler: investigatingHandler,
-				AnalyzingHandler:     nil,
-				AuditClient:          auditClient,
+				Client:           mgr.GetClient(),
+				Scheme:           scheme,
+				Log:              ctrl.Log.WithName("test"),
+				Metrics:          testMetrics,
+				StatusManager:    aistatus.NewManager(mgr.GetClient(), mgr.GetAPIReader()),
+				AnalyzingHandler: nil,
+				AuditClient:      auditClient,
 			}
+			reconciler.InvestigatingHandler.Store(investigatingHandler)
 
 			err = reconciler.SetupWithManager(mgr)
 			Expect(err).To(HaveOccurred())
@@ -151,15 +151,15 @@ var _ = Describe("AIAnalysis Controller Nil Safety (#1116)", func() {
 			)
 
 			reconciler := &aianalysis.AIAnalysisReconciler{
-				Client:               mgr.GetClient(),
-				Scheme:               scheme,
-				Log:                  ctrl.Log.WithName("test"),
-				Metrics:              testMetrics,
-				StatusManager:        aistatus.NewManager(mgr.GetClient(), mgr.GetAPIReader()),
-				InvestigatingHandler: nil,
-				AnalyzingHandler:     analyzingHandler,
-				AuditClient:          auditClient,
+				Client:           mgr.GetClient(),
+				Scheme:           scheme,
+				Log:              ctrl.Log.WithName("test"),
+				Metrics:          testMetrics,
+				StatusManager:    aistatus.NewManager(mgr.GetClient(), mgr.GetAPIReader()),
+				AnalyzingHandler: analyzingHandler,
+				AuditClient:      auditClient,
 			}
+			// InvestigatingHandler left at zero value — .Load() returns nil
 
 			err = reconciler.SetupWithManager(mgr)
 			Expect(err).To(HaveOccurred())
@@ -222,19 +222,19 @@ var _ = Describe("AIAnalysis Controller Nil Safety (#1116)", func() {
 			mockRegoEvaluator := mocks.NewMockRegoEvaluator()
 
 			reconciler := &aianalysis.AIAnalysisReconciler{
-				Client:  fakeClient,
-				Scheme:  scheme,
-				Log:     ctrl.Log.WithName("test"),
-				Metrics: testMetrics,
+				Client:        fakeClient,
+				Scheme:        scheme,
+				Log:           ctrl.Log.WithName("test"),
+				Metrics:       testMetrics,
 				StatusManager: aistatus.NewManager(fakeClient, fakeClient),
-				InvestigatingHandler: handlers.NewInvestigatingHandler(
-					mockHolmesClient, ctrl.Log.WithName("test"), testMetrics, auditClient,
-				),
 				AnalyzingHandler: handlers.NewAnalyzingHandler(
 					mockRegoEvaluator, ctrl.Log.WithName("test"), testMetrics, auditClient,
 				),
 				AuditClient: auditClient,
 			}
+			reconciler.InvestigatingHandler.Store(handlers.NewInvestigatingHandler(
+				mockHolmesClient, ctrl.Log.WithName("test"), testMetrics, auditClient,
+			))
 
 			Expect(reconciler.ValidateDependencies()).To(Succeed())
 		})
@@ -292,14 +292,14 @@ var _ = Describe("AIAnalysis Controller Nil Safety (#1116)", func() {
 				Build()
 
 			reconciler := &aianalysis.AIAnalysisReconciler{
-				Client:               fakeClient,
-				Scheme:               scheme,
-				Recorder:             record.NewFakeRecorder(10),
-				Log:                  ctrl.Log.WithName("test"),
-				Metrics:              testMetrics,
-				InvestigatingHandler: nil,
-				AuditClient:          auditClient,
+				Client:      fakeClient,
+				Scheme:      scheme,
+				Recorder:    record.NewFakeRecorder(10),
+				Log:         ctrl.Log.WithName("test"),
+				Metrics:     testMetrics,
+				AuditClient: auditClient,
 			}
+			// InvestigatingHandler left at zero value — .Load() returns nil
 
 			_, err := reconciler.Reconcile(context.Background(), ctrl.Request{
 				NamespacedName: types.NamespacedName{

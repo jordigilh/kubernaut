@@ -374,6 +374,19 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 
 	inv.emitRCAComplete(ctx, rcaResult, tokens, correlationID)
 
+	// BR-INTERACTIVE-010: When interactive, skip Phase 2+3 (re-enrichment and
+	// workflow selection). Return the RCA result with InteractiveHold=true so
+	// the session transitions to StatusUserDriving for turn-by-turn refinement.
+	if signal.Interactive {
+		backfillSeverity(rcaResult, signal)
+		attachDetectedLabels(rcaResult, enrichData)
+		InjectRemediationTarget(rcaResult, signal, enrichData)
+		injectTargetResourceParameters(rcaResult)
+		rcaResult.InteractiveHold = true
+		inv.emitResponseComplete(ctx, rcaResult, tokens, correlationID)
+		return rcaResult, nil
+	}
+
 	if rcaResult.HumanReviewNeeded {
 		backfillSeverity(rcaResult, signal)
 		attachDetectedLabels(rcaResult, enrichData)

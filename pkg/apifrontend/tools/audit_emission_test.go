@@ -44,15 +44,16 @@ func (s *spyEmitter) eventsByType(t audit.EventType) []*audit.Event {
 
 var _ = Describe("Audit event emission – tool handlers (PR2 wiring)", func() {
 	rrGVR := schema.GroupVersionResource{Group: "kubernaut.ai", Version: "v1alpha1", Resource: "remediationrequests"}
+	eventsGVR := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "events"}
 
 	Describe("HandleCreateRR", func() {
 		It("UT-AF-1156-050: emits rr.created on successful creation", func() {
 			scheme := runtime.NewScheme()
 			client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme,
-				map[schema.GroupVersionResource]string{rrGVR: "RemediationRequestList"})
+				map[schema.GroupVersionResource]string{rrGVR: "RemediationRequestList", eventsGVR: "EventList"})
 			spy := &spyEmitter{}
 
-			_, err := tools.HandleCreateRR(context.Background(), client, &tools.CreateRRArgs{
+			_, err := tools.HandleCreateRR(context.Background(), client, "prod", &tools.CreateRRArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "web", Description: "test",
 			}, "alice", nil, spy)
 			Expect(err).NotTo(HaveOccurred())
@@ -69,10 +70,10 @@ var _ = Describe("Audit event emission – tool handlers (PR2 wiring)", func() {
 			rr := newUnstructuredRR("prod", "rr-deploy-web-existing", "Executing", "Deployment", "web")
 			scheme := runtime.NewScheme()
 			client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme,
-				map[schema.GroupVersionResource]string{rrGVR: "RemediationRequestList"}, rr)
+				map[schema.GroupVersionResource]string{rrGVR: "RemediationRequestList", eventsGVR: "EventList"}, rr)
 			spy := &spyEmitter{}
 
-			result, err := tools.HandleCreateRR(context.Background(), client, &tools.CreateRRArgs{
+			result, err := tools.HandleCreateRR(context.Background(), client, "prod", &tools.CreateRRArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "web", Description: "dup",
 			}, "bob", nil, spy)
 			Expect(err).NotTo(HaveOccurred())
@@ -85,47 +86,80 @@ var _ = Describe("Audit event emission – tool handlers (PR2 wiring)", func() {
 		})
 	})
 
-	Describe("HandleStartInvestigation", func() {
+	Describe("HandleInvestigation (new investigation)", func() {
 		It("UT-AF-1156-052: emits ka.delegated on successful delegation", func() {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			mux := http.NewServeMux()
+			mux.HandleFunc("/api/v1/incident/analyze", func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusAccepted)
 				_ = json.NewEncoder(w).Encode(map[string]string{"session_id": "sess-abc"})
-			}))
+			})
+			mux.HandleFunc("/api/v1/incident/session/sess-abc/stream", func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = w.Write([]byte("event: complete\ndata: {\"summary\":\"done\"}\n\n"))
+			})
+			server := httptest.NewServer(mux)
 			defer server.Close()
 
 			spy := &spyEmitter{}
 			kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
-			_, err := tools.HandleStartInvestigation(context.Background(), kaClient,
-				tools.StartInvestigationArgs{Namespace: "payments", Name: "rr-1"}, spy)
+			_, err := tools.HandleInvestigation(context.Background(), kaClient,
+				tools.InvestigateArgs{Namespace: "payments", Name: "rr-1"}, spy)
 			Expect(err).NotTo(HaveOccurred())
 
 			events := spy.eventsByType(audit.EventKADelegated)
 			Expect(events).To(HaveLen(1), "expected exactly one ka.delegated event")
 			Expect(events[0].Detail).To(HaveKeyWithValue("namespace", "payments"))
 			Expect(events[0].Detail).To(HaveKeyWithValue("rr_name", "rr-1"))
+			Expect(events[0].Detail).To(HaveKeyWithValue("delegation_type", "autonomous"))
+			Expect(events[0].Detail).To(HaveKeyWithValue("ka_correlation_id", "sess-abc"))
 		})
 	})
 
-	Describe("HandlePollInvestigation", func() {
-		It("UT-AF-1156-053: emits ka.result_received when final result returned", func() {
+	Describe("HandleInvestigation (resume completed)", func() {
+		It("UT-AF-1156-053: emits ka.result_received with result_type and ka_correlation_id on completed", func() {
+			mux := http.NewServeMux()
+			mux.HandleFunc("/api/v1/incident/session/sess-1", func(w http.ResponseWriter, _ *http.Request) {
+				_ = json.NewEncoder(w).Encode(ka.SessionStatus{SessionID: "sess-1", Status: "completed"})
+			})
+			mux.HandleFunc("/api/v1/incident/session/sess-1/result", func(w http.ResponseWriter, _ *http.Request) {
+				_ = json.NewEncoder(w).Encode(ka.IncidentResponse{SessionID: "sess-1", Summary: "OOM Kill root cause"})
+			})
+			server := httptest.NewServer(mux)
+			defer server.Close()
+
+			spy := &spyEmitter{}
+			kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
+			_, err := tools.HandleInvestigation(context.Background(), kaClient,
+				tools.InvestigateArgs{SessionID: "sess-1"}, spy)
+			Expect(err).NotTo(HaveOccurred())
+
+			events := spy.eventsByType(audit.EventKAResultReceived)
+			Expect(events).To(HaveLen(1), "expected exactly one ka.result_received event")
+			Expect(events[0].Detail).To(HaveKeyWithValue("session_id", "sess-1"))
+			Expect(events[0].Detail).To(HaveKeyWithValue("result_type", "rca_complete"),
+				"result_type is required by OpenAPI schema (data-storage-v1.yaml)")
+			Expect(events[0].Detail).To(HaveKeyWithValue("ka_correlation_id", "sess-1"),
+				"ka_correlation_id is required by OpenAPI schema")
+		})
+
+		It("UT-AF-1156-058: emits ka.result_received with result_type=rca_failed on failure", func() {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{
-					"status": "completed",
-					"result": map[string]string{"summary": "OOM Kill root cause"},
+					"status": "failed",
 				})
 			}))
 			defer server.Close()
 
 			spy := &spyEmitter{}
 			kaClient := ka.NewClient(ka.Config{BaseURL: server.URL})
-			_, err := tools.HandlePollInvestigation(context.Background(), kaClient,
-				tools.PollInvestigationArgs{SessionID: "sess-1"}, 1, 0, spy)
+			_, err := tools.HandleInvestigation(context.Background(), kaClient,
+				tools.InvestigateArgs{SessionID: "sess-fail"}, spy)
 			Expect(err).NotTo(HaveOccurred())
 
 			events := spy.eventsByType(audit.EventKAResultReceived)
-			Expect(events).To(HaveLen(1), "expected exactly one ka.result_received event")
-			Expect(events[0].Detail).To(HaveKeyWithValue("session_id", "sess-1"))
-			Expect(events[0].Detail).To(HaveKeyWithValue("status", "completed"))
+			Expect(events).To(HaveLen(1))
+			Expect(events[0].Detail).To(HaveKeyWithValue("result_type", "rca_failed"))
+			Expect(events[0].Detail).To(HaveKeyWithValue("ka_correlation_id", "sess-fail"))
 		})
 	})
 

@@ -26,18 +26,24 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	aianalysispkg "github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
@@ -95,8 +101,10 @@ type AIAnalysisReconciler struct {
 	// USAGE: r.StatusManager.AtomicStatusUpdate(ctx, analysis, func() { ... })
 	StatusManager *status.Manager
 
-	// Phase handlers (wired in via dependency injection)
-	InvestigatingHandler *handlers.InvestigatingHandler
+	// Phase handlers (wired in via dependency injection).
+	// InvestigatingHandler uses atomic.Pointer so integration tests can
+	// swap a mock handler while the controller manager is running.
+	InvestigatingHandler atomic.Pointer[handlers.InvestigatingHandler]
 	AnalyzingHandler     *handlers.AnalyzingHandler
 
 	// Audit client for recording audit events (DD-AUDIT-003)
@@ -106,6 +114,7 @@ type AIAnalysisReconciler struct {
 // +kubebuilder:rbac:groups=kubernaut.ai,resources=aianalyses,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=kubernaut.ai,resources=aianalyses/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=kubernaut.ai,resources=aianalyses/finalizers,verbs=update
+// +kubebuilder:rbac:groups=kubernaut.ai,resources=investigationsessions,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
 
@@ -217,7 +226,7 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 // logic (Rego evaluation, investigation) when handlers are nil.
 func (r *AIAnalysisReconciler) ValidateDependencies() error {
 	var errs []error
-	if r.InvestigatingHandler == nil {
+	if r.InvestigatingHandler.Load() == nil {
 		errs = append(errs, fmt.Errorf("investigatingHandler is nil: investigation phase will be skipped (BR-AI-023)"))
 	}
 	if r.AnalyzingHandler == nil {
@@ -250,9 +259,66 @@ func (r *AIAnalysisReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&aianalysisv1.AIAnalysis{}).
+		WatchesRawSource(source.Kind(mgr.GetCache(), &isv1alpha1.InvestigationSession{},
+			handler.TypedEnqueueRequestsFromMapFunc(r.mapISToAIAnalysis),
+			isEventPredicate(),
+		)).
 		WithEventFilter(aiAnalysisUpdatePredicate()).
 		Complete(r)
 }
+
+// mapISToAIAnalysis maps an InvestigationSession event to the AIAnalysis that
+// references the same RemediationRequest. BR-INTERACTIVE-010: enables takeover/deletion detection.
+func (r *AIAnalysisReconciler) mapISToAIAnalysis(ctx context.Context, is *isv1alpha1.InvestigationSession) []reconcile.Request {
+	rrName := is.Spec.RemediationRequestRef.Name
+	if rrName == "" {
+		return nil
+	}
+
+	var list aianalysisv1.AIAnalysisList
+	if err := r.List(ctx, &list,
+		client.InNamespace(is.Namespace),
+		client.MatchingFields{aiAnalysisRRNameIndex: rrName},
+	); err != nil {
+		r.Log.Error(err, "failed to map IS to AIAnalysis", "is", is.Name, "rrName", rrName)
+		return nil
+	}
+
+	requests := make([]reconcile.Request, 0, len(list.Items))
+	for i := range list.Items {
+		aa := &list.Items[i]
+		if aa.Status.Phase == PhaseInvestigating {
+			requests = append(requests, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: aa.Name, Namespace: aa.Namespace},
+			})
+		}
+	}
+	return requests
+}
+
+// isEventPredicate filters IS events to only create and delete (phase changes are not relevant).
+func isEventPredicate() predicate.TypedPredicate[*isv1alpha1.InvestigationSession] {
+	return predicate.TypedFuncs[*isv1alpha1.InvestigationSession]{
+		CreateFunc: func(e event.TypedCreateEvent[*isv1alpha1.InvestigationSession]) bool {
+			return true
+		},
+		DeleteFunc: func(e event.TypedDeleteEvent[*isv1alpha1.InvestigationSession]) bool {
+			return true
+		},
+		UpdateFunc: func(e event.TypedUpdateEvent[*isv1alpha1.InvestigationSession]) bool {
+			return false
+		},
+		GenericFunc: func(e event.TypedGenericEvent[*isv1alpha1.InvestigationSession]) bool {
+			return false
+		},
+	}
+}
+
+// aiAnalysisRRNameIndex is the field index key for AIAnalysis's spec.remediationRequestRef.name.
+const aiAnalysisRRNameIndex = "spec.remediationRequestRef.name"
+
+// AIAnalysisRRNameIndex returns the field index key for external registration.
+func AIAnalysisRRNameIndex() string { return aiAnalysisRRNameIndex }
 
 // aiAnalysisUpdatePredicate returns a predicate that filters Update events.
 // Create, Delete, and Generic events always pass through.

@@ -1,4 +1,34 @@
+/*
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package infrastructure
+
+// ============================================================================
+// AF Severity Triage Prometheus Infrastructure
+//
+// Deploys Prometheus with AF-specific alert rules for the 5-tier severity
+// triage pipeline E2E tests. Builds on the shared DeployPrometheus helper.
+//
+// Provides:
+//   - DeployPrometheusForSeverityTriage: orchestrates Prometheus + AF rules
+//   - SeedTriageAlertRules: patches Prometheus ConfigMap with AF fixtures
+//   - WaitForPrometheusRuleState: polls /api/v1/rules for desired state
+//   - AFInjectOTLPMetrics: single-metric OTLP injection (wraps InjectMetrics)
+//   - SeverityTriageAlertRulesYAML: PromQL alert rule fixtures
+// ============================================================================
 
 import (
 	"context"
@@ -9,8 +39,6 @@ import (
 	"os/exec"
 	"strings"
 	"time"
-
-	kinfra "github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
 // DeployPrometheusForSeverityTriage deploys Prometheus in the E2E cluster and
@@ -19,11 +47,11 @@ import (
 // This delegates to kubernaut's canonical DeployPrometheus (DD-TEST-001 v2.8)
 // and then patches the rules ConfigMap with AF's triage fixtures.
 //
-// Ref: Prometheus OTLP receiver — https://prometheus.io/docs/guides/opentelemetry/
+// Ref: Prometheus OTLP receiver -- https://prometheus.io/docs/guides/opentelemetry/
 func DeployPrometheusForSeverityTriage(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "Deploying Prometheus for severity triage testing...")
 
-	if err := kinfra.DeployPrometheus(ctx, namespace, kubeconfigPath, writer); err != nil {
+	if err := DeployPrometheus(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("deploy Prometheus: %w", err)
 	}
 
@@ -44,7 +72,7 @@ func SeedTriageAlertRules(ctx context.Context, namespace, kubeconfigPath string,
 
 	patchJSON := fmt.Sprintf(`{"data":{"af-severity-triage.yml":%q}}`, rulesYAML)
 
-	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, //nolint:gosec // G204: test infra, args from test constants
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, //nolint:gosec // G204: test infra
 		"patch", "configmap", "prometheus-rules",
 		"-n", namespace,
 		"--type=merge",
@@ -55,7 +83,6 @@ func SeedTriageAlertRules(ctx context.Context, namespace, kubeconfigPath string,
 		return fmt.Errorf("patch prometheus-rules ConfigMap: %w", err)
 	}
 
-	// Restart Prometheus to pick up new rules
 	restartCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
 		"rollout", "restart", "deployment/prometheus",
 		"-n", namespace)
@@ -65,7 +92,6 @@ func SeedTriageAlertRules(ctx context.Context, namespace, kubeconfigPath string,
 		return fmt.Errorf("restart Prometheus: %w", err)
 	}
 
-	// Wait for Prometheus to be ready again
 	waitCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
 		"rollout", "status", "deployment/prometheus",
 		"-n", namespace,
@@ -92,7 +118,6 @@ const (
 	RuleStateInactive PrometheusRuleState = "inactive"
 )
 
-// prometheusRulesResponse models the /api/v1/rules response.
 type prometheusRulesResponse struct {
 	Status string `json:"status"`
 	Data   struct {
@@ -158,72 +183,77 @@ func WaitForPrometheusRuleState(ctx context.Context, prometheusURL, ruleName str
 	return fmt.Errorf("rule %q did not reach state %q within %v", ruleName, desired, timeout)
 }
 
-// InjectOTLPMetrics sends metrics to Prometheus via the OTLP HTTP endpoint.
-// Requires Prometheus started with --web.enable-otlp-receiver.
-func InjectOTLPMetrics(ctx context.Context, prometheusURL, metricName string, value float64, labels map[string]string) error {
-	labelAttrs := make([]map[string]any, 0, len(labels))
-	for k, v := range labels {
-		labelAttrs = append(labelAttrs, map[string]any{
-			"key":   k,
-			"value": map[string]string{"stringValue": v},
-		})
-	}
+// AFInjectOTLPMetrics sends a single gauge metric to Prometheus via the OTLP HTTP endpoint.
+// This is a convenience wrapper around InjectMetrics for AF E2E tests that inject one
+// metric at a time with simple label maps.
+//
+// Retries up to 5 times with 2s back-off to survive NodePort endpoint
+// propagation delays after Prometheus rolling restarts.
+func AFInjectOTLPMetrics(ctx context.Context, prometheusURL, metricName string, value float64, labels map[string]string) error {
+	metric := []TestMetric{{Name: metricName, Value: value, Labels: labels}}
 
-	payload := map[string]any{
-		"resourceMetrics": []map[string]any{
-			{
-				"resource": map[string]any{
-					"attributes": []map[string]any{
-						{"key": "service.name", "value": map[string]string{"stringValue": "e2e-test"}},
-					},
-				},
-				"scopeMetrics": []map[string]any{
-					{
-						"scope": map[string]any{"name": "e2e-test"},
-						"metrics": []map[string]any{
-							{
-								"name": metricName,
-								"gauge": map[string]any{
-									"dataPoints": []map[string]any{
-										{
-											"asDouble":          value,
-											"timeUnixNano":      fmt.Sprintf("%d", time.Now().UnixNano()),
-											"startTimeUnixNano": fmt.Sprintf("%d", time.Now().Add(-10*time.Second).UnixNano()),
-											"attributes":        labelAttrs,
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		},
+	var lastErr error
+	for attempt := range 5 {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if lastErr = InjectMetrics(prometheusURL, metric); lastErr == nil {
+			return nil
+		}
+		if attempt < 4 {
+			time.Sleep(2 * time.Second)
+		}
 	}
-
-	jsonPayload, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("marshal OTLP payload: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		prometheusURL+"/api/v1/otlp/v1/metrics",
-		strings.NewReader(string(jsonPayload)))
-	if err != nil {
-		return fmt.Errorf("create OTLP request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("send OTLP metrics: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("OTLP inject failed (status %d): %s", resp.StatusCode, string(body))
-	}
-	return nil
+	return fmt.Errorf("after 5 attempts: %w", lastErr)
 }
+
+// SeverityTriageAlertRulesYAML is the Prometheus alert rules YAML for seeding
+// the E2E severity triage pipeline tests.
+//
+// Each rule exercises a specific tier:
+//   - HighCPU: for:0s -> fires immediately when metric is present (tier 1)
+//   - HighMemory: for:1h -> stays pending when metric present (tier 1.5)
+//   - DiskPressure: for:0s + metric injected -> inactive then evaluates live data (tier 2)
+//   - NetworkLatency: query matches no-data-ns target but no metric exists -> inactive no data (tier 2.5)
+//
+// PromQL expressions include label selectors for namespace/kind/name because the
+// triage pipeline's Tier 1.5 and Tier 2 use ExtractLabelMatchers(query)
+// + MatchesResource to correlate rules with the target resource.
+const SeverityTriageAlertRulesYAML = `
+groups:
+  - name: e2e-severity-triage
+    interval: 5s
+    rules:
+      - alert: HighCPU
+        expr: e2e_cpu_usage_percent{namespace="default",kind="Deployment",name="test-firing-target"} > 90
+        for: 0s
+        labels:
+          severity: critical
+          source: prometheus
+        annotations:
+          summary: "CPU usage is critically high"
+      - alert: HighMemory
+        expr: e2e_memory_usage_percent{namespace="default",kind="Deployment",name="test-pending-target"} > 85
+        for: 1h
+        labels:
+          severity: high
+          source: prometheus
+        annotations:
+          summary: "Memory usage is high"
+      - alert: DiskPressure
+        expr: e2e_disk_usage_percent{namespace="sev-tier2-ns",kind="Deployment",name="test-inactive-target"} > 90
+        for: 0s
+        labels:
+          severity: medium
+          source: prometheus
+        annotations:
+          summary: "Disk usage is elevated"
+      - alert: NetworkLatency
+        expr: e2e_network_latency_ms{namespace="no-data-ns",kind="Deployment",name="test-nodata-target"} > 100
+        for: 0s
+        labels:
+          severity: high
+          source: prometheus
+        annotations:
+          summary: "Network latency is high"
+`

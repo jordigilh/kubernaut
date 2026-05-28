@@ -193,6 +193,11 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 		return fmt.Errorf("failed to install AIAnalysis CRD: %w", err)
 	}
 
+	_, _ = fmt.Fprintln(writer, "📋 Installing InvestigationSession CRD...")
+	if err := installInvestigationSessionCRD(kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to install InvestigationSession CRD: %w", err)
+	}
+
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 5-6: Load images from .tar into Kind and cleanup .tar files
 	// ═══════════════════════════════════════════════════════════════════════
@@ -539,6 +544,32 @@ func installAIAnalysisCRD(kubeconfigPath string, writer io.Writer) error {
 	return fmt.Errorf("timeout waiting for CRD")
 }
 
+func installInvestigationSessionCRD(kubeconfigPath string, writer io.Writer) error {
+	crdPath := findCRDFile("kubernaut.ai_investigationsessions.yaml")
+	if crdPath == "" {
+		return fmt.Errorf("InvestigationSession CRD not found")
+	}
+
+	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+		"apply", "-f", crdPath)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to apply InvestigationSession CRD: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "  Waiting for InvestigationSession CRD to be established...")
+	for i := 0; i < 30; i++ {
+		cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+			"get", "crd", "investigationsessions.kubernaut.ai")
+		if err := cmd.Run(); err == nil {
+			return nil
+		}
+		time.Sleep(time.Second)
+	}
+	return fmt.Errorf("timeout waiting for InvestigationSession CRD")
+}
+
 // createMockLLMConfigMap creates a Kubernetes ConfigMap with workflow UUIDs for Mock LLM
 // DD-TEST-011 Alt 2: ConfigMap Pattern
 // - Test suite seeds workflows in DataStorage FIRST (captures actual UUIDs)
@@ -601,6 +632,9 @@ rules:
 - apiGroups: ["kubernaut.ai"]
   resources: ["aianalyses/status"]
   verbs: ["get", "update", "patch"]
+- apiGroups: ["kubernaut.ai"]
+  resources: ["investigationsessions"]
+  verbs: ["get", "list", "watch"]
 - apiGroups: [""]
   resources: ["events"]
   verbs: ["create", "patch"]

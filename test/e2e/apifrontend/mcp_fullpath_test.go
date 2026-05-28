@@ -5,13 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
-	"os/exec"
 	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 )
 
 var _ = Describe("MCP Full-Path Validation (G1)", Label("e2e", "phase2", "g1"), func() {
@@ -85,17 +87,18 @@ var _ = Describe("MCP Full-Path Validation (G1)", Label("e2e", "phase2", "g1"), 
 		const rrNamespace = "default"
 		const rrName = "e2e-rr-mcp-full-02"
 
-		By("TC-E2E-MCP-FULL-02: Create RR via kubectl CRD fixture")
-		Expect(kubectlCreateRR(rrNamespace, rrName, "Deployment", g1RRDeployName)).To(Succeed())
-		DeferCleanup(func() { kubectlDeleteRR(rrNamespace, rrName) })
+		By("TC-E2E-MCP-FULL-02: Create RR via k8s client CRD fixture")
+		Expect(createRR(rrNamespace, rrName, "Deployment", g1RRDeployName)).To(Succeed())
+		DeferCleanup(func() { deleteRR(rrNamespace, rrName) })
 
 		By("TC-E2E-MCP-FULL-04: kubernaut_approve after RR exists")
 		rarName := fmt.Sprintf("e2e-rar-g1-%d", time.Now().UnixNano())
-		Expect(kubectlApplyYAML(remediationApprovalManifest(rrNamespace, rarName, rrName))).To(Succeed())
+		Expect(k8sClient.Create(context.Background(), buildRAR(rrNamespace, rarName, rrName))).To(Succeed())
 		DeferCleanup(func() {
-			kubeconfigPath := os.Getenv("HOME") + "/.kube/apifrontend-e2e-config"
-			_, _ = exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath,
-				"delete", "remediationapprovalrequest", rarName, "-n", rrNamespace, "--ignore-not-found").CombinedOutput()
+			rar := &remediationv1alpha1.RemediationApprovalRequest{
+				ObjectMeta: metav1.ObjectMeta{Name: rarName, Namespace: rrNamespace},
+			}
+			_ = client.IgnoreNotFound(k8sClient.Delete(context.Background(), rar))
 		})
 		approverTok, err := fetchDEXTokenForPersona("remediation-approver")
 		Expect(err).NotTo(HaveOccurred())
@@ -135,7 +138,7 @@ var _ = Describe("MCP Full-Path Validation (G1)", Label("e2e", "phase2", "g1"), 
 			"DS must have seeded workflow entries in E2E — workflow catalog must not be empty")
 	})
 
-	It("TC-E2E-MCP-FULL-05: MCP tools/list returns exactly 23 domain tools", func() {
+	It("TC-E2E-MCP-FULL-05: MCP tools/list returns exactly 22 domain tools", func() {
 		root, err := mcpToolsList("mcp-full-05")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(root).NotTo(HaveKey("error"))
@@ -145,7 +148,7 @@ var _ = Describe("MCP Full-Path Validation (G1)", Label("e2e", "phase2", "g1"), 
 
 		toolsRaw, ok := res["tools"].([]interface{})
 		Expect(ok).To(BeTrue(), "result.tools should be an array: %#v", res)
-		Expect(len(toolsRaw)).To(Equal(23))
+		Expect(len(toolsRaw)).To(Equal(22))
 
 		for _, t := range toolsRaw {
 			tm, ok := t.(map[string]interface{})
