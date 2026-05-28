@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -107,7 +108,13 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 
 	if onStarted != nil && result.SessionID != "" {
 		if hookErr := onStarted(ctx, namespace, args.RRID, result.SessionID); hookErr != nil {
-			_ = launcher.EmitReasoningSafe(ctx, "Warning: IS CRD creation failed, investigation continues")
+			slog.Error("IS CRD creation failed after investigate",
+				"rr_id", args.RRID,
+				"session_id", result.SessionID,
+				"namespace", namespace,
+				"error", hookErr,
+			)
+			_ = launcher.EmitReasoningSafe(ctx, fmt.Sprintf("Warning: IS CRD creation failed (%v), investigation continues", hookErr))
 		}
 	}
 
