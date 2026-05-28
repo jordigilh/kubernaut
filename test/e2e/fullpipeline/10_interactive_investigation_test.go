@@ -183,11 +183,19 @@ var _ = Describe("E2E-1293: Interactive Investigation Architecture", Label("e2e"
 		rrName, err := infrastructure.CreateDirectRR(ctx, namespace, "e2e-1293-003")
 		Expect(err).NotTo(HaveOccurred())
 
-		aaName := waitForAAInvestigating(rrName)
-
-		By("Creating Active IS CRD and performing takeover")
+		By("Creating Active IS CRD immediately (before mock-LLM can complete autonomous investigation)")
 		is := createISForRR("1293-003", rrName)
 
+		By("Waiting for AA to reach Investigating with interactive=true")
+		aaName := waitForAAInvestigating(rrName)
+		aa := &aianalysisv1.AIAnalysis{}
+		Eventually(func(g Gomega) {
+			g.Expect(apiReader.Get(ctx, client.ObjectKey{Name: aaName, Namespace: namespace}, aa)).To(Succeed())
+			g.Expect(aa.Status.KASession).NotTo(BeNil())
+			g.Expect(aa.Status.KASession.Interactive).To(BeTrue())
+		}, 90*time.Second, 2*time.Second).Should(Succeed())
+
+		By("Performing MCP takeover on the interactive session")
 		callCtx, callCancel := context.WithTimeout(ctx, 30*time.Second)
 		defer callCancel()
 		result, err := infrastructure.CallInvestigate(callCtx, setup.Session, map[string]any{
@@ -195,15 +203,7 @@ var _ = Describe("E2E-1293: Interactive Investigation Architecture", Label("e2e"
 			"action": "takeover",
 		})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(result.IsError).To(BeFalse())
-
-		By("Waiting for interactive session to be fully established")
-		aa := &aianalysisv1.AIAnalysis{}
-		Eventually(func(g Gomega) {
-			g.Expect(apiReader.Get(ctx, client.ObjectKey{Name: aaName, Namespace: namespace}, aa)).To(Succeed())
-			g.Expect(aa.Status.KASession).NotTo(BeNil())
-			g.Expect(aa.Status.KASession.Interactive).To(BeTrue())
-		}, 60*time.Second, 2*time.Second).Should(Succeed())
+		Expect(result.IsError).To(BeFalse(), "takeover should succeed on interactive session")
 
 		By("Deleting the InvestigationSession CRD (simulates user cancellation)")
 		Expect(k8sClient.Delete(ctx, is)).To(Succeed())
