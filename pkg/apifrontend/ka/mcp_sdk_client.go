@@ -299,6 +299,18 @@ func (c *SDKMCPClient) StartAutonomous(ctx context.Context, args StartAutonomous
 		return nil, fmt.Errorf("start autonomous MCP call: %w", err)
 	}
 
+	if result.IsError {
+		msg := "KA tool error"
+		if len(result.Content) > 0 {
+			if tc, ok := result.Content[0].(*mcp.TextContent); ok {
+				msg = tc.Text
+			}
+		}
+		_ = session.Close()
+		close(eventCh)
+		return nil, fmt.Errorf("kubernaut_investigate start_autonomous: %s", msg)
+	}
+
 	var invResult struct {
 		SessionID string `json:"session_id"`
 		Status    string `json:"status"`
