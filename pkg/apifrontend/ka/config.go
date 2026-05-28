@@ -168,6 +168,20 @@ type InvestigationEvent struct {
 	Data  json.RawMessage `json:"data,omitempty"`
 }
 
+// StartAutonomousArgs is the input for starting an autonomous MCP investigation.
+type StartAutonomousArgs struct {
+	RRID string `json:"rr_id"`
+}
+
+// StartAutonomousResult holds the response from a start_autonomous call,
+// including the event channel for streaming and a closer for cleanup.
+type StartAutonomousResult struct {
+	SessionID string                    `json:"session_id"`
+	Status    string                    `json:"status"`
+	Events    <-chan InvestigationEvent  `json:"-"`
+	Closer    func()                    `json:"-"`
+}
+
 // InvokeActionArgs is the input for the generic kubernaut_investigate action dispatch.
 // The acting_user and acting_user_groups are extracted from context by the
 // implementation and added to the MCP args map automatically.

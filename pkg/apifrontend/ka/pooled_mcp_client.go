@@ -167,6 +167,13 @@ func (c *PooledMCPClient) SelectWorkflow(ctx context.Context, args SelectWorkflo
 	return &result, nil
 }
 
+// StartAutonomous is not supported by pooled sessions — autonomous investigations
+// require a dedicated long-lived MCP session with LoggingMessageHandler.
+// Callers should use SDKMCPClient.StartAutonomous.
+func (c *PooledMCPClient) StartAutonomous(_ context.Context, _ StartAutonomousArgs) (*StartAutonomousResult, error) {
+	return nil, fmt.Errorf("StartAutonomous requires a dedicated MCP session; use SDKMCPClient")
+}
+
 // callPooledTool dispatches a tool call to the given pooled session, handling
 // error response parsing and security redaction consistently with SDKMCPClient.
 func (c *PooledMCPClient) callPooledTool(ctx context.Context, session PoolSession, name string, args map[string]any) (json.RawMessage, error) {

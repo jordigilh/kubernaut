@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -226,6 +227,102 @@ func (c *SDKMCPClient) InvokeAction(ctx context.Context, args InvokeActionArgs) 
 		return nil, fmt.Errorf("parse invoke_action response: %w", err)
 	}
 	return &invResult, nil
+}
+
+// StartAutonomous connects to KA MCP, sends start_autonomous, and registers
+// a LoggingMessageHandler to stream events back to the caller. The caller
+// receives events on the returned channel and must call Closer when done.
+func (c *SDKMCPClient) StartAutonomous(ctx context.Context, args StartAutonomousArgs) (*StartAutonomousResult, error) {
+	identity := auth.UserIdentityFromContext(ctx)
+	if identity == nil {
+		return nil, fmt.Errorf("user identity required: no identity in context")
+	}
+
+	eventCh := make(chan InvestigationEvent, 64)
+
+	streamClient := mcp.NewClient(&mcp.Implementation{
+		Name:    "kubernaut-apifrontend-autonomous",
+		Version: "0.1.0",
+	}, &mcp.ClientOptions{
+		LoggingMessageHandler: func(_ context.Context, req *mcp.LoggingMessageRequest) {
+			raw, err := json.Marshal(req.Params.Data)
+			if err != nil {
+				c.logger.Error(err, "failed to marshal logging message data")
+				return
+			}
+
+			var evt InvestigationEvent
+			if err := json.Unmarshal(raw, &evt); err != nil {
+				c.logger.Error(err, "failed to parse logging message as InvestigationEvent")
+				return
+			}
+
+			select {
+			case eventCh <- evt:
+			default:
+				c.logger.Info("event channel full, dropping event", "event_type", evt.Type)
+			}
+		},
+	})
+
+	transport := &mcp.StreamableClientTransport{
+		Endpoint:   c.endpoint,
+		HTTPClient: c.httpClient,
+	}
+
+	session, err := streamClient.Connect(ctx, transport, nil)
+	if err != nil {
+		close(eventCh)
+		return nil, fmt.Errorf("MCP connect for autonomous: %w", err)
+	}
+
+	if err := session.SetLoggingLevel(ctx, &mcp.SetLoggingLevelParams{Level: "info"}); err != nil {
+		_ = session.Close()
+		close(eventCh)
+		return nil, fmt.Errorf("set logging level: %w", err)
+	}
+
+	argsMap := map[string]any{
+		"rr_id":              args.RRID,
+		"action":             "start_autonomous",
+		"acting_user":        identity.Username,
+		"acting_user_groups": identity.Groups,
+	}
+
+	result, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "kubernaut_investigate",
+		Arguments: argsMap,
+	})
+	if err != nil {
+		_ = session.Close()
+		close(eventCh)
+		return nil, fmt.Errorf("start autonomous MCP call: %w", err)
+	}
+
+	var invResult struct {
+		SessionID string `json:"session_id"`
+		Status    string `json:"status"`
+	}
+	if len(result.Content) > 0 {
+		if tc, ok := result.Content[0].(*mcp.TextContent); ok {
+			_ = json.Unmarshal([]byte(tc.Text), &invResult)
+		}
+	}
+
+	var once sync.Once
+	closer := func() {
+		once.Do(func() {
+			_ = session.Close()
+			close(eventCh)
+		})
+	}
+
+	return &StartAutonomousResult{
+		SessionID: invResult.SessionID,
+		Status:    invResult.Status,
+		Events:    eventCh,
+		Closer:    closer,
+	}, nil
 }
 
 // ConnectSession establishes a new MCP session without auto-closing it.
