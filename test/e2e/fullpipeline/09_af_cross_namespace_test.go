@@ -75,7 +75,7 @@ var _ = Describe("AF A2A Cross-Namespace RR [E2E-FP-1292-001]", Label("fp", "af"
 		GinkgoWriter.Printf("  A2A task: %s (state: %s)\n", task.ID, task.Status.State)
 
 		By("Waiting for RR in kubernaut-system (controllerNS per ADR-057)")
-		rrName := fpWaitForRR("memory-eater", 120*time.Second)
+		rrName := fpWaitForRRWithTargetNS("memory-eater", workloadNS, 120*time.Second)
 		Expect(rrName).NotTo(BeEmpty())
 		GinkgoWriter.Printf("  RR created: %s/%s\n", namespace, rrName)
 

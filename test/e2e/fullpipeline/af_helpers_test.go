@@ -148,6 +148,28 @@ func fpWaitForRR(nameSubstring string, timeout time.Duration) string {
 	return rrName
 }
 
+// fpWaitForRRWithTargetNS polls for a RemediationRequest containing nameSubstring in its
+// name AND whose spec.targetResource.namespace equals targetNS. This avoids picking up
+// RRs from parallel tests that share the same name pattern but target different namespaces.
+func fpWaitForRRWithTargetNS(nameSubstring, targetNS string, timeout time.Duration) string {
+	var rrName string
+	Eventually(func() bool {
+		rrList := &remediationv1.RemediationRequestList{}
+		if err := apiReader.List(ctx, rrList, client.InNamespace(namespace)); err != nil {
+			return false
+		}
+		for _, rr := range rrList.Items {
+			if strings.Contains(rr.Name, nameSubstring) && rr.Spec.TargetResource.Namespace == targetNS {
+				rrName = rr.Name
+				return true
+			}
+		}
+		return false
+	}, timeout, 2*time.Second).Should(BeTrue(),
+		"RemediationRequest with %q targeting namespace %q not found", nameSubstring, targetNS)
+	return rrName
+}
+
 // fpWaitForWEComplete waits until a WorkflowExecution for the given RR reaches Completed phase.
 // Fails fast if the WE enters Failed phase, and logs pipeline state periodically for diagnostics.
 func fpWaitForWEComplete(rrName string, timeout time.Duration) {
