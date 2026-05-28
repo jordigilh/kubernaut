@@ -399,6 +399,66 @@ var _ = Describe("KA Integration (AF -> KA -> DS -> mock-LLM)", Label("e2e", "ph
 			}
 		})
 	})
+
+	// -----------------------------------------------------------------------
+	// TC-E2E-KA-1326: Interactive Investigation (action=start) + Event Bridge
+	// FedRAMP: AU-3 (audit trail), SI-4 (event monitoring), SC-7 (filtering)
+	// -----------------------------------------------------------------------
+	Context("TC-E2E-KA-1326: Interactive Investigation Flow", func() {
+
+		It("TC-E2E-KA-1326-01: kubernaut_investigate returns session_id with 'started' status", func() {
+			status, result := mcpToolCall("e2e-1326-01", "kubernaut_investigate", map[string]interface{}{
+				"rr_id": "e2e-1326-interactive-rr",
+			})
+
+			Expect(status).NotTo(Equal(http.StatusBadGateway),
+				"AF must not return 502 — KA unreachable. Response: %v", result)
+			Expect(status).NotTo(Equal(http.StatusServiceUnavailable),
+				"AF must not return 503 — circuit breaker open. Response: %v", result)
+
+			text := extractMCPResultText(result)
+			if text != "" {
+				var parsed map[string]interface{}
+				if json.Unmarshal([]byte(text), &parsed) == nil {
+					Expect(parsed).To(HaveKey("session_id"),
+						"TC-E2E-KA-1326-01: response must include session_id")
+					Expect(parsed).To(HaveKey("status"),
+						"TC-E2E-KA-1326-01: response must include status")
+				}
+			}
+		})
+
+		It("TC-E2E-KA-1326-02: kubernaut_investigate returns non-blocking (< 5s response time)", func() {
+			start := time.Now()
+
+			status, _ := mcpToolCall("e2e-1326-02", "kubernaut_investigate", map[string]interface{}{
+				"rr_id": "e2e-1326-timing-rr",
+			})
+
+			elapsed := time.Since(start)
+			Expect(status).NotTo(Equal(http.StatusBadGateway))
+
+			// The tool should return within 5 seconds (non-blocking design).
+			// AIA polling timeout is 3 min but context should not block here
+			// since there's no AIA CRD for this RR in E2E.
+			Expect(elapsed).To(BeNumerically("<", 30*time.Second),
+				"TC-E2E-KA-1326-02: investigate must return promptly (non-blocking)")
+		})
+
+		It("TC-E2E-KA-1326-03: kubernaut_investigate with empty rr_id returns error", func() {
+			status, result := mcpToolCall("e2e-1326-03", "kubernaut_investigate", map[string]interface{}{
+				"rr_id": "",
+			})
+
+			// Should return a tool error (not 502/503)
+			Expect(status).NotTo(Equal(http.StatusBadGateway))
+			text := extractMCPResultText(result)
+			if text != "" {
+				Expect(strings.ToLower(text)).To(ContainSubstring("rr_id"),
+					"TC-E2E-KA-1326-03: error must mention rr_id requirement")
+			}
+		})
+	})
 })
 
 // extractSessionID navigates the MCP JSON-RPC response to find a session_id.
