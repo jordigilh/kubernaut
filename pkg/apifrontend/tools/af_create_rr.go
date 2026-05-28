@@ -178,7 +178,7 @@ func HandleCreateRR(ctx context.Context, client dynamic.Interface, controllerNS 
 		}
 
 		out := &CreateRRResult{
-			RRID:    created.GetNamespace() + "/" + created.GetName(),
+			RRID:    created.GetName(),
 			Message: fmt.Sprintf("RemediationRequest created for %s/%s by %s", args.Kind, args.Name, username),
 		}
 		if triageResult != nil {

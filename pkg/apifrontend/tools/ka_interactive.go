@@ -29,7 +29,7 @@ func invokeInteractiveAction(ctx context.Context, mcpClient ka.MCPClient, action
 	if mcpClient == nil {
 		return InteractiveActionResult{}, fmt.Errorf("interactive investigation not available: MCP client not configured")
 	}
-	if _, _, err := validate.ParseRRID(args.RRID); err != nil {
+	if err := validate.ResourceName(args.RRID); err != nil {
 		return InteractiveActionResult{}, fmt.Errorf("invalid rr_id: %w", err)
 	}
 	if err := validate.Action(action); err != nil {

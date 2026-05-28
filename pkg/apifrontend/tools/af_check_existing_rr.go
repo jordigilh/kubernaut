@@ -71,7 +71,7 @@ func HandleCheckExistingRR(ctx context.Context, client dynamic.Interface, contro
 		if !IsTerminalPhase(phase) {
 			return CheckExistingRRResult{
 				Exists: true,
-				RRID:   item.GetNamespace() + "/" + item.GetName(),
+				RRID:   item.GetName(),
 				Phase:  phase,
 			}, nil
 		}

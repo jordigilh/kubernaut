@@ -76,7 +76,7 @@ func HandleListRemediations(ctx context.Context, client dynamic.Interface, args 
 			continue
 		}
 		result = append(result, RemediationSummary{
-			ID:        item.GetNamespace() + "/" + item.GetName(),
+			ID:        item.GetName(),
 			Namespace: item.GetNamespace(),
 			Name:      item.GetName(),
 			Phase:     phase,
@@ -139,7 +139,7 @@ func HandleGetRemediation(ctx context.Context, client dynamic.Interface, args Ge
 	target, _, _ := unstructured.NestedString(obj.Object, "spec", "targetResource", "name")
 
 	return GetRemediationResult{
-		ID:        ns + "/" + name,
+		ID:        name,
 		Namespace: ns,
 		Name:      name,
 		Phase:     phase,
@@ -149,11 +149,16 @@ func HandleGetRemediation(ctx context.Context, client dynamic.Interface, args Ge
 }
 
 // NewGetRemediationTool creates the kubernaut_get_remediation tool.
-func NewGetRemediationTool(client dynamic.Interface) (tool.Tool, error) {
+// controllerNS is used as the default namespace when rr_id is provided without
+// an explicit namespace (all RR CRDs live in the controller namespace per ADR-057).
+func NewGetRemediationTool(client dynamic.Interface, controllerNS string) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_get_remediation",
-		Description: "Get detailed information about a specific remediation by namespace/name or rr_id",
+		Description: "Get detailed information about a specific remediation by rr_id or namespace/name",
 	}, func(ctx tool.Context, args GetRemediationArgs) (GetRemediationResult, error) {
+		if args.Namespace == "" {
+			args.Namespace = controllerNS
+		}
 		return HandleGetRemediation(ctx, client, args)
 	})
 }
@@ -599,11 +604,15 @@ func HandleCancelRemediation(ctx context.Context, client dynamic.Interface, args
 }
 
 // NewCancelRemediationTool creates the kubernaut_cancel_remediation tool.
-func NewCancelRemediationTool(client dynamic.Interface) (tool.Tool, error) {
+// controllerNS is the default namespace for RR CRD lookups (ADR-057).
+func NewCancelRemediationTool(client dynamic.Interface, controllerNS string) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_cancel_remediation",
 		Description: "Cancel an active remediation that has not yet reached a terminal state",
 	}, func(ctx tool.Context, args CancelRemediationArgs) (CancelRemediationResult, error) {
+		if args.Namespace == "" {
+			args.Namespace = controllerNS
+		}
 		return HandleCancelRemediation(ctx, client, args)
 	})
 }
