@@ -750,6 +750,56 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 		})
 	})
 
+	// =============================================================================
+	// TP-1310 §4.5: MCP Bridge — Tool Error Transparency
+	// =============================================================================
+	Describe("Investigation tool error transparency (TP-1310)", func() {
+		It("IT-AF-1310-051: kubernaut_investigate returns tool_errors when KA tool fails", func() {
+			errPayload := `{"status":"error","error":"nodes.config.openshift.io \"dev-worker-1\" not found"}`
+			toolResultInner := map[string]any{
+				"tool_name":      "kubectl_describe",
+				"tool_index":     0,
+				"result_preview": errPayload,
+			}
+			toolResultEnvelope := map[string]any{
+				"type": "tool_result",
+				"turn": 1,
+				"data": toolResultInner,
+			}
+			toolResultJSON, _ := json.Marshal(toolResultEnvelope)
+
+			kaStreamHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost && r.URL.Path == "/api/v1/incident/analyze" {
+					w.WriteHeader(http.StatusAccepted)
+					_ = json.NewEncoder(w).Encode(map[string]string{"session_id": "sess-1310-err"})
+					return
+				}
+				if strings.HasSuffix(r.URL.Path, "/stream") {
+					w.Header().Set("Content-Type", "text/event-stream")
+					w.WriteHeader(http.StatusOK)
+					_, _ = fmt.Fprintf(w, "event: tool_result\ndata: %s\n\n", string(toolResultJSON))
+					_, _ = fmt.Fprintf(w, "event: complete\ndata: {\"summary\":\"partial results due to tool errors\"}\n\n")
+					return
+				}
+				w.WriteHeader(http.StatusNotFound)
+			})
+			setupStackWithKAHandler(kaStreamHandler, newFakeDSClient())
+
+			status, body := mcpCallTool(h, sessionID, "kubernaut_investigate", map[string]any{
+				"namespace": "production",
+				"name":      "dev-worker-1",
+				"kind":      "Node",
+			}, testUser)
+
+			Expect(status).To(Equal(http.StatusOK))
+			text := extractTextContent(body)
+			Expect(text).To(ContainSubstring("tool_errors"),
+				"MCP response must include tool_errors for LLM transparency")
+			Expect(text).To(ContainSubstring("kubectl_describe"),
+				"tool_errors must identify the failing tool")
+		})
+	})
+
 	Describe("KA Circuit Breaker Through Bridge", func() {
 
 		It("IT-BRIDGE-013: CB trips after N failures, subsequent tool calls fail fast with friendly error", func() {
