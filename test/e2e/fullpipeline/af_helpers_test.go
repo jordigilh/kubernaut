@@ -83,6 +83,14 @@ type fpA2ATaskResult struct {
 
 // fpA2AInvoke sends a JSON-RPC request to POST /a2a/invoke.
 func fpA2AInvoke(body string) (*http.Response, error) {
+	return fpA2AInvokeWithTimeout(body, 0)
+}
+
+// fpA2AInvokeWithTimeout sends a JSON-RPC request to POST /a2a/invoke with a
+// custom timeout. Use for multi-turn conversations where the session may still
+// be processing a prior turn's tool chain (AF → MCP → KA → mock-LLM).
+// A zero timeout uses the default afHTTPClient (30s).
+func fpA2AInvokeWithTimeout(body string, timeout time.Duration) (*http.Response, error) {
 	token := getAFToken()
 	req, err := http.NewRequest(http.MethodPost, afBaseURL+"/a2a/invoke", strings.NewReader(body))
 	if err != nil {
@@ -90,6 +98,13 @@ func fpA2AInvoke(body string) (*http.Response, error) {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
+	if timeout > 0 {
+		client := &http.Client{
+			Transport: afHTTPClient.Transport,
+			Timeout:   timeout,
+		}
+		return client.Do(req)
+	}
 	return afHTTPClient.Do(req)
 }
 
