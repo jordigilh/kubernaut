@@ -41,8 +41,12 @@ type AgentConfig struct {
 	K8sClient dynamic.Interface
 	// DSClient is the Data Store client for workflow/history queries.
 	DSClient ds.Client
-	// MCPClient is the KA MCP client for investigations and interactive operations.
+	// MCPClient is the KA MCP client for interactive operations (pooled sessions).
 	MCPClient ka.MCPClient
+	// AutonomousClient is the KA MCP client for autonomous investigations.
+	// It must support StartAutonomous (SDKMCPClient). Falls back to MCPClient
+	// when nil.
+	AutonomousClient ka.MCPClient
 	// Authorizer checks tool-level authorization via SAR.
 	Authorizer auth.ToolAuthorizer
 	// Auditor emits audit events for RBAC denials (FedRAMP SI-4).
