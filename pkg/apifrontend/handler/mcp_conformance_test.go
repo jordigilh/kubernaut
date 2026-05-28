@@ -132,7 +132,7 @@ var _ = Describe("MCP Protocol Conformance", func() {
 	}
 
 	Describe("tools/list conformance", func() {
-		It("UT-AF-042-001: tools/list returns 21 tools after initialization", func() {
+		It("UT-AF-042-001: tools/list returns 22 tools after initialization", func() {
 			sessionID := initializeSession(mcpHandler)
 			rec := sendWithSession(mcpHandler, sessionID, "tools/list", 2, nil)
 			Expect(rec.Code).To(Equal(http.StatusOK))

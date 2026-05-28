@@ -491,7 +491,7 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 	})
 
 	Context("Tool registration", func() {
-		It("UT-AF-B-023: RegisterTools registers exactly 14 domain tools on the server", func() {
+		It("UT-AF-B-023: RegisterTools registers exactly 22 domain tools on the server", func() {
 			listReq := map[string]any{
 				"jsonrpc": "2.0",
 				"id":      3,
