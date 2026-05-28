@@ -73,7 +73,6 @@ func ConnectMCPClient(ctx context.Context, cfg MCPClientConfig) (*mcpsdk.ClientS
 		Endpoint: cfg.Endpoint,
 		HTTPClient: &http.Client{
 			Transport: saTransport,
-			Timeout:   30 * time.Second,
 		},
 	}
 
