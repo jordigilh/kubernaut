@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"time"
 
 	"google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
@@ -64,17 +65,17 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 		return InvestigateMCPResult{}, fmt.Errorf("rr_id is required for MCP investigation")
 	}
 
-	// Poll AIA CRD to confirm AA has submitted the investigation to KA.
-	// On timeout, proceed anyway -- KA's handleStart is best-effort for
-	// the deferred launch and will still acquire the lease.
+	// Best-effort check for existing AIA CRD. Use a short timeout so we
+	// don't block the investigate call — AF creates the IS CRD itself, so
+	// this is purely opportunistic coordination with AA.
 	if k8sClient != nil && namespace != "" {
-		awaitResult, awaitErr := HandleAwaitSession(ctx, k8sClient, AwaitSessionArgs{
+		checkCtx, checkCancel := context.WithTimeout(ctx, 10*time.Second)
+		awaitResult, awaitErr := HandleAwaitSession(checkCtx, k8sClient, AwaitSessionArgs{
 			Namespace: namespace,
 			RRName:    args.RRID,
 		})
-		if awaitErr != nil {
-			_ = launcher.EmitReasoningSafe(ctx, "Waiting for investigation session...")
-		} else if awaitResult.Status == "ready" {
+		checkCancel()
+		if awaitErr == nil && awaitResult.Status == "ready" {
 			_ = launcher.EmitReasoningSafe(ctx, "Investigation session ready, connecting to KA...")
 		}
 	}

@@ -22,7 +22,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/security"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
-	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
 )
 
 const (
@@ -120,6 +119,9 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 
 	registerTool(srv, cfg, sem, "kubernaut_get_remediation", "Get details of a specific remediation",
 		func(ctx context.Context, args tools.GetRemediationArgs) (any, error) {
+			if args.Namespace == "" {
+				args.Namespace = cfg.Namespace
+			}
 			return tools.HandleGetRemediation(ctx, cfg.K8sClient, args)
 		})
 
@@ -141,6 +143,9 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 
 	registerTool(srv, cfg, sem, "kubernaut_cancel_remediation", "Cancel an active remediation",
 		func(ctx context.Context, args tools.CancelRemediationArgs) (any, error) {
+			if args.Namespace == "" {
+				args.Namespace = cfg.Namespace
+			}
 			return tools.HandleCancelRemediation(ctx, cfg.K8sClient, args)
 		})
 
@@ -163,7 +168,19 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 	}
 	registerTool(srv, cfg, sem, "kubernaut_investigate", "Investigate an infrastructure incident",
 		func(ctx context.Context, args tools.InvestigateMCPArgs) (any, error) {
-			return tools.HandleInvestigationMCPWithRegistry(ctx, dedicatedClient, cfg.K8sClient, cfg.Namespace, args, cfg.Auditor, cfg.InvestigationRegistry)
+			result, err := tools.HandleInvestigationMCPWithRegistry(ctx, dedicatedClient, cfg.K8sClient, cfg.Namespace, args, cfg.Auditor, cfg.InvestigationRegistry)
+			if err != nil {
+				return result, err
+			}
+			if cfg.SessionInitializer != nil && result.SessionID != "" {
+				identity := auth.UserIdentityFromContext(ctx)
+				if identity != nil {
+					if iErr := cfg.SessionInitializer.InitializeSessionByRR(ctx, cfg.Namespace, args.RRID, result.SessionID, identity.Username, identity.Groups); iErr != nil {
+						cfg.Logger.Error(iErr, "IS CRD initialization failed on investigate", "rr_id", args.RRID, "session_id", result.SessionID)
+					}
+				}
+			}
+			return result, nil
 		})
 
 	// KA MCP tools
@@ -230,15 +247,11 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 				return result, err
 			}
 			if cfg.SessionInitializer != nil {
-				ns, name, pErr := validate.ParseRRID(args.RRID)
-				if pErr != nil {
-					return result, nil
-				}
 				identity := auth.UserIdentityFromContext(ctx)
 				if identity == nil {
 					return result, nil
 				}
-				if iErr := cfg.SessionInitializer.InitializeSessionByRR(ctx, ns, name, result.SessionID, identity.Username, identity.Groups); iErr != nil {
+				if iErr := cfg.SessionInitializer.InitializeSessionByRR(ctx, cfg.Namespace, args.RRID, result.SessionID, identity.Username, identity.Groups); iErr != nil {
 					cfg.Logger.Error(iErr, "IS CRD initialization failed on takeover", "rr_id", args.RRID, "session_id", result.SessionID)
 					return nil, fmt.Errorf("takeover succeeded but IS CRD creation failed: %w", iErr)
 				}
@@ -255,10 +268,8 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 		func(ctx context.Context, args tools.InteractiveActionArgs) (any, error) {
 			result, err := tools.HandleComplete(ctx, cfg.KAMCPClient, args, cfg.Auditor)
 			if err == nil && cfg.SessionFinalizer != nil {
-				if ns, name, pErr := validate.ParseRRID(args.RRID); pErr == nil {
-					if fErr := cfg.SessionFinalizer.FinalizeSessionByRR(ctx, ns, name, isv1alpha1.SessionPhaseCompleted); fErr != nil {
-						cfg.Logger.Error(fErr, "IS CRD phase finalization failed", "rr_id", args.RRID, "phase", "Completed")
-					}
+				if fErr := cfg.SessionFinalizer.FinalizeSessionByRR(ctx, cfg.Namespace, args.RRID, isv1alpha1.SessionPhaseCompleted); fErr != nil {
+					cfg.Logger.Error(fErr, "IS CRD phase finalization failed", "rr_id", args.RRID, "phase", "Completed")
 				}
 			}
 			return result, err
@@ -268,10 +279,8 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 		func(ctx context.Context, args tools.InteractiveActionArgs) (any, error) {
 			result, err := tools.HandleCancel(ctx, cfg.KAMCPClient, args, cfg.Auditor)
 			if err == nil && cfg.SessionFinalizer != nil {
-				if ns, name, pErr := validate.ParseRRID(args.RRID); pErr == nil {
-					if fErr := cfg.SessionFinalizer.FinalizeSessionByRR(ctx, ns, name, isv1alpha1.SessionPhaseCancelled); fErr != nil {
-						cfg.Logger.Error(fErr, "IS CRD phase finalization failed", "rr_id", args.RRID, "phase", "Cancelled")
-					}
+				if fErr := cfg.SessionFinalizer.FinalizeSessionByRR(ctx, cfg.Namespace, args.RRID, isv1alpha1.SessionPhaseCancelled); fErr != nil {
+					cfg.Logger.Error(fErr, "IS CRD phase finalization failed", "rr_id", args.RRID, "phase", "Cancelled")
 				}
 			}
 			return result, err

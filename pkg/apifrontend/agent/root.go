@@ -43,7 +43,7 @@ func NewRootAgent(cfg AgentConfig, opts ...Option) (agent.Agent, []tool.Tool, er
 	}
 
 	beforeMetrics, afterMetrics := newMetricsToolCallbacks(cfg.ToolCallsTotal, cfg.ToolCallDuration)
-	afterAudit := newAuditToolCallback(cfg.Auditor, cfg.SessionService)
+	afterAudit := newAuditToolCallback(cfg.Auditor, cfg.SessionService, cfg.Namespace)
 
 	var beforeCallbacks []llmagent.BeforeToolCallback
 	if cfg.Authorizer != nil {
@@ -106,11 +106,11 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 
 	constructors := []toolConstructor{
 		{"list_remediations", func() (tool.Tool, error) { return tools.NewListRemediationsTool(k8s) }},
-		{"get_remediation", func() (tool.Tool, error) { return tools.NewGetRemediationTool(k8s) }},
+		{"get_remediation", func() (tool.Tool, error) { return tools.NewGetRemediationTool(k8s, cfg.Namespace) }},
 		{"list_approval_requests", func() (tool.Tool, error) { return tools.NewListApprovalRequestsTool(k8s) }},
 		{"get_approval_request", func() (tool.Tool, error) { return tools.NewGetApprovalRequestTool(k8s) }},
 		{"approve", func() (tool.Tool, error) { return tools.NewApproveTool(k8s) }},
-		{"cancel_remediation", func() (tool.Tool, error) { return tools.NewCancelRemediationTool(k8s) }},
+		{"cancel_remediation", func() (tool.Tool, error) { return tools.NewCancelRemediationTool(k8s, cfg.Namespace) }},
 		{"watch", func() (tool.Tool, error) { return tools.NewWatchTool(k8s) }},
 		{"await_session", func() (tool.Tool, error) { return tools.NewAwaitSessionTool(k8s) }},
 		{"investigate", func() (tool.Tool, error) {
@@ -347,7 +347,7 @@ func newToolLoggingCallbacks() (llmagent.BeforeToolCallback, llmagent.AfterToolC
 // G6 (revised #1293): IS CRD creation moved to kubernaut_takeover hook in
 // mcp_bridge.go. The sessionSvc parameter is retained for future use but
 // MaterializeCRD is no longer called from this callback.
-func newAuditToolCallback(auditor audit.Emitter, sessionSvc *session.CRDSessionService) llmagent.AfterToolCallback {
+func newAuditToolCallback(auditor audit.Emitter, sessionSvc *session.CRDSessionService, controllerNS string) llmagent.AfterToolCallback {
 	return func(ctx tool.Context, t tool.Tool, input, output map[string]any, toolErr error) (map[string]any, error) {
 		if auditor == nil {
 			return nil, nil
@@ -380,14 +380,10 @@ func newAuditToolCallback(auditor audit.Emitter, sessionSvc *session.CRDSessionS
 		if t.Name() == "af_create_rr" && toolErr == nil && output != nil {
 			if rrID, ok := output["rr_id"].(string); ok && rrID != "" {
 				detail["rr_id"] = rrID
-				parts := strings.SplitN(rrID, "/", 2)
-				// AC 12: Store RR reference on the shared CreateContext pointer
-				// so AfterExecuteCallback can enrich EventA2ATaskCompleted.
+				// rr_id is now name-only (no namespace prefix). Use controllerNS.
 				if sc != nil {
-					if len(parts) == 2 {
-						sc.RRNamespace = parts[0]
-						sc.RRName = parts[1]
-					}
+					sc.RRName = rrID
+					sc.RRNamespace = controllerNS
 				}
 				// G6 (revised by #1293): IS CRD creation is now deferred to
 				// explicit user takeover (kubernaut_takeover) rather than
