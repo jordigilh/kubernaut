@@ -1,6 +1,6 @@
 # ADR-047: Policy Engine Selection
 
-**Status**: 🔄 Proposed
+**Status**: ✅ Accepted
 **Date**: 2025-12-05
 **Decision Makers**: Kubernaut Architecture Team
 **Impact**: High - Affects multiple services (SignalProcessing, AIAnalysis, all future policy evaluation)

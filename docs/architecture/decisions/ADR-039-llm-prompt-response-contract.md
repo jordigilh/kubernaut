@@ -1,6 +1,6 @@
 # ADR-038: LLM Prompt and Response Contract for Playbook Selection
 
-**Status**: Proposed
+**Status**: ⛔ Superseded by ADR-041
 **Date**: 2025-11-16
 **Deciders**: Architecture Team
 **Related**: DD-PLAYBOOK-003, DD-STORAGE-008, DD-PLAYBOOK-002, BR-PLAYBOOK-001
@@ -767,6 +767,6 @@ If validation fails, the parser MUST:
 
 ---
 
-**Status**: Proposed
-**Next Steps**: Review and approval by architecture team
+**Status**: ⛔ Superseded by ADR-041
+**Next Steps**: N/A — playbook contract replaced by workflow contract in ADR-041
 

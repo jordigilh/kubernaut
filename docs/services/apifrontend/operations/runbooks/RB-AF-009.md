@@ -20,8 +20,8 @@ KA REST/MCP, DataStorage). This runbook covers diagnosing failures in the bridge
 # Tool call breakdown by result
 sum by (tool, result) (rate(af_tool_calls_total[5m]))
 
-# RBAC denials by tool
-sum by (tool) (rate(af_mcp_rbac_denied_total[5m]))
+# RBAC denials by tool (uses unified tool counter with result="denied")
+sum by (tool) (rate(af_tool_calls_total{result="denied"}[5m]))
 
 # P99 latency per tool
 histogram_quantile(0.99, sum by (le, tool) (rate(af_tool_call_duration_seconds_bucket[5m])))
@@ -42,7 +42,7 @@ sum(rate(af_tool_calls_total{result="throttled"}[5m]))
 
 ### 1. RBAC Denials
 
-1. Check `af_mcp_rbac_denied_total` by tool — which tool is being denied?
+1. Check `af_tool_calls_total{result="denied"}` by tool — which tool is being denied?
 2. Verify the user's OIDC groups are bound to the correct `kubernaut-tool-<persona>` ClusterRole via ClusterRoleBindings
 3. Test SAR manually: `kubectl auth can-i use tools.kubernaut.ai/<toolName> --as=<user> --as-group=<group>`
 4. Check audit trail (DataStorage) for `EventMCPToolDenied` events with user/tool

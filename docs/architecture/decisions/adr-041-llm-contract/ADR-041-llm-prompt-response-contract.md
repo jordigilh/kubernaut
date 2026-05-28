@@ -1,6 +1,6 @@
 # ADR-041: LLM Prompt and Response Contract for Workflow Selection
 
-**Status**: Proposed
+**Status**: ✅ Accepted
 **Date**: 2025-11-16
 **Deciders**: Architecture Team
 **Related**: DD-WORKFLOW-003, DD-STORAGE-008, DD-WORKFLOW-002, BR-WORKFLOW-001

@@ -1,7 +1,7 @@
 openapi: "3.1.0"
 info:
   title: kubernaut API Frontend
-  version: "0.1.0"
+  version: "1.5.0"
   description: |
     API surface for the kubernaut API Frontend service, including operational
     REST endpoints and protocol endpoints (MCP Streamable HTTP and A2A JSON-RPC 2.0).
