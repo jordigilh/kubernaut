@@ -83,6 +83,14 @@ func (m *mockAutoMgrIT) SuspendInvestigation(id string) error {
 	return m.mgr.SuspendInvestigation(id)
 }
 
+func (m *mockAutoMgrIT) StartInvestigation(_ context.Context, _ session.InvestigateFunc, _ map[string]string) (string, error) {
+	return "", fmt.Errorf("not implemented in IT mock")
+}
+
+func (m *mockAutoMgrIT) Subscribe(_ context.Context, _ string) (<-chan session.InvestigationEvent, error) {
+	return nil, fmt.Errorf("not implemented in IT mock")
+}
+
 func (m *mockAutoMgrIT) TransitionToUserDriving(id, username string, groups []string) error {
 	return m.mgr.TransitionToUserDriving(id, username, groups)
 }

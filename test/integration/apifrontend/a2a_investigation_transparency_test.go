@@ -108,7 +108,7 @@ var _ = Describe("A2A Investigation Tool Error Transparency (TP-1310)", func() {
 							"parts":[{
 								"functionCall":{
 									"name":"kubernaut_investigate",
-									"args":{"namespace":"production","name":"dev-worker-1","kind":"Node"}
+									"args":{"rr_id":"production/dev-worker-1"}
 								}
 							}]
 						},
@@ -130,7 +130,14 @@ var _ = Describe("A2A Investigation Tool Error Transparency (TP-1310)", func() {
 			}
 		}))
 
-		kaClient := ka.NewClient(ka.Config{BaseURL: kaServer.URL})
+		mockMCP := &ka.MockMCPClient{
+			StartAutonomousFn: func(_ context.Context, args ka.StartAutonomousArgs) (*ka.StartAutonomousResult, error) {
+				return &ka.StartAutonomousResult{
+					SessionID: "sess-1310-mock",
+					Status:    "autonomous_started",
+				}, nil
+			},
+		}
 
 		ctx := context.Background()
 		llmModel, err := launcher.NewModelFromConfig(ctx, config.LLMConfig{
@@ -144,7 +151,7 @@ var _ = Describe("A2A Investigation Tool Error Transparency (TP-1310)", func() {
 		rootAgent, _, err := agentpkg.NewRootAgent(agentpkg.AgentConfig{
 			Instruction: "You are a test agent. When investigating, report any tool errors to the user.",
 			LLMModel:    llmModel,
-			KAClient:    kaClient,
+			MCPClient:   mockMCP,
 		})
 		Expect(err).NotTo(HaveOccurred())
 

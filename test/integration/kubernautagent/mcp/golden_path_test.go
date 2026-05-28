@@ -19,6 +19,7 @@ package mcp_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"runtime"
 
 	"github.com/go-logr/logr"
@@ -30,6 +31,7 @@ import (
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	mcptools "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
@@ -88,6 +90,12 @@ func (m *goldenPathAutoMgr) ForceTransitionToUserDriving(_ string, _ string, _ [
 func (m *goldenPathAutoMgr) FindPendingByRemediationID(_ string) (string, bool)         { return "", false }
 func (m *goldenPathAutoMgr) LaunchDeferredInvestigation(_ string) error                  { return nil }
 func (m *goldenPathAutoMgr) GetLatestRCASummaryByRemediationID(_ string) (string, bool)  { return "", false }
+func (m *goldenPathAutoMgr) StartInvestigation(_ context.Context, _ session.InvestigateFunc, _ map[string]string) (string, error) {
+	return "", fmt.Errorf("not implemented in golden path mock")
+}
+func (m *goldenPathAutoMgr) Subscribe(_ context.Context, _ string) (<-chan session.InvestigationEvent, error) {
+	return nil, fmt.Errorf("not implemented in golden path mock")
+}
 
 var _ = Describe("Golden Path Lifecycle — IT-KA-GOLDEN-001 BR-INTERACTIVE-001", func() {
 	var (
