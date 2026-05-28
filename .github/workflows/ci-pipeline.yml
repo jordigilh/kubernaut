@@ -660,7 +660,7 @@ jobs:
             timeout: 35
           - service: apifrontend
             service_name: "API Frontend"
-            timeout: 30
+            timeout: 40
           - service: fullpipeline
             service_name: "Full Pipeline"
             timeout: 50

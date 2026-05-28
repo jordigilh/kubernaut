@@ -429,6 +429,7 @@ type backendDeps struct {
 	DSClient             ds.Client
 	KAClient             *ka.Client
 	MCPClient            ka.MCPClient
+	AutonomousClient     ka.MCPClient
 	Pool                 *ka.KASessionPool
 	Triager              *severity.Triager
 	DSResilientTransport *resilience.CircuitBreakerTransport
@@ -524,6 +525,7 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 		Logger:     logger.WithName("ka-session-pool"),
 	})
 	deps.MCPClient = ka.NewPooledMCPClient(deps.Pool, logger)
+	deps.AutonomousClient = mcpClient
 
 	if cfg.SeverityTriage.Enabled {
 		promTransport, promWatcher, promErr := tlswiring.CAReloadableTransport(cfg.SeverityTriage.PrometheusTLSCaFile, logger.WithName("prom-ca"))
@@ -647,6 +649,7 @@ func buildMCPHandler(cfg *config.Config, deps *backendDeps, sessInfra *sessionIn
 	bridgeCfg := &handler.MCPBridgeConfig{
 		K8sClient:          deps.K8sClient(),
 		KAMCPClient:        deps.MCPClient,
+		KAAutonomousClient: deps.AutonomousClient,
 		Pool:               deps.Pool,
 		DSClient:           deps.DSClient,
 		Triager:            deps.Triager,

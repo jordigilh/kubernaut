@@ -48,6 +48,7 @@ type ISSessionInitializer interface {
 type MCPBridgeConfig struct {
 	K8sClient          dynamic.Interface
 	KAMCPClient        ka.MCPClient
+	KAAutonomousClient ka.MCPClient
 	Pool               *ka.KASessionPool
 	DSClient           ds.Client
 	Triager            *severity.Triager
@@ -151,10 +152,16 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 			return tools.HandleAwaitSession(ctx, cfg.K8sClient, args)
 		})
 
-	// KA investigation tool (MCP-only, non-blocking)
+	// KA investigation tool (MCP-only, non-blocking).
+	// Uses KAAutonomousClient (SDKMCPClient) which creates dedicated non-pooled
+	// sessions for StartAutonomous. PooledMCPClient does not support StartAutonomous.
+	autonomousClient := cfg.KAAutonomousClient
+	if autonomousClient == nil {
+		autonomousClient = cfg.KAMCPClient
+	}
 	registerTool(srv, cfg, sem, "kubernaut_investigate", "Investigate an infrastructure incident",
 		func(ctx context.Context, args tools.InvestigateMCPArgs) (any, error) {
-			return tools.HandleInvestigationMCP(ctx, cfg.KAMCPClient, args, cfg.Auditor)
+			return tools.HandleInvestigationMCP(ctx, autonomousClient, args, cfg.Auditor)
 		})
 
 	// KA MCP tools
