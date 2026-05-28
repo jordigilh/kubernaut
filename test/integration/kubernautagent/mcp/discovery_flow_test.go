@@ -576,9 +576,9 @@ func newRealMCPTestStackWithDiscovery(k8sClient client.Client, namespace string,
 	)
 
 	toolDeps := mcpinternal.ToolDeps{
-		Investigate:      mcptools.InvestigateRegistration(investigateTool, stack.EventStore, stack.Notifier),
-		SelectWorkflow:   mcptools.SelectWorkflowRegistration(selectTool),
-		CompleteNoAction: mcptools.CompleteNoActionRegistration(completeNoActionTool),
+		Investigate:      mcptools.InvestigateRegistration(investigateTool, stack.EventStore, stack.Notifier, logr.Discard()),
+		SelectWorkflow:   mcptools.SelectWorkflowRegistration(selectTool, logr.Discard()),
+		CompleteNoAction: mcptools.CompleteNoActionRegistration(completeNoActionTool, logr.Discard()),
 	}
 
 	handler, srv := mcpinternal.BootstrapMCP(mcpinternal.MCPDeps{

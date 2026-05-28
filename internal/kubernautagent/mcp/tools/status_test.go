@@ -86,7 +86,33 @@ var _ = Describe("action=status — PR4 PROD-01 BR-INTERACTIVE-002", func() {
 	})
 
 	Describe("UT-KA-STATUS-002: action=status returns mode 'interactive' + driver identity when driver active", func() {
-		It("should return interactive mode with driver username", func() {
+		It("should return interactive mode with driver username for the driver themselves", func() {
+			sessMgr := &statusSessionMgr{
+				driverSession: &mcpinternal.InteractiveSession{
+					SessionID:     "interactive-sess-001",
+					CorrelationID: "rr-status-002",
+					ActingUser:    mcpinternal.UserInfo{Username: "alice@example.com"},
+					StartedAt:     time.Now(),
+				},
+			}
+			autoMgr := &statusAutoMgr{found: true}
+			tool := mcptools.NewInvestigateTool(sessMgr, nil, nil, autoMgr)
+
+			input := mcptools.InvestigateInput{
+				RRID:   "rr-status-002",
+				Action: mcptools.ActionStatus,
+			}
+
+			result, err := tool.Handle(context.Background(), input, mcpinternal.UserInfo{Username: "alice@example.com"})
+			Expect(err).NotTo(HaveOccurred())
+
+			var status mcptools.StatusOutput
+			Expect(json.Unmarshal([]byte(result.Response), &status)).To(Succeed())
+			Expect(status.Mode).To(Equal("interactive"))
+			Expect(status.Driver).To(Equal("alice@example.com"))
+		})
+
+		It("should redact driver identity for non-owner callers (H4)", func() {
 			sessMgr := &statusSessionMgr{
 				driverSession: &mcpinternal.InteractiveSession{
 					SessionID:     "interactive-sess-001",
@@ -109,7 +135,7 @@ var _ = Describe("action=status — PR4 PROD-01 BR-INTERACTIVE-002", func() {
 			var status mcptools.StatusOutput
 			Expect(json.Unmarshal([]byte(result.Response), &status)).To(Succeed())
 			Expect(status.Mode).To(Equal("interactive"))
-			Expect(status.Driver).To(Equal("alice@example.com"))
+			Expect(status.Driver).To(BeEmpty(), "driver identity should be redacted for non-owner")
 		})
 	})
 

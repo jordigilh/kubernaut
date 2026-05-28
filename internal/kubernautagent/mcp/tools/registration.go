@@ -19,6 +19,8 @@ package tools
 import (
 	"context"
 
+	"github.com/go-logr/logr"
+
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -34,7 +36,7 @@ import (
 // (trusted intermediary model), it takes precedence over the middleware-extracted
 // identity. This supports the AF SA token pattern where AF authenticates as
 // itself and passes user identity in the payload.
-func InvestigateRegistration(tool *InvestigateTool, eventStore *mcpinternal.DelegatingEventStore, notifier *mcpinternal.SessionNotifier) mcpinternal.ToolRegistration {
+func InvestigateRegistration(tool *InvestigateTool, eventStore *mcpinternal.DelegatingEventStore, notifier *mcpinternal.SessionNotifier, logger logr.Logger) mcpinternal.ToolRegistration {
 	return func(server *mcpsdk.Server, userFromCtx func(context.Context) mcpinternal.UserInfo) {
 		mcpsdk.AddTool(server, &mcpsdk.Tool{
 			Name:        "kubernaut_investigate",
@@ -42,7 +44,10 @@ func InvestigateRegistration(tool *InvestigateTool, eventStore *mcpinternal.Dele
 		}, func(ctx context.Context, req *mcpsdk.CallToolRequest, input InvestigateInput) (*mcpsdk.CallToolResult, InvestigateOutput, error) {
 			user := ResolveUser(userFromCtx(ctx), input.ActingUser, input.ActingUserGroups)
 			output, err := tool.Handle(ctx, input, user)
-			if err == nil && output.SessionID != "" {
+			if err != nil {
+				return nil, output, ErrorBoundary(logger, "kubernaut_investigate", err)
+			}
+			if output.SessionID != "" {
 				if eventStore != nil {
 					eventStore.RegisterMCPSession(req.Session.ID(), output.SessionID)
 				}
@@ -57,14 +62,14 @@ func InvestigateRegistration(tool *InvestigateTool, eventStore *mcpinternal.Dele
 					})
 				}
 			}
-			return nil, output, err
+			return nil, output, nil
 		})
 	}
 }
 
 // SelectWorkflowRegistration returns a ToolRegistration that registers the
 // kubernaut_select_workflow tool with the MCP SDK server.
-func SelectWorkflowRegistration(tool *SelectWorkflowTool) mcpinternal.ToolRegistration {
+func SelectWorkflowRegistration(tool *SelectWorkflowTool, logger logr.Logger) mcpinternal.ToolRegistration {
 	return func(server *mcpsdk.Server, userFromCtx func(context.Context) mcpinternal.UserInfo) {
 		mcpsdk.AddTool(server, &mcpsdk.Tool{
 			Name:        "kubernaut_select_workflow",
@@ -72,14 +77,14 @@ func SelectWorkflowRegistration(tool *SelectWorkflowTool) mcpinternal.ToolRegist
 		}, func(ctx context.Context, req *mcpsdk.CallToolRequest, input SelectWorkflowInput) (*mcpsdk.CallToolResult, SelectWorkflowOutput, error) {
 			user := ResolveUser(userFromCtx(ctx), input.ActingUser, input.ActingUserGroups)
 			output, err := tool.Handle(ctx, input, user)
-			return nil, output, err
+			return nil, output, ErrorBoundary(logger, "kubernaut_select_workflow", err)
 		})
 	}
 }
 
 // CompleteNoActionRegistration returns a ToolRegistration that registers the
 // kubernaut_complete_no_action tool with the MCP SDK server.
-func CompleteNoActionRegistration(tool *CompleteNoActionTool) mcpinternal.ToolRegistration {
+func CompleteNoActionRegistration(tool *CompleteNoActionTool, logger logr.Logger) mcpinternal.ToolRegistration {
 	return func(server *mcpsdk.Server, userFromCtx func(context.Context) mcpinternal.UserInfo) {
 		mcpsdk.AddTool(server, &mcpsdk.Tool{
 			Name:        "kubernaut_complete_no_action",
@@ -87,7 +92,7 @@ func CompleteNoActionRegistration(tool *CompleteNoActionTool) mcpinternal.ToolRe
 		}, func(ctx context.Context, req *mcpsdk.CallToolRequest, input CompleteNoActionInput) (*mcpsdk.CallToolResult, CompleteNoActionOutput, error) {
 			user := ResolveUser(userFromCtx(ctx), input.ActingUser, input.ActingUserGroups)
 			output, err := tool.Handle(ctx, input, user)
-			return nil, output, err
+			return nil, output, ErrorBoundary(logger, "kubernaut_complete_no_action", err)
 		})
 	}
 }

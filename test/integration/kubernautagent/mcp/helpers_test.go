@@ -185,7 +185,7 @@ func newRealMCPTestStack(k8sClient client.Client, namespace string, opts realSta
 	investigateTool := tools.NewInvestigateTool(stack.SessionMgr, runner, recon, tools.NopAutonomousManager{}, investigateOpts...)
 
 	toolDeps := mcpinternal.ToolDeps{
-		Investigate: tools.InvestigateRegistration(investigateTool, stack.EventStore, stack.Notifier),
+		Investigate: tools.InvestigateRegistration(investigateTool, stack.EventStore, stack.Notifier, logr.Discard()),
 	}
 
 	handler, srv := mcpinternal.BootstrapMCP(mcpinternal.MCPDeps{

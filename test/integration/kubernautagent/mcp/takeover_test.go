@@ -203,7 +203,7 @@ var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", 
 			handler, _ := mcpinternal.BootstrapMCP(mcpinternal.MCPDeps{
 				AuthMiddleware: fakeAuthMiddleware("alice@example.com"),
 				Tools: mcpinternal.ToolDeps{
-					Investigate: tools.InvestigateRegistration(tool, nil, nil),
+					Investigate: tools.InvestigateRegistration(tool, nil, nil, logr.Discard()),
 				},
 			})
 

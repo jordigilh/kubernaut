@@ -321,7 +321,7 @@ func (t *InvestigateTool) dispatch(ctx context.Context, input InvestigateInput, 
 	case ActionCancel:
 		return t.handleCancel(input, user)
 	case ActionStatus:
-		return t.handleStatus(input)
+		return t.handleStatus(input, user)
 	case ActionReconnect:
 		return t.handleReconnect(input, user)
 	case ActionDiscoverWorkflows:
@@ -652,13 +652,13 @@ func (t *InvestigateTool) handleComplete(input InvestigateInput, user mcpinterna
 	}, nil
 }
 
-func (t *InvestigateTool) handleStatus(input InvestigateInput) (InvestigateOutput, error) {
+func (t *InvestigateTool) handleStatus(input InvestigateInput, user mcpinternal.UserInfo) (InvestigateOutput, error) {
 	status := StatusOutput{RRID: input.RRID}
 
 	if t.sessions.IsDriverActive(input.RRID) {
 		driver, _ := t.sessions.GetDriver(input.RRID)
 		status.Mode = StatusModeInteractive
-		if driver != nil {
+		if driver != nil && driver.ActingUser.Username == user.Username {
 			status.Driver = driver.ActingUser.Username
 		}
 	} else if _, found := t.autoMgr.FindByRemediationID(input.RRID); found {
@@ -921,6 +921,9 @@ func (t *InvestigateTool) handleStartAutonomous(ctx context.Context, input Inves
 		return nil, ctx.Err()
 	}, metadata)
 	if err != nil {
+		if errors.Is(err, session.ErrMaxInvestigationsReached) {
+			return InvestigateOutput{}, ErrCodeMaxInvestigations
+		}
 		return InvestigateOutput{}, fmt.Errorf("start autonomous investigation: %w", err)
 	}
 

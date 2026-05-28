@@ -73,7 +73,7 @@ var _ = Describe("Interactive Session Compatibility — COMPAT BR-INTERACTIVE-00
 			investigateTool := tools.NewInvestigateTool(sessMgr, runner, recon, tools.NopAutonomousManager{})
 
 			toolDeps := mcpinternal.ToolDeps{
-				Investigate: tools.InvestigateRegistration(investigateTool, nil, nil),
+				Investigate: tools.InvestigateRegistration(investigateTool, nil, nil, logr.Discard()),
 			}
 
 			handler, _ := mcpinternal.BootstrapMCP(mcpinternal.MCPDeps{
