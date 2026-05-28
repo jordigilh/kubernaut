@@ -16,7 +16,12 @@ limitations under the License.
 
 package tools
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+
+	"github.com/go-logr/logr"
+)
 
 // MCPError represents a structured error returned to MCP clients.
 // Contains a machine-readable code, a human-readable message, and optional
@@ -54,10 +59,6 @@ var (
 		Code:    "session_active",
 		Message: "Investigation is being driven by another user",
 	}
-	ErrCodeInvestigationCompleted = &MCPError{
-		Code:    "investigation_completed",
-		Message: "Investigation has already completed",
-	}
 	ErrCodeNotDriving = &MCPError{
 		Code:    "not_driving",
 		Message: "You must send action=takeover before sending messages",
@@ -82,4 +83,27 @@ var (
 		Code:    "forbidden",
 		Message: "Access denied: insufficient RBAC permissions",
 	}
+	ErrCodeInternalError = &MCPError{
+		Code:    "internal_error",
+		Message: "Internal service error",
+	}
+	ErrCodeMaxInvestigations = &MCPError{
+		Code:    "max_investigations",
+		Message: "Maximum concurrent investigations reached, retry later",
+	}
 )
+
+// ErrorBoundary wraps a tool handler error: if the error is already an MCPError
+// it passes through unchanged; otherwise the raw error is logged and replaced
+// with a generic internal error to prevent information leakage (H3/SEC-5).
+func ErrorBoundary(logger logr.Logger, toolName string, err error) error {
+	if err == nil {
+		return nil
+	}
+	var mcpErr *MCPError
+	if errors.As(err, &mcpErr) {
+		return err
+	}
+	logger.Error(err, "tool handler error redacted", "tool", toolName)
+	return ErrCodeInternalError
+}
