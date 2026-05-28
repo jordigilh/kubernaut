@@ -118,7 +118,8 @@ func WithEnrichmentRunner(runner EnrichmentRunner) SelectWorkflowOption {
 				if errors.Is(err, enrichment.ErrRBACForbidden) {
 					return ErrCodeForbidden.WithDetail("namespace", input.Namespace)
 				}
-				return fmt.Errorf("enrich failed: %w", err)
+				t.logger.Error(err, "enrichment failed", "namespace", input.Namespace, "kind", input.Kind)
+				return ErrCodeInternalError.WithDetail("stage", "enrichment")
 			}
 			pctx.Enrichment = result
 			return nil
@@ -207,26 +208,26 @@ func (t *SelectWorkflowTool) Handle(ctx context.Context, input SelectWorkflowInp
 	}
 
 	if !t.sessions.IsDriverActive(input.RRID) {
-		return SelectWorkflowOutput{}, fmt.Errorf("no active interactive session for rr_id")
+		return SelectWorkflowOutput{}, ErrCodeNoSession
 	}
 
 	driver, err := t.sessions.GetDriver(input.RRID)
 	if err != nil || driver == nil {
-		return SelectWorkflowOutput{}, fmt.Errorf("no active interactive session for rr_id")
+		return SelectWorkflowOutput{}, ErrCodeNoSession
 	}
 
 	if driver.ActingUser.Username != user.Username {
-		return SelectWorkflowOutput{}, fmt.Errorf("caller is not the active driver for this session")
+		return SelectWorkflowOutput{}, ErrCodeNotDriver
 	}
 
 	// v1.5 strict gating: require prior discover_workflows call.
 	if driver.DiscoveryResult == nil {
-		return SelectWorkflowOutput{}, fmt.Errorf("discover_workflows must be called before select_workflow")
+		return SelectWorkflowOutput{}, ErrCodeDiscoveryRequired
 	}
 
 	// v1.5 strict validation: workflow_id must be from the discovery results.
 	if !isWorkflowInDiscoveryResult(input.WorkflowID, driver.DiscoveryResult) {
-		return SelectWorkflowOutput{}, fmt.Errorf("workflow_id %q not found in discovery results; call discover_workflows to refresh", input.WorkflowID)
+		return SelectWorkflowOutput{}, ErrCodeInvalidWorkflow
 	}
 
 	pctx := &PreSelectionContext{}
@@ -342,10 +343,10 @@ func cloneParameterMap(src map[string]interface{}) map[string]interface{} {
 
 func validateSelectWorkflowInput(input SelectWorkflowInput) error {
 	if input.RRID == "" {
-		return fmt.Errorf("rr_id is required")
+		return ErrCodeInvalidInput.WithDetail("field", "rr_id")
 	}
 	if input.WorkflowID == "" {
-		return fmt.Errorf("workflow_id is required")
+		return ErrCodeInvalidInput.WithDetail("field", "workflow_id")
 	}
 	return nil
 }

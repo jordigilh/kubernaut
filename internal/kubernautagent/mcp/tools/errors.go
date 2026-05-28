@@ -91,6 +91,26 @@ var (
 		Code:    "max_investigations",
 		Message: "Maximum concurrent investigations reached, retry later",
 	}
+	ErrCodeDiscoveryRequired = &MCPError{
+		Code:    "discovery_required",
+		Message: "discover_workflows must be called before select_workflow",
+	}
+	ErrCodeInvalidWorkflow = &MCPError{
+		Code:    "invalid_workflow",
+		Message: "workflow_id not found in discovery results; call discover_workflows to refresh",
+	}
+	ErrCodeInvalidInput = &MCPError{
+		Code:    "invalid_input",
+		Message: "Missing required input field",
+	}
+	ErrCodeNoSession = &MCPError{
+		Code:    "no_session",
+		Message: "No active interactive session for this remediation",
+	}
+	ErrCodeNotDriver = &MCPError{
+		Code:    "not_driver",
+		Message: "Caller is not the active driver for this session",
+	}
 )
 
 // ErrorBoundary wraps a tool handler error: if the error is already an MCPError
