@@ -230,7 +230,7 @@ var _ = Describe("af_create_rr wiring (#1282)", func() {
 			"spec.targetResource.namespace must be workloadNS, not controllerNS")
 
 		DeferCleanup(func() {
-			_ = dynamicClient.Resource(rrGVR).Namespace(controllerNS).Delete(ctx, rrName, metav1.DeleteOptions{})
+			_ = dynamicClient.Resource(rrGVR).Namespace(controllerNS).Delete(ctx, result.RRID, metav1.DeleteOptions{})
 		})
 	})
 

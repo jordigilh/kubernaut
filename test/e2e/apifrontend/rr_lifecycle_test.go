@@ -53,7 +53,6 @@ var _ = Describe("RR CRD Lifecycle (G4)", Label("e2e", "phase2", "g4"), func() {
 
 		const rrName = "e2e-rr-lifecycle-01"
 		const rrNamespace = "default"
-		rrID := rrNamespace + "/" + rrName
 
 		By("TC-E2E-RR-01: Create RR via k8s client CRD fixture")
 		Expect(createRR(rrNamespace, rrName, "Deployment", "test-deploy-rr01")).To(Succeed())
@@ -84,7 +83,7 @@ var _ = Describe("RR CRD Lifecycle (G4)", Label("e2e", "phase2", "g4"), func() {
 
 		By("TC-E2E-RR-05: kubernaut_get_remediation returns detail for RR")
 		text, err = mcpToolCallWith(authToken, mcpSessionID, "kubernaut_get_remediation", map[string]interface{}{
-			"rr_id": rrID,
+			"rr_id": rrName,
 		})
 		Expect(err).NotTo(HaveOccurred(), text)
 		Expect(json.Unmarshal([]byte(text), &out)).To(Succeed())
