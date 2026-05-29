@@ -231,6 +231,25 @@ func (t *SelectWorkflowTool) Handle(ctx context.Context, input SelectWorkflowInp
 		return SelectWorkflowOutput{}, ErrCodeInvalidWorkflow
 	}
 
+	// Backfill target resource fields from the stored RCA when the caller
+	// (AF's LLM) omits them. The RCA already identified the target during
+	// investigation — no reason to require the caller to repeat it.
+	if driver.RCAResult != nil {
+		target := driver.RCAResult.RemediationTarget
+		if input.Kind == "" {
+			input.Kind = target.Kind
+		}
+		if input.Name == "" {
+			input.Name = target.Name
+		}
+		if input.Namespace == "" {
+			input.Namespace = target.Namespace
+		}
+		if input.APIVersion == "" {
+			input.APIVersion = target.APIVersion
+		}
+	}
+
 	pctx := &PreSelectionContext{}
 	for _, hook := range t.preSelectionHooks {
 		if err := hook(ctx, input, user, pctx); err != nil {
@@ -244,29 +263,36 @@ func (t *SelectWorkflowTool) Handle(ctx context.Context, input SelectWorkflowInp
 	}
 
 	// Auto-complete: build final InvestigationResult from RCA + selected workflow,
-	// write to HTTP session store, and release the MCP lease.
+	// write to HTTP session store, and release the MCP lease. Deferred to a
+	// goroutine so the tool response reaches the caller before session teardown
+	// closes the transport (fixes "incomplete chunked read" in kagenti).
 	if t.httpCompleter != nil && driver.RCAResult != nil {
 		finalResult := buildFinalResult(driver.RCAResult, workflow, driver.DiscoveryResult)
 		if finalResult.Parameters == nil && driver.DiscoveryResult != nil {
 			t.logger.V(1).Info("no discovered parameters resolved for selected workflow",
 				"rr_id", input.RRID, "workflow_id", input.WorkflowID)
 		}
-		httpSessionID, found := t.httpCompleter.FindUserDrivingByRemediationID(input.RRID)
-		if found {
-			if completeErr := t.httpCompleter.CompleteUserDriving(httpSessionID, finalResult); completeErr != nil {
-				t.logger.Error(completeErr, "failed to complete HTTP session",
-					"rr_id", input.RRID, "http_session_id", httpSessionID)
+		sessionID := driver.SessionID
+		rrID := input.RRID
+		workflowID := input.WorkflowID
+		go func() {
+			httpSessionID, found := t.httpCompleter.FindUserDrivingByRemediationID(rrID)
+			if found {
+				if completeErr := t.httpCompleter.CompleteUserDriving(httpSessionID, finalResult); completeErr != nil {
+					t.logger.Error(completeErr, "failed to complete HTTP session",
+						"rr_id", rrID, "http_session_id", httpSessionID, "workflow_id", workflowID)
+				}
+			} else if completeErr := t.httpCompleter.ForceCompleteByRemediationID(rrID, finalResult); completeErr != nil {
+				t.logger.V(1).Info("no HTTP session found to force-complete on select_workflow",
+					"rr_id", rrID, "error", completeErr)
 			}
-		} else if completeErr := t.httpCompleter.ForceCompleteByRemediationID(input.RRID, finalResult); completeErr != nil {
-			t.logger.V(1).Info("no HTTP session found to force-complete on select_workflow",
-				"rr_id", input.RRID, "error", completeErr)
-		}
 
-		if releaseErr := t.sessions.Release(driver.SessionID, "workflow_selected"); releaseErr != nil {
-			if !errors.Is(releaseErr, mcpinternal.ErrSessionNotFound) {
-				t.logger.Error(releaseErr, "failed to release MCP lease", "session_id", driver.SessionID)
+			if releaseErr := t.sessions.Release(sessionID, "workflow_selected"); releaseErr != nil {
+				if !errors.Is(releaseErr, mcpinternal.ErrSessionNotFound) {
+					t.logger.Error(releaseErr, "failed to release MCP lease", "session_id", sessionID)
+				}
 			}
-		}
+		}()
 	}
 
 	return SelectWorkflowOutput{
