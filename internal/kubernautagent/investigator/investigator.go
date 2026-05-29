@@ -315,6 +315,8 @@ func (inv *Investigator) RunRCAExtractionFromConversation(ctx context.Context, m
 // (BuildPhase1Context + runWorkflowSelection) so that interactive and
 // autonomous workflow discovery produce consistent results.
 func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal katypes.SignalContext, rcaResult *katypes.InvestigationResult, enrichData *prompt.EnrichmentData, correlationID string) (*katypes.InvestigationResult, error) {
+	inv.pipeline.AnomalyDetector.Reset()
+
 	client := inv.client
 	modelName := inv.modelName
 	var runtimeParams llm.RuntimeParams
