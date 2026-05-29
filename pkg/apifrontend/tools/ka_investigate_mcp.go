@@ -226,6 +226,9 @@ func BridgeEventsToA2A(ctx context.Context, events <-chan ka.InvestigationEvent)
 			if text != "" {
 				_ = launcher.EmitReasoningSafe(ctx, text)
 			}
+			if evt.Type == ka.EventTypeComplete || evt.Type == ka.EventTypeCancelled {
+				return
+			}
 		}
 	}
 }
@@ -253,6 +256,9 @@ func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.Investigat
 				if chunk != "" {
 					summary.WriteString(chunk)
 				}
+			}
+			if evt.Type == ka.EventTypeComplete || evt.Type == ka.EventTypeCancelled {
+				return summary.String()
 			}
 		}
 	}
