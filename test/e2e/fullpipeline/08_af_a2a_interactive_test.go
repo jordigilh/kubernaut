@@ -82,7 +82,7 @@ var _ = Describe("AF A2A Interactive 4-Phase Full Pipeline [E2E-FP-1189-003]", L
 		GinkgoWriter.Printf("  Turn 4 — create RR OK\n")
 
 		By("Waiting for full pipeline execution")
-		rrName := fpWaitForRR("memory-eater", 120*time.Second)
+		rrName := fpWaitForRRWithTargetNS("memory-eater", namespace, 120*time.Second)
 		Expect(rrName).NotTo(BeEmpty())
 		fpWaitForWEComplete(rrName, 5*time.Minute)
 		GinkgoWriter.Printf("  Full pipeline completed for %s\n", rrName)
