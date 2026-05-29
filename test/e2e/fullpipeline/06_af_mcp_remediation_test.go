@@ -108,8 +108,8 @@ spec:
 		})
 
 		By("Waiting for full pipeline execution (RR → WE completion)")
-		foundRR := fpWaitForRR(rrName, 120*time.Second)
-		Expect(foundRR).NotTo(BeEmpty())
+		foundRR := fpWaitForRR("memory-eater", 120*time.Second)
+		Expect(foundRR).To(Equal(rrName))
 		GinkgoWriter.Printf("  RemediationRequest created: %s\n", foundRR)
 
 		fpWaitForWEComplete(foundRR, 5*time.Minute)
