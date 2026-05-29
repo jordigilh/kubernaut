@@ -58,11 +58,10 @@ var _ = Describe("af_create_rr wiring (#1282)", func() {
 			Description: "IT wiring test",
 		}, "it-user", nil, nil)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(result.RRID).To(HavePrefix(ns + "/"))
+		Expect(result.RRID).To(HavePrefix("rr-"))
 		Expect(result.AlreadyExists).To(BeFalse())
 
-		rrName := result.RRID[len(ns)+1:]
-		created, getErr := dynamicClient.Resource(rrGVR).Namespace(ns).Get(ctx, rrName, metav1.GetOptions{})
+		created, getErr := dynamicClient.Resource(rrGVR).Namespace(ns).Get(ctx, result.RRID, metav1.GetOptions{})
 		Expect(getErr).NotTo(HaveOccurred())
 
 		metaNS := created.GetNamespace()
@@ -72,7 +71,7 @@ var _ = Describe("af_create_rr wiring (#1282)", func() {
 		Expect(targetNS).To(Equal(ns), "targetResource.namespace = workloadNS (same-NS case per ADR-057)")
 
 		DeferCleanup(func() {
-			_ = dynamicClient.Resource(rrGVR).Namespace(ns).Delete(ctx, rrName, metav1.DeleteOptions{})
+			_ = dynamicClient.Resource(rrGVR).Namespace(ns).Delete(ctx, result.RRID, metav1.DeleteOptions{})
 		})
 	})
 
@@ -87,15 +86,14 @@ var _ = Describe("af_create_rr wiring (#1282)", func() {
 		}, "it-user", nil, nil)
 		Expect(err).NotTo(HaveOccurred())
 
-		rrName := result.RRID[len("default")+1:]
-		created, getErr := dynamicClient.Resource(rrGVR).Namespace("default").Get(ctx, rrName, metav1.GetOptions{})
+		created, getErr := dynamicClient.Resource(rrGVR).Namespace("default").Get(ctx, result.RRID, metav1.GetOptions{})
 		Expect(getErr).NotTo(HaveOccurred())
 
 		source, _, _ := unstructured.NestedString(created.Object, "spec", "signalSource")
 		Expect(source).To(Equal("a2a-agent"))
 
 		DeferCleanup(func() {
-			_ = dynamicClient.Resource(rrGVR).Namespace("default").Delete(ctx, rrName, metav1.DeleteOptions{})
+			_ = dynamicClient.Resource(rrGVR).Namespace("default").Delete(ctx, result.RRID, metav1.DeleteOptions{})
 		})
 	})
 
@@ -110,8 +108,7 @@ var _ = Describe("af_create_rr wiring (#1282)", func() {
 		}, "it-user", nil, nil)
 		Expect(err).NotTo(HaveOccurred())
 
-		rrName := result.RRID[len("default")+1:]
-		created, getErr := dynamicClient.Resource(rrGVR).Namespace("default").Get(ctx, rrName, metav1.GetOptions{})
+		created, getErr := dynamicClient.Resource(rrGVR).Namespace("default").Get(ctx, result.RRID, metav1.GetOptions{})
 		Expect(getErr).NotTo(HaveOccurred())
 
 		signalName, _, _ := unstructured.NestedString(created.Object, "spec", "signalName")
@@ -119,7 +116,7 @@ var _ = Describe("af_create_rr wiring (#1282)", func() {
 			"with no triager and no events, fallback should be unknown")
 
 		DeferCleanup(func() {
-			_ = dynamicClient.Resource(rrGVR).Namespace("default").Delete(ctx, rrName, metav1.DeleteOptions{})
+			_ = dynamicClient.Resource(rrGVR).Namespace("default").Delete(ctx, result.RRID, metav1.DeleteOptions{})
 		})
 	})
 
@@ -159,15 +156,14 @@ var _ = Describe("af_create_rr wiring (#1282)", func() {
 		}, "it-user", nil, nil)
 		Expect(err).NotTo(HaveOccurred())
 
-		rrName := result.RRID[len("default")+1:]
-		created, getErr := dynamicClient.Resource(rrGVR).Namespace("default").Get(ctx, rrName, metav1.GetOptions{})
+		created, getErr := dynamicClient.Resource(rrGVR).Namespace("default").Get(ctx, result.RRID, metav1.GetOptions{})
 		Expect(getErr).NotTo(HaveOccurred())
 
 		signalName, _, _ := unstructured.NestedString(created.Object, "spec", "signalName")
 		Expect(signalName).To(Equal("OOMKilling"), "K8s OOMKilling event should drive signalName")
 
 		DeferCleanup(func() {
-			_ = dynamicClient.Resource(rrGVR).Namespace("default").Delete(ctx, rrName, metav1.DeleteOptions{})
+			_ = dynamicClient.Resource(rrGVR).Namespace("default").Delete(ctx, result.RRID, metav1.DeleteOptions{})
 		})
 	})
 
@@ -188,8 +184,7 @@ var _ = Describe("af_create_rr wiring (#1282)", func() {
 		Expect(result.Severity).NotTo(BeEmpty())
 
 		DeferCleanup(func() {
-			rrName := result.RRID[len("default")+1:]
-			_ = dynamicClient.Resource(rrGVR).Namespace("default").Delete(ctx, rrName, metav1.DeleteOptions{})
+			_ = dynamicClient.Resource(rrGVR).Namespace("default").Delete(ctx, result.RRID, metav1.DeleteOptions{})
 		})
 	})
 
@@ -282,8 +277,7 @@ var _ = Describe("af_create_rr wiring (#1282)", func() {
 		Expect(events[0].Detail).To(HaveKeyWithValue("namespace", "default"))
 
 		DeferCleanup(func() {
-			rrName := result.RRID[len("default")+1:]
-			_ = dynamicClient.Resource(rrGVR).Namespace("default").Delete(ctx, rrName, metav1.DeleteOptions{})
+			_ = dynamicClient.Resource(rrGVR).Namespace("default").Delete(ctx, result.RRID, metav1.DeleteOptions{})
 		})
 	})
 })

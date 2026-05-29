@@ -78,9 +78,7 @@ var _ = Describe("Investigation Event Bridge Wiring (IT-AF-1326)", func() {
 								"kind": "Pod",
 								"name": "test-pod",
 							},
-							"businessPriority": map[string]interface{}{
-								"tier": "Silver",
-							},
+							"businessPriority": "P2",
 							"enrichmentResults": map[string]interface{}{},
 						},
 					},
