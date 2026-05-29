@@ -71,13 +71,26 @@ func (b *EventLogBridge) Run(ctx context.Context) {
 	defer b.logger.Info("EventLogBridge stopped",
 		"investigation_session_id", b.sessionID,
 		"events_forwarded", b.seq.Load())
+	b.logger.Info("EventLogBridge entering for-select loop",
+		"investigation_session_id", b.sessionID,
+		"events_chan_nil", b.events == nil)
 	for {
 		select {
 		case <-ctx.Done():
+			b.logger.Info("EventLogBridge: ctx.Done fired",
+				"investigation_session_id", b.sessionID)
 			return
 		case evt, ok := <-b.events:
 			if !ok {
+				b.logger.Info("EventLogBridge: channel closed",
+					"investigation_session_id", b.sessionID,
+					"events_forwarded_at_close", b.seq.Load())
 				return
+			}
+			if b.seq.Load() == 0 {
+				b.logger.Info("EventLogBridge: first event received!",
+					"investigation_session_id", b.sessionID,
+					"event_type", evt.Type)
 			}
 			b.forward(evt)
 		}
