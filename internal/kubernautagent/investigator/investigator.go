@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -42,6 +43,13 @@ import (
 )
 
 const maxSelfCorrectionAttempts = 3
+
+// Diagnostic counters for emitToSink — temporary, remove after RCA.
+var (
+	diagSendOK   atomic.Int64
+	diagSendDrop atomic.Int64
+	diagSinkNil  atomic.Int64
+)
 
 // maxForensicPayloadBytes caps serialized accumulated messages in cancellation
 // audit events to 64KB (SEC-1, OPS-3). Generous to preserve forensic RAG value.
@@ -332,6 +340,17 @@ func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal
 // Per BR-AUDIT-005, all audit events use signal.RemediationID as correlation ID
 // so that DataStorage queries by remediation_id return the full investigation trail.
 func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalContext) (*katypes.InvestigationResult, error) {
+	diagSendOK.Store(0)
+	diagSendDrop.Store(0)
+	diagSinkNil.Store(0)
+	defer func() {
+		inv.logger.Info("DIAG emitToSink summary",
+			"session_id", session.SessionIDFromContext(ctx),
+			"sent", diagSendOK.Load(),
+			"dropped", diagSendDrop.Load(),
+			"sink_nil", diagSinkNil.Load(),
+			"sink_ptr", fmt.Sprintf("%p", session.EventSinkFromContext(ctx)))
+	}()
 	inv.pipeline.AnomalyDetector.Reset()
 
 	// #783: Pin client, model name, and runtime params for the duration of
@@ -1281,7 +1300,11 @@ func (inv *Investigator) chatOrStream(ctx context.Context, client llm.Client, re
 	}
 	inv.logger.Info("chatOrStream: sink active, using streaming",
 		"turn", turn, "phase", phase,
-		"session_id", session.SessionIDFromContext(ctx))
+		"session_id", session.SessionIDFromContext(ctx),
+		"sink_ptr", fmt.Sprintf("%p", sink),
+		"diag_sent", diagSendOK.Load(),
+		"diag_dropped", diagSendDrop.Load(),
+		"diag_nil", diagSinkNil.Load())
 
 	temp := runtimeParams.Temperature
 	req.Options.Temperature = &temp
@@ -1310,6 +1333,7 @@ func (inv *Investigator) chatOrStream(ctx context.Context, client llm.Client, re
 func emitToSink(ctx context.Context, eventType string, turn int, phase string, data map[string]interface{}) {
 	sink := session.EventSinkFromContext(ctx)
 	if sink == nil {
+		diagSinkNil.Add(1)
 		return
 	}
 	var raw json.RawMessage
@@ -1328,7 +1352,9 @@ func emitToSink(ctx context.Context, eventType string, turn int, phase string, d
 	}
 	select {
 	case sink <- event:
+		diagSendOK.Add(1)
 	default:
+		diagSendDrop.Add(1)
 	}
 }
 

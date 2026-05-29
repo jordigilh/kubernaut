@@ -511,7 +511,8 @@ func (m *Manager) Subscribe(ctx context.Context, id string) (<-chan Investigatio
 			m.logger.Info("Subscribe: LazySink channel activated",
 				"session_id", id,
 				"status", string(sess.Status),
-				"has_lazy_sink", true)
+				"has_lazy_sink", true,
+				"chan_ptr", fmt.Sprintf("%p", ch))
 		} else {
 			m.logger.Info("Subscribe: LazySink is nil — events will NOT flow",
 				"session_id", id,

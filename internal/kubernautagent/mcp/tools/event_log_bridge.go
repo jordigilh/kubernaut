@@ -17,12 +17,12 @@ limitations under the License.
 package tools
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"sync/atomic"
 
 	"github.com/go-logr/logr"
-
-	"context"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 )
@@ -66,7 +66,8 @@ type logEnvelope struct {
 // Run processes events until the context is cancelled or the channel closes.
 func (b *EventLogBridge) Run(ctx context.Context) {
 	b.logger.Info("EventLogBridge started",
-		"investigation_session_id", b.sessionID)
+		"investigation_session_id", b.sessionID,
+		"events_chan_ptr", fmt.Sprintf("%p", b.events))
 	defer b.logger.Info("EventLogBridge stopped",
 		"investigation_session_id", b.sessionID,
 		"events_forwarded", b.seq.Load())
