@@ -19,6 +19,7 @@ package tools_test
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
@@ -456,13 +457,19 @@ var _ = Describe("kubernaut_select_workflow — discovery gating & auto-complete
 			Expect(err).NotTo(HaveOccurred())
 			Expect(output.Status).To(Equal("workflow_selected"))
 
-			Expect(completer.completedID).To(Equal("http-sess-001"))
+			// Session completion and lease release are deferred to a goroutine
+			// to avoid closing the transport before the MCP response is sent.
+			Eventually(func() string { return completer.completedID }).
+				WithTimeout(2 * time.Second).WithPolling(50 * time.Millisecond).
+				Should(Equal("http-sess-001"))
 			Expect(completer.completedResult).NotTo(BeNil())
 			Expect(completer.completedResult.WorkflowID).To(Equal(wfID))
 			Expect(completer.completedResult.RCASummary).To(Equal("OOM crash"))
 			Expect(completer.completedResult.WorkflowRationale).To(Equal("User-selected via interactive mode"))
 
-			Expect(sessions.releasedID).To(Equal("sess-ac-001"))
+			Eventually(func() string { return sessions.releasedID }).
+				WithTimeout(2 * time.Second).WithPolling(50 * time.Millisecond).
+				Should(Equal("sess-ac-001"))
 			Expect(sessions.releasedReason).To(Equal("workflow_selected"))
 		})
 	})
@@ -886,8 +893,10 @@ var _ = Describe("kubernaut_select_workflow — per-workflow parameter hand-off 
 			Expect(err).NotTo(HaveOccurred(),
 				"select_workflow must succeed when the user picks a discovery-listed alternative")
 
-			Expect(completer.completedResult).NotTo(BeNil(),
-				"the HTTP completer must receive the merged investigation result for session completion")
+			// Session completion is deferred to a goroutine.
+			Eventually(func() *katypes.InvestigationResult { return completer.completedResult }).
+				WithTimeout(2 * time.Second).WithPolling(50 * time.Millisecond).
+				ShouldNot(BeNil(), "the HTTP completer must receive the merged investigation result for session completion")
 			Expect(completer.completedResult.Parameters).To(HaveKey("ALT_KEY"),
 				"the completer must forward parameters for the workflow the user actually selected")
 			Expect(completer.completedResult.Parameters["ALT_KEY"]).To(Equal("alt_val"),

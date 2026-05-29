@@ -313,8 +313,10 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 				FunctionResponse: &genai.FunctionResponse{
 					Name: "kubernaut_watch",
 					Response: map[string]any{
-						"phase":  "Executing",
-						"status": "WorkflowRunning",
+						"events": []any{
+							map[string]any{"phase": "Executing", "resource": "RemediationRequest"},
+						},
+						"status": "completed",
 					},
 				},
 			}
@@ -518,29 +520,34 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 		It("UT-AF-1189-158: kubernaut_watch response with phase only -> phase text", func() {
 			part := &genai.Part{
 				FunctionResponse: &genai.FunctionResponse{
-					Name:     "kubernaut_watch",
-					Response: map[string]any{"phase": "Executing"},
+					Name: "kubernaut_watch",
+					Response: map[string]any{
+						"events": []any{
+							map[string]any{"phase": "Executing"},
+						},
+						"status": "completed",
+					},
 				},
 			}
 			result, err := convert(context.Background(), nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal("Phase: Executing\n\n"))
+			Expect(tp.Text).To(Equal("Remediation completed (final phase: Executing)\n\n"))
 		})
 
 		It("UT-AF-1189-159: kubernaut_watch response with status only -> status text", func() {
 			part := &genai.Part{
 				FunctionResponse: &genai.FunctionResponse{
 					Name:     "kubernaut_watch",
-					Response: map[string]any{"status": "WorkflowRunning"},
+					Response: map[string]any{"status": "completed"},
 				},
 			}
 			result, err := convert(context.Background(), nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal("WorkflowRunning\n\n"))
+			Expect(tp.Text).To(Equal("Remediation completed.\n\n"))
 		})
 
 		It("UT-AF-1189-160: kubernaut_watch response with empty fields -> generic fallback", func() {
