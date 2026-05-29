@@ -113,7 +113,6 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 		{"approve", func() (tool.Tool, error) { return tools.NewApproveTool(k8s) }},
 		{"cancel_remediation", func() (tool.Tool, error) { return tools.NewCancelRemediationTool(k8s, cfg.Namespace) }},
 		{"watch", func() (tool.Tool, error) { return tools.NewWatchTool(k8s) }},
-		{"await_session", func() (tool.Tool, error) { return tools.NewAwaitSessionTool(k8s) }},
 		{"investigate", func() (tool.Tool, error) {
 			return tools.NewInvestigateMCPTool(dedicatedC, k8s, cfg.Namespace, cfg.Auditor, cfg.InvestigationRegistry, agentSessionStartedHook(cfg))
 		}},
