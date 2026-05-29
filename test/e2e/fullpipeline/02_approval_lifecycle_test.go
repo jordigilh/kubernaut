@@ -174,18 +174,34 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 		By("Step 4b: Verifying SP classified environment as production")
 		spList := &signalprocessingv1.SignalProcessingList{}
 		Expect(apiReader.List(ctx, spList, client.InNamespace(namespace))).To(Succeed())
+		var matchedSP *signalprocessingv1.SignalProcessing
 		for i := range spList.Items {
 			sp := &spList.Items[i]
 			if sp.Spec.RemediationRequestRef.Name == remediationRequest.Name {
-				Expect(sp.Status.EnvironmentClassification.Environment).To(Equal(signalprocessingv1.EnvironmentProduction),
-					"SP should classify namespace as production (kubernaut.ai/environment label)")
-				Expect(sp.Status.EnvironmentClassification.Source).To(Equal("namespace-labels"),
-					"SP should classify from namespace labels when kubernaut.ai/environment is set")
-				GinkgoWriter.Printf("  ✅ SP environment: %s (source: %s)\n",
-					sp.Status.EnvironmentClassification.Environment, sp.Status.EnvironmentClassification.Source)
+				matchedSP = sp
 				break
 			}
 		}
+		Expect(matchedSP).ToNot(BeNil(), "SP CR for RR %s must exist", remediationRequest.Name)
+		Expect(matchedSP.Status.EnvironmentClassification).ToNot(BeNil(),
+			"SP EnvironmentClassification must be populated")
+		Expect(matchedSP.Status.EnvironmentClassification.Environment).To(Equal(signalprocessingv1.EnvironmentProduction),
+			"SP should classify namespace as production (kubernaut.ai/environment label)")
+		Expect(matchedSP.Status.EnvironmentClassification.Source).To(Equal("namespace-labels"),
+			"SP should classify from namespace labels when kubernaut.ai/environment is set")
+		GinkgoWriter.Printf("  ✅ SP environment: %s (source: %s)\n",
+			matchedSP.Status.EnvironmentClassification.Environment, matchedSP.Status.EnvironmentClassification.Source)
+
+		// BR-SP-070: Verify priority assignment for production+critical signal
+		By("Step 4c: Verifying SP assigned P0 priority for production critical signal [BR-SP-070]")
+		Expect(matchedSP.Status.PriorityAssignment).ToNot(BeNil(),
+			"SP PriorityAssignment must be populated for production critical signal")
+		Expect(matchedSP.Status.PriorityAssignment.Priority).To(Equal(signalprocessingv1.PriorityP0),
+			"SP should assign P0 priority for production+critical (highest urgency)")
+		Expect(matchedSP.Status.PriorityAssignment.Source).To(BeElementOf("rego-policy", "policy-matrix"),
+			"SP priority source should be rego-policy or policy-matrix")
+		GinkgoWriter.Printf("  ✅ SP priority: %s (source: %s)\n",
+			matchedSP.Status.PriorityAssignment.Priority, matchedSP.Status.PriorityAssignment.Source)
 
 		// ================================================================
 		// Step 5: Wait for AIAnalysis to complete WITH approval required
@@ -214,6 +230,31 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 		Expect(aaObj.Status.ApprovalReason).ToNot(BeEmpty(),
 			"AIAnalysis approval reason should be populated")
 		GinkgoWriter.Printf("  ✅ Approval required: reason=%s\n", aaObj.Status.ApprovalReason)
+
+		// Verify AA signal context propagated environment, priority, severity, signalMode from SP
+		By("Step 5b: Verifying AA signal context contains full SP-derived fields")
+		sc := aaObj.Spec.AnalysisRequest.SignalContext
+		Expect(sc.Environment).To(Equal(string(signalprocessingv1.EnvironmentProduction)),
+			"AA SignalContext.Environment should be 'Production' (propagated from SP EnvironmentClassification)")
+		Expect(sc.BusinessPriority).To(Equal(string(signalprocessingv1.PriorityP0)),
+			"AA SignalContext.BusinessPriority should be 'P0' (propagated from SP PriorityAssignment)")
+		Expect(sc.Severity).To(BeElementOf("critical", "high"),
+			"AA SignalContext.Severity should reflect SP normalized severity for OOMKill signal")
+		Expect(sc.SignalMode).To(BeElementOf("reactive", "proactive"),
+			"AA SignalContext.SignalMode must be populated (BR-AI-084)")
+		GinkgoWriter.Printf("  ✅ AA signal context: env=%s, priority=%s, severity=%s, mode=%s\n",
+			sc.Environment, sc.BusinessPriority, sc.Severity, sc.SignalMode)
+
+		// Verify EnrichmentResults propagated from SP (BR-ORCH-025)
+		By("Step 5c: Verifying AA EnrichmentResults contains BusinessClassification and CustomLabels from SP")
+		er := sc.EnrichmentResults
+		Expect(er.KubernetesContext).ToNot(BeNil(),
+			"AA EnrichmentResults.KubernetesContext must be propagated from SP")
+		Expect(er.BusinessClassification).ToNot(BeNil(),
+			"AA EnrichmentResults.BusinessClassification must be propagated from SP (BR-SP-080, BR-SP-081)")
+		GinkgoWriter.Printf("  ✅ AA enrichment: bizUnit=%s, criticality=%s, customLabels=%d keys\n",
+			er.BusinessClassification.BusinessUnit, er.BusinessClassification.Criticality,
+			len(er.KubernetesContext.CustomLabels))
 
 		// ================================================================
 		// Step 6: Wait for RemediationApprovalRequest to be created
