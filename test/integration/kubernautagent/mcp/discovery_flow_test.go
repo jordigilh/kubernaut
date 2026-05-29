@@ -159,6 +159,9 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 				"action": "discover_workflows",
 			})
 			Expect(err).NotTo(HaveOccurred())
+			if result.IsError {
+				GinkgoWriter.Printf("DISC-001 discover_workflows error content: %v\n", result.Content)
+			}
 			Expect(result.IsError).To(BeFalse())
 			output, err = decodeOutput(result)
 			Expect(err).NotTo(HaveOccurred())
@@ -265,6 +268,9 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 				"action": "discover_workflows",
 			})
 			Expect(err).NotTo(HaveOccurred())
+			if result.IsError {
+				GinkgoWriter.Printf("DISC-003 discover_workflows error content: %v\n", result.Content)
+			}
 			Expect(result.IsError).To(BeFalse())
 
 			By("sending a message (invalidates discovery)")
@@ -325,6 +331,9 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 				"action": "discover_workflows",
 			})
 			Expect(err).NotTo(HaveOccurred())
+			if result.IsError {
+				GinkgoWriter.Printf("DISC-004 discover_workflows error content: %v\n", result.Content)
+			}
 			Expect(result.IsError).To(BeFalse())
 
 			By("selecting a workflow_id not in discovery results")
@@ -396,6 +405,9 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 				"action": "discover_workflows",
 			})
 			Expect(err).NotTo(HaveOccurred())
+			if result.IsError {
+				GinkgoWriter.Printf("DISC-006 discover_workflows error content: %v\n", result.Content)
+			}
 			Expect(result.IsError).To(BeFalse())
 
 			By("completing with no action (should use stored RCA)")
@@ -473,6 +485,9 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 				"action": "discover_workflows",
 			})
 			Expect(err).NotTo(HaveOccurred())
+			if result.IsError {
+				GinkgoWriter.Printf("DISC-008 discover_workflows error content: %v\n", result.Content)
+			}
 			Expect(result.IsError).To(BeFalse())
 
 			By("selecting the alternative workflow")
