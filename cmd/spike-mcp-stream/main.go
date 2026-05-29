@@ -97,7 +97,7 @@ func main() {
 		fmt.Printf("FAIL: %v\n", err)
 		os.Exit(1)
 	}
-	defer session.Close()
+	defer func() { _ = session.Close() }()
 	fmt.Println("OK")
 
 	// Step 2: SetLoggingLevel
@@ -163,10 +163,6 @@ func main() {
 			current := eventCount.Load()
 			fmt.Printf("   [%s] events so far: %d\n",
 				time.Since(startTime).Round(time.Second), current)
-			// If investigation likely done (no new events for a while after some arrived)
-			if current > 0 && current == eventsAtCallEnd {
-				// No new events in last tick
-			}
 			eventsAtCallEnd = current
 		}
 	}

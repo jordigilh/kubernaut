@@ -19,6 +19,7 @@ package tools_test
 import (
 	"context"
 	"errors"
+	"sync"
 	"sync/atomic"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -31,6 +32,7 @@ import (
 )
 
 type mockSessionManager struct {
+	mu              sync.Mutex
 	takeoverSession *mcpinternal.InteractiveSession
 	takeoverErr     error
 	releaseErr      error
@@ -42,24 +44,38 @@ type mockSessionManager struct {
 }
 
 func (m *mockSessionManager) Takeover(_ context.Context, _ string, user mcpinternal.UserInfo) (*mcpinternal.InteractiveSession, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	return m.takeoverSession, m.takeoverErr
 }
 
 func (m *mockSessionManager) Release(sessionID string, reason string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.releasedID = sessionID
 	m.releasedReason = reason
 	return m.releaseErr
 }
 
 func (m *mockSessionManager) GetDriver(_ string) (*mcpinternal.InteractiveSession, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	return m.getDriverResult, m.getDriverErr
 }
 
 func (m *mockSessionManager) IsDriverActive(_ string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	return m.isActive
 }
 
 func (m *mockSessionManager) TouchActivity(_ string) {}
+
+func (m *mockSessionManager) getReleased() (string, string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.releasedID, m.releasedReason
+}
 
 type mockInvestigatorRunner struct {
 	response  string

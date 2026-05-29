@@ -19,6 +19,7 @@ package tools_test
 import (
 	"context"
 	"errors"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -32,7 +33,9 @@ import (
 )
 
 // mockHTTPCompleter implements mcptools.HTTPSessionCompleter for unit tests.
+// Fields written by goroutines are guarded by mu.
 type mockHTTPCompleter struct {
+	mu              sync.Mutex
 	completedID     string
 	completedResult *katypes.InvestigationResult
 	completeErr     error
@@ -41,18 +44,30 @@ type mockHTTPCompleter struct {
 }
 
 func (m *mockHTTPCompleter) CompleteUserDriving(id string, result *katypes.InvestigationResult) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.completedID = id
 	m.completedResult = result
 	return m.completeErr
 }
 
 func (m *mockHTTPCompleter) FindUserDrivingByRemediationID(_ string) (string, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	return m.foundID, m.found
 }
 
 func (m *mockHTTPCompleter) ForceCompleteByRemediationID(_ string, result *katypes.InvestigationResult) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.completedResult = result
 	return m.completeErr
+}
+
+func (m *mockHTTPCompleter) getCompleted() (string, *katypes.InvestigationResult) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.completedID, m.completedResult
 }
 
 // discoveryWithWorkflow creates a DiscoveryResult with a recommended workflow.
@@ -459,18 +474,21 @@ var _ = Describe("kubernaut_select_workflow — discovery gating & auto-complete
 
 			// Session completion and lease release are deferred to a goroutine
 			// to avoid closing the transport before the MCP response is sent.
-			Eventually(func() string { return completer.completedID }).
-				WithTimeout(2 * time.Second).WithPolling(50 * time.Millisecond).
-				Should(Equal("http-sess-001"))
-			Expect(completer.completedResult).NotTo(BeNil())
-			Expect(completer.completedResult.WorkflowID).To(Equal(wfID))
-			Expect(completer.completedResult.RCASummary).To(Equal("OOM crash"))
-			Expect(completer.completedResult.WorkflowRationale).To(Equal("User-selected via interactive mode"))
+			// All assertions use mutex-safe getters to avoid data races.
+			Eventually(func(g Gomega) {
+				id, result := completer.getCompleted()
+				g.Expect(id).To(Equal("http-sess-001"))
+				g.Expect(result).NotTo(BeNil())
+				g.Expect(result.WorkflowID).To(Equal(wfID))
+				g.Expect(result.RCASummary).To(Equal("OOM crash"))
+				g.Expect(result.WorkflowRationale).To(Equal("User-selected via interactive mode"))
+			}).WithTimeout(2 * time.Second).WithPolling(50 * time.Millisecond).Should(Succeed())
 
-			Eventually(func() string { return sessions.releasedID }).
-				WithTimeout(2 * time.Second).WithPolling(50 * time.Millisecond).
-				Should(Equal("sess-ac-001"))
-			Expect(sessions.releasedReason).To(Equal("workflow_selected"))
+			Eventually(func(g Gomega) {
+				id, reason := sessions.getReleased()
+				g.Expect(id).To(Equal("sess-ac-001"))
+				g.Expect(reason).To(Equal("workflow_selected"))
+			}).WithTimeout(2 * time.Second).WithPolling(50 * time.Millisecond).Should(Succeed())
 		})
 	})
 })
@@ -894,15 +912,17 @@ var _ = Describe("kubernaut_select_workflow — per-workflow parameter hand-off 
 				"select_workflow must succeed when the user picks a discovery-listed alternative")
 
 			// Session completion is deferred to a goroutine.
-			Eventually(func() *katypes.InvestigationResult { return completer.completedResult }).
-				WithTimeout(2 * time.Second).WithPolling(50 * time.Millisecond).
-				ShouldNot(BeNil(), "the HTTP completer must receive the merged investigation result for session completion")
-			Expect(completer.completedResult.Parameters).To(HaveKey("ALT_KEY"),
-				"the completer must forward parameters for the workflow the user actually selected")
-			Expect(completer.completedResult.Parameters["ALT_KEY"]).To(Equal("alt_val"),
-				"downstream automation must see concrete values from the alternative workflow")
-			Expect(completer.completedResult.Parameters).NotTo(HaveKey("REC_KEY"),
-				"recommended-workflow parameters must not leak after an explicit alternative choice")
+			Eventually(func(g Gomega) {
+				_, result := completer.getCompleted()
+				g.Expect(result).NotTo(BeNil(),
+					"the HTTP completer must receive the merged investigation result for session completion")
+				g.Expect(result.Parameters).To(HaveKey("ALT_KEY"),
+					"the completer must forward parameters for the workflow the user actually selected")
+				g.Expect(result.Parameters["ALT_KEY"]).To(Equal("alt_val"),
+					"downstream automation must see concrete values from the alternative workflow")
+				g.Expect(result.Parameters).NotTo(HaveKey("REC_KEY"),
+					"recommended-workflow parameters must not leak after an explicit alternative choice")
+			}).WithTimeout(2 * time.Second).WithPolling(50 * time.Millisecond).Should(Succeed())
 		})
 	})
 })
