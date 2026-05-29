@@ -51,6 +51,8 @@ func (d *discoverySignalResolver) ResolveSignalContext(_ context.Context, _ stri
 	return &katypes.SignalContext{
 		Name:         "OOMKilled",
 		Severity:     "critical",
+		Environment:  "Production",
+		Priority:     "P0",
 		ResourceKind: "Deployment",
 		Namespace:    "production",
 		ResourceName: "api-server",
