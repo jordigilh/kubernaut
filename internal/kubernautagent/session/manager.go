@@ -165,6 +165,10 @@ func (m *Manager) launchInvestigation(ctx context.Context, id string, fn Investi
 	sess := m.store.sessions[id]
 	sess.cancel = cancelFn
 	sess.lazySink = ls
+	m.logger.Info("launchInvestigation: LazySink attached to session",
+		"session_id", id,
+		"status", string(sess.Status),
+		"has_deferred_fn", sess.deferredFn != nil)
 	m.store.mu.Unlock()
 
 	if updateErr := m.store.Update(id, StatusRunning, nil, nil); updateErr != nil {
@@ -504,6 +508,14 @@ func (m *Manager) Subscribe(ctx context.Context, id string) (<-chan Investigatio
 		sess.eventChan = ch
 		if sess.lazySink != nil {
 			sess.lazySink.Set(ch)
+			m.logger.Info("Subscribe: LazySink channel activated",
+				"session_id", id,
+				"status", string(sess.Status),
+				"has_lazy_sink", true)
+		} else {
+			m.logger.Info("Subscribe: LazySink is nil — events will NOT flow",
+				"session_id", id,
+				"status", string(sess.Status))
 		}
 	}
 

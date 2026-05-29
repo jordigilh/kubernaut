@@ -1274,8 +1274,14 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 func (inv *Investigator) chatOrStream(ctx context.Context, client llm.Client, req llm.ChatRequest, turn int, phase string, modelName string, runtimeParams llm.RuntimeParams) (llm.ChatResponse, error) {
 	sink := session.EventSinkFromContext(ctx)
 	if sink == nil {
+		inv.logger.Info("chatOrStream: sink is nil, falling back to non-streaming Chat",
+			"turn", turn, "phase", phase,
+			"session_id", session.SessionIDFromContext(ctx))
 		return llm.ChatWithParams(ctx, client, req, runtimeParams)
 	}
+	inv.logger.Info("chatOrStream: sink active, using streaming",
+		"turn", turn, "phase", phase,
+		"session_id", session.SessionIDFromContext(ctx))
 
 	temp := runtimeParams.Temperature
 	req.Options.Temperature = &temp
