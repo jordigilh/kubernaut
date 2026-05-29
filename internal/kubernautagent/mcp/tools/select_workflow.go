@@ -79,16 +79,17 @@ type PreSelectionHook func(ctx context.Context, input SelectWorkflowInput, user 
 
 // SelectWorkflowInput defines the input schema for the kubernaut_select_workflow MCP tool.
 type SelectWorkflowInput struct {
-	RRID             string   `json:"rr_id"`
-	WorkflowID       string   `json:"workflow_id"`
-	Kind             string   `json:"kind,omitempty"`
-	Name             string   `json:"name,omitempty"`
-	Namespace        string   `json:"namespace,omitempty"`
-	APIVersion       string   `json:"api_version,omitempty"`
-	SpecHash         string   `json:"spec_hash,omitempty"`
-	IncidentID       string   `json:"incident_id,omitempty"`
-	ActingUser       string   `json:"acting_user,omitempty"`
-	ActingUserGroups []string `json:"acting_user_groups,omitempty"`
+	RRID             string         `json:"rr_id"`
+	WorkflowID       string         `json:"workflow_id"`
+	Kind             string         `json:"kind,omitempty"`
+	Name             string         `json:"name,omitempty"`
+	Namespace        string         `json:"namespace,omitempty"`
+	APIVersion       string         `json:"api_version,omitempty"`
+	SpecHash         string         `json:"spec_hash,omitempty"`
+	IncidentID       string         `json:"incident_id,omitempty"`
+	Parameters       map[string]any `json:"parameters,omitempty"`
+	ActingUser       string         `json:"acting_user,omitempty"`
+	ActingUserGroups []string       `json:"acting_user_groups,omitempty"`
 }
 
 // SelectWorkflowOutput defines the output schema for the kubernaut_select_workflow MCP tool.
