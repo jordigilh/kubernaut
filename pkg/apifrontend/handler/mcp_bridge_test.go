@@ -167,6 +167,7 @@ func newFakeDynamicClient(objects ...runtime.Object) *dynamicfake.FakeDynamicCli
 		{Group: "kubernaut.ai", Version: "v1alpha1", Resource: "remediationapprovalrequests"}: "RemediationApprovalRequestList",
 		{Group: "kubernaut.ai", Version: "v1alpha1", Resource: "signalprocessings"}:           "SignalProcessingList",
 		{Group: "kubernaut.ai", Version: "v1alpha1", Resource: "aianalyses"}:                  "AIAnalysisList",
+		{Group: "kubernaut.ai", Version: "v1alpha1", Resource: "investigationsessions"}:       "InvestigationSessionList",
 	}, objects...)
 }
 
