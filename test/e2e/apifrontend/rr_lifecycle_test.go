@@ -52,7 +52,7 @@ var _ = Describe("RR CRD Lifecycle (G4)", Label("e2e", "phase2", "g4"), func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		const rrName = "e2e-rr-lifecycle-01"
-		const rrNamespace = "default"
+		rrNamespace := e2eNamespace
 
 		By("TC-E2E-RR-01: Create RR via k8s client CRD fixture")
 		Expect(createRR(rrNamespace, rrName, "Deployment", "test-deploy-rr01")).To(Succeed())
@@ -106,11 +106,11 @@ var _ = Describe("RR CRD Lifecycle (G4)", Label("e2e", "phase2", "g4"), func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		const rrName = "e2e-rr-watch-07"
-		Expect(createRR("default", rrName, "Deployment", "test-deploy-rr07")).To(Succeed())
-		DeferCleanup(func() { deleteRR("default", rrName) })
+		Expect(createRR(e2eNamespace, rrName, "Deployment", "test-deploy-rr07")).To(Succeed())
+		DeferCleanup(func() { deleteRR(e2eNamespace, rrName) })
 
 		text, err := mcpToolCallWith(authToken, mcpSessionID, "kubernaut_watch", map[string]interface{}{
-			"namespace": "default",
+			"namespace": e2eNamespace,
 			"name":      rrName,
 		})
 		Expect(err).NotTo(HaveOccurred(), text)
@@ -126,7 +126,7 @@ var _ = Describe("RR CRD Lifecycle (G4)", Label("e2e", "phase2", "g4"), func() {
 
 var _ = Describe("RAR Flow (G5)", Label("e2e", "phase2", "g5"), func() {
 
-	const rrNamespace = "default"
+	rrNamespace := e2eNamespace
 
 	It("TC-E2E-RAR-01: kubernaut_approve succeeds for RAR referencing existing RR", func() {
 		const rrName = "e2e-rr-rar01"
