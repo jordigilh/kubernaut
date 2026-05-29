@@ -835,6 +835,11 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 	// kind (e.g. Namespace), the label override corrects it for tool context.
 	overriddenSignal := ApplySignalLabelOverrides(signal)
 	ctx = katypes.WithSignalContext(ctx, overriddenSignal)
+	inv.logger.Info("runWorkflowSelection: post-override signal",
+		"component_gvk", overriddenSignal.ComponentGVK(),
+		"resource_kind", overriddenSignal.ResourceKind,
+		"resource_api_version", overriddenSignal.ResourceAPIVersion,
+		"correlation_id", correlationID)
 
 	wfPromptSignal := SignalToPrompt(signal)
 	LogLabelOverrideOrRejection(inv.logger, signal, wfPromptSignal, correlationID, "workflow selection")
