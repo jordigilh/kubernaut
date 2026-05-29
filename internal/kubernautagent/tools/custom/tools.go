@@ -110,15 +110,6 @@ func signalFromContext(ctx context.Context, toolName string) (katypes.SignalCont
 	return signal, nil
 }
 
-// effectivePriority returns the signal priority or "P3" when unset.
-// DS rejects empty priority strings (OpenAPI enum validation), so we
-// default to the lowest priority to avoid 400 errors.
-func effectivePriority(p string) string {
-	if p == "" {
-		return "P3"
-	}
-	return p
-}
 
 // --- list_available_actions ---
 
