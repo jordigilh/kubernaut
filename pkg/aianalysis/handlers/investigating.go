@@ -62,6 +62,7 @@ type InvestigatingHandler struct {
 	maxInvestigationDuration time.Duration                // #1078: Wall-clock cap on investigation before PhaseFailed
 	recorder                 record.EventRecorder         // DD-EVENT-001: K8s event recorder for session lifecycle events
 	isChecker                InvestigationSessionChecker  // BR-INTERACTIVE-010: Check IS CRD before submit
+	isPhaseUpdater           ISPhaseUpdater               // BR-INTERACTIVE-010: Set IS Phase=Active after submit
 }
 
 // InvestigatingHandlerOption is a functional option for InvestigatingHandler configuration.
@@ -108,6 +109,15 @@ func WithMaxInvestigationDuration(d time.Duration) InvestigatingHandlerOption {
 func WithInvestigationSessionChecker(checker InvestigationSessionChecker) InvestigatingHandlerOption {
 	return func(h *InvestigatingHandler) {
 		h.isChecker = checker
+	}
+}
+
+// WithISPhaseUpdater injects the IS phase updater for setting Phase=Active after
+// AA submits to KA with interactive=true. This signals AF that the pending session
+// is ready for action=start. BR-INTERACTIVE-010.
+func WithISPhaseUpdater(updater ISPhaseUpdater) InvestigatingHandlerOption {
+	return func(h *InvestigatingHandler) {
+		h.isPhaseUpdater = updater
 	}
 }
 
@@ -472,6 +482,20 @@ func (h *InvestigatingHandler) handleSessionSubmit(ctx context.Context, analysis
 		analysis.Status.KASession.CreatedAt = &now
 		analysis.Status.KASession.PollCount = 0
 		analysis.Status.KASession.LastPolled = nil
+	}
+
+	// BR-INTERACTIVE-010: After submitting with interactive=true, set the IS
+	// CRD phase to Active so AF knows the pending session is ready. Best-effort:
+	// failure is logged but does not block the investigation.
+	if interactive && h.isPhaseUpdater != nil {
+		rrName := analysis.Spec.RemediationRequestRef.Name
+		if phaseErr := h.isPhaseUpdater.SetActivePhase(ctx, rrName); phaseErr != nil {
+			h.log.Error(phaseErr, "Failed to set IS phase to Active after interactive submit",
+				"rrName", rrName, "sessionID", sessionID)
+		} else {
+			h.log.Info("IS CRD phase set to Active",
+				"rrName", rrName, "sessionID", sessionID)
+		}
 	}
 
 	// Set condition: SessionCreated (first time) or SessionRegenerated (after loss)

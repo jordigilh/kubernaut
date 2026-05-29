@@ -92,3 +92,51 @@ const ISFieldIndexRRName = "spec.remediationRequestRef.name"
 
 // Compile-time interface assertion.
 var _ InvestigationSessionChecker = (*K8sInvestigationSessionChecker)(nil)
+
+// K8sISPhaseUpdater implements ISPhaseUpdater by updating InvestigationSession
+// CRD status via the controller-runtime client. AA calls SetActivePhase after
+// submitting to KA with interactive=true to signal AF that the session is ready.
+type K8sISPhaseUpdater struct {
+	client    client.Client
+	namespace string
+}
+
+// NewK8sISPhaseUpdater creates an updater that transitions IS CRDs to Active
+// in the given namespace. Uses the cached client (mgr.GetClient()) because the
+// write path is less timing-sensitive than the read path.
+func NewK8sISPhaseUpdater(c client.Client, namespace string) *K8sISPhaseUpdater {
+	return &K8sISPhaseUpdater{client: c, namespace: namespace}
+}
+
+// SetActivePhase finds the non-terminal IS CRD for the given RR and sets its
+// status.phase to Active. Best-effort: returns nil if no IS exists or if the
+// update fails (callers log but do not block on failure).
+func (u *K8sISPhaseUpdater) SetActivePhase(ctx context.Context, rrName string) error {
+	if rrName == "" {
+		return nil
+	}
+
+	var list isv1alpha1.InvestigationSessionList
+	if err := u.client.List(ctx, &list,
+		client.InNamespace(u.namespace),
+		client.MatchingFields{ISFieldIndexRRName: rrName},
+	); err != nil {
+		return fmt.Errorf("list InvestigationSessions for RR %s: %w", rrName, err)
+	}
+
+	for i := range list.Items {
+		is := &list.Items[i]
+		if terminalPhases[is.Status.Phase] || is.Status.Phase == isv1alpha1.SessionPhaseActive {
+			continue
+		}
+		is.Status.Phase = isv1alpha1.SessionPhaseActive
+		if err := u.client.Status().Update(ctx, is); err != nil {
+			return fmt.Errorf("update IS %s phase to Active: %w", is.Name, err)
+		}
+		return nil
+	}
+	return nil
+}
+
+// Compile-time interface assertion.
+var _ ISPhaseUpdater = (*K8sISPhaseUpdater)(nil)

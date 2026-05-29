@@ -120,6 +120,15 @@ type InvestigationSessionChecker interface {
 	HasActiveSession(ctx context.Context, rrName string) (bool, error)
 }
 
+// ISPhaseUpdater transitions an InvestigationSession CRD phase. AA uses this
+// to set Phase=Active after successfully submitting to KA with interactive=true,
+// signalling to AF that the pending session is ready for action=start.
+type ISPhaseUpdater interface {
+	// SetActivePhase finds the IS CRD for the given RR and sets its status
+	// phase to Active. Returns nil if no matching IS exists (best-effort).
+	SetActivePhase(ctx context.Context, rrName string) error
+}
+
 // ========================================
 // REGO EVALUATOR INTERFACE
 // BR-AI-012: Rego policy evaluation for approval decisions
