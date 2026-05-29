@@ -992,9 +992,15 @@ func (t *InvestigateTool) storeReconstructedContext(ctx context.Context, rrID, s
 		return 0
 	}
 
-	history := make([]LLMMessage, len(turns))
-	for i, turn := range turns {
-		history[i] = LLMMessage{Role: turn.Role, Content: turn.Content}
+	history := make([]LLMMessage, 0, len(turns))
+	for _, turn := range turns {
+		if turn.Content == "" {
+			continue
+		}
+		history = append(history, LLMMessage{Role: turn.Role, Content: turn.Content})
+	}
+	if len(history) == 0 {
+		return 0
 	}
 	t.reconHistory.Store(rrID, history)
 	return len(history)
