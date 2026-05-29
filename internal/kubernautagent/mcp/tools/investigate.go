@@ -751,9 +751,29 @@ func (t *InvestigateTool) handleDiscoverWorkflows(ctx context.Context, input Inv
 
 	// Step 1: RCA extraction — prompt the LLM to submit structured RCA from
 	// the interactive conversation history.
+	//
+	// When the investigation was performed via the streaming bridge
+	// (StartInvestigation), the interactive session has no conversation
+	// history. In that case, pull the investigation's audit trail from
+	// data storage so the LLM has context for RCA extraction.
 	messages := t.buildMessagesWithContext(input.RRID, "")
 	if len(messages) > 0 && messages[len(messages)-1].Content == "" {
 		messages = messages[:len(messages)-1]
+	}
+	if len(messages) == 0 {
+		reconCount := t.storeReconstructedContext(ctx, input.RRID, sess.SessionID)
+		t.logger.Info("discover_workflows: reconHistory was empty, reconstructed from audit traces",
+			"rr_id", input.RRID, "recon_turns", reconCount)
+		messages = t.buildMessagesWithContext(input.RRID, "")
+		if len(messages) > 0 && messages[len(messages)-1].Content == "" {
+			messages = messages[:len(messages)-1]
+		}
+	}
+
+	if len(messages) == 0 {
+		t.logger.Info("discover_workflows: no conversation context available after reconstruction",
+			"rr_id", input.RRID)
+		return InvestigateOutput{}, fmt.Errorf("rca extraction failed: no conversation context available — investigation audit traces not found in data storage")
 	}
 
 	rcaResult, err := t.runner.RunRCAExtraction(ctx, messages, input.RRID)
