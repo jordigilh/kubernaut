@@ -85,7 +85,7 @@ func (s *StreamingExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestC
 			case <-stopKeepalive:
 				return
 			case <-ticker.C:
-				_ = EmitReasoningSafe(ctx, "\nProcessing...\n")
+				_ = EmitKeepaliveDotSafe(ctx)
 			}
 		}
 	}()

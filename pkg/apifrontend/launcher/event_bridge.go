@@ -50,6 +50,7 @@ type EventBridge struct {
 	contextID  string
 	metrics    BridgeMetrics
 	artifactID a2a.ArtifactID
+	lastWasDot bool
 }
 
 const maxBridgeTextLen = 512
@@ -86,6 +87,24 @@ func (b *EventBridge) EmitReasoning(ctx context.Context, text string) error {
 		return nil
 	}
 
+	if b.lastWasDot {
+		text = "\n" + text
+		b.lastWasDot = false
+	}
+
+	return b.emit(ctx, text)
+}
+
+// EmitKeepaliveDot writes a single "." to the A2A stream as a lightweight
+// keepalive that prevents proxy/gateway idle timeouts. Dots accumulate
+// inline; when real content arrives via EmitReasoning, a newline is
+// prepended automatically so content renders on a fresh line.
+func (b *EventBridge) EmitKeepaliveDot(ctx context.Context) error {
+	b.lastWasDot = true
+	return b.emit(ctx, ".")
+}
+
+func (b *EventBridge) emit(ctx context.Context, text string) error {
 	isAppend := b.artifactID != ""
 	if !isAppend {
 		b.artifactID = a2a.NewArtifactID()
@@ -139,4 +158,14 @@ func EmitReasoningSafe(ctx context.Context, text string) error {
 		return nil
 	}
 	return bridge.EmitReasoning(ctx, text)
+}
+
+// EmitKeepaliveDotSafe is a nil-safe helper that emits a keepalive dot via
+// the bridge. If no bridge is present, it's a no-op.
+func EmitKeepaliveDotSafe(ctx context.Context) error {
+	bridge := EventBridgeFromContext(ctx)
+	if bridge == nil {
+		return nil
+	}
+	return bridge.EmitKeepaliveDot(ctx)
 }

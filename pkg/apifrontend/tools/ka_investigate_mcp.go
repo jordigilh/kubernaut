@@ -222,7 +222,7 @@ func BridgeEventsToA2A(ctx context.Context, events <-chan ka.InvestigationEvent)
 		case <-ctx.Done():
 			return
 		case <-keepalive.C:
-			_ = launcher.EmitReasoningSafe(ctx, "\nProcessing...\n")
+			_ = launcher.EmitKeepaliveDotSafe(ctx)
 		case evt, ok := <-events:
 			if !ok {
 				return
@@ -251,7 +251,7 @@ func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.Investigat
 		case <-ctx.Done():
 			return summary.String()
 		case <-keepalive.C:
-			_ = launcher.EmitReasoningSafe(ctx, "\nProcessing...\n")
+			_ = launcher.EmitKeepaliveDotSafe(ctx)
 		case evt, ok := <-events:
 			if !ok {
 				return summary.String()
