@@ -71,10 +71,10 @@ var _ = Describe("E2E-DS-017-AUDIT: Workflow Discovery Audit Events (DD-WORKFLOW
 
 		// ACT: Call step 1 with remediation_id
 		_, err := DSClient.ListAvailableActions(testCtx, dsgen.ListAvailableActionsParams{
-			Severity:      dsgen.NewOptListAvailableActionsSeverity(dsgen.ListAvailableActionsSeverityCritical),
+			Severity:      dsgen.ListAvailableActionsSeverityCritical,
 			Component:     "v1/Pod",
-			Environment:   dsgen.NewOptString("production"),
-			Priority:      dsgen.NewOptListAvailableActionsPriority(dsgen.ListAvailableActionsPriorityP0),
+			Environment:   "production",
+			Priority:      dsgen.ListAvailableActionsPriorityP0,
 			RemediationID: dsgen.NewOptString(remediationID),
 			Limit:         dsgen.NewOptInt(100),
 		})
@@ -109,10 +109,10 @@ var _ = Describe("E2E-DS-017-AUDIT: Workflow Discovery Audit Events (DD-WORKFLOW
 		// ACT: Call step 2 with remediation_id
 		_, err := DSClient.ListWorkflowsByActionType(testCtx, dsgen.ListWorkflowsByActionTypeParams{
 			ActionType:    "ScaleReplicas",
-			Severity:      dsgen.NewOptListWorkflowsByActionTypeSeverity(dsgen.ListWorkflowsByActionTypeSeverityCritical),
+			Severity:      dsgen.ListWorkflowsByActionTypeSeverityCritical,
 			Component:     "v1/Pod",
-			Environment:   dsgen.NewOptString("production"),
-			Priority:      dsgen.NewOptListWorkflowsByActionTypePriority(dsgen.ListWorkflowsByActionTypePriorityP0),
+			Environment:   "production",
+			Priority:      dsgen.ListWorkflowsByActionTypePriorityP0,
 			RemediationID: dsgen.NewOptString(remediationID),
 			Limit:         dsgen.NewOptInt(100),
 		})

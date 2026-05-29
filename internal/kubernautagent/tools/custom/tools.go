@@ -144,16 +144,10 @@ func (t *listActionsTool) Execute(ctx context.Context, args json.RawMessage) (st
 		"component", component, "gvk_resolved", gvkResolved,
 		"remediation_id", signal.RemediationID)
 	params := ogenclient.ListAvailableActionsParams{
-		Component: component,
-	}
-	if signal.Severity != "" {
-		params.Severity = ogenclient.NewOptListAvailableActionsSeverity(ogenclient.ListAvailableActionsSeverity(signal.Severity))
-	}
-	if signal.Environment != "" {
-		params.Environment = ogenclient.NewOptString(signal.Environment)
-	}
-	if signal.Priority != "" {
-		params.Priority = ogenclient.NewOptListAvailableActionsPriority(ogenclient.ListAvailableActionsPriority(signal.Priority))
+		Severity:    ogenclient.ListAvailableActionsSeverity(signal.Severity),
+		Component:   component,
+		Environment: signal.Environment,
+		Priority:    ogenclient.ListAvailableActionsPriority(signal.Priority),
 	}
 	if signal.RemediationID != "" {
 		params.RemediationID = ogenclient.NewOptString(signal.RemediationID)
@@ -213,17 +207,11 @@ func (t *listWorkflowsTool) Execute(ctx context.Context, args json.RawMessage) (
 		"component", component, "gvk_resolved", gvkResolved,
 		"remediation_id", signal.RemediationID)
 	params := ogenclient.ListWorkflowsByActionTypeParams{
-		ActionType: a.ActionType,
-		Component:  component,
-	}
-	if signal.Severity != "" {
-		params.Severity = ogenclient.NewOptListWorkflowsByActionTypeSeverity(ogenclient.ListWorkflowsByActionTypeSeverity(signal.Severity))
-	}
-	if signal.Environment != "" {
-		params.Environment = ogenclient.NewOptString(signal.Environment)
-	}
-	if signal.Priority != "" {
-		params.Priority = ogenclient.NewOptListWorkflowsByActionTypePriority(ogenclient.ListWorkflowsByActionTypePriority(signal.Priority))
+		ActionType:  a.ActionType,
+		Severity:    ogenclient.ListWorkflowsByActionTypeSeverity(signal.Severity),
+		Component:   component,
+		Environment: signal.Environment,
+		Priority:    ogenclient.ListWorkflowsByActionTypePriority(signal.Priority),
 	}
 	if signal.RemediationID != "" {
 		params.RemediationID = ogenclient.NewOptString(signal.RemediationID)

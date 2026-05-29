@@ -131,11 +131,11 @@ paths:
       parameters:
         - name: severity
           in: query
-          required: false
+          required: true
           schema:
             type: string
             enum: [critical, high, medium, low]
-          description: Signal severity level
+          description: Signal severity level (always provided by Signal Processing)
         - name: component
           in: query
           required: true
@@ -147,17 +147,17 @@ paths:
             Wildcard "*" matches all components. Issue #1051.
         - name: environment
           in: query
-          required: false
+          required: true
           schema:
             type: string
-          description: Target environment (production, staging, etc.)
+          description: Target environment (always provided by Signal Processing)
         - name: priority
           in: query
-          required: false
+          required: true
           schema:
             type: string
             enum: [P0, P1, P2, P3]
-          description: Business priority level
+          description: Business priority level (always provided by Signal Processing)
         - name: custom_labels
           in: query
           required: false
@@ -247,11 +247,11 @@ paths:
           description: "Action type from taxonomy (e.g., ScaleReplicas, RestartPod)"
         - name: severity
           in: query
-          required: false
+          required: true
           schema:
             type: string
             enum: [critical, high, medium, low]
-          description: Signal severity level
+          description: Signal severity level (always provided by Signal Processing)
         - name: component
           in: query
           required: true
@@ -262,17 +262,17 @@ paths:
             (e.g. "apps/v1/Deployment"), "version/Kind" for core group (e.g. "v1/Pod"). Issue #1051.
         - name: environment
           in: query
-          required: false
+          required: true
           schema:
             type: string
-          description: Target environment
+          description: Target environment (always provided by Signal Processing)
         - name: priority
           in: query
-          required: false
+          required: true
           schema:
             type: string
             enum: [P0, P1, P2, P3]
-          description: Business priority level
+          description: Business priority level (always provided by Signal Processing)
         - name: custom_labels
           in: query
           required: false
