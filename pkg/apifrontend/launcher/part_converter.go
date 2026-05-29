@@ -196,16 +196,18 @@ func summarizeSelectWorkflow(resp map[string]any) string {
 }
 
 func summarizeWatch(resp map[string]any) string {
-	phase, _ := resp["phase"].(string)
+	events, _ := resp["events"].([]any)
 	status, _ := resp["status"].(string)
-	if phase != "" && status != "" {
-		return fmt.Sprintf("Phase: %s — %s", phase, status)
-	}
-	if phase != "" {
-		return fmt.Sprintf("Phase: %s", phase)
+	if len(events) > 0 {
+		if last, ok := events[len(events)-1].(map[string]any); ok {
+			phase, _ := last["phase"].(string)
+			if phase != "" {
+				return fmt.Sprintf("Remediation %s (final phase: %s)", status, phase)
+			}
+		}
 	}
 	if status != "" {
-		return status
+		return fmt.Sprintf("Remediation %s.", status)
 	}
 	return "Watching remediation..."
 }
