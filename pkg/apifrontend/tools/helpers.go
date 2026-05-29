@@ -103,7 +103,7 @@ func buildForbiddenMsg(msg string) string {
 // IsTerminalPhase returns true if the given RR phase is terminal.
 func IsTerminalPhase(phase string) bool {
 	switch phase {
-	case "Completed", "Failed", "Cancelled":
+	case "Completed", "Failed", "Cancelled", "TimedOut", "Skipped":
 		return true
 	}
 	return false
