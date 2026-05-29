@@ -110,6 +110,8 @@ type AutonomousSessionManager interface {
 	LaunchDeferredInvestigation(id string) error
 	// BR-INTERACTIVE-010: Get RCA summary from latest completed session for context reconstruction.
 	GetLatestRCASummaryByRemediationID(rrID string) (string, bool)
+	// Get full RCA result from latest completed session for workflow discovery.
+	GetLatestRCAResultByRemediationID(rrID string) (*katypes.InvestigationResult, bool)
 
 	// BR-MCP-002: Start an autonomous investigation and return the session ID.
 	StartInvestigation(ctx context.Context, fn session.InvestigateFunc, metadata map[string]string) (string, error)
@@ -150,6 +152,9 @@ func (NopAutonomousManager) ForceTransitionToUserDriving(string, string, []strin
 func (NopAutonomousManager) FindPendingByRemediationID(string) (string, bool)            { return "", false }
 func (NopAutonomousManager) LaunchDeferredInvestigation(string) error                    { return nil }
 func (NopAutonomousManager) GetLatestRCASummaryByRemediationID(string) (string, bool)    { return "", false }
+func (NopAutonomousManager) GetLatestRCAResultByRemediationID(string) (*katypes.InvestigationResult, bool) {
+	return nil, false
+}
 func (NopAutonomousManager) StartInvestigation(context.Context, session.InvestigateFunc, map[string]string) (string, error) {
 	return "", nil
 }
@@ -749,36 +754,49 @@ func (t *InvestigateTool) handleDiscoverWorkflows(ctx context.Context, input Inv
 		t.timeoutTracker.ResetInactivity(sess.SessionID)
 	}
 
-	// Step 1: RCA extraction — prompt the LLM to submit structured RCA from
-	// the interactive conversation history.
+	// Step 1: Obtain the structured RCA result for Phase 3 workflow discovery.
 	//
-	// When the investigation was performed via the streaming bridge
-	// (StartInvestigation), the interactive session has no conversation
-	// history. In that case, pull the investigation's audit trail from
-	// data storage so the LLM has context for RCA extraction.
-	messages := t.buildMessagesWithContext(input.RRID, "")
-	if len(messages) > 0 && messages[len(messages)-1].Content == "" {
-		messages = messages[:len(messages)-1]
-	}
-	if len(messages) == 0 {
-		reconCount := t.storeReconstructedContext(ctx, input.RRID, sess.SessionID)
-		t.logger.Info("discover_workflows: reconHistory was empty, reconstructed from audit traces",
-			"rr_id", input.RRID, "recon_turns", reconCount)
-		messages = t.buildMessagesWithContext(input.RRID, "")
+	// Preferred path: reuse the full InvestigationResult already produced by the
+	// autonomous Phase 1 RCA and stored in the session manager. This preserves
+	// the complete RemediationTarget (Kind, APIVersion, Name, Namespace) that
+	// the LLM emitted during the original investigation.
+	//
+	// Fallback: if no stored result exists (e.g. pure interactive session),
+	// reconstruct conversation from audit traces and re-extract RCA.
+	var rcaResult *katypes.InvestigationResult
+	if storedResult, ok := t.autoMgr.GetLatestRCAResultByRemediationID(input.RRID); ok && storedResult != nil {
+		rcaResult = storedResult
+		t.logger.Info("discover_workflows: using stored RCA result from autonomous investigation",
+			"rr_id", input.RRID,
+			"rca_target_kind", storedResult.RemediationTarget.Kind,
+			"rca_target_api_version", storedResult.RemediationTarget.APIVersion,
+			"rca_target_name", storedResult.RemediationTarget.Name)
+	} else {
+		messages := t.buildMessagesWithContext(input.RRID, "")
 		if len(messages) > 0 && messages[len(messages)-1].Content == "" {
 			messages = messages[:len(messages)-1]
 		}
-	}
+		if len(messages) == 0 {
+			reconCount := t.storeReconstructedContext(ctx, input.RRID, sess.SessionID)
+			t.logger.Info("discover_workflows: reconHistory was empty, reconstructed from audit traces",
+				"rr_id", input.RRID, "recon_turns", reconCount)
+			messages = t.buildMessagesWithContext(input.RRID, "")
+			if len(messages) > 0 && messages[len(messages)-1].Content == "" {
+				messages = messages[:len(messages)-1]
+			}
+		}
 
-	if len(messages) == 0 {
-		t.logger.Info("discover_workflows: no conversation context available after reconstruction",
-			"rr_id", input.RRID)
-		return InvestigateOutput{}, fmt.Errorf("rca extraction failed: no conversation context available — investigation audit traces not found in data storage")
-	}
+		if len(messages) == 0 {
+			t.logger.Info("discover_workflows: no conversation context available after reconstruction",
+				"rr_id", input.RRID)
+			return InvestigateOutput{}, fmt.Errorf("rca extraction failed: no conversation context available — investigation audit traces not found in data storage")
+		}
 
-	rcaResult, err := t.runner.RunRCAExtraction(ctx, messages, input.RRID)
-	if err != nil {
-		return InvestigateOutput{}, fmt.Errorf("rca extraction failed: %w", err)
+		var err error
+		rcaResult, err = t.runner.RunRCAExtraction(ctx, messages, input.RRID)
+		if err != nil {
+			return InvestigateOutput{}, fmt.Errorf("rca extraction failed: %w", err)
+		}
 	}
 
 	// Step 2: Resolve signal context for Phase 3.

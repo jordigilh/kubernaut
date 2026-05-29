@@ -39,6 +39,9 @@ type reconAutoMgr struct {
 func (m *reconAutoMgr) GetLatestRCASummaryByRemediationID(_ string) (string, bool) {
 	return m.rcaSummary, m.rcaOK
 }
+func (m *reconAutoMgr) GetLatestRCAResultByRemediationID(_ string) (*katypes.InvestigationResult, bool) {
+	return nil, false
+}
 
 // messagesCapturingInvestigatorRunner records LLM messages passed to RunInteractiveTurn.
 type messagesCapturingInvestigatorRunner struct {

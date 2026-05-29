@@ -90,6 +90,9 @@ func (m *goldenPathAutoMgr) ForceTransitionToUserDriving(_ string, _ string, _ [
 func (m *goldenPathAutoMgr) FindPendingByRemediationID(_ string) (string, bool)         { return "", false }
 func (m *goldenPathAutoMgr) LaunchDeferredInvestigation(_ string) error                  { return nil }
 func (m *goldenPathAutoMgr) GetLatestRCASummaryByRemediationID(_ string) (string, bool)  { return "", false }
+func (m *goldenPathAutoMgr) GetLatestRCAResultByRemediationID(_ string) (*katypes.InvestigationResult, bool) {
+	return nil, false
+}
 func (m *goldenPathAutoMgr) StartInvestigation(_ context.Context, _ session.InvestigateFunc, _ map[string]string) (string, error) {
 	return "", fmt.Errorf("not implemented in golden path mock")
 }

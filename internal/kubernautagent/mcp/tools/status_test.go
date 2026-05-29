@@ -27,6 +27,7 @@ import (
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	mcptools "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 type statusSessionMgr struct {
@@ -59,6 +60,9 @@ func (m *statusAutoMgr) ForceTransitionToUserDriving(_ string, _ string, _ []str
 func (m *statusAutoMgr) FindPendingByRemediationID(_ string) (string, bool)              { return "", false }
 func (m *statusAutoMgr) LaunchDeferredInvestigation(_ string) error                       { return nil }
 func (m *statusAutoMgr) GetLatestRCASummaryByRemediationID(_ string) (string, bool)       { return "", false }
+func (m *statusAutoMgr) GetLatestRCAResultByRemediationID(_ string) (*katypes.InvestigationResult, bool) {
+	return nil, false
+}
 func (m *statusAutoMgr) StartInvestigation(_ context.Context, _ session.InvestigateFunc, _ map[string]string) (string, error) { return "", nil }
 func (m *statusAutoMgr) Subscribe(_ context.Context, _ string) (<-chan session.InvestigationEvent, error) { return nil, nil }
 

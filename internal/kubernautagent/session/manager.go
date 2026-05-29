@@ -478,6 +478,33 @@ func (m *Manager) GetLatestRCASummaryByRemediationID(rrID string) (string, bool)
 	return latestSummary, true
 }
 
+// GetLatestRCAResultByRemediationID returns the full InvestigationResult from
+// the most recent completed session for the given remediation_id. This gives
+// workflow discovery access to the complete RemediationTarget produced by the
+// autonomous Phase 1 RCA, avoiding a lossy re-extraction from conversation.
+func (m *Manager) GetLatestRCAResultByRemediationID(rrID string) (*katypes.InvestigationResult, bool) {
+	m.store.mu.RLock()
+	defer m.store.mu.RUnlock()
+	var latestTime time.Time
+	var latestResult *katypes.InvestigationResult
+	for _, sess := range m.store.sessions {
+		if sess.Metadata["remediation_id"] != rrID {
+			continue
+		}
+		if sess.Result == nil {
+			continue
+		}
+		if sess.CreatedAt.After(latestTime) {
+			latestTime = sess.CreatedAt
+			latestResult = sess.Result
+		}
+	}
+	if latestResult == nil {
+		return nil, false
+	}
+	return latestResult, true
+}
+
 // Subscribe returns a read-only channel that delivers investigation events
 // for the given session. The event sink is lazily created on the first
 // Subscribe call so that autonomous investigations (no observer) run without

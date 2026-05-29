@@ -111,6 +111,10 @@ func (m *mockAutoMgrIT) GetLatestRCASummaryByRemediationID(rrID string) (string,
 	return m.mgr.GetLatestRCASummaryByRemediationID(rrID)
 }
 
+func (m *mockAutoMgrIT) GetLatestRCAResultByRemediationID(rrID string) (*katypes.InvestigationResult, bool) {
+	return m.mgr.GetLatestRCAResultByRemediationID(rrID)
+}
+
 var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", func() {
 
 	Describe("IT-KA-TAKE-001: Takeover mid-LLM-turn — autonomous transitions to user_driving", func() {

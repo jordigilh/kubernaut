@@ -27,6 +27,7 @@ import (
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	mcptools "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 // interactiveAutoMgr extends takeoverAutoMgr with pending session support.
@@ -77,6 +78,9 @@ func (m *interactiveAutoMgr) Subscribe(_ context.Context, _ string) (<-chan sess
 }
 func (m *interactiveAutoMgr) GetLatestRCASummaryByRemediationID(_ string) (string, bool) {
 	return "", false
+}
+func (m *interactiveAutoMgr) GetLatestRCAResultByRemediationID(_ string) (*katypes.InvestigationResult, bool) {
+	return nil, false
 }
 
 var _ = Describe("BR-INTERACTIVE-010: handleStart with pending interactive session — #1293", func() {
