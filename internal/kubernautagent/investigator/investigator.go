@@ -335,6 +335,12 @@ func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal
 				"correlation_id", correlationID)
 		}
 	}
+	inv.logger.Info("RunWorkflowDiscoveryFromRCA: RCA target state",
+		"rca_target_kind", rcaResult.RemediationTarget.Kind,
+		"rca_target_api_version", rcaResult.RemediationTarget.APIVersion,
+		"signal_kind", signal.ResourceKind,
+		"signal_api_version", signal.ResourceAPIVersion,
+		"correlation_id", correlationID)
 
 	client := inv.client
 	modelName := inv.modelName

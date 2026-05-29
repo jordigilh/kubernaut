@@ -172,6 +172,7 @@ func LogLabelOverrideOrRejection(logger logr.Logger, signal katypes.SignalContex
 // Issue #1064: used by both SignalToPrompt (LLM prompt) and runWorkflowSelection
 // (tool context) to ensure consistent override application.
 func ApplySignalLabelOverrides(signal katypes.SignalContext) katypes.SignalContext {
+	originalKind := signal.ResourceKind
 	kindOverridden := false
 	if trk := signal.SignalLabels["target_resource_kind"]; trk != "" && isValidK8sIdentifier(trk) {
 		signal.ResourceKind = trk
@@ -182,7 +183,7 @@ func ApplySignalLabelOverrides(signal katypes.SignalContext) katypes.SignalConte
 	}
 	if trav := signal.SignalLabels["target_resource_api_version"]; trav != "" && isValidAPIVersion(trav) && kindOverridden {
 		signal.ResourceAPIVersion = trav
-	} else if kindOverridden {
+	} else if kindOverridden && signal.ResourceKind != originalKind {
 		signal.ResourceAPIVersion = ""
 	}
 	return signal
