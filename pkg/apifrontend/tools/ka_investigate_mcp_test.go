@@ -401,7 +401,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — AIA polling timeout cap
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.SessionID).To(Equal("sess-fast-001"))
-			Expect(elapsed).To(BeNumerically("<", 15*time.Second),
+			Expect(elapsed).To(BeNumerically("<", 30*time.Second),
 				"investigate path must not block for 3 minutes when no AIA CRD exists")
 		})
 	})
@@ -487,8 +487,8 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — AIA polling timeout cap
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.SessionID).To(Equal("sess-aia-found-001"))
-			Expect(elapsed).To(BeNumerically("<", 2*time.Second),
-				"should find existing AIA immediately, no polling delay")
+			Expect(elapsed).To(BeNumerically("<", 10*time.Second),
+				"should not block indefinitely when AIA exists but no Active IS")
 		})
 	})
 

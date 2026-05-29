@@ -34,6 +34,10 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 )
 
+// isPhaseActivePollTimeout caps the IS phase Active polling after AIA readiness.
+// Short because the phase transition should follow almost immediately after AA submits.
+const isPhaseActivePollTimeout = 5 * time.Second
+
 // InvestigateMCPArgs defines the input for the MCP-based kubernaut_investigate tool.
 type InvestigateMCPArgs struct {
 	RRID string `json:"rr_id"`
@@ -98,6 +102,18 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 		if awaitErr == nil && awaitResult.Status == "ready" {
 			_ = launcher.EmitReasoningSafe(ctx, "Investigation session ready, connecting to KA...")
 		}
+
+		// Wait for the IS CRD phase to become Active — AA sets this after
+		// acknowledging the interactive session and submitting to KA with
+		// interactive=true. Without this, action=start may arrive before
+		// KA has a pending session to activate.
+		// Short timeout: by the time AIA is ready, the IS phase transition
+		// should follow almost immediately.
+		isCtx, isCancel := context.WithTimeout(ctx, isPhaseActivePollTimeout)
+		if AwaitISPhaseActive(isCtx, k8sClient, namespace, args.RRID) {
+			_ = launcher.EmitReasoningSafe(ctx, "Interactive session acknowledged by AA, starting investigation...")
+		}
+		isCancel()
 	}
 
 	result, err := mcpClient.StartInvestigation(ctx, ka.StartInvestigationArgs{

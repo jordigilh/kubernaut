@@ -831,3 +831,74 @@ func NewAwaitSessionTool(client dynamic.Interface) (tool.Tool, error) {
 		return HandleAwaitSession(ctx, client, args)
 	})
 }
+
+// ========================================
+// AwaitISPhaseActive: Poll IS CRD until AA sets Phase=Active
+// BR-INTERACTIVE-010: AF waits for AA to acknowledge the interactive session
+// ========================================
+
+var investigationsessionGVR = schema.GroupVersionResource{Group: "kubernaut.ai", Version: "v1alpha1", Resource: "investigationsessions"}
+
+const (
+	isPhaseInitialInterval = 500 * time.Millisecond
+	isPhaseMaxInterval     = 2 * time.Second
+	isPhaseDefaultTimeout  = 30 * time.Second
+)
+
+// AwaitISPhaseActive polls the IS CRD for the given RR name until its phase
+// becomes Active (set by the AA controller). Uses exponential backoff starting
+// at 500ms, capping at 2s. Returns true when Active is detected, false on
+// timeout. Errors from the API are silently retried (best-effort).
+// The poll respects the parent context deadline, capping at isPhaseDefaultTimeout.
+func AwaitISPhaseActive(ctx context.Context, client dynamic.Interface, namespace, rrName string) bool {
+	if client == nil || namespace == "" || rrName == "" {
+		return false
+	}
+
+	timeout := isPhaseDefaultTimeout
+	if deadline, ok := ctx.Deadline(); ok {
+		if remaining := time.Until(deadline); remaining < timeout {
+			timeout = remaining
+		}
+	}
+	pollCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	interval := isPhaseInitialInterval
+	for {
+		if isActivePhasePresent(pollCtx, client, namespace, rrName) {
+			return true
+		}
+
+		select {
+		case <-pollCtx.Done():
+			return false
+		case <-time.After(interval):
+		}
+
+		interval = interval * 2
+		if interval > isPhaseMaxInterval {
+			interval = isPhaseMaxInterval
+		}
+	}
+}
+
+// isActivePhasePresent lists IS CRDs in the namespace and returns true if any
+// non-terminal IS for the given RR has Phase=Active.
+func isActivePhasePresent(ctx context.Context, client dynamic.Interface, namespace, rrName string) bool {
+	list, err := client.Resource(investigationsessionGVR).Namespace(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return false
+	}
+	for _, item := range list.Items {
+		ref, _, _ := unstructured.NestedString(item.Object, "spec", "remediationRequestRef", "name")
+		if ref != rrName {
+			continue
+		}
+		phase, _, _ := unstructured.NestedString(item.Object, "status", "phase")
+		if phase == "Active" {
+			return true
+		}
+	}
+	return false
+}
