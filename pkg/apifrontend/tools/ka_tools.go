@@ -36,6 +36,7 @@ type WorkflowDetail struct {
 	Name        string              `json:"name"`
 	Description string              `json:"description"`
 	Kind        string              `json:"kind,omitempty"`
+	Confidence  float64             `json:"confidence,omitempty"`
 	Parameters  []WorkflowParameter `json:"parameters"`
 }
 
@@ -80,6 +81,7 @@ func HandleDiscoverWorkflows(ctx context.Context, mcpClient ka.MCPClient, args D
 			Name:        w.Name,
 			Description: w.Description,
 			Kind:        w.Kind,
+			Confidence:  w.Confidence,
 			Parameters:  params,
 		})
 	}

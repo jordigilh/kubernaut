@@ -115,11 +115,7 @@ func (c *PooledMCPClient) DiscoverWorkflows(ctx context.Context, args DiscoverWo
 		return nil, err
 	}
 
-	var result DiscoverWorkflowsResult
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return nil, fmt.Errorf("parse discover_workflows response: %w", err)
-	}
-	return &result, nil
+	return ParseDiscoverWorkflowsResponse(raw)
 }
 
 // SelectWorkflow calls kubernaut_select_workflow via a pooled MCP session.

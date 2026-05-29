@@ -191,11 +191,7 @@ func (c *SDKMCPClient) DiscoverWorkflows(ctx context.Context, args DiscoverWorkf
 		return nil, err
 	}
 
-	var dwResult DiscoverWorkflowsResult
-	if err := json.Unmarshal(result, &dwResult); err != nil {
-		return nil, fmt.Errorf("parse discover_workflows response: %w", err)
-	}
-	return &dwResult, nil
+	return ParseDiscoverWorkflowsResponse(result)
 }
 
 // InvokeAction calls kubernaut_investigate with a specific action on KA's MCP server.
