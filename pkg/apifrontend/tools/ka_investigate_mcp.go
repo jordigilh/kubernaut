@@ -210,14 +210,17 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 }
 
 // BridgeEventsToA2A reads investigation events from the KA MCP session and
-// emits filtered reasoning artifacts to the A2A stream. Only user-visible
-// event types are bridged; raw tool output (tool_result, token_delta) is
-// suppressed per BR-MCP-008.
+// emits filtered reasoning artifacts to the A2A stream. A keepalive is sent
+// every 20s to prevent idle SSE timeouts during long tool executions.
 func BridgeEventsToA2A(ctx context.Context, events <-chan ka.InvestigationEvent) {
+	keepalive := time.NewTicker(20 * time.Second)
+	defer keepalive.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-keepalive.C:
+			_ = launcher.EmitReasoningSafe(ctx, "\nProcessing...\n")
 		case evt, ok := <-events:
 			if !ok {
 				return
@@ -239,10 +242,14 @@ func BridgeEventsToA2A(ctx context.Context, events <-chan ka.InvestigationEvent)
 // LLM receives the full investigation results in the tool response.
 func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.InvestigationEvent) string {
 	var summary strings.Builder
+	keepalive := time.NewTicker(20 * time.Second)
+	defer keepalive.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return summary.String()
+		case <-keepalive.C:
+			_ = launcher.EmitReasoningSafe(ctx, "\nProcessing...\n")
 		case evt, ok := <-events:
 			if !ok {
 				return summary.String()
