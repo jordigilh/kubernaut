@@ -213,7 +213,7 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 // emits filtered reasoning artifacts to the A2A stream. A keepalive is sent
 // every 20s to prevent idle SSE timeouts during long tool executions.
 func BridgeEventsToA2A(ctx context.Context, events <-chan ka.InvestigationEvent) {
-	keepalive := time.NewTicker(20 * time.Second)
+	keepalive := time.NewTicker(5 * time.Second)
 	defer keepalive.Stop()
 	for {
 		select {
@@ -242,7 +242,7 @@ func BridgeEventsToA2A(ctx context.Context, events <-chan ka.InvestigationEvent)
 // LLM receives the full investigation results in the tool response.
 func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.InvestigationEvent) string {
 	var summary strings.Builder
-	keepalive := time.NewTicker(20 * time.Second)
+	keepalive := time.NewTicker(5 * time.Second)
 	defer keepalive.Stop()
 	for {
 		select {
