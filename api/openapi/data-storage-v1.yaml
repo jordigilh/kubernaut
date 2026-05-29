@@ -131,7 +131,7 @@ paths:
       parameters:
         - name: severity
           in: query
-          required: true
+          required: false
           schema:
             type: string
             enum: [critical, high, medium, low]
@@ -147,13 +147,13 @@ paths:
             Wildcard "*" matches all components. Issue #1051.
         - name: environment
           in: query
-          required: true
+          required: false
           schema:
             type: string
           description: Target environment (production, staging, etc.)
         - name: priority
           in: query
-          required: true
+          required: false
           schema:
             type: string
             enum: [P0, P1, P2, P3]
@@ -247,7 +247,7 @@ paths:
           description: "Action type from taxonomy (e.g., ScaleReplicas, RestartPod)"
         - name: severity
           in: query
-          required: true
+          required: false
           schema:
             type: string
             enum: [critical, high, medium, low]
@@ -262,13 +262,13 @@ paths:
             (e.g. "apps/v1/Deployment"), "version/Kind" for core group (e.g. "v1/Pod"). Issue #1051.
         - name: environment
           in: query
-          required: true
+          required: false
           schema:
             type: string
           description: Target environment
         - name: priority
           in: query
-          required: true
+          required: false
           schema:
             type: string
             enum: [P0, P1, P2, P3]

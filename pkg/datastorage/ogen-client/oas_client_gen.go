@@ -2138,7 +2138,10 @@ func (c *Client) sendListAvailableActions(ctx context.Context, params ListAvaila
 		}
 
 		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
-			return e.EncodeValue(conv.StringToString(string(params.Severity)))
+			if val, ok := params.Severity.Get(); ok {
+				return e.EncodeValue(conv.StringToString(string(val)))
+			}
+			return nil
 		}); err != nil {
 			return res, errors.Wrap(err, "encode query")
 		}
@@ -2166,7 +2169,10 @@ func (c *Client) sendListAvailableActions(ctx context.Context, params ListAvaila
 		}
 
 		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
-			return e.EncodeValue(conv.StringToString(params.Environment))
+			if val, ok := params.Environment.Get(); ok {
+				return e.EncodeValue(conv.StringToString(val))
+			}
+			return nil
 		}); err != nil {
 			return res, errors.Wrap(err, "encode query")
 		}
@@ -2180,7 +2186,10 @@ func (c *Client) sendListAvailableActions(ctx context.Context, params ListAvaila
 		}
 
 		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
-			return e.EncodeValue(conv.StringToString(string(params.Priority)))
+			if val, ok := params.Priority.Get(); ok {
+				return e.EncodeValue(conv.StringToString(string(val)))
+			}
+			return nil
 		}); err != nil {
 			return res, errors.Wrap(err, "encode query")
 		}
@@ -2667,7 +2676,10 @@ func (c *Client) sendListWorkflowsByActionType(ctx context.Context, params ListW
 		}
 
 		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
-			return e.EncodeValue(conv.StringToString(string(params.Severity)))
+			if val, ok := params.Severity.Get(); ok {
+				return e.EncodeValue(conv.StringToString(string(val)))
+			}
+			return nil
 		}); err != nil {
 			return res, errors.Wrap(err, "encode query")
 		}
@@ -2695,7 +2707,10 @@ func (c *Client) sendListWorkflowsByActionType(ctx context.Context, params ListW
 		}
 
 		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
-			return e.EncodeValue(conv.StringToString(params.Environment))
+			if val, ok := params.Environment.Get(); ok {
+				return e.EncodeValue(conv.StringToString(val))
+			}
+			return nil
 		}); err != nil {
 			return res, errors.Wrap(err, "encode query")
 		}
@@ -2709,7 +2724,10 @@ func (c *Client) sendListWorkflowsByActionType(ctx context.Context, params ListW
 		}
 
 		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
-			return e.EncodeValue(conv.StringToString(string(params.Priority)))
+			if val, ok := params.Priority.Get(); ok {
+				return e.EncodeValue(conv.StringToString(string(val)))
+			}
+			return nil
 		}); err != nil {
 			return res, errors.Wrap(err, "encode query")
 		}

@@ -1767,15 +1767,15 @@ func decodeGetWorkflowByIDParams(args [1]string, argsEscaped bool, r *http.Reque
 // ListAvailableActionsParams is parameters of listAvailableActions operation.
 type ListAvailableActionsParams struct {
 	// Signal severity level.
-	Severity ListAvailableActionsSeverity
+	Severity OptListAvailableActionsSeverity `json:",omitempty,omitzero"`
 	// Kubernetes resource GVK (apiVersion/Kind). Format: "group/version/Kind" for named groups (e.g.
 	// "apps/v1/Deployment"), "version/Kind" for core group (e.g. "v1/Pod"). Wildcard "*" matches all
 	// components. Issue #1051.
 	Component string
 	// Target environment (production, staging, etc.).
-	Environment string
+	Environment OptString `json:",omitempty,omitzero"`
 	// Business priority level.
-	Priority ListAvailableActionsPriority
+	Priority OptListAvailableActionsPriority `json:",omitempty,omitzero"`
 	// JSON-encoded custom labels (e.g., {"constraint":["cost-constrained"]}).
 	CustomLabels OptString `json:",omitempty,omitzero"`
 	// JSON-encoded detected labels (e.g., {"gitOpsManaged":true}).
@@ -1794,7 +1794,9 @@ func unpackListAvailableActionsParams(packed middleware.Parameters) (params List
 			Name: "severity",
 			In:   "query",
 		}
-		params.Severity = packed[key].(ListAvailableActionsSeverity)
+		if v, ok := packed[key]; ok {
+			params.Severity = v.(OptListAvailableActionsSeverity)
+		}
 	}
 	{
 		key := middleware.ParameterKey{
@@ -1808,14 +1810,18 @@ func unpackListAvailableActionsParams(packed middleware.Parameters) (params List
 			Name: "environment",
 			In:   "query",
 		}
-		params.Environment = packed[key].(string)
+		if v, ok := packed[key]; ok {
+			params.Environment = v.(OptString)
+		}
 	}
 	{
 		key := middleware.ParameterKey{
 			Name: "priority",
 			In:   "query",
 		}
-		params.Priority = packed[key].(ListAvailableActionsPriority)
+		if v, ok := packed[key]; ok {
+			params.Priority = v.(OptListAvailableActionsPriority)
+		}
 	}
 	{
 		key := middleware.ParameterKey{
@@ -1877,31 +1883,43 @@ func decodeListAvailableActionsParams(args [0]string, argsEscaped bool, r *http.
 
 		if err := q.HasParam(cfg); err == nil {
 			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
-				val, err := d.DecodeValue()
-				if err != nil {
+				var paramsDotSeverityVal ListAvailableActionsSeverity
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToString(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotSeverityVal = ListAvailableActionsSeverity(c)
+					return nil
+				}(); err != nil {
 					return err
 				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.Severity = ListAvailableActionsSeverity(c)
+				params.Severity.SetTo(paramsDotSeverityVal)
 				return nil
 			}); err != nil {
 				return err
 			}
 			if err := func() error {
-				if err := params.Severity.Validate(); err != nil {
-					return err
+				if value, ok := params.Severity.Get(); ok {
+					if err := func() error {
+						if err := value.Validate(); err != nil {
+							return err
+						}
+						return nil
+					}(); err != nil {
+						return err
+					}
 				}
 				return nil
 			}(); err != nil {
 				return err
 			}
-		} else {
-			return err
 		}
 		return nil
 	}(); err != nil {
@@ -1957,23 +1975,28 @@ func decodeListAvailableActionsParams(args [0]string, argsEscaped bool, r *http.
 
 		if err := q.HasParam(cfg); err == nil {
 			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
-				val, err := d.DecodeValue()
-				if err != nil {
+				var paramsDotEnvironmentVal string
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToString(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotEnvironmentVal = c
+					return nil
+				}(); err != nil {
 					return err
 				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.Environment = c
+				params.Environment.SetTo(paramsDotEnvironmentVal)
 				return nil
 			}); err != nil {
 				return err
 			}
-		} else {
-			return err
 		}
 		return nil
 	}(); err != nil {
@@ -1993,31 +2016,43 @@ func decodeListAvailableActionsParams(args [0]string, argsEscaped bool, r *http.
 
 		if err := q.HasParam(cfg); err == nil {
 			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
-				val, err := d.DecodeValue()
-				if err != nil {
+				var paramsDotPriorityVal ListAvailableActionsPriority
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToString(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotPriorityVal = ListAvailableActionsPriority(c)
+					return nil
+				}(); err != nil {
 					return err
 				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.Priority = ListAvailableActionsPriority(c)
+				params.Priority.SetTo(paramsDotPriorityVal)
 				return nil
 			}); err != nil {
 				return err
 			}
 			if err := func() error {
-				if err := params.Priority.Validate(); err != nil {
-					return err
+				if value, ok := params.Priority.Get(); ok {
+					if err := func() error {
+						if err := value.Validate(); err != nil {
+							return err
+						}
+						return nil
+					}(); err != nil {
+						return err
+					}
 				}
 				return nil
 			}(); err != nil {
 				return err
 			}
-		} else {
-			return err
 		}
 		return nil
 	}(); err != nil {
@@ -2699,14 +2734,14 @@ type ListWorkflowsByActionTypeParams struct {
 	// Action type from taxonomy (e.g., ScaleReplicas, RestartPod).
 	ActionType string
 	// Signal severity level.
-	Severity ListWorkflowsByActionTypeSeverity
+	Severity OptListWorkflowsByActionTypeSeverity `json:",omitempty,omitzero"`
 	// Kubernetes resource GVK (apiVersion/Kind). Format: "group/version/Kind" for named groups (e.g.
 	// "apps/v1/Deployment"), "version/Kind" for core group (e.g. "v1/Pod"). Issue #1051.
 	Component string
 	// Target environment.
-	Environment string
+	Environment OptString `json:",omitempty,omitzero"`
 	// Business priority level.
-	Priority ListWorkflowsByActionTypePriority
+	Priority OptListWorkflowsByActionTypePriority `json:",omitempty,omitzero"`
 	// JSON-encoded custom labels.
 	CustomLabels OptString `json:",omitempty,omitzero"`
 	// JSON-encoded detected labels.
@@ -2732,7 +2767,9 @@ func unpackListWorkflowsByActionTypeParams(packed middleware.Parameters) (params
 			Name: "severity",
 			In:   "query",
 		}
-		params.Severity = packed[key].(ListWorkflowsByActionTypeSeverity)
+		if v, ok := packed[key]; ok {
+			params.Severity = v.(OptListWorkflowsByActionTypeSeverity)
+		}
 	}
 	{
 		key := middleware.ParameterKey{
@@ -2746,14 +2783,18 @@ func unpackListWorkflowsByActionTypeParams(packed middleware.Parameters) (params
 			Name: "environment",
 			In:   "query",
 		}
-		params.Environment = packed[key].(string)
+		if v, ok := packed[key]; ok {
+			params.Environment = v.(OptString)
+		}
 	}
 	{
 		key := middleware.ParameterKey{
 			Name: "priority",
 			In:   "query",
 		}
-		params.Priority = packed[key].(ListWorkflowsByActionTypePriority)
+		if v, ok := packed[key]; ok {
+			params.Priority = v.(OptListWorkflowsByActionTypePriority)
+		}
 	}
 	{
 		key := middleware.ParameterKey{
@@ -2860,31 +2901,43 @@ func decodeListWorkflowsByActionTypeParams(args [1]string, argsEscaped bool, r *
 
 		if err := q.HasParam(cfg); err == nil {
 			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
-				val, err := d.DecodeValue()
-				if err != nil {
+				var paramsDotSeverityVal ListWorkflowsByActionTypeSeverity
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToString(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotSeverityVal = ListWorkflowsByActionTypeSeverity(c)
+					return nil
+				}(); err != nil {
 					return err
 				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.Severity = ListWorkflowsByActionTypeSeverity(c)
+				params.Severity.SetTo(paramsDotSeverityVal)
 				return nil
 			}); err != nil {
 				return err
 			}
 			if err := func() error {
-				if err := params.Severity.Validate(); err != nil {
-					return err
+				if value, ok := params.Severity.Get(); ok {
+					if err := func() error {
+						if err := value.Validate(); err != nil {
+							return err
+						}
+						return nil
+					}(); err != nil {
+						return err
+					}
 				}
 				return nil
 			}(); err != nil {
 				return err
 			}
-		} else {
-			return err
 		}
 		return nil
 	}(); err != nil {
@@ -2940,23 +2993,28 @@ func decodeListWorkflowsByActionTypeParams(args [1]string, argsEscaped bool, r *
 
 		if err := q.HasParam(cfg); err == nil {
 			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
-				val, err := d.DecodeValue()
-				if err != nil {
+				var paramsDotEnvironmentVal string
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToString(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotEnvironmentVal = c
+					return nil
+				}(); err != nil {
 					return err
 				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.Environment = c
+				params.Environment.SetTo(paramsDotEnvironmentVal)
 				return nil
 			}); err != nil {
 				return err
 			}
-		} else {
-			return err
 		}
 		return nil
 	}(); err != nil {
@@ -2976,31 +3034,43 @@ func decodeListWorkflowsByActionTypeParams(args [1]string, argsEscaped bool, r *
 
 		if err := q.HasParam(cfg); err == nil {
 			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
-				val, err := d.DecodeValue()
-				if err != nil {
+				var paramsDotPriorityVal ListWorkflowsByActionTypePriority
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToString(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotPriorityVal = ListWorkflowsByActionTypePriority(c)
+					return nil
+				}(); err != nil {
 					return err
 				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.Priority = ListWorkflowsByActionTypePriority(c)
+				params.Priority.SetTo(paramsDotPriorityVal)
 				return nil
 			}); err != nil {
 				return err
 			}
 			if err := func() error {
-				if err := params.Priority.Validate(); err != nil {
-					return err
+				if value, ok := params.Priority.Get(); ok {
+					if err := func() error {
+						if err := value.Validate(); err != nil {
+							return err
+						}
+						return nil
+					}(); err != nil {
+						return err
+					}
 				}
 				return nil
 			}(); err != nil {
 				return err
 			}
-		} else {
-			return err
 		}
 		return nil
 	}(); err != nil {

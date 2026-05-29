@@ -110,6 +110,16 @@ func signalFromContext(ctx context.Context, toolName string) (katypes.SignalCont
 	return signal, nil
 }
 
+// effectivePriority returns the signal priority or "P3" when unset.
+// DS rejects empty priority strings (OpenAPI enum validation), so we
+// default to the lowest priority to avoid 400 errors.
+func effectivePriority(p string) string {
+	if p == "" {
+		return "P3"
+	}
+	return p
+}
+
 // --- list_available_actions ---
 
 type listActionsTool struct{ ds WorkflowDiscoveryClient }
@@ -143,10 +153,16 @@ func (t *listActionsTool) Execute(ctx context.Context, args json.RawMessage) (st
 		"component", component, "gvk_resolved", gvkResolved,
 		"remediation_id", signal.RemediationID)
 	params := ogenclient.ListAvailableActionsParams{
-		Severity:    ogenclient.ListAvailableActionsSeverity(signal.Severity),
-		Component:   component,
-		Environment: signal.Environment,
-		Priority:    ogenclient.ListAvailableActionsPriority(signal.Priority),
+		Component: component,
+	}
+	if signal.Severity != "" {
+		params.Severity = ogenclient.NewOptListAvailableActionsSeverity(ogenclient.ListAvailableActionsSeverity(signal.Severity))
+	}
+	if signal.Environment != "" {
+		params.Environment = ogenclient.NewOptString(signal.Environment)
+	}
+	if signal.Priority != "" {
+		params.Priority = ogenclient.NewOptListAvailableActionsPriority(ogenclient.ListAvailableActionsPriority(signal.Priority))
 	}
 	if signal.RemediationID != "" {
 		params.RemediationID = ogenclient.NewOptString(signal.RemediationID)
@@ -206,11 +222,17 @@ func (t *listWorkflowsTool) Execute(ctx context.Context, args json.RawMessage) (
 		"component", component, "gvk_resolved", gvkResolved,
 		"remediation_id", signal.RemediationID)
 	params := ogenclient.ListWorkflowsByActionTypeParams{
-		ActionType:  a.ActionType,
-		Severity:    ogenclient.ListWorkflowsByActionTypeSeverity(signal.Severity),
-		Component:   component,
-		Environment: signal.Environment,
-		Priority:    ogenclient.ListWorkflowsByActionTypePriority(signal.Priority),
+		ActionType: a.ActionType,
+		Component:  component,
+	}
+	if signal.Severity != "" {
+		params.Severity = ogenclient.NewOptListWorkflowsByActionTypeSeverity(ogenclient.ListWorkflowsByActionTypeSeverity(signal.Severity))
+	}
+	if signal.Environment != "" {
+		params.Environment = ogenclient.NewOptString(signal.Environment)
+	}
+	if signal.Priority != "" {
+		params.Priority = ogenclient.NewOptListWorkflowsByActionTypePriority(ogenclient.ListWorkflowsByActionTypePriority(signal.Priority))
 	}
 	if signal.RemediationID != "" {
 		params.RemediationID = ogenclient.NewOptString(signal.RemediationID)

@@ -22237,6 +22237,190 @@ func (o OptLLMToolCallPayloadToolArguments) Or(d LLMToolCallPayloadToolArguments
 	return d
 }
 
+// NewOptListAvailableActionsPriority returns new OptListAvailableActionsPriority with value set to v.
+func NewOptListAvailableActionsPriority(v ListAvailableActionsPriority) OptListAvailableActionsPriority {
+	return OptListAvailableActionsPriority{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptListAvailableActionsPriority is optional ListAvailableActionsPriority.
+type OptListAvailableActionsPriority struct {
+	Value ListAvailableActionsPriority
+	Set   bool
+}
+
+// IsSet returns true if OptListAvailableActionsPriority was set.
+func (o OptListAvailableActionsPriority) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptListAvailableActionsPriority) Reset() {
+	var v ListAvailableActionsPriority
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptListAvailableActionsPriority) SetTo(v ListAvailableActionsPriority) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptListAvailableActionsPriority) Get() (v ListAvailableActionsPriority, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptListAvailableActionsPriority) Or(d ListAvailableActionsPriority) ListAvailableActionsPriority {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptListAvailableActionsSeverity returns new OptListAvailableActionsSeverity with value set to v.
+func NewOptListAvailableActionsSeverity(v ListAvailableActionsSeverity) OptListAvailableActionsSeverity {
+	return OptListAvailableActionsSeverity{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptListAvailableActionsSeverity is optional ListAvailableActionsSeverity.
+type OptListAvailableActionsSeverity struct {
+	Value ListAvailableActionsSeverity
+	Set   bool
+}
+
+// IsSet returns true if OptListAvailableActionsSeverity was set.
+func (o OptListAvailableActionsSeverity) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptListAvailableActionsSeverity) Reset() {
+	var v ListAvailableActionsSeverity
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptListAvailableActionsSeverity) SetTo(v ListAvailableActionsSeverity) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptListAvailableActionsSeverity) Get() (v ListAvailableActionsSeverity, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptListAvailableActionsSeverity) Or(d ListAvailableActionsSeverity) ListAvailableActionsSeverity {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptListWorkflowsByActionTypePriority returns new OptListWorkflowsByActionTypePriority with value set to v.
+func NewOptListWorkflowsByActionTypePriority(v ListWorkflowsByActionTypePriority) OptListWorkflowsByActionTypePriority {
+	return OptListWorkflowsByActionTypePriority{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptListWorkflowsByActionTypePriority is optional ListWorkflowsByActionTypePriority.
+type OptListWorkflowsByActionTypePriority struct {
+	Value ListWorkflowsByActionTypePriority
+	Set   bool
+}
+
+// IsSet returns true if OptListWorkflowsByActionTypePriority was set.
+func (o OptListWorkflowsByActionTypePriority) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptListWorkflowsByActionTypePriority) Reset() {
+	var v ListWorkflowsByActionTypePriority
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptListWorkflowsByActionTypePriority) SetTo(v ListWorkflowsByActionTypePriority) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptListWorkflowsByActionTypePriority) Get() (v ListWorkflowsByActionTypePriority, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptListWorkflowsByActionTypePriority) Or(d ListWorkflowsByActionTypePriority) ListWorkflowsByActionTypePriority {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptListWorkflowsByActionTypeSeverity returns new OptListWorkflowsByActionTypeSeverity with value set to v.
+func NewOptListWorkflowsByActionTypeSeverity(v ListWorkflowsByActionTypeSeverity) OptListWorkflowsByActionTypeSeverity {
+	return OptListWorkflowsByActionTypeSeverity{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptListWorkflowsByActionTypeSeverity is optional ListWorkflowsByActionTypeSeverity.
+type OptListWorkflowsByActionTypeSeverity struct {
+	Value ListWorkflowsByActionTypeSeverity
+	Set   bool
+}
+
+// IsSet returns true if OptListWorkflowsByActionTypeSeverity was set.
+func (o OptListWorkflowsByActionTypeSeverity) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptListWorkflowsByActionTypeSeverity) Reset() {
+	var v ListWorkflowsByActionTypeSeverity
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptListWorkflowsByActionTypeSeverity) SetTo(v ListWorkflowsByActionTypeSeverity) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptListWorkflowsByActionTypeSeverity) Get() (v ListWorkflowsByActionTypeSeverity, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptListWorkflowsByActionTypeSeverity) Or(d ListWorkflowsByActionTypeSeverity) ListWorkflowsByActionTypeSeverity {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptListWorkflowsStatus returns new OptListWorkflowsStatus with value set to v.
 func NewOptListWorkflowsStatus(v ListWorkflowsStatus) OptListWorkflowsStatus {
 	return OptListWorkflowsStatus{
