@@ -251,6 +251,34 @@ func (m *Manager) StartInteractiveSession(ctx context.Context, fn InvestigateFun
 	return id, nil
 }
 
+// StartInteractiveSessionWithContext creates a pending interactive session with
+// typed SessionContext, preserving the full SignalContext from the AA payload.
+// This ensures discover_workflows can retrieve severity, environment, priority,
+// and other signal fields without reading CRDs.
+func (m *Manager) StartInteractiveSessionWithContext(ctx context.Context, fn InvestigateFunc, sctx SessionContext) (string, error) {
+	if user := auth.GetUserFromContext(ctx); user != "" {
+		sctx.CreatedBy = user
+	}
+	metadata := sctx.ToMap()
+	id, err := m.store.Create()
+	if err != nil {
+		return "", err
+	}
+	m.store.SetMetadata(id, metadata)
+	m.store.SetContext(id, sctx)
+
+	m.store.mu.Lock()
+	sess := m.store.sessions[id]
+	sess.deferredFn = fn
+	m.store.mu.Unlock()
+
+	m.logger.Info("interactive session created with context (pending)",
+		"session_id", id,
+		"remediation_id", sctx.RemediationID,
+	)
+	return id, nil
+}
+
 // ErrSessionNotPending is returned when LaunchDeferredInvestigation is called
 // on a session that is not in StatusPending.
 var ErrSessionNotPending = fmt.Errorf("session must be in pending state to launch deferred investigation")
@@ -620,22 +648,25 @@ func (m *Manager) GetSessionContext(id string) (*SessionContext, error) {
 	return &ctx, nil
 }
 
-// GetSignalForRemediation looks up the running session associated with the
+// GetSignalForRemediation looks up any non-terminal session associated with the
 // given remediationID and returns its SignalContext. This enables interactive
-// tools (enrich, select_workflow) to inherit security gate parameters from the
-// autonomous investigation session. Returns ErrSessionNotFound if no running
-// session matches the rrID.
+// tools (discover_workflows, select_workflow) to inherit the full signal context
+// (severity, environment, priority) from the original AA payload without reading
+// CRDs. Searches Running, Pending, and UserDriving sessions.
+// Returns ErrSessionNotFound if no matching session has a stored signal.
 func (m *Manager) GetSignalForRemediation(rrID string) (*katypes.SignalContext, error) {
-	sessionID, found := m.FindByRemediationID(rrID)
-	if !found {
-		return nil, ErrSessionNotFound
+	m.store.mu.RLock()
+	defer m.store.mu.RUnlock()
+	for _, sess := range m.store.sessions {
+		if sess.Metadata["remediation_id"] != rrID {
+			continue
+		}
+		if sess.Context.Signal.Name != "" || sess.Context.Signal.Severity != "" {
+			signal := sess.Context.Signal
+			return &signal, nil
+		}
 	}
-	sess, err := m.store.Get(sessionID)
-	if err != nil {
-		return nil, err
-	}
-	signal := sess.Context.Signal
-	return &signal, nil
+	return nil, ErrSessionNotFound
 }
 
 // CompleteUserDriving transitions a user-driven session to completed with the

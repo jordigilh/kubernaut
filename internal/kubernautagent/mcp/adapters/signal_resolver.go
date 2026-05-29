@@ -20,52 +20,51 @@ import (
 	"context"
 	"fmt"
 
-	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
-// K8sSignalContextResolver reads the RemediationRequest CR from the K8s API
-// and maps its spec fields to a SignalContext for Phase 3 workflow discovery.
-type K8sSignalContextResolver struct {
-	client    client.Reader
-	namespace string
+// SignalProvider retrieves the SignalContext stored on the session when the
+// AA payload was received. This avoids cross-CRD reads (KA → AA or KA → RR)
+// and ensures both autonomous and interactive paths derive signal context
+// from the same source: the original AA IncidentRequest payload.
+type SignalProvider interface {
+	GetSignalForRemediation(rrID string) (*katypes.SignalContext, error)
 }
 
-// NewK8sSignalContextResolver creates a resolver that reads RR CRs from the
-// given namespace.
-func NewK8sSignalContextResolver(c client.Reader, namespace string) *K8sSignalContextResolver {
-	return &K8sSignalContextResolver{client: c, namespace: namespace}
+// SessionSignalContextResolver reads the SignalContext that was persisted on the
+// investigation session at creation time (from the AA IncidentRequest payload).
+// Both autonomous and interactive sessions store the full signal via
+// StartInvestigationWithContext / StartInteractiveSessionWithContext, so
+// discover_workflows always gets severity, environment, priority, and all
+// other fields without reading any CRD.
+type SessionSignalContextResolver struct {
+	provider SignalProvider
 }
 
-// ResolveSignalContext fetches the RR CR and maps spec fields to SignalContext.
-func (r *K8sSignalContextResolver) ResolveSignalContext(ctx context.Context, rrID string) (*katypes.SignalContext, error) {
-	var rr remediationv1.RemediationRequest
-	key := client.ObjectKey{Namespace: r.namespace, Name: rrID}
-	if err := r.client.Get(ctx, key, &rr); err != nil {
+// NewSessionSignalContextResolver creates a resolver backed by the session manager.
+func NewSessionSignalContextResolver(provider SignalProvider) *SessionSignalContextResolver {
+	return &SessionSignalContextResolver{provider: provider}
+}
+
+// ResolveSignalContext returns the SignalContext stored on the session for the
+// given remediation ID.
+func (r *SessionSignalContextResolver) ResolveSignalContext(_ context.Context, rrID string) (*katypes.SignalContext, error) {
+	signal, err := r.provider.GetSignalForRemediation(rrID)
+	if err != nil {
 		return nil, fmt.Errorf("resolve signal context for %s: %w", rrID, err)
 	}
-
-	return &katypes.SignalContext{
-		Name:           rr.Spec.SignalName,
-		Severity:       rr.Spec.Severity,
-		ResourceKind:   rr.Spec.TargetResource.Kind,
-		ResourceName:   rr.Spec.TargetResource.Name,
-		Namespace:      rr.Spec.TargetResource.Namespace,
-		RemediationID:  rr.Name,
-	}, nil
+	return signal, nil
 }
 
 // ResolveEnrichmentData returns empty enrichment data. Full enrichment is
 // handled by the investigator's enrichment pipeline, not the signal resolver.
-func (r *K8sSignalContextResolver) ResolveEnrichmentData(_ context.Context, _ string) (*prompt.EnrichmentData, error) {
+func (r *SessionSignalContextResolver) ResolveEnrichmentData(_ context.Context, _ string) (*prompt.EnrichmentData, error) {
 	return &prompt.EnrichmentData{}, nil
 }
 
 // ResolvePostRCAEnrichment performs Phase 2 re-enrichment for the RCA-identified
 // target. Delegates to the enricher if wired, otherwise returns empty data.
-func (r *K8sSignalContextResolver) ResolvePostRCAEnrichment(_ context.Context, _, _, _, _ string) (*prompt.EnrichmentData, error) {
+func (r *SessionSignalContextResolver) ResolvePostRCAEnrichment(_ context.Context, _, _, _, _ string) (*prompt.EnrichmentData, error) {
 	return &prompt.EnrichmentData{}, nil
 }
