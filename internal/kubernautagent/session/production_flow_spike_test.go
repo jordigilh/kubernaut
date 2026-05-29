@@ -20,7 +20,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -31,25 +30,6 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
-
-// mockBridgeLogFn simulates the EventLogBridge's sess.Log() delivery.
-type mockBridgeLogFn struct {
-	mu       sync.Mutex
-	received []json.RawMessage
-}
-
-func (m *mockBridgeLogFn) Log(level, logger string, data json.RawMessage) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.received = append(m.received, data)
-	return nil
-}
-
-func (m *mockBridgeLogFn) count() int {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return len(m.received)
-}
 
 // emitToSink replicates the exact production emitToSink function from
 // investigator.go — non-blocking send to the context-carried event sink.
