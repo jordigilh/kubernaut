@@ -278,14 +278,19 @@ func (c *SDKMCPClient) StartInvestigation(ctx context.Context, args StartInvesti
 		HTTPClient: c.httpClient,
 	}
 
-	session, err := streamClient.Connect(ctx, transport, nil)
+	// Use a detached context for the MCP session so its lifetime is not tied
+	// to the request/tool timeout context. The investigation may run for
+	// minutes; the caller controls cleanup via Closer(). We still use ctx
+	// for the initial Connect and SetLoggingLevel calls (which must complete
+	// within the request deadline), but the session itself lives beyond ctx.
+	session, err := streamClient.Connect(context.Background(), transport, nil)
 	if err != nil {
 		close(doneCh)
 		close(eventCh)
 		return nil, fmt.Errorf("MCP connect for investigation: %w", err)
 	}
 
-	if err := session.SetLoggingLevel(ctx, &mcp.SetLoggingLevelParams{Level: "info"}); err != nil {
+	if err := session.SetLoggingLevel(context.Background(), &mcp.SetLoggingLevelParams{Level: "info"}); err != nil {
 		_ = session.Close()
 		close(doneCh)
 		close(eventCh)
@@ -299,7 +304,9 @@ func (c *SDKMCPClient) StartInvestigation(ctx context.Context, args StartInvesti
 		"acting_user_groups": identity.Groups,
 	}
 
-	result, err := session.CallTool(ctx, &mcp.CallToolParams{
+	callCtx, callCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer callCancel()
+	result, err := session.CallTool(callCtx, &mcp.CallToolParams{
 		Name:      "kubernaut_investigate",
 		Arguments: argsMap,
 	})

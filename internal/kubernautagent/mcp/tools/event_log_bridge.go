@@ -68,9 +68,11 @@ func (b *EventLogBridge) Run(ctx context.Context) {
 	b.logger.Info("EventLogBridge started",
 		"investigation_session_id", b.sessionID,
 		"events_chan_ptr", fmt.Sprintf("%p", b.events))
-	defer b.logger.Info("EventLogBridge stopped",
-		"investigation_session_id", b.sessionID,
-		"events_forwarded", b.seq.Load())
+	defer func() {
+		b.logger.Info("EventLogBridge stopped",
+			"investigation_session_id", b.sessionID,
+			"events_forwarded", b.seq.Load())
+	}()
 	b.logger.Info("EventLogBridge entering for-select loop",
 		"investigation_session_id", b.sessionID,
 		"events_chan_nil", b.events == nil)
