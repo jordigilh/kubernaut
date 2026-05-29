@@ -211,7 +211,9 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 
 // BridgeEventsToA2A reads investigation events from the KA MCP session and
 // emits filtered reasoning artifacts to the A2A stream. A keepalive is sent
-// every 20s to prevent idle SSE timeouts during long tool executions.
+// every 5s to prevent idle SSE timeouts during long KA tool executions.
+// This complements the streaming executor-level keepalive which covers
+// gaps between tool calls.
 func BridgeEventsToA2A(ctx context.Context, events <-chan ka.InvestigationEvent) {
 	keepalive := time.NewTicker(5 * time.Second)
 	defer keepalive.Stop()

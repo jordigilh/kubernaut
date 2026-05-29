@@ -17,6 +17,7 @@ package launcher
 
 import (
 	"context"
+	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/a2aproject/a2a-go/a2a"
@@ -70,7 +71,27 @@ func (s *StreamingExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestC
 		"user", username,
 	)
 
+	// Keepalive: emit a lightweight artifact every 5s to prevent idle SSE
+	// timeouts from proxies or clients during long LLM thinking pauses
+	// between tool calls.
+	stopKeepalive := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-stopKeepalive:
+				return
+			case <-ticker.C:
+				_ = EmitReasoningSafe(ctx, "\nProcessing...\n")
+			}
+		}
+	}()
+
 	err := s.inner.Execute(ctx, reqCtx, queue)
+	close(stopKeepalive)
 
 	s.logger.Info("a2a stream closed",
 		"task_id", string(reqCtx.TaskID),
