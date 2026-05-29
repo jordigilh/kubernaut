@@ -16,7 +16,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	adksession "google.golang.org/adk/session"
@@ -646,11 +645,10 @@ func setRROwnerReference(ctx context.Context, c client.Client, logger logr.Logge
 
 	crd.OwnerReferences = []metav1.OwnerReference{
 		{
-			APIVersion:         "kubernaut.ai/v1alpha1",
-			Kind:               "RemediationRequest",
-			Name:               rr.GetName(),
-			UID:                rr.GetUID(),
-			BlockOwnerDeletion: ptr.To(true),
+			APIVersion: "kubernaut.ai/v1alpha1",
+			Kind:       "RemediationRequest",
+			Name:       rr.GetName(),
+			UID:        rr.GetUID(),
 		},
 	}
 }
