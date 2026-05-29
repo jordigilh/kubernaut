@@ -317,6 +317,25 @@ func (inv *Investigator) RunRCAExtractionFromConversation(ctx context.Context, m
 func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal katypes.SignalContext, rcaResult *katypes.InvestigationResult, enrichData *prompt.EnrichmentData, correlationID string) (*katypes.InvestigationResult, error) {
 	inv.pipeline.AnomalyDetector.Reset()
 
+	// Auto-resolve apiVersion when the LLM omitted it (parity with the
+	// autonomous apiVersionValidationGate in runRCA). Uses the REST mapper
+	// via scopeResolver: if the kind maps to exactly one API group, we can
+	// infer the apiVersion deterministically.
+	if rcaResult.RemediationTarget.APIVersion == "" && rcaResult.RemediationTarget.Kind != "" && inv.scopeResolver != nil {
+		ambiguous, gvrs, err := inv.scopeResolver.IsAmbiguousKind(rcaResult.RemediationTarget.Kind)
+		if err != nil {
+			inv.logger.Error(err, "RunWorkflowDiscoveryFromRCA: IsAmbiguousKind failed, skipping apiVersion auto-resolve",
+				"kind", rcaResult.RemediationTarget.Kind, "correlation_id", correlationID)
+		} else if !ambiguous && len(gvrs) == 1 {
+			rcaResult.RemediationTarget.APIVersion = gvrToAPIVersion(gvrs[0])
+			signal.ResourceAPIVersion = rcaResult.RemediationTarget.APIVersion
+			inv.logger.Info("RunWorkflowDiscoveryFromRCA: auto-resolved apiVersion for non-ambiguous kind",
+				"kind", rcaResult.RemediationTarget.Kind,
+				"api_version", rcaResult.RemediationTarget.APIVersion,
+				"correlation_id", correlationID)
+		}
+	}
+
 	client := inv.client
 	modelName := inv.modelName
 	var runtimeParams llm.RuntimeParams
