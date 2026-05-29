@@ -149,8 +149,7 @@ func main() {
 	fmt.Println("   (Events arriving from KA's EventLogBridge via sess.Log)")
 	fmt.Println()
 
-	eventsAtCallEnd := eventCount.Load()
-	fmt.Printf("   Events received during CallTool: %d\n", eventsAtCallEnd)
+	fmt.Printf("   Events received during CallTool: %d\n", eventCount.Load())
 
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
@@ -160,10 +159,8 @@ func main() {
 		case <-ctx.Done():
 			goto done
 		case <-ticker.C:
-			current := eventCount.Load()
 			fmt.Printf("   [%s] events so far: %d\n",
-				time.Since(startTime).Round(time.Second), current)
-			eventsAtCallEnd = current
+				time.Since(startTime).Round(time.Second), eventCount.Load())
 		}
 	}
 
