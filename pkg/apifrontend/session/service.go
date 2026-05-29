@@ -391,20 +391,13 @@ func (s *CRDSessionService) MaterializeCRD(ctx context.Context, sessionID string
 	delete(s.pendingConfigs, sessionID)
 	s.mu.Unlock()
 
-	now := metav1.Now()
 	crd := &v1alpha1.InvestigationSession{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      crdName,
 			Namespace: s.namespace,
 			Labels: map[string]string{
-				LabelPhase:     string(v1alpha1.SessionPhaseActive),
 				LabelManagedBy: "kubernaut-apifrontend",
 			},
-		},
-		Status: v1alpha1.InvestigationSessionStatus{
-			Phase:           v1alpha1.SessionPhaseActive,
-			ConnectionState: v1alpha1.ConnectionStateConnected,
-			StartedAt:       &now,
 		},
 	}
 
@@ -435,7 +428,7 @@ func (s *CRDSessionService) MaterializeCRD(ctx context.Context, sessionID string
 		); listErr == nil {
 			for i := range existingList.Items {
 				existing := &existingList.Items[i]
-				if existing.Status.Phase == v1alpha1.SessionPhaseActive &&
+				if !IsTerminal(existing.Status.Phase) &&
 					existing.Name != crdName &&
 					existing.Spec.UserIdentity.Username != cfg.UserIdentity.Username {
 					s.mu.Lock()
@@ -448,20 +441,11 @@ func (s *CRDSessionService) MaterializeCRD(ctx context.Context, sessionID string
 		}
 	}
 
-	desiredStatus := crd.Status
 	if err := s.client.Create(ctx, crd); err != nil {
 		s.mu.Lock()
 		s.pendingConfigs[sessionID] = cfg
 		s.mu.Unlock()
 		return fmt.Errorf("create InvestigationSession CRD: %w", err)
-	}
-
-	crd.Status = desiredStatus
-	if err := s.client.Status().Update(ctx, crd); err != nil {
-		s.logger.V(0).Info("CRD status update failed after materialize",
-			"session_id", sessionID,
-			"error", security.RedactError(err),
-		)
 	}
 
 	s.logger.Info("CRD materialized",
@@ -487,7 +471,7 @@ func (s *CRDSessionService) FinalizeSessionByRR(ctx context.Context, rrNamespace
 
 	for i := range list.Items {
 		is := &list.Items[i]
-		if is.Status.Phase == v1alpha1.SessionPhaseActive || is.Status.Phase == v1alpha1.SessionPhaseDisconnected {
+		if !IsTerminal(is.Status.Phase) {
 			msg := fmt.Sprintf("user action: %s", string(phase))
 			userID := is.Spec.UserIdentity.Username
 			return s.UpdatePhase(ctx, is.Name, phase, msg, userID)
@@ -524,8 +508,7 @@ func (s *CRDSessionService) InitializeSessionByRR(ctx context.Context, rrNamespa
 	}
 	for i := range existingList.Items {
 		existing := &existingList.Items[i]
-		if existing.Status.Phase == v1alpha1.SessionPhaseActive ||
-			existing.Status.Phase == v1alpha1.SessionPhaseDisconnected {
+		if !IsTerminal(existing.Status.Phase) {
 			if existing.Spec.UserIdentity.Username == username {
 				return nil
 			}
@@ -539,13 +522,11 @@ func (s *CRDSessionService) InitializeSessionByRR(ctx context.Context, rrNamespa
 		crdName = fmt.Sprintf("isess-%d", time.Now().UnixNano())
 	}
 
-	now := metav1.Now()
 	crd := &v1alpha1.InvestigationSession{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      crdName,
 			Namespace: s.namespace,
 			Labels: map[string]string{
-				LabelPhase:     string(v1alpha1.SessionPhaseActive),
 				LabelManagedBy: "kubernaut-apifrontend",
 				LabelUser:      sanitizeLabelValue(username),
 				LabelRRName:    sanitizeLabelValue(rrName),
@@ -560,18 +541,12 @@ func (s *CRDSessionService) InitializeSessionByRR(ctx context.Context, rrNamespa
 			},
 			JoinMode: v1alpha1.SessionJoinModeTakeover,
 		},
-		Status: v1alpha1.InvestigationSessionStatus{
-			Phase:           v1alpha1.SessionPhaseActive,
-			ConnectionState: v1alpha1.ConnectionStateConnected,
-			StartedAt:       &now,
-		},
 	}
 
 	if rrNamespace == s.namespace {
 		setRROwnerReference(ctx, s.client, s.logger, crd, rrNamespace, rrName)
 	}
 
-	desiredStatus := crd.Status
 	if err := s.client.Create(ctx, crd); err != nil {
 		if apierrors.IsAlreadyExists(err) {
 			return nil
@@ -579,24 +554,11 @@ func (s *CRDSessionService) InitializeSessionByRR(ctx context.Context, rrNamespa
 		return fmt.Errorf("create IS CRD for takeover: %w", err)
 	}
 
-	crd.Status = desiredStatus
-	if err := s.client.Status().Update(ctx, crd); err != nil {
-		s.logger.V(0).Info("IS CRD status update failed after takeover initialize",
-			"crd_name", crdName,
-			"error", security.RedactError(err),
-		)
-	}
-
 	s.mu.Lock()
 	s.crdIndex[kaSessionID] = crdName
 	s.mu.Unlock()
 
-	// Note: sessionsActive gauge tracks in-memory session count. For
-	// InitializeSessionByRR the IS CRD is created directly (no ADK Create),
-	// so the gauge may under-count if the session was not also tracked via
-	// Create(). This is acceptable because the gauge's primary consumer is
-	// the TTL reconciler, which reads CRDs directly from the cache.
-	s.incSessionGauge(string(v1alpha1.SessionPhaseActive))
+	s.incSessionGauge("")
 
 	if s.auditor != nil {
 		s.auditor.Emit(ctx, &audit.Event{

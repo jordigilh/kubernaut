@@ -180,7 +180,7 @@ var _ = Describe("Deferred CRD Creation (G6)", func() {
 			err = k8s.Get(ctx, types.NamespacedName{Name: "mat-002", Namespace: "test-ns"}, &crd)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(crd.Labels[session.LabelRRName]).To(Equal("rr-xyz"))
-			Expect(crd.Labels[session.LabelPhase]).To(Equal(string(v1alpha1.SessionPhaseActive)))
+			Expect(crd.Labels).NotTo(HaveKey(session.LabelPhase))
 			Expect(crd.Labels[session.LabelManagedBy]).To(Equal("kubernaut-apifrontend"))
 		})
 
@@ -383,6 +383,7 @@ var _ = Describe("Deferred CRD Creation (G6)", func() {
 				Namespace: "prod", Name: "rr-disc-001",
 			})
 			Expect(err).NotTo(HaveOccurred())
+			Expect(setSessionCRDPhase(ctx, k8s, "test-ns", "disc-001", v1alpha1.SessionPhaseActive)).To(Succeed())
 
 			err = svc.UpdatePhase(ctx, "disc-001", v1alpha1.SessionPhaseDisconnected, "SSE connection closed", "")
 			Expect(err).NotTo(HaveOccurred())
@@ -413,6 +414,7 @@ var _ = Describe("Deferred CRD Creation (G6)", func() {
 				Namespace: "prod", Name: "rr-ttl-001",
 			})
 			Expect(err).NotTo(HaveOccurred())
+			Expect(setSessionCRDPhase(ctx, k8s, "test-ns", "ttl-001", v1alpha1.SessionPhaseActive)).To(Succeed())
 
 			err = svc.UpdatePhase(ctx, "ttl-001", v1alpha1.SessionPhaseDisconnected, "heartbeat stale", "system")
 			Expect(err).NotTo(HaveOccurred())
@@ -441,6 +443,7 @@ var _ = Describe("Deferred CRD Creation (G6)", func() {
 				Namespace: "prod", Name: "rr-ttl-002",
 			})
 			Expect(err).NotTo(HaveOccurred())
+			Expect(setSessionCRDPhase(ctx, k8s, "test-ns", "ttl-002", v1alpha1.SessionPhaseActive)).To(Succeed())
 
 			err = svc.UpdatePhase(ctx, "ttl-002", v1alpha1.SessionPhaseDisconnected, "SSE dropped", "")
 			Expect(err).NotTo(HaveOccurred())
@@ -480,7 +483,7 @@ var _ = Describe("InitializeSessionByRR (takeover IS CRD creation)", func() {
 		ctx = context.Background()
 	})
 
-	It("UT-AF-1293-INIT-001: creates IS CRD with Active phase, takeover JoinMode, and A2ATaskID", func() {
+	It("UT-AF-1293-INIT-001: creates IS CRD with takeover JoinMode and A2ATaskID (phase owned by AA)", func() {
 		k8s := newIndexedFakeClient()
 		svc := session.NewCRDSessionService(adksession.InMemoryService(), k8s, scheme, "test-ns")
 
@@ -495,7 +498,8 @@ var _ = Describe("InitializeSessionByRR (takeover IS CRD creation)", func() {
 		Expect(is.Spec.UserIdentity.Username).To(Equal("sre-alice"))
 		Expect(is.Spec.UserIdentity.Groups).To(ConsistOf("sre-team"))
 		Expect(is.Spec.JoinMode).To(Equal(v1alpha1.SessionJoinModeTakeover))
-		Expect(is.Labels[session.LabelPhase]).To(Equal(string(v1alpha1.SessionPhaseActive)))
+		Expect(is.Status.Phase).To(BeEmpty())
+		Expect(is.Labels).NotTo(HaveKey(session.LabelPhase))
 		Expect(is.Labels[session.LabelUser]).To(Equal("sre-alice"))
 		Expect(is.Labels[session.LabelRRName]).To(Equal("rr-oom-001"))
 	})
@@ -655,8 +659,8 @@ var _ = Describe("InitializeSessionByRR (takeover IS CRD creation)", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		metric := &dto.Metric{}
-		Expect(gauge.WithLabelValues(string(v1alpha1.SessionPhaseActive)).Write(metric)).To(Succeed())
+		Expect(gauge.WithLabelValues("").Write(metric)).To(Succeed())
 		Expect(metric.GetGauge().GetValue()).To(Equal(float64(1)),
-			"sessionsActive gauge must be incremented for Active phase after InitializeSessionByRR")
+			"sessionsActive gauge must be incremented after InitializeSessionByRR (empty phase until AA sets Active)")
 	})
 })
