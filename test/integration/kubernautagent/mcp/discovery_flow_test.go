@@ -160,7 +160,11 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 			})
 			Expect(err).NotTo(HaveOccurred())
 			if result.IsError {
-				GinkgoWriter.Printf("DISC-001 discover_workflows error content: %v\n", result.Content)
+				for _, c := range result.Content {
+					if tc, ok := c.(*mcpsdk.TextContent); ok {
+						GinkgoWriter.Printf("DISC-001 discover_workflows error: %s\n", tc.Text)
+					}
+				}
 			}
 			Expect(result.IsError).To(BeFalse())
 			output, err = decodeOutput(result)
@@ -269,7 +273,11 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 			})
 			Expect(err).NotTo(HaveOccurred())
 			if result.IsError {
-				GinkgoWriter.Printf("DISC-003 discover_workflows error content: %v\n", result.Content)
+				for _, c := range result.Content {
+					if tc, ok := c.(*mcpsdk.TextContent); ok {
+						GinkgoWriter.Printf("DISC-003 discover_workflows error: %s\n", tc.Text)
+					}
+				}
 			}
 			Expect(result.IsError).To(BeFalse())
 
@@ -332,7 +340,11 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 			})
 			Expect(err).NotTo(HaveOccurred())
 			if result.IsError {
-				GinkgoWriter.Printf("DISC-004 discover_workflows error content: %v\n", result.Content)
+				for _, c := range result.Content {
+					if tc, ok := c.(*mcpsdk.TextContent); ok {
+						GinkgoWriter.Printf("DISC-004 discover_workflows error: %s\n", tc.Text)
+					}
+				}
 			}
 			Expect(result.IsError).To(BeFalse())
 
@@ -406,7 +418,11 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 			})
 			Expect(err).NotTo(HaveOccurred())
 			if result.IsError {
-				GinkgoWriter.Printf("DISC-006 discover_workflows error content: %v\n", result.Content)
+				for _, c := range result.Content {
+					if tc, ok := c.(*mcpsdk.TextContent); ok {
+						GinkgoWriter.Printf("DISC-006 discover_workflows error: %s\n", tc.Text)
+					}
+				}
 			}
 			Expect(result.IsError).To(BeFalse())
 
@@ -486,7 +502,11 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 			})
 			Expect(err).NotTo(HaveOccurred())
 			if result.IsError {
-				GinkgoWriter.Printf("DISC-008 discover_workflows error content: %v\n", result.Content)
+				for _, c := range result.Content {
+					if tc, ok := c.(*mcpsdk.TextContent); ok {
+						GinkgoWriter.Printf("DISC-008 discover_workflows error: %s\n", tc.Text)
+					}
+				}
 			}
 			Expect(result.IsError).To(BeFalse())
 
