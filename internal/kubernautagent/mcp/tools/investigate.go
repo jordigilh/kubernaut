@@ -817,6 +817,7 @@ func (t *InvestigateTool) handleDiscoverWorkflows(ctx context.Context, input Inv
 				signal.ResourceKind = rcaResult.RemediationTarget.Kind
 				signal.ResourceName = rcaResult.RemediationTarget.Name
 				signal.Namespace = rcaResult.RemediationTarget.Namespace
+				signal.ResourceAPIVersion = rcaResult.RemediationTarget.APIVersion
 			}
 		}
 	}
