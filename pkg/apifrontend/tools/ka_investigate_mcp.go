@@ -80,11 +80,16 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 		return InvestigateMCPResult{}, fmt.Errorf("rr_id is required for MCP investigation")
 	}
 
-	// Best-effort check for existing AIA CRD. Use a short timeout so we
-	// don't block the investigate call — AF creates the IS CRD itself, so
-	// this is purely opportunistic coordination with AA.
+	// Wait for AIA CRD to show a session ID, confirming AA has submitted
+	// to KA with interactive=true and KA has created a pending session.
+	// Blocking path uses a longer timeout because the IS CRD (created by
+	// af_create_rr) needs time for AA to detect and resubmit to KA.
 	if k8sClient != nil && namespace != "" {
-		checkCtx, checkCancel := context.WithTimeout(ctx, 10*time.Second)
+		awaitTimeout := 10 * time.Second
+		if blocking {
+			awaitTimeout = 60 * time.Second
+		}
+		checkCtx, checkCancel := context.WithTimeout(ctx, awaitTimeout)
 		awaitResult, awaitErr := HandleAwaitSession(checkCtx, k8sClient, AwaitSessionArgs{
 			Namespace: namespace,
 			RRName:    args.RRID,
