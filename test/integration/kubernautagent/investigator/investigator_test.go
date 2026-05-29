@@ -193,10 +193,12 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 			}
 			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools})
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
-				Name:      "api-server-abc",
-				Namespace: "production",
-				Severity:  "critical",
-				Message:   "OOMKilled",
+				Name:        "api-server-abc",
+				Namespace:   "production",
+				Severity:    "critical",
+				Environment: "Production",
+				Priority:    "P0",
+				Message:     "OOMKilled",
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil(), "Investigate should return a result")
@@ -214,6 +216,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "pod-abc", Namespace: "default", Severity: "warning", Message: "CrashLoopBackOff",
+				Environment: "Development", Priority: "P2",
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(mockClient.calls).To(HaveLen(2), "should make 2 LLM calls (RCA + workflow)")
@@ -229,6 +232,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api-server-abc", Namespace: "production", Severity: "critical", Message: "OOMKilled",
+				Environment: "Production", Priority: "P0",
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(mockClient.calls).To(HaveLen(2))
@@ -251,6 +255,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 1, PhaseTools: phaseTools})
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api", Namespace: "default", Severity: "critical", Message: "OOMKilled",
+				Environment: "Development", Priority: "P1",
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
@@ -276,6 +281,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg})
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api", Namespace: "default", Severity: "warning", Message: "CrashLoop",
+				Environment: "Development", Priority: "P2",
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
@@ -306,6 +312,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg})
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api", Namespace: "default", Severity: "critical", Message: "OOMKilled",
+				Environment: "Development", Priority: "P1",
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
@@ -331,6 +338,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api", Namespace: "default", Severity: "warning", Message: "CrashLoop",
+				Environment: "Development", Priority: "P2",
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(mockClient.calls).To(HaveLen(2))
@@ -359,6 +367,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api", Namespace: "default", Severity: "warning", Message: "CrashLoop",
+				Environment: "Development", Priority: "P2",
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(mockClient.calls).To(HaveLen(2))
@@ -383,10 +392,12 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 			}
 			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
-				Name:      "api-server-abc",
-				Namespace: "production",
-				Severity:  "critical",
-				Message:   "OOMKilled",
+				Name:        "api-server-abc",
+				Namespace:   "production",
+				Severity:    "critical",
+				Environment: "Production",
+				Priority:    "P0",
+				Message:     "OOMKilled",
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(mockClient.calls).To(HaveLen(2))
@@ -417,6 +428,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: nil, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools})
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "test-pod", Namespace: "default", Severity: "warning", Message: "CrashLoop",
+				Environment: "Development", Priority: "P2",
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
@@ -455,6 +467,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg})
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api-server", Namespace: "production", Severity: "critical", Message: "OOMKilled",
+				Environment: "Production", Priority: "P0",
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
@@ -478,6 +491,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api", Namespace: "default", Severity: "warning", Message: "CrashLoop",
+				Environment: "Development", Priority: "P2",
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(mockClient.calls).To(HaveLen(2))
@@ -513,6 +527,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools})
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api", Namespace: "default", Severity: "warning", Message: "CrashLoop",
+				Environment: "Development", Priority: "P2",
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
@@ -529,6 +544,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api-server", Namespace: "production", Severity: "critical", Message: "OOMKilled",
+				Environment: "Production", Priority: "P0",
 			})
 			Expect(err).NotTo(HaveOccurred())
 
@@ -592,6 +608,8 @@ var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() 
 				Name:         "worker-77784c6cf7-l27g4",
 				Namespace:    "demo-crashloop",
 				Severity:     "critical",
+				Environment:  "Development",
+				Priority:     "P1",
 				Message:      "OOMKilled",
 			})
 			Expect(err).NotTo(HaveOccurred())
@@ -634,6 +652,8 @@ var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() 
 				Name:         "worker-77784c6cf7-l27g4",
 				Namespace:    "demo-crashloop",
 				Severity:     "warning",
+				Environment:  "Development",
+				Priority:     "P2",
 				Message:      "CrashLoopBackOff",
 			})
 			Expect(err).NotTo(HaveOccurred())
@@ -676,6 +696,8 @@ var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() 
 				Name:         "worker-77784c6cf7-l27g4",
 				Namespace:    "demo-crashloop",
 				Severity:     "critical",
+				Environment:  "Development",
+				Priority:     "P1",
 				Message:      "OOMKilled",
 			})
 			Expect(err).NotTo(HaveOccurred())
@@ -724,6 +746,8 @@ var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() 
 				Name:         "ip-10-0-1-42",
 				Namespace:    "",
 				Severity:     "warning",
+				Environment:  "Development",
+				Priority:     "P2",
 				Message:      "DiskPressure condition detected",
 			})
 			Expect(err).NotTo(HaveOccurred())
@@ -774,6 +798,8 @@ var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() 
 				Name:         "signal-pod",
 				Namespace:    "production",
 				Severity:     "critical",
+				Environment:  "Production",
+				Priority:     "P0",
 				Message:      "OOMKilled",
 			})
 			Expect(err).NotTo(HaveOccurred())

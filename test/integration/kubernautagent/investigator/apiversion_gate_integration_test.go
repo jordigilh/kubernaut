@@ -75,6 +75,8 @@ var _ = Describe("TP-1044: apiVersionValidationGate Integration — Full Investi
 		Name:         "etcd-operator-xyz",
 		Namespace:    "demo-operator",
 		Severity:     "critical",
+		Environment:  "Development",
+		Priority:     "P1",
 		Message:      "RBAC denial on wrong API group",
 	}
 
@@ -194,6 +196,8 @@ var _ = Describe("TP-1044: apiVersionValidationGate Integration — Full Investi
 				Name:         "api-server-pod",
 				Namespace:    "production",
 				Severity:     "critical",
+				Environment:  "Production",
+				Priority:     "P0",
 				Message:      "OOMKilled",
 			})
 			Expect(err).NotTo(HaveOccurred())
@@ -248,6 +252,8 @@ var _ = Describe("TP-1044: apiVersionValidationGate Integration — Full Investi
 				Name:         "etcd",
 				Namespace:    "demo-operator",
 				Severity:     "critical",
+				Environment:  "Development",
+				Priority:     "P1",
 				Message:      "Subscription unhealthy",
 			})
 			Expect(err).NotTo(HaveOccurred())

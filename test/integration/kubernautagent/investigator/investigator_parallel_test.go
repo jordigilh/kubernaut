@@ -101,6 +101,7 @@ var _ = Describe("BR-PERFORMANCE-970: Parallel Tool Execution in runLLMLoop", fu
 
 	signal := katypes.SignalContext{
 		Name: "api-server", Namespace: "default", Severity: "warning",
+		Environment: "Development", Priority: "P2",
 		Message: "CrashLoopBackOff", RemediationID: "rem-970-test",
 	}
 

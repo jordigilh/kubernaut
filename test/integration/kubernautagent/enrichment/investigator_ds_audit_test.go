@@ -83,6 +83,8 @@ var _ = Describe("#1111 Investigator aiagent.response.failed DS Audit", Label("i
 			Name:          "test-audit-signal",
 			Namespace:     "default",
 			Severity:      "critical",
+			Environment:   "Development",
+			Priority:      "P1",
 			Message:       "Forced LLM failure for aiagent.response.failed audit IT",
 			RemediationID: correlationID,
 			ResourceKind:  "Pod",
