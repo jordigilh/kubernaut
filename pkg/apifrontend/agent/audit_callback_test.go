@@ -174,117 +174,112 @@ var _ = Describe("newAuditToolCallback (#1189)", func() {
 	})
 })
 
-var _ = Describe("Deferred CRD Materialization (G6)", func() {
+var _ = Describe("IS CRD creation on af_create_rr (race fix)", func() {
 
-	It("IT-AF-1234-W20: af_create_rr no longer triggers MaterializeCRD (#1293 design)", func() {
-		k8sScheme := testCRDScheme()
-		k8sClient := newFakeCRDClient(k8sScheme)
+	newIndexedFakeClient := func() client.Client {
+		return k8sfake.NewClientBuilder().
+			WithScheme(testCRDScheme()).
+			WithStatusSubresource(&isv1alpha1.InvestigationSession{}).
+			WithIndex(&isv1alpha1.InvestigationSession{}, session.FieldIndexRRName,
+				func(obj client.Object) []string {
+					is := obj.(*isv1alpha1.InvestigationSession)
+					if is.Spec.RemediationRequestRef.Name == "" {
+						return nil
+					}
+					return []string{is.Spec.RemediationRequestRef.Name}
+				}).
+			Build()
+	}
+
+	It("UT-AF-1326-090: af_create_rr success creates IS CRD when SessionService is configured", func() {
+		k8sClient := newIndexedFakeClient()
 		svc := session.NewCRDSessionService(
-			adksession.InMemoryService(), k8sClient, k8sScheme, "test-ns",
+			adksession.InMemoryService(), k8sClient, testCRDScheme(), "kubernaut-system",
 		)
 
-		ctx := context.Background()
-		_, err := svc.Create(ctx, &adksession.CreateRequest{
-			AppName:   "test-app",
-			UserID:    "sre@kubernaut.ai",
-			SessionID: "sess-deferred-w20",
-			State: map[string]any{
-				session.StateKeyCreateConfig: &session.CreateConfig{
-					A2ATaskID: "task-w20",
-					UserIdentity: isv1alpha1.SessionUser{
-						Username: "sre@kubernaut.ai",
-					},
-					JoinMode:       isv1alpha1.SessionJoinModeStart,
-					RemediationRef: isv1alpha1.ObjectRef{Name: "pending", Namespace: "kubernaut-system"},
-				},
-			},
-		})
-		Expect(err).NotTo(HaveOccurred())
-		Expect(svc.IsMaterialized("sess-deferred-w20")).To(BeFalse())
-
 		auditor := &capturingAuditor{}
-		cbWithSvc := newAuditToolCallback(auditor, svc, "kubernaut-system")
+		cb := newAuditToolCallback(auditor, svc, "kubernaut-system")
 
-		ctx = session.WithCreateContext(ctx, &session.CreateContext{
-			TaskID:    "task-w20",
-			SessionID: "sess-deferred-w20",
+		ctx := context.Background()
+		ctx = auth.WithUserIdentity(ctx, &auth.UserIdentity{
+			Username: "admin",
+			Groups:   []string{"system:masters"},
 		})
-		ctx = auth.WithUserIdentity(ctx, &auth.UserIdentity{Username: "sre@kubernaut.ai"})
 
-		output := map[string]any{"rr_id": "rr-api-gw-oom"}
+		output := map[string]any{"rr_id": "rr-abc123-def456"}
 		tc := fakeToolContext{Context: ctx}
-		_, err = cbWithSvc(tc, fakeTool{name: "af_create_rr"}, nil, output, nil)
+		_, err := cb(tc, fakeTool{name: "af_create_rr"}, nil, output, nil)
 		Expect(err).NotTo(HaveOccurred())
-
-		Expect(svc.IsMaterialized("sess-deferred-w20")).To(BeFalse())
 
 		var isList isv1alpha1.InvestigationSessionList
 		Expect(k8sClient.List(ctx, &isList)).To(Succeed())
-		Expect(isList.Items).To(BeEmpty(), "no IS CRD should exist after af_create_rr")
+		Expect(isList.Items).To(HaveLen(1), "IS CRD must be created after af_create_rr success")
 
-		Expect(auditor.events).To(HaveLen(1))
-		Expect(auditor.events[0].Detail["rr_id"]).To(Equal("rr-api-gw-oom"))
+		is := isList.Items[0]
+		Expect(is.Spec.RemediationRequestRef.Name).To(Equal("rr-abc123-def456"))
+		Expect(is.Spec.RemediationRequestRef.Namespace).To(Equal("kubernaut-system"))
+		Expect(is.Spec.UserIdentity.Username).To(Equal("admin"))
+		Expect(is.Spec.UserIdentity.Groups).To(ContainElement("system:masters"))
+		Expect(is.Status.Phase).To(Equal(isv1alpha1.SessionPhaseActive))
 	})
 
-	It("IT-AF-1234-W21: af_create_rr audit emits rr_id even without SessionService (#1293)", func() {
+	It("UT-AF-1326-091: af_create_rr skips IS CRD when SessionService is nil", func() {
 		auditor := &capturingAuditor{}
-		cbNoSvc := newAuditToolCallback(auditor, nil, "kubernaut-system")
+		cb := newAuditToolCallback(auditor, nil, "kubernaut-system")
 
 		ctx := context.Background()
-		ctx = session.WithCreateContext(ctx, &session.CreateContext{
-			TaskID:    "task-w21",
-			SessionID: "sess-no-svc",
-		})
-		ctx = auth.WithUserIdentity(ctx, &auth.UserIdentity{Username: "sre@kubernaut.ai"})
+		ctx = auth.WithUserIdentity(ctx, &auth.UserIdentity{Username: "admin"})
 
-		output := map[string]any{"rr_id": "rr-api-gw-oom"}
+		output := map[string]any{"rr_id": "rr-no-svc-091"}
 		tc := fakeToolContext{Context: ctx}
-		_, err := cbNoSvc(tc, fakeTool{name: "af_create_rr"}, nil, output, nil)
+		_, err := cb(tc, fakeTool{name: "af_create_rr"}, nil, output, nil)
 		Expect(err).NotTo(HaveOccurred())
 
 		Expect(auditor.events).To(HaveLen(1))
-		Expect(auditor.events[0].Detail["rr_id"]).To(Equal("rr-api-gw-oom"))
+		Expect(auditor.events[0].Detail["rr_id"]).To(Equal("rr-no-svc-091"))
 	})
 
-	It("IT-AF-1234-W22: af_create_rr failure does not create IS CRD (#1293)", func() {
-		k8sScheme := testCRDScheme()
-		k8sClient := newFakeCRDClient(k8sScheme)
+	It("UT-AF-1326-092: af_create_rr failure does not create IS CRD", func() {
+		k8sClient := newIndexedFakeClient()
 		svc := session.NewCRDSessionService(
-			adksession.InMemoryService(), k8sClient, k8sScheme, "test-ns",
+			adksession.InMemoryService(), k8sClient, testCRDScheme(), "kubernaut-system",
 		)
 
-		ctx := context.Background()
-		_, err := svc.Create(ctx, &adksession.CreateRequest{
-			AppName:   "test-app",
-			UserID:    "sre@kubernaut.ai",
-			SessionID: "sess-deferred-w22",
-			State: map[string]any{
-				session.StateKeyCreateConfig: &session.CreateConfig{
-					A2ATaskID: "task-w22",
-					UserIdentity: isv1alpha1.SessionUser{
-						Username: "sre@kubernaut.ai",
-					},
-					JoinMode:       isv1alpha1.SessionJoinModeStart,
-					RemediationRef: isv1alpha1.ObjectRef{Name: "pending", Namespace: "kubernaut-system"},
-				},
-			},
-		})
-		Expect(err).NotTo(HaveOccurred())
-
 		auditor := &capturingAuditor{}
-		cbWithSvc := newAuditToolCallback(auditor, svc, "kubernaut-system")
+		cb := newAuditToolCallback(auditor, svc, "kubernaut-system")
 
-		ctx = session.WithCreateContext(ctx, &session.CreateContext{
-			TaskID:    "task-w22",
-			SessionID: "sess-deferred-w22",
-		})
-		ctx = auth.WithUserIdentity(ctx, &auth.UserIdentity{Username: "sre@kubernaut.ai"})
+		ctx := context.Background()
+		ctx = auth.WithUserIdentity(ctx, &auth.UserIdentity{Username: "admin"})
 
 		tc := fakeToolContext{Context: ctx}
-		toolErr := fmt.Errorf("failed to create RR")
-		_, err = cbWithSvc(tc, fakeTool{name: "af_create_rr"}, nil, nil, toolErr)
+		toolErr := fmt.Errorf("creation failed")
+		_, err := cb(tc, fakeTool{name: "af_create_rr"}, nil, nil, toolErr)
 		Expect(err).NotTo(HaveOccurred())
 
-		Expect(svc.IsMaterialized("sess-deferred-w22")).To(BeFalse())
+		var isList isv1alpha1.InvestigationSessionList
+		Expect(k8sClient.List(ctx, &isList)).To(Succeed())
+		Expect(isList.Items).To(BeEmpty(), "no IS CRD on af_create_rr failure")
 	})
+
+	It("UT-AF-1326-093: af_create_rr skips IS CRD when no user identity in context", func() {
+		k8sClient := newIndexedFakeClient()
+		svc := session.NewCRDSessionService(
+			adksession.InMemoryService(), k8sClient, testCRDScheme(), "kubernaut-system",
+		)
+
+		auditor := &capturingAuditor{}
+		cb := newAuditToolCallback(auditor, svc, "kubernaut-system")
+
+		ctx := context.Background()
+
+		output := map[string]any{"rr_id": "rr-no-identity-093"}
+		tc := fakeToolContext{Context: ctx}
+		_, err := cb(tc, fakeTool{name: "af_create_rr"}, nil, output, nil)
+		Expect(err).NotTo(HaveOccurred())
+
+		var isList isv1alpha1.InvestigationSessionList
+		Expect(k8sClient.List(ctx, &isList)).To(Succeed())
+		Expect(isList.Items).To(BeEmpty(), "no IS CRD without user identity")
+	})
+
 })

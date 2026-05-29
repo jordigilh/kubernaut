@@ -1,13 +1,13 @@
 package agent
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/google/uuid"
 	"google.golang.org/adk/agent"
 	"google.golang.org/adk/agent/llmagent"
 	"google.golang.org/adk/tool"
@@ -114,7 +114,7 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 		{"cancel_remediation", func() (tool.Tool, error) { return tools.NewCancelRemediationTool(k8s, cfg.Namespace) }},
 		{"watch", func() (tool.Tool, error) { return tools.NewWatchTool(k8s) }},
 		{"investigate", func() (tool.Tool, error) {
-			return tools.NewInvestigateMCPTool(dedicatedC, k8s, cfg.Namespace, cfg.Auditor, cfg.InvestigationRegistry, agentSessionStartedHook(cfg))
+			return tools.NewInvestigateMCPTool(dedicatedC, k8s, cfg.Namespace, cfg.Auditor, cfg.InvestigationRegistry, nil)
 		}},
 		{"discover_workflows", func() (tool.Tool, error) { return tools.NewDiscoverWorkflowsTool(mcpC) }},
 		{"select_workflow", func() (tool.Tool, error) { return tools.NewSelectWorkflowTool(mcpC, cfg.Auditor) }},
@@ -380,16 +380,23 @@ func newAuditToolCallback(auditor audit.Emitter, sessionSvc *session.CRDSessionS
 		if t.Name() == "af_create_rr" && toolErr == nil && output != nil {
 			if rrID, ok := output["rr_id"].(string); ok && rrID != "" {
 				detail["rr_id"] = rrID
-				// rr_id is now name-only (no namespace prefix). Use controllerNS.
 				if sc != nil {
 					sc.RRName = rrID
 					sc.RRNamespace = controllerNS
 				}
-				// G6 (revised by #1293): IS CRD creation is now deferred to
-				// explicit user takeover (kubernaut_takeover) rather than
-				// auto-materializing on af_create_rr. This prevents autonomous
-				// "investigate and fix" flows from creating IS CRDs that would
-				// force the AA into interactive mode.
+				// Create IS CRD immediately after RR so AA sees it on its
+				// first reconcile and submits to KA with interactive=true.
+				// This eliminates the race where AF called action=start before
+				// KA had a pending interactive session.
+				if sessionSvc != nil {
+					if identity := auth.UserIdentityFromContext(ctx); identity != nil {
+						isID := uuid.New().String()
+						if isErr := sessionSvc.InitializeSessionByRR(ctx, controllerNS, rrID, isID, identity.Username, identity.Groups); isErr != nil {
+							logr.FromContextOrDiscard(ctx).Error(isErr, "IS CRD creation after af_create_rr failed",
+								"rr_id", rrID)
+						}
+					}
+				}
 			}
 		}
 
@@ -408,17 +415,3 @@ func newAuditToolCallback(auditor audit.Emitter, sessionSvc *session.CRDSessionS
 	}
 }
 
-// agentSessionStartedHook returns a SessionStartedHook for the A2A agent path.
-// Returns nil when SessionService is not configured.
-func agentSessionStartedHook(cfg AgentConfig) tools.SessionStartedHook {
-	if cfg.SessionService == nil {
-		return nil
-	}
-	return func(ctx context.Context, namespace, rrID, sessionID string) error {
-		identity := auth.UserIdentityFromContext(ctx)
-		if identity == nil {
-			return nil
-		}
-		return cfg.SessionService.InitializeSessionByRR(ctx, namespace, rrID, sessionID, identity.Username, identity.Groups)
-	}
-}
