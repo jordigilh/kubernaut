@@ -116,12 +116,18 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 		isCancel()
 	}
 
+	logger := logr.FromContextOrDiscard(ctx)
+	logger.Info("StartInvestigation: calling MCP client", "rr_id", args.RRID, "ctx_err", ctx.Err())
+
 	result, err := mcpClient.StartInvestigation(ctx, ka.StartInvestigationArgs{
 		RRID: args.RRID,
 	})
 	if err != nil {
 		return InvestigateMCPResult{}, fmt.Errorf("start MCP investigation: %w", err)
 	}
+	logger.Info("StartInvestigation: MCP session established",
+		"rr_id", args.RRID, "session_id", result.SessionID,
+		"status", result.Status, "events_nil", result.Events == nil)
 
 	if auditor != nil {
 		auditor.Emit(ctx, &audit.Event{
@@ -173,11 +179,17 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 		// Synchronous: bridge events inline, collecting the summary.
 		// Events stream to kagenti via EmitReasoningSafe during the wait.
 		defer cleanup()
+		logger.Info("bridgeEventsCollectSummary: starting blocking event bridge",
+			"rr_id", args.RRID, "session_id", result.SessionID, "ctx_err", ctx.Err())
 		summary := bridgeEventsCollectSummary(ctx, result.Events)
 		status := "completed"
 		if ctx.Err() != nil {
 			status = "timeout"
+			logger.Info("bridgeEventsCollectSummary: context cancelled/timed out",
+				"rr_id", args.RRID, "ctx_err", ctx.Err(), "summary_len", len(summary))
 		}
+		logger.Info("bridgeEventsCollectSummary: finished",
+			"rr_id", args.RRID, "status", status, "summary_len", len(summary))
 		return InvestigateMCPResult{
 			SessionID: result.SessionID,
 			Status:    status,

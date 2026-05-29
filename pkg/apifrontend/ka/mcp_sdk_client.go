@@ -242,11 +242,18 @@ func (c *SDKMCPClient) StartInvestigation(ctx context.Context, args StartInvesti
 	eventCh := make(chan InvestigationEvent, 64)
 	doneCh := make(chan struct{})
 
+	var eventsReceived int64
 	streamClient := mcp.NewClient(&mcp.Implementation{
 		Name:    "kubernaut-apifrontend-dedicated",
 		Version: "0.1.0",
 	}, &mcp.ClientOptions{
 		LoggingMessageHandler: func(_ context.Context, req *mcp.LoggingMessageRequest) {
+			eventsReceived++
+			if eventsReceived == 1 {
+				c.logger.Info("LoggingMessageHandler: first event received from KA",
+					"rr_id", args.RRID, "level", string(req.Params.Level))
+			}
+
 			raw, err := json.Marshal(req.Params.Data)
 			if err != nil {
 				c.logger.Error(err, "failed to marshal logging message data")
@@ -261,6 +268,8 @@ func (c *SDKMCPClient) StartInvestigation(ctx context.Context, args StartInvesti
 
 			select {
 			case <-doneCh:
+				c.logger.Info("LoggingMessageHandler: doneCh closed, dropping event",
+					"rr_id", args.RRID, "event_type", evt.Type, "total_received", eventsReceived)
 				return
 			default:
 			}
