@@ -497,9 +497,9 @@ var _ = Describe("InitializeSessionByRR (takeover IS CRD creation)", func() {
 		Expect(is.Spec.A2ATaskID).To(Equal("ka-sess-001"))
 		Expect(is.Spec.UserIdentity.Username).To(Equal("sre-alice"))
 		Expect(is.Spec.UserIdentity.Groups).To(ConsistOf("sre-team"))
-		Expect(is.Spec.JoinMode).To(Equal(v1alpha1.SessionJoinModeTakeover))
-		Expect(is.Status.Phase).To(BeEmpty())
-		Expect(is.Labels).NotTo(HaveKey(session.LabelPhase))
+	Expect(is.Spec.JoinMode).To(Equal(v1alpha1.SessionJoinModeTakeover))
+	Expect(is.Status.Phase).To(Equal(v1alpha1.SessionPhaseActive))
+	Expect(is.Labels).NotTo(HaveKey(session.LabelPhase))
 		Expect(is.Labels[session.LabelUser]).To(Equal("sre-alice"))
 		Expect(is.Labels[session.LabelRRName]).To(Equal("rr-oom-001"))
 	})
@@ -659,8 +659,8 @@ var _ = Describe("InitializeSessionByRR (takeover IS CRD creation)", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		metric := &dto.Metric{}
-		Expect(gauge.WithLabelValues("").Write(metric)).To(Succeed())
+		Expect(gauge.WithLabelValues("Active").Write(metric)).To(Succeed())
 		Expect(metric.GetGauge().GetValue()).To(Equal(float64(1)),
-			"sessionsActive gauge must be incremented after InitializeSessionByRR (empty phase until AA sets Active)")
+			"sessionsActive gauge must be incremented after InitializeSessionByRR with Active phase")
 	})
 })

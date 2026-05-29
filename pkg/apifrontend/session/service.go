@@ -448,6 +448,13 @@ func (s *CRDSessionService) MaterializeCRD(ctx context.Context, sessionID string
 		return fmt.Errorf("create InvestigationSession CRD: %w", err)
 	}
 
+	crd.Status.Phase = v1alpha1.SessionPhaseActive
+	crd.Status.Message = "session materialized"
+	if err := s.client.Status().Update(ctx, crd); err != nil {
+		s.logger.Error(err, "failed to set initial phase to Active after CRD creation",
+			"session_id", sessionID, "crd_name", crdName)
+	}
+
 	s.logger.Info("CRD materialized",
 		"session_id", sessionID,
 		"crd_name", crdName,
@@ -554,11 +561,18 @@ func (s *CRDSessionService) InitializeSessionByRR(ctx context.Context, rrNamespa
 		return fmt.Errorf("create IS CRD for takeover: %w", err)
 	}
 
+	crd.Status.Phase = v1alpha1.SessionPhaseActive
+	crd.Status.Message = "session materialized"
+	if err := s.client.Status().Update(ctx, crd); err != nil {
+		s.logger.Error(err, "failed to set initial phase to Active after IS CRD creation",
+			"session_id", kaSessionID, "crd_name", crdName)
+	}
+
 	s.mu.Lock()
 	s.crdIndex[kaSessionID] = crdName
 	s.mu.Unlock()
 
-	s.incSessionGauge("")
+	s.incSessionGauge(string(v1alpha1.SessionPhaseActive))
 
 	if s.auditor != nil {
 		s.auditor.Emit(ctx, &audit.Event{

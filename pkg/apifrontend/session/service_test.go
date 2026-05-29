@@ -175,8 +175,8 @@ var _ = Describe("CRDSessionService", func() {
 			Expect(crd.Spec.UserIdentity.Groups).To(ContainElement("sre-team"))
 			Expect(crd.Spec.JoinMode).To(Equal(v1alpha1.SessionJoinModeStart))
 			Expect(crd.Spec.RemediationRequestRef.Name).To(Equal("rr-payment-api"))
-			Expect(crd.Status.Phase).To(BeEmpty())
-			Expect(crd.Status.StartedAt).To(BeNil())
+			Expect(crd.Status.Phase).To(Equal(v1alpha1.SessionPhaseActive))
+			Expect(crd.Status.Message).To(Equal("session materialized"))
 		})
 
 		It("UT-AF-200-006: duplicate create fails without corrupting first session", func() {
@@ -613,7 +613,7 @@ var _ = Describe("CRDSessionService", func() {
 			var crd v1alpha1.InvestigationSession
 			err = k8s.Get(ctx, types.NamespacedName{Name: "sess-append", Namespace: "test-ns"}, &crd)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(crd.Status.Phase).To(BeEmpty())
+			Expect(crd.Status.Phase).To(Equal(v1alpha1.SessionPhaseActive))
 		})
 
 		It("UT-AF-204-006: preserves user messages and final responses", func() {

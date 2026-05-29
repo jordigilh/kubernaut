@@ -263,11 +263,6 @@ var _ = Describe("SessionCleanupReconciler", func() {
 		err = svc.MaterializeCRD(ctx, "sess-prune-target", v1alpha1.ObjectRef{Name: "rr-1", Namespace: "test-ns"})
 		Expect(err).NotTo(HaveOccurred())
 
-		var crdToActivate v1alpha1.InvestigationSession
-		Expect(k8s.Get(ctx, types.NamespacedName{Name: "sess-prune-target", Namespace: "test-ns"}, &crdToActivate)).To(Succeed())
-		crdToActivate.Status.Phase = v1alpha1.SessionPhaseActive
-		Expect(k8s.Status().Update(ctx, &crdToActivate)).To(Succeed())
-
 		err = svc.UpdatePhase(ctx, "sess-prune-target", v1alpha1.SessionPhaseCompleted, "done", "test-user")
 		Expect(err).NotTo(HaveOccurred())
 

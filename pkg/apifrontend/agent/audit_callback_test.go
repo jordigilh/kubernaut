@@ -220,7 +220,7 @@ var _ = Describe("IS CRD creation on af_create_rr (race fix)", func() {
 		Expect(is.Spec.RemediationRequestRef.Namespace).To(Equal("kubernaut-system"))
 		Expect(is.Spec.UserIdentity.Username).To(Equal("admin"))
 		Expect(is.Spec.UserIdentity.Groups).To(ContainElement("system:masters"))
-		Expect(is.Status.Phase).To(Equal(isv1alpha1.SessionPhase("")), "AF creates IS with empty phase — AA owns phase lifecycle")
+		Expect(is.Status.Phase).To(Equal(isv1alpha1.SessionPhaseActive), "AF sets IS initial phase to Active during MaterializeCRD")
 	})
 
 	It("UT-AF-1326-091: af_create_rr skips IS CRD when SessionService is nil", func() {
