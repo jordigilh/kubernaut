@@ -130,7 +130,7 @@ var _ = Describe("HandleInvestigationMCP — #1326 BR-MCP-002 non-blocking MCP i
 			registry := tools.NewMonitorRegistry()
 			result, err := tools.HandleInvestigationMCPWithRegistry(context.Background(), mockMCP, nil, "", tools.InvestigateMCPArgs{
 				RRID: "rr-monitor-001",
-			}, nil, registry, nil)
+			}, nil, registry, nil, false)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.SessionID).To(Equal("sess-monitor-001"))
 
@@ -156,7 +156,7 @@ var _ = Describe("HandleInvestigationMCP — #1326 BR-MCP-002 non-blocking MCP i
 			registry := tools.NewMonitorRegistry()
 			_, err := tools.HandleInvestigationMCPWithRegistry(context.Background(), mockMCP, nil, "", tools.InvestigateMCPArgs{
 				RRID: "rr-stop-001",
-			}, nil, registry, nil)
+			}, nil, registry, nil, false)
 			Expect(err).NotTo(HaveOccurred())
 
 			registry.Stop("sess-stop-001")
@@ -395,7 +395,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — AIA polling timeout cap
 			result, err := tools.HandleInvestigationMCPWithRegistry(
 				context.Background(), mockMCP, client, "kubernaut-system",
 				tools.InvestigateMCPArgs{RRID: "rr-timeout-001"},
-				nil, registry, nil,
+				nil, registry, nil, false,
 			)
 			elapsed := time.Since(start)
 
@@ -422,7 +422,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — AIA polling timeout cap
 			result, err := tools.HandleInvestigationMCPWithRegistry(
 				context.Background(), mockMCP, nil, "",
 				tools.InvestigateMCPArgs{RRID: "rr-nok8s-001"},
-				nil, nil, nil,
+				nil, nil, nil, false,
 			)
 			elapsed := time.Since(start)
 
@@ -450,7 +450,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — AIA polling timeout cap
 			result, err := tools.HandleInvestigationMCPWithRegistry(
 				context.Background(), mockMCP, client, "",
 				tools.InvestigateMCPArgs{RRID: "rr-nons-001"},
-				nil, nil, nil,
+				nil, nil, nil, false,
 			)
 			elapsed := time.Since(start)
 
@@ -481,7 +481,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — AIA polling timeout cap
 			result, err := tools.HandleInvestigationMCPWithRegistry(
 				context.Background(), mockMCP, client, "kubernaut-system",
 				tools.InvestigateMCPArgs{RRID: "rr-aia-001"},
-				nil, registry, nil,
+				nil, registry, nil, false,
 			)
 			elapsed := time.Since(start)
 
@@ -512,7 +512,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — AIA polling timeout cap
 			result, err := tools.HandleInvestigationMCPWithRegistry(
 				ctx, mockMCP, client, "kubernaut-system",
 				tools.InvestigateMCPArgs{RRID: "rr-cancel-001"},
-				nil, nil, nil,
+				nil, nil, nil, false,
 			)
 			elapsed := time.Since(start)
 
@@ -520,6 +520,153 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — AIA polling timeout cap
 			Expect(result.SessionID).To(Equal("sess-cancel-001"))
 			Expect(elapsed).To(BeNumerically("<", 5*time.Second),
 				"parent context cancellation must abort AIA poll")
+		})
+	})
+})
+
+var _ = Describe("HandleInvestigationMCPWithRegistry — blocking mode (A2A path)", func() {
+
+	Describe("UT-AF-1326-080: blocking mode waits for channel close and returns summary", func() {
+		It("should collect reasoning_delta events into summary and return completed", func() {
+			eventCh := make(chan ka.InvestigationEvent, 10)
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					go func() {
+						eventCh <- ka.InvestigationEvent{
+							Type: ka.EventTypeReasoningDelta,
+							Data: json.RawMessage(`{"text":"The pod is crashing "}`),
+						}
+						eventCh <- ka.InvestigationEvent{
+							Type: ka.EventTypeReasoningDelta,
+							Data: json.RawMessage(`{"text":"due to OOM."}`),
+						}
+						eventCh <- ka.InvestigationEvent{
+							Type: ka.EventTypeComplete,
+							Data: json.RawMessage(`{}`),
+						}
+						close(eventCh)
+					}()
+					return &ka.StartInvestigationResult{
+						SessionID: "sess-block-001",
+						Status:    "autonomous_started",
+						Events:    eventCh,
+						Closer:    func() {},
+					}, nil
+				},
+			}
+
+			result, err := tools.HandleInvestigationMCPWithRegistry(
+				context.Background(), mockMCP, nil, "",
+				tools.InvestigateMCPArgs{RRID: "rr-block-001"},
+				nil, nil, nil, true,
+			)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.SessionID).To(Equal("sess-block-001"))
+			Expect(result.Status).To(Equal("completed"))
+			Expect(result.Summary).To(Equal("The pod is crashing due to OOM."))
+		})
+	})
+
+	Describe("UT-AF-1326-081: blocking mode returns timeout on context cancellation", func() {
+		It("should return partial summary and timeout status", func() {
+			eventCh := make(chan ka.InvestigationEvent, 10)
+			ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+			defer cancel()
+
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					go func() {
+						eventCh <- ka.InvestigationEvent{
+							Type: ka.EventTypeReasoningDelta,
+							Data: json.RawMessage(`{"text":"Partial analysis"}`),
+						}
+						// Don't close channel — simulate long-running investigation
+					}()
+					return &ka.StartInvestigationResult{
+						SessionID: "sess-block-timeout-001",
+						Status:    "autonomous_started",
+						Events:    eventCh,
+						Closer:    func() {},
+					}, nil
+				},
+			}
+
+			result, err := tools.HandleInvestigationMCPWithRegistry(
+				ctx, mockMCP, nil, "",
+				tools.InvestigateMCPArgs{RRID: "rr-block-timeout-001"},
+				nil, nil, nil, true,
+			)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Status).To(Equal("timeout"))
+			Expect(result.Summary).To(Equal("Partial analysis"))
+		})
+	})
+
+	Describe("UT-AF-1326-082: blocking mode with nil events returns immediately", func() {
+		It("should return without blocking when Events channel is nil", func() {
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					return &ka.StartInvestigationResult{
+						SessionID: "sess-nil-events-001",
+						Status:    "autonomous_started",
+						Events:    nil,
+						Closer:    func() {},
+					}, nil
+				},
+			}
+
+			start := time.Now()
+			result, err := tools.HandleInvestigationMCPWithRegistry(
+				context.Background(), mockMCP, nil, "",
+				tools.InvestigateMCPArgs{RRID: "rr-nil-events-001"},
+				nil, nil, nil, true,
+			)
+			elapsed := time.Since(start)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.SessionID).To(Equal("sess-nil-events-001"))
+			Expect(result.Summary).To(BeEmpty())
+			Expect(elapsed).To(BeNumerically("<", 2*time.Second))
+		})
+	})
+
+	Describe("UT-AF-1326-083: blocking mode filters non-reasoning events from summary", func() {
+		It("should include only reasoning_delta text in summary, not tool_call_start", func() {
+			eventCh := make(chan ka.InvestigationEvent, 10)
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					go func() {
+						eventCh <- ka.InvestigationEvent{
+							Type: ka.EventTypeToolCallStart,
+							Data: json.RawMessage(`{"tool":"kubectl_get"}`),
+						}
+						eventCh <- ka.InvestigationEvent{
+							Type: ka.EventTypeReasoningDelta,
+							Data: json.RawMessage(`{"text":"Root cause: memory limit too low."}`),
+						}
+						eventCh <- ka.InvestigationEvent{
+							Type: ka.EventTypeComplete,
+							Data: json.RawMessage(`{}`),
+						}
+						close(eventCh)
+					}()
+					return &ka.StartInvestigationResult{
+						SessionID: "sess-filter-001",
+						Status:    "autonomous_started",
+						Events:    eventCh,
+						Closer:    func() {},
+					}, nil
+				},
+			}
+
+			result, err := tools.HandleInvestigationMCPWithRegistry(
+				context.Background(), mockMCP, nil, "",
+				tools.InvestigateMCPArgs{RRID: "rr-filter-001"},
+				nil, nil, nil, true,
+			)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Summary).To(Equal("Root cause: memory limit too low."))
+			Expect(result.Summary).NotTo(ContainSubstring("kubectl_get"))
 		})
 	})
 })

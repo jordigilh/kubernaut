@@ -455,10 +455,12 @@ var _ = Describe("Root Agent", func() {
 			autonomousMock := &ka.MockMCPClient{
 				StartInvestigationFn: func(_ context.Context, args ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
 					autonomousCalled.Add(1)
+					ch := make(chan ka.InvestigationEvent, 1)
+					close(ch)
 					return &ka.StartInvestigationResult{
 						SessionID: "sess-auto-030",
 						Status:    "autonomous_started",
-						Events:    make(chan ka.InvestigationEvent, 1),
+						Events:    ch,
 						Closer:    func() {},
 					}, nil
 				},
@@ -492,10 +494,12 @@ var _ = Describe("Root Agent", func() {
 			pooledMock := &ka.MockMCPClient{
 				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
 					pooledCalled.Add(1)
+					ch := make(chan ka.InvestigationEvent, 1)
+					close(ch)
 					return &ka.StartInvestigationResult{
 						SessionID: "sess-pool-031",
 						Status:    "autonomous_started",
-						Events:    make(chan ka.InvestigationEvent, 1),
+						Events:    ch,
 						Closer:    func() {},
 					}, nil
 				},

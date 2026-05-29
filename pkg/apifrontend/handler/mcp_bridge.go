@@ -169,7 +169,7 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 	onInvestigateStarted := buildSessionStartedHook(cfg)
 	registerTool(srv, cfg, sem, "kubernaut_investigate", "Investigate an infrastructure incident",
 		func(ctx context.Context, args tools.InvestigateMCPArgs) (any, error) {
-			return tools.HandleInvestigationMCPWithRegistry(ctx, dedicatedClient, cfg.K8sClient, cfg.Namespace, args, cfg.Auditor, cfg.InvestigationRegistry, onInvestigateStarted)
+			return tools.HandleInvestigationMCPWithRegistry(ctx, dedicatedClient, cfg.K8sClient, cfg.Namespace, args, cfg.Auditor, cfg.InvestigationRegistry, onInvestigateStarted, false)
 		})
 
 	// KA MCP tools
