@@ -17,7 +17,10 @@ import (
 	"google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
 
+	"github.com/go-logr/logr"
+
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
 )
 
@@ -638,9 +641,10 @@ type WatchResult struct {
 }
 
 // maxWatchDuration is the maximum time HandleWatch will block before returning.
-const maxWatchDuration = 10 * time.Minute
+const maxWatchDuration = 15 * time.Minute
 
-// HandleWatch implements the kubernaut_watch logic.
+// HandleWatch implements the kubernaut_watch logic with progressive SSE
+// updates via EventBridge and RAR approval lifecycle tracking.
 func HandleWatch(ctx context.Context, client dynamic.Interface, args WatchArgs) (WatchResult, error) {
 	if client == nil {
 		return WatchResult{}, ErrK8sUnavailable
@@ -652,8 +656,8 @@ func HandleWatch(ctx context.Context, client dynamic.Interface, args WatchArgs) 
 		return WatchResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
 	}
 
-	// Verify the RR exists before blocking on a watch — a watch on a
-	// non-existent resource would silently block until the 10-minute timeout.
+	logger := logr.FromContextOrDiscard(ctx)
+
 	if _, err := client.Resource(rrGVR).Namespace(args.Namespace).Get(ctx, args.Name, metav1.GetOptions{}); err != nil {
 		return WatchResult{}, ToUserFriendlyError(err)
 	}
@@ -661,40 +665,118 @@ func HandleWatch(ctx context.Context, client dynamic.Interface, args WatchArgs) 
 	watchCtx, cancel := context.WithTimeout(ctx, maxWatchDuration)
 	defer cancel()
 
-	watcher, err := client.Resource(rrGVR).Namespace(args.Namespace).Watch(watchCtx, metav1.ListOptions{
+	rrWatcher, err := client.Resource(rrGVR).Namespace(args.Namespace).Watch(watchCtx, metav1.ListOptions{
 		FieldSelector: "metadata.name=" + args.Name,
 	})
 	if err != nil {
 		return WatchResult{}, ToUserFriendlyError(err)
 	}
-	defer watcher.Stop()
+	defer rrWatcher.Stop()
 
-	var events []WatchEvent
+	// RAR watch: graceful degradation if RBAC is missing or RAR not yet created.
+	rarName := fmt.Sprintf("rar-%s", args.Name)
+	var rarCh <-chan watch.Event
+	rarWatcher, rarErr := client.Resource(rarGVR).Namespace(args.Namespace).Watch(watchCtx, metav1.ListOptions{
+		FieldSelector: "metadata.name=" + rarName,
+	})
+	if rarErr != nil {
+		logger.V(1).Info("RAR watch unavailable, continuing with RR-only watch",
+			"rar_name", rarName, "error", rarErr)
+	} else {
+		defer rarWatcher.Stop()
+		rarCh = rarWatcher.ResultChan()
+	}
+
+	var (
+		events          []WatchEvent
+		lastSeenPhase   string
+		lastRARDecision string
+	)
+
+	_ = launcher.EmitReasoningSafe(ctx, "Watching remediation progress...\n")
 
 	for {
 		select {
 		case <-ctx.Done():
 			return WatchResult{Events: events, Status: "cancelled"}, nil
-		case evt, ok := <-watcher.ResultChan():
+
+		case evt, ok := <-rrWatcher.ResultChan():
 			if !ok {
 				return WatchResult{Events: events, Status: "completed"}, nil
 			}
-			if evt.Type == watch.Modified || evt.Type == watch.Added {
-				obj, ok := evt.Object.(*unstructured.Unstructured)
-				if !ok {
-					continue
-				}
-				phase, _, _ := unstructured.NestedString(obj.Object, "status", "overallPhase")
-				events = append(events, WatchEvent{
-					Timestamp: time.Now().UTC().Format(time.RFC3339),
-					Resource:  "RemediationRequest",
-					Phase:     phase,
-					Message:   fmt.Sprintf("Phase changed to %s", phase),
-				})
-				if IsTerminalPhase(phase) {
-					return WatchResult{Events: events, Status: "completed"}, nil
-				}
+			if evt.Type != watch.Modified && evt.Type != watch.Added {
+				continue
 			}
+			obj, ok := evt.Object.(*unstructured.Unstructured)
+			if !ok {
+				continue
+			}
+			phase, _, _ := unstructured.NestedString(obj.Object, "status", "overallPhase")
+			if phase == lastSeenPhase {
+				continue
+			}
+			lastSeenPhase = phase
+			msg := fmt.Sprintf("Phase changed to %s", phase)
+			events = append(events, WatchEvent{
+				Timestamp: time.Now().UTC().Format(time.RFC3339),
+				Resource:  "RemediationRequest",
+				Phase:     phase,
+				Message:   msg,
+			})
+			_ = launcher.EmitReasoningSafe(ctx, fmt.Sprintf("Remediation phase: %s\n", phase))
+			if IsTerminalPhase(phase) {
+				return WatchResult{Events: events, Status: "completed"}, nil
+			}
+
+		case evt, ok := <-rarCh:
+			if !ok {
+				rarCh = nil
+				continue
+			}
+			if evt.Type != watch.Modified && evt.Type != watch.Added {
+				continue
+			}
+			obj, ok := evt.Object.(*unstructured.Unstructured)
+			if !ok {
+				continue
+			}
+			decision, _, _ := unstructured.NestedString(obj.Object, "status", "decision")
+			if decision == lastRARDecision {
+				continue
+			}
+			lastRARDecision = decision
+
+			var rarMsg string
+			switch decision {
+			case "":
+				rarMsg = "Approval requested — awaiting human decision"
+			case "Approved":
+				decidedBy, _, _ := unstructured.NestedString(obj.Object, "status", "decidedBy")
+				if decidedBy != "" {
+					rarMsg = fmt.Sprintf("Approval granted by %s", decidedBy)
+				} else {
+					rarMsg = "Approval granted"
+				}
+			case "Rejected":
+				decidedBy, _, _ := unstructured.NestedString(obj.Object, "status", "decidedBy")
+				if decidedBy != "" {
+					rarMsg = fmt.Sprintf("Approval rejected by %s", decidedBy)
+				} else {
+					rarMsg = "Approval rejected"
+				}
+			case "Expired":
+				rarMsg = "Approval expired"
+			default:
+				rarMsg = fmt.Sprintf("Approval status: %s", decision)
+			}
+
+			events = append(events, WatchEvent{
+				Timestamp: time.Now().UTC().Format(time.RFC3339),
+				Resource:  "RemediationApprovalRequest",
+				Phase:     decision,
+				Message:   rarMsg,
+			})
+			_ = launcher.EmitReasoningSafe(ctx, rarMsg+"\n")
 		}
 	}
 }
