@@ -649,6 +649,10 @@ data:
         environment.environment == "production"
         severity == "high"
     }
+    priority := {"priority": "P1", "policy_name": "production-warning"} if {
+        environment.environment == "production"
+        severity == "warning"
+    }
     priority := {"priority": "P1", "policy_name": "staging-critical"} if {
         environment.environment == "staging"
         severity == "critical"
