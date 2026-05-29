@@ -251,9 +251,13 @@ func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.Investigat
 			if text != "" {
 				_ = launcher.EmitReasoningSafe(ctx, text)
 			}
-			if evt.Type == ka.EventTypeReasoningDelta {
-				chunk := extractJSONField(evt.Data, "text")
-				if chunk != "" {
+			switch evt.Type {
+			case ka.EventTypeReasoningDelta:
+				if chunk := extractJSONField(evt.Data, "text"); chunk != "" {
+					summary.WriteString(chunk)
+				}
+			case ka.EventTypeTokenDelta:
+				if chunk := extractJSONField(evt.Data, "delta"); chunk != "" {
 					summary.WriteString(chunk)
 				}
 			}
@@ -270,6 +274,8 @@ func FormatEventForUser(evt ka.InvestigationEvent) string {
 	switch evt.Type {
 	case ka.EventTypeReasoningDelta:
 		return extractJSONField(evt.Data, "text")
+	case ka.EventTypeTokenDelta:
+		return extractJSONField(evt.Data, "delta")
 	case ka.EventTypeToolCallStart:
 		toolName := extractJSONField(evt.Data, "tool")
 		if toolName != "" {
