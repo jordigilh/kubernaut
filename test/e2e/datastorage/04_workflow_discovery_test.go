@@ -72,10 +72,10 @@ var _ = Describe("E2E-DS-017-001: Three-Step Workflow Discovery (DD-HAPI-017)", 
 
 			// STEP 1: List available action types
 			step1Resp, err := DSClient.ListAvailableActions(testCtx, dsgen.ListAvailableActionsParams{
-				Severity:    dsgen.ListAvailableActionsSeverityCritical,
+				Severity:    dsgen.NewOptListAvailableActionsSeverity(dsgen.ListAvailableActionsSeverityCritical),
 				Component:   "v1/Pod",
-				Environment: "production",
-				Priority:    dsgen.ListAvailableActionsPriorityP0,
+				Environment: dsgen.NewOptString("production"),
+				Priority:    dsgen.NewOptListAvailableActionsPriority(dsgen.ListAvailableActionsPriorityP0),
 				Limit:       dsgen.NewOptInt(100),
 			})
 			Expect(err).ToNot(HaveOccurred())
@@ -102,10 +102,10 @@ var _ = Describe("E2E-DS-017-001: Three-Step Workflow Discovery (DD-HAPI-017)", 
 			Eventually(func() string {
 				step2Resp, listErr := DSClient.ListWorkflowsByActionType(testCtx, dsgen.ListWorkflowsByActionTypeParams{
 					ActionType:  "ScaleReplicas",
-					Severity:    dsgen.ListWorkflowsByActionTypeSeverityCritical,
+					Severity:    dsgen.NewOptListWorkflowsByActionTypeSeverity(dsgen.ListWorkflowsByActionTypeSeverityCritical),
 					Component:   "v1/Pod",
-					Environment: "production",
-					Priority:    dsgen.ListWorkflowsByActionTypePriorityP0,
+					Environment: dsgen.NewOptString("production"),
+					Priority:    dsgen.NewOptListWorkflowsByActionTypePriority(dsgen.ListWorkflowsByActionTypePriorityP0),
 					Limit:       dsgen.NewOptInt(100),
 				})
 				if listErr != nil {
@@ -210,10 +210,10 @@ var _ = Describe("E2E-DS-017-001: Three-Step Workflow Discovery (DD-HAPI-017)", 
 			// Query discovery with filters matching the stub (ScaleReplicas, critical, v1/Pod, production, P0)
 			step2Resp, err := DSClient.ListWorkflowsByActionType(testCtx, dsgen.ListWorkflowsByActionTypeParams{
 				ActionType:  "ScaleReplicas",
-				Severity:    dsgen.ListWorkflowsByActionTypeSeverityCritical,
+				Severity:    dsgen.NewOptListWorkflowsByActionTypeSeverity(dsgen.ListWorkflowsByActionTypeSeverityCritical),
 				Component:   "v1/Pod",
-				Environment: "production",
-				Priority:    dsgen.ListWorkflowsByActionTypePriorityP0,
+				Environment: dsgen.NewOptString("production"),
+				Priority:    dsgen.NewOptListWorkflowsByActionTypePriority(dsgen.ListWorkflowsByActionTypePriorityP0),
 				Limit:       dsgen.NewOptInt(100),
 			})
 			Expect(err).ToNot(HaveOccurred())

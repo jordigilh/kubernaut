@@ -148,10 +148,10 @@ var _ = Describe("E2E-DS-043: DetectedLabels OCI Registration and Retrieval", Or
 		Eventually(func() bool {
 			matchResp, listErr := DSClient.ListWorkflowsByActionType(testCtx, dsgen.ListWorkflowsByActionTypeParams{
 				ActionType:     "ScaleReplicas",
-				Severity:       dsgen.ListWorkflowsByActionTypeSeverityCritical,
+				Severity:       dsgen.NewOptListWorkflowsByActionTypeSeverity(dsgen.ListWorkflowsByActionTypeSeverityCritical),
 				Component:      "v1/Pod",
-				Environment:    "production",
-				Priority:       dsgen.ListWorkflowsByActionTypePriorityP0,
+				Environment:    dsgen.NewOptString("production"),
+				Priority:       dsgen.NewOptListWorkflowsByActionTypePriority(dsgen.ListWorkflowsByActionTypePriorityP0),
 				DetectedLabels: dsgen.NewOptString(`{"hpaEnabled":true}`),
 				Limit:          dsgen.NewOptInt(100),
 			})
@@ -175,10 +175,10 @@ var _ = Describe("E2E-DS-043: DetectedLabels OCI Registration and Retrieval", Or
 		By("searching with non-matching detected_labels filter (networkIsolated=true)")
 		nonMatchResp, err := DSClient.ListWorkflowsByActionType(testCtx, dsgen.ListWorkflowsByActionTypeParams{
 			ActionType:     "ScaleReplicas",
-			Severity:       dsgen.ListWorkflowsByActionTypeSeverityCritical,
+			Severity:       dsgen.NewOptListWorkflowsByActionTypeSeverity(dsgen.ListWorkflowsByActionTypeSeverityCritical),
 			Component:      "v1/Pod",
-			Environment:    "production",
-			Priority:       dsgen.ListWorkflowsByActionTypePriorityP0,
+			Environment:    dsgen.NewOptString("production"),
+			Priority:       dsgen.NewOptListWorkflowsByActionTypePriority(dsgen.ListWorkflowsByActionTypePriorityP0),
 			DetectedLabels: dsgen.NewOptString(`{"networkIsolated":true}`),
 			Limit:          dsgen.NewOptInt(100),
 		})
@@ -215,10 +215,10 @@ var _ = Describe("E2E-DS-043: DetectedLabels OCI Registration and Retrieval", Or
 		Eventually(func() bool {
 			step2Resp, searchErr := DSClient.ListWorkflowsByActionType(testCtx, dsgen.ListWorkflowsByActionTypeParams{
 				ActionType:  "ScaleReplicas",
-				Severity:    dsgen.ListWorkflowsByActionTypeSeverityCritical,
+				Severity:    dsgen.NewOptListWorkflowsByActionTypeSeverity(dsgen.ListWorkflowsByActionTypeSeverityCritical),
 				Component:   "v1/Pod",
-				Environment: "production",
-				Priority:    dsgen.ListWorkflowsByActionTypePriorityP0,
+				Environment: dsgen.NewOptString("production"),
+				Priority:    dsgen.NewOptListWorkflowsByActionTypePriority(dsgen.ListWorkflowsByActionTypePriorityP0),
 				Limit:       dsgen.NewOptInt(100),
 			})
 			if searchErr != nil {
@@ -310,10 +310,10 @@ var _ = Describe("E2E-DS-043-005: All 8 DetectedLabels Fields OCI -> DB -> HTTP 
 			logger.Info("All-8-fields workflow already exists (409), fetching by list")
 			listResp, listErr := DSClient.ListWorkflowsByActionType(allFieldsCtx, dsgen.ListWorkflowsByActionTypeParams{
 				ActionType:  "RestartPod",
-				Severity:    dsgen.ListWorkflowsByActionTypeSeverityCritical,
+				Severity:    dsgen.NewOptListWorkflowsByActionTypeSeverity(dsgen.ListWorkflowsByActionTypeSeverityCritical),
 				Component:   "v1/Pod",
-				Environment: "production",
-				Priority:    dsgen.ListWorkflowsByActionTypePriorityP0,
+				Environment: dsgen.NewOptString("production"),
+				Priority:    dsgen.NewOptListWorkflowsByActionTypePriority(dsgen.ListWorkflowsByActionTypePriorityP0),
 				Limit:       dsgen.NewOptInt(100),
 			})
 			Expect(listErr).ToNot(HaveOccurred())
