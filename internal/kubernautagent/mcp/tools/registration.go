@@ -55,11 +55,14 @@ func InvestigateRegistration(tool *InvestigateTool, eventStore *mcpinternal.Dele
 			if notifier != nil && (output.Status == "started" || output.Status == "takeover_started" || output.Status == "reconnected") {
 				sess := req.Session
 				notifier.Register(output.SessionID, func(msg string) {
-					_ = sess.Log(context.Background(), &mcpsdk.LoggingMessageParams{
+					if logErr := sess.Log(context.Background(), &mcpsdk.LoggingMessageParams{
 						Level:  "warning",
 						Logger: "kubernaut-interactive",
 						Data:   msg,
-					})
+					}); logErr != nil {
+						logger.Error(logErr, "notifier sess.Log failed",
+							"session_id", output.SessionID)
+					}
 				})
 			}
 		}
@@ -68,20 +71,29 @@ func InvestigateRegistration(tool *InvestigateTool, eventStore *mcpinternal.Dele
 		// investigation. Streams investigation events (reasoning, tool calls,
 		// completion) as MCP LoggingMessage notifications to the connected client.
 		if output.InvestigationSessionID != "" && output.Status == "started" {
+			logger.Info("subscribing to investigation events",
+				"investigation_session_id", output.InvestigationSessionID,
+				"mcp_session_id", output.SessionID)
 			eventCh, subErr := tool.SubscribeEvents(ctx, output.InvestigationSessionID)
 			if subErr != nil {
 				logger.Error(subErr, "failed to subscribe to investigation events",
 					"investigation_session_id", output.InvestigationSessionID)
 			} else if eventCh != nil {
 				sess := req.Session
-				bridge := NewEventLogBridge(eventCh, func(level, loggerName string, data json.RawMessage) {
-					_ = sess.Log(context.Background(), &mcpsdk.LoggingMessageParams{
+				bridge := NewEventLogBridge(eventCh, func(level, loggerName string, data json.RawMessage) error {
+					return sess.Log(context.Background(), &mcpsdk.LoggingMessageParams{
 						Level:  mcpsdk.LoggingLevel(level),
 						Logger: loggerName,
 						Data:   data,
 					})
-				}, logger)
+				}, logger, output.InvestigationSessionID)
+				logger.Info("EventLogBridge wired",
+					"investigation_session_id", output.InvestigationSessionID,
+					"mcp_session_id", req.Session.ID())
 				go bridge.Run(context.Background())
+			} else {
+				logger.Info("subscribe returned nil channel, no events to bridge",
+					"investigation_session_id", output.InvestigationSessionID)
 			}
 		}
 

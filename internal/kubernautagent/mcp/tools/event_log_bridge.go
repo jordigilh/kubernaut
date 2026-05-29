@@ -29,26 +29,29 @@ import (
 
 // LogFunc is the callback signature for sending log messages to the MCP client.
 // In production this wraps ServerSession.Log(); in tests it captures calls.
-type LogFunc func(level, logger string, data json.RawMessage)
+// Returns an error so callers can detect delivery failures.
+type LogFunc func(level, logger string, data json.RawMessage) error
 
 // EventLogBridge reads InvestigationEvents from a channel and forwards them
 // as structured JSON envelopes via a LogFunc callback. Each event is tagged
 // with a monotonically increasing sequence number for ordering (SI-4).
 type EventLogBridge struct {
-	events <-chan session.InvestigationEvent
-	logFn  LogFunc
-	logger logr.Logger
-	seq    atomic.Int64
+	events    <-chan session.InvestigationEvent
+	logFn     LogFunc
+	logger    logr.Logger
+	seq       atomic.Int64
+	sessionID string
 }
 
 // NewEventLogBridge creates a bridge that reads from events and calls logFn
 // for each event. The bridge runs until the context is cancelled or the
 // events channel is closed.
-func NewEventLogBridge(events <-chan session.InvestigationEvent, logFn LogFunc, logger logr.Logger) *EventLogBridge {
+func NewEventLogBridge(events <-chan session.InvestigationEvent, logFn LogFunc, logger logr.Logger, sessionID string) *EventLogBridge {
 	return &EventLogBridge{
-		events: events,
-		logFn:  logFn,
-		logger: logger,
+		events:    events,
+		logFn:     logFn,
+		logger:    logger,
+		sessionID: sessionID,
 	}
 }
 
@@ -62,6 +65,11 @@ type logEnvelope struct {
 
 // Run processes events until the context is cancelled or the channel closes.
 func (b *EventLogBridge) Run(ctx context.Context) {
+	b.logger.Info("EventLogBridge started",
+		"investigation_session_id", b.sessionID)
+	defer b.logger.Info("EventLogBridge stopped",
+		"investigation_session_id", b.sessionID,
+		"events_forwarded", b.seq.Load())
 	for {
 		select {
 		case <-ctx.Done():
@@ -97,5 +105,10 @@ func (b *EventLogBridge) forward(evt session.InvestigationEvent) {
 		level = "error"
 	}
 
-	b.logFn(level, "kubernaut-investigate", data)
+	if logErr := b.logFn(level, "kubernaut-investigate", data); logErr != nil {
+		b.logger.Error(logErr, "sess.Log delivery failed",
+			"investigation_session_id", b.sessionID,
+			"event_type", evt.Type,
+			"seq", seq)
+	}
 }

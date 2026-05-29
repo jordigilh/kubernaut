@@ -71,10 +71,11 @@ type logMessage struct {
 	Data   json.RawMessage
 }
 
-func (s *mockLogSink) Log(level, logger string, data json.RawMessage) {
+func (s *mockLogSink) Log(level, logger string, data json.RawMessage) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.messages = append(s.messages, logMessage{Level: level, Logger: logger, Data: data})
+	return nil
 }
 
 func (s *mockLogSink) Messages() []logMessage {
@@ -263,7 +264,7 @@ var _ = Describe("kubernaut_investigate — EventChannel→Log bridge (#1326 BR-
 			eventCh := make(chan session.InvestigationEvent, 10)
 			sink := &mockLogSink{}
 
-			bridge := mcptools.NewEventLogBridge(eventCh, sink.Log, logr.Discard())
+			bridge := mcptools.NewEventLogBridge(eventCh, sink.Log, logr.Discard(), "test-010")
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
@@ -290,7 +291,7 @@ var _ = Describe("kubernaut_investigate — EventChannel→Log bridge (#1326 BR-
 			eventCh := make(chan session.InvestigationEvent, 10)
 			sink := &mockLogSink{}
 
-			bridge := mcptools.NewEventLogBridge(eventCh, sink.Log, logr.Discard())
+			bridge := mcptools.NewEventLogBridge(eventCh, sink.Log, logr.Discard(), "test")
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
@@ -315,7 +316,7 @@ var _ = Describe("kubernaut_investigate — EventChannel→Log bridge (#1326 BR-
 			eventCh := make(chan session.InvestigationEvent, 10)
 			sink := &mockLogSink{}
 
-			bridge := mcptools.NewEventLogBridge(eventCh, sink.Log, logr.Discard())
+			bridge := mcptools.NewEventLogBridge(eventCh, sink.Log, logr.Discard(), "test")
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
@@ -340,7 +341,7 @@ var _ = Describe("kubernaut_investigate — EventChannel→Log bridge (#1326 BR-
 			eventCh := make(chan session.InvestigationEvent, 10)
 			sink := &mockLogSink{}
 
-			bridge := mcptools.NewEventLogBridge(eventCh, sink.Log, logr.Discard())
+			bridge := mcptools.NewEventLogBridge(eventCh, sink.Log, logr.Discard(), "test")
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
@@ -365,7 +366,7 @@ var _ = Describe("kubernaut_investigate — EventChannel→Log bridge (#1326 BR-
 			eventCh := make(chan session.InvestigationEvent, 10)
 			sink := &mockLogSink{}
 
-			bridge := mcptools.NewEventLogBridge(eventCh, sink.Log, logr.Discard())
+			bridge := mcptools.NewEventLogBridge(eventCh, sink.Log, logr.Discard(), "test")
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
@@ -392,7 +393,7 @@ var _ = Describe("kubernaut_investigate — EventChannel→Log bridge (#1326 BR-
 			eventCh := make(chan session.InvestigationEvent, 10)
 			sink := &mockLogSink{}
 
-			bridge := mcptools.NewEventLogBridge(eventCh, sink.Log, logr.Discard())
+			bridge := mcptools.NewEventLogBridge(eventCh, sink.Log, logr.Discard(), "test")
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
@@ -413,7 +414,7 @@ var _ = Describe("kubernaut_investigate — EventChannel→Log bridge (#1326 BR-
 			eventCh := make(chan session.InvestigationEvent, 10)
 			sink := &mockLogSink{}
 
-			bridge := mcptools.NewEventLogBridge(eventCh, sink.Log, logr.Discard())
+			bridge := mcptools.NewEventLogBridge(eventCh, sink.Log, logr.Discard(), "test")
 			ctx, cancel := context.WithCancel(context.Background())
 
 			done := make(chan struct{})
@@ -433,7 +434,7 @@ var _ = Describe("kubernaut_investigate — EventChannel→Log bridge (#1326 BR-
 			eventCh := make(chan session.InvestigationEvent, 10)
 			sink := &mockLogSink{}
 
-			bridge := mcptools.NewEventLogBridge(eventCh, sink.Log, logr.Discard())
+			bridge := mcptools.NewEventLogBridge(eventCh, sink.Log, logr.Discard(), "test")
 			ctx, cancel := context.WithCancel(context.Background())
 
 			go bridge.Run(ctx)
@@ -451,7 +452,7 @@ var _ = Describe("kubernaut_investigate — EventChannel→Log bridge (#1326 BR-
 			eventCh := make(chan session.InvestigationEvent, 10)
 			sink := &mockLogSink{}
 
-			bridge := mcptools.NewEventLogBridge(eventCh, sink.Log, logr.Discard())
+			bridge := mcptools.NewEventLogBridge(eventCh, sink.Log, logr.Discard(), "test")
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
