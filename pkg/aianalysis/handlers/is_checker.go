@@ -26,32 +26,52 @@ import (
 )
 
 // K8sInvestigationSessionChecker implements InvestigationSessionChecker by
-// querying InvestigationSession CRDs via a controller-runtime client using
-// a field index on spec.remediationRequestRef.name. BR-INTERACTIVE-010.
+// querying InvestigationSession CRDs via a direct API reader (bypassing the
+// informer cache) using field selectors. BR-INTERACTIVE-010.
+//
+// The checker uses a direct API reader rather than the cached client to avoid
+// missing recently created IS CRDs due to informer sync delay. This is critical
+// because the IS CRD is created by AF immediately after the RR, and the AA
+// controller must detect it on the very first reconcile to set interactive=true.
+//
+// HasActiveSession checks for IS CRD existence in any non-terminal phase
+// (including empty/unset phase for freshly created CRDs). The phase lifecycle
+// is owned by AA — AF creates the IS without a phase, and AA sets it to Active
+// after acknowledging the interactive session.
 //
 // Error policy: callers use fail-open semantics — on list errors, investigations
 // proceed in autonomous mode rather than blocking. This is deliberate: transient
 // K8s API failures must not prevent autonomous investigations from running.
 type K8sInvestigationSessionChecker struct {
-	client    client.Client
+	reader    client.Reader
 	namespace string
 }
 
 // NewK8sInvestigationSessionChecker creates a checker that queries IS CRDs
-// in the given namespace.
-func NewK8sInvestigationSessionChecker(c client.Client, namespace string) *K8sInvestigationSessionChecker {
-	return &K8sInvestigationSessionChecker{client: c, namespace: namespace}
+// in the given namespace. The reader should be a direct API reader
+// (mgr.GetAPIReader()) to bypass the informer cache.
+func NewK8sInvestigationSessionChecker(r client.Reader, namespace string) *K8sInvestigationSessionChecker {
+	return &K8sInvestigationSessionChecker{reader: r, namespace: namespace}
 }
 
-// HasActiveSession returns true if an InvestigationSession CRD with Active phase
-// exists for the given RR name.
+// terminalPhases are IS phases that indicate the session is no longer active.
+// An IS in a terminal phase should not trigger interactive mode.
+var terminalPhases = map[isv1alpha1.SessionPhase]bool{
+	isv1alpha1.SessionPhaseCompleted: true,
+	isv1alpha1.SessionPhaseCancelled: true,
+	isv1alpha1.SessionPhaseFailed:    true,
+}
+
+// HasActiveSession returns true if a non-terminal InvestigationSession CRD
+// exists for the given RR name. Non-terminal includes empty phase (freshly
+// created by AF before AA has acknowledged it), Active, and Disconnected.
 func (k *K8sInvestigationSessionChecker) HasActiveSession(ctx context.Context, rrName string) (bool, error) {
 	if rrName == "" {
 		return false, nil
 	}
 
 	var list isv1alpha1.InvestigationSessionList
-	if err := k.client.List(ctx, &list,
+	if err := k.reader.List(ctx, &list,
 		client.InNamespace(k.namespace),
 		client.MatchingFields{ISFieldIndexRRName: rrName},
 	); err != nil {
@@ -59,8 +79,7 @@ func (k *K8sInvestigationSessionChecker) HasActiveSession(ctx context.Context, r
 	}
 
 	for i := range list.Items {
-		phase := list.Items[i].Status.Phase
-		if phase == isv1alpha1.SessionPhaseActive || phase == isv1alpha1.SessionPhaseDisconnected {
+		if !terminalPhases[list.Items[i].Status.Phase] {
 			return true, nil
 		}
 	}
