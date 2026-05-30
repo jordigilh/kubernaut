@@ -143,9 +143,9 @@ var _ = Describe("Multi-Turn Keyword Matching Fix (issue #1189)", func() {
 						MatchLastOnly: true,
 					},
 					{
-						Name:          "af_create_rr",
+						Name:          "kubernaut_remediate",
 						Keywords:      []string{"create a remediation request"},
-						ToolCall:      config.ToolCallOverride{Name: "af_create_rr"},
+						ToolCall:      config.ToolCallOverride{Name: "kubernaut_remediate"},
 						MatchLastOnly: true,
 					},
 				},
@@ -182,7 +182,7 @@ var _ = Describe("Multi-Turn Keyword Matching Fix (issue #1189)", func() {
 					accumulatedContent: "start investigation for deployment memory-eater investigation results discover available workflows workflow list select workflow oomkill selected create a remediation request",
 					accumulatedAllText: "system prompt user start investigation assistant results user discover available workflows assistant list user select workflow oomkill assistant selected user create a remediation request",
 					lastUserContent:    "create a remediation request",
-					expectedScenario:   "af_create_rr",
+					expectedScenario:   "kubernaut_remediate",
 				},
 			}
 

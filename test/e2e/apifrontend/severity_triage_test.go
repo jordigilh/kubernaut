@@ -63,9 +63,9 @@ var _ = Describe("Severity Triage Pipeline (G12)", Label("e2e", "phase4", "g12")
 			if taskErr == nil && task.Status.Message != nil {
 				msgStr := string(task.Status.Message)
 				Expect(msgStr).NotTo(ContainSubstring("circuit breaker"),
-					"af_create_rr failed due to K8s circuit breaker — cluster not ready")
+					"kubernaut_remediate failed due to K8s circuit breaker — cluster not ready")
 				Expect(msgStr).NotTo(ContainSubstring("ErrK8sUnavailable"),
-					"af_create_rr failed — K8s client unavailable")
+					"kubernaut_remediate failed — K8s client unavailable")
 			}
 		}
 	}

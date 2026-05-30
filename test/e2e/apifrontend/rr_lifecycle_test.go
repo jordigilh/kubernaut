@@ -97,7 +97,7 @@ var _ = Describe("RR CRD Lifecycle (G4)", Label("e2e", "phase2", "g4"), func() {
 		Expect(target).NotTo(BeEmpty())
 	})
 
-	// TC-E2E-RR-06 deleted: idempotency tests af_create_rr (internal tool) — covered by UT.
+	// TC-E2E-RR-06 deleted: idempotency tests kubernaut_remediate (internal tool) — covered by UT.
 	// TC-E2E-RR-07: kubernaut_watch with k8s-seeded RR
 	It("TC-E2E-RR-07: kubernaut_watch returns structured watch result", NodeTimeout(60*time.Second), func(_ SpecContext) {
 		authToken, err := fetchDEXTokenForPersona("sre")
@@ -135,8 +135,8 @@ var _ = Describe("RR CRD Lifecycle (G4)", Label("e2e", "phase2", "g4"), func() {
 		Expect(out).To(HaveKey("status"))
 	})
 
-	// TC-E2E-RR-08 deleted: af_create_rr validation (internal tool) — covered by UT.
-	// TC-E2E-RR-09 deleted: af_create_rr RBAC denial — covered by A2A RBAC-06.
+	// TC-E2E-RR-08 deleted: kubernaut_remediate validation (internal tool) — covered by UT.
+	// TC-E2E-RR-09 deleted: kubernaut_remediate RBAC denial — covered by A2A RBAC-06.
 })
 
 var _ = Describe("RAR Flow (G5)", Label("e2e", "phase2", "g5"), func() {

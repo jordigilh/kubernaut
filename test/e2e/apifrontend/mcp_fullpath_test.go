@@ -176,5 +176,5 @@ var _ = Describe("MCP Full-Path Validation (G1)", Label("e2e", "phase2", "g1"), 
 		Expect(toolIsErr).To(BeTrue(), "expected tool error for unknown tool; text=%q", text)
 	})
 
-	// TC-E2E-MCP-FULL-07 deleted: af_create_rr validation (internal tool) — covered by UT.
+	// TC-E2E-MCP-FULL-07 deleted: kubernaut_remediate validation (internal tool) — covered by UT.
 })

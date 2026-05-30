@@ -201,14 +201,15 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
 
 	// Issue #1189: Append AF keyword_scenarios with match_last_only so the FP
 	// mock-LLM can handle both KA signal scenarios AND AF multi-turn ADK conversations.
-	// Tool schemas updated for #1326 MCP migration: kubernaut_investigate accepts
-	// {rr_id} only; $from_tool resolves rr_id from af_create_rr response.
+	// Tool schemas updated for #1326 MCP migration and #1332 intent-based redesign:
+	// kubernaut_remediate creates RR; kubernaut_investigate accepts {rr_id}.
+	// $from_tool resolves rr_id from kubernaut_remediate response.
 	afKeywordYAML := `keyword_scenarios:
-      - name: "af_create_rr"
+      - name: "kubernaut_remediate"
         keywords: ["create a remediation request", "create remediation"]
         match_last_only: true
         tool_call:
-          name: "af_create_rr"
+          name: "kubernaut_remediate"
           arguments:
             namespace: "fp-a2a-interactive"
             kind: "Deployment"
@@ -220,21 +221,21 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
         tool_call:
           name: "kubernaut_investigate"
           arguments:
-            rr_id: "$from_tool:af_create_rr:rr_id"
+            rr_id: "$from_tool:kubernaut_remediate:rr_id"
       - name: "af_discover_workflows"
         keywords: ["discover available workflows", "discover workflows"]
         match_last_only: true
         tool_call:
           name: "kubernaut_discover_workflows"
           arguments:
-            rr_id: "$from_tool:af_create_rr:rr_id"
+            rr_id: "$from_tool:kubernaut_remediate:rr_id"
       - name: "af_select_workflow"
         keywords: ["select workflow"]
         match_last_only: true
         tool_call:
           name: "kubernaut_select_workflow"
           arguments:
-            rr_id: "$from_tool:af_create_rr:rr_id"
+            rr_id: "$from_tool:kubernaut_remediate:rr_id"
             workflow_id: "oomkill-increase-memory-v1"
       - name: "af_watch"
         keywords: ["watch remediation", "watch pipeline", "watch progress"]
@@ -243,7 +244,7 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
           name: "kubernaut_watch"
           arguments:
             namespace: "kubernaut-system"
-            name: "$from_tool:af_create_rr:rr_id"
+            name: "$from_tool:kubernaut_remediate:rr_id"
 `
 
 	configMap := fmt.Sprintf(`apiVersion: v1

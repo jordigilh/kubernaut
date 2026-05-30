@@ -20,12 +20,13 @@ import (
 // E2E-FP-1292-001: Cross-namespace RR creation (ADR-057, BR-PLATFORM-057, CM-6)
 //
 // Deploys memory-eater in a separate namespace from kubernaut-system, then sends
-// an A2A message that triggers af_create_rr with the workload namespace. Verifies:
+// an A2A message that triggers kubernaut_remediate with the workload namespace. Verifies:
 //   - RR CRD lives in kubernaut-system (metadata.namespace = controllerNS)
 //   - spec.targetResource.namespace = workload namespace (not controllerNS)
+//   - No InvestigationSession is created (autonomous flow, Issue #1332)
 //
 // This completes the Pyramid Invariant E2E tier for Issue #1292.
-var _ = Describe("AF A2A Cross-Namespace RR [E2E-FP-1292-001]", Label("fp", "af", "a2a", "issue-1292", "adr-057"), func() {
+var _ = Describe("AF A2A Cross-Namespace RR [E2E-FP-1292-001]", Label("fp", "af", "a2a", "issue-1292", "adr-057", "issue-1332"), func() {
 
 	It("should create RR in kubernaut-system with targetResource in workload namespace", func() {
 		By("Verifying AF is reachable")
@@ -107,5 +108,8 @@ var _ = Describe("AF A2A Cross-Namespace RR [E2E-FP-1292-001]", Label("fp", "af"
 		Expect(rr.Spec.TargetResource.Kind).To(Equal("Deployment"))
 		Expect(strings.Contains(rr.Spec.TargetResource.Name, "memory-eater")).To(BeTrue(),
 			"targetResource.name should reference memory-eater")
+
+		By("Verifying no InvestigationSession was created (Issue #1332: autonomous flow)")
+		fpAssertNoISForRR(rrName, namespace)
 	})
 })

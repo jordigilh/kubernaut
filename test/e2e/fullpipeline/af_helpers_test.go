@@ -14,6 +14,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -251,5 +252,20 @@ func fpWaitForPodCrashInNS(appLabel, ns string, timeout time.Duration) {
 		return false
 	}, timeout, 2*time.Second).Should(BeTrue(),
 		"pod with label app=%s in namespace %s should crash (OOMKill or CrashLoopBackOff)", appLabel, ns)
+}
+
+// fpAssertNoISForRR asserts that no InvestigationSession exists for the given RR.
+// Issue #1332: Autonomous flow (kubernaut_remediate) must NOT create an IS.
+func fpAssertNoISForRR(rrName, ns string) {
+	var isList isv1alpha1.InvestigationSessionList
+	err := k8sClient.List(ctx, &isList, client.InNamespace(ns))
+	Expect(err).NotTo(HaveOccurred(), "failed to list InvestigationSessions")
+
+	for _, is := range isList.Items {
+		for _, ref := range is.OwnerReferences {
+			Expect(ref.Name).NotTo(Equal(rrName),
+				"autonomous flow must not create InvestigationSession for RR %s", rrName)
+		}
+	}
 }
 

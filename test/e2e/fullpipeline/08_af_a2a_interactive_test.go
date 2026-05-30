@@ -23,12 +23,15 @@ import (
 // with a zero-replica deployment, keeping the fingerprint distinct from the
 // shared kubernaut-system memory-eater used by other FP tests.
 //
-// Turn 1: "create a remediation request"   → af_create_rr  (creates RR + IS)
+// Issue #1332: Turn 1 now uses kubernaut_remediate (renamed from af_create_rr)
+// for autonomous RR creation. Turn 2 upgrades to interactive via kubernaut_investigate.
+//
+// Turn 1: "create a remediation request"   → kubernaut_remediate  (creates RR, no IS)
 // Turn 2: "investigate the remediation"    → kubernaut_investigate  (rr_id, blocks until complete)
 // Turn 3: "discover available workflows"   → kubernaut_discover_workflows  (rr_id)
 // Turn 4: "select workflow"                → kubernaut_select_workflow  (rr_id, workflow_id)
 // Turn 5: "watch remediation progress"     → kubernaut_watch  (namespace, rr name)
-var _ = Describe("AF A2A Interactive 5-Phase Full Pipeline [E2E-FP-1189-003]", Label("fp", "af", "a2a", "interactive", "issue-1189"), func() {
+var _ = Describe("AF A2A Interactive 5-Phase Full Pipeline [E2E-FP-1189-003]", Label("fp", "af", "a2a", "interactive", "issue-1189", "issue-1332"), func() {
 
 	const targetNS = "fp-a2a-interactive"
 
@@ -86,7 +89,7 @@ var _ = Describe("AF A2A Interactive 5-Phase Full Pipeline [E2E-FP-1189-003]", L
 		}
 		Expect(k8sClient.Create(ctx, dep)).To(Succeed())
 
-		By("Turn 1: create a remediation request")
+		By("Turn 1: create a remediation request (kubernaut_remediate — autonomous RR)")
 		body := fpA2ATasksSend("fp-int-1",
 			"create a remediation request for deployment memory-eater in fp-a2a-interactive")
 		resp, err = fpA2AInvokeWithTimeout(body, 60*time.Second)
