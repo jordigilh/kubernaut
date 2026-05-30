@@ -290,9 +290,15 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 	}
 
 	if blocking {
+		bridgeCtx := ctx
+		if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+			var bridgeCancel context.CancelFunc
+			bridgeCtx, bridgeCancel = context.WithTimeout(ctx, 3*time.Minute)
+			defer bridgeCancel()
+		}
 		logger.Info("bridgeEventsCollectSummary: starting blocking event bridge",
 			"rr_id", args.RRID, "session_id", result.SessionID, "ctx_err", ctx.Err())
-		summary := bridgeEventsCollectSummary(ctx, result.Events)
+		summary := bridgeEventsCollectSummary(bridgeCtx, result.Events)
 		status := "completed"
 		if ctx.Err() != nil {
 			status = "timeout"
