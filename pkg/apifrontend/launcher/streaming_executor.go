@@ -100,8 +100,9 @@ func (s *StreamingExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestC
 	)
 
 	// BR-SESS-003 / SI-4: On client SSE disconnect, transition materialized
-	// sessions to Disconnected phase so tracker slots are released promptly
-	// and the CRD reflects the actual connection state.
+	// sessions to Disconnected phase so the CRD reflects the actual
+	// connection state. Tracker slot release is handled by the disconnect
+	// watcher goroutine in trackSSEConnection (router.go).
 	//
 	// The a2a-go library runs executors in a detached context
 	// (context.WithoutCancel), so ctx.Err() won't reflect SSE disconnects.
