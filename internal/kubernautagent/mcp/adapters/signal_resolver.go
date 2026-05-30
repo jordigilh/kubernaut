@@ -20,8 +20,10 @@ import (
 	"context"
 	"fmt"
 
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // SignalProvider retrieves the SignalContext stored on the session when the
@@ -38,23 +40,55 @@ type SignalProvider interface {
 // StartInvestigationWithContext / StartInteractiveSessionWithContext, so
 // discover_workflows always gets severity, environment, priority, and all
 // other fields without reading any CRD.
+//
+// Fallback: when no session holds a signal for the given remediation (e.g.
+// interactive sessions started directly via MCP without an AA payload), the
+// resolver reads the RemediationRequest CRD to extract signal name, severity,
+// and target resource fields. This keeps discover_workflows functional for
+// bare RR scenarios.
 type SessionSignalContextResolver struct {
-	provider SignalProvider
+	provider  SignalProvider
+	k8s       client.Client
+	namespace string
 }
 
 // NewSessionSignalContextResolver creates a resolver backed by the session manager.
-func NewSessionSignalContextResolver(provider SignalProvider) *SessionSignalContextResolver {
-	return &SessionSignalContextResolver{provider: provider}
+// k8sClient and namespace are optional; when provided they enable CRD fallback
+// for sessions without stored signal context.
+func NewSessionSignalContextResolver(provider SignalProvider, k8sClient client.Client, namespace string) *SessionSignalContextResolver {
+	return &SessionSignalContextResolver{
+		provider:  provider,
+		k8s:       k8sClient,
+		namespace: namespace,
+	}
 }
 
 // ResolveSignalContext returns the SignalContext stored on the session for the
-// given remediation ID.
-func (r *SessionSignalContextResolver) ResolveSignalContext(_ context.Context, rrID string) (*katypes.SignalContext, error) {
+// given remediation ID. Falls back to reading the RR CRD when no session
+// signal is available.
+func (r *SessionSignalContextResolver) ResolveSignalContext(ctx context.Context, rrID string) (*katypes.SignalContext, error) {
 	signal, err := r.provider.GetSignalForRemediation(rrID)
-	if err != nil {
+	if err == nil {
+		return signal, nil
+	}
+
+	if r.k8s == nil {
 		return nil, fmt.Errorf("resolve signal context for %s: %w", rrID, err)
 	}
-	return signal, nil
+
+	var rr remediationv1.RemediationRequest
+	if getErr := r.k8s.Get(ctx, client.ObjectKey{Namespace: r.namespace, Name: rrID}, &rr); getErr != nil {
+		return nil, fmt.Errorf("resolve signal context for %s (CRD fallback): %w", rrID, getErr)
+	}
+
+	return &katypes.SignalContext{
+		Name:          rr.Spec.SignalName,
+		Severity:      rr.Spec.Severity,
+		RemediationID: rrID,
+		ResourceKind:  rr.Spec.TargetResource.Kind,
+		ResourceName:  rr.Spec.TargetResource.Name,
+		Namespace:     rr.Spec.TargetResource.Namespace,
+	}, nil
 }
 
 // ResolveEnrichmentData returns empty enrichment data. Full enrichment is

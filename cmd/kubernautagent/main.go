@@ -1353,10 +1353,10 @@ func buildMCPHandler(
 	rrChecker := mcptools.NewK8sRRExistenceChecker(ctrlCli, namespace)
 
 	// Signal context resolver: reads the SignalContext stored on the session
-	// from the original AA IncidentRequest payload. Both autonomous and
-	// interactive sessions persist the full signal at creation time, so
-	// discover_workflows gets severity, environment, priority without CRD reads.
-	signalResolver := mcpadapters.NewSessionSignalContextResolver(autoMgr)
+	// from the original AA IncidentRequest payload. Falls back to reading
+	// the RR CRD for sessions without stored signal (e.g. interactive sessions
+	// started directly via MCP without an AA payload).
+	signalResolver := mcpadapters.NewSessionSignalContextResolver(autoMgr, ctrlCli, namespace)
 
 	// Build the InvestigateTool with optional dependencies.
 	investigateOpts := []mcptools.InvestigateOption{
