@@ -42,7 +42,7 @@ var _ = Describe("AF A2A Autonomous Full Pipeline [E2E-FP-1189-002]", Label("fp"
 		GinkgoWriter.Printf("  A2A task: %s (state: %s)\n", task.ID, task.Status.State)
 
 		By("Waiting for full pipeline execution")
-		rrName := fpWaitForRRWithTargetNS("memory-eater", namespace, 120*time.Second)
+		rrName := fpWaitForRR("memory-eater", 120*time.Second)
 		Expect(rrName).NotTo(BeEmpty())
 		fpWaitForWEComplete(rrName, 5*time.Minute)
 		GinkgoWriter.Printf("  Full pipeline completed for %s\n", rrName)

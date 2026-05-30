@@ -218,6 +218,7 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
       - name: "af_investigate"
         keywords: ["start investigation", "investigate", "begin investigation"]
         match_last_only: true
+        repeat_tool_call: true
         tool_call:
           name: "kubernaut_investigate"
           arguments:
@@ -225,6 +226,7 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
       - name: "af_discover_workflows"
         keywords: ["discover available workflows", "discover workflows"]
         match_last_only: true
+        repeat_tool_call: true
         tool_call:
           name: "kubernaut_discover_workflows"
           arguments:
@@ -232,6 +234,7 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
       - name: "af_select_workflow"
         keywords: ["select workflow"]
         match_last_only: true
+        repeat_tool_call: true
         tool_call:
           name: "kubernaut_select_workflow"
           arguments:
@@ -240,6 +243,7 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
       - name: "af_watch"
         keywords: ["watch remediation", "watch pipeline", "watch progress"]
         match_last_only: true
+        repeat_tool_call: true
         tool_call:
           name: "kubernaut_watch"
           arguments:
