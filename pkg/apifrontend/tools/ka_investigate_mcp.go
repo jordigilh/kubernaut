@@ -30,8 +30,10 @@ import (
 	"k8s.io/client-go/dynamic"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 )
 
 // isPhaseActivePollTimeout caps the IS phase Active polling after AIA readiness.
@@ -39,8 +41,13 @@ import (
 const isPhaseActivePollTimeout = 5 * time.Second
 
 // InvestigateMCPArgs defines the input for the MCP-based kubernaut_investigate tool.
+// Either RRID (for an existing RR) or Namespace/Kind/Name (to create a new one)
+// must be provided. When creating, an IS CRD is also created for the interactive flow.
 type InvestigateMCPArgs struct {
-	RRID string `json:"rr_id"`
+	RRID      string `json:"rr_id,omitempty"`
+	Namespace string `json:"namespace,omitempty"`
+	Kind      string `json:"kind,omitempty"`
+	Name      string `json:"name,omitempty"`
 }
 
 // InvestigateMCPResult is the output of the MCP investigate tool.
@@ -48,6 +55,7 @@ type InvestigateMCPResult struct {
 	SessionID string `json:"session_id"`
 	Status    string `json:"status"`
 	Summary   string `json:"summary,omitempty"`
+	RRID      string `json:"rr_id,omitempty"`
 }
 
 // SessionStartedHook is called after a successful StartInvestigation with the
@@ -84,6 +92,46 @@ func HandleInvestigationMCP(ctx context.Context, mcpClient ka.MCPClient, k8sClie
 // When blocking is false, a background goroutine bridges events and the function
 // returns immediately (legacy behavior for the MCP bridge path).
 func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPClient, k8sClient dynamic.Interface, namespace string, args InvestigateMCPArgs, auditor audit.Emitter, registry *MonitorRegistry, onStarted SessionStartedHook, blocking bool, pool *ka.KASessionPool, username string) (InvestigateMCPResult, error) {
+	hasRRID := args.RRID != ""
+	hasResourceArgs := args.Namespace != "" || args.Kind != "" || args.Name != ""
+
+	if !hasRRID && !hasResourceArgs {
+		return InvestigateMCPResult{}, fmt.Errorf("rr_id or namespace/kind/name required")
+	}
+	if !hasRRID && hasResourceArgs {
+		if args.Kind == "" || args.Name == "" {
+			return InvestigateMCPResult{}, fmt.Errorf("kind and name required when providing namespace/kind/name")
+		}
+		if args.Namespace == "" {
+			return InvestigateMCPResult{}, fmt.Errorf("rr_id or namespace/kind/name required")
+		}
+
+		identity := auth.UserIdentityFromContext(ctx)
+		if identity != nil && identity.IsServiceAccount {
+			return InvestigateMCPResult{}, fmt.Errorf("interactive investigation cannot be started by service accounts")
+		}
+
+		if k8sClient == nil {
+			return InvestigateMCPResult{}, fmt.Errorf("k8s client unavailable for RR creation")
+		}
+
+		createArgs := &CreateRRArgs{
+			Namespace: args.Namespace,
+			Kind:      args.Kind,
+			Name:      args.Name,
+		}
+		createUser := ""
+		if identity != nil {
+			createUser = identity.Username
+		}
+		var triager *severity.Triager
+		result, err := HandleCreateRR(ctx, k8sClient, namespace, createArgs, createUser, triager, auditor)
+		if err != nil {
+			return InvestigateMCPResult{}, fmt.Errorf("create RR for investigation: %w", err)
+		}
+		args.RRID = result.RRID
+	}
+
 	if args.RRID == "" {
 		return InvestigateMCPResult{}, fmt.Errorf("rr_id is required for MCP investigation")
 	}
@@ -91,7 +139,7 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 	// Wait for AIA CRD to show a session ID, confirming AA has submitted
 	// to KA with interactive=true and KA has created a pending session.
 	// Blocking path uses a longer timeout because the IS CRD (created by
-	// af_create_rr) needs time for AA to detect and resubmit to KA.
+	// kubernaut_investigate) needs time for AA to detect and resubmit to KA.
 	if k8sClient != nil && namespace != "" {
 		awaitTimeout := 10 * time.Second
 		if blocking {
@@ -176,6 +224,7 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 		return InvestigateMCPResult{
 			SessionID: result.SessionID,
 			Status:    result.Status,
+			RRID:      args.RRID,
 		}, nil
 	}
 
@@ -210,6 +259,7 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 			SessionID: result.SessionID,
 			Status:    status,
 			Summary:   summary,
+			RRID:      args.RRID,
 		}, nil
 	}
 
@@ -222,6 +272,7 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 	return InvestigateMCPResult{
 		SessionID: result.SessionID,
 		Status:    result.Status,
+		RRID:      args.RRID,
 	}, nil
 }
 

@@ -1076,4 +1076,61 @@ var _ = Describe("GenAIPartConverter — Streaming Mode (TP-1258)", func() {
 			Expect(tp.Text).To(Equal("Analyzing...\n\n"))
 		})
 	})
+
+	Describe("kubernaut_remediate status/summary (#1332)", func() {
+		It("UT-AF-1332-030: kubernaut_remediate FunctionCall -> status message", func() {
+			part := &genai.Part{
+				FunctionCall: &genai.FunctionCall{
+					Name: "kubernaut_remediate",
+					Args: map[string]any{
+						"namespace": "prod",
+						"kind":      "Deployment",
+						"name":      "web",
+					},
+				},
+			}
+			result, err := convertStreaming(context.Background(), nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			tp, ok := result.(*a2a.TextPart)
+			Expect(ok).To(BeTrue())
+			Expect(tp.Text).To(ContainSubstring("Creating remediation request"))
+		})
+
+		It("UT-AF-1332-031: kubernaut_remediate response with new RR -> summary", func() {
+			part := &genai.Part{
+				FunctionResponse: &genai.FunctionResponse{
+					Name: "kubernaut_remediate",
+					Response: map[string]any{
+						"rr_id":   "rr-web-001",
+						"message": "RemediationRequest created for Deployment/web by sre-user",
+					},
+				},
+			}
+			result, err := convertStreaming(context.Background(), nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			tp, ok := result.(*a2a.TextPart)
+			Expect(ok).To(BeTrue())
+			Expect(tp.Text).To(ContainSubstring("Remediation request created"))
+		})
+
+		It("UT-AF-1332-032: kubernaut_remediate response with already_exists -> summary", func() {
+			part := &genai.Part{
+				FunctionResponse: &genai.FunctionResponse{
+					Name: "kubernaut_remediate",
+					Response: map[string]any{
+						"already_exists": true,
+						"rr_id":          "rr-existing-002",
+					},
+				},
+			}
+			result, err := convertStreaming(context.Background(), nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			tp, ok := result.(*a2a.TextPart)
+			Expect(ok).To(BeTrue())
+			Expect(tp.Text).To(ContainSubstring("already exists"))
+		})
+	})
 })

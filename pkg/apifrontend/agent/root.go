@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	"github.com/google/uuid"
 	"google.golang.org/adk/agent"
 	"google.golang.org/adk/agent/llmagent"
 	"google.golang.org/adk/tool"
@@ -138,6 +137,9 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 		{"check_existing_rr", func() (tool.Tool, error) { return tools.NewCheckExistingRRTool(k8s, cfg.Namespace) }},
 		{"create_rr", func() (tool.Tool, error) {
 			return tools.NewCreateRRTool(k8s, cfg.Namespace, cfg.Triager, cfg.Auditor)
+		}},
+		{"remediate", func() (tool.Tool, error) {
+			return tools.NewRemediateTool(k8s, cfg.Namespace, cfg.Triager, cfg.Auditor)
 		}},
 	}
 
@@ -342,8 +344,9 @@ func newToolLoggingCallbacks() (llmagent.BeforeToolCallback, llmagent.AfterToolC
 // newAuditToolCallback returns an AfterToolCallback that emits a structured
 // audit event for every tool invocation (FedRAMP AU-12 compliance).
 // The event includes tool name, result status, and user identity.
-// Issue #1189: when af_create_rr is called within an A2A task context, the
-// audit event includes a2a_task_id for bidirectional task-to-RR correlation.
+// Issue #1332: when kubernaut_remediate or kubernaut_investigate is called
+// within an A2A task context, the audit event includes a2a_task_id for
+// bidirectional task-to-RR correlation.
 // G6 (revised #1293): IS CRD creation moved to kubernaut_takeover hook in
 // mcp_bridge.go. The sessionSvc parameter is retained for future use but
 // MaterializeCRD is no longer called from this callback.
@@ -370,32 +373,22 @@ func newAuditToolCallback(auditor audit.Emitter, sessionSvc *session.CRDSessionS
 			detail["namespace"] = ns
 		}
 
-		// Issue #1189: A2A task-to-RR correlation. When af_create_rr succeeds
-		// within an A2A task, include both a2a_task_id and rr_id in the audit
-		// event so the Data Store can correlate them bidirectionally.
+		// Issue #1189: A2A task-to-RR correlation. When kubernaut_remediate or
+		// kubernaut_investigate succeeds within an A2A task, include both
+		// a2a_task_id and rr_id in the audit event so the Data Store can
+		// correlate them bidirectionally.
 		sc := session.CreateContextFromContext(ctx)
 		if sc != nil && sc.TaskID != "" {
 			detail["a2a_task_id"] = sc.TaskID
 		}
-		if t.Name() == "af_create_rr" && toolErr == nil && output != nil {
+		toolName := t.Name()
+		isRRCreatingTool := (toolName == "kubernaut_remediate" || toolName == "kubernaut_investigate")
+		if isRRCreatingTool && toolErr == nil && output != nil {
 			if rrID, ok := output["rr_id"].(string); ok && rrID != "" {
 				detail["rr_id"] = rrID
 				if sc != nil {
 					sc.RRName = rrID
 					sc.RRNamespace = controllerNS
-				}
-				// Create IS CRD immediately after RR so AA sees it on its
-				// first reconcile and submits to KA with interactive=true.
-				// This eliminates the race where AF called action=start before
-				// KA had a pending interactive session.
-				if sessionSvc != nil {
-					if identity := auth.UserIdentityFromContext(ctx); identity != nil {
-						isID := uuid.New().String()
-						if isErr := sessionSvc.InitializeSessionByRR(ctx, controllerNS, rrID, isID, identity.Username, identity.Groups); isErr != nil {
-							logr.FromContextOrDiscard(ctx).Error(isErr, "IS CRD creation after af_create_rr failed",
-								"rr_id", rrID)
-						}
-					}
 				}
 			}
 		}

@@ -21,6 +21,7 @@ var toolStatusMessages = map[string]string{
 	"kubernaut_discover_workflows":    "Discovering available remediation workflows...",
 	"kubernaut_select_workflow":       "Selecting remediation workflow %s...",
 	"kubernaut_watch":                 "Watching remediation progress...",
+	"kubernaut_remediate":             "Creating remediation request...",
 	"af_create_rr":                    "Creating remediation request...",
 	"af_check_existing_rr":            "Checking for existing remediation...",
 	"kubectl_list_events":             "Fetching cluster events...",
@@ -41,10 +42,11 @@ var toolStatusMessages = map[string]string{
 // summary from FunctionResponse.Response. Tools not listed here have their
 // responses dropped (the LLM's subsequent reasoning covers the content).
 var keyToolSummarizers = map[string]func(map[string]any) string{
-	"kubernaut_investigate": summarizeInvestigation,
+	"kubernaut_investigate":          summarizeInvestigation,
 	"kubernaut_discover_workflows":   summarizeDiscoverWorkflows,
 	"kubernaut_select_workflow":      summarizeSelectWorkflow,
 	"kubernaut_watch":                summarizeWatch,
+	"kubernaut_remediate":            summarizeCreateRR,
 	"af_create_rr":                   summarizeCreateRR,
 }
 

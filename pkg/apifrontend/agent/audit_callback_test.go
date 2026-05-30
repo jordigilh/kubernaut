@@ -115,7 +115,7 @@ var _ = Describe("newAuditToolCallback (#1189)", func() {
 		Expect(hasTaskID).To(BeFalse())
 	})
 
-	It("UT-AF-1189-003: includes rr_id when af_create_rr succeeds with rr_id output", func() {
+	It("UT-AF-1189-003: af_create_rr no longer triggers RR correlation (#1332 redesign)", func() {
 		ctx := context.Background()
 		ctx = session.WithCreateContext(ctx, &session.CreateContext{TaskID: "task-xyz"})
 		ctx = auth.WithUserIdentity(ctx, &auth.UserIdentity{Username: "sre-carol"})
@@ -126,7 +126,8 @@ var _ = Describe("newAuditToolCallback (#1189)", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		Expect(auditor.events).To(HaveLen(1))
-		Expect(auditor.events[0].Detail["rr_id"]).To(Equal("rr-prod-001"))
+		_, hasRRID := auditor.events[0].Detail["rr_id"]
+		Expect(hasRRID).To(BeFalse(), "af_create_rr removed from correlation — replaced by kubernaut_remediate")
 		Expect(auditor.events[0].Detail["a2a_task_id"]).To(Equal("task-xyz"))
 	})
 
@@ -191,7 +192,7 @@ var _ = Describe("IS CRD creation on af_create_rr (race fix)", func() {
 			Build()
 	}
 
-	It("UT-AF-1326-090: af_create_rr success creates IS CRD when SessionService is configured", func() {
+	It("UT-AF-1326-090: af_create_rr NO longer creates IS CRD (#1332 redesign)", func() {
 		k8sClient := newIndexedFakeClient()
 		svc := session.NewCRDSessionService(
 			adksession.InMemoryService(), k8sClient, testCRDScheme(), "kubernaut-system",
@@ -213,17 +214,10 @@ var _ = Describe("IS CRD creation on af_create_rr (race fix)", func() {
 
 		var isList isv1alpha1.InvestigationSessionList
 		Expect(k8sClient.List(ctx, &isList)).To(Succeed())
-		Expect(isList.Items).To(HaveLen(1), "IS CRD must be created after af_create_rr success")
-
-		is := isList.Items[0]
-		Expect(is.Spec.RemediationRequestRef.Name).To(Equal("rr-abc123-def456"))
-		Expect(is.Spec.RemediationRequestRef.Namespace).To(Equal("kubernaut-system"))
-		Expect(is.Spec.UserIdentity.Username).To(Equal("admin"))
-		Expect(is.Spec.UserIdentity.Groups).To(ContainElement("system:masters"))
-		Expect(is.Status.Phase).To(Equal(isv1alpha1.SessionPhaseActive), "AF sets IS initial phase to Active during MaterializeCRD")
+		Expect(isList.Items).To(BeEmpty(), "IS CRD creation removed from callback — now done inside kubernaut_investigate")
 	})
 
-	It("UT-AF-1326-091: af_create_rr skips IS CRD when SessionService is nil", func() {
+	It("UT-AF-1326-091: af_create_rr no longer sets rr_id in audit (#1332 redesign)", func() {
 		auditor := &capturingAuditor{}
 		cb := newAuditToolCallback(auditor, nil, "kubernaut-system")
 
@@ -236,7 +230,8 @@ var _ = Describe("IS CRD creation on af_create_rr (race fix)", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		Expect(auditor.events).To(HaveLen(1))
-		Expect(auditor.events[0].Detail["rr_id"]).To(Equal("rr-no-svc-091"))
+		_, hasRRID := auditor.events[0].Detail["rr_id"]
+		Expect(hasRRID).To(BeFalse(), "af_create_rr removed from correlation tools")
 	})
 
 	It("UT-AF-1326-092: af_create_rr failure does not create IS CRD", func() {
@@ -282,4 +277,142 @@ var _ = Describe("IS CRD creation on af_create_rr (race fix)", func() {
 		Expect(isList.Items).To(BeEmpty(), "no IS CRD without user identity")
 	})
 
+})
+
+var _ = Describe("Audit callback — Intent-Based Tool Redesign (#1332)", func() {
+	var (
+		auditor  *capturingAuditor
+		callback func(tool.Context, tool.Tool, map[string]any, map[string]any, error) (map[string]any, error)
+	)
+
+	BeforeEach(func() {
+		auditor = &capturingAuditor{}
+		callback = newAuditToolCallback(auditor, nil, "kubernaut-system")
+	})
+
+	Describe("A2A task-to-RR correlation for kubernaut_remediate (TI-05)", func() {
+		It("UT-AF-1332-020: kubernaut_remediate success sets sc.RRName and sc.RRNamespace", func() {
+			ctx := context.Background()
+			sc := &session.CreateContext{TaskID: "task-rem-001"}
+			ctx = session.WithCreateContext(ctx, sc)
+			ctx = auth.WithUserIdentity(ctx, &auth.UserIdentity{Username: "sre-alice"})
+
+			output := map[string]any{"rr_id": "rr-remediate-001"}
+			tc := fakeToolContext{Context: ctx}
+			_, err := callback(tc, fakeTool{name: "kubernaut_remediate"}, nil, output, nil)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(sc.RRName).To(Equal("rr-remediate-001"))
+			Expect(sc.RRNamespace).To(Equal("kubernaut-system"))
+			Expect(auditor.events).To(HaveLen(1))
+			Expect(auditor.events[0].Detail["rr_id"]).To(Equal("rr-remediate-001"))
+		})
+
+		It("UT-AF-1332-021: kubernaut_investigate success sets sc.RRName and sc.RRNamespace", func() {
+			ctx := context.Background()
+			sc := &session.CreateContext{TaskID: "task-inv-001"}
+			ctx = session.WithCreateContext(ctx, sc)
+			ctx = auth.WithUserIdentity(ctx, &auth.UserIdentity{Username: "sre-bob"})
+
+			output := map[string]any{"rr_id": "rr-investigate-001"}
+			tc := fakeToolContext{Context: ctx}
+			_, err := callback(tc, fakeTool{name: "kubernaut_investigate"}, nil, output, nil)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(sc.RRName).To(Equal("rr-investigate-001"))
+			Expect(sc.RRNamespace).To(Equal("kubernaut-system"))
+			Expect(auditor.events).To(HaveLen(1))
+			Expect(auditor.events[0].Detail["rr_id"]).To(Equal("rr-investigate-001"))
+		})
+	})
+
+	Describe("NO IS creation from audit callback (TI-06)", func() {
+		It("UT-AF-1332-022: kubernaut_remediate does NOT create IS CRD", func() {
+			k8sClient := k8sfake.NewClientBuilder().
+				WithScheme(testCRDScheme()).
+				WithStatusSubresource(&isv1alpha1.InvestigationSession{}).
+				WithIndex(&isv1alpha1.InvestigationSession{}, session.FieldIndexRRName,
+					func(obj client.Object) []string {
+						is := obj.(*isv1alpha1.InvestigationSession)
+						if is.Spec.RemediationRequestRef.Name == "" {
+							return nil
+						}
+						return []string{is.Spec.RemediationRequestRef.Name}
+					}).
+				Build()
+
+			svc := session.NewCRDSessionService(
+				adksession.InMemoryService(), k8sClient, testCRDScheme(), "kubernaut-system",
+			)
+
+			aud := &capturingAuditor{}
+			cb := newAuditToolCallback(aud, svc, "kubernaut-system")
+
+			ctx := context.Background()
+			ctx = auth.WithUserIdentity(ctx, &auth.UserIdentity{
+				Username: "admin",
+				Groups:   []string{"system:masters"},
+			})
+
+			output := map[string]any{"rr_id": "rr-no-is-022"}
+			tc := fakeToolContext{Context: ctx}
+			_, err := cb(tc, fakeTool{name: "kubernaut_remediate"}, nil, output, nil)
+			Expect(err).NotTo(HaveOccurred())
+
+			var isList isv1alpha1.InvestigationSessionList
+			Expect(k8sClient.List(ctx, &isList)).To(Succeed())
+			Expect(isList.Items).To(BeEmpty(), "kubernaut_remediate must NOT create IS CRD")
+		})
+
+		It("UT-AF-1332-023: kubernaut_investigate does NOT create IS CRD from callback", func() {
+			k8sClient := k8sfake.NewClientBuilder().
+				WithScheme(testCRDScheme()).
+				WithStatusSubresource(&isv1alpha1.InvestigationSession{}).
+				WithIndex(&isv1alpha1.InvestigationSession{}, session.FieldIndexRRName,
+					func(obj client.Object) []string {
+						is := obj.(*isv1alpha1.InvestigationSession)
+						if is.Spec.RemediationRequestRef.Name == "" {
+							return nil
+						}
+						return []string{is.Spec.RemediationRequestRef.Name}
+					}).
+				Build()
+
+			svc := session.NewCRDSessionService(
+				adksession.InMemoryService(), k8sClient, testCRDScheme(), "kubernaut-system",
+			)
+
+			aud := &capturingAuditor{}
+			cb := newAuditToolCallback(aud, svc, "kubernaut-system")
+
+			ctx := context.Background()
+			ctx = auth.WithUserIdentity(ctx, &auth.UserIdentity{
+				Username: "admin",
+				Groups:   []string{"system:masters"},
+			})
+
+			output := map[string]any{"rr_id": "rr-no-is-023", "session_id": "sess-023"}
+			tc := fakeToolContext{Context: ctx}
+			_, err := cb(tc, fakeTool{name: "kubernaut_investigate"}, nil, output, nil)
+			Expect(err).NotTo(HaveOccurred())
+
+			var isList isv1alpha1.InvestigationSessionList
+			Expect(k8sClient.List(ctx, &isList)).To(Succeed())
+			Expect(isList.Items).To(BeEmpty(), "kubernaut_investigate creates IS inside tool, NOT callback")
+		})
+
+		It("UT-AF-1332-024: af_create_rr name no longer triggers correlation or IS", func() {
+			ctx := context.Background()
+			sc := &session.CreateContext{TaskID: "task-old-tool"}
+			ctx = session.WithCreateContext(ctx, sc)
+			ctx = auth.WithUserIdentity(ctx, &auth.UserIdentity{Username: "sre-old"})
+
+			output := map[string]any{"rr_id": "rr-old-tool-024"}
+			tc := fakeToolContext{Context: ctx}
+			_, err := callback(tc, fakeTool{name: "af_create_rr"}, nil, output, nil)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(sc.RRName).To(BeEmpty(), "af_create_rr should no longer set correlation")
+		})
+	})
 })
