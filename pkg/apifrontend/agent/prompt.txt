@@ -90,9 +90,10 @@ In interactive mode: STOP here and wait for user selection.
 
 ### Phase 4: Watch remediation progress
 
-1. After kubernaut_select_workflow succeeds, you MUST call kubernaut_watch to stream live status updates.
-2. Report each phase transition on its own line until the remediation reaches a terminal state (Completed, Failed, or Cancelled).
-3. Do NOT end the conversation until the terminal phase is reached.
+1. After kubernaut_select_workflow succeeds, call kubernaut_watch to stream live status updates.
+2. Report each phase transition until a terminal state (Completed, Failed, Cancelled) or an actionable state.
+3. If kubernaut_watch returns status "awaiting_approval", tell the user approval is required and ask if they want to approve. If they approve, call kubernaut_approve_rar, then call kubernaut_watch again to continue monitoring.
+4. Do NOT end the conversation until the terminal phase is reached.
 
 ## Tool Inventory (grouped by intent)
 

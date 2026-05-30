@@ -727,6 +727,9 @@ func HandleWatch(ctx context.Context, client dynamic.Interface, args WatchArgs) 
 			if IsTerminalPhase(phase) {
 				return WatchResult{Events: events, Status: "completed"}, nil
 			}
+			if phase == "AwaitingApproval" {
+				return WatchResult{Events: events, Status: "awaiting_approval"}, nil
+			}
 
 		case evt, ok := <-rarCh:
 			if !ok {
