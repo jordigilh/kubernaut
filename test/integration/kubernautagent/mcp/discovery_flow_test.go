@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http/httptest"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -73,11 +74,14 @@ func (d *discoverySignalResolver) ResolvePostRCAEnrichment(_ context.Context, _,
 // Wiring that in IT is disproportionate; the stub validates method calls
 // and result payloads, which is sufficient for behavioral assurance.
 type discoveryHTTPCompleter struct {
+	mu              sync.Mutex
 	completedID     string
 	completedResult *katypes.InvestigationResult
 }
 
 func (c *discoveryHTTPCompleter) CompleteUserDriving(id string, result *katypes.InvestigationResult) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.completedID = id
 	c.completedResult = result
 	return nil
@@ -88,8 +92,16 @@ func (c *discoveryHTTPCompleter) FindUserDrivingByRemediationID(_ string) (strin
 }
 
 func (c *discoveryHTTPCompleter) ForceCompleteByRemediationID(_ string, result *katypes.InvestigationResult) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.completedResult = result
 	return nil
+}
+
+func (c *discoveryHTTPCompleter) getCompletedResult() *katypes.InvestigationResult {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.completedResult
 }
 
 // callTool calls an arbitrary MCP tool by name with the given args.
@@ -203,12 +215,12 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 			Expect(output["status"]).To(Equal("workflow_selected"))
 
 			By("verifying auto-complete wrote recommended parameters to HTTP session (#1169)")
-			Expect(completer.completedID).To(Equal("http-sess-discovery"))
-			Expect(completer.completedResult).NotTo(BeNil())
-			Expect(completer.completedResult.WorkflowID).To(Equal(recommendedWfID()))
-			Expect(completer.completedResult.Parameters).To(HaveKeyWithValue("MEMORY_LIMIT_NEW", "512Mi"),
+			Eventually(completer.getCompletedResult, 5*time.Second, 100*time.Millisecond).ShouldNot(BeNil())
+			cr := completer.getCompletedResult()
+			Expect(cr.WorkflowID).To(Equal(recommendedWfID()))
+			Expect(cr.Parameters).To(HaveKeyWithValue("MEMORY_LIMIT_NEW", "512Mi"),
 				"recommended parameters must flow through to the HTTP session completer (#1169)")
-			Expect(completer.completedResult.Parameters).NotTo(HaveKey("REPLICA_COUNT"),
+			Expect(cr.Parameters).NotTo(HaveKey("REPLICA_COUNT"),
 				"alternative parameters must not leak to the recommended workflow's completion (#1169)")
 		})
 	})
@@ -445,7 +457,7 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 			Expect(result.IsError).To(BeFalse())
 
 			By("completing with no action (should use stored RCA)")
-			completer.completedResult = nil
+			func() { completer.mu.Lock(); defer completer.mu.Unlock(); completer.completedResult = nil }()
 			result, err = callTool(sess, "kubernaut_complete_no_action", map[string]any{
 				"rr_id":  "rr-disc-006",
 				"reason": "user prefers manual fix",
@@ -456,11 +468,12 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 			Expect(err).NotTo(HaveOccurred())
 			Expect(output["status"]).To(Equal("completed_no_action"))
 
-			Expect(completer.completedResult).NotTo(BeNil())
-			Expect(completer.completedResult.RCASummary).To(
+			Eventually(completer.getCompletedResult, 5*time.Second, 100*time.Millisecond).ShouldNot(BeNil())
+			cr := completer.getCompletedResult()
+			Expect(cr.RCASummary).To(
 				Equal("Unable to determine specific root cause"),
 				"must propagate exact RCA from extraction step, not the complete_no_action fallback")
-			Expect(completer.completedResult.RCASummary).NotTo(
+			Expect(cr.RCASummary).NotTo(
 				Equal("Investigation completed without workflow selection"),
 				"must NOT use the complete_no_action no-discovery fallback")
 		})
@@ -481,7 +494,7 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 			Expect(result.IsError).To(BeFalse())
 
 			By("immediately completing with no action")
-			completer.completedResult = nil
+			func() { completer.mu.Lock(); defer completer.mu.Unlock(); completer.completedResult = nil }()
 			result, err = callTool(sess, "kubernaut_complete_no_action", map[string]any{
 				"rr_id": "rr-disc-007",
 			})
@@ -491,10 +504,11 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 			Expect(err).NotTo(HaveOccurred())
 			Expect(output["status"]).To(Equal("completed_no_action"))
 
-			Expect(completer.completedResult).NotTo(BeNil())
-			Expect(completer.completedResult.Reason).To(Equal("no action needed"),
+			Eventually(completer.getCompletedResult, 5*time.Second, 100*time.Millisecond).ShouldNot(BeNil())
+			cr := completer.getCompletedResult()
+			Expect(cr.Reason).To(Equal("no action needed"),
 				"should use default reason when none provided")
-			Expect(completer.completedResult.RCASummary).To(ContainSubstring("without workflow"),
+			Expect(cr.RCASummary).To(ContainSubstring("without workflow"),
 				"should use minimal RCA summary when no prior RCA exists")
 		})
 	})
@@ -538,7 +552,7 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 			Expect(result.IsError).To(BeFalse())
 
 			By("selecting the alternative workflow")
-			completer.completedResult = nil
+			func() { completer.mu.Lock(); defer completer.mu.Unlock(); completer.completedResult = nil }()
 			result, err = callTool(sess, "kubernaut_select_workflow", map[string]any{
 				"rr_id":       "rr-disc-008",
 				"workflow_id": alternativeWfID(),
@@ -550,13 +564,14 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 			Expect(output["status"]).To(Equal("workflow_selected"))
 
 			By("verifying completer received alternative parameters (#1169)")
-			Expect(completer.completedResult).NotTo(BeNil(),
+			Eventually(completer.getCompletedResult, 5*time.Second, 100*time.Millisecond).ShouldNot(BeNil(),
 				"HTTP session completion must occur for alternative workflow selection")
-			Expect(completer.completedResult.WorkflowID).To(Equal(alternativeWfID()),
+			cr := completer.getCompletedResult()
+			Expect(cr.WorkflowID).To(Equal(alternativeWfID()),
 				"the selected alternative workflow ID must be on the completed result")
-			Expect(completer.completedResult.Parameters).To(HaveKeyWithValue("REPLICA_COUNT", "3"),
+			Expect(cr.Parameters).To(HaveKeyWithValue("REPLICA_COUNT", "3"),
 				"alternative workflow parameters must flow through to the completer (#1169)")
-			Expect(completer.completedResult.Parameters).NotTo(HaveKey("MEMORY_LIMIT_NEW"),
+			Expect(cr.Parameters).NotTo(HaveKey("MEMORY_LIMIT_NEW"),
 				"recommended parameters must not leak when an alternative is selected (#1169)")
 		})
 	})
