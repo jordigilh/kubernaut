@@ -194,8 +194,8 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 
 		// BR-SP-070: Verify priority assignment for production signal.
 		// The gateway may produce either OOMKilled (critical) or BackOff (warning)
-		// signals depending on timing. For production:
-		//   critical → P0, warning/high → P1, other → P2
+		// signals depending on timing. Rego normalizes warning→medium. For production:
+		//   critical → P0, high/medium → P1, other → P2
 		By("Step 4c: Verifying SP assigned priority for production signal [BR-SP-070]")
 		Expect(matchedSP.Status.PriorityAssignment).ToNot(BeNil(),
 			"SP PriorityAssignment must be populated for production signal")
