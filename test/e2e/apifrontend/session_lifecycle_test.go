@@ -29,7 +29,7 @@ var _ = Describe("Session Join/Takeover/Reconnect (G19)", Label("e2e", "phase4",
 
 	BeforeEach(func() {
 		namespace = getEnvOrDefault("AF_E2E_NAMESPACE", "kubernaut-system")
-		rrNamespace = "default"
+		rrNamespace = namespace
 
 		var err error
 		authTokenA, err = fetchDEXTokenForPersona("sre")
@@ -101,8 +101,8 @@ var _ = Describe("Session Join/Takeover/Reconnect (G19)", Label("e2e", "phase4",
 		// Create a prerequisite RR directly — this test validates session
 		// lifecycle (disconnect/reconnect), not RR creation by the LLM.
 		rrName := fmt.Sprintf("rr-join02-%d", time.Now().UnixNano())
-		Expect(createRR("default", rrName, "Deployment", "test-deploy")).To(Succeed())
-		DeferCleanup(func() { deleteRR("default", rrName) })
+		Expect(createRR(rrNamespace, rrName, "Deployment", "test-deploy")).To(Succeed())
+		DeferCleanup(func() { deleteRR(rrNamespace, rrName) })
 
 		// #1332: IS CRD creation handled by kubernaut_investigate.
 		// Invoke investigate via MCP to create the IS CRD through the production path.
@@ -209,8 +209,8 @@ var _ = Describe("Session Join/Takeover/Reconnect (G19)", Label("e2e", "phase4",
 		// guard (User B rejected when User A holds the session), not RR creation.
 		tokenA := authTokenA
 		rrName := fmt.Sprintf("rr-join06-%d", time.Now().UnixNano())
-		Expect(createRR("default", rrName, "Deployment", "web-join06")).To(Succeed())
-		DeferCleanup(func() { deleteRR("default", rrName) })
+		Expect(createRR(rrNamespace, rrName, "Deployment", "web-join06")).To(Succeed())
+		DeferCleanup(func() { deleteRR(rrNamespace, rrName) })
 
 		// #1332: User A invokes kubernaut_investigate via MCP to create the IS CRD.
 		mcpSessA, mcpSessErr := initMCPSession(tokenA)
