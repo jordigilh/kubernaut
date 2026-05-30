@@ -266,6 +266,15 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.IsError).To(BeFalse())
 
+			By("sending initial message to build conversation context")
+			result, err = callInvestigate(sess, map[string]any{
+				"rr_id":   "rr-disc-003",
+				"action":  "message",
+				"message": "Pod keeps crashing with OOMKilled",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.IsError).To(BeFalse())
+
 			By("discovering workflows")
 			result, err = callInvestigate(sess, map[string]any{
 				"rr_id":  "rr-disc-003",
@@ -329,6 +338,15 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 			result, err := callInvestigate(sess, map[string]any{
 				"rr_id":  "rr-disc-004",
 				"action": "start",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.IsError).To(BeFalse())
+
+			By("sending initial message to build conversation context")
+			result, err = callInvestigate(sess, map[string]any{
+				"rr_id":   "rr-disc-004",
+				"action":  "message",
+				"message": "Pod keeps crashing with OOMKilled",
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.IsError).To(BeFalse())
@@ -491,6 +509,15 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 			result, err := callInvestigate(sess, map[string]any{
 				"rr_id":  "rr-disc-008",
 				"action": "start",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.IsError).To(BeFalse())
+
+			By("sending initial message to build conversation context")
+			result, err = callInvestigate(sess, map[string]any{
+				"rr_id":   "rr-disc-008",
+				"action":  "message",
+				"message": "Pod keeps crashing with OOMKilled",
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.IsError).To(BeFalse())
