@@ -99,7 +99,7 @@ var _ = Describe("RR CRD Lifecycle (G4)", Label("e2e", "phase2", "g4"), func() {
 
 	// TC-E2E-RR-06 deleted: idempotency tests af_create_rr (internal tool) — covered by UT.
 	// TC-E2E-RR-07: kubernaut_watch with k8s-seeded RR
-	It("TC-E2E-RR-07: kubernaut_watch returns structured watch result", func() {
+	It("TC-E2E-RR-07: kubernaut_watch returns structured watch result", NodeTimeout(60*time.Second), func() {
 		authToken, err := fetchDEXTokenForPersona("sre")
 		Expect(err).NotTo(HaveOccurred())
 		mcpSessionID, err := initMCPSession(authToken)
@@ -108,6 +108,21 @@ var _ = Describe("RR CRD Lifecycle (G4)", Label("e2e", "phase2", "g4"), func() {
 		const rrName = "e2e-rr-watch-07"
 		Expect(createRR(e2eNamespace, rrName, "Deployment", "test-deploy-rr07")).To(Succeed())
 		DeferCleanup(func() { deleteRR(e2eNamespace, rrName) })
+
+		// AF-only E2E has no SP/RO controllers, so the RR never transitions
+		// phases on its own. Simulate a terminal phase change after a delay
+		// so kubernaut_watch observes the event and returns.
+		go func() {
+			defer GinkgoRecover()
+			time.Sleep(3 * time.Second)
+			rr := &remediationv1alpha1.RemediationRequest{}
+			Expect(k8sClient.Get(context.Background(), client.ObjectKey{
+				Namespace: e2eNamespace, Name: rrName,
+			}, rr)).To(Succeed())
+			rr.Status.OverallPhase = "Completed"
+			rr.Status.Message = "E2E: simulated terminal phase for kubernaut_watch"
+			Expect(k8sClient.Status().Update(context.Background(), rr)).To(Succeed())
+		}()
 
 		text, err := mcpToolCallWith(authToken, mcpSessionID, "kubernaut_watch", map[string]interface{}{
 			"namespace": e2eNamespace,
