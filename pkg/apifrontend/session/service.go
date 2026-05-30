@@ -151,7 +151,7 @@ func (s *CRDSessionService) getReader() client.Reader {
 
 // Create delegates session creation to the in-memory service and stores the
 // CRD creation config for later materialization. No K8s CRD is created until
-// MaterializeCRD is called (typically after af_create_rr produces a real RR).
+// MaterializeCRD is called (typically after kubernaut_remediate produces a real RR).
 // The CRD creation config is read from req.State[StateKeyCreateConfig].
 func (s *CRDSessionService) Create(ctx context.Context, req *adksession.CreateRequest) (*adksession.CreateResponse, error) {
 	var cfg *CreateConfig
@@ -173,7 +173,7 @@ func (s *CRDSessionService) Create(ctx context.Context, req *adksession.CreateRe
 	}
 
 	// CRD creation is deferred until MaterializeCRD, which is called by the
-	// af_create_rr after-callback once a real RemediationRequest exists.
+	// kubernaut_remediate after-callback once a real RemediationRequest exists.
 	// A2A sessions exist to remediate; no CRD is created for sessions that
 	// never produce an RR (incomplete/error/misuse).
 	resp, err := s.delegate.Create(ctx, req)
@@ -188,7 +188,7 @@ func (s *CRDSessionService) Create(ctx context.Context, req *adksession.CreateRe
 	}
 	s.mu.Unlock()
 
-	s.logger.Info("session created (CRD deferred until af_create_rr)",
+	s.logger.Info("session created (CRD deferred until kubernaut_remediate)",
 		"session_id", resp.Session.ID(),
 		"crd_name", crdName,
 		"user", req.UserID,
@@ -370,7 +370,7 @@ func (s *CRDSessionService) PruneTerminalEntries(ctx context.Context) int {
 }
 
 // Deprecated: MaterializeCRD is the legacy path that created the IS CRD on
-// af_create_rr. Since #1293, IS CRD creation is deferred to explicit
+// kubernaut_remediate. Since #1293, IS CRD creation is deferred to explicit
 // kubernaut_takeover via InitializeSessionByRR. This method is retained for
 // backward compatibility with any remaining callers but is not invoked in
 // the current production flow.

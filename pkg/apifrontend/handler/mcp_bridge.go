@@ -288,7 +288,7 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 	// Stream investigation tool removed — merged into kubernaut_investigate above.
 
 	// Internal triage tools (kubectl_get, kubectl_list, kubectl_list_events,
-	// af_check_existing_rr, af_create_rr) are available only to AF's LLM
+	// af_check_existing_rr, kubernaut_remediate) are available only to AF's LLM
 	// agent (ADK path) and are not exposed via MCP.
 }
 

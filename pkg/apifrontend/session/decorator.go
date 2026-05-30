@@ -19,7 +19,7 @@ type sessionCreateContextKey struct{}
 type CreateContext struct {
 	TaskID string
 	// SessionID is the ADK session ID assigned after session creation.
-	// Set by the launcher after Create, consumed by the af_create_rr
+	// Set by the launcher after Create, consumed by the kubernaut_remediate
 	// after-callback to drive deferred CRD materialization (G6).
 	SessionID string
 	// TODO(v1.6): RemediationRef is a forward-compatibility placeholder.
@@ -29,7 +29,7 @@ type CreateContext struct {
 	RemediationRef v1alpha1.ObjectRef
 
 	// RRName and RRNamespace are populated by the AfterToolCallback when
-	// af_create_rr succeeds during an A2A task, enabling the
+	// kubernaut_remediate succeeds during an A2A task, enabling the
 	// AfterExecuteCallback to enrich EventA2ATaskCompleted with the RR
 	// reference for bidirectional task-to-RR correlation (Issue #1189 AC 12).
 	RRName      string

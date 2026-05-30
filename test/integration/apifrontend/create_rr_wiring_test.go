@@ -33,7 +33,7 @@ func (n *noopPromClientIT) InstantQuery(_ context.Context, _ string) (*prom.Quer
 	return &prom.QueryResult{}, nil
 }
 
-var _ = Describe("af_create_rr wiring (#1282)", func() {
+var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 	rrGVR := schema.GroupVersionResource{Group: "kubernaut.ai", Version: "v1alpha1", Resource: "remediationrequests"}
 	eventsGVR := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "events"}
 
@@ -233,7 +233,7 @@ var _ = Describe("af_create_rr wiring (#1282)", func() {
 		instruction := agentpkg.BuildInstruction("kubernaut-system")
 
 		Expect(instruction).To(ContainSubstring("provide: namespace, kind, name, description"),
-			"prompt must list namespace as an LLM-provided field for af_create_rr")
+			"prompt must list namespace as an LLM-provided field for kubernaut_remediate")
 		Expect(instruction).To(ContainSubstring("namespace is the workload namespace"),
 			"prompt must clarify that namespace is the workload namespace")
 		Expect(instruction).NotTo(ContainSubstring("namespace: from AF's deployment context"),
