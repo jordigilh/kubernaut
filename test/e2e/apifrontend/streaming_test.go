@@ -90,7 +90,7 @@ var _ = Describe("Investigation Streaming (G3)", Ordered, Label("e2e", "phase3",
 		}()
 
 		// CRD is not created because IS CRD creation requires an explicit
-		// kubernaut_takeover call (#1293), which a non-remediating prompt
+		// kubernaut_investigate call (#1332), which a non-remediating prompt
 		// ("list pods") never triggers.
 		//
 		// Filter by this test's task ID to avoid false positives from CRDs
@@ -117,13 +117,13 @@ var _ = Describe("Investigation Streaming (G3)", Ordered, Label("e2e", "phase3",
 		Expect(createRR("default", rrName, "Deployment", "web-slow-disconnect-test")).To(Succeed())
 		DeferCleanup(func() { deleteRR("default", rrName) })
 
-		// #1293: invoke kubernaut_takeover via MCP to create IS CRD.
+		// #1332: invoke kubernaut_investigate via MCP to create IS CRD.
 		sreToken, tokenErr := fetchDEXTokenForPersona("sre")
 		Expect(tokenErr).NotTo(HaveOccurred())
 		mcpSess, mcpSessErr := initMCPSession(sreToken)
 		Expect(mcpSessErr).NotTo(HaveOccurred())
 		takeoverBody := buildJSONRPC("stream-03-takeover", "tools/call", map[string]interface{}{
-			"name":      "kubernaut_takeover",
+			"name":      "kubernaut_investigate",
 			"arguments": map[string]interface{}{"rr_id": rrName},
 		})
 		_, takeoverCode, takeoverErr := mcpPOST(sreToken, mcpSess, takeoverBody)
@@ -141,7 +141,7 @@ var _ = Describe("Investigation Streaming (G3)", Ordered, Label("e2e", "phase3",
 			}
 			return ""
 		}, 30*time.Second, 2*time.Second).Should(Equal("Active"),
-			"IS CRD must reach Active phase after kubernaut_takeover")
+			"IS CRD must reach Active phase after kubernaut_investigate")
 
 		// Simulate client disconnect by updating IS CRD phase directly.
 		isNamespace := getEnvOrDefault("AF_E2E_NAMESPACE", "kubernaut-system")
