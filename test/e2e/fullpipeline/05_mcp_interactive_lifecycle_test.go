@@ -427,15 +427,17 @@ var _ = Describe("FP-MCP-005: discover_workflows and select_workflow", Label("e2
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.IsError).To(BeFalse(), "takeover should succeed")
 
-		By("Calling discover_workflows")
-		discoverCtx, discoverCancel := context.WithTimeout(ctx, 60*time.Second)
-		defer discoverCancel()
-		result, err = infrastructure.CallInvestigate(discoverCtx, setup.Session, map[string]any{
-			"rr_id":  rrName,
-			"action": "discover_workflows",
-		})
-		Expect(err).NotTo(HaveOccurred())
-		Expect(result.IsError).To(BeFalse(), "discover_workflows should succeed")
+		By("Calling discover_workflows (with retry — audit traces may lag autonomous completion)")
+		Eventually(func(g Gomega) {
+			discoverCtx, discoverCancel := context.WithTimeout(ctx, 15*time.Second)
+			defer discoverCancel()
+			result, err = infrastructure.CallInvestigate(discoverCtx, setup.Session, map[string]any{
+				"rr_id":  rrName,
+				"action": "discover_workflows",
+			})
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(result.IsError).To(BeFalse(), "discover_workflows should succeed")
+		}, 30*time.Second, 3*time.Second).Should(Succeed())
 
 		text := infrastructure.ExtractToolResultText(result)
 		GinkgoWriter.Printf("  DiscoverWorkflows response (first 300 chars): %.300s\n", text)
