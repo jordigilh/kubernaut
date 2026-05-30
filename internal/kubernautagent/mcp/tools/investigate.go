@@ -593,6 +593,11 @@ func (t *InvestigateTool) handleMessage(ctx context.Context, input InvestigateIn
 		return InvestigateOutput{}, fmt.Errorf("interactive turn failed: %w", err)
 	}
 
+	// Accumulate the user message + LLM response in reconHistory so that
+	// subsequent actions (discover_workflows) can extract RCA from the
+	// full conversation without relying on audit trace reconstruction.
+	t.appendConversationTurn(input.RRID, input.Message, response)
+
 	// Reset inactivity timer AFTER the LLM call completes. The pre-call reset
 	// (above) prevents timeout during user think-time; this post-call reset
 	// prevents timeout during slow LLM responses that exceed the inactivity
@@ -1023,6 +1028,21 @@ func (t *InvestigateTool) storeReconstructedContext(ctx context.Context, rrID, s
 	}
 	t.reconHistory.Store(rrID, history)
 	return len(history)
+}
+
+// appendConversationTurn appends a user message and the LLM response to
+// reconHistory so that discover_workflows can extract RCA from the
+// accumulated interactive conversation.
+func (t *InvestigateTool) appendConversationTurn(rrID, userMessage, assistantResponse string) {
+	var history []LLMMessage
+	if raw, ok := t.reconHistory.Load(rrID); ok {
+		history = raw.([]LLMMessage)
+	}
+	history = append(history,
+		LLMMessage{Role: "user", Content: userMessage},
+		LLMMessage{Role: "assistant", Content: assistantResponse},
+	)
+	t.reconHistory.Store(rrID, history)
 }
 
 // buildMessagesWithContext prepends any cached reconstruction history to the
