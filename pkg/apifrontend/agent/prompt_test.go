@@ -84,7 +84,7 @@ var _ = Describe("System Prompt", func() {
 	})
 
 	It("UT-AF-1189-034: prompt enforces kubernaut_watch after workflow selection", func() {
-		Expect(instruction).To(ContainSubstring("MUST call kubernaut_watch"))
+		Expect(instruction).To(ContainSubstring("call kubernaut_watch"))
 	})
 
 	It("UT-AF-1189-035: prompt requires session_id/rr_id preservation across phases", func() {

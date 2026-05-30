@@ -127,4 +127,38 @@ var _ = Describe("Phase Guard (#1307)", func() {
 		Expect(errMsg).To(ContainSubstring("kubernaut_takeover"),
 			"error must name the required prerequisite tool")
 	})
+
+	It("UT-AF-1307-013: after investigate succeeds, discover_workflows is allowed", func() {
+		// Simulate successful investigation via AfterToolCallback
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+			"session_id": "sess-inv-001", "status": "completed",
+		}, nil)
+
+		result, err := before(toolCtx, fakeTool{name: "kubernaut_discover_workflows"}, nil)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(BeNil(),
+			"discover_workflows must be allowed after successful investigate (no takeover needed)")
+	})
+
+	It("UT-AF-1307-014: after investigate succeeds, select_workflow is allowed", func() {
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+			"session_id": "sess-inv-002", "status": "completed",
+		}, nil)
+
+		result, err := before(toolCtx, fakeTool{name: "kubernaut_select_workflow"}, nil)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(BeNil(),
+			"select_workflow must be allowed after successful investigate")
+	})
+
+	It("UT-AF-1307-015: investigate error does not activate driver", func() {
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+			"error": "investigation failed",
+		}, nil)
+
+		result, err := before(toolCtx, fakeTool{name: "kubernaut_discover_workflows"}, nil)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).NotTo(BeNil(),
+			"discover_workflows must be blocked when investigate returned an error")
+	})
 })
