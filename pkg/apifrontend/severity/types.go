@@ -26,6 +26,7 @@ type TriageInput struct {
 	Name        string
 	Description string
 	Labels      map[string]string
+	PodNames    []string // Resolved pod names for alert correlation (auto-populated by Triager when PodResolver is set)
 }
 
 // TriageResult holds the outcome of the severity triage pipeline.
