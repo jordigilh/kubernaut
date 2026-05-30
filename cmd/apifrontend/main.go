@@ -534,6 +534,57 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 	deps.DedicatedClient = mcpClient
 	deps.InvestigationRegistry = tools.NewMonitorRegistry()
 
+	kaRESTAuth := http.RoundTripper(kaTransport)
+	if cfg.Agent.KABearerTokenFile != "" {
+		kaRESTAuth = &bearerTokenTransport{
+			base:      kaTransport,
+			tokenFile: cfg.Agent.KABearerTokenFile,
+		}
+	}
+
+	deps.KAClient = ka.NewClient(ka.Config{
+		BaseURL:            cfg.Agent.KABaseURL,
+		BaseTransport:      kaRESTAuth,
+		Timeout:            cfg.Resilience.KA.RequestTimeout,
+		CBMaxRequests:      cfg.Resilience.KA.CBMaxRequests,
+		CBInterval:         cfg.Resilience.KA.CBInterval,
+		CBTimeout:          cfg.Resilience.KA.CBTimeout,
+		CBFailureThreshold: cfg.Resilience.KA.CBFailureThreshold,
+		RetryMax:           cfg.Resilience.KA.RetryMax,
+		RetryInitBackoff:   cfg.Resilience.KA.RetryInitBackoff,
+		RetryMaxBackoff:    cfg.Resilience.KA.RetryMaxBackoff,
+		RetryableStatuses:  cfg.Resilience.KA.RetryableStatuses,
+		CBAuditFunc:        resilience.CircuitBreakerAuditFunc(auditor),
+	}, &ka.ClientMetrics{
+		StateGauge:   metricsReg.CircuitBreakerState,
+		DurationHist: metricsReg.DownstreamDuration,
+	})
+
+	// F7+F8: Eager K8s dynamic client init with circuit breaker (WIRE-03).
+	// Fail-fast: log clearly on failure instead of returning silent nil.
+	restCfg, err := ctrl.GetConfig()
+	if err != nil {
+		logger.Error(err, "K8s dynamic client unavailable — K8s tools will return errors at runtime")
+	} else {
+		inner, err := dynamic.NewForConfig(restCfg)
+		if err != nil {
+			logger.Error(err, "K8s dynamic client creation failed — K8s tools will return errors at runtime")
+		} else {
+			k8sCfg := cfg.Resilience.K8s
+			deps.K8sCB = resilience.NewK8sCircuitBreaker(resilience.K8sCBConfig{
+				Name:             "k8s",
+				MaxRequests:      k8sCfg.CBMaxRequests,
+				Interval:         k8sCfg.CBInterval,
+				Timeout:          k8sCfg.CBTimeout,
+				FailureThreshold: k8sCfg.CBFailureThreshold,
+				StateGauge:       metricsReg.CircuitBreakerState,
+				DependencyName:   "k8s",
+			})
+			deps.k8sDynClient = resilience.NewResilientDynamicClient(inner, deps.K8sCB)
+			logger.Info("K8s dynamic client initialized with circuit breaker")
+		}
+	}
+
 	if cfg.SeverityTriage.Enabled {
 		promTransport, promWatcher, promErr := tlswiring.CAReloadableTransport(cfg.SeverityTriage.PrometheusTLSCaFile, logger.WithName("prom-ca"))
 		if promErr != nil {
@@ -588,59 +639,16 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 			severityCfg.LLMConfidence = 0.7
 		}
 
-		deps.Triager = severity.NewTriager(promClient, llmTriager, severityCfg, logger.WithName("severity-triage"))
-		logger.Info("severity triage enabled", "prometheusURL", cfg.SeverityTriage.PrometheusURL)
-	}
-
-	kaRESTAuth := http.RoundTripper(kaTransport)
-	if cfg.Agent.KABearerTokenFile != "" {
-		kaRESTAuth = &bearerTokenTransport{
-			base:      kaTransport,
-			tokenFile: cfg.Agent.KABearerTokenFile,
+		var triagerOpts []severity.TriagerOption
+		if deps.k8sDynClient != nil {
+			triagerOpts = append(triagerOpts, severity.WithPodResolver(
+				severity.NewK8sPodResolver(deps.k8sDynClient, logger.WithName("pod-resolver")),
+			))
 		}
-	}
 
-	deps.KAClient = ka.NewClient(ka.Config{
-		BaseURL:            cfg.Agent.KABaseURL,
-		BaseTransport:      kaRESTAuth,
-		Timeout:            cfg.Resilience.KA.RequestTimeout,
-		CBMaxRequests:      cfg.Resilience.KA.CBMaxRequests,
-		CBInterval:         cfg.Resilience.KA.CBInterval,
-		CBTimeout:          cfg.Resilience.KA.CBTimeout,
-		CBFailureThreshold: cfg.Resilience.KA.CBFailureThreshold,
-		RetryMax:           cfg.Resilience.KA.RetryMax,
-		RetryInitBackoff:   cfg.Resilience.KA.RetryInitBackoff,
-		RetryMaxBackoff:    cfg.Resilience.KA.RetryMaxBackoff,
-		RetryableStatuses:  cfg.Resilience.KA.RetryableStatuses,
-		CBAuditFunc:        resilience.CircuitBreakerAuditFunc(auditor),
-	}, &ka.ClientMetrics{
-		StateGauge:   metricsReg.CircuitBreakerState,
-		DurationHist: metricsReg.DownstreamDuration,
-	})
-
-	// F7+F8: Eager K8s dynamic client init with circuit breaker (WIRE-03).
-	// Fail-fast: log clearly on failure instead of returning silent nil.
-	restCfg, err := ctrl.GetConfig()
-	if err != nil {
-		logger.Error(err, "K8s dynamic client unavailable — K8s tools will return errors at runtime")
-	} else {
-		inner, err := dynamic.NewForConfig(restCfg)
-		if err != nil {
-			logger.Error(err, "K8s dynamic client creation failed — K8s tools will return errors at runtime")
-		} else {
-			k8sCfg := cfg.Resilience.K8s
-			deps.K8sCB = resilience.NewK8sCircuitBreaker(resilience.K8sCBConfig{
-				Name:             "k8s",
-				MaxRequests:      k8sCfg.CBMaxRequests,
-				Interval:         k8sCfg.CBInterval,
-				Timeout:          k8sCfg.CBTimeout,
-				FailureThreshold: k8sCfg.CBFailureThreshold,
-				StateGauge:       metricsReg.CircuitBreakerState,
-				DependencyName:   "k8s",
-			})
-			deps.k8sDynClient = resilience.NewResilientDynamicClient(inner, deps.K8sCB)
-			logger.Info("K8s dynamic client initialized with circuit breaker")
-		}
+		deps.Triager = severity.NewTriager(promClient, llmTriager, severityCfg, logger.WithName("severity-triage"), triagerOpts...)
+		logger.Info("severity triage enabled", "prometheusURL", cfg.SeverityTriage.PrometheusURL,
+			"podResolverEnabled", deps.k8sDynClient != nil)
 	}
 
 	return deps, nil
