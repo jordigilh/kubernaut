@@ -18,6 +18,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ds"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/handler"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
 )
 
 var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
@@ -507,74 +508,7 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 			sessionID = mcpInitialize(h, testUser)
 		}
 
-		It("IT-AF-1234-W01: kubernaut_takeover dispatches to KA MCP via InvokeAction", func() {
-			setupInteractiveStack()
-
-			status, body := mcpCallTool(h, sessionID, "kubernaut_takeover", map[string]any{
-				"rr_id": "rr-api-gw-001",
-			}, testUser)
-
-			Expect(status).To(Equal(http.StatusOK))
-			text := extractTextContent(body)
-			Expect(text).To(ContainSubstring("ok"))
-			Expect(invokedAction).To(Equal("takeover"))
-		})
-
-		It("IT-AF-1293-BRIDGE-001: kubernaut_takeover propagates IS init failure to caller (FedRAMP AU-12)", func() {
-			invokedAction = ""
-			mockMCP := &ka.MockMCPClient{
-				InvokeActionFn: func(_ context.Context, args ka.InvokeActionArgs) (*ka.InvokeActionResult, error) {
-					invokedAction = args.Action
-					return &ka.InvokeActionResult{SessionID: "sess-fail", Status: "ok"}, nil
-				},
-			}
-			kaStreamHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				w.WriteHeader(http.StatusNotFound)
-			})
-			setupStackWithKAHandler(kaStreamHandler, newFakeDSClient())
-			kaServer.Close()
-			kaServer = httptest.NewServer(kaStreamHandler)
-
-			auditor = &fakeAuditor{}
-			testUser = &auth.UserIdentity{Username: "sre@kubernaut.ai", Groups: []string{"sre"}}
-
-			failingInitializer := &failingSessionInitializer{err: fmt.Errorf("simulated K8s API error")}
-
-			cfg := handler.MCPConfig{
-				ServerName:    "af-it",
-				ServerVersion: "0.0.1-test",
-				Enabled:       true,
-				Bridge: &handler.MCPBridgeConfig{
-					K8sClient:          newFakeDynamicClient(),
-					KAMCPClient:        mockMCP,
-					DSClient:           newFakeDSClient(),
-					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"*"}}},
-					Logger:             logr.Discard(),
-					Auditor:            auditor,
-					Metrics:            newBridgeMetrics(),
-					ToolTimeout:        5 * time.Second,
-					MaxConcurrentTools: 10,
-					SessionInitializer: failingInitializer,
-				},
-			}
-
-			var err error
-			h, err = handler.NewMCPHandler(cfg)
-			Expect(err).NotTo(HaveOccurred())
-			sessionID = mcpInitialize(h, testUser)
-
-			status, body := mcpCallTool(h, sessionID, "kubernaut_takeover", map[string]any{
-				"rr_id": "rr-api-gw-001",
-			}, testUser)
-
-			Expect(status).To(Equal(http.StatusOK))
-			Expect(invokedAction).To(Equal("takeover"))
-			text := extractTextContent(body)
-			Expect(text).To(ContainSubstring("IS CRD creation failed"),
-				"error must propagate to caller so the MCP client can retry or alert the user")
-		})
-
-		It("IT-AF-1326-IS-001: kubernaut_investigate triggers IS CRD creation via SessionInitializer", func() {
+		It("IT-AF-1326-IS-001: kubernaut_investigate triggers IS CRD creation via ISSignaler adapter", func() {
 			invokedAction = ""
 			mockMCP := &ka.MockMCPClient{
 				StartInvestigationFn: func(_ context.Context, args ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
@@ -623,11 +557,17 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 			Expect(text).To(ContainSubstring("sess-is-001"))
 
 			Expect(recorder.calls).To(HaveLen(1),
-				"kubernaut_investigate must trigger IS CRD creation")
+				"kubernaut_investigate must trigger early IS CRD creation via ISSignaler")
 			Expect(recorder.calls[0].rrName).To(Equal("rr-api-gw-001"))
-			Expect(recorder.calls[0].sessionID).To(Equal("sess-is-001"))
+			Expect(recorder.calls[0].sessionID).To(Equal("a2a-rr-api-gw-001"),
+				"early IS creation uses synthesized taskID, not KA sessionID")
 			Expect(recorder.calls[0].rrNamespace).To(Equal("kubernaut-system"))
 			Expect(recorder.calls[0].username).To(Equal("sre@kubernaut.ai"))
+
+			Expect(recorder.correlations).To(HaveLen(1),
+				"ISSignaler must call UpdateCorrelation with the KA session ID")
+			Expect(recorder.correlations[0].crdName).To(Equal("is-rr-api-gw-001"))
+			Expect(recorder.correlations[0].kaSessionID).To(Equal("sess-is-001"))
 		})
 
 		It("IT-AF-1326-IS-002: kubernaut_investigate skips IS CRD when SessionInitializer is nil", func() {
@@ -832,8 +772,9 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 			}), newFakeDSClient())
 			auditor.Reset()
 
-			mcpCallTool(h, sessionID, "kubernaut_takeover", map[string]any{
-				"rr_id": "rr-api-gw-001",
+			mcpCallTool(h, sessionID, "kubernaut_message", map[string]any{
+				"rr_id":   "rr-api-gw-001",
+				"message": "test audit",
 			}, testUser)
 
 			events := auditor.Events()
@@ -878,15 +819,37 @@ func (f *failingSessionInitializer) InitializeSessionByRR(_ context.Context, _, 
 	return f.err
 }
 
+func (f *failingSessionInitializer) CreateInvestigationSession(_ context.Context, _ session.CreateISConfig) (string, error) {
+	return "", f.err
+}
+
+func (f *failingSessionInitializer) UpdateISCorrelation(_ context.Context, _, _ string) error {
+	return f.err
+}
+
 type recordingSessionInitializer struct {
-	calls []initCall
+	calls        []initCall
+	correlations []correlationCall
 }
 type initCall struct {
 	rrNamespace, rrName, sessionID, username string
 	groups                                   []string
 }
+type correlationCall struct {
+	crdName, kaSessionID string
+}
 
 func (r *recordingSessionInitializer) InitializeSessionByRR(_ context.Context, rrNS, rrName, sessionID, user string, groups []string) error {
 	r.calls = append(r.calls, initCall{rrNamespace: rrNS, rrName: rrName, sessionID: sessionID, username: user, groups: groups})
+	return nil
+}
+
+func (r *recordingSessionInitializer) CreateInvestigationSession(_ context.Context, cfg session.CreateISConfig) (string, error) {
+	r.calls = append(r.calls, initCall{rrNamespace: cfg.RRNamespace, rrName: cfg.RRName, sessionID: cfg.TaskID, username: cfg.Username, groups: cfg.Groups})
+	return fmt.Sprintf("is-%s", cfg.RRName), nil
+}
+
+func (r *recordingSessionInitializer) UpdateISCorrelation(_ context.Context, crdName, kaSessionID string) error {
+	r.correlations = append(r.correlations, correlationCall{crdName: crdName, kaSessionID: kaSessionID})
 	return nil
 }

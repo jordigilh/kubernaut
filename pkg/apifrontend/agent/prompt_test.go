@@ -149,7 +149,7 @@ var _ = Describe("System Prompt", func() {
 
 		It("UT-AF-1275-019: intent group 'interactive' contains session tools", func() {
 			result := agentpkg.BuildInstruction("ns")
-			Expect(result).To(ContainSubstring("kubernaut_takeover"))
+			Expect(result).To(ContainSubstring("kubernaut_investigate"))
 			Expect(result).To(ContainSubstring("kubernaut_reconnect"))
 		})
 	})

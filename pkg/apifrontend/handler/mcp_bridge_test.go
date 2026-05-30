@@ -501,7 +501,7 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 	})
 
 	Context("Tool registration", func() {
-		It("UT-AF-B-023: RegisterTools registers exactly 22 domain tools on the server", func() {
+		It("UT-AF-B-023: RegisterTools registers exactly 21 domain tools on the server (#1332)", func() {
 			listReq := map[string]any{
 				"jsonrpc": "2.0",
 				"id":      3,
@@ -512,7 +512,7 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 			Expect(rec.Code).To(Equal(http.StatusOK))
 			body := rec.Body.String()
 			count := countToolsInResponse(body)
-			Expect(count).To(Equal(22))
+			Expect(count).To(Equal(21))
 		})
 	})
 
@@ -966,7 +966,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 	})
 
 	Context("tools/list shows all tools regardless of RBAC", func() {
-		It("UT-AF-B-040: viewer sees all 22 tools in tools/list", func() {
+		It("UT-AF-B-040: viewer sees all 21 tools in tools/list (#1332)", func() {
 			cfg := handler.MCPConfig{
 				ServerName:    "kubernaut-apifrontend",
 				ServerVersion: "v0.1.0-test",
@@ -995,7 +995,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 			rec := mcpPost(h, sid, listReq, viewer)
 			Expect(rec.Code).To(Equal(http.StatusOK))
 			count := countToolsInResponse(rec.Body.String())
-			Expect(count).To(Equal(22))
+			Expect(count).To(Equal(21))
 		})
 	})
 })

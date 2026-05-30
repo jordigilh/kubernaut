@@ -31,44 +31,6 @@ var _ = Describe("Interactive Action Handlers (G1)", func() {
 		spy = &spyAuditor{}
 	})
 
-	Describe("HandleTakeover", func() {
-		It("UT-AF-1234-031: happy path returns session_id + status", func() {
-			mockMCP = &ka.MockMCPClient{
-				InvokeActionFn: func(_ context.Context, args ka.InvokeActionArgs) (*ka.InvokeActionResult, error) {
-					Expect(args.Action).To(Equal("takeover"))
-					Expect(args.RRID).To(Equal("rr-prod-001"))
-					return &ka.InvokeActionResult{SessionID: "s-001", Status: "active"}, nil
-				},
-			}
-			result, err := tools.HandleTakeover(ctx, mockMCP, tools.InteractiveActionArgs{
-				RRID: "rr-prod-001",
-			}, spy)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.SessionID).To(Equal("s-001"))
-			Expect(result.Status).To(Equal("active"))
-		})
-
-		It("UT-AF-1234-032: KA error returns user-friendly message", func() {
-			mockMCP = &ka.MockMCPClient{
-				InvokeActionFn: func(_ context.Context, _ ka.InvokeActionArgs) (*ka.InvokeActionResult, error) {
-					return nil, ka.ErrMCPUnavailable
-				},
-			}
-			_, err := tools.HandleTakeover(ctx, mockMCP, tools.InteractiveActionArgs{
-				RRID: "rr-prod-001",
-			}, spy)
-			Expect(err).To(HaveOccurred())
-		})
-
-		It("UT-AF-1234-033: nil MCPClient returns error", func() {
-			_, err := tools.HandleTakeover(ctx, nil, tools.InteractiveActionArgs{
-				RRID: "rr-prod-001",
-			}, spy)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("not available"))
-		})
-	})
-
 	Describe("HandleMessage", func() {
 		It("UT-AF-1234-034: happy path with message text", func() {
 			mockMCP = &ka.MockMCPClient{
@@ -236,7 +198,7 @@ var _ = Describe("Interactive Action Handlers (G1)", func() {
 
 	Describe("Constructors (G1)", func() {
 		It("UT-AF-1234-060: NewInvestigateMCPTool constructor returns valid tool", func() {
-			t, err := tools.NewInvestigateMCPTool(nil, nil, "", nil, nil, nil, nil)
+			t, err := tools.NewInvestigateMCPTool(nil, nil, "", nil, nil, nil, nil, nil)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(t.Name()).To(Equal("kubernaut_investigate"))
 		})
@@ -246,8 +208,7 @@ var _ = Describe("Interactive Action Handlers (G1)", func() {
 				name string
 				fn   func() (interface{ Name() string }, error)
 			}{
-				{"kubernaut_takeover", func() (interface{ Name() string }, error) { return tools.NewTakeoverTool(nil, nil) }},
-				{"kubernaut_message", func() (interface{ Name() string }, error) { return tools.NewMessageTool(nil, nil) }},
+			{"kubernaut_message", func() (interface{ Name() string }, error) { return tools.NewMessageTool(nil, nil) }},
 				{"kubernaut_complete", func() (interface{ Name() string }, error) { return tools.NewCompleteTool(nil, nil) }},
 				{"kubernaut_cancel", func() (interface{ Name() string }, error) { return tools.NewCancelInvestigationTool(nil, nil) }},
 				{"kubernaut_status", func() (interface{ Name() string }, error) { return tools.NewStatusTool(nil, nil) }},
@@ -277,11 +238,6 @@ var _ = Describe("Interactive Action Handlers (G1)", func() {
 			Expect(spy.events).To(HaveLen(1))
 			return spy.events[0]
 		}
-
-		It("UT-AF-1234-063: HandleTakeover emits EventKADelegated audit", func() {
-			ev := invokeForAudit(tools.HandleTakeover, tools.InteractiveActionArgs{RRID: "rr-prod-001"})
-			Expect(ev.Type).To(Equal(audit.EventKADelegated))
-		})
 
 		It("UT-AF-1234-064: HandleMessage emits EventToolExecuted audit", func() {
 			ev := invokeForAudit(tools.HandleMessage, tools.InteractiveActionArgs{RRID: "rr-prod-001", Message: "test message"})

@@ -162,7 +162,6 @@ var _ = Describe("RBAC tool name alignment", func() {
 		"kubernaut_get_remediation_history":  true,
 		"kubernaut_get_effectiveness":        true,
 		"kubernaut_get_audit_trail":          true,
-		"kubernaut_takeover":                true,
 		"kubernaut_message":                 true,
 		"kubernaut_complete":                true,
 		"kubernaut_cancel":                  true,

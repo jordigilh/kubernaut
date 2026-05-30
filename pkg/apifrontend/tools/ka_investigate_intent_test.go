@@ -24,6 +24,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
@@ -73,7 +75,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			_, err := tools.HandleInvestigationMCPWithRegistry(
 				context.Background(), mockMCP, nil, "kubernaut-system",
 				tools.InvestigateMCPArgs{},
-				nil, nil, nil, true,
+				nil, nil, nil, true, nil, "", nil,
 			)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("rr_id or namespace/kind/name required"))
@@ -84,7 +86,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			_, err := tools.HandleInvestigationMCPWithRegistry(
 				context.Background(), mockMCP, nil, "kubernaut-system",
 				tools.InvestigateMCPArgs{Namespace: "prod"},
-				nil, nil, nil, true,
+				nil, nil, nil, true, nil, "", nil,
 			)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("kind and name required"))
@@ -121,7 +123,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 					Kind:      "Deployment",
 					Name:      "web-app",
 				},
-				nil, nil, nil, true,
+				nil, nil, nil, true, nil, "", nil,
 			)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.SessionID).To(Equal("sess-int-001"))
@@ -143,7 +145,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 					Kind:      "Deployment",
 					Name:      "web-fail",
 				},
-				nil, nil, nil, true,
+				nil, nil, nil, true, nil, "", nil,
 			)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("k8s"))
@@ -166,7 +168,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 					Kind:      "Deployment",
 					Name:      "web-sa",
 				},
-				nil, nil, nil, true,
+				nil, nil, nil, true, nil, "", nil,
 			)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("service account"))
@@ -199,7 +201,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			result, err := tools.HandleInvestigationMCPWithRegistry(
 				ctx, mockMCP, k8sClient, "kubernaut-system",
 				tools.InvestigateMCPArgs{RRID: "rr-existing-001"},
-				nil, nil, nil, true,
+				nil, nil, nil, true, nil, "", nil,
 			)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.SessionID).To(Equal("sess-exist-001"))
@@ -226,7 +228,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 					Kind:      "Deployment",
 					Name:      "web-is-fail",
 				},
-				nil, nil, nil, true,
+				nil, nil, nil, true, nil, "", nil,
 			)
 			// If IS creation fails, the tool should return an error
 			// and the RR should be cleaned up (deleted).
@@ -263,11 +265,250 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			result, err := tools.HandleInvestigationMCPWithRegistry(
 				context.Background(), mockMCP, nil, "",
 				tools.InvestigateMCPArgs{RRID: "rr-block-001"},
-				nil, nil, nil, true,
+				nil, nil, nil, true, nil, "", nil,
 			)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Status).To(Equal("completed"))
 			Expect(result.Summary).To(ContainSubstring("OOMKilled"))
 		})
 	})
+
+	Describe("ISSignaler autonomous detection and early IS creation (#1332)", func() {
+
+		It("UT-AF-1332-070: signals joinMode=takeover when AIA has active session (autonomous detection)", func() {
+			fakeK8s := newFakeClientForInvestigate()
+			aia := newAIAnalysisWithSession("rr-takeover-001", "ka-sess-auto-001")
+			_, createErr := fakeK8s.Resource(aaGVR).Namespace("kubernaut-system").Create(context.Background(), aia, metav1.CreateOptions{})
+			Expect(createErr).NotTo(HaveOccurred())
+
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					return &ka.StartInvestigationResult{
+						SessionID: "ka-sess-new-001",
+						Status:    "investigation_started",
+						Closer:    func() {},
+					}, nil
+				},
+			}
+
+			recorder := &recordingISSignaler{}
+			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+				Username: "sre@kubernaut.ai",
+				Groups:   []string{"sre"},
+			})
+
+			_, err := tools.HandleInvestigationMCPWithRegistry(
+				shortCtx(ctx), mockMCP, fakeK8s, "kubernaut-system",
+				tools.InvestigateMCPArgs{RRID: "rr-takeover-001"},
+				nil, nil, nil, false, nil, "", recorder,
+			)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(recorder.signalCalls).To(HaveLen(1))
+			Expect(recorder.signalCalls[0].joinMode).To(Equal("takeover"),
+				"autonomous AIA with session ID must trigger takeover joinMode")
+			Expect(recorder.signalCalls[0].rrName).To(Equal("rr-takeover-001"))
+			Expect(recorder.signalCalls[0].username).To(Equal("sre@kubernaut.ai"))
+		})
+
+		It("UT-AF-1332-071: signals joinMode=start when no AIA exists for the RR", func() {
+			fakeK8s := newFakeClientForInvestigate()
+
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					return &ka.StartInvestigationResult{
+						SessionID: "ka-sess-fresh-001",
+						Status:    "investigation_started",
+						Closer:    func() {},
+					}, nil
+				},
+			}
+
+			recorder := &recordingISSignaler{}
+			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+				Username: "dev@kubernaut.ai",
+				Groups:   []string{"dev"},
+			})
+
+			_, err := tools.HandleInvestigationMCPWithRegistry(
+				shortCtx(ctx), mockMCP, fakeK8s, "kubernaut-system",
+				tools.InvestigateMCPArgs{RRID: "rr-fresh-001"},
+				nil, nil, nil, false, nil, "", recorder,
+			)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(recorder.signalCalls).To(HaveLen(1))
+			Expect(recorder.signalCalls[0].joinMode).To(Equal("start"),
+				"no active AIA must result in fresh start joinMode")
+			Expect(recorder.signalCalls[0].rrName).To(Equal("rr-fresh-001"))
+			Expect(recorder.signalCalls[0].username).To(Equal("dev@kubernaut.ai"))
+		})
+
+		It("UT-AF-1332-072: signals joinMode=start when AIA exists but has no session ID", func() {
+			fakeK8s := newFakeClientForInvestigate()
+			aia := newAIAnalysisWithoutSession("rr-pending-001")
+			_, createErr := fakeK8s.Resource(aaGVR).Namespace("kubernaut-system").Create(context.Background(), aia, metav1.CreateOptions{})
+			Expect(createErr).NotTo(HaveOccurred())
+
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					return &ka.StartInvestigationResult{
+						SessionID: "ka-sess-pending-001",
+						Status:    "investigation_started",
+						Closer:    func() {},
+					}, nil
+				},
+			}
+
+			recorder := &recordingISSignaler{}
+			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+				Username: "sre@kubernaut.ai",
+				Groups:   []string{"sre"},
+			})
+
+			_, err := tools.HandleInvestigationMCPWithRegistry(
+				shortCtx(ctx), mockMCP, fakeK8s, "kubernaut-system",
+				tools.InvestigateMCPArgs{RRID: "rr-pending-001"},
+				nil, nil, nil, false, nil, "", recorder,
+			)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(recorder.signalCalls).To(HaveLen(1))
+			Expect(recorder.signalCalls[0].joinMode).To(Equal("start"),
+				"AIA without session ID is not autonomous — should use start")
+		})
+
+		It("UT-AF-1332-073: UpdateCorrelation called with KA session ID after MCP connect", func() {
+			fakeK8s := newFakeClientForInvestigate()
+
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					return &ka.StartInvestigationResult{
+						SessionID: "ka-corr-sess-001",
+						Status:    "investigation_started",
+						Closer:    func() {},
+					}, nil
+				},
+			}
+
+			recorder := &recordingISSignaler{}
+			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+				Username: "sre@kubernaut.ai",
+				Groups:   []string{"sre"},
+			})
+
+			_, err := tools.HandleInvestigationMCPWithRegistry(
+				shortCtx(ctx), mockMCP, fakeK8s, "kubernaut-system",
+				tools.InvestigateMCPArgs{RRID: "rr-corr-001"},
+				nil, nil, nil, false, nil, "", recorder,
+			)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(recorder.correlationCalls).To(HaveLen(1))
+			Expect(recorder.correlationCalls[0].crdName).To(Equal("is-rr-corr-001"))
+			Expect(recorder.correlationCalls[0].kaSessionID).To(Equal("ka-corr-sess-001"))
+		})
+
+		It("UT-AF-1332-074: signaler not called when signaler is nil (backward compat)", func() {
+			fakeK8s := newFakeClientForInvestigate()
+
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					return &ka.StartInvestigationResult{
+						SessionID: "ka-nil-sig-001",
+						Status:    "investigation_started",
+						Closer:    func() {},
+					}, nil
+				},
+			}
+
+			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+				Username: "sre@kubernaut.ai",
+				Groups:   []string{"sre"},
+			})
+
+			_, err := tools.HandleInvestigationMCPWithRegistry(
+				shortCtx(ctx), mockMCP, fakeK8s, "kubernaut-system",
+				tools.InvestigateMCPArgs{RRID: "rr-nil-sig-001"},
+				nil, nil, nil, false, nil, "", nil,
+			)
+			Expect(err).NotTo(HaveOccurred())
+		})
+	})
 })
+
+// recordingISSignaler is a test double that records ISSignaler calls.
+type recordingISSignaler struct {
+	signalCalls      []signalCall
+	correlationCalls []corrCall
+}
+
+type signalCall struct {
+	rrNamespace, rrName, taskID, username, joinMode string
+	groups                                          []string
+}
+
+type corrCall struct {
+	crdName, kaSessionID string
+}
+
+func (r *recordingISSignaler) SignalInteractive(_ context.Context, rrNamespace, rrName, taskID, username string, groups []string, joinMode string) (string, error) {
+	r.signalCalls = append(r.signalCalls, signalCall{
+		rrNamespace: rrNamespace, rrName: rrName, taskID: taskID,
+		username: username, groups: groups, joinMode: joinMode,
+	})
+	return fmt.Sprintf("is-%s", rrName), nil
+}
+
+func (r *recordingISSignaler) UpdateCorrelation(_ context.Context, crdName, kaSessionID string) error {
+	r.correlationCalls = append(r.correlationCalls, corrCall{crdName: crdName, kaSessionID: kaSessionID})
+	return nil
+}
+
+// newAIAnalysisWithSession creates a fake AIA CRD with a session ID assigned.
+func newAIAnalysisWithSession(rrName, sessionID string) *unstructured.Unstructured {
+	return &unstructured.Unstructured{
+		Object: map[string]any{
+			"apiVersion": "kubernaut.ai/v1alpha1",
+			"kind":       "AIAnalysis",
+			"metadata": map[string]any{
+				"name":      fmt.Sprintf("ai-%s", rrName),
+				"namespace": "kubernaut-system",
+			},
+			"spec": map[string]any{
+				"remediationRequestRef": map[string]any{
+					"name":      rrName,
+					"namespace": "kubernaut-system",
+				},
+			},
+			"status": map[string]any{
+				"investigationSession": map[string]any{
+					"id": sessionID,
+				},
+			},
+		},
+	}
+}
+
+// newAIAnalysisWithoutSession creates a fake AIA CRD without a session ID.
+func newAIAnalysisWithoutSession(rrName string) *unstructured.Unstructured {
+	return &unstructured.Unstructured{
+		Object: map[string]any{
+			"apiVersion": "kubernaut.ai/v1alpha1",
+			"kind":       "AIAnalysis",
+			"metadata": map[string]any{
+				"name":      fmt.Sprintf("ai-%s", rrName),
+				"namespace": "kubernaut-system",
+			},
+			"spec": map[string]any{
+				"remediationRequestRef": map[string]any{
+					"name":      rrName,
+					"namespace": "kubernaut-system",
+				},
+			},
+			"status": map[string]any{
+				"investigationSession": map[string]any{},
+			},
+		},
+	}
+}

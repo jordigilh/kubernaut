@@ -74,16 +74,16 @@ var _ = Describe("Phase Guard (#1307)", func() {
 		before, after = NewPhaseGuardForTest()
 	})
 
-	DescribeTable("blocks MCP-dependent tools without prior takeover",
+	DescribeTable("blocks MCP-dependent tools without prior investigate",
 		func(toolName string) {
 			result, err := before(toolCtx, fakeTool{name: toolName}, nil)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil(),
-				"%s must be blocked without prior takeover (#1307)", toolName)
+				"%s must be blocked without prior investigate (#1307)", toolName)
 			errMsg, ok := result["error"].(string)
 			Expect(ok).To(BeTrue())
-			Expect(errMsg).To(ContainSubstring("kubernaut_takeover"),
-				"error must guide LLM to call takeover first")
+			Expect(errMsg).To(ContainSubstring("kubernaut_investigate"),
+				"error must guide LLM to call investigate first")
 		},
 		Entry("UT-AF-1307-001: discover_workflows", "kubernaut_discover_workflows"),
 		Entry("UT-AF-1307-002: select_workflow", "kubernaut_select_workflow"),
@@ -98,33 +98,30 @@ var _ = Describe("Phase Guard (#1307)", func() {
 			result, err := before(toolCtx, fakeTool{name: toolName}, nil)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil(),
-				"%s must always be allowed (no takeover prerequisite)", toolName)
+				"%s must always be allowed (no investigate prerequisite)", toolName)
 		},
-		Entry("UT-AF-1307-007: takeover", "kubernaut_takeover"),
 		Entry("UT-AF-1307-008: investigate", "kubernaut_investigate"),
 		Entry("UT-AF-1307-009: kubectl_get", "kubectl_get"),
 		Entry("UT-AF-1307-012: reconnect", "kubernaut_reconnect"),
 	)
 
-	It("UT-AF-1307-010: after takeover succeeds, discover_workflows is allowed", func() {
-		// Simulate successful takeover via AfterToolCallback
-		_, _ = after(toolCtx, fakeTool{name: "kubernaut_takeover"}, nil, map[string]any{
+	It("UT-AF-1307-010: after investigate succeeds, discover_workflows is allowed", func() {
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
 			"session_id": "sess-001", "status": "active",
 		}, nil)
 
-		// Now discover_workflows should be allowed
 		result, err := before(toolCtx, fakeTool{name: "kubernaut_discover_workflows"}, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result).To(BeNil(),
-			"discover_workflows must be allowed after successful takeover")
+			"discover_workflows must be allowed after successful investigate")
 	})
 
-	It("UT-AF-1307-011: error message contains guidance to call takeover", func() {
+	It("UT-AF-1307-011: error message contains guidance to call investigate", func() {
 		result, err := before(toolCtx, fakeTool{name: "kubernaut_discover_workflows"}, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result).NotTo(BeNil())
 		errMsg := result["error"].(string)
-		Expect(errMsg).To(ContainSubstring("kubernaut_takeover"),
+		Expect(errMsg).To(ContainSubstring("kubernaut_investigate"),
 			"error must name the required prerequisite tool")
 	})
 
@@ -137,7 +134,7 @@ var _ = Describe("Phase Guard (#1307)", func() {
 		result, err := before(toolCtx, fakeTool{name: "kubernaut_discover_workflows"}, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result).To(BeNil(),
-			"discover_workflows must be allowed after successful investigate (no takeover needed)")
+			"discover_workflows must be allowed after successful investigate")
 	})
 
 	It("UT-AF-1307-014: after investigate succeeds, select_workflow is allowed", func() {
