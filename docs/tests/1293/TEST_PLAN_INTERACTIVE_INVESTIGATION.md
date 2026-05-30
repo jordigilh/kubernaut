@@ -259,8 +259,9 @@ Each test item follows RED → GREEN → REFACTOR:
 
 #### 7.6.5 IS CRD Takeover Initialization (`session/deferred_crd_test.go`, INIT prefix)
 
-> **Design change (#1293)**: IS CRD creation moved from `af_create_rr` callback
-> (`MaterializeCRD`) to explicit `kubernaut_takeover` via `InitializeSessionByRR`.
+> **Design change (#1293→#1332)**: IS CRD creation moved from `af_create_rr` callback
+> (`MaterializeCRD`) to `kubernaut_investigate` via `ISSignaler.SignalInteractive`.
+> `kubernaut_takeover` was removed and consolidated into `kubernaut_investigate`.
 > This prevents autonomous "investigate and fix" flows from creating IS CRDs.
 
 | ID | Scenario | Expected | TI |

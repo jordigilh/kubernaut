@@ -164,7 +164,7 @@ Each phase is a self-contained commit group. Checkpoints gate progression.
 - Added Decision Algorithm (3-line if/else tiebreaker)
 - Consolidated dual `kubernaut_investigate` description into single canonical entry
 - Added kubectl bypass prevention (Security Rule #6 + WHAT/WHY boundary + anti-pattern callout)
-- Aligned `kubernaut_takeover` description with DD-INTERACTIVE-002 (ongoing autonomous only)
+- Removed `kubernaut_takeover` (consolidated into `kubernaut_investigate` per DD-INTERACTIVE-002)
 - Aligned `kubernaut_investigate` auto-driver with phase guard (UT-AF-1307-013/014/015)
 - **Prompt effectiveness score: 94%** (up from 75%)
 
