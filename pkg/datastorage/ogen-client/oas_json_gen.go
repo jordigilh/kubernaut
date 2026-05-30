@@ -16392,6 +16392,18 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				e.FieldStart("ai_analysis_ref")
 				e.Str(s.AiAnalysisRef)
 			}
+			{
+				if s.DelegatedUser.Set {
+					e.FieldStart("delegated_user")
+					s.DelegatedUser.Encode(e)
+				}
+			}
+			{
+				if s.DelegatedVia.Set {
+					e.FieldStart("delegated_via")
+					s.DelegatedVia.Encode(e)
+				}
+			}
 		}
 	case RemediationApprovalDecisionPayloadAuditEventEventData:
 		e.FieldStart("event_type")
@@ -21138,6 +21150,18 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 			{
 				e.FieldStart("ai_analysis_ref")
 				e.Str(s.AiAnalysisRef)
+			}
+			{
+				if s.DelegatedUser.Set {
+					e.FieldStart("delegated_user")
+					s.DelegatedUser.Encode(e)
+				}
+			}
+			{
+				if s.DelegatedVia.Set {
+					e.FieldStart("delegated_via")
+					s.DelegatedVia.Encode(e)
+				}
 			}
 		}
 	case RemediationApprovalDecisionPayloadAuditEventRequestEventData:
@@ -40423,15 +40447,29 @@ func (s *RemediationApprovalAuditPayload) encodeFields(e *jx.Encoder) {
 		e.FieldStart("ai_analysis_ref")
 		e.Str(s.AiAnalysisRef)
 	}
+	{
+		if s.DelegatedUser.Set {
+			e.FieldStart("delegated_user")
+			s.DelegatedUser.Encode(e)
+		}
+	}
+	{
+		if s.DelegatedVia.Set {
+			e.FieldStart("delegated_via")
+			s.DelegatedVia.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfRemediationApprovalAuditPayload = [6]string{
+var jsonFieldsNameOfRemediationApprovalAuditPayload = [8]string{
 	0: "event_type",
 	1: "request_name",
 	2: "decision",
 	3: "decided_at",
 	4: "decision_message",
 	5: "ai_analysis_ref",
+	6: "delegated_user",
+	7: "delegated_via",
 }
 
 // Decode decodes RemediationApprovalAuditPayload from json.
@@ -40440,6 +40478,7 @@ func (s *RemediationApprovalAuditPayload) Decode(d *jx.Decoder) error {
 		return errors.New("invalid: unable to decode RemediationApprovalAuditPayload to nil")
 	}
 	var requiredBitSet [1]uint8
+	s.setDefaults()
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -40510,6 +40549,26 @@ func (s *RemediationApprovalAuditPayload) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"ai_analysis_ref\"")
+			}
+		case "delegated_user":
+			if err := func() error {
+				s.DelegatedUser.Reset()
+				if err := s.DelegatedUser.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"delegated_user\"")
+			}
+		case "delegated_via":
+			if err := func() error {
+				s.DelegatedVia.Reset()
+				if err := s.DelegatedVia.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"delegated_via\"")
 			}
 		default:
 			return d.Skip()

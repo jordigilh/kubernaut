@@ -4533,6 +4533,14 @@ components:
         ai_analysis_ref:
           type: string
           description: Name of the referenced AIAnalysis
+        delegated_user:
+          type: string
+          description: Human identity the intermediary acted on behalf of (empty for direct decisions). DD-AUTH-MCP-001 v3.0 trusted intermediary pattern.
+          default: ""
+        delegated_via:
+          type: string
+          description: Trusted intermediary SA that facilitated the decision (empty for direct decisions). Enables forensic reconstruction of delegation chain.
+          default: ""
 
     # ========================================
     # RemediationApprovalRequest Controller Audit Payloads

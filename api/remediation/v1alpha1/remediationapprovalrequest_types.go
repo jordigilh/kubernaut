@@ -216,6 +216,13 @@ type RemediationApprovalRequestStatus struct {
 	// +optional
 	DecidedBy string `json:"decidedBy,omitempty"`
 
+	// Who facilitated the decision (trusted intermediary SA identity).
+	// Empty for direct decisions (kubectl, CLI). Set by webhook when a trusted
+	// intermediary (AF SA) delegates approval on behalf of a human user.
+	// Operational visibility field — DS audit trail is authoritative.
+	// +optional
+	DecidedVia string `json:"decidedVia,omitempty"`
+
 	// When the decision was made
 	// +optional
 	DecidedAt *metav1.Time `json:"decidedAt,omitempty"`
