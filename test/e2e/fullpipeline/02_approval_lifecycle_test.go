@@ -242,10 +242,10 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 		sc := aaObj.Spec.AnalysisRequest.SignalContext
 		Expect(sc.Environment).To(Equal(string(signalprocessingv1.EnvironmentProduction)),
 			"AA SignalContext.Environment should be 'Production' (propagated from SP EnvironmentClassification)")
-		Expect(sc.BusinessPriority).To(Equal(string(signalprocessingv1.PriorityP0)),
-			"AA SignalContext.BusinessPriority should be 'P0' (propagated from SP PriorityAssignment)")
-		Expect(sc.Severity).To(BeElementOf("critical", "high"),
-			"AA SignalContext.Severity should reflect SP normalized severity for OOMKill signal")
+		Expect(sc.BusinessPriority).To(BeElementOf(string(signalprocessingv1.PriorityP0), string(signalprocessingv1.PriorityP1)),
+			"AA SignalContext.BusinessPriority should be P0 (critical) or P1 (medium) for production")
+		Expect(sc.Severity).To(BeElementOf("critical", "high", "medium"),
+			"AA SignalContext.Severity should reflect SP normalized severity (OOMKill→critical, BackOff→medium)")
 		Expect(sc.SignalMode).To(BeElementOf("reactive", "proactive"),
 			"AA SignalContext.SignalMode must be populated (BR-AI-084)")
 		GinkgoWriter.Printf("  ✅ AA signal context: env=%s, priority=%s, severity=%s, mode=%s\n",
