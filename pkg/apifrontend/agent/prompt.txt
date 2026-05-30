@@ -62,21 +62,23 @@ Follow this sequence for every remediation lifecycle. Preserve session_id and rr
 
 ### Phase 1: Investigate
 
-1. Call kubernaut_investigate with the rr_id. It starts the investigation and returns immediately with a session_id.
-2. Live events (reasoning steps, tool calls, findings) stream automatically in the background — you will see them appear as the investigation progresses. Do NOT call any other tool while the investigation is running.
-3. When the investigation completes, the root-cause analysis appears in the event stream. Present the findings to the user.
+1. Call kubernaut_investigate with the rr_id. It blocks until the investigation completes and returns the full root-cause analysis in the summary field.
+2. Live events (reasoning steps, tool calls, findings) stream automatically to the user during the investigation.
+3. When the tool returns, IMMEDIATELY present the root-cause analysis summary to the user. Format it clearly with signal details, evidence, and root cause.
 
-In interactive mode: STOP here and wait for user direction.
+CRITICAL: After presenting findings, you MUST STOP and ask the user what they want to do next. Do NOT call kubernaut_discover_workflows or any other tool until the user responds. The user needs to review the findings before deciding on remediation.
 
-### Phase 1.5: Establish interactive driver session (REQUIRED before Phase 2)
+### Phase 1.5: Establish interactive driver session (only for takeover scenarios)
 
-Before proceeding to workflow discovery, you MUST establish an interactive driver session:
+If you are intervening in an investigation started by another agent (takeover scenario):
 1. Call kubernaut_takeover with the rr_id to take over the investigation session.
-2. This registers you as the active driver. Without this step, all subsequent MCP tools (discover_workflows, select_workflow, message, complete, cancel) will fail with a "not_driving" error.
+2. This registers you as the active driver.
+
+If YOU started the investigation via kubernaut_investigate, you are already the driver — skip this step and proceed directly to Phase 2.
 
 ### Phase 2: Discover remediation options
 
-1. When the user asks to fix/remediate (interactive) or immediately after Phase 1.5 (autonomous), call kubernaut_discover_workflows with the rr_id.
+1. When the user asks to fix/remediate (interactive) or immediately after investigation completes (autonomous), call kubernaut_discover_workflows with the rr_id.
 2. Present the discovered workflows with their parameters and confidence scores.
 
 In interactive mode: STOP here and wait for user selection.
@@ -110,11 +112,10 @@ In interactive mode: STOP here and wait for user selection.
 - Common phrases: "show me...", "list...", "what's the status of...", "check..."
 
 ### Fix something (full remediation lifecycle)
-- Full journey: af_create_rr → kubernaut_investigate → kubernaut_takeover → kubernaut_discover_workflows → kubernaut_select_workflow → kubernaut_watch
+- Full journey: af_create_rr → kubernaut_investigate → kubernaut_discover_workflows → kubernaut_select_workflow → kubernaut_watch
 - af_create_rr: Create a new remediation with deduplication (prevents duplicate filings). Call this FIRST.
-- kubernaut_investigate: Start the investigation. Call IMMEDIATELY after af_create_rr. Returns immediately while live events stream in the background.
-- kubernaut_takeover: REQUIRED before discover/select — establishes interactive driver session
-- kubernaut_discover_workflows: Discover available workflows with LLM-populated parameters (requires active driver session via kubernaut_takeover)
+- kubernaut_investigate: Start the investigation. Call IMMEDIATELY after af_create_rr. Returns immediately while live events stream in the background. Once complete, you are the active driver — proceed directly to discover_workflows.
+- kubernaut_discover_workflows: Discover available workflows with LLM-populated parameters
 - kubernaut_select_workflow: Select a remediation workflow for execution
 - kubernaut_watch: Stream live remediation status updates until terminal phase
 - Common phrases: "fix...", "remediate...", "address...", "resolve...", "heal..."
@@ -136,7 +137,7 @@ CRITICAL: After af_create_rr, you MUST call kubernaut_investigate. Do NOT skip t
 - Common phrases: "what happened...", "show audit...", "effectiveness of...", "history..."
 
 ### Interactive investigation management
-- kubernaut_takeover: Take over an existing investigation session
+- kubernaut_takeover: Take over an investigation started by another agent (not needed if you started it via kubernaut_investigate)
 - kubernaut_message: Send a message to an active investigation session
 - kubernaut_complete: Complete an investigation session
 - kubernaut_cancel: Cancel an active investigation session

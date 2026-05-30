@@ -22,9 +22,13 @@ var mcpDependentTools = map[string]bool{
 
 // driverEntryTools are tools that establish the interactive driver session.
 // After a successful call to one of these, mcpDependentTools are unblocked.
+// kubernaut_investigate is included because the agent that starts an
+// investigation implicitly owns the session — takeover is only needed
+// when intervening in an investigation started by another agent.
 var driverEntryTools = map[string]bool{
-	"kubernaut_takeover":  true,
-	"kubernaut_reconnect": true,
+	"kubernaut_investigate": true,
+	"kubernaut_takeover":    true,
+	"kubernaut_reconnect":   true,
 }
 
 // newPhaseGuard returns a BeforeToolCallback that blocks MCP-dependent tools
