@@ -1,24 +1,38 @@
 package fullpipeline
 
 import (
+	"context"
 	"net/http"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// E2E-FP-1189-003: A2A Interactive 4-Phase — Simulates a multi-turn conversation
-// where the user investigates, discovers workflows, selects one, and creates an RR.
-// Depends on Phase 0 mock-LLM fix (match_last_only) for correct keyword resolution.
+// E2E-FP-1189-003: A2A Interactive 5-Phase — Simulates a multi-turn conversation
+// where the user creates an RR, investigates, discovers workflows, selects one,
+// and watches the pipeline to completion.
 //
-// Turn 1: "start investigation…"        → kubernaut_investigate (namespace/name/kind)
-// Turn 2: "stream the investigation…"   → kubernaut_investigate (session_id resume)
-// Turn 3: "discover available workflows" → kubernaut_discover_workflows
-// Turn 4: "create a remediation request" → af_create_rr
-var _ = Describe("AF A2A Interactive 4-Phase Full Pipeline [E2E-FP-1189-003]", Label("fp", "af", "a2a", "interactive", "issue-1189"), func() {
+// Namespace isolation: the RR targets a dedicated fp-a2a-interactive namespace
+// with a zero-replica deployment, keeping the fingerprint distinct from the
+// shared kubernaut-system memory-eater used by other FP tests.
+//
+// Turn 1: "create a remediation request"   → af_create_rr  (creates RR + IS)
+// Turn 2: "investigate the remediation"    → kubernaut_investigate  (rr_id, blocks until complete)
+// Turn 3: "discover available workflows"   → kubernaut_discover_workflows  (rr_id)
+// Turn 4: "select workflow"                → kubernaut_select_workflow  (rr_id, workflow_id)
+// Turn 5: "watch remediation progress"     → kubernaut_watch  (namespace, rr name)
+var _ = Describe("AF A2A Interactive 5-Phase Full Pipeline [E2E-FP-1189-003]", Label("fp", "af", "a2a", "interactive", "issue-1189"), func() {
 
-	It("should complete 4-turn interactive conversation and trigger full pipeline", func() {
+	const targetNS = "fp-a2a-interactive"
+
+	It("should complete 5-turn interactive conversation and trigger full pipeline", NodeTimeout(8*time.Minute), func() {
 		By("Verifying AF is reachable")
 		resp, err := afHTTPClient.Get(afBaseURL + "/healthz")
 		if err != nil || resp.StatusCode == http.StatusBadGateway || resp.StatusCode == http.StatusServiceUnavailable {
@@ -26,13 +40,56 @@ var _ = Describe("AF A2A Interactive 4-Phase Full Pipeline [E2E-FP-1189-003]", L
 		}
 		_ = resp.Body.Close()
 
-		By("Waiting for memory-eater pod to crash (F-SIG-08: ensures Warning events exist for DominantEventReason)")
-		fpWaitForPodCrash("memory-eater", 2*time.Minute)
+		By("Creating managed target namespace for the interactive RR")
+		ns := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: targetNS,
+				Labels: map[string]string{
+					"kubernaut.ai/managed":     "true",
+					"kubernaut.ai/environment": "production",
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		DeferCleanup(func() {
+			_ = k8sClient.Delete(context.Background(), ns, &client.DeleteOptions{})
+		})
 
-		By("Turn 1: start investigation")
+		By("Deploying zero-replica target Deployment in isolated namespace")
+		dep := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "memory-eater",
+				Namespace: targetNS,
+			},
+			Spec: appsv1.DeploymentSpec{
+				Replicas: ptr.To[int32](0),
+				Selector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"app": "memory-eater"},
+				},
+				Template: corev1.PodTemplateSpec{
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: map[string]string{"app": "memory-eater"},
+					},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{{
+							Name:  "app",
+							Image: "busybox:1.36",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceMemory: resource.MustParse("64Mi"),
+								},
+							},
+						}},
+					},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, dep)).To(Succeed())
+
+		By("Turn 1: create a remediation request")
 		body := fpA2ATasksSend("fp-int-1",
-			"start investigation for deployment memory-eater in kubernaut-system")
-		resp, err = fpA2AInvoke(body)
+			"create a remediation request for deployment memory-eater in fp-a2a-interactive")
+		resp, err = fpA2AInvokeWithTimeout(body, 60*time.Second)
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp.Body.Close() }()
 		Expect(resp.StatusCode).To(Equal(http.StatusOK))
@@ -45,17 +102,17 @@ var _ = Describe("AF A2A Interactive 4-Phase Full Pipeline [E2E-FP-1189-003]", L
 		Expect(taskID).NotTo(BeEmpty())
 		GinkgoWriter.Printf("  Turn 1 — task: %s (state: %s)\n", taskID, task.Status.State)
 
-		By("Turn 2: stream the investigation events")
+		By("Turn 2: investigate the remediation (blocks until KA investigation completes)")
 		body = fpA2ATasksSendWithTask("fp-int-2", taskID,
-			"stream the investigation events")
-		resp2, err := fpA2AInvokeWithTimeout(body, 90*time.Second)
+			"investigate the remediation")
+		resp2, err := fpA2AInvokeWithTimeout(body, 180*time.Second)
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp2.Body.Close() }()
 		Expect(resp2.StatusCode).To(Equal(http.StatusOK))
 		rpc, parseErr = fpParseRPC(resp2)
 		Expect(parseErr).NotTo(HaveOccurred())
 		Expect(rpc.Error).To(BeNil(), "Turn 2 should not return JSON-RPC error")
-		GinkgoWriter.Printf("  Turn 2 — stream investigation OK\n")
+		GinkgoWriter.Printf("  Turn 2 — investigate OK\n")
 
 		By("Turn 3: discover available workflows")
 		body = fpA2ATasksSendWithTask("fp-int-3", taskID,
@@ -69,9 +126,9 @@ var _ = Describe("AF A2A Interactive 4-Phase Full Pipeline [E2E-FP-1189-003]", L
 		Expect(rpc.Error).To(BeNil(), "Turn 3 should not return JSON-RPC error")
 		GinkgoWriter.Printf("  Turn 3 — discover workflows OK\n")
 
-		By("Turn 4: create a remediation request")
+		By("Turn 4: select workflow")
 		body = fpA2ATasksSendWithTask("fp-int-4", taskID,
-			"create a remediation request")
+			"select workflow oomkill-increase-memory-v1")
 		resp4, err := fpA2AInvokeWithTimeout(body, 90*time.Second)
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp4.Body.Close() }()
@@ -79,12 +136,24 @@ var _ = Describe("AF A2A Interactive 4-Phase Full Pipeline [E2E-FP-1189-003]", L
 		rpc, parseErr = fpParseRPC(resp4)
 		Expect(parseErr).NotTo(HaveOccurred())
 		Expect(rpc.Error).To(BeNil(), "Turn 4 should not return JSON-RPC error")
-		GinkgoWriter.Printf("  Turn 4 — create RR OK\n")
+		GinkgoWriter.Printf("  Turn 4 — select workflow OK\n")
 
-		By("Waiting for full pipeline execution")
-		rrName := fpWaitForRRWithTargetNS("memory-eater", namespace, 120*time.Second)
+		By("Turn 5: watch remediation progress (blocks until terminal phase)")
+		body = fpA2ATasksSendWithTask("fp-int-5", taskID,
+			"watch remediation progress")
+		resp5, err := fpA2AInvokeWithTimeout(body, 300*time.Second)
+		Expect(err).NotTo(HaveOccurred())
+		defer func() { _ = resp5.Body.Close() }()
+		Expect(resp5.StatusCode).To(Equal(http.StatusOK))
+		rpc, parseErr = fpParseRPC(resp5)
+		Expect(parseErr).NotTo(HaveOccurred())
+		Expect(rpc.Error).To(BeNil(), "Turn 5 should not return JSON-RPC error")
+		GinkgoWriter.Printf("  Turn 5 — watch OK\n")
+
+		By("Verifying full pipeline completed")
+		rrName := fpWaitForRRWithTargetNS("memory-eater", targetNS, 30*time.Second)
 		Expect(rrName).NotTo(BeEmpty())
-		fpWaitForWEComplete(rrName, 5*time.Minute)
+		fpWaitForWEComplete(rrName, 60*time.Second)
 		GinkgoWriter.Printf("  Full pipeline completed for %s\n", rrName)
 	})
 })

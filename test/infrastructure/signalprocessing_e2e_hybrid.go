@@ -632,7 +632,7 @@ data:
     severity := "high" if { lower(input.signal.severity) == "sev2" }
     severity := "high" if { lower(input.signal.severity) == "p2" }
     severity := "medium" if { lower(input.signal.severity) == "medium" }
-    severity := "medium" if { lower(input.signal.severity) == "warning" }
+    severity := "warning" if { lower(input.signal.severity) == "warning" }
     severity := "medium" if { lower(input.signal.severity) == "sev3" }
     severity := "low" if { lower(input.signal.severity) == "low" }
     severity := "low" if { lower(input.signal.severity) == "info" }
