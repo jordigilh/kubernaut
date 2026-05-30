@@ -51,6 +51,10 @@ type AgentConfig struct {
 	// InvestigationRegistry tracks active investigation sessions for graceful
 	// shutdown. If nil, sessions clean up via bridge goroutine defer only.
 	InvestigationRegistry *tools.MonitorRegistry
+	// Pool is the KA session pool. When set, the blocking investigate path
+	// hands off its MCP session to the pool so that discover_workflows /
+	// select_workflow reuse the same connection and driver lease.
+	Pool *ka.KASessionPool
 	// Authorizer checks tool-level authorization via SAR.
 	Authorizer auth.ToolAuthorizer
 	// Auditor emits audit events for RBAC denials (FedRAMP SI-4).

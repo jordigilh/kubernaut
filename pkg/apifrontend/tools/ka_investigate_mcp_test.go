@@ -22,6 +22,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/go-logr/logr"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -130,7 +132,7 @@ var _ = Describe("HandleInvestigationMCP — #1326 BR-MCP-002 non-blocking MCP i
 			registry := tools.NewMonitorRegistry()
 			result, err := tools.HandleInvestigationMCPWithRegistry(context.Background(), mockMCP, nil, "", tools.InvestigateMCPArgs{
 				RRID: "rr-monitor-001",
-			}, nil, registry, nil, false)
+			}, nil, registry, nil, false, nil, "")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.SessionID).To(Equal("sess-monitor-001"))
 
@@ -156,7 +158,7 @@ var _ = Describe("HandleInvestigationMCP — #1326 BR-MCP-002 non-blocking MCP i
 			registry := tools.NewMonitorRegistry()
 			_, err := tools.HandleInvestigationMCPWithRegistry(context.Background(), mockMCP, nil, "", tools.InvestigateMCPArgs{
 				RRID: "rr-stop-001",
-			}, nil, registry, nil, false)
+			}, nil, registry, nil, false, nil, "")
 			Expect(err).NotTo(HaveOccurred())
 
 			registry.Stop("sess-stop-001")
@@ -395,7 +397,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — AIA polling timeout cap
 			result, err := tools.HandleInvestigationMCPWithRegistry(
 				context.Background(), mockMCP, client, "kubernaut-system",
 				tools.InvestigateMCPArgs{RRID: "rr-timeout-001"},
-				nil, registry, nil, false,
+				nil, registry, nil, false, nil, "",
 			)
 			elapsed := time.Since(start)
 
@@ -422,7 +424,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — AIA polling timeout cap
 			result, err := tools.HandleInvestigationMCPWithRegistry(
 				context.Background(), mockMCP, nil, "",
 				tools.InvestigateMCPArgs{RRID: "rr-nok8s-001"},
-				nil, nil, nil, false,
+				nil, nil, nil, false, nil, "",
 			)
 			elapsed := time.Since(start)
 
@@ -450,7 +452,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — AIA polling timeout cap
 			result, err := tools.HandleInvestigationMCPWithRegistry(
 				context.Background(), mockMCP, client, "",
 				tools.InvestigateMCPArgs{RRID: "rr-nons-001"},
-				nil, nil, nil, false,
+				nil, nil, nil, false, nil, "",
 			)
 			elapsed := time.Since(start)
 
@@ -481,7 +483,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — AIA polling timeout cap
 			result, err := tools.HandleInvestigationMCPWithRegistry(
 				context.Background(), mockMCP, client, "kubernaut-system",
 				tools.InvestigateMCPArgs{RRID: "rr-aia-001"},
-				nil, registry, nil, false,
+				nil, registry, nil, false, nil, "",
 			)
 			elapsed := time.Since(start)
 
@@ -512,7 +514,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — AIA polling timeout cap
 			result, err := tools.HandleInvestigationMCPWithRegistry(
 				ctx, mockMCP, client, "kubernaut-system",
 				tools.InvestigateMCPArgs{RRID: "rr-cancel-001"},
-				nil, nil, nil, false,
+				nil, nil, nil, false, nil, "",
 			)
 			elapsed := time.Since(start)
 
@@ -558,7 +560,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — blocking mode (A2A path
 			result, err := tools.HandleInvestigationMCPWithRegistry(
 				context.Background(), mockMCP, nil, "",
 				tools.InvestigateMCPArgs{RRID: "rr-block-001"},
-				nil, nil, nil, true,
+				nil, nil, nil, true, nil, "",
 			)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.SessionID).To(Equal("sess-block-001"))
@@ -594,7 +596,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — blocking mode (A2A path
 			result, err := tools.HandleInvestigationMCPWithRegistry(
 				ctx, mockMCP, nil, "",
 				tools.InvestigateMCPArgs{RRID: "rr-block-timeout-001"},
-				nil, nil, nil, true,
+				nil, nil, nil, true, nil, "",
 			)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Status).To(Equal("timeout"))
@@ -619,7 +621,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — blocking mode (A2A path
 			result, err := tools.HandleInvestigationMCPWithRegistry(
 				context.Background(), mockMCP, nil, "",
 				tools.InvestigateMCPArgs{RRID: "rr-nil-events-001"},
-				nil, nil, nil, true,
+				nil, nil, nil, true, nil, "",
 			)
 			elapsed := time.Since(start)
 
@@ -662,7 +664,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — blocking mode (A2A path
 			result, err := tools.HandleInvestigationMCPWithRegistry(
 				context.Background(), mockMCP, nil, "",
 				tools.InvestigateMCPArgs{RRID: "rr-filter-001"},
-				nil, nil, nil, true,
+				nil, nil, nil, true, nil, "",
 			)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Summary).To(Equal("Root cause: memory limit too low."))
@@ -670,6 +672,108 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — blocking mode (A2A path
 		})
 	})
 })
+
+var _ = Describe("HandleInvestigationMCPWithRegistry — pool handoff (session persistence)", func() {
+
+	Describe("UT-AF-1332-010: blocking mode injects session into pool after investigation", func() {
+		It("should inject session and deregister from MonitorRegistry", func() {
+			mockSession := &mockPoolSession{}
+			eventCh := make(chan ka.InvestigationEvent, 10)
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					go func() {
+						eventCh <- ka.InvestigationEvent{
+							Type: ka.EventTypeReasoningDelta,
+							Data: json.RawMessage(`{"text":"Analysis complete."}`),
+						}
+						eventCh <- ka.InvestigationEvent{
+							Type: ka.EventTypeComplete,
+							Data: json.RawMessage(`{}`),
+						}
+						close(eventCh)
+					}()
+					return &ka.StartInvestigationResult{
+						SessionID: "sess-handoff-001",
+						Status:    "autonomous_started",
+						Events:    eventCh,
+						Closer:    func() {},
+						Session:   mockSession,
+					}, nil
+				},
+			}
+
+			registry := tools.NewMonitorRegistry()
+			pool := ka.NewKASessionPool(ka.PoolConfig{
+				Factory: func(_ context.Context) (ka.PoolSession, error) {
+					return &mockPoolSession{}, nil
+				},
+				MaxEntries: 10,
+				Logger:     logr.Discard(),
+			})
+
+			result, err := tools.HandleInvestigationMCPWithRegistry(
+				context.Background(), mockMCP, nil, "",
+				tools.InvestigateMCPArgs{RRID: "rr-handoff-001"},
+				nil, registry, nil, true, pool, "alice",
+			)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Status).To(Equal("completed"))
+			Expect(result.Summary).To(Equal("Analysis complete."))
+
+			// Verify session was injected into pool
+			acquired, err := pool.Acquire(context.Background(), "rr-handoff-001", "alice")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(acquired).To(BeIdenticalTo(mockSession),
+				"pool should return the injected investigation session")
+
+			// Verify session was deregistered from MonitorRegistry
+			Expect(registry.Active("sess-handoff-001")).To(BeFalse(),
+				"session should be deregistered from MonitorRegistry after handoff")
+		})
+	})
+
+	Describe("UT-AF-1332-011: blocking mode falls back to cleanup when pool is nil", func() {
+		It("should call cleanup (closer) when pool is nil", func() {
+			var closerCalled int32
+			eventCh := make(chan ka.InvestigationEvent, 10)
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					go func() {
+						eventCh <- ka.InvestigationEvent{
+							Type: ka.EventTypeComplete,
+							Data: json.RawMessage(`{}`),
+						}
+						close(eventCh)
+					}()
+					return &ka.StartInvestigationResult{
+						SessionID: "sess-nil-pool-001",
+						Status:    "autonomous_started",
+						Events:    eventCh,
+						Closer:    func() { atomic.AddInt32(&closerCalled, 1) },
+					}, nil
+				},
+			}
+
+			result, err := tools.HandleInvestigationMCPWithRegistry(
+				context.Background(), mockMCP, nil, "",
+				tools.InvestigateMCPArgs{RRID: "rr-nil-pool-001"},
+				nil, nil, nil, true, nil, "",
+			)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Status).To(Equal("completed"))
+			Expect(atomic.LoadInt32(&closerCalled)).To(Equal(int32(1)),
+				"cleanup (closer) should be called when pool is nil")
+		})
+	})
+})
+
+// mockPoolSession implements ka.PoolSession for testing.
+type mockPoolSession struct{}
+
+func (m *mockPoolSession) CallTool(_ context.Context, _ *mcp.CallToolParams) (*mcp.CallToolResult, error) {
+	return &mcp.CallToolResult{}, nil
+}
+func (m *mockPoolSession) Close() error { return nil }
 
 // Suppress unused import warning for json and time
 var _ = json.Marshal

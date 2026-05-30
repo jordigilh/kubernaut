@@ -248,6 +248,11 @@ type StartInvestigationResult struct {
 	Status    string                   `json:"status"`
 	Events    <-chan InvestigationEvent `json:"-"`
 	Closer    func()                   `json:"-"`
+	// Session is the underlying MCP session. Exposed so the blocking A2A
+	// path can hand it off to the KASessionPool after the investigation
+	// completes, letting discover_workflows / select_workflow reuse the
+	// same connection and driver lease.
+	Session PoolSession `json:"-"`
 }
 
 // InvokeActionArgs is the input for the generic kubernaut_investigate action dispatch.

@@ -358,6 +358,7 @@ func (c *SDKMCPClient) StartInvestigation(ctx context.Context, args StartInvesti
 		Status:    invResult.Status,
 		Events:    eventCh,
 		Closer:    closer,
+		Session:   session,
 	}, nil
 }
 

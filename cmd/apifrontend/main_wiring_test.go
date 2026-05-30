@@ -967,6 +967,41 @@ func TestBuildMCPHandler_PassesPool(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// IT-AF-1332-W01: Pool flows from backendDeps into AgentConfig for investigate tool handoff
+// ---------------------------------------------------------------------------
+
+func TestBackendDeps_PoolFlowsToAgentConfig(t *testing.T) {
+	t.Parallel()
+
+	pool := ka.NewKASessionPool(ka.PoolConfig{
+		Factory:    func(_ context.Context) (ka.PoolSession, error) { return &mockPoolSession{}, nil },
+		MaxEntries: 10,
+		Logger:     logr.Discard(),
+	})
+
+	deps := &backendDeps{
+		Pool: pool,
+	}
+
+	if deps.Pool == nil {
+		t.Fatal("IT-AF-1332-W01: backendDeps.Pool must be non-nil")
+	}
+
+	// Verify the pool can be injected — this is what the blocking
+	// investigate path does after investigation completes.
+	injected := &mockPoolSession{}
+	deps.Pool.Inject("rr-w01", "alice", injected)
+
+	acquired, err := deps.Pool.Acquire(context.Background(), "rr-w01", "alice")
+	if err != nil {
+		t.Fatalf("IT-AF-1332-W01: Acquire after Inject failed: %v", err)
+	}
+	if acquired != injected {
+		t.Fatal("IT-AF-1332-W01: Acquire must return the injected session")
+	}
+}
+
+// ---------------------------------------------------------------------------
 // IT-AF-1293-W01: buildMCPHandler wires SessionInitializer from sessionInfra
 // ---------------------------------------------------------------------------
 

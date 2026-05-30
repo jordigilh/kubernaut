@@ -67,7 +67,7 @@ type SessionStartedHook func(ctx context.Context, namespace, rrID, sessionID str
 // If no pending session exists, the MCP session still acquires the interactive
 // lease but the Events channel may be nil or empty.
 func HandleInvestigationMCP(ctx context.Context, mcpClient ka.MCPClient, k8sClient dynamic.Interface, namespace string, args InvestigateMCPArgs, auditor audit.Emitter) (InvestigateMCPResult, error) {
-	return HandleInvestigationMCPWithRegistry(ctx, mcpClient, k8sClient, namespace, args, auditor, nil, nil, false)
+	return HandleInvestigationMCPWithRegistry(ctx, mcpClient, k8sClient, namespace, args, auditor, nil, nil, false, nil, "")
 }
 
 // HandleInvestigationMCPWithRegistry is like HandleInvestigationMCP but also
@@ -77,9 +77,13 @@ func HandleInvestigationMCP(ctx context.Context, mcpClient ka.MCPClient, k8sClie
 // When blocking is true, the function waits for the investigation to complete
 // (or ctx cancellation) and returns the collected summary in InvestigateMCPResult.
 // Events are still streamed to the A2A SSE via EmitReasoningSafe during the wait.
+// After the investigation completes, if pool is non-nil the MCP session is
+// handed off to the pool (keyed by rr_id + username) so that subsequent tool
+// calls (discover_workflows, select_workflow) reuse the same connection and
+// driver lease without requiring a separate takeover.
 // When blocking is false, a background goroutine bridges events and the function
 // returns immediately (legacy behavior for the MCP bridge path).
-func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPClient, k8sClient dynamic.Interface, namespace string, args InvestigateMCPArgs, auditor audit.Emitter, registry *MonitorRegistry, onStarted SessionStartedHook, blocking bool) (InvestigateMCPResult, error) {
+func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPClient, k8sClient dynamic.Interface, namespace string, args InvestigateMCPArgs, auditor audit.Emitter, registry *MonitorRegistry, onStarted SessionStartedHook, blocking bool, pool *ka.KASessionPool, username string) (InvestigateMCPResult, error) {
 	if args.RRID == "" {
 		return InvestigateMCPResult{}, fmt.Errorf("rr_id is required for MCP investigation")
 	}
@@ -176,9 +180,6 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 	}
 
 	if blocking {
-		// Synchronous: bridge events inline, collecting the summary.
-		// Events stream to kagenti via EmitReasoningSafe during the wait.
-		defer cleanup()
 		logger.Info("bridgeEventsCollectSummary: starting blocking event bridge",
 			"rr_id", args.RRID, "session_id", result.SessionID, "ctx_err", ctx.Err())
 		summary := bridgeEventsCollectSummary(ctx, result.Events)
@@ -190,6 +191,21 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 		}
 		logger.Info("bridgeEventsCollectSummary: finished",
 			"rr_id", args.RRID, "status", status, "summary_len", len(summary))
+
+		// Hand off the MCP session to the pool so discover_workflows /
+		// select_workflow reuse the same connection and driver lease.
+		// If no pool is available, fall back to closing the session.
+		if pool != nil && result.Session != nil && username != "" {
+			pool.Inject(args.RRID, username, result.Session)
+			if registry != nil {
+				registry.Deregister(result.SessionID)
+			}
+			logger.Info("investigation session handed off to pool",
+				"rr_id", args.RRID, "session_id", result.SessionID, "username", username)
+		} else {
+			cleanup()
+		}
+
 		return InvestigateMCPResult{
 			SessionID: result.SessionID,
 			Status:    status,
@@ -394,7 +410,10 @@ func (r *MonitorRegistry) StopAll() {
 // investigation (BR-INTERACTIVE-010). Pass nil k8sClient to skip polling.
 // registry is optional; when provided, sessions are tracked for graceful shutdown.
 // onStarted is called after a successful start to create the IS CRD.
-func NewInvestigateMCPTool(mcpClient ka.MCPClient, k8sClient dynamic.Interface, namespace string, auditor audit.Emitter, registry *MonitorRegistry, onStarted SessionStartedHook) (tool.Tool, error) {
+// pool is optional; when provided, the MCP session is handed off to the pool
+// after the investigation so that discover_workflows / select_workflow reuse
+// the same connection and driver lease.
+func NewInvestigateMCPTool(mcpClient ka.MCPClient, k8sClient dynamic.Interface, namespace string, auditor audit.Emitter, registry *MonitorRegistry, onStarted SessionStartedHook, pool *ka.KASessionPool) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name: "kubernaut_investigate",
 		Description: "Investigate an infrastructure incident via MCP. " +
@@ -403,6 +422,7 @@ func NewInvestigateMCPTool(mcpClient ka.MCPClient, k8sClient dynamic.Interface, 
 			"the root-cause analysis summary. Live progress events stream " +
 			"to the user automatically while the investigation runs.",
 	}, func(ctx tool.Context, args InvestigateMCPArgs) (InvestigateMCPResult, error) {
-		return HandleInvestigationMCPWithRegistry(ctx, mcpClient, k8sClient, namespace, args, auditor, registry, onStarted, true)
+		user := usernameFromContext(ctx)
+		return HandleInvestigationMCPWithRegistry(ctx, mcpClient, k8sClient, namespace, args, auditor, registry, onStarted, true, pool, user)
 	})
 }
