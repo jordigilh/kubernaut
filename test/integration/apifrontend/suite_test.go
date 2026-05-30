@@ -20,6 +20,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -499,6 +500,7 @@ timeoutSeconds: 120
 
 	scheme = runtime.NewScheme()
 	Expect(v1alpha1.AddToScheme(scheme)).To(Succeed())
+	Expect(appsv1.AddToScheme(scheme)).To(Succeed())
 	Expect(corev1.AddToScheme(scheme)).To(Succeed())
 	Expect(rbacv1.AddToScheme(scheme)).To(Succeed())
 

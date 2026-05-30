@@ -165,12 +165,12 @@ var _ = Describe("Investigation Streaming (G3)", Ordered, Label("e2e", "phase3",
 	})
 
 	It("TC-E2E-STREAM-04 / TC-E2E-SSE-CAP-01: Connection cap enforcement", func() {
-		// Wait for all SSE slots from prior tests to drain. The tracker now
-		// watches r.Context() for client disconnect and releases the slot
-		// immediately, so this should resolve within seconds.
+		// Wait for all SSE slots to drain. With parallel Ginkgo processes,
+		// STREAM-05 (in a separate Describe block) may hold a bridge connection
+		// for up to 90s. Use 180s to accommodate the worst case.
 		Eventually(func() float64 {
 			return counterValue(scrapeMetrics(), "af_sse_active_connections")
-		}, 30*time.Second, 1*time.Second).Should(BeZero(),
+		}, 180*time.Second, 2*time.Second).Should(BeZero(),
 			"all SSE slots must be released before cap enforcement test")
 
 		maxStr := getEnvOrDefault("AF_E2E_MAX_SSE", "5")
