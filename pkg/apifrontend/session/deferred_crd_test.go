@@ -859,7 +859,7 @@ var _ = Describe("CreateInvestigationSession (#1332 — IS CRD-driven takeover)"
 			JoinMode: v1alpha1.SessionJoinModeTakeover,
 		})
 		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("Username is required"))
+		Expect(err.Error()).To(ContainSubstring("username is required"))
 	})
 
 	It("UT-AF-1332-058: emits EventSessionCreated audit event with correct details", func() {
