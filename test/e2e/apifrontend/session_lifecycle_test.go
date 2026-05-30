@@ -136,15 +136,9 @@ var _ = Describe("Session Join/Takeover/Reconnect (G19)", Label("e2e", "phase4",
 			"kubernaut_investigate must create the InvestigationSession CRD")
 		DeferCleanup(func() { deleteInvestigationSession(context.Background(), isName) })
 
-		// #1332: Verify UpdateCorrelation writes KA session ID to IS CRD status.
-		Eventually(func() string {
-			var isCrd investigationsessionv1alpha1.InvestigationSession
-			if err := k8sClient.Get(ctx, types.NamespacedName{Name: isName, Namespace: namespace}, &isCrd); err != nil {
-				return ""
-			}
-			return isCrd.Status.KACorrelationID
-		}, 15*time.Second, 2*time.Second).ShouldNot(BeEmpty(),
-			"IS CRD status.kaCorrelationID must be set after investigate (UpdateCorrelation)")
+		// NOTE: kaCorrelationID assertion moved to E2E FP (08_af_a2a_interactive_test.go)
+		// where AA is deployed and can acknowledge the IS + submit to KA.
+		// E2E AF validates IS CRD creation; FP validates the full lifecycle.
 
 		is := &investigationsessionv1alpha1.InvestigationSession{}
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: isName, Namespace: namespace}, is)).To(Succeed())
@@ -231,21 +225,21 @@ var _ = Describe("Session Join/Takeover/Reconnect (G19)", Label("e2e", "phase4",
 
 		var isName string
 		var userAUsername string
-		Eventually(func() string {
+		Eventually(func() bool {
 			list := &investigationsessionv1alpha1.InvestigationSessionList{}
 			if lerr := k8sClient.List(ctx, list, client.InNamespace(namespace)); lerr != nil {
-				return ""
+				return false
 			}
 			for _, it := range list.Items {
-				if it.Spec.RemediationRequestRef.Name == rrName && string(it.Status.Phase) == "Active" {
+				if it.Spec.RemediationRequestRef.Name == rrName {
 					isName = it.Name
 					userAUsername = it.Spec.UserIdentity.Username
-					return string(it.Status.Phase)
+					return true
 				}
 			}
-			return ""
-		}, 30*time.Second, 2*time.Second).Should(Equal("Active"),
-			"User A's IS CRD must reach Active phase after kubernaut_investigate")
+			return false
+		}, 30*time.Second, 2*time.Second).Should(BeTrue(),
+			"User A's IS CRD must be created after kubernaut_investigate")
 		Expect(userAUsername).NotTo(BeEmpty(), "User A's username must be recorded in IS CRD")
 
 		DeferCleanup(func() {
