@@ -87,10 +87,9 @@ var _ = Describe("kubernaut_remediate wiring (#1332)", func() {
 					"namespace": ns,
 				},
 				"spec": map[string]interface{}{
-					"description":     "pre-seeded RR",
 					"signalName":      "test-signal-w03",
 					"signalType":      "alert",
-					"signalFingerprint": "fp-w03-test",
+					"signalFingerprint": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
 					"severity":        "medium",
 					"firingTime":      now,
 					"receivedTime":    now,
