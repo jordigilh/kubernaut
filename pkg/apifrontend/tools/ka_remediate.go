@@ -95,13 +95,7 @@ func HandleRemediate(ctx context.Context, client dynamic.Interface, controllerNS
 		return RemediateResult{}, err
 	}
 
-	return RemediateResult{
-		RRID:           result.RRID,
-		Message:        result.Message,
-		AlreadyExists:  result.AlreadyExists,
-		Severity:       result.Severity,
-		SeveritySource: result.SeveritySource,
-	}, nil
+	return RemediateResult(result), nil
 }
 
 // NewRemediateTool creates the kubernaut_remediate tool for autonomous remediation.

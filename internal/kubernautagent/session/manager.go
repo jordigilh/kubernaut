@@ -720,7 +720,7 @@ func (m *Manager) ForceCompleteByRemediationID(rrID string, result *katypes.Inve
 	m.store.mu.Lock()
 	defer m.store.mu.Unlock()
 	for _, sess := range m.store.sessions {
-		if sess.Metadata["remediation_id"] == rrID {
+		if sess.Metadata["remediation_id"] == rrID && !IsTerminal(sess.Status) {
 			prevStatus := sess.Status
 			if sess.cancel != nil {
 				sess.cancel()

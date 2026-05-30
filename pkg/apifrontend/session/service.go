@@ -635,7 +635,7 @@ func (s *CRDSessionService) CreateInvestigationSession(ctx context.Context, cfg 
 		return "", fmt.Errorf("TaskID is required for spec.a2aTaskID (minLength=1)")
 	}
 	if cfg.Username == "" {
-		return "", fmt.Errorf("Username is required for IS CRD creation")
+		return "", fmt.Errorf("username is required for IS CRD creation")
 	}
 
 	crdName := fmt.Sprintf("is-%s", cfg.RRName)

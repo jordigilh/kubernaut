@@ -14,7 +14,6 @@ import (
 	"google.golang.org/adk/tool/toolconfirmation"
 	"google.golang.org/genai"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	k8sfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
@@ -29,9 +28,6 @@ func testCRDScheme() *k8sruntime.Scheme {
 	return s
 }
 
-func newFakeCRDClient(scheme *k8sruntime.Scheme) client.Client {
-	return k8sfake.NewClientBuilder().WithScheme(scheme).Build()
-}
 
 // fakeToolContext satisfies tool.Context for unit testing callbacks.
 // Only context.Value is exercised; all ADK-specific methods return zero values.

@@ -2,6 +2,8 @@ package apifrontend_test
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -73,39 +75,46 @@ var _ = Describe("kubernaut_remediate wiring (#1332)", func() {
 		ctx := context.Background()
 		ns := "default"
 
+		rrName := fmt.Sprintf("rr-existing-1332-w03-%d", GinkgoRandomSeed())
+		now := time.Now().UTC().Format(time.RFC3339)
+
 		rr := &unstructured.Unstructured{
 			Object: map[string]interface{}{
 				"apiVersion": "kubernaut.ai/v1alpha1",
 				"kind":       "RemediationRequest",
 				"metadata": map[string]interface{}{
-					"name":      "rr-existing-1332-w03",
+					"name":      rrName,
 					"namespace": ns,
 				},
 				"spec": map[string]interface{}{
-					"description": "pre-seeded RR",
+					"description":     "pre-seeded RR",
+					"signalName":      "test-signal-w03",
+					"signalType":      "alert",
+					"signalFingerprint": "fp-w03-test",
+					"severity":        "medium",
+					"firingTime":      now,
+					"receivedTime":    now,
+					"targetType":      "kubernetes",
 					"targetResource": map[string]interface{}{
 						"kind":      "Deployment",
 						"name":      "web-existing",
 						"namespace": ns,
 					},
 				},
-				"status": map[string]interface{}{
-					"phase": "InProgress",
-				},
 			},
 		}
 		_, err := dynamicClient.Resource(rrGVR).Namespace(ns).Create(ctx, rr, metav1.CreateOptions{})
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() {
-			_ = dynamicClient.Resource(rrGVR).Namespace(ns).Delete(ctx, "rr-existing-1332-w03", metav1.DeleteOptions{})
+			_ = dynamicClient.Resource(rrGVR).Namespace(ns).Delete(ctx, rrName, metav1.DeleteOptions{})
 		})
 
 		result, err := tools.HandleRemediate(ctx, dynamicClient, ns, &tools.RemediateArgs{
-			RRID: "rr-existing-1332-w03",
+			RRID: rrName,
 		}, "it-user", nil, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.AlreadyExists).To(BeTrue())
-		Expect(result.RRID).To(Equal("rr-existing-1332-w03"))
+		Expect(result.RRID).To(Equal(rrName))
 	})
 
 	It("IT-AF-1332-W04: HandleRemediate with non-existent RRID returns graceful not-found", func() {

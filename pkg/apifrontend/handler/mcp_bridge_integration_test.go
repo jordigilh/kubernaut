@@ -811,21 +811,6 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 	})
 })
 
-type failingSessionInitializer struct {
-	err error
-}
-
-func (f *failingSessionInitializer) InitializeSessionByRR(_ context.Context, _, _, _, _ string, _ []string) error {
-	return f.err
-}
-
-func (f *failingSessionInitializer) CreateInvestigationSession(_ context.Context, _ session.CreateISConfig) (string, error) {
-	return "", f.err
-}
-
-func (f *failingSessionInitializer) UpdateISCorrelation(_ context.Context, _, _ string) error {
-	return f.err
-}
 
 type recordingSessionInitializer struct {
 	calls        []initCall
