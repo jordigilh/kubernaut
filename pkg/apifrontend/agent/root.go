@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"sync"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
+	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ratelimit"
@@ -113,7 +115,7 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 		{"cancel_remediation", func() (tool.Tool, error) { return tools.NewCancelRemediationTool(k8s, cfg.Namespace) }},
 		{"watch", func() (tool.Tool, error) { return tools.NewWatchTool(k8s) }},
 		{"investigate", func() (tool.Tool, error) {
-			return tools.NewInvestigateMCPTool(dedicatedC, k8s, cfg.Namespace, cfg.Auditor, cfg.InvestigationRegistry, nil, cfg.Pool)
+			return tools.NewInvestigateMCPTool(dedicatedC, k8s, cfg.Namespace, cfg.Auditor, cfg.InvestigationRegistry, nil, cfg.Pool, buildAgentISSignaler(cfg))
 		}},
 		{"discover_workflows", func() (tool.Tool, error) { return tools.NewDiscoverWorkflowsTool(mcpC) }},
 		{"select_workflow", func() (tool.Tool, error) { return tools.NewSelectWorkflowTool(mcpC, cfg.Auditor) }},
@@ -127,7 +129,6 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 		{"kubectl_list", func() (tool.Tool, error) { return tools.NewKubectlListTool(saFactory, cfg.RESTMapper) }},
 		{"kubectl_list_events", func() (tool.Tool, error) { return tools.NewKubectlListEventsTool(saFactory) }},
 		// Interactive investigation tools — KA MCP backed
-		{"takeover", func() (tool.Tool, error) { return tools.NewTakeoverTool(mcpC, cfg.Auditor) }},
 		{"message", func() (tool.Tool, error) { return tools.NewMessageTool(mcpC, cfg.Auditor) }},
 		{"complete", func() (tool.Tool, error) { return tools.NewCompleteTool(mcpC, cfg.Auditor) }},
 		{"cancel", func() (tool.Tool, error) { return tools.NewCancelInvestigationTool(mcpC, cfg.Auditor) }},
@@ -341,15 +342,52 @@ func newToolLoggingCallbacks() (llmagent.BeforeToolCallback, llmagent.AfterToolC
 	return before, after
 }
 
+// BuildAgentISSignalerForTest exposes buildAgentISSignaler for integration tests.
+func BuildAgentISSignalerForTest(cfg AgentConfig) tools.ISSignaler {
+	return buildAgentISSignaler(cfg)
+}
+
+// buildAgentISSignaler returns an ISSignaler wired to the CRDSessionService.
+// Returns nil when no SessionService is configured (e.g., unit tests).
+func buildAgentISSignaler(cfg AgentConfig) tools.ISSignaler {
+	if cfg.SessionService == nil {
+		return nil
+	}
+	return &agentISSignalerAdapter{svc: cfg.SessionService}
+}
+
+type agentISSignalerAdapter struct {
+	svc *session.CRDSessionService
+}
+
+func (a *agentISSignalerAdapter) SignalInteractive(ctx context.Context, rrNamespace, rrName, taskID, username string, groups []string, joinMode string) (string, error) {
+	jm := isv1alpha1.SessionJoinModeStart
+	if joinMode == "takeover" {
+		jm = isv1alpha1.SessionJoinModeTakeover
+	}
+	return a.svc.CreateInvestigationSession(ctx, session.CreateISConfig{
+		RRNamespace: rrNamespace,
+		RRName:      rrName,
+		TaskID:      taskID,
+		Username:    username,
+		Groups:      groups,
+		JoinMode:    jm,
+	})
+}
+
+func (a *agentISSignalerAdapter) UpdateCorrelation(ctx context.Context, crdName, kaSessionID string) error {
+	return a.svc.UpdateISCorrelation(ctx, crdName, kaSessionID)
+}
+
 // newAuditToolCallback returns an AfterToolCallback that emits a structured
 // audit event for every tool invocation (FedRAMP AU-12 compliance).
 // The event includes tool name, result status, and user identity.
 // Issue #1332: when kubernaut_remediate or kubernaut_investigate is called
 // within an A2A task context, the audit event includes a2a_task_id for
 // bidirectional task-to-RR correlation.
-// G6 (revised #1293): IS CRD creation moved to kubernaut_takeover hook in
-// mcp_bridge.go. The sessionSvc parameter is retained for future use but
-// MaterializeCRD is no longer called from this callback.
+// G6 (revised #1332): IS CRD creation moved to kubernaut_investigate ISSignaler.
+// The sessionSvc parameter is retained for future use but MaterializeCRD is no
+// longer called from this callback.
 func newAuditToolCallback(auditor audit.Emitter, sessionSvc *session.CRDSessionService, controllerNS string) llmagent.AfterToolCallback {
 	return func(ctx tool.Context, t tool.Tool, input, output map[string]any, toolErr error) (map[string]any, error) {
 		if auditor == nil {

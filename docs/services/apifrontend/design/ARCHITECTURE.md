@@ -509,7 +509,6 @@ kubernaut proxy tools (forwarded to KA REST/MCP or DataStorage, exposed via MCP)
 | `kubernaut_get_remediation_history` | Get remediation execution history | DS REST |
 | `kubernaut_get_effectiveness` | Get effectiveness metrics | DS REST |
 | `kubernaut_get_audit_trail` | Get audit trail for remediations | DS REST |
-| `kubernaut_takeover` | Take over an existing investigation session (creates IS CRD) | KA MCP |
 | `kubernaut_message` | Send a message to an active investigation session | KA MCP |
 | `kubernaut_complete` | Complete an investigation session | KA MCP |
 | `kubernaut_cancel` | Cancel an active investigation session | KA MCP |

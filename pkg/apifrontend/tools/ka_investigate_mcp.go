@@ -27,6 +27,8 @@ import (
 	"github.com/go-logr/logr"
 	"google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/dynamic"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
@@ -39,6 +41,22 @@ import (
 // isPhaseActivePollTimeout caps the IS phase Active polling after AIA readiness.
 // Short because the phase transition should follow almost immediately after AA submits.
 const isPhaseActivePollTimeout = 5 * time.Second
+
+// takeoverISPhaseTimeout is used for the takeover path where AA must cancel
+// the autonomous session and re-submit before setting IS phase=Active.
+const takeoverISPhaseTimeout = 15 * time.Second
+
+// ISSignaler abstracts IS CRD creation for the investigate tool.
+// Implemented by session.CRDSessionService via an adapter in the handler layer.
+type ISSignaler interface {
+	// SignalInteractive creates an IS CRD before the await/connect loop.
+	// joinMode should be "start" for fresh interactive or "takeover" for upgrading autonomous.
+	// Returns the CRD name for later correlation updates.
+	SignalInteractive(ctx context.Context, rrNamespace, rrName, taskID, username string, groups []string, joinMode string) (string, error)
+
+	// UpdateCorrelation writes the KA session ID to IS CRD status after MCP connect.
+	UpdateCorrelation(ctx context.Context, crdName, kaSessionID string) error
+}
 
 // InvestigateMCPArgs defines the input for the MCP-based kubernaut_investigate tool.
 // Either RRID (for an existing RR) or Namespace/Kind/Name (to create a new one)
@@ -75,7 +93,7 @@ type SessionStartedHook func(ctx context.Context, namespace, rrID, sessionID str
 // If no pending session exists, the MCP session still acquires the interactive
 // lease but the Events channel may be nil or empty.
 func HandleInvestigationMCP(ctx context.Context, mcpClient ka.MCPClient, k8sClient dynamic.Interface, namespace string, args InvestigateMCPArgs, auditor audit.Emitter) (InvestigateMCPResult, error) {
-	return HandleInvestigationMCPWithRegistry(ctx, mcpClient, k8sClient, namespace, args, auditor, nil, nil, false, nil, "")
+	return HandleInvestigationMCPWithRegistry(ctx, mcpClient, k8sClient, namespace, args, auditor, nil, nil, false, nil, "", nil)
 }
 
 // HandleInvestigationMCPWithRegistry is like HandleInvestigationMCP but also
@@ -91,13 +109,21 @@ func HandleInvestigationMCP(ctx context.Context, mcpClient ka.MCPClient, k8sClie
 // driver lease without requiring a separate takeover.
 // When blocking is false, a background goroutine bridges events and the function
 // returns immediately (legacy behavior for the MCP bridge path).
-func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPClient, k8sClient dynamic.Interface, namespace string, args InvestigateMCPArgs, auditor audit.Emitter, registry *MonitorRegistry, onStarted SessionStartedHook, blocking bool, pool *ka.KASessionPool, username string) (InvestigateMCPResult, error) {
+//
+// signaler (optional): When provided, creates the IS CRD BEFORE the await loop
+// (pure CRD-driven coordination per DD-INTERACTIVE-002). This enables AA to detect
+// interactive intent via IS watch and resubmit with interactive=true. After successful
+// MCP connect, UpdateCorrelation writes the KA session ID to the IS status.
+func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPClient, k8sClient dynamic.Interface, namespace string, args InvestigateMCPArgs, auditor audit.Emitter, registry *MonitorRegistry, onStarted SessionStartedHook, blocking bool, pool *ka.KASessionPool, username string, signaler ISSignaler) (InvestigateMCPResult, error) {
 	hasRRID := args.RRID != ""
 	hasResourceArgs := args.Namespace != "" || args.Kind != "" || args.Name != ""
 
 	if !hasRRID && !hasResourceArgs {
 		return InvestigateMCPResult{}, fmt.Errorf("rr_id or namespace/kind/name required")
 	}
+
+	identity := auth.UserIdentityFromContext(ctx)
+
 	if !hasRRID && hasResourceArgs {
 		if args.Kind == "" || args.Name == "" {
 			return InvestigateMCPResult{}, fmt.Errorf("kind and name required when providing namespace/kind/name")
@@ -106,7 +132,6 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 			return InvestigateMCPResult{}, fmt.Errorf("rr_id or namespace/kind/name required")
 		}
 
-		identity := auth.UserIdentityFromContext(ctx)
 		if identity != nil && identity.IsServiceAccount {
 			return InvestigateMCPResult{}, fmt.Errorf("interactive investigation cannot be started by service accounts")
 		}
@@ -136,6 +161,33 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 		return InvestigateMCPResult{}, fmt.Errorf("rr_id is required for MCP investigation")
 	}
 
+	// Determine if this RR already has an autonomous investigation running.
+	// When signaler is available, create IS CRD BEFORE the await loop to signal
+	// interactive intent to AA (DD-INTERACTIVE-002, BR-INTERACTIVE-010).
+	var isCRDName string
+	if signaler != nil && k8sClient != nil && namespace != "" {
+		joinMode := "start"
+		if isAutonomousInvestigation(ctx, k8sClient, namespace, args.RRID) {
+			joinMode = "takeover"
+			_ = launcher.EmitReasoningSafe(ctx, "Autonomous investigation detected, signaling takeover...")
+		}
+
+		username := ""
+		var groups []string
+		if identity != nil {
+			username = identity.Username
+			groups = identity.Groups
+		}
+
+		taskID := fmt.Sprintf("a2a-%s", args.RRID)
+		var sigErr error
+		isCRDName, sigErr = signaler.SignalInteractive(ctx, namespace, args.RRID, taskID, username, groups, joinMode)
+		if sigErr != nil {
+			logger := logr.FromContextOrDiscard(ctx)
+			logger.Error(sigErr, "failed to create IS CRD (proceeding without IS signal)", "rr_id", args.RRID)
+		}
+	}
+
 	// Wait for AIA CRD to show a session ID, confirming AA has submitted
 	// to KA with interactive=true and KA has created a pending session.
 	// Blocking path uses a longer timeout because the IS CRD (created by
@@ -159,9 +211,11 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 		// acknowledging the interactive session and submitting to KA with
 		// interactive=true. Without this, action=start may arrive before
 		// KA has a pending session to activate.
-		// Short timeout: by the time AIA is ready, the IS phase transition
-		// should follow almost immediately.
-		isCtx, isCancel := context.WithTimeout(ctx, isPhaseActivePollTimeout)
+		isPhaseTimeout := isPhaseActivePollTimeout
+		if isCRDName != "" {
+			isPhaseTimeout = takeoverISPhaseTimeout
+		}
+		isCtx, isCancel := context.WithTimeout(ctx, isPhaseTimeout)
 		if AwaitISPhaseActive(isCtx, k8sClient, namespace, args.RRID) {
 			_ = launcher.EmitReasoningSafe(ctx, "Interactive session acknowledged by AA, starting investigation...")
 		}
@@ -201,6 +255,13 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 				"namespace", namespace,
 			)
 			_ = launcher.EmitReasoningSafe(ctx, fmt.Sprintf("Warning: IS CRD creation failed (%v), investigation continues", hookErr))
+		}
+	}
+
+	if signaler != nil && isCRDName != "" && result.SessionID != "" {
+		if corrErr := signaler.UpdateCorrelation(ctx, isCRDName, result.SessionID); corrErr != nil {
+			logger.Error(corrErr, "IS CRD correlation update failed (non-fatal)",
+				"crd_name", isCRDName, "session_id", result.SessionID)
 		}
 	}
 
@@ -464,7 +525,7 @@ func (r *MonitorRegistry) StopAll() {
 // pool is optional; when provided, the MCP session is handed off to the pool
 // after the investigation so that discover_workflows / select_workflow reuse
 // the same connection and driver lease.
-func NewInvestigateMCPTool(mcpClient ka.MCPClient, k8sClient dynamic.Interface, namespace string, auditor audit.Emitter, registry *MonitorRegistry, onStarted SessionStartedHook, pool *ka.KASessionPool) (tool.Tool, error) {
+func NewInvestigateMCPTool(mcpClient ka.MCPClient, k8sClient dynamic.Interface, namespace string, auditor audit.Emitter, registry *MonitorRegistry, onStarted SessionStartedHook, pool *ka.KASessionPool, signaler ISSignaler) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name: "kubernaut_investigate",
 		Description: "Investigate an infrastructure incident via MCP. " +
@@ -474,6 +535,30 @@ func NewInvestigateMCPTool(mcpClient ka.MCPClient, k8sClient dynamic.Interface, 
 			"to the user automatically while the investigation runs.",
 	}, func(ctx tool.Context, args InvestigateMCPArgs) (InvestigateMCPResult, error) {
 		user := usernameFromContext(ctx)
-		return HandleInvestigationMCPWithRegistry(ctx, mcpClient, k8sClient, namespace, args, auditor, registry, onStarted, true, pool, user)
+		return HandleInvestigationMCPWithRegistry(ctx, mcpClient, k8sClient, namespace, args, auditor, registry, onStarted, true, pool, user, signaler)
 	})
+}
+
+// isAutonomousInvestigation checks if the given RR has an active AIA CRD with
+// a session ID already assigned (indicating autonomous investigation in progress).
+// Returns true when a takeover is needed instead of a fresh start.
+func isAutonomousInvestigation(ctx context.Context, client dynamic.Interface, namespace, rrName string) bool {
+	if client == nil || namespace == "" || rrName == "" {
+		return false
+	}
+	list, err := client.Resource(aianalysisGVR).Namespace(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return false
+	}
+	for _, item := range list.Items {
+		specRR, _, _ := unstructured.NestedString(item.Object, "spec", "remediationRequestRef", "name")
+		if specRR != rrName {
+			continue
+		}
+		sessionID, _, _ := unstructured.NestedString(item.Object, "status", "investigationSession", "id")
+		if sessionID != "" {
+			return true
+		}
+	}
+	return false
 }

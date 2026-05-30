@@ -34,7 +34,6 @@ rules:
   - apiGroups: ["kubernaut.ai"]
     resources: ["tools"]
     resourceNames:
-      - kubernaut_takeover
       - kubernaut_discover_workflows
       - kubernaut_investigate
       - kubernaut_select_workflow

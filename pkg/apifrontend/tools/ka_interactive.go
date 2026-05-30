@@ -100,11 +100,6 @@ func interactiveAuditDetail(action, rrID string, result *ka.InvokeActionResult, 
 	return d
 }
 
-// HandleTakeover implements the kubernaut_takeover tool.
-func HandleTakeover(ctx context.Context, mcpClient ka.MCPClient, args InteractiveActionArgs, auditor audit.Emitter) (InteractiveActionResult, error) {
-	return invokeInteractiveAction(ctx, mcpClient, "takeover", args, auditor, audit.EventKADelegated)
-}
-
 // HandleMessage implements the kubernaut_message tool.
 func HandleMessage(ctx context.Context, mcpClient ka.MCPClient, args InteractiveActionArgs, auditor audit.Emitter) (InteractiveActionResult, error) {
 	if args.Message == "" {
@@ -133,15 +128,6 @@ func HandleReconnect(ctx context.Context, mcpClient ka.MCPClient, args Interacti
 	return invokeInteractiveAction(ctx, mcpClient, "reconnect", args, auditor, audit.EventKADelegated)
 }
 
-// NewTakeoverTool creates the kubernaut_takeover tool.
-func NewTakeoverTool(mcpClient ka.MCPClient, auditor audit.Emitter) (tool.Tool, error) {
-	return functiontool.New(functiontool.Config{
-		Name:        "kubernaut_takeover",
-		Description: "Take over an existing investigation session",
-	}, func(ctx tool.Context, args InteractiveActionArgs) (InteractiveActionResult, error) {
-		return HandleTakeover(ctx, mcpClient, args, auditor)
-	})
-}
 
 // NewMessageTool creates the kubernaut_message tool.
 func NewMessageTool(mcpClient ka.MCPClient, auditor audit.Emitter) (tool.Tool, error) {

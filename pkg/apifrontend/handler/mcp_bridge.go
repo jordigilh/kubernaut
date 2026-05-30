@@ -20,6 +20,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ratelimit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/security"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
@@ -35,12 +36,12 @@ type ISPhaseFinalizer interface {
 	FinalizeSessionByRR(ctx context.Context, rrNamespace, rrName string, phase isv1alpha1.SessionPhase) error
 }
 
-// ISSessionInitializer creates an IS CRD when a user explicitly takes over
-// an investigation via kubernaut_takeover. Unlike MaterializeCRD (which uses
-// deferred A2A state), this creates the CRD directly from MCP context.
+// ISSessionInitializer creates an IS CRD for interactive investigation flows.
 // Implemented by session.CRDSessionService.
 type ISSessionInitializer interface {
 	InitializeSessionByRR(ctx context.Context, rrNamespace, rrName, kaSessionID, username string, groups []string) error
+	CreateInvestigationSession(ctx context.Context, cfg session.CreateISConfig) (string, error)
+	UpdateISCorrelation(ctx context.Context, crdName, kaSessionID string) error
 }
 
 // MCPBridgeConfig holds the configuration for the real MCP tool bridge.
@@ -166,10 +167,14 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 	if dedicatedClient == nil {
 		dedicatedClient = cfg.KAMCPClient
 	}
-	onInvestigateStarted := buildSessionStartedHook(cfg)
+	isSignaler := buildISSignaler(cfg)
+	var onInvestigateStarted tools.SessionStartedHook
+	if isSignaler == nil {
+		onInvestigateStarted = buildSessionStartedHook(cfg)
+	}
 	registerTool(srv, cfg, sem, "kubernaut_investigate", "Investigate an infrastructure incident",
 		func(ctx context.Context, args tools.InvestigateMCPArgs) (any, error) {
-			return tools.HandleInvestigationMCPWithRegistry(ctx, dedicatedClient, cfg.K8sClient, cfg.Namespace, args, cfg.Auditor, cfg.InvestigationRegistry, onInvestigateStarted, false, nil, "")
+			return tools.HandleInvestigationMCPWithRegistry(ctx, dedicatedClient, cfg.K8sClient, cfg.Namespace, args, cfg.Auditor, cfg.InvestigationRegistry, onInvestigateStarted, false, nil, "", isSignaler)
 		})
 
 	// KA MCP tools
@@ -229,25 +234,6 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 		})
 
 	// Interactive investigation tools (G1: 4-phase journey)
-	registerTool(srv, cfg, sem, "kubernaut_takeover", "Take over an existing investigation session",
-		func(ctx context.Context, args tools.InteractiveActionArgs) (any, error) {
-			result, err := tools.HandleTakeover(ctx, cfg.KAMCPClient, args, cfg.Auditor)
-			if err != nil {
-				return result, err
-			}
-			if cfg.SessionInitializer != nil {
-				identity := auth.UserIdentityFromContext(ctx)
-				if identity == nil {
-					return result, nil
-				}
-				if iErr := cfg.SessionInitializer.InitializeSessionByRR(ctx, cfg.Namespace, args.RRID, result.SessionID, identity.Username, identity.Groups); iErr != nil {
-					cfg.Logger.Error(iErr, "IS CRD initialization failed on takeover", "rr_id", args.RRID, "session_id", result.SessionID)
-					return nil, fmt.Errorf("takeover succeeded but IS CRD creation failed: %w", iErr)
-				}
-			}
-			return result, nil
-		})
-
 	registerTool(srv, cfg, sem, "kubernaut_message", "Send a message to an active investigation session",
 		func(ctx context.Context, args tools.InteractiveActionArgs) (any, error) {
 			return tools.HandleMessage(ctx, cfg.KAMCPClient, args, cfg.Auditor)
@@ -524,8 +510,7 @@ func usernameFromCtx(ctx context.Context) string {
 
 // buildSessionStartedHook returns a SessionStartedHook that creates an IS CRD
 // after a successful StartInvestigation. Returns nil if no SessionInitializer
-// is configured. Both the MCP bridge and A2A agent paths use this to consolidate
-// IS CRD creation in a single place (HandleInvestigationMCPWithRegistry).
+// is configured. Legacy path retained for the non-blocking MCP bridge flow.
 func buildSessionStartedHook(cfg *MCPBridgeConfig) tools.SessionStartedHook {
 	if cfg.SessionInitializer == nil {
 		return nil
@@ -537,4 +522,41 @@ func buildSessionStartedHook(cfg *MCPBridgeConfig) tools.SessionStartedHook {
 		}
 		return cfg.SessionInitializer.InitializeSessionByRR(ctx, namespace, rrID, sessionID, identity.Username, identity.Groups)
 	}
+}
+
+// buildISSignaler returns an ISSignaler adapter that wires
+// CreateInvestigationSession + UpdateISCorrelation to the SessionInitializer.
+// Returns nil if no SessionInitializer is configured.
+func buildISSignaler(cfg *MCPBridgeConfig) tools.ISSignaler {
+	if cfg.SessionInitializer == nil {
+		return nil
+	}
+	return &isSignalerAdapter{
+		initializer: cfg.SessionInitializer,
+		namespace:   cfg.Namespace,
+	}
+}
+
+type isSignalerAdapter struct {
+	initializer ISSessionInitializer
+	namespace   string
+}
+
+func (a *isSignalerAdapter) SignalInteractive(ctx context.Context, rrNamespace, rrName, taskID, username string, groups []string, joinMode string) (string, error) {
+	jm := isv1alpha1.SessionJoinModeStart
+	if joinMode == "takeover" {
+		jm = isv1alpha1.SessionJoinModeTakeover
+	}
+	return a.initializer.CreateInvestigationSession(ctx, session.CreateISConfig{
+		RRNamespace: rrNamespace,
+		RRName:      rrName,
+		TaskID:      taskID,
+		Username:    username,
+		Groups:      groups,
+		JoinMode:    jm,
+	})
+}
+
+func (a *isSignalerAdapter) UpdateCorrelation(ctx context.Context, crdName, kaSessionID string) error {
+	return a.initializer.UpdateISCorrelation(ctx, crdName, kaSessionID)
 }

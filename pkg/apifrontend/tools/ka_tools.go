@@ -177,7 +177,7 @@ func validateParamType(p WorkflowParameter, val any) error {
 func NewDiscoverWorkflowsTool(mcpClient ka.MCPClient) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_discover_workflows",
-		Description: "Discover available workflows with their parameter schemas for LLM-populated execution. Requires an active interactive driver session — call kubernaut_takeover first.",
+		Description: "Discover available workflows with their parameter schemas for LLM-populated execution. Requires an active interactive driver session — call kubernaut_investigate first.",
 	}, func(ctx tool.Context, args DiscoverWorkflowsArgs) (DiscoverWorkflowsResult, error) {
 		return HandleDiscoverWorkflows(ctx, mcpClient, args)
 	})
@@ -239,7 +239,7 @@ func HandleSelectWorkflow(ctx context.Context, mcpClient ka.MCPClient, args Sele
 func NewSelectWorkflowTool(mcpClient ka.MCPClient, auditor audit.Emitter) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_select_workflow",
-		Description: "Select a remediation workflow for execution. Triggers enrichment and workflow selection in the backend. Requires an active interactive driver session — call kubernaut_takeover first.",
+		Description: "Select a remediation workflow for execution. Triggers enrichment and workflow selection in the backend. Requires an active interactive driver session — call kubernaut_investigate first.",
 	}, func(ctx tool.Context, args SelectWorkflowArgs) (SelectWorkflowResult, error) {
 		return HandleSelectWorkflow(ctx, mcpClient, args, auditor)
 	})
