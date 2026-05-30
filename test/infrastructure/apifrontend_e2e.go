@@ -591,7 +591,7 @@ func PersonaToolClusterRolesYAML() string {
 			"kubernaut_present_decision", "kubernaut_list_workflows", "kubernaut_get_remediation_history",
 			"kubernaut_get_effectiveness", "kubernaut_get_audit_trail",
 			"kubectl_get", "kubectl_list", "kubectl_list_events",
-			"af_check_existing_rr", "af_create_rr",
+			"af_check_existing_rr", "kubernaut_remediate",
 		}},
 		{"ai-orchestrator", []string{
 			"kubernaut_list_remediations", "kubernaut_get_remediation", "kubernaut_approve",
@@ -599,7 +599,7 @@ func PersonaToolClusterRolesYAML() string {
 			"kubernaut_discover_workflows", "kubernaut_select_workflow",
 			"kubernaut_present_decision",
 			"kubectl_get", "kubectl_list", "kubectl_list_events",
-			"af_check_existing_rr", "af_create_rr",
+			"af_check_existing_rr", "kubernaut_remediate",
 		}},
 		{"cicd", []string{
 			"kubernaut_list_remediations", "kubernaut_get_remediation", "kubernaut_watch",

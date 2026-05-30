@@ -44,7 +44,7 @@ rules:
       - kubernaut_cancel
       - kubernaut_status
       - kubernaut_reconnect
-      - af_create_rr
+      - kubernaut_remediate
       - af_check_existing_rr
       - kubernaut_cancel_remediation
       - kubernaut_watch
@@ -56,7 +56,7 @@ rules:
       - kubernaut_get_effectiveness
       - kubernaut_get_audit_trail
     verbs: ["use"]
-  # af_create_rr / af_check_existing_rr / kubernaut_cancel_remediation / kubernaut_watch
+  # kubernaut_remediate / af_check_existing_rr / kubernaut_cancel_remediation / kubernaut_watch
   - apiGroups: ["kubernaut.ai"]
     resources: ["remediationrequests"]
     verbs: ["get", "list", "watch", "create", "update", "patch"]

@@ -180,6 +180,7 @@ var _ = Describe("RBAC tool name alignment", func() {
 		"kubectl_list_events":               true,
 		"af_check_existing_rr":              true,
 		"af_create_rr":                      true,
+		"kubernaut_remediate":               true,
 	}
 
 	allKnownTools := map[string]bool{}

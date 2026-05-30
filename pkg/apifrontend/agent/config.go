@@ -70,12 +70,12 @@ type AgentConfig struct {
 	RESTMapper meta.RESTMapper
 	// Namespace is the resolved operational namespace for CRD creation.
 	Namespace string
-	// Triager performs severity triage for af_create_rr. If nil, severity
+	// Triager performs severity triage for kubernaut_remediate. If nil, severity
 	// defaults to "medium" without source attribution.
 	Triager *severity.Triager
 	// SessionService is the CRD session service for deferred CRD materialization (G6).
-	// When non-nil, MaterializeCRD is called in the af_create_rr after-callback
-	// to create the InvestigationSession CRD once a real RR reference is available.
+	// When non-nil, used by kubernaut_investigate to create the InvestigationSession
+	// CRD once a real RR reference is available.
 	SessionService *sessionpkg.CRDSessionService
 	// LLMModel is the model backend for the ADK agent. When non-nil, the agent
 	// uses this model for generateContent calls. When nil, the agent is created
