@@ -99,7 +99,7 @@ var _ = Describe("RR CRD Lifecycle (G4)", Label("e2e", "phase2", "g4"), func() {
 
 	// TC-E2E-RR-06 deleted: idempotency tests af_create_rr (internal tool) — covered by UT.
 	// TC-E2E-RR-07: kubernaut_watch with k8s-seeded RR
-	It("TC-E2E-RR-07: kubernaut_watch returns structured watch result", NodeTimeout(60*time.Second), func() {
+	It("TC-E2E-RR-07: kubernaut_watch returns structured watch result", NodeTimeout(60*time.Second), func(_ SpecContext) {
 		authToken, err := fetchDEXTokenForPersona("sre")
 		Expect(err).NotTo(HaveOccurred())
 		mcpSessionID, err := initMCPSession(authToken)
