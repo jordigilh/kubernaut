@@ -49,7 +49,7 @@ var _ = Describe("AF A2A Interactive 5-Phase Full Pipeline [E2E-FP-1189-003]", L
 				Name: targetNS,
 				Labels: map[string]string{
 					"kubernaut.ai/managed":     "true",
-					"kubernaut.ai/environment": "production",
+					"kubernaut.ai/environment": "staging",
 				},
 			},
 		}
