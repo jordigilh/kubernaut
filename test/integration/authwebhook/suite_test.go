@@ -307,7 +307,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	// Register RemediationApprovalRequest mutating webhook (DD-WEBHOOK-003: Complete audit events)
 	// I1: Use mgr.GetClient() for override validation (F2, #594)
-	rarHandler := authwebhook.NewRemediationApprovalRequestAuthHandler(auditStore, k8sManager.GetClient())
+	rarHandler := authwebhook.NewRemediationApprovalRequestAuthHandler(auditStore, k8sManager.GetClient(), "kubernaut-system")
 	err = rarHandler.InjectDecoder(decoder)
 	Expect(err).ToNot(HaveOccurred())
 	webhookServer.Register("/mutate-remediationapprovalrequest", &webhook.Admission{Handler: rarHandler})

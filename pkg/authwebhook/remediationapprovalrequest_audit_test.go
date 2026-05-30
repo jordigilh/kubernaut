@@ -85,7 +85,7 @@ var _ = Describe("BR-AUDIT-006: RemediationApprovalRequest Webhook Audit Trail",
 	BeforeEach(func() {
 		ctx = context.Background()
 		mockStore = &MockAuditStore{}
-		handler = authwebhook.NewRemediationApprovalRequestAuthHandler(mockStore, nil)
+		handler = authwebhook.NewRemediationApprovalRequestAuthHandler(mockStore, nil, "kubernaut-system")
 
 		// Setup decoder (required by admission.Handler)
 		scheme = runtime.NewScheme()
