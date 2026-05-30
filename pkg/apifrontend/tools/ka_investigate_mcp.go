@@ -184,6 +184,10 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 		isCRDName, sigErr = signaler.SignalInteractive(ctx, namespace, args.RRID, taskID, username, groups, joinMode)
 		if sigErr != nil {
 			logger := logr.FromContextOrDiscard(ctx)
+			if strings.Contains(sigErr.Error(), "session_active") {
+				logger.Info("IS CRD single-driver enforcement: rejecting duplicate session", "rr_id", args.RRID, "error", sigErr)
+				return InvestigateMCPResult{}, sigErr
+			}
 			logger.Error(sigErr, "failed to create IS CRD (proceeding without IS signal)", "rr_id", args.RRID)
 		}
 	}
@@ -293,17 +297,17 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 		bridgeCtx := ctx
 		if _, hasDeadline := ctx.Deadline(); !hasDeadline {
 			var bridgeCancel context.CancelFunc
-			bridgeCtx, bridgeCancel = context.WithTimeout(ctx, 3*time.Minute)
+			bridgeCtx, bridgeCancel = context.WithTimeout(ctx, 90*time.Second)
 			defer bridgeCancel()
 		}
 		logger.Info("bridgeEventsCollectSummary: starting blocking event bridge",
 			"rr_id", args.RRID, "session_id", result.SessionID, "ctx_err", ctx.Err())
 		summary := bridgeEventsCollectSummary(bridgeCtx, result.Events)
 		status := "completed"
-		if ctx.Err() != nil {
+		if bridgeCtx.Err() != nil {
 			status = "timeout"
 			logger.Info("bridgeEventsCollectSummary: context cancelled/timed out",
-				"rr_id", args.RRID, "ctx_err", ctx.Err(), "summary_len", len(summary))
+				"rr_id", args.RRID, "ctx_err", bridgeCtx.Err(), "summary_len", len(summary))
 		}
 		logger.Info("bridgeEventsCollectSummary: finished",
 			"rr_id", args.RRID, "status", status, "summary_len", len(summary))

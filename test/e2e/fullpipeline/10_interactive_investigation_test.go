@@ -35,8 +35,10 @@ import (
 // full pipeline (AA → KA → DS) in a Kind cluster with all services deployed.
 var _ = Describe("E2E-1293: Interactive Investigation Architecture", Label("e2e", "fullpipeline", "interactive", "1293"), func() {
 
-	// waitForAAInvestigating polls until an AIAnalysis for the given RR reaches Investigating phase.
-	// Returns the AA name for subsequent queries.
+	// waitForAAInvestigating polls until an AIAnalysis for the given RR reaches
+	// Investigating or a later phase (Analyzing, Completed). With mock-LLM, the
+	// investigation can complete faster than the polling interval, so we accept
+	// any phase that implies Investigating was reached.
 	waitForAAInvestigating := func(rrName string) string {
 		var aaName string
 		Eventually(func() bool {
@@ -47,7 +49,8 @@ var _ = Describe("E2E-1293: Interactive Investigation Architecture", Label("e2e"
 			for _, aa := range aaList.Items {
 				if aa.Spec.RemediationRequestRef.Name == rrName {
 					aaName = aa.Name
-					return string(aa.Status.Phase) == "Investigating"
+					phase := string(aa.Status.Phase)
+					return phase == "Investigating" || phase == "Analyzing" || phase == "Completed"
 				}
 			}
 			return false

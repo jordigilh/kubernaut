@@ -1,6 +1,7 @@
 package fullpipeline
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -169,6 +170,35 @@ func fpWaitForRRWithTargetNS(nameSubstring, targetNS string, timeout time.Durati
 		return false
 	}, timeout, 2*time.Second).Should(BeTrue(),
 		"RemediationRequest targeting %q in namespace %q not found", nameSubstring, targetNS)
+	return rrName
+}
+
+// rrFingerprint computes the signal fingerprint for a target resource, matching
+// the production logic in pkg/apifrontend/tools/af_create_rr.go.
+func rrFingerprint(namespace, kind, name string) string {
+	h := sha256.Sum256([]byte(namespace + "/" + kind + "/" + name))
+	return fmt.Sprintf("%x", h)
+}
+
+// fpWaitForRRByFingerprint polls for a RemediationRequest whose spec.signalFingerprint
+// matches the given fingerprint. This uniquely identifies an RR by its target resource
+// (namespace+kind+name hash) regardless of deployment name collisions across tests.
+func fpWaitForRRByFingerprint(fingerprint string, timeout time.Duration) string {
+	var rrName string
+	Eventually(func() bool {
+		rrList := &remediationv1.RemediationRequestList{}
+		if err := apiReader.List(ctx, rrList, client.InNamespace(namespace)); err != nil {
+			return false
+		}
+		for _, rr := range rrList.Items {
+			if rr.Spec.SignalFingerprint == fingerprint {
+				rrName = rr.Name
+				return true
+			}
+		}
+		return false
+	}, timeout, 2*time.Second).Should(BeTrue(),
+		"RemediationRequest with fingerprint %q not found", fingerprint[:12])
 	return rrName
 }
 

@@ -27,7 +27,7 @@ var _ = Describe("AF A2A Autonomous Full Pipeline [E2E-FP-1189-002]", Label("fp"
 
 		By("Creating RR via A2A message/send (kubernaut_remediate — autonomous, no IS)")
 		body := fpA2ATasksSend("fp-auto-1",
-			"create a remediation request for deployment memory-eater in kubernaut-system")
+			"create a remediation request for deployment memory-eater in kubernaut-system namespace")
 		resp, err = fpA2AInvoke(body)
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp.Body.Close() }()
@@ -41,8 +41,9 @@ var _ = Describe("AF A2A Autonomous Full Pipeline [E2E-FP-1189-002]", Label("fp"
 		Expect(task.ID).NotTo(BeEmpty(), "A2A task ID must not be empty")
 		GinkgoWriter.Printf("  A2A task: %s (state: %s)\n", task.ID, task.Status.State)
 
-		By("Waiting for full pipeline execution")
-		rrName := fpWaitForRRWithTargetNS("memory-eater", "kubernaut-system", 120*time.Second)
+		By("Waiting for full pipeline execution (match by signal fingerprint)")
+		fp := rrFingerprint(namespace, "Deployment", "memory-eater")
+		rrName := fpWaitForRRByFingerprint(fp, 120*time.Second)
 		Expect(rrName).NotTo(BeEmpty())
 		fpWaitForWEComplete(rrName, 5*time.Minute)
 		GinkgoWriter.Printf("  Full pipeline completed for %s\n", rrName)
