@@ -256,9 +256,8 @@ func (c *SDKMCPClient) StartInvestigation(ctx context.Context, args StartInvesti
 				return
 			}
 
-			var evt InvestigationEvent
-			if err := json.Unmarshal(raw, &evt); err != nil {
-				c.logger.Error(err, "failed to parse logging message as InvestigationEvent")
+			evt, ok := ParseLoggingEvent(c.logger, raw)
+			if !ok {
 				return
 			}
 

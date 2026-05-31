@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-logr/logr"
 	gobreaker "github.com/sony/gobreaker/v2"
 )
 
@@ -234,6 +235,21 @@ type InvestigationEvent struct {
 	Turn  int             `json:"turn"`
 	Phase string          `json:"phase,omitempty"`
 	Data  json.RawMessage `json:"data,omitempty"`
+}
+
+// ParseLoggingEvent attempts to unmarshal raw JSON into an InvestigationEvent.
+// Returns the event and true on success. For non-structured messages (e.g.
+// plain-text KA logs on pooled sessions), logs at V(2) and returns false.
+// AU-6: Non-structured messages are expected after session pooling and must
+// not emit Error-level noise that degrades audit log signal-to-noise ratio.
+func ParseLoggingEvent(logger logr.Logger, raw json.RawMessage) (InvestigationEvent, bool) {
+	var evt InvestigationEvent
+	if err := json.Unmarshal(raw, &evt); err != nil {
+		logger.V(2).Info("non-structured logging message (expected after session pooling)",
+			"parse_error", err.Error())
+		return InvestigationEvent{}, false
+	}
+	return evt, true
 }
 
 // StartInvestigationArgs is the input for starting a dedicated MCP investigation session.
