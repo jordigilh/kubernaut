@@ -23,6 +23,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
@@ -337,6 +338,10 @@ func buildFinalResult(rca *katypes.InvestigationResult, workflow *CatalogWorkflo
 			result.Parameters = cloneParameterMap(params)
 		}
 	}
+
+	// Re-inject KA-managed target resource parameters after the discovery
+	// merge, which may have replaced the RCA parameter map entirely.
+	investigator.InjectTargetResourceParameters(&result)
 
 	return &result
 }

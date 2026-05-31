@@ -391,7 +391,10 @@ func isKindInOwnerChain(kind, signalKind string, chain []enrichment.OwnerChainEn
 	return false
 }
 
-func injectTargetResourceParameters(result *katypes.InvestigationResult) {
+// InjectTargetResourceParameters ensures the decomposed TARGET_RESOURCE_*
+// environment variables are present in result.Parameters, derived from
+// the authoritative RemediationTarget. Safe to call multiple times.
+func InjectTargetResourceParameters(result *katypes.InvestigationResult) {
 	if result == nil || result.RemediationTarget.Kind == "" {
 		return
 	}

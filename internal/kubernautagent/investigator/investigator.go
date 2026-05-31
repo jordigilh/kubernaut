@@ -427,7 +427,7 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 		backfillSeverity(rcaResult, signal)
 		attachDetectedLabels(rcaResult, enrichData)
 		InjectRemediationTarget(rcaResult, signal, enrichData)
-		injectTargetResourceParameters(rcaResult)
+		InjectTargetResourceParameters(rcaResult)
 		rcaResult.InteractiveHold = true
 		inv.emitResponseComplete(ctx, rcaResult, tokens, correlationID)
 		return rcaResult, nil
@@ -437,7 +437,7 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 		backfillSeverity(rcaResult, signal)
 		attachDetectedLabels(rcaResult, enrichData)
 		InjectRemediationTarget(rcaResult, signal, enrichData)
-		injectTargetResourceParameters(rcaResult)
+		InjectTargetResourceParameters(rcaResult)
 		inv.emitResponseComplete(ctx, rcaResult, tokens, correlationID)
 		return rcaResult, nil
 	}
@@ -467,7 +467,7 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 			backfillSeverity(rcaResult, signal)
 			attachDetectedLabels(rcaResult, enrichData)
 			InjectRemediationTarget(rcaResult, workflowSignal, enrichData)
-			injectTargetResourceParameters(rcaResult)
+			InjectTargetResourceParameters(rcaResult)
 			inv.emitResponseComplete(ctx, rcaResult, tokens, correlationID)
 			return rcaResult, nil
 		}
@@ -560,7 +560,7 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 	if workflowResult.RemediationTarget.APIVersion == "" && rcaResult.RemediationTarget.APIVersion != "" {
 		workflowResult.RemediationTarget.APIVersion = rcaResult.RemediationTarget.APIVersion
 	}
-	injectTargetResourceParameters(workflowResult)
+	InjectTargetResourceParameters(workflowResult)
 	inv.emitResponseComplete(ctx, workflowResult, tokens, correlationID)
 	return workflowResult, nil
 }
