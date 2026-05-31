@@ -318,7 +318,7 @@ var _ = Describe("AnalyzingHandler", func() {
 				mockEvaluator.WithAutoApprove("Non-production environment - auto-approved")
 			})
 
-			It("UT-AA-TAT-001: should compute TotalAnalysisTime in seconds from StartedAt to CompletedAt", func() {
+			It("UT-AA-TAT-001: should compute TotalAnalysisTime in milliseconds from StartedAt to CompletedAt", func() {
 				analysis := createTestAnalysis()
 				analysis.Status.StartedAt = &metav1.Time{Time: time.Now().Add(-30 * time.Second)}
 
@@ -326,10 +326,10 @@ var _ = Describe("AnalyzingHandler", func() {
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseCompleted))
-				Expect(analysis.Status.TotalAnalysisTime).To(BeNumerically(">=", int64(29)),
-					"TotalAnalysisTime must be computed as CompletedAt - StartedAt in seconds")
-				Expect(analysis.Status.TotalAnalysisTime).To(BeNumerically("<=", int64(35)),
-					"TotalAnalysisTime should be approximately 30 seconds")
+				Expect(analysis.Status.TotalAnalysisTime).To(BeNumerically(">=", int64(29000)),
+					"TotalAnalysisTime must be computed as CompletedAt - StartedAt in milliseconds")
+				Expect(analysis.Status.TotalAnalysisTime).To(BeNumerically("<=", int64(35000)),
+					"TotalAnalysisTime should be approximately 30000 milliseconds")
 			})
 		})
 

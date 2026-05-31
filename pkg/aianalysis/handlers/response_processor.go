@@ -727,10 +727,11 @@ func (p *ResponseProcessor) handleLowConfidenceFailure(ctx context.Context, anal
 }
 
 // setTotalAnalysisTime calculates and sets TotalAnalysisTime from StartedAt.
+// Uses milliseconds to avoid truncation for sub-second analyses.
 // Safe to call when StartedAt is nil (no-op).
 func setTotalAnalysisTime(analysis *aianalysisv1.AIAnalysis, now metav1.Time) {
 	if analysis.Status.StartedAt != nil {
-		analysis.Status.TotalAnalysisTime = int64(now.Sub(analysis.Status.StartedAt.Time).Seconds())
+		analysis.Status.TotalAnalysisTime = now.Sub(analysis.Status.StartedAt.Time).Milliseconds()
 	}
 }
 
