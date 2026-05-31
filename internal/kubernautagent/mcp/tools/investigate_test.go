@@ -554,7 +554,7 @@ func (m *mockSignalResolver) ResolvePostRCAEnrichment(_ context.Context, _, _, _
 	if m.enrich != nil {
 		return m.enrich, m.enrichErr
 	}
-	return &prompt.EnrichmentData{}, m.enrichErr
+	return nil, m.enrichErr
 }
 
 // trackingPostRCASignalResolver records ResolvePostRCAEnrichment invocations.

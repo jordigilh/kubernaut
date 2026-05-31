@@ -65,7 +65,11 @@ func (d *discoverySignalResolver) ResolveEnrichmentData(_ context.Context, _ str
 }
 
 func (d *discoverySignalResolver) ResolvePostRCAEnrichment(_ context.Context, _, _, _, _ string) (*prompt.EnrichmentData, error) {
-	return &prompt.EnrichmentData{}, nil
+	// Return nil to indicate re-enrichment is not available in this IT fixture.
+	// A non-nil empty result would cause the discover_workflows handler to
+	// override the signal with the RCA's LLM-parsed target, corrupting
+	// the authoritative Deployment/api-server/production from ResolveSignalContext.
+	return nil, nil
 }
 
 // discoveryHTTPCompleter captures CompleteUserDriving calls in-memory.

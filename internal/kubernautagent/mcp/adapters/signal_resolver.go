@@ -98,7 +98,8 @@ func (r *SessionSignalContextResolver) ResolveEnrichmentData(_ context.Context, 
 }
 
 // ResolvePostRCAEnrichment performs Phase 2 re-enrichment for the RCA-identified
-// target. Delegates to the enricher if wired, otherwise returns empty data.
+// target. Returns nil when re-enrichment is not available (no enricher wired),
+// which tells the caller to preserve the original signal context.
 func (r *SessionSignalContextResolver) ResolvePostRCAEnrichment(_ context.Context, _, _, _, _ string) (*prompt.EnrichmentData, error) {
-	return &prompt.EnrichmentData{}, nil
+	return nil, nil
 }
