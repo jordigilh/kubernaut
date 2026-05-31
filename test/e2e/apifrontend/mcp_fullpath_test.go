@@ -84,7 +84,7 @@ var _ = Describe("MCP Full-Path Validation (G1)", Label("e2e", "phase2", "g1"), 
 
 	// TC-E2E-MCP-FULL-02 + 04 collapsed: create RR → approve it
 	It("TC-E2E-MCP-FULL-02+04: RR fixture then kubernaut_approve lifecycle", func() {
-		const rrNamespace = "default"
+		rrNamespace := e2eNamespace
 		const rrName = "e2e-rr-mcp-full-02"
 
 		By("TC-E2E-MCP-FULL-02: Create RR via k8s client CRD fixture")
