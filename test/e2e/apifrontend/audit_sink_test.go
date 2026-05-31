@@ -107,9 +107,7 @@ var _ = Describe("DS Audit Sink (G8)", Label("e2e", "phase4", "g8"), func() {
 		}, 30*time.Second, 2*time.Second).Should(Succeed(),
 			"DS audit endpoint (%s) must be reachable in E2E", dsAuditURL)
 
-		_, err := mcpToolCall("kubernaut_list_remediations", map[string]interface{}{
-			"namespace": "default",
-		})
+		_, err := mcpToolCall("kubernaut_list_remediations", map[string]interface{}{})
 		Expect(err).NotTo(HaveOccurred())
 
 		Eventually(func() bool {

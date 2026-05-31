@@ -171,9 +171,7 @@ var _ = Describe("KA Integration (AF -> KA -> DS -> mock-LLM)", Label("e2e", "ph
 		})
 
 		It("TC-E2E-DS-03: kubernaut_get_remediation_history returns response from DS", func() {
-			status, result := mcpToolCall("e2e-ds-03", "kubernaut_get_remediation_history", map[string]interface{}{
-				"namespace": "default",
-			})
+			status, result := mcpToolCall("e2e-ds-03", "kubernaut_get_remediation_history", map[string]interface{}{})
 
 			Expect(status).NotTo(Equal(http.StatusBadGateway),
 				"TC-E2E-DS-03: AF returned 502 — DS unreachable. Response: %v", result)
@@ -309,9 +307,7 @@ var _ = Describe("KA Integration (AF -> KA -> DS -> mock-LLM)", Label("e2e", "ph
 
 		It("TC-E2E-METRICS-02: af_tool_calls_total has observations after tool calls", func() {
 			// Make a tool call via the standard mcpToolCall helper to trigger the metric
-			mcpToolCall("e2e-metrics-seed", "kubernaut_list_remediations", map[string]interface{}{
-				"namespace": "kubernaut-system",
-			})
+			mcpToolCall("e2e-metrics-seed", "kubernaut_list_remediations", map[string]interface{}{})
 
 			body := scrapeMetrics()
 			// CounterVec only appears after at least one observation. If KA/DS tools

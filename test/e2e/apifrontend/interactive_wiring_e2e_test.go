@@ -122,9 +122,7 @@ var _ = Describe("Interactive Wiring E2E (W6)", Label("e2e", "phase4", "wiring")
 
 		It("E2E-AF-1234-W02b: audit trail includes execution_duration_ms after tool call", func() {
 			rpcID := fmt.Sprintf("w02b-%d", time.Now().UnixNano())
-			_, _, err := mcpToolCall(rpcID, "kubernaut_list_remediations", map[string]interface{}{
-				"namespace": "kubernaut-system",
-			})
+			_, _, err := mcpToolCall(rpcID, "kubernaut_list_remediations", map[string]interface{}{})
 			Expect(err).NotTo(HaveOccurred())
 
 			metrics := scrapeMetrics()

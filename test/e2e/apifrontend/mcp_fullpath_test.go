@@ -107,7 +107,6 @@ var _ = Describe("MCP Full-Path Validation (G1)", Label("e2e", "phase2", "g1"), 
 		apBody := buildJSONRPC("mcp-full-04-approve", "tools/call", map[string]interface{}{
 			"name": "kubernaut_approve",
 			"arguments": map[string]interface{}{
-				"namespace": rrNamespace,
 				"rar_name":  rarName,
 				"decision":  "approved",
 				"reason":    "MCP G1 full-path E2E",

@@ -60,7 +60,6 @@ var _ = Describe("RR CRD Lifecycle (G4)", Label("e2e", "phase2", "g4"), func() {
 
 		By("TC-E2E-RR-03: kubernaut_cancel_remediation sets RR to Cancelled")
 		text, err := mcpToolCallWith(authToken, mcpSessionID, "kubernaut_cancel_remediation", map[string]interface{}{
-			"namespace": rrNamespace,
 			"name":      rrName,
 		})
 		Expect(err).NotTo(HaveOccurred(), text)
@@ -72,7 +71,6 @@ var _ = Describe("RR CRD Lifecycle (G4)", Label("e2e", "phase2", "g4"), func() {
 		By("TC-E2E-RR-04: kubernaut_list_remediations returns the RR")
 		var out map[string]interface{}
 		text, err = mcpToolCallWith(authToken, mcpSessionID, "kubernaut_list_remediations", map[string]interface{}{
-			"namespace": rrNamespace,
 		})
 		Expect(err).NotTo(HaveOccurred(), text)
 		Expect(json.Unmarshal([]byte(text), &out)).To(Succeed())
@@ -125,7 +123,6 @@ var _ = Describe("RR CRD Lifecycle (G4)", Label("e2e", "phase2", "g4"), func() {
 		}()
 
 		text, err := mcpToolCallWith(authToken, mcpSessionID, "kubernaut_watch", map[string]interface{}{
-			"namespace": e2eNamespace,
 			"name":      rrName,
 		})
 		Expect(err).NotTo(HaveOccurred(), text)
@@ -165,7 +162,6 @@ var _ = Describe("RAR Flow (G5)", Label("e2e", "phase2", "g5"), func() {
 		apBody := buildJSONRPC("g5-01-approve", "tools/call", map[string]interface{}{
 			"name": "kubernaut_approve",
 			"arguments": map[string]interface{}{
-				"namespace": rrNamespace,
 				"rar_name":  rarName,
 				"decision":  "approved",
 				"reason":    "E2E G5 approval",
@@ -192,7 +188,6 @@ var _ = Describe("RAR Flow (G5)", Label("e2e", "phase2", "g5"), func() {
 		body := buildJSONRPC("g5-02", "tools/call", map[string]interface{}{
 			"name": "kubernaut_approve",
 			"arguments": map[string]interface{}{
-				"namespace": rrNamespace,
 				"rar_name":  "e2e-rar-does-not-exist-xyz",
 				"decision":  "approved",
 			},
@@ -233,7 +228,6 @@ var _ = Describe("RAR Flow (G5)", Label("e2e", "phase2", "g5"), func() {
 		apBody := buildJSONRPC("g5-03-approve", "tools/call", map[string]interface{}{
 			"name": "kubernaut_approve",
 			"arguments": map[string]interface{}{
-				"namespace": rrNamespace,
 				"rar_name":  rarName,
 				"decision":  "approved",
 			},

@@ -297,7 +297,7 @@ var _ = Describe("A2A Handler (E2E)", Label("e2e", "a2a"), func() {
 			if err == nil && obsSID != "" {
 				body := buildJSONRPC("met04-rbac-deny", "tools/call", map[string]interface{}{
 					"name":      "kubernaut_approve",
-					"arguments": map[string]interface{}{"namespace": "default", "rar_name": "x", "decision": "approved"},
+					"arguments": map[string]interface{}{"rar_name": "x", "decision": "approved"},
 				})
 				_, _, _ = mcpPOST(obsToken, obsSID, body)
 			}
