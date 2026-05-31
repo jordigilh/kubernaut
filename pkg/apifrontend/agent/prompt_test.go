@@ -54,7 +54,6 @@ var _ = Describe("System Prompt", func() {
 		Expect(instruction).To(ContainSubstring("kubernaut_investigate"))
 		Expect(instruction).To(ContainSubstring("kubernaut_select_workflow"))
 		Expect(instruction).To(ContainSubstring("present_decision"))
-		Expect(instruction).To(ContainSubstring("kubernaut_list_workflows"))
 		Expect(instruction).To(ContainSubstring("kubernaut_get_audit_trail"))
 	})
 

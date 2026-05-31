@@ -119,7 +119,6 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 		{"discover_workflows", func() (tool.Tool, error) { return tools.NewDiscoverWorkflowsTool(mcpC) }},
 		{"select_workflow", func() (tool.Tool, error) { return tools.NewSelectWorkflowTool(mcpC, cfg.Auditor) }},
 		{"present_decision", func() (tool.Tool, error) { return tools.NewPresentDecisionTool() }},
-		{"list_workflows", func() (tool.Tool, error) { return tools.NewListWorkflowsTool(dsC) }},
 		{"get_remediation_history", func() (tool.Tool, error) { return tools.NewGetRemediationHistoryTool(dsC) }},
 		{"get_effectiveness", func() (tool.Tool, error) { return tools.NewGetEffectivenessTool(dsC) }},
 		{"get_audit_trail", func() (tool.Tool, error) { return tools.NewGetAuditTrailTool(dsC) }},

@@ -163,7 +163,6 @@ CRITICAL: kubernaut_investigate handles both RR and IS creation internally. Do N
 - kubernaut_get_audit_trail: Retrieve audit trail for a remediation
 - kubernaut_get_remediation_history: Query historical remediations
 - kubernaut_get_effectiveness: Get workflow effectiveness scores
-- kubernaut_list_workflows: List available remediation workflows from the catalog
 - Common phrases: "what happened...", "show audit...", "effectiveness of...", "history..."
 
 ### Interactive investigation management
