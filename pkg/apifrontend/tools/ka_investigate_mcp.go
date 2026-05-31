@@ -313,20 +313,14 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 	}
 
 	if blocking {
-		bridgeCtx := ctx
-		if _, hasDeadline := ctx.Deadline(); !hasDeadline {
-			var bridgeCancel context.CancelFunc
-			bridgeCtx, bridgeCancel = context.WithTimeout(ctx, 90*time.Second)
-			defer bridgeCancel()
-		}
 		logger.Info("bridgeEventsCollectSummary: starting blocking event bridge",
 			"rr_id", args.RRID, "session_id", result.SessionID, "ctx_err", ctx.Err())
-		summary := bridgeEventsCollectSummary(bridgeCtx, result.Events)
+		summary := bridgeEventsCollectSummary(ctx, result.Events, BridgeInactivityTimeout)
 		status := "completed"
-		if bridgeCtx.Err() != nil {
+		if ctx.Err() != nil {
 			status = "timeout"
-			logger.Info("bridgeEventsCollectSummary: context cancelled/timed out",
-				"rr_id", args.RRID, "ctx_err", bridgeCtx.Err(), "summary_len", len(summary))
+			logger.Info("bridgeEventsCollectSummary: context cancelled",
+				"rr_id", args.RRID, "ctx_err", ctx.Err(), "summary_len", len(summary))
 		}
 		logger.Info("bridgeEventsCollectSummary: finished",
 			"rr_id", args.RRID, "status", status, "summary_len", len(summary))
@@ -395,17 +389,29 @@ func BridgeEventsToA2A(ctx context.Context, events <-chan ka.InvestigationEvent)
 	}
 }
 
+// BridgeInactivityTimeout is the maximum silence duration (no events from KA)
+// before the bridge assumes the investigation is hung and returns whatever
+// summary has been collected so far. Each received event resets the timer,
+// so investigations of any wall-clock duration succeed as long as KA keeps
+// producing events (token deltas, tool calls, keepalives).
+// Exported so that tests can override it without modifying production code.
+var BridgeInactivityTimeout = 60 * time.Second
+
 // bridgeEventsCollectSummary bridges events (same as BridgeEventsToA2A) and
 // accumulates reasoning_delta text into a summary returned when the channel
-// closes or the context is cancelled. Used by the blocking A2A path so the
-// LLM receives the full investigation results in the tool response.
-func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.InvestigationEvent) string {
+// closes, the context is cancelled, or no events arrive within
+// inactivityTimeout (hang detection).
+func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.InvestigationEvent, inactivityTimeout time.Duration) string {
 	var summary strings.Builder
 	keepalive := time.NewTicker(5 * time.Second)
 	defer keepalive.Stop()
+	inactivity := time.NewTimer(inactivityTimeout)
+	defer inactivity.Stop()
 	for {
 		select {
 		case <-ctx.Done():
+			return summary.String()
+		case <-inactivity.C:
 			return summary.String()
 		case <-keepalive.C:
 			_ = launcher.EmitKeepaliveDotSafe(ctx)
@@ -413,6 +419,7 @@ func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.Investigat
 			if !ok {
 				return summary.String()
 			}
+			inactivity.Reset(inactivityTimeout)
 			text := FormatEventForUser(evt)
 			if text != "" {
 				_ = launcher.EmitReasoningSafe(ctx, text)
