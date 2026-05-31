@@ -15,7 +15,7 @@ import (
 // validConfig returns a Config that passes Validate() for use as a base in tests.
 func validConfig() *config.Config {
 	return &config.Config{
-		Server: config.ServerConfig{Port: 8443},
+		Server: config.ServerConfig{Port: 8443, MetricsPort: 9090, HealthPort: 8081},
 		Agent: config.AgentConfig{
 			KABaseURL:     "http://localhost:8080",
 			KAMCPEndpoint: "http://localhost:8080/api/v1/mcp/",
@@ -456,6 +456,79 @@ var _ = Describe("TC-P2C-03: DefaultConfig field assertions", func() {
 		Expect(cfg.Resilience.KA.CBFailureThreshold).To(BeNumerically(">", 0))
 		Expect(cfg.Resilience.DS.CBFailureThreshold).To(BeNumerically(">", 0))
 		Expect(cfg.Resilience.K8s.CBFailureThreshold).To(BeNumerically(">", 0))
+	})
+})
+
+var _ = Describe("Tier 5b: Configurable Ports (Issue #1339)", func() {
+	It("UT-AF-1339-001 DefaultConfig metricsPort is 9090", func() {
+		cfg := config.DefaultConfig()
+		Expect(cfg.Server.MetricsPort).To(Equal(9090))
+	})
+
+	It("UT-AF-1339-002 YAML override for metricsPort", func() {
+		data := []byte("server:\n  metricsPort: 9191\n")
+		cfg, err := config.Load(data)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.Server.MetricsPort).To(Equal(9191))
+	})
+
+	It("UT-AF-1339-003 DefaultConfig healthPort is 8081", func() {
+		cfg := config.DefaultConfig()
+		Expect(cfg.Server.HealthPort).To(Equal(8081))
+	})
+
+	It("UT-AF-1339-004 YAML override for healthPort", func() {
+		data := []byte("server:\n  healthPort: 8082\n")
+		cfg, err := config.Load(data)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.Server.HealthPort).To(Equal(8082))
+	})
+
+	DescribeTable("UT-AF-1339-005 port range validation",
+		func(field string, mutate func(*config.Config), wantSub string) {
+			cfg := validConfig()
+			mutate(cfg)
+			err := cfg.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring(wantSub))
+		},
+		Entry("metricsPort = 0", "metricsPort", func(c *config.Config) { c.Server.MetricsPort = 0 }, "server.metricsPort"),
+		Entry("metricsPort = 80", "metricsPort", func(c *config.Config) { c.Server.MetricsPort = 80 }, "server.metricsPort"),
+		Entry("metricsPort = 70000", "metricsPort", func(c *config.Config) { c.Server.MetricsPort = 70000 }, "server.metricsPort"),
+		Entry("healthPort = 0", "healthPort", func(c *config.Config) { c.Server.HealthPort = 0 }, "server.healthPort"),
+		Entry("healthPort = 1023", "healthPort", func(c *config.Config) { c.Server.HealthPort = 1023 }, "server.healthPort"),
+		Entry("healthPort = 70000", "healthPort", func(c *config.Config) { c.Server.HealthPort = 70000 }, "server.healthPort"),
+	)
+
+	DescribeTable("UT-AF-1339-006 port collision validation",
+		func(port, metrics, health int, wantSub string) {
+			cfg := validConfig()
+			cfg.Server.Port = port
+			cfg.Server.MetricsPort = metrics
+			cfg.Server.HealthPort = health
+			err := cfg.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring(wantSub))
+		},
+		Entry("port == metricsPort", 9090, 9090, 8081, "server.port and server.metricsPort must be distinct"),
+		Entry("port == healthPort", 8081, 9090, 8081, "server.port and server.healthPort must be distinct"),
+		Entry("metricsPort == healthPort", 8443, 9090, 9090, "server.metricsPort and server.healthPort must be distinct"),
+	)
+
+	It("UT-AF-1339-007 accepts valid distinct ports", func() {
+		cfg := validConfig()
+		cfg.Server.Port = 8443
+		cfg.Server.MetricsPort = 9191
+		cfg.Server.HealthPort = 8082
+		Expect(cfg.Validate()).To(Succeed())
+	})
+
+	It("UT-AF-1339-008 omitted ports use defaults from Load", func() {
+		data := []byte("server:\n  port: 8443\n")
+		cfg, err := config.Load(data)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.Server.MetricsPort).To(Equal(9090))
+		Expect(cfg.Server.HealthPort).To(Equal(8081))
 	})
 })
 

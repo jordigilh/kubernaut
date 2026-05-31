@@ -107,6 +107,8 @@ type ShutdownConfig struct {
 // ServerConfig holds HTTP server settings.
 type ServerConfig struct {
 	Port              int             `yaml:"port"`
+	MetricsPort       int             `yaml:"metricsPort"`
+	HealthPort        int             `yaml:"healthPort"`
 	TLS               ServerTLSConfig `yaml:"tls"`
 	MaxSSEConnections int             `yaml:"maxSSEConnections,omitempty"`
 }
@@ -206,7 +208,9 @@ type RBACConfig struct {
 func DefaultConfig() *Config {
 	return &Config{
 		Server: ServerConfig{
-			Port: 8443,
+			Port:        8443,
+			MetricsPort: 9090,
+			HealthPort:  8081,
 		},
 		Agent: AgentConfig{
 			KABaseURL:     "http://localhost:8080",
@@ -299,6 +303,15 @@ func Load(data []byte) (*Config, error) {
 func (c *Config) Validate() error {
 	if c.Server.Port < 1024 || c.Server.Port > 65535 {
 		return fmt.Errorf("server.port must be 1024-65535 (non-privileged), got %d", c.Server.Port)
+	}
+	if c.Server.MetricsPort < 1024 || c.Server.MetricsPort > 65535 {
+		return fmt.Errorf("server.metricsPort must be 1024-65535 (non-privileged), got %d", c.Server.MetricsPort)
+	}
+	if c.Server.HealthPort < 1024 || c.Server.HealthPort > 65535 {
+		return fmt.Errorf("server.healthPort must be 1024-65535 (non-privileged), got %d", c.Server.HealthPort)
+	}
+	if err := validatePortsDistinct(c.Server.Port, c.Server.MetricsPort, c.Server.HealthPort); err != nil {
+		return err
 	}
 	if c.Agent.KABaseURL == "" {
 		return fmt.Errorf("agent.kaBaseURL is required")
@@ -610,6 +623,19 @@ func (c *Config) validateTLSPaths() error {
 		if _, err := os.Stat(p.path); err != nil {
 			return fmt.Errorf("%s: CA file %q is not accessible: %w", p.field, p.path, err)
 		}
+	}
+	return nil
+}
+
+func validatePortsDistinct(apiPort, metricsPort, healthPort int) error {
+	if apiPort == metricsPort {
+		return fmt.Errorf("server.port and server.metricsPort must be distinct, both are %d", apiPort)
+	}
+	if apiPort == healthPort {
+		return fmt.Errorf("server.port and server.healthPort must be distinct, both are %d", apiPort)
+	}
+	if metricsPort == healthPort {
+		return fmt.Errorf("server.metricsPort and server.healthPort must be distinct, both are %d", metricsPort)
 	}
 	return nil
 }
