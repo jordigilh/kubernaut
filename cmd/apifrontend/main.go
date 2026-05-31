@@ -60,11 +60,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tlswiring"
 )
 
-const (
-	configPath     = "/etc/apifrontend/config.yaml"
-	defaultHealthz = ":8081"
-	defaultMetrics = ":9090"
-)
+const configPath = "/etc/apifrontend/config.yaml"
 
 func main() { os.Exit(run()) }
 
@@ -280,9 +276,12 @@ func run() int {
 		IdleTimeout:       120 * time.Second,
 	}
 
+	healthAddr := fmt.Sprintf(":%d", cfg.Server.HealthPort)
+	metricsAddr := fmt.Sprintf(":%d", cfg.Server.MetricsPort)
+
 	healthMux := buildHealthMux(handler.AllReady(depsReady, authReady, sessInfra.Healthy.Load), draining)
 	healthServer := &http.Server{
-		Addr:              defaultHealthz,
+		Addr:              healthAddr,
 		Handler:           healthMux,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
@@ -290,7 +289,7 @@ func run() int {
 	metricsMux := http.NewServeMux()
 	metricsMux.Handle("/metrics", metricsReg.Handler())
 	metricsServer := &http.Server{
-		Addr:              defaultMetrics,
+		Addr:              metricsAddr,
 		Handler:           metricsMux,
 		ReadHeaderTimeout: 5 * time.Second,
 	}

@@ -247,7 +247,7 @@ metadata:
     {{- include "kubernaut.labels" . | nindent 4 }}
   annotations:
     prometheus.io/scrape: "true"
-    prometheus.io/port: "9090"
+    prometheus.io/port: "{{ .Values.apifrontend.config.server.metricsPort | default 9090 }}"
 spec:
   type: ClusterIP
   ports:
@@ -255,10 +255,10 @@ spec:
       port: {{ .Values.apifrontend.config.server.httpPort | default 8443 }}
       targetPort: https
     - name: metrics
-      port: 9090
+      port: {{ .Values.apifrontend.config.server.metricsPort | default 9090 }}
       targetPort: metrics
     - name: health
-      port: 8081
+      port: {{ .Values.apifrontend.config.server.healthPort | default 8081 }}
       targetPort: health
   selector:
     app: apifrontend
