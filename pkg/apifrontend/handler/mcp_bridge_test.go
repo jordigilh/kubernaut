@@ -626,8 +626,8 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 	})
 
 	// AF triage tools (kubectl_get, kubectl_list, kubectl_list_events,
-	// af_check_existing_rr, af_create_rr) are internal to AF's LLM agent
-	// (ADK path only) and not exposed via MCP — no bridge dispatch tests needed.
+	// kubernaut_check_existing_remediation, kubernaut_remediate) are internal
+	// to AF's LLM agent (ADK path only) and not exposed via MCP — no bridge dispatch tests needed.
 
 	Context("Error paths", func() {
 		It("UT-AF-B-021: tool call with nil K8sClient returns error", func() {

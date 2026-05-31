@@ -94,11 +94,11 @@ var _ = Describe("Root Agent", func() {
 			Expect(tools).NotTo(BeEmpty())
 		})
 
-		It("UT-AF-100-002: registers all 26 tools (#1332: kubernaut_takeover removed)", func() {
+		It("UT-AF-100-002: registers all 25 tools (#1332: kubernaut_takeover removed, af_create_rr retired)", func() {
 			cfg := agentpkg.DefaultTestConfig()
 			_, tools, err := agentpkg.NewRootAgent(cfg)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(tools).To(HaveLen(26))
+			Expect(tools).To(HaveLen(25))
 		})
 
 		It("UT-AF-100-003: with nil model config returns error", func() {
@@ -152,7 +152,7 @@ var _ = Describe("Root Agent", func() {
 			cfg := agentpkg.DefaultTestConfig()
 			_, tools, err := agentpkg.NewRootAgent(cfg)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(tools).To(HaveLen(26))
+			Expect(tools).To(HaveLen(25))
 		})
 
 		It("UT-AF-100-008: kubernaut_present_decision is marked IsLongRunning", func() {
@@ -193,7 +193,7 @@ var _ = Describe("Root Agent", func() {
 			cfg := agentpkg.DefaultTestConfig()
 			_, tools, err := agentpkg.NewRootAgent(cfg)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(tools).To(HaveLen(26), "AC 7: all 26 tools must be returned unfiltered (#1332)")
+			Expect(tools).To(HaveLen(25), "AC 7: all 25 tools must be returned unfiltered (#1332)")
 		})
 
 		It("IT-AF-1234-W08: buildToolList includes 5 interactive investigation tools (#1332)", func() {
@@ -626,24 +626,6 @@ var _ = Describe("Root Agent", func() {
 			cfg := agentpkg.DefaultTestConfig()
 			cfg = cfg.Apply(agentpkg.WithInstruction("Custom prompt"))
 			Expect(cfg.Instruction).To(Equal("Custom prompt"))
-		})
-
-		It("WithKABaseURL overrides KA URL", func() {
-			cfg := agentpkg.DefaultTestConfig()
-			cfg = cfg.Apply(agentpkg.WithKABaseURL("http://ka:9999"))
-			Expect(cfg.KABaseURL).To(Equal("http://ka:9999"))
-		})
-
-		It("WithKAMCPEndpoint overrides KA MCP URL", func() {
-			cfg := agentpkg.DefaultTestConfig()
-			cfg = cfg.Apply(agentpkg.WithKAMCPEndpoint("http://ka:9999/mcp/"))
-			Expect(cfg.KAMCPEndpoint).To(Equal("http://ka:9999/mcp/"))
-		})
-
-		It("WithDSBaseURL overrides DS URL", func() {
-			cfg := agentpkg.DefaultTestConfig()
-			cfg = cfg.Apply(agentpkg.WithDSBaseURL("http://ds:7777"))
-			Expect(cfg.DSBaseURL).To(Equal("http://ds:7777"))
 		})
 
 		It("NewRootAgent accepts functional options", func() {

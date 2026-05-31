@@ -32,12 +32,6 @@ type AgentConfig struct {
 	InstructionProvider llmagent.InstructionProvider
 	// SkipTools disables tool registration (for testing error paths).
 	SkipTools bool
-	// KABaseURL is the base URL for the Kubernaut Agent REST API.
-	KABaseURL string
-	// KAMCPEndpoint is the MCP endpoint URL for KA.
-	KAMCPEndpoint string
-	// DSBaseURL is the base URL for the Data Store API.
-	DSBaseURL string
 	// K8sClient is the dynamic K8s client for CRD operations.
 	K8sClient dynamic.Interface
 	// DSClient is the Data Store client for workflow/history queries.
@@ -70,8 +64,9 @@ type AgentConfig struct {
 	RESTMapper meta.RESTMapper
 	// Namespace is the resolved operational namespace for CRD creation.
 	Namespace string
-	// Triager performs severity triage for kubernaut_remediate. If nil, severity
-	// defaults to "medium" without source attribution.
+	// Triager performs severity triage for kubernaut_remediate and
+	// kubernaut_investigate (when auto-creating RRs from namespace/kind/name).
+	// If nil, severity defaults to "medium" without source attribution.
 	Triager *severity.Triager
 	// SessionService is the CRD session service for deferred CRD materialization (G6).
 	// When non-nil, used by kubernaut_investigate to create the InvestigationSession
@@ -91,28 +86,10 @@ func WithInstruction(instruction string) Option {
 	return func(c *AgentConfig) { c.Instruction = instruction }
 }
 
-// WithKABaseURL sets the KA REST API base URL.
-func WithKABaseURL(url string) Option {
-	return func(c *AgentConfig) { c.KABaseURL = url }
-}
-
-// WithKAMCPEndpoint sets the KA MCP endpoint URL.
-func WithKAMCPEndpoint(url string) Option {
-	return func(c *AgentConfig) { c.KAMCPEndpoint = url }
-}
-
-// WithDSBaseURL sets the Data Store API base URL.
-func WithDSBaseURL(url string) Option {
-	return func(c *AgentConfig) { c.DSBaseURL = url }
-}
-
 // DefaultTestConfig returns a config suitable for unit tests with placeholder values.
 func DefaultTestConfig() AgentConfig {
 	return AgentConfig{
-		Instruction:   defaultInstruction(),
-		KABaseURL:     "http://localhost:8080",
-		KAMCPEndpoint: "http://localhost:8080/api/v1/mcp/",
-		DSBaseURL:     "http://localhost:9090",
+		Instruction: defaultInstruction(),
 	}
 }
 

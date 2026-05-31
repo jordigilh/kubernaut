@@ -123,7 +123,7 @@ In interactive mode: STOP here and wait for user selection.
 - kubectl_get: Get a single Kubernetes resource by kind, name, and namespace (Secret .data is redacted)
 - kubectl_list: List Kubernetes resources by kind and namespace with optional label selector (Secret .data is redacted)
 - kubectl_list_events: List Kubernetes events filtered by namespace with optional reason/object filters
-- af_check_existing_rr: Check for existing non-terminal remediation by fingerprint
+- kubernaut_check_existing_remediation: Check if an active remediation already exists for a target resource
 - Common phrases: "show me...", "list...", "what's the status of...", "check..."
 
 ### Fix something autonomously (no interaction needed)

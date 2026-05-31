@@ -75,7 +75,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			_, err := tools.HandleInvestigationMCPWithRegistry(
 				context.Background(), mockMCP, nil, "kubernaut-system",
 				tools.InvestigateMCPArgs{},
-				nil, nil, nil, true, nil, "", nil,
+				nil, nil, nil, true, nil, "", nil, nil,
 			)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("rr_id or namespace/kind/name required"))
@@ -86,7 +86,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			_, err := tools.HandleInvestigationMCPWithRegistry(
 				context.Background(), mockMCP, nil, "kubernaut-system",
 				tools.InvestigateMCPArgs{Namespace: "prod"},
-				nil, nil, nil, true, nil, "", nil,
+				nil, nil, nil, true, nil, "", nil, nil,
 			)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("kind and name required"))
@@ -123,7 +123,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 					Kind:      "Deployment",
 					Name:      "web-app",
 				},
-				nil, nil, nil, true, nil, "", nil,
+				nil, nil, nil, true, nil, "", nil, nil,
 			)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.SessionID).To(Equal("sess-int-001"))
@@ -145,7 +145,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 					Kind:      "Deployment",
 					Name:      "web-fail",
 				},
-				nil, nil, nil, true, nil, "", nil,
+				nil, nil, nil, true, nil, "", nil, nil,
 			)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("k8s"))
@@ -168,7 +168,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 					Kind:      "Deployment",
 					Name:      "web-sa",
 				},
-				nil, nil, nil, true, nil, "", nil,
+				nil, nil, nil, true, nil, "", nil, nil,
 			)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("service account"))
@@ -201,7 +201,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			result, err := tools.HandleInvestigationMCPWithRegistry(
 				ctx, mockMCP, k8sClient, "kubernaut-system",
 				tools.InvestigateMCPArgs{RRID: "rr-existing-001"},
-				nil, nil, nil, true, nil, "", nil,
+				nil, nil, nil, true, nil, "", nil, nil,
 			)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.SessionID).To(Equal("sess-exist-001"))
@@ -228,7 +228,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 					Kind:      "Deployment",
 					Name:      "web-is-fail",
 				},
-				nil, nil, nil, true, nil, "", nil,
+				nil, nil, nil, true, nil, "", nil, nil,
 			)
 			// If IS creation fails, the tool should return an error
 			// and the RR should be cleaned up (deleted).
@@ -265,7 +265,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			result, err := tools.HandleInvestigationMCPWithRegistry(
 				context.Background(), mockMCP, nil, "",
 				tools.InvestigateMCPArgs{RRID: "rr-block-001"},
-				nil, nil, nil, true, nil, "", nil,
+				nil, nil, nil, true, nil, "", nil, nil,
 			)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Status).To(Equal("completed"))
@@ -300,7 +300,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			_, err := tools.HandleInvestigationMCPWithRegistry(
 				shortCtx(ctx), mockMCP, fakeK8s, "kubernaut-system",
 				tools.InvestigateMCPArgs{RRID: "rr-takeover-001"},
-				nil, nil, nil, false, nil, "", recorder,
+				nil, nil, nil, false, nil, "", recorder, nil,
 			)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -333,7 +333,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			_, err := tools.HandleInvestigationMCPWithRegistry(
 				shortCtx(ctx), mockMCP, fakeK8s, "kubernaut-system",
 				tools.InvestigateMCPArgs{RRID: "rr-fresh-001"},
-				nil, nil, nil, false, nil, "", recorder,
+				nil, nil, nil, false, nil, "", recorder, nil,
 			)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -369,7 +369,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			_, err := tools.HandleInvestigationMCPWithRegistry(
 				shortCtx(ctx), mockMCP, fakeK8s, "kubernaut-system",
 				tools.InvestigateMCPArgs{RRID: "rr-pending-001"},
-				nil, nil, nil, false, nil, "", recorder,
+				nil, nil, nil, false, nil, "", recorder, nil,
 			)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -400,7 +400,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			_, err := tools.HandleInvestigationMCPWithRegistry(
 				shortCtx(ctx), mockMCP, fakeK8s, "kubernaut-system",
 				tools.InvestigateMCPArgs{RRID: "rr-corr-001"},
-				nil, nil, nil, false, nil, "", recorder,
+				nil, nil, nil, false, nil, "", recorder, nil,
 			)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -430,7 +430,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			_, err := tools.HandleInvestigationMCPWithRegistry(
 				shortCtx(ctx), mockMCP, fakeK8s, "kubernaut-system",
 				tools.InvestigateMCPArgs{RRID: "rr-nil-sig-001"},
-				nil, nil, nil, false, nil, "", nil,
+				nil, nil, nil, false, nil, "", nil, nil,
 			)
 			Expect(err).NotTo(HaveOccurred())
 		})

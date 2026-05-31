@@ -22,8 +22,7 @@ var toolStatusMessages = map[string]string{
 	"kubernaut_select_workflow":       "Selecting remediation workflow %s...",
 	"kubernaut_watch":                 "Watching remediation progress...",
 	"kubernaut_remediate":             "Creating remediation request...",
-	"af_create_rr":                    "Creating remediation request...",
-	"af_check_existing_rr":            "Checking for existing remediation...",
+	"kubernaut_check_existing_remediation": "Checking for existing remediation...",
 	"kubectl_list_events":             "Fetching cluster events...",
 	"kubectl_get":                     "Fetching resource details...",
 	"kubectl_list":                    "Listing cluster resources...",
@@ -47,7 +46,6 @@ var keyToolSummarizers = map[string]func(map[string]any) string{
 	"kubernaut_select_workflow":      summarizeSelectWorkflow,
 	"kubernaut_watch":                summarizeWatch,
 	"kubernaut_remediate":            summarizeCreateRR,
-	"af_create_rr":                   summarizeCreateRR,
 }
 
 // buildPartConverter returns a GenAIPartConverter that transforms raw ADK

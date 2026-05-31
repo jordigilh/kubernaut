@@ -25,7 +25,6 @@ import (
 
 // NewRootAgent creates the ADK root agent with all registered tools.
 // Returns the agent, the full tool list (for RBAC filtering), and any error.
-// The agent is configured without a model (model wiring is deferred to PR5 launcher).
 //
 //nolint:gocritic // hugeParam: value receiver intentional for immutable copy semantics
 func NewRootAgent(cfg AgentConfig, opts ...Option) (agent.Agent, []tool.Tool, error) {
@@ -115,7 +114,7 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 		{"cancel_remediation", func() (tool.Tool, error) { return tools.NewCancelRemediationTool(k8s, cfg.Namespace) }},
 		{"watch", func() (tool.Tool, error) { return tools.NewWatchTool(k8s) }},
 		{"investigate", func() (tool.Tool, error) {
-			return tools.NewInvestigateMCPTool(dedicatedC, k8s, cfg.Namespace, cfg.Auditor, cfg.InvestigationRegistry, nil, cfg.Pool, buildAgentISSignaler(cfg))
+			return tools.NewInvestigateMCPTool(dedicatedC, k8s, cfg.Namespace, cfg.Auditor, cfg.InvestigationRegistry, nil, cfg.Pool, buildAgentISSignaler(cfg), cfg.Triager)
 		}},
 		{"discover_workflows", func() (tool.Tool, error) { return tools.NewDiscoverWorkflowsTool(mcpC) }},
 		{"select_workflow", func() (tool.Tool, error) { return tools.NewSelectWorkflowTool(mcpC, cfg.Auditor) }},
@@ -135,9 +134,8 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 		{"status", func() (tool.Tool, error) { return tools.NewStatusTool(mcpC, cfg.Auditor) }},
 		{"reconnect", func() (tool.Tool, error) { return tools.NewReconnectTool(mcpC, cfg.Auditor) }},
 		// RR tools — AF SA writes AF-owned CRDs
-		{"check_existing_rr", func() (tool.Tool, error) { return tools.NewCheckExistingRRTool(k8s, cfg.Namespace) }},
-		{"create_rr", func() (tool.Tool, error) {
-			return tools.NewCreateRRTool(k8s, cfg.Namespace, cfg.Triager, cfg.Auditor)
+		{"check_existing_remediation", func() (tool.Tool, error) {
+			return tools.NewCheckExistingRemediationTool(k8s, cfg.Namespace)
 		}},
 		{"remediate", func() (tool.Tool, error) {
 			return tools.NewRemediateTool(k8s, cfg.Namespace, cfg.Triager, cfg.Auditor)

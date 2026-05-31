@@ -177,8 +177,7 @@ var _ = Describe("RBAC tool name alignment", func() {
 		"kubectl_get":                       true,
 		"kubectl_list":                      true,
 		"kubectl_list_events":               true,
-		"af_check_existing_rr":              true,
-		"af_create_rr":                      true,
+		"kubernaut_check_existing_remediation": true,
 		"kubernaut_remediate":               true,
 	}
 

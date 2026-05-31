@@ -29,8 +29,14 @@ type WorkflowSummary struct {
 	Kind        string `json:"kind,omitempty"`
 }
 
+// ErrDSUnavailable is returned when the Data Store client is nil.
+var ErrDSUnavailable = fmt.Errorf("datastorage service unavailable")
+
 // HandleListWorkflows implements the kubernaut_list_workflows logic.
 func HandleListWorkflows(ctx context.Context, client ds.Client, args ListWorkflowsArgs) (ListWorkflowsResult, error) {
+	if client == nil {
+		return ListWorkflowsResult{}, ErrDSUnavailable
+	}
 	workflows, err := client.ListWorkflows(ctx, ds.ListWorkflowsOpts{Kind: args.Kind})
 	if err != nil {
 		return ListWorkflowsResult{}, fmt.Errorf("querying workflow catalog: %w", err)
@@ -81,6 +87,9 @@ type GetRemediationHistoryResult struct {
 
 // HandleGetRemediationHistory implements the kubernaut_get_remediation_history logic.
 func HandleGetRemediationHistory(ctx context.Context, client ds.Client, args GetRemediationHistoryArgs) (GetRemediationHistoryResult, error) {
+	if client == nil {
+		return GetRemediationHistoryResult{}, ErrDSUnavailable
+	}
 	history, err := client.GetRemediationHistory(ctx, ds.HistoryOpts{
 		Namespace: args.Namespace, Kind: args.Kind, Name: args.Name, Since: args.Since,
 	})
@@ -124,6 +133,9 @@ type GetEffectivenessResult struct {
 
 // HandleGetEffectiveness implements the kubernaut_get_effectiveness logic.
 func HandleGetEffectiveness(ctx context.Context, client ds.Client, args GetEffectivenessArgs) (GetEffectivenessResult, error) {
+	if client == nil {
+		return GetEffectivenessResult{}, ErrDSUnavailable
+	}
 	report, err := client.GetEffectiveness(ctx, ds.EffectivenessOpts{
 		WorkflowID: args.WorkflowID, Namespace: args.Namespace,
 	})
@@ -169,6 +181,9 @@ type GetAuditTrailResult struct {
 
 // HandleGetAuditTrail implements the kubernaut_get_audit_trail logic.
 func HandleGetAuditTrail(ctx context.Context, client ds.Client, args GetAuditTrailArgs) (GetAuditTrailResult, error) {
+	if client == nil {
+		return GetAuditTrailResult{}, ErrDSUnavailable
+	}
 	events, err := client.GetAuditTrail(ctx, ds.AuditTrailOpts{
 		RRID: args.RRID, EventType: args.EventType,
 	})

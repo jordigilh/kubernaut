@@ -112,7 +112,7 @@ var _ = Describe("Investigation Session Handoff (#1332)", Label("integration", "
 			result, err := tools.HandleInvestigationMCPWithRegistry(
 				context.Background(), mockMCP, nil, "",
 				tools.InvestigateMCPArgs{RRID: "rr-it-1332-010"},
-				nil, registry, nil, true, pool, "alice", nil,
+				nil, registry, nil, true, pool, "alice", nil, nil,
 			)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Status).To(Equal("completed"))
@@ -198,7 +198,7 @@ var _ = Describe("Investigation Session Handoff (#1332)", Label("integration", "
 			_, err := tools.HandleInvestigationMCPWithRegistry(
 				context.Background(), mockMCP, nil, "",
 				tools.InvestigateMCPArgs{RRID: "rr-it-1332-020"},
-				nil, registry, nil, true, pool, "bob", nil,
+				nil, registry, nil, true, pool, "bob", nil, nil,
 			)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -250,7 +250,7 @@ var _ = Describe("Investigation Session Handoff (#1332)", Label("integration", "
 			result, err := tools.HandleInvestigationMCPWithRegistry(
 				context.Background(), mockMCP, nil, "",
 				tools.InvestigateMCPArgs{RRID: "rr-it-1332-030"},
-				nil, nil, nil, true, nil, "", nil,
+				nil, nil, nil, true, nil, "", nil, nil,
 			)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Status).To(Equal("completed"))

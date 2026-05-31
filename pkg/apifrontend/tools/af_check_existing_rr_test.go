@@ -45,7 +45,7 @@ func newUnstructuredRR(ns, name, phase, targetKind, targetName string) *unstruct
 	}
 }
 
-var _ = Describe("af_check_existing_rr", func() {
+var _ = Describe("kubernaut_check_existing_remediation", func() {
 	rrGVR := schema.GroupVersionResource{Group: "kubernaut.ai", Version: "v1alpha1", Resource: "remediationrequests"}
 
 	It("UT-AF-052-040: finds active RR for matching fingerprint", func() {

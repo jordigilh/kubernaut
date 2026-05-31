@@ -20,7 +20,7 @@ var _ = Describe("Tool Constructors", func() {
 		{"kubernaut_cancel_remediation", func() (interface{ Name() string }, error) { return tools.NewCancelRemediationTool(nil, "") }},
 		{"kubernaut_watch", func() (interface{ Name() string }, error) { return tools.NewWatchTool(nil) }},
 		{"kubernaut_investigate", func() (interface{ Name() string }, error) {
-			return tools.NewInvestigateMCPTool(nil, nil, "", nil, nil, nil, nil, nil)
+			return tools.NewInvestigateMCPTool(nil, nil, "", nil, nil, nil, nil, nil, nil)
 		}},
 		{"kubernaut_select_workflow", func() (interface{ Name() string }, error) { return tools.NewSelectWorkflowTool(nil, nil) }},
 		{"kubernaut_present_decision", func() (interface{ Name() string }, error) { return tools.NewPresentDecisionTool() }},

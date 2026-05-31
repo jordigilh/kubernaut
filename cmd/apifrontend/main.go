@@ -23,12 +23,15 @@ import (
 	"gopkg.in/yaml.v3"
 	authorizationv1 "k8s.io/api/authorization/v1"
 	coordinationv1 "k8s.io/api/coordination/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/discovery/cached/memory"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/restmapper"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -96,6 +99,9 @@ func run() int {
 		logger.Error(err, "invalid config")
 		return 1
 	}
+
+	cfg.Session.Namespace = agentpkg.ResolveNamespace(cfg.Session.Namespace, agentpkg.DefaultNamespaceFile)
+	logger.Info("operational namespace resolved", "namespace", cfg.Session.Namespace)
 
 	restCfg, err := ctrl.GetConfig()
 	if err != nil {
@@ -442,6 +448,7 @@ type backendDeps struct {
 	k8sDynClient          dynamic.Interface
 	K8sCB                 *resilience.K8sCircuitBreaker
 	InvestigationRegistry *tools.MonitorRegistry
+	Mapper                meta.RESTMapper
 }
 
 // K8sClient returns the pod service-account scoped dynamic K8s client,
@@ -582,6 +589,14 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 			})
 			deps.k8sDynClient = resilience.NewResilientDynamicClient(inner, deps.K8sCB)
 			logger.Info("K8s dynamic client initialized with circuit breaker")
+
+			disc, discErr := discovery.NewDiscoveryClientForConfig(restCfg)
+			if discErr != nil {
+				logger.Error(discErr, "K8s discovery client unavailable — CRD kind resolution will use static table only")
+			} else {
+				deps.Mapper = restmapper.NewDeferredDiscoveryRESTMapper(memory.NewMemCacheClient(disc))
+				logger.Info("K8s RESTMapper initialized for CRD kind resolution")
+			}
 		}
 	}
 
@@ -640,6 +655,7 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 		}
 
 		var triagerOpts []severity.TriagerOption
+		triagerOpts = append(triagerOpts, severity.WithAuditor(auditor))
 		if deps.k8sDynClient != nil {
 			triagerOpts = append(triagerOpts, severity.WithPodResolver(
 				severity.NewK8sPodResolver(deps.k8sDynClient, logger.WithName("pod-resolver")),
@@ -667,7 +683,6 @@ func buildMCPHandler(cfg *config.Config, deps *backendDeps, sessInfra *sessionIn
 		KAMCPClient:           deps.MCPClient,
 		KADedicatedClient:     deps.DedicatedClient,
 		InvestigationRegistry: deps.InvestigationRegistry,
-		Pool:                  deps.Pool,
 		DSClient:           deps.DSClient,
 		Triager:            deps.Triager,
 		Authorizer:         authorizer,
@@ -729,12 +744,11 @@ func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps,
 	if sessInfra != nil {
 		sessionSvcForAgent = sessInfra.SessionService
 	}
-	resolvedNS := agentpkg.ResolveNamespace(cfg.Session.Namespace, agentpkg.DefaultNamespaceFile)
 	rootAgent, _, err := agentpkg.NewRootAgent(agentpkg.AgentConfig{
-		Instruction:         agentpkg.BuildInstruction(resolvedNS),
-		InstructionProvider: agentpkg.NewInstructionProvider(resolvedNS),
+		Instruction:         agentpkg.BuildInstruction(cfg.Session.Namespace),
+		InstructionProvider: agentpkg.NewInstructionProvider(cfg.Session.Namespace),
 		LLMModel:         llmModel,
-		Namespace:        resolvedNS,
+		Namespace:        cfg.Session.Namespace,
 		K8sClient:        deps.K8sClient(),
 		DSClient:         deps.DSClient,
 		MCPClient:        deps.MCPClient,
@@ -744,6 +758,7 @@ func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps,
 		Authorizer:            authorizer,
 		Auditor:          auditor,
 		Triager:          deps.Triager,
+		RESTMapper:       deps.Mapper,
 		SessionService:   sessionSvcForAgent,
 		ToolCallsTotal:   metricsReg.ToolCallsTotal,
 		ToolCallDuration: metricsReg.ToolCallDuration,
