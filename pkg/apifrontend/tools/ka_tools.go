@@ -224,6 +224,7 @@ func HandleSelectWorkflow(ctx context.Context, mcpClient ka.MCPClient, args Sele
 			Detail: map[string]string{
 				"rr_id":       args.RRID,
 				"workflow_id": args.WorkflowID,
+				"decision":    "accept",
 				"status":      result.Status,
 			},
 		})
