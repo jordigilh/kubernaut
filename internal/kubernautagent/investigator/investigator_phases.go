@@ -156,6 +156,22 @@ func LogLabelOverrideOrRejection(logger logr.Logger, signal katypes.SignalContex
 	}
 }
 
+// SyncSignalAPIVersionFromRCA ensures the signal carries the RCA target's
+// apiVersion when the signal's own ResourceAPIVersion is empty. This is
+// required for workflow discovery tools (list_available_actions, list_workflows)
+// to produce a full GVK component filter (e.g. "apps/v1/Deployment") instead
+// of falling back to the bare kind ("deployment"), which fails to match
+// catalog labels that store components in GVK format.
+//
+// The signal's existing apiVersion is never overridden — only populated when
+// absent. Value semantics: the original signal is not modified.
+func SyncSignalAPIVersionFromRCA(signal katypes.SignalContext, target katypes.RemediationTarget) katypes.SignalContext {
+	if signal.ResourceAPIVersion == "" && target.APIVersion != "" {
+		signal.ResourceAPIVersion = target.APIVersion
+	}
+	return signal
+}
+
 // ApplySignalLabelOverrides returns a copy of signal with ResourceKind,
 // ResourceName, and ResourceAPIVersion overridden by corresponding
 // target_resource_* signal labels, when present and valid per FedRAMP SI-10.

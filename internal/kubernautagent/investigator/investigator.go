@@ -328,13 +328,15 @@ func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal
 				"kind", rcaResult.RemediationTarget.Kind, "correlation_id", correlationID)
 		} else if !ambiguous && len(gvrs) == 1 {
 			rcaResult.RemediationTarget.APIVersion = gvrToAPIVersion(gvrs[0])
-			signal.ResourceAPIVersion = rcaResult.RemediationTarget.APIVersion
 			inv.logger.Info("RunWorkflowDiscoveryFromRCA: auto-resolved apiVersion for non-ambiguous kind",
 				"kind", rcaResult.RemediationTarget.Kind,
 				"api_version", rcaResult.RemediationTarget.APIVersion,
 				"correlation_id", correlationID)
 		}
 	}
+
+	signal = SyncSignalAPIVersionFromRCA(signal, rcaResult.RemediationTarget)
+
 	inv.logger.Info("RunWorkflowDiscoveryFromRCA: RCA target state",
 		"rca_target_kind", rcaResult.RemediationTarget.Kind,
 		"rca_target_api_version", rcaResult.RemediationTarget.APIVersion,

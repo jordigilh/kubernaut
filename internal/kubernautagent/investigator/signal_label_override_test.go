@@ -598,3 +598,71 @@ var _ = Describe("TP-1051: target_resource_api_version label override and isVali
 		})
 	})
 })
+
+var _ = Describe("SyncSignalAPIVersionFromRCA — signal/RCA apiVersion reconciliation", func() {
+
+	Describe("UT-KA-WD-001: signal missing apiVersion, RCA target has it", func() {
+		It("should copy RCA target apiVersion to signal [BR-WORKFLOW-004]", func() {
+			signal := katypes.SignalContext{
+				ResourceKind: "Deployment",
+			}
+			target := katypes.RemediationTarget{
+				Kind:       "Deployment",
+				APIVersion: "apps/v1",
+			}
+			result := investigator.SyncSignalAPIVersionFromRCA(signal, target)
+			Expect(result.ResourceAPIVersion).To(Equal("apps/v1"),
+				"signal must inherit RCA target apiVersion for workflow GVK matching")
+			Expect(result.ComponentGVK()).To(Equal("apps/v1/Deployment"),
+				"ComponentGVK must produce full GVK after sync")
+		})
+	})
+
+	Describe("UT-KA-WD-002: signal already has apiVersion", func() {
+		It("should not override existing signal apiVersion [BR-WORKFLOW-004]", func() {
+			signal := katypes.SignalContext{
+				ResourceKind:       "Deployment",
+				ResourceAPIVersion: "apps/v1",
+			}
+			target := katypes.RemediationTarget{
+				Kind:       "Deployment",
+				APIVersion: "extensions/v1beta1",
+			}
+			result := investigator.SyncSignalAPIVersionFromRCA(signal, target)
+			Expect(result.ResourceAPIVersion).To(Equal("apps/v1"),
+				"signal's own apiVersion takes precedence over RCA target")
+		})
+	})
+
+	Describe("UT-KA-WD-003: both signal and RCA target missing apiVersion", func() {
+		It("should leave signal apiVersion empty [BR-WORKFLOW-004]", func() {
+			signal := katypes.SignalContext{
+				ResourceKind: "Deployment",
+			}
+			target := katypes.RemediationTarget{
+				Kind: "Deployment",
+			}
+			result := investigator.SyncSignalAPIVersionFromRCA(signal, target)
+			Expect(result.ResourceAPIVersion).To(BeEmpty(),
+				"no apiVersion to sync from RCA target")
+			Expect(result.ComponentGVK()).To(BeEmpty(),
+				"ComponentGVK must be empty without apiVersion")
+		})
+	})
+
+	Describe("UT-KA-WD-004: OCP ambiguous kind (Node) — apiVersion from RCA is critical", func() {
+		It("should sync apiVersion for Node to avoid cross-API-group mismatch [BR-WORKFLOW-004]", func() {
+			signal := katypes.SignalContext{
+				ResourceKind: "Node",
+			}
+			target := katypes.RemediationTarget{
+				Kind:       "Node",
+				APIVersion: "v1",
+			}
+			result := investigator.SyncSignalAPIVersionFromRCA(signal, target)
+			Expect(result.ResourceAPIVersion).To(Equal("v1"))
+			Expect(result.ComponentGVK()).To(Equal("v1/Node"),
+				"must distinguish core/v1 Node from other API groups with Node kind")
+		})
+	})
+})
