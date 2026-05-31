@@ -94,11 +94,11 @@ var _ = Describe("Root Agent", func() {
 			Expect(tools).NotTo(BeEmpty())
 		})
 
-		It("UT-AF-100-002: registers all 25 tools (#1332: kubernaut_takeover removed, af_create_rr retired)", func() {
+		It("UT-AF-100-002: registers all 24 tools (#1332: kubernaut_takeover removed, af_create_rr retired, list_workflows removed from agent)", func() {
 			cfg := agentpkg.DefaultTestConfig()
 			_, tools, err := agentpkg.NewRootAgent(cfg)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(tools).To(HaveLen(25))
+			Expect(tools).To(HaveLen(24))
 		})
 
 		It("UT-AF-100-003: with nil model config returns error", func() {
@@ -152,7 +152,7 @@ var _ = Describe("Root Agent", func() {
 			cfg := agentpkg.DefaultTestConfig()
 			_, tools, err := agentpkg.NewRootAgent(cfg)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(tools).To(HaveLen(25))
+			Expect(tools).To(HaveLen(24))
 		})
 
 		It("UT-AF-100-008: kubernaut_present_decision is marked IsLongRunning", func() {
@@ -193,7 +193,7 @@ var _ = Describe("Root Agent", func() {
 			cfg := agentpkg.DefaultTestConfig()
 			_, tools, err := agentpkg.NewRootAgent(cfg)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(tools).To(HaveLen(25), "AC 7: all 25 tools must be returned unfiltered (#1332)")
+			Expect(tools).To(HaveLen(24), "AC 7: all 24 tools must be returned unfiltered (#1332, list_workflows removed)")
 		})
 
 		It("IT-AF-1234-W08: buildToolList includes 5 interactive investigation tools (#1332)", func() {
