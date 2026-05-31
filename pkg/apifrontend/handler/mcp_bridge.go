@@ -376,6 +376,9 @@ func wrapTool[In any](cfg *MCPBridgeConfig, sem *semaphore.Weighted, toolName st
 			redacted := security.RedactError(err)
 			errDetail := map[string]string{"error": redacted}
 			enrichAuditFromArgs(errDetail, input)
+			if cfg.Namespace != "" {
+				errDetail["namespace"] = cfg.Namespace
+			}
 			emitAudit(ctx, cfg, toolName, audit.EventMCPToolFailed, errDetail)
 			cfg.Logger.Error(err, "tool call failed",
 				"tool", toolName, "result", resultLabel, "user", usernameFromCtx(ctx))
@@ -406,6 +409,9 @@ func wrapTool[In any](cfg *MCPBridgeConfig, sem *semaphore.Weighted, toolName st
 			"execution_duration_ms": durationMs,
 		}
 		enrichAuditFromArgs(auditDetail, input)
+		if cfg.Namespace != "" {
+			auditDetail["namespace"] = cfg.Namespace
+		}
 		emitAudit(ctx, cfg, toolName, audit.EventToolExecuted, auditDetail)
 		cfg.Logger.Info("tool call succeeded",
 			"tool", toolName,

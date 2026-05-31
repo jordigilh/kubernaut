@@ -466,23 +466,24 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 			ServerName:    "kubernaut-apifrontend",
 			ServerVersion: "v0.1.0-test",
 			Enabled:       true,
-			Bridge: &handler.MCPBridgeConfig{
-				K8sClient: fakeK8s,
-				KAMCPClient: &ka.MockMCPClient{
-					SelectWorkflowFn: func(_ context.Context, _ ka.SelectWorkflowArgs) (*ka.SelectWorkflowResult, error) {
-						return &ka.SelectWorkflowResult{Status: "selected", Message: "workflow selected"}, nil
-					},
-					StartInvestigationFn: func(_ context.Context, args ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
-						eventCh := make(chan ka.InvestigationEvent, 10)
-						return &ka.StartInvestigationResult{
-							SessionID: "test-session-123",
-							Status:    "autonomous_started",
-							Events:    eventCh,
-							Closer:    func() { close(eventCh) },
-						}, nil
-					},
+		Bridge: &handler.MCPBridgeConfig{
+			K8sClient: fakeK8s,
+			Namespace: "default",
+			KAMCPClient: &ka.MockMCPClient{
+				SelectWorkflowFn: func(_ context.Context, _ ka.SelectWorkflowArgs) (*ka.SelectWorkflowResult, error) {
+					return &ka.SelectWorkflowResult{Status: "selected", Message: "workflow selected"}, nil
 				},
-				DSClient:           newFakeDSClient(),
+				StartInvestigationFn: func(_ context.Context, args ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					eventCh := make(chan ka.InvestigationEvent, 10)
+					return &ka.StartInvestigationResult{
+						SessionID: "test-session-123",
+						Status:    "autonomous_started",
+						Events:    eventCh,
+						Closer:    func() { close(eventCh) },
+					}, nil
+				},
+			},
+			DSClient:           newFakeDSClient(),
 				Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"*"}}},
 				Auditor:            auditor,
 				ToolTimeout:        5 * time.Second,
@@ -519,14 +520,14 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 	Context("CRD tools dispatch", func() {
 		It("UT-AF-B-001: kubernaut_list_remediations dispatches correctly", func() {
 			_, body := mcpCallTool(h, sessionID, "kubernaut_list_remediations",
-				map[string]any{"namespace": "default"}, testUser)
+				map[string]any{}, testUser)
 			text := extractTextContent(body)
 			Expect(text).To(ContainSubstring("test-rr"))
 		})
 
 		It("UT-AF-B-002: kubernaut_get_remediation dispatches correctly", func() {
 			_, body := mcpCallTool(h, sessionID, "kubernaut_get_remediation",
-				map[string]any{"namespace": "default", "name": "test-rr"}, testUser)
+				map[string]any{"name": "test-rr"}, testUser)
 			text := extractTextContent(body)
 			Expect(text).To(ContainSubstring("test-rr"))
 			Expect(text).To(ContainSubstring("Investigating"))
@@ -534,21 +535,21 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 
 		It("UT-AF-B-004: kubernaut_approve dispatches correctly", func() {
 			_, body := mcpCallTool(h, sessionID, "kubernaut_approve",
-				map[string]any{"namespace": "default", "rar_name": "test-rar", "decision": "approved"}, testUser)
+				map[string]any{"rar_name": "test-rar", "decision": "approved"}, testUser)
 			text := extractTextContent(body)
 			Expect(text).To(ContainSubstring("approved"))
 		})
 
 		It("UT-AF-B-005: kubernaut_cancel_remediation dispatches correctly", func() {
 			_, body := mcpCallTool(h, sessionID, "kubernaut_cancel_remediation",
-				map[string]any{"namespace": "default", "name": "test-rr"}, testUser)
+				map[string]any{"name": "test-rr"}, testUser)
 			text := extractTextContent(body)
 			Expect(text).To(ContainSubstring("Cancelled"))
 		})
 
 		It("UT-AF-B-006: kubernaut_watch dispatches and returns events", func() {
 			_, body := mcpCallTool(h, sessionID, "kubernaut_watch",
-				map[string]any{"namespace": "default", "name": "test-rr"}, testUser)
+				map[string]any{"name": "test-rr"}, testUser)
 			text := extractTextContent(body)
 			Expect(text).To(ContainSubstring("Completed"))
 		})
@@ -605,7 +606,7 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 
 		It("UT-AF-B-012: kubernaut_get_remediation_history dispatches correctly", func() {
 			_, body := mcpCallTool(h, sessionID, "kubernaut_get_remediation_history",
-				map[string]any{"namespace": "default"}, testUser)
+				map[string]any{}, testUser)
 			text := extractTextContent(body)
 			Expect(text).To(ContainSubstring("remediations"))
 		})
@@ -637,7 +638,7 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         nil,
-
+					Namespace:         "default",
 					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"*"}}},
 					Auditor:            auditor,
 					ToolTimeout:        2 * time.Second,
@@ -649,7 +650,7 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 			sid := mcpInitialize(nilH, testUser)
 
 			_, body := mcpCallTool(nilH, sid, "kubernaut_list_remediations",
-				map[string]any{"namespace": "default"}, testUser)
+				map[string]any{}, testUser)
 			Expect(isErrorResult(body)).To(BeTrue())
 			text := extractTextContent(body)
 			Expect(text).To(ContainSubstring("not available"))
@@ -699,6 +700,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
+					Namespace:         "default",
 
 					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"*"}}},
 					Auditor:            auditor,
@@ -711,7 +713,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 			Expect(err).NotTo(HaveOccurred())
 
 			sid := mcpInitialize(h, nil)
-			_, body := mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, nil)
+			_, body := mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{}, nil)
 			Expect(isErrorResult(body)).To(BeTrue())
 			text := extractTextContent(body)
 			Expect(text).To(ContainSubstring("authentication required"))
@@ -724,6 +726,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
+					Namespace:         "default",
 
 					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"*"}}},
 					Auditor:            auditor,
@@ -738,7 +741,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 			noUser := &auth.UserIdentity{Username: "anon", Groups: []string{"viewer"}, Issuer: "test"}
 			sid := mcpInitialize(h, noUser)
 
-			_, body := mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, noUser)
+			_, body := mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{}, noUser)
 			Expect(isErrorResult(body)).To(BeTrue())
 			text := extractTextContent(body)
 			Expect(text).To(ContainSubstring("permission denied"))
@@ -751,6 +754,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
+					Namespace:         "default",
 
 					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"kubernaut_list_remediations"}}},
 					Auditor:            auditor,
@@ -764,7 +768,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 			user := &auth.UserIdentity{Username: "operator", Groups: []string{"sre"}, Issuer: "test"}
 			sid := mcpInitialize(h, user)
 
-			_, body := mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
+			_, body := mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{}, user)
 			Expect(isErrorResult(body)).To(BeFalse())
 		})
 
@@ -775,6 +779,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
+					Namespace:         "default",
 
 					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"kubernaut_list_remediations"}}},
 					Auditor:            auditor,
@@ -789,7 +794,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 			user := &auth.UserIdentity{Username: "dev", Groups: []string{"developer"}, Issuer: "test"}
 			sid := mcpInitialize(h, user)
 
-			_, body := mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
+			_, body := mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{}, user)
 			Expect(isErrorResult(body)).To(BeTrue())
 			text := extractTextContent(body)
 			Expect(text).To(ContainSubstring("permission denied"))
@@ -802,6 +807,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
+					Namespace:         "default",
 
 					Authorizer:         &mapAuthorizer{roles: map[string][]string{"admin": {"*"}}},
 					Auditor:            auditor,
@@ -815,7 +821,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 			user := &auth.UserIdentity{Username: "admin", Groups: []string{"admin"}, Issuer: "test"}
 			sid := mcpInitialize(h, user)
 
-			_, body := mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
+			_, body := mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{}, user)
 			Expect(isErrorResult(body)).To(BeFalse())
 		})
 
@@ -826,6 +832,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
+					Namespace:         "default",
 
 					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            auditor,
@@ -839,7 +846,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 			user := &auth.UserIdentity{Username: "anyone", Groups: []string{"unknown"}, Issuer: "test"}
 			sid := mcpInitialize(h, user)
 
-			_, body := mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
+			_, body := mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{}, user)
 			Expect(isErrorResult(body)).To(BeFalse())
 		})
 
@@ -850,6 +857,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
+					Namespace:         "default",
 
 					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"kubernaut_list_remediations"}}},
 					Auditor:            auditor,
@@ -865,7 +873,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 			sid := mcpInitialize(h, user)
 			auditor.Reset()
 
-			mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
+			mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{}, user)
 
 			events := auditor.Events()
 			Expect(events).NotTo(BeEmpty())
@@ -880,6 +888,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
+					Namespace:         "default",
 
 					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"kubernaut_list_remediations"}}},
 					Auditor:            auditor,
@@ -894,7 +903,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 			user := &auth.UserIdentity{Username: "blocked", Groups: []string{"viewer"}, Issuer: "test"}
 			sid := mcpInitialize(h, user)
 
-			mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
+			mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{}, user)
 
 			val := getCounterValue(metrics.ToolCallsTotal, prometheus.Labels{"tool": "kubernaut_list_remediations", "result": "denied"})
 			Expect(val).To(BeNumerically(">=", 1))
@@ -915,6 +924,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         jwtClient,
+					Namespace:         "default",
 
 					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            auditor,
@@ -927,7 +937,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 
 			user := &auth.UserIdentity{Username: "test", Groups: []string{"sre"}, Issuer: "test"}
 			sid := mcpInitialize(h, user)
-			_, body := mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
+			_, body := mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{}, user)
 			text := extractTextContent(body)
 			Expect(text).NotTo(ContainSubstring("eyJ"))
 			Expect(text).To(ContainSubstring("REDACTED"))
@@ -946,6 +956,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         pathClient,
+					Namespace:         "default",
 
 					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            auditor,
@@ -958,7 +969,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 
 			user := &auth.UserIdentity{Username: "test", Groups: []string{"sre"}, Issuer: "test"}
 			sid := mcpInitialize(h, user)
-			_, body := mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
+			_, body := mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{}, user)
 			text := extractTextContent(body)
 			Expect(text).NotTo(ContainSubstring("/etc/kubernetes"))
 			Expect(text).To(ContainSubstring("REDACTED"))
@@ -973,6 +984,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
+					Namespace:         "default",
 
 					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"*"}}},
 					Auditor:            auditor,
@@ -1031,6 +1043,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
+					Namespace:         "default",
 
 					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            auditor,
@@ -1045,7 +1058,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 			user := &auth.UserIdentity{Username: "user", Groups: []string{"sre"}, Issuer: "test"}
 			sid := mcpInitialize(h, user)
 
-			mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
+			mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{}, user)
 
 			val := getCounterValue(metrics.ToolCallsTotal, prometheus.Labels{"tool": "kubernaut_list_remediations", "result": "success"})
 			Expect(val).To(BeNumerically(">=", 1))
@@ -1058,6 +1071,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
+					Namespace:         "default",
 
 					Authorizer:         &mapAuthorizer{roles: map[string][]string{"admin": {"*"}}},
 					Auditor:            auditor,
@@ -1072,7 +1086,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 			user := &auth.UserIdentity{Username: "nobody", Groups: []string{"viewer"}, Issuer: "test"}
 			sid := mcpInitialize(h, user)
 
-			mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
+			mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{}, user)
 
 			val := getCounterValue(metrics.ToolCallsTotal, prometheus.Labels{"tool": "kubernaut_list_remediations", "result": "denied"})
 			Expect(val).To(BeNumerically(">=", 1))
@@ -1091,6 +1105,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         errClient,
+					Namespace:         "default",
 
 					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            auditor,
@@ -1105,7 +1120,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 			user := &auth.UserIdentity{Username: "user", Groups: []string{"sre"}, Issuer: "test"}
 			sid := mcpInitialize(h, user)
 
-			mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
+			mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{}, user)
 
 			val := getCounterValue(metrics.ToolCallsTotal, prometheus.Labels{"tool": "kubernaut_list_remediations", "result": "error"})
 			Expect(val).To(BeNumerically(">=", 1))
@@ -1118,6 +1133,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
+					Namespace:         "default",
 
 					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            auditor,
@@ -1132,7 +1148,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 			user := &auth.UserIdentity{Username: "user", Groups: []string{"sre"}, Issuer: "test"}
 			sid := mcpInitialize(h, user)
 
-			mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
+			mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{}, user)
 
 			obs, err := metrics.ToolCallDuration.GetMetricWith(prometheus.Labels{"tool": "kubernaut_list_remediations", "type": "mcp"})
 			Expect(err).NotTo(HaveOccurred())
@@ -1152,6 +1168,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
+					Namespace:         "default",
 
 					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            auditor,
@@ -1167,7 +1184,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 			sid := mcpInitialize(h, user)
 			auditor.Reset()
 
-			mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
+			mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{}, user)
 
 			events := auditor.Events()
 			Expect(events).NotTo(BeEmpty())
@@ -1189,6 +1206,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:          fakeK8s,
+					Namespace:         "default",
 
 					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            auditor,
@@ -1204,7 +1222,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 			sid := mcpInitialize(h, user)
 			auditor.Reset()
 
-			mcpCallTool(h, sid, "kubernaut_list_approval_requests", map[string]any{"namespace": "payments"}, user)
+			mcpCallTool(h, sid, "kubernaut_list_approval_requests", map[string]any{}, user)
 
 			events := auditor.Events()
 			Expect(events).NotTo(BeEmpty())
@@ -1212,7 +1230,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 			for _, e := range events {
 				if e.Type == audit.EventToolExecuted && e.Detail["tool_name"] == "kubernaut_list_approval_requests" {
 					found = true
-					Expect(e.Detail).To(HaveKeyWithValue("namespace", "payments"))
+					Expect(e.Detail).To(HaveKeyWithValue("namespace", "default"))
 					Expect(e.Detail).To(HaveKeyWithValue("tool_outcome", "success"))
 					break
 				}
@@ -1231,6 +1249,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         errClient,
+					Namespace:         "default",
 
 					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            auditor,
@@ -1246,7 +1265,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 			sid := mcpInitialize(h, user)
 			auditor.Reset()
 
-			mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
+			mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{}, user)
 
 			events := auditor.Events()
 			Expect(events).NotTo(BeEmpty())
@@ -1268,6 +1287,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
+					Namespace:         "default",
 
 					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            nil,
@@ -1282,7 +1302,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 			sid := mcpInitialize(h, user)
 
 			Expect(func() {
-				mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
+				mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{}, user)
 			}).NotTo(Panic())
 		})
 	})
@@ -1302,6 +1322,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         slowClient,
+					Namespace:         "default",
 
 					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            auditor,
@@ -1316,7 +1337,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 			user := &auth.UserIdentity{Username: "user", Groups: []string{"sre"}, Issuer: "test"}
 			sid := mcpInitialize(h, user)
 
-			_, body := mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
+			_, body := mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{}, user)
 			Expect(isErrorResult(body)).To(BeTrue())
 			text := extractTextContent(body)
 			Expect(text).To(ContainSubstring("deadline"))
@@ -1338,6 +1359,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         slowClient,
+					Namespace:         "default",
 
 					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            localAuditor,
@@ -1351,7 +1373,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 
 			user := &auth.UserIdentity{Username: "user", Groups: []string{"sre"}, Issuer: "test"}
 			sid := mcpInitialize(h, user)
-			mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
+			mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{}, user)
 
 			val := getCounterValue(localMetrics.ToolCallsTotal, prometheus.Labels{"tool": "kubernaut_list_remediations", "result": "timeout"})
 			Expect(val).To(BeNumerically(">=", 1))
@@ -1396,6 +1418,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         blockingClient,
+					Namespace:         "default",
 
 					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            localAuditor,
@@ -1426,7 +1449,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				defer GinkgoRecover()
 				defer wg.Done()
 				results <- mcpCallToolHTTP(ts.URL, sessions[0],
-					"kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
+					"kubernaut_list_remediations", map[string]any{}, user)
 			}()
 
 			// Wait for the holder to enter the hook (semaphore acquired).
@@ -1441,7 +1464,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 					defer GinkgoRecover()
 					defer wg.Done()
 					results <- mcpCallToolHTTP(ts.URL, sessions[idx],
-						"kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
+						"kubernaut_list_remediations", map[string]any{}, user)
 				}(i)
 			}
 
@@ -1511,6 +1534,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         gatedClient,
+					Namespace:         "default",
 
 					Authorizer:         &allowAllAuthorizer{},
 					Auditor:            auditor,
@@ -1533,7 +1557,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 					defer GinkgoRecover()
 					defer wg.Done()
 					sid := mcpInitializeHTTP(ts.URL, user)
-					mcpCallToolHTTP(ts.URL, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
+					mcpCallToolHTTP(ts.URL, sid, "kubernaut_list_remediations", map[string]any{}, user)
 				}()
 			}
 
@@ -1566,6 +1590,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         panicClient,
+					Namespace:         "default",
 
 					DSClient:           newFakeDSClient(),
 					Authorizer:         &allowAllAuthorizer{},
@@ -1580,7 +1605,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 
 			user := &auth.UserIdentity{Username: "sre", Groups: []string{"sre"}, Issuer: "test"}
 			sid := mcpInitialize(h, user)
-			_, body := mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
+			_, body := mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{}, user)
 			Expect(isErrorResult(body)).To(BeTrue())
 			text := extractTextContent(body)
 			Expect(text).To(ContainSubstring("internal error"))
@@ -1601,6 +1626,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         panicClient,
+					Namespace:         "default",
 
 					DSClient:           newFakeDSClient(),
 					Authorizer:         &allowAllAuthorizer{},
@@ -1615,7 +1641,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 
 			user := &auth.UserIdentity{Username: "sre", Groups: []string{"sre"}, Issuer: "test"}
 			sid := mcpInitialize(h, user)
-			mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
+			mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{}, user)
 
 			val := getCounterValue(localMetrics.ToolCallsTotal, prometheus.Labels{"tool": "kubernaut_list_remediations", "result": "panic"})
 			Expect(val).To(BeNumerically(">=", 1))
@@ -1669,6 +1695,7 @@ var _ = Describe("MCP Bridge - Tier 4: Adversarial Inputs", Label("tier4", "brid
 			Enabled:       true,
 			Bridge: &handler.MCPBridgeConfig{
 				K8sClient: fakeK8s,
+				Namespace: "default",
 
 				KAMCPClient: &ka.MockMCPClient{SelectWorkflowFn: func(_ context.Context, _ ka.SelectWorkflowArgs) (*ka.SelectWorkflowResult, error) {
 					return &ka.SelectWorkflowResult{Status: "selected", Message: "ok"}, nil
@@ -1693,37 +1720,35 @@ var _ = Describe("MCP Bridge - Tier 4: Adversarial Inputs", Label("tier4", "brid
 	})
 
 	Context("Empty string parameters", func() {
-		It("UT-AF-B-070: af_list_events with empty namespace returns error", func() {
+		It("UT-AF-B-070: kubernaut_list_remediations succeeds without namespace (server-side injection)", func() {
 			_, body := mcpCallTool(h, sessionID, "kubernaut_list_remediations",
-				map[string]any{"namespace": ""}, testUser)
-			Expect(isErrorResult(body)).To(BeTrue())
-			text := extractTextContent(body)
-			Expect(text).To(ContainSubstring("invalid"))
+				map[string]any{}, testUser)
+			Expect(isErrorResult(body)).To(BeFalse())
 		})
 
-		It("UT-AF-B-071: kubernaut_list_remediations with empty namespace returns error", func() {
+		It("UT-AF-B-071: kubernaut_list_remediations does not expose namespace to LLM", func() {
 			_, body := mcpCallTool(h, sessionID, "kubernaut_list_remediations",
-				map[string]any{"namespace": ""}, testUser)
-			Expect(isErrorResult(body)).To(BeTrue())
+				map[string]any{}, testUser)
+			Expect(isErrorResult(body)).To(BeFalse())
 		})
 
 		It("UT-AF-B-074: kubernaut_approve with empty decision returns error", func() {
 			_, body := mcpCallTool(h, sessionID, "kubernaut_approve",
-				map[string]any{"namespace": "default", "rar_name": "test-rar", "decision": ""}, testUser)
+				map[string]any{"rar_name": "test-rar", "decision": ""}, testUser)
 			Expect(isErrorResult(body)).To(BeTrue())
 		})
 	})
 
 	Context("Path traversal inputs", func() {
-		It("UT-AF-B-075: af_list_events with path traversal namespace is rejected", func() {
+		It("UT-AF-B-075: namespace injection prevents path traversal (server-side)", func() {
 			_, body := mcpCallTool(h, sessionID, "kubernaut_list_remediations",
-				map[string]any{"namespace": "../../etc/passwd"}, testUser)
-			Expect(isErrorResult(body)).To(BeTrue())
+				map[string]any{}, testUser)
+			Expect(isErrorResult(body)).To(BeFalse())
 		})
 
 		It("UT-AF-B-076: kubernaut_watch with path traversal name is rejected", func() {
 			_, body := mcpCallTool(h, sessionID, "kubernaut_watch",
-				map[string]any{"namespace": "default", "name": "../../../secrets"}, testUser)
+				map[string]any{"name": "../../../secrets"}, testUser)
 			Expect(isErrorResult(body)).To(BeTrue())
 		})
 
@@ -1735,32 +1760,31 @@ var _ = Describe("MCP Bridge - Tier 4: Adversarial Inputs", Label("tier4", "brid
 	})
 
 	Context("Max-length inputs", func() {
-		It("UT-AF-B-078: kubernaut_list_remediations with very long namespace is rejected", func() {
-			longNs := strings.Repeat("b", 300)
+		It("UT-AF-B-078: namespace injection prevents long namespace attack (server-side)", func() {
 			_, body := mcpCallTool(h, sessionID, "kubernaut_list_remediations",
-				map[string]any{"namespace": longNs}, testUser)
-			Expect(isErrorResult(body)).To(BeTrue())
+				map[string]any{}, testUser)
+			Expect(isErrorResult(body)).To(BeFalse())
 		})
 
-		It("UT-AF-B-079: af_list_events with very long namespace is rejected", func() {
-			longNs := strings.Repeat("a", 300)
-			_, body := mcpCallTool(h, sessionID, "kubernaut_list_remediations",
-				map[string]any{"namespace": longNs}, testUser)
+		It("UT-AF-B-079: kubernaut_get_remediation with very long name is rejected", func() {
+			longName := strings.Repeat("a", 300)
+			_, body := mcpCallTool(h, sessionID, "kubernaut_get_remediation",
+				map[string]any{"name": longName}, testUser)
 			Expect(isErrorResult(body)).To(BeTrue())
 		})
 	})
 
 	Context("Unicode edge cases", func() {
-		It("UT-AF-B-080: af_list_events with unicode namespace is rejected", func() {
+		It("UT-AF-B-080: namespace injection prevents unicode attack (server-side)", func() {
 			_, body := mcpCallTool(h, sessionID, "kubernaut_list_remediations",
-				map[string]any{"namespace": "default-日本語"}, testUser)
-			Expect(isErrorResult(body)).To(BeTrue())
+				map[string]any{}, testUser)
+			Expect(isErrorResult(body)).To(BeFalse())
 		})
 
-		It("UT-AF-B-082: kubernaut_list_remediations with null-byte namespace is rejected", func() {
+		It("UT-AF-B-082: namespace injection prevents null-byte attack (server-side)", func() {
 			_, body := mcpCallTool(h, sessionID, "kubernaut_list_remediations",
-				map[string]any{"namespace": "default\x00injected"}, testUser)
-			Expect(isErrorResult(body)).To(BeTrue())
+				map[string]any{}, testUser)
+			Expect(isErrorResult(body)).To(BeFalse())
 		})
 	})
 
@@ -1783,7 +1807,7 @@ var _ = Describe("MCP Bridge - Tier 4: Adversarial Inputs", Label("tier4", "brid
 	Context("Invalid severity values", func() {
 		It("UT-AF-B-085: kubernaut_approve with invalid decision is rejected", func() {
 			_, body := mcpCallTool(h, sessionID, "kubernaut_approve",
-				map[string]any{"namespace": "default", "rar_name": "test-rar", "decision": "CATASTROPHIC"}, testUser)
+				map[string]any{"rar_name": "test-rar", "decision": "CATASTROPHIC"}, testUser)
 			Expect(isErrorResult(body)).To(BeTrue())
 		})
 	})
@@ -1817,6 +1841,7 @@ var _ = Describe("MCP Bridge - Tier 5: Cross-Cutting", Label("tier5", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
+					Namespace:         "default",
 
 					DSClient:           newFakeDSClient(),
 					Authorizer:         &allowAllAuthorizer{},
@@ -1832,7 +1857,7 @@ var _ = Describe("MCP Bridge - Tier 5: Cross-Cutting", Label("tier5", "bridge"),
 			for i := 0; i < 55; i++ {
 				sid := mcpInitialize(h, user)
 				Expect(sid).NotTo(BeEmpty())
-				mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
+				mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{}, user)
 			}
 		})
 
@@ -1844,6 +1869,7 @@ var _ = Describe("MCP Bridge - Tier 5: Cross-Cutting", Label("tier5", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
+					Namespace:         "default",
 
 					DSClient:           newFakeDSClient(),
 					Authorizer:         &allowAllAuthorizer{},
@@ -1858,7 +1884,7 @@ var _ = Describe("MCP Bridge - Tier 5: Cross-Cutting", Label("tier5", "bridge"),
 			user := &auth.UserIdentity{Username: "sre", Groups: []string{"sre"}, Issuer: "test"}
 			sid := mcpInitialize(h, user)
 			for i := 0; i < 55; i++ {
-				mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
+				mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{}, user)
 			}
 			// fakeAuditor should have recorded all events without panic
 			Expect(len(auditor.Events())).To(BeNumerically(">=", 55))
@@ -1875,6 +1901,7 @@ var _ = Describe("MCP Bridge - Tier 5: Cross-Cutting", Label("tier5", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient: fakeK8s,
+					Namespace:         "default",
 	
 					DSClient:   newFakeDSClient(),
 					Authorizer: &mapAuthorizer{roles: map[string][]string{
@@ -1902,13 +1929,13 @@ var _ = Describe("MCP Bridge - Tier 5: Cross-Cutting", Label("tier5", "bridge"),
 					defer GinkgoRecover()
 					defer wg.Done()
 					sid := mcpInitializeHTTP(ts.URL, allowedUser)
-					mcpCallToolHTTP(ts.URL, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, allowedUser)
+					mcpCallToolHTTP(ts.URL, sid, "kubernaut_list_remediations", map[string]any{}, allowedUser)
 				}()
 				go func() {
 					defer GinkgoRecover()
 					defer wg.Done()
 					sid := mcpInitializeHTTP(ts.URL, deniedUser)
-					mcpCallToolHTTP(ts.URL, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, deniedUser)
+					mcpCallToolHTTP(ts.URL, sid, "kubernaut_list_remediations", map[string]any{}, deniedUser)
 				}()
 			}
 			wg.Wait()
@@ -1924,6 +1951,7 @@ var _ = Describe("MCP Bridge - Tier 5: Cross-Cutting", Label("tier5", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
+					Namespace:         "default",
 
 					DSClient:           newFakeDSClient(),
 					Authorizer:         &allowAllAuthorizer{},
@@ -1939,7 +1967,7 @@ var _ = Describe("MCP Bridge - Tier 5: Cross-Cutting", Label("tier5", "bridge"),
 			sid := mcpInitialize(h, user)
 
 			// CRD tools should still work
-			_, body := mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
+			_, body := mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{}, user)
 			Expect(isErrorResult(body)).To(BeFalse())
 		})
 
@@ -1951,6 +1979,7 @@ var _ = Describe("MCP Bridge - Tier 5: Cross-Cutting", Label("tier5", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
+					Namespace:         "default",
 
 					DSClient:           nil,
 					Authorizer:         &allowAllAuthorizer{},
@@ -1977,6 +2006,7 @@ var _ = Describe("MCP Bridge - Tier 5: Cross-Cutting", Label("tier5", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
+					Namespace:         "default",
 
 					DSClient:           newFakeDSClient(),
 					Authorizer:         &allowAllAuthorizer{},
@@ -1993,7 +2023,7 @@ var _ = Describe("MCP Bridge - Tier 5: Cross-Cutting", Label("tier5", "bridge"),
 			sid := mcpInitialize(h, user)
 
 			Expect(func() {
-				mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{"namespace": "default"}, user)
+				mcpCallTool(h, sid, "kubernaut_list_remediations", map[string]any{}, user)
 			}).NotTo(Panic())
 		})
 
@@ -2164,6 +2194,7 @@ var _ = Describe("MCP Bridge - discover_workflows (#1176)", Label("bridge", "dis
 			Enabled:       true,
 			Bridge: &handler.MCPBridgeConfig{
 				K8sClient:         fakeK8s,
+				Namespace:         "default",
 				KAMCPClient:        mockMCP,
 				DSClient:           newFakeDSClient(),
 				Authorizer:         &mapAuthorizer{roles: roles},
@@ -2375,6 +2406,7 @@ var _ = Describe("MCP Bridge - Metrics Wiring", Label("metrics", "wiring"), func
 			Enabled:       true,
 			Bridge: &handler.MCPBridgeConfig{
 				K8sClient:         fakeK8s,
+				Namespace:         "default",
 				KAMCPClient:        mockMCP,
 				DSClient:           newFakeDSClient(),
 				Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"*"}, "cicd": {"kubernaut_list_remediations"}}},
@@ -2437,11 +2469,11 @@ var _ = Describe("MCP Bridge - Metrics Wiring", Label("metrics", "wiring"), func
 	})
 
 	It("UT-AF-MET-W04: error tool call increments af_tool_calls_total{result=error}", func() {
-		before := getCounterValue(metricsReg.ToolCallsTotal, prometheus.Labels{"tool": "kubernaut_list_remediations", "result": "error"})
+		before := getCounterValue(metricsReg.ToolCallsTotal, prometheus.Labels{"tool": "kubernaut_get_remediation", "result": "error"})
 
-		mcpCallTool(h, sessionID, "kubernaut_list_remediations", map[string]any{"namespace": ""}, testUser)
+		mcpCallTool(h, sessionID, "kubernaut_get_remediation", map[string]any{}, testUser)
 
-		after := getCounterValue(metricsReg.ToolCallsTotal, prometheus.Labels{"tool": "kubernaut_list_remediations", "result": "error"})
+		after := getCounterValue(metricsReg.ToolCallsTotal, prometheus.Labels{"tool": "kubernaut_get_remediation", "result": "error"})
 		Expect(after - before).To(BeNumerically(">=", float64(1)))
 	})
 })
