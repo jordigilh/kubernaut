@@ -14,11 +14,11 @@ var _ = Describe("Tool Constructors", func() {
 	}
 
 	entries := []constructorEntry{
-		{"kubernaut_list_remediations", func() (interface{ Name() string }, error) { return tools.NewListRemediationsTool(nil) }},
-		{"kubernaut_get_remediation", func() (interface{ Name() string }, error) { return tools.NewGetRemediationTool(nil, "") }},
-		{"kubernaut_approve", func() (interface{ Name() string }, error) { return tools.NewApproveTool(nil) }},
-		{"kubernaut_cancel_remediation", func() (interface{ Name() string }, error) { return tools.NewCancelRemediationTool(nil, "") }},
-		{"kubernaut_watch", func() (interface{ Name() string }, error) { return tools.NewWatchTool(nil) }},
+		{"kubernaut_list_remediations", func() (interface{ Name() string }, error) { return tools.NewListRemediationsTool(nil, "test-ns") }},
+		{"kubernaut_get_remediation", func() (interface{ Name() string }, error) { return tools.NewGetRemediationTool(nil, "test-ns") }},
+		{"kubernaut_approve", func() (interface{ Name() string }, error) { return tools.NewApproveTool(nil, "test-ns") }},
+		{"kubernaut_cancel_remediation", func() (interface{ Name() string }, error) { return tools.NewCancelRemediationTool(nil, "test-ns") }},
+		{"kubernaut_watch", func() (interface{ Name() string }, error) { return tools.NewWatchTool(nil, "test-ns") }},
 		{"kubernaut_investigate", func() (interface{ Name() string }, error) {
 			return tools.NewInvestigateMCPTool(nil, nil, "", nil, nil, nil, nil, nil, nil)
 		}},

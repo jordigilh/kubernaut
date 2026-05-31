@@ -29,7 +29,7 @@ var rarGVR = schema.GroupVersionResource{Group: "kubernaut.ai", Version: "v1alph
 
 // ListRemediationsArgs defines the input for kubernaut_list_remediations.
 type ListRemediationsArgs struct {
-	Namespace string `json:"namespace"`
+	Namespace string `json:"-"`
 	Phase     string `json:"phase,omitempty"`
 	Kind      string `json:"kind,omitempty"`
 	Name      string `json:"name,omitempty"`
@@ -95,18 +95,19 @@ func HandleListRemediations(ctx context.Context, client dynamic.Interface, args 
 }
 
 // NewListRemediationsTool creates the kubernaut_list_remediations tool.
-func NewListRemediationsTool(client dynamic.Interface) (tool.Tool, error) {
+func NewListRemediationsTool(client dynamic.Interface, controllerNS string) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_list_remediations",
-		Description: "List active remediations with optional filtering by namespace, phase, kind, or name",
+		Description: "List active remediations with optional filtering by phase or kind",
 	}, func(ctx tool.Context, args ListRemediationsArgs) (ListRemediationsResult, error) {
+		args.Namespace = controllerNS
 		return HandleListRemediations(ctx, client, args)
 	})
 }
 
 // GetRemediationArgs defines the input for kubernaut_get_remediation.
 type GetRemediationArgs struct {
-	Namespace string `json:"namespace,omitempty"`
+	Namespace string `json:"-"`
 	Name      string `json:"name,omitempty"`
 	RRID      string `json:"rr_id,omitempty"`
 }
@@ -152,16 +153,14 @@ func HandleGetRemediation(ctx context.Context, client dynamic.Interface, args Ge
 }
 
 // NewGetRemediationTool creates the kubernaut_get_remediation tool.
-// controllerNS is used as the default namespace when rr_id is provided without
-// an explicit namespace (all RR CRDs live in the controller namespace per ADR-057).
+// controllerNS is always injected as the namespace (all RR CRDs live in the
+// controller namespace per ADR-057). The namespace field is hidden from the LLM.
 func NewGetRemediationTool(client dynamic.Interface, controllerNS string) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_get_remediation",
-		Description: "Get detailed information about a specific remediation by rr_id or namespace/name",
+		Description: "Get detailed information about a specific remediation by rr_id or name",
 	}, func(ctx tool.Context, args GetRemediationArgs) (GetRemediationResult, error) {
-		if args.Namespace == "" {
-			args.Namespace = controllerNS
-		}
+		args.Namespace = controllerNS
 		return HandleGetRemediation(ctx, client, args)
 	})
 }
@@ -172,7 +171,7 @@ func NewGetRemediationTool(client dynamic.Interface, controllerNS string) (tool.
 
 // ListApprovalRequestsArgs defines the input for kubernaut_list_approval_requests.
 type ListApprovalRequestsArgs struct {
-	Namespace string `json:"namespace"`
+	Namespace string `json:"-"`
 	Decision  string `json:"decision,omitempty"`
 }
 
@@ -263,11 +262,12 @@ func matchesDecisionFilter(actual, filter string) bool {
 }
 
 // NewListApprovalRequestsTool creates the kubernaut_list_approval_requests tool.
-func NewListApprovalRequestsTool(client dynamic.Interface) (tool.Tool, error) {
+func NewListApprovalRequestsTool(client dynamic.Interface, controllerNS string) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_list_approval_requests",
 		Description: "List remediation approval requests with optional filtering by decision status (pending, approved, rejected, expired)",
 	}, func(ctx tool.Context, args ListApprovalRequestsArgs) (ListApprovalRequestsResult, error) {
+		args.Namespace = controllerNS
 		return HandleListApprovalRequests(ctx, client, args)
 	})
 }
@@ -278,7 +278,7 @@ func NewListApprovalRequestsTool(client dynamic.Interface) (tool.Tool, error) {
 
 // GetApprovalRequestArgs defines the input for kubernaut_get_approval_request.
 type GetApprovalRequestArgs struct {
-	Namespace string `json:"namespace,omitempty"`
+	Namespace string `json:"-"`
 	Name      string `json:"name,omitempty"`
 	RARID     string `json:"rar_id,omitempty"`
 }
@@ -443,18 +443,19 @@ func HandleGetApprovalRequest(ctx context.Context, client dynamic.Interface, arg
 }
 
 // NewGetApprovalRequestTool creates the kubernaut_get_approval_request tool.
-func NewGetApprovalRequestTool(client dynamic.Interface) (tool.Tool, error) {
+func NewGetApprovalRequestTool(client dynamic.Interface, controllerNS string) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_get_approval_request",
 		Description: "Get full details of a specific remediation approval request for review before deciding",
 	}, func(ctx tool.Context, args GetApprovalRequestArgs) (GetApprovalRequestResult, error) {
+		args.Namespace = controllerNS
 		return HandleGetApprovalRequest(ctx, client, args)
 	})
 }
 
 // ApproveArgs defines the input for kubernaut_approve.
 type ApproveArgs struct {
-	Namespace        string `json:"namespace"`
+	Namespace        string `json:"-"`
 	RARName          string `json:"rar_name"`
 	Decision         string `json:"decision"`
 	Reason           string `json:"reason,omitempty"`
@@ -528,11 +529,12 @@ func HandleApprove(ctx context.Context, client dynamic.Interface, args ApproveAr
 }
 
 // NewApproveTool creates the kubernaut_approve tool.
-func NewApproveTool(client dynamic.Interface) (tool.Tool, error) {
+func NewApproveTool(client dynamic.Interface, controllerNS string) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_approve",
 		Description: "Approve or reject a pending remediation approval request",
 	}, func(ctx tool.Context, args ApproveArgs) (ApproveResult, error) {
+		args.Namespace = controllerNS
 		return HandleApprove(ctx, client, args, usernameFromContext(ctx))
 	})
 }
@@ -548,7 +550,7 @@ func usernameFromContext(ctx context.Context) string {
 
 // CancelRemediationArgs defines the input for kubernaut_cancel_remediation.
 type CancelRemediationArgs struct {
-	Namespace string `json:"namespace,omitempty"`
+	Namespace string `json:"-"`
 	Name      string `json:"name,omitempty"`
 	RRID      string `json:"rr_id,omitempty"`
 }
@@ -607,23 +609,23 @@ func HandleCancelRemediation(ctx context.Context, client dynamic.Interface, args
 }
 
 // NewCancelRemediationTool creates the kubernaut_cancel_remediation tool.
-// controllerNS is the default namespace for RR CRD lookups (ADR-057).
+// controllerNS is always injected as the namespace (all RR CRDs live in the
+// controller namespace per ADR-057). The namespace field is hidden from the LLM.
 func NewCancelRemediationTool(client dynamic.Interface, controllerNS string) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_cancel_remediation",
 		Description: "Cancel an active remediation that has not yet reached a terminal state",
 	}, func(ctx tool.Context, args CancelRemediationArgs) (CancelRemediationResult, error) {
-		if args.Namespace == "" {
-			args.Namespace = controllerNS
-		}
+		args.Namespace = controllerNS
 		return HandleCancelRemediation(ctx, client, args)
 	})
 }
 
 // WatchArgs defines the input for kubernaut_watch.
 type WatchArgs struct {
-	Namespace string `json:"namespace"`
-	Name      string `json:"name"`
+	Namespace string `json:"-"`
+	RRID      string `json:"rr_id,omitempty"`
+	Name      string `json:"name,omitempty"`
 }
 
 // WatchEvent represents a single status change event.
@@ -649,6 +651,12 @@ func HandleWatch(ctx context.Context, client dynamic.Interface, args WatchArgs) 
 	if client == nil {
 		return WatchResult{}, ErrK8sUnavailable
 	}
+	ns, name, err := ParseRRID(args.RRID, args.Namespace, args.Name)
+	if err != nil {
+		return WatchResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+	}
+	args.Namespace = ns
+	args.Name = name
 	if err := validate.Namespace(args.Namespace); err != nil {
 		return WatchResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
 	}
@@ -785,11 +793,12 @@ func HandleWatch(ctx context.Context, client dynamic.Interface, args WatchArgs) 
 }
 
 // NewWatchTool creates the kubernaut_watch tool.
-func NewWatchTool(client dynamic.Interface) (tool.Tool, error) {
+func NewWatchTool(client dynamic.Interface, controllerNS string) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_watch",
 		Description: "Stream live status updates for a remediation and its related resources",
 	}, func(ctx tool.Context, args WatchArgs) (WatchResult, error) {
+		args.Namespace = controllerNS
 		return HandleWatch(ctx, client, args)
 	})
 }
@@ -803,7 +812,7 @@ var aianalysisGVR = schema.GroupVersionResource{Group: "kubernaut.ai", Version: 
 
 // AwaitSessionArgs defines the input for kubernaut_await_session.
 type AwaitSessionArgs struct {
-	Namespace string `json:"namespace"`
+	Namespace string `json:"-"`
 	RRName    string `json:"rr_name"`
 }
 
@@ -908,11 +917,12 @@ func findSessionIDByList(ctx context.Context, client dynamic.Interface, args Awa
 }
 
 // NewAwaitSessionTool creates the kubernaut_await_session tool.
-func NewAwaitSessionTool(client dynamic.Interface) (tool.Tool, error) {
+func NewAwaitSessionTool(client dynamic.Interface, controllerNS string) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_await_session",
 		Description: "Wait for the AI investigation session to become ready for a given remediation request. Returns the KA session ID when available.",
 	}, func(ctx tool.Context, args AwaitSessionArgs) (AwaitSessionResult, error) {
+		args.Namespace = controllerNS
 		return HandleAwaitSession(ctx, client, args)
 	})
 }

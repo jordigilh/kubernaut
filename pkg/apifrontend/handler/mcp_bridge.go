@@ -112,50 +112,53 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 	sem := semaphore.NewWeighted(cfg.GetMaxConcurrentTools())
 
 	// K8s CRD tools (ADR-022: all use AF's ServiceAccount)
+	// Namespace is always injected server-side — never exposed to LLM.
 	registerTool(srv, cfg, sem, "kubernaut_list_remediations", "List active and recent remediations",
 		func(ctx context.Context, args tools.ListRemediationsArgs) (any, error) {
+			args.Namespace = cfg.Namespace
 			return tools.HandleListRemediations(ctx, cfg.K8sClient, args)
 		})
 
 	registerTool(srv, cfg, sem, "kubernaut_get_remediation", "Get details of a specific remediation",
 		func(ctx context.Context, args tools.GetRemediationArgs) (any, error) {
-			if args.Namespace == "" {
-				args.Namespace = cfg.Namespace
-			}
+			args.Namespace = cfg.Namespace
 			return tools.HandleGetRemediation(ctx, cfg.K8sClient, args)
 		})
 
 	registerTool(srv, cfg, sem, "kubernaut_list_approval_requests", "List remediation approval requests with optional filtering by decision status",
 		func(ctx context.Context, args tools.ListApprovalRequestsArgs) (any, error) {
+			args.Namespace = cfg.Namespace
 			return tools.HandleListApprovalRequests(ctx, cfg.K8sClient, args)
 		})
 
 	registerTool(srv, cfg, sem, "kubernaut_get_approval_request", "Get full details of a specific remediation approval request",
 		func(ctx context.Context, args tools.GetApprovalRequestArgs) (any, error) {
+			args.Namespace = cfg.Namespace
 			return tools.HandleGetApprovalRequest(ctx, cfg.K8sClient, args)
 		})
 
 	registerTool(srv, cfg, sem, "kubernaut_approve", "Approve a remediation action",
 		func(ctx context.Context, args tools.ApproveArgs) (any, error) {
+			args.Namespace = cfg.Namespace
 			username := usernameFromCtx(ctx)
 			return tools.HandleApprove(ctx, cfg.K8sClient, args, username)
 		})
 
 	registerTool(srv, cfg, sem, "kubernaut_cancel_remediation", "Cancel an active remediation",
 		func(ctx context.Context, args tools.CancelRemediationArgs) (any, error) {
-			if args.Namespace == "" {
-				args.Namespace = cfg.Namespace
-			}
+			args.Namespace = cfg.Namespace
 			return tools.HandleCancelRemediation(ctx, cfg.K8sClient, args)
 		})
 
 	registerTool(srv, cfg, sem, "kubernaut_watch", "Watch for remediation state changes",
 		func(ctx context.Context, args tools.WatchArgs) (any, error) {
+			args.Namespace = cfg.Namespace
 			return tools.HandleWatch(ctx, cfg.K8sClient, args)
 		})
 
 	registerTool(srv, cfg, sem, "kubernaut_await_session", "Wait for KA investigation session to become ready",
 		func(ctx context.Context, args tools.AwaitSessionArgs) (any, error) {
+			args.Namespace = cfg.Namespace
 			return tools.HandleAwaitSession(ctx, cfg.K8sClient, args)
 		})
 
