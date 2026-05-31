@@ -112,30 +112,30 @@ var _ = Describe("newAuditToolCallback (#1189)", func() {
 		Expect(hasTaskID).To(BeFalse())
 	})
 
-	It("UT-AF-1189-003: af_create_rr no longer triggers RR correlation (#1332 redesign)", func() {
+	It("UT-AF-1189-003: non-correlation tool does not trigger RR correlation (#1332 redesign)", func() {
 		ctx := context.Background()
 		ctx = session.WithCreateContext(ctx, &session.CreateContext{TaskID: "task-xyz"})
 		ctx = auth.WithUserIdentity(ctx, &auth.UserIdentity{Username: "sre-carol"})
 
 		output := map[string]any{"rr_id": "rr-prod-001"}
 		tc := fakeToolContext{Context: ctx}
-		_, err := callback(tc, fakeTool{name: "af_create_rr"}, nil, output, nil)
+		_, err := callback(tc, fakeTool{name: "kubernaut_list_remediations"}, nil, output, nil)
 		Expect(err).NotTo(HaveOccurred())
 
 		Expect(auditor.events).To(HaveLen(1))
 		_, hasRRID := auditor.events[0].Detail["rr_id"]
-		Expect(hasRRID).To(BeFalse(), "af_create_rr removed from correlation — replaced by kubernaut_remediate")
+		Expect(hasRRID).To(BeFalse(), "non-correlation tools must not set rr_id")
 		Expect(auditor.events[0].Detail["a2a_task_id"]).To(Equal("task-xyz"))
 	})
 
-	It("UT-AF-1189-004: omits rr_id when af_create_rr fails", func() {
+	It("UT-AF-1189-004: omits rr_id when non-correlation tool fails", func() {
 		ctx := context.Background()
 		ctx = session.WithCreateContext(ctx, &session.CreateContext{TaskID: "task-fail"})
 		ctx = auth.WithUserIdentity(ctx, &auth.UserIdentity{Username: "sre-dave"})
 
 		tc := fakeToolContext{Context: ctx}
 		toolErr := fmt.Errorf("creation failed")
-		_, err := callback(tc, fakeTool{name: "af_create_rr"}, nil, nil, toolErr)
+		_, err := callback(tc, fakeTool{name: "kubernaut_list_remediations"}, nil, nil, toolErr)
 		Expect(err).NotTo(HaveOccurred())
 
 		Expect(auditor.events).To(HaveLen(1))
@@ -144,7 +144,7 @@ var _ = Describe("newAuditToolCallback (#1189)", func() {
 		Expect(auditor.events[0].Detail["tool_outcome"]).To(Equal("failure"))
 	})
 
-	It("UT-AF-1189-005: omits rr_id for non-af_create_rr tools", func() {
+	It("UT-AF-1189-005: omits rr_id for non-correlation tools", func() {
 		ctx := context.Background()
 		ctx = session.WithCreateContext(ctx, &session.CreateContext{TaskID: "task-other"})
 
@@ -172,7 +172,7 @@ var _ = Describe("newAuditToolCallback (#1189)", func() {
 	})
 })
 
-var _ = Describe("IS CRD creation on af_create_rr (race fix)", func() {
+var _ = Describe("IS CRD creation callback (race fix)", func() {
 
 	newIndexedFakeClient := func() client.Client {
 		return k8sfake.NewClientBuilder().
@@ -189,7 +189,7 @@ var _ = Describe("IS CRD creation on af_create_rr (race fix)", func() {
 			Build()
 	}
 
-	It("UT-AF-1326-090: af_create_rr NO longer creates IS CRD (#1332 redesign)", func() {
+	It("UT-AF-1326-090: non-correlation tool does NOT create IS CRD (#1332 redesign)", func() {
 		k8sClient := newIndexedFakeClient()
 		svc := session.NewCRDSessionService(
 			adksession.InMemoryService(), k8sClient, testCRDScheme(), "kubernaut-system",
@@ -206,7 +206,7 @@ var _ = Describe("IS CRD creation on af_create_rr (race fix)", func() {
 
 		output := map[string]any{"rr_id": "rr-abc123-def456"}
 		tc := fakeToolContext{Context: ctx}
-		_, err := cb(tc, fakeTool{name: "af_create_rr"}, nil, output, nil)
+		_, err := cb(tc, fakeTool{name: "kubernaut_list_remediations"}, nil, output, nil)
 		Expect(err).NotTo(HaveOccurred())
 
 		var isList isv1alpha1.InvestigationSessionList
@@ -214,7 +214,7 @@ var _ = Describe("IS CRD creation on af_create_rr (race fix)", func() {
 		Expect(isList.Items).To(BeEmpty(), "IS CRD creation removed from callback — now done inside kubernaut_investigate")
 	})
 
-	It("UT-AF-1326-091: af_create_rr no longer sets rr_id in audit (#1332 redesign)", func() {
+	It("UT-AF-1326-091: non-correlation tool does not set rr_id in audit (#1332 redesign)", func() {
 		auditor := &capturingAuditor{}
 		cb := newAuditToolCallback(auditor, nil, "kubernaut-system")
 
@@ -223,15 +223,15 @@ var _ = Describe("IS CRD creation on af_create_rr (race fix)", func() {
 
 		output := map[string]any{"rr_id": "rr-no-svc-091"}
 		tc := fakeToolContext{Context: ctx}
-		_, err := cb(tc, fakeTool{name: "af_create_rr"}, nil, output, nil)
+		_, err := cb(tc, fakeTool{name: "kubernaut_list_remediations"}, nil, output, nil)
 		Expect(err).NotTo(HaveOccurred())
 
 		Expect(auditor.events).To(HaveLen(1))
 		_, hasRRID := auditor.events[0].Detail["rr_id"]
-		Expect(hasRRID).To(BeFalse(), "af_create_rr removed from correlation tools")
+		Expect(hasRRID).To(BeFalse(), "non-correlation tools must not set rr_id")
 	})
 
-	It("UT-AF-1326-092: af_create_rr failure does not create IS CRD", func() {
+	It("UT-AF-1326-092: non-correlation tool failure does not create IS CRD", func() {
 		k8sClient := newIndexedFakeClient()
 		svc := session.NewCRDSessionService(
 			adksession.InMemoryService(), k8sClient, testCRDScheme(), "kubernaut-system",
@@ -245,15 +245,15 @@ var _ = Describe("IS CRD creation on af_create_rr (race fix)", func() {
 
 		tc := fakeToolContext{Context: ctx}
 		toolErr := fmt.Errorf("creation failed")
-		_, err := cb(tc, fakeTool{name: "af_create_rr"}, nil, nil, toolErr)
+		_, err := cb(tc, fakeTool{name: "kubernaut_list_remediations"}, nil, nil, toolErr)
 		Expect(err).NotTo(HaveOccurred())
 
 		var isList isv1alpha1.InvestigationSessionList
 		Expect(k8sClient.List(ctx, &isList)).To(Succeed())
-		Expect(isList.Items).To(BeEmpty(), "no IS CRD on af_create_rr failure")
+		Expect(isList.Items).To(BeEmpty(), "no IS CRD on tool failure")
 	})
 
-	It("UT-AF-1326-093: af_create_rr skips IS CRD when no user identity in context", func() {
+	It("UT-AF-1326-093: callback skips IS CRD when no user identity in context", func() {
 		k8sClient := newIndexedFakeClient()
 		svc := session.NewCRDSessionService(
 			adksession.InMemoryService(), k8sClient, testCRDScheme(), "kubernaut-system",
@@ -266,7 +266,7 @@ var _ = Describe("IS CRD creation on af_create_rr (race fix)", func() {
 
 		output := map[string]any{"rr_id": "rr-no-identity-093"}
 		tc := fakeToolContext{Context: ctx}
-		_, err := cb(tc, fakeTool{name: "af_create_rr"}, nil, output, nil)
+		_, err := cb(tc, fakeTool{name: "kubernaut_list_remediations"}, nil, output, nil)
 		Expect(err).NotTo(HaveOccurred())
 
 		var isList isv1alpha1.InvestigationSessionList
@@ -398,7 +398,7 @@ var _ = Describe("Audit callback — Intent-Based Tool Redesign (#1332)", func()
 			Expect(isList.Items).To(BeEmpty(), "kubernaut_investigate creates IS inside tool, NOT callback")
 		})
 
-		It("UT-AF-1332-024: af_create_rr name no longer triggers correlation or IS", func() {
+		It("UT-AF-1332-024: non-correlation tool does not trigger correlation or IS", func() {
 			ctx := context.Background()
 			sc := &session.CreateContext{TaskID: "task-old-tool"}
 			ctx = session.WithCreateContext(ctx, sc)
@@ -406,10 +406,10 @@ var _ = Describe("Audit callback — Intent-Based Tool Redesign (#1332)", func()
 
 			output := map[string]any{"rr_id": "rr-old-tool-024"}
 			tc := fakeToolContext{Context: ctx}
-			_, err := callback(tc, fakeTool{name: "af_create_rr"}, nil, output, nil)
+			_, err := callback(tc, fakeTool{name: "kubernaut_list_remediations"}, nil, output, nil)
 			Expect(err).NotTo(HaveOccurred())
 
-			Expect(sc.RRName).To(BeEmpty(), "af_create_rr should no longer set correlation")
+			Expect(sc.RRName).To(BeEmpty(), "non-correlation tools should not set correlation")
 		})
 	})
 })

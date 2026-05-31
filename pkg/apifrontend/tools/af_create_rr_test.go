@@ -61,7 +61,7 @@ func extractRRName(rrid string) string {
 	return rrid
 }
 
-var _ = Describe("af_create_rr (#1282 refactor)", func() {
+var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 	rrGVR := schema.GroupVersionResource{Group: "kubernaut.ai", Version: "v1alpha1", Resource: "remediationrequests"}
 	eventsGVR := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "events"}
 

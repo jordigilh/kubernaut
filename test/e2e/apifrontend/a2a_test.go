@@ -140,8 +140,8 @@ var _ = Describe("A2A Handler (E2E)", Label("e2e", "a2a"), func() {
 			toolTest("a2a-t16", "Get workloads in the default namespace", "kubectl_list")
 		})
 		// TC-E2E-A2A-T17 deleted: af_resolve_owner removed. Owner chain is internal LLM reasoning.
-		It("TC-E2E-A2A-T18: af_check_existing_rr", func() {
-			toolTest("a2a-t18", "Check if a remediation request already exists for deployment web in prod", "af_check_existing_rr")
+		It("TC-E2E-A2A-T18: kubernaut_check_existing_remediation", func() {
+			toolTest("a2a-t18", "Check if a remediation request already exists for deployment web in prod", "kubernaut_check_existing_remediation")
 		})
 		It("TC-E2E-A2A-T19: kubernaut_remediate", func() {
 			toolTest("a2a-t19", "Create a remediation request for deployment web in prod namespace", "kubernaut_remediate")

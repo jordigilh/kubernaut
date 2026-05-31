@@ -24,5 +24,5 @@ var mcpToolRegistry = []MCPToolDef{
 	{Name: "kubernaut_list_approval_requests", Description: "List remediation approval requests"},
 	{Name: "kubernaut_get_approval_request", Description: "Get details of a specific approval request"},
 	{Name: "kubernaut_await_session", Description: "Wait for KA investigation session to become ready"},
-	// af_check_existing_rr and kubernaut_remediate are internal to AF's LLM agent (ADK path only).
+	// kubernaut_check_existing_remediation and kubernaut_remediate are internal to AF's LLM agent (ADK path only).
 }

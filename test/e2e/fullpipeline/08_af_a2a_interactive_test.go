@@ -23,7 +23,7 @@ import (
 // with a zero-replica deployment, keeping the fingerprint distinct from the
 // shared kubernaut-system memory-eater used by other FP tests.
 //
-// Issue #1332: Turn 1 now uses kubernaut_remediate (renamed from af_create_rr)
+// Issue #1332: Turn 1 now uses kubernaut_remediate
 // for autonomous RR creation. Turn 2 upgrades to interactive via kubernaut_investigate.
 //
 // Turn 1: "create a remediation request"   → kubernaut_remediate  (creates RR, no IS)

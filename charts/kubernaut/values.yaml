@@ -628,7 +628,7 @@ apifrontend:
           - kubectl_get
           - kubectl_list
           - kubectl_list_events
-          - af_check_existing_rr
+          - kubernaut_check_existing_remediation
           - kubernaut_remediate
         ai-orchestrator:
           - kubernaut_list_remediations
@@ -648,7 +648,7 @@ apifrontend:
           - kubectl_get
           - kubectl_list
           - kubectl_list_events
-          - af_check_existing_rr
+          - kubernaut_check_existing_remediation
           - kubernaut_remediate
         cicd:
           - kubernaut_list_remediations

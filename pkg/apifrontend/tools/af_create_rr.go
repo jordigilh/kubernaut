@@ -13,8 +13,6 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/dynamic"
 
-	"google.golang.org/adk/tool"
-	"google.golang.org/adk/tool/functiontool"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
@@ -24,7 +22,7 @@ import (
 // maxDescriptionLen is the maximum length for RR description (truncated, not rejected).
 const maxDescriptionLen = 2048
 
-// CreateRRArgs defines the LLM-supplied input for af_create_rr.
+// CreateRRArgs defines the input for RR creation (used by kubernaut_remediate and kubernaut_investigate).
 // Namespace is the workload namespace where the target resource lives (LLM-provided).
 // Severity is resolved by AF via the triage pipeline.
 type CreateRRArgs struct {
@@ -34,7 +32,7 @@ type CreateRRArgs struct {
 	Description string `json:"description"`
 }
 
-// CreateRRResult is the output of af_create_rr.
+// CreateRRResult is the output of RR creation.
 type CreateRRResult struct {
 	RRID           string `json:"rr_id"`
 	Message        string `json:"message"`
@@ -296,14 +294,3 @@ func deriveSignalName(ctx context.Context, client dynamic.Interface, namespace s
 	return "unknown"
 }
 
-// NewCreateRRTool creates the af_create_rr tool. controllerNS is injected by AF
-// (resolved from downward API / config) for CRD placement (ADR-057).
-// The LLM provides the workload namespace via args.Namespace.
-func NewCreateRRTool(client dynamic.Interface, controllerNS string, triager *severity.Triager, auditor audit.Emitter) (tool.Tool, error) {
-	return functiontool.New(functiontool.Config{
-		Name:        "af_create_rr",
-		Description: "Create a RemediationRequest for a target resource with deduplication. Checks for existing non-terminal RRs before creating.",
-	}, func(ctx tool.Context, args CreateRRArgs) (CreateRRResult, error) {
-		return HandleCreateRR(ctx, client, controllerNS, &args, usernameFromContext(ctx), triager, auditor)
-	})
-}

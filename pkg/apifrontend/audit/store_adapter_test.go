@@ -278,7 +278,7 @@ var _ = Describe("StoreAdapter", func() {
 			UserID:        "sre-user",
 			Detail: map[string]string{
 				"rr_id": "kubernaut-system/rr-deployment-web-1234",
-				"tool":  "af_create_rr",
+				"tool":  "kubernaut_remediate",
 			},
 		})
 		evt := store.lastEvent()
@@ -294,7 +294,7 @@ var _ = Describe("StoreAdapter", func() {
 			UserID:        "sre-user",
 			Detail: map[string]string{
 				"rr_id": "kubernaut-system/rr-deployment-web-existing",
-				"tool":  "af_create_rr",
+				"tool":  "kubernaut_remediate",
 			},
 		})
 		evt := store.lastEvent()
@@ -311,7 +311,7 @@ var _ = Describe("StoreAdapter", func() {
 			UserID:        "test-user",
 			Detail: map[string]string{
 				"rr_id": rrID,
-				"tool":  "af_create_rr",
+				"tool":  "kubernaut_remediate",
 			},
 		})
 		evt := store.lastEvent()

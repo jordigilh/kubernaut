@@ -319,8 +319,9 @@ var _ = Describe("Prompt — Intent-Based Tool Redesign (#1332)", func() {
 		Expect(instruction).To(ContainSubstring("kubernaut_remediate"))
 	})
 
-	It("UT-AF-1332-036: prompt does NOT contain af_create_rr", func() {
+	It("UT-AF-1332-036: prompt does NOT contain deprecated af_ tool names", func() {
 		Expect(instruction).NotTo(ContainSubstring("af_create_rr"))
+		Expect(instruction).NotTo(ContainSubstring("af_check_existing_rr"))
 	})
 
 	It("UT-AF-1332-037: autonomous mode keywords map to kubernaut_remediate", func() {
@@ -331,10 +332,11 @@ var _ = Describe("Prompt — Intent-Based Tool Redesign (#1332)", func() {
 		))
 	})
 
-	It("UT-AF-1332-038: BuildInstruction references kubernaut_remediate instead of af_create_rr", func() {
+	It("UT-AF-1332-038: BuildInstruction references kubernaut_remediate without deprecated af_ names", func() {
 		built := agentpkg.BuildInstruction("kubernaut-system")
 		Expect(built).To(ContainSubstring("kubernaut_remediate"))
 		Expect(built).NotTo(ContainSubstring("af_create_rr"))
+		Expect(built).NotTo(ContainSubstring("af_check_existing_rr"))
 	})
 
 	It("UT-AF-1332-039: prompt contains kubectl bypass prevention rule", func() {

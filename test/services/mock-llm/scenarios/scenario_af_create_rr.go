@@ -28,9 +28,7 @@ import (
 // kubernaut_remediate when the AF ADK agent sends a Gemini request whose user
 // message contains "create a remediation request".
 //
-// Issue #1332: Renamed from af_create_rr to kubernaut_remediate as part of
-// the intent-based tool redesign. E2E-FP-1189-002 uses this for autonomous
-// remediation (no IS creation).
+// E2E-FP-1189-002 uses this for autonomous remediation (no IS creation).
 func afCreateRRConfig() MockScenarioConfig {
 	return MockScenarioConfig{
 		ScenarioName: "kubernaut_remediate",

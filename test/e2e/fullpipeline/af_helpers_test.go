@@ -174,7 +174,7 @@ func fpWaitForRRWithTargetNS(nameSubstring, targetNS string, timeout time.Durati
 }
 
 // rrFingerprint computes the signal fingerprint for a target resource, matching
-// the production logic in pkg/apifrontend/tools/af_create_rr.go.
+// the production logic in HandleCreateRR (pkg/apifrontend/tools/af_create_rr.go).
 func rrFingerprint(namespace, kind, name string) string {
 	h := sha256.Sum256([]byte(namespace + "/" + kind + "/" + name))
 	return fmt.Sprintf("%x", h)

@@ -238,11 +238,11 @@ data:
             kind: "Deployment"
             namespace: "default"
 
-      - name: "af_check_existing_rr"
+      - name: "kubernaut_check_existing_remediation"
         keywords: ["check existing", "remediation already exists", "check if a remediation"]
         match_last_only: true
         tool_call:
-          name: "af_check_existing_rr"
+          name: "kubernaut_check_existing_remediation"
           arguments:
             namespace: "prod"
             kind: "Deployment"
