@@ -121,6 +121,7 @@ func (h *NotificationHandler) HandleNotificationRequestDeletion(
 	)
 
 	// Update notification tracking ONLY (DO NOT change overallPhase!)
+	phaseBefore := rr.Status.OverallPhase
 	previousStatus := rr.Status.NotificationStatus
 	rr.Status.NotificationStatus = "Cancelled"
 	rr.Status.Message = "NotificationRequest deleted by user before delivery completed"
@@ -138,12 +139,11 @@ func (h *NotificationHandler) HandleNotificationRequestDeletion(
 		"conditionReason", "UserCancelled",
 	)
 
-	// CRITICAL: DO NOT change overallPhase - remediation continues!
-	// This is notification cancellation, not remediation cancellation.
-	// Defensive assertion to prevent accidental changes
-	if rr.Status.OverallPhase == remediationv1.PhaseCompleted {
-		logger.Error(nil, "CRITICAL BUG: overallPhase was incorrectly set to Completed",
-			"expectedBehavior", "phase should NOT change on notification cancellation",
+	// Defensive: verify this function did not accidentally mutate overallPhase
+	if rr.Status.OverallPhase != phaseBefore {
+		logger.Error(nil, "CRITICAL BUG: overallPhase was mutated by notification cancellation handler",
+			"before", phaseBefore,
+			"after", rr.Status.OverallPhase,
 			"designDecision", "DD-RO-001 Alternative 3",
 		)
 	}
@@ -185,6 +185,7 @@ func (h *NotificationHandler) UpdateNotificationStatus(
 		)
 	}()
 
+	phaseBefore := rr.Status.OverallPhase
 	previousStatus := rr.Status.NotificationStatus
 
 	// Map NotificationRequest phase to RemediationRequest status
@@ -239,12 +240,11 @@ func (h *NotificationHandler) UpdateNotificationStatus(
 		"statusChanged", previousStatus != rr.Status.NotificationStatus,
 	)
 
-	// CRITICAL: Verify overallPhase unchanged (defensive assertion)
-	// This should NEVER trigger if implementation is correct
-	if rr.Status.OverallPhase == remediationv1.PhaseCompleted &&
-		previousStatus != "Sent" && rr.Status.NotificationStatus != "Sent" {
-		logger.Error(nil, "CRITICAL BUG: overallPhase was incorrectly changed",
-			"expectedBehavior", "phase should NOT change on notification status update",
+	// Defensive: verify this function did not accidentally mutate overallPhase
+	if rr.Status.OverallPhase != phaseBefore {
+		logger.Error(nil, "CRITICAL BUG: overallPhase was mutated by notification status update",
+			"before", phaseBefore,
+			"after", rr.Status.OverallPhase,
 			"designDecision", "DD-RO-001 Alternative 3",
 		)
 	}
