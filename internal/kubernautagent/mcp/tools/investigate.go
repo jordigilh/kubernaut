@@ -399,7 +399,14 @@ func (t *InvestigateTool) handleStart(ctx context.Context, input InvestigateInpu
 	}
 
 	if sess.Reconnected {
-		return InvestigateOutput{}, ErrCodeSessionActive.WithDetail("driver", user.Username)
+		return InvestigateOutput{}, &MCPError{
+			Code:    "session_active",
+			Message: "You already have an active session for this investigation; use action=reconnect to rejoin",
+			Details: map[string]string{
+				"driver":     user.Username,
+				"session_id": sess.SessionID,
+			},
+		}
 	}
 
 	// Transition any running autonomous session to user-driven mode so that

@@ -216,7 +216,7 @@ var _ = Describe("FP-MCP-006: CRD InteractiveSession and CompletedAt", Label("e2
 		rrName, err := infrastructure.CreateDirectRR(ctx, namespace, "fp-mcp-006")
 		Expect(err).NotTo(HaveOccurred())
 
-		By("Waiting for AIAnalysis to reach Investigating phase")
+		By("Waiting for AIAnalysis to reach Investigating phase (or later — mock-LLM may complete in <1s)")
 		var aaName string
 		Eventually(func() bool {
 			aaList := &aianalysisv1.AIAnalysisList{}
@@ -226,7 +226,8 @@ var _ = Describe("FP-MCP-006: CRD InteractiveSession and CompletedAt", Label("e2
 			for _, aa := range aaList.Items {
 				if aa.Spec.RemediationRequestRef.Name == rrName {
 					aaName = aa.Name
-					return string(aa.Status.Phase) == "Investigating"
+					phase := string(aa.Status.Phase)
+					return phase == "Investigating" || phase == "Analyzing" || phase == "Completed"
 				}
 			}
 			return false

@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -74,6 +75,7 @@ type InvestigateMCPResult struct {
 	Status    string `json:"status"`
 	Summary   string `json:"summary,omitempty"`
 	RRID      string `json:"rr_id,omitempty"`
+	Error     string `json:"error,omitempty"`
 }
 
 // SessionStartedHook is called after a successful StartInvestigation with the
@@ -236,6 +238,20 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 		RRID: args.RRID,
 	})
 	if err != nil {
+		if strings.Contains(err.Error(), "session_active") {
+			driver := extractDriverFromSessionActiveError(err)
+			logger.Info("session_active from KA: returning structured result instead of error",
+				"rr_id", args.RRID, "driver", driver)
+			return InvestigateMCPResult{
+				Status: "session_active",
+				RRID:   args.RRID,
+				Error: fmt.Sprintf(
+					"An investigation for this resource is already in progress, driven by %s. "+
+						"Do not retry kubernaut_investigate. "+
+						"Use kubernaut_get_remediation with rr_id %s to check its status.",
+					driver, args.RRID),
+			}, nil
+		}
 		return InvestigateMCPResult{}, fmt.Errorf("start MCP investigation: %w", err)
 	}
 	logger.Info("StartInvestigation: MCP session established",
@@ -574,4 +590,13 @@ func isAutonomousInvestigation(ctx context.Context, client dynamic.Interface, na
 		}
 	}
 	return false
+}
+
+var reDriverFromMap = regexp.MustCompile(`driver:(\S+?)[\]\)\s,}]`)
+
+func extractDriverFromSessionActiveError(err error) string {
+	if m := reDriverFromMap.FindStringSubmatch(err.Error()); len(m) > 1 {
+		return m[1]
+	}
+	return "another user"
 }

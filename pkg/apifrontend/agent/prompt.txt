@@ -90,6 +90,16 @@ CRITICAL: After presenting findings, you MUST STOP and ask the user what they wa
 
 kubernaut_investigate handles takeover automatically. When you call it with an rr_id that has an active autonomous investigation, it detects this and signals takeover to the orchestration layer. The prior context is reconstructed seamlessly. No separate tool call is required.
 
+### Handling session_active responses
+
+If kubernaut_investigate returns status "session_active", an investigation is already in progress for this resource:
+
+- Do NOT retry kubernaut_investigate — it will return the same result every time.
+- Do NOT call kubernaut_reconnect as a workaround — it requires the same driver session.
+- DO call kubernaut_get_remediation with the rr_id to check the investigation's current status and present it to the user.
+- Inform the user that an investigation is already in progress and who is driving it (from the error field).
+- If the user wants to cancel the existing investigation, offer kubernaut_cancel_remediation (requires appropriate RBAC).
+
 ### Phase 2: Discover remediation options
 
 1. When the user asks to fix/remediate (interactive) or immediately after investigation completes (autonomous), call kubernaut_discover_workflows with the rr_id.

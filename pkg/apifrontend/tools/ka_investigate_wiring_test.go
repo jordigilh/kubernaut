@@ -18,6 +18,7 @@ package tools_test
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -193,6 +194,55 @@ var _ = Describe("DS tool nil guard (WIRE-C05)", func() {
 		It("UT-AF-WIRE-C05-audit-trail: HandleGetAuditTrail returns ErrDSUnavailable", func() {
 			_, err := tools.HandleGetAuditTrail(context.Background(), nil, tools.GetAuditTrailArgs{})
 			Expect(err).To(MatchError(tools.ErrDSUnavailable))
+		})
+	})
+})
+
+var _ = Describe("HandleInvestigationMCPWithRegistry — session_active structured result (WIRE-SESSION)", func() {
+
+	Describe("WIRE-SESSION: session_active error from StartInvestigation returns structured result", func() {
+		It("UT-AF-WIRE-SESSION-001: returns InvestigateMCPResult with status=session_active and err=nil", func() {
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					return nil, fmt.Errorf("kubernaut_investigate start_autonomous: session_active: You already have an active session for this investigation; use action=reconnect to rejoin (map[driver:admin session_id:sess-123])")
+				},
+			}
+
+			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+				Username: "admin",
+				Groups:   []string{"sre"},
+			})
+
+			result, err := tools.HandleInvestigationMCPWithRegistry(
+				ctx, mockMCP, nil, "kubernaut-system",
+				tools.InvestigateMCPArgs{RRID: "rr-session-001"},
+				nil, nil, nil, true, nil, "admin", nil, nil,
+			)
+			Expect(err).NotTo(HaveOccurred(), "session_active should not propagate as Go error")
+			Expect(result.Status).To(Equal("session_active"))
+			Expect(result.RRID).To(Equal("rr-session-001"))
+		})
+
+		It("UT-AF-WIRE-SESSION-002: structured result Error field contains driver name", func() {
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					return nil, fmt.Errorf("kubernaut_investigate start_autonomous: session_active: Investigation is being driven by another user (map[driver:bob@example.com])")
+				},
+			}
+
+			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+				Username: "alice",
+				Groups:   []string{"sre"},
+			})
+
+			result, err := tools.HandleInvestigationMCPWithRegistry(
+				ctx, mockMCP, nil, "kubernaut-system",
+				tools.InvestigateMCPArgs{RRID: "rr-session-002"},
+				nil, nil, nil, true, nil, "alice", nil, nil,
+			)
+			Expect(err).NotTo(HaveOccurred(), "session_active should not propagate as Go error")
+			Expect(result.Error).NotTo(BeEmpty(), "Error field must provide actionable guidance")
+			Expect(result.Error).To(ContainSubstring("bob@example.com"), "Error field must include the driver name")
 		})
 	})
 })

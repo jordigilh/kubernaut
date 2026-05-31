@@ -497,7 +497,7 @@ var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func(
 	})
 
 	Describe("UT-KA-1293-007: handleStart rejects when session is reconnected", func() {
-		It("should return MCPError session_active with driver identity when same user already holds lease", func() {
+		It("should return MCPError session_active with same-user reconnect message", func() {
 			sessionMgr := &mockSessionManager{
 				takeoverSession: &mcpinternal.InteractiveSession{
 					SessionID:     "sess-reconnect-007",
@@ -519,7 +519,11 @@ var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func(
 			Expect(errors.As(err, &mcpErr)).To(BeTrue(), "error should be *MCPError")
 			Expect(mcpErr.Code).To(Equal("session_active"),
 				"reconnected session must reject action=start; use action=reconnect instead")
+			Expect(mcpErr.Message).To(ContainSubstring("already have an active session"),
+				"same-user reconnect should use distinct message from cross-user contention")
 			Expect(mcpErr.Details["driver"]).To(Equal("alice"))
+			Expect(mcpErr.Details["session_id"]).To(Equal("sess-reconnect-007"),
+				"reconnect error should include existing session_id for diagnostics")
 		})
 	})
 })
