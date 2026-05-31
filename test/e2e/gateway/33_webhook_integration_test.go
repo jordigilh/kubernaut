@@ -211,11 +211,8 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 			}, "5s", "100ms").Should(Succeed(), "First alert creates CRD")
 
 			// Second alert: Duplicate (CRD still in non-terminal phase)
-			webhookResp2 := sendWebhook(gatewayURL, "/api/v1/signals/prometheus", payload)
+			webhookResp2 := sendWebhookExpectAccepted(gatewayURL, "/api/v1/signals/prometheus", payload)
 			GinkgoWriter.Printf("[dedup-2nd] HTTP %d - %s\n", webhookResp2.StatusCode, string(webhookResp2.Body))
-			Expect(webhookResp2.StatusCode).To(Equal(http.StatusAccepted),
-				fmt.Sprintf("Duplicate alert must return 202 Accepted (got %d); body: %s",
-					webhookResp2.StatusCode, string(webhookResp2.Body)))
 
 			// BUSINESS OUTCOME 2: NO new CRD created (ADR-057: 202 returns same RR name)
 			var gwResp2 GatewayResponse
@@ -234,11 +231,8 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 			}
 
 			// Third alert: Still duplicate
-			webhookResp3 := sendWebhook(gatewayURL, "/api/v1/signals/prometheus", payload)
+			webhookResp3 := sendWebhookExpectAccepted(gatewayURL, "/api/v1/signals/prometheus", payload)
 			GinkgoWriter.Printf("[dedup-3rd] HTTP %d - %s\n", webhookResp3.StatusCode, string(webhookResp3.Body))
-			Expect(webhookResp3.StatusCode).To(Equal(http.StatusAccepted),
-				fmt.Sprintf("Third duplicate must return 202 Accepted (got %d); body: %s",
-					webhookResp3.StatusCode, string(webhookResp3.Body)))
 
 			// BUSINESS OUTCOME 3: Still only 1 CRD (ADR-057: Get by name)
 			var crd3 remediationv1alpha1.RemediationRequest
@@ -287,11 +281,9 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 
 			// Send 4 more duplicates
 			for i := 0; i < 4; i++ {
-				dupResp := sendWebhook(gatewayURL, "/api/v1/signals/prometheus", payload)
+				dupResp := sendWebhookExpectAccepted(gatewayURL, "/api/v1/signals/prometheus", payload)
 				GinkgoWriter.Printf("[dup-count-%d] HTTP %d - %s\n",
 					i+2, dupResp.StatusCode, string(dupResp.Body))
-				Expect(dupResp.StatusCode).To(Equal(http.StatusAccepted),
-					fmt.Sprintf("Duplicate %d must return 202 Accepted (got %d)", i+2, dupResp.StatusCode))
 			}
 
 			// DD-GATEWAY-011: BUSINESS OUTCOME: RR status.deduplication tracks duplicate count

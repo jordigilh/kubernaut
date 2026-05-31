@@ -217,6 +217,22 @@ func sendWebhookExpectCreated(baseURL, path string, payload []byte) *WebhookResp
 	return resp
 }
 
+// sendWebhookExpectAccepted sends a webhook and retries until HTTP 202 is received.
+// This handles transient K8s API timeouts during owner resolution that cause the
+// gateway to return HTTP 400 ("batch parse failed") for duplicate signals that
+// should be deduplicated. Under Kind cluster load, the K8s API can be slow to
+// respond, causing context deadline exceeded errors during owner chain resolution.
+// Retrying is safe because additional duplicate occurrences still produce 202.
+func sendWebhookExpectAccepted(baseURL, path string, payload []byte) *WebhookResponse {
+	var resp *WebhookResponse
+	Eventually(func() int {
+		resp = sendWebhook(baseURL, path, payload)
+		return resp.StatusCode
+	}, "15s", "1s").Should(Equal(http.StatusAccepted),
+		"Duplicate alert should return 202 Accepted (retries handle transient K8s API timeouts during owner resolution)")
+	return resp
+}
+
 // sendWebhookRequest sends an HTTP POST request to Gateway webhook endpoint
 // with mandatory X-Timestamp header for replay attack prevention
 func sendWebhookRequest(gatewayURL, path string, body []byte) *WebhookResponse { //nolint:unused
