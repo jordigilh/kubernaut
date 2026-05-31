@@ -19,6 +19,8 @@ package tools_test
 import (
 	"context"
 	"errors"
+	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
@@ -31,7 +33,9 @@ import (
 )
 
 // mockHTTPCompleter implements mcptools.HTTPSessionCompleter for unit tests.
+// Fields written by goroutines are guarded by mu.
 type mockHTTPCompleter struct {
+	mu              sync.Mutex
 	completedID     string
 	completedResult *katypes.InvestigationResult
 	completeErr     error
@@ -40,18 +44,30 @@ type mockHTTPCompleter struct {
 }
 
 func (m *mockHTTPCompleter) CompleteUserDriving(id string, result *katypes.InvestigationResult) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.completedID = id
 	m.completedResult = result
 	return m.completeErr
 }
 
 func (m *mockHTTPCompleter) FindUserDrivingByRemediationID(_ string) (string, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	return m.foundID, m.found
 }
 
 func (m *mockHTTPCompleter) ForceCompleteByRemediationID(_ string, result *katypes.InvestigationResult) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.completedResult = result
 	return m.completeErr
+}
+
+func (m *mockHTTPCompleter) getCompleted() (string, *katypes.InvestigationResult) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.completedID, m.completedResult
 }
 
 // discoveryWithWorkflow creates a DiscoveryResult with a recommended workflow.
@@ -456,14 +472,23 @@ var _ = Describe("kubernaut_select_workflow — discovery gating & auto-complete
 			Expect(err).NotTo(HaveOccurred())
 			Expect(output.Status).To(Equal("workflow_selected"))
 
-			Expect(completer.completedID).To(Equal("http-sess-001"))
-			Expect(completer.completedResult).NotTo(BeNil())
-			Expect(completer.completedResult.WorkflowID).To(Equal(wfID))
-			Expect(completer.completedResult.RCASummary).To(Equal("OOM crash"))
-			Expect(completer.completedResult.WorkflowRationale).To(Equal("User-selected via interactive mode"))
+			// Session completion and lease release are deferred to a goroutine
+			// to avoid closing the transport before the MCP response is sent.
+			// All assertions use mutex-safe getters to avoid data races.
+			Eventually(func(g Gomega) {
+				id, result := completer.getCompleted()
+				g.Expect(id).To(Equal("http-sess-001"))
+				g.Expect(result).NotTo(BeNil())
+				g.Expect(result.WorkflowID).To(Equal(wfID))
+				g.Expect(result.RCASummary).To(Equal("OOM crash"))
+				g.Expect(result.WorkflowRationale).To(Equal("User-selected via interactive mode"))
+			}).WithTimeout(2 * time.Second).WithPolling(50 * time.Millisecond).Should(Succeed())
 
-			Expect(sessions.releasedID).To(Equal("sess-ac-001"))
-			Expect(sessions.releasedReason).To(Equal("workflow_selected"))
+			Eventually(func(g Gomega) {
+				id, reason := sessions.getReleased()
+				g.Expect(id).To(Equal("sess-ac-001"))
+				g.Expect(reason).To(Equal("workflow_selected"))
+			}).WithTimeout(2 * time.Second).WithPolling(50 * time.Millisecond).Should(Succeed())
 		})
 	})
 })
@@ -697,6 +722,123 @@ var _ = Describe("kubernaut_select_workflow — helper functions", func() {
 		})
 	})
 
+	Describe("UT-KA-SW-BUILDFINAL-PARAMS-001: buildFinalResult injects TARGET_RESOURCE_* from RemediationTarget", func() {
+		It("should include TARGET_RESOURCE_* alongside discovery params when RemediationTarget is set", func() {
+			rca := &katypes.InvestigationResult{
+				RCASummary: "OOM on api-server",
+				RemediationTarget: katypes.RemediationTarget{
+					Kind:      "Deployment",
+					Name:      "api-server",
+					Namespace: "production",
+				},
+				Parameters: map[string]interface{}{
+					"STALE_KEY": "stale_val",
+				},
+			}
+			workflow := &mcptools.CatalogWorkflow{WorkflowID: "wf-increase-mem"}
+			discovery := &mcpinternal.WorkflowDiscoveryResult{
+				Recommended: &mcpinternal.DiscoveredWorkflow{
+					WorkflowID: "wf-increase-mem",
+					Parameters: map[string]interface{}{"MEMORY_LIMIT_NEW": "512Mi"},
+				},
+			}
+
+			result := mcptools.BuildFinalResult(rca, workflow, discovery)
+
+			Expect(result.Parameters).To(HaveKeyWithValue("MEMORY_LIMIT_NEW", "512Mi"),
+				"discovery params must be preserved")
+			Expect(result.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_NAME", "api-server"),
+				"KA-managed TARGET_RESOURCE_NAME must be injected from RemediationTarget")
+			Expect(result.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_KIND", "Deployment"),
+				"KA-managed TARGET_RESOURCE_KIND must be injected from RemediationTarget")
+			Expect(result.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_NAMESPACE", "production"),
+				"KA-managed TARGET_RESOURCE_NAMESPACE must be injected from RemediationTarget")
+			Expect(result.Parameters).NotTo(HaveKey("STALE_KEY"),
+				"stale RCA params must not leak when discovery params are found")
+		})
+
+		It("should inject TARGET_RESOURCE_* even when discovery has nil params for the selected workflow", func() {
+			rca := &katypes.InvestigationResult{
+				RCASummary: "crash loop",
+				RemediationTarget: katypes.RemediationTarget{
+					Kind:       "Deployment",
+					Name:       "worker",
+					Namespace:  "demo-crashloop",
+					APIVersion: "apps/v1",
+				},
+			}
+			workflow := &mcptools.CatalogWorkflow{WorkflowID: "wf-rollback"}
+			discovery := &mcpinternal.WorkflowDiscoveryResult{
+				Recommended: &mcpinternal.DiscoveredWorkflow{
+					WorkflowID: "wf-rollback",
+					Parameters: nil,
+				},
+			}
+
+			result := mcptools.BuildFinalResult(rca, workflow, discovery)
+
+			Expect(result.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_NAME", "worker"),
+				"TARGET_RESOURCE_NAME must be injected even when discovery params are nil")
+			Expect(result.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_KIND", "Deployment"),
+				"TARGET_RESOURCE_KIND must be injected even when discovery params are nil")
+			Expect(result.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_NAMESPACE", "demo-crashloop"),
+				"TARGET_RESOURCE_NAMESPACE must be injected even when discovery params are nil")
+			Expect(result.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_API_VERSION", "apps/v1"),
+				"TARGET_RESOURCE_API_VERSION must be injected when RemediationTarget has apiVersion")
+		})
+
+		It("should prefer Phase 3's K8s-verified RemediationTarget over Phase 2's LLM-parsed values", func() {
+			rca := &katypes.InvestigationResult{
+				RCASummary: "OOM analysis",
+				RemediationTarget: katypes.RemediationTarget{
+					Kind:      "Pod",
+					Name:      "test-pod",
+					Namespace: "default",
+				},
+			}
+			workflow := &mcptools.CatalogWorkflow{WorkflowID: "wf-increase-mem"}
+			discovery := &mcpinternal.WorkflowDiscoveryResult{
+				Recommended: &mcpinternal.DiscoveredWorkflow{
+					WorkflowID: "wf-increase-mem",
+					Parameters: map[string]interface{}{"MEMORY_LIMIT_NEW": "512Mi"},
+				},
+				FullResult: &katypes.InvestigationResult{
+					RemediationTarget: katypes.RemediationTarget{
+						Kind:      "Deployment",
+						Name:      "api-server",
+						Namespace: "production",
+					},
+				},
+			}
+
+			result := mcptools.BuildFinalResult(rca, workflow, discovery)
+
+			Expect(result.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_NAME", "api-server"),
+				"must use Phase 3's K8s-verified name, not Phase 2's LLM-parsed 'test-pod'")
+			Expect(result.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_KIND", "Deployment"),
+				"must use Phase 3's K8s-verified kind, not Phase 2's LLM-parsed 'Pod'")
+			Expect(result.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_NAMESPACE", "production"),
+				"must use Phase 3's K8s-verified namespace, not Phase 2's LLM-parsed 'default'")
+			Expect(result.Parameters).To(HaveKeyWithValue("MEMORY_LIMIT_NEW", "512Mi"),
+				"discovery params must still be present alongside corrected TARGET_RESOURCE_*")
+		})
+
+		It("should not inject TARGET_RESOURCE_* when RemediationTarget.Kind is empty", func() {
+			rca := &katypes.InvestigationResult{
+				RCASummary: "no target",
+				Parameters: map[string]interface{}{"EXISTING": "val"},
+			}
+			workflow := &mcptools.CatalogWorkflow{WorkflowID: "wf-generic"}
+
+			result := mcptools.BuildFinalResult(rca, workflow, nil)
+
+			Expect(result.Parameters).To(HaveKeyWithValue("EXISTING", "val"),
+				"RCA params should pass through when no discovery and no RemediationTarget")
+			Expect(result.Parameters).NotTo(HaveKey("TARGET_RESOURCE_NAME"),
+				"should not inject TARGET_RESOURCE_* when RemediationTarget.Kind is empty")
+		})
+	})
+
 	Describe("UT-KA-SW-ISWF-001: isWorkflowInDiscoveryResult edge cases", func() {
 		It("should match recommended workflow", func() {
 			dr := &mcpinternal.WorkflowDiscoveryResult{
@@ -886,14 +1028,18 @@ var _ = Describe("kubernaut_select_workflow — per-workflow parameter hand-off 
 			Expect(err).NotTo(HaveOccurred(),
 				"select_workflow must succeed when the user picks a discovery-listed alternative")
 
-			Expect(completer.completedResult).NotTo(BeNil(),
-				"the HTTP completer must receive the merged investigation result for session completion")
-			Expect(completer.completedResult.Parameters).To(HaveKey("ALT_KEY"),
-				"the completer must forward parameters for the workflow the user actually selected")
-			Expect(completer.completedResult.Parameters["ALT_KEY"]).To(Equal("alt_val"),
-				"downstream automation must see concrete values from the alternative workflow")
-			Expect(completer.completedResult.Parameters).NotTo(HaveKey("REC_KEY"),
-				"recommended-workflow parameters must not leak after an explicit alternative choice")
+			// Session completion is deferred to a goroutine.
+			Eventually(func(g Gomega) {
+				_, result := completer.getCompleted()
+				g.Expect(result).NotTo(BeNil(),
+					"the HTTP completer must receive the merged investigation result for session completion")
+				g.Expect(result.Parameters).To(HaveKey("ALT_KEY"),
+					"the completer must forward parameters for the workflow the user actually selected")
+				g.Expect(result.Parameters["ALT_KEY"]).To(Equal("alt_val"),
+					"downstream automation must see concrete values from the alternative workflow")
+				g.Expect(result.Parameters).NotTo(HaveKey("REC_KEY"),
+					"recommended-workflow parameters must not leak after an explicit alternative choice")
+			}).WithTimeout(2 * time.Second).WithPolling(50 * time.Millisecond).Should(Succeed())
 		})
 	})
 })

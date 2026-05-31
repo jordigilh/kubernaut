@@ -41,6 +41,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	scope "github.com/jordigilh/kubernaut/pkg/shared/scope"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 	internalconfig "github.com/jordigilh/kubernaut/internal/config"
@@ -65,6 +66,7 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(aianalysisv1.AddToScheme(scheme))
+	utilruntime.Must(isv1alpha1.AddToScheme(scheme))
 }
 
 func main() {
@@ -127,6 +129,11 @@ func main() {
 						controllerNS: {},
 					},
 				},
+				&isv1alpha1.InvestigationSession{}: {
+					Namespaces: map[string]cache.Config{
+						controllerNS: {},
+					},
+				},
 			},
 		},
 		Metrics: metricsserver.Options{
@@ -138,6 +145,38 @@ func main() {
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
+		os.Exit(1)
+	}
+
+	// BR-INTERACTIVE-010: Register field index for InvestigationSession lookups by RR name.
+	if err := mgr.GetFieldIndexer().IndexField(context.Background(),
+		&isv1alpha1.InvestigationSession{},
+		handlers.ISFieldIndexRRName,
+		func(obj crclient.Object) []string {
+			is := obj.(*isv1alpha1.InvestigationSession)
+			if is.Spec.RemediationRequestRef.Name == "" {
+				return nil
+			}
+			return []string{is.Spec.RemediationRequestRef.Name}
+		},
+	); err != nil {
+		setupLog.Error(err, "unable to register InvestigationSession field index")
+		os.Exit(1)
+	}
+
+	// BR-INTERACTIVE-010: Register field index for AIAnalysis lookups by RR name (IS→AA mapping).
+	if err := mgr.GetFieldIndexer().IndexField(context.Background(),
+		&aianalysisv1.AIAnalysis{},
+		aianalysis.AIAnalysisRRNameIndex(),
+		func(obj crclient.Object) []string {
+			aa := obj.(*aianalysisv1.AIAnalysis)
+			if aa.Spec.RemediationRequestRef.Name == "" {
+				return nil
+			}
+			return []string{aa.Spec.RemediationRequestRef.Name}
+		},
+	); err != nil {
+		setupLog.Error(err, "unable to register AIAnalysis RR name field index")
 		os.Exit(1)
 	}
 
@@ -237,10 +276,14 @@ func main() {
 	// ========================================
 	controllerLog := ctrl.Log.WithName("controllers").WithName("AIAnalysis")
 	eventRecorder := mgr.GetEventRecorderFor("aianalysis-controller")
+	isChecker := handlers.NewK8sInvestigationSessionChecker(mgr.GetAPIReader(), controllerNS)
+	isPhaseUpdater := handlers.NewK8sISPhaseUpdater(mgr.GetClient(), controllerNS)
 	investigatingHandler := handlers.NewInvestigatingHandler(agentClient, controllerLog, aianalysisMetrics, auditClient,
 		handlers.WithRecorder(eventRecorder),                              // DD-EVENT-001: Session lifecycle events
 		handlers.WithSessionMode(),                                        // BR-AA-HAPI-064: Async submit/poll/result flow
-		handlers.WithSessionPollInterval(cfg.Agent.SessionPollInterval)) // BR-AA-HAPI-064.8: From config
+		handlers.WithSessionPollInterval(cfg.Agent.SessionPollInterval),   // BR-AA-HAPI-064.8: From config
+		handlers.WithInvestigationSessionChecker(isChecker),               // BR-INTERACTIVE-010: IS CRD awareness
+		handlers.WithISPhaseUpdater(isPhaseUpdater))                       // BR-INTERACTIVE-010: Set IS Active after submit
 	analyzingHandler := handlers.NewAnalyzingHandler(regoEvaluator, controllerLog, aianalysisMetrics, auditClient).
 		WithConfidenceThreshold(cfg.Rego.ConfidenceThreshold) // #225: operator-configurable threshold
 
@@ -253,17 +296,18 @@ func main() {
 	statusManager := aistatus.NewManager(mgr.GetClient(), mgr.GetAPIReader())
 	setupLog.Info("AIAnalysis status manager initialized (DD-PERF-001 + AA-HAPI-001)")
 
-	if err = (&aianalysis.AIAnalysisReconciler{
-		Client:               mgr.GetClient(),
-		Scheme:               mgr.GetScheme(),
-		Recorder:             eventRecorder,
-		Log:                  controllerLog,
-		Metrics:              aianalysisMetrics,    // DD-METRICS-001: Injected metrics (P0)
-		StatusManager:        statusManager,        // DD-PERF-001: Atomic status updates
-		InvestigatingHandler: investigatingHandler, // BR-AI-007: KA integration
-		AnalyzingHandler:     analyzingHandler,     // BR-AI-012: Rego policy evaluation
-		AuditClient:          auditClient,          // DD-AUDIT-003: P0 audit traces
-	}).SetupWithManager(mgr); err != nil {
+	aaReconciler := &aianalysis.AIAnalysisReconciler{
+		Client:           mgr.GetClient(),
+		Scheme:           mgr.GetScheme(),
+		Recorder:         eventRecorder,
+		Log:              controllerLog,
+		Metrics:          aianalysisMetrics, // DD-METRICS-001: Injected metrics (P0)
+		StatusManager:    statusManager,     // DD-PERF-001: Atomic status updates
+		AnalyzingHandler: analyzingHandler,  // BR-AI-012: Rego policy evaluation
+		AuditClient:      auditClient,       // DD-AUDIT-003: P0 audit traces
+	}
+	aaReconciler.InvestigatingHandler.Store(investigatingHandler) // BR-AI-007: KA integration
+	if err = aaReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "AIAnalysis")
 		os.Exit(1)
 	}

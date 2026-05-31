@@ -83,12 +83,36 @@ func (m *mockAutoMgrIT) SuspendInvestigation(id string) error {
 	return m.mgr.SuspendInvestigation(id)
 }
 
+func (m *mockAutoMgrIT) StartInvestigation(_ context.Context, _ session.InvestigateFunc, _ map[string]string) (string, error) {
+	return "", fmt.Errorf("not implemented in IT mock")
+}
+
+func (m *mockAutoMgrIT) Subscribe(_ context.Context, _ string) (<-chan session.InvestigationEvent, error) {
+	return nil, fmt.Errorf("not implemented in IT mock")
+}
+
 func (m *mockAutoMgrIT) TransitionToUserDriving(id, username string, groups []string) error {
 	return m.mgr.TransitionToUserDriving(id, username, groups)
 }
 
 func (m *mockAutoMgrIT) ForceTransitionToUserDriving(rrID, username string, groups []string) error {
 	return m.mgr.ForceTransitionToUserDriving(rrID, username, groups)
+}
+
+func (m *mockAutoMgrIT) FindPendingByRemediationID(rrID string) (string, bool) {
+	return m.mgr.FindPendingByRemediationID(rrID)
+}
+
+func (m *mockAutoMgrIT) LaunchDeferredInvestigation(id string) error {
+	return m.mgr.LaunchDeferredInvestigation(id)
+}
+
+func (m *mockAutoMgrIT) GetLatestRCASummaryByRemediationID(rrID string) (string, bool) {
+	return m.mgr.GetLatestRCASummaryByRemediationID(rrID)
+}
+
+func (m *mockAutoMgrIT) GetLatestRCAResultByRemediationID(rrID string) (*katypes.InvestigationResult, bool) {
+	return m.mgr.GetLatestRCAResultByRemediationID(rrID)
 }
 
 var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", func() {
@@ -183,7 +207,7 @@ var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", 
 			handler, _ := mcpinternal.BootstrapMCP(mcpinternal.MCPDeps{
 				AuthMiddleware: fakeAuthMiddleware("alice@example.com"),
 				Tools: mcpinternal.ToolDeps{
-					Investigate: tools.InvestigateRegistration(tool, nil, nil),
+					Investigate: tools.InvestigateRegistration(tool, nil, nil, logr.Discard()),
 				},
 			})
 

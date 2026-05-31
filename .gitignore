@@ -297,3 +297,7 @@ must-gather-*.tar.gz
 *.vsix
 *.venv*
 /apifrontend
+
+# SBOM and license report artifacts (generated during builds)
+/sbom-*/
+/license-report/

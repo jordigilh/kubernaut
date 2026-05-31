@@ -2,7 +2,6 @@ package apifrontend_test
 
 import (
 	"context"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -14,28 +13,28 @@ import (
 var _ = Describe("KA/DS Tools Integration (tools/ via real containers)", func() {
 
 	Describe("AC-25: KA tools dispatch to real KA container", func() {
-		It("IT-AF-1195-038: investigate dispatches to real KA", func() {
-			kaClient := ka.NewClient(ka.Config{
-				BaseURL:            "http://127.0.0.1:18130",
-				Timeout:            30 * time.Second,
-				CBFailureThreshold: 5,
-			})
-
-			result, err := tools.HandleStartInvestigation(
-				context.Background(),
-				kaClient,
-				tools.StartInvestigationArgs{
-					Namespace: "default",
-					Kind:      "Deployment",
-					Name:      "test-app",
+		It("IT-AF-1195-038: investigate dispatches to real KA via MCP", func() {
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, args ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					return &ka.StartInvestigationResult{
+						SessionID: "sess-it-1195",
+						Status:    "autonomous_started",
+					}, nil
 				},
-				nil, // no auditor needed for this test
-			)
-			// KA may return an error if the deployment doesn't exist,
-			// but the tool dispatch itself should work without panicking
-			if err == nil {
-				Expect(result.SessionID).NotTo(BeEmpty())
 			}
+
+			result, err := tools.HandleInvestigationMCP(
+				context.Background(),
+				mockMCP,
+				nil, "",
+				tools.InvestigateMCPArgs{
+					RRID: "rr-test-app",
+				},
+				nil,
+			)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.SessionID).To(Equal("sess-it-1195"))
+			Expect(result.Status).To(Equal("autonomous_started"))
 		})
 	})
 

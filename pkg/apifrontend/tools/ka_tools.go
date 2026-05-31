@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
-	"time"
 
 	"google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
@@ -13,151 +12,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
 )
-
-// StartInvestigationArgs defines the input for kubernaut_start_investigation.
-type StartInvestigationArgs struct {
-	Namespace string `json:"namespace"`
-	Name      string `json:"name"`
-	Kind      string `json:"kind,omitempty"`
-}
-
-// StartInvestigationResult is the output of kubernaut_start_investigation.
-type StartInvestigationResult struct {
-	SessionID string `json:"session_id"`
-	Status    string `json:"status"`
-	Message   string `json:"message"`
-}
-
-// HandleStartInvestigation implements the kubernaut_start_investigation logic.
-func HandleStartInvestigation(ctx context.Context, kaClient *ka.Client, args StartInvestigationArgs, auditor audit.Emitter) (StartInvestigationResult, error) {
-	sessionID, err := kaClient.Analyze(ctx, ka.AnalyzeRequest{
-		Namespace: args.Namespace,
-		Kind:      args.Kind,
-		Name:      args.Name,
-	})
-	if err != nil {
-		return StartInvestigationResult{}, fmt.Errorf("starting investigation: %w", err)
-	}
-
-	if auditor != nil {
-		auditor.Emit(ctx, &audit.Event{
-			Type: audit.EventKADelegated,
-			Detail: map[string]string{
-				"namespace":  args.Namespace,
-				"rr_name":    args.Name,
-				"session_id": sessionID,
-			},
-		})
-	}
-
-	return StartInvestigationResult{
-		SessionID: sessionID,
-		Status:    "started",
-		Message:   fmt.Sprintf("Investigation started for %s/%s (session: %s)", args.Namespace, args.Name, sessionID),
-	}, nil
-}
-
-// NewStartInvestigationTool creates the kubernaut_start_investigation tool.
-func NewStartInvestigationTool(kaClient *ka.Client, auditor audit.Emitter) (tool.Tool, error) {
-	return functiontool.New(functiontool.Config{
-		Name:        "kubernaut_start_investigation",
-		Description: "Start an AI-powered investigation for an incident, returning a session ID for tracking",
-	}, func(ctx tool.Context, args StartInvestigationArgs) (StartInvestigationResult, error) {
-		return HandleStartInvestigation(ctx, kaClient, args, auditor)
-	})
-}
-
-// PollInvestigationArgs defines the input for kubernaut_poll_investigation.
-type PollInvestigationArgs struct {
-	SessionID string `json:"session_id"`
-}
-
-// PollInvestigationResult is the output of kubernaut_poll_investigation.
-type PollInvestigationResult struct {
-	Status    string `json:"status"`
-	Progress  string `json:"progress,omitempty"`
-	Summary   string `json:"summary,omitempty"`
-	PollCount int    `json:"poll_count"`
-}
-
-// HandlePollInvestigation implements kubernaut_poll_investigation with blocking poll.
-// maxPolls controls how many times to poll; pollInterval is the wait between polls.
-func HandlePollInvestigation(ctx context.Context, kaClient *ka.Client, args PollInvestigationArgs, maxPolls int, pollInterval time.Duration, auditor audit.Emitter) (PollInvestigationResult, error) {
-	for i := 1; i <= maxPolls; i++ {
-		status, err := kaClient.Status(ctx, args.SessionID)
-		if err != nil {
-			return PollInvestigationResult{}, fmt.Errorf("polling investigation: %w", err)
-		}
-
-		switch status.Status {
-		case "completed":
-			result, err := kaClient.Result(ctx, args.SessionID)
-			if err != nil {
-				return PollInvestigationResult{}, fmt.Errorf("fetching investigation result: %w", err)
-			}
-			if auditor != nil {
-				auditor.Emit(ctx, &audit.Event{
-					Type: audit.EventKAResultReceived,
-					Detail: map[string]string{
-						"session_id": args.SessionID,
-						"status":     "completed",
-					},
-				})
-			}
-			return PollInvestigationResult{
-				Status:    "completed",
-				Summary:   result.Summary,
-				PollCount: i,
-			}, nil
-
-		case "failed":
-			if auditor != nil {
-				auditor.Emit(ctx, &audit.Event{
-					Type: audit.EventKAResultReceived,
-					Detail: map[string]string{
-						"session_id": args.SessionID,
-						"status":     "failed",
-					},
-				})
-			}
-			return PollInvestigationResult{
-				Status:    "failed",
-				Progress:  "Investigation failed. Please try again or contact support.",
-				PollCount: i,
-			}, nil
-
-		case "cancelled":
-			return PollInvestigationResult{
-				Status:    "cancelled",
-				PollCount: i,
-			}, nil
-		}
-
-		if i < maxPolls {
-			select {
-			case <-ctx.Done():
-				return PollInvestigationResult{}, ctx.Err()
-			case <-time.After(pollInterval):
-			}
-		}
-	}
-
-	return PollInvestigationResult{
-		Status:    "in_progress",
-		Progress:  "Investigation is still running. Call kubernaut_poll_investigation again.",
-		PollCount: maxPolls,
-	}, nil
-}
-
-// NewPollInvestigationTool creates the kubernaut_poll_investigation tool.
-func NewPollInvestigationTool(kaClient *ka.Client, auditor audit.Emitter) (tool.Tool, error) {
-	return functiontool.New(functiontool.Config{
-		Name:        "kubernaut_poll_investigation",
-		Description: "Check investigation progress. Blocks for up to 15 seconds polling every 3 seconds. Re-call if status is in_progress.",
-	}, func(ctx tool.Context, args PollInvestigationArgs) (PollInvestigationResult, error) {
-		return HandlePollInvestigation(ctx, kaClient, args, 5, 3*time.Second, auditor)
-	})
-}
 
 // WorkflowParameter describes a single input parameter for a workflow.
 type WorkflowParameter struct {
@@ -182,6 +36,7 @@ type WorkflowDetail struct {
 	Name        string              `json:"name"`
 	Description string              `json:"description"`
 	Kind        string              `json:"kind,omitempty"`
+	Confidence  float64             `json:"confidence,omitempty"`
 	Parameters  []WorkflowParameter `json:"parameters"`
 }
 
@@ -226,6 +81,7 @@ func HandleDiscoverWorkflows(ctx context.Context, mcpClient ka.MCPClient, args D
 			Name:        w.Name,
 			Description: w.Description,
 			Kind:        w.Kind,
+			Confidence:  w.Confidence,
 			Parameters:  params,
 		})
 	}
@@ -321,7 +177,7 @@ func validateParamType(p WorkflowParameter, val any) error {
 func NewDiscoverWorkflowsTool(mcpClient ka.MCPClient) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_discover_workflows",
-		Description: "Discover available workflows with their parameter schemas for LLM-populated execution",
+		Description: "Discover available workflows with their parameter schemas for LLM-populated execution. Requires an active interactive driver session — call kubernaut_investigate first.",
 	}, func(ctx tool.Context, args DiscoverWorkflowsArgs) (DiscoverWorkflowsResult, error) {
 		return HandleDiscoverWorkflows(ctx, mcpClient, args)
 	})
@@ -368,6 +224,7 @@ func HandleSelectWorkflow(ctx context.Context, mcpClient ka.MCPClient, args Sele
 			Detail: map[string]string{
 				"rr_id":       args.RRID,
 				"workflow_id": args.WorkflowID,
+				"decision":    "accept",
 				"status":      result.Status,
 			},
 		})
@@ -383,7 +240,7 @@ func HandleSelectWorkflow(ctx context.Context, mcpClient ka.MCPClient, args Sele
 func NewSelectWorkflowTool(mcpClient ka.MCPClient, auditor audit.Emitter) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_select_workflow",
-		Description: "Select a remediation workflow for execution. Triggers enrichment and workflow selection in the backend.",
+		Description: "Select a remediation workflow for execution. Triggers enrichment and workflow selection in the backend. Requires an active interactive driver session — call kubernaut_investigate first.",
 	}, func(ctx tool.Context, args SelectWorkflowArgs) (SelectWorkflowResult, error) {
 		return HandleSelectWorkflow(ctx, mcpClient, args, auditor)
 	})

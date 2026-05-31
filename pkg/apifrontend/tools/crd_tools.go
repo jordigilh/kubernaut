@@ -17,7 +17,10 @@ import (
 	"google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
 
+	"github.com/go-logr/logr"
+
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
 )
 
@@ -26,7 +29,7 @@ var rarGVR = schema.GroupVersionResource{Group: "kubernaut.ai", Version: "v1alph
 
 // ListRemediationsArgs defines the input for kubernaut_list_remediations.
 type ListRemediationsArgs struct {
-	Namespace string `json:"namespace"`
+	Namespace string `json:"-"`
 	Phase     string `json:"phase,omitempty"`
 	Kind      string `json:"kind,omitempty"`
 	Name      string `json:"name,omitempty"`
@@ -76,7 +79,7 @@ func HandleListRemediations(ctx context.Context, client dynamic.Interface, args 
 			continue
 		}
 		result = append(result, RemediationSummary{
-			ID:        item.GetNamespace() + "/" + item.GetName(),
+			ID:        item.GetName(),
 			Namespace: item.GetNamespace(),
 			Name:      item.GetName(),
 			Phase:     phase,
@@ -92,18 +95,19 @@ func HandleListRemediations(ctx context.Context, client dynamic.Interface, args 
 }
 
 // NewListRemediationsTool creates the kubernaut_list_remediations tool.
-func NewListRemediationsTool(client dynamic.Interface) (tool.Tool, error) {
+func NewListRemediationsTool(client dynamic.Interface, controllerNS string) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_list_remediations",
-		Description: "List active remediations with optional filtering by namespace, phase, kind, or name",
+		Description: "List active remediations with optional filtering by phase or kind",
 	}, func(ctx tool.Context, args ListRemediationsArgs) (ListRemediationsResult, error) {
+		args.Namespace = controllerNS
 		return HandleListRemediations(ctx, client, args)
 	})
 }
 
 // GetRemediationArgs defines the input for kubernaut_get_remediation.
 type GetRemediationArgs struct {
-	Namespace string `json:"namespace,omitempty"`
+	Namespace string `json:"-"`
 	Name      string `json:"name,omitempty"`
 	RRID      string `json:"rr_id,omitempty"`
 }
@@ -139,7 +143,7 @@ func HandleGetRemediation(ctx context.Context, client dynamic.Interface, args Ge
 	target, _, _ := unstructured.NestedString(obj.Object, "spec", "targetResource", "name")
 
 	return GetRemediationResult{
-		ID:        ns + "/" + name,
+		ID:        name,
 		Namespace: ns,
 		Name:      name,
 		Phase:     phase,
@@ -149,11 +153,14 @@ func HandleGetRemediation(ctx context.Context, client dynamic.Interface, args Ge
 }
 
 // NewGetRemediationTool creates the kubernaut_get_remediation tool.
-func NewGetRemediationTool(client dynamic.Interface) (tool.Tool, error) {
+// controllerNS is always injected as the namespace (all RR CRDs live in the
+// controller namespace per ADR-057). The namespace field is hidden from the LLM.
+func NewGetRemediationTool(client dynamic.Interface, controllerNS string) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_get_remediation",
-		Description: "Get detailed information about a specific remediation by namespace/name or rr_id",
+		Description: "Get detailed information about a specific remediation by rr_id or name",
 	}, func(ctx tool.Context, args GetRemediationArgs) (GetRemediationResult, error) {
+		args.Namespace = controllerNS
 		return HandleGetRemediation(ctx, client, args)
 	})
 }
@@ -164,7 +171,7 @@ func NewGetRemediationTool(client dynamic.Interface) (tool.Tool, error) {
 
 // ListApprovalRequestsArgs defines the input for kubernaut_list_approval_requests.
 type ListApprovalRequestsArgs struct {
-	Namespace string `json:"namespace"`
+	Namespace string `json:"-"`
 	Decision  string `json:"decision,omitempty"`
 }
 
@@ -255,11 +262,12 @@ func matchesDecisionFilter(actual, filter string) bool {
 }
 
 // NewListApprovalRequestsTool creates the kubernaut_list_approval_requests tool.
-func NewListApprovalRequestsTool(client dynamic.Interface) (tool.Tool, error) {
+func NewListApprovalRequestsTool(client dynamic.Interface, controllerNS string) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_list_approval_requests",
 		Description: "List remediation approval requests with optional filtering by decision status (pending, approved, rejected, expired)",
 	}, func(ctx tool.Context, args ListApprovalRequestsArgs) (ListApprovalRequestsResult, error) {
+		args.Namespace = controllerNS
 		return HandleListApprovalRequests(ctx, client, args)
 	})
 }
@@ -270,7 +278,7 @@ func NewListApprovalRequestsTool(client dynamic.Interface) (tool.Tool, error) {
 
 // GetApprovalRequestArgs defines the input for kubernaut_get_approval_request.
 type GetApprovalRequestArgs struct {
-	Namespace string `json:"namespace,omitempty"`
+	Namespace string `json:"-"`
 	Name      string `json:"name,omitempty"`
 	RARID     string `json:"rar_id,omitempty"`
 }
@@ -435,18 +443,19 @@ func HandleGetApprovalRequest(ctx context.Context, client dynamic.Interface, arg
 }
 
 // NewGetApprovalRequestTool creates the kubernaut_get_approval_request tool.
-func NewGetApprovalRequestTool(client dynamic.Interface) (tool.Tool, error) {
+func NewGetApprovalRequestTool(client dynamic.Interface, controllerNS string) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_get_approval_request",
 		Description: "Get full details of a specific remediation approval request for review before deciding",
 	}, func(ctx tool.Context, args GetApprovalRequestArgs) (GetApprovalRequestResult, error) {
+		args.Namespace = controllerNS
 		return HandleGetApprovalRequest(ctx, client, args)
 	})
 }
 
 // ApproveArgs defines the input for kubernaut_approve.
 type ApproveArgs struct {
-	Namespace        string `json:"namespace"`
+	Namespace        string `json:"-"`
 	RARName          string `json:"rar_name"`
 	Decision         string `json:"decision"`
 	Reason           string `json:"reason,omitempty"`
@@ -520,11 +529,12 @@ func HandleApprove(ctx context.Context, client dynamic.Interface, args ApproveAr
 }
 
 // NewApproveTool creates the kubernaut_approve tool.
-func NewApproveTool(client dynamic.Interface) (tool.Tool, error) {
+func NewApproveTool(client dynamic.Interface, controllerNS string) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_approve",
 		Description: "Approve or reject a pending remediation approval request",
 	}, func(ctx tool.Context, args ApproveArgs) (ApproveResult, error) {
+		args.Namespace = controllerNS
 		return HandleApprove(ctx, client, args, usernameFromContext(ctx))
 	})
 }
@@ -540,7 +550,7 @@ func usernameFromContext(ctx context.Context) string {
 
 // CancelRemediationArgs defines the input for kubernaut_cancel_remediation.
 type CancelRemediationArgs struct {
-	Namespace string `json:"namespace,omitempty"`
+	Namespace string `json:"-"`
 	Name      string `json:"name,omitempty"`
 	RRID      string `json:"rr_id,omitempty"`
 }
@@ -599,19 +609,23 @@ func HandleCancelRemediation(ctx context.Context, client dynamic.Interface, args
 }
 
 // NewCancelRemediationTool creates the kubernaut_cancel_remediation tool.
-func NewCancelRemediationTool(client dynamic.Interface) (tool.Tool, error) {
+// controllerNS is always injected as the namespace (all RR CRDs live in the
+// controller namespace per ADR-057). The namespace field is hidden from the LLM.
+func NewCancelRemediationTool(client dynamic.Interface, controllerNS string) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_cancel_remediation",
 		Description: "Cancel an active remediation that has not yet reached a terminal state",
 	}, func(ctx tool.Context, args CancelRemediationArgs) (CancelRemediationResult, error) {
+		args.Namespace = controllerNS
 		return HandleCancelRemediation(ctx, client, args)
 	})
 }
 
 // WatchArgs defines the input for kubernaut_watch.
 type WatchArgs struct {
-	Namespace string `json:"namespace"`
-	Name      string `json:"name"`
+	Namespace string `json:"-"`
+	RRID      string `json:"rr_id,omitempty"`
+	Name      string `json:"name,omitempty"`
 }
 
 // WatchEvent represents a single status change event.
@@ -624,18 +638,27 @@ type WatchEvent struct {
 
 // WatchResult is the output of kubernaut_watch.
 type WatchResult struct {
-	Events []WatchEvent `json:"events"`
-	Status string       `json:"status"`
+	Events  []WatchEvent `json:"events"`
+	Status  string       `json:"status"`
+	Outcome string       `json:"outcome,omitempty"`
+	Message string       `json:"message,omitempty"`
 }
 
 // maxWatchDuration is the maximum time HandleWatch will block before returning.
-const maxWatchDuration = 10 * time.Minute
+const maxWatchDuration = 15 * time.Minute
 
-// HandleWatch implements the kubernaut_watch logic.
+// HandleWatch implements the kubernaut_watch logic with progressive SSE
+// updates via EventBridge and RAR approval lifecycle tracking.
 func HandleWatch(ctx context.Context, client dynamic.Interface, args WatchArgs) (WatchResult, error) {
 	if client == nil {
 		return WatchResult{}, ErrK8sUnavailable
 	}
+	ns, name, err := ParseRRID(args.RRID, args.Namespace, args.Name)
+	if err != nil {
+		return WatchResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+	}
+	args.Namespace = ns
+	args.Name = name
 	if err := validate.Namespace(args.Namespace); err != nil {
 		return WatchResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
 	}
@@ -643,8 +666,8 @@ func HandleWatch(ctx context.Context, client dynamic.Interface, args WatchArgs) 
 		return WatchResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
 	}
 
-	// Verify the RR exists before blocking on a watch — a watch on a
-	// non-existent resource would silently block until the 10-minute timeout.
+	logger := logr.FromContextOrDiscard(ctx)
+
 	if _, err := client.Resource(rrGVR).Namespace(args.Namespace).Get(ctx, args.Name, metav1.GetOptions{}); err != nil {
 		return WatchResult{}, ToUserFriendlyError(err)
 	}
@@ -652,50 +675,329 @@ func HandleWatch(ctx context.Context, client dynamic.Interface, args WatchArgs) 
 	watchCtx, cancel := context.WithTimeout(ctx, maxWatchDuration)
 	defer cancel()
 
-	watcher, err := client.Resource(rrGVR).Namespace(args.Namespace).Watch(watchCtx, metav1.ListOptions{
+	rrWatcher, err := client.Resource(rrGVR).Namespace(args.Namespace).Watch(watchCtx, metav1.ListOptions{
 		FieldSelector: "metadata.name=" + args.Name,
 	})
 	if err != nil {
 		return WatchResult{}, ToUserFriendlyError(err)
 	}
-	defer watcher.Stop()
+	defer rrWatcher.Stop()
 
-	var events []WatchEvent
+	// RAR watch: graceful degradation if RBAC is missing or RAR not yet created.
+	rarName := fmt.Sprintf("rar-%s", args.Name)
+	var rarCh <-chan watch.Event
+	rarWatcher, rarErr := client.Resource(rarGVR).Namespace(args.Namespace).Watch(watchCtx, metav1.ListOptions{
+		FieldSelector: "metadata.name=" + rarName,
+	})
+	if rarErr != nil {
+		logger.V(1).Info("RAR watch unavailable, continuing with RR-only watch",
+			"rar_name", rarName, "error", rarErr)
+	} else {
+		defer rarWatcher.Stop()
+		rarCh = rarWatcher.ResultChan()
+	}
+
+	var (
+		events          []WatchEvent
+		lastSeenPhase   string
+		lastRARDecision string
+	)
+
+	_ = launcher.EmitReasoningSafe(ctx, "Watching remediation progress...\n")
 
 	for {
 		select {
 		case <-ctx.Done():
 			return WatchResult{Events: events, Status: "cancelled"}, nil
-		case evt, ok := <-watcher.ResultChan():
+
+		case evt, ok := <-rrWatcher.ResultChan():
 			if !ok {
 				return WatchResult{Events: events, Status: "completed"}, nil
+			}
+			if evt.Type != watch.Modified && evt.Type != watch.Added {
+				continue
+			}
+			obj, ok := evt.Object.(*unstructured.Unstructured)
+			if !ok {
+				continue
+			}
+			phase, _, _ := unstructured.NestedString(obj.Object, "status", "overallPhase")
+			if phase == lastSeenPhase {
+				continue
+			}
+			lastSeenPhase = phase
+			msg := fmt.Sprintf("Phase changed to %s", phase)
+			events = append(events, WatchEvent{
+				Timestamp: time.Now().UTC().Format(time.RFC3339),
+				Resource:  "RemediationRequest",
+				Phase:     phase,
+				Message:   msg,
+			})
+			_ = launcher.EmitReasoningSafe(ctx, fmt.Sprintf("Remediation phase: %s\n", phase))
+			if IsTerminalPhase(phase) {
+				outcome, _, _ := unstructured.NestedString(obj.Object, "status", "outcome")
+				statusMsg, _, _ := unstructured.NestedString(obj.Object, "status", "message")
+				return WatchResult{Events: events, Status: "completed", Outcome: outcome, Message: statusMsg}, nil
+			}
+			if phase == "AwaitingApproval" {
+				return WatchResult{Events: events, Status: "awaiting_approval"}, nil
+			}
+
+		case evt, ok := <-rarCh:
+			if !ok {
+				rarCh = nil
+				continue
+			}
+			if evt.Type != watch.Modified && evt.Type != watch.Added {
+				continue
+			}
+			obj, ok := evt.Object.(*unstructured.Unstructured)
+			if !ok {
+				continue
+			}
+			decision, _, _ := unstructured.NestedString(obj.Object, "status", "decision")
+			if decision == lastRARDecision {
+				continue
+			}
+			lastRARDecision = decision
+
+			var rarMsg string
+			switch decision {
+			case "":
+				rarMsg = "Approval requested — awaiting human decision"
+			case "Approved":
+				decidedBy, _, _ := unstructured.NestedString(obj.Object, "status", "decidedBy")
+				if decidedBy != "" {
+					rarMsg = fmt.Sprintf("Approval granted by %s", decidedBy)
+				} else {
+					rarMsg = "Approval granted"
+				}
+			case "Rejected":
+				decidedBy, _, _ := unstructured.NestedString(obj.Object, "status", "decidedBy")
+				if decidedBy != "" {
+					rarMsg = fmt.Sprintf("Approval rejected by %s", decidedBy)
+				} else {
+					rarMsg = "Approval rejected"
+				}
+			case "Expired":
+				rarMsg = "Approval expired"
+			default:
+				rarMsg = fmt.Sprintf("Approval status: %s", decision)
+			}
+
+			events = append(events, WatchEvent{
+				Timestamp: time.Now().UTC().Format(time.RFC3339),
+				Resource:  "RemediationApprovalRequest",
+				Phase:     decision,
+				Message:   rarMsg,
+			})
+			_ = launcher.EmitReasoningSafe(ctx, rarMsg+"\n")
+		}
+	}
+}
+
+// NewWatchTool creates the kubernaut_watch tool.
+func NewWatchTool(client dynamic.Interface, controllerNS string) (tool.Tool, error) {
+	return functiontool.New(functiontool.Config{
+		Name:        "kubernaut_watch",
+		Description: "Stream live status updates for a remediation and its related resources",
+	}, func(ctx tool.Context, args WatchArgs) (WatchResult, error) {
+		args.Namespace = controllerNS
+		return HandleWatch(ctx, client, args)
+	})
+}
+
+// ========================================
+// kubernaut_await_session: Wait for KA investigation session readiness
+// BR-INTERACTIVE-010: AF waits for AA to submit to KA before connecting
+// ========================================
+
+var aianalysisGVR = schema.GroupVersionResource{Group: "kubernaut.ai", Version: "v1alpha1", Resource: "aianalyses"}
+
+// AwaitSessionArgs defines the input for kubernaut_await_session.
+type AwaitSessionArgs struct {
+	Namespace string `json:"-"`
+	RRName    string `json:"rr_name"`
+}
+
+// AwaitSessionResult is the output of kubernaut_await_session.
+type AwaitSessionResult struct {
+	SessionID string `json:"session_id,omitempty"`
+	Status    string `json:"status"`
+	Message   string `json:"message,omitempty"`
+}
+
+const awaitSessionTimeout = 3 * time.Minute
+const awaitSessionPollInterval = 3 * time.Second
+
+// HandleAwaitSession waits for an AIAnalysis resource (matching the given RR) to have
+// a non-empty status.investigationSession.id. Returns the session ID when ready, or
+// times out after 2 minutes.
+func HandleAwaitSession(ctx context.Context, client dynamic.Interface, args AwaitSessionArgs) (AwaitSessionResult, error) {
+	if client == nil {
+		return AwaitSessionResult{}, ErrK8sUnavailable
+	}
+	if err := validate.Namespace(args.Namespace); err != nil {
+		return AwaitSessionResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+	}
+	if args.RRName == "" {
+		return AwaitSessionResult{}, fmt.Errorf("%w: rr_name is required", ErrInvalidInput)
+	}
+
+	// Check existing AIAnalysis first (may already have session).
+	if sessionID := findSessionIDByList(ctx, client, args); sessionID != "" {
+		return AwaitSessionResult{SessionID: sessionID, Status: "ready"}, nil
+	}
+
+	watchCtx, cancel := context.WithTimeout(ctx, awaitSessionTimeout)
+	defer cancel()
+
+	watcher, err := client.Resource(aianalysisGVR).Namespace(args.Namespace).Watch(watchCtx, metav1.ListOptions{
+		FieldSelector: "spec.remediationRequestRef.name=" + args.RRName,
+	})
+	if err != nil {
+		// Field selectors on custom fields may not be supported via dynamic client.
+		// Fall back to polling.
+		return pollForSessionID(watchCtx, client, args)
+	}
+	defer watcher.Stop()
+
+	for {
+		select {
+		case <-watchCtx.Done():
+			return AwaitSessionResult{Status: "timeout", Message: "KA session not ready within timeout"}, nil
+		case evt, ok := <-watcher.ResultChan():
+			if !ok {
+				return AwaitSessionResult{Status: "timeout", Message: "watch closed unexpectedly"}, nil
 			}
 			if evt.Type == watch.Modified || evt.Type == watch.Added {
 				obj, ok := evt.Object.(*unstructured.Unstructured)
 				if !ok {
 					continue
 				}
-				phase, _, _ := unstructured.NestedString(obj.Object, "status", "overallPhase")
-				events = append(events, WatchEvent{
-					Timestamp: time.Now().UTC().Format(time.RFC3339),
-					Resource:  "RemediationRequest",
-					Phase:     phase,
-					Message:   fmt.Sprintf("Phase changed to %s", phase),
-				})
-				if IsTerminalPhase(phase) {
-					return WatchResult{Events: events, Status: "completed"}, nil
+				sessionID, _, _ := unstructured.NestedString(obj.Object, "status", "investigationSession", "id")
+				if sessionID != "" {
+					return AwaitSessionResult{SessionID: sessionID, Status: "ready"}, nil
 				}
 			}
 		}
 	}
 }
 
-// NewWatchTool creates the kubernaut_watch tool.
-func NewWatchTool(client dynamic.Interface) (tool.Tool, error) {
+// pollForSessionID is a fallback that polls AIAnalysis resources until session ID appears.
+func pollForSessionID(ctx context.Context, client dynamic.Interface, args AwaitSessionArgs) (AwaitSessionResult, error) {
+	ticker := time.NewTicker(awaitSessionPollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return AwaitSessionResult{Status: "timeout", Message: "KA session not ready within timeout"}, nil
+		case <-ticker.C:
+			if sessionID := findSessionIDByList(ctx, client, args); sessionID != "" {
+				return AwaitSessionResult{SessionID: sessionID, Status: "ready"}, nil
+			}
+		}
+	}
+}
+
+// findSessionIDByList lists AIAnalysis for the given RR and returns the first non-empty session ID.
+func findSessionIDByList(ctx context.Context, client dynamic.Interface, args AwaitSessionArgs) string {
+	list, err := client.Resource(aianalysisGVR).Namespace(args.Namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return ""
+	}
+	for _, item := range list.Items {
+		rrName, _, _ := unstructured.NestedString(item.Object, "spec", "remediationRequestRef", "name")
+		if rrName != args.RRName {
+			continue
+		}
+		sessionID, _, _ := unstructured.NestedString(item.Object, "status", "investigationSession", "id")
+		if sessionID != "" {
+			return sessionID
+		}
+	}
+	return ""
+}
+
+// NewAwaitSessionTool creates the kubernaut_await_session tool.
+func NewAwaitSessionTool(client dynamic.Interface, controllerNS string) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
-		Name:        "kubernaut_watch",
-		Description: "Stream live status updates for a remediation and its related resources",
-	}, func(ctx tool.Context, args WatchArgs) (WatchResult, error) {
-		return HandleWatch(ctx, client, args)
+		Name:        "kubernaut_await_session",
+		Description: "Wait for the AI investigation session to become ready for a given remediation request. Returns the KA session ID when available.",
+	}, func(ctx tool.Context, args AwaitSessionArgs) (AwaitSessionResult, error) {
+		args.Namespace = controllerNS
+		return HandleAwaitSession(ctx, client, args)
 	})
+}
+
+// ========================================
+// AwaitISPhaseActive: Poll IS CRD until AA sets Phase=Active
+// BR-INTERACTIVE-010: AF waits for AA to acknowledge the interactive session
+// ========================================
+
+var investigationsessionGVR = schema.GroupVersionResource{Group: "kubernaut.ai", Version: "v1alpha1", Resource: "investigationsessions"}
+
+const (
+	isPhaseInitialInterval = 500 * time.Millisecond
+	isPhaseMaxInterval     = 2 * time.Second
+	isPhaseDefaultTimeout  = 30 * time.Second
+)
+
+// AwaitISPhaseActive polls the IS CRD for the given RR name until its phase
+// becomes Active (set by the AA controller). Uses exponential backoff starting
+// at 500ms, capping at 2s. Returns true when Active is detected, false on
+// timeout. Errors from the API are silently retried (best-effort).
+// The poll respects the parent context deadline, capping at isPhaseDefaultTimeout.
+func AwaitISPhaseActive(ctx context.Context, client dynamic.Interface, namespace, rrName string) bool {
+	if client == nil || namespace == "" || rrName == "" {
+		return false
+	}
+
+	timeout := isPhaseDefaultTimeout
+	if deadline, ok := ctx.Deadline(); ok {
+		if remaining := time.Until(deadline); remaining < timeout {
+			timeout = remaining
+		}
+	}
+	pollCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	interval := isPhaseInitialInterval
+	for {
+		if isActivePhasePresent(pollCtx, client, namespace, rrName) {
+			return true
+		}
+
+		select {
+		case <-pollCtx.Done():
+			return false
+		case <-time.After(interval):
+		}
+
+		interval = interval * 2
+		if interval > isPhaseMaxInterval {
+			interval = isPhaseMaxInterval
+		}
+	}
+}
+
+// isActivePhasePresent lists IS CRDs in the namespace and returns true if any
+// non-terminal IS for the given RR has Phase=Active.
+func isActivePhasePresent(ctx context.Context, client dynamic.Interface, namespace, rrName string) bool {
+	list, err := client.Resource(investigationsessionGVR).Namespace(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return false
+	}
+	for _, item := range list.Items {
+		ref, _, _ := unstructured.NestedString(item.Object, "spec", "remediationRequestRef", "name")
+		if ref != rrName {
+			continue
+		}
+		phase, _, _ := unstructured.NestedString(item.Object, "status", "phase")
+		if phase == "Active" {
+			return true
+		}
+	}
+	return false
 }

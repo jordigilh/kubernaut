@@ -57,10 +57,12 @@ type InvestigatingHandler struct {
 	processor           *ResponseProcessor   // P1.1: Response processing logic
 	builder             *RequestBuilder      // P1.2: Request construction logic
 	errorClassifier     *ErrorClassifier     // P2.1: Error classification and retry logic
-	useSessionMode           bool                 // BR-AA-HAPI-064: Enable async session-based flow
-	sessionPollInterval      time.Duration        // BR-AA-HAPI-064.8: Constant interval between session polls
-	maxInvestigationDuration time.Duration        // #1078: Wall-clock cap on investigation before PhaseFailed
-	recorder                 record.EventRecorder // DD-EVENT-001: K8s event recorder for session lifecycle events
+	useSessionMode           bool                         // BR-AA-HAPI-064: Enable async session-based flow
+	sessionPollInterval      time.Duration                // BR-AA-HAPI-064.8: Constant interval between session polls
+	maxInvestigationDuration time.Duration                // #1078: Wall-clock cap on investigation before PhaseFailed
+	recorder                 record.EventRecorder         // DD-EVENT-001: K8s event recorder for session lifecycle events
+	isChecker                InvestigationSessionChecker  // BR-INTERACTIVE-010: Check IS CRD before submit
+	isPhaseUpdater           ISPhaseUpdater               // BR-INTERACTIVE-010: Set IS Phase=Active after submit
 }
 
 // InvestigatingHandlerOption is a functional option for InvestigatingHandler configuration.
@@ -98,6 +100,24 @@ func WithSessionPollInterval(d time.Duration) InvestigatingHandlerOption {
 func WithMaxInvestigationDuration(d time.Duration) InvestigatingHandlerOption {
 	return func(h *InvestigatingHandler) {
 		h.maxInvestigationDuration = d
+	}
+}
+
+// WithInvestigationSessionChecker injects the IS CRD checker for interactive mode detection.
+// BR-INTERACTIVE-010: When set, the handler checks for IS CRD existence before submitting
+// to KA and sets interactive=true on the IncidentRequest if found.
+func WithInvestigationSessionChecker(checker InvestigationSessionChecker) InvestigatingHandlerOption {
+	return func(h *InvestigatingHandler) {
+		h.isChecker = checker
+	}
+}
+
+// WithISPhaseUpdater injects the IS phase updater for setting Phase=Active after
+// AA submits to KA with interactive=true. This signals AF that the pending session
+// is ready for action=start. BR-INTERACTIVE-010.
+func WithISPhaseUpdater(updater ISPhaseUpdater) InvestigatingHandlerOption {
+	return func(h *InvestigatingHandler) {
+		h.isPhaseUpdater = updater
 	}
 }
 
@@ -352,8 +372,62 @@ func (h *InvestigatingHandler) handleSessionBased(ctx context.Context, analysis 
 		return h.handleSessionSubmit(ctx, analysis)
 	}
 
+	// BR-INTERACTIVE-010: Detect IS state mismatch before polling.
+	// If IS appeared after autonomous submit → cancel for takeover.
+	// If IS disappeared after interactive submit → cancel for deletion.
+	if result, cancelled := h.checkISMismatchAndCancel(ctx, analysis); cancelled {
+		return result, nil
+	}
+
 	// POLL: Session exists with an active ID
 	return h.handleSessionPoll(ctx, analysis)
+}
+
+// checkISMismatchAndCancel detects when the InvestigationSession CRD state has changed
+// since the last submit and cancels the KA session to trigger re-submit or terminal failure.
+// Returns (result, true) if cancellation was initiated, (_, false) to proceed with normal polling.
+func (h *InvestigatingHandler) checkISMismatchAndCancel(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, bool) {
+	if h.isChecker == nil {
+		return ctrl.Result{}, false
+	}
+
+	session := analysis.Status.KASession
+	rrName := analysis.Spec.RemediationRequestRef.Name
+	if rrName == "" {
+		return ctrl.Result{}, false
+	}
+
+	hasIS, err := h.isChecker.HasActiveSession(ctx, rrName)
+	if err != nil {
+		h.log.Error(err, "IS mismatch check failed, proceeding with normal poll", "rrName", rrName)
+		return ctrl.Result{}, false
+	}
+
+	switch {
+	case hasIS && !session.Interactive:
+		// IS appeared after autonomous submit → cancel for interactive takeover
+		h.log.Info("IS CRD detected for autonomous session — cancelling for interactive takeover",
+			"sessionID", session.ID, "rrName", rrName)
+		if cancelErr := h.kaClient.CancelSession(ctx, session.ID); cancelErr != nil {
+			h.log.Error(cancelErr, "Failed to cancel session for takeover; will retry", "sessionID", session.ID)
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, true
+		}
+		session.ID = ""
+		return ctrl.Result{Requeue: true}, true
+
+	case !hasIS && session.Interactive:
+		// IS disappeared after interactive submit → cancel (user removed session)
+		h.log.Info("IS CRD removed for interactive session — cancelling investigation",
+			"sessionID", session.ID, "rrName", rrName)
+		if cancelErr := h.kaClient.CancelSession(ctx, session.ID); cancelErr != nil {
+			h.log.Error(cancelErr, "Failed to cancel session for IS deletion; will retry", "sessionID", session.ID)
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, true
+		}
+		session.Interactive = false
+		return ctrl.Result{Requeue: true}, true
+	}
+
+	return ctrl.Result{}, false
 }
 
 // handleSessionSubmit submits a new investigation to KA and records the session ID.
@@ -369,6 +443,22 @@ func (h *InvestigatingHandler) handleSessionSubmit(ctx context.Context, analysis
 		"isRegeneration", isRegeneration,
 	)
 	req := h.builder.BuildIncidentRequest(analysis)
+
+	// BR-INTERACTIVE-010: Check IS CRD existence and set interactive=true if found
+	if h.isChecker != nil {
+		rrName := analysis.Spec.RemediationRequestRef.Name
+		if rrName != "" {
+			if hasIS, checkErr := h.isChecker.HasActiveSession(ctx, rrName); checkErr != nil {
+				h.log.Error(checkErr, "Failed to check InvestigationSession existence, proceeding as autonomous",
+					"rrName", rrName)
+			} else if hasIS {
+				req.Interactive.SetTo(true)
+				h.log.Info("InvestigationSession detected, setting interactive=true",
+					"rrName", rrName)
+			}
+		}
+	}
+
 	sessionID, err := h.kaClient.SubmitInvestigation(ctx, req)
 
 	if err != nil {
@@ -377,18 +467,35 @@ func (h *InvestigatingHandler) handleSessionSubmit(ctx context.Context, analysis
 
 	// Initialize or update InvestigationSession in CRD status
 	now := metav1.Now()
+	interactive, _ := req.Interactive.Get()
 	if analysis.Status.KASession == nil {
 		analysis.Status.KASession = &aianalysisv1.KASession{
-			ID:         sessionID,
-			Generation: 0,
-			CreatedAt:  &now,
-			PollCount:  0,
+			ID:          sessionID,
+			Generation:  0,
+			Interactive: interactive,
+			CreatedAt:   &now,
+			PollCount:   0,
 		}
 	} else {
 		analysis.Status.KASession.ID = sessionID
+		analysis.Status.KASession.Interactive = interactive
 		analysis.Status.KASession.CreatedAt = &now
 		analysis.Status.KASession.PollCount = 0
 		analysis.Status.KASession.LastPolled = nil
+	}
+
+	// BR-INTERACTIVE-010: After submitting with interactive=true, set the IS
+	// CRD phase to Active so AF knows the pending session is ready. Best-effort:
+	// failure is logged but does not block the investigation.
+	if interactive && h.isPhaseUpdater != nil {
+		rrName := analysis.Spec.RemediationRequestRef.Name
+		if phaseErr := h.isPhaseUpdater.SetActivePhase(ctx, rrName); phaseErr != nil {
+			h.log.Error(phaseErr, "Failed to set IS phase to Active after interactive submit",
+				"rrName", rrName, "sessionID", sessionID)
+		} else {
+			h.log.Info("IS CRD phase set to Active",
+				"rrName", rrName, "sessionID", sessionID)
+		}
 	}
 
 	// Set condition: SessionCreated (first time) or SessionRegenerated (after loss)
@@ -447,6 +554,8 @@ func (h *InvestigatingHandler) handleSessionPoll(ctx context.Context, analysis *
 		return h.handleSessionPollCompleted(ctx, analysis)
 	case "failed":
 		return h.handleSessionPollFailed(ctx, analysis, status)
+	case "cancelled":
+		return h.handleSessionPollCancelled(ctx, analysis)
 	default:
 		// Unknown status: treat as pending (requeue for re-poll)
 		h.log.Info("Unknown session status, treating as pending", "status", status.Status)
@@ -622,6 +731,47 @@ func (h *InvestigatingHandler) handleSessionPollFailed(ctx context.Context, anal
 		msg = "Investigation failed on KA side"
 	}
 	aianalysis.SetInvestigationComplete(analysis, false, msg)
+	return ctrl.Result{}, nil
+}
+
+// handleSessionPollCancelled handles the case where a KA session was cancelled.
+// BR-INTERACTIVE-010: Two scenarios:
+//   - IS CRD still exists: takeover — re-submit with interactive=true
+//   - IS CRD gone: user cancelled — transition to PhaseFailed (terminal)
+func (h *InvestigatingHandler) handleSessionPollCancelled(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
+	h.log.Info("KA session cancelled",
+		"sessionID", analysis.Status.KASession.ID,
+	)
+
+	// Check if an IS CRD still exists — if so, this was a takeover cancel and we should re-submit.
+	if h.isChecker != nil {
+		rrName := analysis.Spec.RemediationRequestRef.Name
+		if rrName != "" {
+			if hasIS, checkErr := h.isChecker.HasActiveSession(ctx, rrName); checkErr != nil {
+				h.log.Error(checkErr, "Failed to check IS existence during cancellation, treating as terminal")
+			} else if hasIS {
+				h.log.Info("IS CRD still active after cancellation — re-submitting with interactive=true (takeover)",
+					"rrName", rrName)
+				// Clear the old session ID to trigger a fresh submit on next reconcile.
+				analysis.Status.KASession.ID = ""
+				return ctrl.Result{Requeue: true}, nil
+			}
+		}
+	}
+
+	now := metav1.Now()
+	analysis.Status.Phase = aianalysis.PhaseFailed
+	analysis.Status.Reason = aianalysisv1.ReasonInteractiveCancelled
+	analysis.Status.CompletedAt = &now
+	analysis.Status.ObservedGeneration = analysis.Generation
+	analysis.Status.Message = "Investigation cancelled (interactive session removed)"
+
+	cancelErr := fmt.Errorf("KA session cancelled: interactive session deleted")
+	if auditErr := h.auditClient.RecordAnalysisFailed(ctx, analysis, cancelErr); auditErr != nil {
+		h.log.V(1).Info("Failed to record cancellation audit", "error", auditErr)
+	}
+
+	aianalysis.SetInvestigationComplete(analysis, false, "Investigation cancelled")
 	return ctrl.Result{}, nil
 }
 

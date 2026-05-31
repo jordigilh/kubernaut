@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/google/uuid"
 
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
@@ -63,6 +64,11 @@ type Session struct {
 	cancel    context.CancelFunc
 	eventChan chan InvestigationEvent
 	lazySink  *LazySink
+
+	// deferredFn holds the investigation function for interactive sessions
+	// created in pending state (BR-INTERACTIVE-010). Consumed by
+	// LaunchDeferredInvestigation.
+	deferredFn InvestigateFunc
 }
 
 // ErrSessionNotFound is returned when a session ID does not exist in the store.
@@ -72,24 +78,42 @@ var ErrSessionNotFound = errors.New("session not found")
 // that has already reached a terminal state (completed, cancelled, or failed).
 var ErrSessionTerminal = errors.New("session is in terminal state")
 
+// ErrMaxInvestigationsReached is returned when the store has reached its
+// configured maximum number of concurrent (non-terminal) investigations (M2).
+var ErrMaxInvestigationsReached = errors.New("maximum concurrent investigations reached")
+
 // Store provides thread-safe session storage with TTL-based cleanup.
 // Terminal sessions (Completed, Failed, Cancelled) are evicted at TTL.
 // Non-terminal sessions (Pending, Running) are evicted at MaxSessionAge
 // as a safety net to prevent unbounded memory growth.
 type Store struct {
-	mu            sync.RWMutex
-	sessions      map[string]*Session
-	ttl           time.Duration
-	maxSessionAge time.Duration
+	mu             sync.RWMutex
+	sessions       map[string]*Session
+	ttl            time.Duration
+	maxSessionAge  time.Duration
+	maxConcurrent  int
+	logger         logr.Logger
 }
 
 // StoreOption configures optional Store behaviour.
 type StoreOption func(*Store)
 
+// WithLogger sets the logger for the Store.
+func WithLogger(l logr.Logger) StoreOption {
+	return func(s *Store) { s.logger = l }
+}
+
 // WithMaxSessionAge sets the hard eviction age for non-terminal sessions.
 // Must be >= TTL. Defaults to 2 * TTL if not set.
 func WithMaxSessionAge(d time.Duration) StoreOption {
 	return func(s *Store) { s.maxSessionAge = d }
+}
+
+// WithMaxConcurrent sets the maximum number of concurrent (non-terminal)
+// investigations. When the cap is reached, Create returns
+// ErrMaxInvestigationsReached. A value of 0 disables the cap.
+func WithMaxConcurrent(n int) StoreOption {
+	return func(s *Store) { s.maxConcurrent = n }
 }
 
 // NewStore creates a new session store with the given TTL for cleanup.
@@ -99,6 +123,7 @@ func NewStore(ttl time.Duration, opts ...StoreOption) *Store {
 		sessions:      make(map[string]*Session),
 		ttl:           ttl,
 		maxSessionAge: 2 * ttl,
+		logger:        logr.Discard(),
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -110,6 +135,7 @@ func NewStore(ttl time.Duration, opts ...StoreOption) *Store {
 }
 
 // Create stores a new session and returns its ID.
+// Returns ErrMaxInvestigationsReached when the concurrent cap is hit.
 func (s *Store) Create() (string, error) {
 	id := uuid.New().String()
 	sess := &Session{
@@ -118,6 +144,18 @@ func (s *Store) Create() (string, error) {
 		CreatedAt: time.Now(),
 	}
 	s.mu.Lock()
+	if s.maxConcurrent > 0 {
+		active := 0
+		for _, existing := range s.sessions {
+			if !IsTerminal(existing.Status) {
+				active++
+			}
+		}
+		if active >= s.maxConcurrent {
+			s.mu.Unlock()
+			return "", ErrMaxInvestigationsReached
+		}
+	}
 	s.sessions[id] = sess
 	s.mu.Unlock()
 	return id, nil
@@ -280,6 +318,12 @@ func (s *Store) Cleanup() int {
 			}
 		default:
 			if sess.CreatedAt.Before(nonTerminalCutoff) {
+				if sess.Status == StatusPending {
+					s.logger.Info("evicting pending interactive session (user never connected)",
+						"session_id", id,
+						"remediation_id", sess.Metadata["remediation_id"],
+						"age", now.Sub(sess.CreatedAt).String())
+				}
 				delete(s.sessions, id)
 				removed++
 			}

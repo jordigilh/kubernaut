@@ -99,7 +99,7 @@ func DefaultConfig() *Config {
 			LeaderElectionID: "aianalysis.kubernaut.ai",
 		},
 		Agent: AgentConfig{
-			URL:                 "http://kubernaut-agent:8080",
+			URL:                 "https://kubernaut-agent:8443",
 			Timeout:             180 * time.Second,
 			SessionPollInterval: 15 * time.Second,
 		},

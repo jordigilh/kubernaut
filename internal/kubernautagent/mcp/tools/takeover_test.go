@@ -99,6 +99,15 @@ func (m *takeoverAutoMgr) ForceTransitionToUserDriving(_ string, _ string, _ []s
 	return nil
 }
 
+func (m *takeoverAutoMgr) FindPendingByRemediationID(_ string) (string, bool)         { return "", false }
+func (m *takeoverAutoMgr) LaunchDeferredInvestigation(_ string) error                  { return nil }
+func (m *takeoverAutoMgr) GetLatestRCASummaryByRemediationID(_ string) (string, bool)  { return "", false }
+func (m *takeoverAutoMgr) GetLatestRCAResultByRemediationID(_ string) (*katypes.InvestigationResult, bool) {
+	return nil, false
+}
+func (m *takeoverAutoMgr) StartInvestigation(_ context.Context, _ session.InvestigateFunc, _ map[string]string) (string, error) { return "", nil }
+func (m *takeoverAutoMgr) Subscribe(_ context.Context, _ string) (<-chan session.InvestigationEvent, error) { return nil, nil }
+
 // takeoverSessMgr mocks mcpinternal.SessionManager for takeover tests.
 type takeoverSessMgr struct {
 	takeoverSession *mcpinternal.InteractiveSession

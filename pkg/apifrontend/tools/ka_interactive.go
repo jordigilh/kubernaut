@@ -29,7 +29,7 @@ func invokeInteractiveAction(ctx context.Context, mcpClient ka.MCPClient, action
 	if mcpClient == nil {
 		return InteractiveActionResult{}, fmt.Errorf("interactive investigation not available: MCP client not configured")
 	}
-	if _, _, err := validate.ParseRRID(args.RRID); err != nil {
+	if err := validate.ResourceName(args.RRID); err != nil {
 		return InteractiveActionResult{}, fmt.Errorf("invalid rr_id: %w", err)
 	}
 	if err := validate.Action(action); err != nil {
@@ -52,13 +52,8 @@ func invokeInteractiveAction(ctx context.Context, mcpClient ka.MCPClient, action
 
 	if auditor != nil {
 		auditor.Emit(ctx, &audit.Event{
-			Type: auditType,
-			Detail: map[string]string{
-				"rr_id":      args.RRID,
-				"action":     action,
-				"session_id": result.SessionID,
-				"status":     result.Status,
-			},
+			Type:   auditType,
+			Detail: interactiveAuditDetail(action, args.RRID, result, auditType),
 		})
 	}
 
@@ -68,9 +63,41 @@ func invokeInteractiveAction(ctx context.Context, mcpClient ka.MCPClient, action
 	}, nil
 }
 
-// HandleTakeover implements the kubernaut_takeover tool.
-func HandleTakeover(ctx context.Context, mcpClient ka.MCPClient, args InteractiveActionArgs, auditor audit.Emitter) (InteractiveActionResult, error) {
-	return invokeInteractiveAction(ctx, mcpClient, "takeover", args, auditor, audit.EventKADelegated)
+// actionResultTypes maps interactive actions to their OpenAPI result_type enum
+// value for EventKAResultReceived (enum: rca_complete, rca_failed, timeout, cancelled).
+var actionResultTypes = map[string]string{
+	"complete": "rca_complete",
+	"cancel":   "cancelled",
+}
+
+// actionToolNames maps interactive actions to their canonical tool name for
+// EventToolExecuted (required by OpenAPI ApifrontendToolExecutedPayload).
+var actionToolNames = map[string]string{
+	"message": "kubernaut_message",
+	"status":  "kubernaut_status",
+}
+
+// interactiveAuditDetail builds the Detail map for an interactive action audit
+// event. Common fields are always present; type-specific fields (result_type for
+// EventKAResultReceived, tool_name for EventToolExecuted) are added only when
+// the audit schema requires them.
+func interactiveAuditDetail(action, rrID string, result *ka.InvokeActionResult, auditType audit.EventType) map[string]string {
+	d := map[string]string{
+		"rr_id":             rrID,
+		"action":            action,
+		"session_id":        result.SessionID,
+		"status":            result.Status,
+		"ka_correlation_id": result.SessionID,
+		"delegation_type":   "interactive",
+		"tool_outcome":      "success",
+	}
+	if rt, ok := actionResultTypes[action]; ok && auditType == audit.EventKAResultReceived {
+		d["result_type"] = rt
+	}
+	if tn, ok := actionToolNames[action]; ok && auditType == audit.EventToolExecuted {
+		d["tool_name"] = tn
+	}
+	return d
 }
 
 // HandleMessage implements the kubernaut_message tool.
@@ -101,15 +128,6 @@ func HandleReconnect(ctx context.Context, mcpClient ka.MCPClient, args Interacti
 	return invokeInteractiveAction(ctx, mcpClient, "reconnect", args, auditor, audit.EventKADelegated)
 }
 
-// NewTakeoverTool creates the kubernaut_takeover tool.
-func NewTakeoverTool(mcpClient ka.MCPClient, auditor audit.Emitter) (tool.Tool, error) {
-	return functiontool.New(functiontool.Config{
-		Name:        "kubernaut_takeover",
-		Description: "Take over an existing investigation session",
-	}, func(ctx tool.Context, args InteractiveActionArgs) (InteractiveActionResult, error) {
-		return HandleTakeover(ctx, mcpClient, args, auditor)
-	})
-}
 
 // NewMessageTool creates the kubernaut_message tool.
 func NewMessageTool(mcpClient ka.MCPClient, auditor audit.Emitter) (tool.Tool, error) {

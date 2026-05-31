@@ -18,6 +18,9 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
+
+	"github.com/go-logr/logr"
 
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -34,7 +37,7 @@ import (
 // (trusted intermediary model), it takes precedence over the middleware-extracted
 // identity. This supports the AF SA token pattern where AF authenticates as
 // itself and passes user identity in the payload.
-func InvestigateRegistration(tool *InvestigateTool, eventStore *mcpinternal.DelegatingEventStore, notifier *mcpinternal.SessionNotifier) mcpinternal.ToolRegistration {
+func InvestigateRegistration(tool *InvestigateTool, eventStore *mcpinternal.DelegatingEventStore, notifier *mcpinternal.SessionNotifier, logger logr.Logger) mcpinternal.ToolRegistration {
 	return func(server *mcpsdk.Server, userFromCtx func(context.Context) mcpinternal.UserInfo) {
 		mcpsdk.AddTool(server, &mcpsdk.Tool{
 			Name:        "kubernaut_investigate",
@@ -42,29 +45,66 @@ func InvestigateRegistration(tool *InvestigateTool, eventStore *mcpinternal.Dele
 		}, func(ctx context.Context, req *mcpsdk.CallToolRequest, input InvestigateInput) (*mcpsdk.CallToolResult, InvestigateOutput, error) {
 			user := ResolveUser(userFromCtx(ctx), input.ActingUser, input.ActingUserGroups)
 			output, err := tool.Handle(ctx, input, user)
-			if err == nil && output.SessionID != "" {
-				if eventStore != nil {
-					eventStore.RegisterMCPSession(req.Session.ID(), output.SessionID)
-				}
-				if notifier != nil && (output.Status == "started" || output.Status == "takeover_started" || output.Status == "reconnected") {
-					sess := req.Session
-					notifier.Register(output.SessionID, func(msg string) {
-						_ = sess.Log(context.Background(), &mcpsdk.LoggingMessageParams{
-							Level:  "warning",
-							Logger: "kubernaut-interactive",
-							Data:   msg,
-						})
-					})
-				}
+			if err != nil {
+				return nil, output, ErrorBoundary(logger, "kubernaut_investigate", err)
 			}
-			return nil, output, err
+		if output.SessionID != "" {
+			if eventStore != nil {
+				eventStore.RegisterMCPSession(req.Session.ID(), output.SessionID)
+			}
+			if notifier != nil && (output.Status == "started" || output.Status == "takeover_started" || output.Status == "reconnected") {
+				sess := req.Session
+				notifier.Register(output.SessionID, func(msg string) {
+					if logErr := sess.Log(context.Background(), &mcpsdk.LoggingMessageParams{
+						Level:  "warning",
+						Logger: "kubernaut-interactive",
+						Data:   msg,
+					}); logErr != nil {
+						logger.Error(logErr, "notifier sess.Log failed",
+							"session_id", output.SessionID)
+					}
+				})
+			}
+		}
+
+		// BR-MCP-003: Wire EventLogBridge for action=start with a pending
+		// investigation. Streams investigation events (reasoning, tool calls,
+		// completion) as MCP LoggingMessage notifications to the connected client.
+		if output.InvestigationSessionID != "" && output.Status == "started" {
+			logger.Info("subscribing to investigation events",
+				"investigation_session_id", output.InvestigationSessionID,
+				"mcp_session_id", output.SessionID)
+			eventCh, subErr := tool.SubscribeEvents(ctx, output.InvestigationSessionID)
+			if subErr != nil {
+				logger.Error(subErr, "failed to subscribe to investigation events",
+					"investigation_session_id", output.InvestigationSessionID)
+			} else if eventCh != nil {
+				sess := req.Session
+				bridge := NewEventLogBridge(eventCh, func(level, loggerName string, data json.RawMessage) error {
+					return sess.Log(context.Background(), &mcpsdk.LoggingMessageParams{
+						Level:  mcpsdk.LoggingLevel(level),
+						Logger: loggerName,
+						Data:   data,
+					})
+				}, logger, output.InvestigationSessionID)
+				logger.Info("EventLogBridge wired",
+					"investigation_session_id", output.InvestigationSessionID,
+					"mcp_session_id", req.Session.ID())
+				go bridge.Run(context.Background())
+			} else {
+				logger.Info("subscribe returned nil channel, no events to bridge",
+					"investigation_session_id", output.InvestigationSessionID)
+			}
+		}
+
+		return nil, output, nil
 		})
 	}
 }
 
 // SelectWorkflowRegistration returns a ToolRegistration that registers the
 // kubernaut_select_workflow tool with the MCP SDK server.
-func SelectWorkflowRegistration(tool *SelectWorkflowTool) mcpinternal.ToolRegistration {
+func SelectWorkflowRegistration(tool *SelectWorkflowTool, logger logr.Logger) mcpinternal.ToolRegistration {
 	return func(server *mcpsdk.Server, userFromCtx func(context.Context) mcpinternal.UserInfo) {
 		mcpsdk.AddTool(server, &mcpsdk.Tool{
 			Name:        "kubernaut_select_workflow",
@@ -72,14 +112,14 @@ func SelectWorkflowRegistration(tool *SelectWorkflowTool) mcpinternal.ToolRegist
 		}, func(ctx context.Context, req *mcpsdk.CallToolRequest, input SelectWorkflowInput) (*mcpsdk.CallToolResult, SelectWorkflowOutput, error) {
 			user := ResolveUser(userFromCtx(ctx), input.ActingUser, input.ActingUserGroups)
 			output, err := tool.Handle(ctx, input, user)
-			return nil, output, err
+			return nil, output, ErrorBoundary(logger, "kubernaut_select_workflow", err)
 		})
 	}
 }
 
 // CompleteNoActionRegistration returns a ToolRegistration that registers the
 // kubernaut_complete_no_action tool with the MCP SDK server.
-func CompleteNoActionRegistration(tool *CompleteNoActionTool) mcpinternal.ToolRegistration {
+func CompleteNoActionRegistration(tool *CompleteNoActionTool, logger logr.Logger) mcpinternal.ToolRegistration {
 	return func(server *mcpsdk.Server, userFromCtx func(context.Context) mcpinternal.UserInfo) {
 		mcpsdk.AddTool(server, &mcpsdk.Tool{
 			Name:        "kubernaut_complete_no_action",
@@ -87,7 +127,7 @@ func CompleteNoActionRegistration(tool *CompleteNoActionTool) mcpinternal.ToolRe
 		}, func(ctx context.Context, req *mcpsdk.CallToolRequest, input CompleteNoActionInput) (*mcpsdk.CallToolResult, CompleteNoActionOutput, error) {
 			user := ResolveUser(userFromCtx(ctx), input.ActingUser, input.ActingUserGroups)
 			output, err := tool.Handle(ctx, input, user)
-			return nil, output, err
+			return nil, output, ErrorBoundary(logger, "kubernaut_complete_no_action", err)
 		})
 	}
 }

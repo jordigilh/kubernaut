@@ -33,6 +33,16 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
+// afServiceAccountName is the compile-time constant for the AF ServiceAccount name.
+// This is the sole trusted intermediary for approval delegation (DD-AUTH-MCP-001 v3.0).
+const afServiceAccountName = "apifrontend"
+
+// BuildTrustedAFSA constructs the fully-qualified AF SA identity from a namespace.
+// The SA name is a compile-time constant; only the namespace varies per deployment.
+func BuildTrustedAFSA(namespace string) string {
+	return fmt.Sprintf("system:serviceaccount:%s:%s", namespace, afServiceAccountName)
+}
+
 // RemediationApprovalRequestAuthHandler handles authentication for RemediationApprovalRequest decisions
 // BR-AUTH-001: SOC2 CC8.1 Operator Attribution
 // ADR-040: RemediationApprovalRequest CRD Architecture
@@ -41,22 +51,32 @@ import (
 // This mutating webhook intercepts RemediationApprovalRequest status updates and:
 // 1. Populates status.DecidedBy (operator email/username)
 // 2. Populates status.DecidedAt (timestamp)
-// 3. Writes complete audit event (WHO + WHAT + ACTION)
+// 3. Populates status.DecidedVia (trusted intermediary identity, if delegated)
+// 4. Writes complete audit event (WHO + WHAT + ACTION)
 type RemediationApprovalRequestAuthHandler struct {
 	authenticator *Authenticator
 	decoder       admission.Decoder
 	auditStore    audit.AuditStore
 	reader        client.Reader
+	trustedAFSA   string
 }
 
 // NewRemediationApprovalRequestAuthHandler creates a new RemediationApprovalRequest authentication handler.
 // The reader is used for override validation (F2: RW lookup, I1: use mgr.GetClient() in production).
-func NewRemediationApprovalRequestAuthHandler(auditStore audit.AuditStore, reader client.Reader) *RemediationApprovalRequestAuthHandler {
+// podNamespace is the namespace where AW + AF are colocated (used to derive the trusted AF SA identity).
+func NewRemediationApprovalRequestAuthHandler(auditStore audit.AuditStore, reader client.Reader, podNamespace string) *RemediationApprovalRequestAuthHandler {
 	return &RemediationApprovalRequestAuthHandler{
 		authenticator: NewAuthenticator(),
 		auditStore:    auditStore,
 		reader:        reader,
+		trustedAFSA:   BuildTrustedAFSA(podNamespace),
 	}
+}
+
+// isAFServiceAccount returns true if the authenticated K8s caller is the trusted AF SA.
+// This is the sole trusted intermediary for approval delegation (AC-6: Least Privilege).
+func (h *RemediationApprovalRequestAuthHandler) isAFServiceAccount(username string) bool {
+	return username == h.trustedAFSA
 }
 
 // Handle processes the admission request for RemediationApprovalRequest
@@ -162,8 +182,25 @@ func (h *RemediationApprovalRequestAuthHandler) Handle(ctx context.Context, req 
 		"uid", authCtx.UID,
 	)
 
-	// REFACTOR-AW-002: Detect and log identity forgery attempts using extracted helper
-	DetectAndLogForgeryAttempt(logger, rar.Status.DecidedBy, authCtx.Username)
+	// Trusted intermediary delegation (DD-AUTH-MCP-001 v3.0, AC-6: Least Privilege)
+	// AF SA is the sole trusted intermediary — hardcoded, derived from POD_NAMESPACE.
+	// When AF delegates, it has already authenticated the human via JWT+SAR.
+	isDelegation := h.isAFServiceAccount(authCtx.Username) && rar.Status.DecidedBy != ""
+
+	if isDelegation {
+		// AF SA delegation: preserve human decidedBy, set decidedVia for operational visibility
+		logger.Info("Trusted intermediary delegation accepted (AC-6)",
+			"intermediary", authCtx.Username,
+			"delegatedUser", rar.Status.DecidedBy,
+		)
+		rar.Status.DecidedVia = authCtx.Username
+		// DecidedBy preserved from patch body (the human AF authenticated via JWT)
+	} else {
+		// Non-AF caller OR AF with empty decidedBy: standard forgery prevention
+		DetectAndLogForgeryAttempt(logger, rar.Status.DecidedBy, authCtx.Username)
+		rar.Status.DecidedBy = authCtx.Username
+		rar.Status.DecidedVia = "" // AC-3: Clear any user-submitted value (prevent spoofing)
+	}
 
 	// G5: Override validation AFTER authentication (SOC2 CC8.1 — audit trail captures WHO attempted invalid overrides)
 	if rar.Status.WorkflowOverride != nil {
@@ -180,13 +217,13 @@ func (h *RemediationApprovalRequestAuthHandler) Handle(ctx context.Context, req 
 		overrideLog.Info("Override validation passed")
 	}
 
-	// SECURITY: Populate DecidedBy with authenticated user (OVERWRITE any user-provided value)
-	// Per BR-AUTH-001, SOC 2 CC8.1: User attribution is tamper-proof (webhook-enforced)
-	logger.Info("Populating DecidedBy field (authenticated identity)",
-		"authenticatedUser", authCtx.Username,
+	// Populate DecidedAt timestamp
+	logger.Info("Populating decision attribution",
+		"decidedBy", rar.Status.DecidedBy,
+		"decidedVia", rar.Status.DecidedVia,
 		"decision", rar.Status.Decision,
+		"isDelegation", isDelegation,
 	)
-	rar.Status.DecidedBy = authCtx.Username // ALWAYS use authenticated user, never trust user input
 	now := metav1.Now()
 	rar.Status.DecidedAt = &now
 
@@ -199,7 +236,13 @@ func (h *RemediationApprovalRequestAuthHandler) Handle(ctx context.Context, req 
 	audit.SetEventCategory(auditEvent, EventCategoryApproval)
 	audit.SetEventAction(auditEvent, "approval_decided")
 	audit.SetEventOutcome(auditEvent, audit.OutcomeSuccess)
-	audit.SetActor(auditEvent, "user", authCtx.Username)
+	// AU-3: For delegation, actor is the intermediary service (factual K8s caller).
+	// For direct approvals, actor is the human user.
+	if isDelegation {
+		audit.SetActor(auditEvent, "service", authCtx.Username)
+	} else {
+		audit.SetActor(auditEvent, "user", authCtx.Username)
+	}
 	audit.SetResource(auditEvent, "RemediationApprovalRequest", string(rar.UID))
 	// CRITICAL: Use parent RR name for correlation (DD-AUDIT-CORRELATION-002)
 	// This ensures all RAR audit events (webhook + orchestration) share the same correlation_id

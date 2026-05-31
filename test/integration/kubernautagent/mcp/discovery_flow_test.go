@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http/httptest"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -51,6 +52,8 @@ func (d *discoverySignalResolver) ResolveSignalContext(_ context.Context, _ stri
 	return &katypes.SignalContext{
 		Name:         "OOMKilled",
 		Severity:     "critical",
+		Environment:  "Production",
+		Priority:     "P0",
 		ResourceKind: "Deployment",
 		Namespace:    "production",
 		ResourceName: "api-server",
@@ -61,17 +64,28 @@ func (d *discoverySignalResolver) ResolveEnrichmentData(_ context.Context, _ str
 	return &prompt.EnrichmentData{}, nil
 }
 
+func (d *discoverySignalResolver) ResolvePostRCAEnrichment(_ context.Context, _, _, _, _ string) (*prompt.EnrichmentData, error) {
+	// Return nil to indicate re-enrichment is not available in this IT fixture.
+	// A non-nil empty result would cause the discover_workflows handler to
+	// override the signal with the RCA's LLM-parsed target, corrupting
+	// the authoritative Deployment/api-server/production from ResolveSignalContext.
+	return nil, nil
+}
+
 // discoveryHTTPCompleter captures CompleteUserDriving calls in-memory.
 // Retained as a stub (#1174): the production HTTPSessionCompleter is
 // session.Manager, which requires the full gateway HTTP long-poll bridge.
 // Wiring that in IT is disproportionate; the stub validates method calls
 // and result payloads, which is sufficient for behavioral assurance.
 type discoveryHTTPCompleter struct {
+	mu              sync.Mutex
 	completedID     string
 	completedResult *katypes.InvestigationResult
 }
 
 func (c *discoveryHTTPCompleter) CompleteUserDriving(id string, result *katypes.InvestigationResult) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.completedID = id
 	c.completedResult = result
 	return nil
@@ -82,8 +96,16 @@ func (c *discoveryHTTPCompleter) FindUserDrivingByRemediationID(_ string) (strin
 }
 
 func (c *discoveryHTTPCompleter) ForceCompleteByRemediationID(_ string, result *katypes.InvestigationResult) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.completedResult = result
 	return nil
+}
+
+func (c *discoveryHTTPCompleter) getCompletedResult() *katypes.InvestigationResult {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.completedResult
 }
 
 // callTool calls an arbitrary MCP tool by name with the given args.
@@ -153,6 +175,13 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 				"action": "discover_workflows",
 			})
 			Expect(err).NotTo(HaveOccurred())
+			if result.IsError {
+				for _, c := range result.Content {
+					if tc, ok := c.(*mcpsdk.TextContent); ok {
+						GinkgoWriter.Printf("DISC-001 discover_workflows error: %s\n", tc.Text)
+					}
+				}
+			}
 			Expect(result.IsError).To(BeFalse())
 			output, err = decodeOutput(result)
 			Expect(err).NotTo(HaveOccurred())
@@ -190,13 +219,25 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 			Expect(output["status"]).To(Equal("workflow_selected"))
 
 			By("verifying auto-complete wrote recommended parameters to HTTP session (#1169)")
-			Expect(completer.completedID).To(Equal("http-sess-discovery"))
-			Expect(completer.completedResult).NotTo(BeNil())
-			Expect(completer.completedResult.WorkflowID).To(Equal(recommendedWfID()))
-			Expect(completer.completedResult.Parameters).To(HaveKeyWithValue("MEMORY_LIMIT_NEW", "512Mi"),
+			Eventually(completer.getCompletedResult, 5*time.Second, 100*time.Millisecond).ShouldNot(BeNil())
+			cr := completer.getCompletedResult()
+			Expect(cr.WorkflowID).To(Equal(recommendedWfID()))
+			Expect(cr.Parameters).To(HaveKeyWithValue("MEMORY_LIMIT_NEW", "512Mi"),
 				"recommended parameters must flow through to the HTTP session completer (#1169)")
-			Expect(completer.completedResult.Parameters).NotTo(HaveKey("REPLICA_COUNT"),
+			Expect(cr.Parameters).NotTo(HaveKey("REPLICA_COUNT"),
 				"alternative parameters must not leak to the recommended workflow's completion (#1169)")
+
+			By("verifying TARGET_RESOURCE_* parameters survive discovery param merge (IT-KA-DISC-001 extension)")
+			Expect(cr.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_NAME", "api-server"),
+				"TARGET_RESOURCE_NAME must be injected from RemediationTarget after buildFinalResult")
+			Expect(cr.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_KIND", "Deployment"),
+				"TARGET_RESOURCE_KIND must be injected from RemediationTarget after buildFinalResult")
+			Expect(cr.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_NAMESPACE", "production"),
+				"TARGET_RESOURCE_NAMESPACE must be injected from RemediationTarget after buildFinalResult")
+
+			By("verifying TARGET_RESOURCE_API_VERSION is auto-resolved for non-ambiguous kinds [BR-WORKFLOW-004]")
+			Expect(cr.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_API_VERSION", "apps/v1"),
+				"BR-WORKFLOW-004: TARGET_RESOURCE_API_VERSION must be auto-resolved via ScopeResolver for unambiguous Deployment kind")
 		})
 	})
 
@@ -253,12 +294,28 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.IsError).To(BeFalse())
 
+			By("sending initial message to build conversation context")
+			result, err = callInvestigate(sess, map[string]any{
+				"rr_id":   "rr-disc-003",
+				"action":  "message",
+				"message": "Pod keeps crashing with OOMKilled",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.IsError).To(BeFalse())
+
 			By("discovering workflows")
 			result, err = callInvestigate(sess, map[string]any{
 				"rr_id":  "rr-disc-003",
 				"action": "discover_workflows",
 			})
 			Expect(err).NotTo(HaveOccurred())
+			if result.IsError {
+				for _, c := range result.Content {
+					if tc, ok := c.(*mcpsdk.TextContent); ok {
+						GinkgoWriter.Printf("DISC-003 discover_workflows error: %s\n", tc.Text)
+					}
+				}
+			}
 			Expect(result.IsError).To(BeFalse())
 
 			By("sending a message (invalidates discovery)")
@@ -313,12 +370,28 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.IsError).To(BeFalse())
 
+			By("sending initial message to build conversation context")
+			result, err = callInvestigate(sess, map[string]any{
+				"rr_id":   "rr-disc-004",
+				"action":  "message",
+				"message": "Pod keeps crashing with OOMKilled",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.IsError).To(BeFalse())
+
 			By("discovering workflows")
 			result, err = callInvestigate(sess, map[string]any{
 				"rr_id":  "rr-disc-004",
 				"action": "discover_workflows",
 			})
 			Expect(err).NotTo(HaveOccurred())
+			if result.IsError {
+				for _, c := range result.Content {
+					if tc, ok := c.(*mcpsdk.TextContent); ok {
+						GinkgoWriter.Printf("DISC-004 discover_workflows error: %s\n", tc.Text)
+					}
+				}
+			}
 			Expect(result.IsError).To(BeFalse())
 
 			By("selecting a workflow_id not in discovery results")
@@ -390,10 +463,17 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 				"action": "discover_workflows",
 			})
 			Expect(err).NotTo(HaveOccurred())
+			if result.IsError {
+				for _, c := range result.Content {
+					if tc, ok := c.(*mcpsdk.TextContent); ok {
+						GinkgoWriter.Printf("DISC-006 discover_workflows error: %s\n", tc.Text)
+					}
+				}
+			}
 			Expect(result.IsError).To(BeFalse())
 
 			By("completing with no action (should use stored RCA)")
-			completer.completedResult = nil
+			func() { completer.mu.Lock(); defer completer.mu.Unlock(); completer.completedResult = nil }()
 			result, err = callTool(sess, "kubernaut_complete_no_action", map[string]any{
 				"rr_id":  "rr-disc-006",
 				"reason": "user prefers manual fix",
@@ -404,11 +484,12 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 			Expect(err).NotTo(HaveOccurred())
 			Expect(output["status"]).To(Equal("completed_no_action"))
 
-			Expect(completer.completedResult).NotTo(BeNil())
-			Expect(completer.completedResult.RCASummary).To(
+			Eventually(completer.getCompletedResult, 5*time.Second, 100*time.Millisecond).ShouldNot(BeNil())
+			cr := completer.getCompletedResult()
+			Expect(cr.RCASummary).To(
 				Equal("Unable to determine specific root cause"),
 				"must propagate exact RCA from extraction step, not the complete_no_action fallback")
-			Expect(completer.completedResult.RCASummary).NotTo(
+			Expect(cr.RCASummary).NotTo(
 				Equal("Investigation completed without workflow selection"),
 				"must NOT use the complete_no_action no-discovery fallback")
 		})
@@ -429,7 +510,7 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 			Expect(result.IsError).To(BeFalse())
 
 			By("immediately completing with no action")
-			completer.completedResult = nil
+			func() { completer.mu.Lock(); defer completer.mu.Unlock(); completer.completedResult = nil }()
 			result, err = callTool(sess, "kubernaut_complete_no_action", map[string]any{
 				"rr_id": "rr-disc-007",
 			})
@@ -439,10 +520,11 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 			Expect(err).NotTo(HaveOccurred())
 			Expect(output["status"]).To(Equal("completed_no_action"))
 
-			Expect(completer.completedResult).NotTo(BeNil())
-			Expect(completer.completedResult.Reason).To(Equal("no action needed"),
+			Eventually(completer.getCompletedResult, 5*time.Second, 100*time.Millisecond).ShouldNot(BeNil())
+			cr := completer.getCompletedResult()
+			Expect(cr.Reason).To(Equal("no action needed"),
 				"should use default reason when none provided")
-			Expect(completer.completedResult.RCASummary).To(ContainSubstring("without workflow"),
+			Expect(cr.RCASummary).To(ContainSubstring("without workflow"),
 				"should use minimal RCA summary when no prior RCA exists")
 		})
 	})
@@ -461,16 +543,32 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.IsError).To(BeFalse())
 
+			By("sending initial message to build conversation context")
+			result, err = callInvestigate(sess, map[string]any{
+				"rr_id":   "rr-disc-008",
+				"action":  "message",
+				"message": "Pod keeps crashing with OOMKilled",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.IsError).To(BeFalse())
+
 			By("discovering workflows")
 			result, err = callInvestigate(sess, map[string]any{
 				"rr_id":  "rr-disc-008",
 				"action": "discover_workflows",
 			})
 			Expect(err).NotTo(HaveOccurred())
+			if result.IsError {
+				for _, c := range result.Content {
+					if tc, ok := c.(*mcpsdk.TextContent); ok {
+						GinkgoWriter.Printf("DISC-008 discover_workflows error: %s\n", tc.Text)
+					}
+				}
+			}
 			Expect(result.IsError).To(BeFalse())
 
 			By("selecting the alternative workflow")
-			completer.completedResult = nil
+			func() { completer.mu.Lock(); defer completer.mu.Unlock(); completer.completedResult = nil }()
 			result, err = callTool(sess, "kubernaut_select_workflow", map[string]any{
 				"rr_id":       "rr-disc-008",
 				"workflow_id": alternativeWfID(),
@@ -482,13 +580,14 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 			Expect(output["status"]).To(Equal("workflow_selected"))
 
 			By("verifying completer received alternative parameters (#1169)")
-			Expect(completer.completedResult).NotTo(BeNil(),
+			Eventually(completer.getCompletedResult, 5*time.Second, 100*time.Millisecond).ShouldNot(BeNil(),
 				"HTTP session completion must occur for alternative workflow selection")
-			Expect(completer.completedResult.WorkflowID).To(Equal(alternativeWfID()),
+			cr := completer.getCompletedResult()
+			Expect(cr.WorkflowID).To(Equal(alternativeWfID()),
 				"the selected alternative workflow ID must be on the completed result")
-			Expect(completer.completedResult.Parameters).To(HaveKeyWithValue("REPLICA_COUNT", "3"),
+			Expect(cr.Parameters).To(HaveKeyWithValue("REPLICA_COUNT", "3"),
 				"alternative workflow parameters must flow through to the completer (#1169)")
-			Expect(completer.completedResult.Parameters).NotTo(HaveKey("MEMORY_LIMIT_NEW"),
+			Expect(cr.Parameters).NotTo(HaveKey("MEMORY_LIMIT_NEW"),
 				"recommended parameters must not leak when an alternative is selected (#1169)")
 		})
 	})
@@ -514,13 +613,14 @@ func newRealMCPTestStackWithDiscovery(k8sClient client.Client, namespace string,
 	Expect(buildErr).ToNot(HaveOccurred(), "prompt builder should build")
 
 	inv := investigator.New(investigator.Config{
-		Client:       llmAdapter,
-		Builder:      promptBuilder,
-		ResultParser: parser.NewResultParser(),
-		AuditStore:   audit.NopAuditStore{},
-		Logger:       logrLogger,
-		MaxTurns:     15,
-		ModelName:    "test-model",
+		Client:        llmAdapter,
+		Builder:       promptBuilder,
+		ResultParser:  parser.NewResultParser(),
+		AuditStore:    audit.NopAuditStore{},
+		Logger:        logrLogger,
+		MaxTurns:      15,
+		ModelName:     "test-model",
+		ScopeResolver: itScopeResolver(),
 	})
 	runner := mcpadapters.NewInvestigatorRunnerAdapter(inv)
 
@@ -572,9 +672,9 @@ func newRealMCPTestStackWithDiscovery(k8sClient client.Client, namespace string,
 	)
 
 	toolDeps := mcpinternal.ToolDeps{
-		Investigate:      mcptools.InvestigateRegistration(investigateTool, stack.EventStore, stack.Notifier),
-		SelectWorkflow:   mcptools.SelectWorkflowRegistration(selectTool),
-		CompleteNoAction: mcptools.CompleteNoActionRegistration(completeNoActionTool),
+		Investigate:      mcptools.InvestigateRegistration(investigateTool, stack.EventStore, stack.Notifier, logr.Discard()),
+		SelectWorkflow:   mcptools.SelectWorkflowRegistration(selectTool, logr.Discard()),
+		CompleteNoAction: mcptools.CompleteNoActionRegistration(completeNoActionTool, logr.Discard()),
 	}
 
 	handler, srv := mcpinternal.BootstrapMCP(mcpinternal.MCPDeps{

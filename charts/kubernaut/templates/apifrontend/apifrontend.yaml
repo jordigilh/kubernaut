@@ -27,6 +27,9 @@ rules:
     resources: ["remediationrequests"]
     verbs: ["get", "list", "watch", "create", "update", "patch"]
   - apiGroups: ["kubernaut.ai"]
+    resources: ["remediationrequests/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: ["kubernaut.ai"]
     resources: ["remediationapprovalrequests"]
     verbs: ["get", "list", "create", "update", "patch"]
   - apiGroups: ["kubernaut.ai"]
@@ -36,19 +39,34 @@ rules:
     resources: ["events"]
     verbs: ["get", "list", "create", "patch"]
   - apiGroups: [""]
-    resources: ["pods", "replicationcontrollers"]
+    resources: ["pods", "replicationcontrollers", "services", "endpoints", "configmaps", "secrets", "namespaces", "nodes", "persistentvolumeclaims"]
     verbs: ["get", "list"]
   - apiGroups: ["apps"]
     resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
     verbs: ["get", "list"]
   - apiGroups: ["batch"]
     resources: ["jobs", "cronjobs"]
-    verbs: ["get"]
+    verbs: ["get", "list"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses", "networkpolicies"]
+    verbs: ["get", "list"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get", "list"]
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
     verbs: ["get", "list", "watch"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["aianalyses"]
+    verbs: ["get", "list", "watch"]
   - apiGroups: ["authorization.k8s.io"]
     resources: ["subjectaccessreviews"]
+    verbs: ["create"]
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["tokenreviews"]
     verbs: ["create"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -100,7 +118,7 @@ data:
       metricsPort: {{ .Values.apifrontend.config.server.metricsPort | default 9090 }}
       healthPort: {{ .Values.apifrontend.config.server.healthPort | default 8081 }}
     agent:
-      kaBaseURL: "http://kubernaut-agent.{{ .Release.Namespace }}.svc:8080"
+      kaBaseURL: "https://kubernaut-agent.{{ .Release.Namespace }}.svc:8443"
       dsBearerTokenFile: "/var/run/secrets/kubernetes.io/serviceaccount/token"
     session:
       namespace: {{ .Release.Namespace }}
@@ -109,6 +127,13 @@ data:
     severityTriage:
       cacheTTLSeconds: {{ .Values.apifrontend.config.severityTriage.cacheTTLSeconds | default 30 }}
       llmConfidence: {{ .Values.apifrontend.config.severityTriage.llmConfidence | default 0.7 }}
+    auth:
+      {{- with .Values.apifrontend.config.auth.issuerURL }}
+      issuerURL: {{ . | quote }}
+      {{- end }}
+      {{- with .Values.apifrontend.config.auth.audience }}
+      audience: {{ . | quote }}
+      {{- end }}
     rbac:
       sarCacheTTL: {{ .Values.apifrontend.config.rbac.sarCacheTTL | default "30s" }}
     logging:

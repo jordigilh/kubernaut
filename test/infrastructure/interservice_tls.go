@@ -276,6 +276,7 @@ func NewTLSAwareTransport(kubeconfigPath string) (*http.Transport, error) {
 			RootCAs:    pool,
 			MinVersion: tls.VersionTLS12,
 		},
+		ResponseHeaderTimeout: 30 * time.Second,
 	}, nil
 }
 

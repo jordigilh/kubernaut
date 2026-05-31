@@ -90,6 +90,7 @@ var _ = Describe("BR-HAPI-191: Parameter Validation Self-Correction Integration 
 
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "oom-alert", Namespace: "production", Severity: "critical", Message: "OOM Kill",
+				Environment: "Production", Priority: "P0",
 			})
 
 			Expect(err).NotTo(HaveOccurred())
@@ -159,6 +160,7 @@ var _ = Describe("BR-HAPI-191: Parameter Validation Self-Correction Integration 
 
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "crash-alert", Namespace: "default", Severity: "high", Message: "CrashLoopBackOff",
+				Environment: "Development", Priority: "P2",
 			})
 
 			Expect(err).NotTo(HaveOccurred())
@@ -199,6 +201,7 @@ var _ = Describe("BR-HAPI-191: Parameter Validation Self-Correction Integration 
 
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "node-pressure", Namespace: "default", Severity: "high", Message: "NodePressure",
+				Environment: "Development", Priority: "P2",
 			})
 
 			Expect(err).NotTo(HaveOccurred())
@@ -244,6 +247,7 @@ var _ = Describe("BR-HAPI-191: Parameter Validation Self-Correction Integration 
 
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "scale-alert", Namespace: "prod", Severity: "medium", Message: "High CPU",
+				Environment: "Production", Priority: "P1",
 			})
 
 			Expect(err).NotTo(HaveOccurred())

@@ -21,6 +21,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 
+	"github.com/go-logr/logr"
+
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	mcptools "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -50,9 +52,9 @@ var _ = Describe("MCP Tool Registration — PR6a", func() {
 			deps := mcpinternal.MCPDeps{
 				AuthMiddleware: func(next http.Handler) http.Handler { return next },
 				Tools: mcpinternal.ToolDeps{
-					Investigate:      mcptools.InvestigateRegistration(stubInvestigate(), nil, nil),
-					SelectWorkflow:   mcptools.SelectWorkflowRegistration(stubSelectWorkflow()),
-					CompleteNoAction: mcptools.CompleteNoActionRegistration(stubCompleteNoAction()),
+					Investigate:      mcptools.InvestigateRegistration(stubInvestigate(), nil, nil, logr.Discard()),
+					SelectWorkflow:   mcptools.SelectWorkflowRegistration(stubSelectWorkflow(), logr.Discard()),
+					CompleteNoAction: mcptools.CompleteNoActionRegistration(stubCompleteNoAction(), logr.Discard()),
 				},
 			}
 
@@ -104,7 +106,7 @@ var _ = Describe("MCP Tool Registration — PR6a", func() {
 			deps := mcpinternal.MCPDeps{
 				AuthMiddleware: func(next http.Handler) http.Handler { return next },
 				Tools: mcpinternal.ToolDeps{
-					Investigate: mcptools.InvestigateRegistration(stubInvestigate(), nil, nil),
+					Investigate: mcptools.InvestigateRegistration(stubInvestigate(), nil, nil, logr.Discard()),
 				},
 			}
 

@@ -96,6 +96,7 @@ type resourceArgs struct {
 	Kind      string `json:"kind"`
 	Name      string `json:"name"`
 	Namespace string `json:"namespace"`
+	APIGroup  string `json:"api_group,omitempty"`
 }
 
 type logArgs struct {
@@ -107,12 +108,14 @@ type logArgs struct {
 	Pattern    string `json:"pattern,omitempty"`
 }
 
+const apiGroupDesc = `API group for disambiguation when a kind exists in multiple groups (e.g. empty string for core, apps for Deployments, operators.coreos.com for OLM). Omit for unambiguous kinds.`
+
 var (
-	objParams             = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"name":{"type":"string"},"namespace":{"type":"string"}},"required":["kind","name","namespace"]}`)
-	clusterObjParams      = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string","description":"Kubernetes resource kind"},"name":{"type":"string","description":"Exact resource name to find across all namespaces"}},"required":["kind","name"]}`)
-	listParams            = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"namespace":{"type":"string"}},"required":["kind","namespace"]}`)
-	clusterListParams     = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"}},"required":["kind"]}`)
-	findParams            = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"keyword":{"type":"string","description":"Substring to match in resource name, namespace, or labels"}},"required":["kind","keyword"]}`)
+	objParams             = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"name":{"type":"string"},"namespace":{"type":"string"},"api_group":{"type":"string","description":"` + apiGroupDesc + `"}},"required":["kind","name","namespace"]}`)
+	clusterObjParams      = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string","description":"Kubernetes resource kind"},"name":{"type":"string","description":"Exact resource name to find across all namespaces"},"api_group":{"type":"string","description":"` + apiGroupDesc + `"}},"required":["kind","name"]}`)
+	listParams            = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"namespace":{"type":"string"},"api_group":{"type":"string","description":"` + apiGroupDesc + `"}},"required":["kind","namespace"]}`)
+	clusterListParams     = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"api_group":{"type":"string","description":"` + apiGroupDesc + `"}},"required":["kind"]}`)
+	findParams            = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"keyword":{"type":"string","description":"Substring to match in resource name, namespace, or labels"},"api_group":{"type":"string","description":"` + apiGroupDesc + `"}},"required":["kind","keyword"]}`)
 	nsOnlyParams          = json.RawMessage(`{"type":"object","properties":{"namespace":{"type":"string"}},"required":["namespace"]}`)
 	noParams              = json.RawMessage(`{"type":"object","properties":{}}`)
 	logParams             = json.RawMessage(`{"type":"object","properties":{"name":{"type":"string"},"namespace":{"type":"string"},"container":{"type":"string"},"tailLines":{"type":"integer"},"limitBytes":{"type":"integer"},"pattern":{"type":"string"}},"required":["name","namespace"]}`)
@@ -153,7 +156,7 @@ func newDescribe(resolver ResourceResolver) *resourceTool {
 		toolName: "kubectl_describe",
 		desc:     "Describe a Kubernetes resource as structured JSON", params: objParams,
 		fetchFunc: func(ctx context.Context, a resourceArgs) (interface{}, error) {
-			return resolver.Get(ctx, a.Kind, a.Name, a.Namespace)
+			return resolver.Get(ctx, a.Kind, a.Name, a.Namespace, a.APIGroup)
 		},
 	}
 }
@@ -163,7 +166,7 @@ func newGetByName(resolver ResourceResolver) *resourceTool {
 		toolName: "kubectl_get_by_name",
 		desc:     "Get a Kubernetes resource by name as JSON", params: objParams,
 		fetchFunc: func(ctx context.Context, a resourceArgs) (interface{}, error) {
-			return resolver.Get(ctx, a.Kind, a.Name, a.Namespace)
+			return resolver.Get(ctx, a.Kind, a.Name, a.Namespace, a.APIGroup)
 		},
 	}
 }
@@ -173,7 +176,7 @@ func newGetByKindInNamespace(resolver ResourceResolver) *resourceTool {
 		toolName: "kubectl_get_by_kind_in_namespace",
 		desc:     "List Kubernetes resources of a kind in a namespace", params: listParams,
 		fetchFunc: func(ctx context.Context, a resourceArgs) (interface{}, error) {
-			return resolver.List(ctx, a.Kind, a.Namespace)
+			return resolver.List(ctx, a.Kind, a.Namespace, a.APIGroup)
 		},
 	}
 }
@@ -183,7 +186,7 @@ func newGetByKindInCluster(resolver ResourceResolver) *resourceTool {
 		toolName: "kubectl_get_by_kind_in_cluster",
 		desc:     "List Kubernetes resources of a kind across all namespaces", params: clusterListParams,
 		fetchFunc: func(ctx context.Context, a resourceArgs) (interface{}, error) {
-			return resolver.List(ctx, a.Kind, "")
+			return resolver.List(ctx, a.Kind, "", a.APIGroup)
 		},
 	}
 }
@@ -206,14 +209,15 @@ func (t *getByNameInClusterTool) Parameters() json.RawMessage { return clusterOb
 
 func (t *getByNameInClusterTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
 	var a struct {
-		Kind string `json:"kind"`
-		Name string `json:"name"`
+		Kind     string `json:"kind"`
+		Name     string `json:"name"`
+		APIGroup string `json:"api_group,omitempty"`
 	}
 	if err := json.Unmarshal(args, &a); err != nil {
 		return "", fmt.Errorf("parsing args: %w", err)
 	}
 
-	resources, err := t.resolver.List(ctx, a.Kind, "")
+	resources, err := t.resolver.List(ctx, a.Kind, "", a.APIGroup)
 	if err != nil {
 		return "", err
 	}
@@ -263,8 +267,9 @@ func (t *findResourceTool) Parameters() json.RawMessage { return findParams }
 
 func (t *findResourceTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
 	var a struct {
-		Kind    string `json:"kind"`
-		Keyword string `json:"keyword"`
+		Kind     string `json:"kind"`
+		Keyword  string `json:"keyword"`
+		APIGroup string `json:"api_group,omitempty"`
 	}
 	if err := json.Unmarshal(args, &a); err != nil {
 		return "", fmt.Errorf("parsing args: %w", err)
@@ -275,7 +280,7 @@ func (t *findResourceTool) Execute(ctx context.Context, args json.RawMessage) (s
 		return "", fmt.Errorf("keyword must not be empty; use kubectl_get_by_kind_in_cluster to list all resources of a kind")
 	}
 
-	resources, err := t.resolver.List(ctx, a.Kind, "")
+	resources, err := t.resolver.List(ctx, a.Kind, "", a.APIGroup)
 	if err != nil {
 		return "", err
 	}
@@ -332,7 +337,7 @@ func (t *getYAMLTool) Execute(ctx context.Context, args json.RawMessage) (string
 	if err := json.Unmarshal(args, &a); err != nil {
 		return "", fmt.Errorf("parsing args: %w", err)
 	}
-	obj, err := t.resolver.Get(ctx, a.Kind, a.Name, a.Namespace)
+	obj, err := t.resolver.Get(ctx, a.Kind, a.Name, a.Namespace, a.APIGroup)
 	if err != nil {
 		return "", err
 	}

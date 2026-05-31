@@ -103,6 +103,67 @@ var _ = Describe("Scenario Detection Rules", func() {
 		})
 	})
 
+	Describe("UT-MOCK-1292-001: Cross-namespace kubernaut_remediate scenario extracts workload namespace", func() {
+		DescribeTable("should select kubernaut_remediate_cross_ns and extract the workload namespace",
+			func(prompt, expectedNS, expectedName string) {
+				ctx := &scenarios.DetectionContext{
+					Content:         prompt,
+					AllText:         prompt,
+					LastUserContent: prompt,
+				}
+				result := registry.Detect(ctx)
+				Expect(result).NotTo(BeNil())
+				Expect(result.Scenario.Name()).To(Equal("kubernaut_remediate_cross_ns"),
+					"cross-namespace remediation prompt must match the cross-NS scenario")
+
+				cfgScenario, ok := result.Scenario.(scenarios.ScenarioWithConfig)
+				Expect(ok).To(BeTrue())
+				cfg := cfgScenario.Config()
+				Expect(cfg.ResourceNS).To(Equal(expectedNS),
+					"ResourceNS must be the workload namespace extracted from the prompt, not the default controller namespace")
+				Expect(cfg.ResourceName).To(Equal(expectedName))
+			},
+			Entry("UT-MOCK-1292-001a: single-line prompt with spaces",
+				"cross-namespace remediation for deployment memory-eater in demo-workload namespace",
+				"demo-workload", "memory-eater"),
+			Entry("UT-MOCK-1292-001b: newline before namespace (ADK Gemini restructure)",
+				"cross-namespace remediation for deployment memory-eater in\ndemo-workload namespace",
+				"demo-workload", "memory-eater"),
+			Entry("UT-MOCK-1292-001c: tab-separated tokens",
+				"cross-namespace remediation for deployment\tmemory-eater\tin\tdemo-workload\tnamespace",
+				"demo-workload", "memory-eater"),
+			Entry("UT-MOCK-1292-001d: dynamic namespace with digits and hyphens",
+				"cross-namespace remediation for deployment memory-eater in fp-e2e-1292-1779885620 namespace",
+				"fp-e2e-1292-1779885620", "memory-eater"),
+		)
+
+		It("UT-MOCK-1292-002: stale extractedNS does not leak across calls when regex fails", func() {
+			// First call succeeds — namespace extracted.
+			ctx1 := &scenarios.DetectionContext{
+				Content:         "cross-namespace remediation for deployment memory-eater in staging namespace",
+				AllText:         "cross-namespace remediation for deployment memory-eater in staging namespace",
+				LastUserContent: "cross-namespace remediation for deployment memory-eater in staging namespace",
+			}
+			r1 := registry.Detect(ctx1)
+			Expect(r1).NotTo(BeNil())
+			cfg1 := r1.Scenario.(scenarios.ScenarioWithConfig).Config()
+			Expect(cfg1.ResourceNS).To(Equal("staging"))
+
+			// Second call has the keyword but a malformed resource pattern — regex cannot extract NS.
+			ctx2 := &scenarios.DetectionContext{
+				Content:         "cross-namespace remediation — no structured deployment reference here",
+				AllText:         "cross-namespace remediation — no structured deployment reference here",
+				LastUserContent: "cross-namespace remediation — no structured deployment reference here",
+			}
+			r2 := registry.Detect(ctx2)
+			Expect(r2).NotTo(BeNil())
+			Expect(r2.Scenario.Name()).To(Equal("kubernaut_remediate_cross_ns"))
+			cfg2 := r2.Scenario.(scenarios.ScenarioWithConfig).Config()
+			Expect(cfg2.ResourceNS).To(Equal("kubernaut-system"),
+				"when regex fails, Config() must return the base default — not a stale value from a prior match")
+		})
+	})
+
 	Describe("UT-MOCK-025: Default fallback when no rule matches", func() {
 		It("should return default scenario for unrecognized content", func() {
 			ctx := &scenarios.DetectionContext{

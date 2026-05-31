@@ -45,7 +45,7 @@ func newUnstructuredRR(ns, name, phase, targetKind, targetName string) *unstruct
 	}
 }
 
-var _ = Describe("af_check_existing_rr", func() {
+var _ = Describe("kubernaut_check_existing_remediation", func() {
 	rrGVR := schema.GroupVersionResource{Group: "kubernaut.ai", Version: "v1alpha1", Resource: "remediationrequests"}
 
 	It("UT-AF-052-040: finds active RR for matching fingerprint", func() {
@@ -56,12 +56,12 @@ var _ = Describe("af_check_existing_rr", func() {
 			rr,
 		)
 
-		result, err := tools.HandleCheckExistingRR(context.Background(), client, tools.CheckExistingRRArgs{
+		result, err := tools.HandleCheckExistingRR(context.Background(), client, "prod", tools.CheckExistingRRArgs{
 			Namespace: "prod", Kind: "Deployment", Name: "web",
 		})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Exists).To(BeTrue())
-		Expect(result.RRID).To(Equal("prod/rr-deploy-web-1"))
+		Expect(result.RRID).To(Equal("rr-deploy-web-1"))
 		Expect(result.Phase).To(Equal("Executing"))
 	})
 
@@ -73,7 +73,7 @@ var _ = Describe("af_check_existing_rr", func() {
 			rr,
 		)
 
-		result, err := tools.HandleCheckExistingRR(context.Background(), client, tools.CheckExistingRRArgs{
+		result, err := tools.HandleCheckExistingRR(context.Background(), client, "prod", tools.CheckExistingRRArgs{
 			Namespace: "prod", Kind: "Deployment", Name: "web",
 		})
 		Expect(err).NotTo(HaveOccurred())
@@ -85,7 +85,7 @@ var _ = Describe("af_check_existing_rr", func() {
 		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme,
 			map[schema.GroupVersionResource]string{rrGVR: "RemediationRequestList"})
 
-		result, err := tools.HandleCheckExistingRR(context.Background(), client, tools.CheckExistingRRArgs{
+		result, err := tools.HandleCheckExistingRR(context.Background(), client, "prod", tools.CheckExistingRRArgs{
 			Namespace: "prod", Kind: "Deployment", Name: "web",
 		})
 		Expect(err).NotTo(HaveOccurred())
@@ -97,7 +97,7 @@ var _ = Describe("af_check_existing_rr", func() {
 		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme,
 			map[schema.GroupVersionResource]string{rrGVR: "RemediationRequestList"})
 
-		_, err := tools.HandleCheckExistingRR(context.Background(), client, tools.CheckExistingRRArgs{
+		_, err := tools.HandleCheckExistingRR(context.Background(), client, "prod", tools.CheckExistingRRArgs{
 			Namespace: "", Kind: "Deployment", Name: "web",
 		})
 		Expect(err).To(MatchError(ContainSubstring("invalid input")))
@@ -108,7 +108,7 @@ var _ = Describe("af_check_existing_rr", func() {
 		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme,
 			map[schema.GroupVersionResource]string{rrGVR: "RemediationRequestList"})
 
-		_, err := tools.HandleCheckExistingRR(context.Background(), client, tools.CheckExistingRRArgs{
+		_, err := tools.HandleCheckExistingRR(context.Background(), client, "prod", tools.CheckExistingRRArgs{
 			Namespace: "prod", Kind: "", Name: "web",
 		})
 		Expect(err).To(MatchError(ContainSubstring("invalid input")))
@@ -119,14 +119,14 @@ var _ = Describe("af_check_existing_rr", func() {
 		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme,
 			map[schema.GroupVersionResource]string{rrGVR: "RemediationRequestList"})
 
-		_, err := tools.HandleCheckExistingRR(context.Background(), client, tools.CheckExistingRRArgs{
+		_, err := tools.HandleCheckExistingRR(context.Background(), client, "prod", tools.CheckExistingRRArgs{
 			Namespace: "prod", Kind: "Deployment", Name: "",
 		})
 		Expect(err).To(MatchError(ContainSubstring("invalid input")))
 	})
 
 	It("UT-AF-052-046: nil client returns ErrK8sUnavailable", func() {
-		_, err := tools.HandleCheckExistingRR(context.Background(), nil, tools.CheckExistingRRArgs{
+		_, err := tools.HandleCheckExistingRR(context.Background(), nil, "prod", tools.CheckExistingRRArgs{
 			Namespace: "prod", Kind: "Deployment", Name: "web",
 		})
 		Expect(err).To(MatchError(tools.ErrK8sUnavailable))
@@ -142,7 +142,7 @@ var _ = Describe("af_check_existing_rr", func() {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				_, err := tools.HandleCheckExistingRR(context.Background(), client, tools.CheckExistingRRArgs{
+				_, err := tools.HandleCheckExistingRR(context.Background(), client, "prod", tools.CheckExistingRRArgs{
 					Namespace: "prod", Kind: "Deployment", Name: "web",
 				})
 				Expect(err).NotTo(HaveOccurred())
@@ -159,10 +159,90 @@ var _ = Describe("af_check_existing_rr", func() {
 			rr,
 		)
 
-		result, err := tools.HandleCheckExistingRR(context.Background(), client, tools.CheckExistingRRArgs{
+		result, err := tools.HandleCheckExistingRR(context.Background(), client, "prod", tools.CheckExistingRRArgs{
 			Namespace: "prod", Kind: "Deployment", Name: "other-target",
 		})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Exists).To(BeFalse())
+	})
+
+	Describe("ADR-057 namespace split (F-NS-SPLIT)", func() {
+		It("UT-AF-1292-NS-006: lists in controllerNS, fingerprints with workload NS (BR-SAFETY-001, SI-10)", func() {
+			controllerNS := "kubernaut-system"
+			workloadNS := "prod"
+
+			rr := &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"apiVersion": "kubernaut.ai/v1alpha1",
+					"kind":       "RemediationRequest",
+					"metadata": map[string]interface{}{
+						"name":      "rr-deploy-web-existing",
+						"namespace": controllerNS,
+					},
+					"spec": map[string]interface{}{
+						"signalFingerprint": testFingerprint(workloadNS, "Deployment", "web"),
+						"targetResource": map[string]interface{}{
+							"kind":      "Deployment",
+							"name":      "web",
+							"namespace": workloadNS,
+						},
+					},
+					"status": map[string]interface{}{
+						"overallPhase": "Executing",
+					},
+				},
+			}
+			scheme := runtime.NewScheme()
+			client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme,
+				map[schema.GroupVersionResource]string{rrGVR: "RemediationRequestList"},
+				rr,
+			)
+
+			result, err := tools.HandleCheckExistingRR(context.Background(), client, controllerNS, tools.CheckExistingRRArgs{
+				Namespace: workloadNS, Kind: "Deployment", Name: "web",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Exists).To(BeTrue(),
+				"must find RR in controllerNS using workload NS fingerprint")
+			Expect(result.RRID).To(Equal("rr-deploy-web-existing"))
+		})
+
+		It("UT-AF-1292-NS-007: returns false when fingerprint uses wrong workload NS (BR-SAFETY-001, SI-10)", func() {
+			controllerNS := "kubernaut-system"
+
+			rr := &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"apiVersion": "kubernaut.ai/v1alpha1",
+					"kind":       "RemediationRequest",
+					"metadata": map[string]interface{}{
+						"name":      "rr-deploy-web-staging",
+						"namespace": controllerNS,
+					},
+					"spec": map[string]interface{}{
+						"signalFingerprint": testFingerprint("staging", "Deployment", "web"),
+						"targetResource": map[string]interface{}{
+							"kind":      "Deployment",
+							"name":      "web",
+							"namespace": "staging",
+						},
+					},
+					"status": map[string]interface{}{
+						"overallPhase": "Executing",
+					},
+				},
+			}
+			scheme := runtime.NewScheme()
+			client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme,
+				map[schema.GroupVersionResource]string{rrGVR: "RemediationRequestList"},
+				rr,
+			)
+
+			result, err := tools.HandleCheckExistingRR(context.Background(), client, controllerNS, tools.CheckExistingRRArgs{
+				Namespace: "prod", Kind: "Deployment", Name: "web",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Exists).To(BeFalse(),
+				"fingerprint(prod/Deployment/web) must NOT match fingerprint(staging/Deployment/web)")
+		})
 	})
 })

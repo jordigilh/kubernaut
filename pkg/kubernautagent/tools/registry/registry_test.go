@@ -32,8 +32,8 @@ import (
 
 type nopResolver struct{}
 
-func (n *nopResolver) Get(_ context.Context, _, _, _ string) (interface{}, error) { return nil, nil }
-func (n *nopResolver) List(_ context.Context, _, _ string) (interface{}, error)   { return nil, nil }
+func (n *nopResolver) Get(_ context.Context, _, _, _, _ string) (interface{}, error) { return nil, nil }
+func (n *nopResolver) List(_ context.Context, _, _, _ string) (interface{}, error)  { return nil, nil }
 
 var _ k8s.ResourceResolver = (*nopResolver)(nil)
 

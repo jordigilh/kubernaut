@@ -27,6 +27,14 @@ func (sr *statusRecorder) Flush() {
 	}
 }
 
+// Unwrap returns the underlying ResponseWriter so that
+// http.NewResponseController can traverse the middleware chain to reach
+// connection-level methods like SetWriteDeadline. Without this, SSE
+// streams cannot clear the server's WriteTimeout and are silently killed.
+func (sr *statusRecorder) Unwrap() http.ResponseWriter {
+	return sr.ResponseWriter
+}
+
 // normalizePath maps request paths to a fixed set of known route labels,
 // preventing unbounded Prometheus cardinality from arbitrary request paths.
 func normalizePath(p string) string {

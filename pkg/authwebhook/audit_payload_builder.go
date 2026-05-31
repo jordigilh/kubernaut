@@ -30,17 +30,23 @@ import (
 //
 // Per DD-WEBHOOK-003: Business context ONLY (attribution in structured columns).
 // Per DD-AUDIT-004: Zero unstructured data in audit events.
+// DD-AUTH-MCP-001 v3.0: Includes delegation fields when trusted intermediary is involved.
 //
 // Note: Uses toRemediationApprovalAuditPayloadDecision from audit_helpers.go
 func BuildRARApprovalAuditPayload(rar *remediationv1.RemediationApprovalRequest) api.RemediationApprovalAuditPayload {
-	return api.RemediationApprovalAuditPayload{
+	payload := api.RemediationApprovalAuditPayload{
 		EventType:       api.RemediationApprovalAuditPayloadEventTypeWebhookRemediationapprovalrequestDecided,
 		RequestName:     rar.Name,
 		Decision:        toRemediationApprovalAuditPayloadDecision(string(rar.Status.Decision)),
 		DecidedAt:       rar.Status.DecidedAt.Time,
-		DecisionMessage: rar.Status.DecisionMessage,  // Per DD-WEBHOOK-003 line 316
-		AiAnalysisRef:   rar.Spec.AIAnalysisRef.Name, // Per DD-WEBHOOK-003 line 317 (note: lowercase 'i' in ogen)
+		DecisionMessage: rar.Status.DecisionMessage,
+		AiAnalysisRef:   rar.Spec.AIAnalysisRef.Name,
 	}
+	if rar.Status.DecidedVia != "" {
+		payload.DelegatedUser = api.NewOptString(rar.Status.DecidedBy)
+		payload.DelegatedVia = api.NewOptString(rar.Status.DecidedVia)
+	}
+	return payload
 }
 
 // WrapRARApprovalPayloadWithDiscriminator wraps the audit payload with the correct discriminator.

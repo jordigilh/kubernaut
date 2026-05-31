@@ -190,21 +190,25 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	r.Register(signalScenario("crashloop", []string{"crashloop", "backoff"}, crashloopConfig()))
 	r.Register(signalScenario("injection_configmap_read", []string{"injection_configmap_read"}, injectionConfigmapReadConfig()))
 
-	// Issue #1189: AF-created RRs use "af-manual-<Kind>-<Name>" as signal name.
-	// Map to oomkill workflow so the KA pipeline can process them end-to-end.
-	r.Register(signalScenario("af_manual", []string{"af-manual"}, oomkilledConfig()))
+	// Issue #1189/#1282: AF-created RRs use "unknown" as signal name when
+	// deriveSignalName finds no grounded infrastructure signal.
+	r.Register(signalScenario("af_unknown", []string{"unknown"}, oomkilledConfig()))
 
 	// Issue #1170: Multi-turn param validation self-correction (BR-HAPI-191).
 	// Returns bad params on first call, corrected params after validation feedback.
 	r.Register(paramValidationSelfcorrectScenarioNew())
 
-	// Issue #1189: AF A2A tests need the mock LLM to call af_create_rr when
-	// the user message contains "create a remediation request" (priority 0.9).
+	// Issue #1332: AF A2A tests need the mock LLM to call kubernaut_remediate
+	// when the user message contains "create a remediation request" (priority 0.9).
 	r.Register(afCreateRRScenario())
 
-	// TC-E2E-STREAM-03: slow variant of af_create_rr that delays 5s on the
-	// second LLM turn, giving the test time to disconnect mid-execution.
+	// TC-E2E-STREAM-03: slow variant of kubernaut_remediate that delays 5s on
+	// the second LLM turn, giving the test time to disconnect mid-execution.
 	r.Register(afCreateRRSlowScenario())
+
+	// E2E-FP-1292-001: cross-namespace variant that extracts the workload
+	// namespace from the prompt (ADR-057 split verification).
+	r.Register(afCreateRRCrossNSScenario())
 
 	// Default fallback (lowest priority = 0.01)
 	r.Register(defaultFallbackScenario())

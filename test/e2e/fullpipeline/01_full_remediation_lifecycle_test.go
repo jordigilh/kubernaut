@@ -205,6 +205,36 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		}, timeout, interval).Should(Equal("Completed"),
 			"SignalProcessing should reach Completed phase")
 
+		// BR-SP-051, BR-SP-070: Verify environment and priority are populated
+		By("Step 4b: Verifying SP environment classification and priority assignment are populated [BR-SP-051, BR-SP-070]")
+		{
+			spList := &signalprocessingv1.SignalProcessingList{}
+			Expect(apiReader.List(ctx, spList, client.InNamespace(namespace))).To(Succeed())
+			for i := range spList.Items {
+				sp := &spList.Items[i]
+				if sp.Spec.RemediationRequestRef.Name == remediationRequest.Name {
+					Expect(sp.Status.EnvironmentClassification).ToNot(BeNil(),
+						"SP EnvironmentClassification must be populated (even when no env label)")
+					Expect(string(sp.Status.EnvironmentClassification.Environment)).ToNot(BeEmpty(),
+						"SP EnvironmentClassification.Environment must not be empty")
+					GinkgoWriter.Printf("  ✅ SP environment: %s (source: %s)\n",
+						sp.Status.EnvironmentClassification.Environment, sp.Status.EnvironmentClassification.Source)
+
+					Expect(sp.Status.PriorityAssignment).ToNot(BeNil(),
+						"SP PriorityAssignment must be populated")
+					Expect(string(sp.Status.PriorityAssignment.Priority)).To(BeElementOf("P0", "P1", "P2", "P3"),
+						"SP PriorityAssignment.Priority must be a valid priority level")
+					GinkgoWriter.Printf("  ✅ SP priority: %s (source: %s)\n",
+						sp.Status.PriorityAssignment.Priority, sp.Status.PriorityAssignment.Source)
+
+					Expect(sp.Status.Severity).ToNot(BeEmpty(),
+						"SP Severity must be populated (normalized by Rego)")
+					GinkgoWriter.Printf("  ✅ SP severity: %s\n", sp.Status.Severity)
+					break
+				}
+			}
+		}
+
 		// ================================================================
 		// Step 5: Verify AIAnalysis created and completed
 		// ================================================================
@@ -233,6 +263,31 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		Expect(aa.Status.SelectedWorkflow).ToNot(BeNil(), "AIAnalysis should have selectedWorkflow")
 		Expect(aa.Status.SelectedWorkflow.ExecutionEngine).To(Equal("job"),
 			"AIAnalysis should select job execution engine")
+
+		// Verify AA signal context has environment, priority, severity, signalMode from SP
+		By("Step 5c: Verifying AA signal context contains full SP-derived fields")
+		keSC := aa.Spec.AnalysisRequest.SignalContext
+		Expect(keSC.Environment).ToNot(BeEmpty(),
+			"AA SignalContext.Environment must be populated (propagated from SP EnvironmentClassification)")
+		Expect(keSC.BusinessPriority).ToNot(BeEmpty(),
+			"AA SignalContext.BusinessPriority must be populated (propagated from SP PriorityAssignment)")
+		Expect(keSC.Severity).ToNot(BeEmpty(),
+			"AA SignalContext.Severity must be populated (normalized by SP)")
+		Expect(keSC.SignalMode).To(BeElementOf("reactive", "proactive"),
+			"AA SignalContext.SignalMode must be populated (BR-AI-084)")
+		GinkgoWriter.Printf("  ✅ AA signal context: env=%s, priority=%s, severity=%s, mode=%s\n",
+			keSC.Environment, keSC.BusinessPriority, keSC.Severity, keSC.SignalMode)
+
+		// Verify EnrichmentResults propagated from SP (BR-ORCH-025)
+		By("Step 5d: Verifying AA EnrichmentResults contains KubernetesContext and BusinessClassification from SP")
+		keER := keSC.EnrichmentResults
+		Expect(keER.KubernetesContext).ToNot(BeNil(),
+			"AA EnrichmentResults.KubernetesContext must be propagated from SP")
+		Expect(keER.BusinessClassification).ToNot(BeNil(),
+			"AA EnrichmentResults.BusinessClassification must be propagated from SP (BR-SP-080, BR-SP-081)")
+		GinkgoWriter.Printf("  ✅ AA enrichment: bizUnit=%s, criticality=%s, customLabels=%d keys\n",
+			keER.BusinessClassification.BusinessUnit, keER.BusinessClassification.Criticality,
+			len(keER.KubernetesContext.CustomLabels))
 
 		// ================================================================
 		// Step 6: Verify WorkflowExecution created with executionEngine: job
@@ -921,12 +976,13 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			ObjectMeta: metav1.ObjectMeta{
 				Name: testNamespaceAM,
 				Labels: map[string]string{
-					"kubernaut.ai/managed": "true",
+					"kubernaut.ai/managed":     "true",
+					"kubernaut.ai/environment": "staging",
 				},
 			},
 		}
 		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
-		GinkgoWriter.Printf("  ✅ Namespace created: %s\n", testNamespaceAM)
+		GinkgoWriter.Printf("  ✅ Namespace created: %s (staging environment)\n", testNamespaceAM)
 
 		// ================================================================
 		// AM Step 2: Deploy memory-eater at high usage (no OOMKill)
@@ -1061,6 +1117,37 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		}, timeout, interval).Should(Equal("Completed"),
 			"SignalProcessing should reach Completed phase")
 
+		// BR-SP-051, BR-SP-070: Verify environment classification and priority for staging namespace
+		By("AM Step 4b: Verifying SP classified environment as staging and assigned priority [BR-SP-051, BR-SP-070]")
+		amSPFound := false
+		{
+			spList := &signalprocessingv1.SignalProcessingList{}
+			Expect(apiReader.List(ctx, spList, client.InNamespace(namespace))).To(Succeed())
+			for i := range spList.Items {
+				sp := &spList.Items[i]
+				if sp.Spec.RemediationRequestRef.Name == remediationRequest.Name {
+					amSPFound = true
+					Expect(sp.Status.EnvironmentClassification).ToNot(BeNil(),
+						"SP EnvironmentClassification must be populated")
+					Expect(sp.Status.EnvironmentClassification.Environment).To(Equal(signalprocessingv1.EnvironmentStaging),
+						"SP should classify namespace as staging (kubernaut.ai/environment label)")
+					Expect(sp.Status.EnvironmentClassification.Source).To(Equal("namespace-labels"),
+						"SP should classify from namespace labels when kubernaut.ai/environment is set")
+					GinkgoWriter.Printf("  ✅ SP environment: %s (source: %s)\n",
+						sp.Status.EnvironmentClassification.Environment, sp.Status.EnvironmentClassification.Source)
+
+					Expect(sp.Status.PriorityAssignment).ToNot(BeNil(),
+						"SP PriorityAssignment must be populated for staging critical signal")
+					Expect(string(sp.Status.PriorityAssignment.Priority)).To(BeElementOf("P0", "P1"),
+						"SP should assign P0 or P1 priority for staging+critical signal")
+					GinkgoWriter.Printf("  ✅ SP priority: %s (source: %s)\n",
+						sp.Status.PriorityAssignment.Priority, sp.Status.PriorityAssignment.Source)
+					break
+				}
+			}
+		}
+		Expect(amSPFound).To(BeTrue(), "SP CR for AM RR %s must exist", remediationRequest.Name)
+
 		// ================================================================
 		// AM Step 5: Verify AIAnalysis completed
 		// ================================================================
@@ -1089,6 +1176,33 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		Expect(aa.Status.SelectedWorkflow).ToNot(BeNil(), "AIAnalysis should have selectedWorkflow")
 		Expect(aa.Status.SelectedWorkflow.ExecutionEngine).To(Equal("job"),
 			"AIAnalysis should select job execution engine")
+
+		// Verify AA signal context propagated environment and priority from SP
+		By("AM Step 5c: Verifying AA signal context contains full SP-derived fields (staging)")
+		amSC := aa.Spec.AnalysisRequest.SignalContext
+		Expect(amSC.Environment).To(Equal(string(signalprocessingv1.EnvironmentStaging)),
+			"AA SignalContext.Environment should be 'Staging' (propagated from SP EnvironmentClassification)")
+		Expect(amSC.BusinessPriority).ToNot(BeEmpty(),
+			"AA SignalContext.BusinessPriority must be populated (propagated from SP PriorityAssignment)")
+		Expect(amSC.BusinessPriority).To(BeElementOf("P0", "P1"),
+			"AA SignalContext.BusinessPriority should be P0 or P1 for staging+critical signal")
+		Expect(amSC.Severity).ToNot(BeEmpty(),
+			"AA SignalContext.Severity must be populated (normalized by SP)")
+		Expect(amSC.SignalMode).To(BeElementOf("reactive", "proactive"),
+			"AA SignalContext.SignalMode must be populated (BR-AI-084)")
+		GinkgoWriter.Printf("  ✅ AA signal context: env=%s, priority=%s, severity=%s, mode=%s\n",
+			amSC.Environment, amSC.BusinessPriority, amSC.Severity, amSC.SignalMode)
+
+		// Verify EnrichmentResults propagated from SP (BR-ORCH-025)
+		By("AM Step 5d: Verifying AA EnrichmentResults contains KubernetesContext and BusinessClassification from SP")
+		amER := amSC.EnrichmentResults
+		Expect(amER.KubernetesContext).ToNot(BeNil(),
+			"AA EnrichmentResults.KubernetesContext must be propagated from SP")
+		Expect(amER.BusinessClassification).ToNot(BeNil(),
+			"AA EnrichmentResults.BusinessClassification must be propagated from SP (BR-SP-080, BR-SP-081)")
+		GinkgoWriter.Printf("  ✅ AA enrichment: bizUnit=%s, criticality=%s, customLabels=%d keys\n",
+			amER.BusinessClassification.BusinessUnit, amER.BusinessClassification.Criticality,
+			len(amER.KubernetesContext.CustomLabels))
 
 		// ================================================================
 		// AM Step 6: Verify WorkflowExecution

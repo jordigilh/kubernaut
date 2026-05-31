@@ -26,7 +26,7 @@ var _ = Describe("EventBridge", func() {
 			queue := &fakeQueue{}
 			taskID := a2a.TaskID("test-task-123")
 
-			ctx = launcher.WithEventBridge(ctx, queue, taskID, nil)
+			ctx = launcher.WithEventBridge(ctx, queue, taskID, "", nil)
 			bridge := launcher.EventBridgeFromContext(ctx)
 			Expect(bridge).NotTo(BeNil())
 		})
@@ -36,7 +36,7 @@ var _ = Describe("EventBridge", func() {
 		It("UT-AF-1258-010: writes TaskArtifactUpdateEvent to queue", func() {
 			queue := &fakeQueue{}
 			taskID := a2a.TaskID("task-emit-001")
-			ctx := launcher.WithEventBridge(context.Background(), queue, taskID, nil)
+			ctx := launcher.WithEventBridge(context.Background(), queue, taskID, "ctx-emit-001", nil)
 			bridge := launcher.EventBridgeFromContext(ctx)
 
 			err := bridge.EmitReasoning(ctx, "Checking pod status...")
@@ -54,17 +54,70 @@ var _ = Describe("EventBridge", func() {
 			Expect(textPart.Text).To(Equal("Checking pod status..."))
 		})
 
-		It("UT-AF-1258-015: sets Append=true on artifact", func() {
+		It("UT-AF-1297-001: emitted event includes ContextID matching the bridge value", func() {
 			queue := &fakeQueue{}
-			taskID := a2a.TaskID("task-append-001")
-			ctx := launcher.WithEventBridge(context.Background(), queue, taskID, nil)
+			taskID := a2a.TaskID("task-ctx-001")
+			contextID := "019e67dc-eab1-70f9-8987-9302a245f5e0"
+			ctx := launcher.WithEventBridge(context.Background(), queue, taskID, contextID, nil)
 			bridge := launcher.EventBridgeFromContext(ctx)
 
-			err := bridge.EmitReasoning(ctx, "some reasoning")
+			err := bridge.EmitReasoning(ctx, "Investigating pod crash loop")
 			Expect(err).NotTo(HaveOccurred())
+			Expect(queue.events).To(HaveLen(1))
 
-			evt := queue.events[0].(*a2a.TaskArtifactUpdateEvent)
-			Expect(evt.Append).To(BeTrue())
+			evt, ok := queue.events[0].(*a2a.TaskArtifactUpdateEvent)
+			Expect(ok).To(BeTrue())
+			Expect(evt.ContextID).To(Equal(contextID),
+				"ContextID must propagate through bridge events to satisfy a2a-go task update validation")
+			Expect(string(evt.TaskID)).To(Equal("task-ctx-001"))
+		})
+
+		It("UT-AF-1298-001: first emission creates artifact (Append=false), subsequent appends", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-art-001", "ctx-art-001", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			Expect(bridge.EmitReasoning(ctx, "Step 1: checking pods")).To(Succeed())
+			Expect(bridge.EmitReasoning(ctx, "Step 2: analyzing logs")).To(Succeed())
+			Expect(bridge.EmitReasoning(ctx, "Step 3: root cause found")).To(Succeed())
+			Expect(queue.events).To(HaveLen(3))
+
+			first := queue.events[0].(*a2a.TaskArtifactUpdateEvent)
+			Expect(first.Append).To(BeFalse(),
+				"first bridge emission must create a new artifact (Append=false) per a2a-go contract")
+			Expect(first.Artifact).NotTo(BeNil())
+			Expect(string(first.Artifact.ID)).NotTo(BeEmpty(),
+				"first emission must assign an ArtifactID so subsequent appends can reference it")
+
+			artifactID := first.Artifact.ID
+
+			second := queue.events[1].(*a2a.TaskArtifactUpdateEvent)
+			Expect(second.Append).To(BeTrue(),
+				"subsequent emissions must append to the existing artifact")
+			Expect(second.Artifact.ID).To(Equal(artifactID),
+				"subsequent emissions must reference the same ArtifactID created by the first emission")
+
+			third := queue.events[2].(*a2a.TaskArtifactUpdateEvent)
+			Expect(third.Append).To(BeTrue())
+			Expect(third.Artifact.ID).To(Equal(artifactID))
+		})
+
+		It("UT-AF-1258-015: first emission creates artifact (Append=false), second appends", func() {
+			queue := &fakeQueue{}
+			taskID := a2a.TaskID("task-append-001")
+			ctx := launcher.WithEventBridge(context.Background(), queue, taskID, "", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			Expect(bridge.EmitReasoning(ctx, "first")).To(Succeed())
+			Expect(bridge.EmitReasoning(ctx, "second")).To(Succeed())
+
+			first := queue.events[0].(*a2a.TaskArtifactUpdateEvent)
+			Expect(first.Append).To(BeFalse(), "first emission creates a new artifact")
+			Expect(string(first.Artifact.ID)).NotTo(BeEmpty())
+
+			second := queue.events[1].(*a2a.TaskArtifactUpdateEvent)
+			Expect(second.Append).To(BeTrue(), "subsequent emissions append")
+			Expect(second.Artifact.ID).To(Equal(first.Artifact.ID))
 		})
 
 		It("UT-AF-1258-011: nil-safe when bridge not in context", func() {
@@ -78,7 +131,7 @@ var _ = Describe("EventBridge", func() {
 			queue := &blockingQueue{}
 			taskID := a2a.TaskID("task-cancel-001")
 			ctx, cancel := context.WithCancel(context.Background())
-			ctx = launcher.WithEventBridge(ctx, queue, taskID, nil)
+			ctx = launcher.WithEventBridge(ctx, queue, taskID, "", nil)
 			bridge := launcher.EventBridgeFromContext(ctx)
 
 			cancel()
@@ -89,7 +142,7 @@ var _ = Describe("EventBridge", func() {
 		It("UT-AF-1258-016: truncates text > 512 chars", func() {
 			queue := &fakeQueue{}
 			taskID := a2a.TaskID("task-trunc-001")
-			ctx := launcher.WithEventBridge(context.Background(), queue, taskID, nil)
+			ctx := launcher.WithEventBridge(context.Background(), queue, taskID, "", nil)
 			bridge := launcher.EventBridgeFromContext(ctx)
 
 			longText := make([]byte, 600)
@@ -112,7 +165,7 @@ var _ = Describe("EventBridge", func() {
 	Describe("SC-7 Boundary Protection — outbound secret redaction", func() {
 		It("UT-AF-1258-030: JWT embedded in reasoning is redacted before reaching the queue", func() {
 			queue := &fakeQueue{}
-			ctx := launcher.WithEventBridge(context.Background(), queue, "task-sc7-jwt", nil)
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-sc7-jwt", "", nil)
 			bridge := launcher.EventBridgeFromContext(ctx)
 
 			reasoning := "Authenticating with Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIn0.sig to KA"
@@ -139,7 +192,7 @@ var _ = Describe("EventBridge", func() {
 	Describe("SI-10 Input Validation — control character stripping", func() {
 		It("UT-AF-1258-032: null bytes and non-printable chars are stripped before emission", func() {
 			queue := &fakeQueue{}
-			ctx := launcher.WithEventBridge(context.Background(), queue, "task-si10-ctrl", nil)
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-si10-ctrl", "", nil)
 			bridge := launcher.EventBridgeFromContext(ctx)
 
 			reasoning := "Pod status\x00is\x01healthy\x7f"
@@ -160,7 +213,7 @@ var _ = Describe("EventBridge", func() {
 
 		It("UT-AF-1258-034: all-control-char input produces no event (prevents empty artifacts)", func() {
 			queue := &fakeQueue{}
-			ctx := launcher.WithEventBridge(context.Background(), queue, "task-si10-empty", nil)
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-si10-empty", "", nil)
 			bridge := launcher.EventBridgeFromContext(ctx)
 
 			err := bridge.EmitReasoning(ctx, "\x00\x01\x02\x03")
@@ -185,7 +238,7 @@ var _ = Describe("EventBridge", func() {
 		It("UT-AF-1258-036: successful emission increments event counter for throughput visibility", func() {
 			queue := &fakeQueue{}
 			m := &spyBridgeMetrics{}
-			ctx := launcher.WithEventBridge(context.Background(), queue, "task-obs-ok", m)
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-obs-ok", "", m)
 			bridge := launcher.EventBridgeFromContext(ctx)
 
 			_ = bridge.EmitReasoning(ctx, "reasoning step 1")
@@ -199,7 +252,7 @@ var _ = Describe("EventBridge", func() {
 		It("UT-AF-1258-037: queue write failure increments failure counter for alerting", func() {
 			queue := &failingQueue{err: errors.New("queue full")}
 			m := &spyBridgeMetrics{}
-			ctx := launcher.WithEventBridge(context.Background(), queue, "task-obs-fail", m)
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-obs-fail", "", m)
 			bridge := launcher.EventBridgeFromContext(ctx)
 
 			_ = bridge.EmitReasoning(ctx, "reasoning text")
@@ -212,7 +265,7 @@ var _ = Describe("EventBridge", func() {
 
 		It("UT-AF-1258-038: nil metrics does not block emission (graceful degradation)", func() {
 			queue := &fakeQueue{}
-			ctx := launcher.WithEventBridge(context.Background(), queue, "task-obs-nil", nil)
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-obs-nil", "", nil)
 			bridge := launcher.EventBridgeFromContext(ctx)
 
 			err := bridge.EmitReasoning(ctx, "text without metrics")

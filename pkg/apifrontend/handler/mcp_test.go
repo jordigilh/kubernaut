@@ -91,9 +91,9 @@ var _ = Describe("MCP Handler", func() {
 		}
 	})
 
-	It("UT-AF-220-006: tools count matches 23 expected tools", func() {
+	It("UT-AF-220-006: tools count matches 21 expected tools (#1332: kubernaut_takeover removed)", func() {
 		tools := handler.DefaultMCPTools()
-		Expect(tools).To(HaveLen(23))
+		Expect(tools).To(HaveLen(21))
 	})
 
 	It("UT-AF-220-007: MCP server info includes correct name and version", func() {

@@ -69,4 +69,23 @@ func TestBuildAuthConfig(t *testing.T) {
 			t.Errorf("audiences = %v, want [apifrontend]", result.JWT[0].Issuer.Audiences)
 		}
 	})
+
+	t.Run("UT-AF-1309-022: issuerURL set returns populated JWT slice", func(t *testing.T) {
+		cfg := &config.Config{Auth: config.AuthConfig{
+			IssuerURL: "https://dex.example.com",
+			Audience:  "af",
+		}}
+		result := buildAuthConfig(cfg)
+		if len(result.JWT) == 0 {
+			t.Fatal("UT-AF-1309-022: expected non-empty JWT slice when issuerURL is set")
+		}
+	})
+
+	t.Run("UT-AF-1309-023: empty issuerURL returns empty JWT slice", func(t *testing.T) {
+		cfg := &config.Config{Auth: config.AuthConfig{IssuerURL: ""}}
+		result := buildAuthConfig(cfg)
+		if len(result.JWT) != 0 {
+			t.Errorf("UT-AF-1309-023: expected empty JWT slice, got %d", len(result.JWT))
+		}
+	})
 }

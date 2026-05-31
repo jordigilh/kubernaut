@@ -12,7 +12,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -35,6 +37,24 @@ const (
 	LabelPhase     = "kubernaut.ai/phase"
 	LabelManagedBy = "app.kubernetes.io/managed-by"
 )
+
+// FieldIndexRRName is the field index path for InvestigationSession's
+// spec.remediationRequestRef.name, used for MatchingFields queries.
+const FieldIndexRRName = "spec.remediationRequestRef.name"
+
+// RegisterFieldIndexes registers required field indexes on the given manager's
+// cache for InvestigationSession lookups by spec.remediationRequestRef.name.
+func RegisterFieldIndexes(ctx context.Context, indexer client.FieldIndexer) error {
+	return indexer.IndexField(ctx, &v1alpha1.InvestigationSession{}, FieldIndexRRName,
+		func(obj client.Object) []string {
+			is := obj.(*v1alpha1.InvestigationSession)
+			if is.Spec.RemediationRequestRef.Name == "" {
+				return nil
+			}
+			return []string{is.Spec.RemediationRequestRef.Name}
+		},
+	)
+}
 
 // StateKeyCreateConfig is the session state key used to pass CRD creation
 // parameters from the caller into the Create method. The value must be a
@@ -68,7 +88,7 @@ type CRDSessionService struct {
 
 	mu             sync.RWMutex
 	crdIndex       map[string]string        // sessionID -> CRD name
-	pendingConfigs map[string]*CreateConfig  // sessionID -> deferred CreateConfig (not yet materialized)
+	pendingConfigs map[string]*CreateConfig  // sessionID -> deferred CreateConfig; cleaned on Delete(). Since #1293, MaterializeCRD is deprecated so entries persist until session deletion (bounded by active session count).
 }
 
 // NewCRDSessionService creates a new CRDSessionService. The delegate should
@@ -131,7 +151,7 @@ func (s *CRDSessionService) getReader() client.Reader {
 
 // Create delegates session creation to the in-memory service and stores the
 // CRD creation config for later materialization. No K8s CRD is created until
-// MaterializeCRD is called (typically after af_create_rr produces a real RR).
+// MaterializeCRD is called (typically after kubernaut_remediate produces a real RR).
 // The CRD creation config is read from req.State[StateKeyCreateConfig].
 func (s *CRDSessionService) Create(ctx context.Context, req *adksession.CreateRequest) (*adksession.CreateResponse, error) {
 	var cfg *CreateConfig
@@ -153,7 +173,7 @@ func (s *CRDSessionService) Create(ctx context.Context, req *adksession.CreateRe
 	}
 
 	// CRD creation is deferred until MaterializeCRD, which is called by the
-	// af_create_rr after-callback once a real RemediationRequest exists.
+	// kubernaut_remediate after-callback once a real RemediationRequest exists.
 	// A2A sessions exist to remediate; no CRD is created for sessions that
 	// never produce an RR (incomplete/error/misuse).
 	resp, err := s.delegate.Create(ctx, req)
@@ -168,7 +188,7 @@ func (s *CRDSessionService) Create(ctx context.Context, req *adksession.CreateRe
 	}
 	s.mu.Unlock()
 
-	s.logger.Info("session created (CRD deferred until af_create_rr)",
+	s.logger.Info("session created (CRD deferred until kubernaut_remediate)",
 		"session_id", resp.Session.ID(),
 		"crd_name", crdName,
 		"user", req.UserID,
@@ -349,10 +369,13 @@ func (s *CRDSessionService) PruneTerminalEntries(ctx context.Context) int {
 	return pruned
 }
 
+// Deprecated: MaterializeCRD is the legacy IS CRD creation path. Since #1332,
+// IS CRD creation is handled by CreateInvestigationSession (early CRD-driven
+// model). This method is retained for backward compatibility but is not
+// invoked in the current production flow.
+//
 // MaterializeCRD creates the K8s InvestigationSession CRD for a previously
-// deferred session. It is called by the af_create_rr after-callback once a
-// real RemediationRequest reference is available. Idempotent: returns nil
-// if the CRD was already materialized.
+// deferred session. Idempotent: returns nil if the CRD was already materialized.
 func (s *CRDSessionService) MaterializeCRD(ctx context.Context, sessionID string, rrRef v1alpha1.ObjectRef) error {
 	s.mu.Lock()
 	cfg, isPending := s.pendingConfigs[sessionID]
@@ -367,20 +390,13 @@ func (s *CRDSessionService) MaterializeCRD(ctx context.Context, sessionID string
 	delete(s.pendingConfigs, sessionID)
 	s.mu.Unlock()
 
-	now := metav1.Now()
 	crd := &v1alpha1.InvestigationSession{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      crdName,
 			Namespace: s.namespace,
 			Labels: map[string]string{
-				LabelPhase:     string(v1alpha1.SessionPhaseActive),
 				LabelManagedBy: "kubernaut-apifrontend",
 			},
-		},
-		Status: v1alpha1.InvestigationSessionStatus{
-			Phase:           v1alpha1.SessionPhaseActive,
-			ConnectionState: v1alpha1.ConnectionStateConnected,
-			StartedAt:       &now,
 		},
 	}
 
@@ -407,11 +423,11 @@ func (s *CRDSessionService) MaterializeCRD(ctx context.Context, sessionID string
 		var existingList v1alpha1.InvestigationSessionList
 		if listErr := s.client.List(ctx, &existingList,
 			client.InNamespace(s.namespace),
-			client.MatchingLabels{LabelRRName: sanitizeLabelValue(rrRef.Name)},
+			client.MatchingFields{FieldIndexRRName: rrRef.Name},
 		); listErr == nil {
 			for i := range existingList.Items {
 				existing := &existingList.Items[i]
-				if existing.Status.Phase == v1alpha1.SessionPhaseActive &&
+				if !IsTerminal(existing.Status.Phase) &&
 					existing.Name != crdName &&
 					existing.Spec.UserIdentity.Username != cfg.UserIdentity.Username {
 					s.mu.Lock()
@@ -424,7 +440,6 @@ func (s *CRDSessionService) MaterializeCRD(ctx context.Context, sessionID string
 		}
 	}
 
-	desiredStatus := crd.Status
 	if err := s.client.Create(ctx, crd); err != nil {
 		s.mu.Lock()
 		s.pendingConfigs[sessionID] = cfg
@@ -432,18 +447,149 @@ func (s *CRDSessionService) MaterializeCRD(ctx context.Context, sessionID string
 		return fmt.Errorf("create InvestigationSession CRD: %w", err)
 	}
 
-	crd.Status = desiredStatus
+	crd.Status.Phase = v1alpha1.SessionPhaseActive
+	crd.Status.Message = "session materialized"
 	if err := s.client.Status().Update(ctx, crd); err != nil {
-		s.logger.V(0).Info("CRD status update failed after materialize",
-			"session_id", sessionID,
-			"error", security.RedactError(err),
-		)
+		s.logger.Error(err, "failed to set initial phase to Active after CRD creation",
+			"session_id", sessionID, "crd_name", crdName)
 	}
 
 	s.logger.Info("CRD materialized",
 		"session_id", sessionID,
 		"crd_name", crdName,
 		"rr_ref", rrRef.Name,
+	)
+	return nil
+}
+
+// FinalizeSessionByRR looks up the active InvestigationSession for a given RR
+// and transitions it to the specified terminal phase. Best-effort: returns nil
+// if no active session exists. Enables MCP complete/cancel tools to update the
+// IS CRD (BR-INTERACTIVE-010 SC-1).
+func (s *CRDSessionService) FinalizeSessionByRR(ctx context.Context, rrNamespace, rrName string, phase v1alpha1.SessionPhase) error {
+	var list v1alpha1.InvestigationSessionList
+	if err := s.client.List(ctx, &list,
+		client.InNamespace(s.namespace),
+		client.MatchingFields{FieldIndexRRName: rrName},
+	); err != nil {
+		return fmt.Errorf("list sessions for RR %s/%s: %w", rrNamespace, rrName, err)
+	}
+
+	for i := range list.Items {
+		is := &list.Items[i]
+		if !IsTerminal(is.Status.Phase) {
+			msg := fmt.Sprintf("user action: %s", string(phase))
+			userID := is.Spec.UserIdentity.Username
+			return s.UpdatePhase(ctx, is.Name, phase, msg, userID)
+		}
+	}
+	return nil
+}
+
+// InitializeSessionByRR creates an InvestigationSession CRD for a takeover
+// action. Unlike MaterializeCRD (which uses deferred A2A state), this builds
+// the CRD directly from MCP bridge context. Idempotent: returns nil if an
+// active IS CRD for this RR already exists for the same user.
+//
+// BR-INTERACTIVE-010 SC-1.3: enables dynamic takeover signal via IS CRD.
+// BR-INTERACTIVE-004: single-driver guard rejects a different user's takeover.
+//
+// Concurrency: the List→Create sequence has a TOCTOU window. This is accepted
+// because the Lease is authoritative for single-driver enforcement (same
+// trade-off as MaterializeCRD). AlreadyExists on Create provides idempotency
+// at the K8s layer for concurrent calls with the same CRD name.
+func (s *CRDSessionService) InitializeSessionByRR(ctx context.Context, rrNamespace, rrName, kaSessionID, username string, groups []string) error {
+	if kaSessionID == "" {
+		return fmt.Errorf("kaSessionID is required for IS CRD initialization")
+	}
+
+	rrRef := v1alpha1.ObjectRef{Namespace: rrNamespace, Name: rrName}
+
+	var existingList v1alpha1.InvestigationSessionList
+	if err := s.client.List(ctx, &existingList,
+		client.InNamespace(s.namespace),
+		client.MatchingFields{FieldIndexRRName: rrName},
+	); err != nil {
+		return fmt.Errorf("list sessions for RR %s/%s: %w", rrNamespace, rrName, err)
+	}
+	for i := range existingList.Items {
+		existing := &existingList.Items[i]
+		if !IsTerminal(existing.Status.Phase) {
+			if existing.Spec.UserIdentity.Username == username {
+				return nil
+			}
+			return fmt.Errorf("session_active: an active investigation session already exists for RR %s/%s",
+				rrNamespace, rrName)
+		}
+	}
+
+	crdName := kaSessionID
+	if !validCRDName.MatchString(crdName) {
+		crdName = fmt.Sprintf("isess-%d", time.Now().UnixNano())
+	}
+
+	crd := &v1alpha1.InvestigationSession{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      crdName,
+			Namespace: s.namespace,
+			Labels: map[string]string{
+				LabelManagedBy: "kubernaut-apifrontend",
+				LabelUser:      sanitizeLabelValue(username),
+				LabelRRName:    sanitizeLabelValue(rrName),
+			},
+		},
+		Spec: v1alpha1.InvestigationSessionSpec{
+			RemediationRequestRef: rrRef,
+			A2ATaskID:             kaSessionID,
+			UserIdentity: v1alpha1.SessionUser{
+				Username: username,
+				Groups:   groups,
+			},
+			JoinMode: v1alpha1.SessionJoinModeTakeover,
+		},
+	}
+
+	if rrNamespace == s.namespace {
+		setRROwnerReference(ctx, s.client, s.logger, crd, rrNamespace, rrName)
+	}
+
+	if err := s.client.Create(ctx, crd); err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			return nil
+		}
+		return fmt.Errorf("create IS CRD for takeover: %w", err)
+	}
+
+	crd.Status.Phase = v1alpha1.SessionPhaseActive
+	crd.Status.Message = "session materialized"
+	if err := s.client.Status().Update(ctx, crd); err != nil {
+		s.logger.Error(err, "failed to set initial phase to Active after IS CRD creation",
+			"session_id", kaSessionID, "crd_name", crdName)
+	}
+
+	s.mu.Lock()
+	s.crdIndex[kaSessionID] = crdName
+	s.mu.Unlock()
+
+	s.incSessionGauge(string(v1alpha1.SessionPhaseActive))
+
+	if s.auditor != nil {
+		s.auditor.Emit(ctx, &audit.Event{
+			Type:   audit.EventSessionCreated,
+			UserID: username,
+			Detail: map[string]string{
+				"session_id":    kaSessionID,
+				"join_mode":     string(v1alpha1.SessionJoinModeTakeover),
+				"user_identity": username,
+				"rr_ref":        rrNamespace + "/" + rrName,
+			},
+		})
+	}
+
+	s.logger.Info("IS CRD initialized for takeover",
+		"crd_name", crdName,
+		"rr_ref", rrName,
+		"user", username,
 	)
 	return nil
 }
@@ -455,6 +601,164 @@ func (s *CRDSessionService) IsMaterialized(sessionID string) bool {
 	_, hasCRD := s.crdIndex[sessionID]
 	_, isPending := s.pendingConfigs[sessionID]
 	return hasCRD && !isPending
+}
+
+// CreateISConfig holds parameters for creating an InvestigationSession CRD
+// without requiring a KA session ID. This supports the pure CRD-driven
+// coordination model where IS existence signals interactive intent to AA.
+type CreateISConfig struct {
+	RRNamespace string
+	RRName      string
+	TaskID      string // A2A task ID (semantically correct for spec.a2aTaskID)
+	Username    string
+	Groups      []string
+	JoinMode    v1alpha1.SessionJoinMode
+}
+
+// CreateInvestigationSession creates an InvestigationSession CRD using the
+// deterministic naming convention is-{rr.Name} (aligned with RO child CRDs:
+// sp-{rr.Name}, ai-{rr.Name}, etc. per DD-AUDIT-CORRELATION-002).
+//
+// The CRD is created WITHOUT status.phase set — AA detects the IS via its watch
+// and sets phase=Active after acknowledging the interactive session
+// (BR-INTERACTIVE-010 SC-1). This enables Model A (pure CRD-driven) takeover.
+//
+// Idempotent:
+//   - If a non-terminal IS exists for the same user, returns existing CRD name.
+//   - If a terminal IS exists, deletes and recreates.
+//   - If a non-terminal IS exists for a DIFFERENT user, returns single-driver error.
+func (s *CRDSessionService) CreateInvestigationSession(ctx context.Context, cfg CreateISConfig) (string, error) {
+	if cfg.RRName == "" {
+		return "", fmt.Errorf("RRName is required for IS CRD creation")
+	}
+	if cfg.TaskID == "" {
+		return "", fmt.Errorf("TaskID is required for spec.a2aTaskID (minLength=1)")
+	}
+	if cfg.Username == "" {
+		return "", fmt.Errorf("username is required for IS CRD creation")
+	}
+
+	crdName := fmt.Sprintf("is-%s", cfg.RRName)
+
+	var existing v1alpha1.InvestigationSession
+	err := s.getReader().Get(ctx, types.NamespacedName{Namespace: s.namespace, Name: crdName}, &existing)
+	if err == nil {
+		if !IsTerminal(existing.Status.Phase) {
+			if existing.Spec.UserIdentity.Username == cfg.Username {
+				return crdName, nil
+			}
+			return "", fmt.Errorf("session_active: an active investigation session already exists for RR %s/%s",
+				cfg.RRNamespace, cfg.RRName)
+		}
+		if delErr := s.client.Delete(ctx, &existing); delErr != nil && !apierrors.IsNotFound(delErr) {
+			return "", fmt.Errorf("delete terminal IS %s: %w", crdName, delErr)
+		}
+	} else if !apierrors.IsNotFound(err) {
+		return "", fmt.Errorf("get IS %s: %w", crdName, err)
+	}
+
+	rrRef := v1alpha1.ObjectRef{Namespace: cfg.RRNamespace, Name: cfg.RRName}
+	crd := &v1alpha1.InvestigationSession{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      crdName,
+			Namespace: s.namespace,
+			Labels: map[string]string{
+				LabelManagedBy: "kubernaut-apifrontend",
+				LabelUser:      sanitizeLabelValue(cfg.Username),
+				LabelRRName:    sanitizeLabelValue(cfg.RRName),
+			},
+		},
+		Spec: v1alpha1.InvestigationSessionSpec{
+			RemediationRequestRef: rrRef,
+			A2ATaskID:             cfg.TaskID,
+			UserIdentity: v1alpha1.SessionUser{
+				Username: cfg.Username,
+				Groups:   cfg.Groups,
+			},
+			JoinMode: cfg.JoinMode,
+		},
+	}
+
+	if cfg.RRNamespace == s.namespace {
+		setRROwnerReference(ctx, s.client, s.logger, crd, cfg.RRNamespace, cfg.RRName)
+	}
+
+	if err := s.client.Create(ctx, crd); err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			return crdName, nil
+		}
+		return "", fmt.Errorf("create IS CRD: %w", err)
+	}
+
+	s.mu.Lock()
+	s.crdIndex[cfg.TaskID] = crdName
+	s.mu.Unlock()
+
+	if s.auditor != nil {
+		s.auditor.Emit(ctx, &audit.Event{
+			Type:   audit.EventSessionCreated,
+			UserID: cfg.Username,
+			Detail: map[string]string{
+				"crd_name":  crdName,
+				"task_id":   cfg.TaskID,
+				"join_mode": string(cfg.JoinMode),
+				"rr_ref":    cfg.RRNamespace + "/" + cfg.RRName,
+			},
+		})
+	}
+
+	s.logger.Info("IS CRD created",
+		"crd_name", crdName,
+		"rr_ref", cfg.RRName,
+		"join_mode", string(cfg.JoinMode),
+		"user", cfg.Username,
+	)
+	return crdName, nil
+}
+
+// UpdateISCorrelation writes the KA session ID to status.kaCorrelationID
+// after a successful MCP connection. Best-effort: errors are logged but
+// do not fail the investigation flow.
+func (s *CRDSessionService) UpdateISCorrelation(ctx context.Context, crdName, kaSessionID string) error {
+	if crdName == "" || kaSessionID == "" {
+		return nil
+	}
+
+	var is v1alpha1.InvestigationSession
+	if err := s.getReader().Get(ctx, types.NamespacedName{Namespace: s.namespace, Name: crdName}, &is); err != nil {
+		return fmt.Errorf("get IS %s for correlation update: %w", crdName, err)
+	}
+
+	is.Status.KACorrelationID = kaSessionID
+	if err := s.client.Status().Update(ctx, &is); err != nil {
+		return fmt.Errorf("update IS %s correlation: %w", crdName, err)
+	}
+	return nil
+}
+
+var rrGVK = schema.GroupVersionKind{Group: "kubernaut.ai", Version: "v1alpha1", Kind: "RemediationRequest"}
+
+// setRROwnerReference looks up the RemediationRequest and, if found, sets an
+// OwnerReference on the IS CRD so Kubernetes garbage-collects the IS when the
+// RR is deleted (#1300). Best-effort: a lookup failure is logged and the IS is
+// still created without an owner reference.
+func setRROwnerReference(ctx context.Context, c client.Client, logger logr.Logger, crd *v1alpha1.InvestigationSession, rrNamespace, rrName string) {
+	rr := &unstructured.Unstructured{}
+	rr.SetGroupVersionKind(rrGVK)
+	if err := c.Get(ctx, types.NamespacedName{Namespace: rrNamespace, Name: rrName}, rr); err != nil {
+		logger.V(1).Info("RR lookup for owner reference failed (IS will be created without cascade GC)",
+			"rr_namespace", rrNamespace, "rr_name", rrName, "error", err.Error())
+		return
+	}
+
+	crd.OwnerReferences = []metav1.OwnerReference{
+		{
+			APIVersion: "kubernaut.ai/v1alpha1",
+			Kind:       "RemediationRequest",
+			Name:       rr.GetName(),
+			UID:        rr.GetUID(),
+		},
+	}
 }
 
 var invalidLabelChars = regexp.MustCompile(`[^a-zA-Z0-9._-]`)

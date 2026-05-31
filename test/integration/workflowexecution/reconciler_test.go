@@ -735,17 +735,22 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 				_, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 10*time.Second)
 				Expect(err).ToNot(HaveOccurred())
 
-				By("Simulating completion")
-				wfeStatus, err := getWFE(wfe.Name, wfe.Namespace)
-				Expect(err).ToNot(HaveOccurred())
-
-				now := metav1.Now()
-				wfeStatus.Status.Phase = workflowexecutionv1alpha1.PhaseCompleted
-				wfeStatus.Status.CompletionTime = &now
-				Expect(k8sClient.Status().Update(ctx, wfeStatus)).To(Succeed())
+			By("Simulating completion")
+			now := metav1.Now()
+			Eventually(func() error {
+				fresh, fetchErr := getWFE(wfe.Name, wfe.Namespace)
+				if fetchErr != nil {
+					return fetchErr
+				}
+				fresh.Status.Phase = workflowexecutionv1alpha1.PhaseCompleted
+				fresh.Status.CompletionTime = &now
+				return k8sClient.Status().Update(ctx, fresh)
+			}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
 
 				By("Verifying PipelineRun still exists immediately after completion (cooldown active)")
 				// Use Eventually to verify PipelineRun exists (allows for controller reconciliation timing)
+				wfeStatus, err := getWFE(wfe.Name, wfe.Namespace)
+				Expect(err).ToNot(HaveOccurred())
 				pr := &tektonv1.PipelineRun{}
 				prKey := client.ObjectKey{
 					Name:      wfeStatus.Status.ExecutionRef.Name,

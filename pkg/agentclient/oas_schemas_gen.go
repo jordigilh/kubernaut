@@ -1113,6 +1113,7 @@ func (*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntityApplica
 // Business Requirements:
 // - BR-HAPI-002: Incident analysis request schema
 // - BR-AUDIT-001: Unified audit trail (remediation_id)
+// - BR-INTERACTIVE-010: Interactive investigation via IS CRD signal
 // Design Decision: DD-WORKFLOW-002 v2.2
 // - remediation_id is MANDATORY for audit trail correlation
 // - remediation_id is for CORRELATION ONLY - do NOT use for RCA or workflow matching
@@ -1174,6 +1175,9 @@ type IncidentRequest struct {
 	EnrichmentResults OptNilEnrichmentResults `json:"enrichment_results"`
 	// Signal mode: 'reactive' or 'proactive'. Controls prompt strategy (ADR-054).
 	SignalMode OptNilSignalMode `json:"signal_mode"`
+	// When true, KA creates the session in pending state without launching the Investigate() goroutine.
+	// The session awaits an MCP action=start before beginning investigation. BR-INTERACTIVE-010.
+	Interactive OptNilBool `json:"interactive"`
 }
 
 // GetIncidentID returns the value of IncidentID.
@@ -1306,6 +1310,11 @@ func (s *IncidentRequest) GetSignalMode() OptNilSignalMode {
 	return s.SignalMode
 }
 
+// GetInteractive returns the value of Interactive.
+func (s *IncidentRequest) GetInteractive() OptNilBool {
+	return s.Interactive
+}
+
 // SetIncidentID sets the value of IncidentID.
 func (s *IncidentRequest) SetIncidentID(val string) {
 	s.IncidentID = val
@@ -1434,6 +1443,11 @@ func (s *IncidentRequest) SetEnrichmentResults(val OptNilEnrichmentResults) {
 // SetSignalMode sets the value of SignalMode.
 func (s *IncidentRequest) SetSignalMode(val OptNilSignalMode) {
 	s.SignalMode = val
+}
+
+// SetInteractive sets the value of Interactive.
+func (s *IncidentRequest) SetInteractive(val OptNilBool) {
+	s.Interactive = val
 }
 
 type IncidentRequestSignalAnnotations map[string]string

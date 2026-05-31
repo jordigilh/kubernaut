@@ -19,6 +19,18 @@ func (s *LLMResponsePayload) setDefaults() {
 }
 
 // setDefaults set default value of fields.
+func (s *RemediationApprovalAuditPayload) setDefaults() {
+	{
+		val := string("")
+		s.DelegatedUser.SetTo(val)
+	}
+	{
+		val := string("")
+		s.DelegatedVia.SetTo(val)
+	}
+}
+
+// setDefaults set default value of fields.
 func (s *WorkflowValidationPayload) setDefaults() {
 	{
 		val := bool(false)

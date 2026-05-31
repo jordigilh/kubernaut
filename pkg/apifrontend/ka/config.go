@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-logr/logr"
 	gobreaker "github.com/sony/gobreaker/v2"
 )
 
@@ -121,12 +122,80 @@ type DiscoveredWorkflow struct {
 	Name        string                    `json:"name"`
 	Description string                    `json:"description"`
 	Kind        string                    `json:"kind,omitempty"`
+	Confidence  float64                   `json:"confidence,omitempty"`
 	Parameters  []WorkflowParameterSchema `json:"parameters"`
 }
 
 // DiscoverWorkflowsResult is the response from kubernaut_discover_workflows MCP call.
 type DiscoverWorkflowsResult struct {
 	Workflows []DiscoveredWorkflow `json:"workflows"`
+}
+
+// investigateEnvelope matches the top-level fields of KA's InvestigateOutput.
+type investigateEnvelope struct {
+	SessionID string `json:"session_id"`
+	Status    string `json:"status"`
+	Response  string `json:"response"`
+}
+
+// kaWorkflowDiscoveryPayload matches the JSON inside the Response string
+// of KA's InvestigateOutput when action=discover_workflows.
+type kaWorkflowDiscoveryPayload struct {
+	Recommended  *kaDiscoveredWorkflow  `json:"recommended,omitempty"`
+	Alternatives []kaDiscoveredWorkflow `json:"alternatives,omitempty"`
+}
+
+// kaDiscoveredWorkflow matches KA's internal DiscoveredWorkflow JSON fields.
+type kaDiscoveredWorkflow struct {
+	WorkflowID      string                 `json:"workflow_id"`
+	ExecutionBundle string                 `json:"execution_bundle,omitempty"`
+	Confidence      float64                `json:"confidence"`
+	Rationale       string                 `json:"rationale"`
+	Parameters      map[string]interface{} `json:"parameters,omitempty"`
+}
+
+// ParseDiscoverWorkflowsResponse handles both the direct AF format
+// ({"workflows": [...]}) and KA's InvestigateOutput envelope format
+// ({"session_id":..., "status":..., "response": "{recommended:..., alternatives:...}"}).
+func ParseDiscoverWorkflowsResponse(raw json.RawMessage) (*DiscoverWorkflowsResult, error) {
+	var direct DiscoverWorkflowsResult
+	if err := json.Unmarshal(raw, &direct); err == nil && len(direct.Workflows) > 0 {
+		return &direct, nil
+	}
+
+	var envelope investigateEnvelope
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return nil, fmt.Errorf("parse discover_workflows response: %w", err)
+	}
+
+	if envelope.Response == "" {
+		return &DiscoverWorkflowsResult{}, nil
+	}
+
+	var payload kaWorkflowDiscoveryPayload
+	if err := json.Unmarshal([]byte(envelope.Response), &payload); err != nil {
+		return nil, fmt.Errorf("parse workflow discovery payload: %w", err)
+	}
+
+	var workflows []DiscoveredWorkflow
+	if payload.Recommended != nil {
+		workflows = append(workflows, mapKAWorkflow(*payload.Recommended))
+	}
+	for _, alt := range payload.Alternatives {
+		workflows = append(workflows, mapKAWorkflow(alt))
+	}
+
+	return &DiscoverWorkflowsResult{Workflows: workflows}, nil
+}
+
+func mapKAWorkflow(raw kaDiscoveredWorkflow) DiscoveredWorkflow {
+	name := raw.WorkflowID
+	return DiscoveredWorkflow{
+		WorkflowID:  raw.WorkflowID,
+		Name:        name,
+		Description: raw.Rationale,
+		Confidence:  raw.Confidence,
+	}
 }
 
 // SelectWorkflowArgs is the input for the kubernaut_select_workflow MCP tool call.
@@ -159,13 +228,47 @@ type InvestigateResult struct {
 	Summary   string `json:"summary,omitempty"`
 }
 
-// InvestigationEvent represents a discrete event from KA's SSE stream.
+// InvestigationEvent represents a discrete event from KA's MCP LoggingMessage stream.
 // Wire-format compatible with internal/kubernautagent/session.InvestigationEvent.
 type InvestigationEvent struct {
 	Type  string          `json:"type"`
 	Turn  int             `json:"turn"`
 	Phase string          `json:"phase,omitempty"`
 	Data  json.RawMessage `json:"data,omitempty"`
+}
+
+// ParseLoggingEvent attempts to unmarshal raw JSON into an InvestigationEvent.
+// Returns the event and true on success. For non-structured messages (e.g.
+// plain-text KA logs on pooled sessions), logs at V(2) and returns false.
+// AU-6: Non-structured messages are expected after session pooling and must
+// not emit Error-level noise that degrades audit log signal-to-noise ratio.
+func ParseLoggingEvent(logger logr.Logger, raw json.RawMessage) (InvestigationEvent, bool) {
+	var evt InvestigationEvent
+	if err := json.Unmarshal(raw, &evt); err != nil {
+		logger.V(2).Info("non-structured logging message (expected after session pooling)",
+			"parse_error", err.Error())
+		return InvestigationEvent{}, false
+	}
+	return evt, true
+}
+
+// StartInvestigationArgs is the input for starting a dedicated MCP investigation session.
+type StartInvestigationArgs struct {
+	RRID string `json:"rr_id"`
+}
+
+// StartInvestigationResult holds the response from a dedicated MCP investigation
+// session, including the event channel for streaming and a closer for cleanup.
+type StartInvestigationResult struct {
+	SessionID string                   `json:"session_id"`
+	Status    string                   `json:"status"`
+	Events    <-chan InvestigationEvent `json:"-"`
+	Closer    func()                   `json:"-"`
+	// Session is the underlying MCP session. Exposed so the blocking A2A
+	// path can hand it off to the KASessionPool after the investigation
+	// completes, letting discover_workflows / select_workflow reuse the
+	// same connection and driver lease.
+	Session PoolSession `json:"-"`
 }
 
 // InvokeActionArgs is the input for the generic kubernaut_investigate action dispatch.

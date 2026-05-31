@@ -62,6 +62,7 @@ import (
 	// Import ALL CRD types for the full pipeline
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
+	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
@@ -216,7 +217,8 @@ var _ = SynchronizedBeforeSuite(
 		Expect(aianalysisv1.AddToScheme(scheme.Scheme)).To(Succeed())
 		Expect(workflowexecutionv1.AddToScheme(scheme.Scheme)).To(Succeed())
 		Expect(notificationv1.AddToScheme(scheme.Scheme)).To(Succeed())
-		Expect(eav1.AddToScheme(scheme.Scheme)).To(Succeed()) // ADR-EM-001: EA types
+		Expect(eav1.AddToScheme(scheme.Scheme)).To(Succeed())          // ADR-EM-001: EA types
+		Expect(isv1alpha1.AddToScheme(scheme.Scheme)).To(Succeed()) // BR-INTERACTIVE-010: IS CRD
 
 		By("Creating Kubernetes client")
 		cfg, err := config.GetConfig()

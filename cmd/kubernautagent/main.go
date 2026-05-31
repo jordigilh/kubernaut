@@ -55,6 +55,7 @@ import (
 	sharedtransport "github.com/jordigilh/kubernaut/pkg/shared/transport"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/alignment"
+	"github.com/jordigilh/kubernaut/internal/version"
 	kaapi "github.com/jordigilh/kubernaut/internal/kubernautagent/api"
 	alignprompt "github.com/jordigilh/kubernaut/internal/kubernautagent/alignment/prompt"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
@@ -330,7 +331,10 @@ func main() {
 		investigationRunner = wrapper
 	}
 
-	store := session.NewStore(cfg.Runtime.Session.TTL)
+	store := session.NewStore(cfg.Runtime.Session.TTL,
+		session.WithLogger(logger.WithName("session-store")),
+		session.WithMaxConcurrent(cfg.Runtime.Session.MaxConcurrentInvestigations),
+	)
 	mgr := session.NewManager(store, logger, instrumentedAudit, agentMetrics)
 
 	handler := kaserver.NewHandler(mgr, investigationRunner, logger, agentMetrics)
@@ -359,8 +363,12 @@ func main() {
 		Burst:             cfg.Runtime.Server.RateLimit.Burst,
 		CleanupInterval:   cfg.Runtime.Server.RateLimit.CleanupInterval,
 		MaxAge:            cfg.Runtime.Server.RateLimit.MaxAge,
-	}, agentMetrics.HTTPRateLimitedTotal)
+		TrustedProxyCIDRs: cfg.Runtime.Server.RateLimit.TrustedProxyCIDRs,
+	}, agentMetrics.HTTPRateLimitedTotal, kaserver.WithAuditStore(instrumentedAudit, logger))
 	defer apiRateLimiter.Stop()
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
 	var sessionDrainer *mcpkg.SessionDrainer
 
@@ -386,7 +394,9 @@ func main() {
 			authCleanupRef = authCleanup
 		}
 		if authMw != nil {
-			r.Use(authMw.Handler)
+			r.Use(func(next http.Handler) http.Handler {
+				return kaserver.AuditAuthMiddleware(authMw.Handler(next), instrumentedAudit, logger)
+			})
 			logger.Info("auth middleware enabled (DD-AUTH-014)",
 				"resource", "services",
 				"resourceName", "kubernaut-agent",
@@ -398,7 +408,7 @@ func main() {
 
 		if cfg.Interactive.Enabled {
 			var mcpHandler http.Handler
-			mcpHandler, sessionDrainer = buildMCPHandler(cfg, k8sInfra, ds, inv, enricher, mgr, authMw, agentMetrics, instrumentedAudit, logger)
+			mcpHandler, sessionDrainer = buildMCPHandler(ctx, cfg, k8sInfra, ds, inv, enricher, mgr, authMw, agentMetrics, instrumentedAudit, logger)
 			if mcpHandler != nil {
 				// SEC-02: Per-user rate limiting for MCP interactive endpoint.
 				userRL := kaserver.NewUserRateLimiter(
@@ -464,7 +474,9 @@ func main() {
 	healthMux.HandleFunc("/healthz", healthHandler)
 	healthMux.HandleFunc("/readyz", readinessHandler(&shutdownFlag, swappable, ds, interactiveReadiness))
 	healthMux.HandleFunc("/config", configHandler(cfg, swappable))
-	healthMux.Handle("/admin/loglevel", atomicLevel)
+	if !cfg.Runtime.Server.DisableAdminEndpoints {
+		healthMux.Handle("/admin/loglevel", atomicLevel)
+	}
 	healthMux.HandleFunc("/openapi.json", kaapi.SpecHandler())
 	if !cfg.Runtime.Server.DisableProfiling {
 		healthMux.HandleFunc("/debug/pprof/", pprof.Index)
@@ -490,9 +502,6 @@ func main() {
 		WriteTimeout:      10 * time.Second,
 		IdleTimeout:       30 * time.Second,
 	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 
 	// Issue #756: Wire FileWatcher for server cert hot-reload
 	if certReloader != nil {
@@ -670,7 +679,7 @@ func configHandler(cfg *kaconfig.Config, swappable *llm.SwappableClient) http.Ha
 		model := swappable.ModelName()
 		sanitized := map[string]interface{}{
 			"service":     "kubernaut-agent",
-			"version":     "v1.4",
+			"version":     version.Version,
 			"llm_model":   model,
 			"session_ttl": cfg.Runtime.Session.TTL.String(),
 		}
@@ -1167,6 +1176,7 @@ func newAuthMiddleware(infra *k8sInfra, interactiveCfg kaconfig.InteractiveConfi
 // tools registered. Returns nil if prerequisites are missing (K8s infra or DS).
 // PR6a: Production wiring for MCP interactive mode (BR-INTERACTIVE-001..008).
 func buildMCPHandler(
+	ctx context.Context,
 	cfg *kaconfig.Config,
 	infra *k8sInfra,
 	ds *dsClients,
@@ -1255,10 +1265,6 @@ func buildMCPHandler(
 	// handler. Wraps SDK's MemoryEventStore for stream resumption support.
 	eventStore := mcpkg.NewDelegatingEventStore()
 
-	// NotificationBus: in-memory pub/sub for audit event delivery (DD-INTERACTIVE-002).
-	notifBus := mcpkg.NewInMemoryNotificationBus(32)
-	_ = notifBus // Available for future tool-level publish/subscribe wiring.
-
 	// TimeoutManager: fires onExpire when a session goes inactive (SEC-04, HARM-03/04).
 	timeoutMgr := mcpkg.NewTimeoutManager(
 		cfg.Interactive.InactivityTimeout,
@@ -1318,18 +1324,21 @@ func buildMCPHandler(
 		go func() {
 			reconCtx, reconCancel := context.WithTimeout(context.Background(), 5*time.Minute)
 			defer reconCancel()
-			_ = reconSpawner.SpawnReconstruct(reconCtx, &mcpkg.ReconstructionContext{
+			if err := reconSpawner.SpawnReconstruct(reconCtx, &mcpkg.ReconstructionContext{
 				CorrelationID: rrID,
 				SessionID:     interactiveSessionID,
 				SignalMeta:    signalMeta,
-			})
+			}); err != nil {
+				logger.Error(err, "background reconstruction failed",
+					"correlationID", rrID, "sessionID", interactiveSessionID)
+			}
 		}()
 	}, logger)
 
 	// Start disconnect handler goroutine. The handler terminates when the
 	// eventStore's closedSessions channel is closed during process exit,
 	// or via context cancellation if a parent context is provided.
-	go disconnectHandler.Run(context.Background())
+	go disconnectHandler.Run(ctx)
 
 	// Build the InvestigatorRunner adapter.
 	investigatorRunner := mcpadapters.NewInvestigatorRunnerAdapter(inv)
@@ -1343,9 +1352,11 @@ func buildMCPHandler(
 	// HARM-004: Validate RR existence before creating interactive Leases.
 	rrChecker := mcptools.NewK8sRRExistenceChecker(ctrlCli, namespace)
 
-	// Signal context resolver: reads RR CR to provide signal name, severity,
-	// and resource targeting for Phase 3 workflow discovery prompts.
-	signalResolver := mcpadapters.NewK8sSignalContextResolver(ctrlCli, namespace)
+	// Signal context resolver: reads the SignalContext stored on the session
+	// from the original AA IncidentRequest payload. Falls back to reading
+	// the RR CRD for sessions without stored signal (e.g. interactive sessions
+	// started directly via MCP without an AA payload).
+	signalResolver := mcpadapters.NewSessionSignalContextResolver(autoMgr, ctrlCli, namespace)
 
 	// Build the InvestigateTool with optional dependencies.
 	investigateOpts := []mcptools.InvestigateOption{
@@ -1386,14 +1397,16 @@ func buildMCPHandler(
 
 	// Register tools with the MCP SDK server.
 	toolDeps := mcpkg.ToolDeps{}
-	toolDeps.Investigate = mcptools.InvestigateRegistration(investigateTool, eventStore, sessionNotifier)
+	toolDeps.Investigate = mcptools.InvestigateRegistration(investigateTool, eventStore, sessionNotifier, logger)
 	if selectWfTool != nil {
-		toolDeps.SelectWorkflow = mcptools.SelectWorkflowRegistration(selectWfTool)
+		toolDeps.SelectWorkflow = mcptools.SelectWorkflowRegistration(selectWfTool, logger)
 	}
-	toolDeps.CompleteNoAction = mcptools.CompleteNoActionRegistration(completeNoActionTool)
+	toolDeps.CompleteNoAction = mcptools.CompleteNoActionRegistration(completeNoActionTool, logger)
 
 	mcpHandler, _ := mcpkg.BootstrapMCP(mcpkg.MCPDeps{
-		AuthMiddleware: authMw.Handler,
+		AuthMiddleware: func(next http.Handler) http.Handler {
+			return kaserver.AuditAuthMiddleware(authMw.Handler(next), auditStore, logger)
+		},
 		Tools:          toolDeps,
 		EventStore:     eventStore,
 	})

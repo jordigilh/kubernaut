@@ -176,4 +176,59 @@ var _ = Describe("kubernaut_watch", func() {
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("invalid input"))
 	})
+
+	It("UT-AF-106-013: yields with awaiting_approval on AwaitingApproval phase", func() {
+		fakeWatcher := watch.NewFake()
+		client := newDynamicFakeClient(newFakeRR("payments", "rr-1", "Executing"))
+		client.PrependWatchReactor("remediationrequests", func(action k8stesting.Action) (bool, watch.Interface, error) {
+			return true, fakeWatcher, nil
+		})
+
+		go func() {
+			time.Sleep(10 * time.Millisecond)
+			fakeWatcher.Modify(newFakeRR("payments", "rr-1", "AwaitingApproval"))
+		}()
+
+		result, err := tools.HandleWatch(ctx, client, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Status).To(Equal("awaiting_approval"),
+			"watch must yield on AwaitingApproval so the LLM can approve the RAR")
+		Expect(result.Events).To(HaveLen(1))
+		Expect(result.Events[0].Phase).To(Equal("AwaitingApproval"))
+	})
+
+	It("UT-AF-106-014: AwaitingApproval does not block subsequent terminal phase", func() {
+		fakeWatcher := watch.NewFake()
+		client := newDynamicFakeClient(newFakeRR("payments", "rr-1", "Executing"))
+		client.PrependWatchReactor("remediationrequests", func(action k8stesting.Action) (bool, watch.Interface, error) {
+			return true, fakeWatcher, nil
+		})
+
+		go func() {
+			time.Sleep(10 * time.Millisecond)
+			fakeWatcher.Modify(newFakeRR("payments", "rr-1", "AwaitingApproval"))
+		}()
+
+		result, err := tools.HandleWatch(ctx, client, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Status).To(Equal("awaiting_approval"),
+			"first watch call yields on AwaitingApproval")
+
+		// After approval, a second watch call should see the terminal phase
+		fakeWatcher2 := watch.NewFake()
+		client.PrependWatchReactor("remediationrequests", func(action k8stesting.Action) (bool, watch.Interface, error) {
+			return true, fakeWatcher2, nil
+		})
+
+		go func() {
+			defer fakeWatcher2.Stop()
+			time.Sleep(10 * time.Millisecond)
+			fakeWatcher2.Modify(newFakeRR("payments", "rr-1", "Completed"))
+		}()
+
+		result2, err := tools.HandleWatch(ctx, client, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result2.Status).To(Equal("completed"),
+			"second watch call should reach terminal phase")
+	})
 })

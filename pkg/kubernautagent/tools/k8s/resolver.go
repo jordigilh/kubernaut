@@ -33,9 +33,15 @@ import (
 // ResourceResolver abstracts Kubernetes get/list operations so that tools
 // are decoupled from the concrete client implementation. The dynamic client
 // implementation supports any resource type the cluster knows about, including CRDs.
+//
+// The apiGroup parameter disambiguates kinds that exist in multiple API groups
+// (e.g. Node in core "" vs nodes.config.openshift.io). When apiGroup is non-empty,
+// resolution is filtered to that group. When empty and the kind is unambiguous
+// (single mapping), it resolves automatically. When empty and ambiguous (multiple
+// mappings), an error is returned listing available groups (#1311).
 type ResourceResolver interface {
-	Get(ctx context.Context, kind, name, namespace string) (interface{}, error)
-	List(ctx context.Context, kind, namespace string) (interface{}, error)
+	Get(ctx context.Context, kind, name, namespace, apiGroup string) (interface{}, error)
+	List(ctx context.Context, kind, namespace, apiGroup string) (interface{}, error)
 }
 
 type dynamicResourceResolver struct {
@@ -96,15 +102,19 @@ func (r *dynamicResourceResolver) resolveGroupKind(kind string) schema.GroupKind
 	return schema.GroupKind{Kind: kind}
 }
 
-// resolveMappings returns all possible RESTMappings for a kind, supporting
-// multi-group kinds like Subscription (operators.coreos.com + messaging.knative.dev)
-// and multi-version kinds like AuthorizationPolicy (security.istio.io/v1beta1 + v1).
+// resolveMappings returns RESTMappings for a kind, supporting multi-group kinds
+// like Subscription (operators.coreos.com + messaging.knative.dev) and
+// multi-version kinds like AuthorizationPolicy (security.istio.io/v1beta1 + v1).
+//
+// When apiGroup is non-empty, only mappings matching that group are returned.
+// When apiGroup is empty and only one group matches, it is used automatically.
+// When apiGroup is empty and multiple groups match, an error listing the
+// available groups is returned so the caller (LLM) can retry with disambiguation (#1311).
+//
 // Uses ResourcesFor to discover all API groups, with resettableMapper retry.
-// Falls back to RESTMappings(GroupKind) when ResourcesFor fails entirely,
-// returning ALL versions for the GroupKind instead of a single preferred version.
-// Issue #1064 follow-up: RESTMapping (singular) returns AmbiguousKindError on
-// MultiRESTMapper for multi-version kinds; RESTMappings (plural) handles this.
-func (r *dynamicResourceResolver) resolveMappings(kind string) ([]*meta.RESTMapping, error) {
+// Falls back to RESTMappings(GroupKind) when ResourcesFor fails entirely.
+// Issue #1064 follow-up: RESTMappings (plural) avoids AmbiguousKindError.
+func (r *dynamicResourceResolver) resolveMappings(kind, apiGroup string) ([]*meta.RESTMapping, error) {
 	resource := strings.ToLower(kind)
 	gvrs, err := r.mapper.ResourcesFor(schema.GroupVersionResource{Resource: resource})
 	if err != nil {
@@ -123,7 +133,7 @@ func (r *dynamicResourceResolver) resolveMappings(kind string) ([]*meta.RESTMapp
 				"group", gk.Group,
 				"versions", len(fallbackMappings),
 				"source", "RESTMappings")
-			return fallbackMappings, nil
+			return filterByAPIGroup(fallbackMappings, kind, apiGroup)
 		}
 	}
 
@@ -142,7 +152,57 @@ func (r *dynamicResourceResolver) resolveMappings(kind string) ([]*meta.RESTMapp
 	if len(mappings) == 0 {
 		return nil, fmt.Errorf("no valid mappings found for kind %q", kind)
 	}
-	return mappings, nil
+	return filterByAPIGroup(mappings, kind, apiGroup)
+}
+
+// filterByAPIGroup narrows mappings by the requested API group. When apiGroup
+// is empty and only one distinct group exists, the kind is unambiguous.
+// When multiple groups exist and no apiGroup is specified, an actionable error
+// is returned listing the available groups so the LLM can retry (#1311).
+func filterByAPIGroup(mappings []*meta.RESTMapping, kind, apiGroup string) ([]*meta.RESTMapping, error) {
+	if apiGroup != "" {
+		var filtered []*meta.RESTMapping
+		for _, m := range mappings {
+			if m.Resource.Group == apiGroup {
+				filtered = append(filtered, m)
+			}
+		}
+		if len(filtered) == 0 {
+			return nil, fmt.Errorf("kind %q not found in API group %q", kind, apiGroup)
+		}
+		return filtered, nil
+	}
+
+	groups := distinctGroups(mappings)
+	if len(groups) <= 1 {
+		return mappings, nil
+	}
+
+	quotedGroups := make([]string, len(groups))
+	for i, g := range groups {
+		if g == "" {
+			quotedGroups[i] = `"" (core API)`
+		} else {
+			quotedGroups[i] = `"` + g + `"`
+		}
+	}
+	return nil, fmt.Errorf(
+		"kind %q is ambiguous — it exists in %d API groups: %s. "+
+			"Retry with api_group set to one of these values",
+		kind, len(groups), strings.Join(quotedGroups, ", "))
+}
+
+func distinctGroups(mappings []*meta.RESTMapping) []string {
+	seen := make(map[string]struct{})
+	var groups []string
+	for _, m := range mappings {
+		g := m.Resource.Group
+		if _, ok := seen[g]; !ok {
+			seen[g] = struct{}{}
+			groups = append(groups, g)
+		}
+	}
+	return groups
 }
 
 func (r *dynamicResourceResolver) scopedClient(mapping *meta.RESTMapping, namespace string) dynamic.ResourceInterface {
@@ -152,8 +212,8 @@ func (r *dynamicResourceResolver) scopedClient(mapping *meta.RESTMapping, namesp
 	return r.client.Resource(mapping.Resource)
 }
 
-func (r *dynamicResourceResolver) Get(ctx context.Context, kind, name, namespace string) (interface{}, error) {
-	mappings, err := r.resolveMappings(kind)
+func (r *dynamicResourceResolver) Get(ctx context.Context, kind, name, namespace, apiGroup string) (interface{}, error) {
+	mappings, err := r.resolveMappings(kind, apiGroup)
 	if err != nil {
 		return nil, err
 	}
@@ -179,8 +239,8 @@ func (r *dynamicResourceResolver) Get(ctx context.Context, kind, name, namespace
 	return nil, fmt.Errorf("get %s/%s in %s: %w", kind, name, namespace, lastErr)
 }
 
-func (r *dynamicResourceResolver) List(ctx context.Context, kind, namespace string) (interface{}, error) {
-	mappings, err := r.resolveMappings(kind)
+func (r *dynamicResourceResolver) List(ctx context.Context, kind, namespace, apiGroup string) (interface{}, error) {
+	mappings, err := r.resolveMappings(kind, apiGroup)
 	if err != nil {
 		return nil, err
 	}

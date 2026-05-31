@@ -290,6 +290,30 @@ var _ = Describe("KA Audit Parity — TP-433-AUDIT-SOC2", func() {
 		})
 	})
 
+	Describe("UT-KA-1303-001: tool_result literal 'null' must not serialize as JSON null (#1303)", func() {
+		It("should wrap the literal null string as a JSON string, not JSON null", func() {
+			recorder := &fakeOgenClient{}
+			store := audit.NewDSAuditStore(recorder)
+
+			event := audit.NewEvent(audit.EventTypeLLMToolCall, "corr-1303")
+			event.Data["tool_call_index"] = 0
+			event.Data["tool_name"] = "kubectl_get"
+			event.Data["tool_arguments"] = `{"kind":"ConfigMap"}`
+			event.Data["tool_result"] = "null"
+			event.Data["tool_result_preview"] = "null"
+
+			err := store.StoreAudit(context.Background(), event)
+			Expect(err).NotTo(HaveOccurred())
+
+			payload, ok := recorder.calls[0].EventData.GetLLMToolCallPayload()
+			Expect(ok).To(BeTrue())
+			Expect(string(payload.ToolResult)).NotTo(Equal("null"),
+				"literal 'null' tool result must be JSON-string-encoded, not bare JSON null — "+
+					"bare null fails OpenAPI validation: 'Value is not nullable' (#1303)")
+			Expect(payload.ToolResult).NotTo(BeNil())
+		})
+	})
+
 	// --- Phase 4b: Alignment Events (#942) ---
 
 	Describe("UT-KA-942-001: buildEventData maps AlignmentStepPayload (#942)", func() {

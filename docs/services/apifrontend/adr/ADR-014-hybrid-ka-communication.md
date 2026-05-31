@@ -1,9 +1,16 @@
 # ADR-014: Hybrid REST + MCP Client for AF-to-KA Communication
 
-**Status:** Accepted
+**Status:** Superseded by MCP-only migration (kubernaut#1326)
 **Date:** 2026-05-03
 **Deciders:** AF team, kubernaut team (kubernaut#1020)
 **Supersedes:** ADR-006
+**Superseded by:** MCP-only architecture (kubernaut#1326, 2026-05-27)
+
+> **Note (2026-05-27):** This ADR has been superseded. AF now uses MCP exclusively
+> for all KA communication (autonomous, observer, and interactive modes). The REST
+> client has been removed from the investigation path. The REST `ka.Client` is
+> retained only for health-check readiness probes until an MCP-based health check
+> is wired. See kubernaut#1326 for the full migration tracking.
 
 ## Context
 

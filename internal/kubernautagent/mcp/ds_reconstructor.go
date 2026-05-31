@@ -53,7 +53,12 @@ func NewDSContextReconstructor(querier AuditQuerier, timeout time.Duration, logg
 // Reconstruct queries DS for LLM request/response events matching correlationID,
 // optionally excludes events from a specific actor, and returns turns ordered by
 // timestamp. Returns empty slice (not error) if DS is unavailable.
-func (r *DSContextReconstructor) Reconstruct(ctx context.Context, correlationID string, excludeActorID string) ([]ConversationTurn, error) {
+//
+// excludeSessionID is checked against the event's ActorID field because DS audit
+// events lack a dedicated session_id column. When the caller passes a KA session ID
+// and the ActorID happens to be a session identifier, this provides effective
+// exclusion. When ActorID is a user identity, the exclusion is best-effort.
+func (r *DSContextReconstructor) Reconstruct(ctx context.Context, correlationID string, excludeSessionID string) ([]ConversationTurn, error) {
 	queryCtx, cancel := context.WithTimeout(ctx, r.timeout)
 	defer cancel()
 
@@ -76,8 +81,8 @@ func (r *DSContextReconstructor) Reconstruct(ctx context.Context, correlationID 
 
 	turns := make([]ConversationTurn, 0, len(resp.Data))
 	for _, evt := range resp.Data {
-		if excludeActorID != "" {
-			if actorID, ok := evt.ActorID.Get(); ok && actorID == excludeActorID {
+		if excludeSessionID != "" {
+			if actorID, ok := evt.ActorID.Get(); ok && actorID == excludeSessionID {
 				continue
 			}
 		}

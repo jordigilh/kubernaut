@@ -1,19 +1,20 @@
 package agent
 
 import (
+	"context"
 	"fmt"
-	"log"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/go-logr/logr"
 	"google.golang.org/adk/agent"
 	"google.golang.org/adk/agent/llmagent"
 	"google.golang.org/adk/tool"
 
 	"github.com/prometheus/client_golang/prometheus"
 
-	v1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
+	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ratelimit"
@@ -24,7 +25,6 @@ import (
 
 // NewRootAgent creates the ADK root agent with all registered tools.
 // Returns the agent, the full tool list (for RBAC filtering), and any error.
-// The agent is configured without a model (model wiring is deferred to PR5 launcher).
 //
 //nolint:gocritic // hugeParam: value receiver intentional for immutable copy semantics
 func NewRootAgent(cfg AgentConfig, opts ...Option) (agent.Agent, []tool.Tool, error) {
@@ -44,7 +44,7 @@ func NewRootAgent(cfg AgentConfig, opts ...Option) (agent.Agent, []tool.Tool, er
 	}
 
 	beforeMetrics, afterMetrics := newMetricsToolCallbacks(cfg.ToolCallsTotal, cfg.ToolCallDuration)
-	afterAudit := newAuditToolCallback(cfg.Auditor, cfg.SessionService)
+	afterAudit := newAuditToolCallback(cfg.Auditor, cfg.SessionService, cfg.Namespace)
 
 	var beforeCallbacks []llmagent.BeforeToolCallback
 	if cfg.Authorizer != nil {
@@ -55,15 +55,22 @@ func NewRootAgent(cfg AgentConfig, opts ...Option) (agent.Agent, []tool.Tool, er
 	}
 	beforeCallbacks = append(beforeCallbacks, beforeMetrics)
 
+	beforePhase, afterPhase := newPhaseGuard()
+	beforeCallbacks = append(beforeCallbacks, beforePhase)
+
+	beforeLog, afterLog := newToolLoggingCallbacks()
+	beforeCallbacks = append(beforeCallbacks, beforeLog)
+
 	a, err := llmagent.New(llmagent.Config{
-		Name:                "kubernaut-apifrontend",
-		Description:         "Kubernaut API Frontend agent for incident triage and remediation",
-		Model:               cfg.LLMModel,
-		Tools:               allTools,
-		Instruction:         cfg.Instruction,
-		InstructionProvider: cfg.InstructionProvider,
-		BeforeToolCallbacks: beforeCallbacks,
-		AfterToolCallbacks:  []llmagent.AfterToolCallback{afterMetrics, afterAudit},
+		Name:                 "kubernaut-apifrontend",
+		Description:          "Kubernaut API Frontend agent for incident triage and remediation",
+		Model:                cfg.LLMModel,
+		Tools:                allTools,
+		Instruction:          cfg.Instruction,
+		InstructionProvider:  cfg.InstructionProvider,
+		BeforeModelCallbacks: []llmagent.BeforeModelCallback{historySanitizer},
+		BeforeToolCallbacks:  beforeCallbacks,
+		AfterToolCallbacks:   []llmagent.AfterToolCallback{afterMetrics, afterAudit, afterPhase, afterLog},
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("creating agent: %w", err)
@@ -86,30 +93,32 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 
 	k8s := cfg.K8sClient
 	dsC := cfg.DSClient
-	kaC := cfg.KAClient
 	mcpC := cfg.MCPClient
+	dedicatedC := cfg.DedicatedClient
+	if dedicatedC == nil {
+		dedicatedC = mcpC
+	}
 
 	// All internal tools use AF ServiceAccount. Access control is enforced
 	// at the MCP tool level (RBAC guard): if the user has permission to invoke
-	// kubernaut_start_investigation, AF investigates on their behalf using its
+	// kubernaut_investigate, AF investigates on their behalf using its
 	// own SA. Users do not need direct K8s permissions for triage.
 	saFactory := auth.StaticDynamicFactory(k8s)
 
 	constructors := []toolConstructor{
-		{"list_remediations", func() (tool.Tool, error) { return tools.NewListRemediationsTool(k8s) }},
-		{"get_remediation", func() (tool.Tool, error) { return tools.NewGetRemediationTool(k8s) }},
-		{"list_approval_requests", func() (tool.Tool, error) { return tools.NewListApprovalRequestsTool(k8s) }},
-		{"get_approval_request", func() (tool.Tool, error) { return tools.NewGetApprovalRequestTool(k8s) }},
-		{"approve", func() (tool.Tool, error) { return tools.NewApproveTool(k8s) }},
-		{"cancel_remediation", func() (tool.Tool, error) { return tools.NewCancelRemediationTool(k8s) }},
-		{"watch", func() (tool.Tool, error) { return tools.NewWatchTool(k8s) }},
-		{"start_investigation", func() (tool.Tool, error) { return tools.NewStartInvestigationTool(kaC, cfg.Auditor) }},
-		{"poll_investigation", func() (tool.Tool, error) { return tools.NewPollInvestigationTool(kaC, cfg.Auditor) }},
-		{"stream_investigation", func() (tool.Tool, error) { return tools.NewStreamInvestigationTool(kaC) }},
+		{"list_remediations", func() (tool.Tool, error) { return tools.NewListRemediationsTool(k8s, cfg.Namespace) }},
+		{"get_remediation", func() (tool.Tool, error) { return tools.NewGetRemediationTool(k8s, cfg.Namespace) }},
+		{"list_approval_requests", func() (tool.Tool, error) { return tools.NewListApprovalRequestsTool(k8s, cfg.Namespace) }},
+		{"get_approval_request", func() (tool.Tool, error) { return tools.NewGetApprovalRequestTool(k8s, cfg.Namespace) }},
+		{"approve", func() (tool.Tool, error) { return tools.NewApproveTool(k8s, cfg.Namespace) }},
+		{"cancel_remediation", func() (tool.Tool, error) { return tools.NewCancelRemediationTool(k8s, cfg.Namespace) }},
+		{"watch", func() (tool.Tool, error) { return tools.NewWatchTool(k8s, cfg.Namespace) }},
+		{"investigate", func() (tool.Tool, error) {
+			return tools.NewInvestigateMCPTool(dedicatedC, k8s, cfg.Namespace, cfg.Auditor, cfg.InvestigationRegistry, nil, cfg.Pool, buildAgentISSignaler(cfg), cfg.Triager)
+		}},
 		{"discover_workflows", func() (tool.Tool, error) { return tools.NewDiscoverWorkflowsTool(mcpC) }},
 		{"select_workflow", func() (tool.Tool, error) { return tools.NewSelectWorkflowTool(mcpC, cfg.Auditor) }},
 		{"present_decision", func() (tool.Tool, error) { return tools.NewPresentDecisionTool() }},
-		{"list_workflows", func() (tool.Tool, error) { return tools.NewListWorkflowsTool(dsC) }},
 		{"get_remediation_history", func() (tool.Tool, error) { return tools.NewGetRemediationHistoryTool(dsC) }},
 		{"get_effectiveness", func() (tool.Tool, error) { return tools.NewGetEffectivenessTool(dsC) }},
 		{"get_audit_trail", func() (tool.Tool, error) { return tools.NewGetAuditTrailTool(dsC) }},
@@ -118,15 +127,18 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 		{"kubectl_list", func() (tool.Tool, error) { return tools.NewKubectlListTool(saFactory, cfg.RESTMapper) }},
 		{"kubectl_list_events", func() (tool.Tool, error) { return tools.NewKubectlListEventsTool(saFactory) }},
 		// Interactive investigation tools — KA MCP backed
-		{"takeover", func() (tool.Tool, error) { return tools.NewTakeoverTool(mcpC, cfg.Auditor) }},
 		{"message", func() (tool.Tool, error) { return tools.NewMessageTool(mcpC, cfg.Auditor) }},
 		{"complete", func() (tool.Tool, error) { return tools.NewCompleteTool(mcpC, cfg.Auditor) }},
 		{"cancel", func() (tool.Tool, error) { return tools.NewCancelInvestigationTool(mcpC, cfg.Auditor) }},
 		{"status", func() (tool.Tool, error) { return tools.NewStatusTool(mcpC, cfg.Auditor) }},
 		{"reconnect", func() (tool.Tool, error) { return tools.NewReconnectTool(mcpC, cfg.Auditor) }},
 		// RR tools — AF SA writes AF-owned CRDs
-		{"check_existing_rr", func() (tool.Tool, error) { return tools.NewCheckExistingRRTool(k8s) }},
-		{"create_rr", func() (tool.Tool, error) { return tools.NewCreateRRTool(k8s, cfg.Triager, cfg.Auditor) }},
+		{"check_existing_remediation", func() (tool.Tool, error) {
+			return tools.NewCheckExistingRemediationTool(k8s, cfg.Namespace)
+		}},
+		{"remediate", func() (tool.Tool, error) {
+			return tools.NewRemediateTool(k8s, cfg.Namespace, cfg.Triager, cfg.Auditor)
+		}},
 	}
 
 	result := make([]tool.Tool, 0, len(constructors))
@@ -154,7 +166,7 @@ func newRBACGuard(authorizer auth.ToolAuthorizer, auditor audit.Emitter) llmagen
 	return func(ctx tool.Context, t tool.Tool, _ map[string]any) (map[string]any, error) {
 		identity := auth.UserIdentityFromContext(ctx)
 		if identity == nil {
-			log.Printf("[rbac-guard] DENIED tool=%q reason=no_identity_in_context", t.Name())
+			logr.FromContextOrDiscard(ctx).Info("rbac-guard denied tool", "tool", t.Name(), "reason", "no_identity_in_context")
 			if auditor != nil {
 				auditor.Emit(ctx, &audit.Event{
 					Type: audit.EventAuthAccessDenied,
@@ -171,7 +183,7 @@ func newRBACGuard(authorizer auth.ToolAuthorizer, auditor audit.Emitter) llmagen
 		toolName := t.Name()
 		allowed, err := authorizer.Check(ctx, identity.Username, identity.Groups, toolName)
 		if err != nil {
-			log.Printf("[rbac-guard] DENIED tool=%q user=%q reason=authorizer_error err=%v", toolName, identity.Username, err)
+			logr.FromContextOrDiscard(ctx).Error(err, "rbac-guard denied tool", "tool", toolName, "user", identity.Username, "reason", "authorizer_error")
 			if auditor != nil {
 				auditor.Emit(ctx, &audit.Event{
 					Type:   audit.EventAuthAccessDenied,
@@ -218,7 +230,7 @@ func newRateLimitGuard(limiter *ratelimit.UserLimiter, auditor audit.Emitter) ll
 		if limiter.AllowToolCall(identity.Username) {
 			return nil, nil
 		}
-		log.Printf("[rate-limit-guard] DENIED tool=%q user=%q reason=rate_limited", t.Name(), identity.Username)
+		logr.FromContextOrDiscard(ctx).Info("rate-limit-guard denied tool", "tool", t.Name(), "user", identity.Username, "reason", "rate_limited")
 		if auditor != nil {
 			auditor.Emit(ctx, &audit.Event{
 				Type:   audit.EventRateLimitDenied,
@@ -291,14 +303,89 @@ func newMetricsToolCallbacks(toolCalls *prometheus.CounterVec, toolDuration *pro
 	return before, after
 }
 
+// NewToolLoggingCallbacksForTest is an exported alias of newToolLoggingCallbacks
+// for unit testing. Production code should use the unexported constructor.
+func NewToolLoggingCallbacksForTest() (llmagent.BeforeToolCallback, llmagent.AfterToolCallback) {
+	return newToolLoggingCallbacks()
+}
+
+// newToolLoggingCallbacks returns Before/After callbacks that log tool call
+// start and completion at info level for operator observability (FedRAMP AU-12).
+// Uses sync.Map keyed by FunctionCallID to correlate start times.
+func newToolLoggingCallbacks() (llmagent.BeforeToolCallback, llmagent.AfterToolCallback) {
+	var starts sync.Map
+
+	before := func(ctx tool.Context, t tool.Tool, _ map[string]any) (map[string]any, error) {
+		starts.Store(ctx.FunctionCallID(), time.Now())
+		logr.FromContextOrDiscard(ctx).Info("tool call started", "tool", t.Name(), "callID", ctx.FunctionCallID())
+		return nil, nil
+	}
+
+	after := func(ctx tool.Context, t tool.Tool, _, _ map[string]any, toolErr error) (map[string]any, error) {
+		result := "success"
+		if toolErr != nil {
+			result = "error"
+		}
+		var durationMs int64
+		if raw, ok := starts.LoadAndDelete(ctx.FunctionCallID()); ok {
+			if start, ok := raw.(time.Time); ok {
+				durationMs = time.Since(start).Milliseconds()
+			}
+		}
+		logr.FromContextOrDiscard(ctx).Info("tool call completed", "tool", t.Name(), "callID", ctx.FunctionCallID(), "durationMs", durationMs, "result", result)
+		return nil, nil
+	}
+
+	return before, after
+}
+
+// BuildAgentISSignalerForTest exposes buildAgentISSignaler for integration tests.
+func BuildAgentISSignalerForTest(cfg AgentConfig) tools.ISSignaler {
+	return buildAgentISSignaler(cfg)
+}
+
+// buildAgentISSignaler returns an ISSignaler wired to the CRDSessionService.
+// Returns nil when no SessionService is configured (e.g., unit tests).
+func buildAgentISSignaler(cfg AgentConfig) tools.ISSignaler {
+	if cfg.SessionService == nil {
+		return nil
+	}
+	return &agentISSignalerAdapter{svc: cfg.SessionService}
+}
+
+type agentISSignalerAdapter struct {
+	svc *session.CRDSessionService
+}
+
+func (a *agentISSignalerAdapter) SignalInteractive(ctx context.Context, rrNamespace, rrName, taskID, username string, groups []string, joinMode string) (string, error) {
+	jm := isv1alpha1.SessionJoinModeStart
+	if joinMode == "takeover" {
+		jm = isv1alpha1.SessionJoinModeTakeover
+	}
+	return a.svc.CreateInvestigationSession(ctx, session.CreateISConfig{
+		RRNamespace: rrNamespace,
+		RRName:      rrName,
+		TaskID:      taskID,
+		Username:    username,
+		Groups:      groups,
+		JoinMode:    jm,
+	})
+}
+
+func (a *agentISSignalerAdapter) UpdateCorrelation(ctx context.Context, crdName, kaSessionID string) error {
+	return a.svc.UpdateISCorrelation(ctx, crdName, kaSessionID)
+}
+
 // newAuditToolCallback returns an AfterToolCallback that emits a structured
 // audit event for every tool invocation (FedRAMP AU-12 compliance).
 // The event includes tool name, result status, and user identity.
-// Issue #1189: when af_create_rr is called within an A2A task context, the
-// audit event includes a2a_task_id for bidirectional task-to-RR correlation.
-// G6: when sessionSvc is non-nil and af_create_rr produces a valid rr_id,
-// MaterializeCRD is called to create the deferred InvestigationSession CRD.
-func newAuditToolCallback(auditor audit.Emitter, sessionSvc *session.CRDSessionService) llmagent.AfterToolCallback {
+// Issue #1332: when kubernaut_remediate or kubernaut_investigate is called
+// within an A2A task context, the audit event includes a2a_task_id for
+// bidirectional task-to-RR correlation.
+// G6 (revised #1332): IS CRD creation moved to kubernaut_investigate ISSignaler.
+// The sessionSvc parameter is retained for future use but MaterializeCRD is no
+// longer called from this callback.
+func newAuditToolCallback(auditor audit.Emitter, sessionSvc *session.CRDSessionService, controllerNS string) llmagent.AfterToolCallback {
 	return func(ctx tool.Context, t tool.Tool, input, output map[string]any, toolErr error) (map[string]any, error) {
 		if auditor == nil {
 			return nil, nil
@@ -307,7 +394,7 @@ func newAuditToolCallback(auditor audit.Emitter, sessionSvc *session.CRDSessionS
 		result := "success"
 		if toolErr != nil {
 			result = "failure"
-			log.Printf("[audit-tool-callback] tool=%q outcome=failure error=%v", t.Name(), toolErr)
+			logr.FromContextOrDiscard(ctx).Error(toolErr, "tool call failed", "tool", t.Name())
 		}
 
 		detail := map[string]string{
@@ -321,33 +408,22 @@ func newAuditToolCallback(auditor audit.Emitter, sessionSvc *session.CRDSessionS
 			detail["namespace"] = ns
 		}
 
-		// Issue #1189: A2A task-to-RR correlation. When af_create_rr succeeds
-		// within an A2A task, include both a2a_task_id and rr_id in the audit
-		// event so the Data Store can correlate them bidirectionally.
+		// Issue #1189: A2A task-to-RR correlation. When kubernaut_remediate or
+		// kubernaut_investigate succeeds within an A2A task, include both
+		// a2a_task_id and rr_id in the audit event so the Data Store can
+		// correlate them bidirectionally.
 		sc := session.CreateContextFromContext(ctx)
 		if sc != nil && sc.TaskID != "" {
 			detail["a2a_task_id"] = sc.TaskID
 		}
-		if t.Name() == "af_create_rr" && toolErr == nil && output != nil {
+		toolName := t.Name()
+		isRRCreatingTool := (toolName == "kubernaut_remediate" || toolName == "kubernaut_investigate")
+		if isRRCreatingTool && toolErr == nil && output != nil {
 			if rrID, ok := output["rr_id"].(string); ok && rrID != "" {
 				detail["rr_id"] = rrID
-				parts := strings.SplitN(rrID, "/", 2)
-				// AC 12: Store RR reference on the shared CreateContext pointer
-				// so AfterExecuteCallback can enrich EventA2ATaskCompleted.
 				if sc != nil {
-					if len(parts) == 2 {
-						sc.RRNamespace = parts[0]
-						sc.RRName = parts[1]
-					}
-				}
-				// G6: Materialize the deferred InvestigationSession CRD now
-				// that we have a real RR reference from af_create_rr.
-				if sessionSvc != nil && sc != nil && sc.SessionID != "" && len(parts) == 2 {
-					rrRef := v1alpha1.ObjectRef{Namespace: parts[0], Name: parts[1]}
-					if err := sessionSvc.MaterializeCRD(ctx, sc.SessionID, rrRef); err != nil {
-						log.Printf("[audit-tool-callback] MaterializeCRD failed for session=%q rr=%q: %v",
-							sc.SessionID, rrID, err)
-					}
+					sc.RRName = rrID
+					sc.RRNamespace = controllerNS
 				}
 			}
 		}
@@ -366,3 +442,4 @@ func newAuditToolCallback(auditor audit.Emitter, sessionSvc *session.CRDSessionS
 		return nil, nil
 	}
 }
+

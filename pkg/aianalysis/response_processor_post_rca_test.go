@@ -230,6 +230,52 @@ var _ = Describe("ResponseProcessor PostRCAContext Population (ADR-056)", func()
 	})
 
 	// ═══════════════════════════════════════════════════════════════════════
+	// IT-AA-RESP-PARAMS-001: SelectedWorkflow.Parameters mapped from KA response
+	// Verifies that parameters in KA's selected_workflow JSON (including
+	// TARGET_RESOURCE_*) propagate into AIAnalysis.Status.SelectedWorkflow.Parameters.
+	// ═══════════════════════════════════════════════════════════════════════
+
+	It("IT-AA-RESP-PARAMS-001: should map parameters from KA selected_workflow to AIAnalysis status", func() {
+		analysis = createAnalysisForPostRCA()
+
+		kaResp := &agentclient.IncidentResponse{
+			IncidentID:       "test-params-001",
+			Analysis:         "Root cause: memory pressure on api-server",
+			NeedsHumanReview: agentclient.NewOptBool(false),
+			Confidence:       0.92,
+			Timestamp:        "2026-05-30T12:00:00Z",
+			SelectedWorkflow: agentclient.OptNilIncidentResponseSelectedWorkflow{
+				Value: agentclient.IncidentResponseSelectedWorkflow{
+					"workflow_id":      jx.Raw(`"increase-memory-v1"`),
+					"execution_bundle": jx.Raw(`"ghcr.io/kubernaut/increase-memory:v1.0"`),
+					"confidence":       jx.Raw(`0.92`),
+					"parameters": jx.Raw(`{
+						"TARGET_RESOURCE_NAME": "memory-eater",
+						"TARGET_RESOURCE_KIND": "Deployment",
+						"TARGET_RESOURCE_NAMESPACE": "production",
+						"MEMORY_LIMIT_NEW": "512Mi"
+					}`),
+				},
+				Set: true,
+			},
+		}
+
+		_, err := processor.ProcessIncidentResponse(ctx, analysis, kaResp)
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(analysis.Status.SelectedWorkflow).NotTo(BeNil(),
+			"SelectedWorkflow must be populated after successful processing")
+		Expect(analysis.Status.SelectedWorkflow.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_NAME", "memory-eater"),
+			"TARGET_RESOURCE_NAME must round-trip from KA response to AIAnalysis status")
+		Expect(analysis.Status.SelectedWorkflow.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_KIND", "Deployment"),
+			"TARGET_RESOURCE_KIND must round-trip from KA response to AIAnalysis status")
+		Expect(analysis.Status.SelectedWorkflow.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_NAMESPACE", "production"),
+			"TARGET_RESOURCE_NAMESPACE must round-trip from KA response to AIAnalysis status")
+		Expect(analysis.Status.SelectedWorkflow.Parameters).To(HaveKeyWithValue("MEMORY_LIMIT_NEW", "512Mi"),
+			"LLM-provided MEMORY_LIMIT_NEW must round-trip from KA response to AIAnalysis status")
+	})
+
+	// ═══════════════════════════════════════════════════════════════════════
 	// UT-AA-056-008: Malformed detected_labels handled gracefully
 	// ADR-056: When detected_labels is not a valid object, skip extraction, no panic
 	// ═══════════════════════════════════════════════════════════════════════

@@ -20,6 +20,10 @@ func (s *IncidentRequest) setDefaults() {
 		val := int(0)
 		s.OccurrenceCount.SetTo(val)
 	}
+	{
+		val := bool(false)
+		s.Interactive.SetTo(val)
+	}
 }
 
 // setDefaults set default value of fields.

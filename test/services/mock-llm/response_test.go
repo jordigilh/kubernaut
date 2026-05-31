@@ -208,6 +208,43 @@ var _ = Describe("Response Builders", func() {
 		})
 	})
 
+	Describe("UT-MOCK-1311-001: buildToolArguments includes api_group when set", func() {
+		It("should include api_group in the tool call arguments", func() {
+			cfg := scenarios.MockScenarioConfig{
+				ResourceKind: "Subscription",
+				ResourceNS:   "openshift-operators",
+				ResourceName: "jaeger-product",
+				APIGroup:     "operators.coreos.com",
+			}
+			resp := response.BuildToolCallResponse("mock-model", openai.ToolKubectlGetYAML, cfg)
+			Expect(resp.Choices).To(HaveLen(1))
+			Expect(resp.Choices[0].Message.ToolCalls).To(HaveLen(1))
+
+			var args map[string]interface{}
+			Expect(json.Unmarshal([]byte(resp.Choices[0].Message.ToolCalls[0].Function.Arguments), &args)).To(Succeed())
+			Expect(args).To(HaveKeyWithValue("kind", "Subscription"))
+			Expect(args).To(HaveKeyWithValue("name", "jaeger-product"))
+			Expect(args).To(HaveKeyWithValue("namespace", "openshift-operators"))
+			Expect(args).To(HaveKeyWithValue("api_group", "operators.coreos.com"))
+		})
+	})
+
+	Describe("UT-MOCK-1311-002: buildToolArguments omits api_group when empty", func() {
+		It("should not include api_group key in the tool call arguments", func() {
+			cfg := scenarios.MockScenarioConfig{
+				ResourceKind: "ConfigMap",
+				ResourceNS:   "default",
+				ResourceName: "test-cm",
+			}
+			resp := response.BuildToolCallResponse("mock-model", openai.ToolKubectlGetByName, cfg)
+			Expect(resp.Choices).To(HaveLen(1))
+
+			var args map[string]interface{}
+			Expect(json.Unmarshal([]byte(resp.Choices[0].Message.ToolCalls[0].Function.Arguments), &args)).To(Succeed())
+			Expect(args).NotTo(HaveKey("api_group"))
+		})
+	})
+
 	Describe("UT-MOCK-657-008: BuildToolCallResponse with kubectl tool produces valid response", func() {
 		It("should produce valid OpenAI response with tool_calls finish reason", func() {
 			kubectlCfg := scenarios.MockScenarioConfig{

@@ -298,11 +298,11 @@ var _ = Describe("Issue #1064: Multi-group kind resolution through full tool sta
 		}
 	})
 
-	Describe("IT-KA-1064-001: kubectl_get_by_name resolves ambiguous kind through full tool stack", func() {
-		It("should return the OLM Subscription via multi-group fallback", func() {
+	Describe("IT-KA-1064-001: kubectl_get_by_name resolves ambiguous kind with explicit api_group (#1311)", func() {
+		It("should return the OLM Subscription when api_group is operators.coreos.com", func() {
 			result, err := reg.Execute(context.Background(), "kubectl_get_by_name",
-				json.RawMessage(`{"kind":"Subscription","name":"etcd","namespace":"demo-operator"}`))
-			Expect(err).NotTo(HaveOccurred(), "tool should succeed via multi-group fallback")
+				json.RawMessage(`{"kind":"Subscription","name":"etcd","namespace":"demo-operator","api_group":"operators.coreos.com"}`))
+			Expect(err).NotTo(HaveOccurred(), "tool should succeed with explicit api_group")
 			Expect(result).To(ContainSubstring("etcd"),
 				"result should contain the OLM Subscription named etcd")
 			Expect(result).To(ContainSubstring("operators.coreos.com"),
@@ -310,13 +310,27 @@ var _ = Describe("Issue #1064: Multi-group kind resolution through full tool sta
 		})
 	})
 
-	Describe("IT-KA-1064-002: kubectl_get_by_kind_in_namespace lists correct group through full tool stack", func() {
-		It("should return non-empty list from OLM API group", func() {
+	Describe("IT-KA-1064-002: kubectl_get_by_kind_in_namespace lists correct group with explicit api_group (#1311)", func() {
+		It("should return non-empty list from OLM API group when api_group is operators.coreos.com", func() {
 			result, err := reg.Execute(context.Background(), "kubectl_get_by_kind_in_namespace",
-				json.RawMessage(`{"kind":"Subscription","namespace":"demo-operator"}`))
-			Expect(err).NotTo(HaveOccurred(), "list should succeed via multi-group fallback")
+				json.RawMessage(`{"kind":"Subscription","namespace":"demo-operator","api_group":"operators.coreos.com"}`))
+			Expect(err).NotTo(HaveOccurred(), "list should succeed with explicit api_group")
 			Expect(result).To(ContainSubstring("etcd"),
 				"list should contain the OLM Subscription named etcd")
+		})
+	})
+
+	Describe("IT-KA-1311-001: ambiguous kind without api_group returns disambiguation error", func() {
+		It("should return error listing available groups when api_group is omitted", func() {
+			_, err := reg.Execute(context.Background(), "kubectl_get_by_name",
+				json.RawMessage(`{"kind":"Subscription","name":"etcd","namespace":"demo-operator"}`))
+			Expect(err).To(HaveOccurred(), "ambiguous kind without api_group should error")
+			Expect(err.Error()).To(ContainSubstring("ambiguous"),
+				"error should indicate the kind is ambiguous")
+			Expect(err.Error()).To(ContainSubstring("operators.coreos.com"),
+				"error should list operators.coreos.com as an option")
+			Expect(err.Error()).To(ContainSubstring("messaging.knative.dev"),
+				"error should list messaging.knative.dev as an option")
 		})
 	})
 })

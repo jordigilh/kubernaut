@@ -23,7 +23,8 @@ mcp:
   sessionIdleTimeout: 30m
   toolTimeout: 30s
   toolTimeouts:
-    kubernaut_stream_investigation: 15m
+    kubernaut_investigate: 15m
+    kubernaut_await_session: 3m
 
 agentCard:
   url: "https://apifrontend.kubernaut-system.svc:8443"
@@ -89,3 +90,6 @@ resilience:
     cbFailureThreshold: 5
     retryMax: 0
     retryableStatuses: []
+  prometheus:
+    connectTimeout: 5s
+    requestTimeout: 10s

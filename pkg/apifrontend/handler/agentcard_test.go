@@ -120,7 +120,7 @@ var _ = Describe("Agent Card Handler", func() {
 		Expect(card["version"]).To(Equal("0.2.0"))
 	})
 
-	It("UT-AF-230-007: card includes skills matching 23 tools", func() {
+	It("UT-AF-230-007: card includes skills matching 21 tools (#1332)", func() {
 		h, err := handler.NewAgentCardHandler(handler.AgentCardConfig{
 			Name:    "kubernaut-apifrontend",
 			URL:     "https://kubernaut.example.com",
@@ -137,7 +137,7 @@ var _ = Describe("Agent Card Handler", func() {
 		_ = json.Unmarshal(rec.Body.Bytes(), &card)
 		skills, ok := card["skills"].([]any)
 		Expect(ok).To(BeTrue())
-		Expect(skills).To(HaveLen(23))
+		Expect(skills).To(HaveLen(21))
 	})
 
 	It("UT-AF-230-008: card declares authentication requirements", func() {

@@ -2,7 +2,6 @@ package apifrontend_test
 
 import (
 	"context"
-	"os"
 	"sync"
 	"time"
 
@@ -18,8 +17,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-	"sigs.k8s.io/controller-runtime/pkg/envtest"
-	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	adksession "google.golang.org/adk/session"
 
@@ -241,31 +238,12 @@ var _ = Describe("SessionCleanupReconciler", func() {
 	})
 })
 
-var _ = Describe("SessionCleanupReconciler SetupWithManager", func() {
-	It("IT-AF-220-008: registers controller for InvestigationSession kind", func() {
-		Expect(os.Getenv("KUBEBUILDER_ASSETS")).NotTo(BeEmpty(),
-			"KUBEBUILDER_ASSETS must be set — run 'make setup-envtest' first")
-
-		env := &envtest.Environment{
-			BinaryAssetsDirectory: os.Getenv("KUBEBUILDER_ASSETS"),
-		}
-		cfg, err := env.Start()
-		Expect(err).NotTo(HaveOccurred())
-		defer func() { _ = env.Stop() }()
-
-		s := newTestScheme()
-		mgr, err := ctrl.NewManager(cfg, ctrl.Options{
-			Scheme:  s,
-			Metrics: metricsserver.Options{BindAddress: "0"},
-		})
-		Expect(err).NotTo(HaveOccurred())
-
-		r := controller.NewSessionCleanupReconciler(
-			mgr.GetClient(), 10*time.Minute, 31*24*time.Hour, logr.Discard(), nil, nil, nil,
-		)
-		Expect(r.SetupWithManager(mgr)).To(Succeed())
-	})
-})
+// IT-AF-220-008 (SetupWithManager registration) is now covered by
+// IT-AF-1272-001 in session_wiring_test.go, which is a superset:
+// it calls SetupWithManager, starts the manager, and validates
+// informer cache sync + health flag transition. Keeping both in the
+// same process causes a controller-runtime global name collision
+// ("session-cleanup already exists").
 
 type testAuditEmitter struct {
 	mu     sync.Mutex

@@ -93,6 +93,7 @@ var _ = Describe("Phase 1-to-Phase 3 Context Propagation — #715", func() {
 
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api-server-abc", Namespace: "production", Severity: "critical", Message: "OOMKilled",
+				Environment: "Production", Priority: "P0",
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(mockClient.calls).To(HaveLen(2))
@@ -130,6 +131,7 @@ var _ = Describe("Phase 1-to-Phase 3 Context Propagation — #715", func() {
 
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api-server-abc", Namespace: "production", Severity: "warning", Message: "High memory usage",
+				Environment: "Production", Priority: "P0",
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
@@ -164,6 +166,7 @@ var _ = Describe("Phase 1-to-Phase 3 Context Propagation — #715", func() {
 
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api-server-abc", Namespace: "production", Severity: "critical", Message: "OOMKilled",
+				Environment: "Production", Priority: "P0",
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())

@@ -67,9 +67,9 @@ var _ = Describe("Multi-Turn Keyword Matching Fix (issue #1189)", func() {
 				Scenarios: map[string]config.ScenarioOverride{},
 				KeywordScenarios: []config.KeywordScenarioOverride{
 					{
-						Name:          "af_start_investigation",
+						Name:          "af_investigate",
 						Keywords:      []string{"start investigation"},
-						ToolCall:      config.ToolCallOverride{Name: "kubernaut_start_investigation"},
+						ToolCall:      config.ToolCallOverride{Name: "kubernaut_investigate"},
 						MatchLastOnly: true,
 					},
 					{
@@ -99,9 +99,9 @@ var _ = Describe("Multi-Turn Keyword Matching Fix (issue #1189)", func() {
 				Scenarios: map[string]config.ScenarioOverride{},
 				KeywordScenarios: []config.KeywordScenarioOverride{
 					{
-						Name:          "af_start_investigation",
+						Name:          "af_investigate",
 						Keywords:      []string{"start investigation"},
-						ToolCall:      config.ToolCallOverride{Name: "kubernaut_start_investigation"},
+						ToolCall:      config.ToolCallOverride{Name: "kubernaut_investigate"},
 						MatchLastOnly: false,
 					},
 				},
@@ -115,7 +115,7 @@ var _ = Describe("Multi-Turn Keyword Matching Fix (issue #1189)", func() {
 			}
 			result := registry.Detect(detCtx)
 			Expect(result).NotTo(BeNil())
-			Expect(result.Scenario.Name()).To(Equal("af_start_investigation"))
+			Expect(result.Scenario.Name()).To(Equal("af_investigate"))
 		})
 	})
 
@@ -125,9 +125,9 @@ var _ = Describe("Multi-Turn Keyword Matching Fix (issue #1189)", func() {
 				Scenarios: map[string]config.ScenarioOverride{},
 				KeywordScenarios: []config.KeywordScenarioOverride{
 					{
-						Name:          "af_start_investigation",
+						Name:          "af_investigate",
 						Keywords:      []string{"start investigation"},
-						ToolCall:      config.ToolCallOverride{Name: "kubernaut_stream_investigation"},
+						ToolCall:      config.ToolCallOverride{Name: "kubernaut_investigate"},
 						MatchLastOnly: true,
 					},
 					{
@@ -143,9 +143,9 @@ var _ = Describe("Multi-Turn Keyword Matching Fix (issue #1189)", func() {
 						MatchLastOnly: true,
 					},
 					{
-						Name:          "af_create_rr",
+						Name:          "kubernaut_remediate",
 						Keywords:      []string{"create a remediation request"},
-						ToolCall:      config.ToolCallOverride{Name: "af_create_rr"},
+						ToolCall:      config.ToolCallOverride{Name: "kubernaut_remediate"},
 						MatchLastOnly: true,
 					},
 				},
@@ -164,7 +164,7 @@ var _ = Describe("Multi-Turn Keyword Matching Fix (issue #1189)", func() {
 					accumulatedContent: "start investigation for deployment memory-eater",
 					accumulatedAllText: "system prompt user start investigation for deployment memory-eater",
 					lastUserContent:    "start investigation for deployment memory-eater",
-					expectedScenario:   "af_start_investigation",
+					expectedScenario:   "af_investigate",
 				},
 				{
 					accumulatedContent: "start investigation for deployment memory-eater investigation results discover available workflows",
@@ -182,7 +182,7 @@ var _ = Describe("Multi-Turn Keyword Matching Fix (issue #1189)", func() {
 					accumulatedContent: "start investigation for deployment memory-eater investigation results discover available workflows workflow list select workflow oomkill selected create a remediation request",
 					accumulatedAllText: "system prompt user start investigation assistant results user discover available workflows assistant list user select workflow oomkill assistant selected user create a remediation request",
 					lastUserContent:    "create a remediation request",
-					expectedScenario:   "af_create_rr",
+					expectedScenario:   "kubernaut_remediate",
 				},
 			}
 
@@ -206,9 +206,9 @@ var _ = Describe("Multi-Turn Keyword Matching Fix (issue #1189)", func() {
 				Scenarios: map[string]config.ScenarioOverride{},
 				KeywordScenarios: []config.KeywordScenarioOverride{
 					{
-						Name:          "af_start_investigation",
+						Name:          "af_investigate",
 						Keywords:      []string{"start investigation"},
-						ToolCall:      config.ToolCallOverride{Name: "kubernaut_start_investigation"},
+						ToolCall:      config.ToolCallOverride{Name: "kubernaut_investigate"},
 						MatchLastOnly: true,
 					},
 				},
@@ -222,7 +222,7 @@ var _ = Describe("Multi-Turn Keyword Matching Fix (issue #1189)", func() {
 			}
 			result := registry.Detect(detCtx)
 			Expect(result).NotTo(BeNil())
-			Expect(result.Scenario.Name()).NotTo(Equal("af_start_investigation"),
+			Expect(result.Scenario.Name()).NotTo(Equal("af_investigate"),
 				"match_last_only scenario should not match when LastUserContent is empty")
 		})
 	})
@@ -231,11 +231,11 @@ var _ = Describe("Multi-Turn Keyword Matching Fix (issue #1189)", func() {
 		It("should parse match_last_only from YAML config", func() {
 			yamlContent := `
 keyword_scenarios:
-  - name: "af_start_investigation"
+  - name: "af_investigate"
     keywords: ["start investigation"]
     match_last_only: true
     tool_call:
-      name: "kubernaut_start_investigation"
+      name: "kubernaut_investigate"
       arguments:
         namespace: "default"
   - name: "kubectl_list_pods"

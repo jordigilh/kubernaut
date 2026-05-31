@@ -59,6 +59,8 @@ var _ = Describe("Audit event emission – severity triage (PR2 wiring)", func()
 				{State: "firing", Labels: map[string]string{
 					"alertname": "HighErrorRate",
 					"namespace": "prod",
+					"kind":      "Deployment",
+					"name":      "web",
 					"severity":  "critical",
 				}},
 			},
@@ -72,7 +74,7 @@ var _ = Describe("Audit event emission – severity triage (PR2 wiring)", func()
 			Kind:        "Deployment",
 			Name:        "web",
 			Description: "errors spiking",
-			Labels:      map[string]string{"namespace": "prod"},
+			Labels:      map[string]string{"namespace": "prod", "kind": "Deployment", "name": "web"},
 		})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Severity).NotTo(BeEmpty())

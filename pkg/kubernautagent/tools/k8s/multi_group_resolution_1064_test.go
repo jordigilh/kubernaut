@@ -100,8 +100,8 @@ func newAmbiguousScheme() *runtime.Scheme {
 
 var _ = Describe("Issue #1064: kubectl tool multi-group kind resolution fallback", func() {
 
-	Describe("UT-KA-1064-001: Get resolves ambiguous kind via multi-group fallback", func() {
-		It("should return the OLM Subscription when it exists in operators.coreos.com but not messaging.knative.dev", func() {
+	Describe("UT-KA-1064-001: Get resolves ambiguous kind with explicit api_group (#1311)", func() {
+		It("should return the OLM Subscription when api_group is operators.coreos.com", func() {
 			scheme := newAmbiguousScheme()
 			olmSub := newOLMSubscription("etcd", "demo-operator")
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, olmSub)
@@ -109,16 +109,16 @@ var _ = Describe("Issue #1064: kubectl tool multi-group kind resolution fallback
 			kindIndex := buildAmbiguousKindIndex()
 
 			resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex, logr.Discard())
-			result, err := resolver.Get(context.Background(), "Subscription", "etcd", "demo-operator")
-			Expect(err).NotTo(HaveOccurred(), "Get should succeed via multi-group fallback")
+			result, err := resolver.Get(context.Background(), "Subscription", "etcd", "demo-operator", "operators.coreos.com")
+			Expect(err).NotTo(HaveOccurred(), "Get should succeed with explicit api_group")
 			data, _ := json.Marshal(result)
 			Expect(string(data)).To(ContainSubstring("etcd"),
 				"result should contain the OLM Subscription named etcd")
 		})
 	})
 
-	Describe("UT-KA-1064-002: List returns first non-empty result for ambiguous kind", func() {
-		It("should return the OLM SubscriptionList when items exist only in operators.coreos.com", func() {
+	Describe("UT-KA-1064-002: List resolves ambiguous kind with explicit api_group (#1311)", func() {
+		It("should return the OLM SubscriptionList when api_group is operators.coreos.com", func() {
 			scheme := newAmbiguousScheme()
 			olmSub := newOLMSubscription("etcd", "demo-operator")
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, olmSub)
@@ -126,16 +126,16 @@ var _ = Describe("Issue #1064: kubectl tool multi-group kind resolution fallback
 			kindIndex := buildAmbiguousKindIndex()
 
 			resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex, logr.Discard())
-			result, err := resolver.List(context.Background(), "Subscription", "demo-operator")
-			Expect(err).NotTo(HaveOccurred(), "List should succeed via multi-group fallback")
+			result, err := resolver.List(context.Background(), "Subscription", "demo-operator", "operators.coreos.com")
+			Expect(err).NotTo(HaveOccurred(), "List should succeed with explicit api_group")
 			data, _ := json.Marshal(result)
 			Expect(string(data)).To(ContainSubstring("etcd"),
 				"list should contain the OLM Subscription named etcd")
 		})
 	})
 
-	Describe("UT-KA-1064-003: List returns correct items when both groups have resources in different namespaces", func() {
-		It("should return OLM Subscription in demo-operator, not Knative Subscription in other namespace", func() {
+	Describe("UT-KA-1064-003: List with explicit api_group returns only that group's items (#1311)", func() {
+		It("should return OLM Subscription in demo-operator when api_group is operators.coreos.com", func() {
 			scheme := newAmbiguousScheme()
 			olmSub := newOLMSubscription("alpha", "demo-operator")
 			knativeSub := &unstructured.Unstructured{
@@ -153,7 +153,7 @@ var _ = Describe("Issue #1064: kubectl tool multi-group kind resolution fallback
 			kindIndex := buildAmbiguousKindIndex()
 
 			resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex, logr.Discard())
-			result, err := resolver.List(context.Background(), "Subscription", "demo-operator")
+			result, err := resolver.List(context.Background(), "Subscription", "demo-operator", "operators.coreos.com")
 			Expect(err).NotTo(HaveOccurred())
 			data, _ := json.Marshal(result)
 			Expect(string(data)).To(ContainSubstring("alpha"),
@@ -187,7 +187,7 @@ var _ = Describe("Issue #1064: kubectl tool multi-group kind resolution fallback
 			kindIndex := buildAmbiguousKindIndex()
 
 			resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex, logr.Discard())
-			result, err := resolver.Get(context.Background(), "Deployment", "api-server", "default")
+			result, err := resolver.Get(context.Background(), "Deployment", "api-server", "default", "")
 			Expect(err).NotTo(HaveOccurred())
 			data, _ := json.Marshal(result)
 			Expect(string(data)).To(ContainSubstring("api-server"))
@@ -220,7 +220,7 @@ var _ = Describe("Issue #1064: kubectl tool multi-group kind resolution fallback
 			kindIndex := buildAmbiguousKindIndex()
 
 			resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex, logr.Discard())
-			result, err := resolver.List(context.Background(), "Deployment", "default")
+			result, err := resolver.List(context.Background(), "Deployment", "default", "")
 			Expect(err).NotTo(HaveOccurred())
 			data, _ := json.Marshal(result)
 			Expect(string(data)).To(ContainSubstring("api-server"))
@@ -235,7 +235,7 @@ var _ = Describe("Issue #1064: kubectl tool multi-group kind resolution fallback
 			kindIndex := buildAmbiguousKindIndex()
 
 			resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex, logr.Discard())
-			_, err := resolver.Get(context.Background(), "FooBarBaz", "test", "default")
+			_, err := resolver.Get(context.Background(), "FooBarBaz", "test", "default", "")
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("FooBarBaz"),
 				"error must include the unresolved kind name for diagnostics")
@@ -250,7 +250,7 @@ var _ = Describe("Issue #1064: kubectl tool multi-group kind resolution fallback
 			kindIndex := buildAmbiguousKindIndex()
 
 			resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex, logr.Discard())
-			_, err := resolver.List(context.Background(), "FooBarBaz", "default")
+			_, err := resolver.List(context.Background(), "FooBarBaz", "default", "")
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("FooBarBaz"),
 				"error must include the unresolved kind name for diagnostics")
@@ -268,7 +268,7 @@ var _ = Describe("Issue #1064: kubectl tool multi-group kind resolution fallback
 
 			longKind := strings.Repeat("A", 256)
 			resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex, logr.Discard())
-			_, err := resolver.Get(context.Background(), longKind, "x", "default")
+			_, err := resolver.Get(context.Background(), longKind, "x", "default", "")
 			Expect(err).To(HaveOccurred(), "256-char kind should fail resolution")
 		})
 	})
@@ -281,7 +281,7 @@ var _ = Describe("Issue #1064: kubectl tool multi-group kind resolution fallback
 			kindIndex := buildAmbiguousKindIndex()
 
 			resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex, logr.Discard())
-			_, err := resolver.Get(context.Background(), "Ünïcödé", "x", "default")
+			_, err := resolver.Get(context.Background(), "Ünïcödé", "x", "default", "")
 			Expect(err).To(HaveOccurred(), "Unicode kind should fail resolution")
 		})
 	})
@@ -294,7 +294,7 @@ var _ = Describe("Issue #1064: kubectl tool multi-group kind resolution fallback
 			kindIndex := buildAmbiguousKindIndex()
 
 			resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex, logr.Discard())
-			_, err := resolver.Get(context.Background(), "../etc/passwd", "x", "default")
+			_, err := resolver.Get(context.Background(), "../etc/passwd", "x", "default", "")
 			Expect(err).To(HaveOccurred(), "path-traversal kind should fail resolution")
 		})
 	})
@@ -325,7 +325,7 @@ var _ = Describe("Issue #1064: kubectl tool multi-group kind resolution fallback
 			emptyIndex := map[string]schema.GroupKind{}
 
 			resolver := k8s.NewDynamicResolver(dynClient, mapper, emptyIndex, logr.Discard())
-			result, err := resolver.Get(context.Background(), "Deployment", "api-server", "default")
+			result, err := resolver.Get(context.Background(), "Deployment", "api-server", "default", "")
 			Expect(err).NotTo(HaveOccurred(),
 				"empty kindIndex should fall through to ResourcesFor via mapper")
 			data, _ := json.Marshal(result)
@@ -333,8 +333,8 @@ var _ = Describe("Issue #1064: kubectl tool multi-group kind resolution fallback
 		})
 	})
 
-	Describe("UT-KA-1064-008: Multi-group fallback emits structured log on success", func() {
-		It("should log multi-group resolution details when fallback succeeds", func() {
+	Describe("UT-KA-1064-008: Multi-group Get with explicit api_group emits log on success", func() {
+		It("should resolve with explicit api_group for ambiguous kind", func() {
 			scheme := newAmbiguousScheme()
 			olmSub := newOLMSubscription("etcd", "demo-operator")
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, olmSub)
@@ -342,16 +342,16 @@ var _ = Describe("Issue #1064: kubectl tool multi-group kind resolution fallback
 			kindIndex := buildAmbiguousKindIndex()
 
 			resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex, logr.Discard())
-			result, err := resolver.Get(context.Background(), "Subscription", "etcd", "demo-operator")
+			result, err := resolver.Get(context.Background(), "Subscription", "etcd", "demo-operator", "operators.coreos.com")
 			Expect(err).NotTo(HaveOccurred(),
-				"Get must succeed via fallback before we can verify logs")
+				"Get must succeed with explicit api_group")
 			data, _ := json.Marshal(result)
 			Expect(string(data)).To(ContainSubstring("etcd"))
 		})
 	})
 
-	Describe("UT-KA-1064-009: Non-NotFound/Forbidden error stops fallback immediately", func() {
-		It("should not attempt second group when first returns unexpected error", func() {
+	Describe("UT-KA-1064-009: Ambiguous kind without api_group returns disambiguation error (#1311)", func() {
+		It("should return error listing available groups when api_group is empty", func() {
 			scheme := newAmbiguousScheme()
 			olmSub := newOLMSubscription("etcd", "demo-operator")
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, olmSub)
@@ -359,16 +359,17 @@ var _ = Describe("Issue #1064: kubectl tool multi-group kind resolution fallback
 			kindIndex := buildAmbiguousKindIndex()
 
 			resolver := k8s.NewDynamicResolver(dynClient, mapper, kindIndex, logr.Discard())
-			result, err := resolver.Get(context.Background(), "Subscription", "etcd", "demo-operator")
-			Expect(err).NotTo(HaveOccurred(),
-				"behavioral: Get must find Subscription in the correct group")
-			data, _ := json.Marshal(result)
-			Expect(string(data)).To(ContainSubstring("etcd"))
+			_, err := resolver.Get(context.Background(), "Subscription", "etcd", "demo-operator", "")
+			Expect(err).To(HaveOccurred(),
+				"ambiguous kind without api_group should return error")
+			Expect(err.Error()).To(ContainSubstring("ambiguous"))
+			Expect(err.Error()).To(ContainSubstring("operators.coreos.com"))
+			Expect(err.Error()).To(ContainSubstring("messaging.knative.dev"))
 		})
 	})
 
-	Describe("UT-KA-1064-010: kubectl_find_resource with ambiguous kind finds correct items", func() {
-		It("should find OLM Subscription via keyword search", func() {
+	Describe("UT-KA-1064-010: kubectl_find_resource with explicit api_group finds correct items (#1311)", func() {
+		It("should find OLM Subscription via keyword search with api_group", func() {
 			scheme := newAmbiguousScheme()
 			olmSub := newOLMSubscription("etcd", "demo-operator")
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, olmSub)
@@ -384,15 +385,15 @@ var _ = Describe("Issue #1064: kubectl tool multi-group kind resolution fallback
 			}
 
 			result, err := reg.Execute(context.Background(), "kubectl_find_resource",
-				json.RawMessage(`{"kind":"Subscription","keyword":"etcd"}`))
+				json.RawMessage(`{"kind":"Subscription","keyword":"etcd","api_group":"operators.coreos.com"}`))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(ContainSubstring("etcd"),
 				"find_resource should locate OLM Subscription matching keyword")
 		})
 	})
 
-	Describe("UT-KA-1064-011: kubernetes_jq_query with ambiguous kind queries correct group", func() {
-		It("should apply jq expression to OLM Subscriptions", func() {
+	Describe("UT-KA-1064-011: kubernetes_jq_query with explicit api_group queries correct group (#1311)", func() {
+		It("should apply jq expression to OLM Subscriptions with api_group", func() {
 			scheme := newAmbiguousScheme()
 			olmSub := newOLMSubscription("etcd", "demo-operator")
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, olmSub)
@@ -408,7 +409,7 @@ var _ = Describe("Issue #1064: kubectl tool multi-group kind resolution fallback
 			}
 
 			result, err := reg.Execute(context.Background(), "kubernetes_jq_query",
-				json.RawMessage(`{"kind":"Subscription","jq_expr":".items[].metadata.name"}`))
+				json.RawMessage(`{"kind":"Subscription","jq_expr":".items[].metadata.name","api_group":"operators.coreos.com"}`))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(ContainSubstring("etcd"),
 				"jq query should return names from OLM Subscriptions")

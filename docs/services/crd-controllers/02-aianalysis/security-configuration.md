@@ -354,7 +354,7 @@ spec:
         - name: HOLMESGPT_API_KEY_PATH
           value: "/var/run/secrets/holmesgpt/api-key"
         - name: HOLMESGPT_ENDPOINT
-          value: "http:// kubernaut-agent.kubernaut-system.svc:8080"
+          value: "https://kubernaut-agent.kubernaut-system.svc:8443"
         volumeMounts:
         - name: tmp
           mountPath: /tmp

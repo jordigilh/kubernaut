@@ -2,6 +2,7 @@ package agent_test
 
 import (
 	"context"
+	"os"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -22,8 +23,8 @@ var _ = Describe("System Prompt", func() {
 		Expect(instruction).To(ContainSubstring("Never reference internal system names"))
 	})
 
-	It("UT-AF-131-002: prompt contains polling re-call instruction", func() {
-		Expect(instruction).To(ContainSubstring("kubernaut_poll_investigation"))
+	It("UT-AF-131-002: prompt contains investigate single-call instruction", func() {
+		Expect(instruction).To(ContainSubstring("kubernaut_investigate"))
 		Expect(instruction).To(ContainSubstring("MUST call"))
 	})
 
@@ -50,16 +51,15 @@ var _ = Describe("System Prompt", func() {
 		Expect(instruction).To(ContainSubstring("kubernaut_get_remediation"))
 		Expect(instruction).To(ContainSubstring("kubernaut_approve"))
 		Expect(instruction).To(ContainSubstring("kubernaut_watch"))
-		Expect(instruction).To(ContainSubstring("kubernaut_start_investigation"))
+		Expect(instruction).To(ContainSubstring("kubernaut_investigate"))
 		Expect(instruction).To(ContainSubstring("kubernaut_select_workflow"))
 		Expect(instruction).To(ContainSubstring("present_decision"))
-		Expect(instruction).To(ContainSubstring("kubernaut_list_workflows"))
 		Expect(instruction).To(ContainSubstring("kubernaut_get_audit_trail"))
 	})
 
-	It("UT-AF-1189-030: prompt includes kubernaut_stream_investigation tool", func() {
-		Expect(instruction).To(ContainSubstring("kubernaut_stream_investigation"))
-		Expect(instruction).To(ContainSubstring("Stream live investigation events"))
+	It("UT-AF-1189-030: prompt includes kubernaut_investigate tool", func() {
+		Expect(instruction).To(ContainSubstring("kubernaut_investigate"))
+		Expect(instruction).To(ContainSubstring("streams live events"))
 	})
 
 	It("UT-AF-1189-031: prompt includes kubernaut_discover_workflows tool", func() {
@@ -83,7 +83,7 @@ var _ = Describe("System Prompt", func() {
 	})
 
 	It("UT-AF-1189-034: prompt enforces kubernaut_watch after workflow selection", func() {
-		Expect(instruction).To(ContainSubstring("MUST call kubernaut_watch"))
+		Expect(instruction).To(ContainSubstring("call kubernaut_watch"))
 	})
 
 	It("UT-AF-1189-035: prompt requires session_id/rr_id preservation across phases", func() {
@@ -118,8 +118,7 @@ var _ = Describe("System Prompt", func() {
 
 		It("UT-AF-1275-014: intent group 'investigate' contains expected tools", func() {
 			result := agentpkg.BuildInstruction("ns")
-			Expect(result).To(ContainSubstring("kubernaut_start_investigation"))
-			Expect(result).To(ContainSubstring("kubernaut_stream_investigation"))
+			Expect(result).To(ContainSubstring("kubernaut_investigate"))
 		})
 
 		It("UT-AF-1275-015: intent group 'observe' contains kubectl tools", func() {
@@ -149,8 +148,68 @@ var _ = Describe("System Prompt", func() {
 
 		It("UT-AF-1275-019: intent group 'interactive' contains session tools", func() {
 			result := agentpkg.BuildInstruction("ns")
-			Expect(result).To(ContainSubstring("kubernaut_takeover"))
+			Expect(result).To(ContainSubstring("kubernaut_investigate"))
 			Expect(result).To(ContainSubstring("kubernaut_reconnect"))
+		})
+	})
+
+	Describe("ResolveNamespace (#1282)", func() {
+		It("UT-AF-1282-NS-001: reads namespace from downward API file", func() {
+			dir := GinkgoT().TempDir()
+			nsFile := dir + "/namespace"
+			Expect(os.WriteFile(nsFile, []byte("kubernaut-system"), 0o644)).To(Succeed())
+
+			ns := agentpkg.ResolveNamespace("", nsFile)
+			Expect(ns).To(Equal("kubernaut-system"))
+		})
+
+		It("UT-AF-1282-NS-002: config override takes precedence over downward API", func() {
+			dir := GinkgoT().TempDir()
+			nsFile := dir + "/namespace"
+			Expect(os.WriteFile(nsFile, []byte("from-downward-api"), 0o644)).To(Succeed())
+
+			ns := agentpkg.ResolveNamespace("custom-ns", nsFile)
+			Expect(ns).To(Equal("custom-ns"))
+		})
+
+		It("UT-AF-1282-NS-003: falls back to default when both sources absent", func() {
+			ns := agentpkg.ResolveNamespace("", "/nonexistent/path/namespace")
+			Expect(ns).To(Equal("default"))
+		})
+
+		It("UT-AF-1282-NS-004: trims whitespace and newlines from downward API file", func() {
+			dir := GinkgoT().TempDir()
+			nsFile := dir + "/namespace"
+			Expect(os.WriteFile(nsFile, []byte("  kubernaut-system\n"), 0o644)).To(Succeed())
+
+			ns := agentpkg.ResolveNamespace("", nsFile)
+			Expect(ns).To(Equal("kubernaut-system"))
+		})
+
+		It("UT-AF-1282-NS-005: empty config override falls through to downward API", func() {
+			dir := GinkgoT().TempDir()
+			nsFile := dir + "/namespace"
+			Expect(os.WriteFile(nsFile, []byte("from-api"), 0o644)).To(Succeed())
+
+			ns := agentpkg.ResolveNamespace("", nsFile)
+			Expect(ns).To(Equal("from-api"))
+		})
+	})
+
+	Describe("Prompt hardening (#1282 F-PROMPT)", func() {
+		It("UT-AF-1282-PROMPT-001: prompt mandates kubernaut MCP tools for investigation", func() {
+			result := agentpkg.BuildInstruction("kubernaut-system")
+			Expect(result).To(ContainSubstring("kubernaut MCP tools"))
+			Expect(result).To(ContainSubstring("NEVER use kubectl"))
+		})
+
+		It("UT-AF-1282-PROMPT-002: prompt documents all AF auto-resolved fields", func() {
+			result := agentpkg.BuildInstruction("kubernaut-system")
+			Expect(result).To(ContainSubstring("provide: namespace, kind, name, description"))
+			Expect(result).To(ContainSubstring("workload namespace where the target resource lives"))
+			Expect(result).To(ContainSubstring("severity: via the Prometheus severity triage pipeline"))
+			Expect(result).To(ContainSubstring("signalName: from AlertManager alerts"))
+			Expect(result).To(ContainSubstring("signalSource: hardcoded to a2a-agent"))
 		})
 	})
 
@@ -244,5 +303,50 @@ var _ = Describe("System Prompt", func() {
 			Expect(result).NotTo(ContainSubstring("\"sre\""))
 			Expect(result).NotTo(ContainSubstring("\"l3-audit\""))
 		})
+	})
+})
+
+var _ = Describe("Prompt — Intent-Based Tool Redesign (#1332)", func() {
+	var instruction string
+
+	BeforeEach(func() {
+		cfg := agentpkg.DefaultTestConfig()
+		instruction = cfg.Instruction
+	})
+
+	It("UT-AF-1332-035: prompt contains kubernaut_remediate", func() {
+		Expect(instruction).To(ContainSubstring("kubernaut_remediate"))
+	})
+
+	It("UT-AF-1332-036: prompt does NOT contain deprecated af_ tool names", func() {
+		Expect(instruction).NotTo(ContainSubstring("af_create_rr"))
+		Expect(instruction).NotTo(ContainSubstring("af_check_existing_rr"))
+	})
+
+	It("UT-AF-1332-037: autonomous mode keywords map to kubernaut_remediate", func() {
+		Expect(instruction).To(ContainSubstring("kubernaut_remediate"))
+		Expect(instruction).To(SatisfyAny(
+			ContainSubstring("fix"),
+			ContainSubstring("remediate"),
+		))
+	})
+
+	It("UT-AF-1332-038: BuildInstruction references kubernaut_remediate without deprecated af_ names", func() {
+		built := agentpkg.BuildInstruction("kubernaut-system")
+		Expect(built).To(ContainSubstring("kubernaut_remediate"))
+		Expect(built).NotTo(ContainSubstring("af_create_rr"))
+		Expect(built).NotTo(ContainSubstring("af_check_existing_rr"))
+	})
+
+	It("UT-AF-1332-039: prompt contains kubectl bypass prevention rule", func() {
+		Expect(instruction).To(ContainSubstring("NEVER use kubectl tools to perform root-cause analysis"))
+	})
+
+	It("UT-AF-1332-040: prompt contains decision algorithm", func() {
+		Expect(instruction).To(ContainSubstring("Does the user just want it fixed"))
+	})
+
+	It("UT-AF-1332-041: prompt contains WHAT/WHY boundary for observation mode", func() {
+		Expect(instruction).To(ContainSubstring("kubectl queries answer WHAT"))
 	})
 })

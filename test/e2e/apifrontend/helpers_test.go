@@ -12,10 +12,15 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
+
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 )
 
 // persona holds credentials for a DEX E2E user with a specific RBAC role.
@@ -330,47 +335,6 @@ func extractMCPResultText(root map[string]interface{}) string {
 	return t
 }
 
-// parseJSONStringField extracts a string field from a JSON object string.
-func parseJSONStringField(jsonStr, field string) string {
-	var m map[string]interface{}
-	if err := json.Unmarshal([]byte(jsonStr), &m); err != nil {
-		return ""
-	}
-	v, _ := m[field].(string)
-	return v
-}
-
-// extractA2AToolJSON scans A2A task result artifacts for the first text part
-// that is valid JSON containing the given marker key. This allows tests to
-// extract structured tool output (e.g. af_create_rr result with severity_source)
-// from the A2A task envelope.
-func extractA2AToolJSON(raw json.RawMessage, markerKey string) string {
-	var task struct {
-		Artifacts []struct {
-			Parts []struct {
-				Text string `json:"text"`
-			} `json:"parts"`
-		} `json:"artifacts"`
-	}
-	if err := json.Unmarshal(raw, &task); err != nil {
-		return string(raw)
-	}
-	for _, a := range task.Artifacts {
-		for _, p := range a.Parts {
-			if p.Text == "" {
-				continue
-			}
-			var obj map[string]interface{}
-			if json.Unmarshal([]byte(p.Text), &obj) == nil {
-				if _, ok := obj[markerKey]; ok {
-					return p.Text
-				}
-			}
-		}
-	}
-	return string(raw)
-}
-
 func fetchDEXToken(dexURL, clientID, clientSecret, username, password string) (string, error) {
 	tokenURL := dexURL + "/token"
 	data := url.Values{
@@ -408,35 +372,79 @@ func fetchDEXToken(dexURL, clientID, clientSecret, username, password string) (s
 	return tokenResp.IDToken, nil
 }
 
-func rrManifest(namespace, rrName, targetKind, targetName string) string {
+func buildRR(namespace, rrName, targetKind, targetName string) *remediationv1alpha1.RemediationRequest {
 	h := sha256.Sum256([]byte(fmt.Sprintf("e2e-%s-%s-%s", namespace, targetKind, targetName)))
 	fp := hex.EncodeToString(h[:])
-	return fmt.Sprintf(`apiVersion: kubernaut.ai/v1alpha1
-kind: RemediationRequest
-metadata:
-  name: %s
-  namespace: %s
-spec:
-  signalName: "E2ETestAlert"
-  signalFingerprint: "%s"
-  signalType: "prometheus"
-  severity: "warning"
-  firingTime: "2026-01-01T00:00:00Z"
-  receivedTime: "2026-01-01T00:00:01Z"
-  targetType: "kubernetes"
-  targetResource:
-    kind: %s
-    name: %s
-`, rrName, namespace, fp, targetKind, targetName)
+	firingTime := metav1.NewTime(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+	receivedTime := metav1.NewTime(time.Date(2026, 1, 1, 0, 0, 1, 0, time.UTC))
+	return &remediationv1alpha1.RemediationRequest{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      rrName,
+			Namespace: namespace,
+		},
+		Spec: remediationv1alpha1.RemediationRequestSpec{
+			SignalName:        "E2ETestAlert",
+			SignalFingerprint: fp,
+			SignalType:        "prometheus",
+			Severity:          "warning",
+			FiringTime:        firingTime,
+			ReceivedTime:      receivedTime,
+			TargetType:        "kubernetes",
+			TargetResource: remediationv1alpha1.ResourceIdentifier{
+				Kind: targetKind,
+				Name: targetName,
+			},
+		},
+	}
 }
 
-func kubectlCreateRR(namespace, rrName, targetKind, targetName string) error {
-	return kubectlApplyYAML(rrManifest(namespace, rrName, targetKind, targetName))
+func createRR(namespace, rrName, targetKind, targetName string) error {
+	rr := buildRR(namespace, rrName, targetKind, targetName)
+	return k8sClient.Create(context.Background(), rr)
 }
 
-func kubectlDeleteRR(namespace, rrName string) {
-	kubeconfigPath := os.Getenv("HOME") + "/.kube/apifrontend-e2e-config"
-	_, _ = exec.CommandContext(context.Background(), "kubectl",
-		"--kubeconfig", kubeconfigPath,
-		"delete", "remediationrequest", rrName, "-n", namespace, "--ignore-not-found").CombinedOutput()
+func deleteRR(namespace, rrName string) {
+	rr := &remediationv1alpha1.RemediationRequest{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      rrName,
+			Namespace: namespace,
+		},
+	}
+	_ = client.IgnoreNotFound(k8sClient.Delete(context.Background(), rr))
+}
+
+func buildRAR(namespace, rarName, rrName string) *remediationv1alpha1.RemediationApprovalRequest {
+	return &remediationv1alpha1.RemediationApprovalRequest{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      rarName,
+			Namespace: namespace,
+		},
+		Spec: remediationv1alpha1.RemediationApprovalRequestSpec{
+			RemediationRequestRef: corev1.ObjectReference{
+				Name:      rrName,
+				Namespace: namespace,
+			},
+			AIAnalysisRef: remediationv1alpha1.ObjectRef{
+				Name: "e2e-analysis-" + rarName,
+			},
+			Confidence:             0.65,
+			ConfidenceLevel:        "medium",
+			InvestigationSummary:   fmt.Sprintf("E2E RAR flow — RR %s", rrName),
+			Reason:                 "E2E approval gate",
+			WhyApprovalRequired:    "E2E coverage G5",
+			RequiredBy:             metav1.NewTime(time.Now().UTC()),
+			RecommendedActions: []remediationv1alpha1.ApprovalRecommendedAction{
+				{
+					Action:    "RestartPod",
+					Rationale: "E2E recommended action",
+				},
+			},
+			RecommendedWorkflow: remediationv1alpha1.RecommendedWorkflowSummary{
+				WorkflowID:      "wf-restart-pod-v1",
+				Version:         "1.0.0",
+				ExecutionBundle: "ghcr.io/jordigilh/kubernaut/bundles/restart-pod@sha256:e2e",
+				Rationale:       "E2E workflow",
+			},
+		},
+	}
 }

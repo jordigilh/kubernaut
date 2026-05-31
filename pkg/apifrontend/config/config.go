@@ -53,9 +53,10 @@ type SeverityTriageConfig struct {
 
 // ResilienceConfig holds per-dependency circuit breaker and retry settings.
 type ResilienceConfig struct {
-	KA  DependencyConfig `yaml:"ka"`
-	DS  DependencyConfig `yaml:"ds"`
-	K8s DependencyConfig `yaml:"k8s"`
+	KA         DependencyConfig `yaml:"ka"`
+	DS         DependencyConfig `yaml:"ds"`
+	K8s        DependencyConfig `yaml:"k8s"`
+	Prometheus DependencyConfig `yaml:"prometheus"`
 }
 
 // DependencyConfig holds resilience parameters for a single downstream dependency.
@@ -73,6 +74,9 @@ type DependencyConfig struct {
 }
 
 // AuthConfig holds OIDC authentication settings.
+// Auth mode is auto-detected from provider presence (#1309):
+//   - issuerURL set → OIDC/JWKS validation only
+//   - issuerURL empty → K8s TokenReview only
 type AuthConfig struct {
 	IssuerURL              string `yaml:"issuerURL"`
 	JWKSURL                string `yaml:"jwksURL,omitempty"`
@@ -216,7 +220,9 @@ func DefaultConfig() *Config {
 			Enabled:     false,
 			ToolTimeout: 30 * time.Second,
 			ToolTimeouts: map[string]time.Duration{
-				"kubernaut_stream_investigation": 15 * time.Minute,
+				"kubernaut_investigate":   15 * time.Minute,
+				"kubernaut_await_session": 3 * time.Minute,
+				"kubernaut_watch":         15 * time.Minute,
 			},
 		},
 		Logging: LoggingConfig{
@@ -263,6 +269,10 @@ func DefaultConfig() *Config {
 				CBFailureThreshold: 5,
 				RetryMax:           0,
 				RetryableStatuses:  []int{},
+			},
+			Prometheus: DependencyConfig{
+				ConnectTimeout: 5 * time.Second,
+				RequestTimeout: 10 * time.Second,
 			},
 		},
 		RBAC: RBACConfig{

@@ -2740,9 +2740,15 @@ func (s *IncidentRequest) encodeFields(e *jx.Encoder) {
 			s.SignalMode.Encode(e)
 		}
 	}
+	{
+		if s.Interactive.Set {
+			e.FieldStart("interactive")
+			s.Interactive.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfIncidentRequest = [26]string{
+var jsonFieldsNameOfIncidentRequest = [27]string{
 	0:  "incident_id",
 	1:  "remediation_id",
 	2:  "signal_name",
@@ -2769,6 +2775,7 @@ var jsonFieldsNameOfIncidentRequest = [26]string{
 	23: "signal_annotations",
 	24: "enrichment_results",
 	25: "signal_mode",
+	26: "interactive",
 }
 
 // Decode decodes IncidentRequest from json.
@@ -3066,6 +3073,16 @@ func (s *IncidentRequest) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"signal_mode\"")
+			}
+		case "interactive":
+			if err := func() error {
+				s.Interactive.Reset()
+				if err := s.Interactive.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"interactive\"")
 			}
 		default:
 			return d.Skip()

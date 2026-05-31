@@ -18,6 +18,9 @@ rules:
   - apiGroups: ["kubernaut.ai"]
     resources: ["remediationrequests"]
     verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["remediationrequests/status"]
+    verbs: ["get", "update", "patch"]
   # RemediationApprovalRequest management (MCP kubernaut_approve)
   - apiGroups: ["kubernaut.ai"]
     resources: ["remediationapprovalrequests"]
@@ -29,23 +32,40 @@ rules:
   - apiGroups: [""]
     resources: ["events"]
     verbs: ["get", "list", "create", "patch"]
-  # Internal triage tools (kubectl_get, kubectl_list)
+  # Internal triage tools (kubectl_get, kubectl_list) — aligned with gvk.go static kinds
   - apiGroups: [""]
-    resources: ["pods", "replicationcontrollers"]
+    resources: ["pods", "replicationcontrollers", "services", "endpoints", "configmaps", "secrets", "namespaces", "nodes", "persistentvolumeclaims"]
     verbs: ["get", "list"]
   - apiGroups: ["apps"]
     resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
     verbs: ["get", "list"]
   - apiGroups: ["batch"]
     resources: ["jobs", "cronjobs"]
-    verbs: ["get"]
+    verbs: ["get", "list"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses", "networkpolicies"]
+    verbs: ["get", "list"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get", "list"]
   # Lease observation: sync KA lease state to IS CRD status (SESSION-JOIN-06)
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
     verbs: ["get", "list", "watch"]
+  # AIAnalysis read-only: kubernaut_await_session watches for KA session readiness
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["aianalyses"]
+    verbs: ["get", "list", "watch"]
   # SubjectAccessReview: SAR-based tool authorization (ADR-021)
   - apiGroups: ["authorization.k8s.io"]
     resources: ["subjectaccessreviews"]
+    verbs: ["create"]
+  # TokenReview: validate ServiceAccount tokens (BR-INTERACTIVE-010)
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["tokenreviews"]
     verbs: ["create"]
   # DD-AUTH-014: KA auth middleware SAR gate — AF SA must be authorized
   # to invoke KA's API (virtual SAR resource, not an actual service create)

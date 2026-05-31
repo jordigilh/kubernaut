@@ -1033,3 +1033,28 @@ resilience:
 		Expect(cfg.Agent.KABearerTokenFile).To(BeEmpty())
 	})
 })
+
+var _ = Describe("Auth auto-detect config (#1309)", func() {
+	It("UT-AF-1309-010: config YAML without kubernetesAuthEnabled loads without error", func() {
+		data := []byte(`
+auth:
+  issuerURL: "https://sso.example.com/realms/kubernaut"
+  audience: "apifrontend"
+`)
+		cfg, err := config.Load(data)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.Auth.IssuerURL).To(Equal("https://sso.example.com/realms/kubernaut"))
+	})
+
+	It("UT-AF-1309-011: config YAML with stale kubernetesAuthEnabled loads without error", func() {
+		data := []byte(`
+auth:
+  issuerURL: "https://sso.example.com/realms/kubernaut"
+  audience: "apifrontend"
+  kubernetesAuthEnabled: true
+`)
+		cfg, err := config.Load(data)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.Auth.IssuerURL).To(Equal("https://sso.example.com/realms/kubernaut"))
+	})
+})

@@ -153,13 +153,12 @@ var _ = Describe("Auth Middleware Integration (auth/)", func() {
 		})
 	})
 
-	Describe("AC-11: K8s ServiceAccount token validation via TokenReview", func() {
-		It("IT-AF-1195-019: envtest SA token validated via TokenReview", func() {
+	Describe("AC-11: OIDC mode rejects SA tokens (#1309 replaces dual-auth)", func() {
+		It("IT-AF-1195-019: OIDC mode rejects envtest SA token (no TokenReview fallback)", func() {
 			var captured *auth.UserIdentity
 			srv := buildAuthServer(&captured)
 			defer srv.Close()
 
-			// Create a ServiceAccount in the per-process envtest and request a token
 			sa := &corev1.ServiceAccount{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "af-it-tokenreview-sa",
@@ -171,7 +170,6 @@ var _ = Describe("Auth Middleware Integration (auth/)", func() {
 				Expect(err).NotTo(HaveOccurred())
 			}
 
-			// Request a token from the per-process envtest kube-apiserver
 			tokenReq := &authv1.TokenRequest{
 				Spec: authv1.TokenRequestSpec{
 					ExpirationSeconds: ptr(int64(3600)),
@@ -184,8 +182,6 @@ var _ = Describe("Auth Middleware Integration (auth/)", func() {
 			saToken := tokenResult.Status.Token
 			Expect(saToken).NotTo(BeEmpty())
 
-			// Send the SA token through the auth middleware -- it should fall through
-			// JWT validation (unknown issuer) to TokenReview (K8s SA validation)
 			req, err := http.NewRequest(http.MethodGet, srv.URL, nil)
 			Expect(err).NotTo(HaveOccurred())
 			req.Header.Set("Authorization", "Bearer "+saToken)
@@ -194,9 +190,8 @@ var _ = Describe("Auth Middleware Integration (auth/)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			defer resp.Body.Close()
 
-			Expect(resp.StatusCode).To(Equal(http.StatusOK))
-			Expect(captured).NotTo(BeNil())
-			Expect(captured.Username).To(ContainSubstring("af-it-tokenreview-sa"))
+			Expect(resp.StatusCode).To(Equal(http.StatusUnauthorized),
+				"OIDC mode must reject SA tokens — no TokenReview fallback (#1309)")
 		})
 	})
 
@@ -275,7 +270,6 @@ var _ = Describe("Auth Middleware Integration (auth/)", func() {
 						},
 					},
 				},
-				Kubernetes:           auth.KubernetesAuthConfig{Enabled: false},
 				AllowInsecureIssuers: true,
 			}
 			cbValidator, err := auth.NewJWTValidator(cbCfg,
@@ -368,6 +362,171 @@ var _ = Describe("Auth Middleware Integration (auth/)", func() {
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 			Expect(receivedAuthHeader).To(Equal("Bearer " + token),
 				"delegation transport must forward the user's raw JWT to downstream")
+		})
+	})
+
+	Describe("Auth auto-detect mode (#1309)", func() {
+		It("IT-AF-1309-001: OIDC mode rejects envtest SA token", func() {
+			oidcCfg := auth.Config{
+				JWT: []auth.ProviderConfig{
+					{
+						Issuer: auth.IssuerConfig{
+							URL:       jwksServer.URL,
+							JWKSURL:   jwksServer.URL,
+							Audiences: []string{"kubernaut-af"},
+						},
+					},
+				},
+				AllowInsecureIssuers: true,
+			}
+
+			oidcValidator, err := auth.NewJWTValidator(oidcCfg,
+				auth.WithHTTPClient(jwksServer.Client()),
+			)
+			Expect(err).NotTo(HaveOccurred())
+
+			var captured *auth.UserIdentity
+			mw := auth.MiddlewareWithConfig(auth.MiddlewareConfig{
+				Validator: oidcValidator,
+				Logger:    logf.Log.WithName("it-1309-oidc"),
+			})
+			srv := httptest.NewServer(mw(identityCapture(&captured)))
+			defer srv.Close()
+
+			sa := &corev1.ServiceAccount{
+				ObjectMeta: metav1.ObjectMeta{Name: "af-it-1309-oidc-sa", Namespace: "default"},
+			}
+			err = k8sClient.Create(context.Background(), sa)
+			if err != nil && !apierrors.IsAlreadyExists(err) {
+				Expect(err).NotTo(HaveOccurred())
+			}
+
+			tokenReq := &authv1.TokenRequest{
+				Spec: authv1.TokenRequestSpec{ExpirationSeconds: ptr(int64(3600))},
+			}
+			tokenResult, err := k8sClientset.CoreV1().ServiceAccounts("default").CreateToken(
+				context.Background(), "af-it-1309-oidc-sa", tokenReq, metav1.CreateOptions{},
+			)
+			Expect(err).NotTo(HaveOccurred())
+
+			req, err := http.NewRequest(http.MethodGet, srv.URL, nil)
+			Expect(err).NotTo(HaveOccurred())
+			req.Header.Set("Authorization", "Bearer "+tokenResult.Status.Token)
+
+			resp, err := http.DefaultClient.Do(req)
+			Expect(err).NotTo(HaveOccurred())
+			defer resp.Body.Close()
+
+			Expect(resp.StatusCode).To(Equal(http.StatusUnauthorized),
+				"OIDC mode must reject SA tokens (no TokenReview fallback)")
+		})
+
+		It("IT-AF-1309-002: TokenReview mode accepts envtest SA token", func() {
+			tokenReviewCfg := auth.Config{
+				JWT:                  []auth.ProviderConfig{},
+				AllowInsecureIssuers: true,
+			}
+
+			reviewer := auth.NewTokenReviewer(k8sClientset)
+			trValidator, err := auth.NewJWTValidator(tokenReviewCfg,
+				auth.WithTokenReviewer(reviewer),
+			)
+			Expect(err).NotTo(HaveOccurred())
+
+			var captured *auth.UserIdentity
+			mw := auth.MiddlewareWithConfig(auth.MiddlewareConfig{
+				Validator: trValidator,
+				Logger:    logf.Log.WithName("it-1309-tr"),
+			})
+			srv := httptest.NewServer(mw(identityCapture(&captured)))
+			defer srv.Close()
+
+			sa := &corev1.ServiceAccount{
+				ObjectMeta: metav1.ObjectMeta{Name: "af-it-1309-tr-sa", Namespace: "default"},
+			}
+			err = k8sClient.Create(context.Background(), sa)
+			if err != nil && !apierrors.IsAlreadyExists(err) {
+				Expect(err).NotTo(HaveOccurred())
+			}
+
+			tokenReq := &authv1.TokenRequest{
+				Spec: authv1.TokenRequestSpec{ExpirationSeconds: ptr(int64(3600))},
+			}
+			tokenResult, err := k8sClientset.CoreV1().ServiceAccounts("default").CreateToken(
+				context.Background(), "af-it-1309-tr-sa", tokenReq, metav1.CreateOptions{},
+			)
+			Expect(err).NotTo(HaveOccurred())
+
+			req, err := http.NewRequest(http.MethodGet, srv.URL, nil)
+			Expect(err).NotTo(HaveOccurred())
+			req.Header.Set("Authorization", "Bearer "+tokenResult.Status.Token)
+
+			resp, err := http.DefaultClient.Do(req)
+			Expect(err).NotTo(HaveOccurred())
+			defer resp.Body.Close()
+
+			Expect(resp.StatusCode).To(Equal(http.StatusOK),
+				"TokenReview mode must accept SA tokens")
+			Expect(captured).NotTo(BeNil())
+			Expect(captured.Username).To(ContainSubstring("af-it-1309-tr-sa"))
+			Expect(captured.IsServiceAccount).To(BeTrue())
+		})
+
+		It("IT-AF-1309-003: TokenReview mode emits auth.success audit event", func() {
+			tokenReviewCfg := auth.Config{
+				JWT:                  []auth.ProviderConfig{},
+				AllowInsecureIssuers: true,
+			}
+
+			reviewer := auth.NewTokenReviewer(k8sClientset)
+			trValidator, err := auth.NewJWTValidator(tokenReviewCfg,
+				auth.WithTokenReviewer(reviewer),
+			)
+			Expect(err).NotTo(HaveOccurred())
+
+			auditRec := newRecordingEmitter()
+			var captured *auth.UserIdentity
+			mw := auth.MiddlewareWithConfig(auth.MiddlewareConfig{
+				Validator:    trValidator,
+				Logger:       logf.Log.WithName("it-1309-audit"),
+				Auditor:      auditRec,
+				AuthDuration: metricsRegistry.AuthDuration,
+			})
+			srv := httptest.NewServer(mw(identityCapture(&captured)))
+			defer srv.Close()
+
+			sa := &corev1.ServiceAccount{
+				ObjectMeta: metav1.ObjectMeta{Name: "af-it-1309-audit-sa", Namespace: "default"},
+			}
+			err = k8sClient.Create(context.Background(), sa)
+			if err != nil && !apierrors.IsAlreadyExists(err) {
+				Expect(err).NotTo(HaveOccurred())
+			}
+
+			tokenReq := &authv1.TokenRequest{
+				Spec: authv1.TokenRequestSpec{ExpirationSeconds: ptr(int64(3600))},
+			}
+			tokenResult, err := k8sClientset.CoreV1().ServiceAccounts("default").CreateToken(
+				context.Background(), "af-it-1309-audit-sa", tokenReq, metav1.CreateOptions{},
+			)
+			Expect(err).NotTo(HaveOccurred())
+
+			req, err := http.NewRequest(http.MethodGet, srv.URL, nil)
+			Expect(err).NotTo(HaveOccurred())
+			req.Header.Set("Authorization", "Bearer "+tokenResult.Status.Token)
+
+			resp, err := http.DefaultClient.Do(req)
+			Expect(err).NotTo(HaveOccurred())
+			defer resp.Body.Close()
+
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+			Eventually(func() []*audit.Event {
+				return auditRec.EventsOfType(audit.EventAuthSuccess)
+			}).Should(HaveLen(1))
+
+			events := auditRec.EventsOfType(audit.EventAuthSuccess)
+			Expect(events[0].Detail["auth_method"]).To(Equal("token_review"))
 		})
 	})
 })

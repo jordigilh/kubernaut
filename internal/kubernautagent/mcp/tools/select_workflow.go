@@ -23,6 +23,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
@@ -79,16 +80,17 @@ type PreSelectionHook func(ctx context.Context, input SelectWorkflowInput, user 
 
 // SelectWorkflowInput defines the input schema for the kubernaut_select_workflow MCP tool.
 type SelectWorkflowInput struct {
-	RRID             string   `json:"rr_id"`
-	WorkflowID       string   `json:"workflow_id"`
-	Kind             string   `json:"kind,omitempty"`
-	Name             string   `json:"name,omitempty"`
-	Namespace        string   `json:"namespace,omitempty"`
-	APIVersion       string   `json:"api_version,omitempty"`
-	SpecHash         string   `json:"spec_hash,omitempty"`
-	IncidentID       string   `json:"incident_id,omitempty"`
-	ActingUser       string   `json:"acting_user,omitempty"`
-	ActingUserGroups []string `json:"acting_user_groups,omitempty"`
+	RRID             string         `json:"rr_id"`
+	WorkflowID       string         `json:"workflow_id"`
+	Kind             string         `json:"kind,omitempty"`
+	Name             string         `json:"name,omitempty"`
+	Namespace        string         `json:"namespace,omitempty"`
+	APIVersion       string         `json:"api_version,omitempty"`
+	SpecHash         string         `json:"spec_hash,omitempty"`
+	IncidentID       string         `json:"incident_id,omitempty"`
+	Parameters       map[string]any `json:"parameters,omitempty"`
+	ActingUser       string         `json:"acting_user,omitempty"`
+	ActingUserGroups []string       `json:"acting_user_groups,omitempty"`
 }
 
 // SelectWorkflowOutput defines the output schema for the kubernaut_select_workflow MCP tool.
@@ -118,7 +120,8 @@ func WithEnrichmentRunner(runner EnrichmentRunner) SelectWorkflowOption {
 				if errors.Is(err, enrichment.ErrRBACForbidden) {
 					return ErrCodeForbidden.WithDetail("namespace", input.Namespace)
 				}
-				return fmt.Errorf("enrich failed: %w", err)
+				t.logger.Error(err, "enrichment failed", "namespace", input.Namespace, "kind", input.Kind)
+				return ErrCodeInternalError.WithDetail("stage", "enrichment")
 			}
 			pctx.Enrichment = result
 			return nil
@@ -207,26 +210,45 @@ func (t *SelectWorkflowTool) Handle(ctx context.Context, input SelectWorkflowInp
 	}
 
 	if !t.sessions.IsDriverActive(input.RRID) {
-		return SelectWorkflowOutput{}, fmt.Errorf("no active interactive session for rr_id")
+		return SelectWorkflowOutput{}, ErrCodeNoSession
 	}
 
 	driver, err := t.sessions.GetDriver(input.RRID)
 	if err != nil || driver == nil {
-		return SelectWorkflowOutput{}, fmt.Errorf("no active interactive session for rr_id")
+		return SelectWorkflowOutput{}, ErrCodeNoSession
 	}
 
 	if driver.ActingUser.Username != user.Username {
-		return SelectWorkflowOutput{}, fmt.Errorf("caller is not the active driver for this session")
+		return SelectWorkflowOutput{}, ErrCodeNotDriver
 	}
 
 	// v1.5 strict gating: require prior discover_workflows call.
 	if driver.DiscoveryResult == nil {
-		return SelectWorkflowOutput{}, fmt.Errorf("discover_workflows must be called before select_workflow")
+		return SelectWorkflowOutput{}, ErrCodeDiscoveryRequired
 	}
 
 	// v1.5 strict validation: workflow_id must be from the discovery results.
 	if !isWorkflowInDiscoveryResult(input.WorkflowID, driver.DiscoveryResult) {
-		return SelectWorkflowOutput{}, fmt.Errorf("workflow_id %q not found in discovery results; call discover_workflows to refresh", input.WorkflowID)
+		return SelectWorkflowOutput{}, ErrCodeInvalidWorkflow
+	}
+
+	// Backfill target resource fields from the stored RCA when the caller
+	// (AF's LLM) omits them. The RCA already identified the target during
+	// investigation — no reason to require the caller to repeat it.
+	if driver.RCAResult != nil {
+		target := driver.RCAResult.RemediationTarget
+		if input.Kind == "" {
+			input.Kind = target.Kind
+		}
+		if input.Name == "" {
+			input.Name = target.Name
+		}
+		if input.Namespace == "" {
+			input.Namespace = target.Namespace
+		}
+		if input.APIVersion == "" {
+			input.APIVersion = target.APIVersion
+		}
 	}
 
 	pctx := &PreSelectionContext{}
@@ -242,29 +264,36 @@ func (t *SelectWorkflowTool) Handle(ctx context.Context, input SelectWorkflowInp
 	}
 
 	// Auto-complete: build final InvestigationResult from RCA + selected workflow,
-	// write to HTTP session store, and release the MCP lease.
+	// write to HTTP session store, and release the MCP lease. Deferred to a
+	// goroutine so the tool response reaches the caller before session teardown
+	// closes the transport (fixes "incomplete chunked read" in kagenti).
 	if t.httpCompleter != nil && driver.RCAResult != nil {
 		finalResult := buildFinalResult(driver.RCAResult, workflow, driver.DiscoveryResult)
 		if finalResult.Parameters == nil && driver.DiscoveryResult != nil {
 			t.logger.V(1).Info("no discovered parameters resolved for selected workflow",
 				"rr_id", input.RRID, "workflow_id", input.WorkflowID)
 		}
-		httpSessionID, found := t.httpCompleter.FindUserDrivingByRemediationID(input.RRID)
-		if found {
-			if completeErr := t.httpCompleter.CompleteUserDriving(httpSessionID, finalResult); completeErr != nil {
-				t.logger.Error(completeErr, "failed to complete HTTP session",
-					"rr_id", input.RRID, "http_session_id", httpSessionID)
+		sessionID := driver.SessionID
+		rrID := input.RRID
+		workflowID := input.WorkflowID
+		go func() {
+			httpSessionID, found := t.httpCompleter.FindUserDrivingByRemediationID(rrID)
+			if found {
+				if completeErr := t.httpCompleter.CompleteUserDriving(httpSessionID, finalResult); completeErr != nil {
+					t.logger.Error(completeErr, "failed to complete HTTP session",
+						"rr_id", rrID, "http_session_id", httpSessionID, "workflow_id", workflowID)
+				}
+			} else if completeErr := t.httpCompleter.ForceCompleteByRemediationID(rrID, finalResult); completeErr != nil {
+				t.logger.V(1).Info("no HTTP session found to force-complete on select_workflow",
+					"rr_id", rrID, "error", completeErr)
 			}
-		} else if completeErr := t.httpCompleter.ForceCompleteByRemediationID(input.RRID, finalResult); completeErr != nil {
-			t.logger.V(1).Info("no HTTP session found to force-complete on select_workflow",
-				"rr_id", input.RRID, "error", completeErr)
-		}
 
-		if releaseErr := t.sessions.Release(driver.SessionID, "workflow_selected"); releaseErr != nil {
-			if !errors.Is(releaseErr, mcpinternal.ErrSessionNotFound) {
-				t.logger.Error(releaseErr, "failed to release MCP lease", "session_id", driver.SessionID)
+			if releaseErr := t.sessions.Release(sessionID, "workflow_selected"); releaseErr != nil {
+				if !errors.Is(releaseErr, mcpinternal.ErrSessionNotFound) {
+					t.logger.Error(releaseErr, "failed to release MCP lease", "session_id", sessionID)
+				}
 			}
-		}
+		}()
 	}
 
 	return SelectWorkflowOutput{
@@ -295,6 +324,15 @@ func isWorkflowInDiscoveryResult(workflowID string, dr *mcpinternal.WorkflowDisc
 // from the discovery result (#1169).
 func buildFinalResult(rca *katypes.InvestigationResult, workflow *CatalogWorkflow, discovery *mcpinternal.WorkflowDiscoveryResult) *katypes.InvestigationResult {
 	result := *rca
+
+	// Prefer Phase 3's K8s-verified RemediationTarget over Phase 2's LLM-parsed
+	// values. The RCA result (Phase 2) may contain LLM defaults (e.g., test-pod/Pod),
+	// while the Phase 3 result has been through InjectRemediationTarget with the
+	// authoritative signal context and enrichment data.
+	if discovery != nil && discovery.FullResult != nil && discovery.FullResult.RemediationTarget.Kind != "" {
+		result.RemediationTarget = discovery.FullResult.RemediationTarget
+	}
+
 	if workflow != nil {
 		result.WorkflowID = workflow.WorkflowID
 		result.ExecutionEngine = workflow.ExecutionEngine
@@ -309,6 +347,10 @@ func buildFinalResult(rca *katypes.InvestigationResult, workflow *CatalogWorkflo
 			result.Parameters = cloneParameterMap(params)
 		}
 	}
+
+	// Re-inject KA-managed target resource parameters after the discovery
+	// merge, which may have replaced the RCA parameter map entirely.
+	investigator.InjectTargetResourceParameters(&result)
 
 	return &result
 }
@@ -342,10 +384,10 @@ func cloneParameterMap(src map[string]interface{}) map[string]interface{} {
 
 func validateSelectWorkflowInput(input SelectWorkflowInput) error {
 	if input.RRID == "" {
-		return fmt.Errorf("rr_id is required")
+		return ErrCodeInvalidInput.WithDetail("field", "rr_id")
 	}
 	if input.WorkflowID == "" {
-		return fmt.Errorf("workflow_id is required")
+		return ErrCodeInvalidInput.WithDetail("field", "workflow_id")
 	}
 	return nil
 }

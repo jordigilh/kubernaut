@@ -100,6 +100,7 @@ var _ = Describe("Kubernaut Agent Tool Output Truncation Pipeline — #752", fun
 			})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api", Namespace: "default", Severity: "warning", Message: "CrashLoop",
+				Environment: "Development", Priority: "P2",
 			})
 			Expect(err).NotTo(HaveOccurred())
 
@@ -142,6 +143,7 @@ var _ = Describe("Kubernaut Agent Tool Output Truncation Pipeline — #752", fun
 			})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api", Namespace: "default", Severity: "warning", Message: "CrashLoop",
+				Environment: "Development", Priority: "P2",
 			})
 			Expect(err).NotTo(HaveOccurred())
 
@@ -185,6 +187,7 @@ var _ = Describe("Kubernaut Agent Tool Output Truncation Pipeline — #752", fun
 			})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api", Namespace: "default", Severity: "warning", Message: "CrashLoop",
+				Environment: "Development", Priority: "P2",
 			})
 			Expect(err).NotTo(HaveOccurred())
 

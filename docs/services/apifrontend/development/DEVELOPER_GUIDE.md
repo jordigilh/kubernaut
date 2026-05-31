@@ -1,8 +1,8 @@
-# Developer Guide
+# API Frontend — Developer Guide
 
 ## Prerequisites
 
-- Go 1.25.6+
+- Go 1.25.10+
 - Docker (for container builds)
 - `controller-gen` (for CRD codegen)
 - `ginkgo` (for test runner)
@@ -11,20 +11,20 @@ Optional:
 - `kind` (for local Kubernetes cluster)
 - `k6` (for performance test scripts)
 - `syft` + `trivy` (for SBOM/scanning)
-- `golangci-lint` (for linting)
+- `golangci-lint` v2.9.0+ (for linting)
 
 ## Quick Start
 
 ```bash
-# Clone
-git clone https://github.com/jordigilh/kubernaut-apifrontend.git
-cd kubernaut-apifrontend
+# Clone the monorepo
+git clone https://github.com/jordigilh/kubernaut.git
+cd kubernaut
 
-# Build
-make build
+# Build the apifrontend binary
+make build-apifrontend
 
 # Run unit tests
-make test-unit
+make test-unit-apifrontend
 
 # Run locally (will fail without K8s cluster; use Kind for full workflow)
 go run ./cmd/apifrontend/
@@ -33,46 +33,46 @@ go run ./cmd/apifrontend/
 ## Project Structure
 
 ```
-cmd/apifrontend/          — Application entrypoint
-internal/
-  agent/                  — ADK root agent, RBAC roles, tool registration
-  audit/                  — Audit event emitter (buffered → DS)
-  auth/                   — JWT validation, middleware, context helpers
-  config/                 — YAML config loading, hot-reload FileWatcher
-  controller/             — Session TTL controller
-  ds/                     — DataStorage ogen client
-  handler/                — HTTP handlers (MCP, Agent Card, router)
-  httputil/               — RFC 7807, IP extraction
-  ka/                     — KA REST + MCP SDK client
-  launcher/               — A2A JSON-RPC handler (ADK executor)
-  logging/                — logr/zap logger setup
-  metrics/                — Prometheus registry (af_* prefix)
-  prometheus/             — Prometheus HTTP client (alerts, rules, query)
-  ratelimit/              — Per-IP and per-user rate limiters
-  requestid/              — X-Request-ID middleware
-  resilience/             — Circuit breakers, retry transport
-  security/               — Error redaction, input sanitization
-  session/                — CRD session service (InvestigationSession)
-  severity/               — Multi-tier severity triage pipeline
-  streaming/              — SSE connection tracker
-  tlswiring/              — TLS configuration helpers (server + outbound)
-  tools/                  — MCP tool implementations (6 AF-native + 14 kubernaut proxy)
-  validate/               — K8s name/namespace/label validation
+cmd/apifrontend/              — Application entrypoint and wiring
+pkg/apifrontend/
+  agent/                      — ADK root agent, RBAC roles, tool registration
+  audit/                      — Audit event emitter (StoreAdapter → BufferedAuditStore → DS)
+  auth/                       — JWT/OIDC validation, TokenReview fallback, SAR checker
+  config/                     — YAML config loading, hot-reload FileWatcher
+  ds/                         — DataStorage ogen client
+  handler/                    — HTTP handlers (MCP bridge, Agent Card, router)
+  httputil/                   — RFC 7807, IP extraction
+  ka/                         — KA MCP SDK client (REST retained for health check only)
+  launcher/                   — A2A JSON-RPC handler (ADK executor)
+  logging/                    — logr/zap logger setup
+  metrics/                    — Prometheus registry (af_* prefix)
+  prometheus/                 — Prometheus HTTP client (alerts, rules, query)
+  ratelimit/                  — Per-IP and per-user rate limiters
+  requestid/                  — X-Request-ID middleware
+  resilience/                 — Circuit breakers, retry transport, K8s CB
+  security/                   — Error redaction, input sanitization
+  session/                    — CRD session service (InvestigationSession)
+  severity/                   — Multi-tier severity triage pipeline
+  streaming/                  — SSE connection tracker
+  tlswiring/                  — TLS configuration helpers (server + outbound)
+  tools/                      — MCP tool implementations (6 AF-native + 14 kubernaut proxy)
+  validate/                   — K8s name/namespace/label validation
+internal/controller/apifrontend/ — Session TTL controller (controller-runtime)
 api/
-  apifrontend/v1alpha1/   — CRD types (InvestigationSession)
-  openapi/                — OpenAPI spec
-deploy/
-  kustomize/base/         — Kustomize base (Deployment, Service, RBAC, NetworkPolicy, PrometheusRule)
-  kustomize/overlays/dev/ — Dev overlay (Kind, self-signed TLS, debug logging)
-  kustomize/overlays/ci/  — CI overlay (GitHub Actions)
-docs/                     — ADRs, SLOs, runbooks, guides
-hack/                     — Utility scripts
-tests/performance/        — k6 performance test scripts
+  apifrontend/v1alpha1/       — CRD Go types (InvestigationSession)
+  apifrontend/openapi/        — OpenAPI spec (apifrontend-v1.yaml)
+deploy/apifrontend/
+  base/                       — Kustomize base (Deployment, Service, RBAC, NetworkPolicy, PrometheusRule)
+  overlays/dev/               — Dev overlay (Kind, self-signed TLS, debug logging)
+  overlays/ci/                — CI overlay (GitHub Actions)
+  overlays/e2e/               — E2E overlay (Dex, mock-LLM, full Kind cluster)
+docs/services/apifrontend/    — ADRs, SLOs, runbooks, test plans, guides
+hack/                         — Utility scripts
 ```
 
 ## Adding a New Tool
 
-1. Define the tool in `internal/tools/`:
+1. Define the tool in `pkg/apifrontend/tools/`:
    ```go
    func NewMyTool(deps MyToolDeps) *genai.Tool {
        return &genai.Tool{
@@ -85,7 +85,7 @@ tests/performance/        — k6 performance test scripts
    }
    ```
 
-2. Register it in `internal/agent/root.go`:
+2. Register it in `pkg/apifrontend/agent/root.go`:
    ```go
    tools = append(tools, toolspkg.NewMyTool(deps))
    ```
@@ -97,26 +97,27 @@ tests/performance/        — k6 performance test scripts
      - af_my_tool
    ```
 
-4. Write tests in `internal/tools/my_tool_test.go`
+4. Write tests in `pkg/apifrontend/tools/my_tool_test.go`
 
-5. Update the Agent Card skills in `internal/handler/agentcard.go`
+5. Update the Agent Card skills in `pkg/apifrontend/handler/agentcard.go`
 
 ## Local Development with Kind
 
 Deploy the API Frontend in a local Kubernetes cluster using [Kind](https://kind.sigs.k8s.io/):
 
 ```bash
-# 1. Create the Kind cluster
-make kind-create
+# 1. Create the Kind cluster with the AF dev config
+kind create cluster --config deploy/apifrontend/overlays/dev/kind-config.yaml
 
 # 2. Generate self-signed TLS certificates and create K8s secrets
-make generate-dev-certs
+bash deploy/apifrontend/overlays/dev/generate-certs.sh
 
 # 3. Build the container image and load into Kind
-make kind-load
+docker build -f docker/apifrontend.Dockerfile -t kubernaut-apifrontend:dev .
+kind load docker-image kubernaut-apifrontend:dev
 
 # 4. Deploy using the dev overlay (Kustomize)
-make deploy-dev
+kubectl apply -k deploy/apifrontend/overlays/dev/
 
 # 5. Verify the pod is running
 kubectl get pods -n kubernaut-system
@@ -125,8 +126,8 @@ kubectl get pods -n kubernaut-system
 kubectl port-forward -n kubernaut-system svc/apifrontend 8443:8443
 
 # Tear down
-make undeploy
-make kind-delete
+kubectl delete -k deploy/apifrontend/overlays/dev/
+kind delete cluster
 ```
 
 The dev overlay provides:
@@ -141,44 +142,36 @@ TLS secrets are optional in the dev overlay — the pod will start without them 
 
 ```bash
 # All unit tests with race detection and coverage
-make test-unit
+make test-unit-apifrontend
 
 # Specific package
-go test ./internal/auth/ -v
+go test ./pkg/apifrontend/auth/ -v
 
-# Integration tests (requires cluster)
-make test-integration
+# Integration tests (requires envtest/kubebuilder binaries)
+make test-integration-apifrontend
 
-# Performance tests (dry-run, validates syntax)
-make test-perf-local
+# E2E tests (requires full Kind cluster with deps)
+make test-e2e-apifrontend
+
+# All test tiers
+make test-all-apifrontend
 ```
 
 ## Makefile Reference
 
+The Makefile uses pattern-based targets — replace `<service>` with `apifrontend`:
+
 | Target | Description |
 |--------|-------------|
-| `build` | Build binary to `bin/apifrontend` |
-| `test-unit` | Run Ginkgo unit tests with coverage |
-| `test-integration` | Run integration tests |
-| `lint` | Run golangci-lint |
-| `coverage-report` | Generate HTML coverage report |
-| `coverage-report-json` | Print per-function coverage |
-| `test-perf-local` | Dry-run k6 performance scripts |
-| `validate-maturity-ci` | Run service maturity checks |
-| `validate-openapi` | Lint OpenAPI spec |
-| `validate-kustomize` | Validate kustomize build for dev/ci overlays |
-| `kind-create` | Create a Kind cluster for development |
-| `kind-delete` | Delete the Kind cluster |
-| `kind-load` | Build and load image into Kind |
-| `generate-dev-certs` | Generate self-signed TLS certificates |
-| `deploy-dev` | Deploy to Kind using dev overlay |
-| `deploy-ci` | Deploy to Kind using CI overlay |
-| `undeploy` | Remove kustomize-managed resources |
-| `sbom` | Generate CycloneDX SBOM |
-| `image-scan` | Trivy image vulnerability scan |
-| `image-build` | Build container image |
-| `generate` | Run controller-gen for CRD types |
-| `verify-generate` | Verify generated code is up to date |
+| `build-apifrontend` | Build binary to `bin/apifrontend` |
+| `test-unit-apifrontend` | Run Ginkgo unit tests with coverage |
+| `test-integration-apifrontend` | Run integration tests (envtest) |
+| `test-e2e-apifrontend` | Run E2E tests (Kind cluster) |
+| `test-all-apifrontend` | Run all test tiers |
+| `lint` | Run golangci-lint (monorepo-wide) |
+| `manifests` | Generate CRDs, RBAC, webhook configs |
+| `generate` | Run controller-gen + ogen code generation |
+| `gen-diff` | Verify generated code is up-to-date (CI gate) |
 
 ## Configuration Hot-Reload
 
@@ -198,6 +191,7 @@ The service watches its ConfigMap file for changes. When changes are detected:
 - Audit events: Always emit via `audit.Emitter` interface
 - Context: Always propagate `context.Context` for cancellation
 - Testing: Ginkgo/Gomega with `UT-AF-XXX-NNN` test IDs
+- Logging: Structured `logr.Logger` (never stdlib `log` package)
 
 ## K8s Client Model (ADR-022)
 

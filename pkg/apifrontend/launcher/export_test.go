@@ -57,6 +57,11 @@ func BuildLLMHTTPClientForTest(cfg config.LLMConfig) (*http.Client, error) {
 	return buildLLMHTTPClient(cfg)
 }
 
+// EnsureTrailingParagraphBreakForTest exports ensureTrailingParagraphBreak for unit testing.
+func EnsureTrailingParagraphBreakForTest(s string) string {
+	return ensureTrailingParagraphBreak(s)
+}
+
 // SanitizeBridgeTextForTest exports sanitizeBridgeText for unit testing.
 func SanitizeBridgeTextForTest(text string) string {
 	return sanitizeBridgeText(text)

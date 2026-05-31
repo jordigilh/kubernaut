@@ -108,6 +108,28 @@ func (p *KASessionPool) Acquire(ctx context.Context, rrID, username string) (Poo
 	return session, nil
 }
 
+// Inject places an externally-created session into the pool under the given
+// key. If a session already exists for the key, the old one is closed and
+// replaced. Used to hand off the investigation MCP session so that subsequent
+// tool calls (discover_workflows, select_workflow) reuse the same connection
+// and driver lease without requiring a separate takeover.
+func (p *KASessionPool) Inject(rrID, username string, session PoolSession) {
+	key := poolKey{rrID: rrID, username: username}
+
+	p.mu.Lock()
+	old, exists := p.entries[key]
+	p.entries[key] = &poolEntry{
+		session:  session,
+		lastUsed: time.Now(),
+	}
+	p.mu.Unlock()
+
+	if exists && old.session != nil {
+		_ = old.session.Close()
+	}
+	p.logger.Info("session injected into pool", "rr_id", rrID, "username", username)
+}
+
 // Release closes and removes the session for the given (rrID, username).
 func (p *KASessionPool) Release(rrID, username string) {
 	key := poolKey{rrID: rrID, username: username}

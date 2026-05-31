@@ -93,7 +93,7 @@ graph LR
 
     subgraph Non-PII Flow
         direction TB
-        ToolArgs[Tool Arguments<br/>namespace, name, kind]
+        ToolArgs[Tool Arguments<br/>kind, name, description<br/>namespace: AF-resolved]
         CRD[CRD Operations<br/>spec, status]
         KACall[KA REST<br/>correlation IDs]
         DSCall[DS REST<br/>event queries]

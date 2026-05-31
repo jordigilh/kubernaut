@@ -158,6 +158,10 @@ var _ = Describe("af_list_events", func() {
 })
 
 func newUnstructuredEvent(ns, name, reason, message, involvedKind, involvedName string) *unstructured.Unstructured {
+	return newUnstructuredEventWithType(ns, name, reason, message, involvedKind, involvedName, "Normal")
+}
+
+func newUnstructuredEventWithType(ns, name, reason, message, involvedKind, involvedName, eventType string) *unstructured.Unstructured {
 	return &unstructured.Unstructured{
 		Object: map[string]interface{}{
 			"apiVersion": "v1",
@@ -168,6 +172,7 @@ func newUnstructuredEvent(ns, name, reason, message, involvedKind, involvedName 
 			},
 			"reason":  reason,
 			"message": message,
+			"type":    eventType,
 			"involvedObject": map[string]interface{}{
 				"kind": involvedKind,
 				"name": involvedName,
@@ -177,3 +182,142 @@ func newUnstructuredEvent(ns, name, reason, message, involvedKind, involvedName 
 		},
 	}
 }
+
+var _ = Describe("EventSummary.Type (#1282 F-EVT)", func() {
+	It("UT-AF-1282-EVT-001: EventSummary includes Type field from K8s event", func() {
+		ev := newUnstructuredEventWithType("prod", "ev-1", "OOMKilling", "killed", "Pod", "worker-1", "Warning")
+		scheme := runtime.NewScheme()
+		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme,
+			map[schema.GroupVersionResource]string{eventsGVRTest: "EventList"}, ev)
+
+		result, err := tools.HandleListEvents(context.Background(), client, tools.ListEventsArgs{Namespace: "prod"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Events).To(HaveLen(1))
+		Expect(result.Events[0].Type).To(Equal("Warning"))
+	})
+
+	It("UT-AF-1282-EVT-002: missing type defaults to empty string", func() {
+		ev := newUnstructuredEvent("prod", "ev-1", "Pulled", "pulled image", "Pod", "worker-1")
+		delete(ev.Object, "type")
+		scheme := runtime.NewScheme()
+		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme,
+			map[schema.GroupVersionResource]string{eventsGVRTest: "EventList"}, ev)
+
+		result, err := tools.HandleListEvents(context.Background(), client, tools.ListEventsArgs{Namespace: "prod"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Events[0].Type).To(BeEmpty())
+	})
+})
+
+var _ = Describe("DominantEventReason (#1282 F-SIG)", func() {
+	It("UT-AF-1282-SIG-001: OOMKilling dominates BackOff", func() {
+		events := []tools.EventSummary{
+			{Reason: "BackOff", Type: "Warning", Count: 5},
+			{Reason: "OOMKilling", Type: "Warning", Count: 1},
+		}
+		Expect(tools.DominantEventReason(events)).To(Equal("OOMKilling"))
+	})
+
+	It("UT-AF-1282-SIG-002: FailedScheduling dominates Pulled", func() {
+		events := []tools.EventSummary{
+			{Reason: "Pulled", Type: "Normal", Count: 3},
+			{Reason: "FailedScheduling", Type: "Warning", Count: 1},
+		}
+		Expect(tools.DominantEventReason(events)).To(Equal("FailedScheduling"))
+	})
+
+	It("UT-AF-1282-SIG-003: highest-count Warning wins among same-priority", func() {
+		events := []tools.EventSummary{
+			{Reason: "BackOff", Type: "Warning", Count: 10},
+			{Reason: "Unhealthy", Type: "Warning", Count: 3},
+		}
+		Expect(tools.DominantEventReason(events)).To(Equal("BackOff"))
+	})
+
+	It("UT-AF-1282-SIG-004: empty events returns empty string", func() {
+		Expect(tools.DominantEventReason(nil)).To(BeEmpty())
+	})
+
+	It("UT-AF-1282-SIG-005: only Normal lifecycle events returns empty (not operationally significant)", func() {
+		events := []tools.EventSummary{
+			{Reason: "Pulled", Type: "Normal", Count: 1},
+			{Reason: "Created", Type: "Normal", Count: 5},
+		}
+		Expect(tools.DominantEventReason(events)).To(BeEmpty())
+	})
+
+	It("UT-AF-1282-SIG-006: ScalingReplicaSet-only returns empty (FP E2E canary)", func() {
+		events := []tools.EventSummary{
+			{Reason: "ScalingReplicaSet", Type: "Normal", Count: 3},
+			{Reason: "Scheduled", Type: "Normal", Count: 2},
+			{Reason: "Pulling", Type: "Normal", Count: 1},
+		}
+		Expect(tools.DominantEventReason(events)).To(BeEmpty())
+	})
+
+	It("UT-AF-1282-SIG-007: 3-way priority: OOMKilling > BackOff > FailedScheduling count-ignored", func() {
+		events := []tools.EventSummary{
+			{Reason: "FailedScheduling", Type: "Warning", Count: 100},
+			{Reason: "BackOff", Type: "Warning", Count: 50},
+			{Reason: "OOMKilling", Type: "Warning", Count: 1},
+		}
+		Expect(tools.DominantEventReason(events)).To(Equal("OOMKilling"))
+	})
+
+	It("UT-AF-1282-SIG-008: Normal events filtered by Warning with lower count", func() {
+		events := []tools.EventSummary{
+			{Reason: "Pulled", Type: "Normal", Count: 100},
+			{Reason: "BackOff", Type: "Warning", Count: 2},
+		}
+		Expect(tools.DominantEventReason(events)).To(Equal("BackOff"))
+	})
+})
+
+var _ = Describe("FilterRelatedPodEvents (#1282 F-SIG)", func() {
+	It("UT-AF-1282-SIG-016: filters pods by owner name prefix", func() {
+		events := []tools.EventSummary{
+			{Reason: "BackOff", InvolvedName: "web-abc123-xyz", InvolvedKind: "Pod", Type: "Warning", Count: 3},
+			{Reason: "OOMKilling", InvolvedName: "database-def456", InvolvedKind: "Pod", Type: "Warning", Count: 1},
+			{Reason: "Pulled", InvolvedName: "web-abc123-xyz", InvolvedKind: "Pod", Type: "Normal", Count: 1},
+		}
+		filtered := tools.FilterRelatedPodEvents(events, "web")
+		Expect(filtered).To(HaveLen(2))
+		for _, ev := range filtered {
+			Expect(ev.InvolvedName).To(HavePrefix("web-"))
+		}
+	})
+
+	It("UT-AF-1282-SIG-017: returns empty when no pods match", func() {
+		events := []tools.EventSummary{
+			{Reason: "BackOff", InvolvedName: "database-abc", InvolvedKind: "Pod", Type: "Warning", Count: 1},
+		}
+		filtered := tools.FilterRelatedPodEvents(events, "web")
+		Expect(filtered).To(BeEmpty())
+	})
+
+	It("UT-AF-1282-SIG-018: exact name match without dash suffix is excluded", func() {
+		events := []tools.EventSummary{
+			{Reason: "BackOff", InvolvedName: "web", InvolvedKind: "Pod", Type: "Warning", Count: 1},
+		}
+		filtered := tools.FilterRelatedPodEvents(events, "web")
+		Expect(filtered).To(BeEmpty(),
+			"exact match 'web' should not match prefix 'web-' (pods always have hash suffix)")
+	})
+})
+
+var _ = Describe("EventSummary mixed types (#1282 F-EVT)", func() {
+	It("UT-AF-1282-EVT-003: mixed Warning/Normal events all have Type populated", func() {
+		evWarn := newUnstructuredEventWithType("prod", "ev-w", "OOMKilling", "killed", "Pod", "p1", "Warning")
+		evNorm := newUnstructuredEventWithType("prod", "ev-n", "Pulled", "pulled", "Pod", "p1", "Normal")
+		scheme := runtime.NewScheme()
+		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme,
+			map[schema.GroupVersionResource]string{eventsGVRTest: "EventList"}, evWarn, evNorm)
+
+		result, err := tools.HandleListEvents(context.Background(), client, tools.ListEventsArgs{Namespace: "prod"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Events).To(HaveLen(2))
+		for _, ev := range result.Events {
+			Expect(ev.Type).NotTo(BeEmpty(), "event %q should have Type set", ev.Reason)
+		}
+	})
+})

@@ -1,5 +1,10 @@
 # Test Plan: A2A Progressive Status Updates and 4-Phase Interactive Remediation Journey
 
+> **Partially superseded by [#1282](https://github.com/jordigilh/kubernaut/issues/1282):**
+> `af_create_rr` FunctionCall status and FunctionResponse summary contracts updated.
+> `summarizeCreateRR` now produces human-friendly text (not raw JSON). LLM args reduced
+> to `{kind, name, description}`. See `docs/tests/1282/TEST_PLAN.md` and `UT-AF-1282-OUT-*`.
+
 > **Template Version**: 2.0 — Hybrid IEEE 829-2008 + Kubernaut
 >
 > Based on IEEE 829-2008 (Standard for Software and System Test Documentation) with

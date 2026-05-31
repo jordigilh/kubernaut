@@ -38,7 +38,7 @@ SERVICES := $(filter-out README.md must-gather, $(notdir $(wildcard cmd/*)))
 TEST_PROCS ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 TEST_TIMEOUT_UNIT ?= 5m
 TEST_TIMEOUT_INTEGRATION ?= 15m
-TEST_TIMEOUT_E2E ?= 30m
+TEST_TIMEOUT_E2E ?= 18m
 
 # Race detector: enabled by default for unit and integration tests (#83 100go.co).
 # E2E targets test against a deployed binary so --race is not applicable.
@@ -826,8 +826,8 @@ CONTROLLER_TOOLS_VERSION ?= v0.19.0
 OGEN_VERSION ?= v1.20.1
 ENVTEST_VERSION ?= $(shell go list -m -f "{{ .Version }}" sigs.k8s.io/controller-runtime | awk -F'[v.]' '{printf "release-%d.%d", $$2, $$3}')
 ENVTEST_K8S_VERSION ?= $(shell go list -m -f "{{ .Version }}" k8s.io/api | awk -F'[v.]' '{printf "1.%d", $$3}')
-GOLANGCI_LINT_VERSION ?= v2.1.0
-GINKGO_VERSION ?= v2.28.1
+GOLANGCI_LINT_VERSION ?= v2.9.0
+GINKGO_VERSION ?= v2.29.0
 CRD_REF_DOCS_VERSION ?= v0.3.0
 
 .PHONY: kustomize

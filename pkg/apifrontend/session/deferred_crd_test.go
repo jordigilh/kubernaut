@@ -6,9 +6,15 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	adksession "google.golang.org/adk/session"
 
@@ -174,7 +180,7 @@ var _ = Describe("Deferred CRD Creation (G6)", func() {
 			err = k8s.Get(ctx, types.NamespacedName{Name: "mat-002", Namespace: "test-ns"}, &crd)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(crd.Labels[session.LabelRRName]).To(Equal("rr-xyz"))
-			Expect(crd.Labels[session.LabelPhase]).To(Equal(string(v1alpha1.SessionPhaseActive)))
+			Expect(crd.Labels).NotTo(HaveKey(session.LabelPhase))
 			Expect(crd.Labels[session.LabelManagedBy]).To(Equal("kubernaut-apifrontend"))
 		})
 
@@ -377,6 +383,7 @@ var _ = Describe("Deferred CRD Creation (G6)", func() {
 				Namespace: "prod", Name: "rr-disc-001",
 			})
 			Expect(err).NotTo(HaveOccurred())
+			Expect(setSessionCRDPhase(ctx, k8s, "test-ns", "disc-001", v1alpha1.SessionPhaseActive)).To(Succeed())
 
 			err = svc.UpdatePhase(ctx, "disc-001", v1alpha1.SessionPhaseDisconnected, "SSE connection closed", "")
 			Expect(err).NotTo(HaveOccurred())
@@ -407,6 +414,7 @@ var _ = Describe("Deferred CRD Creation (G6)", func() {
 				Namespace: "prod", Name: "rr-ttl-001",
 			})
 			Expect(err).NotTo(HaveOccurred())
+			Expect(setSessionCRDPhase(ctx, k8s, "test-ns", "ttl-001", v1alpha1.SessionPhaseActive)).To(Succeed())
 
 			err = svc.UpdatePhase(ctx, "ttl-001", v1alpha1.SessionPhaseDisconnected, "heartbeat stale", "system")
 			Expect(err).NotTo(HaveOccurred())
@@ -435,6 +443,7 @@ var _ = Describe("Deferred CRD Creation (G6)", func() {
 				Namespace: "prod", Name: "rr-ttl-002",
 			})
 			Expect(err).NotTo(HaveOccurred())
+			Expect(setSessionCRDPhase(ctx, k8s, "test-ns", "ttl-002", v1alpha1.SessionPhaseActive)).To(Succeed())
 
 			err = svc.UpdatePhase(ctx, "ttl-002", v1alpha1.SessionPhaseDisconnected, "SSE dropped", "")
 			Expect(err).NotTo(HaveOccurred())
@@ -449,3 +458,542 @@ var _ = Describe("Deferred CRD Creation (G6)", func() {
 	})
 })
 
+var _ = Describe("InitializeSessionByRR (takeover IS CRD creation)", func() {
+	var (
+		ctx    context.Context
+		scheme = newScheme()
+	)
+
+	newIndexedFakeClient := func() client.Client {
+		return fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithStatusSubresource(&v1alpha1.InvestigationSession{}).
+			WithIndex(&v1alpha1.InvestigationSession{}, session.FieldIndexRRName,
+				func(obj client.Object) []string {
+					is := obj.(*v1alpha1.InvestigationSession)
+					if is.Spec.RemediationRequestRef.Name == "" {
+						return nil
+					}
+					return []string{is.Spec.RemediationRequestRef.Name}
+				}).
+			Build()
+	}
+
+	BeforeEach(func() {
+		ctx = context.Background()
+	})
+
+	It("UT-AF-1293-INIT-001: creates IS CRD with takeover JoinMode and A2ATaskID (phase owned by AA)", func() {
+		k8s := newIndexedFakeClient()
+		svc := session.NewCRDSessionService(adksession.InMemoryService(), k8s, scheme, "test-ns")
+
+		err := svc.InitializeSessionByRR(ctx, "prod", "rr-oom-001", "ka-sess-001", "sre-alice", []string{"sre-team"})
+		Expect(err).NotTo(HaveOccurred())
+
+		var is v1alpha1.InvestigationSession
+		Expect(k8s.Get(ctx, types.NamespacedName{Namespace: "test-ns", Name: "ka-sess-001"}, &is)).To(Succeed())
+		Expect(is.Spec.RemediationRequestRef.Namespace).To(Equal("prod"))
+		Expect(is.Spec.RemediationRequestRef.Name).To(Equal("rr-oom-001"))
+		Expect(is.Spec.A2ATaskID).To(Equal("ka-sess-001"))
+		Expect(is.Spec.UserIdentity.Username).To(Equal("sre-alice"))
+		Expect(is.Spec.UserIdentity.Groups).To(ConsistOf("sre-team"))
+	Expect(is.Spec.JoinMode).To(Equal(v1alpha1.SessionJoinModeTakeover))
+	Expect(is.Status.Phase).To(Equal(v1alpha1.SessionPhaseActive))
+	Expect(is.Labels).NotTo(HaveKey(session.LabelPhase))
+		Expect(is.Labels[session.LabelUser]).To(Equal("sre-alice"))
+		Expect(is.Labels[session.LabelRRName]).To(Equal("rr-oom-001"))
+	})
+
+	It("UT-AF-1293-INIT-002: idempotent when same user already has active session", func() {
+		k8s := newIndexedFakeClient()
+		svc := session.NewCRDSessionService(adksession.InMemoryService(), k8s, scheme, "test-ns")
+
+		err := svc.InitializeSessionByRR(ctx, "prod", "rr-oom-002", "ka-sess-002", "sre-bob", nil)
+		Expect(err).NotTo(HaveOccurred())
+
+		err = svc.InitializeSessionByRR(ctx, "prod", "rr-oom-002", "ka-sess-002b", "sre-bob", nil)
+		Expect(err).NotTo(HaveOccurred())
+
+		var list v1alpha1.InvestigationSessionList
+		Expect(k8s.List(ctx, &list, client.InNamespace("test-ns"))).To(Succeed())
+		activeCount := 0
+		for _, is := range list.Items {
+			if is.Spec.RemediationRequestRef.Name == "rr-oom-002" {
+				activeCount++
+			}
+		}
+		Expect(activeCount).To(Equal(1), "idempotent call should not create duplicate CRD")
+	})
+
+	It("UT-AF-1293-INIT-003: rejects when different user holds active session (single-driver)", func() {
+		k8s := newIndexedFakeClient()
+		svc := session.NewCRDSessionService(adksession.InMemoryService(), k8s, scheme, "test-ns")
+
+		err := svc.InitializeSessionByRR(ctx, "prod", "rr-oom-003", "ka-sess-003", "sre-carol", nil)
+		Expect(err).NotTo(HaveOccurred())
+
+		err = svc.InitializeSessionByRR(ctx, "prod", "rr-oom-003", "ka-sess-003b", "sre-dave", nil)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("session_active"))
+		Expect(err.Error()).NotTo(ContainSubstring("sre-carol"), "should not leak holder username (SI-11)")
+	})
+
+	It("UT-AF-1293-INIT-004: rejects empty kaSessionID", func() {
+		k8s := newIndexedFakeClient()
+		svc := session.NewCRDSessionService(adksession.InMemoryService(), k8s, scheme, "test-ns")
+
+		err := svc.InitializeSessionByRR(ctx, "prod", "rr-oom-004", "", "sre-alice", nil)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("kaSessionID is required"))
+	})
+
+	It("UT-AF-1293-INIT-005: invalid CRD name falls back to generated name", func() {
+		k8s := newIndexedFakeClient()
+		svc := session.NewCRDSessionService(adksession.InMemoryService(), k8s, scheme, "test-ns")
+
+		err := svc.InitializeSessionByRR(ctx, "prod", "rr-oom-005", "INVALID_UPPER_CASE!", "sre-alice", nil)
+		Expect(err).NotTo(HaveOccurred())
+
+		var list v1alpha1.InvestigationSessionList
+		Expect(k8s.List(ctx, &list, client.InNamespace("test-ns"))).To(Succeed())
+		Expect(list.Items).To(HaveLen(1))
+		Expect(list.Items[0].Name).To(HavePrefix("isess-"))
+	})
+
+	It("UT-AF-1293-INIT-006: emits EventSessionCreated audit event", func() {
+		k8s := newIndexedFakeClient()
+		recorder := &recordingEmitter{}
+		svc := session.NewCRDSessionService(adksession.InMemoryService(), k8s, scheme, "test-ns",
+			session.WithAuditor(recorder),
+		)
+
+		err := svc.InitializeSessionByRR(ctx, "prod", "rr-oom-006", "ka-sess-006", "sre-alice", nil)
+		Expect(err).NotTo(HaveOccurred())
+
+		var found bool
+		for _, e := range recorder.events() {
+			if e.Type == audit.EventSessionCreated {
+				found = true
+				Expect(e.UserID).To(Equal("sre-alice"))
+				Expect(e.Detail["join_mode"]).To(Equal("takeover"))
+				Expect(e.Detail["session_id"]).To(Equal("ka-sess-006"))
+				Expect(e.Detail["rr_ref"]).To(Equal("prod/rr-oom-006"))
+			}
+		}
+		Expect(found).To(BeTrue(), "expected EventSessionCreated audit event")
+	})
+
+	It("UT-AF-1300-001: sets OwnerReference to RR when RR is in same namespace", func() {
+		rr := &unstructured.Unstructured{}
+		rr.SetGroupVersionKind(schema.GroupVersionKind{
+			Group: "kubernaut.ai", Version: "v1alpha1", Kind: "RemediationRequest",
+		})
+		rr.SetNamespace("test-ns")
+		rr.SetName("rr-owned-001")
+		rr.SetUID("uid-rr-owned-001")
+
+		k8s := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithStatusSubresource(&v1alpha1.InvestigationSession{}).
+			WithIndex(&v1alpha1.InvestigationSession{}, session.FieldIndexRRName,
+				func(obj client.Object) []string {
+					is := obj.(*v1alpha1.InvestigationSession)
+					if is.Spec.RemediationRequestRef.Name == "" {
+						return nil
+					}
+					return []string{is.Spec.RemediationRequestRef.Name}
+				}).
+			WithObjects(rr).
+			Build()
+
+		svc := session.NewCRDSessionService(adksession.InMemoryService(), k8s, scheme, "test-ns")
+
+		err := svc.InitializeSessionByRR(ctx, "test-ns", "rr-owned-001", "ka-sess-own-001", "sre-alice", nil)
+		Expect(err).NotTo(HaveOccurred())
+
+		var is v1alpha1.InvestigationSession
+		Expect(k8s.Get(ctx, types.NamespacedName{Namespace: "test-ns", Name: "ka-sess-own-001"}, &is)).To(Succeed())
+		Expect(is.OwnerReferences).To(HaveLen(1),
+			"IS CRD must have an OwnerReference to the RR for cascade deletion (#1300)")
+		Expect(is.OwnerReferences[0].Kind).To(Equal("RemediationRequest"))
+		Expect(is.OwnerReferences[0].Name).To(Equal("rr-owned-001"))
+		Expect(is.OwnerReferences[0].UID).To(Equal(types.UID("uid-rr-owned-001")))
+	})
+
+	It("UT-AF-1300-002: skips OwnerReference when RR is in different namespace (cross-NS not allowed)", func() {
+		k8s := newIndexedFakeClient()
+		svc := session.NewCRDSessionService(adksession.InMemoryService(), k8s, scheme, "test-ns")
+
+		err := svc.InitializeSessionByRR(ctx, "other-ns", "rr-cross-001", "ka-sess-cross-001", "sre-alice", nil)
+		Expect(err).NotTo(HaveOccurred())
+
+		var is v1alpha1.InvestigationSession
+		Expect(k8s.Get(ctx, types.NamespacedName{Namespace: "test-ns", Name: "ka-sess-cross-001"}, &is)).To(Succeed())
+		Expect(is.OwnerReferences).To(BeEmpty(),
+			"cross-namespace OwnerReferences are not allowed in K8s — IS must be created without one")
+	})
+
+	It("UT-AF-1300-003: IS created successfully even when RR lookup fails", func() {
+		k8s := newIndexedFakeClient()
+		svc := session.NewCRDSessionService(adksession.InMemoryService(), k8s, scheme, "test-ns")
+
+		err := svc.InitializeSessionByRR(ctx, "test-ns", "rr-nonexistent", "ka-sess-noref-001", "sre-alice", nil)
+		Expect(err).NotTo(HaveOccurred())
+
+		var is v1alpha1.InvestigationSession
+		Expect(k8s.Get(ctx, types.NamespacedName{Namespace: "test-ns", Name: "ka-sess-noref-001"}, &is)).To(Succeed())
+		Expect(is.OwnerReferences).To(BeEmpty(),
+			"when RR cannot be fetched, IS is still created without OwnerReference")
+	})
+
+	It("UT-AF-1293-INIT-007: increments sessionsActive gauge on successful creation (FedRAMP SI-4)", func() {
+		k8s := newIndexedFakeClient()
+		gauge := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "af_sessions_active_init_test",
+		}, []string{"phase"})
+		svc := session.NewCRDSessionService(adksession.InMemoryService(), k8s, scheme, "test-ns",
+			session.WithSessionsActive(gauge),
+		)
+
+		err := svc.InitializeSessionByRR(ctx, "prod", "rr-oom-007", "ka-sess-007", "sre-alice", nil)
+		Expect(err).NotTo(HaveOccurred())
+
+		metric := &dto.Metric{}
+		Expect(gauge.WithLabelValues("Active").Write(metric)).To(Succeed())
+		Expect(metric.GetGauge().GetValue()).To(Equal(float64(1)),
+			"sessionsActive gauge must be incremented after InitializeSessionByRR with Active phase")
+	})
+})
+
+var _ = Describe("CreateInvestigationSession (#1332 — IS CRD-driven takeover)", func() {
+	var (
+		ctx    context.Context
+		scheme = newScheme()
+	)
+
+	newIndexedFakeClient := func(objs ...client.Object) client.Client {
+		return fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithStatusSubresource(&v1alpha1.InvestigationSession{}).
+			WithIndex(&v1alpha1.InvestigationSession{}, session.FieldIndexRRName,
+				func(obj client.Object) []string {
+					is := obj.(*v1alpha1.InvestigationSession)
+					if is.Spec.RemediationRequestRef.Name == "" {
+						return nil
+					}
+					return []string{is.Spec.RemediationRequestRef.Name}
+				}).
+			WithObjects(objs...).
+			Build()
+	}
+
+	BeforeEach(func() {
+		ctx = context.Background()
+	})
+
+	It("UT-AF-1332-050: creates IS CRD with is-{rr.Name} naming and takeover JoinMode", func() {
+		k8s := newIndexedFakeClient()
+		svc := session.NewCRDSessionService(adksession.InMemoryService(), k8s, scheme, "test-ns")
+
+		crdName, err := svc.CreateInvestigationSession(ctx, session.CreateISConfig{
+			RRNamespace: "prod",
+			RRName:      "rr-b157a3a9e42f-1c2b5576",
+			TaskID:      "task-a2a-001",
+			Username:    "sre-alice",
+			Groups:      []string{"sre-team"},
+			JoinMode:    v1alpha1.SessionJoinModeTakeover,
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(crdName).To(Equal("is-rr-b157a3a9e42f-1c2b5576"))
+
+		var is v1alpha1.InvestigationSession
+		Expect(k8s.Get(ctx, types.NamespacedName{Namespace: "test-ns", Name: crdName}, &is)).To(Succeed())
+		Expect(is.Spec.RemediationRequestRef.Namespace).To(Equal("prod"))
+		Expect(is.Spec.RemediationRequestRef.Name).To(Equal("rr-b157a3a9e42f-1c2b5576"))
+		Expect(is.Spec.A2ATaskID).To(Equal("task-a2a-001"))
+		Expect(is.Spec.UserIdentity.Username).To(Equal("sre-alice"))
+		Expect(is.Spec.UserIdentity.Groups).To(ConsistOf("sre-team"))
+		Expect(is.Spec.JoinMode).To(Equal(v1alpha1.SessionJoinModeTakeover))
+		Expect(is.Status.Phase).To(BeEmpty(), "phase must be empty — AA sets Active")
+		Expect(is.Labels[session.LabelRRName]).To(Equal("rr-b157a3a9e42f-1c2b5576"))
+		Expect(is.Labels[session.LabelUser]).To(Equal("sre-alice"))
+		Expect(is.Labels[session.LabelManagedBy]).To(Equal("kubernaut-apifrontend"))
+	})
+
+	It("UT-AF-1332-051: creates IS CRD with start JoinMode for fresh interactive", func() {
+		k8s := newIndexedFakeClient()
+		svc := session.NewCRDSessionService(adksession.InMemoryService(), k8s, scheme, "test-ns")
+
+		crdName, err := svc.CreateInvestigationSession(ctx, session.CreateISConfig{
+			RRNamespace: "prod",
+			RRName:      "rr-fresh-001",
+			TaskID:      "task-fresh-001",
+			Username:    "sre-bob",
+			JoinMode:    v1alpha1.SessionJoinModeStart,
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(crdName).To(Equal("is-rr-fresh-001"))
+
+		var is v1alpha1.InvestigationSession
+		Expect(k8s.Get(ctx, types.NamespacedName{Namespace: "test-ns", Name: crdName}, &is)).To(Succeed())
+		Expect(is.Spec.JoinMode).To(Equal(v1alpha1.SessionJoinModeStart))
+	})
+
+	It("UT-AF-1332-052: idempotent — same user with active IS returns existing name", func() {
+		k8s := newIndexedFakeClient()
+		svc := session.NewCRDSessionService(adksession.InMemoryService(), k8s, scheme, "test-ns")
+
+		cfg := session.CreateISConfig{
+			RRNamespace: "prod",
+			RRName:      "rr-idem-001",
+			TaskID:      "task-idem-001",
+			Username:    "sre-alice",
+			JoinMode:    v1alpha1.SessionJoinModeTakeover,
+		}
+		name1, err := svc.CreateInvestigationSession(ctx, cfg)
+		Expect(err).NotTo(HaveOccurred())
+
+		cfg.TaskID = "task-idem-002"
+		name2, err := svc.CreateInvestigationSession(ctx, cfg)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(name2).To(Equal(name1), "idempotent call must return same CRD name")
+
+		var list v1alpha1.InvestigationSessionList
+		Expect(k8s.List(ctx, &list, client.InNamespace("test-ns"))).To(Succeed())
+		Expect(list.Items).To(HaveLen(1), "should not create duplicate")
+	})
+
+	It("UT-AF-1332-053: rejects different user with active IS (single-driver guard)", func() {
+		k8s := newIndexedFakeClient()
+		svc := session.NewCRDSessionService(adksession.InMemoryService(), k8s, scheme, "test-ns")
+
+		_, err := svc.CreateInvestigationSession(ctx, session.CreateISConfig{
+			RRNamespace: "prod",
+			RRName:      "rr-guard-001",
+			TaskID:      "task-guard-001",
+			Username:    "sre-alice",
+			JoinMode:    v1alpha1.SessionJoinModeTakeover,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		_, err = svc.CreateInvestigationSession(ctx, session.CreateISConfig{
+			RRNamespace: "prod",
+			RRName:      "rr-guard-001",
+			TaskID:      "task-guard-002",
+			Username:    "sre-bob",
+			JoinMode:    v1alpha1.SessionJoinModeTakeover,
+		})
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("session_active"))
+	})
+
+	It("UT-AF-1332-054: deletes terminal IS and recreates for same RR", func() {
+		terminalIS := &v1alpha1.InvestigationSession{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "is-rr-terminal-001",
+				Namespace: "test-ns",
+			},
+			Spec: v1alpha1.InvestigationSessionSpec{
+				RemediationRequestRef: v1alpha1.ObjectRef{Namespace: "prod", Name: "rr-terminal-001"},
+				A2ATaskID:             "old-task",
+				UserIdentity:          v1alpha1.SessionUser{Username: "old-user"},
+				JoinMode:              v1alpha1.SessionJoinModeStart,
+			},
+			Status: v1alpha1.InvestigationSessionStatus{
+				Phase: v1alpha1.SessionPhaseCompleted,
+			},
+		}
+		k8s := newIndexedFakeClient(terminalIS)
+		svc := session.NewCRDSessionService(adksession.InMemoryService(), k8s, scheme, "test-ns")
+
+		crdName, err := svc.CreateInvestigationSession(ctx, session.CreateISConfig{
+			RRNamespace: "prod",
+			RRName:      "rr-terminal-001",
+			TaskID:      "task-new-001",
+			Username:    "sre-alice",
+			JoinMode:    v1alpha1.SessionJoinModeTakeover,
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(crdName).To(Equal("is-rr-terminal-001"))
+
+		var is v1alpha1.InvestigationSession
+		Expect(k8s.Get(ctx, types.NamespacedName{Namespace: "test-ns", Name: crdName}, &is)).To(Succeed())
+		Expect(is.Spec.A2ATaskID).To(Equal("task-new-001"), "must be the new IS, not the old terminal one")
+		Expect(is.Spec.UserIdentity.Username).To(Equal("sre-alice"))
+		Expect(is.Status.Phase).To(BeEmpty(), "new IS has no phase")
+	})
+
+	It("UT-AF-1332-055: rejects empty RRName", func() {
+		k8s := newIndexedFakeClient()
+		svc := session.NewCRDSessionService(adksession.InMemoryService(), k8s, scheme, "test-ns")
+
+		_, err := svc.CreateInvestigationSession(ctx, session.CreateISConfig{
+			TaskID:   "task-001",
+			Username: "sre-alice",
+			JoinMode: v1alpha1.SessionJoinModeTakeover,
+		})
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("RRName is required"))
+	})
+
+	It("UT-AF-1332-056: rejects empty TaskID", func() {
+		k8s := newIndexedFakeClient()
+		svc := session.NewCRDSessionService(adksession.InMemoryService(), k8s, scheme, "test-ns")
+
+		_, err := svc.CreateInvestigationSession(ctx, session.CreateISConfig{
+			RRName:   "rr-no-task",
+			Username: "sre-alice",
+			JoinMode: v1alpha1.SessionJoinModeTakeover,
+		})
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("TaskID is required"))
+	})
+
+	It("UT-AF-1332-057: rejects empty Username", func() {
+		k8s := newIndexedFakeClient()
+		svc := session.NewCRDSessionService(adksession.InMemoryService(), k8s, scheme, "test-ns")
+
+		_, err := svc.CreateInvestigationSession(ctx, session.CreateISConfig{
+			RRName:   "rr-no-user",
+			TaskID:   "task-no-user",
+			JoinMode: v1alpha1.SessionJoinModeTakeover,
+		})
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("username is required"))
+	})
+
+	It("UT-AF-1332-058: emits EventSessionCreated audit event with correct details", func() {
+		k8s := newIndexedFakeClient()
+		recorder := &recordingEmitter{}
+		svc := session.NewCRDSessionService(adksession.InMemoryService(), k8s, scheme, "test-ns",
+			session.WithAuditor(recorder),
+		)
+
+		_, err := svc.CreateInvestigationSession(ctx, session.CreateISConfig{
+			RRNamespace: "prod",
+			RRName:      "rr-audit-001",
+			TaskID:      "task-audit-001",
+			Username:    "sre-alice",
+			JoinMode:    v1alpha1.SessionJoinModeTakeover,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		var found bool
+		for _, e := range recorder.events() {
+			if e.Type == audit.EventSessionCreated {
+				found = true
+				Expect(e.UserID).To(Equal("sre-alice"))
+				Expect(e.Detail["crd_name"]).To(Equal("is-rr-audit-001"))
+				Expect(e.Detail["task_id"]).To(Equal("task-audit-001"))
+				Expect(e.Detail["join_mode"]).To(Equal("takeover"))
+				Expect(e.Detail["rr_ref"]).To(Equal("prod/rr-audit-001"))
+			}
+		}
+		Expect(found).To(BeTrue(), "expected EventSessionCreated audit event")
+	})
+
+	It("UT-AF-1332-059: sets OwnerReference when RR is in same namespace", func() {
+		rr := &unstructured.Unstructured{}
+		rr.SetGroupVersionKind(schema.GroupVersionKind{
+			Group: "kubernaut.ai", Version: "v1alpha1", Kind: "RemediationRequest",
+		})
+		rr.SetNamespace("test-ns")
+		rr.SetName("rr-owned-is-001")
+		rr.SetUID("uid-rr-owned-is-001")
+
+		k8s := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithStatusSubresource(&v1alpha1.InvestigationSession{}).
+			WithIndex(&v1alpha1.InvestigationSession{}, session.FieldIndexRRName,
+				func(obj client.Object) []string {
+					is := obj.(*v1alpha1.InvestigationSession)
+					if is.Spec.RemediationRequestRef.Name == "" {
+						return nil
+					}
+					return []string{is.Spec.RemediationRequestRef.Name}
+				}).
+			WithObjects(rr).
+			Build()
+		svc := session.NewCRDSessionService(adksession.InMemoryService(), k8s, scheme, "test-ns")
+
+		crdName, err := svc.CreateInvestigationSession(ctx, session.CreateISConfig{
+			RRNamespace: "test-ns",
+			RRName:      "rr-owned-is-001",
+			TaskID:      "task-owned-001",
+			Username:    "sre-alice",
+			JoinMode:    v1alpha1.SessionJoinModeTakeover,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		var is v1alpha1.InvestigationSession
+		Expect(k8s.Get(ctx, types.NamespacedName{Namespace: "test-ns", Name: crdName}, &is)).To(Succeed())
+		Expect(is.OwnerReferences).To(HaveLen(1))
+		Expect(is.OwnerReferences[0].Kind).To(Equal("RemediationRequest"))
+		Expect(is.OwnerReferences[0].Name).To(Equal("rr-owned-is-001"))
+		Expect(is.OwnerReferences[0].UID).To(Equal(types.UID("uid-rr-owned-is-001")))
+	})
+})
+
+var _ = Describe("UpdateISCorrelation (#1332 — post-MCP KA session ID)", func() {
+	var (
+		ctx    context.Context
+		scheme = newScheme()
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+	})
+
+	It("UT-AF-1332-060: updates status.kaCorrelationID on existing IS", func() {
+		existingIS := &v1alpha1.InvestigationSession{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "is-rr-corr-001",
+				Namespace: "test-ns",
+			},
+			Spec: v1alpha1.InvestigationSessionSpec{
+				RemediationRequestRef: v1alpha1.ObjectRef{Namespace: "prod", Name: "rr-corr-001"},
+				A2ATaskID:             "task-corr-001",
+				UserIdentity:          v1alpha1.SessionUser{Username: "sre-alice"},
+				JoinMode:              v1alpha1.SessionJoinModeTakeover,
+			},
+		}
+		k8s := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithStatusSubresource(&v1alpha1.InvestigationSession{}).
+			WithObjects(existingIS).
+			Build()
+		svc := session.NewCRDSessionService(adksession.InMemoryService(), k8s, scheme, "test-ns")
+
+		err := svc.UpdateISCorrelation(ctx, "is-rr-corr-001", "ka-session-abc123")
+		Expect(err).NotTo(HaveOccurred())
+
+		var is v1alpha1.InvestigationSession
+		Expect(k8s.Get(ctx, types.NamespacedName{Namespace: "test-ns", Name: "is-rr-corr-001"}, &is)).To(Succeed())
+		Expect(is.Status.KACorrelationID).To(Equal("ka-session-abc123"))
+	})
+
+	It("UT-AF-1332-061: no-op when crdName is empty", func() {
+		k8s := fake.NewClientBuilder().WithScheme(scheme).Build()
+		svc := session.NewCRDSessionService(adksession.InMemoryService(), k8s, scheme, "test-ns")
+
+		err := svc.UpdateISCorrelation(ctx, "", "ka-session-001")
+		Expect(err).NotTo(HaveOccurred())
+	})
+
+	It("UT-AF-1332-062: no-op when kaSessionID is empty", func() {
+		k8s := fake.NewClientBuilder().WithScheme(scheme).Build()
+		svc := session.NewCRDSessionService(adksession.InMemoryService(), k8s, scheme, "test-ns")
+
+		err := svc.UpdateISCorrelation(ctx, "is-rr-some", "")
+		Expect(err).NotTo(HaveOccurred())
+	})
+
+	It("UT-AF-1332-063: returns error when IS CRD does not exist", func() {
+		k8s := fake.NewClientBuilder().WithScheme(scheme).Build()
+		svc := session.NewCRDSessionService(adksession.InMemoryService(), k8s, scheme, "test-ns")
+
+		err := svc.UpdateISCorrelation(ctx, "is-nonexistent", "ka-session-001")
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("get IS"))
+	})
+})

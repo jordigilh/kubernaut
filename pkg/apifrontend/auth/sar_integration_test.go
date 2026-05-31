@@ -306,11 +306,11 @@ var _ = Describe("SARChecker Integration", func() {
 			}),
 			Entry("Orchestrator: orchestration tools, denied audit", roleTestCase{
 				roleName: "kubernaut-tool-orchestrator", group: "ai-orchestrator",
-				allowedTool: "kubernaut_start_investigation", deniedTool: "kubernaut_get_audit_trail",
+				allowedTool: "kubernaut_investigate", deniedTool: "kubernaut_get_audit_trail",
 			}),
 			Entry("Approver: approve + read, denied create_rr", roleTestCase{
 				roleName: "kubernaut-tool-approver", group: "remediation-approver",
-				allowedTool: "kubernaut_approve", deniedTool: "af_create_rr",
+				allowedTool: "kubernaut_approve", deniedTool: "kubernaut_remediate",
 			}),
 			Entry("Viewer: list/get/watch + events, denied approve", roleTestCase{
 				roleName: "kubernaut-tool-viewer", group: "observability",
@@ -336,7 +336,7 @@ var _ = Describe("SARChecker Integration", func() {
 					ResourceNames: []string{
 						"kubernaut_list_remediations", "kubernaut_get_remediation",
 						"kubernaut_approve", "kubernaut_cancel_remediation", "kubernaut_watch",
-						"kubernaut_start_investigation", "kubernaut_poll_investigation", "kubernaut_stream_investigation",
+						"kubernaut_investigate",
 						"kubernaut_discover_workflows", "kubernaut_select_workflow", "present_decision",
 					},
 				},

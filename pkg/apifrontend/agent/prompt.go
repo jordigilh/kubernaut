@@ -3,6 +3,7 @@ package agent
 import (
 	_ "embed"
 	"fmt"
+	"os"
 	"strings"
 
 	"google.golang.org/adk/agent"
@@ -10,6 +11,27 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 )
+
+// DefaultNamespaceFile is the K8s downward API path for the pod's namespace.
+const DefaultNamespaceFile = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
+
+// ResolveNamespace determines the operational namespace using a two-tier strategy:
+// 1. Config override (if non-empty)
+// 2. K8s downward API file
+// Falls back to "default" if both are absent.
+func ResolveNamespace(configOverride, namespaceFile string) string {
+	if configOverride != "" {
+		return configOverride
+	}
+	data, err := os.ReadFile(namespaceFile) //nolint:gosec // G304: path is either DefaultNamespaceFile (constant) or config-supplied override, not user input
+	if err == nil {
+		ns := strings.TrimSpace(string(data))
+		if ns != "" {
+			return ns
+		}
+	}
+	return "default"
+}
 
 //go:embed prompt.txt
 var embeddedPrompt string
@@ -30,7 +52,7 @@ func BuildInstruction(namespace string) string {
 
 	base := defaultInstruction()
 	var sb strings.Builder
-	sb.Grow(len(base) + 512)
+	sb.Grow(len(base) + 1024)
 	sb.WriteString(base)
 	sb.WriteString("\n\n## Deployment Context\n")
 	sb.WriteString(fmt.Sprintf("- Kubernaut is deployed in the `%s` namespace\n", namespace))
@@ -38,6 +60,17 @@ func BuildInstruction(namespace string) string {
 	sb.WriteString("- Known kubernaut.ai resource types for kubectl_get/kubectl_list: ")
 	sb.WriteString("RemediationRequest, RemediationWorkflow, InvestigationSession, AIAnalysis, ")
 	sb.WriteString("SignalProcessing, EffectivenessAssessment, WorkflowExecution, ActionType, NotificationRequest\n")
+	sb.WriteString("\n## Tool Usage Rules\n")
+	sb.WriteString("- For investigation and remediation, always use kubernaut MCP tools (kubernaut_investigate, ")
+	sb.WriteString("kubernaut_remediate, kubernaut_discover_workflows, kubernaut_select_workflow, kubernaut_watch). ")
+	sb.WriteString("NEVER use kubectl tools directly for investigation or remediation actions.\n")
+	sb.WriteString("- kubectl_get, kubectl_list, and kubectl_list_events are permitted ONLY for observation (reading cluster state).\n")
+	sb.WriteString("- When calling kubernaut_remediate, provide: namespace, kind, name, description. ")
+	sb.WriteString("The namespace is the workload namespace where the target resource lives.\n")
+	sb.WriteString("  AF auto-resolves the remaining fields:\n")
+	sb.WriteString("  - severity: via the Prometheus severity triage pipeline\n")
+	sb.WriteString("  - signalName: from AlertManager alerts, rule names, or K8s events\n")
+	sb.WriteString("  - signalSource: hardcoded to a2a-agent\n")
 	return sb.String()
 }
 

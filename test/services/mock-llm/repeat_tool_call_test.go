@@ -39,19 +39,19 @@ var _ = Describe("Multi-Turn RepeatToolCall and Template Resolution (issue #1258
 		It("should parse repeat_tool_call from YAML config", func() {
 			yamlContent := `
 keyword_scenarios:
-  - name: "af_stream_investigation"
+  - name: "af_investigate_resume"
     keywords: ["stream the investigation"]
     match_last_only: true
     repeat_tool_call: true
     tool_call:
-      name: "kubernaut_stream_investigation"
+      name: "kubernaut_investigate"
       arguments:
-        session_id: "$from_tool:kubernaut_start_investigation:session_id"
-  - name: "af_start"
+        session_id: "$from_tool:kubernaut_investigate:session_id"
+  - name: "af_investigate"
     keywords: ["start investigation"]
     match_last_only: true
     tool_call:
-      name: "kubernaut_start_investigation"
+      name: "kubernaut_investigate"
 `
 			tmpFile := filepath.Join(GinkgoT().TempDir(), "overrides.yaml")
 			Expect(os.WriteFile(tmpFile, []byte(yamlContent), 0644)).To(Succeed())
@@ -70,9 +70,9 @@ keyword_scenarios:
 				Scenarios: map[string]config.ScenarioOverride{},
 				KeywordScenarios: []config.KeywordScenarioOverride{
 					{
-						Name:           "af_stream",
+						Name:           "af_investigate_resume",
 						Keywords:       []string{"stream the investigation"},
-						ToolCall:       config.ToolCallOverride{Name: "kubernaut_stream_investigation"},
+						ToolCall:       config.ToolCallOverride{Name: "kubernaut_investigate"},
 						MatchLastOnly:  true,
 						RepeatToolCall: true,
 					},
@@ -87,13 +87,13 @@ keyword_scenarios:
 			}
 			result := registry.Detect(detCtx)
 			Expect(result).NotTo(BeNil())
-			Expect(result.Scenario.Name()).To(Equal("af_stream"))
+			Expect(result.Scenario.Name()).To(Equal("af_investigate_resume"))
 
 			scenarioWithCfg, ok := result.Scenario.(scenarios.ScenarioWithConfig)
 			Expect(ok).To(BeTrue())
 			cfg := scenarioWithCfg.Config()
 			Expect(cfg.RepeatToolCall).To(BeTrue())
-			Expect(cfg.ToolCallName).To(Equal("kubernaut_stream_investigation"))
+			Expect(cfg.ToolCallName).To(Equal("kubernaut_investigate"))
 		})
 	})
 
@@ -103,9 +103,9 @@ keyword_scenarios:
 				Scenarios: map[string]config.ScenarioOverride{},
 				KeywordScenarios: []config.KeywordScenarioOverride{
 					{
-						Name:           "af_stream",
+						Name:           "af_investigate_resume",
 						Keywords:       []string{"stream the investigation"},
-						ToolCall:       config.ToolCallOverride{Name: "kubernaut_stream_investigation", Arguments: map[string]string{"session_id": "sess-abc"}},
+						ToolCall:       config.ToolCallOverride{Name: "kubernaut_investigate", Arguments: map[string]string{"session_id": "sess-abc"}},
 						MatchLastOnly:  true,
 						RepeatToolCall: true,
 					},
@@ -119,12 +119,12 @@ keyword_scenarios:
 			reqBody := response.GeminiRequest{
 				Contents: []response.GeminiContent{
 					{Role: "user", Parts: []response.GeminiPart{{Text: "start investigation"}}},
-					{Role: "model", Parts: []response.GeminiPart{{FunctionCall: &response.GeminiFunctionCall{Name: "kubernaut_start_investigation", Args: map[string]interface{}{"namespace": "default"}}}}},
-					{Role: "user", Parts: []response.GeminiPart{{FunctionResponse: &response.GeminiFunctionResp{Name: "kubernaut_start_investigation", Response: map[string]interface{}{"session_id": "sess-abc", "status": "started"}}}}},
+					{Role: "model", Parts: []response.GeminiPart{{FunctionCall: &response.GeminiFunctionCall{Name: "kubernaut_investigate", Args: map[string]interface{}{"namespace": "default"}}}}},
+					{Role: "user", Parts: []response.GeminiPart{{FunctionResponse: &response.GeminiFunctionResp{Name: "kubernaut_investigate", Response: map[string]interface{}{"session_id": "sess-abc", "status": "started"}}}}},
 					{Role: "user", Parts: []response.GeminiPart{{Text: "stream the investigation"}}},
 				},
 				Tools: []response.GeminiToolDecl{
-					{FunctionDeclarations: []response.GeminiFunctionDecl{{Name: "kubernaut_stream_investigation"}}},
+					{FunctionDeclarations: []response.GeminiFunctionDecl{{Name: "kubernaut_investigate"}}},
 				},
 			}
 
@@ -143,7 +143,7 @@ keyword_scenarios:
 			parts := gemResp.Candidates[0].Content.Parts
 			Expect(parts).To(HaveLen(1))
 			Expect(parts[0].FunctionCall).NotTo(BeNil())
-			Expect(parts[0].FunctionCall.Name).To(Equal("kubernaut_stream_investigation"))
+			Expect(parts[0].FunctionCall.Name).To(Equal("kubernaut_investigate"))
 			Expect(parts[0].FunctionCall.Args).To(HaveKeyWithValue("session_id", "sess-abc"))
 		})
 	})
@@ -154,9 +154,9 @@ keyword_scenarios:
 				Scenarios: map[string]config.ScenarioOverride{},
 				KeywordScenarios: []config.KeywordScenarioOverride{
 					{
-						Name:          "af_stream",
+						Name:          "af_investigate_resume",
 						Keywords:      []string{"stream the investigation"},
-						ToolCall:      config.ToolCallOverride{Name: "kubernaut_stream_investigation", Arguments: map[string]string{"session_id": "sess-abc"}},
+						ToolCall:      config.ToolCallOverride{Name: "kubernaut_investigate", Arguments: map[string]string{"session_id": "sess-abc"}},
 						MatchLastOnly: true,
 					},
 				},
@@ -169,12 +169,12 @@ keyword_scenarios:
 			reqBody := response.GeminiRequest{
 				Contents: []response.GeminiContent{
 					{Role: "user", Parts: []response.GeminiPart{{Text: "start investigation"}}},
-					{Role: "model", Parts: []response.GeminiPart{{FunctionCall: &response.GeminiFunctionCall{Name: "kubernaut_start_investigation", Args: map[string]interface{}{"namespace": "default"}}}}},
-					{Role: "user", Parts: []response.GeminiPart{{FunctionResponse: &response.GeminiFunctionResp{Name: "kubernaut_start_investigation", Response: map[string]interface{}{"session_id": "sess-abc"}}}}},
+					{Role: "model", Parts: []response.GeminiPart{{FunctionCall: &response.GeminiFunctionCall{Name: "kubernaut_investigate", Args: map[string]interface{}{"namespace": "default"}}}}},
+					{Role: "user", Parts: []response.GeminiPart{{FunctionResponse: &response.GeminiFunctionResp{Name: "kubernaut_investigate", Response: map[string]interface{}{"session_id": "sess-abc"}}}}},
 					{Role: "user", Parts: []response.GeminiPart{{Text: "stream the investigation"}}},
 				},
 				Tools: []response.GeminiToolDecl{
-					{FunctionDeclarations: []response.GeminiFunctionDecl{{Name: "kubernaut_stream_investigation"}}},
+					{FunctionDeclarations: []response.GeminiFunctionDecl{{Name: "kubernaut_investigate"}}},
 				},
 			}
 
@@ -203,9 +203,9 @@ keyword_scenarios:
 				Scenarios: map[string]config.ScenarioOverride{},
 				KeywordScenarios: []config.KeywordScenarioOverride{
 					{
-						Name:           "af_stream",
+						Name:           "af_investigate_resume",
 						Keywords:       []string{"stream the investigation"},
-						ToolCall:       config.ToolCallOverride{Name: "kubernaut_stream_investigation", Arguments: map[string]string{"session_id": "sess-abc"}},
+						ToolCall:       config.ToolCallOverride{Name: "kubernaut_investigate", Arguments: map[string]string{"session_id": "sess-abc"}},
 						MatchLastOnly:  true,
 						RepeatToolCall: true,
 					},
@@ -221,11 +221,11 @@ keyword_scenarios:
 				Model: "gpt-4",
 				Messages: []openai.Message{
 					{Role: "user", Content: content("start investigation")},
-					{Role: "assistant", ToolCalls: []openai.ToolCall{{ID: "call_1", Type: "function", Function: openai.FunctionCall{Name: "kubernaut_start_investigation", Arguments: `{"namespace":"default"}`}}}},
+					{Role: "assistant", ToolCalls: []openai.ToolCall{{ID: "call_1", Type: "function", Function: openai.FunctionCall{Name: "kubernaut_investigate", Arguments: `{"namespace":"default"}`}}}},
 					{Role: "tool", Content: content(`{"session_id":"sess-abc","status":"started"}`)},
 					{Role: "user", Content: content("stream the investigation")},
 				},
-				Tools: []openai.Tool{{Type: "function", Function: openai.ToolDefinition{Name: "kubernaut_stream_investigation"}}},
+				Tools: []openai.Tool{{Type: "function", Function: openai.ToolDefinition{Name: "kubernaut_investigate"}}},
 			}
 
 			body, err := json.Marshal(reqBody)
@@ -240,7 +240,7 @@ keyword_scenarios:
 			Expect(json.NewDecoder(resp.Body).Decode(&oaiResp)).To(Succeed())
 			Expect(oaiResp.Choices).To(HaveLen(1))
 			Expect(oaiResp.Choices[0].Message.ToolCalls).To(HaveLen(1))
-			Expect(oaiResp.Choices[0].Message.ToolCalls[0].Function.Name).To(Equal("kubernaut_stream_investigation"))
+			Expect(oaiResp.Choices[0].Message.ToolCalls[0].Function.Name).To(Equal("kubernaut_investigate"))
 		})
 	})
 
@@ -248,11 +248,11 @@ keyword_scenarios:
 		It("should extract a string field from matching FunctionResponse", func() {
 			contents := []response.GeminiContent{
 				{Role: "user", Parts: []response.GeminiPart{{FunctionResponse: &response.GeminiFunctionResp{
-					Name:     "kubernaut_start_investigation",
+					Name:     "kubernaut_investigate",
 					Response: map[string]interface{}{"session_id": "sess-xyz", "status": "started"},
 				}}}},
 			}
-			val := response.ExtractFieldFromFunctionResponse(contents, "kubernaut_start_investigation", "session_id")
+			val := response.ExtractFieldFromFunctionResponse(contents, "kubernaut_investigate", "session_id")
 			Expect(val).To(Equal("sess-xyz"))
 		})
 
@@ -263,29 +263,29 @@ keyword_scenarios:
 					Response: map[string]interface{}{"session_id": "sess-xyz"},
 				}}}},
 			}
-			val := response.ExtractFieldFromFunctionResponse(contents, "kubernaut_start_investigation", "session_id")
+			val := response.ExtractFieldFromFunctionResponse(contents, "kubernaut_investigate", "session_id")
 			Expect(val).To(BeEmpty())
 		})
 
 		It("should return empty string when field is absent", func() {
 			contents := []response.GeminiContent{
 				{Role: "user", Parts: []response.GeminiPart{{FunctionResponse: &response.GeminiFunctionResp{
-					Name:     "kubernaut_start_investigation",
+					Name:     "kubernaut_investigate",
 					Response: map[string]interface{}{"status": "started"},
 				}}}},
 			}
-			val := response.ExtractFieldFromFunctionResponse(contents, "kubernaut_start_investigation", "session_id")
+			val := response.ExtractFieldFromFunctionResponse(contents, "kubernaut_investigate", "session_id")
 			Expect(val).To(BeEmpty())
 		})
 
 		It("should handle nil response gracefully", func() {
 			contents := []response.GeminiContent{
 				{Role: "user", Parts: []response.GeminiPart{{FunctionResponse: &response.GeminiFunctionResp{
-					Name:     "kubernaut_start_investigation",
+					Name:     "kubernaut_investigate",
 					Response: nil,
 				}}}},
 			}
-			val := response.ExtractFieldFromFunctionResponse(contents, "kubernaut_start_investigation", "session_id")
+			val := response.ExtractFieldFromFunctionResponse(contents, "kubernaut_investigate", "session_id")
 			Expect(val).To(BeEmpty())
 		})
 	})
@@ -296,10 +296,10 @@ keyword_scenarios:
 		It("should extract field from tool result matching function name", func() {
 			messages := []openai.Message{
 				{Role: "user", Content: content("start investigation")},
-				{Role: "assistant", ToolCalls: []openai.ToolCall{{ID: "call_1", Type: "function", Function: openai.FunctionCall{Name: "kubernaut_start_investigation", Arguments: `{"ns":"default"}`}}}},
+				{Role: "assistant", ToolCalls: []openai.ToolCall{{ID: "call_1", Type: "function", Function: openai.FunctionCall{Name: "kubernaut_investigate", Arguments: `{"ns":"default"}`}}}},
 				{Role: "tool", Content: content(`{"session_id":"sess-123","status":"running"}`)},
 			}
-			val := response.ExtractFieldFromToolResult(messages, "kubernaut_start_investigation", "session_id")
+			val := response.ExtractFieldFromToolResult(messages, "kubernaut_investigate", "session_id")
 			Expect(val).To(Equal("sess-123"))
 		})
 
@@ -308,16 +308,16 @@ keyword_scenarios:
 				{Role: "assistant", ToolCalls: []openai.ToolCall{{ID: "call_1", Type: "function", Function: openai.FunctionCall{Name: "other_tool", Arguments: `{}`}}}},
 				{Role: "tool", Content: content(`{"session_id":"sess-123"}`)},
 			}
-			val := response.ExtractFieldFromToolResult(messages, "kubernaut_start_investigation", "session_id")
+			val := response.ExtractFieldFromToolResult(messages, "kubernaut_investigate", "session_id")
 			Expect(val).To(BeEmpty())
 		})
 
 		It("should return empty string when field is missing from result", func() {
 			messages := []openai.Message{
-				{Role: "assistant", ToolCalls: []openai.ToolCall{{ID: "call_1", Type: "function", Function: openai.FunctionCall{Name: "kubernaut_start_investigation", Arguments: `{}`}}}},
+				{Role: "assistant", ToolCalls: []openai.ToolCall{{ID: "call_1", Type: "function", Function: openai.FunctionCall{Name: "kubernaut_investigate", Arguments: `{}`}}}},
 				{Role: "tool", Content: content(`{"status":"done"}`)},
 			}
-			val := response.ExtractFieldFromToolResult(messages, "kubernaut_start_investigation", "session_id")
+			val := response.ExtractFieldFromToolResult(messages, "kubernaut_investigate", "session_id")
 			Expect(val).To(BeEmpty())
 		})
 
@@ -325,12 +325,12 @@ keyword_scenarios:
 			messages := []openai.Message{
 				{Role: "assistant", ToolCalls: []openai.ToolCall{
 					{ID: "call_1", Type: "function", Function: openai.FunctionCall{Name: "tool_a", Arguments: `{}`}},
-					{ID: "call_2", Type: "function", Function: openai.FunctionCall{Name: "kubernaut_start_investigation", Arguments: `{}`}},
+					{ID: "call_2", Type: "function", Function: openai.FunctionCall{Name: "kubernaut_investigate", Arguments: `{}`}},
 				}},
 				{Role: "tool", Content: content(`{"result":"from_a"}`)},
 				{Role: "tool", Content: content(`{"session_id":"sess-multi"}`)},
 			}
-			val := response.ExtractFieldFromToolResult(messages, "kubernaut_start_investigation", "session_id")
+			val := response.ExtractFieldFromToolResult(messages, "kubernaut_investigate", "session_id")
 			Expect(val).To(Equal("sess-multi"))
 		})
 	})
@@ -341,9 +341,9 @@ keyword_scenarios:
 				Scenarios: map[string]config.ScenarioOverride{},
 				KeywordScenarios: []config.KeywordScenarioOverride{
 					{
-						Name:           "af_stream",
+						Name:           "af_investigate_resume",
 						Keywords:       []string{"stream the investigation"},
-						ToolCall:       config.ToolCallOverride{Name: "kubernaut_stream_investigation", Arguments: map[string]string{"session_id": "$from_tool:kubernaut_start_investigation:session_id"}},
+						ToolCall:       config.ToolCallOverride{Name: "kubernaut_investigate", Arguments: map[string]string{"session_id": "$from_tool:kubernaut_investigate:session_id"}},
 						MatchLastOnly:  true,
 						RepeatToolCall: true,
 					},
@@ -357,12 +357,12 @@ keyword_scenarios:
 			reqBody := response.GeminiRequest{
 				Contents: []response.GeminiContent{
 					{Role: "user", Parts: []response.GeminiPart{{Text: "start investigation"}}},
-					{Role: "model", Parts: []response.GeminiPart{{FunctionCall: &response.GeminiFunctionCall{Name: "kubernaut_start_investigation", Args: map[string]interface{}{"namespace": "default"}}}}},
-					{Role: "user", Parts: []response.GeminiPart{{FunctionResponse: &response.GeminiFunctionResp{Name: "kubernaut_start_investigation", Response: map[string]interface{}{"session_id": "sess-dynamic-456", "status": "started"}}}}},
+					{Role: "model", Parts: []response.GeminiPart{{FunctionCall: &response.GeminiFunctionCall{Name: "kubernaut_investigate", Args: map[string]interface{}{"namespace": "default"}}}}},
+					{Role: "user", Parts: []response.GeminiPart{{FunctionResponse: &response.GeminiFunctionResp{Name: "kubernaut_investigate", Response: map[string]interface{}{"session_id": "sess-dynamic-456", "status": "started"}}}}},
 					{Role: "user", Parts: []response.GeminiPart{{Text: "stream the investigation"}}},
 				},
 				Tools: []response.GeminiToolDecl{
-					{FunctionDeclarations: []response.GeminiFunctionDecl{{Name: "kubernaut_stream_investigation"}}},
+					{FunctionDeclarations: []response.GeminiFunctionDecl{{Name: "kubernaut_investigate"}}},
 				},
 			}
 
@@ -381,7 +381,7 @@ keyword_scenarios:
 			parts := gemResp.Candidates[0].Content.Parts
 			Expect(parts).To(HaveLen(1))
 			Expect(parts[0].FunctionCall).NotTo(BeNil())
-			Expect(parts[0].FunctionCall.Name).To(Equal("kubernaut_stream_investigation"))
+			Expect(parts[0].FunctionCall.Name).To(Equal("kubernaut_investigate"))
 			Expect(parts[0].FunctionCall.Args).To(HaveKeyWithValue("session_id", "sess-dynamic-456"))
 		})
 
@@ -390,9 +390,9 @@ keyword_scenarios:
 				Scenarios: map[string]config.ScenarioOverride{},
 				KeywordScenarios: []config.KeywordScenarioOverride{
 					{
-						Name:           "af_stream",
+						Name:           "af_investigate_resume",
 						Keywords:       []string{"stream the investigation"},
-						ToolCall:       config.ToolCallOverride{Name: "kubernaut_stream_investigation", Arguments: map[string]string{"session_id": "$from_tool:kubernaut_start_investigation:session_id"}},
+						ToolCall:       config.ToolCallOverride{Name: "kubernaut_investigate", Arguments: map[string]string{"session_id": "$from_tool:kubernaut_investigate:session_id"}},
 						MatchLastOnly:  true,
 						RepeatToolCall: true,
 					},
@@ -408,7 +408,7 @@ keyword_scenarios:
 					{Role: "user", Parts: []response.GeminiPart{{Text: "stream the investigation"}}},
 				},
 				Tools: []response.GeminiToolDecl{
-					{FunctionDeclarations: []response.GeminiFunctionDecl{{Name: "kubernaut_stream_investigation"}}},
+					{FunctionDeclarations: []response.GeminiFunctionDecl{{Name: "kubernaut_investigate"}}},
 				},
 			}
 
@@ -427,7 +427,7 @@ keyword_scenarios:
 			parts := gemResp.Candidates[0].Content.Parts
 			Expect(parts).To(HaveLen(1))
 			Expect(parts[0].FunctionCall).NotTo(BeNil())
-			Expect(parts[0].FunctionCall.Args).To(HaveKeyWithValue("session_id", "$from_tool:kubernaut_start_investigation:session_id"))
+			Expect(parts[0].FunctionCall.Args).To(HaveKeyWithValue("session_id", "$from_tool:kubernaut_investigate:session_id"))
 		})
 	})
 
@@ -437,9 +437,9 @@ keyword_scenarios:
 				Scenarios: map[string]config.ScenarioOverride{},
 				KeywordScenarios: []config.KeywordScenarioOverride{
 					{
-						Name:           "af_stream",
+						Name:           "af_investigate_resume",
 						Keywords:       []string{"stream the investigation"},
-						ToolCall:       config.ToolCallOverride{Name: "kubernaut_stream_investigation", Arguments: map[string]string{"session_id": "$from_tool:kubernaut_start_investigation:session_id"}},
+						ToolCall:       config.ToolCallOverride{Name: "kubernaut_investigate", Arguments: map[string]string{"session_id": "$from_tool:kubernaut_investigate:session_id"}},
 						MatchLastOnly:  true,
 						RepeatToolCall: true,
 					},
@@ -455,11 +455,11 @@ keyword_scenarios:
 				Model: "gpt-4",
 				Messages: []openai.Message{
 					{Role: "user", Content: content("start investigation")},
-					{Role: "assistant", ToolCalls: []openai.ToolCall{{ID: "call_1", Type: "function", Function: openai.FunctionCall{Name: "kubernaut_start_investigation", Arguments: `{"namespace":"default"}`}}}},
+					{Role: "assistant", ToolCalls: []openai.ToolCall{{ID: "call_1", Type: "function", Function: openai.FunctionCall{Name: "kubernaut_investigate", Arguments: `{"namespace":"default"}`}}}},
 					{Role: "tool", Content: content(`{"session_id":"sess-openai-789","status":"started"}`)},
 					{Role: "user", Content: content("stream the investigation")},
 				},
-				Tools: []openai.Tool{{Type: "function", Function: openai.ToolDefinition{Name: "kubernaut_stream_investigation"}}},
+				Tools: []openai.Tool{{Type: "function", Function: openai.ToolDefinition{Name: "kubernaut_investigate"}}},
 			}
 
 			body, err := json.Marshal(reqBody)
@@ -474,7 +474,7 @@ keyword_scenarios:
 			Expect(json.NewDecoder(resp.Body).Decode(&oaiResp)).To(Succeed())
 			Expect(oaiResp.Choices).To(HaveLen(1))
 			Expect(oaiResp.Choices[0].Message.ToolCalls).To(HaveLen(1))
-			Expect(oaiResp.Choices[0].Message.ToolCalls[0].Function.Name).To(Equal("kubernaut_stream_investigation"))
+			Expect(oaiResp.Choices[0].Message.ToolCalls[0].Function.Name).To(Equal("kubernaut_investigate"))
 
 			var args map[string]interface{}
 			Expect(json.Unmarshal([]byte(oaiResp.Choices[0].Message.ToolCalls[0].Function.Arguments), &args)).To(Succeed())
@@ -704,11 +704,11 @@ keyword_scenarios:
 		It("should return empty when extracted field is numeric (not string)", func() {
 			contents := []response.GeminiContent{
 				{Role: "user", Parts: []response.GeminiPart{{FunctionResponse: &response.GeminiFunctionResp{
-					Name:     "kubernaut_start_investigation",
+					Name:     "kubernaut_investigate",
 					Response: map[string]interface{}{"session_id": 12345},
 				}}}},
 			}
-			val := response.ExtractFieldFromFunctionResponse(contents, "kubernaut_start_investigation", "session_id")
+			val := response.ExtractFieldFromFunctionResponse(contents, "kubernaut_investigate", "session_id")
 			Expect(val).To(BeEmpty(), "numeric field should not be extracted as string")
 		})
 	})
@@ -717,15 +717,15 @@ keyword_scenarios:
 		It("should extract from the first matching FunctionResponse in iteration order", func() {
 			contents := []response.GeminiContent{
 				{Role: "user", Parts: []response.GeminiPart{{FunctionResponse: &response.GeminiFunctionResp{
-					Name:     "kubernaut_start_investigation",
+					Name:     "kubernaut_investigate",
 					Response: map[string]interface{}{"session_id": "first-match"},
 				}}}},
 				{Role: "user", Parts: []response.GeminiPart{{FunctionResponse: &response.GeminiFunctionResp{
-					Name:     "kubernaut_start_investigation",
+					Name:     "kubernaut_investigate",
 					Response: map[string]interface{}{"session_id": "second-match"},
 				}}}},
 			}
-			val := response.ExtractFieldFromFunctionResponse(contents, "kubernaut_start_investigation", "session_id")
+			val := response.ExtractFieldFromFunctionResponse(contents, "kubernaut_investigate", "session_id")
 			Expect(val).To(Equal("first-match"))
 		})
 	})
@@ -734,10 +734,10 @@ keyword_scenarios:
 		It("should extract field from JSON even when preceded by non-JSON text", func() {
 			content := func(s string) *string { return &s }
 			messages := []openai.Message{
-				{Role: "assistant", ToolCalls: []openai.ToolCall{{ID: "call_1", Type: "function", Function: openai.FunctionCall{Name: "kubernaut_start_investigation", Arguments: `{}`}}}},
+				{Role: "assistant", ToolCalls: []openai.ToolCall{{ID: "call_1", Type: "function", Function: openai.FunctionCall{Name: "kubernaut_investigate", Arguments: `{}`}}}},
 				{Role: "tool", Content: content(`Investigation started successfully. {"session_id":"sess-preamble","status":"active"}`)},
 			}
-			val := response.ExtractFieldFromToolResult(messages, "kubernaut_start_investigation", "session_id")
+			val := response.ExtractFieldFromToolResult(messages, "kubernaut_investigate", "session_id")
 			Expect(val).To(Equal("sess-preamble"))
 		})
 	})
@@ -746,10 +746,10 @@ keyword_scenarios:
 		It("should return empty when extracted field is not a string", func() {
 			content := func(s string) *string { return &s }
 			messages := []openai.Message{
-				{Role: "assistant", ToolCalls: []openai.ToolCall{{ID: "call_1", Type: "function", Function: openai.FunctionCall{Name: "kubernaut_start_investigation", Arguments: `{}`}}}},
+				{Role: "assistant", ToolCalls: []openai.ToolCall{{ID: "call_1", Type: "function", Function: openai.FunctionCall{Name: "kubernaut_investigate", Arguments: `{}`}}}},
 				{Role: "tool", Content: content(`{"session_id":99999}`)},
 			}
-			val := response.ExtractFieldFromToolResult(messages, "kubernaut_start_investigation", "session_id")
+			val := response.ExtractFieldFromToolResult(messages, "kubernaut_investigate", "session_id")
 			Expect(val).To(BeEmpty(), "numeric session_id should not be extracted as string")
 		})
 	})
@@ -767,9 +767,9 @@ keyword_scenarios:
 				Scenarios: map[string]config.ScenarioOverride{},
 				KeywordScenarios: []config.KeywordScenarioOverride{
 					{
-						Name:           "af_stream",
+						Name:           "af_investigate_resume",
 						Keywords:       []string{"stream the investigation"},
-						ToolCall:       config.ToolCallOverride{Name: "kubernaut_stream_investigation", Arguments: map[string]string{"session_id": "$from_tool:kubernaut_start_investigation:session_id"}},
+						ToolCall:       config.ToolCallOverride{Name: "kubernaut_investigate", Arguments: map[string]string{"session_id": "$from_tool:kubernaut_investigate:session_id"}},
 						MatchLastOnly:  true,
 						RepeatToolCall: true,
 					},
@@ -783,12 +783,12 @@ keyword_scenarios:
 			makeGeminiRequest := func(sessionID string) response.GeminiResponse {
 				reqBody := response.GeminiRequest{
 					Contents: []response.GeminiContent{
-						{Role: "model", Parts: []response.GeminiPart{{FunctionCall: &response.GeminiFunctionCall{Name: "kubernaut_start_investigation", Args: map[string]interface{}{}}}}},
-						{Role: "user", Parts: []response.GeminiPart{{FunctionResponse: &response.GeminiFunctionResp{Name: "kubernaut_start_investigation", Response: map[string]interface{}{"session_id": sessionID}}}}},
+						{Role: "model", Parts: []response.GeminiPart{{FunctionCall: &response.GeminiFunctionCall{Name: "kubernaut_investigate", Args: map[string]interface{}{}}}}},
+						{Role: "user", Parts: []response.GeminiPart{{FunctionResponse: &response.GeminiFunctionResp{Name: "kubernaut_investigate", Response: map[string]interface{}{"session_id": sessionID}}}}},
 						{Role: "user", Parts: []response.GeminiPart{{Text: "stream the investigation"}}},
 					},
 					Tools: []response.GeminiToolDecl{
-						{FunctionDeclarations: []response.GeminiFunctionDecl{{Name: "kubernaut_stream_investigation"}}},
+						{FunctionDeclarations: []response.GeminiFunctionDecl{{Name: "kubernaut_investigate"}}},
 					},
 				}
 				body, _ := json.Marshal(reqBody)
@@ -817,7 +817,7 @@ keyword_scenarios:
 					{Role: "user", Parts: []response.GeminiPart{{Text: "stream the investigation"}}},
 				},
 				Tools: []response.GeminiToolDecl{
-					{FunctionDeclarations: []response.GeminiFunctionDecl{{Name: "kubernaut_stream_investigation"}}},
+					{FunctionDeclarations: []response.GeminiFunctionDecl{{Name: "kubernaut_investigate"}}},
 				},
 			}
 			body3, _ := json.Marshal(reqBody3)
@@ -828,7 +828,7 @@ keyword_scenarios:
 			var resp3 response.GeminiResponse
 			Expect(json.NewDecoder(resp3raw.Body).Decode(&resp3)).To(Succeed())
 			Expect(resp3.Candidates[0].Content.Parts[0].FunctionCall.Args).To(
-				HaveKeyWithValue("session_id", "$from_tool:kubernaut_start_investigation:session_id"),
+				HaveKeyWithValue("session_id", "$from_tool:kubernaut_investigate:session_id"),
 				"unresolved template must remain as literal, not leak prior request value")
 		})
 	})

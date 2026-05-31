@@ -21,12 +21,15 @@ metadata:
 
 ### ClusterRole: kubernaut-agent-investigator
 
-Grants **read-only** access to Kubernetes resources the KA investigation tools
-require. The KA never creates, updates, or deletes workload resources.
+Grants **read-only** access to most Kubernetes resources the KA investigation
+tools require. The KA never creates, updates, or deletes workload resources,
+with the sole exception of `events` (used for emitting K8s events during
+investigation lifecycle tracking).
 
 | apiGroup | Resources | Verbs | Rationale |
 |----------|-----------|-------|-----------|
-| `""` (core) | pods, pods/log, events, services, endpoints, configmaps, secrets, nodes, namespaces, replicationcontrollers, persistentvolumeclaims, persistentvolumes, resourcequotas, serviceaccounts | get, list, watch | Core investigation: workload state, logs, events, config, auth |
+| `""` (core) | pods, pods/log, services, endpoints, configmaps, secrets, nodes, namespaces, replicationcontrollers, persistentvolumeclaims, persistentvolumes, resourcequotas, serviceaccounts | get, list, watch | Core investigation: workload state, logs, config, auth |
+| `""` (core) | events | get, list, watch, create, patch | Investigation lifecycle events |
 | `apps` | deployments, replicasets, statefulsets, daemonsets | get, list, watch | Owner-chain traversal, rollout status |
 | `batch` | jobs, cronjobs | get, list, watch | Batch workload investigation |
 | `events.k8s.io` | events | get, list, watch | Structured event API |
@@ -56,7 +59,7 @@ Binds `kubernaut-agent-investigator` to `kubernaut-agent-sa`.
 
 ### Design principles
 
-- **Least privilege**: Read-only verbs only; no write access to any workload resource
+- **Least privilege**: Read-only verbs for workload resources; write access limited to `events` for investigation lifecycle tracking
 - **Dynamic client awareness**: The LLM may request any resource kind via `kubectl_*` tools — missing RBAC causes degraded RCA quality (silent tool failures)
 - **Explicit exclusions**: RBAC enumeration (`rbac.authorization.k8s.io/*`) is intentionally excluded for security; `leases`, `limitranges`, `priorityclasses` excluded for low investigation value
 
@@ -115,7 +118,7 @@ spec:
               app: aianalysis-controller
       ports:
         - protocol: TCP
-          port: 8080
+          port: 8443
   egress:
     # Kubernetes API server
     - to:
@@ -143,7 +146,7 @@ spec:
               app: data-storage-service
       ports:
         - protocol: TCP
-          port: 8080
+          port: 8443
     # Prometheus (tools)
     - to:
         - namespaceSelector:

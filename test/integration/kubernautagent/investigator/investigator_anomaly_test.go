@@ -90,6 +90,7 @@ var _ = Describe("Kubernaut Agent Anomaly Detector Wiring — TP-433-WIR Phase 4
 			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg, Pipeline: investigator.Pipeline{AnomalyDetector: detector}})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api", Namespace: "default", Severity: "warning", Message: "CrashLoop",
+				Environment: "Development", Priority: "P2",
 			})
 			Expect(err).NotTo(HaveOccurred())
 
@@ -136,6 +137,7 @@ var _ = Describe("Kubernaut Agent Anomaly Detector Wiring — TP-433-WIR Phase 4
 			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg, Pipeline: investigator.Pipeline{AnomalyDetector: detector}})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api", Namespace: "default", Severity: "critical", Message: "OOMKilled",
+				Environment: "Development", Priority: "P1",
 			})
 			Expect(err).NotTo(HaveOccurred())
 
@@ -186,6 +188,7 @@ var _ = Describe("Kubernaut Agent Anomaly Detector Wiring — TP-433-WIR Phase 4
 			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg, Pipeline: investigator.Pipeline{AnomalyDetector: detector}})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api", Namespace: "default", Severity: "warning", Message: "DiskPressure",
+				Environment: "Development", Priority: "P2",
 			})
 			Expect(err).NotTo(HaveOccurred())
 
@@ -220,6 +223,7 @@ var _ = Describe("Kubernaut Agent Anomaly Detector Wiring — TP-433-WIR Phase 4
 			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools, Registry: reg, Pipeline: investigator.Pipeline{AnomalyDetector: detector}})
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api", Namespace: "default", Severity: "critical", Message: "OOMKilled",
+				Environment: "Development", Priority: "P1",
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())

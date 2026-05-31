@@ -1,5 +1,9 @@
 # Test Plan: A2A Progressive Streaming (Issue #1258)
 
+> **Note:** `summarizeCreateRR` output format updated by [#1282](https://github.com/jordigilh/kubernaut/issues/1282).
+> Expected TextPart for `af_create_rr` is now `"Remediation request created: {message}"` or
+> `"Remediation request created."`, not `"Remediation created."`. See `UT-AF-1282-OUT-*`.
+
 **IEEE 829-2008 Compliant**
 
 | Field | Value |

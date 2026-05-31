@@ -153,7 +153,24 @@ func trackSSEConnection(tracker *streaming.ConnectionTracker, next http.Handler)
 			http.Error(w, "too many concurrent connections", http.StatusServiceUnavailable)
 			return
 		}
-		defer tracker.Remove(connID)
+
+		// Watch for client disconnect independently of handler completion.
+		// a2a-go runs executors under context.WithoutCancel, so the handler
+		// can outlive the HTTP connection. This goroutine frees the tracker
+		// slot as soon as the client disconnects, keeping the connection cap
+		// accurate. The defer below is a no-op if Remove already ran.
+		handlerDone := make(chan struct{})
+		go func() {
+			select {
+			case <-r.Context().Done():
+				tracker.Remove(connID)
+			case <-handlerDone:
+			}
+		}()
+		defer func() {
+			close(handlerDone)
+			tracker.Remove(connID)
+		}()
 
 		// Clear the write deadline for streaming — these are long-lived
 		// connections whose lifetime is managed by token expiry and graceful shutdown.

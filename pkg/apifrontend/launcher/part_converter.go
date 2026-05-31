@@ -2,7 +2,6 @@ package launcher
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -18,14 +17,12 @@ const (
 )
 
 var toolStatusMessages = map[string]string{
-	"kubernaut_start_investigation":   "Starting investigation for %s...",
-	"kubernaut_stream_investigation":  "Streaming live investigation events...",
-	"kubernaut_poll_investigation":    "Polling investigation status...",
+	"kubernaut_investigate":           "Investigating %s...",
 	"kubernaut_discover_workflows":    "Discovering available remediation workflows...",
 	"kubernaut_select_workflow":       "Selecting remediation workflow %s...",
 	"kubernaut_watch":                 "Watching remediation progress...",
-	"af_create_rr":                    "Creating remediation request...",
-	"af_check_existing_rr":            "Checking for existing remediation...",
+	"kubernaut_remediate":             "Creating remediation request...",
+	"kubernaut_check_existing_remediation": "Checking for existing remediation...",
 	"kubectl_list_events":             "Fetching cluster events...",
 	"kubectl_get":                     "Fetching resource details...",
 	"kubectl_list":                    "Listing cluster resources...",
@@ -44,12 +41,11 @@ var toolStatusMessages = map[string]string{
 // summary from FunctionResponse.Response. Tools not listed here have their
 // responses dropped (the LLM's subsequent reasoning covers the content).
 var keyToolSummarizers = map[string]func(map[string]any) string{
-	"kubernaut_stream_investigation": summarizeStreamInvestigation,
-	"kubernaut_start_investigation":  summarizeStartInvestigation,
+	"kubernaut_investigate":          summarizeInvestigation,
 	"kubernaut_discover_workflows":   summarizeDiscoverWorkflows,
 	"kubernaut_select_workflow":      summarizeSelectWorkflow,
 	"kubernaut_watch":                summarizeWatch,
-	"af_create_rr":                   summarizeCreateRR,
+	"kubernaut_remediate":            summarizeCreateRR,
 }
 
 // buildPartConverter returns a GenAIPartConverter that transforms raw ADK
@@ -69,23 +65,27 @@ func buildPartConverter() adka2a.GenAIPartConverter {
 			return convertFunctionResponse(part.FunctionResponse), nil
 		}
 		if part.Thought {
-			return &a2a.TextPart{Text: "Analyzing..."}, nil
+			return &a2a.TextPart{Text: "Analyzing...\n\n"}, nil
 		}
-		return &a2a.TextPart{Text: part.Text}, nil
+		return &a2a.TextPart{Text: ensureTrailingParagraphBreak(part.Text)}, nil
 	}
 }
 
 func convertFunctionCall(fc *genai.FunctionCall) a2a.Part {
 	template, ok := toolStatusMessages[fc.Name]
 	if !ok {
-		return &a2a.TextPart{Text: "Processing..."}
+		return &a2a.TextPart{Text: "...\n\n"}
 	}
 
 	text := formatStatusWithContext(template, fc.Name, fc.Args)
-	return &a2a.TextPart{Text: truncate(text, maxStatusLen)}
+	return &a2a.TextPart{Text: truncate(text, maxStatusLen) + "\n\n"}
 }
 
 func convertFunctionResponse(fr *genai.FunctionResponse) a2a.Part {
+	if errPart := toolErrorPart(fr); errPart != nil {
+		return errPart
+	}
+
 	summarizer, ok := keyToolSummarizers[fr.Name]
 	if !ok {
 		return nil
@@ -97,7 +97,27 @@ func convertFunctionResponse(fr *genai.FunctionResponse) a2a.Part {
 	}
 
 	text := summarizer(resp)
-	return &a2a.TextPart{Text: truncate(text, maxSummaryLen)}
+	return &a2a.TextPart{Text: truncate(text, maxSummaryLen) + "\n\n"}
+}
+
+// toolErrorPart returns an error text part when a tool response indicates
+// failure. Matches both simple {"error":"..."} and the KA MCP pattern
+// {"status":"error","error":"..."}. This ensures tool failures surface on the
+// SSE stream instead of being silently dropped (#1302).
+func toolErrorPart(fr *genai.FunctionResponse) a2a.Part {
+	if fr.Response == nil {
+		return nil
+	}
+	errMsg, _ := fr.Response["error"].(string)
+	if errMsg == "" {
+		return nil
+	}
+	status, _ := fr.Response["status"].(string)
+	if status != "error" && status != "" {
+		return nil
+	}
+	text := fmt.Sprintf("Error: %s\n\n", truncate(errMsg, maxSummaryLen))
+	return &a2a.TextPart{Text: text}
 }
 
 func formatStatusWithContext(template, toolName string, args map[string]any) string {
@@ -107,7 +127,7 @@ func formatStatusWithContext(template, toolName string, args map[string]any) str
 
 	if args != nil {
 		switch toolName {
-		case "kubernaut_start_investigation":
+		case "kubernaut_investigate":
 			ns := stringArg(args, "namespace")
 			name := stringArg(args, "name")
 			if ns != "" && name != "" {
@@ -124,18 +144,14 @@ func formatStatusWithContext(template, toolName string, args map[string]any) str
 	return strings.ReplaceAll(template, " %s", "")
 }
 
-func summarizeStreamInvestigation(resp map[string]any) string {
+func summarizeInvestigation(resp map[string]any) string {
 	if summary, ok := resp["summary"].(string); ok && summary != "" {
 		return summary
 	}
-	return "Investigation completed."
-}
-
-func summarizeStartInvestigation(resp map[string]any) string {
 	if sid, ok := resp["session_id"].(string); ok && sid != "" {
 		return fmt.Sprintf("Investigation started: %s", sid)
 	}
-	return "Investigation started."
+	return "Investigation completed."
 }
 
 func summarizeDiscoverWorkflows(resp map[string]any) string {
@@ -180,30 +196,51 @@ func summarizeSelectWorkflow(resp map[string]any) string {
 }
 
 func summarizeWatch(resp map[string]any) string {
-	phase, _ := resp["phase"].(string)
+	events, _ := resp["events"].([]any)
 	status, _ := resp["status"].(string)
-	if phase != "" && status != "" {
-		return fmt.Sprintf("Phase: %s — %s", phase, status)
+	outcome, _ := resp["outcome"].(string)
+	message, _ := resp["message"].(string)
+
+	var sb strings.Builder
+	if len(events) > 0 {
+		if last, ok := events[len(events)-1].(map[string]any); ok {
+			phase, _ := last["phase"].(string)
+			if phase != "" {
+				fmt.Fprintf(&sb, "Remediation %s (final phase: %s)", status, phase)
+			}
+		}
 	}
-	if phase != "" {
-		return fmt.Sprintf("Phase: %s", phase)
+	if sb.Len() == 0 && status != "" {
+		fmt.Fprintf(&sb, "Remediation %s.", status)
 	}
-	if status != "" {
-		return status
+	if sb.Len() == 0 {
+		return "Watching remediation..."
 	}
-	return "Watching remediation..."
+	if outcome != "" {
+		fmt.Fprintf(&sb, "\nOutcome: %s", outcome)
+	}
+	if message != "" {
+		fmt.Fprintf(&sb, "\nDetails: %s", message)
+	}
+	return sb.String()
 }
 
 func summarizeCreateRR(resp map[string]any) string {
-	data, err := json.Marshal(resp)
-	if err != nil {
-		return "Remediation request created."
+	if exists, _ := resp["already_exists"].(bool); exists {
+		if rrid, ok := resp["rr_id"].(string); ok && rrid != "" {
+			return fmt.Sprintf("Remediation request already exists: %s", rrid)
+		}
+		return "Remediation request already exists."
 	}
-	return string(data)
+	msg, _ := resp["message"].(string)
+	if msg != "" {
+		return fmt.Sprintf("Remediation request created: %s", msg)
+	}
+	return "Remediation request created."
 }
 
 // buildStreamingPartConverter returns a GenAIPartConverter for streaming mode
-// that suppresses kubernaut_stream_investigation FunctionResponse parts (since
+// that suppresses kubernaut_investigate FunctionResponse parts (since
 // the EventBridge already delivered the reasoning progressively). All other
 // behavior is identical to the standard converter.
 func buildStreamingPartConverter() adka2a.GenAIPartConverter {
@@ -216,15 +253,15 @@ func buildStreamingPartConverter() adka2a.GenAIPartConverter {
 			return convertFunctionCall(part.FunctionCall), nil
 		}
 		if part.FunctionResponse != nil {
-			if part.FunctionResponse.Name == "kubernaut_stream_investigation" {
+			if part.FunctionResponse.Name == "kubernaut_investigate" {
 				return nil, nil
 			}
 			return convertFunctionResponse(part.FunctionResponse), nil
 		}
 		if part.Thought {
-			return &a2a.TextPart{Text: "Analyzing..."}, nil
+			return &a2a.TextPart{Text: "Analyzing...\n\n"}, nil
 		}
-		return &a2a.TextPart{Text: part.Text}, nil
+		return &a2a.TextPart{Text: ensureTrailingParagraphBreak(part.Text)}, nil
 	}
 }
 
@@ -234,6 +271,19 @@ func stringArg(args map[string]any, key string) string {
 		return ""
 	}
 	return v
+}
+
+// ensureTrailingParagraphBreak appends a double-newline paragraph break to
+// text that doesn't already end with one. A single \n is insufficient because
+// A2A clients (e.g. kagenti) strip trailing whitespace before concatenating
+// artifact text parts, collapsing single newlines. Double-newline survives
+// stripping and renders as a visible paragraph break in markdown UIs.
+func ensureTrailingParagraphBreak(s string) string {
+	if s == "" || strings.HasSuffix(s, "\n\n") {
+		return s
+	}
+	s = strings.TrimRight(s, "\n")
+	return s + "\n\n"
 }
 
 func truncate(s string, maxLen int) string {

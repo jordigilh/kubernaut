@@ -178,7 +178,7 @@ data:
         level: {{ .Values.kubernautAgent.logging.level | default "INFO" | quote }}
       server:
         address: "0.0.0.0"
-        port: 8080
+        port: 8443
         healthAddr: ":8081"
         metricsAddr: ":9090"
         tls:
@@ -355,8 +355,8 @@ spec:
           securityContext:
             {{- include "kubernaut.containerSecurityContext" .Values.kubernautAgent | nindent 12 }}
           ports:
-            - name: http
-              containerPort: 8080
+            - name: https
+              containerPort: 8443
             - name: health
               containerPort: 8081
             - name: metrics
@@ -458,9 +458,9 @@ metadata:
 spec:
   type: {{ .Values.kubernautAgent.service.type }}
   ports:
-    - name: http
-      port: 8080
-      targetPort: 8080
+    - name: https
+      port: 8443
+      targetPort: 8443
     - name: health
       port: 8081
       targetPort: 8081
