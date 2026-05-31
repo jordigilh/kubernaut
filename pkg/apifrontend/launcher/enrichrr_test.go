@@ -50,7 +50,7 @@ var _ = Describe("enrichRRDetail (AC 12)", func() {
 		sc := &session.CreateContext{TaskID: "task-004"}
 		ctx := session.WithCreateContext(context.Background(), sc)
 
-		// Simulate af_create_rr tool callback mutating the shared pointer
+		// Simulate kubernaut_remediate tool callback mutating the shared pointer
 		sc.RRName = "rr-crash-api"
 		sc.RRNamespace = "staging"
 

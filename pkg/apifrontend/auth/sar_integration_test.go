@@ -310,7 +310,7 @@ var _ = Describe("SARChecker Integration", func() {
 			}),
 			Entry("Approver: approve + read, denied create_rr", roleTestCase{
 				roleName: "kubernaut-tool-approver", group: "remediation-approver",
-				allowedTool: "kubernaut_approve", deniedTool: "af_create_rr",
+				allowedTool: "kubernaut_approve", deniedTool: "kubernaut_remediate",
 			}),
 			Entry("Viewer: list/get/watch + events, denied approve", roleTestCase{
 				roleName: "kubernaut-tool-viewer", group: "observability",

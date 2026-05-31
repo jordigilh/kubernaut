@@ -69,7 +69,7 @@ ai:
 			Expect(err).NotTo(HaveOccurred())
 			Expect(cfg).NotTo(BeNil())
 
-			Expect(cfg.Runtime.Server.Port).To(Equal(8080), "default port should be 8080")
+			Expect(cfg.Runtime.Server.Port).To(Equal(8443), "default port should be 8443")
 			Expect(cfg.Runtime.Session.TTL).To(Equal(30*time.Minute), "default TTL should be 30m")
 			Expect(cfg.AI.Investigation.MaxTurns).To(Equal(40), "default max turns should be 40")
 			Expect(cfg.AI.Safety.Anomaly.MaxToolCallsPerTool).To(Equal(10), "UT-KA-860-006: default per-tool limit raised to 10 per #860")

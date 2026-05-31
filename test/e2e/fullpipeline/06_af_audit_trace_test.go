@@ -100,7 +100,7 @@ var _ = Describe("E2E-FP-AF-001: AF audit trace coverage in happy-path MCP lifec
 			By("Calling kubernaut_list_remediations tool through AF MCP (generates tool.executed audit event)")
 			toolBody := fpBuildJSONRPC("fp-af-audit-1", "tools/call", map[string]interface{}{
 				"name":      "kubernaut_list_remediations",
-				"arguments": map[string]interface{}{"namespace": "default"},
+				"arguments": map[string]interface{}{},
 			})
 			_, code, err := fpMCPPOST(afHTTPClient, afBaseURL, token, sessionID, toolBody)
 			Expect(err).NotTo(HaveOccurred())

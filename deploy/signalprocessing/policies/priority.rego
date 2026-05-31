@@ -11,10 +11,9 @@
 #
 # Input Schema (per BR-SP-070, Issue #113):
 # {
+#   "namespace": { "name": "prod-ns", "labels": { "kubernaut.ai/environment": "production", "tier": "critical" } },
 #   "signal": { "severity": "critical", "source": "prometheus" },
-#   "environment": "production",
-#   "namespace_labels": { "tier": "critical" },
-#   "workload_labels": { "app": "payment-service" }
+#   "workload": { "labels": { "app": "payment-service" } }
 # }
 #
 # Output Schema:
@@ -45,18 +44,21 @@ default severity_score := 0
 # ============================================================================
 # DIMENSION 2: Environment Score (independent, max of env + tier)
 # ============================================================================
-# Tier labels and environment both contribute to the env dimension.
-# When both are present, the highest score wins (e.g., staging namespace
-# with tier=critical gets env_score=3, not 2).
+# Reads environment from namespace labels (kubernaut.ai/environment), matching
+# the environment.rego classification source. Tier labels and environment both
+# contribute to the env dimension. When both are present, the highest score
+# wins (e.g., staging namespace with tier=critical gets env_score=3, not 2).
 
-env_scores contains 3 if { lower(input.environment) == "production" }
-env_scores contains 2 if { lower(input.environment) == "staging" }
-env_scores contains 1 if { lower(input.environment) == "development" }
-env_scores contains 1 if { lower(input.environment) == "test" }
+ns_env := lower(input.namespace.labels["kubernaut.ai/environment"])
+
+env_scores contains 3 if { ns_env == "production" }
+env_scores contains 2 if { ns_env == "staging" }
+env_scores contains 1 if { ns_env == "development" }
+env_scores contains 1 if { ns_env == "test" }
 
 # Tier labels boost the environment score
-env_scores contains 3 if { input.namespace_labels["tier"] == "critical" }
-env_scores contains 2 if { input.namespace_labels["tier"] == "high" }
+env_scores contains 3 if { input.namespace.labels["tier"] == "critical" }
+env_scores contains 2 if { input.namespace.labels["tier"] == "high" }
 
 env_score := max(env_scores) if { count(env_scores) > 0 }
 default env_score := 0

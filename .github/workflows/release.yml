@@ -487,6 +487,23 @@ jobs:
           done
           echo "All images tagged as latest"
 
+      - name: Scan release images for CVEs (Trivy)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE_REGISTRY }}/kubernautagent:${{ needs.prepare.outputs.version }}-amd64
+          format: table
+          exit-code: 1
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+
+      - name: Generate SBOM (CycloneDX)
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          image: ${{ env.IMAGE_REGISTRY }}/kubernautagent:${{ needs.prepare.outputs.version }}-amd64
+          format: cyclonedx-json
+          output-file: sbom-kubernautagent.cdx.json
+          artifact-name: sbom-kubernautagent
+
   # ========================================
   # STAGE 4: HELM CHART PUBLISH
   # Gated on all image builds AND helm smoke tests (Issue #569).

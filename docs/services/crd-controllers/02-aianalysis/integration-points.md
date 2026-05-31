@@ -153,13 +153,13 @@ spec:
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `http://kubernaut-agent:8080/api/v1/incident/analyze` | POST | Initial incident investigation |
-| ~~`http://kubernaut-agent:8080/api/v1/recovery/analyze`~~ | ~~POST~~ | ~~Recovery attempt analysis~~ **DEPRECATED v1.0**: Alert re-fires through Gateway with prior EA context replace dedicated recovery. See BR-AA-HAPI-064.9. |
-| `http://kubernaut-agent:8080/health` | GET | Health check for circuit breaker |
+| `https://kubernaut-agent:8443/api/v1/incident/analyze` | POST | Initial incident investigation |
+| ~~`https://kubernaut-agent:8443/api/v1/recovery/analyze`~~ | ~~POST~~ | ~~Recovery attempt analysis~~ **DEPRECATED v1.0**: Alert re-fires through Gateway with prior EA context replace dedicated recovery. See BR-AA-HAPI-064.9. |
+| `https://kubernaut-agent:8443/health` | GET | Health check for circuit breaker |
 
 ### Investigation Request (V1.0)
 
-**Endpoint**: `POST http://kubernaut-agent:8080/api/v1/incident/analyze`
+**Endpoint**: `POST https://kubernaut-agent:8443/api/v1/incident/analyze`
 
 > **IMPORTANT**: HolmesGPT-API uses a **flat structure** - NOT nested `signalContext`.
 >

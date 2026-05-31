@@ -110,6 +110,13 @@ type AutonomousSessionManager interface {
 	LaunchDeferredInvestigation(id string) error
 	// BR-INTERACTIVE-010: Get RCA summary from latest completed session for context reconstruction.
 	GetLatestRCASummaryByRemediationID(rrID string) (string, bool)
+	// Get full RCA result from latest completed session for workflow discovery.
+	GetLatestRCAResultByRemediationID(rrID string) (*katypes.InvestigationResult, bool)
+
+	// BR-MCP-002: Start an autonomous investigation and return the session ID.
+	StartInvestigation(ctx context.Context, fn session.InvestigateFunc, metadata map[string]string) (string, error)
+	// BR-MCP-003: Subscribe to the event channel for a running investigation, activating the LazySink.
+	Subscribe(ctx context.Context, id string) (<-chan session.InvestigationEvent, error)
 }
 
 // RRExistenceChecker validates that a RemediationRequest exists before
@@ -145,6 +152,15 @@ func (NopAutonomousManager) ForceTransitionToUserDriving(string, string, []strin
 func (NopAutonomousManager) FindPendingByRemediationID(string) (string, bool)            { return "", false }
 func (NopAutonomousManager) LaunchDeferredInvestigation(string) error                    { return nil }
 func (NopAutonomousManager) GetLatestRCASummaryByRemediationID(string) (string, bool)    { return "", false }
+func (NopAutonomousManager) GetLatestRCAResultByRemediationID(string) (*katypes.InvestigationResult, bool) {
+	return nil, false
+}
+func (NopAutonomousManager) StartInvestigation(context.Context, session.InvestigateFunc, map[string]string) (string, error) {
+	return "", nil
+}
+func (NopAutonomousManager) Subscribe(context.Context, string) (<-chan session.InvestigationEvent, error) {
+	return nil, nil
+}
 
 // InvestigateTool handles the kubernaut_investigate MCP tool actions:
 // start, message, complete, cancel, takeover, discover_workflows.
@@ -268,6 +284,13 @@ func NewInvestigateTool(sessions mcpinternal.SessionManager, runner Investigator
 	return t
 }
 
+// SubscribeEvents activates the LazySink for the given investigation session
+// and returns the event channel. Used by registration.go to wire EventLogBridge
+// for live event streaming via MCP LoggingMessage (BR-MCP-003).
+func (t *InvestigateTool) SubscribeEvents(ctx context.Context, sessionID string) (<-chan session.InvestigationEvent, error) {
+	return t.autoMgr.Subscribe(ctx, sessionID)
+}
+
 // getSessionMutex returns a per-rrID mutex for serializing concurrent requests.
 func (t *InvestigateTool) getSessionMutex(rrID string) *sync.Mutex {
 	val, _ := t.sessionMu.LoadOrStore(rrID, &sync.Mutex{})
@@ -310,11 +333,13 @@ func (t *InvestigateTool) dispatch(ctx context.Context, input InvestigateInput, 
 	case ActionCancel:
 		return t.handleCancel(input, user)
 	case ActionStatus:
-		return t.handleStatus(input)
+		return t.handleStatus(input, user)
 	case ActionReconnect:
 		return t.handleReconnect(input, user)
 	case ActionDiscoverWorkflows:
 		return t.handleDiscoverWorkflows(ctx, input, user)
+	case ActionStartAutonomous:
+		return t.handleStartAutonomous(ctx, input, user)
 	default:
 		return InvestigateOutput{}, ErrInvalidAction
 	}
@@ -336,12 +361,14 @@ func (t *InvestigateTool) handleStart(ctx context.Context, input InvestigateInpu
 	// via InteractiveHold — skip TransitionToUserDriving below to avoid cancelling
 	// the RCA goroutine prematurely.
 	var launchedPending bool
+	var investigationSessionID string
 	if pendingID, hasPending := t.autoMgr.FindPendingByRemediationID(input.RRID); hasPending {
 		if launchErr := t.autoMgr.LaunchDeferredInvestigation(pendingID); launchErr != nil {
 			t.logger.Error(launchErr, "start: failed to launch deferred investigation",
 				"rr_id", input.RRID, "pending_session_id", pendingID)
 		} else {
 			launchedPending = true
+			investigationSessionID = pendingID
 		}
 	}
 
@@ -372,7 +399,14 @@ func (t *InvestigateTool) handleStart(ctx context.Context, input InvestigateInpu
 	}
 
 	if sess.Reconnected {
-		return InvestigateOutput{}, ErrCodeSessionActive.WithDetail("driver", user.Username)
+		return InvestigateOutput{}, &MCPError{
+			Code:    "session_active",
+			Message: "You already have an active session for this investigation; use action=reconnect to rejoin",
+			Details: map[string]string{
+				"driver":     user.Username,
+				"session_id": sess.SessionID,
+			},
+		}
 	}
 
 	// Transition any running autonomous session to user-driven mode so that
@@ -413,8 +447,9 @@ func (t *InvestigateTool) handleStart(ctx context.Context, input InvestigateInpu
 	t.storeReconstructedContext(ctx, input.RRID, sess.SessionID)
 
 	return InvestigateOutput{
-		SessionID: sess.SessionID,
-		Status:    "started",
+		SessionID:              sess.SessionID,
+		Status:                 "started",
+		InvestigationSessionID: investigationSessionID,
 	}, nil
 }
 
@@ -565,6 +600,11 @@ func (t *InvestigateTool) handleMessage(ctx context.Context, input InvestigateIn
 		return InvestigateOutput{}, fmt.Errorf("interactive turn failed: %w", err)
 	}
 
+	// Accumulate the user message + LLM response in reconHistory so that
+	// subsequent actions (discover_workflows) can extract RCA from the
+	// full conversation without relying on audit trace reconstruction.
+	t.appendConversationTurn(input.RRID, input.Message, response)
+
 	// Reset inactivity timer AFTER the LLM call completes. The pre-call reset
 	// (above) prevents timeout during user think-time; this post-call reset
 	// prevents timeout during slow LLM responses that exceed the inactivity
@@ -639,13 +679,13 @@ func (t *InvestigateTool) handleComplete(input InvestigateInput, user mcpinterna
 	}, nil
 }
 
-func (t *InvestigateTool) handleStatus(input InvestigateInput) (InvestigateOutput, error) {
+func (t *InvestigateTool) handleStatus(input InvestigateInput, user mcpinternal.UserInfo) (InvestigateOutput, error) {
 	status := StatusOutput{RRID: input.RRID}
 
 	if t.sessions.IsDriverActive(input.RRID) {
 		driver, _ := t.sessions.GetDriver(input.RRID)
 		status.Mode = StatusModeInteractive
-		if driver != nil {
+		if driver != nil && driver.ActingUser.Username == user.Username {
 			status.Driver = driver.ActingUser.Username
 		}
 	} else if _, found := t.autoMgr.FindByRemediationID(input.RRID); found {
@@ -726,16 +766,49 @@ func (t *InvestigateTool) handleDiscoverWorkflows(ctx context.Context, input Inv
 		t.timeoutTracker.ResetInactivity(sess.SessionID)
 	}
 
-	// Step 1: RCA extraction — prompt the LLM to submit structured RCA from
-	// the interactive conversation history.
-	messages := t.buildMessagesWithContext(input.RRID, "")
-	if len(messages) > 0 && messages[len(messages)-1].Content == "" {
-		messages = messages[:len(messages)-1]
-	}
+	// Step 1: Obtain the structured RCA result for Phase 3 workflow discovery.
+	//
+	// Preferred path: reuse the full InvestigationResult already produced by the
+	// autonomous Phase 1 RCA and stored in the session manager. This preserves
+	// the complete RemediationTarget (Kind, APIVersion, Name, Namespace) that
+	// the LLM emitted during the original investigation.
+	//
+	// Fallback: if no stored result exists (e.g. pure interactive session),
+	// reconstruct conversation from audit traces and re-extract RCA.
+	var rcaResult *katypes.InvestigationResult
+	if storedResult, ok := t.autoMgr.GetLatestRCAResultByRemediationID(input.RRID); ok && storedResult != nil {
+		rcaResult = storedResult
+		t.logger.Info("discover_workflows: using stored RCA result from autonomous investigation",
+			"rr_id", input.RRID,
+			"rca_target_kind", storedResult.RemediationTarget.Kind,
+			"rca_target_api_version", storedResult.RemediationTarget.APIVersion,
+			"rca_target_name", storedResult.RemediationTarget.Name)
+	} else {
+		messages := t.buildMessagesWithContext(input.RRID, "")
+		if len(messages) > 0 && messages[len(messages)-1].Content == "" {
+			messages = messages[:len(messages)-1]
+		}
+		if len(messages) == 0 {
+			reconCount := t.storeReconstructedContext(ctx, input.RRID, sess.SessionID)
+			t.logger.Info("discover_workflows: reconHistory was empty, reconstructed from audit traces",
+				"rr_id", input.RRID, "recon_turns", reconCount)
+			messages = t.buildMessagesWithContext(input.RRID, "")
+			if len(messages) > 0 && messages[len(messages)-1].Content == "" {
+				messages = messages[:len(messages)-1]
+			}
+		}
 
-	rcaResult, err := t.runner.RunRCAExtraction(ctx, messages, input.RRID)
-	if err != nil {
-		return InvestigateOutput{}, fmt.Errorf("rca extraction failed: %w", err)
+		if len(messages) == 0 {
+			t.logger.Info("discover_workflows: no conversation context available after reconstruction",
+				"rr_id", input.RRID)
+			return InvestigateOutput{}, fmt.Errorf("rca extraction failed: no conversation context available — investigation audit traces not found in data storage")
+		}
+
+		var err error
+		rcaResult, err = t.runner.RunRCAExtraction(ctx, messages, input.RRID)
+		if err != nil {
+			return InvestigateOutput{}, fmt.Errorf("rca extraction failed: %w", err)
+		}
 	}
 
 	// Step 2: Resolve signal context for Phase 3.
@@ -774,6 +847,7 @@ func (t *InvestigateTool) handleDiscoverWorkflows(ctx context.Context, input Inv
 				signal.ResourceKind = rcaResult.RemediationTarget.Kind
 				signal.ResourceName = rcaResult.RemediationTarget.Name
 				signal.Namespace = rcaResult.RemediationTarget.Namespace
+				signal.ResourceAPIVersion = rcaResult.RemediationTarget.APIVersion
 			}
 		}
 	}
@@ -882,6 +956,49 @@ func (t *InvestigateTool) handleCancel(input InvestigateInput, user mcpinternal.
 	}, nil
 }
 
+func (t *InvestigateTool) handleStartAutonomous(ctx context.Context, input InvestigateInput, _ mcpinternal.UserInfo) (InvestigateOutput, error) {
+	if t.rrChecker != nil {
+		exists, err := t.rrChecker.RemediationRequestExists(ctx, input.RRID)
+		if err != nil {
+			return InvestigateOutput{}, fmt.Errorf("validate remediation request: %w", err)
+		}
+		if !exists {
+			return InvestigateOutput{}, ErrCodeRRNotFound.WithDetail("rr_id", input.RRID)
+		}
+	}
+
+	if existingID, found := t.autoMgr.FindByRemediationID(input.RRID); found {
+		return InvestigateOutput{
+			SessionID: existingID,
+			Status:    "already_running",
+		}, nil
+	}
+
+	metadata := map[string]string{
+		"remediation_id": input.RRID,
+	}
+
+	sessionID, err := t.autoMgr.StartInvestigation(ctx, func(ctx context.Context) (*katypes.InvestigationResult, error) {
+		return nil, ctx.Err()
+	}, metadata)
+	if err != nil {
+		if errors.Is(err, session.ErrMaxInvestigationsReached) {
+			return InvestigateOutput{}, ErrCodeMaxInvestigations
+		}
+		return InvestigateOutput{}, fmt.Errorf("start autonomous investigation: %w", err)
+	}
+
+	if _, subErr := t.autoMgr.Subscribe(ctx, sessionID); subErr != nil {
+		t.logger.Error(subErr, "start_autonomous: Subscribe failed, events may be lost",
+			"session_id", sessionID, "rr_id", input.RRID)
+	}
+
+	return InvestigateOutput{
+		SessionID: sessionID,
+		Status:    "autonomous_started",
+	}, nil
+}
+
 // storeReconstructedContext queries the reconstructor and caches prior turns
 // for the session's lifetime. Prefers RCA summary from a prior completed
 // session (more concise, prevents token bloat) over full audit trail
@@ -906,12 +1023,33 @@ func (t *InvestigateTool) storeReconstructedContext(ctx context.Context, rrID, s
 		return 0
 	}
 
-	history := make([]LLMMessage, len(turns))
-	for i, turn := range turns {
-		history[i] = LLMMessage{Role: turn.Role, Content: turn.Content}
+	history := make([]LLMMessage, 0, len(turns))
+	for _, turn := range turns {
+		if turn.Content == "" {
+			continue
+		}
+		history = append(history, LLMMessage{Role: turn.Role, Content: turn.Content})
+	}
+	if len(history) == 0 {
+		return 0
 	}
 	t.reconHistory.Store(rrID, history)
 	return len(history)
+}
+
+// appendConversationTurn appends a user message and the LLM response to
+// reconHistory so that discover_workflows can extract RCA from the
+// accumulated interactive conversation.
+func (t *InvestigateTool) appendConversationTurn(rrID, userMessage, assistantResponse string) {
+	var history []LLMMessage
+	if raw, ok := t.reconHistory.Load(rrID); ok {
+		history = raw.([]LLMMessage)
+	}
+	history = append(history,
+		LLMMessage{Role: "user", Content: userMessage},
+		LLMMessage{Role: "assistant", Content: assistantResponse},
+	)
+	t.reconHistory.Store(rrID, history)
 }
 
 // buildMessagesWithContext prepends any cached reconstruction history to the

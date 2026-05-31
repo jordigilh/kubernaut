@@ -437,7 +437,7 @@ type AIAnalysisStatus struct {
 	// DegradedMode indicates if the analysis ran with degraded capabilities
 	// (e.g., Rego policy evaluation failed, using safe defaults)
 	DegradedMode bool `json:"degradedMode,omitempty"`
-	// TotalAnalysisTime is the total duration of the analysis in seconds
+	// TotalAnalysisTime is the total duration of the analysis in milliseconds
 	// +kubebuilder:validation:Minimum=0
 	TotalAnalysisTime int64 `json:"totalAnalysisTime,omitempty"`
 	// ConsecutiveFailures tracks retry attempts for exponential backoff

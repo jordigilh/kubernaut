@@ -402,6 +402,18 @@ func (o *Orchestrator) doDelivery(
 	notification *notificationv1alpha1.NotificationRequest,
 	channel notificationv1alpha1.Channel,
 ) error {
+	// DD-NOT-008: Final guard against sequential duplicate delivery.
+	// Singleflight deduplicates concurrent calls, but if a second call arrives
+	// after the first completed (key removed from group), it starts a new execution.
+	// This check catches that case by consulting the in-memory success tracker.
+	key := fmt.Sprintf("%s:%s", notification.UID, channel)
+	if _, already := o.successfulDeliveries.Load(key); already {
+		o.logger.Info("DD-NOT-008: Delivery already succeeded, skipping sequential duplicate",
+			"notification", notification.Name,
+			"channel", string(channel))
+		return nil
+	}
+
 	// DD-NOT-007: Map lookup instead of switch statement (thread-safe)
 	serviceVal, exists := o.channels.Load(string(channel))
 	if !exists {

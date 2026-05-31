@@ -45,7 +45,7 @@ func newUnstructuredRR(ns, name, phase, targetKind, targetName string) *unstruct
 	}
 }
 
-var _ = Describe("af_check_existing_rr", func() {
+var _ = Describe("kubernaut_check_existing_remediation", func() {
 	rrGVR := schema.GroupVersionResource{Group: "kubernaut.ai", Version: "v1alpha1", Resource: "remediationrequests"}
 
 	It("UT-AF-052-040: finds active RR for matching fingerprint", func() {
@@ -61,7 +61,7 @@ var _ = Describe("af_check_existing_rr", func() {
 		})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Exists).To(BeTrue())
-		Expect(result.RRID).To(Equal("prod/rr-deploy-web-1"))
+		Expect(result.RRID).To(Equal("rr-deploy-web-1"))
 		Expect(result.Phase).To(Equal("Executing"))
 	})
 
@@ -204,7 +204,7 @@ var _ = Describe("af_check_existing_rr", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Exists).To(BeTrue(),
 				"must find RR in controllerNS using workload NS fingerprint")
-			Expect(result.RRID).To(Equal(controllerNS + "/rr-deploy-web-existing"))
+			Expect(result.RRID).To(Equal("rr-deploy-web-existing"))
 		})
 
 		It("UT-AF-1292-NS-007: returns false when fingerprint uses wrong workload NS (BR-SAFETY-001, SI-10)", func() {

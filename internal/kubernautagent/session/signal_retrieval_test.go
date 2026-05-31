@@ -127,11 +127,13 @@ var _ = Describe("Signal Retrieval from Autonomous Session — PR5 Slice B", fun
 	})
 
 	Describe("UT-KA-PR5-B05: GetSignalForRemediation gracefully handles session without Context", func() {
-		It("should return a zero SignalContext when session has no typed context", func() {
+		It("should return ErrSessionNotFound when session has no typed context", func() {
 			store := session.NewStore(5 * time.Minute)
 			manager := session.NewManager(store, logr.Discard(), nil, nil)
 
-			// Start with old-style metadata (no SessionContext)
+			// Start with old-style metadata (no SessionContext).
+			// Production handler.go now always uses WithContext variants,
+			// so sessions without a stored signal are not expected.
 			metadata := map[string]string{
 				"remediation_id": "rr-b05-legacy",
 				"incident_id":    "inc-b05",
@@ -142,10 +144,9 @@ var _ = Describe("Signal Retrieval from Autonomous Session — PR5 Slice B", fun
 			}, metadata)
 			Expect(err).NotTo(HaveOccurred())
 
-			signal, err := manager.GetSignalForRemediation("rr-b05-legacy")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(signal).NotTo(BeNil())
-			Expect(signal.Name).To(BeEmpty(), "legacy session should have empty signal")
+			_, err = manager.GetSignalForRemediation("rr-b05-legacy")
+			Expect(err).To(MatchError(session.ErrSessionNotFound),
+				"sessions without a stored signal should not be returned")
 		})
 	})
 })

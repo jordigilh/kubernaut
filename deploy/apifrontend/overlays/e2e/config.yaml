@@ -6,8 +6,8 @@ server:
     required: true
 
 agent:
-  kaBaseURL: "https://kubernaut-agent.kubernaut-system.svc:8080"
-  kaMCPEndpoint: "https://kubernaut-agent.kubernaut-system.svc:8080/api/v1/mcp/"
+  kaBaseURL: "https://kubernaut-agent.kubernaut-system.svc:8443"
+  kaMCPEndpoint: "https://kubernaut-agent.kubernaut-system.svc:8443/api/v1/mcp/"
   dsBaseURL: "https://data-storage-service.kubernaut-system.svc:8080"
   dsBearerTokenFile: "/var/run/secrets/kubernetes.io/serviceaccount/token"
   kaBearerTokenFile: "/var/run/secrets/kubernetes.io/serviceaccount/token"
@@ -92,10 +92,10 @@ resilience:
   k8s:
     connectTimeout: 2s
     requestTimeout: 5s
-    cbMaxRequests: 3
-    cbInterval: 5s
-    cbTimeout: 10s
-    cbFailureThreshold: 3
+    cbMaxRequests: 5
+    cbInterval: 10s
+    cbTimeout: 30s
+    cbFailureThreshold: 10
     retryMax: 0
     retryableStatuses: []
   prometheus:

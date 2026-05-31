@@ -170,7 +170,7 @@ var _ = Describe("BR-ORCH-031: RAR Webhook Override Validation (#594)", func() {
 			rw := buildActiveRW("drain-restart", "kubernaut-system")
 			reader = fake.NewClientBuilder().WithScheme(scheme).WithObjects(rw).
 				WithStatusSubresource(rw).Build()
-			handler = authwebhook.NewRemediationApprovalRequestAuthHandler(mockStore, reader)
+			handler = authwebhook.NewRemediationApprovalRequestAuthHandler(mockStore, reader, "kubernaut-system")
 			Expect(handler.InjectDecoder(decoder)).To(Succeed())
 		})
 
@@ -189,7 +189,7 @@ var _ = Describe("BR-ORCH-031: RAR Webhook Override Validation (#594)", func() {
 	Describe("UT-AW-594-004: Approved + override + non-existent RW → deny", func() {
 		BeforeEach(func() {
 			reader = fake.NewClientBuilder().WithScheme(scheme).Build()
-			handler = authwebhook.NewRemediationApprovalRequestAuthHandler(mockStore, reader)
+			handler = authwebhook.NewRemediationApprovalRequestAuthHandler(mockStore, reader, "kubernaut-system")
 			Expect(handler.InjectDecoder(decoder)).To(Succeed())
 		})
 
@@ -208,7 +208,7 @@ var _ = Describe("BR-ORCH-031: RAR Webhook Override Validation (#594)", func() {
 	Describe("UT-AW-594-005: Rejected + override → deny", func() {
 		BeforeEach(func() {
 			reader = fake.NewClientBuilder().WithScheme(scheme).Build()
-			handler = authwebhook.NewRemediationApprovalRequestAuthHandler(mockStore, reader)
+			handler = authwebhook.NewRemediationApprovalRequestAuthHandler(mockStore, reader, "kubernaut-system")
 			Expect(handler.InjectDecoder(decoder)).To(Succeed())
 		})
 
@@ -231,7 +231,7 @@ var _ = Describe("BR-ORCH-031: RAR Webhook Override Validation (#594)", func() {
 
 			reader = fake.NewClientBuilder().WithScheme(scheme).WithObjects(rw).
 				WithStatusSubresource(rw).Build()
-			handler = authwebhook.NewRemediationApprovalRequestAuthHandler(mockStore, reader)
+			handler = authwebhook.NewRemediationApprovalRequestAuthHandler(mockStore, reader, "kubernaut-system")
 			Expect(handler.InjectDecoder(decoder)).To(Succeed())
 		})
 
@@ -250,7 +250,7 @@ var _ = Describe("BR-ORCH-031: RAR Webhook Override Validation (#594)", func() {
 	Describe("UT-AW-594-007: Approved + override (params only, no workflowName) → allow", func() {
 		BeforeEach(func() {
 			reader = fake.NewClientBuilder().WithScheme(scheme).Build()
-			handler = authwebhook.NewRemediationApprovalRequestAuthHandler(mockStore, reader)
+			handler = authwebhook.NewRemediationApprovalRequestAuthHandler(mockStore, reader, "kubernaut-system")
 			Expect(handler.InjectDecoder(decoder)).To(Succeed())
 		})
 

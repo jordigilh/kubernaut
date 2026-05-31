@@ -188,7 +188,16 @@ func main() {
 
 	// Register RemediationApprovalRequest handler (DD-WEBHOOK-003: Complete audit events)
 	// I1: Use mgr.GetClient() (cached) for consistency with other webhook handlers
-	rarHandler := authwebhook.NewRemediationApprovalRequestAuthHandler(auditStore, mgr.GetClient())
+	// DD-AUTH-MCP-001 v3.0: Derive trusted AF SA from POD_NAMESPACE (K8s downward API)
+	podNamespace := os.Getenv("POD_NAMESPACE")
+	if podNamespace == "" {
+		podNamespace = "kubernaut-system"
+	}
+	setupLog.Info("Trusted intermediary configured",
+		"afSA", authwebhook.BuildTrustedAFSA(podNamespace),
+		"derivedFrom", "POD_NAMESPACE",
+	)
+	rarHandler := authwebhook.NewRemediationApprovalRequestAuthHandler(auditStore, mgr.GetClient(), podNamespace)
 	if err := rarHandler.InjectDecoder(decoder); err != nil {
 		setupLog.Error(err, "failed to inject decoder into RemediationApprovalRequest handler")
 		os.Exit(1)

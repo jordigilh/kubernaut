@@ -35,8 +35,10 @@ import (
 // full pipeline (AA → KA → DS) in a Kind cluster with all services deployed.
 var _ = Describe("E2E-1293: Interactive Investigation Architecture", Label("e2e", "fullpipeline", "interactive", "1293"), func() {
 
-	// waitForAAInvestigating polls until an AIAnalysis for the given RR reaches Investigating phase.
-	// Returns the AA name for subsequent queries.
+	// waitForAAInvestigating polls until an AIAnalysis for the given RR reaches
+	// Investigating or a later phase (Analyzing, Completed). With mock-LLM, the
+	// investigation can complete faster than the polling interval, so we accept
+	// any phase that implies Investigating was reached.
 	waitForAAInvestigating := func(rrName string) string {
 		var aaName string
 		Eventually(func() bool {
@@ -47,7 +49,8 @@ var _ = Describe("E2E-1293: Interactive Investigation Architecture", Label("e2e"
 			for _, aa := range aaList.Items {
 				if aa.Spec.RemediationRequestRef.Name == rrName {
 					aaName = aa.Name
-					return string(aa.Status.Phase) == "Investigating"
+					phase := string(aa.Status.Phase)
+					return phase == "Investigating" || phase == "Analyzing" || phase == "Completed"
 				}
 			}
 			return false
@@ -183,11 +186,19 @@ var _ = Describe("E2E-1293: Interactive Investigation Architecture", Label("e2e"
 		rrName, err := infrastructure.CreateDirectRR(ctx, namespace, "e2e-1293-003")
 		Expect(err).NotTo(HaveOccurred())
 
-		aaName := waitForAAInvestigating(rrName)
-
-		By("Creating Active IS CRD and performing takeover")
+		By("Creating Active IS CRD immediately (before mock-LLM can complete autonomous investigation)")
 		is := createISForRR("1293-003", rrName)
 
+		By("Waiting for AA to reach Investigating with interactive=true")
+		aaName := waitForAAInvestigating(rrName)
+		aa := &aianalysisv1.AIAnalysis{}
+		Eventually(func(g Gomega) {
+			g.Expect(apiReader.Get(ctx, client.ObjectKey{Name: aaName, Namespace: namespace}, aa)).To(Succeed())
+			g.Expect(aa.Status.KASession).NotTo(BeNil())
+			g.Expect(aa.Status.KASession.Interactive).To(BeTrue())
+		}, 90*time.Second, 2*time.Second).Should(Succeed())
+
+		By("Performing MCP takeover on the interactive session")
 		callCtx, callCancel := context.WithTimeout(ctx, 30*time.Second)
 		defer callCancel()
 		result, err := infrastructure.CallInvestigate(callCtx, setup.Session, map[string]any{
@@ -195,15 +206,7 @@ var _ = Describe("E2E-1293: Interactive Investigation Architecture", Label("e2e"
 			"action": "takeover",
 		})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(result.IsError).To(BeFalse())
-
-		By("Waiting for interactive session to be fully established")
-		aa := &aianalysisv1.AIAnalysis{}
-		Eventually(func(g Gomega) {
-			g.Expect(apiReader.Get(ctx, client.ObjectKey{Name: aaName, Namespace: namespace}, aa)).To(Succeed())
-			g.Expect(aa.Status.KASession).NotTo(BeNil())
-			g.Expect(aa.Status.KASession.Interactive).To(BeTrue())
-		}, 60*time.Second, 2*time.Second).Should(Succeed())
+		Expect(result.IsError).To(BeFalse(), "takeover should succeed on interactive session")
 
 		By("Deleting the InvestigationSession CRD (simulates user cancellation)")
 		Expect(k8sClient.Delete(ctx, is)).To(Succeed())

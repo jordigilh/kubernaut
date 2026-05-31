@@ -812,12 +812,14 @@ timeoutSeconds: 120
 	// Create handlers with REAL agent client, metrics, and REAL audit client
 	eventRecorder := k8sManager.GetEventRecorderFor("aianalysis-controller")
 	const controllerNS = "kubernaut-system"
-	isChecker := handlers.NewK8sInvestigationSessionChecker(k8sManager.GetClient(), controllerNS)
+	isChecker := handlers.NewK8sInvestigationSessionChecker(k8sManager.GetAPIReader(), controllerNS)
+	isPhaseUpdater := handlers.NewK8sISPhaseUpdater(k8sManager.GetClient(), controllerNS)
 	investigatingHandler := handlers.NewInvestigatingHandler(realAgentClient, ctrl.Log.WithName("investigating-handler"), testMetrics, auditClient,
 		handlers.WithRecorder(eventRecorder),                  // DD-EVENT-001: Session lifecycle events
 		handlers.WithSessionMode(),                            // BR-AA-HAPI-064: Async submit/poll/result flow
 		handlers.WithSessionPollInterval(2*time.Second),       // Fast polling for tests (production default: 15s)
-		handlers.WithInvestigationSessionChecker(isChecker))   // BR-INTERACTIVE-010: IS CRD awareness
+		handlers.WithInvestigationSessionChecker(isChecker),   // BR-INTERACTIVE-010: IS CRD awareness
+		handlers.WithISPhaseUpdater(isPhaseUpdater))           // BR-INTERACTIVE-010: Set IS Active after submit
 	// #225: Mock LLM current_scenario persists across analyses (statefulness),
 	// so unrecognized signals inherit high confidence (e.g., 0.88 from crashloop).
 	// Threshold 0.9 ensures mock scenarios requiring approval stay below threshold.

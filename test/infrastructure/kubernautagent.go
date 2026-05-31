@@ -31,7 +31,7 @@ import (
 // deploying the Go binary from docker/kubernautagent.Dockerfile.
 //
 // Port allocations (same as AIAnalysis/KA E2E per DD-TEST-001 v2.9):
-//   - Kubernaut Agent: 30088 (NodePort) → 8080 (container, Host Port 8088)
+//   - Kubernaut Agent: 30088 (NodePort) → 8443 (container, Host Port 8088)
 //   - Data Storage:    30089 (NodePort) → 8080 (container, Host Port 8089)
 //   - PostgreSQL:      30439 (NodePort) → 5432 (container)
 //   - Redis:           30387 (NodePort) → 6379 (container)
@@ -847,7 +847,7 @@ subjects:
 }
 
 // DeployKubernautAgentOnly deploys the Go Kubernaut Agent as a Deployment + NodePort Service.
-// Same port mapping as legacy HolmesGPT API / KA (30088 → 8080, host 8088) for API contract parity.
+// Port mapping: 30088 → 8443 (container), host 8088. KA defaults to 8443 since the H1 GA finding.
 // enableJWT controls whether jwtProviders are included in the config (requires DEX to be deployed).
 func DeployKubernautAgentOnly(clusterName, kubeconfigPath, namespace, imageTag string, enableJWT bool, writer io.Writer) error {
 	imagePullPolicy := GetImagePullPolicy()
@@ -948,8 +948,8 @@ spec:
         image: %s
         imagePullPolicy: %s
         ports:
-        - name: http
-          containerPort: 8080
+        - name: https
+          containerPort: 8443
         - name: health
           containerPort: 8081
         - name: metrics
@@ -1021,9 +1021,9 @@ metadata:
 spec:
   type: NodePort
   ports:
-  - name: http
-    port: 8080
-    targetPort: 8080
+  - name: https
+    port: 8443
+    targetPort: 8443
     nodePort: 30088
   - name: health
     port: 8081

@@ -177,7 +177,7 @@ spec:
       - name: effectiveness-monitor
         env:
         - name: HOLMESGPT_API_URL
-          value: "http://kubernaut-agent.kubernaut-system.svc.cluster.local:8080"
+          value: "https://kubernaut-agent.kubernaut-system.svc.cluster.local:8443"
 ```
 
 ### **HolmesGPT API Authorization**

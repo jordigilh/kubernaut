@@ -26,6 +26,8 @@ import (
 
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	mcptools "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 type statusSessionMgr struct {
@@ -58,6 +60,11 @@ func (m *statusAutoMgr) ForceTransitionToUserDriving(_ string, _ string, _ []str
 func (m *statusAutoMgr) FindPendingByRemediationID(_ string) (string, bool)              { return "", false }
 func (m *statusAutoMgr) LaunchDeferredInvestigation(_ string) error                       { return nil }
 func (m *statusAutoMgr) GetLatestRCASummaryByRemediationID(_ string) (string, bool)       { return "", false }
+func (m *statusAutoMgr) GetLatestRCAResultByRemediationID(_ string) (*katypes.InvestigationResult, bool) {
+	return nil, false
+}
+func (m *statusAutoMgr) StartInvestigation(_ context.Context, _ session.InvestigateFunc, _ map[string]string) (string, error) { return "", nil }
+func (m *statusAutoMgr) Subscribe(_ context.Context, _ string) (<-chan session.InvestigationEvent, error) { return nil, nil }
 
 var _ = Describe("action=status — PR4 PROD-01 BR-INTERACTIVE-002", func() {
 
@@ -83,7 +90,33 @@ var _ = Describe("action=status — PR4 PROD-01 BR-INTERACTIVE-002", func() {
 	})
 
 	Describe("UT-KA-STATUS-002: action=status returns mode 'interactive' + driver identity when driver active", func() {
-		It("should return interactive mode with driver username", func() {
+		It("should return interactive mode with driver username for the driver themselves", func() {
+			sessMgr := &statusSessionMgr{
+				driverSession: &mcpinternal.InteractiveSession{
+					SessionID:     "interactive-sess-001",
+					CorrelationID: "rr-status-002",
+					ActingUser:    mcpinternal.UserInfo{Username: "alice@example.com"},
+					StartedAt:     time.Now(),
+				},
+			}
+			autoMgr := &statusAutoMgr{found: true}
+			tool := mcptools.NewInvestigateTool(sessMgr, nil, nil, autoMgr)
+
+			input := mcptools.InvestigateInput{
+				RRID:   "rr-status-002",
+				Action: mcptools.ActionStatus,
+			}
+
+			result, err := tool.Handle(context.Background(), input, mcpinternal.UserInfo{Username: "alice@example.com"})
+			Expect(err).NotTo(HaveOccurred())
+
+			var status mcptools.StatusOutput
+			Expect(json.Unmarshal([]byte(result.Response), &status)).To(Succeed())
+			Expect(status.Mode).To(Equal("interactive"))
+			Expect(status.Driver).To(Equal("alice@example.com"))
+		})
+
+		It("should redact driver identity for non-owner callers (H4)", func() {
 			sessMgr := &statusSessionMgr{
 				driverSession: &mcpinternal.InteractiveSession{
 					SessionID:     "interactive-sess-001",
@@ -106,7 +139,7 @@ var _ = Describe("action=status — PR4 PROD-01 BR-INTERACTIVE-002", func() {
 			var status mcptools.StatusOutput
 			Expect(json.Unmarshal([]byte(result.Response), &status)).To(Succeed())
 			Expect(status.Mode).To(Equal("interactive"))
-			Expect(status.Driver).To(Equal("alice@example.com"))
+			Expect(status.Driver).To(BeEmpty(), "driver identity should be redacted for non-owner")
 		})
 	})
 

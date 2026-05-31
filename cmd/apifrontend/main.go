@@ -23,12 +23,15 @@ import (
 	"gopkg.in/yaml.v3"
 	authorizationv1 "k8s.io/api/authorization/v1"
 	coordinationv1 "k8s.io/api/coordination/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/discovery/cached/memory"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/restmapper"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -52,6 +55,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/resilience"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/streaming"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tlswiring"
 )
@@ -95,6 +99,9 @@ func run() int {
 		logger.Error(err, "invalid config")
 		return 1
 	}
+
+	cfg.Session.Namespace = agentpkg.ResolveNamespace(cfg.Session.Namespace, agentpkg.DefaultNamespaceFile)
+	logger.Info("operational namespace resolved", "namespace", cfg.Session.Namespace)
 
 	restCfg, err := ctrl.GetConfig()
 	if err != nil {
@@ -344,6 +351,10 @@ func run() int {
 	if tracker := routerCfg.SSETracker; tracker != nil {
 		tracker.DrainAll(shutCtx)
 	}
+	if deps.InvestigationRegistry != nil {
+		deps.InvestigationRegistry.StopAll()
+		logger.Info("stopped active investigation sessions")
+	}
 	if deps.Pool != nil {
 		if err := deps.Pool.DrainAll(shutCtx); err != nil {
 			logger.Error(err, "failed to drain KA session pool on shutdown")
@@ -426,15 +437,18 @@ type caWatcherEntry struct {
 // backendDeps holds shared backend clients used by both the MCP and A2A handlers.
 // Created once by buildBackendDeps and consumed by buildMCPHandler / buildA2AHandler.
 type backendDeps struct {
-	DSClient             ds.Client
-	KAClient             *ka.Client
-	MCPClient            ka.MCPClient
-	Pool                 *ka.KASessionPool
-	Triager              *severity.Triager
-	DSResilientTransport *resilience.CircuitBreakerTransport
-	CAWatchers           []caWatcherEntry
-	k8sDynClient         dynamic.Interface
-	K8sCB                *resilience.K8sCircuitBreaker
+	DSClient              ds.Client
+	KAClient              *ka.Client
+	MCPClient             ka.MCPClient
+	DedicatedClient       ka.MCPClient
+	Pool                  *ka.KASessionPool
+	Triager               *severity.Triager
+	DSResilientTransport  *resilience.CircuitBreakerTransport
+	CAWatchers            []caWatcherEntry
+	k8sDynClient          dynamic.Interface
+	K8sCB                 *resilience.K8sCircuitBreaker
+	InvestigationRegistry *tools.MonitorRegistry
+	Mapper                meta.RESTMapper
 }
 
 // K8sClient returns the pod service-account scoped dynamic K8s client,
@@ -524,6 +538,67 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 		Logger:     logger.WithName("ka-session-pool"),
 	})
 	deps.MCPClient = ka.NewPooledMCPClient(deps.Pool, logger)
+	deps.DedicatedClient = mcpClient
+	deps.InvestigationRegistry = tools.NewMonitorRegistry()
+
+	kaRESTAuth := http.RoundTripper(kaTransport)
+	if cfg.Agent.KABearerTokenFile != "" {
+		kaRESTAuth = &bearerTokenTransport{
+			base:      kaTransport,
+			tokenFile: cfg.Agent.KABearerTokenFile,
+		}
+	}
+
+	deps.KAClient = ka.NewClient(ka.Config{
+		BaseURL:            cfg.Agent.KABaseURL,
+		BaseTransport:      kaRESTAuth,
+		Timeout:            cfg.Resilience.KA.RequestTimeout,
+		CBMaxRequests:      cfg.Resilience.KA.CBMaxRequests,
+		CBInterval:         cfg.Resilience.KA.CBInterval,
+		CBTimeout:          cfg.Resilience.KA.CBTimeout,
+		CBFailureThreshold: cfg.Resilience.KA.CBFailureThreshold,
+		RetryMax:           cfg.Resilience.KA.RetryMax,
+		RetryInitBackoff:   cfg.Resilience.KA.RetryInitBackoff,
+		RetryMaxBackoff:    cfg.Resilience.KA.RetryMaxBackoff,
+		RetryableStatuses:  cfg.Resilience.KA.RetryableStatuses,
+		CBAuditFunc:        resilience.CircuitBreakerAuditFunc(auditor),
+	}, &ka.ClientMetrics{
+		StateGauge:   metricsReg.CircuitBreakerState,
+		DurationHist: metricsReg.DownstreamDuration,
+	})
+
+	// F7+F8: Eager K8s dynamic client init with circuit breaker (WIRE-03).
+	// Fail-fast: log clearly on failure instead of returning silent nil.
+	restCfg, err := ctrl.GetConfig()
+	if err != nil {
+		logger.Error(err, "K8s dynamic client unavailable — K8s tools will return errors at runtime")
+	} else {
+		inner, err := dynamic.NewForConfig(restCfg)
+		if err != nil {
+			logger.Error(err, "K8s dynamic client creation failed — K8s tools will return errors at runtime")
+		} else {
+			k8sCfg := cfg.Resilience.K8s
+			deps.K8sCB = resilience.NewK8sCircuitBreaker(resilience.K8sCBConfig{
+				Name:             "k8s",
+				MaxRequests:      k8sCfg.CBMaxRequests,
+				Interval:         k8sCfg.CBInterval,
+				Timeout:          k8sCfg.CBTimeout,
+				FailureThreshold: k8sCfg.CBFailureThreshold,
+				StateGauge:       metricsReg.CircuitBreakerState,
+				DependencyName:   "k8s",
+			})
+			deps.k8sDynClient = resilience.NewResilientDynamicClient(inner, deps.K8sCB)
+			logger.Info("K8s dynamic client initialized with circuit breaker")
+
+			disc, discErr := discovery.NewDiscoveryClientForConfig(restCfg)
+			if discErr != nil {
+				logger.Error(discErr, "K8s discovery client unavailable — CRD kind resolution will use static table only")
+			} else {
+				deps.Mapper = restmapper.NewDeferredDiscoveryRESTMapper(memory.NewMemCacheClient(disc))
+				logger.Info("K8s RESTMapper initialized for CRD kind resolution")
+			}
+		}
+	}
 
 	if cfg.SeverityTriage.Enabled {
 		promTransport, promWatcher, promErr := tlswiring.CAReloadableTransport(cfg.SeverityTriage.PrometheusTLSCaFile, logger.WithName("prom-ca"))
@@ -579,59 +654,17 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 			severityCfg.LLMConfidence = 0.7
 		}
 
-		deps.Triager = severity.NewTriager(promClient, llmTriager, severityCfg, logger.WithName("severity-triage"))
-		logger.Info("severity triage enabled", "prometheusURL", cfg.SeverityTriage.PrometheusURL)
-	}
-
-	kaRESTAuth := http.RoundTripper(kaTransport)
-	if cfg.Agent.KABearerTokenFile != "" {
-		kaRESTAuth = &bearerTokenTransport{
-			base:      kaTransport,
-			tokenFile: cfg.Agent.KABearerTokenFile,
+		var triagerOpts []severity.TriagerOption
+		triagerOpts = append(triagerOpts, severity.WithAuditor(auditor))
+		if deps.k8sDynClient != nil {
+			triagerOpts = append(triagerOpts, severity.WithPodResolver(
+				severity.NewK8sPodResolver(deps.k8sDynClient, logger.WithName("pod-resolver")),
+			))
 		}
-	}
 
-	deps.KAClient = ka.NewClient(ka.Config{
-		BaseURL:            cfg.Agent.KABaseURL,
-		BaseTransport:      kaRESTAuth,
-		Timeout:            cfg.Resilience.KA.RequestTimeout,
-		CBMaxRequests:      cfg.Resilience.KA.CBMaxRequests,
-		CBInterval:         cfg.Resilience.KA.CBInterval,
-		CBTimeout:          cfg.Resilience.KA.CBTimeout,
-		CBFailureThreshold: cfg.Resilience.KA.CBFailureThreshold,
-		RetryMax:           cfg.Resilience.KA.RetryMax,
-		RetryInitBackoff:   cfg.Resilience.KA.RetryInitBackoff,
-		RetryMaxBackoff:    cfg.Resilience.KA.RetryMaxBackoff,
-		RetryableStatuses:  cfg.Resilience.KA.RetryableStatuses,
-		CBAuditFunc:        resilience.CircuitBreakerAuditFunc(auditor),
-	}, &ka.ClientMetrics{
-		StateGauge:   metricsReg.CircuitBreakerState,
-		DurationHist: metricsReg.DownstreamDuration,
-	})
-
-	// F7+F8: Eager K8s dynamic client init with circuit breaker (WIRE-03).
-	// Fail-fast: log clearly on failure instead of returning silent nil.
-	restCfg, err := ctrl.GetConfig()
-	if err != nil {
-		logger.Error(err, "K8s dynamic client unavailable — K8s tools will return errors at runtime")
-	} else {
-		inner, err := dynamic.NewForConfig(restCfg)
-		if err != nil {
-			logger.Error(err, "K8s dynamic client creation failed — K8s tools will return errors at runtime")
-		} else {
-			k8sCfg := cfg.Resilience.K8s
-			deps.K8sCB = resilience.NewK8sCircuitBreaker(resilience.K8sCBConfig{
-				Name:             "k8s",
-				MaxRequests:      k8sCfg.CBMaxRequests,
-				Interval:         k8sCfg.CBInterval,
-				Timeout:          k8sCfg.CBTimeout,
-				FailureThreshold: k8sCfg.CBFailureThreshold,
-				StateGauge:       metricsReg.CircuitBreakerState,
-				DependencyName:   "k8s",
-			})
-			deps.k8sDynClient = resilience.NewResilientDynamicClient(inner, deps.K8sCB)
-			logger.Info("K8s dynamic client initialized with circuit breaker")
-		}
+		deps.Triager = severity.NewTriager(promClient, llmTriager, severityCfg, logger.WithName("severity-triage"), triagerOpts...)
+		logger.Info("severity triage enabled", "prometheusURL", cfg.SeverityTriage.PrometheusURL,
+			"podResolverEnabled", deps.k8sDynClient != nil)
 	}
 
 	return deps, nil
@@ -645,10 +678,11 @@ func buildMCPHandler(cfg *config.Config, deps *backendDeps, sessInfra *sessionIn
 		sessInitializer = sessInfra.SessionService
 	}
 	bridgeCfg := &handler.MCPBridgeConfig{
-		K8sClient:          deps.K8sClient(),
-		KAClient:           deps.KAClient,
-		KAMCPClient:        deps.MCPClient,
-		Pool:               deps.Pool,
+		K8sClient:             deps.K8sClient(),
+		Namespace:             cfg.Session.Namespace,
+		KAMCPClient:           deps.MCPClient,
+		KADedicatedClient:     deps.DedicatedClient,
+		InvestigationRegistry: deps.InvestigationRegistry,
 		DSClient:           deps.DSClient,
 		Triager:            deps.Triager,
 		Authorizer:         authorizer,
@@ -710,19 +744,21 @@ func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps,
 	if sessInfra != nil {
 		sessionSvcForAgent = sessInfra.SessionService
 	}
-	resolvedNS := agentpkg.ResolveNamespace(cfg.Session.Namespace, agentpkg.DefaultNamespaceFile)
 	rootAgent, _, err := agentpkg.NewRootAgent(agentpkg.AgentConfig{
-		Instruction:         agentpkg.BuildInstruction(resolvedNS),
-		InstructionProvider: agentpkg.NewInstructionProvider(resolvedNS),
+		Instruction:         agentpkg.BuildInstruction(cfg.Session.Namespace),
+		InstructionProvider: agentpkg.NewInstructionProvider(cfg.Session.Namespace),
 		LLMModel:         llmModel,
-		Namespace:        resolvedNS,
+		Namespace:        cfg.Session.Namespace,
 		K8sClient:        deps.K8sClient(),
-		KAClient:         deps.KAClient,
 		DSClient:         deps.DSClient,
 		MCPClient:        deps.MCPClient,
-		Authorizer:       authorizer,
+		DedicatedClient:       deps.DedicatedClient,
+		InvestigationRegistry: deps.InvestigationRegistry,
+		Pool:                  deps.Pool,
+		Authorizer:            authorizer,
 		Auditor:          auditor,
 		Triager:          deps.Triager,
+		RESTMapper:       deps.Mapper,
 		SessionService:   sessionSvcForAgent,
 		ToolCallsTotal:   metricsReg.ToolCallsTotal,
 		ToolCallDuration: metricsReg.ToolCallDuration,

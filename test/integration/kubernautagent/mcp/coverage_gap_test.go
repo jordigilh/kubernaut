@@ -18,6 +18,7 @@ package mcp_test
 
 import (
 	"context"
+	"errors"
 	"github.com/go-logr/logr"
 	"time"
 
@@ -85,6 +86,39 @@ var _ = Describe("Coverage Gap Tests — BR-INTERACTIVE-004/005", Label("integra
 			}, bob)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("session_active"))
+		})
+	})
+
+	Describe("IT-KA-COV-RECONNECT-001: same-user second start returns session_active with reconnect guidance", func() {
+		It("should return session_active with distinct message from cross-user contention", func() {
+			leaseMgr := mcpinternal.NewLeaseSessionManagerConcrete(sharedK8sClient, nsName, logger)
+			runner := &delayedMockRunner{delay: 0, response: "response"}
+			recon := &mockReconIT{}
+			tool := mcptools.NewInvestigateTool(leaseMgr, runner, recon, mcptools.NopAutonomousManager{})
+
+			alice := mcpinternal.UserInfo{Username: "alice@example.com"}
+
+			By("alice starts an investigation")
+			out, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID: "rr-cov-reconnect-01", Action: mcptools.ActionStart,
+			}, alice)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(out.Status).To(Equal("started"))
+
+			By("alice calls start again on the same rr_id (same user, reconnect scenario)")
+			_, err = tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID: "rr-cov-reconnect-01", Action: mcptools.ActionStart,
+			}, alice)
+			Expect(err).To(HaveOccurred())
+
+			var mcpErr *mcptools.MCPError
+			Expect(errors.As(err, &mcpErr)).To(BeTrue(), "error should be *MCPError")
+			Expect(mcpErr.Code).To(Equal("session_active"))
+			Expect(mcpErr.Message).To(ContainSubstring("already have an active session"),
+				"same-user reconnect must use distinct message from cross-user 'driven by another user'")
+			Expect(mcpErr.Details).To(HaveKey("session_id"),
+				"reconnect error should include session_id for diagnostics")
+			Expect(mcpErr.Details["driver"]).To(Equal("alice@example.com"))
 		})
 	})
 

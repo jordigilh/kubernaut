@@ -103,8 +103,8 @@ var _ = Describe("Scenario Detection Rules", func() {
 		})
 	})
 
-	Describe("UT-MOCK-1292-001: Cross-namespace af_create_rr scenario extracts workload namespace", func() {
-		DescribeTable("should select af_create_rr_cross_ns and extract the workload namespace",
+	Describe("UT-MOCK-1292-001: Cross-namespace kubernaut_remediate scenario extracts workload namespace", func() {
+		DescribeTable("should select kubernaut_remediate_cross_ns and extract the workload namespace",
 			func(prompt, expectedNS, expectedName string) {
 				ctx := &scenarios.DetectionContext{
 					Content:         prompt,
@@ -113,7 +113,7 @@ var _ = Describe("Scenario Detection Rules", func() {
 				}
 				result := registry.Detect(ctx)
 				Expect(result).NotTo(BeNil())
-				Expect(result.Scenario.Name()).To(Equal("af_create_rr_cross_ns"),
+				Expect(result.Scenario.Name()).To(Equal("kubernaut_remediate_cross_ns"),
 					"cross-namespace remediation prompt must match the cross-NS scenario")
 
 				cfgScenario, ok := result.Scenario.(scenarios.ScenarioWithConfig)
@@ -157,7 +157,7 @@ var _ = Describe("Scenario Detection Rules", func() {
 			}
 			r2 := registry.Detect(ctx2)
 			Expect(r2).NotTo(BeNil())
-			Expect(r2.Scenario.Name()).To(Equal("af_create_rr_cross_ns"))
+			Expect(r2.Scenario.Name()).To(Equal("kubernaut_remediate_cross_ns"))
 			cfg2 := r2.Scenario.(scenarios.ScenarioWithConfig).Config()
 			Expect(cfg2.ResourceNS).To(Equal("kubernaut-system"),
 				"when regex fails, Config() must return the base default — not a stale value from a prior match")

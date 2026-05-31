@@ -1,0 +1,150 @@
+/*
+Copyright 2026 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package tools_test
+
+import (
+	"context"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	dynamicfake "k8s.io/client-go/dynamic/fake"
+
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
+)
+
+var _ = Describe("kubernaut_remediate (#1332 Intent-Based Tool Redesign)", func() {
+	rrGVR := schema.GroupVersionResource{Group: "kubernaut.ai", Version: "v1alpha1", Resource: "remediationrequests"}
+	eventsGVR := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "events"}
+
+	newFakeClientForRemediate := func(objects ...runtime.Object) *dynamicfake.FakeDynamicClient {
+		scheme := runtime.NewScheme()
+		return dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme,
+			map[schema.GroupVersionResource]string{
+				rrGVR:     "RemediationRequestList",
+				eventsGVR: "EventList",
+			},
+			objects...)
+	}
+
+	Describe("HandleRemediate — RR creation without IS (F-01)", func() {
+		It("UT-AF-1332-001: creates RR with valid namespace/kind/name and returns rr_id", func() {
+			client := newFakeClientForRemediate()
+
+			result, err := tools.HandleRemediate(context.Background(), client, "kubernaut-system", &tools.RemediateArgs{
+				Namespace:   "prod",
+				Kind:        "Deployment",
+				Name:        "web",
+				Description: "Pod CrashLoopBackOff detected",
+			}, "sre-user", nil, nil)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RRID).NotTo(BeEmpty())
+			Expect(result.RRID).To(HavePrefix("rr-"))
+			Expect(result.AlreadyExists).To(BeFalse())
+			Expect(result.Message).To(ContainSubstring("created"))
+		})
+
+		It("UT-AF-1332-002: deduplication returns already_exists for same fingerprint", func() {
+			client := newFakeClientForRemediate()
+
+			result1, err := tools.HandleRemediate(context.Background(), client, "kubernaut-system", &tools.RemediateArgs{
+				Namespace: "prod", Kind: "Deployment", Name: "web", Description: "first",
+			}, "user-a", nil, nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result1.AlreadyExists).To(BeFalse())
+
+			result2, err := tools.HandleRemediate(context.Background(), client, "kubernaut-system", &tools.RemediateArgs{
+				Namespace: "prod", Kind: "Deployment", Name: "web", Description: "second",
+			}, "user-b", nil, nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result2.AlreadyExists).To(BeTrue())
+			Expect(result2.RRID).To(Equal(result1.RRID))
+		})
+
+		It("UT-AF-1332-003: rejects empty namespace", func() {
+			client := newFakeClientForRemediate()
+			_, err := tools.HandleRemediate(context.Background(), client, "kubernaut-system", &tools.RemediateArgs{
+				Namespace: "", Kind: "Deployment", Name: "web",
+			}, "user", nil, nil)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("invalid input"))
+		})
+
+		It("UT-AF-1332-004: rejects empty kind", func() {
+			client := newFakeClientForRemediate()
+			_, err := tools.HandleRemediate(context.Background(), client, "kubernaut-system", &tools.RemediateArgs{
+				Namespace: "prod", Kind: "", Name: "web",
+			}, "user", nil, nil)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("invalid input"))
+		})
+
+		It("UT-AF-1332-005: rejects empty name", func() {
+			client := newFakeClientForRemediate()
+			_, err := tools.HandleRemediate(context.Background(), client, "kubernaut-system", &tools.RemediateArgs{
+				Namespace: "prod", Kind: "Deployment", Name: "",
+			}, "user", nil, nil)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("invalid input"))
+		})
+
+		It("UT-AF-1332-006: returns ErrK8sUnavailable when client is nil", func() {
+			_, err := tools.HandleRemediate(context.Background(), nil, "kubernaut-system", &tools.RemediateArgs{
+				Namespace: "prod", Kind: "Deployment", Name: "web",
+			}, "user", nil, nil)
+			Expect(err).To(MatchError(tools.ErrK8sUnavailable))
+		})
+
+		It("UT-AF-1332-007: severity defaults to medium when no triager provided", func() {
+			client := newFakeClientForRemediate()
+
+			result, err := tools.HandleRemediate(context.Background(), client, "kubernaut-system", &tools.RemediateArgs{
+				Namespace: "prod", Kind: "Deployment", Name: "web-sev",
+			}, "user", nil, nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Severity).To(Equal("medium"))
+		})
+
+		It("UT-AF-1332-008: existing rr_id path looks up RR status", func() {
+			client := newFakeClientForRemediate()
+
+			createResult, err := tools.HandleRemediate(context.Background(), client, "kubernaut-system", &tools.RemediateArgs{
+				Namespace: "prod", Kind: "Deployment", Name: "existing-target",
+			}, "user", nil, nil)
+			Expect(err).NotTo(HaveOccurred())
+
+			lookupResult, err := tools.HandleRemediate(context.Background(), client, "kubernaut-system", &tools.RemediateArgs{
+				RRID: createResult.RRID,
+			}, "user", nil, nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(lookupResult.RRID).To(Equal(createResult.RRID))
+			Expect(lookupResult.AlreadyExists).To(BeTrue())
+		})
+	})
+
+	Describe("NewRemediateTool — tool constructor (F-06)", func() {
+		It("UT-AF-1332-009: creates tool with name kubernaut_remediate", func() {
+			client := newFakeClientForRemediate()
+			t, err := tools.NewRemediateTool(client, "kubernaut-system", nil, nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(t.Name()).To(Equal("kubernaut_remediate"))
+		})
+	})
+})

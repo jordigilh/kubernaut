@@ -17,6 +17,7 @@ package launcher
 
 import (
 	"context"
+	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/a2aproject/a2a-go/a2a"
@@ -57,6 +58,7 @@ func NewStreamingExecutor(inner a2asrv.AgentExecutor, logger logr.Logger, m Brid
 // OpenAPI payload schemas in data-storage-v1.yaml. The A2A task lifecycle is
 // already audited by buildBeforeExecuteCallback / buildAfterExecuteCallback.
 func (s *StreamingExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestContext, queue eventqueue.Queue) error {
+	ctx = logr.NewContext(ctx, s.logger)
 	ctx = WithEventBridge(ctx, queue, reqCtx.TaskID, reqCtx.ContextID, s.bridgeMetrics)
 
 	user := auth.UserIdentityFromContext(ctx)
@@ -69,7 +71,27 @@ func (s *StreamingExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestC
 		"user", username,
 	)
 
+	// Keepalive: emit a lightweight artifact every 5s to prevent idle SSE
+	// timeouts from proxies or clients during long LLM thinking pauses
+	// between tool calls.
+	stopKeepalive := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-stopKeepalive:
+				return
+			case <-ticker.C:
+				_ = EmitKeepaliveDotSafe(ctx)
+			}
+		}
+	}()
+
 	err := s.inner.Execute(ctx, reqCtx, queue)
+	close(stopKeepalive)
 
 	s.logger.Info("a2a stream closed",
 		"task_id", string(reqCtx.TaskID),
@@ -78,8 +100,9 @@ func (s *StreamingExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestC
 	)
 
 	// BR-SESS-003 / SI-4: On client SSE disconnect, transition materialized
-	// sessions to Disconnected phase so tracker slots are released promptly
-	// and the CRD reflects the actual connection state.
+	// sessions to Disconnected phase so the CRD reflects the actual
+	// connection state. Tracker slot release is handled by the disconnect
+	// watcher goroutine in trackSSEConnection (router.go).
 	//
 	// The a2a-go library runs executors in a detached context
 	// (context.WithoutCancel), so ctx.Err() won't reflect SSE disconnects.

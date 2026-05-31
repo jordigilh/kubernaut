@@ -182,7 +182,7 @@ AF has tools registered for most phases but the interactive session lifecycle is
 | ID | Description | AC | Category |
 |----|-------------|-----|----------|
 | UT-AF-1234-001 | InvokeAction sends `{rr_id, action: "start"}` for start action | G3 | Happy Path |
-| UT-AF-1234-002 | InvokeAction sends `{rr_id, action: "takeover"}` with message | G3 | Happy Path |
+| UT-AF-1234-002 | InvokeAction sends `{rr_id, action: "investigate"}` with takeover intent (consolidated per #1332) | G3 | Happy Path |
 | UT-AF-1234-003 | InvokeAction sends `{rr_id, action: "message", message: "..."}` | G3 | Happy Path |
 | UT-AF-1234-004 | InvokeAction sends `{rr_id, action: "discover_workflows"}` | G3 | Happy Path |
 | UT-AF-1234-005 | InvokeAction sends `{rr_id, action: "complete"}` | G3 | Happy Path |
@@ -307,7 +307,7 @@ NOTE: Bridge dispatch tests use httptest + MockMCPClient and run via `make test-
 
 | ID | Description | AC | Category |
 |----|-------------|-----|----------|
-| UT-AF-1234-210 | Bridge dispatch kubernaut_takeover via MCP protocol | G1 | Happy Path |
+| UT-AF-1234-210 | Bridge dispatch kubernaut_investigate (takeover intent) via MCP protocol (#1332: consolidated) | G1 | Happy Path |
 | UT-AF-1234-211 | Bridge dispatch kubernaut_message via MCP protocol | G1 | Happy Path |
 | UT-AF-1234-212 | Bridge dispatch kubernaut_complete via MCP protocol | G1 | Happy Path |
 | UT-AF-1234-213 | Bridge dispatch kubernaut_cancel via MCP protocol | G1 | Happy Path |
@@ -325,7 +325,7 @@ NOTE: Bridge dispatch tests use httptest + MockMCPClient and run via `make test-
 | ID | Description | AC | Category |
 |----|-------------|-----|----------|
 | E2E-AF-1234-001 | MCP chain: start -> discover -> select -> watch (sre persona) | G1 | Happy Path |
-| E2E-AF-1234-002 | RBAC: viewer can status, denied on takeover/message | G1 | Security |
+| E2E-AF-1234-002 | RBAC: viewer can status, denied on investigate/message | G1 | Security |
 
 ---
 
@@ -435,7 +435,7 @@ NOTE: Bridge dispatch validation tests run via `make test-unit-apifrontend`, so 
 
 | ID | Description | AC | Category |
 |----|-------------|-----|----------|
-| E2E-AF-1234-005 | Viewer persona: list_remediations OK, takeover denied | G16 | Security |
+| E2E-AF-1234-005 | Viewer persona: list_remediations OK, investigate denied | G16 | Security |
 | E2E-AF-1234-006 | Malformed rr_id returns clean error via MCP bridge | G13 | Validation |
 
 ---
@@ -566,8 +566,8 @@ NOTE: httptest-based resilience tests run via `make test-unit-apifrontend`, so t
 
 **Steps:**
 - Given: SDKMCPClient configured with httptest endpoint
-- When: InvokeAction(ctx, "ns/rr-001", "takeover", "", identity) called
-- Then: Server receives args `{"rr_id": "ns/rr-001", "action": "takeover", "acting_user": "alice", "acting_user_groups": ["sre"]}`
+- When: InvokeAction(ctx, "ns/rr-001", "investigate", "", identity) called (takeover consolidated into investigate per #1332)
+- Then: Server receives args `{"rr_id": "ns/rr-001", "acting_user": "alice", "acting_user_groups": ["sre"]}`
 
 ### TP-1234-002: Pool User Isolation
 

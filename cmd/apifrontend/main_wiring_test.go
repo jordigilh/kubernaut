@@ -927,10 +927,10 @@ func TestBuildResilientTransport_ForMCP(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// IT-AF-1234-W10b: buildMCPHandler passes pool to bridge config
+// IT-AF-1234-W10b: buildMCPHandler returns non-nil handler with deps
 // ---------------------------------------------------------------------------
 
-func TestBuildMCPHandler_PassesPool(t *testing.T) {
+func TestBuildMCPHandler_ReturnsHandler(t *testing.T) {
 	t.Parallel()
 
 	kaBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -962,7 +962,42 @@ func TestBuildMCPHandler_PassesPool(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if h == nil {
-		t.Fatal("IT-AF-1234-W10b: handler must not be nil when pool is provided")
+		t.Fatal("IT-AF-1234-W10b: handler must not be nil")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// IT-AF-1332-W01: Pool flows from backendDeps into AgentConfig for investigate tool handoff
+// ---------------------------------------------------------------------------
+
+func TestBackendDeps_PoolFlowsToAgentConfig(t *testing.T) {
+	t.Parallel()
+
+	pool := ka.NewKASessionPool(ka.PoolConfig{
+		Factory:    func(_ context.Context) (ka.PoolSession, error) { return &mockPoolSession{}, nil },
+		MaxEntries: 10,
+		Logger:     logr.Discard(),
+	})
+
+	deps := &backendDeps{
+		Pool: pool,
+	}
+
+	if deps.Pool == nil {
+		t.Fatal("IT-AF-1332-W01: backendDeps.Pool must be non-nil")
+	}
+
+	// Verify the pool can be injected — this is what the blocking
+	// investigate path does after investigation completes.
+	injected := &mockPoolSession{}
+	deps.Pool.Inject("rr-w01", "alice", injected)
+
+	acquired, err := deps.Pool.Acquire(context.Background(), "rr-w01", "alice")
+	if err != nil {
+		t.Fatalf("IT-AF-1332-W01: Acquire after Inject failed: %v", err)
+	}
+	if acquired != injected {
+		t.Fatal("IT-AF-1332-W01: Acquire must return the injected session")
 	}
 }
 
@@ -1508,21 +1543,21 @@ func TestPromptContainsMandatoryInvestigate(t *testing.T) {
 	if !strings.Contains(text, "kubernaut_investigate") {
 		t.Error("WT-AF-1302-001 CM-3: prompt.txt must reference kubernaut_investigate")
 	}
-	if !strings.Contains(text, "single call") {
-		t.Error("WT-AF-1302-001 CM-3: prompt.txt must describe kubernaut_investigate as a single-call investigation tool")
+	if !strings.Contains(text, "streams live events") {
+		t.Error("WT-AF-1302-001 CM-3: prompt.txt must describe kubernaut_investigate as streaming live events")
 	}
 }
 
-func TestPromptFixJourneyStartsWithCreateRR(t *testing.T) {
+func TestPromptFixJourneyStartsWithInvestigate(t *testing.T) {
 	prompt, err := os.ReadFile("../../pkg/apifrontend/agent/prompt.txt")
 	if err != nil {
 		t.Fatalf("WT-AF-1302-002: failed to read prompt.txt: %v", err)
 	}
 	text := string(prompt)
 
-	fixIdx := strings.Index(text, "### Fix something")
+	fixIdx := strings.Index(text, "### Fix something interactively")
 	if fixIdx == -1 {
-		t.Fatal("WT-AF-1302-002 CM-3: prompt.txt must contain '### Fix something' section")
+		t.Fatal("WT-AF-1302-002 CM-3: prompt.txt must contain '### Fix something interactively' section")
 	}
 	fixSection := text[fixIdx:]
 
@@ -1532,21 +1567,21 @@ func TestPromptFixJourneyStartsWithCreateRR(t *testing.T) {
 	}
 	journeyLine := fixSection[journeyIdx : journeyIdx+200]
 
-	if !strings.Contains(journeyLine, "af_create_rr") {
-		t.Error("WT-AF-1302-002 CM-3: Full journey must start with af_create_rr")
-	}
 	if !strings.Contains(journeyLine, "kubernaut_investigate") {
-		t.Error("WT-AF-1302-002 CM-3: Full journey must include kubernaut_investigate")
+		t.Error("WT-AF-1302-002 CM-3: Full journey must start with kubernaut_investigate")
+	}
+	if !strings.Contains(journeyLine, "kubernaut_discover_workflows") {
+		t.Error("WT-AF-1302-002 CM-3: Full journey must include kubernaut_discover_workflows")
 	}
 
-	createIdx := strings.Index(journeyLine, "af_create_rr")
 	investigateIdx := strings.Index(journeyLine, "kubernaut_investigate")
-	if createIdx > investigateIdx {
-		t.Error("WT-AF-1302-002 CM-3: journey order must be af_create_rr → kubernaut_investigate")
+	discoverIdx := strings.Index(journeyLine, "kubernaut_discover_workflows")
+	if investigateIdx > discoverIdx {
+		t.Error("WT-AF-1302-002 CM-3: journey order must be kubernaut_investigate → kubernaut_discover_workflows")
 	}
 }
 
-func TestPromptPhase1RequiresStartBeforeStream(t *testing.T) {
+func TestPromptPhase1RequiresInvestigateWithBlocking(t *testing.T) {
 	prompt, err := os.ReadFile("../../pkg/apifrontend/agent/prompt.txt")
 	if err != nil {
 		t.Fatalf("WT-AF-1302-003: failed to read prompt.txt: %v", err)
@@ -1565,7 +1600,7 @@ func TestPromptPhase1RequiresStartBeforeStream(t *testing.T) {
 	if !strings.Contains(phase1Section, "Call kubernaut_investigate") {
 		t.Error("WT-AF-1302-003 CM-3: Phase 1 must instruct a single kubernaut_investigate call")
 	}
-	if !strings.Contains(phase1Section, "all in a single call") {
-		t.Error("WT-AF-1302-003 CM-3: Phase 1 must describe investigation as all in a single call")
+	if !strings.Contains(phase1Section, "blocks until") {
+		t.Error("WT-AF-1302-003 CM-3: Phase 1 must describe investigation as blocking until completion")
 	}
 }

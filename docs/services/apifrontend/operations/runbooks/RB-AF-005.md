@@ -18,7 +18,7 @@
    ```
 
 2. Check dependency health:
-   - **KA** (Kubernaut Agent): `curl http://kubernaut-agent:8080/healthz`
+   - **KA** (Kubernaut Agent): `curl https://kubernaut-agent:8443/healthz`
    - **DS** (DataStorage): `curl http://data-storage:9090/healthz`
    - **K8s** API: `kubectl get --raw /healthz`
 

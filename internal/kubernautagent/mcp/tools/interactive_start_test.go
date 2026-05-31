@@ -26,6 +26,8 @@ import (
 
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	mcptools "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 // interactiveAutoMgr extends takeoverAutoMgr with pending session support.
@@ -68,8 +70,17 @@ func (m *interactiveAutoMgr) LaunchDeferredInvestigation(_ string) error {
 	return m.launchErr
 }
 
+func (m *interactiveAutoMgr) StartInvestigation(_ context.Context, _ session.InvestigateFunc, _ map[string]string) (string, error) {
+	return "", nil
+}
+func (m *interactiveAutoMgr) Subscribe(_ context.Context, _ string) (<-chan session.InvestigationEvent, error) {
+	return nil, nil
+}
 func (m *interactiveAutoMgr) GetLatestRCASummaryByRemediationID(_ string) (string, bool) {
 	return "", false
+}
+func (m *interactiveAutoMgr) GetLatestRCAResultByRemediationID(_ string) (*katypes.InvestigationResult, bool) {
+	return nil, false
 }
 
 var _ = Describe("BR-INTERACTIVE-010: handleStart with pending interactive session — #1293", func() {
@@ -129,6 +140,89 @@ var _ = Describe("BR-INTERACTIVE-010: handleStart with pending interactive sessi
 
 			Expect(autoMgr.launchCalled.Load()).To(Equal(int32(0)),
 				"LaunchDeferredInvestigation must NOT be called when no pending session")
+		})
+	})
+
+	Describe("UT-KA-1326-020: action=start populates InvestigationSessionID on successful deferred launch", func() {
+		It("should set InvestigationSessionID to the pending session ID", func() {
+			sessionMgr := &mockSessionManager{
+				takeoverSession: &mcpinternal.InteractiveSession{
+					SessionID:     "lease-sess-020",
+					CorrelationID: "rr-interactive-020",
+				},
+			}
+			autoMgr := &interactiveAutoMgr{
+				pendingResult: "investigation-sess-020",
+				pendingOK:     true,
+			}
+			runner := &mockInvestigatorRunner{}
+			recon := &mockContextReconstructor{turns: []mcpinternal.ConversationTurn{}}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, autoMgr)
+			out, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-interactive-020",
+				Action: mcptools.ActionStart,
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(out.Status).To(Equal("started"))
+			Expect(out.SessionID).To(Equal("lease-sess-020"))
+			Expect(out.InvestigationSessionID).To(Equal("investigation-sess-020"),
+				"InvestigationSessionID must be populated with the pending session ID after successful launch")
+		})
+	})
+
+	Describe("UT-KA-1326-021: action=start does not populate InvestigationSessionID when no pending session", func() {
+		It("should leave InvestigationSessionID empty", func() {
+			sessionMgr := &mockSessionManager{
+				takeoverSession: &mcpinternal.InteractiveSession{
+					SessionID:     "lease-sess-021",
+					CorrelationID: "rr-no-pending-021",
+				},
+			}
+			autoMgr := &interactiveAutoMgr{
+				pendingOK: false,
+				findOK:    false,
+			}
+			runner := &mockInvestigatorRunner{}
+			recon := &mockContextReconstructor{turns: []mcpinternal.ConversationTurn{}}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, autoMgr)
+			out, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-no-pending-021",
+				Action: mcptools.ActionStart,
+			}, mcpinternal.UserInfo{Username: "bob"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(out.Status).To(Equal("started"))
+			Expect(out.InvestigationSessionID).To(BeEmpty(),
+				"InvestigationSessionID must be empty when no pending session exists")
+		})
+	})
+
+	Describe("UT-KA-1326-022: action=start does not populate InvestigationSessionID on deferred launch failure", func() {
+		It("should leave InvestigationSessionID empty on launch error", func() {
+			sessionMgr := &mockSessionManager{
+				takeoverSession: &mcpinternal.InteractiveSession{
+					SessionID:     "lease-sess-022",
+					CorrelationID: "rr-launch-fail-022",
+				},
+			}
+			autoMgr := &interactiveAutoMgr{
+				pendingResult: "investigation-sess-022",
+				pendingOK:     true,
+				launchErr:     errors.New("deferred launch failed"),
+			}
+			runner := &mockInvestigatorRunner{}
+			recon := &mockContextReconstructor{turns: []mcpinternal.ConversationTurn{}}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, autoMgr)
+			out, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-launch-fail-022",
+				Action: mcptools.ActionStart,
+			}, mcpinternal.UserInfo{Username: "charlie"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(out.Status).To(Equal("started"))
+			Expect(out.InvestigationSessionID).To(BeEmpty(),
+				"InvestigationSessionID must be empty when deferred launch fails")
 		})
 	})
 

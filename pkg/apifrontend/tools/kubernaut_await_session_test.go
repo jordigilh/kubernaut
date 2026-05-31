@@ -50,6 +50,7 @@ func newSeededAIAnalysisClient(objects ...*unstructured.Unstructured) *dynamicfa
 	client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme,
 		map[schema.GroupVersionResource]string{
 			testAIAnalysisGVR: "AIAnalysisList",
+			isGVR:             "InvestigationSessionList",
 		})
 	for _, obj := range objects {
 		ns := obj.GetNamespace()

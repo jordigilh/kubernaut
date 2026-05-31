@@ -61,7 +61,7 @@ func extractRRName(rrid string) string {
 	return rrid
 }
 
-var _ = Describe("af_create_rr (#1282 refactor)", func() {
+var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 	rrGVR := schema.GroupVersionResource{Group: "kubernaut.ai", Version: "v1alpha1", Resource: "remediationrequests"}
 	eventsGVR := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "events"}
 
@@ -181,7 +181,7 @@ var _ = Describe("af_create_rr (#1282 refactor)", func() {
 				Namespace: "kubernaut-system", Kind: "Deployment", Name: "web", Description: "ns from AF",
 			}, "user", nil, nil)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.RRID).To(HavePrefix("kubernaut-system/"))
+			Expect(result.RRID).To(HavePrefix("rr-"))
 		})
 
 		It("UT-AF-1282-NS-006: empty namespace from AF is rejected", func() {
@@ -446,7 +446,7 @@ var _ = Describe("af_create_rr (#1282 refactor)", func() {
 				Description: "cross-namespace RR creation",
 			}, "user", nil, nil)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.RRID).To(HavePrefix(controllerNS + "/"))
+			Expect(result.RRID).To(HavePrefix("rr-"))
 
 			created, getErr := client.Resource(rrGVR).Namespace(controllerNS).Get(
 				context.Background(), extractRRName(result.RRID), getOpts)
@@ -588,6 +588,6 @@ var _ = Describe("af_create_rr (#1282 refactor)", func() {
 		}, "sre-user", nil, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.AlreadyExists).To(BeTrue())
-		Expect(result.RRID).To(Equal("prod/rr-deploy-web-existing"))
+		Expect(result.RRID).To(Equal("rr-deploy-web-existing"))
 	})
 })

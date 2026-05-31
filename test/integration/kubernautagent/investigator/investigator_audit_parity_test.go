@@ -143,6 +143,8 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 		Name:          "api-server-abc",
 		Namespace:     "production",
 		Severity:      "critical",
+		Environment:   "Production",
+		Priority:      "P0",
 		Message:       "OOMKilled",
 		ResourceKind:  "Deployment",
 		ResourceName:  "api-server",
@@ -531,6 +533,8 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 				Name:          "api-server-abc",
 				Namespace:     "production",
 				Severity:      "high",
+				Environment:   "Production",
+				Priority:      "P0",
 				Message:       "OOMKilled",
 				ResourceKind:  "Deployment",
 				ResourceName:  "api-server",
@@ -608,6 +612,7 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api", Namespace: "default", Severity: "warning", Message: "CrashLoop",
+				Environment: "Development", Priority: "P2",
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
@@ -662,6 +667,7 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api", Namespace: "default", Severity: "warning", Message: "CrashLoop",
+				Environment: "Development", Priority: "P2",
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
@@ -708,6 +714,8 @@ var _ = Describe("IT-KA-947: Alignment audit events emitted during investigation
 		Name:          "api-server-abc",
 		Namespace:     "production",
 		Severity:      "critical",
+		Environment:   "Production",
+		Priority:      "P0",
 		Message:       "OOMKilled",
 		ResourceKind:  "Deployment",
 		ResourceName:  "api-server",

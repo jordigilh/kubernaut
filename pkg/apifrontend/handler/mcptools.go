@@ -16,7 +16,6 @@ var mcpToolRegistry = []MCPToolDef{
 	{Name: "kubernaut_get_remediation_history", Description: "Get remediation execution history"},
 	{Name: "kubernaut_get_effectiveness", Description: "Get remediation effectiveness metrics"},
 	{Name: "kubernaut_get_audit_trail", Description: "Get audit trail for remediations"},
-	{Name: "kubernaut_takeover", Description: "Take over an existing investigation session"},
 	{Name: "kubernaut_message", Description: "Send a message to an active investigation session"},
 	{Name: "kubernaut_complete", Description: "Complete an investigation session"},
 	{Name: "kubernaut_cancel", Description: "Cancel an active investigation session"},
@@ -25,5 +24,5 @@ var mcpToolRegistry = []MCPToolDef{
 	{Name: "kubernaut_list_approval_requests", Description: "List remediation approval requests"},
 	{Name: "kubernaut_get_approval_request", Description: "Get details of a specific approval request"},
 	{Name: "kubernaut_await_session", Description: "Wait for KA investigation session to become ready"},
-	// af_check_existing_rr and af_create_rr are internal to AF's LLM agent (ADK path only).
+	// kubernaut_check_existing_remediation and kubernaut_remediate are internal to AF's LLM agent (ADK path only).
 }

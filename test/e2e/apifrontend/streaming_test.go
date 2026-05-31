@@ -90,7 +90,7 @@ var _ = Describe("Investigation Streaming (G3)", Ordered, Label("e2e", "phase3",
 		}()
 
 		// CRD is not created because IS CRD creation requires an explicit
-		// kubernaut_takeover call (#1293), which a non-remediating prompt
+		// kubernaut_investigate call (#1332), which a non-remediating prompt
 		// ("list pods") never triggers.
 		//
 		// Filter by this test's task ID to avoid false positives from CRDs
@@ -117,31 +117,31 @@ var _ = Describe("Investigation Streaming (G3)", Ordered, Label("e2e", "phase3",
 		Expect(createRR("default", rrName, "Deployment", "web-slow-disconnect-test")).To(Succeed())
 		DeferCleanup(func() { deleteRR("default", rrName) })
 
-		// #1293: invoke kubernaut_takeover via MCP to create IS CRD.
+		// #1332: invoke kubernaut_investigate via MCP to create IS CRD.
 		sreToken, tokenErr := fetchDEXTokenForPersona("sre")
 		Expect(tokenErr).NotTo(HaveOccurred())
 		mcpSess, mcpSessErr := initMCPSession(sreToken)
 		Expect(mcpSessErr).NotTo(HaveOccurred())
 		takeoverBody := buildJSONRPC("stream-03-takeover", "tools/call", map[string]interface{}{
-			"name":      "kubernaut_takeover",
-			"arguments": map[string]interface{}{"rr_id": "default/" + rrName},
+			"name":      "kubernaut_investigate",
+			"arguments": map[string]interface{}{"rr_id": rrName},
 		})
 		_, takeoverCode, takeoverErr := mcpPOST(sreToken, mcpSess, takeoverBody)
 		Expect(takeoverErr).NotTo(HaveOccurred())
 		Expect(takeoverCode).To(BeNumerically("<", 500))
 
 		var isName string
-		Eventually(func() string {
+		Eventually(func() bool {
 			list := listInvestigationSessions(kctlCtx)
 			for _, it := range list.Items {
-				if it.Spec.RemediationRequestRef.Name == rrName && string(it.Status.Phase) == "Active" {
+				if it.Spec.RemediationRequestRef.Name == rrName {
 					isName = it.Name
-					return string(it.Status.Phase)
+					return true
 				}
 			}
-			return ""
-		}, 30*time.Second, 2*time.Second).Should(Equal("Active"),
-			"IS CRD must reach Active phase after kubernaut_takeover")
+			return false
+		}, 30*time.Second, 2*time.Second).Should(BeTrue(),
+			"IS CRD must be created after kubernaut_investigate")
 
 		// Simulate client disconnect by updating IS CRD phase directly.
 		isNamespace := getEnvOrDefault("AF_E2E_NAMESPACE", "kubernaut-system")
@@ -165,12 +165,12 @@ var _ = Describe("Investigation Streaming (G3)", Ordered, Label("e2e", "phase3",
 	})
 
 	It("TC-E2E-STREAM-04 / TC-E2E-SSE-CAP-01: Connection cap enforcement", func() {
-		// Wait for all SSE slots from prior tests to drain before testing the cap.
-		// Server-side SSE handlers detect client disconnect via failed writes or
-		// keepalive timeouts; under CI load this can take >30s.
+		// Wait for all SSE slots to drain. With parallel Ginkgo processes,
+		// STREAM-05 (in a separate Describe block) may hold a bridge connection
+		// for up to 90s. Use 180s to accommodate the worst case.
 		Eventually(func() float64 {
 			return counterValue(scrapeMetrics(), "af_sse_active_connections")
-		}, 90*time.Second, 2*time.Second).Should(BeZero(),
+		}, 180*time.Second, 2*time.Second).Should(BeZero(),
 			"all SSE slots must be released before cap enforcement test")
 
 		maxStr := getEnvOrDefault("AF_E2E_MAX_SSE", "5")

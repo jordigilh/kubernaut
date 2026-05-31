@@ -135,7 +135,7 @@ paths:
           schema:
             type: string
             enum: [critical, high, medium, low]
-          description: Signal severity level
+          description: Signal severity level (always provided by Signal Processing)
         - name: component
           in: query
           required: true
@@ -150,14 +150,14 @@ paths:
           required: true
           schema:
             type: string
-          description: Target environment (production, staging, etc.)
+          description: Target environment (always provided by Signal Processing)
         - name: priority
           in: query
           required: true
           schema:
             type: string
             enum: [P0, P1, P2, P3]
-          description: Business priority level
+          description: Business priority level (always provided by Signal Processing)
         - name: custom_labels
           in: query
           required: false
@@ -251,7 +251,7 @@ paths:
           schema:
             type: string
             enum: [critical, high, medium, low]
-          description: Signal severity level
+          description: Signal severity level (always provided by Signal Processing)
         - name: component
           in: query
           required: true
@@ -265,14 +265,14 @@ paths:
           required: true
           schema:
             type: string
-          description: Target environment
+          description: Target environment (always provided by Signal Processing)
         - name: priority
           in: query
           required: true
           schema:
             type: string
             enum: [P0, P1, P2, P3]
-          description: Business priority level
+          description: Business priority level (always provided by Signal Processing)
         - name: custom_labels
           in: query
           required: false
@@ -4533,6 +4533,14 @@ components:
         ai_analysis_ref:
           type: string
           description: Name of the referenced AIAnalysis
+        delegated_user:
+          type: string
+          description: Human identity the intermediary acted on behalf of (empty for direct decisions). DD-AUTH-MCP-001 v3.0 trusted intermediary pattern.
+          default: ""
+        delegated_via:
+          type: string
+          description: Trusted intermediary SA that facilitated the decision (empty for direct decisions). Enables forensic reconstruction of delegation chain.
+          default: ""
 
     # ========================================
     # RemediationApprovalRequest Controller Audit Payloads

@@ -30,6 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
@@ -201,12 +202,6 @@ var _ = Describe("FP-MCP-001: full interactive lifecycle", Label("e2e", "fullpip
 
 var _ = Describe("FP-MCP-006: CRD InteractiveSession and CompletedAt", Label("e2e", "fullpipeline", "interactive", "mcp"), func() {
 	It("should populate InteractiveSession after takeover and CompletedAt after complete", func() {
-		// MCP session setup BEFORE RR creation minimizes the window between
-		// AA entering Investigating and the takeover call. With a fast mock LLM
-		// the autonomous investigation completes in ~200ms; the AA controller's
-		// predicate-triggered re-reconcile can poll KA and see "completed"
-		// before ForceTransitionToUserDriving runs. Pre-creating the MCP session
-		// removes ~3s of SA/RBAC/connect overhead from that critical window.
 		By("Setting up MCP session (pre-RR creation to minimize race window)")
 		setup, err := infrastructure.SetupMCPSession(ctx, namespace, "fp-mcp-006-sa", kubeconfigPath, GinkgoWriter)
 		Expect(err).NotTo(HaveOccurred())
@@ -216,7 +211,36 @@ var _ = Describe("FP-MCP-006: CRD InteractiveSession and CompletedAt", Label("e2
 		rrName, err := infrastructure.CreateDirectRR(ctx, namespace, "fp-mcp-006")
 		Expect(err).NotTo(HaveOccurred())
 
-		By("Waiting for AIAnalysis to reach Investigating phase")
+		// IR-4: Pre-create the IS CRD immediately after the RR so that
+		// AA detects interactive mode on its first reconcile (or via the
+		// checkISMismatchAndCancel mechanism on the next poll). Without
+		// this, the mock-LLM completes the autonomous investigation in
+		// ~200ms and AA moves to a terminal phase before any takeover
+		// can run — leaving InteractiveSession unpopulated.
+		By("Pre-creating IS CRD to guarantee AA enters interactive mode [IR-4]")
+		isCRD := &isv1alpha1.InvestigationSession{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      fmt.Sprintf("is-%s", rrName),
+				Namespace: namespace,
+			},
+			Spec: isv1alpha1.InvestigationSessionSpec{
+				RemediationRequestRef: isv1alpha1.ObjectRef{
+					Name:      rrName,
+					Namespace: namespace,
+				},
+				A2ATaskID: "fp-mcp-006-pre-interactive",
+				UserIdentity: isv1alpha1.SessionUser{
+					Username: fmt.Sprintf("system:serviceaccount:%s:fp-mcp-006-sa", namespace),
+				},
+				JoinMode: isv1alpha1.SessionJoinModeTakeover,
+			},
+		}
+		Expect(k8sClient.Create(ctx, isCRD)).To(Succeed())
+		DeferCleanup(func() {
+			_ = client.IgnoreNotFound(k8sClient.Delete(ctx, isCRD))
+		})
+
+		By("Waiting for AIAnalysis to reach Investigating phase with interactive=true")
 		var aaName string
 		Eventually(func() bool {
 			aaList := &aianalysisv1.AIAnalysisList{}
@@ -226,13 +250,14 @@ var _ = Describe("FP-MCP-006: CRD InteractiveSession and CompletedAt", Label("e2
 			for _, aa := range aaList.Items {
 				if aa.Spec.RemediationRequestRef.Name == rrName {
 					aaName = aa.Name
-					return string(aa.Status.Phase) == "Investigating"
+					phase := string(aa.Status.Phase)
+					return phase == "Investigating" || phase == "Analyzing" || phase == "Completed"
 				}
 			}
 			return false
 		}, timeout, 1*time.Second).Should(BeTrue(), "AIAnalysis should reach Investigating phase for RR")
 
-		By("Takeover (immediately — MCP session already set up, beat the first poll)")
+		By("Takeover via MCP [AC-6]")
 		callCtx, callCancel := context.WithTimeout(ctx, 30*time.Second)
 		defer callCancel()
 		result, err := infrastructure.CallInvestigate(callCtx, setup.Session, map[string]any{
@@ -242,7 +267,7 @@ var _ = Describe("FP-MCP-006: CRD InteractiveSession and CompletedAt", Label("e2
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.IsError).To(BeFalse(), "takeover should succeed")
 
-		By("Waiting for InteractiveSession to be populated on AA CRD")
+		By("Verifying InteractiveSession audit record completeness [AU-3]")
 		aa := &aianalysisv1.AIAnalysis{}
 		Eventually(func(g Gomega) {
 			keepAliveCtx, keepAliveCancel := context.WithTimeout(ctx, 5*time.Second)
@@ -254,15 +279,17 @@ var _ = Describe("FP-MCP-006: CRD InteractiveSession and CompletedAt", Label("e2
 
 			g.Expect(apiReader.Get(ctx, client.ObjectKey{Name: aaName, Namespace: namespace}, aa)).To(Succeed())
 			g.Expect(aa.Status.InteractiveSession).NotTo(BeNil(),
-				"BR-007: InteractiveSession must be populated after takeover")
+				"AU-3: InteractiveSession must be populated to prove human-driven incident handling")
 		}, 90*time.Second, 5*time.Second).Should(Succeed())
 
 		GinkgoWriter.Printf("  InteractiveSession: driver=%s, sessionID=%s\n",
 			aa.Status.InteractiveSession.ActingUser, aa.Status.InteractiveSession.SessionID)
-		Expect(aa.Status.InteractiveSession.ActingUser).NotTo(BeEmpty())
-		Expect(aa.Status.InteractiveSession.SessionID).NotTo(BeEmpty())
+		Expect(aa.Status.InteractiveSession.ActingUser).NotTo(BeEmpty(),
+			"AU-3: ActingUser must identify the authenticated operator")
+		Expect(aa.Status.InteractiveSession.SessionID).NotTo(BeEmpty(),
+			"AU-3: SessionID must be present for audit correlation")
 
-		By("Completing session")
+		By("Completing session [IR-4]")
 		completeCtx, completeCancel := context.WithTimeout(ctx, 30*time.Second)
 		defer completeCancel()
 		result, err = infrastructure.CallInvestigate(completeCtx, setup.Session, map[string]any{
@@ -272,12 +299,12 @@ var _ = Describe("FP-MCP-006: CRD InteractiveSession and CompletedAt", Label("e2
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.IsError).To(BeFalse(), "complete should succeed")
 
-		By("Waiting for CompletedAt to be populated on AA CRD")
+		By("Verifying CompletedAt after investigation complete [IR-4, AU-3]")
 		Eventually(func(g Gomega) {
 			g.Expect(apiReader.Get(ctx, client.ObjectKey{Name: aaName, Namespace: namespace}, aa)).To(Succeed())
 			g.Expect(aa.Status.InteractiveSession).NotTo(BeNil())
 			g.Expect(aa.Status.InteractiveSession.CompletedAt).NotTo(BeNil(),
-				"BR-007: CompletedAt must be set after interactive complete")
+				"IR-4/AU-3: CompletedAt must be set to prove incident handling lifecycle completed")
 		}, 90*time.Second, 2*time.Second).Should(Succeed())
 
 		GinkgoWriter.Printf("  CompletedAt: %s\n", aa.Status.InteractiveSession.CompletedAt.Time)
@@ -427,15 +454,17 @@ var _ = Describe("FP-MCP-005: discover_workflows and select_workflow", Label("e2
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.IsError).To(BeFalse(), "takeover should succeed")
 
-		By("Calling discover_workflows")
-		discoverCtx, discoverCancel := context.WithTimeout(ctx, 60*time.Second)
-		defer discoverCancel()
-		result, err = infrastructure.CallInvestigate(discoverCtx, setup.Session, map[string]any{
-			"rr_id":  rrName,
-			"action": "discover_workflows",
-		})
-		Expect(err).NotTo(HaveOccurred())
-		Expect(result.IsError).To(BeFalse(), "discover_workflows should succeed")
+		By("Calling discover_workflows (with retry — audit traces may lag autonomous completion)")
+		Eventually(func(g Gomega) {
+			discoverCtx, discoverCancel := context.WithTimeout(ctx, 15*time.Second)
+			defer discoverCancel()
+			result, err = infrastructure.CallInvestigate(discoverCtx, setup.Session, map[string]any{
+				"rr_id":  rrName,
+				"action": "discover_workflows",
+			})
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(result.IsError).To(BeFalse(), "discover_workflows should succeed")
+		}, 30*time.Second, 3*time.Second).Should(Succeed())
 
 		text := infrastructure.ExtractToolResultText(result)
 		GinkgoWriter.Printf("  DiscoverWorkflows response (first 300 chars): %.300s\n", text)

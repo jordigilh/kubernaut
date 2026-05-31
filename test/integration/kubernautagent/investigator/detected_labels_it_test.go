@@ -139,6 +139,7 @@ var _ = Describe("KA-KA Integration Parity — Detected Labels (TP-433-PARITY)",
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api-server", Namespace: "production", Severity: "critical",
 				Message: "OOMKilled", ResourceKind: "Pod", ResourceName: "api-server-xyz",
+				Environment: "Production", Priority: "P0",
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
@@ -197,6 +198,7 @@ var _ = Describe("KA-KA Integration Parity — Detected Labels (TP-433-PARITY)",
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api-server", Namespace: "production", Severity: "warning",
 				Message: "CrashLoop", ResourceKind: "Pod", ResourceName: "api-server-xyz",
+				Environment: "Production", Priority: "P0",
 			})
 			Expect(err).NotTo(HaveOccurred())
 
@@ -257,6 +259,7 @@ var _ = Describe("KA-KA Integration Parity — Detected Labels (TP-433-PARITY)",
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api-server", Namespace: "production", Severity: "warning",
 				Message: "OOMKilled", ResourceKind: "Pod", ResourceName: "api-server-xyz",
+				Environment: "Production", Priority: "P0",
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
@@ -320,6 +323,7 @@ var _ = Describe("KA-KA Integration Parity — Detected Labels (TP-433-PARITY)",
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "web-app", Namespace: "production", Severity: "critical",
 				Message: "OOMKilled", ResourceKind: "Pod", ResourceName: "web-app-xyz",
+				Environment: "Production", Priority: "P0",
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
@@ -381,6 +385,7 @@ var _ = Describe("KA-KA Integration Parity — Detected Labels (TP-433-PARITY)",
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "meshed-app", Namespace: "production", Severity: "warning",
 				Message: "CrashLoop", ResourceKind: "Pod", ResourceName: "meshed-app-xyz",
+				Environment: "Production", Priority: "P0",
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())

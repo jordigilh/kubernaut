@@ -115,11 +115,10 @@ func (h *Handler) IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(
 		"actor", actor,
 	)
 
-	metadata := map[string]string{
-		"incident_id":    req.IncidentID,
-		"remediation_id": req.RemediationID,
-		"signal_name":    signal.Name,
-		"severity":       signal.Severity,
+	sctx := session.SessionContext{
+		IncidentID:    req.IncidentID,
+		RemediationID: req.RemediationID,
+		Signal:        signal,
 	}
 	investigateFn := func(bgCtx context.Context) (*katypes.InvestigationResult, error) {
 		bgCtx = audit.WithActor(bgCtx, actor, "User")
@@ -131,11 +130,21 @@ func (h *Handler) IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(
 		err       error
 	)
 	if signal.Interactive {
-		sessionID, err = h.sessions.StartInteractiveSession(ctx, investigateFn, metadata)
+		sessionID, err = h.sessions.StartInteractiveSessionWithContext(ctx, investigateFn, sctx)
 	} else {
-		sessionID, err = h.sessions.StartInvestigation(ctx, investigateFn, metadata)
+		sessionID, err = h.sessions.StartInvestigationWithContext(ctx, investigateFn, sctx)
 	}
 	if err != nil {
+		if errors.Is(err, session.ErrMaxInvestigationsReached) {
+			h.logger.Info("investigation rejected: max concurrent investigations reached")
+			return &agentclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON{
+				Type:     "https://kubernaut.ai/problems/capacity-exhausted",
+				Title:    "Capacity Exhausted",
+				Detail:   "maximum concurrent investigations reached, retry later",
+				Status:   500,
+				Instance: "/api/v1/incident/analyze",
+			}, nil
+		}
 		h.logger.Error(err, "failed to start investigation")
 		return &agentclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON{
 			Type:     "https://kubernaut.ai/problems/internal-error",

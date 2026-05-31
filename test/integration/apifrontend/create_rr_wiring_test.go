@@ -33,7 +33,7 @@ func (n *noopPromClientIT) InstantQuery(_ context.Context, _ string) (*prom.Quer
 	return &prom.QueryResult{}, nil
 }
 
-var _ = Describe("af_create_rr wiring (#1282)", func() {
+var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 	rrGVR := schema.GroupVersionResource{Group: "kubernaut.ai", Version: "v1alpha1", Resource: "remediationrequests"}
 	eventsGVR := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "events"}
 
@@ -58,11 +58,10 @@ var _ = Describe("af_create_rr wiring (#1282)", func() {
 			Description: "IT wiring test",
 		}, "it-user", nil, nil)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(result.RRID).To(HavePrefix(ns + "/"))
+		Expect(result.RRID).To(HavePrefix("rr-"))
 		Expect(result.AlreadyExists).To(BeFalse())
 
-		rrName := result.RRID[len(ns)+1:]
-		created, getErr := dynamicClient.Resource(rrGVR).Namespace(ns).Get(ctx, rrName, metav1.GetOptions{})
+		created, getErr := dynamicClient.Resource(rrGVR).Namespace(ns).Get(ctx, result.RRID, metav1.GetOptions{})
 		Expect(getErr).NotTo(HaveOccurred())
 
 		metaNS := created.GetNamespace()
@@ -72,7 +71,7 @@ var _ = Describe("af_create_rr wiring (#1282)", func() {
 		Expect(targetNS).To(Equal(ns), "targetResource.namespace = workloadNS (same-NS case per ADR-057)")
 
 		DeferCleanup(func() {
-			_ = dynamicClient.Resource(rrGVR).Namespace(ns).Delete(ctx, rrName, metav1.DeleteOptions{})
+			_ = dynamicClient.Resource(rrGVR).Namespace(ns).Delete(ctx, result.RRID, metav1.DeleteOptions{})
 		})
 	})
 
@@ -87,15 +86,14 @@ var _ = Describe("af_create_rr wiring (#1282)", func() {
 		}, "it-user", nil, nil)
 		Expect(err).NotTo(HaveOccurred())
 
-		rrName := result.RRID[len("default")+1:]
-		created, getErr := dynamicClient.Resource(rrGVR).Namespace("default").Get(ctx, rrName, metav1.GetOptions{})
+		created, getErr := dynamicClient.Resource(rrGVR).Namespace("default").Get(ctx, result.RRID, metav1.GetOptions{})
 		Expect(getErr).NotTo(HaveOccurred())
 
 		source, _, _ := unstructured.NestedString(created.Object, "spec", "signalSource")
 		Expect(source).To(Equal("a2a-agent"))
 
 		DeferCleanup(func() {
-			_ = dynamicClient.Resource(rrGVR).Namespace("default").Delete(ctx, rrName, metav1.DeleteOptions{})
+			_ = dynamicClient.Resource(rrGVR).Namespace("default").Delete(ctx, result.RRID, metav1.DeleteOptions{})
 		})
 	})
 
@@ -110,8 +108,7 @@ var _ = Describe("af_create_rr wiring (#1282)", func() {
 		}, "it-user", nil, nil)
 		Expect(err).NotTo(HaveOccurred())
 
-		rrName := result.RRID[len("default")+1:]
-		created, getErr := dynamicClient.Resource(rrGVR).Namespace("default").Get(ctx, rrName, metav1.GetOptions{})
+		created, getErr := dynamicClient.Resource(rrGVR).Namespace("default").Get(ctx, result.RRID, metav1.GetOptions{})
 		Expect(getErr).NotTo(HaveOccurred())
 
 		signalName, _, _ := unstructured.NestedString(created.Object, "spec", "signalName")
@@ -119,7 +116,7 @@ var _ = Describe("af_create_rr wiring (#1282)", func() {
 			"with no triager and no events, fallback should be unknown")
 
 		DeferCleanup(func() {
-			_ = dynamicClient.Resource(rrGVR).Namespace("default").Delete(ctx, rrName, metav1.DeleteOptions{})
+			_ = dynamicClient.Resource(rrGVR).Namespace("default").Delete(ctx, result.RRID, metav1.DeleteOptions{})
 		})
 	})
 
@@ -159,15 +156,14 @@ var _ = Describe("af_create_rr wiring (#1282)", func() {
 		}, "it-user", nil, nil)
 		Expect(err).NotTo(HaveOccurred())
 
-		rrName := result.RRID[len("default")+1:]
-		created, getErr := dynamicClient.Resource(rrGVR).Namespace("default").Get(ctx, rrName, metav1.GetOptions{})
+		created, getErr := dynamicClient.Resource(rrGVR).Namespace("default").Get(ctx, result.RRID, metav1.GetOptions{})
 		Expect(getErr).NotTo(HaveOccurred())
 
 		signalName, _, _ := unstructured.NestedString(created.Object, "spec", "signalName")
 		Expect(signalName).To(Equal("OOMKilling"), "K8s OOMKilling event should drive signalName")
 
 		DeferCleanup(func() {
-			_ = dynamicClient.Resource(rrGVR).Namespace("default").Delete(ctx, rrName, metav1.DeleteOptions{})
+			_ = dynamicClient.Resource(rrGVR).Namespace("default").Delete(ctx, result.RRID, metav1.DeleteOptions{})
 		})
 	})
 
@@ -188,8 +184,7 @@ var _ = Describe("af_create_rr wiring (#1282)", func() {
 		Expect(result.Severity).NotTo(BeEmpty())
 
 		DeferCleanup(func() {
-			rrName := result.RRID[len("default")+1:]
-			_ = dynamicClient.Resource(rrGVR).Namespace("default").Delete(ctx, rrName, metav1.DeleteOptions{})
+			_ = dynamicClient.Resource(rrGVR).Namespace("default").Delete(ctx, result.RRID, metav1.DeleteOptions{})
 		})
 	})
 
@@ -217,10 +212,9 @@ var _ = Describe("af_create_rr wiring (#1282)", func() {
 			Description: "ADR-057 namespace split IT",
 		}, "it-user", nil, nil)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(result.RRID).To(HavePrefix(controllerNS + "/"))
+		Expect(result.RRID).To(HavePrefix("rr-"))
 
-		rrName := result.RRID[len(controllerNS)+1:]
-		created, getErr := dynamicClient.Resource(rrGVR).Namespace(controllerNS).Get(ctx, rrName, metav1.GetOptions{})
+		created, getErr := dynamicClient.Resource(rrGVR).Namespace(controllerNS).Get(ctx, result.RRID, metav1.GetOptions{})
 		Expect(getErr).NotTo(HaveOccurred())
 
 		metaNS := created.GetNamespace()
@@ -231,7 +225,7 @@ var _ = Describe("af_create_rr wiring (#1282)", func() {
 			"spec.targetResource.namespace must be workloadNS, not controllerNS")
 
 		DeferCleanup(func() {
-			_ = dynamicClient.Resource(rrGVR).Namespace(controllerNS).Delete(ctx, rrName, metav1.DeleteOptions{})
+			_ = dynamicClient.Resource(rrGVR).Namespace(controllerNS).Delete(ctx, result.RRID, metav1.DeleteOptions{})
 		})
 	})
 
@@ -239,7 +233,7 @@ var _ = Describe("af_create_rr wiring (#1282)", func() {
 		instruction := agentpkg.BuildInstruction("kubernaut-system")
 
 		Expect(instruction).To(ContainSubstring("provide: namespace, kind, name, description"),
-			"prompt must list namespace as an LLM-provided field for af_create_rr")
+			"prompt must list namespace as an LLM-provided field for kubernaut_remediate")
 		Expect(instruction).To(ContainSubstring("namespace is the workload namespace"),
 			"prompt must clarify that namespace is the workload namespace")
 		Expect(instruction).NotTo(ContainSubstring("namespace: from AF's deployment context"),
@@ -283,8 +277,7 @@ var _ = Describe("af_create_rr wiring (#1282)", func() {
 		Expect(events[0].Detail).To(HaveKeyWithValue("namespace", "default"))
 
 		DeferCleanup(func() {
-			rrName := result.RRID[len("default")+1:]
-			_ = dynamicClient.Resource(rrGVR).Namespace("default").Delete(ctx, rrName, metav1.DeleteOptions{})
+			_ = dynamicClient.Resource(rrGVR).Namespace("default").Delete(ctx, result.RRID, metav1.DeleteOptions{})
 		})
 	})
 })

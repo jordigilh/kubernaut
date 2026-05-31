@@ -190,7 +190,7 @@ func buildToolArguments(toolName string, cfg scenarios.MockScenarioConfig) map[s
 		}
 	case "kubernaut_list_remediations":
 		return map[string]interface{}{"namespace": cfg.ResourceNS}
-	case "af_create_rr":
+	case "kubernaut_remediate":
 		return map[string]interface{}{
 			"namespace":   cfg.ResourceNS,
 			"kind":        cfg.ResourceKind,

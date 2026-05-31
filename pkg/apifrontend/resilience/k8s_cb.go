@@ -6,6 +6,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	gobreaker "github.com/sony/gobreaker/v2"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
 // K8sCBConfig holds circuit breaker configuration for the K8s API wrapper.
@@ -57,11 +58,37 @@ func NewK8sCircuitBreaker(cfg K8sCBConfig) *K8sCircuitBreaker {
 
 // Execute wraps a K8s API operation with circuit breaker protection.
 // Use this for non-watch operations (Get, List, Create, Update, Delete).
+// Client errors (NotFound, Conflict, AlreadyExists, Invalid, Forbidden) are
+// returned to the caller but NOT counted as CB failures — they indicate
+// valid API responses, not infrastructure degradation.
 func (k *K8sCircuitBreaker) Execute(ctx context.Context, fn func(ctx context.Context) error) error {
-	_, err := k.cb.Execute(func() (any, error) {
-		return nil, fn(ctx)
+	result, err := k.cb.Execute(func() (any, error) {
+		if e := fn(ctx); e != nil {
+			if isK8sClientError(e) {
+				return e, nil
+			}
+			return nil, e
+		}
+		return nil, nil
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	if result != nil {
+		return result.(error)
+	}
+	return nil
+}
+
+// isK8sClientError returns true for K8s API errors that represent valid
+// server responses rather than infrastructure failures.
+func isK8sClientError(err error) bool {
+	return apierrors.IsNotFound(err) ||
+		apierrors.IsAlreadyExists(err) ||
+		apierrors.IsConflict(err) ||
+		apierrors.IsInvalid(err) ||
+		apierrors.IsForbidden(err) ||
+		apierrors.IsGone(err)
 }
 
 // State returns the current circuit breaker state.

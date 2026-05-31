@@ -392,10 +392,11 @@ Interactive mode requires these RBAC grants (auto-provisioned by Helm):
    - `coordination.k8s.io/leases`: get, create, update, delete
 
 2. **ClusterRole** (added to `kubernaut-agent-investigator`):
-   - `users`, `groups`, `serviceaccounts`: impersonate
+   - `events`: create, patch (investigation lifecycle events)
+   - Note: Impersonation RBAC was removed in v1.5; KA uses trusted intermediary model via AF SA token (#1287)
 
 3. **Startup SAR self-check** (#891):
-   - Agent validates impersonate permission at startup
+   - Agent validates required permissions at startup
    - If denied: interactive mode is soft-disabled, `/readyz` reflects status, K8s Event emitted
 
 ## Scaling Considerations
@@ -434,4 +435,4 @@ Possible `interactive_mode` values:
 - `soft_disabled` — SAR check failed; interactive mode unavailable
 - `disabled` — `interactive.enabled=false` in config
 
-When `soft_disabled`, `interactive_reason` provides the failure cause (e.g., "SA lacks impersonate permission").
+When `soft_disabled`, `interactive_reason` provides the failure cause (e.g., "SA lacks required RBAC permission").

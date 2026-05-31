@@ -19,7 +19,7 @@ fi
 
 # Port-forward to service
 echo "Setting up port-forward..."
-kubectl port-forward -n kubernaut-system svc/kubernaut-agent 8080:8080 > /dev/null 2>&1 &
+kubectl port-forward -n kubernaut-system svc/kubernaut-agent 8443:8443 > /dev/null 2>&1 &
 PF_PID=$!
 sleep 3
 

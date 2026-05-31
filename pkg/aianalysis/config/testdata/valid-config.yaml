@@ -7,7 +7,7 @@ controller:
   leaderElectionId: "aianalysis.kubernaut.ai"
 
 agent:
-  url: "http://kubernaut-agent:8080"
+  url: "https://kubernaut-agent:8443"
   timeout: 180s
   sessionPollInterval: 15s
 

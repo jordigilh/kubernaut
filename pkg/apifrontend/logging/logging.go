@@ -2,8 +2,6 @@ package logging
 
 import (
 	"context"
-	"log/slog"
-	"os"
 
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
@@ -86,37 +84,4 @@ func WithUserID(ctx context.Context, uid string) context.Context {
 // WithSessionID attaches a session ID to the context for structured logging.
 func WithSessionID(ctx context.Context, sid string) context.Context {
 	return context.WithValue(ctx, sessionIDKey, sid)
-}
-
-// NewSlogLogger creates a *slog.Logger that writes structured JSON to stderr
-// and shares the dynamic log level from the given zap.AtomicLevel.
-// This bridges components that require *slog.Logger (e.g. ADK) to the same
-// logging pipeline as the rest of the service.
-//
-// NOTE for SRE: slog uses {"time":..., "level":"INFO"} while zap uses
-// {"ts":..., "level":"info"}. Log aggregation parsers must handle both schemas.
-func NewSlogLogger(level zap.AtomicLevel) *slog.Logger {
-	return slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
-		Level: &atomicLeveler{level: level},
-	}))
-}
-
-// atomicLeveler adapts zap.AtomicLevel to slog.Leveler so that hot-reloads
-// of the zap level are reflected in slog output without reconnection.
-type atomicLeveler struct {
-	level zap.AtomicLevel
-}
-
-// Level implements slog.Leveler by mapping the current zap level to slog.
-func (a *atomicLeveler) Level() slog.Level {
-	switch a.level.Level() {
-	case zapcore.DebugLevel:
-		return slog.LevelDebug
-	case zapcore.WarnLevel:
-		return slog.LevelWarn
-	case zapcore.ErrorLevel:
-		return slog.LevelError
-	default:
-		return slog.LevelInfo
-	}
 }

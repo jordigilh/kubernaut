@@ -31,44 +31,6 @@ var _ = Describe("Interactive Action Handlers (G1)", func() {
 		spy = &spyAuditor{}
 	})
 
-	Describe("HandleTakeover", func() {
-		It("UT-AF-1234-031: happy path returns session_id + status", func() {
-			mockMCP = &ka.MockMCPClient{
-				InvokeActionFn: func(_ context.Context, args ka.InvokeActionArgs) (*ka.InvokeActionResult, error) {
-					Expect(args.Action).To(Equal("takeover"))
-					Expect(args.RRID).To(Equal("prod/rr-001"))
-					return &ka.InvokeActionResult{SessionID: "s-001", Status: "active"}, nil
-				},
-			}
-			result, err := tools.HandleTakeover(ctx, mockMCP, tools.InteractiveActionArgs{
-				RRID: "prod/rr-001",
-			}, spy)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.SessionID).To(Equal("s-001"))
-			Expect(result.Status).To(Equal("active"))
-		})
-
-		It("UT-AF-1234-032: KA error returns user-friendly message", func() {
-			mockMCP = &ka.MockMCPClient{
-				InvokeActionFn: func(_ context.Context, _ ka.InvokeActionArgs) (*ka.InvokeActionResult, error) {
-					return nil, ka.ErrMCPUnavailable
-				},
-			}
-			_, err := tools.HandleTakeover(ctx, mockMCP, tools.InteractiveActionArgs{
-				RRID: "prod/rr-001",
-			}, spy)
-			Expect(err).To(HaveOccurred())
-		})
-
-		It("UT-AF-1234-033: nil MCPClient returns error", func() {
-			_, err := tools.HandleTakeover(ctx, nil, tools.InteractiveActionArgs{
-				RRID: "prod/rr-001",
-			}, spy)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("not available"))
-		})
-	})
-
 	Describe("HandleMessage", func() {
 		It("UT-AF-1234-034: happy path with message text", func() {
 			mockMCP = &ka.MockMCPClient{
@@ -79,7 +41,7 @@ var _ = Describe("Interactive Action Handlers (G1)", func() {
 				},
 			}
 			result, err := tools.HandleMessage(ctx, mockMCP, tools.InteractiveActionArgs{
-				RRID:    "prod/rr-001",
+				RRID:    "rr-prod-001",
 				Message: "Check pod logs for OOM",
 			}, spy)
 			Expect(err).NotTo(HaveOccurred())
@@ -93,7 +55,7 @@ var _ = Describe("Interactive Action Handlers (G1)", func() {
 				},
 			}
 			_, err := tools.HandleMessage(ctx, mockMCP, tools.InteractiveActionArgs{
-				RRID:    "prod/rr-001",
+				RRID:    "rr-prod-001",
 				Message: "",
 			}, spy)
 			Expect(err).To(HaveOccurred())
@@ -107,7 +69,7 @@ var _ = Describe("Interactive Action Handlers (G1)", func() {
 				},
 			}
 			_, err := tools.HandleMessage(ctx, mockMCP, tools.InteractiveActionArgs{
-				RRID:    "prod/rr-001",
+				RRID:    "rr-prod-001",
 				Message: "test",
 			}, spy)
 			Expect(err).To(HaveOccurred())
@@ -123,7 +85,7 @@ var _ = Describe("Interactive Action Handlers (G1)", func() {
 				},
 			}
 			result, err := tools.HandleComplete(ctx, mockMCP, tools.InteractiveActionArgs{
-				RRID: "prod/rr-001",
+				RRID: "rr-prod-001",
 			}, spy)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Status).To(Equal("completed"))
@@ -136,7 +98,7 @@ var _ = Describe("Interactive Action Handlers (G1)", func() {
 				},
 			}
 			_, err := tools.HandleComplete(ctx, mockMCP, tools.InteractiveActionArgs{
-				RRID: "prod/rr-001",
+				RRID: "rr-prod-001",
 			}, spy)
 			Expect(err).To(HaveOccurred())
 		})
@@ -151,7 +113,7 @@ var _ = Describe("Interactive Action Handlers (G1)", func() {
 				},
 			}
 			result, err := tools.HandleCancel(ctx, mockMCP, tools.InteractiveActionArgs{
-				RRID: "prod/rr-001",
+				RRID: "rr-prod-001",
 			}, spy)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Status).To(Equal("cancelled"))
@@ -164,7 +126,7 @@ var _ = Describe("Interactive Action Handlers (G1)", func() {
 				},
 			}
 			_, err := tools.HandleCancel(ctx, mockMCP, tools.InteractiveActionArgs{
-				RRID: "prod/rr-001",
+				RRID: "rr-prod-001",
 			}, spy)
 			Expect(err).To(HaveOccurred())
 		})
@@ -179,7 +141,7 @@ var _ = Describe("Interactive Action Handlers (G1)", func() {
 				},
 			}
 			result, err := tools.HandleStatus(ctx, mockMCP, tools.InteractiveActionArgs{
-				RRID: "prod/rr-001",
+				RRID: "rr-prod-001",
 			}, spy)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Status).To(Equal("active"))
@@ -192,7 +154,7 @@ var _ = Describe("Interactive Action Handlers (G1)", func() {
 				},
 			}
 			_, err := tools.HandleStatus(ctx, mockMCP, tools.InteractiveActionArgs{
-				RRID: "prod/rr-001",
+				RRID: "rr-prod-001",
 			}, spy)
 			Expect(err).To(HaveOccurred())
 		})
@@ -207,7 +169,7 @@ var _ = Describe("Interactive Action Handlers (G1)", func() {
 				},
 			}
 			result, err := tools.HandleReconnect(ctx, mockMCP, tools.InteractiveActionArgs{
-				RRID: "prod/rr-001",
+				RRID: "rr-prod-001",
 			}, spy)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Status).To(Equal("active"))
@@ -220,7 +182,7 @@ var _ = Describe("Interactive Action Handlers (G1)", func() {
 				},
 			}
 			_, err := tools.HandleReconnect(ctx, mockMCP, tools.InteractiveActionArgs{
-				RRID: "prod/rr-001",
+				RRID: "rr-prod-001",
 			}, spy)
 			Expect(err).To(HaveOccurred())
 		})
@@ -235,8 +197,8 @@ var _ = Describe("Interactive Action Handlers (G1)", func() {
 	})
 
 	Describe("Constructors (G1)", func() {
-		It("UT-AF-1234-060: NewInvestigateTool constructor returns valid tool", func() {
-			t, err := tools.NewInvestigateTool(nil, nil)
+		It("UT-AF-1234-060: NewInvestigateMCPTool constructor returns valid tool", func() {
+			t, err := tools.NewInvestigateMCPTool(nil, nil, "", nil, nil, nil, nil, nil, nil)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(t.Name()).To(Equal("kubernaut_investigate"))
 		})
@@ -246,8 +208,7 @@ var _ = Describe("Interactive Action Handlers (G1)", func() {
 				name string
 				fn   func() (interface{ Name() string }, error)
 			}{
-				{"kubernaut_takeover", func() (interface{ Name() string }, error) { return tools.NewTakeoverTool(nil, nil) }},
-				{"kubernaut_message", func() (interface{ Name() string }, error) { return tools.NewMessageTool(nil, nil) }},
+			{"kubernaut_message", func() (interface{ Name() string }, error) { return tools.NewMessageTool(nil, nil) }},
 				{"kubernaut_complete", func() (interface{ Name() string }, error) { return tools.NewCompleteTool(nil, nil) }},
 				{"kubernaut_cancel", func() (interface{ Name() string }, error) { return tools.NewCancelInvestigationTool(nil, nil) }},
 				{"kubernaut_status", func() (interface{ Name() string }, error) { return tools.NewStatusTool(nil, nil) }},
@@ -278,13 +239,8 @@ var _ = Describe("Interactive Action Handlers (G1)", func() {
 			return spy.events[0]
 		}
 
-		It("UT-AF-1234-063: HandleTakeover emits EventKADelegated audit", func() {
-			ev := invokeForAudit(tools.HandleTakeover, tools.InteractiveActionArgs{RRID: "prod/rr-001"})
-			Expect(ev.Type).To(Equal(audit.EventKADelegated))
-		})
-
 		It("UT-AF-1234-064: HandleMessage emits EventToolExecuted audit", func() {
-			ev := invokeForAudit(tools.HandleMessage, tools.InteractiveActionArgs{RRID: "prod/rr-001", Message: "test message"})
+			ev := invokeForAudit(tools.HandleMessage, tools.InteractiveActionArgs{RRID: "rr-prod-001", Message: "test message"})
 			Expect(ev.Type).To(Equal(audit.EventToolExecuted))
 		})
 
@@ -297,12 +253,12 @@ var _ = Describe("Interactive Action Handlers (G1)", func() {
 		}
 
 		auditCases := []auditDetailCase{
-			{"UT-AF-1300-001", tools.HandleStatus, tools.InteractiveActionArgs{RRID: "prod/rr-001"}, "tool_outcome", "success"},
-			{"UT-AF-1300-002", tools.HandleMessage, tools.InteractiveActionArgs{RRID: "prod/rr-001", Message: "check logs"}, "tool_outcome", "success"},
-			{"UT-AF-AUDIT-001", tools.HandleComplete, tools.InteractiveActionArgs{RRID: "prod/rr-001"}, "result_type", "rca_complete"},
-			{"UT-AF-AUDIT-002", tools.HandleCancel, tools.InteractiveActionArgs{RRID: "prod/rr-001"}, "result_type", "cancelled"},
-			{"UT-AF-AUDIT-003", tools.HandleMessage, tools.InteractiveActionArgs{RRID: "prod/rr-001", Message: "check logs"}, "tool_name", "kubernaut_message"},
-			{"UT-AF-AUDIT-004", tools.HandleStatus, tools.InteractiveActionArgs{RRID: "prod/rr-001"}, "tool_name", "kubernaut_status"},
+			{"UT-AF-1300-001", tools.HandleStatus, tools.InteractiveActionArgs{RRID: "rr-prod-001"}, "tool_outcome", "success"},
+			{"UT-AF-1300-002", tools.HandleMessage, tools.InteractiveActionArgs{RRID: "rr-prod-001", Message: "check logs"}, "tool_outcome", "success"},
+			{"UT-AF-AUDIT-001", tools.HandleComplete, tools.InteractiveActionArgs{RRID: "rr-prod-001"}, "result_type", "rca_complete"},
+			{"UT-AF-AUDIT-002", tools.HandleCancel, tools.InteractiveActionArgs{RRID: "rr-prod-001"}, "result_type", "cancelled"},
+			{"UT-AF-AUDIT-003", tools.HandleMessage, tools.InteractiveActionArgs{RRID: "rr-prod-001", Message: "check logs"}, "tool_name", "kubernaut_message"},
+			{"UT-AF-AUDIT-004", tools.HandleStatus, tools.InteractiveActionArgs{RRID: "rr-prod-001"}, "tool_name", "kubernaut_status"},
 		}
 
 		for _, tc := range auditCases {

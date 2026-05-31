@@ -36,6 +36,7 @@ type WorkflowDetail struct {
 	Name        string              `json:"name"`
 	Description string              `json:"description"`
 	Kind        string              `json:"kind,omitempty"`
+	Confidence  float64             `json:"confidence,omitempty"`
 	Parameters  []WorkflowParameter `json:"parameters"`
 }
 
@@ -80,6 +81,7 @@ func HandleDiscoverWorkflows(ctx context.Context, mcpClient ka.MCPClient, args D
 			Name:        w.Name,
 			Description: w.Description,
 			Kind:        w.Kind,
+			Confidence:  w.Confidence,
 			Parameters:  params,
 		})
 	}
@@ -175,7 +177,7 @@ func validateParamType(p WorkflowParameter, val any) error {
 func NewDiscoverWorkflowsTool(mcpClient ka.MCPClient) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_discover_workflows",
-		Description: "Discover available workflows with their parameter schemas for LLM-populated execution. Requires an active interactive driver session — call kubernaut_takeover first.",
+		Description: "Discover available workflows with their parameter schemas for LLM-populated execution. Requires an active interactive driver session — call kubernaut_investigate first.",
 	}, func(ctx tool.Context, args DiscoverWorkflowsArgs) (DiscoverWorkflowsResult, error) {
 		return HandleDiscoverWorkflows(ctx, mcpClient, args)
 	})
@@ -222,6 +224,7 @@ func HandleSelectWorkflow(ctx context.Context, mcpClient ka.MCPClient, args Sele
 			Detail: map[string]string{
 				"rr_id":       args.RRID,
 				"workflow_id": args.WorkflowID,
+				"decision":    "accept",
 				"status":      result.Status,
 			},
 		})
@@ -237,7 +240,7 @@ func HandleSelectWorkflow(ctx context.Context, mcpClient ka.MCPClient, args Sele
 func NewSelectWorkflowTool(mcpClient ka.MCPClient, auditor audit.Emitter) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_select_workflow",
-		Description: "Select a remediation workflow for execution. Triggers enrichment and workflow selection in the backend. Requires an active interactive driver session — call kubernaut_takeover first.",
+		Description: "Select a remediation workflow for execution. Triggers enrichment and workflow selection in the backend. Requires an active interactive driver session — call kubernaut_investigate first.",
 	}, func(ctx tool.Context, args SelectWorkflowArgs) (SelectWorkflowResult, error) {
 		return HandleSelectWorkflow(ctx, mcpClient, args, auditor)
 	})

@@ -79,6 +79,7 @@ var _ = Describe("KA-KA Integration Parity — Token Usage (TP-433-PARITY)", fun
 
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api-server", Namespace: "production", Severity: "critical",
+				Environment: "Production", Priority: "P0",
 				Message: "OOMKilled",
 			})
 			Expect(err).NotTo(HaveOccurred())
@@ -149,6 +150,7 @@ var _ = Describe("KA-KA Integration Parity — LLM Metrics (TP-433-PARITY)", fun
 
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api-server", Namespace: "default", Severity: "warning",
+				Environment: "Development", Priority: "P2",
 				Message: "CrashLoop",
 			})
 			Expect(err).NotTo(HaveOccurred())
@@ -182,6 +184,7 @@ var _ = Describe("KA-KA Integration Parity — LLM Metrics (TP-433-PARITY)", fun
 
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api-server", Namespace: "default", Severity: "critical",
+				Environment: "Development", Priority: "P1",
 				Message: "timeout",
 			})
 			Expect(err).NotTo(HaveOccurred())
@@ -241,6 +244,7 @@ var _ = Describe("KA-KA Integration Parity — RCA (TP-433-PARITY)", func() {
 
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api-server", Namespace: "production", Severity: "critical",
+				Environment: "Production", Priority: "P0",
 				Message: "OOMKilled", ResourceKind: "Pod", ResourceName: "api-server-xyz",
 			})
 			Expect(err).NotTo(HaveOccurred())
@@ -271,6 +275,7 @@ var _ = Describe("KA-KA Integration Parity — RCA (TP-433-PARITY)", func() {
 
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api-server", Namespace: "production", Severity: "high",
+				Environment: "Production", Priority: "P0",
 				Message: "OOMKilled",
 			})
 			Expect(err).NotTo(HaveOccurred())

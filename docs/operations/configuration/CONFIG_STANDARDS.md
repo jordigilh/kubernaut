@@ -245,7 +245,7 @@ metrics:
 
 ```yaml
 kubernaut_agent:
-  url: "http://kubernaut-agent:8080"  # REQUIRED - no default
+  url: "https://kubernaut-agent:8443"  # REQUIRED - no default
   timeout: 120s                     # Default: 120s
 
 timeouts:

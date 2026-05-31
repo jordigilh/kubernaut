@@ -9,7 +9,7 @@ import (
 const stateKeyDriverActive = "af_interactive_driver_active"
 
 // mcpDependentTools are tools that require an active interactive driver session
-// (i.e., a successful kubernaut_takeover) before they can be called. Without
+// (i.e., a successful kubernaut_investigate) before they can be called. Without
 // this prerequisite, KA rejects them with not_driving errors.
 var mcpDependentTools = map[string]bool{
 	"kubernaut_discover_workflows": true,
@@ -22,9 +22,11 @@ var mcpDependentTools = map[string]bool{
 
 // driverEntryTools are tools that establish the interactive driver session.
 // After a successful call to one of these, mcpDependentTools are unblocked.
+// kubernaut_investigate is included because it handles both fresh investigations
+// and takeover of autonomous sessions (consolidated per #1332).
 var driverEntryTools = map[string]bool{
-	"kubernaut_takeover":  true,
-	"kubernaut_reconnect": true,
+	"kubernaut_investigate": true,
+	"kubernaut_reconnect":   true,
 }
 
 // newPhaseGuard returns a BeforeToolCallback that blocks MCP-dependent tools
@@ -47,7 +49,7 @@ func newPhaseGuard() (llmagent.BeforeToolCallback, llmagent.AfterToolCallback) {
 
 		logr.FromContextOrDiscard(ctx).Info("phase-guard blocked tool", "tool", t.Name(), "reason", "no_active_driver")
 		return map[string]any{
-			"error": "interactive session not active — you must call kubernaut_takeover first to establish a driver session before using this tool",
+			"error": "interactive session not active — you must call kubernaut_investigate first to establish a driver session before using this tool",
 		}, nil
 	}
 

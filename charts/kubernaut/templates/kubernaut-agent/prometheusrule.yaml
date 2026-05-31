@@ -57,4 +57,16 @@ spec:
             summary: "High interactive takeover rate (potential session quality issue)"
             description: "Takeover rate is {{ "{{" }} $value | humanize {{ "}}" }}/s over 5m (threshold: {{ .Values.monitoring.prometheusRule.thresholds.takeoverRateMax }}/s). Frequent takeovers may indicate autonomous investigation quality issues."
             runbook_url: "https://github.com/jordigilh/kubernaut/blob/main/docs/operations/runbooks/interactive-mode-runbook.md#3-takeover-failures"
+
+    - name: kubernaut-agent-availability
+      rules:
+        - alert: KubernautAgentDown
+          expr: absent(up{job=~"kubernaut-agent.*"}) or up{job=~"kubernaut-agent.*"} == 0
+          for: 2m
+          labels:
+            severity: critical
+            service: kubernaut-agent
+          annotations:
+            summary: "Kubernaut Agent is down"
+            description: "No healthy Kubernaut Agent instance detected for 2 minutes. Autonomous investigations and interactive sessions are unavailable."
 {{- end }}

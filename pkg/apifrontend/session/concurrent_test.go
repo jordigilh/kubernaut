@@ -9,6 +9,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	adksession "google.golang.org/adk/session"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
@@ -17,12 +18,13 @@ import (
 var _ = Describe("CRDSessionService concurrency", func() {
 	var (
 		svc    *session.CRDSessionService
+		k8s    client.Client
 		ctx    context.Context
 		scheme = newScheme()
 	)
 
 	BeforeEach(func() {
-		k8s := newFakeClient(scheme)
+		k8s = newFakeClient(scheme)
 		svc = newTestService(k8s, scheme)
 		ctx = context.Background()
 	})
@@ -65,6 +67,7 @@ var _ = Describe("CRDSessionService concurrency", func() {
 
 		err = svc.MaterializeCRD(ctx, "race-sess", v1alpha1.ObjectRef{Name: "rr-race", Namespace: "test-ns"})
 		Expect(err).NotTo(HaveOccurred())
+		Expect(setSessionCRDPhase(ctx, k8s, "test-ns", "race-sess", v1alpha1.SessionPhaseActive)).To(Succeed())
 
 		err = svc.UpdatePhase(ctx, "race-sess", v1alpha1.SessionPhaseDisconnected, "SSE dropped", "")
 		Expect(err).NotTo(HaveOccurred())

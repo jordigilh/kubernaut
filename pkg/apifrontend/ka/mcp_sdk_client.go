@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -190,11 +191,7 @@ func (c *SDKMCPClient) DiscoverWorkflows(ctx context.Context, args DiscoverWorkf
 		return nil, err
 	}
 
-	var dwResult DiscoverWorkflowsResult
-	if err := json.Unmarshal(result, &dwResult); err != nil {
-		return nil, fmt.Errorf("parse discover_workflows response: %w", err)
-	}
-	return &dwResult, nil
+	return ParseDiscoverWorkflowsResponse(result)
 }
 
 // InvokeAction calls kubernaut_investigate with a specific action on KA's MCP server.
@@ -226,6 +223,142 @@ func (c *SDKMCPClient) InvokeAction(ctx context.Context, args InvokeActionArgs) 
 		return nil, fmt.Errorf("parse invoke_action response: %w", err)
 	}
 	return &invResult, nil
+}
+
+// StartInvestigation connects to KA MCP, sends action=start to launch the
+// deferred investigation and acquire the interactive lease, and registers a
+// LoggingMessageHandler to stream events back to the caller. The caller
+// receives events on the returned channel and must call Closer when done.
+func (c *SDKMCPClient) StartInvestigation(ctx context.Context, args StartInvestigationArgs) (*StartInvestigationResult, error) {
+	identity := auth.UserIdentityFromContext(ctx)
+	if identity == nil {
+		return nil, fmt.Errorf("user identity required: no identity in context")
+	}
+
+	eventCh := make(chan InvestigationEvent, 64)
+	doneCh := make(chan struct{})
+
+	var eventsReceived int64
+	streamClient := mcp.NewClient(&mcp.Implementation{
+		Name:    "kubernaut-apifrontend-dedicated",
+		Version: "0.1.0",
+	}, &mcp.ClientOptions{
+		LoggingMessageHandler: func(_ context.Context, req *mcp.LoggingMessageRequest) {
+			eventsReceived++
+			if eventsReceived == 1 {
+				c.logger.Info("LoggingMessageHandler: first event received from KA",
+					"rr_id", args.RRID, "level", string(req.Params.Level))
+			}
+
+			raw, err := json.Marshal(req.Params.Data)
+			if err != nil {
+				c.logger.Error(err, "failed to marshal logging message data")
+				return
+			}
+
+			evt, ok := ParseLoggingEvent(c.logger, raw)
+			if !ok {
+				return
+			}
+
+			select {
+			case <-doneCh:
+				c.logger.Info("LoggingMessageHandler: doneCh closed, dropping event",
+					"rr_id", args.RRID, "event_type", evt.Type, "total_received", eventsReceived)
+				return
+			default:
+			}
+			select {
+			case eventCh <- evt:
+			case <-doneCh:
+			default:
+				c.logger.Info("event channel full, dropping event", "event_type", evt.Type)
+			}
+		},
+	})
+
+	transport := &mcp.StreamableClientTransport{
+		Endpoint:   c.endpoint,
+		HTTPClient: c.httpClient,
+	}
+
+	// Use a detached context for the MCP session so its lifetime is not tied
+	// to the request/tool timeout context. The investigation may run for
+	// minutes; the caller controls cleanup via Closer(). We still use ctx
+	// for the initial Connect and SetLoggingLevel calls (which must complete
+	// within the request deadline), but the session itself lives beyond ctx.
+	session, err := streamClient.Connect(context.Background(), transport, nil)
+	if err != nil {
+		close(doneCh)
+		close(eventCh)
+		return nil, fmt.Errorf("MCP connect for investigation: %w", err)
+	}
+
+	if err := session.SetLoggingLevel(context.Background(), &mcp.SetLoggingLevelParams{Level: "info"}); err != nil {
+		_ = session.Close()
+		close(doneCh)
+		close(eventCh)
+		return nil, fmt.Errorf("set logging level: %w", err)
+	}
+
+	argsMap := map[string]any{
+		"rr_id":              args.RRID,
+		"action":             "start",
+		"acting_user":        identity.Username,
+		"acting_user_groups": identity.Groups,
+	}
+
+	callCtx, callCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer callCancel()
+	result, err := session.CallTool(callCtx, &mcp.CallToolParams{
+		Name:      "kubernaut_investigate",
+		Arguments: argsMap,
+	})
+	if err != nil {
+		_ = session.Close()
+		close(doneCh)
+		close(eventCh)
+		return nil, fmt.Errorf("start investigation MCP call: %w", err)
+	}
+
+	if result.IsError {
+		msg := "KA tool error"
+		if len(result.Content) > 0 {
+			if tc, ok := result.Content[0].(*mcp.TextContent); ok {
+				msg = tc.Text
+			}
+		}
+		_ = session.Close()
+		close(eventCh)
+		return nil, fmt.Errorf("kubernaut_investigate start_autonomous: %s", msg)
+	}
+
+	var invResult struct {
+		SessionID string `json:"session_id"`
+		Status    string `json:"status"`
+	}
+	if len(result.Content) > 0 {
+		if tc, ok := result.Content[0].(*mcp.TextContent); ok {
+			_ = json.Unmarshal([]byte(tc.Text), &invResult)
+		}
+	}
+
+	var once sync.Once
+	closer := func() {
+		once.Do(func() {
+			close(doneCh)
+			_ = session.Close()
+			close(eventCh)
+		})
+	}
+
+	return &StartInvestigationResult{
+		SessionID: invResult.SessionID,
+		Status:    invResult.Status,
+		Events:    eventCh,
+		Closer:    closer,
+		Session:   session,
+	}, nil
 }
 
 // ConnectSession establishes a new MCP session without auto-closing it.

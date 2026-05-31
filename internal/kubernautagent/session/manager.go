@@ -165,6 +165,10 @@ func (m *Manager) launchInvestigation(ctx context.Context, id string, fn Investi
 	sess := m.store.sessions[id]
 	sess.cancel = cancelFn
 	sess.lazySink = ls
+	m.logger.Info("launchInvestigation: LazySink attached to session",
+		"session_id", id,
+		"status", string(sess.Status),
+		"has_deferred_fn", sess.deferredFn != nil)
 	m.store.mu.Unlock()
 
 	if updateErr := m.store.Update(id, StatusRunning, nil, nil); updateErr != nil {
@@ -243,6 +247,34 @@ func (m *Manager) StartInteractiveSession(ctx context.Context, fn InvestigateFun
 	m.logger.Info("interactive session created (pending)",
 		"session_id", id,
 		"remediation_id", metadata["remediation_id"],
+	)
+	return id, nil
+}
+
+// StartInteractiveSessionWithContext creates a pending interactive session with
+// typed SessionContext, preserving the full SignalContext from the AA payload.
+// This ensures discover_workflows can retrieve severity, environment, priority,
+// and other signal fields without reading CRDs.
+func (m *Manager) StartInteractiveSessionWithContext(ctx context.Context, fn InvestigateFunc, sctx SessionContext) (string, error) {
+	if user := auth.GetUserFromContext(ctx); user != "" {
+		sctx.CreatedBy = user
+	}
+	metadata := sctx.ToMap()
+	id, err := m.store.Create()
+	if err != nil {
+		return "", err
+	}
+	m.store.SetMetadata(id, metadata)
+	m.store.SetContext(id, sctx)
+
+	m.store.mu.Lock()
+	sess := m.store.sessions[id]
+	sess.deferredFn = fn
+	m.store.mu.Unlock()
+
+	m.logger.Info("interactive session created with context (pending)",
+		"session_id", id,
+		"remediation_id", sctx.RemediationID,
 	)
 	return id, nil
 }
@@ -474,6 +506,33 @@ func (m *Manager) GetLatestRCASummaryByRemediationID(rrID string) (string, bool)
 	return latestSummary, true
 }
 
+// GetLatestRCAResultByRemediationID returns the full InvestigationResult from
+// the most recent completed session for the given remediation_id. This gives
+// workflow discovery access to the complete RemediationTarget produced by the
+// autonomous Phase 1 RCA, avoiding a lossy re-extraction from conversation.
+func (m *Manager) GetLatestRCAResultByRemediationID(rrID string) (*katypes.InvestigationResult, bool) {
+	m.store.mu.RLock()
+	defer m.store.mu.RUnlock()
+	var latestTime time.Time
+	var latestResult *katypes.InvestigationResult
+	for _, sess := range m.store.sessions {
+		if sess.Metadata["remediation_id"] != rrID {
+			continue
+		}
+		if sess.Result == nil {
+			continue
+		}
+		if sess.CreatedAt.After(latestTime) {
+			latestTime = sess.CreatedAt
+			latestResult = sess.Result
+		}
+	}
+	if latestResult == nil {
+		return nil, false
+	}
+	return latestResult, true
+}
+
 // Subscribe returns a read-only channel that delivers investigation events
 // for the given session. The event sink is lazily created on the first
 // Subscribe call so that autonomous investigations (no observer) run without
@@ -504,6 +563,15 @@ func (m *Manager) Subscribe(ctx context.Context, id string) (<-chan Investigatio
 		sess.eventChan = ch
 		if sess.lazySink != nil {
 			sess.lazySink.Set(ch)
+			m.logger.Info("Subscribe: LazySink channel activated",
+				"session_id", id,
+				"status", string(sess.Status),
+				"has_lazy_sink", true,
+				"chan_ptr", fmt.Sprintf("%p", ch))
+		} else {
+			m.logger.Info("Subscribe: LazySink is nil — events will NOT flow",
+				"session_id", id,
+				"status", string(sess.Status))
 		}
 	}
 
@@ -580,22 +648,25 @@ func (m *Manager) GetSessionContext(id string) (*SessionContext, error) {
 	return &ctx, nil
 }
 
-// GetSignalForRemediation looks up the running session associated with the
+// GetSignalForRemediation looks up any non-terminal session associated with the
 // given remediationID and returns its SignalContext. This enables interactive
-// tools (enrich, select_workflow) to inherit security gate parameters from the
-// autonomous investigation session. Returns ErrSessionNotFound if no running
-// session matches the rrID.
+// tools (discover_workflows, select_workflow) to inherit the full signal context
+// (severity, environment, priority) from the original AA payload without reading
+// CRDs. Searches Running, Pending, and UserDriving sessions.
+// Returns ErrSessionNotFound if no matching session has a stored signal.
 func (m *Manager) GetSignalForRemediation(rrID string) (*katypes.SignalContext, error) {
-	sessionID, found := m.FindByRemediationID(rrID)
-	if !found {
-		return nil, ErrSessionNotFound
+	m.store.mu.RLock()
+	defer m.store.mu.RUnlock()
+	for _, sess := range m.store.sessions {
+		if sess.Metadata["remediation_id"] != rrID {
+			continue
+		}
+		if sess.Context.Signal.Name != "" || sess.Context.Signal.Severity != "" {
+			signal := sess.Context.Signal
+			return &signal, nil
+		}
 	}
-	sess, err := m.store.Get(sessionID)
-	if err != nil {
-		return nil, err
-	}
-	signal := sess.Context.Signal
-	return &signal, nil
+	return nil, ErrSessionNotFound
 }
 
 // CompleteUserDriving transitions a user-driven session to completed with the
@@ -649,7 +720,7 @@ func (m *Manager) ForceCompleteByRemediationID(rrID string, result *katypes.Inve
 	m.store.mu.Lock()
 	defer m.store.mu.Unlock()
 	for _, sess := range m.store.sessions {
-		if sess.Metadata["remediation_id"] == rrID {
+		if sess.Metadata["remediation_id"] == rrID && !IsTerminal(sess.Status) {
 			prevStatus := sess.Status
 			if sess.cancel != nil {
 				sess.cancel()

@@ -84,7 +84,7 @@ var _ = Describe("MCP Full-Path Validation (G1)", Label("e2e", "phase2", "g1"), 
 
 	// TC-E2E-MCP-FULL-02 + 04 collapsed: create RR → approve it
 	It("TC-E2E-MCP-FULL-02+04: RR fixture then kubernaut_approve lifecycle", func() {
-		const rrNamespace = "default"
+		rrNamespace := e2eNamespace
 		const rrName = "e2e-rr-mcp-full-02"
 
 		By("TC-E2E-MCP-FULL-02: Create RR via k8s client CRD fixture")
@@ -107,7 +107,6 @@ var _ = Describe("MCP Full-Path Validation (G1)", Label("e2e", "phase2", "g1"), 
 		apBody := buildJSONRPC("mcp-full-04-approve", "tools/call", map[string]interface{}{
 			"name": "kubernaut_approve",
 			"arguments": map[string]interface{}{
-				"namespace": rrNamespace,
 				"rar_name":  rarName,
 				"decision":  "approved",
 				"reason":    "MCP G1 full-path E2E",
@@ -138,7 +137,7 @@ var _ = Describe("MCP Full-Path Validation (G1)", Label("e2e", "phase2", "g1"), 
 			"DS must have seeded workflow entries in E2E — workflow catalog must not be empty")
 	})
 
-	It("TC-E2E-MCP-FULL-05: MCP tools/list returns exactly 22 domain tools", func() {
+	It("TC-E2E-MCP-FULL-05: MCP tools/list returns exactly 21 domain tools", func() {
 		root, err := mcpToolsList("mcp-full-05")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(root).NotTo(HaveKey("error"))
@@ -148,7 +147,7 @@ var _ = Describe("MCP Full-Path Validation (G1)", Label("e2e", "phase2", "g1"), 
 
 		toolsRaw, ok := res["tools"].([]interface{})
 		Expect(ok).To(BeTrue(), "result.tools should be an array: %#v", res)
-		Expect(len(toolsRaw)).To(Equal(22))
+		Expect(len(toolsRaw)).To(Equal(21))
 
 		for _, t := range toolsRaw {
 			tm, ok := t.(map[string]interface{})
@@ -176,5 +175,5 @@ var _ = Describe("MCP Full-Path Validation (G1)", Label("e2e", "phase2", "g1"), 
 		Expect(toolIsErr).To(BeTrue(), "expected tool error for unknown tool; text=%q", text)
 	})
 
-	// TC-E2E-MCP-FULL-07 deleted: af_create_rr validation (internal tool) — covered by UT.
+	// TC-E2E-MCP-FULL-07 deleted: kubernaut_remediate validation (internal tool) — covered by UT.
 })

@@ -25444,6 +25444,12 @@ type RemediationApprovalAuditPayload struct {
 	DecisionMessage string `json:"decision_message"`
 	// Name of the referenced AIAnalysis.
 	AiAnalysisRef string `json:"ai_analysis_ref"`
+	// Human identity the intermediary acted on behalf of (empty for direct decisions). DD-AUTH-MCP-001
+	// v3.0 trusted intermediary pattern.
+	DelegatedUser OptString `json:"delegated_user"`
+	// Trusted intermediary SA that facilitated the decision (empty for direct decisions). Enables
+	// forensic reconstruction of delegation chain.
+	DelegatedVia OptString `json:"delegated_via"`
 }
 
 // GetEventType returns the value of EventType.
@@ -25476,6 +25482,16 @@ func (s *RemediationApprovalAuditPayload) GetAiAnalysisRef() string {
 	return s.AiAnalysisRef
 }
 
+// GetDelegatedUser returns the value of DelegatedUser.
+func (s *RemediationApprovalAuditPayload) GetDelegatedUser() OptString {
+	return s.DelegatedUser
+}
+
+// GetDelegatedVia returns the value of DelegatedVia.
+func (s *RemediationApprovalAuditPayload) GetDelegatedVia() OptString {
+	return s.DelegatedVia
+}
+
 // SetEventType sets the value of EventType.
 func (s *RemediationApprovalAuditPayload) SetEventType(val RemediationApprovalAuditPayloadEventType) {
 	s.EventType = val
@@ -25504,6 +25520,16 @@ func (s *RemediationApprovalAuditPayload) SetDecisionMessage(val string) {
 // SetAiAnalysisRef sets the value of AiAnalysisRef.
 func (s *RemediationApprovalAuditPayload) SetAiAnalysisRef(val string) {
 	s.AiAnalysisRef = val
+}
+
+// SetDelegatedUser sets the value of DelegatedUser.
+func (s *RemediationApprovalAuditPayload) SetDelegatedUser(val OptString) {
+	s.DelegatedUser = val
+}
+
+// SetDelegatedVia sets the value of DelegatedVia.
+func (s *RemediationApprovalAuditPayload) SetDelegatedVia(val OptString) {
+	s.DelegatedVia = val
 }
 
 // Approval decision.

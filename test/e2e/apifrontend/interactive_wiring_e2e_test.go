@@ -54,12 +54,12 @@ var _ = Describe("Interactive Wiring E2E (W6)", Label("e2e", "phase4", "wiring")
 
 	Describe("E2E-AF-1234-W01: Interactive 4-phase tool wiring", func() {
 
-		It("E2E-AF-1234-W01a: tools/list exposes all 6 interactive tools", func() {
+		It("E2E-AF-1234-W01a: tools/list exposes interactive tools (#1332: takeover via investigate)", func() {
 			body, err := mcpToolsList()
 			Expect(err).NotTo(HaveOccurred())
 
 			for _, tool := range []string{
-				"kubernaut_takeover",
+				"kubernaut_investigate",
 				"kubernaut_message",
 				"kubernaut_complete",
 				"kubernaut_cancel",
@@ -71,18 +71,18 @@ var _ = Describe("Interactive Wiring E2E (W6)", Label("e2e", "phase4", "wiring")
 			}
 		})
 
-		It("E2E-AF-1234-W01b: kubernaut_takeover dispatches to KA and returns structured response", func() {
+		It("E2E-AF-1332-W01b: kubernaut_investigate dispatches to KA and returns structured response", func() {
 			rrName := fmt.Sprintf("e2e-rr-w01b-%s", uuid.New().String()[:8])
 			Expect(createRR("default", rrName, "Deployment", "test-deploy-w01b")).To(Succeed())
 			DeferCleanup(func() { deleteRR("default", rrName) })
 
 			rpcID := fmt.Sprintf("w01b-%d", time.Now().UnixNano())
-			text, code, err := mcpToolCall(rpcID, "kubernaut_takeover", map[string]interface{}{
-				"rr_id": "default/" + rrName,
+			text, code, err := mcpToolCall(rpcID, "kubernaut_investigate", map[string]interface{}{
+				"rr_id": rrName,
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(code).To(BeNumerically("<", 500),
-				"takeover should not return 5xx; got body: %s", text)
+				"investigate should not return 5xx; got body: %s", text)
 
 			var result map[string]interface{}
 			if json.Unmarshal([]byte(text), &result) == nil {
@@ -122,9 +122,7 @@ var _ = Describe("Interactive Wiring E2E (W6)", Label("e2e", "phase4", "wiring")
 
 		It("E2E-AF-1234-W02b: audit trail includes execution_duration_ms after tool call", func() {
 			rpcID := fmt.Sprintf("w02b-%d", time.Now().UnixNano())
-			_, _, err := mcpToolCall(rpcID, "kubernaut_list_remediations", map[string]interface{}{
-				"namespace": "kubernaut-system",
-			})
+			_, _, err := mcpToolCall(rpcID, "kubernaut_list_remediations", map[string]interface{}{})
 			Expect(err).NotTo(HaveOccurred())
 
 			metrics := scrapeMetrics()

@@ -6,8 +6,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 
 	"github.com/go-logr/logr"
+	"github.com/go-logr/logr/funcr"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -511,3 +513,74 @@ func (t *authedRoundTripper) RoundTrip(req *http.Request) (*http.Response, error
 	}
 	return base.RoundTrip(req)
 }
+
+// logEntry captures a single log call for assertion.
+type logEntry struct {
+	prefix string
+	args   string
+}
+
+// capturingLogger returns a funcr.Logger that stores every log line at any
+// verbosity in the returned slice (thread-safe). Error-level calls are
+// stored with prefix "ERROR".
+func capturingLogger() (logr.Logger, *[]logEntry) {
+	var mu sync.Mutex
+	entries := &[]logEntry{}
+	logger := funcr.New(func(prefix, args string) {
+		mu.Lock()
+		defer mu.Unlock()
+		*entries = append(*entries, logEntry{prefix: prefix, args: args})
+	}, funcr.Options{Verbosity: 10})
+	return logger, entries
+}
+
+var _ = Describe("ParseLoggingEvent [AU-6]", func() {
+
+	Describe("UT-AF-LOG-001: Non-structured messages log at V(2), not Error", func() {
+		It("should return false and log at debug level for plain-text KA messages", func() {
+			logger, entries := capturingLogger()
+			raw := json.RawMessage([]byte(`"this is a plain text log from KA session"`))
+
+			evt, ok := ka.ParseLoggingEvent(logger, raw)
+			Expect(ok).To(BeFalse(), "non-structured messages must return false")
+			Expect(evt).To(Equal(ka.InvestigationEvent{}))
+
+			Expect(*entries).To(HaveLen(1))
+			Expect((*entries)[0].args).To(ContainSubstring("non-structured logging message"))
+			Expect((*entries)[0].args).NotTo(ContainSubstring("ERROR"),
+				"AU-6: non-structured messages must not emit Error-level logs")
+		})
+	})
+
+	Describe("UT-AF-LOG-002: Valid structured events are parsed successfully", func() {
+		It("should return the event and true for well-formed InvestigationEvent JSON", func() {
+			logger, entries := capturingLogger()
+			raw := json.RawMessage([]byte(`{"type":"rca_progress","turn":3,"phase":"investigating"}`))
+
+			evt, ok := ka.ParseLoggingEvent(logger, raw)
+			Expect(ok).To(BeTrue())
+			Expect(evt.Type).To(Equal("rca_progress"))
+			Expect(evt.Turn).To(Equal(3))
+			Expect(evt.Phase).To(Equal("investigating"))
+
+			Expect(*entries).To(BeEmpty(),
+				"AU-6: valid events must not produce any log output")
+		})
+	})
+
+	Describe("UT-AF-LOG-003: Malformed JSON logs at V(2), not Error", func() {
+		It("should return false and log at debug level for invalid JSON", func() {
+			logger, entries := capturingLogger()
+			raw := json.RawMessage([]byte(`{not valid json`))
+
+			evt, ok := ka.ParseLoggingEvent(logger, raw)
+			Expect(ok).To(BeFalse())
+			Expect(evt).To(Equal(ka.InvestigationEvent{}))
+
+			Expect(*entries).To(HaveLen(1))
+			Expect((*entries)[0].args).To(ContainSubstring("parse_error"))
+			Expect((*entries)[0].args).NotTo(ContainSubstring("ERROR"),
+				"AU-6: malformed JSON must not emit Error-level logs")
+		})
+	})
+})

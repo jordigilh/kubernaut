@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -42,6 +43,13 @@ import (
 )
 
 const maxSelfCorrectionAttempts = 3
+
+// Diagnostic counters for emitToSink — temporary, remove after RCA.
+var (
+	diagSendOK   atomic.Int64
+	diagSendDrop atomic.Int64
+	diagSinkNil  atomic.Int64
+)
 
 // maxForensicPayloadBytes caps serialized accumulated messages in cancellation
 // audit events to 64KB (SEC-1, OPS-3). Generous to preserve forensic RAG value.
@@ -307,6 +315,35 @@ func (inv *Investigator) RunRCAExtractionFromConversation(ctx context.Context, m
 // (BuildPhase1Context + runWorkflowSelection) so that interactive and
 // autonomous workflow discovery produce consistent results.
 func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal katypes.SignalContext, rcaResult *katypes.InvestigationResult, enrichData *prompt.EnrichmentData, correlationID string) (*katypes.InvestigationResult, error) {
+	inv.pipeline.AnomalyDetector.Reset()
+
+	// Auto-resolve apiVersion when the LLM omitted it (parity with the
+	// autonomous apiVersionValidationGate in runRCA). Uses the REST mapper
+	// via scopeResolver: if the kind maps to exactly one API group, we can
+	// infer the apiVersion deterministically.
+	if rcaResult.RemediationTarget.APIVersion == "" && rcaResult.RemediationTarget.Kind != "" && inv.scopeResolver != nil {
+		ambiguous, gvrs, err := inv.scopeResolver.IsAmbiguousKind(rcaResult.RemediationTarget.Kind)
+		if err != nil {
+			inv.logger.Error(err, "RunWorkflowDiscoveryFromRCA: IsAmbiguousKind failed, skipping apiVersion auto-resolve",
+				"kind", rcaResult.RemediationTarget.Kind, "correlation_id", correlationID)
+		} else if !ambiguous && len(gvrs) == 1 {
+			rcaResult.RemediationTarget.APIVersion = gvrToAPIVersion(gvrs[0])
+			inv.logger.Info("RunWorkflowDiscoveryFromRCA: auto-resolved apiVersion for non-ambiguous kind",
+				"kind", rcaResult.RemediationTarget.Kind,
+				"api_version", rcaResult.RemediationTarget.APIVersion,
+				"correlation_id", correlationID)
+		}
+	}
+
+	signal = SyncSignalAPIVersionFromRCA(signal, rcaResult.RemediationTarget)
+
+	inv.logger.Info("RunWorkflowDiscoveryFromRCA: RCA target state",
+		"rca_target_kind", rcaResult.RemediationTarget.Kind,
+		"rca_target_api_version", rcaResult.RemediationTarget.APIVersion,
+		"signal_kind", signal.ResourceKind,
+		"signal_api_version", signal.ResourceAPIVersion,
+		"correlation_id", correlationID)
+
 	client := inv.client
 	modelName := inv.modelName
 	var runtimeParams llm.RuntimeParams
@@ -332,6 +369,17 @@ func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal
 // Per BR-AUDIT-005, all audit events use signal.RemediationID as correlation ID
 // so that DataStorage queries by remediation_id return the full investigation trail.
 func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalContext) (*katypes.InvestigationResult, error) {
+	diagSendOK.Store(0)
+	diagSendDrop.Store(0)
+	diagSinkNil.Store(0)
+	defer func() {
+		inv.logger.Info("DIAG emitToSink summary",
+			"session_id", session.SessionIDFromContext(ctx),
+			"sent", diagSendOK.Load(),
+			"dropped", diagSendDrop.Load(),
+			"sink_nil", diagSinkNil.Load(),
+			"sink_ptr", fmt.Sprintf("%p", session.EventSinkFromContext(ctx)))
+	}()
 	inv.pipeline.AnomalyDetector.Reset()
 
 	// #783: Pin client, model name, and runtime params for the duration of
@@ -381,7 +429,7 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 		backfillSeverity(rcaResult, signal)
 		attachDetectedLabels(rcaResult, enrichData)
 		InjectRemediationTarget(rcaResult, signal, enrichData)
-		injectTargetResourceParameters(rcaResult)
+		InjectTargetResourceParameters(rcaResult)
 		rcaResult.InteractiveHold = true
 		inv.emitResponseComplete(ctx, rcaResult, tokens, correlationID)
 		return rcaResult, nil
@@ -391,7 +439,7 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 		backfillSeverity(rcaResult, signal)
 		attachDetectedLabels(rcaResult, enrichData)
 		InjectRemediationTarget(rcaResult, signal, enrichData)
-		injectTargetResourceParameters(rcaResult)
+		InjectTargetResourceParameters(rcaResult)
 		inv.emitResponseComplete(ctx, rcaResult, tokens, correlationID)
 		return rcaResult, nil
 	}
@@ -421,7 +469,7 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 			backfillSeverity(rcaResult, signal)
 			attachDetectedLabels(rcaResult, enrichData)
 			InjectRemediationTarget(rcaResult, workflowSignal, enrichData)
-			injectTargetResourceParameters(rcaResult)
+			InjectTargetResourceParameters(rcaResult)
 			inv.emitResponseComplete(ctx, rcaResult, tokens, correlationID)
 			return rcaResult, nil
 		}
@@ -514,7 +562,7 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 	if workflowResult.RemediationTarget.APIVersion == "" && rcaResult.RemediationTarget.APIVersion != "" {
 		workflowResult.RemediationTarget.APIVersion = rcaResult.RemediationTarget.APIVersion
 	}
-	injectTargetResourceParameters(workflowResult)
+	InjectTargetResourceParameters(workflowResult)
 	inv.emitResponseComplete(ctx, workflowResult, tokens, correlationID)
 	return workflowResult, nil
 }
@@ -789,6 +837,11 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 	// kind (e.g. Namespace), the label override corrects it for tool context.
 	overriddenSignal := ApplySignalLabelOverrides(signal)
 	ctx = katypes.WithSignalContext(ctx, overriddenSignal)
+	inv.logger.Info("runWorkflowSelection: post-override signal",
+		"component_gvk", overriddenSignal.ComponentGVK(),
+		"resource_kind", overriddenSignal.ResourceKind,
+		"resource_api_version", overriddenSignal.ResourceAPIVersion,
+		"correlation_id", correlationID)
 
 	wfPromptSignal := SignalToPrompt(signal)
 	LogLabelOverrideOrRejection(inv.logger, signal, wfPromptSignal, correlationID, "workflow selection")
@@ -1274,8 +1327,18 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 func (inv *Investigator) chatOrStream(ctx context.Context, client llm.Client, req llm.ChatRequest, turn int, phase string, modelName string, runtimeParams llm.RuntimeParams) (llm.ChatResponse, error) {
 	sink := session.EventSinkFromContext(ctx)
 	if sink == nil {
+		inv.logger.Info("chatOrStream: sink is nil, falling back to non-streaming Chat",
+			"turn", turn, "phase", phase,
+			"session_id", session.SessionIDFromContext(ctx))
 		return llm.ChatWithParams(ctx, client, req, runtimeParams)
 	}
+	inv.logger.Info("chatOrStream: sink active, using streaming",
+		"turn", turn, "phase", phase,
+		"session_id", session.SessionIDFromContext(ctx),
+		"sink_ptr", fmt.Sprintf("%p", sink),
+		"diag_sent", diagSendOK.Load(),
+		"diag_dropped", diagSendDrop.Load(),
+		"diag_nil", diagSinkNil.Load())
 
 	temp := runtimeParams.Temperature
 	req.Options.Temperature = &temp
@@ -1304,6 +1367,7 @@ func (inv *Investigator) chatOrStream(ctx context.Context, client llm.Client, re
 func emitToSink(ctx context.Context, eventType string, turn int, phase string, data map[string]interface{}) {
 	sink := session.EventSinkFromContext(ctx)
 	if sink == nil {
+		diagSinkNil.Add(1)
 		return
 	}
 	var raw json.RawMessage
@@ -1322,7 +1386,9 @@ func emitToSink(ctx context.Context, eventType string, turn int, phase string, d
 	}
 	select {
 	case sink <- event:
+		diagSendOK.Add(1)
 	default:
+		diagSendDrop.Add(1)
 	}
 }
 

@@ -29,9 +29,10 @@ type InvestigateInput struct {
 
 // InvestigateOutput is the response returned by the kubernaut_investigate tool.
 type InvestigateOutput struct {
-	SessionID string `json:"session_id"`
-	Status    string `json:"status"`
-	Response  string `json:"response,omitempty"`
+	SessionID              string `json:"session_id"`
+	Status                 string `json:"status"`
+	Response               string `json:"response,omitempty"`
+	InvestigationSessionID string `json:"investigation_session_id,omitempty"`
 }
 
 // Status mode constants for StatusOutput.Mode.
@@ -50,14 +51,15 @@ type StatusOutput struct {
 
 // Valid actions for the kubernaut_investigate tool.
 const (
-	ActionStart     = "start"
-	ActionMessage   = "message"
-	ActionComplete  = "complete"
-	ActionCancel    = "cancel"
-	ActionTakeover  = "takeover"
-	ActionStatus    = "status"
+	ActionStart              = "start"
+	ActionMessage            = "message"
+	ActionComplete           = "complete"
+	ActionCancel             = "cancel"
+	ActionTakeover           = "takeover"
+	ActionStatus             = "status"
 	ActionReconnect          = "reconnect"
 	ActionDiscoverWorkflows  = "discover_workflows"
+	ActionStartAutonomous    = "start_autonomous"
 )
 
 var (
@@ -80,7 +82,7 @@ func ValidateInput(input InvestigateInput) error {
 		return ErrMissingRRID
 	}
 	switch input.Action {
-	case ActionStart, ActionComplete, ActionCancel, ActionTakeover, ActionStatus, ActionReconnect, ActionDiscoverWorkflows:
+	case ActionStart, ActionComplete, ActionCancel, ActionTakeover, ActionStatus, ActionReconnect, ActionDiscoverWorkflows, ActionStartAutonomous:
 		return nil
 	case ActionMessage:
 		if input.Message == "" {

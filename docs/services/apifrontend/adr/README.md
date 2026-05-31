@@ -29,7 +29,7 @@ Each ADR follows the standard structure:
 | [ADR-011](ADR-011-deployment-model.md) | Deployment model: operator for OCP prod, Helm for dev/test | Accepted | 2026-05-02 |
 | [ADR-012](ADR-012-signal-mode-manual.md) | Signal mode: `manual` for user-initiated investigations | Accepted (speculative) | 2026-04-30 |
 | [ADR-013](ADR-013-jwt-forwarding.md) | JWT forwarding for AF-to-KA identity delegation | Accepted | 2026-05-03 |
-| [ADR-014](ADR-014-hybrid-ka-communication.md) | Hybrid REST + MCP client for AF-to-KA communication | Accepted | 2026-05-03 |
+| [ADR-014](ADR-014-hybrid-ka-communication.md) | Hybrid REST + MCP client for AF-to-KA communication | Superseded (#1326) | 2026-05-03 |
 | [ADR-015](ADR-015-ginkgo-mandate.md) | Ginkgo/Gomega for all test tiers (supersedes ADR-004) | Accepted | 2026-05-04 |
 | [ADR-016](ADR-016-jwks-failopen-rationale.md) | JWKS fail-open rationale and compensating controls | Accepted | 2026-05-05 |
 | [ADR-017](ADR-017-crd-pii-classification.md) | CRD PII data classification and retention policy | Accepted | 2026-05-06 |

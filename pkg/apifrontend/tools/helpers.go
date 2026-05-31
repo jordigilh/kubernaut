@@ -36,18 +36,15 @@ var ErrInvalidInput = errors.New("invalid input")
 // Matches the 4KB threshold used by session.TrimToolResult for etcd safety.
 const maxToolOutputBytes = 4096
 
-// ParseRRID parses an rr_id shorthand (namespace/name) into its components.
-// If rr_id is empty, namespace and name are returned as-is.
+// ParseRRID resolves rr_id to namespace and name. The rr_id is always a plain
+// resource name (no namespace prefix). If rr_id is empty, the explicit
+// namespace and name arguments are used as fallback.
 func ParseRRID(rrID, namespace, name string) (ns, n string, err error) {
 	if rrID != "" {
-		parts := strings.SplitN(rrID, "/", 2)
-		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-			return "", "", fmt.Errorf("invalid rr_id format %q: expected namespace/name", rrID)
-		}
-		return parts[0], parts[1], nil
+		return namespace, rrID, nil
 	}
-	if namespace == "" || name == "" {
-		return "", "", fmt.Errorf("namespace and name are required when rr_id is not provided")
+	if name == "" {
+		return "", "", fmt.Errorf("name is required when rr_id is not provided")
 	}
 	return namespace, name, nil
 }
@@ -106,7 +103,7 @@ func buildForbiddenMsg(msg string) string {
 // IsTerminalPhase returns true if the given RR phase is terminal.
 func IsTerminalPhase(phase string) bool {
 	switch phase {
-	case "Completed", "Failed", "Cancelled":
+	case "Completed", "Failed", "Cancelled", "TimedOut", "Skipped":
 		return true
 	}
 	return false

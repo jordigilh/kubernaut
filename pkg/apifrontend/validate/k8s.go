@@ -49,28 +49,6 @@ func Kind(k string) error {
 	return nil
 }
 
-// ParseRRID validates and splits an rr_id in the form "namespace/name" into
-// its components. Returns an error for empty, malformed, or path-traversal values.
-func ParseRRID(rrid string) (namespace, name string, err error) {
-	if rrid == "" {
-		return "", "", fmt.Errorf("rr_id must not be empty")
-	}
-	if strings.Contains(rrid, "..") {
-		return "", "", fmt.Errorf("rr_id %q contains path traversal", rrid)
-	}
-	parts := strings.SplitN(rrid, "/", 2)
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		return "", "", fmt.Errorf("rr_id %q must be in the form namespace/name", rrid)
-	}
-	if err := Namespace(parts[0]); err != nil {
-		return "", "", fmt.Errorf("rr_id namespace: %w", err)
-	}
-	if err := ResourceName(parts[1]); err != nil {
-		return "", "", fmt.Errorf("rr_id name: %w", err)
-	}
-	return parts[0], parts[1], nil
-}
-
 // ValidActions is the set of valid interactive action strings.
 var ValidActions = map[string]bool{
 	"investigate":  true,

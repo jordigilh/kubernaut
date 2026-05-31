@@ -392,4 +392,79 @@ var _ = Describe("KASessionPool (G2 + G9: Pool + User Isolation)", func() {
 			Expect(err).NotTo(HaveOccurred())
 		})
 	})
+
+	Describe("Inject (session handoff from dedicated investigate path)", func() {
+		It("UT-AF-1332-001: Inject places session and Acquire returns it without calling factory", func() {
+			pool = ka.NewKASessionPool(ka.PoolConfig{
+				Factory:    countingFactory(),
+				MaxEntries: 10,
+				Logger:     logr.Discard(),
+			})
+
+			injected := &mockPoolSession{id: 999}
+			pool.Inject("rr-inject-001", "alice", injected)
+
+			session, err := pool.Acquire(context.Background(), "rr-inject-001", "alice")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(session).To(BeIdenticalTo(injected))
+			Expect(connectCount.Load()).To(Equal(int32(0)),
+				"factory should not have been called when injected session exists")
+		})
+
+		It("UT-AF-1332-002: Inject replaces existing session and closes old one", func() {
+			pool = ka.NewKASessionPool(ka.PoolConfig{
+				Factory:    countingFactory(),
+				MaxEntries: 10,
+				Logger:     logr.Discard(),
+			})
+
+			oldSession, err := pool.Acquire(context.Background(), "rr-inject-002", "bob")
+			Expect(err).NotTo(HaveOccurred())
+			oldMock := oldSession.(*mockPoolSession)
+
+			newSession := &mockPoolSession{id: 888}
+			pool.Inject("rr-inject-002", "bob", newSession)
+
+			Eventually(oldMock.IsClosed).Should(BeTrue(),
+				"old session should be closed when replaced by Inject")
+
+			acquired, err := pool.Acquire(context.Background(), "rr-inject-002", "bob")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(acquired).To(BeIdenticalTo(newSession))
+		})
+
+		It("UT-AF-1332-003: Injected session is isolated by username", func() {
+			pool = ka.NewKASessionPool(ka.PoolConfig{
+				Factory:    countingFactory(),
+				MaxEntries: 10,
+				Logger:     logr.Discard(),
+			})
+
+			injected := &mockPoolSession{id: 777}
+			pool.Inject("rr-inject-003", "alice", injected)
+
+			// bob should get a factory-created session, not alice's injected one
+			bobSession, err := pool.Acquire(context.Background(), "rr-inject-003", "bob")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(bobSession).NotTo(BeIdenticalTo(injected))
+			Expect(connectCount.Load()).To(Equal(int32(1)),
+				"factory should be called for bob since injected session belongs to alice")
+		})
+
+		It("UT-AF-1332-004: DrainAll closes injected sessions", func() {
+			pool = ka.NewKASessionPool(ka.PoolConfig{
+				Factory:    countingFactory(),
+				MaxEntries: 10,
+				Logger:     logr.Discard(),
+			})
+
+			injected := &mockPoolSession{id: 666}
+			pool.Inject("rr-inject-004", "charlie", injected)
+
+			err := pool.DrainAll(context.Background())
+			Expect(err).NotTo(HaveOccurred())
+			Expect(injected.IsClosed()).To(BeTrue(),
+				"DrainAll should close injected sessions")
+		})
+	})
 })

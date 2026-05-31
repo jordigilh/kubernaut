@@ -138,7 +138,7 @@ func buildBeforeExecuteCallback(userCb func(ctx context.Context) (context.Contex
 		// Inject session creation context for the ServiceDecorator.
 		// The decorator reads this to build CreateConfig with task/user metadata.
 		// SessionID = ContextID because ADK maps A2A ContextID to ADK session ID
-		// (see adka2a.Executor.prepareSession). The callback for af_create_rr
+		// (see adka2a.Executor.prepareSession). The callback for kubernaut_remediate
 		// reads SessionID to drive deferred CRD materialization (G6).
 		if reqCtx != nil {
 			sc := &session.CreateContext{
@@ -158,7 +158,7 @@ func buildBeforeExecuteCallback(userCb func(ctx context.Context) (context.Contex
 // buildAfterExecuteCallback logs task completion with structured context for
 // SRE observability and emits audit events (AU-2 compliance).
 // Issue #1189 AC 12: enriches EventA2ATaskCompleted/Failed with rr_name and
-// rr_namespace if af_create_rr populated the shared CreateContext during the task.
+// rr_namespace if kubernaut_remediate populated the shared CreateContext during the task.
 func buildAfterExecuteCallback(log logr.Logger, auditor audit.Emitter) adka2a.AfterExecuteCallback {
 	return func(ctx adka2a.ExecutorContext, finalEvent *a2a.TaskStatusUpdateEvent, err error) error {
 		user := auth.UserIdentityFromContext(ctx)

@@ -70,11 +70,15 @@ func ConnectMCPClient(ctx context.Context, cfg MCPClientConfig) (*mcpsdk.ClientS
 	saTransport := testauth.NewServiceAccountTransportWithBase(cfg.SAToken, cfg.TLSTransport)
 
 	transport := &mcpsdk.StreamableClientTransport{
-		Endpoint:   cfg.Endpoint,
-		HTTPClient: &http.Client{Transport: saTransport},
+		Endpoint: cfg.Endpoint,
+		HTTPClient: &http.Client{
+			Transport: saTransport,
+		},
 	}
 
-	return client.Connect(ctx, transport, nil)
+	connectCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	return client.Connect(connectCtx, transport, nil)
 }
 
 // ConnectMCPClientWithRetry wraps ConnectMCPClient with exponential backoff on

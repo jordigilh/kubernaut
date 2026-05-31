@@ -54,7 +54,6 @@ var _ = Describe("System Prompt", func() {
 		Expect(instruction).To(ContainSubstring("kubernaut_investigate"))
 		Expect(instruction).To(ContainSubstring("kubernaut_select_workflow"))
 		Expect(instruction).To(ContainSubstring("present_decision"))
-		Expect(instruction).To(ContainSubstring("kubernaut_list_workflows"))
 		Expect(instruction).To(ContainSubstring("kubernaut_get_audit_trail"))
 	})
 
@@ -84,7 +83,7 @@ var _ = Describe("System Prompt", func() {
 	})
 
 	It("UT-AF-1189-034: prompt enforces kubernaut_watch after workflow selection", func() {
-		Expect(instruction).To(ContainSubstring("MUST call kubernaut_watch"))
+		Expect(instruction).To(ContainSubstring("call kubernaut_watch"))
 	})
 
 	It("UT-AF-1189-035: prompt requires session_id/rr_id preservation across phases", func() {
@@ -149,7 +148,7 @@ var _ = Describe("System Prompt", func() {
 
 		It("UT-AF-1275-019: intent group 'interactive' contains session tools", func() {
 			result := agentpkg.BuildInstruction("ns")
-			Expect(result).To(ContainSubstring("kubernaut_takeover"))
+			Expect(result).To(ContainSubstring("kubernaut_investigate"))
 			Expect(result).To(ContainSubstring("kubernaut_reconnect"))
 		})
 	})
@@ -304,5 +303,50 @@ var _ = Describe("System Prompt", func() {
 			Expect(result).NotTo(ContainSubstring("\"sre\""))
 			Expect(result).NotTo(ContainSubstring("\"l3-audit\""))
 		})
+	})
+})
+
+var _ = Describe("Prompt — Intent-Based Tool Redesign (#1332)", func() {
+	var instruction string
+
+	BeforeEach(func() {
+		cfg := agentpkg.DefaultTestConfig()
+		instruction = cfg.Instruction
+	})
+
+	It("UT-AF-1332-035: prompt contains kubernaut_remediate", func() {
+		Expect(instruction).To(ContainSubstring("kubernaut_remediate"))
+	})
+
+	It("UT-AF-1332-036: prompt does NOT contain deprecated af_ tool names", func() {
+		Expect(instruction).NotTo(ContainSubstring("af_create_rr"))
+		Expect(instruction).NotTo(ContainSubstring("af_check_existing_rr"))
+	})
+
+	It("UT-AF-1332-037: autonomous mode keywords map to kubernaut_remediate", func() {
+		Expect(instruction).To(ContainSubstring("kubernaut_remediate"))
+		Expect(instruction).To(SatisfyAny(
+			ContainSubstring("fix"),
+			ContainSubstring("remediate"),
+		))
+	})
+
+	It("UT-AF-1332-038: BuildInstruction references kubernaut_remediate without deprecated af_ names", func() {
+		built := agentpkg.BuildInstruction("kubernaut-system")
+		Expect(built).To(ContainSubstring("kubernaut_remediate"))
+		Expect(built).NotTo(ContainSubstring("af_create_rr"))
+		Expect(built).NotTo(ContainSubstring("af_check_existing_rr"))
+	})
+
+	It("UT-AF-1332-039: prompt contains kubectl bypass prevention rule", func() {
+		Expect(instruction).To(ContainSubstring("NEVER use kubectl tools to perform root-cause analysis"))
+	})
+
+	It("UT-AF-1332-040: prompt contains decision algorithm", func() {
+		Expect(instruction).To(ContainSubstring("Does the user just want it fixed"))
+	})
+
+	It("UT-AF-1332-041: prompt contains WHAT/WHY boundary for observation mode", func() {
+		Expect(instruction).To(ContainSubstring("kubectl queries answer WHAT"))
 	})
 })

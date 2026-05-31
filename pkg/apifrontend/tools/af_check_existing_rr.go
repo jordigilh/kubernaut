@@ -14,7 +14,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
 )
 
-// CheckExistingRRArgs defines the LLM-supplied input for af_check_existing_rr.
+// CheckExistingRRArgs defines the LLM-supplied input for kubernaut_check_existing_remediation.
 // Namespace is the workload namespace where the target resource lives (LLM-provided).
 // controllerNS for CRD listing is injected separately at wiring time (ADR-057).
 type CheckExistingRRArgs struct {
@@ -23,7 +23,7 @@ type CheckExistingRRArgs struct {
 	Name      string `json:"name"`
 }
 
-// CheckExistingRRResult is the output of af_check_existing_rr.
+// CheckExistingRRResult is the output of kubernaut_check_existing_remediation.
 type CheckExistingRRResult struct {
 	Exists bool   `json:"exists"`
 	RRID   string `json:"rr_id,omitempty"`
@@ -71,7 +71,7 @@ func HandleCheckExistingRR(ctx context.Context, client dynamic.Interface, contro
 		if !IsTerminalPhase(phase) {
 			return CheckExistingRRResult{
 				Exists: true,
-				RRID:   item.GetNamespace() + "/" + item.GetName(),
+				RRID:   item.GetName(),
 				Phase:  phase,
 			}, nil
 		}
@@ -80,13 +80,13 @@ func HandleCheckExistingRR(ctx context.Context, client dynamic.Interface, contro
 	return CheckExistingRRResult{Exists: false}, nil
 }
 
-// NewCheckExistingRRTool creates the af_check_existing_rr tool. controllerNS is
-// injected at wiring time for CRD listing (ADR-057). The LLM provides the
-// workload namespace via args.Namespace for fingerprint matching.
-func NewCheckExistingRRTool(client dynamic.Interface, controllerNS string) (tool.Tool, error) {
+// NewCheckExistingRemediationTool creates the kubernaut_check_existing_remediation tool.
+// controllerNS is injected at wiring time for CRD listing (ADR-057). The LLM
+// provides the workload namespace via args.Namespace for fingerprint matching.
+func NewCheckExistingRemediationTool(client dynamic.Interface, controllerNS string) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
-		Name:        "af_check_existing_rr",
-		Description: "Check if a non-terminal RemediationRequest already exists for a target resource (deduplication check)",
+		Name:        "kubernaut_check_existing_remediation",
+		Description: "Check if an active remediation already exists for a target resource (deduplication check)",
 	}, func(ctx tool.Context, args CheckExistingRRArgs) (CheckExistingRRResult, error) {
 		return HandleCheckExistingRR(ctx, client, controllerNS, args)
 	})

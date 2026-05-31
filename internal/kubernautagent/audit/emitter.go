@@ -92,6 +92,10 @@ const (
 
 	EventTypeShadowLLMRequest  = "aiagent.shadow.llm.request"
 	EventTypeShadowLLMResponse = "aiagent.shadow.llm.response"
+
+	EventTypeAuthFailure      = "aiagent.auth.failure"
+	EventTypeAuthDenied       = "aiagent.auth.denied"
+	EventTypeRateLimitDenied  = "aiagent.ratelimit.denied"
 )
 
 const (
@@ -125,6 +129,9 @@ const (
 	ActionInteractiveCompleted  = "interactive_completed"
 	ActionSessionResumed        = "session_resumed"
 	ActionInteractiveK8sCall    = "interactive_k8s_call"
+	ActionAuthFailure           = "auth_failure"
+	ActionAuthDenied            = "auth_denied"
+	ActionRateLimitDenied       = "ratelimit_denied"
 )
 
 const (
@@ -162,6 +169,9 @@ var AllEventTypes = []string{
 	EventTypeShadowLLMResponse,
 	EventTypeGroundingRequest,
 	EventTypeGroundingResponse,
+	EventTypeAuthFailure,
+	EventTypeAuthDenied,
+	EventTypeRateLimitDenied,
 }
 
 // AuditEvent represents an audit event to be stored.

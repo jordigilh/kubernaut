@@ -38,12 +38,13 @@ func DefaultConfig() Config {
 
 // Triager orchestrates the multi-tier severity triage pipeline.
 type Triager struct {
-	promClient prom.Client
-	llm        LLMTriager
-	config     Config
-	logger     logr.Logger
-	cache      *RulesCache
-	auditor    audit.Emitter
+	promClient  prom.Client
+	llm         LLMTriager
+	config      Config
+	logger      logr.Logger
+	cache       *RulesCache
+	auditor     audit.Emitter
+	podResolver PodResolver
 }
 
 // TriagerOption configures optional dependencies on Triager.
@@ -52,6 +53,12 @@ type TriagerOption func(*Triager)
 // WithAuditor injects an audit.Emitter for SOC2 AU-2 compliance.
 func WithAuditor(e audit.Emitter) TriagerOption {
 	return func(t *Triager) { t.auditor = e }
+}
+
+// WithPodResolver injects a PodResolver for workload-to-pod correlation in Tier 1.
+// When set, Triage() auto-resolves pod names before running the pipeline.
+func WithPodResolver(r PodResolver) TriagerOption {
+	return func(t *Triager) { t.podResolver = r }
 }
 
 // NewTriager creates a new Triager instance.
@@ -81,6 +88,15 @@ func NewTriager(promClient prom.Client, llm LLMTriager, cfg Config, logger logr.
 func (t *Triager) Triage(ctx context.Context, input TriageInput) (TriageResult, error) {
 	if !t.config.Enabled {
 		return TriageResult{}, nil
+	}
+
+	if len(input.PodNames) == 0 && t.podResolver != nil {
+		pods, err := t.podResolver.ResolvePodNames(ctx, input.Namespace, input.Kind, input.Name)
+		if err != nil {
+			t.logger.Info("pod resolution failed, continuing without pod correlation", "error", err.Error())
+		} else {
+			input.PodNames = pods
+		}
 	}
 
 	result, err := t.triagePipeline(ctx, input)
@@ -175,13 +191,34 @@ func (t *Triager) runTier1(ctx context.Context, input TriageInput) (TriageResult
 		return TriageResult{}, false
 	}
 
+	podNameSet := make(map[string]struct{}, len(input.PodNames))
+	for _, pn := range input.PodNames {
+		podNameSet[pn] = struct{}{}
+	}
+
+	// Pass 1: firing alerts (highest priority).
+	if result, ok := t.bestAlertMatch(alerts, input.Labels, podNameSet, input.Namespace, "firing", SourceFiringAlert); ok {
+		return result, true
+	}
+
+	// Pass 2: pending alerts with the same pod correlation (closes the
+	// timing race where an alert condition is met but the `for` duration
+	// has not elapsed yet).
+	if result, ok := t.bestAlertMatch(alerts, input.Labels, podNameSet, input.Namespace, "pending", SourcePendingAlert); ok {
+		return result, true
+	}
+
+	return TriageResult{}, false
+}
+
+func (t *Triager) bestAlertMatch(alerts []prom.Alert, targetLabels map[string]string, podNameSet map[string]struct{}, targetNamespace, state string, source Source) (TriageResult, bool) {
 	var bestSeverity string
 	var bestAlert string
 	for _, alert := range alerts {
-		if alert.State != "firing" {
+		if alert.State != state {
 			continue
 		}
-		if !labelsOverlap(alert.Labels, input.Labels) {
+		if !labelsOverlap(alert.Labels, targetLabels, podNameSet, targetNamespace) {
 			continue
 		}
 		sev := alert.Labels["severity"]
@@ -190,11 +227,10 @@ func (t *Triager) runTier1(ctx context.Context, input TriageInput) (TriageResult
 			bestAlert = alert.Labels["alertname"]
 		}
 	}
-
 	if bestSeverity != "" {
 		return TriageResult{
 			Severity:  bestSeverity,
-			Source:    SourceFiringAlert,
+			Source:    source,
 			AlertName: bestAlert,
 		}, true
 	}
@@ -317,16 +353,24 @@ func (t *Triager) fetchRules(ctx context.Context) ([]prom.RuleGroup, error) {
 	return groups, nil
 }
 
-// labelsOverlap returns true if every key present in both maps (excluding
-// "namespace") has an equal value and at least one such key exists. A single
-// mismatched key rejects the pair.
+// labelsOverlap returns true if the alert correlates with the target resource.
 //
-// The "namespace" key is excluded from comparison because the signal source
-// (Prometheus alert) fires in the namespace where the resource lives (e.g.,
+// Two correlation paths are checked in order:
+//
+// 1. Key overlap: every key present in both maps (excluding "namespace") must
+// have equal values, and at least one such key must exist. This is the
+// original path for alerts that carry kind/name labels.
+//
+// 2. Pod-based correlation (fallback): if key overlap finds no match AND
+// podNames is non-empty, checks whether alert.Labels["pod"] matches any
+// resolved pod name. Requires alert.Labels["namespace"] == targetNamespace
+// to prevent cross-namespace false matches (M3).
+//
+// The "namespace" key is excluded from key-overlap comparison because the
+// signal source (Prometheus alert) fires in the workload namespace (e.g.,
 // "default"), while the RR is created in AF's operational namespace (e.g.,
-// "kubernaut-system"). Correlation is based on kind + name; the alert's
-// namespace is the ground truth for where the problem is occurring.
-func labelsOverlap(alertLabels, targetLabels map[string]string) bool {
+// "kubernaut-system").
+func labelsOverlap(alertLabels, targetLabels map[string]string, podNameSet map[string]struct{}, targetNamespace string) bool {
 	matched := 0
 	for k, v := range targetLabels {
 		if k == "namespace" {
@@ -339,5 +383,19 @@ func labelsOverlap(alertLabels, targetLabels map[string]string) bool {
 			matched++
 		}
 	}
-	return matched > 0
+	if matched > 0 {
+		return true
+	}
+
+	if len(podNameSet) > 0 {
+		alertPod := alertLabels["pod"]
+		alertNS := alertLabels["namespace"]
+		if alertPod != "" && alertNS == targetNamespace {
+			if _, ok := podNameSet[alertPod]; ok {
+				return true
+			}
+		}
+	}
+
+	return false
 }

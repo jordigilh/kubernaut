@@ -198,12 +198,12 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	// Returns bad params on first call, corrected params after validation feedback.
 	r.Register(paramValidationSelfcorrectScenarioNew())
 
-	// Issue #1189: AF A2A tests need the mock LLM to call af_create_rr when
-	// the user message contains "create a remediation request" (priority 0.9).
+	// Issue #1332: AF A2A tests need the mock LLM to call kubernaut_remediate
+	// when the user message contains "create a remediation request" (priority 0.9).
 	r.Register(afCreateRRScenario())
 
-	// TC-E2E-STREAM-03: slow variant of af_create_rr that delays 5s on the
-	// second LLM turn, giving the test time to disconnect mid-execution.
+	// TC-E2E-STREAM-03: slow variant of kubernaut_remediate that delays 5s on
+	// the second LLM turn, giving the test time to disconnect mid-execution.
 	r.Register(afCreateRRSlowScenario())
 
 	// E2E-FP-1292-001: cross-namespace variant that extracts the workload

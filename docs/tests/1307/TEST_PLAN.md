@@ -11,11 +11,14 @@ TP-1307-TOOL-ORDERING-GUARD
 The AF ADK agent (LLM) calls KA MCP tools in the wrong order. The system prompt
 defines a 4-phase journey but nothing enforces it. The LLM sometimes jumps
 directly to Phase 2 (`kubernaut_discover_workflows`) without calling
-`kubernaut_takeover` first, causing `not_driving` errors.
+`kubernaut_investigate` first, causing `not_driving` errors.
+
+> **Note (#1332):** `kubernaut_takeover` was consolidated into `kubernaut_investigate`.
+> All references to `kubernaut_takeover` in this plan now refer to `kubernaut_investigate`.
 
 This test plan covers: (A) a `BeforeToolCallback` that blocks MCP-dependent
-tools unless `takeover` has succeeded, (B) prompt fixes to document `takeover`
-in the 4-phase journey, and (C) tool description updates.
+tools unless `kubernaut_investigate` has succeeded, (B) prompt fixes to document
+the investigate prerequisite in the 4-phase journey, and (C) tool description updates.
 
 ## 3. Test Items
 
@@ -23,19 +26,19 @@ in the 4-phase journey, and (C) tool description updates.
 |------|------|-------------|
 | `newPhaseGuard` | `pkg/apifrontend/agent/phase_guard.go` | BeforeToolCallback enforcing tool order |
 | Phase state tracking | `pkg/apifrontend/agent/phase_guard.go` | AfterToolCallback recording phase transitions |
-| Prompt update | `pkg/apifrontend/agent/prompt.txt` | Document takeover in 4-phase journey |
+| Prompt update | `pkg/apifrontend/agent/prompt.txt` | Document investigate prerequisite in 4-phase journey |
 | Tool descriptions | `pkg/apifrontend/tools/ka_tools.go` | Prerequisite docs in tool descriptions |
 
 ## 4. Features to Be Tested
 
-- BR-ORDERING-001: `discover_workflows` blocked without prior `takeover`
-- BR-ORDERING-002: `select_workflow` blocked without prior `takeover`
-- BR-ORDERING-003: `message`/`status`/`complete`/`cancel` blocked without prior `takeover`
-- BR-ORDERING-004: `takeover` always allowed (entry point for interactive flow)
-- BR-ORDERING-005: `kubernaut_investigate` always allowed (Phase 1, merged tool)
+- BR-ORDERING-001: `discover_workflows` blocked without prior `kubernaut_investigate`
+- BR-ORDERING-002: `select_workflow` blocked without prior `kubernaut_investigate`
+- BR-ORDERING-003: `message`/`status`/`complete`/`cancel` blocked without prior `kubernaut_investigate`
+- BR-ORDERING-004: `kubernaut_investigate` always allowed (entry point for interactive flow, consolidates takeover)
+- BR-ORDERING-005: (Removed — merged into BR-ORDERING-004 per #1332)
 - BR-ORDERING-006: Guard returns LLM-guiding error message (not generic deny)
 - BR-ORDERING-007: Phase state resets across A2A sessions
-- BR-PROMPT-001: Prompt includes `kubernaut_takeover` in Phase 2 prerequisites
+- BR-PROMPT-001: Prompt includes `kubernaut_investigate` in Phase 2 prerequisites
 - BR-PROMPT-002: Tool descriptions state prerequisites
 
 ## 5. Features Not Tested
@@ -52,18 +55,18 @@ Testing Pyramid Invariant: UT proves logic. IT proves wiring. E2E proves the jou
 
 | ID | Scenario | Asserts |
 |----|----------|---------|
-| UT-AF-1307-001 | discover_workflows blocked without takeover | returns `{error: "...takeover..."}`, not `(nil, nil)` |
-| UT-AF-1307-002 | select_workflow blocked without takeover | same deny pattern |
-| UT-AF-1307-003 | message blocked without takeover | same deny pattern |
-| UT-AF-1307-004 | complete blocked without takeover | same deny pattern |
-| UT-AF-1307-005 | cancel blocked without takeover | same deny pattern |
-| UT-AF-1307-006 | status blocked without takeover | same deny pattern |
-| UT-AF-1307-007 | takeover always allowed | returns `(nil, nil)` |
-| UT-AF-1307-008 | kubernaut_investigate always allowed | returns `(nil, nil)` |
+| UT-AF-1307-001 | discover_workflows blocked without investigate | returns `{error: "...investigate..."}`, not `(nil, nil)` |
+| UT-AF-1307-002 | select_workflow blocked without investigate | same deny pattern |
+| UT-AF-1307-003 | message blocked without investigate | same deny pattern |
+| UT-AF-1307-004 | complete blocked without investigate | same deny pattern |
+| UT-AF-1307-005 | cancel blocked without investigate | same deny pattern |
+| UT-AF-1307-006 | status blocked without investigate | same deny pattern |
+| UT-AF-1307-007 | kubernaut_investigate always allowed (entry point, consolidates takeover per #1332) | returns `(nil, nil)` |
+| UT-AF-1307-008 | (merged into 007 per #1332) | — |
 | UT-AF-1307-009 | kubectl_get always allowed (not MCP-gated) | returns `(nil, nil)` |
-| UT-AF-1307-010 | After takeover succeeds, discover_workflows allowed | AfterTool sets state; BeforeTool reads state → allow |
-| UT-AF-1307-011 | Error message guides LLM to call takeover first | error string contains "kubernaut_takeover" |
-| UT-AF-1307-012 | reconnect allowed without takeover (re-entry point) | returns `(nil, nil)` |
+| UT-AF-1307-010 | After investigate succeeds, discover_workflows allowed | AfterTool sets state; BeforeTool reads state → allow |
+| UT-AF-1307-011 | Error message guides LLM to call investigate first | error string contains "kubernaut_investigate" |
+| UT-AF-1307-012 | reconnect allowed without investigate (re-entry point) | returns `(nil, nil)` |
 
 ### 6.2 Integration Tests (cmd/apifrontend/)
 
@@ -76,9 +79,9 @@ Testing Pyramid Invariant: UT proves logic. IT proves wiring. E2E proves the jou
 
 | ID | Scenario | Asserts |
 |----|----------|---------|
-| UT-AF-1307-020 | prompt.txt Phase 2 mentions takeover prerequisite | string search in embedded prompt |
-| UT-AF-1307-021 | discover_workflows description mentions prerequisite | tool Description contains "takeover" |
-| UT-AF-1307-022 | select_workflow description mentions prerequisite | tool Description contains "takeover" |
+| UT-AF-1307-020 | prompt.txt Phase 2 mentions investigate prerequisite | string search in embedded prompt |
+| UT-AF-1307-021 | discover_workflows description mentions prerequisite | tool Description contains "investigate" |
+| UT-AF-1307-022 | select_workflow description mentions prerequisite | tool Description contains "investigate" |
 
 ## 7. Pass/Fail Criteria
 

@@ -276,12 +276,14 @@ func main() {
 	// ========================================
 	controllerLog := ctrl.Log.WithName("controllers").WithName("AIAnalysis")
 	eventRecorder := mgr.GetEventRecorderFor("aianalysis-controller")
-	isChecker := handlers.NewK8sInvestigationSessionChecker(mgr.GetClient(), controllerNS)
+	isChecker := handlers.NewK8sInvestigationSessionChecker(mgr.GetAPIReader(), controllerNS)
+	isPhaseUpdater := handlers.NewK8sISPhaseUpdater(mgr.GetClient(), controllerNS)
 	investigatingHandler := handlers.NewInvestigatingHandler(agentClient, controllerLog, aianalysisMetrics, auditClient,
 		handlers.WithRecorder(eventRecorder),                              // DD-EVENT-001: Session lifecycle events
 		handlers.WithSessionMode(),                                        // BR-AA-HAPI-064: Async submit/poll/result flow
 		handlers.WithSessionPollInterval(cfg.Agent.SessionPollInterval),   // BR-AA-HAPI-064.8: From config
-		handlers.WithInvestigationSessionChecker(isChecker))               // BR-INTERACTIVE-010: IS CRD awareness
+		handlers.WithInvestigationSessionChecker(isChecker),               // BR-INTERACTIVE-010: IS CRD awareness
+		handlers.WithISPhaseUpdater(isPhaseUpdater))                       // BR-INTERACTIVE-010: Set IS Active after submit
 	analyzingHandler := handlers.NewAnalyzingHandler(regoEvaluator, controllerLog, aianalysisMetrics, auditClient).
 		WithConfidenceThreshold(cfg.Rego.ConfidenceThreshold) // #225: operator-configurable threshold
 

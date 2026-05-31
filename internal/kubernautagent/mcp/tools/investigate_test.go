@@ -19,6 +19,7 @@ package tools_test
 import (
 	"context"
 	"errors"
+	"sync"
 	"sync/atomic"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -31,6 +32,7 @@ import (
 )
 
 type mockSessionManager struct {
+	mu              sync.Mutex
 	takeoverSession *mcpinternal.InteractiveSession
 	takeoverErr     error
 	releaseErr      error
@@ -42,24 +44,38 @@ type mockSessionManager struct {
 }
 
 func (m *mockSessionManager) Takeover(_ context.Context, _ string, user mcpinternal.UserInfo) (*mcpinternal.InteractiveSession, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	return m.takeoverSession, m.takeoverErr
 }
 
 func (m *mockSessionManager) Release(sessionID string, reason string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.releasedID = sessionID
 	m.releasedReason = reason
 	return m.releaseErr
 }
 
 func (m *mockSessionManager) GetDriver(_ string) (*mcpinternal.InteractiveSession, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	return m.getDriverResult, m.getDriverErr
 }
 
 func (m *mockSessionManager) IsDriverActive(_ string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	return m.isActive
 }
 
 func (m *mockSessionManager) TouchActivity(_ string) {}
+
+func (m *mockSessionManager) getReleased() (string, string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.releasedID, m.releasedReason
+}
 
 type mockInvestigatorRunner struct {
 	response  string
@@ -481,7 +497,7 @@ var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func(
 	})
 
 	Describe("UT-KA-1293-007: handleStart rejects when session is reconnected", func() {
-		It("should return MCPError session_active with driver identity when same user already holds lease", func() {
+		It("should return MCPError session_active with same-user reconnect message", func() {
 			sessionMgr := &mockSessionManager{
 				takeoverSession: &mcpinternal.InteractiveSession{
 					SessionID:     "sess-reconnect-007",
@@ -503,7 +519,11 @@ var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func(
 			Expect(errors.As(err, &mcpErr)).To(BeTrue(), "error should be *MCPError")
 			Expect(mcpErr.Code).To(Equal("session_active"),
 				"reconnected session must reject action=start; use action=reconnect instead")
+			Expect(mcpErr.Message).To(ContainSubstring("already have an active session"),
+				"same-user reconnect should use distinct message from cross-user contention")
 			Expect(mcpErr.Details["driver"]).To(Equal("alice"))
+			Expect(mcpErr.Details["session_id"]).To(Equal("sess-reconnect-007"),
+				"reconnect error should include existing session_id for diagnostics")
 		})
 	})
 })
@@ -534,7 +554,7 @@ func (m *mockSignalResolver) ResolvePostRCAEnrichment(_ context.Context, _, _, _
 	if m.enrich != nil {
 		return m.enrich, m.enrichErr
 	}
-	return &prompt.EnrichmentData{}, m.enrichErr
+	return nil, m.enrichErr
 }
 
 // trackingPostRCASignalResolver records ResolvePostRCAEnrichment invocations.

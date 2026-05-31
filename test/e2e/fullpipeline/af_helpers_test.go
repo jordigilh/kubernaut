@@ -1,6 +1,7 @@
 package fullpipeline
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,6 +15,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -128,8 +130,8 @@ func fpExtractTask(raw json.RawMessage) (fpA2ATaskResult, error) {
 // Pipeline polling helpers
 // ────────────────────────────────────────────────────────────────────────────
 
-// fpWaitForRR polls for a RemediationRequest containing nameSubstring in its name.
-// Returns the RR name or fails after timeout.
+// fpWaitForRR polls for a RemediationRequest whose targetResource.name contains
+// nameSubstring. Returns the RR name or fails after timeout.
 func fpWaitForRR(nameSubstring string, timeout time.Duration) string {
 	var rrName string
 	Eventually(func() bool {
@@ -138,19 +140,20 @@ func fpWaitForRR(nameSubstring string, timeout time.Duration) string {
 			return false
 		}
 		for _, rr := range rrList.Items {
-			if strings.Contains(rr.Name, nameSubstring) {
+			if strings.Contains(rr.Spec.TargetResource.Name, nameSubstring) {
 				rrName = rr.Name
 				return true
 			}
 		}
 		return false
-	}, timeout, 2*time.Second).Should(BeTrue(), "RemediationRequest with %q not found", nameSubstring)
+	}, timeout, 2*time.Second).Should(BeTrue(), "RemediationRequest targeting %q not found", nameSubstring)
 	return rrName
 }
 
-// fpWaitForRRWithTargetNS polls for a RemediationRequest containing nameSubstring in its
-// name AND whose spec.targetResource.namespace equals targetNS. This avoids picking up
-// RRs from parallel tests that share the same name pattern but target different namespaces.
+// fpWaitForRRWithTargetNS polls for a RemediationRequest whose targetResource.name
+// contains nameSubstring AND whose spec.targetResource.namespace equals targetNS.
+// This avoids picking up RRs from parallel tests that share the same name pattern
+// but target different namespaces.
 func fpWaitForRRWithTargetNS(nameSubstring, targetNS string, timeout time.Duration) string {
 	var rrName string
 	Eventually(func() bool {
@@ -159,14 +162,43 @@ func fpWaitForRRWithTargetNS(nameSubstring, targetNS string, timeout time.Durati
 			return false
 		}
 		for _, rr := range rrList.Items {
-			if strings.Contains(rr.Name, nameSubstring) && rr.Spec.TargetResource.Namespace == targetNS {
+			if strings.Contains(rr.Spec.TargetResource.Name, nameSubstring) && rr.Spec.TargetResource.Namespace == targetNS {
 				rrName = rr.Name
 				return true
 			}
 		}
 		return false
 	}, timeout, 2*time.Second).Should(BeTrue(),
-		"RemediationRequest with %q targeting namespace %q not found", nameSubstring, targetNS)
+		"RemediationRequest targeting %q in namespace %q not found", nameSubstring, targetNS)
+	return rrName
+}
+
+// rrFingerprint computes the signal fingerprint for a target resource, matching
+// the production logic in HandleCreateRR (pkg/apifrontend/tools/af_create_rr.go).
+func rrFingerprint(namespace, kind, name string) string {
+	h := sha256.Sum256([]byte(namespace + "/" + kind + "/" + name))
+	return fmt.Sprintf("%x", h)
+}
+
+// fpWaitForRRByFingerprint polls for a RemediationRequest whose spec.signalFingerprint
+// matches the given fingerprint. This uniquely identifies an RR by its target resource
+// (namespace+kind+name hash) regardless of deployment name collisions across tests.
+func fpWaitForRRByFingerprint(fingerprint string, timeout time.Duration) string {
+	var rrName string
+	Eventually(func() bool {
+		rrList := &remediationv1.RemediationRequestList{}
+		if err := apiReader.List(ctx, rrList, client.InNamespace(namespace)); err != nil {
+			return false
+		}
+		for _, rr := range rrList.Items {
+			if rr.Spec.SignalFingerprint == fingerprint {
+				rrName = rr.Name
+				return true
+			}
+		}
+		return false
+	}, timeout, 2*time.Second).Should(BeTrue(),
+		"RemediationRequest with fingerprint %q not found", fingerprint[:12])
 	return rrName
 }
 
@@ -250,5 +282,20 @@ func fpWaitForPodCrashInNS(appLabel, ns string, timeout time.Duration) {
 		return false
 	}, timeout, 2*time.Second).Should(BeTrue(),
 		"pod with label app=%s in namespace %s should crash (OOMKill or CrashLoopBackOff)", appLabel, ns)
+}
+
+// fpAssertNoISForRR asserts that no InvestigationSession exists for the given RR.
+// Issue #1332: Autonomous flow (kubernaut_remediate) must NOT create an IS.
+func fpAssertNoISForRR(rrName, ns string) {
+	var isList isv1alpha1.InvestigationSessionList
+	err := k8sClient.List(ctx, &isList, client.InNamespace(ns))
+	Expect(err).NotTo(HaveOccurred(), "failed to list InvestigationSessions")
+
+	for _, is := range isList.Items {
+		for _, ref := range is.OwnerReferences {
+			Expect(ref.Name).NotTo(Equal(rrName),
+				"autonomous flow must not create InvestigationSession for RR %s", rrName)
+		}
+	}
 }
 

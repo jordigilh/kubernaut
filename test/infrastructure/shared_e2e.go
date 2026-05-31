@@ -201,49 +201,54 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
 
 	// Issue #1189: Append AF keyword_scenarios with match_last_only so the FP
 	// mock-LLM can handle both KA signal scenarios AND AF multi-turn ADK conversations.
+	// Tool schemas updated for #1326 MCP migration and #1332 intent-based redesign:
+	// kubernaut_remediate creates RR; kubernaut_investigate accepts {rr_id}.
+	// $from_tool resolves rr_id from kubernaut_remediate response.
 	afKeywordYAML := `keyword_scenarios:
-      - name: "af_investigate"
-        keywords: ["start investigation", "investigate", "begin investigation"]
+      - name: "kubernaut_remediate"
+        keywords: ["create a remediation request", "create remediation"]
         match_last_only: true
         tool_call:
-          name: "kubernaut_investigate"
+          name: "kubernaut_remediate"
           arguments:
-            namespace: "kubernaut-system"
-            name: "memory-eater"
+            namespace: "fp-a2a-interactive"
             kind: "Deployment"
-      - name: "af_investigate_resume"
-        keywords: ["stream the investigation", "resume investigation", "check investigation status"]
+            name: "memory-eater"
+            description: "FP E2E test remediation request"
+      - name: "af_investigate"
+        keywords: ["start investigation", "investigate", "begin investigation"]
         match_last_only: true
         repeat_tool_call: true
         tool_call:
           name: "kubernaut_investigate"
           arguments:
-            session_id: "$from_tool:kubernaut_investigate:session_id"
+            rr_id: "$from_tool:kubernaut_remediate:rr_id"
       - name: "af_discover_workflows"
         keywords: ["discover available workflows", "discover workflows"]
         match_last_only: true
+        repeat_tool_call: true
         tool_call:
           name: "kubernaut_discover_workflows"
           arguments:
-            rr_id: "kubernaut-system/rr-test"
+            rr_id: "$from_tool:kubernaut_remediate:rr_id"
       - name: "af_select_workflow"
         keywords: ["select workflow"]
         match_last_only: true
+        repeat_tool_call: true
         tool_call:
           name: "kubernaut_select_workflow"
           arguments:
+            rr_id: "$from_tool:kubernaut_remediate:rr_id"
             workflow_id: "oomkill-increase-memory-v1"
-            remediation_id: "rr-001"
-      - name: "af_create_rr"
-        keywords: ["create a remediation request", "create remediation"]
+      - name: "af_watch"
+        keywords: ["watch remediation", "watch pipeline", "watch progress"]
         match_last_only: true
+        repeat_tool_call: true
         tool_call:
-          name: "af_create_rr"
+          name: "kubernaut_watch"
           arguments:
             namespace: "kubernaut-system"
-            kind: "Deployment"
-            name: "memory-eater"
-            description: "FP E2E test remediation request"
+            name: "$from_tool:kubernaut_remediate:rr_id"
 `
 
 	configMap := fmt.Sprintf(`apiVersion: v1

@@ -1,12 +1,35 @@
 package agent
 
 import (
+	"context"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"google.golang.org/adk/agent"
 	"google.golang.org/adk/model"
+	"google.golang.org/adk/session"
 	"google.golang.org/genai"
 )
+
+type stubCallbackContext struct {
+	context.Context
+}
+
+func (s *stubCallbackContext) UserContent() *genai.Content              { return nil }
+func (s *stubCallbackContext) InvocationID() string                     { return "" }
+func (s *stubCallbackContext) AgentName() string                        { return "test-agent" }
+func (s *stubCallbackContext) ReadonlyState() session.ReadonlyState     { return nil }
+func (s *stubCallbackContext) UserID() string                           { return "" }
+func (s *stubCallbackContext) AppName() string                          { return "" }
+func (s *stubCallbackContext) SessionID() string                        { return "" }
+func (s *stubCallbackContext) Branch() string                           { return "" }
+func (s *stubCallbackContext) Artifacts() agent.Artifacts               { return nil }
+func (s *stubCallbackContext) State() session.State                     { return nil }
+
+func testCallbackCtx() agent.CallbackContext {
+	return &stubCallbackContext{Context: context.Background()}
+}
 
 var _ = Describe("historySanitizer BeforeModelCallback (#1299)", func() {
 
@@ -50,7 +73,7 @@ var _ = Describe("historySanitizer BeforeModelCallback (#1299)", func() {
 		))
 		original := len(req.Contents)
 
-		resp, err := historySanitizer(nil, req)
+		resp, err := historySanitizer(testCallbackCtx(), req)
 
 		Expect(err).NotTo(HaveOccurred())
 		Expect(resp).To(BeNil(), "must return nil to let model call proceed")
@@ -66,7 +89,7 @@ var _ = Describe("historySanitizer BeforeModelCallback (#1299)", func() {
 		))
 		original := len(req.Contents)
 
-		resp, err := historySanitizer(nil, req)
+		resp, err := historySanitizer(testCallbackCtx(), req)
 
 		Expect(err).NotTo(HaveOccurred())
 		Expect(resp).To(BeNil())
@@ -81,7 +104,7 @@ var _ = Describe("historySanitizer BeforeModelCallback (#1299)", func() {
 			userText("start the investigation again"),
 		))
 
-		resp, err := historySanitizer(nil, req)
+		resp, err := historySanitizer(testCallbackCtx(), req)
 
 		Expect(err).NotTo(HaveOccurred())
 		Expect(resp).To(BeNil())
@@ -112,7 +135,7 @@ var _ = Describe("historySanitizer BeforeModelCallback (#1299)", func() {
 			userText("try again"),
 		))
 
-		resp, err := historySanitizer(nil, req)
+		resp, err := historySanitizer(testCallbackCtx(), req)
 
 		Expect(err).NotTo(HaveOccurred())
 		Expect(resp).To(BeNil())
@@ -139,7 +162,7 @@ var _ = Describe("historySanitizer BeforeModelCallback (#1299)", func() {
 			userText("continue"),
 		))
 
-		resp, err := historySanitizer(nil, req)
+		resp, err := historySanitizer(testCallbackCtx(), req)
 
 		Expect(err).NotTo(HaveOccurred())
 		Expect(resp).To(BeNil())
@@ -163,7 +186,7 @@ var _ = Describe("historySanitizer BeforeModelCallback (#1299)", func() {
 			userText("continue please"),
 		))
 
-		_, _ = historySanitizer(nil, req)
+		_, _ = historySanitizer(testCallbackCtx(), req)
 
 		// Find the index of the model content with the FunctionCall
 		callIdx := -1
@@ -188,12 +211,12 @@ var _ = Describe("historySanitizer BeforeModelCallback (#1299)", func() {
 
 	It("UT-AF-1299-007: nil and empty contents handled gracefully", func() {
 		reqNil := &model.LLMRequest{Contents: nil}
-		resp, err := historySanitizer(nil, reqNil)
+		resp, err := historySanitizer(testCallbackCtx(), reqNil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(resp).To(BeNil())
 
 		reqEmpty := &model.LLMRequest{Contents: []*genai.Content{}}
-		resp, err = historySanitizer(nil, reqEmpty)
+		resp, err = historySanitizer(testCallbackCtx(), reqEmpty)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(resp).To(BeNil())
 	})

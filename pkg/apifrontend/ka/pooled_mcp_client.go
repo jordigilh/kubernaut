@@ -115,11 +115,7 @@ func (c *PooledMCPClient) DiscoverWorkflows(ctx context.Context, args DiscoverWo
 		return nil, err
 	}
 
-	var result DiscoverWorkflowsResult
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return nil, fmt.Errorf("parse discover_workflows response: %w", err)
-	}
-	return &result, nil
+	return ParseDiscoverWorkflowsResponse(raw)
 }
 
 // SelectWorkflow calls kubernaut_select_workflow via a pooled MCP session.
@@ -165,6 +161,13 @@ func (c *PooledMCPClient) SelectWorkflow(ctx context.Context, args SelectWorkflo
 		return nil, fmt.Errorf("parse select_workflow response: %w", err)
 	}
 	return &result, nil
+}
+
+// StartInvestigation is not supported by pooled sessions — dedicated investigations
+// require a long-lived MCP session with LoggingMessageHandler for event streaming.
+// Callers should use SDKMCPClient.StartInvestigation.
+func (c *PooledMCPClient) StartInvestigation(_ context.Context, _ StartInvestigationArgs) (*StartInvestigationResult, error) {
+	return nil, fmt.Errorf("StartInvestigation requires a dedicated MCP session; use SDKMCPClient")
 }
 
 // callPooledTool dispatches a tool call to the given pooled session, handling

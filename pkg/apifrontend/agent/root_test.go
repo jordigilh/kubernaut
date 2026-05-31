@@ -22,7 +22,10 @@ import (
 	"google.golang.org/genai"
 
 	agentpkg "github.com/jordigilh/kubernaut/pkg/apifrontend/agent"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
+	sessionpkg "github.com/jordigilh/kubernaut/pkg/apifrontend/session"
 )
 
 // newMockToolContext returns a minimal tool.Context with a specific
@@ -91,11 +94,11 @@ var _ = Describe("Root Agent", func() {
 			Expect(tools).NotTo(BeEmpty())
 		})
 
-		It("UT-AF-100-002: registers all 27 tools", func() {
+		It("UT-AF-100-002: registers all 24 tools (#1332: kubernaut_takeover removed, af_create_rr retired, list_workflows removed from agent)", func() {
 			cfg := agentpkg.DefaultTestConfig()
 			_, tools, err := agentpkg.NewRootAgent(cfg)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(tools).To(HaveLen(27))
+			Expect(tools).To(HaveLen(24))
 		})
 
 		It("UT-AF-100-003: with nil model config returns error", func() {
@@ -149,7 +152,7 @@ var _ = Describe("Root Agent", func() {
 			cfg := agentpkg.DefaultTestConfig()
 			_, tools, err := agentpkg.NewRootAgent(cfg)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(tools).To(HaveLen(27))
+			Expect(tools).To(HaveLen(24))
 		})
 
 		It("UT-AF-100-008: kubernaut_present_decision is marked IsLongRunning", func() {
@@ -190,10 +193,10 @@ var _ = Describe("Root Agent", func() {
 			cfg := agentpkg.DefaultTestConfig()
 			_, tools, err := agentpkg.NewRootAgent(cfg)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(tools).To(HaveLen(27), "AC 7: all 27 tools must be returned unfiltered")
+			Expect(tools).To(HaveLen(24), "AC 7: all 24 tools must be returned unfiltered (#1332, list_workflows removed)")
 		})
 
-		It("IT-AF-1234-W08: buildToolList includes 6 interactive investigation tools", func() {
+		It("IT-AF-1234-W08: buildToolList includes 5 interactive investigation tools (#1332)", func() {
 			cfg := agentpkg.DefaultTestConfig()
 			_, tools, err := agentpkg.NewRootAgent(cfg)
 			Expect(err).NotTo(HaveOccurred())
@@ -204,7 +207,6 @@ var _ = Describe("Root Agent", func() {
 			}
 
 			for _, expected := range []string{
-				"kubernaut_takeover",
 				"kubernaut_message",
 				"kubernaut_complete",
 				"kubernaut_cancel",
@@ -371,6 +373,66 @@ var _ = Describe("Root Agent", func() {
 			result := runAgent(r, context.Background())
 			Expect(result).To(ContainSubstring("unauthorized"))
 		})
+
+		It("UT-AF-1332-080: RBAC denial emits EventAuthAccessDenied audit event (SI-4)", func() {
+			spyAuditor := &spyAuditEmitter{}
+			guard := agentpkg.NewRBACGuardForTest(&mockAuthorizerImpl{allow: false}, spyAuditor)
+
+			testTool, err := functiontool.New(functiontool.Config{
+				Name:        "kubernaut_investigate",
+				Description: "test tool for SI-4 audit",
+			}, func(_ tool.Context, _ struct{}) (struct{}, error) {
+				return struct{}{}, nil
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			baseCtx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+				Username: "blocked-user@example.com",
+				Groups:   []string{"observability"},
+			})
+			ctx := mockToolCtx{Context: baseCtx, callID: "si4-audit-080"}
+
+			result, err := guard(ctx, testTool, map[string]any{})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(HaveKey("error"))
+			Expect(result["error"]).To(ContainSubstring("forbidden"))
+
+			Expect(spyAuditor.events).To(HaveLen(1),
+				"SI-4: RBAC denial must emit exactly one audit event")
+			ev := spyAuditor.events[0]
+			Expect(ev.Type).To(Equal(audit.EventAuthAccessDenied))
+			Expect(ev.UserID).To(Equal("blocked-user@example.com"))
+			Expect(ev.Detail["tool_name"]).To(Equal("kubernaut_investigate"))
+			Expect(ev.Detail["endpoint"]).To(Equal("a2a"))
+			Expect(ev.Detail["groups"]).To(Equal("observability"))
+		})
+
+		It("UT-AF-1332-081: no-identity denial emits audit event with reason (SI-4)", func() {
+			spyAuditor := &spyAuditEmitter{}
+			guard := agentpkg.NewRBACGuardForTest(&mockAuthorizerImpl{allow: true}, spyAuditor)
+
+			testTool, err := functiontool.New(functiontool.Config{
+				Name:        "kubernaut_remediate",
+				Description: "test tool for SI-4 no-identity",
+			}, func(_ tool.Context, _ struct{}) (struct{}, error) {
+				return struct{}{}, nil
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			ctx := mockToolCtx{Context: context.Background(), callID: "si4-audit-081"}
+
+			result, err := guard(ctx, testTool, map[string]any{})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(HaveKey("error"))
+			Expect(result["error"]).To(ContainSubstring("unauthorized"))
+
+			Expect(spyAuditor.events).To(HaveLen(1),
+				"SI-4: no-identity denial must emit audit event")
+			ev := spyAuditor.events[0]
+			Expect(ev.Type).To(Equal(audit.EventAuthAccessDenied))
+			Expect(ev.Detail["reason"]).To(Equal("no_identity_in_context"))
+			Expect(ev.Detail["tool_name"]).To(Equal("kubernaut_remediate"))
+		})
 	})
 
 	// =============================================================================
@@ -424,29 +486,146 @@ var _ = Describe("Root Agent", func() {
 		})
 	})
 
+	// =========================================================================
+	// DedicatedClient wiring — verifies kubernaut_investigate uses the
+	// dedicated SDKMCPClient when DedicatedClient is set, and falls back
+	// to MCPClient when nil.
+	// =========================================================================
+	Describe("DedicatedClient wiring for kubernaut_investigate", func() {
+		// runnableTool matches the unexported ADK runnableTool interface via
+		// structural typing so we can invoke the tool directly without the
+		// full runner/LLM stack.
+		type runnableTool interface {
+			Run(ctx tool.Context, args any) (map[string]any, error)
+		}
+
+		findTool := func(allTools []tool.Tool, name string) runnableTool {
+			for _, t := range allTools {
+				if t.Name() == name {
+					rt, ok := t.(runnableTool)
+					Expect(ok).To(BeTrue(), "tool %q must implement runnableTool", name)
+					return rt
+				}
+			}
+			Fail("tool " + name + " not found in tool list")
+			return nil
+		}
+
+		It("UT-AF-1326-030: kubernaut_investigate uses DedicatedClient when set", func() {
+			var autonomousCalled atomic.Int32
+			autonomousMock := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, args ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					autonomousCalled.Add(1)
+					ch := make(chan ka.InvestigationEvent, 1)
+					close(ch)
+					return &ka.StartInvestigationResult{
+						SessionID: "sess-auto-030",
+						Status:    "autonomous_started",
+						Events:    ch,
+						Closer:    func() {},
+					}, nil
+				},
+			}
+
+			var pooledCalled atomic.Int32
+			pooledMock := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					pooledCalled.Add(1)
+					return nil, fmt.Errorf("StartInvestigation requires a dedicated MCP session; use SDKMCPClient")
+				},
+			}
+
+			cfg := agentpkg.DefaultTestConfig()
+			cfg.MCPClient = pooledMock
+			cfg.DedicatedClient = autonomousMock
+
+			_, allTools, err := agentpkg.NewRootAgent(cfg)
+			Expect(err).NotTo(HaveOccurred())
+
+			investigateTool := findTool(allTools, "kubernaut_investigate")
+			ctx := newMockToolContext("call-auto-030")
+			_, _ = investigateTool.Run(ctx, map[string]any{"rr_id": "rr-wiring-030"})
+
+			Expect(autonomousCalled.Load()).To(Equal(int32(1)), "DedicatedClient.StartInvestigation must be called")
+			Expect(pooledCalled.Load()).To(Equal(int32(0)), "MCPClient.StartInvestigation must NOT be called")
+		})
+
+		It("UT-AF-1326-031: kubernaut_investigate falls back to MCPClient when DedicatedClient is nil", func() {
+			var pooledCalled atomic.Int32
+			pooledMock := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					pooledCalled.Add(1)
+					ch := make(chan ka.InvestigationEvent, 1)
+					close(ch)
+					return &ka.StartInvestigationResult{
+						SessionID: "sess-pool-031",
+						Status:    "autonomous_started",
+						Events:    ch,
+						Closer:    func() {},
+					}, nil
+				},
+			}
+
+			cfg := agentpkg.DefaultTestConfig()
+			cfg.MCPClient = pooledMock
+			// DedicatedClient intentionally nil — should fall back to MCPClient
+
+			_, allTools, err := agentpkg.NewRootAgent(cfg)
+			Expect(err).NotTo(HaveOccurred())
+
+			investigateTool := findTool(allTools, "kubernaut_investigate")
+			ctx := newMockToolContext("call-pool-031")
+			_, _ = investigateTool.Run(ctx, map[string]any{"rr_id": "rr-wiring-031"})
+
+			Expect(pooledCalled.Load()).To(Equal(int32(1)), "MCPClient.StartInvestigation must be called as fallback")
+		})
+
+		It("UT-AF-1332-082: buildAgentISSignaler returns non-nil when SessionService is set", func() {
+			cfg := agentpkg.DefaultTestConfig()
+			cfg.SessionService = &sessionpkg.CRDSessionService{}
+
+			signaler := agentpkg.BuildAgentISSignalerForTest(cfg)
+			Expect(signaler).NotTo(BeNil(),
+				"ISSignaler must be wired when SessionService is configured")
+		})
+
+		It("UT-AF-1332-083: buildAgentISSignaler returns nil when SessionService is nil", func() {
+			cfg := agentpkg.DefaultTestConfig()
+
+			signaler := agentpkg.BuildAgentISSignalerForTest(cfg)
+			Expect(signaler).To(BeNil(),
+				"ISSignaler must be nil when SessionService is not configured")
+		})
+
+		It("UT-AF-1326-032: kubernaut_investigate propagates DedicatedClient error", func() {
+			autonomousMock := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					return nil, fmt.Errorf("connection refused")
+				},
+			}
+
+			cfg := agentpkg.DefaultTestConfig()
+			cfg.MCPClient = &ka.MockMCPClient{}
+			cfg.DedicatedClient = autonomousMock
+
+			_, allTools, err := agentpkg.NewRootAgent(cfg)
+			Expect(err).NotTo(HaveOccurred())
+
+			investigateTool := findTool(allTools, "kubernaut_investigate")
+			ctx := newMockToolContext("call-err-032")
+			result, err := investigateTool.Run(ctx, map[string]any{"rr_id": "rr-wiring-032"})
+
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("connection refused"))
+			Expect(result).To(BeNil())
+		})
+	})
+
 	Describe("Functional Options", func() {
 		It("WithInstruction overrides instruction", func() {
 			cfg := agentpkg.DefaultTestConfig()
 			cfg = cfg.Apply(agentpkg.WithInstruction("Custom prompt"))
 			Expect(cfg.Instruction).To(Equal("Custom prompt"))
-		})
-
-		It("WithKABaseURL overrides KA URL", func() {
-			cfg := agentpkg.DefaultTestConfig()
-			cfg = cfg.Apply(agentpkg.WithKABaseURL("http://ka:9999"))
-			Expect(cfg.KABaseURL).To(Equal("http://ka:9999"))
-		})
-
-		It("WithKAMCPEndpoint overrides KA MCP URL", func() {
-			cfg := agentpkg.DefaultTestConfig()
-			cfg = cfg.Apply(agentpkg.WithKAMCPEndpoint("http://ka:9999/mcp/"))
-			Expect(cfg.KAMCPEndpoint).To(Equal("http://ka:9999/mcp/"))
-		})
-
-		It("WithDSBaseURL overrides DS URL", func() {
-			cfg := agentpkg.DefaultTestConfig()
-			cfg = cfg.Apply(agentpkg.WithDSBaseURL("http://ds:7777"))
-			Expect(cfg.DSBaseURL).To(Equal("http://ds:7777"))
 		})
 
 		It("NewRootAgent accepts functional options", func() {
@@ -457,3 +636,12 @@ var _ = Describe("Root Agent", func() {
 		})
 	})
 })
+
+type spyAuditEmitter struct {
+	events []*audit.Event
+}
+
+func (s *spyAuditEmitter) Emit(_ context.Context, event *audit.Event) {
+	cp := *event
+	s.events = append(s.events, &cp)
+}

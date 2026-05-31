@@ -110,6 +110,7 @@ func signalFromContext(ctx context.Context, toolName string) (katypes.SignalCont
 	return signal, nil
 }
 
+
 // --- list_available_actions ---
 
 type listActionsTool struct{ ds WorkflowDiscoveryClient }
@@ -267,12 +268,18 @@ func (t *getWorkflowTool) Execute(ctx context.Context, args json.RawMessage) (st
 	signal, ok := katypes.SignalContextFromContext(ctx)
 	if ok && signal.RemediationID != "" {
 		params.RemediationID = ogenclient.NewOptString(signal.RemediationID)
-		params.Severity = ogenclient.NewOptGetWorkflowByIDSeverity(
-			ogenclient.GetWorkflowByIDSeverity(signal.Severity))
+		if signal.Severity != "" {
+			params.Severity = ogenclient.NewOptGetWorkflowByIDSeverity(
+				ogenclient.GetWorkflowByIDSeverity(signal.Severity))
+		}
 		params.Component = ogenclient.NewOptString(strings.ToLower(signal.ResourceKind))
-		params.Environment = ogenclient.NewOptString(signal.Environment)
-		params.Priority = ogenclient.NewOptGetWorkflowByIDPriority(
-			ogenclient.GetWorkflowByIDPriority(signal.Priority))
+		if signal.Environment != "" {
+			params.Environment = ogenclient.NewOptString(signal.Environment)
+		}
+		if signal.Priority != "" {
+			params.Priority = ogenclient.NewOptGetWorkflowByIDPriority(
+				ogenclient.GetWorkflowByIDPriority(signal.Priority))
+		}
 	}
 
 	res, err := t.ds.GetWorkflowByID(ctx, params)

@@ -81,6 +81,7 @@ var _ = Describe("State Machine", func() {
 
 			err := svc.MaterializeCRD(ctx, "sess-phase", v1alpha1.ObjectRef{Name: "rr-phase", Namespace: "test-ns"})
 			Expect(err).NotTo(HaveOccurred())
+			Expect(setSessionCRDPhase(ctx, k8s, "test-ns", "sess-phase", v1alpha1.SessionPhaseActive)).To(Succeed())
 
 			err = svc.UpdatePhase(ctx, "sess-phase", v1alpha1.SessionPhaseCompleted, "investigation done", "test-user")
 			Expect(err).NotTo(HaveOccurred())
@@ -100,6 +101,7 @@ var _ = Describe("State Machine", func() {
 
 			err := svc.MaterializeCRD(ctx, "sess-terminal", v1alpha1.ObjectRef{Name: "rr-terminal", Namespace: "test-ns"})
 			Expect(err).NotTo(HaveOccurred())
+			Expect(setSessionCRDPhase(ctx, k8s, "test-ns", "sess-terminal", v1alpha1.SessionPhaseActive)).To(Succeed())
 
 			err = svc.UpdatePhase(ctx, "sess-terminal", v1alpha1.SessionPhaseCompleted, "done", "test-user")
 			Expect(err).NotTo(HaveOccurred())
@@ -117,6 +119,7 @@ var _ = Describe("State Machine", func() {
 
 			err := svc.MaterializeCRD(ctx, "sess-disconnect", v1alpha1.ObjectRef{Name: "rr-disc", Namespace: "test-ns"})
 			Expect(err).NotTo(HaveOccurred())
+			Expect(setSessionCRDPhase(ctx, k8s, "test-ns", "sess-disconnect", v1alpha1.SessionPhaseActive)).To(Succeed())
 
 			err = svc.UpdatePhase(ctx, "sess-disconnect", v1alpha1.SessionPhaseDisconnected, "SSE dropped", "test-user")
 			Expect(err).NotTo(HaveOccurred())

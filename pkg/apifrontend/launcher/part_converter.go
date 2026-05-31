@@ -21,8 +21,8 @@ var toolStatusMessages = map[string]string{
 	"kubernaut_discover_workflows":    "Discovering available remediation workflows...",
 	"kubernaut_select_workflow":       "Selecting remediation workflow %s...",
 	"kubernaut_watch":                 "Watching remediation progress...",
-	"af_create_rr":                    "Creating remediation request...",
-	"af_check_existing_rr":            "Checking for existing remediation...",
+	"kubernaut_remediate":             "Creating remediation request...",
+	"kubernaut_check_existing_remediation": "Checking for existing remediation...",
 	"kubectl_list_events":             "Fetching cluster events...",
 	"kubectl_get":                     "Fetching resource details...",
 	"kubectl_list":                    "Listing cluster resources...",
@@ -41,11 +41,11 @@ var toolStatusMessages = map[string]string{
 // summary from FunctionResponse.Response. Tools not listed here have their
 // responses dropped (the LLM's subsequent reasoning covers the content).
 var keyToolSummarizers = map[string]func(map[string]any) string{
-	"kubernaut_investigate": summarizeInvestigation,
+	"kubernaut_investigate":          summarizeInvestigation,
 	"kubernaut_discover_workflows":   summarizeDiscoverWorkflows,
 	"kubernaut_select_workflow":      summarizeSelectWorkflow,
 	"kubernaut_watch":                summarizeWatch,
-	"af_create_rr":                   summarizeCreateRR,
+	"kubernaut_remediate":            summarizeCreateRR,
 }
 
 // buildPartConverter returns a GenAIPartConverter that transforms raw ADK
@@ -74,7 +74,7 @@ func buildPartConverter() adka2a.GenAIPartConverter {
 func convertFunctionCall(fc *genai.FunctionCall) a2a.Part {
 	template, ok := toolStatusMessages[fc.Name]
 	if !ok {
-		return &a2a.TextPart{Text: "Processing...\n\n"}
+		return &a2a.TextPart{Text: "...\n\n"}
 	}
 
 	text := formatStatusWithContext(template, fc.Name, fc.Args)
@@ -196,18 +196,33 @@ func summarizeSelectWorkflow(resp map[string]any) string {
 }
 
 func summarizeWatch(resp map[string]any) string {
-	phase, _ := resp["phase"].(string)
+	events, _ := resp["events"].([]any)
 	status, _ := resp["status"].(string)
-	if phase != "" && status != "" {
-		return fmt.Sprintf("Phase: %s — %s", phase, status)
+	outcome, _ := resp["outcome"].(string)
+	message, _ := resp["message"].(string)
+
+	var sb strings.Builder
+	if len(events) > 0 {
+		if last, ok := events[len(events)-1].(map[string]any); ok {
+			phase, _ := last["phase"].(string)
+			if phase != "" {
+				fmt.Fprintf(&sb, "Remediation %s (final phase: %s)", status, phase)
+			}
+		}
 	}
-	if phase != "" {
-		return fmt.Sprintf("Phase: %s", phase)
+	if sb.Len() == 0 && status != "" {
+		fmt.Fprintf(&sb, "Remediation %s.", status)
 	}
-	if status != "" {
-		return status
+	if sb.Len() == 0 {
+		return "Watching remediation..."
 	}
-	return "Watching remediation..."
+	if outcome != "" {
+		fmt.Fprintf(&sb, "\nOutcome: %s", outcome)
+	}
+	if message != "" {
+		fmt.Fprintf(&sb, "\nDetails: %s", message)
+	}
+	return sb.String()
 }
 
 func summarizeCreateRR(resp map[string]any) string {

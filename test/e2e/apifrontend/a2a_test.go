@@ -140,11 +140,11 @@ var _ = Describe("A2A Handler (E2E)", Label("e2e", "a2a"), func() {
 			toolTest("a2a-t16", "Get workloads in the default namespace", "kubectl_list")
 		})
 		// TC-E2E-A2A-T17 deleted: af_resolve_owner removed. Owner chain is internal LLM reasoning.
-		It("TC-E2E-A2A-T18: af_check_existing_rr", func() {
-			toolTest("a2a-t18", "Check if a remediation request already exists for deployment web in prod", "af_check_existing_rr")
+		It("TC-E2E-A2A-T18: kubernaut_check_existing_remediation", func() {
+			toolTest("a2a-t18", "Check if a remediation request already exists for deployment web in prod", "kubernaut_check_existing_remediation")
 		})
-		It("TC-E2E-A2A-T19: af_create_rr", func() {
-			toolTest("a2a-t19", "Create a remediation request for deployment web in prod namespace", "af_create_rr")
+		It("TC-E2E-A2A-T19: kubernaut_remediate", func() {
+			toolTest("a2a-t19", "Create a remediation request for deployment web in prod namespace", "kubernaut_remediate")
 		})
 		It("E2E-AF-1189-001: kubernaut_investigate (session resume)", func() {
 			toolTest("a2a-1189-001", "Resume investigation for session sess-001", "kubernaut_investigate")
@@ -208,8 +208,8 @@ var _ = Describe("A2A Handler (E2E)", Label("e2e", "a2a"), func() {
 		It("TC-E2E-A2A-RBAC-05: observability denied kubernaut_investigate", func() {
 			rbacDenialTest("rbac-05", observabilityToken, "Start investigation on pod nginx in default namespace", "kubernaut_investigate")
 		})
-		It("TC-E2E-A2A-RBAC-06: observability denied af_create_rr", func() {
-			rbacDenialTest("rbac-06", observabilityToken, "Create a remediation request for deployment web in prod namespace", "af_create_rr")
+		It("TC-E2E-A2A-RBAC-06: observability denied kubernaut_remediate", func() {
+			rbacDenialTest("rbac-06", observabilityToken, "Create a remediation request for deployment web in prod namespace", "kubernaut_remediate")
 		})
 
 		// l3-audit persona — denied tools
@@ -297,7 +297,7 @@ var _ = Describe("A2A Handler (E2E)", Label("e2e", "a2a"), func() {
 			if err == nil && obsSID != "" {
 				body := buildJSONRPC("met04-rbac-deny", "tools/call", map[string]interface{}{
 					"name":      "kubernaut_approve",
-					"arguments": map[string]interface{}{"namespace": "default", "rar_name": "x", "decision": "approved"},
+					"arguments": map[string]interface{}{"rar_name": "x", "decision": "approved"},
 				})
 				_, _, _ = mcpPOST(obsToken, obsSID, body)
 			}

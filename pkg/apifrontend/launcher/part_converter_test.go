@@ -99,24 +99,6 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(tp.Text).To(ContainSubstring("Watching remediation progress"))
 		})
 
-		It("UT-AF-1189-105: af_create_rr -> creating RR status", func() {
-			part := &genai.Part{
-				FunctionCall: &genai.FunctionCall{
-					Name: "af_create_rr",
-					Args: map[string]any{
-						"namespace": "staging",
-						"kind":      "Pod",
-						"name":      "web-0",
-					},
-				},
-			}
-			result, err := convert(context.Background(), nil, part)
-			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(ContainSubstring("Creating remediation request"))
-		})
-
 		It("UT-AF-1189-106: unknown tool -> generic fallback", func() {
 			part := &genai.Part{
 				FunctionCall: &genai.FunctionCall{
@@ -128,7 +110,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(ContainSubstring("Processing"))
+			Expect(tp.Text).To(Equal("...\n\n"))
 		})
 
 		It("UT-AF-1189-107: FunctionCall with nil Args -> no panic, status without context", func() {
@@ -190,10 +172,10 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(tp.Text).To(ContainSubstring("Fetching cluster events"))
 		})
 
-		It("UT-AF-1189-116: af_check_existing_rr -> checking for existing remediation", func() {
+		It("UT-AF-1189-116: kubernaut_check_existing_remediation -> checking for existing remediation", func() {
 			part := &genai.Part{
 				FunctionCall: &genai.FunctionCall{
-					Name: "af_check_existing_rr",
+					Name: "kubernaut_check_existing_remediation",
 					Args: map[string]any{"namespace": "prod", "kind": "Deployment", "name": "api"},
 				},
 			}
@@ -260,24 +242,6 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(tp.Text).To(ContainSubstring("restart-pod"))
 		})
 
-		It("UT-AF-1189-114: af_create_rr response with rr_id -> human-friendly summary", func() {
-			part := &genai.Part{
-				FunctionResponse: &genai.FunctionResponse{
-					Name: "af_create_rr",
-					Response: map[string]any{
-						"rr_id":   "prod/rr-disk-pressure-abc123",
-						"message": "RemediationRequest created for Deployment/web by alice",
-					},
-				},
-			}
-			result, err := convert(context.Background(), nil, part)
-			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(ContainSubstring("Remediation request created"))
-			Expect(tp.Text).NotTo(ContainSubstring(`"rr_id"`), "should not dump raw JSON keys")
-		})
-
 		It("UT-AF-1189-115: non-key tool response -> nil (dropped)", func() {
 			part := &genai.Part{
 				FunctionResponse: &genai.FunctionResponse{
@@ -313,8 +277,10 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 				FunctionResponse: &genai.FunctionResponse{
 					Name: "kubernaut_watch",
 					Response: map[string]any{
-						"phase":  "Executing",
-						"status": "WorkflowRunning",
+						"events": []any{
+							map[string]any{"phase": "Executing", "resource": "RemediationRequest"},
+						},
+						"status": "completed",
 					},
 				},
 			}
@@ -448,7 +414,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(ContainSubstring("Processing"))
+			Expect(tp.Text).To(Equal("...\n\n"))
 		})
 	})
 
@@ -518,29 +484,34 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 		It("UT-AF-1189-158: kubernaut_watch response with phase only -> phase text", func() {
 			part := &genai.Part{
 				FunctionResponse: &genai.FunctionResponse{
-					Name:     "kubernaut_watch",
-					Response: map[string]any{"phase": "Executing"},
+					Name: "kubernaut_watch",
+					Response: map[string]any{
+						"events": []any{
+							map[string]any{"phase": "Executing"},
+						},
+						"status": "completed",
+					},
 				},
 			}
 			result, err := convert(context.Background(), nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal("Phase: Executing\n\n"))
+			Expect(tp.Text).To(Equal("Remediation completed (final phase: Executing)\n\n"))
 		})
 
 		It("UT-AF-1189-159: kubernaut_watch response with status only -> status text", func() {
 			part := &genai.Part{
 				FunctionResponse: &genai.FunctionResponse{
 					Name:     "kubernaut_watch",
-					Response: map[string]any{"status": "WorkflowRunning"},
+					Response: map[string]any{"status": "completed"},
 				},
 			}
 			result, err := convert(context.Background(), nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal("WorkflowRunning\n\n"))
+			Expect(tp.Text).To(Equal("Remediation completed.\n\n"))
 		})
 
 		It("UT-AF-1189-160: kubernaut_watch response with empty fields -> generic fallback", func() {
@@ -557,10 +528,10 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(tp.Text).To(Equal("Watching remediation...\n\n"))
 		})
 
-		It("UT-AF-1189-161: af_create_rr response without rr_id -> human-friendly fallback", func() {
+		It("UT-AF-1189-161: kubernaut_remediate response without rr_id -> human-friendly fallback", func() {
 			part := &genai.Part{
 				FunctionResponse: &genai.FunctionResponse{
-					Name:     "af_create_rr",
+					Name:     "kubernaut_remediate",
 					Response: map[string]any{"already_exists": true},
 				},
 			}
@@ -574,12 +545,12 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 	})
 
 	Describe("Output suppression (#1282 F-OUT)", func() {
-		It("UT-AF-1282-OUT-001: af_create_rr new RR → human-friendly text, no raw JSON", func() {
+		It("UT-AF-1282-OUT-001: kubernaut_remediate new RR → human-friendly text, no raw JSON", func() {
 			part := &genai.Part{
 				FunctionResponse: &genai.FunctionResponse{
-					Name: "af_create_rr",
+					Name: "kubernaut_remediate",
 					Response: map[string]any{
-						"rr_id":   "prod/rr-oom-abc",
+						"rr_id":   "rr-oom-abc",
 						"message": "RemediationRequest created for Deployment/web by sre-user",
 					},
 				},
@@ -593,13 +564,13 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(tp.Text).NotTo(ContainSubstring(`"message"`))
 		})
 
-		It("UT-AF-1282-OUT-002: af_create_rr existing RR → human-friendly, no JSON syntax", func() {
+		It("UT-AF-1282-OUT-002: kubernaut_remediate existing RR → human-friendly, no JSON syntax", func() {
 			part := &genai.Part{
 				FunctionResponse: &genai.FunctionResponse{
-					Name: "af_create_rr",
+					Name: "kubernaut_remediate",
 					Response: map[string]any{
 						"already_exists": true,
-						"rr_id":          "prod/rr-existing",
+						"rr_id":          "rr-existing",
 					},
 				},
 			}
@@ -608,7 +579,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
 			Expect(tp.Text).To(ContainSubstring("already exists"))
-			Expect(tp.Text).To(ContainSubstring("prod/rr-existing"))
+			Expect(tp.Text).To(ContainSubstring("rr-existing"))
 			Expect(tp.Text).NotTo(ContainSubstring(`{`))
 		})
 
@@ -805,8 +776,8 @@ var _ = Describe("Status message line breaks (#1301)", func() {
 	It("UT-AF-1301-003: FunctionResponse summary ends with paragraph break", func() {
 		part := &genai.Part{
 			FunctionResponse: &genai.FunctionResponse{
-				Name:     "af_create_rr",
-				Response: map[string]any{"rr_id": "prod/rr-test-001"},
+				Name:     "kubernaut_remediate",
+				Response: map[string]any{"rr_id": "rr-test-001"},
 			},
 		}
 		result, err := convert(context.Background(), nil, part)
@@ -1011,10 +982,10 @@ var _ = Describe("GenAIPartConverter — Streaming Mode (TP-1258)", func() {
 			Expect(tp.Text).NotTo(BeEmpty())
 		})
 
-		It("UT-AF-1258-033: af_create_rr FunctionResponse -> brief status", func() {
+		It("UT-AF-1258-033: kubernaut_remediate FunctionResponse -> brief status", func() {
 			part := &genai.Part{
 				FunctionResponse: &genai.FunctionResponse{
-					Name: "af_create_rr",
+					Name: "kubernaut_remediate",
 					Response: map[string]any{
 						"rr_id":     "rr-oom-001",
 						"namespace": "prod",
@@ -1067,6 +1038,63 @@ var _ = Describe("GenAIPartConverter — Streaming Mode (TP-1258)", func() {
 			tp, ok := result.(*a2a.TextPart)
 			Expect(ok).To(BeTrue())
 			Expect(tp.Text).To(Equal("Analyzing...\n\n"))
+		})
+	})
+
+	Describe("kubernaut_remediate status/summary (#1332)", func() {
+		It("UT-AF-1332-030: kubernaut_remediate FunctionCall -> status message", func() {
+			part := &genai.Part{
+				FunctionCall: &genai.FunctionCall{
+					Name: "kubernaut_remediate",
+					Args: map[string]any{
+						"namespace": "prod",
+						"kind":      "Deployment",
+						"name":      "web",
+					},
+				},
+			}
+			result, err := convertStreaming(context.Background(), nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			tp, ok := result.(*a2a.TextPart)
+			Expect(ok).To(BeTrue())
+			Expect(tp.Text).To(ContainSubstring("Creating remediation request"))
+		})
+
+		It("UT-AF-1332-031: kubernaut_remediate response with new RR -> summary", func() {
+			part := &genai.Part{
+				FunctionResponse: &genai.FunctionResponse{
+					Name: "kubernaut_remediate",
+					Response: map[string]any{
+						"rr_id":   "rr-web-001",
+						"message": "RemediationRequest created for Deployment/web by sre-user",
+					},
+				},
+			}
+			result, err := convertStreaming(context.Background(), nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			tp, ok := result.(*a2a.TextPart)
+			Expect(ok).To(BeTrue())
+			Expect(tp.Text).To(ContainSubstring("Remediation request created"))
+		})
+
+		It("UT-AF-1332-032: kubernaut_remediate response with already_exists -> summary", func() {
+			part := &genai.Part{
+				FunctionResponse: &genai.FunctionResponse{
+					Name: "kubernaut_remediate",
+					Response: map[string]any{
+						"already_exists": true,
+						"rr_id":          "rr-existing-002",
+					},
+				},
+			}
+			result, err := convertStreaming(context.Background(), nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			tp, ok := result.(*a2a.TextPart)
+			Expect(ok).To(BeTrue())
+			Expect(tp.Text).To(ContainSubstring("already exists"))
 		})
 	})
 })
