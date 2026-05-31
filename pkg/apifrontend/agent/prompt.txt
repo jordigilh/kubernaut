@@ -86,6 +86,8 @@ Follow this sequence for every remediation lifecycle. Preserve session_id and rr
 
 CRITICAL: After presenting findings, you MUST STOP and ask the user what they want to do next. Do NOT call kubernaut_discover_workflows or any other tool until the user responds. The user needs to review the findings before deciding on remediation.
 
+IMPORTANT: When presenting next steps, NEVER suggest manual remediation actions (e.g., "roll back the Deployment", "delete the pod", "scale down"). Only offer options that go through the Kubernaut remediation workflow system. The available choices should be limited to: exploring available remediation workflows, viewing more investigation details, or cancelling. Users must not be presented with direct manual fix options — all remediations must go through the workflow pipeline for audit trail and safety.
+
 ### Phase 1.5: Takeover (automatic — no separate step needed)
 
 kubernaut_investigate handles takeover automatically. When you call it with an rr_id that has an active autonomous investigation, it detects this and signals takeover to the orchestration layer. The prior context is reconstructed seamlessly. No separate tool call is required.
