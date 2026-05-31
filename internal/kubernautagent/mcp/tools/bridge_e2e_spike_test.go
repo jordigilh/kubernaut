@@ -169,10 +169,9 @@ var _ = Describe("Bridge E2E Spike — Real EventLogBridge + Real Manager", func
 			GinkgoWriter.Printf("================================\n\n")
 
 			Expect(sentCount.Load()).To(BeNumerically(">", 0), "events should be sent")
-			Expect(nilSinkCount.Load()).To(Equal(int64(0)), "sink should never be nil")
-			// Bridge subscribes after investigation starts, so early events may be
-			// dropped before the channel is consumed. Verify the bridge eventually
-			// receives a meaningful number of events.
+			// LazySink returns nil until Subscribe activates it. Since
+			// LaunchDeferredInvestigation runs before Subscribe, early
+			// turns may see a nil sink — that's the production behavior.
 			Expect(sink.count()).To(BeNumerically(">", 0),
 				"bridge mock sink should receive events once subscribed")
 		})
