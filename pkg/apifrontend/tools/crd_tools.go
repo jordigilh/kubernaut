@@ -638,8 +638,10 @@ type WatchEvent struct {
 
 // WatchResult is the output of kubernaut_watch.
 type WatchResult struct {
-	Events []WatchEvent `json:"events"`
-	Status string       `json:"status"`
+	Events  []WatchEvent `json:"events"`
+	Status  string       `json:"status"`
+	Outcome string       `json:"outcome,omitempty"`
+	Message string       `json:"message,omitempty"`
 }
 
 // maxWatchDuration is the maximum time HandleWatch will block before returning.
@@ -733,7 +735,9 @@ func HandleWatch(ctx context.Context, client dynamic.Interface, args WatchArgs) 
 			})
 			_ = launcher.EmitReasoningSafe(ctx, fmt.Sprintf("Remediation phase: %s\n", phase))
 			if IsTerminalPhase(phase) {
-				return WatchResult{Events: events, Status: "completed"}, nil
+				outcome, _, _ := unstructured.NestedString(obj.Object, "status", "outcome")
+				statusMsg, _, _ := unstructured.NestedString(obj.Object, "status", "message")
+				return WatchResult{Events: events, Status: "completed", Outcome: outcome, Message: statusMsg}, nil
 			}
 			if phase == "AwaitingApproval" {
 				return WatchResult{Events: events, Status: "awaiting_approval"}, nil

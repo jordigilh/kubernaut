@@ -198,18 +198,31 @@ func summarizeSelectWorkflow(resp map[string]any) string {
 func summarizeWatch(resp map[string]any) string {
 	events, _ := resp["events"].([]any)
 	status, _ := resp["status"].(string)
+	outcome, _ := resp["outcome"].(string)
+	message, _ := resp["message"].(string)
+
+	var sb strings.Builder
 	if len(events) > 0 {
 		if last, ok := events[len(events)-1].(map[string]any); ok {
 			phase, _ := last["phase"].(string)
 			if phase != "" {
-				return fmt.Sprintf("Remediation %s (final phase: %s)", status, phase)
+				fmt.Fprintf(&sb, "Remediation %s (final phase: %s)", status, phase)
 			}
 		}
 	}
-	if status != "" {
-		return fmt.Sprintf("Remediation %s.", status)
+	if sb.Len() == 0 && status != "" {
+		fmt.Fprintf(&sb, "Remediation %s.", status)
 	}
-	return "Watching remediation..."
+	if sb.Len() == 0 {
+		return "Watching remediation..."
+	}
+	if outcome != "" {
+		fmt.Fprintf(&sb, "\nOutcome: %s", outcome)
+	}
+	if message != "" {
+		fmt.Fprintf(&sb, "\nDetails: %s", message)
+	}
+	return sb.String()
 }
 
 func summarizeCreateRR(resp map[string]any) string {

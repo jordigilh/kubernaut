@@ -120,6 +120,10 @@ In interactive mode: STOP here and wait for user selection.
 2. Report each phase transition until a terminal state (Completed, Failed, Cancelled) or an actionable state.
 3. If kubernaut_watch returns status "awaiting_approval", tell the user approval is required and ask if they want to approve. If they approve, call kubernaut_approve_rar, then call kubernaut_watch again to continue monitoring.
 4. Do NOT end the conversation until the terminal phase is reached.
+5. **MANDATORY**: When kubernaut_watch returns with a terminal status, ALWAYS provide a final summary that includes:
+   - The remediation outcome (from the "outcome" field: Remediated, Inconclusive, NoActionRequired, etc.)
+   - A brief explanation of what happened during each phase
+   - If the outcome is "Inconclusive", explain that the effectiveness assessment could not confirm the remediation resolved the issue, and suggest next steps (manual review, re-investigation, etc.)
 
 ## Tool Inventory (grouped by intent)
 
