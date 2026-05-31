@@ -787,6 +787,42 @@ var _ = Describe("kubernaut_select_workflow — helper functions", func() {
 				"TARGET_RESOURCE_API_VERSION must be injected when RemediationTarget has apiVersion")
 		})
 
+		It("should prefer Phase 3's K8s-verified RemediationTarget over Phase 2's LLM-parsed values", func() {
+			rca := &katypes.InvestigationResult{
+				RCASummary: "OOM analysis",
+				RemediationTarget: katypes.RemediationTarget{
+					Kind:      "Pod",
+					Name:      "test-pod",
+					Namespace: "default",
+				},
+			}
+			workflow := &mcptools.CatalogWorkflow{WorkflowID: "wf-increase-mem"}
+			discovery := &mcpinternal.WorkflowDiscoveryResult{
+				Recommended: &mcpinternal.DiscoveredWorkflow{
+					WorkflowID: "wf-increase-mem",
+					Parameters: map[string]interface{}{"MEMORY_LIMIT_NEW": "512Mi"},
+				},
+				FullResult: &katypes.InvestigationResult{
+					RemediationTarget: katypes.RemediationTarget{
+						Kind:      "Deployment",
+						Name:      "api-server",
+						Namespace: "production",
+					},
+				},
+			}
+
+			result := mcptools.BuildFinalResult(rca, workflow, discovery)
+
+			Expect(result.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_NAME", "api-server"),
+				"must use Phase 3's K8s-verified name, not Phase 2's LLM-parsed 'test-pod'")
+			Expect(result.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_KIND", "Deployment"),
+				"must use Phase 3's K8s-verified kind, not Phase 2's LLM-parsed 'Pod'")
+			Expect(result.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_NAMESPACE", "production"),
+				"must use Phase 3's K8s-verified namespace, not Phase 2's LLM-parsed 'default'")
+			Expect(result.Parameters).To(HaveKeyWithValue("MEMORY_LIMIT_NEW", "512Mi"),
+				"discovery params must still be present alongside corrected TARGET_RESOURCE_*")
+		})
+
 		It("should not inject TARGET_RESOURCE_* when RemediationTarget.Kind is empty", func() {
 			rca := &katypes.InvestigationResult{
 				RCASummary: "no target",

@@ -324,6 +324,15 @@ func isWorkflowInDiscoveryResult(workflowID string, dr *mcpinternal.WorkflowDisc
 // from the discovery result (#1169).
 func buildFinalResult(rca *katypes.InvestigationResult, workflow *CatalogWorkflow, discovery *mcpinternal.WorkflowDiscoveryResult) *katypes.InvestigationResult {
 	result := *rca
+
+	// Prefer Phase 3's K8s-verified RemediationTarget over Phase 2's LLM-parsed
+	// values. The RCA result (Phase 2) may contain LLM defaults (e.g., test-pod/Pod),
+	// while the Phase 3 result has been through InjectRemediationTarget with the
+	// authoritative signal context and enrichment data.
+	if discovery != nil && discovery.FullResult != nil && discovery.FullResult.RemediationTarget.Kind != "" {
+		result.RemediationTarget = discovery.FullResult.RemediationTarget
+	}
+
 	if workflow != nil {
 		result.WorkflowID = workflow.WorkflowID
 		result.ExecutionEngine = workflow.ExecutionEngine
