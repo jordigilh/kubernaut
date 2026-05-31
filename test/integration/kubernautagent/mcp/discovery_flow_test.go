@@ -222,6 +222,14 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 				"recommended parameters must flow through to the HTTP session completer (#1169)")
 			Expect(cr.Parameters).NotTo(HaveKey("REPLICA_COUNT"),
 				"alternative parameters must not leak to the recommended workflow's completion (#1169)")
+
+			By("verifying TARGET_RESOURCE_* parameters survive discovery param merge (IT-KA-DISC-001 extension)")
+			Expect(cr.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_NAME", "api-server"),
+				"TARGET_RESOURCE_NAME must be injected from RemediationTarget after buildFinalResult")
+			Expect(cr.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_KIND", "Deployment"),
+				"TARGET_RESOURCE_KIND must be injected from RemediationTarget after buildFinalResult")
+			Expect(cr.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_NAMESPACE", "production"),
+				"TARGET_RESOURCE_NAMESPACE must be injected from RemediationTarget after buildFinalResult")
 		})
 	})
 

@@ -722,6 +722,87 @@ var _ = Describe("kubernaut_select_workflow — helper functions", func() {
 		})
 	})
 
+	Describe("UT-KA-SW-BUILDFINAL-PARAMS-001: buildFinalResult injects TARGET_RESOURCE_* from RemediationTarget", func() {
+		It("should include TARGET_RESOURCE_* alongside discovery params when RemediationTarget is set", func() {
+			rca := &katypes.InvestigationResult{
+				RCASummary: "OOM on api-server",
+				RemediationTarget: katypes.RemediationTarget{
+					Kind:      "Deployment",
+					Name:      "api-server",
+					Namespace: "production",
+				},
+				Parameters: map[string]interface{}{
+					"STALE_KEY": "stale_val",
+				},
+			}
+			workflow := &mcptools.CatalogWorkflow{WorkflowID: "wf-increase-mem"}
+			discovery := &mcpinternal.WorkflowDiscoveryResult{
+				Recommended: &mcpinternal.DiscoveredWorkflow{
+					WorkflowID: "wf-increase-mem",
+					Parameters: map[string]interface{}{"MEMORY_LIMIT_NEW": "512Mi"},
+				},
+			}
+
+			result := mcptools.BuildFinalResult(rca, workflow, discovery)
+
+			Expect(result.Parameters).To(HaveKeyWithValue("MEMORY_LIMIT_NEW", "512Mi"),
+				"discovery params must be preserved")
+			Expect(result.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_NAME", "api-server"),
+				"KA-managed TARGET_RESOURCE_NAME must be injected from RemediationTarget")
+			Expect(result.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_KIND", "Deployment"),
+				"KA-managed TARGET_RESOURCE_KIND must be injected from RemediationTarget")
+			Expect(result.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_NAMESPACE", "production"),
+				"KA-managed TARGET_RESOURCE_NAMESPACE must be injected from RemediationTarget")
+			Expect(result.Parameters).NotTo(HaveKey("STALE_KEY"),
+				"stale RCA params must not leak when discovery params are found")
+		})
+
+		It("should inject TARGET_RESOURCE_* even when discovery has nil params for the selected workflow", func() {
+			rca := &katypes.InvestigationResult{
+				RCASummary: "crash loop",
+				RemediationTarget: katypes.RemediationTarget{
+					Kind:       "Deployment",
+					Name:       "worker",
+					Namespace:  "demo-crashloop",
+					APIVersion: "apps/v1",
+				},
+			}
+			workflow := &mcptools.CatalogWorkflow{WorkflowID: "wf-rollback"}
+			discovery := &mcpinternal.WorkflowDiscoveryResult{
+				Recommended: &mcpinternal.DiscoveredWorkflow{
+					WorkflowID: "wf-rollback",
+					Parameters: nil,
+				},
+			}
+
+			result := mcptools.BuildFinalResult(rca, workflow, discovery)
+
+			Expect(result.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_NAME", "worker"),
+				"TARGET_RESOURCE_NAME must be injected even when discovery params are nil")
+			Expect(result.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_KIND", "Deployment"),
+				"TARGET_RESOURCE_KIND must be injected even when discovery params are nil")
+			Expect(result.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_NAMESPACE", "demo-crashloop"),
+				"TARGET_RESOURCE_NAMESPACE must be injected even when discovery params are nil")
+			Expect(result.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_API_VERSION", "apps/v1"),
+				"TARGET_RESOURCE_API_VERSION must be injected when RemediationTarget has apiVersion")
+		})
+
+		It("should not inject TARGET_RESOURCE_* when RemediationTarget.Kind is empty", func() {
+			rca := &katypes.InvestigationResult{
+				RCASummary: "no target",
+				Parameters: map[string]interface{}{"EXISTING": "val"},
+			}
+			workflow := &mcptools.CatalogWorkflow{WorkflowID: "wf-generic"}
+
+			result := mcptools.BuildFinalResult(rca, workflow, nil)
+
+			Expect(result.Parameters).To(HaveKeyWithValue("EXISTING", "val"),
+				"RCA params should pass through when no discovery and no RemediationTarget")
+			Expect(result.Parameters).NotTo(HaveKey("TARGET_RESOURCE_NAME"),
+				"should not inject TARGET_RESOURCE_* when RemediationTarget.Kind is empty")
+		})
+	})
+
 	Describe("UT-KA-SW-ISWF-001: isWorkflowInDiscoveryResult edge cases", func() {
 		It("should match recommended workflow", func() {
 			dr := &mcpinternal.WorkflowDiscoveryResult{

@@ -13,6 +13,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 )
 
 // E2E-FP-1189-003: A2A Interactive 5-Phase — Simulates a multi-turn conversation
@@ -158,5 +160,27 @@ var _ = Describe("AF A2A Interactive 5-Phase Full Pipeline [E2E-FP-1189-003]", L
 		Expect(rrName).NotTo(BeEmpty())
 		fpWaitForWEComplete(rrName, 60*time.Second)
 		GinkgoWriter.Printf("  Full pipeline completed for %s\n", rrName)
+
+		By("[E2E-FP-1189-004] Verifying interactive WFE has TARGET_RESOURCE_* parameters")
+		weList := &workflowexecutionv1.WorkflowExecutionList{}
+		Expect(apiReader.List(ctx, weList, client.InNamespace(namespace))).To(Succeed())
+		var we *workflowexecutionv1.WorkflowExecution
+		for i := range weList.Items {
+			if weList.Items[i].Spec.RemediationRequestRef.Name == rrName {
+				we = &weList.Items[i]
+				break
+			}
+		}
+		Expect(we).NotTo(BeNil(), "WorkflowExecution for RR %s must exist", rrName)
+		params := we.Spec.Parameters
+		Expect(params).ToNot(BeNil(), "interactive WFE must have parameters")
+		Expect(params).To(HaveKeyWithValue("TARGET_RESOURCE_NAME", "memory-eater"),
+			"TARGET_RESOURCE_NAME must be injected into interactive WFE parameters")
+		Expect(params).To(HaveKeyWithValue("TARGET_RESOURCE_KIND", "Deployment"),
+			"TARGET_RESOURCE_KIND must be injected into interactive WFE parameters")
+		Expect(params).To(HaveKeyWithValue("TARGET_RESOURCE_NAMESPACE", targetNS),
+			"TARGET_RESOURCE_NAMESPACE must be injected into interactive WFE parameters")
+		GinkgoWriter.Printf("  [E2E-FP-1189-004] WFE params: TARGET_RESOURCE_NAME=%s, KIND=%s, NAMESPACE=%s\n",
+			params["TARGET_RESOURCE_NAME"], params["TARGET_RESOURCE_KIND"], params["TARGET_RESOURCE_NAMESPACE"])
 	})
 })
