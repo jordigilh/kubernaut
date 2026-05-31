@@ -33,7 +33,9 @@ import (
 	. "github.com/onsi/gomega"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
@@ -106,6 +108,20 @@ func defaultRealStackOpts() realStackOpts {
 	}
 }
 
+// itScopeResolver returns a ScopeResolver pre-loaded with common K8s kinds
+// (Deployment, Pod) for production parity in IT tests. All IT stacks must
+// use this so that TARGET_RESOURCE_API_VERSION auto-resolution matches
+// the autonomous production path.
+func itScopeResolver() investigator.ScopeResolver {
+	m := meta.NewDefaultRESTMapper([]schema.GroupVersion{
+		{Group: "apps", Version: "v1"},
+		{Group: "", Version: "v1"},
+	})
+	m.Add(schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "Deployment"}, meta.RESTScopeNamespace)
+	m.Add(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Pod"}, meta.RESTScopeNamespace)
+	return investigator.NewMapperScopeResolver(m)
+}
+
 // newRealMCPTestStack builds a fully production-wired MCP test stack using:
 // - envtest K8s client for real LeaseSessionManager
 // - Podman Mock LLM (mode=interactive) for real investigator.Investigator via langchaingo
@@ -133,13 +149,14 @@ func newRealMCPTestStack(k8sClient client.Client, namespace string, opts realSta
 		Expect(err).ToNot(HaveOccurred(), "prompt builder should build")
 
 		inv := investigator.New(investigator.Config{
-			Client:       llmAdapter,
-			Builder:      promptBuilder,
-			ResultParser: parser.NewResultParser(),
-			AuditStore:   audit.NopAuditStore{},
-			Logger:       logrLogger,
-			MaxTurns:     15,
-			ModelName:    "test-model",
+			Client:        llmAdapter,
+			Builder:       promptBuilder,
+			ResultParser:  parser.NewResultParser(),
+			AuditStore:    audit.NopAuditStore{},
+			Logger:        logrLogger,
+			MaxTurns:      15,
+			ModelName:     "test-model",
+			ScopeResolver: itScopeResolver(),
 		})
 		runner = adapters.NewInvestigatorRunnerAdapter(inv)
 	}

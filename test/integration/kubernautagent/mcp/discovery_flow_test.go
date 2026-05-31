@@ -234,6 +234,10 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 				"TARGET_RESOURCE_KIND must be injected from RemediationTarget after buildFinalResult")
 			Expect(cr.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_NAMESPACE", "production"),
 				"TARGET_RESOURCE_NAMESPACE must be injected from RemediationTarget after buildFinalResult")
+
+			By("verifying TARGET_RESOURCE_API_VERSION is auto-resolved for non-ambiguous kinds [BR-WORKFLOW-004]")
+			Expect(cr.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_API_VERSION", "apps/v1"),
+				"BR-WORKFLOW-004: TARGET_RESOURCE_API_VERSION must be auto-resolved via ScopeResolver for unambiguous Deployment kind")
 		})
 	})
 
@@ -609,13 +613,14 @@ func newRealMCPTestStackWithDiscovery(k8sClient client.Client, namespace string,
 	Expect(buildErr).ToNot(HaveOccurred(), "prompt builder should build")
 
 	inv := investigator.New(investigator.Config{
-		Client:       llmAdapter,
-		Builder:      promptBuilder,
-		ResultParser: parser.NewResultParser(),
-		AuditStore:   audit.NopAuditStore{},
-		Logger:       logrLogger,
-		MaxTurns:     15,
-		ModelName:    "test-model",
+		Client:        llmAdapter,
+		Builder:       promptBuilder,
+		ResultParser:  parser.NewResultParser(),
+		AuditStore:    audit.NopAuditStore{},
+		Logger:        logrLogger,
+		MaxTurns:      15,
+		ModelName:     "test-model",
+		ScopeResolver: itScopeResolver(),
 	})
 	runner := mcpadapters.NewInvestigatorRunnerAdapter(inv)
 
