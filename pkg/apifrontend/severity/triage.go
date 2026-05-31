@@ -196,13 +196,29 @@ func (t *Triager) runTier1(ctx context.Context, input TriageInput) (TriageResult
 		podNameSet[pn] = struct{}{}
 	}
 
+	// Pass 1: firing alerts (highest priority).
+	if result, ok := t.bestAlertMatch(alerts, input.Labels, podNameSet, input.Namespace, "firing", SourceFiringAlert); ok {
+		return result, true
+	}
+
+	// Pass 2: pending alerts with the same pod correlation (closes the
+	// timing race where an alert condition is met but the `for` duration
+	// has not elapsed yet).
+	if result, ok := t.bestAlertMatch(alerts, input.Labels, podNameSet, input.Namespace, "pending", SourcePendingAlert); ok {
+		return result, true
+	}
+
+	return TriageResult{}, false
+}
+
+func (t *Triager) bestAlertMatch(alerts []prom.Alert, targetLabels map[string]string, podNameSet map[string]struct{}, targetNamespace, state string, source Source) (TriageResult, bool) {
 	var bestSeverity string
 	var bestAlert string
 	for _, alert := range alerts {
-		if alert.State != "firing" {
+		if alert.State != state {
 			continue
 		}
-		if !labelsOverlap(alert.Labels, input.Labels, podNameSet, input.Namespace) {
+		if !labelsOverlap(alert.Labels, targetLabels, podNameSet, targetNamespace) {
 			continue
 		}
 		sev := alert.Labels["severity"]
@@ -211,11 +227,10 @@ func (t *Triager) runTier1(ctx context.Context, input TriageInput) (TriageResult
 			bestAlert = alert.Labels["alertname"]
 		}
 	}
-
 	if bestSeverity != "" {
 		return TriageResult{
 			Severity:  bestSeverity,
-			Source:    SourceFiringAlert,
+			Source:    source,
 			AlertName: bestAlert,
 		}, true
 	}

@@ -418,6 +418,119 @@ var _ = Describe("Pod-Based Alert Correlation", func() {
 		})
 	})
 
+	Describe("Tier 1 Pending Alert Pod Correlation", func() {
+		It("UT-AF-TRIAGE-010: pending alert matches via pod correlation when no firing alert exists [IR-4]", func() {
+			mockProm := &mockPromClient{
+				alerts: []prom.Alert{
+					{
+						Labels: map[string]string{
+							"alertname": "KubePodCrashLooping",
+							"pod":       "worker-abc-xyz",
+							"container": "worker",
+							"namespace": "default",
+							"severity":  "warning",
+						},
+						State: "pending",
+					},
+				},
+			}
+
+			input := severity.TriageInput{
+				Namespace:   "default",
+				Kind:        "Deployment",
+				Name:        "worker",
+				Description: "CrashLoopBackOff on worker",
+				Labels:      map[string]string{"namespace": "default", "kind": "Deployment", "name": "worker"},
+				PodNames:    []string{"worker-abc-xyz", "worker-def-123"},
+			}
+
+			triager := severity.NewTriager(mockProm, &mockLLM{}, severity.DefaultConfig(), logr.Discard())
+			result, err := triager.Triage(context.Background(), input)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Severity).To(Equal("warning"))
+			Expect(result.Source).To(Equal(severity.SourcePendingAlert),
+				"IR-4: pending alert with pod correlation must be resolved before falling to LLM/K8s events")
+			Expect(result.AlertName).To(Equal("KubePodCrashLooping"))
+		})
+
+		It("UT-AF-TRIAGE-011: firing alert takes priority over pending alert for same pod", func() {
+			mockProm := &mockPromClient{
+				alerts: []prom.Alert{
+					{
+						Labels: map[string]string{
+							"alertname": "KubePodNotReady",
+							"pod":       "worker-abc-xyz",
+							"namespace": "default",
+							"severity":  "warning",
+						},
+						State: "firing",
+					},
+					{
+						Labels: map[string]string{
+							"alertname": "KubePodCrashLooping",
+							"pod":       "worker-abc-xyz",
+							"namespace": "default",
+							"severity":  "critical",
+						},
+						State: "pending",
+					},
+				},
+			}
+
+			input := severity.TriageInput{
+				Namespace:   "default",
+				Kind:        "Deployment",
+				Name:        "worker",
+				Description: "CrashLoopBackOff on worker",
+				Labels:      map[string]string{"namespace": "default", "kind": "Deployment", "name": "worker"},
+				PodNames:    []string{"worker-abc-xyz"},
+			}
+
+			triager := severity.NewTriager(mockProm, &mockLLM{}, severity.DefaultConfig(), logr.Discard())
+			result, err := triager.Triage(context.Background(), input)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Source).To(Equal(severity.SourceFiringAlert),
+				"firing alert must take priority over pending alert")
+			Expect(result.AlertName).To(Equal("KubePodNotReady"))
+		})
+
+		It("UT-AF-TRIAGE-012: pending alert with pod correlation wins over LLM fallback [IR-4]", func() {
+			mockProm := &mockPromClient{
+				alerts: []prom.Alert{
+					{
+						Labels: map[string]string{
+							"alertname": "KubePodOOMKilled",
+							"pod":       "worker-def-123",
+							"namespace": "default",
+							"severity":  "critical",
+						},
+						State: "pending",
+					},
+				},
+			}
+			mockLLM := &mockLLM{
+				pureResult: severity.TriageResult{Severity: "medium", Source: severity.SourceLLMTriage},
+			}
+
+			input := severity.TriageInput{
+				Namespace:   "default",
+				Kind:        "Deployment",
+				Name:        "worker",
+				Description: "OOM on worker",
+				Labels:      map[string]string{"namespace": "default", "kind": "Deployment", "name": "worker"},
+				PodNames:    []string{"worker-def-123"},
+			}
+
+			triager := severity.NewTriager(mockProm, mockLLM, severity.DefaultConfig(), logr.Discard())
+			result, err := triager.Triage(context.Background(), input)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Source).To(Equal(severity.SourcePendingAlert),
+				"IR-4: pending alert must win over LLM fallback")
+			Expect(result.AlertName).To(Equal("KubePodOOMKilled"))
+			Expect(result.Severity).To(Equal("critical"))
+		})
+	})
+
 	Describe("PodResolver Error Handling", func() {
 		It("pod resolver error degrades gracefully to Tier 3", func() {
 			failingResolver := &failingPodResolver{err: errors.New("k8s unavailable")}
