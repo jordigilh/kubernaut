@@ -33,6 +33,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -40,6 +41,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/anthropics/anthropic-sdk-go/vertex"
 	"github.com/go-logr/logr"
+	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
@@ -49,9 +51,10 @@ import (
 type Option func(*clientOpts)
 
 type clientOpts struct {
-	extraSDKOpts []option.RequestOption
-	logger       logr.Logger
-	httpTimeout  time.Duration
+	extraSDKOpts  []option.RequestOption
+	logger        logr.Logger
+	httpTimeout   time.Duration
+	baseTransport http.RoundTripper
 }
 
 // WithSDKOptions injects additional Anthropic SDK request options (e.g. base URL
@@ -70,6 +73,15 @@ func WithLogger(l logr.Logger) Option {
 // by the Anthropic SDK, preventing unbounded network calls (#956).
 func WithHTTPTimeout(d time.Duration) Option {
 	return func(o *clientOpts) { o.httpTimeout = d }
+}
+
+// WithBaseTransport sets a custom base RoundTripper (e.g. mTLS, circuit breaker,
+// custom headers) that will be wrapped with GCP OAuth2 authentication.
+// The SDK's vertex middleware (URL rewriting, anthropic_version) is preserved;
+// only the HTTP client is replaced with one that layers OAuth2 on top of this
+// transport. Issue #1342: enterprise mTLS for LLM gateways.
+func WithBaseTransport(rt http.RoundTripper) Option {
+	return func(o *clientOpts) { o.baseTransport = rt }
 }
 
 // Client implements llm.Client for Claude on Vertex AI using the official
@@ -105,6 +117,7 @@ func New(ctx context.Context, model string, credentialsJSON []byte, project, loc
 	}
 
 	var vertexOpt option.RequestOption
+	var tokenSource oauth2.TokenSource
 
 	trimmed := bytes.TrimSpace(credentialsJSON)
 	if len(trimmed) > 0 {
@@ -119,11 +132,17 @@ func New(ctx context.Context, model string, credentialsJSON []byte, project, loc
 			return nil, fmt.Errorf("vertexanthropic: invalid credentials JSON: %w", err)
 		}
 		vertexOpt = vertex.WithCredentials(ctx, location, project, creds)
+		tokenSource = creds.TokenSource
 	} else {
 		var adcErr error
 		vertexOpt, adcErr = safeWithGoogleAuth(ctx, location, project)
 		if adcErr != nil {
 			return nil, adcErr
+		}
+		adcCreds, err := google.FindDefaultCredentials(ctx,
+			"https://www.googleapis.com/auth/cloud-platform")
+		if err == nil {
+			tokenSource = adcCreds.TokenSource
 		}
 	}
 
@@ -131,6 +150,18 @@ func New(ctx context.Context, model string, credentialsJSON []byte, project, loc
 	if o.httpTimeout > 0 {
 		sdkOpts = append(sdkOpts, option.WithRequestTimeout(o.httpTimeout))
 	}
+
+	if o.baseTransport != nil && tokenSource != nil {
+		oauthClient := &http.Client{
+			Transport: &oauth2.Transport{
+				Base:   o.baseTransport,
+				Source: tokenSource,
+			},
+			Timeout: o.httpTimeout,
+		}
+		sdkOpts = append(sdkOpts, option.WithHTTPClient(oauthClient))
+	}
+
 	sdkOpts = append(sdkOpts, o.extraSDKOpts...)
 	sdk := anthropic.NewClient(sdkOpts...)
 

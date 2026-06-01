@@ -1,6 +1,13 @@
 package launcher_test
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"math/big"
 	"os"
 	"path/filepath"
 	"time"
@@ -11,6 +18,31 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/config"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 )
+
+func generateTestCertPair(dir string) (certFile, keyFile string) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	Expect(err).ToNot(HaveOccurred())
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(99),
+		Subject:      pkix.Name{CommonName: "test-client"},
+		NotBefore:    time.Now().Add(-1 * time.Hour),
+		NotAfter:     time.Now().Add(24 * time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	}
+	certDER, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	Expect(err).ToNot(HaveOccurred())
+
+	certFile = filepath.Join(dir, "client.crt")
+	Expect(os.WriteFile(certFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER}), 0644)).To(Succeed())
+
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	Expect(err).ToNot(HaveOccurred())
+	keyFile = filepath.Join(dir, "client.key")
+	Expect(os.WriteFile(keyFile, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER}), 0600)).To(Succeed())
+
+	return certFile, keyFile
+}
 
 var _ = Describe("Transport Chain", func() {
 	Describe("BuildTransportChain", func() {
@@ -86,6 +118,47 @@ var _ = Describe("Transport Chain", func() {
 			rt, err := launcher.BuildTransportChainForTest(cfg)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("resolve OAuth2 secrets"))
+			Expect(rt).To(BeNil())
+		})
+
+		// UT-AF-1342-020: mTLS transport chain construction
+		It("UT-AF-1342-020: constructs mTLS transport chain with client cert", func() {
+			dir := GinkgoT().TempDir()
+			caFile := filepath.Join(dir, "ca.crt")
+			Expect(os.WriteFile(caFile, []byte(testCACert), 0o600)).To(Succeed())
+
+			certFile, keyFile := generateTestCertPair(dir)
+
+			cfg := config.LLMConfig{
+				Provider:    config.LLMProviderGemini,
+				Model:       "gemini-2.0-flash",
+				APIKey:      "test-key",
+				TLSCaFile:   caFile,
+				TLSCertFile: certFile,
+				TLSKeyFile:  keyFile,
+			}
+			rt, err := launcher.BuildTransportChainForTest(cfg)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rt).NotTo(BeNil())
+		})
+
+		// UT-AF-1342-021: mTLS with invalid cert returns error
+		It("UT-AF-1342-021: returns error for invalid client cert file", func() {
+			dir := GinkgoT().TempDir()
+			caFile := filepath.Join(dir, "ca.crt")
+			Expect(os.WriteFile(caFile, []byte(testCACert), 0o600)).To(Succeed())
+
+			cfg := config.LLMConfig{
+				Provider:    config.LLMProviderGemini,
+				Model:       "gemini-2.0-flash",
+				APIKey:      "test-key",
+				TLSCaFile:   caFile,
+				TLSCertFile: "/nonexistent/client.crt",
+				TLSKeyFile:  "/nonexistent/client.key",
+			}
+			rt, err := launcher.BuildTransportChainForTest(cfg)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("client certificate"))
 			Expect(rt).To(BeNil())
 		})
 	})

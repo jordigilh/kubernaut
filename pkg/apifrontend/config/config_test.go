@@ -1016,6 +1016,138 @@ agent:
 	})
 })
 
+var _ = Describe("Tier 10: LLM mTLS Config Validation (Issue #1342)", func() {
+
+	// UT-AF-1342-010: tlsCertFile without tlsKeyFile is rejected
+	It("UT-AF-1342-010: rejects tlsCertFile without tlsKeyFile", func() {
+		cfg := validConfig()
+		cfg.Agent.LLM.Provider = config.LLMProviderGemini
+		cfg.Agent.LLM.Model = "gemini-2.0-flash"
+		cfg.Agent.LLM.APIKeyFile = "/etc/secrets/llm-key"
+		cfg.Agent.LLM.TLSCaFile = "/etc/ca/ca.pem"
+		cfg.Agent.LLM.TLSCertFile = "/etc/certs/client.crt"
+		cfg.Agent.LLM.TLSKeyFile = ""
+		err := cfg.Validate()
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("tlsCertFile"))
+		Expect(err.Error()).To(ContainSubstring("tlsKeyFile"))
+	})
+
+	// UT-AF-1342-011: tlsKeyFile without tlsCertFile is rejected
+	It("UT-AF-1342-011: rejects tlsKeyFile without tlsCertFile", func() {
+		cfg := validConfig()
+		cfg.Agent.LLM.Provider = config.LLMProviderGemini
+		cfg.Agent.LLM.Model = "gemini-2.0-flash"
+		cfg.Agent.LLM.APIKeyFile = "/etc/secrets/llm-key"
+		cfg.Agent.LLM.TLSCaFile = "/etc/ca/ca.pem"
+		cfg.Agent.LLM.TLSCertFile = ""
+		cfg.Agent.LLM.TLSKeyFile = "/etc/certs/client.key"
+		err := cfg.Validate()
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("tlsCertFile"))
+	})
+
+	// UT-AF-1342-012: relative tlsCertFile path is rejected
+	It("UT-AF-1342-012: rejects relative tlsCertFile path", func() {
+		cfg := validConfig()
+		cfg.Agent.LLM.Provider = config.LLMProviderGemini
+		cfg.Agent.LLM.Model = "gemini-2.0-flash"
+		cfg.Agent.LLM.APIKeyFile = "/etc/secrets/llm-key"
+		cfg.Agent.LLM.TLSCaFile = "/etc/ca/ca.pem"
+		cfg.Agent.LLM.TLSCertFile = "relative/client.crt"
+		cfg.Agent.LLM.TLSKeyFile = "/etc/certs/client.key"
+		err := cfg.Validate()
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("tlsCertFile"))
+		Expect(err.Error()).To(ContainSubstring("absolute path"))
+	})
+
+	// UT-AF-1342-013: relative tlsKeyFile path is rejected
+	It("UT-AF-1342-013: rejects relative tlsKeyFile path", func() {
+		cfg := validConfig()
+		cfg.Agent.LLM.Provider = config.LLMProviderGemini
+		cfg.Agent.LLM.Model = "gemini-2.0-flash"
+		cfg.Agent.LLM.APIKeyFile = "/etc/secrets/llm-key"
+		cfg.Agent.LLM.TLSCaFile = "/etc/ca/ca.pem"
+		cfg.Agent.LLM.TLSCertFile = "/etc/certs/client.crt"
+		cfg.Agent.LLM.TLSKeyFile = "relative/client.key"
+		err := cfg.Validate()
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("tlsKeyFile"))
+		Expect(err.Error()).To(ContainSubstring("absolute path"))
+	})
+
+	// UT-AF-1342-014: mTLS without tlsCaFile is rejected (SC-8: server verification mandatory)
+	It("UT-AF-1342-014: rejects mTLS without tlsCaFile", func() {
+		cfg := validConfig()
+		cfg.Agent.LLM.Provider = config.LLMProviderGemini
+		cfg.Agent.LLM.Model = "gemini-2.0-flash"
+		cfg.Agent.LLM.APIKeyFile = "/etc/secrets/llm-key"
+		cfg.Agent.LLM.TLSCaFile = ""
+		cfg.Agent.LLM.TLSCertFile = "/etc/certs/client.crt"
+		cfg.Agent.LLM.TLSKeyFile = "/etc/certs/client.key"
+		err := cfg.Validate()
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("tlsCaFile"))
+		Expect(err.Error()).To(ContainSubstring("server verification"))
+	})
+
+	// UT-AF-1342-015: valid mTLS config accepted
+	It("UT-AF-1342-015: accepts valid mTLS config", func() {
+		cfg := validConfig()
+		cfg.Agent.LLM.Provider = config.LLMProviderGemini
+		cfg.Agent.LLM.Model = "gemini-2.0-flash"
+		cfg.Agent.LLM.APIKeyFile = "/etc/secrets/llm-key"
+		cfg.Agent.LLM.TLSCaFile = "/etc/ca/ca.pem"
+		cfg.Agent.LLM.TLSCertFile = "/etc/certs/client.crt"
+		cfg.Agent.LLM.TLSKeyFile = "/etc/certs/client.key"
+		Expect(cfg.Validate()).To(Succeed())
+	})
+
+	// UT-AF-1342-016: vertex_ai with transport options is accepted (gate removed)
+	It("UT-AF-1342-016: accepts vertex_ai with transport options", func() {
+		cfg := validConfig()
+		cfg.Agent.LLM.Provider = config.LLMProviderVertexAI
+		cfg.Agent.LLM.Model = "claude-sonnet-4-20250514"
+		cfg.Agent.LLM.VertexProject = "my-project"
+		cfg.Agent.LLM.VertexLocation = "us-central1"
+		cfg.Agent.LLM.TLSCaFile = "/etc/ca/ca.pem"
+		cfg.Agent.LLM.TLSCertFile = "/etc/certs/client.crt"
+		cfg.Agent.LLM.TLSKeyFile = "/etc/certs/client.key"
+		Expect(cfg.Validate()).To(Succeed())
+	})
+
+	// UT-AF-1342-017: anthropic with transport options is accepted (gate removed)
+	It("UT-AF-1342-017: accepts anthropic with transport options", func() {
+		cfg := validConfig()
+		cfg.Agent.LLM.Provider = config.LLMProviderAnthropic
+		cfg.Agent.LLM.Model = "claude-sonnet-4-20250514"
+		cfg.Agent.LLM.APIKeyFile = "/etc/secrets/llm-key"
+		cfg.Agent.LLM.TLSCaFile = "/etc/ca/ca.pem"
+		cfg.Agent.LLM.TLSCertFile = "/etc/certs/client.crt"
+		cfg.Agent.LLM.TLSKeyFile = "/etc/certs/client.key"
+		Expect(cfg.Validate()).To(Succeed())
+	})
+
+	// UT-AF-1342-018: YAML parsing includes tlsCertFile and tlsKeyFile
+	It("UT-AF-1342-018: parses mTLS fields from YAML", func() {
+		data := []byte(`
+agent:
+  llm:
+    provider: gemini
+    model: gemini-2.0-flash
+    apiKeyFile: "/etc/secrets/llm-key"
+    tlsCaFile: "/etc/ca/ca.pem"
+    tlsCertFile: "/etc/certs/client.crt"
+    tlsKeyFile: "/etc/certs/client.key"
+`)
+		cfg, err := config.Load(data)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.Agent.LLM.TLSCertFile).To(Equal("/etc/certs/client.crt"))
+		Expect(cfg.Agent.LLM.TLSKeyFile).To(Equal("/etc/certs/client.key"))
+	})
+})
+
 var _ = Describe("AF SA Token Config (#1287)", func() {
 	It("UT-AF-1287-001: KABearerTokenFile parsed from YAML", func() {
 		data := []byte(`

@@ -150,6 +150,70 @@ var _ = Describe("Shared TLS Helper (#493)", func() {
 			Expect(transport.TLSClientConfig.RootCAs.Subjects()).ToNot(BeEmpty(), //nolint:staticcheck // no alternative for validating cert pool content
 				"transport CA pool should contain the loaded CA certificate")
 		})
+
+		// UT-TLS-1342-001: WithClientCert loads client certificate into transport
+		// BR-NET-002: Certificate-based authentication for enterprise LLM gateways
+		It("UT-TLS-1342-001: should load client certificate when WithClientCert is provided", func() {
+			generateSelfSignedCert(certPath, keyPath)
+
+			transport, err := sharedtls.NewTLSTransport(certPath,
+				sharedtls.WithClientCert(certPath, keyPath),
+			)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(transport.TLSClientConfig.Certificates).To(HaveLen(1),
+				"mTLS transport must contain exactly one client certificate")
+			Expect(transport.TLSClientConfig.RootCAs.Subjects()).ToNot(BeEmpty(), //nolint:staticcheck // no alternative for validating cert pool content
+				"mTLS transport must still have CA pool for server verification")
+		})
+
+		// UT-TLS-1342-002: WithClientCert returns error for invalid cert file
+		It("UT-TLS-1342-002: should return error when client cert file is invalid", func() {
+			generateSelfSignedCert(certPath, keyPath)
+
+			_, err := sharedtls.NewTLSTransport(certPath,
+				sharedtls.WithClientCert("/nonexistent/client.crt", "/nonexistent/client.key"),
+			)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("client certificate"))
+		})
+
+		// UT-TLS-1342-003: WithClientCert returns error for mismatched cert/key pair
+		It("UT-TLS-1342-003: should return error when client cert and key do not match", func() {
+			generateSelfSignedCert(certPath, keyPath)
+
+			otherCertPath := filepath.Join(certDir, "other.crt")
+			otherKeyPath := filepath.Join(certDir, "other.key")
+			generateSelfSignedCert(otherCertPath, otherKeyPath)
+
+			_, err := sharedtls.NewTLSTransport(certPath,
+				sharedtls.WithClientCert(certPath, otherKeyPath),
+			)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("client certificate"))
+		})
+
+		// UT-TLS-1342-004: NewTLSTransport without options is backward-compatible
+		It("UT-TLS-1342-004: should work without options (backward-compatible)", func() {
+			generateSelfSignedCert(certPath, keyPath)
+
+			transport, err := sharedtls.NewTLSTransport(certPath)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(transport.TLSClientConfig.Certificates).To(BeEmpty(),
+				"transport without WithClientCert must have no client certificates")
+		})
+
+		// UT-TLS-1342-005: Security profile is applied to mTLS transport
+		// BR-ENC-001: FIPS 140-2 approved algorithms
+		It("UT-TLS-1342-005: should apply security profile to mTLS transport", func() {
+			generateSelfSignedCert(certPath, keyPath)
+
+			transport, err := sharedtls.NewTLSTransport(certPath,
+				sharedtls.WithClientCert(certPath, keyPath),
+			)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(transport.TLSClientConfig.MinVersion).To(BeNumerically(">=", tls.VersionTLS12),
+				"mTLS transport must enforce TLS 1.2+ (SC-8)")
+		})
 	})
 
 	Describe("DefaultBaseTransport (#753)", func() {
