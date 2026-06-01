@@ -117,6 +117,15 @@ var _ = Describe("StartupReconciler Integration (#548)", Ordered, ContinueOnFail
 
 			Expect(k8sClient.Create(ctx, testAT)).To(Succeed())
 			Expect(k8sClient.Create(ctx, testRW)).To(Succeed())
+
+			// Wait for the controller-runtime informer cache to sync both CRDs.
+			// The manager's cached client (k8sManager.GetClient()) is eventually consistent;
+			// without this gate the reconciler's List call can race and return 0 items.
+			Eventually(func() int {
+				var rwList rwv1alpha1.RemediationWorkflowList
+				_ = k8sClient.List(ctx, &rwList)
+				return len(rwList.Items)
+			}, 5*time.Second, 100*time.Millisecond).Should(BeNumerically(">=", 1))
 		})
 
 		AfterEach(func() {
