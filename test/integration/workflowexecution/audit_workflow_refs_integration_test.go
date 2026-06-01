@@ -109,7 +109,7 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 		dsClient = dsClients.OpenAPIClient
 
 		// #518: Ensure engine mock is reset before each test to prevent leak from Job tests
-		testWorkflowQuerier.Engine = "tekton"
+		testWorkflowQuerier.setEngine("tekton")
 	})
 
 	AfterEach(func() {

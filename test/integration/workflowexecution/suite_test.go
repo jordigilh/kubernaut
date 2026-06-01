@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -65,10 +66,12 @@ import (
 // configurableWorkflowQuerier is a test WorkflowQuerier whose return value
 // can be set per-test. F6: All catalog artifacts returned from a single call.
 // Engine defaults to "tekton" via testWorkflowQuerier initialization; createUniqueJobWFE sets "job".
+// Engine uses atomic.Value to prevent data races between test goroutines (which write)
+// and the reconciler goroutine (which reads). See #1347.
 type configurableWorkflowQuerier struct {
 	Deps               *models.WorkflowDependencies
 	ParamNames         map[string]bool
-	Engine             string
+	engine             atomic.Value
 	WorkflowName       string
 	Bundle             string
 	BundleDigest       string
@@ -76,9 +79,21 @@ type configurableWorkflowQuerier struct {
 	EngineConfig       json.RawMessage
 }
 
+func (q *configurableWorkflowQuerier) getEngine() string {
+	v := q.engine.Load()
+	if v == nil {
+		return ""
+	}
+	return v.(string)
+}
+
+func (q *configurableWorkflowQuerier) setEngine(e string) {
+	q.engine.Store(e)
+}
+
 func (q *configurableWorkflowQuerier) GetWorkflowSchemaMetadata(_ context.Context, _ string) (*weclient.SchemaMetadata, error) {
 	return &weclient.SchemaMetadata{
-		Engine:                 q.Engine,
+		Engine:                 q.getEngine(),
 		WorkflowName:           q.WorkflowName,
 		EngineConfig:           q.EngineConfig,
 		Dependencies:           q.Deps,
@@ -88,7 +103,7 @@ func (q *configurableWorkflowQuerier) GetWorkflowSchemaMetadata(_ context.Contex
 
 func (q *configurableWorkflowQuerier) ResolveWorkflowCatalogMetadata(_ context.Context, _ string) (*weclient.WorkflowCatalogMetadata, error) {
 	return &weclient.WorkflowCatalogMetadata{
-		ExecutionEngine:       q.Engine,
+		ExecutionEngine:       q.getEngine(),
 		ExecutionBundle:       q.Bundle,
 		ExecutionBundleDigest: q.BundleDigest,
 		ServiceAccountName:    q.ServiceAccountName,
@@ -105,7 +120,7 @@ func (q *configurableWorkflowQuerier) GetWorkflowEngineConfig(_ context.Context,
 }
 
 func (q *configurableWorkflowQuerier) GetWorkflowExecutionEngine(_ context.Context, _ string) (string, string, error) {
-	return q.Engine, q.WorkflowName, nil
+	return q.getEngine(), q.WorkflowName, nil
 }
 
 func (q *configurableWorkflowQuerier) GetWorkflowExecutionBundle(_ context.Context, _ string) (string, string, error) {
@@ -153,7 +168,11 @@ var (
 )
 
 // testWorkflowQuerier provides catalog responses for integration EnvTest (Issue #518: engine from querier until status persists).
-var testWorkflowQuerier = configurableWorkflowQuerier{Engine: "tekton"}
+var testWorkflowQuerier configurableWorkflowQuerier
+
+func init() {
+	testWorkflowQuerier.setEngine("tekton")
+}
 
 // Test namespaces (unique per test run for parallel safety)
 const (
@@ -496,7 +515,7 @@ var _ = SynchronizedAfterSuite(func() {
 // createUniqueWFE creates a WorkflowExecution with unique name for parallel test isolation
 // Defaults to ExecutionEngine: "tekton" for backward compat with existing Tekton tests
 func createUniqueWFE(testID, targetResource string) *workflowexecutionv1alpha1.WorkflowExecution {
-	testWorkflowQuerier.Engine = "tekton"
+	testWorkflowQuerier.setEngine("tekton")
 	name := IntegrationTestNamePrefix + testID + "-" + time.Now().Format("150405000")
 	return &workflowexecutionv1alpha1.WorkflowExecution{
 		ObjectMeta: metav1.ObjectMeta{
@@ -524,7 +543,7 @@ func createUniqueWFE(testID, targetResource string) *workflowexecutionv1alpha1.W
 // createUniqueJobWFE creates a WorkflowExecution for Job backend tests
 func createUniqueJobWFE(testID, targetResource string) *workflowexecutionv1alpha1.WorkflowExecution {
 	wfe := createUniqueWFE(testID, targetResource)
-	testWorkflowQuerier.Engine = "job"
+	testWorkflowQuerier.setEngine("job")
 	return wfe
 }
 

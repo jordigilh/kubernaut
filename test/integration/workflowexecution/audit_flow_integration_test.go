@@ -89,7 +89,7 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 	dsClient = dsClients.OpenAPIClient
 
 	// #518: Ensure engine mock is reset before each test to prevent leak from Job tests
-	testWorkflowQuerier.Engine = "tekton"
+	testWorkflowQuerier.setEngine("tekton")
 	})
 
 	Context("when workflow execution starts (BR-WE-005)", func() {

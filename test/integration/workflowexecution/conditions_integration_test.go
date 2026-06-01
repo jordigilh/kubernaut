@@ -44,7 +44,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 		It("should be set after PipelineRun creation during reconciliation", func() {
 			// Issue #518: Engine is resolved at runtime via the configurable mock querier.
 			// Reset to "tekton" so earlier tests that set it to "job" don't leak.
-			testWorkflowQuerier.Engine = "tekton"
+			testWorkflowQuerier.setEngine("tekton")
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "wfe-condition-pipeline-created",
@@ -113,7 +113,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 
 	Context("ExecutionRunning condition", func() {
 		It("should be set when PipelineRun starts executing", func() {
-			testWorkflowQuerier.Engine = "tekton"
+			testWorkflowQuerier.setEngine("tekton")
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "wfe-condition-running",
@@ -177,7 +177,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 
 	Context("ExecutionComplete condition", func() {
 		It("should be set to True when PipelineRun succeeds", func() {
-			testWorkflowQuerier.Engine = "tekton"
+			testWorkflowQuerier.setEngine("tekton")
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "wfe-condition-complete-success",
@@ -261,7 +261,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 
 	Context("AuditRecorded condition", func() {
 		It("should be set after audit event emission", func() {
-			testWorkflowQuerier.Engine = "tekton"
+			testWorkflowQuerier.setEngine("tekton")
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "wfe-condition-audit",
@@ -316,7 +316,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 
 	Context("Complete lifecycle with all conditions", func() {
 		It("should set all applicable conditions during successful execution", func() {
-			testWorkflowQuerier.Engine = "tekton"
+			testWorkflowQuerier.setEngine("tekton")
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "wfe-condition-full-lifecycle",

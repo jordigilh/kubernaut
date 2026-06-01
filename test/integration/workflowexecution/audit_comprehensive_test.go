@@ -53,7 +53,7 @@ import (
 var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "comprehensive"), func() {
 
 	BeforeEach(func() {
-		testWorkflowQuerier.Engine = "tekton"
+		testWorkflowQuerier.setEngine("tekton")
 	})
 
 	// ========================================

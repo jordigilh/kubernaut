@@ -55,8 +55,8 @@ var _ = Describe("Ansible Executor Integration (BR-WE-015)", func() {
 			})
 			Expect(err).ToNot(HaveOccurred())
 
-			DeferCleanup(func() { testWorkflowQuerier.Engine = "tekton" })
-			testWorkflowQuerier.Engine = "ansible"
+			DeferCleanup(func() { testWorkflowQuerier.setEngine("tekton") })
+			testWorkflowQuerier.setEngine("ansible")
 
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{

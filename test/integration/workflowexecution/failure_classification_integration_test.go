@@ -202,7 +202,7 @@ var _ = Describe("BR-WE-004: Tekton Failure Reason Classification", Ordered, Con
 func createMinimalWorkflowExecution(name, namespace string) *workflowexecutionv1alpha1.WorkflowExecution {
 	// Issue #518: Engine is resolved at runtime via the configurable mock querier.
 	// Reset to "tekton" so earlier tests that set it to "job" don't leak.
-	testWorkflowQuerier.Engine = "tekton"
+	testWorkflowQuerier.setEngine("tekton")
 	return &workflowexecutionv1alpha1.WorkflowExecution{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:       name,
