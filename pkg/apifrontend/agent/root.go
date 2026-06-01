@@ -55,7 +55,7 @@ func NewRootAgent(cfg AgentConfig, opts ...Option) (agent.Agent, []tool.Tool, er
 	}
 	beforeCallbacks = append(beforeCallbacks, beforeMetrics)
 
-	beforePhase, afterPhase := newPhaseGuard()
+	beforePhase, afterPhase := newPhaseGuard(cfg.ActiveContextRegistry)
 	beforeCallbacks = append(beforeCallbacks, beforePhase)
 
 	beforeLog, afterLog := newToolLoggingCallbacks()

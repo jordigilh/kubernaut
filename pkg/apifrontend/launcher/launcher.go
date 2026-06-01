@@ -38,6 +38,11 @@ type A2AConfig struct {
 	// BeforeExecute is called before each A2A execution with the request context.
 	// The context already contains the UserIdentity from auth middleware.
 	BeforeExecute func(ctx context.Context) (context.Context, error)
+
+	// SessionInterceptor enables multi-turn session continuity (BR-SESS-020).
+	// When non-nil, it is registered as an a2asrv.CallInterceptor to override
+	// ContextID and set stable User identity on incoming A2A messages.
+	SessionInterceptor *SessionInterceptor
 }
 
 func (c A2AConfig) validate() error { //nolint:gocritic // hugeParam: value copy intentional for validation
@@ -85,7 +90,13 @@ func NewA2AHandler(cfg A2AConfig) (http.Handler, error) { //nolint:gocritic // h
 
 	inner := adka2a.NewExecutor(execCfg)
 	executor := NewStreamingExecutor(inner, log, cfg.BridgeMetrics, cfg.SessionPhaseUpdater)
-	reqHandler := a2asrv.NewHandler(executor)
+
+	var handlerOpts []a2asrv.RequestHandlerOption
+	if cfg.SessionInterceptor != nil {
+		handlerOpts = append(handlerOpts, a2asrv.WithCallInterceptor(cfg.SessionInterceptor))
+		log.Info("session interceptor wired for multi-turn continuity")
+	}
+	reqHandler := a2asrv.NewHandler(executor, handlerOpts...)
 	httpHandler := a2asrv.NewJSONRPCHandler(reqHandler,
 		a2asrv.WithKeepAlive(1*time.Second),
 	)
