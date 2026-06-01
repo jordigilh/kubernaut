@@ -14,6 +14,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ds"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ratelimit"
 	sessionpkg "github.com/jordigilh/kubernaut/pkg/apifrontend/session"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
@@ -76,6 +77,10 @@ type AgentConfig struct {
 	// uses this model for generateContent calls. When nil, the agent is created
 	// without a model (tools-only mode for MCP bridge).
 	LLMModel model.LLM
+	// ActiveContextRegistry enables multi-turn session continuity (BR-SESS-020).
+	// When non-nil, the phase guard stores/clears the active context on
+	// investigate success and complete/cancel respectively.
+	ActiveContextRegistry *launcher.ActiveContextRegistry
 }
 
 // Option applies a configuration override to AgentConfig.

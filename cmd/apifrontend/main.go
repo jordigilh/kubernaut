@@ -743,25 +743,29 @@ func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps,
 	if sessInfra != nil {
 		sessionSvcForAgent = sessInfra.SessionService
 	}
+
+	activeCtxRegistry := launcher.NewActiveContextRegistry(launcher.DefaultRegistryTTL)
+
 	rootAgent, _, err := agentpkg.NewRootAgent(agentpkg.AgentConfig{
-		Instruction:         agentpkg.BuildInstruction(cfg.Session.Namespace),
-		InstructionProvider: agentpkg.NewInstructionProvider(cfg.Session.Namespace),
-		LLMModel:         llmModel,
-		Namespace:        cfg.Session.Namespace,
-		K8sClient:        deps.K8sClient(),
-		DSClient:         deps.DSClient,
-		MCPClient:        deps.MCPClient,
+		Instruction:           agentpkg.BuildInstruction(cfg.Session.Namespace),
+		InstructionProvider:   agentpkg.NewInstructionProvider(cfg.Session.Namespace),
+		LLMModel:              llmModel,
+		Namespace:             cfg.Session.Namespace,
+		K8sClient:             deps.K8sClient(),
+		DSClient:              deps.DSClient,
+		MCPClient:             deps.MCPClient,
 		DedicatedClient:       deps.DedicatedClient,
 		InvestigationRegistry: deps.InvestigationRegistry,
 		Pool:                  deps.Pool,
 		Authorizer:            authorizer,
-		Auditor:          auditor,
-		Triager:          deps.Triager,
-		RESTMapper:       deps.Mapper,
-		SessionService:   sessionSvcForAgent,
-		ToolCallsTotal:   metricsReg.ToolCallsTotal,
-		ToolCallDuration: metricsReg.ToolCallDuration,
-		UserLimiter:      userLimiter,
+		Auditor:               auditor,
+		Triager:               deps.Triager,
+		RESTMapper:            deps.Mapper,
+		SessionService:        sessionSvcForAgent,
+		ToolCallsTotal:        metricsReg.ToolCallsTotal,
+		ToolCallDuration:      metricsReg.ToolCallDuration,
+		UserLimiter:           userLimiter,
+		ActiveContextRegistry: activeCtxRegistry,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create root agent: %w", err)
@@ -782,6 +786,7 @@ func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps,
 		Auditor:             auditor,
 		BridgeMetrics:       metricsReg,
 		SessionPhaseUpdater: sessionSvcForAgent,
+		SessionInterceptor:  launcher.NewSessionInterceptor(activeCtxRegistry, logger.WithName("session-interceptor")),
 	}
 
 	h, err := launcher.NewA2AHandler(a2aCfg)

@@ -436,6 +436,110 @@ var _ = Describe("Root Agent", func() {
 	})
 
 	// =============================================================================
+	// IT-AF-1307: Phase Guard Wiring — proves callbacks are wired in NewRootAgent
+	// and exercise the full runner.Run dispatch path (Pyramid Invariant: IT).
+	// =============================================================================
+	Describe("Phase Guard wiring via runner.Run (IT-AF-1307)", func() {
+		type pgArgs struct {
+			RRID string `json:"rr_id,omitempty"`
+		}
+		type pgResult struct {
+			Status string `json:"status"`
+		}
+
+		type pgMockLLM struct {
+			callCount atomic.Int32
+		}
+
+		pgGenerateContent := func(m *pgMockLLM) func(context.Context, *model.LLMRequest, bool) iter.Seq2[*model.LLMResponse, error] {
+			return func(_ context.Context, _ *model.LLMRequest, _ bool) iter.Seq2[*model.LLMResponse, error] {
+				return func(yield func(*model.LLMResponse, error) bool) {
+					n := m.callCount.Add(1)
+					if n == 1 {
+						yield(&model.LLMResponse{
+							Content: &genai.Content{
+								Role: "model",
+								Parts: []*genai.Part{{FunctionCall: &genai.FunctionCall{
+									ID:   "call-pg-1",
+									Name: "kubernaut_discover_workflows",
+									Args: map[string]any{},
+								}}},
+							},
+						}, nil)
+					} else {
+						yield(&model.LLMResponse{
+							Content: &genai.Content{
+								Role:  "model",
+								Parts: []*genai.Part{{Text: "Done."}},
+							},
+						}, nil)
+					}
+				}
+			}
+		}
+
+		It("IT-AF-1307-001: phase guard blocks MCP-dependent tool via runner.Run dispatch", func() {
+			discoverTool, err := functiontool.New(functiontool.Config{
+				Name:        "kubernaut_discover_workflows",
+				Description: "Discover workflows (MCP-dependent tool)",
+			}, func(_ tool.Context, _ pgArgs) (pgResult, error) {
+				return pgResult{Status: "discovered"}, nil
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			mockLLM := &pgMockLLM{}
+			adapter := &llmAdapter{m: mockLLM, genFn: pgGenerateContent(mockLLM)}
+
+			before, after := agentpkg.NewPhaseGuardForTest()
+			a, err := llmagent.New(llmagent.Config{
+				Name:                "phase-guard-it-agent",
+				Description:         "IT agent for phase guard wiring",
+				Model:               adapter,
+				Tools:               []tool.Tool{discoverTool},
+				Instruction:         "You are a test agent. Call kubernaut_discover_workflows when asked.",
+				BeforeToolCallbacks: []llmagent.BeforeToolCallback{before},
+				AfterToolCallbacks:  []llmagent.AfterToolCallback{after},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			r, err := runner.New(runner.Config{
+				AppName:           "phase-guard-it",
+				Agent:             a,
+				SessionService:    session.InMemoryService(),
+				AutoCreateSession: true,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+				Username: "sre@example.com", Groups: []string{"sre"},
+			})
+			msg := &genai.Content{
+				Role:  "user",
+				Parts: []*genai.Part{{Text: "discover workflows"}},
+			}
+			var allText strings.Builder
+			for event, err := range r.Run(ctx, "test-user", "sess-pg-1", msg, agent.RunConfig{}) {
+				Expect(err).NotTo(HaveOccurred())
+				if event.Content != nil {
+					for _, p := range event.Content.Parts {
+						if p.Text != "" {
+							allText.WriteString(p.Text)
+						}
+						if p.FunctionResponse != nil && p.FunctionResponse.Response != nil {
+							if errMsg, ok := p.FunctionResponse.Response["error"].(string); ok {
+								allText.WriteString(fmt.Sprintf(" [fn_error:%s]", errMsg))
+							}
+						}
+					}
+				}
+			}
+
+			Expect(allText.String()).To(ContainSubstring("kubernaut_investigate"),
+				"IT: phase guard must block discover_workflows via full runner dispatch and guide LLM to investigate first")
+		})
+	})
+
+	// =============================================================================
 	// TP-1310 §4.3: Tool Call Logging Callbacks — FedRAMP AU-12
 	// =============================================================================
 	Describe("newToolLoggingCallbacks (TP-1310)", func() {
