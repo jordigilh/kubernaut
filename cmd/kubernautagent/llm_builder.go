@@ -48,18 +48,31 @@ func buildLLMClientFromConfig(ctx context.Context, cfg *kaconfig.Config, rt *kac
 			timeout = time.Duration(rt.TimeoutSeconds) * time.Second
 		}
 		vertexOpts = append(vertexOpts, vertexanthropic.WithHTTPTimeout(timeout))
+
+		chain, err := buildTransportChain(cfg, rt)
+		if err != nil {
+			return nil, fmt.Errorf("vertex_ai transport chain: %w", err)
+		}
+		if chain != nil {
+			vertexOpts = append(vertexOpts, vertexanthropic.WithBaseTransport(chain))
+		}
+
 		return vertexanthropic.New(ctx,
 			rt.Model, []byte(rt.APIKey),
 			cfg.AI.LLM.VertexProject, cfg.AI.LLM.VertexLocation,
 			vertexOpts...)
 	default:
+		providerOpts, err := buildLLMProviderOpts(cfg, rt)
+		if err != nil {
+			return nil, err
+		}
 		return langchaingo.New(cfg.AI.LLM.Provider, rt.Endpoint, rt.Model, rt.APIKey,
-			buildLLMProviderOpts(cfg, rt)...)
+			providerOpts...)
 	}
 }
 
 // buildLLMProviderOpts returns provider-specific LangChainGo options.
-func buildLLMProviderOpts(cfg *kaconfig.Config, rt *kaconfig.LLMRuntimeConfig) []langchaingo.Option {
+func buildLLMProviderOpts(cfg *kaconfig.Config, rt *kaconfig.LLMRuntimeConfig) ([]langchaingo.Option, error) {
 	var opts []langchaingo.Option
 	if cfg.AI.LLM.AzureAPIVersion != "" {
 		opts = append(opts, langchaingo.WithAzureAPIVersion(cfg.AI.LLM.AzureAPIVersion))
@@ -81,7 +94,10 @@ func buildLLMProviderOpts(cfg *kaconfig.Config, rt *kaconfig.LLMRuntimeConfig) [
 		timeout = time.Duration(rt.TimeoutSeconds) * time.Second
 	}
 
-	customTransport := buildTransportChain(cfg, rt)
+	customTransport, err := buildTransportChain(cfg, rt)
+	if err != nil {
+		return nil, fmt.Errorf("llm transport chain: %w", err)
+	}
 	httpClient := &http.Client{Timeout: timeout}
 	if customTransport != nil {
 		httpClient.Transport = customTransport
@@ -95,7 +111,7 @@ func buildLLMProviderOpts(cfg *kaconfig.Config, rt *kaconfig.LLMRuntimeConfig) [
 			return nil
 		}))
 	}
-	return opts
+	return opts, nil
 }
 
 // buildTransportChain composes the HTTP transport stack from static (TLS CA,
@@ -106,14 +122,18 @@ func buildLLMProviderOpts(cfg *kaconfig.Config, rt *kaconfig.LLMRuntimeConfig) [
 //
 // Issue #902: When tlsCaFile is set, uses sharedtls.NewTLSTransport as the
 // base instead of http.DefaultTransport.
-func buildTransportChain(cfg *kaconfig.Config, rt *kaconfig.LLMRuntimeConfig) http.RoundTripper {
+func buildTransportChain(cfg *kaconfig.Config, rt *kaconfig.LLMRuntimeConfig) (http.RoundTripper, error) {
 	var base = http.DefaultTransport
 	needsCustom := false
 
 	if cfg.AI.LLM.TLSCaFile != "" {
-		tlsTransport, err := sharedtls.NewTLSTransport(cfg.AI.LLM.TLSCaFile)
+		var tlsOpts []sharedtls.TLSTransportOption
+		if cfg.AI.LLM.TLSCertFile != "" {
+			tlsOpts = append(tlsOpts, sharedtls.WithClientCert(cfg.AI.LLM.TLSCertFile, cfg.AI.LLM.TLSKeyFile))
+		}
+		tlsTransport, err := sharedtls.NewTLSTransport(cfg.AI.LLM.TLSCaFile, tlsOpts...)
 		if err != nil {
-			return nil
+			return nil, fmt.Errorf("llm TLS transport: %w", err)
 		}
 		base = tlsTransport
 		needsCustom = true
@@ -143,9 +163,9 @@ func buildTransportChain(cfg *kaconfig.Config, rt *kaconfig.LLMRuntimeConfig) ht
 	}
 
 	if !needsCustom {
-		return nil
+		return nil, nil
 	}
-	return base
+	return base, nil
 }
 
 // llmRuntimeReloadCallback creates a hotreload.ReloadCallback for LLM runtime

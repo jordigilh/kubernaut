@@ -30,7 +30,10 @@ func TestBuildTransportChain_TLSCaFile(t *testing.T) {
 
 	rt := &kaconfig.LLMRuntimeConfig{}
 
-	transport := buildTransportChain(cfg, rt)
+	transport, err := buildTransportChain(cfg, rt)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if transport == nil {
 		t.Fatal("expected non-nil transport when tlsCaFile is set, got nil")
 	}
@@ -40,18 +43,46 @@ func TestBuildTransportChain_NoTLSCaFile(t *testing.T) {
 	cfg := kaconfig.DefaultConfig()
 	rt := &kaconfig.LLMRuntimeConfig{}
 
-	transport := buildTransportChain(cfg, rt)
+	transport, err := buildTransportChain(cfg, rt)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if transport != nil {
 		t.Fatalf("expected nil transport when no custom config, got %T", transport)
 	}
 }
 
+// UT-KA-1342-030: buildTransportChain returns error for invalid CA file (fail-hard per SC-8)
 func TestBuildTransportChain_InvalidCaFile(t *testing.T) {
 	cfg := kaconfig.DefaultConfig()
 	cfg.AI.LLM.TLSCaFile = "/nonexistent/ca.crt"
 
 	rt := &kaconfig.LLMRuntimeConfig{}
 
-	transport := buildTransportChain(cfg, rt)
-	_ = transport
+	_, err := buildTransportChain(cfg, rt)
+	if err == nil {
+		t.Fatal("expected error for invalid CA file, got nil")
+	}
+}
+
+// UT-KA-1342-020: buildTransportChain passes WithClientCert when cert fields are set
+func TestBuildTransportChain_mTLS(t *testing.T) {
+	caPath := generateTestCACert(t, "Test CA")
+
+	certPath, keyPath := generateTestClientCert(t, caPath)
+
+	cfg := kaconfig.DefaultConfig()
+	cfg.AI.LLM.TLSCaFile = caPath
+	cfg.AI.LLM.TLSCertFile = certPath
+	cfg.AI.LLM.TLSKeyFile = keyPath
+
+	rt := &kaconfig.LLMRuntimeConfig{}
+
+	chain, err := buildTransportChain(cfg, rt)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if chain == nil {
+		t.Fatal("expected non-nil transport for mTLS config")
+	}
 }

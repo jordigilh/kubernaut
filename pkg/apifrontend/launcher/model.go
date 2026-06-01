@@ -130,17 +130,23 @@ func buildLLMHTTPClient(cfg config.LLMConfig) (*http.Client, error) {
 // Chain order (outermost first): CircuitBreaker -> CustomHeaders -> OAuth2 -> TLS/base
 // Returns (nil, nil) when no custom transport is needed.
 //
-// NOTE: This transport chain is currently only applied to the Gemini provider
-// (via buildLLMHTTPClient). Vertex AI uses GCP-managed auth (ADC) and the
-// Anthropic ADK wrapper does not expose HTTP client injection. If support is
-// added for Anthropic transport in the future, validateLLM() must be updated
-// to allow it, and newAnthropicModel must call buildLLMHTTPClient.
+// Issue #1342: This transport chain is applied to the Gemini provider (via
+// buildLLMHTTPClient). Vertex AI and Anthropic providers cannot receive a custom
+// transport yet because the ADK wrapper (adk-anthropic-go) does not expose HTTP
+// client injection. An upstream PR adding BaseTransport to Config is pending;
+// once merged, newVertexAIModel and newAnthropicModel should call
+// buildLLMHTTPClient. The AF validation gate for these providers has been
+// removed (Phase 3) to allow transport config in preparation.
 func buildTransportChain(cfg config.LLMConfig) (http.RoundTripper, error) {
 	base := http.DefaultTransport
 	needsCustom := false
 
 	if cfg.TLSCaFile != "" {
-		tlsTransport, err := sharedtls.NewTLSTransport(cfg.TLSCaFile)
+		var tlsOpts []sharedtls.TLSTransportOption
+		if cfg.TLSCertFile != "" {
+			tlsOpts = append(tlsOpts, sharedtls.WithClientCert(cfg.TLSCertFile, cfg.TLSKeyFile))
+		}
+		tlsTransport, err := sharedtls.NewTLSTransport(cfg.TLSCaFile, tlsOpts...)
 		if err != nil {
 			return nil, fmt.Errorf("load TLS CA %q: %w", cfg.TLSCaFile, err)
 		}
