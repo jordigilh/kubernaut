@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -21,12 +22,32 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 )
 
+// syncBuffer wraps bytes.Buffer with a mutex for concurrent read/write safety.
+// The A2A handler dispatches execution asynchronously, so the logger may write
+// from a background goroutine while the test reads.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) WriteString(s string) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.WriteString(s)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
 var _ = Describe("SessionInterceptor Integration (BR-SESS-020)", func() {
 	var (
 		rootAgent  agent.Agent
 		sessionSvc adksession.Service
 		registry   *launcher.ActiveContextRegistry
-		logBuf     *bytes.Buffer
+		logBuf     *syncBuffer
 		logger     logr.Logger
 	)
 
@@ -39,7 +60,7 @@ var _ = Describe("SessionInterceptor Integration (BR-SESS-020)", func() {
 		Expect(err).NotTo(HaveOccurred())
 		sessionSvc = adksession.InMemoryService()
 		registry = launcher.NewActiveContextRegistry(2 * time.Hour)
-		logBuf = &bytes.Buffer{}
+		logBuf = &syncBuffer{}
 		logger = funcr.New(func(prefix, args string) {
 			logBuf.WriteString(prefix + " " + args + "\n")
 		}, funcr.Options{})
