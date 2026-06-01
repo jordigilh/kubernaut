@@ -47,9 +47,6 @@ func (s *SessionInterceptor) Before(ctx context.Context, callCtx *a2asrv.CallCon
 	}
 
 	msg := params.Message
-	if msg.ContextID == "" {
-		return ctx, nil
-	}
 
 	activeCtx, found := s.registry.Get(identity.Username)
 	if !found || activeCtx == msg.ContextID {

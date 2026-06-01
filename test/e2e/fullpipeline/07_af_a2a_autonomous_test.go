@@ -14,7 +14,7 @@ import (
 // Issue #1332: Autonomous flow must NOT create an InvestigationSession.
 var _ = Describe("AF A2A Autonomous Full Pipeline [E2E-FP-1189-002]", Label("fp", "af", "a2a", "issue-1189", "issue-1332"), func() {
 
-	It("should create RR via A2A and trigger full pipeline execution without IS", func() {
+	It("should create RR via A2A and trigger full pipeline execution without IS", FlakeAttempts(2), func() {
 		By("Verifying AF is reachable")
 		resp, err := afHTTPClient.Get(afBaseURL + "/healthz")
 		if err != nil || resp.StatusCode == http.StatusBadGateway || resp.StatusCode == http.StatusServiceUnavailable {

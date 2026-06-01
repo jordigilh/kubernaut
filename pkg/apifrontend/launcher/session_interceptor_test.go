@@ -154,6 +154,28 @@ var _ = Describe("SessionInterceptor (BR-SESS-020, BR-SESS-021, BR-SESS-023)", f
 		Expect(logOutput).To(ContainSubstring("ctx-target"),
 			"Log must contain the target context_id")
 	})
+
+	It("UT-AF-SESS-020-017: Overrides empty ContextID when active context exists (#1345)", func() {
+		registry.Set("grace", "ctx-active-investigation")
+
+		ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+			Username: "grace", Groups: []string{"sre"},
+		})
+		callCtx := newTestCallContext()
+		msg := &a2a.Message{ContextID: ""}
+		req := &a2asrv.Request{
+			Payload: &a2a.MessageSendParams{Message: msg},
+		}
+
+		_, err := interceptor.Before(ctx, callCtx, req)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(msg.ContextID).To(Equal("ctx-active-investigation"),
+			"Empty ContextID must be overridden when an active investigation exists for the user")
+
+		logOutput := logBuf.String()
+		Expect(logOutput).To(ContainSubstring("overriding context_id"),
+			"Override must be logged for audit trail")
+	})
 })
 
 // newTestCallContext creates a minimal CallContext for interceptor testing.
