@@ -120,8 +120,9 @@ func maxBodyMiddleware(maxBytes int64, next http.Handler) http.Handler {
 const defaultWriteDeadline = 60 * time.Second
 
 // writeDeadlineMiddleware sets a per-request write deadline via
-// http.ResponseController. SSE/streaming handlers can extend this by calling
-// SetWriteDeadline(time.Time{}) when they upgrade to long-lived streams.
+// http.ResponseController. This is the sole write deadline authority — the
+// http.Server has no WriteTimeout set. SSE/streaming handlers clear this
+// deadline via trackSSEConnection which calls SetWriteDeadline(time.Time{}).
 func writeDeadlineMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rc := http.NewResponseController(w)
