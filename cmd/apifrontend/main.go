@@ -272,7 +272,6 @@ func run() int {
 		Handler:           router,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      5 * time.Minute,
 		IdleTimeout:       120 * time.Second,
 	}
 
