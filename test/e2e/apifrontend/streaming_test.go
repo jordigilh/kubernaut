@@ -187,9 +187,12 @@ var _ = Describe("Investigation Streaming (G3)", Ordered, Label("e2e", "phase3",
 		}
 		var mu sync.Mutex
 		cancels := make([]context.CancelFunc, maxSSE)
-		ready := make(chan slotResult, maxSSE)
+		ready := make(chan slotResult, 1)
 		var wg sync.WaitGroup
 
+		// Establish SSE connections sequentially to avoid a race where all
+		// goroutines hit the server simultaneously and some are rejected
+		// before prior connections are fully registered in the semaphore.
 		for i := 0; i < maxSSE; i++ {
 			wg.Add(1)
 			go func(idx int) {
@@ -230,12 +233,13 @@ var _ = Describe("Investigation Streaming (G3)", Ordered, Label("e2e", "phase3",
 				_ = resp.Body.Close()
 				scancel()
 			}(i)
-		}
 
-		for i := 0; i < maxSSE; i++ {
+			// Wait for this connection to be established before launching the
+			// next one. The goroutine stays alive (blocked on io.Copy) keeping
+			// the SSE slot occupied.
 			sr := <-ready
 			Expect(sr.status).To(Equal(http.StatusOK),
-				"expected concurrent SSE slot %d (goroutine %d) to connect; err=%v", i, sr.idx, sr.err)
+				"SSE slot %d (goroutine %d) should connect within cap; err=%v", i, sr.idx, sr.err)
 		}
 
 		extraReq, err := http.NewRequestWithContext(context.Background(), http.MethodPost, baseURL+"/a2a/invoke",

@@ -205,10 +205,18 @@ func fpWaitForRRByFingerprint(fingerprint string, timeout time.Duration) string 
 // fpWaitForWEComplete waits until a WorkflowExecution for the given RR reaches Completed phase.
 // Fails fast if the WE enters Failed phase, and logs pipeline state periodically for diagnostics.
 func fpWaitForWEComplete(rrName string, timeout time.Duration) {
-	logged := false
+	lastLog := time.Time{}
+	logInterval := 30 * time.Second
 	Eventually(func() bool {
+		now := time.Now()
+		shouldLog := now.Sub(lastLog) >= logInterval
+
 		weList := &workflowexecutionv1.WorkflowExecutionList{}
 		if err := apiReader.List(ctx, weList, client.InNamespace(namespace)); err != nil {
+			if shouldLog {
+				GinkgoWriter.Printf("  [fpWaitForWEComplete] failed to list WEs: %v\n", err)
+				lastLog = now
+			}
 			return false
 		}
 		for _, we := range weList.Items {
@@ -217,23 +225,31 @@ func fpWaitForWEComplete(rrName string, timeout time.Duration) {
 				if phase == "Failed" {
 					Fail(fmt.Sprintf("WorkflowExecution %s failed (phase=Failed)", we.Name))
 				}
-				if phase != "" && !logged {
+				if shouldLog {
 					GinkgoWriter.Printf("  WE %s phase: %s, engine: %s\n", we.Name, phase, we.Status.ExecutionEngine)
-					logged = true
+					lastLog = now
 				}
 				return phase == "Completed"
 			}
 		}
-		if !logged {
+
+		// No WE found yet -- check upstream pipeline state for diagnostics.
+		if shouldLog {
 			aaList := &aianalysisv1.AIAnalysisList{}
 			if err := apiReader.List(ctx, aaList, client.InNamespace(namespace)); err == nil {
+				found := false
 				for _, aa := range aaList.Items {
 					if strings.Contains(aa.Name, rrName) || aa.Spec.RemediationRequestRef.Name == rrName {
 						GinkgoWriter.Printf("  AA %s phase: %s (WE not yet created)\n", aa.Name, aa.Status.Phase)
+						found = true
 						break
 					}
 				}
+				if !found {
+					GinkgoWriter.Printf("  [fpWaitForWEComplete] no WE or AA found for RR %q (pipeline may not have started)\n", rrName)
+				}
 			}
+			lastLog = now
 		}
 		return false
 	}, timeout, 3*time.Second).Should(BeTrue(), "WorkflowExecution for %q did not complete", rrName)
