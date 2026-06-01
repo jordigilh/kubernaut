@@ -142,6 +142,8 @@ type LLMConfig struct {
 	VertexProject  string            `yaml:"vertexProject,omitempty"`
 	VertexLocation string            `yaml:"vertexLocation,omitempty"`
 	TLSCaFile      string            `yaml:"tlsCaFile,omitempty"`
+	TLSCertFile    string            `yaml:"tlsCertFile,omitempty"`
+	TLSKeyFile     string            `yaml:"tlsKeyFile,omitempty"`
 	TimeoutSeconds int               `yaml:"timeoutSeconds,omitempty"`
 	OAuth2         LLMOAuth2Config   `yaml:"oauth2,omitempty"`
 	CircuitBreaker LLMCircuitBreaker `yaml:"circuitBreaker,omitempty"`
@@ -416,6 +418,9 @@ func (c *Config) validateLLM() error {
 	if llm.TLSCaFile != "" && !filepath.IsAbs(llm.TLSCaFile) {
 		return fmt.Errorf("agent.llm.tlsCaFile must be an absolute path, got %q", llm.TLSCaFile)
 	}
+	if err := validateTLSCertPair("agent.llm", llm.TLSCertFile, llm.TLSKeyFile, llm.TLSCaFile); err != nil {
+		return err
+	}
 	if llm.Endpoint != "" {
 		if err := validateURL("agent.llm.endpoint", llm.Endpoint); err != nil {
 			return err
@@ -441,19 +446,6 @@ func (c *Config) validateLLM() error {
 		}
 		if llm.CircuitBreaker.Timeout <= 0 {
 			return fmt.Errorf("agent.llm.circuitBreaker.timeout must be positive")
-		}
-	}
-	if llm.Provider != LLMProviderGemini {
-		hasTransportConfig := llm.TLSCaFile != "" || llm.OAuth2.Enabled || len(llm.CustomHeaders) > 0 || llm.CircuitBreaker.Enabled
-		if hasTransportConfig && llm.Provider == LLMProviderVertexAI {
-			return fmt.Errorf("agent.llm: transport options (tlsCaFile, oauth2, customHeaders, circuitBreaker) "+
-				"are not applicable for provider %q — Vertex AI uses GCP-managed authentication",
-				LLMProviderVertexAI)
-		}
-		if hasTransportConfig && llm.Provider == LLMProviderAnthropic {
-			return fmt.Errorf("agent.llm: transport options (tlsCaFile, oauth2, customHeaders, circuitBreaker) "+
-				"are not yet supported for provider %q — use apiKeyFile and endpoint instead",
-				LLMProviderAnthropic)
 		}
 	}
 	return nil
@@ -636,6 +628,30 @@ func validatePortsDistinct(apiPort, metricsPort, healthPort int) error {
 	}
 	if metricsPort == healthPort {
 		return fmt.Errorf("server.metricsPort and server.healthPort must be distinct, both are %d", metricsPort)
+	}
+	return nil
+}
+
+// validateTLSCertPair validates that tlsCertFile and tlsKeyFile are set
+// together, use absolute paths, and require tlsCaFile (server verification
+// remains mandatory per SC-8).
+func validateTLSCertPair(prefix, certFile, keyFile, caFile string) error {
+	hasCert := certFile != ""
+	hasKey := keyFile != ""
+	if hasCert != hasKey {
+		return fmt.Errorf("%s.tlsCertFile and %s.tlsKeyFile must both be set or both be empty", prefix, prefix)
+	}
+	if !hasCert {
+		return nil
+	}
+	if !filepath.IsAbs(certFile) {
+		return fmt.Errorf("%s.tlsCertFile must be an absolute path, got %q", prefix, certFile)
+	}
+	if !filepath.IsAbs(keyFile) {
+		return fmt.Errorf("%s.tlsKeyFile must be an absolute path, got %q", prefix, keyFile)
+	}
+	if caFile == "" {
+		return fmt.Errorf("%s.tlsCaFile is required when client certificates are configured (server verification is mandatory)", prefix)
 	}
 	return nil
 }

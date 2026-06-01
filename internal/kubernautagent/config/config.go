@@ -77,6 +77,8 @@ type LLMConfig struct {
 	VertexLocation  string              `yaml:"vertexLocation"`
 	BedrockRegion   string              `yaml:"bedrockRegion"`
 	TLSCaFile       string              `yaml:"tlsCaFile,omitempty"`
+	TLSCertFile     string              `yaml:"tlsCertFile,omitempty"`
+	TLSKeyFile      string              `yaml:"tlsKeyFile,omitempty"`
 	OAuth2          OAuth2Config        `yaml:"oauth2,omitempty"`
 	CircuitBreaker  CircuitBreakerCfg   `yaml:"circuitBreaker,omitempty"`
 }
@@ -541,6 +543,9 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("ai.llm.oauth2.credentialsDir is required when oauth2.enabled=true")
 		}
 	}
+	if err := validateTLSCertPair("ai.llm", c.AI.LLM.TLSCertFile, c.AI.LLM.TLSKeyFile, c.AI.LLM.TLSCaFile); err != nil {
+		return err
+	}
 	if c.Runtime.Server.RateLimit.RequestsPerSecond <= 0 {
 		return fmt.Errorf("runtime.server.rateLimit.requestsPerSecond must be positive, got %v", c.Runtime.Server.RateLimit.RequestsPerSecond)
 	}
@@ -683,4 +688,28 @@ func DefaultLLMRuntime() *LLMRuntimeConfig {
 		MaxRetries:     3,
 		TimeoutSeconds: 120,
 	}
+}
+
+// validateTLSCertPair validates that tlsCertFile and tlsKeyFile are set
+// together, use absolute paths, and require tlsCaFile (server verification
+// remains mandatory per SC-8).
+func validateTLSCertPair(prefix, certFile, keyFile, caFile string) error {
+	hasCert := certFile != ""
+	hasKey := keyFile != ""
+	if hasCert != hasKey {
+		return fmt.Errorf("%s.tlsCertFile and %s.tlsKeyFile must both be set or both be empty", prefix, prefix)
+	}
+	if !hasCert {
+		return nil
+	}
+	if !filepath.IsAbs(certFile) {
+		return fmt.Errorf("%s.tlsCertFile must be an absolute path, got %q", prefix, certFile)
+	}
+	if !filepath.IsAbs(keyFile) {
+		return fmt.Errorf("%s.tlsKeyFile must be an absolute path, got %q", prefix, keyFile)
+	}
+	if caFile == "" {
+		return fmt.Errorf("%s.tlsCaFile is required when client certificates are configured (server verification is mandatory)", prefix)
+	}
+	return nil
 }
