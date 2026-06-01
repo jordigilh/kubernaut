@@ -210,18 +210,54 @@ func StartCAFileWatcher(ctx context.Context, logger logr.Logger) (*hotreload.Fil
 	return watcher, nil
 }
 
+// TLSTransportOption configures optional features on transports created by
+// NewTLSTransport. Use WithClientCert to enable mTLS.
+type TLSTransportOption func(*tlsTransportOpts)
+
+type tlsTransportOpts struct {
+	certFile string
+	keyFile  string
+}
+
+// WithClientCert enables mutual TLS (mTLS) by loading a client certificate
+// and private key that will be presented during the TLS handshake.
+// Both certFile and keyFile must be valid PEM-encoded files.
+// BR-NET-002: Certificate-based authentication for enterprise LLM gateways.
+func WithClientCert(certFile, keyFile string) TLSTransportOption {
+	return func(o *tlsTransportOpts) {
+		o.certFile = certFile
+		o.keyFile = keyFile
+	}
+}
+
 // NewTLSTransport creates an http.Transport configured with a custom CA pool
 // for verifying server certificates on outbound HTTPS calls.
-func NewTLSTransport(caFile string) (*http.Transport, error) {
+// Optional TLSTransportOption values (e.g. WithClientCert) extend the transport
+// with mTLS or other features without breaking existing callers.
+func NewTLSTransport(caFile string, opts ...TLSTransportOption) (*http.Transport, error) {
 	pool, err := LoadCACert(caFile)
 	if err != nil {
 		return nil, err
+	}
+
+	var o tlsTransportOpts
+	for _, fn := range opts {
+		fn(&o)
 	}
 
 	tlsCfg := &tls.Config{
 		RootCAs:    pool,
 		MinVersion: tls.VersionTLS12,
 	}
+
+	if o.certFile != "" && o.keyFile != "" {
+		cert, err := tls.LoadX509KeyPair(o.certFile, o.keyFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load client certificate (%s, %s): %w", o.certFile, o.keyFile, err)
+		}
+		tlsCfg.Certificates = []tls.Certificate{cert}
+	}
+
 	ApplyProfile(tlsCfg, getDefaultSecurityProfile())
 	return &http.Transport{TLSClientConfig: tlsCfg}, nil
 }

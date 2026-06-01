@@ -244,4 +244,159 @@ var _ = Describe("TLS Integration Tests (#493)", func() {
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("certificate"))
 	})
+
+	// --- mTLS tests (Issue #1342) ---
+
+	// Helper: generate client cert signed by the CA
+	generateClientCert := func() (clientCertPath, clientKeyPath string) {
+		clientKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		Expect(err).ToNot(HaveOccurred())
+
+		clientTemplate := &x509.Certificate{
+			SerialNumber: big.NewInt(3),
+			Subject:      pkix.Name{CommonName: "test-client"},
+			NotBefore:    time.Now().Add(-1 * time.Hour),
+			NotAfter:     time.Now().Add(24 * time.Hour),
+			KeyUsage:     x509.KeyUsageDigitalSignature,
+			ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+		}
+
+		clientCertDER, err := x509.CreateCertificate(rand.Reader, clientTemplate, caCert, &clientKey.PublicKey, caKey)
+		Expect(err).ToNot(HaveOccurred())
+
+		clientCertPath = filepath.Join(certDir, "client.crt")
+		clientCertPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: clientCertDER})
+		Expect(os.WriteFile(clientCertPath, clientCertPEM, 0644)).To(Succeed())
+
+		clientKeyPath = filepath.Join(certDir, "client.key")
+		clientKeyDER, err := x509.MarshalECPrivateKey(clientKey)
+		Expect(err).ToNot(HaveOccurred())
+		clientKeyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: clientKeyDER})
+		Expect(os.WriteFile(clientKeyPath, clientKeyPEM, 0600)).To(Succeed())
+
+		return clientCertPath, clientKeyPath
+	}
+
+	// Helper: start a TLS server that requires client certificates (mTLS)
+	startMTLSServer := func() (*http.Server, string) {
+		generateServerCert()
+
+		caPool, err := sharedtls.LoadCACert(caCertPath)
+		Expect(err).ToNot(HaveOccurred())
+
+		mux := http.NewServeMux()
+		mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("ok"))
+		})
+
+		serverCert, err := tls.LoadX509KeyPair(
+			filepath.Join(certDir, "tls.crt"),
+			filepath.Join(certDir, "tls.key"),
+		)
+		Expect(err).ToNot(HaveOccurred())
+
+		tlsCfg := &tls.Config{
+			Certificates: []tls.Certificate{serverCert},
+			ClientCAs:    caPool,
+			ClientAuth:   tls.RequireAndVerifyClientCert,
+			MinVersion:   tls.VersionTLS12,
+		}
+
+		listener, err := tls.Listen("tcp", "127.0.0.1:0", tlsCfg)
+		Expect(err).ToNot(HaveOccurred())
+
+		server := &http.Server{Handler: mux}
+		go func() {
+			defer GinkgoRecover()
+			_ = server.Serve(listener)
+		}()
+
+		addr := listener.Addr().(*net.TCPAddr)
+		return server, fmt.Sprintf("https://127.0.0.1:%d", addr.Port)
+	}
+
+	// IT-TLS-1342-001: mTLS handshake succeeds with valid client cert
+	// BR-NET-002: Certificate-based authentication
+	It("IT-TLS-1342-001: should complete mTLS handshake with valid client certificate", func() {
+		server, url := startMTLSServer()
+		defer func() { _ = server.Close() }()
+
+		clientCertPath, clientKeyPath := generateClientCert()
+
+		transport, err := sharedtls.NewTLSTransport(caCertPath,
+			sharedtls.WithClientCert(clientCertPath, clientKeyPath),
+		)
+		Expect(err).ToNot(HaveOccurred())
+
+		client := &http.Client{Transport: transport, Timeout: 5 * time.Second}
+		resp, err := client.Get(url + "/health")
+		Expect(err).ToNot(HaveOccurred())
+		defer func() { _ = resp.Body.Close() }()
+		Expect(resp.StatusCode).To(Equal(http.StatusOK))
+	})
+
+	// IT-TLS-1342-002: mTLS handshake fails without client cert when server requires it
+	It("IT-TLS-1342-002: should fail mTLS handshake when client cert is missing", func() {
+		server, url := startMTLSServer()
+		defer func() { _ = server.Close() }()
+
+		transport, err := sharedtls.NewTLSTransport(caCertPath)
+		Expect(err).ToNot(HaveOccurred())
+
+		client := &http.Client{Transport: transport, Timeout: 2 * time.Second}
+		_, err = client.Get(url + "/health")
+		Expect(err).To(HaveOccurred())
+	})
+
+	// IT-TLS-1342-003: mTLS handshake fails with client cert signed by wrong CA
+	It("IT-TLS-1342-003: should fail mTLS handshake when client cert is signed by wrong CA", func() {
+		server, url := startMTLSServer()
+		defer func() { _ = server.Close() }()
+
+		wrongCAKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		Expect(err).ToNot(HaveOccurred())
+		wrongCATemplate := &x509.Certificate{
+			SerialNumber:          big.NewInt(99),
+			Subject:               pkix.Name{CommonName: "Wrong CA"},
+			NotBefore:             time.Now().Add(-1 * time.Hour),
+			NotAfter:              time.Now().Add(24 * time.Hour),
+			IsCA:                  true,
+			BasicConstraintsValid: true,
+			KeyUsage:              x509.KeyUsageCertSign,
+		}
+		wrongCACertDER, err := x509.CreateCertificate(rand.Reader, wrongCATemplate, wrongCATemplate, &wrongCAKey.PublicKey, wrongCAKey)
+		Expect(err).ToNot(HaveOccurred())
+
+		wrongClientKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		Expect(err).ToNot(HaveOccurred())
+		wrongCACert, err := x509.ParseCertificate(wrongCACertDER)
+		Expect(err).ToNot(HaveOccurred())
+		wrongClientTemplate := &x509.Certificate{
+			SerialNumber: big.NewInt(4),
+			Subject:      pkix.Name{CommonName: "wrong-client"},
+			NotBefore:    time.Now().Add(-1 * time.Hour),
+			NotAfter:     time.Now().Add(24 * time.Hour),
+			KeyUsage:     x509.KeyUsageDigitalSignature,
+			ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+		}
+		wrongClientCertDER, err := x509.CreateCertificate(rand.Reader, wrongClientTemplate, wrongCACert, &wrongClientKey.PublicKey, wrongCAKey)
+		Expect(err).ToNot(HaveOccurred())
+
+		wrongClientCertPath := filepath.Join(certDir, "wrong-client.crt")
+		Expect(os.WriteFile(wrongClientCertPath, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: wrongClientCertDER}), 0644)).To(Succeed())
+		wrongClientKeyPath := filepath.Join(certDir, "wrong-client.key")
+		wrongClientKeyDER, err := x509.MarshalECPrivateKey(wrongClientKey)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(os.WriteFile(wrongClientKeyPath, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: wrongClientKeyDER}), 0600)).To(Succeed())
+
+		transport, err := sharedtls.NewTLSTransport(caCertPath,
+			sharedtls.WithClientCert(wrongClientCertPath, wrongClientKeyPath),
+		)
+		Expect(err).ToNot(HaveOccurred())
+
+		client := &http.Client{Transport: transport, Timeout: 2 * time.Second}
+		_, err = client.Get(url + "/health")
+		Expect(err).To(HaveOccurred())
+	})
 })
