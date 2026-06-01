@@ -599,6 +599,48 @@ var _ = Describe("CRDSessionService", func() {
 			_ = responseJSON
 		})
 
+		It("UT-AF-204-010: trimming preserves rr_id and session_id for cross-turn propagation (AU-3)", func() {
+			largeRCAResponse := map[string]any{
+				"rr_id":      "rr-preserve-001",
+				"session_id": "sess-preserve-001",
+				"status":     "completed",
+				"summary":    strings.Repeat("Root cause analysis details... ", 200),
+			}
+
+			evt := adksession.NewEvent("inv-1")
+			evt.Author = "agent"
+			evt.Content = &genai.Content{
+				Role: string(genai.RoleModel),
+				Parts: []*genai.Part{
+					{
+						FunctionResponse: &genai.FunctionResponse{
+							Name:     "kubernaut_investigate",
+							Response: largeRCAResponse,
+						},
+					},
+				},
+			}
+
+			err := svc.AppendEvent(ctx, sess, evt)
+			Expect(err).NotTo(HaveOccurred())
+
+			getResp, err := svc.Get(ctx, &adksession.GetRequest{
+				AppName:   "kubernaut-apifrontend",
+				UserID:    "jane.doe",
+				SessionID: "sess-append",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			storedEvent := getResp.Session.Events().At(0)
+			storedResp := storedEvent.Content.Parts[0].FunctionResponse.Response
+
+			Expect(storedResp["truncated"]).To(Equal(true),
+				"response must be truncated (exceeds 4KB)")
+			Expect(storedResp["rr_id"]).To(Equal("rr-preserve-001"),
+				"rr_id must survive trimming for cross-turn LLM context (BR-INTERACTIVE-010, AU-3)")
+			Expect(storedResp["session_id"]).To(Equal("sess-preserve-001"),
+				"session_id must survive trimming for audit correlation (AU-12)")
+		})
+
 		It("UT-AF-204-005: updates CRD status lastUpdateTime", func() {
 			err := svc.MaterializeCRD(ctx, "sess-append", v1alpha1.ObjectRef{Name: "rr-append", Namespace: "test-ns"})
 			Expect(err).NotTo(HaveOccurred())

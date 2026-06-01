@@ -44,10 +44,17 @@ func trimEventFunctionResponses(event *adksession.Event) {
 			summary = summary[:TrimSummaryPrefix]
 		}
 
-		fr.Response = map[string]any{
+		trimmed := map[string]any{
 			"truncated":     true,
 			"original_size": len(raw),
 			"summary":       summary,
 		}
+		if rrID, ok := fr.Response["rr_id"].(string); ok && rrID != "" {
+			trimmed["rr_id"] = rrID
+		}
+		if sessionID, ok := fr.Response["session_id"].(string); ok && sessionID != "" {
+			trimmed["session_id"] = sessionID
+		}
+		fr.Response = trimmed
 	}
 }
