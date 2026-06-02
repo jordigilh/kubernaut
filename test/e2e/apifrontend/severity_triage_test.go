@@ -41,8 +41,9 @@ var _ = Describe("Severity Triage Pipeline (G12)", Label("e2e", "phase4", "g12")
 
 	a2aCreateRRAndWait := func(namespace, deployName string, promptSuffix string) {
 		prompt := fmt.Sprintf("Create a remediation request for deployment %s in %s namespace%s", deployName, namespace, promptSuffix)
-		resp, err := a2aInvoke(httpClient, baseURL, authToken, a2aTasksSend(
-			fmt.Sprintf("g12-sev-%s-%d", deployName, time.Now().UnixNano()), prompt))
+		taskID := fmt.Sprintf("g12-sev-%s-%d", deployName, time.Now().UnixNano())
+		resp, err := a2aInvoke(httpClient, baseURL, authToken, a2aTasksSendWithContext(
+			taskID, "sev-ctx-"+taskID, prompt))
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != http.StatusOK {

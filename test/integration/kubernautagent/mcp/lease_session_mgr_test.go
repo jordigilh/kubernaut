@@ -18,6 +18,7 @@ package mcp_test
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -65,7 +66,9 @@ var _ = Describe("LeaseSessionManager deep IT — BR-INTERACTIVE-005", Label("in
 				wg.Add(1)
 				go func(idx int) {
 					defer wg.Done()
-					user := mcpinternal.UserInfo{Username: "user@example.com"}
+					// Each goroutine uses a distinct username to test genuine
+					// contention rather than triggering the same-user reconnect path.
+					user := mcpinternal.UserInfo{Username: fmt.Sprintf("user-%d@example.com", idx)}
 					sess, err := mgr.Takeover(context.Background(), "rr-contention", user)
 					mu.Lock()
 					defer mu.Unlock()

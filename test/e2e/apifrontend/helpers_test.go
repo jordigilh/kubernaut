@@ -85,6 +85,21 @@ func a2aTasksSend(id, text string) string {
 	})
 }
 
+// a2aTasksSendWithContext builds a message/send JSON-RPC payload with an explicit
+// contextId, ensuring the SessionInterceptor does not redirect to a stale session.
+func a2aTasksSendWithContext(id, contextID, text string) string {
+	return buildJSONRPC(id, "message/send", map[string]interface{}{
+		"message": map[string]interface{}{
+			"messageId": "msg-" + id,
+			"contextId": contextID,
+			"role":      "user",
+			"parts": []map[string]interface{}{
+				{"kind": "text", "text": text},
+			},
+		},
+	})
+}
+
 // a2aMessageStream builds a message/stream JSON-RPC payload (SSE variant).
 func a2aMessageStream(id, text string) string {
 	return buildJSONRPC(id, "message/stream", map[string]interface{}{
