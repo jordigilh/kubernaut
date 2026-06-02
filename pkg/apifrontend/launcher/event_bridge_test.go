@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
@@ -272,6 +273,141 @@ var _ = Describe("EventBridge", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(queue.events).To(HaveLen(1),
 				"absence of metrics collector must not prevent event delivery")
+		})
+	})
+
+	Describe("Newline separation — surviving client trailing-whitespace stripping", func() {
+		It("UT-AF-NL-001: text-to-text transition prepends newline on second emission", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-nl-001", "", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			Expect(bridge.EmitReasoning(ctx, "first message")).To(Succeed())
+			Expect(bridge.EmitReasoning(ctx, "second message")).To(Succeed())
+
+			second := queue.events[1].(*a2a.TaskArtifactUpdateEvent)
+			text := second.Artifact.Parts[0].(*a2a.TextPart).Text
+			Expect(text).To(HavePrefix("\n"),
+				"second reasoning emission must start with \\n so it renders on its own line after kagenti trailing-strip")
+			Expect(text).To(Equal("\nsecond message"))
+		})
+
+		It("UT-AF-NL-002: text-to-dot transition prepends newline before first dot", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-nl-002", "", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			Expect(bridge.EmitReasoning(ctx, "status text")).To(Succeed())
+			Expect(bridge.EmitKeepaliveDot(ctx)).To(Succeed())
+
+			dot := queue.events[1].(*a2a.TaskArtifactUpdateEvent)
+			text := dot.Artifact.Parts[0].(*a2a.TextPart).Text
+			Expect(text).To(Equal("\n."),
+				"first dot after reasoning text must start with \\n so dots render on their own line")
+		})
+
+		It("UT-AF-NL-003: dot-to-dot accumulates inline without newline", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-nl-003", "", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			Expect(bridge.EmitKeepaliveDot(ctx)).To(Succeed())
+			Expect(bridge.EmitKeepaliveDot(ctx)).To(Succeed())
+			Expect(bridge.EmitKeepaliveDot(ctx)).To(Succeed())
+
+			for i := 0; i < 3; i++ {
+				evt := queue.events[i].(*a2a.TaskArtifactUpdateEvent)
+				text := evt.Artifact.Parts[0].(*a2a.TextPart).Text
+				Expect(text).To(Equal("."),
+					"consecutive dots must accumulate inline without newline prefix")
+			}
+		})
+
+		It("UT-AF-NL-004: dot-to-text transition prepends newline", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-nl-004", "", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			Expect(bridge.EmitKeepaliveDot(ctx)).To(Succeed())
+			Expect(bridge.EmitKeepaliveDot(ctx)).To(Succeed())
+			Expect(bridge.EmitReasoning(ctx, "reasoning after dots")).To(Succeed())
+
+			reasoning := queue.events[2].(*a2a.TaskArtifactUpdateEvent)
+			text := reasoning.Artifact.Parts[0].(*a2a.TextPart).Text
+			Expect(text).To(Equal("\nreasoning after dots"),
+				"reasoning after keepalive dots must start with \\n")
+		})
+
+		It("UT-AF-NL-005: first emission has no leading newline", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-nl-005", "", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			Expect(bridge.EmitReasoning(ctx, "very first message")).To(Succeed())
+
+			first := queue.events[0].(*a2a.TaskArtifactUpdateEvent)
+			text := first.Artifact.Parts[0].(*a2a.TextPart).Text
+			Expect(text).To(Equal("very first message"),
+				"first emission must not have leading newline")
+		})
+
+		It("UT-AF-NL-006: full remediation watch scenario produces correct concatenated output", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-nl-006", "", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			Expect(bridge.EmitReasoning(ctx, "Watching remediation progress...\n")).To(Succeed())
+			Expect(bridge.EmitKeepaliveDot(ctx)).To(Succeed())
+			Expect(bridge.EmitKeepaliveDot(ctx)).To(Succeed())
+			Expect(bridge.EmitReasoning(ctx, "Remediation phase: Executing\n")).To(Succeed())
+			Expect(bridge.EmitReasoning(ctx, "Approval granted by admin\n")).To(Succeed())
+			Expect(bridge.EmitKeepaliveDot(ctx)).To(Succeed())
+			Expect(bridge.EmitKeepaliveDot(ctx)).To(Succeed())
+			Expect(bridge.EmitKeepaliveDot(ctx)).To(Succeed())
+			Expect(bridge.EmitReasoning(ctx, "Remediation phase: Verifying\n")).To(Succeed())
+
+			var parts []string
+			for _, evt := range queue.events {
+				ae := evt.(*a2a.TaskArtifactUpdateEvent)
+				tp := ae.Artifact.Parts[0].(*a2a.TextPart)
+				parts = append(parts, strings.TrimRight(tp.Text, " \t\n\r"))
+			}
+			concatenated := strings.Join(parts, "")
+
+			expected := "Watching remediation progress..." +
+				"\n.." +
+				"\nRemediation phase: Executing" +
+				"\nApproval granted by admin" +
+				"\n..." +
+				"\nRemediation phase: Verifying"
+			Expect(concatenated).To(Equal(expected),
+				"concatenated output after simulated kagenti trailing-strip must match expected compact format")
+		})
+
+		It("UT-AF-NL-007: concurrent dot and reasoning emissions do not race", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-nl-007", "", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			var wg sync.WaitGroup
+			wg.Add(2)
+
+			go func() {
+				defer wg.Done()
+				for i := 0; i < 50; i++ {
+					_ = bridge.EmitKeepaliveDot(ctx)
+				}
+			}()
+			go func() {
+				defer wg.Done()
+				for i := 0; i < 50; i++ {
+					_ = bridge.EmitReasoning(ctx, "reasoning")
+				}
+			}()
+			wg.Wait()
+
+			Expect(queue.events).To(HaveLen(100),
+				"all 100 concurrent emissions must complete without data loss")
 		})
 	})
 })
