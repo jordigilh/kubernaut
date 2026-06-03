@@ -109,6 +109,11 @@ var (
 	// Map of "workflowID:environment" → UUID. Tests must NOT modify this or the Mock LLM ConfigMap.
 	workflowUUIDs map[string]string
 
+	// Per-test namespace isolation for AF remediate scenarios.
+	// Keys match mock-LLM keyword scenario suffixes (e.g., "autonomous", "interactive").
+	// Values are UUID-based K8s namespace names generated during infrastructure setup.
+	fpRemediateNS map[string]string
+
 	// Track test failures for cluster cleanup decision
 	anyTestFailed bool
 )
@@ -131,7 +136,7 @@ var _ = SynchronizedBeforeSuite(
 
 		By("Setting up Full Pipeline E2E infrastructure (Issue #39)")
 		ctx := context.Background()
-		images, seededUUIDs, err := infrastructure.SetupFullPipelineInfrastructure(
+		images, seededUUIDs, remediateNS, err := infrastructure.SetupFullPipelineInfrastructure(
 			ctx, clusterName, tempKubeconfigPath, GinkgoWriter,
 		)
 		Expect(err).ToNot(HaveOccurred(), "Full pipeline infrastructure setup failed")
@@ -166,18 +171,21 @@ var _ = SynchronizedBeforeSuite(
 		labelOut, labelErr := labelCmd.CombinedOutput()
 		Expect(labelErr).ToNot(HaveOccurred(), "Failed to label namespace: %s", string(labelOut))
 
-		By("Creating fp-a2a-interactive namespace (mock-LLM hardcodes this for kubernaut_remediate)")
-		createNSCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", tempKubeconfigPath,
-			"create", "namespace", "fp-a2a-interactive")
-		createNSOut, createNSErr := createNSCmd.CombinedOutput()
-		if createNSErr != nil && !strings.Contains(string(createNSOut), "already exists") {
-			Expect(createNSErr).ToNot(HaveOccurred(), "Failed to create fp-a2a-interactive namespace: %s", string(createNSOut))
+		By("Creating per-test remediate namespaces (dynamic, UUID-based)")
+		for key, ns := range remediateNS {
+			GinkgoWriter.Printf("  Creating namespace %s (scenario: %s)\n", ns, key)
+			createNSCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", tempKubeconfigPath,
+				"create", "namespace", ns)
+			createNSOut, createNSErr := createNSCmd.CombinedOutput()
+			if createNSErr != nil && !strings.Contains(string(createNSOut), "already exists") {
+				Expect(createNSErr).ToNot(HaveOccurred(), "Failed to create namespace %s: %s", ns, string(createNSOut))
+			}
+			labelNSCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", tempKubeconfigPath,
+				"label", "namespace", ns,
+				"kubernaut.ai/managed=true", "kubernaut.ai/environment=staging", "--overwrite")
+			labelNSOut, labelNSErr := labelNSCmd.CombinedOutput()
+			Expect(labelNSErr).ToNot(HaveOccurred(), "Failed to label namespace %s: %s", ns, string(labelNSOut))
 		}
-		labelNSCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", tempKubeconfigPath,
-			"label", "namespace", "fp-a2a-interactive",
-			"kubernaut.ai/managed=true", "kubernaut.ai/environment=staging", "--overwrite")
-		labelNSOut, labelNSErr := labelNSCmd.CombinedOutput()
-		Expect(labelNSErr).ToNot(HaveOccurred(), "Failed to label fp-a2a-interactive namespace: %s", string(labelNSOut))
 
 		By("Deploying memory-eater in kubernaut-system for AF E2E tests")
 		err = infrastructure.DeployMemoryEater(ctx, namespace, tempKubeconfigPath, GinkgoWriter)
@@ -189,14 +197,16 @@ var _ = SynchronizedBeforeSuite(
 
 		GinkgoWriter.Println("✅ Full Pipeline E2E infrastructure ready (Process 1)")
 
-		// Encode kubeconfig + tokens + workflow UUIDs for all processes
+		// Encode kubeconfig + tokens + workflow UUIDs + remediate namespaces for all processes
 		uuidsJSON, jsonErr := json.Marshal(seededUUIDs)
 		Expect(jsonErr).ToNot(HaveOccurred())
-		return []byte(fmt.Sprintf("%s|%s|%s|%s", tempKubeconfigPath, token, string(uuidsJSON), gatewayToken))
+		remediateNSJSON, nsErr := json.Marshal(remediateNS)
+		Expect(nsErr).ToNot(HaveOccurred())
+		return []byte(fmt.Sprintf("%s|%s|%s|%s|%s", tempKubeconfigPath, token, string(uuidsJSON), gatewayToken, string(remediateNSJSON)))
 	},
 	// ALL processes: connect to the cluster
 	func(data []byte) {
-		parts := strings.SplitN(string(data), "|", 4)
+		parts := strings.SplitN(string(data), "|", 5)
 		kubeconfigPath = parts[0]
 		if len(parts) > 1 {
 			e2eAuthToken = parts[1]
@@ -207,6 +217,10 @@ var _ = SynchronizedBeforeSuite(
 		}
 		if len(parts) > 3 {
 			fpAuthToken = parts[3]
+		}
+		if len(parts) > 4 {
+			Expect(json.Unmarshal([]byte(parts[4]), &fpRemediateNS)).To(Succeed(),
+				"Failed to decode remediate namespaces from Process 1")
 		}
 
 		ctx, cancel = context.WithCancel(context.TODO())

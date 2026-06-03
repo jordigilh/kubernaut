@@ -27,7 +27,7 @@ var _ = Describe("AF A2A Autonomous Full Pipeline [E2E-FP-1189-002]", Label("fp"
 
 		By("Creating RR via A2A message/send (kubernaut_remediate — autonomous, no IS)")
 		body := fpA2ATasksSend("fp-auto-1",
-			"create a remediation request for deployment memory-eater in kubernaut-system namespace")
+			"create autonomous remediation for deployment memory-eater")
 		resp, err = fpA2AInvoke(body)
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp.Body.Close() }()
@@ -42,9 +42,9 @@ var _ = Describe("AF A2A Autonomous Full Pipeline [E2E-FP-1189-002]", Label("fp"
 		GinkgoWriter.Printf("  A2A task: %s (state: %s)\n", task.ID, task.Status.State)
 
 		By("Waiting for full pipeline execution (match by signal fingerprint)")
-		// The mock-LLM scenario hardcodes namespace "fp-a2a-interactive" for
-		// kubernaut_remediate. Use that to compute the expected fingerprint.
-		fp := rrFingerprint("fp-a2a-interactive", "Deployment", "memory-eater")
+		autoNS := fpRemediateNS["autonomous"]
+		Expect(autoNS).NotTo(BeEmpty(), "autonomous namespace must be set by SynchronizedBeforeSuite")
+		fp := rrFingerprint(autoNS, "Deployment", "memory-eater")
 		rrName := fpWaitForRRByFingerprint(fp, 120*time.Second)
 		Expect(rrName).NotTo(BeEmpty())
 		fpWaitForWEComplete(rrName, 5*time.Minute)

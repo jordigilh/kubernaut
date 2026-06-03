@@ -165,7 +165,15 @@ subjects:
 
 // DeployMockLLMInNamespace deploys the Go Mock LLM service to a Kind namespace.
 // Uses ClusterIP for internal access only (no NodePort needed for E2E).
-func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, imageTag string, workflowUUIDs map[string]string, writer io.Writer) error {
+//
+// afRemediateNS controls per-test namespace isolation for the mock-LLM's
+// kubernaut_remediate keyword scenarios. Each map entry generates a distinct
+// scenario with keyword "<key> remediation" targeting the given namespace.
+// For example {"autonomous": "fp-auto-abc"} produces a scenario named
+// "kubernaut_remediate_autonomous" that matches the keyword "autonomous remediation"
+// and returns namespace "fp-auto-abc" in the tool call.
+// When nil or empty (KA/AA suites), a single default scenario is emitted.
+func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, imageTag string, workflowUUIDs map[string]string, afRemediateNS map[string]string, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "   📦 Deploying Mock LLM service (image: %s)...\n", imageTag)
 
 	scenariosYAML := "scenarios:\n"
@@ -204,18 +212,39 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
 	// Tool schemas updated for #1326 MCP migration and #1332 intent-based redesign:
 	// kubernaut_remediate creates RR; kubernaut_investigate accepts {rr_id}.
 	// $from_tool resolves rr_id from kubernaut_remediate response.
-	afKeywordYAML := `keyword_scenarios:
-      - name: "kubernaut_remediate"
+	//
+	// Per-test namespace isolation: each entry in afRemediateNS produces a
+	// distinct kubernaut_remediate scenario with a unique keyword trigger,
+	// preventing parallel Ginkgo processes from cross-matching RRs.
+	var remediateScenarios string
+	if len(afRemediateNS) > 0 {
+		for key, ns := range afRemediateNS {
+			remediateScenarios += fmt.Sprintf(`      - name: "kubernaut_remediate_%s"
+        keywords: ["%s remediation"]
+        match_last_only: true
+        tool_call:
+          name: "kubernaut_remediate"
+          arguments:
+            namespace: "%s"
+            kind: "Deployment"
+            name: "memory-eater"
+            description: "FP E2E %s remediation request"
+`, key, key, ns, key)
+		}
+	} else {
+		remediateScenarios = `      - name: "kubernaut_remediate"
         keywords: ["create a remediation request", "create remediation"]
         match_last_only: true
         tool_call:
           name: "kubernaut_remediate"
           arguments:
-            namespace: "fp-a2a-interactive"
+            namespace: "default"
             kind: "Deployment"
             name: "memory-eater"
             description: "FP E2E test remediation request"
-      - name: "af_investigate"
+`
+	}
+	afKeywordYAML := "keyword_scenarios:\n" + remediateScenarios + `      - name: "af_investigate"
         keywords: ["start investigation", "investigate", "begin investigation"]
         match_last_only: true
         repeat_tool_call: true
