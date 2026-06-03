@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Go 1.25.10+
+- Go 1.25.11+
 - Docker (for container builds)
 - `controller-gen` (for CRD codegen)
 - `ginkgo` (for test runner)

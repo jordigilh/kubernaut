@@ -1,6 +1,6 @@
 module github.com/jordigilh/kubernaut/spikes/shadow-acp
 
-go 1.25.10
+go 1.25.11
 
 replace github.com/jordigilh/kubernaut => ../../
 
