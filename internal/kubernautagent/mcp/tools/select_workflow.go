@@ -327,12 +327,30 @@ func isWorkflowInDiscoveryResult(workflowID string, dr *mcpinternal.WorkflowDisc
 func buildFinalResult(rca *katypes.InvestigationResult, workflow *CatalogWorkflow, discovery *mcpinternal.WorkflowDiscoveryResult) *katypes.InvestigationResult {
 	result := *rca
 
-	// Prefer Phase 3's K8s-verified RemediationTarget over Phase 2's LLM-parsed
-	// values. The RCA result (Phase 2) may contain LLM defaults (e.g., test-pod/Pod),
-	// while the Phase 3 result has been through InjectRemediationTarget with the
-	// authoritative signal context and enrichment data.
-	if discovery != nil && discovery.FullResult != nil && discovery.FullResult.RemediationTarget.Kind != "" {
-		result.RemediationTarget = discovery.FullResult.RemediationTarget
+	// Phase 3 (FullResult) is authoritative for post-RCA fields populated during
+	// workflow discovery: RemediationTarget (K8s-verified vs LLM-parsed), confidence,
+	// labels, warnings, outcome, and actionability. Override Phase 2 values only
+	// when Phase 3 provides non-zero/non-nil replacements.
+	if discovery != nil && discovery.FullResult != nil {
+		fr := discovery.FullResult
+		if fr.RemediationTarget.Kind != "" {
+			result.RemediationTarget = fr.RemediationTarget
+		}
+		if fr.Confidence > 0 {
+			result.Confidence = fr.Confidence
+		}
+		if len(fr.DetectedLabels) > 0 {
+			result.DetectedLabels = fr.DetectedLabels
+		}
+		if len(fr.Warnings) > 0 {
+			result.Warnings = fr.Warnings
+		}
+		if fr.IsActionable != nil {
+			result.IsActionable = fr.IsActionable
+		}
+		if fr.InvestigationOutcome != "" {
+			result.InvestigationOutcome = fr.InvestigationOutcome
+		}
 	}
 
 	// KA-HIGH-1: Use Phase 3 confidence when a discovery recommendation exists,

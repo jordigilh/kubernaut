@@ -931,6 +931,125 @@ var _ = Describe("kubernaut_select_workflow — helper functions", func() {
 		})
 	})
 
+	Describe("UT-KA-SW-BUILDFINAL-003: buildFinalResult propagates Phase 3 fields from FullResult", func() {
+		It("should propagate DetectedLabels from FullResult", func() {
+			rca := &katypes.InvestigationResult{RCASummary: "OOM", Confidence: 0.7}
+			workflow := &mcptools.CatalogWorkflow{WorkflowID: "wf-labels"}
+			discovery := &mcpinternal.WorkflowDiscoveryResult{
+				Recommended: &mcpinternal.DiscoveredWorkflow{WorkflowID: "wf-labels", Confidence: 0.9},
+				FullResult: &katypes.InvestigationResult{
+					DetectedLabels: map[string]interface{}{"app": "nginx", "team": "platform"},
+				},
+			}
+
+			result := mcptools.BuildFinalResult(rca, workflow, discovery)
+			Expect(result.DetectedLabels).To(HaveKeyWithValue("app", "nginx"),
+				"Phase 3 DetectedLabels must propagate to final result for GitOps-aware scoring")
+			Expect(result.DetectedLabels).To(HaveKeyWithValue("team", "platform"))
+		})
+
+		It("should propagate Warnings from FullResult", func() {
+			rca := &katypes.InvestigationResult{RCASummary: "OOM", Confidence: 0.7}
+			workflow := &mcptools.CatalogWorkflow{WorkflowID: "wf-warn"}
+			discovery := &mcpinternal.WorkflowDiscoveryResult{
+				Recommended: &mcpinternal.DiscoveredWorkflow{WorkflowID: "wf-warn", Confidence: 0.9},
+				FullResult: &katypes.InvestigationResult{
+					Warnings: []string{"high blast radius", "production namespace"},
+				},
+			}
+
+			result := mcptools.BuildFinalResult(rca, workflow, discovery)
+			Expect(result.Warnings).To(ContainElement("high blast radius"),
+				"Phase 3 Warnings must propagate to final result for operator visibility")
+			Expect(result.Warnings).To(ContainElement("production namespace"))
+		})
+
+		It("should propagate IsActionable from FullResult", func() {
+			rca := &katypes.InvestigationResult{RCASummary: "OOM", Confidence: 0.7}
+			workflow := &mcptools.CatalogWorkflow{WorkflowID: "wf-actionable"}
+			actionable := true
+			discovery := &mcpinternal.WorkflowDiscoveryResult{
+				Recommended: &mcpinternal.DiscoveredWorkflow{WorkflowID: "wf-actionable", Confidence: 0.9},
+				FullResult: &katypes.InvestigationResult{
+					IsActionable: &actionable,
+				},
+			}
+
+			result := mcptools.BuildFinalResult(rca, workflow, discovery)
+			Expect(result.IsActionable).NotTo(BeNil(),
+				"Phase 3 IsActionable must propagate to final result for AA routing")
+			Expect(*result.IsActionable).To(BeTrue())
+		})
+
+		It("should propagate InvestigationOutcome from FullResult", func() {
+			rca := &katypes.InvestigationResult{RCASummary: "OOM", Confidence: 0.7}
+			workflow := &mcptools.CatalogWorkflow{WorkflowID: "wf-outcome"}
+			discovery := &mcpinternal.WorkflowDiscoveryResult{
+				Recommended: &mcpinternal.DiscoveredWorkflow{WorkflowID: "wf-outcome", Confidence: 0.9},
+				FullResult: &katypes.InvestigationResult{
+					InvestigationOutcome: "actionable",
+				},
+			}
+
+			result := mcptools.BuildFinalResult(rca, workflow, discovery)
+			Expect(result.InvestigationOutcome).To(Equal("actionable"),
+				"Phase 3 InvestigationOutcome must propagate for AA outcome routing")
+		})
+
+		It("should not clobber Phase 2 values when FullResult fields are empty/nil", func() {
+			actionable := true
+			rca := &katypes.InvestigationResult{
+				RCASummary:           "OOM",
+				Confidence:           0.7,
+				DetectedLabels:       map[string]interface{}{"phase2": "label"},
+				Warnings:             []string{"phase2 warning"},
+				IsActionable:         &actionable,
+				InvestigationOutcome: "inconclusive",
+			}
+			workflow := &mcptools.CatalogWorkflow{WorkflowID: "wf-preserve"}
+			discovery := &mcpinternal.WorkflowDiscoveryResult{
+				Recommended: &mcpinternal.DiscoveredWorkflow{WorkflowID: "wf-preserve", Confidence: 0.9},
+				FullResult:  &katypes.InvestigationResult{},
+			}
+
+			result := mcptools.BuildFinalResult(rca, workflow, discovery)
+			Expect(result.DetectedLabels).To(HaveKeyWithValue("phase2", "label"),
+				"Phase 2 DetectedLabels must be preserved when Phase 3 has none")
+			Expect(result.Warnings).To(ContainElement("phase2 warning"),
+				"Phase 2 Warnings must be preserved when Phase 3 has none")
+			Expect(result.IsActionable).NotTo(BeNil(),
+				"Phase 2 IsActionable must be preserved when Phase 3 has nil")
+			Expect(*result.IsActionable).To(BeTrue())
+			Expect(result.InvestigationOutcome).To(Equal("inconclusive"),
+				"Phase 2 InvestigationOutcome must be preserved when Phase 3 is empty")
+		})
+
+		It("should propagate all Phase 3 fields together", func() {
+			rca := &katypes.InvestigationResult{RCASummary: "combined test", Confidence: 0.5}
+			workflow := &mcptools.CatalogWorkflow{WorkflowID: "wf-all"}
+			actionable := true
+			discovery := &mcpinternal.WorkflowDiscoveryResult{
+				Recommended: &mcpinternal.DiscoveredWorkflow{WorkflowID: "wf-all", Confidence: 0.95},
+				FullResult: &katypes.InvestigationResult{
+					Confidence:           0.95,
+					DetectedLabels:       map[string]interface{}{"env": "prod"},
+					Warnings:             []string{"critical path"},
+					IsActionable:         &actionable,
+					InvestigationOutcome: "actionable",
+					RemediationTarget:    katypes.RemediationTarget{Kind: "Deployment", Name: "web", Namespace: "prod"},
+				},
+			}
+
+			result := mcptools.BuildFinalResult(rca, workflow, discovery)
+			Expect(result.Confidence).To(Equal(0.95))
+			Expect(result.DetectedLabels).To(HaveKeyWithValue("env", "prod"))
+			Expect(result.Warnings).To(ContainElement("critical path"))
+			Expect(*result.IsActionable).To(BeTrue())
+			Expect(result.InvestigationOutcome).To(Equal("actionable"))
+			Expect(result.RemediationTarget.Kind).To(Equal("Deployment"))
+		})
+	})
+
 	Describe("UT-KA-SW-ISWF-001: isWorkflowInDiscoveryResult edge cases", func() {
 		It("should match recommended workflow", func() {
 			dr := &mcpinternal.WorkflowDiscoveryResult{
