@@ -657,7 +657,22 @@ func (t *InvestigateTool) handleComplete(input InvestigateInput, user mcpinterna
 
 	t.emitInteractiveCompleted(sess.SessionID, input.RRID, user.Username, "complete")
 
-	CompleteHTTPSession(t.httpCompleter, input.RRID, nil, t.logger, "complete")
+	var finalResult *katypes.InvestigationResult
+	if sess.RCAResult != nil {
+		r := *sess.RCAResult
+		r.Reason = "investigation completed by user"
+		finalResult = &r
+	} else {
+		finalResult = &katypes.InvestigationResult{
+			RCASummary: "Investigation completed without workflow selection",
+			Reason:     "investigation completed by user",
+		}
+	}
+	notActionable := false
+	finalResult.IsActionable = &notActionable
+	finalResult.Warnings = append(finalResult.Warnings, "Alert not actionable")
+
+	CompleteHTTPSession(t.httpCompleter, input.RRID, finalResult, t.logger, "complete")
 
 	if t.metrics != nil {
 		t.metrics.RecordInteractiveSessionEnded()

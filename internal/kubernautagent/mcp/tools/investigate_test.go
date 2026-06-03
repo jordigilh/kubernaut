@@ -250,6 +250,79 @@ var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func(
 		})
 	})
 
+	Describe("UT-KA-COMPLETE-HTTP-001: action=complete delivers proper result to HTTP session", func() {
+		It("should build InvestigationResult from RCA and write to HTTP completer", func() {
+			completer := &mockHTTPCompleter{foundID: "http-complete-001", found: true}
+			sessionMgr := &mockSessionManager{
+				isActive: true,
+				getDriverResult: &mcpinternal.InteractiveSession{
+					SessionID:     "sess-complete-http",
+					CorrelationID: "rr-complete-http",
+					ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+					RCAResult: &katypes.InvestigationResult{
+						RCASummary: "Pod OOM due to memory leak",
+						Confidence: 0.85,
+						Severity:   "critical",
+					},
+				},
+			}
+			runner := &mockInvestigatorRunner{}
+			recon := &mockContextReconstructor{}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{},
+				mcptools.WithHTTPCompleter(completer),
+			)
+			out, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-complete-http",
+				Action: mcptools.ActionComplete,
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(out.Status).To(Equal("completed"))
+
+			Expect(completer.completedResult).NotTo(BeNil(),
+				"handleComplete must deliver a non-nil result to the HTTP session so AA can poll it")
+			Expect(completer.completedResult.RCASummary).To(Equal("Pod OOM due to memory leak"),
+				"RCA from the driver session must propagate to the HTTP session result")
+			Expect(completer.completedResult.IsActionable).NotTo(BeNil(),
+				"IsActionable must be set for AA routing")
+			Expect(*completer.completedResult.IsActionable).To(BeFalse(),
+				"completing without workflow selection means not actionable")
+			Expect(completer.completedResult.Warnings).To(ContainElement("Alert not actionable"),
+				"Warnings must signal AA that no remediation is needed")
+		})
+
+		It("should build minimal result when no RCA exists", func() {
+			completer := &mockHTTPCompleter{foundID: "http-complete-002", found: true}
+			sessionMgr := &mockSessionManager{
+				isActive: true,
+				getDriverResult: &mcpinternal.InteractiveSession{
+					SessionID:     "sess-complete-norca",
+					CorrelationID: "rr-complete-norca",
+					ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+				},
+			}
+			runner := &mockInvestigatorRunner{}
+			recon := &mockContextReconstructor{}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{},
+				mcptools.WithHTTPCompleter(completer),
+			)
+			out, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-complete-norca",
+				Action: mcptools.ActionComplete,
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(out.Status).To(Equal("completed"))
+
+			Expect(completer.completedResult).NotTo(BeNil(),
+				"even without RCA, handleComplete must provide a non-nil result to avoid AA 409")
+			Expect(completer.completedResult.RCASummary).NotTo(BeEmpty(),
+				"minimal result must have an RCA summary for AA routing")
+			Expect(completer.completedResult.IsActionable).NotTo(BeNil())
+			Expect(*completer.completedResult.IsActionable).To(BeFalse())
+		})
+	})
+
 	Describe("UT-KA-703-K07: action=cancel releases session with reason 'explicit'", func() {
 		It("should release with reason 'explicit' on cancel", func() {
 			sessionMgr := &mockSessionManager{
