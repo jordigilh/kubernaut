@@ -543,6 +543,9 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
     port: 18120
     healthAddr: ":18121"
     metricsAddr: ":18122"
+    rateLimit:
+      requestsPerSecond: 50
+      burst: 100
   audit:
     flushIntervalSeconds: 0.1
     bufferSize: 10000
