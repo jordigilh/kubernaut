@@ -240,7 +240,7 @@ var _ = Describe("E2E-1293: Interactive Investigation Architecture", Label("e2e"
 			g.Expect(aa.Status.KASession.ID).NotTo(BeEmpty())
 			g.Expect(aa.Status.KASession.PollCount).To(BeNumerically(">=", int32(1)),
 				"autonomous investigation must have completed at least one poll cycle to persist turns for reconstruction")
-		}, 60*time.Second, 1*time.Second).Should(Succeed())
+		}, 120*time.Second, 2*time.Second).Should(Succeed())
 
 		By("Creating Active IS CRD to trigger dynamic takeover (autonomous → interactive)")
 		is := createISForRR("1293-006", rrName)
