@@ -857,9 +857,13 @@ func ExtractRootCauseAnalysis(rcaData interface{}) *aianalysisv1.RootCauseAnalys
 	if rcaMap == nil {
 		return nil
 	}
+	severity := GetStringFromMap(rcaMap, "severity")
+	if severity == "" {
+		severity = "unknown"
+	}
 	rca := &aianalysisv1.RootCauseAnalysis{
 		Summary:             GetStringFromMap(rcaMap, "summary"),
-		Severity:            GetStringFromMap(rcaMap, "severity"),
+		Severity:            severity,
 		SignalType:          GetStringFromMap(rcaMap, "signal_name"),
 		ContributingFactors: GetStringSliceFromMap(rcaMap, "contributing_factors"),
 	}
