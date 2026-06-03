@@ -108,7 +108,7 @@ var _ = Describe("MCP Full-Path Validation (G1)", Label("e2e", "phase2", "g1"), 
 			"name": "kubernaut_approve",
 			"arguments": map[string]interface{}{
 				"rar_name":  rarName,
-				"decision":  "approved",
+				"decision":  "Approved",
 				"reason":    "MCP G1 full-path E2E",
 			},
 		})

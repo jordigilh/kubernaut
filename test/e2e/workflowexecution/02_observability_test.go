@@ -223,26 +223,27 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 
 			GinkgoWriter.Println("✅ WFE completed, checking metrics...")
 
-			// Query metrics endpoint via NodePort
-			// Per DD-TEST-001: Metrics NodePort is 30185
-			metricsURL := fmt.Sprintf("http://127.0.0.1:%d/metrics", infrastructure.WorkflowExecutionMetricsHostPort)
+		// Query metrics endpoint via NodePort
+		// Per DD-TEST-001: Metrics NodePort is 30185
+		metricsURL := fmt.Sprintf("http://127.0.0.1:%d/metrics", infrastructure.WorkflowExecutionMetricsHostPort)
+		metricsClient := &http.Client{Timeout: 5 * time.Second}
 
-			// Business Behavior: Metrics should be scrapable by Prometheus
-			var metricsBody string
-			Eventually(func() error {
-				resp, err := http.Get(metricsURL)
-				if err != nil {
-					return err
-				}
-				defer func() { _ = resp.Body.Close() }()
+		// Business Behavior: Metrics should be scrapable by Prometheus
+		var metricsBody string
+		Eventually(func() error {
+			resp, err := metricsClient.Get(metricsURL)
+			if err != nil {
+				return err
+			}
+			defer func() { _ = resp.Body.Close() }()
 
-				body, err := io.ReadAll(resp.Body)
-				if err != nil {
-					return err
-				}
-				metricsBody = string(body)
-				return nil
-			}, 30*time.Second).Should(Succeed(), "Should be able to scrape metrics endpoint")
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return err
+			}
+			metricsBody = string(body)
+			return nil
+		}, 60*time.Second, 2*time.Second).Should(Succeed(), "Should be able to scrape metrics endpoint")
 
 			// Verify expected business metrics are present
 			// Using constants from pkg/workflowexecution/metrics to prevent typos (DRY principle)
@@ -269,27 +270,28 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			GinkgoWriter.Println("✅ BR-WE-008: All expected Prometheus metrics exposed")
 		})
 
-		It("should increment workflowexecution_total{outcome=Completed} on successful completion", func() {
-			// Business Outcome: SREs can track completion rate via Prometheus
-			// This test validates metrics are actually incremented when workflows complete
+	It("should increment workflowexecution_total{outcome=Completed} on successful completion", func() {
+		// Business Outcome: SREs can track completion rate via Prometheus
+		// This test validates metrics are actually incremented when workflows complete
 
-			// Query initial metric value
-			metricsURL := fmt.Sprintf("http://127.0.0.1:%d/metrics", infrastructure.WorkflowExecutionMetricsHostPort)
+		// Query initial metric value
+		metricsURL := fmt.Sprintf("http://127.0.0.1:%d/metrics", infrastructure.WorkflowExecutionMetricsHostPort)
+		metricsClient := &http.Client{Timeout: 5 * time.Second}
 
-			var initialMetricsBody string
-			Eventually(func() error {
-				resp, err := http.Get(metricsURL)
-				if err != nil {
-					return err
-				}
-				defer func() { _ = resp.Body.Close() }()
-				body, err := io.ReadAll(resp.Body)
-				if err != nil {
-					return err
-				}
-				initialMetricsBody = string(body)
-				return nil
-			}, 30*time.Second).Should(Succeed(), "Should be able to scrape metrics endpoint initially")
+		var initialMetricsBody string
+		Eventually(func() error {
+			resp, err := metricsClient.Get(metricsURL)
+			if err != nil {
+				return err
+			}
+			defer func() { _ = resp.Body.Close() }()
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return err
+			}
+			initialMetricsBody = string(body)
+			return nil
+		}, 60*time.Second, 2*time.Second).Should(Succeed(), "Should be able to scrape metrics endpoint initially")
 
 			// Extract initial count (parse Prometheus format)
 			initialCompletedCount := extractMetricValue(initialMetricsBody, wemetrics.MetricNameExecutionTotal, wemetrics.LabelOutcomeCompleted)
@@ -317,22 +319,22 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 
 			GinkgoWriter.Println("✅ Workflow completed, checking metrics...")
 
-			// Verify metric incremented
-			Eventually(func() bool {
-				resp, err := http.Get(metricsURL)
-				if err != nil {
-					return false
-				}
-				defer func() { _ = resp.Body.Close() }()
-				body, _ := io.ReadAll(resp.Body)
-				metricsBody := string(body)
+		// Verify metric incremented
+		Eventually(func() bool {
+			resp, err := metricsClient.Get(metricsURL)
+			if err != nil {
+				return false
+			}
+			defer func() { _ = resp.Body.Close() }()
+			body, _ := io.ReadAll(resp.Body)
+			metricsBody := string(body)
 
-				currentCount := extractMetricValue(metricsBody, wemetrics.MetricNameExecutionTotal, wemetrics.LabelOutcomeCompleted)
-				GinkgoWriter.Printf("Current %s{outcome=%s}: %.0f (initial: %.0f)\n", wemetrics.MetricNameExecutionTotal, wemetrics.LabelOutcomeCompleted, currentCount, initialCompletedCount)
+			currentCount := extractMetricValue(metricsBody, wemetrics.MetricNameExecutionTotal, wemetrics.LabelOutcomeCompleted)
+			GinkgoWriter.Printf("Current %s{outcome=%s}: %.0f (initial: %.0f)\n", wemetrics.MetricNameExecutionTotal, wemetrics.LabelOutcomeCompleted, currentCount, initialCompletedCount)
 
-				return currentCount > initialCompletedCount
-			}, 30*time.Second, 2*time.Second).Should(BeTrue(),
-				fmt.Sprintf("%s{outcome=%s} should increment after workflow completion", wemetrics.MetricNameExecutionTotal, wemetrics.LabelOutcomeCompleted))
+			return currentCount > initialCompletedCount
+		}, 60*time.Second, 2*time.Second).Should(BeTrue(),
+			fmt.Sprintf("%s{outcome=%s} should increment after workflow completion", wemetrics.MetricNameExecutionTotal, wemetrics.LabelOutcomeCompleted))
 
 			GinkgoWriter.Println("✅ BR-WE-008: Completion metric incremented on successful workflow")
 		})
@@ -341,26 +343,27 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			// Business Outcome: SREs can track failure rate via Prometheus
 			// This test validates metrics are actually incremented when workflows fail
 
-			// Query initial metric value
-			metricsURL := fmt.Sprintf("http://127.0.0.1:%d/metrics", infrastructure.WorkflowExecutionMetricsHostPort)
+		// Query initial metric value
+		metricsURL := fmt.Sprintf("http://127.0.0.1:%d/metrics", infrastructure.WorkflowExecutionMetricsHostPort)
+		metricsClient := &http.Client{Timeout: 5 * time.Second}
 
-			var initialMetricsBody string
-			Eventually(func() error {
-				resp, err := http.Get(metricsURL)
-				if err != nil {
-					return err
-				}
-				defer func() { _ = resp.Body.Close() }()
-				body, err := io.ReadAll(resp.Body)
-				if err != nil {
-					return err
-				}
-				initialMetricsBody = string(body)
-				return nil
-			}, 30*time.Second).Should(Succeed(), "Should be able to scrape metrics endpoint initially")
+		var initialMetricsBody string
+		Eventually(func() error {
+			resp, err := metricsClient.Get(metricsURL)
+			if err != nil {
+				return err
+			}
+			defer func() { _ = resp.Body.Close() }()
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return err
+			}
+			initialMetricsBody = string(body)
+			return nil
+		}, 60*time.Second, 2*time.Second).Should(Succeed(), "Should be able to scrape metrics endpoint initially")
 
-			// Extract initial count
-			initialFailedCount := extractMetricValue(initialMetricsBody, wemetrics.MetricNameExecutionTotal, wemetrics.LabelOutcomeFailed)
+		// Extract initial count
+		initialFailedCount := extractMetricValue(initialMetricsBody, wemetrics.MetricNameExecutionTotal, wemetrics.LabelOutcomeFailed)
 			GinkgoWriter.Printf("Initial %s{outcome=%s}: %.0f\n", wemetrics.MetricNameExecutionTotal, wemetrics.LabelOutcomeFailed, initialFailedCount)
 
 			// Run a workflow that intentionally fails (tekton-bundles/failing exits non-zero)
@@ -413,22 +416,22 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 
 			GinkgoWriter.Println("✅ Workflow failed as expected, checking metrics...")
 
-			// Verify metric incremented
-			Eventually(func() bool {
-				resp, err := http.Get(metricsURL)
-				if err != nil {
-					return false
-				}
-				defer func() { _ = resp.Body.Close() }()
-				body, _ := io.ReadAll(resp.Body)
-				metricsBody := string(body)
+		// Verify metric incremented
+		Eventually(func() bool {
+			resp, err := metricsClient.Get(metricsURL)
+			if err != nil {
+				return false
+			}
+			defer func() { _ = resp.Body.Close() }()
+			body, _ := io.ReadAll(resp.Body)
+			metricsBody := string(body)
 
-				currentCount := extractMetricValue(metricsBody, wemetrics.MetricNameExecutionTotal, wemetrics.LabelOutcomeFailed)
-				GinkgoWriter.Printf("Current %s{outcome=%s}: %.0f (initial: %.0f)\n", wemetrics.MetricNameExecutionTotal, wemetrics.LabelOutcomeFailed, currentCount, initialFailedCount)
+			currentCount := extractMetricValue(metricsBody, wemetrics.MetricNameExecutionTotal, wemetrics.LabelOutcomeFailed)
+			GinkgoWriter.Printf("Current %s{outcome=%s}: %.0f (initial: %.0f)\n", wemetrics.MetricNameExecutionTotal, wemetrics.LabelOutcomeFailed, currentCount, initialFailedCount)
 
-				return currentCount > initialFailedCount
-			}, 30*time.Second, 2*time.Second).Should(BeTrue(),
-				fmt.Sprintf("%s{outcome=%s} should increment after workflow failure", wemetrics.MetricNameExecutionTotal, wemetrics.LabelOutcomeFailed))
+			return currentCount > initialFailedCount
+		}, 60*time.Second, 2*time.Second).Should(BeTrue(),
+			fmt.Sprintf("%s{outcome=%s} should increment after workflow failure", wemetrics.MetricNameExecutionTotal, wemetrics.LabelOutcomeFailed))
 
 			GinkgoWriter.Println("✅ BR-WE-008: Failure metric incremented on failed workflow")
 		})

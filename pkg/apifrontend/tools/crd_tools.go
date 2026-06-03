@@ -14,6 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/dynamic"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
 
@@ -484,8 +485,9 @@ func HandleApprove(ctx context.Context, client dynamic.Interface, args ApproveAr
 	if args.Decision == "" {
 		return ApproveResult{}, fmt.Errorf("%w: decision must not be empty", ErrInvalidInput)
 	}
-	// CRD enum requires capitalized values: Approved, Rejected, Expired
-	normalizedDecision := strings.ToUpper(args.Decision[:1]) + strings.ToLower(args.Decision[1:])
+	if args.Decision != "Approved" && args.Decision != "Rejected" {
+		return ApproveResult{}, fmt.Errorf("%w: decision %q is not valid; must be exactly one of: Approved, Rejected", ErrInvalidInput, args.Decision)
+	}
 	_, err := client.Resource(rarGVR).Namespace(args.Namespace).Get(ctx, args.RARName, metav1.GetOptions{})
 	if err != nil {
 		return ApproveResult{}, ToUserFriendlyError(err)
@@ -493,7 +495,7 @@ func HandleApprove(ctx context.Context, client dynamic.Interface, args ApproveAr
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	statusPatch := map[string]interface{}{
-		"decision":  normalizedDecision,
+		"decision":  args.Decision,
 		"decidedBy": username,
 		"decidedAt": now,
 	}
@@ -532,11 +534,41 @@ func HandleApprove(ctx context.Context, client dynamic.Interface, args ApproveAr
 func NewApproveTool(client dynamic.Interface, controllerNS string) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_approve",
-		Description: "Approve or reject a pending remediation approval request",
+		Description: "Approve or reject a pending remediation approval request. The decision field accepts exactly 'Approved' or 'Rejected'.",
+		InputSchema: approveInputSchema(),
 	}, func(ctx tool.Context, args ApproveArgs) (ApproveResult, error) {
 		args.Namespace = controllerNS
 		return HandleApprove(ctx, client, args, usernameFromContext(ctx))
 	})
+}
+
+// approveInputSchema returns a JSON schema with an enum constraint on the
+// decision field, so the LLM sees the valid values directly in the tool definition.
+func approveInputSchema() *jsonschema.Schema {
+	return &jsonschema.Schema{
+		Type: "object",
+		Properties: map[string]*jsonschema.Schema{
+			"rar_name": {
+				Type:        "string",
+				Description: "Name of the RemediationApprovalRequest resource to approve or reject",
+			},
+			"decision": {
+				Type:        "string",
+				Description: "The approval decision",
+				Enum:        []any{"Approved", "Rejected"},
+			},
+			"reason": {
+				Type:        "string",
+				Description: "Optional reason for the decision",
+			},
+			"workflow_override": {
+				Type:        "string",
+				Description: "Optional workflow name to override the recommended workflow",
+			},
+		},
+		Required:      []string{"rar_name", "decision"},
+		PropertyOrder: []string{"rar_name", "decision", "reason", "workflow_override"},
+	}
 }
 
 // usernameFromContext extracts the authenticated username from tool context.
