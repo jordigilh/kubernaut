@@ -122,6 +122,19 @@ var _ = Describe("Investigation Streaming (G3)", Ordered, Label("e2e", "phase3",
 		Expect(tokenErr).NotTo(HaveOccurred())
 		mcpSess, mcpSessErr := initMCPSession(sreToken)
 		Expect(mcpSessErr).NotTo(HaveOccurred())
+
+		// Explicitly cancel the MCP session after this test to release the
+		// server-side SSE tracker slot. Without this, the handler may hold the
+		// connection until the investigation times out (~120s), starving
+		// STREAM-04's precondition that all SSE slots are drained.
+		DeferCleanup(func() {
+			cancelBody := buildJSONRPC("stream-03-cancel", "tools/call", map[string]interface{}{
+				"name":      "kubernaut_investigate",
+				"arguments": map[string]interface{}{"rr_id": rrName, "action": "cancel"},
+			})
+			_, _, _ = mcpPOST(sreToken, mcpSess, cancelBody)
+		})
+
 		takeoverBody := buildJSONRPC("stream-03-takeover", "tools/call", map[string]interface{}{
 			"name":      "kubernaut_investigate",
 			"arguments": map[string]interface{}{"rr_id": rrName},
@@ -165,12 +178,13 @@ var _ = Describe("Investigation Streaming (G3)", Ordered, Label("e2e", "phase3",
 	})
 
 	It("TC-E2E-STREAM-04 / TC-E2E-SSE-CAP-01: Connection cap enforcement", func() {
-		// Wait for all SSE slots to drain. With parallel Ginkgo processes,
-		// STREAM-05 (in a separate Describe block) may hold a bridge connection
-		// for up to 90s. Use 180s to accommodate the worst case.
+		// Wait for all SSE slots to drain. Prior tests (STREAM-01/02/03) open
+		// SSE or MCP connections whose server-side handlers may run until the
+		// LLM investigation completes or the connection timeout fires (~120s).
+		// Use 300s to accommodate CI variability and slow handler teardown.
 		Eventually(func() float64 {
 			return counterValue(scrapeMetrics(), "af_sse_active_connections")
-		}, 180*time.Second, 2*time.Second).Should(BeZero(),
+		}, 300*time.Second, 3*time.Second).Should(BeZero(),
 			"all SSE slots must be released before cap enforcement test")
 
 		maxStr := getEnvOrDefault("AF_E2E_MAX_SSE", "5")

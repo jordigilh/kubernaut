@@ -1022,7 +1022,6 @@ spec:
                     description: Brief summary of root cause
                     type: string
                 required:
-                - severity
                 - signalType
                 - summary
                 type: object

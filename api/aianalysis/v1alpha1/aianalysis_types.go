@@ -557,7 +557,8 @@ type RootCauseAnalysis struct {
 	// Severity determined by RCA (normalized per DD-SEVERITY-001 v1.1)
 	// DD-SEVERITY-001 v1.1: Aligned with KA/workflow catalog (critical, high, medium, low, unknown)
 	// +kubebuilder:validation:Enum=critical;high;medium;low;unknown
-	Severity string `json:"severity"`
+	// +optional
+	Severity string `json:"severity,omitempty"`
 	// Signal type determined by RCA (may differ from input)
 	SignalType string `json:"signalType"`
 	// Contributing factors

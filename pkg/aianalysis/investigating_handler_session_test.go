@@ -321,6 +321,10 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseAnalyzing), "Should advance to Analyzing phase")
 				Expect(analysis.Status.SelectedWorkflow).NotTo(BeNil(), "SelectedWorkflow should be populated from result")
 				Expect(analysis.Status.SelectedWorkflow.WorkflowID).To(Equal("wf-restart-pod"))
+				Expect(analysis.Status.KASession.PollCount).To(Equal(int32(1)),
+					"PollCount must be incremented even when poll returns completed")
+				Expect(analysis.Status.KASession.LastPolled).NotTo(BeNil(),
+					"LastPolled must be set on completed poll")
 
 				// Audit side effect: exactly 1 aiagent.result event
 				Expect(auditSpy.resultEvents).To(HaveLen(1), "Should record exactly 1 result audit event")
@@ -350,6 +354,10 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed), "Should transition to Failed")
 				Expect(analysis.Status.Message).To(ContainSubstring("LLM provider error"), "Error details should be in Message")
+				Expect(analysis.Status.KASession.PollCount).To(Equal(int32(1)),
+					"PollCount must be incremented even when poll returns failed")
+				Expect(analysis.Status.KASession.LastPolled).NotTo(BeNil(),
+					"LastPolled must be set on failed poll")
 			})
 		})
 

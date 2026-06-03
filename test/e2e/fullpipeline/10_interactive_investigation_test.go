@@ -231,13 +231,15 @@ var _ = Describe("E2E-1293: Interactive Investigation Architecture", Label("e2e"
 		rrName, err := infrastructure.CreateDirectRR(ctx, namespace, "e2e-1293-006")
 		Expect(err).NotTo(HaveOccurred())
 
-		By("Waiting for AA to reach Investigating with a KA session (autonomous)")
+		By("Waiting for AA to reach Investigating with a KA session that has polled at least once")
 		aaName := waitForAAInvestigating(rrName)
 		aa := &aianalysisv1.AIAnalysis{}
 		Eventually(func(g Gomega) {
 			g.Expect(apiReader.Get(ctx, client.ObjectKey{Name: aaName, Namespace: namespace}, aa)).To(Succeed())
 			g.Expect(aa.Status.KASession).NotTo(BeNil())
 			g.Expect(aa.Status.KASession.ID).NotTo(BeEmpty())
+			g.Expect(aa.Status.KASession.PollCount).To(BeNumerically(">=", int32(1)),
+				"autonomous investigation must have completed at least one poll cycle to persist turns for reconstruction")
 		}, 60*time.Second, 1*time.Second).Should(Succeed())
 
 		By("Creating Active IS CRD to trigger dynamic takeover (autonomous → interactive)")
