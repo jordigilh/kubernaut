@@ -166,6 +166,19 @@ var _ = SynchronizedBeforeSuite(
 		labelOut, labelErr := labelCmd.CombinedOutput()
 		Expect(labelErr).ToNot(HaveOccurred(), "Failed to label namespace: %s", string(labelOut))
 
+		By("Creating fp-a2a-interactive namespace (mock-LLM hardcodes this for kubernaut_remediate)")
+		createNSCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", tempKubeconfigPath,
+			"create", "namespace", "fp-a2a-interactive")
+		createNSOut, createNSErr := createNSCmd.CombinedOutput()
+		if createNSErr != nil && !strings.Contains(string(createNSOut), "already exists") {
+			Expect(createNSErr).ToNot(HaveOccurred(), "Failed to create fp-a2a-interactive namespace: %s", string(createNSOut))
+		}
+		labelNSCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", tempKubeconfigPath,
+			"label", "namespace", "fp-a2a-interactive",
+			"kubernaut.ai/managed=true", "kubernaut.ai/environment=staging", "--overwrite")
+		labelNSOut, labelNSErr := labelNSCmd.CombinedOutput()
+		Expect(labelNSErr).ToNot(HaveOccurred(), "Failed to label fp-a2a-interactive namespace: %s", string(labelNSOut))
+
 		By("Deploying memory-eater in kubernaut-system for AF E2E tests")
 		err = infrastructure.DeployMemoryEater(ctx, namespace, tempKubeconfigPath, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred(), "Failed to deploy memory-eater for AF tests")

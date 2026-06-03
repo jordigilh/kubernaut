@@ -9,6 +9,7 @@ import (
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
@@ -45,7 +46,7 @@ var _ = Describe("AF A2A Interactive 5-Phase Full Pipeline [E2E-FP-1189-003]", L
 		}
 		_ = resp.Body.Close()
 
-		By("Creating managed target namespace for the interactive RR")
+		By("Ensuring managed target namespace exists for the interactive RR")
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: targetNS,
@@ -55,7 +56,9 @@ var _ = Describe("AF A2A Interactive 5-Phase Full Pipeline [E2E-FP-1189-003]", L
 				},
 			},
 		}
-		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		if err := k8sClient.Create(ctx, ns); err != nil && !apierrors.IsAlreadyExists(err) {
+			Expect(err).NotTo(HaveOccurred(), "Failed to create namespace %s", targetNS)
+		}
 		DeferCleanup(func() {
 			_ = k8sClient.Delete(context.Background(), ns, &client.DeleteOptions{})
 		})

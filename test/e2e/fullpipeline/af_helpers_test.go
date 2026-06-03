@@ -37,10 +37,13 @@ func fpBuildJSONRPC(id, method string, params map[string]interface{}) string {
 }
 
 // fpA2ATasksSend builds a message/send JSON-RPC payload with a user text message.
+// Each call gets a unique contextId to prevent the SessionInterceptor from
+// routing independent tests to a shared session.
 func fpA2ATasksSend(id, text string) string {
 	return fpBuildJSONRPC(id, "message/send", map[string]interface{}{
 		"message": map[string]interface{}{
 			"messageId": "msg-" + id,
+			"contextId": "ctx-" + id,
 			"role":      "user",
 			"parts": []map[string]interface{}{
 				{"kind": "text", "text": text},
@@ -50,11 +53,14 @@ func fpA2ATasksSend(id, text string) string {
 }
 
 // fpA2ATasksSendWithTask continues an existing A2A task by including taskId.
+// Includes a contextId derived from the taskId to prevent the SessionInterceptor
+// from overriding to a stale session.
 func fpA2ATasksSendWithTask(id, taskID, text string) string {
 	return fpBuildJSONRPC(id, "message/send", map[string]interface{}{
 		"id": taskID,
 		"message": map[string]interface{}{
 			"messageId": "msg-" + id,
+			"contextId": "ctx-" + taskID,
 			"role":      "user",
 			"parts": []map[string]interface{}{
 				{"kind": "text", "text": text},
