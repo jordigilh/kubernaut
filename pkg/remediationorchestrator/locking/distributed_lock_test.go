@@ -246,6 +246,56 @@ var _ = Describe("RO DistributedLockManager (BR-ORCH-025)", func() {
 		})
 	})
 
+	Describe("RO-C3: Holder-aware lock release (#1356)", func() {
+		It("UT-RO-1356-001: should not delete lease if held by another pod", func() {
+			target := "Deployment/test-takeover"
+			lockMgr1 := locking.NewDistributedLockManager(k8sClient, namespace, "ro-pod-1")
+			lockMgr2 := locking.NewDistributedLockManager(k8sClient, namespace, "ro-pod-2")
+
+			// Pod 1 acquires
+			acquired, err := lockMgr1.AcquireLock(ctx, target)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(acquired).To(BeTrue())
+
+			// Simulate expiry + takeover by pod 2
+			leaseName := locking.GenerateLeaseName(target)
+			lease := &coordinationv1.Lease{}
+			Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: namespace, Name: leaseName}, lease)).To(Succeed())
+			expiredTime := metav1.NewMicroTime(time.Now().Add(-35 * time.Second))
+			lease.Spec.RenewTime = &expiredTime
+			Expect(k8sClient.Update(ctx, lease)).To(Succeed())
+
+			acquired2, err := lockMgr2.AcquireLock(ctx, target)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(acquired2).To(BeTrue())
+
+			// Pod 1 tries to release -- should be no-op
+			err = lockMgr1.ReleaseLock(ctx, target)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Lease still exists and is held by pod 2
+			Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: namespace, Name: leaseName}, lease)).To(Succeed())
+			Expect(*lease.Spec.HolderIdentity).To(Equal("ro-pod-2"))
+		})
+
+		It("UT-RO-1356-002: should delete lease when held by current pod", func() {
+			target := "Deployment/test-self-release"
+			lockMgr1 := locking.NewDistributedLockManager(k8sClient, namespace, "ro-pod-1")
+
+			acquired, err := lockMgr1.AcquireLock(ctx, target)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(acquired).To(BeTrue())
+
+			err = lockMgr1.ReleaseLock(ctx, target)
+			Expect(err).NotTo(HaveOccurred())
+
+			leaseName := locking.GenerateLeaseName(target)
+			lease := &coordinationv1.Lease{}
+			err = k8sClient.Get(ctx, client.ObjectKey{Namespace: namespace, Name: leaseName}, lease)
+			Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		})
+	})
+
 	Describe("UT-RO-189-007: Long target resource = stable DNS-compliant name", func() {
 		It("should produce a DNS-compliant name for long target strings", func() {
 			longTarget := "my-namespace/Deployment/my-very-long-application-name-that-exceeds-normal-lengths"
