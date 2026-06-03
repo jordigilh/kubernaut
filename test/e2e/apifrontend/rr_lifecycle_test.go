@@ -163,7 +163,7 @@ var _ = Describe("RAR Flow (G5)", Label("e2e", "phase2", "g5"), func() {
 			"name": "kubernaut_approve",
 			"arguments": map[string]interface{}{
 				"rar_name":  rarName,
-				"decision":  "approved",
+				"decision":  "Approved",
 				"reason":    "E2E G5 approval",
 			},
 		})
@@ -189,7 +189,7 @@ var _ = Describe("RAR Flow (G5)", Label("e2e", "phase2", "g5"), func() {
 			"name": "kubernaut_approve",
 			"arguments": map[string]interface{}{
 				"rar_name":  "e2e-rar-does-not-exist-xyz",
-				"decision":  "approved",
+				"decision":  "Approved",
 			},
 		})
 		raw, code, err := mcpPOST(tok, sid, body)
@@ -229,7 +229,7 @@ var _ = Describe("RAR Flow (G5)", Label("e2e", "phase2", "g5"), func() {
 			"name": "kubernaut_approve",
 			"arguments": map[string]interface{}{
 				"rar_name":  rarName,
-				"decision":  "approved",
+				"decision":  "Approved",
 			},
 		})
 		araw, acode, err := mcpPOST(sreTok, sreSession, apBody)
