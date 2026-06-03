@@ -275,22 +275,15 @@ func (t *SelectWorkflowTool) Handle(ctx context.Context, input SelectWorkflowInp
 		}
 		sessionID := driver.SessionID
 		rrID := input.RRID
-		workflowID := input.WorkflowID
+		logger := t.logger
+		completer := t.httpCompleter
+		sessions := t.sessions
 		go func() {
-			httpSessionID, found := t.httpCompleter.FindUserDrivingByRemediationID(rrID)
-			if found {
-				if completeErr := t.httpCompleter.CompleteUserDriving(httpSessionID, finalResult); completeErr != nil {
-					t.logger.Error(completeErr, "failed to complete HTTP session",
-						"rr_id", rrID, "http_session_id", httpSessionID, "workflow_id", workflowID)
-				}
-			} else if completeErr := t.httpCompleter.ForceCompleteByRemediationID(rrID, finalResult); completeErr != nil {
-				t.logger.V(1).Info("no HTTP session found to force-complete on select_workflow",
-					"rr_id", rrID, "error", completeErr)
-			}
+			completeHTTPSession(completer, rrID, finalResult, logger, "select_workflow")
 
-			if releaseErr := t.sessions.Release(sessionID, "workflow_selected"); releaseErr != nil {
+			if releaseErr := sessions.Release(sessionID, "workflow_selected"); releaseErr != nil {
 				if !errors.Is(releaseErr, mcpinternal.ErrSessionNotFound) {
-					t.logger.Error(releaseErr, "failed to release MCP lease", "session_id", sessionID)
+					logger.Error(releaseErr, "failed to release MCP lease", "session_id", sessionID)
 				}
 			}
 		}()
@@ -333,6 +326,12 @@ func buildFinalResult(rca *katypes.InvestigationResult, workflow *CatalogWorkflo
 		result.RemediationTarget = discovery.FullResult.RemediationTarget
 	}
 
+	// KA-HIGH-1: Use Phase 3 confidence when a discovery recommendation exists,
+	// since Phase 3 has additional workflow-specific scoring context.
+	if discovery != nil && discovery.Recommended != nil && discovery.Recommended.Confidence > 0 {
+		result.Confidence = discovery.Recommended.Confidence
+	}
+
 	if workflow != nil {
 		result.WorkflowID = workflow.WorkflowID
 		result.ExecutionEngine = workflow.ExecutionEngine
@@ -346,6 +345,22 @@ func buildFinalResult(rca *katypes.InvestigationResult, workflow *CatalogWorkflo
 		if params, found := lookupDiscoveredParameters(workflow.WorkflowID, discovery); found {
 			result.Parameters = cloneParameterMap(params)
 		}
+	}
+
+	// KA-MED-2: Propagate alternative workflows from discovery so AA and the
+	// operator have visibility into what other options were available.
+	if discovery != nil && len(discovery.Alternatives) > 0 {
+		alts := make([]katypes.AlternativeWorkflow, 0, len(discovery.Alternatives))
+		for _, alt := range discovery.Alternatives {
+			alts = append(alts, katypes.AlternativeWorkflow{
+				WorkflowID:      alt.WorkflowID,
+				ExecutionBundle: alt.ExecutionBundle,
+				Confidence:      alt.Confidence,
+				Rationale:       alt.Rationale,
+				Parameters:      cloneParameterMap(alt.Parameters),
+			})
+		}
+		result.AlternativeWorkflows = alts
 	}
 
 	// Re-inject KA-managed target resource parameters after the discovery

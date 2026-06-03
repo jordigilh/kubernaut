@@ -160,4 +160,36 @@ var _ = Describe("AA-Side Investigation Timeout — #1078", func() {
 				"default 25-minute timeout must apply when WithMaxInvestigationDuration is not set")
 		})
 	})
+
+	Describe("UT-AA-1351-TOUT-005: user_driving respects MaxInvestigationDuration (AA-CRIT-1)", func() {
+		It("should transition to PhaseFailed when user_driving exceeds MaxInvestigationDuration", func() {
+			// Session created 30 minutes ago (exceeds 25 minute limit)
+			analysis := createTimeoutTestAnalysis(time.Now().Add(-30 * time.Minute))
+			mockClient.WithSessionPollStatus("user_driving")
+
+			result, err := handler.Handle(ctx, analysis)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed),
+				"user_driving sessions must NOT bypass MaxInvestigationDuration (AA-CRIT-1)")
+			Expect(analysis.Status.Message).To(ContainSubstring("timed out"),
+				"timeout message must explain the failure reason")
+			Expect(result.RequeueAfter).To(BeZero(),
+				"timed-out analysis should not requeue for polling")
+		})
+
+		It("should continue polling user_driving within time limit", func() {
+			// Session created 10 minutes ago (within 25 minute limit)
+			analysis := createTimeoutTestAnalysis(time.Now().Add(-10 * time.Minute))
+			mockClient.WithSessionPollStatus("user_driving")
+
+			result, err := handler.Handle(ctx, analysis)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseInvestigating),
+				"user_driving within time limit must continue polling")
+			Expect(result.RequeueAfter).To(BeNumerically(">", 0),
+				"should requeue for next poll")
+		})
+	})
 })

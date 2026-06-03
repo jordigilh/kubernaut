@@ -623,6 +623,10 @@ func (t *InvestigateTool) handleMessage(ctx context.Context, input InvestigateIn
 }
 
 func (t *InvestigateTool) handleComplete(input InvestigateInput, user mcpinternal.UserInfo) (InvestigateOutput, error) {
+	mu := t.getSessionMutex(input.RRID)
+	mu.Lock()
+	defer mu.Unlock()
+
 	if !t.sessions.IsDriverActive(input.RRID) {
 		return InvestigateOutput{}, ErrCodeNotFound
 	}
@@ -653,18 +657,7 @@ func (t *InvestigateTool) handleComplete(input InvestigateInput, user mcpinterna
 
 	t.emitInteractiveCompleted(sess.SessionID, input.RRID, user.Username, "complete")
 
-	if t.httpCompleter != nil {
-		httpSessionID, found := t.httpCompleter.FindUserDrivingByRemediationID(input.RRID)
-		if found {
-			if completeErr := t.httpCompleter.CompleteUserDriving(httpSessionID, nil); completeErr != nil {
-				t.logger.Error(completeErr, "failed to complete HTTP session on action:complete",
-					"rr_id", input.RRID, "http_session_id", httpSessionID)
-			}
-		} else if completeErr := t.httpCompleter.ForceCompleteByRemediationID(input.RRID, nil); completeErr != nil {
-			t.logger.V(1).Info("no HTTP session found to force-complete on action:complete",
-				"rr_id", input.RRID, "error", completeErr)
-		}
-	}
+	completeHTTPSession(t.httpCompleter, input.RRID, nil, t.logger, "complete")
 
 	if t.metrics != nil {
 		t.metrics.RecordInteractiveSessionEnded()
@@ -919,6 +912,10 @@ func extractDiscoveryResult(result *katypes.InvestigationResult) *mcpinternal.Wo
 }
 
 func (t *InvestigateTool) handleCancel(input InvestigateInput, user mcpinternal.UserInfo) (InvestigateOutput, error) {
+	mu := t.getSessionMutex(input.RRID)
+	mu.Lock()
+	defer mu.Unlock()
+
 	if !t.sessions.IsDriverActive(input.RRID) {
 		return InvestigateOutput{}, ErrNoActiveSession
 	}
@@ -938,10 +935,14 @@ func (t *InvestigateTool) handleCancel(input InvestigateInput, user mcpinternal.
 	}
 
 	if err := t.sessions.Release(sess.SessionID, "explicit"); err != nil {
-		return InvestigateOutput{}, fmt.Errorf("release session: %w", err)
+		if !errors.Is(err, mcpinternal.ErrSessionNotFound) {
+			return InvestigateOutput{}, fmt.Errorf("release session: %w", err)
+		}
 	}
 
 	t.emitInteractiveCompleted(sess.SessionID, input.RRID, user.Username, "cancel")
+
+	completeHTTPSession(t.httpCompleter, input.RRID, nil, t.logger, "cancel")
 
 	if t.metrics != nil {
 		t.metrics.RecordInteractiveSessionEnded()

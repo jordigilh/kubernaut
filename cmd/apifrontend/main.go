@@ -884,13 +884,25 @@ func buildAuthMiddleware(cfg *config.Config, reg *metrics.Registry, auditor audi
 	if len(ac.JWT) == 0 {
 		restCfg, k8sErr := ctrl.GetConfig()
 		if k8sErr != nil {
-			logger.Info("WARNING: no auth issuer configured and kubeconfig unavailable — using pass-through auth (not suitable for production)")
-			return func(next http.Handler) http.Handler { return next }, alwaysReady
+			logger.Error(k8sErr, "CRITICAL: no auth issuer configured and kubeconfig unavailable — denying all authenticated requests (AF-CRIT-1)")
+			denyAll := func(next http.Handler) http.Handler {
+				return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					http.Error(w, "authentication system unavailable", http.StatusServiceUnavailable)
+				})
+			}
+			notReady := handler.ReadyChecker(func() bool { return false })
+			return denyAll, notReady
 		}
 		k8sClient, k8sErr := kubernetes.NewForConfig(restCfg)
 		if k8sErr != nil {
-			logger.Error(k8sErr, "failed to create kubernetes client for TokenReview")
-			return func(next http.Handler) http.Handler { return next }, alwaysReady
+			logger.Error(k8sErr, "CRITICAL: failed to create kubernetes client for TokenReview — denying all authenticated requests (AF-CRIT-1)")
+			denyAll := func(next http.Handler) http.Handler {
+				return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					http.Error(w, "authentication system unavailable", http.StatusServiceUnavailable)
+				})
+			}
+			notReady := handler.ReadyChecker(func() bool { return false })
+			return denyAll, notReady
 		}
 		validatorOpts = append(validatorOpts, auth.WithTokenReviewer(auth.NewTokenReviewer(k8sClient)))
 		logger.Info("auth mode: TokenReview (no OIDC issuer configured)")

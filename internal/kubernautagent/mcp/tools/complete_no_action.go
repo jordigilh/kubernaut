@@ -44,10 +44,11 @@ type CompleteNoActionOutput struct {
 // Allows the user to explicitly conclude an investigation without selecting
 // a workflow. No discovery gate — can be called at any point in the session.
 type CompleteNoActionTool struct {
-	sessions      mcpinternal.SessionManager
-	httpCompleter HTTPSessionCompleter
-	mutexProvider SessionMutexProvider
-	logger        logr.Logger
+	sessions       mcpinternal.SessionManager
+	httpCompleter  HTTPSessionCompleter
+	mutexProvider  SessionMutexProvider
+	timeoutTracker TimeoutTracker
+	logger         logr.Logger
 }
 
 // CompleteNoActionOption configures optional dependencies.
@@ -72,6 +73,15 @@ func WithCompleteNoActionMutexProvider(provider SessionMutexProvider) CompleteNo
 	return func(t *CompleteNoActionTool) {
 		if provider != nil {
 			t.mutexProvider = provider
+		}
+	}
+}
+
+// WithCompleteNoActionTimeoutTracker sets the timeout tracker for session cleanup.
+func WithCompleteNoActionTimeoutTracker(tt TimeoutTracker) CompleteNoActionOption {
+	return func(t *CompleteNoActionTool) {
+		if tt != nil {
+			t.timeoutTracker = tt
 		}
 	}
 }
@@ -137,19 +147,11 @@ func (t *CompleteNoActionTool) Handle(_ context.Context, input CompleteNoActionI
 	finalResult.IsActionable = &notActionable
 	finalResult.Warnings = append(finalResult.Warnings, "Alert not actionable")
 
-	// Write result to HTTP session store.
-	if t.httpCompleter != nil {
-		httpSessionID, found := t.httpCompleter.FindUserDrivingByRemediationID(input.RRID)
-		if found {
-			if completeErr := t.httpCompleter.CompleteUserDriving(httpSessionID, finalResult); completeErr != nil {
-				t.logger.Error(completeErr, "failed to complete HTTP session",
-					"rr_id", input.RRID, "http_session_id", httpSessionID)
-			}
-		} else if completeErr := t.httpCompleter.ForceCompleteByRemediationID(input.RRID, finalResult); completeErr != nil {
-			t.logger.V(1).Info("no HTTP session found to force-complete (may already be terminal)",
-				"rr_id", input.RRID, "error", completeErr)
-		}
+	if t.timeoutTracker != nil {
+		t.timeoutTracker.StopTracking(driver.SessionID)
 	}
+
+	completeHTTPSession(t.httpCompleter, input.RRID, finalResult, t.logger, "complete_no_action")
 
 	// Release the MCP interactive lease.
 	if releaseErr := t.sessions.Release(driver.SessionID, "complete_no_action"); releaseErr != nil {

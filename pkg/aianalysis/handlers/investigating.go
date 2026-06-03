@@ -571,6 +571,30 @@ func (h *InvestigatingHandler) handleSessionPoll(ctx context.Context, analysis *
 func (h *InvestigatingHandler) handleSessionPollUserDriving(ctx context.Context, analysis *aianalysisv1.AIAnalysis, status *agentclient.SessionStatusResult) (ctrl.Result, error) {
 	session := analysis.Status.KASession
 
+	// AA-CRIT-1: user_driving must NOT bypass MaxInvestigationDuration.
+	// A malicious or stalled interactive session cannot hold the pipeline indefinitely.
+	if session.CreatedAt != nil {
+		elapsed := time.Since(session.CreatedAt.Time)
+		if elapsed > h.maxInvestigationDuration {
+			h.log.Info("Interactive session exceeded max duration, failing",
+				"sessionID", session.ID,
+				"elapsed", elapsed,
+				"maxDuration", h.maxInvestigationDuration,
+			)
+			now := metav1.Now()
+			analysis.Status.Phase = aianalysis.PhaseFailed
+			analysis.Status.ObservedGeneration = analysis.Generation
+			analysis.Status.CompletedAt = &now
+			analysis.Status.Reason = aianalysisv1.ReasonTransientError
+			analysis.Status.SubReason = "TransientError"
+			analysis.Status.Message = fmt.Sprintf(
+				"Interactive investigation timed out after %s (limit: %s)",
+				elapsed.Truncate(time.Second), h.maxInvestigationDuration,
+			)
+			return ctrl.Result{}, nil
+		}
+	}
+
 	session.PollCount++
 	now := metav1.Now()
 	session.LastPolled = &now

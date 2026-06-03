@@ -839,6 +839,68 @@ var _ = Describe("kubernaut_select_workflow — helper functions", func() {
 		})
 	})
 
+	Describe("UT-KA-1351-010: buildFinalResult propagates Phase 3 confidence (KA-HIGH-1)", func() {
+		It("should use discovery confidence when higher than Phase 2 RCA", func() {
+			rca := &katypes.InvestigationResult{
+				RCASummary: "Pod OOM",
+				Confidence: 0.65,
+			}
+			discovery := &mcpinternal.WorkflowDiscoveryResult{
+				Recommended: &mcpinternal.DiscoveredWorkflow{
+					WorkflowID: "wf-scale",
+					Confidence: 0.92,
+				},
+			}
+			workflow := &mcptools.CatalogWorkflow{WorkflowID: "wf-scale"}
+
+			result := mcptools.BuildFinalResult(rca, workflow, discovery)
+
+			Expect(result.Confidence).To(Equal(0.92),
+				"buildFinalResult must use Phase 3 discovery confidence, not stale Phase 2 RCA confidence (KA-HIGH-1)")
+		})
+
+		It("should keep RCA confidence when discovery is nil", func() {
+			rca := &katypes.InvestigationResult{
+				RCASummary: "Pod OOM",
+				Confidence: 0.88,
+			}
+			workflow := &mcptools.CatalogWorkflow{WorkflowID: "wf-restart"}
+
+			result := mcptools.BuildFinalResult(rca, workflow, nil)
+
+			Expect(result.Confidence).To(Equal(0.88),
+				"without discovery context, confidence must remain from Phase 2")
+		})
+	})
+
+	Describe("UT-KA-1351-011: buildFinalResult propagates AlternativeWorkflows (KA-MED-2)", func() {
+		It("should populate AlternativeWorkflows from discovery alternatives", func() {
+			rca := &katypes.InvestigationResult{
+				RCASummary: "CPU throttled",
+				Confidence: 0.85,
+			}
+			discovery := &mcpinternal.WorkflowDiscoveryResult{
+				Recommended: &mcpinternal.DiscoveredWorkflow{
+					WorkflowID: "wf-scale",
+					Confidence: 0.92,
+					Rationale:  "high correlation",
+				},
+				Alternatives: []mcpinternal.DiscoveredWorkflow{
+					{WorkflowID: "wf-restart", Confidence: 0.75, Rationale: "simpler fix"},
+					{WorkflowID: "wf-rollback", Confidence: 0.60, Rationale: "last resort"},
+				},
+			}
+			workflow := &mcptools.CatalogWorkflow{WorkflowID: "wf-scale"}
+
+			result := mcptools.BuildFinalResult(rca, workflow, discovery)
+
+			Expect(result.AlternativeWorkflows).To(HaveLen(2),
+				"buildFinalResult must propagate discovery alternatives to the final result (KA-MED-2)")
+			Expect(result.AlternativeWorkflows[0].WorkflowID).To(Equal("wf-restart"))
+			Expect(result.AlternativeWorkflows[1].WorkflowID).To(Equal("wf-rollback"))
+		})
+	})
+
 	Describe("UT-KA-SW-ISWF-001: isWorkflowInDiscoveryResult edge cases", func() {
 		It("should match recommended workflow", func() {
 			dr := &mcpinternal.WorkflowDiscoveryResult{
