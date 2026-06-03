@@ -356,9 +356,15 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 	}
 
 	// Non-blocking: spawn background goroutine for MCP bridge path.
+	// Detach from the tool context (which is cancelled by wrapTool's defer cancel()
+	// on handler return) and use an explicit investigation TTL to bound the bridge
+	// lifetime. Without this, the bridge goroutine would exit immediately when the
+	// handler returns.
+	bridgeCtx, bridgeCancel := context.WithTimeout(context.WithoutCancel(ctx), NonBlockingBridgeTTL)
 	go func() {
+		defer bridgeCancel()
 		defer cleanup()
-		BridgeEventsToA2A(ctx, result.Events)
+		BridgeEventsToA2A(bridgeCtx, result.Events)
 	}()
 
 	return InvestigateMCPResult{
@@ -376,9 +382,15 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 func BridgeEventsToA2A(ctx context.Context, events <-chan ka.InvestigationEvent) {
 	keepalive := time.NewTicker(5 * time.Second)
 	defer keepalive.Stop()
+
+	inactivity := time.NewTimer(BridgeInactivityTimeout)
+	defer inactivity.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
+			return
+		case <-inactivity.C:
 			return
 		case <-keepalive.C:
 			_ = launcher.EmitKeepaliveDotSafe(ctx)
@@ -386,6 +398,14 @@ func BridgeEventsToA2A(ctx context.Context, events <-chan ka.InvestigationEvent)
 			if !ok {
 				return
 			}
+			if !inactivity.Stop() {
+				select {
+				case <-inactivity.C:
+				default:
+				}
+			}
+			inactivity.Reset(BridgeInactivityTimeout)
+
 			text := FormatEventForUser(evt)
 			if text != "" {
 				_ = launcher.EmitReasoningSafe(ctx, text)
@@ -396,6 +416,11 @@ func BridgeEventsToA2A(ctx context.Context, events <-chan ka.InvestigationEvent)
 		}
 	}
 }
+
+// NonBlockingBridgeTTL bounds the maximum lifetime of a non-blocking bridge
+// goroutine. This prevents goroutine leaks if KA never sends a terminal event.
+// Matches the per-tool investigate timeout (15m) from production config.
+var NonBlockingBridgeTTL = 15 * time.Minute
 
 // BridgeInactivityTimeout is the maximum silence duration (no events from KA)
 // before the bridge assumes the investigation is hung and returns whatever
