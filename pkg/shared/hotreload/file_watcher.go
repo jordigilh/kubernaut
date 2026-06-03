@@ -24,6 +24,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -53,9 +54,11 @@ type FileWatcher struct {
 	reloadCount int64
 	errorCount  int64
 
-	watcher *fsnotify.Watcher
-	stopCh  chan struct{}
-	doneCh  chan struct{}
+	watcher  *fsnotify.Watcher
+	stopCh   chan struct{}
+	doneCh   chan struct{}
+	stopOnce sync.Once
+	started  atomic.Bool
 }
 
 // NewFileWatcher creates a new file-based hot-reloader for a specific ConfigMap key.
@@ -117,15 +120,19 @@ func (w *FileWatcher) Start(ctx context.Context) error {
 		"directory", dir)
 
 	// Start watch loop in background
+	w.started.Store(true)
 	go w.watchLoop(ctx)
 
 	return nil
 }
 
 // Stop gracefully stops the file watcher.
+// Safe to call multiple times or before Start.
 func (w *FileWatcher) Stop() {
-	close(w.stopCh)
-	<-w.doneCh // Wait for watchLoop to finish
+	w.stopOnce.Do(func() { close(w.stopCh) })
+	if w.started.Load() {
+		<-w.doneCh
+	}
 
 	if w.watcher != nil {
 		if err := w.watcher.Close(); err != nil {
