@@ -682,8 +682,16 @@ func (h *InvestigatingHandler) handleSessionPollPending(ctx context.Context, ana
 func (h *InvestigatingHandler) handleSessionPollCompleted(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
 	session := analysis.Status.KASession
 
+	// Track that a poll occurred even on terminal status — the poll that discovered
+	// completion is still a poll event for observability and precondition checks
+	// (e.g., E2E-1293-006 requires PollCount >= 1 before takeover).
+	session.PollCount++
+	now := metav1.Now()
+	session.LastPolled = &now
+
 	h.log.Info("KA session completed, fetching result",
 		"sessionID", session.ID,
+		"pollCount", session.PollCount,
 	)
 
 	// BR-INTERACTIVE-001: If a user was driving the session, record when the
@@ -735,12 +743,17 @@ func (h *InvestigatingHandler) handleSessionIncidentResult(ctx context.Context, 
 // BR-AA-HAPI-064: Surface KA-side failure to operators via CRD status
 // AA-MED-1: Ensure Reason and SubReason are set for structured failure reporting.
 func (h *InvestigatingHandler) handleSessionPollFailed(ctx context.Context, analysis *aianalysisv1.AIAnalysis, status *agentclient.SessionStatusResult) (ctrl.Result, error) {
+	session := analysis.Status.KASession
+	session.PollCount++
+	now := metav1.Now()
+	session.LastPolled = &now
+
 	h.log.Info("KA session failed",
-		"sessionID", analysis.Status.KASession.ID,
+		"sessionID", session.ID,
+		"pollCount", session.PollCount,
 		"error", status.Error,
 	)
 
-	now := metav1.Now()
 	analysis.Status.Phase = aianalysis.PhaseFailed
 	analysis.Status.Reason = aianalysisv1.ReasonAPIError
 	analysis.Status.SubReason = "InvestigationFailed"
@@ -905,10 +918,8 @@ func (h *InvestigatingHandler) handleSessionGetResultError(ctx context.Context, 
 			h.log.Info("GetSessionResult returned 409 Conflict, treating as transient",
 				"sessionID", analysis.Status.KASession.ID,
 			)
-			session := analysis.Status.KASession
-			now := metav1.Now()
-			session.LastPolled = &now
-			session.PollCount++
+			// PollCount and LastPolled already incremented by handleSessionPollCompleted
+			// which is the only caller of handleSessionIncidentResult.
 			return ctrl.Result{RequeueAfter: h.sessionPollInterval}, nil
 		}
 	}
