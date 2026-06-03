@@ -305,7 +305,7 @@ var _ = Describe("FP-MCP-006: CRD InteractiveSession and CompletedAt", Label("e2
 			g.Expect(aa.Status.InteractiveSession).NotTo(BeNil())
 			g.Expect(aa.Status.InteractiveSession.CompletedAt).NotTo(BeNil(),
 				"IR-4/AU-3: CompletedAt must be set to prove incident handling lifecycle completed")
-		}, 180*time.Second, 3*time.Second).Should(Succeed())
+		}, 90*time.Second, 2*time.Second).Should(Succeed())
 
 		GinkgoWriter.Printf("  CompletedAt: %s\n", aa.Status.InteractiveSession.CompletedAt.Time)
 	})
