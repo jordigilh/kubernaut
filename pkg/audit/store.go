@@ -183,6 +183,10 @@ func NewBufferedStore(client DataStorageClient, config Config, serviceName strin
 // - The event fails validation (missing required fields)
 // - The buffer is full (event is dropped, but service continues)
 func (s *BufferedAuditStore) StoreAudit(ctx context.Context, event *ogenclient.AuditEventRequest) error {
+	if event == nil {
+		return fmt.Errorf("audit event is nil")
+	}
+
 	s.logger.V(2).Info("StoreAudit called",
 		"event_type", event.EventType,
 		"event_action", event.EventAction,
