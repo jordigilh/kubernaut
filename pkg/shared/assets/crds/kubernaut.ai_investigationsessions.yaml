@@ -79,9 +79,13 @@ spec:
                 properties:
                   name:
                     description: Name of the referenced object.
+                    maxLength: 253
+                    minLength: 1
                     type: string
                   namespace:
                     description: Namespace of the referenced object.
+                    maxLength: 63
+                    minLength: 1
                     type: string
                 required:
                 - name
@@ -95,9 +99,12 @@ spec:
                     description: Groups from JWT groups claim (RBAC-relevant only).
                     items:
                       type: string
+                    maxItems: 64
                     type: array
                   username:
                     description: Username from JWT sub claim.
+                    maxLength: 253
+                    minLength: 1
                     type: string
                 required:
                 - username

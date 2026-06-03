@@ -1116,10 +1116,11 @@ spec:
                 - MaxRetriesExceeded
                 - SessionRegenerationExceeded
                 - RcaIncomplete
+                - InvestigationFailed
                 type: string
               totalAnalysisTime:
                 description: TotalAnalysisTime is the total duration of the analysis
-                  in seconds
+                  in milliseconds
                 format: int64
                 minimum: 0
                 type: integer
