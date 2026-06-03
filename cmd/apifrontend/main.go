@@ -186,6 +186,25 @@ func run() int {
 		}
 	}()
 
+	// AF-HIGH-2: Schedule periodic idle session eviction to prevent pool growth.
+	evictStop := make(chan struct{})
+	if deps.Pool != nil {
+		go func() {
+			ticker := time.NewTicker(2 * time.Minute)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ticker.C:
+					if n := deps.Pool.EvictIdle(); n > 0 {
+						logger.V(1).Info("evicted idle KA sessions", "count", n)
+					}
+				case <-evictStop:
+					return
+				}
+			}
+		}()
+	}
+
 	mcpHandler, depsReady, err := buildMCPHandler(cfg, deps, sessInfra, metricsReg, sarChecker, auditor, logger, userLimiter)
 	if err != nil {
 		logger.Error(err, "failed to create MCP handler")
@@ -368,6 +387,7 @@ func run() int {
 	}
 
 	// WIRE-16: Stop background goroutines in limiters to prevent leaks.
+	close(evictStop)
 	ipLimiter.Stop()
 	userLimiter.Stop()
 
@@ -510,7 +530,10 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 			tokenFile: cfg.Agent.KABearerTokenFile,
 		}
 	}
-	kaMCPHTTPClient := &http.Client{Transport: kaMCPAuth}
+	kaMCPHTTPClient := &http.Client{
+		Transport: kaMCPAuth,
+		Timeout:   cfg.Resilience.KA.RequestTimeout,
+	}
 	mcpClient := ka.NewSDKMCPClient(
 		cfg.Agent.KAMCPEndpoint,
 		kaMCPHTTPClient,
@@ -884,13 +907,25 @@ func buildAuthMiddleware(cfg *config.Config, reg *metrics.Registry, auditor audi
 	if len(ac.JWT) == 0 {
 		restCfg, k8sErr := ctrl.GetConfig()
 		if k8sErr != nil {
-			logger.Info("WARNING: no auth issuer configured and kubeconfig unavailable — using pass-through auth (not suitable for production)")
-			return func(next http.Handler) http.Handler { return next }, alwaysReady
+			logger.Error(k8sErr, "CRITICAL: no auth issuer configured and kubeconfig unavailable — denying all authenticated requests (AF-CRIT-1)")
+			denyAll := func(next http.Handler) http.Handler {
+				return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					http.Error(w, "authentication system unavailable", http.StatusServiceUnavailable)
+				})
+			}
+			notReady := handler.ReadyChecker(func() bool { return false })
+			return denyAll, notReady
 		}
 		k8sClient, k8sErr := kubernetes.NewForConfig(restCfg)
 		if k8sErr != nil {
-			logger.Error(k8sErr, "failed to create kubernetes client for TokenReview")
-			return func(next http.Handler) http.Handler { return next }, alwaysReady
+			logger.Error(k8sErr, "CRITICAL: failed to create kubernetes client for TokenReview — denying all authenticated requests (AF-CRIT-1)")
+			denyAll := func(next http.Handler) http.Handler {
+				return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					http.Error(w, "authentication system unavailable", http.StatusServiceUnavailable)
+				})
+			}
+			notReady := handler.ReadyChecker(func() bool { return false })
+			return denyAll, notReady
 		}
 		validatorOpts = append(validatorOpts, auth.WithTokenReviewer(auth.NewTokenReviewer(k8sClient)))
 		logger.Info("auth mode: TokenReview (no OIDC issuer configured)")

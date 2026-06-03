@@ -349,6 +349,13 @@ spec:
               decidedBy:
                 description: Who made the decision (username or "system" for timeout)
                 type: string
+              decidedVia:
+                description: |-
+                  Who facilitated the decision (trusted intermediary SA identity).
+                  Empty for direct decisions (kubectl, CLI). Set by webhook when a trusted
+                  intermediary (AF SA) delegates approval on behalf of a human user.
+                  Operational visibility field — DS audit trail is authoritative.
+                type: string
               decision:
                 description: |-
                   Decision made by operator or system (timeout)

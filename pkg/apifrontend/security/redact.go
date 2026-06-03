@@ -14,6 +14,7 @@ var sensitiveKeys = []string{
 var (
 	urlPattern  = regexp.MustCompile(`[a-zA-Z][a-zA-Z0-9+.-]*://[^\s"']+`)
 	pathPattern = regexp.MustCompile(`(/[a-zA-Z0-9._-]+){2,}`)
+	ipv4Pattern = regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}(?::\d{1,5})?\b`)
 
 	// Value patterns for detecting secrets embedded in arbitrary values.
 	jwtPattern    = regexp.MustCompile(`eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}`)
@@ -49,6 +50,7 @@ func RedactError(err error) string {
 	}
 	msg := err.Error()
 	msg = urlPattern.ReplaceAllString(msg, "[URL_REDACTED]")
+	msg = ipv4Pattern.ReplaceAllString(msg, "[HOST_REDACTED]")
 	msg = pathPattern.ReplaceAllString(msg, "[PATH_REDACTED]")
 	msg = jwtPattern.ReplaceAllString(msg, "[JWT_REDACTED]")
 	msg = bearerPattern.ReplaceAllString(msg, "[BEARER_REDACTED]")

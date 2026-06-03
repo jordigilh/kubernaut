@@ -1279,6 +1279,8 @@ func buildMCPHandler(
 					"session_id", sessionID)
 				return
 			}
+			// KA-CRIT-2: Resolve the HTTP session so AA stops polling user_driving.
+			mcptools.CompleteHTTPSession(autoMgr, rrID, nil, logger, "inactivity_timeout")
 			emitDisconnectAudit(sessionID, rrID, "inactivity_timeout")
 			// T1-4: Decrement gauge on timeout expiry to prevent drift.
 			agentMetrics.RecordInteractiveSessionEnded()
@@ -1313,6 +1315,9 @@ func buildMCPHandler(
 				"error", err.Error())
 			return
 		}
+
+		// KA-CRIT-2: Resolve the HTTP session so AA stops polling user_driving.
+		mcptools.CompleteHTTPSession(autoMgr, rrID, nil, logger, "disconnect")
 
 		// Emit audit event for disconnect-driven completion (M1: timeout/TTL/disconnect paths).
 		emitDisconnectAudit(interactiveSessionID, rrID, "disconnect")

@@ -35,6 +35,25 @@ func ResourceName(name string) error {
 	return nil
 }
 
+// RRID validates a Remediation Request ID, which may be in namespace/name format
+// or just a plain resource name. Both parts must be valid Kubernetes identifiers.
+func RRID(rrid string) error {
+	if rrid == "" {
+		return fmt.Errorf("rr_id must not be empty")
+	}
+	parts := strings.SplitN(rrid, "/", 2)
+	if len(parts) == 2 {
+		if err := Namespace(parts[0]); err != nil {
+			return fmt.Errorf("invalid rr_id namespace: %w", err)
+		}
+		if err := ResourceName(parts[1]); err != nil {
+			return fmt.Errorf("invalid rr_id name: %w", err)
+		}
+		return nil
+	}
+	return ResourceName(rrid)
+}
+
 // Kind validates that k is a valid Kubernetes resource kind (PascalCase identifier, ASCII alphanumeric only).
 func Kind(k string) error {
 	if k == "" {

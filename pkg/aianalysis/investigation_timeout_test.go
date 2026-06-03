@@ -18,6 +18,7 @@ package aianalysis_test
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -31,6 +32,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/controller/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
+	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
 
@@ -158,6 +160,115 @@ var _ = Describe("AA-Side Investigation Timeout — #1078", func() {
 
 			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed),
 				"default 25-minute timeout must apply when WithMaxInvestigationDuration is not set")
+		})
+	})
+
+	Describe("UT-AA-1351-TOUT-006: successful poll resets ConsecutiveFailures (AA-CRIT-2)", func() {
+		It("should reset ConsecutiveFailures to 0 on successful poll", func() {
+			analysis := createTimeoutTestAnalysis(time.Now().Add(-5 * time.Minute))
+			analysis.Status.ConsecutiveFailures = 3
+			mockClient.WithSessionPollStatus("investigating")
+
+			_, err := handler.Handle(ctx, analysis)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(analysis.Status.ConsecutiveFailures).To(Equal(int32(0)),
+				"successful poll must reset ConsecutiveFailures to prevent transient error accumulation (AA-CRIT-2)")
+		})
+	})
+
+	Describe("UT-AA-1351-TOUT-005: user_driving respects MaxInvestigationDuration (AA-CRIT-1)", func() {
+		It("should transition to PhaseFailed when user_driving exceeds MaxInvestigationDuration", func() {
+			// Session created 30 minutes ago (exceeds 25 minute limit)
+			analysis := createTimeoutTestAnalysis(time.Now().Add(-30 * time.Minute))
+			mockClient.WithSessionPollStatus("user_driving")
+
+			result, err := handler.Handle(ctx, analysis)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed),
+				"user_driving sessions must NOT bypass MaxInvestigationDuration (AA-CRIT-1)")
+			Expect(analysis.Status.Message).To(ContainSubstring("timed out"),
+				"timeout message must explain the failure reason")
+			Expect(result.RequeueAfter).To(BeZero(),
+				"timed-out analysis should not requeue for polling")
+		})
+
+		It("should continue polling user_driving within time limit", func() {
+			// Session created 10 minutes ago (within 25 minute limit)
+			analysis := createTimeoutTestAnalysis(time.Now().Add(-10 * time.Minute))
+			mockClient.WithSessionPollStatus("user_driving")
+
+			result, err := handler.Handle(ctx, analysis)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseInvestigating),
+				"user_driving within time limit must continue polling")
+			Expect(result.RequeueAfter).To(BeNumerically(">", 0),
+				"should requeue for next poll")
+		})
+	})
+
+	Describe("UT-AA-1351-004: GetSessionResult 404 triggers session regeneration (AA-HIGH-1)", func() {
+		It("should increment generation and clear session ID like poll 404", func() {
+			analysis := createTimeoutTestAnalysis(time.Now().Add(-5 * time.Minute))
+			mockClient.WithSessionPollStatus("completed")
+			mockClient.WithSessionResultError(&agentclient.APIError{StatusCode: 404, Message: "Session not found"})
+
+			result, err := handler.Handle(ctx, analysis)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(analysis.Status.KASession.Generation).To(Equal(int32(1)),
+				"GetSessionResult 404 must trigger handleSessionLost regeneration (AA-HIGH-1)")
+			Expect(analysis.Status.KASession.ID).To(BeEmpty(), "session ID should be cleared for re-submit")
+			Expect(result.Requeue).To(BeTrue(), "should requeue immediately for re-submit")
+			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseInvestigating),
+				"should not use handleError terminal path on result 404")
+		})
+	})
+
+	Describe("UT-AA-1351-005: handleSessionPollCancelled requeues on IS check error (AA-HIGH-2)", func() {
+		It("should requeue at poll interval when IS existence check fails", func() {
+			isChecker := &mockISChecker{err: fmt.Errorf("apiserver unavailable")}
+			isHandler := handlers.NewInvestigatingHandler(
+				mockClient, ctrl.Log.WithName("test-cancel-is-err"), metrics.NewMetrics(), &noopAuditClient{},
+				handlers.WithSessionMode(),
+				handlers.WithRecorder(recorder),
+				handlers.WithInvestigationSessionChecker(isChecker),
+			)
+
+			analysis := createTimeoutTestAnalysis(time.Now().Add(-5 * time.Minute))
+			mockClient.WithSessionPollStatus("cancelled")
+
+			result, err := isHandler.Handle(ctx, analysis)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseInvestigating),
+				"transient IS check error must not cause premature terminal state (AA-HIGH-2)")
+			Expect(result.RequeueAfter).To(Equal(handlers.DefaultSessionPollInterval),
+				"should requeue to retry IS check instead of failing")
+		})
+	})
+
+	Describe("UT-AA-1351-008: handleSessionPollFailed sets Reason and SubReason (AA-MED-1)", func() {
+		It("should set structured failure fields when KA session poll returns failed", func() {
+			analysis := createTimeoutTestAnalysis(time.Now().Add(-5 * time.Minute))
+			mockClient.PollSessionFunc = func(ctx context.Context, sessionID string) (*agentclient.SessionStatusResult, error) {
+				return &agentclient.SessionStatusResult{
+					Status: "failed",
+					Error:  "LLM provider error: rate limit exceeded",
+				}, nil
+			}
+
+			result, err := handler.Handle(ctx, analysis)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed))
+			Expect(analysis.Status.Reason).To(Equal(aianalysisv1.ReasonAPIError))
+			Expect(analysis.Status.SubReason).To(Equal("InvestigationFailed"))
+			Expect(analysis.Status.Message).To(ContainSubstring("rate limit"))
+			Expect(analysis.Status.CompletedAt).NotTo(BeNil())
+			Expect(result.RequeueAfter).To(BeZero(), "terminal failure should not requeue for polling")
 		})
 	})
 })

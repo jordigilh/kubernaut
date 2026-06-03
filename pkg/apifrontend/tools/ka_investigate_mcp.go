@@ -36,7 +36,9 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/security"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
 )
 
 // isPhaseActivePollTimeout caps the IS phase Active polling after AIA readiness.
@@ -126,6 +128,12 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 
 	if !hasRRID && !hasResourceArgs {
 		return InvestigateMCPResult{}, fmt.Errorf("rr_id or namespace/kind/name required")
+	}
+
+	if hasRRID {
+		if err := validate.RRID(args.RRID); err != nil {
+			return InvestigateMCPResult{}, fmt.Errorf("invalid rr_id: %w", err)
+		}
 	}
 
 	identity := auth.UserIdentityFromContext(ctx)
@@ -458,7 +466,7 @@ func FormatEventForUser(evt ka.InvestigationEvent) string {
 	case ka.EventTypeError:
 		errMsg := extractJSONField(evt.Data, "error")
 		if errMsg != "" {
-			return "Error: " + errMsg
+			return "Error: " + security.RedactError(fmt.Errorf("%s", errMsg))
 		}
 		return "Investigation error occurred"
 	case ka.EventTypeComplete:

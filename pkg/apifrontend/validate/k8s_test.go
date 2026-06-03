@@ -101,3 +101,31 @@ var _ = Describe("LabelValue", func() {
 		Entry("unicode", "日本語", "invalid label value"),
 	)
 })
+
+var _ = Describe("IT-AF-1351: RRID validation wiring", func() {
+
+	Describe("IT-AF-1351-VALID: valid namespace/name formats accepted", func() {
+		DescribeTable("accepts valid rr_id values",
+			func(rrid string) {
+				Expect(validate.RRID(rrid)).To(Succeed())
+			},
+			Entry("simple name", "my-rr-001"),
+			Entry("namespace/name", "prod/my-rr-001"),
+			Entry("long valid name", "my-namespace/my-long-remediation-request-name-123"),
+		)
+	})
+
+	Describe("IT-AF-1351-INVALID: invalid formats rejected", func() {
+		DescribeTable("rejects invalid rr_id values",
+			func(rrid string) {
+				Expect(validate.RRID(rrid)).NotTo(Succeed())
+			},
+			Entry("path traversal", "../../etc/passwd"),
+			Entry("SQL injection", "drop table; --"),
+			Entry("empty", ""),
+			Entry("spaces", "my namespace/my name"),
+			Entry("too many slashes", "a/b/c"),
+			Entry("uppercase not DNS", "MyNamespace/MyRR"),
+		)
+	})
+})

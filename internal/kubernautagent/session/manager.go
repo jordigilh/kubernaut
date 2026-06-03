@@ -507,9 +507,11 @@ func (m *Manager) GetLatestRCASummaryByRemediationID(rrID string) (string, bool)
 }
 
 // GetLatestRCAResultByRemediationID returns the full InvestigationResult from
-// the most recent completed session for the given remediation_id. This gives
-// workflow discovery access to the complete RemediationTarget produced by the
-// autonomous Phase 1 RCA, avoiding a lossy re-extraction from conversation.
+// the most recent completed (non-cancelled) session for the given remediation_id.
+// This gives workflow discovery access to the complete RemediationTarget produced
+// by the autonomous Phase 1 RCA, avoiding a lossy re-extraction from conversation.
+// Cancelled sessions are excluded because their partial results may be stale or
+// incomplete (KA-HIGH-5).
 func (m *Manager) GetLatestRCAResultByRemediationID(rrID string) (*katypes.InvestigationResult, bool) {
 	m.store.mu.RLock()
 	defer m.store.mu.RUnlock()
@@ -520,6 +522,9 @@ func (m *Manager) GetLatestRCAResultByRemediationID(rrID string) (*katypes.Inves
 			continue
 		}
 		if sess.Result == nil {
+			continue
+		}
+		if sess.Status == StatusCancelled {
 			continue
 		}
 		if sess.CreatedAt.After(latestTime) {
