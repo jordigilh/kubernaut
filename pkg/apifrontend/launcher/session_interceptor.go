@@ -48,8 +48,16 @@ func (s *SessionInterceptor) Before(ctx context.Context, callCtx *a2asrv.CallCon
 
 	msg := params.Message
 
+	// Respect an explicitly provided contextId: the caller intends to
+	// start or continue a specific conversation, so the interceptor must
+	// not redirect it. Only override when contextId is empty, meaning
+	// "route me to my active conversation" (UX continuity).
+	if msg.ContextID != "" {
+		return ctx, nil
+	}
+
 	activeCtx, found := s.registry.Get(identity.Username)
-	if !found || activeCtx == msg.ContextID {
+	if !found {
 		return ctx, nil
 	}
 

@@ -9,6 +9,7 @@ import (
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
@@ -35,9 +36,9 @@ import (
 // Turn 5: "watch remediation progress"     → kubernaut_watch  (namespace, rr name)
 var _ = Describe("AF A2A Interactive 5-Phase Full Pipeline [E2E-FP-1189-003]", Label("fp", "af", "a2a", "interactive", "issue-1189", "issue-1332"), func() {
 
-	const targetNS = "fp-a2a-interactive"
-
 	It("should complete 5-turn interactive conversation and trigger full pipeline", NodeTimeout(8*time.Minute), func(_ SpecContext) {
+		targetNS := fpRemediateNS["interactive"]
+		Expect(targetNS).NotTo(BeEmpty(), "interactive namespace must be set by SynchronizedBeforeSuite")
 		By("Verifying AF is reachable")
 		resp, err := afHTTPClient.Get(afBaseURL + "/healthz")
 		if err != nil || resp.StatusCode == http.StatusBadGateway || resp.StatusCode == http.StatusServiceUnavailable {
@@ -45,7 +46,7 @@ var _ = Describe("AF A2A Interactive 5-Phase Full Pipeline [E2E-FP-1189-003]", L
 		}
 		_ = resp.Body.Close()
 
-		By("Creating managed target namespace for the interactive RR")
+		By("Ensuring managed target namespace exists for the interactive RR")
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: targetNS,
@@ -55,7 +56,9 @@ var _ = Describe("AF A2A Interactive 5-Phase Full Pipeline [E2E-FP-1189-003]", L
 				},
 			},
 		}
-		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		if err := k8sClient.Create(ctx, ns); err != nil && !apierrors.IsAlreadyExists(err) {
+			Expect(err).NotTo(HaveOccurred(), "Failed to create namespace %s", targetNS)
+		}
 		DeferCleanup(func() {
 			_ = k8sClient.Delete(context.Background(), ns, &client.DeleteOptions{})
 		})
@@ -91,9 +94,9 @@ var _ = Describe("AF A2A Interactive 5-Phase Full Pipeline [E2E-FP-1189-003]", L
 		}
 		Expect(k8sClient.Create(ctx, dep)).To(Succeed())
 
-		By("Turn 1: create a remediation request (kubernaut_remediate — autonomous RR)")
+		By("Turn 1: create a remediation request (kubernaut_remediate — interactive RR)")
 		body := fpA2ATasksSend("fp-int-1",
-			"create a remediation request for deployment memory-eater in fp-a2a-interactive")
+			"create interactive remediation for deployment memory-eater")
 		resp, err = fpA2AInvokeWithTimeout(body, 60*time.Second)
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp.Body.Close() }()

@@ -73,10 +73,19 @@ func buildJSONRPC(id, method string, params map[string]interface{}) string {
 }
 
 // a2aTasksSend builds a message/send JSON-RPC payload with a user text message.
+// Each call gets a unique contextId derived from the task ID to prevent the
+// SessionInterceptor from routing independent tests to a shared session.
 func a2aTasksSend(id, text string) string {
+	return a2aTasksSendWithContext(id, "ctx-"+id, text)
+}
+
+// a2aTasksSendWithContext builds a message/send JSON-RPC payload with an explicit
+// contextId, ensuring the SessionInterceptor does not redirect to a stale session.
+func a2aTasksSendWithContext(id, contextID, text string) string {
 	return buildJSONRPC(id, "message/send", map[string]interface{}{
 		"message": map[string]interface{}{
 			"messageId": "msg-" + id,
+			"contextId": contextID,
 			"role":      "user",
 			"parts": []map[string]interface{}{
 				{"kind": "text", "text": text},
@@ -86,10 +95,14 @@ func a2aTasksSend(id, text string) string {
 }
 
 // a2aMessageStream builds a message/stream JSON-RPC payload (SSE variant).
+// Each call gets a unique contextId derived from the task ID to prevent the
+// SessionInterceptor from routing independent SSE streams to a shared session,
+// which causes phantom connections that never drain.
 func a2aMessageStream(id, text string) string {
 	return buildJSONRPC(id, "message/stream", map[string]interface{}{
 		"message": map[string]interface{}{
 			"messageId": "msg-" + id,
+			"contextId": "ctx-" + id,
 			"role":      "user",
 			"parts": []map[string]interface{}{
 				{"kind": "text", "text": text},

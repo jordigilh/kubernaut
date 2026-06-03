@@ -96,23 +96,23 @@ var _ = Describe("SessionInterceptor Integration (BR-SESS-020)", func() {
 		return rec
 	}
 
-	It("IT-AF-SESS-020-002: SessionInterceptor overrides ContextID through real NewHandler dispatch (SC-7)", func() {
+	It("IT-AF-SESS-020-002: SessionInterceptor overrides empty ContextID through real dispatch (SC-7)", func() {
 		registry.Set("alice", "ctx-active-investigation")
 		h := buildHandler()
 
-		rec := sendMessage(h, "alice", "ctx-new-random", "explore remediation options")
+		rec := sendMessage(h, "alice", "", "explore remediation options")
 
 		Expect(rec.Code).To(Equal(http.StatusOK))
-		Expect(logBuf.String()).To(ContainSubstring("ctx-new-random"),
-			"Log must record the original context_id")
+		Expect(logBuf.String()).To(ContainSubstring("overriding context_id"),
+			"Log must record the context_id override")
 		Expect(logBuf.String()).To(ContainSubstring("ctx-active-investigation"),
 			"Log must record the target override context_id")
 	})
 
-	It("IT-AF-SESS-020-005: Two messages with different context_ids share ADK session state after investigate (SC-7)", func() {
+	It("IT-AF-SESS-020-005: Empty contextId follows active session after investigate (SC-7)", func() {
 		h := buildHandler()
 
-		// First message establishes the session with context "ctx-first"
+		// First message establishes the session with explicit context "ctx-first"
 		rec1 := sendMessage(h, "bob", "ctx-first", "hello")
 		Expect(rec1.Code).To(Equal(http.StatusOK))
 
@@ -120,21 +120,37 @@ var _ = Describe("SessionInterceptor Integration (BR-SESS-020)", func() {
 		// store the active context for "bob"
 		registry.Set("bob", "ctx-first")
 
-		// Second message arrives with a DIFFERENT context_id
-		rec2 := sendMessage(h, "bob", "ctx-second", "explore remediation options")
+		// Second message arrives with EMPTY context_id — should be routed
+		// to the active investigation
+		rec2 := sendMessage(h, "bob", "", "explore remediation options")
 		Expect(rec2.Code).To(Equal(http.StatusOK))
 
-		// Verify the interceptor overrode the context_id
-		Expect(logBuf.String()).To(ContainSubstring("ctx-second"),
-			"Log must record original context_id from second message")
+		// Verify the interceptor overrode the empty context_id
+		Expect(logBuf.String()).To(ContainSubstring("overriding context_id"),
+			"Log must record that context_id was overridden")
 		Expect(logBuf.String()).To(ContainSubstring("ctx-first"),
 			"Log must record target context_id (the active investigation)")
 
-		// Verify both responses are valid JSON-RPC (proving the handler dispatched successfully)
+		// Verify both responses are valid JSON-RPC
 		var resp1, resp2 map[string]any
 		Expect(json.Unmarshal(rec1.Body.Bytes(), &resp1)).To(Succeed())
 		Expect(json.Unmarshal(rec2.Body.Bytes(), &resp2)).To(Succeed())
 		Expect(resp1).To(HaveKey("result"))
 		Expect(resp2).To(HaveKey("result"))
+	})
+
+	It("IT-AF-SESS-020-006: Explicit contextId is preserved even when active context exists (SC-7)", func() {
+		registry.Set("carol", "ctx-active-investigation")
+		h := buildHandler()
+
+		rec := sendMessage(h, "carol", "ctx-explicit-new", "start a new conversation")
+		Expect(rec.Code).To(Equal(http.StatusOK))
+
+		Expect(logBuf.String()).NotTo(ContainSubstring("overriding context_id"),
+			"Explicit ContextID must not trigger override")
+
+		var resp map[string]any
+		Expect(json.Unmarshal(rec.Body.Bytes(), &resp)).To(Succeed())
+		Expect(resp).To(HaveKey("result"))
 	})
 })

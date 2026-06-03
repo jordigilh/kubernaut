@@ -1,6 +1,6 @@
 module github.com/jordigilh/kubernaut
 
-go 1.25.10
+go 1.25.11
 
 require (
 	github.com/Alcova-AI/adk-anthropic-go v0.1.16

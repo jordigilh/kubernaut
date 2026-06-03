@@ -18,6 +18,7 @@ package launcher
 import (
 	"context"
 	"strings"
+	"sync"
 	"unicode"
 
 	"github.com/a2aproject/a2a-go/a2a"
@@ -45,11 +46,13 @@ type BridgeMetrics interface {
 // satisfies the a2a-go taskupdate.Manager contract that requires a matching
 // ArtifactID for append operations.
 type EventBridge struct {
+	mu         sync.Mutex
 	queue      eventqueue.Writer
 	taskID     a2a.TaskID
 	contextID  string
 	metrics    BridgeMetrics
 	artifactID a2a.ArtifactID
+	hasEmitted bool
 	lastWasDot bool
 }
 
@@ -81,27 +84,42 @@ func EventBridgeFromContext(ctx context.Context) *EventBridge {
 // generated ArtifactID. Subsequent calls append to that same artifact
 // (Append=true) so the a2a-go taskupdate.Manager can locate the existing
 // artifact by its ID.
+//
+// A leading newline is prepended when prior content exists so that each
+// reasoning message renders on its own line after A2A clients (e.g. kagenti)
+// strip trailing whitespace from individual text parts before concatenation.
 func (b *EventBridge) EmitReasoning(ctx context.Context, text string) error {
 	text = sanitizeBridgeText(text)
 	if text == "" {
 		return nil
 	}
 
-	if b.lastWasDot {
+	b.mu.Lock()
+	if b.hasEmitted {
 		text = "\n" + text
-		b.lastWasDot = false
 	}
-
-	return b.emit(ctx, text)
+	b.hasEmitted = true
+	b.lastWasDot = false
+	err := b.emit(ctx, text)
+	b.mu.Unlock()
+	return err
 }
 
 // EmitKeepaliveDot writes a single "." to the A2A stream as a lightweight
-// keepalive that prevents proxy/gateway idle timeouts. Dots accumulate
-// inline; when real content arrives via EmitReasoning, a newline is
-// prepended automatically so content renders on a fresh line.
+// keepalive that prevents proxy/gateway idle timeouts. Consecutive dots
+// accumulate inline on the same line. The first dot after reasoning text
+// is preceded by a newline so dots render on their own line.
 func (b *EventBridge) EmitKeepaliveDot(ctx context.Context) error {
+	b.mu.Lock()
+	text := "."
+	if b.hasEmitted && !b.lastWasDot {
+		text = "\n."
+	}
+	b.hasEmitted = true
 	b.lastWasDot = true
-	return b.emit(ctx, ".")
+	err := b.emit(ctx, text)
+	b.mu.Unlock()
+	return err
 }
 
 func (b *EventBridge) emit(ctx context.Context, text string) error {

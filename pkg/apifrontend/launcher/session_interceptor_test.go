@@ -65,7 +65,7 @@ var _ = Describe("SessionInterceptor (BR-SESS-020, BR-SESS-021, BR-SESS-023)", f
 		Expect(callCtx.User.Name()).To(BeEmpty())
 	})
 
-	It("UT-AF-SESS-020-012: Overrides msg.ContextID when active context differs (SC-7)", func() {
+	It("UT-AF-SESS-020-012: Preserves explicit ContextID even when active context differs (SC-7)", func() {
 		registry.Set("bob", "ctx-active-session")
 
 		ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
@@ -79,8 +79,8 @@ var _ = Describe("SessionInterceptor (BR-SESS-020, BR-SESS-021, BR-SESS-023)", f
 
 		_, err := interceptor.Before(ctx, callCtx, req)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(msg.ContextID).To(Equal("ctx-active-session"),
-			"ContextID must be overridden to the active context from registry")
+		Expect(msg.ContextID).To(Equal("ctx-new-random"),
+			"Explicit ContextID must be preserved — interceptor only overrides empty values")
 	})
 
 	It("UT-AF-SESS-020-013: No-op on ContextID when registry has no entry (SC-7)", func() {
@@ -140,19 +140,43 @@ var _ = Describe("SessionInterceptor (BR-SESS-020, BR-SESS-021, BR-SESS-023)", f
 			Username: "frank", Groups: []string{"sre"},
 		})
 		callCtx := newTestCallContext()
-		msg := &a2a.Message{ContextID: "ctx-original"}
+		msg := &a2a.Message{ContextID: ""}
 		req := &a2asrv.Request{
 			Payload: &a2a.MessageSendParams{Message: msg},
 		}
 
 		_, err := interceptor.Before(ctx, callCtx, req)
 		Expect(err).NotTo(HaveOccurred())
+		Expect(msg.ContextID).To(Equal("ctx-target"),
+			"Empty ContextID must be overridden to the active context")
 
 		logOutput := logBuf.String()
-		Expect(logOutput).To(ContainSubstring("ctx-original"),
-			"Log must contain the original context_id")
+		Expect(logOutput).To(ContainSubstring("overriding context_id"),
+			"Override must be logged for audit trail")
 		Expect(logOutput).To(ContainSubstring("ctx-target"),
 			"Log must contain the target context_id")
+	})
+
+	It("UT-AF-SESS-020-018: Explicit ContextID skips override without logging (SC-7)", func() {
+		registry.Set("gina", "ctx-active")
+
+		ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+			Username: "gina", Groups: []string{"sre"},
+		})
+		callCtx := newTestCallContext()
+		msg := &a2a.Message{ContextID: "ctx-explicit"}
+		req := &a2asrv.Request{
+			Payload: &a2a.MessageSendParams{Message: msg},
+		}
+
+		_, err := interceptor.Before(ctx, callCtx, req)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(msg.ContextID).To(Equal("ctx-explicit"),
+			"Explicit ContextID must not be overridden")
+
+		logOutput := logBuf.String()
+		Expect(logOutput).NotTo(ContainSubstring("overriding context_id"),
+			"No override log when explicit ContextID is provided")
 	})
 
 	It("UT-AF-SESS-020-017: Overrides empty ContextID when active context exists (#1345)", func() {

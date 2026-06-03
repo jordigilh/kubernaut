@@ -27,6 +27,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -116,7 +117,7 @@ var fullPipelineImageConfigs = []E2EImageConfig{
 //   - builtImages: Map of service name → full image reference (for cleanup)
 //   - seededUUIDs: Map of "workflow_name:environment" → UUID (seeded in Phase 6b)
 //   - error: First fatal error encountered
-func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) (map[string]string, map[string]string, error) {
+func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) (builtImages map[string]string, seededUUIDs map[string]string, afRemediateNS map[string]string, err error) {
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "🚀 Full Pipeline E2E Infrastructure (Issue #39)")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -134,9 +135,10 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Building service images...")
 
-	builtImages, err := buildFullPipelineImages(writer)
-	if err != nil {
-		return nil, nil, fmt.Errorf("PHASE 1 failed: %w", err)
+	var buildErr error
+	builtImages, buildErr = buildFullPipelineImages(writer)
+	if buildErr != nil {
+		return builtImages, nil, nil, fmt.Errorf("PHASE 1 failed: %w", buildErr)
 	}
 	_, _ = fmt.Fprintf(writer, "✅ PHASE 1 complete: %d images ready (%s)\n",
 		len(builtImages), time.Since(startTime).Round(time.Second))
@@ -150,7 +152,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	// Coverage + notification file output mounts
 	coverdataPath := filepath.Join(projectRoot, "coverdata")
 	if err := os.MkdirAll(coverdataPath, 0777); err != nil {
-		return builtImages, nil, fmt.Errorf("failed to create coverdata directory: %w", err)
+		return builtImages, nil, nil, fmt.Errorf("failed to create coverdata directory: %w", err)
 	}
 
 	extraMounts := []ExtraMount{}
@@ -166,7 +168,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	if err := CreateKindClusterWithExtraMounts(
 		clusterName, kubeconfigPath, kindConfigPath, extraMounts, writer,
 	); err != nil {
-		return builtImages, nil, fmt.Errorf("PHASE 2 failed: %w", err)
+		return builtImages, nil, nil, fmt.Errorf("PHASE 2 failed: %w", err)
 	}
 	_, _ = fmt.Fprintf(writer, "✅ PHASE 2 complete: Kind cluster ready (%s)\n",
 		time.Since(phase2Start).Round(time.Second))
@@ -181,7 +183,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		_, _ = fmt.Fprintln(writer, "  ⏭️  Skipping local image loading (CI/CD: IMAGE_REGISTRY is set, Kind pulls from registry)")
 	} else {
 		if err := loadFullPipelineImages(builtImages, clusterName, writer); err != nil {
-			return builtImages, nil, fmt.Errorf("PHASE 3 failed: %w", err)
+			return builtImages, nil, nil, fmt.Errorf("PHASE 3 failed: %w", err)
 		}
 	}
 	_, _ = fmt.Fprintf(writer, "✅ PHASE 3 complete: images loaded (%s)\n",
@@ -212,7 +214,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	if err := cmd.Run(); err != nil {
-		return builtImages, nil, fmt.Errorf("failed to install CRDs: %w", err)
+		return builtImages, nil, nil, fmt.Errorf("failed to install CRDs: %w", err)
 	}
 	_, _ = fmt.Fprintf(writer, "✅ PHASE 4 complete: %d CRDs installed (%s)\n",
 		len(crdFiles), time.Since(phase4Start).Round(time.Second))
@@ -224,12 +226,12 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	phase5Start := time.Now()
 
 	if err := createTestNamespace(namespace, kubeconfigPath, writer); err != nil {
-		return builtImages, nil, fmt.Errorf("failed to create namespace: %w", err)
+		return builtImages, nil, nil, fmt.Errorf("failed to create namespace: %w", err)
 	}
 
 	// DD-AUTH-014: Deploy DataStorage client ClusterRole (required for all SAR checks)
 	if err := deployDataStorageClientClusterRole(ctx, kubeconfigPath, writer); err != nil {
-		return builtImages, nil, fmt.Errorf("failed to deploy client ClusterRole: %w", err)
+		return builtImages, nil, nil, fmt.Errorf("failed to deploy client ClusterRole: %w", err)
 	}
 
 	// Create DataStorage access RoleBindings for all services that need audit trail
@@ -246,19 +248,19 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	}
 	for _, sa := range auditServices {
 		if err := CreateDataStorageAccessRoleBinding(ctx, namespace, kubeconfigPath, sa, writer); err != nil {
-			return builtImages, nil, fmt.Errorf("failed to create RoleBinding for %s: %w", sa, err)
+			return builtImages, nil, nil, fmt.Errorf("failed to create RoleBinding for %s: %w", sa, err)
 		}
 	}
 
 	// Issue #785: Inter-service TLS (Secrets/ConfigMap) before DataStorage and dependent controllers.
 	_, _ = fmt.Fprintln(writer, "\n🔐 Issue #785: Generating inter-service TLS certificates...")
 	if _, err := GenerateInterServiceTLS(ctx, kubeconfigPath, namespace, writer); err != nil {
-		return builtImages, nil, fmt.Errorf("failed to generate inter-service TLS: %w", err)
+		return builtImages, nil, nil, fmt.Errorf("failed to generate inter-service TLS: %w", err)
 	}
 
 	// AU-9: Generate RSA signing certificate for audit exports
 	if err := GenerateSigningCertSecret(ctx, kubeconfigPath, namespace, writer); err != nil {
-		return builtImages, nil, fmt.Errorf("failed to generate signing certificate: %w", err)
+		return builtImages, nil, nil, fmt.Errorf("failed to generate signing certificate: %w", err)
 	}
 
 	_, _ = fmt.Fprintf(writer, "✅ PHASE 5 complete (%s)\n", time.Since(phase5Start).Round(time.Second))
@@ -284,14 +286,14 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	for i := 0; i < 2; i++ {
 		r := <-infraResults
 		if r.err != nil {
-			return builtImages, nil, fmt.Errorf("%s deployment failed: %w", r.name, r.err)
+			return builtImages, nil, nil, fmt.Errorf("%s deployment failed: %w", r.name, r.err)
 		}
 		_, _ = fmt.Fprintf(writer, "  ✅ %s ready\n", r.name)
 	}
 
 	// 6b: Run database migrations (needs PostgreSQL ready)
 	if err := ApplyAllMigrations(ctx, namespace, kubeconfigPath, writer); err != nil {
-		return builtImages, nil, fmt.Errorf("database migrations failed: %w", err)
+		return builtImages, nil, nil, fmt.Errorf("database migrations failed: %w", err)
 	}
 	_, _ = fmt.Fprintln(writer, "  ✅ Migrations applied")
 
@@ -320,7 +322,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	for i := 0; i < 3; i++ {
 		r := <-phase6cResults
 		if r.err != nil {
-			return builtImages, nil, fmt.Errorf("%s deployment failed: %w", r.name, r.err)
+			return builtImages, nil, nil, fmt.Errorf("%s deployment failed: %w", r.name, r.err)
 		}
 		_, _ = fmt.Fprintf(writer, "  ✅ %s deployed\n", r.name)
 	}
@@ -343,11 +345,11 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 
 	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for DataStorage HTTP endpoint (pre-condition for seeding)...")
 	if err := waitForDataStorageHTTP(ctx, namespace, kubeconfigPath, writer); err != nil {
-		return builtImages, nil, fmt.Errorf("PHASE 6b: DataStorage HTTP not ready: %w", err)
+		return builtImages, nil, nil, fmt.Errorf("PHASE 6b: DataStorage HTTP not ready: %w", err)
 	}
 
 	if err := SeedE2EActionTypes(kubeconfigPath, namespace, writer); err != nil {
-		return builtImages, nil, fmt.Errorf("PHASE 6b: failed to seed action types: %w", err)
+		return builtImages, nil, nil, fmt.Errorf("PHASE 6b: failed to seed action types: %w", err)
 	}
 
 	fpWorkflows := []WorkflowSeedSpec{
@@ -358,7 +360,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	}
 	seededUUIDs, seedErr := SeedWorkflowsViaKubectlApply(kubeconfigPath, namespace, fpWorkflows, writer)
 	if seedErr != nil {
-		return builtImages, nil, fmt.Errorf("PHASE 6b: failed to seed workflows: %w", seedErr)
+		return builtImages, nil, nil, fmt.Errorf("PHASE 6b: failed to seed workflows: %w", seedErr)
 	}
 	_, _ = fmt.Fprintf(writer, "✅ PHASE 6b complete: %d workflows seeded (%s)\n",
 		len(seededUUIDs), time.Since(phase6bStart).Round(time.Second))
@@ -378,11 +380,11 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	_, _ = fmt.Fprintln(writer, "  🔐 Creating E2E ServiceAccount for Gateway signal ingestion (BR-GATEWAY-036/037)...")
 	gatewaySAName := "fullpipeline-gateway-sa"
 	if err := CreateE2EServiceAccountWithGatewayAccess(ctx, namespace, kubeconfigPath, gatewaySAName, writer); err != nil {
-		return builtImages, seededUUIDs, fmt.Errorf("PHASE 7: failed to create Gateway SA: %w", err)
+		return builtImages, seededUUIDs, nil, fmt.Errorf("PHASE 7: failed to create Gateway SA: %w", err)
 	}
 	gatewayToken, err := GetServiceAccountToken(ctx, namespace, gatewaySAName, kubeconfigPath)
 	if err != nil {
-		return builtImages, seededUUIDs, fmt.Errorf("PHASE 7: failed to get Gateway SA token: %w", err)
+		return builtImages, seededUUIDs, nil, fmt.Errorf("PHASE 7: failed to get Gateway SA token: %w", err)
 	}
 	_, _ = fmt.Fprintln(writer, "  ✅ Gateway auth token ready for event-exporter and AlertManager")
 
@@ -401,6 +403,17 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	// Total capacity = 14 (generous upper bound)
 	allResults := make(chan waveResult, 16)
 
+	// Per-test namespace isolation: generate a unique namespace per remediate
+	// scenario so parallel Ginkgo processes never cross-match RRs.
+	afRemediateNS = map[string]string{
+		"autonomous":  fmt.Sprintf("fp-auto-%s", uuid.New().String()[:8]),
+		"interactive": fmt.Sprintf("fp-int-%s", uuid.New().String()[:8]),
+	}
+	_, _ = fmt.Fprintln(writer, "  📌 AF remediate namespaces:")
+	for key, ns := range afRemediateNS {
+		_, _ = fmt.Fprintf(writer, "      %s → %s\n", key, ns)
+	}
+
 	// ── Wave A: Deploy in parallel (no inter-dependency beyond DataStorage) ──
 	_, _ = fmt.Fprintln(writer, "  Wave A: deploying services in parallel...")
 
@@ -417,7 +430,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 			allResults <- waveResult{"MockLLM", nil}
 			return
 		}
-		err := DeployMockLLMInNamespace(ctx, namespace, kubeconfigPath, builtImages["mock-llm"], seededUUIDs, writer)
+		err := DeployMockLLMInNamespace(ctx, namespace, kubeconfigPath, builtImages["mock-llm"], seededUUIDs, afRemediateNS, writer)
 		allResults <- waveResult{"MockLLM", err}
 	}()
 
@@ -532,7 +545,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		}
 	}
 	if len(deployErrors) > 0 {
-		return builtImages, seededUUIDs, fmt.Errorf("PHASE 7 deployments failed: %v", deployErrors)
+		return builtImages, seededUUIDs, nil, fmt.Errorf("PHASE 7 deployments failed: %v", deployErrors)
 	}
 
 	_, _ = fmt.Fprintf(writer, "✅ PHASE 7 complete (%s)\n", time.Since(phase7Start).Round(time.Second))
@@ -544,7 +557,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	phase8Start := time.Now()
 
 	if err := waitForFullPipelineServicesReady(ctx, namespace, kubeconfigPath, writer); err != nil {
-		return builtImages, seededUUIDs, fmt.Errorf("PHASE 8 failed: services not ready: %w", err)
+		return builtImages, seededUUIDs, nil, fmt.Errorf("PHASE 8 failed: services not ready: %w", err)
 	}
 	_, _ = fmt.Fprintf(writer, "✅ PHASE 8 complete (%s)\n", time.Since(phase8Start).Round(time.Second))
 
@@ -554,7 +567,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	_, _ = fmt.Fprintln(writer, "\n⏳ PHASE 8b: Verifying Prometheus cadvisor scrape target...")
 	promURL := fmt.Sprintf("http://127.0.0.1:%d", PrometheusHostPort)
 	if err := WaitForPrometheusCadvisorTarget(promURL, 60*time.Second, writer); err != nil {
-		return builtImages, seededUUIDs, fmt.Errorf("PHASE 8b failed: %w", err)
+		return builtImages, seededUUIDs, nil, fmt.Errorf("PHASE 8b failed: %w", err)
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -562,7 +575,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 9: Creating enrichment fixture resources (#704)...")
 	if err := createEnrichmentFixtures(ctx, kubeconfigPath, writer); err != nil {
-		return builtImages, seededUUIDs, fmt.Errorf("PHASE 9 failed: enrichment fixtures: %w", err)
+		return builtImages, seededUUIDs, nil, fmt.Errorf("PHASE 9 failed: enrichment fixtures: %w", err)
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -579,7 +592,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	_, _ = fmt.Fprintf(writer, "  🔑 Kubeconfig:  %s\n", kubeconfigPath)
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	return builtImages, seededUUIDs, nil
+	return builtImages, seededUUIDs, afRemediateNS, nil
 }
 
 // ============================================================================

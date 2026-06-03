@@ -423,7 +423,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	deployResults := make(chan deployResult, 4)
 
 	go func() {
-		err := DeployMockLLMInNamespace(ctx, namespace, kubeconfigPath, builtImages["mock-llm"], workflowUUIDs, writer)
+		err := DeployMockLLMInNamespace(ctx, namespace, kubeconfigPath, builtImages["mock-llm"], workflowUUIDs, nil, writer)
 		deployResults <- deployResult{"Mock LLM", err}
 	}()
 
