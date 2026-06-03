@@ -100,19 +100,15 @@ var _ = Describe("AuthTransport", func() {
 		// 5 minutes" are tested in integration tests with a real filesystem/token.
 		// They do not belong at the unit test tier.
 
-		It("should not inject header if token file doesn't exist", func() {
+		It("UT-AUTH-1356-001: should return error when token file doesn't exist (fail-fast)", func() {
 			ts := auth.NewDefaultTokenSource()
 			transport := auth.NewAuthTransport(ts, http.DefaultTransport)
 			client := &http.Client{Transport: transport}
 
 			// Make request (token file doesn't exist)
-			resp, err := client.Get(server.URL)
-			Expect(err).ToNot(HaveOccurred())
-			defer func() { _ = resp.Body.Close() }()
-
-			// Verify no headers injected (graceful degradation)
-			Expect(resp.Header.Get("X-Echo-Authorization")).To(BeEmpty())
-			Expect(resp.Header.Get("X-Echo-User")).To(BeEmpty())
+			_, err := client.Get(server.URL)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("authentication token unavailable"))
 		})
 	})
 
@@ -463,33 +459,24 @@ var _ = Describe("NewTokenSource + NewAuthTransport (#1055)", func() {
 			// Delete the token file (simulates SA volume unmount)
 			Expect(os.Remove(tokenFile)).To(Succeed())
 
-			// Next request: cache invalidated by 401, file gone → empty token → no auth header
+			// Next request: cache invalidated by 401, file gone → fail-fast error
 			base.setStatus(200)
 			req2, _ := http.NewRequest("GET", "http://localhost/test", nil)
-			resp2, err := client.Do(req2)
-			Expect(err).ToNot(HaveOccurred())
-			_ = resp2.Body.Close()
-
-			headers = base.getAuthHeaders()
-			Expect(headers).To(HaveLen(2))
-			Expect(headers[1]).To(BeEmpty(),
-				"Deleted token file should result in no auth header (graceful degradation)")
+			_, err2 := client.Do(req2)
+			Expect(err2).To(HaveOccurred())
+			Expect(err2.Error()).To(ContainSubstring("authentication token unavailable"))
 		})
 
-		It("should handle empty token path gracefully", func() {
+		It("UT-AUTH-1356-002: should return error with empty token path (fail-fast)", func() {
 			base := &statusRoundTripper{statusCode: 200}
 			ts := auth.NewTokenSource("")
 			transport := auth.NewAuthTransport(ts, base)
 			client := &http.Client{Transport: transport}
 
 			req, _ := http.NewRequest("GET", "http://localhost/test", nil)
-			resp, err := client.Do(req)
-			Expect(err).ToNot(HaveOccurred())
-			_ = resp.Body.Close()
-
-			headers := base.getAuthHeaders()
-			Expect(headers).To(HaveLen(1))
-			Expect(headers[0]).To(BeEmpty(), "Empty path should result in no auth header")
+			_, err := client.Do(req)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("authentication token unavailable"))
 		})
 	})
 })
