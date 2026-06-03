@@ -222,4 +222,52 @@ var _ = Describe("Redis Client", func() {
 			// No panic, no crash
 		})
 	})
+
+	Describe("MarkDisconnected (#1356)", func() {
+		It("UT-REDIS-1356-001: should re-ping after MarkDisconnected is called", func() {
+			opts := &redis.Options{
+				Addr: redisAddr,
+				DB:   0,
+			}
+			client = rediscache.NewClient(opts, logger)
+
+			// Connect successfully
+			err := client.EnsureConnection(ctx)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Fast path should work (no ping needed)
+			err = client.EnsureConnection(ctx)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Mark as disconnected
+			client.MarkDisconnected()
+
+			// Stop miniredis to simulate outage
+			miniRedis.Close()
+
+			// Next EnsureConnection should re-ping and fail
+			err = client.EnsureConnection(ctx)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("redis unavailable"))
+		})
+
+		It("UT-REDIS-1356-002: should recover after Redis comes back", func() {
+			opts := &redis.Options{
+				Addr: redisAddr,
+				DB:   0,
+			}
+			client = rediscache.NewClient(opts, logger)
+
+			// Connect
+			err := client.EnsureConnection(ctx)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Mark disconnected (simulating error in Cache.Get/Set)
+			client.MarkDisconnected()
+
+			// Redis still available -> next EnsureConnection re-pings and succeeds
+			err = client.EnsureConnection(ctx)
+			Expect(err).ToNot(HaveOccurred())
+		})
+	})
 })

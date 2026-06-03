@@ -159,6 +159,13 @@ func (c *Client) GetClient() *redis.Client {
 	return c.client
 }
 
+// MarkDisconnected clears the connected flag so the next EnsureConnection call
+// re-pings Redis. Call this when a Redis command fails to enable automatic
+// recovery after transient outages.
+func (c *Client) MarkDisconnected() {
+	c.connected.Store(false)
+}
+
 // Close closes the Redis connection and releases resources.
 //
 // This method should be called when the client is no longer needed (e.g., service shutdown).

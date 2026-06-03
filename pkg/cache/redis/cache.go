@@ -133,6 +133,7 @@ func (c *Cache[T]) Get(ctx context.Context, key string) (*T, error) {
 	if err == goredis.Nil {
 		return nil, ErrCacheMiss
 	} else if err != nil {
+		c.client.MarkDisconnected()
 		return nil, fmt.Errorf("redis get failed: %w", err)
 	}
 
@@ -187,6 +188,7 @@ func (c *Cache[T]) Set(ctx context.Context, key string, value *T) error {
 	// Store JSON in Redis with TTL
 	redisClient := c.client.GetClient()
 	if err := redisClient.Set(ctx, hashedKey, jsonData, c.ttl).Err(); err != nil {
+		c.client.MarkDisconnected()
 		return fmt.Errorf("redis set failed: %w", err)
 	}
 
