@@ -535,9 +535,9 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 
 		It("UT-AF-B-004: kubernaut_approve dispatches correctly", func() {
 			_, body := mcpCallTool(h, sessionID, "kubernaut_approve",
-				map[string]any{"rar_name": "test-rar", "decision": "approved"}, testUser)
+				map[string]any{"rar_name": "test-rar", "decision": "Approved"}, testUser)
 			text := extractTextContent(body)
-			Expect(text).To(ContainSubstring("approved"))
+			Expect(text).To(ContainSubstring("Approved"))
 		})
 
 		It("UT-AF-B-005: kubernaut_cancel_remediation dispatches correctly", func() {

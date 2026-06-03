@@ -150,4 +150,64 @@ var _ = Describe("kubernaut_approve", func() {
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("invalid input"))
 	})
+
+	Context("strict decision enum validation (#1353)", func() {
+		It("UT-AF-1353-001: rejects verb form 'Approve' with actionable error", func() {
+			client := newDynamicFakeClient(newFakeRAR("payments", "rar-1"))
+			_, err := tools.HandleApprove(ctx, client, tools.ApproveArgs{
+				Namespace: "payments",
+				RARName:   "rar-1",
+				Decision:  "Approve",
+			}, "bob")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("invalid input"))
+			Expect(err.Error()).To(ContainSubstring("Approved"))
+			Expect(err.Error()).To(ContainSubstring("Rejected"))
+		})
+
+		It("UT-AF-1353-002: rejects verb form 'Reject' with actionable error", func() {
+			client := newDynamicFakeClient(newFakeRAR("payments", "rar-1"))
+			_, err := tools.HandleApprove(ctx, client, tools.ApproveArgs{
+				Namespace: "payments",
+				RARName:   "rar-1",
+				Decision:  "Reject",
+			}, "bob")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("invalid input"))
+			Expect(err.Error()).To(ContainSubstring("Approved"))
+		})
+
+		It("UT-AF-1353-003: rejects arbitrary string 'maybe'", func() {
+			client := newDynamicFakeClient(newFakeRAR("payments", "rar-1"))
+			_, err := tools.HandleApprove(ctx, client, tools.ApproveArgs{
+				Namespace: "payments",
+				RARName:   "rar-1",
+				Decision:  "maybe",
+			}, "bob")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("invalid input"))
+		})
+
+		It("UT-AF-1353-004: accepts exact enum value 'Approved'", func() {
+			client := newDynamicFakeClient(newFakeRAR("payments", "rar-1"))
+			result, err := tools.HandleApprove(ctx, client, tools.ApproveArgs{
+				Namespace: "payments",
+				RARName:   "rar-1",
+				Decision:  "Approved",
+			}, "bob")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Status).To(Equal("Approved"))
+		})
+
+		It("UT-AF-1353-005: accepts exact enum value 'Rejected'", func() {
+			client := newDynamicFakeClient(newFakeRAR("payments", "rar-1"))
+			result, err := tools.HandleApprove(ctx, client, tools.ApproveArgs{
+				Namespace: "payments",
+				RARName:   "rar-1",
+				Decision:  "Rejected",
+			}, "bob")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Status).To(Equal("Rejected"))
+		})
+	})
 })
