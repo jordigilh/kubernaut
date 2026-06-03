@@ -1253,6 +1253,53 @@ var _ = Describe("kubernaut_select_workflow — per-workflow parameter hand-off 
 			}).WithTimeout(2 * time.Second).WithPolling(50 * time.Millisecond).Should(Succeed())
 		})
 	})
+
+	Describe("UT-KA-SW-AC-003: select_workflow logs error when both completion paths fail", func() {
+		It("should still return workflow_selected but log error when both paths fail", func() {
+			wfID := "wf-both-fail"
+			catalog := &mockWorkflowCatalog{
+				workflow: &mcptools.CatalogWorkflow{
+					WorkflowID:      wfID,
+					WorkflowName:    "restart-pod",
+					ExecutionEngine: "argo",
+					ExecutionBundle: "oci://restart:v1",
+					Version:         "v1.0",
+				},
+			}
+			completer := &mockHTTPCompleter{
+				found:       false,
+				completeErr: errors.New("force complete failed: session expired"),
+			}
+			sessions := &mockSessionManager{
+				isActive: true,
+				getDriverResult: &mcpinternal.InteractiveSession{
+					SessionID:       "sess-ac-003",
+					CorrelationID:   "rr-ac-003",
+					ActingUser:      mcpinternal.UserInfo{Username: "alice"},
+					RCAResult:       &katypes.InvestigationResult{RCASummary: "OOM", Confidence: 0.85},
+					DiscoveryResult: discoveryWithWorkflow(wfID),
+				},
+			}
+
+			tool := mcptools.NewSelectWorkflowTool(catalog, sessions,
+				mcptools.WithHTTPSessionCompleter(completer),
+			)
+			output, err := tool.Handle(context.Background(), mcptools.SelectWorkflowInput{
+				RRID:       "rr-ac-003",
+				WorkflowID: wfID,
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).NotTo(HaveOccurred(),
+				"user experience must be preserved — tool returns success even if session write fails")
+			Expect(output.Status).To(Equal("workflow_selected"))
+
+			// Verify the goroutine attempted completion (error path exercised)
+			Eventually(func(g Gomega) {
+				_, result := completer.getCompleted()
+				g.Expect(result).NotTo(BeNil(),
+					"ForceCompleteByRemediationID must still be called with the result")
+			}).WithTimeout(2 * time.Second).WithPolling(50 * time.Millisecond).Should(Succeed())
+		})
+	})
 })
 
 var _ = Describe("kubernaut_complete_no_action — interactive pipeline completion", func() {

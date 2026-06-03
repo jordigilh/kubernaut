@@ -33,11 +33,11 @@ func CompleteHTTPSession(completer HTTPSessionCompleter, rrID string, result *ka
 	httpSessionID, found := completer.FindUserDrivingByRemediationID(rrID)
 	if found {
 		if err := completer.CompleteUserDriving(httpSessionID, result); err != nil {
-			logger.Error(err, "failed to complete HTTP session",
+			logger.Error(err, "CRITICAL: failed to complete HTTP session — AA will not receive result",
 				"action", action, "rr_id", rrID, "http_session_id", httpSessionID)
 		}
 	} else if err := completer.ForceCompleteByRemediationID(rrID, result); err != nil {
-		logger.V(1).Info("no HTTP session found to force-complete",
-			"action", action, "rr_id", rrID, "error", err)
+		logger.Error(err, "CRITICAL: both completion paths failed — AA will not receive result",
+			"action", action, "rr_id", rrID)
 	}
 }
