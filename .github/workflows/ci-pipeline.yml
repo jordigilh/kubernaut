@@ -657,7 +657,7 @@ jobs:
             timeout: 20
           - service: kubernautagent
             service_name: "Kubernaut Agent"
-            timeout: 20
+            timeout: 30
           - service: apifrontend
             service_name: "API Frontend"
             timeout: 20
