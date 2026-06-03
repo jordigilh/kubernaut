@@ -573,6 +573,26 @@ var _ = Describe("ErrorClassifier", func() {
 				"Unknown errors should alert for investigation")
 		})
 	})
+
+	Describe("AA-H3: context.Canceled classified as non-retryable (#1356)", func() {
+		It("UT-AA-1356-001: context.Canceled should be non-retryable", func() {
+			classification := errorClassifier.ClassifyError(context.Canceled)
+
+			Expect(classification.ErrorType).To(Equal(handlers.ErrorTypePermanent))
+			Expect(classification.IsRetryable).To(BeFalse(),
+				"context.Canceled means caller aborted; retrying is pointless")
+			Expect(classification.ShouldAlert).To(BeFalse(),
+				"Caller-initiated cancellation is not alertable")
+		})
+
+		It("UT-AA-1356-002: context.DeadlineExceeded remains retryable", func() {
+			classification := errorClassifier.ClassifyError(context.DeadlineExceeded)
+
+			Expect(classification.ErrorType).To(Equal(handlers.ErrorTypeTimeout))
+			Expect(classification.IsRetryable).To(BeTrue(),
+				"Deadline exceeded is a timeout; retrying makes sense")
+		})
+	})
 })
 
 // ========================================
