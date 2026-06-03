@@ -151,7 +151,7 @@ func (t *CompleteNoActionTool) Handle(_ context.Context, input CompleteNoActionI
 		t.timeoutTracker.StopTracking(driver.SessionID)
 	}
 
-	completeHTTPSession(t.httpCompleter, input.RRID, finalResult, t.logger, "complete_no_action")
+	CompleteHTTPSession(t.httpCompleter, input.RRID, finalResult, t.logger, "complete_no_action")
 
 	// Release the MCP interactive lease.
 	if releaseErr := t.sessions.Release(driver.SessionID, "complete_no_action"); releaseErr != nil {

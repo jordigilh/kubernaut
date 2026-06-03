@@ -545,6 +545,10 @@ func (h *InvestigatingHandler) handleSessionPoll(ctx context.Context, analysis *
 		return h.handleSessionPollError(ctx, analysis, err)
 	}
 
+	// AA-CRIT-2: Reset consecutive failure counter on successful poll to prevent
+	// transient errors from accumulating across successful intervals.
+	analysis.Status.ConsecutiveFailures = 0
+
 	switch status.Status {
 	case "pending", "investigating":
 		return h.handleSessionPollPending(ctx, analysis, status)
@@ -729,6 +733,7 @@ func (h *InvestigatingHandler) handleSessionIncidentResult(ctx context.Context, 
 
 // handleSessionPollFailed handles poll results where investigation has failed on KA side.
 // BR-AA-HAPI-064: Surface KA-side failure to operators via CRD status
+// AA-MED-1: Ensure Reason and SubReason are set for structured failure reporting.
 func (h *InvestigatingHandler) handleSessionPollFailed(ctx context.Context, analysis *aianalysisv1.AIAnalysis, status *agentclient.SessionStatusResult) (ctrl.Result, error) {
 	h.log.Info("KA session failed",
 		"sessionID", analysis.Status.KASession.ID,
@@ -737,6 +742,8 @@ func (h *InvestigatingHandler) handleSessionPollFailed(ctx context.Context, anal
 
 	now := metav1.Now()
 	analysis.Status.Phase = aianalysis.PhaseFailed
+	analysis.Status.Reason = aianalysisv1.ReasonAPIError
+	analysis.Status.SubReason = "InvestigationFailed"
 	analysis.Status.CompletedAt = &now
 	analysis.Status.ObservedGeneration = analysis.Generation
 	analysis.Status.Message = status.Error
@@ -771,12 +778,17 @@ func (h *InvestigatingHandler) handleSessionPollCancelled(ctx context.Context, a
 	if h.isChecker != nil {
 		rrName := analysis.Spec.RemediationRequestRef.Name
 		if rrName != "" {
-			if hasIS, checkErr := h.isChecker.HasActiveSession(ctx, rrName); checkErr != nil {
-				h.log.Error(checkErr, "Failed to check IS existence during cancellation, treating as terminal")
-			} else if hasIS {
+			hasIS, checkErr := h.isChecker.HasActiveSession(ctx, rrName)
+			if checkErr != nil {
+				// AA-HIGH-2: Transient API error must not cause premature terminal state.
+				// Requeue to retry the IS check instead of assuming cancellation.
+				h.log.Error(checkErr, "Failed to check IS existence during cancellation, requeuing",
+					"rrName", rrName)
+				return ctrl.Result{RequeueAfter: h.sessionPollInterval}, nil
+			}
+			if hasIS {
 				h.log.Info("IS CRD still active after cancellation — re-submitting with interactive=true (takeover)",
 					"rrName", rrName)
-				// Clear the old session ID to trigger a fresh submit on next reconcile.
 				analysis.Status.KASession.ID = ""
 				return ctrl.Result{Requeue: true}, nil
 			}
@@ -879,18 +891,26 @@ func (h *InvestigatingHandler) handleSessionLost(ctx context.Context, analysis *
 
 // handleSessionGetResultError handles errors when fetching the session result.
 // BR-AA-HAPI-064: 409 Conflict treated as transient (re-poll gracefully at standard interval)
+// AA-HIGH-1: 404 triggers session regeneration (same as poll 404)
 func (h *InvestigatingHandler) handleSessionGetResultError(ctx context.Context, analysis *aianalysisv1.AIAnalysis, err error) (ctrl.Result, error) {
-	// Check for 409 Conflict - treat as transient, re-poll at standard interval
 	var apiErr *agentclient.APIError
-	if errors.As(err, &apiErr) && apiErr.StatusCode == 409 {
-		h.log.Info("GetSessionResult returned 409 Conflict, treating as transient",
-			"sessionID", analysis.Status.KASession.ID,
-		)
-		session := analysis.Status.KASession
-		now := metav1.Now()
-		session.LastPolled = &now
-		session.PollCount++
-		return ctrl.Result{RequeueAfter: h.sessionPollInterval}, nil
+	if errors.As(err, &apiErr) {
+		switch apiErr.StatusCode {
+		case 404:
+			h.log.Info("GetSessionResult returned 404, triggering session regeneration",
+				"sessionID", analysis.Status.KASession.ID,
+			)
+			return h.handleSessionLost(ctx, analysis)
+		case 409:
+			h.log.Info("GetSessionResult returned 409 Conflict, treating as transient",
+				"sessionID", analysis.Status.KASession.ID,
+			)
+			session := analysis.Status.KASession
+			now := metav1.Now()
+			session.LastPolled = &now
+			session.PollCount++
+			return ctrl.Result{RequeueAfter: h.sessionPollInterval}, nil
+		}
 	}
 
 	// For other errors, use standard error classification

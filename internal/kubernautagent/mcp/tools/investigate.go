@@ -657,7 +657,7 @@ func (t *InvestigateTool) handleComplete(input InvestigateInput, user mcpinterna
 
 	t.emitInteractiveCompleted(sess.SessionID, input.RRID, user.Username, "complete")
 
-	completeHTTPSession(t.httpCompleter, input.RRID, nil, t.logger, "complete")
+	CompleteHTTPSession(t.httpCompleter, input.RRID, nil, t.logger, "complete")
 
 	if t.metrics != nil {
 		t.metrics.RecordInteractiveSessionEnded()
@@ -942,7 +942,7 @@ func (t *InvestigateTool) handleCancel(input InvestigateInput, user mcpinternal.
 
 	t.emitInteractiveCompleted(sess.SessionID, input.RRID, user.Username, "cancel")
 
-	completeHTTPSession(t.httpCompleter, input.RRID, nil, t.logger, "cancel")
+	CompleteHTTPSession(t.httpCompleter, input.RRID, nil, t.logger, "cancel")
 
 	if t.metrics != nil {
 		t.metrics.RecordInteractiveSessionEnded()

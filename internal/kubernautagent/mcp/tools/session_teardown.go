@@ -22,10 +22,11 @@ import (
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
-// completeHTTPSession bridges the MCP session lifecycle event to the HTTP session
+// CompleteHTTPSession bridges the MCP session lifecycle event to the HTTP session
 // store that the AA controller polls. It attempts FindUserDriving first, falling
 // back to ForceComplete when the session is not in user_driving status.
-func completeHTTPSession(completer HTTPSessionCompleter, rrID string, result *katypes.InvestigationResult, logger logr.Logger, action string) {
+// Exported for use by cmd/kubernautagent/main.go (timeout/disconnect handlers).
+func CompleteHTTPSession(completer HTTPSessionCompleter, rrID string, result *katypes.InvestigationResult, logger logr.Logger, action string) {
 	if completer == nil {
 		return
 	}

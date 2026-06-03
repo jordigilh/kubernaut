@@ -11,6 +11,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
 )
 
 // WorkflowParameter describes a single input parameter for a workflow.
@@ -50,6 +51,11 @@ type DiscoverWorkflowsResult struct {
 //
 //nolint:gocritic // hugeParam: args passed by value for simplicity
 func HandleDiscoverWorkflows(ctx context.Context, mcpClient ka.MCPClient, args DiscoverWorkflowsArgs) (DiscoverWorkflowsResult, error) {
+	if args.RRID != "" {
+		if err := validate.RRID(args.RRID); err != nil {
+			return DiscoverWorkflowsResult{}, fmt.Errorf("invalid rr_id: %w", err)
+		}
+	}
 	if mcpClient == nil {
 		return DiscoverWorkflowsResult{}, fmt.Errorf("workflow discovery is not available: MCP client not configured")
 	}
@@ -203,6 +209,9 @@ type SelectWorkflowResult struct {
 //
 //nolint:gocritic // hugeParam: args passed by value for simplicity; not performance-critical
 func HandleSelectWorkflow(ctx context.Context, mcpClient ka.MCPClient, args SelectWorkflowArgs, auditor audit.Emitter) (SelectWorkflowResult, error) {
+	if err := validate.RRID(args.RRID); err != nil {
+		return SelectWorkflowResult{}, fmt.Errorf("invalid rr_id: %w", err)
+	}
 	if mcpClient == nil {
 		return SelectWorkflowResult{}, fmt.Errorf("workflow selection is not available: MCP client not configured")
 	}

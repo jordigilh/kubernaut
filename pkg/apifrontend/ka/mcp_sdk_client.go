@@ -308,7 +308,7 @@ func (c *SDKMCPClient) StartInvestigation(ctx context.Context, args StartInvesti
 		"acting_user_groups": identity.Groups,
 	}
 
-	callCtx, callCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	callCtx, callCancel := context.WithTimeout(ctx, 30*time.Second)
 	defer callCancel()
 	result, err := session.CallTool(callCtx, &mcp.CallToolParams{
 		Name:      "kubernaut_investigate",

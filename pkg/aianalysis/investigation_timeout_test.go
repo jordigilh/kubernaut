@@ -161,6 +161,20 @@ var _ = Describe("AA-Side Investigation Timeout — #1078", func() {
 		})
 	})
 
+	Describe("UT-AA-1351-TOUT-006: successful poll resets ConsecutiveFailures (AA-CRIT-2)", func() {
+		It("should reset ConsecutiveFailures to 0 on successful poll", func() {
+			analysis := createTimeoutTestAnalysis(time.Now().Add(-5 * time.Minute))
+			analysis.Status.ConsecutiveFailures = 3
+			mockClient.WithSessionPollStatus("investigating")
+
+			_, err := handler.Handle(ctx, analysis)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(analysis.Status.ConsecutiveFailures).To(Equal(int32(0)),
+				"successful poll must reset ConsecutiveFailures to prevent transient error accumulation (AA-CRIT-2)")
+		})
+	})
+
 	Describe("UT-AA-1351-TOUT-005: user_driving respects MaxInvestigationDuration (AA-CRIT-1)", func() {
 		It("should transition to PhaseFailed when user_driving exceeds MaxInvestigationDuration", func() {
 			// Session created 30 minutes ago (exceeds 25 minute limit)
