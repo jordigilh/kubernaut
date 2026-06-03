@@ -901,6 +901,36 @@ var _ = Describe("kubernaut_select_workflow — helper functions", func() {
 		})
 	})
 
+	Describe("UT-KA-1351-011-digest: buildFinalResult propagates ExecutionBundleDigest (KA-MED-1)", func() {
+		It("should copy ExecutionBundleDigest from workflow to result", func() {
+			rca := &katypes.InvestigationResult{RCASummary: "OOM", Confidence: 0.8}
+			workflow := &mcptools.CatalogWorkflow{
+				WorkflowID:            "wf-restart",
+				ExecutionBundle:       "bundle.tar.gz",
+				ExecutionBundleDigest: "sha256:abc123",
+			}
+			result := mcptools.BuildFinalResult(rca, workflow, nil)
+			Expect(result.ExecutionBundleDigest).To(Equal("sha256:abc123"),
+				"buildFinalResult must propagate ExecutionBundleDigest from catalog (KA-MED-1)")
+		})
+	})
+
+	Describe("UT-KA-1351-014: buildFinalResult with nil discovery gracefully degrades (KA-MED-8)", func() {
+		It("should not panic and fall back to RCA-only fields", func() {
+			rca := &katypes.InvestigationResult{
+				RCASummary: "Disk full",
+				Confidence: 0.75,
+			}
+			workflow := &mcptools.CatalogWorkflow{WorkflowID: "wf-cleanup"}
+
+			// Should not panic with nil discovery
+			result := mcptools.BuildFinalResult(rca, workflow, nil)
+			Expect(result.Confidence).To(Equal(0.75))
+			Expect(result.RCASummary).To(Equal("Disk full"))
+			Expect(result.WorkflowID).To(Equal("wf-cleanup"))
+		})
+	})
+
 	Describe("UT-KA-SW-ISWF-001: isWorkflowInDiscoveryResult edge cases", func() {
 		It("should match recommended workflow", func() {
 			dr := &mcpinternal.WorkflowDiscoveryResult{

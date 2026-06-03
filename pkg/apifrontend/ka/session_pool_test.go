@@ -468,3 +468,25 @@ var _ = Describe("KASessionPool (G2 + G9: Pool + User Isolation)", func() {
 		})
 	})
 })
+
+var _ = Describe("IT-AF-1351: KASessionPool EvictIdle wiring", func() {
+
+	It("IT-AF-1351-EVICT: EvictIdle removes entries older than IdleTTL", func() {
+		pool := ka.NewKASessionPool(ka.PoolConfig{
+			Factory: func(ctx context.Context) (ka.PoolSession, error) {
+				return &mockPoolSession{}, nil
+			},
+			MaxEntries: 10,
+			IdleTTL:    50 * time.Millisecond,
+			Logger:     logr.Discard(),
+		})
+
+		pool.Inject("rr-1", "user-1", &mockPoolSession{})
+
+		time.Sleep(100 * time.Millisecond)
+
+		evicted := pool.EvictIdle()
+		Expect(evicted).To(Equal(1), "EvictIdle must remove entries older than IdleTTL (AF-HIGH-2)")
+		Expect(pool.Size()).To(Equal(0))
+	})
+})

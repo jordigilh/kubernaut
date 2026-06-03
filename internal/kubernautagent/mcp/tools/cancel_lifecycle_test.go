@@ -20,6 +20,7 @@ import (
 	"context"
 	"sync"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -135,6 +136,36 @@ var _ = Describe("#1351 KA Session Lifecycle — handleCancel HTTP bridge", func
 			Expect(tracker.stoppedSessionID()).To(Equal("mcp-sess-005"),
 				"complete_no_action must call StopTracking (KA-MED-4)")
 		})
+	})
+})
+
+var _ = Describe("UT-KA-1351-003: TimeoutManager onExpire resolves HTTP session (KA-CRIT-2)", func() {
+	It("should complete the HTTP session when called with a valid rrID", func() {
+		completer := &cancelLifecycleHTTPCompleter{
+			foundID: "http-sess-timeout",
+			found:   true,
+		}
+		logger := logr.Discard()
+
+		mcptools.CompleteHTTPSession(completer, "rr-timeout-001", nil, logger, "inactivity_timeout")
+
+		completedID, _ := completer.getCompleted()
+		Expect(completedID).To(Equal("http-sess-timeout"),
+			"CompleteHTTPSession must call CompleteUserDriving for timeout path (KA-CRIT-2)")
+	})
+})
+
+var _ = Describe("UT-KA-1351-004: SessionClosedHandler disconnect resolves HTTP session (KA-CRIT-2)", func() {
+	It("should complete the HTTP session via ForceComplete when no user_driving match", func() {
+		completer := &cancelLifecycleHTTPCompleter{
+			found: false, // No active user_driving session
+		}
+		logger := logr.Discard()
+
+		mcptools.CompleteHTTPSession(completer, "rr-disconnect-001", nil, logger, "disconnect")
+
+		Expect(completer.forceCompleteCalled()).To(BeTrue(),
+			"CompleteHTTPSession must fall back to ForceComplete on disconnect (KA-CRIT-2)")
 	})
 })
 

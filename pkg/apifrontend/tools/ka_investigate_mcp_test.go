@@ -236,6 +236,20 @@ var _ = Describe("formatEventForUser — #1326 BR-MCP-008 event filtering", func
 		})
 	})
 
+	Describe("UT-AF-1351-021: FormatEventForUser applies RedactError on error events (AF-HIGH-4)", func() {
+		It("should redact internal error details before returning to user", func() {
+			evt := ka.InvestigationEvent{
+				Type: ka.EventTypeError,
+				Data: json.RawMessage(`{"error": "connection refused: dial tcp 10.0.0.1:8080: connect: connection refused"}`),
+			}
+			text := tools.FormatEventForUser(evt)
+			Expect(text).NotTo(ContainSubstring("10.0.0.1"),
+				"Internal IP addresses must be redacted from user-facing error events (AF-HIGH-4)")
+			Expect(text).To(HavePrefix("Error: "),
+				"Error events should still have the Error: prefix")
+		})
+	})
+
 	Describe("UT-AF-1326-043: complete events produce terminal text", func() {
 		It("should return 'Investigation complete.'", func() {
 			evt := ka.InvestigationEvent{
