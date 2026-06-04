@@ -53,9 +53,8 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 		// Pattern: RO E2E (test/e2e/remediationorchestrator/suite_test.go)
 		testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "gw-resilience")
 
-		// Get DataStorage URL from environment (for reference, though not used in all tests)
-		// Use suite-level gatewayURL (deployed Gateway service)
-		// Note: gatewayURL is defined at suite level in gateway_e2e_suite_test.go
+		// Create test pod for owner resolution (GW-H2: resource validation requires existing pod)
+		helpers.EnsureTestPod(ctx, k8sClient, testNamespace, "resilience-test-pod")
 	})
 
 	AfterEach(func() {
@@ -78,7 +77,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 				AlertName: "KubernetesAPIDown",
 				Namespace: testNamespace,
 				Severity:  "critical",
-				PodName:   "kube-apiserver-node-1",
+				PodName:   "resilience-test-pod",
 				Labels: map[string]string{
 					"component": "kube-apiserver",
 				},
@@ -151,7 +150,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 				AlertName: "TestRetryAfter",
 				Namespace: testNamespace,
 				Severity:  "warning",
-				PodName:   "retry-test-pod",
+				PodName:   "resilience-test-pod",
 			})
 
 			req, _ := http.NewRequest("POST",
@@ -186,7 +185,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 				AlertName: "TestK8sAPIError",
 				Namespace: testNamespace,
 				Severity:  "critical",
-				PodName:   "k8s-error-test-pod",
+				PodName:   "resilience-test-pod",
 			})
 
 			req, _ := http.NewRequest("POST",
@@ -225,7 +224,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 				AlertName: "DataStorageDown",
 				Namespace: testNamespace,
 				Severity:  "warning",
-				PodName:   "data-storage-pod-0",
+				PodName:   "resilience-test-pod",
 				Labels: map[string]string{
 					"component": "data-storage",
 				},
@@ -278,7 +277,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 				AlertName: "TestDataStorageError",
 				Namespace: testNamespace,
 				Severity:  "info",
-				PodName:   "ds-error-test-pod",
+				PodName:   "resilience-test-pod",
 			})
 
 			req, _ := http.NewRequest("POST",
@@ -331,7 +330,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 				AlertName: "TestDataStorageRecovery",
 				Namespace: testNamespace,
 				Severity:  "warning",
-				PodName:   "ds-recovery-test-pod",
+				PodName:   "resilience-test-pod",
 			})
 
 			req, _ := http.NewRequest("POST",
@@ -381,7 +380,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 				AlertName: "TestCombinedFailures",
 				Namespace: testNamespace,
 				Severity:  "critical",
-				PodName:   "combined-failure-pod",
+				PodName:   "resilience-test-pod",
 			})
 
 			req, _ := http.NewRequest("POST",

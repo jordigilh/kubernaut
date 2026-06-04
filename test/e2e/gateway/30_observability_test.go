@@ -421,7 +421,8 @@ var _ = Describe("Observability E2E Tests", func() {
 
 			// Send requests to different endpoints (use unique name)
 			uniqueID := time.Now().UnixNano()
-			podName := fmt.Sprintf("api-pod-%d", uniqueID)
+			podName := fmt.Sprintf("obs-duration-pod-%d", uniqueID)
+			helpers.EnsureTestPod(ctx, k8sClient, testNamespace, podName)
 			payload := GeneratePrometheusAlert(PrometheusAlertPayload{
 				AlertName: fmt.Sprintf("EndpointTest-%d", uniqueID),
 				Namespace: testNamespace,
