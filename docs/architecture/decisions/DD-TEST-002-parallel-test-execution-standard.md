@@ -350,7 +350,7 @@ All service Dockerfiles MUST be optimized for fast E2E builds:
 
 ```dockerfile
 # ✅ CORRECT: Fast builds (~2 minutes)
-FROM registry.access.redhat.com/ubi10/go-toolset:1.25 AS builder
+FROM registry.access.redhat.com/ubi10/go-toolset:1.26 AS builder
 
 # Install build dependencies (NO dnf update)
 RUN dnf install -y git ca-certificates tzdata && \

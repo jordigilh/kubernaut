@@ -432,23 +432,25 @@ var _ = Describe("Progressive A2A Streaming (issue #1258)", Label("e2e", "phase3
 		Expect(len(arts2)+len(statuses2)).To(BeNumerically(">", 0),
 			"turn 2 must produce SSE events (progressive artifacts or status updates)")
 
-		// SC-4 assertion: artifact text is non-empty (reasoning content was bridged)
-		if len(arts2) > 0 {
-			hasContent := false
-			for _, art := range arts2 {
-				for _, part := range art.Artifact.Parts {
-					if part.Kind == "text" && strings.TrimSpace(part.Text) != "" {
-						hasContent = true
-						break
-					}
-				}
-				if hasContent {
+		// SC-4 assertion: at least one artifact across the entire streaming
+		// session contains non-empty reasoning text. ADK >=v1.4 changed how
+		// OutputArtifactPerEvent emits artifacts for follow-up turns, so we
+		// validate across both turns rather than Turn 2 alone.
+		allArts := append(arts1, arts2...)
+		hasContent := false
+		for _, art := range allArts {
+			for _, part := range art.Artifact.Parts {
+				if part.Kind == "text" && strings.TrimSpace(part.Text) != "" {
+					hasContent = true
 					break
 				}
 			}
-			Expect(hasContent).To(BeTrue(),
-				"progressive artifact events must contain non-empty reasoning text (SC-4)")
+			if hasContent {
+				break
+			}
 		}
+		Expect(hasContent).To(BeTrue(),
+			"progressive artifact events must contain non-empty reasoning text (SC-4)")
 
 		// Final state must be completed or failed (stream lifecycle closed)
 		hasFinal := false

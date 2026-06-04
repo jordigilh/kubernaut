@@ -6,8 +6,8 @@
 # Based on upstream Dockerfile with Red Hat UBI base images
 # Uses publicly accessible registry.access.redhat.com (no auth required)
 
-# Build stage - Red Hat UBI 10 with Go 1.25
-FROM registry.access.redhat.com/ubi10/go-toolset:1.25 AS builder
+# Build stage - Red Hat UBI 10 with Go 1.26
+FROM registry.access.redhat.com/ubi10/go-toolset:1.26 AS builder
 
 WORKDIR /workspace
 

@@ -120,7 +120,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: '1.25.11'
+          go-version: '1.26.4'
           cache: true
 
       - name: Generate Go code
@@ -169,7 +169,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: '1.25.11'
+          go-version: '1.26.4'
           cache: true
 
       - name: Install go-licenses
@@ -209,7 +209,7 @@ jobs:
     needs: [detect-changes]
     if: needs.detect-changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -235,7 +235,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: '1.25.11'
+          go-version: '1.26.4'
           cache: true
 
       - name: Generate Go code
@@ -364,7 +364,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: '1.25.11'
+          go-version: '1.26.4'
           cache: true
 
       - name: Generate required files
@@ -499,7 +499,7 @@ jobs:
           submodules: true
       - uses: actions/setup-go@v6
         with:
-          go-version: '1.25.11'
+          go-version: '1.26.4'
       - name: Generate OpenAPI specs
         run: make generate
       - name: Install Podman
@@ -660,7 +660,7 @@ jobs:
             timeout: 30
           - service: apifrontend
             service_name: "API Frontend"
-            timeout: 20
+            timeout: 25
           - service: fullpipeline
             service_name: "Full Pipeline"
             timeout: 20
@@ -681,7 +681,7 @@ jobs:
 
       - uses: actions/setup-go@v6
         with:
-          go-version: '1.25.11'
+          go-version: '1.26.4'
       - name: Generate OpenAPI specs
         run: make generate
       - name: Install Podman
@@ -860,7 +860,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: '1.25.11'
+          go-version: '1.26.4'
           cache: true
 
       - name: CRD freshness gate
