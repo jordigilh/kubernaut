@@ -810,11 +810,25 @@ func (r *WorkflowExecutionReconciler) CheckCooldownActive(ctx context.Context, t
 		cooldown = DefaultCooldownPeriod
 	}
 
-	// Query all WorkflowExecutions with the same targetResource
+	// Query all WorkflowExecutions with the same targetResource.
+	// Retry up to 3 times with short backoff to tolerate transient informer/API
+	// pressure in resource-constrained environments (e.g., Kind CI clusters).
+	// Only fail-closed if ALL attempts fail (DD-WE-001 compliance).
 	wfeList := &workflowexecutionv1alpha1.WorkflowExecutionList{}
-	if err := r.List(ctx, wfeList, client.MatchingFields{"spec.targetResource": targetResource}); err != nil {
-		logger.Error(err, "Failed to list WorkflowExecutions for cooldown check — failing closed",
-			"targetResource", targetResource)
+	const maxAttempts = 3
+	var listErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		listErr = r.List(ctx, wfeList, client.MatchingFields{"spec.targetResource": targetResource})
+		if listErr == nil {
+			break
+		}
+		if attempt < maxAttempts {
+			time.Sleep(50 * time.Millisecond)
+		}
+	}
+	if listErr != nil {
+		logger.Error(listErr, "Failed to list WorkflowExecutions for cooldown check after retries — failing closed",
+			"targetResource", targetResource, "attempts", maxAttempts)
 		return cooldown, true
 	}
 

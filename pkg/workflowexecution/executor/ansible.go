@@ -663,11 +663,16 @@ func (a *AnsibleExecutor) storeCredentialIDs(
 	credentialIDs []int,
 ) error {
 	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		if err := a.K8sClient.Get(ctx, client.ObjectKeyFromObject(wfe), wfe); err != nil {
+		fresh := wfe.DeepCopy()
+		if err := a.K8sClient.Get(ctx, client.ObjectKeyFromObject(fresh), fresh); err != nil {
 			return err
 		}
-		wfe.Status.EphemeralCredentialIDs = credentialIDs
-		return a.K8sClient.Status().Update(ctx, wfe)
+		fresh.Status.EphemeralCredentialIDs = credentialIDs
+		if err := a.K8sClient.Status().Update(ctx, fresh); err != nil {
+			return err
+		}
+		wfe.SetResourceVersion(fresh.GetResourceVersion())
+		return nil
 	})
 }
 
