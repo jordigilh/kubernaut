@@ -190,6 +190,7 @@ func (h *Handler) HandleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Step 7: Audit workflow creation (synchronous per ADR-032)
+	// DS-H5: Bounded context (5s) prevents indefinite blocking if Data Storage is slow.
 	if h.auditStore != nil {
 		auditEvent, auditErr := dsaudit.NewWorkflowCreatedAuditEvent(workflow)
 		if auditErr != nil {
@@ -197,11 +198,15 @@ func (h *Handler) HandleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 				"workflow_id", workflow.WorkflowID,
 				"workflow_name", workflow.WorkflowName,
 			)
-		} else if storeErr := h.auditStore.StoreAudit(r.Context(), auditEvent); storeErr != nil {
-			h.logger.Error(storeErr, "Failed to persist workflow creation audit",
-				"workflow_id", workflow.WorkflowID,
-				"workflow_name", workflow.WorkflowName,
-			)
+		} else {
+			auditCtx, auditCancel := context.WithTimeout(r.Context(), 5*time.Second)
+			defer auditCancel()
+			if storeErr := h.auditStore.StoreAudit(auditCtx, auditEvent); storeErr != nil {
+				h.logger.Error(storeErr, "Failed to persist workflow creation audit",
+					"workflow_id", workflow.WorkflowID,
+					"workflow_name", workflow.WorkflowName,
+				)
+			}
 		}
 	}
 
