@@ -224,6 +224,15 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	token := string(data)
 	GinkgoWriter.Printf("DD-AUTH-014: ServiceAccount token received (%d bytes)\n", len(token))
 
+	// Write SA token to temp file so production code paths using
+	// NewDefaultTokenSource() can read it via SA_TOKEN_PATH env var.
+	saTokenFile, err := os.CreateTemp("", "sa-token-em-*")
+	Expect(err).ToNot(HaveOccurred())
+	_, err = saTokenFile.WriteString(token)
+	Expect(err).ToNot(HaveOccurred())
+	Expect(saTokenFile.Close()).To(Succeed())
+	Expect(os.Setenv("SA_TOKEN_PATH", saTokenFile.Name())).To(Succeed())
+
 	// Create per-process context for controller lifecycle
 	ctx, cancel = context.WithCancel(context.Background())
 

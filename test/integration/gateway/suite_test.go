@@ -203,6 +203,15 @@ var _ = SynchronizedBeforeSuite(
 		
 		// Extract ServiceAccount token from Phase 1
 		saToken := string(data)
+
+		// Write SA token to temp file so production code paths using
+		// NewDefaultTokenSource() can read it via SA_TOKEN_PATH env var.
+		saTokenFile, err := os.CreateTemp("", "sa-token-*")
+		Expect(err).ToNot(HaveOccurred())
+		_, err = saTokenFile.WriteString(saToken)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(saTokenFile.Close()).To(Succeed())
+		Expect(os.Setenv("SA_TOKEN_PATH", saTokenFile.Name())).To(Succeed())
 		
 		// STANDARDIZED PATTERN: Use shared helper for authenticated client creation
 		dataStorageURL := fmt.Sprintf("http://127.0.0.1:%d", infrastructure.GatewayIntegrationDataStoragePort)

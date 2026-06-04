@@ -405,6 +405,15 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	}
 	GinkgoWriter.Printf("✅ Received ServiceAccount token from Phase 1 (length: %d bytes)\n", len(token))
 
+	// Write SA token to temp file so production code paths using
+	// NewDefaultTokenSource() can read it via SA_TOKEN_PATH env var.
+	saTokenFile, err := os.CreateTemp("", "sa-token-nt-*")
+	Expect(err).ToNot(HaveOccurred())
+	_, err = saTokenFile.WriteString(token)
+	Expect(err).ToNot(HaveOccurred())
+	Expect(saTokenFile.Close()).To(Succeed())
+	Expect(os.Setenv("SA_TOKEN_PATH", saTokenFile.Name())).To(Succeed())
+
 	// DD-AUTH-014: Create authenticated DataStorage clients
 	// Uses ServiceAccount Bearer token for all DataStorage API calls
 	dsClients = integration.NewAuthenticatedDataStorageClients(

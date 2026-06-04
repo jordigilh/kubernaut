@@ -119,8 +119,14 @@ func (ts *TokenSource) SetLogger(l logr.Logger) {
 
 // NewDefaultTokenSource creates a TokenSource for the standard Kubernetes
 // projected volume at /var/run/secrets/kubernetes.io/serviceaccount/token.
+// Override with SA_TOKEN_PATH env var for integration tests that write a
+// token to a temp file outside the standard projected volume path.
 func NewDefaultTokenSource() *TokenSource {
-	return NewTokenSource(defaultTokenPath)
+	path := defaultTokenPath
+	if override := os.Getenv("SA_TOKEN_PATH"); override != "" {
+		path = override
+	}
+	return NewTokenSource(path)
 }
 
 // Token returns the cached SA token, re-reading from disk when the cache has
