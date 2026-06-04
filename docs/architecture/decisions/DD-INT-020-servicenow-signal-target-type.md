@@ -26,7 +26,7 @@
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
-| 1.2 | 2026-06-04 | Architecture Team | B2 clarified: KA injects full ticket data (not summaries) as raw context; LLM triages related tickets against resource state. Workflow selection is mandatory unless ticket is already closed (mirrors K8s flow). |
+| 1.2 | 2026-06-04 | Architecture Team | B2 clarified: KA injects lightweight list (numbers + titles) of related tickets, LLM uses ServiceNow tools to drill into details (mirrors K8s tool-driven investigation pattern). Workflow selection is mandatory unless ticket is already closed. |
 | 1.1 | 2026-06-04 | Architecture Team | Dropped Part D (EM verification) and B6 (KA verification endpoint). ServiceNow is its own audit trail -- WFE success/failure is sufficient. Removed C3 (ProviderData to EA) since EM no longer consumes it. Simplified scope and file count. |
 | 1.0 | 2026-06-03 | Architecture Team | Initial design: pipeline plumbing, KA enrichment/prompt/tools, RO guards, EM contract-driven verification, ProviderData schema |
 
@@ -178,12 +178,12 @@ Also skip re-enrichment (post-RCA target resolution). Downstream consumers handl
 
 **Phase 1** (`incident_investigation.tmpl`): Add `{{ if eq .TargetType "servicenow" }}` conditional block (mirrors existing `{{ if eq .SignalMode "proactive" }}` pattern) containing:
 
-- **Full original ticket data** from ProviderData (number, description, state, priority, CMDB CI, timestamps, assignment details) -- injected as raw context, not pre-digested summaries
-- **Full related open ticket data** for the same CMDB CI (fetched by KA pre-enrichment) -- each ticket's complete details, not summaries
-- **Investigation instructions** directing the LLM to triage the related tickets against the state of the resource: the LLM must determine whether the symptoms in the original ticket are explained by what the related tickets describe (scheduled maintenance, known changes, etc.) or whether the problem is independent
+- **Original ticket context** from ProviderData (number, description, state, priority, CMDB CI, timestamps, assignment details)
+- **Lightweight list of related open tickets** for the same CMDB CI (fetched by KA pre-enrichment) -- ticket numbers and titles only, not full details
+- **Tool-driven investigation instructions** directing the LLM to use ServiceNow tools (`servicenow_get_ticket`, etc.) to drill into the related tickets, extract summaries and relevant details, and triage them against the state of the resource to determine whether the symptoms in the original ticket are explained by the related tickets (scheduled maintenance, known changes, etc.) or whether the problem is independent
 - **`submit_result` schema guidance** including `is_false_alarm`, `explained_by_ticket`, `correlation_reasoning` fields
 
-The key design principle: KA provides the raw evidence (original ticket + related tickets + CMDB CI context). The LLM does the triage -- cross-referencing related tickets against the actual resource state to determine causality. KA does not pre-process or summarize the tickets.
+The key design principle mirrors the K8s investigation pattern: KA provides the signal context (original ticket + lightweight list of related ticket numbers/titles) and the LLM uses tools to investigate. The LLM decides which related tickets to drill into, fetches their details via ServiceNow tools, and does the triage itself. KA does not pre-load full ticket data into the prompt -- the LLM drives the investigation through tool calls, just as it uses `kubectl_describe` and `kubectl_logs` for K8s signals.
 
 **Phase 3** (`phase3_workflow_selection.tmpl`): Add ServiceNow action-type selection rules (CloseAlert vs EscalateTicket) alongside existing K8s/GitOps rules.
 
