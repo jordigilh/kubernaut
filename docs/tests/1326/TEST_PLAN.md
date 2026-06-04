@@ -336,7 +336,7 @@ are escalated before proceeding.
 
 | Component | Tool |
 |-----------|------|
-| Go version | 1.25.11+ |
+| Go version | 1.26+ |
 | Test framework | Ginkgo v2 / Gomega |
 | MCP SDK | `github.com/modelcontextprotocol/go-sdk` v1.6.0 |
 | K8s testing | envtest (kubebuilder) for IT tier |

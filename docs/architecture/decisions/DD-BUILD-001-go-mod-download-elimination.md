@@ -74,7 +74,7 @@ This decision applies to ALL Kubernaut Dockerfiles:
 
 ```dockerfile
 # Stage 1: Build
-FROM registry.access.redhat.com/ubi10/go-toolset:1.25 AS builder
+FROM registry.access.redhat.com/ubi10/go-toolset:1.26 AS builder
 
 USER 1001
 WORKDIR /opt/app-root/src

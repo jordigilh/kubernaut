@@ -10,13 +10,13 @@
 #   Production:  podman build --target production -t authwebhook:v1.0 -f docker/authwebhook.Dockerfile .
 #   Development: podman build --build-arg GOFLAGS=-cover -t authwebhook:dev -f docker/authwebhook.Dockerfile .
 
-ARG BUILDER_IMAGE=registry.access.redhat.com/ubi10/go-toolset:1.25
+ARG BUILDER_IMAGE=registry.access.redhat.com/ubi10/go-toolset:1.26
 ARG BASE_IMAGE=registry.access.redhat.com/ubi10/ubi-minimal:latest
 
 # ============================================================================
 # Stage 1: Build (native cross-compile, no QEMU needed for Go)
 # ============================================================================
-# SECURITY: Pin to specific digest on release. Run: skopeo inspect --format '{{.Digest}}' docker://registry.access.redhat.com/ubi10/go-toolset:1.25
+# SECURITY: Pin to specific digest on release. Run: skopeo inspect --format '{{.Digest}}' docker://registry.access.redhat.com/ubi10/go-toolset:1.26
 # Best practice: pass --build-arg BUILDER_IMAGE=registry.access.redhat.com/ubi10/go-toolset@sha256:<digest> in CI; digests change with each image release.
 FROM ${BUILDER_IMAGE} AS builder
 ENV GOTOOLCHAIN=auto

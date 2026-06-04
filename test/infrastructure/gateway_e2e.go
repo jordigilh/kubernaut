@@ -885,7 +885,7 @@ func BuildGatewayImageWithCoverage(writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "  📦 Building Gateway with coverage: %s\n", imageName)
 
 	// Build with GOFLAGS=-cover for E2E coverage
-	// Using go-toolset:1.25 (no dnf update) reduces build time from 10min to 2-3min
+	// Using go-toolset:1.26 (no dnf update) reduces build time from 10min to 2-3min
 	// CRITICAL: --no-cache ensures latest code changes are included (DD-TEST-002)
 	cmd := exec.Command(containerCmd, "build",
 		"--no-cache", // Force fresh build to include latest code changes

@@ -1,8 +1,8 @@
 # ADR-027: Multi-Architecture Container Build Strategy with Red Hat UBI Base Images
 # Build Stage: Red Hat UBI10 Go Toolset 1.25
-ARG BUILDER_IMAGE=registry.access.redhat.com/ubi10/go-toolset:1.25
+ARG BUILDER_IMAGE=registry.access.redhat.com/ubi10/go-toolset:1.26
 
-# SECURITY: Pin to specific digest on release. Run: skopeo inspect --format '{{.Digest}}' docker://registry.access.redhat.com/ubi10/go-toolset:1.25
+# SECURITY: Pin to specific digest on release. Run: skopeo inspect --format '{{.Digest}}' docker://registry.access.redhat.com/ubi10/go-toolset:1.26
 # Best practice: pass --build-arg BUILDER_IMAGE=registry.access.redhat.com/ubi10/go-toolset@sha256:<digest> in CI; digests change with each image release.
 FROM ${BUILDER_IMAGE} AS builder
 ENV GOTOOLCHAIN=auto
