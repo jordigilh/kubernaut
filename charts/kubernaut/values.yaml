@@ -671,6 +671,8 @@ apifrontend:
           - kubernaut_get_audit_trail
         remediation-approver:
           - kubernaut_approve
+          - kubernaut_list_approval_requests
+          - kubernaut_get_approval_request
           - kubernaut_list_remediations
           - kubernaut_get_remediation
           - kubernaut_watch
