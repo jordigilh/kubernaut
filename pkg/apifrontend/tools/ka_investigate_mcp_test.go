@@ -19,6 +19,7 @@ package tools_test
 import (
 	"context"
 	"encoding/json"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-logr/logr"
