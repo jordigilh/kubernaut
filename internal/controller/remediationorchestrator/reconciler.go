@@ -895,7 +895,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		}
 
 		// BR-ORCH-044: Track routing decision - no action needed
-		r.Metrics.NoActionNeededTotal.WithLabelValues(rr.Namespace, string(rr.Status.OverallPhase)).Inc()
+		r.Metrics.NoActionNeededTotal.WithLabelValues(string(rr.Status.OverallPhase), rr.Namespace).Inc()
 
 		// #265: Requeue for TTL cleanup at expiry time
 		return ctrl.Result{RequeueAfter: retentionRequeue}, nil
