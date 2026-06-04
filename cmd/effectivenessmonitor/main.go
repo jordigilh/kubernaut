@@ -92,10 +92,11 @@ func main() {
 	// ========================================
 	cfg, err := config.LoadFromFile(configPath)
 	if err != nil {
-		setupLog.Error(err, "Failed to load configuration from file, using defaults",
+		setupLog.Error(err, "Failed to load configuration -- aborting startup",
 			"configPath", configPath)
-		cfg = config.DefaultConfig()
-	} else if configPath != "" {
+		os.Exit(1)
+	}
+	if configPath != "" {
 		setupLog.Info("Configuration loaded successfully", "configPath", configPath)
 	} else {
 		setupLog.Info("No config file specified, using defaults")
