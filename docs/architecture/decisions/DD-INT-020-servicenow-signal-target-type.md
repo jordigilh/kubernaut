@@ -2,7 +2,7 @@
 
 **Status**: Proposed
 **Decision Date**: 2026-06-03
-**Version**: 1.1
+**Version**: 1.2
 **Confidence**: 94%
 **Deciders**: Architecture Team
 **Applies To**: API Frontend, Signal Processing, Remediation Orchestrator, AI Analysis, Kubernaut Agent, Workflow Execution
@@ -26,6 +26,7 @@
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 1.2 | 2026-06-04 | Architecture Team | B2 clarified: KA injects full ticket data (not summaries) as raw context; LLM triages related tickets against resource state. Workflow selection is mandatory unless ticket is already closed (mirrors K8s flow). |
 | 1.1 | 2026-06-04 | Architecture Team | Dropped Part D (EM verification) and B6 (KA verification endpoint). ServiceNow is its own audit trail -- WFE success/failure is sufficient. Removed C3 (ProviderData to EA) since EM no longer consumes it. Simplified scope and file count. |
 | 1.0 | 2026-06-03 | Architecture Team | Initial design: pipeline plumbing, KA enrichment/prompt/tools, RO guards, EM contract-driven verification, ProviderData schema |
 
@@ -176,12 +177,23 @@ Also skip re-enrichment (post-RCA target resolution). Downstream consumers handl
 #### B2: Prompt Templates
 
 **Phase 1** (`incident_investigation.tmpl`): Add `{{ if eq .TargetType "servicenow" }}` conditional block (mirrors existing `{{ if eq .SignalMode "proactive" }}` pattern) containing:
-- ServiceNow ticket context from ProviderData (number, description, state, CMDB CI)
-- Pre-fetched related active ticket summaries
-- Tool guidance for ServiceNow-specific investigation tools
-- Modified `submit_result` schema guidance including `is_false_alarm`, `explained_by_ticket`, `correlation_reasoning`
+
+- **Full original ticket data** from ProviderData (number, description, state, priority, CMDB CI, timestamps, assignment details) -- injected as raw context, not pre-digested summaries
+- **Full related open ticket data** for the same CMDB CI (fetched by KA pre-enrichment) -- each ticket's complete details, not summaries
+- **Investigation instructions** directing the LLM to triage the related tickets against the state of the resource: the LLM must determine whether the symptoms in the original ticket are explained by what the related tickets describe (scheduled maintenance, known changes, etc.) or whether the problem is independent
+- **`submit_result` schema guidance** including `is_false_alarm`, `explained_by_ticket`, `correlation_reasoning` fields
+
+The key design principle: KA provides the raw evidence (original ticket + related tickets + CMDB CI context). The LLM does the triage -- cross-referencing related tickets against the actual resource state to determine causality. KA does not pre-process or summarize the tickets.
 
 **Phase 3** (`phase3_workflow_selection.tmpl`): Add ServiceNow action-type selection rules (CloseAlert vs EscalateTicket) alongside existing K8s/GitOps rules.
+
+**Workflow selection is mandatory** unless the ticket is already closed at investigation time (early exit with "no action needed"). The RCA outcome (explained by maintenance or not) informs which workflow is selected but never skips selection. This mirrors the K8s flow:
+
+| RCA Outcome | Workflow Selection |
+|---|---|
+| Explained by related tickets (maintenance) | CloseServiceNowAlert |
+| Not explained by related tickets | EscalateServiceNowTicket |
+| Ticket already closed at investigation time | No workflow -- early exit ("nothing to do") |
 
 #### B3: Dynamic Tool Gating
 
@@ -339,5 +351,5 @@ Serves as KA investigation context. If EM verification is introduced in the futu
 
 ---
 
-**Document Version**: 1.1
+**Document Version**: 1.2
 **Last Updated**: 2026-06-04
