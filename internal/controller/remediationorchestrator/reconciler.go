@@ -1297,6 +1297,13 @@ func (r *Reconciler) transitionPhase(ctx context.Context, rr *remediationv1.Reme
 		return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
 	}
 
+	if !phase.CanTransition(phase.Phase(oldPhase), newPhase) {
+		logger.Error(nil, "Invalid phase transition rejected by state machine",
+			"currentPhase", oldPhase,
+			"requestedPhase", newPhase)
+		return ctrl.Result{}, fmt.Errorf("invalid phase transition from %s to %s", oldPhase, newPhase)
+	}
+
 	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		// Phase conflict guard: the reconcile loop selects a phase handler based on
 		// the informer cache (potentially stale). This updateFn runs after
