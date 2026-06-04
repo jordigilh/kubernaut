@@ -548,10 +548,11 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 
 			signalLabels, ok := eventData["signal_labels"].(map[string]interface{})
 			Expect(ok).To(BeTrue(), "signal_labels should be a map, not nil")
-			Expect(len(signalLabels)).To(Equal(2),
-				"signal_labels should have alertname and namespace")
+			Expect(len(signalLabels)).To(Equal(3),
+				"signal_labels should have alertname, namespace, and pod")
 			Expect(signalLabels).To(HaveKeyWithValue("alertname", "MinimalAlert"))
 			Expect(signalLabels).To(HaveKey("namespace"))
+			Expect(signalLabels).To(HaveKeyWithValue("pod", "minimal-alert-pod"))
 
 			// Gap #3: signal_annotations should be empty map, not nil
 			Expect(eventData).To(HaveKey("signal_annotations"),
@@ -907,6 +908,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 						"alertname": "CrossTypeTest-Prometheus",
 						"severity": "warning",
 						"namespace": "%s",
+						"pod": "api-server-pod-cross",
 						"source": "prometheus"
 					},
 					"annotations": {
