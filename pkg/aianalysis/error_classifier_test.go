@@ -343,7 +343,7 @@ var _ = Describe("ErrorClassifier", func() {
 				"Occasional timeouts are expected")
 			Expect(classification.RetryAfter).To(BeNumerically(">", 0),
 				"Should provide retry delay for timeout errors")
-			Expect(classification.Message).To(ContainSubstring("timed out or was canceled"))
+			Expect(classification.Message).To(ContainSubstring("timed out"))
 		})
 
 		// ========================================

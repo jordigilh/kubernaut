@@ -430,6 +430,9 @@ var _ = Describe("WorkflowExecution Controller Observability [Issue #659]", func
 				WithScheme(evtScheme).
 				WithObjects(wfe).
 				WithStatusSubresource(wfe).
+				WithIndex(&workflowexecutionv1alpha1.WorkflowExecution{}, "spec.targetResource", func(obj client.Object) []string {
+					return []string{obj.(*workflowexecutionv1alpha1.WorkflowExecution).Spec.TargetResource}
+				}).
 				Build()
 
 			querier := &mockCatalogQuerier{

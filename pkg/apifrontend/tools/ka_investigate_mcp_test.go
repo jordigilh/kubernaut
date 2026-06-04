@@ -19,7 +19,6 @@ package tools_test
 import (
 	"context"
 	"encoding/json"
-	"sync/atomic"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -356,7 +355,6 @@ var _ = Describe("AF-C1: Non-blocking bridge context detachment (#1356)", func()
 	Describe("UT-AF-1356-001: bridge goroutine survives after parent context is cancelled", func() {
 		It("should process events even when the original ctx is cancelled", func() {
 			eventCh := make(chan ka.InvestigationEvent, 5)
-			var processed atomic.Int32
 			closerCalled := make(chan struct{})
 
 			mockMCP := &ka.MockMCPClient{
@@ -394,7 +392,6 @@ var _ = Describe("AF-C1: Non-blocking bridge context detachment (#1356)", func()
 
 			// Bridge goroutine should complete and call cleanup
 			Eventually(closerCalled, 5*time.Second).Should(BeClosed())
-			_ = processed
 		})
 	})
 
