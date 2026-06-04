@@ -19,6 +19,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -326,8 +327,7 @@ func (s *Server) queryEffectivenessEvents(ctx context.Context, correlationID str
 		}
 		var eventData map[string]interface{}
 		if err := json.Unmarshal(eventDataJSON, &eventData); err != nil {
-			s.logger.Error(err, "Failed to unmarshal event data")
-			continue
+			return nil, fmt.Errorf("corrupt JSONB in effectiveness event (type=%s): %w", eventType, err)
 		}
 		eventData["event_type"] = eventType
 		events = append(events, &EffectivenessEvent{EventData: eventData})

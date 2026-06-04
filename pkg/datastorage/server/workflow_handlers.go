@@ -189,30 +189,20 @@ func (h *Handler) HandleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Step 7: Audit workflow creation (async, best-effort)
-	// Copy workflow to avoid data race with JSON encoding in the main goroutine (Issue #674 Bug 11)
+	// Step 7: Audit workflow creation (synchronous per ADR-032)
 	if h.auditStore != nil {
-		wfCopy := *workflow
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-
-			auditEvent, err := dsaudit.NewWorkflowCreatedAuditEvent(&wfCopy)
-			if err != nil {
-				h.logger.Error(err, "Failed to create workflow creation audit event",
-					"workflow_id", wfCopy.WorkflowID,
-					"workflow_name", wfCopy.WorkflowName,
-				)
-				return
-			}
-
-			if err := h.auditStore.StoreAudit(ctx, auditEvent); err != nil {
-				h.logger.Error(err, "Failed to audit workflow creation",
-					"workflow_id", wfCopy.WorkflowID,
-					"workflow_name", wfCopy.WorkflowName,
-				)
-			}
-		}()
+		auditEvent, auditErr := dsaudit.NewWorkflowCreatedAuditEvent(workflow)
+		if auditErr != nil {
+			h.logger.Error(auditErr, "Failed to create workflow creation audit event",
+				"workflow_id", workflow.WorkflowID,
+				"workflow_name", workflow.WorkflowName,
+			)
+		} else if storeErr := h.auditStore.StoreAudit(r.Context(), auditEvent); storeErr != nil {
+			h.logger.Error(storeErr, "Failed to persist workflow creation audit",
+				"workflow_id", workflow.WorkflowID,
+				"workflow_name", workflow.WorkflowName,
+			)
+		}
 	}
 
 	// Log success

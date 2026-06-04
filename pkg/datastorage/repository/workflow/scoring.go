@@ -233,6 +233,9 @@ func buildCustomLabelsBoostSQL(customLabels map[string][]string) string {
 
 		for _, incidentValue := range incidentValues {
 			safeKey := sanitizeJSONBKey(key)
+			if safeKey == "" {
+				continue
+			}
 			safeValue := sanitizeJSONBValue(incidentValue)
 
 			boostCase := fmt.Sprintf(`
