@@ -37,6 +37,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/discovery/cached/memory"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
@@ -1208,8 +1209,8 @@ func buildMCPHandler(
 	// Scheme includes remediationv1 for RR existence validation (HARM-004)
 	// and future NL signal intake (#714).
 	mcpScheme := k8sruntime.NewScheme()
-	_ = clientgoscheme.AddToScheme(mcpScheme)
-	_ = remediationv1.AddToScheme(mcpScheme)
+	utilruntime.Must(clientgoscheme.AddToScheme(mcpScheme))
+	utilruntime.Must(remediationv1.AddToScheme(mcpScheme))
 
 	mcpRestConfig := *infra.kubeConfig
 	mcpRestConfig.Timeout = 10 * time.Second
