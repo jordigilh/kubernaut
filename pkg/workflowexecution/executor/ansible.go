@@ -30,7 +30,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/util/retry"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
@@ -662,13 +662,8 @@ func (a *AnsibleExecutor) storeCredentialIDs(
 	wfe *workflowexecutionv1alpha1.WorkflowExecution,
 	credentialIDs []int,
 ) error {
-	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		if err := a.K8sClient.Get(ctx, client.ObjectKeyFromObject(wfe), wfe); err != nil {
-			return err
-		}
-		wfe.Status.EphemeralCredentialIDs = credentialIDs
-		return a.K8sClient.Status().Update(ctx, wfe)
-	})
+	wfe.Status.EphemeralCredentialIDs = credentialIDs
+	return a.K8sClient.Status().Update(ctx, wfe)
 }
 
 // GetStatus polls AWX for the job status and maps it to an ExecutionResult.

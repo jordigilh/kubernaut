@@ -556,6 +556,11 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 
 	createdName := createResult.ResourceName
 
+	// Restore in-memory status fields that may have been lost if Create() performed
+	// an internal status update (e.g., storeCredentialIDs). These fields were set by
+	// resolveWorkflowCatalog but not yet persisted to the API server.
+	wfe.Status.ExecutionEngine = engine
+
 	// Issue #501: Process warnings from CreateResult (e.g., TokenTTL issues)
 	for _, w := range createResult.Warnings {
 		meta.SetStatusCondition(&wfe.Status.Conditions, metav1.Condition{
