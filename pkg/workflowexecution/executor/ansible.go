@@ -283,6 +283,14 @@ func (a *AnsibleExecutor) Create(
 		jobID, err = a.AWXClient.LaunchJobTemplate(ctx, templateID, extraVars)
 	}
 	if err != nil {
+		if len(credentialIDs) > 0 {
+			for _, credID := range credentialIDs {
+				if delErr := a.AWXClient.DeleteCredential(ctx, credID); delErr != nil {
+					a.Logger.Error(delErr, "Failed to cleanup ephemeral credential after launch failure",
+						"credentialID", credID, "wfe", wfe.Name)
+				}
+			}
+		}
 		return nil, fmt.Errorf("launch AWX job template %d: %w", templateID, err)
 	}
 
