@@ -306,6 +306,7 @@ Serves as KA investigation context. If EM verification is introduced in the futu
 2. EM remains untouched for the POC -- zero regression risk for K8s signals
 3. Minimal blast radius: ServiceNow-specific logic isolated to KA (tools, prompts, gating)
 4. WFE success/failure + ServiceNow audit trail provide sufficient verification
+5. Architecture is ticket-type-agnostic: POC targets INC (incidents), but CHG (change requests) and PRB (problems) can be added later with new prompt blocks + workflow CRDs only -- no pipeline or architecture changes
 
 ### Negative Consequences
 

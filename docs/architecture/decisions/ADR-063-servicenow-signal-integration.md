@@ -116,6 +116,8 @@ Key fields: `instance_url`, `ticket.sys_id`, `ticket.number`, `ticket.short_desc
 
 ### Deferred to Production GA
 
+- **CHG (Change Request) use case**: Post-change validation -- after a change is deployed, investigate whether affected resources are healthy. Same pipeline, new prompt blocks and workflow CRDs (confirm success / roll back / escalate incident). No architecture changes required.
+- **PRB (Problem) use case**: Problem investigation -- correlate multiple incidents on the same CI, find common root cause. Same pipeline, new prompt blocks and workflow CRDs (link RCA to problem / escalate to engineering). No architecture changes required.
 - EM ServiceNow verification (Part D): contract-driven verification via KA endpoint
 - KA verification endpoint (Part B6): `POST /verify-effectiveness`
 - ProviderData propagation to EA (Part C3): only needed if EM verification is introduced
@@ -125,6 +127,8 @@ Key fields: `instance_url`, `ticket.sys_id`, `ticket.number`, `ticket.short_desc
 - Shared `ResourceResolver` interface (K8s + ServiceNow)
 - Credential rotation runbook
 - `targetType`-based scope bypass in `scope.Manager.IsManaged` (namespace fallback sufficient for POC)
+
+**Extensibility note**: The POC targets INC (incident) tickets only. The architecture is ticket-type-agnostic by design: `TargetType="servicenow"` is not incident-specific, `ProviderData` holds any ServiceNow ticket type (INC, CHG, PRB all share the same core fields), ServiceNow tools are generic, and workflow selection is driven by RemediationWorkflow CRDs. Extending to CHG and PRB is additive -- new prompt conditional blocks + new workflow CRDs, no pipeline or architecture changes.
 
 ---
 
