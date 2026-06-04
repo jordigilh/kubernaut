@@ -608,6 +608,10 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 	}
 	if podName != "" {
 		lockManager = processing.NewDistributedLockManager(apiReader, namespace, podName)
+	} else {
+		logger.Error(nil, "WARNING: POD_NAME not set — distributed locking disabled. "+
+			"Multi-replica deployments WILL create duplicate RemediationRequests. "+
+			"Set POD_NAME via Kubernetes downward API in production.")
 	}
 
 	// DD-AUDIT-003: Initialize audit store for P0 service compliance

@@ -540,15 +540,15 @@ func (c *CRDCreator) buildProviderData(signal *types.NormalizedSignal) []byte {
 func (c *CRDCreator) validateResourceInfo(signal *types.NormalizedSignal) error {
 	var missingFields []string
 
-	if signal.Resource.Kind == "" {
+	if signal.Resource.Kind == "" || strings.EqualFold(signal.Resource.Kind, "unknown") {
 		missingFields = append(missingFields, "Kind")
 	}
-	if signal.Resource.Name == "" {
+	if signal.Resource.Name == "" || strings.EqualFold(signal.Resource.Name, "unknown") {
 		missingFields = append(missingFields, "Name")
 	}
 
 	if len(missingFields) > 0 {
-		return fmt.Errorf("resource validation failed: missing required fields [%s] - V1.0 requires valid Kubernetes resource info",
+		return fmt.Errorf("resource validation failed: missing or unresolved fields [%s] - V1.0 requires valid Kubernetes resource info",
 			strings.Join(missingFields, ", "))
 	}
 

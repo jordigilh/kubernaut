@@ -424,30 +424,29 @@ func (r *APIResourceRegistry) CheckExistence(ctx context.Context, gvr schema.Gro
 
 	v, _, _ := r.sfGroup.Do(key, func() (interface{}, error) {
 		exists := false
+		transient := false
 		if r.dynClient != nil {
 			_, err := r.dynClient.Resource(gvr).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
 			if err == nil {
 				exists = true
 			} else if apierrors.IsNotFound(err) {
 				exists = false
-			} else if apierrors.IsForbidden(err) {
-				r.logger.V(1).Info("CheckExistence forbidden — treating as non-existent",
-					"gvr", gvr.String(), "namespace", namespace, "name", name)
-				exists = false
 			} else {
-				r.logger.V(1).Info("CheckExistence error — treating as non-existent",
+				r.logger.V(1).Info("CheckExistence transient error — not caching",
 					"gvr", gvr.String(), "namespace", namespace, "name", name, "error", err)
-				exists = false
+				transient = true
 			}
 		}
 
-		r.cacheMu.Lock()
-		r.evictExpiredLocked()
-		r.cache[key] = existenceCacheEntry{
-			exists:    exists,
-			expiresAt: time.Now().Add(r.cacheTTL),
+		if !transient {
+			r.cacheMu.Lock()
+			r.evictExpiredLocked()
+			r.cache[key] = existenceCacheEntry{
+				exists:    exists,
+				expiresAt: time.Now().Add(r.cacheTTL),
+			}
+			r.cacheMu.Unlock()
 		}
-		r.cacheMu.Unlock()
 
 		return exists, nil
 	})
