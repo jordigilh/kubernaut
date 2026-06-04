@@ -940,28 +940,28 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 
 			By("Sending Kubernetes Event")
 
-			k8sEvent := map[string]interface{}{
-				"apiVersion": "v1",
-				"kind":       "Event",
-				"metadata": map[string]interface{}{
-					"name":      "cross-type-test-k8s",
-					"namespace": sharedNamespace,
-					"labels": map[string]string{
-						"app":    "api-server",
-						"source": "kubernetes",
-					},
-					"annotations": map[string]string{
-						"runbook": "http://runbooks.com/k8s-oom",
-					},
+		k8sEvent := map[string]interface{}{
+			"apiVersion": "v1",
+			"kind":       "Event",
+			"metadata": map[string]interface{}{
+				"name":      "cross-type-test-k8s",
+				"namespace": sharedNamespace,
+				"labels": map[string]string{
+					"app":    "payment-service",
+					"source": "kubernetes",
 				},
-				"reason":  "OOMKilled",
-				"message": "Container exceeded memory limit (cross-type test)",
-				"type":    "Warning",
-				"involvedObject": map[string]interface{}{
-					"kind":      "Pod",
-					"name":      "api-server-pod-cross",
-					"namespace": sharedNamespace,
+				"annotations": map[string]string{
+					"runbook": "http://runbooks.com/k8s-oom",
 				},
+			},
+			"reason":  "OOMKilled",
+			"message": "Container exceeded memory limit (cross-type test)",
+			"type":    "Warning",
+			"involvedObject": map[string]interface{}{
+				"kind":      "Pod",
+				"name":      "payment-service-recurring",
+				"namespace": sharedNamespace,
+			},
 				"source": map[string]interface{}{
 					"component": "kubelet",
 				},
