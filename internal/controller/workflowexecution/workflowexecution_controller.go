@@ -716,10 +716,12 @@ func (r *WorkflowExecutionReconciler) ReconcileTerminal(ctx context.Context, wfe
 	}
 	logger.Info("Reconciling Terminal phase", "phase", wfe.Status.Phase)
 
-	// Guard clause: no completion time means we can't calculate cooldown
+	// WE-H3: No completion time in terminal phase means we can't calculate cooldown,
+	// but we must still release execution resources. Set completionTime now so cleanup proceeds.
 	if wfe.Status.CompletionTime == nil {
-		logger.V(1).Info("No completion time set, skipping cooldown check")
-		return ctrl.Result{}, nil
+		logger.Info("No completion time set in terminal phase — setting now to unblock cleanup")
+		now := metav1.Now()
+		wfe.Status.CompletionTime = &now
 	}
 
 	// Get cooldown period (use default if not set)
@@ -811,10 +813,9 @@ func (r *WorkflowExecutionReconciler) CheckCooldownActive(ctx context.Context, t
 	// Query all WorkflowExecutions with the same targetResource
 	wfeList := &workflowexecutionv1alpha1.WorkflowExecutionList{}
 	if err := r.List(ctx, wfeList, client.MatchingFields{"spec.targetResource": targetResource}); err != nil {
-		logger.Error(err, "Failed to list WorkflowExecutions for cooldown check",
+		logger.Error(err, "Failed to list WorkflowExecutions for cooldown check — failing closed",
 			"targetResource", targetResource)
-		// On error, don't block execution (fail open)
-		return 0, false
+		return cooldown, true
 	}
 
 	// Find any completed/failed WFE still within cooldown period
@@ -1720,6 +1721,10 @@ func (r *WorkflowExecutionReconciler) resolveWorkflowCatalog(ctx context.Context
 	wfe.Status.ExecutionEngine = meta.ExecutionEngine
 	wfe.Status.ServiceAccountName = meta.ServiceAccountName
 
+	// WE-H1: In-memory spec mutation is acceptable here because ResolveWorkflowCatalogMetadata
+	// is called on every Pending-phase reconcile. If the controller requeues in Pending,
+	// the catalog lookup re-applies the override. Once the WFE leaves Pending, the bundle
+	// value is already consumed (execution resource created).
 	if meta.ExecutionBundle != "" {
 		if wfe.Spec.WorkflowRef.ExecutionBundle != meta.ExecutionBundle {
 			logger.Info("Overriding execution bundle from DS catalog",

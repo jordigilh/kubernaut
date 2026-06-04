@@ -717,8 +717,7 @@ func (a *AnsibleExecutor) Cleanup(
 			a.Logger.Info("AWX job already completed, cancel not needed", "jobID", jobID)
 			return nil
 		}
-		a.Logger.Error(err, "Failed to cancel AWX job during cleanup", "jobID", jobID)
-		return fmt.Errorf("cancel AWX job %d: %w", jobID, err)
+		a.Logger.Error(err, "Failed to cancel AWX job during cleanup (best-effort, not blocking finalizer)", "jobID", jobID)
 	}
 
 	return nil
