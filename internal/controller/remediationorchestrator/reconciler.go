@@ -721,12 +721,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	// Tradeoff: Accepts extra reconciles during active and terminal phases
 	// Benefit: Allows critical polling, child status updates, and terminal housekeeping
 	if rr.Status.ObservedGeneration == rr.Generation &&
-		rr.Status.OverallPhase == phase.Pending {
+		rr.Status.OverallPhase == phase.Pending &&
+		rr.Status.SignalProcessingRef != nil {
 		logger.V(1).Info("⏭️  SKIPPED: No orchestration needed in Pending phase",
 			"phase", rr.Status.OverallPhase,
 			"generation", rr.Generation,
 			"observedGeneration", rr.Status.ObservedGeneration,
-			"reason", "ObservedGeneration matches and phase is Pending")
+			"reason", "ObservedGeneration matches, phase is Pending, and SP already created")
 		return ctrl.Result{}, nil
 	}
 
