@@ -106,12 +106,11 @@ func main() {
 	// ========================================
 	cfg, err := config.LoadFromFile(configFile)
 	if err != nil {
-		setupLog.Error(err, "Failed to load configuration from file, using defaults",
+		setupLog.Error(err, "Failed to load configuration -- aborting startup",
 			"configPath", configFile)
-		cfg = config.DefaultConfig()
-	} else {
-		setupLog.Info("Configuration loaded successfully", "configPath", configFile)
+		os.Exit(1)
 	}
+	setupLog.Info("Configuration loaded successfully", "configPath", configFile)
 
 	// Issue #875: Apply config-driven log level
 	atomicLevel.SetLevel(cfg.Logging.ZapLevel())
