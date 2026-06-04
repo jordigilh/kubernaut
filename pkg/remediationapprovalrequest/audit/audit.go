@@ -191,6 +191,6 @@ func mapDecisionToPayloadEnum(decision remediationapprovalrequestv1alpha1.Approv
 	case remediationapprovalrequestv1alpha1.ApprovalDecisionExpired:
 		return ogenclient.RemediationApprovalDecisionPayloadDecisionExpired
 	default:
-		return ogenclient.RemediationApprovalDecisionPayloadDecisionApproved
+		return ogenclient.RemediationApprovalDecisionPayloadDecisionExpired
 	}
 }

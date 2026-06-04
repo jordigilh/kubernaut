@@ -1136,8 +1136,10 @@ func isTransientError(err error) bool {
 		return true
 	}
 
-	// E2 fix: Use errors.Is for wrapped context errors
-	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+	// E2 fix: Use errors.Is for wrapped context errors.
+	// context.DeadlineExceeded is transient (timeout, retry with backoff).
+	// context.Canceled is NOT transient (caller-initiated abort, e.g., shutdown).
+	if errors.Is(err, context.DeadlineExceeded) {
 		return true
 	}
 

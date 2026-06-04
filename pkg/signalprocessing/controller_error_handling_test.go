@@ -516,7 +516,7 @@ var _ = Describe("Issue #1110 Phase 1: Error Handling, Resilience, and Startup V
 				"E2: Transient errors get explicit backoff delay")
 		})
 
-		It("UT-SP-1110-005: detects wrapped context.Canceled as transient", func() {
+		It("UT-SP-1110-005: context.Canceled is NOT transient (caller-initiated abort)", func() {
 			wrappedErr := fmt.Errorf("operation cancelled: %w", context.Canceled)
 
 			sp := &signalprocessingv1alpha1.SignalProcessing{
@@ -568,10 +568,9 @@ var _ = Describe("Issue #1110 Phase 1: Error Handling, Resilience, and Startup V
 				NamespacedName: types.NamespacedName{Name: sp.Name, Namespace: sp.Namespace},
 			})
 
-			Expect(err).ToNot(HaveOccurred(),
-				"E2: Wrapped context.Canceled MUST be detected as transient (currently uses == instead of errors.Is)")
-			Expect(result.RequeueAfter).To(BeNumerically(">", 0),
-				"E2: Transient errors get explicit backoff delay")
+			Expect(err).To(HaveOccurred(),
+				"context.Canceled is NOT transient; reconciler should return error for controller-runtime retry")
+			_ = result
 		})
 
 		It("UT-SP-1110-006: detects direct context.DeadlineExceeded as transient (baseline)", func() {
