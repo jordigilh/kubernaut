@@ -534,30 +534,24 @@ func (r *NotificationRequestReconciler) ExportedAuditMessageFailed(ctx context.C
 // shouldEmitAuditEvent checks if audit event should be emitted for this notification.
 // Returns true if event has NOT been emitted yet for this notification+eventType combination.
 func (r *NotificationRequestReconciler) shouldEmitAuditEvent(notificationKey string, eventType string) bool {
-	// Load existing events for this notification
 	events, exists := r.emittedAuditEvents.Load(notificationKey)
 	if !exists {
-		return true // No events emitted yet
+		return true
 	}
-
-	// Check if this specific event type was emitted
-	if emittedMap, ok := events.(map[string]bool); ok {
-		return !emittedMap[eventType]
+	innerMap, ok := events.(*sync.Map)
+	if !ok {
+		return true
 	}
-
-	return true // Default to allowing emission if type assertion fails
+	_, alreadyEmitted := innerMap.Load(eventType)
+	return !alreadyEmitted
 }
 
 // markAuditEventEmitted records that audit event was emitted for this notification.
-// Ensures subsequent reconciles won't emit the same event again.
+// Uses nested sync.Map to avoid data races on concurrent reconcile goroutines.
 func (r *NotificationRequestReconciler) markAuditEventEmitted(notificationKey string, eventType string) {
-	// Load or create event map for this notification
-	events, _ := r.emittedAuditEvents.LoadOrStore(notificationKey, make(map[string]bool))
-
-	// Mark this event type as emitted
-	if emittedMap, ok := events.(map[string]bool); ok {
-		emittedMap[eventType] = true
-		r.emittedAuditEvents.Store(notificationKey, emittedMap)
+	actual, _ := r.emittedAuditEvents.LoadOrStore(notificationKey, &sync.Map{})
+	if innerMap, ok := actual.(*sync.Map); ok {
+		innerMap.Store(eventType, true)
 	}
 }
 

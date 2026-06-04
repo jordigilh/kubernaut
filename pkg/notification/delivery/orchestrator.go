@@ -241,7 +241,7 @@ func (o *Orchestrator) DeliverToChannels(
 		o.incrementInFlightAttempts(string(notification.UID), string(channel))
 
 		attemptCount := getChannelAttemptCount(notification, string(channel))
-		if attemptCount > policy.MaxAttempts {
+		if attemptCount >= policy.MaxAttempts {
 			// Over-reserved: another concurrent reconcile already claimed
 			// the last slot. Release our reservation and skip.
 			o.decrementInFlightAttempts(string(notification.UID), string(channel))
