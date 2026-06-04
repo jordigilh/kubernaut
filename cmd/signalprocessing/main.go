@@ -365,20 +365,19 @@ func main() {
 		}
 	}
 
+	// ADR-032 §2: No Audit Loss - MUST flush pending events on any exit path.
+	// Defer before mgr.Start so the flush runs even if Start returns an error.
+	defer func() {
+		setupLog.Info("Shutting down signalprocessing controller, flushing remaining audit events")
+		if err := auditStore.Close(); err != nil {
+			setupLog.Error(err, "Failed to close audit store gracefully")
+		}
+		setupLog.Info("Audit store closed successfully, all events flushed")
+	}()
+
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
-
-	// ========================================
-	// Graceful Shutdown: Flush Audit Events (DD-007)
-	// ADR-032 §2: No Audit Loss - MUST flush pending events
-	// ========================================
-	setupLog.Info("Shutting down signalprocessing controller, flushing remaining audit events")
-	if err := auditStore.Close(); err != nil {
-		setupLog.Error(err, "Failed to close audit store gracefully")
-		os.Exit(1)
-	}
-	setupLog.Info("Audit store closed successfully, all events flushed")
 }
