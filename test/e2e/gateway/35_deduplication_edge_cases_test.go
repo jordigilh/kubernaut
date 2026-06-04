@@ -79,6 +79,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 				AlertName: "TestDedupFieldSelectorFailure",
 				Namespace: testNamespace,
 				Severity:  "critical",
+				PodName:   "dedup-field-selector-pod",
 				Labels: map[string]string{
 					"fingerprint": "test-fingerprint-12345678",
 				},
@@ -126,6 +127,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 				AlertName: "TestNoFallback",
 				Namespace: testNamespace,
 				Severity:  "warning",
+				PodName:   "no-fallback-test-pod",
 			})
 
 			req, _ := http.NewRequest("POST",
@@ -161,6 +163,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 				AlertName: "TestActionableError",
 				Namespace: testNamespace,
 				Severity:  "info",
+				PodName:   "actionable-error-pod",
 			})
 
 			req, _ := http.NewRequest("POST",
@@ -207,6 +210,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 					AlertName: alertName,
 					Namespace: testNamespace,
 					Severity:  "warning",
+					PodName:   "concurrent-dedup-pod",
 					Labels: map[string]string{
 						"fingerprint": fingerprint,
 					},
@@ -305,6 +309,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 				AlertName: alertName,
 				Namespace: testNamespace,
 				Severity:  "info",
+				PodName:   "atomic-hit-count-pod",
 				Labels: map[string]string{
 					"fingerprint": fingerprint,
 				},
@@ -404,6 +409,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 				AlertName: "TestMissingFingerprint",
 				Namespace: testNamespace,
 				Severity:  "warning",
+				PodName:   "missing-fingerprint-pod",
 				Labels: map[string]string{
 					"fingerprint": fingerprint,
 				},

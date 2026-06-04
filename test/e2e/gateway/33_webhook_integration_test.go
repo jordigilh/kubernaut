@@ -260,7 +260,8 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 					"labels": {
 						"alertname": "NetworkLatency",
 						"severity": "critical",
-						"namespace": "%s"
+						"namespace": "%s",
+						"pod": "network-latency-pod"
 					},
 					"annotations": {
 						"summary": "Network latency > 500ms"

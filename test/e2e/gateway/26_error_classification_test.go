@@ -73,6 +73,7 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-111 to 
 				AlertName: "TestTransientRetry",
 				Namespace: testNamespace,
 				Severity:  "warning",
+				PodName:   "transient-retry-pod",
 				Labels: map[string]string{
 					"test_scenario": "transient_error",
 				},
@@ -119,6 +120,7 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-111 to 
 				AlertName: "TestExponentialBackoff",
 				Namespace: testNamespace,
 				Severity:  "info",
+				PodName:   "exp-backoff-pod",
 			})
 
 			req, _ := http.NewRequest("POST",
@@ -156,6 +158,7 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-111 to 
 				AlertName: "TestMinimumBackoff",
 				Namespace: testNamespace,
 				Severity:  "warning",
+				PodName:   "min-backoff-pod",
 			})
 
 			req, _ := http.NewRequest("POST",
@@ -296,6 +299,7 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-111 to 
 				AlertName: "TestRetryExhaustion",
 				Namespace: testNamespace,
 				Severity:  "critical",
+				PodName:   "retry-exhaustion-pod",
 				Labels: map[string]string{
 					"test_scenario": "persistent_failure",
 				},
@@ -340,6 +344,7 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-111 to 
 				AlertName: "TestMaxBackoff",
 				Namespace: testNamespace,
 				Severity:  "warning",
+				PodName:   "max-backoff-pod",
 			})
 
 			req, _ := http.NewRequest("POST",
@@ -380,6 +385,7 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-111 to 
 				AlertName: "TestRetryCount",
 				Namespace: testNamespace,
 				Severity:  "info",
+				PodName:   "retry-count-pod",
 			})
 
 			req, _ := http.NewRequest("POST",

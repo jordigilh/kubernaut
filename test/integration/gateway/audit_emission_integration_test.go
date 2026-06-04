@@ -287,6 +287,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 							"alertname": "CustomLabelsTest",
 							"severity": "critical",
 							"namespace": "%s",
+							"pod": "custom-labels-test-pod",
 							"team": "platform",
 							"environment": "production",
 							"component": "api-server"

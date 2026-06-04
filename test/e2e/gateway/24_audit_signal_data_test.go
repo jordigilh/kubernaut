@@ -461,7 +461,8 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 					"status": "firing",
 					"labels": {
 						"alertname": "MinimalAlert",
-						"namespace": "%s"
+						"namespace": "%s",
+						"pod": "minimal-alert-pod"
 					},
 					"annotations": {},
 					"startsAt": "2025-01-04T10:00:00.000Z",
@@ -597,6 +598,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 						"alertname": "SyntheticAlert",
 						"severity": "info",
 						"namespace": "%s",
+						"pod": "synthetic-alert-pod",
 						"synthetic": "true"
 					},
 					"annotations": {

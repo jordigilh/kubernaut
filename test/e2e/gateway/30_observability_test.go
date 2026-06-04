@@ -421,16 +421,12 @@ var _ = Describe("Observability E2E Tests", func() {
 
 			// Send requests to different endpoints (use unique name)
 			uniqueID := time.Now().UnixNano()
-			svcName := fmt.Sprintf("api-%d", uniqueID)
-			helpers.EnsureTestService(ctx, k8sClient, testNamespace, svcName)
+			podName := fmt.Sprintf("api-pod-%d", uniqueID)
 			payload := GeneratePrometheusAlert(PrometheusAlertPayload{
 				AlertName: fmt.Sprintf("EndpointTest-%d", uniqueID),
 				Namespace: testNamespace,
 				Severity:  "info",
-				Resource: ResourceIdentifier{
-					Kind: "Service",
-					Name: svcName,
-				},
+				PodName:   podName,
 			})
 			resp := sendWebhookExpectCreated(gatewayURL, "/api/v1/signals/prometheus", payload)
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated),

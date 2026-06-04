@@ -78,6 +78,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 				AlertName: "KubernetesAPIDown",
 				Namespace: testNamespace,
 				Severity:  "critical",
+				PodName:   "kube-apiserver-node-1",
 				Labels: map[string]string{
 					"component": "kube-apiserver",
 				},
@@ -150,6 +151,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 				AlertName: "TestRetryAfter",
 				Namespace: testNamespace,
 				Severity:  "warning",
+				PodName:   "retry-test-pod",
 			})
 
 			req, _ := http.NewRequest("POST",
@@ -184,6 +186,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 				AlertName: "TestK8sAPIError",
 				Namespace: testNamespace,
 				Severity:  "critical",
+				PodName:   "k8s-error-test-pod",
 			})
 
 			req, _ := http.NewRequest("POST",
@@ -222,6 +225,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 				AlertName: "DataStorageDown",
 				Namespace: testNamespace,
 				Severity:  "warning",
+				PodName:   "data-storage-pod-0",
 				Labels: map[string]string{
 					"component": "data-storage",
 				},
@@ -274,6 +278,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 				AlertName: "TestDataStorageError",
 				Namespace: testNamespace,
 				Severity:  "info",
+				PodName:   "ds-error-test-pod",
 			})
 
 			req, _ := http.NewRequest("POST",
@@ -326,6 +331,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 				AlertName: "TestDataStorageRecovery",
 				Namespace: testNamespace,
 				Severity:  "warning",
+				PodName:   "ds-recovery-test-pod",
 			})
 
 			req, _ := http.NewRequest("POST",
@@ -375,6 +381,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 				AlertName: "TestCombinedFailures",
 				Namespace: testNamespace,
 				Severity:  "critical",
+				PodName:   "combined-failure-pod",
 			})
 
 			req, _ := http.NewRequest("POST",
