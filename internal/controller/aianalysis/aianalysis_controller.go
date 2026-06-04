@@ -203,7 +203,10 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		result = ctrl.Result{}
 		err = nil
 	default:
-		log.Info("Unknown phase", "phase", currentPhase)
+		log.Error(nil, "Unknown phase - failing AIAnalysis to prevent stall", "phase", currentPhase)
+		analysis.Status.Phase = PhaseFailed
+		analysis.Status.Reason = "UnknownPhase"
+		analysis.Status.Message = fmt.Sprintf("Unrecognized phase %q; failing to prevent stall", currentPhase)
 		result = ctrl.Result{}
 		err = nil
 	}

@@ -626,8 +626,10 @@ func (h *InvestigatingHandler) handleSessionPollUserDriving(ctx context.Context,
 		"pollCount", session.PollCount,
 	)
 
-	h.recorder.Eventf(analysis, corev1.EventTypeNormal, events.EventReasonUserDriving,
-		"Interactive session %s: user is driving investigation", session.ID)
+	if h.recorder != nil {
+		h.recorder.Eventf(analysis, corev1.EventTypeNormal, events.EventReasonUserDriving,
+			"Interactive session %s: user is driving investigation", session.ID)
+	}
 
 	return ctrl.Result{RequeueAfter: h.sessionPollInterval}, nil
 }
