@@ -556,6 +556,11 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 
 	createdName := createResult.ResourceName
 
+	// Restore in-memory status fields that may have been lost if Create() performed
+	// an internal status update (e.g., storeCredentialIDs). These fields were set by
+	// resolveWorkflowCatalog but not yet persisted to the API server.
+	wfe.Status.ExecutionEngine = engine
+
 	// Issue #501: Process warnings from CreateResult (e.g., TokenTTL issues)
 	for _, w := range createResult.Warnings {
 		meta.SetStatusCondition(&wfe.Status.Conditions, metav1.Condition{
@@ -716,10 +721,12 @@ func (r *WorkflowExecutionReconciler) ReconcileTerminal(ctx context.Context, wfe
 	}
 	logger.Info("Reconciling Terminal phase", "phase", wfe.Status.Phase)
 
-	// Guard clause: no completion time means we can't calculate cooldown
+	// WE-H3: No completion time in terminal phase means we can't calculate cooldown,
+	// but we must still release execution resources. Set completionTime now so cleanup proceeds.
 	if wfe.Status.CompletionTime == nil {
-		logger.V(1).Info("No completion time set, skipping cooldown check")
-		return ctrl.Result{}, nil
+		logger.Info("No completion time set in terminal phase — setting now to unblock cleanup")
+		now := metav1.Now()
+		wfe.Status.CompletionTime = &now
 	}
 
 	// Get cooldown period (use default if not set)
@@ -808,13 +815,26 @@ func (r *WorkflowExecutionReconciler) CheckCooldownActive(ctx context.Context, t
 		cooldown = DefaultCooldownPeriod
 	}
 
-	// Query all WorkflowExecutions with the same targetResource
+	// Query all WorkflowExecutions with the same targetResource.
+	// Retry up to 3 times with short backoff to tolerate transient informer/API
+	// pressure in resource-constrained environments (e.g., Kind CI clusters).
+	// Only fail-closed if ALL attempts fail (DD-WE-001 compliance).
 	wfeList := &workflowexecutionv1alpha1.WorkflowExecutionList{}
-	if err := r.List(ctx, wfeList, client.MatchingFields{"spec.targetResource": targetResource}); err != nil {
-		logger.Error(err, "Failed to list WorkflowExecutions for cooldown check",
-			"targetResource", targetResource)
-		// On error, don't block execution (fail open)
-		return 0, false
+	const maxAttempts = 3
+	var listErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		listErr = r.List(ctx, wfeList, client.MatchingFields{"spec.targetResource": targetResource})
+		if listErr == nil {
+			break
+		}
+		if attempt < maxAttempts {
+			time.Sleep(50 * time.Millisecond)
+		}
+	}
+	if listErr != nil {
+		logger.Error(listErr, "Failed to list WorkflowExecutions for cooldown check after retries — failing closed",
+			"targetResource", targetResource, "attempts", maxAttempts)
+		return cooldown, true
 	}
 
 	// Find any completed/failed WFE still within cooldown period
@@ -1720,6 +1740,10 @@ func (r *WorkflowExecutionReconciler) resolveWorkflowCatalog(ctx context.Context
 	wfe.Status.ExecutionEngine = meta.ExecutionEngine
 	wfe.Status.ServiceAccountName = meta.ServiceAccountName
 
+	// WE-H1: In-memory spec mutation is acceptable here because ResolveWorkflowCatalogMetadata
+	// is called on every Pending-phase reconcile. If the controller requeues in Pending,
+	// the catalog lookup re-applies the override. Once the WFE leaves Pending, the bundle
+	// value is already consumed (execution resource created).
 	if meta.ExecutionBundle != "" {
 		if wfe.Spec.WorkflowRef.ExecutionBundle != meta.ExecutionBundle {
 			logger.Info("Overriding execution bundle from DS catalog",

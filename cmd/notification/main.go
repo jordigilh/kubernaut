@@ -496,7 +496,8 @@ func main() {
 		os.Exit(1)
 	}
 	if err := routingWatcher.Start(ctx); err != nil {
-		logger.Info("Routing file watcher failed to start (using default config)", "error", err)
+		logger.Error(err, "Routing file watcher failed to start -- aborting startup")
+		os.Exit(1)
 	} else {
 		logger.Info("Routing file watcher started (#244)", "path", routingConfigPath)
 		defer routingWatcher.Stop()

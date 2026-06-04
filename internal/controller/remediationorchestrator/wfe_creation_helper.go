@@ -63,14 +63,14 @@ func CreateWFEAndTransition(
 ) (phase.TransitionIntent, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
 
-	cbs.EmitWorkflowCreatedAudit(ctx, rr, ai, preHash)
-
 	weName, err := cbs.CreateWFE(ctx, rr, ai)
 	if err != nil {
 		logger.Error(err, "Failed to create WorkflowExecution CRD")
 		return phase.Requeue(config.RequeueGenericError, "WFE creation failed"), nil
 	}
 	logger.Info("Created WorkflowExecution CRD", "weName", weName)
+
+	cbs.EmitWorkflowCreatedAudit(ctx, rr, ai, preHash)
 
 	m.ChildCRDCreationsTotal.WithLabelValues("WorkflowExecution", rr.Namespace).Inc()
 

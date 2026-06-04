@@ -316,6 +316,46 @@ var _ = Describe("BR-GATEWAY-190: RetryTransport (#853)", func() {
 		})
 	})
 
+	Context("exhausted retries on HTTP status (#1356)", func() {
+		It("UT-RT-1356-001: should return error when all retries exhausted on 503", func() {
+			mock := &mockRoundTripper{
+				responses: []*http.Response{
+					newResponse(http.StatusServiceUnavailable),
+					newResponse(http.StatusServiceUnavailable),
+					newResponse(http.StatusServiceUnavailable),
+				},
+			}
+			rt := transport.NewRetryTransport(mock, transport.RetryConfig{
+				MaxAttempts: 3,
+				Backoff:     backoff.Config{BasePeriod: time.Millisecond, MaxPeriod: time.Millisecond},
+			})
+
+			req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://test/status-retry", nil)
+			_, err := rt.RoundTrip(req)
+			Expect(err).To(HaveOccurred(), "exhausted retries on retryable status must return error")
+			Expect(err.Error()).To(ContainSubstring("503"))
+			Expect(mock.calls).To(Equal(3))
+		})
+
+		It("UT-RT-1356-002: non-replayable body + retryable HTTP status returns error", func() {
+			mock := &mockRoundTripper{
+				responses: []*http.Response{newResponse(http.StatusServiceUnavailable)},
+			}
+			rt := transport.NewRetryTransport(mock, transport.RetryConfig{
+				MaxAttempts: 3,
+				Backoff:     backoff.Config{BasePeriod: time.Millisecond, MaxPeriod: time.Millisecond},
+			})
+
+			req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, "http://test/nobody", bytes.NewReader([]byte("payload")))
+			req.GetBody = nil
+
+			_, err := rt.RoundTrip(req)
+			Expect(err).To(HaveOccurred(), "non-replayable body with retryable status must return error")
+			Expect(err.Error()).To(ContainSubstring("503"))
+			Expect(mock.calls).To(Equal(1))
+		})
+	})
+
 	Context("response body drain", func() {
 		It("UT-RT-853-010: should drain and close 5xx response body before retry", func() {
 			bodyDrained := false

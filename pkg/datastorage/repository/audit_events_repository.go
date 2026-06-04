@@ -661,8 +661,12 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 			for _, ie := range correlationEvents {
 				event := ie.event
 
-				eventDataJSON, _ := json.Marshal(event.EventData)
-				eventDate := event.EventTimestamp.Truncate(24 * time.Hour)
+			eventDataJSON, marshalErr := json.Marshal(event.EventData)
+			if marshalErr != nil {
+				txErr = fmt.Errorf("failed to marshal event_data for event %s in batch insert: %w", event.EventID, marshalErr)
+				return txErr
+			}
+			eventDate := event.EventTimestamp.Truncate(24 * time.Hour)
 
 				previousHash := lastHashByCorrelation[event.CorrelationID]
 				eventHash, hashErr := calculateEventHash(previousHash, event)

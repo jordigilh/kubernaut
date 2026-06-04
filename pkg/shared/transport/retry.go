@@ -25,6 +25,7 @@ package transport
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"syscall"
@@ -98,7 +99,6 @@ func (rt *RetryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	// Attempt once; if it fails with a retryable error, return immediately.
 	canReplay := req.Body == nil || req.GetBody != nil
 
-	var lastResp *http.Response
 	var lastErr error
 
 	logger := rt.config.Logger
@@ -130,8 +130,8 @@ func (rt *RetryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 			}
 		} else {
 			drainAndClose(resp.Body)
-			lastResp = resp
-			lastErr = nil
+			lastErr = fmt.Errorf("downstream returned retryable status %d for %s %s",
+				resp.StatusCode, req.Method, req.URL.String())
 			if logger.GetSink() != nil {
 				logger.V(1).Info("retryable HTTP status",
 					"attempt", attempt, "max", rt.config.MaxAttempts,
@@ -140,10 +140,7 @@ func (rt *RetryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 
 		if !canReplay {
-			if lastErr != nil {
-				return nil, lastErr
-			}
-			return lastResp, nil
+			return nil, lastErr
 		}
 
 		if attempt < rt.config.MaxAttempts {
@@ -154,10 +151,7 @@ func (rt *RetryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 	}
 
-	if lastErr != nil {
-		return nil, lastErr
-	}
-	return lastResp, nil
+	return nil, lastErr
 }
 
 func isRetryableStatus(code int) bool {

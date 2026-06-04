@@ -344,4 +344,36 @@ var _ = Describe("FileWatcher", func() {
 			// If Stop() hangs, the test will timeout - that's the business outcome we care about
 		})
 	})
+
+	// ============================================================================
+	// DOUBLE-STOP SAFETY TESTS (SHARED-H4 / #1356)
+	// ============================================================================
+
+	Context("Double Stop Safety", func() {
+		It("UT-HR-1356-001: should not panic when Stop() is called twice after Start()", func() {
+			createFile("double stop content")
+
+			watcher, err := prodhotreload.NewFileWatcher(testFile, func(string) error { return nil }, logger)
+			Expect(err).NotTo(HaveOccurred())
+
+			err = watcher.Start(ctx)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(func() {
+				watcher.Stop()
+				watcher.Stop()
+			}).NotTo(Panic())
+		})
+
+		It("UT-HR-1356-002: should not panic when Stop() is called before Start()", func() {
+			createFile("stop before start")
+
+			watcher, err := prodhotreload.NewFileWatcher(testFile, func(string) error { return nil }, logger)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(func() {
+				watcher.Stop()
+			}).NotTo(Panic())
+		})
+	})
 })

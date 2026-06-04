@@ -17,6 +17,7 @@ limitations under the License.
 package auth
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 	"sync"
@@ -188,7 +189,8 @@ func (ts *TokenSource) InvalidationCount() int64 {
 //   - 401 cache invalidation: When downstream returns 401 Unauthorized, the
 //     TokenSource cache is immediately invalidated so the next request (from
 //     this or any other transport sharing the same TokenSource) re-reads from disk.
-//   - Graceful degradation: If token file missing, request proceeds without auth
+//   - Fail-fast: If token file missing or unreadable, RoundTrip returns error
+//     (prevents unauthenticated requests reaching production endpoints)
 //
 // Thread Safety: RoundTrip() is thread-safe (clones request, TokenSource uses sync.RWMutex).
 //
@@ -225,9 +227,10 @@ func (t *AuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	reqClone := req.Clone(req.Context())
 
 	token := t.tokenSource.Token()
-	if token != "" {
-		reqClone.Header.Set("Authorization", "Bearer "+token)
+	if token == "" {
+		return nil, fmt.Errorf("authentication token unavailable: cannot read SA token from %s", t.tokenSource.tokenPath)
 	}
+	reqClone.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := t.base.RoundTrip(reqClone)
 	if err == nil && resp.StatusCode == http.StatusUnauthorized {

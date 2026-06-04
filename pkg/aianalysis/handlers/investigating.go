@@ -626,8 +626,10 @@ func (h *InvestigatingHandler) handleSessionPollUserDriving(ctx context.Context,
 		"pollCount", session.PollCount,
 	)
 
-	h.recorder.Eventf(analysis, corev1.EventTypeNormal, events.EventReasonUserDriving,
-		"Interactive session %s: user is driving investigation", session.ID)
+	if h.recorder != nil {
+		h.recorder.Eventf(analysis, corev1.EventTypeNormal, events.EventReasonUserDriving,
+			"Interactive session %s: user is driving investigation", session.ID)
+	}
 
 	return ctrl.Result{RequeueAfter: h.sessionPollInterval}, nil
 }
@@ -872,6 +874,7 @@ func (h *InvestigatingHandler) handleSessionLost(ctx context.Context, analysis *
 		analysis.Status.Phase = aianalysis.PhaseFailed
 		analysis.Status.CompletedAt = &now
 		analysis.Status.ObservedGeneration = analysis.Generation
+		analysis.Status.Reason = aianalysisv1.ReasonTransientError
 		analysis.Status.SubReason = "SessionRegenerationExceeded"
 		analysis.Status.Message = fmt.Sprintf("Session regeneration cap exceeded (%d regenerations)", session.Generation)
 

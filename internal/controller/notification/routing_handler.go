@@ -275,7 +275,7 @@ func (r *NotificationRequestReconciler) rebuildSlackDeliveryServices(ctx context
 		for i, sc := range receiver.SlackConfigs {
 			webhookURL, err := r.CredentialResolver.Resolve(sc.CredentialRef)
 			if err != nil {
-				logger.Error(err, "Failed to resolve credential for Slack receiver",
+				logger.Error(err, "DEGRADED: Slack receiver skipped due to credential failure — notifications to this channel will fail",
 					"receiver", receiver.Name,
 					"credentialRef", sc.CredentialRef)
 				continue

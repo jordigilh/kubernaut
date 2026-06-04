@@ -429,25 +429,33 @@ func (m *Manager) ForceTransitionToUserDriving(rrID, username string, groups []s
 
 	m.store.mu.Lock()
 	defer m.store.mu.Unlock()
+
+	var latest *Session
 	for _, sess := range m.store.sessions {
 		if sess.Metadata["remediation_id"] == rrID {
-			prevStatus := sess.Status
-			if sess.cancel != nil {
-				sess.cancel()
+			if latest == nil || sess.CreatedAt.After(latest.CreatedAt) {
+				latest = sess
 			}
-			sess.Status = StatusUserDriving
-			if sess.Metadata == nil {
-				sess.Metadata = make(map[string]string)
-			}
-			sess.Metadata["acting_user"] = username
-			sess.Metadata["acting_user_groups"] = string(groupsJSON)
-			m.logger.Info("Force-transitioned session to user-driving",
-				"remediation_id", rrID, "previous_status", string(prevStatus),
-				"acting_user", username)
-			return nil
 		}
 	}
-	return ErrSessionNotFound
+	if latest == nil {
+		return ErrSessionNotFound
+	}
+
+	prevStatus := latest.Status
+	if latest.cancel != nil {
+		latest.cancel()
+	}
+	latest.Status = StatusUserDriving
+	if latest.Metadata == nil {
+		latest.Metadata = make(map[string]string)
+	}
+	latest.Metadata["acting_user"] = username
+	latest.Metadata["acting_user_groups"] = string(groupsJSON)
+	m.logger.Info("Force-transitioned session to user-driving",
+		"remediation_id", rrID, "previous_status", string(prevStatus),
+		"acting_user", username)
+	return nil
 }
 
 // FindByRemediationID scans running sessions for one whose metadata

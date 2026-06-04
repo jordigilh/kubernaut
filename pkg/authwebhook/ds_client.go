@@ -67,6 +67,22 @@ func NewDSClientAdapter(baseURL string, timeout time.Duration, logger logr.Logge
 	}
 	transport := auth.NewAuthTransport(auth.NewDefaultTokenSource(), baseTransport)
 
+	return newDSClientAdapterWithTransport(baseURL, timeout, transport, logger)
+}
+
+// NewDSClientAdapterWithTransport creates a DSClientAdapter with a caller-provided
+// http.RoundTripper. Use in unit tests to avoid requiring a Kubernetes SA token.
+func NewDSClientAdapterWithTransport(baseURL string, timeout time.Duration, transport http.RoundTripper, logger logr.Logger) (*DSClientAdapter, error) {
+	if baseURL == "" {
+		return nil, fmt.Errorf("baseURL cannot be empty")
+	}
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+	return newDSClientAdapterWithTransport(baseURL, timeout, transport, logger)
+}
+
+func newDSClientAdapterWithTransport(baseURL string, timeout time.Duration, transport http.RoundTripper, logger logr.Logger) (*DSClientAdapter, error) {
 	httpClient := &http.Client{
 		Timeout:   timeout,
 		Transport: transport,

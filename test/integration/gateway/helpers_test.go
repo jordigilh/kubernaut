@@ -264,10 +264,14 @@ func StartTestGatewayWithOptions(ctx context.Context, k8sClient *K8sTestClient, 
 		// Middleware: Rate limiting removed (ADR-048) - delegated to proxy
 
 		// ADR-030: DataStorage connectivity
+		// DD-AUTH-005 DI: suiteAuthTransport injects the authenticated transport
+		// so production code paths use the envtest SA token instead of reading
+		// from /var/run/secrets (which doesn't exist in CI).
 		DataStorage: sharedconfig.DataStorageConfig{
-			URL:     dataStorageURL,
-			Timeout: 10 * time.Second,
-			Buffer:  sharedconfig.DefaultDataStorageConfig().Buffer,
+			URL:       dataStorageURL,
+			Timeout:   10 * time.Second,
+			Buffer:    sharedconfig.DefaultDataStorageConfig().Buffer,
+			Transport: suiteAuthTransport,
 		},
 
 		Processing: config.ProcessingSettings{

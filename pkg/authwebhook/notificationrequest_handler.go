@@ -109,11 +109,10 @@ func (h *NotificationRequestDeleteHandler) Handle(ctx context.Context, req admis
 
 	auditEvent.EventData = api.NewAuditEventRequestEventDataWebhookNotificationCancelledAuditEventRequestEventData(payload)
 
-	// Store audit event asynchronously (buffered write)
+	// ADR-032 §2: Deny destructive operations when audit trail cannot be recorded.
+	// FedRAMP AC-6 requires attribution for all destructive actions.
 	if err := h.auditStore.StoreAudit(ctx, auditEvent); err != nil {
-		// Log error but don't fail the webhook (audit should not block operations)
-		// The audit store has retry + DLQ mechanisms
-		return admission.Allowed(fmt.Sprintf("DELETE allowed with audit warning: %v", err))
+		return admission.Denied(fmt.Sprintf("DELETE denied: audit store unavailable (%v)", err))
 	}
 
 	// Allow DELETE to proceed

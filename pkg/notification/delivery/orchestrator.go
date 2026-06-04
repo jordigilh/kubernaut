@@ -244,6 +244,9 @@ func (o *Orchestrator) DeliverToChannels(
 		if attemptCount > policy.MaxAttempts {
 			// Over-reserved: another concurrent reconcile already claimed
 			// the last slot. Release our reservation and skip.
+			// Note: use > (not >=) because attemptCount includes OUR reservation
+			// from incrementInFlightAttempts above. When attemptCount == MaxAttempts,
+			// we are the Nth allowed attempt and should proceed.
 			o.decrementInFlightAttempts(string(notification.UID), string(channel))
 			log.Info("Max retry attempts reached for channel", "channel", channel, "attempts", attemptCount, "maxAttempts", policy.MaxAttempts)
 			result.DeliveryResults[string(channel)] = fmt.Errorf("max retry attempts exceeded")

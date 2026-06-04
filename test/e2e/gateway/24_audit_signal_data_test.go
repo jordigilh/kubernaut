@@ -123,7 +123,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 		// Create unique test namespace (Pattern: RO E2E)
 		// This prevents circuit breaker degradation from "namespace not found" errors
 		sharedNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "test-rr-audit")
-		helpers.EnsureTestPods(ctx, k8sClient, sharedNamespace, "payment-service-abc123", "payment-service-recurring", "api-server-pod-cross")
+		helpers.EnsureTestPods(ctx, k8sClient, sharedNamespace, "payment-service-abc123", "payment-service-recurring", "api-server-pod-cross", "minimal-alert-pod", "synthetic-alert-pod")
 
 		// DD-TEST-001: Get Data Storage URL from suite's shared infrastructure
 		dataStorageURL = os.Getenv("TEST_DATA_STORAGE_URL")
@@ -461,7 +461,8 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 					"status": "firing",
 					"labels": {
 						"alertname": "MinimalAlert",
-						"namespace": "%s"
+						"namespace": "%s",
+						"pod": "minimal-alert-pod"
 					},
 					"annotations": {},
 					"startsAt": "2025-01-04T10:00:00.000Z",
@@ -547,10 +548,11 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 
 			signalLabels, ok := eventData["signal_labels"].(map[string]interface{})
 			Expect(ok).To(BeTrue(), "signal_labels should be a map, not nil")
-			Expect(len(signalLabels)).To(Equal(2),
-				"signal_labels should have alertname and namespace")
+			Expect(len(signalLabels)).To(Equal(3),
+				"signal_labels should have alertname, namespace, and pod")
 			Expect(signalLabels).To(HaveKeyWithValue("alertname", "MinimalAlert"))
 			Expect(signalLabels).To(HaveKey("namespace"))
+			Expect(signalLabels).To(HaveKeyWithValue("pod", "minimal-alert-pod"))
 
 			// Gap #3: signal_annotations should be empty map, not nil
 			Expect(eventData).To(HaveKey("signal_annotations"),
@@ -597,6 +599,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 						"alertname": "SyntheticAlert",
 						"severity": "info",
 						"namespace": "%s",
+						"pod": "synthetic-alert-pod",
 						"synthetic": "true"
 					},
 					"annotations": {
@@ -905,6 +908,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 						"alertname": "CrossTypeTest-Prometheus",
 						"severity": "warning",
 						"namespace": "%s",
+						"pod": "api-server-pod-cross",
 						"source": "prometheus"
 					},
 					"annotations": {
@@ -936,28 +940,28 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 
 			By("Sending Kubernetes Event")
 
-			k8sEvent := map[string]interface{}{
-				"apiVersion": "v1",
-				"kind":       "Event",
-				"metadata": map[string]interface{}{
-					"name":      "cross-type-test-k8s",
-					"namespace": sharedNamespace,
-					"labels": map[string]string{
-						"app":    "api-server",
-						"source": "kubernetes",
-					},
-					"annotations": map[string]string{
-						"runbook": "http://runbooks.com/k8s-oom",
-					},
+		k8sEvent := map[string]interface{}{
+			"apiVersion": "v1",
+			"kind":       "Event",
+			"metadata": map[string]interface{}{
+				"name":      "cross-type-test-k8s",
+				"namespace": sharedNamespace,
+				"labels": map[string]string{
+					"app":    "payment-service",
+					"source": "kubernetes",
 				},
-				"reason":  "OOMKilled",
-				"message": "Container exceeded memory limit (cross-type test)",
-				"type":    "Warning",
-				"involvedObject": map[string]interface{}{
-					"kind":      "Pod",
-					"name":      "api-server-pod-cross",
-					"namespace": sharedNamespace,
+				"annotations": map[string]string{
+					"runbook": "http://runbooks.com/k8s-oom",
 				},
+			},
+			"reason":  "OOMKilled",
+			"message": "Container exceeded memory limit (cross-type test)",
+			"type":    "Warning",
+			"involvedObject": map[string]interface{}{
+				"kind":      "Pod",
+				"name":      "payment-service-recurring",
+				"namespace": sharedNamespace,
+			},
 				"source": map[string]interface{}{
 					"component": "kubelet",
 				},

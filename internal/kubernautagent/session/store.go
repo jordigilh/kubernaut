@@ -321,10 +321,18 @@ func (s *Store) Cleanup() int {
 			}
 		default:
 			if sess.CreatedAt.Before(nonTerminalCutoff) {
+				if sess.cancel != nil {
+					sess.cancel()
+				}
 				if sess.Status == StatusPending {
 					s.logger.Info("evicting pending interactive session (user never connected)",
 						"session_id", id,
 						"remediation_id", sess.Metadata["remediation_id"],
+						"age", now.Sub(sess.CreatedAt).String())
+				} else {
+					s.logger.Info("evicting non-terminal session (TTL exceeded)",
+						"session_id", id,
+						"status", sess.Status,
 						"age", now.Sub(sess.CreatedAt).String())
 				}
 				delete(s.sessions, id)

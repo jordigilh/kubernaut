@@ -498,38 +498,10 @@ func (r *NotificationRequestReconciler) auditMessageFailed(ctx context.Context, 
 	return nil
 }
 
-// auditMessageAcknowledged audits notification acknowledgment (non-blocking)
-//
-// V2.0 ROADMAP FEATURE: Operator acknowledgment tracking
-//
-// Planned for Notification Service v2.0 (not v1.x scope):
-//   - Interactive Slack messages with [Acknowledge] button
-//   - Webhook endpoint to receive acknowledgment events
-//   - CRD fields: Status.AcknowledgedAt, Status.AcknowledgedBy
-//   - Response time SLA tracking (time to acknowledge)
-//   - Compliance audit trail (who acknowledged what, when)
-//
-// Current Implementation Status (v1.x):
-//
-//	✅ Audit method implemented and tested (110 unit tests)
-//	✅ Ready for integration when v2.0 CRD schema is added
-//	⏸️ NOT integrated (no CRD fields, no webhook endpoint)
-//
-// Integration Point (v2.0):
-//
-//	if notification.Status.AcknowledgedAt != nil && !notification.Status.AuditedAcknowledgment {
-//	    r.auditMessageAcknowledged(ctx, notification)
-//	}
-//
-// Business Requirement: v2.0 roadmap (operator accountability)
-// Tests: test/unit/notification/audit_test.go (25+ test cases)
-// BR-NOT-062: Unified audit table integration ✅
-// BR-NOT-063: Graceful audit degradation ✅
-//
-//nolint:unused // v2.0 roadmap feature - prepared ahead of CRD schema changes
+
+// auditMessageAcknowledged audits notification acknowledgment (non-blocking).
+// Emitted when a notification transitions to Sent (all deliveries succeeded).
 func (r *NotificationRequestReconciler) auditMessageAcknowledged(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
-	// ADR-032 §1: Audit is MANDATORY - no graceful degradation allowed
-	// If audit store is nil, this indicates misconfiguration and MUST fail
 	if r.AuditStore == nil || r.AuditManager == nil {
 		err := fmt.Errorf("audit store or helpers nil - audit is MANDATORY per ADR-032 §1")
 		log := log.FromContext(ctx)
@@ -539,7 +511,6 @@ func (r *NotificationRequestReconciler) auditMessageAcknowledged(ctx context.Con
 
 	log := log.FromContext(ctx)
 
-	// NT-BUG-001 Fix: Check if this audit event was already emitted
 	notificationKey := fmt.Sprintf("%s/%s", notification.Namespace, notification.Name)
 	eventKey := "message.acknowledged"
 	if !r.shouldEmitAuditEvent(notificationKey, eventKey) {
@@ -547,58 +518,24 @@ func (r *NotificationRequestReconciler) auditMessageAcknowledged(ctx context.Con
 		return nil
 	}
 
-	// Create audit event
 	event, err := r.AuditManager.CreateMessageAcknowledgedEvent(notification)
 	if err != nil {
 		log.Error(err, "Failed to create audit event - audit creation is MANDATORY per ADR-032 §1", "event_type", "message.acknowledged")
 		return fmt.Errorf("failed to create audit event (ADR-032 §1): %w", err)
 	}
 
-	// Fire-and-forget: Audit write failures don't block reconciliation (BR-NOT-063)
-	// ADR-032 §1: Store is available (checked above), write failure is acceptable (async buffered write)
 	if err := r.AuditStore.StoreAudit(ctx, event); err != nil {
 		log.Error(err, "Failed to buffer audit event", "event_type", "message.acknowledged")
-		// Continue reconciliation - audit failure is not critical (BR-NOT-063)
 	} else {
-		// NT-BUG-001 Fix: Mark event as emitted only if store succeeded
 		r.markAuditEventEmitted(notificationKey, eventKey)
 	}
 
 	return nil
 }
 
-// auditMessageEscalated audits notification escalation (non-blocking)
-//
-// V2.0 ROADMAP FEATURE: Automatic notification escalation
-//
-// Planned for Notification Service v2.0 (not v1.x scope):
-//   - Auto-escalation policy (escalate if unacknowledged after N minutes)
-//   - RemediationOrchestrator watches for unacknowledged notifications
-//   - CRD fields: Status.EscalatedAt, Status.EscalatedTo, Status.EscalationReason
-//   - Escalation metrics (frequency by team, escalation patterns)
-//   - SLA compliance tracking (time to acknowledge vs. escalation threshold)
-//
-// Current Implementation Status (v1.x):
-//
-//	✅ Audit method implemented and tested (110 unit tests)
-//	✅ Ready for integration when v2.0 CRD schema is added
-//	⏸️ NOT integrated (no CRD fields, no escalation policy)
-//
-// Integration Point (v2.0):
-//
-//	if notification.Status.EscalatedAt != nil && !notification.Status.AuditedEscalation {
-//	    r.auditMessageEscalated(ctx, notification)
-//	}
-//
-// Business Requirement: v2.0 roadmap (auto-escalation for unacknowledged alerts)
-// Tests: test/unit/notification/audit_test.go (25+ test cases)
-// BR-NOT-062: Unified audit table integration ✅
-// BR-NOT-063: Graceful audit degradation ✅
-//
-//nolint:unused // v2.0 roadmap feature - prepared ahead of CRD schema changes
+// auditMessageEscalated audits notification escalation (non-blocking).
+// Emitted when a notification transitions to Failed (all retries exhausted).
 func (r *NotificationRequestReconciler) auditMessageEscalated(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
-	// ADR-032 §1: Audit is MANDATORY - no graceful degradation allowed
-	// If audit store is nil, this indicates misconfiguration and MUST fail
 	if r.AuditStore == nil || r.AuditManager == nil {
 		err := fmt.Errorf("audit store or helpers nil - audit is MANDATORY per ADR-032 §1")
 		log := log.FromContext(ctx)
@@ -608,7 +545,6 @@ func (r *NotificationRequestReconciler) auditMessageEscalated(ctx context.Contex
 
 	log := log.FromContext(ctx)
 
-	// NT-BUG-001 Fix: Check if this audit event was already emitted
 	notificationKey := fmt.Sprintf("%s/%s", notification.Namespace, notification.Name)
 	eventKey := "message.escalated"
 	if !r.shouldEmitAuditEvent(notificationKey, eventKey) {
@@ -616,20 +552,15 @@ func (r *NotificationRequestReconciler) auditMessageEscalated(ctx context.Contex
 		return nil
 	}
 
-	// Create audit event
 	event, err := r.AuditManager.CreateMessageEscalatedEvent(notification)
 	if err != nil {
 		log.Error(err, "Failed to create audit event - audit creation is MANDATORY per ADR-032 §1", "event_type", "message.escalated")
 		return fmt.Errorf("failed to create audit event (ADR-032 §1): %w", err)
 	}
 
-	// Fire-and-forget: Audit write failures don't block reconciliation (BR-NOT-063)
-	// ADR-032 §1: Store is available (checked above), write failure is acceptable (async buffered write)
 	if err := r.AuditStore.StoreAudit(ctx, event); err != nil {
 		log.Error(err, "Failed to buffer audit event", "event_type", "message.escalated")
-		// Continue reconciliation - audit failure is not critical (BR-NOT-063)
 	} else {
-		// NT-BUG-001 Fix: Mark event as emitted only if store succeeded
 		r.markAuditEventEmitted(notificationKey, eventKey)
 	}
 
@@ -662,6 +593,7 @@ func (r *NotificationRequestReconciler) ExportedAuditMessageEscalated(ctx contex
 	return r.auditMessageEscalated(ctx, notification)
 }
 
+
 // ========================================
 // AUDIT EVENT IDEMPOTENCY (NT-BUG-001 Fix)
 // ========================================
@@ -680,30 +612,24 @@ func (r *NotificationRequestReconciler) ExportedAuditMessageEscalated(ctx contex
 // shouldEmitAuditEvent checks if audit event should be emitted for this notification.
 // Returns true if event has NOT been emitted yet for this notification+eventType combination.
 func (r *NotificationRequestReconciler) shouldEmitAuditEvent(notificationKey string, eventType string) bool {
-	// Load existing events for this notification
 	events, exists := r.emittedAuditEvents.Load(notificationKey)
 	if !exists {
-		return true // No events emitted yet
+		return true
 	}
-
-	// Check if this specific event type was emitted
-	if emittedMap, ok := events.(map[string]bool); ok {
-		return !emittedMap[eventType]
+	innerMap, ok := events.(*sync.Map)
+	if !ok {
+		return true
 	}
-
-	return true // Default to allowing emission if type assertion fails
+	_, alreadyEmitted := innerMap.Load(eventType)
+	return !alreadyEmitted
 }
 
 // markAuditEventEmitted records that audit event was emitted for this notification.
-// Ensures subsequent reconciles won't emit the same event again.
+// Uses nested sync.Map to avoid data races on concurrent reconcile goroutines.
 func (r *NotificationRequestReconciler) markAuditEventEmitted(notificationKey string, eventType string) {
-	// Load or create event map for this notification
-	events, _ := r.emittedAuditEvents.LoadOrStore(notificationKey, make(map[string]bool))
-
-	// Mark this event type as emitted
-	if emittedMap, ok := events.(map[string]bool); ok {
-		emittedMap[eventType] = true
-		r.emittedAuditEvents.Store(notificationKey, emittedMap)
+	actual, _ := r.emittedAuditEvents.LoadOrStore(notificationKey, &sync.Map{})
+	if innerMap, ok := actual.(*sync.Map); ok {
+		innerMap.Store(eventType, true)
 	}
 }
 

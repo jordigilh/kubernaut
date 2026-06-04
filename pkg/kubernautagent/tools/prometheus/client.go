@@ -119,6 +119,10 @@ func (c *Client) doGet(ctx context.Context, apiPath string, params url.Values) (
 		return "", fmt.Errorf("reading response: %w", err)
 	}
 
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("prometheus returned HTTP %d: %s", resp.StatusCode, TruncateWithHint(string(body), 256))
+	}
+
 	result := string(body)
 	return TruncateWithHint(result, c.config.SizeLimit), nil
 }

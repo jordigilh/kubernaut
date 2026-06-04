@@ -267,7 +267,7 @@ var _ = Describe("UT-AW-668-004: ForceDisableActionType via HTTP mock (BR-WORKFL
 		}))
 		defer ts.Close()
 
-		adapter, err := authwebhook.NewDSClientAdapter(ts.URL, 0, logr.Discard())
+		adapter, err := authwebhook.NewDSClientAdapterWithTransport(ts.URL, 0, http.DefaultTransport, logr.Discard())
 		Expect(err).NotTo(HaveOccurred())
 
 		result, err := adapter.ForceDisableActionType(context.Background(), "my-at", "system", []string{"wf-orphan"})
@@ -282,7 +282,7 @@ var _ = Describe("UT-AW-668-004: ForceDisableActionType via HTTP mock (BR-WORKFL
 		}))
 		defer ts.Close()
 
-		adapter, err := authwebhook.NewDSClientAdapter(ts.URL, 0, logr.Discard())
+		adapter, err := authwebhook.NewDSClientAdapterWithTransport(ts.URL, 0, http.DefaultTransport, logr.Discard())
 		Expect(err).NotTo(HaveOccurred())
 
 		result, err := adapter.ForceDisableActionType(context.Background(), "my-at", "system", nil)
@@ -297,7 +297,7 @@ var _ = Describe("UT-AW-668-004: ForceDisableActionType via HTTP mock (BR-WORKFL
 		}))
 		defer ts.Close()
 
-		adapter, err := authwebhook.NewDSClientAdapter(ts.URL, 0, logr.Discard())
+		adapter, err := authwebhook.NewDSClientAdapterWithTransport(ts.URL, 0, http.DefaultTransport, logr.Discard())
 		Expect(err).NotTo(HaveOccurred())
 
 		result, err := adapter.ForceDisableActionType(context.Background(), "my-at", "system", nil)
@@ -311,7 +311,7 @@ var _ = Describe("UT-AW-668-004: ForceDisableActionType via HTTP mock (BR-WORKFL
 		}))
 		defer ts.Close()
 
-		adapter, err := authwebhook.NewDSClientAdapter(ts.URL, 0, logr.Discard())
+		adapter, err := authwebhook.NewDSClientAdapterWithTransport(ts.URL, 0, http.DefaultTransport, logr.Discard())
 		Expect(err).NotTo(HaveOccurred())
 
 		_, err = adapter.ForceDisableActionType(context.Background(), "my-at", "system", nil)
@@ -320,7 +320,7 @@ var _ = Describe("UT-AW-668-004: ForceDisableActionType via HTTP mock (BR-WORKFL
 	})
 
 	It("BR-WORKFLOW-006: rejects call when adapter missing baseURL/httpClient", func() {
-		adapter, err := authwebhook.NewDSClientAdapter("", 0, logr.Discard())
+		adapter, err := authwebhook.NewDSClientAdapterWithTransport("", 0, http.DefaultTransport, logr.Discard())
 		Expect(err).To(HaveOccurred())
 
 		if adapter != nil {

@@ -30,6 +30,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
@@ -283,6 +284,14 @@ func (a *AnsibleExecutor) Create(
 		jobID, err = a.AWXClient.LaunchJobTemplate(ctx, templateID, extraVars)
 	}
 	if err != nil {
+		if len(credentialIDs) > 0 {
+			for _, credID := range credentialIDs {
+				if delErr := a.AWXClient.DeleteCredential(ctx, credID); delErr != nil {
+					a.Logger.Error(delErr, "Failed to cleanup ephemeral credential after launch failure",
+						"credentialID", credID, "wfe", wfe.Name)
+				}
+			}
+		}
 		return nil, fmt.Errorf("launch AWX job template %d: %w", templateID, err)
 	}
 
@@ -703,8 +712,7 @@ func (a *AnsibleExecutor) Cleanup(
 			a.Logger.Info("AWX job already completed, cancel not needed", "jobID", jobID)
 			return nil
 		}
-		a.Logger.Error(err, "Failed to cancel AWX job during cleanup", "jobID", jobID)
-		return fmt.Errorf("cancel AWX job %d: %w", jobID, err)
+		a.Logger.Error(err, "Failed to cancel AWX job during cleanup (best-effort, not blocking finalizer)", "jobID", jobID)
 	}
 
 	return nil

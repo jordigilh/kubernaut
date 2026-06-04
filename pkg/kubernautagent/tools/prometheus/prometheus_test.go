@@ -93,6 +93,60 @@ var _ = Describe("Kubernaut Agent Prometheus Tools Unit — #433", func() {
 		})
 	})
 
+	Describe("KA-H2: Prometheus client HTTP status check (#1356)", func() {
+		It("UT-KA-1356-001: doGet returns error on non-2xx HTTP status", func() {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				_, _ = w.Write([]byte(`service unavailable`))
+			}))
+			defer server.Close()
+
+			cfg := prometheus.ClientConfig{URL: server.URL}
+			client, err := prometheus.NewClient(cfg)
+			Expect(err).NotTo(HaveOccurred())
+
+			allTools := prometheus.NewAllTools(client)
+			var queryTool tools.Tool
+			for _, t := range allTools {
+				if t.Name() == "execute_prometheus_instant_query" {
+					queryTool = t
+					break
+				}
+			}
+			Expect(queryTool).NotTo(BeNil())
+
+			_, err = queryTool.Execute(context.Background(), json.RawMessage(`{"query":"up"}`))
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("503"))
+		})
+
+		It("UT-KA-1356-002: doGet succeeds on HTTP 200", func() {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"scalar","result":[1,"42"]}}`))
+			}))
+			defer server.Close()
+
+			cfg := prometheus.ClientConfig{URL: server.URL}
+			client, err := prometheus.NewClient(cfg)
+			Expect(err).NotTo(HaveOccurred())
+
+			allTools := prometheus.NewAllTools(client)
+			var queryTool tools.Tool
+			for _, t := range allTools {
+				if t.Name() == "execute_prometheus_instant_query" {
+					queryTool = t
+					break
+				}
+			}
+			Expect(queryTool).NotTo(BeNil())
+
+			result, err := queryTool.Execute(context.Background(), json.RawMessage(`{"query":"up"}`))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(ContainSubstring("success"))
+		})
+	})
+
 	Describe("UT-KA-433-034: Response exceeding size limit is truncated with topk() hint", func() {
 		It("should truncate text longer than sizeLimit and append topk() hint", func() {
 			longText := strings.Repeat("x", 35000)

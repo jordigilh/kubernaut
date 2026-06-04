@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/http"
 	"time"
 )
 
@@ -20,6 +21,12 @@ type DataStorageConfig struct {
 	// Buffer controls client-side event buffering and batching.
 	// CRITICAL: FlushInterval directly affects integration test timing!
 	Buffer BufferConfig `yaml:"buffer"`
+
+	// Transport overrides the HTTP transport used for DataStorage API calls.
+	// When nil (production), the default ServiceAccount token transport is used.
+	// Integration tests inject an authenticated transport here to avoid
+	// reading SA tokens from the filesystem (DD-AUTH-005 DI pattern).
+	Transport http.RoundTripper `yaml:"-"`
 }
 
 // BufferConfig controls audit event buffering and batching.

@@ -52,8 +52,8 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 		// Pre-create managed namespace (Pattern: RO E2E)
 		testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "gw-dedup-test")
 
-		// Get DataStorage URL from environment
-		// Note: gatewayURL is the globally deployed Gateway service at http://127.0.0.1:8080
+		// Create test pod for owner resolution (GW-H2: resource validation requires existing pod)
+		helpers.EnsureTestPod(ctx, k8sClient, testNamespace, "dedup-test-pod")
 	})
 
 	AfterEach(func() {
@@ -79,6 +79,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 				AlertName: "TestDedupFieldSelectorFailure",
 				Namespace: testNamespace,
 				Severity:  "critical",
+				PodName:   "dedup-test-pod",
 				Labels: map[string]string{
 					"fingerprint": "test-fingerprint-12345678",
 				},
@@ -126,6 +127,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 				AlertName: "TestNoFallback",
 				Namespace: testNamespace,
 				Severity:  "warning",
+				PodName:   "dedup-test-pod",
 			})
 
 			req, _ := http.NewRequest("POST",
@@ -161,6 +163,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 				AlertName: "TestActionableError",
 				Namespace: testNamespace,
 				Severity:  "info",
+				PodName:   "dedup-test-pod",
 			})
 
 			req, _ := http.NewRequest("POST",
@@ -207,6 +210,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 					AlertName: alertName,
 					Namespace: testNamespace,
 					Severity:  "warning",
+					PodName:   "dedup-test-pod",
 					Labels: map[string]string{
 						"fingerprint": fingerprint,
 					},
@@ -305,6 +309,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 				AlertName: alertName,
 				Namespace: testNamespace,
 				Severity:  "info",
+				PodName:   "dedup-test-pod",
 				Labels: map[string]string{
 					"fingerprint": fingerprint,
 				},
@@ -404,6 +409,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 				AlertName: "TestMissingFingerprint",
 				Namespace: testNamespace,
 				Severity:  "warning",
+				PodName:   "dedup-test-pod",
 				Labels: map[string]string{
 					"fingerprint": fingerprint,
 				},

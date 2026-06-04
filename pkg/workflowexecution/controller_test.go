@@ -2029,7 +2029,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 		})
 
 		Context("Cooldown Period", func() {
-			It("should return early when CompletionTime is nil", func() {
+			It("should set CompletionTime and requeue for cooldown when CompletionTime is nil (WE-H3)", func() {
 				// Given: WFE in Completed phase but no CompletionTime
 				wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 					ObjectMeta: metav1.ObjectMeta{
@@ -2048,9 +2048,12 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				// When: reconcileTerminal is called
 				result, err := reconciler.ReconcileTerminal(ctx, wfe)
 
-				// Then: Should return immediately without error
+				// Then: WE-H3 sets CompletionTime to Now() and proceeds with cooldown
 				Expect(err).NotTo(HaveOccurred())
-				Expect(result.RequeueAfter).To(BeZero())
+				Expect(wfe.Status.CompletionTime).NotTo(BeNil(),
+					"WE-H3: CompletionTime must be set to unblock cleanup")
+				Expect(result.RequeueAfter).To(BeNumerically(">", 50*time.Second),
+					"Should requeue for ~1 minute cooldown since CompletionTime was just set")
 			})
 
 			It("should requeue with remaining duration when within cooldown period", func() {

@@ -150,7 +150,7 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 		var parentDate time.Time
 		err = s.db.QueryRowContext(ctx,
 			"SELECT event_date FROM audit_events WHERE event_id = $1",
-			&parentEventID).Scan(&parentDate)
+			parentEventID).Scan(&parentDate)
 		if err != nil {
 			s.logger.Info("Parent event not found", "error", err, "parent_event_id", parentEventID.String())
 			response.WriteRFC7807Error(w, http.StatusBadRequest, "validation-error", "Validation Error", "parent event does not exist", s.logger)

@@ -608,6 +608,10 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 	}
 	if podName != "" {
 		lockManager = processing.NewDistributedLockManager(apiReader, namespace, podName)
+	} else {
+		logger.Error(nil, "WARNING: POD_NAME not set — distributed locking disabled. "+
+			"Multi-replica deployments WILL create duplicate RemediationRequests. "+
+			"Set POD_NAME via Kubernetes downward API in production.")
 	}
 
 	// DD-AUDIT-003: Initialize audit store for P0 service compliance
@@ -617,7 +621,9 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 	var auditStore audit.AuditStore
 	if cfg.DataStorage.URL != "" {
 		// DD-API-001: Use OpenAPI generated client (not direct HTTP)
-		dsClient, err := audit.NewOpenAPIClientAdapter(cfg.DataStorage.URL, cfg.DataStorage.Timeout)
+		// DD-AUTH-005 DI: cfg.DataStorage.Transport overrides the default SA token transport
+		// (used by integration tests to inject authenticated transports)
+		dsClient, err := audit.NewOpenAPIClientAdapterWithTransport(cfg.DataStorage.URL, cfg.DataStorage.Timeout, cfg.DataStorage.Transport)
 		if err != nil {
 			// ADR-032 §2: No fallback/recovery allowed - crash on init failure
 			return nil, fmt.Errorf("FATAL: failed to create Data Storage client - audit is MANDATORY per ADR-032 §1.5 (Gateway is P0 service): %w", err)

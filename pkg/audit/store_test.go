@@ -357,6 +357,13 @@ var _ = Describe("BufferedAuditStore", func() {
 			Expect(err.Error()).To(ContainSubstring("invalid audit event"))
 		})
 
+		It("UT-AUDIT-1356-001: should return error on nil event without panic", func() {
+			err := store.StoreAudit(ctx, nil)
+
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("nil"))
+		})
+
 		It("should not block when buffer has space", func() {
 			event := createTestEvent()
 

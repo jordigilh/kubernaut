@@ -351,6 +351,124 @@ var _ = Describe("bridgeEventsToA2A — #1326 BR-MCP-003 event bridge goroutine"
 	})
 })
 
+var _ = Describe("AF-C1: Non-blocking bridge context detachment (#1356)", func() {
+
+	Describe("UT-AF-1356-001: bridge goroutine survives after parent context is cancelled", func() {
+		It("should process events even when the original ctx is cancelled", func() {
+			eventCh := make(chan ka.InvestigationEvent, 5)
+			closerCalled := make(chan struct{})
+
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					return &ka.StartInvestigationResult{
+						SessionID: "sess-af-c1-001",
+						Status:    "autonomous_started",
+						Events:    eventCh,
+						Closer: func() {
+							close(closerCalled)
+						},
+					}, nil
+				},
+			}
+
+			// Parent context that will be cancelled immediately after handler returns
+			parentCtx, parentCancel := context.WithCancel(context.Background())
+
+			registry := tools.NewMonitorRegistry()
+			result, err := tools.HandleInvestigationMCPWithRegistry(
+				parentCtx, mockMCP, nil, "",
+				tools.InvestigateMCPArgs{RRID: "rr-af-c1-001"},
+				nil, registry, nil, false, nil, "", nil, nil,
+			)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.SessionID).To(Equal("sess-af-c1-001"))
+
+			// Cancel parent -- simulates wrapTool's `defer cancel()`
+			parentCancel()
+
+			// Send events AFTER parent context is cancelled
+			eventCh <- ka.InvestigationEvent{Type: ka.EventTypeReasoningDelta, Data: json.RawMessage(`{"text":"step 1"}`)}
+			eventCh <- ka.InvestigationEvent{Type: ka.EventTypeReasoningDelta, Data: json.RawMessage(`{"text":"step 2"}`)}
+			eventCh <- ka.InvestigationEvent{Type: ka.EventTypeComplete}
+
+			// Bridge goroutine should complete and call cleanup
+			Eventually(closerCalled, 5*time.Second).Should(BeClosed())
+		})
+	})
+
+	Describe("UT-AF-1356-002: bridge goroutine exits on inactivity timeout", func() {
+		It("should exit when no events arrive within BridgeInactivityTimeout", func() {
+			// Override inactivity timeout for test speed
+			original := tools.BridgeInactivityTimeout
+			tools.BridgeInactivityTimeout = 200 * time.Millisecond
+			defer func() { tools.BridgeInactivityTimeout = original }()
+
+			eventCh := make(chan ka.InvestigationEvent, 5)
+			done := make(chan struct{})
+			go func() {
+				tools.BridgeEventsToA2A(context.Background(), eventCh)
+				close(done)
+			}()
+
+			// No events sent -- bridge should exit after 200ms inactivity
+			Eventually(done, 2*time.Second).Should(BeClosed())
+		})
+	})
+
+	Describe("UT-AF-1356-003: NonBlockingBridgeTTL caps bridge lifetime", func() {
+		It("should exit when TTL is exceeded even if events keep coming", func() {
+			// Override TTL to a short value
+			original := tools.NonBlockingBridgeTTL
+			tools.NonBlockingBridgeTTL = 300 * time.Millisecond
+			defer func() { tools.NonBlockingBridgeTTL = original }()
+
+			// Override inactivity to not interfere
+			origInactivity := tools.BridgeInactivityTimeout
+			tools.BridgeInactivityTimeout = 5 * time.Second
+			defer func() { tools.BridgeInactivityTimeout = origInactivity }()
+
+			eventCh := make(chan ka.InvestigationEvent, 100)
+			closerCalled := make(chan struct{})
+
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					return &ka.StartInvestigationResult{
+						SessionID: "sess-af-c1-003",
+						Status:    "autonomous_started",
+						Events:    eventCh,
+						Closer: func() {
+							close(closerCalled)
+						},
+					}, nil
+				},
+			}
+
+			registry := tools.NewMonitorRegistry()
+			_, err := tools.HandleInvestigationMCPWithRegistry(
+				context.Background(), mockMCP, nil, "",
+				tools.InvestigateMCPArgs{RRID: "rr-af-c1-003"},
+				nil, registry, nil, false, nil, "", nil, nil,
+			)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Keep sending events to prevent inactivity timeout from firing
+			go func() {
+				for {
+					select {
+					case eventCh <- ka.InvestigationEvent{Type: ka.EventTypeReasoningDelta, Data: json.RawMessage(`{"text":"x"}`)}:
+						time.Sleep(50 * time.Millisecond)
+					case <-closerCalled:
+						return
+					}
+				}
+			}()
+
+			// Bridge should exit after 300ms TTL
+			Eventually(closerCalled, 2*time.Second).Should(BeClosed())
+		})
+	})
+})
+
 var _ = Describe("HandleInvestigationMCP — delegation_type audit event", func() {
 
 	Describe("UT-AF-1326-060: audit event uses interactive delegation type", func() {

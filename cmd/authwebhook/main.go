@@ -23,6 +23,7 @@ import (
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 
 	"k8s.io/apimachinery/pkg/runtime"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
@@ -38,11 +39,11 @@ var (
 )
 
 func init() {
-	_ = workflowexecutionv1.AddToScheme(scheme)
-	_ = remediationv1.AddToScheme(scheme)
-	_ = notificationv1.AddToScheme(scheme)
-	_ = remediationworkflowv1.AddToScheme(scheme)
-	_ = actiontypev1.AddToScheme(scheme)
+	utilruntime.Must(workflowexecutionv1.AddToScheme(scheme))
+	utilruntime.Must(remediationv1.AddToScheme(scheme))
+	utilruntime.Must(notificationv1.AddToScheme(scheme))
+	utilruntime.Must(remediationworkflowv1.AddToScheme(scheme))
+	utilruntime.Must(actiontypev1.AddToScheme(scheme))
 }
 
 func main() {

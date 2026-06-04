@@ -86,9 +86,9 @@ var _ = Describe("AgentClient", func() {
 				}))
 
 				var err error
-				hgClient, err = agentclient.NewKubernautAgentClient(agentclient.Config{
+				hgClient, err = agentclient.NewKubernautAgentClientWithTransport(agentclient.Config{
 					BaseURL: mockServer.URL,
-				})
+				}, http.DefaultTransport)
 				Expect(err).ToNot(HaveOccurred())
 			})
 
@@ -117,7 +117,7 @@ var _ = Describe("AgentClient", func() {
 					w.WriteHeader(http.StatusServiceUnavailable)
 				}))
 				var err error
-				hgClient, err = agentclient.NewKubernautAgentClient(agentclient.Config{BaseURL: mockServer.URL})
+				hgClient, err = agentclient.NewKubernautAgentClientWithTransport(agentclient.Config{BaseURL: mockServer.URL}, http.DefaultTransport)
 				Expect(err).ToNot(HaveOccurred())
 			})
 
@@ -137,7 +137,7 @@ var _ = Describe("AgentClient", func() {
 					w.WriteHeader(http.StatusInternalServerError)
 				}))
 				var err error
-				hgClient, err = agentclient.NewKubernautAgentClient(agentclient.Config{BaseURL: mockServer.URL})
+				hgClient, err = agentclient.NewKubernautAgentClientWithTransport(agentclient.Config{BaseURL: mockServer.URL}, http.DefaultTransport)
 				Expect(err).ToNot(HaveOccurred())
 			})
 
@@ -157,7 +157,7 @@ var _ = Describe("AgentClient", func() {
 					w.WriteHeader(http.StatusUnauthorized)
 				}))
 				var err error
-				hgClient, err = agentclient.NewKubernautAgentClient(agentclient.Config{BaseURL: mockServer.URL})
+				hgClient, err = agentclient.NewKubernautAgentClientWithTransport(agentclient.Config{BaseURL: mockServer.URL}, http.DefaultTransport)
 				Expect(err).ToNot(HaveOccurred())
 			})
 
@@ -177,7 +177,7 @@ var _ = Describe("AgentClient", func() {
 					w.WriteHeader(http.StatusBadRequest)
 				}))
 				var err error
-				hgClient, err = agentclient.NewKubernautAgentClient(agentclient.Config{BaseURL: mockServer.URL})
+				hgClient, err = agentclient.NewKubernautAgentClientWithTransport(agentclient.Config{BaseURL: mockServer.URL}, http.DefaultTransport)
 				Expect(err).ToNot(HaveOccurred())
 			})
 
@@ -210,7 +210,7 @@ var _ = Describe("AgentClient", func() {
 					}
 				}))
 				var err error
-				hgClient, err = agentclient.NewKubernautAgentClient(agentclient.Config{BaseURL: mockServer.URL})
+				hgClient, err = agentclient.NewKubernautAgentClientWithTransport(agentclient.Config{BaseURL: mockServer.URL}, http.DefaultTransport)
 				Expect(err).ToNot(HaveOccurred())
 			})
 
@@ -253,7 +253,7 @@ var _ = Describe("AgentClient", func() {
 					}
 				}))
 				var err error
-				hgClient, err = agentclient.NewKubernautAgentClient(agentclient.Config{BaseURL: mockServer.URL})
+				hgClient, err = agentclient.NewKubernautAgentClientWithTransport(agentclient.Config{BaseURL: mockServer.URL}, http.DefaultTransport)
 				Expect(err).ToNot(HaveOccurred())
 			})
 
@@ -288,7 +288,7 @@ var _ = Describe("AgentClient", func() {
 					w.WriteHeader(http.StatusTooManyRequests)
 				}))
 				var err error
-				hgClient, err = agentclient.NewKubernautAgentClient(agentclient.Config{BaseURL: mockServer.URL})
+				hgClient, err = agentclient.NewKubernautAgentClientWithTransport(agentclient.Config{BaseURL: mockServer.URL}, http.DefaultTransport)
 				Expect(err).ToNot(HaveOccurred())
 			})
 

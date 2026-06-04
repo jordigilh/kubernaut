@@ -421,23 +421,22 @@ func main() {
 		}
 	}
 
+	// DD-AUDIT-002: Flush audit events on any exit path (including os.Exit via mgr.Start failure).
+	if auditStore != nil {
+		defer func() {
+			setupLog.Info("Flushing audit events on shutdown (DD-AUDIT-002)")
+			if closeErr := auditStore.Close(); closeErr != nil {
+				setupLog.Error(closeErr, "Failed to close audit store")
+			} else {
+				setupLog.Info("Audit store closed successfully")
+			}
+		}()
+	}
+
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
-	}
-
-	// ========================================
-	// DD-AUDIT-002: Graceful Shutdown - Flush Audit Events
-	// Per DD-007: Kubernetes-aware graceful shutdown
-	// ========================================
-	if auditStore != nil {
-		setupLog.Info("Flushing audit events on shutdown (DD-AUDIT-002)")
-		if err := auditStore.Close(); err != nil {
-			setupLog.Error(err, "Failed to close audit store")
-		} else {
-			setupLog.Info("Audit store closed successfully")
-		}
 	}
 }
 

@@ -24,6 +24,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -142,8 +143,7 @@ func (r *RemediationHistoryRepository) QueryEffectivenessEventsBatch(
 		}
 		var eventData map[string]interface{}
 		if err := json.Unmarshal(eventDataJSON, &eventData); err != nil {
-			r.logger.Error(err, "Failed to unmarshal EM event data", "correlation_id", correlationID)
-			continue
+			return nil, fmt.Errorf("corrupt JSONB in remediation history (correlation=%s, type=%s): %w", correlationID, eventType, err)
 		}
 		// Merge event_type column into EventData for BuildEffectivenessResponse routing.
 		// Column value takes precedence (authoritative source).

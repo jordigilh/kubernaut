@@ -721,12 +721,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	// Tradeoff: Accepts extra reconciles during active and terminal phases
 	// Benefit: Allows critical polling, child status updates, and terminal housekeeping
 	if rr.Status.ObservedGeneration == rr.Generation &&
-		rr.Status.OverallPhase == phase.Pending {
+		rr.Status.OverallPhase == phase.Pending &&
+		rr.Status.SignalProcessingRef != nil {
 		logger.V(1).Info("⏭️  SKIPPED: No orchestration needed in Pending phase",
 			"phase", rr.Status.OverallPhase,
 			"generation", rr.Generation,
 			"observedGeneration", rr.Status.ObservedGeneration,
-			"reason", "ObservedGeneration matches and phase is Pending")
+			"reason", "ObservedGeneration matches, phase is Pending, and SP already created")
 		return ctrl.Result{}, nil
 	}
 
@@ -894,7 +895,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		}
 
 		// BR-ORCH-044: Track routing decision - no action needed
-		r.Metrics.NoActionNeededTotal.WithLabelValues(rr.Namespace, string(rr.Status.OverallPhase)).Inc()
+		r.Metrics.NoActionNeededTotal.WithLabelValues(string(rr.Status.OverallPhase), rr.Namespace).Inc()
 
 		// #265: Requeue for TTL cleanup at expiry time
 		return ctrl.Result{RequeueAfter: retentionRequeue}, nil
@@ -1295,6 +1296,13 @@ func (r *Reconciler) transitionPhase(ctx context.Context, rr *remediationv1.Reme
 			"currentPhase", oldPhase,
 			"requestedPhase", newPhase)
 		return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
+	}
+
+	if !phase.CanTransition(phase.Phase(oldPhase), newPhase) {
+		logger.Error(nil, "Invalid phase transition rejected by state machine",
+			"currentPhase", oldPhase,
+			"requestedPhase", newPhase)
+		return ctrl.Result{}, fmt.Errorf("invalid phase transition from %s to %s", oldPhase, newPhase)
 	}
 
 	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {

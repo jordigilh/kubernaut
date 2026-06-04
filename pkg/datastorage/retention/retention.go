@@ -156,13 +156,15 @@ WHERE event_date + (retention_days * INTERVAL '1 day') < $1::DATE
   AND legal_hold = FALSE`
 
 // PurgeSQLBatched is PurgeSQL with a LIMIT clause for batched deletion.
-// FED-H1: Uses GREATEST(retention_days, $3) to enforce category-based minimum retention.
-// $3 is the category floor (defaultDays from config, or per-category policy).
+// FED-H1: Uses GREATEST(retention_days, COALESCE(policy.retention_days, $3)) to enforce
+// per-category minimum retention from audit_retention_policies, falling back to the
+// configured default floor ($3) when no category policy exists.
 const PurgeSQLBatched = `DELETE FROM audit_events
 WHERE ctid IN (
-    SELECT ctid FROM audit_events
-    WHERE event_date + (GREATEST(retention_days, $3) * INTERVAL '1 day') < $1::DATE
-      AND legal_hold = FALSE
+    SELECT ae.ctid FROM audit_events ae
+    LEFT JOIN audit_retention_policies arp ON ae.event_category = arp.event_category
+    WHERE ae.event_date + (GREATEST(ae.retention_days, COALESCE(arp.retention_days, $3)) * INTERVAL '1 day') < $1::DATE
+      AND ae.legal_hold = FALSE
     LIMIT $2
 )`
 

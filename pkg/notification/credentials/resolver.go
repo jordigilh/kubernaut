@@ -86,7 +86,12 @@ func (r *Resolver) Reload() error {
 		}
 		content, err := os.ReadFile(filepath.Join(r.credentialsDir, name))
 		if err != nil {
-			r.logger.Error(err, "Failed to read credential file", "name", name)
+			r.logger.Error(err, "Failed to read credential file — keeping stale value if available", "name", name)
+			r.mu.RLock()
+			if stale, ok := r.cache[name]; ok {
+				newCache[name] = stale
+			}
+			r.mu.RUnlock()
 			continue
 		}
 		newCache[name] = strings.TrimSpace(string(content))

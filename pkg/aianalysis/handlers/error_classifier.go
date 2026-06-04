@@ -161,14 +161,26 @@ func (ec *ErrorClassifier) ClassifyError(err error) ErrorClassification {
 		}
 	}
 
-	// Check for timeout errors first (highest priority)
-	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+	// Check for context cancellation (caller-initiated abort: shutdown, user cancel)
+	if errors.Is(err, context.Canceled) {
+		return ErrorClassification{
+			ErrorType:     ErrorTypePermanent,
+			IsRetryable:   false,
+			ShouldAlert:   false,
+			RetryAfter:    -1,
+			Message:       "Request canceled by caller",
+			OriginalError: err,
+		}
+	}
+
+	// Check for timeout errors (deadline exceeded is retryable)
+	if errors.Is(err, context.DeadlineExceeded) {
 		return ErrorClassification{
 			ErrorType:     ErrorTypeTimeout,
 			IsRetryable:   true,
 			ShouldAlert:   false,
 			RetryAfter:    ec.backoffConfig.BasePeriod,
-			Message:       "Request timed out or was canceled",
+			Message:       "Request timed out",
 			OriginalError: err,
 		}
 	}

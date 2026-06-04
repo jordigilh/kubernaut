@@ -343,7 +343,9 @@ func (s *Server) HandleListLegalHolds(w http.ResponseWriter, r *http.Request) {
 		err := rows.Scan(&hold.CorrelationID, &hold.EventsAffected, &hold.PlacedBy, &placedAt, &hold.Reason)
 		if err != nil {
 			s.logger.Error(err, "Failed to scan legal hold row")
-			continue
+			response.WriteRFC7807Error(w, http.StatusInternalServerError, "database-error", "Database Error",
+				"Failed to scan legal hold data", s.logger)
+			return
 		}
 		if placedAt.Valid {
 			hold.PlacedAt = placedAt.Time

@@ -50,7 +50,7 @@ var _ = Describe("OpenAPIClientAdapter - DD-API-001 Compliance", Label("unit", "
 				w.WriteHeader(http.StatusOK)
 			}))
 
-			client, err := audit.NewOpenAPIClientAdapter(server.URL, 5*time.Second)
+			client, err := audit.NewOpenAPIClientAdapterWithTransport(server.URL, 5*time.Second, http.DefaultTransport)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(client).To(Not(BeNil()), "client must be initialized with valid server URL")
 		})
@@ -91,7 +91,7 @@ var _ = Describe("OpenAPIClientAdapter - DD-API-001 Compliance", Label("unit", "
 				}))
 
 				var err error
-				client, err = audit.NewOpenAPIClientAdapter(server.URL, 5*time.Second)
+				client, err = audit.NewOpenAPIClientAdapterWithTransport(server.URL, 5*time.Second, http.DefaultTransport)
 				Expect(err).ToNot(HaveOccurred())
 
 				// Create test events using ogen union constructors (ogen migration)
@@ -143,7 +143,7 @@ var _ = Describe("OpenAPIClientAdapter - DD-API-001 Compliance", Label("unit", "
 				}))
 
 				var err error
-				client, err = audit.NewOpenAPIClientAdapter(server.URL, 5*time.Second)
+				client, err = audit.NewOpenAPIClientAdapterWithTransport(server.URL, 5*time.Second, http.DefaultTransport)
 				Expect(err).ToNot(HaveOccurred())
 
 				err = client.StoreBatch(ctx, []*ogenclient.AuditEventRequest{})
@@ -154,7 +154,7 @@ var _ = Describe("OpenAPIClientAdapter - DD-API-001 Compliance", Label("unit", "
 		Context("Error Cases - Network Errors (Retryable)", func() {
 			It("should return NetworkError for connection refused", func() {
 				// Use invalid URL to trigger connection error
-				client, err := audit.NewOpenAPIClientAdapter("http://localhost:1", 100*time.Millisecond)
+				client, err := audit.NewOpenAPIClientAdapterWithTransport("http://localhost:1", 100*time.Millisecond, http.DefaultTransport)
 				Expect(err).ToNot(HaveOccurred())
 
 				// Create test event using ogen union constructor (ogen migration)
@@ -230,7 +230,7 @@ var _ = Describe("OpenAPIClientAdapter - DD-API-001 Compliance", Label("unit", "
 				}))
 
 				var err error
-				client, err = audit.NewOpenAPIClientAdapter(server.URL, 5*time.Second)
+				client, err = audit.NewOpenAPIClientAdapterWithTransport(server.URL, 5*time.Second, http.DefaultTransport)
 				Expect(err).ToNot(HaveOccurred())
 
 				// Create test event using ogen union constructor (ogen migration)
@@ -269,7 +269,7 @@ var _ = Describe("OpenAPIClientAdapter - DD-API-001 Compliance", Label("unit", "
 				}))
 
 				var err error
-				client, err = audit.NewOpenAPIClientAdapter(server.URL, 5*time.Second)
+				client, err = audit.NewOpenAPIClientAdapterWithTransport(server.URL, 5*time.Second, http.DefaultTransport)
 				Expect(err).ToNot(HaveOccurred())
 
 				// Create test event using ogen union constructor (ogen migration)
@@ -310,7 +310,7 @@ var _ = Describe("OpenAPIClientAdapter - DD-API-001 Compliance", Label("unit", "
 				}))
 
 				var err error
-				client, err = audit.NewOpenAPIClientAdapter(server.URL, 5*time.Second)
+				client, err = audit.NewOpenAPIClientAdapterWithTransport(server.URL, 5*time.Second, http.DefaultTransport)
 				Expect(err).ToNot(HaveOccurred())
 
 				// Create test event using ogen union constructor (ogen migration)
@@ -403,7 +403,7 @@ var _ = Describe("OpenAPIClientAdapter - DD-API-001 Compliance", Label("unit", "
 				_, _ = w.Write([]byte(`{"message": "Success", "events_created": 1}`))
 			}))
 
-			client, err := audit.NewOpenAPIClientAdapter(server.URL, 5*time.Second)
+			client, err := audit.NewOpenAPIClientAdapterWithTransport(server.URL, 5*time.Second, http.DefaultTransport)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Create test event using ogen union constructor (ogen migration - DD-API-001 compliance)
@@ -437,7 +437,7 @@ var _ = Describe("OpenAPIClientAdapter - DD-API-001 Compliance", Label("unit", "
 				w.WriteHeader(http.StatusCreated)
 			}))
 
-			client, err := audit.NewOpenAPIClientAdapter(server.URL, 5*time.Second)
+			client, err := audit.NewOpenAPIClientAdapterWithTransport(server.URL, 5*time.Second, http.DefaultTransport)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Verify it implements the interface

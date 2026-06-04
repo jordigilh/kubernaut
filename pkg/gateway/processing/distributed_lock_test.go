@@ -352,6 +352,58 @@ var _ = Describe("DistributedLockManager", func() {
 		})
 	})
 
+	Describe("GW-C1: Holder-aware lock release (#1356)", func() {
+		It("UT-GW-1356-001: should not delete lease if held by another pod", func() {
+			// Given: Pod 1 acquires the lock
+			lockManager1 := processing.NewDistributedLockManager(k8sClient, namespace, "gateway-pod-1")
+			acquired, err := lockManager1.AcquireLock(ctx, fingerprint)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(acquired).To(BeTrue())
+
+			// And: Pod 1's lock expires and Pod 2 takes over
+			leaseName := "gw-lock-" + fingerprint[:16]
+			lease := &coordinationv1.Lease{}
+			err = k8sClient.Get(ctx, client.ObjectKey{Namespace: namespace, Name: leaseName}, lease)
+			Expect(err).NotTo(HaveOccurred())
+			expiredTime := metav1.NewMicroTime(time.Now().Add(-35 * time.Second))
+			lease.Spec.RenewTime = &expiredTime
+			Expect(k8sClient.Update(ctx, lease)).To(Succeed())
+
+			lockManager2 := processing.NewDistributedLockManager(k8sClient, namespace, "gateway-pod-2")
+			acquired2, err := lockManager2.AcquireLock(ctx, fingerprint)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(acquired2).To(BeTrue())
+
+			// When: Pod 1 (stale owner) tries to release
+			err = lockManager1.ReleaseLock(ctx, fingerprint)
+
+			// Then: Should not return error (idempotent/safe for defer)
+			Expect(err).NotTo(HaveOccurred())
+
+			// And: Lease should still exist (owned by Pod 2)
+			err = k8sClient.Get(ctx, client.ObjectKey{Namespace: namespace, Name: leaseName}, lease)
+			Expect(err).NotTo(HaveOccurred(), "Lease should NOT be deleted")
+			Expect(*lease.Spec.HolderIdentity).To(Equal("gateway-pod-2"))
+		})
+
+		It("UT-GW-1356-002: should delete lease if held by current pod", func() {
+			// Given: Pod 1 acquires the lock
+			acquired, err := lockManager.AcquireLock(ctx, fingerprint)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(acquired).To(BeTrue())
+
+			// When: Same pod releases it
+			err = lockManager.ReleaseLock(ctx, fingerprint)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Then: Lease is deleted
+			leaseName := "gw-lock-" + fingerprint[:16]
+			lease := &coordinationv1.Lease{}
+			err = k8sClient.Get(ctx, client.ObjectKey{Namespace: namespace, Name: leaseName}, lease)
+			Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		})
+	})
+
 	Describe("Business Scenario: Pod Crash Recovery", func() {
 		It("should allow new pod to take over after lease expires", func() {
 			// TDD: Define fault-tolerance behavior

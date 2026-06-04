@@ -112,9 +112,13 @@ func (m *DistributedLockManager) AcquireLock(ctx context.Context, targetResource
 		return true, nil
 	}
 
-	// Lease exists — check if we own it (idempotent re-acquire)
+	// Lease exists — check if we own it (idempotent re-acquire with renewal)
 	if lease.Spec.HolderIdentity != nil && *lease.Spec.HolderIdentity == m.holderID {
-		logger.V(2).Info("Re-acquired own lease (idempotent)", "target", targetResource, "lease", leaseName)
+		now := metav1.NowMicro()
+		lease.Spec.RenewTime = &now
+		if err := m.client.Update(ctx, lease); err != nil {
+			logger.V(1).Info("Failed to renew own lease (will retry)", "error", err)
+		}
 		return true, nil
 	}
 
@@ -148,16 +152,28 @@ func (m *DistributedLockManager) AcquireLock(ctx context.Context, targetResource
 }
 
 // ReleaseLock releases the distributed lock for the given target resource.
+// Holder-aware: only deletes the lease if the current pod is the holder.
 // Idempotent: safe to call multiple times (e.g., in defer).
 func (m *DistributedLockManager) ReleaseLock(ctx context.Context, targetResource string) error {
 	leaseName := GenerateLeaseName(targetResource)
 
 	lease := &coordinationv1.Lease{}
-	lease.Namespace = m.namespace
-	lease.Name = leaseName
+	err := m.client.Get(ctx, client.ObjectKey{
+		Namespace: m.namespace,
+		Name:      leaseName,
+	}, lease)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("failed to get lease for release: %w", err)
+	}
 
-	err := m.client.Delete(ctx, lease)
-	if err != nil && !apierrors.IsNotFound(err) {
+	if lease.Spec.HolderIdentity == nil || *lease.Spec.HolderIdentity != m.holderID {
+		return nil
+	}
+
+	if err := m.client.Delete(ctx, lease); err != nil && !apierrors.IsNotFound(err) {
 		return fmt.Errorf("failed to delete lease: %w", err)
 	}
 
