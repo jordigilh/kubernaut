@@ -19,6 +19,7 @@ package gateway
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"testing"
 	"time"
@@ -102,6 +103,7 @@ var (
 	dsClient                  audit.DataStorageClient // Per-process DataStorage audit client (authenticated)
 	sharedOgenClient          *ogenclient.Client      // Per-process OpenAPI client (authenticated) - used for audit queries
 	sharedAuditStore          audit.AuditStore        // Shared audit store (background flusher runs continuously)
+	suiteAuthTransport        http.RoundTripper       // Authenticated transport for DI into production code paths
 
 	// BR-GATEWAY-036/037: Suite-level auth for all integration test servers
 	suiteAuthenticator auth.Authenticator
@@ -203,15 +205,6 @@ var _ = SynchronizedBeforeSuite(
 		
 		// Extract ServiceAccount token from Phase 1
 		saToken := string(data)
-
-		// Write SA token to temp file so production code paths using
-		// NewDefaultTokenSource() can read it via SA_TOKEN_PATH env var.
-		saTokenFile, err := os.CreateTemp("", "sa-token-*")
-		Expect(err).ToNot(HaveOccurred())
-		_, err = saTokenFile.WriteString(saToken)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(saTokenFile.Close()).To(Succeed())
-		Expect(os.Setenv("SA_TOKEN_PATH", saTokenFile.Name())).To(Succeed())
 		
 		// STANDARDIZED PATTERN: Use shared helper for authenticated client creation
 		dataStorageURL := fmt.Sprintf("http://127.0.0.1:%d", infrastructure.GatewayIntegrationDataStoragePort)
@@ -222,6 +215,7 @@ var _ = SynchronizedBeforeSuite(
 		)
 		dsClient = dsClients.AuditClient       // ✅ For audit event emission (used by Gateway servers)
 		sharedOgenClient = dsClients.OpenAPIClient // ✅ For audit event queries (used by test assertions)
+		suiteAuthTransport = dsClients.HTTPClient.Transport // ✅ For DI into production code paths (DD-AUTH-005)
 		logger.Info(fmt.Sprintf("[Process %d] ✅ Authenticated DataStorage clients created", processNum))
 
 		// Create SHARED audit store (used by all Gateway servers in this process)

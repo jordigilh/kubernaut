@@ -183,7 +183,7 @@ var _ = Describe("Issue #573: ADR-EM-001 Implementation Gaps", func() {
 		newLocalReconciler := func(dsURL string, initObjects ...client.Object) (*controller.Reconciler, client.Client) {
 			localMetrics = emmetrics.NewMetricsWithRegistry(prometheus.NewRegistry())
 			fakeRecorder = record.NewFakeRecorder(20)
-			dsQuerier, err := emclient.NewOgenDataStorageQuerierWithTransport(dsURL, 10*time.Second, http.DefaultTransport)
+			dsQuerier, err := emclient.NewOgenDataStorageQuerierWithTransport(dsURL, 10*time.Second, dsClients.HTTPClient.Transport)
 			Expect(err).ToNot(HaveOccurred())
 
 			s := runtime.NewScheme()
