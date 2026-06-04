@@ -29,6 +29,12 @@ import (
 	emclient "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/client"
 )
 
+// newTestQuerier creates a DataStorageQuerier backed by http.DefaultTransport
+// so unit tests don't require a Kubernetes SA token on the filesystem.
+func newTestQuerier(baseURL string) (emclient.DataStorageQuerier, error) {
+	return emclient.NewOgenDataStorageQuerierWithTransport(baseURL, 10*time.Second, http.DefaultTransport)
+}
+
 // testAuditEvent builds a schema-compliant AuditEvent JSON map with all 8 required
 // fields populated. Callers supply the event_type, correlation_id, and an eventData
 // map that is merged into the required event_data structure.
@@ -117,7 +123,7 @@ var _ = Describe("DataStorageQuerier (DD-EM-002)", func() {
 				})
 			}))
 
-			querier, err := emclient.NewOgenDataStorageQuerier(server.URL, 10*time.Second)
+			querier, err := newTestQuerier(server.URL)
 			Expect(err).ToNot(HaveOccurred())
 			hash, err := querier.QueryPreRemediationHash(ctx, "test-correlation-001")
 			Expect(err).ToNot(HaveOccurred())
@@ -129,7 +135,7 @@ var _ = Describe("DataStorageQuerier (DD-EM-002)", func() {
 				serveOgenCompliantResponse(w, []map[string]interface{}{})
 			}))
 
-			querier, err := emclient.NewOgenDataStorageQuerier(server.URL, 10*time.Second)
+			querier, err := newTestQuerier(server.URL)
 			Expect(err).ToNot(HaveOccurred())
 			hash, err := querier.QueryPreRemediationHash(ctx, "no-events-correlation")
 			Expect(err).ToNot(HaveOccurred())
@@ -146,7 +152,7 @@ var _ = Describe("DataStorageQuerier (DD-EM-002)", func() {
 				})
 			}))
 
-			querier, err := emclient.NewOgenDataStorageQuerier(server.URL, 10*time.Second)
+			querier, err := newTestQuerier(server.URL)
 			Expect(err).ToNot(HaveOccurred())
 			hash, err := querier.QueryPreRemediationHash(ctx, "test-correlation-003")
 			Expect(err).ToNot(HaveOccurred())
@@ -158,7 +164,7 @@ var _ = Describe("DataStorageQuerier (DD-EM-002)", func() {
 				http.Error(w, "internal server error", http.StatusInternalServerError)
 			}))
 
-			querier, err := emclient.NewOgenDataStorageQuerier(server.URL, 10*time.Second)
+			querier, err := newTestQuerier(server.URL)
 			Expect(err).ToNot(HaveOccurred())
 			_, err = querier.QueryPreRemediationHash(ctx, "test-correlation-004")
 			Expect(err).To(HaveOccurred())
@@ -190,7 +196,7 @@ var _ = Describe("DataStorageQuerier (DD-EM-002)", func() {
 				})
 			}))
 
-			querier, err := emclient.NewOgenDataStorageQuerier(server.URL, 10*time.Second)
+			querier, err := newTestQuerier(server.URL)
 			Expect(err).ToNot(HaveOccurred())
 			started, err := querier.HasWorkflowStarted(ctx, "corr-started")
 			Expect(err).ToNot(HaveOccurred())
@@ -202,7 +208,7 @@ var _ = Describe("DataStorageQuerier (DD-EM-002)", func() {
 				serveOgenCompliantResponse(w, []map[string]interface{}{})
 			}))
 
-			querier, err := emclient.NewOgenDataStorageQuerier(server.URL, 10*time.Second)
+			querier, err := newTestQuerier(server.URL)
 			Expect(err).ToNot(HaveOccurred())
 			started, err := querier.HasWorkflowStarted(ctx, "corr-not-started")
 			Expect(err).ToNot(HaveOccurred())
@@ -214,7 +220,7 @@ var _ = Describe("DataStorageQuerier (DD-EM-002)", func() {
 				http.Error(w, "internal server error", http.StatusInternalServerError)
 			}))
 
-			querier, err := emclient.NewOgenDataStorageQuerier(server.URL, 10*time.Second)
+			querier, err := newTestQuerier(server.URL)
 			Expect(err).ToNot(HaveOccurred())
 			_, err = querier.HasWorkflowStarted(ctx, "corr-error")
 			Expect(err).To(HaveOccurred())
@@ -245,7 +251,7 @@ var _ = Describe("DataStorageQuerier (DD-EM-002)", func() {
 				})
 			}))
 
-			querier, err := emclient.NewOgenDataStorageQuerier(server.URL, 10*time.Second)
+			querier, err := newTestQuerier(server.URL)
 			Expect(err).ToNot(HaveOccurred())
 			completed, err := querier.HasWorkflowCompleted(ctx, "rr-completed")
 			Expect(err).ToNot(HaveOccurred())
@@ -258,7 +264,7 @@ var _ = Describe("DataStorageQuerier (DD-EM-002)", func() {
 				serveOgenCompliantResponse(w, []map[string]interface{}{})
 			}))
 
-			querier, err := emclient.NewOgenDataStorageQuerier(server.URL, 10*time.Second)
+			querier, err := newTestQuerier(server.URL)
 			Expect(err).ToNot(HaveOccurred())
 			completed, err := querier.HasWorkflowCompleted(ctx, "rr-only-started")
 			Expect(err).ToNot(HaveOccurred())
