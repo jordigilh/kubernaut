@@ -112,9 +112,13 @@ func (m *DistributedLockManager) AcquireLock(ctx context.Context, targetResource
 		return true, nil
 	}
 
-	// Lease exists — check if we own it (idempotent re-acquire)
+	// Lease exists — check if we own it (idempotent re-acquire with renewal)
 	if lease.Spec.HolderIdentity != nil && *lease.Spec.HolderIdentity == m.holderID {
-		logger.V(2).Info("Re-acquired own lease (idempotent)", "target", targetResource, "lease", leaseName)
+		now := metav1.NowMicro()
+		lease.Spec.RenewTime = &now
+		if err := m.client.Update(ctx, lease); err != nil {
+			logger.V(1).Info("Failed to renew own lease (will retry)", "error", err)
+		}
 		return true, nil
 	}
 

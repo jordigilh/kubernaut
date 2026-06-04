@@ -874,6 +874,7 @@ func (h *InvestigatingHandler) handleSessionLost(ctx context.Context, analysis *
 		analysis.Status.Phase = aianalysis.PhaseFailed
 		analysis.Status.CompletedAt = &now
 		analysis.Status.ObservedGeneration = analysis.Generation
+		analysis.Status.Reason = aianalysisv1.ReasonTransientError
 		analysis.Status.SubReason = "SessionRegenerationExceeded"
 		analysis.Status.Message = fmt.Sprintf("Session regeneration cap exceeded (%d regenerations)", session.Generation)
 

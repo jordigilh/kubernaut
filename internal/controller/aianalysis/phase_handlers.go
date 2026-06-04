@@ -123,11 +123,17 @@ func (r *AIAnalysisReconciler) reconcileInvestigating(ctx context.Context, analy
 			}
 
 			if analysis.Status.InvestigationTime > 0 {
-				log.Info("AA-HAPI-001: Handler already executed, skipping duplicate call",
-					"investigationTime", analysis.Status.InvestigationTime,
-					"phase", phaseBefore)
-				handlerExecuted = false
-				return nil
+				hasActiveSession := analysis.Status.KASession != nil && analysis.Status.KASession.ID != ""
+				if !hasActiveSession {
+					log.Info("AA-HAPI-001: Handler already executed, skipping duplicate call",
+						"investigationTime", analysis.Status.InvestigationTime,
+						"phase", phaseBefore)
+					handlerExecuted = false
+					return nil
+				}
+				log.Info("AA-H4: Active KA session detected, allowing recovery poll despite InvestigationTime > 0",
+					"sessionID", analysis.Status.KASession.ID,
+					"investigationTime", analysis.Status.InvestigationTime)
 			}
 
 			// Execute handler ONLY if phase check passed AND not already executed
