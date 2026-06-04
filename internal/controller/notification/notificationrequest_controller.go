@@ -499,6 +499,74 @@ func (r *NotificationRequestReconciler) auditMessageFailed(ctx context.Context, 
 }
 
 
+// auditMessageAcknowledged audits notification acknowledgment (non-blocking).
+// Emitted when a notification transitions to Sent (all deliveries succeeded).
+func (r *NotificationRequestReconciler) auditMessageAcknowledged(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
+	if r.AuditStore == nil || r.AuditManager == nil {
+		err := fmt.Errorf("audit store or helpers nil - audit is MANDATORY per ADR-032 §1")
+		log := log.FromContext(ctx)
+		log.Error(err, "CRITICAL: Cannot record audit event", "event_type", "message.acknowledged")
+		return err
+	}
+
+	log := log.FromContext(ctx)
+
+	notificationKey := fmt.Sprintf("%s/%s", notification.Namespace, notification.Name)
+	eventKey := "message.acknowledged"
+	if !r.shouldEmitAuditEvent(notificationKey, eventKey) {
+		log.V(1).Info("Audit event already emitted, skipping duplicate", "event_type", "message.acknowledged")
+		return nil
+	}
+
+	event, err := r.AuditManager.CreateMessageAcknowledgedEvent(notification)
+	if err != nil {
+		log.Error(err, "Failed to create audit event - audit creation is MANDATORY per ADR-032 §1", "event_type", "message.acknowledged")
+		return fmt.Errorf("failed to create audit event (ADR-032 §1): %w", err)
+	}
+
+	if err := r.AuditStore.StoreAudit(ctx, event); err != nil {
+		log.Error(err, "Failed to buffer audit event", "event_type", "message.acknowledged")
+	} else {
+		r.markAuditEventEmitted(notificationKey, eventKey)
+	}
+
+	return nil
+}
+
+// auditMessageEscalated audits notification escalation (non-blocking).
+// Emitted when a notification transitions to Failed (all retries exhausted).
+func (r *NotificationRequestReconciler) auditMessageEscalated(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
+	if r.AuditStore == nil || r.AuditManager == nil {
+		err := fmt.Errorf("audit store or helpers nil - audit is MANDATORY per ADR-032 §1")
+		log := log.FromContext(ctx)
+		log.Error(err, "CRITICAL: Cannot record audit event", "event_type", "message.escalated")
+		return err
+	}
+
+	log := log.FromContext(ctx)
+
+	notificationKey := fmt.Sprintf("%s/%s", notification.Namespace, notification.Name)
+	eventKey := "message.escalated"
+	if !r.shouldEmitAuditEvent(notificationKey, eventKey) {
+		log.V(1).Info("Audit event already emitted, skipping duplicate", "event_type", "message.escalated")
+		return nil
+	}
+
+	event, err := r.AuditManager.CreateMessageEscalatedEvent(notification)
+	if err != nil {
+		log.Error(err, "Failed to create audit event - audit creation is MANDATORY per ADR-032 §1", "event_type", "message.escalated")
+		return fmt.Errorf("failed to create audit event (ADR-032 §1): %w", err)
+	}
+
+	if err := r.AuditStore.StoreAudit(ctx, event); err != nil {
+		log.Error(err, "Failed to buffer audit event", "event_type", "message.escalated")
+	} else {
+		r.markAuditEventEmitted(notificationKey, eventKey)
+	}
+
+	return nil
+}
+
 // =============================================================================
 // Exported Methods for Testing (ADR-032 Compliance Tests)
 // =============================================================================
@@ -513,6 +581,16 @@ func (r *NotificationRequestReconciler) ExportedAuditMessageSent(ctx context.Con
 // ExportedAuditMessageFailed exposes auditMessageFailed for ADR-032 compliance testing
 func (r *NotificationRequestReconciler) ExportedAuditMessageFailed(ctx context.Context, notification *notificationv1alpha1.NotificationRequest, channel string, deliveryErr error) error {
 	return r.auditMessageFailed(ctx, notification, channel, deliveryErr)
+}
+
+// ExportedAuditMessageAcknowledged exposes auditMessageAcknowledged for ADR-032 compliance testing
+func (r *NotificationRequestReconciler) ExportedAuditMessageAcknowledged(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
+	return r.auditMessageAcknowledged(ctx, notification)
+}
+
+// ExportedAuditMessageEscalated exposes auditMessageEscalated for ADR-032 compliance testing
+func (r *NotificationRequestReconciler) ExportedAuditMessageEscalated(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
+	return r.auditMessageEscalated(ctx, notification)
 }
 
 
@@ -1008,6 +1086,12 @@ func (r *NotificationRequestReconciler) transitionToSent(
 	// DD-METRICS-001: Use injected metrics recorder
 	r.Metrics.UpdatePhaseCount(notification.Namespace, string(notificationv1alpha1.NotificationPhaseSent), 1)
 
+	// AUDIT: Message acknowledged (ADR-032 §1: MANDATORY)
+	if auditErr := r.auditMessageAcknowledged(ctx, notification); auditErr != nil {
+		log.Error(auditErr, "CRITICAL: Failed to audit message.acknowledged (ADR-032 §1)")
+		return ctrl.Result{}, fmt.Errorf("audit failure (ADR-032 §1): %w", auditErr)
+	}
+
 	log.Info("NotificationRequest completed successfully (atomic update)",
 		"name", notification.Name,
 		"successfulDeliveries", notification.Status.SuccessfulDeliveries,
@@ -1185,6 +1269,12 @@ func (r *NotificationRequestReconciler) transitionToFailed(
 		// DD-EVENT-001 v1.1: Emit NotificationFailed Warning when delivery fails terminally
 		r.Recorder.Event(notification, corev1.EventTypeWarning, events.EventReasonNotificationFailed,
 			"All delivery attempts failed or exhausted retries")
+
+		// AUDIT: Message escalated (ADR-032 §1: MANDATORY)
+		if auditErr := r.auditMessageEscalated(ctx, notification); auditErr != nil {
+			log.Error(auditErr, "CRITICAL: Failed to audit message.escalated (ADR-032 §1)")
+			return ctrl.Result{}, fmt.Errorf("audit failure (ADR-032 §1): %w", auditErr)
+		}
 
 		log.Info("NotificationRequest permanently failed (atomic update)",
 			"name", notification.Name,
