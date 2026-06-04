@@ -498,143 +498,6 @@ func (r *NotificationRequestReconciler) auditMessageFailed(ctx context.Context, 
 	return nil
 }
 
-// auditMessageAcknowledged audits notification acknowledgment (non-blocking)
-//
-// V2.0 ROADMAP FEATURE: Operator acknowledgment tracking
-//
-// Planned for Notification Service v2.0 (not v1.x scope):
-//   - Interactive Slack messages with [Acknowledge] button
-//   - Webhook endpoint to receive acknowledgment events
-//   - CRD fields: Status.AcknowledgedAt, Status.AcknowledgedBy
-//   - Response time SLA tracking (time to acknowledge)
-//   - Compliance audit trail (who acknowledged what, when)
-//
-// Current Implementation Status (v1.x):
-//
-//	✅ Audit method implemented and tested (110 unit tests)
-//	✅ Ready for integration when v2.0 CRD schema is added
-//	⏸️ NOT integrated (no CRD fields, no webhook endpoint)
-//
-// Integration Point (v2.0):
-//
-//	if notification.Status.AcknowledgedAt != nil && !notification.Status.AuditedAcknowledgment {
-//	    r.auditMessageAcknowledged(ctx, notification)
-//	}
-//
-// Business Requirement: v2.0 roadmap (operator accountability)
-// Tests: test/unit/notification/audit_test.go (25+ test cases)
-// BR-NOT-062: Unified audit table integration ✅
-// BR-NOT-063: Graceful audit degradation ✅
-//
-//nolint:unused // v2.0 roadmap feature - prepared ahead of CRD schema changes
-func (r *NotificationRequestReconciler) auditMessageAcknowledged(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
-	// ADR-032 §1: Audit is MANDATORY - no graceful degradation allowed
-	// If audit store is nil, this indicates misconfiguration and MUST fail
-	if r.AuditStore == nil || r.AuditManager == nil {
-		err := fmt.Errorf("audit store or helpers nil - audit is MANDATORY per ADR-032 §1")
-		log := log.FromContext(ctx)
-		log.Error(err, "CRITICAL: Cannot record audit event", "event_type", "message.acknowledged")
-		return err
-	}
-
-	log := log.FromContext(ctx)
-
-	// NT-BUG-001 Fix: Check if this audit event was already emitted
-	notificationKey := fmt.Sprintf("%s/%s", notification.Namespace, notification.Name)
-	eventKey := "message.acknowledged"
-	if !r.shouldEmitAuditEvent(notificationKey, eventKey) {
-		log.V(1).Info("Audit event already emitted, skipping duplicate", "event_type", "message.acknowledged")
-		return nil
-	}
-
-	// Create audit event
-	event, err := r.AuditManager.CreateMessageAcknowledgedEvent(notification)
-	if err != nil {
-		log.Error(err, "Failed to create audit event - audit creation is MANDATORY per ADR-032 §1", "event_type", "message.acknowledged")
-		return fmt.Errorf("failed to create audit event (ADR-032 §1): %w", err)
-	}
-
-	// Fire-and-forget: Audit write failures don't block reconciliation (BR-NOT-063)
-	// ADR-032 §1: Store is available (checked above), write failure is acceptable (async buffered write)
-	if err := r.AuditStore.StoreAudit(ctx, event); err != nil {
-		log.Error(err, "Failed to buffer audit event", "event_type", "message.acknowledged")
-		// Continue reconciliation - audit failure is not critical (BR-NOT-063)
-	} else {
-		// NT-BUG-001 Fix: Mark event as emitted only if store succeeded
-		r.markAuditEventEmitted(notificationKey, eventKey)
-	}
-
-	return nil
-}
-
-// auditMessageEscalated audits notification escalation (non-blocking)
-//
-// V2.0 ROADMAP FEATURE: Automatic notification escalation
-//
-// Planned for Notification Service v2.0 (not v1.x scope):
-//   - Auto-escalation policy (escalate if unacknowledged after N minutes)
-//   - RemediationOrchestrator watches for unacknowledged notifications
-//   - CRD fields: Status.EscalatedAt, Status.EscalatedTo, Status.EscalationReason
-//   - Escalation metrics (frequency by team, escalation patterns)
-//   - SLA compliance tracking (time to acknowledge vs. escalation threshold)
-//
-// Current Implementation Status (v1.x):
-//
-//	✅ Audit method implemented and tested (110 unit tests)
-//	✅ Ready for integration when v2.0 CRD schema is added
-//	⏸️ NOT integrated (no CRD fields, no escalation policy)
-//
-// Integration Point (v2.0):
-//
-//	if notification.Status.EscalatedAt != nil && !notification.Status.AuditedEscalation {
-//	    r.auditMessageEscalated(ctx, notification)
-//	}
-//
-// Business Requirement: v2.0 roadmap (auto-escalation for unacknowledged alerts)
-// Tests: test/unit/notification/audit_test.go (25+ test cases)
-// BR-NOT-062: Unified audit table integration ✅
-// BR-NOT-063: Graceful audit degradation ✅
-//
-//nolint:unused // v2.0 roadmap feature - prepared ahead of CRD schema changes
-func (r *NotificationRequestReconciler) auditMessageEscalated(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
-	// ADR-032 §1: Audit is MANDATORY - no graceful degradation allowed
-	// If audit store is nil, this indicates misconfiguration and MUST fail
-	if r.AuditStore == nil || r.AuditManager == nil {
-		err := fmt.Errorf("audit store or helpers nil - audit is MANDATORY per ADR-032 §1")
-		log := log.FromContext(ctx)
-		log.Error(err, "CRITICAL: Cannot record audit event", "event_type", "message.escalated")
-		return err
-	}
-
-	log := log.FromContext(ctx)
-
-	// NT-BUG-001 Fix: Check if this audit event was already emitted
-	notificationKey := fmt.Sprintf("%s/%s", notification.Namespace, notification.Name)
-	eventKey := "message.escalated"
-	if !r.shouldEmitAuditEvent(notificationKey, eventKey) {
-		log.V(1).Info("Audit event already emitted, skipping duplicate", "event_type", "message.escalated")
-		return nil
-	}
-
-	// Create audit event
-	event, err := r.AuditManager.CreateMessageEscalatedEvent(notification)
-	if err != nil {
-		log.Error(err, "Failed to create audit event - audit creation is MANDATORY per ADR-032 §1", "event_type", "message.escalated")
-		return fmt.Errorf("failed to create audit event (ADR-032 §1): %w", err)
-	}
-
-	// Fire-and-forget: Audit write failures don't block reconciliation (BR-NOT-063)
-	// ADR-032 §1: Store is available (checked above), write failure is acceptable (async buffered write)
-	if err := r.AuditStore.StoreAudit(ctx, event); err != nil {
-		log.Error(err, "Failed to buffer audit event", "event_type", "message.escalated")
-		// Continue reconciliation - audit failure is not critical (BR-NOT-063)
-	} else {
-		// NT-BUG-001 Fix: Mark event as emitted only if store succeeded
-		r.markAuditEventEmitted(notificationKey, eventKey)
-	}
-
-	return nil
-}
 
 // =============================================================================
 // Exported Methods for Testing (ADR-032 Compliance Tests)
@@ -652,15 +515,6 @@ func (r *NotificationRequestReconciler) ExportedAuditMessageFailed(ctx context.C
 	return r.auditMessageFailed(ctx, notification, channel, deliveryErr)
 }
 
-// ExportedAuditMessageAcknowledged exposes auditMessageAcknowledged for ADR-032 compliance testing
-func (r *NotificationRequestReconciler) ExportedAuditMessageAcknowledged(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
-	return r.auditMessageAcknowledged(ctx, notification)
-}
-
-// ExportedAuditMessageEscalated exposes auditMessageEscalated for ADR-032 compliance testing
-func (r *NotificationRequestReconciler) ExportedAuditMessageEscalated(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
-	return r.auditMessageEscalated(ctx, notification)
-}
 
 // ========================================
 // AUDIT EVENT IDEMPOTENCY (NT-BUG-001 Fix)
@@ -1160,12 +1014,6 @@ func (r *NotificationRequestReconciler) transitionToSent(
 	// DD-METRICS-001: Use injected metrics recorder
 	r.Metrics.UpdatePhaseCount(notification.Namespace, string(notificationv1alpha1.NotificationPhaseSent), 1)
 
-	// AUDIT: Message acknowledged (ADR-032 §1: MANDATORY)
-	if auditErr := r.auditMessageAcknowledged(ctx, notification); auditErr != nil {
-		log.Error(auditErr, "CRITICAL: Failed to audit message.acknowledged (ADR-032 §1)")
-		return ctrl.Result{}, fmt.Errorf("audit failure (ADR-032 §1): %w", auditErr)
-	}
-
 	log.Info("NotificationRequest completed successfully (atomic update)",
 		"name", notification.Name,
 		"successfulDeliveries", notification.Status.SuccessfulDeliveries,
@@ -1343,12 +1191,6 @@ func (r *NotificationRequestReconciler) transitionToFailed(
 		// DD-EVENT-001 v1.1: Emit NotificationFailed Warning when delivery fails terminally
 		r.Recorder.Event(notification, corev1.EventTypeWarning, events.EventReasonNotificationFailed,
 			"All delivery attempts failed or exhausted retries")
-
-		// AUDIT: Message escalated (ADR-032 §1: MANDATORY)
-		if auditErr := r.auditMessageEscalated(ctx, notification); auditErr != nil {
-			log.Error(auditErr, "CRITICAL: Failed to audit message.escalated (ADR-032 §1)")
-			return ctrl.Result{}, fmt.Errorf("audit failure (ADR-032 §1): %w", auditErr)
-		}
 
 		log.Info("NotificationRequest permanently failed (atomic update)",
 			"name", notification.Name,
