@@ -52,6 +52,7 @@ type Registry struct {
 
 	A2ABridgeEventsTotal       prometheus.Counter
 	A2ABridgeWriteFailures     prometheus.Counter
+	A2ABridgeStatusEventsTotal prometheus.Counter
 	SessionTTLActions          *prometheus.CounterVec
 }
 
@@ -135,6 +136,12 @@ func NewRegistry() *Registry {
 			Name:      "bridge_write_failures_total",
 			Help:      "Total failures writing to the A2A event queue via the EventBridge.",
 		}),
+		A2ABridgeStatusEventsTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: "af",
+			Subsystem: "a2a",
+			Name:      "bridge_status_events_total",
+			Help:      "Total status update events emitted via the A2A EventBridge.",
+		}),
 		SessionTTLActions: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "af",
 			Name:      "session_ttl_actions_total",
@@ -156,6 +163,7 @@ func NewRegistry() *Registry {
 	reg.MustRegister(r.SessionsActive)
 	reg.MustRegister(r.A2ABridgeEventsTotal)
 	reg.MustRegister(r.A2ABridgeWriteFailures)
+	reg.MustRegister(r.A2ABridgeStatusEventsTotal)
 	reg.MustRegister(r.SessionTTLActions)
 
 	return r
@@ -176,6 +184,11 @@ func (r *Registry) IncBridgeEvents() {
 // IncBridgeWriteFailures increments the bridge write failure counter.
 func (r *Registry) IncBridgeWriteFailures() {
 	r.A2ABridgeWriteFailures.Inc()
+}
+
+// IncBridgeStatusEvents increments the status events counter.
+func (r *Registry) IncBridgeStatusEvents() {
+	r.A2ABridgeStatusEventsTotal.Inc()
 }
 
 // Gather collects all metric families from the underlying Prometheus registry.
