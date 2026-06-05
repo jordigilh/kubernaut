@@ -358,15 +358,16 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 	})
 
 	Describe("Text passthrough", func() {
-		It("UT-AF-1189-130: LLM reasoning text -> passed through with trailing paragraph break", func() {
+		It("UT-AF-1189-130: LLM reasoning text -> returned as artifact TextPart with trailing paragraph break", func() {
 			reasoning := "Node shows DiskPressure, emptyDir usage at 72%. The PostgreSQL StatefulSet is consuming excessive disk."
 			part := &genai.Part{Text: reasoning}
 			queue, ctx := partConverterBridgeCtx()
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result).To(BeNil())
-			Expect(outputEventTextAt(queue, 0)).To(Equal(reasoning+"\n\n"),
-				"LLM text must get trailing paragraph break so consecutive chunks are readable (#1301)")
+			tp, ok := result.(*a2a.TextPart)
+			Expect(ok).To(BeTrue(), "LLM text must be returned as artifact TextPart")
+			Expect(tp.Text).To(Equal(reasoning + "\n\n"))
+			Expect(queue.events).To(BeEmpty(), "LLM text must NOT emit status events")
 		})
 
 		It("UT-AF-1189-131: Text part with Thought=true -> activity indicator, not raw thought", func() {
@@ -770,7 +771,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(statusEventTextAt(queue, 0)).To(Equal("Analyzing...\n\n"))
 		})
 
-		It("UT-AF-1189-168: Thought=false with text -> text gets trailing paragraph break", func() {
+		It("UT-AF-1189-168: Thought=false with text -> returned as artifact TextPart with trailing paragraph break", func() {
 			text := "Based on the analysis, the root cause is disk pressure from emptyDir."
 			part := &genai.Part{
 				Text:    text,
@@ -779,9 +780,10 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			queue, ctx := partConverterBridgeCtx()
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result).To(BeNil())
-			Expect(outputEventTextAt(queue, 0)).To(Equal(text+"\n\n"),
-				"LLM text must get trailing paragraph break so consecutive chunks are readable (#1301)")
+			tp, ok := result.(*a2a.TextPart)
+			Expect(ok).To(BeTrue(), "LLM text must be returned as artifact TextPart")
+			Expect(tp.Text).To(Equal(text + "\n\n"))
+			Expect(queue.events).To(BeEmpty(), "LLM text must NOT emit status events")
 		})
 	})
 
@@ -881,9 +883,11 @@ var _ = Describe("Status message line breaks (#1301)", func() {
 		queue, ctx := partConverterBridgeCtx()
 		result, err := convert(ctx, nil, part)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(result).To(BeNil())
-		Expect(outputEventTextAt(queue, 0)).To(Equal(text),
+		tp, ok := result.(*a2a.TextPart)
+		Expect(ok).To(BeTrue(), "LLM text must be returned as artifact TextPart")
+		Expect(tp.Text).To(Equal(text),
 			"text already ending with \\n\\n must NOT get additional newlines")
+		Expect(queue.events).To(BeEmpty(), "LLM text must NOT emit status events")
 	})
 
 	It("UT-AF-1301-005: consecutive LLM text chunks are separated by paragraph break", func() {
@@ -894,17 +898,19 @@ var _ = Describe("Status message line breaks (#1301)", func() {
 		queue := &fakeQueue{}
 		ctx := launcher.WithEventBridge(context.Background(), queue, "task-pc-001", "ctx-pc-001", nil)
 		var results []string
-		for i, chunk := range chunks {
+		for _, chunk := range chunks {
 			part := &genai.Part{Text: chunk}
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result).To(BeNil())
-			results = append(results, outputEventTextAt(queue, i))
+			tp, ok := result.(*a2a.TextPart)
+			Expect(ok).To(BeTrue(), "LLM text must be returned as artifact TextPart")
+			results = append(results, tp.Text)
 		}
 		concatenated := strings.Join(results, "")
 		Expect(concatenated).To(ContainSubstring("namespace.\n\n"),
 			"LLM text chunks must get trailing paragraph break appended "+
 				"so consecutive chunks render as separate paragraphs (#1301)")
+		Expect(queue.events).To(BeEmpty(), "LLM text must NOT emit status events")
 	})
 })
 

@@ -285,9 +285,9 @@ var _ = Describe("Investigation Streaming (G3)", Ordered, Label("e2e", "phase3",
 
 // ═══════════════════════════════════════════════════════════════
 // TC-E2E-STREAM-05: FedRAMP AU-6/SC-4 — Progressive Streaming
-// Validates that a 2-turn A2A streaming conversation produces
-// TaskArtifactUpdateEvent SSE frames with progressive reasoning
-// content from the KA investigation bridge.
+// Validates that a 2-turn A2A streaming conversation produces SSE
+// frames with content: LLM output as TaskArtifactUpdateEvent and
+// status/reasoning as TaskStatusUpdateEvent with metadata.type.
 // ═══════════════════════════════════════════════════════════════
 
 var _ = Describe("Progressive A2A Streaming (issue #1258)", Label("e2e", "phase3", "streaming"), func() {
@@ -384,7 +384,7 @@ var _ = Describe("Progressive A2A Streaming (issue #1258)", Label("e2e", "phase3
 		return artifacts, statuses
 	}
 
-	It("TC-E2E-STREAM-05: AU-6/SC-4 progressive streaming produces TaskStatusUpdateEvent with content", func() {
+	It("TC-E2E-STREAM-05: AU-6/SC-4 progressive streaming produces artifact and status content", func() {
 		streamCtx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 		defer cancel()
 
@@ -439,27 +439,42 @@ var _ = Describe("Progressive A2A Streaming (issue #1258)", Label("e2e", "phase3
 		Expect(len(arts2)+len(statuses2)).To(BeNumerically(">", 0),
 			"turn 2 must produce SSE events (progressive artifacts or status updates)")
 
-		// SC-4 assertion: at least one status event across the entire streaming
-		// session contains non-empty text content. All streaming content is now
-		// routed through TaskStatusUpdateEvent with metadata.type tags (output,
-		// reasoning, status) instead of TaskArtifactUpdateEvent.
+		// SC-4 assertion: the stream produces non-empty text content in either
+		// artifact events (LLM output) or status events (reasoning/progress).
+		// The hybrid approach routes LLM text through TaskArtifactUpdateEvent
+		// (rendered as the main response) and status/reasoning through
+		// TaskStatusUpdateEvent with metadata.type tags.
+		allArts := append(arts1, arts2...)
 		allStatuses := append(statuses1, statuses2...)
 		hasContent := false
-		for _, st := range allStatuses {
-			if st.Status.Message != nil {
-				for _, part := range st.Status.Message.Parts {
-					if part.Kind == "text" && strings.TrimSpace(part.Text) != "" {
-						hasContent = true
-						break
-					}
+		for _, art := range allArts {
+			for _, part := range art.Artifact.Parts {
+				if part.Kind == "text" && strings.TrimSpace(part.Text) != "" {
+					hasContent = true
+					break
 				}
 			}
 			if hasContent {
 				break
 			}
 		}
+		if !hasContent {
+			for _, st := range allStatuses {
+				if st.Status.Message != nil {
+					for _, part := range st.Status.Message.Parts {
+						if part.Kind == "text" && strings.TrimSpace(part.Text) != "" {
+							hasContent = true
+							break
+						}
+					}
+				}
+				if hasContent {
+					break
+				}
+			}
+		}
 		Expect(hasContent).To(BeTrue(),
-			"progressive status events must contain non-empty text content (SC-4)")
+			"progressive stream must contain non-empty text content in artifacts or status events (SC-4)")
 
 		// Final state must be completed or failed (stream lifecycle closed)
 		hasFinal := false

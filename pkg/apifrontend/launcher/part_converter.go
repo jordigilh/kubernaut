@@ -48,13 +48,15 @@ var keyToolSummarizers = map[string]func(map[string]any) string{
 	"kubernaut_remediate":            summarizeCreateRR,
 }
 
-// buildPartConverter returns a GenAIPartConverter that routes ADK
-// FunctionCall/FunctionResponse/Text parts through the EventBridge status
-// channel as TaskStatusUpdateEvents with metadata.type tags. Returns nil for
-// all parts so the ADK executor does not emit TaskArtifactUpdateEvents.
+// buildPartConverter returns a GenAIPartConverter that uses a hybrid approach:
+//   - FunctionCall/FunctionResponse/Thought → emitted via EventBridge as
+//     TaskStatusUpdateEvent (ephemeral, shown in Kagenti's streaming bubble)
+//   - Text (LLM output) → returned as TextPart artifact so the ADK executor
+//     wraps it in TaskArtifactUpdateEvent with lastChunk lifecycle, which
+//     Kagenti renders as the final persistent chat message
 //
-// If no EventBridge is in the context (non-streaming path), falls back to
-// returning TextParts as artifacts for backward compatibility.
+// If no EventBridge is in the context, falls back to returning TextParts for
+// all part types.
 func buildPartConverter() adka2a.GenAIPartConverter {
 	return func(ctx context.Context, _ *session.Event, part *genai.Part) (a2a.Part, error) {
 		if part == nil {
@@ -66,8 +68,7 @@ func buildPartConverter() adka2a.GenAIPartConverter {
 			return convertPartToText(part), nil
 		}
 
-		emitPartViaBridge(ctx, bridge, part)
-		return nil, nil
+		return emitPartViaBridge(ctx, bridge, part), nil
 	}
 }
 
@@ -240,10 +241,10 @@ func summarizeCreateRR(resp map[string]any) string {
 }
 
 // buildStreamingPartConverter returns a GenAIPartConverter for streaming mode.
-// All content is routed through the EventBridge status channel as
-// TaskStatusUpdateEvents with metadata.type tags. kubernaut_investigate
-// FunctionResponse parts are suppressed since the EventBridge already
-// delivered the reasoning progressively.
+// Same hybrid approach as buildPartConverter: status-like parts go through the
+// EventBridge as TaskStatusUpdateEvent, LLM text goes as artifact TextParts.
+// kubernaut_investigate FunctionResponse parts are suppressed since the
+// EventBridge already delivered the reasoning progressively.
 func buildStreamingPartConverter() adka2a.GenAIPartConverter {
 	return func(ctx context.Context, _ *session.Event, part *genai.Part) (a2a.Part, error) {
 		if part == nil {
@@ -259,29 +260,34 @@ func buildStreamingPartConverter() adka2a.GenAIPartConverter {
 			return convertPartToText(part), nil
 		}
 
-		emitPartViaBridge(ctx, bridge, part)
-		return nil, nil
+		return emitPartViaBridge(ctx, bridge, part), nil
 	}
 }
 
-// emitPartViaBridge routes a genai.Part through the EventBridge status
-// channel with the appropriate metadata.type tag.
-func emitPartViaBridge(ctx context.Context, bridge *EventBridge, part *genai.Part) {
+// emitPartViaBridge routes status-like parts (FunctionCall, FunctionResponse,
+// Thought) through the EventBridge as TaskStatusUpdateEvent and returns nil.
+// LLM text output is returned as a TextPart so the ADK executor wraps it in
+// a TaskArtifactUpdateEvent with the lastChunk lifecycle that Kagenti renders
+// as the persistent chat response.
+func emitPartViaBridge(ctx context.Context, bridge *EventBridge, part *genai.Part) a2a.Part {
 	switch {
 	case part.FunctionCall != nil:
 		text := convertFunctionCall(part.FunctionCall)
 		if text != nil {
 			_ = bridge.EmitStatus(ctx, text.(*a2a.TextPart).Text)
 		}
+		return nil
 	case part.FunctionResponse != nil:
 		text := convertFunctionResponse(part.FunctionResponse)
 		if text != nil {
 			_ = bridge.EmitStatus(ctx, text.(*a2a.TextPart).Text)
 		}
+		return nil
 	case part.Thought:
 		_ = bridge.EmitStatus(ctx, "Analyzing...\n\n")
+		return nil
 	default:
-		_ = bridge.EmitOutput(ctx, ensureTrailingParagraphBreak(part.Text))
+		return &a2a.TextPart{Text: ensureTrailingParagraphBreak(part.Text)}
 	}
 }
 
