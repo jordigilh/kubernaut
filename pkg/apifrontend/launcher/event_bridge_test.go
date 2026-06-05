@@ -276,6 +276,146 @@ var _ = Describe("EventBridge", func() {
 		})
 	})
 
+	Describe("EmitStatus — status channel separation", func() {
+		It("UT-AF-STATUS-001: EmitStatus writes TaskStatusUpdateEvent to queue", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-status-001", "ctx-status-001", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			err := bridge.EmitStatus(ctx, "Connecting to KA...")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(queue.events).To(HaveLen(1))
+
+			evt, ok := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			Expect(ok).To(BeTrue(), "EmitStatus must produce TaskStatusUpdateEvent, not TaskArtifactUpdateEvent")
+			Expect(string(evt.TaskID)).To(Equal("task-status-001"))
+			Expect(evt.ContextID).To(Equal("ctx-status-001"))
+			Expect(evt.Status.State).To(Equal(a2a.TaskStateWorking))
+			Expect(evt.Status.Timestamp).NotTo(BeNil())
+			Expect(evt.Status.Message).NotTo(BeNil())
+			Expect(evt.Status.Message.Role).To(Equal(a2a.MessageRoleAgent))
+			Expect(evt.Status.Message.Parts).To(HaveLen(1))
+
+			textPart, ok := evt.Status.Message.Parts[0].(*a2a.TextPart)
+			Expect(ok).To(BeTrue())
+			Expect(textPart.Text).To(Equal("Connecting to KA..."))
+		})
+
+		It("UT-AF-STATUS-002: EmitStatusSafe is nil-safe when bridge absent", func() {
+			err := launcher.EmitStatusSafe(context.Background(), "no bridge here")
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("UT-AF-STATUS-003: EmitStatus applies SC-7 sanitization", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-status-sc7", "", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			err := bridge.EmitStatus(ctx, "token=Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIn0.sig")
+			Expect(err).NotTo(HaveOccurred())
+
+			evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			text := evt.Status.Message.Parts[0].(*a2a.TextPart).Text
+			Expect(text).NotTo(ContainSubstring("eyJhbGci"),
+				"SC-7: status channel must redact secrets")
+		})
+
+		It("UT-AF-STATUS-004: EmitStatus skips empty text after sanitization", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-status-empty", "", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			err := bridge.EmitStatus(ctx, "\x00\x01\x02")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(queue.events).To(BeEmpty(),
+				"sanitized-to-empty status text must not produce an event")
+		})
+
+		It("UT-AF-STATUS-005: status events do not affect artifact hasEmitted state", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-status-iso", "", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			Expect(bridge.EmitStatus(ctx, "status message")).To(Succeed())
+			Expect(bridge.EmitReasoning(ctx, "first reasoning")).To(Succeed())
+
+			reasoning := queue.events[1].(*a2a.TaskArtifactUpdateEvent)
+			text := reasoning.Artifact.Parts[0].(*a2a.TextPart).Text
+			Expect(text).To(Equal("first reasoning"),
+				"reasoning after status must not have leading newline — status does not set hasEmitted")
+		})
+
+		It("UT-AF-STATUS-006: IncBridgeStatusEvents incremented on successful status emission", func() {
+			queue := &fakeQueue{}
+			m := &spyBridgeMetrics{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-status-metrics", "", m)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			_ = bridge.EmitStatus(ctx, "status 1")
+			_ = bridge.EmitStatus(ctx, "status 2")
+
+			Expect(m.statusEventsInc).To(Equal(2),
+				"each successful status emission must increment the status counter")
+			Expect(m.eventsInc).To(Equal(0),
+				"status emissions must not inflate the artifact event counter")
+		})
+
+		It("UT-AF-STATUS-007: EmitKeepaliveDot produces metadata-only TaskStatusUpdateEvent", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-dot-status", "", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			Expect(bridge.EmitKeepaliveDot(ctx)).To(Succeed())
+			Expect(queue.events).To(HaveLen(1))
+
+			evt, isStatus := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			Expect(isStatus).To(BeTrue(),
+				"keepalive dots must produce TaskStatusUpdateEvent, not TaskArtifactUpdateEvent")
+			Expect(evt.Status.Message).To(BeNil(),
+				"keepalive dots must have nil Message to avoid Task.History pollution")
+			Expect(evt.Metadata).NotTo(BeNil())
+			Expect(evt.Metadata["type"]).To(Equal("keepalive"))
+			Expect(evt.Metadata["dot"]).To(Equal("."))
+		})
+
+		It("UT-AF-STATUS-008: EmitKeepaliveDot does not affect artifact stream state", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-dot-iso", "", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			Expect(bridge.EmitKeepaliveDot(ctx)).To(Succeed())
+			Expect(bridge.EmitKeepaliveDot(ctx)).To(Succeed())
+			Expect(bridge.EmitReasoning(ctx, "reasoning after dots")).To(Succeed())
+
+			reasoning := queue.events[2].(*a2a.TaskArtifactUpdateEvent)
+			text := reasoning.Artifact.Parts[0].(*a2a.TextPart).Text
+			Expect(text).To(Equal("reasoning after dots"),
+				"reasoning after keepalive dots must not have leading newline — dots are on status channel")
+		})
+
+		It("UT-AF-STATUS-009: real status then keepalive dots only produce one History-relevant message", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-hist-001", "", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			Expect(bridge.EmitStatus(ctx, "Connecting to KA...")).To(Succeed())
+			Expect(bridge.EmitKeepaliveDot(ctx)).To(Succeed())
+			Expect(bridge.EmitKeepaliveDot(ctx)).To(Succeed())
+			Expect(bridge.EmitKeepaliveDot(ctx)).To(Succeed())
+			Expect(queue.events).To(HaveLen(4))
+
+			var historyRelevant int
+			for _, evt := range queue.events {
+				statusEvt, ok := evt.(*a2a.TaskStatusUpdateEvent)
+				if ok && statusEvt.Status.Message != nil {
+					historyRelevant++
+				}
+			}
+			Expect(historyRelevant).To(Equal(1),
+				"only the real status message should carry Status.Message; keepalive dots must have nil Message")
+		})
+	})
+
 	Describe("Newline separation — surviving client trailing-whitespace stripping", func() {
 		It("UT-AF-NL-001: text-to-text transition prepends newline on second emission", func() {
 			queue := &fakeQueue{}
@@ -292,21 +432,27 @@ var _ = Describe("EventBridge", func() {
 			Expect(text).To(Equal("\nsecond message"))
 		})
 
-		It("UT-AF-NL-002: text-to-dot transition prepends newline before first dot", func() {
+		It("UT-AF-NL-002: text-to-dot produces metadata-only status event, not artifact", func() {
 			queue := &fakeQueue{}
 			ctx := launcher.WithEventBridge(context.Background(), queue, "task-nl-002", "", nil)
 			bridge := launcher.EventBridgeFromContext(ctx)
 
 			Expect(bridge.EmitReasoning(ctx, "status text")).To(Succeed())
 			Expect(bridge.EmitKeepaliveDot(ctx)).To(Succeed())
+			Expect(queue.events).To(HaveLen(2))
 
-			dot := queue.events[1].(*a2a.TaskArtifactUpdateEvent)
-			text := dot.Artifact.Parts[0].(*a2a.TextPart).Text
-			Expect(text).To(Equal("\n."),
-				"first dot after reasoning text must start with \\n so dots render on their own line")
+			_, isArtifact := queue.events[0].(*a2a.TaskArtifactUpdateEvent)
+			Expect(isArtifact).To(BeTrue(), "reasoning must be artifact event")
+
+			dot, isStatus := queue.events[1].(*a2a.TaskStatusUpdateEvent)
+			Expect(isStatus).To(BeTrue(), "dot must be status event after channel separation")
+			Expect(dot.Status.Message).To(BeNil(),
+				"keepalive dot must have nil Message to avoid Task.History pollution")
+			Expect(dot.Metadata).NotTo(BeNil())
+			Expect(dot.Metadata["type"]).To(Equal("keepalive"))
 		})
 
-		It("UT-AF-NL-003: dot-to-dot accumulates inline without newline", func() {
+		It("UT-AF-NL-003: consecutive dots produce metadata-only status events", func() {
 			queue := &fakeQueue{}
 			ctx := launcher.WithEventBridge(context.Background(), queue, "task-nl-003", "", nil)
 			bridge := launcher.EventBridgeFromContext(ctx)
@@ -316,14 +462,18 @@ var _ = Describe("EventBridge", func() {
 			Expect(bridge.EmitKeepaliveDot(ctx)).To(Succeed())
 
 			for i := 0; i < 3; i++ {
-				evt := queue.events[i].(*a2a.TaskArtifactUpdateEvent)
-				text := evt.Artifact.Parts[0].(*a2a.TextPart).Text
-				Expect(text).To(Equal("."),
-					"consecutive dots must accumulate inline without newline prefix")
+				evt, isStatus := queue.events[i].(*a2a.TaskStatusUpdateEvent)
+				Expect(isStatus).To(BeTrue(), "all dots must be status events")
+				Expect(evt.Status.Message).To(BeNil(),
+					"keepalive dots must have nil Message to avoid Task.History pollution")
+				Expect(evt.Metadata).NotTo(BeNil())
+				Expect(evt.Metadata["type"]).To(Equal("keepalive"))
+				Expect(evt.Metadata["dot"]).To(Equal("."),
+					"each keepalive carries dot in metadata for renderer UX cues")
 			}
 		})
 
-		It("UT-AF-NL-004: dot-to-text transition prepends newline", func() {
+		It("UT-AF-NL-004: reasoning after dots has no leading newline (status channel isolation)", func() {
 			queue := &fakeQueue{}
 			ctx := launcher.WithEventBridge(context.Background(), queue, "task-nl-004", "", nil)
 			bridge := launcher.EventBridgeFromContext(ctx)
@@ -334,8 +484,8 @@ var _ = Describe("EventBridge", func() {
 
 			reasoning := queue.events[2].(*a2a.TaskArtifactUpdateEvent)
 			text := reasoning.Artifact.Parts[0].(*a2a.TextPart).Text
-			Expect(text).To(Equal("\nreasoning after dots"),
-				"reasoning after keepalive dots must start with \\n")
+			Expect(text).To(Equal("reasoning after dots"),
+				"reasoning after keepalive dots must not have leading newline — dots are on status channel")
 		})
 
 		It("UT-AF-NL-005: first emission has no leading newline", func() {
@@ -351,7 +501,7 @@ var _ = Describe("EventBridge", func() {
 				"first emission must not have leading newline")
 		})
 
-		It("UT-AF-NL-006: full remediation watch scenario produces correct concatenated output", func() {
+		It("UT-AF-NL-006: full remediation watch scenario separates artifacts from metadata-only keepalive status events", func() {
 			queue := &fakeQueue{}
 			ctx := launcher.WithEventBridge(context.Background(), queue, "task-nl-006", "", nil)
 			bridge := launcher.EventBridgeFromContext(ctx)
@@ -366,22 +516,32 @@ var _ = Describe("EventBridge", func() {
 			Expect(bridge.EmitKeepaliveDot(ctx)).To(Succeed())
 			Expect(bridge.EmitReasoning(ctx, "Remediation phase: Verifying\n")).To(Succeed())
 
-			var parts []string
+			var artifactTexts []string
+			var keepaliveCount int
 			for _, evt := range queue.events {
-				ae := evt.(*a2a.TaskArtifactUpdateEvent)
-				tp := ae.Artifact.Parts[0].(*a2a.TextPart)
-				parts = append(parts, strings.TrimRight(tp.Text, " \t\n\r"))
+				switch e := evt.(type) {
+				case *a2a.TaskArtifactUpdateEvent:
+					tp := e.Artifact.Parts[0].(*a2a.TextPart)
+					artifactTexts = append(artifactTexts, strings.TrimRight(tp.Text, " \t\n\r"))
+				case *a2a.TaskStatusUpdateEvent:
+					keepaliveCount++
+					Expect(e.Status.Message).To(BeNil(),
+						"keepalive dots must have nil Message to avoid Task.History pollution")
+					Expect(e.Metadata).NotTo(BeNil())
+					Expect(e.Metadata["type"]).To(Equal("keepalive"))
+				}
 			}
-			concatenated := strings.Join(parts, "")
 
+			Expect(keepaliveCount).To(Equal(5), "5 keepalive dots must be metadata-only status events")
+			Expect(artifactTexts).To(HaveLen(4), "4 reasoning messages must be artifact events")
+
+			concatenated := strings.Join(artifactTexts, "")
 			expected := "Watching remediation progress..." +
-				"\n.." +
 				"\nRemediation phase: Executing" +
 				"\nApproval granted by admin" +
-				"\n..." +
 				"\nRemediation phase: Verifying"
 			Expect(concatenated).To(Equal(expected),
-				"concatenated output after simulated kagenti trailing-strip must match expected compact format")
+				"artifact stream must contain only reasoning text with newline separation between consecutive reasoning emissions")
 		})
 
 		It("UT-AF-NL-007: concurrent dot and reasoning emissions do not race", func() {
@@ -414,12 +574,14 @@ var _ = Describe("EventBridge", func() {
 
 // spyBridgeMetrics records metric increment calls for assertion.
 type spyBridgeMetrics struct {
-	eventsInc   int
-	failuresInc int
+	eventsInc       int
+	failuresInc     int
+	statusEventsInc int
 }
 
 func (s *spyBridgeMetrics) IncBridgeEvents()       { s.eventsInc++ }
 func (s *spyBridgeMetrics) IncBridgeWriteFailures() { s.failuresInc++ }
+func (s *spyBridgeMetrics) IncBridgeStatusEvents()  { s.statusEventsInc++ }
 
 // failingQueue always returns an error from Write.
 type failingQueue struct {

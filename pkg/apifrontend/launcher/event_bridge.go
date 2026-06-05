@@ -19,6 +19,7 @@ import (
 	"context"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 
 	"github.com/a2aproject/a2a-go/a2a"
@@ -33,6 +34,7 @@ type contextKey struct{}
 type BridgeMetrics interface {
 	IncBridgeEvents()
 	IncBridgeWriteFailures()
+	IncBridgeStatusEvents()
 }
 
 // EventBridge enables tool handlers to emit progressive A2A events (reasoning
@@ -53,7 +55,6 @@ type EventBridge struct {
 	metrics    BridgeMetrics
 	artifactID a2a.ArtifactID
 	hasEmitted bool
-	lastWasDot bool
 }
 
 const maxBridgeTextLen = 512
@@ -99,30 +100,48 @@ func (b *EventBridge) EmitReasoning(ctx context.Context, text string) error {
 		text = "\n" + text
 	}
 	b.hasEmitted = true
-	b.lastWasDot = false
-	err := b.emit(ctx, text)
+	err := b.emitArtifact(ctx, text)
 	b.mu.Unlock()
 	return err
 }
 
-// EmitKeepaliveDot writes a single "." to the A2A stream as a lightweight
-// keepalive that prevents proxy/gateway idle timeouts. Consecutive dots
-// accumulate inline on the same line. The first dot after reasoning text
-// is preceded by a newline so dots render on their own line.
+// EmitKeepaliveDot writes a metadata-only TaskStatusUpdateEvent to prevent
+// proxy/gateway idle timeouts. The event carries no Status.Message (avoiding
+// Task.History pollution in the a2a-go taskupdate.Manager) and instead tags the
+// dot in Metadata for renderers: {"type":"keepalive", "dot":"."}.
 func (b *EventBridge) EmitKeepaliveDot(ctx context.Context) error {
 	b.mu.Lock()
-	text := "."
-	if b.hasEmitted && !b.lastWasDot {
-		text = "\n."
-	}
-	b.hasEmitted = true
-	b.lastWasDot = true
-	err := b.emit(ctx, text)
+	err := b.emitKeepaliveEvent(ctx)
 	b.mu.Unlock()
 	return err
 }
 
-func (b *EventBridge) emit(ctx context.Context, text string) error {
+func (b *EventBridge) emitKeepaliveEvent(ctx context.Context) error {
+	now := time.Now().UTC()
+	event := &a2a.TaskStatusUpdateEvent{
+		TaskID:    b.taskID,
+		ContextID: b.contextID,
+		Status: a2a.TaskStatus{
+			State:     a2a.TaskStateWorking,
+			Timestamp: &now,
+		},
+		Metadata: map[string]any{
+			"type": "keepalive",
+			"dot":  ".",
+		},
+	}
+	err := b.queue.Write(ctx, event)
+	if b.metrics != nil {
+		if err != nil {
+			b.metrics.IncBridgeWriteFailures()
+		} else {
+			b.metrics.IncBridgeStatusEvents()
+		}
+	}
+	return err
+}
+
+func (b *EventBridge) emitArtifact(ctx context.Context, text string) error {
 	isAppend := b.artifactID != ""
 	if !isAppend {
 		b.artifactID = a2a.NewArtifactID()
@@ -145,6 +164,49 @@ func (b *EventBridge) emit(ctx context.Context, text string) error {
 			b.metrics.IncBridgeWriteFailures()
 		} else {
 			b.metrics.IncBridgeEvents()
+		}
+	}
+	return err
+}
+
+// EmitStatus writes a TaskStatusUpdateEvent to the A2A event queue for
+// ephemeral progress/status messages (orchestration updates, tool call starts,
+// keepalive dots). Status events are separate from the artifact stream and do
+// not affect the artifact's hasEmitted / Append state.
+func (b *EventBridge) EmitStatus(ctx context.Context, text string) error {
+	text = sanitizeBridgeText(text)
+	if text == "" {
+		return nil
+	}
+
+	b.mu.Lock()
+	err := b.emitStatusEvent(ctx, text)
+	b.mu.Unlock()
+	return err
+}
+
+func (b *EventBridge) emitStatusEvent(ctx context.Context, text string) error {
+	now := time.Now().UTC()
+	event := &a2a.TaskStatusUpdateEvent{
+		TaskID:    b.taskID,
+		ContextID: b.contextID,
+		Status: a2a.TaskStatus{
+			State:     a2a.TaskStateWorking,
+			Timestamp: &now,
+			Message: &a2a.Message{
+				Role: a2a.MessageRoleAgent,
+				Parts: []a2a.Part{
+					&a2a.TextPart{Text: text},
+				},
+			},
+		},
+	}
+	err := b.queue.Write(ctx, event)
+	if b.metrics != nil {
+		if err != nil {
+			b.metrics.IncBridgeWriteFailures()
+		} else {
+			b.metrics.IncBridgeStatusEvents()
 		}
 	}
 	return err
@@ -176,6 +238,16 @@ func EmitReasoningSafe(ctx context.Context, text string) error {
 		return nil
 	}
 	return bridge.EmitReasoning(ctx, text)
+}
+
+// EmitStatusSafe is a nil-safe helper that emits a status update via the
+// bridge. If no bridge is present, it's a no-op.
+func EmitStatusSafe(ctx context.Context, text string) error {
+	bridge := EventBridgeFromContext(ctx)
+	if bridge == nil {
+		return nil
+	}
+	return bridge.EmitStatus(ctx, text)
 }
 
 // EmitKeepaliveDotSafe is a nil-safe helper that emits a keepalive dot via
