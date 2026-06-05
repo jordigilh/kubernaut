@@ -360,6 +360,31 @@ var _ = Describe("EventBridge", func() {
 				"status emissions must not inflate the artifact event counter")
 		})
 
+		It("UT-AF-STATUS-006a: EmitStatus queue write failure increments failure counter (F5)", func() {
+			queue := &failingQueue{err: errors.New("queue full")}
+			m := &spyBridgeMetrics{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-status-fail", "", m)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			_ = bridge.EmitStatus(ctx, "status text")
+
+			Expect(m.failuresInc).To(Equal(1),
+				"status write failures must be counted for alerting")
+			Expect(m.statusEventsInc).To(Equal(0),
+				"failed status writes must not inflate the success counter")
+		})
+
+		It("UT-AF-STATUS-006b: EmitStatus respects context cancellation (F6 SC-10)", func() {
+			queue := &blockingQueue{}
+			ctx, cancel := context.WithCancel(context.Background())
+			ctx = launcher.WithEventBridge(ctx, queue, "task-status-cancel", "", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			cancel()
+			err := bridge.EmitStatus(ctx, "should fail")
+			Expect(err).To(MatchError(context.Canceled))
+		})
+
 		It("UT-AF-STATUS-007: EmitKeepaliveDot produces metadata-only TaskStatusUpdateEvent", func() {
 			queue := &fakeQueue{}
 			ctx := launcher.WithEventBridge(context.Background(), queue, "task-dot-status", "", nil)
