@@ -360,7 +360,8 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 	// on handler return) and use an explicit investigation TTL to bound the bridge
 	// lifetime. Without this, the bridge goroutine would exit immediately when the
 	// handler returns.
-	bridgeCtx, bridgeCancel := context.WithTimeout(context.WithoutCancel(ctx), NonBlockingBridgeTTL)
+	bridgeTTL := NonBlockingBridgeTTL
+	bridgeCtx, bridgeCancel := context.WithTimeout(context.WithoutCancel(ctx), bridgeTTL)
 	go func() {
 		defer bridgeCancel()
 		defer cleanup()
