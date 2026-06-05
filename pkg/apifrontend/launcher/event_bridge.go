@@ -24,6 +24,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
+	"github.com/go-logr/logr"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/security"
 )
@@ -234,31 +235,49 @@ func sanitizeBridgeText(text string) string {
 }
 
 // EmitReasoningSafe is a nil-safe helper that emits reasoning via the bridge
-// in the given context. If no bridge is present, it's a no-op.
+// in the given context. If no bridge is present, it's a no-op. Write failures
+// are logged (AU-2) so callers can use fire-and-forget semantics without
+// silently swallowing errors.
 func EmitReasoningSafe(ctx context.Context, text string) error {
 	bridge := EventBridgeFromContext(ctx)
 	if bridge == nil {
 		return nil
 	}
-	return bridge.EmitReasoning(ctx, text)
+	if err := bridge.EmitReasoning(ctx, text); err != nil {
+		logr.FromContextOrDiscard(ctx).Error(err, "A2A bridge write failed", "channel", "artifact")
+		return err
+	}
+	return nil
 }
 
 // EmitStatusSafe is a nil-safe helper that emits a status update via the
-// bridge. If no bridge is present, it's a no-op.
+// bridge. If no bridge is present, it's a no-op. Write failures are logged
+// (AU-2) so callers can use fire-and-forget semantics without silently
+// swallowing errors.
 func EmitStatusSafe(ctx context.Context, text string) error {
 	bridge := EventBridgeFromContext(ctx)
 	if bridge == nil {
 		return nil
 	}
-	return bridge.EmitStatus(ctx, text)
+	if err := bridge.EmitStatus(ctx, text); err != nil {
+		logr.FromContextOrDiscard(ctx).Error(err, "A2A bridge write failed", "channel", "status")
+		return err
+	}
+	return nil
 }
 
 // EmitKeepaliveDotSafe is a nil-safe helper that emits a keepalive dot via
-// the bridge. If no bridge is present, it's a no-op.
+// the bridge. If no bridge is present, it's a no-op. Write failures are
+// logged (AU-2) so callers can use fire-and-forget semantics without silently
+// swallowing errors.
 func EmitKeepaliveDotSafe(ctx context.Context) error {
 	bridge := EventBridgeFromContext(ctx)
 	if bridge == nil {
 		return nil
 	}
-	return bridge.EmitKeepaliveDot(ctx)
+	if err := bridge.EmitKeepaliveDot(ctx); err != nil {
+		logr.FromContextOrDiscard(ctx).Error(err, "A2A bridge write failed", "channel", "keepalive")
+		return err
+	}
+	return nil
 }

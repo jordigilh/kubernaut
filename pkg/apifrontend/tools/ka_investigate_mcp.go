@@ -511,29 +511,16 @@ func isStatusEvent(evtType string) bool {
 
 // emitEventToA2A routes a formatted event text to the correct A2A channel
 // based on the event type: status channel for orchestration events, artifact
-// channel for LLM content. Write failures are logged (AU-2) rather than
-// silently discarded.
+// channel for LLM content. Write failures are logged by the Safe helpers (AU-2).
 func emitEventToA2A(ctx context.Context, evt ka.InvestigationEvent, text string) {
 	if text == "" {
 		return
 	}
-	var err error
 	if isStatusEvent(evt.Type) {
-		err = launcher.EmitStatusSafe(ctx, text)
+		_ = launcher.EmitStatusSafe(ctx, text)
 	} else {
-		err = launcher.EmitReasoningSafe(ctx, text)
+		_ = launcher.EmitReasoningSafe(ctx, text)
 	}
-	if err != nil {
-		logr.FromContextOrDiscard(ctx).Error(err, "A2A bridge write failed",
-			"event_type", evt.Type, "channel", channelForEvent(evt.Type))
-	}
-}
-
-func channelForEvent(evtType string) string {
-	if isStatusEvent(evtType) {
-		return "status"
-	}
-	return "artifact"
 }
 
 // extractJSONField extracts a string field from a JSON RawMessage.
