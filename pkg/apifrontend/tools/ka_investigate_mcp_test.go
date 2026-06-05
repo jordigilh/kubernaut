@@ -328,7 +328,7 @@ var _ = Describe("bridgeEventsToA2A — #1326 BR-MCP-003 event bridge goroutine"
 
 			done := make(chan struct{})
 			go func() {
-				tools.BridgeEventsToA2A(context.Background(), eventCh)
+				tools.BridgeEventsToA2A(context.Background(), eventCh, tools.BridgeInactivityTimeout)
 				close(done)
 			}()
 
@@ -343,7 +343,7 @@ var _ = Describe("bridgeEventsToA2A — #1326 BR-MCP-003 event bridge goroutine"
 			ctx, cancel := context.WithCancel(context.Background())
 			done := make(chan struct{})
 			go func() {
-				tools.BridgeEventsToA2A(ctx, eventCh)
+				tools.BridgeEventsToA2A(ctx, eventCh, tools.BridgeInactivityTimeout)
 				close(done)
 			}()
 
@@ -368,7 +368,7 @@ var _ = Describe("A2A status channel routing — event type aware emission", fun
 			eventCh <- ka.InvestigationEvent{Type: ka.EventTypeComplete}
 			close(eventCh)
 
-			tools.BridgeEventsToA2A(ctx, eventCh)
+			tools.BridgeEventsToA2A(ctx, eventCh, tools.BridgeInactivityTimeout)
 
 			events := queue.Events()
 			Expect(len(events)).To(BeNumerically(">=", 1))
@@ -409,7 +409,7 @@ var _ = Describe("A2A status channel routing — event type aware emission", fun
 			eventCh <- ka.InvestigationEvent{Type: ka.EventTypeComplete}
 			close(eventCh)
 
-			tools.BridgeEventsToA2A(ctx, eventCh)
+			tools.BridgeEventsToA2A(ctx, eventCh, tools.BridgeInactivityTimeout)
 
 			events := queue.Events()
 			var reasoningEvents []*a2a.TaskStatusUpdateEvent
@@ -444,7 +444,7 @@ var _ = Describe("A2A status channel routing — event type aware emission", fun
 			eventCh <- ka.InvestigationEvent{Type: ka.EventTypeComplete}
 			close(eventCh)
 
-			tools.BridgeEventsToA2A(ctx, eventCh)
+			tools.BridgeEventsToA2A(ctx, eventCh, tools.BridgeInactivityTimeout)
 
 			events := queue.Events()
 			var reasoningEvents []*a2a.TaskStatusUpdateEvent
@@ -475,7 +475,7 @@ var _ = Describe("A2A status channel routing — event type aware emission", fun
 			eventCh <- ka.InvestigationEvent{Type: ka.EventTypeComplete}
 			close(eventCh)
 
-			tools.BridgeEventsToA2A(ctx, eventCh)
+			tools.BridgeEventsToA2A(ctx, eventCh, tools.BridgeInactivityTimeout)
 
 			events := queue.Events()
 			var statusEvents []*a2a.TaskStatusUpdateEvent
@@ -525,7 +525,7 @@ var _ = Describe("A2A status channel routing — event type aware emission", fun
 			eventCh <- ka.InvestigationEvent{Type: ka.EventTypeComplete}
 			close(eventCh)
 
-			tools.BridgeEventsToA2A(ctx, eventCh)
+			tools.BridgeEventsToA2A(ctx, eventCh, tools.BridgeInactivityTimeout)
 
 			events := queue.Events()
 			var reasoningCount, statusCount int
@@ -566,7 +566,7 @@ var _ = Describe("A2A status channel routing — event type aware emission", fun
 			eventCh <- ka.InvestigationEvent{Type: ka.EventTypeComplete}
 			close(eventCh)
 
-			tools.BridgeEventsToA2A(ctx, eventCh)
+			tools.BridgeEventsToA2A(ctx, eventCh, tools.BridgeInactivityTimeout)
 
 			events := queue.Events()
 			for _, evt := range events {
@@ -649,15 +649,10 @@ var _ = Describe("AF-C1: Non-blocking bridge context detachment (#1356)", func()
 
 	Describe("UT-AF-1356-002: bridge goroutine exits on inactivity timeout", func() {
 		It("should exit when no events arrive within BridgeInactivityTimeout", func() {
-			// Override inactivity timeout for test speed
-			original := tools.BridgeInactivityTimeout
-			tools.BridgeInactivityTimeout = 200 * time.Millisecond
-			defer func() { tools.BridgeInactivityTimeout = original }()
-
 			eventCh := make(chan ka.InvestigationEvent, 5)
 			done := make(chan struct{})
 			go func() {
-				tools.BridgeEventsToA2A(context.Background(), eventCh)
+				tools.BridgeEventsToA2A(context.Background(), eventCh, 200*time.Millisecond)
 				close(done)
 			}()
 
