@@ -31,10 +31,13 @@ import (
 type contextKey struct{}
 
 // BridgeMetrics collects metrics for the EventBridge write path.
+// Artifact and status channels have separate failure counters (SI-4)
+// so operators can distinguish which channel is experiencing write failures.
 type BridgeMetrics interface {
 	IncBridgeEvents()
 	IncBridgeWriteFailures()
 	IncBridgeStatusEvents()
+	IncBridgeStatusWriteFailures()
 }
 
 // EventBridge enables tool handlers to emit progressive A2A events (reasoning
@@ -133,7 +136,7 @@ func (b *EventBridge) emitKeepaliveEvent(ctx context.Context) error {
 	err := b.queue.Write(ctx, event)
 	if b.metrics != nil {
 		if err != nil {
-			b.metrics.IncBridgeWriteFailures()
+			b.metrics.IncBridgeStatusWriteFailures()
 		} else {
 			b.metrics.IncBridgeStatusEvents()
 		}
@@ -204,7 +207,7 @@ func (b *EventBridge) emitStatusEvent(ctx context.Context, text string) error {
 	err := b.queue.Write(ctx, event)
 	if b.metrics != nil {
 		if err != nil {
-			b.metrics.IncBridgeWriteFailures()
+			b.metrics.IncBridgeStatusWriteFailures()
 		} else {
 			b.metrics.IncBridgeStatusEvents()
 		}

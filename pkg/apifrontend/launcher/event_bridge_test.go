@@ -360,7 +360,7 @@ var _ = Describe("EventBridge", func() {
 				"status emissions must not inflate the artifact event counter")
 		})
 
-		It("UT-AF-STATUS-006a: EmitStatus queue write failure increments failure counter (F5)", func() {
+		It("UT-AF-STATUS-006a: EmitStatus queue write failure increments status failure counter (F5, F7)", func() {
 			queue := &failingQueue{err: errors.New("queue full")}
 			m := &spyBridgeMetrics{}
 			ctx := launcher.WithEventBridge(context.Background(), queue, "task-status-fail", "", m)
@@ -368,8 +368,10 @@ var _ = Describe("EventBridge", func() {
 
 			_ = bridge.EmitStatus(ctx, "status text")
 
-			Expect(m.failuresInc).To(Equal(1),
-				"status write failures must be counted for alerting")
+			Expect(m.statusFailuresInc).To(Equal(1),
+				"status write failures must increment the status-specific failure counter (SI-4)")
+			Expect(m.failuresInc).To(Equal(0),
+				"status write failures must NOT inflate the artifact failure counter")
 			Expect(m.statusEventsInc).To(Equal(0),
 				"failed status writes must not inflate the success counter")
 		})
@@ -599,14 +601,16 @@ var _ = Describe("EventBridge", func() {
 
 // spyBridgeMetrics records metric increment calls for assertion.
 type spyBridgeMetrics struct {
-	eventsInc       int
-	failuresInc     int
-	statusEventsInc int
+	eventsInc         int
+	failuresInc       int
+	statusEventsInc   int
+	statusFailuresInc int
 }
 
-func (s *spyBridgeMetrics) IncBridgeEvents()       { s.eventsInc++ }
-func (s *spyBridgeMetrics) IncBridgeWriteFailures() { s.failuresInc++ }
-func (s *spyBridgeMetrics) IncBridgeStatusEvents()  { s.statusEventsInc++ }
+func (s *spyBridgeMetrics) IncBridgeEvents()              { s.eventsInc++ }
+func (s *spyBridgeMetrics) IncBridgeWriteFailures()        { s.failuresInc++ }
+func (s *spyBridgeMetrics) IncBridgeStatusEvents()         { s.statusEventsInc++ }
+func (s *spyBridgeMetrics) IncBridgeStatusWriteFailures()  { s.statusFailuresInc++ }
 
 // failingQueue always returns an error from Write.
 type failingQueue struct {
