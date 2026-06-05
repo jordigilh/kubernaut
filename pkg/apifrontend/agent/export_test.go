@@ -43,3 +43,11 @@ func (e *emptyState) Get(_ string) (any, error) {
 func (e *emptyState) All() iter.Seq2[string, any] {
 	return func(yield func(string, any) bool) {}
 }
+
+// PhaseGuardToolSets exports the phase guard tool classification sets for
+// consistency testing against tools.SessionDependentTools (#1366 F6).
+var (
+	ExportedMCPDependentTools   = mcpDependentTools
+	ExportedDriverEntryTools    = driverEntryTools
+	ExportedSessionTerminalTools = sessionTerminalTools
+)

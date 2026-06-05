@@ -773,6 +773,24 @@ var _ = Describe("Conditional tool registration — interactive mode (#1366)", f
 	})
 })
 
+var _ = Describe("Phase guard / SessionDependentTools consistency (#1366 F6)", func() {
+
+	It("UT-AF-1366-040: every phase-guard tool is in SessionDependentTools", func() {
+		for name := range agentpkg.ExportedMCPDependentTools {
+			Expect(toolspkg.SessionDependentTools).To(HaveKey(name),
+				"mcpDependentTools has %q but SessionDependentTools does not — drift detected", name)
+		}
+		for name := range agentpkg.ExportedDriverEntryTools {
+			Expect(toolspkg.SessionDependentTools).To(HaveKey(name),
+				"driverEntryTools has %q but SessionDependentTools does not — drift detected", name)
+		}
+		for name := range agentpkg.ExportedSessionTerminalTools {
+			Expect(toolspkg.SessionDependentTools).To(HaveKey(name),
+				"sessionTerminalTools has %q but SessionDependentTools does not — drift detected", name)
+		}
+	})
+})
+
 type spyAuditEmitter struct {
 	events []*audit.Event
 }

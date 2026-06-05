@@ -39,7 +39,7 @@ var _ = Describe("MCP Protocol Conformance", func() {
 		mcpHandler, err = handler.NewMCPHandler(handler.MCPConfig{
 			ServerName:    "kubernaut-apifrontend",
 			ServerVersion: "v0.1.0",
-			Tools:         handler.DefaultMCPTools(),
+			Tools:         handler.DefaultMCPTools(true),
 			Enabled:       true,
 		})
 		Expect(err).NotTo(HaveOccurred())
