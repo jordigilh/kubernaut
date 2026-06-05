@@ -48,26 +48,26 @@ var keyToolSummarizers = map[string]func(map[string]any) string{
 	"kubernaut_remediate":            summarizeCreateRR,
 }
 
-// buildPartConverter returns a GenAIPartConverter that transforms raw ADK
-// FunctionCall/FunctionResponse parts into human-readable A2A TextParts.
-// This provides progressive status updates to external agents during the
-// 4-phase interactive remediation journey (AC 5, AC 10).
+// buildPartConverter returns a GenAIPartConverter that routes ADK
+// FunctionCall/FunctionResponse/Text parts through the EventBridge status
+// channel as TaskStatusUpdateEvents with metadata.type tags. Returns nil for
+// all parts so the ADK executor does not emit TaskArtifactUpdateEvents.
+//
+// If no EventBridge is in the context (non-streaming path), falls back to
+// returning TextParts as artifacts for backward compatibility.
 func buildPartConverter() adka2a.GenAIPartConverter {
-	return func(_ context.Context, _ *session.Event, part *genai.Part) (a2a.Part, error) {
+	return func(ctx context.Context, _ *session.Event, part *genai.Part) (a2a.Part, error) {
 		if part == nil {
 			return nil, nil
 		}
 
-		if part.FunctionCall != nil {
-			return convertFunctionCall(part.FunctionCall), nil
+		bridge := EventBridgeFromContext(ctx)
+		if bridge == nil {
+			return convertPartToText(part), nil
 		}
-		if part.FunctionResponse != nil {
-			return convertFunctionResponse(part.FunctionResponse), nil
-		}
-		if part.Thought {
-			return &a2a.TextPart{Text: "Analyzing...\n\n"}, nil
-		}
-		return &a2a.TextPart{Text: ensureTrailingParagraphBreak(part.Text)}, nil
+
+		emitPartViaBridge(ctx, bridge, part)
+		return nil, nil
 	}
 }
 
@@ -239,30 +239,65 @@ func summarizeCreateRR(resp map[string]any) string {
 	return "Remediation request created."
 }
 
-// buildStreamingPartConverter returns a GenAIPartConverter for streaming mode
-// that suppresses kubernaut_investigate FunctionResponse parts (since
-// the EventBridge already delivered the reasoning progressively). All other
-// behavior is identical to the standard converter.
+// buildStreamingPartConverter returns a GenAIPartConverter for streaming mode.
+// All content is routed through the EventBridge status channel as
+// TaskStatusUpdateEvents with metadata.type tags. kubernaut_investigate
+// FunctionResponse parts are suppressed since the EventBridge already
+// delivered the reasoning progressively.
 func buildStreamingPartConverter() adka2a.GenAIPartConverter {
-	return func(_ context.Context, _ *session.Event, part *genai.Part) (a2a.Part, error) {
+	return func(ctx context.Context, _ *session.Event, part *genai.Part) (a2a.Part, error) {
 		if part == nil {
 			return nil, nil
 		}
 
-		if part.FunctionCall != nil {
-			return convertFunctionCall(part.FunctionCall), nil
+		if part.FunctionResponse != nil && part.FunctionResponse.Name == "kubernaut_investigate" {
+			return nil, nil
 		}
-		if part.FunctionResponse != nil {
-			if part.FunctionResponse.Name == "kubernaut_investigate" {
-				return nil, nil
-			}
-			return convertFunctionResponse(part.FunctionResponse), nil
+
+		bridge := EventBridgeFromContext(ctx)
+		if bridge == nil {
+			return convertPartToText(part), nil
 		}
-		if part.Thought {
-			return &a2a.TextPart{Text: "Analyzing...\n\n"}, nil
-		}
-		return &a2a.TextPart{Text: ensureTrailingParagraphBreak(part.Text)}, nil
+
+		emitPartViaBridge(ctx, bridge, part)
+		return nil, nil
 	}
+}
+
+// emitPartViaBridge routes a genai.Part through the EventBridge status
+// channel with the appropriate metadata.type tag.
+func emitPartViaBridge(ctx context.Context, bridge *EventBridge, part *genai.Part) {
+	switch {
+	case part.FunctionCall != nil:
+		text := convertFunctionCall(part.FunctionCall)
+		if text != nil {
+			_ = bridge.EmitStatus(ctx, text.(*a2a.TextPart).Text)
+		}
+	case part.FunctionResponse != nil:
+		text := convertFunctionResponse(part.FunctionResponse)
+		if text != nil {
+			_ = bridge.EmitStatus(ctx, text.(*a2a.TextPart).Text)
+		}
+	case part.Thought:
+		_ = bridge.EmitStatus(ctx, "Analyzing...\n\n")
+	default:
+		_ = bridge.EmitOutput(ctx, ensureTrailingParagraphBreak(part.Text))
+	}
+}
+
+// convertPartToText is the fallback path when no EventBridge is available.
+// Returns the part as a TextPart artifact for backward compatibility.
+func convertPartToText(part *genai.Part) a2a.Part {
+	if part.FunctionCall != nil {
+		return convertFunctionCall(part.FunctionCall)
+	}
+	if part.FunctionResponse != nil {
+		return convertFunctionResponse(part.FunctionResponse)
+	}
+	if part.Thought {
+		return &a2a.TextPart{Text: "Analyzing...\n\n"}
+	}
+	return &a2a.TextPart{Text: ensureTrailingParagraphBreak(part.Text)}
 }
 
 func stringArg(args map[string]any, key string) string {

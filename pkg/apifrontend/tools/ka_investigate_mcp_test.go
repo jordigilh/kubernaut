@@ -356,7 +356,7 @@ var _ = Describe("bridgeEventsToA2A — #1326 BR-MCP-003 event bridge goroutine"
 var _ = Describe("A2A status channel routing — event type aware emission", func() {
 
 	Describe("UT-AF-STATUS-010: tool call start events route to status channel", func() {
-		It("should emit TaskStatusUpdateEvent for EventTypeToolCallStart", func() {
+		It("should emit TaskStatusUpdateEvent with metadata.type=status for EventTypeToolCallStart", func() {
 			queue := &bridgeQueue{}
 			ctx := launcher.WithEventBridge(context.Background(), queue, "task-route-010", "", nil)
 
@@ -386,6 +386,7 @@ var _ = Describe("A2A status channel routing — event type aware emission", fun
 			for _, se := range statusEvents {
 				text := se.Status.Message.Parts[0].(*a2a.TextPart).Text
 				if text == "Calling kubectl_get..." {
+					Expect(se.Metadata).To(HaveKeyWithValue("type", "status"))
 					foundToolCall = true
 					break
 				}
@@ -395,8 +396,8 @@ var _ = Describe("A2A status channel routing — event type aware emission", fun
 		})
 	})
 
-	Describe("UT-AF-STATUS-011: reasoning deltas route to artifact channel", func() {
-		It("should emit TaskArtifactUpdateEvent for EventTypeReasoningDelta", func() {
+	Describe("UT-AF-STATUS-011: reasoning deltas route to reasoning metadata", func() {
+		It("should emit TaskStatusUpdateEvent with metadata.type=reasoning for EventTypeReasoningDelta", func() {
 			queue := &bridgeQueue{}
 			ctx := launcher.WithEventBridge(context.Background(), queue, "task-route-011", "", nil)
 
@@ -411,22 +412,27 @@ var _ = Describe("A2A status channel routing — event type aware emission", fun
 			tools.BridgeEventsToA2A(ctx, eventCh)
 
 			events := queue.Events()
-			var artifactEvents []*a2a.TaskArtifactUpdateEvent
+			var reasoningEvents []*a2a.TaskStatusUpdateEvent
 			for _, evt := range events {
-				if ae, ok := evt.(*a2a.TaskArtifactUpdateEvent); ok {
-					artifactEvents = append(artifactEvents, ae)
+				se, ok := evt.(*a2a.TaskStatusUpdateEvent)
+				if !ok {
+					continue
+				}
+				if metaType, ok := se.Metadata["type"].(string); ok && metaType == "reasoning" {
+					reasoningEvents = append(reasoningEvents, se)
 				}
 			}
-			Expect(artifactEvents).NotTo(BeEmpty(),
-				"reasoning deltas must produce TaskArtifactUpdateEvent")
+			Expect(reasoningEvents).NotTo(BeEmpty(),
+				"reasoning deltas must produce TaskStatusUpdateEvent with metadata.type=reasoning")
 
-			text := artifactEvents[0].Artifact.Parts[0].(*a2a.TextPart).Text
+			text := reasoningEvents[0].Status.Message.Parts[0].(*a2a.TextPart).Text
 			Expect(text).To(ContainSubstring("Pod is in CrashLoopBackOff"))
+			Expect(reasoningEvents[0].Metadata).To(HaveKeyWithValue("type", "reasoning"))
 		})
 	})
 
-	Describe("UT-AF-STATUS-012: token deltas route to artifact channel", func() {
-		It("should emit TaskArtifactUpdateEvent for EventTypeTokenDelta", func() {
+	Describe("UT-AF-STATUS-012: token deltas route to reasoning metadata", func() {
+		It("should emit TaskStatusUpdateEvent with metadata.type=reasoning for EventTypeTokenDelta", func() {
 			queue := &bridgeQueue{}
 			ctx := launcher.WithEventBridge(context.Background(), queue, "task-route-012", "", nil)
 
@@ -441,19 +447,27 @@ var _ = Describe("A2A status channel routing — event type aware emission", fun
 			tools.BridgeEventsToA2A(ctx, eventCh)
 
 			events := queue.Events()
-			var artifactEvents []*a2a.TaskArtifactUpdateEvent
+			var reasoningEvents []*a2a.TaskStatusUpdateEvent
 			for _, evt := range events {
-				if ae, ok := evt.(*a2a.TaskArtifactUpdateEvent); ok {
-					artifactEvents = append(artifactEvents, ae)
+				se, ok := evt.(*a2a.TaskStatusUpdateEvent)
+				if !ok {
+					continue
+				}
+				if metaType, ok := se.Metadata["type"].(string); ok && metaType == "reasoning" {
+					reasoningEvents = append(reasoningEvents, se)
 				}
 			}
-			Expect(artifactEvents).NotTo(BeEmpty(),
-				"token deltas must produce TaskArtifactUpdateEvent")
+			Expect(reasoningEvents).NotTo(BeEmpty(),
+				"token deltas must produce TaskStatusUpdateEvent with metadata.type=reasoning")
+
+			text := reasoningEvents[0].Status.Message.Parts[0].(*a2a.TextPart).Text
+			Expect(text).To(ContainSubstring("The root cause"))
+			Expect(reasoningEvents[0].Metadata).To(HaveKeyWithValue("type", "reasoning"))
 		})
 	})
 
 	Describe("UT-AF-STATUS-013: complete event routes to status channel", func() {
-		It("should emit TaskStatusUpdateEvent for EventTypeComplete", func() {
+		It("should emit TaskStatusUpdateEvent with metadata.type=status for EventTypeComplete", func() {
 			queue := &bridgeQueue{}
 			ctx := launcher.WithEventBridge(context.Background(), queue, "task-route-013", "", nil)
 
@@ -477,6 +491,7 @@ var _ = Describe("A2A status channel routing — event type aware emission", fun
 			for _, se := range statusEvents {
 				text := se.Status.Message.Parts[0].(*a2a.TextPart).Text
 				if text == "Investigation complete." {
+					Expect(se.Metadata).To(HaveKeyWithValue("type", "status"))
 					found = true
 					break
 				}
@@ -485,8 +500,8 @@ var _ = Describe("A2A status channel routing — event type aware emission", fun
 		})
 	})
 
-	Describe("UT-AF-STATUS-014: mixed event stream separates channels correctly", func() {
-		It("should route each event type to the correct A2A channel", func() {
+	Describe("UT-AF-STATUS-014: mixed event stream separates metadata types correctly", func() {
+		It("should route each event type to the correct metadata.type", func() {
 			queue := &bridgeQueue{}
 			ctx := launcher.WithEventBridge(context.Background(), queue, "task-route-014", "", nil)
 
@@ -513,25 +528,33 @@ var _ = Describe("A2A status channel routing — event type aware emission", fun
 			tools.BridgeEventsToA2A(ctx, eventCh)
 
 			events := queue.Events()
-			var artifactCount, statusCount int
+			var reasoningCount, statusCount int
 			for _, evt := range events {
-				switch evt.(type) {
-				case *a2a.TaskArtifactUpdateEvent:
-					artifactCount++
-				case *a2a.TaskStatusUpdateEvent:
+				se, ok := evt.(*a2a.TaskStatusUpdateEvent)
+				if !ok {
+					continue
+				}
+				metaType, ok := se.Metadata["type"].(string)
+				if !ok {
+					continue
+				}
+				switch metaType {
+				case "reasoning":
+					reasoningCount++
+				case "status":
 					statusCount++
 				}
 			}
 
-			Expect(artifactCount).To(Equal(2),
-				"reasoning_delta + token_delta = 2 artifact events")
+			Expect(reasoningCount).To(Equal(2),
+				"reasoning_delta + token_delta = 2 reasoning metadata events")
 			Expect(statusCount).To(BeNumerically(">=", 2),
-				"tool_call_start x2 + complete = at least 3 status events (2 tool calls + complete)")
+				"tool_call_start x2 + complete = at least 3 status metadata events (2 tool calls + complete)")
 		})
 	})
 
 	Describe("UT-AF-STATUS-015: error events route to status channel (F1 AC-4)", func() {
-		It("should emit error text on TaskStatusUpdateEvent, not TaskArtifactUpdateEvent", func() {
+		It("should emit error text on TaskStatusUpdateEvent with metadata.type=status, not reasoning", func() {
 			queue := &bridgeQueue{}
 			ctx := launcher.WithEventBridge(context.Background(), queue, "task-route-015", "", nil)
 
@@ -546,15 +569,18 @@ var _ = Describe("A2A status channel routing — event type aware emission", fun
 			tools.BridgeEventsToA2A(ctx, eventCh)
 
 			events := queue.Events()
-			var artifactTexts []string
 			for _, evt := range events {
-				if ae, ok := evt.(*a2a.TaskArtifactUpdateEvent); ok {
-					artifactTexts = append(artifactTexts, ae.Artifact.Parts[0].(*a2a.TextPart).Text)
+				se, ok := evt.(*a2a.TaskStatusUpdateEvent)
+				if !ok || se.Status.Message == nil {
+					continue
 				}
-			}
-			for _, t := range artifactTexts {
-				Expect(t).NotTo(ContainSubstring("Error:"),
-					"error text must NOT appear on artifact stream (AC-4 information flow violation)")
+				metaType, _ := se.Metadata["type"].(string)
+				if metaType != "reasoning" {
+					continue
+				}
+				text := se.Status.Message.Parts[0].(*a2a.TextPart).Text
+				Expect(text).NotTo(ContainSubstring("Error:"),
+					"error text must NOT appear on reasoning metadata stream (AC-4 information flow violation)")
 			}
 
 			foundErrorOnStatus := false
@@ -565,12 +591,13 @@ var _ = Describe("A2A status channel routing — event type aware emission", fun
 				}
 				text := se.Status.Message.Parts[0].(*a2a.TextPart).Text
 				if text != "" && text != "Investigation complete." {
+					Expect(se.Metadata).To(HaveKeyWithValue("type", "status"))
 					foundErrorOnStatus = true
 					break
 				}
 			}
 			Expect(foundErrorOnStatus).To(BeTrue(),
-				"error text must appear on status channel as ephemeral message")
+				"error text must appear on status metadata stream as ephemeral message")
 		})
 	})
 })
