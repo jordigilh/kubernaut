@@ -24,7 +24,7 @@ func statusEventTextAt(queue *fakeQueue, idx int) string {
 	Expect(ok).To(BeTrue(), "expected TaskStatusUpdateEvent at index %d", idx)
 	Expect(evt.Metadata).NotTo(BeNil())
 	Expect(evt.Metadata["type"]).To(Equal("status"))
-	tp, ok := evt.Status.Message.Parts[0].(*a2a.TextPart)
+	tp, ok := evt.Status.Message.Parts[0].(a2a.TextPart)
 	Expect(ok).To(BeTrue())
 	return tp.Text
 }
@@ -353,7 +353,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			queue, ctx := partConverterBridgeCtx()
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
+			tp, ok := result.(a2a.TextPart)
 			Expect(ok).To(BeTrue(), "LLM text must be returned as artifact TextPart")
 			Expect(tp.Text).To(Equal(reasoning + "\n\n"))
 			Expect(queue.events).To(BeEmpty(), "LLM text must NOT emit status events")
@@ -375,7 +375,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			part := &genai.Part{Text: ""}
 			result, err := convert(context.Background(), nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
+			tp, ok := result.(a2a.TextPart)
 			Expect(ok).To(BeTrue())
 			Expect(tp.Text).To(BeEmpty(),
 				"fallback without bridge must return empty TextPart, not drop the part")
@@ -769,7 +769,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			queue, ctx := partConverterBridgeCtx()
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
+			tp, ok := result.(a2a.TextPart)
 			Expect(ok).To(BeTrue(), "LLM text must be returned as artifact TextPart")
 			Expect(tp.Text).To(Equal(text + "\n\n"))
 			Expect(queue.events).To(BeEmpty(), "LLM text must NOT emit status events")
@@ -786,7 +786,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			}
 			result, err := convert(context.Background(), nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
+			tp, ok := result.(a2a.TextPart)
 			Expect(ok).To(BeTrue())
 			Expect(tp.Text).To(ContainSubstring("Investigating"))
 		})
@@ -802,7 +802,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			}
 			result, err := convert(context.Background(), nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
+			tp, ok := result.(a2a.TextPart)
 			Expect(ok).To(BeTrue())
 			Expect(tp.Text).To(ContainSubstring("Disk pressure detected"))
 		})
@@ -812,7 +812,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			part := &genai.Part{Text: text}
 			result, err := convert(context.Background(), nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
+			tp, ok := result.(a2a.TextPart)
 			Expect(ok).To(BeTrue())
 			Expect(tp.Text).To(Equal(text + "\n\n"))
 		})
@@ -872,7 +872,7 @@ var _ = Describe("Status message line breaks (#1301)", func() {
 		queue, ctx := partConverterBridgeCtx()
 		result, err := convert(ctx, nil, part)
 		Expect(err).NotTo(HaveOccurred())
-		tp, ok := result.(*a2a.TextPart)
+		tp, ok := result.(a2a.TextPart)
 		Expect(ok).To(BeTrue(), "LLM text must be returned as artifact TextPart")
 		Expect(tp.Text).To(Equal(text),
 			"text already ending with \\n\\n must NOT get additional newlines")
@@ -891,7 +891,7 @@ var _ = Describe("Status message line breaks (#1301)", func() {
 			part := &genai.Part{Text: chunk}
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
+			tp, ok := result.(a2a.TextPart)
 			Expect(ok).To(BeTrue(), "LLM text must be returned as artifact TextPart")
 			results = append(results, tp.Text)
 		}

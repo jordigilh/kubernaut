@@ -50,7 +50,7 @@ var _ = Describe("EventBridge", func() {
 			Expect(evt.Status.Message).NotTo(BeNil())
 			Expect(evt.Status.Message.Parts).To(HaveLen(1))
 
-			textPart, ok := evt.Status.Message.Parts[0].(*a2a.TextPart)
+			textPart, ok := evt.Status.Message.Parts[0].(a2a.TextPart)
 			Expect(ok).To(BeTrue(), "expected TextPart")
 			Expect(textPart.Text).To(Equal("Checking pod status..."))
 			Expect(evt.Metadata).NotTo(BeNil())
@@ -92,7 +92,7 @@ var _ = Describe("EventBridge", func() {
 				"Step 3: root cause found",
 			} {
 				evt := queue.events[i].(*a2a.TaskStatusUpdateEvent)
-				text := evt.Status.Message.Parts[0].(*a2a.TextPart).Text
+				text := evt.Status.Message.Parts[0].(a2a.TextPart).Text
 				Expect(text).To(Equal(expectedText),
 					"each reasoning emission must be an independent status event")
 				Expect(evt.Metadata["type"]).To(Equal("reasoning"))
@@ -109,11 +109,11 @@ var _ = Describe("EventBridge", func() {
 			Expect(bridge.EmitReasoning(ctx, "second")).To(Succeed())
 
 			first := queue.events[0].(*a2a.TaskStatusUpdateEvent)
-			Expect(first.Status.Message.Parts[0].(*a2a.TextPart).Text).To(Equal("first"))
+			Expect(first.Status.Message.Parts[0].(a2a.TextPart).Text).To(Equal("first"))
 			Expect(first.Metadata["type"]).To(Equal("reasoning"))
 
 			second := queue.events[1].(*a2a.TaskStatusUpdateEvent)
-			Expect(second.Status.Message.Parts[0].(*a2a.TextPart).Text).To(Equal("second"))
+			Expect(second.Status.Message.Parts[0].(a2a.TextPart).Text).To(Equal("second"))
 			Expect(second.Metadata["type"]).To(Equal("reasoning"))
 		})
 
@@ -150,7 +150,7 @@ var _ = Describe("EventBridge", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
-			textPart := evt.Status.Message.Parts[0].(*a2a.TextPart)
+			textPart := evt.Status.Message.Parts[0].(a2a.TextPart)
 			Expect(len(textPart.Text)).To(BeNumerically("<=", 515)) // 512 + "..."
 			Expect(evt.Metadata["type"]).To(Equal("reasoning"))
 		})
@@ -171,7 +171,7 @@ var _ = Describe("EventBridge", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
-			emittedText := evt.Status.Message.Parts[0].(*a2a.TextPart).Text
+			emittedText := evt.Status.Message.Parts[0].(a2a.TextPart).Text
 			Expect(emittedText).NotTo(ContainSubstring("eyJhbGci"),
 				"SC-7 violation: JWT token leaked to external agent via bridge")
 		})
@@ -198,7 +198,7 @@ var _ = Describe("EventBridge", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
-			emittedText := evt.Status.Message.Parts[0].(*a2a.TextPart).Text
+			emittedText := evt.Status.Message.Parts[0].(a2a.TextPart).Text
 			Expect(emittedText).To(Equal("Pod statusishealthy"),
 				"SI-10 violation: control characters reached external agent")
 		})
@@ -294,7 +294,7 @@ var _ = Describe("EventBridge", func() {
 			Expect(evt.Status.State).To(Equal(a2a.TaskStateWorking))
 			Expect(evt.Status.Message).NotTo(BeNil())
 			Expect(evt.Status.Message.Parts).To(HaveLen(1))
-			Expect(evt.Status.Message.Parts[0].(*a2a.TextPart).Text).
+			Expect(evt.Status.Message.Parts[0].(a2a.TextPart).Text).
 				To(Equal("Final answer: pod restarted successfully."))
 			Expect(evt.Metadata).NotTo(BeNil())
 			Expect(evt.Metadata["type"]).To(Equal("output"))
@@ -321,7 +321,7 @@ var _ = Describe("EventBridge", func() {
 			Expect(string(evt.TaskID)).To(Equal("task-meta-001"))
 			Expect(evt.ContextID).To(Equal("ctx-meta-001"))
 			Expect(evt.Status.Message).NotTo(BeNil())
-			Expect(evt.Status.Message.Parts[0].(*a2a.TextPart).Text).
+			Expect(evt.Status.Message.Parts[0].(a2a.TextPart).Text).
 				To(Equal("Analyzing crash loop backoff"))
 			Expect(evt.Metadata).To(Equal(customMeta))
 		})
@@ -347,7 +347,7 @@ var _ = Describe("EventBridge", func() {
 			Expect(evt.Status.Message.Role).To(Equal(a2a.MessageRoleAgent))
 			Expect(evt.Status.Message.Parts).To(HaveLen(1))
 
-			textPart, ok := evt.Status.Message.Parts[0].(*a2a.TextPart)
+			textPart, ok := evt.Status.Message.Parts[0].(a2a.TextPart)
 			Expect(ok).To(BeTrue())
 			Expect(textPart.Text).To(Equal("Connecting to KA..."))
 			Expect(evt.Metadata).NotTo(BeNil())
@@ -368,7 +368,7 @@ var _ = Describe("EventBridge", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
-			text := evt.Status.Message.Parts[0].(*a2a.TextPart).Text
+			text := evt.Status.Message.Parts[0].(a2a.TextPart).Text
 			Expect(text).NotTo(ContainSubstring("eyJhbGci"),
 				"SC-7: status channel must redact secrets")
 			Expect(evt.Metadata["type"]).To(Equal("status"))
@@ -395,11 +395,11 @@ var _ = Describe("EventBridge", func() {
 
 			statusEvt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
 			Expect(statusEvt.Metadata["type"]).To(Equal("status"))
-			Expect(statusEvt.Status.Message.Parts[0].(*a2a.TextPart).Text).To(Equal("status message"))
+			Expect(statusEvt.Status.Message.Parts[0].(a2a.TextPart).Text).To(Equal("status message"))
 
 			reasoningEvt := queue.events[1].(*a2a.TaskStatusUpdateEvent)
 			Expect(reasoningEvt.Metadata["type"]).To(Equal("reasoning"))
-			Expect(reasoningEvt.Status.Message.Parts[0].(*a2a.TextPart).Text).To(Equal("first reasoning"),
+			Expect(reasoningEvt.Status.Message.Parts[0].(a2a.TextPart).Text).To(Equal("first reasoning"),
 				"reasoning after status must be an independent event with original text")
 		})
 
@@ -473,7 +473,7 @@ var _ = Describe("EventBridge", func() {
 			Expect(bridge.EmitReasoning(ctx, "reasoning after dots")).To(Succeed())
 
 			reasoning := queue.events[2].(*a2a.TaskStatusUpdateEvent)
-			text := reasoning.Status.Message.Parts[0].(*a2a.TextPart).Text
+			text := reasoning.Status.Message.Parts[0].(a2a.TextPart).Text
 			Expect(text).To(Equal("reasoning after dots"),
 				"reasoning after keepalive dots must be an independent status event with original text")
 			Expect(reasoning.Metadata["type"]).To(Equal("reasoning"))
@@ -512,7 +512,7 @@ var _ = Describe("EventBridge", func() {
 			Expect(bridge.EmitReasoning(ctx, "second message")).To(Succeed())
 
 			second := queue.events[1].(*a2a.TaskStatusUpdateEvent)
-			text := second.Status.Message.Parts[0].(*a2a.TextPart).Text
+			text := second.Status.Message.Parts[0].(a2a.TextPart).Text
 			Expect(text).NotTo(HavePrefix("\n"),
 				"each reasoning emission is independent — no newline prepending")
 			Expect(text).To(Equal("second message"))
@@ -531,7 +531,7 @@ var _ = Describe("EventBridge", func() {
 			reasoning, isStatus := queue.events[0].(*a2a.TaskStatusUpdateEvent)
 			Expect(isStatus).To(BeTrue(), "reasoning must be a status event")
 			Expect(reasoning.Metadata["type"]).To(Equal("reasoning"))
-			Expect(reasoning.Status.Message.Parts[0].(*a2a.TextPart).Text).To(Equal("status text"))
+			Expect(reasoning.Status.Message.Parts[0].(a2a.TextPart).Text).To(Equal("status text"))
 
 			dot, isStatus := queue.events[1].(*a2a.TaskStatusUpdateEvent)
 			Expect(isStatus).To(BeTrue(), "dot must be status event")
@@ -572,7 +572,7 @@ var _ = Describe("EventBridge", func() {
 			Expect(bridge.EmitReasoning(ctx, "reasoning after dots")).To(Succeed())
 
 			reasoning := queue.events[2].(*a2a.TaskStatusUpdateEvent)
-			text := reasoning.Status.Message.Parts[0].(*a2a.TextPart).Text
+			text := reasoning.Status.Message.Parts[0].(a2a.TextPart).Text
 			Expect(text).To(Equal("reasoning after dots"),
 				"reasoning after keepalive dots must not have leading newline")
 			Expect(reasoning.Metadata["type"]).To(Equal("reasoning"))
@@ -586,7 +586,7 @@ var _ = Describe("EventBridge", func() {
 			Expect(bridge.EmitReasoning(ctx, "very first message")).To(Succeed())
 
 			first := queue.events[0].(*a2a.TaskStatusUpdateEvent)
-			text := first.Status.Message.Parts[0].(*a2a.TextPart).Text
+			text := first.Status.Message.Parts[0].(a2a.TextPart).Text
 			Expect(text).To(Equal("very first message"),
 				"first emission must not have leading newline")
 			Expect(first.Metadata["type"]).To(Equal("reasoning"))
@@ -614,7 +614,7 @@ var _ = Describe("EventBridge", func() {
 				case *a2a.TaskStatusUpdateEvent:
 					switch e.Metadata["type"] {
 					case "reasoning":
-						tp := e.Status.Message.Parts[0].(*a2a.TextPart)
+						tp := e.Status.Message.Parts[0].(a2a.TextPart)
 						reasoningTexts = append(reasoningTexts, strings.TrimRight(tp.Text, " \t\n\r"))
 					case "keepalive":
 						keepaliveCount++

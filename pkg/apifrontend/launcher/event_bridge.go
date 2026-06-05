@@ -169,7 +169,7 @@ func (b *EventBridge) emitStatusEventWithMeta(ctx context.Context, text string, 
 			Message: &a2a.Message{
 				Role: a2a.MessageRoleAgent,
 				Parts: []a2a.Part{
-					&a2a.TextPart{Text: text},
+					a2a.TextPart{Text: text},
 				},
 			},
 		},

@@ -384,7 +384,7 @@ var _ = Describe("A2A status channel routing — event type aware emission", fun
 
 			foundToolCall := false
 			for _, se := range statusEvents {
-				text := se.Status.Message.Parts[0].(*a2a.TextPart).Text
+				text := se.Status.Message.Parts[0].(a2a.TextPart).Text
 				if text == "Calling kubectl_get..." {
 					Expect(se.Metadata).To(HaveKeyWithValue("type", "status"))
 					foundToolCall = true
@@ -425,7 +425,7 @@ var _ = Describe("A2A status channel routing — event type aware emission", fun
 			Expect(reasoningEvents).NotTo(BeEmpty(),
 				"reasoning deltas must produce TaskStatusUpdateEvent with metadata.type=reasoning")
 
-			text := reasoningEvents[0].Status.Message.Parts[0].(*a2a.TextPart).Text
+			text := reasoningEvents[0].Status.Message.Parts[0].(a2a.TextPart).Text
 			Expect(text).To(ContainSubstring("Pod is in CrashLoopBackOff"))
 			Expect(reasoningEvents[0].Metadata).To(HaveKeyWithValue("type", "reasoning"))
 		})
@@ -460,7 +460,7 @@ var _ = Describe("A2A status channel routing — event type aware emission", fun
 			Expect(reasoningEvents).NotTo(BeEmpty(),
 				"token deltas must produce TaskStatusUpdateEvent with metadata.type=reasoning")
 
-			text := reasoningEvents[0].Status.Message.Parts[0].(*a2a.TextPart).Text
+			text := reasoningEvents[0].Status.Message.Parts[0].(a2a.TextPart).Text
 			Expect(text).To(ContainSubstring("The root cause"))
 			Expect(reasoningEvents[0].Metadata).To(HaveKeyWithValue("type", "reasoning"))
 		})
@@ -489,7 +489,7 @@ var _ = Describe("A2A status channel routing — event type aware emission", fun
 
 			found := false
 			for _, se := range statusEvents {
-				text := se.Status.Message.Parts[0].(*a2a.TextPart).Text
+				text := se.Status.Message.Parts[0].(a2a.TextPart).Text
 				if text == "Investigation complete." {
 					Expect(se.Metadata).To(HaveKeyWithValue("type", "status"))
 					found = true
@@ -578,7 +578,7 @@ var _ = Describe("A2A status channel routing — event type aware emission", fun
 				if metaType != "reasoning" {
 					continue
 				}
-				text := se.Status.Message.Parts[0].(*a2a.TextPart).Text
+				text := se.Status.Message.Parts[0].(a2a.TextPart).Text
 				Expect(text).NotTo(ContainSubstring("Error:"),
 					"error text must NOT appear on reasoning metadata stream (AC-4 information flow violation)")
 			}
@@ -589,7 +589,7 @@ var _ = Describe("A2A status channel routing — event type aware emission", fun
 				if !ok || se.Status.Message == nil {
 					continue
 				}
-				text := se.Status.Message.Parts[0].(*a2a.TextPart).Text
+				text := se.Status.Message.Parts[0].(a2a.TextPart).Text
 				if text != "" && text != "Investigation complete." {
 					Expect(se.Metadata).To(HaveKeyWithValue("type", "status"))
 					foundErrorOnStatus = true

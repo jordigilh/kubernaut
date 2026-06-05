@@ -75,11 +75,11 @@ func buildPartConverter() adka2a.GenAIPartConverter {
 func convertFunctionCall(fc *genai.FunctionCall) a2a.Part {
 	template, ok := toolStatusMessages[fc.Name]
 	if !ok {
-		return &a2a.TextPart{Text: "...\n\n"}
+		return a2a.TextPart{Text: "...\n\n"}
 	}
 
 	text := formatStatusWithContext(template, fc.Name, fc.Args)
-	return &a2a.TextPart{Text: truncate(text, maxStatusLen) + "\n\n"}
+	return a2a.TextPart{Text: truncate(text, maxStatusLen) + "\n\n"}
 }
 
 func convertFunctionResponse(fr *genai.FunctionResponse) a2a.Part {
@@ -98,7 +98,7 @@ func convertFunctionResponse(fr *genai.FunctionResponse) a2a.Part {
 	}
 
 	text := summarizer(resp)
-	return &a2a.TextPart{Text: truncate(text, maxSummaryLen) + "\n\n"}
+	return a2a.TextPart{Text: truncate(text, maxSummaryLen) + "\n\n"}
 }
 
 // toolErrorPart returns an error text part when a tool response indicates
@@ -118,7 +118,7 @@ func toolErrorPart(fr *genai.FunctionResponse) a2a.Part {
 		return nil
 	}
 	text := fmt.Sprintf("Error: %s\n\n", truncate(errMsg, maxSummaryLen))
-	return &a2a.TextPart{Text: text}
+	return a2a.TextPart{Text: text}
 }
 
 func formatStatusWithContext(template, toolName string, args map[string]any) string {
@@ -274,20 +274,20 @@ func emitPartViaBridge(ctx context.Context, bridge *EventBridge, part *genai.Par
 	case part.FunctionCall != nil:
 		text := convertFunctionCall(part.FunctionCall)
 		if text != nil {
-			_ = bridge.EmitStatus(ctx, text.(*a2a.TextPart).Text)
+			_ = bridge.EmitStatus(ctx, text.(a2a.TextPart).Text)
 		}
 		return nil
 	case part.FunctionResponse != nil:
 		text := convertFunctionResponse(part.FunctionResponse)
 		if text != nil {
-			_ = bridge.EmitStatus(ctx, text.(*a2a.TextPart).Text)
+			_ = bridge.EmitStatus(ctx, text.(a2a.TextPart).Text)
 		}
 		return nil
 	case part.Thought:
 		_ = bridge.EmitStatus(ctx, "Analyzing...\n\n")
 		return nil
 	default:
-		return &a2a.TextPart{Text: ensureTrailingParagraphBreak(part.Text)}
+		return a2a.TextPart{Text: ensureTrailingParagraphBreak(part.Text)}
 	}
 }
 
@@ -301,9 +301,9 @@ func convertPartToText(part *genai.Part) a2a.Part {
 		return convertFunctionResponse(part.FunctionResponse)
 	}
 	if part.Thought {
-		return &a2a.TextPart{Text: "Analyzing...\n\n"}
+		return a2a.TextPart{Text: "Analyzing...\n\n"}
 	}
-	return &a2a.TextPart{Text: ensureTrailingParagraphBreak(part.Text)}
+	return a2a.TextPart{Text: ensureTrailingParagraphBreak(part.Text)}
 }
 
 func stringArg(args map[string]any, key string) string {
