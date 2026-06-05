@@ -285,7 +285,7 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 				"session_id", result.SessionID,
 				"namespace", namespace,
 			)
-			_ = launcher.EmitStatusSafe(ctx, fmt.Sprintf("Warning: IS CRD creation failed (%v), investigation continues", hookErr))
+			_ = launcher.EmitStatusSafe(ctx, fmt.Sprintf("Warning: IS CRD creation failed (%s), investigation continues", security.RedactError(hookErr)))
 		}
 	}
 
@@ -499,10 +499,10 @@ func FormatEventForUser(evt ka.InvestigationEvent) string {
 // A2A status channel (TaskStatusUpdateEvent) rather than the artifact channel.
 // LLM-generated content (reasoning_delta, token_delta) belongs on the artifact
 // stream. Orchestration updates (tool_call_start, complete, cancelled) and
-// errors belong on the status channel.
+// errors belong on the status channel as ephemeral messages (AC-4).
 func isStatusEvent(evtType string) bool {
 	switch evtType {
-	case ka.EventTypeToolCallStart, ka.EventTypeComplete, ka.EventTypeCancelled:
+	case ka.EventTypeToolCallStart, ka.EventTypeComplete, ka.EventTypeCancelled, ka.EventTypeError:
 		return true
 	default:
 		return false

@@ -529,6 +529,50 @@ var _ = Describe("A2A status channel routing — event type aware emission", fun
 				"tool_call_start x2 + complete = at least 3 status events (2 tool calls + complete)")
 		})
 	})
+
+	Describe("UT-AF-STATUS-015: error events route to status channel (F1 AC-4)", func() {
+		It("should emit error text on TaskStatusUpdateEvent, not TaskArtifactUpdateEvent", func() {
+			queue := &bridgeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-route-015", "", nil)
+
+			eventCh := make(chan ka.InvestigationEvent, 5)
+			eventCh <- ka.InvestigationEvent{
+				Type: ka.EventTypeError,
+				Data: json.RawMessage(`{"error":"connection refused"}`),
+			}
+			eventCh <- ka.InvestigationEvent{Type: ka.EventTypeComplete}
+			close(eventCh)
+
+			tools.BridgeEventsToA2A(ctx, eventCh)
+
+			events := queue.Events()
+			var artifactTexts []string
+			for _, evt := range events {
+				if ae, ok := evt.(*a2a.TaskArtifactUpdateEvent); ok {
+					artifactTexts = append(artifactTexts, ae.Artifact.Parts[0].(*a2a.TextPart).Text)
+				}
+			}
+			for _, t := range artifactTexts {
+				Expect(t).NotTo(ContainSubstring("Error:"),
+					"error text must NOT appear on artifact stream (AC-4 information flow violation)")
+			}
+
+			foundErrorOnStatus := false
+			for _, evt := range events {
+				se, ok := evt.(*a2a.TaskStatusUpdateEvent)
+				if !ok || se.Status.Message == nil {
+					continue
+				}
+				text := se.Status.Message.Parts[0].(*a2a.TextPart).Text
+				if text != "" && text != "Investigation complete." {
+					foundErrorOnStatus = true
+					break
+				}
+			}
+			Expect(foundErrorOnStatus).To(BeTrue(),
+				"error text must appear on status channel as ephemeral message")
+		})
+	})
 })
 
 var _ = Describe("AF-C1: Non-blocking bridge context detachment (#1356)", func() {
