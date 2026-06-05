@@ -2,24 +2,22 @@
 
 **Status**: Proposed
 **Decision Date**: 2026-06-03
-**Version**: 1.0
-**Confidence**: 92%
+**Version**: 1.2
+**Confidence**: 94%
 **Deciders**: Architecture Team
-**Applies To**: API Frontend, Signal Processing, Remediation Orchestrator, AI Analysis, Kubernaut Agent, Workflow Execution, Effectiveness Monitor
+**Applies To**: API Frontend, Signal Processing, Remediation Orchestrator, AI Analysis, Kubernaut Agent, Workflow Execution
 
 **Related Business Requirements**:
 - BR-INT-004: ServiceNow ticket creation/tracking
 - BR-INT-020: ServiceNow as signal target type
 
 **Related Design Decisions**:
-- DD-EM-002: Canonical spec hash (pre/post comparison model)
 - DD-HAPI-019: KA Go rewrite design (prompt builder, parser, tool registry)
 - DD-WORKFLOW-001: Mandatory label schema (workflow contract description)
 - DD-RO-002: Centralized routing responsibility (scope, blocking conditions)
 
 **Related ADRs**:
 - ADR-063: ServiceNow Signal Integration Architecture
-- ADR-EM-001: Effectiveness Monitor Service Integration
 - ADR-041: LLM Prompt Response Contract
 
 ---
@@ -28,6 +26,8 @@
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 1.2 | 2026-06-04 | Architecture Team | B2 clarified: KA injects lightweight list (numbers + titles) of related tickets, LLM uses ServiceNow tools to drill into details (mirrors K8s tool-driven investigation pattern). Workflow selection is mandatory unless ticket is already closed. |
+| 1.1 | 2026-06-04 | Architecture Team | Dropped Part D (EM verification) and B6 (KA verification endpoint). ServiceNow is its own audit trail -- WFE success/failure is sufficient. Removed C3 (ProviderData to EA) since EM no longer consumes it. Simplified scope and file count. |
 | 1.0 | 2026-06-03 | Architecture Team | Initial design: pipeline plumbing, KA enrichment/prompt/tools, RO guards, EM contract-driven verification, ProviderData schema |
 
 ---
@@ -45,13 +45,11 @@ Customers need to investigate ServiceNow tickets that reference cloud objects (c
 1. Accept signals derived from ServiceNow tickets
 2. Correlate maintenance tickets with reported issues (false alarm detection)
 3. Choose between closing the alert (maintenance-caused) or escalating with a new ticket
-4. Verify that the chosen workflow actually achieved its intended outcome
 
 ### Constraints
 
 - `TargetType` and `ProviderData` are dropped at the AA boundary (9-hop plumbing gap)
 - KA enrichment assumes K8s API access (would attempt `Pod/<ticket-number>` lookup without gating)
-- EM is purely deterministic (no LLM client) -- cannot reason about ServiceNow ticket outcomes
 - Scope is customer evaluation readiness (POC/demo), not full production GA
 - CMDB CIs are at cluster/node level only (no application-level CIs)
 
@@ -60,10 +58,9 @@ Customers need to investigate ServiceNow tickets that reference cloud objects (c
 ## Decision Drivers
 
 1. **Customer demand**: Evaluation deployment requires ServiceNow integration end-to-end
-2. **Pipeline reuse**: Maximize reuse of existing RR -> SP -> AA -> KA -> WFE -> EM pipeline
+2. **Pipeline reuse**: Maximize reuse of existing RR -> SP -> AA -> KA -> WFE pipeline
 3. **Isolation**: ServiceNow-specific logic must not pollute K8s signal processing
-4. **Verification depth**: "Did the workflow complete?" is insufficient -- need "Did the workflow do what it promised?"
-5. **Minimal blast radius**: Prefer composition over modification of existing components
+4. **Minimal blast radius**: Prefer composition over modification of existing components
 
 ---
 
@@ -103,57 +100,47 @@ Customers need to investigate ServiceNow tickets that reference cloud objects (c
 - Makes EM non-deterministic for all target types
 - Large blast radius in a controller that is currently purely deterministic
 
-**Confidence**: 0% (rejected in favor of KA verification endpoint)
+**Confidence**: 0% (rejected)
 
-### Alternative D: KA verification endpoint for EM -- CHOSEN
+### Alternative D: KA verification endpoint for EM -- DEFERRED
 
 **Approach**: Expose `POST /verify-effectiveness` in KA. EM calls it as an HTTP client. KA reuses existing LLM infrastructure for a completely independent reasoning session.
 
-**Pros**:
-- Zero duplication of LLM infrastructure
-- EM stays thin (HTTP client, same pattern as Prometheus/AlertManager)
-- Clean separation: KA = reasoning engine, EM = orchestrator
-- Independent session with dedicated prompt and guardrails
+**Rationale for deferral**: ServiceNow is its own audit trail. Every ticket state change is recorded with timestamps, actors, and reasons. Unlike K8s resources (where we have no visibility into what changed and must verify post-remediation state), ServiceNow verification would be validating that a ticket did what it was supposed to do -- which the ticket history already confirms. WFE success/failure is sufficient for the POC. If a future need arises (e.g., complex multi-step ServiceNow workflows where partial success is possible), the verification endpoint can be revisited as a new requirement.
 
-**Cons**:
-- KA availability becomes a dependency for EM ServiceNow verification
-
-**Confidence**: 92%
+**Confidence**: N/A (deferred)
 
 ---
 
 ## Decision
 
-### Chosen: Alternative B (TargetType) + Alternative D (KA verification endpoint)
+### Chosen: Alternative B (TargetType) + No EM verification for ServiceNow (POC)
 
 ### Architecture
 
 ```
-                         ┌──────────────────────────────────────────────┐
-                         │              ServiceNow API                  │
-                         └──────┬───────────────┬───────────────┬──────┘
-                                │               │               │
-                           AF fetches      KA queries      EM fetches
-                           originating     related         current
-                           ticket          tickets         ticket
-                                │               │               │
-  ┌─────┐   ┌────┐   ┌────┐   ▼   ┌────┐      ▼   ┌─────┐    ▼   ┌────┐
-  │  AF │──▶│ RR │──▶│ SP │──────▶│ AA │─────────▶│ KA  │───────▶│ WFE│
-  └─────┘   └────┘   └────┘       └────┘          └──┬──┘        └──┬─┘
-              │                                       │              │
-              │  targetType + ProviderData             │              │
-              │  propagated through pipeline           │              │
-              │                                       │              │
-              ▼                                       │              ▼
-           ┌────┐                                     │           ┌────┐
-           │ EA │◀────────────────────────────────────┘           │ EM │
-           └────┘  RO copies ProviderData into EA                └──┬─┘
-              ▲                                                     │
-              │                          POST /verify-effectiveness │
-              │                          (workflow contract +       │
-              │                           pre/post ticket state)    │
-              └─────────────────────────────────────────────────────┘
+                         ┌──────────────────────────────────┐
+                         │          ServiceNow API           │
+                         └──────┬───────────────┬───────────┘
+                                │               │
+                           AF fetches      KA queries
+                           originating     related
+                           ticket          tickets
+                                │               │
+  ┌─────┐   ┌────┐   ┌────┐   ▼   ┌────┐      ▼   ┌─────┐        ┌─────┐
+  │  AF │──▶│ RR │──▶│ SP │──────▶│ AA │─────────▶│ KA  │───────▶│ WFE │
+  └─────┘   └────┘   └────┘       └────┘          └─────┘        └─────┘
+              │                                                      │
+              │  targetType + ProviderData                           │
+              │  propagated through pipeline                  WFE success/failure
+              │                                              is sufficient for EM
+              ▼
+           ┌────┐
+           │ EA │  EM skips ServiceNow signals (no K8s checks apply,
+           └────┘  ServiceNow audit trail is self-documenting)
 ```
+
+**EM note**: For the POC, EM does not perform ServiceNow-specific verification. ServiceNow is its own audit trail -- every ticket state change is recorded with timestamps, actors, and reasons. WFE success/failure provides sufficient signal. Contract-driven verification via a KA endpoint could be added as a future requirement if complex multi-step workflows require partial-success detection.
 
 ### Part A: Pipeline Plumbing (9 files + codegen)
 
@@ -190,12 +177,23 @@ Also skip re-enrichment (post-RCA target resolution). Downstream consumers handl
 #### B2: Prompt Templates
 
 **Phase 1** (`incident_investigation.tmpl`): Add `{{ if eq .TargetType "servicenow" }}` conditional block (mirrors existing `{{ if eq .SignalMode "proactive" }}` pattern) containing:
-- ServiceNow ticket context from ProviderData (number, description, state, CMDB CI)
-- Pre-fetched related active ticket summaries
-- Tool guidance for ServiceNow-specific investigation tools
-- Modified `submit_result` schema guidance including `is_false_alarm`, `explained_by_ticket`, `correlation_reasoning`
+
+- **Original ticket context** from ProviderData (number, description, state, priority, CMDB CI, timestamps, assignment details)
+- **Lightweight list of related open tickets** for the same CMDB CI (fetched by KA pre-enrichment) -- ticket numbers and titles only, not full details
+- **Tool-driven investigation instructions** directing the LLM to use ServiceNow tools (`servicenow_get_ticket`, etc.) to drill into the related tickets, extract summaries and relevant details, and triage them against the state of the resource to determine whether the symptoms in the original ticket are explained by the related tickets (scheduled maintenance, known changes, etc.) or whether the problem is independent
+- **`submit_result` schema guidance** including `is_false_alarm`, `explained_by_ticket`, `correlation_reasoning` fields
+
+The key design principle mirrors the K8s investigation pattern: KA provides the signal context (original ticket + lightweight list of related ticket numbers/titles) and the LLM uses tools to investigate. The LLM decides which related tickets to drill into, fetches their details via ServiceNow tools, and does the triage itself. KA does not pre-load full ticket data into the prompt -- the LLM drives the investigation through tool calls, just as it uses `kubectl_describe` and `kubectl_logs` for K8s signals.
 
 **Phase 3** (`phase3_workflow_selection.tmpl`): Add ServiceNow action-type selection rules (CloseAlert vs EscalateTicket) alongside existing K8s/GitOps rules.
+
+**Workflow selection is mandatory** unless the ticket is already closed at investigation time (early exit with "no action needed"). The RCA outcome (explained by maintenance or not) informs which workflow is selected but never skips selection. This mirrors the K8s flow:
+
+| RCA Outcome | Workflow Selection |
+|---|---|
+| Explained by related tickets (maintenance) | CloseServiceNowAlert |
+| Not explained by related tickets | EscalateServiceNowTicket |
+| Ticket already closed at investigation time | No workflow -- early exit ("nothing to do") |
 
 #### B3: Dynamic Tool Gating
 
@@ -220,45 +218,11 @@ Add to `InvestigationResult`:
 
 Add corresponding fields to `llmResponse` in parser, JSON schema in `schema.go`, and response mapper in `handler.go`.
 
-#### B6: KA Verification Endpoint
+#### B6: KA Verification Endpoint -- DEFERRED (not in POC)
 
-New `POST /verify-effectiveness` endpoint for contract-driven EM verification.
+Dropped from POC scope. ServiceNow's native audit trail makes contract-driven verification redundant for the demo. See "Decision Drivers" and "Alternatives Considered > Alternative D" for full rationale.
 
-**Request** (`VerifyEffectivenessRequest`):
-```json
-{
-  "correlation_id": "rr-abc-123",
-  "target_type": "servicenow",
-  "workflow_id": "servicenow-close-maintenance-v1",
-  "workflow_contract": {
-    "what": "Closes the ServiceNow incident as false alarm...",
-    "when_to_use": "When RCA determines incident is caused by maintenance...",
-    "preconditions": "Active maintenance change request exists..."
-  },
-  "rca_summary": "Alert caused by scheduled maintenance CHG0012345...",
-  "pre_remediation_state": { "ticket": { "...ProviderData snapshot..." } },
-  "post_remediation_state": {
-    "tickets": [
-      { "sys_id": "abc123", "number": "INC0067890", "state": "resolved", "..." : "..." }
-    ]
-  }
-}
-```
-
-**Response** (`VerifyEffectivenessResponse`):
-```json
-{
-  "effective": true,
-  "confidence": 0.93,
-  "contract_evaluation": [
-    {"criterion": "Sets ticket state to Resolved", "met": true, "evidence": "state: active -> resolved"},
-    {"criterion": "Adds close_notes referencing maintenance CR", "met": true, "evidence": "close_notes contains CHG0012345"}
-  ],
-  "reasoning": "All contract criteria met."
-}
-```
-
-The workflow contract comes from the `RemediationWorkflow` CRD's `description.what` field. EM fetches the CRD and sends the contract in the request. KA evaluates each claim against post-remediation evidence using a dedicated `verify_effectiveness.tmpl` prompt template.
+If revisited for production GA, the design would expose a `POST /verify-effectiveness` endpoint in KA for EM to call as an HTTP client. The endpoint would use the workflow's `RemediationWorkflowDescription.What` field as the agentic contract and evaluate each claim against post-remediation ServiceNow state.
 
 ### Part C: RO Guardrails
 
@@ -276,63 +240,30 @@ if rr.Spec.TargetType != "" && rr.Spec.TargetType != "kubernetes" {
 
 Skip semantics: `preHash = ""` causes downstream EA creation to have empty `PreRemediationSpecHash`, which EM handles gracefully (hash comparison returns "no pre-hash for comparison").
 
-#### C3: ProviderData into EA Spec
+#### C3: ProviderData into EA Spec -- DEFERRED (not in POC)
 
-RO copies `rr.Spec.ProviderData` into `EA.Spec.ProviderData` at creation time, so EM can read the pre-remediation ticket snapshot directly from the EA.
+Originally planned so EM could read the pre-remediation ticket snapshot. With EM verification dropped, there is no consumer of `ProviderData` on the EA. Deferred to GA if/when EM verification is introduced.
 
 #### CheckUnmanagedResource (no change needed for POC)
 
 `scope.Manager.IsManaged` skips resource-level label checks for unknown K8s kinds and falls back to namespace label. ServiceNow signals in a managed namespace pass scope checks without code changes.
 
-### Part D: EM ServiceNow Verification
+### Part D: EM ServiceNow Verification -- DROPPED FROM POC
 
-#### D1: EA CRD Extension
+**Decision**: EM does not perform ServiceNow-specific verification for the POC.
 
-Add optional fields to `EffectivenessAssessmentSpec`:
-- `TargetType string` (discriminator for EM pipeline)
-- `ProviderData string` (pre-remediation ServiceNow ticket snapshot)
-- `WorkflowID string` (for contract lookup)
+**Rationale**: ServiceNow is its own audit trail. Every ticket state change (creation, resolution, escalation, comment) is recorded with timestamps, actors, and reasons. Unlike K8s resources -- where Kubernaut has no visibility into what changed and must verify post-remediation state via spec hashing and health checks -- ServiceNow ticket history already confirms what happened. Verifying that the workflow "did what it was supposed to do" adds little value when the ticket history already documents the outcome.
 
-Add to `EAComponents`:
-- `ServiceNowAssessed bool`
-- `ServiceNowScore *float64`
+For the POC, WFE success/failure is the only signal EM needs. If WFE reports success, the ServiceNow CLI container executed its API calls successfully (ticket closed, escalation created, etc.). If WFE reports failure, the Job failed.
 
-Add `AssessmentReason` enum value: `"servicenow_verified"`.
+**What this means for EM**: ServiceNow EAs will complete through the standard K8s-skip path with no ServiceNow-specific components. The existing `scopeNoExecution` / degraded mode patterns in EM handle this gracefully.
 
-CEL `self == oldSelf` on spec is unaffected (new optional fields are additive).
-
-#### D2: EA Creator
-
-RO populates new EA spec fields from RR and AA at creation time.
-
-#### D3: ServiceNow Scorer
-
-HTTP client calling KA `/verify-effectiveness`. Flow:
-
-1. Read `ea.Spec.ProviderData` (pre-remediation state)
-2. Fetch current ticket from ServiceNow API (post-remediation state)
-3. Fetch `RemediationWorkflow` CRD for `ea.Spec.WorkflowID` (get `description` contract)
-4. Build `VerifyEffectivenessRequest` with contract + pre/post state + RCA summary
-5. POST to KA `/verify-effectiveness`
-6. Map `VerifyEffectivenessResponse` to `ComponentResult{Assessed: true, Score: &confidence}`
-
-#### D5: Pipeline Integration (Early-Exit Branch)
-
-At top of `runComponentPipeline` (after scope determination):
-
-```go
-if ea.Spec.TargetType == "servicenow" {
-    r.runServiceNowCheck(ctx, rctx)
-    result, err := r.completeAssessmentWithReason(ctx, ea, eav1.AssessmentReasonServiceNowVerified)
-    return result, true, err
-}
-```
-
-This skips all K8s components (hash, health, alert, metrics) and runs only the ServiceNow scorer. Pattern matches existing `scopeNoExecution` early exit.
-
-#### D6: Completion Logic
-
-`allComponentsDone` and `determineAssessmentReason` updated to handle `targetType == "servicenow"` (only `ServiceNowAssessed` required, K8s components treated as N/A).
+**Deferred items** (if revisited for production GA):
+- D1: EA CRD extension (`TargetType`, `ProviderData`, `WorkflowID`, `ServiceNowAssessed`, `ServiceNowScore`)
+- D2: EA creator populating ServiceNow fields
+- D3: ServiceNow scorer as HTTP client to KA verification endpoint
+- D5: Early-exit branch in `runComponentPipeline`
+- D6: Completion logic for `servicenow_verified` assessment reason
 
 ### ProviderData Schema
 
@@ -363,7 +294,7 @@ This skips all K8s components (hash, health, alert, metrics) and runs only the S
 }
 ```
 
-Serves dual purpose: KA investigation context AND EM pre-remediation baseline.
+Serves as KA investigation context. If EM verification is introduced in the future, this same snapshot serves as the pre-remediation baseline.
 
 ---
 
@@ -371,27 +302,27 @@ Serves dual purpose: KA investigation context AND EM pre-remediation baseline.
 
 ### Positive Consequences
 
-1. End-to-end ServiceNow signal support reusing existing pipeline
-2. Contract-driven verification is workflow-agnostic -- works for any future ServiceNow workflow
-3. KA verification endpoint is reusable for other non-K8s target types
-4. EM remains deterministic for K8s signals (zero regression risk)
+1. End-to-end ServiceNow signal support (AF -> RR -> SP -> AA -> KA -> WFE) reusing existing pipeline
+2. EM remains untouched for the POC -- zero regression risk for K8s signals
+3. Minimal blast radius: ServiceNow-specific logic isolated to KA (tools, prompts, gating)
+4. WFE success/failure + ServiceNow audit trail provide sufficient verification
+5. Architecture is ticket-type-agnostic: POC targets INC (incidents), but CHG (change requests) and PRB (problems) can be added later with new prompt blocks + workflow CRDs only -- no pipeline or architecture changes
 
 ### Negative Consequences
 
 1. 9-file plumbing change for AA boundary gap
    - **Mitigation**: Mechanical field propagation, validated by spikes
-2. KA availability becomes EM dependency for ServiceNow verification
-   - **Mitigation**: Same graceful degradation pattern as Prometheus/AlertManager (assessed-as-skipped, requeue)
-3. Two prompt templates need ServiceNow awareness (Phase 1 + Phase 3)
+2. Two prompt templates need ServiceNow awareness (Phase 1 + Phase 3)
    - **Mitigation**: Conditional blocks mirror existing `SignalMode` pattern
+3. No automated verification of ServiceNow workflow outcomes beyond WFE success/failure
+   - **Mitigation**: ServiceNow's native audit trail documents what changed. For the POC, this is acceptable. For GA, a KA verification endpoint could be added.
 
 ### Risks
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|-----------|--------|------------|
-| Verification prompt produces inconsistent results | Medium | Low | Structured output schema constrains LLM; per-criterion evaluation provides transparency |
-| ServiceNow API rate limiting during EM verification | Low | Medium | Graceful degradation; requeue with backoff |
 | Phase 3 template ServiceNow action types not matched by DS catalog | Low | High | Ensure ServiceNow RemediationWorkflow CRDs deployed before demo |
+| WFE reports success but API call partially failed | Low | Medium | ServiceNow API returns errors on partial failure; CLI container exits non-zero |
 
 ---
 
@@ -400,17 +331,16 @@ Serves dual purpose: KA investigation context AND EM pre-remediation baseline.
 | Requirement | Status | Notes |
 |-------------|--------|-------|
 | BR-INT-004 | Partial | ServiceNow ticket creation via WFE Job executor |
-| BR-INT-020 | Full | ServiceNow as signal target type end-to-end |
+| BR-INT-020 | Full | ServiceNow as signal target type end-to-end (AF through WFE) |
 
 ---
 
 ## Validation Strategy
 
-1. **Unit tests**: Per-component logic (parser, prompt rendering, scorer) with mock dependencies
+1. **Unit tests**: Per-component logic (parser, prompt rendering, tool gating) with mock dependencies
 2. **Integration tests**: Pipeline plumbing (RR -> SP -> AA -> KA) with test CRDs
 3. **E2E tests**: Full pipeline with mock ServiceNow API + mock LLM
-4. **Contract verification tests**: Verify `description.what` parsing and per-criterion evaluation
-5. **Spike validation**: 11 spikes executed pre-implementation confirming all assumptions
+4. **Spike validation**: 11 spikes executed pre-implementation confirming all assumptions
 
 ---
 
@@ -419,9 +349,8 @@ Serves dual purpose: KA investigation context AND EM pre-remediation baseline.
 - Issue #1338: feat: Add ServiceNow as a signal target type
 - `api/remediationworkflow/v1alpha1/remediationworkflow_types.go`: Workflow description contract
 - `internal/kubernautagent/api/openapi.json`: KA OpenAPI specification
-- `internal/controller/effectivenessmonitor/reconcile_components.go`: EM component pipeline
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: 2026-06-03
+**Document Version**: 1.2
+**Last Updated**: 2026-06-04
