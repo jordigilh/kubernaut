@@ -380,10 +380,11 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 // This complements the streaming executor-level keepalive which covers
 // gaps between tool calls.
 func BridgeEventsToA2A(ctx context.Context, events <-chan ka.InvestigationEvent) {
+	inactivityTimeout := BridgeInactivityTimeout
 	keepalive := time.NewTicker(5 * time.Second)
 	defer keepalive.Stop()
 
-	inactivity := time.NewTimer(BridgeInactivityTimeout)
+	inactivity := time.NewTimer(inactivityTimeout)
 	defer inactivity.Stop()
 
 	for {
@@ -404,7 +405,7 @@ func BridgeEventsToA2A(ctx context.Context, events <-chan ka.InvestigationEvent)
 				default:
 				}
 			}
-			inactivity.Reset(BridgeInactivityTimeout)
+			inactivity.Reset(inactivityTimeout)
 
 			emitEventToA2A(ctx, evt, FormatEventForUser(evt))
 			if evt.Type == ka.EventTypeComplete || evt.Type == ka.EventTypeCancelled {
