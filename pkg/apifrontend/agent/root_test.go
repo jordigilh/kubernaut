@@ -26,6 +26,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
 	sessionpkg "github.com/jordigilh/kubernaut/pkg/apifrontend/session"
+	toolspkg "github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
 
 // newMockToolContext returns a minimal tool.Context with a specific
@@ -738,6 +739,37 @@ var _ = Describe("Root Agent", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(a).NotTo(BeNil())
 		})
+	})
+})
+
+var _ = Describe("Conditional tool registration — interactive mode (#1366)", func() {
+
+	It("UT-AF-1366-010: InteractiveEnabled=false excludes session-dependent tools", func() {
+		cfg := agentpkg.DefaultTestConfig()
+		cfg.InteractiveEnabled = false
+		_, tools, err := agentpkg.NewRootAgent(cfg)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(tools).To(HaveLen(15), "only 15 stateless tools when interactive disabled (await_session is MCP-only)")
+
+		for _, t := range tools {
+			Expect(toolspkg.SessionDependentTools).NotTo(HaveKey(t.Name()),
+				"session-dependent tool %q should not be registered when interactive disabled", t.Name())
+		}
+	})
+
+	It("UT-AF-1366-011: InteractiveEnabled=true registers all 24 tools", func() {
+		cfg := agentpkg.DefaultTestConfig()
+		cfg.InteractiveEnabled = true
+		_, tools, err := agentpkg.NewRootAgent(cfg)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(tools).To(HaveLen(24), "all 24 tools when interactive enabled")
+	})
+
+	It("UT-AF-1366-012: default config (InteractiveEnabled zero-value) registers all 24 tools", func() {
+		cfg := agentpkg.DefaultTestConfig()
+		_, tools, err := agentpkg.NewRootAgent(cfg)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(tools).To(HaveLen(24), "backward compat: zero-value InteractiveEnabled means all tools")
 	})
 })
 

@@ -237,7 +237,7 @@ func run() int {
 		Description: "Kubernaut AI-driven remediation agent",
 		URL:         cfg.AgentCard.URL,
 		Version:     version(),
-		Skills:      handler.DefaultAgentSkills(),
+		Skills:      handler.DefaultAgentSkills(cfg.Interactive.Enabled),
 	})
 	if err != nil {
 		logger.Error(err, "failed to create agent card handler")
@@ -716,6 +716,7 @@ func buildMCPHandler(cfg *config.Config, deps *backendDeps, sessInfra *sessionIn
 		UserLimiter:        userLimiter,
 		SessionFinalizer:   sessFinalizer,
 		SessionInitializer: sessInitializer,
+		InteractiveEnabled: cfg.Interactive.Enabled,
 	}
 
 	mcpSessionTimeout := cfg.MCP.SessionIdleTimeout
@@ -788,6 +789,7 @@ func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps,
 		ToolCallDuration:      metricsReg.ToolCallDuration,
 		UserLimiter:           userLimiter,
 		ActiveContextRegistry: activeCtxRegistry,
+		InteractiveEnabled:    cfg.Interactive.Enabled,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create root agent: %w", err)

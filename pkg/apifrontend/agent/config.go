@@ -81,6 +81,10 @@ type AgentConfig struct {
 	// When non-nil, the phase guard stores/clears the active context on
 	// investigate success and complete/cancel respectively.
 	ActiveContextRegistry *launcher.ActiveContextRegistry
+	// InteractiveEnabled controls whether session-dependent tools are registered
+	// in the A2A agent tool list. When false, tools in tools.SessionDependentTools
+	// are excluded (#1366). DefaultTestConfig sets this to true.
+	InteractiveEnabled bool
 }
 
 // Option applies a configuration override to AgentConfig.
@@ -94,7 +98,8 @@ func WithInstruction(instruction string) Option {
 // DefaultTestConfig returns a config suitable for unit tests with placeholder values.
 func DefaultTestConfig() AgentConfig {
 	return AgentConfig{
-		Instruction: defaultInstruction(),
+		Instruction:        defaultInstruction(),
+		InteractiveEnabled: true,
 	}
 }
 

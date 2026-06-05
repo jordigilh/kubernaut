@@ -147,6 +147,9 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 		if err != nil {
 			return nil, fmt.Errorf("creating tool %q: %w", c.name, err)
 		}
+		if !cfg.InteractiveEnabled && tools.SessionDependentTools[t.Name()] {
+			continue
+		}
 		result = append(result, t)
 	}
 
