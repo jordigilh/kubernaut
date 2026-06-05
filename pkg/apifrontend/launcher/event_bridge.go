@@ -19,10 +19,12 @@ import (
 	"context"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
+	"github.com/go-logr/logr"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/security"
 )
@@ -30,30 +32,39 @@ import (
 type contextKey struct{}
 
 // BridgeMetrics collects metrics for the EventBridge write path.
+// Artifact and status channels have separate failure counters (SI-4)
+// so operators can distinguish which channel is experiencing write failures.
 type BridgeMetrics interface {
 	IncBridgeEvents()
 	IncBridgeWriteFailures()
+	IncBridgeStatusEvents()
+	IncBridgeStatusWriteFailures()
 }
 
-// EventBridge enables tool handlers to emit progressive A2A events (reasoning
-// artifacts) directly to the A2A event queue during execution. This bridges KA
-// SSE investigation events into the A2A stream without waiting for the tool to
-// return a FunctionResponse.
-//
-// The bridge manages a stable ArtifactID across emissions: the first emission
-// creates a new artifact (Append=false) and captures the ID; subsequent
-// emissions append to that artifact (Append=true) with the same ID. This
-// satisfies the a2a-go taskupdate.Manager contract that requires a matching
-// ArtifactID for append operations.
+// Metadata type constants for TaskStatusUpdateEvent classification.
+// Clients inspect metadata.type to style events differently (dimmed for
+// reasoning, ephemeral for status, full render for output). Clients that
+// ignore metadata still render every status.message as streaming text.
+const (
+	MetaTypeReasoning     = "reasoning"
+	MetaTypeStatus        = "status"
+	MetaTypeOutput        = "output"
+	MetaTypeInvestigation = "investigation"
+	MetaTypeKeepalive     = "keepalive"
+)
+
+// EventBridge enables tool handlers to emit progressive A2A events directly to
+// the A2A event queue during execution. All streaming content is emitted as
+// TaskStatusUpdateEvent with a metadata.type tag for semantic classification.
+// This ensures A2A clients (Kagenti, Agent Stack, etc.) render streaming text
+// correctly, since the A2A ecosystem convention routes streaming content through
+// status-update events, not artifact-update events.
 type EventBridge struct {
-	mu         sync.Mutex
-	queue      eventqueue.Writer
-	taskID     a2a.TaskID
-	contextID  string
-	metrics    BridgeMetrics
-	artifactID a2a.ArtifactID
-	hasEmitted bool
-	lastWasDot bool
+	mu        sync.Mutex
+	queue     eventqueue.Writer
+	taskID    a2a.TaskID
+	contextID string
+	metrics   BridgeMetrics
 }
 
 const maxBridgeTextLen = 512
@@ -76,75 +87,100 @@ func EventBridgeFromContext(ctx context.Context) *EventBridge {
 	return bridge
 }
 
-// EmitReasoning writes a progressive reasoning artifact to the A2A event queue.
-// The text is sanitized (control characters stripped, secrets redacted) and
-// truncated to maxBridgeTextLen to prevent flooding.
-//
-// On the first call the bridge creates a new artifact (Append=false) with a
-// generated ArtifactID. Subsequent calls append to that same artifact
-// (Append=true) so the a2a-go taskupdate.Manager can locate the existing
-// artifact by its ID.
-//
-// A leading newline is prepended when prior content exists so that each
-// reasoning message renders on its own line after A2A clients (e.g. kagenti)
-// strip trailing whitespace from individual text parts before concatenation.
+// EmitReasoning writes a TaskStatusUpdateEvent with metadata.type="reasoning"
+// for LLM inner thoughts and investigation reasoning deltas. The text is
+// sanitized (control characters stripped, secrets redacted) and truncated.
 func (b *EventBridge) EmitReasoning(ctx context.Context, text string) error {
+	return b.EmitStatusWithMeta(ctx, text, map[string]any{"type": MetaTypeReasoning})
+}
+
+// EmitOutput writes a TaskStatusUpdateEvent with metadata.type="output" for
+// final LLM response content (the markdown answer). Renderers display this
+// as primary content while reasoning/status events are secondary.
+func (b *EventBridge) EmitOutput(ctx context.Context, text string) error {
+	return b.EmitStatusWithMeta(ctx, text, map[string]any{"type": MetaTypeOutput})
+}
+
+// EmitKeepaliveDot writes a metadata-only TaskStatusUpdateEvent to prevent
+// proxy/gateway idle timeouts. The event carries no Status.Message (avoiding
+// Task.History pollution in the a2a-go taskupdate.Manager) and instead tags the
+// dot in Metadata for renderers: {"type":"keepalive", "dot":"."}.
+func (b *EventBridge) EmitKeepaliveDot(ctx context.Context) error {
+	b.mu.Lock()
+	err := b.emitKeepaliveEvent(ctx)
+	b.mu.Unlock()
+	return err
+}
+
+func (b *EventBridge) emitKeepaliveEvent(ctx context.Context) error {
+	now := time.Now().UTC()
+	event := &a2a.TaskStatusUpdateEvent{
+		TaskID:    b.taskID,
+		ContextID: b.contextID,
+		Status: a2a.TaskStatus{
+			State:     a2a.TaskStateWorking,
+			Timestamp: &now,
+		},
+		Metadata: map[string]any{
+			"type": "keepalive",
+			"dot":  ".",
+		},
+	}
+	err := b.queue.Write(ctx, event)
+	if b.metrics != nil {
+		if err != nil {
+			b.metrics.IncBridgeStatusWriteFailures()
+		} else {
+			b.metrics.IncBridgeStatusEvents()
+		}
+	}
+	return err
+}
+
+// EmitStatus writes a TaskStatusUpdateEvent with metadata.type="status" for
+// ephemeral progress messages (orchestration updates, tool call starts).
+func (b *EventBridge) EmitStatus(ctx context.Context, text string) error {
+	return b.EmitStatusWithMeta(ctx, text, map[string]any{"type": MetaTypeStatus})
+}
+
+// EmitStatusWithMeta writes a TaskStatusUpdateEvent with caller-supplied
+// metadata. The text is sanitized and the metadata.type field controls how
+// A2A clients classify and render the event.
+func (b *EventBridge) EmitStatusWithMeta(ctx context.Context, text string, meta map[string]any) error {
 	text = sanitizeBridgeText(text)
 	if text == "" {
 		return nil
 	}
 
 	b.mu.Lock()
-	if b.hasEmitted {
-		text = "\n" + text
-	}
-	b.hasEmitted = true
-	b.lastWasDot = false
-	err := b.emit(ctx, text)
+	err := b.emitStatusEventWithMeta(ctx, text, meta)
 	b.mu.Unlock()
 	return err
 }
 
-// EmitKeepaliveDot writes a single "." to the A2A stream as a lightweight
-// keepalive that prevents proxy/gateway idle timeouts. Consecutive dots
-// accumulate inline on the same line. The first dot after reasoning text
-// is preceded by a newline so dots render on their own line.
-func (b *EventBridge) EmitKeepaliveDot(ctx context.Context) error {
-	b.mu.Lock()
-	text := "."
-	if b.hasEmitted && !b.lastWasDot {
-		text = "\n."
-	}
-	b.hasEmitted = true
-	b.lastWasDot = true
-	err := b.emit(ctx, text)
-	b.mu.Unlock()
-	return err
-}
-
-func (b *EventBridge) emit(ctx context.Context, text string) error {
-	isAppend := b.artifactID != ""
-	if !isAppend {
-		b.artifactID = a2a.NewArtifactID()
-	}
-
-	event := &a2a.TaskArtifactUpdateEvent{
+func (b *EventBridge) emitStatusEventWithMeta(ctx context.Context, text string, meta map[string]any) error {
+	now := time.Now().UTC()
+	event := &a2a.TaskStatusUpdateEvent{
 		TaskID:    b.taskID,
 		ContextID: b.contextID,
-		Append:    isAppend,
-		Artifact: &a2a.Artifact{
-			ID: b.artifactID,
-			Parts: []a2a.Part{
-				&a2a.TextPart{Text: text},
+		Status: a2a.TaskStatus{
+			State:     a2a.TaskStateWorking,
+			Timestamp: &now,
+			Message: &a2a.Message{
+				Role: a2a.MessageRoleAgent,
+				Parts: []a2a.Part{
+					a2a.TextPart{Text: text},
+				},
 			},
 		},
+		Metadata: meta,
 	}
 	err := b.queue.Write(ctx, event)
 	if b.metrics != nil {
 		if err != nil {
-			b.metrics.IncBridgeWriteFailures()
+			b.metrics.IncBridgeStatusWriteFailures()
 		} else {
-			b.metrics.IncBridgeEvents()
+			b.metrics.IncBridgeStatusEvents()
 		}
 	}
 	return err
@@ -168,22 +204,60 @@ func sanitizeBridgeText(text string) string {
 	return text
 }
 
-// EmitReasoningSafe is a nil-safe helper that emits reasoning via the bridge
-// in the given context. If no bridge is present, it's a no-op.
+// EmitReasoningSafe is a nil-safe helper that emits reasoning via the bridge.
+// If no bridge is present, it's a no-op. Write failures are logged (AU-2).
 func EmitReasoningSafe(ctx context.Context, text string) error {
 	bridge := EventBridgeFromContext(ctx)
 	if bridge == nil {
 		return nil
 	}
-	return bridge.EmitReasoning(ctx, text)
+	if err := bridge.EmitReasoning(ctx, text); err != nil {
+		logr.FromContextOrDiscard(ctx).Error(err, "A2A bridge write failed", "channel", "reasoning")
+		return err
+	}
+	return nil
+}
+
+// EmitOutputSafe is a nil-safe helper that emits final LLM output via the
+// bridge. If no bridge is present, it's a no-op. Write failures are logged.
+func EmitOutputSafe(ctx context.Context, text string) error {
+	bridge := EventBridgeFromContext(ctx)
+	if bridge == nil {
+		return nil
+	}
+	if err := bridge.EmitOutput(ctx, text); err != nil {
+		logr.FromContextOrDiscard(ctx).Error(err, "A2A bridge write failed", "channel", "output")
+		return err
+	}
+	return nil
+}
+
+// EmitStatusSafe is a nil-safe helper that emits a status update via the
+// bridge. If no bridge is present, it's a no-op. Write failures are logged.
+func EmitStatusSafe(ctx context.Context, text string) error {
+	bridge := EventBridgeFromContext(ctx)
+	if bridge == nil {
+		return nil
+	}
+	if err := bridge.EmitStatus(ctx, text); err != nil {
+		logr.FromContextOrDiscard(ctx).Error(err, "A2A bridge write failed", "channel", "status")
+		return err
+	}
+	return nil
 }
 
 // EmitKeepaliveDotSafe is a nil-safe helper that emits a keepalive dot via
-// the bridge. If no bridge is present, it's a no-op.
+// the bridge. If no bridge is present, it's a no-op. Write failures are
+// logged (AU-2) so callers can use fire-and-forget semantics without silently
+// swallowing errors.
 func EmitKeepaliveDotSafe(ctx context.Context) error {
 	bridge := EventBridgeFromContext(ctx)
 	if bridge == nil {
 		return nil
 	}
-	return bridge.EmitKeepaliveDot(ctx)
+	if err := bridge.EmitKeepaliveDot(ctx); err != nil {
+		logr.FromContextOrDiscard(ctx).Error(err, "A2A bridge write failed", "channel", "keepalive")
+		return err
+	}
+	return nil
 }

@@ -22,6 +22,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/go-logr/logr"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	. "github.com/onsi/ginkgo/v2"
@@ -29,6 +30,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
 
@@ -326,7 +328,7 @@ var _ = Describe("bridgeEventsToA2A — #1326 BR-MCP-003 event bridge goroutine"
 
 			done := make(chan struct{})
 			go func() {
-				tools.BridgeEventsToA2A(context.Background(), eventCh)
+				tools.BridgeEventsToA2A(context.Background(), eventCh, tools.BridgeInactivityTimeout)
 				close(done)
 			}()
 
@@ -341,12 +343,261 @@ var _ = Describe("bridgeEventsToA2A — #1326 BR-MCP-003 event bridge goroutine"
 			ctx, cancel := context.WithCancel(context.Background())
 			done := make(chan struct{})
 			go func() {
-				tools.BridgeEventsToA2A(ctx, eventCh)
+				tools.BridgeEventsToA2A(ctx, eventCh, tools.BridgeInactivityTimeout)
 				close(done)
 			}()
 
 			cancel()
 			Eventually(done, 2*time.Second).Should(BeClosed())
+		})
+	})
+})
+
+var _ = Describe("A2A status channel routing — event type aware emission", func() {
+
+	Describe("UT-AF-STATUS-010: tool call start events route to status channel", func() {
+		It("should emit TaskStatusUpdateEvent with metadata.type=status for EventTypeToolCallStart", func() {
+			queue := &bridgeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-route-010", "", nil)
+
+			eventCh := make(chan ka.InvestigationEvent, 5)
+			eventCh <- ka.InvestigationEvent{
+				Type: ka.EventTypeToolCallStart,
+				Data: json.RawMessage(`{"tool":"kubectl_get"}`),
+			}
+			eventCh <- ka.InvestigationEvent{Type: ka.EventTypeComplete}
+			close(eventCh)
+
+			tools.BridgeEventsToA2A(ctx, eventCh, tools.BridgeInactivityTimeout)
+
+			events := queue.Events()
+			Expect(len(events)).To(BeNumerically(">=", 1))
+
+			var statusEvents []*a2a.TaskStatusUpdateEvent
+			for _, evt := range events {
+				if se, ok := evt.(*a2a.TaskStatusUpdateEvent); ok {
+					statusEvents = append(statusEvents, se)
+				}
+			}
+			Expect(statusEvents).NotTo(BeEmpty(),
+				"tool call start must produce TaskStatusUpdateEvent")
+
+			foundToolCall := false
+			for _, se := range statusEvents {
+				text := se.Status.Message.Parts[0].(a2a.TextPart).Text
+				if text == "Calling kubectl_get..." {
+					Expect(se.Metadata).To(HaveKeyWithValue("type", "status"))
+					foundToolCall = true
+					break
+				}
+			}
+			Expect(foundToolCall).To(BeTrue(),
+				"tool call start status event must contain formatted tool name")
+		})
+	})
+
+	Describe("UT-AF-STATUS-011: reasoning deltas route to reasoning metadata", func() {
+		It("should emit TaskStatusUpdateEvent with metadata.type=reasoning for EventTypeReasoningDelta", func() {
+			queue := &bridgeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-route-011", "", nil)
+
+			eventCh := make(chan ka.InvestigationEvent, 5)
+			eventCh <- ka.InvestigationEvent{
+				Type: ka.EventTypeReasoningDelta,
+				Data: json.RawMessage(`{"text":"Pod is in CrashLoopBackOff"}`),
+			}
+			eventCh <- ka.InvestigationEvent{Type: ka.EventTypeComplete}
+			close(eventCh)
+
+			tools.BridgeEventsToA2A(ctx, eventCh, tools.BridgeInactivityTimeout)
+
+			events := queue.Events()
+			var reasoningEvents []*a2a.TaskStatusUpdateEvent
+			for _, evt := range events {
+				se, ok := evt.(*a2a.TaskStatusUpdateEvent)
+				if !ok {
+					continue
+				}
+				if metaType, ok := se.Metadata["type"].(string); ok && metaType == "reasoning" {
+					reasoningEvents = append(reasoningEvents, se)
+				}
+			}
+			Expect(reasoningEvents).NotTo(BeEmpty(),
+				"reasoning deltas must produce TaskStatusUpdateEvent with metadata.type=reasoning")
+
+			text := reasoningEvents[0].Status.Message.Parts[0].(a2a.TextPart).Text
+			Expect(text).To(ContainSubstring("Pod is in CrashLoopBackOff"))
+			Expect(reasoningEvents[0].Metadata).To(HaveKeyWithValue("type", "reasoning"))
+		})
+	})
+
+	Describe("UT-AF-STATUS-012: token deltas route to reasoning metadata", func() {
+		It("should emit TaskStatusUpdateEvent with metadata.type=reasoning for EventTypeTokenDelta", func() {
+			queue := &bridgeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-route-012", "", nil)
+
+			eventCh := make(chan ka.InvestigationEvent, 5)
+			eventCh <- ka.InvestigationEvent{
+				Type: ka.EventTypeTokenDelta,
+				Data: json.RawMessage(`{"delta":"The root cause"}`),
+			}
+			eventCh <- ka.InvestigationEvent{Type: ka.EventTypeComplete}
+			close(eventCh)
+
+			tools.BridgeEventsToA2A(ctx, eventCh, tools.BridgeInactivityTimeout)
+
+			events := queue.Events()
+			var reasoningEvents []*a2a.TaskStatusUpdateEvent
+			for _, evt := range events {
+				se, ok := evt.(*a2a.TaskStatusUpdateEvent)
+				if !ok {
+					continue
+				}
+				if metaType, ok := se.Metadata["type"].(string); ok && metaType == "reasoning" {
+					reasoningEvents = append(reasoningEvents, se)
+				}
+			}
+			Expect(reasoningEvents).NotTo(BeEmpty(),
+				"token deltas must produce TaskStatusUpdateEvent with metadata.type=reasoning")
+
+			text := reasoningEvents[0].Status.Message.Parts[0].(a2a.TextPart).Text
+			Expect(text).To(ContainSubstring("The root cause"))
+			Expect(reasoningEvents[0].Metadata).To(HaveKeyWithValue("type", "reasoning"))
+		})
+	})
+
+	Describe("UT-AF-STATUS-013: complete event routes to status channel", func() {
+		It("should emit TaskStatusUpdateEvent with metadata.type=status for EventTypeComplete", func() {
+			queue := &bridgeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-route-013", "", nil)
+
+			eventCh := make(chan ka.InvestigationEvent, 5)
+			eventCh <- ka.InvestigationEvent{Type: ka.EventTypeComplete}
+			close(eventCh)
+
+			tools.BridgeEventsToA2A(ctx, eventCh, tools.BridgeInactivityTimeout)
+
+			events := queue.Events()
+			var statusEvents []*a2a.TaskStatusUpdateEvent
+			for _, evt := range events {
+				if se, ok := evt.(*a2a.TaskStatusUpdateEvent); ok {
+					statusEvents = append(statusEvents, se)
+				}
+			}
+			Expect(statusEvents).NotTo(BeEmpty(),
+				"complete event must produce TaskStatusUpdateEvent")
+
+			found := false
+			for _, se := range statusEvents {
+				text := se.Status.Message.Parts[0].(a2a.TextPart).Text
+				if text == "Investigation complete." {
+					Expect(se.Metadata).To(HaveKeyWithValue("type", "status"))
+					found = true
+					break
+				}
+			}
+			Expect(found).To(BeTrue())
+		})
+	})
+
+	Describe("UT-AF-STATUS-014: mixed event stream separates metadata types correctly", func() {
+		It("should route each event type to the correct metadata.type", func() {
+			queue := &bridgeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-route-014", "", nil)
+
+			eventCh := make(chan ka.InvestigationEvent, 10)
+			eventCh <- ka.InvestigationEvent{
+				Type: ka.EventTypeToolCallStart,
+				Data: json.RawMessage(`{"tool":"kubectl_get"}`),
+			}
+			eventCh <- ka.InvestigationEvent{
+				Type: ka.EventTypeReasoningDelta,
+				Data: json.RawMessage(`{"text":"Analyzing pods..."}`),
+			}
+			eventCh <- ka.InvestigationEvent{
+				Type: ka.EventTypeTokenDelta,
+				Data: json.RawMessage(`{"delta":"Root cause found"}`),
+			}
+			eventCh <- ka.InvestigationEvent{
+				Type: ka.EventTypeToolCallStart,
+				Data: json.RawMessage(`{"tool":"kubectl_describe"}`),
+			}
+			eventCh <- ka.InvestigationEvent{Type: ka.EventTypeComplete}
+			close(eventCh)
+
+			tools.BridgeEventsToA2A(ctx, eventCh, tools.BridgeInactivityTimeout)
+
+			events := queue.Events()
+			var reasoningCount, statusCount int
+			for _, evt := range events {
+				se, ok := evt.(*a2a.TaskStatusUpdateEvent)
+				if !ok {
+					continue
+				}
+				metaType, ok := se.Metadata["type"].(string)
+				if !ok {
+					continue
+				}
+				switch metaType {
+				case "reasoning":
+					reasoningCount++
+				case "status":
+					statusCount++
+				}
+			}
+
+			Expect(reasoningCount).To(Equal(2),
+				"reasoning_delta + token_delta = 2 reasoning metadata events")
+			Expect(statusCount).To(BeNumerically(">=", 2),
+				"tool_call_start x2 + complete = at least 3 status metadata events (2 tool calls + complete)")
+		})
+	})
+
+	Describe("UT-AF-STATUS-015: error events route to status channel (F1 AC-4)", func() {
+		It("should emit error text on TaskStatusUpdateEvent with metadata.type=status, not reasoning", func() {
+			queue := &bridgeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-route-015", "", nil)
+
+			eventCh := make(chan ka.InvestigationEvent, 5)
+			eventCh <- ka.InvestigationEvent{
+				Type: ka.EventTypeError,
+				Data: json.RawMessage(`{"error":"connection refused"}`),
+			}
+			eventCh <- ka.InvestigationEvent{Type: ka.EventTypeComplete}
+			close(eventCh)
+
+			tools.BridgeEventsToA2A(ctx, eventCh, tools.BridgeInactivityTimeout)
+
+			events := queue.Events()
+			for _, evt := range events {
+				se, ok := evt.(*a2a.TaskStatusUpdateEvent)
+				if !ok || se.Status.Message == nil {
+					continue
+				}
+				metaType, _ := se.Metadata["type"].(string)
+				if metaType != "reasoning" {
+					continue
+				}
+				text := se.Status.Message.Parts[0].(a2a.TextPart).Text
+				Expect(text).NotTo(ContainSubstring("Error:"),
+					"error text must NOT appear on reasoning metadata stream (AC-4 information flow violation)")
+			}
+
+			foundErrorOnStatus := false
+			for _, evt := range events {
+				se, ok := evt.(*a2a.TaskStatusUpdateEvent)
+				if !ok || se.Status.Message == nil {
+					continue
+				}
+				text := se.Status.Message.Parts[0].(a2a.TextPart).Text
+				if text != "" && text != "Investigation complete." {
+					Expect(se.Metadata).To(HaveKeyWithValue("type", "status"))
+					foundErrorOnStatus = true
+					break
+				}
+			}
+			Expect(foundErrorOnStatus).To(BeTrue(),
+				"error text must appear on status metadata stream as ephemeral message")
 		})
 	})
 })
@@ -398,15 +649,10 @@ var _ = Describe("AF-C1: Non-blocking bridge context detachment (#1356)", func()
 
 	Describe("UT-AF-1356-002: bridge goroutine exits on inactivity timeout", func() {
 		It("should exit when no events arrive within BridgeInactivityTimeout", func() {
-			// Override inactivity timeout for test speed
-			original := tools.BridgeInactivityTimeout
-			tools.BridgeInactivityTimeout = 200 * time.Millisecond
-			defer func() { tools.BridgeInactivityTimeout = original }()
-
 			eventCh := make(chan ka.InvestigationEvent, 5)
 			done := make(chan struct{})
 			go func() {
-				tools.BridgeEventsToA2A(context.Background(), eventCh)
+				tools.BridgeEventsToA2A(context.Background(), eventCh, 200*time.Millisecond)
 				close(done)
 			}()
 

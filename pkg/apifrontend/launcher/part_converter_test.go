@@ -12,6 +12,23 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 )
 
+func partConverterBridgeCtx() (*fakeQueue, context.Context) {
+	queue := &fakeQueue{}
+	ctx := launcher.WithEventBridge(context.Background(), queue, "task-pc-001", "ctx-pc-001", nil)
+	return queue, ctx
+}
+
+func statusEventTextAt(queue *fakeQueue, idx int) string {
+	Expect(queue.events).To(HaveLen(idx + 1))
+	evt, ok := queue.events[idx].(*a2a.TaskStatusUpdateEvent)
+	Expect(ok).To(BeTrue(), "expected TaskStatusUpdateEvent at index %d", idx)
+	Expect(evt.Metadata).NotTo(BeNil())
+	Expect(evt.Metadata["type"]).To(Equal("status"))
+	tp, ok := evt.Status.Message.Parts[0].(a2a.TextPart)
+	Expect(ok).To(BeTrue())
+	return tp.Text
+}
+
 var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 	var convert launcher.PartConverterFunc
 
@@ -31,14 +48,14 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 					},
 				},
 			}
-			result, err := convert(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result).NotTo(BeNil())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue(), "expected *a2a.TextPart")
-			Expect(tp.Text).To(ContainSubstring("Investigating"))
-			Expect(tp.Text).To(ContainSubstring("prod"))
-			Expect(tp.Text).To(ContainSubstring("api-server"))
+			Expect(result).To(BeNil(), "bridge path must not return artifact parts")
+			text := statusEventTextAt(queue, 0)
+			Expect(text).To(ContainSubstring("Investigating"))
+			Expect(text).To(ContainSubstring("prod"))
+			Expect(text).To(ContainSubstring("api-server"))
 		})
 
 		It("UT-AF-1189-101: kubernaut_investigate -> investigating status", func() {
@@ -48,12 +65,11 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 					Args: map[string]any{"session_id": "sess-42"},
 				},
 			}
-			result, err := convert(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result).NotTo(BeNil())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(ContainSubstring("Investigating"))
+			Expect(result).To(BeNil())
+			Expect(statusEventTextAt(queue, 0)).To(ContainSubstring("Investigating"))
 		})
 
 		It("UT-AF-1189-102: kubernaut_discover_workflows -> discovering status", func() {
@@ -63,11 +79,11 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 					Args: map[string]any{"rr_id": "rr-001"},
 				},
 			}
-			result, err := convert(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(ContainSubstring("Discovering available remediation workflows"))
+			Expect(result).To(BeNil())
+			Expect(statusEventTextAt(queue, 0)).To(ContainSubstring("Discovering available remediation workflows"))
 		})
 
 		It("UT-AF-1189-103: kubernaut_select_workflow -> selecting status with workflow_id", func() {
@@ -77,12 +93,13 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 					Args: map[string]any{"workflow_id": "wf-increase-memory"},
 				},
 			}
-			result, err := convert(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(ContainSubstring("Selecting remediation workflow"))
-			Expect(tp.Text).To(ContainSubstring("wf-increase-memory"))
+			Expect(result).To(BeNil())
+			text := statusEventTextAt(queue, 0)
+			Expect(text).To(ContainSubstring("Selecting remediation workflow"))
+			Expect(text).To(ContainSubstring("wf-increase-memory"))
 		})
 
 		It("UT-AF-1189-104: kubernaut_watch -> watching status", func() {
@@ -92,11 +109,11 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 					Args: map[string]any{"rr_id": "rr-disk-001"},
 				},
 			}
-			result, err := convert(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(ContainSubstring("Watching remediation progress"))
+			Expect(result).To(BeNil())
+			Expect(statusEventTextAt(queue, 0)).To(ContainSubstring("Watching remediation progress"))
 		})
 
 		It("UT-AF-1189-106: unknown tool -> generic fallback", func() {
@@ -106,11 +123,11 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 					Args: map[string]any{},
 				},
 			}
-			result, err := convert(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal("...\n\n"))
+			Expect(result).To(BeNil())
+			Expect(statusEventTextAt(queue, 0)).To(Equal("...\n\n"))
 		})
 
 		It("UT-AF-1189-107: FunctionCall with nil Args -> no panic, status without context", func() {
@@ -120,12 +137,13 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 					Args: nil,
 				},
 			}
-			result, err := convert(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(ContainSubstring("Watching remediation progress"))
-			Expect(tp.Text).NotTo(ContainSubstring("<nil>"))
+			Expect(result).To(BeNil())
+			text := statusEventTextAt(queue, 0)
+			Expect(text).To(ContainSubstring("Watching remediation progress"))
+			Expect(text).NotTo(ContainSubstring("<nil>"))
 		})
 
 		It("UT-AF-1189-108: FunctionCall with malformed Args -> no panic, status without context", func() {
@@ -137,11 +155,11 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 					},
 				},
 			}
-			result, err := convert(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(ContainSubstring("Investigating"))
+			Expect(result).To(BeNil())
+			Expect(statusEventTextAt(queue, 0)).To(ContainSubstring("Investigating"))
 		})
 
 		It("UT-AF-1189-109: kubectl_list -> listing cluster resources", func() {
@@ -151,11 +169,11 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 					Args: map[string]any{"namespace": "production"},
 				},
 			}
-			result, err := convert(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(ContainSubstring("Listing cluster resources"))
+			Expect(result).To(BeNil())
+			Expect(statusEventTextAt(queue, 0)).To(ContainSubstring("Listing cluster resources"))
 		})
 
 		It("UT-AF-1189-110: kubectl_list_events -> fetching cluster events", func() {
@@ -165,11 +183,11 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 					Args: map[string]any{"namespace": "kube-system"},
 				},
 			}
-			result, err := convert(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(ContainSubstring("Fetching cluster events"))
+			Expect(result).To(BeNil())
+			Expect(statusEventTextAt(queue, 0)).To(ContainSubstring("Fetching cluster events"))
 		})
 
 		It("UT-AF-1189-116: kubernaut_check_existing_remediation -> checking for existing remediation", func() {
@@ -179,11 +197,11 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 					Args: map[string]any{"namespace": "prod", "kind": "Deployment", "name": "api"},
 				},
 			}
-			result, err := convert(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(ContainSubstring("Checking for existing remediation"))
+			Expect(result).To(BeNil())
+			Expect(statusEventTextAt(queue, 0)).To(ContainSubstring("Checking for existing remediation"))
 		})
 	})
 
@@ -198,13 +216,13 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 					},
 				},
 			}
-			result, err := convert(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result).NotTo(BeNil())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(ContainSubstring("Root cause: PostgreSQL uses emptyDir"))
-			Expect(tp.Text).NotTo(ContainSubstring(`"summary"`))
+			Expect(result).To(BeNil())
+			text := statusEventTextAt(queue, 0)
+			Expect(text).To(ContainSubstring("Root cause: PostgreSQL uses emptyDir"))
+			Expect(text).NotTo(ContainSubstring(`"summary"`))
 		})
 
 		It("UT-AF-1189-112: kubernaut_investigate response with unknown structure -> fallback", func() {
@@ -214,12 +232,11 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 					Response: map[string]any{"unexpected_field": 42},
 				},
 			}
-			result, err := convert(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result).NotTo(BeNil())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(ContainSubstring("Investigation completed"))
+			Expect(result).To(BeNil())
+			Expect(statusEventTextAt(queue, 0)).To(ContainSubstring("Investigation completed"))
 		})
 
 		It("UT-AF-1189-113: kubernaut_discover_workflows response with workflows array -> listing", func() {
@@ -234,12 +251,13 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 					},
 				},
 			}
-			result, err := convert(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(ContainSubstring("increase-memory"))
-			Expect(tp.Text).To(ContainSubstring("restart-pod"))
+			Expect(result).To(BeNil())
+			text := statusEventTextAt(queue, 0)
+			Expect(text).To(ContainSubstring("increase-memory"))
+			Expect(text).To(ContainSubstring("restart-pod"))
 		})
 
 		It("UT-AF-1189-115: non-key tool response -> nil (dropped)", func() {
@@ -249,9 +267,11 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 					Response: map[string]any{"remediations": []any{}},
 				},
 			}
-			result, err := convert(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
+			Expect(queue.events).To(BeEmpty(), "dropped responses must not emit bridge events")
 		})
 
 		It("UT-AF-1189-117: kubernaut_select_workflow response with status and message -> summary", func() {
@@ -264,12 +284,13 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 					},
 				},
 			}
-			result, err := convert(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(ContainSubstring("selected"))
-			Expect(tp.Text).To(ContainSubstring("Workflow increase-memory-limit selected for execution"))
+			Expect(result).To(BeNil())
+			text := statusEventTextAt(queue, 0)
+			Expect(text).To(ContainSubstring("selected"))
+			Expect(text).To(ContainSubstring("Workflow increase-memory-limit selected for execution"))
 		})
 
 		It("UT-AF-1189-118: kubernaut_watch response with phase transition -> status", func() {
@@ -284,11 +305,11 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 					},
 				},
 			}
-			result, err := convert(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(ContainSubstring("Executing"))
+			Expect(result).To(BeNil())
+			Expect(statusEventTextAt(queue, 0)).To(ContainSubstring("Executing"))
 		})
 
 		It("UT-AF-1189-119: FunctionResponse with nil Response map -> fallback text, no panic", func() {
@@ -298,12 +319,11 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 					Response: nil,
 				},
 			}
-			result, err := convert(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result).NotTo(BeNil())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(ContainSubstring("Investigation completed"))
+			Expect(result).To(BeNil())
+			Expect(statusEventTextAt(queue, 0)).To(ContainSubstring("Investigation completed"))
 		})
 
 		It("UT-AF-1189-120: kubernaut_investigate response with session_id -> started summary", func() {
@@ -316,25 +336,27 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 					},
 				},
 			}
-			result, err := convert(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(ContainSubstring("Investigation started"))
-			Expect(tp.Text).To(ContainSubstring("sess-abc-123"))
+			Expect(result).To(BeNil())
+			text := statusEventTextAt(queue, 0)
+			Expect(text).To(ContainSubstring("Investigation started"))
+			Expect(text).To(ContainSubstring("sess-abc-123"))
 		})
 	})
 
 	Describe("Text passthrough", func() {
-		It("UT-AF-1189-130: LLM reasoning text -> passed through with trailing paragraph break", func() {
+		It("UT-AF-1189-130: LLM reasoning text -> returned as artifact TextPart with trailing paragraph break", func() {
 			reasoning := "Node shows DiskPressure, emptyDir usage at 72%. The PostgreSQL StatefulSet is consuming excessive disk."
 			part := &genai.Part{Text: reasoning}
-			result, err := convert(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal(reasoning + "\n\n"),
-				"LLM text must get trailing paragraph break so consecutive chunks are readable (#1301)")
+			tp, ok := result.(a2a.TextPart)
+			Expect(ok).To(BeTrue(), "LLM text must be returned as artifact TextPart")
+			Expect(tp.Text).To(Equal(reasoning + "\n\n"))
+			Expect(queue.events).To(BeEmpty(), "LLM text must NOT emit status events")
 		})
 
 		It("UT-AF-1189-131: Text part with Thought=true -> activity indicator, not raw thought", func() {
@@ -342,20 +364,21 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 				Text:    "I should check the node resource utilization next.",
 				Thought: true,
 			}
-			result, err := convert(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal("Analyzing...\n\n"))
+			Expect(result).To(BeNil())
+			Expect(statusEventTextAt(queue, 0)).To(Equal("Analyzing...\n\n"))
 		})
 
 		It("UT-AF-1189-132: empty text part -> passed through (not dropped)", func() {
 			part := &genai.Part{Text: ""}
 			result, err := convert(context.Background(), nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
+			tp, ok := result.(a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(BeEmpty())
+			Expect(tp.Text).To(BeEmpty(),
+				"fallback without bridge must return empty TextPart, not drop the part")
 		})
 	})
 
@@ -378,12 +401,13 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 					Args: map[string]any{"namespace": largeValue},
 				},
 			}
-			result, err := convert(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(ContainSubstring("Investigating"))
-			Expect(len(tp.Text)).To(BeNumerically("<", 1024), "status text should be bounded")
+			Expect(result).To(BeNil())
+			text := statusEventTextAt(queue, 0)
+			Expect(text).To(ContainSubstring("Investigating"))
+			Expect(len(text)).To(BeNumerically("<", 1024), "status text should be bounded")
 		})
 
 		It("UT-AF-1189-151: FunctionResponse with 100KB Response -> summary truncated", func() {
@@ -396,11 +420,11 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 					},
 				},
 			}
-			result, err := convert(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(len(tp.Text)).To(BeNumerically("<", 2048), "summary should be bounded")
+			Expect(result).To(BeNil())
+			Expect(len(statusEventTextAt(queue, 0))).To(BeNumerically("<", 2048), "summary should be bounded")
 		})
 
 		It("UT-AF-1189-152: FunctionCall with special chars in tool name -> generic fallback", func() {
@@ -410,11 +434,11 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 					Args: map[string]any{},
 				},
 			}
-			result, err := convert(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal("...\n\n"))
+			Expect(result).To(BeNil())
+			Expect(statusEventTextAt(queue, 0)).To(Equal("...\n\n"))
 		})
 	})
 
@@ -432,11 +456,11 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 					Response: map[string]any{"status": "pending"},
 				},
 			}
-			result, err := convert(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal("Investigation completed.\n\n"))
+			Expect(result).To(BeNil())
+			Expect(statusEventTextAt(queue, 0)).To(Equal("Investigation completed.\n\n"))
 		})
 
 		It("UT-AF-1189-155: kubernaut_select_workflow response with message only -> message text", func() {
@@ -446,11 +470,11 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 					Response: map[string]any{"message": "Workflow selected for execution"},
 				},
 			}
-			result, err := convert(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal("Workflow selected for execution\n\n"))
+			Expect(result).To(BeNil())
+			Expect(statusEventTextAt(queue, 0)).To(Equal("Workflow selected for execution\n\n"))
 		})
 
 		It("UT-AF-1189-156: kubernaut_select_workflow response with status only -> formatted status", func() {
@@ -460,11 +484,11 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 					Response: map[string]any{"status": "queued"},
 				},
 			}
-			result, err := convert(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal("Workflow queued.\n\n"))
+			Expect(result).To(BeNil())
+			Expect(statusEventTextAt(queue, 0)).To(Equal("Workflow queued.\n\n"))
 		})
 
 		It("UT-AF-1189-157: kubernaut_select_workflow response with empty fields -> generic fallback", func() {
@@ -474,11 +498,11 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 					Response: map[string]any{"other": "data"},
 				},
 			}
-			result, err := convert(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal("Workflow selection completed.\n\n"))
+			Expect(result).To(BeNil())
+			Expect(statusEventTextAt(queue, 0)).To(Equal("Workflow selection completed.\n\n"))
 		})
 
 		It("UT-AF-1189-158: kubernaut_watch response with phase only -> phase text", func() {
@@ -493,11 +517,11 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 					},
 				},
 			}
-			result, err := convert(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal("Remediation completed (final phase: Executing)\n\n"))
+			Expect(result).To(BeNil())
+			Expect(statusEventTextAt(queue, 0)).To(Equal("Remediation completed (final phase: Executing)\n\n"))
 		})
 
 		It("UT-AF-1189-159: kubernaut_watch response with status only -> status text", func() {
@@ -507,11 +531,11 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 					Response: map[string]any{"status": "completed"},
 				},
 			}
-			result, err := convert(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal("Remediation completed.\n\n"))
+			Expect(result).To(BeNil())
+			Expect(statusEventTextAt(queue, 0)).To(Equal("Remediation completed.\n\n"))
 		})
 
 		It("UT-AF-1189-160: kubernaut_watch response with empty fields -> generic fallback", func() {
@@ -521,11 +545,11 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 					Response: map[string]any{"other": "data"},
 				},
 			}
-			result, err := convert(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal("Watching remediation...\n\n"))
+			Expect(result).To(BeNil())
+			Expect(statusEventTextAt(queue, 0)).To(Equal("Watching remediation...\n\n"))
 		})
 
 		It("UT-AF-1189-161: kubernaut_remediate response without rr_id -> human-friendly fallback", func() {
@@ -535,12 +559,13 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 					Response: map[string]any{"already_exists": true},
 				},
 			}
-			result, err := convert(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(ContainSubstring("already exists"))
-			Expect(tp.Text).NotTo(ContainSubstring(`"`), "should not contain JSON syntax")
+			Expect(result).To(BeNil())
+			text := statusEventTextAt(queue, 0)
+			Expect(text).To(ContainSubstring("already exists"))
+			Expect(text).NotTo(ContainSubstring(`"`), "should not contain JSON syntax")
 		})
 	})
 
@@ -555,13 +580,14 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 					},
 				},
 			}
-			result, err := convert(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(ContainSubstring("Remediation request created"))
-			Expect(tp.Text).NotTo(ContainSubstring(`"rr_id"`))
-			Expect(tp.Text).NotTo(ContainSubstring(`"message"`))
+			Expect(result).To(BeNil())
+			text := statusEventTextAt(queue, 0)
+			Expect(text).To(ContainSubstring("Remediation request created"))
+			Expect(text).NotTo(ContainSubstring(`"rr_id"`))
+			Expect(text).NotTo(ContainSubstring(`"message"`))
 		})
 
 		It("UT-AF-1282-OUT-002: kubernaut_remediate existing RR → human-friendly, no JSON syntax", func() {
@@ -574,13 +600,14 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 					},
 				},
 			}
-			result, err := convert(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(ContainSubstring("already exists"))
-			Expect(tp.Text).To(ContainSubstring("rr-existing"))
-			Expect(tp.Text).NotTo(ContainSubstring(`{`))
+			Expect(result).To(BeNil())
+			text := statusEventTextAt(queue, 0)
+			Expect(text).To(ContainSubstring("already exists"))
+			Expect(text).To(ContainSubstring("rr-existing"))
+			Expect(text).NotTo(ContainSubstring(`{`))
 		})
 
 		It("UT-AF-1282-OUT-003: non-key tool response → nil (payload suppressed)", func() {
@@ -590,9 +617,11 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 					Response: map[string]any{"data": "large payload"},
 				},
 			}
-			result, err := convert(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil(), "non-key tool payloads must be suppressed")
+			Expect(queue.events).To(BeEmpty())
 		})
 	})
 
@@ -609,11 +638,12 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 					Response: map[string]any{"summary": multiByteStr},
 				},
 			}
-			result, err := convert(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal(multiByteStr+"\n\n"), "rune-safe truncation should preserve string when rune count is within limit")
+			Expect(result).To(BeNil())
+			Expect(statusEventTextAt(queue, 0)).To(Equal(multiByteStr+"\n\n"),
+				"rune-safe truncation should preserve string when rune count is within limit")
 		})
 
 		It("UT-AF-1189-163: multi-byte string over both byte and rune limits -> rune-safe truncation", func() {
@@ -626,12 +656,15 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 					Response: map[string]any{"summary": multiByteStr},
 				},
 			}
-			result, err := convert(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(HaveSuffix("...\n\n"))
-			Expect(len([]rune(tp.Text))).To(BeNumerically("<=", 1026))
+			Expect(result).To(BeNil())
+			text := statusEventTextAt(queue, 0)
+			Expect(text).To(HaveSuffix("..."),
+				"bridge sanitization truncates long status text after converter summarization")
+			Expect(len([]rune(text))).To(BeNumerically("<=", 515),
+				"bridge sanitization bounds status text to maxBridgeTextLen")
 		})
 	})
 
@@ -649,12 +682,13 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 					},
 				},
 			}
-			result, err := convert(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(ContainSubstring("valid-workflow"))
-			Expect(tp.Text).NotTo(ContainSubstring("not-a-map"))
+			Expect(result).To(BeNil())
+			text := statusEventTextAt(queue, 0)
+			Expect(text).To(ContainSubstring("valid-workflow"))
+			Expect(text).NotTo(ContainSubstring("not-a-map"))
 		})
 
 		It("UT-AF-1189-165: workflow entry with empty name -> skipped", func() {
@@ -669,11 +703,11 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 					},
 				},
 			}
-			result, err := convert(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(ContainSubstring("restart-pod"))
+			Expect(result).To(BeNil())
+			Expect(statusEventTextAt(queue, 0)).To(ContainSubstring("restart-pod"))
 		})
 
 		It("UT-AF-1189-169: workflows key is not an array -> no workflows discovered", func() {
@@ -685,11 +719,11 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 					},
 				},
 			}
-			result, err := convert(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal("No workflows discovered.\n\n"))
+			Expect(result).To(BeNil())
+			Expect(statusEventTextAt(queue, 0)).To(Equal("No workflows discovered.\n\n"))
 		})
 
 		It("UT-AF-1189-166: workflow entry with zero confidence -> name without percentage", func() {
@@ -703,12 +737,13 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 					},
 				},
 			}
-			result, err := convert(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(ContainSubstring("- scale-up"))
-			Expect(tp.Text).NotTo(ContainSubstring("confidence"))
+			Expect(result).To(BeNil())
+			text := statusEventTextAt(queue, 0)
+			Expect(text).To(ContainSubstring("- scale-up"))
+			Expect(text).NotTo(ContainSubstring("confidence"))
 		})
 	})
 
@@ -718,25 +753,68 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 				Text:    "Let me analyze the disk pressure situation. The node shows high emptyDir usage which is likely caused by the PostgreSQL StatefulSet writing temporary data.",
 				Thought: true,
 			}
-			result, err := convert(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal("Analyzing...\n\n"))
+			Expect(result).To(BeNil())
+			Expect(statusEventTextAt(queue, 0)).To(Equal("Analyzing...\n\n"))
 		})
 
-		It("UT-AF-1189-168: Thought=false with text -> text gets trailing paragraph break", func() {
+		It("UT-AF-1189-168: Thought=false with text -> returned as artifact TextPart with trailing paragraph break", func() {
 			text := "Based on the analysis, the root cause is disk pressure from emptyDir."
 			part := &genai.Part{
 				Text:    text,
 				Thought: false,
 			}
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			tp, ok := result.(a2a.TextPart)
+			Expect(ok).To(BeTrue(), "LLM text must be returned as artifact TextPart")
+			Expect(tp.Text).To(Equal(text + "\n\n"))
+			Expect(queue.events).To(BeEmpty(), "LLM text must NOT emit status events")
+		})
+	})
+
+	Describe("Fallback without EventBridge", func() {
+		It("UT-AF-1189-105: FunctionCall returns TextPart artifact when no bridge in context", func() {
+			part := &genai.Part{
+				FunctionCall: &genai.FunctionCall{
+					Name: "kubernaut_investigate",
+					Args: map[string]any{"namespace": "prod", "name": "api"},
+				},
+			}
 			result, err := convert(context.Background(), nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
+			tp, ok := result.(a2a.TextPart)
 			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal(text + "\n\n"),
-				"LLM text must get trailing paragraph break so consecutive chunks are readable (#1301)")
+			Expect(tp.Text).To(ContainSubstring("Investigating"))
+		})
+
+		It("UT-AF-1189-114: FunctionResponse returns TextPart artifact when no bridge in context", func() {
+			part := &genai.Part{
+				FunctionResponse: &genai.FunctionResponse{
+					Name: "kubernaut_investigate",
+					Response: map[string]any{
+						"summary": "Disk pressure detected on node-1",
+					},
+				},
+			}
+			result, err := convert(context.Background(), nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			tp, ok := result.(a2a.TextPart)
+			Expect(ok).To(BeTrue())
+			Expect(tp.Text).To(ContainSubstring("Disk pressure detected"))
+		})
+
+		It("UT-AF-1189-133: Text returns TextPart artifact when no bridge in context", func() {
+			text := "Root cause is memory pressure."
+			part := &genai.Part{Text: text}
+			result, err := convert(context.Background(), nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			tp, ok := result.(a2a.TextPart)
+			Expect(ok).To(BeTrue())
+			Expect(tp.Text).To(Equal(text + "\n\n"))
 		})
 	})
 })
@@ -755,21 +833,21 @@ var _ = Describe("Status message line breaks (#1301)", func() {
 				Args: map[string]any{"namespace": "demo"},
 			},
 		}
-		result, err := convert(context.Background(), nil, part)
+		queue, ctx := partConverterBridgeCtx()
+		result, err := convert(ctx, nil, part)
 		Expect(err).NotTo(HaveOccurred())
-		tp, ok := result.(*a2a.TextPart)
-		Expect(ok).To(BeTrue())
-		Expect(tp.Text).To(HaveSuffix("\n\n"),
+		Expect(result).To(BeNil())
+		Expect(statusEventTextAt(queue, 0)).To(HaveSuffix("\n\n"),
 			"status messages must end with \\n\\n so concatenated SSE frames are readable (#1301)")
 	})
 
 	It("UT-AF-1301-002: Thought activity indicator ends with paragraph break", func() {
 		part := &genai.Part{Text: "thinking...", Thought: true}
-		result, err := convert(context.Background(), nil, part)
+		queue, ctx := partConverterBridgeCtx()
+		result, err := convert(ctx, nil, part)
 		Expect(err).NotTo(HaveOccurred())
-		tp, ok := result.(*a2a.TextPart)
-		Expect(ok).To(BeTrue())
-		Expect(tp.Text).To(HaveSuffix("\n\n"),
+		Expect(result).To(BeNil())
+		Expect(statusEventTextAt(queue, 0)).To(HaveSuffix("\n\n"),
 			"thought indicator must end with \\n\\n for readability (#1301)")
 	})
 
@@ -780,23 +858,25 @@ var _ = Describe("Status message line breaks (#1301)", func() {
 				Response: map[string]any{"rr_id": "rr-test-001"},
 			},
 		}
-		result, err := convert(context.Background(), nil, part)
+		queue, ctx := partConverterBridgeCtx()
+		result, err := convert(ctx, nil, part)
 		Expect(err).NotTo(HaveOccurred())
-		tp, ok := result.(*a2a.TextPart)
-		Expect(ok).To(BeTrue())
-		Expect(tp.Text).To(HaveSuffix("\n\n"),
+		Expect(result).To(BeNil())
+		Expect(statusEventTextAt(queue, 0)).To(HaveSuffix("\n\n"),
 			"tool response summaries must end with \\n\\n for readability (#1301)")
 	})
 
 	It("UT-AF-1301-004: LLM text already ending with paragraph break gets no triple newline", func() {
 		text := "The root cause is disk pressure.\n\n"
 		part := &genai.Part{Text: text}
-		result, err := convert(context.Background(), nil, part)
+		queue, ctx := partConverterBridgeCtx()
+		result, err := convert(ctx, nil, part)
 		Expect(err).NotTo(HaveOccurred())
-		tp, ok := result.(*a2a.TextPart)
-		Expect(ok).To(BeTrue())
+		tp, ok := result.(a2a.TextPart)
+		Expect(ok).To(BeTrue(), "LLM text must be returned as artifact TextPart")
 		Expect(tp.Text).To(Equal(text),
 			"text already ending with \\n\\n must NOT get additional newlines")
+		Expect(queue.events).To(BeEmpty(), "LLM text must NOT emit status events")
 	})
 
 	It("UT-AF-1301-005: consecutive LLM text chunks are separated by paragraph break", func() {
@@ -804,19 +884,22 @@ var _ = Describe("Status message line breaks (#1301)", func() {
 			"I'll start by checking what's running in the demo-crashloop namespace.",
 			"Let me investigate the affected deployment.",
 		}
+		queue := &fakeQueue{}
+		ctx := launcher.WithEventBridge(context.Background(), queue, "task-pc-001", "ctx-pc-001", nil)
 		var results []string
 		for _, chunk := range chunks {
 			part := &genai.Part{Text: chunk}
-			result, err := convert(context.Background(), nil, part)
+			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
+			tp, ok := result.(a2a.TextPart)
+			Expect(ok).To(BeTrue(), "LLM text must be returned as artifact TextPart")
 			results = append(results, tp.Text)
 		}
 		concatenated := strings.Join(results, "")
 		Expect(concatenated).To(ContainSubstring("namespace.\n\n"),
 			"LLM text chunks must get trailing paragraph break appended "+
 				"so consecutive chunks render as separate paragraphs (#1301)")
+		Expect(queue.events).To(BeEmpty(), "LLM text must NOT emit status events")
 	})
 })
 
@@ -861,13 +944,12 @@ var _ = Describe("Tool error surfacing (#1302)", func() {
 				Response: map[string]any{"error": "cannot resolve GVK for kind \"pods\""},
 			},
 		}
-		result, err := convert(context.Background(), nil, part)
+		queue, ctx := partConverterBridgeCtx()
+		result, err := convert(ctx, nil, part)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(result).NotTo(BeNil(),
-			"tool errors must be surfaced on the SSE stream, not silently dropped (#1302)")
-		tp, ok := result.(*a2a.TextPart)
-		Expect(ok).To(BeTrue())
-		Expect(tp.Text).To(ContainSubstring("cannot resolve GVK"))
+		Expect(result).To(BeNil(),
+			"bridge path must not return artifact parts; errors go via status channel (#1302)")
+		Expect(statusEventTextAt(queue, 0)).To(ContainSubstring("cannot resolve GVK"))
 	})
 
 	It("UT-AF-1302-002: non-key tool success response still nil (unchanged)", func() {
@@ -877,10 +959,12 @@ var _ = Describe("Tool error surfacing (#1302)", func() {
 				Response: map[string]any{"data": "large payload"},
 			},
 		}
-		result, err := convert(context.Background(), nil, part)
+		queue, ctx := partConverterBridgeCtx()
+		result, err := convert(ctx, nil, part)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result).To(BeNil(),
 			"non-key tool success payloads must still be suppressed")
+		Expect(queue.events).To(BeEmpty())
 	})
 
 	It("UT-AF-1302-004: non-key tool with status=error JSON pattern emits error text", func() {
@@ -893,13 +977,12 @@ var _ = Describe("Tool error surfacing (#1302)", func() {
 				},
 			},
 		}
-		result, err := convert(context.Background(), nil, part)
+		queue, ctx := partConverterBridgeCtx()
+		result, err := convert(ctx, nil, part)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(result).NotTo(BeNil(),
-			"MCP tool errors with status=error must be surfaced on SSE stream (#1302)")
-		tp, ok := result.(*a2a.TextPart)
-		Expect(ok).To(BeTrue())
-		Expect(tp.Text).To(ContainSubstring("not_driving"),
+		Expect(result).To(BeNil(),
+			"MCP tool errors with status=error must be surfaced via bridge (#1302)")
+		Expect(statusEventTextAt(queue, 0)).To(ContainSubstring("not_driving"),
 			"error message from MCP tool must be visible to the user")
 	})
 
@@ -911,12 +994,11 @@ var _ = Describe("Tool error surfacing (#1302)", func() {
 				Response: map[string]any{"error": "connection refused"},
 			},
 		}
-		result, err := nonStreamConvert(context.Background(), nil, part)
+		queue, ctx := partConverterBridgeCtx()
+		result, err := nonStreamConvert(ctx, nil, part)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(result).NotTo(BeNil(), "tool errors must always be surfaced (#1302)")
-		tp, ok := result.(*a2a.TextPart)
-		Expect(ok).To(BeTrue())
-		Expect(tp.Text).To(ContainSubstring("connection refused"),
+		Expect(result).To(BeNil(), "tool errors must always be surfaced via bridge (#1302)")
+		Expect(statusEventTextAt(queue, 0)).To(ContainSubstring("connection refused"),
 			"even key tool errors must be surfaced so the user knows what failed (#1302)")
 	})
 })
@@ -939,9 +1021,11 @@ var _ = Describe("GenAIPartConverter — Streaming Mode (TP-1258)", func() {
 					},
 				},
 			}
-			result, err := convertStreaming(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convertStreaming(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil(), "kubernaut_investigate FunctionResponse should be suppressed in streaming mode")
+			Expect(queue.events).To(BeEmpty(), "suppressed investigate response must not emit bridge events")
 		})
 
 		It("UT-AF-1258-031: discover_workflows FunctionResponse -> brief summary", func() {
@@ -956,12 +1040,11 @@ var _ = Describe("GenAIPartConverter — Streaming Mode (TP-1258)", func() {
 					},
 				},
 			}
-			result, err := convertStreaming(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convertStreaming(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result).NotTo(BeNil())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(ContainSubstring("workflow"))
+			Expect(result).To(BeNil())
+			Expect(statusEventTextAt(queue, 0)).To(ContainSubstring("workflow"))
 		})
 
 		It("UT-AF-1258-032: select_workflow FunctionResponse -> brief status", func() {
@@ -974,12 +1057,11 @@ var _ = Describe("GenAIPartConverter — Streaming Mode (TP-1258)", func() {
 					},
 				},
 			}
-			result, err := convertStreaming(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convertStreaming(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result).NotTo(BeNil())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).NotTo(BeEmpty())
+			Expect(result).To(BeNil())
+			Expect(statusEventTextAt(queue, 0)).NotTo(BeEmpty())
 		})
 
 		It("UT-AF-1258-033: kubernaut_remediate FunctionResponse -> brief status", func() {
@@ -993,12 +1075,11 @@ var _ = Describe("GenAIPartConverter — Streaming Mode (TP-1258)", func() {
 					},
 				},
 			}
-			result, err := convertStreaming(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convertStreaming(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result).NotTo(BeNil())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).NotTo(BeEmpty())
+			Expect(result).To(BeNil())
+			Expect(statusEventTextAt(queue, 0)).NotTo(BeEmpty())
 		})
 
 		It("UT-AF-1258-034: kubectl_* FunctionResponse -> nil (unchanged behavior)", func() {
@@ -1008,9 +1089,11 @@ var _ = Describe("GenAIPartConverter — Streaming Mode (TP-1258)", func() {
 					Response: map[string]any{"output": "NAME READY STATUS\npod-1 1/1 Running"},
 				},
 			}
-			result, err := convertStreaming(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convertStreaming(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil(), "kubectl FunctionResponse should still be nil in streaming mode")
+			Expect(queue.events).To(BeEmpty())
 		})
 
 		It("UT-AF-1258-035: FunctionCall parts unchanged in streaming mode", func() {
@@ -1020,12 +1103,11 @@ var _ = Describe("GenAIPartConverter — Streaming Mode (TP-1258)", func() {
 					Args: map[string]any{"session_id": "sess-42"},
 				},
 			}
-			result, err := convertStreaming(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convertStreaming(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result).NotTo(BeNil())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(ContainSubstring("Investigating"))
+			Expect(result).To(BeNil())
+			Expect(statusEventTextAt(queue, 0)).To(ContainSubstring("Investigating"))
 		})
 
 		It("UT-AF-1258-036: Thought parts unchanged in streaming mode", func() {
@@ -1033,11 +1115,11 @@ var _ = Describe("GenAIPartConverter — Streaming Mode (TP-1258)", func() {
 				Text:    "Analyzing the disk usage patterns...",
 				Thought: true,
 			}
-			result, err := convertStreaming(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convertStreaming(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(Equal("Analyzing...\n\n"))
+			Expect(result).To(BeNil())
+			Expect(statusEventTextAt(queue, 0)).To(Equal("Analyzing...\n\n"))
 		})
 	})
 
@@ -1053,12 +1135,11 @@ var _ = Describe("GenAIPartConverter — Streaming Mode (TP-1258)", func() {
 					},
 				},
 			}
-			result, err := convertStreaming(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convertStreaming(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result).NotTo(BeNil())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(ContainSubstring("Creating remediation request"))
+			Expect(result).To(BeNil())
+			Expect(statusEventTextAt(queue, 0)).To(ContainSubstring("Creating remediation request"))
 		})
 
 		It("UT-AF-1332-031: kubernaut_remediate response with new RR -> summary", func() {
@@ -1071,12 +1152,11 @@ var _ = Describe("GenAIPartConverter — Streaming Mode (TP-1258)", func() {
 					},
 				},
 			}
-			result, err := convertStreaming(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convertStreaming(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result).NotTo(BeNil())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(ContainSubstring("Remediation request created"))
+			Expect(result).To(BeNil())
+			Expect(statusEventTextAt(queue, 0)).To(ContainSubstring("Remediation request created"))
 		})
 
 		It("UT-AF-1332-032: kubernaut_remediate response with already_exists -> summary", func() {
@@ -1089,12 +1169,11 @@ var _ = Describe("GenAIPartConverter — Streaming Mode (TP-1258)", func() {
 					},
 				},
 			}
-			result, err := convertStreaming(context.Background(), nil, part)
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convertStreaming(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result).NotTo(BeNil())
-			tp, ok := result.(*a2a.TextPart)
-			Expect(ok).To(BeTrue())
-			Expect(tp.Text).To(ContainSubstring("already exists"))
+			Expect(result).To(BeNil())
+			Expect(statusEventTextAt(queue, 0)).To(ContainSubstring("already exists"))
 		})
 	})
 })
