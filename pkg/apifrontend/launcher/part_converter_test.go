@@ -29,17 +29,6 @@ func statusEventTextAt(queue *fakeQueue, idx int) string {
 	return tp.Text
 }
 
-func outputEventTextAt(queue *fakeQueue, idx int) string {
-	Expect(queue.events).To(HaveLen(idx + 1))
-	evt, ok := queue.events[idx].(*a2a.TaskStatusUpdateEvent)
-	Expect(ok).To(BeTrue(), "expected TaskStatusUpdateEvent at index %d", idx)
-	Expect(evt.Metadata).NotTo(BeNil())
-	Expect(evt.Metadata["type"]).To(Equal("output"))
-	tp, ok := evt.Status.Message.Parts[0].(*a2a.TextPart)
-	Expect(ok).To(BeTrue())
-	return tp.Text
-}
-
 var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 	var convert launcher.PartConverterFunc
 
