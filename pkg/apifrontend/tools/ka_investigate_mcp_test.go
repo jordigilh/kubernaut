@@ -22,6 +22,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/go-logr/logr"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	. "github.com/onsi/ginkgo/v2"
@@ -29,6 +30,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
 
@@ -347,6 +349,184 @@ var _ = Describe("bridgeEventsToA2A — #1326 BR-MCP-003 event bridge goroutine"
 
 			cancel()
 			Eventually(done, 2*time.Second).Should(BeClosed())
+		})
+	})
+})
+
+var _ = Describe("A2A status channel routing — event type aware emission", func() {
+
+	Describe("UT-AF-STATUS-010: tool call start events route to status channel", func() {
+		It("should emit TaskStatusUpdateEvent for EventTypeToolCallStart", func() {
+			queue := &bridgeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-route-010", "", nil)
+
+			eventCh := make(chan ka.InvestigationEvent, 5)
+			eventCh <- ka.InvestigationEvent{
+				Type: ka.EventTypeToolCallStart,
+				Data: json.RawMessage(`{"tool":"kubectl_get"}`),
+			}
+			eventCh <- ka.InvestigationEvent{Type: ka.EventTypeComplete}
+			close(eventCh)
+
+			tools.BridgeEventsToA2A(ctx, eventCh)
+
+			events := queue.Events()
+			Expect(len(events)).To(BeNumerically(">=", 1))
+
+			var statusEvents []*a2a.TaskStatusUpdateEvent
+			for _, evt := range events {
+				if se, ok := evt.(*a2a.TaskStatusUpdateEvent); ok {
+					statusEvents = append(statusEvents, se)
+				}
+			}
+			Expect(statusEvents).NotTo(BeEmpty(),
+				"tool call start must produce TaskStatusUpdateEvent")
+
+			foundToolCall := false
+			for _, se := range statusEvents {
+				text := se.Status.Message.Parts[0].(*a2a.TextPart).Text
+				if text == "Calling kubectl_get..." {
+					foundToolCall = true
+					break
+				}
+			}
+			Expect(foundToolCall).To(BeTrue(),
+				"tool call start status event must contain formatted tool name")
+		})
+	})
+
+	Describe("UT-AF-STATUS-011: reasoning deltas route to artifact channel", func() {
+		It("should emit TaskArtifactUpdateEvent for EventTypeReasoningDelta", func() {
+			queue := &bridgeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-route-011", "", nil)
+
+			eventCh := make(chan ka.InvestigationEvent, 5)
+			eventCh <- ka.InvestigationEvent{
+				Type: ka.EventTypeReasoningDelta,
+				Data: json.RawMessage(`{"text":"Pod is in CrashLoopBackOff"}`),
+			}
+			eventCh <- ka.InvestigationEvent{Type: ka.EventTypeComplete}
+			close(eventCh)
+
+			tools.BridgeEventsToA2A(ctx, eventCh)
+
+			events := queue.Events()
+			var artifactEvents []*a2a.TaskArtifactUpdateEvent
+			for _, evt := range events {
+				if ae, ok := evt.(*a2a.TaskArtifactUpdateEvent); ok {
+					artifactEvents = append(artifactEvents, ae)
+				}
+			}
+			Expect(artifactEvents).NotTo(BeEmpty(),
+				"reasoning deltas must produce TaskArtifactUpdateEvent")
+
+			text := artifactEvents[0].Artifact.Parts[0].(*a2a.TextPart).Text
+			Expect(text).To(ContainSubstring("Pod is in CrashLoopBackOff"))
+		})
+	})
+
+	Describe("UT-AF-STATUS-012: token deltas route to artifact channel", func() {
+		It("should emit TaskArtifactUpdateEvent for EventTypeTokenDelta", func() {
+			queue := &bridgeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-route-012", "", nil)
+
+			eventCh := make(chan ka.InvestigationEvent, 5)
+			eventCh <- ka.InvestigationEvent{
+				Type: ka.EventTypeTokenDelta,
+				Data: json.RawMessage(`{"delta":"The root cause"}`),
+			}
+			eventCh <- ka.InvestigationEvent{Type: ka.EventTypeComplete}
+			close(eventCh)
+
+			tools.BridgeEventsToA2A(ctx, eventCh)
+
+			events := queue.Events()
+			var artifactEvents []*a2a.TaskArtifactUpdateEvent
+			for _, evt := range events {
+				if ae, ok := evt.(*a2a.TaskArtifactUpdateEvent); ok {
+					artifactEvents = append(artifactEvents, ae)
+				}
+			}
+			Expect(artifactEvents).NotTo(BeEmpty(),
+				"token deltas must produce TaskArtifactUpdateEvent")
+		})
+	})
+
+	Describe("UT-AF-STATUS-013: complete event routes to status channel", func() {
+		It("should emit TaskStatusUpdateEvent for EventTypeComplete", func() {
+			queue := &bridgeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-route-013", "", nil)
+
+			eventCh := make(chan ka.InvestigationEvent, 5)
+			eventCh <- ka.InvestigationEvent{Type: ka.EventTypeComplete}
+			close(eventCh)
+
+			tools.BridgeEventsToA2A(ctx, eventCh)
+
+			events := queue.Events()
+			var statusEvents []*a2a.TaskStatusUpdateEvent
+			for _, evt := range events {
+				if se, ok := evt.(*a2a.TaskStatusUpdateEvent); ok {
+					statusEvents = append(statusEvents, se)
+				}
+			}
+			Expect(statusEvents).NotTo(BeEmpty(),
+				"complete event must produce TaskStatusUpdateEvent")
+
+			found := false
+			for _, se := range statusEvents {
+				text := se.Status.Message.Parts[0].(*a2a.TextPart).Text
+				if text == "Investigation complete." {
+					found = true
+					break
+				}
+			}
+			Expect(found).To(BeTrue())
+		})
+	})
+
+	Describe("UT-AF-STATUS-014: mixed event stream separates channels correctly", func() {
+		It("should route each event type to the correct A2A channel", func() {
+			queue := &bridgeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-route-014", "", nil)
+
+			eventCh := make(chan ka.InvestigationEvent, 10)
+			eventCh <- ka.InvestigationEvent{
+				Type: ka.EventTypeToolCallStart,
+				Data: json.RawMessage(`{"tool":"kubectl_get"}`),
+			}
+			eventCh <- ka.InvestigationEvent{
+				Type: ka.EventTypeReasoningDelta,
+				Data: json.RawMessage(`{"text":"Analyzing pods..."}`),
+			}
+			eventCh <- ka.InvestigationEvent{
+				Type: ka.EventTypeTokenDelta,
+				Data: json.RawMessage(`{"delta":"Root cause found"}`),
+			}
+			eventCh <- ka.InvestigationEvent{
+				Type: ka.EventTypeToolCallStart,
+				Data: json.RawMessage(`{"tool":"kubectl_describe"}`),
+			}
+			eventCh <- ka.InvestigationEvent{Type: ka.EventTypeComplete}
+			close(eventCh)
+
+			tools.BridgeEventsToA2A(ctx, eventCh)
+
+			events := queue.Events()
+			var artifactCount, statusCount int
+			for _, evt := range events {
+				switch evt.(type) {
+				case *a2a.TaskArtifactUpdateEvent:
+					artifactCount++
+				case *a2a.TaskStatusUpdateEvent:
+					statusCount++
+				}
+			}
+
+			Expect(artifactCount).To(Equal(2),
+				"reasoning_delta + token_delta = 2 artifact events")
+			Expect(statusCount).To(BeNumerically(">=", 2),
+				"tool_call_start x2 + complete = at least 3 status events (2 tool calls + complete)")
 		})
 	})
 })

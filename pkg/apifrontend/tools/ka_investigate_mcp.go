@@ -106,7 +106,7 @@ func HandleInvestigationMCP(ctx context.Context, mcpClient ka.MCPClient, k8sClie
 //
 // When blocking is true, the function waits for the investigation to complete
 // (or ctx cancellation) and returns the collected summary in InvestigateMCPResult.
-// Events are still streamed to the A2A SSE via EmitReasoningSafe during the wait.
+// Events are streamed to the A2A SSE via the EventBridge during the wait.
 // After the investigation completes, if pool is non-nil the MCP session is
 // handed off to the pool (keyed by rr_id + username) so that subsequent tool
 // calls (discover_workflows, select_workflow) reuse the same connection and
@@ -182,7 +182,7 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 		joinMode := "start"
 		if isAutonomousInvestigation(ctx, k8sClient, namespace, args.RRID) {
 			joinMode = "takeover"
-			_ = launcher.EmitReasoningSafe(ctx, "Autonomous investigation detected, signaling takeover...")
+			_ = launcher.EmitStatusSafe(ctx, "Autonomous investigation detected, signaling takeover...")
 		}
 
 		username := ""
@@ -221,7 +221,7 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 		})
 		checkCancel()
 		if awaitErr == nil && awaitResult.Status == "ready" {
-			_ = launcher.EmitReasoningSafe(ctx, "Investigation session ready, connecting to KA...")
+			_ = launcher.EmitStatusSafe(ctx, "Investigation session ready, connecting to KA...")
 		}
 
 		// Wait for the IS CRD phase to become Active — AA sets this after
@@ -234,7 +234,7 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 		}
 		isCtx, isCancel := context.WithTimeout(ctx, isPhaseTimeout)
 		if AwaitISPhaseActive(isCtx, k8sClient, namespace, args.RRID) {
-			_ = launcher.EmitReasoningSafe(ctx, "Interactive session acknowledged by AA, starting investigation...")
+			_ = launcher.EmitStatusSafe(ctx, "Interactive session acknowledged by AA, starting investigation...")
 		}
 		isCancel()
 	}
@@ -285,7 +285,7 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 				"session_id", result.SessionID,
 				"namespace", namespace,
 			)
-			_ = launcher.EmitReasoningSafe(ctx, fmt.Sprintf("Warning: IS CRD creation failed (%v), investigation continues", hookErr))
+			_ = launcher.EmitStatusSafe(ctx, fmt.Sprintf("Warning: IS CRD creation failed (%v), investigation continues", hookErr))
 		}
 	}
 
@@ -406,10 +406,7 @@ func BridgeEventsToA2A(ctx context.Context, events <-chan ka.InvestigationEvent)
 			}
 			inactivity.Reset(BridgeInactivityTimeout)
 
-			text := FormatEventForUser(evt)
-			if text != "" {
-				_ = launcher.EmitReasoningSafe(ctx, text)
-			}
+			emitEventToA2A(ctx, evt, FormatEventForUser(evt))
 			if evt.Type == ka.EventTypeComplete || evt.Type == ka.EventTypeCancelled {
 				return
 			}
@@ -453,10 +450,7 @@ func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.Investigat
 				return summary.String()
 			}
 			inactivity.Reset(inactivityTimeout)
-			text := FormatEventForUser(evt)
-			if text != "" {
-				_ = launcher.EmitReasoningSafe(ctx, text)
-			}
+			emitEventToA2A(ctx, evt, FormatEventForUser(evt))
 			switch evt.Type {
 			case ka.EventTypeReasoningDelta:
 				if chunk := extractJSONField(evt.Data, "text"); chunk != "" {
@@ -498,6 +492,34 @@ func FormatEventForUser(evt ka.InvestigationEvent) string {
 		return "Investigation complete."
 	default:
 		return ""
+	}
+}
+
+// isStatusEvent returns true for event types that should be routed to the
+// A2A status channel (TaskStatusUpdateEvent) rather than the artifact channel.
+// LLM-generated content (reasoning_delta, token_delta) belongs on the artifact
+// stream. Orchestration updates (tool_call_start, complete, cancelled) and
+// errors belong on the status channel.
+func isStatusEvent(evtType string) bool {
+	switch evtType {
+	case ka.EventTypeToolCallStart, ka.EventTypeComplete, ka.EventTypeCancelled:
+		return true
+	default:
+		return false
+	}
+}
+
+// emitEventToA2A routes a formatted event text to the correct A2A channel
+// based on the event type: status channel for orchestration events, artifact
+// channel for LLM content.
+func emitEventToA2A(ctx context.Context, evt ka.InvestigationEvent, text string) {
+	if text == "" {
+		return
+	}
+	if isStatusEvent(evt.Type) {
+		_ = launcher.EmitStatusSafe(ctx, text)
+	} else {
+		_ = launcher.EmitReasoningSafe(ctx, text)
 	}
 }
 

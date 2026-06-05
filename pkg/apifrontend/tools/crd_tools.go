@@ -735,7 +735,7 @@ func HandleWatch(ctx context.Context, client dynamic.Interface, args WatchArgs) 
 		lastRARDecision string
 	)
 
-	_ = launcher.EmitReasoningSafe(ctx, "Watching remediation progress...\n")
+	_ = launcher.EmitStatusSafe(ctx, "Watching remediation progress...\n")
 
 	for {
 		select {
@@ -765,7 +765,7 @@ func HandleWatch(ctx context.Context, client dynamic.Interface, args WatchArgs) 
 				Phase:     phase,
 				Message:   msg,
 			})
-			_ = launcher.EmitReasoningSafe(ctx, fmt.Sprintf("Remediation phase: %s\n", phase))
+			_ = launcher.EmitStatusSafe(ctx, fmt.Sprintf("Remediation phase: %s\n", phase))
 			if IsTerminalPhase(phase) {
 				outcome, _, _ := unstructured.NestedString(obj.Object, "status", "outcome")
 				statusMsg, _, _ := unstructured.NestedString(obj.Object, "status", "message")
@@ -823,7 +823,7 @@ func HandleWatch(ctx context.Context, client dynamic.Interface, args WatchArgs) 
 				Phase:     decision,
 				Message:   rarMsg,
 			})
-			_ = launcher.EmitReasoningSafe(ctx, rarMsg+"\n")
+			_ = launcher.EmitStatusSafe(ctx, rarMsg+"\n")
 		}
 	}
 }
