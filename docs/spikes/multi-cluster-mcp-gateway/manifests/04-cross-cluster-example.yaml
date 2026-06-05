@@ -1,0 +1,75 @@
+# Cross-cluster MCP server registration example.
+# When the OCP MCP server runs in a DIFFERENT cluster than the MCP Gateway,
+# use Istio ServiceEntry + DestinationRule to route traffic.
+#
+# This example registers a workload cluster B that is external to the
+# management cluster where the MCP Gateway runs.
+---
+# ServiceEntry: registers the external MCP server endpoint in Istio's service registry
+apiVersion: networking.istio.io/v1beta1
+kind: ServiceEntry
+metadata:
+  name: cluster-b-mcp-server
+  namespace: kubernaut-mcp
+spec:
+  hosts:
+    - cluster-b-mcp.workload.example.com
+  ports:
+    - number: 443
+      name: https
+      protocol: HTTPS
+  resolution: DNS
+  location: MESH_EXTERNAL
+---
+# DestinationRule: TLS settings for the external connection
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: cluster-b-mcp-server
+  namespace: kubernaut-mcp
+spec:
+  host: cluster-b-mcp.workload.example.com
+  trafficPolicy:
+    tls:
+      mode: SIMPLE
+---
+# HTTPRoute: routes through the gateway to the external MCP server
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: workload-cluster-b-route
+  namespace: kubernaut-mcp
+spec:
+  parentRefs:
+    - name: mcp-gateway
+      namespace: gateway-system
+  hostnames:
+    - "cluster-b.mcp.local"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /mcp
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            hostname: cluster-b-mcp.workload.example.com
+      backendRefs:
+        - name: cluster-b-mcp.workload.example.com
+          kind: Hostname
+          group: networking.istio.io
+          port: 443
+---
+# MCPServerRegistration for the external cluster
+apiVersion: mcp.kuadrant.io/v1alpha1
+kind: MCPServerRegistration
+metadata:
+  name: cluster-b
+  namespace: kubernaut-mcp
+spec:
+  prefix: "cluster_b_"
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: workload-cluster-b-route
+    namespace: kubernaut-mcp

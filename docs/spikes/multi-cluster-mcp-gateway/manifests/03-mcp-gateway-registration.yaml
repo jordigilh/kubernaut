@@ -1,0 +1,51 @@
+# MCP Gateway registration for an OCP MCP Server instance.
+# This is applied in the management cluster where the MCP Gateway runs.
+# One HTTPRoute + MCPServerRegistration per workload cluster.
+#
+# Prerequisites:
+#   - MCP Gateway installed (via Helm or OLM)
+#   - MCPGatewayExtension created and Ready
+#   - OCP MCP server accessible (in-cluster service or external via ServiceEntry)
+---
+# HTTPRoute: routes MCP traffic from the gateway to the workload cluster's MCP server.
+# For in-cluster (same cluster) MCP servers, use a standard backendRef.
+# For cross-cluster MCP servers, use Istio ServiceEntry + Hostname backendRef.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: workload-cluster-a-route
+  namespace: kubernaut-mcp
+spec:
+  parentRefs:
+    - name: mcp-gateway
+      namespace: gateway-system
+  hostnames:
+    # Must match the gateway's wildcard listener (e.g., *.mcp.local)
+    - "cluster-a.mcp.local"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: ocp-mcp-server  # Service name of the MCP server
+          port: 9090
+---
+# MCPServerRegistration: registers the MCP server with the gateway.
+# The gateway discovers tools from this server and federates them
+# with a prefix to avoid name collisions across clusters.
+apiVersion: mcp.kuadrant.io/v1alpha1
+kind: MCPServerRegistration
+metadata:
+  name: cluster-a
+  namespace: kubernaut-mcp
+spec:
+  # Prefix all tools from this cluster. KA uses the prefix to route
+  # tool calls to the correct cluster.
+  # e.g., cluster_a_pods_list, cluster_a_resources_get
+  prefix: "cluster_a_"
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: workload-cluster-a-route
+    namespace: kubernaut-mcp

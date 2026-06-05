@@ -2,8 +2,8 @@
 
 **Status**: Proposed
 **Decision Date**: 2026-06-03
-**Version**: 1.2
-**Confidence**: 94%
+**Version**: 1.5
+**Confidence**: 95%
 **Deciders**: Architecture Team
 **Applies To**: API Frontend, Signal Processing, Remediation Orchestrator, AI Analysis, Kubernaut Agent, Workflow Execution
 
@@ -18,6 +18,7 @@
 
 **Related ADRs**:
 - ADR-063: ServiceNow Signal Integration Architecture
+- ADR-064: Multi-Cluster Investigation via MCP Gateway
 - ADR-041: LLM Prompt Response Contract
 
 ---
@@ -26,6 +27,9 @@
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 1.5 | 2026-06-05 | Architecture Team | Part E updated: CMDB scope limited to clusters and nodes only. CMDB CI names map directly to Prometheus `cluster` and `node` labels (no mapping table needed). Added E2a (CMDB CI scope and label mapping). Confidence raised to 95%. |
+| 1.4 | 2026-06-05 | Architecture Team | Part E revised: v1.5 MVP uses Thanos for multi-cluster resource status (existing Prometheus tools, zero new code). MCP Gateway deferred to v1.6+ (spike validated, prototype ready). Added KA RBAC requirement for Thanos access (`cluster-monitoring-view`). |
+| 1.3 | 2026-06-04 | Architecture Team | Added Part E: Multi-Cluster Investigation via MCP Gateway. KA becomes an MCP client to the MCP Gateway (Kuadrant/Connectivity Link), which federates per-cluster OCP MCP servers. Added CMDB CI -> cluster prefix mapping via ClusterResolver. Spike validated: OCP MCP server covers 82% of KA's investigation tools, MCP Bridge prototype working (14 tests). |
 | 1.2 | 2026-06-04 | Architecture Team | B2 clarified: KA injects lightweight list (numbers + titles) of related tickets, LLM uses ServiceNow tools to drill into details (mirrors K8s tool-driven investigation pattern). Workflow selection is mandatory unless ticket is already closed. |
 | 1.1 | 2026-06-04 | Architecture Team | Dropped Part D (EM verification) and B6 (KA verification endpoint). ServiceNow is its own audit trail -- WFE success/failure is sufficient. Removed C3 (ProviderData to EA) since EM no longer consumes it. Simplified scope and file count. |
 | 1.0 | 2026-06-03 | Architecture Team | Initial design: pipeline plumbing, KA enrichment/prompt/tools, RO guards, EM contract-driven verification, ProviderData schema |
@@ -51,7 +55,7 @@ Customers need to investigate ServiceNow tickets that reference cloud objects (c
 - `TargetType` and `ProviderData` are dropped at the AA boundary (9-hop plumbing gap)
 - KA enrichment assumes K8s API access (would attempt `Pod/<ticket-number>` lookup without gating)
 - Scope is customer evaluation readiness (POC/demo), not full production GA
-- CMDB CIs are at cluster/node level only (no application-level CIs)
+- CMDB CIs are limited to two types: `cmdb_ci_kubernetes_cluster` (cluster) and `cmdb_ci_linux_server` (node). No application-level CIs. CI names map directly to Prometheus `cluster` and `node` labels (no mapping table required).
 
 ---
 
@@ -298,6 +302,162 @@ Serves as KA investigation context. If EM verification is introduced in the futu
 
 ---
 
+## Part E: Multi-Cluster Resource Status Investigation
+
+### E1. Problem
+
+ServiceNow tickets reference resources across multiple workload clusters. Kubernaut runs in a management cluster. KA needs to assess the health of resources in those workload clusters to determine if the issue is explained by maintenance or requires escalation.
+
+### E2. CMDB CI Scope and Label Mapping
+
+Kubernaut v1.5 supports exactly **two CMDB CI types** for ServiceNow signals:
+
+| CMDB CI Class | Prometheus Label | Mapping |
+|---------------|-----------------|---------|
+| `cmdb_ci_kubernetes_cluster` | `cluster="<ci_name>"` | Direct 1:1 -- CMDB CI `name` = Prometheus `cluster` label |
+| `cmdb_ci_linux_server` (node) | `node="<ci_name>"`, `cluster="<parent_ci_name>"` | Node CI `name` = Prometheus `node` label. Parent cluster CI from CMDB relationship provides `cluster` label. |
+
+**No mapping table or ConfigMap needed.** CMDB CI names are infrastructure identifiers set during provisioning -- the same names appear as Prometheus labels because both originate from the platform provisioner. KA extracts labels directly from `ProviderData`:
+
+```json
+{
+  "cmdb_ci": {
+    "sys_id": "abc123",
+    "name": "prod-east-1-node-03",
+    "sys_class_name": "cmdb_ci_linux_server"
+  },
+  "cmdb_ci_parent": {
+    "sys_id": "def456",
+    "name": "prod-east-1",
+    "sys_class_name": "cmdb_ci_kubernetes_cluster"
+  }
+}
+```
+
+From this, KA derives:
+- `cluster = "prod-east-1"` (from `cmdb_ci_parent.name` or `cmdb_ci.name` if the CI is a cluster)
+- `node = "prod-east-1-node-03"` (from `cmdb_ci.name`, only when CI is a node)
+
+### E3. v1.5 MVP Approach: Thanos Metrics
+
+For v1.5, KA uses **Thanos Querier** as the cross-cluster observability layer. Thanos already aggregates Prometheus metrics from all workload clusters, including the `cluster` label that identifies the source.
+
+```
+Workload Cluster A                    Workload Cluster B
+├── Prometheus ──sidecar──┐            ├── Prometheus ──sidecar──┐
+│   (metrics + alerts)    │            │   (metrics + alerts)    │
+└─────────────────────────┘            └─────────────────────────┘
+                          │                                      │
+                          └──────────┬───────────────────────────┘
+                                     ▼
+                          Management Cluster
+                          ├── Thanos Querier ◄── KA (existing Prometheus tools)
+                          │   (aggregated view)
+                          └── KA uses PromQL with cluster= and node= labels
+```
+
+**Why this works**:
+- KA already has 8 Prometheus tools (`execute_prometheus_instant_query`, `execute_prometheus_range_query`, `get_metric_names`, `get_label_values`, `get_all_labels`, `get_metric_metadata`, `list_prometheus_rules`, `get_series`)
+- These tools talk to any Prometheus-compatible API -- Thanos Querier is fully compatible
+- **Zero new code required** -- just point `cfg.Integrations.Tools.Prometheus.URL` at Thanos Querier
+- Cross-cluster queries use the `cluster` and `node` labels derived directly from CMDB CI names
+
+**PromQL patterns for cluster-level investigation** (CI = `cmdb_ci_kubernetes_cluster`):
+
+| Investigation Need | PromQL Query |
+|-------------------|-------------|
+| All nodes healthy? | `kube_node_status_condition{cluster="<cluster>", condition="Ready", status="true"}` |
+| Any nodes not ready? | `kube_node_status_condition{cluster="<cluster>", condition="Ready", status="true"} == 0` |
+| Active alerts on cluster? | `ALERTS{cluster="<cluster>", alertstate="firing"}` |
+| Cluster metrics flowing? | `up{cluster="<cluster>"}` |
+| Pod pressure across cluster? | `sum(kube_pod_status_phase{cluster="<cluster>", phase=~"Pending\|Unknown\|Failed"})` |
+
+**PromQL patterns for node-level investigation** (CI = `cmdb_ci_linux_server`):
+
+| Investigation Need | PromQL Query |
+|-------------------|-------------|
+| Is the node ready? | `kube_node_status_condition{cluster="<cluster>", node="<node>", condition="Ready", status="true"}` |
+| Node CPU pressure? | `1 - avg(rate(node_cpu_seconds_total{cluster="<cluster>", node="<node>", mode="idle"}[5m]))` |
+| Node memory available? | `node_memory_MemAvailable_bytes{cluster="<cluster>", node="<node>"}` |
+| Node disk pressure? | `kube_node_status_condition{cluster="<cluster>", node="<node>", condition="DiskPressure", status="true"}` |
+| Pods on this node? | `kube_pod_info{cluster="<cluster>", node="<node>"}` |
+| Alerts on this node? | `ALERTS{cluster="<cluster>", node="<node>", alertstate="firing"}` |
+
+### E4. RBAC Requirement
+
+KA's ServiceAccount must be granted access to Thanos Querier. On OpenShift, this requires the `cluster-monitoring-view` ClusterRole:
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubernaut-agent-thanos-access
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-monitoring-view
+subjects:
+  - kind: ServiceAccount
+    name: kubernaut-agent
+    namespace: kubernaut-system
+```
+
+The existing Prometheus client already supports SA bearer token auth via `auth.NewAuthTransport` + TLS via `sharedtls.NewTLSTransport`. The Thanos Querier endpoint on OCP is typically `https://thanos-querier.openshift-monitoring.svc:9091`.
+
+### E5. KA Prompt Integration
+
+The ServiceNow investigation prompt (`incident_investigation.tmpl`) must guide the LLM to use PromQL with labels derived directly from `ProviderData` CMDB CI names:
+
+**For cluster-level CIs:**
+```
+The resource under investigation is Kubernetes cluster "{{.ClusterName}}".
+Use execute_prometheus_instant_query and execute_prometheus_range_query
+with cluster="{{.ClusterName}}" in your PromQL queries to assess the
+cluster's health, check for active alerts, and identify node-level issues.
+```
+
+**For node-level CIs:**
+```
+The resource under investigation is node "{{.NodeName}}" in cluster "{{.ClusterName}}".
+Use execute_prometheus_instant_query and execute_prometheus_range_query
+with cluster="{{.ClusterName}}" and node="{{.NodeName}}" in your PromQL
+queries to assess the node's health (Ready condition, CPU, memory, disk
+pressure) and check for active alerts.
+```
+
+### E6. What Thanos Covers vs. Doesn't
+
+| Capability | Thanos | Sufficient for MVP? |
+|-----------|--------|---------------------|
+| Resource health (up/down, CPU, memory) | Yes | Yes |
+| Active alerts cross-cluster | Yes (`ALERTS{}`) | Yes |
+| Node status (Ready, pressure) | Yes (`kube_node_*`) | Yes |
+| Pod phase, restarts | Yes (`kube_pod_*`) | Yes |
+| Pod specs, events, logs | No | Acceptable -- metrics + ServiceNow context is sufficient for triage |
+| Resource YAML/describe | No | Acceptable -- deferred to v1.6+ |
+
+### E7. v1.6+ Path: MCP Gateway
+
+For v1.6+, the MCP Gateway (Kuadrant/Connectivity Link) provides full K8s API access to remote clusters (events, logs, resource specs). The spike validated this architecture:
+- OCP MCP server covers 82% of KA's investigation tools
+- KA MCP client prototype working (`StreamableProvider` + `BridgeTool`, 14 tests passing)
+- Deployment manifests and routing strategy documented
+
+See `docs/spikes/multi-cluster-mcp-gateway/` for full spike reports and ADR-064 for the deferred architecture.
+
+### E8. Files Affected (v1.5)
+
+| File | Change |
+|------|--------|
+| Helm chart / deployment config | MODIFIED: Set `Prometheus.URL` to Thanos Querier endpoint |
+| RBAC manifests | MODIFIED: Grant `cluster-monitoring-view` to KA ServiceAccount |
+| `internal/kubernautagent/investigator/types.go` | MODIFIED: `ServiceNowPhaseToolMap` includes existing Prometheus tools |
+| `internal/kubernautagent/prompt/templates/incident_investigation.tmpl` | MODIFIED: Add cluster-label PromQL guidance for ServiceNow signals |
+
+No new Go code required for multi-cluster resource status in v1.5.
+
+---
+
 ## Consequences
 
 ### Positive Consequences
@@ -352,5 +512,5 @@ Serves as KA investigation context. If EM verification is introduced in the futu
 
 ---
 
-**Document Version**: 1.2
-**Last Updated**: 2026-06-04
+**Document Version**: 1.5
+**Last Updated**: 2026-06-05

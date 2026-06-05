@@ -1,0 +1,141 @@
+# OCP MCP Server deployment for a workload cluster.
+# Deploy one instance per workload cluster with a cluster-scoped read-only ServiceAccount.
+# The MCP server exposes K8s tools via HTTP/SSE transport.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mcp-viewer
+  namespace: kubernaut-mcp
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: mcp-viewer
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "services", "endpoints", "configmaps",
+                "secrets", "events", "namespaces", "nodes", "nodes/proxy",
+                "persistentvolumeclaims", "persistentvolumes",
+                "replicationcontrollers", "serviceaccounts", "resourcequotas",
+                "limitranges"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "daemonsets", "replicasets", "statefulsets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses", "networkpolicies"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses", "volumeattachments"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods", "nodes"]
+    verbs: ["get", "list"]
+  # CRD read access for kubernaut-specific resources
+  - apiGroups: ["apiextensions.k8s.io"]
+    resources: ["customresourcedefinitions"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: mcp-viewer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: mcp-viewer
+subjects:
+  - kind: ServiceAccount
+    name: mcp-viewer
+    namespace: kubernaut-mcp
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ocp-mcp-server
+  namespace: kubernaut-mcp
+  labels:
+    app.kubernetes.io/name: ocp-mcp-server
+    app.kubernetes.io/part-of: kubernaut
+    app.kubernetes.io/component: mcp-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ocp-mcp-server
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ocp-mcp-server
+        app.kubernetes.io/part-of: kubernaut
+    spec:
+      serviceAccountName: mcp-viewer
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: mcp-server
+          # Use the OCP variant for metrics/prometheus toolset
+          image: ghcr.io/openshift/openshift-mcp-server:latest
+          args:
+            - "--port=9090"
+            - "--read-only"
+            - "--stateless"
+            - "--toolsets=core,config"
+            - "--log-level=2"
+            - "--disable-multi-cluster"
+          ports:
+            - name: mcp
+              containerPort: 9090
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /mcp
+              port: 9090
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /mcp
+              port: 9090
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ocp-mcp-server
+  namespace: kubernaut-mcp
+  labels:
+    app.kubernetes.io/name: ocp-mcp-server
+    app.kubernetes.io/part-of: kubernaut
+spec:
+  selector:
+    app.kubernetes.io/name: ocp-mcp-server
+  ports:
+    - name: mcp
+      port: 9090
+      targetPort: mcp
+      protocol: TCP
+  type: ClusterIP
