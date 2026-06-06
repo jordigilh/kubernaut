@@ -9,6 +9,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/requestid"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
 
 // AgentSkill represents a skill in the agent card.
@@ -135,14 +136,18 @@ func WithAgentCardAudit(h http.Handler, auditor audit.Emitter) http.Handler {
 }
 
 // DefaultAgentSkills returns the agent skills corresponding to the MCP tools.
-func DefaultAgentSkills() []AgentSkill {
-	skills := make([]AgentSkill, len(mcpToolRegistry))
-	for i, t := range mcpToolRegistry {
-		skills[i] = AgentSkill{
+// When interactiveEnabled is false, session-dependent tools are excluded (#1366).
+func DefaultAgentSkills(interactiveEnabled bool) []AgentSkill {
+	skills := make([]AgentSkill, 0, len(mcpToolRegistry))
+	for _, t := range mcpToolRegistry {
+		if !interactiveEnabled && tools.SessionDependentTools[t.Name] {
+			continue
+		}
+		skills = append(skills, AgentSkill{
 			ID:          t.Name,
 			Name:        t.Name,
 			Description: t.Description,
-		}
+		})
 	}
 	return skills
 }

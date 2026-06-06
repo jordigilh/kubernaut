@@ -65,6 +65,7 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 				Metrics:            newBridgeMetrics(),
 				ToolTimeout:        5 * time.Second,
 				MaxConcurrentTools: 10,
+				InteractiveEnabled: true,
 			},
 		}
 
@@ -424,6 +425,7 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 					Metrics:            newBridgeMetrics(),
 					ToolTimeout:        5 * time.Second,
 					MaxConcurrentTools: 10,
+					InteractiveEnabled: true,
 				},
 			}
 
@@ -499,6 +501,7 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 					Metrics:            newBridgeMetrics(),
 					ToolTimeout:        5 * time.Second,
 					MaxConcurrentTools: 10,
+					InteractiveEnabled: true,
 				},
 			}
 
@@ -540,6 +543,7 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 					ToolTimeout:        5 * time.Second,
 					MaxConcurrentTools: 10,
 					SessionInitializer: recorder,
+					InteractiveEnabled: true,
 				},
 			}
 
@@ -599,6 +603,7 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 					Namespace:          "kubernaut-system",
 					ToolTimeout:        5 * time.Second,
 					MaxConcurrentTools: 10,
+					InteractiveEnabled: true,
 				},
 			}
 

@@ -125,7 +125,7 @@ var _ = Describe("Agent Card Handler", func() {
 			Name:    "kubernaut-apifrontend",
 			URL:     "https://kubernaut.example.com",
 			Version: "0.1.0",
-			Skills:  handler.DefaultAgentSkills(),
+			Skills:  handler.DefaultAgentSkills(true),
 		})
 		Expect(err).NotTo(HaveOccurred())
 
@@ -312,3 +312,30 @@ func (s *spyAuditor) Events() []*audit.Event {
 	copy(cp, s.events)
 	return cp
 }
+
+var _ = Describe("DefaultAgentSkills interactive filtering (#1366)", func() {
+
+	It("UT-AF-1366-020: DefaultAgentSkills(false) returns only stateless skills", func() {
+		skills := handler.DefaultAgentSkills(false)
+		Expect(skills).To(HaveLen(11), "only 11 stateless skills when interactive disabled")
+		for _, s := range skills {
+			Expect(s.ID).NotTo(BeElementOf(
+				"kubernaut_investigate",
+				"kubernaut_discover_workflows",
+				"kubernaut_select_workflow",
+				"kubernaut_present_decision",
+				"kubernaut_message",
+				"kubernaut_complete",
+				"kubernaut_cancel",
+				"kubernaut_status",
+				"kubernaut_reconnect",
+				"kubernaut_await_session",
+			), "session-dependent skill %q should be hidden when interactive disabled", s.ID)
+		}
+	})
+
+	It("UT-AF-1366-021: DefaultAgentSkills(true) returns all 21 skills", func() {
+		skills := handler.DefaultAgentSkills(true)
+		Expect(skills).To(HaveLen(21), "all 21 skills when interactive enabled")
+	})
+})

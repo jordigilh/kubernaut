@@ -30,6 +30,15 @@ type Config struct {
 	RBAC           RBACConfig           `yaml:"rbac"`
 	SeverityTriage SeverityTriageConfig `yaml:"severityTriage"`
 	Session        SessionConfig        `yaml:"session"`
+	Interactive    InteractiveConfig    `yaml:"interactive"`
+}
+
+// InteractiveConfig controls whether session-dependent MCP tools are registered.
+// When Enabled=false, tools that require a KA interactive session (e.g.
+// kubernaut_investigate, kubernaut_message) are hidden from MCP enumeration
+// and the A2A agent tool list (#1366).
+type InteractiveConfig struct {
+	Enabled bool `yaml:"enabled"`
 }
 
 // SessionConfig holds InvestigationSession CRD controller settings.
@@ -283,6 +292,9 @@ func DefaultConfig() *Config {
 		},
 		RBAC: RBACConfig{
 			SARCacheTTL: 30 * time.Second,
+		},
+		Interactive: InteractiveConfig{
+			Enabled: true,
 		},
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/httputil"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
 
 // MCPToolDef defines a tool to be registered with the MCP server.
@@ -34,6 +35,9 @@ type MCPConfig struct {
 	Bridge *MCPBridgeConfig
 	// SessionTimeout configures idle session auto-close duration.
 	SessionTimeout time.Duration
+	// InteractiveEnabled controls tool filtering in the stub path. When Bridge
+	// is non-nil, InteractiveEnabled is read from Bridge.InteractiveEnabled instead.
+	InteractiveEnabled bool
 }
 
 func (c MCPConfig) validate() error { //nolint:gocritic // hugeParam: value copy intentional for validation
@@ -70,7 +74,8 @@ func NewMCPHandler(cfg MCPConfig) (http.Handler, error) { //nolint:gocritic // h
 	if cfg.Bridge != nil {
 		RegisterTools(srv, cfg.Bridge)
 	} else {
-		registerStubTools(srv, cfg)
+		interactiveEnabled := cfg.InteractiveEnabled
+		registerStubTools(srv, cfg, interactiveEnabled)
 	}
 
 	opts := &mcp.StreamableHTTPOptions{}
@@ -109,13 +114,13 @@ func NewMCPHandler(cfg MCPConfig) (http.Handler, error) { //nolint:gocritic // h
 	return h, nil
 }
 
-func registerStubTools(srv *mcp.Server, cfg MCPConfig) { //nolint:gocritic // hugeParam: called once at startup
-	tools := cfg.Tools
-	if tools == nil {
-		tools = DefaultMCPTools()
+func registerStubTools(srv *mcp.Server, cfg MCPConfig, interactiveEnabled bool) { //nolint:gocritic // hugeParam: called once at startup
+	defs := cfg.Tools
+	if defs == nil {
+		defs = DefaultMCPTools(interactiveEnabled)
 	}
 
-	for _, t := range tools {
+	for _, t := range defs {
 		toolDef := &mcp.Tool{
 			Name:        t.Name,
 			Description: t.Description,
@@ -148,22 +153,26 @@ func registerStubTools(srv *mcp.Server, cfg MCPConfig) { //nolint:gocritic // hu
 	}
 }
 
-// DefaultMCPTools returns the 20 MCP tool definitions as stub descriptors.
+// DefaultMCPTools returns the MCP tool definitions as stub descriptors.
+// When interactiveEnabled is false, session-dependent tools are excluded (#1366).
 // When Bridge is configured, RegisterTools registers real handlers with
 // SDK-derived input schemas; these stubs serve only the fallback/dev path.
-func DefaultMCPTools() []MCPToolDef {
+func DefaultMCPTools(interactiveEnabled bool) []MCPToolDef {
 	objectSchema := map[string]any{
 		"type":       "object",
 		"properties": map[string]any{},
 	}
 
-	result := make([]MCPToolDef, len(mcpToolRegistry))
-	for i, t := range mcpToolRegistry {
-		result[i] = MCPToolDef{
+	result := make([]MCPToolDef, 0, len(mcpToolRegistry))
+	for _, t := range mcpToolRegistry {
+		if !interactiveEnabled && tools.SessionDependentTools[t.Name] {
+			continue
+		}
+		result = append(result, MCPToolDef{
 			Name:        t.Name,
 			Description: t.Description,
 			InputSchema: objectSchema,
-		}
+		})
 	}
 	return result
 }

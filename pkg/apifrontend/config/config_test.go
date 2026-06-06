@@ -1263,3 +1263,47 @@ auth:
 		Expect(cfg.Auth.IssuerURL).To(Equal("https://sso.example.com/realms/kubernaut"))
 	})
 })
+
+var _ = Describe("Interactive config (#1366)", func() {
+
+	It("UT-AF-1366-004: DefaultConfig sets interactive.enabled to true", func() {
+		cfg := config.DefaultConfig()
+		Expect(cfg.Interactive.Enabled).To(BeTrue(),
+			"interactive.enabled must default to true for backward compatibility")
+	})
+
+	It("UT-AF-1366-005: Load parses interactive.enabled from YAML", func() {
+		data := []byte(`
+server:
+  port: 8443
+  metricsPort: 9090
+  healthPort: 8081
+agent:
+  kaBaseURL: "http://localhost:8080"
+  kaMCPEndpoint: "http://localhost:8080/api/v1/mcp/"
+  dsBaseURL: "http://localhost:9090"
+interactive:
+  enabled: false
+`)
+		cfg, err := config.Load(data)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.Interactive.Enabled).To(BeFalse())
+	})
+
+	It("UT-AF-1366-006: Load without interactive section defaults to enabled=true", func() {
+		data := []byte(`
+server:
+  port: 8443
+  metricsPort: 9090
+  healthPort: 8081
+agent:
+  kaBaseURL: "http://localhost:8080"
+  kaMCPEndpoint: "http://localhost:8080/api/v1/mcp/"
+  dsBaseURL: "http://localhost:9090"
+`)
+		cfg, err := config.Load(data)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.Interactive.Enabled).To(BeTrue(),
+			"omitting interactive section should default to enabled=true")
+	})
+})

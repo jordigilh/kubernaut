@@ -63,6 +63,9 @@ type MCPBridgeConfig struct {
 	UserLimiter        *ratelimit.UserLimiter
 	SessionFinalizer    ISPhaseFinalizer
 	SessionInitializer  ISSessionInitializer
+	// InteractiveEnabled controls whether session-dependent tools are registered.
+	// When false, tools in tools.SessionDependentTools are skipped (#1366).
+	InteractiveEnabled bool
 }
 
 // MCPBridgeMetrics holds Prometheus collectors specific to MCP bridge operations.
@@ -99,6 +102,8 @@ func (c *MCPBridgeConfig) GetMaxConcurrentTools() int64 {
 }
 
 // RegisterTools registers all MCP domain tools on the server with the real dispatch handlers.
+// When cfg.InteractiveEnabled is false, session-dependent tools (those in
+// tools.SessionDependentTools) are skipped (#1366).
 func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 	if cfg == nil {
 		panic("RegisterTools: cfg must not be nil")
@@ -110,6 +115,17 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 		cfg.Logger = logr.Discard()
 	}
 	sem := semaphore.NewWeighted(cfg.GetMaxConcurrentTools())
+
+	shouldRegister := func(name string) bool {
+		if cfg.InteractiveEnabled {
+			return true
+		}
+		if tools.SessionDependentTools[name] {
+			cfg.Logger.Info("skipping session-dependent tool (interactive disabled)", "tool", name)
+			return false
+		}
+		return true
+	}
 
 	// K8s CRD tools (ADR-022: all use AF's ServiceAccount)
 	// Namespace is always injected server-side — never exposed to LLM.
@@ -156,51 +172,60 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 			return tools.HandleWatch(ctx, cfg.K8sClient, args)
 		})
 
-	registerTool(srv, cfg, sem, "kubernaut_await_session", "Wait for KA investigation session to become ready",
-		func(ctx context.Context, args tools.AwaitSessionArgs) (any, error) {
-			args.Namespace = cfg.Namespace
-			return tools.HandleAwaitSession(ctx, cfg.K8sClient, args)
-		})
+	if shouldRegister("kubernaut_await_session") {
+		registerTool(srv, cfg, sem, "kubernaut_await_session", "Wait for KA investigation session to become ready",
+			func(ctx context.Context, args tools.AwaitSessionArgs) (any, error) {
+				args.Namespace = cfg.Namespace
+				return tools.HandleAwaitSession(ctx, cfg.K8sClient, args)
+			})
+	}
 
 	// KA investigation tool (MCP-only, non-blocking).
 	// Uses KADedicatedClient (SDKMCPClient) which creates dedicated non-pooled
 	// sessions for StartInvestigation. PooledMCPClient does not support StartInvestigation.
-	dedicatedClient := cfg.KADedicatedClient
-	if dedicatedClient == nil {
-		dedicatedClient = cfg.KAMCPClient
+	if shouldRegister("kubernaut_investigate") {
+		dedicatedClient := cfg.KADedicatedClient
+		if dedicatedClient == nil {
+			dedicatedClient = cfg.KAMCPClient
+		}
+		isSignaler := buildISSignaler(cfg)
+		var onInvestigateStarted tools.SessionStartedHook
+		if isSignaler == nil {
+			onInvestigateStarted = buildSessionStartedHook(cfg)
+		}
+		registerTool(srv, cfg, sem, "kubernaut_investigate", "Investigate an infrastructure incident",
+			func(ctx context.Context, args tools.InvestigateMCPArgs) (any, error) {
+				return tools.HandleInvestigationMCPWithRegistry(ctx, dedicatedClient, cfg.K8sClient, cfg.Namespace, args, cfg.Auditor, cfg.InvestigationRegistry, onInvestigateStarted, false, nil, "", isSignaler, cfg.Triager)
+			})
 	}
-	isSignaler := buildISSignaler(cfg)
-	var onInvestigateStarted tools.SessionStartedHook
-	if isSignaler == nil {
-		onInvestigateStarted = buildSessionStartedHook(cfg)
-	}
-	registerTool(srv, cfg, sem, "kubernaut_investigate", "Investigate an infrastructure incident",
-		func(ctx context.Context, args tools.InvestigateMCPArgs) (any, error) {
-			return tools.HandleInvestigationMCPWithRegistry(ctx, dedicatedClient, cfg.K8sClient, cfg.Namespace, args, cfg.Auditor, cfg.InvestigationRegistry, onInvestigateStarted, false, nil, "", isSignaler, cfg.Triager)
-		})
 
 	// KA MCP tools
-	registerTool(srv, cfg, sem, "kubernaut_select_workflow", "Select a workflow for an investigation",
-		func(ctx context.Context, args tools.SelectWorkflowArgs) (any, error) {
-			return tools.HandleSelectWorkflow(ctx, cfg.KAMCPClient, args, cfg.Auditor)
-		})
+	if shouldRegister("kubernaut_select_workflow") {
+		registerTool(srv, cfg, sem, "kubernaut_select_workflow", "Select a workflow for an investigation",
+			func(ctx context.Context, args tools.SelectWorkflowArgs) (any, error) {
+				return tools.HandleSelectWorkflow(ctx, cfg.KAMCPClient, args, cfg.Auditor)
+			})
+	}
 
-	registerTool(srv, cfg, sem, "kubernaut_discover_workflows", "Discover available workflows with parameter schemas",
-		func(ctx context.Context, args tools.DiscoverWorkflowsArgs) (any, error) {
-			result, err := tools.HandleDiscoverWorkflows(ctx, cfg.KAMCPClient, args)
-			if err != nil {
-				return result, err
-			}
-			emitAudit(ctx, cfg, "kubernaut_discover_workflows", audit.EventWorkflowDiscovery,
-				map[string]string{"workflow_count": strconv.Itoa(result.Count)})
-			return result, nil
-		})
+	if shouldRegister("kubernaut_discover_workflows") {
+		registerTool(srv, cfg, sem, "kubernaut_discover_workflows", "Discover available workflows with parameter schemas",
+			func(ctx context.Context, args tools.DiscoverWorkflowsArgs) (any, error) {
+				result, err := tools.HandleDiscoverWorkflows(ctx, cfg.KAMCPClient, args)
+				if err != nil {
+					return result, err
+				}
+				emitAudit(ctx, cfg, "kubernaut_discover_workflows", audit.EventWorkflowDiscovery,
+					map[string]string{"workflow_count": strconv.Itoa(result.Count)})
+				return result, nil
+			})
+	}
 
-	// Presentation tool (no backend dependency)
-	registerTool(srv, cfg, sem, "kubernaut_present_decision", "Present a decision point requiring user input",
-		func(_ context.Context, args tools.PresentDecisionArgs) (any, error) {
-			return tools.HandlePresentDecision(args), nil
-		})
+	if shouldRegister("kubernaut_present_decision") {
+		registerTool(srv, cfg, sem, "kubernaut_present_decision", "Present a decision point requiring user input",
+			func(_ context.Context, args tools.PresentDecisionArgs) (any, error) {
+				return tools.HandlePresentDecision(args), nil
+			})
+	}
 
 	// DS tools
 	registerTool(srv, cfg, sem, "kubernaut_list_workflows", "List available workflows",
@@ -236,42 +261,52 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 		})
 
 	// Interactive investigation tools (G1: 4-phase journey)
-	registerTool(srv, cfg, sem, "kubernaut_message", "Send a message to an active investigation session",
-		func(ctx context.Context, args tools.InteractiveActionArgs) (any, error) {
-			return tools.HandleMessage(ctx, cfg.KAMCPClient, args, cfg.Auditor)
-		})
+	if shouldRegister("kubernaut_message") {
+		registerTool(srv, cfg, sem, "kubernaut_message", "Send a message to an active investigation session",
+			func(ctx context.Context, args tools.InteractiveActionArgs) (any, error) {
+				return tools.HandleMessage(ctx, cfg.KAMCPClient, args, cfg.Auditor)
+			})
+	}
 
-	registerTool(srv, cfg, sem, "kubernaut_complete", "Complete an investigation session",
-		func(ctx context.Context, args tools.InteractiveActionArgs) (any, error) {
-			result, err := tools.HandleComplete(ctx, cfg.KAMCPClient, args, cfg.Auditor)
-			if err == nil && cfg.SessionFinalizer != nil {
-				if fErr := cfg.SessionFinalizer.FinalizeSessionByRR(ctx, cfg.Namespace, args.RRID, isv1alpha1.SessionPhaseCompleted); fErr != nil {
-					cfg.Logger.Error(fErr, "IS CRD phase finalization failed", "rr_id", args.RRID, "phase", "Completed")
+	if shouldRegister("kubernaut_complete") {
+		registerTool(srv, cfg, sem, "kubernaut_complete", "Complete an investigation session",
+			func(ctx context.Context, args tools.InteractiveActionArgs) (any, error) {
+				result, err := tools.HandleComplete(ctx, cfg.KAMCPClient, args, cfg.Auditor)
+				if err == nil && cfg.SessionFinalizer != nil {
+					if fErr := cfg.SessionFinalizer.FinalizeSessionByRR(ctx, cfg.Namespace, args.RRID, isv1alpha1.SessionPhaseCompleted); fErr != nil {
+						cfg.Logger.Error(fErr, "IS CRD phase finalization failed", "rr_id", args.RRID, "phase", "Completed")
+					}
 				}
-			}
-			return result, err
-		})
+				return result, err
+			})
+	}
 
-	registerTool(srv, cfg, sem, "kubernaut_cancel", "Cancel an active investigation session",
-		func(ctx context.Context, args tools.InteractiveActionArgs) (any, error) {
-			result, err := tools.HandleCancel(ctx, cfg.KAMCPClient, args, cfg.Auditor)
-			if err == nil && cfg.SessionFinalizer != nil {
-				if fErr := cfg.SessionFinalizer.FinalizeSessionByRR(ctx, cfg.Namespace, args.RRID, isv1alpha1.SessionPhaseCancelled); fErr != nil {
-					cfg.Logger.Error(fErr, "IS CRD phase finalization failed", "rr_id", args.RRID, "phase", "Cancelled")
+	if shouldRegister("kubernaut_cancel") {
+		registerTool(srv, cfg, sem, "kubernaut_cancel", "Cancel an active investigation session",
+			func(ctx context.Context, args tools.InteractiveActionArgs) (any, error) {
+				result, err := tools.HandleCancel(ctx, cfg.KAMCPClient, args, cfg.Auditor)
+				if err == nil && cfg.SessionFinalizer != nil {
+					if fErr := cfg.SessionFinalizer.FinalizeSessionByRR(ctx, cfg.Namespace, args.RRID, isv1alpha1.SessionPhaseCancelled); fErr != nil {
+						cfg.Logger.Error(fErr, "IS CRD phase finalization failed", "rr_id", args.RRID, "phase", "Cancelled")
+					}
 				}
-			}
-			return result, err
-		})
+				return result, err
+			})
+	}
 
-	registerTool(srv, cfg, sem, "kubernaut_status", "Get the current status of an investigation session",
-		func(ctx context.Context, args tools.InteractiveActionArgs) (any, error) {
-			return tools.HandleStatus(ctx, cfg.KAMCPClient, args, cfg.Auditor)
-		})
+	if shouldRegister("kubernaut_status") {
+		registerTool(srv, cfg, sem, "kubernaut_status", "Get the current status of an investigation session",
+			func(ctx context.Context, args tools.InteractiveActionArgs) (any, error) {
+				return tools.HandleStatus(ctx, cfg.KAMCPClient, args, cfg.Auditor)
+			})
+	}
 
-	registerTool(srv, cfg, sem, "kubernaut_reconnect", "Reconnect to a disconnected investigation session",
-		func(ctx context.Context, args tools.InteractiveActionArgs) (any, error) {
-			return tools.HandleReconnect(ctx, cfg.KAMCPClient, args, cfg.Auditor)
-		})
+	if shouldRegister("kubernaut_reconnect") {
+		registerTool(srv, cfg, sem, "kubernaut_reconnect", "Reconnect to a disconnected investigation session",
+			func(ctx context.Context, args tools.InteractiveActionArgs) (any, error) {
+				return tools.HandleReconnect(ctx, cfg.KAMCPClient, args, cfg.Auditor)
+			})
+	}
 
 	// Stream investigation tool removed — merged into kubernaut_investigate above.
 

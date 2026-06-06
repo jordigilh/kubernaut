@@ -1,6 +1,7 @@
 package handler_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/handler"
+	toolspkg "github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
 
 var _ = Describe("MCP Handler", func() {
@@ -76,7 +78,7 @@ var _ = Describe("MCP Handler", func() {
 		toolHandler, err := handler.NewMCPHandler(handler.MCPConfig{
 			ServerName:    "kubernaut-apifrontend",
 			ServerVersion: "v0.1.0",
-			Tools:         handler.DefaultMCPTools(),
+			Tools:         handler.DefaultMCPTools(true),
 			Enabled:       true,
 		})
 		Expect(err).NotTo(HaveOccurred())
@@ -84,7 +86,7 @@ var _ = Describe("MCP Handler", func() {
 	})
 
 	It("UT-AF-220-005: tools registered include kubernaut_ or af_ prefix", func() {
-		tools := handler.DefaultMCPTools()
+		tools := handler.DefaultMCPTools(true)
 		for _, t := range tools {
 			hasValid := strings.HasPrefix(t.Name, "kubernaut_") || strings.HasPrefix(t.Name, "af_")
 			Expect(hasValid).To(BeTrue(), "tool %q missing kubernaut_ or af_ prefix", t.Name)
@@ -92,8 +94,82 @@ var _ = Describe("MCP Handler", func() {
 	})
 
 	It("UT-AF-220-006: tools count matches 21 expected tools (#1332: kubernaut_takeover removed)", func() {
-		tools := handler.DefaultMCPTools()
+		tools := handler.DefaultMCPTools(true)
 		Expect(tools).To(HaveLen(21))
+	})
+
+	It("UT-AF-1366-030: DefaultMCPTools(false) returns only stateless tools", func() {
+		tools := handler.DefaultMCPTools(false)
+		Expect(tools).To(HaveLen(11), "only 11 stateless tools when interactive disabled")
+		for _, t := range tools {
+			Expect(toolspkg.SessionDependentTools).NotTo(HaveKey(t.Name),
+				"session-dependent tool %q should be hidden in stub path", t.Name)
+		}
+	})
+
+	It("UT-AF-1366-031: stub path registers only stateless tools when InteractiveEnabled=false", func() {
+		h, err := handler.NewMCPHandler(handler.MCPConfig{
+			ServerName:    "kubernaut-apifrontend",
+			ServerVersion: "v0.1.0-test",
+			Enabled:       true,
+			InteractiveEnabled: false,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		rec := httptest.NewRecorder()
+		initReq := map[string]any{
+			"jsonrpc": "2.0", "id": 1,
+			"method": "initialize",
+			"params": map[string]any{
+				"protocolVersion": "2025-03-26",
+				"capabilities":    map[string]any{},
+				"clientInfo":      map[string]any{"name": "test", "version": "1.0"},
+			},
+		}
+		body, _ := json.Marshal(initReq)
+		req := httptest.NewRequest("POST", "/mcp", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json, text/event-stream")
+		h.ServeHTTP(rec, req)
+		Expect(rec.Code).To(Equal(http.StatusOK))
+		sid := rec.Header().Get("Mcp-Session-Id")
+
+		listReq := map[string]any{
+			"jsonrpc": "2.0", "id": 2,
+			"method": "tools/list",
+			"params": map[string]any{},
+		}
+		body, _ = json.Marshal(listReq)
+		rec2 := httptest.NewRecorder()
+		req2 := httptest.NewRequest("POST", "/mcp", bytes.NewReader(body))
+		req2.Header.Set("Content-Type", "application/json")
+		req2.Header.Set("Accept", "application/json, text/event-stream")
+		req2.Header.Set("Mcp-Session-Id", sid)
+		h.ServeHTTP(rec2, req2)
+		Expect(rec2.Code).To(Equal(http.StatusOK))
+
+		responseBody := rec2.Body.String()
+		Expect(responseBody).NotTo(BeEmpty(), "tools/list response should not be empty")
+
+		jsonPayload := responseBody
+		if strings.Contains(responseBody, "data: ") {
+			for _, line := range strings.Split(responseBody, "\n") {
+				if strings.HasPrefix(line, "data: ") {
+					jsonPayload = strings.TrimPrefix(line, "data: ")
+					break
+				}
+			}
+		}
+
+		var result map[string]any
+		err = json.Unmarshal([]byte(jsonPayload), &result)
+		Expect(err).NotTo(HaveOccurred(), "response should be valid JSON")
+		Expect(result).To(HaveKey("result"))
+		resultObj, ok := result["result"].(map[string]any)
+		Expect(ok).To(BeTrue())
+		registeredTools, ok := resultObj["tools"].([]any)
+		Expect(ok).To(BeTrue())
+		Expect(registeredTools).To(HaveLen(11), "stub path should only register 11 stateless tools")
 	})
 
 	It("UT-AF-220-007: MCP server info includes correct name and version", func() {
@@ -124,7 +200,7 @@ var _ = Describe("MCP Handler", func() {
 	})
 
 	It("UT-AF-220-009: each tool has non-empty description", func() {
-		tools := handler.DefaultMCPTools()
+		tools := handler.DefaultMCPTools(true)
 		for _, t := range tools {
 			Expect(t.Description).NotTo(BeEmpty(), "tool %s missing description", t.Name)
 		}
@@ -144,7 +220,7 @@ var _ = Describe("MCP Handler", func() {
 	})
 
 	It("UT-AF-220-011: each tool has input schema", func() {
-		tools := handler.DefaultMCPTools()
+		tools := handler.DefaultMCPTools(true)
 		for _, t := range tools {
 			Expect(t.InputSchema).NotTo(BeNil(), "tool %s missing input schema", t.Name)
 		}

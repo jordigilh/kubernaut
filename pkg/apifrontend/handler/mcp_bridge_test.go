@@ -488,6 +488,7 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 				Auditor:            auditor,
 				ToolTimeout:        5 * time.Second,
 				MaxConcurrentTools: 10,
+				InteractiveEnabled: true,
 			},
 		}
 		var err error
@@ -514,6 +515,72 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 			body := rec.Body.String()
 			count := countToolsInResponse(body)
 			Expect(count).To(Equal(21))
+		})
+	})
+
+	Context("Conditional tool registration — interactive mode (#1366)", func() {
+		It("IT-BRIDGE-1366-001: InteractiveEnabled=false registers only 11 stateless tools", func() {
+			cfg := handler.MCPConfig{
+				ServerName:    "kubernaut-apifrontend",
+				ServerVersion: "v0.1.0-test",
+				Enabled:       true,
+				Bridge: &handler.MCPBridgeConfig{
+					K8sClient:          fakeK8s,
+					Namespace:          "default",
+					KAMCPClient:        &ka.MockMCPClient{},
+					DSClient:           newFakeDSClient(),
+					Authorizer:         &allowAllAuthorizer{},
+					Auditor:            auditor,
+					ToolTimeout:        2 * time.Second,
+					InteractiveEnabled: false,
+				},
+			}
+			localH, err := handler.NewMCPHandler(cfg)
+			Expect(err).NotTo(HaveOccurred())
+			localSess := mcpInitialize(localH, testUser)
+
+			listReq := map[string]any{
+				"jsonrpc": "2.0",
+				"id":      3,
+				"method":  "tools/list",
+				"params":  map[string]any{},
+			}
+			rec := mcpPost(localH, localSess, listReq, testUser)
+			Expect(rec.Code).To(Equal(http.StatusOK))
+			count := countToolsInResponse(rec.Body.String())
+			Expect(count).To(Equal(11), "only 11 stateless tools when interactive disabled")
+		})
+
+		It("IT-BRIDGE-1366-002: InteractiveEnabled=true registers all 21 tools", func() {
+			cfg := handler.MCPConfig{
+				ServerName:    "kubernaut-apifrontend",
+				ServerVersion: "v0.1.0-test",
+				Enabled:       true,
+				Bridge: &handler.MCPBridgeConfig{
+					K8sClient:          fakeK8s,
+					Namespace:          "default",
+					KAMCPClient:        &ka.MockMCPClient{},
+					DSClient:           newFakeDSClient(),
+					Authorizer:         &allowAllAuthorizer{},
+					Auditor:            auditor,
+					ToolTimeout:        2 * time.Second,
+					InteractiveEnabled: true,
+				},
+			}
+			localH, err := handler.NewMCPHandler(cfg)
+			Expect(err).NotTo(HaveOccurred())
+			localSess := mcpInitialize(localH, testUser)
+
+			listReq := map[string]any{
+				"jsonrpc": "2.0",
+				"id":      3,
+				"method":  "tools/list",
+				"params":  map[string]any{},
+			}
+			rec := mcpPost(localH, localSess, listReq, testUser)
+			Expect(rec.Code).To(Equal(http.StatusOK))
+			count := countToolsInResponse(rec.Body.String())
+			Expect(count).To(Equal(21), "all 21 tools when interactive enabled")
 		})
 	})
 
@@ -983,13 +1050,13 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 				ServerVersion: "v0.1.0-test",
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
-					K8sClient:         fakeK8s,
-					Namespace:         "default",
-
+					K8sClient:          fakeK8s,
+					Namespace:          "default",
 					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"*"}}},
 					Auditor:            auditor,
 					ToolTimeout:        2 * time.Second,
 					MaxConcurrentTools: 5,
+					InteractiveEnabled: true,
 				},
 			}
 			h, err := handler.NewMCPHandler(cfg)
@@ -2193,14 +2260,15 @@ var _ = Describe("MCP Bridge - discover_workflows (#1176)", Label("bridge", "dis
 			ServerVersion: "v0.1.0-test",
 			Enabled:       true,
 			Bridge: &handler.MCPBridgeConfig{
-				K8sClient:         fakeK8s,
-				Namespace:         "default",
+				K8sClient:          fakeK8s,
+				Namespace:          "default",
 				KAMCPClient:        mockMCP,
 				DSClient:           newFakeDSClient(),
 				Authorizer:         &mapAuthorizer{roles: roles},
 				Auditor:            auditor,
 				ToolTimeout:        5 * time.Second,
 				MaxConcurrentTools: 10,
+				InteractiveEnabled: true,
 			},
 		}
 		h, err := handler.NewMCPHandler(cfg)
@@ -2405,8 +2473,8 @@ var _ = Describe("MCP Bridge - Metrics Wiring", Label("metrics", "wiring"), func
 			ServerVersion: "v0.1.0-test",
 			Enabled:       true,
 			Bridge: &handler.MCPBridgeConfig{
-				K8sClient:         fakeK8s,
-				Namespace:         "default",
+				K8sClient:          fakeK8s,
+				Namespace:          "default",
 				KAMCPClient:        mockMCP,
 				DSClient:           newFakeDSClient(),
 				Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"*"}, "cicd": {"kubernaut_list_remediations"}}},
@@ -2414,6 +2482,7 @@ var _ = Describe("MCP Bridge - Metrics Wiring", Label("metrics", "wiring"), func
 				Metrics:            bridgeMetrics,
 				ToolTimeout:        5 * time.Second,
 				MaxConcurrentTools: 10,
+				InteractiveEnabled: true,
 			},
 		}
 		var err error
