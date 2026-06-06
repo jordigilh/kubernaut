@@ -191,12 +191,16 @@ func buildToolArguments(toolName string, cfg scenarios.MockScenarioConfig) map[s
 	case "kubernaut_list_remediations":
 		return map[string]interface{}{"namespace": cfg.ResourceNS}
 	case "kubernaut_remediate":
-		return map[string]interface{}{
+		args := map[string]interface{}{
 			"namespace":   cfg.ResourceNS,
 			"kind":        cfg.ResourceKind,
 			"name":        cfg.ResourceName,
 			"description": "Auto-remediation triggered by AI analysis",
 		}
+		if cfg.APIVersion != "" {
+			args["api_version"] = cfg.APIVersion
+		}
+		return args
 	default:
 		return map[string]interface{}{}
 	}
