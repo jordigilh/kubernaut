@@ -29,6 +29,7 @@ import (
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	mcptools "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 // mockAutonomousSessionManager extends the base NopAutonomousManager with
@@ -105,6 +106,37 @@ type mockRRCheckerAutonomous struct {
 
 func (m *mockRRCheckerAutonomous) RemediationRequestExists(_ context.Context, _ string) (bool, error) {
 	return m.exists, m.err
+}
+
+// funcCapturingAutoMgr captures the InvestigateFunc passed to StartInvestigation.
+type funcCapturingAutoMgr struct {
+	mcptools.NopAutonomousManager
+	startSessionID string
+	captureFn      func(session.InvestigateFunc)
+}
+
+func (m *funcCapturingAutoMgr) StartInvestigation(_ context.Context, fn session.InvestigateFunc, _ map[string]string) (string, error) {
+	if m.captureFn != nil {
+		m.captureFn(fn)
+	}
+	return m.startSessionID, nil
+}
+
+func (m *funcCapturingAutoMgr) Subscribe(_ context.Context, _ string) (<-chan session.InvestigationEvent, error) {
+	return nil, nil
+}
+
+// signalCapturingRunner records the signal passed to RunFullInvestigation.
+type signalCapturingRunner struct {
+	mockInvestigatorRunner
+	captureFn func(katypes.SignalContext)
+}
+
+func (r *signalCapturingRunner) RunFullInvestigation(_ context.Context, signal katypes.SignalContext) (*katypes.InvestigationResult, error) {
+	if r.captureFn != nil {
+		r.captureFn(signal)
+	}
+	return &katypes.InvestigationResult{RCASummary: "autonomous result", Confidence: 0.9}, nil
 }
 
 var _ = Describe("kubernaut_investigate — start_autonomous action (#1326 BR-MCP-002)", func() {
@@ -444,6 +476,55 @@ var _ = Describe("kubernaut_investigate — EventChannel→Log bridge (#1326 BR-
 			cancel()
 
 			Expect(sink.Messages()).To(BeEmpty(), "Log must never be called when no events are emitted")
+		})
+	})
+
+	Describe("UT-KA-1374-F4-001: start_autonomous passes real InvestigateFunc to session manager [BR-MCP-002]", func() {
+		It("should invoke RunFullInvestigation with the resolved signal", func() {
+			var capturedFn session.InvestigateFunc
+			autoMgr := &funcCapturingAutoMgr{
+				startSessionID: "sess-f4-001",
+				captureFn:      func(fn session.InvestigateFunc) { capturedFn = fn },
+			}
+
+			expectedSignal := &katypes.SignalContext{
+				IncidentID:   "inc-f4-001",
+				Severity:     "critical",
+				ResourceKind: "Deployment",
+				ResourceName: "api-server",
+				Namespace:    "production",
+			}
+
+			var investigatedSignal katypes.SignalContext
+			runner := &signalCapturingRunner{
+				captureFn: func(s katypes.SignalContext) { investigatedSignal = s },
+			}
+
+			resolver := &mockSignalResolver{signal: expectedSignal}
+
+			tool := mcptools.NewInvestigateTool(
+				&mockSessionManager{},
+				runner,
+				&mockContextReconstructor{},
+				autoMgr,
+				mcptools.WithRRExistenceChecker(&mockRRCheckerAutonomous{exists: true}),
+				mcptools.WithSignalContextResolver(resolver),
+			)
+
+			out, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-f4-001",
+				Action: mcptools.ActionStartAutonomous,
+			}, mcpinternal.UserInfo{Username: "operator"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(out.Status).To(Equal("autonomous_started"))
+
+			Expect(capturedFn).NotTo(BeNil(), "StartInvestigation must receive a non-nil InvestigateFunc")
+
+			_, fnErr := capturedFn(context.Background())
+			Expect(fnErr).NotTo(HaveOccurred())
+			Expect(investigatedSignal.ResourceKind).To(Equal("Deployment"),
+				"F4: RunFullInvestigation must receive the resolved signal")
+			Expect(investigatedSignal.IncidentID).To(Equal("inc-f4-001"))
 		})
 	})
 

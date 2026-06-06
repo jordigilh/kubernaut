@@ -52,6 +52,9 @@ type InvestigatorRunner interface {
 	// selection) using the structured RCA, signal context, and enrichment data.
 	// Returns the full InvestigationResult including the selected workflow.
 	RunWorkflowDiscovery(ctx context.Context, signal katypes.SignalContext, rcaResult *katypes.InvestigationResult, enrichData *prompt.EnrichmentData, correlationID string) (*katypes.InvestigationResult, error)
+	// RunFullInvestigation executes the full autonomous RCA + workflow pipeline.
+	// F4 (#1374): Used by handleStartAutonomous to wire real investigation logic.
+	RunFullInvestigation(ctx context.Context, signal katypes.SignalContext) (*katypes.InvestigationResult, error)
 }
 
 // SignalContextResolver resolves the SignalContext and EnrichmentData for a
@@ -585,6 +588,14 @@ func (t *InvestigateTool) handleMessage(ctx context.Context, input InvestigateIn
 	// #898-S5: Attach session ID for audit attribution on K8s API calls.
 	ctx = transport.WithAuditSessionID(ctx, sess.SessionID)
 
+	// F9 / #1374: Attach signal context for PhaseRCA tool parity with
+	// the autonomous path. Future tools may read SignalContextFromContext.
+	if t.signalResolver != nil {
+		if resolved, resolveErr := t.signalResolver.ResolveSignalContext(ctx, input.RRID); resolveErr == nil && resolved != nil {
+			ctx = katypes.WithSignalContext(ctx, *resolved)
+		}
+	}
+
 	// Clear DiscoveryResult before the LLM call: any message after
 	// discover_workflows invalidates stale recommendations, forcing re-discovery
 	// before select_workflow can be called.
@@ -994,8 +1005,21 @@ func (t *InvestigateTool) handleStartAutonomous(ctx context.Context, input Inves
 		"remediation_id": input.RRID,
 	}
 
-	sessionID, err := t.autoMgr.StartInvestigation(ctx, func(ctx context.Context) (*katypes.InvestigationResult, error) {
-		return nil, ctx.Err()
+	// F4 (#1374): Resolve signal context to build a real InvestigateFunc.
+	// The autonomous investigation uses the same full pipeline as the HTTP path.
+	var signal katypes.SignalContext
+	if t.signalResolver != nil {
+		resolved, resolveErr := t.signalResolver.ResolveSignalContext(ctx, input.RRID)
+		if resolveErr != nil {
+			return InvestigateOutput{}, fmt.Errorf("resolve signal context for autonomous investigation: %w", resolveErr)
+		}
+		if resolved != nil {
+			signal = *resolved
+		}
+	}
+
+	sessionID, err := t.autoMgr.StartInvestigation(ctx, func(bgCtx context.Context) (*katypes.InvestigationResult, error) {
+		return t.runner.RunFullInvestigation(bgCtx, signal)
 	}, metadata)
 	if err != nil {
 		if errors.Is(err, session.ErrMaxInvestigationsReached) {

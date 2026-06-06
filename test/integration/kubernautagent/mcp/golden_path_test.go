@@ -55,6 +55,10 @@ func (r *goldenPathRunner) RunWorkflowDiscovery(_ context.Context, _ katypes.Sig
 	return &katypes.InvestigationResult{RCASummary: "mock RCA", WorkflowID: "mock-wf"}, nil
 }
 
+func (r *goldenPathRunner) RunFullInvestigation(_ context.Context, _ katypes.SignalContext) (*katypes.InvestigationResult, error) {
+	return &katypes.InvestigationResult{RCASummary: "mock autonomous RCA"}, nil
+}
+
 type goldenPathRecon struct{}
 
 func (r *goldenPathRecon) Reconstruct(_ context.Context, _, _ string) ([]mcpinternal.ConversationTurn, error) {

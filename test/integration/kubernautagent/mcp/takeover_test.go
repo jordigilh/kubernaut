@@ -59,6 +59,12 @@ func (m *delayedMockRunner) RunWorkflowDiscovery(_ context.Context, _ katypes.Si
 	return &katypes.InvestigationResult{RCASummary: "mock RCA", WorkflowID: "mock-wf"}, nil
 }
 
+func (m *delayedMockRunner) RunFullInvestigation(_ context.Context, _ katypes.SignalContext) (*katypes.InvestigationResult, error) {
+	m.calls.Add(1)
+	time.Sleep(m.delay)
+	return &katypes.InvestigationResult{RCASummary: "mock autonomous RCA"}, nil
+}
+
 // mockReconIT mocks ContextReconstructor for integration tests.
 type mockReconIT struct{}
 

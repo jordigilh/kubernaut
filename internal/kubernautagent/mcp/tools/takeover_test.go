@@ -201,6 +201,10 @@ func (m *takeoverRunner) RunWorkflowDiscovery(_ context.Context, _ katypes.Signa
 	return &katypes.InvestigationResult{RCASummary: "mock RCA", WorkflowID: "mock-wf"}, nil
 }
 
+func (m *takeoverRunner) RunFullInvestigation(_ context.Context, _ katypes.SignalContext) (*katypes.InvestigationResult, error) {
+	return &katypes.InvestigationResult{RCASummary: "mock RCA"}, nil
+}
+
 // takeoverRecon mocks mcpinternal.ContextReconstructor for takeover tests.
 type takeoverRecon struct {
 	turns []mcpinternal.ConversationTurn

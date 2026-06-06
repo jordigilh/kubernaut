@@ -78,13 +78,22 @@ func (m *mockSessionManager) getReleased() (string, string) {
 }
 
 type mockInvestigatorRunner struct {
-	response  string
-	err       error
-	rcaResult *katypes.InvestigationResult
+	response    string
+	err         error
+	rcaResult   *katypes.InvestigationResult
+	capturedCtx context.Context
 }
 
-func (m *mockInvestigatorRunner) RunInteractiveTurn(_ context.Context, _ []mcptools.LLMMessage, _ string) (string, error) {
+func (m *mockInvestigatorRunner) RunInteractiveTurn(ctx context.Context, _ []mcptools.LLMMessage, _ string) (string, error) {
+	m.capturedCtx = ctx
 	return m.response, m.err
+}
+
+func (m *mockInvestigatorRunner) RunFullInvestigation(_ context.Context, _ katypes.SignalContext) (*katypes.InvestigationResult, error) {
+	if m.rcaResult != nil {
+		return m.rcaResult, m.err
+	}
+	return &katypes.InvestigationResult{RCASummary: "mock autonomous result", Confidence: 0.8}, m.err
 }
 
 func (m *mockInvestigatorRunner) RunRCAExtraction(_ context.Context, _ []mcptools.LLMMessage, _ string) (*katypes.InvestigationResult, error) {
@@ -875,6 +884,47 @@ var _ = Describe("kubernaut_investigate — DiscoveryResult invalidation on mess
 
 			Expect(sess.DiscoveryResult).To(BeNil(),
 				"DiscoveryResult must be cleared after a message to prevent stale recommendations")
+		})
+	})
+
+	Describe("UT-KA-1374-F9-001: action=message attaches SignalContext to context [BR-INTERACTIVE-010]", func() {
+		It("should propagate SignalContext via WithSignalContext on message turns", func() {
+			sess := &mcpinternal.InteractiveSession{
+				SessionID:     "sess-f9-001",
+				CorrelationID: "rr-f9-001",
+				ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+			}
+			sessionMgr := &mockSessionManager{
+				isActive:        true,
+				getDriverResult: sess,
+			}
+			runner := &mockInvestigatorRunner{response: "Analyzing crash dumps..."}
+			recon := &mockContextReconstructor{turns: []mcpinternal.ConversationTurn{}}
+
+			expectedSignal := &katypes.SignalContext{
+				IncidentID:   "inc-f9-001",
+				Severity:     "critical",
+				ResourceKind: "Deployment",
+				ResourceName: "api-server",
+				Namespace:    "production",
+			}
+			resolver := &mockSignalResolver{signal: expectedSignal}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{},
+				mcptools.WithSignalContextResolver(resolver))
+			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:    "rr-f9-001",
+				Action:  mcptools.ActionMessage,
+				Message: "Pod keeps crashing with OOMKilled",
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(runner.capturedCtx).NotTo(BeNil(), "RunInteractiveTurn must receive a non-nil context")
+			signal, ok := katypes.SignalContextFromContext(runner.capturedCtx)
+			Expect(ok).To(BeTrue(), "context must carry SignalContext after F9 fix")
+			Expect(signal.ResourceKind).To(Equal("Deployment"))
+			Expect(signal.IncidentID).To(Equal("inc-f9-001"))
+			Expect(signal.Namespace).To(Equal("production"))
 		})
 	})
 })
