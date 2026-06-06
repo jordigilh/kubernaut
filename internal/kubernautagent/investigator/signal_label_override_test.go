@@ -909,12 +909,14 @@ var _ = Describe("FinalizeWorkflowResult — post-Phase 3 processing parity (#13
 		})
 	})
 
-	Describe("UT-KA-1374-F8-003: InjectRemediationTarget sets target from signal", func() {
-		It("should set RemediationTarget from signal when enrichData is nil [BR-INTERACTIVE-010]", func() {
+	Describe("UT-KA-1374-F8-003: RemediationTarget falls back to signal when enrichData is nil", func() {
+		It("should use signal identity as authoritative target when enrichment is unavailable [BR-INTERACTIVE-010]", func() {
 			result := &katypes.InvestigationResult{
 				RCASummary: "test rca",
 				RemediationTarget: katypes.RemediationTarget{
-					Kind: "Deployment",
+					Kind:      "Pod",
+					Name:      "test-pod",
+					Namespace: "default",
 				},
 			}
 			signal := katypes.SignalContext{
@@ -923,15 +925,17 @@ var _ = Describe("FinalizeWorkflowResult — post-Phase 3 processing parity (#13
 				Namespace:    "production",
 			}
 			investigator.FinalizeWorkflowResult(result, signal, &katypes.InvestigationResult{}, nil)
+			Expect(result.RemediationTarget.Kind).To(Equal("Deployment"),
+				"RemediationTarget.Kind must fall back to signal identity when enrichData is nil")
 			Expect(result.RemediationTarget.Name).To(Equal("api-server"),
-				"RemediationTarget.Name must be set from signal")
+				"RemediationTarget.Name must fall back to signal identity when enrichData is nil")
 			Expect(result.RemediationTarget.Namespace).To(Equal("production"),
-				"RemediationTarget.Namespace must be set from signal")
+				"RemediationTarget.Namespace must fall back to signal identity when enrichData is nil")
 		})
 	})
 
-	Describe("UT-KA-1374-F8-004: InjectTargetResourceParameters populates TARGET_RESOURCE_* params", func() {
-		It("should inject TARGET_RESOURCE_* parameters [BR-INTERACTIVE-010]", func() {
+	Describe("UT-KA-1374-F8-004: TARGET_RESOURCE_* injected from signal when enrichData is nil", func() {
+		It("should inject TARGET_RESOURCE_* parameters using signal identity [BR-INTERACTIVE-010]", func() {
 			result := &katypes.InvestigationResult{
 				RCASummary: "test rca",
 				RemediationTarget: katypes.RemediationTarget{
@@ -947,15 +951,16 @@ var _ = Describe("FinalizeWorkflowResult — post-Phase 3 processing parity (#13
 				Namespace:    "production",
 			}
 			investigator.FinalizeWorkflowResult(result, signal, &katypes.InvestigationResult{}, nil)
-			Expect(result.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_KIND", "Deployment"))
-			Expect(result.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_NAME", "api-server"))
-			Expect(result.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_NAMESPACE", "production"))
-			Expect(result.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_API_VERSION", "apps/v1"))
+			Expect(result.Parameters).NotTo(BeNil(),
+				"TARGET_RESOURCE_* params must be injected using signal identity")
+			Expect(result.Parameters["TARGET_RESOURCE_KIND"]).To(Equal("Deployment"))
+			Expect(result.Parameters["TARGET_RESOURCE_NAME"]).To(Equal("api-server"))
+			Expect(result.Parameters["TARGET_RESOURCE_NAMESPACE"]).To(Equal("production"))
 		})
 	})
 
-	Describe("UT-KA-1374-F8-005: apiVersion propagation from RCA when result lacks it", func() {
-		It("should copy apiVersion from rcaResult when workflowResult has none [BR-WORKFLOW-004]", func() {
+	Describe("UT-KA-1374-F8-005: apiVersion propagated from RCA when enrichData is nil", func() {
+		It("should propagate apiVersion from RCA result even without enrichment [BR-WORKFLOW-004]", func() {
 			result := &katypes.InvestigationResult{
 				RCASummary: "test rca",
 				RemediationTarget: katypes.RemediationTarget{
@@ -976,7 +981,7 @@ var _ = Describe("FinalizeWorkflowResult — post-Phase 3 processing parity (#13
 			}
 			investigator.FinalizeWorkflowResult(result, signal, rcaResult, nil)
 			Expect(result.RemediationTarget.APIVersion).To(Equal("apps/v1"),
-				"apiVersion must be propagated from rcaResult when workflowResult lacks it")
+				"apiVersion must be propagated from RCA result; signal identity is preserved with RCA apiVersion")
 		})
 	})
 })

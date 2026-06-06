@@ -200,8 +200,14 @@ func SyncSignalFromRCA(signal katypes.SignalContext, target katypes.RemediationT
 // completeness as autonomous results: severity backfill, detected labels,
 // authoritative remediation target, and TARGET_RESOURCE_* parameters.
 //
-// enrichData may be nil when the interactive path lacks full enrichment (F5).
-// All callees handle nil gracefully.
+// When enrichData is available, InjectRemediationTarget K8s-verifies the
+// LLM's target via owner chain and sets the authoritative RemediationTarget.
+// When enrichData is nil, InjectRemediationTarget falls back to the signal
+// identity (rootKind/rootName) as the authoritative target since owner-chain
+// verification is unavailable. The caller (RunWorkflowDiscoveryFromRCA)
+// passes the original signal resolver identity when enrichment is not
+// available, ensuring the target reflects the resolver's ground truth
+// rather than a potentially incorrect LLM-parsed target.
 func FinalizeWorkflowResult(result *katypes.InvestigationResult, signal katypes.SignalContext, rcaResult *katypes.InvestigationResult, enrichData *enrichment.EnrichmentResult) {
 	if result == nil {
 		return
@@ -381,7 +387,8 @@ func attachDetectedLabels(result *katypes.InvestigationResult, enrichData *enric
 //
 // LLM target handling:
 //   - Kind == "" or same as root: override with K8s-verified root identity
-//   - Different Kind (cross-type): preserve the LLM's target
+//   - Different Kind with enrichment: owner-chain lookup determines resolution
+//   - Different Kind without enrichment: fall back to signal identity (cannot verify)
 func InjectRemediationTarget(result *katypes.InvestigationResult, signal katypes.SignalContext, enrichData *enrichment.EnrichmentResult) {
 	if result == nil {
 		return
@@ -435,6 +442,17 @@ func InjectRemediationTarget(result *katypes.InvestigationResult, signal katypes
 			APIVersion: rootAPIVersion,
 		}
 		return
+	}
+
+	// Without enrichment data, we cannot verify whether the LLM's
+	// cross-type target is valid (no owner chain to check). Fall back
+	// to the signal identity as the authoritative target.
+	if enrichData == nil {
+		result.RemediationTarget = katypes.RemediationTarget{
+			Kind:      rootKind,
+			Name:      rootName,
+			Namespace: rootNS,
+		}
 	}
 }
 
