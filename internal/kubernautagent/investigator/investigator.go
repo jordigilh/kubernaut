@@ -320,6 +320,13 @@ func (inv *Investigator) RunRCAExtractionFromConversation(ctx context.Context, m
 // the autonomous Investigate() pipeline. The caller-provided enrichData is used
 // as fallback only when the enricher is nil.
 func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal katypes.SignalContext, rcaResult *katypes.InvestigationResult, enrichData *prompt.EnrichmentData, correlationID string) (*katypes.InvestigationResult, error) {
+	if rcaResult == nil {
+		return nil, fmt.Errorf("RunWorkflowDiscoveryFromRCA: rcaResult must not be nil")
+	}
+
+	rcaCopy := *rcaResult
+	rcaResult = &rcaCopy
+
 	inv.pipeline.AnomalyDetector.Reset()
 
 	// Auto-resolve apiVersion when the LLM omitted it (parity with the
@@ -375,8 +382,15 @@ func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal
 
 			if reEnriched != nil && reEnriched.HardFail {
 				inv.logger.Error(reEnriched.OwnerChainError,
-					"RunWorkflowDiscoveryFromRCA: enrichment hard-failed for RCA target",
+					"RunWorkflowDiscoveryFromRCA: enrichment hard-failed, triggering rca_incomplete",
 					"correlation_id", correlationID)
+				rcaResult.HumanReviewNeeded = true
+				rcaResult.HumanReviewReason = "rca_incomplete"
+				backfillSeverity(rcaResult, signal)
+				attachDetectedLabels(rcaResult, rawEnrichData)
+				InjectRemediationTarget(rcaResult, signal, rawEnrichData)
+				InjectTargetResourceParameters(rcaResult)
+				return rcaResult, nil
 			} else if reEnriched != nil && reEnriched.TargetResourceDeleted {
 				rcaResult.Warnings = append(rcaResult.Warnings,
 					deletedResourceWarning(postRCAKind, postRCAName, postRCANS))

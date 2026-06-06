@@ -174,6 +174,7 @@ var _ = Describe("kubernaut_investigate — start_autonomous action (#1326 BR-MC
 				&mockContextReconstructor{},
 				autoMgr,
 				mcptools.WithRRExistenceChecker(&mockRRCheckerAutonomous{exists: true}),
+				mcptools.WithSignalContextResolver(&mockSignalResolver{}),
 			)
 
 			output, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
@@ -246,6 +247,7 @@ var _ = Describe("kubernaut_investigate — start_autonomous action (#1326 BR-MC
 				&mockContextReconstructor{},
 				autoMgr,
 				mcptools.WithRRExistenceChecker(&mockRRCheckerAutonomous{exists: true}),
+				mcptools.WithSignalContextResolver(&mockSignalResolver{}),
 			)
 
 			output, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
@@ -272,6 +274,7 @@ var _ = Describe("kubernaut_investigate — start_autonomous action (#1326 BR-MC
 				&mockContextReconstructor{},
 				autoMgr,
 				mcptools.WithRRExistenceChecker(&mockRRCheckerAutonomous{exists: true}),
+				mcptools.WithSignalContextResolver(&mockSignalResolver{}),
 			)
 
 			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{

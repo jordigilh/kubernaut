@@ -1007,16 +1007,17 @@ func (t *InvestigateTool) handleStartAutonomous(ctx context.Context, input Inves
 
 	// F4 (#1374): Resolve signal context to build a real InvestigateFunc.
 	// The autonomous investigation uses the same full pipeline as the HTTP path.
-	var signal katypes.SignalContext
-	if t.signalResolver != nil {
-		resolved, resolveErr := t.signalResolver.ResolveSignalContext(ctx, input.RRID)
-		if resolveErr != nil {
-			return InvestigateOutput{}, fmt.Errorf("resolve signal context for autonomous investigation: %w", resolveErr)
-		}
-		if resolved != nil {
-			signal = *resolved
-		}
+	if t.signalResolver == nil {
+		return InvestigateOutput{}, fmt.Errorf("start autonomous investigation: signal resolver not configured")
 	}
+	resolved, resolveErr := t.signalResolver.ResolveSignalContext(ctx, input.RRID)
+	if resolveErr != nil {
+		return InvestigateOutput{}, fmt.Errorf("resolve signal context for autonomous investigation: %w", resolveErr)
+	}
+	if resolved == nil {
+		return InvestigateOutput{}, fmt.Errorf("start autonomous investigation: no signal context for rr_id %s", input.RRID)
+	}
+	signal := *resolved
 
 	sessionID, err := t.autoMgr.StartInvestigation(ctx, func(bgCtx context.Context) (*katypes.InvestigationResult, error) {
 		return t.runner.RunFullInvestigation(bgCtx, signal)
