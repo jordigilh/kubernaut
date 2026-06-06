@@ -151,6 +151,17 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 			toolConstructor{"get_alert_details", func() (tool.Tool, error) {
 				return tools.NewGetAlertDetailsTool(cfg.PromClient)
 			}},
+			toolConstructor{"kubernaut_investigate_alert", func() (tool.Tool, error) {
+				return tools.NewInvestigateAlertTool(tools.InvestigateAlertConfig{
+					Client:             cfg.K8sClient,
+					ControllerNS:       cfg.Namespace,
+					Triager:            cfg.Triager,
+					PromClient:         cfg.PromClient,
+					Auditor:            cfg.Auditor,
+					ValidationFailures: cfg.AlertValidationFailures,
+					Mapper:             cfg.RESTMapper,
+				})
+			}},
 		)
 	}
 

@@ -36,6 +36,7 @@ func afCreateRRConfig() MockScenarioConfig {
 		ResourceKind: "Deployment",
 		ResourceNS:   "kubernaut-system",
 		ResourceName: "memory-eater",
+		APIVersion:   "apps/v1",
 		InvestigationOutcome: "actionable",
 		IsActionable:         BoolPtr(true),
 	}

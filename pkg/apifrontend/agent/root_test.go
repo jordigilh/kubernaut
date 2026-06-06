@@ -839,6 +839,37 @@ var _ = Describe("Alert tool wiring (#1367)", func() {
 	})
 })
 
+var _ = Describe("kubernaut_investigate_alert wiring (#1372)", func() {
+
+	It("IT-AF-1372-001: kubernaut_investigate_alert registered when PromClient is set", func() {
+		cfg := agentpkg.DefaultTestConfig()
+		cfg.PromClient = &stubPromClient{}
+		_, allTools, err := agentpkg.NewRootAgent(cfg)
+		Expect(err).NotTo(HaveOccurred())
+
+		var found tool.Tool
+		for _, t := range allTools {
+			if t.Name() == "kubernaut_investigate_alert" {
+				found = t
+				break
+			}
+		}
+		Expect(found).NotTo(BeNil(), "kubernaut_investigate_alert should be registered when PromClient is set")
+	})
+
+	It("IT-AF-1372-002: kubernaut_investigate_alert excluded when PromClient is nil", func() {
+		cfg := agentpkg.DefaultTestConfig()
+		cfg.PromClient = nil
+		_, allTools, err := agentpkg.NewRootAgent(cfg)
+		Expect(err).NotTo(HaveOccurred())
+
+		for _, t := range allTools {
+			Expect(t.Name()).NotTo(Equal("kubernaut_investigate_alert"),
+				"kubernaut_investigate_alert should not be registered when PromClient is nil")
+		}
+	})
+})
+
 type stubPromClient struct{}
 
 func (s *stubPromClient) GetAlerts(_ context.Context) ([]prom.Alert, error) { return nil, nil }

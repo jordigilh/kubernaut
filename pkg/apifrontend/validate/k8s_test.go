@@ -102,6 +102,72 @@ var _ = Describe("LabelValue", func() {
 	)
 })
 
+var _ = Describe("AlertName (F1)", func() {
+	DescribeTable("valid alert names",
+		func(name string) {
+			Expect(validate.AlertName(name)).To(Succeed())
+		},
+		Entry("simple", "KubePodCrashLooping"),
+		Entry("with underscores", "high_memory_usage"),
+		Entry("with colons", "namespace:container_cpu:rate5m"),
+		Entry("starts with underscore", "_internal_alert"),
+		Entry("starts with colon", ":aggregation_rule"),
+		Entry("single char", "A"),
+		Entry("all caps", "ALERT"),
+		Entry("mixed", "kube_pod_container_status_waiting_reason"),
+	)
+
+	DescribeTable("invalid alert names",
+		func(name string, substr string) {
+			err := validate.AlertName(name)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring(substr))
+		},
+		Entry("empty", "", "must not be empty"),
+		Entry("starts with digit", "1alert", "invalid alert_name"),
+		Entry("contains hyphen", "my-alert", "invalid alert_name"),
+		Entry("contains dot", "my.alert", "invalid alert_name"),
+		Entry("contains slash", "path/traversal", "invalid alert_name"),
+		Entry("contains space", "my alert", "invalid alert_name"),
+		Entry("CRLF injection", "alert\r\ninjection", "invalid alert_name"),
+		Entry("too long", strings.Repeat("a", 254), "exceeds max length"),
+	)
+})
+
+var _ = Describe("APIVersion (F2)", func() {
+	DescribeTable("valid api versions",
+		func(v string) {
+			Expect(validate.APIVersion(v)).To(Succeed())
+		},
+		Entry("core v1", "v1"),
+		Entry("apps/v1", "apps/v1"),
+		Entry("batch/v1", "batch/v1"),
+		Entry("autoscaling/v2", "autoscaling/v2"),
+		Entry("policy/v1", "policy/v1"),
+		Entry("route.openshift.io/v1", "route.openshift.io/v1"),
+		Entry("serving.knative.dev/v1", "serving.knative.dev/v1"),
+		Entry("v1beta1", "v1beta1"),
+		Entry("apps/v1beta2", "apps/v1beta2"),
+		Entry("apiextensions.k8s.io/v1", "apiextensions.k8s.io/v1"),
+	)
+
+	DescribeTable("invalid api versions",
+		func(v string, substr string) {
+			err := validate.APIVersion(v)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring(substr))
+		},
+		Entry("empty", "", "must not be empty"),
+		Entry("no version prefix", "apps", "invalid api_version"),
+		Entry("uppercase group", "Apps/v1", "invalid api_version"),
+		Entry("double slash", "apps//v1", "invalid api_version"),
+		Entry("missing v prefix", "apps/1", "invalid api_version"),
+		Entry("path traversal", "../../v1", "invalid api_version"),
+		Entry("space", "apps /v1", "invalid api_version"),
+		Entry("too long", strings.Repeat("a", 254), "exceeds max length"),
+	)
+})
+
 var _ = Describe("IT-AF-1351: RRID validation wiring", func() {
 
 	Describe("IT-AF-1351-VALID: valid namespace/name formats accepted", func() {

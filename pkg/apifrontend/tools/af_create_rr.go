@@ -24,12 +24,23 @@ const maxDescriptionLen = 2048
 
 // CreateRRArgs defines the input for RR creation (used by kubernaut_remediate and kubernaut_investigate).
 // Namespace is the workload namespace where the target resource lives (LLM-provided).
+// For cluster-scoped resources (e.g., Node), Namespace is empty and ClusterScoped is true.
 // Severity is resolved by AF via the triage pipeline.
 type CreateRRArgs struct {
 	Namespace   string `json:"namespace"`
 	Kind        string `json:"kind"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
+	// APIVersion is the Kubernetes API group/version (e.g., "apps/v1", "v1").
+	// Stored in targetResource.apiVersion of the RR CRD (#1372).
+	APIVersion string `json:"api_version"`
+	// ClusterScoped indicates the target resource is cluster-scoped (e.g., Node).
+	// When true, Namespace may be empty. Callers set this after RESTMapper validation.
+	ClusterScoped bool `json:"-"`
+	// SignalNameOverride, when set, bypasses deriveSignalName and uses this value
+	// directly as the RR spec.signalName. Used by kubernaut_investigate_alert
+	// where the alert name is the definitive signal (#1372).
+	SignalNameOverride string `json:"-"`
 }
 
 // CreateRRResult is the output of RR creation.
@@ -54,6 +65,31 @@ func rrFingerprint(namespace, kind, name string) string {
 	return fmt.Sprintf("%x", h)
 }
 
+// checkExistingRRByFingerprint checks for an existing non-terminal RR by fingerprint.
+// This is the internal dedup check used by HandleCreateRR that skips input validation
+// (namespace validation already performed by caller).
+func checkExistingRRByFingerprint(ctx context.Context, client dynamic.Interface, controllerNS, fingerprint string) (CheckExistingRRResult, error) {
+	list, err := client.Resource(rrGVR).Namespace(controllerNS).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return CheckExistingRRResult{}, ToUserFriendlyError(err)
+	}
+	for _, item := range list.Items {
+		fp, _, _ := unstructured.NestedString(item.Object, "spec", "signalFingerprint")
+		if fp != fingerprint {
+			continue
+		}
+		phase, _, _ := unstructured.NestedString(item.Object, "status", "overallPhase")
+		if !IsTerminalPhase(phase) {
+			return CheckExistingRRResult{
+				Exists: true,
+				RRID:   item.GetName(),
+				Phase:  phase,
+			}, nil
+		}
+	}
+	return CheckExistingRRResult{Exists: false}, nil
+}
+
 // HandleCreateRR creates a RemediationRequest CRD with singleflight deduplication.
 //
 // controllerNS is where the RR CRD is placed (metadata.namespace) — injected at
@@ -68,14 +104,25 @@ func HandleCreateRR(ctx context.Context, client dynamic.Interface, controllerNS 
 	if err := validate.Namespace(controllerNS); err != nil {
 		return CreateRRResult{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
-	if err := validate.Namespace(args.Namespace); err != nil {
-		return CreateRRResult{}, fmt.Errorf("%w: workload namespace: %w", ErrInvalidInput, err)
+	if args.ClusterScoped {
+		if args.Namespace != "" {
+			return CreateRRResult{}, fmt.Errorf("%w: cluster-scoped resources must have empty namespace", ErrInvalidInput)
+		}
+	} else {
+		if err := validate.Namespace(args.Namespace); err != nil {
+			return CreateRRResult{}, fmt.Errorf("%w: workload namespace: %w", ErrInvalidInput, err)
+		}
 	}
-	if args.Kind == "" {
-		return CreateRRResult{}, fmt.Errorf("%w: kind must not be empty", ErrInvalidInput)
+	if err := validate.Kind(args.Kind); err != nil {
+		return CreateRRResult{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
 	if args.Name == "" {
 		return CreateRRResult{}, fmt.Errorf("%w: name must not be empty", ErrInvalidInput)
+	}
+	if args.APIVersion != "" {
+		if err := validate.APIVersion(args.APIVersion); err != nil {
+			return CreateRRResult{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
+		}
 	}
 
 	if len(args.Description) > maxDescriptionLen {
@@ -102,15 +149,14 @@ func HandleCreateRR(ctx context.Context, client dynamic.Interface, controllerNS 
 		}
 	}
 
-	signalName := deriveSignalName(ctx, client, args.Namespace, args, triageResult)
+	signalName := args.SignalNameOverride
+	if signalName == "" {
+		signalName = deriveSignalName(ctx, client, args.Namespace, args, triageResult)
+	}
 	fingerprint := rrFingerprint(args.Namespace, args.Kind, args.Name)
 
 	result, err, _ := rrCreateGroup.Do(fingerprint, func() (interface{}, error) {
-		existing, checkErr := HandleCheckExistingRR(ctx, client, controllerNS, CheckExistingRRArgs{
-			Namespace: args.Namespace,
-			Kind:      args.Kind,
-			Name:      args.Name,
-		})
+		existing, checkErr := checkExistingRRByFingerprint(ctx, client, controllerNS, fingerprint)
 		if checkErr != nil {
 			return nil, checkErr
 		}
@@ -139,11 +185,7 @@ func HandleCreateRR(ctx context.Context, client dynamic.Interface, controllerNS 
 			"firingTime":        now,
 			"receivedTime":      now,
 			"targetType":        "kubernetes",
-			"targetResource": map[string]interface{}{
-				"kind":      args.Kind,
-				"name":      args.Name,
-				"namespace": args.Namespace,
-			},
+			"targetResource": buildTargetResource(args),
 		}
 
 		if triageResult != nil {
@@ -225,6 +267,22 @@ func HandleCreateRR(ctx context.Context, client dynamic.Interface, controllerNS 
 	}
 
 	return *res, nil
+}
+
+// buildTargetResource constructs the targetResource map for the RR CRD spec.
+// Includes apiVersion when available (#1372). Omits namespace for cluster-scoped resources.
+func buildTargetResource(args *CreateRRArgs) map[string]interface{} {
+	tr := map[string]interface{}{
+		"kind": args.Kind,
+		"name": args.Name,
+	}
+	if args.Namespace != "" {
+		tr["namespace"] = args.Namespace
+	}
+	if args.APIVersion != "" {
+		tr["apiVersion"] = args.APIVersion
+	}
+	return tr
 }
 
 // deriveSignalName selects a grounded signal name using a priority cascade:

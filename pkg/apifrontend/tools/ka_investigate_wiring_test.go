@@ -106,9 +106,10 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — wiring audit (WIRE-C01/
 			result, err := tools.HandleInvestigationMCPWithRegistry(
 				ctx, mockMCP, k8sClient, "kubernaut-system",
 				tools.InvestigateMCPArgs{
-					Namespace: "prod",
-					Kind:      "Deployment",
-					Name:      "web-app",
+					APIVersion: "apps/v1",
+					Namespace:  "prod",
+					Kind:       "Deployment",
+					Name:       "web-app",
 				},
 				nil, nil, nil, true, nil, "", nil, triager,
 			)
