@@ -29,6 +29,7 @@ var _ = Describe("kubernaut_remediate wiring (#1332)", func() {
 			Kind:        "Deployment",
 			Name:        "web-1332-w01",
 			Description: "kubernaut_remediate wiring IT",
+			APIVersion:  "apps/v1",
 		}, "it-user", nil, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.RRID).To(HavePrefix("rr-"))
@@ -52,6 +53,7 @@ var _ = Describe("kubernaut_remediate wiring (#1332)", func() {
 			Kind:        "Deployment",
 			Name:        "web-1332-w02",
 			Description: "no IS expected",
+			APIVersion:  "apps/v1",
 		}, "it-user", nil, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.RRID).To(HavePrefix("rr-"))
@@ -136,6 +138,7 @@ var _ = Describe("kubernaut_remediate wiring (#1332)", func() {
 			Kind:        "Deployment",
 			Name:        "web-nil",
 			Description: "nil client test",
+			APIVersion:  "apps/v1",
 		}, "it-user", nil, nil)
 		Expect(err).To(MatchError(tools.ErrK8sUnavailable))
 	})
@@ -150,6 +153,7 @@ var _ = Describe("kubernaut_remediate wiring (#1332)", func() {
 			Kind:        "Deployment",
 			Name:        "web-1332-w06",
 			Description: "audit wiring IT",
+			APIVersion:  "apps/v1",
 		}, "audit-user-1332", nil, auditRecorder)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.RRID).NotTo(BeEmpty())

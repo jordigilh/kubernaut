@@ -232,7 +232,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 	It("IT-AF-1292-W02: prompt includes workload namespace instruction and rejects old single-NS wording (BR-PLATFORM-057, CM-6)", func() {
 		instruction := agentpkg.BuildInstruction("kubernaut-system")
 
-		Expect(instruction).To(ContainSubstring("provide: namespace, kind, name, description"),
+		Expect(instruction).To(ContainSubstring("provide: api_version, namespace, kind, name, description"),
 			"prompt must list namespace as an LLM-provided field for kubernaut_remediate")
 		Expect(instruction).To(ContainSubstring("namespace is the workload namespace"),
 			"prompt must clarify that namespace is the workload namespace")
