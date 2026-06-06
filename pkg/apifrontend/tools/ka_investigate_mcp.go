@@ -62,13 +62,16 @@ type ISSignaler interface {
 }
 
 // InvestigateMCPArgs defines the input for the MCP-based kubernaut_investigate tool.
-// Either RRID (for an existing RR) or Namespace/Kind/Name (to create a new one)
+// Either RRID (for an existing RR) or APIVersion/Kind/Name (to create a new one)
 // must be provided. When creating, an IS CRD is also created for the interactive flow.
 type InvestigateMCPArgs struct {
-	RRID      string `json:"rr_id,omitempty"`
-	Namespace string `json:"namespace,omitempty"`
-	Kind      string `json:"kind,omitempty"`
-	Name      string `json:"name,omitempty"`
+	RRID string `json:"rr_id,omitempty"`
+	// APIVersion is the Kubernetes API group/version (e.g., "apps/v1", "v1").
+	// Required when creating a new RR (not using rr_id) (#1372).
+	APIVersion string `json:"api_version,omitempty"`
+	Namespace  string `json:"namespace,omitempty"`
+	Kind       string `json:"kind,omitempty"`
+	Name       string `json:"name,omitempty"`
 }
 
 // InvestigateMCPResult is the output of the MCP investigate tool.
@@ -124,10 +127,10 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 	}
 
 	hasRRID := args.RRID != ""
-	hasResourceArgs := args.Namespace != "" || args.Kind != "" || args.Name != ""
+	hasResourceArgs := args.APIVersion != "" || args.Kind != "" || args.Name != "" || args.Namespace != ""
 
 	if !hasRRID && !hasResourceArgs {
-		return InvestigateMCPResult{}, fmt.Errorf("rr_id or namespace/kind/name required")
+		return InvestigateMCPResult{}, fmt.Errorf("rr_id or api_version/kind/name required")
 	}
 
 	if hasRRID {
@@ -139,12 +142,14 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 	identity := auth.UserIdentityFromContext(ctx)
 
 	if !hasRRID && hasResourceArgs {
+		if err := validate.APIVersion(args.APIVersion); err != nil {
+			return InvestigateMCPResult{}, fmt.Errorf("%w", err)
+		}
 		if args.Kind == "" || args.Name == "" {
-			return InvestigateMCPResult{}, fmt.Errorf("kind and name required when providing namespace/kind/name")
+			return InvestigateMCPResult{}, fmt.Errorf("kind and name required when providing api_version/kind/name")
 		}
-		if args.Namespace == "" {
-			return InvestigateMCPResult{}, fmt.Errorf("rr_id or namespace/kind/name required")
-		}
+
+		clusterScoped := args.Namespace == ""
 
 		if identity != nil && identity.IsServiceAccount {
 			return InvestigateMCPResult{}, fmt.Errorf("interactive investigation cannot be started by service accounts")
@@ -155,9 +160,11 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 		}
 
 		createArgs := &CreateRRArgs{
-			Namespace: args.Namespace,
-			Kind:      args.Kind,
-			Name:      args.Name,
+			Namespace:     args.Namespace,
+			Kind:          args.Kind,
+			Name:          args.Name,
+			APIVersion:    args.APIVersion,
+			ClusterScoped: clusterScoped,
 		}
 		createUser := ""
 		if identity != nil {
@@ -622,7 +629,9 @@ func NewInvestigateMCPTool(mcpClient ka.MCPClient, k8sClient dynamic.Interface, 
 	return functiontool.New(functiontool.Config{
 		Name: "kubernaut_investigate",
 		Description: "Investigate an infrastructure incident via MCP. " +
-			"Provide rr_id to start and run the full investigation. " +
+			"Provide rr_id to resume an existing investigation, or " +
+			"api_version/kind/name (and optional namespace for namespaced resources) " +
+			"to create a new investigation. " +
 			"This tool blocks until the investigation completes and returns " +
 			"the root-cause analysis summary. Live progress events stream " +
 			"to the user automatically while the investigation runs.",

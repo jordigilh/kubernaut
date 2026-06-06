@@ -205,7 +205,7 @@ var _ = Describe("System Prompt", func() {
 
 		It("UT-AF-1282-PROMPT-002: prompt documents all AF auto-resolved fields", func() {
 			result := agentpkg.BuildInstruction("kubernaut-system")
-			Expect(result).To(ContainSubstring("provide: namespace, kind, name, description"))
+			Expect(result).To(ContainSubstring("provide: api_version, namespace, kind, name, description"))
 			Expect(result).To(ContainSubstring("workload namespace where the target resource lives"))
 			Expect(result).To(ContainSubstring("severity: via the Prometheus severity triage pipeline"))
 			Expect(result).To(ContainSubstring("signalName: from AlertManager alerts"))

@@ -70,7 +70,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 	}
 
 	Describe("InvestigateMCPArgs validation (F-02, F-03)", func() {
-		It("UT-AF-1332-012: empty args (no rr_id, no namespace/kind/name) returns error", func() {
+		It("UT-AF-1332-012: empty args (no rr_id, no api_version/kind/name) returns error", func() {
 			mockMCP := &ka.MockMCPClient{}
 			_, err := tools.HandleInvestigationMCPWithRegistry(
 				context.Background(), mockMCP, nil, "kubernaut-system",
@@ -78,14 +78,14 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 				nil, nil, nil, true, nil, "", nil, nil,
 			)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("rr_id or namespace/kind/name required"))
+			Expect(err.Error()).To(ContainSubstring("rr_id or api_version/kind/name required"))
 		})
 
 		It("UT-AF-1332-013: partial args (namespace only, missing kind/name) returns error", func() {
 			mockMCP := &ka.MockMCPClient{}
 			_, err := tools.HandleInvestigationMCPWithRegistry(
 				context.Background(), mockMCP, nil, "kubernaut-system",
-				tools.InvestigateMCPArgs{Namespace: "prod"},
+				tools.InvestigateMCPArgs{Namespace: "prod", APIVersion: "apps/v1"},
 				nil, nil, nil, true, nil, "", nil, nil,
 			)
 			Expect(err).To(HaveOccurred())
@@ -119,9 +119,10 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			result, err := tools.HandleInvestigationMCPWithRegistry(
 				ctx, mockMCP, k8sClient, "kubernaut-system",
 				tools.InvestigateMCPArgs{
-					Namespace: "prod",
-					Kind:      "Deployment",
-					Name:      "web-app",
+					APIVersion: "apps/v1",
+					Namespace:  "prod",
+					Kind:       "Deployment",
+					Name:       "web-app",
 				},
 				nil, nil, nil, true, nil, "", nil, nil,
 			)
@@ -141,9 +142,10 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			_, err := tools.HandleInvestigationMCPWithRegistry(
 				ctx, mockMCP, nil, "kubernaut-system",
 				tools.InvestigateMCPArgs{
-					Namespace: "prod",
-					Kind:      "Deployment",
-					Name:      "web-fail",
+					APIVersion: "apps/v1",
+					Namespace:  "prod",
+					Kind:       "Deployment",
+					Name:       "web-fail",
 				},
 				nil, nil, nil, true, nil, "", nil, nil,
 			)
@@ -164,9 +166,10 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			_, err := tools.HandleInvestigationMCPWithRegistry(
 				ctx, mockMCP, k8sClient, "kubernaut-system",
 				tools.InvestigateMCPArgs{
-					Namespace: "prod",
-					Kind:      "Deployment",
-					Name:      "web-sa",
+					APIVersion: "apps/v1",
+					Namespace:  "prod",
+					Kind:       "Deployment",
+					Name:       "web-sa",
 				},
 				nil, nil, nil, true, nil, "", nil, nil,
 			)
@@ -224,9 +227,10 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			_, err := tools.HandleInvestigationMCPWithRegistry(
 				ctx, mockMCP, k8sClient, "kubernaut-system",
 				tools.InvestigateMCPArgs{
-					Namespace: "prod",
-					Kind:      "Deployment",
-					Name:      "web-is-fail",
+					APIVersion: "apps/v1",
+					Namespace:  "prod",
+					Kind:       "Deployment",
+					Name:       "web-is-fail",
 				},
 				nil, nil, nil, true, nil, "", nil, nil,
 			)

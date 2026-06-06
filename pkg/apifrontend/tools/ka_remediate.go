@@ -11,6 +11,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
 )
 
 // getNestedString safely extracts a nested string value from an unstructured map.
@@ -40,6 +41,9 @@ type RemediateArgs struct {
 	Name        string `json:"name,omitempty"`
 	Description string `json:"description,omitempty"`
 	RRID        string `json:"rr_id,omitempty"`
+	// APIVersion is the Kubernetes API group/version (e.g., "apps/v1", "v1").
+	// Required when providing namespace/kind/name (#1372).
+	APIVersion string `json:"api_version"`
 }
 
 // RemediateResult is the output of kubernaut_remediate.
@@ -83,11 +87,17 @@ func HandleRemediate(ctx context.Context, client dynamic.Interface, controllerNS
 		}, nil
 	}
 
+	if err := validate.APIVersion(args.APIVersion); err != nil {
+		return RemediateResult{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
+	}
+
 	createArgs := &CreateRRArgs{
-		Namespace:   args.Namespace,
-		Kind:        args.Kind,
-		Name:        args.Name,
-		Description: args.Description,
+		Namespace:     args.Namespace,
+		Kind:          args.Kind,
+		Name:          args.Name,
+		Description:   args.Description,
+		APIVersion:    args.APIVersion,
+		ClusterScoped: args.Namespace == "",
 	}
 
 	result, err := HandleCreateRR(ctx, client, controllerNS, createArgs, username, triager, auditor)
