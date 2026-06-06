@@ -347,10 +347,6 @@ func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal
 		}
 	}
 
-	// Preserve the signal resolver's identity before SyncSignalFromRCA
-	// overwrites Kind/Name/APIVersion. When enrichment is unavailable,
-	// FinalizeWorkflowResult uses this as the authoritative target.
-	originalSignal := signal
 	preKind := signal.ResourceKind
 	signal = SyncSignalFromRCA(signal, rcaResult.RemediationTarget)
 	signal.Namespace = inv.normalizeNamespace(signal.ResourceKind, signal.Namespace)
@@ -456,15 +452,7 @@ func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal
 		return nil, err
 	}
 
-	// When enrichment is available, the owner chain resolves the root
-	// identity regardless of signal. When enrichment is nil, pass the
-	// original (pre-sync) signal so InjectRemediationTarget uses the
-	// signal resolver's authoritative identity, not the RCA-synced one.
-	finalSignal := signal
-	if rawEnrichData == nil {
-		finalSignal = originalSignal
-	}
-	FinalizeWorkflowResult(workflowResult, finalSignal, rcaResult, rawEnrichData)
+	FinalizeWorkflowResult(workflowResult, signal, rcaResult, rawEnrichData)
 	return workflowResult, nil
 }
 
