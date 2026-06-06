@@ -11,7 +11,11 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation"
 )
 
-var kindRE = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9]*$`)
+var (
+	kindRE      = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9]*$`)
+	alertNameRE = regexp.MustCompile(`^[a-zA-Z_:][a-zA-Z0-9_:]*$`)
+	apiVersionRE = regexp.MustCompile(`^([a-z0-9][a-z0-9.-]*/)?v[0-9]+([a-z0-9]+)?$`)
+)
 
 // Namespace validates that ns is a valid Kubernetes namespace (RFC 1123 DNS label).
 func Namespace(ns string) error {
@@ -96,6 +100,42 @@ const MaxMessageLen = 10240
 func MessageLength(msg string) error {
 	if len(msg) > MaxMessageLen {
 		return fmt.Errorf("message length %d exceeds maximum %d", len(msg), MaxMessageLen)
+	}
+	return nil
+}
+
+// MaxAlertNameLen is the maximum length for a Prometheus alert name.
+const MaxAlertNameLen = 253
+
+// AlertName validates that name is a valid Prometheus alert name.
+// Prometheus alert names follow the pattern [a-zA-Z_:][a-zA-Z0-9_:]*.
+func AlertName(name string) error {
+	if name == "" {
+		return fmt.Errorf("alert_name must not be empty")
+	}
+	if len(name) > MaxAlertNameLen {
+		return fmt.Errorf("alert_name %q exceeds max length %d", name, MaxAlertNameLen)
+	}
+	if !alertNameRE.MatchString(name) {
+		return fmt.Errorf("invalid alert_name %q: must match Prometheus naming convention [a-zA-Z_:][a-zA-Z0-9_:]*", name)
+	}
+	return nil
+}
+
+// MaxAPIVersionLen is the maximum length for a Kubernetes API version string.
+const MaxAPIVersionLen = 253
+
+// APIVersion validates that v is a valid Kubernetes API version string.
+// Format: "group/version" (e.g., "apps/v1") or "version" for core (e.g., "v1").
+func APIVersion(v string) error {
+	if v == "" {
+		return fmt.Errorf("api_version must not be empty")
+	}
+	if len(v) > MaxAPIVersionLen {
+		return fmt.Errorf("api_version %q exceeds max length %d", v, MaxAPIVersionLen)
+	}
+	if !apiVersionRE.MatchString(v) {
+		return fmt.Errorf("invalid api_version %q: must be 'v<N>' or '<group>/v<N>' (e.g., 'v1', 'apps/v1')", v)
 	}
 	return nil
 }
