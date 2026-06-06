@@ -630,6 +630,9 @@ apifrontend:
           - kubectl_list_events
           - kubernaut_check_existing_remediation
           - kubernaut_remediate
+          # Alert observation tools (#1367)
+          - list_alerts
+          - get_alert_details
         ai-orchestrator:
           - kubernaut_list_remediations
           - kubernaut_get_remediation
@@ -650,6 +653,9 @@ apifrontend:
           - kubectl_list_events
           - kubernaut_check_existing_remediation
           - kubernaut_remediate
+          # Alert observation tools (#1367)
+          - list_alerts
+          - get_alert_details
         cicd:
           - kubernaut_list_remediations
           - kubernaut_get_remediation

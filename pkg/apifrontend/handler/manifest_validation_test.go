@@ -176,11 +176,13 @@ var _ = Describe("RBAC tool name alignment", func() {
 	// These are exposed via A2A (ADK) and authorized through the same persona
 	// definitions but are NOT registered in the MCP bridge.
 	a2aInternalTools := map[string]bool{
-		"kubectl_get":                       true,
-		"kubectl_list":                      true,
-		"kubectl_list_events":               true,
+		"kubectl_get":                          true,
+		"kubectl_list":                         true,
+		"kubectl_list_events":                  true,
 		"kubernaut_check_existing_remediation": true,
-		"kubernaut_remediate":               true,
+		"kubernaut_remediate":                  true,
+		"list_alerts":                          true,
+		"get_alert_details":                    true,
 	}
 
 	allKnownTools := map[string]bool{}

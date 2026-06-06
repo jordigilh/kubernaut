@@ -461,6 +461,7 @@ type backendDeps struct {
 	DedicatedClient       ka.MCPClient
 	Pool                  *ka.KASessionPool
 	Triager               *severity.Triager
+	PromClient            prom.Client
 	DSResilientTransport  *resilience.CircuitBreakerTransport
 	CAWatchers            []caWatcherEntry
 	k8sDynClient          dynamic.Interface
@@ -652,6 +653,7 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 		}
 
 		promClient := prom.NewHTTPClient(cfg.SeverityTriage.PrometheusURL, promHTTPClient)
+		deps.PromClient = promClient
 
 		llmTriager := severity.LLMTriager(severity.NewNoopLLMTriager(logger.WithName("llm-triage")))
 
@@ -790,6 +792,7 @@ func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps,
 		UserLimiter:           userLimiter,
 		ActiveContextRegistry: activeCtxRegistry,
 		InteractiveEnabled:    cfg.Interactive.Enabled,
+		PromClient:            deps.PromClient,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create root agent: %w", err)
