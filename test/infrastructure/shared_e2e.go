@@ -228,6 +228,7 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
             namespace: "%s"
             kind: "Deployment"
             name: "memory-eater"
+            api_version: "apps/v1"
             description: "FP E2E %s remediation request"
 `, key, key, ns, key)
 		}
@@ -241,6 +242,7 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
             namespace: "default"
             kind: "Deployment"
             name: "memory-eater"
+            api_version: "apps/v1"
             description: "FP E2E test remediation request"
 `
 	}
