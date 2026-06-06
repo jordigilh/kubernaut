@@ -9,6 +9,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	prom "github.com/jordigilh/kubernaut/pkg/apifrontend/prometheus"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
 
@@ -33,7 +34,7 @@ var _ = Describe("Alert Tools (#1367)", func() {
 
 	BeforeEach(func() {
 		testAlerts = []prom.Alert{
-			{Labels: map[string]string{"alertname": "HighCPU", "namespace": "prod", "severity": "critical", "instance": "10.128.0.45:9090"}, Annotations: map[string]string{"summary": "CPU is high"}, State: "firing", ActiveAt: time.Now()},
+			{Labels: map[string]string{"alertname": "HighCPU", "namespace": "prod", "severity": "critical", "instance": "10.128.0.45:9090"}, Annotations: map[string]string{"summary": "CPU is high", "runbook_url": "https://runbook.internal.corp:8080/cpu"}, State: "firing", ActiveAt: time.Now()},
 			{Labels: map[string]string{"alertname": "LowDisk", "namespace": "prod", "severity": "warning"}, Annotations: map[string]string{"summary": "Disk low"}, State: "firing", ActiveAt: time.Now()},
 			{Labels: map[string]string{"alertname": "MemLeak", "namespace": "staging", "severity": "high"}, Annotations: map[string]string{"summary": "Memory leak"}, State: "pending", ActiveAt: time.Now()},
 			{Labels: map[string]string{"alertname": "etcdSlow", "severity": "warning"}, Annotations: map[string]string{"summary": "etcd slow"}, State: "firing", ActiveAt: time.Now()},
@@ -159,6 +160,78 @@ var _ = Describe("Alert Tools (#1367)", func() {
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).NotTo(ContainSubstring("thanos-querier"))
 			Expect(err.Error()).NotTo(ContainSubstring("9091"))
+		})
+	})
+
+	Describe("FedRAMP audit fixes (#1367 F1-F8)", func() {
+
+		It("UT-AF-1367-F1: annotations are redacted — runbook_url internal hostnames stripped", func() {
+			client := &mockAlertPromClient{alerts: testAlerts}
+			result, err := tools.HandleListAlerts(context.Background(), client, tools.ListAlertsArgs{Namespace: "prod", Severity: "critical"})
+			Expect(err).NotTo(HaveOccurred())
+			for _, a := range result.Alerts {
+				if a.Labels["alertname"] == "HighCPU" {
+					Expect(a.Annotations["runbook_url"]).NotTo(ContainSubstring("runbook.internal.corp"),
+						"internal hostname should be redacted from runbook_url annotation")
+				}
+			}
+		})
+
+		It("UT-AF-1367-F2: HandleListAlerts rejects invalid namespace with ErrInvalidInput", func() {
+			client := &mockAlertPromClient{alerts: testAlerts}
+			_, err := tools.HandleListAlerts(context.Background(), client, tools.ListAlertsArgs{Namespace: "INVALID--NS!"})
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, tools.ErrInvalidInput)).To(BeTrue())
+		})
+
+		It("UT-AF-1367-F3: HandleListAlerts sets Truncated when output exceeds size cap", func() {
+			largeAlerts := make([]prom.Alert, 500)
+			for i := range largeAlerts {
+				largeAlerts[i] = prom.Alert{
+					Labels:      map[string]string{"alertname": "Alert" + string(rune('A'+i%26)), "namespace": "prod", "severity": "warning"},
+					Annotations: map[string]string{"summary": "This is a long summary that contributes to output size padding for testing purposes across many repeated alerts"},
+					State:       "firing",
+					ActiveAt:    time.Now(),
+				}
+			}
+			client := &mockAlertPromClient{alerts: largeAlerts}
+			result, err := tools.HandleListAlerts(context.Background(), client, tools.ListAlertsArgs{})
+			Expect(err).NotTo(HaveOccurred())
+			if result.Truncated {
+				Expect(result.Count).To(BeNumerically("<", 500))
+			}
+		})
+
+		It("UT-AF-1367-F4: sensitiveAlertKeys matches severity.SensitiveKeys", func() {
+			for k := range severity.SensitiveKeys {
+				Expect(tools.SensitiveAlertKeys).To(HaveKey(k),
+					"severity.SensitiveKeys has %q but tools.SensitiveAlertKeys does not — drift detected", k)
+			}
+			for k := range tools.SensitiveAlertKeys {
+				Expect(severity.SensitiveKeys).To(HaveKey(k),
+					"tools.SensitiveAlertKeys has %q but severity.SensitiveKeys does not — drift detected", k)
+			}
+		})
+
+		It("UT-AF-1367-F5: redactAlertLabels applies URL/IP redaction to all label values", func() {
+			alerts := []prom.Alert{
+				{Labels: map[string]string{"alertname": "TestAlert", "namespace": "prod", "severity": "warning", "custom_label": "10.0.0.1:443", "endpoint": "https://internal.svc:8080/metrics"}, State: "firing", ActiveAt: time.Now()},
+			}
+			client := &mockAlertPromClient{alerts: alerts}
+			result, err := tools.HandleListAlerts(context.Background(), client, tools.ListAlertsArgs{})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Count).To(Equal(1))
+			Expect(result.Alerts[0].Labels["custom_label"]).NotTo(ContainSubstring("10.0.0.1"),
+				"IP in custom label should be redacted")
+			Expect(result.Alerts[0].Labels["endpoint"]).NotTo(ContainSubstring("internal.svc"),
+				"internal URL in endpoint label should be redacted")
+		})
+
+		It("UT-AF-1367-F6: HandleGetAlertDetails rejects invalid namespace with ErrInvalidInput", func() {
+			client := &mockAlertPromClient{alerts: testAlerts}
+			_, err := tools.HandleGetAlertDetails(context.Background(), client, tools.GetAlertDetailsArgs{AlertName: "HighCPU", Namespace: "INVALID--NS!"})
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, tools.ErrInvalidInput)).To(BeTrue())
 		})
 	})
 })

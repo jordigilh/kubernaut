@@ -12,11 +12,21 @@ type Source string
 
 // Triage source constants identify which pipeline tier produced the severity.
 const (
-	SourceFiringAlert         Source = "firing_alert"
-	SourcePendingAlert        Source = "pending_alert"
-	SourceNSFiringAlert       Source = "ns_firing_alert"
-	SourceNSPendingAlert      Source = "ns_pending_alert"
-	SourceClusterFiringAlert  Source = "cluster_firing_alert"
+	SourceFiringAlert  Source = "firing_alert"
+	SourcePendingAlert Source = "pending_alert"
+	// SourceNSFiringAlert indicates a namespace-scoped firing alert correlation.
+	// The alert's namespace label matched the target but no resource-specific
+	// key overlap was found. This is a broader correlation than resource-specific
+	// matching -- downstream consumers should weigh accordingly.
+	SourceNSFiringAlert Source = "ns_firing_alert"
+	// SourceNSPendingAlert is the pending equivalent of SourceNSFiringAlert.
+	SourceNSPendingAlert Source = "ns_pending_alert"
+	// SourceClusterFiringAlert indicates a cluster-scoped firing alert correlation.
+	// The alert has no namespace label, so it is matched to any investigation target.
+	// This is the broadest correlation tier -- the alert represents a cluster-wide
+	// condition that may or may not be related to the specific workload under triage.
+	SourceClusterFiringAlert Source = "cluster_firing_alert"
+	// SourceClusterPendingAlert is the pending equivalent of SourceClusterFiringAlert.
 	SourceClusterPendingAlert Source = "cluster_pending_alert"
 	SourceRuleEval            Source = "rule_evaluation"
 	SourceLLMRuleInform       Source = "llm_rule_informed"
@@ -93,8 +103,9 @@ func HighestSeverity(severities []string) string {
 	return best
 }
 
-// sensitiveKeys lists label keys that should not appear in LLM prompts.
-var sensitiveKeys = map[string]bool{
+// SensitiveKeys lists label keys that should not appear in LLM prompts.
+// Exported for consistency testing against tools.sensitiveAlertKeys (#1367 F4).
+var SensitiveKeys = map[string]bool{
 	"password": true, "token": true, "secret": true,
 	"key": true, "credential": true, "bearer": true,
 }
@@ -109,7 +120,7 @@ func BuildTriagePrompt(input TriageInput, rules interface{}) string {
 
 	sb.WriteString("Resource labels:\n")
 	for k, v := range input.Labels {
-		if sensitiveKeys[strings.ToLower(k)] {
+		if SensitiveKeys[strings.ToLower(k)] {
 			continue
 		}
 		fmt.Fprintf(&sb, "  %s: %s\n", k, v)

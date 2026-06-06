@@ -236,6 +236,20 @@ var _ = Describe("RBAC tool name alignment", func() {
 		}
 	})
 
+	It("TC-A-RBAC-01d: every A2A internal tool must appear in at least one persona", func() {
+		personas := loadPersonas()
+		allPersonaTools := map[string]bool{}
+		for _, tools := range personas {
+			for _, t := range tools {
+				allPersonaTools[t] = true
+			}
+		}
+		for tool := range a2aInternalTools {
+			Expect(allPersonaTools).To(HaveKey(tool),
+				"A2A internal tool %q has no persona assignment in Helm values", tool)
+		}
+	})
+
 	It("TC-A-RBAC-01c: Helm personas must use kubernaut_present_decision (MCP bridge name)", func() {
 		path := filepath.Join(repoRoot(), "charts", "kubernaut", "values.yaml")
 		raw, err := os.ReadFile(path)
