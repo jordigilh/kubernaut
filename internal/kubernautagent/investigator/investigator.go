@@ -314,6 +314,11 @@ func (inv *Investigator) RunRCAExtractionFromConversation(ctx context.Context, m
 // structured RCA result. This reuses the exact autonomous Phase 3 pipeline
 // (BuildPhase1Context + runWorkflowSelection) so that interactive and
 // autonomous workflow discovery produce consistent results.
+//
+// F5/F6 (#1374): When the investigator has an enricher wired, this function
+// resolves enrichment internally (pre-RCA + post-RCA re-enrichment), mirroring
+// the autonomous Investigate() pipeline. The caller-provided enrichData is used
+// as fallback only when the enricher is nil.
 func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal katypes.SignalContext, rcaResult *katypes.InvestigationResult, enrichData *prompt.EnrichmentData, correlationID string) (*katypes.InvestigationResult, error) {
 	inv.pipeline.AnomalyDetector.Reset()
 
@@ -335,14 +340,80 @@ func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal
 		}
 	}
 
-	signal = SyncSignalAPIVersionFromRCA(signal, rcaResult.RemediationTarget)
+	preKind := signal.ResourceKind
+	signal = SyncSignalFromRCA(signal, rcaResult.RemediationTarget)
+	signal.Namespace = inv.normalizeNamespace(signal.ResourceKind, signal.Namespace)
 
 	inv.logger.Info("RunWorkflowDiscoveryFromRCA: RCA target state",
 		"rca_target_kind", rcaResult.RemediationTarget.Kind,
 		"rca_target_api_version", rcaResult.RemediationTarget.APIVersion,
+		"signal_kind_before", preKind,
 		"signal_kind", signal.ResourceKind,
 		"signal_api_version", signal.ResourceAPIVersion,
+		"signal_namespace", signal.Namespace,
 		"correlation_id", correlationID)
+
+	// F5 (#1374): Resolve enrichment when the enricher is wired, mirroring
+	// the autonomous path (Investigate L414-500). Pre-RCA enrichment uses
+	// the signal target; post-RCA re-enrichment uses the RCA-identified
+	// target when it differs (cross-resource RCA).
+	var rawEnrichData *enrichment.EnrichmentResult
+	if inv.enricher != nil {
+		enrichmentCache := make(map[string]*enrichment.EnrichmentResult)
+		signalKind, signalName, signalNS := ResolveEnrichmentTarget(signal, nil)
+		signalNS = inv.normalizeNamespace(signalKind, signalNS)
+		rawEnrichData = inv.resolveEnrichmentCached(ctx, enrichmentCache, signalKind, signalName, signalNS, signal.IncidentID)
+
+		postRCAKind, postRCAName, postRCANS := ResolveEnrichmentTarget(signal, rcaResult)
+		postRCANS = inv.normalizeNamespace(postRCAKind, postRCANS)
+		if postRCAKind != signalKind || postRCAName != signalName || postRCANS != signalNS {
+			inv.logger.Info("RunWorkflowDiscoveryFromRCA: re-enriching with RCA target",
+				"signal", signalKind+"/"+signalName,
+				"rca_target", postRCAKind+"/"+postRCAName,
+				"correlation_id", correlationID)
+			reEnriched := inv.resolveEnrichmentCached(ctx, enrichmentCache, postRCAKind, postRCAName, postRCANS, signal.IncidentID)
+
+			if reEnriched != nil && reEnriched.HardFail {
+				inv.logger.Error(reEnriched.OwnerChainError,
+					"RunWorkflowDiscoveryFromRCA: enrichment hard-failed for RCA target",
+					"correlation_id", correlationID)
+			} else if reEnriched != nil && reEnriched.TargetResourceDeleted {
+				rcaResult.Warnings = append(rcaResult.Warnings,
+					deletedResourceWarning(postRCAKind, postRCAName, postRCANS))
+			}
+
+			if reEnriched != nil && !reEnriched.HardFail && !allLabelDetectionsFailed(reEnriched.DetectedLabels) {
+				rawEnrichData = reEnriched
+			} else if reEnriched != nil && !reEnriched.HardFail {
+				inv.logger.Info("RunWorkflowDiscoveryFromRCA: re-enrichment labels all failed, preserving signal-target labels",
+					"rca_target", postRCAKind+"/"+postRCAName, "correlation_id", correlationID)
+			}
+		} else if rawEnrichData != nil && rawEnrichData.TargetResourceDeleted {
+			rcaResult.Warnings = append(rcaResult.Warnings,
+				deletedResourceWarning(signalKind, signalName, signalNS))
+		}
+
+		enrichData = toPromptEnrichment(rawEnrichData)
+	}
+
+	// F6 (#1374): Attach DetectedLabelsJSON to the signal so workflow
+	// discovery tools forward labels to DS catalog queries, activating
+	// GitOps-aware scoring (parity with autonomous path L521-537).
+	if rawEnrichData != nil && rawEnrichData.DetectedLabels != nil {
+		if dlJSON, err := json.Marshal(rawEnrichData.DetectedLabels); err == nil {
+			signal.DetectedLabelsJSON = string(dlJSON)
+			dl := rawEnrichData.DetectedLabels
+			trueCount := countTrueLabels(dl.GitOpsManaged, dl.PDBProtected, dl.HPAEnabled,
+				dl.Stateful, dl.HelmManaged, dl.NetworkIsolated, dl.ResourceQuotaConstrained)
+			inv.logger.V(1).Info("RunWorkflowDiscoveryFromRCA: detected labels attached for workflow scoring",
+				"correlation_id", correlationID,
+				"true_label_count", trueCount,
+				"gitops_tool", dl.GitOpsTool)
+		} else {
+			inv.logger.Error(err, "RunWorkflowDiscoveryFromRCA: failed to marshal detected labels",
+				"correlation_id", correlationID)
+		}
+	}
 
 	client := inv.client
 	modelName := inv.modelName
@@ -362,7 +433,13 @@ func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal
 	}
 
 	p1Ctx := BuildPhase1Context(rcaResult)
-	return inv.runWorkflowSelection(ctx, signal, rcaResult.RCASummary, enrichData, p1Ctx, nil, correlationID, client, modelName, runtimeParams)
+	workflowResult, err := inv.runWorkflowSelection(ctx, signal, rcaResult.RCASummary, enrichData, p1Ctx, nil, correlationID, client, modelName, runtimeParams)
+	if err != nil {
+		return nil, err
+	}
+
+	FinalizeWorkflowResult(workflowResult, signal, rcaResult, rawEnrichData)
+	return workflowResult, nil
 }
 
 // Investigate runs the two-invocation investigation and returns the result.
