@@ -156,20 +156,59 @@ func LogLabelOverrideOrRejection(logger logr.Logger, signal katypes.SignalContex
 	}
 }
 
-// SyncSignalAPIVersionFromRCA ensures the signal carries the RCA target's
-// apiVersion when the signal's own ResourceAPIVersion is empty. This is
-// required for workflow discovery tools (list_available_actions, list_workflows)
-// to produce a full GVK component filter (e.g. "apps/v1/Deployment") instead
-// of falling back to the bare kind ("deployment"), which fails to match
-// catalog labels that store components in GVK format.
+// SyncSignalFromRCA reconciles the signal context with the RCA-identified
+// remediation target. When the RCA identifies a different resource than the
+// original alert target (cross-resource RCA), this function updates Kind,
+// Name, Namespace, and APIVersion so that ComponentGVK() produces the
+// correct GVK for workflow discovery catalog matching.
 //
-// The signal's existing apiVersion is never overridden — only populated when
-// absent. Value semantics: the original signal is not modified.
-func SyncSignalAPIVersionFromRCA(signal katypes.SignalContext, target katypes.RemediationTarget) katypes.SignalContext {
-	if signal.ResourceAPIVersion == "" && target.APIVersion != "" {
+// Parity with the autonomous path at investigator.go L492-509:
+//   - Kind, Name, Namespace are always synced from a non-empty RCA target
+//   - APIVersion from RCA target is authoritative (overrides signal)
+//   - Stale GVK guard: when Kind changes but RCA has no apiVersion,
+//     the signal's apiVersion is cleared to prevent invalid combinations
+//     (e.g. "security.istio.io/v1/Deployment")
+//
+// Value semantics: the original signal is not modified.
+func SyncSignalFromRCA(signal katypes.SignalContext, target katypes.RemediationTarget) katypes.SignalContext {
+	if target.Kind == "" {
+		return signal
+	}
+
+	originalKind := signal.ResourceKind
+	signal.ResourceKind = target.Kind
+	if target.Name != "" {
+		signal.ResourceName = target.Name
+	}
+	signal.Namespace = target.Namespace
+
+	if target.APIVersion != "" {
 		signal.ResourceAPIVersion = target.APIVersion
+	} else if signal.ResourceKind != originalKind {
+		signal.ResourceAPIVersion = ""
 	}
 	return signal
+}
+
+// FinalizeWorkflowResult applies post-Phase 3 processing to the workflow
+// discovery result, mirroring the autonomous path in Investigate() L558-569.
+// This ensures interactive discover_workflows results have the same
+// completeness as autonomous results: severity backfill, detected labels,
+// authoritative remediation target, and TARGET_RESOURCE_* parameters.
+//
+// enrichData may be nil when the interactive path lacks full enrichment (F5).
+// All callees handle nil gracefully.
+func FinalizeWorkflowResult(result *katypes.InvestigationResult, signal katypes.SignalContext, rcaResult *katypes.InvestigationResult, enrichData *enrichment.EnrichmentResult) {
+	if result == nil {
+		return
+	}
+	backfillSeverity(result, signal)
+	attachDetectedLabels(result, enrichData)
+	InjectRemediationTarget(result, signal, enrichData)
+	if result.RemediationTarget.APIVersion == "" && rcaResult != nil && rcaResult.RemediationTarget.APIVersion != "" {
+		result.RemediationTarget.APIVersion = rcaResult.RemediationTarget.APIVersion
+	}
+	InjectTargetResourceParameters(result)
 }
 
 // ApplySignalLabelOverrides returns a copy of signal with ResourceKind,
