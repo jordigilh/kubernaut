@@ -781,6 +781,91 @@ var _ = Describe("SyncSignalFromRCA — signal/RCA target reconciliation (#1374)
 			Expect(result.ComponentGVK()).To(Equal("v1/Node"))
 		})
 	})
+
+	Describe("UT-KA-1374-SI10-001: SyncSignalFromRCA rejects malformed Kind (FedRAMP SI-10)", func() {
+		It("should preserve original signal when RCA Kind fails validation", func() {
+			signal := katypes.SignalContext{
+				ResourceKind:       "Deployment",
+				ResourceName:       "api-server",
+				ResourceAPIVersion: "apps/v1",
+				Namespace:          "production",
+			}
+			target := katypes.RemediationTarget{
+				Kind:       "../../etc/passwd",
+				Name:       "evil",
+				APIVersion: "apps/v1",
+			}
+			result := investigator.SyncSignalFromRCA(signal, target)
+			Expect(result.ResourceKind).To(Equal("Deployment"),
+				"malformed Kind must be rejected; original signal preserved")
+			Expect(result.ResourceName).To(Equal("api-server"))
+			Expect(result.ResourceAPIVersion).To(Equal("apps/v1"))
+		})
+	})
+
+	Describe("UT-KA-1374-SI10-002: SyncSignalFromRCA rejects malformed Name", func() {
+		It("should sync Kind but skip malformed Name", func() {
+			signal := katypes.SignalContext{
+				ResourceKind:       "Deployment",
+				ResourceName:       "api-server",
+				ResourceAPIVersion: "apps/v1",
+				Namespace:          "production",
+			}
+			target := katypes.RemediationTarget{
+				Kind:       "StatefulSet",
+				Name:       strings.Repeat("x", 300),
+				APIVersion: "apps/v1",
+			}
+			result := investigator.SyncSignalFromRCA(signal, target)
+			Expect(result.ResourceKind).To(Equal("StatefulSet"),
+				"valid Kind should be synced")
+			Expect(result.ResourceName).To(Equal("api-server"),
+				"overlong Name must be rejected; original signal preserved")
+		})
+	})
+
+	Describe("UT-KA-1374-SI10-003: SyncSignalFromRCA rejects malformed APIVersion", func() {
+		It("should sync Kind but clear stale apiVersion when RCA apiVersion is invalid", func() {
+			signal := katypes.SignalContext{
+				ResourceKind:       "Deployment",
+				ResourceName:       "api-server",
+				ResourceAPIVersion: "apps/v1",
+				Namespace:          "production",
+			}
+			target := katypes.RemediationTarget{
+				Kind:       "AuthorizationPolicy",
+				Name:       "deny-all",
+				APIVersion: "not a valid version!!!",
+			}
+			result := investigator.SyncSignalFromRCA(signal, target)
+			Expect(result.ResourceKind).To(Equal("AuthorizationPolicy"))
+			Expect(result.ResourceName).To(Equal("deny-all"))
+			Expect(result.ResourceAPIVersion).To(BeEmpty(),
+				"invalid apiVersion must be rejected; stale value cleared on Kind change")
+		})
+	})
+
+	Describe("UT-KA-1374-SI10-004: SyncSignalFromRCA accepts valid RCA targets", func() {
+		It("should sync all fields when all values pass validation", func() {
+			signal := katypes.SignalContext{
+				ResourceKind:       "Pod",
+				ResourceName:       "frontend-abc123",
+				ResourceAPIVersion: "v1",
+				Namespace:          "default",
+			}
+			target := katypes.RemediationTarget{
+				Kind:       "AuthorizationPolicy",
+				Name:       "deny-all-traffic",
+				Namespace:  "istio-system",
+				APIVersion: "security.istio.io/v1",
+			}
+			result := investigator.SyncSignalFromRCA(signal, target)
+			Expect(result.ResourceKind).To(Equal("AuthorizationPolicy"))
+			Expect(result.ResourceName).To(Equal("deny-all-traffic"))
+			Expect(result.Namespace).To(Equal("istio-system"))
+			Expect(result.ResourceAPIVersion).To(Equal("security.istio.io/v1"))
+		})
+	})
 })
 
 var _ = Describe("FinalizeWorkflowResult — post-Phase 3 processing parity (#1374 F8)", func() {

@@ -175,14 +175,18 @@ func SyncSignalFromRCA(signal katypes.SignalContext, target katypes.RemediationT
 		return signal
 	}
 
+	if !isValidK8sIdentifier(target.Kind) {
+		return signal
+	}
+
 	originalKind := signal.ResourceKind
 	signal.ResourceKind = target.Kind
-	if target.Name != "" {
+	if target.Name != "" && isValidK8sIdentifier(target.Name) {
 		signal.ResourceName = target.Name
 	}
 	signal.Namespace = target.Namespace
 
-	if target.APIVersion != "" {
+	if target.APIVersion != "" && isValidAPIVersion(target.APIVersion) {
 		signal.ResourceAPIVersion = target.APIVersion
 	} else if signal.ResourceKind != originalKind {
 		signal.ResourceAPIVersion = ""
