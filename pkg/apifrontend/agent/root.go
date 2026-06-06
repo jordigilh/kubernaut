@@ -141,6 +141,19 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 		}},
 	}
 
+	// Alert observation tools (#1367) — conditionally registered when
+	// Prometheus/Thanos is configured (severityTriage.enabled: true).
+	if cfg.PromClient != nil {
+		constructors = append(constructors,
+			toolConstructor{"list_alerts", func() (tool.Tool, error) {
+				return tools.NewListAlertsTool(cfg.PromClient)
+			}},
+			toolConstructor{"get_alert_details", func() (tool.Tool, error) {
+				return tools.NewGetAlertDetailsTool(cfg.PromClient)
+			}},
+		)
+	}
+
 	result := make([]tool.Tool, 0, len(constructors))
 	for _, c := range constructors {
 		t, err := c.fn()

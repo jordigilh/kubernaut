@@ -532,7 +532,7 @@ var _ = Describe("Pod-Based Alert Correlation", func() {
 	})
 
 	Describe("PodResolver Error Handling", func() {
-		It("pod resolver error degrades gracefully to Tier 3", func() {
+		It("pod resolver error degrades gracefully — namespace-scoped fallback catches alert (#1369)", func() {
 			failingResolver := &failingPodResolver{err: errors.New("k8s unavailable")}
 
 			mockProm := &mockPromClient{
@@ -564,7 +564,9 @@ var _ = Describe("Pod-Based Alert Correlation", func() {
 				severity.WithPodResolver(failingResolver))
 			result, err := triager.Triage(context.Background(), input)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Source).To(Equal(severity.SourceLLMTriage))
+			Expect(result.Source).To(Equal(severity.SourceNSFiringAlert),
+				"#1369: namespace-scoped fallback should catch the alert when pod resolution fails")
+			Expect(result.AlertName).To(Equal("KubePodCrashLooping"))
 		})
 
 		It("WithPodResolver option injects resolver at construction", func() {

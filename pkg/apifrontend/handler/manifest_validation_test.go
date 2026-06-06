@@ -176,11 +176,13 @@ var _ = Describe("RBAC tool name alignment", func() {
 	// These are exposed via A2A (ADK) and authorized through the same persona
 	// definitions but are NOT registered in the MCP bridge.
 	a2aInternalTools := map[string]bool{
-		"kubectl_get":                       true,
-		"kubectl_list":                      true,
-		"kubectl_list_events":               true,
+		"kubectl_get":                          true,
+		"kubectl_list":                         true,
+		"kubectl_list_events":                  true,
 		"kubernaut_check_existing_remediation": true,
-		"kubernaut_remediate":               true,
+		"kubernaut_remediate":                  true,
+		"list_alerts":                          true,
+		"get_alert_details":                    true,
 	}
 
 	allKnownTools := map[string]bool{}
@@ -231,6 +233,20 @@ var _ = Describe("RBAC tool name alignment", func() {
 		for tool := range registeredTools {
 			Expect(allPersonaTools).To(HaveKey(tool),
 				"registered tool %q has no persona assignment in Helm values", tool)
+		}
+	})
+
+	It("TC-A-RBAC-01d: every A2A internal tool must appear in at least one persona", func() {
+		personas := loadPersonas()
+		allPersonaTools := map[string]bool{}
+		for _, tools := range personas {
+			for _, t := range tools {
+				allPersonaTools[t] = true
+			}
+		}
+		for tool := range a2aInternalTools {
+			Expect(allPersonaTools).To(HaveKey(tool),
+				"A2A internal tool %q has no persona assignment in Helm values", tool)
 		}
 	})
 

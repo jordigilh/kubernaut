@@ -15,6 +15,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ds"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
+	prom "github.com/jordigilh/kubernaut/pkg/apifrontend/prometheus"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ratelimit"
 	sessionpkg "github.com/jordigilh/kubernaut/pkg/apifrontend/session"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
@@ -85,6 +86,10 @@ type AgentConfig struct {
 	// in the A2A agent tool list. When false, tools in tools.SessionDependentTools
 	// are excluded (#1366). DefaultTestConfig sets this to true.
 	InteractiveEnabled bool
+	// PromClient is the Prometheus/Thanos query client for alert tools (#1367).
+	// When non-nil, list_alerts and get_alert_details ADK tools are registered.
+	// When nil, alert tools are not available (graceful degradation).
+	PromClient prom.Client
 }
 
 // Option applies a configuration override to AgentConfig.
