@@ -109,16 +109,19 @@ func defaultRealStackOpts() realStackOpts {
 }
 
 // itScopeResolver returns a ScopeResolver pre-loaded with common K8s kinds
-// (Deployment, Pod) for production parity in IT tests. All IT stacks must
-// use this so that TARGET_RESOURCE_API_VERSION auto-resolution matches
-// the autonomous production path.
+// for production parity in IT tests. All IT stacks must use this so that
+// TARGET_RESOURCE_API_VERSION auto-resolution matches the autonomous
+// production path. Includes AuthorizationPolicy for cross-resource RCA
+// tests (#1374 IT-KA-DISC-009).
 func itScopeResolver() investigator.ScopeResolver {
 	m := meta.NewDefaultRESTMapper([]schema.GroupVersion{
 		{Group: "apps", Version: "v1"},
 		{Group: "", Version: "v1"},
+		{Group: "security.istio.io", Version: "v1"},
 	})
 	m.Add(schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "Deployment"}, meta.RESTScopeNamespace)
 	m.Add(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Pod"}, meta.RESTScopeNamespace)
+	m.Add(schema.GroupVersionKind{Group: "security.istio.io", Version: "v1", Kind: "AuthorizationPolicy"}, meta.RESTScopeNamespace)
 	return investigator.NewMapperScopeResolver(m)
 }
 

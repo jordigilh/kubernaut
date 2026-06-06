@@ -591,7 +591,243 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 				"recommended parameters must not leak when an alternative is selected (#1169)")
 		})
 	})
+
+	Describe("IT-KA-DISC-009: cross-resource RCA — Kind synced from RCA target to signal (#1374)", func() {
+		It("should update signal Kind to match RCA target Kind [BR-INTERACTIVE-010, BR-WORKFLOW-004]", func() {
+			// Use a signal resolver that returns ResourceKind: "Pod" while the
+			// mock LLM's OOMKilled scenario returns RemediationTarget.Kind: "Deployment".
+			// After SyncSignalFromRCA, the signal Kind should be "Deployment".
+			crossResourceResolver := &crossResourceSignalResolver{}
+			crossResourceStack := newRealMCPTestStackWithDiscoveryAndResolver(
+				sharedK8sClient, nsName, defaultRealStackOpts(), completer, crossResourceResolver,
+			)
+			defer crossResourceStack.Close()
+
+			sess, err := connectMCP(crossResourceStack.Server, "alice@acme.io")
+			Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = sess.Close() }()
+
+			By("starting a session")
+			result, err := callInvestigate(sess, map[string]any{
+				"rr_id":  "rr-disc-009",
+				"action": "start",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.IsError).To(BeFalse())
+
+			By("sending a message to build conversation context")
+			result, err = callInvestigate(sess, map[string]any{
+				"rr_id":   "rr-disc-009",
+				"action":  "message",
+				"message": "Pod keeps crashing with OOMKilled",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.IsError).To(BeFalse())
+
+			By("discovering workflows — signal Kind must be synced from RCA target")
+			result, err = callInvestigate(sess, map[string]any{
+				"rr_id":  "rr-disc-009",
+				"action": "discover_workflows",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			if result.IsError {
+				for _, c := range result.Content {
+					if tc, ok := c.(*mcpsdk.TextContent); ok {
+						GinkgoWriter.Printf("DISC-009 discover_workflows error: %s\n", tc.Text)
+					}
+				}
+			}
+			Expect(result.IsError).To(BeFalse())
+
+			By("selecting the recommended workflow")
+			func() { completer.mu.Lock(); defer completer.mu.Unlock(); completer.completedResult = nil }()
+			result, err = callTool(sess, "kubernaut_select_workflow", map[string]any{
+				"rr_id":       "rr-disc-009",
+				"workflow_id": recommendedWfID(),
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.IsError).To(BeFalse())
+
+			By("verifying TARGET_RESOURCE_KIND reflects RCA target, not original signal [BR-WORKFLOW-004]")
+			Eventually(completer.getCompletedResult, 5*time.Second, 100*time.Millisecond).ShouldNot(BeNil())
+			cr := completer.getCompletedResult()
+			Expect(cr.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_KIND", "Deployment"),
+				"#1374: TARGET_RESOURCE_KIND must reflect RCA target (Deployment), not original signal (Pod)")
+			Expect(cr.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_API_VERSION", "apps/v1"),
+				"#1374: TARGET_RESOURCE_API_VERSION must be set from RCA target")
+		})
+	})
+
+	Describe("IT-KA-DISC-010: same-resource RCA — GVK unchanged [BR-INTERACTIVE-010]", func() {
+		It("should preserve signal Kind when RCA target agrees with signal", func() {
+			sess, err := connectMCP(stack.Server, "alice@acme.io")
+			Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = sess.Close() }()
+
+			By("starting a session")
+			result, err := callInvestigate(sess, map[string]any{
+				"rr_id":  "rr-disc-010",
+				"action": "start",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.IsError).To(BeFalse())
+
+			By("sending a message")
+			result, err = callInvestigate(sess, map[string]any{
+				"rr_id":   "rr-disc-010",
+				"action":  "message",
+				"message": "Pod keeps crashing with OOMKilled",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.IsError).To(BeFalse())
+
+			By("discovering workflows — same-resource RCA, no Kind change")
+			result, err = callInvestigate(sess, map[string]any{
+				"rr_id":  "rr-disc-010",
+				"action": "discover_workflows",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.IsError).To(BeFalse())
+
+			By("selecting the recommended workflow")
+			func() { completer.mu.Lock(); defer completer.mu.Unlock(); completer.completedResult = nil }()
+			result, err = callTool(sess, "kubernaut_select_workflow", map[string]any{
+				"rr_id":       "rr-disc-010",
+				"workflow_id": recommendedWfID(),
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.IsError).To(BeFalse())
+
+			By("verifying GVK unchanged when signal and RCA agree [BR-INTERACTIVE-010]")
+			Eventually(completer.getCompletedResult, 5*time.Second, 100*time.Millisecond).ShouldNot(BeNil())
+			cr := completer.getCompletedResult()
+			Expect(cr.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_KIND", "Deployment"),
+				"same-resource RCA: Kind should remain Deployment")
+			Expect(cr.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_API_VERSION", "apps/v1"),
+				"same-resource RCA: apiVersion should remain apps/v1")
+		})
+	})
 })
+
+// crossResourceSignalResolver returns a signal with ResourceKind "Pod" to
+// simulate a cross-resource scenario where the alert targets a Pod but the
+// RCA identifies a Deployment as the root cause (#1374).
+type crossResourceSignalResolver struct{}
+
+func (d *crossResourceSignalResolver) ResolveSignalContext(_ context.Context, _ string) (*katypes.SignalContext, error) {
+	return &katypes.SignalContext{
+		Name:         "OOMKilled",
+		Severity:     "critical",
+		Environment:  "Production",
+		Priority:     "P0",
+		ResourceKind: "Pod",
+		Namespace:    "production",
+		ResourceName: "api-server-pod-xyz",
+	}, nil
+}
+
+func (d *crossResourceSignalResolver) ResolveEnrichmentData(_ context.Context, _ string) (*prompt.EnrichmentData, error) {
+	return &prompt.EnrichmentData{}, nil
+}
+
+func (d *crossResourceSignalResolver) ResolvePostRCAEnrichment(_ context.Context, _, _, _, _ string) (*prompt.EnrichmentData, error) {
+	return nil, nil
+}
+
+// newRealMCPTestStackWithDiscoveryAndResolver is a variant of
+// newRealMCPTestStackWithDiscovery that accepts a custom signal resolver,
+// enabling cross-resource RCA testing (#1374).
+func newRealMCPTestStackWithDiscoveryAndResolver(k8sClient client.Client, namespace string, opts realStackOpts, completer *discoveryHTTPCompleter, resolver mcptools.SignalContextResolver) *realMCPTestStack {
+	stack := &realMCPTestStack{
+		K8sClient: k8sClient,
+		Namespace: namespace,
+	}
+
+	logrLogger := logr.Discard()
+
+	llmAdapter, err := langchaingo.New("openai", sharedMockLLMEndpoint, "test-model", "test-key")
+	Expect(err).ToNot(HaveOccurred(), "langchaingo adapter should build against Mock LLM at %s", sharedMockLLMEndpoint)
+	stack.LLMClient = llmAdapter
+
+	promptBuilder, buildErr := prompt.NewBuilder()
+	Expect(buildErr).ToNot(HaveOccurred(), "prompt builder should build")
+
+	inv := investigator.New(investigator.Config{
+		Client:        llmAdapter,
+		Builder:       promptBuilder,
+		ResultParser:  parser.NewResultParser(),
+		AuditStore:    audit.NopAuditStore{},
+		Logger:        logrLogger,
+		MaxTurns:      15,
+		ModelName:     "test-model",
+		ScopeResolver: itScopeResolver(),
+	})
+	runner := mcpadapters.NewInvestigatorRunnerAdapter(inv)
+
+	recon := mcpinternal.NewDSContextReconstructor(sharedDSClient, 5*time.Second, logrLogger)
+
+	leaseOpts := []mcpinternal.LeaseOption{
+		mcpinternal.WithSessionTTL(opts.sessionTTL),
+	}
+	stack.SessionMgr = mcpinternal.NewLeaseSessionManagerConcrete(k8sClient, namespace, logrLogger, leaseOpts...)
+	stack.RateLimiter = mcpinternal.NewSessionRateLimiter(opts.maxPerMinute, opts.maxMessageSize)
+	stack.Notifier = mcpinternal.NewSessionNotifier()
+	warningIntervals := opts.warningIntervals
+	if warningIntervals == nil {
+		warningIntervals = []time.Duration{opts.inactivityTimeout - 1*time.Second}
+	}
+	stack.TimeoutMgr = mcpinternal.NewTimeoutManager(
+		opts.inactivityTimeout,
+		warningIntervals,
+		func(sessionID string) {
+			stack.addExpired(sessionID)
+			_ = stack.SessionMgr.Release(sessionID, "inactivity_timeout")
+		},
+	)
+	stack.EventStore = mcpinternal.NewDelegatingEventStore()
+
+	investigateOpts := []mcptools.InvestigateOption{
+		mcptools.WithRateLimiter(stack.RateLimiter),
+		mcptools.WithTimeoutTracker(stack.TimeoutMgr),
+		mcptools.WithNotifyFunc(stack.Notifier.Notify),
+		mcptools.WithSignalContextResolver(resolver),
+	}
+	investigateTool := mcptools.NewInvestigateTool(stack.SessionMgr, runner, recon, mcptools.NopAutonomousManager{}, investigateOpts...)
+
+	wfQuerier := wfclient.NewOgenWorkflowQuerier(sharedDSClient)
+	catalog := mcpadapters.NewWorkflowCatalogAdapter(wfQuerier)
+
+	selectTool := mcptools.NewSelectWorkflowTool(catalog, stack.SessionMgr,
+		mcptools.WithHTTPSessionCompleter(completer),
+		mcptools.WithMutexProvider(investigateTool),
+	)
+
+	completeNoActionTool := mcptools.NewCompleteNoActionTool(stack.SessionMgr,
+		mcptools.WithCompleteNoActionHTTPCompleter(completer),
+		mcptools.WithCompleteNoActionMutexProvider(investigateTool),
+	)
+
+	toolDeps := mcpinternal.ToolDeps{
+		Investigate:      mcptools.InvestigateRegistration(investigateTool, stack.EventStore, stack.Notifier, logr.Discard()),
+		SelectWorkflow:   mcptools.SelectWorkflowRegistration(selectTool, logr.Discard()),
+		CompleteNoAction: mcptools.CompleteNoActionRegistration(completeNoActionTool, logr.Discard()),
+	}
+
+	handler, srv := mcpinternal.BootstrapMCP(mcpinternal.MCPDeps{
+		AuthMiddleware: fakeAuthMiddlewareWithUserInfo,
+		Tools:          toolDeps,
+		EventStore:     stack.EventStore,
+	})
+	stack.MCPServer = srv
+
+	r := chi.NewRouter()
+	r.Use(fakeAuthMiddlewareWithUserInfo)
+	r.Handle("/mcp", handler)
+	r.Handle("/mcp/*", handler)
+	stack.Server = httptest.NewServer(r)
+
+	return stack
+}
 
 // newRealMCPTestStackWithDiscovery builds a test stack with select_workflow and
 // complete_no_action tools wired up, using the REAL investigator via langchaingo

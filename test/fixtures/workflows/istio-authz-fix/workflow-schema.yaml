@@ -1,0 +1,46 @@
+apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
+metadata:
+  name: istio-authz-fix-v1
+spec:
+  # Istio AuthorizationPolicy Fix Workflow (#1374 E2E-KA-DISC-005)
+  # Tests cross-resource RCA: alert targets Deployment, RCA identifies AuthorizationPolicy.
+  # The component label uses a specific GVK (not wildcard) to prove that
+  # SyncSignalFromRCA correctly updates the signal's Kind and APIVersion
+  # for DS catalog matching.
+  version: "1.0.0"
+  description:
+    what: "Fixes overly restrictive Istio AuthorizationPolicy blocking legitimate traffic"
+    whenToUse: "When high deny rate is caused by misconfigured AuthorizationPolicy"
+    whenNotToUse: "When deny rate is expected (e.g., during maintenance window)"
+    preconditions: "Istio sidecar injection is enabled in the namespace"
+
+  actionType: FixAuthorizationPolicy
+
+  labels:
+    severity: [critical, high]
+    environment: [production, staging, test]
+    component: ["security.istio.io/v1/AuthorizationPolicy"]
+    priority: "*"
+
+  execution:
+    engine: job
+    bundle: quay.io/kubernaut-cicd/tekton-bundles/hello-world:v1.0.0@sha256:c4fc636f28d46f94c3f4a211f4dc07f60545891818ee45262e860b0825296ba0
+
+  parameters:
+    - name: TARGET_RESOURCE_NAME
+      type: string
+      required: true
+      description: "Name of the AuthorizationPolicy to fix"
+    - name: TARGET_RESOURCE_KIND
+      type: string
+      required: true
+      description: "Kind of the target resource (AuthorizationPolicy)"
+    - name: TARGET_RESOURCE_NAMESPACE
+      type: string
+      required: true
+      description: "Namespace of the target resource"
+    - name: POLICY_ACTION
+      type: string
+      required: true
+      description: "Action to apply to the AuthorizationPolicy (e.g., ALLOW)"

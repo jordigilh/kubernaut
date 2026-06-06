@@ -262,6 +262,87 @@ var _ = Describe("E2E-KA-DISC: Interactive Workflow Discovery", Label("e2e", "ka
 		})
 	})
 
+	Describe("E2E-KA-DISC-005: cross-resource RCA discovery lifecycle (#1374)", func() {
+		It("should discover workflows matching RCA target GVK, not original alert GVK [BR-INTERACTIVE-010, BR-WORKFLOW-004, BR-HAPI-261]", func() {
+			rrID := fmt.Sprintf("rr-disc005-%d", time.Now().Unix())
+			createTestRemediationRequest(ctx, rrID, withSignalName("IstioHighDenyRate"))
+
+			By("Connecting MCP client")
+			session, err := infrastructure.ConnectMCPClient(ctx, infrastructure.MCPClientConfig{
+				Endpoint:     mcpEndpoint,
+				SAToken:      saToken,
+				TLSTransport: tlsTransport,
+			})
+			Expect(err).NotTo(HaveOccurred(), "MCP client should connect")
+			defer session.Close()
+
+			By("Starting interactive session")
+			result, err := infrastructure.CallInvestigate(ctx, session, map[string]any{
+				"rr_id":  rrID,
+				"action": "start",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.IsError).To(BeFalse(), "start should succeed")
+
+			By("Sending message to steer to istio_authz scenario")
+			result, err = infrastructure.CallInvestigate(ctx, session, map[string]any{
+				"rr_id":   rrID,
+				"action":  "message",
+				"message": "High deny rate detected on IstioHighDenyRate alert. What is the root cause?",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.IsError).To(BeFalse())
+
+			By("Discovering workflows — should match AuthorizationPolicy GVK from RCA, not Deployment from alert")
+			result, err = infrastructure.CallInvestigate(ctx, session, map[string]any{
+				"rr_id":  rrID,
+				"action": "discover_workflows",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			discoverText := infrastructure.ExtractToolResultText(result)
+			GinkgoWriter.Printf("E2E-KA-DISC-005 discover_workflows result: %s\n", discoverText)
+			Expect(result.IsError).To(BeFalse(), "discover_workflows should succeed")
+
+			By("Extracting recommended workflow from discovery results")
+			var outerData map[string]any
+			Expect(json.Unmarshal([]byte(discoverText), &outerData)).To(Succeed())
+			responseStr, ok := outerData["response"].(string)
+			Expect(ok).To(BeTrue(), "discovery result should have a response field")
+			var innerData map[string]any
+			Expect(json.Unmarshal([]byte(responseStr), &innerData)).To(Succeed())
+
+			recommended, ok := innerData["recommended"].(map[string]any)
+			Expect(ok).To(BeTrue(),
+				"#1374: discovery must return a recommended workflow for security.istio.io/v1/AuthorizationPolicy; "+
+					"submit_result_no_workflow sentinel indicates SyncSignalFromRCA did not sync Kind")
+			recommendedID, ok := recommended["workflow_id"].(string)
+			Expect(ok).To(BeTrue(), "recommended workflow should have a workflow_id")
+			GinkgoWriter.Printf("E2E-KA-DISC-005 recommended workflow_id: %s\n", recommendedID)
+
+			By("Selecting the recommended workflow")
+			result, err = infrastructure.CallSelectWorkflow(ctx, session, map[string]any{
+				"rr_id":       rrID,
+				"workflow_id": recommendedID,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.IsError).To(BeFalse(), "select_workflow should succeed")
+
+			By("Verifying Lease released after auto-complete")
+			clientset, err := getKubernetesClientset()
+			Expect(err).NotTo(HaveOccurred())
+			Eventually(func() bool {
+				_, err := clientset.CoordinationV1().Leases(sharedNamespace).Get(
+					ctx, leaseNameForRR(rrID), metav1.GetOptions{})
+				return err != nil
+			}, 15*time.Second, 500*time.Millisecond).Should(BeTrue(),
+				"Lease should be deleted after select_workflow auto-complete")
+
+			GinkgoWriter.Println("E2E-KA-DISC-005: Cross-resource RCA discovery lifecycle completed")
+		})
+	})
+
 	Describe("E2E-KA-DISC-004: select alternative workflow propagates parameters through real KA (#1169)", func() {
 		It("should discover alternatives with parameters and successfully select one", func() {
 			rrID := fmt.Sprintf("rr-disc004-%d", time.Now().Unix())

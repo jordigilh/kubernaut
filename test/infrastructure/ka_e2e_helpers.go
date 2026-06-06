@@ -175,6 +175,15 @@ func GetKAE2ETestWorkflows() []TestWorkflow {
 				{Name: "TARGET_RESOURCE_NAME", Type: "string", Required: true, Description: "Name of the resource to reconfigure"},
 				{Name: "TARGET_NAMESPACE", Type: "string", Required: true, Description: "Namespace of the resource"},
 			}},
+		// Issue #1374: Cross-resource RCA workflow (E2E-KA-DISC-005).
+		// Component-specific GVK label proves SyncSignalFromRCA correctness.
+		{WorkflowID: "istio-authz-fix-v1", Name: "Istio AuthorizationPolicy Fix", Description: "Fixes overly restrictive Istio AuthorizationPolicy", ActionType: "FixAuthorizationPolicy", Severity: "critical", Component: []string{"security.istio.io/v1/AuthorizationPolicy"}, Priority: "P0", ExecutionEngine: "job", SchemaImage: kaWorkflowRegistry + "/istio-authz-fix:v1.0.0",
+			SchemaParameters: []models.WorkflowParameter{
+				{Name: "TARGET_RESOURCE_NAME", Type: "string", Required: true, Description: "Name of the AuthorizationPolicy to fix"},
+				{Name: "TARGET_RESOURCE_KIND", Type: "string", Required: true, Description: "Kind of the target resource"},
+				{Name: "TARGET_RESOURCE_NAMESPACE", Type: "string", Required: true, Description: "Namespace of the target resource"},
+				{Name: "POLICY_ACTION", Type: "string", Required: true, Description: "Action to apply (ALLOW)"},
+			}},
 	}
 
 	// Create workflow instances for BOTH staging AND production
