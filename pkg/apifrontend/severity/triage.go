@@ -211,28 +211,71 @@ func (t *Triager) runTier1(ctx context.Context, input TriageInput) (TriageResult
 	return TriageResult{}, false
 }
 
+// matchCandidate tracks the best alert match at a given priority tier.
+type matchCandidate struct {
+	found    bool
+	severity string
+	alert    string
+}
+
+func (m *matchCandidate) update(sev, alertName string) {
+	if !m.found || CompareSeverity(sev, m.severity) > 0 {
+		m.found = true
+		m.severity = sev
+		m.alert = alertName
+	}
+}
+
+func (m *matchCandidate) result(source Source) TriageResult {
+	return TriageResult{
+		Severity:  m.severity,
+		Source:    source,
+		AlertName: m.alert,
+	}
+}
+
+// nsSource maps a resource-level source to its namespace-scoped equivalent.
+func nsSource(base Source) Source {
+	if base == SourcePendingAlert {
+		return SourceNSPendingAlert
+	}
+	return SourceNSFiringAlert
+}
+
+// clusterSource maps a resource-level source to its cluster-scoped equivalent.
+func clusterSource(base Source) Source {
+	if base == SourcePendingAlert {
+		return SourceClusterPendingAlert
+	}
+	return SourceClusterFiringAlert
+}
+
 func (t *Triager) bestAlertMatch(alerts []prom.Alert, targetLabels map[string]string, podNameSet map[string]struct{}, targetNamespace, state string, source Source) (TriageResult, bool) {
-	var bestSeverity string
-	var bestAlert string
+	var resourceBest, nsBest, clusterBest matchCandidate
+
 	for _, alert := range alerts {
 		if alert.State != state {
 			continue
 		}
-		if !labelsOverlap(alert.Labels, targetLabels, podNameSet, targetNamespace) {
-			continue
-		}
 		sev := alert.Labels["severity"]
-		if bestSeverity == "" || CompareSeverity(sev, bestSeverity) > 0 {
-			bestSeverity = sev
-			bestAlert = alert.Labels["alertname"]
+
+		if labelsOverlap(alert.Labels, targetLabels, podNameSet, targetNamespace) {
+			resourceBest.update(sev, alert.Labels["alertname"])
+		} else if targetNamespace != "" && alert.Labels["namespace"] == targetNamespace {
+			nsBest.update(sev, alert.Labels["alertname"])
+		} else if alert.Labels["namespace"] == "" {
+			clusterBest.update(sev, alert.Labels["alertname"])
 		}
 	}
-	if bestSeverity != "" {
-		return TriageResult{
-			Severity:  bestSeverity,
-			Source:    source,
-			AlertName: bestAlert,
-		}, true
+
+	if resourceBest.found {
+		return resourceBest.result(source), true
+	}
+	if nsBest.found {
+		return nsBest.result(nsSource(source)), true
+	}
+	if clusterBest.found {
+		return clusterBest.result(clusterSource(source)), true
 	}
 	return TriageResult{}, false
 }

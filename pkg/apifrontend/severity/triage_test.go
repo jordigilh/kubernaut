@@ -84,6 +84,137 @@ var _ = Describe("Triage Orchestrator", func() {
 		})
 	})
 
+	Describe("Tier 1: Namespace-scoped and cluster-scoped alert correlation (#1369)", func() {
+
+		It("UT-AF-1369-001: resource-specific alert takes priority over namespace-scoped alert", func() {
+			mockProm := &mockPromClient{
+				alerts: []prom.Alert{
+					{Labels: map[string]string{"alertname": "IstioHighDenyRate", "namespace": "prod", "severity": "critical"}, State: "firing"},
+					{Labels: map[string]string{"alertname": "HighCPU", "namespace": "prod", "kind": "Deployment", "name": "web-api", "severity": "warning"}, State: "firing"},
+				},
+			}
+			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
+			result, err := triager.Triage(context.Background(), defaultInput)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.AlertName).To(Equal("HighCPU"), "resource-specific match should win over namespace-scoped")
+			Expect(result.Source).To(Equal(severity.SourceFiringAlert))
+		})
+
+		It("UT-AF-1369-002: namespace-scoped alert matches when no resource-specific match exists", func() {
+			mockProm := &mockPromClient{
+				alerts: []prom.Alert{
+					{Labels: map[string]string{"alertname": "IstioHighDenyRate", "namespace": "prod", "severity": "critical"}, State: "firing"},
+				},
+			}
+			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
+			result, err := triager.Triage(context.Background(), defaultInput)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Severity).To(Equal("critical"))
+			Expect(result.AlertName).To(Equal("IstioHighDenyRate"))
+			Expect(result.Source).To(Equal(severity.SourceNSFiringAlert))
+		})
+
+		It("UT-AF-1369-003: cluster-scoped alert matches when no resource or namespace match exists", func() {
+			mockProm := &mockPromClient{
+				alerts: []prom.Alert{
+					{Labels: map[string]string{"alertname": "etcdHighCommitDurations", "severity": "warning"}, State: "firing"},
+				},
+			}
+			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
+			result, err := triager.Triage(context.Background(), defaultInput)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Severity).To(Equal("warning"))
+			Expect(result.AlertName).To(Equal("etcdHighCommitDurations"))
+			Expect(result.Source).To(Equal(severity.SourceClusterFiringAlert))
+		})
+
+		It("UT-AF-1369-004: namespace-scoped alert returns ns_firing_alert source", func() {
+			mockProm := &mockPromClient{
+				alerts: []prom.Alert{
+					{Labels: map[string]string{"alertname": "IstioRequestsUnauthorized", "namespace": "prod", "severity": "high"}, State: "firing"},
+				},
+			}
+			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
+			result, err := triager.Triage(context.Background(), defaultInput)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Source).To(Equal(severity.SourceNSFiringAlert))
+		})
+
+		It("UT-AF-1369-005: cluster-scoped alert returns cluster_firing_alert source", func() {
+			mockProm := &mockPromClient{
+				alerts: []prom.Alert{
+					{Labels: map[string]string{"alertname": "KubeAPIErrorBudgetBurn", "severity": "critical"}, State: "firing"},
+				},
+			}
+			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
+			result, err := triager.Triage(context.Background(), defaultInput)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Source).To(Equal(severity.SourceClusterFiringAlert))
+		})
+
+		It("UT-AF-1369-006: multiple namespace-scoped alerts return highest severity", func() {
+			mockProm := &mockPromClient{
+				alerts: []prom.Alert{
+					{Labels: map[string]string{"alertname": "IstioLowRate", "namespace": "prod", "severity": "low"}, State: "firing"},
+					{Labels: map[string]string{"alertname": "IstioHighDenyRate", "namespace": "prod", "severity": "critical"}, State: "firing"},
+					{Labels: map[string]string{"alertname": "IstioMediumRate", "namespace": "prod", "severity": "medium"}, State: "firing"},
+				},
+			}
+			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
+			result, err := triager.Triage(context.Background(), defaultInput)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Severity).To(Equal("critical"))
+			Expect(result.AlertName).To(Equal("IstioHighDenyRate"))
+		})
+
+		It("UT-AF-1369-007: empty targetNamespace prevents namespace-scoped false matches", func() {
+			mockProm := &mockPromClient{
+				alerts: []prom.Alert{
+					{Labels: map[string]string{"alertname": "IstioHighDenyRate", "namespace": "prod", "severity": "critical"}, State: "firing"},
+				},
+			}
+			emptyNSInput := severity.TriageInput{
+				Namespace:   "",
+				Kind:        "Deployment",
+				Name:        "web-api",
+				Description: "error",
+				Labels:      map[string]string{"kind": "Deployment", "name": "web-api"},
+			}
+			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
+			result, err := triager.Triage(context.Background(), emptyNSInput)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Source).NotTo(Equal(severity.SourceNSFiringAlert), "should not match namespace-scoped when targetNamespace is empty")
+		})
+
+		It("UT-AF-1369-008: pending namespace-scoped alert returns ns_pending_alert source", func() {
+			mockProm := &mockPromClient{
+				alerts: []prom.Alert{
+					{Labels: map[string]string{"alertname": "IstioHighDenyRate", "namespace": "prod", "severity": "high"}, State: "pending"},
+				},
+			}
+			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
+			result, err := triager.Triage(context.Background(), defaultInput)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Source).To(Equal(severity.SourceNSPendingAlert))
+		})
+
+		It("UT-AF-1369-009: resource-specific match blocks lower-priority matches even if they have higher severity", func() {
+			mockProm := &mockPromClient{
+				alerts: []prom.Alert{
+					{Labels: map[string]string{"alertname": "HighCPU", "namespace": "prod", "kind": "Deployment", "name": "web-api", "severity": "low"}, State: "firing"},
+					{Labels: map[string]string{"alertname": "IstioHighDenyRate", "namespace": "prod", "severity": "critical"}, State: "firing"},
+					{Labels: map[string]string{"alertname": "etcdHighCommit", "severity": "critical"}, State: "firing"},
+				},
+			}
+			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
+			result, err := triager.Triage(context.Background(), defaultInput)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.AlertName).To(Equal("HighCPU"), "resource-specific match wins regardless of severity")
+			Expect(result.Severity).To(Equal("low"))
+			Expect(result.Source).To(Equal(severity.SourceFiringAlert))
+		})
+	})
+
 	Describe("Tier 1.5: Pending Alert Check", func() {
 		It("UT-AF-T-026: pending rule with severity=high returns high, source=pending_alert", func() {
 			mockProm := &mockPromClient{

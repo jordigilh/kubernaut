@@ -12,11 +12,15 @@ type Source string
 
 // Triage source constants identify which pipeline tier produced the severity.
 const (
-	SourceFiringAlert   Source = "firing_alert"
-	SourcePendingAlert  Source = "pending_alert"
-	SourceRuleEval      Source = "rule_evaluation"
-	SourceLLMRuleInform Source = "llm_rule_informed"
-	SourceLLMTriage     Source = "llm_triage"
+	SourceFiringAlert         Source = "firing_alert"
+	SourcePendingAlert        Source = "pending_alert"
+	SourceNSFiringAlert       Source = "ns_firing_alert"
+	SourceNSPendingAlert      Source = "ns_pending_alert"
+	SourceClusterFiringAlert  Source = "cluster_firing_alert"
+	SourceClusterPendingAlert Source = "cluster_pending_alert"
+	SourceRuleEval            Source = "rule_evaluation"
+	SourceLLMRuleInform       Source = "llm_rule_informed"
+	SourceLLMTriage           Source = "llm_triage"
 )
 
 // TriageInput holds the resource context for severity triage.
