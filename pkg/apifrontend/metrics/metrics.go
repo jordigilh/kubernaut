@@ -55,6 +55,10 @@ type Registry struct {
 	A2ABridgeStatusEventsTotal      prometheus.Counter
 	A2ABridgeStatusWriteFailures    prometheus.Counter
 	SessionTTLActions               *prometheus.CounterVec
+
+	// AlertInvestigationValidationFailures tracks input validation failures
+	// for kubernaut_investigate_alert, partitioned by failure reason (#1372).
+	AlertInvestigationValidationFailures *prometheus.CounterVec
 }
 
 // NewRegistry creates and registers all AF Prometheus metrics.
@@ -154,6 +158,11 @@ func NewRegistry() *Registry {
 			Name:      "session_ttl_actions_total",
 			Help:      "TTL-driven session lifecycle actions.",
 		}, []string{"action"}),
+		AlertInvestigationValidationFailures: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "af",
+			Name:      "alert_investigation_validation_failures_total",
+			Help:      "Input validation failures for kubernaut_investigate_alert (#1372).",
+		}, []string{"reason"}),
 	}
 
 	reg.MustRegister(r.HTTPRequestsTotal)
@@ -173,6 +182,7 @@ func NewRegistry() *Registry {
 	reg.MustRegister(r.A2ABridgeStatusEventsTotal)
 	reg.MustRegister(r.A2ABridgeStatusWriteFailures)
 	reg.MustRegister(r.SessionTTLActions)
+	reg.MustRegister(r.AlertInvestigationValidationFailures)
 
 	return r
 }

@@ -90,6 +90,10 @@ type AgentConfig struct {
 	// When non-nil, list_alerts and get_alert_details ADK tools are registered.
 	// When nil, alert tools are not available (graceful degradation).
 	PromClient prom.Client
+	// AlertValidationFailures is the counter for kubernaut_investigate_alert
+	// input validation failures (#1372). When nil, validation failures are
+	// not tracked in metrics (test-safe).
+	AlertValidationFailures *prometheus.CounterVec
 }
 
 // Option applies a configuration override to AgentConfig.

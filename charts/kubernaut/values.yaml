@@ -633,6 +633,8 @@ apifrontend:
           # Alert observation tools (#1367)
           - list_alerts
           - get_alert_details
+          # Alert-driven investigation (#1372)
+          - kubernaut_investigate_alert
         ai-orchestrator:
           - kubernaut_list_remediations
           - kubernaut_get_remediation
@@ -656,6 +658,8 @@ apifrontend:
           # Alert observation tools (#1367)
           - list_alerts
           - get_alert_details
+          # Alert-driven investigation (#1372)
+          - kubernaut_investigate_alert
         cicd:
           - kubernaut_list_remediations
           - kubernaut_get_remediation
