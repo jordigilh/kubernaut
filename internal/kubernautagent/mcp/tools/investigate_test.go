@@ -612,10 +612,8 @@ var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func(
 
 // mockSignalResolver implements mcptools.SignalContextResolver for UTs.
 type mockSignalResolver struct {
-	signal  *katypes.SignalContext
-	enrich  *prompt.EnrichmentData
+	signal    *katypes.SignalContext
 	signalErr error
-	enrichErr error
 }
 
 func (m *mockSignalResolver) ResolveSignalContext(_ context.Context, _ string) (*katypes.SignalContext, error) {
@@ -623,31 +621,6 @@ func (m *mockSignalResolver) ResolveSignalContext(_ context.Context, _ string) (
 		return m.signal, m.signalErr
 	}
 	return &katypes.SignalContext{Severity: "critical"}, m.signalErr
-}
-
-func (m *mockSignalResolver) ResolveEnrichmentData(_ context.Context, _ string) (*prompt.EnrichmentData, error) {
-	if m.enrich != nil {
-		return m.enrich, m.enrichErr
-	}
-	return &prompt.EnrichmentData{}, m.enrichErr
-}
-
-func (m *mockSignalResolver) ResolvePostRCAEnrichment(_ context.Context, _, _, _, _ string) (*prompt.EnrichmentData, error) {
-	if m.enrich != nil {
-		return m.enrich, m.enrichErr
-	}
-	return nil, m.enrichErr
-}
-
-// trackingPostRCASignalResolver records ResolvePostRCAEnrichment invocations.
-type trackingPostRCASignalResolver struct {
-	mockSignalResolver
-	postRCACalls atomic.Int32
-}
-
-func (m *trackingPostRCASignalResolver) ResolvePostRCAEnrichment(ctx context.Context, kind, name, namespace, incidentID string) (*prompt.EnrichmentData, error) {
-	m.postRCACalls.Add(1)
-	return m.mockSignalResolver.ResolvePostRCAEnrichment(ctx, kind, name, namespace, incidentID)
 }
 
 var _ = Describe("kubernaut_investigate — discover_workflows action", func() {
@@ -721,8 +694,8 @@ var _ = Describe("kubernaut_investigate — discover_workflows action", func() {
 		})
 	})
 
-	Describe("UT-KA-1293-011: discover_workflows calls ResolvePostRCAEnrichment when RCA has RemediationTarget", func() {
-		It("should invoke Phase 2 post-RCA enrichment before workflow selection", func() {
+	Describe("UT-KA-1374-PF01-001: discover_workflows delegates enrichment to investigator", func() {
+		It("should pass nil enrichData since enrichment is handled by investigator pipeline", func() {
 			sess := &mcpinternal.InteractiveSession{
 				SessionID:     "sess-dw-011",
 				CorrelationID: "rr-dw-011",
@@ -747,11 +720,8 @@ var _ = Describe("kubernaut_investigate — discover_workflows action", func() {
 				{Role: "user", Content: "my pod is crashing"},
 				{Role: "assistant", Content: "I see OOM errors"},
 			}}
-			resolver := &trackingPostRCASignalResolver{
-				mockSignalResolver: mockSignalResolver{
-					signal: &katypes.SignalContext{IncidentID: "inc-011", Severity: "critical"},
-					enrich: &prompt.EnrichmentData{},
-				},
+			resolver := &mockSignalResolver{
+				signal: &katypes.SignalContext{IncidentID: "inc-011", Severity: "critical"},
 			}
 
 			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{},
@@ -762,8 +732,6 @@ var _ = Describe("kubernaut_investigate — discover_workflows action", func() {
 			}, mcpinternal.UserInfo{Username: "alice"})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(output.Status).To(Equal("workflows_discovered"))
-			Expect(resolver.postRCACalls.Load()).To(Equal(int32(1)),
-				"ResolvePostRCAEnrichment must be called when RCA identifies a RemediationTarget")
 		})
 	})
 })

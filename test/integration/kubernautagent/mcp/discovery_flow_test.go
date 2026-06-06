@@ -60,18 +60,6 @@ func (d *discoverySignalResolver) ResolveSignalContext(_ context.Context, _ stri
 	}, nil
 }
 
-func (d *discoverySignalResolver) ResolveEnrichmentData(_ context.Context, _ string) (*prompt.EnrichmentData, error) {
-	return &prompt.EnrichmentData{}, nil
-}
-
-func (d *discoverySignalResolver) ResolvePostRCAEnrichment(_ context.Context, _, _, _, _ string) (*prompt.EnrichmentData, error) {
-	// Return nil to indicate re-enrichment is not available in this IT fixture.
-	// A non-nil empty result would cause the discover_workflows handler to
-	// override the signal with the RCA's LLM-parsed target, corrupting
-	// the authoritative Deployment/api-server/production from ResolveSignalContext.
-	return nil, nil
-}
-
 // discoveryHTTPCompleter captures CompleteUserDriving calls in-memory.
 // Retained as a stub (#1174): the production HTTPSessionCompleter is
 // session.Manager, which requires the full gateway HTTP long-poll bridge.
@@ -724,14 +712,6 @@ func (d *crossResourceSignalResolver) ResolveSignalContext(_ context.Context, _ 
 		Namespace:    "production",
 		ResourceName: "api-server-pod-xyz",
 	}, nil
-}
-
-func (d *crossResourceSignalResolver) ResolveEnrichmentData(_ context.Context, _ string) (*prompt.EnrichmentData, error) {
-	return &prompt.EnrichmentData{}, nil
-}
-
-func (d *crossResourceSignalResolver) ResolvePostRCAEnrichment(_ context.Context, _, _, _, _ string) (*prompt.EnrichmentData, error) {
-	return nil, nil
 }
 
 // newRealMCPTestStackWithDiscoveryAndResolver is a variant of

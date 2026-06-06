@@ -89,17 +89,6 @@ var _ = Describe("SessionSignalContextResolver", func() {
 		})
 	})
 
-	Describe("UT-KA-1175-SCR-003: ResolveEnrichmentData returns empty data", func() {
-		It("should return non-nil empty EnrichmentData", func() {
-			provider := &stubSignalProvider{}
-			resolver := adapters.NewSessionSignalContextResolver(provider, nil, "")
-
-			ed, err := resolver.ResolveEnrichmentData(context.Background(), "rr-any")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(ed).NotTo(BeNil())
-		})
-	})
-
 	Describe("UT-KA-1175-SCR-004: compile-time interface check", func() {
 		It("should satisfy tools.SignalContextResolver", func() {
 			var _ tools.SignalContextResolver = &adapters.SessionSignalContextResolver{}

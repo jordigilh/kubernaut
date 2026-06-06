@@ -57,17 +57,14 @@ type InvestigatorRunner interface {
 	RunFullInvestigation(ctx context.Context, signal katypes.SignalContext) (*katypes.InvestigationResult, error)
 }
 
-// SignalContextResolver resolves the SignalContext and EnrichmentData for a
-// given remediation ID. Used by discover_workflows to obtain the signal
-// parameters needed for Phase 3 workflow discovery.
+// SignalContextResolver resolves the SignalContext for a given remediation ID.
+// Used by discover_workflows and handleMessage to obtain the signal parameters
+// needed for Phase 3 workflow discovery and interactive message context.
+//
+// Enrichment is handled internally by the investigator's enrichment pipeline
+// (F5 #1374), so this interface only resolves the signal context.
 type SignalContextResolver interface {
 	ResolveSignalContext(ctx context.Context, rrID string) (*katypes.SignalContext, error)
-	ResolveEnrichmentData(ctx context.Context, rrID string) (*prompt.EnrichmentData, error)
-	// ResolvePostRCAEnrichment performs Phase 2 re-enrichment using the
-	// RCA-identified remediation target. Returns enrichment data for the
-	// target kind/name/namespace. BR-INTERACTIVE-010: ensures discover_workflows
-	// matches the autonomous 3-phase pipeline.
-	ResolvePostRCAEnrichment(ctx context.Context, kind, name, namespace, incidentID string) (*prompt.EnrichmentData, error)
 }
 
 // HTTPSessionCompleter bridges MCP tool completion to the HTTP session store.
@@ -831,8 +828,9 @@ func (t *InvestigateTool) handleDiscoverWorkflows(ctx context.Context, input Inv
 	}
 
 	// Step 2: Resolve signal context for Phase 3.
+	// Enrichment is handled internally by the investigator's enrichment pipeline
+	// (F5 #1374), so we only resolve the signal here.
 	var signal katypes.SignalContext
-	var enrichData *prompt.EnrichmentData
 	if t.signalResolver != nil {
 		resolved, resolveErr := t.signalResolver.ResolveSignalContext(ctx, input.RRID)
 		if resolveErr != nil {
@@ -841,38 +839,12 @@ func (t *InvestigateTool) handleDiscoverWorkflows(ctx context.Context, input Inv
 		} else if resolved != nil {
 			signal = *resolved
 		}
-		enrichResolved, enrichErr := t.signalResolver.ResolveEnrichmentData(ctx, input.RRID)
-		if enrichErr != nil {
-			t.logger.V(1).Info("enrichment data resolution failed",
-				"rr_id", input.RRID, "error", enrichErr)
-		} else {
-			enrichData = enrichResolved
-		}
-
-		// Phase 2 re-enrichment: use RCA-identified target if available.
-		if rcaResult != nil && rcaResult.RemediationTarget.Kind != "" {
-			postRCAEnrich, reEnrichErr := t.signalResolver.ResolvePostRCAEnrichment(
-				ctx,
-				rcaResult.RemediationTarget.Kind,
-				rcaResult.RemediationTarget.Name,
-				rcaResult.RemediationTarget.Namespace,
-				signal.IncidentID,
-			)
-			if reEnrichErr != nil {
-				t.logger.V(1).Info("post-RCA re-enrichment failed, using pre-RCA enrichment",
-					"rr_id", input.RRID, "error", reEnrichErr)
-			} else if postRCAEnrich != nil {
-				enrichData = postRCAEnrich
-				signal.ResourceKind = rcaResult.RemediationTarget.Kind
-				signal.ResourceName = rcaResult.RemediationTarget.Name
-				signal.Namespace = rcaResult.RemediationTarget.Namespace
-				signal.ResourceAPIVersion = rcaResult.RemediationTarget.APIVersion
-			}
-		}
 	}
 
 	// Step 3: Run Phase 3 workflow discovery using the structured RCA.
-	workflowResult, err := t.runner.RunWorkflowDiscovery(ctx, signal, rcaResult, enrichData, input.RRID)
+	// The investigator resolves enrichment internally when its enricher is wired,
+	// falling back to nil when not available.
+	workflowResult, err := t.runner.RunWorkflowDiscovery(ctx, signal, rcaResult, nil, input.RRID)
 	if err != nil {
 		return InvestigateOutput{}, fmt.Errorf("workflow discovery failed: %w", err)
 	}
