@@ -42,6 +42,7 @@ type actionTypeDef struct {
 var e2eActionTypes = []actionTypeDef{
 	{MetadataName: "delete-pod", SpecName: "DeletePod", What: "Delete one or more specific pods without waiting for graceful termination.", WhenToUse: "Pods are stuck in a terminal state (Terminating, Unknown) and cannot be restarted through normal means."},
 	{MetadataName: "drain-node", SpecName: "DrainNode", What: "Drain and cordon a Kubernetes node, evicting all pods and preventing new scheduling.", WhenToUse: "Root cause is a node-level issue affecting multiple workloads on the node."},
+	{MetadataName: "fix-authorization-policy", SpecName: "FixAuthorizationPolicy", What: "Fix an overly restrictive Istio AuthorizationPolicy blocking legitimate traffic.", WhenToUse: "High deny rate is caused by a misconfigured AuthorizationPolicy."},
 	{MetadataName: "fix-certificate", SpecName: "FixCertificate", What: "Recreate a missing or corrupted CA Secret backing a cert-manager ClusterIssuer.", WhenToUse: "A cert-manager Certificate is stuck in NotReady because the CA Secret has been deleted or corrupted."},
 	{MetadataName: "increase-memory-limits", SpecName: "IncreaseMemoryLimits", What: "Increase memory resource limits on containers.", WhenToUse: "OOM kills are caused by memory limits being too low relative to the workload actual requirements."},
 	{MetadataName: "restart-deployment", SpecName: "RestartDeployment", What: "Perform a rolling restart of all pods in a workload.", WhenToUse: "Root cause is a workload-wide state issue affecting all or most pods."},
