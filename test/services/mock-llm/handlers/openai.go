@@ -96,7 +96,6 @@ func (h *handler) handleOpenAI(w http.ResponseWriter, r *http.Request) {
 
 	if !cfg.OverrideResource {
 		if res := ctx.ExtractResource(); res.Kind != "" && res.Name != "" {
-			cfg.ResourceKind = res.Kind
 			cfg.ResourceName = res.Name
 			cfg.ResourceNS = res.Namespace
 		}
