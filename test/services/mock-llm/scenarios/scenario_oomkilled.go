@@ -25,8 +25,7 @@ func oomkilledConfig() MockScenarioConfig {
 		Rationale:    "Container exceeded memory limits under traffic spike; increasing limits is the safest remediation with medium risk tolerance",
 		RootCause:    "Container exceeded memory limits due to traffic spike",
 		ResourceKind: "Deployment", ResourceNS: "production", ResourceName: "api-server",
-		APIVersion:       "apps/v1",
-		OverrideResource: true,
+		APIVersion: "apps/v1",
 		Parameters: map[string]string{"MEMORY_LIMIT_NEW": "512Mi"}, ExecutionEngine: "job",
 		Contributing: []string{"traffic_spike", "insufficient_memory_limits", "no_HPA_configured"},
 		Alternatives: []MockAlternativeWorkflow{

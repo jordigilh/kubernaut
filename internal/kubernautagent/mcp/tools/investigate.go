@@ -825,6 +825,14 @@ func (t *InvestigateTool) handleDiscoverWorkflows(ctx context.Context, input Inv
 		if err != nil {
 			return InvestigateOutput{}, fmt.Errorf("rca extraction failed: %w", err)
 		}
+
+		// Phase 2 extraction from conversation reconstructs a best-effort RCA,
+		// but its RemediationTarget is unreliable: the conversation messages lack
+		// the system prompt (with signal name/resource), so the LLM may fall back
+		// to a generic target. Clear it so RunWorkflowDiscoveryFromRCA preserves
+		// the signal resolver's authoritative identity instead of overwriting it
+		// via SyncSignalFromRCA with the extraction's guess.
+		rcaResult.RemediationTarget = katypes.RemediationTarget{}
 	}
 
 	// Step 2: Resolve signal context for Phase 3.
