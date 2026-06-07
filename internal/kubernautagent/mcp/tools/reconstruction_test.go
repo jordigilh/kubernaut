@@ -62,6 +62,10 @@ func (r *messagesCapturingInvestigatorRunner) RunWorkflowDiscovery(_ context.Con
 	return &katypes.InvestigationResult{RCASummary: "mock RCA"}, nil
 }
 
+func (r *messagesCapturingInvestigatorRunner) RunFullInvestigation(_ context.Context, _ katypes.SignalContext) (*katypes.InvestigationResult, error) {
+	return &katypes.InvestigationResult{RCASummary: "mock RCA"}, nil
+}
+
 func newReconSessionMgr(rrID, sessionID string) (*mcpinternal.InteractiveSession, *mockSessionManager) {
 	sess := &mcpinternal.InteractiveSession{
 		SessionID:     sessionID,

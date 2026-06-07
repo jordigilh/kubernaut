@@ -599,7 +599,7 @@ var _ = Describe("TP-1051: target_resource_api_version label override and isVali
 	})
 })
 
-var _ = Describe("SyncSignalAPIVersionFromRCA — signal/RCA apiVersion reconciliation", func() {
+var _ = Describe("SyncSignalFromRCA — signal/RCA target reconciliation (#1374)", func() {
 
 	Describe("UT-KA-WD-001: signal missing apiVersion, RCA target has it", func() {
 		It("should copy RCA target apiVersion to signal [BR-WORKFLOW-004]", func() {
@@ -610,7 +610,7 @@ var _ = Describe("SyncSignalAPIVersionFromRCA — signal/RCA apiVersion reconcil
 				Kind:       "Deployment",
 				APIVersion: "apps/v1",
 			}
-			result := investigator.SyncSignalAPIVersionFromRCA(signal, target)
+			result := investigator.SyncSignalFromRCA(signal, target)
 			Expect(result.ResourceAPIVersion).To(Equal("apps/v1"),
 				"signal must inherit RCA target apiVersion for workflow GVK matching")
 			Expect(result.ComponentGVK()).To(Equal("apps/v1/Deployment"),
@@ -618,8 +618,8 @@ var _ = Describe("SyncSignalAPIVersionFromRCA — signal/RCA apiVersion reconcil
 		})
 	})
 
-	Describe("UT-KA-WD-002: signal already has apiVersion", func() {
-		It("should not override existing signal apiVersion [BR-WORKFLOW-004]", func() {
+	Describe("UT-KA-WD-002: signal already has apiVersion, RCA target overrides", func() {
+		It("should use RCA target apiVersion (parity with autonomous L505) [BR-WORKFLOW-004]", func() {
 			signal := katypes.SignalContext{
 				ResourceKind:       "Deployment",
 				ResourceAPIVersion: "apps/v1",
@@ -628,9 +628,9 @@ var _ = Describe("SyncSignalAPIVersionFromRCA — signal/RCA apiVersion reconcil
 				Kind:       "Deployment",
 				APIVersion: "extensions/v1beta1",
 			}
-			result := investigator.SyncSignalAPIVersionFromRCA(signal, target)
-			Expect(result.ResourceAPIVersion).To(Equal("apps/v1"),
-				"signal's own apiVersion takes precedence over RCA target")
+			result := investigator.SyncSignalFromRCA(signal, target)
+			Expect(result.ResourceAPIVersion).To(Equal("extensions/v1beta1"),
+				"RCA target apiVersion is authoritative for workflow discovery")
 		})
 	})
 
@@ -642,7 +642,7 @@ var _ = Describe("SyncSignalAPIVersionFromRCA — signal/RCA apiVersion reconcil
 			target := katypes.RemediationTarget{
 				Kind: "Deployment",
 			}
-			result := investigator.SyncSignalAPIVersionFromRCA(signal, target)
+			result := investigator.SyncSignalFromRCA(signal, target)
 			Expect(result.ResourceAPIVersion).To(BeEmpty(),
 				"no apiVersion to sync from RCA target")
 			Expect(result.ComponentGVK()).To(BeEmpty(),
@@ -659,10 +659,324 @@ var _ = Describe("SyncSignalAPIVersionFromRCA — signal/RCA apiVersion reconcil
 				Kind:       "Node",
 				APIVersion: "v1",
 			}
-			result := investigator.SyncSignalAPIVersionFromRCA(signal, target)
+			result := investigator.SyncSignalFromRCA(signal, target)
 			Expect(result.ResourceAPIVersion).To(Equal("v1"))
 			Expect(result.ComponentGVK()).To(Equal("v1/Node"),
 				"must distinguish core/v1 Node from other API groups with Node kind")
+		})
+	})
+
+	Describe("UT-KA-1374-001: cross-resource RCA — Kind synced from RCA target", func() {
+		It("should produce correct GVK for AuthorizationPolicy [BR-WORKFLOW-004, SI-10]", func() {
+			signal := katypes.SignalContext{
+				ResourceKind:       "Deployment",
+				ResourceName:       "api-server",
+				Namespace:          "demo-mesh",
+				ResourceAPIVersion: "apps/v1",
+			}
+			target := katypes.RemediationTarget{
+				Kind:       "AuthorizationPolicy",
+				Name:       "deny-all-traffic",
+				Namespace:  "demo-mesh",
+				APIVersion: "security.istio.io/v1",
+			}
+			result := investigator.SyncSignalFromRCA(signal, target)
+			Expect(result.ResourceKind).To(Equal("AuthorizationPolicy"),
+				"Kind must be synced from RCA target for cross-resource RCA")
+			Expect(result.ResourceAPIVersion).To(Equal("security.istio.io/v1"))
+			Expect(result.ComponentGVK()).To(Equal("security.istio.io/v1/AuthorizationPolicy"),
+				"ComponentGVK must reflect RCA target, not original alert target")
+		})
+	})
+
+	Describe("UT-KA-1374-002: cross-resource RCA — Name and Namespace synced", func() {
+		It("should sync Name and Namespace from RCA target [BR-WORKFLOW-004]", func() {
+			signal := katypes.SignalContext{
+				ResourceKind: "Deployment",
+				ResourceName: "api-server",
+				Namespace:    "production",
+			}
+			target := katypes.RemediationTarget{
+				Kind:       "AuthorizationPolicy",
+				Name:       "deny-all-traffic",
+				Namespace:  "demo-mesh",
+				APIVersion: "security.istio.io/v1",
+			}
+			result := investigator.SyncSignalFromRCA(signal, target)
+			Expect(result.ResourceName).To(Equal("deny-all-traffic"),
+				"Name must be synced from RCA target")
+			Expect(result.Namespace).To(Equal("demo-mesh"),
+				"Namespace must be synced from RCA target")
+		})
+	})
+
+	Describe("UT-KA-1374-003: stale GVK guard — Kind changes without apiVersion", func() {
+		It("should clear apiVersion to prevent invalid GVK [BR-WORKFLOW-004, SI-10]", func() {
+			signal := katypes.SignalContext{
+				ResourceKind:       "Deployment",
+				ResourceAPIVersion: "apps/v1",
+			}
+			target := katypes.RemediationTarget{
+				Kind: "AuthorizationPolicy",
+				Name: "deny-all-traffic",
+			}
+			result := investigator.SyncSignalFromRCA(signal, target)
+			Expect(result.ResourceKind).To(Equal("AuthorizationPolicy"))
+			Expect(result.ResourceAPIVersion).To(BeEmpty(),
+				"stale apiVersion must be cleared when Kind changes but RCA has no apiVersion")
+			Expect(result.ComponentGVK()).To(BeEmpty(),
+				"ComponentGVK must be empty to prevent nonsensical GVK")
+		})
+	})
+
+	Describe("UT-KA-1374-004: same-resource RCA — apiVersion always synced from RCA", func() {
+		It("should override signal apiVersion with RCA apiVersion [BR-WORKFLOW-004]", func() {
+			signal := katypes.SignalContext{
+				ResourceKind:       "Deployment",
+				ResourceAPIVersion: "apps/v1",
+			}
+			target := katypes.RemediationTarget{
+				Kind:       "Deployment",
+				APIVersion: "apps/v1",
+			}
+			result := investigator.SyncSignalFromRCA(signal, target)
+			Expect(result.ResourceAPIVersion).To(Equal("apps/v1"))
+			Expect(result.ResourceKind).To(Equal("Deployment"))
+		})
+	})
+
+	Describe("UT-KA-1374-005: RCA target with empty Kind — signal unchanged", func() {
+		It("should not modify signal when RCA target Kind is empty [BR-WORKFLOW-004]", func() {
+			signal := katypes.SignalContext{
+				ResourceKind:       "Deployment",
+				ResourceName:       "api-server",
+				Namespace:          "production",
+				ResourceAPIVersion: "apps/v1",
+			}
+			target := katypes.RemediationTarget{}
+			result := investigator.SyncSignalFromRCA(signal, target)
+			Expect(result.ResourceKind).To(Equal("Deployment"))
+			Expect(result.ResourceName).To(Equal("api-server"))
+			Expect(result.Namespace).To(Equal("production"))
+			Expect(result.ResourceAPIVersion).To(Equal("apps/v1"))
+		})
+	})
+
+	Describe("UT-KA-1374-006: cluster-scoped kind — Namespace cleared", func() {
+		It("should clear Namespace for cluster-scoped RCA target [BR-WORKFLOW-004]", func() {
+			signal := katypes.SignalContext{
+				ResourceKind: "Deployment",
+				Namespace:    "production",
+			}
+			target := katypes.RemediationTarget{
+				Kind:       "Node",
+				Name:       "worker-1",
+				APIVersion: "v1",
+			}
+			result := investigator.SyncSignalFromRCA(signal, target)
+			Expect(result.ResourceKind).To(Equal("Node"))
+			Expect(result.ResourceName).To(Equal("worker-1"))
+			Expect(result.Namespace).To(BeEmpty(),
+				"cluster-scoped kind must have empty namespace")
+			Expect(result.ComponentGVK()).To(Equal("v1/Node"))
+		})
+	})
+
+	Describe("UT-KA-1374-SI10-001: SyncSignalFromRCA rejects malformed Kind (FedRAMP SI-10)", func() {
+		It("should preserve original signal when RCA Kind fails validation", func() {
+			signal := katypes.SignalContext{
+				ResourceKind:       "Deployment",
+				ResourceName:       "api-server",
+				ResourceAPIVersion: "apps/v1",
+				Namespace:          "production",
+			}
+			target := katypes.RemediationTarget{
+				Kind:       "../../etc/passwd",
+				Name:       "evil",
+				APIVersion: "apps/v1",
+			}
+			result := investigator.SyncSignalFromRCA(signal, target)
+			Expect(result.ResourceKind).To(Equal("Deployment"),
+				"malformed Kind must be rejected; original signal preserved")
+			Expect(result.ResourceName).To(Equal("api-server"))
+			Expect(result.ResourceAPIVersion).To(Equal("apps/v1"))
+		})
+	})
+
+	Describe("UT-KA-1374-SI10-002: SyncSignalFromRCA rejects malformed Name", func() {
+		It("should sync Kind but skip malformed Name", func() {
+			signal := katypes.SignalContext{
+				ResourceKind:       "Deployment",
+				ResourceName:       "api-server",
+				ResourceAPIVersion: "apps/v1",
+				Namespace:          "production",
+			}
+			target := katypes.RemediationTarget{
+				Kind:       "StatefulSet",
+				Name:       strings.Repeat("x", 300),
+				APIVersion: "apps/v1",
+			}
+			result := investigator.SyncSignalFromRCA(signal, target)
+			Expect(result.ResourceKind).To(Equal("StatefulSet"),
+				"valid Kind should be synced")
+			Expect(result.ResourceName).To(Equal("api-server"),
+				"overlong Name must be rejected; original signal preserved")
+		})
+	})
+
+	Describe("UT-KA-1374-SI10-003: SyncSignalFromRCA rejects malformed APIVersion", func() {
+		It("should sync Kind but clear stale apiVersion when RCA apiVersion is invalid", func() {
+			signal := katypes.SignalContext{
+				ResourceKind:       "Deployment",
+				ResourceName:       "api-server",
+				ResourceAPIVersion: "apps/v1",
+				Namespace:          "production",
+			}
+			target := katypes.RemediationTarget{
+				Kind:       "AuthorizationPolicy",
+				Name:       "deny-all",
+				APIVersion: "not a valid version!!!",
+			}
+			result := investigator.SyncSignalFromRCA(signal, target)
+			Expect(result.ResourceKind).To(Equal("AuthorizationPolicy"))
+			Expect(result.ResourceName).To(Equal("deny-all"))
+			Expect(result.ResourceAPIVersion).To(BeEmpty(),
+				"invalid apiVersion must be rejected; stale value cleared on Kind change")
+		})
+	})
+
+	Describe("UT-KA-1374-SI10-004: SyncSignalFromRCA accepts valid RCA targets", func() {
+		It("should sync all fields when all values pass validation", func() {
+			signal := katypes.SignalContext{
+				ResourceKind:       "Pod",
+				ResourceName:       "frontend-abc123",
+				ResourceAPIVersion: "v1",
+				Namespace:          "default",
+			}
+			target := katypes.RemediationTarget{
+				Kind:       "AuthorizationPolicy",
+				Name:       "deny-all-traffic",
+				Namespace:  "istio-system",
+				APIVersion: "security.istio.io/v1",
+			}
+			result := investigator.SyncSignalFromRCA(signal, target)
+			Expect(result.ResourceKind).To(Equal("AuthorizationPolicy"))
+			Expect(result.ResourceName).To(Equal("deny-all-traffic"))
+			Expect(result.Namespace).To(Equal("istio-system"))
+			Expect(result.ResourceAPIVersion).To(Equal("security.istio.io/v1"))
+		})
+	})
+})
+
+var _ = Describe("FinalizeWorkflowResult — post-Phase 3 processing parity (#1374 F8)", func() {
+
+	Describe("UT-KA-1374-F8-001: severity backfill from signal when result has none", func() {
+		It("should backfill severity from signal [BR-INTERACTIVE-010]", func() {
+			result := &katypes.InvestigationResult{
+				RCASummary: "test rca",
+			}
+			signal := katypes.SignalContext{
+				Severity:     "critical",
+				ResourceKind: "Deployment",
+				ResourceName: "api-server",
+				Namespace:    "production",
+			}
+			rcaResult := &katypes.InvestigationResult{
+				RemediationTarget: katypes.RemediationTarget{
+					Kind:       "Deployment",
+					APIVersion: "apps/v1",
+				},
+			}
+			investigator.FinalizeWorkflowResult(result, signal, rcaResult, nil)
+			Expect(result.Severity).To(Equal("critical"),
+				"severity must be backfilled from signal when result has none")
+		})
+	})
+
+	Describe("UT-KA-1374-F8-002: severity preserved when result already has it", func() {
+		It("should not override existing severity [BR-INTERACTIVE-010]", func() {
+			result := &katypes.InvestigationResult{
+				Severity:   "high",
+				RCASummary: "test rca",
+			}
+			signal := katypes.SignalContext{
+				Severity:     "critical",
+				ResourceKind: "Deployment",
+			}
+			investigator.FinalizeWorkflowResult(result, signal, &katypes.InvestigationResult{}, nil)
+			Expect(result.Severity).To(Equal("high"),
+				"existing severity must be preserved")
+		})
+	})
+
+	Describe("UT-KA-1374-F8-003: InjectRemediationTarget sets target from signal", func() {
+		It("should set RemediationTarget from signal when enrichData is nil [BR-INTERACTIVE-010]", func() {
+			result := &katypes.InvestigationResult{
+				RCASummary: "test rca",
+				RemediationTarget: katypes.RemediationTarget{
+					Kind: "Deployment",
+				},
+			}
+			signal := katypes.SignalContext{
+				ResourceKind: "Deployment",
+				ResourceName: "api-server",
+				Namespace:    "production",
+			}
+			investigator.FinalizeWorkflowResult(result, signal, &katypes.InvestigationResult{}, nil)
+			Expect(result.RemediationTarget.Name).To(Equal("api-server"),
+				"RemediationTarget.Name must be set from signal")
+			Expect(result.RemediationTarget.Namespace).To(Equal("production"),
+				"RemediationTarget.Namespace must be set from signal")
+		})
+	})
+
+	Describe("UT-KA-1374-F8-004: InjectTargetResourceParameters populates TARGET_RESOURCE_* params", func() {
+		It("should inject TARGET_RESOURCE_* parameters [BR-INTERACTIVE-010]", func() {
+			result := &katypes.InvestigationResult{
+				RCASummary: "test rca",
+				RemediationTarget: katypes.RemediationTarget{
+					Kind:       "Deployment",
+					Name:       "api-server",
+					Namespace:  "production",
+					APIVersion: "apps/v1",
+				},
+			}
+			signal := katypes.SignalContext{
+				ResourceKind: "Deployment",
+				ResourceName: "api-server",
+				Namespace:    "production",
+			}
+			investigator.FinalizeWorkflowResult(result, signal, &katypes.InvestigationResult{}, nil)
+			Expect(result.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_KIND", "Deployment"))
+			Expect(result.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_NAME", "api-server"))
+			Expect(result.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_NAMESPACE", "production"))
+			Expect(result.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_API_VERSION", "apps/v1"))
+		})
+	})
+
+	Describe("UT-KA-1374-F8-005: apiVersion propagation from RCA when result lacks it", func() {
+		It("should copy apiVersion from rcaResult when workflowResult has none [BR-WORKFLOW-004]", func() {
+			result := &katypes.InvestigationResult{
+				RCASummary: "test rca",
+				RemediationTarget: katypes.RemediationTarget{
+					Kind: "Deployment",
+					Name: "api-server",
+				},
+			}
+			signal := katypes.SignalContext{
+				ResourceKind: "Deployment",
+				ResourceName: "api-server",
+				Namespace:    "production",
+			}
+			rcaResult := &katypes.InvestigationResult{
+				RemediationTarget: katypes.RemediationTarget{
+					Kind:       "Deployment",
+					APIVersion: "apps/v1",
+				},
+			}
+			investigator.FinalizeWorkflowResult(result, signal, rcaResult, nil)
+			Expect(result.RemediationTarget.APIVersion).To(Equal("apps/v1"),
+				"apiVersion must be propagated from rcaResult when workflowResult lacks it")
 		})
 	})
 })

@@ -851,3 +851,179 @@ func auditEventTypes(events []*audit.AuditEvent) []string {
 	}
 	return types
 }
+
+// ---------------------------------------------------------------------------
+// F5+F6: RunWorkflowDiscoveryFromRCA enrichment + DetectedLabelsJSON parity
+// ---------------------------------------------------------------------------
+
+var _ = Describe("F5/F6: RunWorkflowDiscoveryFromRCA enrichment parity (#1374)", func() {
+
+	var (
+		invLogger  logr.Logger
+		auditStore *recordingAuditStore
+		mockClient *mockLLMClient
+		builder    *prompt.Builder
+		rp         *parser.ResultParser
+		phaseTools katypes.PhaseToolMap
+	)
+
+	BeforeEach(func() {
+		invLogger = logr.Discard()
+		auditStore = &recordingAuditStore{}
+		mockClient = &mockLLMClient{}
+		builder, _ = prompt.NewBuilder()
+		rp = parser.NewResultParser()
+		phaseTools = investigator.DefaultPhaseToolMap()
+	})
+
+	Describe("IT-KA-1374-F5-001: RunWorkflowDiscoveryFromRCA resolves enrichment when enricher is wired [BR-INTERACTIVE-010]", func() {
+		It("should include owner chain in workflow selection prompt", func() {
+			k8s := &resourceAwareK8sClient{
+				chains: map[string][]enrichment.OwnerChainEntry{
+					"api-server": {
+						{Kind: "ReplicaSet", Name: "api-server-7f8c9d", Namespace: "production"},
+						{Kind: "Deployment", Name: "api-server", Namespace: "production", APIVersion: "apps/v1"},
+					},
+				},
+			}
+			ds := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
+			enricher := enrichment.NewEnricher(k8s, ds, auditStore, invLogger)
+
+			mockClient.responses = []llm.ChatResponse{
+				wfToolResp(`{"workflow_id":"oom-fix","confidence":0.9,"remediation_target":{"kind":"Deployment","name":"api-server","namespace":"production","api_version":"apps/v1"}}`),
+			}
+
+			inv := investigator.New(investigator.Config{
+				Client: mockClient, Builder: builder, ResultParser: rp,
+				Enricher: enricher, AuditStore: auditStore, Logger: invLogger,
+				MaxTurns: 15, PhaseTools: phaseTools,
+			})
+
+			signal := katypes.SignalContext{
+				ResourceKind: "Deployment",
+				ResourceName: "api-server",
+				Namespace:    "production",
+				Severity:     "critical",
+				Environment:  "Production",
+				Priority:     "P0",
+				Message:      "OOMKilled",
+			}
+			rcaResult := &katypes.InvestigationResult{
+				RCASummary: "OOMKilled in api-server container",
+				Confidence: 0.92,
+				RemediationTarget: katypes.RemediationTarget{
+					Kind:       "Deployment",
+					Name:       "api-server",
+					Namespace:  "production",
+					APIVersion: "apps/v1",
+				},
+			}
+
+			result, err := inv.RunWorkflowDiscoveryFromRCA(
+				context.Background(), signal, rcaResult, nil, "corr-f5-001",
+			)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+
+			Expect(mockClient.calls).To(HaveLen(1))
+			promptContent := allMessageContent(mockClient.calls[0].Messages)
+			Expect(promptContent).To(ContainSubstring("Owner chain:"),
+				"IT-KA-1374-F5-001: workflow prompt must contain enrichment Owner chain section")
+			Expect(promptContent).To(ContainSubstring("ReplicaSet/api-server-7f8c9d"),
+				"IT-KA-1374-F5-001: Owner chain must include ReplicaSet entry from enrichment")
+		})
+	})
+
+	Describe("IT-KA-1374-F5-002: RunWorkflowDiscoveryFromRCA degrades gracefully without enricher [BR-INTERACTIVE-010]", func() {
+		It("should produce valid result when enricher is nil", func() {
+			mockClient.responses = []llm.ChatResponse{
+				wfToolResp(`{"workflow_id":"restart","confidence":0.8,"remediation_target":{"kind":"Deployment","name":"api-server","namespace":"default"}}`),
+			}
+
+			inv := investigator.New(investigator.Config{
+				Client: mockClient, Builder: builder, ResultParser: rp,
+				Enricher: nil, AuditStore: auditStore, Logger: invLogger,
+				MaxTurns: 15, PhaseTools: phaseTools,
+			})
+
+			signal := katypes.SignalContext{
+				ResourceKind: "Deployment",
+				ResourceName: "api-server",
+				Namespace:    "default",
+				Severity:     "warning",
+				Environment:  "Development",
+				Priority:     "P2",
+				Message:      "CrashLoop",
+			}
+			rcaResult := &katypes.InvestigationResult{
+				RCASummary: "CrashLoop detected",
+				Confidence: 0.7,
+				RemediationTarget: katypes.RemediationTarget{
+					Kind: "Deployment", Name: "api-server", Namespace: "default",
+				},
+			}
+
+			result, err := inv.RunWorkflowDiscoveryFromRCA(
+				context.Background(), signal, rcaResult, nil, "corr-f5-002",
+			)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_KIND", "Deployment"))
+		})
+	})
+
+	Describe("IT-KA-1374-F5-003: RunWorkflowDiscoveryFromRCA post-RCA re-enrichment [BR-INTERACTIVE-010, BR-HAPI-261]", func() {
+		It("should re-enrich when RCA target differs from signal", func() {
+			k8s := &resourceAwareK8sClient{
+				chains: map[string][]enrichment.OwnerChainEntry{
+					"worker-pod-abc": {
+						{Kind: "ReplicaSet", Name: "worker-7f8c9d", Namespace: "production"},
+						{Kind: "Deployment", Name: "worker", Namespace: "production", APIVersion: "apps/v1"},
+					},
+					"worker": {},
+				},
+			}
+			ds := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
+			enricher := enrichment.NewEnricher(k8s, ds, auditStore, invLogger)
+
+			mockClient.responses = []llm.ChatResponse{
+				wfToolResp(`{"workflow_id":"oom-fix","confidence":0.9,"remediation_target":{"kind":"Deployment","name":"worker","namespace":"production","api_version":"apps/v1"}}`),
+			}
+
+			inv := investigator.New(investigator.Config{
+				Client: mockClient, Builder: builder, ResultParser: rp,
+				Enricher: enricher, AuditStore: auditStore, Logger: invLogger,
+				MaxTurns: 15, PhaseTools: phaseTools,
+			})
+
+			signal := katypes.SignalContext{
+				ResourceKind: "Pod",
+				ResourceName: "worker-pod-abc",
+				Namespace:    "production",
+				Severity:     "critical",
+				Environment:  "Production",
+				Priority:     "P0",
+				Message:      "OOMKilled",
+			}
+			rcaResult := &katypes.InvestigationResult{
+				RCASummary: "OOMKilled — root cause is Deployment worker",
+				Confidence: 0.95,
+				RemediationTarget: katypes.RemediationTarget{
+					Kind:       "Deployment",
+					Name:       "worker",
+					Namespace:  "production",
+					APIVersion: "apps/v1",
+				},
+			}
+
+			result, err := inv.RunWorkflowDiscoveryFromRCA(
+				context.Background(), signal, rcaResult, nil, "corr-f5-003",
+			)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.RemediationTarget.Kind).To(Equal("Deployment"),
+				"IT-KA-1374-F5-003: RemediationTarget.Kind must reflect RCA target after re-enrichment")
+			Expect(result.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_KIND", "Deployment"))
+		})
+	})
+})

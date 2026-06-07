@@ -78,13 +78,22 @@ func (m *mockSessionManager) getReleased() (string, string) {
 }
 
 type mockInvestigatorRunner struct {
-	response  string
-	err       error
-	rcaResult *katypes.InvestigationResult
+	response    string
+	err         error
+	rcaResult   *katypes.InvestigationResult
+	capturedCtx context.Context
 }
 
-func (m *mockInvestigatorRunner) RunInteractiveTurn(_ context.Context, _ []mcptools.LLMMessage, _ string) (string, error) {
+func (m *mockInvestigatorRunner) RunInteractiveTurn(ctx context.Context, _ []mcptools.LLMMessage, _ string) (string, error) {
+	m.capturedCtx = ctx
 	return m.response, m.err
+}
+
+func (m *mockInvestigatorRunner) RunFullInvestigation(_ context.Context, _ katypes.SignalContext) (*katypes.InvestigationResult, error) {
+	if m.rcaResult != nil {
+		return m.rcaResult, m.err
+	}
+	return &katypes.InvestigationResult{RCASummary: "mock autonomous result", Confidence: 0.8}, m.err
 }
 
 func (m *mockInvestigatorRunner) RunRCAExtraction(_ context.Context, _ []mcptools.LLMMessage, _ string) (*katypes.InvestigationResult, error) {
@@ -603,10 +612,8 @@ var _ = Describe("kubernaut_investigate tool — #703 BR-INTERACTIVE-001", func(
 
 // mockSignalResolver implements mcptools.SignalContextResolver for UTs.
 type mockSignalResolver struct {
-	signal  *katypes.SignalContext
-	enrich  *prompt.EnrichmentData
+	signal    *katypes.SignalContext
 	signalErr error
-	enrichErr error
 }
 
 func (m *mockSignalResolver) ResolveSignalContext(_ context.Context, _ string) (*katypes.SignalContext, error) {
@@ -614,31 +621,6 @@ func (m *mockSignalResolver) ResolveSignalContext(_ context.Context, _ string) (
 		return m.signal, m.signalErr
 	}
 	return &katypes.SignalContext{Severity: "critical"}, m.signalErr
-}
-
-func (m *mockSignalResolver) ResolveEnrichmentData(_ context.Context, _ string) (*prompt.EnrichmentData, error) {
-	if m.enrich != nil {
-		return m.enrich, m.enrichErr
-	}
-	return &prompt.EnrichmentData{}, m.enrichErr
-}
-
-func (m *mockSignalResolver) ResolvePostRCAEnrichment(_ context.Context, _, _, _, _ string) (*prompt.EnrichmentData, error) {
-	if m.enrich != nil {
-		return m.enrich, m.enrichErr
-	}
-	return nil, m.enrichErr
-}
-
-// trackingPostRCASignalResolver records ResolvePostRCAEnrichment invocations.
-type trackingPostRCASignalResolver struct {
-	mockSignalResolver
-	postRCACalls atomic.Int32
-}
-
-func (m *trackingPostRCASignalResolver) ResolvePostRCAEnrichment(ctx context.Context, kind, name, namespace, incidentID string) (*prompt.EnrichmentData, error) {
-	m.postRCACalls.Add(1)
-	return m.mockSignalResolver.ResolvePostRCAEnrichment(ctx, kind, name, namespace, incidentID)
 }
 
 var _ = Describe("kubernaut_investigate — discover_workflows action", func() {
@@ -712,8 +694,8 @@ var _ = Describe("kubernaut_investigate — discover_workflows action", func() {
 		})
 	})
 
-	Describe("UT-KA-1293-011: discover_workflows calls ResolvePostRCAEnrichment when RCA has RemediationTarget", func() {
-		It("should invoke Phase 2 post-RCA enrichment before workflow selection", func() {
+	Describe("UT-KA-1374-PF01-001: discover_workflows delegates enrichment to investigator", func() {
+		It("should pass nil enrichData since enrichment is handled by investigator pipeline", func() {
 			sess := &mcpinternal.InteractiveSession{
 				SessionID:     "sess-dw-011",
 				CorrelationID: "rr-dw-011",
@@ -738,11 +720,8 @@ var _ = Describe("kubernaut_investigate — discover_workflows action", func() {
 				{Role: "user", Content: "my pod is crashing"},
 				{Role: "assistant", Content: "I see OOM errors"},
 			}}
-			resolver := &trackingPostRCASignalResolver{
-				mockSignalResolver: mockSignalResolver{
-					signal: &katypes.SignalContext{IncidentID: "inc-011", Severity: "critical"},
-					enrich: &prompt.EnrichmentData{},
-				},
+			resolver := &mockSignalResolver{
+				signal: &katypes.SignalContext{IncidentID: "inc-011", Severity: "critical"},
 			}
 
 			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{},
@@ -753,8 +732,6 @@ var _ = Describe("kubernaut_investigate — discover_workflows action", func() {
 			}, mcpinternal.UserInfo{Username: "alice"})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(output.Status).To(Equal("workflows_discovered"))
-			Expect(resolver.postRCACalls.Load()).To(Equal(int32(1)),
-				"ResolvePostRCAEnrichment must be called when RCA identifies a RemediationTarget")
 		})
 	})
 })
@@ -875,6 +852,47 @@ var _ = Describe("kubernaut_investigate — DiscoveryResult invalidation on mess
 
 			Expect(sess.DiscoveryResult).To(BeNil(),
 				"DiscoveryResult must be cleared after a message to prevent stale recommendations")
+		})
+	})
+
+	Describe("UT-KA-1374-F9-001: action=message attaches SignalContext to context [BR-INTERACTIVE-010]", func() {
+		It("should propagate SignalContext via WithSignalContext on message turns", func() {
+			sess := &mcpinternal.InteractiveSession{
+				SessionID:     "sess-f9-001",
+				CorrelationID: "rr-f9-001",
+				ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+			}
+			sessionMgr := &mockSessionManager{
+				isActive:        true,
+				getDriverResult: sess,
+			}
+			runner := &mockInvestigatorRunner{response: "Analyzing crash dumps..."}
+			recon := &mockContextReconstructor{turns: []mcpinternal.ConversationTurn{}}
+
+			expectedSignal := &katypes.SignalContext{
+				IncidentID:   "inc-f9-001",
+				Severity:     "critical",
+				ResourceKind: "Deployment",
+				ResourceName: "api-server",
+				Namespace:    "production",
+			}
+			resolver := &mockSignalResolver{signal: expectedSignal}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{},
+				mcptools.WithSignalContextResolver(resolver))
+			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:    "rr-f9-001",
+				Action:  mcptools.ActionMessage,
+				Message: "Pod keeps crashing with OOMKilled",
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(runner.capturedCtx).NotTo(BeNil(), "RunInteractiveTurn must receive a non-nil context")
+			signal, ok := katypes.SignalContextFromContext(runner.capturedCtx)
+			Expect(ok).To(BeTrue(), "context must carry SignalContext after F9 fix")
+			Expect(signal.ResourceKind).To(Equal("Deployment"))
+			Expect(signal.IncidentID).To(Equal("inc-f9-001"))
+			Expect(signal.Namespace).To(Equal("production"))
 		})
 	})
 })

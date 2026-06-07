@@ -189,6 +189,7 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	r.Register(signalScenario("oomkilled", []string{"memoryexceedslimit", "memoryexceeds", "oomkilled", "oomkill"}, oomkilledConfig()))
 	r.Register(signalScenario("crashloop", []string{"crashloop", "backoff"}, crashloopConfig()))
 	r.Register(signalScenario("injection_configmap_read", []string{"injection_configmap_read"}, injectionConfigmapReadConfig()))
+	r.Register(signalScenario("istio_authz", []string{"istiohighdenyrate", "istio_high_deny"}, istioAuthzConfig()))
 
 	// Issue #1189/#1282: AF-created RRs use "unknown" as signal name when
 	// deriveSignalName finds no grounded infrastructure signal.

@@ -21,7 +21,6 @@ import (
 	"fmt"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -91,15 +90,3 @@ func (r *SessionSignalContextResolver) ResolveSignalContext(ctx context.Context,
 	}, nil
 }
 
-// ResolveEnrichmentData returns empty enrichment data. Full enrichment is
-// handled by the investigator's enrichment pipeline, not the signal resolver.
-func (r *SessionSignalContextResolver) ResolveEnrichmentData(_ context.Context, _ string) (*prompt.EnrichmentData, error) {
-	return &prompt.EnrichmentData{}, nil
-}
-
-// ResolvePostRCAEnrichment performs Phase 2 re-enrichment for the RCA-identified
-// target. Returns nil when re-enrichment is not available (no enricher wired),
-// which tells the caller to preserve the original signal context.
-func (r *SessionSignalContextResolver) ResolvePostRCAEnrichment(_ context.Context, _, _, _, _ string) (*prompt.EnrichmentData, error) {
-	return nil, nil
-}
