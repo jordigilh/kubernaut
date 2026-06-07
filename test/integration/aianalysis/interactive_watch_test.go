@@ -273,7 +273,7 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			}
 		})
 
-		It("IT-AA-1293-004: should cancel autonomous session and re-submit with interactive=true on takeover", func() {
+		It("IT-AA-1293-004: should cancel autonomous session and re-submit with interactive=true on takeover [BR-INTERACTIVE-010]", func() {
 			rrName := helpers.UniqueTestName("rr-takeover")
 			oldSessionID := "session-autonomous-old"
 			newSessionID := "session-interactive-new"
@@ -317,6 +317,190 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 				interactive, ok := lastReq.Interactive.Get()
 				g.Expect(ok).To(BeTrue())
 				g.Expect(interactive).To(BeTrue())
+			}, timeout, interval).Should(Succeed())
+		})
+	})
+
+	// IT-AA-1376: IS terminal phase transitions through the reconcile loop.
+	// These tests prove that K8sISPhaseUpdater.SetTerminalPhase is called through
+	// the production dispatch path (envtest reconcile → handler → real updater → IS CRD).
+	Context("#1376: IS terminal phase wiring through reconcile loop", Serial, func() {
+		var (
+			savedHandler *handlers.InvestigatingHandler
+			mockClient   *mocks.MockAgentClient
+		)
+
+		swapMockHandlerWithPhaseUpdater := func(opts ...handlers.InvestigatingHandlerOption) {
+			savedHandler = reconciler.InvestigatingHandler.Load()
+			mockClient = mocks.NewMockAgentClient()
+			mockClient.WithSessionPollStatus("investigating")
+
+			auditClient := aiaudit.NewAuditClient(auditStore, ctrl.Log.WithName("is-phase-test-audit"))
+			isChecker := handlers.NewK8sInvestigationSessionChecker(k8sClient, testNamespace)
+			isPhaseUpdater := handlers.NewK8sISPhaseUpdater(k8sClient, testNamespace)
+
+			baseOpts := []handlers.InvestigatingHandlerOption{
+				handlers.WithSessionMode(),
+				handlers.WithSessionPollInterval(100 * time.Millisecond),
+				handlers.WithInvestigationSessionChecker(isChecker),
+				handlers.WithISPhaseUpdater(isPhaseUpdater),
+				handlers.WithRecorder(k8sManager.GetEventRecorderFor("aianalysis-controller")),
+			}
+			reconciler.InvestigatingHandler.Store(handlers.NewInvestigatingHandler(
+				mockClient,
+				ctrl.Log.WithName("is-phase-mock-handler"),
+				testMetrics,
+				auditClient,
+				append(baseOpts, opts...)...,
+			))
+		}
+
+		AfterEach(func() {
+			if savedHandler != nil {
+				reconciler.InvestigatingHandler.Store(savedHandler)
+			}
+		})
+
+		It("IT-AA-1376-001: IS transitions to Completed when KA session completes [BR-INTERACTIVE-010, #1376]", func() {
+			swapMockHandlerWithPhaseUpdater()
+			rrName := helpers.UniqueTestName("rr-1376-complete")
+			isName := helpers.UniqueTestName("is-1376-complete")
+			aaName := helpers.UniqueTestName("aa-1376-complete")
+
+			By("creating Active IS for the RR")
+			createActiveIS(isName, rrName)
+
+			By("creating Investigating AA with session")
+			mockClient.WithSessionPollStatus("completed")
+			mockClient.Response = &agentclient.IncidentResponse{
+				IncidentID:        "mock-it-1376-001",
+				Analysis:          "OOM caused by memory leak in api-server",
+				RootCauseAnalysis: mocks.BuildMockRCA("OOM caused by memory leak", "high", nil),
+				Confidence:        0.95,
+				Timestamp:         "2026-06-06T22:00:00Z",
+			}
+			analysis := createInvestigatingAA(aaName, rrName, "session-1376-001", true)
+
+			By("verifying IS CRD transitions to Completed (wiring proof)")
+			Eventually(func(g Gomega) {
+				var is isv1alpha1.InvestigationSession
+				g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: isName, Namespace: testNamespace}, &is)).To(Succeed())
+				g.Expect(is.Status.Phase).To(Equal(isv1alpha1.SessionPhaseCompleted),
+					"#1376: IS must transition to Completed when KA session completes")
+			}, timeout, interval).Should(Succeed())
+
+			By("verifying AA progresses past Investigating (sanity)")
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
+				g.Expect(string(analysis.Status.Phase)).NotTo(Equal(string(aianalysisv1.PhaseInvestigating)),
+					"AA should have left Investigating phase after completed poll")
+			}, timeout, interval).Should(Succeed())
+		})
+
+		It("IT-AA-1376-002: IS transitions to Failed when KA session fails [BR-INTERACTIVE-010, #1376]", func() {
+			swapMockHandlerWithPhaseUpdater()
+			rrName := helpers.UniqueTestName("rr-1376-failed")
+			isName := helpers.UniqueTestName("is-1376-failed")
+			aaName := helpers.UniqueTestName("aa-1376-failed")
+
+			By("creating Active IS for the RR")
+			createActiveIS(isName, rrName)
+
+			By("creating Investigating AA with failing session")
+			mockClient.WithSessionPollStatus("failed")
+			mockClient.DefaultSessionStatus = &agentclient.SessionStatusResult{
+				Status: "failed",
+				Error:  "LLM provider timeout after 120s",
+			}
+			analysis := createInvestigatingAA(aaName, rrName, "session-1376-002", true)
+
+			By("verifying IS CRD transitions to Failed (wiring proof)")
+			Eventually(func(g Gomega) {
+				var is isv1alpha1.InvestigationSession
+				g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: isName, Namespace: testNamespace}, &is)).To(Succeed())
+				g.Expect(is.Status.Phase).To(Equal(isv1alpha1.SessionPhaseFailed),
+					"#1376: IS must transition to Failed when KA session fails")
+			}, timeout, interval).Should(Succeed())
+
+			By("verifying AA transitions to PhaseFailed")
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
+				g.Expect(analysis.Status.Phase).To(Equal(aianalysisv1.PhaseFailed))
+			}, timeout, interval).Should(Succeed())
+		})
+
+		It("IT-AA-1376-003: IS transitions to Failed on autonomous investigation timeout [BR-INTERACTIVE-010, AA-CRIT-1, #1376]", func() {
+			swapMockHandlerWithPhaseUpdater(handlers.WithMaxInvestigationDuration(500 * time.Millisecond))
+			rrName := helpers.UniqueTestName("rr-1376-auto-tout")
+			isName := helpers.UniqueTestName("is-1376-auto-tout")
+			aaName := helpers.UniqueTestName("aa-1376-auto-tout")
+
+			By("creating Active IS for the RR")
+			createActiveIS(isName, rrName)
+
+			By("creating Investigating AA with backdated session (already timed out)")
+			analysis := createInvestigatingAA(aaName, rrName, "session-1376-003", false)
+
+			By("backdating session.CreatedAt to trigger timeout")
+			Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis); err != nil {
+					return err
+				}
+				pastTime := metav1.NewTime(time.Now().Add(-2 * time.Hour))
+				analysis.Status.KASession.CreatedAt = &pastTime
+				return k8sClient.Status().Update(ctx, analysis)
+			})).To(Succeed())
+
+			By("verifying IS CRD transitions to Failed on timeout (wiring proof)")
+			Eventually(func(g Gomega) {
+				var is isv1alpha1.InvestigationSession
+				g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: isName, Namespace: testNamespace}, &is)).To(Succeed())
+				g.Expect(is.Status.Phase).To(Equal(isv1alpha1.SessionPhaseFailed),
+					"#1376: IS must transition to Failed when autonomous investigation times out")
+			}, timeout, interval).Should(Succeed())
+
+			By("verifying AA transitions to PhaseFailed")
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
+				g.Expect(analysis.Status.Phase).To(Equal(aianalysisv1.PhaseFailed))
+			}, timeout, interval).Should(Succeed())
+		})
+
+		It("IT-AA-1376-004: IS transitions to Failed on interactive user_driving timeout [BR-INTERACTIVE-010, AA-CRIT-1, #1376]", func() {
+			swapMockHandlerWithPhaseUpdater(handlers.WithMaxInvestigationDuration(500 * time.Millisecond))
+			rrName := helpers.UniqueTestName("rr-1376-ud-tout")
+			isName := helpers.UniqueTestName("is-1376-ud-tout")
+			aaName := helpers.UniqueTestName("aa-1376-ud-tout")
+
+			By("creating Active IS for the RR")
+			createActiveIS(isName, rrName)
+
+			By("creating Investigating AA with interactive session")
+			mockClient.WithSessionPollStatus("user_driving")
+			analysis := createInvestigatingAA(aaName, rrName, "session-1376-004", true)
+
+			By("backdating session.CreatedAt to trigger timeout")
+			Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis); err != nil {
+					return err
+				}
+				pastTime := metav1.NewTime(time.Now().Add(-2 * time.Hour))
+				analysis.Status.KASession.CreatedAt = &pastTime
+				return k8sClient.Status().Update(ctx, analysis)
+			})).To(Succeed())
+
+			By("verifying IS CRD transitions to Failed on user_driving timeout (wiring proof)")
+			Eventually(func(g Gomega) {
+				var is isv1alpha1.InvestigationSession
+				g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: isName, Namespace: testNamespace}, &is)).To(Succeed())
+				g.Expect(is.Status.Phase).To(Equal(isv1alpha1.SessionPhaseFailed),
+					"#1376: IS must transition to Failed when interactive user_driving session times out")
+			}, timeout, interval).Should(Succeed())
+
+			By("verifying AA transitions to PhaseFailed")
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
+				g.Expect(analysis.Status.Phase).To(Equal(aianalysisv1.PhaseFailed))
 			}, timeout, interval).Should(Succeed())
 		})
 	})

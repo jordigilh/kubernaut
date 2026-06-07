@@ -268,4 +268,34 @@ var _ = Describe("InvestigatingHandler IS Phase Completion — #1376, BR-INTERAC
 			Expect(calls[0].Phase).To(Equal(isv1alpha1.SessionPhaseFailed))
 		})
 	})
+
+	Describe("UT-AA-1376-007: Interactive user_driving timeout calls SetTerminalPhase(Failed)", func() {
+		It("should set IS phase to Failed when user_driving session exceeds max duration [BR-INTERACTIVE-010, AA-CRIT-1]", func() {
+			updater := &mockISPhaseUpdater{}
+			handler := handlers.NewInvestigatingHandler(
+				mockClient, ctrl.Log.WithName("test-is-user-driving-timeout"), metrics.NewMetrics(), auditSpy,
+				handlers.WithSessionMode(),
+				handlers.WithRecorder(recorder),
+				handlers.WithISPhaseUpdater(updater),
+				handlers.WithMaxInvestigationDuration(1*time.Minute),
+			)
+
+			analysis := createAnalysisWithSession("rr-1376-ud-timeout", "session-ud-timeout-001")
+			pastTime := metav1.NewTime(time.Now().Add(-2 * time.Hour))
+			analysis.Status.KASession.CreatedAt = &pastTime
+
+			mockClient.WithSessionPollStatus("user_driving")
+
+			_, err := handler.Handle(ctx, analysis)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed),
+				"AA-CRIT-1: user_driving must NOT bypass MaxInvestigationDuration")
+
+			calls := updater.getTerminalPhaseCalls()
+			Expect(calls).To(HaveLen(1), "SetTerminalPhase should be called on user_driving timeout")
+			Expect(calls[0].RRName).To(Equal("rr-1376-ud-timeout"))
+			Expect(calls[0].Phase).To(Equal(isv1alpha1.SessionPhaseFailed))
+		})
+	})
 })
