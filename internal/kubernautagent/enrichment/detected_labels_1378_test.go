@@ -530,9 +530,9 @@ var _ = Describe("CNV DetectedLabels Detection — #1378", func() {
 			scheme := newCNVScheme()
 			vm := makeUnstructuredVM("fail-pvc-vm", "cnv-ns", "")
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, vm)
-			// PVC LIST will return empty (no PVCs registered), which is not a failure
-			// but an empty result. For a real failure test we need a reactor.
-			// For now, this test verifies the non-failure path.
+			dynClient.PrependReactor("list", "persistentvolumeclaims", func(action k8stesting.Action) (bool, runtime.Object, error) {
+				return true, nil, fmt.Errorf("simulated timeout: context deadline exceeded")
+			})
 			detector := enrichment.NewLabelDetector(dynClient, newCNVTestMapper(), logr.Discard())
 
 			ownerChain := []enrichment.OwnerChainEntry{
@@ -541,9 +541,12 @@ var _ = Describe("CNV DetectedLabels Detection — #1378", func() {
 
 			labels, _, err := detector.DetectLabels(ctx, "Pod", "virt-launcher-fail-pvc-vm-abc", "cnv-ns", ownerChain)
 			Expect(err).NotTo(HaveOccurred())
-			// With no PVCs, both should be zero values but NOT in FailedDetections
 			Expect(labels.CDIManaged).To(BeFalse())
 			Expect(labels.StorageBackend).To(BeEmpty())
+			Expect(labels.FailedDetections).To(ContainElement("cdiManaged"),
+				"PVC LIST failure should add cdiManaged to FailedDetections")
+			Expect(labels.FailedDetections).To(ContainElement("storageBackend"),
+				"PVC LIST failure should add storageBackend to FailedDetections")
 		})
 	})
 
