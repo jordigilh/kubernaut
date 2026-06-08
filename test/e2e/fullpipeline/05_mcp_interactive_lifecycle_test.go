@@ -240,7 +240,7 @@ var _ = Describe("FP-MCP-006: CRD InteractiveSession and CompletedAt", Label("e2
 			_ = client.IgnoreNotFound(k8sClient.Delete(ctx, isCRD))
 		})
 
-		By("Waiting for AIAnalysis to reach Investigating phase with interactive=true")
+		By("Waiting for AIAnalysis to reach Investigating phase with KA session established")
 		var aaName string
 		Eventually(func() bool {
 			aaList := &aianalysisv1.AIAnalysisList{}
@@ -251,11 +251,12 @@ var _ = Describe("FP-MCP-006: CRD InteractiveSession and CompletedAt", Label("e2
 				if aa.Spec.RemediationRequestRef.Name == rrName {
 					aaName = aa.Name
 					phase := string(aa.Status.Phase)
-					return phase == "Investigating" || phase == "Analyzing" || phase == "Completed"
+					hasSession := aa.Status.KASession != nil && aa.Status.KASession.ID != ""
+					return hasSession && (phase == "Investigating" || phase == "Analyzing" || phase == "Completed")
 				}
 			}
 			return false
-		}, timeout, 1*time.Second).Should(BeTrue(), "AIAnalysis should reach Investigating phase for RR")
+		}, timeout, 1*time.Second).Should(BeTrue(), "AIAnalysis should reach Investigating phase with KA session for RR")
 
 		By("Takeover via MCP [AC-6]")
 		callCtx, callCancel := context.WithTimeout(ctx, 30*time.Second)
