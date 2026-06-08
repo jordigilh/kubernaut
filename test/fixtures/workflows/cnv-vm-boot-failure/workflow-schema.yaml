@@ -16,7 +16,7 @@ spec:
   actionType: RestartPod
 
   labels:
-    severity: [critical, warning]
+    severity: [critical, high]
     environment: [production, staging]
     component: [kubevirt.io/v1/VirtualMachine]
     priority: P1

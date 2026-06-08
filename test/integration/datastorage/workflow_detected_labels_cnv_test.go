@@ -69,7 +69,7 @@ var _ = Describe("CNV DetectedLabels Integration (#1378)", Label("it", "ds", "cn
 	})
 
 	cnvMandatoryLabels := models.MandatoryLabels{
-		Severity:    []string{"critical", "warning"},
+		Severity:    []string{"critical", "high"},
 		Component:   []string{"kubevirt.io/v1/VirtualMachine"},
 		Environment: []string{"production", "staging"},
 		Priority:    "P1",
