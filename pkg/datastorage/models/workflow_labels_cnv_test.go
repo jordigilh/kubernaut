@@ -17,9 +17,8 @@ limitations under the License.
 package models
 
 import (
-	"strings"
-	"testing"
-
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	"gopkg.in/yaml.v3"
 )
 
@@ -27,118 +26,104 @@ import (
 // CNV DetectedLabels Schema/Serialization Tests — #1378
 // ========================================
 
-func TestDetectedLabelsSchema_CNV_VirtualMachineTrue(t *testing.T) {
-	// UT-DS-1378-020: DetectedLabelsSchema validates virtualMachine="true"
-	yamlData := "virtualMachine: \"true\""
-	var schema DetectedLabelsSchema
-	if err := yaml.Unmarshal([]byte(yamlData), &schema); err != nil {
-		// Before Phase 5 implementation, this will fail with "unknown field"
-		t.Fatalf("UT-DS-1378-020: unmarshal error (CNV fields not yet implemented): %v", err)
-	}
-	if err := schema.ValidateDetectedLabels(); err != nil {
-		t.Errorf("UT-DS-1378-020: validation error for virtualMachine=true: %v", err)
-	}
-}
+var _ = Describe("CNV DetectedLabels Schema/Serialization (#1378)", func() {
 
-func TestDetectedLabelsSchema_CNV_StorageBackendODFCeph(t *testing.T) {
-	// UT-DS-1378-021: DetectedLabelsSchema validates storageBackend="odf-ceph"
-	yamlData := "storageBackend: odf-ceph"
-	var schema DetectedLabelsSchema
-	if err := yaml.Unmarshal([]byte(yamlData), &schema); err != nil {
-		t.Fatalf("UT-DS-1378-021: unmarshal error (CNV fields not yet implemented): %v", err)
-	}
-	if err := schema.ValidateDetectedLabels(); err != nil {
-		t.Errorf("UT-DS-1378-021: validation error for storageBackend=odf-ceph: %v", err)
-	}
-}
+	Describe("UT-DS-1378-020: DetectedLabelsSchema validates virtualMachine=true", func() {
+		It("accepts virtualMachine=\"true\"", func() {
+			yamlData := "virtualMachine: \"true\""
+			var schema DetectedLabelsSchema
+			err := yaml.Unmarshal([]byte(yamlData), &schema)
+			Expect(err).ToNot(HaveOccurred(), "CNV fields not yet implemented")
+			Expect(schema.ValidateDetectedLabels()).To(Succeed())
+		})
+	})
 
-func TestDetectedLabelsSchema_CNV_RejectsInvalidStorageBackend(t *testing.T) {
-	// UT-DS-1378-022: schema rejects storageBackend="invalid"
-	yamlData := "storageBackend: invalid"
-	var schema DetectedLabelsSchema
-	if err := yaml.Unmarshal([]byte(yamlData), &schema); err != nil {
-		t.Fatalf("UT-DS-1378-022: unmarshal error (CNV fields not yet implemented): %v", err)
-	}
-	if err := schema.ValidateDetectedLabels(); err == nil {
-		t.Error("UT-DS-1378-022: expected validation error for invalid storageBackend")
-	}
-}
+	Describe("UT-DS-1378-021: DetectedLabelsSchema validates storageBackend=odf-ceph", func() {
+		It("accepts storageBackend=odf-ceph", func() {
+			yamlData := "storageBackend: odf-ceph"
+			var schema DetectedLabelsSchema
+			err := yaml.Unmarshal([]byte(yamlData), &schema)
+			Expect(err).ToNot(HaveOccurred(), "CNV fields not yet implemented")
+			Expect(schema.ValidateDetectedLabels()).To(Succeed())
+		})
+	})
 
-func TestDetectedLabelsSchema_CNV_RejectsBooleanFalse(t *testing.T) {
-	// UT-DS-1378-023: schema rejects virtualMachine="false" (booleans only accept "true")
-	yamlData := "virtualMachine: \"false\""
-	var schema DetectedLabelsSchema
-	if err := yaml.Unmarshal([]byte(yamlData), &schema); err != nil {
-		t.Fatalf("UT-DS-1378-023: unmarshal error (CNV fields not yet implemented): %v", err)
-	}
-	if err := schema.ValidateDetectedLabels(); err == nil {
-		t.Error("UT-DS-1378-023: expected validation error for virtualMachine=false")
-	}
-}
+	Describe("UT-DS-1378-022: schema rejects storageBackend=invalid", func() {
+		It("rejects invalid storageBackend", func() {
+			yamlData := "storageBackend: invalid"
+			var schema DetectedLabelsSchema
+			err := yaml.Unmarshal([]byte(yamlData), &schema)
+			Expect(err).ToNot(HaveOccurred(), "CNV fields not yet implemented")
+			Expect(schema.ValidateDetectedLabels()).ToNot(Succeed())
+		})
+	})
 
-func TestSerializeLabels_CNV_IncludesWhenSet(t *testing.T) {
-	// UT-DS-1378-024: SerializeLabels includes CNV fields when set
-	dl := DetectedLabels{
-		VirtualMachine: true,
-		LiveMigratable: true,
-		CDIManaged:     true,
-		StorageBackend: "odf-ceph",
-	}
-	data, err := dl.SerializeLabels()
-	if err != nil {
-		t.Fatalf("UT-DS-1378-024: unexpected error: %v", err)
-	}
-	str := string(data)
-	for _, key := range []string{"virtualMachine", "liveMigratable", "cdiManaged", "storageBackend"} {
-		if !strings.Contains(str, key) {
-			t.Errorf("UT-DS-1378-024: expected JSON to contain %q, got: %s", key, str)
-		}
-	}
-}
+	Describe("UT-DS-1378-023: schema rejects virtualMachine=false", func() {
+		It("rejects virtualMachine=\"false\" (booleans only accept \"true\")", func() {
+			yamlData := "virtualMachine: \"false\""
+			var schema DetectedLabelsSchema
+			err := yaml.Unmarshal([]byte(yamlData), &schema)
+			Expect(err).ToNot(HaveOccurred(), "CNV fields not yet implemented")
+			Expect(schema.ValidateDetectedLabels()).ToNot(Succeed())
+		})
+	})
 
-func TestSerializeLabels_CNV_OmitsWhenFalseEmpty(t *testing.T) {
-	// UT-DS-1378-025: SerializeLabels omits CNV fields when false/empty
-	dl := DetectedLabels{
-		VirtualMachine: false,
-		LiveMigratable: false,
-		CDIManaged:     false,
-		StorageBackend: "",
-	}
-	data, err := dl.SerializeLabels()
-	if err != nil {
-		t.Fatalf("UT-DS-1378-025: unexpected error: %v", err)
-	}
-	str := string(data)
-	for _, key := range []string{"virtualMachine", "liveMigratable", "cdiManaged", "storageBackend"} {
-		if strings.Contains(str, key) {
-			t.Errorf("UT-DS-1378-025: JSON should not contain %q when zero, got: %s", key, str)
-		}
-	}
-}
+	Describe("UT-DS-1378-024: SerializeLabels includes CNV fields when set", func() {
+		It("includes all CNV fields in JSON output", func() {
+			dl := DetectedLabels{
+				VirtualMachine: true,
+				LiveMigratable: true,
+				CDIManaged:     true,
+				StorageBackend: "odf-ceph",
+			}
+			data, err := dl.SerializeLabels()
+			Expect(err).ToNot(HaveOccurred())
+			str := string(data)
+			for _, key := range []string{"virtualMachine", "liveMigratable", "cdiManaged", "storageBackend"} {
+				Expect(str).To(ContainSubstring(key), "expected JSON to contain %q", key)
+			}
+		})
+	})
 
-func TestIsEmpty_CNV_VirtualMachineNotEmpty(t *testing.T) {
-	dl := &DetectedLabels{VirtualMachine: true}
-	if dl.IsEmpty() {
-		t.Error("DetectedLabels with VirtualMachine=true should not be empty")
-	}
-}
+	Describe("UT-DS-1378-025: SerializeLabels omits CNV fields when false/empty", func() {
+		It("omits zero-valued CNV fields from JSON output", func() {
+			dl := DetectedLabels{
+				VirtualMachine: false,
+				LiveMigratable: false,
+				CDIManaged:     false,
+				StorageBackend: "",
+			}
+			data, err := dl.SerializeLabels()
+			Expect(err).ToNot(HaveOccurred())
+			str := string(data)
+			for _, key := range []string{"virtualMachine", "liveMigratable", "cdiManaged", "storageBackend"} {
+				Expect(str).NotTo(ContainSubstring(key), "JSON should not contain %q when zero", key)
+			}
+		})
+	})
 
-func TestIsEmpty_CNV_StorageBackendNotEmpty(t *testing.T) {
-	dl := &DetectedLabels{StorageBackend: "odf-ceph"}
-	if dl.IsEmpty() {
-		t.Error("DetectedLabels with StorageBackend=odf-ceph should not be empty")
-	}
-}
+	Describe("IsEmpty with CNV fields", func() {
+		It("returns false when VirtualMachine=true", func() {
+			dl := &DetectedLabels{VirtualMachine: true}
+			Expect(dl.IsEmpty()).To(BeFalse())
+		})
 
-func TestValidDetectedLabelFields_ContainsCNV(t *testing.T) {
-	expected := []string{"virtualMachine", "liveMigratable", "cdiManaged", "storageBackend"}
-	fieldSet := make(map[string]bool, len(ValidDetectedLabelFields))
-	for _, f := range ValidDetectedLabelFields {
-		fieldSet[f] = true
-	}
-	for _, f := range expected {
-		if !fieldSet[f] {
-			t.Errorf("ValidDetectedLabelFields missing CNV field %q", f)
-		}
-	}
-}
+		It("returns false when StorageBackend=odf-ceph", func() {
+			dl := &DetectedLabels{StorageBackend: "odf-ceph"}
+			Expect(dl.IsEmpty()).To(BeFalse())
+		})
+	})
+
+	Describe("ValidDetectedLabelFields contains CNV fields", func() {
+		It("includes all CNV field names", func() {
+			expected := []string{"virtualMachine", "liveMigratable", "cdiManaged", "storageBackend"}
+			fieldSet := make(map[string]bool, len(ValidDetectedLabelFields))
+			for _, f := range ValidDetectedLabelFields {
+				fieldSet[f] = true
+			}
+			for _, f := range expected {
+				Expect(fieldSet).To(HaveKey(f), "ValidDetectedLabelFields missing CNV field %q", f)
+			}
+		})
+	})
+})
