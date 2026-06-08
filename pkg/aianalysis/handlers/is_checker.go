@@ -138,5 +138,35 @@ func (u *K8sISPhaseUpdater) SetActivePhase(ctx context.Context, rrName string) e
 	return nil
 }
 
+// SetTerminalPhase finds the non-terminal IS CRD for the given RR and sets its
+// status.phase to the specified terminal phase. Best-effort: returns nil if no
+// IS exists, if the IS is already terminal, or if the update fails. #1376.
+func (u *K8sISPhaseUpdater) SetTerminalPhase(ctx context.Context, rrName string, phase isv1alpha1.SessionPhase) error {
+	if rrName == "" {
+		return nil
+	}
+
+	var list isv1alpha1.InvestigationSessionList
+	if err := u.client.List(ctx, &list,
+		client.InNamespace(u.namespace),
+		client.MatchingFields{ISFieldIndexRRName: rrName},
+	); err != nil {
+		return fmt.Errorf("list InvestigationSessions for RR %s: %w", rrName, err)
+	}
+
+	for i := range list.Items {
+		is := &list.Items[i]
+		if terminalPhases[is.Status.Phase] {
+			continue
+		}
+		is.Status.Phase = phase
+		if err := u.client.Status().Update(ctx, is); err != nil {
+			return fmt.Errorf("update IS %s phase to %s: %w", is.Name, phase, err)
+		}
+		return nil
+	}
+	return nil
+}
+
 // Compile-time interface assertion.
 var _ ISPhaseUpdater = (*K8sISPhaseUpdater)(nil)

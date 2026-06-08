@@ -115,7 +115,11 @@ var _ = Describe("Severity Triage Pipeline (G12)", Label("e2e", "phase4", "g12")
 		rr := findRRByTarget("default", "test-pending-target")
 		Expect(rr.Spec.Severity).NotTo(BeEmpty(), "severity must be set by triage pipeline")
 		src := rr.Spec.SignalLabels["severity_source"]
-		Expect(src).To(BeElementOf("pending_alert", "firing_alert", "llm_rule_informed", "llm_triage"),
+		Expect(src).To(BeElementOf(
+			"pending_alert", "firing_alert",
+			"ns_pending_alert", "ns_firing_alert",
+			"cluster_pending_alert", "cluster_firing_alert",
+			"llm_rule_informed", "llm_triage"),
 			"expected Prometheus-informed source, got: %s", src)
 	})
 

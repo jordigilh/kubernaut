@@ -24,6 +24,7 @@ import (
 	"context"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/rego"
 	"github.com/jordigilh/kubernaut/pkg/agentclient"
 )
@@ -122,11 +123,18 @@ type InvestigationSessionChecker interface {
 
 // ISPhaseUpdater transitions an InvestigationSession CRD phase. AA uses this
 // to set Phase=Active after successfully submitting to KA with interactive=true,
-// signalling to AF that the pending session is ready for action=start.
+// signalling to AF that the pending session is ready for action=start, and to
+// set terminal phases (Completed/Failed) when the investigation finishes (#1376).
 type ISPhaseUpdater interface {
 	// SetActivePhase finds the IS CRD for the given RR and sets its status
 	// phase to Active. Returns nil if no matching IS exists (best-effort).
 	SetActivePhase(ctx context.Context, rrName string) error
+
+	// SetTerminalPhase finds the IS CRD for the given RR and sets its status
+	// phase to the given terminal phase (Completed, Failed, or Cancelled).
+	// Returns nil if no matching IS exists or if the IS is already terminal
+	// (best-effort). Called by AA when the investigation session ends (#1376).
+	SetTerminalPhase(ctx context.Context, rrName string, phase isv1alpha1.SessionPhase) error
 }
 
 // ========================================

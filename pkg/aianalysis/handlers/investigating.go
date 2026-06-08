@@ -31,10 +31,11 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
 )
 
 // P2.2 Refactoring: Constants moved to constants.go
@@ -585,6 +586,9 @@ func (h *InvestigatingHandler) handleSessionPollUserDriving(ctx context.Context,
 				"elapsed", elapsed,
 				"maxDuration", h.maxInvestigationDuration,
 			)
+			// #1376: Close the InvestigationSession CRD on interactive timeout.
+			h.setISTerminalPhase(ctx, analysis, isv1alpha1.SessionPhaseFailed)
+
 			now := metav1.Now()
 			analysis.Status.Phase = aianalysis.PhaseFailed
 			analysis.Status.ObservedGeneration = analysis.Generation
@@ -651,6 +655,9 @@ func (h *InvestigatingHandler) handleSessionPollPending(ctx context.Context, ana
 				"elapsed", elapsed,
 				"maxDuration", h.maxInvestigationDuration,
 			)
+			// #1376: Close the InvestigationSession CRD on timeout.
+			h.setISTerminalPhase(ctx, analysis, isv1alpha1.SessionPhaseFailed)
+
 			now := metav1.Now()
 			analysis.Status.Phase = aianalysis.PhaseFailed
 			analysis.Status.ObservedGeneration = analysis.Generation
@@ -704,6 +711,9 @@ func (h *InvestigatingHandler) handleSessionPollCompleted(ctx context.Context, a
 		iss.CompletedAt = &now
 	}
 
+	// #1376: Close the InvestigationSession CRD now that KA has finished.
+	h.setISTerminalPhase(ctx, analysis, isv1alpha1.SessionPhaseCompleted)
+
 	// Calculate investigation time from session creation
 	var investigationTime int64
 	if session.CreatedAt != nil {
@@ -755,6 +765,9 @@ func (h *InvestigatingHandler) handleSessionPollFailed(ctx context.Context, anal
 		"pollCount", session.PollCount,
 		"error", status.Error,
 	)
+
+	// #1376: Close the InvestigationSession CRD on failure.
+	h.setISTerminalPhase(ctx, analysis, isv1alpha1.SessionPhaseFailed)
 
 	analysis.Status.Phase = aianalysis.PhaseFailed
 	analysis.Status.Reason = aianalysisv1.ReasonAPIError
@@ -929,4 +942,22 @@ func (h *InvestigatingHandler) handleSessionGetResultError(ctx context.Context, 
 
 	// For other errors, use standard error classification
 	return h.handleError(ctx, analysis, err)
+}
+
+// setISTerminalPhase transitions the InvestigationSession CRD to a terminal
+// phase. Best-effort: errors are logged but do not block the investigation
+// pipeline. Called when the KA session finishes (completed, failed, timed out).
+// #1376: Prevents stale Active IS CRDs after autonomous investigations.
+func (h *InvestigatingHandler) setISTerminalPhase(ctx context.Context, analysis *aianalysisv1.AIAnalysis, phase isv1alpha1.SessionPhase) {
+	if h.isPhaseUpdater == nil {
+		return
+	}
+	rrName := analysis.Spec.RemediationRequestRef.Name
+	if rrName == "" {
+		return
+	}
+	if err := h.isPhaseUpdater.SetTerminalPhase(ctx, rrName, phase); err != nil {
+		h.log.Error(err, "Failed to set IS terminal phase (best-effort)",
+			"rrName", rrName, "phase", phase)
+	}
 }
