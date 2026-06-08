@@ -309,7 +309,7 @@ func toPromptEnrichment(data *enrichment.EnrichmentResult) *prompt.EnrichmentDat
 }
 
 func detectedLabelsToPromptMap(dl *enrichment.DetectedLabels) map[string]string {
-	m := make(map[string]string)
+	m := make(map[string]string, 14)
 	if dl.GitOpsManaged {
 		m["gitOpsManaged"] = "true"
 		if dl.GitOpsTool != "" {
@@ -337,6 +337,18 @@ func detectedLabelsToPromptMap(dl *enrichment.DetectedLabels) map[string]string 
 	if dl.ResourceQuotaConstrained {
 		m["resourceQuotaConstrained"] = "true"
 	}
+	if dl.VirtualMachine {
+		m["virtualMachine"] = "true"
+	}
+	if dl.LiveMigratable {
+		m["liveMigratable"] = "true"
+	}
+	if dl.CDIManaged {
+		m["cdiManaged"] = "true"
+	}
+	if dl.StorageBackend != "" {
+		m["storageBackend"] = dl.StorageBackend
+	}
 	if len(dl.FailedDetections) > 0 {
 		m["failedDetections"] = strings.Join(dl.FailedDetections, ",")
 	}
@@ -344,7 +356,7 @@ func detectedLabelsToPromptMap(dl *enrichment.DetectedLabels) map[string]string 
 }
 
 func detectedLabelsToResult(dl *enrichment.DetectedLabels) map[string]interface{} {
-	m := make(map[string]interface{})
+	m := make(map[string]interface{}, 14)
 	m["gitOpsManaged"] = dl.GitOpsManaged
 	if dl.GitOpsTool != "" {
 		m["gitOpsTool"] = dl.GitOpsTool
@@ -358,6 +370,12 @@ func detectedLabelsToResult(dl *enrichment.DetectedLabels) map[string]interface{
 		m["serviceMesh"] = dl.ServiceMesh
 	}
 	m["resourceQuotaConstrained"] = dl.ResourceQuotaConstrained
+	m["virtualMachine"] = dl.VirtualMachine
+	m["liveMigratable"] = dl.LiveMigratable
+	m["cdiManaged"] = dl.CDIManaged
+	if dl.StorageBackend != "" {
+		m["storageBackend"] = dl.StorageBackend
+	}
 	if len(dl.FailedDetections) > 0 {
 		m["failedDetections"] = dl.FailedDetections
 	}

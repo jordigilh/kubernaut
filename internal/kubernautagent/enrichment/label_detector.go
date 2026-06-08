@@ -36,7 +36,24 @@ var (
 	networkPolicyGVR = schema.GroupVersionResource{Group: "networking.k8s.io", Version: "v1", Resource: "networkpolicies"}
 	resourceQuotaGVR = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "resourcequotas"}
 	namespaceGVR     = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}
+	pvcGVR           = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "persistentvolumeclaims"}
+	storageClassGVR  = schema.GroupVersionResource{Group: "storage.k8s.io", Version: "v1", Resource: "storageclasses"}
+	vmGVR            = schema.GroupVersionResource{Group: "kubevirt.io", Version: "v1", Resource: "virtualmachines"}
 )
+
+// cnvKinds lists Kubernetes kinds that indicate a CNV/KubeVirt workload.
+var cnvKinds = map[string]bool{
+	"VirtualMachine":                 true,
+	"VirtualMachineInstance":         true,
+	"VirtualMachineInstanceMigration": true,
+	"DataVolume":                     true,
+}
+
+// provisionerToBackend maps known CSI provisioner strings to canonical backend names.
+var provisionerToBackend = map[string]string{
+	"topolvm.io":                     "lvms",
+	"kubernetes.io/no-provisioner":   "local",
+}
 
 // LabelDetector detects cluster infrastructure characteristics for a resource.
 // Per ADR-056 v1.7, label detection runs in EnrichmentService Phase 2 of the
@@ -64,6 +81,7 @@ func NewLabelDetector(dynClient dynamic.Interface, mapper meta.RESTMapper, logge
 var AllDetectionCategories = []string{
 	"gitOpsManaged", "helmManaged", "stateful", "serviceMesh",
 	"hpaEnabled", "pdbProtected", "networkIsolated", "resourceQuotaConstrained",
+	"virtualMachine", "liveMigratable", "cdiManaged", "storageBackend",
 }
 
 func (d *LabelDetector) DetectLabels(ctx context.Context, kind, name, namespace string, ownerChain []OwnerChainEntry) (*DetectedLabels, map[string]QuotaResourceUsage, error) {
@@ -95,6 +113,8 @@ func (d *LabelDetector) DetectLabels(ctx context.Context, kind, name, namespace 
 	d.detectNetworkPolicy(ctx, rootNS, result, &failed)
 	quotaSummary := d.detectResourceQuota(ctx, rootNS, result, &failed)
 
+	d.detectCNV(ctx, kind, ownerChain, rootKind, rootName, rootNS, result, &failed)
+
 	if len(failed) > 0 {
 		result.FailedDetections = failed
 	}
@@ -111,6 +131,10 @@ func (d *LabelDetector) DetectLabels(ctx context.Context, kind, name, namespace 
 		"pdbProtected", result.PDBProtected,
 		"networkIsolated", result.NetworkIsolated,
 		"resourceQuotaConstrained", result.ResourceQuotaConstrained,
+		"virtualMachine", result.VirtualMachine,
+		"liveMigratable", result.LiveMigratable,
+		"cdiManaged", result.CDIManaged,
+		"storageBackend", result.StorageBackend,
 		"quotaSummaryKeys", len(quotaSummary),
 		"failedDetections", result.FailedDetections,
 	)
@@ -451,6 +475,134 @@ func (d *LabelDetector) detectResourceQuota(ctx context.Context, namespace strin
 	}
 	result.ResourceQuotaConstrained = true
 	return summarizeQuotas(list.Items)
+}
+
+// detectCNV orchestrates CNV/KubeVirt label detection (#1378). A RESTMapper
+// pre-check verifies that the VirtualMachine CRD is registered; if not, all
+// 4 CNV detections are skipped without adding FailedDetections entries (CRD
+// absence is expected on non-CNV clusters).
+func (d *LabelDetector) detectCNV(ctx context.Context, targetKind string, ownerChain []OwnerChainEntry, rootKind, rootName, rootNS string, result *DetectedLabels, failed *[]string) {
+	if !d.cnvAvailable() {
+		return
+	}
+
+	detectVirtualMachine(targetKind, ownerChain, result)
+	if !result.VirtualMachine {
+		return
+	}
+
+	d.detectLiveMigratable(ctx, rootKind, rootName, rootNS, result, failed)
+
+	pvcs := d.listNamespacePVCs(ctx, rootNS, failed)
+	detectCDIManaged(pvcs, result)
+	d.detectStorageBackend(ctx, pvcs, result, failed)
+}
+
+// cnvAvailable returns true when the VirtualMachine CRD is registered in the
+// REST mapper, indicating a CNV-enabled cluster.
+func (d *LabelDetector) cnvAvailable() bool {
+	if d.mapper == nil {
+		return false
+	}
+	_, err := d.mapper.RESTMapping(schema.GroupKind{Group: "kubevirt.io", Kind: "VirtualMachine"})
+	return err == nil
+}
+
+// detectVirtualMachine walks the owner chain and target kind for CNV kinds.
+// No API calls needed — mirrors the detectStateful pattern.
+func detectVirtualMachine(targetKind string, ownerChain []OwnerChainEntry, result *DetectedLabels) {
+	if cnvKinds[targetKind] {
+		result.VirtualMachine = true
+		return
+	}
+	for _, entry := range ownerChain {
+		if cnvKinds[entry.Kind] {
+			result.VirtualMachine = true
+			return
+		}
+	}
+}
+
+// detectLiveMigratable checks the VirtualMachine's evictionStrategy field.
+// Conditional on virtualMachine=true. Appends to FailedDetections on API error.
+func (d *LabelDetector) detectLiveMigratable(ctx context.Context, rootKind, rootName, rootNS string, result *DetectedLabels, failed *[]string) {
+	vmName := rootName
+	vmNS := rootNS
+	if rootKind != "VirtualMachine" {
+		return
+	}
+
+	vmObj, err := d.dynClient.Resource(vmGVR).Namespace(vmNS).Get(ctx, vmName, metav1.GetOptions{})
+	if err != nil {
+		d.logger.Error(err, "CNV: VirtualMachine fetch failed", "name", vmName, "namespace", vmNS)
+		*failed = append(*failed, "liveMigratable")
+		return
+	}
+
+	strategy, found, _ := unstructured.NestedString(vmObj.Object, "spec", "template", "spec", "evictionStrategy")
+	if found && strategy == "LiveMigrate" {
+		result.LiveMigratable = true
+	}
+}
+
+// listNamespacePVCs lists PVCs in the given namespace. Returns nil on error
+// and appends cdiManaged + storageBackend to FailedDetections.
+func (d *LabelDetector) listNamespacePVCs(ctx context.Context, namespace string, failed *[]string) []unstructured.Unstructured {
+	if namespace == "" {
+		*failed = append(*failed, "cdiManaged", "storageBackend")
+		return nil
+	}
+	list, err := d.dynClient.Resource(pvcGVR).Namespace(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		d.logger.Error(err, "CNV: PVC list failed", "namespace", namespace)
+		*failed = append(*failed, "cdiManaged", "storageBackend")
+		return nil
+	}
+	return list.Items
+}
+
+// detectCDIManaged checks PVC annotations for CDI import markers.
+func detectCDIManaged(pvcs []unstructured.Unstructured, result *DetectedLabels) {
+	for i := range pvcs {
+		annotations := pvcs[i].GetAnnotations()
+		for key := range annotations {
+			if strings.HasPrefix(key, "cdi.kubevirt.io/storage.import.") {
+				result.CDIManaged = true
+				return
+			}
+		}
+	}
+}
+
+// detectStorageBackend resolves the storage provisioner from PVC -> StorageClass.
+func (d *LabelDetector) detectStorageBackend(ctx context.Context, pvcs []unstructured.Unstructured, result *DetectedLabels, failed *[]string) {
+	for i := range pvcs {
+		scName, found, _ := unstructured.NestedString(pvcs[i].Object, "spec", "storageClassName")
+		if !found || scName == "" {
+			continue
+		}
+		scObj, err := d.dynClient.Resource(storageClassGVR).Get(ctx, scName, metav1.GetOptions{})
+		if err != nil {
+			d.logger.Error(err, "CNV: StorageClass fetch failed", "name", scName)
+			continue
+		}
+		provisioner, _, _ := unstructured.NestedString(scObj.Object, "provisioner")
+		if backend := mapProvisionerToBackend(provisioner); backend != "" {
+			result.StorageBackend = backend
+			return
+		}
+	}
+}
+
+// mapProvisionerToBackend maps a CSI provisioner string to a canonical backend name.
+func mapProvisionerToBackend(provisioner string) string {
+	if strings.Contains(provisioner, "rbd.csi.ceph.com") {
+		return "odf-ceph"
+	}
+	if backend, ok := provisionerToBackend[provisioner]; ok {
+		return backend
+	}
+	return ""
 }
 
 // summarizeQuotas aggregates status.hard and status.used from all ResourceQuota
