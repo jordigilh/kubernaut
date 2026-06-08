@@ -27359,19 +27359,47 @@ func (s *DetectedLabels) encodeFields(e *jx.Encoder) {
 			s.ResourceQuotaConstrained.Encode(e)
 		}
 	}
+	{
+		if s.VirtualMachine.Set {
+			e.FieldStart("virtualMachine")
+			s.VirtualMachine.Encode(e)
+		}
+	}
+	{
+		if s.LiveMigratable.Set {
+			e.FieldStart("liveMigratable")
+			s.LiveMigratable.Encode(e)
+		}
+	}
+	{
+		if s.CdiManaged.Set {
+			e.FieldStart("cdiManaged")
+			s.CdiManaged.Encode(e)
+		}
+	}
+	{
+		if s.StorageBackend.Set {
+			e.FieldStart("storageBackend")
+			s.StorageBackend.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfDetectedLabels = [10]string{
-	0: "failedDetections",
-	1: "gitOpsManaged",
-	2: "gitOpsTool",
-	3: "pdbProtected",
-	4: "hpaEnabled",
-	5: "stateful",
-	6: "helmManaged",
-	7: "networkIsolated",
-	8: "serviceMesh",
-	9: "resourceQuotaConstrained",
+var jsonFieldsNameOfDetectedLabels = [14]string{
+	0:  "failedDetections",
+	1:  "gitOpsManaged",
+	2:  "gitOpsTool",
+	3:  "pdbProtected",
+	4:  "hpaEnabled",
+	5:  "stateful",
+	6:  "helmManaged",
+	7:  "networkIsolated",
+	8:  "serviceMesh",
+	9:  "resourceQuotaConstrained",
+	10: "virtualMachine",
+	11: "liveMigratable",
+	12: "cdiManaged",
+	13: "storageBackend",
 }
 
 // Decode decodes DetectedLabels from json.
@@ -27489,6 +27517,46 @@ func (s *DetectedLabels) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"resourceQuotaConstrained\"")
 			}
+		case "virtualMachine":
+			if err := func() error {
+				s.VirtualMachine.Reset()
+				if err := s.VirtualMachine.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"virtualMachine\"")
+			}
+		case "liveMigratable":
+			if err := func() error {
+				s.LiveMigratable.Reset()
+				if err := s.LiveMigratable.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"liveMigratable\"")
+			}
+		case "cdiManaged":
+			if err := func() error {
+				s.CdiManaged.Reset()
+				if err := s.CdiManaged.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"cdiManaged\"")
+			}
+		case "storageBackend":
+			if err := func() error {
+				s.StorageBackend.Reset()
+				if err := s.StorageBackend.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"storageBackend\"")
+			}
 		default:
 			return d.Skip()
 		}
@@ -27547,6 +27615,14 @@ func (s *DetectedLabelsFailedDetectionsItem) Decode(d *jx.Decoder) error {
 		*s = DetectedLabelsFailedDetectionsItemServiceMesh
 	case DetectedLabelsFailedDetectionsItemResourceQuotaConstrained:
 		*s = DetectedLabelsFailedDetectionsItemResourceQuotaConstrained
+	case DetectedLabelsFailedDetectionsItemVirtualMachine:
+		*s = DetectedLabelsFailedDetectionsItemVirtualMachine
+	case DetectedLabelsFailedDetectionsItemLiveMigratable:
+		*s = DetectedLabelsFailedDetectionsItemLiveMigratable
+	case DetectedLabelsFailedDetectionsItemCdiManaged:
+		*s = DetectedLabelsFailedDetectionsItemCdiManaged
+	case DetectedLabelsFailedDetectionsItemStorageBackend:
+		*s = DetectedLabelsFailedDetectionsItemStorageBackend
 	default:
 		*s = DetectedLabelsFailedDetectionsItem(v)
 	}
@@ -27647,6 +27723,50 @@ func (s DetectedLabelsServiceMesh) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *DetectedLabelsServiceMesh) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes DetectedLabelsStorageBackend as json.
+func (s DetectedLabelsStorageBackend) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes DetectedLabelsStorageBackend from json.
+func (s *DetectedLabelsStorageBackend) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode DetectedLabelsStorageBackend to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch DetectedLabelsStorageBackend(v) {
+	case DetectedLabelsStorageBackend_odfMinusceph:
+		*s = DetectedLabelsStorageBackend_odfMinusceph
+	case DetectedLabelsStorageBackend_lvms:
+		*s = DetectedLabelsStorageBackend_lvms
+	case DetectedLabelsStorageBackend_local:
+		*s = DetectedLabelsStorageBackend_local
+	case DetectedLabelsStorageBackend_:
+		*s = DetectedLabelsStorageBackend_
+	default:
+		*s = DetectedLabelsStorageBackend(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s DetectedLabelsStorageBackend) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *DetectedLabelsStorageBackend) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -36192,6 +36312,39 @@ func (s OptDetectedLabelsServiceMesh) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptDetectedLabelsServiceMesh) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes DetectedLabelsStorageBackend as json.
+func (o OptDetectedLabelsStorageBackend) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes DetectedLabelsStorageBackend from json.
+func (o *OptDetectedLabelsStorageBackend) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptDetectedLabelsStorageBackend to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptDetectedLabelsStorageBackend) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptDetectedLabelsStorageBackend) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

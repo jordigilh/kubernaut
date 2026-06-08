@@ -4532,6 +4532,24 @@ func (s *DetectedLabels) Validate() error {
 			Error: err,
 		})
 	}
+	if err := func() error {
+		if value, ok := s.StorageBackend.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "storageBackend",
+			Error: err,
+		})
+	}
 	if len(failures) > 0 {
 		return &validate.Error{Fields: failures}
 	}
@@ -4558,6 +4576,14 @@ func (s DetectedLabelsFailedDetectionsItem) Validate() error {
 		return nil
 	case "resourceQuotaConstrained":
 		return nil
+	case "virtualMachine":
+		return nil
+	case "liveMigratable":
+		return nil
+	case "cdiManaged":
+		return nil
+	case "storageBackend":
+		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}
@@ -4581,6 +4607,21 @@ func (s DetectedLabelsServiceMesh) Validate() error {
 	case "istio":
 		return nil
 	case "linkerd":
+		return nil
+	case "*":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s DetectedLabelsStorageBackend) Validate() error {
+	switch s {
+	case "odf-ceph":
+		return nil
+	case "lvms":
+		return nil
+	case "local":
 		return nil
 	case "*":
 		return nil

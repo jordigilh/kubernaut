@@ -188,6 +188,51 @@ func TestBuildDetectedLabelsBoostSQL_GitOpsTool_QueryWildcard(t *testing.T) {
 	}
 }
 
+// --- Phase 5: CNV DetectedLabels scoring (#1378) ---
+
+func TestBuildDetectedLabelsBoostSQL_CNV_VirtualMachine(t *testing.T) {
+	// UT-DS-1378-010: virtualMachine=true boost
+	dl := &models.DetectedLabels{VirtualMachine: true}
+	result := buildDetectedLabelsBoostSQL(dl)
+	if !strings.Contains(result, "virtualMachine") {
+		t.Errorf("UT-DS-1378-010: expected SQL to reference virtualMachine, got: %s", result)
+	}
+	if !strings.Contains(result, "0.08") {
+		t.Errorf("UT-DS-1378-010: expected 0.08 weight for virtualMachine, got: %s", result)
+	}
+}
+
+func TestBuildDetectedLabelsBoostSQL_CNV_StorageBackend(t *testing.T) {
+	// UT-DS-1378-011: storageBackend=odf-ceph boost with exact + wildcard
+	dl := &models.DetectedLabels{StorageBackend: "odf-ceph"}
+	result := buildDetectedLabelsBoostSQL(dl)
+	if !strings.Contains(result, "storageBackend") {
+		t.Errorf("UT-DS-1378-011: expected SQL to reference storageBackend, got: %s", result)
+	}
+	if !strings.Contains(result, "0.05") {
+		t.Errorf("UT-DS-1378-011: expected 0.05 weight for storageBackend, got: %s", result)
+	}
+	if !strings.Contains(result, "'*'") {
+		t.Errorf("UT-DS-1378-011: expected wildcard check in storageBackend, got: %s", result)
+	}
+}
+
+func TestBuildDetectedLabelsBoostSQL_CNV_AllFour(t *testing.T) {
+	// UT-DS-1378-012: all 4 CNV fields
+	dl := &models.DetectedLabels{
+		VirtualMachine: true,
+		LiveMigratable: true,
+		CDIManaged:     true,
+		StorageBackend: "odf-ceph",
+	}
+	result := buildDetectedLabelsBoostSQL(dl)
+	for _, key := range []string{"virtualMachine", "liveMigratable", "cdiManaged", "storageBackend"} {
+		if !strings.Contains(result, key) {
+			t.Errorf("UT-DS-1378-012: expected SQL to reference %s, got: %s", key, result)
+		}
+	}
+}
+
 // --- Phase 6: Custom labels wired into discovery scoring (#212 Gap 2+3) ---
 
 func TestBuildCustomLabelsBoostSQL_MultipleKeys(t *testing.T) {

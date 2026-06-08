@@ -15409,6 +15409,14 @@ type DetectedLabels struct {
 	ServiceMesh OptDetectedLabelsServiceMesh `json:"serviceMesh"`
 	// ResourceQuota exists in namespace (#366).
 	ResourceQuotaConstrained OptBool `json:"resourceQuotaConstrained"`
+	// Workload is a VirtualMachine/VMI/DataVolume (CNV/KubeVirt #1378).
+	VirtualMachine OptBool `json:"virtualMachine"`
+	// VM has evictionStrategy=LiveMigrate (#1378).
+	LiveMigratable OptBool `json:"liveMigratable"`
+	// PVCs carry CDI import annotations (#1378).
+	CdiManaged OptBool `json:"cdiManaged"`
+	// Storage provisioner backing PVCs: odf-ceph, lvms, local, or * (wildcard).
+	StorageBackend OptDetectedLabelsStorageBackend `json:"storageBackend"`
 }
 
 // GetFailedDetections returns the value of FailedDetections.
@@ -15461,6 +15469,26 @@ func (s *DetectedLabels) GetResourceQuotaConstrained() OptBool {
 	return s.ResourceQuotaConstrained
 }
 
+// GetVirtualMachine returns the value of VirtualMachine.
+func (s *DetectedLabels) GetVirtualMachine() OptBool {
+	return s.VirtualMachine
+}
+
+// GetLiveMigratable returns the value of LiveMigratable.
+func (s *DetectedLabels) GetLiveMigratable() OptBool {
+	return s.LiveMigratable
+}
+
+// GetCdiManaged returns the value of CdiManaged.
+func (s *DetectedLabels) GetCdiManaged() OptBool {
+	return s.CdiManaged
+}
+
+// GetStorageBackend returns the value of StorageBackend.
+func (s *DetectedLabels) GetStorageBackend() OptDetectedLabelsStorageBackend {
+	return s.StorageBackend
+}
+
 // SetFailedDetections sets the value of FailedDetections.
 func (s *DetectedLabels) SetFailedDetections(val []DetectedLabelsFailedDetectionsItem) {
 	s.FailedDetections = val
@@ -15511,6 +15539,26 @@ func (s *DetectedLabels) SetResourceQuotaConstrained(val OptBool) {
 	s.ResourceQuotaConstrained = val
 }
 
+// SetVirtualMachine sets the value of VirtualMachine.
+func (s *DetectedLabels) SetVirtualMachine(val OptBool) {
+	s.VirtualMachine = val
+}
+
+// SetLiveMigratable sets the value of LiveMigratable.
+func (s *DetectedLabels) SetLiveMigratable(val OptBool) {
+	s.LiveMigratable = val
+}
+
+// SetCdiManaged sets the value of CdiManaged.
+func (s *DetectedLabels) SetCdiManaged(val OptBool) {
+	s.CdiManaged = val
+}
+
+// SetStorageBackend sets the value of StorageBackend.
+func (s *DetectedLabels) SetStorageBackend(val OptDetectedLabelsStorageBackend) {
+	s.StorageBackend = val
+}
+
 type DetectedLabelsFailedDetectionsItem string
 
 const (
@@ -15523,6 +15571,10 @@ const (
 	DetectedLabelsFailedDetectionsItemNetworkIsolated          DetectedLabelsFailedDetectionsItem = "networkIsolated"
 	DetectedLabelsFailedDetectionsItemServiceMesh              DetectedLabelsFailedDetectionsItem = "serviceMesh"
 	DetectedLabelsFailedDetectionsItemResourceQuotaConstrained DetectedLabelsFailedDetectionsItem = "resourceQuotaConstrained"
+	DetectedLabelsFailedDetectionsItemVirtualMachine           DetectedLabelsFailedDetectionsItem = "virtualMachine"
+	DetectedLabelsFailedDetectionsItemLiveMigratable           DetectedLabelsFailedDetectionsItem = "liveMigratable"
+	DetectedLabelsFailedDetectionsItemCdiManaged               DetectedLabelsFailedDetectionsItem = "cdiManaged"
+	DetectedLabelsFailedDetectionsItemStorageBackend           DetectedLabelsFailedDetectionsItem = "storageBackend"
 )
 
 // AllValues returns all DetectedLabelsFailedDetectionsItem values.
@@ -15537,6 +15589,10 @@ func (DetectedLabelsFailedDetectionsItem) AllValues() []DetectedLabelsFailedDete
 		DetectedLabelsFailedDetectionsItemNetworkIsolated,
 		DetectedLabelsFailedDetectionsItemServiceMesh,
 		DetectedLabelsFailedDetectionsItemResourceQuotaConstrained,
+		DetectedLabelsFailedDetectionsItemVirtualMachine,
+		DetectedLabelsFailedDetectionsItemLiveMigratable,
+		DetectedLabelsFailedDetectionsItemCdiManaged,
+		DetectedLabelsFailedDetectionsItemStorageBackend,
 	}
 }
 
@@ -15560,6 +15616,14 @@ func (s DetectedLabelsFailedDetectionsItem) MarshalText() ([]byte, error) {
 	case DetectedLabelsFailedDetectionsItemServiceMesh:
 		return []byte(s), nil
 	case DetectedLabelsFailedDetectionsItemResourceQuotaConstrained:
+		return []byte(s), nil
+	case DetectedLabelsFailedDetectionsItemVirtualMachine:
+		return []byte(s), nil
+	case DetectedLabelsFailedDetectionsItemLiveMigratable:
+		return []byte(s), nil
+	case DetectedLabelsFailedDetectionsItemCdiManaged:
+		return []byte(s), nil
+	case DetectedLabelsFailedDetectionsItemStorageBackend:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -15595,6 +15659,18 @@ func (s *DetectedLabelsFailedDetectionsItem) UnmarshalText(data []byte) error {
 		return nil
 	case DetectedLabelsFailedDetectionsItemResourceQuotaConstrained:
 		*s = DetectedLabelsFailedDetectionsItemResourceQuotaConstrained
+		return nil
+	case DetectedLabelsFailedDetectionsItemVirtualMachine:
+		*s = DetectedLabelsFailedDetectionsItemVirtualMachine
+		return nil
+	case DetectedLabelsFailedDetectionsItemLiveMigratable:
+		*s = DetectedLabelsFailedDetectionsItemLiveMigratable
+		return nil
+	case DetectedLabelsFailedDetectionsItemCdiManaged:
+		*s = DetectedLabelsFailedDetectionsItemCdiManaged
+		return nil
+	case DetectedLabelsFailedDetectionsItemStorageBackend:
+		*s = DetectedLabelsFailedDetectionsItemStorageBackend
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -15693,6 +15769,62 @@ func (s *DetectedLabelsServiceMesh) UnmarshalText(data []byte) error {
 		return nil
 	case DetectedLabelsServiceMesh_:
 		*s = DetectedLabelsServiceMesh_
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Storage provisioner backing PVCs: odf-ceph, lvms, local, or * (wildcard).
+type DetectedLabelsStorageBackend string
+
+const (
+	DetectedLabelsStorageBackend_odfMinusceph DetectedLabelsStorageBackend = "odf-ceph"
+	DetectedLabelsStorageBackend_lvms         DetectedLabelsStorageBackend = "lvms"
+	DetectedLabelsStorageBackend_local        DetectedLabelsStorageBackend = "local"
+	DetectedLabelsStorageBackend_             DetectedLabelsStorageBackend = "*"
+)
+
+// AllValues returns all DetectedLabelsStorageBackend values.
+func (DetectedLabelsStorageBackend) AllValues() []DetectedLabelsStorageBackend {
+	return []DetectedLabelsStorageBackend{
+		DetectedLabelsStorageBackend_odfMinusceph,
+		DetectedLabelsStorageBackend_lvms,
+		DetectedLabelsStorageBackend_local,
+		DetectedLabelsStorageBackend_,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s DetectedLabelsStorageBackend) MarshalText() ([]byte, error) {
+	switch s {
+	case DetectedLabelsStorageBackend_odfMinusceph:
+		return []byte(s), nil
+	case DetectedLabelsStorageBackend_lvms:
+		return []byte(s), nil
+	case DetectedLabelsStorageBackend_local:
+		return []byte(s), nil
+	case DetectedLabelsStorageBackend_:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *DetectedLabelsStorageBackend) UnmarshalText(data []byte) error {
+	switch DetectedLabelsStorageBackend(data) {
+	case DetectedLabelsStorageBackend_odfMinusceph:
+		*s = DetectedLabelsStorageBackend_odfMinusceph
+		return nil
+	case DetectedLabelsStorageBackend_lvms:
+		*s = DetectedLabelsStorageBackend_lvms
+		return nil
+	case DetectedLabelsStorageBackend_local:
+		*s = DetectedLabelsStorageBackend_local
+		return nil
+	case DetectedLabelsStorageBackend_:
+		*s = DetectedLabelsStorageBackend_
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -21173,6 +21305,52 @@ func (o OptDetectedLabelsServiceMesh) Get() (v DetectedLabelsServiceMesh, ok boo
 
 // Or returns value if set, or given parameter if does not.
 func (o OptDetectedLabelsServiceMesh) Or(d DetectedLabelsServiceMesh) DetectedLabelsServiceMesh {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptDetectedLabelsStorageBackend returns new OptDetectedLabelsStorageBackend with value set to v.
+func NewOptDetectedLabelsStorageBackend(v DetectedLabelsStorageBackend) OptDetectedLabelsStorageBackend {
+	return OptDetectedLabelsStorageBackend{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptDetectedLabelsStorageBackend is optional DetectedLabelsStorageBackend.
+type OptDetectedLabelsStorageBackend struct {
+	Value DetectedLabelsStorageBackend
+	Set   bool
+}
+
+// IsSet returns true if OptDetectedLabelsStorageBackend was set.
+func (o OptDetectedLabelsStorageBackend) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptDetectedLabelsStorageBackend) Reset() {
+	var v DetectedLabelsStorageBackend
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptDetectedLabelsStorageBackend) SetTo(v DetectedLabelsStorageBackend) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptDetectedLabelsStorageBackend) Get() (v DetectedLabelsStorageBackend, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptDetectedLabelsStorageBackend) Or(d DetectedLabelsStorageBackend) DetectedLabelsStorageBackend {
 	if v, ok := o.Get(); ok {
 		return v
 	}

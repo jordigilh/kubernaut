@@ -339,6 +339,9 @@ func buildContextFilterSQL(filters *models.WorkflowDiscoveryFilters) (string, []
 			{"stateful", dl.Stateful},
 			{"helmManaged", dl.HelmManaged},
 			{"networkIsolated", dl.NetworkIsolated},
+			{"virtualMachine", dl.VirtualMachine},
+			{"liveMigratable", dl.LiveMigratable},
+			{"cdiManaged", dl.CDIManaged},
 		}
 		for _, f := range boolFields {
 			if f.value {
@@ -357,6 +360,7 @@ func buildContextFilterSQL(filters *models.WorkflowDiscoveryFilters) (string, []
 		}{
 			{"gitOpsTool", dl.GitOpsTool},
 			{"serviceMesh", dl.ServiceMesh},
+			{"storageBackend", dl.StorageBackend},
 		}
 		for _, f := range stringFields {
 			if f.value != "" {

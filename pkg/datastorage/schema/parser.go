@@ -384,6 +384,10 @@ func (p *Parser) ExtractDetectedLabels(schema *models.WorkflowSchema) (*models.D
 	dl.HelmManaged = src.HelmManaged == "true"
 	dl.NetworkIsolated = src.NetworkIsolated == "true"
 	dl.ServiceMesh = src.ServiceMesh
+	dl.VirtualMachine = src.VirtualMachine == "true"
+	dl.LiveMigratable = src.LiveMigratable == "true"
+	dl.CDIManaged = src.CDIManaged == "true"
+	dl.StorageBackend = src.StorageBackend
 
 	return dl, nil
 }

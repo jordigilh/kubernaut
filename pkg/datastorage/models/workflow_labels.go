@@ -118,7 +118,7 @@ func NewDetectedLabels() *DetectedLabels {
 
 // SerializeLabels produces sparse JSON, omitting false boolean fields.
 func (d DetectedLabels) SerializeLabels() ([]byte, error) {
-	m := make(map[string]interface{})
+	m := make(map[string]interface{}, 14)
 	if len(d.FailedDetections) > 0 {
 		m["failedDetections"] = d.FailedDetections
 	}
@@ -148,6 +148,18 @@ func (d DetectedLabels) SerializeLabels() ([]byte, error) {
 	}
 	if d.ResourceQuotaConstrained {
 		m["resourceQuotaConstrained"] = true
+	}
+	if d.VirtualMachine {
+		m["virtualMachine"] = true
+	}
+	if d.LiveMigratable {
+		m["liveMigratable"] = true
+	}
+	if d.CDIManaged {
+		m["cdiManaged"] = true
+	}
+	if d.StorageBackend != "" {
+		m["storageBackend"] = d.StorageBackend
 	}
 	return json.Marshal(m)
 }
@@ -186,7 +198,12 @@ func (d *DetectedLabels) IsEmpty() bool {
 		!d.Stateful &&
 		!d.HelmManaged &&
 		!d.NetworkIsolated &&
-		d.ServiceMesh == ""
+		d.ServiceMesh == "" &&
+		!d.ResourceQuotaConstrained &&
+		!d.VirtualMachine &&
+		!d.LiveMigratable &&
+		!d.CDIManaged &&
+		d.StorageBackend == ""
 }
 
 // ========================================
@@ -318,6 +335,10 @@ var ValidDetectedLabelFields = []string{
 	"networkIsolated",
 	"serviceMesh",
 	"resourceQuotaConstrained",
+	"virtualMachine",
+	"liveMigratable",
+	"cdiManaged",
+	"storageBackend",
 }
 
 // ========================================

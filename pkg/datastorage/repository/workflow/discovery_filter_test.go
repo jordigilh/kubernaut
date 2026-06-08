@@ -446,6 +446,97 @@ func TestBuildContextFilterSQL_Issue595_WildcardPreservation(t *testing.T) {
 	}
 }
 
+// ========================================
+// CNV DetectedLabels Filter Tests — #1378
+// ========================================
+
+func TestBuildContextFilterSQL_CNV_VirtualMachine(t *testing.T) {
+	// UT-DS-1378-001: virtualMachine=true filter
+	filters := &models.WorkflowDiscoveryFilters{
+		DetectedLabels: &models.DetectedLabels{VirtualMachine: true},
+	}
+	sql, args := buildContextFilterSQL(filters)
+	if !strings.Contains(sql, "virtualMachine") {
+		t.Errorf("UT-DS-1378-001: expected SQL to reference virtualMachine, got: %s", sql)
+	}
+	if len(args) == 0 {
+		t.Error("UT-DS-1378-001: expected at least one arg")
+	}
+}
+
+func TestBuildContextFilterSQL_CNV_LiveMigratable(t *testing.T) {
+	// UT-DS-1378-002: liveMigratable=true filter
+	filters := &models.WorkflowDiscoveryFilters{
+		DetectedLabels: &models.DetectedLabels{LiveMigratable: true},
+	}
+	sql, args := buildContextFilterSQL(filters)
+	if !strings.Contains(sql, "liveMigratable") {
+		t.Errorf("UT-DS-1378-002: expected SQL to reference liveMigratable, got: %s", sql)
+	}
+	if len(args) == 0 {
+		t.Error("UT-DS-1378-002: expected at least one arg")
+	}
+}
+
+func TestBuildContextFilterSQL_CNV_CDIManaged(t *testing.T) {
+	// UT-DS-1378-003: cdiManaged=true filter
+	filters := &models.WorkflowDiscoveryFilters{
+		DetectedLabels: &models.DetectedLabels{CDIManaged: true},
+	}
+	sql, args := buildContextFilterSQL(filters)
+	if !strings.Contains(sql, "cdiManaged") {
+		t.Errorf("UT-DS-1378-003: expected SQL to reference cdiManaged, got: %s", sql)
+	}
+	if len(args) == 0 {
+		t.Error("UT-DS-1378-003: expected at least one arg")
+	}
+}
+
+func TestBuildContextFilterSQL_CNV_StorageBackend(t *testing.T) {
+	// UT-DS-1378-004: storageBackend=odf-ceph string filter
+	filters := &models.WorkflowDiscoveryFilters{
+		DetectedLabels: &models.DetectedLabels{StorageBackend: "odf-ceph"},
+	}
+	sql, args := buildContextFilterSQL(filters)
+	if !strings.Contains(sql, "storageBackend") {
+		t.Errorf("UT-DS-1378-004: expected SQL to reference storageBackend, got: %s", sql)
+	}
+	if len(args) == 0 {
+		t.Error("UT-DS-1378-004: expected at least one arg")
+	}
+}
+
+func TestBuildContextFilterSQL_CNV_AllFour(t *testing.T) {
+	// UT-DS-1378-005: all 4 CNV fields set
+	filters := &models.WorkflowDiscoveryFilters{
+		DetectedLabels: &models.DetectedLabels{
+			VirtualMachine: true,
+			LiveMigratable: true,
+			CDIManaged:     true,
+			StorageBackend: "odf-ceph",
+		},
+	}
+	sql, _ := buildContextFilterSQL(filters)
+	for _, key := range []string{"virtualMachine", "liveMigratable", "cdiManaged", "storageBackend"} {
+		if !strings.Contains(sql, key) {
+			t.Errorf("UT-DS-1378-005: expected SQL to reference %s, got: %s", key, sql)
+		}
+	}
+}
+
+func TestBuildContextFilterSQL_CNV_NoneSet(t *testing.T) {
+	// UT-DS-1378-006: no CNV fields (all false/empty) -> no CNV conditions
+	filters := &models.WorkflowDiscoveryFilters{
+		DetectedLabels: &models.DetectedLabels{},
+	}
+	sql, _ := buildContextFilterSQL(filters)
+	for _, key := range []string{"virtualMachine", "liveMigratable", "cdiManaged", "storageBackend"} {
+		if strings.Contains(sql, key) {
+			t.Errorf("UT-DS-1378-006: SQL should not reference %s when all CNV fields are zero, got: %s", key, sql)
+		}
+	}
+}
+
 func TestBuildContextFilterSQL_Issue595_PriorityScalarBranchPreserved(t *testing.T) {
 	// UT-DS-595-006: Priority scalar ELSE branch must still use the
 	// labels->>'priority' extraction (scalar path), not jsonb_array_elements_text.
