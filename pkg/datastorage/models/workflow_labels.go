@@ -199,7 +199,6 @@ func (d *DetectedLabels) IsEmpty() bool {
 		!d.HelmManaged &&
 		!d.NetworkIsolated &&
 		d.ServiceMesh == "" &&
-		!d.ResourceQuotaConstrained &&
 		!d.VirtualMachine &&
 		!d.LiveMigratable &&
 		!d.CDIManaged &&
