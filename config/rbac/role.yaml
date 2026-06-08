@@ -69,6 +69,7 @@ rules:
   - kubernaut.ai
   resources:
   - aianalyses/status
+  - investigationsessions/status
   - notificationrequests/status
   - signalprocessings/status
   - workflowexecutions/status
