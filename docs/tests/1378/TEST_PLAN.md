@@ -15,7 +15,7 @@ The feature spans 6 layers: shared types, KA enrichment detection, KA prompt/res
 **Business Requirements**:
 - BR-WORKFLOW-018: CNV workload detection for v1.5 scenarios (demo-scenarios #375-#380)
 - BR-WORKFLOW-004: DS catalog labels use GVK format; discovery filters must match
-- BR-SP-101: DetectedLabels Auto-Detection
+- BR-SP-101: DetectedLabels Auto-Detection (superseded by ADR-056; detection moved to KA)
 - BR-SP-103: FailedDetections Tracking
 
 **FedRAMP Control Mapping**:
@@ -146,7 +146,7 @@ The feature spans 6 layers: shared types, KA enrichment detection, KA prompt/res
 
 **Rationale**: On a non-CNV cluster, the RESTMapper pre-check must cleanly skip all CNV detection without errors or FailedDetections entries. This E2E proves the graceful degradation path runs through the full production stack (alert -> enrichment -> investigation -> workflow discovery) without CNV infra interference. It runs in the existing Kind-based E2E suite with no additional infrastructure.
 
-### 4.11 Full CNV Journey (E2E tier — deferred to demo-scenarios #375)
+### 4.11 Full CNV Journey (E2E tier — deferred to demo-scenarios #376)
 
 | ID | BR | FedRAMP | Scenario | Asserts |
 |----|-----|---------|----------|---------|
@@ -184,7 +184,7 @@ Each implementation phase follows strict TDD RED-GREEN-REFACTOR:
 
 | Tier | Count | Target Coverage | Strategy |
 |------|-------|-----------------|----------|
-| Unit (UT) | 39 scenarios | >= 80% of new KA detection + DS filter/scoring/schema code | Table-driven where appropriate, Ginkgo BDD for KA, standard Go testing for DS |
+| Unit (UT) | 39 scenarios | >= 80% of new KA detection + DS filter/scoring/schema code | Table-driven where appropriate, Ginkgo BDD for KA and DS |
 | Integration (IT) | 7 scenarios | >= 80% of wiring points; every Wiring Manifest row has an IT | Fake K8s clients for KA, envtest/real DB for DS |
 | E2E | 1 CI-runnable (negative path) + 1 deferred (positive path) | Graceful degradation on non-CNV cluster (CI); full CNV journey (deferred to #375) | Kind cluster without KubeVirt CRDs |
 
@@ -223,7 +223,7 @@ The following mistakes are specifically relevant to this feature and will be val
 | Build | `go build ./...` green | CI output |
 | UT KA | UT-KA-1378-001..018 pass | Test output |
 | UT KA Prompt | UT-KA-1378-020..023 pass | Test output |
-| IT KA | IT-KA-1378-001..003 pass | Test output |
+| IT KA | IT-KA-1378-001..004 pass | Test output |
 | Coverage KA | >= 80% of `detectVirtualMachine`, `detectLiveMigratable`, `detectCDIManaged`, `detectStorageBackend` | `go test -cover` |
 | FedRAMP SI-10 | RESTMapper pre-check validates CRD existence | UT-KA-1378-015 |
 | FedRAMP AU-12 | CNV labels appear in enrichment result | IT-KA-1378-001 |
@@ -239,7 +239,7 @@ The following mistakes are specifically relevant to this feature and will be val
 | UT DS Filter | UT-DS-1378-001..006 pass | Test output |
 | UT DS Scoring | UT-DS-1378-010..012 pass | Test output |
 | UT DS Schema | UT-DS-1378-020..027 pass | Test output |
-| IT DS | IT-DS-1378-001..002 pass | Test output |
+| IT DS | IT-DS-1378-001..003 pass | Test output |
 | Coverage DS | >= 80% of new `buildContextFilterSQL` and `buildDetectedLabelsBoostSQL` code | `go test -cover` |
 | FedRAMP SI-10 | Schema validation rejects invalid `storageBackend` values | UT-DS-1378-022 |
 | Ogen regen | `make generate-datastorage-client` succeeds, no manual drift | Generated files match spec |
@@ -256,6 +256,14 @@ The following mistakes are specifically relevant to this feature and will be val
 | Wiring Manifest | All rows verified | CHECKPOINT W results |
 | Coverage per tier | >= 80% of testable code per tier | Coverage report |
 | Confidence >= 95% | Grounded in test results | Assessment report |
+
+### 6.5 Pass/Fail Criteria
+
+**Pass**: All checkpoints (CP-1 through CP-4) gates satisfied, no pending test scenarios, all UT+IT+E2E (CI-runnable) green.
+
+**Fail**: Any checkpoint gate fails, compilation errors persist, or test coverage drops below 80% per-tier threshold.
+
+**Suspension**: Testing is suspended if envtest or Kind infrastructure is unavailable. Resume after infrastructure is restored and all existing tests pass.
 
 ## 7. Wiring Manifest
 
@@ -310,7 +318,7 @@ The following mistakes are specifically relevant to this feature and will be val
 | PVC LIST returns large result sets on busy namespaces | Low | Medium | PVC LIST is already O(namespace) for existing HPA/PDB patterns; CNV adds one LIST | UT-KA-1378-014 |
 | StorageClass provisioner strings vary across providers | Medium | Medium | Explicit mapping with empty-string fallback for unknown provisioners | UT-KA-1378-013 |
 | Ogen regeneration produces large diff | Low | High (expected) | Committed as separate commit for review clarity | CI build |
-| E2E requires CNV infrastructure not yet available | Medium | High | UT + IT provide >= 80% coverage; E2E deferred to demo-scenarios #375 | IT-KA-1378-001..003 |
+| E2E requires CNV infrastructure not yet available | Medium | High | UT + IT provide >= 80% coverage; E2E deferred to demo-scenarios #376 | IT-KA-1378-001..003 |
 | `storageBackend` wildcard `"*"` in RW CRD matches any backend | Low | Low | Follows existing `serviceMesh` / `gitOpsTool` wildcard pattern | UT-DS-1378-004 |
 
 ## 11. Schedule
@@ -328,3 +336,10 @@ The following mistakes are specifically relevant to this feature and will be val
 |------|------|------|
 | Author | AI Agent | 2026-06-08 |
 | Reviewer | — | — |
+
+## 13. Changelog
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | 2026-06-08 | AI Agent | Initial test plan |
+| 1.0.1 | 2026-06-08 | AI Agent | Fix #375/#376 refs, CP-2/CP-3 ranges, add Pass/Fail criteria, Ginkgo migration note |
