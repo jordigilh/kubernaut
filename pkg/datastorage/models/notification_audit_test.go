@@ -17,7 +17,6 @@ limitations under the License.
 package models_test
 
 import (
-	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -25,11 +24,6 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
-
-func TestModels(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "Models Suite")
-}
 
 func validNotificationAudit() *models.NotificationAudit {
 	return &models.NotificationAudit{

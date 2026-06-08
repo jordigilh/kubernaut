@@ -71,6 +71,10 @@ var detectedLabelWeights = map[string]float64{
 	"helm_managed":     0.02,
 	"stateful":         0.02,
 	"hpa_enabled":      0.02,
+	"virtual_machine":  0.08,
+	"live_migratable":  0.04,
+	"cdi_managed":      0.03,
+	"storage_backend":  0.05,
 }
 
 // buildDetectedLabelsBoostSQL generates SQL for detected label boost scoring.
@@ -163,6 +167,44 @@ func buildDetectedLabelsBoostSQL(dl *models.DetectedLabels) string {
 		weight := detectedLabelWeights["hpa_enabled"]
 		boostCases = append(boostCases,
 			fmt.Sprintf("CASE WHEN detected_labels->>'hpaEnabled' = 'true' THEN %.2f ELSE 0.0 END", weight))
+	}
+
+	// VirtualMachine (boolean)
+	if dl.VirtualMachine {
+		weight := detectedLabelWeights["virtual_machine"]
+		boostCases = append(boostCases,
+			fmt.Sprintf("CASE WHEN detected_labels->>'virtualMachine' = 'true' THEN %.2f ELSE 0.0 END", weight))
+	}
+
+	// LiveMigratable (boolean)
+	if dl.LiveMigratable {
+		weight := detectedLabelWeights["live_migratable"]
+		boostCases = append(boostCases,
+			fmt.Sprintf("CASE WHEN detected_labels->>'liveMigratable' = 'true' THEN %.2f ELSE 0.0 END", weight))
+	}
+
+	// CDIManaged (boolean)
+	if dl.CDIManaged {
+		weight := detectedLabelWeights["cdi_managed"]
+		boostCases = append(boostCases,
+			fmt.Sprintf("CASE WHEN detected_labels->>'cdiManaged' = 'true' THEN %.2f ELSE 0.0 END", weight))
+	}
+
+	// StorageBackend (string -- bidirectional wildcard)
+	if dl.StorageBackend != "" {
+		weight := detectedLabelWeights["storage_backend"]
+		if dl.StorageBackend == "*" {
+			boostCases = append(boostCases,
+				fmt.Sprintf("CASE WHEN detected_labels->>'storageBackend' IS NOT NULL AND detected_labels->>'storageBackend' != '' THEN %.2f ELSE 0.0 END",
+					weight/2))
+		} else {
+			backend := sanitizeEnumValue(dl.StorageBackend, []string{"odf-ceph", "lvms", "local"})
+			if backend != "" {
+				boostCases = append(boostCases,
+					fmt.Sprintf("CASE WHEN detected_labels->>'storageBackend' = '%s' THEN %.2f WHEN detected_labels->>'storageBackend' = '*' THEN %.2f ELSE 0.0 END",
+						backend, weight, weight/2))
+			}
+		}
 	}
 
 	if len(boostCases) == 0 {

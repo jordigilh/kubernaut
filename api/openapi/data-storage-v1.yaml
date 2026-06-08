@@ -3293,7 +3293,7 @@ components:
           type: array
           items:
             type: string
-            enum: [gitOpsManaged, gitOpsTool, pdbProtected, hpaEnabled, stateful, helmManaged, networkIsolated, serviceMesh, resourceQuotaConstrained]
+            enum: [gitOpsManaged, gitOpsTool, pdbProtected, hpaEnabled, stateful, helmManaged, networkIsolated, serviceMesh, resourceQuotaConstrained, virtualMachine, liveMigratable, cdiManaged, storageBackend]
           description: "Fields where detection failed (RBAC, timeout, etc.) - consumer should ignore these fields"
           example: ["pdbProtected", "networkIsolated"]
         gitOpsManaged:
@@ -3327,6 +3327,20 @@ components:
         resourceQuotaConstrained:
           type: boolean
           description: "ResourceQuota exists in namespace (#366)"
+        virtualMachine:
+          type: boolean
+          description: "Workload is a VirtualMachine/VMI/DataVolume (CNV/KubeVirt #1378)"
+        liveMigratable:
+          type: boolean
+          description: "VM has evictionStrategy=LiveMigrate (#1378)"
+        cdiManaged:
+          type: boolean
+          description: "PVCs carry CDI import annotations (#1378)"
+        storageBackend:
+          type: string
+          description: "Storage provisioner backing PVCs: odf-ceph, lvms, local, or * (wildcard)"
+          enum: [odf-ceph, lvms, local, "*"]
+          example: "odf-ceph"
 
     WorkflowSearchResponse:
       type: object

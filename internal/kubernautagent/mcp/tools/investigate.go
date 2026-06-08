@@ -518,8 +518,19 @@ func (t *InvestigateTool) handleTakeover(ctx context.Context, input InvestigateI
 			}
 		}
 	} else {
-		if forceErr := t.autoMgr.ForceTransitionToUserDriving(input.RRID, user.Username, user.Groups); forceErr != nil {
-			t.logger.Error(forceErr, "takeover: force-transition to user-driving (no running session found)",
+		// No running session found by RR ID. The AA session submit may still
+		// be in-flight (race between MCP takeover and AA reconcile). Retry
+		// briefly to allow the session to appear before giving up.
+		var forceErr error
+		for attempt := 0; attempt < 5; attempt++ {
+			forceErr = t.autoMgr.ForceTransitionToUserDriving(input.RRID, user.Username, user.Groups)
+			if forceErr == nil || !errors.Is(forceErr, session.ErrSessionNotFound) {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		if forceErr != nil {
+			t.logger.Error(forceErr, "takeover: force-transition to user-driving failed after retries",
 				"rr_id", input.RRID)
 		}
 	}

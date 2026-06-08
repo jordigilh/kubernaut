@@ -848,6 +848,11 @@ spec:
                       DetectedLabels contains cluster characteristics computed by KA's
                       LabelDetector during get_namespaced_resource_context or get_cluster_resource_context tool invocations.
                     properties:
+                      cdiManaged:
+                        description: |-
+                          True if PVCs in the namespace carry cdi.kubevirt.io/storage.import.* annotations.
+                          Only evaluated when VirtualMachine is true.
+                        type: boolean
                       failedDetections:
                         description: |-
                           ========================================
@@ -857,7 +862,8 @@ spec:
                           If a field is in this array, its value should be ignored.
                           If empty/nil, all detections succeeded.
                           Only accepts valid field names: gitOpsManaged, gitOpsTool, pdbProtected, hpaEnabled,
-                          stateful, helmManaged, networkIsolated, serviceMesh, resourceQuotaConstrained
+                          stateful, helmManaged, networkIsolated, serviceMesh, resourceQuotaConstrained,
+                          virtualMachine, liveMigratable, cdiManaged, storageBackend
                         items:
                           enum:
                           - gitOpsManaged
@@ -869,6 +875,10 @@ spec:
                           - networkIsolated
                           - serviceMesh
                           - resourceQuotaConstrained
+                          - virtualMachine
+                          - liveMigratable
+                          - cdiManaged
+                          - storageBackend
                           type: string
                         type: array
                       gitOpsManaged:
@@ -892,6 +902,11 @@ spec:
                       hpaEnabled:
                         description: True if HorizontalPodAutoscaler targets this
                           workload
+                        type: boolean
+                      liveMigratable:
+                        description: |-
+                          True if the VirtualMachine has evictionStrategy=LiveMigrate.
+                          Only evaluated when VirtualMachine is true.
                         type: boolean
                       networkIsolated:
                         description: |-
@@ -929,14 +944,35 @@ spec:
                           ========================================
                           True if StatefulSet or has PVCs attached
                         type: boolean
+                      storageBackend:
+                        description: |-
+                          Storage provisioner backing PVCs in the namespace.
+                          Only evaluated when VirtualMachine is true.
+                        enum:
+                        - odf-ceph
+                        - lvms
+                        - local
+                        - ""
+                        type: string
+                      virtualMachine:
+                        description: |-
+                          ========================================
+                          VIRTUALIZATION — CNV / KubeVirt (#1378)
+                          ========================================
+                          True if the workload is a VirtualMachine, VirtualMachineInstance,
+                          VirtualMachineInstanceMigration, or DataVolume (owner chain walk).
+                        type: boolean
                     required:
+                    - cdiManaged
                     - gitOpsManaged
                     - helmManaged
                     - hpaEnabled
+                    - liveMigratable
                     - networkIsolated
                     - pdbProtected
                     - resourceQuotaConstrained
                     - stateful
+                    - virtualMachine
                     type: object
                   setAt:
                     description: |-

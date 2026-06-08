@@ -7,7 +7,7 @@
 //
 // This file is the AUTHORITATIVE SOURCE for:
 //   - EnrichmentResults schema
-//   - DetectedLabels schema (8 fields)
+//   - DetectedLabels schema (13 fields)
 //   - OwnerChainEntry schema
 //   - KubernetesContext schema (lean, classification-focused)
 //   - NamespaceContext schema
@@ -143,8 +143,9 @@ type DetectedLabels struct {
 	// If a field is in this array, its value should be ignored.
 	// If empty/nil, all detections succeeded.
 	// Only accepts valid field names: gitOpsManaged, gitOpsTool, pdbProtected, hpaEnabled,
-	// stateful, helmManaged, networkIsolated, serviceMesh, resourceQuotaConstrained
-	// +kubebuilder:validation:items:Enum={gitOpsManaged,gitOpsTool,pdbProtected,hpaEnabled,stateful,helmManaged,networkIsolated,serviceMesh,resourceQuotaConstrained}
+	// stateful, helmManaged, networkIsolated, serviceMesh, resourceQuotaConstrained,
+	// virtualMachine, liveMigratable, cdiManaged, storageBackend
+	// +kubebuilder:validation:items:Enum={gitOpsManaged,gitOpsTool,pdbProtected,hpaEnabled,stateful,helmManaged,networkIsolated,serviceMesh,resourceQuotaConstrained,virtualMachine,liveMigratable,cdiManaged,storageBackend}
 	FailedDetections []string `json:"failedDetections,omitempty"`
 
 	// ========================================
@@ -187,6 +188,23 @@ type DetectedLabels struct {
 	// ========================================
 	// True if any ResourceQuota exists in namespace
 	ResourceQuotaConstrained bool `json:"resourceQuotaConstrained"`
+
+	// ========================================
+	// VIRTUALIZATION — CNV / KubeVirt (#1378)
+	// ========================================
+	// True if the workload is a VirtualMachine, VirtualMachineInstance,
+	// VirtualMachineInstanceMigration, or DataVolume (owner chain walk).
+	VirtualMachine bool `json:"virtualMachine"`
+	// True if the VirtualMachine has evictionStrategy=LiveMigrate.
+	// Only evaluated when VirtualMachine is true.
+	LiveMigratable bool `json:"liveMigratable"`
+	// True if PVCs in the namespace carry cdi.kubevirt.io/storage.import.* annotations.
+	// Only evaluated when VirtualMachine is true.
+	CDIManaged bool `json:"cdiManaged"`
+	// Storage provisioner backing PVCs in the namespace.
+	// Only evaluated when VirtualMachine is true.
+	// +kubebuilder:validation:Enum="odf-ceph";"lvms";"local";""
+	StorageBackend string `json:"storageBackend,omitempty"`
 }
 
 // NewDetectedLabels creates a DetectedLabels with an initialized (non-nil) FailedDetections slice.
@@ -198,6 +216,9 @@ func NewDetectedLabels() *DetectedLabels {
 
 // IsEmpty returns true when no label detection produced a positive result.
 func (d *DetectedLabels) IsEmpty() bool {
+	if d == nil {
+		return true
+	}
 	return !d.GitOpsManaged &&
 		d.GitOpsTool == "" &&
 		!d.PDBProtected &&
@@ -205,7 +226,12 @@ func (d *DetectedLabels) IsEmpty() bool {
 		!d.Stateful &&
 		!d.HelmManaged &&
 		!d.NetworkIsolated &&
-		d.ServiceMesh == ""
+		d.ServiceMesh == "" &&
+		!d.ResourceQuotaConstrained &&
+		!d.VirtualMachine &&
+		!d.LiveMigratable &&
+		!d.CDIManaged &&
+		d.StorageBackend == ""
 }
 
 // ========================================

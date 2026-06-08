@@ -1,0 +1,50 @@
+apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
+metadata:
+  name: cnv-vm-boot-failure-v1
+spec:
+  # CNV VM Boot Failure Workflow (BR-WORKFLOW-018, #1378)
+  # Used by: DataStorage E2E -- validates CNV detectedLabels survive the production pipeline
+  # Purpose: Validates 4 CNV detectedLabels fields in workflow discovery + scoring
+  version: "1.0.0"
+  description:
+    what: "Remediate VM boot failure by restarting the VirtualMachine via virtctl"
+    whenToUse: "VirtualMachine stuck in Provisioning or ErrorUnschedulable with CDI-managed storage"
+    whenNotToUse: "Non-CNV workloads or VMs with external storage provisioners"
+    preconditions: "KubeVirt operator running, VM exists, CDI storage provisioned"
+
+  actionType: RestartPod
+
+  labels:
+    severity: [critical, high]
+    environment: [production, staging]
+    component: [kubevirt.io/v1/VirtualMachine]
+    priority: P1
+
+  detectedLabels:
+    virtualMachine: "true"
+    liveMigratable: "true"
+    cdiManaged: "true"
+    storageBackend: "odf-ceph"
+
+  execution:
+    engine: tekton
+    bundle: quay.io/kubernaut-cicd/tekton-bundles/hello-world:v1.0.0@sha256:c4fc636f28d46f94c3f4a211f4dc07f60545891818ee45262e860b0825296ba0
+
+  parameters:
+    - name: TARGET_RESOURCE_NAME
+      type: string
+      required: true
+      description: "Name of the VirtualMachine resource (KA-injected)"
+    - name: TARGET_RESOURCE_KIND
+      type: string
+      required: true
+      description: "Kind of the target resource (KA-injected)"
+    - name: TARGET_RESOURCE_NAMESPACE
+      type: string
+      required: true
+      description: "Namespace of the VirtualMachine (KA-injected)"
+    - name: NAMESPACE
+      type: string
+      required: true
+      description: "Target namespace containing the affected VM"

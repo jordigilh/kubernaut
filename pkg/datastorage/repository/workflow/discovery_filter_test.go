@@ -20,6 +20,9 @@ import (
 	"strings"
 	"testing"
 
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
 
@@ -469,3 +472,83 @@ func TestBuildContextFilterSQL_Issue595_PriorityScalarBranchPreserved(t *testing
 		t.Errorf("UT-DS-595-006: scalar branch must NOT use jsonb_array_elements_text, got: %s", scalarBranch)
 	}
 }
+
+// ========================================
+// CNV DetectedLabels Filter Tests — #1378
+// ========================================
+
+var _ = Describe("CNV DetectedLabels Filter (#1378)", func() {
+
+	Describe("UT-DS-1378-001: virtualMachine=true filter", func() {
+		It("includes virtualMachine in SQL with at least one arg", func() {
+			filters := &models.WorkflowDiscoveryFilters{
+				DetectedLabels: &models.DetectedLabels{VirtualMachine: true},
+			}
+			sql, args := buildContextFilterSQL(filters)
+			Expect(sql).To(ContainSubstring("virtualMachine"))
+			Expect(args).NotTo(BeEmpty())
+		})
+	})
+
+	Describe("UT-DS-1378-002: liveMigratable=true filter", func() {
+		It("includes liveMigratable in SQL with at least one arg", func() {
+			filters := &models.WorkflowDiscoveryFilters{
+				DetectedLabels: &models.DetectedLabels{LiveMigratable: true},
+			}
+			sql, args := buildContextFilterSQL(filters)
+			Expect(sql).To(ContainSubstring("liveMigratable"))
+			Expect(args).NotTo(BeEmpty())
+		})
+	})
+
+	Describe("UT-DS-1378-003: cdiManaged=true filter", func() {
+		It("includes cdiManaged in SQL with at least one arg", func() {
+			filters := &models.WorkflowDiscoveryFilters{
+				DetectedLabels: &models.DetectedLabels{CDIManaged: true},
+			}
+			sql, args := buildContextFilterSQL(filters)
+			Expect(sql).To(ContainSubstring("cdiManaged"))
+			Expect(args).NotTo(BeEmpty())
+		})
+	})
+
+	Describe("UT-DS-1378-004: storageBackend=odf-ceph string filter", func() {
+		It("includes storageBackend in SQL with at least one arg", func() {
+			filters := &models.WorkflowDiscoveryFilters{
+				DetectedLabels: &models.DetectedLabels{StorageBackend: "odf-ceph"},
+			}
+			sql, args := buildContextFilterSQL(filters)
+			Expect(sql).To(ContainSubstring("storageBackend"))
+			Expect(args).NotTo(BeEmpty())
+		})
+	})
+
+	Describe("UT-DS-1378-005: all 4 CNV fields set", func() {
+		It("includes all CNV field references in SQL", func() {
+			filters := &models.WorkflowDiscoveryFilters{
+				DetectedLabels: &models.DetectedLabels{
+					VirtualMachine: true,
+					LiveMigratable: true,
+					CDIManaged:     true,
+					StorageBackend: "odf-ceph",
+				},
+			}
+			sql, _ := buildContextFilterSQL(filters)
+			for _, key := range []string{"virtualMachine", "liveMigratable", "cdiManaged", "storageBackend"} {
+				Expect(sql).To(ContainSubstring(key))
+			}
+		})
+	})
+
+	Describe("UT-DS-1378-006: no CNV fields (all false/empty)", func() {
+		It("does not reference CNV fields in SQL", func() {
+			filters := &models.WorkflowDiscoveryFilters{
+				DetectedLabels: &models.DetectedLabels{},
+			}
+			sql, _ := buildContextFilterSQL(filters)
+			for _, key := range []string{"virtualMachine", "liveMigratable", "cdiManaged", "storageBackend"} {
+				Expect(sql).NotTo(ContainSubstring(key))
+			}
+		})
+	})
+})

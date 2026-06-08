@@ -20,6 +20,9 @@ import (
 	"strings"
 	"testing"
 
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
 
@@ -220,3 +223,42 @@ func TestBuildCustomLabelsBoostSQL_EmptyValues(t *testing.T) {
 		t.Errorf("expected 0.0 for empty values, got: %s", result)
 	}
 }
+
+// --- Phase 5: CNV DetectedLabels scoring (#1378) ---
+
+var _ = Describe("CNV DetectedLabels scoring (#1378)", func() {
+
+	Describe("UT-DS-1378-010: virtualMachine=true boost", func() {
+		It("includes virtualMachine with 0.08 weight", func() {
+			dl := &models.DetectedLabels{VirtualMachine: true}
+			result := buildDetectedLabelsBoostSQL(dl)
+			Expect(result).To(ContainSubstring("virtualMachine"))
+			Expect(result).To(ContainSubstring("0.08"))
+		})
+	})
+
+	Describe("UT-DS-1378-011: storageBackend=odf-ceph boost with exact + wildcard", func() {
+		It("includes storageBackend with 0.05 weight and wildcard check", func() {
+			dl := &models.DetectedLabels{StorageBackend: "odf-ceph"}
+			result := buildDetectedLabelsBoostSQL(dl)
+			Expect(result).To(ContainSubstring("storageBackend"))
+			Expect(result).To(ContainSubstring("0.05"))
+			Expect(result).To(ContainSubstring("'*'"))
+		})
+	})
+
+	Describe("UT-DS-1378-012: all 4 CNV fields", func() {
+		It("includes all CNV field references in boost SQL", func() {
+			dl := &models.DetectedLabels{
+				VirtualMachine: true,
+				LiveMigratable: true,
+				CDIManaged:     true,
+				StorageBackend: "odf-ceph",
+			}
+			result := buildDetectedLabelsBoostSQL(dl)
+			for _, key := range []string{"virtualMachine", "liveMigratable", "cdiManaged", "storageBackend"} {
+				Expect(result).To(ContainSubstring(key))
+			}
+		})
+	})
+})

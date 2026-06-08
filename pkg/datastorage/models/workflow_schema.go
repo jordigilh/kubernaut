@@ -358,6 +358,10 @@ var detectedLabelsFieldSpecs = map[string]detectedLabelFieldSpec{
 	"helmManaged":     {isBoolean: true},
 	"networkIsolated": {isBoolean: true},
 	"serviceMesh":     {validValues: map[string]bool{"istio": true, "linkerd": true, "*": true}},
+	"virtualMachine":  {isBoolean: true},
+	"liveMigratable":  {isBoolean: true},
+	"cdiManaged":      {isBoolean: true},
+	"storageBackend":  {validValues: map[string]bool{"odf-ceph": true, "lvms": true, "local": true, "*": true}},
 }
 
 // DetectedLabelsSchema represents the raw YAML detectedLabels section.
@@ -372,6 +376,10 @@ type DetectedLabelsSchema struct {
 	HelmManaged     string `yaml:"-" json:"helmManaged,omitempty"`
 	NetworkIsolated string `yaml:"-" json:"networkIsolated,omitempty"`
 	ServiceMesh     string `yaml:"-" json:"serviceMesh,omitempty"`
+	VirtualMachine  string `yaml:"-" json:"virtualMachine,omitempty"`
+	LiveMigratable  string `yaml:"-" json:"liveMigratable,omitempty"`
+	CDIManaged      string `yaml:"-" json:"cdiManaged,omitempty"`
+	StorageBackend  string `yaml:"-" json:"storageBackend,omitempty"`
 
 	// PopulatedFields records which fields the author explicitly declared.
 	// Mirrors the Signal Processing pattern for distinguishing "empty" from
@@ -419,6 +427,14 @@ func (d *DetectedLabelsSchema) UnmarshalYAML(value *yaml.Node) error {
 			d.NetworkIsolated = val
 		case "serviceMesh":
 			d.ServiceMesh = val
+		case "virtualMachine":
+			d.VirtualMachine = val
+		case "liveMigratable":
+			d.LiveMigratable = val
+		case "cdiManaged":
+			d.CDIManaged = val
+		case "storageBackend":
+			d.StorageBackend = val
 		}
 	}
 
@@ -462,6 +478,14 @@ func (d *DetectedLabelsSchema) fieldValue(name string) string {
 		return d.NetworkIsolated
 	case "serviceMesh":
 		return d.ServiceMesh
+	case "virtualMachine":
+		return d.VirtualMachine
+	case "liveMigratable":
+		return d.LiveMigratable
+	case "cdiManaged":
+		return d.CDIManaged
+	case "storageBackend":
+		return d.StorageBackend
 	default:
 		return ""
 	}
