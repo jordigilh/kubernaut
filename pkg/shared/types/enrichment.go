@@ -216,6 +216,9 @@ func NewDetectedLabels() *DetectedLabels {
 
 // IsEmpty returns true when no label detection produced a positive result.
 func (d *DetectedLabels) IsEmpty() bool {
+	if d == nil {
+		return true
+	}
 	return !d.GitOpsManaged &&
 		d.GitOpsTool == "" &&
 		!d.PDBProtected &&

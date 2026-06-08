@@ -576,6 +576,7 @@ func detectCDIManaged(pvcs []unstructured.Unstructured, result *DetectedLabels) 
 
 // detectStorageBackend resolves the storage provisioner from PVC -> StorageClass.
 func (d *LabelDetector) detectStorageBackend(ctx context.Context, pvcs []unstructured.Unstructured, result *DetectedLabels, failed *[]string) {
+	var scFetchError bool
 	for i := range pvcs {
 		scName, found, _ := unstructured.NestedString(pvcs[i].Object, "spec", "storageClassName")
 		if !found || scName == "" {
@@ -584,6 +585,7 @@ func (d *LabelDetector) detectStorageBackend(ctx context.Context, pvcs []unstruc
 		scObj, err := d.dynClient.Resource(storageClassGVR).Get(ctx, scName, metav1.GetOptions{})
 		if err != nil {
 			d.logger.Error(err, "CNV: StorageClass fetch failed", "name", scName)
+			scFetchError = true
 			continue
 		}
 		provisioner, _, _ := unstructured.NestedString(scObj.Object, "provisioner")
@@ -591,6 +593,9 @@ func (d *LabelDetector) detectStorageBackend(ctx context.Context, pvcs []unstruc
 			result.StorageBackend = backend
 			return
 		}
+	}
+	if scFetchError && result.StorageBackend == "" {
+		*failed = append(*failed, "storageBackend")
 	}
 }
 
