@@ -1409,12 +1409,22 @@ func buildMCPHandler(
 	}
 	toolDeps.CompleteNoAction = mcptools.CompleteNoActionRegistration(completeNoActionTool, logger)
 
+	mcpKeepAlive := cfg.Interactive.MCPKeepAlive
+	if mcpKeepAlive == 0 {
+		mcpKeepAlive = kaconfig.DefaultMCPKeepAlive
+	}
+	mcpSessionTimeout := cfg.Interactive.MCPSessionTimeout
+	if mcpSessionTimeout == 0 {
+		mcpSessionTimeout = kaconfig.DefaultMCPSessionTimeout
+	}
 	mcpHandler, _ := mcpkg.BootstrapMCP(mcpkg.MCPDeps{
 		AuthMiddleware: func(next http.Handler) http.Handler {
 			return kaserver.AuditAuthMiddleware(authMw.Handler(next), auditStore, logger)
 		},
 		Tools:          toolDeps,
 		EventStore:     eventStore,
+		KeepAlive:      mcpKeepAlive,
+		SessionTimeout: mcpSessionTimeout,
 	})
 
 	drainer := mcpkg.NewSessionDrainer(leaseMgr, sessionNotifier, logger.WithName("session-drainer"))

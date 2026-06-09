@@ -220,7 +220,20 @@ type InteractiveConfig struct {
 	RateLimitPerUser      int                 `yaml:"rateLimitPerUser"`
 	MaxAnalyzingTimeout   time.Duration       `yaml:"maxAnalyzingTimeout"`
 	JWTProviders []JWTProviderConfig `yaml:"jwtProviders,omitempty"`
+
+	// MCPKeepAlive is the server-side ping interval for MCP sessions (#1387).
+	// Keeps SSE streams alive through OCP router idle timeouts.
+	// Zero means no keepalive pings. Default: 15s.
+	MCPKeepAlive time.Duration `yaml:"mcpKeepAlive"`
+	// MCPSessionTimeout auto-closes idle MCP sessions that AF abandoned
+	// without a proper disconnect (#1387). Zero means never. Default: 10m.
+	MCPSessionTimeout time.Duration `yaml:"mcpSessionTimeout"`
 }
+
+const (
+	DefaultMCPKeepAlive      = 15 * time.Second
+	DefaultMCPSessionTimeout = 10 * time.Minute
+)
 
 // JWTProviderConfig defines a trusted JWT issuer for Pattern B authentication.
 // DD-AUTH-MCP-001 v2.0: KA validates JWT signatures via JWKS and extracts

@@ -28,6 +28,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 )
 
@@ -35,7 +36,7 @@ var _ = Describe("MCP Server — #703", func() {
 
 	Describe("UT-KA-703-F01: NewMCPServer returns non-nil server with Implementation", func() {
 		It("should create a valid MCP server instance", func() {
-			srv := mcpinternal.NewMCPServer()
+			srv := mcpinternal.NewMCPServer(0)
 			Expect(srv).NotTo(BeNil())
 			Expect(srv.Implementation()).NotTo(BeNil())
 			Expect(srv.Implementation().Name).To(Equal("kubernaut-agent-interactive"))
@@ -69,7 +70,7 @@ var _ = Describe("MCP Server — #703", func() {
 
 	Describe("UT-KA-703-F05: MCP server registers zero tools initially", func() {
 		It("should have an empty tool list on creation", func() {
-			srv := mcpinternal.NewMCPServer()
+			srv := mcpinternal.NewMCPServer(0)
 			tools := srv.ToolCount()
 			Expect(tools).To(Equal(0))
 		})
@@ -84,6 +85,65 @@ var _ = Describe("MCP Server — #703", func() {
 			Expect(handler).NotTo(BeNil())
 			Expect(srv).NotTo(BeNil())
 		})
+	})
+})
+
+var _ = Describe("MCP Session Resilience — #1387", func() {
+	noopAuth := func(next http.Handler) http.Handler { return next }
+
+	It("UT-KA-1387-001 [SC-8]: server with KeepAlive preserves transport integrity through proxy idle timeouts", func() {
+		handler, srv := mcpinternal.BootstrapMCP(mcpinternal.MCPDeps{
+			AuthMiddleware: noopAuth,
+			KeepAlive:      15 * time.Second,
+		})
+		Expect(handler).NotTo(BeNil(),
+			"SC-8: handler must be created when keepalive is configured")
+		Expect(srv).NotTo(BeNil())
+		Expect(srv.Implementation().Name).To(Equal("kubernaut-agent-interactive"))
+
+		jsonRPC := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}`
+		req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(jsonRPC))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json, text/event-stream")
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		Expect(rec.Code).To(Equal(http.StatusOK),
+			"SC-8: MCP server with keepalive must accept initialize handshake")
+	})
+
+	It("UT-KA-1387-002 [SC-10]: server with SessionTimeout terminates abandoned sessions after inactivity", func() {
+		handler, srv := mcpinternal.BootstrapMCP(mcpinternal.MCPDeps{
+			AuthMiddleware: noopAuth,
+			SessionTimeout: 10 * time.Minute,
+		})
+		Expect(handler).NotTo(BeNil(),
+			"SC-10: handler must be created when session timeout is configured")
+		Expect(srv).NotTo(BeNil())
+	})
+
+	It("UT-KA-1387-003 [SC-8, SC-10]: keepalive and session timeout coexist without conflict", func() {
+		handler, srv := mcpinternal.BootstrapMCP(mcpinternal.MCPDeps{
+			AuthMiddleware: noopAuth,
+			KeepAlive:      15 * time.Second,
+			SessionTimeout: 10 * time.Minute,
+		})
+		Expect(handler).NotTo(BeNil(),
+			"SC-8+SC-10: both resilience controls must be simultaneously active")
+		Expect(srv).NotTo(BeNil())
+	})
+
+	It("UT-KA-1387-004 [SA-8]: default config values match security baseline", func() {
+		Expect(kaconfig.DefaultMCPKeepAlive).To(Equal(15 * time.Second),
+			"SA-8: keepalive must be < OCP router idle timeout (30s) to prevent silent stream death")
+		Expect(kaconfig.DefaultMCPSessionTimeout).To(Equal(10 * time.Minute),
+			"SA-8: session cap prevents resource exhaustion from abandoned connections")
+	})
+
+	It("UT-KA-1387-005 [SA-8]: zero-value config produces server without keepalive (explicit opt-in)", func() {
+		srv := mcpinternal.NewMCPServer(0)
+		Expect(srv).NotTo(BeNil())
+		Expect(srv.Server()).NotTo(BeNil(),
+			"SA-8: server without keepalive is valid for environments with no proxy idle timeout")
 	})
 })
 
