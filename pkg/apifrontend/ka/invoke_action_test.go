@@ -77,7 +77,7 @@ var _ = Describe("InvokeAction (G3: Args + Identity)", func() {
 			})
 
 			httpClient := &http.Client{Transport: &authedRoundTripper{user: "alice@example.com"}}
-			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, logr.Discard())
+			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, nil, logr.Discard())
 
 			result, err := client.InvokeAction(withIdentityCtx("alice@example.com", []string{"sre"}), ka.InvokeActionArgs{
 				RRID:   "prod/rr-pod-crash-001",
@@ -102,7 +102,7 @@ var _ = Describe("InvokeAction (G3: Args + Identity)", func() {
 			})
 
 			httpClient := &http.Client{Transport: &authedRoundTripper{user: "alice@example.com"}}
-			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, logr.Discard())
+			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, nil, logr.Discard())
 
 			_, err := client.InvokeAction(withIdentityCtx("alice@example.com", []string{"sre"}), ka.InvokeActionArgs{
 				RRID:    "prod/rr-pod-crash-001",
@@ -128,7 +128,7 @@ var _ = Describe("InvokeAction (G3: Args + Identity)", func() {
 			})
 
 			httpClient := &http.Client{Transport: &authedRoundTripper{user: "alice@example.com"}}
-			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, logr.Discard())
+			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, nil, logr.Discard())
 
 			_, err := client.InvokeAction(withIdentityCtx("alice@example.com", []string{"sre"}), ka.InvokeActionArgs{
 				RRID:    "prod/rr-001",
@@ -153,7 +153,7 @@ var _ = Describe("InvokeAction (G3: Args + Identity)", func() {
 			})
 
 			httpClient := &http.Client{Transport: &authedRoundTripper{user: "alice@example.com"}}
-			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, logr.Discard())
+			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, nil, logr.Discard())
 
 			_, err := client.InvokeAction(withIdentityCtx("alice@example.com", []string{"sre"}), ka.InvokeActionArgs{
 				RRID:   "prod/rr-001",
@@ -177,7 +177,7 @@ var _ = Describe("InvokeAction (G3: Args + Identity)", func() {
 			})
 
 			httpClient := &http.Client{Transport: &authedRoundTripper{user: "alice@example.com"}}
-			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, logr.Discard())
+			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, nil, logr.Discard())
 
 			_, err := client.InvokeAction(withIdentityCtx("alice@example.com", []string{"sre"}), ka.InvokeActionArgs{
 				RRID:   "prod/rr-001",
@@ -202,7 +202,7 @@ var _ = Describe("InvokeAction (G3: Args + Identity)", func() {
 			})
 
 			httpClient := &http.Client{Transport: &authedRoundTripper{user: "alice@example.com"}}
-			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, logr.Discard())
+			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, nil, logr.Discard())
 
 			_, err := client.InvokeAction(withIdentityCtx("alice@example.com", []string{"sre"}), ka.InvokeActionArgs{
 				RRID:   "prod/rr-001",
@@ -225,7 +225,7 @@ var _ = Describe("InvokeAction (G3: Args + Identity)", func() {
 			})
 
 			httpClient := &http.Client{Transport: &authedRoundTripper{user: "bob@example.com"}}
-			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, logr.Discard())
+			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, nil, logr.Discard())
 
 			_, err := client.InvokeAction(withIdentityCtx("bob@example.com", []string{"sre", "admin"}), ka.InvokeActionArgs{
 				RRID:   "prod/rr-001",
@@ -251,7 +251,7 @@ var _ = Describe("InvokeAction (G3: Args + Identity)", func() {
 			})
 
 			httpClient := &http.Client{Transport: &authedRoundTripper{user: "anonymous"}}
-			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, logr.Discard())
+			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, nil, logr.Discard())
 
 			_, err := client.InvokeAction(context.Background(), ka.InvokeActionArgs{
 				RRID:   "prod/rr-001",
@@ -265,7 +265,7 @@ var _ = Describe("InvokeAction (G3: Args + Identity)", func() {
 	Describe("Error handling", func() {
 		It("UT-AF-1234-009: KA unavailable returns user-friendly error", func() {
 			httpClient := &http.Client{Transport: &authedRoundTripper{user: "alice@example.com"}}
-			client = ka.NewSDKMCPClient("http://localhost:1/mcp", httpClient, logr.Discard())
+			client = ka.NewSDKMCPClient("http://localhost:1/mcp", httpClient, nil, logr.Discard())
 
 			_, err := client.InvokeAction(withIdentityCtx("alice@example.com", []string{"sre"}), ka.InvokeActionArgs{
 				RRID:   "prod/rr-001",
@@ -290,7 +290,7 @@ var _ = Describe("InvokeAction (G3: Args + Identity)", func() {
 			})
 
 			httpClient := &http.Client{Transport: &authedRoundTripper{user: "alice@example.com"}}
-			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, logr.Discard())
+			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, nil, logr.Discard())
 
 			_, err := client.InvokeAction(withIdentityCtx("alice@example.com", []string{"sre"}), ka.InvokeActionArgs{
 				RRID:   "prod/rr-001",
@@ -317,7 +317,7 @@ var _ = Describe("InvokeAction (G3: Args + Identity)", func() {
 			})
 
 			httpClient := &http.Client{Transport: &authedRoundTripper{user: "sre@kubernaut.ai"}}
-			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, logr.Discard())
+			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, nil, logr.Discard())
 
 			result, err := client.InvokeAction(withIdentityCtx("sre@kubernaut.ai", []string{"sre"}), ka.InvokeActionArgs{
 				RRID:   "monitoring/rr-oom-456",
@@ -345,7 +345,7 @@ var _ = Describe("InvokeAction (G3: Args + Identity)", func() {
 			})
 
 			httpClient := &http.Client{Transport: &authedRoundTripper{user: "dev@kubernaut.ai"}}
-			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, logr.Discard())
+			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, nil, logr.Discard())
 
 			_, err := client.InvokeAction(withIdentityCtx("dev@kubernaut.ai", []string{"dev-team", "viewers"}), ka.InvokeActionArgs{
 				RRID:   "prod/rr-crash-789",
@@ -364,7 +364,7 @@ var _ = Describe("InvokeAction (G3: Args + Identity)", func() {
 			}))
 
 			httpClient := &http.Client{Transport: &authedRoundTripper{user: "alice@example.com"}}
-			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, logr.Discard())
+			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, nil, logr.Discard())
 
 			_, err := client.InvokeAction(withIdentityCtx("alice@example.com", []string{"sre"}), ka.InvokeActionArgs{
 				RRID:   "prod/rr-001",

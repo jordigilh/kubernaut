@@ -50,7 +50,7 @@ var _ = Describe("MCP Resilience (G10: Retry/CB)", func() {
 					base: cbt,
 				},
 			}
-			client := ka.NewSDKMCPClient(failServer.URL+"/mcp", httpClient, logr.Discard())
+			client := ka.NewSDKMCPClient(failServer.URL+"/mcp", httpClient, nil, logr.Discard())
 
 			ctx := withIdentityCtx("alice@example.com")
 			for i := 0; i < 4; i++ {
@@ -119,7 +119,7 @@ var _ = Describe("MCP Resilience (G10: Retry/CB)", func() {
 					base: cbt,
 				},
 			}
-			client := ka.NewSDKMCPClient(failServer.URL+"/mcp", httpClient, logr.Discard())
+			client := ka.NewSDKMCPClient(failServer.URL+"/mcp", httpClient, nil, logr.Discard())
 
 			ctx := withIdentityCtx("alice@example.com")
 			for i := 0; i < 6; i++ {
@@ -188,7 +188,7 @@ var _ = Describe("MCP Resilience (G10: Retry/CB)", func() {
 					base: cbt,
 				},
 			}
-			client := ka.NewSDKMCPClient(failServer.URL+"/mcp", httpClient, logr.Discard())
+			client := ka.NewSDKMCPClient(failServer.URL+"/mcp", httpClient, nil, logr.Discard())
 
 			ctx := withIdentityCtx("alice@example.com")
 			for i := 0; i < 4; i++ {
