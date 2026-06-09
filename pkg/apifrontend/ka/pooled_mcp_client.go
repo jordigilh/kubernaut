@@ -3,7 +3,9 @@ package ka
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/go-logr/logr"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -69,7 +71,7 @@ func (c *PooledMCPClient) InvokeAction(ctx context.Context, args InvokeActionArg
 		argsMap["message"] = args.Message
 	}
 
-	raw, err := c.callPooledTool(ctx, session, "kubernaut_investigate", argsMap)
+	raw, err := c.callPooledTool(ctx, session, "kubernaut_investigate", argsMap, args.RRID, identity.Username)
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +112,7 @@ func (c *PooledMCPClient) DiscoverWorkflows(ctx context.Context, args DiscoverWo
 		"acting_user_groups": identity.Groups,
 	}
 
-	raw, err := c.callPooledTool(ctx, session, "kubernaut_investigate", argsMap)
+	raw, err := c.callPooledTool(ctx, session, "kubernaut_investigate", argsMap, args.RRID, identity.Username)
 	if err != nil {
 		return nil, err
 	}
@@ -151,7 +153,7 @@ func (c *PooledMCPClient) SelectWorkflow(ctx context.Context, args SelectWorkflo
 		argsMap["parameters"] = args.Parameters
 	}
 
-	raw, err := c.callPooledTool(ctx, session, "kubernaut_select_workflow", argsMap)
+	raw, err := c.callPooledTool(ctx, session, "kubernaut_select_workflow", argsMap, args.RRID, identity.Username)
 	if err != nil {
 		return nil, err
 	}
@@ -172,7 +174,24 @@ func (c *PooledMCPClient) StartInvestigation(_ context.Context, _ StartInvestiga
 
 // callPooledTool dispatches a tool call to the given pooled session, handling
 // error response parsing and security redaction consistently with SDKMCPClient.
-func (c *PooledMCPClient) callPooledTool(ctx context.Context, session PoolSession, name string, args map[string]any) (json.RawMessage, error) {
+// On stale-session errors (#1386), it evicts the dead entry and retries once
+// with a fresh session from the pool factory.
+func (c *PooledMCPClient) callPooledTool(ctx context.Context, session PoolSession, name string, args map[string]any, rrID, username string) (json.RawMessage, error) {
+	raw, err := c.doCallTool(ctx, session, name, args)
+	if err != nil && isStaleSessionError(err) {
+		c.logger.Info("stale MCP session detected, evicting and retrying",
+			"rr_id", rrID, "error", err.Error())
+		c.pool.Release(rrID, username)
+		newSession, acqErr := c.pool.Acquire(ctx, rrID, username)
+		if acqErr != nil {
+			return nil, fmt.Errorf("re-acquire MCP session after stale eviction: %w", acqErr)
+		}
+		raw, err = c.doCallTool(ctx, newSession, name, args)
+	}
+	return raw, err
+}
+
+func (c *PooledMCPClient) doCallTool(ctx context.Context, session PoolSession, name string, args map[string]any) (json.RawMessage, error) {
 	result, err := session.CallTool(ctx, &mcp.CallToolParams{
 		Name:      name,
 		Arguments: args,
@@ -200,6 +219,19 @@ func (c *PooledMCPClient) callPooledTool(ctx context.Context, session PoolSessio
 	}
 
 	return json.RawMessage("{}"), nil
+}
+
+// isStaleSessionError returns true if the error indicates the MCP transport
+// session is no longer valid on the server (e.g., SSE stream died, pod
+// restarted, or proxy idle timeout).
+func isStaleSessionError(err error) bool {
+	if errors.Is(err, mcp.ErrSessionMissing) {
+		return true
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "session not found") ||
+		strings.Contains(msg, "failed to connect") ||
+		strings.Contains(msg, "failed to reconnect")
 }
 
 // Compile-time interface check.
