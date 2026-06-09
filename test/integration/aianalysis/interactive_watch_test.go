@@ -365,6 +365,8 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 				return mockClient.GetPollCallCount()
 			}, timeout, interval).Should(BeNumerically(">=", 1))
 
+			cancelCountBeforeIS := mockClient.GetCancelCallCount()
+
 			By("creating Active InvestigationSession for the same RR")
 			isName := helpers.UniqueTestName("is-1390-upgrade")
 			createActiveIS(isName, rrName)
@@ -377,8 +379,8 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 					"Interactive flag must be set by upgrade path")
 				g.Expect(analysis.Status.KASession.ID).To(Equal(sessionID),
 					"session ID must be preserved — no cancel/resubmit")
-				g.Expect(mockClient.GetCancelCallCount()).To(Equal(0),
-					"CancelSession must NOT be called in the upgrade path")
+				g.Expect(mockClient.GetCancelCallCount()).To(Equal(cancelCountBeforeIS),
+					"CancelSession must NOT be called for THIS session in the upgrade path")
 			}, timeout, interval).Should(Succeed())
 
 			By("verifying InteractiveSession populated from user_driving poll")
