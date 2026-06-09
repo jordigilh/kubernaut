@@ -230,4 +230,130 @@ var _ = Describe("PooledMCPClient (#1306)", func() {
 		// implement MCPClient, the test file won't compile.
 		var _ ka.MCPClient = (*ka.PooledMCPClient)(nil)
 	})
+
+	Describe("Stale-session evict+retry (#1386)", func() {
+		It("UT-AF-1386-001: retries on stale session and succeeds with fresh session", func() {
+			var callCount atomic.Int32
+			staleSession := &mockPoolSession{
+				callFn: func(_ context.Context, _ *mcp.CallToolParams) (*mcp.CallToolResult, error) {
+					return nil, fmt.Errorf("MCP call kubernaut_investigate: failed to connect (session ID: WVIPJI3): %w", mcp.ErrSessionMissing)
+				},
+			}
+			freshSession := &mockPoolSession{
+				callFn: func(_ context.Context, _ *mcp.CallToolParams) (*mcp.CallToolResult, error) {
+					callCount.Add(1)
+					resp := `{"status":"active","session_id":"sess-fresh"}`
+					return &mcp.CallToolResult{
+						Content: []mcp.Content{&mcp.TextContent{Text: resp}},
+					}, nil
+				},
+			}
+
+			retryPool := ka.NewKASessionPool(ka.PoolConfig{
+				Factory: func(_ context.Context) (ka.PoolSession, error) {
+					return freshSession, nil
+				},
+				Logger: logr.Discard(),
+			})
+
+			client := ka.NewPooledMCPClient(retryPool, logr.Discard())
+			ctx := ctxWithIdentity("alice", []string{"sre"})
+
+			retryPool.Inject("ns/rr-stale", "alice", staleSession)
+			Expect(retryPool.Size()).To(Equal(1))
+
+			result, err := client.InvokeAction(ctx, ka.InvokeActionArgs{
+				RRID: "ns/rr-stale", Action: "takeover",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.Status).To(Equal("active"))
+			Expect(callCount.Load()).To(Equal(int32(1)),
+				"fresh session should have been called once after retry")
+		})
+
+		It("UT-AF-1386-002: retries on 'session not found' string match", func() {
+			staleSession := &mockPoolSession{
+				callFn: func(_ context.Context, _ *mcp.CallToolParams) (*mcp.CallToolResult, error) {
+					return nil, fmt.Errorf("MCP call kubernaut_investigate: sending request: session not found")
+				},
+			}
+			freshSession := &mockPoolSession{
+				callFn: func(_ context.Context, _ *mcp.CallToolParams) (*mcp.CallToolResult, error) {
+					resp := `{"workflows":[],"count":0}`
+					return &mcp.CallToolResult{
+						Content: []mcp.Content{&mcp.TextContent{Text: resp}},
+					}, nil
+				},
+			}
+
+			retryPool := ka.NewKASessionPool(ka.PoolConfig{
+				Factory: func(_ context.Context) (ka.PoolSession, error) {
+					return freshSession, nil
+				},
+				Logger: logr.Discard(),
+			})
+
+			client := ka.NewPooledMCPClient(retryPool, logr.Discard())
+			ctx := ctxWithIdentity("alice", []string{"sre"})
+
+			retryPool.Inject("ns/rr-stale2", "alice", staleSession)
+
+			result, err := client.DiscoverWorkflows(ctx, ka.DiscoverWorkflowsArgs{RRID: "ns/rr-stale2"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+		})
+
+		It("UT-AF-1386-003: non-stale errors are not retried", func() {
+			failSession := &mockPoolSession{
+				callFn: func(_ context.Context, _ *mcp.CallToolParams) (*mcp.CallToolResult, error) {
+					return nil, fmt.Errorf("MCP call kubernaut_investigate: internal server error")
+				},
+			}
+
+			noRetryPool := ka.NewKASessionPool(ka.PoolConfig{
+				Factory: func(_ context.Context) (ka.PoolSession, error) {
+					return failSession, nil
+				},
+				Logger: logr.Discard(),
+			})
+
+			client := ka.NewPooledMCPClient(noRetryPool, logr.Discard())
+			ctx := ctxWithIdentity("alice", []string{"sre"})
+
+			_, err := client.InvokeAction(ctx, ka.InvokeActionArgs{
+				RRID: "ns/rr-fail", Action: "takeover",
+			})
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("internal server error"))
+			Expect(noRetryPool.Size()).To(Equal(1),
+				"pool entry should NOT be evicted for non-stale errors")
+		})
+
+		It("UT-AF-1386-004: retry fails if re-acquire fails", func() {
+			staleSession := &mockPoolSession{
+				callFn: func(_ context.Context, _ *mcp.CallToolParams) (*mcp.CallToolResult, error) {
+					return nil, fmt.Errorf("MCP call: %w", mcp.ErrSessionMissing)
+				},
+			}
+
+			failPool := ka.NewKASessionPool(ka.PoolConfig{
+				Factory: func(_ context.Context) (ka.PoolSession, error) {
+					return nil, fmt.Errorf("KA unreachable")
+				},
+				Logger: logr.Discard(),
+			})
+
+			client := ka.NewPooledMCPClient(failPool, logr.Discard())
+			ctx := ctxWithIdentity("alice", []string{"sre"})
+
+			failPool.Inject("ns/rr-dead", "alice", staleSession)
+
+			_, err := client.InvokeAction(ctx, ka.InvokeActionArgs{
+				RRID: "ns/rr-dead", Action: "takeover",
+			})
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("re-acquire MCP session after stale eviction"))
+		})
+	})
 })
