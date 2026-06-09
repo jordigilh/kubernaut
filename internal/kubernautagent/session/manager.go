@@ -357,6 +357,11 @@ func (m *Manager) terminateSession(id, eventType, action string) error {
 		sess.cancel()
 	}
 	sess.Status = StatusCancelled
+	sess.lazySink.Set(nil)
+	if sess.eventChan != nil {
+		close(sess.eventChan)
+		sess.eventChan = nil
+	}
 	correlationID := sess.Metadata["remediation_id"]
 	m.store.mu.Unlock()
 
@@ -619,9 +624,7 @@ func (m *Manager) closeEventChan(id string) {
 	if !ok {
 		return
 	}
-	if sess.lazySink != nil {
-		sess.lazySink.Set(nil)
-	}
+	sess.lazySink.Set(nil)
 	if sess.eventChan != nil {
 		close(sess.eventChan)
 		sess.eventChan = nil
@@ -767,9 +770,7 @@ func (m *Manager) ForceCompleteByRemediationID(rrID string, result *katypes.Inve
 			}
 			sess.Status = StatusCompleted
 			sess.Result = result
-			if sess.lazySink != nil {
-				sess.lazySink.Set(nil)
-			}
+			sess.lazySink.Set(nil)
 			if sess.eventChan != nil {
 				close(sess.eventChan)
 				sess.eventChan = nil
