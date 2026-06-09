@@ -117,6 +117,8 @@ type AutonomousSessionManager interface {
 	StartInvestigation(ctx context.Context, fn session.InvestigateFunc, metadata map[string]string) (string, error)
 	// BR-MCP-003: Subscribe to the event channel for a running investigation, activating the LazySink.
 	Subscribe(ctx context.Context, id string) (<-chan session.InvestigationEvent, error)
+	// #1384: Get the LazySink for a session so workflow_discovery can stream events.
+	GetSessionLazySink(id string) (*session.LazySink, bool)
 }
 
 // RRExistenceChecker validates that a RemediationRequest exists before
@@ -161,6 +163,7 @@ func (NopAutonomousManager) StartInvestigation(context.Context, session.Investig
 func (NopAutonomousManager) Subscribe(context.Context, string) (<-chan session.InvestigationEvent, error) {
 	return nil, nil
 }
+func (NopAutonomousManager) GetSessionLazySink(string) (*session.LazySink, bool) { return nil, false }
 
 // InvestigateTool handles the kubernaut_investigate MCP tool actions:
 // start, message, complete, cancel, takeover, discover_workflows.
@@ -860,7 +863,21 @@ func (t *InvestigateTool) handleDiscoverWorkflows(ctx context.Context, input Inv
 		}
 	}
 
-	// Step 3: Run Phase 3 workflow discovery using the structured RCA.
+	// Step 3: Enrich context with the HTTP investigation session so that
+	// workflow discovery can emit audit events with session_id and stream
+	// events to the subscriber (#1384: Bug A fix).
+	if t.httpCompleter != nil {
+		if httpSessionID, found := t.httpCompleter.FindUserDrivingByRemediationID(input.RRID); found {
+			ctx = session.WithSessionID(ctx, httpSessionID)
+			if ls, ok := t.autoMgr.GetSessionLazySink(httpSessionID); ok {
+				ctx = session.WithLazySink(ctx, ls)
+			}
+			t.logger.V(1).Info("discover_workflows: enriched context with HTTP session",
+				"rr_id", input.RRID, "http_session_id", httpSessionID)
+		}
+	}
+
+	// Step 4: Run Phase 3 workflow discovery using the structured RCA.
 	// The investigator resolves enrichment internally when its enricher is wired,
 	// falling back to nil when not available.
 	workflowResult, err := t.runner.RunWorkflowDiscovery(ctx, signal, rcaResult, nil, input.RRID)

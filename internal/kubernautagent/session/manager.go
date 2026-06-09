@@ -721,6 +721,19 @@ func (m *Manager) FindUserDrivingByRemediationID(rrID string) (string, bool) {
 	return "", false
 }
 
+// GetSessionLazySink returns the LazySink for the given session ID so that
+// callers (e.g. handleDiscoverWorkflows) can attach it to a context for
+// streaming events during workflow discovery (#1384).
+func (m *Manager) GetSessionLazySink(id string) (*LazySink, bool) {
+	m.store.mu.RLock()
+	defer m.store.mu.RUnlock()
+	sess, ok := m.store.sessions[id]
+	if !ok || sess.lazySink == nil {
+		return nil, false
+	}
+	return sess.lazySink, true
+}
+
 // ForceCompleteByRemediationID locates any session (Running, UserDriving, or
 // Completed) matching the given remediation ID and forces it to StatusCompleted
 // with the provided result. Cancels the investigation goroutine if still running.

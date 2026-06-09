@@ -107,6 +107,7 @@ func (m *takeoverAutoMgr) GetLatestRCAResultByRemediationID(_ string) (*katypes.
 }
 func (m *takeoverAutoMgr) StartInvestigation(_ context.Context, _ session.InvestigateFunc, _ map[string]string) (string, error) { return "", nil }
 func (m *takeoverAutoMgr) Subscribe(_ context.Context, _ string) (<-chan session.InvestigationEvent, error) { return nil, nil }
+func (m *takeoverAutoMgr) GetSessionLazySink(_ string) (*session.LazySink, bool) { return nil, false }
 
 // takeoverSessMgr mocks mcpinternal.SessionManager for takeover tests.
 type takeoverSessMgr struct {

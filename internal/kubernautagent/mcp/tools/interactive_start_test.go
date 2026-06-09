@@ -82,6 +82,9 @@ func (m *interactiveAutoMgr) GetLatestRCASummaryByRemediationID(_ string) (strin
 func (m *interactiveAutoMgr) GetLatestRCAResultByRemediationID(_ string) (*katypes.InvestigationResult, bool) {
 	return nil, false
 }
+func (m *interactiveAutoMgr) GetSessionLazySink(_ string) (*session.LazySink, bool) {
+	return nil, false
+}
 
 var _ = Describe("BR-INTERACTIVE-010: handleStart with pending interactive session — #1293", func() {
 
