@@ -182,7 +182,6 @@ func (m *Manager) launchInvestigation(ctx context.Context, id string, fn Investi
 	go func() {
 		start := time.Now()
 		defer m.recordSessionMetrics(id, start)
-		defer m.closeEventChan(id)
 		defer m.recoverPanic(id, correlationID)
 
 		result, fnErr := fn(bgCtx)
@@ -198,6 +197,7 @@ func (m *Manager) launchInvestigation(ctx context.Context, id string, fn Investi
 					m.storePartialResult(id, nil)
 				}
 			} else {
+				m.closeEventChan(id)
 				m.emitSessionEvent(context.Background(), audit.EventTypeSessionFailed, audit.ActionSessionFailed, audit.OutcomeFailure, id, correlationID, fnErr)
 			}
 			return
@@ -215,6 +215,9 @@ func (m *Manager) launchInvestigation(ctx context.Context, id string, fn Investi
 				m.storePartialResult(id, result)
 			}
 		} else {
+			if targetStatus != StatusUserDriving {
+				m.closeEventChan(id)
+			}
 			m.emitSessionEvent(context.Background(), audit.EventTypeSessionCompleted, audit.ActionSessionCompleted, audit.OutcomeSuccess, id, correlationID, nil)
 		}
 	}()
@@ -616,6 +619,9 @@ func (m *Manager) closeEventChan(id string) {
 	if !ok {
 		return
 	}
+	if sess.lazySink != nil {
+		sess.lazySink.Set(nil)
+	}
 	if sess.eventChan != nil {
 		close(sess.eventChan)
 		sess.eventChan = nil
@@ -635,6 +641,13 @@ func (m *Manager) Shutdown() {
 				sess.cancel()
 			}
 			sess.Status = StatusCancelled
+			if sess.lazySink != nil {
+				sess.lazySink.Set(nil)
+			}
+			if sess.eventChan != nil {
+				close(sess.eventChan)
+				sess.eventChan = nil
+			}
 			running = append(running, id)
 		}
 	}
@@ -689,6 +702,8 @@ func (m *Manager) CompleteUserDriving(id string, result *katypes.InvestigationRe
 	if err := m.store.CompleteUserDriving(id, result); err != nil {
 		return err
 	}
+	m.closeEventChan(id)
+
 	m.store.mu.RLock()
 	sess := m.store.sessions[id]
 	var correlationID string
@@ -744,7 +759,6 @@ func (m *Manager) GetSessionLazySink(id string) (*LazySink, bool) {
 // already completed before takeover.
 func (m *Manager) ForceCompleteByRemediationID(rrID string, result *katypes.InvestigationResult) error {
 	m.store.mu.Lock()
-	defer m.store.mu.Unlock()
 	for _, sess := range m.store.sessions {
 		if sess.Metadata["remediation_id"] == rrID && !IsTerminal(sess.Status) {
 			prevStatus := sess.Status
@@ -753,11 +767,20 @@ func (m *Manager) ForceCompleteByRemediationID(rrID string, result *katypes.Inve
 			}
 			sess.Status = StatusCompleted
 			sess.Result = result
+			if sess.lazySink != nil {
+				sess.lazySink.Set(nil)
+			}
+			if sess.eventChan != nil {
+				close(sess.eventChan)
+				sess.eventChan = nil
+			}
+			m.store.mu.Unlock()
 			m.logger.Info("Force-completed session by remediation ID",
 				"remediation_id", rrID, "previous_status", string(prevStatus))
 			return nil
 		}
 	}
+	m.store.mu.Unlock()
 	return ErrSessionNotFound
 }
 
