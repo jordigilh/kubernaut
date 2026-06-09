@@ -19,6 +19,7 @@ package apifrontend_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sync/atomic"
 
 	"github.com/go-logr/logr"
@@ -45,10 +46,11 @@ import (
 //   IT (this file) proves wiring through production dispatch paths.
 // =============================================================================
 
-// handoffSession is a trackable PoolSession used by IT-AF-1332 tests.
+// handoffSession is a trackable PoolSession used by IT-AF-1332 and IT-AF-1387 tests.
 type handoffSession struct {
 	id       string
 	callFn   func(ctx context.Context, params *mcp.CallToolParams) (*mcp.CallToolResult, error)
+	pingFn   func(ctx context.Context, params *mcp.PingParams) error
 	closed   int32
 }
 
@@ -57,6 +59,13 @@ func (s *handoffSession) CallTool(ctx context.Context, params *mcp.CallToolParam
 		return s.callFn(ctx, params)
 	}
 	return &mcp.CallToolResult{}, nil
+}
+
+func (s *handoffSession) Ping(ctx context.Context, params *mcp.PingParams) error {
+	if s.pingFn != nil {
+		return s.pingFn(ctx, params)
+	}
+	return nil
 }
 
 func (s *handoffSession) Close() error {
@@ -259,5 +268,172 @@ var _ = Describe("Investigation Session Handoff (#1332)", Label("integration", "
 			Expect(atomic.LoadInt32(&closerCalled)).To(Equal(int32(1)),
 				"cleanup (closer) must be called when pool is nil — MCP bridge path behavior")
 		})
+	})
+})
+
+// =============================================================================
+// IT-AF-1387: MCP Session Resilience — Ping-on-Acquire Wiring (#1387)
+//
+// Wiring Manifest rows covered:
+//   - Ping-on-Acquire via PooledMCPClient.DiscoverWorkflows (IT-AF-1387-W01)
+//   - Transparent reconnection via PooledMCPClient dispatch   (IT-AF-1387-W02)
+//   - Healthy session reuse via PooledMCPClient dispatch      (IT-AF-1387-W03)
+//
+// Pyramid Invariant:
+//   UT (session_pool_test.go) proves Ping-on-Acquire logic.
+//   IT (this block) proves wiring through PooledMCPClient production dispatch.
+// =============================================================================
+
+var _ = Describe("MCP Session Resilience — Ping-on-Acquire Wiring (#1387)", Label("integration", "mcp-resilience"), func() {
+
+	It("IT-AF-1387-W01 [SI-4, SC-24]: dead session evicted transparently when DiscoverWorkflows dispatches through pool", func() {
+		var factoryCalled int32
+		pool := ka.NewKASessionPool(ka.PoolConfig{
+			Factory: func(_ context.Context) (ka.PoolSession, error) {
+				atomic.AddInt32(&factoryCalled, 1)
+				return &handoffSession{
+					id: "factory-replacement",
+					callFn: func(_ context.Context, _ *mcp.CallToolParams) (*mcp.CallToolResult, error) {
+						resp := map[string]any{
+							"workflows": []map[string]any{
+								{"workflow_id": "wf-recovery-v1", "name": "Recovery", "description": "Auto recovery", "kind": "remediation", "confidence": 0.9},
+							},
+						}
+						raw, _ := json.Marshal(resp)
+						return &mcp.CallToolResult{
+							Content: []mcp.Content{&mcp.TextContent{Text: string(raw)}},
+						}, nil
+					},
+				}, nil
+			},
+			MaxEntries: 10,
+			Logger:     logr.Discard(),
+		})
+
+		deadSession := &handoffSession{
+			id: "dead-session",
+			pingFn: func(_ context.Context, _ *mcp.PingParams) error {
+				return fmt.Errorf("transport closed")
+			},
+		}
+		pool.Inject("rr-it-1387-w01", "alice", deadSession)
+
+		pooledClient := ka.NewPooledMCPClient(pool, logr.Discard())
+		ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+			Username: "alice",
+			Groups:   []string{"system:authenticated"},
+		})
+
+		result, err := pooledClient.DiscoverWorkflows(ctx, ka.DiscoverWorkflowsArgs{
+			RRID: "rr-it-1387-w01",
+		})
+		Expect(err).NotTo(HaveOccurred(),
+			"SI-4: PooledMCPClient.DiscoverWorkflows must succeed despite dead cached session")
+		Expect(result).NotTo(BeNil())
+		Expect(result.Workflows).To(HaveLen(1))
+		Expect(result.Workflows[0].WorkflowID).To(Equal("wf-recovery-v1"))
+
+		By("verifying dead session was evicted and closed")
+		Expect(deadSession.isClosed()).To(BeTrue(),
+			"SC-24: evicted session must be closed — fail in known state")
+
+		By("verifying factory created replacement")
+		Expect(atomic.LoadInt32(&factoryCalled)).To(Equal(int32(1)),
+			"CP-10: factory must create exactly one replacement session")
+	})
+
+	It("IT-AF-1387-W02 [CP-10]: transparent reconnection via InvokeAction dispatch path", func() {
+		var factoryCalled int32
+		pool := ka.NewKASessionPool(ka.PoolConfig{
+			Factory: func(_ context.Context) (ka.PoolSession, error) {
+				atomic.AddInt32(&factoryCalled, 1)
+				return &handoffSession{
+					id: "factory-replacement-w02",
+					callFn: func(_ context.Context, _ *mcp.CallToolParams) (*mcp.CallToolResult, error) {
+						resp := map[string]any{"status": "active", "session_id": "sess-w02"}
+						raw, _ := json.Marshal(resp)
+						return &mcp.CallToolResult{
+							Content: []mcp.Content{&mcp.TextContent{Text: string(raw)}},
+						}, nil
+					},
+				}, nil
+			},
+			MaxEntries: 10,
+			Logger:     logr.Discard(),
+		})
+
+		deadSession := &handoffSession{
+			id: "dead-session-w02",
+			pingFn: func(_ context.Context, _ *mcp.PingParams) error {
+				return fmt.Errorf("connection reset by peer")
+			},
+		}
+		pool.Inject("rr-it-1387-w02", "bob", deadSession)
+
+		pooledClient := ka.NewPooledMCPClient(pool, logr.Discard())
+		ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+			Username: "bob",
+			Groups:   []string{"system:authenticated"},
+		})
+
+		result, err := pooledClient.InvokeAction(ctx, ka.InvokeActionArgs{
+			RRID:   "rr-it-1387-w02",
+			Action: "status",
+		})
+		Expect(err).NotTo(HaveOccurred(),
+			"CP-10: InvokeAction must auto-reconstitute after dead session eviction")
+		Expect(result).NotTo(BeNil())
+		Expect(result.Status).To(Equal("active"))
+	})
+
+	It("IT-AF-1387-W03 [SI-4]: healthy session reused via PooledMCPClient without false-positive eviction", func() {
+		var factoryCalled int32
+		var callToolInvoked int32
+		healthySession := &handoffSession{
+			id: "healthy-session",
+			callFn: func(_ context.Context, _ *mcp.CallToolParams) (*mcp.CallToolResult, error) {
+				atomic.AddInt32(&callToolInvoked, 1)
+				resp := map[string]any{
+					"workflows": []map[string]any{
+						{"workflow_id": "wf-healthy-v1", "name": "Healthy Path", "description": "test", "kind": "remediation", "confidence": 0.99},
+					},
+				}
+				raw, _ := json.Marshal(resp)
+				return &mcp.CallToolResult{
+					Content: []mcp.Content{&mcp.TextContent{Text: string(raw)}},
+				}, nil
+			},
+		}
+
+		pool := ka.NewKASessionPool(ka.PoolConfig{
+			Factory: func(_ context.Context) (ka.PoolSession, error) {
+				atomic.AddInt32(&factoryCalled, 1)
+				return &handoffSession{id: "factory-sentinel"}, nil
+			},
+			MaxEntries: 10,
+			Logger:     logr.Discard(),
+		})
+		pool.Inject("rr-it-1387-w03", "carol", healthySession)
+
+		pooledClient := ka.NewPooledMCPClient(pool, logr.Discard())
+		ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+			Username: "carol",
+			Groups:   []string{"system:authenticated"},
+		})
+
+		result, err := pooledClient.DiscoverWorkflows(ctx, ka.DiscoverWorkflowsArgs{
+			RRID: "rr-it-1387-w03",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Workflows).To(HaveLen(1))
+		Expect(result.Workflows[0].WorkflowID).To(Equal("wf-healthy-v1"))
+
+		By("verifying healthy session was reused, not replaced")
+		Expect(atomic.LoadInt32(&callToolInvoked)).To(Equal(int32(1)),
+			"SI-4: healthy session must be reused — CallTool invoked exactly once on it")
+		Expect(atomic.LoadInt32(&factoryCalled)).To(Equal(int32(0)),
+			"SI-4: factory must not be called when cached session passes Ping")
+		Expect(healthySession.isClosed()).To(BeFalse(),
+			"SI-4: healthy session must NOT be closed")
 	})
 })

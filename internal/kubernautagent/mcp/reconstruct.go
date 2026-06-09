@@ -107,9 +107,15 @@ func turnsToReconMessages(turns []ConversationTurn) []ReconMessage {
 	if len(turns) == 0 {
 		return nil
 	}
-	messages := make([]ReconMessage, len(turns))
-	for i, t := range turns {
-		messages[i] = ReconMessage{Role: t.Role, Content: t.Content}
+	messages := make([]ReconMessage, 0, len(turns))
+	for _, t := range turns {
+		if t.Content == "" {
+			continue
+		}
+		messages = append(messages, ReconMessage{Role: t.Role, Content: t.Content})
+	}
+	if len(messages) == 0 {
+		return nil
 	}
 	return messages
 }

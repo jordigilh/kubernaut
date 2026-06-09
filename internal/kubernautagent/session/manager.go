@@ -165,6 +165,7 @@ func (m *Manager) launchInvestigation(ctx context.Context, id string, fn Investi
 	sess := m.store.sessions[id]
 	sess.cancel = cancelFn
 	sess.lazySink = ls
+	bgCtx = WithInteractiveUpgrade(bgCtx, sess.interactiveUpgrade)
 	m.logger.Info("launchInvestigation: LazySink attached to session",
 		"session_id", id,
 		"status", string(sess.Status),
@@ -182,7 +183,6 @@ func (m *Manager) launchInvestigation(ctx context.Context, id string, fn Investi
 	go func() {
 		start := time.Now()
 		defer m.recordSessionMetrics(id, start)
-		defer m.closeEventChan(id)
 		defer m.recoverPanic(id, correlationID)
 
 		result, fnErr := fn(bgCtx)
@@ -198,6 +198,7 @@ func (m *Manager) launchInvestigation(ctx context.Context, id string, fn Investi
 					m.storePartialResult(id, nil)
 				}
 			} else {
+				m.closeEventChan(id)
 				m.emitSessionEvent(context.Background(), audit.EventTypeSessionFailed, audit.ActionSessionFailed, audit.OutcomeFailure, id, correlationID, fnErr)
 			}
 			return
@@ -215,6 +216,9 @@ func (m *Manager) launchInvestigation(ctx context.Context, id string, fn Investi
 				m.storePartialResult(id, result)
 			}
 		} else {
+			if targetStatus != StatusUserDriving {
+				m.closeEventChan(id)
+			}
 			m.emitSessionEvent(context.Background(), audit.EventTypeSessionCompleted, audit.ActionSessionCompleted, audit.OutcomeSuccess, id, correlationID, nil)
 		}
 	}()
@@ -317,6 +321,47 @@ func (m *Manager) LaunchDeferredInvestigation(id string) error {
 	return err
 }
 
+// UpgradeToInteractive sets the interactive upgrade flag on a running session
+// without cancelling its goroutine. The background goroutine reads this flag
+// via InteractiveUpgradeFromContext to decide InteractiveHold. The store-level
+// mutex serialization in Update() guarantees a deterministic outcome (#1390).
+// Returns ErrSessionNotFound or ErrSessionTerminal on invalid state.
+func (m *Manager) UpgradeToInteractive(id string, username string, groups []string) error {
+	m.store.mu.Lock()
+	sess, ok := m.store.sessions[id]
+	if !ok {
+		m.store.mu.Unlock()
+		return ErrSessionNotFound
+	}
+	if IsTerminal(sess.Status) || sess.Status == StatusUserDriving {
+		m.store.mu.Unlock()
+		return ErrSessionTerminal
+	}
+	sess.interactiveUpgrade.Store(true)
+	if sess.Metadata == nil {
+		sess.Metadata = make(map[string]string)
+	}
+	sess.Metadata["acting_user"] = username
+	if len(groups) > 0 {
+		groupsJSON, _ := json.Marshal(groups)
+		sess.Metadata["acting_user_groups"] = string(groupsJSON)
+	}
+	correlationID := sess.Metadata["remediation_id"]
+	m.store.mu.Unlock()
+
+	m.logger.Info("session upgraded to interactive in-place",
+		"session_id", id,
+		"acting_user", username,
+		"remediation_id", correlationID)
+
+	m.emitSessionEvent(context.Background(),
+		audit.EventTypeSessionSuspended, audit.ActionSessionSuspended,
+		audit.OutcomeSuccess, id, correlationID, nil,
+		"acting_user", username, "upgrade_type", "jump_in")
+
+	return nil
+}
+
 // CancelInvestigation stops a running investigation by cancelling its context
 // and transitioning its status to StatusCancelled. Returns ErrSessionNotFound
 // if the session does not exist, or ErrSessionTerminal if it has already
@@ -354,6 +399,11 @@ func (m *Manager) terminateSession(id, eventType, action string) error {
 		sess.cancel()
 	}
 	sess.Status = StatusCancelled
+	sess.lazySink.Set(nil)
+	if sess.eventChan != nil {
+		close(sess.eventChan)
+		sess.eventChan = nil
+	}
 	correlationID := sess.Metadata["remediation_id"]
 	m.store.mu.Unlock()
 
@@ -574,18 +624,11 @@ func (m *Manager) Subscribe(ctx context.Context, id string) (<-chan Investigatio
 	if sess.eventChan == nil {
 		ch := make(chan InvestigationEvent, eventChannelBuffer)
 		sess.eventChan = ch
-		if sess.lazySink != nil {
-			sess.lazySink.Set(ch)
-			m.logger.Info("Subscribe: LazySink channel activated",
-				"session_id", id,
-				"status", string(sess.Status),
-				"has_lazy_sink", true,
-				"chan_ptr", fmt.Sprintf("%p", ch))
-		} else {
-			m.logger.Info("Subscribe: LazySink is nil — events will NOT flow",
-				"session_id", id,
-				"status", string(sess.Status))
-		}
+		sess.lazySink.Set(ch)
+		m.logger.Info("Subscribe: LazySink channel activated",
+			"session_id", id,
+			"status", string(sess.Status),
+			"chan_ptr", fmt.Sprintf("%p", ch))
 	}
 
 	ch := sess.eventChan
@@ -616,6 +659,7 @@ func (m *Manager) closeEventChan(id string) {
 	if !ok {
 		return
 	}
+	sess.lazySink.Set(nil)
 	if sess.eventChan != nil {
 		close(sess.eventChan)
 		sess.eventChan = nil
@@ -635,6 +679,11 @@ func (m *Manager) Shutdown() {
 				sess.cancel()
 			}
 			sess.Status = StatusCancelled
+			sess.lazySink.Set(nil)
+			if sess.eventChan != nil {
+				close(sess.eventChan)
+				sess.eventChan = nil
+			}
 			running = append(running, id)
 		}
 	}
@@ -689,6 +738,8 @@ func (m *Manager) CompleteUserDriving(id string, result *katypes.InvestigationRe
 	if err := m.store.CompleteUserDriving(id, result); err != nil {
 		return err
 	}
+	m.closeEventChan(id)
+
 	m.store.mu.RLock()
 	sess := m.store.sessions[id]
 	var correlationID string
@@ -721,6 +772,19 @@ func (m *Manager) FindUserDrivingByRemediationID(rrID string) (string, bool) {
 	return "", false
 }
 
+// GetSessionLazySink returns the LazySink for the given session ID so that
+// callers (e.g. handleDiscoverWorkflows) can attach it to a context for
+// streaming events during workflow discovery (#1384).
+func (m *Manager) GetSessionLazySink(id string) (*LazySink, bool) {
+	m.store.mu.RLock()
+	defer m.store.mu.RUnlock()
+	sess, ok := m.store.sessions[id]
+	if !ok {
+		return nil, false
+	}
+	return sess.lazySink, true
+}
+
 // ForceCompleteByRemediationID locates any session (Running, UserDriving, or
 // Completed) matching the given remediation ID and forces it to StatusCompleted
 // with the provided result. Cancels the investigation goroutine if still running.
@@ -731,7 +795,6 @@ func (m *Manager) FindUserDrivingByRemediationID(rrID string) (string, bool) {
 // already completed before takeover.
 func (m *Manager) ForceCompleteByRemediationID(rrID string, result *katypes.InvestigationResult) error {
 	m.store.mu.Lock()
-	defer m.store.mu.Unlock()
 	for _, sess := range m.store.sessions {
 		if sess.Metadata["remediation_id"] == rrID && !IsTerminal(sess.Status) {
 			prevStatus := sess.Status
@@ -740,11 +803,18 @@ func (m *Manager) ForceCompleteByRemediationID(rrID string, result *katypes.Inve
 			}
 			sess.Status = StatusCompleted
 			sess.Result = result
+			sess.lazySink.Set(nil)
+			if sess.eventChan != nil {
+				close(sess.eventChan)
+				sess.eventChan = nil
+			}
+			m.store.mu.Unlock()
 			m.logger.Info("Force-completed session by remediation ID",
 				"remediation_id", rrID, "previous_status", string(prevStatus))
 			return nil
 		}
 	}
+	m.store.mu.Unlock()
 	return ErrSessionNotFound
 }
 

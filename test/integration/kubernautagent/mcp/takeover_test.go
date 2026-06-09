@@ -105,6 +105,10 @@ func (m *mockAutoMgrIT) ForceTransitionToUserDriving(rrID, username string, grou
 	return m.mgr.ForceTransitionToUserDriving(rrID, username, groups)
 }
 
+func (m *mockAutoMgrIT) UpgradeToInteractive(id, username string, groups []string) error {
+	return m.mgr.UpgradeToInteractive(id, username, groups)
+}
+
 func (m *mockAutoMgrIT) FindPendingByRemediationID(rrID string) (string, bool) {
 	return m.mgr.FindPendingByRemediationID(rrID)
 }
@@ -119,6 +123,10 @@ func (m *mockAutoMgrIT) GetLatestRCASummaryByRemediationID(rrID string) (string,
 
 func (m *mockAutoMgrIT) GetLatestRCAResultByRemediationID(rrID string) (*katypes.InvestigationResult, bool) {
 	return m.mgr.GetLatestRCAResultByRemediationID(rrID)
+}
+
+func (m *mockAutoMgrIT) GetSessionLazySink(id string) (*session.LazySink, bool) {
+	return m.mgr.GetSessionLazySink(id)
 }
 
 var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", func() {

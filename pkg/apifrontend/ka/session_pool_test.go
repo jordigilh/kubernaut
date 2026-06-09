@@ -2,6 +2,8 @@ package ka_test
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -20,6 +22,7 @@ type mockPoolSession struct {
 	closed   bool
 	mu       sync.Mutex
 	callFn   func(ctx context.Context, params *mcp.CallToolParams) (*mcp.CallToolResult, error)
+	pingFn   func(ctx context.Context, params *mcp.PingParams) error
 }
 
 func (s *mockPoolSession) CallTool(ctx context.Context, params *mcp.CallToolParams) (*mcp.CallToolResult, error) {
@@ -27,6 +30,13 @@ func (s *mockPoolSession) CallTool(ctx context.Context, params *mcp.CallToolPara
 		return s.callFn(ctx, params)
 	}
 	return &mcp.CallToolResult{}, nil
+}
+
+func (s *mockPoolSession) Ping(ctx context.Context, params *mcp.PingParams) error {
+	if s.pingFn != nil {
+		return s.pingFn(ctx, params)
+	}
+	return nil
 }
 
 func (s *mockPoolSession) Close() error {
@@ -468,6 +478,323 @@ var _ = Describe("KASessionPool (G2 + G9: Pool + User Isolation)", func() {
 		})
 	})
 })
+
+var _ = Describe("MCP Session Resilience — Proactive Pool Health Check (#1387)", func() {
+	var (
+		pool         *ka.KASessionPool
+		connectCount atomic.Int32
+	)
+
+	countingFactory := func() ka.SessionFactory {
+		return func(_ context.Context) (ka.PoolSession, error) {
+			id := int(connectCount.Add(1))
+			return &mockPoolSession{id: id}, nil
+		}
+	}
+
+	BeforeEach(func() {
+		connectCount.Store(0)
+	})
+
+	It("UT-AF-1387-001 [SI-4, SC-24]: dead cached session detected and evicted before user-visible failure", func() {
+		pool = ka.NewKASessionPool(ka.PoolConfig{
+			Factory:    countingFactory(),
+			MaxEntries: 10,
+			Logger:     logr.Discard(),
+		})
+
+		deadSession := &mockPoolSession{
+			id: 1,
+			pingFn: func(_ context.Context, _ *mcp.PingParams) error {
+				return fmt.Errorf("transport closed")
+			},
+		}
+		pool.Inject("rr-001", "alice", deadSession)
+
+		session, err := pool.Acquire(context.Background(), "rr-001", "alice")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(session).NotTo(BeIdenticalTo(deadSession),
+			"SI-4: dead session must be replaced, not returned to caller")
+		Expect(deadSession.IsClosed()).To(BeTrue(),
+			"SC-24: evicted session resources must be released")
+		Expect(connectCount.Load()).To(Equal(int32(1)),
+			"CP-10: factory creates replacement transparently")
+	})
+
+	It("UT-AF-1387-002 [CP-10]: auto-reconstitution after eviction without caller retry", func() {
+		pool = ka.NewKASessionPool(ka.PoolConfig{
+			Factory:    countingFactory(),
+			MaxEntries: 10,
+			Logger:     logr.Discard(),
+		})
+
+		deadSession := &mockPoolSession{
+			id: 1,
+			pingFn: func(_ context.Context, _ *mcp.PingParams) error {
+				return fmt.Errorf("connection reset by peer")
+			},
+		}
+		pool.Inject("rr-002", "bob", deadSession)
+
+		session, err := pool.Acquire(context.Background(), "rr-002", "bob")
+		Expect(err).NotTo(HaveOccurred(),
+			"CP-10: caller must not see the eviction — Acquire returns a valid session")
+		Expect(session).NotTo(BeNil())
+
+		_, err = session.CallTool(context.Background(), &mcp.CallToolParams{
+			Name: "test_tool",
+		})
+		Expect(err).NotTo(HaveOccurred(),
+			"CP-10: replacement session must be functional for tool calls")
+	})
+
+	It("UT-AF-1387-003 [SI-4]: healthy cached session reused without false-positive eviction", func() {
+		pool = ka.NewKASessionPool(ka.PoolConfig{
+			Factory:    countingFactory(),
+			MaxEntries: 10,
+			Logger:     logr.Discard(),
+		})
+
+		healthySession := &mockPoolSession{id: 42}
+		pool.Inject("rr-003", "carol", healthySession)
+
+		session, err := pool.Acquire(context.Background(), "rr-003", "carol")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(session).To(BeIdenticalTo(healthySession),
+			"SI-4: healthy session must be returned as-is, no false-positive eviction")
+		Expect(connectCount.Load()).To(Equal(int32(0)),
+			"SI-4: factory must not be called when cached session is healthy")
+	})
+
+	It("UT-AF-1387-004 [SA-15]: ping timeout bounded to prevent indefinite Acquire blocking", func() {
+		pool = ka.NewKASessionPool(ka.PoolConfig{
+			Factory:    countingFactory(),
+			MaxEntries: 10,
+			Logger:     logr.Discard(),
+		})
+
+		hangingSession := &mockPoolSession{
+			id: 1,
+			pingFn: func(ctx context.Context, _ *mcp.PingParams) error {
+				<-ctx.Done()
+				return ctx.Err()
+			},
+		}
+		pool.Inject("rr-004", "dave", hangingSession)
+
+		start := time.Now()
+		session, err := pool.Acquire(context.Background(), "rr-004", "dave")
+		elapsed := time.Since(start)
+
+		Expect(err).NotTo(HaveOccurred(),
+			"SA-15: hung ping must not propagate error to caller")
+		Expect(session).NotTo(BeIdenticalTo(hangingSession),
+			"SA-15: hung session must be evicted, not returned")
+		Expect(elapsed).To(BeNumerically("<", 5*time.Second),
+			"SA-15: Acquire must not block indefinitely — ping timeout enforces 2s bound")
+	})
+
+	It("UT-AF-1387-005 [SC-24]: concurrent Acquire with failing Ping does not double-evict or race", func() {
+		pool = ka.NewKASessionPool(ka.PoolConfig{
+			Factory:    countingFactory(),
+			MaxEntries: 10,
+			Logger:     logr.Discard(),
+		})
+
+		deadSession := &mockPoolSession{
+			id: 1,
+			pingFn: func(_ context.Context, _ *mcp.PingParams) error {
+				return fmt.Errorf("transport closed")
+			},
+		}
+		pool.Inject("rr-005", "eve", deadSession)
+
+		const goroutines = 10
+		var wg sync.WaitGroup
+		sessions := make([]ka.PoolSession, goroutines)
+		errs := make([]error, goroutines)
+
+		for i := 0; i < goroutines; i++ {
+			wg.Add(1)
+			go func(idx int) {
+				defer wg.Done()
+				sessions[idx], errs[idx] = pool.Acquire(context.Background(), "rr-005", "eve")
+			}(i)
+		}
+		wg.Wait()
+
+		for i := 0; i < goroutines; i++ {
+			Expect(errs[i]).NotTo(HaveOccurred(),
+				"SC-24: goroutine %d should succeed even under concurrent eviction", i)
+			Expect(sessions[i]).NotTo(BeNil(),
+				"SC-24: goroutine %d must receive a valid session", i)
+		}
+	})
+})
+
+var _ = Describe("MCP Transport Observability — Audit Logging (#1387)", func() {
+	var (
+		pool         *ka.KASessionPool
+		connectCount atomic.Int32
+	)
+
+	countingFactoryWithLogger := func() ka.SessionFactory {
+		return func(_ context.Context) (ka.PoolSession, error) {
+			id := int(connectCount.Add(1))
+			return &mockPoolSession{id: id}, nil
+		}
+	}
+
+	BeforeEach(func() {
+		connectCount.Store(0)
+	})
+
+	It("UT-AF-1387-010 [AU-2, AU-3]: Inject emits structured log with mcp_session_id and rr_id", func() {
+		logger, entries := capturingLogger()
+		pool = ka.NewKASessionPool(ka.PoolConfig{
+			Factory:    countingFactoryWithLogger(),
+			MaxEntries: 10,
+			Logger:     logger,
+		})
+
+		injected := &mockPoolSession{id: 42}
+		pool.Inject("rr-010", "alice", injected)
+
+		found := false
+		for _, e := range *entries {
+			if containsAll(e.args, "mcp_session_id", "rr_id", "rr-010") {
+				found = true
+				break
+			}
+		}
+		Expect(found).To(BeTrue(),
+			"AU-2+AU-3: Inject must emit structured log containing mcp_session_id and rr_id for cross-service correlation")
+	})
+
+	It("UT-AF-1387-011 [AU-2, AU-3]: Acquire cache-hit emits log with mcp_session_id and rr_id", func() {
+		logger, entries := capturingLogger()
+		pool = ka.NewKASessionPool(ka.PoolConfig{
+			Factory:    countingFactoryWithLogger(),
+			MaxEntries: 10,
+			Logger:     logger,
+		})
+
+		pool.Inject("rr-011", "bob", &mockPoolSession{id: 99})
+
+		_, err := pool.Acquire(context.Background(), "rr-011", "bob")
+		Expect(err).NotTo(HaveOccurred())
+
+		found := false
+		for _, e := range *entries {
+			if containsAll(e.args, "mcp_session_id", "rr_id", "rr-011") && containsAny(e.args, "acquire", "cache hit", "reuse") {
+				found = true
+				break
+			}
+		}
+		Expect(found).To(BeTrue(),
+			"AU-2+AU-3: Acquire cache-hit must emit structured log with mcp_session_id and rr_id")
+	})
+
+	It("UT-AF-1387-012 [AU-2]: Release emits log with mcp_session_id and rr_id", func() {
+		logger, entries := capturingLogger()
+		pool = ka.NewKASessionPool(ka.PoolConfig{
+			Factory:    countingFactoryWithLogger(),
+			MaxEntries: 10,
+			Logger:     logger,
+		})
+
+		pool.Inject("rr-012", "carol", &mockPoolSession{id: 77})
+		pool.Release("rr-012", "carol")
+
+		found := false
+		for _, e := range *entries {
+			if containsAll(e.args, "mcp_session_id", "rr_id", "rr-012") && containsAny(e.args, "release", "released") {
+				found = true
+				break
+			}
+		}
+		Expect(found).To(BeTrue(),
+			"AU-2: Release must emit structured log with mcp_session_id and rr_id")
+	})
+
+	It("UT-AF-1387-013 [AU-3, AU-6]: stale-retry logs both evicted and replacement mcp_session_id", func() {
+		logger, entries := capturingLogger()
+		pool = ka.NewKASessionPool(ka.PoolConfig{
+			Factory:    countingFactoryWithLogger(),
+			MaxEntries: 10,
+			Logger:     logger,
+		})
+
+		deadSession := &mockPoolSession{
+			id: 1,
+			pingFn: func(_ context.Context, _ *mcp.PingParams) error {
+				return fmt.Errorf("transport closed")
+			},
+		}
+		pool.Inject("rr-013", "dave", deadSession)
+
+		_, err := pool.Acquire(context.Background(), "rr-013", "dave")
+		Expect(err).NotTo(HaveOccurred())
+
+		foundEvicted := false
+		for _, e := range *entries {
+			if containsAll(e.args, "mcp_session_id", "evict") {
+				foundEvicted = true
+				break
+			}
+		}
+		Expect(foundEvicted).To(BeTrue(),
+			"AU-3+AU-6: stale-retry path must log mcp_session_id of evicted session for correlation")
+	})
+
+	It("UT-AF-1387-014 [SI-4]: ping-eviction logs mcp_session_id of dead session with error detail", func() {
+		logger, entries := capturingLogger()
+		pool = ka.NewKASessionPool(ka.PoolConfig{
+			Factory:    countingFactoryWithLogger(),
+			MaxEntries: 10,
+			Logger:     logger,
+		})
+
+		deadSession := &mockPoolSession{
+			id: 1,
+			pingFn: func(_ context.Context, _ *mcp.PingParams) error {
+				return fmt.Errorf("connection reset by peer")
+			},
+		}
+		pool.Inject("rr-014", "eve", deadSession)
+
+		_, err := pool.Acquire(context.Background(), "rr-014", "eve")
+		Expect(err).NotTo(HaveOccurred())
+
+		found := false
+		for _, e := range *entries {
+			if containsAll(e.args, "mcp_session_id", "error") {
+				found = true
+				break
+			}
+		}
+		Expect(found).To(BeTrue(),
+			"SI-4: ping-eviction must log mcp_session_id of dead session alongside error detail for incident correlation")
+	})
+})
+
+func containsAll(s string, substrs ...string) bool {
+	for _, sub := range substrs {
+		if !strings.Contains(s, sub) {
+			return false
+		}
+	}
+	return true
+}
+
+func containsAny(s string, substrs ...string) bool {
+	for _, sub := range substrs {
+		if strings.Contains(s, sub) {
+			return true
+		}
+	}
+	return false
+}
 
 var _ = Describe("IT-AF-1351: KASessionPool EvictIdle wiring", func() {
 

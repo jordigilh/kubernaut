@@ -886,7 +886,8 @@ type mockPoolSession struct{}
 func (m *mockPoolSession) CallTool(_ context.Context, _ *mcp.CallToolParams) (*mcp.CallToolResult, error) {
 	return nil, nil
 }
-func (m *mockPoolSession) Close() error { return nil }
+func (m *mockPoolSession) Ping(_ context.Context, _ *mcp.PingParams) error { return nil }
+func (m *mockPoolSession) Close() error                                     { return nil }
 
 // ---------------------------------------------------------------------------
 // IT-AF-1234-W12: WithDownstreamDuration wired on SDKMCPClient
@@ -895,7 +896,7 @@ func (m *mockPoolSession) Close() error { return nil }
 func TestSDKMCPClient_DownstreamDurationWired(t *testing.T) {
 	t.Parallel()
 	reg := metrics.NewRegistry()
-	mcpClient := ka.NewSDKMCPClient("http://localhost:0", &http.Client{}, logr.Discard())
+	mcpClient := ka.NewSDKMCPClient("http://localhost:0", &http.Client{}, nil, logr.Discard())
 	result := mcpClient.WithDownstreamDuration(reg.DownstreamDuration)
 	if result == nil {
 		t.Fatal("IT-AF-1234-W12: WithDownstreamDuration must return the client")

@@ -759,6 +759,14 @@ spec:
                   ========================================
                   KASession tracks the async KA session for submit/poll pattern
                 properties:
+                  consecutiveGetResultErrors:
+                    description: |-
+                      ConsecutiveGetResultErrors tracks consecutive 409 errors from GetSessionResult.
+                      #1390: After 3 consecutive 409s, the session is regenerated to break the polling loop.
+                      Reset to 0 on any successful GetSessionResult call.
+                    format: int32
+                    minimum: 0
+                    type: integer
                   createdAt:
                     description: CreatedAt timestamp when the current session was
                       created

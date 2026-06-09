@@ -259,3 +259,51 @@ var _ = Describe("MCP Auth Architecture — #895/#896 BR-SECURITY-896", func() {
 		})
 	})
 })
+
+// =============================================================================
+// IT-KA-1387: MCP Session Resilience — KeepAlive/SessionTimeout Wiring (#1387)
+//
+// Pyramid Invariant:
+//   UT (server_test.go) proves BootstrapMCP accepts KeepAlive/SessionTimeout.
+//   IT (this block) proves config flows through to a functional MCP endpoint.
+// =============================================================================
+
+var _ = Describe("MCP Session Resilience — KeepAlive/SessionTimeout Wiring (#1387)", Label("integration", "mcp-resilience"), func() {
+
+	It("IT-KA-1387-W01 [SC-8, SC-10]: BootstrapMCP with KeepAlive+SessionTimeout produces functional MCP endpoint", func() {
+		authMw := fakeAuthMiddleware("test-user")
+		handler, srv := mcpinternal.BootstrapMCP(mcpinternal.MCPDeps{
+			AuthMiddleware: authMw,
+			KeepAlive:      15 * time.Second,
+			SessionTimeout: 10 * time.Minute,
+		})
+		Expect(handler).NotTo(BeNil())
+		Expect(srv).NotTo(BeNil())
+
+		r := chi.NewRouter()
+		r.Route("/api/v1", func(r chi.Router) {
+			r.Handle("/mcp", kaserver.SSEHeadersMiddleware(handler))
+			r.Handle("/mcp/*", kaserver.SSEHeadersMiddleware(handler))
+		})
+		ts := httptest.NewServer(r)
+		defer ts.Close()
+
+		jsonRPC := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}`
+		req, err := http.NewRequest("POST", ts.URL+"/api/v1/mcp", strings.NewReader(jsonRPC))
+		Expect(err).NotTo(HaveOccurred())
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json, text/event-stream")
+		req.Header.Set("Authorization", "Bearer test-token")
+
+		resp, err := httpTestClient.Do(req)
+		Expect(err).NotTo(HaveOccurred())
+		defer resp.Body.Close()
+
+		body, err := io.ReadAll(resp.Body)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(resp.StatusCode).To(Equal(http.StatusOK), "body: %s", string(body))
+		Expect(string(body)).To(ContainSubstring("kubernaut-agent-interactive"),
+			"SC-8+SC-10: MCP endpoint with resilience config must accept initialize handshake and return valid server info")
+	})
+})

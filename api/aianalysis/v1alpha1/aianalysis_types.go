@@ -523,6 +523,12 @@ type KASession struct {
 	// +kubebuilder:validation:Minimum=0
 	// +optional
 	PollCount int32 `json:"pollCount,omitempty"`
+	// ConsecutiveGetResultErrors tracks consecutive 409 errors from GetSessionResult.
+	// #1390: After 3 consecutive 409s, the session is regenerated to break the polling loop.
+	// Reset to 0 on any successful GetSessionResult call.
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	ConsecutiveGetResultErrors int32 `json:"consecutiveGetResultErrors,omitempty"`
 }
 
 // InteractiveSessionInfo tracks the dynamic takeover session for MCP interactive mode.

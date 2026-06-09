@@ -385,8 +385,10 @@ func (h *InvestigatingHandler) handleSessionBased(ctx context.Context, analysis 
 }
 
 // checkISMismatchAndCancel detects when the InvestigationSession CRD state has changed
-// since the last submit and cancels the KA session to trigger re-submit or terminal failure.
-// Returns (result, true) if cancellation was initiated, (_, false) to proceed with normal polling.
+// since the last submit and handles the transition. For autonomous→interactive upgrade
+// (#1390), sets Interactive=true and calls SetActivePhase instead of cancelling, preserving
+// the running KA session. For IS deletion, cancels the KA session.
+// Returns (result, true) if action was taken, (_, false) to proceed with normal polling.
 func (h *InvestigatingHandler) checkISMismatchAndCancel(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, bool) {
 	if h.isChecker == nil {
 		return ctrl.Result{}, false
@@ -406,14 +408,18 @@ func (h *InvestigatingHandler) checkISMismatchAndCancel(ctx context.Context, ana
 
 	switch {
 	case hasIS && !session.Interactive:
-		// IS appeared after autonomous submit → cancel for interactive takeover
-		h.log.Info("IS CRD detected for autonomous session — cancelling for interactive takeover",
+		// #1390: IS appeared for autonomous session → upgrade in-place (no cancel).
+		// KA's UpgradeToInteractive sets the atomic flag; the goroutine will hold
+		// the session open for MCP takeover. Session ID is preserved.
+		h.log.Info("IS CRD detected for autonomous session — upgrading to interactive in-place",
 			"sessionID", session.ID, "rrName", rrName)
-		if cancelErr := h.kaClient.CancelSession(ctx, session.ID); cancelErr != nil {
-			h.log.Error(cancelErr, "Failed to cancel session for takeover; will retry", "sessionID", session.ID)
-			return ctrl.Result{RequeueAfter: 5 * time.Second}, true
+		session.Interactive = true
+		if h.isPhaseUpdater != nil {
+			if phaseErr := h.isPhaseUpdater.SetActivePhase(ctx, rrName); phaseErr != nil {
+				h.log.Error(phaseErr, "Failed to set IS phase to Active after upgrade (best-effort)",
+					"rrName", rrName, "sessionID", session.ID)
+			}
 		}
-		session.ID = ""
 		return ctrl.Result{Requeue: true}, true
 
 	case !hasIS && session.Interactive:
@@ -732,6 +738,9 @@ func (h *InvestigatingHandler) handleSessionIncidentResult(ctx context.Context, 
 		return h.handleSessionGetResultError(ctx, analysis, err)
 	}
 
+	// #1390: Reset consecutive 409 error counter on successful result retrieval.
+	session.ConsecutiveGetResultErrors = 0
+
 	// Set investigation metadata
 	analysis.Status.InvestigationTime = investigationTime
 	analysis.Status.ObservedGeneration = analysis.Generation
@@ -919,7 +928,7 @@ func (h *InvestigatingHandler) handleSessionLost(ctx context.Context, analysis *
 }
 
 // handleSessionGetResultError handles errors when fetching the session result.
-// BR-AA-HAPI-064: 409 Conflict treated as transient (re-poll gracefully at standard interval)
+// BR-AA-HAPI-064: 409 Conflict tracked with consecutive error counter (#1390)
 // AA-HIGH-1: 404 triggers session regeneration (same as poll 404)
 func (h *InvestigatingHandler) handleSessionGetResultError(ctx context.Context, analysis *aianalysisv1.AIAnalysis, err error) (ctrl.Result, error) {
 	var apiErr *agentclient.APIError
@@ -931,11 +940,19 @@ func (h *InvestigatingHandler) handleSessionGetResultError(ctx context.Context, 
 			)
 			return h.handleSessionLost(ctx, analysis)
 		case 409:
-			h.log.Info("GetSessionResult returned 409 Conflict, treating as transient",
-				"sessionID", analysis.Status.KASession.ID,
+			session := analysis.Status.KASession
+			session.ConsecutiveGetResultErrors++
+			h.log.Info("GetSessionResult returned 409 Conflict",
+				"sessionID", session.ID,
+				"consecutiveErrors", session.ConsecutiveGetResultErrors,
 			)
-			// PollCount and LastPolled already incremented by handleSessionPollCompleted
-			// which is the only caller of handleSessionIncidentResult.
+			if session.ConsecutiveGetResultErrors >= MaxConsecutiveGetResultErrors {
+				h.log.Info("409 retry cap reached, regenerating session",
+					"sessionID", session.ID,
+					"cap", MaxConsecutiveGetResultErrors,
+				)
+				return h.handleSessionLost(ctx, analysis)
+			}
 			return ctrl.Result{RequeueAfter: h.sessionPollInterval}, nil
 		}
 	}

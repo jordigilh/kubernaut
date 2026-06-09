@@ -90,6 +90,9 @@ func (m *goldenPathAutoMgr) ForceTransitionToUserDriving(_ string, _ string, _ [
 	m.suspended = true
 	return nil
 }
+func (m *goldenPathAutoMgr) UpgradeToInteractive(_ string, _ string, _ []string) error {
+	return nil
+}
 
 func (m *goldenPathAutoMgr) FindPendingByRemediationID(_ string) (string, bool)         { return "", false }
 func (m *goldenPathAutoMgr) LaunchDeferredInvestigation(_ string) error                  { return nil }
@@ -102,6 +105,10 @@ func (m *goldenPathAutoMgr) StartInvestigation(_ context.Context, _ session.Inve
 }
 func (m *goldenPathAutoMgr) Subscribe(_ context.Context, _ string) (<-chan session.InvestigationEvent, error) {
 	return nil, fmt.Errorf("not implemented in golden path mock")
+}
+
+func (m *goldenPathAutoMgr) GetSessionLazySink(_ string) (*session.LazySink, bool) {
+	return nil, false
 }
 
 var _ = Describe("Golden Path Lifecycle — IT-KA-GOLDEN-001 BR-INTERACTIVE-001", func() {

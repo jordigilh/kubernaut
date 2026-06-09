@@ -232,10 +232,10 @@ func (c *Client) buildParams(req llm.ChatRequest) anthropic.MessageNewParams {
 				}
 				params.Messages = append(params.Messages,
 					anthropic.NewAssistantMessage(parts...))
-			} else {
-				params.Messages = append(params.Messages,
-					anthropic.NewAssistantMessage(anthropic.NewTextBlock(m.Content)))
-			}
+		} else if m.Content != "" {
+			params.Messages = append(params.Messages,
+				anthropic.NewAssistantMessage(anthropic.NewTextBlock(m.Content)))
+		}
 		case "tool":
 			pendingToolResults = append(pendingToolResults,
 				anthropic.NewToolResultBlock(m.ToolCallID, m.Content, false))

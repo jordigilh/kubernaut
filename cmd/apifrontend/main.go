@@ -535,9 +535,19 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 		Transport: kaMCPAuth,
 		Timeout:   cfg.Resilience.KA.RequestTimeout,
 	}
+	// #1386: Separate HTTP client for long-lived MCP sessions (SSE streams).
+	// Go's http.Client.Timeout is a deadline on the entire response including
+	// body reads. For persistent SSE connections, the 30s timeout kills the
+	// stream after idle periods, causing "session not found" on next tool call.
+	// The MCP SDK manages session lifecycle via context cancellation and
+	// session.Close(); no global timeout is needed.
+	kaMCPStreamClient := &http.Client{
+		Transport: kaMCPAuth,
+	}
 	mcpClient := ka.NewSDKMCPClient(
 		cfg.Agent.KAMCPEndpoint,
 		kaMCPHTTPClient,
+		kaMCPStreamClient,
 		logger,
 	)
 	mcpClient.WithDownstreamDuration(metricsReg.DownstreamDuration)
@@ -551,7 +561,7 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 		Factory: func(ctx context.Context) (ka.PoolSession, error) {
 			transport := &mcp.StreamableClientTransport{
 				Endpoint:   kaMCPEndpoint,
-				HTTPClient: kaMCPHTTPClient,
+				HTTPClient: kaMCPStreamClient,
 			}
 			return mcpClient.ConnectSession(ctx, transport)
 		},

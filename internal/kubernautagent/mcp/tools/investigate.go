@@ -103,6 +103,8 @@ type AutonomousSessionManager interface {
 	SuspendInvestigation(id string) error
 	TransitionToUserDriving(id, username string, groups []string) error
 	ForceTransitionToUserDriving(rrID, username string, groups []string) error
+	// #1390: Upgrade a running autonomous session to interactive in-place.
+	UpgradeToInteractive(id, username string, groups []string) error
 
 	// BR-INTERACTIVE-010: Find pending interactive session by remediation ID.
 	FindPendingByRemediationID(rrID string) (string, bool)
@@ -117,6 +119,8 @@ type AutonomousSessionManager interface {
 	StartInvestigation(ctx context.Context, fn session.InvestigateFunc, metadata map[string]string) (string, error)
 	// BR-MCP-003: Subscribe to the event channel for a running investigation, activating the LazySink.
 	Subscribe(ctx context.Context, id string) (<-chan session.InvestigationEvent, error)
+	// #1384: Get the LazySink for a session so workflow_discovery can stream events.
+	GetSessionLazySink(id string) (*session.LazySink, bool)
 }
 
 // RRExistenceChecker validates that a RemediationRequest exists before
@@ -149,6 +153,7 @@ func (NopAutonomousManager) CancelInvestigation(string) error                   
 func (NopAutonomousManager) SuspendInvestigation(string) error                           { return nil }
 func (NopAutonomousManager) TransitionToUserDriving(string, string, []string) error      { return nil }
 func (NopAutonomousManager) ForceTransitionToUserDriving(string, string, []string) error { return nil }
+func (NopAutonomousManager) UpgradeToInteractive(string, string, []string) error         { return nil }
 func (NopAutonomousManager) FindPendingByRemediationID(string) (string, bool)            { return "", false }
 func (NopAutonomousManager) LaunchDeferredInvestigation(string) error                    { return nil }
 func (NopAutonomousManager) GetLatestRCASummaryByRemediationID(string) (string, bool)    { return "", false }
@@ -161,6 +166,7 @@ func (NopAutonomousManager) StartInvestigation(context.Context, session.Investig
 func (NopAutonomousManager) Subscribe(context.Context, string) (<-chan session.InvestigationEvent, error) {
 	return nil, nil
 }
+func (NopAutonomousManager) GetSessionLazySink(string) (*session.LazySink, bool) { return nil, false }
 
 // InvestigateTool handles the kubernaut_investigate MCP tool actions:
 // start, message, complete, cancel, takeover, discover_workflows.
@@ -409,26 +415,27 @@ func (t *InvestigateTool) handleStart(ctx context.Context, input InvestigateInpu
 		}
 	}
 
-	// Transition any running autonomous session to user-driven mode so that
-	// complete_no_action / action:complete can find and close it via
-	// FindUserDrivingByRemediationID. Without this, the autonomous HTTP
-	// session keeps running after the MCP lease is released.
+	// #1390: Upgrade running autonomous session in-place (Jump In) instead of
+	// cancelling and recreating. UpgradeToInteractive sets the atomic flag so
+	// the goroutine's next InteractiveHold check sees it, and store.Update's
+	// deterministic check catches completion that already happened.
 	// Skip when we just launched a pending session — its RCA goroutine will
 	// self-transition via InteractiveHold once complete.
 	if !launchedPending {
 		autoSessionID, found := t.autoMgr.FindByRemediationID(input.RRID)
 		if found {
-			if transErr := t.autoMgr.TransitionToUserDriving(autoSessionID, user.Username, user.Groups); transErr != nil {
-				if errors.Is(transErr, session.ErrSessionTerminal) {
+			if upgradeErr := t.autoMgr.UpgradeToInteractive(autoSessionID, user.Username, user.Groups); upgradeErr != nil {
+				if errors.Is(upgradeErr, session.ErrSessionTerminal) {
 					if forceErr := t.autoMgr.ForceTransitionToUserDriving(input.RRID, user.Username, user.Groups); forceErr != nil {
-						t.logger.Error(forceErr, "start: force-transition to user-driving failed",
+						t.logger.Error(forceErr, "start: force-transition to user-driving failed (session terminal)",
 							"rr_id", input.RRID, "auto_session_id", autoSessionID)
 					}
 				} else {
-					t.logger.Error(transErr, "start: transition autonomous session to user-driving",
+					t.logger.Error(upgradeErr, "start: upgrade autonomous session to interactive",
 						"rr_id", input.RRID, "auto_session_id", autoSessionID)
 				}
 			}
+			investigationSessionID = autoSessionID
 		} else {
 			if forceErr := t.autoMgr.ForceTransitionToUserDriving(input.RRID, user.Username, user.Groups); forceErr != nil {
 				t.logger.Error(forceErr, "start: force-transition to user-driving (no running session found)",
@@ -860,7 +867,21 @@ func (t *InvestigateTool) handleDiscoverWorkflows(ctx context.Context, input Inv
 		}
 	}
 
-	// Step 3: Run Phase 3 workflow discovery using the structured RCA.
+	// Step 3: Enrich context with the HTTP investigation session so that
+	// workflow discovery can emit audit events with session_id and stream
+	// events to the subscriber (#1384: Bug A fix).
+	if t.httpCompleter != nil {
+		if httpSessionID, found := t.httpCompleter.FindUserDrivingByRemediationID(input.RRID); found {
+			ctx = session.WithSessionID(ctx, httpSessionID)
+			if ls, ok := t.autoMgr.GetSessionLazySink(httpSessionID); ok {
+				ctx = session.WithLazySink(ctx, ls)
+			}
+			t.logger.V(1).Info("discover_workflows: enriched context with HTTP session",
+				"rr_id", input.RRID, "http_session_id", httpSessionID)
+		}
+	}
+
+	// Step 4: Run Phase 3 workflow discovery using the structured RCA.
 	// The investigator resolves enrichment internally when its enricher is wired,
 	// falling back to nil when not available.
 	workflowResult, err := t.runner.RunWorkflowDiscovery(ctx, signal, rcaResult, nil, input.RRID)

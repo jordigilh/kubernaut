@@ -20,6 +20,7 @@ import (
 	"context"
 	"net/http"
 	"sync/atomic"
+	"time"
 
 	sharedauth "github.com/jordigilh/kubernaut/pkg/shared/auth"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -35,13 +36,17 @@ type MCPServer struct {
 // NewMCPServer creates a new MCP server instance configured for Kubernaut Agent
 // interactive mode. The server starts with zero tools; tools are registered
 // via RegisterTools before the handler is created.
-func NewMCPServer() *MCPServer {
+func NewMCPServer(keepAlive time.Duration) *MCPServer {
 	impl := &mcpsdk.Implementation{
 		Name:    "kubernaut-agent-interactive",
 		Version: "1.5.0",
 	}
 
-	server := mcpsdk.NewServer(impl, nil)
+	var opts *mcpsdk.ServerOptions
+	if keepAlive > 0 {
+		opts = &mcpsdk.ServerOptions{KeepAlive: keepAlive}
+	}
+	server := mcpsdk.NewServer(impl, opts)
 
 	return &MCPServer{
 		server: server,
@@ -84,6 +89,13 @@ type MCPDeps struct {
 	AuthMiddleware func(http.Handler) http.Handler
 	Tools          ToolDeps
 	EventStore     *DelegatingEventStore // nil = no stream resumption or disconnect detection
+
+	// KeepAlive is the server-side ping interval for MCP sessions (#1387).
+	// Zero means no keepalive pings.
+	KeepAlive time.Duration
+	// SessionTimeout auto-closes idle MCP HTTP sessions (#1387).
+	// Zero means never.
+	SessionTimeout time.Duration
 }
 
 // userFromContext extracts the authenticated user identity from the request
@@ -133,13 +145,17 @@ func BootstrapMCP(deps MCPDeps) (http.Handler, *MCPServer) {
 		panic("MCP interactive mode enabled but auth middleware is nil — refusing to start without authentication")
 	}
 
-	srv := NewMCPServer()
+	srv := NewMCPServer(deps.KeepAlive)
 	srv.registerTools(deps.Tools)
 
 	var opts *mcpsdk.StreamableHTTPOptions
-	if deps.EventStore != nil {
-		opts = &mcpsdk.StreamableHTTPOptions{
-			EventStore: deps.EventStore,
+	if deps.EventStore != nil || deps.SessionTimeout > 0 {
+		opts = &mcpsdk.StreamableHTTPOptions{}
+		if deps.EventStore != nil {
+			opts.EventStore = deps.EventStore
+		}
+		if deps.SessionTimeout > 0 {
+			opts.SessionTimeout = deps.SessionTimeout
 		}
 	}
 

@@ -111,16 +111,23 @@ var _ = Describe("Kubernaut Agent Session Manager Cancellation — #823 PR3", fu
 			err = manager.CancelInvestigation(id)
 			Expect(err).NotTo(HaveOccurred())
 
-			Eventually(func() bool {
-				_, open := <-ch
-				return !open
-			}, 2*time.Second, 10*time.Millisecond).Should(BeTrue(),
-				"event channel should be closed after investigation goroutine exits")
+		Eventually(func() bool {
+			_, open := <-ch
+			return !open
+		}, 2*time.Second, 10*time.Millisecond).Should(BeTrue(),
+			"event channel should be closed after cancel")
 
-			sess, gErr := manager.GetSession(id)
-			Expect(gErr).NotTo(HaveOccurred())
-			Expect(sess.Status).To(Equal(session.StatusCancelled))
-			Expect(sess.Result).NotTo(BeNil(), "partial result must be stored")
+		sess, gErr := manager.GetSession(id)
+		Expect(gErr).NotTo(HaveOccurred())
+		Expect(sess.Status).To(Equal(session.StatusCancelled))
+
+		// #1389: terminateSession closes the channel before the goroutine
+		// stores its partial result, so we must wait asynchronously.
+		Eventually(func() *katypes.InvestigationResult {
+			s, _ := manager.GetSession(id)
+			return s.Result
+		}, 2*time.Second, 10*time.Millisecond).ShouldNot(BeNil(),
+			"partial result must be stored")
 		})
 	})
 

@@ -21,16 +21,27 @@ import (
 )
 
 // capturingDSClient captures batches written by BufferedAuditStore for verification.
+// StoreBatch is called from the backgroundWriter goroutine; allEvents is called from
+// the test goroutine, so access to batches is protected by a mutex. StoreBatch copies
+// the incoming slice to avoid aliasing the backgroundWriter's reusable batch array
+// (batch[:0] reuse causes silent data corruption without the copy).
 type capturingDSClient struct {
+	mu      sync.Mutex
 	batches [][]*ogenclient.AuditEventRequest
 }
 
 func (c *capturingDSClient) StoreBatch(_ context.Context, events []*ogenclient.AuditEventRequest) error {
-	c.batches = append(c.batches, events)
+	copied := make([]*ogenclient.AuditEventRequest, len(events))
+	copy(copied, events)
+	c.mu.Lock()
+	c.batches = append(c.batches, copied)
+	c.mu.Unlock()
 	return nil
 }
 
 func (c *capturingDSClient) allEvents() []*ogenclient.AuditEventRequest {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	var all []*ogenclient.AuditEventRequest
 	for _, batch := range c.batches {
 		all = append(all, batch...)
