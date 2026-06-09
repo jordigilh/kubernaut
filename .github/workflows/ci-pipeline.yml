@@ -724,7 +724,7 @@ jobs:
             echo "⚠️  AppArmor rsyslog profile not found or already removed (non-fatal)"
           fi
       - name: Run ${{ matrix.service }} E2E tests
-        uses: nick-fields/retry@v3
+        uses: nick-fields/retry@v4
         with:
           timeout_minutes: ${{ matrix.timeout }}
           max_attempts: 3
