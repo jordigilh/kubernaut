@@ -104,6 +104,10 @@ func (m *goldenPathAutoMgr) Subscribe(_ context.Context, _ string) (<-chan sessi
 	return nil, fmt.Errorf("not implemented in golden path mock")
 }
 
+func (m *goldenPathAutoMgr) GetSessionLazySink(_ string) (*session.LazySink, bool) {
+	return nil, false
+}
+
 var _ = Describe("Golden Path Lifecycle — IT-KA-GOLDEN-001 BR-INTERACTIVE-001", func() {
 	var (
 		tool    *mcptools.InvestigateTool

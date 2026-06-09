@@ -121,6 +121,10 @@ func (m *mockAutoMgrIT) GetLatestRCAResultByRemediationID(rrID string) (*katypes
 	return m.mgr.GetLatestRCAResultByRemediationID(rrID)
 }
 
+func (m *mockAutoMgrIT) GetSessionLazySink(id string) (*session.LazySink, bool) {
+	return m.mgr.GetSessionLazySink(id)
+}
+
 var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", func() {
 
 	Describe("IT-KA-TAKE-001: Takeover mid-LLM-turn — autonomous transitions to user_driving", func() {
