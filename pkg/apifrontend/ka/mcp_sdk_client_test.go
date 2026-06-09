@@ -75,7 +75,7 @@ var _ = Describe("SDKMCPClient", func() {
 			})
 
 			httpClient := &http.Client{Transport: &authedRoundTripper{user: "alice@example.com"}}
-			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, logr.Discard())
+			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, nil, logr.Discard())
 
 			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
 				Username: "alice@example.com",
@@ -130,7 +130,7 @@ var _ = Describe("SDKMCPClient", func() {
 			ts = httptest.NewServer(mux)
 
 			httpClient := &http.Client{Transport: &auth.ContextJWTDelegationTransport{}}
-			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, logr.Discard())
+			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, nil, logr.Discard())
 
 			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
 				Username: "bob@example.com",
@@ -156,7 +156,7 @@ var _ = Describe("SDKMCPClient", func() {
 			})
 
 			httpClient := &http.Client{Transport: &authedRoundTripper{user: ""}}
-			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, logr.Discard())
+			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, nil, logr.Discard())
 
 			_, err := client.SelectWorkflow(context.Background(), ka.SelectWorkflowArgs{
 				RRID:       "rr-test-002",
@@ -182,7 +182,7 @@ var _ = Describe("SDKMCPClient", func() {
 			})
 
 			httpClient := &http.Client{Transport: &authedRoundTripper{user: "alice@example.com"}}
-			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, logr.Discard())
+			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, nil, logr.Discard())
 
 			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
 				Username: "alice@example.com",
@@ -210,7 +210,7 @@ var _ = Describe("SDKMCPClient", func() {
 			})
 
 			httpClient := &http.Client{Transport: &authedRoundTripper{user: "alice@example.com"}}
-			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, logr.Discard())
+			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, nil, logr.Discard())
 
 			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
 				Username: "alice@example.com",
@@ -235,7 +235,7 @@ var _ = Describe("SDKMCPClient", func() {
 			})
 
 			httpClient := &http.Client{Transport: &authedRoundTripper{user: "alice@example.com"}}
-			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, logr.Discard())
+			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, nil, logr.Discard())
 
 			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
 				Username: "alice@example.com",
@@ -261,7 +261,7 @@ var _ = Describe("SDKMCPClient", func() {
 			})
 
 			httpClient := &http.Client{Transport: &authedRoundTripper{user: "alice@example.com"}}
-			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, logr.Discard())
+			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, nil, logr.Discard())
 
 			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
 				Username: "alice@example.com",
@@ -284,7 +284,7 @@ var _ = Describe("SDKMCPClient", func() {
 			})
 
 			httpClient := &http.Client{Transport: &authedRoundTripper{user: "alice@example.com"}}
-			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, logr.Discard())
+			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, nil, logr.Discard())
 
 			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
 				Username: "alice@example.com",
@@ -310,7 +310,7 @@ var _ = Describe("SDKMCPClient", func() {
 			})
 
 			httpClient := &http.Client{Transport: &authedRoundTripper{user: "alice@example.com"}}
-			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, logr.Discard())
+			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, nil, logr.Discard())
 
 			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
 				Username: "alice@example.com",
@@ -340,7 +340,7 @@ var _ = Describe("SDKMCPClient", func() {
 			})
 
 			httpClient := &http.Client{Transport: &authedRoundTripper{user: "alice@example.com"}}
-			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, logr.Discard())
+			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, nil, logr.Discard())
 
 			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
 				Username: "alice@example.com",
@@ -373,7 +373,7 @@ var _ = Describe("SDKMCPClient", func() {
 			})
 
 			httpClient := &http.Client{Transport: &authedRoundTripper{user: "alice@example.com"}}
-			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, logr.Discard())
+			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, nil, logr.Discard())
 
 			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
 				Username: "alice@example.com",
@@ -403,7 +403,7 @@ var _ = Describe("SDKMCPClient", func() {
 			})
 
 			httpClient := &http.Client{Transport: &authedRoundTripper{user: "bob@example.com"}}
-			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, logr.Discard())
+			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, nil, logr.Discard())
 
 			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
 				Username: "bob@example.com",
@@ -436,7 +436,7 @@ var _ = Describe("SDKMCPClient", func() {
 			})
 
 			httpClient := &http.Client{Transport: &authedRoundTripper{user: "alice@example.com"}}
-			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, logr.Discard())
+			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, nil, logr.Discard())
 
 			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
 				Username: "alice@example.com",
@@ -468,7 +468,7 @@ var _ = Describe("SDKMCPClient", func() {
 			})
 
 			httpClient := &http.Client{Transport: &authedRoundTripper{user: "bob@example.com"}}
-			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, logr.Discard())
+			client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, nil, logr.Discard())
 
 			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
 				Username: "bob@example.com",

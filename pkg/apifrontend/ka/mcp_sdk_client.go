@@ -26,12 +26,11 @@ type SDKMCPClient struct {
 	endpoint           string
 	client             *mcp.Client
 	httpClient         *http.Client
+	streamHTTPClient   *http.Client
 	logger             logr.Logger
 	downstreamDuration *prometheus.HistogramVec
 }
 
-// NewSDKMCPClient creates a new MCP client for KA communication.
-// The httpClient should include auth transport (e.g., bearerTokenTransport for SA token).
 // WithDownstreamDuration injects the af_downstream_request_duration_seconds
 // histogram for MCP call latency instrumentation (G18).
 func (c *SDKMCPClient) WithDownstreamDuration(h *prometheus.HistogramVec) *SDKMCPClient {
@@ -39,17 +38,27 @@ func (c *SDKMCPClient) WithDownstreamDuration(h *prometheus.HistogramVec) *SDKMC
 	return c
 }
 
-func NewSDKMCPClient(endpoint string, httpClient *http.Client, logger logr.Logger) *SDKMCPClient {
+// NewSDKMCPClient creates a new MCP client for KA communication.
+// httpClient (with timeout) is used for short-lived session-per-call tool invocations.
+// streamHTTPClient (no timeout) is used for long-lived MCP sessions
+// (StartInvestigation, ConnectSession) where SSE streams must survive idle periods.
+// If streamHTTPClient is nil, httpClient is used for all connections.
+func NewSDKMCPClient(endpoint string, httpClient *http.Client, streamHTTPClient *http.Client, logger logr.Logger) *SDKMCPClient {
 	mcpClient := mcp.NewClient(&mcp.Implementation{
 		Name:    "kubernaut-apifrontend",
 		Version: "0.1.0",
 	}, nil)
 
+	if streamHTTPClient == nil {
+		streamHTTPClient = httpClient
+	}
+
 	return &SDKMCPClient{
-		endpoint:   endpoint,
-		client:     mcpClient,
-		httpClient: httpClient,
-		logger:     logger.WithName("ka-mcp"),
+		endpoint:         endpoint,
+		client:           mcpClient,
+		httpClient:       httpClient,
+		streamHTTPClient: streamHTTPClient,
+		logger:           logger.WithName("ka-mcp"),
 	}
 }
 
@@ -279,7 +288,7 @@ func (c *SDKMCPClient) StartInvestigation(ctx context.Context, args StartInvesti
 
 	transport := &mcp.StreamableClientTransport{
 		Endpoint:   c.endpoint,
-		HTTPClient: c.httpClient,
+		HTTPClient: c.streamHTTPClient,
 	}
 
 	// Use a detached context for the MCP session so its lifetime is not tied
