@@ -165,6 +165,7 @@ func (m *Manager) launchInvestigation(ctx context.Context, id string, fn Investi
 	sess := m.store.sessions[id]
 	sess.cancel = cancelFn
 	sess.lazySink = ls
+	bgCtx = WithInteractiveUpgrade(bgCtx, sess.interactiveUpgrade)
 	m.logger.Info("launchInvestigation: LazySink attached to session",
 		"session_id", id,
 		"status", string(sess.Status),
@@ -318,6 +319,47 @@ func (m *Manager) LaunchDeferredInvestigation(id string) error {
 
 	_, err := m.launchInvestigation(context.Background(), id, fn, correlationID, signalName, severity, startExtra)
 	return err
+}
+
+// UpgradeToInteractive sets the interactive upgrade flag on a running session
+// without cancelling its goroutine. The background goroutine reads this flag
+// via InteractiveUpgradeFromContext to decide InteractiveHold. The store-level
+// mutex serialization in Update() guarantees a deterministic outcome (#1390).
+// Returns ErrSessionNotFound or ErrSessionTerminal on invalid state.
+func (m *Manager) UpgradeToInteractive(id string, username string, groups []string) error {
+	m.store.mu.Lock()
+	sess, ok := m.store.sessions[id]
+	if !ok {
+		m.store.mu.Unlock()
+		return ErrSessionNotFound
+	}
+	if IsTerminal(sess.Status) || sess.Status == StatusUserDriving {
+		m.store.mu.Unlock()
+		return ErrSessionTerminal
+	}
+	sess.interactiveUpgrade.Store(true)
+	if sess.Metadata == nil {
+		sess.Metadata = make(map[string]string)
+	}
+	sess.Metadata["acting_user"] = username
+	if len(groups) > 0 {
+		groupsJSON, _ := json.Marshal(groups)
+		sess.Metadata["acting_user_groups"] = string(groupsJSON)
+	}
+	correlationID := sess.Metadata["remediation_id"]
+	m.store.mu.Unlock()
+
+	m.logger.Info("session upgraded to interactive in-place",
+		"session_id", id,
+		"acting_user", username,
+		"remediation_id", correlationID)
+
+	m.emitSessionEvent(context.Background(),
+		audit.EventTypeSessionSuspended, audit.ActionSessionSuspended,
+		audit.OutcomeSuccess, id, correlationID, nil,
+		"acting_user", username, "upgrade_type", "jump_in")
+
+	return nil
 }
 
 // CancelInvestigation stops a running investigation by cancelling its context

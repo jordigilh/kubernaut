@@ -18,6 +18,7 @@ package session_test
 
 import (
 	"context"
+	"sync/atomic"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -80,6 +81,32 @@ var _ = Describe("Session ID Context Helpers — BR-AUDIT-070", func() {
 
 			Expect(session.SessionIDFromContext(ctx)).To(Equal("sess-coexist"))
 			Expect(session.EventSinkFromContext(ctx)).NotTo(BeNil())
+		})
+	})
+})
+
+var _ = Describe("Interactive Upgrade Context Helpers — #1390", func() {
+
+	Describe("UT-KA-1390-005 [SC-24]: InteractiveUpgradeFromContext returns false when no flag in context", func() {
+		It("returns false without panic on a plain context", func() {
+			ctx := context.Background()
+			Expect(session.InteractiveUpgradeFromContext(ctx)).To(BeFalse(),
+				"no upgrade flag attached — must return false")
+		})
+	})
+
+	Describe("UT-KA-1390-006 [SC-24]: InteractiveUpgradeFromContext reads true after Store(true) on atomic", func() {
+		It("returns true after a concurrent Store(true) on the shared atomic.Bool", func() {
+			flag := &atomic.Bool{}
+			ctx := session.WithInteractiveUpgrade(context.Background(), flag)
+
+			Expect(session.InteractiveUpgradeFromContext(ctx)).To(BeFalse(),
+				"before Store(true), must return false")
+
+			flag.Store(true)
+
+			Expect(session.InteractiveUpgradeFromContext(ctx)).To(BeTrue(),
+				"after Store(true), must return true via shared pointer")
 		})
 	})
 })

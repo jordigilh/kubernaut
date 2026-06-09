@@ -105,6 +105,10 @@ func (m *mockAutoMgrIT) ForceTransitionToUserDriving(rrID, username string, grou
 	return m.mgr.ForceTransitionToUserDriving(rrID, username, groups)
 }
 
+func (m *mockAutoMgrIT) UpgradeToInteractive(id, username string, groups []string) error {
+	return m.mgr.UpgradeToInteractive(id, username, groups)
+}
+
 func (m *mockAutoMgrIT) FindPendingByRemediationID(rrID string) (string, bool) {
 	return m.mgr.FindPendingByRemediationID(rrID)
 }

@@ -90,6 +90,9 @@ func (m *goldenPathAutoMgr) ForceTransitionToUserDriving(_ string, _ string, _ [
 	m.suspended = true
 	return nil
 }
+func (m *goldenPathAutoMgr) UpgradeToInteractive(_ string, _ string, _ []string) error {
+	return nil
+}
 
 func (m *goldenPathAutoMgr) FindPendingByRemediationID(_ string) (string, bool)         { return "", false }
 func (m *goldenPathAutoMgr) LaunchDeferredInvestigation(_ string) error                  { return nil }

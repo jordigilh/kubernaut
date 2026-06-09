@@ -98,6 +98,9 @@ func (m *takeoverAutoMgr) TransitionToUserDriving(_ string, _ string, _ []string
 func (m *takeoverAutoMgr) ForceTransitionToUserDriving(_ string, _ string, _ []string) error {
 	return nil
 }
+func (m *takeoverAutoMgr) UpgradeToInteractive(_ string, _ string, _ []string) error {
+	return nil
+}
 
 func (m *takeoverAutoMgr) FindPendingByRemediationID(_ string) (string, bool)         { return "", false }
 func (m *takeoverAutoMgr) LaunchDeferredInvestigation(_ string) error                  { return nil }

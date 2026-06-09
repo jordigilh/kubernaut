@@ -19,6 +19,7 @@ package session
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 )
 
 type eventSinkKey struct{}
@@ -100,4 +101,23 @@ func ActingUserFromContext(ctx context.Context) string {
 		return v
 	}
 	return ""
+}
+
+type interactiveUpgradeKey struct{}
+
+// WithInteractiveUpgrade returns a derived context carrying the interactive
+// upgrade atomic flag. The investigator goroutine checks this flag to decide
+// whether to set InteractiveHold=true on the result (BR-INTERACTIVE-004, #1390).
+func WithInteractiveUpgrade(ctx context.Context, flag *atomic.Bool) context.Context {
+	return context.WithValue(ctx, interactiveUpgradeKey{}, flag)
+}
+
+// InteractiveUpgradeFromContext reads the interactive upgrade flag from ctx.
+// Returns false if no flag was attached or the flag is false.
+func InteractiveUpgradeFromContext(ctx context.Context) bool {
+	flag, ok := ctx.Value(interactiveUpgradeKey{}).(*atomic.Bool)
+	if !ok || flag == nil {
+		return false
+	}
+	return flag.Load()
 }

@@ -49,8 +49,11 @@ func (m *interactiveAutoMgr) FindByRemediationID(_ string) (string, bool) {
 	return m.findResult, m.findOK
 }
 
-func (m *interactiveAutoMgr) CancelInvestigation(_ string) error { return nil }
+func (m *interactiveAutoMgr) CancelInvestigation(_ string) error  { return nil }
 func (m *interactiveAutoMgr) SuspendInvestigation(_ string) error { return nil }
+func (m *interactiveAutoMgr) UpgradeToInteractive(_ string, _ string, _ []string) error {
+	return nil
+}
 
 func (m *interactiveAutoMgr) TransitionToUserDriving(_ string, _ string, _ []string) error {
 	m.transitionCalled.Add(1)
@@ -256,3 +259,108 @@ var _ = Describe("BR-INTERACTIVE-010: handleStart with pending interactive sessi
 		})
 	})
 })
+
+var _ = Describe("Fix #1390: handleStart upgrade wiring — BR-INTERACTIVE-004", func() {
+
+	Describe("UT-KA-1390-012 [SC-24]: handleStart calls UpgradeToInteractive (not TransitionToUserDriving) for running sessions", func() {
+		It("should call UpgradeToInteractive instead of TransitionToUserDriving for running auto sessions", func() {
+			sessionMgr := &mockSessionManager{
+				takeoverSession: &mcpinternal.InteractiveSession{
+					SessionID:     "lease-sess-012",
+					CorrelationID: "rr-upgrade-012",
+				},
+			}
+			autoMgr := &upgradeTrackingAutoMgr{
+				findResult: "http-auto-sess-012",
+				findOK:     true,
+			}
+			runner := &mockInvestigatorRunner{}
+			recon := &mockContextReconstructor{turns: []mcpinternal.ConversationTurn{}}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, autoMgr)
+			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-upgrade-012",
+				Action: mcptools.ActionStart,
+			}, mcpinternal.UserInfo{Username: "alice", Groups: []string{"sre"}})
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(autoMgr.upgradeCalled.Load()).To(Equal(int32(1)),
+				"UpgradeToInteractive must be called once for running session")
+			Expect(autoMgr.transitionCalled.Load()).To(Equal(int32(0)),
+				"TransitionToUserDriving must NOT be called — replaced by UpgradeToInteractive")
+		})
+	})
+
+	Describe("UT-KA-1390-013 [SI-4]: handleStart sets InvestigationSessionID for running sessions (enables EventLogBridge)", func() {
+		It("should populate InvestigationSessionID with the auto session ID", func() {
+			sessionMgr := &mockSessionManager{
+				takeoverSession: &mcpinternal.InteractiveSession{
+					SessionID:     "lease-sess-013",
+					CorrelationID: "rr-upgrade-013",
+				},
+			}
+			autoMgr := &upgradeTrackingAutoMgr{
+				findResult: "http-auto-sess-013",
+				findOK:     true,
+			}
+			runner := &mockInvestigatorRunner{}
+			recon := &mockContextReconstructor{turns: []mcpinternal.ConversationTurn{}}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, autoMgr)
+			out, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-upgrade-013",
+				Action: mcptools.ActionStart,
+			}, mcpinternal.UserInfo{Username: "bob"})
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(out.InvestigationSessionID).To(Equal("http-auto-sess-013"),
+				"InvestigationSessionID must be set to enable EventLogBridge for upgraded sessions")
+		})
+	})
+})
+
+// upgradeTrackingAutoMgr tracks calls to UpgradeToInteractive vs TransitionToUserDriving.
+type upgradeTrackingAutoMgr struct {
+	findResult       string
+	findOK           bool
+	upgradeCalled    atomic.Int32
+	upgradeErr       error
+	transitionCalled atomic.Int32
+	transitionErr    error
+}
+
+func (m *upgradeTrackingAutoMgr) FindByRemediationID(_ string) (string, bool) {
+	return m.findResult, m.findOK
+}
+func (m *upgradeTrackingAutoMgr) CancelInvestigation(_ string) error  { return nil }
+func (m *upgradeTrackingAutoMgr) SuspendInvestigation(_ string) error { return nil }
+func (m *upgradeTrackingAutoMgr) TransitionToUserDriving(_ string, _ string, _ []string) error {
+	m.transitionCalled.Add(1)
+	return m.transitionErr
+}
+func (m *upgradeTrackingAutoMgr) ForceTransitionToUserDriving(_ string, _ string, _ []string) error {
+	return nil
+}
+func (m *upgradeTrackingAutoMgr) UpgradeToInteractive(_ string, _ string, _ []string) error {
+	m.upgradeCalled.Add(1)
+	return m.upgradeErr
+}
+func (m *upgradeTrackingAutoMgr) FindPendingByRemediationID(_ string) (string, bool) {
+	return "", false
+}
+func (m *upgradeTrackingAutoMgr) LaunchDeferredInvestigation(_ string) error { return nil }
+func (m *upgradeTrackingAutoMgr) GetLatestRCASummaryByRemediationID(_ string) (string, bool) {
+	return "", false
+}
+func (m *upgradeTrackingAutoMgr) GetLatestRCAResultByRemediationID(_ string) (*katypes.InvestigationResult, bool) {
+	return nil, false
+}
+func (m *upgradeTrackingAutoMgr) StartInvestigation(_ context.Context, _ session.InvestigateFunc, _ map[string]string) (string, error) {
+	return "", nil
+}
+func (m *upgradeTrackingAutoMgr) Subscribe(_ context.Context, _ string) (<-chan session.InvestigationEvent, error) {
+	return nil, nil
+}
+func (m *upgradeTrackingAutoMgr) GetSessionLazySink(_ string) (*session.LazySink, bool) {
+	return nil, false
+}

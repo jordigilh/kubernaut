@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -64,6 +65,11 @@ type Session struct {
 	cancel    context.CancelFunc
 	eventChan chan InvestigationEvent
 	lazySink  *LazySink
+
+	// interactiveUpgrade is set by UpgradeToInteractive under store.mu.
+	// Checked by store.Update under the same lock to guarantee deterministic
+	// upgrade when the goroutine completes (#1390).
+	interactiveUpgrade *atomic.Bool
 
 	// deferredFn holds the investigation function for interactive sessions
 	// created in pending state (BR-INTERACTIVE-010). Consumed by
@@ -139,10 +145,11 @@ func NewStore(ttl time.Duration, opts ...StoreOption) *Store {
 func (s *Store) Create() (string, error) {
 	id := uuid.New().String()
 	sess := &Session{
-		ID:        id,
-		Status:    StatusPending,
-		CreatedAt: time.Now(),
-		lazySink:  &LazySink{},
+		ID:                 id,
+		Status:             StatusPending,
+		CreatedAt:          time.Now(),
+		lazySink:           &LazySink{},
+		interactiveUpgrade: &atomic.Bool{},
 	}
 	s.mu.Lock()
 	if s.maxConcurrent > 0 {
@@ -210,6 +217,11 @@ func IsTerminal(st Status) bool {
 	return st == StatusCompleted || st == StatusFailed || st == StatusCancelled
 }
 
+// IsTerminal reports whether this status represents a final state.
+func (st Status) IsTerminal() bool {
+	return IsTerminal(st)
+}
+
 // SetMetadata stores request-level metadata on an existing session.
 // Deprecated: Use SetContext for typed access. Retained for backward compatibility.
 func (s *Store) SetMetadata(id string, metadata map[string]string) {
@@ -231,6 +243,11 @@ func (s *Store) SetContext(id string, ctx SessionContext) {
 
 // Update modifies an existing session. Returns ErrSessionTerminal if the
 // session has already reached a terminal state (completed, cancelled, failed).
+//
+// Deterministic upgrade (#1390): if the goroutine completes with StatusCompleted
+// but UpgradeToInteractive has set interactiveUpgrade=true (under this same mu),
+// the status is forced to StatusUserDriving and result.InteractiveHold is set.
+// This serialization eliminates the race between upgrade and completion.
 func (s *Store) Update(id string, status Status, result *katypes.InvestigationResult, err error) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -240,6 +257,12 @@ func (s *Store) Update(id string, status Status, result *katypes.InvestigationRe
 	}
 	if IsTerminal(sess.Status) || sess.Status == StatusUserDriving {
 		return ErrSessionTerminal
+	}
+	if status == StatusCompleted && sess.interactiveUpgrade != nil && sess.interactiveUpgrade.Load() {
+		status = StatusUserDriving
+		if result != nil {
+			result.InteractiveHold = true
+		}
 	}
 	sess.Status = status
 	sess.Result = result
