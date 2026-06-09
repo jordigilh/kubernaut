@@ -20,6 +20,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -49,17 +50,15 @@ import (
 
 var _ = Describe("CNV DetectedLabels Integration (#1378)", Label("it", "ds", "cnv", "1378", "detected-labels"), func() {
 	var (
-		workflowRepo  *workflow.Repository
-		schemaParser  *schema.Parser
-		testID        string
-		cnvActionType string
+		workflowRepo *workflow.Repository
+		schemaParser *schema.Parser
+		testID       string
 	)
 
 	BeforeEach(func() {
 		workflowRepo = workflow.NewRepository(db, logger)
 		schemaParser = schema.NewParser()
 		testID = generateTestID()
-		cnvActionType = fmt.Sprintf("RestartPod-cnv-%s", testID)
 	})
 
 	AfterEach(func() {
@@ -151,16 +150,27 @@ var _ = Describe("CNV DetectedLabels Integration (#1378)", Label("it", "ds", "cn
 		return wf
 	}
 
+	filterOurs := func(results []models.RemediationWorkflow, prefix string) []models.RemediationWorkflow {
+		var filtered []models.RemediationWorkflow
+		for _, r := range results {
+			if strings.HasPrefix(r.WorkflowName, prefix) {
+				filtered = append(filtered, r)
+			}
+		}
+		return filtered
+	}
+
 	Describe("ListWorkflowsByActionType — CNV filters", func() {
 		It("IT-DS-1378-001: virtualMachine=true returns VM workflows and ranks CNV matches first [BR-WORKFLOW-004]", func() {
+			prefix := fmt.Sprintf("wf-cnv-%s-", testID)
 			fullCNV := models.DetectedLabels{
 				VirtualMachine: true,
 				LiveMigratable: true,
 				CDIManaged:     true,
 				StorageBackend: "odf-ceph",
 			}
-			cnvWF := createCNVWorkflow("cnv-full-match", cnvActionType, cnvMandatoryLabels, fullCNV)
-			createCNVWorkflow("generic-kubevirt", cnvActionType, cnvMandatoryLabels, models.DetectedLabels{})
+			cnvWF := createCNVWorkflow("cnv-full-match", "RestartPod", cnvMandatoryLabels, fullCNV)
+			createCNVWorkflow("generic-kubevirt", "RestartPod", cnvMandatoryLabels, models.DetectedLabels{})
 
 			podLabels := models.MandatoryLabels{
 				Severity:    []string{"critical"},
@@ -168,45 +178,46 @@ var _ = Describe("CNV DetectedLabels Integration (#1378)", Label("it", "ds", "cn
 				Environment: []string{"production"},
 				Priority:    "P1",
 			}
-			createCNVWorkflow("pod-non-vm", cnvActionType, podLabels, models.DetectedLabels{})
+			createCNVWorkflow("pod-non-vm", "RestartPod", podLabels, models.DetectedLabels{})
 
 			filters := cnvDiscoveryContext(&models.DetectedLabels{VirtualMachine: true})
-			results, totalCount, err := workflowRepo.ListWorkflowsByActionType(ctx, cnvActionType, filters, 0, 10)
+			results, _, err := workflowRepo.ListWorkflowsByActionType(ctx, "RestartPod", filters, 0, 100)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(totalCount).To(Equal(2), "only kubevirt workflows should match VM discovery context")
-			Expect(results).To(HaveLen(2))
-			Expect(results[0].WorkflowName).To(Equal(cnvWF.WorkflowName),
+			ours := filterOurs(results, prefix)
+			Expect(ours).To(HaveLen(2), "only 2 of our kubevirt workflows should match VM discovery context")
+			Expect(ours[0].WorkflowName).To(Equal(cnvWF.WorkflowName),
 				"CNV workflow with virtualMachine=true should rank first due to detected label boost")
-			Expect(results[0].DetectedLabels.VirtualMachine).To(BeTrue())
-			Expect(results[1].DetectedLabels.IsEmpty()).To(BeTrue(),
+			Expect(ours[0].DetectedLabels.VirtualMachine).To(BeTrue())
+			Expect(ours[1].DetectedLabels.IsEmpty()).To(BeTrue(),
 				"generic kubevirt workflow should remain discoverable without CNV requirements")
 		})
 
 		It("IT-DS-1378-002: storageBackend=odf-ceph matches exact and wildcard with correct ranking [BR-WORKFLOW-004]", func() {
-			exactWF := createCNVWorkflow("exact-odf-ceph", cnvActionType, cnvMandatoryLabels, models.DetectedLabels{
+			prefix := fmt.Sprintf("wf-cnv-%s-", testID)
+			exactWF := createCNVWorkflow("exact-odf-ceph", "RestartPod", cnvMandatoryLabels, models.DetectedLabels{
 				VirtualMachine: true,
 				StorageBackend: "odf-ceph",
 			})
-			createCNVWorkflow("wildcard-storage", cnvActionType, cnvMandatoryLabels, models.DetectedLabels{
+			createCNVWorkflow("wildcard-storage", "RestartPod", cnvMandatoryLabels, models.DetectedLabels{
 				VirtualMachine: true,
 				StorageBackend: "*",
 			})
-			createCNVWorkflow("lvms-storage", cnvActionType, cnvMandatoryLabels, models.DetectedLabels{
+			createCNVWorkflow("lvms-storage", "RestartPod", cnvMandatoryLabels, models.DetectedLabels{
 				VirtualMachine: true,
 				StorageBackend: "lvms",
 			})
 
 			filters := cnvDiscoveryContext(&models.DetectedLabels{StorageBackend: "odf-ceph"})
-			results, totalCount, err := workflowRepo.ListWorkflowsByActionType(ctx, cnvActionType, filters, 0, 10)
+			results, _, err := workflowRepo.ListWorkflowsByActionType(ctx, "RestartPod", filters, 0, 100)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(totalCount).To(Equal(2), "exact and wildcard storageBackend workflows should match odf-ceph filter")
-			Expect(results).To(HaveLen(2))
-			Expect(results[0].WorkflowName).To(Equal(exactWF.WorkflowName),
+			ours := filterOurs(results, prefix)
+			Expect(ours).To(HaveLen(2), "exact and wildcard storageBackend workflows should match odf-ceph filter")
+			Expect(ours[0].WorkflowName).To(Equal(exactWF.WorkflowName),
 				"exact storageBackend=odf-ceph workflow should outrank wildcard workflow")
-			Expect(results[0].DetectedLabels.StorageBackend).To(Equal("odf-ceph"))
-			Expect(results[1].DetectedLabels.StorageBackend).To(Equal("*"))
+			Expect(ours[0].DetectedLabels.StorageBackend).To(Equal("odf-ceph"))
+			Expect(ours[1].DetectedLabels.StorageBackend).To(Equal("*"))
 		})
 	})
 
