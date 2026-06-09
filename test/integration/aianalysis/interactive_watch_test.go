@@ -187,7 +187,7 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			}
 		})
 
-		It("IT-AA-1293-002: should cancel autonomous session when Active IS is created", func() {
+		It("IT-AA-1293-002: should upgrade autonomous session in-place when Active IS is created (#1390)", func() {
 			rrName := helpers.UniqueTestName("rr-watch-create")
 			sessionID := "session-autonomous-001"
 			analysisName := helpers.UniqueTestName("aa-watch-create")
@@ -202,12 +202,16 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			By("creating Active InvestigationSession for the same RR")
 			createActiveIS(helpers.UniqueTestName("is-watch-create"), rrName)
 
-			By("verifying IS watch triggered cancel and cleared session ID for re-submit")
+			By("verifying IS watch triggered upgrade: Interactive=true, no cancel, session ID preserved")
 			Eventually(func(g Gomega) {
 				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
 				g.Expect(analysis.Status.KASession).NotTo(BeNil())
-				g.Expect(mockClient.GetCancelCallCount()).To(BeNumerically(">=", 1),
-					"CancelSession should be called when IS appears for autonomous session")
+				g.Expect(analysis.Status.KASession.Interactive).To(BeTrue(),
+					"Interactive flag must be set by upgrade path")
+				g.Expect(analysis.Status.KASession.ID).To(Equal(sessionID),
+					"session ID must be preserved — upgrade in-place, no cancel")
+				g.Expect(mockClient.GetCancelCallCount()).To(Equal(0),
+					"CancelSession must NOT be called — #1390 upgrade replaces cancel")
 			}, timeout, interval).Should(Succeed())
 		})
 
@@ -273,23 +277,12 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			}
 		})
 
-		It("IT-AA-1293-004: should cancel autonomous session and re-submit with interactive=true on takeover [BR-INTERACTIVE-010]", func() {
+		It("IT-AA-1293-004: should upgrade autonomous session in-place with Interactive=true and SetActivePhase (#1390) [BR-INTERACTIVE-010]", func() {
 			rrName := helpers.UniqueTestName("rr-takeover")
-			oldSessionID := "session-autonomous-old"
-			newSessionID := "session-interactive-new"
+			sessionID := "session-autonomous-upgrade"
 			analysisName := helpers.UniqueTestName("aa-takeover")
 
-			submitCount := 0
-			var submitMu sync.Mutex
-			mockClient.SubmitInvestigationFunc = func(_ context.Context, req *agentclient.IncidentRequest) (string, error) {
-				submitMu.Lock()
-				defer submitMu.Unlock()
-				submitCount++
-				mockClient.LastRequest = req
-				return newSessionID, nil
-			}
-
-			analysis := createInvestigatingAA(analysisName, rrName, oldSessionID, false)
+			analysis := createInvestigatingAA(analysisName, rrName, sessionID, false)
 
 			By("waiting for controller to start polling (proves reconcile loop is active)")
 			Eventually(func() int {
@@ -299,25 +292,108 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			By("creating Active InvestigationSession mid-investigation")
 			createActiveIS(helpers.UniqueTestName("is-takeover"), rrName)
 
-			By("verifying cancel + re-submit with interactive=true")
+			By("verifying upgrade in-place: Interactive=true, no cancel, session ID preserved")
 			Eventually(func(g Gomega) {
 				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
-				g.Expect(mockClient.GetCancelCallCount()).To(BeNumerically(">=", 1))
-
-				submitMu.Lock()
-				sc := submitCount
-				submitMu.Unlock()
-				g.Expect(sc).To(BeNumerically(">=", 1))
-
 				g.Expect(analysis.Status.KASession).NotTo(BeNil())
-				g.Expect(analysis.Status.KASession.ID).To(Equal(newSessionID))
-				g.Expect(analysis.Status.KASession.Interactive).To(BeTrue())
-				lastReq := mockClient.GetLastRequest()
-				g.Expect(lastReq).NotTo(BeNil())
-				interactive, ok := lastReq.Interactive.Get()
-				g.Expect(ok).To(BeTrue())
-				g.Expect(interactive).To(BeTrue())
+				g.Expect(analysis.Status.KASession.Interactive).To(BeTrue(),
+					"Interactive flag must be set by upgrade path")
+				g.Expect(analysis.Status.KASession.ID).To(Equal(sessionID),
+					"session ID must be preserved — no cancel/resubmit in #1390")
+				g.Expect(mockClient.GetCancelCallCount()).To(Equal(0),
+					"CancelSession must NOT be called — upgrade in-place replaces cancel")
 			}, timeout, interval).Should(Succeed())
+		})
+	})
+
+	// IT-AA-1390-W04: AA upgrade path (no cancel) wiring through envtest reconcile loop.
+	// Proves that when IS appears for an autonomous session, the handler sets Interactive=true
+	// and calls SetActivePhase instead of cancelling and resubmitting.
+	Context("#1390: AA upgrade-in-place wiring through reconcile loop", Serial, func() {
+		var (
+			savedHandler *handlers.InvestigatingHandler
+			mockClient   *mocks.MockAgentClient
+		)
+
+		swapMockHandlerWithUpgrade := func() {
+			savedHandler = reconciler.InvestigatingHandler.Load()
+			mockClient = mocks.NewMockAgentClient()
+			mockClient.WithSessionPollStatus("investigating")
+
+			auditClient := aiaudit.NewAuditClient(auditStore, ctrl.Log.WithName("upgrade-test-audit"))
+			isChecker := handlers.NewK8sInvestigationSessionChecker(k8sClient, testNamespace)
+			isPhaseUpdater := handlers.NewK8sISPhaseUpdater(k8sClient, testNamespace)
+			reconciler.InvestigatingHandler.Store(handlers.NewInvestigatingHandler(
+				mockClient,
+				ctrl.Log.WithName("upgrade-mock-handler"),
+				testMetrics,
+				auditClient,
+				handlers.WithSessionMode(),
+				handlers.WithSessionPollInterval(100*time.Millisecond),
+				handlers.WithInvestigationSessionChecker(isChecker),
+				handlers.WithISPhaseUpdater(isPhaseUpdater),
+				handlers.WithRecorder(k8sManager.GetEventRecorderFor("aianalysis-controller")),
+			))
+		}
+
+		BeforeEach(func() {
+			swapMockHandlerWithUpgrade()
+		})
+
+		AfterEach(func() {
+			if savedHandler != nil {
+				reconciler.InvestigatingHandler.Store(savedHandler)
+			}
+		})
+
+		It("IT-AA-1390-W04: should set Interactive=true and SetActivePhase without cancel when IS appears for autonomous session [AC-12]", func() {
+			rrName := helpers.UniqueTestName("rr-1390-upgrade")
+			sessionID := "session-autonomous-upgrade"
+			analysisName := helpers.UniqueTestName("aa-1390-upgrade")
+
+			mockClient.PollSessionFunc = func(_ context.Context, _ string) (*agentclient.SessionStatusResult, error) {
+				return &agentclient.SessionStatusResult{
+					Status:     "user_driving",
+					ActingUser: "sre-takeover@example.com",
+				}, nil
+			}
+
+			analysis := createInvestigatingAA(analysisName, rrName, sessionID, false)
+
+			By("waiting for controller to start polling (proves reconcile loop is active)")
+			Eventually(func() int {
+				return mockClient.GetPollCallCount()
+			}, timeout, interval).Should(BeNumerically(">=", 1))
+
+			By("creating Active InvestigationSession for the same RR")
+			isName := helpers.UniqueTestName("is-1390-upgrade")
+			createActiveIS(isName, rrName)
+
+			By("verifying upgrade path: Interactive=true, no cancel, IS Phase=Active preserved")
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
+				g.Expect(analysis.Status.KASession).NotTo(BeNil())
+				g.Expect(analysis.Status.KASession.Interactive).To(BeTrue(),
+					"Interactive flag must be set by upgrade path")
+				g.Expect(analysis.Status.KASession.ID).To(Equal(sessionID),
+					"session ID must be preserved — no cancel/resubmit")
+				g.Expect(mockClient.GetCancelCallCount()).To(Equal(0),
+					"CancelSession must NOT be called in the upgrade path")
+			}, timeout, interval).Should(Succeed())
+
+			By("verifying InteractiveSession populated from user_driving poll")
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
+				g.Expect(analysis.Status.InteractiveSession).NotTo(BeNil(),
+					"InteractiveSession must be populated after polling user_driving")
+				g.Expect(analysis.Status.InteractiveSession.ActingUser).To(Equal("sre-takeover@example.com"))
+			}, timeout, interval).Should(Succeed())
+
+			By("verifying IS CRD Phase=Active was set via K8sISPhaseUpdater (best-effort)")
+			var is isv1alpha1.InvestigationSession
+			Expect(k8sClient.Get(ctx, client.ObjectKey{Name: isName, Namespace: testNamespace}, &is)).To(Succeed())
+			Expect(is.Status.Phase).To(Equal(isv1alpha1.SessionPhaseActive),
+				"IS phase must be Active after SetActivePhase call")
 		})
 	})
 

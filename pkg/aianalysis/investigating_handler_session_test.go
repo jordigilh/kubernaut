@@ -29,6 +29,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
@@ -906,13 +907,13 @@ var _ = Describe("InvestigatingHandler IS Mismatch Detection", func() {
 		recorder = record.NewFakeRecorder(10)
 	})
 
-	Context("UT-AA-1293-SC1-005: Autonomous session + IS appears → cancel for takeover", func() {
-		It("should cancel the session and clear ID for re-submit", func() {
-			cancelClient := mocks.NewMockAgentClient()
-			cancelClient.WithSessionPollStatus("investigating")
+	Context("UT-AA-1293-SC1-005: Autonomous session + IS appears → upgrade in-place (#1390)", func() {
+		It("should set Interactive=true and preserve session ID without cancel", func() {
+			upgradeClient := mocks.NewMockAgentClient()
+			upgradeClient.WithSessionPollStatus("investigating")
 			isChecker := &mockISChecker{hasSession: true}
 			testMetrics := metrics.NewMetrics()
-			h := handlers.NewInvestigatingHandler(cancelClient, ctrl.Log.WithName("test-takeover"), testMetrics, auditSpy,
+			h := handlers.NewInvestigatingHandler(upgradeClient, ctrl.Log.WithName("test-takeover"), testMetrics, auditSpy,
 				handlers.WithSessionMode(), handlers.WithRecorder(recorder),
 				handlers.WithInvestigationSessionChecker(isChecker))
 
@@ -932,8 +933,12 @@ var _ = Describe("InvestigatingHandler IS Mismatch Detection", func() {
 			result, err := h.Handle(context.Background(), analysis)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Requeue).To(BeTrue())
-			Expect(analysis.Status.KASession.ID).To(BeEmpty())
-			Expect(cancelClient.CancelCallCount).To(Equal(1))
+			Expect(analysis.Status.KASession.ID).To(Equal("session-123"),
+				"session ID must be preserved — upgrade in-place, no cancel")
+			Expect(analysis.Status.KASession.Interactive).To(BeTrue(),
+				"Interactive flag must be set for upgrade path")
+			Expect(upgradeClient.CancelCallCount).To(Equal(0),
+				"CancelSession must NOT be called — #1390 upgrade replaces cancel")
 		})
 	})
 
@@ -1130,6 +1135,183 @@ type mockISChecker struct {
 
 func (m *mockISChecker) HasActiveSession(_ context.Context, _ string) (bool, error) {
 	return m.hasSession, m.err
+}
+
+// ========================================
+// Fix #1390: AA Takeover Simplification
+//
+// UT-AA-1390-014..017: Validate that the takeover branch no longer
+// cancels the session but instead sets Interactive=true and calls
+// SetActivePhase on the IS phase updater.
+// ========================================
+
+var _ = Describe("Fix #1390: AA Takeover Simplification — BR-INTERACTIVE-004", func() {
+	var (
+		auditSpy *sessionAuditSpy
+		recorder record.EventRecorder
+	)
+
+	BeforeEach(func() {
+		auditSpy = &sessionAuditSpy{}
+		recorder = record.NewFakeRecorder(32)
+	})
+
+	Context("UT-AA-1390-014 [AC-12]: Takeover sets Interactive=true without calling CancelSession", func() {
+		It("should not cancel the session when IS appears for autonomous session", func() {
+			cancelClient := mocks.NewMockAgentClient()
+			cancelClient.WithSessionPollStatus("investigating")
+			isChecker := &mockISChecker{hasSession: true}
+			phaseUpdater := &mockISPhaseUpdater1390{}
+			testMetrics := metrics.NewMetrics()
+
+			h := handlers.NewInvestigatingHandler(cancelClient, ctrl.Log.WithName("test-1390-014"), testMetrics, auditSpy,
+				handlers.WithSessionMode(), handlers.WithRecorder(recorder),
+				handlers.WithInvestigationSessionChecker(isChecker),
+				handlers.WithISPhaseUpdater(phaseUpdater))
+
+			analysis := &aianalysisv1.AIAnalysis{
+				Spec: aianalysisv1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{Name: "rr-upgrade-014", Namespace: "default"},
+				},
+				Status: aianalysisv1.AIAnalysisStatus{
+					Phase: aianalysis.PhaseInvestigating,
+					KASession: &aianalysisv1.KASession{
+						ID:          "session-014",
+						Interactive: false,
+					},
+				},
+			}
+
+			result, err := h.Handle(context.Background(), analysis)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Requeue).To(BeTrue())
+			Expect(cancelClient.CancelCallCount).To(Equal(0),
+				"CancelSession must NOT be called — upgrade-in-place replaces cancel")
+			Expect(analysis.Status.KASession.Interactive).To(BeTrue(),
+				"Interactive flag must be set to true for upgrade path")
+			Expect(analysis.Status.KASession.ID).To(Equal("session-014"),
+				"session ID must be preserved — no clearing")
+		})
+	})
+
+	Context("UT-AA-1390-015 [AC-12]: Takeover calls SetActivePhase on IS phase updater", func() {
+		It("should call SetActivePhase when upgrading to interactive", func() {
+			cancelClient := mocks.NewMockAgentClient()
+			cancelClient.WithSessionPollStatus("investigating")
+			isChecker := &mockISChecker{hasSession: true}
+			phaseUpdater := &mockISPhaseUpdater1390{}
+			testMetrics := metrics.NewMetrics()
+
+			h := handlers.NewInvestigatingHandler(cancelClient, ctrl.Log.WithName("test-1390-015"), testMetrics, auditSpy,
+				handlers.WithSessionMode(), handlers.WithRecorder(recorder),
+				handlers.WithInvestigationSessionChecker(isChecker),
+				handlers.WithISPhaseUpdater(phaseUpdater))
+
+			analysis := &aianalysisv1.AIAnalysis{
+				Spec: aianalysisv1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{Name: "rr-upgrade-015", Namespace: "default"},
+				},
+				Status: aianalysisv1.AIAnalysisStatus{
+					Phase: aianalysis.PhaseInvestigating,
+					KASession: &aianalysisv1.KASession{
+						ID:          "session-015",
+						Interactive: false,
+					},
+				},
+			}
+
+			_, err := h.Handle(context.Background(), analysis)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(phaseUpdater.activePhaseCount).To(Equal(1),
+				"SetActivePhase must be called once for the upgrade")
+			Expect(phaseUpdater.lastActiveRRName).To(Equal("rr-upgrade-015"))
+		})
+	})
+
+	Context("UT-AA-1390-016 [AC-12]: Next reconcile with hasIS=true + Interactive=true is no-op", func() {
+		It("should skip mismatch check when Interactive already matches IS state", func() {
+			mockClient := mocks.NewMockAgentClient()
+			mockClient.WithSessionPollStatus("user_driving")
+			isChecker := &mockISChecker{hasSession: true}
+			testMetrics := metrics.NewMetrics()
+
+			h := handlers.NewInvestigatingHandler(mockClient, ctrl.Log.WithName("test-1390-016"), testMetrics, auditSpy,
+				handlers.WithSessionMode(), handlers.WithRecorder(recorder),
+				handlers.WithInvestigationSessionChecker(isChecker))
+
+			analysis := &aianalysisv1.AIAnalysis{
+				Spec: aianalysisv1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{Name: "rr-noop-016", Namespace: "default"},
+				},
+				Status: aianalysisv1.AIAnalysisStatus{
+					Phase: aianalysis.PhaseInvestigating,
+					KASession: &aianalysisv1.KASession{
+						ID:          "session-016",
+						Interactive: true,
+					},
+				},
+			}
+
+			result, err := h.Handle(context.Background(), analysis)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(mockClient.CancelCallCount).To(Equal(0), "no cancel expected")
+			Expect(result.RequeueAfter).To(BeNumerically(">", 0),
+				"should proceed to poll, not immediate requeue")
+		})
+	})
+
+	Context("UT-AA-1390-017 [AC-12]: Poll user_driving after upgrade populates InteractiveSession", func() {
+		It("should populate InteractiveSession info when polling upgraded session", func() {
+			mockClient := mocks.NewMockAgentClient()
+			mockClient.WithSessionPollStatus("user_driving")
+			mockClient.DefaultSessionStatus = &agentclient.SessionStatusResult{
+				Status:     "user_driving",
+				ActingUser: "sre-user@example.com",
+			}
+			isChecker := &mockISChecker{hasSession: true}
+			testMetrics := metrics.NewMetrics()
+
+			h := handlers.NewInvestigatingHandler(mockClient, ctrl.Log.WithName("test-1390-017"), testMetrics, auditSpy,
+				handlers.WithSessionMode(), handlers.WithRecorder(recorder),
+				handlers.WithInvestigationSessionChecker(isChecker))
+
+			analysis := &aianalysisv1.AIAnalysis{
+				Spec: aianalysisv1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{Name: "rr-poll-017", Namespace: "default"},
+				},
+				Status: aianalysisv1.AIAnalysisStatus{
+					Phase: aianalysis.PhaseInvestigating,
+					KASession: &aianalysisv1.KASession{
+						ID:          "session-017",
+						Interactive: true,
+					},
+				},
+			}
+
+			_, err := h.Handle(context.Background(), analysis)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(analysis.Status.InteractiveSession).NotTo(BeNil(),
+				"InteractiveSession must be populated after polling user_driving")
+			Expect(analysis.Status.InteractiveSession.ActingUser).To(Equal("sre-user@example.com"))
+		})
+	})
+})
+
+// mockISPhaseUpdater1390 tracks SetActivePhase calls for #1390 tests.
+type mockISPhaseUpdater1390 struct {
+	activePhaseCount  int
+	lastActiveRRName  string
+	setActiveErr      error
+}
+
+func (m *mockISPhaseUpdater1390) SetActivePhase(_ context.Context, rrName string) error {
+	m.activePhaseCount++
+	m.lastActiveRRName = rrName
+	return m.setActiveErr
+}
+
+func (m *mockISPhaseUpdater1390) SetTerminalPhase(_ context.Context, _ string, _ isv1alpha1.SessionPhase) error {
+	return nil
 }
 
 // ========================================
