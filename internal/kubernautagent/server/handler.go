@@ -235,7 +235,7 @@ func (h *Handler) IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResu
 		return nil, errors.New("internal server error")
 	}
 
-	if sess.Status != session.StatusCompleted {
+	if !session.IsTerminal(sess.Status) {
 		return &agentclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetConflict{
 			Type:     "https://kubernaut.ai/problems/session-not-completed",
 			Title:    "Session Not Completed",
@@ -245,21 +245,17 @@ func (h *Handler) IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResu
 		}, nil
 	}
 
-	result := sess.Result
-	if result == nil {
-		h.logger.Error(nil, "nil result in completed session", "session_id", sess.ID)
-		return &agentclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetConflict{
-			Type:     "https://kubernaut.ai/problems/session-not-completed",
-			Title:    "Session Not Completed",
-			Detail:   "session result is not an investigation result",
-			Status:   409,
-			Instance: fmt.Sprintf("/api/v1/incident/session/%s/result", params.SessionID),
-		}, nil
-	}
-
 	var incidentID string
 	if sess.Metadata != nil {
 		incidentID = sess.Metadata["incident_id"]
+	}
+
+	result := sess.Result
+	if result == nil {
+		h.logger.Info("nil_result_synthesized", "session_id", sess.ID, "status", string(sess.Status))
+		synthetic := synthesizeNilResult(sess)
+		resp := mapInvestigationResultToResponse(h.logger, synthetic, incidentID)
+		return resp, nil
 	}
 
 	resp := mapInvestigationResultToResponse(h.logger, result, incidentID)
@@ -608,6 +604,35 @@ func mapSessionStatusToAPI(s session.Status) string {
 		return "user_driving"
 	default:
 		return "unknown"
+	}
+}
+
+// synthesizeNilResult creates a minimal InvestigationResult for terminal sessions
+// whose goroutine produced no result. This prevents AA from entering a 409 polling
+// loop (#1390). The synthetic result is always non-actionable.
+func synthesizeNilResult(sess *session.Session) *katypes.InvestigationResult {
+	switch sess.Status {
+	case session.StatusFailed:
+		reason := "Investigation failed"
+		if sess.Error != nil {
+			reason = fmt.Sprintf("Investigation failed: %s", sess.Error.Error())
+		}
+		return &katypes.InvestigationResult{
+			RCASummary:        reason,
+			Confidence:        0,
+			HumanReviewNeeded: true,
+			HumanReviewReason: "investigation_failed",
+		}
+	case session.StatusCancelled:
+		return &katypes.InvestigationResult{
+			RCASummary: "Investigation cancelled",
+			Confidence: 0,
+		}
+	default:
+		return &katypes.InvestigationResult{
+			RCASummary: "Investigation completed without result",
+			Confidence: 0,
+		}
 	}
 }
 

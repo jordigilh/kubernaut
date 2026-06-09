@@ -25,6 +25,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	aiaudit "github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
@@ -95,5 +96,128 @@ var _ = Describe("AA-H4: Investigating Handler Session Recovery", func() {
 		// PollCount should be incremented by the handler
 		Expect(analysis.Status.KASession.PollCount).To(Equal(int32(4)),
 			"PollCount must increment after successful poll")
+	})
+})
+
+// ========================================
+// Fix #1390: AA 409 Retry Cap
+//
+// UT-AA-1390-022..024: Validate that the handler caps consecutive 409 errors
+// from GetSessionResult and triggers session regeneration after 3 consecutive failures.
+// ========================================
+
+var _ = Describe("Fix #1390: AA GetResult 409 Retry Cap — BR-REL-014", func() {
+	var (
+		ctx             context.Context
+		mockAgentClient *mocks.MockAgentClient
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		mockAgentClient = mocks.NewMockAgentClient()
+	})
+
+	createCompletedAnalysis := func(sessionID string, consecutiveErrors int32) *aianalysisv1.AIAnalysis {
+		now := metav1.Now()
+		return &aianalysisv1.AIAnalysis{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "aa-1390-retry",
+				Namespace: "default",
+			},
+			Status: aianalysisv1.AIAnalysisStatus{
+				Phase: "Investigating",
+				KASession: &aianalysisv1.KASession{
+					ID:                         sessionID,
+					CreatedAt:                  &now,
+					PollCount:                  5,
+					ConsecutiveGetResultErrors: consecutiveErrors,
+				},
+			},
+		}
+	}
+
+	Context("UT-AA-1390-022 [SI-13]: Third consecutive GetResult 409 triggers session regeneration", func() {
+		It("should clear session ID and requeue after 3 consecutive 409 errors", func() {
+			mockAgentClient.WithSessionPollStatus("completed")
+			mockAgentClient.GetResultErr = &agentclient.APIError{StatusCode: 409, Message: "session result is not an investigation result"}
+
+			mockAuditStore := NewMockAuditStore()
+			auditClient := aiaudit.NewAuditClient(mockAuditStore, ctrl.Log.WithName("test-409-cap"))
+			testMetrics := metrics.NewMetrics()
+			handler := handlers.NewInvestigatingHandler(
+				mockAgentClient,
+				ctrl.Log.WithName("test-1390-022"),
+				testMetrics,
+				auditClient,
+				handlers.WithSessionMode(),
+			)
+
+			analysis := createCompletedAnalysis("session-409-cap", 2)
+
+			result, err := handler.Handle(ctx, analysis)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(analysis.Status.KASession.ID).To(BeEmpty(),
+				"session ID must be cleared after 3 consecutive 409 errors")
+			Expect(result.Requeue).To(BeTrue(),
+				"should requeue for re-submit (session regeneration)")
+		})
+	})
+
+	Context("UT-AA-1390-023 [SI-13]: Successful GetResult resets consecutive error counter to 0", func() {
+		It("should reset ConsecutiveGetResultErrors to 0 on successful result retrieval", func() {
+			mockAgentClient.WithSessionPollStatus("completed")
+			mockAgentClient.Response = &agentclient.IncidentResponse{
+				IncidentID: "test-success",
+				Analysis:   "Test completed successfully",
+				Confidence: 0.9,
+			}
+
+			mockAuditStore := NewMockAuditStore()
+			auditClient := aiaudit.NewAuditClient(mockAuditStore, ctrl.Log.WithName("test-409-reset"))
+			testMetrics := metrics.NewMetrics()
+			handler := handlers.NewInvestigatingHandler(
+				mockAgentClient,
+				ctrl.Log.WithName("test-1390-023"),
+				testMetrics,
+				auditClient,
+				handlers.WithSessionMode(),
+			)
+
+			analysis := createCompletedAnalysis("session-409-reset", 2)
+
+			_, err := handler.Handle(ctx, analysis)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(analysis.Status.KASession.ConsecutiveGetResultErrors).To(Equal(int32(0)),
+				"ConsecutiveGetResultErrors must be reset to 0 after successful result")
+		})
+	})
+
+	Context("UT-AA-1390-024 [AC-12]: Regeneration clears session ID and requeues for re-submit", func() {
+		It("should increment consecutive errors and requeue on first 409", func() {
+			mockAgentClient.WithSessionPollStatus("completed")
+			mockAgentClient.GetResultErr = &agentclient.APIError{StatusCode: 409, Message: "session not completed"}
+
+			mockAuditStore := NewMockAuditStore()
+			auditClient := aiaudit.NewAuditClient(mockAuditStore, ctrl.Log.WithName("test-409-inc"))
+			testMetrics := metrics.NewMetrics()
+			handler := handlers.NewInvestigatingHandler(
+				mockAgentClient,
+				ctrl.Log.WithName("test-1390-024"),
+				testMetrics,
+				auditClient,
+				handlers.WithSessionMode(),
+			)
+
+			analysis := createCompletedAnalysis("session-409-first", 0)
+
+			result, err := handler.Handle(ctx, analysis)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(analysis.Status.KASession.ConsecutiveGetResultErrors).To(Equal(int32(1)),
+				"ConsecutiveGetResultErrors must increment on 409")
+			Expect(analysis.Status.KASession.ID).NotTo(BeEmpty(),
+				"session ID must NOT be cleared on first 409 — only after 3")
+			Expect(result.RequeueAfter).To(BeNumerically(">", 0),
+				"should requeue for next poll at standard interval")
+		})
 	})
 })

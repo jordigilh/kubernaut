@@ -67,6 +67,11 @@ const (
 	// BR-AA-HAPI-064.6: Cap at 5 regenerations
 	MaxSessionRegenerations int32 = 5
 
+	// MaxConsecutiveGetResultErrors is the maximum number of consecutive 409 errors
+	// from GetSessionResult before the session is regenerated. #1390: Breaks the
+	// nil-result 409 polling loop by treating repeated 409s as a non-recoverable state.
+	MaxConsecutiveGetResultErrors int32 = 3
+
 	// DefaultSessionPollInterval is the constant polling interval for session status checks.
 	// BR-AA-HAPI-064.8: Polling is not error recovery -- KA is healthy, just not done yet.
 	// A constant interval is simpler, predictable, and sufficient for async LLM investigations.
