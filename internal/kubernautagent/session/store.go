@@ -142,6 +142,7 @@ func (s *Store) Create() (string, error) {
 		ID:        id,
 		Status:    StatusPending,
 		CreatedAt: time.Now(),
+		lazySink:  &LazySink{},
 	}
 	s.mu.Lock()
 	if s.maxConcurrent > 0 {

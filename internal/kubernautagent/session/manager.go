@@ -582,18 +582,11 @@ func (m *Manager) Subscribe(ctx context.Context, id string) (<-chan Investigatio
 	if sess.eventChan == nil {
 		ch := make(chan InvestigationEvent, eventChannelBuffer)
 		sess.eventChan = ch
-		if sess.lazySink != nil {
-			sess.lazySink.Set(ch)
-			m.logger.Info("Subscribe: LazySink channel activated",
-				"session_id", id,
-				"status", string(sess.Status),
-				"has_lazy_sink", true,
-				"chan_ptr", fmt.Sprintf("%p", ch))
-		} else {
-			m.logger.Info("Subscribe: LazySink is nil — events will NOT flow",
-				"session_id", id,
-				"status", string(sess.Status))
-		}
+		sess.lazySink.Set(ch)
+		m.logger.Info("Subscribe: LazySink channel activated",
+			"session_id", id,
+			"status", string(sess.Status),
+			"chan_ptr", fmt.Sprintf("%p", ch))
 	}
 
 	ch := sess.eventChan
@@ -644,9 +637,7 @@ func (m *Manager) Shutdown() {
 				sess.cancel()
 			}
 			sess.Status = StatusCancelled
-			if sess.lazySink != nil {
-				sess.lazySink.Set(nil)
-			}
+			sess.lazySink.Set(nil)
 			if sess.eventChan != nil {
 				close(sess.eventChan)
 				sess.eventChan = nil
@@ -746,7 +737,7 @@ func (m *Manager) GetSessionLazySink(id string) (*LazySink, bool) {
 	m.store.mu.RLock()
 	defer m.store.mu.RUnlock()
 	sess, ok := m.store.sessions[id]
-	if !ok || sess.lazySink == nil {
+	if !ok {
 		return nil, false
 	}
 	return sess.lazySink, true

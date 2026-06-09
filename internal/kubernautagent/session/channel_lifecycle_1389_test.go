@@ -116,6 +116,49 @@ var _ = Describe("Event channel lifecycle (#1389)", func() {
 				"if it panics, the defer closeEventChan bug (#1389) is present")
 	})
 
+	// UT-KA-1389-003: lazySink must be non-nil for every session, including
+	// pending interactive sessions that have not yet launched their goroutine.
+	// This guarantees that terminateSession/closeEventChan/Shutdown can always
+	// call lazySink.Set(nil) without a nil-pointer panic.
+	It("UT-KA-1389-003: lazySink is non-nil for pending interactive sessions", func() {
+		store := session.NewStore(30 * time.Minute)
+		mgr := session.NewManager(store, logr.Discard(), audit.NopAuditStore{}, nil)
+
+		id, err := mgr.StartInteractiveSession(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
+			return &katypes.InvestigationResult{}, nil
+		}, map[string]string{"remediation_id": "rr-1389-003"})
+		Expect(err).NotTo(HaveOccurred())
+
+		sess, err := mgr.GetSession(id)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(sess.Status).To(Equal(session.StatusPending))
+
+		ls, found := mgr.GetSessionLazySink(id)
+		Expect(found).To(BeTrue(), "lazySink must exist for pending sessions")
+		Expect(ls).NotTo(BeNil(), "lazySink must be non-nil by construction")
+	})
+
+	// UT-KA-1389-004: CancelInvestigation on a StatusPending interactive
+	// session must not panic. Before the fix, lazySink was nil for pending
+	// sessions, so terminateSession's lazySink.Set(nil) caused a nil deref.
+	It("UT-KA-1389-004: CancelInvestigation on pending session does not panic", func() {
+		store := session.NewStore(30 * time.Minute)
+		mgr := session.NewManager(store, logr.Discard(), audit.NopAuditStore{}, nil)
+
+		id, err := mgr.StartInteractiveSession(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
+			return &katypes.InvestigationResult{}, nil
+		}, map[string]string{"remediation_id": "rr-1389-004"})
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(func() {
+			_ = mgr.CancelInvestigation(id)
+		}).NotTo(Panic(), "CancelInvestigation on a pending session must not panic")
+
+		sess, err := mgr.GetSession(id)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(sess.Status).To(Equal(session.StatusCancelled))
+	})
+
 	// UT-KA-1389-002: Verifies that CompleteUserDriving closes the channel.
 	It("UT-KA-1389-002: CompleteUserDriving closes the event channel", func() {
 		store := session.NewStore(30 * time.Minute)
