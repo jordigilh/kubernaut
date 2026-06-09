@@ -1151,7 +1151,8 @@ type mockPoolSession struct{}
 func (m *mockPoolSession) CallTool(_ context.Context, _ *mcp.CallToolParams) (*mcp.CallToolResult, error) {
 	return &mcp.CallToolResult{}, nil
 }
-func (m *mockPoolSession) Close() error { return nil }
+func (m *mockPoolSession) Ping(_ context.Context, _ *mcp.PingParams) error { return nil }
+func (m *mockPoolSession) Close() error                                     { return nil }
 
 // Suppress unused import warning for json and time
 var _ = json.Marshal

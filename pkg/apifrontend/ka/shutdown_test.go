@@ -27,6 +27,10 @@ func (s *countingSession) CallTool(_ context.Context, _ *mcp.CallToolParams) (*m
 	return &mcp.CallToolResult{}, nil
 }
 
+func (s *countingSession) Ping(_ context.Context, _ *mcp.PingParams) error {
+	return nil
+}
+
 var _ = Describe("Graceful Shutdown (G14)", func() {
 	It("UT-AF-1234-140: DrainAll closes all pool sessions", func() {
 		var closeCount int32

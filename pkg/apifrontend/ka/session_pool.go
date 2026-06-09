@@ -14,6 +14,7 @@ import (
 // *mcp.ClientSession satisfies this interface.
 type PoolSession interface {
 	CallTool(ctx context.Context, params *mcp.CallToolParams) (*mcp.CallToolResult, error)
+	Ping(ctx context.Context, params *mcp.PingParams) error
 	Close() error
 }
 
@@ -25,9 +26,23 @@ type poolKey struct {
 	username string
 }
 
+// SessionIdentifier is an optional interface that PoolSession implementations
+// can satisfy to provide a transport-level session ID for audit logging.
+type SessionIdentifier interface {
+	SessionID() string
+}
+
 type poolEntry struct {
-	session  PoolSession
-	lastUsed time.Time
+	session   PoolSession
+	sessionID string
+	lastUsed  time.Time
+}
+
+func extractSessionID(s PoolSession) string {
+	if si, ok := s.(SessionIdentifier); ok {
+		return si.SessionID()
+	}
+	return "unknown"
 }
 
 // PoolConfig configures the KASessionPool.
@@ -69,26 +84,48 @@ func NewKASessionPool(cfg PoolConfig) *KASessionPool {
 	}
 }
 
+const pingTimeout = 2 * time.Second
+
 // Acquire gets or creates a pooled session for the given (rrID, username).
 // Sessions are keyed by composite (rrID, username) to enforce user isolation (G9).
-// Uses a check-lock-recheck pattern to minimise lock contention (#78 race safety).
+// Cached sessions are proactively health-checked via Ping before reuse (#1387).
 func (p *KASessionPool) Acquire(ctx context.Context, rrID, username string) (PoolSession, error) {
 	key := poolKey{rrID: rrID, username: username}
 
-	// Fast path: read-lock to check for existing session.
-	p.mu.RLock()
-	_, exists := p.entries[key]
-	p.mu.RUnlock()
+	p.mu.Lock()
+	entry, exists := p.entries[key]
+	if exists && entry != nil {
+		session := entry.session
+		sid := entry.sessionID
+		entry.lastUsed = time.Now()
+		p.mu.Unlock()
+
+		pingCtx, cancel := context.WithTimeout(ctx, pingTimeout)
+		defer cancel()
+		if err := session.Ping(pingCtx, nil); err != nil {
+			p.logger.Info("cached session failed health check, evicting",
+				"rr_id", rrID, "username", username, "mcp_session_id", sid, "error", err.Error())
+			p.mu.Lock()
+			if cur, ok := p.entries[key]; ok && cur.session == session {
+				delete(p.entries, key)
+			}
+			p.mu.Unlock()
+			_ = session.Close()
+		} else {
+			p.logger.Info("pool session reused (cache hit)",
+				"rr_id", rrID, "username", username, "mcp_session_id", sid)
+			return session, nil
+		}
+	} else {
+		p.mu.Unlock()
+	}
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	// Recheck under write lock -- another goroutine may have created or deleted it.
-	if entry, ok := p.entries[key]; ok || exists {
-		if entry != nil {
-			entry.lastUsed = time.Now()
-			return entry.session, nil
-		}
+	if entry, ok := p.entries[key]; ok && entry != nil {
+		entry.lastUsed = time.Now()
+		return entry.session, nil
 	}
 
 	if len(p.entries) >= p.maxEntries {
@@ -100,9 +137,11 @@ func (p *KASessionPool) Acquire(ctx context.Context, rrID, username string) (Poo
 		return nil, fmt.Errorf("create MCP session: %w", err)
 	}
 
+	sid := extractSessionID(session)
 	p.entries[key] = &poolEntry{
-		session:  session,
-		lastUsed: time.Now(),
+		session:   session,
+		sessionID: sid,
+		lastUsed:  time.Now(),
 	}
 
 	return session, nil
@@ -115,19 +154,21 @@ func (p *KASessionPool) Acquire(ctx context.Context, rrID, username string) (Poo
 // and driver lease without requiring a separate takeover.
 func (p *KASessionPool) Inject(rrID, username string, session PoolSession) {
 	key := poolKey{rrID: rrID, username: username}
+	sid := extractSessionID(session)
 
 	p.mu.Lock()
 	old, exists := p.entries[key]
 	p.entries[key] = &poolEntry{
-		session:  session,
-		lastUsed: time.Now(),
+		session:   session,
+		sessionID: sid,
+		lastUsed:  time.Now(),
 	}
 	p.mu.Unlock()
 
 	if exists && old.session != nil {
 		_ = old.session.Close()
 	}
-	p.logger.Info("session injected into pool", "rr_id", rrID, "username", username)
+	p.logger.Info("session injected into pool", "rr_id", rrID, "username", username, "mcp_session_id", sid)
 }
 
 // Release closes and removes the session for the given (rrID, username).
@@ -142,6 +183,8 @@ func (p *KASessionPool) Release(rrID, username string) {
 	p.mu.Unlock()
 
 	if exists && entry.session != nil {
+		p.logger.Info("pool session released",
+			"rr_id", rrID, "username", username, "mcp_session_id", entry.sessionID)
 		_ = entry.session.Close()
 	}
 }
