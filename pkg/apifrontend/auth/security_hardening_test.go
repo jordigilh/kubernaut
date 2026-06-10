@@ -855,7 +855,7 @@ func TestBuildIdentity_UseStrongerSanitization(t *testing.T) {
 		"groups":             []interface{}{"sre\x00", "dev\u202D"},
 		"exp":                float64(time.Now().Add(time.Hour).Unix()),
 	}
-	identity := buildIdentity(claims, "https://issuer.test", "raw-token")
+	identity := buildIdentity(claims, "https://issuer.test", "raw-token", ClaimMappings{})
 
 	if strings.ContainsRune(identity.Username, 0) {
 		t.Error("expected null bytes stripped from username")
@@ -880,8 +880,71 @@ func TestBuildIdentity_UseStrongerSanitization(t *testing.T) {
 		"preferred_username": longName,
 		"exp":                float64(time.Now().Add(time.Hour).Unix()),
 	}
-	identity2 := buildIdentity(claims2, "https://issuer.test", "raw-token")
+	identity2 := buildIdentity(claims2, "https://issuer.test", "raw-token", ClaimMappings{})
 	if len(identity2.Username) > 256 {
 		t.Errorf("expected username truncated to 256, got length %d", len(identity2.Username))
 	}
+}
+
+func TestBuildIdentity_CELClaimMappings(t *testing.T) {
+	// IT-AF-AUTH-W01: ClaimMappings CEL expressions produce correct identity
+
+	t.Run("custom username mapping", func(t *testing.T) {
+		claims := map[string]interface{}{
+			"email":    "alice@example.com",
+			"sub":      "alice-sub",
+			"exp":      float64(time.Now().Add(time.Hour).Unix()),
+		}
+		mappings := ClaimMappings{
+			Username: `claims.email`,
+		}
+		identity := buildIdentity(claims, "https://issuer.test", "raw-token", mappings)
+		if identity.Username != "alice@example.com" {
+			t.Errorf("expected username 'alice@example.com' from CEL mapping, got %q", identity.Username)
+		}
+	})
+
+	t.Run("custom groups mapping", func(t *testing.T) {
+		claims := map[string]interface{}{
+			"preferred_username": "bob",
+			"cognito:groups":     []interface{}{"admins", "viewers"},
+			"exp":                float64(time.Now().Add(time.Hour).Unix()),
+		}
+		mappings := ClaimMappings{
+			Groups: `claims["cognito:groups"]`,
+		}
+		identity := buildIdentity(claims, "https://issuer.test", "raw-token", mappings)
+		if len(identity.Groups) != 2 || identity.Groups[0] != "admins" || identity.Groups[1] != "viewers" {
+			t.Errorf("expected groups [admins, viewers] from CEL mapping, got %v", identity.Groups)
+		}
+	})
+
+	t.Run("fallback when CEL mapping is empty", func(t *testing.T) {
+		claims := map[string]interface{}{
+			"preferred_username": "charlie",
+			"groups":             []interface{}{"sre"},
+			"exp":                float64(time.Now().Add(time.Hour).Unix()),
+		}
+		identity := buildIdentity(claims, "https://issuer.test", "raw-token", ClaimMappings{})
+		if identity.Username != "charlie" {
+			t.Errorf("expected fallback username 'charlie', got %q", identity.Username)
+		}
+		if len(identity.Groups) != 1 || identity.Groups[0] != "sre" {
+			t.Errorf("expected fallback groups [sre], got %v", identity.Groups)
+		}
+	})
+
+	t.Run("fallback when CEL expression errors", func(t *testing.T) {
+		claims := map[string]interface{}{
+			"sub": "dave-sub",
+			"exp": float64(time.Now().Add(time.Hour).Unix()),
+		}
+		mappings := ClaimMappings{
+			Username: `claims.nonexistent_field`,
+		}
+		identity := buildIdentity(claims, "https://issuer.test", "raw-token", mappings)
+		if identity.Username != "dave-sub" {
+			t.Errorf("expected fallback username 'dave-sub' when CEL errors, got %q", identity.Username)
+		}
+	})
 }

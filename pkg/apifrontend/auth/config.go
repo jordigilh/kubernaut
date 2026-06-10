@@ -36,10 +36,10 @@ func (c IssuerConfig) ResolveJWKSURL() string {
 }
 
 // ClaimMappings defines CEL expressions for mapping claims to user identity.
-// NOTE: Currently the JWT validator uses fixed claim paths (preferred_username/sub
-// for username, groups for group membership). CEL-based claim mapping is a planned
-// enhancement. These fields are parsed from config for forward compatibility but
-// are not yet evaluated at runtime. See buildIdentity() in jwt.go.
+// When Username or Groups is set, the CEL expression is evaluated against the
+// JWT claims map. The expression receives "claims" as a map[string]any variable.
+// When empty, the validator falls back to hardcoded paths (preferred_username/sub
+// for username, groups for group membership). See buildIdentity() in jwt.go.
 type ClaimMappings struct {
 	Username string `yaml:"username"`
 	Groups   string `yaml:"groups"`
