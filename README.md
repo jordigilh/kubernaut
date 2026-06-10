@@ -17,7 +17,7 @@ Kubernaut closes the loop from Kubernetes alert to automated remediation. When s
 <p align="center">
   <a href="https://jordigilh.github.io/kubernaut-docs/"><strong>Full Documentation</strong></a> &nbsp;·&nbsp;
   <a href="https://github.com/jordigilh/kubernaut-demo-scenarios"><strong>Demo Scenarios</strong></a> &nbsp;·&nbsp;
-  <a href="https://github.com/jordigilh/kubernaut/releases/tag/v1.4.0"><strong>Latest Release (v1.4.0)</strong></a>
+  <a href="https://github.com/jordigilh/kubernaut/releases/tag/v1.5.0"><strong>Latest Release (v1.5.0)</strong></a>
 </p>
 
 ---
@@ -37,9 +37,11 @@ Kubernaut bridges that gap. It uses an LLM agent that investigates the actual ro
 ## What It Does
 
 - **Detects** — Ingests Prometheus AlertManager alerts and Kubernetes Events, validates resource scope, and deduplicates by fingerprint
+- **Triages** — Resolves signal severity through a multi-tier pipeline (firing alerts, Prometheus rule evaluation, LLM-based triage) and derives grounded signal names from infrastructure context
 - **Investigates** — Performs live root cause analysis using Kubernetes inspection tools, configurable observability toolsets (Prometheus, etc.), and remediation history
+- **Integrates** — Exposes MCP and A2A (Agent-to-Agent) protocol endpoints through the API Frontend, enabling external agents, UIs, and automation to interact with Kubernaut via OIDC-authenticated sessions
 - **Remediates** — Selects and executes a workflow from a searchable catalog via Tekton Pipelines, Kubernetes Jobs, or Ansible (AWX/AAP), with optional human approval gates
-- **Closes the loop** — Notifies the team (Slack, console), evaluates whether the fix worked via health checks, alert resolution, and spec hash drift detection, and feeds effectiveness scores back into future investigations
+- **Closes the loop** — Notifies the team (Slack, webhook), evaluates whether the fix worked via health checks, alert resolution, and spec hash drift detection, and feeds effectiveness scores back into future investigations
 
 <details>
 <summary>Architecture</summary>
@@ -48,24 +50,49 @@ Kubernaut bridges that gap. It uses an LLM agent that investigates the actual ro
 
 </details>
 
+<details>
+<summary>Services</summary>
+
+| Service | Path | Description |
+|---|---|---|
+| **Gateway** | `cmd/gateway` | Signal ingestion — AlertManager webhooks and Kubernetes Events |
+| **Signal Processing** | `cmd/signalprocessing` | Signal enrichment, deduplication, and routing |
+| **Remediation Orchestrator** | `cmd/remediationorchestrator` | CRD lifecycle orchestration across the pipeline |
+| **AI Analysis** | `cmd/aianalysis` | Investigation controller — dispatches to Kubernaut Agent |
+| **Kubernaut Agent** | `cmd/kubernautagent` | LLM-powered RCA, workflow selection, and MCP tool execution |
+| **API Frontend** | `cmd/apifrontend` | External protocol layer — MCP, A2A, OIDC auth, severity triage |
+| **Workflow Execution** | `cmd/workflowexecution` | Tekton Pipeline / Job / Ansible execution engine |
+| **Data Storage** | `cmd/datastorage` | Workflow catalog, audit trail, and persistence (PostgreSQL) |
+| **Notification** | `cmd/notification` | Slack, webhook, and console notification delivery |
+| **Effectiveness Monitor** | `cmd/effectivenessmonitor` | Post-remediation health checks and effectiveness scoring |
+| **Auth Webhook** | `cmd/authwebhook` | Kubernetes authentication webhook for service identity |
+
+</details>
+
 ---
 
 ## Roadmap
 
-### v1.5 — Agentic Integration ([current](https://github.com/jordigilh/kubernaut/issues/874))
+### v1.5 — Agentic Integration ([released](https://github.com/jordigilh/kubernaut/releases/tag/v1.5.0))
 
 - **MCP Interactive Mode** — Human-in-the-loop investigation via MCP tools with lease-based session management, SSE streaming, dynamic takeover, and user impersonation ([#703](https://github.com/jordigilh/kubernaut/issues/703), [#823](https://github.com/jordigilh/kubernaut/issues/823))
-- **API Frontend service** — Unified external protocol layer (MCP + A2A) with OIDC authentication, natural language signal intake, and the Kubernaut Console web UI ([kubernaut-apifrontend](https://github.com/jordigilh/kubernaut-apifrontend))
+- **API Frontend service** — Unified external protocol layer (MCP + A2A) with OIDC authentication, severity triage pipeline, and natural language signal intake
+- **Severity triage pipeline** — Multi-tier severity resolution (Prometheus alerts, rule evaluation, LLM-based triage) with pod correlation and signal name derivation
+- **A2A protocol** — Agent-to-Agent integration enabling external AI agents and automation platforms to trigger investigations and remediations via JSON-RPC
 
-Track progress on the [v1.5 milestone](https://github.com/jordigilh/kubernaut/milestone/6).
+### v1.6 — Console & Operational Maturity (next)
 
-**[Full roadmap](docs/roadmap/ROADMAP.md)** — Agentic Integration (A2A), Collective Intelligence, Fleet Operations (ACM/AAP), and Operational Expansion (cost, security, non-K8s). For past releases, see the [CHANGELOG](CHANGELOG.md).
+- **Kubernaut Console** — Web UI for interactive investigation, remediation monitoring, and workflow management
+- **Config hot-reload** — Runtime application of configuration changes without pod restarts
+- **Session hydration** — CRD-backed session persistence for zero-downtime pod restarts
 
 <p align="center">
   <img src="docs/architecture/diagrams/kubernaut-console-animated.gif" alt="Kubernaut Console — interactive investigation and remediation" width="800"/>
   <br/>
-  <em>Coming in v1.5 — Kubernaut Console: investigate, chat, and remediate from a single UI</em>
+  <em>Coming in v1.6 — Kubernaut Console: investigate, chat, and remediate from a single UI</em>
 </p>
+
+**[Full roadmap](docs/roadmap/ROADMAP.md)** — Collective Intelligence, Fleet Operations (ACM/AAP), and Operational Expansion (cost, security, non-K8s). For past releases, see the [CHANGELOG](CHANGELOG.md).
 
 ---
 
@@ -91,7 +118,6 @@ See the [Installation Guide](https://jordigilh.github.io/kubernaut-docs/latest/g
 | Repository | Description |
 |---|---|
 | [kubernaut-docs](https://github.com/jordigilh/kubernaut-docs) | Documentation website (MkDocs Material) |
-| [kubernaut-apifrontend](https://github.com/jordigilh/kubernaut-apifrontend) | API Frontend — MCP/A2A gateway with OIDC authentication |
 | [kubernaut-demo-scenarios](https://github.com/jordigilh/kubernaut-demo-scenarios) | Demo scenarios, scripts, and recordings |
 
 ---
@@ -99,12 +125,15 @@ See the [Installation Guide](https://jordigilh.github.io/kubernaut-docs/latest/g
 ## Development
 
 ```bash
-make build-all          # Build all services
-make test-tier-unit     # Run unit tests
-make test-all-gateway   # Run all test tiers for a service
+make build-all                    # Build all services
+make test-tier-unit               # Run unit tests (all services)
+make test-integration-apifrontend # Run integration tests for a service
+make test-e2e-apifrontend         # Run E2E tests for a service (Kind cluster)
+make test-all-gateway             # Run all test tiers for a service
+make lint                         # Run golangci-lint across the monorepo
 ```
 
-We use **Ginkgo/Gomega BDD** for testing and follow a TDD workflow. See the [Developer Guide](docs/DEVELOPER_GUIDE.md) for environment setup, build targets, and test commands.
+We use **Ginkgo/Gomega BDD** for testing and follow a strict TDD workflow with a defense-in-depth testing pyramid (unit, integration, E2E). See the [Developer Guide](docs/DEVELOPER_GUIDE.md) for environment setup, build targets, and test commands.
 
 ---
 
