@@ -8,7 +8,7 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![CI](https://github.com/jordigilh/kubernaut/actions/workflows/ci-pipeline.yml/badge.svg)](https://github.com/jordigilh/kubernaut/actions/workflows/ci-pipeline.yml)
 
-Kubernaut closes the loop from Kubernetes alert to automated remediation. When something goes wrong in your cluster, Kubernaut detects the signal, sends it to an LLM-powered agent that investigates the root cause using native Go client-go bindings against the Kubernetes API, log, and Prometheus endpoints, selects a remediation workflow, and executes the fix — or escalates to a human with a full RCA when it can't.
+Kubernaut closes the loop from Kubernetes alert to automated remediation. It operates in two modes: **autonomously** — detecting signals, investigating root causes, and executing fixes end-to-end without human involvement — and **interactively** — letting operators join an in-progress investigation via MCP or A2A, guide the agent, and approve remediations in real time. The LLM-powered agent uses native Go client-go bindings against the Kubernetes API, Prometheus, and log endpoints to investigate, select a remediation workflow, and execute the fix — or escalate to a human with a full RCA when it can't.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/jordigilh/kubernaut-demo-scenarios/main/scenarios/crashloop/crashloop-lite.gif" alt="CrashLoopBackOff demo — from alert to automated fix in under 5 minutes" width="800"/>
@@ -38,8 +38,8 @@ Kubernaut bridges that gap. It uses an LLM agent that investigates the actual ro
 
 - **Detects** — Ingests Prometheus AlertManager alerts and Kubernetes Events, validates resource scope, and deduplicates by fingerprint
 - **Triages** — Resolves signal severity through a multi-tier pipeline (firing alerts, Prometheus rule evaluation, LLM-based triage) and derives grounded signal names from infrastructure context
-- **Investigates** — Performs live root cause analysis using Kubernetes inspection tools, configurable observability toolsets (Prometheus, etc.), and remediation history
-- **Integrates** — Exposes MCP and A2A (Agent-to-Agent) protocol endpoints through the API Frontend, enabling external agents, UIs, and automation to interact with Kubernaut via OIDC-authenticated sessions
+- **Investigates** — Performs live root cause analysis using Kubernetes inspection tools, configurable observability toolsets (Prometheus, etc.), and remediation history. Runs **autonomously** end-to-end, or **interactively** with an operator guiding the investigation in real time via MCP tools or A2A sessions
+- **Integrates** — Exposes MCP and A2A (Agent-to-Agent) protocol endpoints through the API Frontend, enabling external agents, UIs, and automation to interact with Kubernaut via OIDC-authenticated sessions. Operators can take over autonomous sessions mid-flight, review findings, and approve next steps
 - **Remediates** — Selects and executes a workflow from a searchable catalog via Tekton Pipelines, Kubernetes Jobs, or Ansible (AWX/AAP), with optional human approval gates
 - **Closes the loop** — Notifies the team (Slack, webhook), evaluates whether the fix worked via health checks, alert resolution, and spec hash drift detection, and feeds effectiveness scores back into future investigations
 
@@ -75,16 +75,19 @@ Kubernaut bridges that gap. It uses an LLM agent that investigates the actual ro
 
 ### v1.5 — Agentic Integration ([released](https://github.com/jordigilh/kubernaut/releases/tag/v1.5.0))
 
-- **MCP Interactive Mode** — Human-in-the-loop investigation via MCP tools with lease-based session management, SSE streaming, dynamic takeover, and user impersonation ([#703](https://github.com/jordigilh/kubernaut/issues/703), [#823](https://github.com/jordigilh/kubernaut/issues/823))
+- **Dual-mode investigation** — Kubernaut operates **autonomously** (alert-to-fix with zero human involvement) and **interactively** (operator joins via MCP/A2A, guides the agent, approves actions). Operators can take over an autonomous session mid-flight without restarting the investigation ([#703](https://github.com/jordigilh/kubernaut/issues/703), [#823](https://github.com/jordigilh/kubernaut/issues/823))
 - **API Frontend service** — Unified external protocol layer (MCP + A2A) with OIDC authentication, severity triage pipeline, and natural language signal intake
 - **Severity triage pipeline** — Multi-tier severity resolution (Prometheus alerts, rule evaluation, LLM-based triage) with pod correlation and signal name derivation
 - **A2A protocol** — Agent-to-Agent integration enabling external AI agents and automation platforms to trigger investigations and remediations via JSON-RPC
 
-### v1.6 — Console & Operational Maturity (next)
+### v1.5.x — ITSM Integration (upcoming)
 
+- **ServiceNow incident triage** — Bi-directional integration with ServiceNow for incident creation, enrichment, and remediation status sync
+
+### v1.6 — Fleet Management (next)
+
+- **Fleet operations** — Multi-cluster remediation orchestration via ACM/AAP, enabling policy-driven remediation across fleet-scale Kubernetes environments
 - **Kubernaut Console** — Web UI for interactive investigation, remediation monitoring, and workflow management
-- **Config hot-reload** — Runtime application of configuration changes without pod restarts
-- **Session hydration** — CRD-backed session persistence for zero-downtime pod restarts
 
 <p align="center">
   <img src="docs/architecture/diagrams/kubernaut-console-animated.gif" alt="Kubernaut Console — interactive investigation and remediation" width="800"/>
@@ -92,7 +95,7 @@ Kubernaut bridges that gap. It uses an LLM agent that investigates the actual ro
   <em>Coming in v1.6 — Kubernaut Console: investigate, chat, and remediate from a single UI</em>
 </p>
 
-**[Full roadmap](docs/roadmap/ROADMAP.md)** — Collective Intelligence, Fleet Operations (ACM/AAP), and Operational Expansion (cost, security, non-K8s). For past releases, see the [CHANGELOG](CHANGELOG.md).
+**[Full roadmap](docs/roadmap/ROADMAP.md)** — Fleet Operations (ACM/AAP), Collective Intelligence, and Operational Expansion (cost, security, non-K8s). For past releases, see the [CHANGELOG](CHANGELOG.md).
 
 ---
 
