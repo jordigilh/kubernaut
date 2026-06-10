@@ -83,7 +83,7 @@ Kubernaut bridges that gap. It uses an LLM agent that investigates the actual ro
 ### v1.5.x — Custom Agent Injection & ITSM (upcoming)
 
 - **Custom agent injection** — Pluggable investigation and remediation agents via the AgenticWorkflow CRD, enabling customers to inject domain-specific automation into the Kubernaut pipeline ([#1242](https://github.com/jordigilh/kubernaut/issues/1242), [#883](https://github.com/jordigilh/kubernaut/issues/883), [#711](https://github.com/jordigilh/kubernaut/issues/711))
-- **ServiceNow incident triage** — Bi-directional integration with ServiceNow for incident creation, enrichment, and remediation status sync ([#53](https://github.com/jordigilh/kubernaut/issues/53))
+- **ServiceNow incident triage** — Consume ServiceNow incidents as signals through the API Frontend, enabling Kubernaut to investigate and remediate ITSM tickets alongside Kubernetes alerts ([#1338](https://github.com/jordigilh/kubernaut/issues/1338))
 
 ### v1.6 — Fleet Management (next)
 
