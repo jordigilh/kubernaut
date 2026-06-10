@@ -121,6 +121,7 @@ See the [Installation Guide](https://jordigilh.github.io/kubernaut-docs/latest/g
 
 | Repository | Description |
 |---|---|
+| [kubernaut-operator](https://github.com/jordigilh/kubernaut-operator) | OLM operator — deploys and manages Kubernaut services on OpenShift |
 | [kubernaut-docs](https://github.com/jordigilh/kubernaut-docs) | Documentation website (MkDocs Material) |
 | [kubernaut-demo-scenarios](https://github.com/jordigilh/kubernaut-demo-scenarios) | Demo scenarios, scripts, and recordings |
 
