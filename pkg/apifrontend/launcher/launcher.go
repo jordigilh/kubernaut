@@ -43,6 +43,10 @@ type A2AConfig struct {
 	// When non-nil, it is registered as an a2asrv.CallInterceptor to override
 	// ContextID and set stable User identity on incoming A2A messages.
 	SessionInterceptor *SessionInterceptor
+
+	// LLMSemaphore limits global LLM concurrency (SC-5 Denial of Service Protection).
+	// When non-nil, Execute acquires a slot before invoking the agent and releases on return.
+	LLMSemaphore ConcurrencyLimiter
 }
 
 func (c A2AConfig) validate() error { //nolint:gocritic // hugeParam: value copy intentional for validation
@@ -89,7 +93,12 @@ func NewA2AHandler(cfg A2AConfig) (http.Handler, error) { //nolint:gocritic // h
 	}
 
 	inner := adka2a.NewExecutor(execCfg)
-	executor := NewStreamingExecutor(inner, log, cfg.BridgeMetrics, cfg.SessionPhaseUpdater)
+	var seOpts []StreamingExecutorOption
+	if cfg.LLMSemaphore != nil {
+		seOpts = append(seOpts, WithLLMSemaphore(cfg.LLMSemaphore))
+	}
+	seOpts = append(seOpts, WithReinvocation(cfg.SessionService, cfg.AppName))
+	executor := NewStreamingExecutor(inner, log, cfg.BridgeMetrics, cfg.SessionPhaseUpdater, seOpts...)
 
 	var handlerOpts []a2asrv.RequestHandlerOption
 	if cfg.SessionInterceptor != nil {

@@ -57,13 +57,14 @@ type providerRuntime struct {
 //   - providers non-empty → OIDC/JWKS validation only (reviewer not called)
 //   - providers empty + reviewer set → TokenReview only
 type JWTValidator struct {
-	providers   map[string]*providerRuntime
-	cache       *JWKSCache
-	reviewer    *TokenReviewer
-	replayCache *ReplayCache
-	httpClient  *http.Client
-	cbTimeout   time.Duration
-	cbGauge     *prometheus.GaugeVec
+	providers    map[string]*providerRuntime
+	cache        *JWKSCache
+	reviewer     *TokenReviewer
+	replayCache  *ReplayCache
+	httpClient   *http.Client
+	cbTimeout    time.Duration
+	cbGauge      *prometheus.GaugeVec
+	fetchLimiter FetchLimiter
 }
 
 // JWTValidatorOption is a functional option for configuring JWTValidator.
@@ -93,6 +94,11 @@ func WithCBMetrics(g *prometheus.GaugeVec) JWTValidatorOption {
 // WithReplayCache enables jti-based token replay detection.
 func WithReplayCache(rc *ReplayCache) JWTValidatorOption {
 	return func(v *JWTValidator) { v.replayCache = rc }
+}
+
+// WithProviderLimiter injects a per-provider JWKS fetch rate limiter (SC-5).
+func WithProviderLimiter(l FetchLimiter) JWTValidatorOption {
+	return func(v *JWTValidator) { v.fetchLimiter = l }
 }
 
 // NewJWTValidator creates a new JWTValidator from the given config.
@@ -136,6 +142,9 @@ func NewJWTValidator(cfg Config, opts ...JWTValidatorOption) (*JWTValidator, err
 	}
 	if v.cbGauge != nil {
 		cacheOpts = append(cacheOpts, WithCBGauge(v.cbGauge))
+	}
+	if v.fetchLimiter != nil {
+		cacheOpts = append(cacheOpts, WithFetchLimiter(v.fetchLimiter))
 	}
 	v.cache = NewJWKSCache(v.httpClient, jwksURLs, cacheOpts...)
 
@@ -217,7 +226,7 @@ func (v *JWTValidator) Validate(ctx context.Context, rawToken string) (*UserIden
 		}
 	}
 
-	identity := buildIdentity(claims, issuer, rawToken)
+	identity := buildIdentity(claims, issuer, rawToken, provider.config.ClaimMappings)
 
 	for _, rule := range provider.celRules {
 		if err := evaluateCELRule(rule, identity); err != nil {
@@ -337,14 +346,43 @@ func extractAudiences(claims map[string]interface{}) []string {
 	}
 }
 
-func buildIdentity(claims map[string]interface{}, issuer, rawToken string) *UserIdentity {
-	username := extractStringClaim(claims, "preferred_username")
-	if username == "" {
-		username = extractStringClaim(claims, "sub")
+func buildIdentity(claims map[string]interface{}, issuer, rawToken string, mappings ClaimMappings) *UserIdentity {
+	var username string
+	var groups []string
+
+	if mappings.Username != "" {
+		if v, err := evaluateClaimCEL(mappings.Username, claims); err == nil {
+			username, _ = v.(string)
+		}
 	}
+	if username == "" {
+		username = extractStringClaim(claims, "preferred_username")
+		if username == "" {
+			username = extractStringClaim(claims, "sub")
+		}
+	}
+
+	if mappings.Groups != "" {
+		if v, err := evaluateClaimCEL(mappings.Groups, claims); err == nil {
+			switch g := v.(type) {
+			case []string:
+				groups = g
+			case []interface{}:
+				for _, item := range g {
+					if s, ok := item.(string); ok {
+						groups = append(groups, s)
+					}
+				}
+			}
+		}
+	}
+	if groups == nil {
+		groups = extractGroupsClaim(claims)
+	}
+
 	identity := &UserIdentity{
 		Username: SanitizeClaimValue(username),
-		Groups:   sanitizeGroups(extractGroupsClaim(claims)),
+		Groups:   sanitizeGroups(groups),
 		Issuer:   issuer,
 		RawToken: rawToken,
 	}
@@ -426,4 +464,35 @@ func evaluateCELRule(rule compiledRule, identity *UserIdentity) error {
 	}
 
 	return nil
+}
+
+// evaluateClaimCEL evaluates a CEL expression against JWT claims.
+// The expression receives the full claims map as the variable "claims".
+// Returns the evaluated value (string for username, list for groups) or an error.
+func evaluateClaimCEL(expression string, claims map[string]interface{}) (interface{}, error) {
+	env, err := cel.NewEnv(
+		cel.Variable("claims", cel.MapType(cel.StringType, cel.AnyType)),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	ast, issues := env.Compile(expression)
+	if issues != nil && issues.Err() != nil {
+		return nil, issues.Err()
+	}
+
+	prg, err := env.Program(ast)
+	if err != nil {
+		return nil, err
+	}
+
+	out, _, err := prg.Eval(map[string]interface{}{
+		"claims": claims,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return out.Value(), nil
 }
