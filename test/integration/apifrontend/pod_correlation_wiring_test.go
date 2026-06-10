@@ -115,6 +115,83 @@ var _ = Describe("Pod Correlation Wiring (#triage)", func() {
 		})
 	})
 
+	It("IT-AF-SEV-W02: spec.signalName resolves to Prometheus alert name via pod correlation (not BackOff)", func() {
+		ctx := context.Background()
+		ns := "it-signal-" + uuid.New().String()[:8]
+
+		nsObj := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ns}}
+		Expect(k8sClient.Create(ctx, nsObj)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, nsObj) })
+
+		deploy := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{Name: "api-server", Namespace: ns},
+			Spec: appsv1.DeploymentSpec{
+				Selector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"app": "api-server"},
+				},
+				Template: corev1.PodTemplateSpec{
+					ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "api-server"}},
+					Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "main", Image: "busybox"}}},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, deploy)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, deploy) })
+
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "api-server-rs-pod1", Namespace: ns,
+				Labels: map[string]string{"app": "api-server"},
+			},
+			Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "main", Image: "busybox"}}},
+		}
+		Expect(k8sClient.Create(ctx, pod)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, pod) })
+
+		promClient := &podCorrelationPromClient{
+			alerts: []prom.Alert{
+				{
+					Labels: map[string]string{
+						"alertname": "KubePodCrashLooping",
+						"pod":       "api-server-rs-pod1",
+						"namespace": ns,
+						"severity":  "critical",
+					},
+					State: "firing",
+				},
+			},
+		}
+
+		resolver := severity.NewK8sPodResolver(dynamicClient, logr.Discard())
+		triager := severity.NewTriager(
+			promClient,
+			severity.NewNoopLLMTriager(logr.Discard()),
+			severity.DefaultConfig(),
+			logr.Discard(),
+			severity.WithPodResolver(resolver),
+		)
+
+		result, err := tools.HandleCreateRR(ctx, dynamicClient, ns, &tools.CreateRRArgs{
+			Namespace:   ns,
+			Kind:        "Deployment",
+			Name:        "api-server",
+			Description: "Pod crash looping",
+		}, "it-user", triager, nil)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.RRID).To(HavePrefix("rr-"))
+
+		created, getErr := dynamicClient.Resource(rrGVR).Namespace(ns).Get(ctx, result.RRID, metav1.GetOptions{})
+		Expect(getErr).NotTo(HaveOccurred())
+
+		signalName, _, _ := unstructured.NestedString(created.Object, "spec", "signalName")
+		Expect(signalName).To(Equal("KubePodCrashLooping"),
+			"spec.signalName must be the Prometheus alert name, not a generic K8s event like 'BackOff'")
+
+		DeferCleanup(func() {
+			_ = dynamicClient.Resource(rrGVR).Namespace(ns).Delete(ctx, result.RRID, metav1.DeleteOptions{})
+		})
+	})
+
 	It("IT-AF-TRIAGE-W01: WithPodResolver wiring pattern (main.go production path) works with envtest", func() {
 		ctx := context.Background()
 		ns := "it-triage-w-" + uuid.New().String()[:8]

@@ -24,6 +24,12 @@ func NewCircuitBreakerStateGauge() *prometheus.GaugeVec {
 	}, []string{"dependency"})
 }
 
+// FetchLimiter abstracts per-provider JWKS fetch rate limiting so the cache
+// does not depend directly on the ratelimit package.
+type FetchLimiter interface {
+	AllowFetch(provider string) bool
+}
+
 // JWKSCache provides JWKS key caching with circuit breaker support per issuer.
 // Per ARCHITECTURE.md: 3 consecutive failures -> open, 30s half-open timeout, 1 success -> close.
 // Fail-open for existing sessions (cached keys available), fail-closed for new sessions.
@@ -35,6 +41,7 @@ type JWKSCache struct {
 	maxStaleness    time.Duration
 	refreshInterval time.Duration
 	breakers        map[string]*gobreaker.CircuitBreaker[*jose.JSONWebKeySet]
+	fetchLimiter    FetchLimiter
 }
 
 type jwksCacheEntry struct {
@@ -50,6 +57,7 @@ type jwksCacheConfig struct {
 	cbGauge         *prometheus.GaugeVec
 	maxStaleness    time.Duration
 	refreshInterval time.Duration
+	fetchLimiter    FetchLimiter
 }
 
 // WithCBTimeout sets the circuit breaker half-open timeout. Default is 30s.
@@ -75,6 +83,13 @@ func WithRefreshInterval(d time.Duration) JWKSCacheOption {
 	return func(c *jwksCacheConfig) { c.refreshInterval = d }
 }
 
+// WithFetchLimiter injects a per-provider rate limiter (SC-5 Denial of Service Protection).
+// When set, JWKS fetch requests that exceed the provider's rate are skipped;
+// cached keys are returned if available, otherwise the fetch proceeds normally.
+func WithFetchLimiter(l FetchLimiter) JWKSCacheOption {
+	return func(c *jwksCacheConfig) { c.fetchLimiter = l }
+}
+
 // NewJWKSCache creates a JWKS cache with circuit breakers per JWKS endpoint.
 func NewJWKSCache(client *http.Client, jwksURLs []string, opts ...JWKSCacheOption) *JWKSCache {
 	if client == nil {
@@ -92,6 +107,7 @@ func NewJWKSCache(client *http.Client, jwksURLs []string, opts ...JWKSCacheOptio
 		maxStaleness:    cfg.maxStaleness,
 		refreshInterval: cfg.refreshInterval,
 		breakers:        make(map[string]*gobreaker.CircuitBreaker[*jose.JSONWebKeySet], len(jwksURLs)),
+		fetchLimiter:    cfg.fetchLimiter,
 	}
 
 	for _, jwksURL := range jwksURLs {
@@ -131,6 +147,16 @@ func (c *JWKSCache) GetKeys(ctx context.Context, issuerURL string) (*jose.JSONWe
 		entry, hasCached := c.entries[issuerURL]
 		c.mu.RUnlock()
 		if hasCached && entry.keys != nil && time.Since(entry.fetchedAt) < c.refreshInterval {
+			return entry.keys, nil
+		}
+	}
+
+	// SC-5: per-provider fetch rate limiting — return cached keys when throttled
+	if c.fetchLimiter != nil && !c.fetchLimiter.AllowFetch(issuerURL) {
+		c.mu.RLock()
+		entry, hasCached := c.entries[issuerURL]
+		c.mu.RUnlock()
+		if hasCached && entry.keys != nil {
 			return entry.keys, nil
 		}
 	}

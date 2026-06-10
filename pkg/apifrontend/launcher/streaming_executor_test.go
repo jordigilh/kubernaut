@@ -3,6 +3,8 @@ package launcher_test
 import (
 	"bytes"
 	"context"
+	"sync/atomic"
+	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/go-logr/logr/funcr"
@@ -11,6 +13,8 @@ import (
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"google.golang.org/genai"
+	adksession "google.golang.org/adk/session"
 
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
@@ -439,4 +443,147 @@ func (m *mockSessionPhaseUpdater) UpdatePhase(_ context.Context, sessionID strin
 	})
 	return m.updatePhaseErr
 }
+
+// stubSemaphore implements launcher.ConcurrencyLimiter for testing.
+type stubSemaphore struct {
+	allowed  bool
+	acquired int
+	released int
+}
+
+func (s *stubSemaphore) Acquire() bool {
+	if s.allowed {
+		s.acquired++
+		return true
+	}
+	return false
+}
+
+func (s *stubSemaphore) Release() {
+	s.released++
+}
+
+var _ = Describe("LLM Semaphore Wiring (SC-5)", func() {
+	It("IT-AF-RATE-W02: Execute rejects when semaphore is full", func() {
+		inner := &mockExecutor{}
+		sem := &stubSemaphore{allowed: false}
+		executor := launcher.NewStreamingExecutor(inner, logr.Discard(), nil, nil, launcher.WithLLMSemaphore(sem))
+
+		reqCtx := &a2asrv.RequestContext{TaskID: "task-reject"}
+		err := executor.Execute(context.Background(), reqCtx, &fakeQueue{})
+		Expect(err).To(MatchError(launcher.ErrLLMCapacity))
+		Expect(inner.executeCalled).To(BeFalse(),
+			"inner executor must NOT be called when semaphore rejects")
+	})
+
+	It("IT-AF-RATE-W02b: Execute acquires and releases semaphore on success", func() {
+		inner := &mockExecutor{}
+		sem := &stubSemaphore{allowed: true}
+		executor := launcher.NewStreamingExecutor(inner, logr.Discard(), nil, nil, launcher.WithLLMSemaphore(sem))
+
+		reqCtx := &a2asrv.RequestContext{TaskID: "task-ok"}
+		err := executor.Execute(context.Background(), reqCtx, &fakeQueue{})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(inner.executeCalled).To(BeTrue())
+		Expect(sem.acquired).To(Equal(1))
+		Expect(sem.released).To(Equal(1))
+	})
+})
+
+// reinvokeCountingExecutor counts how many times Execute is called.
+type reinvokeCountingExecutor struct {
+	callCount atomic.Int32
+}
+
+func (e *reinvokeCountingExecutor) Execute(_ context.Context, _ *a2asrv.RequestContext, _ eventqueue.Queue) error {
+	e.callCount.Add(1)
+	return nil
+}
+func (e *reinvokeCountingExecutor) Cancel(_ context.Context, _ *a2asrv.RequestContext, _ eventqueue.Queue) error {
+	return nil
+}
+
+// fakeSessionService returns a session with configurable events for reinvocation testing.
+type fakeSessionService struct {
+	events []*adksession.Event
+}
+
+func (f *fakeSessionService) Get(_ context.Context, _ *adksession.GetRequest) (*adksession.GetResponse, error) {
+	sess := adksession.InMemoryService()
+	created, _ := sess.Create(context.Background(), &adksession.CreateRequest{
+		AppName:   "test",
+		UserID:    "user",
+		SessionID: "sess-1",
+	})
+	for _, ev := range f.events {
+		_ = sess.AppendEvent(context.Background(), created.Session, ev)
+	}
+	resp, _ := sess.Get(context.Background(), &adksession.GetRequest{
+		AppName:   "test",
+		UserID:    "user",
+		SessionID: "sess-1",
+	})
+	return resp, nil
+}
+func (f *fakeSessionService) Create(_ context.Context, _ *adksession.CreateRequest) (*adksession.CreateResponse, error) {
+	return nil, nil
+}
+func (f *fakeSessionService) List(_ context.Context, _ *adksession.ListRequest) (*adksession.ListResponse, error) {
+	return nil, nil
+}
+func (f *fakeSessionService) Delete(_ context.Context, _ *adksession.DeleteRequest) error {
+	return nil
+}
+func (f *fakeSessionService) AppendEvent(_ context.Context, _ adksession.Session, _ *adksession.Event) error {
+	return nil
+}
+
+var _ = Describe("Re-invocation Wiring (BR-SESS-013)", func() {
+	It("IT-AF-REINV-W01: Execute re-invokes when last event is text-only (no tool call)", func() {
+		inner := &reinvokeCountingExecutor{}
+
+		textOnlyEvent := adksession.NewEvent("inv-1")
+		textOnlyEvent.Author = "model"
+		textOnlyEvent.Content = genai.NewContentFromText("I need more information.", genai.RoleModel)
+		textOnlyEvent.Timestamp = time.Now()
+
+		sessSvc := &fakeSessionService{events: []*adksession.Event{textOnlyEvent}}
+
+		executor := launcher.NewStreamingExecutor(inner, logr.Discard(), nil, nil,
+			launcher.WithReinvocation(sessSvc, "test-app"),
+		)
+
+		reqCtx := &a2asrv.RequestContext{TaskID: "task-reinvoke", ContextID: "sess-1"}
+		err := executor.Execute(context.Background(), reqCtx, &fakeQueue{})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(inner.callCount.Load()).To(BeNumerically(">", 1),
+			"executor must be re-invoked when last event has no tool call")
+	})
+
+	It("IT-AF-REINV-W01b: Execute does NOT re-invoke when last event has a tool call", func() {
+		inner := &reinvokeCountingExecutor{}
+
+		toolCallEvent := adksession.NewEvent("inv-2")
+		toolCallEvent.Author = "model"
+		toolCallEvent.Content = &genai.Content{
+			Role: "model",
+			Parts: []*genai.Part{
+				{FunctionCall: &genai.FunctionCall{Name: "kubernaut_investigate", Args: map[string]any{}}},
+			},
+		}
+		toolCallEvent.Timestamp = time.Now()
+
+		sessSvc := &fakeSessionService{events: []*adksession.Event{toolCallEvent}}
+
+		executor := launcher.NewStreamingExecutor(inner, logr.Discard(), nil, nil,
+			launcher.WithReinvocation(sessSvc, "test-app"),
+		)
+
+		reqCtx := &a2asrv.RequestContext{TaskID: "task-no-reinvoke", ContextID: "sess-1"}
+		err := executor.Execute(context.Background(), reqCtx, &fakeQueue{})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(inner.callCount.Load()).To(Equal(int32(1)),
+			"executor must NOT be re-invoked when last event contains a tool call")
+	})
+})
 

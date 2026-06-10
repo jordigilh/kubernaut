@@ -173,7 +173,7 @@ var _ = Describe("Logger Wiring (#1274)", func() {
 
 		Eventually(func() string {
 			return buf.String()
-		}, 5*time.Second, 100*time.Millisecond).Should(ContainSubstring("config reloaded"))
+		}, 5*time.Second, 100*time.Millisecond).Should(ContainSubstring("config validated but NOT applied"))
 
 		Expect(buf.String()).NotTo(ContainSubstring("level=INFO"))
 	})

@@ -107,6 +107,7 @@ func NewCRDSessionService(delegate adksession.Service, c client.Client, scheme *
 	for _, o := range opts {
 		o(svc)
 	}
+	svc.logger.Info("WARNING: session hydration from CRDs is NOT active — pod restart will lose in-memory sessions (deferred to PR7, issue #1451)")
 	return svc
 }
 

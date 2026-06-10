@@ -37,7 +37,7 @@ type ReloadCallback func(newContent []byte) error
 // On config change the callback parses and validates the new YAML, but the
 // running process keeps the original startup config. Full hot-apply would
 // require coordinated updates to the HTTP listener, auth pipeline, and rate
-// limiter — deferred to v1.6 (issue #TBD). The audit trail still records
+// limiter — deferred to v1.6 (issue #1450). The audit trail still records
 // every accepted or rejected reload for FedRAMP CM-3.
 //
 // Kubernetes ConfigMap volume mounts use a "..data" symlink that is atomically
@@ -126,6 +126,7 @@ func (w *FileWatcher) Start(ctx context.Context) error {
 	}
 
 	w.started.Store(true)
+	w.logger.Info("config hot-reload is VALIDATE-ONLY — config changes are validated but not applied at runtime (issue #1450, deferred to v1.6)")
 	go w.watchLoop(ctx)
 	return nil
 }
@@ -286,7 +287,7 @@ func (w *FileWatcher) handleFileChange(ctx context.Context) {
 		return
 	}
 
-	w.logger.Info("config reloaded", "path", w.path, "hash", newHash)
+	w.logger.Info("config validated but NOT applied (validate-only mode, issue #1450)", "path", w.path, "hash", newHash)
 	if w.auditor != nil {
 		w.auditor.Emit(ctx, &audit.Event{
 			Type: audit.EventConfigReloaded,

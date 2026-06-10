@@ -157,3 +157,70 @@ func TestJWKSCache_GetKeys_RefetchesAfterTTLExpires(t *testing.T) {
 		t.Fatalf("expected 2 fetches after TTL expiry, got %d", fetchCount.Load())
 	}
 }
+
+// spyFetchLimiter records AllowFetch calls and returns configurable results.
+type spyFetchLimiter struct {
+	allowed    bool
+	callCount  atomic.Int32
+}
+
+func (s *spyFetchLimiter) AllowFetch(_ string) bool {
+	s.callCount.Add(1)
+	return s.allowed
+}
+
+func TestJWKSCache_FetchLimiter_BlocksExcessiveFetches(t *testing.T) {
+	// IT-AF-RATE-W01: ProviderLimiter integration — when rate-limited,
+	// GetKeys returns cached keys without making a network call.
+	var fetchCount atomic.Int32
+	keySet := testJWKS(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fetchCount.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(keySet)
+	}))
+	defer srv.Close()
+
+	limiter := &spyFetchLimiter{allowed: true}
+	cache := NewJWKSCache(&http.Client{}, []string{srv.URL},
+		WithRefreshInterval(0),
+		WithFetchLimiter(limiter),
+	)
+	ctx := context.Background()
+
+	// First call: limiter allows, fetch occurs
+	keys1, err := cache.GetKeys(ctx, srv.URL)
+	if err != nil {
+		t.Fatalf("first GetKeys: %v", err)
+	}
+	if keys1 == nil || len(keys1.Keys) == 0 {
+		t.Fatal("expected non-empty keys on first fetch")
+	}
+	if fetchCount.Load() != 1 {
+		t.Fatalf("expected 1 fetch, got %d", fetchCount.Load())
+	}
+
+	// Second call: limiter blocks, cached keys returned without fetch
+	limiter.allowed = false
+	keys2, err := cache.GetKeys(ctx, srv.URL)
+	if err != nil {
+		t.Fatalf("second GetKeys: %v", err)
+	}
+	if keys2 == nil || len(keys2.Keys) == 0 {
+		t.Fatal("expected non-empty cached keys when rate-limited")
+	}
+	if fetchCount.Load() != 1 {
+		t.Fatalf("expected still 1 fetch (rate-limited), got %d", fetchCount.Load())
+	}
+
+	// Third call: limiter allows again, new fetch occurs
+	limiter.allowed = true
+	_, err = cache.GetKeys(ctx, srv.URL)
+	if err != nil {
+		t.Fatalf("third GetKeys: %v", err)
+	}
+	if fetchCount.Load() != 2 {
+		t.Fatalf("expected 2 fetches after limiter allows, got %d", fetchCount.Load())
+	}
+}
