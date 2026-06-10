@@ -36,6 +36,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
+	"google.golang.org/genai"
+
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 
 	v1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
@@ -665,7 +667,24 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 		promClient := prom.NewHTTPClient(cfg.SeverityTriage.PrometheusURL, promHTTPClient)
 		deps.PromClient = promClient
 
-		llmTriager := severity.LLMTriager(severity.NewNoopLLMTriager(logger.WithName("llm-triage")))
+		var llmTriager severity.LLMTriager
+		if cfg.Agent.LLM.Provider != "" {
+			genaiClient, genaiErr := newGenAIClientForTriage(ctx, cfg.Agent.LLM)
+			if genaiErr != nil {
+				logger.Error(genaiErr, "failed to create LLM client for severity triage, falling back to noop")
+				llmTriager = severity.NewNoopLLMTriager(logger.WithName("llm-triage"))
+			} else {
+				llmTriager = severity.NewGenAITriager(severity.GenAITriagerConfig{
+					Client: genaiClient,
+					Model:  cfg.Agent.LLM.Model,
+					Logger: logger.WithName("llm-triage"),
+				})
+				logger.Info("LLM severity triage enabled", "provider", cfg.Agent.LLM.Provider, "model", cfg.Agent.LLM.Model)
+			}
+		} else {
+			llmTriager = severity.NewNoopLLMTriager(logger.WithName("llm-triage"))
+			logger.Info("LLM severity triage disabled (no LLM provider configured), using noop triager")
+		}
 
 		severityCfg := severity.Config{
 			Enabled:           true,
@@ -701,6 +720,26 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 	}
 
 	return deps, nil
+}
+
+// newGenAIClientForTriage creates a genai.Client for the severity triage LLM,
+// reusing the same provider credentials configured for the A2A agent LLM.
+func newGenAIClientForTriage(ctx context.Context, llmCfg config.LLMConfig) (*genai.Client, error) {
+	switch llmCfg.Provider {
+	case config.LLMProviderVertexAI:
+		return genai.NewClient(ctx, &genai.ClientConfig{
+			Project:  llmCfg.VertexProject,
+			Location: llmCfg.VertexLocation,
+			Backend:  genai.BackendVertexAI,
+		})
+	case config.LLMProviderGemini:
+		return genai.NewClient(ctx, &genai.ClientConfig{
+			APIKey:  llmCfg.APIKey,
+			Backend: genai.BackendGeminiAPI,
+		})
+	default:
+		return nil, fmt.Errorf("unsupported triage LLM provider: %q (only vertex_ai and gemini supported for severity triage)", llmCfg.Provider)
+	}
 }
 
 func buildMCPHandler(cfg *config.Config, deps *backendDeps, sessInfra *sessionInfra, metricsReg *metrics.Registry, authorizer auth.ToolAuthorizer, auditor audit.Emitter, logger logr.Logger, userLimiter *ratelimit.UserLimiter) (http.Handler, func() bool, error) {
@@ -774,6 +813,12 @@ func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps,
 		return nil, fmt.Errorf("create LLM model: %w", err)
 	}
 
+	hasCustomTransport := cfg.Agent.LLM.TLSCaFile != "" || cfg.Agent.LLM.OAuth2.Enabled
+	if hasCustomTransport && (cfg.Agent.LLM.Provider == config.LLMProviderVertexAI || cfg.Agent.LLM.Provider == config.LLMProviderAnthropic) {
+		logger.Info("WARNING: mTLS/OAuth2 transport config is set but CANNOT be applied to "+cfg.Agent.LLM.Provider+
+			" — upstream ADK wrapper lacks HTTP client injection (blocked by issue #1342)")
+	}
+
 	var sessionSvcForAgent *session.CRDSessionService
 	if sessInfra != nil {
 		sessionSvcForAgent = sessInfra.SessionService
@@ -815,6 +860,7 @@ func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps,
 		sessionSvc = adksession.InMemoryService()
 	}
 
+	llmSemaphore := ratelimit.NewLLMSemaphore(cfg.RateLimit.MaxConcurrentSessions)
 	a2aCfg := launcher.A2AConfig{
 		Agent:               rootAgent,
 		SessionService:      sessionSvc,
@@ -824,6 +870,7 @@ func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps,
 		BridgeMetrics:       metricsReg,
 		SessionPhaseUpdater: sessionSvcForAgent,
 		SessionInterceptor:  launcher.NewSessionInterceptor(activeCtxRegistry, logger.WithName("session-interceptor")),
+		LLMSemaphore:        llmSemaphore,
 	}
 
 	h, err := launcher.NewA2AHandler(a2aCfg)
@@ -963,6 +1010,10 @@ func buildAuthMiddleware(cfg *config.Config, reg *metrics.Registry, auditor audi
 		}
 		logger.Info("auth mode: OIDC/JWKS", "providers", len(ac.JWT))
 	}
+	providerLimiter := ratelimit.NewProviderLimiter(ratelimit.PerProviderConfig{
+		FetchIntervalSeconds: 300,
+	})
+	validatorOpts = append(validatorOpts, auth.WithProviderLimiter(providerLimiter))
 	validatorOpts = append(validatorOpts, auth.WithCBMetrics(reg.CircuitBreakerState))
 	validator, err := auth.NewJWTValidator(authCfg, validatorOpts...)
 	if err != nil {
