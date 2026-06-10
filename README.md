@@ -80,13 +80,14 @@ Kubernaut bridges that gap. It uses an LLM agent that investigates the actual ro
 - **Severity triage pipeline** — Multi-tier severity resolution (Prometheus alerts, rule evaluation, LLM-based triage) with pod correlation and signal name derivation
 - **A2A protocol** — Agent-to-Agent integration enabling external AI agents and automation platforms to trigger investigations and remediations via JSON-RPC
 
-### v1.5.x — ITSM Integration (upcoming)
+### v1.5.x — Custom Agent Injection & ITSM (upcoming)
 
-- **ServiceNow incident triage** — Bi-directional integration with ServiceNow for incident creation, enrichment, and remediation status sync
+- **Custom agent injection** — Pluggable investigation and remediation agents via the AgenticWorkflow CRD, enabling customers to inject domain-specific automation into the Kubernaut pipeline ([#1242](https://github.com/jordigilh/kubernaut/issues/1242), [#883](https://github.com/jordigilh/kubernaut/issues/883), [#711](https://github.com/jordigilh/kubernaut/issues/711))
+- **ServiceNow incident triage** — Bi-directional integration with ServiceNow for incident creation, enrichment, and remediation status sync ([#53](https://github.com/jordigilh/kubernaut/issues/53))
 
 ### v1.6 — Fleet Management (next)
 
-- **Fleet operations** — Multi-cluster remediation orchestration via ACM/AAP, enabling policy-driven remediation across fleet-scale Kubernetes environments
+- **Fleet operations** — Multi-cluster remediation orchestration via ACM/OCM, enabling policy-driven remediation across fleet-scale Kubernetes environments
 - **Kubernaut Console** — Web UI for interactive investigation, remediation monitoring, and workflow management
 
 <p align="center">
@@ -95,7 +96,7 @@ Kubernaut bridges that gap. It uses an LLM agent that investigates the actual ro
   <em>Coming in v1.6 — Kubernaut Console: investigate, chat, and remediate from a single UI</em>
 </p>
 
-**[Full roadmap](docs/roadmap/ROADMAP.md)** — Fleet Operations (ACM/AAP), Collective Intelligence, and Operational Expansion (cost, security, non-K8s). For past releases, see the [CHANGELOG](CHANGELOG.md).
+**[Full roadmap](docs/roadmap/ROADMAP.md)** — Fleet Operations (ACM/OCM), Collective Intelligence, and Operational Expansion (cost, security, non-K8s). For past releases, see the [CHANGELOG](CHANGELOG.md).
 
 ---
 
