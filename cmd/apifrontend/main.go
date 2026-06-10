@@ -727,16 +727,28 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 func newGenAIClientForTriage(ctx context.Context, llmCfg config.LLMConfig) (*genai.Client, error) {
 	switch llmCfg.Provider {
 	case config.LLMProviderVertexAI:
-		return genai.NewClient(ctx, &genai.ClientConfig{
+		clientCfg := &genai.ClientConfig{
 			Project:  llmCfg.VertexProject,
 			Location: llmCfg.VertexLocation,
 			Backend:  genai.BackendVertexAI,
-		})
+		}
+		if llmCfg.Endpoint != "" {
+			clientCfg.HTTPOptions = genai.HTTPOptions{
+				BaseURL: llmCfg.Endpoint,
+			}
+		}
+		return genai.NewClient(ctx, clientCfg)
 	case config.LLMProviderGemini:
-		return genai.NewClient(ctx, &genai.ClientConfig{
+		clientCfg := &genai.ClientConfig{
 			APIKey:  llmCfg.APIKey,
 			Backend: genai.BackendGeminiAPI,
-		})
+		}
+		if llmCfg.Endpoint != "" {
+			clientCfg.HTTPOptions = genai.HTTPOptions{
+				BaseURL: llmCfg.Endpoint,
+			}
+		}
+		return genai.NewClient(ctx, clientCfg)
 	default:
 		return nil, fmt.Errorf("unsupported triage LLM provider: %q (only vertex_ai and gemini supported for severity triage)", llmCfg.Provider)
 	}
