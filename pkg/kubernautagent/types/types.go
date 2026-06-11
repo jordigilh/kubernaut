@@ -85,6 +85,16 @@ type InvestigationResult struct {
 	// Populated by Validator.SelfCorrect when validation fails and retries occur.
 	ValidationAttemptsHistory []ValidationAttemptRecord `json:"validation_attempts_history,omitempty"`
 
+	// TotalLLMTurns tracks the total number of LLM inference calls made across
+	// all investigation phases (RCA + workflow selection). Surfaced in the
+	// structured decision payload for observability (#1396).
+	TotalLLMTurns int `json:"total_llm_turns,omitempty"`
+
+	// TotalToolCalls tracks the total number of tool executions dispatched
+	// across all investigation phases. Surfaced in the structured decision
+	// payload for observability (#1396).
+	TotalToolCalls int `json:"total_tool_calls,omitempty"`
+
 	// Cancelled indicates the investigation was aborted by operator action
 	// (BR-SESSION-001). When true, the result contains partial accumulated
 	// state up to the point of cancellation.

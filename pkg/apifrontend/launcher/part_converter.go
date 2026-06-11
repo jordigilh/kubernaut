@@ -2,6 +2,7 @@ package launcher
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -41,11 +42,26 @@ var toolStatusMessages = map[string]string{
 // summary from FunctionResponse.Response. Tools not listed here have their
 // responses dropped (the LLM's subsequent reasoning covers the content).
 var keyToolSummarizers = map[string]func(map[string]any) string{
-	"kubernaut_investigate":          summarizeInvestigation,
-	"kubernaut_discover_workflows":   summarizeDiscoverWorkflows,
-	"kubernaut_select_workflow":      summarizeSelectWorkflow,
-	"kubernaut_watch":                summarizeWatch,
-	"kubernaut_remediate":            summarizeCreateRR,
+	"kubernaut_investigate":        summarizeInvestigation,
+	"kubernaut_discover_workflows": summarizeDiscoverWorkflows,
+	"kubernaut_select_workflow":    summarizeSelectWorkflow,
+	"kubernaut_watch":              summarizeWatch,
+	"kubernaut_remediate":          summarizeCreateRR,
+	"kubernaut_present_decision":   summarizePresentDecision,
+}
+
+// decisionMetaTools lists tools whose FunctionResponse should be emitted
+// with MetaTypeDecision metadata instead of the default MetaTypeStatus.
+// This allows Console/Kagenti to render rich structured workflow cards.
+var decisionMetaTools = map[string]bool{
+	"kubernaut_present_decision": true,
+}
+
+// outputMetaTools lists tools whose FunctionResponse should be emitted
+// with MetaTypeOutput metadata for structured rendering (e.g. execution
+// progress steps in the Console).
+var outputMetaTools = map[string]bool{
+	"kubernaut_watch": true,
 }
 
 // buildPartConverter returns a GenAIPartConverter that uses a hybrid approach:
@@ -240,6 +256,19 @@ func summarizeCreateRR(resp map[string]any) string {
 	return "Remediation request created."
 }
 
+// summarizePresentDecision outputs a structured JSON payload containing the
+// workflow options for rich card rendering in Console/Kagenti. The FunctionResponse
+// contains {"presented":true,"message":"..."} but we reconstruct structured data
+// from the original tool call args that are captured in the response context.
+// Fallback: extract option names from the formatted message string.
+func summarizePresentDecision(resp map[string]any) string {
+	msg, _ := resp["message"].(string)
+	if msg == "" {
+		return `{"options":[]}`
+	}
+	return msg
+}
+
 // buildStreamingPartConverter returns a GenAIPartConverter for streaming mode.
 // Same hybrid approach as buildPartConverter: status-like parts go through the
 // EventBridge as TaskStatusUpdateEvent, LLM text goes as artifact TextParts.
@@ -260,6 +289,11 @@ func buildStreamingPartConverter() adka2a.GenAIPartConverter {
 			return convertPartToText(part), nil
 		}
 
+		if part.FunctionResponse != nil && outputMetaTools[part.FunctionResponse.Name] {
+			emitStructuredOutput(ctx, bridge, part.FunctionResponse)
+			return nil, nil
+		}
+
 		return emitPartViaBridge(ctx, bridge, part), nil
 	}
 }
@@ -272,6 +306,10 @@ func buildStreamingPartConverter() adka2a.GenAIPartConverter {
 func emitPartViaBridge(ctx context.Context, bridge *EventBridge, part *genai.Part) a2a.Part {
 	switch {
 	case part.FunctionCall != nil:
+		if part.FunctionCall.Name == "kubernaut_present_decision" {
+			emitDecisionEvent(ctx, bridge, part.FunctionCall)
+			return nil
+		}
 		text := convertFunctionCall(part.FunctionCall)
 		if text != nil {
 			_ = bridge.EmitStatus(ctx, text.(a2a.TextPart).Text)
@@ -280,7 +318,11 @@ func emitPartViaBridge(ctx context.Context, bridge *EventBridge, part *genai.Par
 	case part.FunctionResponse != nil:
 		text := convertFunctionResponse(part.FunctionResponse)
 		if text != nil {
-			_ = bridge.EmitStatus(ctx, text.(a2a.TextPart).Text)
+			if decisionMetaTools[part.FunctionResponse.Name] {
+				_ = bridge.EmitStructuredMeta(ctx, text.(a2a.TextPart).Text, map[string]any{"type": MetaTypeDecision})
+			} else {
+				_ = bridge.EmitStatus(ctx, text.(a2a.TextPart).Text)
+			}
 		}
 		return nil
 	case part.Thought:
@@ -289,6 +331,85 @@ func emitPartViaBridge(ctx context.Context, bridge *EventBridge, part *genai.Par
 	default:
 		return a2a.TextPart{Text: ensureTrailingParagraphBreak(part.Text)}
 	}
+}
+
+// emitDecisionEvent emits the kubernaut_present_decision FunctionCall args
+// as a structured JSON status event with metadata.type="decision". This allows
+// A2A clients (e.g. Kubernaut Console) to render workflow option cards instead
+// of relying on the LLM's text formatting. Uses EmitStructuredMeta to bypass
+// the 512-rune truncation that would corrupt JSON payloads (#1395).
+func emitDecisionEvent(ctx context.Context, bridge *EventBridge, fc *genai.FunctionCall) {
+	_ = bridge.EmitStatus(ctx, "Presenting decision to user...\n\n")
+
+	payload, err := json.Marshal(fc.Args)
+	if err != nil {
+		return
+	}
+	_ = bridge.EmitStructuredMeta(ctx, string(payload), map[string]any{"type": MetaTypeDecision})
+}
+
+// emitStructuredOutput emits the FunctionResponse from kubernaut_watch as a
+// structured output event so the Console can render execution progress steps.
+func emitStructuredOutput(ctx context.Context, bridge *EventBridge, fr *genai.FunctionResponse) {
+	if fr.Response == nil {
+		return
+	}
+
+	type outputStep struct {
+		ID    string `json:"id"`
+		Label string `json:"label"`
+		State string `json:"state"`
+	}
+
+	type outputPayload struct {
+		Steps     []outputStep `json:"steps"`
+		Completed bool         `json:"completed"`
+	}
+
+	raw, err := json.Marshal(fr.Response)
+	if err != nil {
+		return
+	}
+
+	var result struct {
+		Events []struct {
+			Resource string `json:"resource"`
+			Phase    string `json:"phase"`
+			Message  string `json:"message"`
+		} `json:"events"`
+		Status  string `json:"status"`
+		Outcome string `json:"outcome"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return
+	}
+
+	steps := make([]outputStep, 0, len(result.Events))
+	for i, evt := range result.Events {
+		state := "done"
+		if i == len(result.Events)-1 && result.Status != "completed" {
+			state = "running"
+		}
+		label := evt.Phase
+		if evt.Message != "" {
+			label = evt.Message
+		}
+		steps = append(steps, outputStep{
+			ID:    fmt.Sprintf("s%d", i+1),
+			Label: label,
+			State: state,
+		})
+	}
+
+	completed := result.Status == "completed"
+	payload := outputPayload{Steps: steps, Completed: completed}
+
+	out, err := json.Marshal(payload)
+	if err != nil {
+		return
+	}
+
+	_ = bridge.EmitStatusWithMeta(ctx, string(out), map[string]any{"type": MetaTypeOutput})
 }
 
 // convertPartToText is the fallback path when no EventBridge is available.

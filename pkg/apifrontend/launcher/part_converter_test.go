@@ -2,6 +2,7 @@ package launcher_test
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 
 	"github.com/a2aproject/a2a-go/a2a"
@@ -1175,5 +1176,443 @@ var _ = Describe("GenAIPartConverter — Streaming Mode (TP-1258)", func() {
 			Expect(result).To(BeNil())
 			Expect(statusEventTextAt(queue, 0)).To(ContainSubstring("already exists"))
 		})
+	})
+})
+
+// ===========================================================================
+// AU-3: Content of Audit Records — Remediation Progress Observability
+// Proves that remediation execution steps are emitted as structured, machine-
+// parseable audit records so operators can observe and reconstruct the full
+// remediation timeline without reading free-form text.
+// ===========================================================================
+
+var _ = Describe("AU-3: Remediation progress produces structured audit records", func() {
+	var convertStreaming launcher.PartConverterFunc
+
+	BeforeEach(func() {
+		convertStreaming = launcher.BuildStreamingPartConverterForTest()
+	})
+
+	It("UT-AF-WATCH-OUTPUT-001: completed remediation produces structured step record with terminal state", func() {
+		part := &genai.Part{
+			FunctionResponse: &genai.FunctionResponse{
+				Name: "kubernaut_watch",
+				Response: map[string]any{
+					"events": []any{
+						map[string]any{"phase": "Executing", "resource": "RemediationRequest", "message": "Starting rollout undo"},
+						map[string]any{"phase": "Verifying", "resource": "RemediationRequest", "message": "Checking pod health"},
+					},
+					"status": "completed",
+				},
+			},
+		}
+		queue, ctx := partConverterBridgeCtx()
+		result, err := convertStreaming(ctx, nil, part)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(BeNil())
+
+		Expect(queue.events).To(HaveLen(1))
+		evt, ok := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+		Expect(ok).To(BeTrue())
+		Expect(evt.Metadata).NotTo(BeNil())
+		Expect(evt.Metadata["type"]).To(Equal("output"),
+			"AU-3: remediation steps must be classified as 'output' for audit separation")
+
+		tp, ok := evt.Status.Message.Parts[0].(a2a.TextPart)
+		Expect(ok).To(BeTrue())
+		Expect(tp.Text).To(ContainSubstring(`"steps"`))
+		Expect(tp.Text).To(ContainSubstring(`"completed":true`),
+			"AU-3: terminal state must be explicitly recorded")
+		Expect(tp.Text).To(ContainSubstring(`"s1"`))
+		Expect(tp.Text).To(ContainSubstring(`"s2"`))
+		Expect(tp.Text).To(ContainSubstring(`"done"`),
+			"AU-3: each step must record its final disposition")
+	})
+
+	It("UT-AF-WATCH-OUTPUT-002: in-progress remediation distinguishes pending from completed steps", func() {
+		part := &genai.Part{
+			FunctionResponse: &genai.FunctionResponse{
+				Name: "kubernaut_watch",
+				Response: map[string]any{
+					"events": []any{
+						map[string]any{"phase": "Submitted", "resource": "RemediationRequest", "message": "RR created"},
+						map[string]any{"phase": "Executing", "resource": "RemediationRequest", "message": "Rolling back"},
+					},
+					"status": "awaiting_approval",
+				},
+			},
+		}
+		queue, ctx := partConverterBridgeCtx()
+		result, err := convertStreaming(ctx, nil, part)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(BeNil())
+
+		Expect(queue.events).To(HaveLen(1))
+		evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+		Expect(evt.Metadata["type"]).To(Equal("output"))
+
+		tp := evt.Status.Message.Parts[0].(a2a.TextPart)
+		Expect(tp.Text).To(ContainSubstring(`"completed":false`),
+			"AU-3: non-terminal state must not claim completion")
+		Expect(tp.Text).To(ContainSubstring(`"state":"running"`),
+			"AU-3: active step must be distinguishable from historical steps")
+		Expect(tp.Text).To(ContainSubstring(`"state":"done"`))
+	})
+
+	It("UT-AF-WATCH-OUTPUT-003: remediation with no events still produces a valid audit record", func() {
+		part := &genai.Part{
+			FunctionResponse: &genai.FunctionResponse{
+				Name: "kubernaut_watch",
+				Response: map[string]any{
+					"events": []any{},
+					"status": "completed",
+				},
+			},
+		}
+		queue, ctx := partConverterBridgeCtx()
+		result, err := convertStreaming(ctx, nil, part)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(BeNil())
+
+		Expect(queue.events).To(HaveLen(1))
+		evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+		Expect(evt.Metadata["type"]).To(Equal("output"))
+
+		tp := evt.Status.Message.Parts[0].(a2a.TextPart)
+		Expect(tp.Text).To(ContainSubstring(`"steps":[]`),
+			"AU-3: empty remediation must still produce valid structured record")
+		Expect(tp.Text).To(ContainSubstring(`"completed":true`))
+	})
+
+	It("UT-AF-WATCH-OUTPUT-004: SI-17 fail-safe — nil response degrades gracefully without data loss", func() {
+		part := &genai.Part{
+			FunctionResponse: &genai.FunctionResponse{
+				Name:     "kubernaut_watch",
+				Response: nil,
+			},
+		}
+		queue, ctx := partConverterBridgeCtx()
+		result, err := convertStreaming(ctx, nil, part)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(BeNil())
+		Expect(queue.events).To(BeEmpty(),
+			"SI-17: nil response must not produce corrupt audit records")
+	})
+
+	It("UT-AF-WATCH-OUTPUT-005: AU-3 human-readable — step labels carry actionable context", func() {
+		part := &genai.Part{
+			FunctionResponse: &genai.FunctionResponse{
+				Name: "kubernaut_watch",
+				Response: map[string]any{
+					"events": []any{
+						map[string]any{"phase": "Executing", "resource": "RR"},
+						map[string]any{"phase": "Verifying", "resource": "RR", "message": "All pods healthy"},
+					},
+					"status": "completed",
+				},
+			},
+		}
+		queue, ctx := partConverterBridgeCtx()
+		_, _ = convertStreaming(ctx, nil, part)
+
+		evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+		tp := evt.Status.Message.Parts[0].(a2a.TextPart)
+		Expect(tp.Text).To(ContainSubstring(`"label":"Executing"`),
+			"AU-3: phase name used as fallback when no descriptive message present")
+		Expect(tp.Text).To(ContainSubstring(`"label":"All pods healthy"`),
+			"AU-3: descriptive message preferred over phase name for readability")
+	})
+})
+
+// ===========================================================================
+// AC-3: Access Enforcement — Streaming Mode Isolation
+// Proves that the streaming-only structured output path does not leak into
+// the non-streaming (send) path, ensuring that clients using message/send
+// receive the legacy text format and are not exposed to internal metadata.
+// ===========================================================================
+
+var _ = Describe("AC-3: Structured output confined to streaming path", func() {
+	It("UT-AF-WATCH-OUTPUT-006: non-streaming path preserves legacy text format for backward compatibility", func() {
+		convert := launcher.BuildPartConverterForTest()
+		part := &genai.Part{
+			FunctionResponse: &genai.FunctionResponse{
+				Name: "kubernaut_watch",
+				Response: map[string]any{
+					"events": []any{
+						map[string]any{"phase": "Executing", "resource": "RR"},
+					},
+					"status": "completed",
+				},
+			},
+		}
+		queue, ctx := partConverterBridgeCtx()
+		result, err := convert(ctx, nil, part)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(BeNil())
+		Expect(queue.events).To(HaveLen(1))
+		evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+		Expect(evt.Metadata["type"]).To(Equal("status"),
+			"AC-3: non-streaming clients must receive status-type events, not structured output")
+	})
+})
+
+// ===========================================================================
+// SI-4/AC-6: Decision Transparency & Least Privilege
+// Proves that remediation decisions present ALL options to the operator with
+// explicit recommendation markers, ensuring no hidden actions and auditable
+// human-in-the-loop decision points.
+// ===========================================================================
+
+var _ = Describe("SI-4: Decision records preserve all options with recommendation transparency", func() {
+	It("IT-AF-WATCH-OUTPUT-001: AU-3 — remediation progress record is valid JSON matching wire contract", func() {
+		convertStreaming := launcher.BuildStreamingPartConverterForTest()
+		part := &genai.Part{
+			FunctionResponse: &genai.FunctionResponse{
+				Name: "kubernaut_watch",
+				Response: map[string]any{
+					"events": []any{
+						map[string]any{"phase": "Submitted", "resource": "RemediationRequest", "message": "RR created"},
+						map[string]any{"phase": "Executing", "resource": "RemediationRequest", "message": "Rolling back deployment"},
+						map[string]any{"phase": "Verifying", "resource": "RemediationRequest", "message": "Pod health check"},
+					},
+					"status": "completed",
+				},
+			},
+		}
+		queue, ctx := partConverterBridgeCtx()
+		_, _ = convertStreaming(ctx, nil, part)
+
+		evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+		tp := evt.Status.Message.Parts[0].(a2a.TextPart)
+
+		var payload struct {
+			Steps []struct {
+				ID    string `json:"id"`
+				Label string `json:"label"`
+				State string `json:"state"`
+			} `json:"steps"`
+			Completed bool `json:"completed"`
+		}
+		err := json.Unmarshal([]byte(tp.Text), &payload)
+		Expect(err).NotTo(HaveOccurred(),
+			"AU-3: output payload must be machine-parseable for downstream audit tooling")
+		Expect(payload.Completed).To(BeTrue())
+		Expect(payload.Steps).To(HaveLen(3),
+			"AU-3: every observed phase transition must be recorded as a step")
+		Expect(payload.Steps[0].ID).To(Equal("s1"))
+		Expect(payload.Steps[0].Label).To(Equal("RR created"))
+		Expect(payload.Steps[0].State).To(Equal("done"))
+		Expect(payload.Steps[1].State).To(Equal("done"))
+		Expect(payload.Steps[2].State).To(Equal("done"))
+	})
+
+	It("IT-AF-WATCH-OUTPUT-002: AC-6 — decision payload preserves recommended flag for all workflow options", func() {
+		convertStreaming := launcher.BuildStreamingPartConverterForTest()
+		part := &genai.Part{
+			FunctionCall: &genai.FunctionCall{
+				Name: "kubernaut_present_decision",
+				Args: map[string]any{
+					"session_id": "sess-1",
+					"summary":    "OOM detected",
+					"options": []any{
+						map[string]any{"workflow_id": "wf-1", "name": "Rollback", "description": "undo last deploy", "recommended": true},
+						map[string]any{"workflow_id": "wf-2", "name": "Scale", "description": "add replicas"},
+					},
+				},
+			},
+		}
+		queue, ctx := partConverterBridgeCtx()
+		_, _ = convertStreaming(ctx, nil, part)
+
+		Expect(queue.events).To(HaveLen(2))
+		decisionEvt := queue.events[1].(*a2a.TaskStatusUpdateEvent)
+		Expect(decisionEvt.Metadata["type"]).To(Equal("decision"),
+			"SI-4: decision events must be classified separately for audit tracing")
+
+		tp := decisionEvt.Status.Message.Parts[0].(a2a.TextPart)
+		var payload struct {
+			Options []struct {
+				WorkflowID  string `json:"workflow_id"`
+				Name        string `json:"name"`
+				Recommended bool   `json:"recommended"`
+			} `json:"options"`
+		}
+		err := json.Unmarshal([]byte(tp.Text), &payload)
+		Expect(err).NotTo(HaveOccurred(),
+			"SI-4: decision payload must be machine-parseable")
+		Expect(payload.Options).To(HaveLen(2),
+			"AC-6: ALL options must be presented — no hidden automated choices")
+		Expect(payload.Options[0].Recommended).To(BeTrue(),
+			"AC-6: recommendation flag must be explicit and auditable")
+		Expect(payload.Options[1].Recommended).To(BeFalse(),
+			"AC-6: non-recommended options must explicitly show false (not omitted)")
+	})
+})
+
+// =============================================================================
+// TP-1395-1396 Integration Tests — prove wiring through production dispatch path
+// =============================================================================
+
+var _ = Describe("Structured Decision Payload Integration — TP-1395-1396", func() {
+
+	It("IT-AF-1395-001: SI-10 — decision payload > 512 chars passes through streaming converter without truncation", func() {
+		convertStreaming := launcher.BuildStreamingPartConverterForTest()
+		part := &genai.Part{
+			FunctionCall: &genai.FunctionCall{
+				Name: "kubernaut_present_decision",
+				Args: map[string]any{
+					"session_id": "sess-it-001",
+					"summary":    "OOMKill detected in production data-processor pod with critical severity and high confidence",
+					"rca": map[string]any{
+						"severity":         "critical",
+						"confidence":       0.92,
+						"causal_chain":     []any{"Memory leak in data-processor worker goroutine", "Container hit 512Mi memory limit", "Kernel sent OOMKill signal to container"},
+						"target":           "Deployment/data-processor in production",
+						"tool_calls_count": 19,
+						"llm_turns":        17,
+					},
+					"options": []any{
+						map[string]any{"workflow_id": "wf-restart", "name": "Restart Pod", "description": "Rolling restart of affected deployment pods to recover from OOM state immediately", "risk": "low", "recommended": true, "parameters": map[string]any{"namespace": "production", "deployment": "data-processor"}},
+						map[string]any{"workflow_id": "wf-scale", "name": "Increase Memory Limit", "description": "Scale memory limit from 512Mi to 1Gi to prevent future OOMKill events", "risk": "medium", "parameters": map[string]any{"new_limit": "1Gi"}},
+						map[string]any{"workflow_id": "wf-rollback", "name": "Rollback Deployment", "description": "Roll back to the previous stable revision that did not exhibit the memory leak", "risk": "low", "ruled_out_reason": "No previous revision available in cluster deployment history"},
+					},
+				},
+			},
+		}
+		queue, ctx := partConverterBridgeCtx()
+		_, _ = convertStreaming(ctx, nil, part)
+
+		Expect(len(queue.events)).To(BeNumerically(">=", 2))
+		decisionEvt := queue.events[1].(*a2a.TaskStatusUpdateEvent)
+		Expect(decisionEvt.Metadata["type"]).To(Equal("decision"))
+
+		tp := decisionEvt.Status.Message.Parts[0].(a2a.TextPart)
+		Expect(len(tp.Text)).To(BeNumerically(">", 512),
+			"SI-10: structured JSON payload must NOT be truncated at 512 chars")
+		Expect(tp.Text).NotTo(HaveSuffix("..."),
+			"#1395: structured JSON must not have truncation suffix")
+
+		var parsed map[string]any
+		err := json.Unmarshal([]byte(tp.Text), &parsed)
+		Expect(err).NotTo(HaveOccurred(), "payload must be valid JSON after emission")
+		Expect(parsed).To(HaveKey("rca"), "RCA field must be preserved in payload")
+		Expect(parsed).To(HaveKey("options"), "options must be preserved in payload")
+
+		rca, ok := parsed["rca"].(map[string]any)
+		Expect(ok).To(BeTrue())
+		Expect(rca["severity"]).To(Equal("critical"))
+		Expect(rca["confidence"]).To(BeNumerically("~", 0.92, 0.001))
+	})
+
+	It("IT-AF-1396-001: AU-3 — RCA fields flow through decision event for audit tracing", func() {
+		convertStreaming := launcher.BuildStreamingPartConverterForTest()
+		part := &genai.Part{
+			FunctionCall: &genai.FunctionCall{
+				Name: "kubernaut_present_decision",
+				Args: map[string]any{
+					"session_id": "sess-it-002",
+					"summary":    "Certificate expired",
+					"rca": map[string]any{
+						"severity":         "high",
+						"confidence":       0.88,
+						"causal_chain":     []any{"TLS cert expired", "Mutual TLS handshake failed"},
+						"target":           "Secret/tls-cert in istio-system",
+						"tool_calls_count": 5,
+						"llm_turns":        3,
+					},
+					"options": []any{
+						map[string]any{"workflow_id": "wf-renew", "name": "Renew Certificate", "description": "Issue new cert via cert-manager", "recommended": true},
+					},
+				},
+			},
+		}
+		queue, ctx := partConverterBridgeCtx()
+		_, _ = convertStreaming(ctx, nil, part)
+
+		Expect(len(queue.events)).To(BeNumerically(">=", 2))
+		decisionEvt := queue.events[1].(*a2a.TaskStatusUpdateEvent)
+
+		tp := decisionEvt.Status.Message.Parts[0].(a2a.TextPart)
+		var parsed struct {
+			RCA struct {
+				Severity       string   `json:"severity"`
+				Confidence     float64  `json:"confidence"`
+				CausalChain    []string `json:"causal_chain"`
+				Target         string   `json:"target"`
+				ToolCallsCount int      `json:"tool_calls_count"`
+				LLMTurns       int      `json:"llm_turns"`
+			} `json:"rca"`
+			Options []struct {
+				WorkflowID  string            `json:"workflow_id"`
+				Name        string            `json:"name"`
+				Parameters  map[string]string `json:"parameters"`
+				Recommended bool              `json:"recommended"`
+			} `json:"options"`
+		}
+		err := json.Unmarshal([]byte(tp.Text), &parsed)
+		Expect(err).NotTo(HaveOccurred(), "AU-3: decision payload must be valid JSON for audit parsing")
+		Expect(parsed.RCA.Severity).To(Equal("high"))
+		Expect(parsed.RCA.Confidence).To(BeNumerically("~", 0.88, 0.001))
+		Expect(parsed.RCA.CausalChain).To(HaveLen(2))
+		Expect(parsed.RCA.Target).To(Equal("Secret/tls-cert in istio-system"))
+		Expect(parsed.RCA.ToolCallsCount).To(Equal(5))
+		Expect(parsed.RCA.LLMTurns).To(Equal(3))
+	})
+
+	It("IT-AF-1396-002: AC-6 — extended WorkflowOption fields (Parameters, RuledOutReason) flow through", func() {
+		convertStreaming := launcher.BuildStreamingPartConverterForTest()
+		part := &genai.Part{
+			FunctionCall: &genai.FunctionCall{
+				Name: "kubernaut_present_decision",
+				Args: map[string]any{
+					"session_id": "sess-it-003",
+					"summary":    "Pod crash loop",
+					"rca": map[string]any{
+						"severity":   "medium",
+						"confidence": 0.75,
+						"target":     "Pod/worker-abc in staging",
+					},
+					"options": []any{
+						map[string]any{
+							"workflow_id": "wf-fix",
+							"name":       "Apply Fix",
+							"description": "Apply configuration fix",
+							"parameters": map[string]any{"image": "v2.1.0", "replicas": "3"},
+							"recommended": true,
+						},
+						map[string]any{
+							"workflow_id":      "wf-migrate",
+							"name":            "Migrate Database",
+							"description":     "Run database migration",
+							"ruled_out_reason": "No pending migrations detected in schema diff",
+						},
+					},
+				},
+			},
+		}
+		queue, ctx := partConverterBridgeCtx()
+		_, _ = convertStreaming(ctx, nil, part)
+
+		Expect(len(queue.events)).To(BeNumerically(">=", 2))
+		decisionEvt := queue.events[1].(*a2a.TaskStatusUpdateEvent)
+		tp := decisionEvt.Status.Message.Parts[0].(a2a.TextPart)
+
+		var parsed struct {
+			Options []struct {
+				WorkflowID     string            `json:"workflow_id"`
+				Parameters     map[string]string `json:"parameters"`
+				RuledOutReason string            `json:"ruled_out_reason"`
+				Recommended    bool              `json:"recommended"`
+			} `json:"options"`
+		}
+		err := json.Unmarshal([]byte(tp.Text), &parsed)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(parsed.Options).To(HaveLen(2))
+
+		Expect(parsed.Options[0].Parameters).To(HaveKeyWithValue("image", "v2.1.0"))
+		Expect(parsed.Options[0].Parameters).To(HaveKeyWithValue("replicas", "3"))
+		Expect(parsed.Options[0].Recommended).To(BeTrue())
+
+		Expect(parsed.Options[1].RuledOutReason).To(Equal("No pending migrations detected in schema diff"))
 	})
 })

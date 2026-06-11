@@ -80,7 +80,21 @@ type InvestigateMCPResult struct {
 	Status    string `json:"status"`
 	Summary   string `json:"summary,omitempty"`
 	RRID      string `json:"rr_id,omitempty"`
-	Error     string `json:"error,omitempty"`
+	Error     string          `json:"error,omitempty"`
+	RCA       *InvestigateRCA `json:"rca,omitempty"`
+}
+
+// InvestigateRCA is the structured RCA data extracted from the KA complete event.
+// It carries the AF-relevant subset of InvestigationResult for the LLM to pass
+// through into present_decision (#1396).
+type InvestigateRCA struct {
+	Severity       string   `json:"severity,omitempty"`
+	Confidence     float64  `json:"confidence,omitempty"`
+	CausalChain    []string `json:"causal_chain,omitempty"`
+	Target         string   `json:"target,omitempty"`
+	RCASummary     string   `json:"rca_summary,omitempty"`
+	TotalLLMTurns  int      `json:"total_llm_turns,omitempty"`
+	TotalToolCalls int      `json:"total_tool_calls,omitempty"`
 }
 
 // SessionStartedHook is called after a successful StartInvestigation with the
@@ -330,7 +344,7 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 	if blocking {
 		logger.Info("bridgeEventsCollectSummary: starting blocking event bridge",
 			"rr_id", args.RRID, "session_id", result.SessionID, "ctx_err", ctx.Err())
-		summary := bridgeEventsCollectSummary(ctx, result.Events, BridgeInactivityTimeout)
+		summary, rca := bridgeEventsCollectSummary(ctx, result.Events, BridgeInactivityTimeout)
 		status := "completed"
 		if ctx.Err() != nil {
 			status = "timeout"
@@ -359,6 +373,7 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 			Status:    status,
 			Summary:   summary,
 			RRID:      args.RRID,
+			RCA:       rca,
 		}, nil
 	}
 
@@ -436,12 +451,19 @@ var NonBlockingBridgeTTL = 15 * time.Minute
 // Exported so that tests can override it without modifying production code.
 var BridgeInactivityTimeout = 60 * time.Second
 
+// BridgeEventsCollectSummary is the exported entry point for bridgeEventsCollectSummary.
+// It is used by integration tests and the blocking MCP investigation path.
+func BridgeEventsCollectSummary(ctx context.Context, events <-chan ka.InvestigationEvent, inactivityTimeout time.Duration) (string, *InvestigateRCA) {
+	return bridgeEventsCollectSummary(ctx, events, inactivityTimeout)
+}
+
 // bridgeEventsCollectSummary bridges events (same as BridgeEventsToA2A) and
 // accumulates reasoning_delta text into a summary returned when the channel
 // closes, the context is cancelled, or no events arrive within
 // inactivityTimeout (hang detection).
-func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.InvestigationEvent, inactivityTimeout time.Duration) string {
+func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.InvestigationEvent, inactivityTimeout time.Duration) (string, *InvestigateRCA) {
 	var summary strings.Builder
+	var rcaResult *InvestigateRCA
 	keepalive := time.NewTicker(5 * time.Second)
 	defer keepalive.Stop()
 	inactivity := time.NewTimer(inactivityTimeout)
@@ -449,14 +471,14 @@ func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.Investigat
 	for {
 		select {
 		case <-ctx.Done():
-			return summary.String()
+			return summary.String(), rcaResult
 		case <-inactivity.C:
-			return summary.String()
+			return summary.String(), rcaResult
 		case <-keepalive.C:
 			_ = launcher.EmitKeepaliveDotSafe(ctx)
 		case evt, ok := <-events:
 			if !ok {
-				return summary.String()
+				return summary.String(), rcaResult
 			}
 			inactivity.Reset(inactivityTimeout)
 			emitEventToA2A(ctx, evt, FormatEventForUser(evt))
@@ -469,9 +491,19 @@ func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.Investigat
 				if chunk := extractJSONField(evt.Data, "delta"); chunk != "" {
 					summary.WriteString(chunk)
 				}
-			}
-			if evt.Type == ka.EventTypeComplete || evt.Type == ka.EventTypeCancelled {
-				return summary.String()
+			case ka.EventTypeComplete:
+				if len(evt.Data) > 0 {
+					var rca InvestigateRCA
+					if json.Unmarshal(evt.Data, &rca) == nil && rca.Severity != "" {
+						rcaResult = &rca
+						if rca.RCASummary != "" && summary.Len() == 0 {
+							summary.WriteString(rca.RCASummary)
+						}
+					}
+				}
+				return summary.String(), rcaResult
+			case ka.EventTypeCancelled:
+				return summary.String(), rcaResult
 			}
 		}
 	}

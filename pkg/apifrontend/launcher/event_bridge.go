@@ -51,6 +51,7 @@ const (
 	MetaTypeOutput        = "output"
 	MetaTypeInvestigation = "investigation"
 	MetaTypeKeepalive     = "keepalive"
+	MetaTypeDecision      = "decision"
 )
 
 // EventBridge enables tool handlers to emit progressive A2A events directly to
@@ -202,6 +203,45 @@ func sanitizeBridgeText(text string) string {
 		text = string([]rune(text)[:maxBridgeTextLen]) + "..."
 	}
 	return text
+}
+
+const maxStructuredPayloadLen = 8192
+
+// EmitStructuredMeta writes a TaskStatusUpdateEvent for structured JSON payloads
+// (decision cards, remediation output) that must NOT be truncated at 512 runes.
+// Applies SI-10 control-char sanitization and SC-7 secret redaction, but skips
+// length truncation. Rejects payloads exceeding 8KB with a fallback status
+// message and metric increment (defense-in-depth).
+func (b *EventBridge) EmitStructuredMeta(ctx context.Context, text string, meta map[string]any) error {
+	text = sanitizeStructuredText(text)
+	if text == "" {
+		return nil
+	}
+	if len(text) > maxStructuredPayloadLen {
+		if b.metrics != nil {
+			b.metrics.IncBridgeWriteFailures()
+		}
+		logr.FromContextOrDiscard(ctx).Error(nil, "structured payload exceeds size limit",
+			"len", len(text), "max", maxStructuredPayloadLen)
+		return b.EmitStatus(ctx, "Decision payload too large to render.\n\n")
+	}
+	b.mu.Lock()
+	err := b.emitStatusEventWithMeta(ctx, text, meta)
+	b.mu.Unlock()
+	return err
+}
+
+// sanitizeStructuredText applies SI-10 control-char stripping and SC-7 secret
+// redaction WITHOUT length truncation. Used for structured JSON payloads that
+// must preserve their full content for machine parsing.
+func sanitizeStructuredText(text string) string {
+	text = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) && r != '\n' && r != '\t' {
+			return -1
+		}
+		return r
+	}, text)
+	return security.RedactText(text)
 }
 
 // EmitReasoningSafe is a nil-safe helper that emits reasoning via the bridge.

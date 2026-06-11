@@ -256,18 +256,35 @@ func NewSelectWorkflowTool(mcpClient ka.MCPClient, auditor audit.Emitter) (tool.
 }
 
 // PresentDecisionArgs defines the input for present_decision.
+// RCAData is the structured root cause analysis data that the LLM passes
+// through from the kubernaut_investigate response into present_decision.
+// This field is required — ADK schema validation enforces self-correction
+// if omitted by the LLM (#1396).
+type RCAData struct {
+	Severity       string   `json:"severity"`
+	Confidence     float64  `json:"confidence"`
+	CausalChain    []string `json:"causal_chain,omitempty"`
+	Target         string   `json:"target"`
+	ToolCallsCount int      `json:"tool_calls_count"`
+	LLMTurns       int      `json:"llm_turns"`
+}
+
 type PresentDecisionArgs struct {
 	SessionID string           `json:"session_id"`
 	Summary   string           `json:"summary"`
+	RCA       RCAData          `json:"rca"`
 	Options   []WorkflowOption `json:"options"`
 }
 
 // WorkflowOption represents a remediation workflow choice.
 type WorkflowOption struct {
-	WorkflowID  string `json:"workflow_id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Risk        string `json:"risk,omitempty"`
+	WorkflowID     string            `json:"workflow_id"`
+	Name           string            `json:"name"`
+	Description    string            `json:"description"`
+	Risk           string            `json:"risk,omitempty"`
+	Recommended    bool              `json:"recommended,omitempty"`
+	Parameters     map[string]string `json:"parameters,omitempty"`
+	RuledOutReason string            `json:"ruled_out_reason,omitempty"`
 }
 
 // PresentDecisionResult is the output of present_decision.
@@ -278,7 +295,11 @@ type PresentDecisionResult struct {
 
 // HandlePresentDecision formats RCA and options for user presentation.
 func HandlePresentDecision(args PresentDecisionArgs) PresentDecisionResult {
-	msg := fmt.Sprintf("Investigation complete.\n\nSummary: %s\n\nAvailable actions:", args.Summary)
+	msg := fmt.Sprintf("Investigation complete.\n\nSummary: %s", args.Summary)
+	if args.RCA.Severity != "" {
+		msg += fmt.Sprintf("\nSeverity: %s (confidence: %.2f)", args.RCA.Severity, args.RCA.Confidence)
+	}
+	msg += "\n\nAvailable actions:"
 	for i, opt := range args.Options {
 		msg += fmt.Sprintf("\n  %d. %s", i+1, opt.Name)
 		if opt.Description != "" {
