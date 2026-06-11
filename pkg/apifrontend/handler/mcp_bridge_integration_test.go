@@ -270,6 +270,13 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 			status, body := mcpCallTool(h, sessionID, "kubernaut_present_decision", map[string]any{
 				"session_id": "sess-decision-it",
 				"summary":    "Pod crash-looping due to OOMKilled",
+				"rca": map[string]any{
+					"severity":         "critical",
+					"confidence":       0.92,
+					"target":           "pod/nginx-abc123",
+					"tool_calls_count": 5,
+					"llm_turns":        3,
+				},
 				"options": []any{
 					map[string]any{"workflow_id": "wf-restart", "name": "Restart Pod", "description": "Recreate pod", "risk": "low"},
 					map[string]any{"workflow_id": "wf-scale", "name": "Scale Up", "description": "Add replicas", "risk": "medium"},
@@ -294,7 +301,14 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 			mcpCallTool(h, sessionID, "kubernaut_present_decision", map[string]any{
 				"session_id": "sess-audit-decision",
 				"summary":    "test summary",
-				"options":    []any{},
+				"rca": map[string]any{
+					"severity":         "medium",
+					"confidence":       0.80,
+					"target":           "deploy/api",
+					"tool_calls_count": 2,
+					"llm_turns":        1,
+				},
+				"options": []any{},
 			}, testUser)
 
 			events := auditor.Events()
@@ -801,7 +815,14 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 			mcpCallTool(h, sessionID, "kubernaut_present_decision", map[string]any{
 				"session_id": "sess-obs-001",
 				"summary":    "test summary",
-				"options":    []any{},
+				"rca": map[string]any{
+					"severity":         "low",
+					"confidence":       0.70,
+					"target":           "svc/backend",
+					"tool_calls_count": 1,
+					"llm_turns":        1,
+				},
+				"options": []any{},
 			}, testUser)
 
 			events := auditor.Events()

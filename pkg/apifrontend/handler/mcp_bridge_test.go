@@ -656,7 +656,14 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 				map[string]any{
 					"session_id": "sess-1",
 					"summary":    "RCA complete",
-					"options":    []any{map[string]any{"workflow_id": "wf-1", "name": "Restart", "description": "Restart pods"}},
+					"rca": map[string]any{
+						"severity":         "high",
+						"confidence":       0.85,
+						"target":           "pod/nginx-abc123",
+						"tool_calls_count": 3,
+						"llm_turns":        2,
+					},
+					"options": []any{map[string]any{"workflow_id": "wf-1", "name": "Restart", "description": "Restart pods"}},
 				}, testUser)
 			text := extractTextContent(body)
 			Expect(text).To(ContainSubstring("Restart"))
