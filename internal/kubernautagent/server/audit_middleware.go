@@ -20,6 +20,7 @@ import (
 	"net/http"
 
 	"github.com/go-logr/logr"
+	"github.com/google/uuid"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 )
@@ -51,7 +52,7 @@ func AuditAuthMiddleware(next http.Handler, store audit.AuditStore, logger logr.
 
 		switch rec.status {
 		case http.StatusUnauthorized:
-			evt := audit.NewEvent(audit.EventTypeAuthFailure, "")
+			evt := audit.NewEvent(audit.EventTypeAuthFailure, "security-"+uuid.New().String())
 			evt.EventAction = audit.ActionAuthFailure
 			evt.EventOutcome = audit.OutcomeFailure
 			evt.Data["source_ip"] = extractIP(r, nil)
@@ -59,7 +60,7 @@ func AuditAuthMiddleware(next http.Handler, store audit.AuditStore, logger logr.
 			evt.Data["method"] = r.Method
 			audit.StoreBestEffort(r.Context(), store, evt, logger)
 		case http.StatusForbidden:
-			evt := audit.NewEvent(audit.EventTypeAuthDenied, "")
+			evt := audit.NewEvent(audit.EventTypeAuthDenied, "security-"+uuid.New().String())
 			evt.EventAction = audit.ActionAuthDenied
 			evt.EventOutcome = audit.OutcomeFailure
 			evt.Data["source_ip"] = extractIP(r, nil)

@@ -278,6 +278,208 @@ func (s *AIAgentAlignmentVerdictPayloadEventType) UnmarshalText(data []byte) err
 	}
 }
 
+// AI Agent authorization denied event payload (aiagent.auth.denied) — request denied by
+// authorization policy (FedRAMP AU-12/AC-7, Issue.
+// Ref: #/components/schemas/AIAgentAuthDeniedPayload
+type AIAgentAuthDeniedPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType AIAgentAuthDeniedPayloadEventType `json:"event_type"`
+	// Unique event identifier.
+	EventID string `json:"event_id"`
+	// Source IP address of the denied request.
+	SourceIP OptString `json:"source_ip"`
+	// HTTP request path.
+	Path OptString `json:"path"`
+	// HTTP request method.
+	Method OptString `json:"method"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *AIAgentAuthDeniedPayload) GetEventType() AIAgentAuthDeniedPayloadEventType {
+	return s.EventType
+}
+
+// GetEventID returns the value of EventID.
+func (s *AIAgentAuthDeniedPayload) GetEventID() string {
+	return s.EventID
+}
+
+// GetSourceIP returns the value of SourceIP.
+func (s *AIAgentAuthDeniedPayload) GetSourceIP() OptString {
+	return s.SourceIP
+}
+
+// GetPath returns the value of Path.
+func (s *AIAgentAuthDeniedPayload) GetPath() OptString {
+	return s.Path
+}
+
+// GetMethod returns the value of Method.
+func (s *AIAgentAuthDeniedPayload) GetMethod() OptString {
+	return s.Method
+}
+
+// SetEventType sets the value of EventType.
+func (s *AIAgentAuthDeniedPayload) SetEventType(val AIAgentAuthDeniedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetEventID sets the value of EventID.
+func (s *AIAgentAuthDeniedPayload) SetEventID(val string) {
+	s.EventID = val
+}
+
+// SetSourceIP sets the value of SourceIP.
+func (s *AIAgentAuthDeniedPayload) SetSourceIP(val OptString) {
+	s.SourceIP = val
+}
+
+// SetPath sets the value of Path.
+func (s *AIAgentAuthDeniedPayload) SetPath(val OptString) {
+	s.Path = val
+}
+
+// SetMethod sets the value of Method.
+func (s *AIAgentAuthDeniedPayload) SetMethod(val OptString) {
+	s.Method = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type AIAgentAuthDeniedPayloadEventType string
+
+const (
+	AIAgentAuthDeniedPayloadEventTypeAiagentAuthDenied AIAgentAuthDeniedPayloadEventType = "aiagent.auth.denied"
+)
+
+// AllValues returns all AIAgentAuthDeniedPayloadEventType values.
+func (AIAgentAuthDeniedPayloadEventType) AllValues() []AIAgentAuthDeniedPayloadEventType {
+	return []AIAgentAuthDeniedPayloadEventType{
+		AIAgentAuthDeniedPayloadEventTypeAiagentAuthDenied,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AIAgentAuthDeniedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case AIAgentAuthDeniedPayloadEventTypeAiagentAuthDenied:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AIAgentAuthDeniedPayloadEventType) UnmarshalText(data []byte) error {
+	switch AIAgentAuthDeniedPayloadEventType(data) {
+	case AIAgentAuthDeniedPayloadEventTypeAiagentAuthDenied:
+		*s = AIAgentAuthDeniedPayloadEventTypeAiagentAuthDenied
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// AI Agent authentication failure event payload (aiagent.auth.failure) — request failed
+// authentication (FedRAMP AU-12/AC-7, Issue.
+// Ref: #/components/schemas/AIAgentAuthFailurePayload
+type AIAgentAuthFailurePayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType AIAgentAuthFailurePayloadEventType `json:"event_type"`
+	// Unique event identifier.
+	EventID string `json:"event_id"`
+	// Source IP address of the failed request.
+	SourceIP OptString `json:"source_ip"`
+	// HTTP request path.
+	Path OptString `json:"path"`
+	// HTTP request method.
+	Method OptString `json:"method"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *AIAgentAuthFailurePayload) GetEventType() AIAgentAuthFailurePayloadEventType {
+	return s.EventType
+}
+
+// GetEventID returns the value of EventID.
+func (s *AIAgentAuthFailurePayload) GetEventID() string {
+	return s.EventID
+}
+
+// GetSourceIP returns the value of SourceIP.
+func (s *AIAgentAuthFailurePayload) GetSourceIP() OptString {
+	return s.SourceIP
+}
+
+// GetPath returns the value of Path.
+func (s *AIAgentAuthFailurePayload) GetPath() OptString {
+	return s.Path
+}
+
+// GetMethod returns the value of Method.
+func (s *AIAgentAuthFailurePayload) GetMethod() OptString {
+	return s.Method
+}
+
+// SetEventType sets the value of EventType.
+func (s *AIAgentAuthFailurePayload) SetEventType(val AIAgentAuthFailurePayloadEventType) {
+	s.EventType = val
+}
+
+// SetEventID sets the value of EventID.
+func (s *AIAgentAuthFailurePayload) SetEventID(val string) {
+	s.EventID = val
+}
+
+// SetSourceIP sets the value of SourceIP.
+func (s *AIAgentAuthFailurePayload) SetSourceIP(val OptString) {
+	s.SourceIP = val
+}
+
+// SetPath sets the value of Path.
+func (s *AIAgentAuthFailurePayload) SetPath(val OptString) {
+	s.Path = val
+}
+
+// SetMethod sets the value of Method.
+func (s *AIAgentAuthFailurePayload) SetMethod(val OptString) {
+	s.Method = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type AIAgentAuthFailurePayloadEventType string
+
+const (
+	AIAgentAuthFailurePayloadEventTypeAiagentAuthFailure AIAgentAuthFailurePayloadEventType = "aiagent.auth.failure"
+)
+
+// AllValues returns all AIAgentAuthFailurePayloadEventType values.
+func (AIAgentAuthFailurePayloadEventType) AllValues() []AIAgentAuthFailurePayloadEventType {
+	return []AIAgentAuthFailurePayloadEventType{
+		AIAgentAuthFailurePayloadEventTypeAiagentAuthFailure,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AIAgentAuthFailurePayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case AIAgentAuthFailurePayloadEventTypeAiagentAuthFailure:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AIAgentAuthFailurePayloadEventType) UnmarshalText(data []byte) error {
+	switch AIAgentAuthFailurePayloadEventType(data) {
+	case AIAgentAuthFailurePayloadEventTypeAiagentAuthFailure:
+		*s = AIAgentAuthFailurePayloadEventTypeAiagentAuthFailure
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // AI Agent Phase 2 enrichment completed event payload (aiagent.enrichment.completed) - SOC2 CC8.1,
 // Issue.
 // Ref: #/components/schemas/AIAgentEnrichmentCompletedPayload
@@ -1164,6 +1366,107 @@ func (s *AIAgentRCACompletePayloadEventType) UnmarshalText(data []byte) error {
 	switch AIAgentRCACompletePayloadEventType(data) {
 	case AIAgentRCACompletePayloadEventTypeAiagentRcaComplete:
 		*s = AIAgentRCACompletePayloadEventTypeAiagentRcaComplete
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// AI Agent rate limit denied event payload (aiagent.ratelimit.denied) — request rejected by per-IP
+// rate limiter (FedRAMP AU-12, Issue.
+// Ref: #/components/schemas/AIAgentRatelimitDeniedPayload
+type AIAgentRatelimitDeniedPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType AIAgentRatelimitDeniedPayloadEventType `json:"event_type"`
+	// Unique event identifier.
+	EventID string `json:"event_id"`
+	// Source IP address of the rate-limited request.
+	SourceIP OptString `json:"source_ip"`
+	// HTTP request path.
+	Path OptString `json:"path"`
+	// HTTP request method.
+	Method OptString `json:"method"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *AIAgentRatelimitDeniedPayload) GetEventType() AIAgentRatelimitDeniedPayloadEventType {
+	return s.EventType
+}
+
+// GetEventID returns the value of EventID.
+func (s *AIAgentRatelimitDeniedPayload) GetEventID() string {
+	return s.EventID
+}
+
+// GetSourceIP returns the value of SourceIP.
+func (s *AIAgentRatelimitDeniedPayload) GetSourceIP() OptString {
+	return s.SourceIP
+}
+
+// GetPath returns the value of Path.
+func (s *AIAgentRatelimitDeniedPayload) GetPath() OptString {
+	return s.Path
+}
+
+// GetMethod returns the value of Method.
+func (s *AIAgentRatelimitDeniedPayload) GetMethod() OptString {
+	return s.Method
+}
+
+// SetEventType sets the value of EventType.
+func (s *AIAgentRatelimitDeniedPayload) SetEventType(val AIAgentRatelimitDeniedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetEventID sets the value of EventID.
+func (s *AIAgentRatelimitDeniedPayload) SetEventID(val string) {
+	s.EventID = val
+}
+
+// SetSourceIP sets the value of SourceIP.
+func (s *AIAgentRatelimitDeniedPayload) SetSourceIP(val OptString) {
+	s.SourceIP = val
+}
+
+// SetPath sets the value of Path.
+func (s *AIAgentRatelimitDeniedPayload) SetPath(val OptString) {
+	s.Path = val
+}
+
+// SetMethod sets the value of Method.
+func (s *AIAgentRatelimitDeniedPayload) SetMethod(val OptString) {
+	s.Method = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type AIAgentRatelimitDeniedPayloadEventType string
+
+const (
+	AIAgentRatelimitDeniedPayloadEventTypeAiagentRatelimitDenied AIAgentRatelimitDeniedPayloadEventType = "aiagent.ratelimit.denied"
+)
+
+// AllValues returns all AIAgentRatelimitDeniedPayloadEventType values.
+func (AIAgentRatelimitDeniedPayloadEventType) AllValues() []AIAgentRatelimitDeniedPayloadEventType {
+	return []AIAgentRatelimitDeniedPayloadEventType{
+		AIAgentRatelimitDeniedPayloadEventTypeAiagentRatelimitDenied,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AIAgentRatelimitDeniedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case AIAgentRatelimitDeniedPayloadEventTypeAiagentRatelimitDenied:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AIAgentRatelimitDeniedPayloadEventType) UnmarshalText(data []byte) error {
+	switch AIAgentRatelimitDeniedPayloadEventType(data) {
+	case AIAgentRatelimitDeniedPayloadEventTypeAiagentRatelimitDenied:
+		*s = AIAgentRatelimitDeniedPayloadEventTypeAiagentRatelimitDenied
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -8128,6 +8431,9 @@ type AuditEventEventData struct {
 	AIAgentAlignmentVerdictPayload               AIAgentAlignmentVerdictPayload
 	ShadowLLMRequestPayload                      ShadowLLMRequestPayload
 	ShadowLLMResponsePayload                     ShadowLLMResponsePayload
+	AIAgentRatelimitDeniedPayload                AIAgentRatelimitDeniedPayload
+	AIAgentAuthFailurePayload                    AIAgentAuthFailurePayload
+	AIAgentAuthDeniedPayload                     AIAgentAuthDeniedPayload
 	RemediationRequestWebhookAuditPayload        RemediationRequestWebhookAuditPayload
 	RemediationWorkflowWebhookAuditPayload       RemediationWorkflowWebhookAuditPayload
 	AuthwebhookWorkflowRegistrationFailedPayload AuthwebhookWorkflowRegistrationFailedPayload
@@ -8255,6 +8561,9 @@ const (
 	AIAgentAlignmentVerdictPayloadAuditEventEventData                                AuditEventEventDataType = "aiagent.alignment.verdict"
 	ShadowLLMRequestPayloadAuditEventEventData                                       AuditEventEventDataType = "aiagent.shadow.llm.request"
 	ShadowLLMResponsePayloadAuditEventEventData                                      AuditEventEventDataType = "aiagent.shadow.llm.response"
+	AIAgentRatelimitDeniedPayloadAuditEventEventData                                 AuditEventEventDataType = "aiagent.ratelimit.denied"
+	AIAgentAuthFailurePayloadAuditEventEventData                                     AuditEventEventDataType = "aiagent.auth.failure"
+	AIAgentAuthDeniedPayloadAuditEventEventData                                      AuditEventEventDataType = "aiagent.auth.denied"
 	RemediationRequestWebhookAuditPayloadAuditEventEventData                         AuditEventEventDataType = "webhook.remediationrequest.timeout_modified"
 	AuditEventEventDataRemediationworkflowAdmittedCreateAuditEventEventData          AuditEventEventDataType = "remediationworkflow.admitted.create"
 	AuditEventEventDataRemediationworkflowAdmittedDeleteAuditEventEventData          AuditEventEventDataType = "remediationworkflow.admitted.delete"
@@ -8579,6 +8888,21 @@ func (s AuditEventEventData) IsShadowLLMRequestPayload() bool {
 // IsShadowLLMResponsePayload reports whether AuditEventEventData is ShadowLLMResponsePayload.
 func (s AuditEventEventData) IsShadowLLMResponsePayload() bool {
 	return s.Type == ShadowLLMResponsePayloadAuditEventEventData
+}
+
+// IsAIAgentRatelimitDeniedPayload reports whether AuditEventEventData is AIAgentRatelimitDeniedPayload.
+func (s AuditEventEventData) IsAIAgentRatelimitDeniedPayload() bool {
+	return s.Type == AIAgentRatelimitDeniedPayloadAuditEventEventData
+}
+
+// IsAIAgentAuthFailurePayload reports whether AuditEventEventData is AIAgentAuthFailurePayload.
+func (s AuditEventEventData) IsAIAgentAuthFailurePayload() bool {
+	return s.Type == AIAgentAuthFailurePayloadAuditEventEventData
+}
+
+// IsAIAgentAuthDeniedPayload reports whether AuditEventEventData is AIAgentAuthDeniedPayload.
+func (s AuditEventEventData) IsAIAgentAuthDeniedPayload() bool {
+	return s.Type == AIAgentAuthDeniedPayloadAuditEventEventData
 }
 
 // IsRemediationRequestWebhookAuditPayload reports whether AuditEventEventData is RemediationRequestWebhookAuditPayload.
@@ -10029,6 +10353,69 @@ func (s AuditEventEventData) GetShadowLLMResponsePayload() (v ShadowLLMResponseP
 func NewShadowLLMResponsePayloadAuditEventEventData(v ShadowLLMResponsePayload) AuditEventEventData {
 	var s AuditEventEventData
 	s.SetShadowLLMResponsePayload(v)
+	return s
+}
+
+// SetAIAgentRatelimitDeniedPayload sets AuditEventEventData to AIAgentRatelimitDeniedPayload.
+func (s *AuditEventEventData) SetAIAgentRatelimitDeniedPayload(v AIAgentRatelimitDeniedPayload) {
+	s.Type = AIAgentRatelimitDeniedPayloadAuditEventEventData
+	s.AIAgentRatelimitDeniedPayload = v
+}
+
+// GetAIAgentRatelimitDeniedPayload returns AIAgentRatelimitDeniedPayload and true boolean if AuditEventEventData is AIAgentRatelimitDeniedPayload.
+func (s AuditEventEventData) GetAIAgentRatelimitDeniedPayload() (v AIAgentRatelimitDeniedPayload, ok bool) {
+	if !s.IsAIAgentRatelimitDeniedPayload() {
+		return v, false
+	}
+	return s.AIAgentRatelimitDeniedPayload, true
+}
+
+// NewAIAgentRatelimitDeniedPayloadAuditEventEventData returns new AuditEventEventData from AIAgentRatelimitDeniedPayload.
+func NewAIAgentRatelimitDeniedPayloadAuditEventEventData(v AIAgentRatelimitDeniedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetAIAgentRatelimitDeniedPayload(v)
+	return s
+}
+
+// SetAIAgentAuthFailurePayload sets AuditEventEventData to AIAgentAuthFailurePayload.
+func (s *AuditEventEventData) SetAIAgentAuthFailurePayload(v AIAgentAuthFailurePayload) {
+	s.Type = AIAgentAuthFailurePayloadAuditEventEventData
+	s.AIAgentAuthFailurePayload = v
+}
+
+// GetAIAgentAuthFailurePayload returns AIAgentAuthFailurePayload and true boolean if AuditEventEventData is AIAgentAuthFailurePayload.
+func (s AuditEventEventData) GetAIAgentAuthFailurePayload() (v AIAgentAuthFailurePayload, ok bool) {
+	if !s.IsAIAgentAuthFailurePayload() {
+		return v, false
+	}
+	return s.AIAgentAuthFailurePayload, true
+}
+
+// NewAIAgentAuthFailurePayloadAuditEventEventData returns new AuditEventEventData from AIAgentAuthFailurePayload.
+func NewAIAgentAuthFailurePayloadAuditEventEventData(v AIAgentAuthFailurePayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetAIAgentAuthFailurePayload(v)
+	return s
+}
+
+// SetAIAgentAuthDeniedPayload sets AuditEventEventData to AIAgentAuthDeniedPayload.
+func (s *AuditEventEventData) SetAIAgentAuthDeniedPayload(v AIAgentAuthDeniedPayload) {
+	s.Type = AIAgentAuthDeniedPayloadAuditEventEventData
+	s.AIAgentAuthDeniedPayload = v
+}
+
+// GetAIAgentAuthDeniedPayload returns AIAgentAuthDeniedPayload and true boolean if AuditEventEventData is AIAgentAuthDeniedPayload.
+func (s AuditEventEventData) GetAIAgentAuthDeniedPayload() (v AIAgentAuthDeniedPayload, ok bool) {
+	if !s.IsAIAgentAuthDeniedPayload() {
+		return v, false
+	}
+	return s.AIAgentAuthDeniedPayload, true
+}
+
+// NewAIAgentAuthDeniedPayloadAuditEventEventData returns new AuditEventEventData from AIAgentAuthDeniedPayload.
+func NewAIAgentAuthDeniedPayloadAuditEventEventData(v AIAgentAuthDeniedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetAIAgentAuthDeniedPayload(v)
 	return s
 }
 
@@ -11500,6 +11887,9 @@ type AuditEventRequestEventData struct {
 	AIAgentAlignmentVerdictPayload               AIAgentAlignmentVerdictPayload
 	ShadowLLMRequestPayload                      ShadowLLMRequestPayload
 	ShadowLLMResponsePayload                     ShadowLLMResponsePayload
+	AIAgentRatelimitDeniedPayload                AIAgentRatelimitDeniedPayload
+	AIAgentAuthFailurePayload                    AIAgentAuthFailurePayload
+	AIAgentAuthDeniedPayload                     AIAgentAuthDeniedPayload
 	RemediationRequestWebhookAuditPayload        RemediationRequestWebhookAuditPayload
 	RemediationWorkflowWebhookAuditPayload       RemediationWorkflowWebhookAuditPayload
 	AuthwebhookWorkflowRegistrationFailedPayload AuthwebhookWorkflowRegistrationFailedPayload
@@ -11627,6 +12017,9 @@ const (
 	AIAgentAlignmentVerdictPayloadAuditEventRequestEventData                                       AuditEventRequestEventDataType = "aiagent.alignment.verdict"
 	ShadowLLMRequestPayloadAuditEventRequestEventData                                              AuditEventRequestEventDataType = "aiagent.shadow.llm.request"
 	ShadowLLMResponsePayloadAuditEventRequestEventData                                             AuditEventRequestEventDataType = "aiagent.shadow.llm.response"
+	AIAgentRatelimitDeniedPayloadAuditEventRequestEventData                                        AuditEventRequestEventDataType = "aiagent.ratelimit.denied"
+	AIAgentAuthFailurePayloadAuditEventRequestEventData                                            AuditEventRequestEventDataType = "aiagent.auth.failure"
+	AIAgentAuthDeniedPayloadAuditEventRequestEventData                                             AuditEventRequestEventDataType = "aiagent.auth.denied"
 	RemediationRequestWebhookAuditPayloadAuditEventRequestEventData                                AuditEventRequestEventDataType = "webhook.remediationrequest.timeout_modified"
 	AuditEventRequestEventDataRemediationworkflowAdmittedCreateAuditEventRequestEventData          AuditEventRequestEventDataType = "remediationworkflow.admitted.create"
 	AuditEventRequestEventDataRemediationworkflowAdmittedDeleteAuditEventRequestEventData          AuditEventRequestEventDataType = "remediationworkflow.admitted.delete"
@@ -11951,6 +12344,21 @@ func (s AuditEventRequestEventData) IsShadowLLMRequestPayload() bool {
 // IsShadowLLMResponsePayload reports whether AuditEventRequestEventData is ShadowLLMResponsePayload.
 func (s AuditEventRequestEventData) IsShadowLLMResponsePayload() bool {
 	return s.Type == ShadowLLMResponsePayloadAuditEventRequestEventData
+}
+
+// IsAIAgentRatelimitDeniedPayload reports whether AuditEventRequestEventData is AIAgentRatelimitDeniedPayload.
+func (s AuditEventRequestEventData) IsAIAgentRatelimitDeniedPayload() bool {
+	return s.Type == AIAgentRatelimitDeniedPayloadAuditEventRequestEventData
+}
+
+// IsAIAgentAuthFailurePayload reports whether AuditEventRequestEventData is AIAgentAuthFailurePayload.
+func (s AuditEventRequestEventData) IsAIAgentAuthFailurePayload() bool {
+	return s.Type == AIAgentAuthFailurePayloadAuditEventRequestEventData
+}
+
+// IsAIAgentAuthDeniedPayload reports whether AuditEventRequestEventData is AIAgentAuthDeniedPayload.
+func (s AuditEventRequestEventData) IsAIAgentAuthDeniedPayload() bool {
+	return s.Type == AIAgentAuthDeniedPayloadAuditEventRequestEventData
 }
 
 // IsRemediationRequestWebhookAuditPayload reports whether AuditEventRequestEventData is RemediationRequestWebhookAuditPayload.
@@ -13401,6 +13809,69 @@ func (s AuditEventRequestEventData) GetShadowLLMResponsePayload() (v ShadowLLMRe
 func NewShadowLLMResponsePayloadAuditEventRequestEventData(v ShadowLLMResponsePayload) AuditEventRequestEventData {
 	var s AuditEventRequestEventData
 	s.SetShadowLLMResponsePayload(v)
+	return s
+}
+
+// SetAIAgentRatelimitDeniedPayload sets AuditEventRequestEventData to AIAgentRatelimitDeniedPayload.
+func (s *AuditEventRequestEventData) SetAIAgentRatelimitDeniedPayload(v AIAgentRatelimitDeniedPayload) {
+	s.Type = AIAgentRatelimitDeniedPayloadAuditEventRequestEventData
+	s.AIAgentRatelimitDeniedPayload = v
+}
+
+// GetAIAgentRatelimitDeniedPayload returns AIAgentRatelimitDeniedPayload and true boolean if AuditEventRequestEventData is AIAgentRatelimitDeniedPayload.
+func (s AuditEventRequestEventData) GetAIAgentRatelimitDeniedPayload() (v AIAgentRatelimitDeniedPayload, ok bool) {
+	if !s.IsAIAgentRatelimitDeniedPayload() {
+		return v, false
+	}
+	return s.AIAgentRatelimitDeniedPayload, true
+}
+
+// NewAIAgentRatelimitDeniedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from AIAgentRatelimitDeniedPayload.
+func NewAIAgentRatelimitDeniedPayloadAuditEventRequestEventData(v AIAgentRatelimitDeniedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetAIAgentRatelimitDeniedPayload(v)
+	return s
+}
+
+// SetAIAgentAuthFailurePayload sets AuditEventRequestEventData to AIAgentAuthFailurePayload.
+func (s *AuditEventRequestEventData) SetAIAgentAuthFailurePayload(v AIAgentAuthFailurePayload) {
+	s.Type = AIAgentAuthFailurePayloadAuditEventRequestEventData
+	s.AIAgentAuthFailurePayload = v
+}
+
+// GetAIAgentAuthFailurePayload returns AIAgentAuthFailurePayload and true boolean if AuditEventRequestEventData is AIAgentAuthFailurePayload.
+func (s AuditEventRequestEventData) GetAIAgentAuthFailurePayload() (v AIAgentAuthFailurePayload, ok bool) {
+	if !s.IsAIAgentAuthFailurePayload() {
+		return v, false
+	}
+	return s.AIAgentAuthFailurePayload, true
+}
+
+// NewAIAgentAuthFailurePayloadAuditEventRequestEventData returns new AuditEventRequestEventData from AIAgentAuthFailurePayload.
+func NewAIAgentAuthFailurePayloadAuditEventRequestEventData(v AIAgentAuthFailurePayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetAIAgentAuthFailurePayload(v)
+	return s
+}
+
+// SetAIAgentAuthDeniedPayload sets AuditEventRequestEventData to AIAgentAuthDeniedPayload.
+func (s *AuditEventRequestEventData) SetAIAgentAuthDeniedPayload(v AIAgentAuthDeniedPayload) {
+	s.Type = AIAgentAuthDeniedPayloadAuditEventRequestEventData
+	s.AIAgentAuthDeniedPayload = v
+}
+
+// GetAIAgentAuthDeniedPayload returns AIAgentAuthDeniedPayload and true boolean if AuditEventRequestEventData is AIAgentAuthDeniedPayload.
+func (s AuditEventRequestEventData) GetAIAgentAuthDeniedPayload() (v AIAgentAuthDeniedPayload, ok bool) {
+	if !s.IsAIAgentAuthDeniedPayload() {
+		return v, false
+	}
+	return s.AIAgentAuthDeniedPayload, true
+}
+
+// NewAIAgentAuthDeniedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from AIAgentAuthDeniedPayload.
+func NewAIAgentAuthDeniedPayloadAuditEventRequestEventData(v AIAgentAuthDeniedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetAIAgentAuthDeniedPayload(v)
 	return s
 }
 
