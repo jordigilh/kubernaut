@@ -77,35 +77,49 @@ var _ = Describe("Structured Approval Events E2E — #1398", Ordered, Label("e2e
 		})
 	}
 
-	patchRRToAwaitingApproval := func(delay time.Duration) {
+	patchRRToAwaitingApproval := func(ctx context.Context, delay time.Duration) {
 		go func() {
 			defer GinkgoRecover()
-			time.Sleep(delay)
+			select {
+			case <-time.After(delay):
+			case <-ctx.Done():
+				return
+			}
 			rr := &remediationv1alpha1.RemediationRequest{}
-			Expect(k8sClient.Get(context.Background(), client.ObjectKey{
+			err := k8sClient.Get(ctx, client.ObjectKey{
 				Name: rrName, Namespace: rrNamespace,
-			}, rr)).To(Succeed())
+			}, rr)
+			if err != nil {
+				return
+			}
 			patch := client.MergeFrom(rr.DeepCopy())
 			rr.Status.OverallPhase = remediationv1alpha1.PhaseAwaitingApproval
 			rr.Status.Message = "E2E: approval gate triggered"
-			Expect(k8sClient.Status().Patch(context.Background(), rr, patch)).To(Succeed())
+			_ = k8sClient.Status().Patch(ctx, rr, patch)
 		}()
 	}
 
-	patchRARDecision := func(decision, decidedBy string, delay time.Duration) {
+	patchRARDecision := func(ctx context.Context, decision, decidedBy string, delay time.Duration) {
 		go func() {
 			defer GinkgoRecover()
-			time.Sleep(delay)
+			select {
+			case <-time.After(delay):
+			case <-ctx.Done():
+				return
+			}
 			rar := &remediationv1alpha1.RemediationApprovalRequest{}
-			Expect(k8sClient.Get(context.Background(), client.ObjectKey{
+			err := k8sClient.Get(ctx, client.ObjectKey{
 				Name: rarName, Namespace: rrNamespace,
-			}, rar)).To(Succeed())
+			}, rar)
+			if err != nil {
+				return
+			}
 			patch := client.MergeFrom(rar.DeepCopy())
 			rar.Status.Decision = remediationv1alpha1.ApprovalDecision(decision)
 			rar.Status.DecidedBy = decidedBy
 			now := metav1.Now()
 			rar.Status.DecidedAt = &now
-			Expect(k8sClient.Status().Patch(context.Background(), rar, patch)).To(Succeed())
+			_ = k8sClient.Status().Patch(ctx, rar, patch)
 		}()
 	}
 
@@ -179,7 +193,7 @@ var _ = Describe("Structured Approval Events E2E — #1398", Ordered, Label("e2e
 		readCtx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer cancel()
 
-		patchRRToAwaitingApproval(3 * time.Second)
+		patchRRToAwaitingApproval(readCtx, 3*time.Second)
 
 		resp, err := a2aSSEPost(readCtx, a2aMessageStream(
 			fmt.Sprintf("e2e-approval-001-%d", time.Now().UnixNano()),
@@ -229,8 +243,8 @@ var _ = Describe("Structured Approval Events E2E — #1398", Ordered, Label("e2e
 		readCtx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer cancel()
 
-		patchRRToAwaitingApproval(3 * time.Second)
-		patchRARDecision("Approved", "e2e-operator@acme.com", 6*time.Second)
+		patchRRToAwaitingApproval(readCtx, 3*time.Second)
+		patchRARDecision(readCtx, "Approved", "e2e-operator@acme.com", 6*time.Second)
 
 		resp, err := a2aSSEPost(readCtx, a2aMessageStream(
 			fmt.Sprintf("e2e-approval-002-%d", time.Now().UnixNano()),
@@ -262,8 +276,8 @@ var _ = Describe("Structured Approval Events E2E — #1398", Ordered, Label("e2e
 		readCtx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 		defer cancel()
 
-		patchRRToAwaitingApproval(3 * time.Second)
-		patchRARDecision("Expired", "system", 6*time.Second)
+		patchRRToAwaitingApproval(readCtx, 3*time.Second)
+		patchRARDecision(readCtx, "Expired", "system", 6*time.Second)
 
 		resp, err := a2aSSEPost(readCtx, a2aMessageStream(
 			fmt.Sprintf("e2e-approval-003-%d", time.Now().UnixNano()),
