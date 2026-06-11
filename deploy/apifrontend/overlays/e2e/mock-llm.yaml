@@ -137,6 +137,45 @@ data:
             session_id: "sess-002"
             options: "restart,scale-up,rollback"
 
+      - name: "af_structured_decision"
+        keywords: ["structured decision", "present structured rca decision"]
+        match_last_only: true
+        tool_call:
+          name: "kubernaut_present_decision"
+          arguments:
+            session_id: "sess-structured-001"
+            summary: "OOMKill detected in production data-processor pod with critical severity and high confidence from investigation"
+            rca:
+              severity: "critical"
+              confidence: 0.92
+              causal_chain:
+                - "Memory leak in data-processor worker goroutine"
+                - "Container hit 512Mi memory limit"
+                - "Kernel sent OOMKill signal to container"
+              target: "Deployment/data-processor in production"
+              tool_calls_count: 19
+              llm_turns: 17
+            options:
+              - workflow_id: "wf-restart-pod"
+                name: "Restart Pod"
+                description: "Rolling restart of affected deployment pods to recover from OOM state"
+                risk: "low"
+                recommended: true
+                parameters:
+                  namespace: "production"
+                  deployment: "data-processor"
+              - workflow_id: "wf-increase-memory"
+                name: "Increase Memory Limit"
+                description: "Scale memory limit from 512Mi to 1Gi to prevent future OOMKill events"
+                risk: "medium"
+                parameters:
+                  new_limit: "1Gi"
+              - workflow_id: "wf-rollback"
+                name: "Rollback Deployment"
+                description: "Roll back to previous stable revision without memory leak"
+                risk: "low"
+                ruled_out_reason: "No previous revision available in cluster deployment history"
+
       - name: "af_list_remediations"
         keywords: ["list remediations", "list all remediations"]
         match_last_only: true
