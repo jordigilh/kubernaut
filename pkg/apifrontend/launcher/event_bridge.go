@@ -52,6 +52,9 @@ const (
 	MetaTypeInvestigation = "investigation"
 	MetaTypeKeepalive     = "keepalive"
 	MetaTypeDecision      = "decision"
+
+	MetaTypeApprovalRequest         = "approval_request"
+	MetaTypeApprovalRequestResolved = "approval_request_resolved"
 )
 
 // EventBridge enables tool handlers to emit progressive A2A events directly to
@@ -297,6 +300,20 @@ func EmitKeepaliveDotSafe(ctx context.Context) error {
 	}
 	if err := bridge.EmitKeepaliveDot(ctx); err != nil {
 		logr.FromContextOrDiscard(ctx).Error(err, "A2A bridge write failed", "channel", "keepalive")
+		return err
+	}
+	return nil
+}
+
+// EmitStructuredMetaSafe is a nil-safe helper that emits structured JSON via
+// the bridge. If no bridge is present, it's a no-op. Write failures are logged.
+func EmitStructuredMetaSafe(ctx context.Context, text string, meta map[string]any) error {
+	bridge := EventBridgeFromContext(ctx)
+	if bridge == nil {
+		return nil
+	}
+	if err := bridge.EmitStructuredMeta(ctx, text, meta); err != nil {
+		logr.FromContextOrDiscard(ctx).Error(err, "A2A bridge write failed", "channel", "structured")
 		return err
 	}
 	return nil

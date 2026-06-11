@@ -772,6 +772,21 @@ func HandleWatch(ctx context.Context, client dynamic.Interface, args WatchArgs) 
 				return WatchResult{Events: events, Status: "completed", Outcome: outcome, Message: statusMsg}, nil
 			}
 			if phase == "AwaitingApproval" {
+				rarObj, getErr := client.Resource(rarGVR).Namespace(args.Namespace).Get(ctx, rarName, metav1.GetOptions{})
+				if getErr == nil {
+					if payload, mErr := MarshalApprovalRequestPayload(rarObj); mErr == nil {
+						_ = launcher.EmitStructuredMetaSafe(ctx, payload, map[string]any{"type": launcher.MetaTypeApprovalRequest})
+					}
+					decision, _, _ := unstructured.NestedString(rarObj.Object, "status", "decision")
+					if decision != "" {
+						if resolved, mErr := MarshalApprovalResolvedPayload(rarObj); mErr == nil {
+							_ = launcher.EmitStructuredMetaSafe(ctx, resolved, map[string]any{"type": launcher.MetaTypeApprovalRequestResolved})
+						}
+					}
+				} else {
+					logger.V(1).Info("RAR GET for structured event failed, continuing with text-only",
+						"rar_name", rarName, "error", getErr)
+				}
 				return WatchResult{Events: events, Status: "awaiting_approval"}, nil
 			}
 
@@ -824,6 +839,9 @@ func HandleWatch(ctx context.Context, client dynamic.Interface, args WatchArgs) 
 				Message:   rarMsg,
 			})
 			_ = launcher.EmitStatusSafe(ctx, rarMsg+"\n")
+			if resolved, mErr := MarshalApprovalResolvedPayload(obj); mErr == nil {
+				_ = launcher.EmitStructuredMetaSafe(ctx, resolved, map[string]any{"type": launcher.MetaTypeApprovalRequestResolved})
+			}
 		}
 	}
 }

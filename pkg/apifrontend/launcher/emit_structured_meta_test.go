@@ -134,3 +134,35 @@ var _ = Describe("EmitStructuredMeta — TP-1395-1396 (#1395)", func() {
 		})
 	})
 })
+
+var _ = Describe("EmitStructuredMetaSafe — TP-1398 (#1398)", func() {
+
+	It("UT-AF-1398-005: EmitStructuredMetaSafe returns nil when no bridge in context", func() {
+		ctx := context.Background()
+		err := launcher.EmitStructuredMetaSafe(ctx, `{"test":"payload"}`, map[string]any{"type": launcher.MetaTypeApprovalRequest})
+		Expect(err).NotTo(HaveOccurred())
+	})
+
+	It("UT-AF-1398-006: EmitStructuredMetaSafe emits correctly when bridge present", func() {
+		queue := &fakeQueue{}
+		taskID := a2a.TaskID("task-safe-001")
+		ctx := launcher.WithEventBridge(context.Background(), queue, taskID, "ctx-safe-001", nil)
+
+		payload := `{"name":"rar-rr-test","confidence":0.72,"reason":"Test approval"}`
+		err := launcher.EmitStructuredMetaSafe(ctx, payload, map[string]any{"type": launcher.MetaTypeApprovalRequest})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(queue.events).To(HaveLen(1))
+
+		evt, ok := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+		Expect(ok).To(BeTrue())
+		Expect(evt.Metadata["type"]).To(Equal("approval_request"))
+		textPart, ok := evt.Status.Message.Parts[0].(a2a.TextPart)
+		Expect(ok).To(BeTrue())
+		Expect(textPart.Text).To(ContainSubstring("rar-rr-test"))
+	})
+
+	It("UT-AF-1398-007: MetaType constants have correct values", func() {
+		Expect(launcher.MetaTypeApprovalRequest).To(Equal("approval_request"))
+		Expect(launcher.MetaTypeApprovalRequestResolved).To(Equal("approval_request_resolved"))
+	})
+})
