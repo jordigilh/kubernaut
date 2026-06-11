@@ -176,6 +176,15 @@ data:
                 risk: "low"
                 ruled_out_reason: "No previous revision available in cluster deployment history"
 
+      - name: "af_approval_request"
+        keywords: ["watch approval gate", "watch approval gate and approve", "watch approval gate expire"]
+        match_last_only: true
+        tool_call:
+          name: "kubernaut_watch"
+          arguments:
+            namespace: "kubernaut-system"
+            name: "rr-approval-e2e"
+
       - name: "af_list_remediations"
         keywords: ["list remediations", "list all remediations"]
         match_last_only: true
