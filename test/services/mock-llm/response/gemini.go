@@ -131,14 +131,10 @@ func BuildGeminiToolCallResponse(toolName string, cfg scenarios.MockScenarioConf
 func BuildGeminiMultiToolCallResponse(toolEntries []scenarios.MultiToolCallEntry) GeminiResponse {
 	parts := make([]GeminiPart, len(toolEntries))
 	for i, entry := range toolEntries {
-		args := make(map[string]interface{}, len(entry.Arguments))
-		for k, v := range entry.Arguments {
-			args[k] = v
-		}
 		parts[i] = GeminiPart{
 			FunctionCall: &GeminiFunctionCall{
 				Name: entry.Name,
-				Args: args,
+				Args: entry.Arguments,
 			},
 		}
 	}

@@ -105,7 +105,7 @@ keyword_scenarios:
 					{
 						Name:           "af_investigate_resume",
 						Keywords:       []string{"stream the investigation"},
-						ToolCall:       config.ToolCallOverride{Name: "kubernaut_investigate", Arguments: map[string]string{"session_id": "sess-abc"}},
+						ToolCall:       config.ToolCallOverride{Name: "kubernaut_investigate", Arguments: map[string]interface{}{"session_id": "sess-abc"}},
 						MatchLastOnly:  true,
 						RepeatToolCall: true,
 					},
@@ -156,7 +156,7 @@ keyword_scenarios:
 					{
 						Name:          "af_investigate_resume",
 						Keywords:      []string{"stream the investigation"},
-						ToolCall:      config.ToolCallOverride{Name: "kubernaut_investigate", Arguments: map[string]string{"session_id": "sess-abc"}},
+						ToolCall:      config.ToolCallOverride{Name: "kubernaut_investigate", Arguments: map[string]interface{}{"session_id": "sess-abc"}},
 						MatchLastOnly: true,
 					},
 				},
@@ -205,7 +205,7 @@ keyword_scenarios:
 					{
 						Name:           "af_investigate_resume",
 						Keywords:       []string{"stream the investigation"},
-						ToolCall:       config.ToolCallOverride{Name: "kubernaut_investigate", Arguments: map[string]string{"session_id": "sess-abc"}},
+						ToolCall:       config.ToolCallOverride{Name: "kubernaut_investigate", Arguments: map[string]interface{}{"session_id": "sess-abc"}},
 						MatchLastOnly:  true,
 						RepeatToolCall: true,
 					},
@@ -343,7 +343,7 @@ keyword_scenarios:
 					{
 						Name:           "af_investigate_resume",
 						Keywords:       []string{"stream the investigation"},
-						ToolCall:       config.ToolCallOverride{Name: "kubernaut_investigate", Arguments: map[string]string{"session_id": "$from_tool:kubernaut_investigate:session_id"}},
+						ToolCall:       config.ToolCallOverride{Name: "kubernaut_investigate", Arguments: map[string]interface{}{"session_id": "$from_tool:kubernaut_investigate:session_id"}},
 						MatchLastOnly:  true,
 						RepeatToolCall: true,
 					},
@@ -392,7 +392,7 @@ keyword_scenarios:
 					{
 						Name:           "af_investigate_resume",
 						Keywords:       []string{"stream the investigation"},
-						ToolCall:       config.ToolCallOverride{Name: "kubernaut_investigate", Arguments: map[string]string{"session_id": "$from_tool:kubernaut_investigate:session_id"}},
+						ToolCall:       config.ToolCallOverride{Name: "kubernaut_investigate", Arguments: map[string]interface{}{"session_id": "$from_tool:kubernaut_investigate:session_id"}},
 						MatchLastOnly:  true,
 						RepeatToolCall: true,
 					},
@@ -439,7 +439,7 @@ keyword_scenarios:
 					{
 						Name:           "af_investigate_resume",
 						Keywords:       []string{"stream the investigation"},
-						ToolCall:       config.ToolCallOverride{Name: "kubernaut_investigate", Arguments: map[string]string{"session_id": "$from_tool:kubernaut_investigate:session_id"}},
+						ToolCall:       config.ToolCallOverride{Name: "kubernaut_investigate", Arguments: map[string]interface{}{"session_id": "$from_tool:kubernaut_investigate:session_id"}},
 						MatchLastOnly:  true,
 						RepeatToolCall: true,
 					},
@@ -496,7 +496,7 @@ keyword_scenarios:
 					{
 						Name:           "af_malformed",
 						Keywords:       []string{"malformed test"},
-						ToolCall:       config.ToolCallOverride{Name: "test_tool", Arguments: map[string]string{"id": "$from_tool:onlytoolname"}},
+						ToolCall:       config.ToolCallOverride{Name: "test_tool", Arguments: map[string]interface{}{"id": "$from_tool:onlytoolname"}},
 						MatchLastOnly:  true,
 						RepeatToolCall: true,
 					},
@@ -537,7 +537,7 @@ keyword_scenarios:
 					{
 						Name:           "af_malformed",
 						Keywords:       []string{"malformed test"},
-						ToolCall:       config.ToolCallOverride{Name: "test_tool", Arguments: map[string]string{"id": "$from_tool:onlytoolname"}},
+						ToolCall:       config.ToolCallOverride{Name: "test_tool", Arguments: map[string]interface{}{"id": "$from_tool:onlytoolname"}},
 						MatchLastOnly:  true,
 						RepeatToolCall: true,
 					},
@@ -602,8 +602,8 @@ keyword_scenarios:
 			scenarioWithCfg := result.Scenario.(scenarios.ScenarioWithConfig)
 			cfg := scenarioWithCfg.Config()
 			cfg.MultiToolCalls = []scenarios.MultiToolCallEntry{
-				{Name: "tool_a", Arguments: map[string]string{"key": "val_a"}},
-				{Name: "tool_b", Arguments: map[string]string{"key": "val_b"}},
+				{Name: "tool_a", Arguments: map[string]interface{}{"key": "val_a"}},
+				{Name: "tool_b", Arguments: map[string]interface{}{"key": "val_b"}},
 			}
 
 			router := handlers.NewRouter(scenarios.DefaultRegistryWithOverrides(&config.Overrides{
@@ -659,7 +659,7 @@ keyword_scenarios:
 					{
 						Name:           "af_parallel",
 						Keywords:       []string{"parallel tools"},
-						ToolCall:       config.ToolCallOverride{Name: "tool_a", Arguments: map[string]string{"key": "val"}},
+						ToolCall:       config.ToolCallOverride{Name: "tool_a", Arguments: map[string]interface{}{"key": "val"}},
 						MatchLastOnly:  true,
 						RepeatToolCall: true,
 					},
@@ -769,7 +769,7 @@ keyword_scenarios:
 					{
 						Name:           "af_investigate_resume",
 						Keywords:       []string{"stream the investigation"},
-						ToolCall:       config.ToolCallOverride{Name: "kubernaut_investigate", Arguments: map[string]string{"session_id": "$from_tool:kubernaut_investigate:session_id"}},
+						ToolCall:       config.ToolCallOverride{Name: "kubernaut_investigate", Arguments: map[string]interface{}{"session_id": "$from_tool:kubernaut_investigate:session_id"}},
 						MatchLastOnly:  true,
 						RepeatToolCall: true,
 					},

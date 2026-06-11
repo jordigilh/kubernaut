@@ -26,8 +26,8 @@ import (
 // ToolCallOverride specifies a tool call that the mock-LLM should return
 // for a given scenario instead of following the normal DAG path.
 type ToolCallOverride struct {
-	Name      string            `yaml:"name"`
-	Arguments map[string]string `yaml:"arguments,omitempty"`
+	Name      string                 `yaml:"name"`
+	Arguments map[string]interface{} `yaml:"arguments,omitempty"`
 }
 
 // ScenarioOverride defines optional per-scenario overrides from a YAML config file.

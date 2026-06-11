@@ -96,7 +96,7 @@ var _ = Describe("Override Application (BR-TESTING-657)", func() {
 						ForceText: &forceText,
 						ToolCall: &config.ToolCallOverride{
 							Name: "kubectl_get_yaml",
-							Arguments: map[string]string{
+							Arguments: map[string]interface{}{
 								"kind":      "ConfigMap",
 								"name":      "poisoned-cm",
 								"namespace": "default",

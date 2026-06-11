@@ -34,8 +34,8 @@ type MockAlternativeWorkflow struct {
 
 // MultiToolCallEntry describes a single tool call within a multi-tool-call batch.
 type MultiToolCallEntry struct {
-	Name      string            `yaml:"name"`
-	Arguments map[string]string `yaml:"arguments,omitempty"`
+	Name      string                 `yaml:"name"`
+	Arguments map[string]interface{} `yaml:"arguments,omitempty"`
 }
 
 // MockScenarioConfig holds the static configuration for a mock scenario.
@@ -82,7 +82,7 @@ type MockScenarioConfig struct {
 	// and return a tool call with this name on the first request.
 	ToolCallName string
 	// ToolCallArgs provides the arguments for the custom tool call.
-	ToolCallArgs map[string]string
+	ToolCallArgs map[string]interface{}
 
 	// MultiToolCalls, when non-empty, causes the handler to return all
 	// listed tool calls in a single assistant message on the first request.
