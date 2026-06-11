@@ -357,3 +357,131 @@ func buildIncidentResponseWithDetectedLabels(labels map[string]jx.Raw) *agentcli
 		),
 	}
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// #1400: CNV Label Extraction Tests
+// ═══════════════════════════════════════════════════════════════════════
+
+var _ = Describe("CNV Label Extraction — #1400", func() {
+	var (
+		processor *handlers.ResponseProcessor
+		analysis  *aianalysisv1.AIAnalysis
+		ctx       context.Context
+	)
+
+	BeforeEach(func() {
+		m := metrics.NewMetrics()
+		processor = handlers.NewResponseProcessor(logr.Discard(), m, &noopAuditClient{})
+		ctx = context.Background()
+	})
+
+	It("UT-AA-1400-001: extractDetectedLabels maps all 4 CNV fields from KA response", func() {
+		analysis = createAnalysisForPostRCA()
+
+		kaResp := buildIncidentResponseWithDetectedLabels(map[string]jx.Raw{
+			"gitOpsManaged":  jx.Raw(`false`),
+			"stateful":       jx.Raw(`true`),
+			"virtualMachine": jx.Raw(`true`),
+			"liveMigratable": jx.Raw(`true`),
+			"cdiManaged":     jx.Raw(`false`),
+			"storageBackend": jx.Raw(`"odf-ceph"`),
+		})
+
+		_, err := processor.ProcessIncidentResponse(ctx, analysis, kaResp)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(analysis.Status.PostRCAContext).ToNot(BeNil())
+
+		dl := analysis.Status.PostRCAContext.DetectedLabels
+		Expect(dl.VirtualMachine).To(BeTrue(), "virtualMachine must be extracted as true")
+		Expect(dl.LiveMigratable).To(BeTrue(), "liveMigratable must be extracted as true")
+		Expect(dl.CDIManaged).To(BeFalse(), "cdiManaged must be extracted as false")
+		Expect(dl.StorageBackend).To(Equal("odf-ceph"), "storageBackend must be extracted")
+	})
+
+	It("UT-AA-1400-002: non-CNV input produces struct with false CNV fields (backward compat)", func() {
+		analysis = createAnalysisForPostRCA()
+
+		kaResp := buildIncidentResponseWithDetectedLabels(map[string]jx.Raw{
+			"gitOpsManaged": jx.Raw(`true`),
+			"stateful":      jx.Raw(`true`),
+		})
+
+		_, err := processor.ProcessIncidentResponse(ctx, analysis, kaResp)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(analysis.Status.PostRCAContext).ToNot(BeNil())
+
+		dl := analysis.Status.PostRCAContext.DetectedLabels
+		Expect(dl.VirtualMachine).To(BeFalse(), "virtualMachine defaults to false when absent")
+		Expect(dl.LiveMigratable).To(BeFalse(), "liveMigratable defaults to false when absent")
+		Expect(dl.CDIManaged).To(BeFalse(), "cdiManaged defaults to false when absent")
+		Expect(dl.StorageBackend).To(BeEmpty(), "storageBackend defaults to empty when absent")
+		Expect(dl.GitOpsManaged).To(BeTrue(), "non-CNV fields must still work")
+	})
+
+	It("UT-AA-1400-003: extractDetectedLabels maps storageBackend string field", func() {
+		analysis = createAnalysisForPostRCA()
+
+		kaResp := buildIncidentResponseWithDetectedLabels(map[string]jx.Raw{
+			"virtualMachine": jx.Raw(`true`),
+			"storageBackend": jx.Raw(`"lvms"`),
+		})
+
+		_, err := processor.ProcessIncidentResponse(ctx, analysis, kaResp)
+		Expect(err).ToNot(HaveOccurred())
+
+		dl := analysis.Status.PostRCAContext.DetectedLabels
+		Expect(dl.StorageBackend).To(Equal("lvms"), "storageBackend=lvms must round-trip")
+	})
+
+	It("IT-AA-1400-001: ProcessIncidentResponse with CNV labels persists to PostRCAContext", func() {
+		analysis = createAnalysisForPostRCA()
+
+		kaResp := buildIncidentResponseWithDetectedLabels(map[string]jx.Raw{
+			"gitOpsManaged":            jx.Raw(`true`),
+			"pdbProtected":             jx.Raw(`true`),
+			"hpaEnabled":               jx.Raw(`false`),
+			"stateful":                 jx.Raw(`true`),
+			"helmManaged":              jx.Raw(`false`),
+			"networkIsolated":          jx.Raw(`false`),
+			"serviceMesh":              jx.Raw(`"istio"`),
+			"resourceQuotaConstrained": jx.Raw(`true`),
+			"virtualMachine":           jx.Raw(`true`),
+			"liveMigratable":           jx.Raw(`true`),
+			"cdiManaged":               jx.Raw(`true`),
+			"storageBackend":           jx.Raw(`"odf-ceph"`),
+		})
+
+		_, err := processor.ProcessIncidentResponse(ctx, analysis, kaResp)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(analysis.Status.PostRCAContext).ToNot(BeNil())
+
+		dl := analysis.Status.PostRCAContext.DetectedLabels
+		Expect(dl.GitOpsManaged).To(BeTrue())
+		Expect(dl.PDBProtected).To(BeTrue())
+		Expect(dl.Stateful).To(BeTrue())
+		Expect(dl.ServiceMesh).To(Equal("istio"))
+		Expect(dl.ResourceQuotaConstrained).To(BeTrue())
+		Expect(dl.VirtualMachine).To(BeTrue())
+		Expect(dl.LiveMigratable).To(BeTrue())
+		Expect(dl.CDIManaged).To(BeTrue())
+		Expect(dl.StorageBackend).To(Equal("odf-ceph"))
+	})
+
+	It("IT-AA-1400-002: ProcessIncidentResponse without CNV keys still populates PostRCAContext", func() {
+		analysis = createAnalysisForPostRCA()
+
+		kaResp := buildIncidentResponseWithDetectedLabels(map[string]jx.Raw{
+			"gitOpsManaged": jx.Raw(`true`),
+			"stateful":      jx.Raw(`false`),
+		})
+
+		_, err := processor.ProcessIncidentResponse(ctx, analysis, kaResp)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(analysis.Status.PostRCAContext).ToNot(BeNil())
+
+		dl := analysis.Status.PostRCAContext.DetectedLabels
+		Expect(dl.GitOpsManaged).To(BeTrue())
+		Expect(dl.VirtualMachine).To(BeFalse(), "absent CNV field must not cause error")
+		Expect(dl.StorageBackend).To(BeEmpty())
+	})
+})

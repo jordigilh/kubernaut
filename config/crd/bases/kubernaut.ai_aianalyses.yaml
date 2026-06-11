@@ -971,16 +971,13 @@ spec:
                           VirtualMachineInstanceMigration, or DataVolume (owner chain walk).
                         type: boolean
                     required:
-                    - cdiManaged
                     - gitOpsManaged
                     - helmManaged
                     - hpaEnabled
-                    - liveMigratable
                     - networkIsolated
                     - pdbProtected
                     - resourceQuotaConstrained
                     - stateful
-                    - virtualMachine
                     type: object
                   setAt:
                     description: |-
