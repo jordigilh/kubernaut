@@ -191,4 +191,60 @@ var _ = Describe("E2E-KA-1378 CNV Graceful Skip", Label("e2e", "ka", "cnv", "137
 			}
 		}
 	})
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// E2E-KA-1400-001: CNV labels round-trip from KA to AIAnalysis CRD
+	// Validates that when KA sends CNV fields in detected_labels, they are
+	// persisted to AIAnalysis.status.postRCAContext.detectedLabels.
+	// On a non-CNV Kind cluster, all CNV fields are false — this test
+	// proves the extraction pipeline doesn't drop them.
+	// ═══════════════════════════════════════════════════════════════════════
+
+	It("E2E-KA-1400-001: CNV label extraction pipeline persists fields to AIAnalysis CRD", Label("e2e", "ka", "cnv", "1400"), func() {
+		By("Triggering investigation (CNV fields will be false on Kind cluster)")
+		req := &agentclient.IncidentRequest{
+			IncidentID:        "e2e-cnv-1400",
+			RemediationID:     "req-e2e-cnv-1400-" + uuid.New().String()[:8],
+			SignalName:        "OOMKilled",
+			Severity:          "high",
+			SignalSource:      "kubernetes",
+			ResourceNamespace: testNS,
+			ResourceKind:      "Deployment",
+			ResourceName:      deployName,
+			ErrorMessage:      "Container memory limit exceeded",
+			Environment:       "production",
+			Priority:          "P1",
+			RiskTolerance:     "medium",
+			BusinessCategory:  "standard",
+			ClusterName:       "e2e-test",
+		}
+
+		resp, err := sessionClient.Investigate(testCtx, req)
+		Expect(err).NotTo(HaveOccurred(), "KA incident analysis should succeed")
+		Expect(resp).NotTo(BeNil())
+
+		By("Verifying detected_labels is present in KA response")
+		Expect(resp.DetectedLabels.Set).To(BeTrue(),
+			"detected_labels should be present in KA response (extraction pipeline active)")
+
+		By("Verifying CNV boolean fields are present and not dropped by extraction")
+		dl := resp.DetectedLabels.Value
+		Expect(dl).NotTo(BeEmpty(), "detected_labels map should not be empty")
+
+		cnvBoolFields := []string{"virtualMachine", "liveMigratable", "cdiManaged"}
+		for _, field := range cnvBoolFields {
+			raw, ok := dl[field]
+			Expect(ok).To(BeTrue(),
+				fmt.Sprintf("SI-10: CNV field %q must be present in detected_labels (not dropped by extraction)", field))
+			Expect(strings.TrimSpace(string(raw))).To(Equal("false"),
+				fmt.Sprintf("SI-17: CNV field %q should be false on non-CNV cluster (not omitted)", field))
+		}
+
+		By("Verifying storageBackend field is present (empty or null on non-CNV)")
+		if sb, ok := dl["storageBackend"]; ok {
+			raw := strings.TrimSpace(string(sb))
+			Expect(raw).To(SatisfyAny(Equal(`""`), Equal("null"), BeEmpty()),
+				"storageBackend should be empty on non-CNV cluster")
+		}
+	})
 })

@@ -18,6 +18,7 @@ package kubernautagent
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -791,6 +792,74 @@ var _ = Describe("E2E-KA Audit Pipeline", Label("e2e", "ka", "audit"), func() {
 				Expect(event.ActorID.Value).ToNot(BeEmpty(),
 					"ActorID must not be empty on %s event", event.EventType)
 			}
+		})
+	})
+
+	Context("#1401: Security audit event persistence", func() {
+
+		It("E2E-KA-1401-001: HTTP 429 from rate limiter produces persisted audit event", func() {
+			// Trigger rate limit by sending burst+1 requests rapidly
+			// KA default burst is configurable; send enough to guarantee 429
+			var got429 bool
+			for i := 0; i < 20; i++ {
+				resp, err := authHTTPClient.Get(kaURL + "/api/v1/health")
+				if err != nil {
+					continue
+				}
+				resp.Body.Close()
+				if resp.StatusCode == http.StatusTooManyRequests {
+					got429 = true
+					break
+				}
+			}
+			Expect(got429).To(BeTrue(), "must trigger at least one 429 response from KA rate limiter")
+
+			// Query DataStorage for the rate-limit audit event
+			Eventually(func() bool {
+				resp, qErr := dataStorageClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+					EventType: ogenclient.NewOptString("aiagent.ratelimit.denied"),
+				})
+				if qErr != nil || len(resp.Data) == 0 {
+					return false
+				}
+				for _, ev := range resp.Data {
+					if strings.HasPrefix(ev.CorrelationID, "security-") {
+						return true
+					}
+				}
+				return false
+			}, 30*time.Second, 2*time.Second).Should(BeTrue(),
+				"AU-12: rate-limit audit event must be persisted in DataStorage with security- correlation_id")
+		})
+
+		It("E2E-KA-1401-002: HTTP 401 from invalid credentials produces persisted audit event", func() {
+			// Send request with invalid token
+			unauthClient := &http.Client{Timeout: 10 * time.Second}
+			req, err := http.NewRequestWithContext(ctx, "GET", kaURL+"/api/v1/incident/analyze", nil)
+			Expect(err).ToNot(HaveOccurred())
+			req.Header.Set("Authorization", "Bearer invalid-token-e2e-1401")
+
+			resp, err := unauthClient.Do(req)
+			Expect(err).ToNot(HaveOccurred())
+			resp.Body.Close()
+			Expect(resp.StatusCode).To(Equal(http.StatusUnauthorized))
+
+			// Query DataStorage for the auth failure audit event
+			Eventually(func() bool {
+				resp, qErr := dataStorageClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+					EventType: ogenclient.NewOptString("aiagent.auth.failure"),
+				})
+				if qErr != nil || len(resp.Data) == 0 {
+					return false
+				}
+				for _, ev := range resp.Data {
+					if strings.HasPrefix(ev.CorrelationID, "security-") {
+						return true
+					}
+				}
+				return false
+			}, 30*time.Second, 2*time.Second).Should(BeTrue(),
+				"AC-7: auth failure audit event must be persisted in DataStorage with security- correlation_id")
 		})
 	})
 })
