@@ -491,22 +491,44 @@ func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.Investigat
 				if chunk := extractJSONField(evt.Data, "delta"); chunk != "" {
 					summary.WriteString(chunk)
 				}
-			case ka.EventTypeComplete:
-				if len(evt.Data) > 0 {
-					var rca InvestigateRCA
-					if json.Unmarshal(evt.Data, &rca) == nil && rca.Severity != "" {
-						rcaResult = &rca
-						if rca.RCASummary != "" && summary.Len() == 0 {
-							summary.WriteString(rca.RCASummary)
-						}
+		case ka.EventTypeComplete:
+			if len(evt.Data) > 0 {
+				var rca InvestigateRCA
+				if json.Unmarshal(evt.Data, &rca) == nil && rca.Severity != "" {
+					rcaResult = &rca
+					if rca.RCASummary != "" && summary.Len() == 0 {
+						summary.WriteString(rca.RCASummary)
 					}
+					emitEarlyRCA(ctx, &rca)
 				}
-				return summary.String(), rcaResult
+			}
+			return summary.String(), rcaResult
 			case ka.EventTypeCancelled:
 				return summary.String(), rcaResult
 			}
 		}
 	}
+}
+
+// emitEarlyRCA emits a progressive RCA status-update via the EventBridge so
+// the console can render investigation findings immediately (before workflow
+// discovery completes). Uses metadata.type="decision" with schema="early_rca"
+// to differentiate from the final present_decision artifact.
+// FedRAMP: SI-4 (audit classification), AU-3 (content traceability).
+func emitEarlyRCA(ctx context.Context, rca *InvestigateRCA) {
+	if rca == nil {
+		return
+	}
+	payload := fmt.Sprintf(
+		`{"severity":"%s","confidence":%.2f,"target":"%s","rca_summary":"%s"}`,
+		rca.Severity, rca.Confidence, rca.Target, rca.RCASummary,
+	)
+	meta := map[string]any{
+		"type":           launcher.MetaTypeDecision,
+		"schema":         "early_rca",
+		"schema_version": "1.0",
+	}
+	_ = launcher.EmitStructuredMetaSafe(ctx, payload, meta)
 }
 
 // FormatEventForUser converts an investigation event into user-readable text.
