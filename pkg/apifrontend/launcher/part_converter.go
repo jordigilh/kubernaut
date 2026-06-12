@@ -284,6 +284,10 @@ func buildStreamingPartConverter() adka2a.GenAIPartConverter {
 			return nil, nil
 		}
 
+		if part.FunctionResponse != nil && part.FunctionResponse.Name == "kubernaut_present_decision" {
+			return nil, nil
+		}
+
 		bridge := EventBridgeFromContext(ctx)
 		if bridge == nil {
 			return convertPartToText(part), nil
@@ -346,6 +350,9 @@ func emitDecisionEvent(ctx context.Context, bridge *EventBridge, fc *genai.Funct
 	if data == nil {
 		data = map[string]any{}
 	}
+
+	data["type"] = "investigation_summary"
+	data["schema_version"] = "1.0"
 
 	summary, _ := data["summary"].(string)
 	if summary == "" {

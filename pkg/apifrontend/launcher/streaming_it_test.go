@@ -110,6 +110,81 @@ var _ = Describe("IT-AF-1399: A2A Streaming Pipeline Wiring", func() {
 		})
 	})
 
+	Describe("Contract compliance (#1408)", func() {
+		It("IT-AF-1408-001: AU-3 — DataPart.Data contains type + schema_version through streaming pipeline", func() {
+			convert := launcher.BuildStreamingPartConverterForTest()
+			part := &genai.Part{
+				FunctionCall: &genai.FunctionCall{
+					Name: "kubernaut_present_decision",
+					Args: map[string]any{
+						"session_id": "sess-it-1408",
+						"summary":    "OOM detected in data-processor",
+						"rca": map[string]any{
+							"severity":    "critical",
+							"confidence":  0.92,
+							"explanation": "Container OOMKilled",
+						},
+						"options": []any{
+							map[string]any{"workflow_id": "wf-restart", "name": "Restart Pod"},
+						},
+					},
+				},
+			}
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-it-1408", "ctx-it-1408", nil)
+
+			result, err := convert(ctx, nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(BeNil())
+
+			Expect(queue.events).To(HaveLen(1))
+			artifactEvt, ok := queue.events[0].(*a2a.TaskArtifactUpdateEvent)
+			Expect(ok).To(BeTrue())
+
+			dp, ok := artifactEvt.Artifact.Parts[0].(a2a.DataPart)
+			Expect(ok).To(BeTrue())
+			Expect(dp.Data).To(HaveKeyWithValue("type", "investigation_summary"),
+				"AU-3: DataPart.Data must self-identify as investigation_summary for audit tracing")
+			Expect(dp.Data).To(HaveKeyWithValue("schema_version", "1.0"),
+				"AU-3: DataPart.Data must include schema_version for contract versioning")
+		})
+
+		It("IT-AF-1408-002: SI-4 — FunctionResponse suppression prevents duplicate event through streaming pipeline", func() {
+			convert := launcher.BuildStreamingPartConverterForTest()
+			fcPart := &genai.Part{
+				FunctionCall: &genai.FunctionCall{
+					Name: "kubernaut_present_decision",
+					Args: map[string]any{
+						"session_id": "sess-it-1408-dup",
+						"summary":    "Cert expired",
+						"rca":        map[string]any{"severity": "high", "confidence": 0.88, "explanation": "TLS expired"},
+						"options":    []any{},
+					},
+				},
+			}
+			frPart := &genai.Part{
+				FunctionResponse: &genai.FunctionResponse{
+					Name: "kubernaut_present_decision",
+					Response: map[string]any{
+						"presented": true,
+						"message":   "Investigation complete.",
+					},
+				},
+			}
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-it-1408-dup", "ctx-it-1408-dup", nil)
+
+			_, _ = convert(ctx, nil, fcPart)
+			_, _ = convert(ctx, nil, frPart)
+
+			Expect(queue.events).To(HaveLen(1),
+				"SI-4: full present_decision cycle through streaming pipeline must produce exactly 1 event")
+			_, ok := queue.events[0].(*a2a.TaskArtifactUpdateEvent)
+			Expect(ok).To(BeTrue(),
+				"SI-4: the single event must be TaskArtifactUpdateEvent")
+		})
+	})
+
 	Describe("outputMetaTools routing preserved", func() {
 		It("IT-AF-1399-005: kubernaut_watch FunctionResponse still uses status type", func() {
 			convert := launcher.BuildPartConverterForTest()

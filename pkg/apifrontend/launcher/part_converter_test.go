@@ -1781,3 +1781,173 @@ var _ = Describe("Reasoning Routing (#1399)", func() {
 		})
 	})
 })
+
+// =============================================================================
+// #1408: Contract compliance — FunctionResponse suppression + schema fields
+// =============================================================================
+
+var _ = Describe("Contract Compliance #1408 — Structured investigation_summary", func() {
+	var convertStreaming launcher.PartConverterFunc
+
+	BeforeEach(func() {
+		convertStreaming = launcher.BuildStreamingPartConverterForTest()
+	})
+
+	Describe("FunctionResponse suppression", func() {
+		It("UT-AF-1408-001: SI-4 — present_decision FunctionResponse must NOT emit any event", func() {
+			part := &genai.Part{
+				FunctionResponse: &genai.FunctionResponse{
+					Name: "kubernaut_present_decision",
+					Response: map[string]any{
+						"presented": true,
+						"message":   "Investigation complete.\n\nSummary: OOM detected\nSeverity: critical",
+					},
+				},
+			}
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convertStreaming(ctx, nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(BeNil(),
+				"SI-4: present_decision FunctionResponse must return nil (suppressed)")
+			Expect(queue.events).To(BeEmpty(),
+				"SI-4: present_decision FunctionResponse must NOT emit status events (prevents double-render)")
+		})
+	})
+
+	Describe("DataPart schema compliance", func() {
+		It("UT-AF-1408-002: SI-10 — DataPart.Data must contain type=investigation_summary", func() {
+			part := &genai.Part{
+				FunctionCall: &genai.FunctionCall{
+					Name: "kubernaut_present_decision",
+					Args: map[string]any{
+						"session_id": "sess-1408-001",
+						"summary":    "OOM detected",
+						"rca": map[string]any{
+							"severity":   "critical",
+							"confidence": 0.92,
+							"explanation": "Memory limit exceeded",
+						},
+						"options": []any{
+							map[string]any{"workflow_id": "wf-1", "name": "Restart"},
+						},
+					},
+				},
+			}
+			queue, ctx := partConverterBridgeCtx()
+			_, _ = convertStreaming(ctx, nil, part)
+
+			Expect(queue.events).To(HaveLen(1))
+			artifactEvt, ok := queue.events[0].(*a2a.TaskArtifactUpdateEvent)
+			Expect(ok).To(BeTrue())
+			dp, ok := artifactEvt.Artifact.Parts[0].(a2a.DataPart)
+			Expect(ok).To(BeTrue())
+			Expect(dp.Data).To(HaveKeyWithValue("type", "investigation_summary"),
+				"SI-10: DataPart.Data must include type field for schema self-identification")
+		})
+
+		It("UT-AF-1408-003: SI-10 — DataPart.Data must contain schema_version=1.0", func() {
+			part := &genai.Part{
+				FunctionCall: &genai.FunctionCall{
+					Name: "kubernaut_present_decision",
+					Args: map[string]any{
+						"session_id": "sess-1408-002",
+						"summary":    "Cert expired",
+						"rca": map[string]any{
+							"severity":    "high",
+							"confidence":  0.88,
+							"explanation": "TLS cert expired",
+						},
+						"options": []any{},
+					},
+				},
+			}
+			queue, ctx := partConverterBridgeCtx()
+			_, _ = convertStreaming(ctx, nil, part)
+
+			Expect(queue.events).To(HaveLen(1))
+			artifactEvt, ok := queue.events[0].(*a2a.TaskArtifactUpdateEvent)
+			Expect(ok).To(BeTrue())
+			dp, ok := artifactEvt.Artifact.Parts[0].(a2a.DataPart)
+			Expect(ok).To(BeTrue())
+			Expect(dp.Data).To(HaveKeyWithValue("schema_version", "1.0"),
+				"SI-10: DataPart.Data must include schema_version for contract versioning")
+		})
+
+		It("UT-AF-1408-004: SI-10 — DataPart.Data passes ValidatePayload for investigation_summary schema", func() {
+			part := &genai.Part{
+				FunctionCall: &genai.FunctionCall{
+					Name: "kubernaut_present_decision",
+					Args: map[string]any{
+						"session_id": "sess-1408-003",
+						"summary":    "OOM detected in production",
+						"rca": map[string]any{
+							"severity":    "critical",
+							"confidence":  0.95,
+							"explanation": "Container OOMKilled due to memory limit",
+							"causal_chain": []any{
+								"Memory leak in worker goroutine",
+								"Container hit 512Mi limit",
+							},
+							"target": "Deployment/data-processor",
+						},
+						"options": []any{
+							map[string]any{"workflow_id": "wf-restart", "name": "Restart Pod"},
+						},
+					},
+				},
+			}
+			queue, ctx := partConverterBridgeCtx()
+			_, _ = convertStreaming(ctx, nil, part)
+
+			Expect(queue.events).To(HaveLen(1))
+			artifactEvt, ok := queue.events[0].(*a2a.TaskArtifactUpdateEvent)
+			Expect(ok).To(BeTrue())
+			dp, ok := artifactEvt.Artifact.Parts[0].(a2a.DataPart)
+			Expect(ok).To(BeTrue())
+
+			err := launcher.ValidatePayloadForTest("investigation_summary", dp.Data)
+			Expect(err).NotTo(HaveOccurred(),
+				"SI-10: emitted DataPart.Data must pass schema validation for investigation_summary")
+		})
+	})
+
+	Describe("Single artifact emission (no duplicates)", func() {
+		It("UT-AF-1408-005: AU-3 — full FunctionCall+FunctionResponse cycle produces exactly one event", func() {
+			fcPart := &genai.Part{
+				FunctionCall: &genai.FunctionCall{
+					Name: "kubernaut_present_decision",
+					Args: map[string]any{
+						"session_id": "sess-1408-004",
+						"summary":    "Pod crash loop",
+						"rca": map[string]any{
+							"severity":    "medium",
+							"confidence":  0.75,
+							"explanation": "Bad config",
+						},
+						"options": []any{
+							map[string]any{"workflow_id": "wf-fix", "name": "Apply Fix"},
+						},
+					},
+				},
+			}
+			frPart := &genai.Part{
+				FunctionResponse: &genai.FunctionResponse{
+					Name: "kubernaut_present_decision",
+					Response: map[string]any{
+						"presented": true,
+						"message":   "Investigation complete.",
+					},
+				},
+			}
+			queue, ctx := partConverterBridgeCtx()
+			_, _ = convertStreaming(ctx, nil, fcPart)
+			_, _ = convertStreaming(ctx, nil, frPart)
+
+			Expect(queue.events).To(HaveLen(1),
+				"AU-3: full present_decision cycle must produce exactly 1 event (artifact only, no status duplicate)")
+			_, ok := queue.events[0].(*a2a.TaskArtifactUpdateEvent)
+			Expect(ok).To(BeTrue(),
+				"AU-3: the single event must be TaskArtifactUpdateEvent (not TaskStatusUpdateEvent)")
+		})
+	})
+})
