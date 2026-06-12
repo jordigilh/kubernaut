@@ -243,8 +243,8 @@ var _ = Describe("Structured Approval Events E2E — #1398", Ordered, Label("e2e
 		readCtx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer cancel()
 
-		patchRRToAwaitingApproval(readCtx, 3*time.Second)
-		patchRARDecision(readCtx, "Approved", "e2e-operator@acme.com", 6*time.Second)
+		patchRARDecision(readCtx, "Approved", "e2e-operator@acme.com", 2*time.Second)
+		patchRRToAwaitingApproval(readCtx, 4*time.Second)
 
 		resp, err := a2aSSEPost(readCtx, a2aMessageStream(
 			fmt.Sprintf("e2e-approval-002-%d", time.Now().UnixNano()),
@@ -276,8 +276,8 @@ var _ = Describe("Structured Approval Events E2E — #1398", Ordered, Label("e2e
 		readCtx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 		defer cancel()
 
-		patchRRToAwaitingApproval(readCtx, 3*time.Second)
-		patchRARDecision(readCtx, "Expired", "system", 6*time.Second)
+		patchRARDecision(readCtx, "Expired", "system", 2*time.Second)
+		patchRRToAwaitingApproval(readCtx, 4*time.Second)
 
 		resp, err := a2aSSEPost(readCtx, a2aMessageStream(
 			fmt.Sprintf("e2e-approval-003-%d", time.Now().UnixNano()),

@@ -112,8 +112,12 @@ var _ = Describe("Execution Progress Streaming (#1403)", Ordered, Label("e2e", "
 			if err := json.Unmarshal(raw, &evt); err != nil {
 				continue
 			}
-			artifact, hasArtifact := evt["artifact"].(map[string]any)
-			if !hasArtifact {
+			result, _ := evt["result"].(map[string]any)
+			if result == nil {
+				continue
+			}
+			artifact, _ := result["artifact"].(map[string]any)
+			if artifact == nil {
 				continue
 			}
 			meta, _ := artifact["metadata"].(map[string]any)
