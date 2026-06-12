@@ -562,13 +562,12 @@ func emitFallbackInvestigationArtifact(ctx context.Context, rca *InvestigateRCA,
 		return
 	}
 	data := map[string]any{
-		"type":           "investigation_summary",
-		"schema_version": "1.0",
-		"session_id":     rrID,
-		"summary":        rca.RCASummary,
+		"session_id": rrID,
+		"summary":    rca.RCASummary,
 		"rca": map[string]any{
-			"severity":   rca.Severity,
-			"confidence": rca.Confidence,
+			"explanation": rca.RCASummary,
+			"severity":    rca.Severity,
+			"confidence":  rca.Confidence,
 		},
 	}
 	meta := map[string]any{

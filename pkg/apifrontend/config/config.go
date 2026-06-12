@@ -38,7 +38,9 @@ type Config struct {
 // kubernaut_investigate, kubernaut_message) are hidden from MCP enumeration
 // and the A2A agent tool list (#1366).
 type InteractiveConfig struct {
-	Enabled bool `yaml:"enabled"`
+	Enabled                bool          `yaml:"enabled"`
+	AwaitSessionTimeout    time.Duration `yaml:"awaitSessionTimeout,omitempty"`
+	BridgeInactivityTimeout time.Duration `yaml:"bridgeInactivityTimeout,omitempty"`
 }
 
 // SessionConfig holds InvestigationSession CRD controller settings.

@@ -26,8 +26,6 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
-	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
 
 // =============================================================================
@@ -37,10 +35,9 @@ import (
 // → AF creates RR with severity triage → bridge waits for KA events → fallback
 // early_rca decision event emitted from triage data via SSE.
 //
-// The AF E2E cluster has no AA controller. The test emulates the AA by
-// pre-creating an AIAnalysis CRD so HandleAwaitSession returns quickly.
-// The fallback RCA emission provides immediate severity feedback even when
-// the KA has no autonomous session.
+// The AF E2E cluster has no AA controller. The deployed AF uses short
+// awaitSessionTimeout/bridgeInactivityTimeout values (set in the E2E
+// config overlay) so the fallback RCA emission fires promptly.
 //
 // FedRAMP: SI-4 (audit classification of early RCA), AU-3 (traceability of
 // progressive events through the streaming pipeline).
@@ -57,19 +54,6 @@ var _ = Describe("Progressive RCA Flow E2E — #1407", Ordered, Label("e2e", "pr
 		sreToken, err = fetchDEXTokenForPersona("sre")
 		Expect(err).NotTo(HaveOccurred(), "SRE DEX token required")
 		Expect(sreToken).NotTo(BeEmpty())
-
-		// AF E2E has no AA controller — shorten the await/bridge timeouts
-		// so HandleInvestigationMCPWithRegistry doesn't block for minutes
-		// waiting for an AIA CRD that will never appear. The fallback RCA
-		// emission (from severity triage) fires after bridge timeout.
-		origAwait := tools.AwaitSessionTimeout
-		origBridge := tools.BridgeInactivityTimeout
-		tools.AwaitSessionTimeout = 10 * time.Second
-		tools.BridgeInactivityTimeout = 15 * time.Second
-		DeferCleanup(func() {
-			tools.AwaitSessionTimeout = origAwait
-			tools.BridgeInactivityTimeout = origBridge
-		})
 	})
 
 	a2aSSEPost := func(ctx context.Context, body string) (*http.Response, error) {
@@ -252,15 +236,6 @@ var _ = Describe("Structured Artifact Contract E2E — #1408", Ordered, Label("e
 		sreToken, err = fetchDEXTokenForPersona("sre")
 		Expect(err).NotTo(HaveOccurred(), "SRE DEX token required")
 		Expect(sreToken).NotTo(BeEmpty())
-
-		origAwait := tools.AwaitSessionTimeout
-		origBridge := tools.BridgeInactivityTimeout
-		tools.AwaitSessionTimeout = 10 * time.Second
-		tools.BridgeInactivityTimeout = 15 * time.Second
-		DeferCleanup(func() {
-			tools.AwaitSessionTimeout = origAwait
-			tools.BridgeInactivityTimeout = origBridge
-		})
 	})
 
 	a2aSSEPost := func(ctx context.Context, body string) (*http.Response, error) {
@@ -321,27 +296,28 @@ var _ = Describe("Structured Artifact Contract E2E — #1408", Ordered, Label("e
 		Expect(artifactEvents).NotTo(BeEmpty(),
 			"SI-10: progressive flow must emit at least one artifact-update event")
 
-		By("SI-10: artifact must contain DataPart with schema self-identification fields")
+		By("SI-10: artifact metadata must identify schema (per #1411: schema fields live in metadata, not DataPart body)")
 		found := false
 		for _, evt := range artifactEvents {
 			artifact, _ := evt["artifact"].(map[string]any)
 			if artifact == nil {
 				continue
 			}
-			parts, _ := artifact["parts"].([]any)
-			for _, p := range parts {
-				part, _ := p.(map[string]any)
-				if part == nil {
-					continue
-				}
-				dpData, _ := part["data"].(map[string]any)
-				if dpData == nil {
-					continue
-				}
-				if dpData["type"] == "investigation_summary" && dpData["schema_version"] == "1.0" {
-					found = true
+			meta, _ := artifact["metadata"].(map[string]any)
+			if meta["schema"] == "investigation_summary" && meta["schema_version"] == "1.0" {
+				parts, _ := artifact["parts"].([]any)
+				for _, p := range parts {
+					part, _ := p.(map[string]any)
+					if part == nil {
+						continue
+					}
+					dpData, _ := part["data"].(map[string]any)
+					if dpData == nil {
+						continue
+					}
 					Expect(dpData).To(HaveKey("summary"),
 						"SI-10: investigation_summary must include summary field")
+					found = true
 					break
 				}
 			}
@@ -350,6 +326,6 @@ var _ = Describe("Structured Artifact Contract E2E — #1408", Ordered, Label("e
 			}
 		}
 		Expect(found).To(BeTrue(),
-			"SI-10: at least one artifact must contain DataPart with type=investigation_summary and schema_version=1.0")
+			"SI-10: at least one artifact must have metadata schema=investigation_summary with DataPart containing summary")
 	})
 })

@@ -101,6 +101,13 @@ func run() int {
 	cfg.Session.Namespace = agentpkg.ResolveNamespace(cfg.Session.Namespace, agentpkg.DefaultNamespaceFile)
 	logger.Info("operational namespace resolved", "namespace", cfg.Session.Namespace)
 
+	if cfg.Interactive.AwaitSessionTimeout > 0 {
+		tools.AwaitSessionTimeout = cfg.Interactive.AwaitSessionTimeout
+	}
+	if cfg.Interactive.BridgeInactivityTimeout > 0 {
+		tools.BridgeInactivityTimeout = cfg.Interactive.BridgeInactivityTimeout
+	}
+
 	restCfg, err := ctrl.GetConfig()
 	if err != nil {
 		logger.Error(err, "failed to get in-cluster config for SAR client")
