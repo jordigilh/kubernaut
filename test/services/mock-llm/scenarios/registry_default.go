@@ -132,6 +132,7 @@ func DefaultRegistryFull(overrides *config.Overrides, goldenDir string) *Registr
 				ToolCallArgs:   ks.ToolCall.Arguments,
 				ForceText:      BoolPtr(false),
 				RepeatToolCall: ks.RepeatToolCall,
+				ThoughtText:    ks.ThoughtText,
 			}
 			if ks.MatchLastOnly {
 				r.Register(lastUserKeywordScenarioMulti(ks.Name, ks.Keywords, cfg))

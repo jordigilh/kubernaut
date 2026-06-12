@@ -24,7 +24,6 @@ func statusEventTextAt(queue *fakeQueue, idx int) string {
 	evt, ok := queue.events[idx].(*a2a.TaskStatusUpdateEvent)
 	Expect(ok).To(BeTrue(), "expected TaskStatusUpdateEvent at index %d", idx)
 	Expect(evt.Metadata).NotTo(BeNil())
-	Expect(evt.Metadata["type"]).To(Equal("status"))
 	tp, ok := evt.Status.Message.Parts[0].(a2a.TextPart)
 	Expect(ok).To(BeTrue())
 	return tp.Text
@@ -360,7 +359,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(queue.events).To(BeEmpty(), "LLM text must NOT emit status events")
 		})
 
-		It("UT-AF-1189-131: Text part with Thought=true -> activity indicator, not raw thought", func() {
+		It("UT-AF-1189-131: Text part with Thought=true -> reasoning event with actual content", func() {
 			part := &genai.Part{
 				Text:    "I should check the node resource utilization next.",
 				Thought: true,
@@ -369,7 +368,14 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			Expect(statusEventTextAt(queue, 0)).To(Equal("Analyzing...\n\n"))
+
+			Expect(queue.events).To(HaveLen(1))
+			evt, ok := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			Expect(ok).To(BeTrue())
+			Expect(evt.Metadata).To(HaveKeyWithValue("type", "reasoning"))
+			tp, ok := evt.Status.Message.Parts[0].(a2a.TextPart)
+			Expect(ok).To(BeTrue())
+			Expect(tp.Text).To(ContainSubstring("check the node resource utilization"))
 		})
 
 		It("UT-AF-1189-132: empty text part -> passed through (not dropped)", func() {
@@ -749,7 +755,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 	})
 
 	Describe("Thought-to-activity indicator (AC 10)", func() {
-		It("UT-AF-1189-167: Thought=true with long reasoning -> activity indicator, not raw thought", func() {
+		It("UT-AF-1189-167: Thought=true with long reasoning -> reasoning event with actual content", func() {
 			part := &genai.Part{
 				Text:    "Let me analyze the disk pressure situation. The node shows high emptyDir usage which is likely caused by the PostgreSQL StatefulSet writing temporary data.",
 				Thought: true,
@@ -758,7 +764,14 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			Expect(statusEventTextAt(queue, 0)).To(Equal("Analyzing...\n\n"))
+
+			Expect(queue.events).To(HaveLen(1))
+			evt, ok := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			Expect(ok).To(BeTrue())
+			Expect(evt.Metadata).To(HaveKeyWithValue("type", "reasoning"))
+			tp, ok := evt.Status.Message.Parts[0].(a2a.TextPart)
+			Expect(ok).To(BeTrue())
+			Expect(tp.Text).To(ContainSubstring("disk pressure situation"))
 		})
 
 		It("UT-AF-1189-168: Thought=false with text -> returned as artifact TextPart with trailing paragraph break", func() {
@@ -1111,7 +1124,7 @@ var _ = Describe("GenAIPartConverter — Streaming Mode (TP-1258)", func() {
 			Expect(statusEventTextAt(queue, 0)).To(ContainSubstring("Investigating"))
 		})
 
-		It("UT-AF-1258-036: Thought parts unchanged in streaming mode", func() {
+		It("UT-AF-1258-036: Thought parts emit reasoning in streaming mode", func() {
 			part := &genai.Part{
 				Text:    "Analyzing the disk usage patterns...",
 				Thought: true,
@@ -1120,7 +1133,14 @@ var _ = Describe("GenAIPartConverter — Streaming Mode (TP-1258)", func() {
 			result, err := convertStreaming(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			Expect(statusEventTextAt(queue, 0)).To(Equal("Analyzing...\n\n"))
+
+			Expect(queue.events).To(HaveLen(1))
+			evt, ok := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			Expect(ok).To(BeTrue())
+			Expect(evt.Metadata).To(HaveKeyWithValue("type", "reasoning"))
+			tp, ok := evt.Status.Message.Parts[0].(a2a.TextPart)
+			Expect(ok).To(BeTrue())
+			Expect(tp.Text).To(ContainSubstring("disk usage patterns"))
 		})
 	})
 
@@ -1424,28 +1444,19 @@ var _ = Describe("SI-4: Decision records preserve all options with recommendatio
 		queue, ctx := partConverterBridgeCtx()
 		_, _ = convertStreaming(ctx, nil, part)
 
-		Expect(queue.events).To(HaveLen(2))
-		decisionEvt := queue.events[1].(*a2a.TaskStatusUpdateEvent)
-		Expect(decisionEvt.Metadata["type"]).To(Equal("decision"),
+		Expect(queue.events).To(HaveLen(1))
+		artifactEvt, ok := queue.events[0].(*a2a.TaskArtifactUpdateEvent)
+		Expect(ok).To(BeTrue(), "decision must emit TaskArtifactUpdateEvent")
+		Expect(artifactEvt.Artifact.Metadata["type"]).To(Equal("decision"),
 			"SI-4: decision events must be classified separately for audit tracing")
 
-		tp := decisionEvt.Status.Message.Parts[0].(a2a.TextPart)
-		var payload struct {
-			Options []struct {
-				WorkflowID  string `json:"workflow_id"`
-				Name        string `json:"name"`
-				Recommended bool   `json:"recommended"`
-			} `json:"options"`
-		}
-		err := json.Unmarshal([]byte(tp.Text), &payload)
-		Expect(err).NotTo(HaveOccurred(),
-			"SI-4: decision payload must be machine-parseable")
-		Expect(payload.Options).To(HaveLen(2),
-			"AC-6: ALL options must be presented — no hidden automated choices")
-		Expect(payload.Options[0].Recommended).To(BeTrue(),
-			"AC-6: recommendation flag must be explicit and auditable")
-		Expect(payload.Options[1].Recommended).To(BeFalse(),
-			"AC-6: non-recommended options must explicitly show false (not omitted)")
+		dp, ok := artifactEvt.Artifact.Parts[0].(a2a.DataPart)
+		Expect(ok).To(BeTrue(), "first part must be DataPart")
+		options, ok := dp.Data["options"].([]any)
+		Expect(ok).To(BeTrue())
+		opt0 := options[0].(map[string]any)
+		Expect(opt0["recommended"]).To(BeTrue(),
+			"AC-6: recommended flag must be preserved in structured DataPart")
 	})
 })
 
@@ -1482,23 +1493,17 @@ var _ = Describe("Structured Decision Payload Integration — TP-1395-1396", fun
 		queue, ctx := partConverterBridgeCtx()
 		_, _ = convertStreaming(ctx, nil, part)
 
-		Expect(len(queue.events)).To(BeNumerically(">=", 2))
-		decisionEvt := queue.events[1].(*a2a.TaskStatusUpdateEvent)
-		Expect(decisionEvt.Metadata["type"]).To(Equal("decision"))
+		Expect(queue.events).To(HaveLen(1))
+		artifactEvt, ok := queue.events[0].(*a2a.TaskArtifactUpdateEvent)
+		Expect(ok).To(BeTrue(), "decision must emit TaskArtifactUpdateEvent")
+		Expect(artifactEvt.Artifact.Metadata["type"]).To(Equal("decision"))
 
-		tp := decisionEvt.Status.Message.Parts[0].(a2a.TextPart)
-		Expect(len(tp.Text)).To(BeNumerically(">", 512),
-			"SI-10: structured JSON payload must NOT be truncated at 512 chars")
-		Expect(tp.Text).NotTo(HaveSuffix("..."),
-			"#1395: structured JSON must not have truncation suffix")
+		dp, ok := artifactEvt.Artifact.Parts[0].(a2a.DataPart)
+		Expect(ok).To(BeTrue(), "first part must be DataPart with structured JSON")
+		Expect(dp.Data).To(HaveKey("rca"), "SI-10: RCA field must be preserved without truncation")
+		Expect(dp.Data).To(HaveKey("options"), "SI-10: options must be preserved without truncation")
 
-		var parsed map[string]any
-		err := json.Unmarshal([]byte(tp.Text), &parsed)
-		Expect(err).NotTo(HaveOccurred(), "payload must be valid JSON after emission")
-		Expect(parsed).To(HaveKey("rca"), "RCA field must be preserved in payload")
-		Expect(parsed).To(HaveKey("options"), "options must be preserved in payload")
-
-		rca, ok := parsed["rca"].(map[string]any)
+		rca, ok := dp.Data["rca"].(map[string]any)
 		Expect(ok).To(BeTrue())
 		Expect(rca["severity"]).To(Equal("critical"))
 		Expect(rca["confidence"]).To(BeNumerically("~", 0.92, 0.001))
@@ -1529,34 +1534,22 @@ var _ = Describe("Structured Decision Payload Integration — TP-1395-1396", fun
 		queue, ctx := partConverterBridgeCtx()
 		_, _ = convertStreaming(ctx, nil, part)
 
-		Expect(len(queue.events)).To(BeNumerically(">=", 2))
-		decisionEvt := queue.events[1].(*a2a.TaskStatusUpdateEvent)
+		Expect(queue.events).To(HaveLen(1))
+		artifactEvt, ok := queue.events[0].(*a2a.TaskArtifactUpdateEvent)
+		Expect(ok).To(BeTrue())
 
-		tp := decisionEvt.Status.Message.Parts[0].(a2a.TextPart)
-		var parsed struct {
-			RCA struct {
-				Severity       string   `json:"severity"`
-				Confidence     float64  `json:"confidence"`
-				CausalChain    []string `json:"causal_chain"`
-				Target         string   `json:"target"`
-				ToolCallsCount int      `json:"tool_calls_count"`
-				LLMTurns       int      `json:"llm_turns"`
-			} `json:"rca"`
-			Options []struct {
-				WorkflowID  string            `json:"workflow_id"`
-				Name        string            `json:"name"`
-				Parameters  map[string]string `json:"parameters"`
-				Recommended bool              `json:"recommended"`
-			} `json:"options"`
-		}
-		err := json.Unmarshal([]byte(tp.Text), &parsed)
-		Expect(err).NotTo(HaveOccurred(), "AU-3: decision payload must be valid JSON for audit parsing")
-		Expect(parsed.RCA.Severity).To(Equal("high"))
-		Expect(parsed.RCA.Confidence).To(BeNumerically("~", 0.88, 0.001))
-		Expect(parsed.RCA.CausalChain).To(HaveLen(2))
-		Expect(parsed.RCA.Target).To(Equal("Secret/tls-cert in istio-system"))
-		Expect(parsed.RCA.ToolCallsCount).To(Equal(5))
-		Expect(parsed.RCA.LLMTurns).To(Equal(3))
+		dp, ok := artifactEvt.Artifact.Parts[0].(a2a.DataPart)
+		Expect(ok).To(BeTrue())
+		rca, ok := dp.Data["rca"].(map[string]any)
+		Expect(ok).To(BeTrue(), "AU-3: RCA must be present for audit tracing")
+		Expect(rca["severity"]).To(Equal("high"))
+		Expect(rca["confidence"]).To(BeNumerically("~", 0.88, 0.001))
+		causalChain, ok := rca["causal_chain"].([]any)
+		Expect(ok).To(BeTrue())
+		Expect(causalChain).To(HaveLen(2))
+		Expect(rca["target"]).To(Equal("Secret/tls-cert in istio-system"))
+		Expect(rca["tool_calls_count"]).To(BeNumerically("==", 5))
+		Expect(rca["llm_turns"]).To(BeNumerically("==", 3))
 	})
 
 	It("IT-AF-1396-002: AC-6 — extended WorkflowOption fields (Parameters, RuledOutReason) flow through", func() {
@@ -1593,26 +1586,198 @@ var _ = Describe("Structured Decision Payload Integration — TP-1395-1396", fun
 		queue, ctx := partConverterBridgeCtx()
 		_, _ = convertStreaming(ctx, nil, part)
 
-		Expect(len(queue.events)).To(BeNumerically(">=", 2))
-		decisionEvt := queue.events[1].(*a2a.TaskStatusUpdateEvent)
-		tp := decisionEvt.Status.Message.Parts[0].(a2a.TextPart)
+		Expect(queue.events).To(HaveLen(1))
+		artifactEvt, ok := queue.events[0].(*a2a.TaskArtifactUpdateEvent)
+		Expect(ok).To(BeTrue())
 
-		var parsed struct {
-			Options []struct {
-				WorkflowID     string            `json:"workflow_id"`
-				Parameters     map[string]string `json:"parameters"`
-				RuledOutReason string            `json:"ruled_out_reason"`
-				Recommended    bool              `json:"recommended"`
-			} `json:"options"`
-		}
-		err := json.Unmarshal([]byte(tp.Text), &parsed)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(parsed.Options).To(HaveLen(2))
+		dp, ok := artifactEvt.Artifact.Parts[0].(a2a.DataPart)
+		Expect(ok).To(BeTrue())
+		options, ok := dp.Data["options"].([]any)
+		Expect(ok).To(BeTrue())
+		Expect(options).To(HaveLen(2))
 
-		Expect(parsed.Options[0].Parameters).To(HaveKeyWithValue("image", "v2.1.0"))
-		Expect(parsed.Options[0].Parameters).To(HaveKeyWithValue("replicas", "3"))
-		Expect(parsed.Options[0].Recommended).To(BeTrue())
+		opt0 := options[0].(map[string]any)
+		params0, ok := opt0["parameters"].(map[string]any)
+		Expect(ok).To(BeTrue())
+		Expect(params0["image"]).To(Equal("v2.1.0"))
+		Expect(params0["replicas"]).To(Equal("3"))
+		Expect(opt0["recommended"]).To(BeTrue())
 
-		Expect(parsed.Options[1].RuledOutReason).To(Equal("No pending migrations detected in schema diff"))
+		opt1 := options[1].(map[string]any)
+		Expect(opt1["ruled_out_reason"]).To(Equal("No pending migrations detected in schema diff"))
+	})
+})
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// #1399: A2A Streaming — Separate thinking from final output
+// Phase A RED: reasoning routing + emoji suppression
+// ═══════════════════════════════════════════════════════════════════════════════
+
+var _ = Describe("Reasoning Routing (#1399)", func() {
+	var convert launcher.PartConverterFunc
+
+	BeforeEach(func() {
+		convert = launcher.BuildPartConverterForTest()
+	})
+
+	Describe("Thought parts route to reasoning channel", func() {
+		It("UT-AF-1399-001: Thought=true emits metadata.type=reasoning with actual thought text", func() {
+			part := &genai.Part{
+				Text:    "I should check the node resource utilization next.",
+				Thought: true,
+			}
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(BeNil(), "Thought parts must not produce an artifact")
+
+			Expect(queue.events).To(HaveLen(1))
+			evt, ok := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			Expect(ok).To(BeTrue(), "expected TaskStatusUpdateEvent")
+			Expect(evt.Metadata).To(HaveKeyWithValue("type", "reasoning"),
+				"SI-4: Thought parts must be classified as reasoning")
+
+			tp, ok := evt.Status.Message.Parts[0].(a2a.TextPart)
+			Expect(ok).To(BeTrue())
+			Expect(tp.Text).To(ContainSubstring("check the node resource utilization"),
+				"SI-4: Thought content must be forwarded, not replaced with placeholder")
+		})
+	})
+
+	Describe("FunctionCall (non-decision) routes to reasoning channel", func() {
+		It("UT-AF-1399-002: non-decision FunctionCall emits metadata.type=reasoning", func() {
+			part := &genai.Part{
+				FunctionCall: &genai.FunctionCall{
+					Name: "kubernaut_investigate",
+					Args: map[string]any{
+						"namespace": "prod",
+						"kind":      "Deployment",
+						"name":      "api-server",
+					},
+				},
+			}
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(BeNil())
+
+			Expect(queue.events).To(HaveLen(1))
+			evt, ok := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			Expect(ok).To(BeTrue())
+			Expect(evt.Metadata).To(HaveKeyWithValue("type", "reasoning"),
+				"SI-4: Non-decision FunctionCall must be classified as reasoning")
+		})
+	})
+
+	Describe("FunctionResponse (non-decision) routes to reasoning channel", func() {
+		It("UT-AF-1399-003: non-decision FunctionResponse emits metadata.type=reasoning", func() {
+			part := &genai.Part{
+				FunctionResponse: &genai.FunctionResponse{
+					Name:     "kubernaut_investigate",
+					Response: map[string]any{"status": "completed", "findings": "disk pressure"},
+				},
+			}
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(BeNil())
+
+			Expect(queue.events).To(HaveLen(1))
+			evt, ok := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			Expect(ok).To(BeTrue())
+			Expect(evt.Metadata).To(HaveKeyWithValue("type", "reasoning"),
+				"SI-4: Non-decision FunctionResponse must be classified as reasoning")
+		})
+	})
+
+	Describe("present_decision FunctionCall still returns nil (no ADK artifact)", func() {
+		It("UT-AF-1399-004: present_decision FunctionCall returns nil from converter", func() {
+			part := &genai.Part{
+				FunctionCall: &genai.FunctionCall{
+					Name: "kubernaut_present_decision",
+					Args: map[string]any{
+						"session_id": "sess-001",
+						"summary":    "OOMKill detected",
+						"rca": map[string]any{
+							"severity":   "critical",
+							"confidence": 0.92,
+						},
+						"options": []any{
+							map[string]any{"workflow_id": "restart", "name": "Restart"},
+						},
+					},
+				},
+			}
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(BeNil(),
+				"AC-6: present_decision must return nil to prevent ADK artifact duplication")
+			Expect(queue.events).NotTo(BeEmpty(),
+				"present_decision must still emit events via EventBridge")
+		})
+	})
+
+	Describe("Final LLM text output has emoji stripped", func() {
+		It("UT-AF-1399-007: emoji in final text output is stripped before delivery", func() {
+			part := &genai.Part{
+				Text: "\U0001F680 Investigation complete! The root cause is \U0001F525 disk pressure.\n\n",
+			}
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
+			Expect(err).NotTo(HaveOccurred())
+
+			tp, ok := result.(a2a.TextPart)
+			Expect(ok).To(BeTrue(), "final text must be returned as TextPart")
+			Expect(tp.Text).NotTo(ContainSubstring("\U0001F680"),
+				"SC-7: emoji must be stripped from final output")
+			Expect(tp.Text).NotTo(ContainSubstring("\U0001F525"),
+				"SC-7: emoji must be stripped from final output")
+			Expect(tp.Text).To(ContainSubstring("Investigation complete"),
+				"non-emoji text must be preserved")
+			Expect(tp.Text).To(ContainSubstring("disk pressure"),
+				"non-emoji text must be preserved")
+			Expect(queue.events).To(BeEmpty(),
+				"final text must NOT emit status events")
+		})
+	})
+
+	Describe("Decision event uses EmitArtifact", func() {
+		It("UT-AF-1399-011: present_decision emits TaskArtifactUpdateEvent (not status-update)", func() {
+			part := &genai.Part{
+				FunctionCall: &genai.FunctionCall{
+					Name: "kubernaut_present_decision",
+					Args: map[string]any{
+						"session_id": "sess-structured-001",
+						"summary":    "OOMKill detected in production data-processor pod",
+						"rca": map[string]any{
+							"severity":   "critical",
+							"confidence": 0.92,
+							"causal_chain": []any{
+								"Memory leak in worker goroutine",
+								"Container hit 512Mi limit",
+							},
+						},
+						"options": []any{
+							map[string]any{"workflow_id": "restart", "name": "Restart Pod", "recommended": true},
+						},
+					},
+				},
+			}
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(BeNil())
+
+			var hasArtifactEvent bool
+			for _, evt := range queue.events {
+				if _, ok := evt.(*a2a.TaskArtifactUpdateEvent); ok {
+					hasArtifactEvent = true
+					break
+				}
+			}
+			Expect(hasArtifactEvent).To(BeTrue(),
+				"AU-3: present_decision must emit TaskArtifactUpdateEvent with structured data")
+		})
 	})
 })

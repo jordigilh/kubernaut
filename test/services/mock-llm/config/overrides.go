@@ -52,6 +52,7 @@ type KeywordScenarioOverride struct {
 	ToolCall       ToolCallOverride `yaml:"tool_call"`
 	MatchLastOnly  bool             `yaml:"match_last_only,omitempty"`
 	RepeatToolCall bool             `yaml:"repeat_tool_call,omitempty"`
+	ThoughtText    string           `yaml:"thought_text,omitempty"`
 }
 
 // Overrides holds the parsed YAML override configuration.

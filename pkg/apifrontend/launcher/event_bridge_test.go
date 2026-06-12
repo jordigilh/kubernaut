@@ -698,3 +698,92 @@ func (q *failingQueue) Read(_ context.Context) (a2a.Event, a2a.TaskVersion, erro
 func (q *failingQueue) Close() error { return nil }
 
 var _ eventqueue.Queue = (*failingQueue)(nil)
+
+var _ = Describe("stripEmoji (#1399)", func() {
+	DescribeTable("UT-AF-1399-005: removes common emoji codepoints",
+		func(input, expected string) {
+			result := launcher.StripEmojiForTest(input)
+			Expect(result).To(Equal(expected))
+		},
+		Entry("rocket emoji", "Hello \U0001F680 world", "Hello  world"),
+		Entry("check mark emoji", "Status: \u2705 Done", "Status:  Done"),
+		Entry("warning emoji", "Alert \u26A0\uFE0F critical", "Alert  critical"),
+		Entry("multiple emoji", "\U0001F525 Fire \U0001F4A5 Boom \U0001F389 Party", " Fire  Boom  Party"),
+		Entry("emoji at boundaries", "\U0001F600Hello\U0001F600", "Hello"),
+		Entry("no emoji", "Plain text without emoji", "Plain text without emoji"),
+		Entry("empty string", "", ""),
+	)
+
+	DescribeTable("UT-AF-1399-006: preserves non-emoji Unicode",
+		func(input string) {
+			result := launcher.StripEmojiForTest(input)
+			Expect(result).To(Equal(input))
+		},
+		Entry("math symbols", "\u2200x \u2208 \u2124: x\u00B2 \u2265 0"),
+		Entry("currency symbols", "Price: \u00A3100, \u00A5500, \u20AC75"),
+		Entry("CJK characters", "\u4F60\u597D\u4E16\u754C"),
+		Entry("accented Latin", "caf\u00E9, na\u00EFve, r\u00E9sum\u00E9"),
+		Entry("arrows", "\u2190 \u2191 \u2192 \u2193"),
+		Entry("box drawing", "\u250C\u2500\u2510\u2502\u2514\u2518"),
+	)
+})
+
+var _ = Describe("EmitArtifact (#1399)", func() {
+	It("UT-AF-1399-008: constructs TaskArtifactUpdateEvent with DataPart + TextPart", func() {
+		queue := &fakeQueue{}
+		ctx := launcher.WithEventBridge(context.Background(), queue, "task-art-008", "ctx-art-008", nil)
+
+		data := map[string]any{
+			"type":           "investigation_summary",
+			"schema_version": "1.0",
+			"session_id":     "sess-001",
+			"summary":        "OOMKill detected",
+			"rca":            map[string]any{"severity": "critical", "confidence": 0.92},
+		}
+		textFallback := "Investigation complete. Severity: critical (confidence: 0.92)"
+		meta := map[string]any{
+			"type":           "investigation_summary",
+			"schema_version": "1.0",
+		}
+
+		err := launcher.EmitArtifactForTest(ctx, data, textFallback, meta)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(queue.events).To(HaveLen(1))
+		evt, ok := queue.events[0].(*a2a.TaskArtifactUpdateEvent)
+		Expect(ok).To(BeTrue(), "expected TaskArtifactUpdateEvent")
+		Expect(evt.Artifact).NotTo(BeNil())
+		Expect(evt.Artifact.Parts).To(HaveLen(2))
+
+		dp, ok := evt.Artifact.Parts[0].(a2a.DataPart)
+		Expect(ok).To(BeTrue(), "first part must be DataPart")
+		Expect(dp.Data).To(HaveKeyWithValue("type", "investigation_summary"))
+
+		tp, ok := evt.Artifact.Parts[1].(a2a.TextPart)
+		Expect(ok).To(BeTrue(), "second part must be TextPart")
+		Expect(tp.Text).To(Equal(textFallback))
+	})
+
+	It("UT-AF-1399-009: sets artifact metadata from caller params", func() {
+		queue := &fakeQueue{}
+		ctx := launcher.WithEventBridge(context.Background(), queue, "task-art-009", "ctx-art-009", nil)
+
+		meta := map[string]any{
+			"type":           "investigation_summary",
+			"schema":         "investigation_summary",
+			"schema_version": "1.0",
+		}
+		err := launcher.EmitArtifactForTest(ctx, map[string]any{"type": "test"}, "fallback", meta)
+		Expect(err).NotTo(HaveOccurred())
+
+		evt := queue.events[0].(*a2a.TaskArtifactUpdateEvent)
+		Expect(evt.Artifact.Metadata).To(HaveKeyWithValue("type", "investigation_summary"))
+		Expect(evt.Artifact.Metadata).To(HaveKeyWithValue("schema_version", "1.0"))
+	})
+
+	It("UT-AF-1399-010: nil bridge returns nil (no panic)", func() {
+		ctx := context.Background()
+		err := launcher.EmitArtifactForTest(ctx, map[string]any{"x": 1}, "text", nil)
+		Expect(err).NotTo(HaveOccurred())
+	})
+})

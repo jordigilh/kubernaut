@@ -140,6 +140,7 @@ data:
       - name: "af_structured_decision"
         keywords: ["structured decision", "present structured rca decision"]
         match_last_only: true
+        thought_text: "Let me analyze the investigation findings. The data-processor pod has been OOMKilled repeatedly, which correlates with the memory leak pattern in the worker goroutine. I should present the decision options to the operator."
         tool_call:
           name: "kubernaut_present_decision"
           arguments:

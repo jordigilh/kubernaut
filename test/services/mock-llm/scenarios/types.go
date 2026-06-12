@@ -102,6 +102,11 @@ type MockScenarioConfig struct {
 	// Used by E2E tests (e.g. STREAM-03) that need to disconnect while the
 	// executor is blocked waiting for the LLM response.
 	SecondTurnDelay time.Duration
+
+	// ThoughtText, when non-empty, causes the response to include a Thought
+	// part (with thought=true) before the tool call or text response. This
+	// simulates Gemini's extended thinking mode for E2E reasoning tests.
+	ThoughtText string
 }
 
 // BoolPtr is a helper for creating *bool literals in scenario configs.

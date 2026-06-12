@@ -487,3 +487,185 @@ var _ = Describe("Progressive A2A Streaming (issue #1258)", Label("e2e", "phase3
 		Expect(hasFinal).To(BeTrue(), "AU-6: stream must reach a terminal state (stream_closed)")
 	})
 })
+
+// =============================================================================
+// E2E-AF-1399: A2A Streaming — Reasoning Routing + Structured Artifacts
+// Proves that the production SSE stream correctly separates thinking (reasoning)
+// from final output and delivers decision artifacts as structured data.
+// =============================================================================
+
+var _ = Describe("A2A Streaming Reasoning (#1399)", Ordered, Label("e2e", "phase3", "g3", "1399"), func() {
+	var sreToken string
+
+	BeforeEach(func() {
+		var err error
+		sreToken, err = fetchDEXTokenForPersona("sre")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(sreToken).NotTo(BeEmpty())
+	})
+
+	a2aSSEPostReq := func(ctx context.Context, body string) (*http.Response, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/a2a/invoke", strings.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "text/event-stream")
+		req.Header.Set("Authorization", "Bearer "+sreToken)
+		return httpClient.Do(req)
+	}
+
+	It("E2E-AF-1399-001: SSE stream emits reasoning events with metadata.type=reasoning", func() {
+		streamCtx, streamCancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer streamCancel()
+
+		resp, err := a2aSSEPostReq(streamCtx, a2aMessageStream("reasoning-e2e-001", "present structured rca decision"))
+		Expect(err).NotTo(HaveOccurred())
+		defer func() { _ = resp.Body.Close() }()
+		Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+		var wg sync.WaitGroup
+		var mu sync.Mutex
+		var events []json.RawMessage
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sc := bufio.NewScanner(resp.Body)
+			sc.Buffer(make([]byte, 64*1024), 1024*1024)
+			for sc.Scan() {
+				line := strings.TrimRight(sc.Text(), "\r")
+				if strings.HasPrefix(strings.TrimSpace(line), "data:") {
+					data := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "data:"))
+					if data != "" {
+						mu.Lock()
+						events = append(events, json.RawMessage(data))
+						mu.Unlock()
+					}
+				}
+			}
+		}()
+		wg.Wait()
+
+		var foundReasoning bool
+		for _, raw := range events {
+			var evt map[string]any
+			if err := json.Unmarshal(raw, &evt); err != nil {
+				continue
+			}
+			meta, _ := evt["metadata"].(map[string]any)
+			if meta != nil && meta["type"] == "reasoning" {
+				foundReasoning = true
+				break
+			}
+		}
+		Expect(foundReasoning).To(BeTrue(),
+			"SI-4: SSE stream must contain at least one reasoning-type event")
+	})
+
+	It("E2E-AF-1399-002: SSE stream emits TaskArtifactUpdateEvent for structured decision", func() {
+		streamCtx, streamCancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer streamCancel()
+
+		resp, err := a2aSSEPostReq(streamCtx, a2aMessageStream("reasoning-e2e-002", "present structured rca decision"))
+		Expect(err).NotTo(HaveOccurred())
+		defer func() { _ = resp.Body.Close() }()
+		Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+		var wg sync.WaitGroup
+		var mu sync.Mutex
+		var events []json.RawMessage
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sc := bufio.NewScanner(resp.Body)
+			sc.Buffer(make([]byte, 64*1024), 1024*1024)
+			for sc.Scan() {
+				line := strings.TrimRight(sc.Text(), "\r")
+				if strings.HasPrefix(strings.TrimSpace(line), "data:") {
+					data := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "data:"))
+					if data != "" {
+						mu.Lock()
+						events = append(events, json.RawMessage(data))
+						mu.Unlock()
+					}
+				}
+			}
+		}()
+		wg.Wait()
+
+		var foundArtifact bool
+		for _, raw := range events {
+			var evt map[string]any
+			if err := json.Unmarshal(raw, &evt); err != nil {
+				continue
+			}
+			if _, hasArtifact := evt["artifact"]; hasArtifact {
+				artifact, _ := evt["artifact"].(map[string]any)
+				if artifact != nil {
+					meta, _ := artifact["metadata"].(map[string]any)
+					if meta != nil && meta["type"] == "decision" {
+						foundArtifact = true
+						break
+					}
+				}
+			}
+		}
+		Expect(foundArtifact).To(BeTrue(),
+			"AU-3: SSE stream must contain TaskArtifactUpdateEvent with decision metadata")
+	})
+
+	It("E2E-AF-1399-003: Final LLM text in SSE stream has no emoji characters", func() {
+		streamCtx, streamCancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer streamCancel()
+
+		resp, err := a2aSSEPostReq(streamCtx, a2aMessageStream("reasoning-e2e-003", "list pods in kubernaut-system"))
+		Expect(err).NotTo(HaveOccurred())
+		defer func() { _ = resp.Body.Close() }()
+		Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+		var wg sync.WaitGroup
+		var mu sync.Mutex
+		var events []json.RawMessage
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sc := bufio.NewScanner(resp.Body)
+			sc.Buffer(make([]byte, 64*1024), 1024*1024)
+			for sc.Scan() {
+				line := strings.TrimRight(sc.Text(), "\r")
+				if strings.HasPrefix(strings.TrimSpace(line), "data:") {
+					data := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "data:"))
+					if data != "" {
+						mu.Lock()
+						events = append(events, json.RawMessage(data))
+						mu.Unlock()
+					}
+				}
+			}
+		}()
+		wg.Wait()
+
+		for _, raw := range events {
+			var evt map[string]any
+			if err := json.Unmarshal(raw, &evt); err != nil {
+				continue
+			}
+			if artifact, hasArtifact := evt["artifact"].(map[string]any); hasArtifact {
+				if parts, ok := artifact["parts"].([]any); ok {
+					for _, part := range parts {
+						pm, _ := part.(map[string]any)
+						if text, ok := pm["text"].(string); ok {
+							for _, r := range text {
+								Expect(r >= 0x1F300 && r <= 0x1FAFF).To(BeFalse(),
+									fmt.Sprintf("SC-7: artifact text contains emoji U+%04X", r))
+							}
+						}
+					}
+				}
+			}
+		}
+	})
+})
