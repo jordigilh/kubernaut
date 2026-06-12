@@ -153,6 +153,7 @@ data:
         tool_call:
           name: "kubernaut_investigate"
           arguments:
+            api_version: "v1"
             namespace: "default"
             name: "nginx"
             kind: "Pod"
