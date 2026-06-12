@@ -107,10 +107,20 @@ var _ = Describe("Progressive RCA Flow E2E — #1407", Ordered, Label("e2e", "pr
 			}
 
 			kind, _ := raw["kind"].(string)
+			if kind == "" {
+				GinkgoWriter.Printf("DEBUG no-kind event: keys=%v\n", func() []string {
+					var k []string
+					for key := range raw {
+						k = append(k, key)
+					}
+					return k
+				}())
+			}
 			switch kind {
 			case "status-update":
 				result.allStatuses = append(result.allStatuses, raw)
 				meta, _ := raw["metadata"].(map[string]any)
+				GinkgoWriter.Printf("DEBUG status-update #%d: kind=%s metadata=%v\n", len(result.allStatuses), kind, meta)
 				if meta != nil && meta["schema"] == "early_rca" {
 					result.earlyRCAEvents = append(result.earlyRCAEvents, raw)
 				}
