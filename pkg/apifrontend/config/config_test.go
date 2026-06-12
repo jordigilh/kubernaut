@@ -749,6 +749,83 @@ resilience:
 		Expect(cfg.Validate()).To(Succeed())
 	})
 
+	// BR-AI-1404: Severity triage independent LLM configuration (FedRAMP IA-5(1), SC-8)
+	It("UT-AF-1404-004 accepts severityTriage.llm with valid vertex_ai config", func() {
+		cfg := validConfig()
+		cfg.SeverityTriage.Enabled = true
+		cfg.SeverityTriage.PrometheusURL = "http://prometheus:9090"
+		cfg.SeverityTriage.LLM = &config.LLMConfig{
+			Provider:       config.LLMProviderVertexAI,
+			Model:          "gemini-2.0-flash",
+			VertexProject:  "triage-project",
+			VertexLocation: "us-central1",
+		}
+		Expect(cfg.Validate()).To(Succeed())
+	})
+
+	It("UT-AF-1404-005 accepts severityTriage.llm with valid gemini config", func() {
+		cfg := validConfig()
+		cfg.SeverityTriage.Enabled = true
+		cfg.SeverityTriage.PrometheusURL = "http://prometheus:9090"
+		cfg.SeverityTriage.LLM = &config.LLMConfig{
+			Provider:   config.LLMProviderGemini,
+			Model:      "gemini-2.0-flash",
+			APIKeyFile: "/etc/secrets/gemini-key",
+		}
+		Expect(cfg.Validate()).To(Succeed())
+	})
+
+	It("UT-AF-1404-006 rejects severityTriage.llm with missing model", func() {
+		cfg := validConfig()
+		cfg.SeverityTriage.Enabled = true
+		cfg.SeverityTriage.PrometheusURL = "http://prometheus:9090"
+		cfg.SeverityTriage.LLM = &config.LLMConfig{
+			Provider:       config.LLMProviderVertexAI,
+			Model:          "",
+			VertexProject:  "triage-project",
+			VertexLocation: "us-central1",
+		}
+		err := cfg.Validate()
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("model"))
+	})
+
+	It("UT-AF-1404-007 rejects severityTriage.llm with invalid provider", func() {
+		cfg := validConfig()
+		cfg.SeverityTriage.Enabled = true
+		cfg.SeverityTriage.PrometheusURL = "http://prometheus:9090"
+		cfg.SeverityTriage.LLM = &config.LLMConfig{
+			Provider: "invalid_provider",
+			Model:    "some-model",
+		}
+		err := cfg.Validate()
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("provider"))
+	})
+
+	It("UT-AF-1404-008 skips severityTriage.llm validation when nil (inherits agent.llm)", func() {
+		cfg := validConfig()
+		cfg.SeverityTriage.Enabled = true
+		cfg.SeverityTriage.PrometheusURL = "http://prometheus:9090"
+		cfg.SeverityTriage.LLM = nil
+		Expect(cfg.Validate()).To(Succeed())
+	})
+
+	It("UT-AF-1404-009 rejects vertex_ai severityTriage.llm without vertexProject", func() {
+		cfg := validConfig()
+		cfg.SeverityTriage.Enabled = true
+		cfg.SeverityTriage.PrometheusURL = "http://prometheus:9090"
+		cfg.SeverityTriage.LLM = &config.LLMConfig{
+			Provider:       config.LLMProviderVertexAI,
+			Model:          "gemini-2.0-flash",
+			VertexProject:  "",
+			VertexLocation: "us-central1",
+		}
+		err := cfg.Validate()
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("vertexProject"))
+	})
+
 	DescribeTable("requires session namespace when TTLs are set",
 		func(namespace string, disconn, retention time.Duration, wantErr bool) {
 			cfg := validConfig()
