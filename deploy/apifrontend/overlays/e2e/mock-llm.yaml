@@ -147,6 +147,20 @@ data:
                 name: "Rollback"
                 description: "Rollback to previous revision"
 
+      - name: "af_progressive_investigate"
+        keywords: ["progressive investigate", "investigate progressively"]
+        match_last_only: true
+        tool_call:
+          name: "kubernaut_investigate"
+          arguments:
+            namespace: "default"
+            name: "nginx"
+            kind: "Pod"
+        next_tool_call:
+          name: "kubernaut_discover_workflows"
+          arguments:
+            rr_id: "kubernaut-system/rr-progressive-e2e"
+
       - name: "af_structured_decision"
         keywords: ["structured decision", "present structured rca decision"]
         match_last_only: true
