@@ -185,6 +185,35 @@ var _ = Describe("IT-AF-1399: A2A Streaming Pipeline Wiring", func() {
 		})
 	})
 
+	Describe("Terminal state contract (#1408 Issue 3)", func() {
+		It("IT-AF-1408-003: present_decision converter returns nil — ADK precondition for input-required frame", func() {
+			convert := launcher.BuildStreamingPartConverterForTest()
+			part := &genai.Part{
+				FunctionCall: &genai.FunctionCall{
+					Name: "kubernaut_present_decision",
+					Args: map[string]any{
+						"session_id": "sess-it-terminal",
+						"summary":    "Investigation complete",
+						"rca":        map[string]any{"severity": "high", "confidence": 0.9},
+						"options":    []any{},
+					},
+				},
+			}
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-it-terminal", "ctx-it-terminal", nil)
+
+			result, err := convert(ctx, nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(BeNil(),
+				"Converter MUST return nil for present_decision FunctionCall so ADK's "+
+					"inputRequiredProcessor includes it in LongRunningToolIDs and emits "+
+					"state=input-required with final=true on the SSE output queue")
+
+			Expect(queue.events).To(HaveLen(1),
+				"Decision artifact must still be emitted via EventBridge side-channel")
+		})
+	})
+
 	Describe("outputMetaTools routing preserved", func() {
 		It("IT-AF-1399-005: kubernaut_watch FunctionResponse still uses status type", func() {
 			convert := launcher.BuildPartConverterForTest()
