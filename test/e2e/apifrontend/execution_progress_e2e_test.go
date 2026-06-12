@@ -68,7 +68,7 @@ var _ = Describe("Execution Progress Streaming (#1403)", Ordered, Label("e2e", "
 				Namespace: e2eNamespace, Name: rrName,
 			}, rr)).To(Succeed())
 			rr.Status.OverallPhase = "Completed"
-			rr.Status.Outcome = "Success"
+			rr.Status.Outcome = "Remediated"
 			rr.Status.Message = "E2E: simulated Completed phase"
 			Expect(k8sClient.Status().Update(context.Background(), rr)).To(Succeed())
 		}()

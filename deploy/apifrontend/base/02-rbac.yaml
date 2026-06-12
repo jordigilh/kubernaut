@@ -21,10 +21,10 @@ rules:
   - apiGroups: ["kubernaut.ai"]
     resources: ["remediationrequests/status"]
     verbs: ["get", "update", "patch"]
-  # RemediationApprovalRequest management (MCP kubernaut_approve)
+  # RemediationApprovalRequest management (MCP kubernaut_approve + kubernaut_watch)
   - apiGroups: ["kubernaut.ai"]
     resources: ["remediationapprovalrequests"]
-    verbs: ["get", "list", "create", "update", "patch"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
   - apiGroups: ["kubernaut.ai"]
     resources: ["remediationapprovalrequests/status"]
     verbs: ["get", "update", "patch"]
