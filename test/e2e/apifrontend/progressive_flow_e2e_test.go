@@ -210,3 +210,118 @@ var _ = Describe("Progressive RCA Flow E2E — #1407", Ordered, Label("e2e", "pr
 		Expect(payload).To(HaveKey("confidence"), "AU-3: payload must include confidence")
 	})
 })
+
+// =============================================================================
+// E2E-AF-1408: Structured investigation_summary Artifact Contract
+//
+// Proves the full contract: mock-LLM calls kubernaut_present_decision →
+// AF emits TaskArtifactUpdateEvent with DataPart containing type=investigation_summary,
+// schema_version=1.0 → SSE stream delivers compliant artifact to Console.
+//
+// FedRAMP: SI-4 (structured audit classification), AU-3 (schema traceability),
+// SI-10 (data integrity through schema validation).
+//
+// Mock-LLM scenario: af_progressive_investigate (reuses #1407 scenario since
+// present_decision is called after discovery completes).
+// =============================================================================
+
+var _ = Describe("Structured Artifact Contract E2E — #1408", Ordered, Label("e2e", "structured-artifact", "1408"), func() {
+	var sreToken string
+
+	BeforeEach(func() {
+		var err error
+		sreToken, err = fetchDEXTokenForPersona("sre")
+		Expect(err).NotTo(HaveOccurred(), "SRE DEX token required")
+		Expect(sreToken).NotTo(BeEmpty())
+	})
+
+	a2aSSEPost := func(ctx context.Context, body string) (*http.Response, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/a2a/invoke", strings.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "text/event-stream")
+		req.Header.Set("Authorization", "Bearer "+sreToken)
+		return httpClient.Do(req)
+	}
+
+	It("E2E-AF-1408-001: SI-10 — artifact DataPart contains type=investigation_summary and schema_version=1.0", func() {
+		readCtx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+		defer cancel()
+
+		resp, err := a2aSSEPost(readCtx, a2aMessageStream("e2e-artifact-1408-001", "progressive investigate"))
+		Expect(err).NotTo(HaveOccurred())
+		defer func() { _ = resp.Body.Close() }()
+
+		Expect(resp.StatusCode).To(Equal(http.StatusOK))
+		Expect(resp.Header.Get("Content-Type")).To(ContainSubstring("text/event-stream"))
+
+		var artifactEvents []map[string]any
+		sc := bufio.NewScanner(resp.Body)
+		sc.Buffer(make([]byte, 64*1024), 1024*1024)
+
+		for sc.Scan() {
+			line := strings.TrimRight(sc.Text(), "\r")
+			if !strings.HasPrefix(strings.TrimSpace(line), "data:") {
+				continue
+			}
+			data := strings.TrimPrefix(strings.TrimSpace(line), "data:")
+			data = strings.TrimSpace(data)
+			if data == "" || !strings.HasPrefix(data, "{") {
+				continue
+			}
+
+			var envelope struct {
+				Result json.RawMessage `json:"result"`
+			}
+			if json.Unmarshal([]byte(data), &envelope) != nil || len(envelope.Result) == 0 {
+				continue
+			}
+
+			var raw map[string]any
+			if json.Unmarshal(envelope.Result, &raw) != nil {
+				continue
+			}
+
+			if kind, _ := raw["kind"].(string); kind == "artifact-update" {
+				artifactEvents = append(artifactEvents, raw)
+			}
+		}
+
+		GinkgoWriter.Printf("Structured artifact contract: %d artifact events collected\n", len(artifactEvents))
+		Expect(artifactEvents).NotTo(BeEmpty(),
+			"SI-10: progressive flow must emit at least one artifact-update event")
+
+		By("SI-10: artifact must contain DataPart with schema self-identification fields")
+		found := false
+		for _, evt := range artifactEvents {
+			artifact, _ := evt["artifact"].(map[string]any)
+			if artifact == nil {
+				continue
+			}
+			parts, _ := artifact["parts"].([]any)
+			for _, p := range parts {
+				part, _ := p.(map[string]any)
+				if part == nil {
+					continue
+				}
+				dpData, _ := part["data"].(map[string]any)
+				if dpData == nil {
+					continue
+				}
+				if dpData["type"] == "investigation_summary" && dpData["schema_version"] == "1.0" {
+					found = true
+					Expect(dpData).To(HaveKey("summary"),
+						"SI-10: investigation_summary must include summary field")
+					break
+				}
+			}
+			if found {
+				break
+			}
+		}
+		Expect(found).To(BeTrue(),
+			"SI-10: at least one artifact must contain DataPart with type=investigation_summary and schema_version=1.0")
+	})
+})

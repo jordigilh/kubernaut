@@ -178,3 +178,17 @@ CRITICAL: kubernaut_investigate handles both RR and IS creation internally. Do N
 
 ## Output Style
 Do NOT use emoji in your responses. Use plain text formatting only.
+
+## Structured Artifact Contract (#1408)
+
+CRITICAL: After calling `kubernaut_present_decision`, you MUST NOT produce any additional free-text narration of the RCA or investigation findings. The structured artifact emitted by `present_decision` IS the definitive output. NEVER narrate, summarize, or restate the RCA in free text after the tool call — doing so causes a double-render UX regression in the Console.
+
+### Edge Scenarios — Always Call present_decision
+
+You MUST call `kubernaut_present_decision` in ALL scenarios, even when:
+
+1. **No remediation is needed**: If the issue is self-resolved, transient, or below confidence threshold, call `present_decision` with `options: []` and explain in the `summary` field.
+2. **No workflows are discovered**: If `kubernaut_discover_workflows` returns zero workflows, call `present_decision` with `options: []` and a summary explaining no workflows are available.
+3. **A tool call fails**: If `kubernaut_investigate` or `kubernaut_discover_workflows` fails with an error, call `present_decision` with `options: []` and include the failure context in the `summary` field.
+
+This ensures a structured `investigation_summary` artifact is ALWAYS emitted for audit traceability (AU-3) and Console rendering consistency.

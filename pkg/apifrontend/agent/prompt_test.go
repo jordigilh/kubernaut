@@ -387,3 +387,36 @@ var _ = Describe("Prompt — Progressive Flow (#1407)", func() {
 			"SI-4: present_decision must remain the structured decision artifact for audit trail")
 	})
 })
+
+// =============================================================================
+// Issue #1408: Structured investigation_summary — prompt directives
+// =============================================================================
+
+var _ = Describe("Prompt — Structured Artifact Contract (#1408)", func() {
+	var instruction string
+
+	BeforeEach(func() {
+		cfg := agentpkg.DefaultTestConfig()
+		instruction = cfg.Instruction
+	})
+
+	It("UT-AF-1408-020: SI-4 — prompt prohibits free-text narration after present_decision", func() {
+		Expect(instruction).To(ContainSubstring("NEVER narrate"),
+			"SI-4: free-text RCA narration after structured artifact causes double-render UX regression")
+	})
+
+	It("UT-AF-1408-021: SI-4 — prompt mandates present_decision for no-action scenarios", func() {
+		Expect(instruction).To(ContainSubstring("No remediation is needed"),
+			"SI-4: present_decision must be called even for no-action scenarios to ensure structured artifact")
+	})
+
+	It("UT-AF-1408-022: SI-4 — prompt mandates present_decision when no workflows found", func() {
+		Expect(instruction).To(ContainSubstring("No workflows are discovered"),
+			"SI-4: empty workflow discovery must still produce structured artifact via present_decision")
+	})
+
+	It("UT-AF-1408-023: SI-4 — prompt mandates present_decision on tool error paths", func() {
+		Expect(instruction).To(ContainSubstring("tool call fails"),
+			"SI-4: tool errors must still produce structured artifact for audit traceability")
+	})
+})
