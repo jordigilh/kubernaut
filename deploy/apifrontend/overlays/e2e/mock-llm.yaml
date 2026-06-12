@@ -224,6 +224,14 @@ data:
           arguments:
             name: "rr-test"
 
+      - name: "af_watch_progress_e2e"
+        keywords: ["watch progress e2e 1403"]
+        match_last_only: true
+        tool_call:
+          name: "kubernaut_watch"
+          arguments:
+            name: "rr-progress-e2e-1403"
+
       - name: "af_list_workflows"
         keywords: ["list workflows", "available remediation workflows", "list all available"]
         match_last_only: true
