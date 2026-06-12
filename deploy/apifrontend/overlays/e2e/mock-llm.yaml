@@ -92,6 +92,21 @@ data:
     # AF-specific keyword→tool_call mappings for E2E testing.
     # mock-LLM matches prompt keywords and returns the corresponding tool call.
     keyword_scenarios:
+      - name: "af_progressive_investigate"
+        keywords: ["progressive investigate", "investigate progressively"]
+        match_last_only: true
+        tool_call:
+          name: "kubernaut_investigate"
+          arguments:
+            api_version: "v1"
+            namespace: "default"
+            name: "nginx"
+            kind: "Pod"
+        next_tool_call:
+          name: "kubernaut_discover_workflows"
+          arguments:
+            rr_id: "kubernaut-system/rr-progressive-e2e"
+
       - name: "af_investigate"
         keywords: ["start investigation", "investigate", "begin investigation"]
         match_last_only: true
@@ -146,21 +161,6 @@ data:
               - workflow_id: "wf-rollback"
                 name: "Rollback"
                 description: "Rollback to previous revision"
-
-      - name: "af_progressive_investigate"
-        keywords: ["progressive investigate", "investigate progressively"]
-        match_last_only: true
-        tool_call:
-          name: "kubernaut_investigate"
-          arguments:
-            api_version: "v1"
-            namespace: "default"
-            name: "nginx"
-            kind: "Pod"
-        next_tool_call:
-          name: "kubernaut_discover_workflows"
-          arguments:
-            rr_id: "kubernaut-system/rr-progressive-e2e"
 
       - name: "af_structured_decision"
         keywords: ["structured decision", "present structured rca decision"]
