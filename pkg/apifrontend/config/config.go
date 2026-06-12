@@ -236,9 +236,10 @@ func DefaultConfig() *Config {
 			Enabled:     false,
 			ToolTimeout: 30 * time.Second,
 			ToolTimeouts: map[string]time.Duration{
-				"kubernaut_investigate":   15 * time.Minute,
-				"kubernaut_await_session": 3 * time.Minute,
-				"kubernaut_watch":         15 * time.Minute,
+				"kubernaut_investigate":          15 * time.Minute,
+				"kubernaut_await_session":        3 * time.Minute,
+				"kubernaut_watch":                15 * time.Minute,
+				"kubernaut_discover_workflows":   60 * time.Second,
 			},
 		},
 		Logging: LoggingConfig{

@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 
@@ -66,6 +67,9 @@ func HandleDiscoverWorkflows(ctx context.Context, mcpClient ka.MCPClient, args D
 		Kind:       args.Kind,
 	})
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			return DiscoverWorkflowsResult{Workflows: []WorkflowDetail{}, Count: 0}, nil
+		}
 		return DiscoverWorkflowsResult{}, fmt.Errorf("discover workflows: %w", err)
 	}
 

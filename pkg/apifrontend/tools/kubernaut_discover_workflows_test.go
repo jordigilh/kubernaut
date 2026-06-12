@@ -91,6 +91,21 @@ var _ = Describe("kubernaut_discover_workflows", func() {
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("discover"))
 		})
+
+		It("UT-AF-1408-010: SI-4 — context deadline exceeded degrades gracefully to empty workflows", func() {
+			deadlineCtx, cancel := context.WithCancel(ctx)
+			cancel()
+			mockMCP := &ka.MockMCPClient{
+				DiscoverWorkflowsFn: func(c context.Context, _ ka.DiscoverWorkflowsArgs) (*ka.DiscoverWorkflowsResult, error) {
+					return nil, c.Err()
+				},
+			}
+			result, err := tools.HandleDiscoverWorkflows(deadlineCtx, mockMCP, tools.DiscoverWorkflowsArgs{RRID: "rr-timeout-001"})
+			Expect(err).NotTo(HaveOccurred(),
+				"SI-4: timeout must degrade gracefully, not surface as tool error to LLM")
+			Expect(result.Workflows).To(BeEmpty())
+			Expect(result.Count).To(Equal(0))
+		})
 	})
 
 	Describe("WorkflowParameter serialization", func() {

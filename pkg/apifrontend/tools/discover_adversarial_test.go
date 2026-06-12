@@ -41,7 +41,7 @@ var _ = Describe("kubernaut_discover_workflows adversarial", func() {
 		Expect(err.Error()).To(ContainSubstring("unavailable"))
 	})
 
-	It("UT-AF-WP-049: context cancellation during discovery — error propagated", func() {
+	It("UT-AF-WP-049: context cancellation during discovery — graceful degradation to empty result", func() {
 		cancelledCtx, cancel := context.WithCancel(ctx)
 		cancel()
 		mockMCP := &ka.MockMCPClient{
@@ -49,8 +49,11 @@ var _ = Describe("kubernaut_discover_workflows adversarial", func() {
 				return nil, ctx.Err()
 			},
 		}
-		_, err := tools.HandleDiscoverWorkflows(cancelledCtx, mockMCP, tools.DiscoverWorkflowsArgs{})
-		Expect(err).To(HaveOccurred())
+		result, err := tools.HandleDiscoverWorkflows(cancelledCtx, mockMCP, tools.DiscoverWorkflowsArgs{})
+		Expect(err).NotTo(HaveOccurred(),
+			"#1408: context cancellation must degrade gracefully, not error")
+		Expect(result.Workflows).To(BeEmpty())
+		Expect(result.Count).To(Equal(0))
 	})
 
 	It("UT-AF-WP-050: concurrent discovery calls — no data race under -race", func() {
