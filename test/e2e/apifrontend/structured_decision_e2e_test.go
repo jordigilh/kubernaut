@@ -63,8 +63,10 @@ var _ = Describe("Structured Decision Payload E2E — #1395 #1396", Ordered, Lab
 		return httpClient.Do(req)
 	}
 
-	// scanDecisionEvent reads SSE frames until it finds a status-update event
-	// with metadata.type="decision", and returns the parsed text payload.
+	// scanDecisionEvent reads SSE frames until it finds a decision event and
+	// returns the structured JSON payload text and metadata.
+	// Checks artifact-update events first (EmitArtifact path, A2A v1.0),
+	// then falls back to status-update events (EmitStructuredMeta path).
 	scanDecisionEvent := func(resp *http.Response) (string, map[string]any) {
 		sc := bufio.NewScanner(resp.Body)
 		sc.Buffer(make([]byte, 64*1024), 1024*1024)
@@ -90,29 +92,45 @@ var _ = Describe("Structured Decision Payload E2E — #1395 #1396", Ordered, Lab
 							} `json:"parts"`
 						} `json:"message"`
 					} `json:"status"`
+					Artifact struct {
+						Parts []struct {
+							Data json.RawMessage `json:"data,omitempty"`
+							Text string          `json:"text,omitempty"`
+						} `json:"parts"`
+						Metadata map[string]any `json:"metadata"`
+					} `json:"artifact"`
 					Metadata map[string]any `json:"metadata"`
 				} `json:"result"`
 			}
 			if json.Unmarshal([]byte(data), &frame) != nil {
 				continue
 			}
-			if frame.Result.Kind != "status-update" {
+
+			if frame.Result.Kind == "artifact-update" {
+				if frame.Result.Artifact.Metadata == nil || frame.Result.Artifact.Metadata["type"] != "decision" {
+					continue
+				}
+				for _, p := range frame.Result.Artifact.Parts {
+					if len(p.Data) > 0 {
+						return string(p.Data), frame.Result.Artifact.Metadata
+					}
+				}
 				continue
 			}
-			if frame.Result.Metadata == nil {
-				continue
+
+			if frame.Result.Kind == "status-update" {
+				if frame.Result.Metadata == nil || frame.Result.Metadata["type"] != "decision" {
+					continue
+				}
+				if len(frame.Result.Status.Message.Parts) == 0 {
+					continue
+				}
+				text := frame.Result.Status.Message.Parts[0].Text
+				if text == "" || strings.Contains(text, "Presenting decision") {
+					continue
+				}
+				return text, frame.Result.Metadata
 			}
-			if frame.Result.Metadata["type"] != "decision" {
-				continue
-			}
-			if len(frame.Result.Status.Message.Parts) == 0 {
-				continue
-			}
-			text := frame.Result.Status.Message.Parts[0].Text
-			if text == "" || strings.Contains(text, "Presenting decision") {
-				continue
-			}
-			return text, frame.Result.Metadata
 		}
 		return "", nil
 	}

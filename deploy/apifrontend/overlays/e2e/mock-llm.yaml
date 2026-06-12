@@ -135,7 +135,17 @@ data:
           name: "kubernaut_present_decision"
           arguments:
             session_id: "sess-002"
-            options: "restart,scale-up,rollback"
+            summary: "Remediation decision required"
+            options:
+              - workflow_id: "wf-restart"
+                name: "Restart"
+                description: "Restart affected pods"
+              - workflow_id: "wf-scale-up"
+                name: "Scale Up"
+                description: "Scale up deployment replicas"
+              - workflow_id: "wf-rollback"
+                name: "Rollback"
+                description: "Rollback to previous revision"
 
       - name: "af_structured_decision"
         keywords: ["structured decision", "present structured rca decision"]

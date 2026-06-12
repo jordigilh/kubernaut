@@ -553,7 +553,11 @@ var _ = Describe("A2A Streaming Reasoning (#1399)", Ordered, Label("e2e", "phase
 			if err := json.Unmarshal(raw, &evt); err != nil {
 				continue
 			}
-			meta, _ := evt["metadata"].(map[string]any)
+			result, _ := evt["result"].(map[string]any)
+			if result == nil {
+				continue
+			}
+			meta, _ := result["metadata"].(map[string]any)
 			if meta != nil && meta["type"] == "reasoning" {
 				foundReasoning = true
 				break
@@ -601,15 +605,18 @@ var _ = Describe("A2A Streaming Reasoning (#1399)", Ordered, Label("e2e", "phase
 			if err := json.Unmarshal(raw, &evt); err != nil {
 				continue
 			}
-			if _, hasArtifact := evt["artifact"]; hasArtifact {
-				artifact, _ := evt["artifact"].(map[string]any)
-				if artifact != nil {
-					meta, _ := artifact["metadata"].(map[string]any)
-					if meta != nil && meta["type"] == "decision" {
-						foundArtifact = true
-						break
-					}
-				}
+			result, _ := evt["result"].(map[string]any)
+			if result == nil {
+				continue
+			}
+			artifact, _ := result["artifact"].(map[string]any)
+			if artifact == nil {
+				continue
+			}
+			meta, _ := artifact["metadata"].(map[string]any)
+			if meta != nil && meta["type"] == "decision" {
+				foundArtifact = true
+				break
 			}
 		}
 		Expect(foundArtifact).To(BeTrue(),
@@ -653,15 +660,21 @@ var _ = Describe("A2A Streaming Reasoning (#1399)", Ordered, Label("e2e", "phase
 			if err := json.Unmarshal(raw, &evt); err != nil {
 				continue
 			}
-			if artifact, hasArtifact := evt["artifact"].(map[string]any); hasArtifact {
-				if parts, ok := artifact["parts"].([]any); ok {
-					for _, part := range parts {
-						pm, _ := part.(map[string]any)
-						if text, ok := pm["text"].(string); ok {
-							for _, r := range text {
-								Expect(r >= 0x1F300 && r <= 0x1FAFF).To(BeFalse(),
-									fmt.Sprintf("SC-7: artifact text contains emoji U+%04X", r))
-							}
+			result, _ := evt["result"].(map[string]any)
+			if result == nil {
+				continue
+			}
+			artifact, _ := result["artifact"].(map[string]any)
+			if artifact == nil {
+				continue
+			}
+			if parts, ok := artifact["parts"].([]any); ok {
+				for _, part := range parts {
+					pm, _ := part.(map[string]any)
+					if text, ok := pm["text"].(string); ok {
+						for _, r := range text {
+							Expect(r >= 0x1F300 && r <= 0x1FAFF).To(BeFalse(),
+								fmt.Sprintf("SC-7: artifact text contains emoji U+%04X", r))
 						}
 					}
 				}
