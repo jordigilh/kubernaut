@@ -102,7 +102,6 @@ var _ = Describe("IT-AF-1399: A2A Streaming Pipeline Wiring", func() {
 	Describe("Schema validation wiring", func() {
 		It("IT-AF-1399-004: ValidatePayload rejects invalid payload", func() {
 			err := launcher.ValidatePayloadForTest("investigation_summary", map[string]any{
-				"type":    "investigation_summary",
 				"summary": "Missing required fields",
 			})
 			Expect(err).To(HaveOccurred(),
@@ -143,10 +142,12 @@ var _ = Describe("IT-AF-1399: A2A Streaming Pipeline Wiring", func() {
 
 			dp, ok := artifactEvt.Artifact.Parts[0].(a2a.DataPart)
 			Expect(ok).To(BeTrue())
-			Expect(dp.Data).To(HaveKeyWithValue("type", "investigation_summary"),
-				"AU-3: DataPart.Data must self-identify as investigation_summary for audit tracing")
-			Expect(dp.Data).To(HaveKeyWithValue("schema_version", "1.0"),
-				"AU-3: DataPart.Data must include schema_version for contract versioning")
+			Expect(dp.Data).To(HaveKey("summary"),
+				"AU-3: DataPart.Data must contain the LLM-produced investigation summary")
+			Expect(artifactEvt.Artifact.Metadata).To(HaveKeyWithValue("schema", "investigation_summary"),
+				"AU-3: artifact metadata must identify schema for consumer routing")
+			Expect(artifactEvt.Artifact.Metadata).To(HaveKeyWithValue("schema_version", "1.0"),
+				"AU-3: artifact metadata must include schema_version for contract versioning")
 		})
 
 		It("IT-AF-1408-002: SI-4 — FunctionResponse suppression prevents duplicate event through streaming pipeline", func() {

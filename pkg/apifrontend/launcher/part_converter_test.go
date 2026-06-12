@@ -1817,7 +1817,7 @@ var _ = Describe("Contract Compliance #1408 — Structured investigation_summary
 	})
 
 	Describe("DataPart schema compliance", func() {
-		It("UT-AF-1408-002: SI-10 — DataPart.Data must contain type=investigation_summary", func() {
+		It("UT-AF-1408-002: SI-10 — DataPart.Data contains LLM-produced args without injected fields", func() {
 			part := &genai.Part{
 				FunctionCall: &genai.FunctionCall{
 					Name: "kubernaut_present_decision",
@@ -1843,11 +1843,15 @@ var _ = Describe("Contract Compliance #1408 — Structured investigation_summary
 			Expect(ok).To(BeTrue())
 			dp, ok := artifactEvt.Artifact.Parts[0].(a2a.DataPart)
 			Expect(ok).To(BeTrue())
-			Expect(dp.Data).To(HaveKeyWithValue("type", "investigation_summary"),
-				"SI-10: DataPart.Data must include type field for schema self-identification")
+			Expect(dp.Data).NotTo(HaveKey("type"),
+				"SI-10: DataPart.Data must NOT contain injected type — prevents LLM context pollution (#1411)")
+			Expect(dp.Data).NotTo(HaveKey("schema_version"),
+				"SI-10: DataPart.Data must NOT contain injected schema_version — prevents LLM context pollution (#1411)")
+			Expect(dp.Data).To(HaveKey("summary"))
+			Expect(dp.Data).To(HaveKey("rca"))
 		})
 
-		It("UT-AF-1408-003: SI-10 — DataPart.Data must contain schema_version=1.0", func() {
+		It("UT-AF-1408-003: SI-10 — artifact metadata carries schema identification", func() {
 			part := &genai.Part{
 				FunctionCall: &genai.FunctionCall{
 					Name: "kubernaut_present_decision",
@@ -1869,10 +1873,10 @@ var _ = Describe("Contract Compliance #1408 — Structured investigation_summary
 			Expect(queue.events).To(HaveLen(1))
 			artifactEvt, ok := queue.events[0].(*a2a.TaskArtifactUpdateEvent)
 			Expect(ok).To(BeTrue())
-			dp, ok := artifactEvt.Artifact.Parts[0].(a2a.DataPart)
-			Expect(ok).To(BeTrue())
-			Expect(dp.Data).To(HaveKeyWithValue("schema_version", "1.0"),
-				"SI-10: DataPart.Data must include schema_version for contract versioning")
+			Expect(artifactEvt.Artifact.Metadata).To(HaveKeyWithValue("schema", "investigation_summary"),
+				"SI-10: schema identification must live in artifact metadata, not body")
+			Expect(artifactEvt.Artifact.Metadata).To(HaveKeyWithValue("schema_version", "1.0"),
+				"SI-10: schema_version must live in artifact metadata, not body")
 		})
 
 		It("UT-AF-1408-004: SI-10 — DataPart.Data passes ValidatePayload for investigation_summary schema", func() {

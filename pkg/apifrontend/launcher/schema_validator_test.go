@@ -10,10 +10,8 @@ import (
 var _ = Describe("Schema Validation (#1399)", func() {
 	It("UT-AF-1399-012: ValidatePayload returns nil for valid investigation_summary", func() {
 		data := map[string]any{
-			"type":           "investigation_summary",
-			"schema_version": "1.0",
-			"session_id":     "sess-001",
-			"summary":        "OOMKill detected in production pod",
+			"session_id": "sess-001",
+			"summary":    "OOMKill detected in production pod",
 			"rca": map[string]any{
 				"explanation": "Memory leak in data-processor worker goroutine caused OOM",
 			},
@@ -24,10 +22,8 @@ var _ = Describe("Schema Validation (#1399)", func() {
 
 	It("UT-AF-1399-013: ValidatePayload returns error for missing required field (rca)", func() {
 		data := map[string]any{
-			"type":           "investigation_summary",
-			"schema_version": "1.0",
-			"session_id":     "sess-001",
-			"summary":        "OOMKill detected in production pod",
+			"session_id": "sess-001",
+			"summary":    "OOMKill detected in production pod",
 		}
 		err := launcher.ValidatePayloadForTest("investigation_summary", data)
 		Expect(err).To(HaveOccurred(), "SI-10: missing required field 'rca' must be caught")
@@ -36,7 +32,6 @@ var _ = Describe("Schema Validation (#1399)", func() {
 
 	It("UT-AF-1399-014: Schema validation failure triggers graceful degradation", func() {
 		data := map[string]any{
-			"type":    "investigation_summary",
 			"summary": "Missing required fields",
 		}
 		err := launcher.ValidatePayloadForTest("investigation_summary", data)
