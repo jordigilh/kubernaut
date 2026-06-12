@@ -143,7 +143,7 @@ var _ = Describe("Execution Progress Streaming (#1403)", Ordered, Label("e2e", "
 		Expect(lastProgress["rr_name"]).To(Equal(rrName))
 		Expect(lastProgress["started_at"]).NotTo(BeEmpty())
 		Expect(lastProgress).To(HaveKey("current_phase"))
-		fmt.Fprintf(GinkgoWriter, "Progress artifacts received: %d, last phase: %s\n",
+		_, _ = fmt.Fprintf(GinkgoWriter, "Progress artifacts received: %d, last phase: %s\n",
 			len(progressArtifacts), lastProgress["current_phase"])
 	})
 })
