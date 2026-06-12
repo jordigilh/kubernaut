@@ -273,6 +273,19 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 			driver := extractDriverFromSessionActiveError(err)
 			logger.Info("session_active from KA: returning structured result instead of error",
 				"rr_id", args.RRID, "driver", driver)
+
+			if rrSeverity != "" {
+				rca := &InvestigateRCA{
+					Severity:   rrSeverity,
+					Confidence: 0.6,
+					RCASummary: fmt.Sprintf("Severity assessed from resource metadata (investigation in progress by %s)", driver),
+				}
+				emitEarlyRCA(ctx, rca)
+				emitFallbackInvestigationArtifact(ctx, rca, args.RRID)
+				logger.Info("emitted early_rca on session_active path",
+					"rr_id", args.RRID, "severity", rrSeverity, "driver", driver)
+			}
+
 			return InvestigateMCPResult{
 				Status: "session_active",
 				RRID:   args.RRID,
