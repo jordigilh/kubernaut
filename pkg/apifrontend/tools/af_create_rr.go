@@ -80,10 +80,12 @@ func checkExistingRRByFingerprint(ctx context.Context, client dynamic.Interface,
 		}
 		phase, _, _ := unstructured.NestedString(item.Object, "status", "overallPhase")
 		if !IsTerminalPhase(phase) {
+			sev, _, _ := unstructured.NestedString(item.Object, "spec", "severity")
 			return CheckExistingRRResult{
-				Exists: true,
-				RRID:   item.GetName(),
-				Phase:  phase,
+				Exists:   true,
+				RRID:     item.GetName(),
+				Phase:    phase,
+				Severity: sev,
 			}, nil
 		}
 	}
@@ -165,6 +167,7 @@ func HandleCreateRR(ctx context.Context, client dynamic.Interface, controllerNS 
 				RRID:          existing.RRID,
 				Message:       fmt.Sprintf("RemediationRequest already exists (%s)", existing.Phase),
 				AlreadyExists: true,
+				Severity:      existing.Severity,
 			}, nil
 		}
 

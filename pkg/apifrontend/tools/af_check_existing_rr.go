@@ -25,9 +25,10 @@ type CheckExistingRRArgs struct {
 
 // CheckExistingRRResult is the output of kubernaut_check_existing_remediation.
 type CheckExistingRRResult struct {
-	Exists bool   `json:"exists"`
-	RRID   string `json:"rr_id,omitempty"`
-	Phase  string `json:"phase,omitempty"`
+	Exists   bool   `json:"exists"`
+	RRID     string `json:"rr_id,omitempty"`
+	Phase    string `json:"phase,omitempty"`
+	Severity string `json:"severity,omitempty"`
 }
 
 // HandleCheckExistingRR checks whether a non-terminal RemediationRequest already
