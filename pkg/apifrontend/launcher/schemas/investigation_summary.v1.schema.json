@@ -4,15 +4,8 @@
   "title": "Investigation Summary",
   "description": "Structured investigation summary emitted as A2A artifact DataPart",
   "type": "object",
-  "required": ["type", "schema_version", "session_id", "summary", "rca"],
+  "required": ["session_id", "summary", "rca"],
   "properties": {
-    "type": {
-      "type": "string",
-      "const": "investigation_summary"
-    },
-    "schema_version": {
-      "type": "string"
-    },
     "session_id": {
       "type": "string"
     },

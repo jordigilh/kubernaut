@@ -396,9 +396,6 @@ func emitDecisionEvent(ctx context.Context, bridge *EventBridge, fc *genai.Funct
 		data = map[string]any{}
 	}
 
-	data["type"] = "investigation_summary"
-	data["schema_version"] = "1.0"
-
 	summary, _ := data["summary"].(string)
 	if summary == "" {
 		summary = "Remediation decision"
