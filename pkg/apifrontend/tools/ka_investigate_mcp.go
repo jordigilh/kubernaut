@@ -155,6 +155,7 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 
 	identity := auth.UserIdentityFromContext(ctx)
 
+	var rrSeverity string
 	if !hasRRID && hasResourceArgs {
 		if err := validate.APIVersion(args.APIVersion); err != nil {
 			return InvestigateMCPResult{}, fmt.Errorf("%w", err)
@@ -189,6 +190,7 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 			return InvestigateMCPResult{}, fmt.Errorf("create RR for investigation: %w", err)
 		}
 		args.RRID = result.RRID
+		rrSeverity = result.Severity
 	}
 
 	if args.RRID == "" {
@@ -353,6 +355,25 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 		}
 		logger.Info("bridgeEventsCollectSummary: finished",
 			"rr_id", args.RRID, "status", status, "summary_len", len(summary))
+
+		// Fallback: when KA produced no RCA (e.g. user-driving mode with
+		// no autonomous session) but severity triage completed during RR
+		// creation, emit progressive events using the triage data so the
+		// user gets immediate severity feedback.
+		if rca == nil && rrSeverity != "" {
+			rca = &InvestigateRCA{
+				Severity:   rrSeverity,
+				Confidence: 0.6,
+				RCASummary: "Severity assessed from resource metadata (full investigation pending)",
+			}
+			emitEarlyRCA(ctx, rca)
+			emitFallbackInvestigationArtifact(ctx, rca, args.RRID)
+			logger.Info("emitted fallback early_rca from severity triage",
+				"rr_id", args.RRID, "severity", rrSeverity)
+			if summary == "" {
+				summary = rca.RCASummary
+			}
+		}
 
 		// Hand off the MCP session to the pool so discover_workflows /
 		// select_workflow reuse the same connection and driver lease.
@@ -529,6 +550,33 @@ func emitEarlyRCA(ctx context.Context, rca *InvestigateRCA) {
 		"schema_version": "1.0",
 	}
 	_ = launcher.EmitStructuredMetaSafe(ctx, payload, meta)
+}
+
+// emitFallbackInvestigationArtifact emits an artifact-update event with the
+// investigation_summary schema when the KA bridge produced no events but
+// severity triage data is available. This ensures the Console gets a
+// structured artifact even when the KA investigation is slow or unavailable.
+// FedRAMP: SI-10 (data integrity through schema self-identification).
+func emitFallbackInvestigationArtifact(ctx context.Context, rca *InvestigateRCA, rrID string) {
+	if rca == nil {
+		return
+	}
+	data := map[string]any{
+		"type":           "investigation_summary",
+		"schema_version": "1.0",
+		"session_id":     rrID,
+		"summary":        rca.RCASummary,
+		"rca": map[string]any{
+			"severity":   rca.Severity,
+			"confidence": rca.Confidence,
+		},
+	}
+	meta := map[string]any{
+		"type":           launcher.MetaTypeDecision,
+		"schema":         "investigation_summary",
+		"schema_version": "1.0",
+	}
+	_ = launcher.EmitArtifactSafe(ctx, data, fmt.Sprintf("Severity: %s (confidence %.0f%%)\n%s", rca.Severity, rca.Confidence*100, rca.RCASummary), meta)
 }
 
 // FormatEventForUser converts an investigation event into user-readable text.

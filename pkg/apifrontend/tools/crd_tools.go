@@ -895,12 +895,17 @@ type AwaitSessionResult struct {
 	Message   string `json:"message,omitempty"`
 }
 
-const awaitSessionTimeout = 3 * time.Minute
+// AwaitSessionTimeout is the maximum duration HandleAwaitSession waits for an
+// AIAnalysis CRD with a session ID. In production the AA controller may take
+// minutes to process an RR; in E2E tests this can be shortened.
+// Exported so that tests can override it without modifying production code.
+var AwaitSessionTimeout = 3 * time.Minute
+
 const awaitSessionPollInterval = 3 * time.Second
 
 // HandleAwaitSession waits for an AIAnalysis resource (matching the given RR) to have
 // a non-empty status.investigationSession.id. Returns the session ID when ready, or
-// times out after 2 minutes.
+// times out after AwaitSessionTimeout.
 func HandleAwaitSession(ctx context.Context, client dynamic.Interface, args AwaitSessionArgs) (AwaitSessionResult, error) {
 	if client == nil {
 		return AwaitSessionResult{}, ErrK8sUnavailable
@@ -917,7 +922,7 @@ func HandleAwaitSession(ctx context.Context, client dynamic.Interface, args Awai
 		return AwaitSessionResult{SessionID: sessionID, Status: "ready"}, nil
 	}
 
-	watchCtx, cancel := context.WithTimeout(ctx, awaitSessionTimeout)
+	watchCtx, cancel := context.WithTimeout(ctx, AwaitSessionTimeout)
 	defer cancel()
 
 	watcher, err := client.Resource(aianalysisGVR).Namespace(args.Namespace).Watch(watchCtx, metav1.ListOptions{

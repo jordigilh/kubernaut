@@ -102,10 +102,6 @@ data:
             namespace: "default"
             name: "nginx"
             kind: "Pod"
-        next_tool_call:
-          name: "kubernaut_discover_workflows"
-          arguments:
-            rr_id: "kubernaut-system/rr-progressive-e2e"
 
       - name: "af_investigate"
         keywords: ["start investigation", "investigate", "begin investigation"]

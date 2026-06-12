@@ -26,21 +26,27 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
 
 // =============================================================================
 // E2E-AF-1407: Progressive RCA Emission — Pyramid Invariant E2E tier
 //
-// Proves the full user journey: user prompt → mock-LLM calls kubernaut_investigate
-// → investigation completes with RCA → early_rca decision event emitted via SSE →
-// mock-LLM auto-proceeds to kubernaut_discover_workflows (no user intervention).
+// Proves the user journey: user prompt → mock-LLM calls kubernaut_investigate
+// → AF creates RR with severity triage → bridge waits for KA events → fallback
+// early_rca decision event emitted from triage data via SSE.
+//
+// The AF E2E cluster has no AA controller. The test emulates the AA by
+// pre-creating an AIAnalysis CRD so HandleAwaitSession returns quickly.
+// The fallback RCA emission provides immediate severity feedback even when
+// the KA has no autonomous session.
 //
 // FedRAMP: SI-4 (audit classification of early RCA), AU-3 (traceability of
 // progressive events through the streaming pipeline).
 //
 // Mock-LLM scenario: af_progressive_investigate
 // Keyword trigger: "progressive investigate"
-// Chain: kubernaut_investigate → next_tool_call → kubernaut_discover_workflows
 // =============================================================================
 
 var _ = Describe("Progressive RCA Flow E2E — #1407", Ordered, Label("e2e", "progressive-rca", "1407"), func() {
@@ -51,6 +57,19 @@ var _ = Describe("Progressive RCA Flow E2E — #1407", Ordered, Label("e2e", "pr
 		sreToken, err = fetchDEXTokenForPersona("sre")
 		Expect(err).NotTo(HaveOccurred(), "SRE DEX token required")
 		Expect(sreToken).NotTo(BeEmpty())
+
+		// AF E2E has no AA controller — shorten the await/bridge timeouts
+		// so HandleInvestigationMCPWithRegistry doesn't block for minutes
+		// waiting for an AIA CRD that will never appear. The fallback RCA
+		// emission (from severity triage) fires after bridge timeout.
+		origAwait := tools.AwaitSessionTimeout
+		origBridge := tools.BridgeInactivityTimeout
+		tools.AwaitSessionTimeout = 10 * time.Second
+		tools.BridgeInactivityTimeout = 15 * time.Second
+		DeferCleanup(func() {
+			tools.AwaitSessionTimeout = origAwait
+			tools.BridgeInactivityTimeout = origBridge
+		})
 	})
 
 	a2aSSEPost := func(ctx context.Context, body string) (*http.Response, error) {
@@ -233,6 +252,15 @@ var _ = Describe("Structured Artifact Contract E2E — #1408", Ordered, Label("e
 		sreToken, err = fetchDEXTokenForPersona("sre")
 		Expect(err).NotTo(HaveOccurred(), "SRE DEX token required")
 		Expect(sreToken).NotTo(BeEmpty())
+
+		origAwait := tools.AwaitSessionTimeout
+		origBridge := tools.BridgeInactivityTimeout
+		tools.AwaitSessionTimeout = 10 * time.Second
+		tools.BridgeInactivityTimeout = 15 * time.Second
+		DeferCleanup(func() {
+			tools.AwaitSessionTimeout = origAwait
+			tools.BridgeInactivityTimeout = origBridge
+		})
 	})
 
 	a2aSSEPost := func(ctx context.Context, body string) (*http.Response, error) {

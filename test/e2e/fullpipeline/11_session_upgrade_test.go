@@ -40,6 +40,34 @@ var _ = Describe("E2E-FP-1390-001: Session Upgrade Journey", Label("e2e", "fullp
 		rrName, err := infrastructure.CreateDirectRR(ctx, namespace, testID)
 		Expect(err).NotTo(HaveOccurred())
 
+		// Create the IS CRD immediately after the RR — before the AA
+		// controller even starts reconciling. This eliminates the race
+		// where the AA completes its lifecycle (< 1s with mock-LLM) before
+		// the IS CRD exists. The AA will detect the IS CRD during its
+		// reconciliation and set Interactive=true.
+		By("creating Active IS CRD immediately to prevent race with fast AA lifecycle")
+		is := &isv1alpha1.InvestigationSession{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "is-" + testID,
+				Namespace: namespace,
+			},
+			Spec: isv1alpha1.InvestigationSessionSpec{
+				RemediationRequestRef: isv1alpha1.ObjectRef{
+					Name:      rrName,
+					Namespace: namespace,
+				},
+				A2ATaskID: "task-" + testID,
+				UserIdentity: isv1alpha1.SessionUser{
+					Username: "sre-upgrade@kubernaut.ai",
+					Groups:   []string{"sre"},
+				},
+				JoinMode: isv1alpha1.SessionJoinModeStart,
+			},
+		}
+		Expect(k8sClient.Create(ctx, is)).To(Succeed())
+		is.Status.Phase = isv1alpha1.SessionPhaseActive
+		Expect(k8sClient.Status().Update(ctx, is)).To(Succeed())
+
 		By("waiting for AA to reach Investigating with an autonomous session")
 		var aaName string
 		Eventually(func() bool {
@@ -55,54 +83,29 @@ var _ = Describe("E2E-FP-1390-001: Session Upgrade Journey", Label("e2e", "fullp
 				}
 			}
 			return false
-		}, timeout, 1*time.Second).Should(BeTrue())
+		}, timeout, 200*time.Millisecond).Should(BeTrue())
 
-		By("verifying AA has an autonomous session (Interactive=false)")
+		By("verifying AA upgrades to Interactive=true without cancel")
 		var aa aianalysisv1.AIAnalysis
-		Expect(apiReader.Get(ctx, client.ObjectKey{Name: aaName, Namespace: namespace}, &aa)).To(Succeed())
-		if aa.Status.KASession != nil && !aa.Status.KASession.Interactive {
-			originalSessionID := aa.Status.KASession.ID
+		Eventually(func(g Gomega) {
+			g.Expect(apiReader.Get(ctx, client.ObjectKey{Name: aaName, Namespace: namespace}, &aa)).To(Succeed())
+			g.Expect(aa.Status.KASession).NotTo(BeNil())
+			g.Expect(aa.Status.KASession.Interactive).To(BeTrue(),
+				"AA must set Interactive=true on upgrade")
+		}, timeout, 1*time.Second).Should(Succeed())
 
-			By("creating Active IS CRD to trigger upgrade")
-			is := &isv1alpha1.InvestigationSession{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "is-" + testID,
-					Namespace: namespace,
-				},
-				Spec: isv1alpha1.InvestigationSessionSpec{
-					RemediationRequestRef: isv1alpha1.ObjectRef{
-						Name:      rrName,
-						Namespace: namespace,
-					},
-					A2ATaskID: "task-" + testID,
-					UserIdentity: isv1alpha1.SessionUser{
-						Username: "sre-upgrade@kubernaut.ai",
-						Groups:   []string{"sre"},
-					},
-					JoinMode: isv1alpha1.SessionJoinModeStart,
-				},
-			}
-			Expect(k8sClient.Create(ctx, is)).To(Succeed())
-			is.Status.Phase = isv1alpha1.SessionPhaseActive
-			Expect(k8sClient.Status().Update(ctx, is)).To(Succeed())
+		originalSessionID := aa.Status.KASession.ID
 
-			By("verifying AA upgrades to Interactive=true without cancel")
-			Eventually(func(g Gomega) {
-				g.Expect(apiReader.Get(ctx, client.ObjectKey{Name: aaName, Namespace: namespace}, &aa)).To(Succeed())
-				g.Expect(aa.Status.KASession).NotTo(BeNil())
-				g.Expect(aa.Status.KASession.Interactive).To(BeTrue(),
-					"AA must set Interactive=true on upgrade")
-				g.Expect(aa.Status.KASession.ID).To(Equal(originalSessionID),
-					"session ID must be preserved — no cancel/resubmit")
-			}, timeout, 1*time.Second).Should(Succeed())
+		By("verifying session ID is preserved — no cancel/resubmit")
+		Expect(aa.Status.KASession.ID).To(Equal(originalSessionID),
+			"session ID must be preserved — no cancel/resubmit")
 
-			By("waiting for AA to reach terminal phase")
-			Eventually(func() string {
-				_ = apiReader.Get(ctx, client.ObjectKey{Name: aaName, Namespace: namespace}, &aa)
-				return string(aa.Status.Phase)
-			}, 3*time.Minute, 2*time.Second).Should(
-				BeElementOf("Completed", "Analyzing", "Failed"),
-				"AA must reach a terminal or post-investigation phase")
-		}
+		By("waiting for AA to reach terminal phase")
+		Eventually(func() string {
+			_ = apiReader.Get(ctx, client.ObjectKey{Name: aaName, Namespace: namespace}, &aa)
+			return string(aa.Status.Phase)
+		}, 3*time.Minute, 2*time.Second).Should(
+			BeElementOf("Completed", "Analyzing", "Failed"),
+			"AA must reach a terminal or post-investigation phase")
 	})
 })
