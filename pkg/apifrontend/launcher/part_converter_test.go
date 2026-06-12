@@ -8,6 +8,8 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"google.golang.org/adk/model"
+	"google.golang.org/adk/session"
 	"google.golang.org/genai"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
@@ -1948,6 +1950,90 @@ var _ = Describe("Contract Compliance #1408 — Structured investigation_summary
 			_, ok := queue.events[0].(*a2a.TaskArtifactUpdateEvent)
 			Expect(ok).To(BeTrue(),
 				"AU-3: the single event must be TaskArtifactUpdateEvent (not TaskStatusUpdateEvent)")
+		})
+	})
+})
+
+var _ = Describe("Event-aware text routing (#1410)", func() {
+	var convertStreaming launcher.PartConverterFunc
+
+	BeforeEach(func() {
+		convertStreaming = launcher.BuildStreamingPartConverterForTest()
+	})
+
+	Describe("Text in partial event", func() {
+		It("UT-AF-1410-001: text in partial event routes to reasoning, not artifact", func() {
+			event := &session.Event{
+				LLMResponse: model.LLMResponse{
+					Content: &genai.Content{
+						Parts: []*genai.Part{{Text: "Let me check the logs..."}},
+					},
+					Partial: true,
+				},
+			}
+			part := &genai.Part{Text: "Let me check the logs..."}
+			queue, ctx := partConverterBridgeCtx()
+
+			result, err := convertStreaming(ctx, event, part)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(BeNil(),
+				"Text in partial events must NOT become an artifact")
+
+			Expect(queue.events).To(HaveLen(1))
+			statusEvt, ok := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			Expect(ok).To(BeTrue(), "Partial text must be routed to reasoning via EventBridge")
+			Expect(statusEvt.Status.Message).NotTo(BeNil())
+		})
+	})
+
+	Describe("Text in event with FunctionCall", func() {
+		It("UT-AF-1410-002: text coexisting with FunctionCall routes to reasoning", func() {
+			event := &session.Event{
+				LLMResponse: model.LLMResponse{
+					Content: &genai.Content{
+						Parts: []*genai.Part{
+							{Text: "I'll investigate this pod."},
+							{FunctionCall: &genai.FunctionCall{Name: "kubernaut_investigate", Args: map[string]any{"namespace": "prod"}}},
+						},
+					},
+					Partial: false,
+				},
+			}
+			part := &genai.Part{Text: "I'll investigate this pod."}
+			queue, ctx := partConverterBridgeCtx()
+
+			result, err := convertStreaming(ctx, event, part)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(BeNil(),
+				"Text preamble in event with FunctionCall must NOT become an artifact")
+
+			Expect(queue.events).To(HaveLen(1))
+			_, ok := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			Expect(ok).To(BeTrue(), "Preamble text must be routed to reasoning")
+		})
+	})
+
+	Describe("Text in final event without FunctionCall", func() {
+		It("UT-AF-1410-003: text in final non-partial event becomes artifact", func() {
+			event := &session.Event{
+				LLMResponse: model.LLMResponse{
+					Content: &genai.Content{
+						Parts: []*genai.Part{{Text: "The investigation is complete. Here are the results."}},
+					},
+					Partial: false,
+				},
+			}
+			part := &genai.Part{Text: "The investigation is complete. Here are the results."}
+			_, ctx := partConverterBridgeCtx()
+
+			result, err := convertStreaming(ctx, event, part)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil(),
+				"Text in final event without FunctionCall MUST become an artifact")
+
+			textPart, ok := result.(a2a.TextPart)
+			Expect(ok).To(BeTrue())
+			Expect(textPart.Text).To(ContainSubstring("investigation is complete"))
 		})
 	})
 })

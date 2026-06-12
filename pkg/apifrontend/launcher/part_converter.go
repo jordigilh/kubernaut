@@ -274,8 +274,13 @@ func summarizePresentDecision(resp map[string]any) string {
 // EventBridge as TaskStatusUpdateEvent, LLM text goes as artifact TextParts.
 // kubernaut_investigate FunctionResponse parts are suppressed since the
 // EventBridge already delivered the reasoning progressively.
+//
+// Event-aware text routing (#1410): intermediate text (partial chunks or
+// preamble before tool calls) is routed to reasoning (ThinkingPanel) instead
+// of becoming a user-facing artifact. Only final definitive text without
+// FunctionCalls becomes an artifact.
 func buildStreamingPartConverter() adka2a.GenAIPartConverter {
-	return func(ctx context.Context, _ *session.Event, part *genai.Part) (a2a.Part, error) {
+	return func(ctx context.Context, event *session.Event, part *genai.Part) (a2a.Part, error) {
 		if part == nil {
 			return nil, nil
 		}
@@ -298,8 +303,48 @@ func buildStreamingPartConverter() adka2a.GenAIPartConverter {
 			return nil, nil
 		}
 
+		if isPlainText(part) && shouldRouteTextToReasoning(event) {
+			_ = bridge.EmitReasoning(ctx, ensureTrailingParagraphBreak(part.Text))
+			return nil, nil
+		}
+
 		return emitPartViaBridge(ctx, bridge, part), nil
 	}
+}
+
+// isPlainText returns true when the part contains only text (not a function
+// call, response, or thought).
+func isPlainText(part *genai.Part) bool {
+	return part.Text != "" && part.FunctionCall == nil && part.FunctionResponse == nil && !part.Thought
+}
+
+// shouldRouteTextToReasoning determines whether plain text should go to the
+// reasoning channel (ThinkingPanel) instead of becoming a user-facing artifact.
+// Text is reasoning when:
+//   - The event is partial (streaming intermediate chunk), OR
+//   - The event contains a FunctionCall alongside the text (preamble narration)
+func shouldRouteTextToReasoning(event *session.Event) bool {
+	if event == nil {
+		return false
+	}
+	if event.Partial {
+		return true
+	}
+	return eventHasFunctionCall(event)
+}
+
+// eventHasFunctionCall checks whether the event's content contains any
+// FunctionCall part (indicating the text is preamble to a tool invocation).
+func eventHasFunctionCall(event *session.Event) bool {
+	if event.Content == nil {
+		return false
+	}
+	for _, p := range event.Content.Parts {
+		if p != nil && p.FunctionCall != nil {
+			return true
+		}
+	}
+	return false
 }
 
 // emitPartViaBridge routes intermediate parts (FunctionCall, FunctionResponse,
