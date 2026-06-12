@@ -298,11 +298,12 @@ func buildStreamingPartConverter() adka2a.GenAIPartConverter {
 	}
 }
 
-// emitPartViaBridge routes status-like parts (FunctionCall, FunctionResponse,
+// emitPartViaBridge routes intermediate parts (FunctionCall, FunctionResponse,
 // Thought) through the EventBridge as TaskStatusUpdateEvent and returns nil.
-// LLM text output is returned as a TextPart so the ADK executor wraps it in
-// a TaskArtifactUpdateEvent with the lastChunk lifecycle that Kagenti renders
-// as the persistent chat response.
+// Non-decision FunctionCall/FunctionResponse parts emit as reasoning (for the
+// ThinkingPanel). Decision-related responses use their respective metadata types.
+// LLM text output is returned as a TextPart (emoji-stripped) so the ADK executor
+// wraps it in a TaskArtifactUpdateEvent with the lastChunk lifecycle.
 func emitPartViaBridge(ctx context.Context, bridge *EventBridge, part *genai.Part) a2a.Part {
 	switch {
 	case part.FunctionCall != nil:
@@ -312,7 +313,7 @@ func emitPartViaBridge(ctx context.Context, bridge *EventBridge, part *genai.Par
 		}
 		text := convertFunctionCall(part.FunctionCall)
 		if text != nil {
-			_ = bridge.EmitStatus(ctx, text.(a2a.TextPart).Text)
+			_ = bridge.EmitReasoning(ctx, text.(a2a.TextPart).Text)
 		}
 		return nil
 	case part.FunctionResponse != nil:
@@ -320,32 +321,45 @@ func emitPartViaBridge(ctx context.Context, bridge *EventBridge, part *genai.Par
 		if text != nil {
 			if decisionMetaTools[part.FunctionResponse.Name] {
 				_ = bridge.EmitStructuredMeta(ctx, text.(a2a.TextPart).Text, map[string]any{"type": MetaTypeDecision})
-			} else {
+			} else if outputMetaTools[part.FunctionResponse.Name] {
 				_ = bridge.EmitStatus(ctx, text.(a2a.TextPart).Text)
+			} else {
+				_ = bridge.EmitReasoning(ctx, text.(a2a.TextPart).Text)
 			}
 		}
 		return nil
 	case part.Thought:
-		_ = bridge.EmitStatus(ctx, "Analyzing...\n\n")
+		_ = bridge.EmitReasoning(ctx, ensureTrailingParagraphBreak(part.Text))
 		return nil
 	default:
-		return a2a.TextPart{Text: ensureTrailingParagraphBreak(part.Text)}
+		return a2a.TextPart{Text: stripEmoji(ensureTrailingParagraphBreak(part.Text))}
 	}
 }
 
 // emitDecisionEvent emits the kubernaut_present_decision FunctionCall args
-// as a structured JSON status event with metadata.type="decision". This allows
-// A2A clients (e.g. Kubernaut Console) to render workflow option cards instead
-// of relying on the LLM's text formatting. Uses EmitStructuredMeta to bypass
-// the 512-rune truncation that would corrupt JSON payloads (#1395).
+// as a TaskArtifactUpdateEvent with DataPart (structured JSON) + TextPart
+// (human-readable fallback). Compliant with A2A v1.0 artifact conventions.
+// Falls back to EmitStructuredMeta on schema validation failure for graceful
+// degradation (SI-17).
 func emitDecisionEvent(ctx context.Context, bridge *EventBridge, fc *genai.FunctionCall) {
-	_ = bridge.EmitStatus(ctx, "Presenting decision to user...\n\n")
-
-	payload, err := json.Marshal(fc.Args)
-	if err != nil {
-		return
+	data := fc.Args
+	if data == nil {
+		data = map[string]any{}
 	}
-	_ = bridge.EmitStructuredMeta(ctx, string(payload), map[string]any{"type": MetaTypeDecision})
+
+	summary, _ := data["summary"].(string)
+	if summary == "" {
+		summary = "Remediation decision"
+	}
+	textFallback := fmt.Sprintf("Decision: %s\n\n", summary)
+
+	meta := map[string]any{
+		"type":           MetaTypeDecision,
+		"schema":         "investigation_summary",
+		"schema_version": "1.0",
+	}
+
+	_ = bridge.EmitArtifact(ctx, data, textFallback, meta)
 }
 
 // emitStructuredOutput emits the FunctionResponse from kubernaut_watch as a

@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kubernaut.ai/schemas/a2a/investigation_summary.v1.schema.json",
+  "title": "Investigation Summary",
+  "description": "Structured investigation summary emitted as A2A artifact DataPart",
+  "type": "object",
+  "required": ["type", "schema_version", "session_id", "summary", "rca"],
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "investigation_summary"
+    },
+    "schema_version": {
+      "type": "string"
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "rr_id": {
+      "type": "string"
+    },
+    "summary": {
+      "type": "string"
+    },
+    "rca": {
+      "type": "object",
+      "required": ["explanation"],
+      "properties": {
+        "explanation": { "type": "string" },
+        "severity": { "type": "string" },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "causal_chain": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "target": { "type": "string" },
+        "root_cause": { "type": "string" },
+        "affected_components": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "evidence": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "tool_calls_count": { "type": "integer" },
+        "llm_turns": { "type": "integer" }
+      },
+      "additionalProperties": true
+    },
+    "options": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["workflow_id", "name"],
+        "properties": {
+          "workflow_id": { "type": "string" },
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "risk": { "type": "string" },
+          "recommended": { "type": "boolean" },
+          "parameters": { "type": "object" },
+          "ruled_out_reason": { "type": "string" }
+        },
+        "additionalProperties": true
+      }
+    },
+    "severity": { "type": "string" },
+    "confidence": { "type": "number" }
+  },
+  "additionalProperties": true
+}

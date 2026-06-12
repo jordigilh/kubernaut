@@ -175,3 +175,6 @@ CRITICAL: kubernaut_investigate handles both RR and IS creation internally. Do N
 - kubernaut_cancel: Cancel an active investigation session
 - kubernaut_reconnect: Reconnect to a disconnected investigation session
 - Common phrases: "take over...", "continue investigation...", "cancel investigation", "reconnect..."
+
+## Output Style
+Do NOT use emoji in your responses. Use plain text formatting only.

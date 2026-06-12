@@ -318,3 +318,90 @@ func EmitStructuredMetaSafe(ctx context.Context, text string, meta map[string]an
 	}
 	return nil
 }
+
+// stripEmoji removes Unicode emoji codepoints from the input string.
+// Targets emoji presentation sequences while preserving valid Unicode
+// (math symbols, currency, CJK, accented Latin, arrows, box drawing).
+func stripEmoji(s string) string {
+	return strings.Map(func(r rune) rune {
+		if isEmoji(r) {
+			return -1
+		}
+		return r
+	}, s)
+}
+
+// EmitArtifact writes a TaskArtifactUpdateEvent with multi-part content:
+// Part[0] = DataPart (structured JSON), Part[1] = TextPart (human-readable fallback).
+// This is the A2A v1.0-compliant way to deliver structured results to clients.
+func (b *EventBridge) EmitArtifact(ctx context.Context, data map[string]any, textFallback string, meta map[string]any) error {
+	if b == nil || b.queue == nil {
+		return nil
+	}
+
+	parts := make(a2a.ContentParts, 0, 2)
+	if data != nil {
+		parts = append(parts, a2a.DataPart{
+			Data:     data,
+			Metadata: map[string]any{"mediaType": "application/json"},
+		})
+	}
+	parts = append(parts, a2a.TextPart{Text: textFallback})
+
+	evt := &a2a.TaskArtifactUpdateEvent{
+		TaskID:    b.taskID,
+		ContextID: b.contextID,
+		Artifact: &a2a.Artifact{
+			ID:       a2a.NewArtifactID(),
+			Parts:    parts,
+			Metadata: meta,
+		},
+		LastChunk: true,
+	}
+
+	b.mu.Lock()
+	err := b.queue.Write(ctx, evt)
+	b.mu.Unlock()
+
+	if b.metrics != nil {
+		if err != nil {
+			b.metrics.IncBridgeStatusWriteFailures()
+		} else {
+			b.metrics.IncBridgeStatusEvents()
+		}
+	}
+	return err
+}
+
+// isEmoji returns true if the rune is a Unicode emoji codepoint.
+func isEmoji(r rune) bool {
+	switch {
+	case r >= 0x1F600 && r <= 0x1F64F: // Emoticons
+		return true
+	case r >= 0x1F300 && r <= 0x1F5FF: // Misc Symbols and Pictographs
+		return true
+	case r >= 0x1F680 && r <= 0x1F6FF: // Transport and Map
+		return true
+	case r >= 0x1F900 && r <= 0x1F9FF: // Supplemental Symbols and Pictographs
+		return true
+	case r >= 0x1FA00 && r <= 0x1FA6F: // Chess Symbols
+		return true
+	case r >= 0x1FA70 && r <= 0x1FAFF: // Symbols and Pictographs Extended-A
+		return true
+	case r >= 0x2600 && r <= 0x26FF: // Misc symbols (sun, cloud, etc.)
+		return true
+	case r >= 0x2700 && r <= 0x27BF: // Dingbats
+		return true
+	case r >= 0xFE00 && r <= 0xFE0F: // Variation Selectors
+		return true
+	case r >= 0x200D && r <= 0x200D: // Zero Width Joiner
+		return true
+	case r == 0x20E3: // Combining Enclosing Keycap
+		return true
+	case r >= 0x2300 && r <= 0x23FF: // Misc Technical (includes hourglass, keyboard, etc.)
+		return true
+	case r >= 0x2B50 && r <= 0x2B55: // Stars and circles
+		return true
+	}
+	return false
+}
