@@ -179,6 +179,7 @@ type InvestigateTool struct {
 	httpCompleter   HTTPSessionCompleter
 	signalResolver  SignalContextResolver
 	rrChecker       RRExistenceChecker
+	catalog         WorkflowCatalog
 	metrics         ToolMetrics
 	rateLimiter     MessageRateLimiter
 	timeoutTracker  TimeoutTracker
@@ -267,6 +268,15 @@ func WithAuditStore(store audit.AuditStore, logger logr.Logger) InvestigateOptio
 			t.auditStore = store
 			t.logger = logger
 		}
+	}
+}
+
+// WithWorkflowCatalog injects the workflow catalog for enriching discovered
+// workflow names in handleDiscoverWorkflows. DS is a hard dependency — KA does
+// not start without it — so this option must always be provided in production.
+func WithWorkflowCatalog(catalog WorkflowCatalog) InvestigateOption {
+	return func(t *InvestigateTool) {
+		t.catalog = catalog
 	}
 }
 
@@ -794,6 +804,10 @@ func (t *InvestigateTool) handleDiscoverWorkflows(ctx context.Context, input Inv
 		return InvestigateOutput{}, ErrCodeSessionActive.WithDetail("driver", sess.ActingUser.Username)
 	}
 
+	if t.catalog == nil {
+		return InvestigateOutput{}, fmt.Errorf("workflow catalog not configured: cannot enrich discovery names")
+	}
+
 	// Reset inactivity timer before the (potentially long) LLM calls.
 	t.sessions.TouchActivity(input.RRID)
 	if t.timeoutTracker != nil {
@@ -893,6 +907,9 @@ func (t *InvestigateTool) handleDiscoverWorkflows(ctx context.Context, input Inv
 	sess.RCAResult = rcaResult
 	sess.DiscoveryResult = extractDiscoveryResult(workflowResult)
 
+	// Enrich workflow names from catalog.
+	t.enrichDiscoveryNames(ctx, sess.DiscoveryResult)
+
 	// Reset inactivity timer after the LLM calls complete.
 	t.sessions.TouchActivity(input.RRID)
 	if t.timeoutTracker != nil {
@@ -947,6 +964,34 @@ func extractDiscoveryResult(result *katypes.InvestigationResult) *mcpinternal.Wo
 	}
 
 	return dr
+}
+
+// enrichDiscoveryNames resolves human-readable workflow names from the catalog
+// for each discovered workflow. Lookup failures are logged but do not fail the
+// operation (the workflow is still usable by ID).
+func (t *InvestigateTool) enrichDiscoveryNames(ctx context.Context, dr *mcpinternal.WorkflowDiscoveryResult) {
+	if dr == nil {
+		return
+	}
+	if dr.Recommended != nil {
+		dr.Recommended.Name = t.resolveWorkflowName(ctx, dr.Recommended.WorkflowID)
+	}
+	for i := range dr.Alternatives {
+		dr.Alternatives[i].Name = t.resolveWorkflowName(ctx, dr.Alternatives[i].WorkflowID)
+	}
+}
+
+func (t *InvestigateTool) resolveWorkflowName(ctx context.Context, workflowID string) string {
+	if workflowID == "" {
+		return ""
+	}
+	wf, err := t.catalog.GetWorkflowByID(ctx, workflowID)
+	if err != nil {
+		t.logger.V(1).Info("catalog lookup failed for workflow name enrichment",
+			"workflow_id", workflowID, "error", err)
+		return ""
+	}
+	return wf.WorkflowName
 }
 
 func (t *InvestigateTool) handleCancel(input InvestigateInput, user mcpinternal.UserInfo) (InvestigateOutput, error) {

@@ -148,6 +148,7 @@ type kaWorkflowDiscoveryPayload struct {
 // kaDiscoveredWorkflow matches KA's internal DiscoveredWorkflow JSON fields.
 type kaDiscoveredWorkflow struct {
 	WorkflowID      string                 `json:"workflow_id"`
+	Name            string                 `json:"name,omitempty"`
 	ExecutionBundle string                 `json:"execution_bundle,omitempty"`
 	Confidence      float64                `json:"confidence"`
 	Rationale       string                 `json:"rationale"`
@@ -189,10 +190,9 @@ func ParseDiscoverWorkflowsResponse(raw json.RawMessage) (*DiscoverWorkflowsResu
 }
 
 func mapKAWorkflow(raw kaDiscoveredWorkflow) DiscoveredWorkflow {
-	name := raw.WorkflowID
 	return DiscoveredWorkflow{
 		WorkflowID:  raw.WorkflowID,
-		Name:        name,
+		Name:        raw.Name,
 		Description: raw.Rationale,
 		Confidence:  raw.Confidence,
 	}

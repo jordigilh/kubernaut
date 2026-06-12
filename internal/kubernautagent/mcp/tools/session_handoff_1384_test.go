@@ -158,7 +158,10 @@ var _ = Describe("Fix #1384 Bug A — Session context propagation (AU-2/AU-3, BR
 
 			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, autoMgr,
 				mcptools.WithSignalContextResolver(resolver),
-				mcptools.WithHTTPCompleter(completer))
+				mcptools.WithHTTPCompleter(completer),
+				mcptools.WithWorkflowCatalog(&mockWorkflowCatalog{
+					workflow: &mcptools.CatalogWorkflow{WorkflowID: "mock-workflow", WorkflowName: "Mock Workflow"},
+				}))
 
 			output, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
 				RRID:   "rr-a01",
@@ -201,7 +204,10 @@ var _ = Describe("Fix #1384 Bug A — Session context propagation (AU-2/AU-3, BR
 			}
 
 			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, autoMgr,
-				mcptools.WithSignalContextResolver(resolver))
+				mcptools.WithSignalContextResolver(resolver),
+				mcptools.WithWorkflowCatalog(&mockWorkflowCatalog{
+					workflow: &mcptools.CatalogWorkflow{WorkflowID: "mock-workflow", WorkflowName: "Mock Workflow"},
+				}))
 
 			output, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
 				RRID:   "rr-a02",
@@ -246,7 +252,10 @@ var _ = Describe("Fix #1384 Bug A — Session context propagation (AU-2/AU-3, BR
 
 			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, autoMgr,
 				mcptools.WithSignalContextResolver(resolver),
-				mcptools.WithHTTPCompleter(completer))
+				mcptools.WithHTTPCompleter(completer),
+				mcptools.WithWorkflowCatalog(&mockWorkflowCatalog{
+					workflow: &mcptools.CatalogWorkflow{WorkflowID: "mock-workflow", WorkflowName: "Mock Workflow"},
+				}))
 
 			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
 				RRID:   "rr-a03",
@@ -285,7 +294,10 @@ var _ = Describe("Fix #1384 Bug A — Session context propagation (AU-2/AU-3, BR
 			autoMgr := &mockAutoMgrWithHTTPSession{}
 
 			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, autoMgr,
-				mcptools.WithSignalContextResolver(resolver))
+				mcptools.WithSignalContextResolver(resolver),
+				mcptools.WithWorkflowCatalog(&mockWorkflowCatalog{
+					workflow: &mcptools.CatalogWorkflow{WorkflowID: "mock-workflow", WorkflowName: "Mock Workflow"},
+				}))
 
 			Expect(func() {
 				_, _ = tool.Handle(context.Background(), mcptools.InvestigateInput{
@@ -400,7 +412,10 @@ var _ = Describe("Fix #1384 — Wiring Chain IT (discover -> select -> HTTP comp
 
 			investTool := mcptools.NewInvestigateTool(sessionMgr, discoveryRunner, &mockContextReconstructor{}, autoMgr,
 				mcptools.WithSignalContextResolver(resolver),
-				mcptools.WithHTTPCompleter(completer))
+				mcptools.WithHTTPCompleter(completer),
+				mcptools.WithWorkflowCatalog(&mockWorkflowCatalog{
+					workflow: &mcptools.CatalogWorkflow{WorkflowID: "mock-workflow", WorkflowName: "Mock Workflow"},
+				}))
 
 			By("Step 1: discover_workflows with session context enrichment")
 			discoverOut, err := investTool.Handle(context.Background(), mcptools.InvestigateInput{
@@ -496,7 +511,10 @@ var _ = Describe("Fix #1384 Bug A — Integration Tests (session wiring)", func(
 
 			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, autoMgr,
 				mcptools.WithSignalContextResolver(resolver),
-				mcptools.WithHTTPCompleter(completer))
+				mcptools.WithHTTPCompleter(completer),
+				mcptools.WithWorkflowCatalog(&mockWorkflowCatalog{
+					workflow: &mcptools.CatalogWorkflow{WorkflowID: "mock-workflow", WorkflowName: "Mock Workflow"},
+				}))
 
 			output, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
 				RRID:   "rr-it-001",

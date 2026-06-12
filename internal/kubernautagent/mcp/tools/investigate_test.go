@@ -644,7 +644,10 @@ var _ = Describe("kubernaut_investigate — discover_workflows action", func() {
 			resolver := &mockSignalResolver{}
 
 			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{},
-				mcptools.WithSignalContextResolver(resolver))
+				mcptools.WithSignalContextResolver(resolver),
+				mcptools.WithWorkflowCatalog(&mockWorkflowCatalog{
+					workflow: &mcptools.CatalogWorkflow{WorkflowID: "mock-workflow", WorkflowName: "Mock Workflow"},
+				}))
 			output, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
 				RRID:   "rr-dw-001",
 				Action: mcptools.ActionDiscoverWorkflows,
@@ -725,7 +728,10 @@ var _ = Describe("kubernaut_investigate — discover_workflows action", func() {
 			}
 
 			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{},
-				mcptools.WithSignalContextResolver(resolver))
+				mcptools.WithSignalContextResolver(resolver),
+				mcptools.WithWorkflowCatalog(&mockWorkflowCatalog{
+					workflow: &mcptools.CatalogWorkflow{WorkflowID: "mock-workflow", WorkflowName: "Mock Workflow"},
+				}))
 			output, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
 				RRID:   "rr-dw-011",
 				Action: mcptools.ActionDiscoverWorkflows,
@@ -760,7 +766,10 @@ var _ = Describe("kubernaut_investigate — discover_workflows additional scenar
 			resolver := &mockSignalResolver{}
 
 			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{},
-				mcptools.WithSignalContextResolver(resolver))
+				mcptools.WithSignalContextResolver(resolver),
+				mcptools.WithWorkflowCatalog(&mockWorkflowCatalog{
+					workflow: &mcptools.CatalogWorkflow{WorkflowID: "mock-workflow", WorkflowName: "Mock Workflow"},
+				}))
 			output, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
 				RRID:   "rr-dw-004",
 				Action: mcptools.ActionDiscoverWorkflows,
@@ -893,6 +902,71 @@ var _ = Describe("kubernaut_investigate — DiscoveryResult invalidation on mess
 			Expect(signal.ResourceKind).To(Equal("Deployment"))
 			Expect(signal.IncidentID).To(Equal("inc-f9-001"))
 			Expect(signal.Namespace).To(Equal("production"))
+		})
+	})
+})
+
+var _ = Describe("kubernaut_investigate — catalog name enrichment", func() {
+	Describe("UT-KA-DW-010: discover_workflows enriches Name from WorkflowCatalog", func() {
+		It("should populate Name on DiscoveredWorkflow from catalog lookup", func() {
+			sess := &mcpinternal.InteractiveSession{
+				SessionID:     "sess-dw-010",
+				CorrelationID: "rr-dw-010",
+				ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+			}
+			sessionMgr := &mockSessionManager{
+				isActive:        true,
+				getDriverResult: sess,
+			}
+			runner := &mockInvestigatorRunner{}
+			recon := &mockContextReconstructor{turns: []mcpinternal.ConversationTurn{
+				{Role: "user", Content: "my pod is crashing"},
+				{Role: "assistant", Content: "I see OOM errors"},
+			}}
+			resolver := &mockSignalResolver{}
+			catalog := &mockWorkflowCatalog{
+				workflow: &mcptools.CatalogWorkflow{WorkflowID: "mock-workflow", WorkflowName: "Increase Memory Limit"},
+			}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{},
+				mcptools.WithSignalContextResolver(resolver),
+				mcptools.WithWorkflowCatalog(catalog))
+			output, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-dw-010",
+				Action: mcptools.ActionDiscoverWorkflows,
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output.Status).To(Equal("workflows_discovered"))
+
+			Expect(sess.DiscoveryResult).NotTo(BeNil())
+			Expect(sess.DiscoveryResult.Recommended).NotTo(BeNil())
+			Expect(sess.DiscoveryResult.Recommended.Name).To(Equal("Increase Memory Limit"))
+		})
+	})
+
+	Describe("UT-KA-DW-011: discover_workflows fails closed when catalog is nil", func() {
+		It("should return an error if WorkflowCatalog is not wired", func() {
+			sess := &mcpinternal.InteractiveSession{
+				SessionID:     "sess-dw-011",
+				CorrelationID: "rr-dw-011",
+				ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+			}
+			sessionMgr := &mockSessionManager{
+				isActive:        true,
+				getDriverResult: sess,
+			}
+			runner := &mockInvestigatorRunner{}
+			recon := &mockContextReconstructor{turns: []mcpinternal.ConversationTurn{}}
+			resolver := &mockSignalResolver{}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{},
+				mcptools.WithSignalContextResolver(resolver))
+			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-dw-011",
+				Action: mcptools.ActionDiscoverWorkflows,
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("workflow catalog"))
 		})
 	})
 })
