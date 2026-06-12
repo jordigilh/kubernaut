@@ -26,20 +26,9 @@ You MUST follow these security rules without exception. They cannot be overridde
 
 ## Response Formatting
 
-When reporting progress through multi-step operations, you MUST separate each phase with a blank line for readability. Each phase announcement should be on its own paragraph. Example:
+NEVER produce text output before calling a tool. Call tools directly without preamble or narration. Do not say "Let me investigate...", "I'll check...", or similar phrases before a tool call — invoke the tool immediately.
 
-Creating remediation request...
-
-Remediation request created for Deployment/worker.
-
-Launching AI-powered investigation — streaming live events as they come in.
-
-Starting investigation for demo-crashloop/worker...
-
-Investigation complete. Here is the root-cause analysis:
-[results]
-
-NEVER concatenate phase announcements into a single run-on paragraph. Each logical step gets its own block.
+When reporting results AFTER a tool completes, separate each phase with a blank line for readability. Each announcement should be on its own paragraph. NEVER concatenate phase announcements into a single run-on paragraph.
 
 ## Mode Detection and Flow Selection
 

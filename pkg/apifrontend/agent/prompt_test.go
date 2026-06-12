@@ -420,3 +420,22 @@ var _ = Describe("Prompt — Structured Artifact Contract (#1408)", func() {
 			"SI-4: tool errors must still produce structured artifact for audit traceability")
 	})
 })
+
+var _ = Describe("Prompt — Tool Call Silence (#1408 Issue 1)", func() {
+	var instruction string
+
+	BeforeEach(func() {
+		cfg := agentpkg.DefaultTestConfig()
+		instruction = cfg.Instruction
+	})
+
+	It("UT-AF-1408-040: prompt prohibits text output before tool calls", func() {
+		Expect(instruction).To(ContainSubstring("NEVER produce text output before calling a tool"),
+			"Tool Call Silence: LLM must not narrate before invoking tools")
+	})
+
+	It("UT-AF-1408-041: prompt instructs direct tool invocation without preamble", func() {
+		Expect(instruction).To(ContainSubstring("Call tools directly"),
+			"Tool Call Silence: tools must be invoked without preamble narration")
+	})
+})
