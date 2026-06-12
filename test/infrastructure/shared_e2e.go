@@ -278,7 +278,6 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
         tool_call:
           name: "kubernaut_watch"
           arguments:
-            namespace: "kubernaut-system"
             name: "$from_tool:kubernaut_remediate:rr_id"
 `
 
