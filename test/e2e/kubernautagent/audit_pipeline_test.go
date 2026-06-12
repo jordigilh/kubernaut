@@ -19,6 +19,7 @@ package kubernautagent
 import (
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -798,21 +799,43 @@ var _ = Describe("E2E-KA Audit Pipeline", Label("e2e", "ka", "audit"), func() {
 	Context("#1401: Security audit event persistence", func() {
 
 		It("E2E-KA-1401-001: HTTP 429 from rate limiter produces persisted audit event", func() {
-			// Trigger rate limit by sending burst+1 requests rapidly
-			// KA default burst is configurable; send enough to guarantee 429
+			// E2E configures burst=100 on the per-IP rate limiter. We must
+			// exceed that with parallel requests AND use a client without
+			// RetryOn429Transport so we observe raw 429 responses.
+			saToken, err := infrastructure.GetServiceAccountToken(ctx, sharedNamespace, "kubernaut-agent-e2e-sa", kubeconfigPath)
+			Expect(err).ToNot(HaveOccurred())
+
+			noRetryClient := &http.Client{
+				Transport: testauth.NewServiceAccountTransport(saToken),
+				Timeout:   10 * time.Second,
+			}
+
+			const numRequests = 150
+			statuses := make([]int, numRequests)
+			var wg sync.WaitGroup
+			wg.Add(numRequests)
+			for i := 0; i < numRequests; i++ {
+				go func(idx int) {
+					defer wg.Done()
+					defer GinkgoRecover()
+					resp, reqErr := noRetryClient.Get(kaURL + "/api/v1/incident/session/nonexistent-1401")
+					if reqErr != nil {
+						return
+					}
+					resp.Body.Close()
+					statuses[idx] = resp.StatusCode
+				}(i)
+			}
+			wg.Wait()
+
 			var got429 bool
-			for i := 0; i < 20; i++ {
-				resp, err := authHTTPClient.Get(kaURL + "/api/v1/health")
-				if err != nil {
-					continue
-				}
-				resp.Body.Close()
-				if resp.StatusCode == http.StatusTooManyRequests {
+			for _, code := range statuses {
+				if code == http.StatusTooManyRequests {
 					got429 = true
 					break
 				}
 			}
-			Expect(got429).To(BeTrue(), "must trigger at least one 429 response from KA rate limiter")
+			Expect(got429).To(BeTrue(), "must trigger at least one 429 response from KA rate limiter (burst=100, sent %d parallel)", numRequests)
 
 			// Query DataStorage for the rate-limit audit event
 			Eventually(func() bool {
