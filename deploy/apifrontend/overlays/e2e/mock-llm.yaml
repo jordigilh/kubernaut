@@ -183,7 +183,6 @@ data:
         tool_call:
           name: "kubernaut_watch"
           arguments:
-            namespace: "kubernaut-system"
             name: "rr-approval-e2e"
 
       - name: "af_list_remediations"
@@ -191,8 +190,7 @@ data:
         match_last_only: true
         tool_call:
           name: "kubernaut_list_remediations"
-          arguments:
-            namespace: "default"
+          arguments: {}
 
       - name: "af_get_remediation"
         keywords: ["get details for remediation", "get remediation"]
@@ -200,7 +198,6 @@ data:
         tool_call:
           name: "kubernaut_get_remediation"
           arguments:
-            namespace: "payments"
             name: "rr-test"
 
       - name: "af_approve"
@@ -209,7 +206,6 @@ data:
         tool_call:
           name: "kubernaut_approve"
           arguments:
-            namespace: "payments"
             name: "rr-test"
 
       - name: "af_cancel_remediation"
@@ -218,7 +214,6 @@ data:
         tool_call:
           name: "kubernaut_cancel_remediation"
           arguments:
-            namespace: "payments"
             name: "rr-test"
 
       - name: "af_watch"
@@ -227,7 +222,6 @@ data:
         tool_call:
           name: "kubernaut_watch"
           arguments:
-            namespace: "payments"
             name: "rr-test"
 
       - name: "af_list_workflows"
