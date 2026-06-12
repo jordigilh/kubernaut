@@ -319,6 +319,20 @@ func EmitStructuredMetaSafe(ctx context.Context, text string, meta map[string]an
 	return nil
 }
 
+// EmitArtifactSafe is a nil-safe helper that emits a TaskArtifactUpdateEvent
+// via the bridge. If no bridge is present, it's a no-op. Write failures are logged.
+func EmitArtifactSafe(ctx context.Context, data map[string]any, textFallback string, meta map[string]any) error {
+	bridge := EventBridgeFromContext(ctx)
+	if bridge == nil {
+		return nil
+	}
+	if err := bridge.EmitArtifact(ctx, data, textFallback, meta); err != nil {
+		logr.FromContextOrDiscard(ctx).Error(err, "A2A bridge write failed", "channel", "artifact")
+		return err
+	}
+	return nil
+}
+
 // stripEmoji removes Unicode emoji codepoints from the input string.
 // Targets emoji presentation sequences while preserving valid Unicode
 // (math symbols, currency, CJK, accented Latin, arrows, box drawing).

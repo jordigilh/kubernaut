@@ -733,6 +733,7 @@ func HandleWatch(ctx context.Context, client dynamic.Interface, args WatchArgs) 
 		events          []WatchEvent
 		lastSeenPhase   string
 		lastRARDecision string
+		startedAt       = time.Now().UTC().Format(time.RFC3339)
 	)
 
 	_ = launcher.EmitStatusSafe(ctx, "Watching remediation progress...\n")
@@ -766,6 +767,23 @@ func HandleWatch(ctx context.Context, client dynamic.Interface, args WatchArgs) 
 				Message:   msg,
 			})
 			_ = launcher.EmitStatusSafe(ctx, fmt.Sprintf("Remediation phase: %s\n", phase))
+
+			completedAt := ""
+			if IsTerminalPhase(phase) {
+				completedAt = time.Now().UTC().Format(time.RFC3339)
+			}
+			progressMeta := map[string]any{"type": "execution_progress"}
+			if phase == "Verifying" {
+				eaRef := extractEARef(obj)
+				if eaRef != "" {
+					if sw := FetchStabilizationWindow(ctx, client, args.Namespace, eaRef); sw != "" {
+						progressMeta["stabilization_window"] = sw
+					}
+				}
+			}
+			snapshot := BuildProgressSnapshot(phase, args.Name, startedAt, completedAt)
+			_ = launcher.EmitArtifactSafe(ctx, snapshot, fmt.Sprintf("Progress: %s", phase), progressMeta)
+
 			if IsTerminalPhase(phase) {
 				outcome, _, _ := unstructured.NestedString(obj.Object, "status", "outcome")
 				statusMsg, _, _ := unstructured.NestedString(obj.Object, "status", "message")
