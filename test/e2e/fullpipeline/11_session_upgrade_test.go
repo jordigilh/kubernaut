@@ -100,12 +100,9 @@ var _ = Describe("E2E-FP-1390-001: Session Upgrade Journey", Label("e2e", "fullp
 		Expect(aa.Status.KASession.ID).To(Equal(originalSessionID),
 			"session ID must be preserved — no cancel/resubmit")
 
-		By("waiting for AA to reach terminal phase")
-		Eventually(func() string {
-			_ = apiReader.Get(ctx, client.ObjectKey{Name: aaName, Namespace: namespace}, &aa)
-			return string(aa.Status.Phase)
-		}, 3*time.Minute, 2*time.Second).Should(
-			BeElementOf("Completed", "Analyzing", "Failed"),
-			"AA must reach a terminal or post-investigation phase")
+		// Interactive mode keeps the investigation open for user commands.
+		// Terminal phase completion is tested by E2E-1293 via explicit MCP
+		// takeover + complete calls. This test's scope is the upgrade journey
+		// (autonomous → Interactive=true with preserved session ID).
 	})
 })
