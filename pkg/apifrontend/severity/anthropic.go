@@ -91,15 +91,15 @@ func (a *AnthropicTriager) classify(ctx context.Context, prompt string) (TriageR
 
 	resp, err := a.messager.Create(ctx, params)
 	if err != nil {
-		return TriageResult{}, fmt.Errorf("Anthropic LLM call failed: %w", err)
+		return TriageResult{}, fmt.Errorf("anthropic LLM call failed: %w", err)
 	}
 	if resp == nil {
-		return TriageResult{}, fmt.Errorf("Anthropic LLM returned nil response")
+		return TriageResult{}, fmt.Errorf("anthropic LLM returned nil response")
 	}
 
 	text := extractAnthropicText(resp)
 	if text == "" {
-		return TriageResult{}, fmt.Errorf("Anthropic LLM returned empty response")
+		return TriageResult{}, fmt.Errorf("anthropic LLM returned empty response")
 	}
 
 	severity := NormalizeSeverity(text)
