@@ -171,6 +171,18 @@ func (h *handler) handleGeminiToolResponse(
 	// fall through to text response instead of re-emitting the tool call.
 	repeatAllowed := cfg.RepeatToolCall && !response.LastContentIsFunctionResponse(contents)
 
+	// NextToolCall: when the initial tool has been called (FunctionResponse
+	// present) and a chained next_tool_call is configured, emit it. This
+	// simulates the LLM auto-proceeding to a second tool in the same session.
+	if hasFunctionResults && cfg.NextToolCall != nil {
+		h.trackToolCall(cfg.NextToolCall.Name)
+		writeJSON(w, http.StatusOK, response.BuildGeminiToolCallResponse(cfg.NextToolCall.Name, scenarios.MockScenarioConfig{
+			ToolCallName: cfg.NextToolCall.Name,
+			ToolCallArgs: cfg.NextToolCall.Arguments,
+		}))
+		return
+	}
+
 	if len(cfg.MultiToolCalls) > 0 && (!hasFunctionResults || repeatAllowed) {
 		for _, tc := range cfg.MultiToolCalls {
 			h.trackToolCall(tc.Name)

@@ -47,12 +47,13 @@ type ScenarioOverride struct {
 // instead of the full conversation history. This prevents prior-turn keywords
 // from shadowing later-turn keywords in multi-turn ADK agent conversations.
 type KeywordScenarioOverride struct {
-	Name           string           `yaml:"name"`
-	Keywords       []string         `yaml:"keywords"`
-	ToolCall       ToolCallOverride `yaml:"tool_call"`
-	MatchLastOnly  bool             `yaml:"match_last_only,omitempty"`
-	RepeatToolCall bool             `yaml:"repeat_tool_call,omitempty"`
-	ThoughtText    string           `yaml:"thought_text,omitempty"`
+	Name           string            `yaml:"name"`
+	Keywords       []string          `yaml:"keywords"`
+	ToolCall       ToolCallOverride  `yaml:"tool_call"`
+	MatchLastOnly  bool              `yaml:"match_last_only,omitempty"`
+	RepeatToolCall bool              `yaml:"repeat_tool_call,omitempty"`
+	ThoughtText    string            `yaml:"thought_text,omitempty"`
+	NextToolCall   *ToolCallOverride `yaml:"next_tool_call,omitempty"`
 }
 
 // Overrides holds the parsed YAML override configuration.

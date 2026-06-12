@@ -96,6 +96,12 @@ type MockScenarioConfig struct {
 	// keyword scenarios where each turn must trigger a distinct tool call.
 	RepeatToolCall bool
 
+	// NextToolCall, when set, is emitted on the second turn (after the
+	// initial ToolCallName's FunctionResponse arrives). This enables chained
+	// tool call scenarios like: investigate → discover_workflows without
+	// requiring a new user message between them.
+	NextToolCall *MultiToolCallEntry
+
 	// SecondTurnDelay, when > 0, causes the handler to sleep for the given
 	// duration on second-turn (tool-result-present) requests. The delay is
 	// context-aware: it aborts early if the HTTP client disconnects.

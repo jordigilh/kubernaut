@@ -846,3 +846,139 @@ keyword_scenarios:
 		})
 	})
 })
+
+var _ = Describe("NextToolCall chaining (issue #1407)", func() {
+
+	Describe("UT-ML-1407-001: NextToolCall YAML parsing", func() {
+		It("should parse next_tool_call from YAML config", func() {
+			yamlContent := `
+keyword_scenarios:
+  - name: "af_progressive_investigate"
+    keywords: ["progressive investigate"]
+    match_last_only: true
+    tool_call:
+      name: "kubernaut_investigate"
+      arguments:
+        namespace: "default"
+    next_tool_call:
+      name: "kubernaut_discover_workflows"
+      arguments:
+        rr_id: "kubernaut-system/rr-progressive"
+`
+			tmpFile := filepath.Join(GinkgoT().TempDir(), "overrides.yaml")
+			Expect(os.WriteFile(tmpFile, []byte(yamlContent), 0644)).To(Succeed())
+
+			overrides, err := config.LoadYAMLOverrides(tmpFile)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(overrides.KeywordScenarios).To(HaveLen(1))
+			Expect(overrides.KeywordScenarios[0].NextToolCall).NotTo(BeNil())
+			Expect(overrides.KeywordScenarios[0].NextToolCall.Name).To(Equal("kubernaut_discover_workflows"))
+			Expect(overrides.KeywordScenarios[0].NextToolCall.Arguments).To(HaveKeyWithValue("rr_id", "kubernaut-system/rr-progressive"))
+		})
+	})
+
+	Describe("UT-ML-1407-002: Gemini handler emits next_tool_call on second turn", func() {
+		It("should return next_tool_call after initial tool FunctionResponse", func() {
+			overrides := &config.Overrides{
+				Scenarios: map[string]config.ScenarioOverride{},
+				KeywordScenarios: []config.KeywordScenarioOverride{
+					{
+						Name:          "af_progressive_investigate",
+						Keywords:      []string{"progressive investigate"},
+						ToolCall:      config.ToolCallOverride{Name: "kubernaut_investigate", Arguments: map[string]interface{}{"namespace": "default"}},
+						MatchLastOnly: true,
+						NextToolCall:  &config.ToolCallOverride{Name: "kubernaut_discover_workflows", Arguments: map[string]interface{}{"rr_id": "rr-001"}},
+					},
+				},
+			}
+			registry := scenarios.DefaultRegistryWithOverrides(overrides)
+			router := handlers.NewRouter(registry, false, "")
+			ts := httptest.NewServer(router)
+			defer ts.Close()
+
+			reqBody := response.GeminiRequest{
+				Contents: []response.GeminiContent{
+					{Role: "user", Parts: []response.GeminiPart{{Text: "progressive investigate"}}},
+					{Role: "model", Parts: []response.GeminiPart{{FunctionCall: &response.GeminiFunctionCall{Name: "kubernaut_investigate", Args: map[string]interface{}{"namespace": "default"}}}}},
+					{Role: "user", Parts: []response.GeminiPart{{FunctionResponse: &response.GeminiFunctionResp{Name: "kubernaut_investigate", Response: map[string]interface{}{"session_id": "sess-001", "rca_summary": "OOM detected"}}}}},
+				},
+				Tools: []response.GeminiToolDecl{
+					{FunctionDeclarations: []response.GeminiFunctionDecl{
+						{Name: "kubernaut_investigate"},
+						{Name: "kubernaut_discover_workflows"},
+					}},
+				},
+			}
+
+			body, err := json.Marshal(reqBody)
+			Expect(err).NotTo(HaveOccurred())
+
+			resp, err := http.Post(ts.URL+"/v1beta/models/gemini-1.5-pro:generateContent", "application/json", bytes.NewReader(body))
+			Expect(err).NotTo(HaveOccurred())
+			defer resp.Body.Close()
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+			var gemResp response.GeminiResponse
+			Expect(json.NewDecoder(resp.Body).Decode(&gemResp)).To(Succeed())
+			Expect(gemResp.Candidates).To(HaveLen(1))
+
+			parts := gemResp.Candidates[0].Content.Parts
+			Expect(parts).To(HaveLen(1))
+			Expect(parts[0].FunctionCall).NotTo(BeNil(), "should emit next_tool_call")
+			Expect(parts[0].FunctionCall.Name).To(Equal("kubernaut_discover_workflows"),
+				"chained tool call must be kubernaut_discover_workflows")
+			Expect(parts[0].FunctionCall.Args).To(HaveKeyWithValue("rr_id", "rr-001"))
+		})
+	})
+
+	Describe("UT-ML-1407-003: Gemini handler emits initial tool_call on first turn (no FunctionResponse)", func() {
+		It("should return the initial tool_call before any chaining", func() {
+			overrides := &config.Overrides{
+				Scenarios: map[string]config.ScenarioOverride{},
+				KeywordScenarios: []config.KeywordScenarioOverride{
+					{
+						Name:          "af_progressive_investigate",
+						Keywords:      []string{"progressive investigate"},
+						ToolCall:      config.ToolCallOverride{Name: "kubernaut_investigate", Arguments: map[string]interface{}{"namespace": "default"}},
+						MatchLastOnly: true,
+						NextToolCall:  &config.ToolCallOverride{Name: "kubernaut_discover_workflows", Arguments: map[string]interface{}{"rr_id": "rr-001"}},
+					},
+				},
+			}
+			registry := scenarios.DefaultRegistryWithOverrides(overrides)
+			router := handlers.NewRouter(registry, false, "")
+			ts := httptest.NewServer(router)
+			defer ts.Close()
+
+			reqBody := response.GeminiRequest{
+				Contents: []response.GeminiContent{
+					{Role: "user", Parts: []response.GeminiPart{{Text: "progressive investigate"}}},
+				},
+				Tools: []response.GeminiToolDecl{
+					{FunctionDeclarations: []response.GeminiFunctionDecl{
+						{Name: "kubernaut_investigate"},
+						{Name: "kubernaut_discover_workflows"},
+					}},
+				},
+			}
+
+			body, err := json.Marshal(reqBody)
+			Expect(err).NotTo(HaveOccurred())
+
+			resp, err := http.Post(ts.URL+"/v1beta/models/gemini-1.5-pro:generateContent", "application/json", bytes.NewReader(body))
+			Expect(err).NotTo(HaveOccurred())
+			defer resp.Body.Close()
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+			var gemResp response.GeminiResponse
+			Expect(json.NewDecoder(resp.Body).Decode(&gemResp)).To(Succeed())
+			Expect(gemResp.Candidates).To(HaveLen(1))
+
+			parts := gemResp.Candidates[0].Content.Parts
+			Expect(parts).To(HaveLen(1))
+			Expect(parts[0].FunctionCall).NotTo(BeNil(), "first turn should emit initial tool_call")
+			Expect(parts[0].FunctionCall.Name).To(Equal("kubernaut_investigate"),
+				"first turn must use the primary tool_call, not next_tool_call")
+		})
+	})
+})
