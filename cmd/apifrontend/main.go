@@ -667,19 +667,24 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 		promClient := prom.NewHTTPClient(cfg.SeverityTriage.PrometheusURL, promHTTPClient)
 		deps.PromClient = promClient
 
+		// BR-AI-1404: Resolve effective triage LLM config (independent or inherited).
+		triageLLMCfg := cfg.Agent.LLM
+		if cfg.SeverityTriage.LLM != nil {
+			triageLLMCfg = *cfg.SeverityTriage.LLM
+		}
+
 		var llmTriager severity.LLMTriager
-		if cfg.Agent.LLM.Provider != "" {
-			genaiClient, genaiErr := newGenAIClientForTriage(ctx, cfg.Agent.LLM)
-			if genaiErr != nil {
-				logger.Error(genaiErr, "failed to create LLM client for severity triage, falling back to noop")
+		if triageLLMCfg.Provider != "" {
+			triager, triageErr := newLLMTriagerFromConfig(ctx, triageLLMCfg, logger.WithName("llm-triage"))
+			if triageErr != nil {
+				logger.Error(triageErr, "failed to create LLM triager, falling back to noop")
 				llmTriager = severity.NewNoopLLMTriager(logger.WithName("llm-triage"))
 			} else {
-				llmTriager = severity.NewGenAITriager(severity.GenAITriagerConfig{
-					Client: genaiClient,
-					Model:  cfg.Agent.LLM.Model,
-					Logger: logger.WithName("llm-triage"),
-				})
-				logger.Info("LLM severity triage enabled", "provider", cfg.Agent.LLM.Provider, "model", cfg.Agent.LLM.Model)
+				llmTriager = triager
+				logger.Info("LLM severity triage enabled",
+					"provider", triageLLMCfg.Provider,
+					"model", triageLLMCfg.Model,
+					"source", triageLLMSource(cfg))
 			}
 		} else {
 			llmTriager = severity.NewNoopLLMTriager(logger.WithName("llm-triage"))
@@ -722,36 +727,98 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 	return deps, nil
 }
 
-// newGenAIClientForTriage creates a genai.Client for the severity triage LLM,
-// reusing the same provider credentials configured for the A2A agent LLM.
-func newGenAIClientForTriage(ctx context.Context, llmCfg config.LLMConfig) (*genai.Client, error) {
+// newLLMTriagerFromConfig creates a provider-aware LLMTriager based on the resolved
+// LLM configuration. Routes by provider + model family:
+//   - vertex_ai + claude-* model → AnthropicTriager (Anthropic SDK + Vertex)
+//   - vertex_ai + other model → GenAITriager (Google GenAI SDK)
+//   - gemini → GenAITriager (Gemini API)
+//   - anthropic → AnthropicTriager (direct Anthropic API)
+func newLLMTriagerFromConfig(ctx context.Context, llmCfg config.LLMConfig, logger logr.Logger) (severity.LLMTriager, error) {
 	switch llmCfg.Provider {
 	case config.LLMProviderVertexAI:
-		clientCfg := &genai.ClientConfig{
-			Project:  llmCfg.VertexProject,
-			Location: llmCfg.VertexLocation,
-			Backend:  genai.BackendVertexAI,
+		if severity.IsAnthropicModel(llmCfg.Model) {
+			return newAnthropicTriagerForVertex(ctx, llmCfg, logger)
 		}
-		if llmCfg.Endpoint != "" {
-			clientCfg.HTTPOptions = genai.HTTPOptions{
-				BaseURL: llmCfg.Endpoint,
-			}
-		}
-		return genai.NewClient(ctx, clientCfg)
+		return newGenAITriagerForVertex(ctx, llmCfg, logger)
 	case config.LLMProviderGemini:
-		clientCfg := &genai.ClientConfig{
-			APIKey:  llmCfg.APIKey,
-			Backend: genai.BackendGeminiAPI,
-		}
-		if llmCfg.Endpoint != "" {
-			clientCfg.HTTPOptions = genai.HTTPOptions{
-				BaseURL: llmCfg.Endpoint,
-			}
-		}
-		return genai.NewClient(ctx, clientCfg)
+		return newGenAITriagerForGemini(ctx, llmCfg, logger)
+	case config.LLMProviderAnthropic:
+		return newAnthropicTriagerDirect(ctx, llmCfg, logger)
 	default:
-		return nil, fmt.Errorf("unsupported triage LLM provider: %q (only vertex_ai and gemini supported for severity triage)", llmCfg.Provider)
+		return nil, fmt.Errorf("unsupported triage LLM provider: %q", llmCfg.Provider)
 	}
+}
+
+func newGenAITriagerForVertex(ctx context.Context, llmCfg config.LLMConfig, logger logr.Logger) (severity.LLMTriager, error) {
+	clientCfg := &genai.ClientConfig{
+		Project:  llmCfg.VertexProject,
+		Location: llmCfg.VertexLocation,
+		Backend:  genai.BackendVertexAI,
+	}
+	if llmCfg.Endpoint != "" {
+		clientCfg.HTTPOptions = genai.HTTPOptions{BaseURL: llmCfg.Endpoint}
+	}
+	client, err := genai.NewClient(ctx, clientCfg)
+	if err != nil {
+		return nil, fmt.Errorf("vertex_ai GenAI client: %w", err)
+	}
+	return severity.NewGenAITriager(severity.GenAITriagerConfig{
+		Client: client,
+		Model:  llmCfg.Model,
+		Logger: logger,
+	}), nil
+}
+
+func newGenAITriagerForGemini(ctx context.Context, llmCfg config.LLMConfig, logger logr.Logger) (severity.LLMTriager, error) {
+	clientCfg := &genai.ClientConfig{
+		APIKey:  llmCfg.APIKey,
+		Backend: genai.BackendGeminiAPI,
+	}
+	if llmCfg.Endpoint != "" {
+		clientCfg.HTTPOptions = genai.HTTPOptions{BaseURL: llmCfg.Endpoint}
+	}
+	client, err := genai.NewClient(ctx, clientCfg)
+	if err != nil {
+		return nil, fmt.Errorf("gemini GenAI client: %w", err)
+	}
+	return severity.NewGenAITriager(severity.GenAITriagerConfig{
+		Client: client,
+		Model:  llmCfg.Model,
+		Logger: logger,
+	}), nil
+}
+
+func newAnthropicTriagerForVertex(ctx context.Context, llmCfg config.LLMConfig, logger logr.Logger) (severity.LLMTriager, error) {
+	client, err := severity.NewAnthropicVertexClient(ctx, llmCfg.VertexProject, llmCfg.VertexLocation)
+	if err != nil {
+		return nil, fmt.Errorf("vertex_ai Anthropic client: %w", err)
+	}
+	return severity.NewAnthropicTriager(severity.AnthropicTriagerConfig{
+		Client: client,
+		Model:  llmCfg.Model,
+		Logger: logger,
+	}), nil
+}
+
+func newAnthropicTriagerDirect(_ context.Context, llmCfg config.LLMConfig, logger logr.Logger) (severity.LLMTriager, error) {
+	client, err := severity.NewAnthropicDirectClient(llmCfg.APIKey)
+	if err != nil {
+		return nil, fmt.Errorf("anthropic direct client: %w", err)
+	}
+	return severity.NewAnthropicTriager(severity.AnthropicTriagerConfig{
+		Client: client,
+		Model:  llmCfg.Model,
+		Logger: logger,
+	}), nil
+}
+
+// triageLLMSource returns a human-readable label indicating whether the triage
+// LLM config was explicitly set or inherited from the agent.
+func triageLLMSource(cfg *config.Config) string {
+	if cfg.SeverityTriage.LLM != nil {
+		return "severityTriage.llm (explicit)"
+	}
+	return "agent.llm (inherited)"
 }
 
 func buildMCPHandler(cfg *config.Config, deps *backendDeps, sessInfra *sessionInfra, metricsReg *metrics.Registry, authorizer auth.ToolAuthorizer, auditor audit.Emitter, logger logr.Logger, userLimiter *ratelimit.UserLimiter) (http.Handler, func() bool, error) {
