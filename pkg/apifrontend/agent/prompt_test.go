@@ -350,3 +350,40 @@ var _ = Describe("Prompt — Intent-Based Tool Redesign (#1332)", func() {
 		Expect(instruction).To(ContainSubstring("kubectl queries answer WHAT"))
 	})
 })
+
+// =============================================================================
+// Issue #1407: Progressive Flow — auto-proceed from investigation to discovery
+// =============================================================================
+
+var _ = Describe("Prompt — Progressive Flow (#1407)", func() {
+	var instruction string
+
+	BeforeEach(func() {
+		cfg := agentpkg.DefaultTestConfig()
+		instruction = cfg.Instruction
+	})
+
+	It("UT-AF-1407-010: SI-4 prompt does NOT contain unconditional MUST STOP after investigation", func() {
+		Expect(instruction).NotTo(ContainSubstring(
+			"you MUST STOP and ask the user what they want to do next"),
+			"SI-4: unconditional stop blocks progressive flow and audit trail continuity")
+	})
+
+	It("UT-AF-1407-011: SI-4 prompt contains auto-proceed directive from investigation to discovery", func() {
+		Expect(instruction).To(ContainSubstring("automatically proceed"),
+			"SI-4: progressive flow must auto-proceed to workflow discovery for audit completeness")
+	})
+
+	It("UT-AF-1407-012: AU-3 prompt preserves investigate-only exception for explicit user requests", func() {
+		Expect(instruction).To(SatisfyAny(
+			ContainSubstring("just investigate"),
+			ContainSubstring("investigate only"),
+			ContainSubstring("only investigate"),
+		), "AU-3: user must be able to request investigation-only mode for audit separation")
+	})
+
+	It("UT-AF-1407-013: SI-4 prompt retains present_decision as final structured artifact", func() {
+		Expect(instruction).To(ContainSubstring("present_decision"),
+			"SI-4: present_decision must remain the structured decision artifact for audit trail")
+	})
+})

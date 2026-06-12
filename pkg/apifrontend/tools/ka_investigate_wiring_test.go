@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -34,6 +35,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	prom "github.com/jordigilh/kubernaut/pkg/apifrontend/prometheus"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 	sharedK8s "github.com/jordigilh/kubernaut/pkg/shared/k8s"
@@ -323,3 +325,77 @@ type auditSpy struct {
 func (a *auditSpy) Emit(_ context.Context, e *audit.Event) {
 	a.events = append(a.events, e)
 }
+
+// =============================================================================
+// Issue #1407: Progressive RCA Emission — IT proving wiring through production path
+// =============================================================================
+
+var _ = Describe("Progressive RCA Emission Wiring — #1407", func() {
+
+	It("IT-AF-1407-001: SI-4 early RCA decision event flows through EventBridge on investigation complete", func() {
+		rcaJSON := []byte(`{"severity":"critical","confidence":0.92,"causal_chain":["Memory leak","OOMKill"],"target":"Deployment/worker in production","rca_summary":"OOMKill caused by memory leak","total_llm_turns":17,"total_tool_calls":19}`)
+		eventCh := make(chan ka.InvestigationEvent, 5)
+		eventCh <- ka.InvestigationEvent{
+			Type: ka.EventTypeComplete,
+			Data: rcaJSON,
+		}
+		close(eventCh)
+
+		mockMCP := &ka.MockMCPClient{
+			StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+				return &ka.StartInvestigationResult{
+					SessionID: "sess-1407-it",
+					Status:    "started",
+					Events:    eventCh,
+					Closer:    func() {},
+				}, nil
+			},
+		}
+
+		queue := &bridgeQueue{}
+		ctx := launcher.WithEventBridge(
+			auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+				Username: "alice",
+				Groups:   []string{"sre"},
+			}),
+			queue, "task-1407-it", "ctx-1407-it", nil,
+		)
+		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+
+		result, err := tools.HandleInvestigationMCPWithRegistry(
+			ctx, mockMCP, nil, "",
+			tools.InvestigateMCPArgs{RRID: "rr-1407-test"},
+			nil, nil, nil, true, nil, "alice", nil, nil,
+		)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.RCA).NotTo(BeNil(), "RCA must be populated from investigation complete event")
+		Expect(result.RCA.Severity).To(Equal("critical"))
+
+		allEvents := queue.Events()
+		var decisionFound bool
+		for _, evt := range allEvents {
+			statusEvt, ok := evt.(*a2a.TaskStatusUpdateEvent)
+			if !ok {
+				continue
+			}
+			if statusEvt.Metadata == nil {
+				continue
+			}
+			metaType, _ := statusEvt.Metadata["type"].(string)
+			if metaType == launcher.MetaTypeDecision {
+				decisionFound = true
+				Expect(statusEvt.Metadata["schema"]).To(Equal("early_rca"),
+					"SI-4: schema must classify early RCA for audit differentiation")
+				Expect(statusEvt.Metadata["schema_version"]).To(Equal("1.0"))
+				tp, ok := statusEvt.Status.Message.Parts[0].(a2a.TextPart)
+				Expect(ok).To(BeTrue())
+				Expect(tp.Text).To(ContainSubstring("critical"),
+					"AU-3: severity must appear in structured text for audit trail")
+				break
+			}
+		}
+		Expect(decisionFound).To(BeTrue(),
+			"IT-AF-1407-001: early RCA decision status-update must flow through production EventBridge wiring")
+	})
+})
