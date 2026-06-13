@@ -1,10 +1,12 @@
 package tools
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -13,6 +15,7 @@ import (
 
 	prom "github.com/jordigilh/kubernaut/pkg/apifrontend/prometheus"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/security"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
 )
 
@@ -68,11 +71,51 @@ type AlertSummary struct {
 	ActiveAt    time.Time         `json:"active_at,omitempty"`
 }
 
+// PrioritizedAlerts holds the severity-ranked alert selection.
+// Selected is the highest-severity, longest-firing (FIFO) alert.
+// Tied contains other alerts at the same severity as Selected.
+// AlsoActive contains lower-severity alerts for context.
+type PrioritizedAlerts struct {
+	Selected   *AlertSummary  `json:"selected,omitempty"`
+	Tied       []AlertSummary `json:"tied,omitempty"`
+	AlsoActive []AlertSummary `json:"also_active,omitempty"`
+}
+
 // ListAlertsResult is the output of list_alerts.
 type ListAlertsResult struct {
-	Alerts    []AlertSummary `json:"alerts"`
-	Count     int            `json:"count"`
-	Truncated bool           `json:"truncated,omitempty"`
+	Alerts      []AlertSummary     `json:"alerts"`
+	Count       int                `json:"count"`
+	Truncated   bool               `json:"truncated,omitempty"`
+	Prioritized *PrioritizedAlerts `json:"prioritized,omitempty"`
+}
+
+// PrioritizeAlerts ranks alerts by severity (descending) then ActiveAt (ascending, FIFO).
+// Returns the highest-priority alert as Selected, same-severity peers as Tied, and the rest as AlsoActive.
+func PrioritizeAlerts(alerts []AlertSummary) PrioritizedAlerts {
+	if len(alerts) == 0 {
+		return PrioritizedAlerts{}
+	}
+	sorted := make([]AlertSummary, len(alerts))
+	copy(sorted, alerts)
+	slices.SortStableFunc(sorted, func(a, b AlertSummary) int {
+		sevCmp := severity.CompareSeverity(b.Labels["severity"], a.Labels["severity"])
+		if sevCmp != 0 {
+			return sevCmp
+		}
+		return cmp.Compare(a.ActiveAt.UnixNano(), b.ActiveAt.UnixNano())
+	})
+	selected := sorted[0]
+	selectedSev := selected.Labels["severity"]
+	var tied []AlertSummary
+	var alsoActive []AlertSummary
+	for _, a := range sorted[1:] {
+		if severity.CompareSeverity(a.Labels["severity"], selectedSev) == 0 {
+			tied = append(tied, a)
+		} else {
+			alsoActive = append(alsoActive, a)
+		}
+	}
+	return PrioritizedAlerts{Selected: &selected, Tied: tied, AlsoActive: alsoActive}
 }
 
 // GetAlertDetailsArgs defines the input for get_alert_details.
@@ -131,7 +174,12 @@ func HandleListAlerts(ctx context.Context, client prom.Client, args ListAlertsAr
 	}
 
 	result, truncated := TrimSliceToFit(result)
-	return ListAlertsResult{Alerts: result, Count: len(result), Truncated: truncated}, nil
+	var prioritized *PrioritizedAlerts
+	if len(result) > 0 {
+		p := PrioritizeAlerts(result)
+		prioritized = &p
+	}
+	return ListAlertsResult{Alerts: result, Count: len(result), Truncated: truncated, Prioritized: prioritized}, nil
 }
 
 // HandleGetAlertDetails implements the get_alert_details logic.

@@ -234,4 +234,117 @@ var _ = Describe("Alert Tools (#1367)", func() {
 			Expect(errors.Is(err, tools.ErrInvalidInput)).To(BeTrue())
 		})
 	})
+
+	Describe("PrioritizeAlerts (#1412)", func() {
+		var now time.Time
+
+		BeforeEach(func() {
+			now = time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
+		})
+
+		It("UT-AF-1412-010: single alert — Selected is that alert, Tied and AlsoActive empty", func() {
+			alerts := []tools.AlertSummary{
+				{Labels: map[string]string{"alertname": "HighCPU", "severity": "critical"}, State: "firing", ActiveAt: now},
+			}
+			result := tools.PrioritizeAlerts(alerts)
+			Expect(result.Selected).NotTo(BeNil())
+			Expect(result.Selected.Labels["alertname"]).To(Equal("HighCPU"))
+			Expect(result.Tied).To(BeEmpty())
+			Expect(result.AlsoActive).To(BeEmpty())
+		})
+
+		It("UT-AF-1412-020: multiple severities — highest selected, others in AlsoActive", func() {
+			alerts := []tools.AlertSummary{
+				{Labels: map[string]string{"alertname": "LowDisk", "severity": "warning"}, State: "firing", ActiveAt: now},
+				{Labels: map[string]string{"alertname": "HighCPU", "severity": "critical"}, State: "firing", ActiveAt: now},
+				{Labels: map[string]string{"alertname": "InfoAlert", "severity": "info"}, State: "firing", ActiveAt: now},
+			}
+			result := tools.PrioritizeAlerts(alerts)
+			Expect(result.Selected).NotTo(BeNil())
+			Expect(result.Selected.Labels["alertname"]).To(Equal("HighCPU"))
+			Expect(result.Selected.Labels["severity"]).To(Equal("critical"))
+			Expect(result.Tied).To(BeEmpty())
+			Expect(result.AlsoActive).To(HaveLen(2))
+		})
+
+		It("UT-AF-1412-030: tie at same severity — FIFO (oldest ActiveAt) wins, others in Tied", func() {
+			alerts := []tools.AlertSummary{
+				{Labels: map[string]string{"alertname": "NewerAlert", "severity": "critical"}, State: "firing", ActiveAt: now.Add(5 * time.Minute)},
+				{Labels: map[string]string{"alertname": "OlderAlert", "severity": "critical"}, State: "firing", ActiveAt: now},
+				{Labels: map[string]string{"alertname": "InfoAlert", "severity": "info"}, State: "firing", ActiveAt: now},
+			}
+			result := tools.PrioritizeAlerts(alerts)
+			Expect(result.Selected).NotTo(BeNil())
+			Expect(result.Selected.Labels["alertname"]).To(Equal("OlderAlert"), "FIFO: oldest ActiveAt wins")
+			Expect(result.Tied).To(HaveLen(1))
+			Expect(result.Tied[0].Labels["alertname"]).To(Equal("NewerAlert"))
+			Expect(result.AlsoActive).To(HaveLen(1))
+			Expect(result.AlsoActive[0].Labels["alertname"]).To(Equal("InfoAlert"))
+		})
+
+		It("UT-AF-1412-040: all same severity — oldest selected, rest in Tied", func() {
+			alerts := []tools.AlertSummary{
+				{Labels: map[string]string{"alertname": "C", "severity": "warning"}, State: "firing", ActiveAt: now.Add(10 * time.Minute)},
+				{Labels: map[string]string{"alertname": "A", "severity": "warning"}, State: "firing", ActiveAt: now},
+				{Labels: map[string]string{"alertname": "B", "severity": "warning"}, State: "firing", ActiveAt: now.Add(5 * time.Minute)},
+			}
+			result := tools.PrioritizeAlerts(alerts)
+			Expect(result.Selected).NotTo(BeNil())
+			Expect(result.Selected.Labels["alertname"]).To(Equal("A"), "FIFO: oldest ActiveAt wins")
+			Expect(result.Tied).To(HaveLen(2))
+			Expect(result.AlsoActive).To(BeEmpty())
+		})
+
+		It("UT-AF-1412-050: empty alerts — Selected is nil", func() {
+			result := tools.PrioritizeAlerts([]tools.AlertSummary{})
+			Expect(result.Selected).To(BeNil())
+			Expect(result.Tied).To(BeEmpty())
+			Expect(result.AlsoActive).To(BeEmpty())
+		})
+
+		It("UT-AF-1412-060: warning vs info — warning is selected (not info)", func() {
+			alerts := []tools.AlertSummary{
+				{Labels: map[string]string{"alertname": "InfoAlert", "severity": "info"}, State: "firing", ActiveAt: now},
+				{Labels: map[string]string{"alertname": "WarnAlert", "severity": "warning"}, State: "firing", ActiveAt: now.Add(time.Minute)},
+			}
+			result := tools.PrioritizeAlerts(alerts)
+			Expect(result.Selected).NotTo(BeNil())
+			Expect(result.Selected.Labels["alertname"]).To(Equal("WarnAlert"), "warning should outrank info")
+			Expect(result.AlsoActive).To(HaveLen(1))
+			Expect(result.AlsoActive[0].Labels["alertname"]).To(Equal("InfoAlert"))
+		})
+	})
+
+	Describe("HandleListAlerts prioritization wiring (IT-AF-1412)", func() {
+		It("IT-AF-1412-001: HandleListAlerts returns Prioritized.Selected as highest-severity alert", func() {
+			alerts := []prom.Alert{
+				{Labels: map[string]string{"alertname": "LowDisk", "namespace": "prod", "severity": "warning"}, State: "firing", ActiveAt: time.Now().Add(-10 * time.Minute)},
+				{Labels: map[string]string{"alertname": "HighCPU", "namespace": "prod", "severity": "critical"}, State: "firing", ActiveAt: time.Now()},
+				{Labels: map[string]string{"alertname": "InfoAlert", "namespace": "prod", "severity": "info"}, State: "firing", ActiveAt: time.Now()},
+			}
+			client := &mockAlertPromClient{alerts: alerts}
+			result, err := tools.HandleListAlerts(context.Background(), client, tools.ListAlertsArgs{Namespace: "prod"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Prioritized).NotTo(BeNil(), "Prioritized field must be populated by HandleListAlerts")
+			Expect(result.Prioritized.Selected).NotTo(BeNil())
+			Expect(result.Prioritized.Selected.Labels["alertname"]).To(Equal("HighCPU"))
+			Expect(result.Prioritized.Selected.Labels["severity"]).To(Equal("critical"))
+			Expect(result.Prioritized.AlsoActive).To(HaveLen(2))
+		})
+
+		It("IT-AF-1412-002: HandleListAlerts JSON output contains prioritized field with correct structure", func() {
+			alerts := []prom.Alert{
+				{Labels: map[string]string{"alertname": "A", "namespace": "prod", "severity": "critical"}, State: "firing", ActiveAt: time.Now().Add(-5 * time.Minute)},
+				{Labels: map[string]string{"alertname": "B", "namespace": "prod", "severity": "critical"}, State: "firing", ActiveAt: time.Now()},
+			}
+			client := &mockAlertPromClient{alerts: alerts}
+			result, err := tools.HandleListAlerts(context.Background(), client, tools.ListAlertsArgs{Namespace: "prod"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Prioritized).NotTo(BeNil(), "Prioritized field must be populated")
+			Expect(result.Prioritized.Selected).NotTo(BeNil())
+			Expect(result.Prioritized.Selected.Labels["alertname"]).To(Equal("A"), "FIFO: older alert selected")
+			Expect(result.Prioritized.Tied).To(HaveLen(1))
+			Expect(result.Prioritized.Tied[0].Labels["alertname"]).To(Equal("B"))
+		})
+	})
 })
