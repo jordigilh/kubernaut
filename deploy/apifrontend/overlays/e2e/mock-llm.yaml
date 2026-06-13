@@ -318,7 +318,7 @@ data:
         tool_call:
           name: "list_alerts"
           arguments:
-            namespace: "prod"
+            namespace: "default"
 
       - name: "af_investigate_prioritized_alert"
         keywords: ["investigate selected alert", "investigate the highest severity"]

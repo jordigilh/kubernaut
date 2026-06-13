@@ -70,7 +70,7 @@ var _ = Describe("Alert Prioritization E2E — #1412", Ordered, Label("e2e", "al
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 
-		body := a2aTasksSend("e2e-1412-001", "list alerts in prod namespace")
+		body := a2aTasksSend("e2e-1412-001", "list alerts in default namespace")
 		resp, err := a2aSSEPost(ctx, body)
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp.Body.Close() }()
