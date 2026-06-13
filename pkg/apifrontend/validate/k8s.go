@@ -147,3 +147,23 @@ func LabelValue(v string) error {
 	}
 	return nil
 }
+
+// MaxEscalationReasonLen is the maximum allowed length for an escalation reason.
+const MaxEscalationReasonLen = 1024
+
+// EscalationReason validates that reason is within the allowed length and
+// does not contain control characters that could break structured logging.
+func EscalationReason(reason string) error {
+	if strings.TrimSpace(reason) == "" {
+		return fmt.Errorf("escalation_reason must not be empty or whitespace-only")
+	}
+	if len(reason) > MaxEscalationReasonLen {
+		return fmt.Errorf("escalation_reason length %d exceeds maximum %d", len(reason), MaxEscalationReasonLen)
+	}
+	for i, r := range reason {
+		if r < 0x20 && r != '\n' && r != '\t' {
+			return fmt.Errorf("escalation_reason contains control character at position %d", i)
+		}
+	}
+	return nil
+}

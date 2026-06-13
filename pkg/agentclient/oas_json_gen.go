@@ -1488,6 +1488,8 @@ func (s *HumanReviewReason) Decode(d *jx.Decoder) error {
 		*s = HumanReviewReasonRcaIncomplete
 	case HumanReviewReasonAlignmentCheckFailed:
 		*s = HumanReviewReasonAlignmentCheckFailed
+	case HumanReviewReasonOperatorEscalation:
+		*s = HumanReviewReasonOperatorEscalation
 	default:
 		*s = HumanReviewReason(v)
 	}

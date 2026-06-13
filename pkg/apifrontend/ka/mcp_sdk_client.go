@@ -380,5 +380,36 @@ func (c *SDKMCPClient) ConnectSession(ctx context.Context, transport *mcp.Stream
 	return session, nil
 }
 
+// CompleteNoAction calls kubernaut_complete_no_action on KA's MCP server.
+func (c *SDKMCPClient) CompleteNoAction(ctx context.Context, args CompleteNoActionArgs) (*CompleteNoActionResult, error) {
+	identity := auth.UserIdentityFromContext(ctx)
+	if identity == nil {
+		return nil, fmt.Errorf("user identity required: no identity in context")
+	}
+
+	argsMap := map[string]any{
+		"rr_id":              args.RRID,
+		"acting_user":        identity.Username,
+		"acting_user_groups": identity.Groups,
+	}
+	if args.Reason != "" {
+		argsMap["reason"] = args.Reason
+	}
+	if args.EscalationReason != "" {
+		argsMap["escalation_reason"] = args.EscalationReason
+	}
+
+	result, err := c.callTool(ctx, "kubernaut_complete_no_action", argsMap)
+	if err != nil {
+		return nil, err
+	}
+
+	var cnaResult CompleteNoActionResult
+	if err := json.Unmarshal(result, &cnaResult); err != nil {
+		return nil, fmt.Errorf("parse complete_no_action response: %w", err)
+	}
+	return &cnaResult, nil
+}
+
 // Compile-time interface check.
 var _ MCPClient = (*SDKMCPClient)(nil)

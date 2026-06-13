@@ -55,6 +55,7 @@ rules:
       - kubernaut_get_effectiveness
       - kubernaut_get_audit_trail
       - kubernaut_list_alerts
+      - kubernaut_complete_no_action
       - kubernaut_list_approval_requests
       - kubernaut_get_approval_request
       - kubernaut_await_session

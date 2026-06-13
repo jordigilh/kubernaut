@@ -25,5 +25,6 @@ var mcpToolRegistry = []MCPToolDef{
 	{Name: "kubernaut_get_approval_request", Description: "Get details of a specific approval request"},
 	{Name: "kubernaut_await_session", Description: "Wait for KA investigation session to become ready"},
 	{Name: "kubernaut_list_alerts", Description: "List currently firing or pending Prometheus/Thanos alerts"},
+	{Name: "kubernaut_complete_no_action", Description: "Complete an investigation without selecting a workflow — dismiss or escalate to a human team"},
 	// kubernaut_check_existing_remediation and kubernaut_remediate are internal to AF's LLM agent (ADK path only).
 }

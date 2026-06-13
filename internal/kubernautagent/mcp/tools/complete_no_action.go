@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/go-logr/logr"
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
@@ -30,14 +31,16 @@ import (
 type CompleteNoActionInput struct {
 	RRID             string   `json:"rr_id"`
 	Reason           string   `json:"reason,omitempty"`
+	EscalationReason string   `json:"escalation_reason,omitempty"`
 	ActingUser       string   `json:"acting_user,omitempty"`
 	ActingUserGroups []string `json:"acting_user_groups,omitempty"`
 }
 
 // CompleteNoActionOutput defines the output schema for the kubernaut_complete_no_action tool.
 type CompleteNoActionOutput struct {
-	Status string `json:"status"`
-	Reason string `json:"reason,omitempty"`
+	Status           string `json:"status"`
+	Reason           string `json:"reason,omitempty"`
+	EscalationReason string `json:"escalation_reason,omitempty"`
 }
 
 // CompleteNoActionTool handles the kubernaut_complete_no_action MCP tool.
@@ -100,6 +103,12 @@ func (t *CompleteNoActionTool) Handle(_ context.Context, input CompleteNoActionI
 	if input.RRID == "" {
 		return CompleteNoActionOutput{}, fmt.Errorf("rr_id is required")
 	}
+	if input.EscalationReason != "" && strings.TrimSpace(input.EscalationReason) == "" {
+		return CompleteNoActionOutput{}, fmt.Errorf("escalation_reason must not be whitespace-only")
+	}
+	if input.EscalationReason != "" && len(input.EscalationReason) > 1024 {
+		return CompleteNoActionOutput{}, fmt.Errorf("escalation_reason exceeds maximum length of 1024")
+	}
 
 	if t.mutexProvider != nil {
 		mu := t.mutexProvider.GetSessionMutex(input.RRID)
@@ -124,28 +133,31 @@ func (t *CompleteNoActionTool) Handle(_ context.Context, input CompleteNoActionI
 	var finalResult *katypes.InvestigationResult
 	if driver.RCAResult != nil {
 		result := *driver.RCAResult
-		result.Reason = input.Reason
-		if result.Reason == "" {
-			result.Reason = "no action needed"
-		}
 		finalResult = &result
 	} else {
 		finalResult = &katypes.InvestigationResult{
 			RCASummary: "Investigation completed without workflow selection",
-			Reason:     input.Reason,
-		}
-		if finalResult.Reason == "" {
-			finalResult.Reason = "no action needed"
 		}
 	}
 
-	// Signal to AA that no remediation is needed. AA's ProcessIncidentResponse
-	// requires both the "Alert not actionable" warning and IsActionable=false
-	// to route to Completed/WorkflowNotNeeded/NotActionable instead of
-	// Failed/WorkflowResolutionFailed.
-	notActionable := false
-	finalResult.IsActionable = &notActionable
-	finalResult.Warnings = append(finalResult.Warnings, "Alert not actionable")
+	// Branch: escalation vs dismiss
+	if input.EscalationReason != "" {
+		// Escalation path: signal ManualReviewRequired via HumanReviewNeeded
+		finalResult.HumanReviewNeeded = true
+		finalResult.HumanReviewReason = "operator_escalation"
+		finalResult.Reason = input.EscalationReason
+	} else {
+		// Dismiss path: signal WorkflowNotNeeded via IsActionable=false
+		finalResult.HumanReviewNeeded = false
+		finalResult.HumanReviewReason = ""
+		finalResult.Reason = input.Reason
+		if finalResult.Reason == "" {
+			finalResult.Reason = "no action needed"
+		}
+		notActionable := false
+		finalResult.IsActionable = &notActionable
+		finalResult.Warnings = append(finalResult.Warnings, "Alert not actionable")
+	}
 
 	if t.timeoutTracker != nil {
 		t.timeoutTracker.StopTracking(driver.SessionID)
@@ -160,8 +172,15 @@ func (t *CompleteNoActionTool) Handle(_ context.Context, input CompleteNoActionI
 		}
 	}
 
+	// Determine output status
+	status := "completed_no_action"
+	if input.EscalationReason != "" {
+		status = "escalated"
+	}
+
 	return CompleteNoActionOutput{
-		Status: "completed_no_action",
-		Reason: input.Reason,
+		Status:           status,
+		Reason:           input.Reason,
+		EscalationReason: input.EscalationReason,
 	}, nil
 }

@@ -234,5 +234,50 @@ func isStaleSessionError(err error) bool {
 		strings.Contains(msg, "failed to reconnect")
 }
 
+// CompleteNoAction calls kubernaut_complete_no_action via a pooled MCP session.
+// This is a terminal action — the pooled session is released after success.
+func (c *PooledMCPClient) CompleteNoAction(ctx context.Context, args CompleteNoActionArgs) (*CompleteNoActionResult, error) {
+	identity := auth.UserIdentityFromContext(ctx)
+	if identity == nil {
+		return nil, fmt.Errorf("user identity required: no identity in context")
+	}
+
+	session, err := c.pool.Acquire(ctx, args.RRID, identity.Username)
+	if err != nil {
+		return nil, fmt.Errorf("acquire MCP session: %w", err)
+	}
+
+	argsMap := map[string]any{
+		"rr_id":              args.RRID,
+		"acting_user":        identity.Username,
+		"acting_user_groups": identity.Groups,
+	}
+	if args.Reason != "" {
+		argsMap["reason"] = args.Reason
+	}
+	if args.EscalationReason != "" {
+		argsMap["escalation_reason"] = args.EscalationReason
+	}
+
+	raw, err := c.callPooledTool(ctx, session, "kubernaut_complete_no_action", argsMap, args.RRID, identity.Username)
+	if err != nil {
+		return nil, err
+	}
+
+	// Terminal action: always release the session after successful tool call,
+	// regardless of unmarshal outcome.
+	defer func() {
+		c.pool.Release(args.RRID, identity.Username)
+		c.logger.Info("pooled session released (complete_no_action)", "rr_id", args.RRID)
+	}()
+
+	var result CompleteNoActionResult
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return nil, fmt.Errorf("parse complete_no_action response: %w", err)
+	}
+
+	return &result, nil
+}
+
 // Compile-time interface check.
 var _ MCPClient = (*PooledMCPClient)(nil)

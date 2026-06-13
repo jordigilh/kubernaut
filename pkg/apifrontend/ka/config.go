@@ -287,6 +287,20 @@ type InvokeActionResult struct {
 	Data      json.RawMessage `json:"data,omitempty"`
 }
 
+// CompleteNoActionArgs is the input for the kubernaut_complete_no_action tool proxy.
+type CompleteNoActionArgs struct {
+	RRID             string `json:"rr_id"`
+	Reason           string `json:"reason,omitempty"`
+	EscalationReason string `json:"escalation_reason,omitempty"`
+}
+
+// CompleteNoActionResult is the response from kubernaut_complete_no_action.
+type CompleteNoActionResult struct {
+	Status           string `json:"status"`
+	Reason           string `json:"reason,omitempty"`
+	EscalationReason string `json:"escalation_reason,omitempty"`
+}
+
 // SSE event type constants matching KA's wire format.
 const (
 	EventTypeReasoningDelta = "reasoning_delta"

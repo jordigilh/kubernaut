@@ -326,3 +326,71 @@ func NewPresentDecisionTool() (tool.Tool, error) {
 		return HandlePresentDecision(args), nil
 	})
 }
+
+// CompleteNoActionArgs defines the input for kubernaut_complete_no_action.
+type CompleteNoActionArgs struct {
+	RRID             string `json:"rr_id"`
+	Reason           string `json:"reason,omitempty"`
+	EscalationReason string `json:"escalation_reason,omitempty"`
+}
+
+// CompleteNoActionResult is the output of kubernaut_complete_no_action.
+type CompleteNoActionResult struct {
+	Status           string `json:"status"`
+	Reason           string `json:"reason,omitempty"`
+	EscalationReason string `json:"escalation_reason,omitempty"`
+}
+
+// HandleCompleteNoAction implements kubernaut_complete_no_action via KA MCP proxy.
+func HandleCompleteNoAction(ctx context.Context, mcpClient ka.MCPClient, args CompleteNoActionArgs, auditor audit.Emitter) (CompleteNoActionResult, error) {
+	if mcpClient == nil {
+		return CompleteNoActionResult{}, fmt.Errorf("complete_no_action not available: MCP client not configured")
+	}
+	if err := validate.RRID(args.RRID); err != nil {
+		return CompleteNoActionResult{}, fmt.Errorf("invalid rr_id: %w", err)
+	}
+	if args.EscalationReason != "" {
+		if err := validate.EscalationReason(args.EscalationReason); err != nil {
+			return CompleteNoActionResult{}, err
+		}
+	}
+
+	kaResult, err := mcpClient.CompleteNoAction(ctx, ka.CompleteNoActionArgs{
+		RRID:             args.RRID,
+		Reason:           args.Reason,
+		EscalationReason: args.EscalationReason,
+	})
+	if err != nil {
+		return CompleteNoActionResult{}, fmt.Errorf("complete_no_action: %w", err)
+	}
+
+	if auditor != nil {
+		resultType := "completed"
+		if args.EscalationReason != "" {
+			resultType = "escalated"
+		}
+		detail := map[string]string{
+			"rr_id":           args.RRID,
+			"status":          kaResult.Status,
+			"result_type":     resultType,
+			"delegation_type": "interactive",
+			"tool_outcome":    "success",
+		}
+		if args.Reason != "" {
+			detail["reason"] = args.Reason
+		}
+		if args.EscalationReason != "" {
+			detail["escalation_reason"] = args.EscalationReason
+		}
+		auditor.Emit(ctx, &audit.Event{
+			Type:   audit.EventKAResultReceived,
+			Detail: detail,
+		})
+	}
+
+	return CompleteNoActionResult{
+		Status:           kaResult.Status,
+		Reason:           kaResult.Reason,
+		EscalationReason: kaResult.EscalationReason,
+	}, nil
+}

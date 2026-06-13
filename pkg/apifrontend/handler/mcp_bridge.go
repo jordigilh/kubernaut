@@ -296,6 +296,19 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 			})
 	}
 
+	if shouldRegister("kubernaut_complete_no_action") {
+		registerTool(srv, cfg, sem, "kubernaut_complete_no_action", "Complete an investigation without selecting a workflow — dismiss or escalate to a human team",
+			func(ctx context.Context, args tools.CompleteNoActionArgs) (any, error) {
+				result, err := tools.HandleCompleteNoAction(ctx, cfg.KAMCPClient, args, cfg.Auditor)
+				if err == nil && cfg.SessionFinalizer != nil {
+					if fErr := cfg.SessionFinalizer.FinalizeSessionByRR(ctx, cfg.Namespace, args.RRID, isv1alpha1.SessionPhaseCompleted); fErr != nil {
+						cfg.Logger.Error(fErr, "IS CRD phase finalization failed", "rr_id", args.RRID, "phase", "Completed")
+					}
+				}
+				return result, err
+			})
+	}
+
 	if shouldRegister("kubernaut_status") {
 		registerTool(srv, cfg, sem, "kubernaut_status", "Get the current status of an investigation session",
 			func(ctx context.Context, args tools.InteractiveActionArgs) (any, error) {
