@@ -319,6 +319,26 @@ data:
             namespace: "prod"
             kind: "Deployment"
             name: "web"
+
+      - name: "af_list_alerts_prioritized"
+        keywords: ["list alerts", "check active alerts", "what alerts are firing"]
+        match_last_only: true
+        tool_call:
+          name: "list_alerts"
+          arguments:
+            namespace: "prod"
+
+      - name: "af_investigate_prioritized_alert"
+        keywords: ["investigate selected alert", "investigate the highest severity"]
+        match_last_only: true
+        tool_call:
+          name: "kubernaut_investigate_alert"
+          arguments:
+            alert_name: "KubePodCrashLooping"
+            namespace: "prod"
+            kind: "Deployment"
+            name: "web-frontend"
+            api_version: "apps/v1"
 ---
 apiVersion: v1
 kind: Service
