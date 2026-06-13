@@ -248,7 +248,7 @@ var _ = Describe("Structured Approval Events E2E — #1398", Ordered, Label("e2e
 
 		resp, err := a2aSSEPost(readCtx, a2aMessageStream(
 			fmt.Sprintf("e2e-approval-002-%d", time.Now().UnixNano()),
-			"watch the approval gate for the remediation"))
+			"watch approval gate"))
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp.Body.Close() }()
 
