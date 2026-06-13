@@ -141,7 +141,7 @@ kubernaut-apifrontend/
 │   │   ├── router.go              # HTTP route registration
 │   │   ├── mcp.go                 # MCP Streamable HTTP handler
 │   │   ├── mcp_bridge.go          # MCP tool bridge (RBAC, dispatch, metrics)
-│   │   ├── mcptools.go            # MCP tool registry (22 tools)
+│   │   ├── mcptools.go            # MCP tool registry (23 tools)
 │   │   ├── agentcard.go           # /.well-known/agent-card.json
 │   │   ├── health.go              # /healthz, /readyz
 │   │   └── middleware.go          # HTTP middleware chain
@@ -526,6 +526,8 @@ kubernaut proxy tools (forwarded to KA REST/MCP or DataStorage, exposed via MCP)
 | `kubernaut_list_approval_requests` | List remediation approval requests | KA REST |
 | `kubernaut_get_approval_request` | Get details of a specific approval request | KA REST |
 | `kubernaut_await_session` | Wait for KA investigation session to become ready | KA REST |
+| `kubernaut_list_alerts` | List currently firing or pending Prometheus/Thanos alerts | KA REST (PromClient) |
+| `kubernaut_complete_no_action` | Complete an investigation without selecting a workflow — dismiss or escalate to a human team (Console-only via MCP, not available to A2A agent — see DD-AF-007) | KA MCP |
 
 ### A2A Protocol (v0.3.0, JSON-RPC 2.0)
 
