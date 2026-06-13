@@ -185,8 +185,8 @@ var _ = Describe("Escalation Routing E2E (#1418)", Label("e2e", "phase4", "escal
 
 	It("E2E-KA-1418-001: kubernaut_complete_no_action (dismiss) returns completed_no_action", func() {
 		rrName := fmt.Sprintf("e2e-rr-1418-dismiss-%s", uuid.New().String()[:8])
-		Expect(createRR("default", rrName, "Deployment", "test-deploy-1418")).To(Succeed())
-		DeferCleanup(func() { deleteRR("default", rrName) })
+		Expect(createRR("kubernaut-system", rrName, "Deployment", "test-deploy-1418")).To(Succeed())
+		DeferCleanup(func() { deleteRR("kubernaut-system", rrName) })
 
 		// Start investigation to acquire a session
 		rpcID := fmt.Sprintf("1418-inv-%d", time.Now().UnixNano())
@@ -197,7 +197,7 @@ var _ = Describe("Escalation Routing E2E (#1418)", Label("e2e", "phase4", "escal
 		Expect(code).To(BeNumerically("<", 500))
 
 		// Allow session to initialize
-		time.Sleep(2 * time.Second)
+		time.Sleep(5 * time.Second)
 
 		// Call complete_no_action (dismiss path)
 		rpcID = fmt.Sprintf("1418-dismiss-%d", time.Now().UnixNano())
@@ -214,8 +214,8 @@ var _ = Describe("Escalation Routing E2E (#1418)", Label("e2e", "phase4", "escal
 
 	It("E2E-KA-1418-002: kubernaut_complete_no_action (escalate) returns escalated", func() {
 		rrName := fmt.Sprintf("e2e-rr-1418-escalate-%s", uuid.New().String()[:8])
-		Expect(createRR("default", rrName, "Deployment", "test-deploy-1418-esc")).To(Succeed())
-		DeferCleanup(func() { deleteRR("default", rrName) })
+		Expect(createRR("kubernaut-system", rrName, "Deployment", "test-deploy-1418-esc")).To(Succeed())
+		DeferCleanup(func() { deleteRR("kubernaut-system", rrName) })
 
 		// Start investigation to acquire a session
 		rpcID := fmt.Sprintf("1418-inv-esc-%d", time.Now().UnixNano())
@@ -226,7 +226,7 @@ var _ = Describe("Escalation Routing E2E (#1418)", Label("e2e", "phase4", "escal
 		Expect(code).To(BeNumerically("<", 500))
 
 		// Allow session to initialize
-		time.Sleep(2 * time.Second)
+		time.Sleep(5 * time.Second)
 
 		// Call complete_no_action (escalation path)
 		rpcID = fmt.Sprintf("1418-escalate-%d", time.Now().UnixNano())
