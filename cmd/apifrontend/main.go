@@ -842,6 +842,7 @@ func buildMCPHandler(cfg *config.Config, deps *backendDeps, sessInfra *sessionIn
 		KADedicatedClient:     deps.DedicatedClient,
 		InvestigationRegistry: deps.InvestigationRegistry,
 		DSClient:           deps.DSClient,
+		PromClient:         deps.PromClient,
 		Triager:            deps.Triager,
 		Authorizer:         authorizer,
 		Auditor:            auditor,

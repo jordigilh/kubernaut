@@ -57,7 +57,7 @@ var _ = Describe("Alert Prioritization E2E — #1412", Ordered, Label("e2e", "al
 
 	It("E2E-AF-1412-001: list_alerts returns prioritized result with critical as Selected over warning and info", func() {
 		callBody := buildJSONRPC("e2e-1412-001", "tools/call", map[string]interface{}{
-			"name":      "list_alerts",
+			"name":      "kubernaut_list_alerts",
 			"arguments": map[string]interface{}{"namespace": "default"},
 		})
 		raw, code, err := mcpPOST(sreToken, mcpSessionID, callBody)
@@ -97,7 +97,7 @@ var _ = Describe("Alert Prioritization E2E — #1412", Ordered, Label("e2e", "al
 		// The E2E infrastructure fires a single HighCPU critical alert, so Tied will be empty.
 		// Validates structural correctness: tool returns valid response with Selected populated.
 		callBody := buildJSONRPC("e2e-1412-002", "tools/call", map[string]interface{}{
-			"name":      "list_alerts",
+			"name":      "kubernaut_list_alerts",
 			"arguments": map[string]interface{}{"namespace": "default"},
 		})
 		raw, code, err := mcpPOST(sreToken, mcpSessionID, callBody)

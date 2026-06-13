@@ -18,6 +18,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ds"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
+	prom "github.com/jordigilh/kubernaut/pkg/apifrontend/prometheus"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ratelimit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/security"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
@@ -52,6 +53,7 @@ type MCPBridgeConfig struct {
 	KADedicatedClient     ka.MCPClient
 	InvestigationRegistry *tools.MonitorRegistry
 	DSClient           ds.Client
+	PromClient         prom.Client
 	Triager            *severity.Triager
 	Authorizer         auth.ToolAuthorizer
 	Auditor            audit.Emitter
@@ -313,6 +315,14 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 	// Internal triage tools (kubectl_get, kubectl_list, kubectl_list_events,
 	// kubernaut_check_existing_remediation, kubernaut_remediate) are available
 	// only to AF's LLM agent (ADK path) and are not exposed via MCP.
+
+	// Alert observation tools (#1412) — registered when Prometheus/Thanos is configured.
+	if cfg.PromClient != nil {
+		registerTool(srv, cfg, sem, "kubernaut_list_alerts", "List currently firing or pending Prometheus/Thanos alerts, optionally filtered by namespace, severity, or state",
+			func(ctx context.Context, args tools.ListAlertsArgs) (any, error) {
+				return tools.HandleListAlerts(ctx, cfg.PromClient, args)
+			})
+	}
 }
 
 // registerTool is a generic helper that registers a single tool with all cross-cutting concerns:

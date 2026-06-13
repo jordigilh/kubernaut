@@ -137,7 +137,7 @@ var _ = Describe("Agent Card Handler", func() {
 		_ = json.Unmarshal(rec.Body.Bytes(), &card)
 		skills, ok := card["skills"].([]any)
 		Expect(ok).To(BeTrue())
-		Expect(skills).To(HaveLen(21))
+		Expect(skills).To(HaveLen(22))
 	})
 
 	It("UT-AF-230-008: card declares authentication requirements", func() {
@@ -317,7 +317,7 @@ var _ = Describe("DefaultAgentSkills interactive filtering (#1366)", func() {
 
 	It("UT-AF-1366-020: DefaultAgentSkills(false) returns only stateless skills", func() {
 		skills := handler.DefaultAgentSkills(false)
-		Expect(skills).To(HaveLen(11), "only 11 stateless skills when interactive disabled")
+		Expect(skills).To(HaveLen(12), "only 12 stateless skills when interactive disabled")
 		for _, s := range skills {
 			Expect(s.ID).NotTo(BeElementOf(
 				"kubernaut_investigate",
@@ -334,8 +334,8 @@ var _ = Describe("DefaultAgentSkills interactive filtering (#1366)", func() {
 		}
 	})
 
-	It("UT-AF-1366-021: DefaultAgentSkills(true) returns all 21 skills", func() {
+	It("UT-AF-1366-021: DefaultAgentSkills(true) returns all 22 skills", func() {
 		skills := handler.DefaultAgentSkills(true)
-		Expect(skills).To(HaveLen(21), "all 21 skills when interactive enabled")
+		Expect(skills).To(HaveLen(22), "all 22 skills when interactive enabled")
 	})
 })
