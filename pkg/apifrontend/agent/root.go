@@ -110,7 +110,6 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 		{"get_remediation", func() (tool.Tool, error) { return tools.NewGetRemediationTool(k8s, cfg.Namespace) }},
 		{"list_approval_requests", func() (tool.Tool, error) { return tools.NewListApprovalRequestsTool(k8s, cfg.Namespace) }},
 		{"get_approval_request", func() (tool.Tool, error) { return tools.NewGetApprovalRequestTool(k8s, cfg.Namespace) }},
-		{"approve", func() (tool.Tool, error) { return tools.NewApproveTool(k8s, cfg.Namespace) }},
 		{"cancel_remediation", func() (tool.Tool, error) { return tools.NewCancelRemediationTool(k8s, cfg.Namespace) }},
 		{"watch", func() (tool.Tool, error) { return tools.NewWatchTool(k8s, cfg.Namespace) }},
 		{"investigate", func() (tool.Tool, error) {
