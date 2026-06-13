@@ -38,6 +38,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/langchaingo"
+	wfclient "github.com/jordigilh/kubernaut/pkg/workflowexecution/client"
 )
 
 // ---------------------------------------------------------------------------
@@ -148,10 +149,14 @@ func newCapturingMCPStack(k8sClient client.Client, namespace string, opts realSt
 	)
 	stack.EventStore = mcpinternal.NewDelegatingEventStore()
 
+	wfQuerier := wfclient.NewOgenWorkflowQuerier(sharedDSClient)
+	catalog := mcpadapters.NewWorkflowCatalogAdapter(wfQuerier)
+
 	investigateOpts := []mcptools.InvestigateOption{
 		mcptools.WithRateLimiter(stack.RateLimiter),
 		mcptools.WithTimeoutTracker(stack.TimeoutMgr),
 		mcptools.WithNotifyFunc(stack.Notifier.Notify),
+		mcptools.WithWorkflowCatalog(catalog),
 	}
 	if resolver != nil {
 		investigateOpts = append(investigateOpts, mcptools.WithSignalContextResolver(resolver))
@@ -232,10 +237,14 @@ func newAutonomousMCPStack(k8sClient client.Client, namespace string, opts realS
 	sessionStore := session.NewStore(30 * time.Minute)
 	autoMgr := session.NewManager(sessionStore, logrLogger, audit.NopAuditStore{}, nil)
 
+	wfQuerier2 := wfclient.NewOgenWorkflowQuerier(sharedDSClient)
+	catalog2 := mcpadapters.NewWorkflowCatalogAdapter(wfQuerier2)
+
 	investigateOpts := []mcptools.InvestigateOption{
 		mcptools.WithRateLimiter(stack.RateLimiter),
 		mcptools.WithTimeoutTracker(stack.TimeoutMgr),
 		mcptools.WithNotifyFunc(stack.Notifier.Notify),
+		mcptools.WithWorkflowCatalog(catalog2),
 	}
 	if resolver != nil {
 		investigateOpts = append(investigateOpts, mcptools.WithSignalContextResolver(resolver))
