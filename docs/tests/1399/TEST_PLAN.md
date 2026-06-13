@@ -4,10 +4,10 @@
 
 **Test Plan Identifier**: TP-1399-v1
 **Feature**: Separate thinking events from final output and provide structured data via A2A-compliant artifacts
-**Version**: 1.0
+**Version**: 1.1
 **Created**: 2026-06-11
 **Author**: AI Agent
-**Status**: Draft
+**Status**: Implemented
 **Branch**: `feat/structured-decision-payload`
 
 ---
@@ -189,28 +189,28 @@ Every business requirement covered by UT + IT minimum. E2E provides journey assu
 
 | BR/Issue | Description | Priority | Tier | Test ID | Status |
 |----------|-------------|----------|------|---------|--------|
-| #1399 | Thought parts route to reasoning channel | P0 | Unit | UT-AF-1399-001 | Pending |
-| #1399 | FunctionCall (non-decision) routes to reasoning | P0 | Unit | UT-AF-1399-002 | Pending |
-| #1399 | FunctionResponse (non-decision) routes to reasoning | P0 | Unit | UT-AF-1399-003 | Pending |
-| #1399 | present_decision FunctionCall still returns nil (no ADK artifact) | P0 | Unit | UT-AF-1399-004 | Pending |
-| #1399 | stripEmoji removes common emoji from text | P0 | Unit | UT-AF-1399-005 | Pending |
-| #1399 | stripEmoji preserves non-emoji Unicode (math, currency, CJK) | P0 | Unit | UT-AF-1399-006 | Pending |
-| #1399 | Final LLM text output has emoji stripped | P0 | Unit | UT-AF-1399-007 | Pending |
-| #1399 | EmitArtifact constructs TaskArtifactUpdateEvent with DataPart + TextPart | P0 | Unit | UT-AF-1399-008 | Pending |
-| #1399 | EmitArtifact sets artifact.metadata.type from caller | P1 | Unit | UT-AF-1399-009 | Pending |
-| #1399 | EmitArtifact nil-safe (no bridge in context) | P0 | Unit | UT-AF-1399-010 | Pending |
-| #1399 | emitDecisionEvent uses EmitArtifact (not EmitStructuredMeta) | P0 | Unit | UT-AF-1399-011 | Pending |
-| #1399 | Schema validation passes for valid investigation_summary | P0 | Unit | UT-AF-1399-012 | Pending |
-| #1399 | Schema validation fails for missing required field (rca) | P1 | Unit | UT-AF-1399-013 | Pending |
-| #1399 | Schema validation failure -> graceful degradation (text-only) | P0 | Unit | UT-AF-1399-014 | Pending |
-| #1399 | Reasoning event carries actual thought content | P0 | Integration | IT-AF-1399-001 | Pending |
-| #1399 | Final artifact has no emoji after full converter pipeline | P0 | Integration | IT-AF-1399-002 | Pending |
-| #1399 | Structured decision emits TaskArtifactUpdateEvent to queue | P0 | Integration | IT-AF-1399-003 | Pending |
-| #1399 | Decision part returns nil from converter (no ADK duplicate) | P0 | Integration | IT-AF-1399-004 | Pending |
-| #1399 | Artifact DataPart matches investigation_summary schema | P0 | Integration | IT-AF-1399-005 | Pending |
-| #1399 | SSE stream delivers reasoning events with type=reasoning | P0 | E2E | E2E-AF-1399-001 | Pending |
-| #1399 | SSE stream delivers structured artifact with DataPart for investigation | P0 | E2E | E2E-AF-1399-002 | Pending |
-| #1399 | Final artifact text in SSE has no emoji characters | P1 | E2E | E2E-AF-1399-003 | Pending |
+| #1399 | Thought parts route to reasoning channel | P0 | Unit | UT-AF-1399-001 | Implemented |
+| #1399 | FunctionCall (non-decision) routes to reasoning | P0 | Unit | UT-AF-1399-002 | Implemented |
+| #1399 | FunctionResponse (non-decision) routes to reasoning | P0 | Unit | UT-AF-1399-003 | Implemented |
+| #1399 | present_decision FunctionCall still returns nil (no ADK artifact) | P0 | Unit | UT-AF-1399-004 | Implemented |
+| #1399 | stripEmoji removes common emoji from text | P0 | Unit | UT-AF-1399-005 | Implemented |
+| #1399 | stripEmoji preserves non-emoji Unicode (math, currency, CJK) | P0 | Unit | UT-AF-1399-006 | Implemented |
+| #1399 | Final LLM text output has emoji stripped | P0 | Unit | UT-AF-1399-007 | Implemented |
+| #1399 | EmitArtifact constructs TaskArtifactUpdateEvent with DataPart + TextPart | P0 | Unit | UT-AF-1399-008 | Implemented |
+| #1399 | EmitArtifact sets artifact.metadata.type from caller | P1 | Unit | UT-AF-1399-009 | Implemented |
+| #1399 | EmitArtifact nil-safe (no bridge in context) | P0 | Unit | UT-AF-1399-010 | Implemented |
+| #1399 | emitDecisionEvent uses EmitArtifact (not EmitStructuredMeta) | P0 | Unit | UT-AF-1399-011 | Implemented |
+| #1399 | Schema validation passes for valid investigation_summary | P0 | Unit | UT-AF-1399-012 | Implemented |
+| #1399 | Schema validation fails for missing required field (rca) | P1 | Unit | UT-AF-1399-013 | Implemented |
+| #1399 | Schema validation failure -> graceful degradation (text-only) | P0 | Unit | UT-AF-1399-014 | Implemented |
+| #1399 | Reasoning event carries actual thought content | P0 | Integration | IT-AF-1399-001 | Implemented |
+| #1399 | Final artifact has no emoji after full converter pipeline | P0 | Integration | IT-AF-1399-002 | Implemented |
+| #1399 | Structured decision emits TaskArtifactUpdateEvent to queue | P0 | Integration | IT-AF-1399-003 | Implemented |
+| #1399 | Decision part returns nil from converter (no ADK duplicate) | P0 | Integration | IT-AF-1399-004 | Implemented |
+| #1399 | Artifact DataPart matches investigation_summary schema | P0 | Integration | IT-AF-1399-005 | Implemented |
+| #1399 | SSE stream delivers reasoning events with type=reasoning | P0 | E2E | E2E-AF-1399-001 | Implemented |
+| #1399 | SSE stream delivers structured artifact with DataPart for investigation | P0 | E2E | E2E-AF-1399-002 | Implemented |
+| #1399 | Final artifact text in SSE has no emoji characters | P1 | E2E | E2E-AF-1399-003 | Implemented |
 
 ---
 
@@ -448,3 +448,54 @@ flowchart TD
 | EmitArtifact | `emitDecisionEvent()` | `event_bridge.go:EmitArtifact` | IT-AF-1399-003 |
 | Schema validation | `emitDecisionEvent()` pre-emit | `schema_validator.go:ValidatePayload` | IT-AF-1399-005 |
 | investigation_summary schema | `//go:embed` in validator | `schemas/a2a/investigation_summary.v1.schema.json` | UT-AF-1399-012 |
+| Event-aware text routing (#1410) | `buildStreamingPartConverter()` | `part_converter.go:shouldRouteTextToReasoning` | UT-AF-1399-001 |
+| Metadata-only schema ID (#1411) | `emitDecisionEvent()` | `part_converter.go:emitDecisionEvent` | IT-AF-1399-003 |
+
+---
+
+## 14. Consolidated Changes (#1408, #1410, #1411)
+
+This test plan was originally scoped to #1399 but the streaming architecture evolved
+with tightly-coupled enhancements. These are documented here for completeness:
+
+### #1408: FunctionResponse Suppression
+
+The `kubernaut_investigate` and `kubernaut_present_decision` FunctionResponses are
+suppressed in `buildStreamingPartConverter()` to prevent duplicate content (the
+reasoning was already streamed progressively via EventBridge). This is validated by
+existing tests that assert the converter returns `nil` for these tools.
+
+### #1410: Event-Aware Text Routing
+
+`shouldRouteTextToReasoning(event)` routes intermediate text to the reasoning channel
+instead of the user-facing artifact. Conditions:
+- `event.Partial == true` (streaming intermediate chunk)
+- `eventHasFunctionCall(event)` (text is preamble narration)
+
+This is validated by UT-AF-1399-001..003 which verify correct routing decisions.
+
+### #1411: Metadata-Only Schema Identification
+
+Artifact metadata carries `schema` and `schema_version` fields enabling forward-compatible
+content routing without DataPart inspection:
+
+```json
+"metadata": { "type": "decision", "schema": "investigation_summary", "schema_version": "1.0" }
+```
+
+This is validated by UT-AF-1399-009 and IT-AF-1399-005.
+
+---
+
+## 15. Execution Summary
+
+```bash
+# All unit tests
+go test ./pkg/apifrontend/launcher/... -run "UT-AF-1399" -v -count=1
+
+# Integration tests
+go test ./pkg/apifrontend/launcher/... -run "IT-AF-1399" -v -count=1
+
+# E2E tests
+make test-e2e-apifrontend GINKGO_FOCUS="1399"
+```

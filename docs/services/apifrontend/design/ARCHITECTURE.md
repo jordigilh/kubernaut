@@ -385,6 +385,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant Approver
+    participant Console
     participant AF as API Frontend
     participant K8s as K8s API
 
@@ -394,14 +395,22 @@ sequenceDiagram
     AF->>AF: Create InvestigationSession (joinMode: takeover)
     AF->>K8s: Get RR, AA status (AF SA)
     AF->>AF: Synthesize investigation summary from AA.status
-    AF->>Approver: SSE: investigation summary + approval prompt
+    AF->>Approver: SSE: investigation summary + Console approval guidance
     Approver->>AF: "what was the root cause?"
     AF->>AF: LLM reads AA.status.postRCAContext, synthesizes answer
     AF->>Approver: SSE: RCA explanation in natural language
-    Approver->>AF: "approve the remediation"
-    AF->>K8s: Create RemediationApprovalRequest (AF SA)
-    AF->>Approver: SSE: task completed
+    Note over Approver,Console: Approver clicks Approve in Console UI
+    Console->>AF: MCP tools/call { kubernaut_approve, ... } (OIDC token)
+    AF->>AF: SAR check (kubernaut.ai/tools/kubernaut_approve)
+    AF->>K8s: Create RemediationApprovalRequest (AF SA, user attribution)
+    AF->>Console: MCP response (approval confirmed)
+    Console->>AF: tasks/send "The remediation has been approved"
+    AF->>Approver: SSE: approval_request_resolved event
 ```
+
+> **Note (#1415)**: The LLM agent does NOT have access to `kubernaut_approve`.
+> Approval is performed exclusively via the Console UI → MCP endpoint path.
+> See [DD-AF-006](../../architecture/decisions/DD-AF-006-approval-consent-guard.md).
 
 ---
 
@@ -498,7 +507,7 @@ kubernaut proxy tools (forwarded to KA REST/MCP or DataStorage, exposed via MCP)
 |------|---------|---------|
 | `kubernaut_list_remediations` | List active and recent remediations | KA REST |
 | `kubernaut_get_remediation` | Get remediation details | KA REST |
-| `kubernaut_approve` | Approve a remediation action | KA REST |
+| `kubernaut_approve` | Approve a remediation action (Console-only via MCP, not available to A2A agent — see DD-AF-006) | KA REST |
 | `kubernaut_cancel_remediation` | Cancel active remediation | KA REST |
 | `kubernaut_watch` | Watch remediation state changes | KA REST |
 | `kubernaut_investigate` | Investigate an infrastructure incident (start new or resume existing via session_id) | KA REST + SSE |
