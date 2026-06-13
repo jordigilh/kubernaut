@@ -195,3 +195,33 @@ var _ = Describe("IT-AF-1351: RRID validation wiring", func() {
 		)
 	})
 })
+
+var _ = Describe("EscalationReason validation (UT-VALIDATE-1418)", func() {
+	DescribeTable("UT-VALIDATE-1418-001: valid escalation reasons accepted",
+		func(reason string) {
+			Expect(validate.EscalationReason(reason)).To(Succeed())
+		},
+		Entry("simple reason", "Alert needs database team review"),
+		Entry("exactly 1024 chars", strings.Repeat("a", 1024)),
+		Entry("contains newline", "line1\nline2"),
+		Entry("contains tab", "field1\tfield2"),
+		Entry("unicode content", "Needs review: アラート"),
+		Entry("multiline with reasoning", "This alert requires human review because:\n1. Metrics are ambiguous\n2. Service owner unavailable"),
+	)
+
+	DescribeTable("invalid escalation reasons rejected",
+		func(reason string, substr string) {
+			err := validate.EscalationReason(reason)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring(substr))
+		},
+		Entry("UT-VALIDATE-1418-002: over limit (1025 chars)", strings.Repeat("a", 1025), "exceeds maximum"),
+		Entry("UT-VALIDATE-1418-003: whitespace-only spaces", "     ", "whitespace-only"),
+		Entry("whitespace-only tabs", "\t\t\t", "whitespace-only"),
+		Entry("whitespace-only mixed", "  \t  \n  ", "whitespace-only"),
+		Entry("UT-VALIDATE-1418-004: control char NUL", "reason\x00bad", "control character"),
+		Entry("control char SOH", "reason\x01bad", "control character"),
+		Entry("control char BEL", "reason\x07bad", "control character"),
+		Entry("empty string", "", "whitespace-only"),
+	)
+})

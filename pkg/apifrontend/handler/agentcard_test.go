@@ -137,7 +137,7 @@ var _ = Describe("Agent Card Handler", func() {
 		_ = json.Unmarshal(rec.Body.Bytes(), &card)
 		skills, ok := card["skills"].([]any)
 		Expect(ok).To(BeTrue())
-		Expect(skills).To(HaveLen(22))
+		Expect(skills).To(HaveLen(23))
 	})
 
 	It("UT-AF-230-008: card declares authentication requirements", func() {
@@ -334,8 +334,8 @@ var _ = Describe("DefaultAgentSkills interactive filtering (#1366)", func() {
 		}
 	})
 
-	It("UT-AF-1366-021: DefaultAgentSkills(true) returns all 22 skills", func() {
+	It("UT-AF-1366-021: DefaultAgentSkills(true) returns all 23 skills", func() {
 		skills := handler.DefaultAgentSkills(true)
-		Expect(skills).To(HaveLen(22), "all 22 skills when interactive enabled")
+		Expect(skills).To(HaveLen(23), "all 23 skills when interactive enabled")
 	})
 })

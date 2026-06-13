@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -14,11 +15,14 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ds"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/handler"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
+
+	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 )
 
 var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
@@ -838,9 +842,229 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 })
 
 
+var _ = Describe("kubernaut_complete_no_action — AF MCP bridge proxy (#1418)", func() {
+
+	var (
+		h         http.Handler
+		sessionID string
+		testUser  *auth.UserIdentity
+		auditor   *fakeAuditor
+	)
+
+	setupCNAStack := func(cnaFn func(context.Context, ka.CompleteNoActionArgs) (*ka.CompleteNoActionResult, error), authorizer auth.ToolAuthorizer) {
+		mockMCP := &ka.MockMCPClient{
+			CompleteNoActionFn: cnaFn,
+			StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+				return &ka.StartInvestigationResult{SessionID: "sess-cna", Status: "autonomous_started", Closer: func() {}}, nil
+			},
+		}
+
+		auditor = &fakeAuditor{}
+		testUser = &auth.UserIdentity{Username: "sre@kubernaut.ai", Groups: []string{"sre"}}
+
+		cfg := handler.MCPConfig{
+			ServerName:    "af-it",
+			ServerVersion: "0.0.1-test",
+			Enabled:       true,
+			Bridge: &handler.MCPBridgeConfig{
+				K8sClient:          newFakeDynamicClient(),
+				KAMCPClient:        mockMCP,
+				DSClient:           newFakeDSClient(),
+				Authorizer:         authorizer,
+				Logger:             logr.Discard(),
+				Auditor:            auditor,
+				Metrics:            newBridgeMetrics(),
+				ToolTimeout:        5 * time.Second,
+				MaxConcurrentTools: 10,
+				InteractiveEnabled: true,
+			},
+		}
+
+		var err error
+		h, err = handler.NewMCPHandler(cfg)
+		Expect(err).NotTo(HaveOccurred())
+		sessionID = mcpInitialize(h, testUser)
+	}
+
+	Describe("IT-AF-1418-001: AC-6 dismiss path proxied through AF MCP", func() {
+		It("should return status=completed_no_action via AF bridge", func() {
+			setupCNAStack(func(_ context.Context, args ka.CompleteNoActionArgs) (*ka.CompleteNoActionResult, error) {
+				Expect(args.RRID).To(Equal("rr-1418-it-001"))
+				Expect(args.Reason).To(Equal("operator dismissed"))
+				Expect(args.EscalationReason).To(BeEmpty())
+				return &ka.CompleteNoActionResult{
+					Status: "completed_no_action",
+					Reason: "operator dismissed",
+				}, nil
+			}, &mapAuthorizer{roles: map[string][]string{"sre": {"*"}}})
+
+			status, body := mcpCallTool(h, sessionID, "kubernaut_complete_no_action", map[string]any{
+				"rr_id":  "rr-1418-it-001",
+				"reason": "operator dismissed",
+			}, testUser)
+
+			Expect(status).To(Equal(http.StatusOK))
+			text := extractTextContent(body)
+			Expect(text).To(ContainSubstring("completed_no_action"))
+		})
+	})
+
+	Describe("IT-AF-1418-002: IR-5 escalation proxied through AF MCP", func() {
+		It("should return status=escalated via AF bridge with audit event", func() {
+			setupCNAStack(func(_ context.Context, args ka.CompleteNoActionArgs) (*ka.CompleteNoActionResult, error) {
+				Expect(args.RRID).To(Equal("rr-1418-it-002"))
+				Expect(args.EscalationReason).To(Equal("Needs SRE team"))
+				return &ka.CompleteNoActionResult{
+					Status:           "escalated",
+					EscalationReason: "Needs SRE team",
+				}, nil
+			}, &mapAuthorizer{roles: map[string][]string{"sre": {"*"}}})
+
+			status, body := mcpCallTool(h, sessionID, "kubernaut_complete_no_action", map[string]any{
+				"rr_id":             "rr-1418-it-002",
+				"reason":            "Escalated by operator",
+				"escalation_reason": "Needs SRE team",
+			}, testUser)
+
+			Expect(status).To(Equal(http.StatusOK))
+			text := extractTextContent(body)
+			Expect(text).To(ContainSubstring("escalated"))
+
+			// AU-2: Verify audit event emitted with full detail fields
+			var kaResultEvents []*audit.Event
+			for _, e := range auditor.events {
+				if e.Type == audit.EventKAResultReceived {
+					kaResultEvents = append(kaResultEvents, e)
+				}
+			}
+			Expect(kaResultEvents).To(HaveLen(1), "exactly one KAResultReceived audit event expected")
+			evt := kaResultEvents[0]
+			Expect(evt.Detail).To(HaveKeyWithValue("rr_id", "rr-1418-it-002"))
+			Expect(evt.Detail).To(HaveKeyWithValue("status", "escalated"))
+			Expect(evt.Detail).To(HaveKeyWithValue("result_type", "escalated"))
+			Expect(evt.Detail).To(HaveKeyWithValue("delegation_type", "interactive"))
+			Expect(evt.Detail).To(HaveKeyWithValue("tool_outcome", "success"))
+			Expect(evt.Detail).To(HaveKeyWithValue("escalation_reason", "Needs SRE team"))
+		})
+	})
+
+	Describe("IT-AF-1418-003: AC-6 RBAC denial for unauthorized caller", func() {
+		It("should deny kubernaut_complete_no_action when group lacks access", func() {
+			setupCNAStack(func(_ context.Context, _ ka.CompleteNoActionArgs) (*ka.CompleteNoActionResult, error) {
+				Fail("should not reach KA handler when RBAC denied")
+				return nil, nil
+			}, &mapAuthorizer{roles: map[string][]string{"sre": {"kubernaut_investigate"}}})
+
+			status, body := mcpCallTool(h, sessionID, "kubernaut_complete_no_action", map[string]any{
+				"rr_id":  "rr-1418-it-003",
+				"reason": "should be blocked",
+			}, testUser)
+
+			Expect(status).To(Equal(http.StatusOK))
+			text := extractTextContent(body)
+			Expect(text).To(ContainSubstring("denied"),
+				"AC-6: MCP bridge must enforce RBAC for kubernaut_complete_no_action")
+		})
+	})
+
+	Describe("IT-AF-1418-004: mcpClient error propagation", func() {
+		It("should propagate KA error without emitting KAResultReceived audit event", func() {
+			setupCNAStack(func(_ context.Context, _ ka.CompleteNoActionArgs) (*ka.CompleteNoActionResult, error) {
+				return nil, fmt.Errorf("session expired: connection reset")
+			}, &mapAuthorizer{roles: map[string][]string{"sre": {"*"}}})
+
+			status, body := mcpCallTool(h, sessionID, "kubernaut_complete_no_action", map[string]any{
+				"rr_id":  "rr-1418-it-004",
+				"reason": "dismiss attempt",
+			}, testUser)
+
+			Expect(status).To(Equal(http.StatusOK))
+			text := extractTextContent(body)
+			Expect(text).To(ContainSubstring("complete_no_action"),
+				"error message should reference the tool")
+
+			// The bridge emits EventMCPToolFailed on error, but the tool handler
+			// must NOT emit EventKAResultReceived when KA returns an error.
+			for _, e := range auditor.events {
+				Expect(e.Type).NotTo(Equal(audit.EventKAResultReceived),
+					"no KAResultReceived audit event should be emitted on KA error")
+			}
+		})
+	})
+})
+
+var _ = Describe("IT-AF-1418-005: SessionFinalizer wiring for complete_no_action", func() {
+	It("should call FinalizeSessionByRR with SessionPhaseCompleted on successful CNA", func() {
+		finalizer := &recordingSessionFinalizer{}
+		mockMCP := &ka.MockMCPClient{
+			CompleteNoActionFn: func(_ context.Context, args ka.CompleteNoActionArgs) (*ka.CompleteNoActionResult, error) {
+				return &ka.CompleteNoActionResult{Status: "completed_no_action", Reason: "dismissed"}, nil
+			},
+			StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+				return &ka.StartInvestigationResult{SessionID: "sess-fin", Status: "autonomous_started", Closer: func() {}}, nil
+			},
+		}
+
+		testUser := &auth.UserIdentity{Username: "sre@kubernaut.ai", Groups: []string{"sre"}}
+		cfg := handler.MCPConfig{
+			ServerName:    "af-it-finalizer",
+			ServerVersion: "0.0.1-test",
+			Enabled:       true,
+			Bridge: &handler.MCPBridgeConfig{
+				K8sClient:          newFakeDynamicClient(),
+				KAMCPClient:        mockMCP,
+				DSClient:           newFakeDSClient(),
+				Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"*"}}},
+				Logger:             logr.Discard(),
+				Auditor:            &fakeAuditor{},
+				Metrics:            newBridgeMetrics(),
+				ToolTimeout:        5 * time.Second,
+				MaxConcurrentTools: 10,
+				InteractiveEnabled: true,
+				SessionFinalizer:   finalizer,
+				Namespace:          "kubernaut-system",
+			},
+		}
+
+		h, err := handler.NewMCPHandler(cfg)
+		Expect(err).NotTo(HaveOccurred())
+		sessionID := mcpInitialize(h, testUser)
+
+		status, body := mcpCallTool(h, sessionID, "kubernaut_complete_no_action", map[string]any{
+			"rr_id":  "rr-1418-finalizer",
+			"reason": "test finalization",
+		}, testUser)
+
+		Expect(status).To(Equal(http.StatusOK))
+		text := extractTextContent(body)
+		Expect(text).To(ContainSubstring("completed_no_action"))
+
+		Expect(finalizer.calls).To(HaveLen(1))
+		Expect(finalizer.calls[0].rrNamespace).To(Equal("kubernaut-system"))
+		Expect(finalizer.calls[0].rrName).To(Equal("rr-1418-finalizer"))
+		Expect(finalizer.calls[0].phase).To(Equal(isv1alpha1.SessionPhaseCompleted))
+	})
+})
+
 type recordingSessionInitializer struct {
 	calls        []initCall
 	correlations []correlationCall
+}
+
+type recordingSessionFinalizer struct {
+	mu    sync.Mutex
+	calls []finalizeCall
+}
+type finalizeCall struct {
+	rrNamespace, rrName string
+	phase               isv1alpha1.SessionPhase
+}
+
+func (r *recordingSessionFinalizer) FinalizeSessionByRR(_ context.Context, rrNamespace, rrName string, phase isv1alpha1.SessionPhase) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.calls = append(r.calls, finalizeCall{rrNamespace: rrNamespace, rrName: rrName, phase: phase})
+	return nil
 }
 type initCall struct {
 	rrNamespace, rrName, sessionID, username string

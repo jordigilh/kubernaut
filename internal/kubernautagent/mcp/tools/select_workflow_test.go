@@ -1482,3 +1482,167 @@ var _ = Describe("kubernaut_complete_no_action — interactive pipeline completi
 		})
 	})
 })
+
+var _ = Describe("kubernaut_complete_no_action — escalation routing (#1418)", func() {
+
+	Describe("UT-KA-1418-001: AC-6 dismiss path preserves existing behavior", func() {
+		It("should set IsActionable=false and status=completed_no_action when escalation_reason is empty", func() {
+			completer := &mockHTTPCompleter{foundID: "http-1418-001", found: true}
+			sessions := &mockSessionManager{
+				isActive: true,
+				getDriverResult: &mcpinternal.InteractiveSession{
+					SessionID:     "sess-1418-001",
+					CorrelationID: "rr-1418-001",
+					ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+					RCAResult:     &katypes.InvestigationResult{RCASummary: "transient spike"},
+				},
+			}
+
+			tool := mcptools.NewCompleteNoActionTool(sessions,
+				mcptools.WithCompleteNoActionHTTPCompleter(completer),
+			)
+			output, err := tool.Handle(context.Background(), mcptools.CompleteNoActionInput{
+				RRID:   "rr-1418-001",
+				Reason: "operator dismissed",
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output.Status).To(Equal("completed_no_action"))
+			Expect(output.EscalationReason).To(BeEmpty())
+
+			Expect(completer.completedResult).NotTo(BeNil())
+			Expect(completer.completedResult.IsActionable).NotTo(BeNil())
+			Expect(*completer.completedResult.IsActionable).To(BeFalse(),
+				"AC-6: dismiss path must set IsActionable=false for WorkflowNotNeeded routing")
+			Expect(completer.completedResult.HumanReviewNeeded).To(BeFalse(),
+				"AC-6: dismiss path must NOT set HumanReviewNeeded")
+			Expect(completer.completedResult.Warnings).To(ContainElement("Alert not actionable"))
+		})
+	})
+
+	Describe("UT-KA-1418-002: IR-5 escalation sets HumanReviewNeeded for ManualReviewRequired routing", func() {
+		It("should set HumanReviewNeeded=true and HumanReviewReason=operator_escalation", func() {
+			completer := &mockHTTPCompleter{foundID: "http-1418-002", found: true}
+			sessions := &mockSessionManager{
+				isActive: true,
+				getDriverResult: &mcpinternal.InteractiveSession{
+					SessionID:     "sess-1418-002",
+					CorrelationID: "rr-1418-002",
+					ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+					RCAResult:     &katypes.InvestigationResult{RCASummary: "complex issue"},
+				},
+			}
+
+			tool := mcptools.NewCompleteNoActionTool(sessions,
+				mcptools.WithCompleteNoActionHTTPCompleter(completer),
+			)
+			output, err := tool.Handle(context.Background(), mcptools.CompleteNoActionInput{
+				RRID:             "rr-1418-002",
+				Reason:           "Escalated by operator",
+				EscalationReason: "No matching workflow, needs SRE team intervention",
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output.Status).To(Equal("escalated"))
+
+			Expect(completer.completedResult).NotTo(BeNil())
+			Expect(completer.completedResult.HumanReviewNeeded).To(BeTrue(),
+				"IR-5: escalation must set HumanReviewNeeded=true for ManualReviewRequired routing")
+			Expect(completer.completedResult.HumanReviewReason).To(Equal("operator_escalation"),
+				"IR-5: HumanReviewReason must be operator_escalation to trigger notification")
+		})
+	})
+
+	Describe("UT-KA-1418-003: AC-6 escalation does NOT set IsActionable=false", func() {
+		It("should not set IsActionable=false on escalation path", func() {
+			completer := &mockHTTPCompleter{foundID: "http-1418-003", found: true}
+			sessions := &mockSessionManager{
+				isActive: true,
+				getDriverResult: &mcpinternal.InteractiveSession{
+					SessionID:     "sess-1418-003",
+					CorrelationID: "rr-1418-003",
+					ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+					RCAResult:     &katypes.InvestigationResult{RCASummary: "needs expert"},
+				},
+			}
+
+			tool := mcptools.NewCompleteNoActionTool(sessions,
+				mcptools.WithCompleteNoActionHTTPCompleter(completer),
+			)
+			_, err := tool.Handle(context.Background(), mcptools.CompleteNoActionInput{
+				RRID:             "rr-1418-003",
+				Reason:           "Escalated",
+				EscalationReason: "Requires manual database repair",
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(completer.completedResult.IsActionable).To(BeNil(),
+				"AC-6: escalation path must NOT set IsActionable=false (alert may be actionable by human)")
+			Expect(completer.completedResult.Warnings).NotTo(ContainElement("Alert not actionable"),
+				"AC-6: escalation path must NOT add 'Alert not actionable' warning")
+		})
+	})
+
+	Describe("UT-KA-1418-004: AU-2 output includes escalation_reason for audit trail", func() {
+		It("should return status=escalated and escalation_reason in output", func() {
+			completer := &mockHTTPCompleter{foundID: "http-1418-004", found: true}
+			sessions := &mockSessionManager{
+				isActive: true,
+				getDriverResult: &mcpinternal.InteractiveSession{
+					SessionID:     "sess-1418-004",
+					CorrelationID: "rr-1418-004",
+					ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+				},
+			}
+
+			tool := mcptools.NewCompleteNoActionTool(sessions,
+				mcptools.WithCompleteNoActionHTTPCompleter(completer),
+			)
+			output, err := tool.Handle(context.Background(), mcptools.CompleteNoActionInput{
+				RRID:             "rr-1418-004",
+				Reason:           "Escalated by operator",
+				EscalationReason: "Needs SRE team",
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output.Status).To(Equal("escalated"),
+				"AU-2: status must be 'escalated' for audit trail differentiation")
+			Expect(output.EscalationReason).To(Equal("Needs SRE team"),
+				"AU-2: escalation_reason must be echoed in output for audit attribution")
+		})
+	})
+
+	Describe("UT-KA-1418-005: AU-3 escalation preserves RCA from driver.RCAResult", func() {
+		It("should carry RCA summary through escalation for compliance reporting", func() {
+			completer := &mockHTTPCompleter{foundID: "http-1418-005", found: true}
+			sessions := &mockSessionManager{
+				isActive: true,
+				getDriverResult: &mcpinternal.InteractiveSession{
+					SessionID:     "sess-1418-005",
+					CorrelationID: "rr-1418-005",
+					ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+					RCAResult: &katypes.InvestigationResult{
+						RCASummary: "Persistent connection pool exhaustion",
+						Confidence: 0.88,
+						Severity:   "high",
+					},
+				},
+			}
+
+			tool := mcptools.NewCompleteNoActionTool(sessions,
+				mcptools.WithCompleteNoActionHTTPCompleter(completer),
+			)
+			_, err := tool.Handle(context.Background(), mcptools.CompleteNoActionInput{
+				RRID:             "rr-1418-005",
+				Reason:           "Escalated",
+				EscalationReason: "Requires DBA investigation",
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(completer.completedResult).NotTo(BeNil())
+			Expect(completer.completedResult.RCASummary).To(Equal("Persistent connection pool exhaustion"),
+				"AU-3: RCA must be preserved for compliance reporting")
+			Expect(completer.completedResult.Confidence).To(Equal(0.88),
+				"AU-3: confidence must be preserved")
+			Expect(completer.completedResult.Reason).To(Equal("Requires DBA investigation"),
+				"AU-3: escalation_reason flows as Reason field for notification payload")
+		})
+	})
+})

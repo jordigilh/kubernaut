@@ -911,3 +911,17 @@ var _ = Describe("ADVERSARIAL: kubernaut_approve removed from A2A toolset (#1415
 		}
 	})
 })
+
+var _ = Describe("ADVERSARIAL: kubernaut_complete_no_action excluded from A2A toolset (#1418)", func() {
+	It("ADV-AF-1418-001: agent toolset does NOT contain kubernaut_complete_no_action", func() {
+		cfg := agentpkg.DefaultTestConfig()
+		cfg.InteractiveEnabled = true
+		_, tools, err := agentpkg.NewRootAgent(cfg)
+		Expect(err).NotTo(HaveOccurred())
+
+		for _, t := range tools {
+			Expect(t.Name()).NotTo(Equal("kubernaut_complete_no_action"),
+				"kubernaut_complete_no_action must NOT be in the A2A agent toolset — dismiss/escalation is Console-only via MCP (#1418, DD-AF-007)")
+		}
+	})
+})

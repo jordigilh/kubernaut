@@ -153,3 +153,92 @@ var _ = Describe("Interactive Wiring E2E (W6)", Label("e2e", "phase4", "wiring")
 		})
 	})
 })
+
+var _ = Describe("Escalation Routing E2E (#1418)", Label("e2e", "phase4", "escalation"), func() {
+
+	var (
+		authToken    string
+		mcpSessionID string
+	)
+
+	BeforeEach(func() {
+		var err error
+		authToken, err = fetchDEXTokenForPersona("sre")
+		Expect(err).NotTo(HaveOccurred())
+
+		mcpSessionID, err = initMCPSession(authToken)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(mcpSessionID).NotTo(BeEmpty())
+	})
+
+	mcpToolCall := func(rpcID, toolName string, args map[string]interface{}) (string, int, error) {
+		callBody := buildJSONRPC(rpcID, "tools/call", map[string]interface{}{
+			"name":      toolName,
+			"arguments": args,
+		})
+		raw, code, err := mcpPOST(authToken, mcpSessionID, callBody)
+		if err != nil {
+			return "", code, err
+		}
+		return unwrapSSEDataLine(raw), code, nil
+	}
+
+	It("E2E-KA-1418-001: kubernaut_complete_no_action (dismiss) returns completed_no_action", func() {
+		rrName := fmt.Sprintf("e2e-rr-1418-dismiss-%s", uuid.New().String()[:8])
+		Expect(createRR("default", rrName, "Deployment", "test-deploy-1418")).To(Succeed())
+		DeferCleanup(func() { deleteRR("default", rrName) })
+
+		// Start investigation to acquire a session
+		rpcID := fmt.Sprintf("1418-inv-%d", time.Now().UnixNano())
+		_, code, err := mcpToolCall(rpcID, "kubernaut_investigate", map[string]interface{}{
+			"rr_id": rrName,
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(code).To(BeNumerically("<", 500))
+
+		// Allow session to initialize
+		time.Sleep(2 * time.Second)
+
+		// Call complete_no_action (dismiss path)
+		rpcID = fmt.Sprintf("1418-dismiss-%d", time.Now().UnixNano())
+		text, code, err := mcpToolCall(rpcID, "kubernaut_complete_no_action", map[string]interface{}{
+			"rr_id":  rrName,
+			"reason": "transient spike, no action needed",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(code).To(BeNumerically("<", 500),
+			"complete_no_action should not return 5xx; got body: %s", text)
+		Expect(text).To(ContainSubstring("completed_no_action"),
+			"AC-6: dismiss path must return status=completed_no_action")
+	})
+
+	It("E2E-KA-1418-002: kubernaut_complete_no_action (escalate) returns escalated", func() {
+		rrName := fmt.Sprintf("e2e-rr-1418-escalate-%s", uuid.New().String()[:8])
+		Expect(createRR("default", rrName, "Deployment", "test-deploy-1418-esc")).To(Succeed())
+		DeferCleanup(func() { deleteRR("default", rrName) })
+
+		// Start investigation to acquire a session
+		rpcID := fmt.Sprintf("1418-inv-esc-%d", time.Now().UnixNano())
+		_, code, err := mcpToolCall(rpcID, "kubernaut_investigate", map[string]interface{}{
+			"rr_id": rrName,
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(code).To(BeNumerically("<", 500))
+
+		// Allow session to initialize
+		time.Sleep(2 * time.Second)
+
+		// Call complete_no_action (escalation path)
+		rpcID = fmt.Sprintf("1418-escalate-%d", time.Now().UnixNano())
+		text, code, err := mcpToolCall(rpcID, "kubernaut_complete_no_action", map[string]interface{}{
+			"rr_id":             rrName,
+			"reason":            "Escalated by operator",
+			"escalation_reason": "Requires DBA team investigation for connection pool exhaustion",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(code).To(BeNumerically("<", 500),
+			"complete_no_action escalation should not return 5xx; got body: %s", text)
+		Expect(text).To(ContainSubstring("escalated"),
+			"IR-5: escalation path must return status=escalated")
+	})
+})

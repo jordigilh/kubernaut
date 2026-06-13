@@ -16,6 +16,7 @@ var _ = Describe("SessionDependentTools (#1366)", func() {
 		"kubernaut_present_decision",
 		"kubernaut_message",
 		"kubernaut_complete",
+		"kubernaut_complete_no_action",
 		"kubernaut_cancel",
 		"kubernaut_status",
 		"kubernaut_reconnect",
@@ -36,8 +37,8 @@ var _ = Describe("SessionDependentTools (#1366)", func() {
 		"kubernaut_get_audit_trail",
 	}
 
-	It("UT-AF-1366-001: contains exactly 10 session-dependent tools", func() {
-		Expect(tools.SessionDependentTools).To(HaveLen(10))
+	It("UT-AF-1366-001: contains exactly 11 session-dependent tools", func() {
+		Expect(tools.SessionDependentTools).To(HaveLen(11))
 	})
 
 	It("UT-AF-1366-002: all expected session-dependent tools are present", func() {

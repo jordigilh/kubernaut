@@ -503,7 +503,7 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 	})
 
 	Context("Tool registration", func() {
-		It("UT-AF-B-023: RegisterTools registers exactly 21 domain tools on the server (#1332)", func() {
+		It("UT-AF-B-023: RegisterTools registers exactly 22 domain tools on the server (#1418)", func() {
 			listReq := map[string]any{
 				"jsonrpc": "2.0",
 				"id":      3,
@@ -514,7 +514,7 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 			Expect(rec.Code).To(Equal(http.StatusOK))
 			body := rec.Body.String()
 			count := countToolsInResponse(body)
-			Expect(count).To(Equal(21))
+			Expect(count).To(Equal(22))
 		})
 	})
 
@@ -551,7 +551,7 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 			Expect(count).To(Equal(11), "only 11 stateless tools when interactive disabled")
 		})
 
-		It("IT-BRIDGE-1366-002: InteractiveEnabled=true registers all 21 tools", func() {
+		It("IT-BRIDGE-1366-002: InteractiveEnabled=true registers all 22 tools", func() {
 			cfg := handler.MCPConfig{
 				ServerName:    "kubernaut-apifrontend",
 				ServerVersion: "v0.1.0-test",
@@ -580,7 +580,7 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 			rec := mcpPost(localH, localSess, listReq, testUser)
 			Expect(rec.Code).To(Equal(http.StatusOK))
 			count := countToolsInResponse(rec.Body.String())
-			Expect(count).To(Equal(21), "all 21 tools when interactive enabled")
+			Expect(count).To(Equal(22), "all 22 tools when interactive enabled")
 		})
 	})
 
@@ -1051,7 +1051,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 	})
 
 	Context("tools/list shows all tools regardless of RBAC", func() {
-		It("UT-AF-B-040: viewer sees all 21 tools in tools/list (#1332)", func() {
+		It("UT-AF-B-040: viewer sees all 22 tools in tools/list (#1418)", func() {
 			cfg := handler.MCPConfig{
 				ServerName:    "kubernaut-apifrontend",
 				ServerVersion: "v0.1.0-test",
@@ -1081,7 +1081,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 			rec := mcpPost(h, sid, listReq, viewer)
 			Expect(rec.Code).To(Equal(http.StatusOK))
 			count := countToolsInResponse(rec.Body.String())
-			Expect(count).To(Equal(21))
+			Expect(count).To(Equal(22))
 		})
 	})
 })
