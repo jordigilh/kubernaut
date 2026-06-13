@@ -96,11 +96,11 @@ var _ = Describe("Root Agent", func() {
 			Expect(tools).NotTo(BeEmpty())
 		})
 
-		It("UT-AF-100-002: registers all 24 tools (#1332: kubernaut_takeover removed, af_create_rr retired, list_workflows removed from agent)", func() {
+		It("UT-AF-100-002: registers all 23 tools (#1415: kubernaut_approve removed from A2A toolset)", func() {
 			cfg := agentpkg.DefaultTestConfig()
 			_, tools, err := agentpkg.NewRootAgent(cfg)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(tools).To(HaveLen(24))
+			Expect(tools).To(HaveLen(23))
 		})
 
 		It("UT-AF-100-003: with nil model config returns error", func() {
@@ -154,7 +154,7 @@ var _ = Describe("Root Agent", func() {
 			cfg := agentpkg.DefaultTestConfig()
 			_, tools, err := agentpkg.NewRootAgent(cfg)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(tools).To(HaveLen(24))
+			Expect(tools).To(HaveLen(23))
 		})
 
 		It("UT-AF-100-008: kubernaut_present_decision is marked IsLongRunning", func() {
@@ -195,7 +195,7 @@ var _ = Describe("Root Agent", func() {
 			cfg := agentpkg.DefaultTestConfig()
 			_, tools, err := agentpkg.NewRootAgent(cfg)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(tools).To(HaveLen(24), "AC 7: all 24 tools must be returned unfiltered (#1332, list_workflows removed)")
+			Expect(tools).To(HaveLen(23), "AC 7: all 23 tools must be returned unfiltered (#1415: kubernaut_approve removed from A2A)")
 		})
 
 		It("IT-AF-1234-W08: buildToolList includes 5 interactive investigation tools (#1332)", func() {
@@ -750,7 +750,7 @@ var _ = Describe("Conditional tool registration — interactive mode (#1366)", f
 		cfg.InteractiveEnabled = false
 		_, tools, err := agentpkg.NewRootAgent(cfg)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(tools).To(HaveLen(15), "only 15 stateless tools when interactive disabled (await_session is MCP-only)")
+		Expect(tools).To(HaveLen(14), "only 14 stateless tools when interactive disabled (#1415: kubernaut_approve removed)")
 
 		for _, t := range tools {
 			Expect(toolspkg.SessionDependentTools).NotTo(HaveKey(t.Name()),
@@ -763,14 +763,14 @@ var _ = Describe("Conditional tool registration — interactive mode (#1366)", f
 		cfg.InteractiveEnabled = true
 		_, tools, err := agentpkg.NewRootAgent(cfg)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(tools).To(HaveLen(24), "all 24 tools when interactive enabled")
+		Expect(tools).To(HaveLen(23), "all 23 tools when interactive enabled")
 	})
 
 	It("UT-AF-1366-012: default config (InteractiveEnabled zero-value) registers all 24 tools", func() {
 		cfg := agentpkg.DefaultTestConfig()
 		_, tools, err := agentpkg.NewRootAgent(cfg)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(tools).To(HaveLen(24), "backward compat: zero-value InteractiveEnabled means all tools")
+		Expect(tools).To(HaveLen(23), "backward compat: zero-value InteractiveEnabled means all tools")
 	})
 })
 
@@ -886,3 +886,28 @@ func (s *spyAuditEmitter) Emit(_ context.Context, event *audit.Event) {
 	cp := *event
 	s.events = append(s.events, &cp)
 }
+
+var _ = Describe("ADVERSARIAL: kubernaut_approve removed from A2A toolset (#1415)", func() {
+	It("ADV-AF-1415-001: agent toolset does NOT contain kubernaut_approve", func() {
+		cfg := agentpkg.DefaultTestConfig()
+		_, tools, err := agentpkg.NewRootAgent(cfg)
+		Expect(err).NotTo(HaveOccurred())
+
+		for _, t := range tools {
+			Expect(t.Name()).NotTo(Equal("kubernaut_approve"),
+				"kubernaut_approve must NOT be in the A2A agent toolset — approval is Console-only via MCP (#1415)")
+		}
+	})
+
+	It("ADV-AF-1415-002: agent toolset does NOT contain kubernaut_approve even with InteractiveEnabled=true", func() {
+		cfg := agentpkg.DefaultTestConfig()
+		cfg.InteractiveEnabled = true
+		_, tools, err := agentpkg.NewRootAgent(cfg)
+		Expect(err).NotTo(HaveOccurred())
+
+		for _, t := range tools {
+			Expect(t.Name()).NotTo(Equal("kubernaut_approve"),
+				"kubernaut_approve must NOT be in the A2A agent toolset regardless of interactive mode (#1415)")
+		}
+	})
+})

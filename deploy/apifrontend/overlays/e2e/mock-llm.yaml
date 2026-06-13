@@ -221,14 +221,6 @@ data:
           arguments:
             name: "rr-test"
 
-      - name: "af_approve"
-        keywords: ["approve the remediation", "approve remediation"]
-        match_last_only: true
-        tool_call:
-          name: "kubernaut_approve"
-          arguments:
-            name: "rr-test"
-
       - name: "af_cancel_remediation"
         keywords: ["cancel the remediation", "cancel remediation"]
         match_last_only: true

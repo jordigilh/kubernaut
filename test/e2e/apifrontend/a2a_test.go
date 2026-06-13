@@ -109,8 +109,18 @@ var _ = Describe("A2A Handler (E2E)", Label("e2e", "a2a"), func() {
 		It("TC-E2E-A2A-T06: kubernaut_get_remediation", func() {
 			toolTest("a2a-t06", "Get details for remediation rr-test in payments namespace", "kubernaut_get_remediation")
 		})
-		It("TC-E2E-A2A-T07: kubernaut_approve", func() {
-			toolTest("a2a-t07", "Approve the remediation rr-test in payments namespace", "kubernaut_approve")
+		It("TC-E2E-A2A-T07: kubernaut_approve removed from A2A toolset (#1415)", func() {
+			// Verify that asking the agent to approve does NOT result in a kubernaut_approve tool call.
+			// The mock-LLM no longer has an af_approve scenario, so this prompt should produce
+			// a text response (not a tool call) explaining approval is Console-only.
+			resp, err := a2aInvoke(httpClient, baseURL, sreToken, a2aTasksSend("a2a-t07", "Approve the remediation rr-test in payments namespace"))
+			Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = resp.Body.Close() }()
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+			rpc, err := parseRPCResponse(resp)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rpc.Error).To(BeNil(), "should not error — agent returns guidance text instead")
 		})
 		It("TC-E2E-A2A-T08: kubernaut_cancel_remediation", func() {
 			toolTest("a2a-t08", "Cancel the remediation rr-test in payments namespace", "kubernaut_cancel_remediation")
@@ -191,9 +201,8 @@ var _ = Describe("A2A Handler (E2E)", Label("e2e", "a2a"), func() {
 		}
 
 		// cicd persona — denied tools
-		It("TC-E2E-A2A-RBAC-01: cicd denied kubernaut_approve", func() {
-			rbacDenialTest("rbac-01", cicdToken, "Approve the remediation rr-test in payments namespace", "kubernaut_approve")
-		})
+		// NOTE: kubernaut_approve removed from A2A toolset (#1415) — RBAC denial
+		// for approve is tested at the MCP layer instead (TC-E2E-A2A-MET-04).
 		It("TC-E2E-A2A-RBAC-02: cicd denied kubectl_list", func() {
 			rbacDenialTest("rbac-02", cicdToken, "Get all pods in the default namespace", "kubectl_list")
 		})
@@ -202,9 +211,7 @@ var _ = Describe("A2A Handler (E2E)", Label("e2e", "a2a"), func() {
 		})
 
 		// observability persona — denied tools
-		It("TC-E2E-A2A-RBAC-04: observability denied kubernaut_approve", func() {
-			rbacDenialTest("rbac-04", observabilityToken, "Approve the remediation rr-test in payments namespace", "kubernaut_approve")
-		})
+		// NOTE: kubernaut_approve removed from A2A toolset (#1415) — see TC-E2E-A2A-MET-04.
 		It("TC-E2E-A2A-RBAC-05: observability denied kubernaut_investigate", func() {
 			rbacDenialTest("rbac-05", observabilityToken, "Start investigation on pod nginx in default namespace", "kubernaut_investigate")
 		})
@@ -213,9 +220,7 @@ var _ = Describe("A2A Handler (E2E)", Label("e2e", "a2a"), func() {
 		})
 
 		// l3-audit persona — denied tools
-		It("TC-E2E-A2A-RBAC-07: l3-audit denied kubernaut_approve", func() {
-			rbacDenialTest("rbac-07", auditorToken, "Approve the remediation rr-test in payments namespace", "kubernaut_approve")
-		})
+		// NOTE: kubernaut_approve removed from A2A toolset (#1415) — see TC-E2E-A2A-MET-04.
 		It("TC-E2E-A2A-RBAC-08: l3-audit denied kubectl_list", func() {
 			rbacDenialTest("rbac-08", auditorToken, "Get all pods in the default namespace", "kubectl_list")
 		})
@@ -384,8 +389,8 @@ var _ = Describe("A2A Handler (E2E)", Label("e2e", "a2a"), func() {
 			Expect(rpc.Result).NotTo(BeNil())
 		})
 
-		It("TC-E2E-A2A-WF-04: remediation-approver approval flow (list -> get -> approve)", func() {
-			prompt := "List remediations, get details for rr-pending, and approve it"
+		It("TC-E2E-A2A-WF-04: remediation-approver list + get flow (approve is Console-only #1415)", func() {
+			prompt := "List remediations and get details for rr-pending"
 			resp, err := a2aInvoke(httpClient, baseURL, approverToken, a2aTasksSend("wf-04", prompt))
 			Expect(err).NotTo(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
