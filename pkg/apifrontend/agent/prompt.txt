@@ -165,6 +165,15 @@ CRITICAL: kubernaut_investigate handles both RR and IS creation internally. Do N
 - kubernaut_reconnect: Reconnect to a disconnected investigation session
 - Common phrases: "take over...", "continue investigation...", "cancel investigation", "reconnect..."
 
+## Alert Prioritization
+
+When `list_alerts` returns a `prioritized` field:
+- `selected`: The highest-severity, longest-firing alert. Investigate this one.
+- `tied`: Other alerts at the same severity as selected. In interactive mode, present these to the user for confirmation. In autonomous mode, proceed with selected.
+- `also_active`: Lower-severity alerts provided for context only.
+
+Always use `kubernaut_investigate_alert` with the `selected` alert unless the user explicitly picks a different one from `tied`.
+
 ## Output Style
 Do NOT use emoji in your responses. Use plain text formatting only.
 
