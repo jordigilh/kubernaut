@@ -2,11 +2,11 @@
 
 ## Status
 
-Proposed
+Accepted
 
 ## Date
 
-2026-06-12
+2026-06-12 (Proposed) | 2026-06-13 (Accepted)
 
 ## Context
 
@@ -104,3 +104,30 @@ critical > high > warning > info
 - #1412: Forward-compatible fix (added `warning` to `severityRank`)
 - #1416: Console alert_selection artifact
 - #1417: Tracking issue for this ADR
+
+---
+
+## Phase 1 Deliverables (#1412)
+
+Phase 1 has been fully implemented in the `feat/structured-decision-payload` branch:
+
+| Deliverable | Location | Test Coverage |
+|-------------|----------|---------------|
+| Forward-compatible `severityRank` map | `pkg/apifrontend/severity/types.go` | UT-AF-1412-001 |
+| `PrioritizeAlerts` algorithm | `pkg/apifrontend/tools/af_alerts.go` | UT-AF-1412-010..060 |
+| MCP `kubernaut_list_alerts` tool | `pkg/apifrontend/handler/mcp_bridge.go` | IT-AF-1412-001, E2E-AF-1412-001 |
+| `CompareSeverity` using rank map | `pkg/apifrontend/severity/types.go` | UT-AF-1412-020 |
+| Design document | DD-AF-005 | — |
+| Test plan | `docs/tests/1412/TEST_PLAN.md` | — |
+
+### Implementation vs ADR Drift
+
+| ADR Statement | Implementation | Notes |
+|--------------|----------------|-------|
+| "Add `warning: 3` alongside `medium: 3`" | Done: both map to rank 3 | Forward-compatible |
+| "Both vocabularies work simultaneously" | Done: `validSeverities` accepts both | — |
+| Phase 2: emit `warning` instead of `medium` | Not yet done | Future work |
+| Phase 3: backward-compat reads | Not yet done | Requires DataStorage migration |
+| Phase 4-5: schema + cleanup | Not yet done | Tracked in #1417 |
+
+**Drift note**: Code still accepts `medium` and `low` in all input paths (`validAlertSeverities`, `validSeverities`). This is intentional for Phase 1 (forward-compatibility). Phases 2-5 will progressively remove the legacy vocabulary.

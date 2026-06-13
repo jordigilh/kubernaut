@@ -105,9 +105,14 @@ persona has no K8s RBAC fallback.
 **Mitigation**:
 - Document persona assignment as a security-sensitive operation
 - Audit events track all tool invocations with user identity
-- Approval requires explicit `kubernaut_approve` tool call (not implicit)
+- **UPDATE (#1415)**: `kubernaut_approve` structurally removed from A2A agent toolset.
+  Approvals now execute exclusively via MCP endpoint (Console UI), which enforces:
+  - Kubernetes SAR authorization on `kubernaut.ai/tools/kubernaut_approve`
+  - OIDC-authenticated user identity attribution
+  - Audit event with human user, never LLM
+- See DD-AF-006 for full defense-in-depth rationale
 
-**Decision**: Accepted (design-inherent).
+**Decision**: Accepted. Risk significantly reduced by #1415 structural removal.
 
 ### SEC-11: `tools/list` Reconnaissance (MEDIUM, Pre-existing)
 

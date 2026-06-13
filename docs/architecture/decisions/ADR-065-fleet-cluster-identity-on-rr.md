@@ -1,7 +1,7 @@
 # ADR-065: Fleet Cluster Identity on RemediationRequest CRD
 
-**Status**: Proposed
-**Date**: 2026-06-12
+**Status**: Accepted
+**Date**: 2026-06-12 (Proposed) | 2026-06-13 (Accepted)
 **Deciders**: Architecture Team
 **Context**: Fleet remediation requires per-RR cluster identity (#54, #1409)
 **Related**: ADR-064 (Multi-Cluster MCP Gateway), Issue #54, Issue #1409
@@ -103,3 +103,38 @@ type RemediationRequestSpec struct {
 2. Gateway adapter wiring (call `clusterid.DiscoverIdentity` at boot, inject into RR creation)
 3. AF consumption (read from RR, thread to EventBridge, include in payloads)
 4. RO migration (read from RR spec in notifications, fall back to boot-time if empty)
+
+---
+
+## Wiring Manifest
+
+| Component | Production Entry Point | Wiring Code Location | Test ID |
+|-----------|----------------------|---------------------|---------|
+| ClusterID field | RemediationRequestSpec | api/remediation/v1alpha1/remediationrequest_types.go | CRD validation |
+| ClusterName field | RemediationRequestSpec | api/remediation/v1alpha1/remediationrequest_types.go | CRD validation |
+| Gateway population | adapter.CreateRR() | pkg/gateway/adapter/ (future) | — |
+| AF consumption | session start | pkg/apifrontend/agent/ (future) | — |
+
+---
+
+## Business Requirement Linkage
+
+- **BR-FLEET-001**: Fleet remediation requires cluster identity on every RR
+- **Issue #54**: Multi-cluster remediation tracking
+- **Issue #1409**: Console cluster context banner
+
+---
+
+## Test Plan Reference
+
+Implementation test plan will be created when the CRD schema change lands. Current branch adds the `ClusterID`/`ClusterName` fields to the spec with `+optional` and `omitempty` for backward compatibility.
+
+---
+
+## FedRAMP Implications
+
+| Control | Impact |
+|---------|--------|
+| AU-3 (Audit content) | Cluster provenance now recorded per-RR, enabling cluster-scoped audit queries |
+| SI-4 (Monitoring) | Cross-cluster signal correlation enabled by `ClusterID` field |
+| AC-6 (Least privilege) | Future: RBAC scoped per-cluster identity for multi-tenant fleet |
