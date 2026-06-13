@@ -90,6 +90,12 @@ type Orchestrator struct {
 	// Value: bool (true if successfully delivered)
 	successfulDeliveries sync.Map
 
+	// DD-NOT-008 v2: Per-notification delivery mutex. Serializes the
+	// reserve-check-deliver cycle for each notification, eliminating the
+	// TOCTOU window between in-flight decrement and status persistence.
+	// Key: notification UID, Value: *sync.Mutex
+	deliveryMu sync.Map
+
 	// Dependencies
 	sanitizer     *sanitization.Sanitizer
 	metrics       *notificationmetrics.Metrics
@@ -202,6 +208,13 @@ func (o *Orchestrator) DeliverToChannels(
 ) (*DeliveryResult, error) {
 	log := o.logger.WithValues("notification", notification.Name, "namespace", notification.Namespace)
 
+	// DD-NOT-008 v2: Serialize delivery attempts per notification. This eliminates
+	// the TOCTOU window where concurrent reconciles both pass the max-attempts gate
+	// because inFlight was decremented before status persistence.
+	mu := o.getDeliveryMutex(string(notification.UID))
+	mu.Lock()
+	defer mu.Unlock()
+
 	// Initialize result
 	result := &DeliveryResult{
 		DeliveryResults:  make(map[string]error),
@@ -290,11 +303,9 @@ func (o *Orchestrator) DeliverToChannels(
 		durationSeconds := math.Round(time.Since(start).Seconds()*1000) / 1000
 
 		// Decrement in-flight counter now that delivery is complete.
-		// Note: there is a brief window between this decrement and status
-		// persistence where a concurrent reconcile could see stale persisted
-		// count + 0 in-flight. This is bounded to at most 1 extra delivery
-		// call per channel and is handled by status dedup in AtomicStatusUpdate.
-		// The reserve-then-check pattern above prevents the wider TOCTOU race.
+		// DD-NOT-008 v2: The per-notification mutex in DeliverToChannels
+		// serializes concurrent reconciles, so the decrement-before-persist
+		// gap is no longer exploitable.
 		o.decrementInFlightAttempts(string(notification.UID), string(channel))
 
 		// Create delivery attempt record (but DON'T write to status yet)
@@ -560,6 +571,14 @@ func (o *Orchestrator) decrementInFlightAttempts(uid string, channel string) {
 	}
 }
 
+// getDeliveryMutex returns a per-notification mutex. Concurrent reconciles for
+// the same notification are serialized, eliminating the TOCTOU window between
+// in-flight decrement and status persistence (DD-NOT-008 v2).
+func (o *Orchestrator) getDeliveryMutex(uid string) *sync.Mutex {
+	mu, _ := o.deliveryMu.LoadOrStore(uid, &sync.Mutex{})
+	return mu.(*sync.Mutex)
+}
+
 // ClearInMemoryState clears all in-memory tracking for a notification.
 // DD-NOT-008: Called after status is persisted to clean up in-memory state.
 // This is critical for test isolation in parallel execution.
@@ -585,6 +604,9 @@ func (o *Orchestrator) ClearInMemoryState(uid string) {
 		}
 		return true
 	})
+
+	// Clear per-notification delivery mutex
+	o.deliveryMu.Delete(uid)
 }
 
 // sanitizeNotification creates a sanitized copy of the notification.

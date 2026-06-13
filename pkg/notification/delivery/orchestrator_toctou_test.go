@@ -47,19 +47,16 @@ var _ = Describe("Orchestrator TOCTOU Race Prevention (DD-NOT-008)", func() {
 
 	// BR-NOT-052: MaxAttempts enforcement under concurrent reconciliation.
 	//
-	// The TOCTOU race: two concurrent DeliverToChannels calls both check
-	// attemptCount < MaxAttempts before either increments the in-flight counter,
-	// so both pass the gate and both deliver — exceeding MaxAttempts.
+	// DD-NOT-008 v2: A per-notification mutex serializes DeliverToChannels
+	// calls for the same notification. Concurrent reconciles queue behind the
+	// mutex, so only one at a time evaluates the max-attempts gate. This
+	// eliminates the TOCTOU race entirely.
 	Describe("Concurrent delivery must respect MaxAttempts", func() {
-		It("UT-TOCTOU-001: concurrent reconciles with overlapping delivery must not exceed MaxAttempts", func() {
+		It("UT-TOCTOU-001: concurrent reconciles with per-notification mutex must not exceed MaxAttempts", func() {
 			const maxAttempts = 1
 			const concurrency = 10
 
 			var deliverCalls atomic.Int32
-			// Hold all goroutines at the delivery gate so they overlap
-			// inside the reserve-then-check region simultaneously.
-			allReserved := make(chan struct{})
-			var reservedCount atomic.Int32
 
 			svc := &mockDeliveryService{
 				deliverFunc: func(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
@@ -79,16 +76,10 @@ var _ = Describe("Orchestrator TOCTOU Race Prevention (DD-NOT-008)", func() {
 				return nil
 			}
 
-			// The getChannelAttemptCount callback blocks until all
-			// goroutines have reserved their in-flight slots. This
-			// guarantees all reservations are visible before any
-			// goroutine evaluates the max-attempts gate.
+			// DD-NOT-008 v2: The per-notification mutex serializes calls.
+			// Each goroutine sees the in-flight counter left by predecessors,
+			// so only MaxAttempts=1 delivery actually fires.
 			getAttemptCount := func(n *notificationv1alpha1.NotificationRequest, ch string) int {
-				if reservedCount.Add(1) == int32(concurrency) {
-					close(allReserved)
-				} else {
-					<-allReserved
-				}
 				return orchestrator.GetTotalAttemptCount(n, ch, 0)
 			}
 
@@ -110,11 +101,11 @@ var _ = Describe("Orchestrator TOCTOU Race Prevention (DD-NOT-008)", func() {
 			}
 			wg.Wait()
 
-			// All 10 goroutines increment in-flight before any checks
-			// the count. With MaxAttempts=1, exactly 1 sees count<=1
-			// and proceeds; the other 9 see count>1 and bail.
-			Expect(int(deliverCalls.Load())).To(BeNumerically("<=", maxAttempts),
-				"BR-NOT-052: concurrent reconciles must not exceed MaxAttempts Deliver calls")
+			// DD-NOT-008 v2: With mutex serialization, exactly MaxAttempts
+			// deliveries occur — the first caller delivers, subsequent callers
+			// see attemptCount > MaxAttempts and bail.
+			Expect(int(deliverCalls.Load())).To(Equal(maxAttempts),
+				"BR-NOT-052: concurrent reconciles must deliver exactly MaxAttempts times")
 		})
 
 		It("UT-TOCTOU-002: in-flight reservation is visible to getChannelAttemptCount", func() {
