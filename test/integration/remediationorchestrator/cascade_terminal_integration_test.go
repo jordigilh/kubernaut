@@ -77,14 +77,7 @@ var _ = Describe("Cascade Terminal to Children (#1421) [IR-4, AC-6, AU-12]", Lab
 		By("Creating an RR already in terminal (Cancelled) phase with child refs")
 		now := metav1.Now()
 		rr := createRemediationRequest(namespace, rrName)
-		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
-
-		By("Waiting for RR to be persisted and get a UID")
-		Eventually(func(g Gomega) {
-			fetched := &remediationv1.RemediationRequest{}
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), fetched)).To(Succeed())
-			g.Expect(fetched.UID).ToNot(BeEmpty())
-		}, timeout, interval).Should(Succeed())
+		Expect(rr.UID).ToNot(BeEmpty(), "createRemediationRequest should populate UID after Create")
 
 		By("Creating an AIAnalysis in Investigating phase (child of RR)")
 		ai := &aianalysisv1.AIAnalysis{
@@ -200,13 +193,7 @@ var _ = Describe("Cascade Terminal to Children (#1421) [IR-4, AC-6, AU-12]", Lab
 		By("Creating RR")
 		now := metav1.Now()
 		rr := createRemediationRequest(namespace, rrName)
-		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
-
-		Eventually(func(g Gomega) {
-			fetched := &remediationv1.RemediationRequest{}
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), fetched)).To(Succeed())
-			g.Expect(fetched.UID).ToNot(BeEmpty())
-		}, timeout, interval).Should(Succeed())
+		Expect(rr.UID).ToNot(BeEmpty(), "createRemediationRequest should populate UID after Create")
 
 		By("Creating AI already in Completed state")
 		ai := &aianalysisv1.AIAnalysis{
@@ -273,13 +260,7 @@ var _ = Describe("Cascade Terminal to Children (#1421) [IR-4, AC-6, AU-12]", Lab
 		By("Creating RR")
 		now := metav1.Now()
 		rr := createRemediationRequest(namespace, rrName)
-		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
-
-		Eventually(func(g Gomega) {
-			fetched := &remediationv1.RemediationRequest{}
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), fetched)).To(Succeed())
-			g.Expect(fetched.UID).ToNot(BeEmpty())
-		}, timeout, interval).Should(Succeed())
+		Expect(rr.UID).ToNot(BeEmpty(), "createRemediationRequest should populate UID after Create")
 
 		By("Creating WE in Running phase")
 		we := &workflowexecutionv1.WorkflowExecution{
