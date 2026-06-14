@@ -18,7 +18,7 @@
 
 **Related ADRs**:
 - ADR-063: ServiceNow Signal Integration Architecture
-- ADR-064: Multi-Cluster Investigation via MCP Gateway
+- ADR-064: Multi-Cluster Investigation via OCP MCP Server
 - ADR-041: LLM Prompt Response Contract
 
 ---
@@ -436,14 +436,14 @@ pressure) and check for active alerts.
 | Pod specs, events, logs | No | Acceptable -- metrics + ServiceNow context is sufficient for triage |
 | Resource YAML/describe | No | Acceptable -- deferred to v1.6+ |
 
-### E7. v1.6+ Path: MCP Gateway
+### E7. v1.6+ Path: Direct KA→OCP MCP Server
 
-For v1.6+, the MCP Gateway (Kuadrant/Connectivity Link) provides full K8s API access to remote clusters (events, logs, resource specs). The spike validated this architecture:
+For v1.6+, KA connects directly to per-cluster OCP MCP servers (no MCP Gateway) for full K8s API access to remote clusters (events, logs, resource specs). KA authenticates with a short-lived JWT per cluster. The spike validated:
 - OCP MCP server covers 82% of KA's investigation tools
 - KA MCP client prototype working (`StreamableProvider` + `BridgeTool`, 14 tests passing)
-- Deployment manifests and routing strategy documented
+- MCP Gateway evaluated and removed from design -- KA knows the target cluster from CMDB CI, so gateway aggregation adds no value
 
-See `docs/spikes/multi-cluster-mcp-gateway/` for full spike reports and ADR-064 for the deferred architecture.
+See `docs/spikes/multi-cluster-mcp-gateway/` for spike reports and ADR-064 for the deferred architecture.
 
 ### E8. Files Affected (v1.5)
 
