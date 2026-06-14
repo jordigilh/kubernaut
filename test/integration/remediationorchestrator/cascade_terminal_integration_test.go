@@ -101,6 +101,17 @@ var _ = Describe("Cascade Terminal to Children (#1421) [IR-4, AC-6, AU-12]", Lab
 					Name:       rrName,
 					Namespace:  ROControllerNamespace,
 				},
+				RemediationID: rrName,
+				AnalysisRequest: aianalysisv1.AnalysisRequest{
+					SignalContext: aianalysisv1.SignalContextInput{
+						Fingerprint:      "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+						Severity:         "critical",
+						SignalName:       "TestHighMemoryAlert",
+						Environment:      "test",
+						BusinessPriority: "P1",
+					},
+					AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
+				},
 			},
 		}
 		Expect(k8sClient.Create(ctx, ai)).To(Succeed())
@@ -216,6 +227,17 @@ var _ = Describe("Cascade Terminal to Children (#1421) [IR-4, AC-6, AU-12]", Lab
 					Kind:       "RemediationRequest",
 					Name:       rrName,
 					Namespace:  ROControllerNamespace,
+				},
+				RemediationID: rrName,
+				AnalysisRequest: aianalysisv1.AnalysisRequest{
+					SignalContext: aianalysisv1.SignalContextInput{
+						Fingerprint:      "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+						Severity:         "critical",
+						SignalName:       "TestHighMemoryAlert",
+						Environment:      "test",
+						BusinessPriority: "P1",
+					},
+					AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
 				},
 			},
 		}
