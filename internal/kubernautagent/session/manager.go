@@ -194,9 +194,9 @@ func (m *Manager) launchInvestigation(ctx context.Context, id string, fn Investi
 					"session_id", id,
 					"attempted_status", string(StatusFailed),
 					"reason", updateErr.Error())
-				if bgCtx.Err() != nil {
-					m.storePartialResult(id, nil)
-				}
+			if bgCtx.Err() != nil {
+				m.storePartialResult(id, result)
+			}
 			} else {
 				m.closeEventChan(id)
 				m.emitSessionEvent(context.Background(), audit.EventTypeSessionFailed, audit.ActionSessionFailed, audit.OutcomeFailure, id, correlationID, fnErr)

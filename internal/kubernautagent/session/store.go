@@ -274,14 +274,16 @@ func (s *Store) Update(id string, status Status, result *katypes.InvestigationRe
 // SetResult attaches a result to an existing session without changing its
 // status. Used to persist partial investigation state on cancelled sessions
 // where Store.Update would reject the status transition (BR-SESSION-002).
-// Skips if the session is in StatusUserDriving (owned by the interactive driver)
-// or already completed with a result to prevent a race where the cancelled
-// investigation goroutine overwrites the user-provided result.
+// First-write-wins: on UserDriving sessions, accepts the first write (nil
+// result) so the cancelled investigation goroutine can preserve its result
+// for discover_workflows (#1425). Blocks subsequent writes to prevent the
+// goroutine from overwriting a user-provided result. Also blocks overwrites
+// on completed sessions.
 func (s *Store) SetResult(id string, result *katypes.InvestigationResult) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if sess, ok := s.sessions[id]; ok {
-		if sess.Status == StatusUserDriving {
+		if sess.Status == StatusUserDriving && sess.Result != nil {
 			return
 		}
 		if sess.Status == StatusCompleted && sess.Result != nil {

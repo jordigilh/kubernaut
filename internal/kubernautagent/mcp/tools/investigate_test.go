@@ -970,3 +970,62 @@ var _ = Describe("kubernaut_investigate — catalog name enrichment", func() {
 		})
 	})
 })
+
+type storedRCAAutoMgr struct {
+	mcptools.NopAutonomousManager
+	rca *katypes.InvestigationResult
+}
+
+func (m *storedRCAAutoMgr) GetLatestRCAResultByRemediationID(_ string) (*katypes.InvestigationResult, bool) {
+	if m.rca != nil {
+		return m.rca, true
+	}
+	return nil, false
+}
+
+var _ = Describe("kubernaut_investigate — discover_workflows takeover resilience", func() {
+
+	Describe("UT-KA-DW-012: discover_workflows uses stored RCA from cancelled investigation [SC-24, IR-4(1)]", func() {
+		It("should find stored RCA via GetLatestRCAResultByRemediationID and return workflows_discovered", func() {
+			sess := &mcpinternal.InteractiveSession{
+				SessionID:     "sess-dw-012",
+				CorrelationID: "rr-dw-012",
+				ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+			}
+			sessionMgr := &mockSessionManager{
+				isActive:        true,
+				getDriverResult: sess,
+			}
+			runner := &mockInvestigatorRunner{}
+			recon := &mockContextReconstructor{turns: nil}
+
+			storedRCA := &katypes.InvestigationResult{
+				RCASummary: "OOMKilled on api-server",
+				Confidence: 0.9,
+				WorkflowID: "mock-workflow",
+				RemediationTarget: katypes.RemediationTarget{
+					Kind: "Deployment", Name: "api-server", Namespace: "production",
+				},
+			}
+			autoMgr := &storedRCAAutoMgr{rca: storedRCA}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, autoMgr,
+				mcptools.WithSignalContextResolver(&mockSignalResolver{}),
+				mcptools.WithWorkflowCatalog(&mockWorkflowCatalog{
+					workflow: &mcptools.CatalogWorkflow{WorkflowID: "mock-workflow", WorkflowName: "Restart Pod"},
+				}))
+
+			output, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-dw-012",
+				Action: mcptools.ActionDiscoverWorkflows,
+			}, mcpinternal.UserInfo{Username: "alice"})
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output.Status).To(Equal("workflows_discovered"),
+				"IR-4(1): discover_workflows must succeed using stored RCA from cancelled investigation")
+			Expect(sess.RCAResult).NotTo(BeNil(), "SC-24: session must have authoritative RCA")
+			Expect(sess.RCAResult.RCASummary).To(Equal("OOMKilled on api-server"))
+			Expect(sess.DiscoveryResult).NotTo(BeNil())
+		})
+	})
+})

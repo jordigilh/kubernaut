@@ -129,6 +129,20 @@ func (m *mockAutoMgrIT) GetSessionLazySink(id string) (*session.LazySink, bool) 
 	return m.mgr.GetSessionLazySink(id)
 }
 
+type mockWorkflowCatalogIT struct {
+	workflow *tools.CatalogWorkflow
+}
+
+func (m *mockWorkflowCatalogIT) GetWorkflowByID(_ context.Context, _ string) (*tools.CatalogWorkflow, error) {
+	return m.workflow, nil
+}
+
+type mockSignalResolverIT struct{}
+
+func (m *mockSignalResolverIT) ResolveSignalContext(_ context.Context, _ string) (*katypes.SignalContext, error) {
+	return &katypes.SignalContext{Severity: "critical"}, nil
+}
+
 var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", func() {
 
 	Describe("IT-KA-TAKE-001: Takeover mid-LLM-turn — autonomous transitions to user_driving", func() {
@@ -272,6 +286,91 @@ var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", 
 			totalDuration := latest.Sub(earliest)
 			Expect(totalDuration).To(BeNumerically(">=", 80*time.Millisecond),
 				"concurrent messages should be serialized (total time >= 80ms)")
+		})
+	})
+
+	// ---------------------------------------------------------------
+	// IT-KA-1425-001: Takeover mid-investigation preserves result for discover_workflows
+	// BR: BR-INTERACTIVE-010, #1425
+	//
+	// Proves that when takeover cancels an in-flight investigation, the
+	// investigation goroutine's result is preserved via storePartialResult
+	// (first-write-wins on SetResult), and discover_workflows finds the
+	// stored RCA through the normal preferred path.
+	// ---------------------------------------------------------------
+	Describe("IT-KA-1425-001: takeover preserves investigation result, discover_workflows succeeds [SC-24, IR-4(1)]", func() {
+		It("should preserve investigation result through takeover and use it for discover_workflows", func() {
+			nsName := uniqueNamespace("take1425")
+			createNamespace(context.Background(), sharedK8sClient, nsName)
+
+			store := session.NewStore(30 * time.Minute)
+			mgr := session.NewManager(store, logr.Discard(), nil, nil)
+			autoMgr := &mockAutoMgrIT{mgr: mgr}
+
+			gate := make(chan struct{})
+			expectedResult := &katypes.InvestigationResult{
+				RCASummary: "OOMKilled in api-server deployment",
+				WorkflowID: "restart-pod-v1",
+				Confidence: 0.9,
+				RemediationTarget: katypes.RemediationTarget{
+					Kind: "Deployment", Name: "api-server", Namespace: "production",
+				},
+			}
+
+			By("Starting autonomous investigation that returns result on cancellation")
+			autoSessionID, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
+				<-gate
+				return expectedResult, ctx.Err()
+			}, map[string]string{"remediation_id": "rr-1425-it-001"})
+			Expect(err).NotTo(HaveOccurred())
+
+			Eventually(func() session.Status {
+				s, _ := mgr.GetSession(autoSessionID)
+				if s == nil {
+					return ""
+				}
+				return s.Status
+			}).Should(Equal(session.StatusRunning))
+
+			By("Taking over the autonomous investigation (cancels context)")
+			logger := logr.Discard()
+			leaseMgr := mcpinternal.NewLeaseSessionManagerConcrete(sharedK8sClient, nsName, logger)
+			runner := &delayedMockRunner{delay: 10 * time.Millisecond, response: "interactive response"}
+			recon := &mockReconIT{}
+			catalog := &mockWorkflowCatalogIT{
+				workflow: &tools.CatalogWorkflow{WorkflowID: "restart-pod-v1", WorkflowName: "Restart Pod"},
+			}
+			tool := tools.NewInvestigateTool(leaseMgr, runner, recon, autoMgr,
+				tools.WithSignalContextResolver(&mockSignalResolverIT{}),
+				tools.WithWorkflowCatalog(catalog),
+			)
+
+			user := mcpinternal.UserInfo{Username: "sre@example.com"}
+			out, err := tool.Handle(context.Background(), tools.InvestigateInput{
+				RRID:   "rr-1425-it-001",
+				Action: tools.ActionTakeover,
+			}, user)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(out.Status).To(Equal("takeover_started"))
+
+			By("Unblocking investigation goroutine (returns result + context.Canceled)")
+			close(gate)
+
+			By("Waiting for investigation result to be stored via storePartialResult")
+			Eventually(func() bool {
+				result, ok := mgr.GetLatestRCAResultByRemediationID("rr-1425-it-001")
+				return ok && result != nil
+			}, 3*time.Second, 50*time.Millisecond).Should(BeTrue(),
+				"SC-24: investigation result must be preserved through takeover")
+
+			By("Calling discover_workflows — must succeed using stored RCA")
+			dwOut, dwErr := tool.Handle(context.Background(), tools.InvestigateInput{
+				RRID:   "rr-1425-it-001",
+				Action: tools.ActionDiscoverWorkflows,
+			}, user)
+			Expect(dwErr).NotTo(HaveOccurred())
+			Expect(dwOut.Status).To(Equal("workflows_discovered"),
+				"IR-4(1): discover_workflows must succeed using stored RCA from cancelled investigation")
 		})
 	})
 

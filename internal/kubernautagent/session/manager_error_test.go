@@ -73,6 +73,53 @@ var _ = Describe("UT-KA-948: Session manager logs store.Update errors — BR-AUD
 		})
 	})
 
+	Describe("UT-KA-1425-001: cancelled investigation preserves result through UserDriving [SC-24]", func() {
+		It("should store the investigation result even when session is UserDriving after takeover", func() {
+			var mu sync.Mutex
+			var logLines []string
+			logger := funcr.New(func(prefix, args string) {
+				mu.Lock()
+				defer mu.Unlock()
+				logLines = append(logLines, prefix+" "+args)
+			}, funcr.Options{Verbosity: 10})
+
+			store := session.NewStore(5 * time.Minute)
+			mgr := session.NewManager(store, logger, audit.NopAuditStore{}, metrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
+
+			expectedResult := &katypes.InvestigationResult{
+				RCASummary: "OOMKilled in api-server deployment",
+				WorkflowID: "restart-pod-v1",
+			}
+
+			gate := make(chan struct{})
+			id, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
+				<-gate
+				return expectedResult, ctx.Err()
+			}, map[string]string{"remediation_id": "rr-1425-001"})
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(mgr.TransitionToUserDriving(id, "alice", nil)).To(Succeed())
+
+			close(gate)
+
+			Eventually(func() string {
+				mu.Lock()
+				defer mu.Unlock()
+				return strings.Join(logLines, "\n")
+			}, 2*time.Second, 5*time.Millisecond).Should(
+				ContainSubstring("post-investigation status update rejected"),
+			)
+
+			time.Sleep(50 * time.Millisecond)
+
+			result, ok := mgr.GetLatestRCAResultByRemediationID("rr-1425-001")
+			Expect(ok).To(BeTrue(), "SC-24: stored RCA result must be retrievable after takeover")
+			Expect(result).NotTo(BeNil(), "SC-24: investigation result must survive takeover")
+			Expect(result.RCASummary).To(Equal("OOMKilled in api-server deployment"))
+			Expect(result.WorkflowID).To(Equal("restart-pod-v1"))
+		})
+	})
+
 	Describe("UT-KA-RACE-001: storePartialResult preserves result when cancel races with completion", func() {
 		It("should attach the result to the session despite terminal status (BR-SESSION-002)", func() {
 			var mu sync.Mutex
