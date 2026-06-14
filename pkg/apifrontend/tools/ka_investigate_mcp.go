@@ -207,10 +207,32 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 		}
 		args.RRID = result.RRID
 		rrSeverity = result.Severity
+
+		// #1423 (AU-3, SI-4): Set RR context on EventBridge so all
+		// subsequent status events include rr_id, namespace, kind, target,
+		// alert_name, and phase for Console banner population.
+		launcher.SetRRContextSafe(ctx, &launcher.RRContext{
+			RRID:      result.RRID,
+			Namespace: args.Namespace,
+			Kind:      args.Kind,
+			Target:    args.Name,
+			AlertName: result.SignalName,
+			Phase:     "Investigating",
+		})
 	}
 
 	if args.RRID == "" {
 		return InvestigateMCPResult{}, fmt.Errorf("rr_id is required for MCP investigation")
+	}
+
+	// For the existing-RR path (rr_id provided as input), set minimal RR context.
+	// Resource metadata may not be available without a K8s read; rr_id + phase
+	// is sufficient for Console escape-hatch buttons (#1423).
+	if !hasResourceArgs {
+		launcher.SetRRContextSafe(ctx, &launcher.RRContext{
+			RRID:  args.RRID,
+			Phase: "Investigating",
+		})
 	}
 
 	// Determine if this RR already has an autonomous investigation running.

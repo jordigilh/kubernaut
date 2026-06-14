@@ -12,6 +12,7 @@ import (
 	"k8s.io/client-go/dynamic"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	apiprom "github.com/jordigilh/kubernaut/pkg/apifrontend/prometheus"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
@@ -152,6 +153,15 @@ func HandleInvestigateAlert(
 	if err != nil {
 		return InvestigateAlertResult{}, fmt.Errorf("create RR for alert investigation: %w", err)
 	}
+
+	launcher.SetRRContextSafe(ctx, &launcher.RRContext{
+		RRID:      result.RRID,
+		Namespace: args.Namespace,
+		Kind:      args.Kind,
+		Target:    args.Name,
+		AlertName: args.AlertName,
+		Phase:     "Investigating",
+	})
 
 	return InvestigateAlertResult{
 		RRID:           result.RRID,

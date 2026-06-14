@@ -19,6 +19,7 @@ package tools_test
 import (
 	"context"
 
+	"github.com/a2aproject/a2a-go/a2a"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -26,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
 
@@ -172,6 +174,48 @@ var _ = Describe("kubernaut_remediate (#1332 Intent-Based Tool Redesign)", func(
 			}, "user", nil, nil)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("api_version"))
+		})
+	})
+
+	Describe("RR context enrichment — #1423 (AU-3, SI-4)", func() {
+		It("UT-AF-1423-020: HandleRemediate sets RR context on EventBridge after RR creation", func() {
+			client := newFakeClientForRemediate()
+			q := &bridgeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), q, a2a.NewTaskID(), "ctx-1423-020", nil)
+
+			result, err := tools.HandleRemediate(ctx, client, "kubernaut-system", &tools.RemediateArgs{
+				Namespace:  "prod",
+				Kind:       "Deployment",
+				Name:       "web-enriched",
+				APIVersion: "apps/v1",
+			}, "user", nil, nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RRID).NotTo(BeEmpty())
+
+			Expect(launcher.EmitStatusSafe(ctx, "post-remediate status")).To(Succeed())
+
+			found := false
+			for _, evt := range q.Events() {
+				statusEvt, ok := evt.(*a2a.TaskStatusUpdateEvent)
+				if !ok {
+					continue
+				}
+				meta := statusEvt.Metadata
+				if meta == nil {
+					continue
+				}
+				if rrid, ok := meta["rr_id"].(string); ok && rrid == result.RRID {
+					found = true
+					Expect(meta["namespace"]).To(Equal("prod"),
+						"AU-3: namespace must be present for audit trail correlation")
+					Expect(meta["kind"]).To(Equal("Deployment"))
+					Expect(meta["target"]).To(Equal("web-enriched"))
+					Expect(meta["phase"]).To(Equal("Investigating"),
+						"SI-4: initial phase must be Investigating")
+				}
+			}
+			Expect(found).To(BeTrue(),
+				"AU-3: status events after HandleRemediate must carry rr_id from RR context")
 		})
 	})
 })

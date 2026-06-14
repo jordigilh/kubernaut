@@ -759,6 +759,7 @@ func HandleWatch(ctx context.Context, client dynamic.Interface, args WatchArgs) 
 				continue
 			}
 			lastSeenPhase = phase
+			launcher.UpdatePhaseSafe(ctx, phase)
 			msg := fmt.Sprintf("Phase changed to %s", phase)
 			events = append(events, WatchEvent{
 				Timestamp: time.Now().UTC().Format(time.RFC3339),

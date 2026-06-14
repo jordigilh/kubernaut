@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/a2aproject/a2a-go/a2a"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
@@ -15,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	prom "github.com/jordigilh/kubernaut/pkg/apifrontend/prometheus"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
@@ -515,6 +517,54 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(t.Name()).To(Equal("kubernaut_investigate_alert"))
+		})
+	})
+
+	Describe("RR context enrichment — #1423 (AU-3, SI-4)", func() {
+		It("UT-AF-1423-030: HandleInvestigateAlert sets RR context on EventBridge after RR creation", func() {
+			client := newFakeClient()
+			q := &bridgeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), q, a2a.NewTaskID(), "ctx-1423-030", nil)
+
+			result, err := tools.HandleInvestigateAlert(ctx, tools.InvestigateAlertConfig{
+				Client:       client,
+				ControllerNS: "kubernaut-system",
+			}, &tools.InvestigateAlertArgs{
+				AlertName:  "ScalingLimited",
+				APIVersion: "apps/v1",
+				Kind:       "Deployment",
+				Name:       "api-frontend",
+				Namespace:  "demo-gateway",
+			}, "sre-user")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RRID).NotTo(BeEmpty())
+
+			Expect(launcher.EmitStatusSafe(ctx, "post-alert-investigate status")).To(Succeed())
+
+			found := false
+			for _, evt := range q.Events() {
+				statusEvt, ok := evt.(*a2a.TaskStatusUpdateEvent)
+				if !ok {
+					continue
+				}
+				meta := statusEvt.Metadata
+				if meta == nil {
+					continue
+				}
+				if rrid, ok := meta["rr_id"].(string); ok && rrid == result.RRID {
+					found = true
+					Expect(meta["namespace"]).To(Equal("demo-gateway"),
+						"AU-3: namespace must be present for audit trail correlation")
+					Expect(meta["kind"]).To(Equal("Deployment"))
+					Expect(meta["target"]).To(Equal("api-frontend"))
+					Expect(meta["alert_name"]).To(Equal("ScalingLimited"),
+						"AU-3: alert_name must match the triggering alert")
+					Expect(meta["phase"]).To(Equal("Investigating"),
+						"SI-4: initial phase must be Investigating")
+				}
+			}
+			Expect(found).To(BeTrue(),
+				"AU-3: status events after HandleInvestigateAlert must carry rr_id from RR context")
 		})
 	})
 })

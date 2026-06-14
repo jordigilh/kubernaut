@@ -10,6 +10,7 @@ import (
 	"k8s.io/client-go/dynamic"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
 )
@@ -53,6 +54,7 @@ type RemediateResult struct {
 	AlreadyExists  bool   `json:"already_exists,omitempty"`
 	Severity       string `json:"severity,omitempty"`
 	SeveritySource string `json:"severity_source,omitempty"`
+	SignalName     string `json:"signal_name,omitempty"`
 }
 
 // HandleRemediate creates a RemediationRequest CRD without creating an
@@ -104,6 +106,15 @@ func HandleRemediate(ctx context.Context, client dynamic.Interface, controllerNS
 	if err != nil {
 		return RemediateResult{}, err
 	}
+
+	launcher.SetRRContextSafe(ctx, &launcher.RRContext{
+		RRID:      result.RRID,
+		Namespace: args.Namespace,
+		Kind:      args.Kind,
+		Target:    args.Name,
+		AlertName: result.SignalName,
+		Phase:     "Investigating",
+	})
 
 	return RemediateResult(result), nil
 }

@@ -50,6 +50,7 @@ type CreateRRResult struct {
 	AlreadyExists  bool   `json:"already_exists,omitempty"`
 	Severity       string `json:"severity,omitempty"`
 	SeveritySource string `json:"severity_source,omitempty"`
+	SignalName     string `json:"signal_name,omitempty"`
 }
 
 // rrCreateGroup provides singleflight deduplication per fingerprint.
@@ -222,8 +223,9 @@ func HandleCreateRR(ctx context.Context, client dynamic.Interface, controllerNS 
 		}
 
 		out := &CreateRRResult{
-			RRID:    created.GetName(),
-			Message: fmt.Sprintf("RemediationRequest created for %s/%s by %s", args.Kind, args.Name, username),
+			RRID:       created.GetName(),
+			Message:    fmt.Sprintf("RemediationRequest created for %s/%s by %s", args.Kind, args.Name, username),
+			SignalName: signalName,
 		}
 		if triageResult != nil {
 			out.Severity = triageResult.Severity
