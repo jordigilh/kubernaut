@@ -787,3 +787,267 @@ var _ = Describe("EmitArtifact (#1399)", func() {
 		Expect(err).NotTo(HaveOccurred())
 	})
 })
+
+var _ = Describe("RR Context Enrichment — #1423 (AU-3, SI-4, SC-7)", func() {
+
+	Describe("SetRRContext + EmitStatus (AU-3: audit record content traceability)", func() {
+		It("UT-AF-1423-001: status events include all RR context fields after SetRRContext", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-1423-001", "ctx-1423-001", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			bridge.SetRRContext(&launcher.RRContext{
+				RRID:      "rr-47ec5289",
+				Namespace: "demo-gateway",
+				Kind:      "Deployment",
+				Target:    "api-frontend",
+				AlertName: "ScalingLimited",
+				Phase:     "Investigating",
+			})
+
+			err := bridge.EmitStatus(ctx, "Investigation starting...")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(queue.events).To(HaveLen(1))
+
+			evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			Expect(evt.Metadata).To(HaveKeyWithValue("type", "status"))
+			Expect(evt.Metadata).To(HaveKeyWithValue("rr_id", "rr-47ec5289"),
+				"AU-3: rr_id enables cross-event correlation in audit trail")
+			Expect(evt.Metadata).To(HaveKeyWithValue("namespace", "demo-gateway"))
+			Expect(evt.Metadata).To(HaveKeyWithValue("kind", "Deployment"))
+			Expect(evt.Metadata).To(HaveKeyWithValue("target", "api-frontend"))
+			Expect(evt.Metadata).To(HaveKeyWithValue("alert_name", "ScalingLimited"))
+			Expect(evt.Metadata).To(HaveKeyWithValue("phase", "Investigating"),
+				"SI-4: phase enables real-time monitoring of remediation lifecycle")
+		})
+
+		It("UT-AF-1423-002: status events without SetRRContext contain no RR fields (backward compat)", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-1423-002", "ctx-1423-002", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			err := bridge.EmitStatus(ctx, "No RR context yet")
+			Expect(err).NotTo(HaveOccurred())
+
+			evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			Expect(evt.Metadata).To(HaveKeyWithValue("type", "status"))
+			Expect(evt.Metadata).NotTo(HaveKey("rr_id"),
+				"SI-10: no RR fields injected when context is absent")
+			Expect(evt.Metadata).NotTo(HaveKey("namespace"))
+			Expect(evt.Metadata).NotTo(HaveKey("kind"))
+			Expect(evt.Metadata).NotTo(HaveKey("target"))
+			Expect(evt.Metadata).NotTo(HaveKey("alert_name"))
+			Expect(evt.Metadata).NotTo(HaveKey("phase"))
+		})
+	})
+
+	Describe("Caller metadata precedence (SI-10: server-sourced authority)", func() {
+		It("UT-AF-1423-003: caller-supplied metadata keys take precedence over RR context", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-1423-003", "ctx-1423-003", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			bridge.SetRRContext(&launcher.RRContext{
+				RRID:      "rr-from-context",
+				Namespace: "ns-from-context",
+				Phase:     "Investigating",
+			})
+
+			callerMeta := map[string]any{
+				"type":  launcher.MetaTypeAlignmentCheckFailed,
+				"rr_id": "rr-from-caller",
+			}
+			err := bridge.EmitStatusWithMeta(ctx, "Alignment check", callerMeta)
+			Expect(err).NotTo(HaveOccurred())
+
+			evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			Expect(evt.Metadata["rr_id"]).To(Equal("rr-from-caller"),
+				"SI-10: caller-supplied rr_id must NOT be overwritten by RR context")
+			Expect(evt.Metadata["namespace"]).To(Equal("ns-from-context"),
+				"AU-3: non-conflicting RR fields still merged")
+			Expect(evt.Metadata["phase"]).To(Equal("Investigating"))
+		})
+	})
+
+	Describe("EmitReasoning includes RR context (AU-3)", func() {
+		It("UT-AF-1423-004: reasoning events carry RR context for audit correlation", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-1423-004", "ctx-1423-004", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			bridge.SetRRContext(&launcher.RRContext{
+				RRID:   "rr-reasoning-001",
+				Target: "memory-eater",
+				Phase:  "Investigating",
+			})
+
+			err := bridge.EmitReasoning(ctx, "Checking pod status...")
+			Expect(err).NotTo(HaveOccurred())
+
+			evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			Expect(evt.Metadata["type"]).To(Equal("reasoning"))
+			Expect(evt.Metadata["rr_id"]).To(Equal("rr-reasoning-001"),
+				"AU-3: reasoning events include rr_id for audit trail correlation")
+			Expect(evt.Metadata["target"]).To(Equal("memory-eater"))
+		})
+	})
+
+	Describe("EmitKeepaliveDot includes RR context (SI-4)", func() {
+		It("UT-AF-1423-005: keepalive dots carry RR context for Console banner persistence", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-1423-005", "ctx-1423-005", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			bridge.SetRRContext(&launcher.RRContext{
+				RRID:      "rr-keepalive-001",
+				Namespace: "payments",
+				Kind:      "StatefulSet",
+				Target:    "db-primary",
+				Phase:     "Investigating",
+			})
+
+			err := bridge.EmitKeepaliveDot(ctx)
+			Expect(err).NotTo(HaveOccurred())
+
+			evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			Expect(evt.Metadata["type"]).To(Equal("keepalive"))
+			Expect(evt.Metadata["dot"]).To(Equal("."))
+			Expect(evt.Metadata["rr_id"]).To(Equal("rr-keepalive-001"),
+				"SI-4: keepalive events carry RR context so Console banner survives SSE reconnect")
+			Expect(evt.Metadata["namespace"]).To(Equal("payments"))
+			Expect(evt.Metadata["kind"]).To(Equal("StatefulSet"))
+			Expect(evt.Metadata["target"]).To(Equal("db-primary"))
+		})
+	})
+
+	Describe("UpdatePhase (SI-4: lifecycle monitoring)", func() {
+		It("UT-AF-1423-006: UpdatePhase changes phase on subsequent status events", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-1423-006", "ctx-1423-006", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			bridge.SetRRContext(&launcher.RRContext{
+				RRID:  "rr-phase-001",
+				Phase: "Investigating",
+			})
+
+			Expect(bridge.EmitStatus(ctx, "Starting investigation")).To(Succeed())
+
+			bridge.UpdatePhase("AwaitingApproval")
+			Expect(bridge.EmitStatus(ctx, "Approval required")).To(Succeed())
+
+			evt0 := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			Expect(evt0.Metadata["phase"]).To(Equal("Investigating"))
+
+			evt1 := queue.events[1].(*a2a.TaskStatusUpdateEvent)
+			Expect(evt1.Metadata["phase"]).To(Equal("AwaitingApproval"),
+				"SI-4: phase must reflect current lifecycle state for real-time monitoring")
+		})
+
+		It("UT-AF-1423-007: UpdatePhase is no-op when no RR context set", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-1423-007", "ctx-1423-007", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			bridge.UpdatePhase("AwaitingApproval")
+			Expect(bridge.EmitStatus(ctx, "No RR context")).To(Succeed())
+
+			evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			Expect(evt.Metadata).NotTo(HaveKey("phase"),
+				"UpdatePhase must be no-op without prior SetRRContext")
+		})
+	})
+
+	Describe("SetRRContextSafe (SC-7: nil-safe boundary protection)", func() {
+		It("UT-AF-1423-008: SetRRContextSafe is nil-safe when no bridge in context", func() {
+			ctx := context.Background()
+			Expect(func() {
+				launcher.SetRRContextSafe(ctx, &launcher.RRContext{RRID: "rr-nil-001"})
+			}).NotTo(Panic(), "SC-7: nil bridge must not panic")
+		})
+
+		It("UT-AF-1423-009: SetRRContextSafe enriches subsequent status events via context", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-1423-009", "ctx-1423-009", nil)
+
+			launcher.SetRRContextSafe(ctx, &launcher.RRContext{
+				RRID:      "rr-safe-001",
+				Namespace: "demo",
+				Kind:      "Deployment",
+				Target:    "web",
+				AlertName: "CrashLooping",
+				Phase:     "Investigating",
+			})
+
+			Expect(launcher.EmitStatusSafe(ctx, "After SetRRContextSafe")).To(Succeed())
+
+			evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			Expect(evt.Metadata["rr_id"]).To(Equal("rr-safe-001"),
+				"SC-7: SetRRContextSafe must propagate RR context through EventBridge")
+			Expect(evt.Metadata["alert_name"]).To(Equal("CrashLooping"))
+		})
+
+		It("UT-AF-1423-010: UpdatePhaseSafe is nil-safe when no bridge in context", func() {
+			ctx := context.Background()
+			Expect(func() {
+				launcher.UpdatePhaseSafe(ctx, "Executing")
+			}).NotTo(Panic())
+		})
+	})
+
+	Describe("Empty fields are omitted (SI-10: minimal data exposure)", func() {
+		It("UT-AF-1423-011: empty RR context fields are not included in metadata", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-1423-011", "ctx-1423-011", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			bridge.SetRRContext(&launcher.RRContext{
+				RRID:  "rr-partial-001",
+				Phase: "Investigating",
+			})
+
+			Expect(bridge.EmitStatus(ctx, "Partial context")).To(Succeed())
+
+			evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			Expect(evt.Metadata).To(HaveKeyWithValue("rr_id", "rr-partial-001"))
+			Expect(evt.Metadata).To(HaveKeyWithValue("phase", "Investigating"))
+			Expect(evt.Metadata).NotTo(HaveKey("namespace"),
+				"SI-10: empty fields must not appear in metadata to minimize data exposure")
+			Expect(evt.Metadata).NotTo(HaveKey("kind"))
+			Expect(evt.Metadata).NotTo(HaveKey("target"))
+			Expect(evt.Metadata).NotTo(HaveKey("alert_name"))
+		})
+	})
+
+	Describe("Thread safety (SC-7: concurrent access protection)", func() {
+		It("UT-AF-1423-012: concurrent SetRRContext and EmitStatus do not race", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-1423-012", "ctx-1423-012", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			var wg sync.WaitGroup
+			wg.Add(2)
+
+			go func() {
+				defer wg.Done()
+				for i := 0; i < 50; i++ {
+					bridge.SetRRContext(&launcher.RRContext{
+						RRID:  "rr-race-001",
+						Phase: "Investigating",
+					})
+				}
+			}()
+
+			go func() {
+				defer wg.Done()
+				for i := 0; i < 50; i++ {
+					_ = bridge.EmitStatus(ctx, "concurrent emit")
+				}
+			}()
+
+			wg.Wait()
+			Expect(queue.events).NotTo(BeEmpty(),
+				"SC-7: concurrent SetRRContext + EmitStatus must not panic or deadlock")
+		})
+	})
+})

@@ -58,6 +58,20 @@ const (
 	MetaTypeAlignmentCheckFailed    = "alignment_check_failed"
 )
 
+// RRContext holds RemediationRequest metadata that is merged into every status
+// event emitted after SetRRContext is called. This enables Console banner
+// population from the first status event after RR creation (#1423).
+// Fields are server-sourced (validated at creation time per SI-10) and contain
+// only identifiers (safe for boundary crossing per SC-7).
+type RRContext struct {
+	RRID      string `json:"rr_id"`
+	Namespace string `json:"namespace"`
+	Kind      string `json:"kind"`
+	Target    string `json:"target"`
+	AlertName string `json:"alert_name"`
+	Phase     string `json:"phase"`
+}
+
 // EventBridge enables tool handlers to emit progressive A2A events directly to
 // the A2A event queue during execution. All streaming content is emitted as
 // TaskStatusUpdateEvent with a metadata.type tag for semantic classification.
@@ -70,9 +84,79 @@ type EventBridge struct {
 	taskID    a2a.TaskID
 	contextID string
 	metrics   BridgeMetrics
+	rrCtx     *RRContext
 }
 
 const maxBridgeTextLen = 512
+
+// SetRRContext stores RR metadata on the bridge so all subsequent status events
+// include rr_id, namespace, kind, target, alert_name, and phase in their
+// metadata map (AU-3 traceability, SI-4 monitoring, SC-7 Console association).
+// Thread-safe: protected by the bridge mutex.
+func (b *EventBridge) SetRRContext(rc *RRContext) {
+	b.mu.Lock()
+	b.rrCtx = rc
+	b.mu.Unlock()
+}
+
+// UpdatePhase updates the phase field in the stored RR context so subsequent
+// status events reflect the current lifecycle phase (SI-4). No-op if
+// SetRRContext has not been called.
+func (b *EventBridge) UpdatePhase(phase string) {
+	b.mu.Lock()
+	if b.rrCtx != nil {
+		b.rrCtx.Phase = phase
+	}
+	b.mu.Unlock()
+}
+
+// mergeRRContext copies RR context fields into meta without overwriting
+// caller-supplied keys (SI-10: caller metadata takes precedence).
+// Must be called under the bridge mutex.
+func (b *EventBridge) mergeRRContext(meta map[string]any) map[string]any {
+	if b.rrCtx == nil {
+		return meta
+	}
+	if meta == nil {
+		meta = map[string]any{}
+	}
+	fields := map[string]string{
+		"rr_id":      b.rrCtx.RRID,
+		"namespace":  b.rrCtx.Namespace,
+		"kind":       b.rrCtx.Kind,
+		"target":     b.rrCtx.Target,
+		"alert_name": b.rrCtx.AlertName,
+		"phase":      b.rrCtx.Phase,
+	}
+	for k, v := range fields {
+		if v == "" {
+			continue
+		}
+		if _, exists := meta[k]; !exists {
+			meta[k] = v
+		}
+	}
+	return meta
+}
+
+// SetRRContextSafe sets RR context on the EventBridge from context. Nil-safe:
+// no-op when no bridge is present. Used by tool handlers after RR creation.
+func SetRRContextSafe(ctx context.Context, rc *RRContext) {
+	bridge := EventBridgeFromContext(ctx)
+	if bridge == nil {
+		return
+	}
+	bridge.SetRRContext(rc)
+}
+
+// UpdatePhaseSafe updates the phase on the EventBridge from context. Nil-safe.
+func UpdatePhaseSafe(ctx context.Context, phase string) {
+	bridge := EventBridgeFromContext(ctx)
+	if bridge == nil {
+		return
+	}
+	bridge.UpdatePhase(phase)
+}
 
 // WithEventBridge attaches an EventBridge to the context, enabling
 // downstream tool handlers to emit progressive reasoning artifacts.
@@ -118,6 +202,10 @@ func (b *EventBridge) EmitKeepaliveDot(ctx context.Context) error {
 }
 
 func (b *EventBridge) emitKeepaliveEvent(ctx context.Context) error {
+	meta := b.mergeRRContext(map[string]any{
+		"type": "keepalive",
+		"dot":  ".",
+	})
 	now := time.Now().UTC()
 	event := &a2a.TaskStatusUpdateEvent{
 		TaskID:    b.taskID,
@@ -126,10 +214,7 @@ func (b *EventBridge) emitKeepaliveEvent(ctx context.Context) error {
 			State:     a2a.TaskStateWorking,
 			Timestamp: &now,
 		},
-		Metadata: map[string]any{
-			"type": "keepalive",
-			"dot":  ".",
-		},
+		Metadata: meta,
 	}
 	err := b.queue.Write(ctx, event)
 	if b.metrics != nil {
@@ -164,6 +249,7 @@ func (b *EventBridge) EmitStatusWithMeta(ctx context.Context, text string, meta 
 }
 
 func (b *EventBridge) emitStatusEventWithMeta(ctx context.Context, text string, meta map[string]any) error {
+	meta = b.mergeRRContext(meta)
 	now := time.Now().UTC()
 	event := &a2a.TaskStatusUpdateEvent{
 		TaskID:    b.taskID,
