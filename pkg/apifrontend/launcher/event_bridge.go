@@ -55,6 +55,7 @@ const (
 
 	MetaTypeApprovalRequest         = "approval_request"
 	MetaTypeApprovalRequestResolved = "approval_request_resolved"
+	MetaTypeAlignmentCheckFailed    = "alignment_check_failed"
 )
 
 // EventBridge enables tool handlers to emit progressive A2A events directly to

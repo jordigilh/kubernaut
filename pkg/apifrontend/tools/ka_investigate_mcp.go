@@ -39,11 +39,27 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/security"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 // isPhaseActivePollTimeout caps the IS phase Active polling after AIA readiness.
 // Short because the phase transition should follow almost immediately after AA submits.
 const isPhaseActivePollTimeout = 5 * time.Second
+
+type rrIDContextKey struct{}
+
+// WithRRID attaches the remediation request ID to the context so that
+// bridgeEventsCollectSummary can include it in structured event metadata.
+func WithRRID(ctx context.Context, rrID string) context.Context {
+	return context.WithValue(ctx, rrIDContextKey{}, rrID)
+}
+
+func extractRRIDFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(rrIDContextKey{}).(string); ok {
+		return v
+	}
+	return ""
+}
 
 // takeoverISPhaseTimeout is used for the takeover path where AA must cancel
 // the autonomous session and re-submit before setting IS phase=Active.
@@ -359,7 +375,8 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 	if blocking {
 		logger.Info("bridgeEventsCollectSummary: starting blocking event bridge",
 			"rr_id", args.RRID, "session_id", result.SessionID, "ctx_err", ctx.Err())
-		summary, rca := bridgeEventsCollectSummary(ctx, result.Events, BridgeInactivityTimeout)
+		bridgeCtx := WithRRID(ctx, args.RRID)
+		summary, rca := bridgeEventsCollectSummary(bridgeCtx, result.Events, BridgeInactivityTimeout)
 		status := "completed"
 		if ctx.Err() != nil {
 			status = "timeout"
@@ -437,6 +454,15 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 // every 5s to prevent idle SSE timeouts during long KA tool executions.
 // This complements the streaming executor-level keepalive which covers
 // gaps between tool calls.
+//
+// NOTE: This is the non-blocking (legacy) bridge path. It does NOT handle
+// EventTypeAlignmentVerdict structured emission — that is handled only by
+// bridgeEventsCollectSummary (the blocking path used by the A2A agent).
+// The non-blocking path emits the raw event text via emitEventToA2A, but
+// FormatEventForUser returns "" for alignment_verdict, so the event is
+// effectively dropped. If the non-blocking path needs alignment verdict
+// support in the future, add a handler here and inject WithRRID on the
+// bridgeCtx at the call site (line ~438).
 func BridgeEventsToA2A(ctx context.Context, events <-chan ka.InvestigationEvent, inactivityTimeout time.Duration) {
 	keepalive := time.NewTicker(5 * time.Second)
 	defer keepalive.Stop()
@@ -525,18 +551,29 @@ func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.Investigat
 				if chunk := extractJSONField(evt.Data, "delta"); chunk != "" {
 					summary.WriteString(chunk)
 				}
-		case ka.EventTypeComplete:
-			if len(evt.Data) > 0 {
-				var rca InvestigateRCA
-				if json.Unmarshal(evt.Data, &rca) == nil && rca.Severity != "" {
-					rcaResult = &rca
-					if rca.RCASummary != "" && summary.Len() == 0 {
-						summary.WriteString(rca.RCASummary)
+			case ka.EventTypeAlignmentVerdict:
+				if len(evt.Data) > 0 {
+					var avr katypes.AlignmentVerdictResult
+					if json.Unmarshal(evt.Data, &avr) == nil && avr.Result != "aligned" {
+						meta := map[string]any{
+							"type":  launcher.MetaTypeAlignmentCheckFailed,
+							"rr_id": extractRRIDFromContext(ctx),
+						}
+						_ = launcher.EmitStructuredMetaSafe(ctx, string(evt.Data), meta)
 					}
-					emitEarlyRCA(ctx, &rca)
 				}
-			}
-			return summary.String(), rcaResult
+			case ka.EventTypeComplete:
+				if len(evt.Data) > 0 {
+					var rca InvestigateRCA
+					if json.Unmarshal(evt.Data, &rca) == nil && rca.Severity != "" {
+						rcaResult = &rca
+						if rca.RCASummary != "" && summary.Len() == 0 {
+							summary.WriteString(rca.RCASummary)
+						}
+						emitEarlyRCA(ctx, &rca)
+					}
+				}
+				return summary.String(), rcaResult
 			case ka.EventTypeCancelled:
 				return summary.String(), rcaResult
 			}
@@ -613,6 +650,8 @@ func FormatEventForUser(evt ka.InvestigationEvent) string {
 		return "Investigation error occurred"
 	case ka.EventTypeComplete:
 		return "Investigation complete."
+	case ka.EventTypeAlignmentVerdict:
+		return ""
 	default:
 		return ""
 	}
@@ -625,7 +664,7 @@ func FormatEventForUser(evt ka.InvestigationEvent) string {
 // errors belong on the status channel as ephemeral messages (AC-4).
 func isStatusEvent(evtType string) bool {
 	switch evtType {
-	case ka.EventTypeToolCallStart, ka.EventTypeComplete, ka.EventTypeCancelled, ka.EventTypeError:
+	case ka.EventTypeToolCallStart, ka.EventTypeComplete, ka.EventTypeCancelled, ka.EventTypeError, ka.EventTypeAlignmentVerdict:
 		return true
 	default:
 		return false

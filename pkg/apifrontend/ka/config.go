@@ -308,7 +308,8 @@ const (
 	EventTypeToolCallStart  = "tool_call_start"
 	EventTypeToolCall       = "tool_call"
 	EventTypeToolResult     = "tool_result"
-	EventTypeError          = "error"
-	EventTypeComplete       = "complete"
-	EventTypeCancelled      = "cancelled"
+	EventTypeError            = "error"
+	EventTypeComplete         = "complete"
+	EventTypeCancelled        = "cancelled"
+	EventTypeAlignmentVerdict = "alignment_verdict"
 )
