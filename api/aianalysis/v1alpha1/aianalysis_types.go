@@ -101,7 +101,7 @@ const (
 
 // AIAnalysisReason represents the umbrella failure or completion reason.
 // Per K8s convention, reasons cover all terminal states (success and failure).
-// +kubebuilder:validation:Enum=AnalysisCompleted;WorkflowResolutionFailed;WorkflowNotNeeded;NoWorkflowSelected;RegoEvaluationError;TransientError;APIError;InteractiveCancelled
+// +kubebuilder:validation:Enum=AnalysisCompleted;WorkflowResolutionFailed;WorkflowNotNeeded;NoWorkflowSelected;RegoEvaluationError;TransientError;APIError;InteractiveCancelled;ParentCancelled
 type AIAnalysisReason string
 
 const (
@@ -113,6 +113,7 @@ const (
 	ReasonTransientError           AIAnalysisReason = "TransientError"
 	ReasonAPIError                 AIAnalysisReason = "APIError"
 	ReasonInteractiveCancelled     AIAnalysisReason = "InteractiveCancelled"
+	ReasonParentCancelled          AIAnalysisReason = "ParentCancelled"
 )
 
 // PolicyDecision represents the Rego policy evaluation outcome.

@@ -109,6 +109,11 @@ type AIAnalysisReconciler struct {
 
 	// Audit client for recording audit events (DD-AUDIT-003)
 	AuditClient *audit.AuditClient
+
+	// #1421: IS phase updater for cascade cancellation in terminal branch.
+	// When RO externally patches AA to Failed/ParentCancelled, the terminal
+	// branch uses this to transition IS to Cancelled.
+	ISPhaseUpdater handlers.ISPhaseUpdater
 }
 
 // +kubebuilder:rbac:groups=kubernaut.ai,resources=aianalyses,verbs=get;list;watch;create;update;patch;delete
@@ -200,6 +205,10 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	case PhaseCompleted, PhaseFailed:
 		// Terminal states - no action needed
 		log.Info("AIAnalysis in terminal state", "phase", currentPhase)
+		// #1421: If externally cancelled (ParentCancelled), cascade to IS + KA session
+		if analysis.Status.Reason == aianalysisv1.ReasonParentCancelled {
+			r.cascadeCancelToIS(ctx, analysis)
+		}
 		// AA-BUG-005: Must call recordPhaseMetrics for terminal states to record analysis.completed event
 		result = ctrl.Result{}
 		err = nil
@@ -385,6 +394,30 @@ func aiAnalysisUpdatePredicate() predicate.Predicate {
 // reconcilePending handles AIAnalysis in Pending phase
 // BR-AI-001: Initialize and transition to Investigating
 // Per reconciliation-phases.md v2.1: Pending → Investigating → Analyzing → Completed/Failed
+
+// cascadeCancelToIS transitions the InvestigationSession to Cancelled when
+// the AIAnalysis is externally terminated (e.g., ParentCancelled from RO).
+// #1421: Kubernetes-native cascade — parent manages child lifecycle.
+func (r *AIAnalysisReconciler) cascadeCancelToIS(ctx context.Context, analysis *aianalysisv1.AIAnalysis) {
+	log := r.Log.WithValues("aianalysis", analysis.Name)
+
+	if r.ISPhaseUpdater == nil {
+		return
+	}
+
+	rrName := analysis.Spec.RemediationRequestRef.Name
+	if rrName == "" {
+		return
+	}
+
+	if err := r.ISPhaseUpdater.SetTerminalPhase(ctx, rrName, isv1alpha1.SessionPhaseCancelled); err != nil {
+		log.Error(err, "Failed to cascade cancel to InvestigationSession (best-effort)",
+			"rrName", rrName)
+	} else {
+		log.Info("Cascaded ParentCancelled to InvestigationSession",
+			"rrName", rrName, "isPhase", isv1alpha1.SessionPhaseCancelled)
+	}
+}
 
 // reconcileInvestigating handles AIAnalysis in Investigating phase
 // BR-AI-023: KA integration
