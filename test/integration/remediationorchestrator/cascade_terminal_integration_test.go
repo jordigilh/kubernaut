@@ -143,6 +143,19 @@ var _ = Describe("Cascade Terminal to Children (#1421) [IR-4, AC-6, AU-12]", Lab
 					Name:       rrName,
 					Namespace:  ROControllerNamespace,
 				},
+				Signal: signalprocessingv1.SignalData{
+					Fingerprint: "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+					Name:        "TestHighMemoryAlert",
+					Severity:    "critical",
+					Type:        "alert",
+					TargetType:  "kubernetes",
+					TargetResource: signalprocessingv1.ResourceIdentifier{
+						Kind:      "Deployment",
+						Name:      "test-app",
+						Namespace: ROControllerNamespace,
+					},
+					ReceivedTime: metav1.Now(),
+				},
 			},
 		}
 		Expect(k8sClient.Create(ctx, sp)).To(Succeed())
