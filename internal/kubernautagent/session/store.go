@@ -258,7 +258,8 @@ func (s *Store) Update(id string, status Status, result *katypes.InvestigationRe
 	if IsTerminal(sess.Status) || sess.Status == StatusUserDriving {
 		return ErrSessionTerminal
 	}
-	if status == StatusCompleted && sess.interactiveUpgrade != nil && sess.interactiveUpgrade.Load() {
+	isSecurityEscalation := result != nil && result.HumanReviewNeeded && result.HumanReviewReason == katypes.HumanReviewReasonAlignmentCheckFailed
+	if status == StatusCompleted && sess.interactiveUpgrade != nil && sess.interactiveUpgrade.Load() && !isSecurityEscalation {
 		status = StatusUserDriving
 		if result != nil {
 			result.InteractiveHold = true
@@ -305,7 +306,9 @@ func (s *Store) CompleteUserDriving(id string, result *katypes.InvestigationResu
 		return fmt.Errorf("cannot complete: status is %s, expected %s", sess.Status, StatusUserDriving)
 	}
 	sess.Status = StatusCompleted
-	sess.Result = result
+	if result != nil {
+		sess.Result = result
+	}
 	return nil
 }
 

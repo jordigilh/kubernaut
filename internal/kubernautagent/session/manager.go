@@ -207,6 +207,9 @@ func (m *Manager) launchInvestigation(ctx context.Context, id string, fn Investi
 		if result != nil && result.InteractiveHold {
 			targetStatus = StatusUserDriving
 		}
+		if result != nil && result.HumanReviewNeeded && result.HumanReviewReason == katypes.HumanReviewReasonAlignmentCheckFailed {
+			targetStatus = StatusCompleted
+		}
 		if updateErr := m.store.Update(id, targetStatus, result, nil); updateErr != nil {
 			m.logger.Info("post-investigation status update rejected",
 				"session_id", id,
@@ -802,7 +805,9 @@ func (m *Manager) ForceCompleteByRemediationID(rrID string, result *katypes.Inve
 				sess.cancel()
 			}
 			sess.Status = StatusCompleted
-			sess.Result = result
+			if result != nil {
+				sess.Result = result
+			}
 			sess.lazySink.Set(nil)
 			if sess.eventChan != nil {
 				close(sess.eventChan)

@@ -27,6 +27,13 @@ const (
 	PhaseValidation        Phase = "validation"
 )
 
+// HumanReviewReasonAlignmentCheckFailed is the sentinel value for
+// InvestigationResult.HumanReviewReason when the shadow agent alignment
+// check has flagged suspicious content. Used across session lifecycle
+// (store, manager) and event emission to identify security escalations
+// that must bypass interactive hold.
+const HumanReviewReasonAlignmentCheckFailed = "alignment_check_failed"
+
 // PhaseToolMap defines which tool names are available in each phase (I4).
 type PhaseToolMap map[Phase][]string
 
