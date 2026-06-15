@@ -33,24 +33,21 @@ var _ = Describe("Full Wiring Integration", func() {
 
 	It("IT-AF-1428-001: HandleListRemediations accepts crclient.Client (typed wiring)", func() {
 		fc := newTypedFakeClient(newTypedRR("ns", "rr-typed-1", "Pending"))
-		var c crclient.Client = fc
-		result, err := tools.HandleListRemediations(context.Background(), c, tools.ListRemediationsArgs{Namespace: "ns"})
+		result, err := tools.HandleListRemediations(context.Background(), fc, tools.ListRemediationsArgs{Namespace: "ns"})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Count).To(Equal(1))
 	})
 
 	It("IT-AF-1428-001b: HandleGetRemediation accepts crclient.Client (typed wiring)", func() {
 		fc := newTypedFakeClient(newTypedRR("ns", "rr-typed-2", "Executing"))
-		var c crclient.Client = fc
-		result, err := tools.HandleGetRemediation(context.Background(), c, tools.GetRemediationArgs{Namespace: "ns", Name: "rr-typed-2"})
+		result, err := tools.HandleGetRemediation(context.Background(), fc, tools.GetRemediationArgs{Namespace: "ns", Name: "rr-typed-2"})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Phase).To(Equal("Executing"))
 	})
 
 	It("IT-AF-1428-001c: HandleCheckExistingRR accepts crclient.Client (typed wiring)", func() {
 		fc := newTypedFakeClient()
-		var c crclient.Client = fc
-		result, err := tools.HandleCheckExistingRR(context.Background(), c, "ns", tools.CheckExistingRRArgs{
+		result, err := tools.HandleCheckExistingRR(context.Background(), fc, "ns", tools.CheckExistingRRArgs{
 			Namespace: "ns", Kind: "Deployment", Name: "web",
 		})
 		Expect(err).NotTo(HaveOccurred())

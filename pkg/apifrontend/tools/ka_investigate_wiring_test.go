@@ -241,33 +241,6 @@ var _ = Describe("mcpClient nil guard (WIRE-W04)", func() {
 	})
 })
 
-func unstructuredNestedString(obj map[string]interface{}, fields ...string) (string, bool, error) {
-	val, found, err := unstructuredNestedField(obj, fields...)
-	if !found || err != nil {
-		return "", found, err
-	}
-	s, ok := val.(string)
-	return s, ok, nil
-}
-
-func unstructuredNestedField(obj map[string]interface{}, fields ...string) (interface{}, bool, error) {
-	current := obj
-	for i, field := range fields {
-		val, ok := current[field]
-		if !ok {
-			return nil, false, nil
-		}
-		if i == len(fields)-1 {
-			return val, true, nil
-		}
-		next, ok := val.(map[string]interface{})
-		if !ok {
-			return nil, false, nil
-		}
-		current = next
-	}
-	return nil, false, nil
-}
 
 type mockPromClientForWiring struct {
 	alerts []prom.Alert

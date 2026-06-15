@@ -21,7 +21,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/watch"
-	"k8s.io/client-go/dynamic"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	k8stesting "k8s.io/client-go/testing"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -116,45 +115,6 @@ func (f *fakeAuditor) Reset() {
 	f.events = nil
 }
 
-// hookDynamicClient intercepts List and Get K8s verbs through a context-aware hook.
-// The hook runs instead of the real call; it can block, return an error, or panic.
-// Other verbs (Watch, Create, Patch, Delete) fall through to the embedded fake.
-type hookDynamicClient struct {
-	dynamic.Interface
-	hook func(ctx context.Context) error
-}
-
-func (h *hookDynamicClient) Resource(gvr schema.GroupVersionResource) dynamic.NamespaceableResourceInterface {
-	return &hookNamespaceableResource{NamespaceableResourceInterface: h.Interface.Resource(gvr), hook: h.hook}
-}
-
-type hookNamespaceableResource struct {
-	dynamic.NamespaceableResourceInterface
-	hook func(ctx context.Context) error
-}
-
-func (h *hookNamespaceableResource) Namespace(ns string) dynamic.ResourceInterface {
-	return &hookResourceInterface{ResourceInterface: h.NamespaceableResourceInterface.Namespace(ns), hook: h.hook}
-}
-
-type hookResourceInterface struct {
-	dynamic.ResourceInterface
-	hook func(ctx context.Context) error
-}
-
-func (h *hookResourceInterface) List(ctx context.Context, _ metav1.ListOptions) (*unstructured.UnstructuredList, error) {
-	if err := h.hook(ctx); err != nil {
-		return nil, err
-	}
-	return &unstructured.UnstructuredList{}, nil
-}
-
-func (h *hookResourceInterface) Get(ctx context.Context, _ string, _ metav1.GetOptions, _ ...string) (*unstructured.Unstructured, error) {
-	if err := h.hook(ctx); err != nil {
-		return nil, err
-	}
-	return &unstructured.Unstructured{}, nil
-}
 
 func bridgeTestScheme() *runtime.Scheme {
 	s := runtime.NewScheme()

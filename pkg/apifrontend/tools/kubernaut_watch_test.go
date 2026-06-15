@@ -20,26 +20,20 @@ import (
 )
 
 func newWatchClient(objects ...crclient.Object) crclient.WithWatch {
-	fc := fake.NewClientBuilder().
+	return fake.NewClientBuilder().
 		WithScheme(watchTestScheme()).
 		WithObjects(objects...).
 		WithStatusSubresource(objects...).
 		Build()
-	wc, ok := fc.(crclient.WithWatch)
-	Expect(ok).To(BeTrue(), "fake client must implement WithWatch")
-	return wc
 }
 
 func newWatchClientWithInterceptor(funcs interceptor.Funcs, objects ...crclient.Object) crclient.WithWatch {
-	fc := fake.NewClientBuilder().
+	return fake.NewClientBuilder().
 		WithScheme(watchTestScheme()).
 		WithObjects(objects...).
 		WithStatusSubresource(objects...).
 		WithInterceptorFuncs(funcs).
 		Build()
-	wc, ok := fc.(crclient.WithWatch)
-	Expect(ok).To(BeTrue(), "fake client must implement WithWatch")
-	return wc
 }
 
 func updateRRPhase(ctx context.Context, c crclient.WithWatch, ns, name, phase string) {
