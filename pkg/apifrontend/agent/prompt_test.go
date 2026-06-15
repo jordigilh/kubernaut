@@ -369,9 +369,9 @@ var _ = Describe("Prompt — Progressive Flow (#1407)", func() {
 			"SI-4: unconditional stop blocks progressive flow and audit trail continuity")
 	})
 
-	It("UT-AF-1407-011: SI-4 prompt contains auto-proceed directive from investigation to discovery", func() {
-		Expect(instruction).To(ContainSubstring("automatically proceed"),
-			"SI-4: progressive flow must auto-proceed to workflow discovery for audit completeness")
+	It("UT-AF-1407-011: SI-4 prompt contains proceed-to-discovery in OTHERWISE branch", func() {
+		Expect(instruction).To(ContainSubstring("Proceed to Phase 2"),
+			"SI-4: OTHERWISE branch must auto-proceed to workflow discovery for audit completeness")
 	})
 
 	It("UT-AF-1407-012: AU-3 prompt preserves investigate-only exception for explicit user requests", func() {
@@ -453,14 +453,19 @@ var _ = Describe("Prompt #1430 / BR-HAPI-200: No-action exception in Phase 1 CRI
 		instruction = cfg.Instruction
 	})
 
-	// UT-AF-1430-001: Phase 1 CRITICAL includes no-action exception.
+	// UT-AF-1430-001: Phase 1 CRITICAL uses conditional branching with no-action as first branch.
 	// FedRAMP SI-4: the agent's decision logic must be observable/auditable
 	// in the prompt contract.
-	It("UT-AF-1430-001: SI-4 prompt includes no-action exception for skipping Phase 2", func() {
-		Expect(instruction).To(ContainSubstring("no remediation is needed"),
-			"#1430 / SI-4: Phase 1 CRITICAL must include exception for RCA concluding no action needed")
+	It("UT-AF-1430-001: SI-4 prompt uses conditional branching for Phase 1 to Phase 2 decision", func() {
+		Expect(instruction).To(ContainSubstring("evaluate the RCA conclusion"),
+			"#1430 / SI-4: Phase 1 must require RCA evaluation before deciding next step")
+		Expect(instruction).To(ContainSubstring("Do NOT call kubernaut_discover_workflows"),
+			"#1430 / SI-4: no-action branch must explicitly prohibit workflow discovery")
 		Expect(instruction).To(ContainSubstring("self-resolved"),
-			"#1430 / SI-4: exception clause must mention self-resolved signals")
+			"#1430 / SI-4: no-action branch must mention self-resolved signals")
+		Expect(instruction).NotTo(MatchRegexp(
+			`MUST automatically proceed to Phase 2.*without waiting`),
+			"#1430: unconditional MUST proceed directive must not appear (causes LLM to skip branch evaluation)")
 	})
 
 	// UT-AF-1430-002: Edge Scenarios section retained and consistent.
@@ -471,9 +476,5 @@ var _ = Describe("Prompt #1430 / BR-HAPI-200: No-action exception in Phase 1 CRI
 			"#1430 / AU-3: present_decision must remain in prompt for no-action path")
 		Expect(instruction).To(ContainSubstring("options: []"),
 			"#1430 / AU-3: prompt must document empty options list for no-action scenario")
-
-		Expect(instruction).NotTo(MatchRegexp(
-			`MUST automatically proceed to Phase 2[^.]*without.*Exception`),
-			"#1430: the unconditional MUST proceed directive must include the no-action exception")
 	})
 })
