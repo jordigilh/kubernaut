@@ -51,7 +51,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 			_ = k8sClient.Delete(ctx, nsObj)
 		})
 
-		result, err := tools.HandleCreateRR(ctx, dynamicClient, ns, &tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(ctx, k8sClient, dynamicClient, ns, &tools.CreateRRArgs{
 			Namespace:   ns,
 			Kind:        "Deployment",
 			Name:        "web-w01",
@@ -78,7 +78,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 	It("IT-AF-1282-W02: created RR has signalSource=a2a-agent in envtest", func() {
 		ctx := context.Background()
 
-		result, err := tools.HandleCreateRR(ctx, dynamicClient, "default", &tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(ctx, k8sClient, dynamicClient, "default", &tools.CreateRRArgs{
 			Namespace:   "default",
 			Kind:        "Deployment",
 			Name:        "web-w02",
@@ -100,7 +100,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 	It("IT-AF-1282-W03: signalName falls back to unknown in envtest", func() {
 		ctx := context.Background()
 
-		result, err := tools.HandleCreateRR(ctx, dynamicClient, "default", &tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(ctx, k8sClient, dynamicClient, "default", &tools.CreateRRArgs{
 			Namespace:   "default",
 			Kind:        "Deployment",
 			Name:        "web-w03",
@@ -148,7 +148,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 			_ = dynamicClient.Resource(eventsGVR).Namespace("default").Delete(ctx, "oom-event-w03b", metav1.DeleteOptions{})
 		})
 
-		result, err := tools.HandleCreateRR(ctx, dynamicClient, "default", &tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(ctx, k8sClient, dynamicClient, "default", &tools.CreateRRArgs{
 			Namespace:   "default",
 			Kind:        "Deployment",
 			Name:        "web-w03b",
@@ -173,7 +173,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 		cfg := severity.DefaultConfig()
 		triager := severity.NewTriager(&noopPromClientIT{}, noopLLM, cfg, logr.Discard())
 
-		result, err := tools.HandleCreateRR(ctx, dynamicClient, "default", &tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(ctx, k8sClient, dynamicClient, "default", &tools.CreateRRArgs{
 			Namespace:   "default",
 			Kind:        "Deployment",
 			Name:        "web-w04",
@@ -205,7 +205,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 			_ = k8sClient.Delete(ctx, workloadNSObj)
 		})
 
-		result, err := tools.HandleCreateRR(ctx, dynamicClient, controllerNS, &tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(ctx, k8sClient, dynamicClient, controllerNS, &tools.CreateRRArgs{
 			Namespace:   workloadNS,
 			Kind:        "Deployment",
 			Name:        "web-1292-w01",
@@ -262,7 +262,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 		ctx := context.Background()
 		auditRecorder.Reset()
 
-		result, err := tools.HandleCreateRR(ctx, dynamicClient, "default", &tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(ctx, k8sClient, dynamicClient, "default", &tools.CreateRRArgs{
 			Namespace:   "default",
 			Kind:        "Deployment",
 			Name:        "web-w06",

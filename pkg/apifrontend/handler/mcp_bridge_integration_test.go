@@ -48,6 +48,7 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 			Enabled:       true,
 			Bridge: &handler.MCPBridgeConfig{
 				K8sClient: fakeK8s,
+				TypedClient:        newBridgeTypedClient(),
 			KAMCPClient: &ka.MockMCPClient{
 				SelectWorkflowFn: func(_ context.Context, _ ka.SelectWorkflowArgs) (*ka.SelectWorkflowResult, error) {
 					return &ka.SelectWorkflowResult{Status: "selected", Message: "workflow selected"}, nil
@@ -431,6 +432,7 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient: fakeK8s,
+					TypedClient:        newBridgeTypedClient(),
 					KAMCPClient: &ka.MockMCPClient{
 						SelectWorkflowFn: func(_ context.Context, _ ka.SelectWorkflowArgs) (*ka.SelectWorkflowResult, error) {
 							return nil, ka.ErrMCPUnavailable
@@ -511,6 +513,7 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:          newFakeDynamicClient(),
+					TypedClient:        newBridgeTypedClient(),
 					KAMCPClient:        mockMCP,
 					DSClient:           newFakeDSClient(),
 					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"*"}}},
@@ -551,6 +554,7 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:          newFakeDynamicClient(),
+					TypedClient:        newBridgeTypedClient(),
 					KAMCPClient:        mockMCP,
 					DSClient:           newFakeDSClient(),
 					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"*"}}},
@@ -612,6 +616,7 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:          newFakeDynamicClient(),
+					TypedClient:        newBridgeTypedClient(),
 					KAMCPClient:        mockMCP,
 					DSClient:           newFakeDSClient(),
 					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"*"}}},
@@ -868,6 +873,7 @@ var _ = Describe("kubernaut_complete_no_action — AF MCP bridge proxy (#1418)",
 			Enabled:       true,
 			Bridge: &handler.MCPBridgeConfig{
 				K8sClient:          newFakeDynamicClient(),
+				TypedClient:        newBridgeTypedClient(),
 				KAMCPClient:        mockMCP,
 				DSClient:           newFakeDSClient(),
 				Authorizer:         authorizer,
@@ -1012,6 +1018,7 @@ var _ = Describe("IT-AF-1418-005: SessionFinalizer wiring for complete_no_action
 			Enabled:       true,
 			Bridge: &handler.MCPBridgeConfig{
 				K8sClient:          newFakeDynamicClient(),
+				TypedClient:        newBridgeTypedClient(),
 				KAMCPClient:        mockMCP,
 				DSClient:           newFakeDSClient(),
 				Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"*"}}},
