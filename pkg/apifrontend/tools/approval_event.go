@@ -17,8 +17,9 @@ package tools
 
 import (
 	"encoding/json"
+	"time"
 
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 )
 
 // ApprovalRequestEventPayload is the structured payload emitted as a
@@ -88,113 +89,55 @@ type ApprovalWorkflowOverridePayload struct {
 	Rationale    string            `json:"rationale,omitempty"`
 }
 
-// MarshalApprovalRequestPayload extracts RAR spec fields from an unstructured
-// object and returns a JSON string suitable for EmitStructuredMeta emission.
-func MarshalApprovalRequestPayload(obj *unstructured.Unstructured) (string, error) {
+// MarshalApprovalRequestPayload extracts RAR spec fields from a typed
+// RemediationApprovalRequest and returns a JSON string suitable for
+// EmitStructuredMeta emission.
+func MarshalApprovalRequestPayload(rar *remediationv1.RemediationApprovalRequest) (string, error) {
 	payload := ApprovalRequestEventPayload{
-		Name:      obj.GetName(),
-		Namespace: obj.GetNamespace(),
+		Name:                   rar.Name,
+		Namespace:              rar.Namespace,
+		RemediationRequestName: rar.Spec.RemediationRequestRef.Name,
+		Confidence:             rar.Spec.Confidence,
+		ConfidenceLevel:        rar.Spec.ConfidenceLevel,
+		Reason:                 rar.Spec.Reason,
+		WhyApprovalRequired:    rar.Spec.WhyApprovalRequired,
+		InvestigationSummary:   rar.Spec.InvestigationSummary,
+		EvidenceCollected:      rar.Spec.EvidenceCollected,
 	}
 
-	spec, _, _ := unstructured.NestedMap(obj.Object, "spec")
-	if spec == nil {
-		b, err := json.Marshal(payload)
-		return string(b), err
+	if !rar.Spec.RequiredBy.IsZero() {
+		payload.RequiredBy = rar.Spec.RequiredBy.Format(time.RFC3339)
 	}
 
-	if ref, ok := spec["remediationRequestRef"].(map[string]interface{}); ok {
-		if name, ok := ref["name"].(string); ok {
-			payload.RemediationRequestName = name
-		}
-	}
-
-	if v, ok := spec["confidence"].(float64); ok {
-		payload.Confidence = v
-	}
-	if v, ok := spec["confidenceLevel"].(string); ok {
-		payload.ConfidenceLevel = v
-	}
-	if v, ok := spec["reason"].(string); ok {
-		payload.Reason = v
-	}
-	if v, ok := spec["whyApprovalRequired"].(string); ok {
-		payload.WhyApprovalRequired = v
-	}
-	if v, ok := spec["investigationSummary"].(string); ok {
-		payload.InvestigationSummary = v
-	}
-	if v, ok := spec["requiredBy"].(string); ok {
-		payload.RequiredBy = v
-	}
-
-	if wf, ok := spec["recommendedWorkflow"].(map[string]interface{}); ok {
-		payload.RecommendedWorkflow = &ApprovalWorkflowPayload{}
-		if v, ok := wf["workflowId"].(string); ok {
-			payload.RecommendedWorkflow.WorkflowID = v
-		}
-		if v, ok := wf["version"].(string); ok {
-			payload.RecommendedWorkflow.Version = v
-		}
-		if v, ok := wf["executionBundle"].(string); ok {
-			payload.RecommendedWorkflow.ExecutionBundle = v
-		}
-		if v, ok := wf["rationale"].(string); ok {
-			payload.RecommendedWorkflow.Rationale = v
+	wf := rar.Spec.RecommendedWorkflow
+	if wf.WorkflowID != "" || wf.Version != "" {
+		payload.RecommendedWorkflow = &ApprovalWorkflowPayload{
+			WorkflowID:      wf.WorkflowID,
+			Version:         wf.Version,
+			ExecutionBundle: wf.ExecutionBundle,
+			Rationale:       wf.Rationale,
 		}
 	}
 
-	if items, ok := spec["evidenceCollected"].([]interface{}); ok {
-		for _, item := range items {
-			if s, ok := item.(string); ok {
-				payload.EvidenceCollected = append(payload.EvidenceCollected, s)
-			}
-		}
+	for _, a := range rar.Spec.RecommendedActions {
+		payload.RecommendedActions = append(payload.RecommendedActions, ApprovalActionPayload{
+			Action:    a.Action,
+			Rationale: a.Rationale,
+		})
 	}
 
-	if items, ok := spec["recommendedActions"].([]interface{}); ok {
-		for _, item := range items {
-			if m, ok := item.(map[string]interface{}); ok {
-				action := ApprovalActionPayload{}
-				if v, ok := m["action"].(string); ok {
-					action.Action = v
-				}
-				if v, ok := m["rationale"].(string); ok {
-					action.Rationale = v
-				}
-				payload.RecommendedActions = append(payload.RecommendedActions, action)
-			}
-		}
+	for _, a := range rar.Spec.AlternativesConsidered {
+		payload.AlternativesConsidered = append(payload.AlternativesConsidered, ApprovalAlternativePayload{
+			Approach: a.Approach,
+			ProsCons: a.ProsCons,
+		})
 	}
 
-	if items, ok := spec["alternativesConsidered"].([]interface{}); ok {
-		for _, item := range items {
-			if m, ok := item.(map[string]interface{}); ok {
-				alt := ApprovalAlternativePayload{}
-				if v, ok := m["approach"].(string); ok {
-					alt.Approach = v
-				}
-				if v, ok := m["prosCons"].(string); ok {
-					alt.ProsCons = v
-				}
-				payload.AlternativesConsidered = append(payload.AlternativesConsidered, alt)
-			}
-		}
-	}
-
-	if pe, ok := spec["policyEvaluation"].(map[string]interface{}); ok {
-		payload.PolicyEvaluation = &ApprovalPolicyPayload{}
-		if v, ok := pe["policyName"].(string); ok {
-			payload.PolicyEvaluation.PolicyName = v
-		}
-		if v, ok := pe["decision"].(string); ok {
-			payload.PolicyEvaluation.Decision = v
-		}
-		if rules, ok := pe["matchedRules"].([]interface{}); ok {
-			for _, r := range rules {
-				if s, ok := r.(string); ok {
-					payload.PolicyEvaluation.MatchedRules = append(payload.PolicyEvaluation.MatchedRules, s)
-				}
-			}
+	if rar.Spec.PolicyEvaluation != nil {
+		payload.PolicyEvaluation = &ApprovalPolicyPayload{
+			PolicyName:   rar.Spec.PolicyEvaluation.PolicyName,
+			Decision:     rar.Spec.PolicyEvaluation.Decision,
+			MatchedRules: rar.Spec.PolicyEvaluation.MatchedRules,
 		}
 	}
 
@@ -202,43 +145,26 @@ func MarshalApprovalRequestPayload(obj *unstructured.Unstructured) (string, erro
 	return string(b), err
 }
 
-// MarshalApprovalResolvedPayload extracts RAR status decision fields from an
-// unstructured object and returns a JSON string for the resolution event.
-func MarshalApprovalResolvedPayload(obj *unstructured.Unstructured) (string, error) {
+// MarshalApprovalResolvedPayload extracts RAR status decision fields from a
+// typed RemediationApprovalRequest and returns a JSON string for the resolution
+// event.
+func MarshalApprovalResolvedPayload(rar *remediationv1.RemediationApprovalRequest) (string, error) {
 	payload := ApprovalResolvedEventPayload{
-		Name: obj.GetName(),
+		Name:     rar.Name,
+		Decision: string(rar.Status.Decision),
+		DecidedBy: rar.Status.DecidedBy,
+		DecisionMessage: rar.Status.DecisionMessage,
 	}
 
-	status, _, _ := unstructured.NestedMap(obj.Object, "status")
-	if status != nil {
-		if v, ok := status["decision"].(string); ok {
-			payload.Decision = v
-		}
-		if v, ok := status["decidedBy"].(string); ok {
-			payload.DecidedBy = v
-		}
-		if v, ok := status["decidedAt"].(string); ok {
-			payload.DecidedAt = v
-		}
-		if v, ok := status["decisionMessage"].(string); ok {
-			payload.DecisionMessage = v
-		}
-		if wo, ok := status["workflowOverride"].(map[string]interface{}); ok {
-			payload.WorkflowOverride = &ApprovalWorkflowOverridePayload{}
-			if v, ok := wo["workflowName"].(string); ok {
-				payload.WorkflowOverride.WorkflowName = v
-			}
-			if v, ok := wo["rationale"].(string); ok {
-				payload.WorkflowOverride.Rationale = v
-			}
-			if params, ok := wo["parameters"].(map[string]interface{}); ok {
-				payload.WorkflowOverride.Parameters = make(map[string]string, len(params))
-				for k, v := range params {
-					if s, ok := v.(string); ok {
-						payload.WorkflowOverride.Parameters[k] = s
-					}
-				}
-			}
+	if rar.Status.DecidedAt != nil {
+		payload.DecidedAt = rar.Status.DecidedAt.Format(time.RFC3339)
+	}
+
+	if wo := rar.Status.WorkflowOverride; wo != nil {
+		payload.WorkflowOverride = &ApprovalWorkflowOverridePayload{
+			WorkflowName: wo.WorkflowName,
+			Parameters:   wo.Parameters,
+			Rationale:    wo.Rationale,
 		}
 	}
 

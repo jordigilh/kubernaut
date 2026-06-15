@@ -7,12 +7,8 @@ import (
 	"strings"
 	"time"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/watch"
-	"k8s.io/client-go/dynamic"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"google.golang.org/adk/tool"
@@ -21,15 +17,15 @@ import (
 	"github.com/go-logr/logr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	aiav1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	eav1alpha1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
+	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
 )
 
-var rrGVR = schema.GroupVersionResource{Group: "kubernaut.ai", Version: "v1alpha1", Resource: "remediationrequests"}
-var rarGVR = schema.GroupVersionResource{Group: "kubernaut.ai", Version: "v1alpha1", Resource: "remediationapprovalrequests"}
 
 // ListRemediationsArgs defines the input for kubernaut_list_remediations.
 type ListRemediationsArgs struct {
@@ -200,7 +196,7 @@ type ApprovalRequestSummary struct {
 }
 
 // HandleListApprovalRequests implements the kubernaut_list_approval_requests logic.
-func HandleListApprovalRequests(ctx context.Context, client dynamic.Interface, args ListApprovalRequestsArgs) (ListApprovalRequestsResult, error) {
+func HandleListApprovalRequests(ctx context.Context, client crclient.Client, args ListApprovalRequestsArgs) (ListApprovalRequestsResult, error) {
 	if client == nil {
 		return ListApprovalRequestsResult{}, ErrK8sUnavailable
 	}
@@ -208,23 +204,18 @@ func HandleListApprovalRequests(ctx context.Context, client dynamic.Interface, a
 		return ListApprovalRequestsResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
 	}
 
-	list, err := client.Resource(rarGVR).Namespace(args.Namespace).List(ctx, metav1.ListOptions{})
-	if err != nil {
+	var list remediationv1.RemediationApprovalRequestList
+	if err := client.List(ctx, &list, crclient.InNamespace(args.Namespace)); err != nil {
 		return ListApprovalRequestsResult{}, ToUserFriendlyError(err)
 	}
 
 	result := make([]ApprovalRequestSummary, 0)
-	for _, item := range list.Items {
-		decision, _, _ := unstructured.NestedString(item.Object, "status", "decision")
+	for i := range list.Items {
+		item := &list.Items[i]
+		decision := string(item.Status.Decision)
 		if !matchesDecisionFilter(decision, args.Decision) {
 			continue
 		}
-
-		rrName, _, _ := unstructured.NestedString(item.Object, "spec", "remediationRequestRef", "name")
-		confidence, _, _ := unstructured.NestedFloat64(item.Object, "spec", "confidence")
-		confidenceLevel, _, _ := unstructured.NestedString(item.Object, "spec", "confidenceLevel")
-		timeRemaining, _, _ := unstructured.NestedString(item.Object, "status", "timeRemaining")
-		requiredBy, _, _ := unstructured.NestedString(item.Object, "spec", "requiredBy")
 
 		displayDecision := decision
 		if displayDecision == "" {
@@ -232,14 +223,14 @@ func HandleListApprovalRequests(ctx context.Context, client dynamic.Interface, a
 		}
 
 		result = append(result, ApprovalRequestSummary{
-			Name:               item.GetName(),
-			Namespace:          item.GetNamespace(),
+			Name:               item.Name,
+			Namespace:          item.Namespace,
 			Decision:           displayDecision,
-			RemediationRequest: rrName,
-			Confidence:         confidence,
-			ConfidenceLevel:    confidenceLevel,
-			TimeRemaining:      timeRemaining,
-			RequiredBy:         requiredBy,
+			RemediationRequest: item.Spec.RemediationRequestRef.Name,
+			Confidence:         item.Spec.Confidence,
+			ConfidenceLevel:    item.Spec.ConfidenceLevel,
+			TimeRemaining:      item.Status.TimeRemaining,
+			RequiredBy:         item.Spec.RequiredBy.Format(time.RFC3339),
 		})
 	}
 
@@ -263,7 +254,7 @@ func matchesDecisionFilter(actual, filter string) bool {
 }
 
 // NewListApprovalRequestsTool creates the kubernaut_list_approval_requests tool.
-func NewListApprovalRequestsTool(client dynamic.Interface, controllerNS string) (tool.Tool, error) {
+func NewListApprovalRequestsTool(client crclient.Client, controllerNS string) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_list_approval_requests",
 		Description: "List remediation approval requests with optional filtering by decision status (pending, approved, rejected, expired)",
@@ -342,7 +333,7 @@ type AlternativeSummary struct {
 }
 
 // HandleGetApprovalRequest implements the kubernaut_get_approval_request logic.
-func HandleGetApprovalRequest(ctx context.Context, client dynamic.Interface, args GetApprovalRequestArgs) (GetApprovalRequestResult, error) {
+func HandleGetApprovalRequest(ctx context.Context, client crclient.Client, args GetApprovalRequestArgs) (GetApprovalRequestResult, error) {
 	if client == nil {
 		return GetApprovalRequestResult{}, ErrK8sUnavailable
 	}
@@ -358,93 +349,67 @@ func HandleGetApprovalRequest(ctx context.Context, client dynamic.Interface, arg
 		return GetApprovalRequestResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, errV)
 	}
 
-	obj, err := client.Resource(rarGVR).Namespace(ns).Get(ctx, name, metav1.GetOptions{})
-	if err != nil {
+	var rar remediationv1.RemediationApprovalRequest
+	if err := client.Get(ctx, crclient.ObjectKey{Namespace: ns, Name: name}, &rar); err != nil {
 		return GetApprovalRequestResult{}, ToUserFriendlyError(err)
 	}
 
-	// Spec fields
-	rrName, _, _ := unstructured.NestedString(obj.Object, "spec", "remediationRequestRef", "name")
-	aiaName, _, _ := unstructured.NestedString(obj.Object, "spec", "aiAnalysisRef", "name")
-	confidence, _, _ := unstructured.NestedFloat64(obj.Object, "spec", "confidence")
-	confidenceLevel, _, _ := unstructured.NestedString(obj.Object, "spec", "confidenceLevel")
-	reason, _, _ := unstructured.NestedString(obj.Object, "spec", "reason")
-	investigationSummary, _, _ := unstructured.NestedString(obj.Object, "spec", "investigationSummary")
-	whyApprovalRequired, _, _ := unstructured.NestedString(obj.Object, "spec", "whyApprovalRequired")
-	requiredBy, _, _ := unstructured.NestedString(obj.Object, "spec", "requiredBy")
-
-	// Recommended workflow
-	wfName, _, _ := unstructured.NestedString(obj.Object, "spec", "recommendedWorkflow", "workflowId")
-	wfVersion, _, _ := unstructured.NestedString(obj.Object, "spec", "recommendedWorkflow", "version")
-
-	// Evidence
-	evidenceRaw, _, _ := unstructured.NestedStringSlice(obj.Object, "spec", "evidenceCollected")
-	if evidenceRaw == nil {
-		evidenceRaw = []string{}
+	evidence := rar.Spec.EvidenceCollected
+	if evidence == nil {
+		evidence = []string{}
 	}
 
-	// Recommended actions
-	actionsRaw, _, _ := unstructured.NestedSlice(obj.Object, "spec", "recommendedActions")
-	actions := make([]RecommendedActionSummary, 0, len(actionsRaw))
-	for _, a := range actionsRaw {
-		if m, ok := a.(map[string]interface{}); ok {
-			action, _ := m["action"].(string)
-			rationale, _ := m["rationale"].(string)
-			actions = append(actions, RecommendedActionSummary{Action: action, Rationale: rationale})
-		}
+	actions := make([]RecommendedActionSummary, 0, len(rar.Spec.RecommendedActions))
+	for _, a := range rar.Spec.RecommendedActions {
+		actions = append(actions, RecommendedActionSummary{Action: a.Action, Rationale: a.Rationale})
 	}
 
-	// Alternatives
-	altsRaw, _, _ := unstructured.NestedSlice(obj.Object, "spec", "alternativesConsidered")
-	alternatives := make([]AlternativeSummary, 0, len(altsRaw))
-	for _, a := range altsRaw {
-		if m, ok := a.(map[string]interface{}); ok {
-			approach, _ := m["approach"].(string)
-			prosCons, _ := m["prosCons"].(string)
-			alternatives = append(alternatives, AlternativeSummary{
-				Approach: approach,
-				ProsCons: prosCons,
-			})
-		}
+	alternatives := make([]AlternativeSummary, 0, len(rar.Spec.AlternativesConsidered))
+	for _, a := range rar.Spec.AlternativesConsidered {
+		alternatives = append(alternatives, AlternativeSummary{Approach: a.Approach, ProsCons: a.ProsCons})
 	}
 
-	// Status fields
-	decision, _, _ := unstructured.NestedString(obj.Object, "status", "decision")
-	decidedBy, _, _ := unstructured.NestedString(obj.Object, "status", "decidedBy")
-	decidedAt, _, _ := unstructured.NestedString(obj.Object, "status", "decidedAt")
-	timeRemaining, _, _ := unstructured.NestedString(obj.Object, "status", "timeRemaining")
-	expired, _, _ := unstructured.NestedBool(obj.Object, "status", "expired")
-
+	decision := string(rar.Status.Decision)
 	displayDecision := decision
 	if displayDecision == "" {
 		displayDecision = "Pending"
 	}
 
+	decidedAt := ""
+	if rar.Status.DecidedAt != nil {
+		decidedAt = rar.Status.DecidedAt.Format(time.RFC3339)
+	}
+
+	requiredBy := ""
+	if !rar.Spec.RequiredBy.IsZero() {
+		requiredBy = rar.Spec.RequiredBy.Format(time.RFC3339)
+	}
+
 	return GetApprovalRequestResult{
-		Name:                   obj.GetName(),
-		Namespace:              obj.GetNamespace(),
-		RemediationRequest:     rrName,
-		AIAnalysis:             aiaName,
-		Confidence:             confidence,
-		ConfidenceLevel:        confidenceLevel,
-		Reason:                 reason,
-		InvestigationSummary:   investigationSummary,
-		WhyApprovalRequired:    whyApprovalRequired,
-		RecommendedWorkflow:    RecommendedWorkflowInfo{Name: wfName, Version: wfVersion},
+		Name:                   rar.Name,
+		Namespace:              rar.Namespace,
+		RemediationRequest:     rar.Spec.RemediationRequestRef.Name,
+		AIAnalysis:             rar.Spec.AIAnalysisRef.Name,
+		Confidence:             rar.Spec.Confidence,
+		ConfidenceLevel:        rar.Spec.ConfidenceLevel,
+		Reason:                 rar.Spec.Reason,
+		InvestigationSummary:   rar.Spec.InvestigationSummary,
+		WhyApprovalRequired:    rar.Spec.WhyApprovalRequired,
+		RecommendedWorkflow:    RecommendedWorkflowInfo{Name: rar.Spec.RecommendedWorkflow.WorkflowID, Version: rar.Spec.RecommendedWorkflow.Version},
 		RecommendedActions:     actions,
-		EvidenceCollected:      evidenceRaw,
+		EvidenceCollected:      evidence,
 		AlternativesConsidered: alternatives,
 		RequiredBy:             requiredBy,
 		Decision:               displayDecision,
-		DecidedBy:              decidedBy,
+		DecidedBy:              rar.Status.DecidedBy,
 		DecidedAt:              decidedAt,
-		TimeRemaining:          timeRemaining,
-		Expired:                expired,
+		TimeRemaining:          rar.Status.TimeRemaining,
+		Expired:                rar.Status.Expired,
 	}, nil
 }
 
 // NewGetApprovalRequestTool creates the kubernaut_get_approval_request tool.
-func NewGetApprovalRequestTool(client dynamic.Interface, controllerNS string) (tool.Tool, error) {
+func NewGetApprovalRequestTool(client crclient.Client, controllerNS string) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_get_approval_request",
 		Description: "Get full details of a specific remediation approval request for review before deciding",
@@ -472,7 +437,7 @@ type ApproveResult struct {
 // HandleApprove implements the kubernaut_approve logic.
 //
 //nolint:gocritic // hugeParam: args passed by value for simplicity; not performance-critical
-func HandleApprove(ctx context.Context, client dynamic.Interface, args ApproveArgs, username string) (ApproveResult, error) {
+func HandleApprove(ctx context.Context, client crclient.Client, args ApproveArgs, username string) (ApproveResult, error) {
 	if client == nil {
 		return ApproveResult{}, ErrK8sUnavailable
 	}
@@ -488,8 +453,9 @@ func HandleApprove(ctx context.Context, client dynamic.Interface, args ApproveAr
 	if args.Decision != "Approved" && args.Decision != "Rejected" {
 		return ApproveResult{}, fmt.Errorf("%w: decision %q is not valid; must be exactly one of: Approved, Rejected", ErrInvalidInput, args.Decision)
 	}
-	_, err := client.Resource(rarGVR).Namespace(args.Namespace).Get(ctx, args.RARName, metav1.GetOptions{})
-	if err != nil {
+
+	var rar remediationv1.RemediationApprovalRequest
+	if err := client.Get(ctx, crclient.ObjectKey{Namespace: args.Namespace, Name: args.RARName}, &rar); err != nil {
 		return ApproveResult{}, ToUserFriendlyError(err)
 	}
 
@@ -517,10 +483,7 @@ func HandleApprove(ctx context.Context, client dynamic.Interface, args ApproveAr
 		return ApproveResult{}, fmt.Errorf("marshaling patch: %w", err)
 	}
 
-	_, err = client.Resource(rarGVR).Namespace(args.Namespace).Patch(
-		ctx, args.RARName, types.MergePatchType, patchBytes, metav1.PatchOptions{}, "status",
-	)
-	if err != nil {
+	if err := client.Status().Patch(ctx, &rar, crclient.RawPatch(types.MergePatchType, patchBytes)); err != nil {
 		return ApproveResult{}, ToUserFriendlyError(err)
 	}
 
@@ -531,7 +494,7 @@ func HandleApprove(ctx context.Context, client dynamic.Interface, args ApproveAr
 }
 
 // NewApproveTool creates the kubernaut_approve tool.
-func NewApproveTool(client dynamic.Interface, controllerNS string) (tool.Tool, error) {
+func NewApproveTool(client crclient.Client, controllerNS string) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_approve",
 		Description: "Approve or reject a pending remediation approval request. The decision field accepts exactly 'Approved' or 'Rejected'.",
@@ -679,7 +642,7 @@ const maxWatchDuration = 15 * time.Minute
 // updates via EventBridge and RAR approval lifecycle tracking.
 // typedClient is the controller-runtime client for typed CRD operations (EA);
 // may be nil (graceful degradation — EA metadata omitted).
-func HandleWatch(ctx context.Context, client dynamic.Interface, typedClient crclient.WithWatch, args WatchArgs) (WatchResult, error) {
+func HandleWatch(ctx context.Context, client crclient.WithWatch, args WatchArgs) (WatchResult, error) {
 	if client == nil {
 		return WatchResult{}, ErrK8sUnavailable
 	}
@@ -698,27 +661,27 @@ func HandleWatch(ctx context.Context, client dynamic.Interface, typedClient crcl
 
 	logger := logr.FromContextOrDiscard(ctx)
 
-	if _, err := client.Resource(rrGVR).Namespace(args.Namespace).Get(ctx, args.Name, metav1.GetOptions{}); err != nil {
+	var rrCheck remediationv1.RemediationRequest
+	if err := client.Get(ctx, crclient.ObjectKey{Namespace: args.Namespace, Name: args.Name}, &rrCheck); err != nil {
 		return WatchResult{}, ToUserFriendlyError(err)
 	}
 
 	watchCtx, cancel := context.WithTimeout(ctx, maxWatchDuration)
 	defer cancel()
 
-	rrWatcher, err := client.Resource(rrGVR).Namespace(args.Namespace).Watch(watchCtx, metav1.ListOptions{
-		FieldSelector: "metadata.name=" + args.Name,
-	})
+	rrWatcher, err := client.Watch(watchCtx, &remediationv1.RemediationRequestList{},
+		crclient.InNamespace(args.Namespace),
+		crclient.MatchingFields{"metadata.name": args.Name})
 	if err != nil {
 		return WatchResult{}, ToUserFriendlyError(err)
 	}
 	defer rrWatcher.Stop()
 
-	// RAR watch: graceful degradation if RBAC is missing or RAR not yet created.
 	rarName := fmt.Sprintf("rar-%s", args.Name)
 	var rarCh <-chan watch.Event
-	rarWatcher, rarErr := client.Resource(rarGVR).Namespace(args.Namespace).Watch(watchCtx, metav1.ListOptions{
-		FieldSelector: "metadata.name=" + rarName,
-	})
+	rarWatcher, rarErr := client.Watch(watchCtx, &remediationv1.RemediationApprovalRequestList{},
+		crclient.InNamespace(args.Namespace),
+		crclient.MatchingFields{"metadata.name": rarName})
 	if rarErr != nil {
 		logger.V(1).Info("RAR watch unavailable, continuing with RR-only watch",
 			"rar_name", rarName, "error", rarErr)
@@ -750,11 +713,11 @@ func HandleWatch(ctx context.Context, client dynamic.Interface, typedClient crcl
 			if evt.Type != watch.Modified && evt.Type != watch.Added {
 				continue
 			}
-			obj, ok := evt.Object.(*unstructured.Unstructured)
+			rrObj, ok := evt.Object.(*remediationv1.RemediationRequest)
 			if !ok {
 				continue
 			}
-			phase, _, _ := unstructured.NestedString(obj.Object, "status", "overallPhase")
+			phase := string(rrObj.Status.OverallPhase)
 			if phase == lastSeenPhase {
 				continue
 			}
@@ -769,7 +732,7 @@ func HandleWatch(ctx context.Context, client dynamic.Interface, typedClient crcl
 			})
 			if phase == "Verifying" {
 				eaName := EANameForRR(args.Name)
-				timing := FetchEATimingMetadata(ctx, typedClient, nil, args.Namespace, eaName)
+				timing := FetchEATimingMetadata(ctx, client, nil, args.Namespace, eaName)
 
 				statusMeta := map[string]any{"type": launcher.MetaTypeStatus}
 				if timing.StabilizationWindow != "" {
@@ -781,9 +744,9 @@ func HandleWatch(ctx context.Context, client dynamic.Interface, typedClient crcl
 				}
 				_ = launcher.EmitStatusWithMetaSafe(ctx, fmt.Sprintf("Remediation phase: %s\n", phase), statusMeta)
 
-				if typedClient != nil && eaCh == nil {
+				if eaCh == nil {
 					eaList := &eav1alpha1.EffectivenessAssessmentList{}
-					eaWatcher, eaErr := typedClient.Watch(watchCtx, eaList,
+					eaWatcher, eaErr := client.Watch(watchCtx, eaList,
 						crclient.InNamespace(args.Namespace),
 						crclient.MatchingFields{"metadata.name": eaName})
 					if eaErr != nil {
@@ -805,7 +768,7 @@ func HandleWatch(ctx context.Context, client dynamic.Interface, typedClient crcl
 			progressMeta := map[string]any{"type": "execution_progress"}
 			if phase == "Verifying" {
 				eaName := EANameForRR(args.Name)
-				timing := FetchEATimingMetadata(ctx, typedClient, nil, args.Namespace, eaName)
+				timing := FetchEATimingMetadata(ctx, client, nil, args.Namespace, eaName)
 				if timing.StabilizationWindow != "" {
 					progressMeta["stabilization_window"] = timing.StabilizationWindow
 				}
@@ -814,19 +777,17 @@ func HandleWatch(ctx context.Context, client dynamic.Interface, typedClient crcl
 			_ = launcher.EmitArtifactSafe(ctx, snapshot, fmt.Sprintf("Progress: %s", phase), progressMeta)
 
 			if IsTerminalPhase(phase) {
-				outcome, _, _ := unstructured.NestedString(obj.Object, "status", "outcome")
-				statusMsg, _, _ := unstructured.NestedString(obj.Object, "status", "message")
-				return WatchResult{Events: events, Status: "completed", Outcome: outcome, Message: statusMsg}, nil
+				return WatchResult{Events: events, Status: "completed", Outcome: rrObj.Status.Outcome, Message: rrObj.Status.Message}, nil
 			}
 			if phase == "AwaitingApproval" {
-				rarObj, getErr := client.Resource(rarGVR).Namespace(args.Namespace).Get(ctx, rarName, metav1.GetOptions{})
+				var rarObj remediationv1.RemediationApprovalRequest
+				getErr := client.Get(ctx, crclient.ObjectKey{Namespace: args.Namespace, Name: rarName}, &rarObj)
 				if getErr == nil {
-					if payload, mErr := MarshalApprovalRequestPayload(rarObj); mErr == nil {
+					if payload, mErr := MarshalApprovalRequestPayload(&rarObj); mErr == nil {
 						_ = launcher.EmitStructuredMetaSafe(ctx, payload, map[string]any{"type": launcher.MetaTypeApprovalRequest})
 					}
-					decision, _, _ := unstructured.NestedString(rarObj.Object, "status", "decision")
-					if decision != "" {
-						if resolved, mErr := MarshalApprovalResolvedPayload(rarObj); mErr == nil {
+					if rarObj.Status.Decision != "" {
+						if resolved, mErr := MarshalApprovalResolvedPayload(&rarObj); mErr == nil {
 							_ = launcher.EmitStructuredMetaSafe(ctx, resolved, map[string]any{"type": launcher.MetaTypeApprovalRequestResolved})
 						}
 					}
@@ -845,11 +806,11 @@ func HandleWatch(ctx context.Context, client dynamic.Interface, typedClient crcl
 			if evt.Type != watch.Modified && evt.Type != watch.Added {
 				continue
 			}
-			obj, ok := evt.Object.(*unstructured.Unstructured)
+			rarObj, ok := evt.Object.(*remediationv1.RemediationApprovalRequest)
 			if !ok {
 				continue
 			}
-			decision, _, _ := unstructured.NestedString(obj.Object, "status", "decision")
+			decision := string(rarObj.Status.Decision)
 			if decision == lastRARDecision {
 				continue
 			}
@@ -860,16 +821,14 @@ func HandleWatch(ctx context.Context, client dynamic.Interface, typedClient crcl
 			case "":
 				rarMsg = "Approval requested — awaiting human decision"
 			case "Approved":
-				decidedBy, _, _ := unstructured.NestedString(obj.Object, "status", "decidedBy")
-				if decidedBy != "" {
-					rarMsg = fmt.Sprintf("Approval granted by %s", decidedBy)
+				if rarObj.Status.DecidedBy != "" {
+					rarMsg = fmt.Sprintf("Approval granted by %s", rarObj.Status.DecidedBy)
 				} else {
 					rarMsg = "Approval granted"
 				}
 			case "Rejected":
-				decidedBy, _, _ := unstructured.NestedString(obj.Object, "status", "decidedBy")
-				if decidedBy != "" {
-					rarMsg = fmt.Sprintf("Approval rejected by %s", decidedBy)
+				if rarObj.Status.DecidedBy != "" {
+					rarMsg = fmt.Sprintf("Approval rejected by %s", rarObj.Status.DecidedBy)
 				} else {
 					rarMsg = "Approval rejected"
 				}
@@ -886,7 +845,7 @@ func HandleWatch(ctx context.Context, client dynamic.Interface, typedClient crcl
 				Message:   rarMsg,
 			})
 			_ = launcher.EmitStatusSafe(ctx, rarMsg+"\n")
-			if resolved, mErr := MarshalApprovalResolvedPayload(obj); mErr == nil {
+			if resolved, mErr := MarshalApprovalResolvedPayload(rarObj); mErr == nil {
 				_ = launcher.EmitStructuredMetaSafe(ctx, resolved, map[string]any{"type": launcher.MetaTypeApprovalRequestResolved})
 			}
 
@@ -925,13 +884,13 @@ func HandleWatch(ctx context.Context, client dynamic.Interface, typedClient crcl
 }
 
 // NewWatchTool creates the kubernaut_watch tool.
-func NewWatchTool(client dynamic.Interface, typedClient crclient.WithWatch, controllerNS string) (tool.Tool, error) {
+func NewWatchTool(client crclient.WithWatch, controllerNS string) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_watch",
 		Description: "Stream live status updates for a remediation and its related resources",
 	}, func(ctx tool.Context, args WatchArgs) (WatchResult, error) {
 		args.Namespace = controllerNS
-		return HandleWatch(ctx, client, typedClient, args)
+		return HandleWatch(ctx, client, args)
 	})
 }
 
@@ -940,7 +899,6 @@ func NewWatchTool(client dynamic.Interface, typedClient crclient.WithWatch, cont
 // BR-INTERACTIVE-010: AF waits for AA to submit to KA before connecting
 // ========================================
 
-var aianalysisGVR = schema.GroupVersionResource{Group: "kubernaut.ai", Version: "v1alpha1", Resource: "aianalyses"}
 
 // AwaitSessionArgs defines the input for kubernaut_await_session.
 type AwaitSessionArgs struct {
@@ -966,7 +924,7 @@ const awaitSessionPollInterval = 3 * time.Second
 // HandleAwaitSession waits for an AIAnalysis resource (matching the given RR) to have
 // a non-empty status.investigationSession.id. Returns the session ID when ready, or
 // times out after AwaitSessionTimeout.
-func HandleAwaitSession(ctx context.Context, client dynamic.Interface, args AwaitSessionArgs) (AwaitSessionResult, error) {
+func HandleAwaitSession(ctx context.Context, client crclient.Client, args AwaitSessionArgs) (AwaitSessionResult, error) {
 	if client == nil {
 		return AwaitSessionResult{}, ErrK8sUnavailable
 	}
@@ -977,7 +935,6 @@ func HandleAwaitSession(ctx context.Context, client dynamic.Interface, args Awai
 		return AwaitSessionResult{}, fmt.Errorf("%w: rr_name is required", ErrInvalidInput)
 	}
 
-	// Check existing AIAnalysis first (may already have session).
 	if sessionID := findSessionIDByList(ctx, client, args); sessionID != "" {
 		return AwaitSessionResult{SessionID: sessionID, Status: "ready"}, nil
 	}
@@ -985,12 +942,14 @@ func HandleAwaitSession(ctx context.Context, client dynamic.Interface, args Awai
 	watchCtx, cancel := context.WithTimeout(ctx, AwaitSessionTimeout)
 	defer cancel()
 
-	watcher, err := client.Resource(aianalysisGVR).Namespace(args.Namespace).Watch(watchCtx, metav1.ListOptions{
-		FieldSelector: "spec.remediationRequestRef.name=" + args.RRName,
-	})
+	wc, ok := client.(crclient.WithWatch)
+	if !ok {
+		return pollForSessionID(watchCtx, client, args)
+	}
+
+	var aiaList aiav1alpha1.AIAnalysisList
+	watcher, err := wc.Watch(watchCtx, &aiaList, crclient.InNamespace(args.Namespace))
 	if err != nil {
-		// Field selectors on custom fields may not be supported via dynamic client.
-		// Fall back to polling.
 		return pollForSessionID(watchCtx, client, args)
 	}
 	defer watcher.Stop()
@@ -1004,13 +963,15 @@ func HandleAwaitSession(ctx context.Context, client dynamic.Interface, args Awai
 				return AwaitSessionResult{Status: "timeout", Message: "watch closed unexpectedly"}, nil
 			}
 			if evt.Type == watch.Modified || evt.Type == watch.Added {
-				obj, ok := evt.Object.(*unstructured.Unstructured)
+				aia, ok := evt.Object.(*aiav1alpha1.AIAnalysis)
 				if !ok {
 					continue
 				}
-				sessionID, _, _ := unstructured.NestedString(obj.Object, "status", "investigationSession", "id")
-				if sessionID != "" {
-					return AwaitSessionResult{SessionID: sessionID, Status: "ready"}, nil
+				if aia.Spec.RemediationRequestRef.Name != args.RRName {
+					continue
+				}
+				if aia.Status.KASession != nil && aia.Status.KASession.ID != "" {
+					return AwaitSessionResult{SessionID: aia.Status.KASession.ID, Status: "ready"}, nil
 				}
 			}
 		}
@@ -1018,7 +979,7 @@ func HandleAwaitSession(ctx context.Context, client dynamic.Interface, args Awai
 }
 
 // pollForSessionID is a fallback that polls AIAnalysis resources until session ID appears.
-func pollForSessionID(ctx context.Context, client dynamic.Interface, args AwaitSessionArgs) (AwaitSessionResult, error) {
+func pollForSessionID(ctx context.Context, client crclient.Client, args AwaitSessionArgs) (AwaitSessionResult, error) {
 	ticker := time.NewTicker(awaitSessionPollInterval)
 	defer ticker.Stop()
 
@@ -1035,26 +996,25 @@ func pollForSessionID(ctx context.Context, client dynamic.Interface, args AwaitS
 }
 
 // findSessionIDByList lists AIAnalysis for the given RR and returns the first non-empty session ID.
-func findSessionIDByList(ctx context.Context, client dynamic.Interface, args AwaitSessionArgs) string {
-	list, err := client.Resource(aianalysisGVR).Namespace(args.Namespace).List(ctx, metav1.ListOptions{})
-	if err != nil {
+func findSessionIDByList(ctx context.Context, client crclient.Client, args AwaitSessionArgs) string {
+	var list aiav1alpha1.AIAnalysisList
+	if err := client.List(ctx, &list, crclient.InNamespace(args.Namespace)); err != nil {
 		return ""
 	}
-	for _, item := range list.Items {
-		rrName, _, _ := unstructured.NestedString(item.Object, "spec", "remediationRequestRef", "name")
-		if rrName != args.RRName {
+	for i := range list.Items {
+		item := &list.Items[i]
+		if item.Spec.RemediationRequestRef.Name != args.RRName {
 			continue
 		}
-		sessionID, _, _ := unstructured.NestedString(item.Object, "status", "investigationSession", "id")
-		if sessionID != "" {
-			return sessionID
+		if item.Status.KASession != nil && item.Status.KASession.ID != "" {
+			return item.Status.KASession.ID
 		}
 	}
 	return ""
 }
 
 // NewAwaitSessionTool creates the kubernaut_await_session tool.
-func NewAwaitSessionTool(client dynamic.Interface, controllerNS string) (tool.Tool, error) {
+func NewAwaitSessionTool(client crclient.Client, controllerNS string) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_await_session",
 		Description: "Wait for the AI investigation session to become ready for a given remediation request. Returns the KA session ID when available.",
@@ -1069,7 +1029,6 @@ func NewAwaitSessionTool(client dynamic.Interface, controllerNS string) (tool.To
 // BR-INTERACTIVE-010: AF waits for AA to acknowledge the interactive session
 // ========================================
 
-var investigationsessionGVR = schema.GroupVersionResource{Group: "kubernaut.ai", Version: "v1alpha1", Resource: "investigationsessions"}
 
 const (
 	isPhaseInitialInterval = 500 * time.Millisecond
@@ -1082,7 +1041,7 @@ const (
 // at 500ms, capping at 2s. Returns true when Active is detected, false on
 // timeout. Errors from the API are silently retried (best-effort).
 // The poll respects the parent context deadline, capping at isPhaseDefaultTimeout.
-func AwaitISPhaseActive(ctx context.Context, client dynamic.Interface, namespace, rrName string) bool {
+func AwaitISPhaseActive(ctx context.Context, client crclient.Client, namespace, rrName string) bool {
 	if client == nil || namespace == "" || rrName == "" {
 		return false
 	}
@@ -1117,18 +1076,17 @@ func AwaitISPhaseActive(ctx context.Context, client dynamic.Interface, namespace
 
 // isActivePhasePresent lists IS CRDs in the namespace and returns true if any
 // non-terminal IS for the given RR has Phase=Active.
-func isActivePhasePresent(ctx context.Context, client dynamic.Interface, namespace, rrName string) bool {
-	list, err := client.Resource(investigationsessionGVR).Namespace(namespace).List(ctx, metav1.ListOptions{})
-	if err != nil {
+func isActivePhasePresent(ctx context.Context, client crclient.Client, namespace, rrName string) bool {
+	var list isv1alpha1.InvestigationSessionList
+	if err := client.List(ctx, &list, crclient.InNamespace(namespace)); err != nil {
 		return false
 	}
-	for _, item := range list.Items {
-		ref, _, _ := unstructured.NestedString(item.Object, "spec", "remediationRequestRef", "name")
-		if ref != rrName {
+	for i := range list.Items {
+		item := &list.Items[i]
+		if item.Spec.RemediationRequestRef.Name != rrName {
 			continue
 		}
-		phase, _, _ := unstructured.NestedString(item.Object, "status", "phase")
-		if phase == "Active" {
+		if item.Status.Phase == isv1alpha1.SessionPhaseActive {
 			return true
 		}
 	}

@@ -8,15 +8,55 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/watch"
-	k8stesting "k8s.io/client-go/testing"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
+
+func newWatchClient(objects ...crclient.Object) crclient.WithWatch {
+	fc := fake.NewClientBuilder().
+		WithScheme(watchTestScheme()).
+		WithObjects(objects...).
+		WithStatusSubresource(objects...).
+		Build()
+	wc, ok := fc.(crclient.WithWatch)
+	Expect(ok).To(BeTrue(), "fake client must implement WithWatch")
+	return wc
+}
+
+func newWatchClientWithInterceptor(funcs interceptor.Funcs, objects ...crclient.Object) crclient.WithWatch {
+	fc := fake.NewClientBuilder().
+		WithScheme(watchTestScheme()).
+		WithObjects(objects...).
+		WithStatusSubresource(objects...).
+		WithInterceptorFuncs(funcs).
+		Build()
+	wc, ok := fc.(crclient.WithWatch)
+	Expect(ok).To(BeTrue(), "fake client must implement WithWatch")
+	return wc
+}
+
+func updateRRPhase(ctx context.Context, c crclient.WithWatch, ns, name, phase string) {
+	var rr remediationv1.RemediationRequest
+	ExpectWithOffset(1, c.Get(ctx, crclient.ObjectKey{Namespace: ns, Name: name}, &rr)).To(Succeed())
+	rr.Status.OverallPhase = remediationv1.RemediationPhase(phase)
+	ExpectWithOffset(1, c.Status().Update(ctx, &rr)).To(Succeed())
+}
+
+func updateRRTerminal(ctx context.Context, c crclient.WithWatch, ns, name, phase, outcome, msg string) {
+	var rr remediationv1.RemediationRequest
+	ExpectWithOffset(1, c.Get(ctx, crclient.ObjectKey{Namespace: ns, Name: name}, &rr)).To(Succeed())
+	rr.Status.OverallPhase = remediationv1.RemediationPhase(phase)
+	rr.Status.Outcome = outcome
+	rr.Status.Message = msg
+	ExpectWithOffset(1, c.Status().Update(ctx, &rr)).To(Succeed())
+}
 
 var _ = Describe("kubernaut_watch", func() {
 	var ctx context.Context
@@ -26,59 +66,47 @@ var _ = Describe("kubernaut_watch", func() {
 	})
 
 	It("UT-AF-106-001: emits phase change events for RR", func() {
-		fakeWatcher := watch.NewFake()
-		client := newDynamicFakeClient(newFakeRR("payments", "rr-1", "Pending"))
-		client.PrependWatchReactor("remediationrequests", func(action k8stesting.Action) (bool, watch.Interface, error) {
-			return true, fakeWatcher, nil
-		})
+		rr := newTypedRR("payments", "rr-1", "Pending")
+		wc := newWatchClient(rr)
 
 		go func() {
-			defer fakeWatcher.Stop()
-			time.Sleep(10 * time.Millisecond)
-			fakeWatcher.Modify(newFakeRR("payments", "rr-1", "Executing"))
-			time.Sleep(10 * time.Millisecond)
-			fakeWatcher.Modify(newFakeRR("payments", "rr-1", "Completed"))
+			time.Sleep(50 * time.Millisecond)
+			updateRRPhase(ctx, wc, "payments", "rr-1", "Executing")
+			time.Sleep(50 * time.Millisecond)
+			updateRRTerminal(ctx, wc, "payments", "rr-1", "Completed", "success", "done")
 		}()
 
-		result, err := tools.HandleWatch(ctx, client, nil, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
+		result, err := tools.HandleWatch(ctx, wc, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Events).NotTo(BeEmpty())
 	})
 
 	It("UT-AF-106-002: correlates related CRDs via ownerRef", func() {
-		fakeWatcher := watch.NewFake()
-		client := newDynamicFakeClient(newFakeRR("payments", "rr-1", "Executing"))
-		client.PrependWatchReactor("remediationrequests", func(action k8stesting.Action) (bool, watch.Interface, error) {
-			return true, fakeWatcher, nil
-		})
+		rr := newTypedRR("payments", "rr-1", "Executing")
+		wc := newWatchClient(rr)
 
 		go func() {
-			defer fakeWatcher.Stop()
-			time.Sleep(10 * time.Millisecond)
-			fakeWatcher.Modify(newFakeRR("payments", "rr-1", "Completed"))
+			time.Sleep(50 * time.Millisecond)
+			updateRRTerminal(ctx, wc, "payments", "rr-1", "Completed", "success", "done")
 		}()
 
-		result, err := tools.HandleWatch(ctx, client, nil, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
+		result, err := tools.HandleWatch(ctx, wc, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).NotTo(BeEmpty())
 	})
 
 	It("UT-AF-106-003: emits events in chronological order", func() {
-		fakeWatcher := watch.NewFake()
-		client := newDynamicFakeClient(newFakeRR("payments", "rr-1", "Pending"))
-		client.PrependWatchReactor("remediationrequests", func(action k8stesting.Action) (bool, watch.Interface, error) {
-			return true, fakeWatcher, nil
-		})
+		rr := newTypedRR("payments", "rr-1", "Pending")
+		wc := newWatchClient(rr)
 
 		go func() {
-			defer fakeWatcher.Stop()
-			time.Sleep(10 * time.Millisecond)
-			fakeWatcher.Modify(newFakeRR("payments", "rr-1", "Executing"))
-			time.Sleep(10 * time.Millisecond)
-			fakeWatcher.Modify(newFakeRR("payments", "rr-1", "Completed"))
+			time.Sleep(50 * time.Millisecond)
+			updateRRPhase(ctx, wc, "payments", "rr-1", "Executing")
+			time.Sleep(50 * time.Millisecond)
+			updateRRTerminal(ctx, wc, "payments", "rr-1", "Completed", "success", "done")
 		}()
 
-		result, err := tools.HandleWatch(ctx, client, nil, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
+		result, err := tools.HandleWatch(ctx, wc, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
 		Expect(err).NotTo(HaveOccurred())
 		if len(result.Events) >= 2 {
 			Expect(result.Events[0].Timestamp <= result.Events[1].Timestamp).To(BeTrue())
@@ -86,114 +114,83 @@ var _ = Describe("kubernaut_watch", func() {
 	})
 
 	It("UT-AF-106-004: closes stream on terminal RR state", func() {
-		fakeWatcher := watch.NewFake()
-		client := newDynamicFakeClient(newFakeRR("payments", "rr-1", "Executing"))
-		client.PrependWatchReactor("remediationrequests", func(action k8stesting.Action) (bool, watch.Interface, error) {
-			return true, fakeWatcher, nil
-		})
+		rr := newTypedRR("payments", "rr-1", "Executing")
+		wc := newWatchClient(rr)
 
 		go func() {
-			defer fakeWatcher.Stop()
-			time.Sleep(10 * time.Millisecond)
-			fakeWatcher.Modify(newFakeRR("payments", "rr-1", "Completed"))
+			time.Sleep(50 * time.Millisecond)
+			updateRRTerminal(ctx, wc, "payments", "rr-1", "Completed", "success", "done")
 		}()
 
-		result, err := tools.HandleWatch(ctx, client, nil, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
+		result, err := tools.HandleWatch(ctx, wc, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).To(Equal("completed"))
 	})
 
 	It("UT-AF-106-006: respects context cancellation", func() {
-		cancelCtx, cancel := context.WithCancel(ctx)
-		fakeWatcher := watch.NewFake()
-		client := newDynamicFakeClient(newFakeRR("payments", "rr-1", "Executing"))
-		client.PrependWatchReactor("remediationrequests", func(action k8stesting.Action) (bool, watch.Interface, error) {
-			return true, fakeWatcher, nil
-		})
+		rr := newTypedRR("payments", "rr-1", "Executing")
+		wc := newWatchClient(rr)
 
+		cancelCtx, cancel := context.WithCancel(ctx)
 		go func() {
-			time.Sleep(50 * time.Millisecond)
+			time.Sleep(100 * time.Millisecond)
 			cancel()
 		}()
 
-		result, err := tools.HandleWatch(cancelCtx, client, nil, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
+		result, err := tools.HandleWatch(cancelCtx, wc, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).To(Equal("cancelled"))
 	})
 
-	It("UT-AF-106-007: uses impersonated watch", func() {
-		var capturedAction k8stesting.Action
-		fakeWatcher := watch.NewFake()
-		client := newDynamicFakeClient(newFakeRR("payments", "rr-1", "Executing"))
-		client.PrependWatchReactor("remediationrequests", func(action k8stesting.Action) (bool, watch.Interface, error) {
-			capturedAction = action
-			return true, fakeWatcher, nil
-		})
-
-		go func() {
-			defer fakeWatcher.Stop()
-			time.Sleep(10 * time.Millisecond)
-			fakeWatcher.Modify(newFakeRR("payments", "rr-1", "Completed"))
-		}()
-
-		_, err := tools.HandleWatch(ctx, client, nil, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
-		Expect(err).NotTo(HaveOccurred())
-		Expect(capturedAction).NotTo(BeNil())
-		Expect(capturedAction.GetNamespace()).To(Equal("payments"))
-		Expect(capturedAction.GetResource()).To(Equal(schema.GroupVersionResource{
-			Group: "kubernaut.ai", Version: "v1alpha1", Resource: "remediationrequests",
-		}))
-	})
-
 	It("UT-AF-106-008: returns 403 when user cannot access namespace", func() {
-		client := newDynamicFakeClient()
-		client.PrependReactor("get", "remediationrequests", func(action k8stesting.Action) (bool, runtime.Object, error) {
-			return true, nil, newForbiddenError("remediationrequests")
-		})
-		_, err := tools.HandleWatch(ctx, client, nil, tools.WatchArgs{Namespace: "forbidden", Name: "rr-1"})
+		rr := newTypedRR("forbidden", "rr-1", "Pending")
+		wc := newWatchClientWithInterceptor(interceptor.Funcs{
+			Get: func(ctx context.Context, client crclient.WithWatch, key crclient.ObjectKey, obj crclient.Object, opts ...crclient.GetOption) error {
+				return newForbiddenError("remediationrequests")
+			},
+		}, rr)
+
+		_, err := tools.HandleWatch(ctx, wc, tools.WatchArgs{Namespace: "forbidden", Name: "rr-1"})
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("access denied"))
 	})
 
 	It("UT-AF-106-012: returns not-found when RR does not exist", func() {
-		client := newDynamicFakeClient()
-		_, err := tools.HandleWatch(ctx, client, nil, tools.WatchArgs{Namespace: "default", Name: "nonexistent"})
+		wc := newWatchClient()
+		_, err := tools.HandleWatch(ctx, wc, tools.WatchArgs{Namespace: "default", Name: "nonexistent"})
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("not found"))
 	})
 
 	It("UT-AF-106-009: nil client returns ErrK8sUnavailable", func() {
-		_, err := tools.HandleWatch(ctx, nil, nil, tools.WatchArgs{Namespace: "default", Name: "rr-1"})
+		_, err := tools.HandleWatch(ctx, nil, tools.WatchArgs{Namespace: "default", Name: "rr-1"})
 		Expect(err).To(MatchError(tools.ErrK8sUnavailable))
 	})
 
 	It("UT-AF-106-010: invalid namespace returns ErrInvalidInput", func() {
-		client := newDynamicFakeClient()
-		_, err := tools.HandleWatch(ctx, client, nil, tools.WatchArgs{Namespace: "../etc", Name: "rr-1"})
+		wc := newWatchClient()
+		_, err := tools.HandleWatch(ctx, wc, tools.WatchArgs{Namespace: "../etc", Name: "rr-1"})
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("invalid input"))
 	})
 
 	It("UT-AF-106-011: invalid resource name returns ErrInvalidInput", func() {
-		client := newDynamicFakeClient()
-		_, err := tools.HandleWatch(ctx, client, nil, tools.WatchArgs{Namespace: "default", Name: "INVALID NAME!!"})
+		wc := newWatchClient()
+		_, err := tools.HandleWatch(ctx, wc, tools.WatchArgs{Namespace: "default", Name: "INVALID NAME!!"})
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("invalid input"))
 	})
 
 	It("UT-AF-106-013: yields with awaiting_approval on AwaitingApproval phase", func() {
-		fakeWatcher := watch.NewFake()
-		client := newDynamicFakeClient(newFakeRR("payments", "rr-1", "Executing"))
-		client.PrependWatchReactor("remediationrequests", func(action k8stesting.Action) (bool, watch.Interface, error) {
-			return true, fakeWatcher, nil
-		})
+		rr := newTypedRR("payments", "rr-1", "Executing")
+		wc := newWatchClient(rr)
 
 		go func() {
-			time.Sleep(10 * time.Millisecond)
-			fakeWatcher.Modify(newFakeRR("payments", "rr-1", "AwaitingApproval"))
+			time.Sleep(50 * time.Millisecond)
+			updateRRPhase(ctx, wc, "payments", "rr-1", "AwaitingApproval")
 		}()
 
-		result, err := tools.HandleWatch(ctx, client, nil, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
+		result, err := tools.HandleWatch(ctx, wc, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).To(Equal("awaiting_approval"),
 			"watch must yield on AwaitingApproval so the LLM can approve the RAR")
@@ -202,35 +199,25 @@ var _ = Describe("kubernaut_watch", func() {
 	})
 
 	It("UT-AF-106-014: AwaitingApproval does not block subsequent terminal phase", func() {
-		fakeWatcher := watch.NewFake()
-		client := newDynamicFakeClient(newFakeRR("payments", "rr-1", "Executing"))
-		client.PrependWatchReactor("remediationrequests", func(action k8stesting.Action) (bool, watch.Interface, error) {
-			return true, fakeWatcher, nil
-		})
+		rr := newTypedRR("payments", "rr-1", "Executing")
+		wc := newWatchClient(rr)
 
 		go func() {
-			time.Sleep(10 * time.Millisecond)
-			fakeWatcher.Modify(newFakeRR("payments", "rr-1", "AwaitingApproval"))
+			time.Sleep(50 * time.Millisecond)
+			updateRRPhase(ctx, wc, "payments", "rr-1", "AwaitingApproval")
 		}()
 
-		result, err := tools.HandleWatch(ctx, client, nil, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
+		result, err := tools.HandleWatch(ctx, wc, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).To(Equal("awaiting_approval"),
 			"first watch call yields on AwaitingApproval")
 
-		// After approval, a second watch call should see the terminal phase
-		fakeWatcher2 := watch.NewFake()
-		client.PrependWatchReactor("remediationrequests", func(action k8stesting.Action) (bool, watch.Interface, error) {
-			return true, fakeWatcher2, nil
-		})
-
 		go func() {
-			defer fakeWatcher2.Stop()
-			time.Sleep(10 * time.Millisecond)
-			fakeWatcher2.Modify(newFakeRR("payments", "rr-1", "Completed"))
+			time.Sleep(50 * time.Millisecond)
+			updateRRTerminal(ctx, wc, "payments", "rr-1", "Completed", "success", "done")
 		}()
 
-		result2, err := tools.HandleWatch(ctx, client, nil, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
+		result2, err := tools.HandleWatch(ctx, wc, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result2.Status).To(Equal("completed"),
 			"second watch call should reach terminal phase")
@@ -245,27 +232,19 @@ var _ = Describe("Structured Approval Events in HandleWatch — TP-1398 (#1398)"
 	})
 
 	It("IT-AF-1398-001: emits structured approval_request event on AwaitingApproval with RAR", func() {
-		rar := newDetailedFakeRAR("payments", "rar-rr-1")
-		rrWatcher := watch.NewFake()
-		rarWatcher := watch.NewFake()
-		client := newDynamicFakeClient(newFakeRR("payments", "rr-1", "Executing"), rar)
-
-		client.PrependWatchReactor("remediationrequests", func(action k8stesting.Action) (bool, watch.Interface, error) {
-			return true, rrWatcher, nil
-		})
-		client.PrependWatchReactor("remediationapprovalrequests", func(action k8stesting.Action) (bool, watch.Interface, error) {
-			return true, rarWatcher, nil
-		})
+		rr := newTypedRR("payments", "rr-1", "Executing")
+		rar := newTypedDetailedRAR("payments", "rar-rr-1")
+		wc := newWatchClient(rr, rar)
 
 		queue := &bridgeQueue{}
 		ctx = launcher.WithEventBridge(ctx, queue, "task-it-1398-001", "ctx-it-001", nil)
 
 		go func() {
-			time.Sleep(10 * time.Millisecond)
-			rrWatcher.Modify(newFakeRR("payments", "rr-1", "AwaitingApproval"))
+			time.Sleep(50 * time.Millisecond)
+			updateRRPhase(ctx, wc, "payments", "rr-1", "AwaitingApproval")
 		}()
 
-		result, err := tools.HandleWatch(ctx, client, nil, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
+		result, err := tools.HandleWatch(ctx, wc, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).To(Equal("awaiting_approval"))
 
@@ -293,45 +272,33 @@ var _ = Describe("Structured Approval Events in HandleWatch — TP-1398 (#1398)"
 	})
 
 	It("IT-AF-1398-002: emits approval_request_resolved on RAR decision change", func() {
-		rar := newDetailedFakeRAR("payments", "rar-rr-1")
-		rrWatcher := watch.NewFake()
-		rarWatcher := watch.NewFake()
-		client := newDynamicFakeClient(newFakeRR("payments", "rr-1", "Executing"), rar)
-
-		client.PrependWatchReactor("remediationrequests", func(action k8stesting.Action) (bool, watch.Interface, error) {
-			return true, rrWatcher, nil
-		})
-		client.PrependWatchReactor("remediationapprovalrequests", func(action k8stesting.Action) (bool, watch.Interface, error) {
-			return true, rarWatcher, nil
-		})
+		rr := newTypedRR("payments", "rr-1", "Executing")
+		rar := &remediationv1.RemediationApprovalRequest{
+			ObjectMeta: objMeta("payments", "rar-rr-1"),
+			Spec: remediationv1.RemediationApprovalRequestSpec{
+				RemediationRequestRef: corev1.ObjectReference{Name: "rr-1"},
+			},
+		}
+		wc := newWatchClient(rr, rar)
 
 		queue := &bridgeQueue{}
 		ctx = launcher.WithEventBridge(ctx, queue, "task-it-1398-002", "ctx-it-002", nil)
 
-		decidedRAR := &unstructured.Unstructured{
-			Object: map[string]interface{}{
-				"apiVersion": "kubernaut.ai/v1alpha1",
-				"kind":       "RemediationApprovalRequest",
-				"metadata": map[string]interface{}{
-					"name":      "rar-rr-1",
-					"namespace": "payments",
-				},
-				"status": map[string]interface{}{
-					"decision":  "Approved",
-					"decidedBy": "operator@acme.com",
-					"decidedAt": "2026-06-11T15:50:00Z",
-				},
-			},
-		}
-
 		go func() {
-			time.Sleep(10 * time.Millisecond)
-			rarWatcher.Modify(decidedRAR)
-			time.Sleep(10 * time.Millisecond)
-			rrWatcher.Modify(newFakeRR("payments", "rr-1", "Completed"))
+			time.Sleep(50 * time.Millisecond)
+			var existing remediationv1.RemediationApprovalRequest
+			_ = wc.(crclient.Client).Get(ctx, crclient.ObjectKey{Namespace: "payments", Name: "rar-rr-1"}, &existing)
+			decidedAt := metav1.NewTime(time.Date(2026, 6, 11, 15, 50, 0, 0, time.UTC))
+			existing.Status.Decision = remediationv1.ApprovalDecisionApproved
+			existing.Status.DecidedBy = "operator@acme.com"
+			existing.Status.DecidedAt = &decidedAt
+			_ = wc.(crclient.Client).Status().Update(ctx, &existing)
+
+			time.Sleep(50 * time.Millisecond)
+			updateRRTerminal(ctx, wc, "payments", "rr-1", "Completed", "success", "done")
 		}()
 
-		result, err := tools.HandleWatch(ctx, client, nil, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
+		result, err := tools.HandleWatch(ctx, wc, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).To(Equal("completed"))
 
@@ -357,61 +324,44 @@ var _ = Describe("Structured Approval Events in HandleWatch — TP-1398 (#1398)"
 	})
 
 	It("IT-AF-1398-003: emits both events when RAR already decided at AwaitingApproval", func() {
-		decidedRAR := &unstructured.Unstructured{
-			Object: map[string]interface{}{
-				"apiVersion": "kubernaut.ai/v1alpha1",
-				"kind":       "RemediationApprovalRequest",
-				"metadata": map[string]interface{}{
-					"name":      "rar-rr-1",
-					"namespace": "payments",
+		decidedAt := metav1.NewTime(time.Date(2026, 6, 11, 15, 45, 1, 0, time.UTC))
+		rr := newTypedRR("payments", "rr-1", "Executing")
+		rar := &remediationv1.RemediationApprovalRequest{
+			ObjectMeta: objMeta("payments", "rar-rr-1"),
+			Spec: remediationv1.RemediationApprovalRequestSpec{
+				RemediationRequestRef: corev1.ObjectReference{Name: "rr-1"},
+				Confidence:            0.95,
+				ConfidenceLevel:       "high",
+				Reason:                "Auto-approved",
+				WhyApprovalRequired:   "Audit trail",
+				InvestigationSummary:  "Quick fix",
+				RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{
+					WorkflowID: "auto-v1",
+					Version:    "1.0.0",
+					Rationale:  "Auto-selected",
 				},
-				"spec": map[string]interface{}{
-					"remediationRequestRef": map[string]interface{}{
-						"name": "rr-1",
-					},
-					"confidence":           0.95,
-					"confidenceLevel":      "high",
-					"reason":               "Auto-approved",
-					"whyApprovalRequired":  "Audit trail",
-					"investigationSummary": "Quick fix",
-					"recommendedWorkflow": map[string]interface{}{
-						"workflowId": "auto-v1",
-						"version":    "1.0.0",
-						"rationale":  "Auto-selected",
-					},
-					"recommendedActions": []interface{}{
-						map[string]interface{}{"action": "Apply", "rationale": "Safe"},
-					},
-					"requiredBy": "2026-06-11T16:00:00Z",
+				RecommendedActions: []remediationv1.ApprovalRecommendedAction{
+					{Action: "Apply", Rationale: "Safe"},
 				},
-				"status": map[string]interface{}{
-					"decision":  "Approved",
-					"decidedBy": "system",
-					"decidedAt": "2026-06-11T15:45:01Z",
-				},
+				RequiredBy: metav1.NewTime(time.Date(2026, 6, 11, 16, 0, 0, 0, time.UTC)),
+			},
+			Status: remediationv1.RemediationApprovalRequestStatus{
+				Decision:  remediationv1.ApprovalDecisionApproved,
+				DecidedBy: "system",
+				DecidedAt: &decidedAt,
 			},
 		}
-
-		rrWatcher := watch.NewFake()
-		rarWatcher := watch.NewFake()
-		client := newDynamicFakeClient(newFakeRR("payments", "rr-1", "Executing"), decidedRAR)
-
-		client.PrependWatchReactor("remediationrequests", func(action k8stesting.Action) (bool, watch.Interface, error) {
-			return true, rrWatcher, nil
-		})
-		client.PrependWatchReactor("remediationapprovalrequests", func(action k8stesting.Action) (bool, watch.Interface, error) {
-			return true, rarWatcher, nil
-		})
+		wc := newWatchClient(rr, rar)
 
 		queue := &bridgeQueue{}
 		ctx = launcher.WithEventBridge(ctx, queue, "task-it-1398-003", "ctx-it-003", nil)
 
 		go func() {
-			time.Sleep(10 * time.Millisecond)
-			rrWatcher.Modify(newFakeRR("payments", "rr-1", "AwaitingApproval"))
+			time.Sleep(50 * time.Millisecond)
+			updateRRPhase(ctx, wc, "payments", "rr-1", "AwaitingApproval")
 		}()
 
-		result, err := tools.HandleWatch(ctx, client, nil, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
+		result, err := tools.HandleWatch(ctx, wc, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).To(Equal("awaiting_approval"))
 

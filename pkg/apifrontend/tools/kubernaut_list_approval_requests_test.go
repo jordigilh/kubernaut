@@ -5,34 +5,28 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
-	k8stesting "k8s.io/client-go/testing"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
 
-func newFakeRARWithDecision(namespace, name, rrName, decision string, confidence float64, confidenceLevel string) *unstructured.Unstructured {
-	return &unstructured.Unstructured{
-		Object: map[string]interface{}{
-			"apiVersion": "kubernaut.ai/v1alpha1",
-			"kind":       "RemediationApprovalRequest",
-			"metadata": map[string]interface{}{
-				"name":      name,
-				"namespace": namespace,
-			},
-			"spec": map[string]interface{}{
-				"remediationRequestRef": map[string]interface{}{
-					"name": rrName,
-				},
-				"confidence":      confidence,
-				"confidenceLevel": confidenceLevel,
-				"reason":          "Confidence below auto-approve threshold",
-			},
-			"status": map[string]interface{}{
-				"decision":      decision,
-				"timeRemaining": "4m30s",
-			},
+func newTypedRARWithDecision(namespace, name, rrName string, decision remediationv1.ApprovalDecision, confidence float64, confidenceLevel string) *remediationv1.RemediationApprovalRequest {
+	return &remediationv1.RemediationApprovalRequest{
+		ObjectMeta: objMeta(namespace, name),
+		Spec: remediationv1.RemediationApprovalRequestSpec{
+			RemediationRequestRef: corev1.ObjectReference{Name: rrName},
+			Confidence:            confidence,
+			ConfidenceLevel:       confidenceLevel,
+			Reason:                "Confidence below auto-approve threshold",
+			RequiredBy:            metav1.NewTime(metav1.Now().Time),
+		},
+		Status: remediationv1.RemediationApprovalRequestStatus{
+			Decision:      decision,
+			TimeRemaining: "4m30s",
 		},
 	}
 }
@@ -45,22 +39,22 @@ var _ = Describe("kubernaut_list_approval_requests", func() {
 	})
 
 	It("UT-AF-108-001: lists all RARs in namespace", func() {
-		client := newDynamicFakeClient(
-			newFakeRARWithDecision("payments", "rar-1", "rr-1", "", 0.72, "medium"),
-			newFakeRARWithDecision("payments", "rar-2", "rr-2", "Approved", 0.65, "low"),
+		tc := newTypedFakeClient(
+			newTypedRARWithDecision("payments", "rar-1", "rr-1", "", 0.72, "medium"),
+			newTypedRARWithDecision("payments", "rar-2", "rr-2", remediationv1.ApprovalDecisionApproved, 0.65, "low"),
 		)
-		result, err := tools.HandleListApprovalRequests(ctx, client, tools.ListApprovalRequestsArgs{Namespace: "payments"})
+		result, err := tools.HandleListApprovalRequests(ctx, tc, tools.ListApprovalRequestsArgs{Namespace: "payments"})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Count).To(Equal(2))
 		Expect(result.ApprovalRequests).To(HaveLen(2))
 	})
 
 	It("UT-AF-108-002: filters by decision=pending (empty string)", func() {
-		client := newDynamicFakeClient(
-			newFakeRARWithDecision("payments", "rar-1", "rr-1", "", 0.72, "medium"),
-			newFakeRARWithDecision("payments", "rar-2", "rr-2", "Approved", 0.65, "low"),
+		tc := newTypedFakeClient(
+			newTypedRARWithDecision("payments", "rar-1", "rr-1", "", 0.72, "medium"),
+			newTypedRARWithDecision("payments", "rar-2", "rr-2", remediationv1.ApprovalDecisionApproved, 0.65, "low"),
 		)
-		result, err := tools.HandleListApprovalRequests(ctx, client, tools.ListApprovalRequestsArgs{
+		result, err := tools.HandleListApprovalRequests(ctx, tc, tools.ListApprovalRequestsArgs{
 			Namespace: "payments",
 			Decision:  "pending",
 		})
@@ -71,11 +65,11 @@ var _ = Describe("kubernaut_list_approval_requests", func() {
 	})
 
 	It("UT-AF-108-003: filters by decision=approved", func() {
-		client := newDynamicFakeClient(
-			newFakeRARWithDecision("payments", "rar-1", "rr-1", "", 0.72, "medium"),
-			newFakeRARWithDecision("payments", "rar-2", "rr-2", "Approved", 0.65, "low"),
+		tc := newTypedFakeClient(
+			newTypedRARWithDecision("payments", "rar-1", "rr-1", "", 0.72, "medium"),
+			newTypedRARWithDecision("payments", "rar-2", "rr-2", remediationv1.ApprovalDecisionApproved, 0.65, "low"),
 		)
-		result, err := tools.HandleListApprovalRequests(ctx, client, tools.ListApprovalRequestsArgs{
+		result, err := tools.HandleListApprovalRequests(ctx, tc, tools.ListApprovalRequestsArgs{
 			Namespace: "payments",
 			Decision:  "approved",
 		})
@@ -85,19 +79,20 @@ var _ = Describe("kubernaut_list_approval_requests", func() {
 	})
 
 	It("UT-AF-108-004: returns empty list when no RARs match", func() {
-		client := newDynamicFakeClient()
-		result, err := tools.HandleListApprovalRequests(ctx, client, tools.ListApprovalRequestsArgs{Namespace: "empty"})
+		tc := newTypedFakeClient()
+		result, err := tools.HandleListApprovalRequests(ctx, tc, tools.ListApprovalRequestsArgs{Namespace: "empty"})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Count).To(Equal(0))
 		Expect(result.ApprovalRequests).To(BeEmpty())
 	})
 
 	It("UT-AF-108-005: returns user-friendly error on 403", func() {
-		client := newDynamicFakeClient()
-		client.PrependReactor("list", "remediationapprovalrequests", func(action k8stesting.Action) (bool, runtime.Object, error) {
-			return true, nil, newForbiddenError("remediationapprovalrequests")
+		tc := newTypedFakeClientWithInterceptor(interceptor.Funcs{
+			List: func(ctx context.Context, client crclient.WithWatch, list crclient.ObjectList, opts ...crclient.ListOption) error {
+				return newForbiddenError("remediationapprovalrequests")
+			},
 		})
-		_, err := tools.HandleListApprovalRequests(ctx, client, tools.ListApprovalRequestsArgs{Namespace: "forbidden"})
+		_, err := tools.HandleListApprovalRequests(ctx, tc, tools.ListApprovalRequestsArgs{Namespace: "forbidden"})
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("access denied"))
 	})
@@ -108,17 +103,17 @@ var _ = Describe("kubernaut_list_approval_requests", func() {
 	})
 
 	It("UT-AF-108-007: invalid namespace returns ErrInvalidInput", func() {
-		client := newDynamicFakeClient()
-		_, err := tools.HandleListApprovalRequests(ctx, client, tools.ListApprovalRequestsArgs{Namespace: "../etc"})
+		tc := newTypedFakeClient()
+		_, err := tools.HandleListApprovalRequests(ctx, tc, tools.ListApprovalRequestsArgs{Namespace: "../etc"})
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("invalid input"))
 	})
 
 	It("UT-AF-108-008: summary includes expected fields", func() {
-		client := newDynamicFakeClient(
-			newFakeRARWithDecision("payments", "rar-1", "rr-1", "", 0.72, "medium"),
+		tc := newTypedFakeClient(
+			newTypedRARWithDecision("payments", "rar-1", "rr-1", "", 0.72, "medium"),
 		)
-		result, err := tools.HandleListApprovalRequests(ctx, client, tools.ListApprovalRequestsArgs{Namespace: "payments"})
+		result, err := tools.HandleListApprovalRequests(ctx, tc, tools.ListApprovalRequestsArgs{Namespace: "payments"})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Count).To(Equal(1))
 		summary := result.ApprovalRequests[0]

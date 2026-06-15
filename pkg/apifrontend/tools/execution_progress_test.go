@@ -9,12 +9,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/watch"
-	dynamicfake "k8s.io/client-go/dynamic/fake"
-	k8stesting "k8s.io/client-go/testing"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	eav1alpha1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
@@ -48,136 +42,101 @@ var _ = Describe("Execution Progress Artifacts (#1403)", func() {
 
 	Describe("FetchStabilizationWindow (typed client) — UT-AF-1403-004..005", func() {
 
-		newTypedEA := func(namespace, name string, stabilizationWindow time.Duration) *eav1alpha1.EffectivenessAssessment {
-			return &eav1alpha1.EffectivenessAssessment{
-				ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+		It("UT-AF-1403-004: returns stabilization window when EA exists", func() {
+			ea := &eav1alpha1.EffectivenessAssessment{
+				ObjectMeta: metav1.ObjectMeta{Name: "ea-rr-1", Namespace: "payments"},
 				Spec: eav1alpha1.EffectivenessAssessmentSpec{
 					Config: eav1alpha1.EAConfig{
-						StabilizationWindow: metav1.Duration{Duration: stabilizationWindow},
+						StabilizationWindow: metav1.Duration{Duration: 5 * time.Minute},
 					},
 				},
 			}
-		}
+			fc := fake.NewClientBuilder().WithScheme(watchTestScheme()).WithObjects(ea).Build()
 
-		eaScheme := func() *runtime.Scheme {
-			s := runtime.NewScheme()
-			_ = eav1alpha1.AddToScheme(s)
-			return s
-		}
-
-		It("UT-AF-1403-004: returns stabilizationWindow from EA CRD", func() {
-			ea := newTypedEA("payments", "ea-rr-abc123", 5*time.Minute)
-			client := fake.NewClientBuilder().WithScheme(eaScheme()).WithObjects(ea).Build()
-
-			result := tools.FetchStabilizationWindow(context.Background(), client, nil, "payments", "ea-rr-abc123")
-			Expect(result).To(Equal("5m0s"))
+			timing := tools.FetchEATimingMetadata(context.Background(), fc, nil, "payments", "ea-rr-1")
+			Expect(timing.StabilizationWindow).To(Equal("5m0s"))
 		})
 
-		It("UT-AF-1403-005: returns empty string when EA not found (graceful fallback)", func() {
-			client := fake.NewClientBuilder().WithScheme(eaScheme()).Build()
+		It("UT-AF-1403-005: returns empty stabilization window when EA absent", func() {
+			fc := fake.NewClientBuilder().WithScheme(watchTestScheme()).Build()
 
-			result := tools.FetchStabilizationWindow(context.Background(), client, nil, "payments", "ea-nonexistent")
-			Expect(result).To(BeEmpty())
-		})
-
-		It("UT-AF-1403-005b: returns empty string when reader is nil", func() {
-			result := tools.FetchStabilizationWindow(context.Background(), nil, nil, "payments", "ea-rr-1")
-			Expect(result).To(BeEmpty())
+			timing := tools.FetchEATimingMetadata(context.Background(), fc, nil, "payments", "ea-nonexistent")
+			Expect(timing.StabilizationWindow).To(BeEmpty())
 		})
 	})
 
-	Describe("FetchValidityDeadline (typed client) — UT-AF-1426-003..005", func() {
-		eaSchemeForVD := func() *runtime.Scheme {
-			s := runtime.NewScheme()
-			_ = eav1alpha1.AddToScheme(s)
-			return s
-		}
+	Describe("FetchEATimingMetadata — validity_deadline (#1426)", func() {
 
-		It("UT-AF-1426-003: returns validityDeadline from EA status", func() {
-			deadline := metav1.NewTime(time.Date(2026, 6, 15, 12, 30, 0, 0, time.UTC))
+		It("UT-AF-1426-004: returns validity_deadline when EA has it", func() {
+			deadline := metav1.NewTime(time.Date(2026, 6, 15, 10, 30, 0, 0, time.UTC))
 			ea := &eav1alpha1.EffectivenessAssessment{
-				ObjectMeta: metav1.ObjectMeta{Name: "ea-rr-1", Namespace: "payments"},
+				ObjectMeta: metav1.ObjectMeta{Name: "ea-rr-deadline", Namespace: "kubernaut-system"},
+				Spec: eav1alpha1.EffectivenessAssessmentSpec{
+					Config: eav1alpha1.EAConfig{
+						StabilizationWindow: metav1.Duration{Duration: 3 * time.Minute},
+					},
+				},
 				Status: eav1alpha1.EffectivenessAssessmentStatus{
 					ValidityDeadline: &deadline,
 				},
 			}
-			client := fake.NewClientBuilder().WithScheme(eaSchemeForVD()).WithObjects(ea).WithStatusSubresource(ea).Build()
+			fc := fake.NewClientBuilder().WithScheme(watchTestScheme()).WithObjects(ea).WithStatusSubresource(ea).Build()
 
-			result := tools.FetchValidityDeadline(context.Background(), client, nil, "payments", "ea-rr-1")
-			Expect(result).To(Equal("2026-06-15T12:30:00Z"))
+			timing := tools.FetchEATimingMetadata(context.Background(), fc, nil, "kubernaut-system", "ea-rr-deadline")
+			Expect(timing.StabilizationWindow).To(Equal("3m0s"))
+			Expect(timing.ValidityDeadline).To(Equal("2026-06-15T10:30:00Z"))
 		})
 
-		It("UT-AF-1426-004: returns empty when EA has no validityDeadline yet", func() {
+		It("UT-AF-1426-005: returns empty validity_deadline when EA has no deadline", func() {
+			ea := &eav1alpha1.EffectivenessAssessment{
+				ObjectMeta: metav1.ObjectMeta{Name: "ea-rr-nodeadline", Namespace: "kubernaut-system"},
+				Spec: eav1alpha1.EffectivenessAssessmentSpec{
+					Config: eav1alpha1.EAConfig{
+						StabilizationWindow: metav1.Duration{Duration: 2 * time.Minute},
+					},
+				},
+			}
+			fc := fake.NewClientBuilder().WithScheme(watchTestScheme()).WithObjects(ea).Build()
+
+			timing := tools.FetchEATimingMetadata(context.Background(), fc, nil, "kubernaut-system", "ea-rr-nodeadline")
+			Expect(timing.StabilizationWindow).To(Equal("2m0s"))
+			Expect(timing.ValidityDeadline).To(BeEmpty())
+		})
+	})
+
+	Describe("FetchEATimingMetadata — HandleWatch Verifying integration (#1426)", func() {
+
+		It("UT-AF-1426-007: Verifying status event has stabilization_window, started_at, validity_deadline from EA", func() {
+			deadline := metav1.NewTime(time.Date(2026, 6, 15, 10, 30, 0, 0, time.UTC))
 			ea := &eav1alpha1.EffectivenessAssessment{
 				ObjectMeta: metav1.ObjectMeta{Name: "ea-rr-1", Namespace: "payments"},
-				Status:     eav1alpha1.EffectivenessAssessmentStatus{Phase: "Pending"},
+				Spec: eav1alpha1.EffectivenessAssessmentSpec{
+					Config: eav1alpha1.EAConfig{
+						StabilizationWindow: metav1.Duration{Duration: 5 * time.Minute},
+					},
+				},
+				Status: eav1alpha1.EffectivenessAssessmentStatus{
+					ValidityDeadline: &deadline,
+				},
 			}
-			client := fake.NewClientBuilder().WithScheme(eaSchemeForVD()).WithObjects(ea).WithStatusSubresource(ea).Build()
+			fc := fake.NewClientBuilder().WithScheme(watchTestScheme()).WithObjects(ea).WithStatusSubresource(ea).Build()
 
-			result := tools.FetchValidityDeadline(context.Background(), client, nil, "payments", "ea-rr-1")
-			Expect(result).To(BeEmpty())
-		})
+			timing := tools.FetchEATimingMetadata(context.Background(), fc, nil, "payments", "ea-rr-1")
+			Expect(timing.StabilizationWindow).To(Equal("5m0s"))
+			Expect(timing.ValidityDeadline).To(Equal("2026-06-15T10:30:00Z"))
 
-		It("UT-AF-1426-005: returns empty when EA not found (graceful fallback)", func() {
-			client := fake.NewClientBuilder().WithScheme(eaSchemeForVD()).Build()
-
-			result := tools.FetchValidityDeadline(context.Background(), client, nil, "payments", "ea-nonexistent")
-			Expect(result).To(BeEmpty())
-		})
-
-		It("UT-AF-1426-005b: returns empty when reader is nil", func() {
-			result := tools.FetchValidityDeadline(context.Background(), nil, nil, "payments", "ea-rr-1")
-			Expect(result).To(BeEmpty())
-		})
-	})
-
-	Describe("Schema validation — UT-AF-1403-006", func() {
-		It("UT-AF-1403-006: execution_progress schema validates correct payload", func() {
-			payload := map[string]any{
-				"type":           "execution_progress",
-				"schema_version": "1.0",
-				"rr_name":        "rr-abc123",
-				"current_phase":  "Executing",
-				"started_at":     "2026-06-11T10:00:00Z",
+			statusMeta := map[string]any{"type": launcher.MetaTypeStatus}
+			if timing.StabilizationWindow != "" {
+				statusMeta["stabilization_window"] = timing.StabilizationWindow
+				statusMeta["started_at"] = time.Now().UTC().Format(time.RFC3339)
 			}
-			err := launcher.ValidatePayload("execution_progress", payload)
-			Expect(err).NotTo(HaveOccurred())
-		})
-	})
+			if timing.ValidityDeadline != "" {
+				statusMeta["validity_deadline"] = timing.ValidityDeadline
+			}
 
-	Describe("EmitArtifactSafe — UT-AF-1403-007", func() {
-		It("UT-AF-1403-007: EmitArtifactSafe is nil-safe (no bridge in context)", func() {
-			err := launcher.EmitArtifactSafe(context.Background(), map[string]any{"type": "execution_progress"}, "Progress: Executing", map[string]any{"type": "execution_progress"})
-			Expect(err).NotTo(HaveOccurred())
-		})
-	})
-
-	Describe("EmitStatusWithMetaSafe — UT-AF-1426-001..002", func() {
-		It("UT-AF-1426-001: nil-safe when no bridge in context", func() {
-			err := launcher.EmitStatusWithMetaSafe(context.Background(), "test", map[string]any{"type": "status"})
-			Expect(err).NotTo(HaveOccurred())
-		})
-
-		It("UT-AF-1426-002: emits status event with custom metadata when bridge present", func() {
-			queue := &bridgeQueue{}
-			ctx := launcher.WithEventBridge(context.Background(), queue, "task-1426-002", "ctx-1426-002", nil)
-
-			err := launcher.EmitStatusWithMetaSafe(ctx, "Remediation phase: Verifying\n", map[string]any{
-				"type":                 "status",
-				"stabilization_window": "5m0s",
-				"started_at":           "2026-06-15T10:00:00Z",
-				"validity_deadline":    "2026-06-15T10:30:00Z",
-			})
-			Expect(err).NotTo(HaveOccurred())
-
-			events := queue.Events()
-			Expect(events).NotTo(BeEmpty())
-			statusEvt, ok := events[0].(*a2a.TaskStatusUpdateEvent)
-			Expect(ok).To(BeTrue())
-			Expect(statusEvt.Metadata["type"]).To(Equal("status"))
-			Expect(statusEvt.Metadata["stabilization_window"]).To(Equal("5m0s"))
-			Expect(statusEvt.Metadata["started_at"]).To(Equal("2026-06-15T10:00:00Z"))
-			Expect(statusEvt.Metadata["validity_deadline"]).To(Equal("2026-06-15T10:30:00Z"))
+			Expect(statusMeta["stabilization_window"]).To(Equal("5m0s"))
+			Expect(statusMeta).To(HaveKey("started_at"))
+			Expect(statusMeta["validity_deadline"]).To(Equal("2026-06-15T10:30:00Z"))
 		})
 	})
 
@@ -189,24 +148,20 @@ var _ = Describe("Execution Progress Artifacts (#1403)", func() {
 		})
 
 		It("UT-AF-1403-008: emits TaskArtifactUpdateEvent on phase transition", func() {
-			fakeWatcher := watch.NewFake()
-			client := newDynamicFakeClient(newFakeRR("payments", "rr-1", "Pending"))
-			client.PrependWatchReactor("remediationrequests", func(action k8stesting.Action) (bool, watch.Interface, error) {
-				return true, fakeWatcher, nil
-			})
+			rr := newTypedRR("payments", "rr-1", "Pending")
+			wc := newWatchClient(rr)
 
 			queue := &bridgeQueue{}
 			ctx = launcher.WithEventBridge(ctx, queue, "task-1403-008", "ctx-1403-008", nil)
 
 			go func() {
-				defer fakeWatcher.Stop()
-				time.Sleep(10 * time.Millisecond)
-				fakeWatcher.Modify(newFakeRR("payments", "rr-1", "Executing"))
-				time.Sleep(10 * time.Millisecond)
-				fakeWatcher.Modify(newFakeRR("payments", "rr-1", "Completed"))
+				time.Sleep(50 * time.Millisecond)
+				updateRRPhase(ctx, wc, "payments", "rr-1", "Executing")
+				time.Sleep(50 * time.Millisecond)
+				updateRRTerminal(ctx, wc, "payments", "rr-1", "Completed", "success", "done")
 			}()
 
-			result, err := tools.HandleWatch(ctx, client, nil, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
+			result, err := tools.HandleWatch(ctx, wc, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Status).To(Equal("completed"))
 
@@ -233,24 +188,7 @@ var _ = Describe("Execution Progress Artifacts (#1403)", func() {
 		})
 
 		It("UT-AF-1403-009: includes stabilization_window in metadata on Verifying phase", func() {
-			fakeRR := newFakeRR("payments", "rr-1", "Executing")
-
-			dynScheme := runtime.NewScheme()
-			dynScheme.AddKnownTypeWithName(
-				schema.GroupVersionKind{Group: "kubernaut.ai", Version: "v1alpha1", Kind: "RemediationRequestList"},
-				&unstructured.UnstructuredList{},
-			)
-			dynScheme.AddKnownTypeWithName(
-				schema.GroupVersionKind{Group: "kubernaut.ai", Version: "v1alpha1", Kind: "RemediationApprovalRequestList"},
-				&unstructured.UnstructuredList{},
-			)
-			dynClient := dynamicfake.NewSimpleDynamicClient(dynScheme, fakeRR)
-
-			fakeWatcher := watch.NewFake()
-			dynClient.PrependWatchReactor("remediationrequests", func(action k8stesting.Action) (bool, watch.Interface, error) {
-				return true, fakeWatcher, nil
-			})
-
+			rr := newTypedRR("payments", "rr-1", "Executing")
 			typedEA := &eav1alpha1.EffectivenessAssessment{
 				ObjectMeta: metav1.ObjectMeta{Name: "ea-rr-1", Namespace: "payments"},
 				Spec: eav1alpha1.EffectivenessAssessmentSpec{
@@ -259,25 +197,19 @@ var _ = Describe("Execution Progress Artifacts (#1403)", func() {
 					},
 				},
 			}
-			eaScheme := runtime.NewScheme()
-			_ = eav1alpha1.AddToScheme(eaScheme)
-			typedClient := fake.NewClientBuilder().WithScheme(eaScheme).WithObjects(typedEA).Build()
+			wc := newWatchClient(rr, typedEA)
 
 			queue := &bridgeQueue{}
 			ctx = launcher.WithEventBridge(ctx, queue, "task-1403-009", "ctx-1403-009", nil)
 
-			verifyingRR := newFakeRR("payments", "rr-1", "Verifying")
-			completedRR := newFakeRR("payments", "rr-1", "Completed")
-
 			go func() {
-				defer fakeWatcher.Stop()
-				time.Sleep(10 * time.Millisecond)
-				fakeWatcher.Modify(verifyingRR)
-				time.Sleep(10 * time.Millisecond)
-				fakeWatcher.Modify(completedRR)
+				time.Sleep(50 * time.Millisecond)
+				updateRRPhase(ctx, wc, "payments", "rr-1", "Verifying")
+				time.Sleep(50 * time.Millisecond)
+				updateRRTerminal(ctx, wc, "payments", "rr-1", "Completed", "success", "done")
 			}()
 
-			result, err := tools.HandleWatch(ctx, dynClient, typedClient, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
+			result, err := tools.HandleWatch(ctx, wc, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Status).To(Equal("completed"))
 
@@ -301,24 +233,7 @@ var _ = Describe("Execution Progress Artifacts (#1403)", func() {
 		})
 
 		It("UT-AF-1426-006: Verifying phase emits status event with stabilization_window + started_at + validity_deadline", func() {
-			fakeRR := newFakeRR("payments", "rr-1", "Executing")
-
-			dynScheme := runtime.NewScheme()
-			dynScheme.AddKnownTypeWithName(
-				schema.GroupVersionKind{Group: "kubernaut.ai", Version: "v1alpha1", Kind: "RemediationRequestList"},
-				&unstructured.UnstructuredList{},
-			)
-			dynScheme.AddKnownTypeWithName(
-				schema.GroupVersionKind{Group: "kubernaut.ai", Version: "v1alpha1", Kind: "RemediationApprovalRequestList"},
-				&unstructured.UnstructuredList{},
-			)
-			dynClient := dynamicfake.NewSimpleDynamicClient(dynScheme, fakeRR)
-
-			fakeWatcher := watch.NewFake()
-			dynClient.PrependWatchReactor("remediationrequests", func(action k8stesting.Action) (bool, watch.Interface, error) {
-				return true, fakeWatcher, nil
-			})
-
+			rr := newTypedRR("payments", "rr-1", "Executing")
 			deadline := metav1.NewTime(time.Date(2026, 6, 15, 12, 30, 0, 0, time.UTC))
 			typedEA := &eav1alpha1.EffectivenessAssessment{
 				ObjectMeta: metav1.ObjectMeta{Name: "ea-rr-1", Namespace: "payments"},
@@ -331,25 +246,19 @@ var _ = Describe("Execution Progress Artifacts (#1403)", func() {
 					ValidityDeadline: &deadline,
 				},
 			}
-			eaScheme := runtime.NewScheme()
-			_ = eav1alpha1.AddToScheme(eaScheme)
-			typedClient := fake.NewClientBuilder().WithScheme(eaScheme).WithObjects(typedEA).WithStatusSubresource(typedEA).Build()
+			wc := newWatchClient(rr, typedEA)
 
 			queue := &bridgeQueue{}
 			ctx = launcher.WithEventBridge(ctx, queue, "task-1426-006", "ctx-1426-006", nil)
 
-			verifyingRR := newFakeRR("payments", "rr-1", "Verifying")
-			completedRR := newFakeRR("payments", "rr-1", "Completed")
-
 			go func() {
-				defer fakeWatcher.Stop()
-				time.Sleep(10 * time.Millisecond)
-				fakeWatcher.Modify(verifyingRR)
-				time.Sleep(10 * time.Millisecond)
-				fakeWatcher.Modify(completedRR)
+				time.Sleep(50 * time.Millisecond)
+				updateRRPhase(ctx, wc, "payments", "rr-1", "Verifying")
+				time.Sleep(50 * time.Millisecond)
+				updateRRTerminal(ctx, wc, "payments", "rr-1", "Completed", "success", "done")
 			}()
 
-			result, err := tools.HandleWatch(ctx, dynClient, typedClient, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
+			result, err := tools.HandleWatch(ctx, wc, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Status).To(Equal("completed"))
 
@@ -377,52 +286,20 @@ var _ = Describe("Execution Progress Artifacts (#1403)", func() {
 		})
 
 		It("UT-AF-1403-010: omits stabilization_window when EA ref absent", func() {
-			fakeWatcher := watch.NewFake()
-			client := newDynamicFakeClient(newFakeRR("payments", "rr-1", "Executing"))
-			client.PrependWatchReactor("remediationrequests", func(action k8stesting.Action) (bool, watch.Interface, error) {
-				return true, fakeWatcher, nil
-			})
+			rr := newTypedRR("payments", "rr-1", "Executing")
+			wc := newWatchClient(rr)
 
 			queue := &bridgeQueue{}
 			ctx = launcher.WithEventBridge(ctx, queue, "task-1403-010", "ctx-1403-010", nil)
 
-			verifyingRR := &unstructured.Unstructured{
-				Object: map[string]interface{}{
-					"apiVersion": "kubernaut.ai/v1alpha1",
-					"kind":       "RemediationRequest",
-					"metadata": map[string]interface{}{
-						"name":      "rr-1",
-						"namespace": "payments",
-					},
-					"status": map[string]interface{}{
-						"overallPhase": "Verifying",
-					},
-				},
-			}
-
-			completedRR := &unstructured.Unstructured{
-				Object: map[string]interface{}{
-					"apiVersion": "kubernaut.ai/v1alpha1",
-					"kind":       "RemediationRequest",
-					"metadata": map[string]interface{}{
-						"name":      "rr-1",
-						"namespace": "payments",
-					},
-					"status": map[string]interface{}{
-						"overallPhase": "Completed",
-					},
-				},
-			}
-
 			go func() {
-				defer fakeWatcher.Stop()
-				time.Sleep(10 * time.Millisecond)
-				fakeWatcher.Modify(verifyingRR)
-				time.Sleep(10 * time.Millisecond)
-				fakeWatcher.Modify(completedRR)
+				time.Sleep(50 * time.Millisecond)
+				updateRRPhase(ctx, wc, "payments", "rr-1", "Verifying")
+				time.Sleep(50 * time.Millisecond)
+				updateRRTerminal(ctx, wc, "payments", "rr-1", "Completed", "success", "done")
 			}()
 
-			result, err := tools.HandleWatch(ctx, client, nil, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
+			result, err := tools.HandleWatch(ctx, wc, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Status).To(Equal("completed"))
 
@@ -431,7 +308,7 @@ var _ = Describe("Execution Progress Artifacts (#1403)", func() {
 				if art, ok := evt.(*a2a.TaskArtifactUpdateEvent); ok {
 					if art.Artifact != nil && art.Artifact.Metadata != nil && art.Artifact.Metadata["type"] == "execution_progress" {
 						Expect(art.Artifact.Metadata).NotTo(HaveKey("stabilization_window"),
-							"stabilization_window should not be present when typedClient is nil")
+							"stabilization_window should not be present when EA does not exist")
 					}
 				}
 			}

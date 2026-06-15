@@ -2,18 +2,56 @@ package tools_test
 
 import (
 	"encoding/json"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
+
+func newTypedDetailedRAR(namespace, name string) *remediationv1.RemediationApprovalRequest {
+	return &remediationv1.RemediationApprovalRequest{
+		ObjectMeta: objMeta(namespace, name),
+		Spec: remediationv1.RemediationApprovalRequestSpec{
+			RemediationRequestRef: corev1.ObjectReference{Name: "rr-oom-1"},
+			AIAnalysisRef:         remediationv1.ObjectRef{Name: "aia-oom-1"},
+			Confidence:            0.72,
+			ConfidenceLevel:       "medium",
+			Reason:                "Confidence below auto-approve threshold",
+			RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{
+				WorkflowID:      "oomkill-increase-memory-v1",
+				Version:         "1.0.0",
+				ExecutionBundle: "oci://registry/oomkill:sha256-abc",
+				Rationale:       "Best match for OOMKill scenario",
+			},
+			InvestigationSummary: "Container exceeded memory limits under traffic spike",
+			EvidenceCollected: []string{
+				"OOMKill event at 2026-01-15T10:30:00Z",
+				"Memory usage 98% of limit",
+			},
+			RecommendedActions: []remediationv1.ApprovalRecommendedAction{
+				{Action: "Increase memory limit to 512Mi", Rationale: "Current limit 256Mi insufficient for traffic spike"},
+			},
+			AlternativesConsidered: []remediationv1.ApprovalAlternative{
+				{Approach: "Horizontal scaling", ProsCons: "Higher cost but better availability vs single node vertical scaling"},
+			},
+			WhyApprovalRequired: "Confidence 0.72 below auto-approve threshold of 0.80",
+			RequiredBy:          metav1.NewTime(time.Date(2026, 1, 15, 10, 45, 0, 0, time.UTC)),
+		},
+		Status: remediationv1.RemediationApprovalRequestStatus{
+			TimeRemaining: "12m30s",
+		},
+	}
+}
 
 var _ = Describe("Approval Event Payload Marshaling — TP-1398", func() {
 
 	It("UT-AF-1398-001: MarshalApprovalRequestPayload produces valid JSON with all spec fields", func() {
-		rar := newDetailedFakeRAR("kubernaut-system", "rar-rr-oom-1")
+		rar := newTypedDetailedRAR("kubernaut-system", "rar-rr-oom-1")
 
 		payload, err := tools.MarshalApprovalRequestPayload(rar)
 		Expect(err).NotTo(HaveOccurred())
@@ -48,34 +86,24 @@ var _ = Describe("Approval Event Payload Marshaling — TP-1398", func() {
 	})
 
 	It("UT-AF-1398-002: payload includes remediationRequestName from spec.remediationRequestRef", func() {
-		rar := &unstructured.Unstructured{
-			Object: map[string]interface{}{
-				"apiVersion": "kubernaut.ai/v1alpha1",
-				"kind":       "RemediationApprovalRequest",
-				"metadata": map[string]interface{}{
-					"name":      "rar-rr-gitops-drift-1",
-					"namespace": "kubernaut-system",
+		rar := &remediationv1.RemediationApprovalRequest{
+			ObjectMeta: objMeta("kubernaut-system", "rar-rr-gitops-drift-1"),
+			Spec: remediationv1.RemediationApprovalRequestSpec{
+				RemediationRequestRef: corev1.ObjectReference{Name: "rr-gitops-drift-1"},
+				Confidence:            0.65,
+				ConfidenceLevel:       "medium",
+				Reason:                "Policy requires approval",
+				WhyApprovalRequired:   "Production namespace",
+				InvestigationSummary:  "Drift detected",
+				RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{
+					WorkflowID: "drift-v1",
+					Version:    "1.0.0",
+					Rationale:  "Best match",
 				},
-				"spec": map[string]interface{}{
-					"remediationRequestRef": map[string]interface{}{
-						"name": "rr-gitops-drift-1",
-					},
-					"confidence":           0.65,
-					"confidenceLevel":      "medium",
-					"reason":               "Policy requires approval",
-					"whyApprovalRequired":  "Production namespace",
-					"investigationSummary": "Drift detected",
-					"recommendedWorkflow": map[string]interface{}{
-						"workflowId": "drift-v1",
-						"version":    "1.0.0",
-						"rationale":  "Best match",
-					},
-					"recommendedActions": []interface{}{
-						map[string]interface{}{"action": "Revert", "rationale": "Restore consistency"},
-					},
-					"requiredBy": "2026-06-11T16:00:00Z",
+				RecommendedActions: []remediationv1.ApprovalRecommendedAction{
+					{Action: "Revert", Rationale: "Restore consistency"},
 				},
-				"status": map[string]interface{}{},
+				RequiredBy: metav1.NewTime(time.Date(2026, 6, 11, 16, 0, 0, 0, time.UTC)),
 			},
 		}
 
@@ -88,26 +116,18 @@ var _ = Describe("Approval Event Payload Marshaling — TP-1398", func() {
 	})
 
 	It("UT-AF-1398-003: MarshalApprovalResolvedPayload includes all decision fields + workflowOverride", func() {
-		rar := &unstructured.Unstructured{
-			Object: map[string]interface{}{
-				"apiVersion": "kubernaut.ai/v1alpha1",
-				"kind":       "RemediationApprovalRequest",
-				"metadata": map[string]interface{}{
-					"name":      "rar-rr-oom-1",
-					"namespace": "kubernaut-system",
-				},
-				"status": map[string]interface{}{
-					"decision":        "Approved",
-					"decidedBy":       "jane@acme.com",
-					"decidedAt":       "2026-06-11T15:50:00Z",
-					"decisionMessage": "Reviewed evidence, proceeding with revert",
-					"workflowOverride": map[string]interface{}{
-						"workflowName": "gitops-manual-sync-v1",
-						"parameters": map[string]interface{}{
-							"SYNC_PRUNE": "true",
-						},
-						"rationale": "Prefer sync over revert",
-					},
+		decidedAt := metav1.NewTime(time.Date(2026, 6, 11, 15, 50, 0, 0, time.UTC))
+		rar := &remediationv1.RemediationApprovalRequest{
+			ObjectMeta: objMeta("kubernaut-system", "rar-rr-oom-1"),
+			Status: remediationv1.RemediationApprovalRequestStatus{
+				Decision:        remediationv1.ApprovalDecisionApproved,
+				DecidedBy:       "jane@acme.com",
+				DecidedAt:       &decidedAt,
+				DecisionMessage: "Reviewed evidence, proceeding with revert",
+				WorkflowOverride: &remediationv1.WorkflowOverride{
+					WorkflowName: "gitops-manual-sync-v1",
+					Parameters:   map[string]string{"SYNC_PRUNE": "true"},
+					Rationale:    "Prefer sync over revert",
 				},
 			},
 		}
@@ -130,19 +150,13 @@ var _ = Describe("Approval Event Payload Marshaling — TP-1398", func() {
 	})
 
 	It("UT-AF-1398-004: resolution payload omits workflowOverride when nil", func() {
-		rar := &unstructured.Unstructured{
-			Object: map[string]interface{}{
-				"apiVersion": "kubernaut.ai/v1alpha1",
-				"kind":       "RemediationApprovalRequest",
-				"metadata": map[string]interface{}{
-					"name":      "rar-rr-oom-1",
-					"namespace": "kubernaut-system",
-				},
-				"status": map[string]interface{}{
-					"decision":  "Rejected",
-					"decidedBy": "bob@acme.com",
-					"decidedAt": "2026-06-11T15:55:00Z",
-				},
+		decidedAt := metav1.NewTime(time.Date(2026, 6, 11, 15, 55, 0, 0, time.UTC))
+		rar := &remediationv1.RemediationApprovalRequest{
+			ObjectMeta: objMeta("kubernaut-system", "rar-rr-oom-1"),
+			Status: remediationv1.RemediationApprovalRequestStatus{
+				Decision:  remediationv1.ApprovalDecisionRejected,
+				DecidedBy: "bob@acme.com",
+				DecidedAt: &decidedAt,
 			},
 		}
 
@@ -158,35 +172,24 @@ var _ = Describe("Approval Event Payload Marshaling — TP-1398", func() {
 	})
 
 	It("UT-AF-1398-008: missing optional fields produces valid JSON", func() {
-		rar := &unstructured.Unstructured{
-			Object: map[string]interface{}{
-				"apiVersion": "kubernaut.ai/v1alpha1",
-				"kind":       "RemediationApprovalRequest",
-				"metadata": map[string]interface{}{
-					"name":      "rar-rr-minimal-1",
-					"namespace": "kubernaut-system",
+		rar := &remediationv1.RemediationApprovalRequest{
+			ObjectMeta: objMeta("kubernaut-system", "rar-rr-minimal-1"),
+			Spec: remediationv1.RemediationApprovalRequestSpec{
+				RemediationRequestRef: corev1.ObjectReference{Name: "rr-minimal-1"},
+				Confidence:            0.55,
+				ConfidenceLevel:       "low",
+				Reason:                "Low confidence requires approval",
+				WhyApprovalRequired:   "Below threshold",
+				InvestigationSummary:  "Basic investigation",
+				RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{
+					WorkflowID: "basic-v1",
+					Version:    "1.0.0",
+					Rationale:  "Only option",
 				},
-				"spec": map[string]interface{}{
-					"remediationRequestRef": map[string]interface{}{
-						"name": "rr-minimal-1",
-					},
-					"confidence":           0.55,
-					"confidenceLevel":      "low",
-					"reason":               "Low confidence requires approval",
-					"whyApprovalRequired":  "Below threshold",
-					"investigationSummary": "Basic investigation",
-					"recommendedWorkflow": map[string]interface{}{
-						"workflowId": "basic-v1",
-						"version":    "1.0.0",
-						"rationale":  "Only option",
-					},
-					"recommendedActions": []interface{}{
-						map[string]interface{}{"action": "Fix", "rationale": "Needed"},
-					},
-					"requiredBy": "2026-06-11T16:00:00Z",
-					// No policyEvaluation, no evidenceCollected, no alternativesConsidered
+				RecommendedActions: []remediationv1.ApprovalRecommendedAction{
+					{Action: "Fix", Rationale: "Needed"},
 				},
-				"status": map[string]interface{}{},
+				RequiredBy: metav1.NewTime(time.Date(2026, 6, 11, 16, 0, 0, 0, time.UTC)),
 			},
 		}
 
@@ -203,49 +206,38 @@ var _ = Describe("Approval Event Payload Marshaling — TP-1398", func() {
 	})
 
 	It("UT-AF-1398-009: RAR with existing decision includes decision in request payload context", func() {
-		rar := &unstructured.Unstructured{
-			Object: map[string]interface{}{
-				"apiVersion": "kubernaut.ai/v1alpha1",
-				"kind":       "RemediationApprovalRequest",
-				"metadata": map[string]interface{}{
-					"name":      "rar-rr-fast-1",
-					"namespace": "kubernaut-system",
+		rar := &remediationv1.RemediationApprovalRequest{
+			ObjectMeta: objMeta("kubernaut-system", "rar-rr-fast-1"),
+			Spec: remediationv1.RemediationApprovalRequestSpec{
+				RemediationRequestRef: corev1.ObjectReference{Name: "rr-fast-1"},
+				Confidence:            0.95,
+				ConfidenceLevel:       "high",
+				Reason:                "Auto-approved by policy",
+				WhyApprovalRequired:   "Policy audit trail",
+				InvestigationSummary:  "Quick fix",
+				RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{
+					WorkflowID: "fast-v1",
+					Version:    "1.0.0",
+					Rationale:  "Auto-selected",
 				},
-				"spec": map[string]interface{}{
-					"remediationRequestRef": map[string]interface{}{
-						"name": "rr-fast-1",
-					},
-					"confidence":           0.95,
-					"confidenceLevel":      "high",
-					"reason":               "Auto-approved by policy",
-					"whyApprovalRequired":  "Policy audit trail",
-					"investigationSummary": "Quick fix",
-					"recommendedWorkflow": map[string]interface{}{
-						"workflowId": "fast-v1",
-						"version":    "1.0.0",
-						"rationale":  "Auto-selected",
-					},
-					"recommendedActions": []interface{}{
-						map[string]interface{}{"action": "Apply", "rationale": "Safe"},
-					},
-					"requiredBy": "2026-06-11T16:00:00Z",
+				RecommendedActions: []remediationv1.ApprovalRecommendedAction{
+					{Action: "Apply", Rationale: "Safe"},
 				},
-				"status": map[string]interface{}{
-					"decision":  "Approved",
-					"decidedBy": "system",
-					"decidedAt": "2026-06-11T15:45:01Z",
-				},
+				RequiredBy: metav1.NewTime(time.Date(2026, 6, 11, 16, 0, 0, 0, time.UTC)),
+			},
+			Status: remediationv1.RemediationApprovalRequestStatus{
+				Decision:  remediationv1.ApprovalDecisionApproved,
+				DecidedBy: "system",
+				DecidedAt: func() *metav1.Time { t := metav1.NewTime(time.Date(2026, 6, 11, 15, 45, 1, 0, time.UTC)); return &t }(),
 			},
 		}
 
-		// Request payload still works even when decision exists
 		reqPayload, err := tools.MarshalApprovalRequestPayload(rar)
 		Expect(err).NotTo(HaveOccurred())
 		var parsedReq tools.ApprovalRequestEventPayload
 		Expect(json.Unmarshal([]byte(reqPayload), &parsedReq)).To(Succeed())
 		Expect(parsedReq.Name).To(Equal("rar-rr-fast-1"))
 
-		// Resolution payload also works
 		resPayload, err := tools.MarshalApprovalResolvedPayload(rar)
 		Expect(err).NotTo(HaveOccurred())
 		var parsedRes tools.ApprovalResolvedEventPayload
@@ -255,75 +247,49 @@ var _ = Describe("Approval Event Payload Marshaling — TP-1398", func() {
 	})
 
 	It("UT-AF-1398-010: realistic RAR payload within 8KB limit", func() {
-		rar := &unstructured.Unstructured{
-			Object: map[string]interface{}{
-				"apiVersion": "kubernaut.ai/v1alpha1",
-				"kind":       "RemediationApprovalRequest",
-				"metadata": map[string]interface{}{
-					"name":      "rar-rr-complex-scenario-1",
-					"namespace": "kubernaut-system",
+		rar := &remediationv1.RemediationApprovalRequest{
+			ObjectMeta: objMeta("kubernaut-system", "rar-rr-complex-scenario-1"),
+			Spec: remediationv1.RemediationApprovalRequestSpec{
+				RemediationRequestRef: corev1.ObjectReference{Name: "rr-complex-scenario-1"},
+				Confidence:            0.68,
+				ConfidenceLevel:       "medium",
+				Reason:                "Multiple factors indicate need for human review before proceeding with remediation",
+				WhyApprovalRequired: "Production namespace requires approval per policy evaluation; " +
+					"confidence below auto-approve threshold; multiple alternative approaches available",
+				InvestigationSummary: "Kubernetes deployment nginx-frontend in production namespace " +
+					"experienced repeated CrashLoopBackOff events due to misconfigured readiness probe. " +
+					"Root cause traced to ConfigMap change deployed outside GitOps pipeline.",
+				RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{
+					WorkflowID:      "configmap-revert-v2",
+					Version:         "2.1.0",
+					ExecutionBundle: "oci://registry.kubernaut.ai/workflows/configmap-revert:v2.1.0@sha256:abc123def456",
+					Rationale:       "Best match for ConfigMap drift scenario with GitOps restoration",
 				},
-				"spec": map[string]interface{}{
-					"remediationRequestRef": map[string]interface{}{
-						"name": "rr-complex-scenario-1",
-					},
-					"confidence":      0.68,
-					"confidenceLevel": "medium",
-					"reason":          "Multiple factors indicate need for human review before proceeding with remediation",
-					"whyApprovalRequired": "Production namespace requires approval per policy evaluation; " +
-						"confidence below auto-approve threshold; multiple alternative approaches available",
-					"investigationSummary": "Kubernetes deployment nginx-frontend in production namespace " +
-						"experienced repeated CrashLoopBackOff events due to misconfigured readiness probe. " +
-						"Root cause traced to ConfigMap change deployed outside GitOps pipeline.",
-					"recommendedWorkflow": map[string]interface{}{
-						"workflowId":      "configmap-revert-v2",
-						"version":         "2.1.0",
-						"executionBundle": "oci://registry.kubernaut.ai/workflows/configmap-revert:v2.1.0@sha256:abc123def456",
-						"rationale":       "Best match for ConfigMap drift scenario with GitOps restoration",
-					},
-					"evidenceCollected": []interface{}{
-						"CrashLoopBackOff events detected at 2026-06-11T14:30:00Z (5 occurrences in 10 minutes)",
-						"ConfigMap production/nginx-config last modified 2026-06-11T14:25:00Z by kubectl",
-						"ArgoCD Application out-of-sync since 2026-06-11T14:25:00Z",
-						"Git HEAD for nginx-config differs from live state (3 field changes)",
-						"No PDB violation detected — safe to restart pods",
-					},
-					"recommendedActions": []interface{}{
-						map[string]interface{}{
-							"action":    "Revert ConfigMap to git HEAD state",
-							"rationale": "Restore GitOps consistency; probe config in git is known-good",
-						},
-						map[string]interface{}{
-							"action":    "Trigger ArgoCD sync for nginx-frontend Application",
-							"rationale": "Ensure all resources match declared state after ConfigMap fix",
-						},
-						map[string]interface{}{
-							"action":    "Verify pod readiness after rollout",
-							"rationale": "Confirm fix resolved CrashLoopBackOff within 60s",
-						},
-					},
-					"alternativesConsidered": []interface{}{
-						map[string]interface{}{
-							"approach": "Update git to match live ConfigMap state",
-							"prosCons": "Preserves the manual change but bypasses code review; risks introducing untested configuration",
-						},
-						map[string]interface{}{
-							"approach": "Scale down deployment and investigate offline",
-							"prosCons": "Zero risk of further damage but causes extended downtime for end users",
-						},
-					},
-					"policyEvaluation": map[string]interface{}{
-						"policyName":   "approval.rego",
-						"matchedRules": []interface{}{"production_namespace_always_requires_approval", "confidence_below_threshold"},
-						"decision":     "ManualReviewRequired",
-					},
-					"requiredBy": "2026-06-11T16:00:00Z",
+				EvidenceCollected: []string{
+					"CrashLoopBackOff events detected at 2026-06-11T14:30:00Z (5 occurrences in 10 minutes)",
+					"ConfigMap production/nginx-config last modified 2026-06-11T14:25:00Z by kubectl",
+					"ArgoCD Application out-of-sync since 2026-06-11T14:25:00Z",
+					"Git HEAD for nginx-config differs from live state (3 field changes)",
+					"No PDB violation detected — safe to restart pods",
 				},
-				"status": map[string]interface{}{
-					"decision":      "",
-					"timeRemaining": "14m30s",
-					"expired":       false,
+				RecommendedActions: []remediationv1.ApprovalRecommendedAction{
+					{Action: "Revert ConfigMap to git HEAD state", Rationale: "Restore GitOps consistency; probe config in git is known-good"},
+					{Action: "Trigger ArgoCD sync for nginx-frontend Application", Rationale: "Ensure all resources match declared state after ConfigMap fix"},
+					{Action: "Verify pod readiness after rollout", Rationale: "Confirm fix resolved CrashLoopBackOff within 60s"},
 				},
+				AlternativesConsidered: []remediationv1.ApprovalAlternative{
+					{Approach: "Update git to match live ConfigMap state", ProsCons: "Preserves the manual change but bypasses code review; risks introducing untested configuration"},
+					{Approach: "Scale down deployment and investigate offline", ProsCons: "Zero risk of further damage but causes extended downtime for end users"},
+				},
+				PolicyEvaluation: &remediationv1.ApprovalPolicyEvaluation{
+					PolicyName:   "approval.rego",
+					MatchedRules: []string{"production_namespace_always_requires_approval", "confidence_below_threshold"},
+					Decision:     "ManualReviewRequired",
+				},
+				RequiredBy: metav1.NewTime(time.Date(2026, 6, 11, 16, 0, 0, 0, time.UTC)),
+			},
+			Status: remediationv1.RemediationApprovalRequestStatus{
+				TimeRemaining: "14m30s",
 			},
 		}
 

@@ -5,7 +5,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	k8sruntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
@@ -14,8 +14,8 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
 
-func rrTestScheme() *k8sruntime.Scheme {
-	s := k8sruntime.NewScheme()
+func rrTestScheme() *runtime.Scheme {
+	s := runtime.NewScheme()
 	_ = remediationv1.AddToScheme(s)
 	return s
 }
