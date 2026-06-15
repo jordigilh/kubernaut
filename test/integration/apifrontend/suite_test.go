@@ -35,7 +35,9 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	v1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
+	eav1alpha1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
+	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/handler"
@@ -499,7 +501,9 @@ timeoutSeconds: 120
 		"KUBEBUILDER_ASSETS must be set -- run 'make setup-envtest' first")
 
 	scheme = runtime.NewScheme()
-	Expect(v1alpha1.AddToScheme(scheme)).To(Succeed())
+	Expect(isv1alpha1.AddToScheme(scheme)).To(Succeed())
+	Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
+	Expect(eav1alpha1.AddToScheme(scheme)).To(Succeed())
 	Expect(appsv1.AddToScheme(scheme)).To(Succeed())
 	Expect(corev1.AddToScheme(scheme)).To(Succeed())
 	Expect(rbacv1.AddToScheme(scheme)).To(Succeed())
