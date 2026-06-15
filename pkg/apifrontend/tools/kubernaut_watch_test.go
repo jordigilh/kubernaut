@@ -14,6 +14,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
+	eav1alpha1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
@@ -380,5 +381,282 @@ var _ = Describe("Structured Approval Events in HandleWatch — TP-1398 (#1398)"
 		Expect(resolvedFound).To(BeTrue(), "must emit approval_request_resolved for already-decided RAR")
 		Expect(requestIdx).To(BeNumerically("<", resolvedIdx),
 			"approval_request must precede approval_request_resolved (ordering guarantee)")
+	})
+})
+
+// =============================================================================
+// Issue #1427: verification_step sub-events — Wiring Integration Tests
+// FedRAMP: SI-4 (System Monitoring), AU-3 (Content of Audit Records),
+//          AU-12 (Audit Generation), SI-7 (Software/Information Integrity)
+// =============================================================================
+
+var _ = Describe("verification_step events in HandleWatch — #1427", func() {
+	var ctx context.Context
+
+	BeforeEach(func() {
+		ctx = context.Background()
+	})
+
+	updateEAStatus := func(
+		ctx context.Context,
+		c crclient.WithWatch,
+		ns, name string,
+		mutate func(*eav1alpha1.EffectivenessAssessment),
+	) {
+		var ea eav1alpha1.EffectivenessAssessment
+		ExpectWithOffset(1, c.Get(ctx, crclient.ObjectKey{Namespace: ns, Name: name}, &ea)).To(Succeed())
+		mutate(&ea)
+		ExpectWithOffset(1, c.Status().Update(ctx, &ea)).To(Succeed())
+	}
+
+	It("IT-AF-1427-001: AU-3, SI-4 — emits verification_step with step_status and detail through production wiring", func() {
+		rr := newTypedRR("payments", "rr-1", "Executing")
+		ea := &eav1alpha1.EffectivenessAssessment{
+			ObjectMeta: objMeta("payments", tools.EANameForRR("rr-1")),
+			Spec: eav1alpha1.EffectivenessAssessmentSpec{
+				CorrelationID:           "rr-1",
+				RemediationRequestPhase: "Verifying",
+				SignalTarget:            eav1alpha1.TargetResource{Kind: "Deployment", Name: "api-server"},
+				RemediationTarget:       eav1alpha1.TargetResource{Kind: "Deployment", Name: "api-server"},
+				Config: eav1alpha1.EAConfig{
+					StabilizationWindow: metav1.Duration{Duration: 120 * time.Second},
+				},
+			},
+			Status: eav1alpha1.EffectivenessAssessmentStatus{
+				Phase: "Stabilizing",
+			},
+		}
+		wc := newWatchClient(rr, ea)
+
+		queue := &bridgeQueue{}
+		ctx = launcher.WithEventBridge(ctx, queue, "task-it-1427-001", "ctx-it-001", nil)
+
+		go func() {
+			time.Sleep(50 * time.Millisecond)
+			updateRRPhase(ctx, wc, "payments", "rr-1", "Verifying")
+			time.Sleep(100 * time.Millisecond)
+			updateEAStatus(ctx, wc, "payments", tools.EANameForRR("rr-1"), func(ea *eav1alpha1.EffectivenessAssessment) {
+				ea.Status.Phase = "Assessing"
+				ea.Status.Components.HealthAssessed = true
+				score := 1.0
+				ea.Status.Components.HealthScore = &score
+			})
+			time.Sleep(50 * time.Millisecond)
+			updateRRTerminal(ctx, wc, "payments", "rr-1", "Completed", "Remediated", "done")
+		}()
+
+		result, err := tools.HandleWatch(ctx, wc, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Status).To(Equal("completed"))
+
+		events := queue.Events()
+		var verificationSteps []*a2a.TaskStatusUpdateEvent
+		for _, evt := range events {
+			if tsu, ok := evt.(*a2a.TaskStatusUpdateEvent); ok {
+				if tsu.Metadata != nil && tsu.Metadata["type"] == launcher.MetaTypeVerificationStep {
+					verificationSteps = append(verificationSteps, tsu)
+				}
+			}
+		}
+		Expect(verificationSteps).NotTo(BeEmpty(),
+			"AU-3: HandleWatch must emit verification_step events through EventBridge when EA status changes")
+
+		for _, tsu := range verificationSteps {
+			Expect(tsu.Metadata).To(HaveKey("step"),
+				"SI-4: each verification_step must identify the step name")
+			Expect(tsu.Metadata).To(HaveKey("step_status"),
+				"AU-3: each verification_step must include step_status for audit record completeness")
+			Expect(tsu.Metadata).To(HaveKey("detail"),
+				"SI-4: each verification_step must include human-readable detail for operator monitoring")
+		}
+
+		stepNames := make([]string, len(verificationSteps))
+		for i, tsu := range verificationSteps {
+			stepNames[i] = tsu.Metadata["step"].(string)
+		}
+		Expect(stepNames).To(ContainElement("health_check"),
+			"SI-4: health_check step must be emitted when HealthAssessed transitions")
+	})
+
+	It("IT-AF-1427-002: AU-12 — elapsed_s is present and non-negative in verification_step metadata", func() {
+		rr := newTypedRR("payments", "rr-2", "Executing")
+		ea := &eav1alpha1.EffectivenessAssessment{
+			ObjectMeta: objMeta("payments", tools.EANameForRR("rr-2")),
+			Spec: eav1alpha1.EffectivenessAssessmentSpec{
+				CorrelationID:           "rr-2",
+				RemediationRequestPhase: "Verifying",
+				SignalTarget:            eav1alpha1.TargetResource{Kind: "Deployment", Name: "api-server"},
+				RemediationTarget:       eav1alpha1.TargetResource{Kind: "Deployment", Name: "api-server"},
+				Config: eav1alpha1.EAConfig{
+					StabilizationWindow: metav1.Duration{Duration: 60 * time.Second},
+				},
+			},
+			Status: eav1alpha1.EffectivenessAssessmentStatus{Phase: "Stabilizing"},
+		}
+		wc := newWatchClient(rr, ea)
+
+		queue := &bridgeQueue{}
+		ctx = launcher.WithEventBridge(ctx, queue, "task-it-1427-002", "ctx-it-002", nil)
+
+		go func() {
+			time.Sleep(50 * time.Millisecond)
+			updateRRPhase(ctx, wc, "payments", "rr-2", "Verifying")
+			time.Sleep(100 * time.Millisecond)
+			updateEAStatus(ctx, wc, "payments", tools.EANameForRR("rr-2"), func(ea *eav1alpha1.EffectivenessAssessment) {
+				ea.Status.Phase = "Assessing"
+			})
+			time.Sleep(50 * time.Millisecond)
+			updateRRTerminal(ctx, wc, "payments", "rr-2", "Completed", "Remediated", "done")
+		}()
+
+		result, err := tools.HandleWatch(ctx, wc, tools.WatchArgs{Namespace: "payments", Name: "rr-2"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Status).To(Equal("completed"))
+
+		events := queue.Events()
+		var foundElapsed bool
+		for _, evt := range events {
+			tsu, ok := evt.(*a2a.TaskStatusUpdateEvent)
+			if !ok || tsu.Metadata == nil {
+				continue
+			}
+			if tsu.Metadata["type"] != launcher.MetaTypeVerificationStep {
+				continue
+			}
+			Expect(tsu.Metadata).To(HaveKey("elapsed_s"),
+				"AU-12: verification_step events must include elapsed_s generated at source")
+			elapsed, ok := tsu.Metadata["elapsed_s"].(int)
+			Expect(ok).To(BeTrue(), "AU-12: elapsed_s must be an integer")
+			Expect(elapsed).To(BeNumerically(">=", 0),
+				"AU-12: elapsed_s must be non-negative (seconds since Verifying started)")
+			foundElapsed = true
+		}
+		Expect(foundElapsed).To(BeTrue(),
+			"AU-12: at least one verification_step with elapsed_s must be emitted")
+	})
+
+	It("IT-AF-1427-003: SI-4 — Stabilizing->Assessing emits stabilization_elapsed, not phase_transition", func() {
+		rr := newTypedRR("payments", "rr-3", "Executing")
+		ea := &eav1alpha1.EffectivenessAssessment{
+			ObjectMeta: objMeta("payments", tools.EANameForRR("rr-3")),
+			Spec: eav1alpha1.EffectivenessAssessmentSpec{
+				CorrelationID:           "rr-3",
+				RemediationRequestPhase: "Verifying",
+				SignalTarget:            eav1alpha1.TargetResource{Kind: "Deployment", Name: "api-server"},
+				RemediationTarget:       eav1alpha1.TargetResource{Kind: "Deployment", Name: "api-server"},
+				Config: eav1alpha1.EAConfig{
+					StabilizationWindow: metav1.Duration{Duration: 60 * time.Second},
+				},
+			},
+			Status: eav1alpha1.EffectivenessAssessmentStatus{Phase: "Stabilizing"},
+		}
+		wc := newWatchClient(rr, ea)
+
+		queue := &bridgeQueue{}
+		ctx = launcher.WithEventBridge(ctx, queue, "task-it-1427-003", "ctx-it-003", nil)
+
+		go func() {
+			time.Sleep(50 * time.Millisecond)
+			updateRRPhase(ctx, wc, "payments", "rr-3", "Verifying")
+			time.Sleep(100 * time.Millisecond)
+			updateEAStatus(ctx, wc, "payments", tools.EANameForRR("rr-3"), func(ea *eav1alpha1.EffectivenessAssessment) {
+				ea.Status.Phase = "Assessing"
+			})
+			time.Sleep(50 * time.Millisecond)
+			updateRRTerminal(ctx, wc, "payments", "rr-3", "Completed", "Remediated", "done")
+		}()
+
+		result, err := tools.HandleWatch(ctx, wc, tools.WatchArgs{Namespace: "payments", Name: "rr-3"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Status).To(Equal("completed"))
+
+		events := queue.Events()
+		var stabilizationStep *a2a.TaskStatusUpdateEvent
+		for _, evt := range events {
+			tsu, ok := evt.(*a2a.TaskStatusUpdateEvent)
+			if !ok || tsu.Metadata == nil {
+				continue
+			}
+			if tsu.Metadata["type"] == launcher.MetaTypeVerificationStep &&
+				tsu.Metadata["step"] == "stabilization_elapsed" {
+				stabilizationStep = tsu
+				break
+			}
+		}
+		Expect(stabilizationStep).NotTo(BeNil(),
+			"SI-4: Stabilizing->Assessing must emit 'stabilization_elapsed' for Console monitoring")
+		Expect(stabilizationStep.Metadata["step_status"]).To(Equal(tools.StepStatusCompleted),
+			"SI-4: stabilization_elapsed must have step_status=completed")
+
+		for _, evt := range events {
+			tsu, ok := evt.(*a2a.TaskStatusUpdateEvent)
+			if !ok || tsu.Metadata == nil {
+				continue
+			}
+			if tsu.Metadata["type"] == launcher.MetaTypeVerificationStep {
+				Expect(tsu.Metadata["step"]).NotTo(Equal("phase_transition"),
+					"SI-4: Stabilizing->Assessing must NOT emit generic 'phase_transition'")
+			}
+		}
+	})
+
+	It("IT-AF-1427-004: SI-4, AU-3 — alert decay emits alert_check with in_progress and signal name in detail", func() {
+		rr := newTypedRR("payments", "rr-4", "Executing")
+		ea := &eav1alpha1.EffectivenessAssessment{
+			ObjectMeta: objMeta("payments", tools.EANameForRR("rr-4")),
+			Spec: eav1alpha1.EffectivenessAssessmentSpec{
+				CorrelationID:           "rr-4",
+				RemediationRequestPhase: "Verifying",
+				SignalName:              "KubePodCrashLooping",
+				SignalTarget:            eav1alpha1.TargetResource{Kind: "Deployment", Name: "api-server"},
+				RemediationTarget:       eav1alpha1.TargetResource{Kind: "Deployment", Name: "api-server"},
+				Config: eav1alpha1.EAConfig{
+					StabilizationWindow: metav1.Duration{Duration: 60 * time.Second},
+				},
+			},
+			Status: eav1alpha1.EffectivenessAssessmentStatus{
+				Phase: "Assessing",
+			},
+		}
+		wc := newWatchClient(rr, ea)
+
+		queue := &bridgeQueue{}
+		ctx = launcher.WithEventBridge(ctx, queue, "task-it-1427-004", "ctx-it-004", nil)
+
+		go func() {
+			time.Sleep(50 * time.Millisecond)
+			updateRRPhase(ctx, wc, "payments", "rr-4", "Verifying")
+			time.Sleep(100 * time.Millisecond)
+			updateEAStatus(ctx, wc, "payments", tools.EANameForRR("rr-4"), func(ea *eav1alpha1.EffectivenessAssessment) {
+				ea.Status.Components.AlertDecayRetries = 1
+			})
+			time.Sleep(50 * time.Millisecond)
+			updateRRTerminal(ctx, wc, "payments", "rr-4", "Completed", "Remediated", "done")
+		}()
+
+		result, err := tools.HandleWatch(ctx, wc, tools.WatchArgs{Namespace: "payments", Name: "rr-4"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Status).To(Equal("completed"))
+
+		events := queue.Events()
+		var alertInProgress *a2a.TaskStatusUpdateEvent
+		for _, evt := range events {
+			tsu, ok := evt.(*a2a.TaskStatusUpdateEvent)
+			if !ok || tsu.Metadata == nil {
+				continue
+			}
+			if tsu.Metadata["type"] == launcher.MetaTypeVerificationStep &&
+				tsu.Metadata["step"] == "alert_check" &&
+				tsu.Metadata["step_status"] == tools.StepStatusInProgress {
+				alertInProgress = tsu
+				break
+			}
+		}
+		Expect(alertInProgress).NotTo(BeNil(),
+			"SI-4: alert decay retry must emit alert_check with step_status=in_progress")
+		detail, ok := alertInProgress.Metadata["detail"].(string)
+		Expect(ok).To(BeTrue())
+		Expect(detail).To(ContainSubstring("KubePodCrashLooping"),
+			"AU-3: alert_check in_progress detail must include signal name for audit traceability")
 	})
 })
