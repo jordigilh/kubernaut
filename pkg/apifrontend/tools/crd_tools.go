@@ -691,12 +691,13 @@ func HandleWatch(ctx context.Context, client crclient.WithWatch, args WatchArgs)
 	}
 
 	var (
-		events          []WatchEvent
-		lastSeenPhase   string
-		lastRARDecision string
-		startedAt       = time.Now().UTC().Format(time.RFC3339)
-		eaCh            <-chan watch.Event
-		prevEA          *eav1alpha1.EffectivenessAssessment
+		events             []WatchEvent
+		lastSeenPhase      string
+		lastRARDecision    string
+		startedAt          = time.Now().UTC().Format(time.RFC3339)
+		eaCh               <-chan watch.Event
+		prevEA             *eav1alpha1.EffectivenessAssessment
+		verifyingStartedAt time.Time
 	)
 
 	_ = launcher.EmitStatusSafe(ctx, "Watching remediation progress...\n")
@@ -731,13 +732,14 @@ func HandleWatch(ctx context.Context, client crclient.WithWatch, args WatchArgs)
 				Message:   msg,
 			})
 			if phase == "Verifying" {
+				verifyingStartedAt = time.Now().UTC()
 				eaName := EANameForRR(args.Name)
 				timing := FetchEATimingMetadata(ctx, client, nil, args.Namespace, eaName)
 
 				statusMeta := map[string]any{"type": launcher.MetaTypeStatus}
 				if timing.StabilizationWindow != "" {
 					statusMeta["stabilization_window"] = timing.StabilizationWindow
-					statusMeta["started_at"] = time.Now().UTC().Format(time.RFC3339)
+					statusMeta["started_at"] = verifyingStartedAt.Format(time.RFC3339)
 				}
 				if timing.ValidityDeadline != "" {
 					statusMeta["validity_deadline"] = timing.ValidityDeadline
@@ -869,6 +871,9 @@ func HandleWatch(ctx context.Context, client crclient.WithWatch, args WatchArgs)
 				}
 				for k, v := range step.Data {
 					stepMeta[k] = v
+				}
+				if !verifyingStartedAt.IsZero() {
+					stepMeta["elapsed_s"] = int(time.Since(verifyingStartedAt).Seconds())
 				}
 				_ = launcher.EmitStatusWithMetaSafe(ctx, step.Message+"\n", stepMeta)
 				events = append(events, WatchEvent{
