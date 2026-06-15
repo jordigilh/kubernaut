@@ -40,7 +40,7 @@ var _ = Describe("kubernaut_watch", func() {
 			fakeWatcher.Modify(newFakeRR("payments", "rr-1", "Completed"))
 		}()
 
-		result, err := tools.HandleWatch(ctx, client, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
+		result, err := tools.HandleWatch(ctx, client, nil, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Events).NotTo(BeEmpty())
 	})
@@ -58,7 +58,7 @@ var _ = Describe("kubernaut_watch", func() {
 			fakeWatcher.Modify(newFakeRR("payments", "rr-1", "Completed"))
 		}()
 
-		result, err := tools.HandleWatch(ctx, client, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
+		result, err := tools.HandleWatch(ctx, client, nil, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).NotTo(BeEmpty())
 	})
@@ -78,7 +78,7 @@ var _ = Describe("kubernaut_watch", func() {
 			fakeWatcher.Modify(newFakeRR("payments", "rr-1", "Completed"))
 		}()
 
-		result, err := tools.HandleWatch(ctx, client, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
+		result, err := tools.HandleWatch(ctx, client, nil, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
 		Expect(err).NotTo(HaveOccurred())
 		if len(result.Events) >= 2 {
 			Expect(result.Events[0].Timestamp <= result.Events[1].Timestamp).To(BeTrue())
@@ -98,7 +98,7 @@ var _ = Describe("kubernaut_watch", func() {
 			fakeWatcher.Modify(newFakeRR("payments", "rr-1", "Completed"))
 		}()
 
-		result, err := tools.HandleWatch(ctx, client, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
+		result, err := tools.HandleWatch(ctx, client, nil, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).To(Equal("completed"))
 	})
@@ -116,7 +116,7 @@ var _ = Describe("kubernaut_watch", func() {
 			cancel()
 		}()
 
-		result, err := tools.HandleWatch(cancelCtx, client, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
+		result, err := tools.HandleWatch(cancelCtx, client, nil, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).To(Equal("cancelled"))
 	})
@@ -136,7 +136,7 @@ var _ = Describe("kubernaut_watch", func() {
 			fakeWatcher.Modify(newFakeRR("payments", "rr-1", "Completed"))
 		}()
 
-		_, err := tools.HandleWatch(ctx, client, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
+		_, err := tools.HandleWatch(ctx, client, nil, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(capturedAction).NotTo(BeNil())
 		Expect(capturedAction.GetNamespace()).To(Equal("payments"))
@@ -150,33 +150,33 @@ var _ = Describe("kubernaut_watch", func() {
 		client.PrependReactor("get", "remediationrequests", func(action k8stesting.Action) (bool, runtime.Object, error) {
 			return true, nil, newForbiddenError("remediationrequests")
 		})
-		_, err := tools.HandleWatch(ctx, client, tools.WatchArgs{Namespace: "forbidden", Name: "rr-1"})
+		_, err := tools.HandleWatch(ctx, client, nil, tools.WatchArgs{Namespace: "forbidden", Name: "rr-1"})
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("access denied"))
 	})
 
 	It("UT-AF-106-012: returns not-found when RR does not exist", func() {
 		client := newDynamicFakeClient()
-		_, err := tools.HandleWatch(ctx, client, tools.WatchArgs{Namespace: "default", Name: "nonexistent"})
+		_, err := tools.HandleWatch(ctx, client, nil, tools.WatchArgs{Namespace: "default", Name: "nonexistent"})
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("not found"))
 	})
 
 	It("UT-AF-106-009: nil client returns ErrK8sUnavailable", func() {
-		_, err := tools.HandleWatch(ctx, nil, tools.WatchArgs{Namespace: "default", Name: "rr-1"})
+		_, err := tools.HandleWatch(ctx, nil, nil, tools.WatchArgs{Namespace: "default", Name: "rr-1"})
 		Expect(err).To(MatchError(tools.ErrK8sUnavailable))
 	})
 
 	It("UT-AF-106-010: invalid namespace returns ErrInvalidInput", func() {
 		client := newDynamicFakeClient()
-		_, err := tools.HandleWatch(ctx, client, tools.WatchArgs{Namespace: "../etc", Name: "rr-1"})
+		_, err := tools.HandleWatch(ctx, client, nil, tools.WatchArgs{Namespace: "../etc", Name: "rr-1"})
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("invalid input"))
 	})
 
 	It("UT-AF-106-011: invalid resource name returns ErrInvalidInput", func() {
 		client := newDynamicFakeClient()
-		_, err := tools.HandleWatch(ctx, client, tools.WatchArgs{Namespace: "default", Name: "INVALID NAME!!"})
+		_, err := tools.HandleWatch(ctx, client, nil, tools.WatchArgs{Namespace: "default", Name: "INVALID NAME!!"})
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("invalid input"))
 	})
@@ -193,7 +193,7 @@ var _ = Describe("kubernaut_watch", func() {
 			fakeWatcher.Modify(newFakeRR("payments", "rr-1", "AwaitingApproval"))
 		}()
 
-		result, err := tools.HandleWatch(ctx, client, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
+		result, err := tools.HandleWatch(ctx, client, nil, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).To(Equal("awaiting_approval"),
 			"watch must yield on AwaitingApproval so the LLM can approve the RAR")
@@ -213,7 +213,7 @@ var _ = Describe("kubernaut_watch", func() {
 			fakeWatcher.Modify(newFakeRR("payments", "rr-1", "AwaitingApproval"))
 		}()
 
-		result, err := tools.HandleWatch(ctx, client, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
+		result, err := tools.HandleWatch(ctx, client, nil, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).To(Equal("awaiting_approval"),
 			"first watch call yields on AwaitingApproval")
@@ -230,7 +230,7 @@ var _ = Describe("kubernaut_watch", func() {
 			fakeWatcher2.Modify(newFakeRR("payments", "rr-1", "Completed"))
 		}()
 
-		result2, err := tools.HandleWatch(ctx, client, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
+		result2, err := tools.HandleWatch(ctx, client, nil, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result2.Status).To(Equal("completed"),
 			"second watch call should reach terminal phase")
@@ -265,7 +265,7 @@ var _ = Describe("Structured Approval Events in HandleWatch — TP-1398 (#1398)"
 			rrWatcher.Modify(newFakeRR("payments", "rr-1", "AwaitingApproval"))
 		}()
 
-		result, err := tools.HandleWatch(ctx, client, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
+		result, err := tools.HandleWatch(ctx, client, nil, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).To(Equal("awaiting_approval"))
 
@@ -331,7 +331,7 @@ var _ = Describe("Structured Approval Events in HandleWatch — TP-1398 (#1398)"
 			rrWatcher.Modify(newFakeRR("payments", "rr-1", "Completed"))
 		}()
 
-		result, err := tools.HandleWatch(ctx, client, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
+		result, err := tools.HandleWatch(ctx, client, nil, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).To(Equal("completed"))
 
@@ -411,7 +411,7 @@ var _ = Describe("Structured Approval Events in HandleWatch — TP-1398 (#1398)"
 			rrWatcher.Modify(newFakeRR("payments", "rr-1", "AwaitingApproval"))
 		}()
 
-		result, err := tools.HandleWatch(ctx, client, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
+		result, err := tools.HandleWatch(ctx, client, nil, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).To(Equal("awaiting_approval"))
 

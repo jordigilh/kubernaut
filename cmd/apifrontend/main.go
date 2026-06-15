@@ -34,12 +34,14 @@ import (
 	"k8s.io/client-go/restmapper"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	"google.golang.org/genai"
 
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 
+	eav1alpha1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	v1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	agentpkg "github.com/jordigilh/kubernaut/pkg/apifrontend/agent"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
@@ -474,6 +476,7 @@ type backendDeps struct {
 	DSResilientTransport  *resilience.CircuitBreakerTransport
 	CAWatchers            []caWatcherEntry
 	k8sDynClient          dynamic.Interface
+	k8sTypedClient        crclient.WithWatch
 	K8sCB                 *resilience.K8sCircuitBreaker
 	InvestigationRegistry *tools.MonitorRegistry
 	Mapper                meta.RESTMapper
@@ -484,6 +487,13 @@ type backendDeps struct {
 // at startup; callers must check for nil (tools return a clear error).
 func (d *backendDeps) K8sClient() dynamic.Interface {
 	return d.k8sDynClient
+}
+
+// TypedClient returns the controller-runtime typed client for owned CRDs
+// (e.g. EffectivenessAssessment). Returns nil if K8s API was unreachable;
+// callers must check for nil (#1428).
+func (d *backendDeps) TypedClient() crclient.WithWatch {
+	return d.k8sTypedClient
 }
 
 func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metrics.Registry, auditor audit.Emitter, logger logr.Logger) (*backendDeps, error) {
@@ -637,6 +647,16 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 			} else {
 				deps.Mapper = restmapper.NewDeferredDiscoveryRESTMapper(memory.NewMemCacheClient(disc))
 				logger.Info("K8s RESTMapper initialized for CRD kind resolution")
+			}
+
+			typedScheme := k8sruntime.NewScheme()
+			_ = eav1alpha1.AddToScheme(typedScheme)
+			typedClient, tcErr := crclient.NewWithWatch(restCfg, crclient.Options{Scheme: typedScheme})
+			if tcErr != nil {
+				logger.Error(tcErr, "K8s typed client creation failed — EA typed operations will fall back to dynamic")
+			} else {
+				deps.k8sTypedClient = typedClient
+				logger.Info("K8s typed client initialized for EA CRD operations (#1428)")
 			}
 		}
 	}
@@ -837,6 +857,7 @@ func buildMCPHandler(cfg *config.Config, deps *backendDeps, sessInfra *sessionIn
 	}
 	bridgeCfg := &handler.MCPBridgeConfig{
 		K8sClient:             deps.K8sClient(),
+		TypedClient:           deps.TypedClient(),
 		Namespace:             cfg.Session.Namespace,
 		KAMCPClient:           deps.MCPClient,
 		KADedicatedClient:     deps.DedicatedClient,
@@ -919,6 +940,7 @@ func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps,
 		LLMModel:              llmModel,
 		Namespace:             cfg.Session.Namespace,
 		K8sClient:             deps.K8sClient(),
+		TypedClient:           deps.TypedClient(),
 		DSClient:              deps.DSClient,
 		MCPClient:             deps.MCPClient,
 		DedicatedClient:       deps.DedicatedClient,

@@ -12,6 +12,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/semaphore"
 	"k8s.io/client-go/dynamic"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
@@ -48,6 +49,7 @@ type ISSessionInitializer interface {
 // MCPBridgeConfig holds the configuration for the real MCP tool bridge.
 type MCPBridgeConfig struct {
 	K8sClient             dynamic.Interface
+	TypedClient           crclient.WithWatch
 	Namespace             string
 	KAMCPClient           ka.MCPClient
 	KADedicatedClient     ka.MCPClient
@@ -171,7 +173,7 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 	registerTool(srv, cfg, sem, "kubernaut_watch", "Watch for remediation state changes",
 		func(ctx context.Context, args tools.WatchArgs) (any, error) {
 			args.Namespace = cfg.Namespace
-			return tools.HandleWatch(ctx, cfg.K8sClient, args)
+			return tools.HandleWatch(ctx, cfg.K8sClient, cfg.TypedClient, args)
 		})
 
 	if shouldRegister("kubernaut_await_session") {

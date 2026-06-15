@@ -19,6 +19,7 @@ import (
 	"google.golang.org/adk/tool/functiontool"
 
 	"github.com/go-logr/logr"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
@@ -681,7 +682,9 @@ const maxWatchDuration = 15 * time.Minute
 
 // HandleWatch implements the kubernaut_watch logic with progressive SSE
 // updates via EventBridge and RAR approval lifecycle tracking.
-func HandleWatch(ctx context.Context, client dynamic.Interface, args WatchArgs) (WatchResult, error) {
+// typedClient is the controller-runtime client for typed CRD operations (EA);
+// may be nil (graceful degradation — EA metadata omitted).
+func HandleWatch(ctx context.Context, client dynamic.Interface, typedClient crclient.WithWatch, args WatchArgs) (WatchResult, error) {
 	if client == nil {
 		return WatchResult{}, ErrK8sUnavailable
 	}
@@ -775,11 +778,9 @@ func HandleWatch(ctx context.Context, client dynamic.Interface, args WatchArgs) 
 			}
 			progressMeta := map[string]any{"type": "execution_progress"}
 			if phase == "Verifying" {
-				eaRef := extractEARef(obj)
-				if eaRef != "" {
-					if sw := FetchStabilizationWindow(ctx, client, args.Namespace, eaRef); sw != "" {
-						progressMeta["stabilization_window"] = sw
-					}
+				eaName := EANameForRR(args.Name)
+				if sw := FetchStabilizationWindow(ctx, typedClient, nil, args.Namespace, eaName); sw != "" {
+					progressMeta["stabilization_window"] = sw
 				}
 			}
 			snapshot := BuildProgressSnapshot(phase, args.Name, startedAt, completedAt)
@@ -866,13 +867,13 @@ func HandleWatch(ctx context.Context, client dynamic.Interface, args WatchArgs) 
 }
 
 // NewWatchTool creates the kubernaut_watch tool.
-func NewWatchTool(client dynamic.Interface, controllerNS string) (tool.Tool, error) {
+func NewWatchTool(client dynamic.Interface, typedClient crclient.WithWatch, controllerNS string) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_watch",
 		Description: "Stream live status updates for a remediation and its related resources",
 	}, func(ctx tool.Context, args WatchArgs) (WatchResult, error) {
 		args.Namespace = controllerNS
-		return HandleWatch(ctx, client, args)
+		return HandleWatch(ctx, client, typedClient, args)
 	})
 }
 

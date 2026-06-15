@@ -8,13 +8,16 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/watch"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	k8stesting "k8s.io/client-go/testing"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	eav1alpha1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
@@ -43,47 +46,42 @@ var _ = Describe("Execution Progress Artifacts (#1403)", func() {
 		)
 	})
 
-	Describe("FetchStabilizationWindow — UT-AF-1403-004..005", func() {
+	Describe("FetchStabilizationWindow (typed client) — UT-AF-1403-004..005", func() {
 
-		newFakeEA := func(namespace, name string, stabilizationWindow string) *unstructured.Unstructured {
-			return &unstructured.Unstructured{
-				Object: map[string]interface{}{
-					"apiVersion": "kubernaut.ai/v1alpha1",
-					"kind":       "EffectivenessAssessment",
-					"metadata": map[string]interface{}{
-						"name":      name,
-						"namespace": namespace,
-					},
-					"spec": map[string]interface{}{
-						"config": map[string]interface{}{
-							"stabilizationWindow": stabilizationWindow,
-						},
+		newTypedEA := func(namespace, name string, stabilizationWindow time.Duration) *eav1alpha1.EffectivenessAssessment {
+			return &eav1alpha1.EffectivenessAssessment{
+				ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+				Spec: eav1alpha1.EffectivenessAssessmentSpec{
+					Config: eav1alpha1.EAConfig{
+						StabilizationWindow: metav1.Duration{Duration: stabilizationWindow},
 					},
 				},
 			}
 		}
 
-		newDynamicFakeClientWithEA := func(objects ...runtime.Object) *dynamicfake.FakeDynamicClient {
-			scheme := runtime.NewScheme()
-			scheme.AddKnownTypeWithName(
-				schema.GroupVersionKind{Group: "kubernaut.ai", Version: "v1alpha1", Kind: "EffectivenessAssessmentList"},
-				&unstructured.UnstructuredList{},
-			)
-			return dynamicfake.NewSimpleDynamicClient(scheme, objects...)
+		eaScheme := func() *runtime.Scheme {
+			s := runtime.NewScheme()
+			_ = eav1alpha1.AddToScheme(s)
+			return s
 		}
 
 		It("UT-AF-1403-004: returns stabilizationWindow from EA CRD", func() {
-			ea := newFakeEA("payments", "ea-rr-abc123", "5m0s")
-			client := newDynamicFakeClientWithEA(ea)
+			ea := newTypedEA("payments", "ea-rr-abc123", 5*time.Minute)
+			client := fake.NewClientBuilder().WithScheme(eaScheme()).WithObjects(ea).Build()
 
-			result := tools.FetchStabilizationWindow(context.Background(), client, "payments", "ea-rr-abc123")
+			result := tools.FetchStabilizationWindow(context.Background(), client, nil, "payments", "ea-rr-abc123")
 			Expect(result).To(Equal("5m0s"))
 		})
 
 		It("UT-AF-1403-005: returns empty string when EA not found (graceful fallback)", func() {
-			client := newDynamicFakeClientWithEA()
+			client := fake.NewClientBuilder().WithScheme(eaScheme()).Build()
 
-			result := tools.FetchStabilizationWindow(context.Background(), client, "payments", "ea-nonexistent")
+			result := tools.FetchStabilizationWindow(context.Background(), client, nil, "payments", "ea-nonexistent")
+			Expect(result).To(BeEmpty())
+		})
+
+		It("UT-AF-1403-005b: returns empty string when reader is nil", func() {
+			result := tools.FetchStabilizationWindow(context.Background(), nil, nil, "payments", "ea-rr-1")
 			Expect(result).To(BeEmpty())
 		})
 	})
@@ -134,7 +132,7 @@ var _ = Describe("Execution Progress Artifacts (#1403)", func() {
 				fakeWatcher.Modify(newFakeRR("payments", "rr-1", "Completed"))
 			}()
 
-			result, err := tools.HandleWatch(ctx, client, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
+			result, err := tools.HandleWatch(ctx, client, nil, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Status).To(Equal("completed"))
 
@@ -161,104 +159,41 @@ var _ = Describe("Execution Progress Artifacts (#1403)", func() {
 		})
 
 		It("UT-AF-1403-009: includes stabilization_window in metadata on Verifying phase", func() {
-			eaGVR := schema.GroupVersionResource{Group: "kubernaut.ai", Version: "v1alpha1", Resource: "effectivenessassessments"}
+			fakeRR := newFakeRR("payments", "rr-1", "Executing")
 
-			fakeRR := &unstructured.Unstructured{
-				Object: map[string]interface{}{
-					"apiVersion": "kubernaut.ai/v1alpha1",
-					"kind":       "RemediationRequest",
-					"metadata": map[string]interface{}{
-						"name":      "rr-1",
-						"namespace": "payments",
-					},
-					"spec": map[string]interface{}{
-						"targetResource": map[string]interface{}{
-							"kind": "Deployment",
-							"name": "api-server",
-						},
-					},
-					"status": map[string]interface{}{
-						"overallPhase": "Executing",
-						"effectivenessAssessmentRef": map[string]interface{}{
-							"name":      "ea-rr-1",
-							"namespace": "payments",
-						},
-					},
-				},
-			}
-
-			fakeEA := &unstructured.Unstructured{
-				Object: map[string]interface{}{
-					"apiVersion": "kubernaut.ai/v1alpha1",
-					"kind":       "EffectivenessAssessment",
-					"metadata": map[string]interface{}{
-						"name":      "ea-rr-1",
-						"namespace": "payments",
-					},
-					"spec": map[string]interface{}{
-						"config": map[string]interface{}{
-							"stabilizationWindow": "5m0s",
-						},
-					},
-				},
-			}
-
-			scheme := runtime.NewScheme()
-			scheme.AddKnownTypeWithName(
+			dynScheme := runtime.NewScheme()
+			dynScheme.AddKnownTypeWithName(
 				schema.GroupVersionKind{Group: "kubernaut.ai", Version: "v1alpha1", Kind: "RemediationRequestList"},
 				&unstructured.UnstructuredList{},
 			)
-			scheme.AddKnownTypeWithName(
+			dynScheme.AddKnownTypeWithName(
 				schema.GroupVersionKind{Group: "kubernaut.ai", Version: "v1alpha1", Kind: "RemediationApprovalRequestList"},
 				&unstructured.UnstructuredList{},
 			)
-			scheme.AddKnownTypeWithName(
-				schema.GroupVersionKind{Group: "kubernaut.ai", Version: "v1alpha1", Kind: "EffectivenessAssessmentList"},
-				&unstructured.UnstructuredList{},
-			)
-			client := dynamicfake.NewSimpleDynamicClient(scheme, fakeRR, fakeEA)
+			dynClient := dynamicfake.NewSimpleDynamicClient(dynScheme, fakeRR)
 
 			fakeWatcher := watch.NewFake()
-			client.PrependWatchReactor("remediationrequests", func(action k8stesting.Action) (bool, watch.Interface, error) {
+			dynClient.PrependWatchReactor("remediationrequests", func(action k8stesting.Action) (bool, watch.Interface, error) {
 				return true, fakeWatcher, nil
 			})
+
+			typedEA := &eav1alpha1.EffectivenessAssessment{
+				ObjectMeta: metav1.ObjectMeta{Name: "ea-rr-1", Namespace: "payments"},
+				Spec: eav1alpha1.EffectivenessAssessmentSpec{
+					Config: eav1alpha1.EAConfig{
+						StabilizationWindow: metav1.Duration{Duration: 5 * time.Minute},
+					},
+				},
+			}
+			eaScheme := runtime.NewScheme()
+			_ = eav1alpha1.AddToScheme(eaScheme)
+			typedClient := fake.NewClientBuilder().WithScheme(eaScheme).WithObjects(typedEA).Build()
 
 			queue := &bridgeQueue{}
 			ctx = launcher.WithEventBridge(ctx, queue, "task-1403-009", "ctx-1403-009", nil)
 
-			verifyingRR := &unstructured.Unstructured{
-				Object: map[string]interface{}{
-					"apiVersion": "kubernaut.ai/v1alpha1",
-					"kind":       "RemediationRequest",
-					"metadata": map[string]interface{}{
-						"name":      "rr-1",
-						"namespace": "payments",
-					},
-					"status": map[string]interface{}{
-						"overallPhase": "Verifying",
-						"effectivenessAssessmentRef": map[string]interface{}{
-							"name":      "ea-rr-1",
-							"namespace": "payments",
-						},
-					},
-				},
-			}
-
-			completedRR := &unstructured.Unstructured{
-				Object: map[string]interface{}{
-					"apiVersion": "kubernaut.ai/v1alpha1",
-					"kind":       "RemediationRequest",
-					"metadata": map[string]interface{}{
-						"name":      "rr-1",
-						"namespace": "payments",
-					},
-					"status": map[string]interface{}{
-						"overallPhase": "Completed",
-					},
-				},
-			}
-
-			_ = eaGVR // used by scheme registration above
+			verifyingRR := newFakeRR("payments", "rr-1", "Verifying")
+			completedRR := newFakeRR("payments", "rr-1", "Completed")
 
 			go func() {
 				defer fakeWatcher.Stop()
@@ -268,7 +203,7 @@ var _ = Describe("Execution Progress Artifacts (#1403)", func() {
 				fakeWatcher.Modify(completedRR)
 			}()
 
-			result, err := tools.HandleWatch(ctx, client, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
+			result, err := tools.HandleWatch(ctx, dynClient, typedClient, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Status).To(Equal("completed"))
 
@@ -337,7 +272,7 @@ var _ = Describe("Execution Progress Artifacts (#1403)", func() {
 				fakeWatcher.Modify(completedRR)
 			}()
 
-			result, err := tools.HandleWatch(ctx, client, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
+			result, err := tools.HandleWatch(ctx, client, nil, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Status).To(Equal("completed"))
 
@@ -346,7 +281,7 @@ var _ = Describe("Execution Progress Artifacts (#1403)", func() {
 				if art, ok := evt.(*a2a.TaskArtifactUpdateEvent); ok {
 					if art.Artifact != nil && art.Artifact.Metadata != nil && art.Artifact.Metadata["type"] == "execution_progress" {
 						Expect(art.Artifact.Metadata).NotTo(HaveKey("stabilization_window"),
-							"stabilization_window should not be present when EA ref is absent")
+							"stabilization_window should not be present when typedClient is nil")
 					}
 				}
 			}

@@ -6,6 +6,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/client-go/dynamic"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"google.golang.org/adk/agent/llmagent"
 	"google.golang.org/adk/model"
@@ -36,6 +37,9 @@ type AgentConfig struct {
 	SkipTools bool
 	// K8sClient is the dynamic K8s client for CRD operations.
 	K8sClient dynamic.Interface
+	// TypedClient is the controller-runtime typed client for owned CRDs
+	// (e.g. EffectivenessAssessment). May be nil (#1428).
+	TypedClient crclient.WithWatch
 	// DSClient is the Data Store client for workflow/history queries.
 	DSClient ds.Client
 	// MCPClient is the KA MCP client for interactive operations (pooled sessions).
