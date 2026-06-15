@@ -21,6 +21,7 @@ import (
 	"github.com/go-logr/logr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	eav1alpha1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
@@ -737,6 +738,8 @@ func HandleWatch(ctx context.Context, client dynamic.Interface, typedClient crcl
 		lastSeenPhase   string
 		lastRARDecision string
 		startedAt       = time.Now().UTC().Format(time.RFC3339)
+		eaCh            <-chan watch.Event
+		prevEA          *eav1alpha1.EffectivenessAssessment
 	)
 
 	_ = launcher.EmitStatusSafe(ctx, "Watching remediation progress...\n")
@@ -770,7 +773,36 @@ func HandleWatch(ctx context.Context, client dynamic.Interface, typedClient crcl
 				Phase:     phase,
 				Message:   msg,
 			})
-			_ = launcher.EmitStatusSafe(ctx, fmt.Sprintf("Remediation phase: %s\n", phase))
+			if phase == "Verifying" {
+				eaName := EANameForRR(args.Name)
+				timing := FetchEATimingMetadata(ctx, typedClient, nil, args.Namespace, eaName)
+
+				statusMeta := map[string]any{"type": launcher.MetaTypeStatus}
+				if timing.StabilizationWindow != "" {
+					statusMeta["stabilization_window"] = timing.StabilizationWindow
+					statusMeta["started_at"] = time.Now().UTC().Format(time.RFC3339)
+				}
+				if timing.ValidityDeadline != "" {
+					statusMeta["validity_deadline"] = timing.ValidityDeadline
+				}
+				_ = launcher.EmitStatusWithMetaSafe(ctx, fmt.Sprintf("Remediation phase: %s\n", phase), statusMeta)
+
+				if typedClient != nil && eaCh == nil {
+					eaList := &eav1alpha1.EffectivenessAssessmentList{}
+					eaWatcher, eaErr := typedClient.Watch(watchCtx, eaList,
+						crclient.InNamespace(args.Namespace),
+						crclient.MatchingFields{"metadata.name": eaName})
+					if eaErr != nil {
+						logger.V(1).Info("EA watch unavailable, verification_step events will not be emitted",
+							"ea_name", eaName, "error", eaErr)
+					} else {
+						defer eaWatcher.Stop()
+						eaCh = eaWatcher.ResultChan()
+					}
+				}
+			} else {
+				_ = launcher.EmitStatusSafe(ctx, fmt.Sprintf("Remediation phase: %s\n", phase))
+			}
 
 			completedAt := ""
 			if IsTerminalPhase(phase) {
@@ -779,8 +811,9 @@ func HandleWatch(ctx context.Context, client dynamic.Interface, typedClient crcl
 			progressMeta := map[string]any{"type": "execution_progress"}
 			if phase == "Verifying" {
 				eaName := EANameForRR(args.Name)
-				if sw := FetchStabilizationWindow(ctx, typedClient, nil, args.Namespace, eaName); sw != "" {
-					progressMeta["stabilization_window"] = sw
+				timing := FetchEATimingMetadata(ctx, typedClient, nil, args.Namespace, eaName)
+				if timing.StabilizationWindow != "" {
+					progressMeta["stabilization_window"] = timing.StabilizationWindow
 				}
 			}
 			snapshot := BuildProgressSnapshot(phase, args.Name, startedAt, completedAt)
@@ -862,6 +895,37 @@ func HandleWatch(ctx context.Context, client dynamic.Interface, typedClient crcl
 			if resolved, mErr := MarshalApprovalResolvedPayload(obj); mErr == nil {
 				_ = launcher.EmitStructuredMetaSafe(ctx, resolved, map[string]any{"type": launcher.MetaTypeApprovalRequestResolved})
 			}
+
+		case evt, ok := <-eaCh:
+			if !ok {
+				eaCh = nil
+				continue
+			}
+			if evt.Type != watch.Modified && evt.Type != watch.Added {
+				continue
+			}
+			currEA, ok := evt.Object.(*eav1alpha1.EffectivenessAssessment)
+			if !ok {
+				continue
+			}
+			steps := DiffEASteps(prevEA, currEA)
+			for _, step := range steps {
+				stepMeta := map[string]any{
+					"type": launcher.MetaTypeVerificationStep,
+					"step": step.Step,
+				}
+				for k, v := range step.Data {
+					stepMeta[k] = v
+				}
+				_ = launcher.EmitStatusWithMetaSafe(ctx, step.Message+"\n", stepMeta)
+				events = append(events, WatchEvent{
+					Timestamp: time.Now().UTC().Format(time.RFC3339),
+					Resource:  "EffectivenessAssessment",
+					Phase:     step.Step,
+					Message:   step.Message,
+				})
+			}
+			prevEA = currEA.DeepCopy()
 		}
 	}
 }

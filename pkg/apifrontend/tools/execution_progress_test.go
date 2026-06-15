@@ -86,6 +86,51 @@ var _ = Describe("Execution Progress Artifacts (#1403)", func() {
 		})
 	})
 
+	Describe("FetchValidityDeadline (typed client) — UT-AF-1426-003..005", func() {
+		eaSchemeForVD := func() *runtime.Scheme {
+			s := runtime.NewScheme()
+			_ = eav1alpha1.AddToScheme(s)
+			return s
+		}
+
+		It("UT-AF-1426-003: returns validityDeadline from EA status", func() {
+			deadline := metav1.NewTime(time.Date(2026, 6, 15, 12, 30, 0, 0, time.UTC))
+			ea := &eav1alpha1.EffectivenessAssessment{
+				ObjectMeta: metav1.ObjectMeta{Name: "ea-rr-1", Namespace: "payments"},
+				Status: eav1alpha1.EffectivenessAssessmentStatus{
+					ValidityDeadline: &deadline,
+				},
+			}
+			client := fake.NewClientBuilder().WithScheme(eaSchemeForVD()).WithObjects(ea).WithStatusSubresource(ea).Build()
+
+			result := tools.FetchValidityDeadline(context.Background(), client, nil, "payments", "ea-rr-1")
+			Expect(result).To(Equal("2026-06-15T12:30:00Z"))
+		})
+
+		It("UT-AF-1426-004: returns empty when EA has no validityDeadline yet", func() {
+			ea := &eav1alpha1.EffectivenessAssessment{
+				ObjectMeta: metav1.ObjectMeta{Name: "ea-rr-1", Namespace: "payments"},
+				Status:     eav1alpha1.EffectivenessAssessmentStatus{Phase: "Pending"},
+			}
+			client := fake.NewClientBuilder().WithScheme(eaSchemeForVD()).WithObjects(ea).WithStatusSubresource(ea).Build()
+
+			result := tools.FetchValidityDeadline(context.Background(), client, nil, "payments", "ea-rr-1")
+			Expect(result).To(BeEmpty())
+		})
+
+		It("UT-AF-1426-005: returns empty when EA not found (graceful fallback)", func() {
+			client := fake.NewClientBuilder().WithScheme(eaSchemeForVD()).Build()
+
+			result := tools.FetchValidityDeadline(context.Background(), client, nil, "payments", "ea-nonexistent")
+			Expect(result).To(BeEmpty())
+		})
+
+		It("UT-AF-1426-005b: returns empty when reader is nil", func() {
+			result := tools.FetchValidityDeadline(context.Background(), nil, nil, "payments", "ea-rr-1")
+			Expect(result).To(BeEmpty())
+		})
+	})
+
 	Describe("Schema validation — UT-AF-1403-006", func() {
 		It("UT-AF-1403-006: execution_progress schema validates correct payload", func() {
 			payload := map[string]any{
@@ -104,6 +149,35 @@ var _ = Describe("Execution Progress Artifacts (#1403)", func() {
 		It("UT-AF-1403-007: EmitArtifactSafe is nil-safe (no bridge in context)", func() {
 			err := launcher.EmitArtifactSafe(context.Background(), map[string]any{"type": "execution_progress"}, "Progress: Executing", map[string]any{"type": "execution_progress"})
 			Expect(err).NotTo(HaveOccurred())
+		})
+	})
+
+	Describe("EmitStatusWithMetaSafe — UT-AF-1426-001..002", func() {
+		It("UT-AF-1426-001: nil-safe when no bridge in context", func() {
+			err := launcher.EmitStatusWithMetaSafe(context.Background(), "test", map[string]any{"type": "status"})
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("UT-AF-1426-002: emits status event with custom metadata when bridge present", func() {
+			queue := &bridgeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-1426-002", "ctx-1426-002", nil)
+
+			err := launcher.EmitStatusWithMetaSafe(ctx, "Remediation phase: Verifying\n", map[string]any{
+				"type":                 "status",
+				"stabilization_window": "5m0s",
+				"started_at":           "2026-06-15T10:00:00Z",
+				"validity_deadline":    "2026-06-15T10:30:00Z",
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			events := queue.Events()
+			Expect(events).NotTo(BeEmpty())
+			statusEvt, ok := events[0].(*a2a.TaskStatusUpdateEvent)
+			Expect(ok).To(BeTrue())
+			Expect(statusEvt.Metadata["type"]).To(Equal("status"))
+			Expect(statusEvt.Metadata["stabilization_window"]).To(Equal("5m0s"))
+			Expect(statusEvt.Metadata["started_at"]).To(Equal("2026-06-15T10:00:00Z"))
+			Expect(statusEvt.Metadata["validity_deadline"]).To(Equal("2026-06-15T10:30:00Z"))
 		})
 	})
 
@@ -224,6 +298,82 @@ var _ = Describe("Execution Progress Artifacts (#1403)", func() {
 			}
 			Expect(verifyingArtifact).NotTo(BeNil(), "expected a Verifying progress artifact")
 			Expect(verifyingArtifact.Artifact.Metadata["stabilization_window"]).To(Equal("5m0s"))
+		})
+
+		It("UT-AF-1426-006: Verifying phase emits status event with stabilization_window + started_at + validity_deadline", func() {
+			fakeRR := newFakeRR("payments", "rr-1", "Executing")
+
+			dynScheme := runtime.NewScheme()
+			dynScheme.AddKnownTypeWithName(
+				schema.GroupVersionKind{Group: "kubernaut.ai", Version: "v1alpha1", Kind: "RemediationRequestList"},
+				&unstructured.UnstructuredList{},
+			)
+			dynScheme.AddKnownTypeWithName(
+				schema.GroupVersionKind{Group: "kubernaut.ai", Version: "v1alpha1", Kind: "RemediationApprovalRequestList"},
+				&unstructured.UnstructuredList{},
+			)
+			dynClient := dynamicfake.NewSimpleDynamicClient(dynScheme, fakeRR)
+
+			fakeWatcher := watch.NewFake()
+			dynClient.PrependWatchReactor("remediationrequests", func(action k8stesting.Action) (bool, watch.Interface, error) {
+				return true, fakeWatcher, nil
+			})
+
+			deadline := metav1.NewTime(time.Date(2026, 6, 15, 12, 30, 0, 0, time.UTC))
+			typedEA := &eav1alpha1.EffectivenessAssessment{
+				ObjectMeta: metav1.ObjectMeta{Name: "ea-rr-1", Namespace: "payments"},
+				Spec: eav1alpha1.EffectivenessAssessmentSpec{
+					Config: eav1alpha1.EAConfig{
+						StabilizationWindow: metav1.Duration{Duration: 5 * time.Minute},
+					},
+				},
+				Status: eav1alpha1.EffectivenessAssessmentStatus{
+					ValidityDeadline: &deadline,
+				},
+			}
+			eaScheme := runtime.NewScheme()
+			_ = eav1alpha1.AddToScheme(eaScheme)
+			typedClient := fake.NewClientBuilder().WithScheme(eaScheme).WithObjects(typedEA).WithStatusSubresource(typedEA).Build()
+
+			queue := &bridgeQueue{}
+			ctx = launcher.WithEventBridge(ctx, queue, "task-1426-006", "ctx-1426-006", nil)
+
+			verifyingRR := newFakeRR("payments", "rr-1", "Verifying")
+			completedRR := newFakeRR("payments", "rr-1", "Completed")
+
+			go func() {
+				defer fakeWatcher.Stop()
+				time.Sleep(10 * time.Millisecond)
+				fakeWatcher.Modify(verifyingRR)
+				time.Sleep(10 * time.Millisecond)
+				fakeWatcher.Modify(completedRR)
+			}()
+
+			result, err := tools.HandleWatch(ctx, dynClient, typedClient, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Status).To(Equal("completed"))
+
+			events := queue.Events()
+			var verifyingStatus *a2a.TaskStatusUpdateEvent
+			for _, evt := range events {
+				if se, ok := evt.(*a2a.TaskStatusUpdateEvent); ok {
+					if se.Metadata != nil && se.Metadata["type"] == "status" {
+						if se.Status.Message != nil {
+							for _, p := range se.Status.Message.Parts {
+								if tp, tpOK := p.(a2a.TextPart); tpOK {
+									if tp.Text == "Remediation phase: Verifying\n" {
+										verifyingStatus = se
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+			Expect(verifyingStatus).NotTo(BeNil(), "expected a Verifying status event with metadata")
+			Expect(verifyingStatus.Metadata["stabilization_window"]).To(Equal("5m0s"))
+			Expect(verifyingStatus.Metadata).To(HaveKey("started_at"))
+			Expect(verifyingStatus.Metadata["validity_deadline"]).To(Equal("2026-06-15T12:30:00Z"))
 		})
 
 		It("UT-AF-1403-010: omits stabilization_window when EA ref absent", func() {

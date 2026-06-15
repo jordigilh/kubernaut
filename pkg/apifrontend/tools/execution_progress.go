@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/types"
@@ -35,13 +36,18 @@ func EANameForRR(rrName string) string {
 	return fmt.Sprintf("ea-%s", rrName)
 }
 
-// FetchStabilizationWindow retrieves the stabilizationWindow from an
-// EffectivenessAssessment CRD using the typed client. Returns empty string on
-// any failure (graceful degradation: RBAC missing, EA not yet created, or
-// field absent).
-func FetchStabilizationWindow(ctx context.Context, reader crclient.Reader, cb *resilience.K8sCircuitBreaker, namespace, eaName string) string {
+// EATimingMetadata holds timing fields extracted from an EffectivenessAssessment.
+// All fields are empty strings when unavailable (graceful degradation).
+type EATimingMetadata struct {
+	StabilizationWindow string
+	ValidityDeadline    string
+}
+
+// FetchEATimingMetadata retrieves timing metadata from an EA in a single GET.
+// Returns zero-value EATimingMetadata on any failure (graceful degradation).
+func FetchEATimingMetadata(ctx context.Context, reader crclient.Reader, cb *resilience.K8sCircuitBreaker, namespace, eaName string) EATimingMetadata {
 	if reader == nil || eaName == "" {
-		return ""
+		return EATimingMetadata{}
 	}
 	logger := logr.FromContextOrDiscard(ctx)
 
@@ -57,9 +63,30 @@ func FetchStabilizationWindow(ctx context.Context, reader crclient.Reader, cb *r
 		getErr = reader.Get(ctx, key, ea)
 	}
 	if getErr != nil {
-		logger.V(1).Info("EA fetch for stabilizationWindow failed (graceful fallback)",
+		logger.V(1).Info("EA timing metadata fetch failed (graceful fallback)",
 			"ea_name", eaName, "namespace", namespace, "error", getErr)
-		return ""
+		return EATimingMetadata{}
 	}
-	return ea.Spec.Config.StabilizationWindow.Duration.String()
+
+	result := EATimingMetadata{
+		StabilizationWindow: ea.Spec.Config.StabilizationWindow.Duration.String(),
+	}
+	if ea.Status.ValidityDeadline != nil {
+		result.ValidityDeadline = ea.Status.ValidityDeadline.UTC().Format(time.RFC3339)
+	}
+	return result
+}
+
+// FetchStabilizationWindow retrieves the stabilizationWindow from an EA.
+// Convenience wrapper around FetchEATimingMetadata for callers that only
+// need the stabilization window.
+func FetchStabilizationWindow(ctx context.Context, reader crclient.Reader, cb *resilience.K8sCircuitBreaker, namespace, eaName string) string {
+	return FetchEATimingMetadata(ctx, reader, cb, namespace, eaName).StabilizationWindow
+}
+
+// FetchValidityDeadline retrieves the validity deadline from an EA.
+// Convenience wrapper around FetchEATimingMetadata for callers that only
+// need the validity deadline.
+func FetchValidityDeadline(ctx context.Context, reader crclient.Reader, cb *resilience.K8sCircuitBreaker, namespace, eaName string) string {
+	return FetchEATimingMetadata(ctx, reader, cb, namespace, eaName).ValidityDeadline
 }

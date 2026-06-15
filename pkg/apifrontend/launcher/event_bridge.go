@@ -53,6 +53,8 @@ const (
 	MetaTypeKeepalive     = "keepalive"
 	MetaTypeDecision      = "decision"
 
+	MetaTypeVerificationStep = "verification_step"
+
 	MetaTypeApprovalRequest         = "approval_request"
 	MetaTypeApprovalRequestResolved = "approval_request_resolved"
 	MetaTypeAlignmentCheckFailed    = "alignment_check_failed"
@@ -370,6 +372,22 @@ func EmitStatusSafe(ctx context.Context, text string) error {
 		return nil
 	}
 	if err := bridge.EmitStatus(ctx, text); err != nil {
+		logr.FromContextOrDiscard(ctx).Error(err, "A2A bridge write failed", "channel", "status")
+		return err
+	}
+	return nil
+}
+
+// EmitStatusWithMetaSafe is a nil-safe helper that emits a status update with
+// caller-supplied metadata via the bridge. If no bridge is present, it's a
+// no-op. Write failures are logged (AU-2). Used by HandleWatch to emit
+// phase-level metadata (stabilization_window, validity_deadline) on Verifying.
+func EmitStatusWithMetaSafe(ctx context.Context, text string, meta map[string]any) error {
+	bridge := EventBridgeFromContext(ctx)
+	if bridge == nil {
+		return nil
+	}
+	if err := bridge.EmitStatusWithMeta(ctx, text, meta); err != nil {
 		logr.FromContextOrDiscard(ctx).Error(err, "A2A bridge write failed", "channel", "status")
 		return err
 	}
