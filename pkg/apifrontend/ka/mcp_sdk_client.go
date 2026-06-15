@@ -244,7 +244,7 @@ func (c *SDKMCPClient) StartInvestigation(ctx context.Context, args StartInvesti
 		return nil, fmt.Errorf("user identity required: no identity in context")
 	}
 
-	eventCh := make(chan InvestigationEvent, 64)
+	eventCh := make(chan InvestigationEvent, DefaultEventChannelBuffer)
 	doneCh := make(chan struct{})
 
 	var eventsReceived int64
@@ -270,18 +270,14 @@ func (c *SDKMCPClient) StartInvestigation(ctx context.Context, args StartInvesti
 				return
 			}
 
-			select {
-			case <-doneCh:
-				c.logger.Info("LoggingMessageHandler: doneCh closed, dropping event",
-					"rr_id", args.RRID, "event_type", evt.Type, "total_received", eventsReceived)
-				return
-			default:
-			}
-			select {
-			case eventCh <- evt:
-			case <-doneCh:
-			default:
-				c.logger.Info("event channel full, dropping event", "event_type", evt.Type)
+			if PrioritySend(eventCh, doneCh, evt) {
+				if IsStructuralEvent(evt.Type) {
+					c.logger.Error(nil, "CRITICAL: structural event dropped after timeout",
+						"event_type", evt.Type, "rr_id", args.RRID, "total_received", eventsReceived)
+				} else {
+					c.logger.V(2).Info("streaming event dropped (channel full)",
+						"event_type", evt.Type)
+				}
 			}
 		},
 	})
