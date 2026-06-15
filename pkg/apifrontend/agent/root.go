@@ -106,14 +106,14 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 	saFactory := auth.StaticDynamicFactory(k8s)
 
 	constructors := []toolConstructor{
-		{"list_remediations", func() (tool.Tool, error) { return tools.NewListRemediationsTool(k8s, cfg.Namespace) }},
-		{"get_remediation", func() (tool.Tool, error) { return tools.NewGetRemediationTool(k8s, cfg.Namespace) }},
+		{"list_remediations", func() (tool.Tool, error) { return tools.NewListRemediationsTool(cfg.TypedClient, cfg.Namespace) }},
+		{"get_remediation", func() (tool.Tool, error) { return tools.NewGetRemediationTool(cfg.TypedClient, cfg.Namespace) }},
 		{"list_approval_requests", func() (tool.Tool, error) { return tools.NewListApprovalRequestsTool(k8s, cfg.Namespace) }},
 		{"get_approval_request", func() (tool.Tool, error) { return tools.NewGetApprovalRequestTool(k8s, cfg.Namespace) }},
-		{"cancel_remediation", func() (tool.Tool, error) { return tools.NewCancelRemediationTool(k8s, cfg.Namespace) }},
+		{"cancel_remediation", func() (tool.Tool, error) { return tools.NewCancelRemediationTool(cfg.TypedClient, cfg.Namespace) }},
 		{"watch", func() (tool.Tool, error) { return tools.NewWatchTool(k8s, cfg.TypedClient, cfg.Namespace) }},
 		{"investigate", func() (tool.Tool, error) {
-			return tools.NewInvestigateMCPTool(dedicatedC, k8s, cfg.Namespace, cfg.Auditor, cfg.InvestigationRegistry, nil, cfg.Pool, buildAgentISSignaler(cfg), cfg.Triager)
+			return tools.NewInvestigateMCPTool(dedicatedC, k8s, cfg.TypedClient, cfg.Namespace, cfg.Auditor, cfg.InvestigationRegistry, nil, cfg.Pool, buildAgentISSignaler(cfg), cfg.Triager)
 		}},
 		{"discover_workflows", func() (tool.Tool, error) { return tools.NewDiscoverWorkflowsTool(mcpC) }},
 		{"select_workflow", func() (tool.Tool, error) { return tools.NewSelectWorkflowTool(mcpC, cfg.Auditor) }},
@@ -133,10 +133,10 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 		{"reconnect", func() (tool.Tool, error) { return tools.NewReconnectTool(mcpC, cfg.Auditor) }},
 		// RR tools — AF SA writes AF-owned CRDs
 		{"check_existing_remediation", func() (tool.Tool, error) {
-			return tools.NewCheckExistingRemediationTool(k8s, cfg.Namespace)
+			return tools.NewCheckExistingRemediationTool(cfg.TypedClient, cfg.Namespace)
 		}},
 		{"remediate", func() (tool.Tool, error) {
-			return tools.NewRemediateTool(k8s, cfg.Namespace, cfg.Triager, cfg.Auditor)
+			return tools.NewRemediateTool(cfg.TypedClient, k8s, cfg.Namespace, cfg.Triager, cfg.Auditor)
 		}},
 	}
 
@@ -152,7 +152,8 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 			}},
 			toolConstructor{"kubernaut_investigate_alert", func() (tool.Tool, error) {
 				return tools.NewInvestigateAlertTool(tools.InvestigateAlertConfig{
-					Client:             cfg.K8sClient,
+					Client:             cfg.TypedClient,
+					DynClient:          cfg.K8sClient,
 					ControllerNS:       cfg.Namespace,
 					Triager:            cfg.Triager,
 					PromClient:         cfg.PromClient,

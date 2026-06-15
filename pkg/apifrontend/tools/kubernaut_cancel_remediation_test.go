@@ -17,21 +17,21 @@ var _ = Describe("kubernaut_cancel_remediation", func() {
 	})
 
 	It("UT-AF-105-001: patches RR to cancelled state", func() {
-		client := newDynamicFakeClient(newFakeRR("payments", "rr-1", "Executing"))
+		client := newTypedFakeClient(newTypedRR("payments", "rr-1", "Executing"))
 		result, err := tools.HandleCancelRemediation(ctx, client, tools.CancelRemediationArgs{RRID: "rr-1", Namespace: "payments"})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).To(Equal("Cancelled"))
 	})
 
 	It("UT-AF-105-002: returns error when RR not found", func() {
-		client := newDynamicFakeClient()
+		client := newTypedFakeClient()
 		_, err := tools.HandleCancelRemediation(ctx, client, tools.CancelRemediationArgs{RRID: "rr-missing", Namespace: "payments"})
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("not found"))
 	})
 
 	It("UT-AF-105-003: returns error when RR already terminal", func() {
-		client := newDynamicFakeClient(newFakeRR("payments", "rr-1", "Completed"))
+		client := newTypedFakeClient(newTypedRR("payments", "rr-1", "Completed"))
 		_, err := tools.HandleCancelRemediation(ctx, client, tools.CancelRemediationArgs{RRID: "rr-1", Namespace: "payments"})
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("terminal"))

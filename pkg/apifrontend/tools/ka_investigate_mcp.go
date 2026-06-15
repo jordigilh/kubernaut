@@ -31,6 +31,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/dynamic"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
@@ -129,8 +130,8 @@ type SessionStartedHook func(ctx context.Context, namespace, rrID, sessionID str
 // investigation launches successfully (InvestigationSessionID is populated).
 // If no pending session exists, the MCP session still acquires the interactive
 // lease but the Events channel may be nil or empty.
-func HandleInvestigationMCP(ctx context.Context, mcpClient ka.MCPClient, k8sClient dynamic.Interface, namespace string, args InvestigateMCPArgs, auditor audit.Emitter) (InvestigateMCPResult, error) {
-	return HandleInvestigationMCPWithRegistry(ctx, mcpClient, k8sClient, namespace, args, auditor, nil, nil, false, nil, "", nil, nil)
+func HandleInvestigationMCP(ctx context.Context, mcpClient ka.MCPClient, k8sClient dynamic.Interface, typedClient crclient.Client, namespace string, args InvestigateMCPArgs, auditor audit.Emitter) (InvestigateMCPResult, error) {
+	return HandleInvestigationMCPWithRegistry(ctx, mcpClient, k8sClient, typedClient, namespace, args, auditor, nil, nil, false, nil, "", nil, nil)
 }
 
 // HandleInvestigationMCPWithRegistry is like HandleInvestigationMCP but also
@@ -151,7 +152,7 @@ func HandleInvestigationMCP(ctx context.Context, mcpClient ka.MCPClient, k8sClie
 // (pure CRD-driven coordination per DD-INTERACTIVE-002). This enables AA to detect
 // interactive intent via IS watch and resubmit with interactive=true. After successful
 // MCP connect, UpdateCorrelation writes the KA session ID to the IS status.
-func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPClient, k8sClient dynamic.Interface, namespace string, args InvestigateMCPArgs, auditor audit.Emitter, registry *MonitorRegistry, onStarted SessionStartedHook, blocking bool, pool *ka.KASessionPool, username string, signaler ISSignaler, triager *severity.Triager) (InvestigateMCPResult, error) {
+func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPClient, k8sClient dynamic.Interface, typedClient crclient.Client, namespace string, args InvestigateMCPArgs, auditor audit.Emitter, registry *MonitorRegistry, onStarted SessionStartedHook, blocking bool, pool *ka.KASessionPool, username string, signaler ISSignaler, triager *severity.Triager) (InvestigateMCPResult, error) {
 	if mcpClient == nil {
 		return InvestigateMCPResult{}, fmt.Errorf("KA MCP client unavailable")
 	}
@@ -201,7 +202,7 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 		if identity != nil {
 			createUser = identity.Username
 		}
-		result, err := HandleCreateRR(ctx, k8sClient, namespace, createArgs, createUser, triager, auditor)
+		result, err := HandleCreateRR(ctx, typedClient, k8sClient, namespace, createArgs, createUser, triager, auditor)
 		if err != nil {
 			return InvestigateMCPResult{}, fmt.Errorf("create RR for investigation: %w", err)
 		}
@@ -800,7 +801,7 @@ func (r *MonitorRegistry) StopAll() {
 // pool is optional; when provided, the MCP session is handed off to the pool
 // after the investigation so that discover_workflows / select_workflow reuse
 // the same connection and driver lease.
-func NewInvestigateMCPTool(mcpClient ka.MCPClient, k8sClient dynamic.Interface, namespace string, auditor audit.Emitter, registry *MonitorRegistry, onStarted SessionStartedHook, pool *ka.KASessionPool, signaler ISSignaler, triager *severity.Triager) (tool.Tool, error) {
+func NewInvestigateMCPTool(mcpClient ka.MCPClient, k8sClient dynamic.Interface, typedClient crclient.Client, namespace string, auditor audit.Emitter, registry *MonitorRegistry, onStarted SessionStartedHook, pool *ka.KASessionPool, signaler ISSignaler, triager *severity.Triager) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name: "kubernaut_investigate",
 		Description: "Investigate an infrastructure incident via MCP. " +
@@ -812,7 +813,7 @@ func NewInvestigateMCPTool(mcpClient ka.MCPClient, k8sClient dynamic.Interface, 
 			"to the user automatically while the investigation runs.",
 	}, func(ctx tool.Context, args InvestigateMCPArgs) (InvestigateMCPResult, error) {
 		user := usernameFromContext(ctx)
-		return HandleInvestigationMCPWithRegistry(ctx, mcpClient, k8sClient, namespace, args, auditor, registry, onStarted, true, pool, user, signaler, triager)
+		return HandleInvestigationMCPWithRegistry(ctx, mcpClient, k8sClient, typedClient, namespace, args, auditor, registry, onStarted, true, pool, user, signaler, triager)
 	})
 }
 

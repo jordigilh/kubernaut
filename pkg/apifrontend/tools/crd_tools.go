@@ -22,6 +22,7 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	eav1alpha1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
@@ -55,26 +56,27 @@ type RemediationSummary struct {
 }
 
 // HandleListRemediations implements the kubernaut_list_remediations logic.
-func HandleListRemediations(ctx context.Context, client dynamic.Interface, args ListRemediationsArgs) (ListRemediationsResult, error) {
+func HandleListRemediations(ctx context.Context, client crclient.Client, args ListRemediationsArgs) (ListRemediationsResult, error) {
 	if client == nil {
 		return ListRemediationsResult{}, ErrK8sUnavailable
 	}
 	if err := validate.Namespace(args.Namespace); err != nil {
 		return ListRemediationsResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
 	}
-	list, err := client.Resource(rrGVR).Namespace(args.Namespace).List(ctx, metav1.ListOptions{})
-	if err != nil {
+	var list remediationv1.RemediationRequestList
+	if err := client.List(ctx, &list, crclient.InNamespace(args.Namespace)); err != nil {
 		return ListRemediationsResult{}, ToUserFriendlyError(err)
 	}
 
 	var result []RemediationSummary
-	for _, item := range list.Items {
-		phase, _, _ := unstructured.NestedString(item.Object, "status", "overallPhase")
+	for i := range list.Items {
+		item := &list.Items[i]
+		phase := string(item.Status.OverallPhase)
 		if args.Phase != "" && phase != args.Phase {
 			continue
 		}
-		kind, _, _ := unstructured.NestedString(item.Object, "spec", "targetResource", "kind")
-		target, _, _ := unstructured.NestedString(item.Object, "spec", "targetResource", "name")
+		kind := item.Spec.TargetResource.Kind
+		target := item.Spec.TargetResource.Name
 		if args.Kind != "" && kind != args.Kind {
 			continue
 		}
@@ -82,9 +84,9 @@ func HandleListRemediations(ctx context.Context, client dynamic.Interface, args 
 			continue
 		}
 		result = append(result, RemediationSummary{
-			ID:        item.GetName(),
-			Namespace: item.GetNamespace(),
-			Name:      item.GetName(),
+			ID:        item.Name,
+			Namespace: item.Namespace,
+			Name:      item.Name,
 			Phase:     phase,
 			Kind:      kind,
 			Target:    target,
@@ -98,7 +100,7 @@ func HandleListRemediations(ctx context.Context, client dynamic.Interface, args 
 }
 
 // NewListRemediationsTool creates the kubernaut_list_remediations tool.
-func NewListRemediationsTool(client dynamic.Interface, controllerNS string) (tool.Tool, error) {
+func NewListRemediationsTool(client crclient.Client, controllerNS string) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_list_remediations",
 		Description: "List active remediations with optional filtering by phase or kind",
@@ -127,7 +129,7 @@ type GetRemediationResult struct {
 }
 
 // HandleGetRemediation implements the kubernaut_get_remediation logic.
-func HandleGetRemediation(ctx context.Context, client dynamic.Interface, args GetRemediationArgs) (GetRemediationResult, error) {
+func HandleGetRemediation(ctx context.Context, client crclient.Client, args GetRemediationArgs) (GetRemediationResult, error) {
 	if client == nil {
 		return GetRemediationResult{}, ErrK8sUnavailable
 	}
@@ -136,29 +138,25 @@ func HandleGetRemediation(ctx context.Context, client dynamic.Interface, args Ge
 		return GetRemediationResult{}, err
 	}
 
-	obj, err := client.Resource(rrGVR).Namespace(ns).Get(ctx, name, metav1.GetOptions{})
-	if err != nil {
+	var rr remediationv1.RemediationRequest
+	if err := client.Get(ctx, crclient.ObjectKey{Namespace: ns, Name: name}, &rr); err != nil {
 		return GetRemediationResult{}, ToUserFriendlyError(err)
 	}
-
-	phase, _, _ := unstructured.NestedString(obj.Object, "status", "overallPhase")
-	kind, _, _ := unstructured.NestedString(obj.Object, "spec", "targetResource", "kind")
-	target, _, _ := unstructured.NestedString(obj.Object, "spec", "targetResource", "name")
 
 	return GetRemediationResult{
 		ID:        name,
 		Namespace: ns,
 		Name:      name,
-		Phase:     phase,
-		Kind:      kind,
-		Target:    target,
+		Phase:     string(rr.Status.OverallPhase),
+		Kind:      rr.Spec.TargetResource.Kind,
+		Target:    rr.Spec.TargetResource.Name,
 	}, nil
 }
 
 // NewGetRemediationTool creates the kubernaut_get_remediation tool.
 // controllerNS is always injected as the namespace (all RR CRDs live in the
 // controller namespace per ADR-057). The namespace field is hidden from the LLM.
-func NewGetRemediationTool(client dynamic.Interface, controllerNS string) (tool.Tool, error) {
+func NewGetRemediationTool(client crclient.Client, controllerNS string) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_get_remediation",
 		Description: "Get detailed information about a specific remediation by rr_id or name",
@@ -596,7 +594,7 @@ type CancelRemediationResult struct {
 }
 
 // HandleCancelRemediation implements the kubernaut_cancel_remediation logic.
-func HandleCancelRemediation(ctx context.Context, client dynamic.Interface, args CancelRemediationArgs) (CancelRemediationResult, error) {
+func HandleCancelRemediation(ctx context.Context, client crclient.Client, args CancelRemediationArgs) (CancelRemediationResult, error) {
 	if client == nil {
 		return CancelRemediationResult{}, ErrK8sUnavailable
 	}
@@ -605,14 +603,13 @@ func HandleCancelRemediation(ctx context.Context, client dynamic.Interface, args
 		return CancelRemediationResult{}, err
 	}
 
-	obj, err := client.Resource(rrGVR).Namespace(ns).Get(ctx, name, metav1.GetOptions{})
-	if err != nil {
+	var rr remediationv1.RemediationRequest
+	if err := client.Get(ctx, crclient.ObjectKey{Namespace: ns, Name: name}, &rr); err != nil {
 		return CancelRemediationResult{}, ToUserFriendlyError(err)
 	}
 
-	overallPhase, _, _ := unstructured.NestedString(obj.Object, "status", "overallPhase")
-	if IsTerminalPhase(overallPhase) {
-		return CancelRemediationResult{}, fmt.Errorf("%w: remediation %s/%s is in terminal state %q", ErrAlreadyTerminal, ns, name, overallPhase)
+	if IsTerminalPhase(string(rr.Status.OverallPhase)) {
+		return CancelRemediationResult{}, fmt.Errorf("%w: remediation %s/%s is in terminal state %q", ErrAlreadyTerminal, ns, name, rr.Status.OverallPhase)
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
@@ -629,10 +626,7 @@ func HandleCancelRemediation(ctx context.Context, client dynamic.Interface, args
 		return CancelRemediationResult{}, fmt.Errorf("marshaling patch: %w", err)
 	}
 
-	_, err = client.Resource(rrGVR).Namespace(ns).Patch(
-		ctx, name, types.MergePatchType, patchBytes, metav1.PatchOptions{}, "status",
-	)
-	if err != nil {
+	if err := client.Status().Patch(ctx, &rr, crclient.RawPatch(types.MergePatchType, patchBytes)); err != nil {
 		return CancelRemediationResult{}, ToUserFriendlyError(err)
 	}
 
@@ -645,7 +639,7 @@ func HandleCancelRemediation(ctx context.Context, client dynamic.Interface, args
 // NewCancelRemediationTool creates the kubernaut_cancel_remediation tool.
 // controllerNS is always injected as the namespace (all RR CRDs live in the
 // controller namespace per ADR-057). The namespace field is hidden from the LLM.
-func NewCancelRemediationTool(client dynamic.Interface, controllerNS string) (tool.Tool, error) {
+func NewCancelRemediationTool(client crclient.Client, controllerNS string) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_cancel_remediation",
 		Description: "Cancel an active remediation that has not yet reached a terminal state",

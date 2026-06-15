@@ -41,8 +41,10 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 
+	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	eav1alpha1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
-	v1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
+	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	agentpkg "github.com/jordigilh/kubernaut/pkg/apifrontend/agent"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
@@ -489,8 +491,8 @@ func (d *backendDeps) K8sClient() dynamic.Interface {
 	return d.k8sDynClient
 }
 
-// TypedClient returns the controller-runtime typed client for owned CRDs
-// (e.g. EffectivenessAssessment). Returns nil if K8s API was unreachable;
+// TypedClient returns the controller-runtime typed client for all kubernaut CRDs
+// (RR, RAR, EA, AIAnalysis, IS). Returns nil if K8s API was unreachable;
 // callers must check for nil (#1428).
 func (d *backendDeps) TypedClient() crclient.WithWatch {
 	return d.k8sTypedClient
@@ -651,12 +653,15 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 
 			typedScheme := k8sruntime.NewScheme()
 			_ = eav1alpha1.AddToScheme(typedScheme)
+			_ = remediationv1.AddToScheme(typedScheme)
+			_ = aianalysisv1.AddToScheme(typedScheme)
+			_ = isv1alpha1.AddToScheme(typedScheme)
 			typedClient, tcErr := crclient.NewWithWatch(restCfg, crclient.Options{Scheme: typedScheme})
 			if tcErr != nil {
-				logger.Error(tcErr, "K8s typed client creation failed — EA typed operations will fall back to dynamic")
+				logger.Error(tcErr, "K8s typed client creation failed — CRD typed operations will fall back to dynamic")
 			} else {
 				deps.k8sTypedClient = typedClient
-				logger.Info("K8s typed client initialized for EA CRD operations (#1428)")
+				logger.Info("K8s typed client initialized for all kubernaut CRD operations (#1428)")
 			}
 		}
 	}
@@ -1301,7 +1306,7 @@ func buildSessionInfra(cfg *config.Config, reg *metrics.Registry, auditor audit.
 	if err := coordinationv1.AddToScheme(scheme); err != nil {
 		return nil, fmt.Errorf("register coordination scheme: %w", err)
 	}
-	if err := v1alpha1.AddToScheme(scheme); err != nil {
+	if err := isv1alpha1.AddToScheme(scheme); err != nil {
 		return nil, fmt.Errorf("register InvestigationSession scheme: %w", err)
 	}
 

@@ -27,7 +27,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
@@ -105,8 +104,9 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — wiring audit (WIRE-C01/
 			)
 			defer cancel()
 
+			tc := newTypedFakeClient()
 			result, err := tools.HandleInvestigationMCPWithRegistry(
-				ctx, mockMCP, k8sClient, "kubernaut-system",
+				ctx, mockMCP, k8sClient, tc, "kubernaut-system",
 				tools.InvestigateMCPArgs{
 					APIVersion: "apps/v1",
 					Namespace:  "prod",
@@ -118,11 +118,8 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — wiring audit (WIRE-C01/
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RRID).NotTo(BeEmpty())
 
-			rr, err := k8sClient.Resource(rrGVR).Namespace("kubernaut-system").Get(ctx, result.RRID, metav1.GetOptions{})
-			Expect(err).NotTo(HaveOccurred())
-
-			rrSeverity, _, _ := unstructuredNestedString(rr.Object, "spec", "severity")
-			Expect(rrSeverity).To(Equal("critical"), "investigate path should use triaged severity from Prometheus alert, not default 'medium'")
+			created := verifyTypedRR(tc, "kubernaut-system", result.RRID)
+			Expect(created.Spec.Severity).To(Equal("critical"), "investigate path should use triaged severity from Prometheus alert, not default 'medium'")
 		})
 	})
 
@@ -217,7 +214,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — session_active structur
 			})
 
 			result, err := tools.HandleInvestigationMCPWithRegistry(
-				ctx, mockMCP, nil, "kubernaut-system",
+				ctx, mockMCP, nil, nil, "kubernaut-system",
 				tools.InvestigateMCPArgs{RRID: "rr-session-001"},
 				nil, nil, nil, true, nil, "admin", nil, nil,
 			)
@@ -239,7 +236,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — session_active structur
 			})
 
 			result, err := tools.HandleInvestigationMCPWithRegistry(
-				ctx, mockMCP, nil, "kubernaut-system",
+				ctx, mockMCP, nil, nil, "kubernaut-system",
 				tools.InvestigateMCPArgs{RRID: "rr-session-002"},
 				nil, nil, nil, true, nil, "alice", nil, nil,
 			)
@@ -254,7 +251,7 @@ var _ = Describe("mcpClient nil guard (WIRE-W04)", func() {
 	Describe("WIRE-W04: HandleInvestigationMCPWithRegistry rejects nil mcpClient", func() {
 		It("UT-AF-WIRE-W04: returns error when mcpClient is nil", func() {
 			_, err := tools.HandleInvestigationMCPWithRegistry(
-				context.Background(), nil, nil, "ns",
+				context.Background(), nil, nil, nil, "ns",
 				tools.InvestigateMCPArgs{RRID: "rr-test"},
 				nil, nil, nil, false, nil, "", nil, nil,
 			)
@@ -364,7 +361,7 @@ var _ = Describe("Progressive RCA Emission Wiring — #1407", func() {
 		defer cancel()
 
 		result, err := tools.HandleInvestigationMCPWithRegistry(
-			ctx, mockMCP, nil, "",
+			ctx, mockMCP, nil, nil, "",
 			tools.InvestigateMCPArgs{RRID: "rr-1407-test"},
 			nil, nil, nil, true, nil, "alice", nil, nil,
 		)

@@ -136,13 +136,13 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 	registerTool(srv, cfg, sem, "kubernaut_list_remediations", "List active and recent remediations",
 		func(ctx context.Context, args tools.ListRemediationsArgs) (any, error) {
 			args.Namespace = cfg.Namespace
-			return tools.HandleListRemediations(ctx, cfg.K8sClient, args)
+			return tools.HandleListRemediations(ctx, cfg.TypedClient, args)
 		})
 
 	registerTool(srv, cfg, sem, "kubernaut_get_remediation", "Get details of a specific remediation",
 		func(ctx context.Context, args tools.GetRemediationArgs) (any, error) {
 			args.Namespace = cfg.Namespace
-			return tools.HandleGetRemediation(ctx, cfg.K8sClient, args)
+			return tools.HandleGetRemediation(ctx, cfg.TypedClient, args)
 		})
 
 	registerTool(srv, cfg, sem, "kubernaut_list_approval_requests", "List remediation approval requests with optional filtering by decision status",
@@ -167,7 +167,7 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 	registerTool(srv, cfg, sem, "kubernaut_cancel_remediation", "Cancel an active remediation",
 		func(ctx context.Context, args tools.CancelRemediationArgs) (any, error) {
 			args.Namespace = cfg.Namespace
-			return tools.HandleCancelRemediation(ctx, cfg.K8sClient, args)
+			return tools.HandleCancelRemediation(ctx, cfg.TypedClient, args)
 		})
 
 	registerTool(srv, cfg, sem, "kubernaut_watch", "Watch for remediation state changes",
@@ -199,7 +199,7 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 		}
 		registerTool(srv, cfg, sem, "kubernaut_investigate", "Investigate an infrastructure incident",
 			func(ctx context.Context, args tools.InvestigateMCPArgs) (any, error) {
-				return tools.HandleInvestigationMCPWithRegistry(ctx, dedicatedClient, cfg.K8sClient, cfg.Namespace, args, cfg.Auditor, cfg.InvestigationRegistry, onInvestigateStarted, false, nil, "", isSignaler, cfg.Triager)
+				return tools.HandleInvestigationMCPWithRegistry(ctx, dedicatedClient, cfg.K8sClient, cfg.TypedClient, cfg.Namespace, args, cfg.Auditor, cfg.InvestigationRegistry, onInvestigateStarted, false, nil, "", isSignaler, cfg.Triager)
 			})
 	}
 

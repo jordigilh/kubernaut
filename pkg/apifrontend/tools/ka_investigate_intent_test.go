@@ -73,7 +73,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 		It("UT-AF-1332-012: empty args (no rr_id, no api_version/kind/name) returns error", func() {
 			mockMCP := &ka.MockMCPClient{}
 			_, err := tools.HandleInvestigationMCPWithRegistry(
-				context.Background(), mockMCP, nil, "kubernaut-system",
+				context.Background(), mockMCP, nil, nil, "kubernaut-system",
 				tools.InvestigateMCPArgs{},
 				nil, nil, nil, true, nil, "", nil, nil,
 			)
@@ -84,7 +84,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 		It("UT-AF-1332-013: partial args (namespace only, missing kind/name) returns error", func() {
 			mockMCP := &ka.MockMCPClient{}
 			_, err := tools.HandleInvestigationMCPWithRegistry(
-				context.Background(), mockMCP, nil, "kubernaut-system",
+				context.Background(), mockMCP, nil, nil, "kubernaut-system",
 				tools.InvestigateMCPArgs{Namespace: "prod", APIVersion: "apps/v1"},
 				nil, nil, nil, true, nil, "", nil, nil,
 			)
@@ -117,7 +117,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			}))
 
 			result, err := tools.HandleInvestigationMCPWithRegistry(
-				ctx, mockMCP, k8sClient, "kubernaut-system",
+				ctx, mockMCP, k8sClient, newTypedFakeClient(), "kubernaut-system",
 				tools.InvestigateMCPArgs{
 					APIVersion: "apps/v1",
 					Namespace:  "prod",
@@ -140,7 +140,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			})
 
 			_, err := tools.HandleInvestigationMCPWithRegistry(
-				ctx, mockMCP, nil, "kubernaut-system",
+				ctx, mockMCP, nil, nil, "kubernaut-system",
 				tools.InvestigateMCPArgs{
 					APIVersion: "apps/v1",
 					Namespace:  "prod",
@@ -164,7 +164,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			})
 
 			_, err := tools.HandleInvestigationMCPWithRegistry(
-				ctx, mockMCP, k8sClient, "kubernaut-system",
+				ctx, mockMCP, k8sClient, nil, "kubernaut-system",
 				tools.InvestigateMCPArgs{
 					APIVersion: "apps/v1",
 					Namespace:  "prod",
@@ -202,7 +202,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			}))
 
 			result, err := tools.HandleInvestigationMCPWithRegistry(
-				ctx, mockMCP, k8sClient, "kubernaut-system",
+				ctx, mockMCP, k8sClient, nil, "kubernaut-system",
 				tools.InvestigateMCPArgs{RRID: "rr-existing-001"},
 				nil, nil, nil, true, nil, "", nil, nil,
 			)
@@ -225,7 +225,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			_ = sessionInitErr
 
 			_, err := tools.HandleInvestigationMCPWithRegistry(
-				ctx, mockMCP, k8sClient, "kubernaut-system",
+				ctx, mockMCP, k8sClient, nil, "kubernaut-system",
 				tools.InvestigateMCPArgs{
 					APIVersion: "apps/v1",
 					Namespace:  "prod",
@@ -267,7 +267,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			}
 
 			result, err := tools.HandleInvestigationMCPWithRegistry(
-				context.Background(), mockMCP, nil, "",
+				context.Background(), mockMCP, nil, nil, "",
 				tools.InvestigateMCPArgs{RRID: "rr-block-001"},
 				nil, nil, nil, true, nil, "", nil, nil,
 			)
@@ -302,7 +302,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			})
 
 			_, err := tools.HandleInvestigationMCPWithRegistry(
-				shortCtx(ctx), mockMCP, fakeK8s, "kubernaut-system",
+				shortCtx(ctx), mockMCP, fakeK8s, nil, "kubernaut-system",
 				tools.InvestigateMCPArgs{RRID: "rr-takeover-001"},
 				nil, nil, nil, false, nil, "", recorder, nil,
 			)
@@ -335,7 +335,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			})
 
 			_, err := tools.HandleInvestigationMCPWithRegistry(
-				shortCtx(ctx), mockMCP, fakeK8s, "kubernaut-system",
+				shortCtx(ctx), mockMCP, fakeK8s, nil, "kubernaut-system",
 				tools.InvestigateMCPArgs{RRID: "rr-fresh-001"},
 				nil, nil, nil, false, nil, "", recorder, nil,
 			)
@@ -371,7 +371,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			})
 
 			_, err := tools.HandleInvestigationMCPWithRegistry(
-				shortCtx(ctx), mockMCP, fakeK8s, "kubernaut-system",
+				shortCtx(ctx), mockMCP, fakeK8s, nil, "kubernaut-system",
 				tools.InvestigateMCPArgs{RRID: "rr-pending-001"},
 				nil, nil, nil, false, nil, "", recorder, nil,
 			)
@@ -402,7 +402,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			})
 
 			_, err := tools.HandleInvestigationMCPWithRegistry(
-				shortCtx(ctx), mockMCP, fakeK8s, "kubernaut-system",
+				shortCtx(ctx), mockMCP, fakeK8s, nil, "kubernaut-system",
 				tools.InvestigateMCPArgs{RRID: "rr-corr-001"},
 				nil, nil, nil, false, nil, "", recorder, nil,
 			)
@@ -432,7 +432,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			})
 
 			_, err := tools.HandleInvestigationMCPWithRegistry(
-				shortCtx(ctx), mockMCP, fakeK8s, "kubernaut-system",
+				shortCtx(ctx), mockMCP, fakeK8s, nil, "kubernaut-system",
 				tools.InvestigateMCPArgs{RRID: "rr-nil-sig-001"},
 				nil, nil, nil, false, nil, "", nil, nil,
 			)

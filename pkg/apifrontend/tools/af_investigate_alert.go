@@ -10,6 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
@@ -22,7 +23,8 @@ import (
 // All nil-safe: nil PromClient skips alert validation, nil Mapper skips
 // RESTMapper scope checks, nil ValidationFailures skips metric emission.
 type InvestigateAlertConfig struct {
-	Client             dynamic.Interface
+	Client             crclient.Client
+	DynClient          dynamic.Interface
 	ControllerNS       string
 	Triager            *severity.Triager
 	PromClient         apiprom.Client
@@ -149,7 +151,7 @@ func HandleInvestigateAlert(
 		SignalNameOverride: args.AlertName,
 	}
 
-	result, err := HandleCreateRR(ctx, cfg.Client, cfg.ControllerNS, createArgs, username, cfg.Triager, cfg.Auditor)
+	result, err := HandleCreateRR(ctx, cfg.Client, cfg.DynClient, cfg.ControllerNS, createArgs, username, cfg.Triager, cfg.Auditor)
 	if err != nil {
 		return InvestigateAlertResult{}, fmt.Errorf("create RR for alert investigation: %w", err)
 	}

@@ -39,7 +39,7 @@ var _ = Describe("#1351 AF Input Validation", func() {
 		It("should reject rr_id with invalid characters", func() {
 			mockMCP := &ka.MockMCPClient{}
 			_, err := tools.HandleInvestigationMCPWithRegistry(
-				context.Background(), mockMCP, nil, "ns",
+				context.Background(), mockMCP, nil, nil, "ns",
 				tools.InvestigateMCPArgs{RRID: "../../etc/passwd"},
 				nil, nil, nil, false, nil, "", nil, nil,
 			)
@@ -55,7 +55,7 @@ var _ = Describe("#1351 AF Input Validation", func() {
 			}
 			// Valid rr_id should pass validation (may fail later for other reasons)
 			_, err := tools.HandleInvestigationMCPWithRegistry(
-				context.Background(), mockMCP, nil, "default",
+				context.Background(), mockMCP, nil, nil, "default",
 				tools.InvestigateMCPArgs{RRID: "prod/my-rr-001"},
 				nil, nil, nil, false, nil, "user1", nil, nil,
 			)
