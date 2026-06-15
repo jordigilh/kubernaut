@@ -24,26 +24,20 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	dynamicfake "k8s.io/client-go/dynamic/fake"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	aiav1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
 
-// shortCtx returns a context that expires in 100ms for unit tests that
-// trigger HandleAwaitSession (which polls with configurable timeout).
-// The cancel function is intentionally deferred via runtime.SetFinalizer
-// pattern; the GC will reclaim the timer. In tests, the short deadline
-// ensures cleanup happens promptly.
 func shortCtx(parent context.Context) context.Context {
 	ctx, cancel := context.WithTimeout(parent, 100*time.Millisecond)
-	// Schedule cancel at end of enclosing It block via Ginkgo's DeferCleanup.
-	// For tests outside Ginkgo, the context deadline itself ensures cleanup.
 	go func() {
 		<-ctx.Done()
 		cancel()
@@ -51,29 +45,62 @@ func shortCtx(parent context.Context) context.Context {
 	return ctx
 }
 
-var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func() {
-	rrGVR := schema.GroupVersionResource{Group: "kubernaut.ai", Version: "v1alpha1", Resource: "remediationrequests"}
-	isGVR := schema.GroupVersionResource{Group: "kubernaut.ai", Version: "v1alpha1", Resource: "investigationsessions"}
-	aaGVR := schema.GroupVersionResource{Group: "kubernaut.ai", Version: "v1alpha1", Resource: "aianalyses"}
-	eventsGVR := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "events"}
+func investigateTestScheme() *runtime.Scheme {
+	s := runtime.NewScheme()
+	_ = aiav1alpha1.AddToScheme(s)
+	_ = remediationv1.AddToScheme(s)
+	return s
+}
 
-	newFakeClientForInvestigate := func(objects ...runtime.Object) *dynamicfake.FakeDynamicClient {
-		scheme := runtime.NewScheme()
-		return dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme,
-			map[schema.GroupVersionResource]string{
-				rrGVR:     "RemediationRequestList",
-				isGVR:     "InvestigationSessionList",
-				aaGVR:     "AIAnalysisList",
-				eventsGVR: "EventList",
+func newTypedClientForInvestigate(objects ...crclient.Object) crclient.Client {
+	return fake.NewClientBuilder().
+		WithScheme(investigateTestScheme()).
+		WithObjects(objects...).
+		WithStatusSubresource(objects...).
+		Build()
+}
+
+func newTypedAIAnalysisWithSession(rrName, sessionID string) *aiav1alpha1.AIAnalysis {
+	return &aiav1alpha1.AIAnalysis{
+		ObjectMeta: objMeta("kubernaut-system", fmt.Sprintf("ai-%s", rrName)),
+		Spec: aiav1alpha1.AIAnalysisSpec{
+			RemediationRequestRef: corev1.ObjectReference{
+				Name:      rrName,
+				Namespace: "kubernaut-system",
 			},
-			objects...)
+			RemediationID: rrName,
+		},
+		Status: aiav1alpha1.AIAnalysisStatus{
+			KASession: &aiav1alpha1.KASession{
+				ID: sessionID,
+			},
+		},
 	}
+}
+
+func newTypedAIAnalysisWithoutSession(rrName string) *aiav1alpha1.AIAnalysis {
+	return &aiav1alpha1.AIAnalysis{
+		ObjectMeta: objMeta("kubernaut-system", fmt.Sprintf("ai-%s", rrName)),
+		Spec: aiav1alpha1.AIAnalysisSpec{
+			RemediationRequestRef: corev1.ObjectReference{
+				Name:      rrName,
+				Namespace: "kubernaut-system",
+			},
+			RemediationID: rrName,
+		},
+		Status: aiav1alpha1.AIAnalysisStatus{
+			KASession: &aiav1alpha1.KASession{},
+		},
+	}
+}
+
+var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func() {
 
 	Describe("InvestigateMCPArgs validation (F-02, F-03)", func() {
 		It("UT-AF-1332-012: empty args (no rr_id, no api_version/kind/name) returns error", func() {
 			mockMCP := &ka.MockMCPClient{}
 			_, err := tools.HandleInvestigationMCPWithRegistry(
-				context.Background(), mockMCP, nil, nil, "kubernaut-system",
+				context.Background(), mockMCP, nil, "kubernaut-system",
 				tools.InvestigateMCPArgs{},
 				nil, nil, nil, true, nil, "", nil, nil,
 			)
@@ -84,7 +111,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 		It("UT-AF-1332-013: partial args (namespace only, missing kind/name) returns error", func() {
 			mockMCP := &ka.MockMCPClient{}
 			_, err := tools.HandleInvestigationMCPWithRegistry(
-				context.Background(), mockMCP, nil, nil, "kubernaut-system",
+				context.Background(), mockMCP, nil, "kubernaut-system",
 				tools.InvestigateMCPArgs{Namespace: "prod", APIVersion: "apps/v1"},
 				nil, nil, nil, true, nil, "", nil, nil,
 			)
@@ -95,7 +122,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 
 	Describe("Investigation with namespace/kind/name — creates RR + IS (F-02)", func() {
 		It("UT-AF-1332-011: creates RR and IS when namespace/kind/name provided", func() {
-			k8sClient := newFakeClientForInvestigate()
+			tc := newTypedClientForInvestigate()
 			eventCh := make(chan ka.InvestigationEvent)
 			close(eventCh)
 
@@ -117,7 +144,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			}))
 
 			result, err := tools.HandleInvestigationMCPWithRegistry(
-				ctx, mockMCP, k8sClient, newTypedFakeClient(), "kubernaut-system",
+				ctx, mockMCP, tc, "kubernaut-system",
 				tools.InvestigateMCPArgs{
 					APIVersion: "apps/v1",
 					Namespace:  "prod",
@@ -140,7 +167,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			})
 
 			_, err := tools.HandleInvestigationMCPWithRegistry(
-				ctx, mockMCP, nil, nil, "kubernaut-system",
+				ctx, mockMCP, nil, "kubernaut-system",
 				tools.InvestigateMCPArgs{
 					APIVersion: "apps/v1",
 					Namespace:  "prod",
@@ -154,7 +181,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 		})
 
 		It("UT-AF-1332-016: SA caller blocked from interactive investigation", func() {
-			k8sClient := newFakeClientForInvestigate()
+			tc := newTypedClientForInvestigate()
 			mockMCP := &ka.MockMCPClient{}
 
 			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
@@ -164,7 +191,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			})
 
 			_, err := tools.HandleInvestigationMCPWithRegistry(
-				ctx, mockMCP, k8sClient, nil, "kubernaut-system",
+				ctx, mockMCP, tc, "kubernaut-system",
 				tools.InvestigateMCPArgs{
 					APIVersion: "apps/v1",
 					Namespace:  "prod",
@@ -180,7 +207,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 
 	Describe("Investigation with existing rr_id — creates IS only (F-03)", func() {
 		It("UT-AF-1332-010: creates IS when rr_id provided (existing RR)", func() {
-			k8sClient := newFakeClientForInvestigate()
+			tc := newTypedClientForInvestigate()
 			eventCh := make(chan ka.InvestigationEvent)
 			close(eventCh)
 
@@ -202,7 +229,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			}))
 
 			result, err := tools.HandleInvestigationMCPWithRegistry(
-				ctx, mockMCP, k8sClient, nil, "kubernaut-system",
+				ctx, mockMCP, tc, "kubernaut-system",
 				tools.InvestigateMCPArgs{RRID: "rr-existing-001"},
 				nil, nil, nil, true, nil, "", nil, nil,
 			)
@@ -213,7 +240,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 
 	Describe("IS creation failure — transactional cleanup (NF-01)", func() {
 		It("UT-AF-1332-015: IS failure after RR creation triggers RR cleanup", func() {
-			k8sClient := newFakeClientForInvestigate()
+			tc := newTypedClientForInvestigate()
 			mockMCP := &ka.MockMCPClient{}
 
 			ctx := shortCtx(auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
@@ -225,7 +252,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			_ = sessionInitErr
 
 			_, err := tools.HandleInvestigationMCPWithRegistry(
-				ctx, mockMCP, k8sClient, nil, "kubernaut-system",
+				ctx, mockMCP, tc, "kubernaut-system",
 				tools.InvestigateMCPArgs{
 					APIVersion: "apps/v1",
 					Namespace:  "prod",
@@ -234,10 +261,6 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 				},
 				nil, nil, nil, true, nil, "", nil, nil,
 			)
-			// If IS creation fails, the tool should return an error
-			// and the RR should be cleaned up (deleted).
-			// The exact behavior depends on implementation — this test
-			// validates the transactional guarantee.
 			_ = err
 		})
 	})
@@ -267,7 +290,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			}
 
 			result, err := tools.HandleInvestigationMCPWithRegistry(
-				context.Background(), mockMCP, nil, nil, "",
+				context.Background(), mockMCP, nil, "",
 				tools.InvestigateMCPArgs{RRID: "rr-block-001"},
 				nil, nil, nil, true, nil, "", nil, nil,
 			)
@@ -280,10 +303,8 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 	Describe("ISSignaler autonomous detection and early IS creation (#1332)", func() {
 
 		It("UT-AF-1332-070: signals joinMode=takeover when AIA has active session (autonomous detection)", func() {
-			fakeK8s := newFakeClientForInvestigate()
-			aia := newAIAnalysisWithSession("rr-takeover-001", "ka-sess-auto-001")
-			_, createErr := fakeK8s.Resource(aaGVR).Namespace("kubernaut-system").Create(context.Background(), aia, metav1.CreateOptions{})
-			Expect(createErr).NotTo(HaveOccurred())
+			aia := newTypedAIAnalysisWithSession("rr-takeover-001", "ka-sess-auto-001")
+			tc := newTypedClientForInvestigate(aia)
 
 			mockMCP := &ka.MockMCPClient{
 				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
@@ -302,7 +323,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			})
 
 			_, err := tools.HandleInvestigationMCPWithRegistry(
-				shortCtx(ctx), mockMCP, fakeK8s, nil, "kubernaut-system",
+				shortCtx(ctx), mockMCP, tc, "kubernaut-system",
 				tools.InvestigateMCPArgs{RRID: "rr-takeover-001"},
 				nil, nil, nil, false, nil, "", recorder, nil,
 			)
@@ -316,7 +337,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 		})
 
 		It("UT-AF-1332-071: signals joinMode=start when no AIA exists for the RR", func() {
-			fakeK8s := newFakeClientForInvestigate()
+			tc := newTypedClientForInvestigate()
 
 			mockMCP := &ka.MockMCPClient{
 				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
@@ -335,7 +356,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			})
 
 			_, err := tools.HandleInvestigationMCPWithRegistry(
-				shortCtx(ctx), mockMCP, fakeK8s, nil, "kubernaut-system",
+				shortCtx(ctx), mockMCP, tc, "kubernaut-system",
 				tools.InvestigateMCPArgs{RRID: "rr-fresh-001"},
 				nil, nil, nil, false, nil, "", recorder, nil,
 			)
@@ -349,10 +370,8 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 		})
 
 		It("UT-AF-1332-072: signals joinMode=start when AIA exists but has no session ID", func() {
-			fakeK8s := newFakeClientForInvestigate()
-			aia := newAIAnalysisWithoutSession("rr-pending-001")
-			_, createErr := fakeK8s.Resource(aaGVR).Namespace("kubernaut-system").Create(context.Background(), aia, metav1.CreateOptions{})
-			Expect(createErr).NotTo(HaveOccurred())
+			aia := newTypedAIAnalysisWithoutSession("rr-pending-001")
+			tc := newTypedClientForInvestigate(aia)
 
 			mockMCP := &ka.MockMCPClient{
 				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
@@ -371,7 +390,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			})
 
 			_, err := tools.HandleInvestigationMCPWithRegistry(
-				shortCtx(ctx), mockMCP, fakeK8s, nil, "kubernaut-system",
+				shortCtx(ctx), mockMCP, tc, "kubernaut-system",
 				tools.InvestigateMCPArgs{RRID: "rr-pending-001"},
 				nil, nil, nil, false, nil, "", recorder, nil,
 			)
@@ -383,7 +402,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 		})
 
 		It("UT-AF-1332-073: UpdateCorrelation called with KA session ID after MCP connect", func() {
-			fakeK8s := newFakeClientForInvestigate()
+			tc := newTypedClientForInvestigate()
 
 			mockMCP := &ka.MockMCPClient{
 				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
@@ -402,7 +421,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			})
 
 			_, err := tools.HandleInvestigationMCPWithRegistry(
-				shortCtx(ctx), mockMCP, fakeK8s, nil, "kubernaut-system",
+				shortCtx(ctx), mockMCP, tc, "kubernaut-system",
 				tools.InvestigateMCPArgs{RRID: "rr-corr-001"},
 				nil, nil, nil, false, nil, "", recorder, nil,
 			)
@@ -414,7 +433,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 		})
 
 		It("UT-AF-1332-074: signaler not called when signaler is nil (backward compat)", func() {
-			fakeK8s := newFakeClientForInvestigate()
+			tc := newTypedClientForInvestigate()
 
 			mockMCP := &ka.MockMCPClient{
 				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
@@ -432,7 +451,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			})
 
 			_, err := tools.HandleInvestigationMCPWithRegistry(
-				shortCtx(ctx), mockMCP, fakeK8s, nil, "kubernaut-system",
+				shortCtx(ctx), mockMCP, tc, "kubernaut-system",
 				tools.InvestigateMCPArgs{RRID: "rr-nil-sig-001"},
 				nil, nil, nil, false, nil, "", nil, nil,
 			)
@@ -441,7 +460,6 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 	})
 })
 
-// recordingISSignaler is a test double that records ISSignaler calls.
 type recordingISSignaler struct {
 	signalCalls      []signalCall
 	correlationCalls []corrCall
@@ -467,52 +485,4 @@ func (r *recordingISSignaler) SignalInteractive(_ context.Context, rrNamespace, 
 func (r *recordingISSignaler) UpdateCorrelation(_ context.Context, crdName, kaSessionID string) error {
 	r.correlationCalls = append(r.correlationCalls, corrCall{crdName: crdName, kaSessionID: kaSessionID})
 	return nil
-}
-
-// newAIAnalysisWithSession creates a fake AIA CRD with a session ID assigned.
-func newAIAnalysisWithSession(rrName, sessionID string) *unstructured.Unstructured {
-	return &unstructured.Unstructured{
-		Object: map[string]any{
-			"apiVersion": "kubernaut.ai/v1alpha1",
-			"kind":       "AIAnalysis",
-			"metadata": map[string]any{
-				"name":      fmt.Sprintf("ai-%s", rrName),
-				"namespace": "kubernaut-system",
-			},
-			"spec": map[string]any{
-				"remediationRequestRef": map[string]any{
-					"name":      rrName,
-					"namespace": "kubernaut-system",
-				},
-			},
-			"status": map[string]any{
-				"investigationSession": map[string]any{
-					"id": sessionID,
-				},
-			},
-		},
-	}
-}
-
-// newAIAnalysisWithoutSession creates a fake AIA CRD without a session ID.
-func newAIAnalysisWithoutSession(rrName string) *unstructured.Unstructured {
-	return &unstructured.Unstructured{
-		Object: map[string]any{
-			"apiVersion": "kubernaut.ai/v1alpha1",
-			"kind":       "AIAnalysis",
-			"metadata": map[string]any{
-				"name":      fmt.Sprintf("ai-%s", rrName),
-				"namespace": "kubernaut-system",
-			},
-			"spec": map[string]any{
-				"remediationRequestRef": map[string]any{
-					"name":      rrName,
-					"namespace": "kubernaut-system",
-				},
-			},
-			"status": map[string]any{
-				"investigationSession": map[string]any{},
-			},
-		},
-	}
 }

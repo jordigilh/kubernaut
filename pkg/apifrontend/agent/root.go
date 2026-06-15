@@ -108,12 +108,12 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 	constructors := []toolConstructor{
 		{"list_remediations", func() (tool.Tool, error) { return tools.NewListRemediationsTool(cfg.TypedClient, cfg.Namespace) }},
 		{"get_remediation", func() (tool.Tool, error) { return tools.NewGetRemediationTool(cfg.TypedClient, cfg.Namespace) }},
-		{"list_approval_requests", func() (tool.Tool, error) { return tools.NewListApprovalRequestsTool(k8s, cfg.Namespace) }},
-		{"get_approval_request", func() (tool.Tool, error) { return tools.NewGetApprovalRequestTool(k8s, cfg.Namespace) }},
+		{"list_approval_requests", func() (tool.Tool, error) { return tools.NewListApprovalRequestsTool(cfg.TypedClient, cfg.Namespace) }},
+		{"get_approval_request", func() (tool.Tool, error) { return tools.NewGetApprovalRequestTool(cfg.TypedClient, cfg.Namespace) }},
 		{"cancel_remediation", func() (tool.Tool, error) { return tools.NewCancelRemediationTool(cfg.TypedClient, cfg.Namespace) }},
-		{"watch", func() (tool.Tool, error) { return tools.NewWatchTool(k8s, cfg.TypedClient, cfg.Namespace) }},
+		{"watch", func() (tool.Tool, error) { return tools.NewWatchTool(cfg.TypedClient, cfg.Namespace) }},
 		{"investigate", func() (tool.Tool, error) {
-			return tools.NewInvestigateMCPTool(dedicatedC, k8s, cfg.TypedClient, cfg.Namespace, cfg.Auditor, cfg.InvestigationRegistry, nil, cfg.Pool, buildAgentISSignaler(cfg), cfg.Triager)
+			return tools.NewInvestigateMCPTool(dedicatedC, cfg.TypedClient, cfg.Namespace, cfg.Auditor, cfg.InvestigationRegistry, nil, cfg.Pool, buildAgentISSignaler(cfg), cfg.Triager)
 		}},
 		{"discover_workflows", func() (tool.Tool, error) { return tools.NewDiscoverWorkflowsTool(mcpC) }},
 		{"select_workflow", func() (tool.Tool, error) { return tools.NewSelectWorkflowTool(mcpC, cfg.Auditor) }},

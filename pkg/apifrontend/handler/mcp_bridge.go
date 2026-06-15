@@ -48,6 +48,9 @@ type ISSessionInitializer interface {
 
 // MCPBridgeConfig holds the configuration for the real MCP tool bridge.
 type MCPBridgeConfig struct {
+	// K8sClient is the dynamic K8s client. Not used by the bridge directly
+	// (kubernaut CRDs use TypedClient); retained for test compatibility and
+	// future kubectl/events tool registration if moved from the agent path.
 	K8sClient             dynamic.Interface
 	TypedClient           crclient.WithWatch
 	Namespace             string
@@ -148,20 +151,20 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 	registerTool(srv, cfg, sem, "kubernaut_list_approval_requests", "List remediation approval requests with optional filtering by decision status",
 		func(ctx context.Context, args tools.ListApprovalRequestsArgs) (any, error) {
 			args.Namespace = cfg.Namespace
-			return tools.HandleListApprovalRequests(ctx, cfg.K8sClient, args)
+			return tools.HandleListApprovalRequests(ctx, cfg.TypedClient, args)
 		})
 
 	registerTool(srv, cfg, sem, "kubernaut_get_approval_request", "Get full details of a specific remediation approval request",
 		func(ctx context.Context, args tools.GetApprovalRequestArgs) (any, error) {
 			args.Namespace = cfg.Namespace
-			return tools.HandleGetApprovalRequest(ctx, cfg.K8sClient, args)
+			return tools.HandleGetApprovalRequest(ctx, cfg.TypedClient, args)
 		})
 
 	registerTool(srv, cfg, sem, "kubernaut_approve", "Approve a remediation action",
 		func(ctx context.Context, args tools.ApproveArgs) (any, error) {
 			args.Namespace = cfg.Namespace
 			username := usernameFromCtx(ctx)
-			return tools.HandleApprove(ctx, cfg.K8sClient, args, username)
+			return tools.HandleApprove(ctx, cfg.TypedClient, args, username)
 		})
 
 	registerTool(srv, cfg, sem, "kubernaut_cancel_remediation", "Cancel an active remediation",
@@ -173,14 +176,14 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 	registerTool(srv, cfg, sem, "kubernaut_watch", "Watch for remediation state changes",
 		func(ctx context.Context, args tools.WatchArgs) (any, error) {
 			args.Namespace = cfg.Namespace
-			return tools.HandleWatch(ctx, cfg.K8sClient, cfg.TypedClient, args)
+			return tools.HandleWatch(ctx, cfg.TypedClient, args)
 		})
 
 	if shouldRegister("kubernaut_await_session") {
 		registerTool(srv, cfg, sem, "kubernaut_await_session", "Wait for KA investigation session to become ready",
 			func(ctx context.Context, args tools.AwaitSessionArgs) (any, error) {
 				args.Namespace = cfg.Namespace
-				return tools.HandleAwaitSession(ctx, cfg.K8sClient, args)
+				return tools.HandleAwaitSession(ctx, cfg.TypedClient, args)
 			})
 	}
 
@@ -199,7 +202,7 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 		}
 		registerTool(srv, cfg, sem, "kubernaut_investigate", "Investigate an infrastructure incident",
 			func(ctx context.Context, args tools.InvestigateMCPArgs) (any, error) {
-				return tools.HandleInvestigationMCPWithRegistry(ctx, dedicatedClient, cfg.K8sClient, cfg.TypedClient, cfg.Namespace, args, cfg.Auditor, cfg.InvestigationRegistry, onInvestigateStarted, false, nil, "", isSignaler, cfg.Triager)
+				return tools.HandleInvestigationMCPWithRegistry(ctx, dedicatedClient, cfg.TypedClient, cfg.Namespace, args, cfg.Auditor, cfg.InvestigationRegistry, onInvestigateStarted, false, nil, "", isSignaler, cfg.Triager)
 			})
 	}
 

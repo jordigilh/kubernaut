@@ -8,10 +8,13 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	dynamicfake "k8s.io/client-go/dynamic/fake"
+
+	aiav1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	eav1alpha1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
+	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 )
 
 func objMeta(namespace, name string) metav1.ObjectMeta {
@@ -21,72 +24,23 @@ func objMeta(namespace, name string) metav1.ObjectMeta {
 	}
 }
 
-// Legacy helpers — will be removed as each test file migrates to typed client (#1428).
-
-func newFakeRR(namespace, name, phase string) *unstructured.Unstructured {
-	return &unstructured.Unstructured{
-		Object: map[string]interface{}{
-			"apiVersion": "kubernaut.ai/v1alpha1",
-			"kind":       "RemediationRequest",
-			"metadata": map[string]interface{}{
-				"name":      name,
-				"namespace": namespace,
-			},
-			"spec": map[string]interface{}{
-				"targetResource": map[string]interface{}{
-					"kind": "Deployment",
-					"name": "api-server",
-				},
-			},
-			"status": map[string]interface{}{
-				"overallPhase": phase,
-			},
-		},
-	}
+func isTestScheme() *runtime.Scheme {
+	s := runtime.NewScheme()
+	_ = isv1alpha1.AddToScheme(s)
+	return s
 }
 
-func newUnstructuredRR(ns, name, phase, targetKind, targetName string) *unstructured.Unstructured {
-	return &unstructured.Unstructured{
-		Object: map[string]interface{}{
-			"apiVersion": "kubernaut.ai/v1alpha1",
-			"kind":       "RemediationRequest",
-			"metadata": map[string]interface{}{
-				"name":      name,
-				"namespace": ns,
-			},
-			"spec": map[string]interface{}{
-				"signalFingerprint": func() string {
-					h := [32]byte{}
-					copy(h[:], ns+"/"+targetKind+"/"+targetName)
-					return fmt.Sprintf("%x", h)
-				}(),
-				"targetResource": map[string]interface{}{
-					"kind": targetKind,
-					"name": targetName,
-				},
-			},
-			"status": map[string]interface{}{
-				"overallPhase": phase,
-			},
-		},
-	}
+func aiaTestScheme() *runtime.Scheme {
+	s := runtime.NewScheme()
+	_ = aiav1alpha1.AddToScheme(s)
+	return s
 }
 
-func newDynamicFakeClient(objects ...runtime.Object) *dynamicfake.FakeDynamicClient {
-	scheme := runtime.NewScheme()
-	scheme.AddKnownTypeWithName(
-		schema.GroupVersionKind{Group: "kubernaut.ai", Version: "v1alpha1", Kind: "RemediationRequestList"},
-		&unstructured.UnstructuredList{},
-	)
-	scheme.AddKnownTypeWithName(
-		schema.GroupVersionKind{Group: "kubernaut.ai", Version: "v1alpha1", Kind: "RemediationApprovalRequestList"},
-		&unstructured.UnstructuredList{},
-	)
-	scheme.AddKnownTypeWithName(
-		schema.GroupVersionKind{Group: "kubernaut.ai", Version: "v1alpha1", Kind: "SignalProcessingList"},
-		&unstructured.UnstructuredList{},
-	)
-	return dynamicfake.NewSimpleDynamicClient(scheme, objects...)
+func watchTestScheme() *runtime.Scheme {
+	s := runtime.NewScheme()
+	_ = remediationv1.AddToScheme(s)
+	_ = eav1alpha1.AddToScheme(s)
+	return s
 }
 
 func newForbiddenError(resource string) *errors.StatusError {

@@ -35,10 +35,11 @@ type AgentConfig struct {
 	InstructionProvider llmagent.InstructionProvider
 	// SkipTools disables tool registration (for testing error paths).
 	SkipTools bool
-	// K8sClient is the dynamic K8s client for CRD operations.
+	// K8sClient is the dynamic K8s client for non-kubernaut CRD operations
+	// (kubectl, events, signal derivation). Kubernaut CRDs use TypedClient.
 	K8sClient dynamic.Interface
-	// TypedClient is the controller-runtime typed client for owned CRDs
-	// (e.g. EffectivenessAssessment). May be nil (#1428).
+	// TypedClient is the controller-runtime typed client for kubernaut CRDs
+	// (RR, RAR, AIA, IS, EA).
 	TypedClient crclient.WithWatch
 	// DSClient is the Data Store client for workflow/history queries.
 	DSClient ds.Client
