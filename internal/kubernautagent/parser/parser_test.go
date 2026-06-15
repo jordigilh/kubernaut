@@ -1147,3 +1147,96 @@ false
 		})
 	})
 })
+
+// =============================================================================
+// Issue #1431: Parser flat path should extract selected_workflow.workflow_id
+// =============================================================================
+
+var _ = Describe("Parser #1431: Flat path merges nested selected_workflow", func() {
+
+	// UT-KA-1431-001: Hybrid flat JSON with nested selected_workflow (no top-level workflow_id).
+	// The flat path succeeds because rca_summary is present, but WorkflowID must be
+	// backfilled from the nested selected_workflow object.
+	Describe("UT-KA-1431-001: hybrid flat rca_summary + nested selected_workflow", func() {
+		It("should extract workflow_id from nested selected_workflow on the flat path", func() {
+			p := parser.NewResultParser()
+			content := `{
+				"rca_summary": "Pod OOMKilled due to memory leak in api-server",
+				"investigation_outcome": "actionable",
+				"confidence": 0.75,
+				"actionable": true,
+				"selected_workflow": {
+					"workflow_id": "wf-nested-oom",
+					"confidence": 0.90
+				}
+			}`
+			result, err := p.Parse(content)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.WorkflowID).To(Equal("wf-nested-oom"),
+				"#1431: WorkflowID must be extracted from nested selected_workflow on flat path")
+		})
+	})
+
+	// UT-KA-1431-002: Full parity — all llmWorkflow fields propagated from nested object.
+	Describe("UT-KA-1431-002: full parity — all llmWorkflow fields from nested selected_workflow", func() {
+		It("should propagate ExecutionBundle, Confidence, Reason, ExecutionEngine, and Parameters", func() {
+			p := parser.NewResultParser()
+			content := `{
+				"rca_summary": "Certificate expired causing TLS handshake failures",
+				"investigation_outcome": "actionable",
+				"confidence": 0.70,
+				"actionable": true,
+				"selected_workflow": {
+					"workflow_id": "wf-cert-renew",
+					"execution_bundle": "cert-renewal-v2",
+					"confidence": 0.95,
+					"rationale": "Certificate renewal resolves TLS errors",
+					"execution_engine": "ansible",
+					"parameters": {
+						"cert_name": "api-tls",
+						"namespace": "production"
+					}
+				}
+			}`
+			result, err := p.Parse(content)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.WorkflowID).To(Equal("wf-cert-renew"),
+				"#1431: WorkflowID from nested selected_workflow")
+			Expect(result.ExecutionBundle).To(Equal("cert-renewal-v2"),
+				"#1431: ExecutionBundle from nested selected_workflow")
+			Expect(result.Confidence).To(BeNumerically("~", 0.95, 0.01),
+				"#1431: Confidence from nested selected_workflow")
+			Expect(result.Reason).To(Equal("Certificate renewal resolves TLS errors"),
+				"#1431: Reason (rationale) from nested selected_workflow")
+			Expect(result.ExecutionEngine).To(Equal("ansible"),
+				"#1431: ExecutionEngine from nested selected_workflow")
+			Expect(result.Parameters).To(HaveKeyWithValue("cert_name", "api-tls"),
+				"#1431: Parameters from nested selected_workflow")
+			Expect(result.Parameters).To(HaveKeyWithValue("namespace", "production"),
+				"#1431: Parameters from nested selected_workflow")
+		})
+	})
+
+	// UT-KA-1431-003: Top-level workflow_id takes precedence over nested selected_workflow.
+	Describe("UT-KA-1431-003: top-level workflow_id wins over nested selected_workflow", func() {
+		It("should use top-level workflow_id when both are present", func() {
+			p := parser.NewResultParser()
+			content := `{
+				"rca_summary": "Memory pressure resolved after scaling",
+				"workflow_id": "wf-top-level",
+				"confidence": 0.88,
+				"selected_workflow": {
+					"workflow_id": "wf-nested-should-lose",
+					"confidence": 0.95
+				}
+			}`
+			result, err := p.Parse(content)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.WorkflowID).To(Equal("wf-top-level"),
+				"#1431: top-level workflow_id must take precedence over nested selected_workflow")
+		})
+	})
+})
