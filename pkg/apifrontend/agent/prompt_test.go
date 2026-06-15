@@ -439,3 +439,41 @@ var _ = Describe("Prompt — Tool Call Silence (#1408 Issue 1)", func() {
 			"Tool Call Silence: tools must be invoked without preamble narration")
 	})
 })
+
+// =============================================================================
+// Issue #1430: Skip workflow discovery when RCA concludes no action required
+// BR-HAPI-200: Handling non-actionable outcomes
+// =============================================================================
+
+var _ = Describe("Prompt #1430 / BR-HAPI-200: No-action exception in Phase 1 CRITICAL block", func() {
+	var instruction string
+
+	BeforeEach(func() {
+		cfg := agentpkg.DefaultTestConfig()
+		instruction = cfg.Instruction
+	})
+
+	// UT-AF-1430-001: Phase 1 CRITICAL includes no-action exception.
+	// FedRAMP SI-4: the agent's decision logic must be observable/auditable
+	// in the prompt contract.
+	It("UT-AF-1430-001: SI-4 prompt includes no-action exception for skipping Phase 2", func() {
+		Expect(instruction).To(ContainSubstring("no remediation is needed"),
+			"#1430 / SI-4: Phase 1 CRITICAL must include exception for RCA concluding no action needed")
+		Expect(instruction).To(ContainSubstring("self-resolved"),
+			"#1430 / SI-4: exception clause must mention self-resolved signals")
+	})
+
+	// UT-AF-1430-002: Edge Scenarios section retained and consistent.
+	// FedRAMP AU-3: present_decision with empty options is the audit record
+	// for no-action outcomes.
+	It("UT-AF-1430-002: AU-3 prompt retains present_decision with options: [] for no-action", func() {
+		Expect(instruction).To(ContainSubstring("present_decision"),
+			"#1430 / AU-3: present_decision must remain in prompt for no-action path")
+		Expect(instruction).To(ContainSubstring("options: []"),
+			"#1430 / AU-3: prompt must document empty options list for no-action scenario")
+
+		Expect(instruction).NotTo(MatchRegexp(
+			`MUST automatically proceed to Phase 2[^.]*without.*Exception`),
+			"#1430: the unconditional MUST proceed directive must include the no-action exception")
+	})
+})
