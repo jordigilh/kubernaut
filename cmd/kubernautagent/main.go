@@ -1248,7 +1248,12 @@ func buildMCPHandler(
 		mcpkg.WithInactivityTimeout(cfg.Interactive.InactivityTimeout),
 		mcpkg.WithMaxConcurrentSessions(cfg.Interactive.MaxConcurrentSessions),
 		mcpkg.WithSessionExpiredCallback(func(sessionID, rrID, reason string) {
+			// #1438: Emit terminal event BEFORE completing the HTTP session so
+			// EventLogBridge can forward it to AF before the channel closes.
+			autoMgr.EmitSessionEndedByRR(rrID, reason)
+			mcptools.CompleteHTTPSession(autoMgr, rrID, nil, logger, reason)
 			emitDisconnectAudit(sessionID, rrID, reason)
+			agentMetrics.RecordInteractiveSessionEnded()
 		}),
 	}
 	leaseMgr := mcpkg.NewLeaseSessionManagerConcrete(ctrlCli, namespace, logger, leaseOpts...)
@@ -1279,6 +1284,9 @@ func buildMCPHandler(
 				"session_id", sessionID)
 			// Snapshot correlationID before Release deletes the entry.
 			rrID, _ := leaseMgr.GetSessionInfo(sessionID)
+			// #1438: Emit terminal event BEFORE closing the HTTP session so the
+			// EventLogBridge can forward it to AF before the channel closes.
+			autoMgr.EmitSessionEndedByRR(rrID, "inactivity_timeout")
 			if err := leaseMgr.Release(sessionID, "inactivity_timeout"); err != nil {
 				logger.Error(err, "failed to release expired session",
 					"session_id", sessionID)
@@ -1313,6 +1321,10 @@ func buildMCPHandler(
 
 		// T1-1: Snapshot session info BEFORE Release deletes the entry.
 		rrID, signalMeta := leaseMgr.GetSessionInfo(interactiveSessionID)
+
+		// #1438: Emit terminal event BEFORE closing the HTTP session so the
+		// EventLogBridge can forward it to AF before the channel closes.
+		autoMgr.EmitSessionEndedByRR(rrID, "disconnect")
 
 		if err := leaseMgr.Release(interactiveSessionID, "disconnect"); err != nil {
 			logger.Info("failed to release disconnected session",

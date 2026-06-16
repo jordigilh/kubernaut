@@ -19,9 +19,10 @@ const structuralSendTimeout = 5 * time.Second
 //
 // DD-AF-008: Structural events use blocking send with timeout.
 // BR-AF-STREAM-001.1: complete, error, cancelled, alignment_verdict.
+// #1438: session_ended is terminal and must reach Console for phase transition.
 func IsStructuralEvent(eventType string) bool {
 	switch eventType {
-	case EventTypeComplete, EventTypeError, EventTypeCancelled, EventTypeAlignmentVerdict:
+	case EventTypeComplete, EventTypeError, EventTypeCancelled, EventTypeAlignmentVerdict, EventTypeSessionEnded:
 		return true
 	default:
 		return false
@@ -29,8 +30,9 @@ func IsStructuralEvent(eventType string) bool {
 }
 
 // PrioritySend sends an event to the channel using priority-based delivery:
-//   - Structural events (complete, error, cancelled, alignment_verdict) use a
-//     blocking send with a bounded timeout — they are never silently dropped.
+//   - Structural events (complete, error, cancelled, alignment_verdict,
+//     session_ended) use a blocking send with a bounded timeout — they are
+//     never silently dropped.
 //   - Streaming events (token_delta, reasoning_delta, etc.) use a non-blocking
 //     send — they are dropped when the channel is full.
 //

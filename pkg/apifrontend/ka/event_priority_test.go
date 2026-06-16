@@ -111,4 +111,31 @@ var _ = Describe("Event Priority Classification — #1433 BR-AF-STREAM-001", fun
 			Expect(ka.DefaultEventChannelBuffer).To(Equal(128))
 		})
 	})
+
+	Describe("UT-AF-1438-040: session_ended classified as structural (#1438, SI-4)", func() {
+		It("should classify session_ended as structural", func() {
+			Expect(ka.IsStructuralEvent(ka.EventTypeSessionEnded)).To(BeTrue())
+		})
+	})
+
+	Describe("UT-AF-1438-041: PrioritySend delivers session_ended under backpressure (#1438)", func() {
+		It("should deliver session_ended even when channel is full", func() {
+			ch := make(chan ka.InvestigationEvent, 1)
+			done := make(chan struct{})
+
+			ch <- ka.InvestigationEvent{Type: ka.EventTypeTokenDelta}
+
+			go func() {
+				defer close(done)
+				<-ch
+				<-ch
+			}()
+
+			evt := ka.InvestigationEvent{Type: ka.EventTypeSessionEnded, Phase: "inactivity_timeout"}
+			dropped := ka.PrioritySend(ch, done, evt)
+			Expect(dropped).To(BeFalse())
+
+			Eventually(done).Should(BeClosed())
+		})
+	})
 })
