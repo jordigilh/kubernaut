@@ -246,8 +246,10 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 			"BR-NOT-052: File service must be called at most MaxAttempts+1 (stale-read tolerance per DD-NOT-008 v2)")
 		Expect(mockFileCallCount).To(BeNumerically(">=", 5),
 			"BR-NOT-052: File service must be called at least MaxAttempts times")
-		Expect(mockConsoleCallCount).To(Equal(1),
-			"Console service must be called exactly once (succeeds on first attempt)")
+		Expect(mockConsoleCallCount).To(BeNumerically("<=", 2),
+			"BR-NOT-052: Console service must be called at most 1+1 (stale-read tolerance per DD-NOT-008 v2)")
+		Expect(mockConsoleCallCount).To(BeNumerically(">=", 1),
+			"Console service must be called at least once (succeeds on first attempt)")
 
 			// ========================================
 			// CLEANUP: Remove test notification
