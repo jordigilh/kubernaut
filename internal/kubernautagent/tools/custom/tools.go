@@ -272,7 +272,11 @@ func (t *getWorkflowTool) Execute(ctx context.Context, args json.RawMessage) (st
 			params.Severity = ogenclient.NewOptGetWorkflowByIDSeverity(
 				ogenclient.GetWorkflowByIDSeverity(signal.Severity))
 		}
-		params.Component = ogenclient.NewOptString(strings.ToLower(signal.ResourceKind))
+		component := signal.ComponentGVK()
+		if component == "" {
+			component = strings.ToLower(signal.ResourceKind)
+		}
+		params.Component = ogenclient.NewOptString(component)
 		if signal.Environment != "" {
 			params.Environment = ogenclient.NewOptString(signal.Environment)
 		}
