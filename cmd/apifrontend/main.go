@@ -1062,25 +1062,11 @@ func bridgeMetricsFrom(reg *metrics.Registry) *handler.MCPBridgeMetrics {
 func buildAuthMiddleware(cfg *config.Config, reg *metrics.Registry, auditor audit.Emitter, logger logr.Logger) (func(http.Handler) http.Handler, handler.ReadyChecker) {
 	alwaysReady := handler.ReadyChecker(func() bool { return true })
 
-	ac := buildAuthConfig(cfg)
-
-	authCfg := auth.Config{
-		JWT:                  make([]auth.ProviderConfig, 0, len(ac.JWT)),
-		AllowInsecureIssuers: cfg.Auth.AllowInsecureIssuers,
-	}
-	for _, jp := range ac.JWT {
-		authCfg.JWT = append(authCfg.JWT, auth.ProviderConfig{
-			Issuer: auth.IssuerConfig{
-				URL:       jp.Issuer.URL,
-				JWKSURL:   jp.Issuer.JWKSURL,
-				Audiences: jp.Issuer.Audiences,
-			},
-		})
-	}
+	authCfg := buildAuthConfig(cfg)
 
 	var validatorOpts []auth.JWTValidatorOption
 
-	if len(ac.JWT) == 0 {
+	if len(authCfg.JWT) == 0 {
 		restCfg, k8sErr := ctrl.GetConfig()
 		if k8sErr != nil {
 			logger.Error(k8sErr, "CRITICAL: no auth issuer configured and kubeconfig unavailable — denying all authenticated requests (AF-CRIT-1)")
@@ -1122,7 +1108,7 @@ func buildAuthMiddleware(cfg *config.Config, reg *metrics.Registry, auditor audi
 		if cfg.Auth.EnableReplayProtection {
 			validatorOpts = append(validatorOpts, auth.WithReplayCache(auth.NewReplayCache(10*time.Minute)))
 		}
-		logger.Info("auth mode: OIDC/JWKS", "providers", len(ac.JWT))
+		logger.Info("auth mode: OIDC/JWKS", "providers", len(authCfg.JWT))
 	}
 	providerLimiter := ratelimit.NewProviderLimiter(ratelimit.PerProviderConfig{
 		FetchIntervalSeconds: 300,
@@ -1189,36 +1175,44 @@ func parseLogLevel(s string) (zapcore.Level, error) {
 	}
 }
 
-// authConfig holds JWT auth provider configuration for the auth middleware.
-type authConfig struct {
-	JWT []jwtProvider
-}
-
-type jwtProvider struct {
-	Issuer jwtIssuer
-}
-
-type jwtIssuer struct {
-	URL       string
-	JWKSURL   string
-	Audiences []string
-}
-
-func buildAuthConfig(cfg *config.Config) authConfig {
-	if cfg.Auth.IssuerURL == "" {
-		return authConfig{}
+// buildAuthConfig maps config.AuthConfig to auth.Config.
+// Priority: jwtProviders[] > legacy issuerURL > empty (TokenReview auto-detect).
+func buildAuthConfig(cfg *config.Config) auth.Config {
+	if len(cfg.Auth.JWTProviders) > 0 {
+		providers := make([]auth.ProviderConfig, 0, len(cfg.Auth.JWTProviders))
+		for _, p := range cfg.Auth.JWTProviders {
+			providers = append(providers, auth.ProviderConfig{
+				Issuer: auth.IssuerConfig{
+					URL:       p.IssuerURL,
+					JWKSURL:   p.JWKSURL,
+					Audiences: p.Audiences,
+				},
+				ClaimMappings: auth.ClaimMappings{
+					Username: p.ClaimMappings.Username,
+					Groups:   p.ClaimMappings.Groups,
+				},
+			})
+		}
+		return auth.Config{
+			JWT:                  providers,
+			AllowInsecureIssuers: cfg.Auth.AllowInsecureIssuers,
+		}
 	}
-	return authConfig{
-		JWT: []jwtProvider{
-			{
-				Issuer: jwtIssuer{
-					URL:       cfg.Auth.IssuerURL,
-					JWKSURL:   cfg.Auth.JWKSURL,
-					Audiences: []string{cfg.Auth.Audience},
+	if cfg.Auth.IssuerURL != "" {
+		return auth.Config{
+			JWT: []auth.ProviderConfig{
+				{
+					Issuer: auth.IssuerConfig{
+						URL:       cfg.Auth.IssuerURL,
+						JWKSURL:   cfg.Auth.JWKSURL,
+						Audiences: []string{cfg.Auth.Audience},
+					},
 				},
 			},
-		},
+			AllowInsecureIssuers: cfg.Auth.AllowInsecureIssuers,
+		}
 	}
+	return auth.Config{}
 }
 
 // Build-time metadata set via -ldflags.
