@@ -87,15 +87,34 @@ type DependencyConfig struct {
 
 // AuthConfig holds OIDC authentication settings.
 // Auth mode is auto-detected from provider presence (#1309):
-//   - issuerURL set → OIDC/JWKS validation only
-//   - issuerURL empty → K8s TokenReview only
+//   - issuerURL or jwtProviders set → OIDC/JWKS validation only
+//   - both empty → K8s TokenReview only
 type AuthConfig struct {
+	// Legacy single-provider fields (backward compat, dev environments)
 	IssuerURL              string `yaml:"issuerURL"`
 	JWKSURL                string `yaml:"jwksURL,omitempty"`
 	Audience               string `yaml:"audience"`
 	OIDCCaFile             string `yaml:"oidcCaFile,omitempty"`
 	EnableReplayProtection bool   `yaml:"enableReplayProtection,omitempty"`
 	AllowInsecureIssuers   bool   `yaml:"allowInsecureIssuers,omitempty"`
+	// Multi-provider JWT configuration (#1436)
+	JWTProviders []JWTProviderConfig `yaml:"jwtProviders,omitempty"`
+}
+
+// JWTProviderConfig defines a single JWT provider within the multi-provider
+// configuration. Each entry maps to one auth.ProviderConfig at runtime.
+type JWTProviderConfig struct {
+	Name          string              `yaml:"name"`
+	IssuerURL     string              `yaml:"issuerURL"`
+	JWKSURL       string              `yaml:"jwksURL,omitempty"`
+	Audiences     []string            `yaml:"audiences"`
+	ClaimMappings ConfigClaimMappings `yaml:"claimMappings,omitempty"`
+}
+
+// ConfigClaimMappings defines per-provider claim mapping expressions.
+type ConfigClaimMappings struct {
+	Username string `yaml:"username,omitempty"`
+	Groups   string `yaml:"groups,omitempty"`
 }
 
 // LoggingConfig holds structured logging settings.
@@ -473,8 +492,11 @@ func validateLLMConfig(prefix string, llm *LLMConfig) error {
 }
 
 func (c *Config) validateAuth() error {
-	if c.Server.TLS.Required && c.Auth.IssuerURL == "" {
-		return fmt.Errorf("auth.issuerURL is required when server.tls.required is true (production mode)")
+	if c.Server.TLS.Required && c.Auth.IssuerURL == "" && len(c.Auth.JWTProviders) == 0 {
+		return fmt.Errorf("auth.issuerURL or auth.jwtProviders is required when server.tls.required is true (production mode)")
+	}
+	if err := c.validateJWTProviders(); err != nil {
+		return err
 	}
 	if c.Auth.IssuerURL == "" {
 		return nil
@@ -491,6 +513,55 @@ func (c *Config) validateAuth() error {
 		return fmt.Errorf("auth.oidcCaFile must be an absolute path, got %q", c.Auth.OIDCCaFile)
 	}
 	return nil
+}
+
+func (c *Config) validateJWTProviders() error {
+	if len(c.Auth.JWTProviders) == 0 {
+		return nil
+	}
+	seenNames := make(map[string]struct{}, len(c.Auth.JWTProviders))
+	for i, p := range c.Auth.JWTProviders {
+		prefix := fmt.Sprintf("auth.jwtProviders[%d]", i)
+		if p.Name != "" {
+			if _, exists := seenNames[p.Name]; exists {
+				return fmt.Errorf("%s: duplicate provider name %q", prefix, p.Name)
+			}
+			seenNames[p.Name] = struct{}{}
+		}
+		if p.IssuerURL == "" {
+			return fmt.Errorf("%s: issuerURL must not be empty", prefix)
+		}
+		if err := validateJWTProviderURL(prefix+".issuerURL", p.IssuerURL, c.Auth.AllowInsecureIssuers); err != nil {
+			return err
+		}
+		if len(p.Audiences) == 0 {
+			return fmt.Errorf("%s: audiences must not be empty (would reject all tokens)", prefix)
+		}
+		if p.JWKSURL != "" {
+			if err := validateJWTProviderURL(prefix+".jwksURL", p.JWKSURL, c.Auth.AllowInsecureIssuers); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func validateJWTProviderURL(field, rawURL string, allowInsecure bool) error {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("%s is not a valid URL: %w", field, err)
+	}
+	switch u.Scheme {
+	case "https":
+		return nil
+	case "http":
+		if allowInsecure {
+			return nil
+		}
+		return fmt.Errorf("%s: %q uses http; https required (set allowInsecureIssuers for dev/test)", field, rawURL)
+	default:
+		return fmt.Errorf("%s must include a scheme (http:// or https://), got %q", field, rawURL)
+	}
 }
 
 var validLogLevels = map[string]bool{

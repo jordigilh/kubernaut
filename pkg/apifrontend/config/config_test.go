@@ -1316,6 +1316,133 @@ resilience:
 	})
 })
 
+var _ = Describe("Multi-provider JWT config (#1436)", func() {
+	It("UT-AF-1436-001: config YAML with jwtProviders[] array loads correctly", func() {
+		data := []byte(`
+auth:
+  jwtProviders:
+    - name: "keycloak"
+      issuerURL: "https://keycloak.example.com/realms/kubernaut"
+      jwksURL: "https://keycloak.example.com/realms/kubernaut/protocol/openid-connect/certs"
+      audiences:
+        - "kubernaut-apifrontend"
+      claimMappings:
+        username: "preferred_username"
+        groups: "groups"
+    - name: "spire"
+      issuerURL: "https://oidc-discovery.example.com"
+      jwksURL: "https://spire-oidc.example.com/keys"
+      audiences:
+        - "spiffe://trust-domain/ns/kubernaut/sa/af"
+`)
+		cfg, err := config.Load(data)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.Auth.JWTProviders).To(HaveLen(2))
+
+		kc := cfg.Auth.JWTProviders[0]
+		Expect(kc.Name).To(Equal("keycloak"))
+		Expect(kc.IssuerURL).To(Equal("https://keycloak.example.com/realms/kubernaut"))
+		Expect(kc.JWKSURL).To(Equal("https://keycloak.example.com/realms/kubernaut/protocol/openid-connect/certs"))
+		Expect(kc.Audiences).To(Equal([]string{"kubernaut-apifrontend"}))
+		Expect(kc.ClaimMappings.Username).To(Equal("preferred_username"))
+		Expect(kc.ClaimMappings.Groups).To(Equal("groups"))
+
+		sp := cfg.Auth.JWTProviders[1]
+		Expect(sp.Name).To(Equal("spire"))
+		Expect(sp.IssuerURL).To(Equal("https://oidc-discovery.example.com"))
+		Expect(sp.Audiences).To(HaveLen(1))
+	})
+
+	It("UT-AF-1436-002: config YAML with legacy issuerURL only loads (backward compat)", func() {
+		data := []byte(`
+auth:
+  issuerURL: "https://sso.example.com/realms/kubernaut"
+  audience: "apifrontend"
+`)
+		cfg, err := config.Load(data)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.Auth.IssuerURL).To(Equal("https://sso.example.com/realms/kubernaut"))
+		Expect(cfg.Auth.JWTProviders).To(BeEmpty())
+	})
+
+	It("UT-AF-1436-003: config YAML with both issuerURL and jwtProviders loads", func() {
+		data := []byte(`
+auth:
+  issuerURL: "https://legacy.example.com"
+  audience: "af"
+  jwtProviders:
+    - name: "keycloak"
+      issuerURL: "https://keycloak.example.com/realms/kubernaut"
+      audiences: ["kubernaut-apifrontend"]
+`)
+		cfg, err := config.Load(data)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.Auth.IssuerURL).To(Equal("https://legacy.example.com"))
+		Expect(cfg.Auth.JWTProviders).To(HaveLen(1))
+	})
+
+	It("UT-AF-1436-004: jwtProviders entry with empty issuerURL rejected", func() {
+		cfg := validConfig()
+		cfg.Auth.JWTProviders = []config.JWTProviderConfig{
+			{Name: "bad", IssuerURL: "", Audiences: []string{"aud"}},
+		}
+		err := cfg.Validate()
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("issuerURL"))
+	})
+
+	It("UT-AF-1436-005: jwtProviders entry with empty audiences rejected", func() {
+		cfg := validConfig()
+		cfg.Auth.JWTProviders = []config.JWTProviderConfig{
+			{Name: "bad", IssuerURL: "https://issuer.example.com", Audiences: []string{}},
+		}
+		err := cfg.Validate()
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("audiences"))
+	})
+
+	It("UT-AF-1436-006: jwtProviders with duplicate names rejected", func() {
+		cfg := validConfig()
+		cfg.Auth.JWTProviders = []config.JWTProviderConfig{
+			{Name: "dup", IssuerURL: "https://a.example.com", Audiences: []string{"aud"}},
+			{Name: "dup", IssuerURL: "https://b.example.com", Audiences: []string{"aud"}},
+		}
+		err := cfg.Validate()
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("duplicate"))
+	})
+
+	It("UT-AF-1436-007: HTTP jwksURL with allowInsecureIssuers=false rejected", func() {
+		cfg := validConfig()
+		cfg.Auth.AllowInsecureIssuers = false
+		cfg.Auth.JWTProviders = []config.JWTProviderConfig{
+			{
+				Name:      "insecure",
+				IssuerURL: "https://issuer.example.com",
+				JWKSURL:   "http://insecure.example.com/keys",
+				Audiences: []string{"aud"},
+			},
+		}
+		err := cfg.Validate()
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("https"))
+	})
+
+	It("UT-AF-1436-008: HTTP jwksURL with allowInsecureIssuers=true accepted", func() {
+		cfg := validConfig()
+		cfg.Auth.AllowInsecureIssuers = true
+		cfg.Auth.JWTProviders = []config.JWTProviderConfig{
+			{
+				Name:      "dev",
+				IssuerURL: "http://issuer.local",
+				JWKSURL:   "http://issuer.local/keys",
+				Audiences: []string{"aud"},
+			},
+		}
+		Expect(cfg.Validate()).To(Succeed())
+	})
+})
+
 var _ = Describe("Auth auto-detect config (#1309)", func() {
 	It("UT-AF-1309-010: config YAML without kubernetesAuthEnabled loads without error", func() {
 		data := []byte(`
