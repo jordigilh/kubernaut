@@ -109,4 +109,20 @@ var _ = Describe("Re-invocation Fallback", func() {
 		result := session.NeedsReinvocation(v1alpha1.SessionPhaseActive, events, 0)
 		Expect(result).To(BeFalse())
 	})
+
+	It("UT-AF-1435-010: does not trigger when context is cancelled (#1435)", func() {
+		events := getEvents(textEvent())
+		cancelledCtx, cancel := context.WithCancel(ctx)
+		cancel()
+		result := session.NeedsReinvocationCtx(cancelledCtx, v1alpha1.SessionPhaseActive, events, 0)
+		Expect(result).To(BeFalse(),
+			"#1435: re-invocation must not fire when context is already cancelled")
+	})
+
+	It("UT-AF-1435-011: triggers normally when context is active", func() {
+		events := getEvents(textEvent())
+		result := session.NeedsReinvocationCtx(ctx, v1alpha1.SessionPhaseActive, events, 0)
+		Expect(result).To(BeTrue(),
+			"re-invocation should still fire when context is healthy")
+	})
 })
