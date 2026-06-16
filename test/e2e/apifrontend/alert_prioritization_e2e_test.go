@@ -109,9 +109,10 @@ var _ = Describe("Alert Prioritization E2E — #1412", Ordered, Label("e2e", "al
 		Expect(json.Unmarshal([]byte(textJSON), &toolResult)).To(Succeed(), "tool result must parse as ListAlertsResult")
 
 		Expect(toolResult.Prioritized).NotTo(BeNil(), "prioritized field must be populated when alerts are firing")
-		Expect(toolResult.Prioritized.Selected).NotTo(BeNil(), "prioritized.selected must identify the highest-severity alert")
-		Expect(toolResult.Prioritized.Selected.Labels["severity"]).To(Equal("critical"),
-			"SI-4(5): highest-severity alert (critical) must be deterministically Selected")
+		Expect(toolResult.Prioritized.SelectedIndex).To(Equal(0),
+			"prioritized.selected_index must be 0 (first element in priority-sorted alerts[])")
+		Expect(toolResult.Alerts[toolResult.Prioritized.SelectedIndex].Labels["severity"]).To(Equal("critical"),
+			"SI-4(5): highest-severity alert (critical) must be deterministically selected")
 	})
 
 	It("E2E-AF-1412-002: tied critical alerts both appear in response (Selected + Tied)", func() {

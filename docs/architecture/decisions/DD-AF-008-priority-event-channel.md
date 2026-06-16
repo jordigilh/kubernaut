@@ -1,213 +1,102 @@
-# DD-AF-008: Priority-Based Event Channel for MCP Investigation Stream
+# DD-AF-008: Index-Based Alert Prioritization Response
 
-**Status**: Approved
+**Status**: Accepted
 **Date**: 2026-06-15
-**Last Reviewed**: 2026-06-15
-**Confidence**: 90%
-**Author**: AI Assistant
-**Issue**: [#1433](https://github.com/jordigilh/kubernaut/issues/1433)
-**BR**: [BR-AF-STREAM-001](../../requirements/BR-AF-STREAM-001-priority-event-delivery.md)
-
----
+**Issue**: [#1434](https://github.com/jordigilh/kubernaut/issues/1434)
+**Related**: DD-AF-005 (Alert Prioritization Algorithm), BR-AF-STREAM-001
 
 ## Context & Problem
 
-The AF MCP client (`pkg/apifrontend/ka/mcp_sdk_client.go`) receives investigation events from KA via the MCP SDK's `LoggingMessageHandler`. Events are written to a buffered channel (`make(chan InvestigationEvent, 64)`) using a non-blocking send:
+The `list_alerts` tool returns a `ListAlertsResult` containing both an `alerts[]`
+array and a `prioritized` field. The `prioritized` field duplicates full alert
+objects (selected, tied, also_active), causing the serialized response to exceed
+the 4096-byte `MaxToolResultBytes` limit at just 4 alerts.
 
-```go
-select {
-case eventCh <- evt:
-case <-doneCh:
-default:
-    c.logger.Info("event channel full, dropping event", "event_type", evt.Type)
-}
-```
-
-During active LLM inference (workflow selection, investigation reasoning), KA produces `token_delta` events at high frequency (~50-100/s). When the bridge goroutine (`BridgeEventsToA2A`) cannot drain fast enough, the buffer fills and ALL events are dropped indiscriminately — including lifecycle events (`complete`, `error`, `alignment_verdict`) that the system depends on for state transitions.
-
-**Key Requirements**:
-- Structural/lifecycle events must never be silently dropped
-- Streaming delta events are loss-tolerant (Console renders partial text gracefully)
-- Solution must not change the consumer-side channel interface
-- Solution must not introduce unbounded memory growth
-- Solution must not block the LoggingMessageHandler goroutine indefinitely
-
----
+The tool-level trimmer (`TrimSliceToFit`) checks only the `[]AlertSummary` slice
+size, not accounting for the wrapper struct and duplication. The session-level
+trimmer (`trimEventFunctionResponses`) then replaces the entire response with a
+128-byte stub, causing the LLM to detect truncation and retry in a loop.
 
 ## Alternatives Considered
 
-### Alternative 1: Increase Buffer Size
+### Alternative 1: Increase maxToolOutputBytes to 8-16KB
 
-**Approach**: Increase channel buffer from 64 to 256 or higher.
+**Pros**: Trivial code change, no contract change.
+**Cons**: Increases etcd pressure (session state stored in CRDs), doesn't fix the
+architectural duplication, only delays the problem.
+**Rejected**: Violates etcd safety constraint.
 
-**Pros**:
-- Minimal code change (one constant)
-- No behavioral change to test
+### Alternative 2: Fix TrimSliceToFit to check full result size
 
-**Cons**:
-- Does not solve the problem — any finite buffer can fill under sustained output
-- Masks the issue rather than addressing it
-- Higher memory usage per session (256 * sizeof(InvestigationEvent))
-- Does not provide guarantees for structural events
+**Pros**: Minimal contract change.
+**Cons**: Still wastes ~50% of budget on duplicated data. With 4KB budget and 2x
+duplication, only fits ~3 alerts — below the 5-alert target.
+**Rejected**: Insufficient capacity.
 
-**Confidence**: 30% (rejected — treats symptom, not cause)
+### Alternative 3: Index-based prioritization (SELECTED)
 
----
-
-### Alternative 2: Separate Channels (Structural + Streaming)
-
-**Approach**: Two channels — one for structural events (small buffer, blocking) and one for streaming events (large buffer, non-blocking). Consumer selects on both.
+Replace the `prioritized` field's full alert copies with positional indices into
+the already-sorted `alerts[]` array. Add `total_count` for truncation awareness.
 
 **Pros**:
-- Clean separation of concerns
-- Structural events have dedicated path
+- Eliminates 48% of payload (measured: 6146→3168 bytes for 5 alerts)
+- Fits 5-6 realistic alerts within 4KB
+- `alerts[]` is already sorted by priority, so indices are meaningful
+- No information loss — LLM reads `alerts[selected_index]` for full detail
 
 **Cons**:
-- Changes consumer interface (must select on 2 channels)
-- Existing tests and bridge goroutine need significant rework
-- More complex lifecycle management (two channels to close)
-- `BridgeEventsToA2A` and `bridgeEventsCollectSummary` both need updates
-
-**Confidence**: 60% (viable but high churn)
-
----
-
-### Alternative 3: Priority Send at Producer (Classification + Blocking for Structural)
-
-**Approach**: Classify events at the send site. Structural events use a blocking send with a bounded timeout. Streaming events retain non-blocking send with drop. Single channel, unchanged consumer interface.
-
-**Pros**:
-- Zero consumer-side changes (channel type unchanged)
-- Structural events guaranteed delivered (up to timeout)
-- Streaming events still drop gracefully under pressure
-- Minimal code change — isolated to LoggingMessageHandler
-- Drop counter enables observability without log spam
-
-**Cons**:
-- Structural send blocks the LoggingMessageHandler callback (up to 5s)
-- If channel is permanently stuck, structural events also eventually drop (with Error log)
-- Classification logic must be maintained when new event types are added
-
-**Confidence**: 90% (approved)
-
----
+- Breaking API contract change for `prioritized` field
+- LLM prompt must be updated to understand indices
 
 ## Decision
 
-**APPROVED: Alternative 3** — Priority Send at Producer
+**Accepted: Alternative 3** — Index-based prioritization.
 
-**Rationale**:
-1. **Zero consumer change**: The `<-chan InvestigationEvent` interface remains identical. `BridgeEventsToA2A`, `bridgeEventsCollectSummary`, and all tests continue working unchanged.
-2. **Guaranteed delivery for lifecycle events**: A 5s blocking timeout is far beyond any realistic channel drain latency (the bridge processes events in <1ms each). The only scenario where structural events drop is if the consumer is completely dead — which means the session is already broken.
-3. **Minimal blast radius**: The change is isolated to ~20 lines in `StartInvestigation`'s LoggingMessageHandler closure and a small helper function for classification.
+### New Response Contract
 
-**Key Insight**: The problem is asymmetric — streaming events are loss-tolerant (partial text is acceptable) while structural events are loss-intolerant (missed `complete` = stuck session). The solution should reflect this asymmetry at the send site rather than adding complexity to the receive site.
-
----
-
-## Implementation
-
-### Event Classification
-
-```go
-func IsStructuralEvent(eventType string) bool {
-    switch eventType {
-    case EventTypeComplete, EventTypeError, EventTypeCancelled, EventTypeAlignmentVerdict:
-        return true
-    default:
-        return false
-    }
+```json
+{
+  "alerts": [ ...full AlertSummary objects sorted by priority... ],
+  "count": 5,
+  "total_count": 12,
+  "truncated": true,
+  "prioritized": {
+    "selected_index": 0,
+    "tied_indices": [1],
+    "also_active_start": 2
+  }
 }
 ```
 
-### Priority Send Pattern
+### Trimming Strategy
 
-```go
-if IsStructuralEvent(evt.Type) {
-    select {
-    case eventCh <- evt:
-    case <-doneCh:
-    case <-time.After(structuralSendTimeout):
-        c.logger.Error(nil, "CRITICAL: structural event dropped after timeout",
-            "event_type", evt.Type, "rr_id", args.RRID)
-        atomic.AddInt64(&structuralDrops, 1)
-    }
-} else {
-    select {
-    case eventCh <- evt:
-    case <-doneCh:
-    default:
-        atomic.AddInt64(&streamingDrops, 1)
-    }
-}
-```
+Replace `TrimSliceToFit` usage with `trimResultToFit` that:
+1. Builds the complete `ListAlertsResult` (with sorted alerts + index-based prioritized)
+2. Marshals the full struct to check total size
+3. Removes alerts from the tail (lowest priority) until the result fits in 4KB
+4. Adjusts `count` and `prioritized` indices accordingly
 
-### Primary Implementation Files
-- `pkg/apifrontend/ka/event_priority.go` — `IsStructuralEvent()` + constants
-- `pkg/apifrontend/ka/mcp_sdk_client.go` — Updated LoggingMessageHandler in `StartInvestigation`
+### Agent Behavior
 
-### Data Flow
-1. KA emits LoggingMessage via MCP SDK
-2. `LoggingMessageHandler` callback fires, parses event
-3. `IsStructuralEvent(evt.Type)` classifies
-4. Structural → blocking send with 5s timeout
-5. Streaming → non-blocking send with `default: drop`
-6. Consumer (`BridgeEventsToA2A` / `bridgeEventsCollectSummary`) drains as before
-
-### Graceful Degradation
-- If channel is stuck for >5s: structural event is logged at Error and dropped (session is likely dead anyway)
-- If LoggingMessageHandler blocks for 5s: subsequent events queue in the MCP SDK's internal buffer (SDK handles its own backpressure)
-
----
+The LLM uses existing filters (`namespace`, `severity`, `state`) to narrow results.
+No pagination is needed. The `total_count` field tells the LLM how many alerts
+exist beyond the visible set.
 
 ## Consequences
 
 **Positive**:
-- Lifecycle events (`complete`, `error`, `alignment_verdict`) reliably reach the bridge and Console
-- Drop counter provides observability into backpressure frequency
-- Buffer increase (64→128) reduces drop frequency for streaming events too
-- No test rework required (consumer unchanged)
+- 5 realistic alerts fit within 4KB (measured: 3168 bytes)
+- Eliminates the 7-retry loop observed in #1434
+- Reduces token waste ($0.07-0.35 per incident)
+- Preserves etcd safety (no limit increase)
 
 **Negative**:
-- LoggingMessageHandler may block up to 5s per structural event if channel is full — **Mitigation**: This scenario implies the consumer is stuck, so the 5s delay is acceptable (session will timeout anyway)
-- New event types must be explicitly classified — **Mitigation**: Default to streaming (safe) with a lint rule to check new constants
+- Breaking change to `prioritized` field shape (internal API only, no external consumers)
+- Prompt update required (minimal — 3 lines)
 
-**Neutral**:
-- Channel buffer increase from 64 to 128 doubles per-session memory footprint (~8KB → ~16KB, negligible)
-- Drop counter adds one atomic.Int64 per session (8 bytes)
+## Validation
 
----
-
-## Validation Results
-
-**Confidence Assessment Progression**:
-- Initial assessment: 85% confidence
-- After alternatives analysis: 90% confidence
-- After implementation review: 90% confidence (pending test validation)
-
-**Key Validation Points**:
-- Consumer interface unchanged (verified by existing test compilation)
-- `time.After` in select is safe in callback context (no goroutine leak — timer is GC'd after select)
-- Atomic counters are lock-free and have no contention with single-writer pattern
-
----
-
-## Related Decisions
-
-- **Builds On**: DD-AF-002 (A2A v2 Native Migration) — EventBridge is the consumer
-- **Supports**: BR-AF-STREAM-001 (Priority Event Delivery)
-- **Related**: #1389 (Event channel lifecycle management) — prior work on channel close semantics
-
----
-
-## Review & Evolution
-
-**When to Revisit**:
-- If new structural event types are added (must update `IsStructuralEvent`)
-- If KA event frequency increases 10x+ (may need adaptive buffer sizing)
-- If multiple concurrent investigations per AF instance are introduced (per-session channels already isolated)
-
-**Success Metrics**:
-- Structural event drop count = 0 in production (Prometheus alert if > 0)
-- Streaming event drop rate < 5% of total events (acceptable loss)
-- Console receives all `complete`/`error` events (end-to-end validation)
+- UT: 5 alerts with 10 labels + 3 annotations each serialize under 4096 bytes
+- UT: `trimResultToFit` correctly trims and adjusts indices
+- UT: `total_count` reflects pre-truncation count
+- IT: Full HandleListAlerts → session trimmer pipeline does not replace result with stub

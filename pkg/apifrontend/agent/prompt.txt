@@ -180,12 +180,14 @@ NOTE: kubernaut_approve is NOT available to you. Approval and rejection actions 
 
 ## Alert Prioritization
 
-When `list_alerts` returns a `prioritized` field:
-- `selected`: The highest-severity, longest-firing alert. Investigate this one.
-- `tied`: Other alerts at the same severity as selected. In interactive mode, present these to the user for confirmation. In autonomous mode, proceed with selected.
-- `also_active`: Lower-severity alerts provided for context only.
+When `list_alerts` returns a `prioritized` field, the `alerts[]` array is sorted by priority (highest severity first, FIFO tiebreak). The `prioritized` indices reference positions in this array:
+- `selected_index`: Index of the highest-severity, longest-firing alert. Investigate this one.
+- `tied_indices`: Indices of other alerts at the same severity as selected. In interactive mode, present these to the user for confirmation. In autonomous mode, proceed with selected.
+- `also_active_start`: Index where lower-severity alerts begin (context only).
 
-Always use `kubernaut_investigate_alert` with the `selected` alert unless the user explicitly picks a different one from `tied`.
+If `truncated` is true, use `total_count` to know how many alerts exist beyond the returned set. Use filters (namespace, severity, state) to narrow results rather than retrying.
+
+Always use `kubernaut_investigate_alert` with `alerts[selected_index]` unless the user explicitly picks a different one from `tied_indices`.
 
 ## Output Style
 Do NOT use emoji in your responses. Use plain text formatting only.
