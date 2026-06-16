@@ -42,10 +42,20 @@ type WorkflowDetail struct {
 	Parameters  []WorkflowParameter `json:"parameters"`
 }
 
+// TargetInfo identifies a Kubernetes resource involved in workflow discovery (#1437).
+type TargetInfo struct {
+	APIVersion string `json:"api_version,omitempty"`
+	Kind       string `json:"kind"`
+	Name       string `json:"name"`
+	Namespace  string `json:"namespace"`
+}
+
 // DiscoverWorkflowsResult is the output of kubernaut_discover_workflows.
 type DiscoverWorkflowsResult struct {
-	Workflows []WorkflowDetail `json:"workflows"`
-	Count     int              `json:"count"`
+	Workflows      []WorkflowDetail `json:"workflows"`
+	Count          int              `json:"count"`
+	SearchedTarget *TargetInfo      `json:"searched_target,omitempty"`
+	SignalTarget   *TargetInfo      `json:"signal_target,omitempty"`
 }
 
 // HandleDiscoverWorkflows implements kubernaut_discover_workflows via KA MCP.
@@ -96,10 +106,27 @@ func HandleDiscoverWorkflows(ctx context.Context, mcpClient ka.MCPClient, args D
 		})
 	}
 
-	return DiscoverWorkflowsResult{
+	result := DiscoverWorkflowsResult{
 		Workflows: workflows,
 		Count:     len(workflows),
-	}, nil
+	}
+	if kaResult.SearchedTarget != nil {
+		result.SearchedTarget = &TargetInfo{
+			APIVersion: kaResult.SearchedTarget.APIVersion,
+			Kind:       kaResult.SearchedTarget.Kind,
+			Name:       kaResult.SearchedTarget.Name,
+			Namespace:  kaResult.SearchedTarget.Namespace,
+		}
+	}
+	if kaResult.SignalTarget != nil {
+		result.SignalTarget = &TargetInfo{
+			APIVersion: kaResult.SignalTarget.APIVersion,
+			Kind:       kaResult.SignalTarget.Kind,
+			Name:       kaResult.SignalTarget.Name,
+			Namespace:  kaResult.SignalTarget.Namespace,
+		}
+	}
+	return result, nil
 }
 
 // ValidateWorkflowParameters validates supplied parameters against a discovered schema.
@@ -274,10 +301,12 @@ type RCAData struct {
 }
 
 type PresentDecisionArgs struct {
-	SessionID string           `json:"session_id"`
-	Summary   string           `json:"summary"`
-	RCA       RCAData          `json:"rca"`
-	Options   []WorkflowOption `json:"options"`
+	SessionID      string           `json:"session_id"`
+	Summary        string           `json:"summary"`
+	RCA            RCAData          `json:"rca"`
+	Options        []WorkflowOption `json:"options"`
+	SearchedTarget *TargetInfo      `json:"searched_target,omitempty"`
+	SignalTarget   *TargetInfo      `json:"signal_target,omitempty"`
 }
 
 // WorkflowOption represents a remediation workflow choice.

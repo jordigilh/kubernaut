@@ -126,9 +126,19 @@ type DiscoveredWorkflow struct {
 	Parameters  []WorkflowParameterSchema `json:"parameters"`
 }
 
+// DiscoveryTarget identifies a Kubernetes resource involved in workflow discovery (#1437).
+type DiscoveryTarget struct {
+	APIVersion string `json:"api_version,omitempty"`
+	Kind       string `json:"kind"`
+	Name       string `json:"name"`
+	Namespace  string `json:"namespace"`
+}
+
 // DiscoverWorkflowsResult is the response from kubernaut_discover_workflows MCP call.
 type DiscoverWorkflowsResult struct {
-	Workflows []DiscoveredWorkflow `json:"workflows"`
+	Workflows      []DiscoveredWorkflow `json:"workflows"`
+	SearchedTarget *DiscoveryTarget     `json:"searched_target,omitempty"`
+	SignalTarget   *DiscoveryTarget     `json:"signal_target,omitempty"`
 }
 
 // investigateEnvelope matches the top-level fields of KA's InvestigateOutput.
@@ -138,11 +148,21 @@ type investigateEnvelope struct {
 	Response  string `json:"response"`
 }
 
+// kaDiscoveryTarget matches KA's DiscoveryTargetInfo JSON fields.
+type kaDiscoveryTarget struct {
+	APIVersion string `json:"api_version,omitempty"`
+	Kind       string `json:"kind"`
+	Name       string `json:"name"`
+	Namespace  string `json:"namespace"`
+}
+
 // kaWorkflowDiscoveryPayload matches the JSON inside the Response string
 // of KA's InvestigateOutput when action=discover_workflows.
 type kaWorkflowDiscoveryPayload struct {
-	Recommended  *kaDiscoveredWorkflow  `json:"recommended,omitempty"`
-	Alternatives []kaDiscoveredWorkflow `json:"alternatives,omitempty"`
+	Recommended    *kaDiscoveredWorkflow  `json:"recommended,omitempty"`
+	Alternatives   []kaDiscoveredWorkflow `json:"alternatives,omitempty"`
+	SearchedTarget *kaDiscoveryTarget     `json:"searched_target,omitempty"`
+	SignalTarget   *kaDiscoveryTarget     `json:"signal_target,omitempty"`
 }
 
 // kaDiscoveredWorkflow matches KA's internal DiscoveredWorkflow JSON fields.
@@ -186,7 +206,24 @@ func ParseDiscoverWorkflowsResponse(raw json.RawMessage) (*DiscoverWorkflowsResu
 		workflows = append(workflows, mapKAWorkflow(alt))
 	}
 
-	return &DiscoverWorkflowsResult{Workflows: workflows}, nil
+	result := &DiscoverWorkflowsResult{Workflows: workflows}
+	if payload.SearchedTarget != nil {
+		result.SearchedTarget = &DiscoveryTarget{
+			APIVersion: payload.SearchedTarget.APIVersion,
+			Kind:       payload.SearchedTarget.Kind,
+			Name:       payload.SearchedTarget.Name,
+			Namespace:  payload.SearchedTarget.Namespace,
+		}
+	}
+	if payload.SignalTarget != nil {
+		result.SignalTarget = &DiscoveryTarget{
+			APIVersion: payload.SignalTarget.APIVersion,
+			Kind:       payload.SignalTarget.Kind,
+			Name:       payload.SignalTarget.Name,
+			Namespace:  payload.SignalTarget.Namespace,
+		}
+	}
+	return result, nil
 }
 
 func mapKAWorkflow(raw kaDiscoveredWorkflow) DiscoveredWorkflow {

@@ -903,9 +903,34 @@ func (t *InvestigateTool) handleDiscoverWorkflows(ctx context.Context, input Inv
 		return InvestigateOutput{}, fmt.Errorf("workflow discovery failed: %w", err)
 	}
 
-	// Step 4: Store results on the interactive session.
+	// Step 5: Store results on the interactive session.
 	sess.RCAResult = rcaResult
 	sess.DiscoveryResult = extractDiscoveryResult(workflowResult)
+
+	// Step 6: Populate discovery target visibility fields (#1437).
+	// SignalTarget is always the original alert resource (captured before RunWorkflowDiscovery).
+	// SearchedTarget is the resource actually searched against the catalog — sourced from
+	// workflowResult.RemediationTarget (set by SyncSignalFromRCA inside the investigator).
+	// Falls back to signal when RemediationTarget is empty (e.g., fallback RCA path).
+	signalTarget := &mcpinternal.DiscoveryTargetInfo{
+		APIVersion: signal.ResourceAPIVersion,
+		Kind:       signal.ResourceKind,
+		Name:       signal.ResourceName,
+		Namespace:  signal.Namespace,
+	}
+	sess.DiscoveryResult.SignalTarget = signalTarget
+
+	rt := workflowResult.RemediationTarget
+	if rt.Kind != "" {
+		sess.DiscoveryResult.SearchedTarget = &mcpinternal.DiscoveryTargetInfo{
+			APIVersion: rt.APIVersion,
+			Kind:       rt.Kind,
+			Name:       rt.Name,
+			Namespace:  rt.Namespace,
+		}
+	} else {
+		sess.DiscoveryResult.SearchedTarget = signalTarget
+	}
 
 	// Enrich workflow names from catalog.
 	t.enrichDiscoveryNames(ctx, sess.DiscoveryResult)

@@ -253,4 +253,47 @@ var _ = Describe("Integration: discover_workflows (#1176)", Label("integration",
 			))
 		})
 	})
+
+	It("IT-AF-WP-008: full round-trip with divergent targets (#1437)", func() {
+		targetMCP := &ka.MockMCPClient{
+			DiscoverWorkflowsFn: func(_ context.Context, _ ka.DiscoverWorkflowsArgs) (*ka.DiscoverWorkflowsResult, error) {
+				return &ka.DiscoverWorkflowsResult{
+					Workflows: []ka.DiscoveredWorkflow{
+						{WorkflowID: "fix-config", Name: "Fix Config", Description: "Fix misconfigured ConfigMap"},
+					},
+					SearchedTarget: &ka.DiscoveryTarget{
+						APIVersion: "v1",
+						Kind:       "ConfigMap",
+						Name:       "worker-config",
+						Namespace:  "demo-storefront",
+					},
+					SignalTarget: &ka.DiscoveryTarget{
+						APIVersion: "apps/v1",
+						Kind:       "Deployment",
+						Name:       "worker",
+						Namespace:  "demo-storefront",
+					},
+				}, nil
+			},
+		}
+
+		result, err := tools.HandleDiscoverWorkflows(ctx, targetMCP, tools.DiscoverWorkflowsArgs{RRID: "rr-it-008"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Count).To(Equal(1))
+
+		Expect(result.SearchedTarget).NotTo(BeNil(), "IT: SearchedTarget must survive full handler round-trip")
+		Expect(result.SearchedTarget.Kind).To(Equal("ConfigMap"))
+		Expect(result.SearchedTarget.APIVersion).To(Equal("v1"))
+
+		Expect(result.SignalTarget).NotTo(BeNil(), "IT: SignalTarget must survive full handler round-trip")
+		Expect(result.SignalTarget.Kind).To(Equal("Deployment"))
+		Expect(result.SignalTarget.APIVersion).To(Equal("apps/v1"))
+
+		data, err := json.Marshal(result)
+		Expect(err).NotTo(HaveOccurred())
+		var parsed map[string]json.RawMessage
+		Expect(json.Unmarshal(data, &parsed)).To(Succeed())
+		Expect(parsed).To(HaveKey("searched_target"), "JSON output must include searched_target")
+		Expect(parsed).To(HaveKey("signal_target"), "JSON output must include signal_target")
+	})
 })

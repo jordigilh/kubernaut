@@ -253,4 +253,43 @@ var _ = Describe("kubernaut_discover_workflows", func() {
 			Expect(t).NotTo(BeNil())
 		})
 	})
+
+	Describe("HandleDiscoverWorkflows — target propagation (#1437)", func() {
+		It("UT-AF-WP-020: propagates searched_target and signal_target from KA result", func() {
+			mockMCP := &ka.MockMCPClient{
+				DiscoverWorkflowsFn: func(_ context.Context, _ ka.DiscoverWorkflowsArgs) (*ka.DiscoverWorkflowsResult, error) {
+					return &ka.DiscoverWorkflowsResult{
+						Workflows: []ka.DiscoveredWorkflow{
+							{WorkflowID: "fix-config", Name: "Fix Config", Description: "ConfigMap fix"},
+						},
+						SearchedTarget: &ka.DiscoveryTarget{
+							APIVersion: "v1",
+							Kind:       "ConfigMap",
+							Name:       "worker-config",
+							Namespace:  "demo-storefront",
+						},
+						SignalTarget: &ka.DiscoveryTarget{
+							APIVersion: "apps/v1",
+							Kind:       "Deployment",
+							Name:       "worker",
+							Namespace:  "demo-storefront",
+						},
+					}, nil
+				},
+			}
+
+			result, err := tools.HandleDiscoverWorkflows(ctx, mockMCP, tools.DiscoverWorkflowsArgs{RRID: "rr-wp-020"})
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(result.SearchedTarget).NotTo(BeNil(), "SearchedTarget must be propagated from KA")
+			Expect(result.SearchedTarget.Kind).To(Equal("ConfigMap"))
+			Expect(result.SearchedTarget.Name).To(Equal("worker-config"))
+			Expect(result.SearchedTarget.APIVersion).To(Equal("v1"))
+
+			Expect(result.SignalTarget).NotTo(BeNil(), "SignalTarget must be propagated from KA")
+			Expect(result.SignalTarget.Kind).To(Equal("Deployment"))
+			Expect(result.SignalTarget.Name).To(Equal("worker"))
+			Expect(result.SignalTarget.APIVersion).To(Equal("apps/v1"))
+		})
+	})
 })
