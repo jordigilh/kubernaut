@@ -1016,7 +1016,34 @@
               "additionalProperties": false,
               "properties": {
                 "issuerURL": { "type": "string", "default": "", "description": "OIDC issuer URL for JWT validation. When set, OIDC/JWKS auth is used. When empty, K8s TokenReview is auto-detected." },
-                "audience": { "type": "string", "default": "", "description": "Expected JWT audience claim" }
+                "audience": { "type": "string", "default": "", "description": "Expected JWT audience claim" },
+                "jwtProviders": {
+                  "type": "array",
+                  "description": "Multi-provider JWT configuration (#1436). When set, takes precedence over issuerURL/audience.",
+                  "items": {
+                    "type": "object",
+                    "required": ["name", "issuerURL", "audiences"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "name": { "type": "string", "description": "Unique provider name" },
+                      "issuerURL": { "type": "string", "description": "OIDC issuer URL (must match JWT iss claim)" },
+                      "jwksURL": { "type": "string", "description": "JWKS endpoint URL (optional, defaults to issuerURL)" },
+                      "audiences": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Expected JWT audience claims"
+                      },
+                      "claimMappings": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "username": { "type": "string", "description": "Claim path or CEL expression for username" },
+                          "groups": { "type": "string", "description": "Claim path or CEL expression for groups" }
+                        }
+                      }
+                    }
+                  }
+                }
               }
             },
             "rbac": {
