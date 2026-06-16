@@ -365,6 +365,149 @@ var _ = Describe("Auth Middleware Integration (auth/)", func() {
 		})
 	})
 
+	Describe("Multi-issuer JWT validation (#1436)", func() {
+		var (
+			kcKeyPair    *testKeyPair
+			spireKeyPair *testKeyPair
+			kcJWKS       *httptest.Server
+			spireJWKS    *httptest.Server
+			multiValidator *auth.JWTValidator
+		)
+
+		BeforeEach(func() {
+			kcKeyPair = newTestKeyPair("kc-key-1")
+			spireKeyPair = newTestKeyPair("spire-key-1")
+			kcJWKS = newJWKSServer(kcKeyPair.jwks())
+			spireJWKS = newJWKSServer(spireKeyPair.jwks())
+
+			multiCfg := auth.Config{
+				JWT: []auth.ProviderConfig{
+					{
+						Issuer: auth.IssuerConfig{
+							URL:       kcJWKS.URL,
+							JWKSURL:   kcJWKS.URL,
+							Audiences: []string{"kubernaut-af"},
+						},
+						ClaimMappings: auth.ClaimMappings{
+							Username: "preferred_username",
+							Groups:   "groups",
+						},
+					},
+					{
+						Issuer: auth.IssuerConfig{
+							URL:       spireJWKS.URL,
+							JWKSURL:   spireJWKS.URL,
+							Audiences: []string{"spiffe://trust-domain/ns/kubernaut/sa/af"},
+						},
+					},
+				},
+				AllowInsecureIssuers: true,
+			}
+
+			var err error
+			multiValidator, err = auth.NewJWTValidator(multiCfg)
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		AfterEach(func() {
+			if kcJWKS != nil {
+				kcJWKS.Close()
+			}
+			if spireJWKS != nil {
+				spireJWKS.Close()
+			}
+		})
+
+		It("IT-AF-1436-001: JWT from provider A (keycloak) accepted with correct identity", func() {
+			var captured *auth.UserIdentity
+			mw := auth.MiddlewareWithConfig(auth.MiddlewareConfig{
+				Validator: multiValidator,
+				Logger:    logf.Log.WithName("it-1436-multi"),
+				Auditor:   auditRecorder,
+			})
+			srv := httptest.NewServer(mw(identityCapture(&captured)))
+			defer srv.Close()
+
+			token := kcKeyPair.signToken(standardClaims(
+				kcJWKS.URL, "kc-user", []string{"kubernaut-af"}, time.Now().Add(1*time.Hour),
+			))
+
+			req, err := http.NewRequest(http.MethodGet, srv.URL, nil)
+			Expect(err).NotTo(HaveOccurred())
+			req.Header.Set("Authorization", "Bearer "+token)
+
+			resp, err := http.DefaultClient.Do(req)
+			Expect(err).NotTo(HaveOccurred())
+			defer resp.Body.Close()
+
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			Expect(captured).NotTo(BeNil())
+			Expect(captured.Username).To(Equal("kc-user"))
+			Expect(captured.Issuer).To(Equal(kcJWKS.URL))
+		})
+
+		It("IT-AF-1436-002: JWT from provider B (SPIRE-style) accepted with SPIRE identity", func() {
+			var captured *auth.UserIdentity
+			mw := auth.MiddlewareWithConfig(auth.MiddlewareConfig{
+				Validator: multiValidator,
+				Logger:    logf.Log.WithName("it-1436-spire"),
+				Auditor:   auditRecorder,
+			})
+			srv := httptest.NewServer(mw(identityCapture(&captured)))
+			defer srv.Close()
+
+			token := spireKeyPair.signToken(standardClaims(
+				spireJWKS.URL, "spiffe://trust-domain/ns/kubernaut/sa/agent",
+				[]string{"spiffe://trust-domain/ns/kubernaut/sa/af"},
+				time.Now().Add(1*time.Hour),
+			))
+
+			req, err := http.NewRequest(http.MethodGet, srv.URL, nil)
+			Expect(err).NotTo(HaveOccurred())
+			req.Header.Set("Authorization", "Bearer "+token)
+
+			resp, err := http.DefaultClient.Do(req)
+			Expect(err).NotTo(HaveOccurred())
+			defer resp.Body.Close()
+
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			Expect(captured).NotTo(BeNil())
+			Expect(captured.Issuer).To(Equal(spireJWKS.URL))
+		})
+
+		It("IT-AF-1436-003: JWT from unknown third issuer rejected with 401", func() {
+			unknownKeyPair := newTestKeyPair("unknown-key-1")
+			unknownJWKS := newJWKSServer(unknownKeyPair.jwks())
+			defer unknownJWKS.Close()
+
+			var captured *auth.UserIdentity
+			mw := auth.MiddlewareWithConfig(auth.MiddlewareConfig{
+				Validator: multiValidator,
+				Logger:    logf.Log.WithName("it-1436-unknown"),
+			})
+			srv := httptest.NewServer(mw(identityCapture(&captured)))
+			defer srv.Close()
+
+			token := unknownKeyPair.signToken(standardClaims(
+				unknownJWKS.URL, "unknown-user",
+				[]string{"kubernaut-af"},
+				time.Now().Add(1*time.Hour),
+			))
+
+			req, err := http.NewRequest(http.MethodGet, srv.URL, nil)
+			Expect(err).NotTo(HaveOccurred())
+			req.Header.Set("Authorization", "Bearer "+token)
+
+			resp, err := http.DefaultClient.Do(req)
+			Expect(err).NotTo(HaveOccurred())
+			defer resp.Body.Close()
+
+			Expect(resp.StatusCode).To(Equal(http.StatusUnauthorized),
+				"unknown issuer must be rejected")
+			Expect(captured).To(BeNil())
+		})
+	})
+
 	Describe("Auth auto-detect mode (#1309)", func() {
 		It("IT-AF-1309-001: OIDC mode rejects envtest SA token", func() {
 			oidcCfg := auth.Config{

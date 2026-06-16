@@ -26,8 +26,8 @@ import (
 // ToolCallOverride specifies a tool call that the mock-LLM should return
 // for a given scenario instead of following the normal DAG path.
 type ToolCallOverride struct {
-	Name      string            `yaml:"name"`
-	Arguments map[string]string `yaml:"arguments,omitempty"`
+	Name      string                 `yaml:"name"`
+	Arguments map[string]interface{} `yaml:"arguments,omitempty"`
 }
 
 // ScenarioOverride defines optional per-scenario overrides from a YAML config file.
@@ -47,11 +47,13 @@ type ScenarioOverride struct {
 // instead of the full conversation history. This prevents prior-turn keywords
 // from shadowing later-turn keywords in multi-turn ADK agent conversations.
 type KeywordScenarioOverride struct {
-	Name           string           `yaml:"name"`
-	Keywords       []string         `yaml:"keywords"`
-	ToolCall       ToolCallOverride `yaml:"tool_call"`
-	MatchLastOnly  bool             `yaml:"match_last_only,omitempty"`
-	RepeatToolCall bool             `yaml:"repeat_tool_call,omitempty"`
+	Name           string            `yaml:"name"`
+	Keywords       []string          `yaml:"keywords"`
+	ToolCall       ToolCallOverride  `yaml:"tool_call"`
+	MatchLastOnly  bool              `yaml:"match_last_only,omitempty"`
+	RepeatToolCall bool              `yaml:"repeat_tool_call,omitempty"`
+	ThoughtText    string            `yaml:"thought_text,omitempty"`
+	NextToolCall   *ToolCallOverride `yaml:"next_tool_call,omitempty"`
 }
 
 // Overrides holds the parsed YAML override configuration.

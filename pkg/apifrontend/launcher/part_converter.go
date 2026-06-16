@@ -2,6 +2,7 @@ package launcher
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -41,11 +42,26 @@ var toolStatusMessages = map[string]string{
 // summary from FunctionResponse.Response. Tools not listed here have their
 // responses dropped (the LLM's subsequent reasoning covers the content).
 var keyToolSummarizers = map[string]func(map[string]any) string{
-	"kubernaut_investigate":          summarizeInvestigation,
-	"kubernaut_discover_workflows":   summarizeDiscoverWorkflows,
-	"kubernaut_select_workflow":      summarizeSelectWorkflow,
-	"kubernaut_watch":                summarizeWatch,
-	"kubernaut_remediate":            summarizeCreateRR,
+	"kubernaut_investigate":        summarizeInvestigation,
+	"kubernaut_discover_workflows": summarizeDiscoverWorkflows,
+	"kubernaut_select_workflow":    summarizeSelectWorkflow,
+	"kubernaut_watch":              summarizeWatch,
+	"kubernaut_remediate":          summarizeCreateRR,
+	"kubernaut_present_decision":   summarizePresentDecision,
+}
+
+// decisionMetaTools lists tools whose FunctionResponse should be emitted
+// with MetaTypeDecision metadata instead of the default MetaTypeStatus.
+// This allows Console/Kagenti to render rich structured workflow cards.
+var decisionMetaTools = map[string]bool{
+	"kubernaut_present_decision": true,
+}
+
+// outputMetaTools lists tools whose FunctionResponse should be emitted
+// with MetaTypeOutput metadata for structured rendering (e.g. execution
+// progress steps in the Console).
+var outputMetaTools = map[string]bool{
+	"kubernaut_watch": true,
 }
 
 // buildPartConverter returns a GenAIPartConverter that uses a hybrid approach:
@@ -240,13 +256,31 @@ func summarizeCreateRR(resp map[string]any) string {
 	return "Remediation request created."
 }
 
+// summarizePresentDecision outputs a structured JSON payload containing the
+// workflow options for rich card rendering in Console/Kagenti. The FunctionResponse
+// contains {"presented":true,"message":"..."} but we reconstruct structured data
+// from the original tool call args that are captured in the response context.
+// Fallback: extract option names from the formatted message string.
+func summarizePresentDecision(resp map[string]any) string {
+	msg, _ := resp["message"].(string)
+	if msg == "" {
+		return `{"options":[]}`
+	}
+	return msg
+}
+
 // buildStreamingPartConverter returns a GenAIPartConverter for streaming mode.
 // Same hybrid approach as buildPartConverter: status-like parts go through the
 // EventBridge as TaskStatusUpdateEvent, LLM text goes as artifact TextParts.
 // kubernaut_investigate FunctionResponse parts are suppressed since the
 // EventBridge already delivered the reasoning progressively.
+//
+// Event-aware text routing (#1410): intermediate text (partial chunks or
+// preamble before tool calls) is routed to reasoning (ThinkingPanel) instead
+// of becoming a user-facing artifact. Only final definitive text without
+// FunctionCalls becomes an artifact.
 func buildStreamingPartConverter() adka2a.GenAIPartConverter {
-	return func(ctx context.Context, _ *session.Event, part *genai.Part) (a2a.Part, error) {
+	return func(ctx context.Context, event *session.Event, part *genai.Part) (a2a.Part, error) {
 		if part == nil {
 			return nil, nil
 		}
@@ -255,40 +289,190 @@ func buildStreamingPartConverter() adka2a.GenAIPartConverter {
 			return nil, nil
 		}
 
+		if part.FunctionResponse != nil && part.FunctionResponse.Name == "kubernaut_present_decision" {
+			return nil, nil
+		}
+
 		bridge := EventBridgeFromContext(ctx)
 		if bridge == nil {
 			return convertPartToText(part), nil
+		}
+
+		if part.FunctionResponse != nil && outputMetaTools[part.FunctionResponse.Name] {
+			emitStructuredOutput(ctx, bridge, part.FunctionResponse)
+			return nil, nil
+		}
+
+		if isPlainText(part) && shouldRouteTextToReasoning(event) {
+			_ = bridge.EmitReasoning(ctx, ensureTrailingParagraphBreak(part.Text))
+			return nil, nil
 		}
 
 		return emitPartViaBridge(ctx, bridge, part), nil
 	}
 }
 
-// emitPartViaBridge routes status-like parts (FunctionCall, FunctionResponse,
+// isPlainText returns true when the part contains only text (not a function
+// call, response, or thought).
+func isPlainText(part *genai.Part) bool {
+	return part.Text != "" && part.FunctionCall == nil && part.FunctionResponse == nil && !part.Thought
+}
+
+// shouldRouteTextToReasoning determines whether plain text should go to the
+// reasoning channel (ThinkingPanel) instead of becoming a user-facing artifact.
+// Text is reasoning when:
+//   - The event is partial (streaming intermediate chunk), OR
+//   - The event contains a FunctionCall alongside the text (preamble narration)
+func shouldRouteTextToReasoning(event *session.Event) bool {
+	if event == nil {
+		return false
+	}
+	if event.Partial {
+		return true
+	}
+	return eventHasFunctionCall(event)
+}
+
+// eventHasFunctionCall checks whether the event's content contains any
+// FunctionCall part (indicating the text is preamble to a tool invocation).
+func eventHasFunctionCall(event *session.Event) bool {
+	if event.Content == nil {
+		return false
+	}
+	for _, p := range event.Content.Parts {
+		if p != nil && p.FunctionCall != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// emitPartViaBridge routes intermediate parts (FunctionCall, FunctionResponse,
 // Thought) through the EventBridge as TaskStatusUpdateEvent and returns nil.
-// LLM text output is returned as a TextPart so the ADK executor wraps it in
-// a TaskArtifactUpdateEvent with the lastChunk lifecycle that Kagenti renders
-// as the persistent chat response.
+// Non-decision FunctionCall/FunctionResponse parts emit as reasoning (for the
+// ThinkingPanel). Decision-related responses use their respective metadata types.
+// LLM text output is returned as a TextPart (emoji-stripped) so the ADK executor
+// wraps it in a TaskArtifactUpdateEvent with the lastChunk lifecycle.
 func emitPartViaBridge(ctx context.Context, bridge *EventBridge, part *genai.Part) a2a.Part {
 	switch {
 	case part.FunctionCall != nil:
+		if part.FunctionCall.Name == "kubernaut_present_decision" {
+			emitDecisionEvent(ctx, bridge, part.FunctionCall)
+			return nil
+		}
 		text := convertFunctionCall(part.FunctionCall)
 		if text != nil {
-			_ = bridge.EmitStatus(ctx, text.(a2a.TextPart).Text)
+			_ = bridge.EmitReasoning(ctx, text.(a2a.TextPart).Text)
 		}
 		return nil
 	case part.FunctionResponse != nil:
 		text := convertFunctionResponse(part.FunctionResponse)
 		if text != nil {
-			_ = bridge.EmitStatus(ctx, text.(a2a.TextPart).Text)
+			if decisionMetaTools[part.FunctionResponse.Name] {
+				_ = bridge.EmitStructuredMeta(ctx, text.(a2a.TextPart).Text, map[string]any{"type": MetaTypeDecision})
+			} else if outputMetaTools[part.FunctionResponse.Name] {
+				_ = bridge.EmitStatus(ctx, text.(a2a.TextPart).Text)
+			} else {
+				_ = bridge.EmitReasoning(ctx, text.(a2a.TextPart).Text)
+			}
 		}
 		return nil
 	case part.Thought:
-		_ = bridge.EmitStatus(ctx, "Analyzing...\n\n")
+		_ = bridge.EmitReasoning(ctx, ensureTrailingParagraphBreak(part.Text))
 		return nil
 	default:
-		return a2a.TextPart{Text: ensureTrailingParagraphBreak(part.Text)}
+		return a2a.TextPart{Text: stripEmoji(ensureTrailingParagraphBreak(part.Text))}
 	}
+}
+
+// emitDecisionEvent emits the kubernaut_present_decision FunctionCall args
+// as a TaskArtifactUpdateEvent with DataPart (structured JSON) + TextPart
+// (human-readable fallback). Compliant with A2A v1.0 artifact conventions.
+// Falls back to EmitStructuredMeta on schema validation failure for graceful
+// degradation (SI-17).
+func emitDecisionEvent(ctx context.Context, bridge *EventBridge, fc *genai.FunctionCall) {
+	data := fc.Args
+	if data == nil {
+		data = map[string]any{}
+	}
+
+	summary, _ := data["summary"].(string)
+	if summary == "" {
+		summary = "Remediation decision"
+	}
+	textFallback := fmt.Sprintf("Decision: %s\n\n", summary)
+
+	meta := map[string]any{
+		"type":           MetaTypeDecision,
+		"schema":         "investigation_summary",
+		"schema_version": "1.0",
+	}
+
+	_ = bridge.EmitArtifact(ctx, data, textFallback, meta)
+}
+
+// emitStructuredOutput emits the FunctionResponse from kubernaut_watch as a
+// structured output event so the Console can render execution progress steps.
+func emitStructuredOutput(ctx context.Context, bridge *EventBridge, fr *genai.FunctionResponse) {
+	if fr.Response == nil {
+		return
+	}
+
+	type outputStep struct {
+		ID    string `json:"id"`
+		Label string `json:"label"`
+		State string `json:"state"`
+	}
+
+	type outputPayload struct {
+		Steps     []outputStep `json:"steps"`
+		Completed bool         `json:"completed"`
+	}
+
+	raw, err := json.Marshal(fr.Response)
+	if err != nil {
+		return
+	}
+
+	var result struct {
+		Events []struct {
+			Resource string `json:"resource"`
+			Phase    string `json:"phase"`
+			Message  string `json:"message"`
+		} `json:"events"`
+		Status  string `json:"status"`
+		Outcome string `json:"outcome"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return
+	}
+
+	steps := make([]outputStep, 0, len(result.Events))
+	for i, evt := range result.Events {
+		state := "done"
+		if i == len(result.Events)-1 && result.Status != "completed" {
+			state = "running"
+		}
+		label := evt.Phase
+		if evt.Message != "" {
+			label = evt.Message
+		}
+		steps = append(steps, outputStep{
+			ID:    fmt.Sprintf("s%d", i+1),
+			Label: label,
+			State: state,
+		})
+	}
+
+	completed := result.Status == "completed"
+	payload := outputPayload{Steps: steps, Completed: completed}
+
+	out, err := json.Marshal(payload)
+	if err != nil {
+		return
+	}
+
+	_ = bridge.EmitStatusWithMeta(ctx, string(out), map[string]any{"type": MetaTypeOutput})
 }
 
 // convertPartToText is the fallback path when no EventBridge is available.

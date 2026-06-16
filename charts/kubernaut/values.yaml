@@ -599,8 +599,22 @@ apifrontend:
       cacheTTLSeconds: 30
       llmConfidence: 0.7
     auth:
+      # Simple single-provider (dev/test convenience, backward compat)
       issuerURL: ""
       audience: ""
+      # Multi-provider JWT configuration (production, #1436)
+      # jwtProviders:
+      #   - name: "keycloak"
+      #     issuerURL: "https://keycloak.example.com/realms/kagenti"
+      #     jwksURL: "http://keycloak-service.keycloak:8080/realms/kagenti/protocol/openid-connect/certs"
+      #     audiences: ["kubernaut-apifrontend"]
+      #     claimMappings:
+      #       username: "preferred_username"
+      #       groups: "groups"
+      #   - name: "spire"
+      #     issuerURL: "https://oidc-discovery-provider.example.com"
+      #     jwksURL: "https://spire-spiffe-oidc-discovery-provider.zero-trust-workload-identity-manager.svc:443/keys"
+      #     audiences: ["spiffe://trust-domain/ns/kubernaut-system/sa/apifrontend"]
     rbac:
       sarCacheTTL: "30s"
       personas:

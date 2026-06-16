@@ -194,12 +194,15 @@ type DetectedLabels struct {
 	// ========================================
 	// True if the workload is a VirtualMachine, VirtualMachineInstance,
 	// VirtualMachineInstanceMigration, or DataVolume (owner chain walk).
+	// +optional
 	VirtualMachine bool `json:"virtualMachine"`
 	// True if the VirtualMachine has evictionStrategy=LiveMigrate.
 	// Only evaluated when VirtualMachine is true.
+	// +optional
 	LiveMigratable bool `json:"liveMigratable"`
 	// True if PVCs in the namespace carry cdi.kubevirt.io/storage.import.* annotations.
 	// Only evaluated when VirtualMachine is true.
+	// +optional
 	CDIManaged bool `json:"cdiManaged"`
 	// Storage provisioner backing PVCs in the namespace.
 	// Only evaluated when VirtualMachine is true.

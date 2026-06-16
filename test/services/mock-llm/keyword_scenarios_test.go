@@ -109,7 +109,7 @@ scenarios:
 						Keywords: []string{"start investigation"},
 						ToolCall: config.ToolCallOverride{
 							Name:      "kubernaut_investigate",
-							Arguments: map[string]string{"namespace": "default"},
+							Arguments: map[string]interface{}{"namespace": "default"},
 						},
 					},
 				},

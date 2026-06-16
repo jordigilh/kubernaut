@@ -456,6 +456,54 @@ func buildEventData(event *AuditEvent) (ogenclient.AuditEventRequestEventData, b
 		}
 		return ogenclient.NewShadowLLMResponsePayloadAuditEventRequestEventData(payload), true
 
+	case EventTypeRateLimitDenied:
+		payload := ogenclient.AIAgentRatelimitDeniedPayload{
+			EventType: ogenclient.AIAgentRatelimitDeniedPayloadEventTypeAiagentRatelimitDenied,
+			EventID:   dataString(event.Data, "event_id"),
+		}
+		if v := dataString(event.Data, "source_ip"); v != "" {
+			payload.SourceIP.SetTo(v)
+		}
+		if v := dataString(event.Data, "path"); v != "" {
+			payload.Path.SetTo(v)
+		}
+		if v := dataString(event.Data, "method"); v != "" {
+			payload.Method.SetTo(v)
+		}
+		return ogenclient.NewAIAgentRatelimitDeniedPayloadAuditEventRequestEventData(payload), true
+
+	case EventTypeAuthFailure:
+		payload := ogenclient.AIAgentAuthFailurePayload{
+			EventType: ogenclient.AIAgentAuthFailurePayloadEventTypeAiagentAuthFailure,
+			EventID:   dataString(event.Data, "event_id"),
+		}
+		if v := dataString(event.Data, "source_ip"); v != "" {
+			payload.SourceIP.SetTo(v)
+		}
+		if v := dataString(event.Data, "path"); v != "" {
+			payload.Path.SetTo(v)
+		}
+		if v := dataString(event.Data, "method"); v != "" {
+			payload.Method.SetTo(v)
+		}
+		return ogenclient.NewAIAgentAuthFailurePayloadAuditEventRequestEventData(payload), true
+
+	case EventTypeAuthDenied:
+		payload := ogenclient.AIAgentAuthDeniedPayload{
+			EventType: ogenclient.AIAgentAuthDeniedPayloadEventTypeAiagentAuthDenied,
+			EventID:   dataString(event.Data, "event_id"),
+		}
+		if v := dataString(event.Data, "source_ip"); v != "" {
+			payload.SourceIP.SetTo(v)
+		}
+		if v := dataString(event.Data, "path"); v != "" {
+			payload.Path.SetTo(v)
+		}
+		if v := dataString(event.Data, "method"); v != "" {
+			payload.Method.SetTo(v)
+		}
+		return ogenclient.NewAIAgentAuthDeniedPayloadAuditEventRequestEventData(payload), true
+
 	default:
 		return ogenclient.AuditEventRequestEventData{}, false
 	}

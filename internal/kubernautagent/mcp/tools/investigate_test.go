@@ -18,6 +18,7 @@ package tools_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"sync"
 	"sync/atomic"
@@ -78,10 +79,11 @@ func (m *mockSessionManager) getReleased() (string, string) {
 }
 
 type mockInvestigatorRunner struct {
-	response    string
-	err         error
-	rcaResult   *katypes.InvestigationResult
-	capturedCtx context.Context
+	response               string
+	err                    error
+	rcaResult              *katypes.InvestigationResult
+	workflowDiscoveryResult *katypes.InvestigationResult
+	capturedCtx            context.Context
 }
 
 func (m *mockInvestigatorRunner) RunInteractiveTurn(ctx context.Context, _ []mcptools.LLMMessage, _ string) (string, error) {
@@ -104,6 +106,9 @@ func (m *mockInvestigatorRunner) RunRCAExtraction(_ context.Context, _ []mcptool
 }
 
 func (m *mockInvestigatorRunner) RunWorkflowDiscovery(_ context.Context, _ katypes.SignalContext, _ *katypes.InvestigationResult, _ *prompt.EnrichmentData, _ string) (*katypes.InvestigationResult, error) {
+	if m.workflowDiscoveryResult != nil {
+		return m.workflowDiscoveryResult, nil
+	}
 	return &katypes.InvestigationResult{RCASummary: "mock RCA", WorkflowID: "mock-workflow", Confidence: 0.85}, nil
 }
 
@@ -644,7 +649,10 @@ var _ = Describe("kubernaut_investigate — discover_workflows action", func() {
 			resolver := &mockSignalResolver{}
 
 			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{},
-				mcptools.WithSignalContextResolver(resolver))
+				mcptools.WithSignalContextResolver(resolver),
+				mcptools.WithWorkflowCatalog(&mockWorkflowCatalog{
+					workflow: &mcptools.CatalogWorkflow{WorkflowID: "mock-workflow", WorkflowName: "Mock Workflow"},
+				}))
 			output, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
 				RRID:   "rr-dw-001",
 				Action: mcptools.ActionDiscoverWorkflows,
@@ -725,7 +733,10 @@ var _ = Describe("kubernaut_investigate — discover_workflows action", func() {
 			}
 
 			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{},
-				mcptools.WithSignalContextResolver(resolver))
+				mcptools.WithSignalContextResolver(resolver),
+				mcptools.WithWorkflowCatalog(&mockWorkflowCatalog{
+					workflow: &mcptools.CatalogWorkflow{WorkflowID: "mock-workflow", WorkflowName: "Mock Workflow"},
+				}))
 			output, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
 				RRID:   "rr-dw-011",
 				Action: mcptools.ActionDiscoverWorkflows,
@@ -760,7 +771,10 @@ var _ = Describe("kubernaut_investigate — discover_workflows additional scenar
 			resolver := &mockSignalResolver{}
 
 			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{},
-				mcptools.WithSignalContextResolver(resolver))
+				mcptools.WithSignalContextResolver(resolver),
+				mcptools.WithWorkflowCatalog(&mockWorkflowCatalog{
+					workflow: &mcptools.CatalogWorkflow{WorkflowID: "mock-workflow", WorkflowName: "Mock Workflow"},
+				}))
 			output, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
 				RRID:   "rr-dw-004",
 				Action: mcptools.ActionDiscoverWorkflows,
@@ -893,6 +907,360 @@ var _ = Describe("kubernaut_investigate — DiscoveryResult invalidation on mess
 			Expect(signal.ResourceKind).To(Equal("Deployment"))
 			Expect(signal.IncidentID).To(Equal("inc-f9-001"))
 			Expect(signal.Namespace).To(Equal("production"))
+		})
+	})
+})
+
+var _ = Describe("kubernaut_investigate — catalog name enrichment", func() {
+	Describe("UT-KA-DW-010: discover_workflows enriches Name from WorkflowCatalog", func() {
+		It("should populate Name on DiscoveredWorkflow from catalog lookup", func() {
+			sess := &mcpinternal.InteractiveSession{
+				SessionID:     "sess-dw-010",
+				CorrelationID: "rr-dw-010",
+				ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+			}
+			sessionMgr := &mockSessionManager{
+				isActive:        true,
+				getDriverResult: sess,
+			}
+			runner := &mockInvestigatorRunner{}
+			recon := &mockContextReconstructor{turns: []mcpinternal.ConversationTurn{
+				{Role: "user", Content: "my pod is crashing"},
+				{Role: "assistant", Content: "I see OOM errors"},
+			}}
+			resolver := &mockSignalResolver{}
+			catalog := &mockWorkflowCatalog{
+				workflow: &mcptools.CatalogWorkflow{WorkflowID: "mock-workflow", WorkflowName: "Increase Memory Limit"},
+			}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{},
+				mcptools.WithSignalContextResolver(resolver),
+				mcptools.WithWorkflowCatalog(catalog))
+			output, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-dw-010",
+				Action: mcptools.ActionDiscoverWorkflows,
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output.Status).To(Equal("workflows_discovered"))
+
+			Expect(sess.DiscoveryResult).NotTo(BeNil())
+			Expect(sess.DiscoveryResult.Recommended).NotTo(BeNil())
+			Expect(sess.DiscoveryResult.Recommended.Name).To(Equal("Increase Memory Limit"))
+		})
+	})
+
+	Describe("UT-KA-DW-011: discover_workflows fails closed when catalog is nil", func() {
+		It("should return an error if WorkflowCatalog is not wired", func() {
+			sess := &mcpinternal.InteractiveSession{
+				SessionID:     "sess-dw-011",
+				CorrelationID: "rr-dw-011",
+				ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+			}
+			sessionMgr := &mockSessionManager{
+				isActive:        true,
+				getDriverResult: sess,
+			}
+			runner := &mockInvestigatorRunner{}
+			recon := &mockContextReconstructor{turns: []mcpinternal.ConversationTurn{}}
+			resolver := &mockSignalResolver{}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{},
+				mcptools.WithSignalContextResolver(resolver))
+			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-dw-011",
+				Action: mcptools.ActionDiscoverWorkflows,
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("workflow catalog"))
+		})
+	})
+})
+
+type storedRCAAutoMgr struct {
+	mcptools.NopAutonomousManager
+	rca *katypes.InvestigationResult
+}
+
+func (m *storedRCAAutoMgr) GetLatestRCAResultByRemediationID(_ string) (*katypes.InvestigationResult, bool) {
+	if m.rca != nil {
+		return m.rca, true
+	}
+	return nil, false
+}
+
+var _ = Describe("kubernaut_investigate — discover_workflows takeover resilience", func() {
+
+	Describe("UT-KA-DW-012: discover_workflows uses stored RCA from cancelled investigation [SC-24, IR-4(1)]", func() {
+		It("should find stored RCA via GetLatestRCAResultByRemediationID and return workflows_discovered", func() {
+			sess := &mcpinternal.InteractiveSession{
+				SessionID:     "sess-dw-012",
+				CorrelationID: "rr-dw-012",
+				ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+			}
+			sessionMgr := &mockSessionManager{
+				isActive:        true,
+				getDriverResult: sess,
+			}
+			runner := &mockInvestigatorRunner{}
+			recon := &mockContextReconstructor{turns: nil}
+
+			storedRCA := &katypes.InvestigationResult{
+				RCASummary: "OOMKilled on api-server",
+				Confidence: 0.9,
+				WorkflowID: "mock-workflow",
+				RemediationTarget: katypes.RemediationTarget{
+					Kind: "Deployment", Name: "api-server", Namespace: "production",
+				},
+			}
+			autoMgr := &storedRCAAutoMgr{rca: storedRCA}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, autoMgr,
+				mcptools.WithSignalContextResolver(&mockSignalResolver{}),
+				mcptools.WithWorkflowCatalog(&mockWorkflowCatalog{
+					workflow: &mcptools.CatalogWorkflow{WorkflowID: "mock-workflow", WorkflowName: "Restart Pod"},
+				}))
+
+			output, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-dw-012",
+				Action: mcptools.ActionDiscoverWorkflows,
+			}, mcpinternal.UserInfo{Username: "alice"})
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output.Status).To(Equal("workflows_discovered"),
+				"IR-4(1): discover_workflows must succeed using stored RCA from cancelled investigation")
+			Expect(sess.RCAResult).NotTo(BeNil(), "SC-24: session must have authoritative RCA")
+			Expect(sess.RCAResult.RCASummary).To(Equal("OOMKilled on api-server"))
+			Expect(sess.DiscoveryResult).NotTo(BeNil())
+		})
+	})
+})
+
+var _ = Describe("Issue #1437: discover_workflows target visibility", func() {
+
+	Describe("UT-KA-DW-013: Cross-resource RCA populates divergent searched_target and signal_target", func() {
+		It("should set searched_target=ConfigMap and signal_target=Deployment in response JSON", func() {
+			sess := &mcpinternal.InteractiveSession{
+				SessionID:     "sess-dw-013",
+				CorrelationID: "rr-dw-013",
+				ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+			}
+			sessionMgr := &mockSessionManager{
+				isActive:        true,
+				getDriverResult: sess,
+			}
+
+			storedRCA := &katypes.InvestigationResult{
+				RCASummary: "misconfigured ConfigMap causes Deployment failure",
+				Confidence: 0.9,
+				RemediationTarget: katypes.RemediationTarget{
+					APIVersion: "v1",
+					Kind:       "ConfigMap",
+					Name:       "worker-config",
+					Namespace:  "demo-storefront",
+				},
+			}
+			autoMgr := &storedRCAAutoMgr{rca: storedRCA}
+
+			runner := &mockInvestigatorRunner{
+				workflowDiscoveryResult: &katypes.InvestigationResult{
+					RCASummary: "misconfigured ConfigMap causes Deployment failure",
+					WorkflowID: "mock-workflow",
+					Confidence: 0.85,
+					RemediationTarget: katypes.RemediationTarget{
+						APIVersion: "v1",
+						Kind:       "ConfigMap",
+						Name:       "worker-config",
+						Namespace:  "demo-storefront",
+					},
+				},
+			}
+			recon := &mockContextReconstructor{turns: nil}
+			resolver := &mockSignalResolver{
+				signal: &katypes.SignalContext{
+					Severity:           "critical",
+					ResourceKind:       "Deployment",
+					ResourceAPIVersion: "apps/v1",
+					ResourceName:       "worker",
+					Namespace:          "demo-storefront",
+				},
+			}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, autoMgr,
+				mcptools.WithSignalContextResolver(resolver),
+				mcptools.WithWorkflowCatalog(&mockWorkflowCatalog{
+					workflow: &mcptools.CatalogWorkflow{WorkflowID: "mock-workflow", WorkflowName: "Fix Config"},
+				}))
+
+			output, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-dw-013",
+				Action: mcptools.ActionDiscoverWorkflows,
+			}, mcpinternal.UserInfo{Username: "alice"})
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output.Status).To(Equal("workflows_discovered"))
+
+			var parsed map[string]json.RawMessage
+			Expect(json.Unmarshal([]byte(output.Response), &parsed)).To(Succeed())
+
+			Expect(parsed).To(HaveKey("searched_target"), "response must include searched_target")
+			Expect(parsed).To(HaveKey("signal_target"), "response must include signal_target")
+
+			var searchedTarget map[string]string
+			Expect(json.Unmarshal(parsed["searched_target"], &searchedTarget)).To(Succeed())
+			Expect(searchedTarget["kind"]).To(Equal("ConfigMap"))
+			Expect(searchedTarget["name"]).To(Equal("worker-config"))
+			Expect(searchedTarget["namespace"]).To(Equal("demo-storefront"))
+			Expect(searchedTarget["api_version"]).To(Equal("v1"))
+
+			var signalTarget map[string]string
+			Expect(json.Unmarshal(parsed["signal_target"], &signalTarget)).To(Succeed())
+			Expect(signalTarget["kind"]).To(Equal("Deployment"))
+			Expect(signalTarget["name"]).To(Equal("worker"))
+			Expect(signalTarget["namespace"]).To(Equal("demo-storefront"))
+			Expect(signalTarget["api_version"]).To(Equal("apps/v1"))
+		})
+	})
+
+	Describe("UT-KA-DW-014: Same-resource RCA populates identical searched_target and signal_target", func() {
+		It("should set both targets to Deployment when RCA does not redirect", func() {
+			sess := &mcpinternal.InteractiveSession{
+				SessionID:     "sess-dw-014",
+				CorrelationID: "rr-dw-014",
+				ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+			}
+			sessionMgr := &mockSessionManager{
+				isActive:        true,
+				getDriverResult: sess,
+			}
+
+			storedRCA := &katypes.InvestigationResult{
+				RCASummary: "OOMKilled on worker Deployment",
+				Confidence: 0.9,
+				RemediationTarget: katypes.RemediationTarget{
+					APIVersion: "apps/v1",
+					Kind:       "Deployment",
+					Name:       "worker",
+					Namespace:  "demo-storefront",
+				},
+			}
+			autoMgr := &storedRCAAutoMgr{rca: storedRCA}
+
+			runner := &mockInvestigatorRunner{
+				workflowDiscoveryResult: &katypes.InvestigationResult{
+					RCASummary: "OOMKilled on worker Deployment",
+					WorkflowID: "restart-deployment",
+					Confidence: 0.9,
+					RemediationTarget: katypes.RemediationTarget{
+						APIVersion: "apps/v1",
+						Kind:       "Deployment",
+						Name:       "worker",
+						Namespace:  "demo-storefront",
+					},
+				},
+			}
+			recon := &mockContextReconstructor{turns: nil}
+			resolver := &mockSignalResolver{
+				signal: &katypes.SignalContext{
+					Severity:           "critical",
+					ResourceKind:       "Deployment",
+					ResourceAPIVersion: "apps/v1",
+					ResourceName:       "worker",
+					Namespace:          "demo-storefront",
+				},
+			}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, autoMgr,
+				mcptools.WithSignalContextResolver(resolver),
+				mcptools.WithWorkflowCatalog(&mockWorkflowCatalog{
+					workflow: &mcptools.CatalogWorkflow{WorkflowID: "restart-deployment", WorkflowName: "Restart Deployment"},
+				}))
+
+			output, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-dw-014",
+				Action: mcptools.ActionDiscoverWorkflows,
+			}, mcpinternal.UserInfo{Username: "alice"})
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output.Status).To(Equal("workflows_discovered"))
+
+			var parsed map[string]json.RawMessage
+			Expect(json.Unmarshal([]byte(output.Response), &parsed)).To(Succeed())
+
+			Expect(parsed).To(HaveKey("searched_target"))
+			Expect(parsed).To(HaveKey("signal_target"))
+
+			var searchedTarget, signalTarget map[string]string
+			Expect(json.Unmarshal(parsed["searched_target"], &searchedTarget)).To(Succeed())
+			Expect(json.Unmarshal(parsed["signal_target"], &signalTarget)).To(Succeed())
+
+			Expect(searchedTarget["kind"]).To(Equal("Deployment"))
+			Expect(searchedTarget["api_version"]).To(Equal("apps/v1"))
+			Expect(signalTarget["kind"]).To(Equal("Deployment"))
+			Expect(signalTarget["api_version"]).To(Equal("apps/v1"))
+			Expect(searchedTarget).To(Equal(signalTarget),
+				"when RCA does not redirect, both targets should be identical")
+		})
+	})
+
+	Describe("UT-KA-DW-015: Fallback path (no stored RCA) uses signal as searched_target", func() {
+		It("should set searched_target from signal when RCA target is cleared on fallback", func() {
+			sess := &mcpinternal.InteractiveSession{
+				SessionID:     "sess-dw-015",
+				CorrelationID: "rr-dw-015",
+				ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+			}
+			sessionMgr := &mockSessionManager{
+				isActive:        true,
+				getDriverResult: sess,
+			}
+
+			runner := &mockInvestigatorRunner{
+				workflowDiscoveryResult: &katypes.InvestigationResult{
+					RCASummary: "extracted RCA from conversation",
+					WorkflowID: "mock-workflow",
+					Confidence: 0.7,
+				},
+			}
+			recon := &mockContextReconstructor{turns: []mcpinternal.ConversationTurn{
+				{Role: "user", Content: "my pod is crashing"},
+				{Role: "assistant", Content: "I see OOM errors on the Deployment"},
+			}}
+			resolver := &mockSignalResolver{
+				signal: &katypes.SignalContext{
+					Severity:           "high",
+					ResourceKind:       "Deployment",
+					ResourceAPIVersion: "apps/v1",
+					ResourceName:       "api-server",
+					Namespace:          "production",
+				},
+			}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{},
+				mcptools.WithSignalContextResolver(resolver),
+				mcptools.WithWorkflowCatalog(&mockWorkflowCatalog{
+					workflow: &mcptools.CatalogWorkflow{WorkflowID: "mock-workflow", WorkflowName: "Mock Workflow"},
+				}))
+
+			output, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-dw-015",
+				Action: mcptools.ActionDiscoverWorkflows,
+			}, mcpinternal.UserInfo{Username: "alice"})
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output.Status).To(Equal("workflows_discovered"))
+
+			var parsed map[string]json.RawMessage
+			Expect(json.Unmarshal([]byte(output.Response), &parsed)).To(Succeed())
+
+			Expect(parsed).To(HaveKey("searched_target"))
+			Expect(parsed).To(HaveKey("signal_target"))
+
+			var searchedTarget map[string]string
+			Expect(json.Unmarshal(parsed["searched_target"], &searchedTarget)).To(Succeed())
+			Expect(searchedTarget["kind"]).To(Equal("Deployment"),
+				"fallback path clears RCA target, so searched_target should match signal")
+			Expect(searchedTarget["name"]).To(Equal("api-server"))
+			Expect(searchedTarget["api_version"]).To(Equal("apps/v1"))
 		})
 	})
 })

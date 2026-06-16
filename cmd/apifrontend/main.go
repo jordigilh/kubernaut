@@ -34,13 +34,17 @@ import (
 	"k8s.io/client-go/restmapper"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	"google.golang.org/genai"
 
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 
-	v1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
+	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	eav1alpha1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
+	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	agentpkg "github.com/jordigilh/kubernaut/pkg/apifrontend/agent"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
@@ -100,6 +104,13 @@ func run() int {
 
 	cfg.Session.Namespace = agentpkg.ResolveNamespace(cfg.Session.Namespace, agentpkg.DefaultNamespaceFile)
 	logger.Info("operational namespace resolved", "namespace", cfg.Session.Namespace)
+
+	if cfg.Interactive.AwaitSessionTimeout > 0 {
+		tools.AwaitSessionTimeout = cfg.Interactive.AwaitSessionTimeout
+	}
+	if cfg.Interactive.BridgeInactivityTimeout > 0 {
+		tools.BridgeInactivityTimeout = cfg.Interactive.BridgeInactivityTimeout
+	}
 
 	restCfg, err := ctrl.GetConfig()
 	if err != nil {
@@ -467,6 +478,7 @@ type backendDeps struct {
 	DSResilientTransport  *resilience.CircuitBreakerTransport
 	CAWatchers            []caWatcherEntry
 	k8sDynClient          dynamic.Interface
+	k8sTypedClient        crclient.WithWatch
 	K8sCB                 *resilience.K8sCircuitBreaker
 	InvestigationRegistry *tools.MonitorRegistry
 	Mapper                meta.RESTMapper
@@ -477,6 +489,13 @@ type backendDeps struct {
 // at startup; callers must check for nil (tools return a clear error).
 func (d *backendDeps) K8sClient() dynamic.Interface {
 	return d.k8sDynClient
+}
+
+// TypedClient returns the controller-runtime typed client for all kubernaut CRDs
+// (RR, RAR, EA, AIAnalysis, IS). Returns nil if K8s API was unreachable;
+// callers must check for nil (#1428).
+func (d *backendDeps) TypedClient() crclient.WithWatch {
+	return d.k8sTypedClient
 }
 
 func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metrics.Registry, auditor audit.Emitter, logger logr.Logger) (*backendDeps, error) {
@@ -631,6 +650,19 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 				deps.Mapper = restmapper.NewDeferredDiscoveryRESTMapper(memory.NewMemCacheClient(disc))
 				logger.Info("K8s RESTMapper initialized for CRD kind resolution")
 			}
+
+			typedScheme := k8sruntime.NewScheme()
+			_ = eav1alpha1.AddToScheme(typedScheme)
+			_ = remediationv1.AddToScheme(typedScheme)
+			_ = aianalysisv1.AddToScheme(typedScheme)
+			_ = isv1alpha1.AddToScheme(typedScheme)
+			typedClient, tcErr := crclient.NewWithWatch(restCfg, crclient.Options{Scheme: typedScheme})
+			if tcErr != nil {
+				logger.Error(tcErr, "K8s typed client creation failed — CRD typed operations will fall back to dynamic")
+			} else {
+				deps.k8sTypedClient = typedClient
+				logger.Info("K8s typed client initialized for all kubernaut CRD operations (#1428)")
+			}
 		}
 	}
 
@@ -667,19 +699,24 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 		promClient := prom.NewHTTPClient(cfg.SeverityTriage.PrometheusURL, promHTTPClient)
 		deps.PromClient = promClient
 
+		// BR-AI-1404: Resolve effective triage LLM config (independent or inherited).
+		triageLLMCfg := cfg.Agent.LLM
+		if cfg.SeverityTriage.LLM != nil {
+			triageLLMCfg = *cfg.SeverityTriage.LLM
+		}
+
 		var llmTriager severity.LLMTriager
-		if cfg.Agent.LLM.Provider != "" {
-			genaiClient, genaiErr := newGenAIClientForTriage(ctx, cfg.Agent.LLM)
-			if genaiErr != nil {
-				logger.Error(genaiErr, "failed to create LLM client for severity triage, falling back to noop")
+		if triageLLMCfg.Provider != "" {
+			triager, triageErr := newLLMTriagerFromConfig(ctx, triageLLMCfg, logger.WithName("llm-triage"))
+			if triageErr != nil {
+				logger.Error(triageErr, "failed to create LLM triager, falling back to noop")
 				llmTriager = severity.NewNoopLLMTriager(logger.WithName("llm-triage"))
 			} else {
-				llmTriager = severity.NewGenAITriager(severity.GenAITriagerConfig{
-					Client: genaiClient,
-					Model:  cfg.Agent.LLM.Model,
-					Logger: logger.WithName("llm-triage"),
-				})
-				logger.Info("LLM severity triage enabled", "provider", cfg.Agent.LLM.Provider, "model", cfg.Agent.LLM.Model)
+				llmTriager = triager
+				logger.Info("LLM severity triage enabled",
+					"provider", triageLLMCfg.Provider,
+					"model", triageLLMCfg.Model,
+					"source", triageLLMSource(cfg))
 			}
 		} else {
 			llmTriager = severity.NewNoopLLMTriager(logger.WithName("llm-triage"))
@@ -722,36 +759,98 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 	return deps, nil
 }
 
-// newGenAIClientForTriage creates a genai.Client for the severity triage LLM,
-// reusing the same provider credentials configured for the A2A agent LLM.
-func newGenAIClientForTriage(ctx context.Context, llmCfg config.LLMConfig) (*genai.Client, error) {
+// newLLMTriagerFromConfig creates a provider-aware LLMTriager based on the resolved
+// LLM configuration. Routes by provider + model family:
+//   - vertex_ai + claude-* model → AnthropicTriager (Anthropic SDK + Vertex)
+//   - vertex_ai + other model → GenAITriager (Google GenAI SDK)
+//   - gemini → GenAITriager (Gemini API)
+//   - anthropic → AnthropicTriager (direct Anthropic API)
+func newLLMTriagerFromConfig(ctx context.Context, llmCfg config.LLMConfig, logger logr.Logger) (severity.LLMTriager, error) {
 	switch llmCfg.Provider {
 	case config.LLMProviderVertexAI:
-		clientCfg := &genai.ClientConfig{
-			Project:  llmCfg.VertexProject,
-			Location: llmCfg.VertexLocation,
-			Backend:  genai.BackendVertexAI,
+		if severity.IsAnthropicModel(llmCfg.Model) {
+			return newAnthropicTriagerForVertex(ctx, llmCfg, logger)
 		}
-		if llmCfg.Endpoint != "" {
-			clientCfg.HTTPOptions = genai.HTTPOptions{
-				BaseURL: llmCfg.Endpoint,
-			}
-		}
-		return genai.NewClient(ctx, clientCfg)
+		return newGenAITriagerForVertex(ctx, llmCfg, logger)
 	case config.LLMProviderGemini:
-		clientCfg := &genai.ClientConfig{
-			APIKey:  llmCfg.APIKey,
-			Backend: genai.BackendGeminiAPI,
-		}
-		if llmCfg.Endpoint != "" {
-			clientCfg.HTTPOptions = genai.HTTPOptions{
-				BaseURL: llmCfg.Endpoint,
-			}
-		}
-		return genai.NewClient(ctx, clientCfg)
+		return newGenAITriagerForGemini(ctx, llmCfg, logger)
+	case config.LLMProviderAnthropic:
+		return newAnthropicTriagerDirect(ctx, llmCfg, logger)
 	default:
-		return nil, fmt.Errorf("unsupported triage LLM provider: %q (only vertex_ai and gemini supported for severity triage)", llmCfg.Provider)
+		return nil, fmt.Errorf("unsupported triage LLM provider: %q", llmCfg.Provider)
 	}
+}
+
+func newGenAITriagerForVertex(ctx context.Context, llmCfg config.LLMConfig, logger logr.Logger) (severity.LLMTriager, error) {
+	clientCfg := &genai.ClientConfig{
+		Project:  llmCfg.VertexProject,
+		Location: llmCfg.VertexLocation,
+		Backend:  genai.BackendVertexAI,
+	}
+	if llmCfg.Endpoint != "" {
+		clientCfg.HTTPOptions = genai.HTTPOptions{BaseURL: llmCfg.Endpoint}
+	}
+	client, err := genai.NewClient(ctx, clientCfg)
+	if err != nil {
+		return nil, fmt.Errorf("vertex_ai GenAI client: %w", err)
+	}
+	return severity.NewGenAITriager(severity.GenAITriagerConfig{
+		Client: client,
+		Model:  llmCfg.Model,
+		Logger: logger,
+	}), nil
+}
+
+func newGenAITriagerForGemini(ctx context.Context, llmCfg config.LLMConfig, logger logr.Logger) (severity.LLMTriager, error) {
+	clientCfg := &genai.ClientConfig{
+		APIKey:  llmCfg.APIKey,
+		Backend: genai.BackendGeminiAPI,
+	}
+	if llmCfg.Endpoint != "" {
+		clientCfg.HTTPOptions = genai.HTTPOptions{BaseURL: llmCfg.Endpoint}
+	}
+	client, err := genai.NewClient(ctx, clientCfg)
+	if err != nil {
+		return nil, fmt.Errorf("gemini GenAI client: %w", err)
+	}
+	return severity.NewGenAITriager(severity.GenAITriagerConfig{
+		Client: client,
+		Model:  llmCfg.Model,
+		Logger: logger,
+	}), nil
+}
+
+func newAnthropicTriagerForVertex(ctx context.Context, llmCfg config.LLMConfig, logger logr.Logger) (severity.LLMTriager, error) {
+	client, err := severity.NewAnthropicVertexClient(ctx, llmCfg.VertexProject, llmCfg.VertexLocation)
+	if err != nil {
+		return nil, fmt.Errorf("vertex_ai Anthropic client: %w", err)
+	}
+	return severity.NewAnthropicTriager(severity.AnthropicTriagerConfig{
+		Client: client,
+		Model:  llmCfg.Model,
+		Logger: logger,
+	}), nil
+}
+
+func newAnthropicTriagerDirect(_ context.Context, llmCfg config.LLMConfig, logger logr.Logger) (severity.LLMTriager, error) {
+	client, err := severity.NewAnthropicDirectClient(llmCfg.APIKey)
+	if err != nil {
+		return nil, fmt.Errorf("anthropic direct client: %w", err)
+	}
+	return severity.NewAnthropicTriager(severity.AnthropicTriagerConfig{
+		Client: client,
+		Model:  llmCfg.Model,
+		Logger: logger,
+	}), nil
+}
+
+// triageLLMSource returns a human-readable label indicating whether the triage
+// LLM config was explicitly set or inherited from the agent.
+func triageLLMSource(cfg *config.Config) string {
+	if cfg.SeverityTriage.LLM != nil {
+		return "severityTriage.llm (explicit)"
+	}
+	return "agent.llm (inherited)"
 }
 
 func buildMCPHandler(cfg *config.Config, deps *backendDeps, sessInfra *sessionInfra, metricsReg *metrics.Registry, authorizer auth.ToolAuthorizer, auditor audit.Emitter, logger logr.Logger, userLimiter *ratelimit.UserLimiter) (http.Handler, func() bool, error) {
@@ -763,11 +862,13 @@ func buildMCPHandler(cfg *config.Config, deps *backendDeps, sessInfra *sessionIn
 	}
 	bridgeCfg := &handler.MCPBridgeConfig{
 		K8sClient:             deps.K8sClient(),
+		TypedClient:           deps.TypedClient(),
 		Namespace:             cfg.Session.Namespace,
 		KAMCPClient:           deps.MCPClient,
 		KADedicatedClient:     deps.DedicatedClient,
 		InvestigationRegistry: deps.InvestigationRegistry,
 		DSClient:           deps.DSClient,
+		PromClient:         deps.PromClient,
 		Triager:            deps.Triager,
 		Authorizer:         authorizer,
 		Auditor:            auditor,
@@ -844,6 +945,7 @@ func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps,
 		LLMModel:              llmModel,
 		Namespace:             cfg.Session.Namespace,
 		K8sClient:             deps.K8sClient(),
+		TypedClient:           deps.TypedClient(),
 		DSClient:              deps.DSClient,
 		MCPClient:             deps.MCPClient,
 		DedicatedClient:       deps.DedicatedClient,
@@ -960,25 +1062,11 @@ func bridgeMetricsFrom(reg *metrics.Registry) *handler.MCPBridgeMetrics {
 func buildAuthMiddleware(cfg *config.Config, reg *metrics.Registry, auditor audit.Emitter, logger logr.Logger) (func(http.Handler) http.Handler, handler.ReadyChecker) {
 	alwaysReady := handler.ReadyChecker(func() bool { return true })
 
-	ac := buildAuthConfig(cfg)
-
-	authCfg := auth.Config{
-		JWT:                  make([]auth.ProviderConfig, 0, len(ac.JWT)),
-		AllowInsecureIssuers: cfg.Auth.AllowInsecureIssuers,
-	}
-	for _, jp := range ac.JWT {
-		authCfg.JWT = append(authCfg.JWT, auth.ProviderConfig{
-			Issuer: auth.IssuerConfig{
-				URL:       jp.Issuer.URL,
-				JWKSURL:   jp.Issuer.JWKSURL,
-				Audiences: jp.Issuer.Audiences,
-			},
-		})
-	}
+	authCfg := buildAuthConfig(cfg)
 
 	var validatorOpts []auth.JWTValidatorOption
 
-	if len(ac.JWT) == 0 {
+	if len(authCfg.JWT) == 0 {
 		restCfg, k8sErr := ctrl.GetConfig()
 		if k8sErr != nil {
 			logger.Error(k8sErr, "CRITICAL: no auth issuer configured and kubeconfig unavailable — denying all authenticated requests (AF-CRIT-1)")
@@ -1020,7 +1108,7 @@ func buildAuthMiddleware(cfg *config.Config, reg *metrics.Registry, auditor audi
 		if cfg.Auth.EnableReplayProtection {
 			validatorOpts = append(validatorOpts, auth.WithReplayCache(auth.NewReplayCache(10*time.Minute)))
 		}
-		logger.Info("auth mode: OIDC/JWKS", "providers", len(ac.JWT))
+		logger.Info("auth mode: OIDC/JWKS", "providers", len(authCfg.JWT))
 	}
 	providerLimiter := ratelimit.NewProviderLimiter(ratelimit.PerProviderConfig{
 		FetchIntervalSeconds: 300,
@@ -1087,36 +1175,44 @@ func parseLogLevel(s string) (zapcore.Level, error) {
 	}
 }
 
-// authConfig holds JWT auth provider configuration for the auth middleware.
-type authConfig struct {
-	JWT []jwtProvider
-}
-
-type jwtProvider struct {
-	Issuer jwtIssuer
-}
-
-type jwtIssuer struct {
-	URL       string
-	JWKSURL   string
-	Audiences []string
-}
-
-func buildAuthConfig(cfg *config.Config) authConfig {
-	if cfg.Auth.IssuerURL == "" {
-		return authConfig{}
+// buildAuthConfig maps config.AuthConfig to auth.Config.
+// Priority: jwtProviders[] > legacy issuerURL > empty (TokenReview auto-detect).
+func buildAuthConfig(cfg *config.Config) auth.Config {
+	if len(cfg.Auth.JWTProviders) > 0 {
+		providers := make([]auth.ProviderConfig, 0, len(cfg.Auth.JWTProviders))
+		for _, p := range cfg.Auth.JWTProviders {
+			providers = append(providers, auth.ProviderConfig{
+				Issuer: auth.IssuerConfig{
+					URL:       p.IssuerURL,
+					JWKSURL:   p.JWKSURL,
+					Audiences: p.Audiences,
+				},
+				ClaimMappings: auth.ClaimMappings{
+					Username: p.ClaimMappings.Username,
+					Groups:   p.ClaimMappings.Groups,
+				},
+			})
+		}
+		return auth.Config{
+			JWT:                  providers,
+			AllowInsecureIssuers: cfg.Auth.AllowInsecureIssuers,
+		}
 	}
-	return authConfig{
-		JWT: []jwtProvider{
-			{
-				Issuer: jwtIssuer{
-					URL:       cfg.Auth.IssuerURL,
-					JWKSURL:   cfg.Auth.JWKSURL,
-					Audiences: []string{cfg.Auth.Audience},
+	if cfg.Auth.IssuerURL != "" {
+		return auth.Config{
+			JWT: []auth.ProviderConfig{
+				{
+					Issuer: auth.IssuerConfig{
+						URL:       cfg.Auth.IssuerURL,
+						JWKSURL:   cfg.Auth.JWKSURL,
+						Audiences: []string{cfg.Auth.Audience},
+					},
 				},
 			},
-		},
+			AllowInsecureIssuers: cfg.Auth.AllowInsecureIssuers,
+		}
 	}
+	return auth.Config{}
 }
 
 // Build-time metadata set via -ldflags.
@@ -1204,7 +1300,7 @@ func buildSessionInfra(cfg *config.Config, reg *metrics.Registry, auditor audit.
 	if err := coordinationv1.AddToScheme(scheme); err != nil {
 		return nil, fmt.Errorf("register coordination scheme: %w", err)
 	}
-	if err := v1alpha1.AddToScheme(scheme); err != nil {
+	if err := isv1alpha1.AddToScheme(scheme); err != nil {
 		return nil, fmt.Errorf("register InvestigationSession scheme: %w", err)
 	}
 

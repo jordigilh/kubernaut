@@ -443,6 +443,17 @@ var _ = Describe("Triage Orchestrator", func() {
 			Expect(severity.HighestSeverity([]string{"info"})).To(Equal("info"))
 			Expect(severity.HighestSeverity([]string{})).To(BeEmpty())
 		})
+
+		It("UT-AF-1412-001: warning ranks correctly in Prometheus vocabulary", func() {
+			Expect(severity.CompareSeverity("warning", "info")).To(BeNumerically(">", 0))
+			Expect(severity.CompareSeverity("warning", "medium")).To(BeNumerically("==", 0))
+			Expect(severity.CompareSeverity("critical", "warning")).To(BeNumerically(">", 0))
+			Expect(severity.CompareSeverity("high", "warning")).To(BeNumerically(">", 0))
+			Expect(severity.CompareSeverity("warning", "low")).To(BeNumerically(">", 0))
+			Expect(severity.HighestSeverity([]string{"warning", "info"})).To(Equal("warning"))
+			Expect(severity.HighestSeverity([]string{"warning", "medium"})).To(Equal("warning"))
+			Expect(severity.ValidateSeverity("warning")).To(BeTrue())
+		})
 	})
 
 	Describe("Graceful Degradation", func() {

@@ -851,6 +851,8 @@ func mapHumanReviewReason(reason string) (agentclient.HumanReviewReason, bool) {
 		return agentclient.HumanReviewReasonLlmParsingError, false
 	case "alignment_check_failed":
 		return agentclient.HumanReviewReasonAlignmentCheckFailed, false
+	case "operator_escalation":
+		return agentclient.HumanReviewReasonOperatorEscalation, false
 	}
 
 	switch {

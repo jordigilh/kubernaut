@@ -139,11 +139,7 @@ func BuildErrorResponse(message string) openai.ErrorResponse {
 
 func buildToolArguments(toolName string, cfg scenarios.MockScenarioConfig) map[string]interface{} {
 	if len(cfg.ToolCallArgs) > 0 {
-		args := make(map[string]interface{}, len(cfg.ToolCallArgs))
-		for k, v := range cfg.ToolCallArgs {
-			args[k] = v
-		}
-		return args
+		return cfg.ToolCallArgs
 	}
 	switch toolName {
 	case openai.ToolSearchWorkflowCatalog:

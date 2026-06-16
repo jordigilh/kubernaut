@@ -292,6 +292,10 @@ func extractDetectedLabels(m map[string]interface{}) *sharedtypes.DetectedLabels
 		NetworkIsolated:          GetBoolFromMap(m, "networkIsolated"),
 		ServiceMesh:              GetStringFromMap(m, "serviceMesh"),
 		ResourceQuotaConstrained: GetBoolFromMap(m, "resourceQuotaConstrained"),
+		VirtualMachine:           GetBoolFromMap(m, "virtualMachine"),
+		LiveMigratable:           GetBoolFromMap(m, "liveMigratable"),
+		CDIManaged:               GetBoolFromMap(m, "cdiManaged"),
+		StorageBackend:           GetStringFromMap(m, "storageBackend"),
 		FailedDetections:         GetStringSliceFromMap(m, "failedDetections"),
 	}
 }

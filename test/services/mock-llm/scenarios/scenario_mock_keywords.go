@@ -115,9 +115,9 @@ func parallelToolsConfig() MockScenarioConfig {
 		IsActionable:         &actionable,
 		ForceText:            BoolPtr(false),
 		MultiToolCalls: []MultiToolCallEntry{
-			{Name: "kubectl_describe", Arguments: map[string]string{"kind": "Pod", "name": "api-server-abc", "namespace": "production"}},
-			{Name: "kubectl_events", Arguments: map[string]string{"kind": "Pod", "name": "api-server-abc", "namespace": "production"}},
-			{Name: "kubectl_logs", Arguments: map[string]string{"kind": "Pod", "name": "api-server-abc", "namespace": "production"}},
+			{Name: "kubectl_describe", Arguments: map[string]interface{}{"kind": "Pod", "name": "api-server-abc", "namespace": "production"}},
+			{Name: "kubectl_events", Arguments: map[string]interface{}{"kind": "Pod", "name": "api-server-abc", "namespace": "production"}},
+			{Name: "kubectl_logs", Arguments: map[string]interface{}{"kind": "Pod", "name": "api-server-abc", "namespace": "production"}},
 		},
 	}
 }

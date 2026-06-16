@@ -590,8 +590,8 @@ func (*HTTPValidationError) incidentSessionResultEndpointAPIV1IncidentSessionSes
 func (*HTTPValidationError) incidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes() {}
 
 // Structured reason for needs_human_review=true.
-// Business Requirements: BR-HAPI-197, BR-HAPI-200, BR-496, BR-AI-601
-// Design Decision: DD-HAPI-002 v1.2, DD-HAPI-006 v1.3
+// Business Requirements: BR-HAPI-197, BR-HAPI-200, BR-496, BR-AI-601, BR-WORKFLOW-1418
+// Design Decision: DD-HAPI-002 v1.2, DD-HAPI-006 v1.3, DD-AF-007
 // AIAnalysis uses this for reliable subReason mapping instead of parsing warnings.
 // Ref: #/components/schemas/HumanReviewReason
 type HumanReviewReason string
@@ -606,6 +606,7 @@ const (
 	HumanReviewReasonInvestigationInconclusive HumanReviewReason = "investigation_inconclusive"
 	HumanReviewReasonRcaIncomplete             HumanReviewReason = "rca_incomplete"
 	HumanReviewReasonAlignmentCheckFailed      HumanReviewReason = "alignment_check_failed"
+	HumanReviewReasonOperatorEscalation        HumanReviewReason = "operator_escalation"
 )
 
 // AllValues returns all HumanReviewReason values.
@@ -620,6 +621,7 @@ func (HumanReviewReason) AllValues() []HumanReviewReason {
 		HumanReviewReasonInvestigationInconclusive,
 		HumanReviewReasonRcaIncomplete,
 		HumanReviewReasonAlignmentCheckFailed,
+		HumanReviewReasonOperatorEscalation,
 	}
 }
 
@@ -643,6 +645,8 @@ func (s HumanReviewReason) MarshalText() ([]byte, error) {
 	case HumanReviewReasonRcaIncomplete:
 		return []byte(s), nil
 	case HumanReviewReasonAlignmentCheckFailed:
+		return []byte(s), nil
+	case HumanReviewReasonOperatorEscalation:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -678,6 +682,9 @@ func (s *HumanReviewReason) UnmarshalText(data []byte) error {
 		return nil
 	case HumanReviewReasonAlignmentCheckFailed:
 		*s = HumanReviewReasonAlignmentCheckFailed
+		return nil
+	case HumanReviewReasonOperatorEscalation:
+		*s = HumanReviewReasonOperatorEscalation
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)

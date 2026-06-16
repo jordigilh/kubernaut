@@ -38,7 +38,9 @@ type Config struct {
 // kubernaut_investigate, kubernaut_message) are hidden from MCP enumeration
 // and the A2A agent tool list (#1366).
 type InteractiveConfig struct {
-	Enabled bool `yaml:"enabled"`
+	Enabled                bool          `yaml:"enabled"`
+	AwaitSessionTimeout    time.Duration `yaml:"awaitSessionTimeout,omitempty"`
+	BridgeInactivityTimeout time.Duration `yaml:"bridgeInactivityTimeout,omitempty"`
 }
 
 // SessionConfig holds InvestigationSession CRD controller settings.
@@ -50,14 +52,15 @@ type SessionConfig struct {
 
 // SeverityTriageConfig holds settings for the Prometheus-based severity triage pipeline.
 type SeverityTriageConfig struct {
-	Enabled                   bool    `yaml:"enabled"`
-	PrometheusURL             string  `yaml:"prometheusURL,omitempty"`
-	PrometheusTLSCaFile       string  `yaml:"prometheusTlsCaFile,omitempty"`
-	PrometheusBearerTokenFile string  `yaml:"prometheusBearerTokenFile,omitempty"`
-	CacheTTLSeconds           int     `yaml:"cacheTTLSeconds,omitempty"`
-	MaxQueriesPerCall         int     `yaml:"maxQueriesPerCall,omitempty"`
-	MaxRulesEvaluated         int     `yaml:"maxRulesEvaluated,omitempty"`
-	LLMConfidence             float64 `yaml:"llmConfidence,omitempty"`
+	Enabled                   bool       `yaml:"enabled"`
+	LLM                       *LLMConfig `yaml:"llm,omitempty"`
+	PrometheusURL             string     `yaml:"prometheusURL,omitempty"`
+	PrometheusTLSCaFile       string     `yaml:"prometheusTlsCaFile,omitempty"`
+	PrometheusBearerTokenFile string     `yaml:"prometheusBearerTokenFile,omitempty"`
+	CacheTTLSeconds           int        `yaml:"cacheTTLSeconds,omitempty"`
+	MaxQueriesPerCall         int        `yaml:"maxQueriesPerCall,omitempty"`
+	MaxRulesEvaluated         int        `yaml:"maxRulesEvaluated,omitempty"`
+	LLMConfidence             float64    `yaml:"llmConfidence,omitempty"`
 }
 
 // ResilienceConfig holds per-dependency circuit breaker and retry settings.
@@ -84,15 +87,34 @@ type DependencyConfig struct {
 
 // AuthConfig holds OIDC authentication settings.
 // Auth mode is auto-detected from provider presence (#1309):
-//   - issuerURL set → OIDC/JWKS validation only
-//   - issuerURL empty → K8s TokenReview only
+//   - issuerURL or jwtProviders set → OIDC/JWKS validation only
+//   - both empty → K8s TokenReview only
 type AuthConfig struct {
+	// Legacy single-provider fields (backward compat, dev environments)
 	IssuerURL              string `yaml:"issuerURL"`
 	JWKSURL                string `yaml:"jwksURL,omitempty"`
 	Audience               string `yaml:"audience"`
 	OIDCCaFile             string `yaml:"oidcCaFile,omitempty"`
 	EnableReplayProtection bool   `yaml:"enableReplayProtection,omitempty"`
 	AllowInsecureIssuers   bool   `yaml:"allowInsecureIssuers,omitempty"`
+	// Multi-provider JWT configuration (#1436)
+	JWTProviders []JWTProviderConfig `yaml:"jwtProviders,omitempty"`
+}
+
+// JWTProviderConfig defines a single JWT provider within the multi-provider
+// configuration. Each entry maps to one auth.ProviderConfig at runtime.
+type JWTProviderConfig struct {
+	Name          string              `yaml:"name"`
+	IssuerURL     string              `yaml:"issuerURL"`
+	JWKSURL       string              `yaml:"jwksURL,omitempty"`
+	Audiences     []string            `yaml:"audiences"`
+	ClaimMappings ConfigClaimMappings `yaml:"claimMappings,omitempty"`
+}
+
+// ConfigClaimMappings defines per-provider claim mapping expressions.
+type ConfigClaimMappings struct {
+	Username string `yaml:"username,omitempty"`
+	Groups   string `yaml:"groups,omitempty"`
 }
 
 // LoggingConfig holds structured logging settings.
@@ -235,9 +257,10 @@ func DefaultConfig() *Config {
 			Enabled:     false,
 			ToolTimeout: 30 * time.Second,
 			ToolTimeouts: map[string]time.Duration{
-				"kubernaut_investigate":   15 * time.Minute,
-				"kubernaut_await_session": 3 * time.Minute,
-				"kubernaut_watch":         15 * time.Minute,
+				"kubernaut_investigate":          15 * time.Minute,
+				"kubernaut_await_session":        3 * time.Minute,
+				"kubernaut_watch":                15 * time.Minute,
+				"kubernaut_discover_workflows":   60 * time.Second,
 			},
 		},
 		Logging: LoggingConfig{
@@ -400,72 +423,80 @@ func (c *Config) validateSession() error {
 }
 
 func (c *Config) validateLLM() error {
-	llm := &c.Agent.LLM
+	return validateLLMConfig("agent.llm", &c.Agent.LLM)
+}
+
+// validateLLMConfig validates an LLMConfig under the given prefix.
+// Shared by agent.llm and severityTriage.llm validation paths.
+func validateLLMConfig(prefix string, llm *LLMConfig) error {
 	if llm.Provider == "" {
 		return nil
 	}
 	switch llm.Provider {
 	case LLMProviderVertexAI, LLMProviderGemini, LLMProviderAnthropic:
 	default:
-		return fmt.Errorf("agent.llm.provider must be one of %q, %q, %q; got %q",
-			LLMProviderVertexAI, LLMProviderGemini, LLMProviderAnthropic, llm.Provider)
+		return fmt.Errorf("%s.provider must be one of %q, %q, %q; got %q",
+			prefix, LLMProviderVertexAI, LLMProviderGemini, LLMProviderAnthropic, llm.Provider)
 	}
 	if llm.Model == "" {
-		return fmt.Errorf("agent.llm.model is required when provider is set")
+		return fmt.Errorf("%s.model is required when provider is set", prefix)
 	}
 	if llm.Provider == LLMProviderVertexAI {
 		if llm.VertexProject == "" {
-			return fmt.Errorf("agent.llm.vertexProject is required for provider %q", llm.Provider)
+			return fmt.Errorf("%s.vertexProject is required for provider %q", prefix, llm.Provider)
 		}
 		if llm.VertexLocation == "" {
-			return fmt.Errorf("agent.llm.vertexLocation is required for provider %q", llm.Provider)
+			return fmt.Errorf("%s.vertexLocation is required for provider %q", prefix, llm.Provider)
 		}
 	}
 	if (llm.Provider == LLMProviderGemini || llm.Provider == LLMProviderAnthropic) && llm.APIKeyFile == "" && !llm.OAuth2.Enabled {
-		return fmt.Errorf("agent.llm.apiKeyFile (or oauth2) is required for provider %q", llm.Provider)
+		return fmt.Errorf("%s.apiKeyFile (or oauth2) is required for provider %q", prefix, llm.Provider)
 	}
 	if llm.APIKeyFile != "" && !filepath.IsAbs(llm.APIKeyFile) {
-		return fmt.Errorf("agent.llm.apiKeyFile must be an absolute path, got %q", llm.APIKeyFile)
+		return fmt.Errorf("%s.apiKeyFile must be an absolute path, got %q", prefix, llm.APIKeyFile)
 	}
 	if llm.TLSCaFile != "" && !filepath.IsAbs(llm.TLSCaFile) {
-		return fmt.Errorf("agent.llm.tlsCaFile must be an absolute path, got %q", llm.TLSCaFile)
+		return fmt.Errorf("%s.tlsCaFile must be an absolute path, got %q", prefix, llm.TLSCaFile)
 	}
-	if err := validateTLSCertPair("agent.llm", llm.TLSCertFile, llm.TLSKeyFile, llm.TLSCaFile); err != nil {
+	if err := validateTLSCertPair(prefix, llm.TLSCertFile, llm.TLSKeyFile, llm.TLSCaFile); err != nil {
 		return err
 	}
 	if llm.Endpoint != "" {
-		if err := validateURL("agent.llm.endpoint", llm.Endpoint); err != nil {
+		if err := validateURL(prefix+".endpoint", llm.Endpoint); err != nil {
 			return err
 		}
 	}
 	if llm.OAuth2.Enabled {
 		if llm.OAuth2.TokenURL == "" {
-			return fmt.Errorf("agent.llm.oauth2.tokenURL is required when oauth2 is enabled")
+			return fmt.Errorf("%s.oauth2.tokenURL is required when oauth2 is enabled", prefix)
 		}
-		if err := validateURL("agent.llm.oauth2.tokenURL", llm.OAuth2.TokenURL); err != nil {
+		if err := validateURL(prefix+".oauth2.tokenURL", llm.OAuth2.TokenURL); err != nil {
 			return err
 		}
 		if llm.OAuth2.CredentialsDir == "" {
-			return fmt.Errorf("agent.llm.oauth2.credentialsDir is required when oauth2 is enabled")
+			return fmt.Errorf("%s.oauth2.credentialsDir is required when oauth2 is enabled", prefix)
 		}
 		if !filepath.IsAbs(llm.OAuth2.CredentialsDir) {
-			return fmt.Errorf("agent.llm.oauth2.credentialsDir must be an absolute path, got %q", llm.OAuth2.CredentialsDir)
+			return fmt.Errorf("%s.oauth2.credentialsDir must be an absolute path, got %q", prefix, llm.OAuth2.CredentialsDir)
 		}
 	}
 	if llm.CircuitBreaker.Enabled {
 		if llm.CircuitBreaker.FailureThreshold == 0 || llm.CircuitBreaker.FailureThreshold > 100 {
-			return fmt.Errorf("agent.llm.circuitBreaker.failureThreshold must be 1-100, got %d", llm.CircuitBreaker.FailureThreshold)
+			return fmt.Errorf("%s.circuitBreaker.failureThreshold must be 1-100, got %d", prefix, llm.CircuitBreaker.FailureThreshold)
 		}
 		if llm.CircuitBreaker.Timeout <= 0 {
-			return fmt.Errorf("agent.llm.circuitBreaker.timeout must be positive")
+			return fmt.Errorf("%s.circuitBreaker.timeout must be positive", prefix)
 		}
 	}
 	return nil
 }
 
 func (c *Config) validateAuth() error {
-	if c.Server.TLS.Required && c.Auth.IssuerURL == "" {
-		return fmt.Errorf("auth.issuerURL is required when server.tls.required is true (production mode)")
+	if c.Server.TLS.Required && c.Auth.IssuerURL == "" && len(c.Auth.JWTProviders) == 0 {
+		return fmt.Errorf("auth.issuerURL or auth.jwtProviders is required when server.tls.required is true (production mode)")
+	}
+	if err := c.validateJWTProviders(); err != nil {
+		return err
 	}
 	if c.Auth.IssuerURL == "" {
 		return nil
@@ -482,6 +513,55 @@ func (c *Config) validateAuth() error {
 		return fmt.Errorf("auth.oidcCaFile must be an absolute path, got %q", c.Auth.OIDCCaFile)
 	}
 	return nil
+}
+
+func (c *Config) validateJWTProviders() error {
+	if len(c.Auth.JWTProviders) == 0 {
+		return nil
+	}
+	seenNames := make(map[string]struct{}, len(c.Auth.JWTProviders))
+	for i, p := range c.Auth.JWTProviders {
+		prefix := fmt.Sprintf("auth.jwtProviders[%d]", i)
+		if p.Name != "" {
+			if _, exists := seenNames[p.Name]; exists {
+				return fmt.Errorf("%s: duplicate provider name %q", prefix, p.Name)
+			}
+			seenNames[p.Name] = struct{}{}
+		}
+		if p.IssuerURL == "" {
+			return fmt.Errorf("%s: issuerURL must not be empty", prefix)
+		}
+		if err := validateJWTProviderURL(prefix+".issuerURL", p.IssuerURL, c.Auth.AllowInsecureIssuers); err != nil {
+			return err
+		}
+		if len(p.Audiences) == 0 {
+			return fmt.Errorf("%s: audiences must not be empty (would reject all tokens)", prefix)
+		}
+		if p.JWKSURL != "" {
+			if err := validateJWTProviderURL(prefix+".jwksURL", p.JWKSURL, c.Auth.AllowInsecureIssuers); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func validateJWTProviderURL(field, rawURL string, allowInsecure bool) error {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("%s is not a valid URL: %w", field, err)
+	}
+	switch u.Scheme {
+	case "https":
+		return nil
+	case "http":
+		if allowInsecure {
+			return nil
+		}
+		return fmt.Errorf("%s: %q uses http; https required (set allowInsecureIssuers for dev/test)", field, rawURL)
+	default:
+		return fmt.Errorf("%s must include a scheme (http:// or https://), got %q", field, rawURL)
+	}
 }
 
 var validLogLevels = map[string]bool{
@@ -562,16 +642,13 @@ func (c *Config) ResolveDefaults() error {
 	if c.AgentCard.URL == "" {
 		c.AgentCard.URL = fmt.Sprintf("https://localhost:%d", c.Server.Port)
 	}
-	if c.Agent.LLM.APIKey == "" && c.Agent.LLM.APIKeyFile != "" {
-		data, err := os.ReadFile(c.Agent.LLM.APIKeyFile)
-		if err != nil {
-			return fmt.Errorf("agent.llm.apiKeyFile %q: %w", c.Agent.LLM.APIKeyFile, err)
+	if err := resolveLLMKey(&c.Agent.LLM); err != nil {
+		return fmt.Errorf("agent.llm: %w", err)
+	}
+	if c.SeverityTriage.LLM != nil {
+		if err := resolveLLMKey(c.SeverityTriage.LLM); err != nil {
+			return fmt.Errorf("severityTriage.llm: %w", err)
 		}
-		key := strings.TrimSpace(string(data))
-		if key == "" {
-			return fmt.Errorf("agent.llm.apiKeyFile %q: file is empty", c.Agent.LLM.APIKeyFile)
-		}
-		c.Agent.LLM.APIKey = key
 	}
 	if c.Agent.LLM.OAuth2.Enabled && c.Agent.LLM.OAuth2.CredentialsDir != "" {
 		dir := c.Agent.LLM.OAuth2.CredentialsDir
@@ -585,6 +662,22 @@ func (c *Config) ResolveDefaults() error {
 				return fmt.Errorf("agent.llm.oauth2.credentialsDir/%s: file is empty", f)
 			}
 		}
+	}
+	return nil
+}
+
+// resolveLLMKey reads the API key from the mounted secret file if configured.
+func resolveLLMKey(llm *LLMConfig) error {
+	if llm.APIKey == "" && llm.APIKeyFile != "" {
+		data, err := os.ReadFile(llm.APIKeyFile)
+		if err != nil {
+			return fmt.Errorf("apiKeyFile %q: %w", llm.APIKeyFile, err)
+		}
+		key := strings.TrimSpace(string(data))
+		if key == "" {
+			return fmt.Errorf("apiKeyFile %q: file is empty", llm.APIKeyFile)
+		}
+		llm.APIKey = key
 	}
 	return nil
 }
@@ -606,6 +699,11 @@ func (c *Config) validateSeverityTriage() error {
 	if st.PrometheusBearerTokenFile != "" {
 		if _, err := os.Stat(st.PrometheusBearerTokenFile); err != nil {
 			return fmt.Errorf("severityTriage.prometheusBearerTokenFile %q is not accessible: %w", st.PrometheusBearerTokenFile, err)
+		}
+	}
+	if st.LLM != nil {
+		if err := validateLLMConfig("severityTriage.llm", st.LLM); err != nil {
+			return err
 		}
 	}
 	return nil

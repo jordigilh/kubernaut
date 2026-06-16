@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kubernaut.ai/schemas/a2a/execution_progress.v1.schema.json",
+  "title": "Execution Progress",
+  "description": "Structured execution progress emitted as A2A artifact DataPart during kubernaut_watch phase transitions",
+  "type": "object",
+  "required": ["type", "schema_version", "rr_name", "current_phase", "started_at"],
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "execution_progress"
+    },
+    "schema_version": {
+      "type": "string"
+    },
+    "rr_name": {
+      "type": "string"
+    },
+    "current_phase": {
+      "type": "string"
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "completed_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": true
+}

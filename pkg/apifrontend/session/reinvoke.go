@@ -1,6 +1,8 @@
 package session
 
 import (
+	"context"
+
 	adksession "google.golang.org/adk/session"
 	"google.golang.org/genai"
 
@@ -28,6 +30,16 @@ const (
 //
 // Wired into StreamingExecutor.Execute via WithReinvocation option.
 func NeedsReinvocation(phase v1alpha1.SessionPhase, events adksession.Events, reinvokeCount int) bool {
+	return NeedsReinvocationCtx(context.Background(), phase, events, reinvokeCount)
+}
+
+// NeedsReinvocationCtx is the context-aware variant of NeedsReinvocation.
+// Returns false when ctx is cancelled, preventing ghost re-invocation cascades
+// that fail immediately with "context canceled" (#1435).
+func NeedsReinvocationCtx(ctx context.Context, phase v1alpha1.SessionPhase, events adksession.Events, reinvokeCount int) bool {
+	if ctx.Err() != nil {
+		return false
+	}
 	if phase != v1alpha1.SessionPhaseActive {
 		return false
 	}

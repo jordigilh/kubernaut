@@ -534,6 +534,22 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 		return rcaResult, nil
 	}
 
+	// #1430 / BR-HAPI-200: When the RCA concludes no action is required
+	// (problem_resolved or predictive_no_action), skip workflow discovery.
+	// Guard: only short-circuit when no workflow was already identified by
+	// the RCA (defense-in-depth against LLM self-contradiction).
+	if rcaResult.IsActionable != nil && !*rcaResult.IsActionable && rcaResult.WorkflowID == "" {
+		inv.logger.Info("skipping workflow discovery: RCA concluded not actionable",
+			"investigation_outcome", rcaResult.InvestigationOutcome,
+			"correlation_id", correlationID)
+		backfillSeverity(rcaResult, signal)
+		attachDetectedLabels(rcaResult, enrichData)
+		InjectRemediationTarget(rcaResult, signal, enrichData)
+		InjectTargetResourceParameters(rcaResult)
+		inv.emitResponseComplete(ctx, rcaResult, tokens, correlationID)
+		return rcaResult, nil
+	}
+
 	// GAP-001 / ADR-056: Re-enrich using RCA-identified remediation target if different.
 	// H3-fix: retain pre-RCA enrichment if re-enrichment fails.
 	workflowSignal := signal

@@ -54,6 +54,11 @@ rules:
       - kubernaut_get_remediation_history
       - kubernaut_get_effectiveness
       - kubernaut_get_audit_trail
+      - kubernaut_list_alerts
+      - kubernaut_complete_no_action
+      - kubernaut_list_approval_requests
+      - kubernaut_get_approval_request
+      - kubernaut_await_session
     verbs: ["use"]
   # kubernaut_remediate / kubernaut_check_existing_remediation / kubernaut_cancel_remediation / kubernaut_watch
   - apiGroups: ["kubernaut.ai"]

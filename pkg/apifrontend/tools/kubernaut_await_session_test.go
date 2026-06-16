@@ -7,56 +7,39 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	dynamicfake "k8s.io/client-go/dynamic/fake"
+	corev1 "k8s.io/api/core/v1"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	aiav1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
 
-var testAIAnalysisGVR = schema.GroupVersionResource{Group: "kubernaut.ai", Version: "v1alpha1", Resource: "aianalyses"}
-
-func newUnstructuredAIAnalysis(ns, name, rrName, sessionID string) *unstructured.Unstructured {
-	obj := &unstructured.Unstructured{
-		Object: map[string]interface{}{
-			"apiVersion": "kubernaut.ai/v1alpha1",
-			"kind":       "AIAnalysis",
-			"metadata": map[string]interface{}{
-				"name":      name,
-				"namespace": ns,
+func newTypedAIAnalysis(ns, name, rrName, sessionID string) *aiav1alpha1.AIAnalysis {
+	aia := &aiav1alpha1.AIAnalysis{
+		ObjectMeta: objMeta(ns, name),
+		Spec: aiav1alpha1.AIAnalysisSpec{
+			RemediationRequestRef: corev1.ObjectReference{
+				Name:      rrName,
+				Namespace: ns,
 			},
-			"spec": map[string]interface{}{
-				"remediationRequestRef": map[string]interface{}{
-					"name":      rrName,
-					"namespace": ns,
-				},
-			},
+			RemediationID: rrName,
 		},
 	}
 	if sessionID != "" {
-		obj.Object["status"] = map[string]interface{}{
-			"investigationSession": map[string]interface{}{
-				"id": sessionID,
-			},
+		aia.Status.KASession = &aiav1alpha1.KASession{
+			ID: sessionID,
 		}
 	}
-	return obj
+	return aia
 }
 
-func newSeededAIAnalysisClient(objects ...*unstructured.Unstructured) *dynamicfake.FakeDynamicClient {
-	scheme := runtime.NewScheme()
-	client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme,
-		map[schema.GroupVersionResource]string{
-			testAIAnalysisGVR: "AIAnalysisList",
-			isGVR:             "InvestigationSessionList",
-		})
-	for _, obj := range objects {
-		ns := obj.GetNamespace()
-		_, _ = client.Resource(testAIAnalysisGVR).Namespace(ns).Create(context.Background(), obj, metav1.CreateOptions{})
-	}
-	return client
+func newTypedAIAnalysisClient(objects ...crclient.Object) crclient.Client {
+	return fake.NewClientBuilder().
+		WithScheme(aiaTestScheme()).
+		WithObjects(objects...).
+		WithStatusSubresource(objects...).
+		Build()
 }
 
 var _ = Describe("kubernaut_await_session", func() {
@@ -76,8 +59,8 @@ var _ = Describe("kubernaut_await_session", func() {
 		})
 
 		It("UT-AF-1293-SC8-004: returns error when namespace is empty", func() {
-			client := newSeededAIAnalysisClient()
-			_, err := tools.HandleAwaitSession(ctx, client, tools.AwaitSessionArgs{
+			tc := newTypedAIAnalysisClient()
+			_, err := tools.HandleAwaitSession(ctx, tc, tools.AwaitSessionArgs{
 				Namespace: "",
 				RRName:    "rr-test",
 			})
@@ -86,8 +69,8 @@ var _ = Describe("kubernaut_await_session", func() {
 		})
 
 		It("UT-AF-1293-SC8-005: returns error when rr_name is empty", func() {
-			client := newSeededAIAnalysisClient()
-			_, err := tools.HandleAwaitSession(ctx, client, tools.AwaitSessionArgs{
+			tc := newTypedAIAnalysisClient()
+			_, err := tools.HandleAwaitSession(ctx, tc, tools.AwaitSessionArgs{
 				Namespace: "default",
 				RRName:    "",
 			})
@@ -98,11 +81,11 @@ var _ = Describe("kubernaut_await_session", func() {
 
 	Describe("HandleAwaitSession fast-path", func() {
 		It("UT-AF-1293-006: returns immediately when session already exists", func() {
-			aa := newUnstructuredAIAnalysis("default", "aa-ready", "rr-ready", "session-xyz")
-			client := newSeededAIAnalysisClient(aa)
+			aa := newTypedAIAnalysis("default", "aa-ready", "rr-ready", "session-xyz")
+			tc := newTypedAIAnalysisClient(aa)
 
 			start := time.Now()
-			result, err := tools.HandleAwaitSession(ctx, client, tools.AwaitSessionArgs{
+			result, err := tools.HandleAwaitSession(ctx, tc, tools.AwaitSessionArgs{
 				Namespace: "default",
 				RRName:    "rr-ready",
 			})
@@ -117,44 +100,42 @@ var _ = Describe("kubernaut_await_session", func() {
 
 	Describe("HandleAwaitSession list filtering", func() {
 		It("UT-AF-1293-007: list ignores AIAnalysis for different RR name", func() {
-			aa := newUnstructuredAIAnalysis("default", "aa-other", "rr-other", "session-other")
-			client := newSeededAIAnalysisClient(aa)
+			aa := newTypedAIAnalysis("default", "aa-other", "rr-other", "session-other")
+			tc := newTypedAIAnalysisClient(aa)
 
-			list, err := client.Resource(testAIAnalysisGVR).Namespace("default").List(ctx, metav1.ListOptions{})
+			var aiaList aiav1alpha1.AIAnalysisList
+			err := tc.List(ctx, &aiaList, crclient.InNamespace("default"))
 			Expect(err).NotTo(HaveOccurred())
-			Expect(list.Items).To(HaveLen(1))
+			Expect(aiaList.Items).To(HaveLen(1))
 
 			var found string
-			for _, item := range list.Items {
-				rrName, _, _ := unstructured.NestedString(item.Object, "spec", "remediationRequestRef", "name")
-				if rrName != "rr-mine" {
+			for _, item := range aiaList.Items {
+				if item.Spec.RemediationRequestRef.Name != "rr-mine" {
 					continue
 				}
-				sessionID, _, _ := unstructured.NestedString(item.Object, "status", "investigationSession", "id")
-				if sessionID != "" {
-					found = sessionID
+				if item.Status.KASession != nil && item.Status.KASession.ID != "" {
+					found = item.Status.KASession.ID
 				}
 			}
 			Expect(found).To(BeEmpty())
 		})
 
 		It("UT-AF-1293-008: list skips AIAnalysis with empty session ID", func() {
-			aa := newUnstructuredAIAnalysis("default", "aa-nosession", "rr-nosession", "")
-			client := newSeededAIAnalysisClient(aa)
+			aa := newTypedAIAnalysis("default", "aa-nosession", "rr-nosession", "")
+			tc := newTypedAIAnalysisClient(aa)
 
-			list, err := client.Resource(testAIAnalysisGVR).Namespace("default").List(ctx, metav1.ListOptions{})
+			var aiaList aiav1alpha1.AIAnalysisList
+			err := tc.List(ctx, &aiaList, crclient.InNamespace("default"))
 			Expect(err).NotTo(HaveOccurred())
-			Expect(list.Items).To(HaveLen(1))
+			Expect(aiaList.Items).To(HaveLen(1))
 
 			var found string
-			for _, item := range list.Items {
-				rrName, _, _ := unstructured.NestedString(item.Object, "spec", "remediationRequestRef", "name")
-				if rrName != "rr-nosession" {
+			for _, item := range aiaList.Items {
+				if item.Spec.RemediationRequestRef.Name != "rr-nosession" {
 					continue
 				}
-				sessionID, _, _ := unstructured.NestedString(item.Object, "status", "investigationSession", "id")
-				if sessionID != "" {
-					found = sessionID
+				if item.Status.KASession != nil && item.Status.KASession.ID != "" {
+					found = item.Status.KASession.ID
 				}
 			}
 			Expect(found).To(BeEmpty())

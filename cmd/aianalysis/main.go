@@ -306,6 +306,7 @@ func main() {
 		StatusManager:    statusManager,     // DD-PERF-001: Atomic status updates
 		AnalyzingHandler: analyzingHandler,  // BR-AI-012: Rego policy evaluation
 		AuditClient:      auditClient,       // DD-AUDIT-003: P0 audit traces
+		ISPhaseUpdater:   isPhaseUpdater,    // #1421: Cascade cancel to IS in terminal branch
 	}
 	aaReconciler.InvestigatingHandler.Store(investigatingHandler) // BR-AI-007: KA integration
 	if err = aaReconciler.SetupWithManager(mgr); err != nil {

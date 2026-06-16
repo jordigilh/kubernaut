@@ -92,6 +92,17 @@ data:
     # AF-specific keyword→tool_call mappings for E2E testing.
     # mock-LLM matches prompt keywords and returns the corresponding tool call.
     keyword_scenarios:
+      - name: "af_progressive_investigate"
+        keywords: ["progressive investigate", "investigate progressively"]
+        match_last_only: true
+        tool_call:
+          name: "kubernaut_investigate"
+          arguments:
+            api_version: "v1"
+            namespace: "default"
+            name: "nginx"
+            kind: "Pod"
+
       - name: "af_investigate"
         keywords: ["start investigation", "investigate", "begin investigation"]
         match_last_only: true
@@ -135,15 +146,72 @@ data:
           name: "kubernaut_present_decision"
           arguments:
             session_id: "sess-002"
-            options: "restart,scale-up,rollback"
+            summary: "Remediation decision required"
+            options:
+              - workflow_id: "wf-restart"
+                name: "Restart"
+                description: "Restart affected pods"
+              - workflow_id: "wf-scale-up"
+                name: "Scale Up"
+                description: "Scale up deployment replicas"
+              - workflow_id: "wf-rollback"
+                name: "Rollback"
+                description: "Rollback to previous revision"
+
+      - name: "af_structured_decision"
+        keywords: ["structured decision", "present structured rca decision"]
+        match_last_only: true
+        thought_text: "Let me analyze the investigation findings. The data-processor pod has been OOMKilled repeatedly, which correlates with the memory leak pattern in the worker goroutine. I should present the decision options to the operator."
+        tool_call:
+          name: "kubernaut_present_decision"
+          arguments:
+            session_id: "sess-structured-001"
+            summary: "OOMKill detected in production data-processor pod with critical severity and high confidence from investigation"
+            rca:
+              severity: "critical"
+              confidence: 0.92
+              causal_chain:
+                - "Memory leak in data-processor worker goroutine"
+                - "Container hit 512Mi memory limit"
+                - "Kernel sent OOMKill signal to container"
+              target: "Deployment/data-processor in production"
+              tool_calls_count: 19
+              llm_turns: 17
+            options:
+              - workflow_id: "wf-restart-pod"
+                name: "Restart Pod"
+                description: "Rolling restart of affected deployment pods to recover from OOM state"
+                risk: "low"
+                recommended: true
+                parameters:
+                  namespace: "production"
+                  deployment: "data-processor"
+              - workflow_id: "wf-increase-memory"
+                name: "Increase Memory Limit"
+                description: "Scale memory limit from 512Mi to 1Gi to prevent future OOMKill events"
+                risk: "medium"
+                parameters:
+                  new_limit: "1Gi"
+              - workflow_id: "wf-rollback"
+                name: "Rollback Deployment"
+                description: "Roll back to previous stable revision without memory leak"
+                risk: "low"
+                ruled_out_reason: "No previous revision available in cluster deployment history"
+
+      - name: "af_approval_request"
+        keywords: ["watch approval gate", "watch approval gate and approve", "watch approval gate expire"]
+        match_last_only: true
+        tool_call:
+          name: "kubernaut_watch"
+          arguments:
+            name: "rr-approval-e2e"
 
       - name: "af_list_remediations"
         keywords: ["list remediations", "list all remediations"]
         match_last_only: true
         tool_call:
           name: "kubernaut_list_remediations"
-          arguments:
-            namespace: "default"
+          arguments: {}
 
       - name: "af_get_remediation"
         keywords: ["get details for remediation", "get remediation"]
@@ -151,16 +219,6 @@ data:
         tool_call:
           name: "kubernaut_get_remediation"
           arguments:
-            namespace: "payments"
-            name: "rr-test"
-
-      - name: "af_approve"
-        keywords: ["approve the remediation", "approve remediation"]
-        match_last_only: true
-        tool_call:
-          name: "kubernaut_approve"
-          arguments:
-            namespace: "payments"
             name: "rr-test"
 
       - name: "af_cancel_remediation"
@@ -169,7 +227,6 @@ data:
         tool_call:
           name: "kubernaut_cancel_remediation"
           arguments:
-            namespace: "payments"
             name: "rr-test"
 
       - name: "af_watch"
@@ -178,8 +235,15 @@ data:
         tool_call:
           name: "kubernaut_watch"
           arguments:
-            namespace: "payments"
             name: "rr-test"
+
+      - name: "af_watch_progress_e2e"
+        keywords: ["watch progress e2e 1403"]
+        match_last_only: true
+        tool_call:
+          name: "kubernaut_watch"
+          arguments:
+            name: "rr-progress-e2e-1403"
 
       - name: "af_list_workflows"
         keywords: ["list workflows", "available remediation workflows", "list all available"]
@@ -247,6 +311,26 @@ data:
             namespace: "prod"
             kind: "Deployment"
             name: "web"
+
+      - name: "af_list_alerts_prioritized"
+        keywords: ["list alerts", "check active alerts", "what alerts are firing"]
+        match_last_only: true
+        tool_call:
+          name: "list_alerts"
+          arguments:
+            namespace: "default"
+
+      - name: "af_investigate_prioritized_alert"
+        keywords: ["investigate selected alert", "investigate the highest severity"]
+        match_last_only: true
+        tool_call:
+          name: "kubernaut_investigate_alert"
+          arguments:
+            alert_name: "KubePodCrashLooping"
+            namespace: "prod"
+            kind: "Deployment"
+            name: "web-frontend"
+            api_version: "apps/v1"
 ---
 apiVersion: v1
 kind: Service

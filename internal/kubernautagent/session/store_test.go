@@ -291,4 +291,42 @@ var _ = Describe("Session Cancellation Infrastructure — #823", func() {
 			Expect(func() { store.SetResult("nonexistent", &katypes.InvestigationResult{}) }).NotTo(Panic())
 		})
 	})
+
+	Describe("UT-KA-1425-002: SetResult first-write-wins on UserDriving sessions [SI-13]", func() {
+		It("should accept the first result write on a UserDriving session with nil result", func() {
+			store := session.NewStore(30 * time.Minute)
+			id, err := store.Create()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(store.Update(id, session.StatusRunning, nil, nil)).To(Succeed())
+			Expect(store.Update(id, session.StatusUserDriving, nil, nil)).To(Succeed())
+
+			result := &katypes.InvestigationResult{RCASummary: "first write"}
+			store.SetResult(id, result)
+
+			sess, err := store.Get(id)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(sess.Result).To(Equal(result),
+				"SI-13: first write must succeed on UserDriving with nil result")
+		})
+	})
+
+	Describe("UT-KA-1425-003: SetResult blocks overwrite on UserDriving [SC-24, SI-13]", func() {
+		It("should reject a second result write on a UserDriving session that already has a result", func() {
+			store := session.NewStore(30 * time.Minute)
+			id, err := store.Create()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(store.Update(id, session.StatusRunning, nil, nil)).To(Succeed())
+			Expect(store.Update(id, session.StatusUserDriving, nil, nil)).To(Succeed())
+
+			store.SetResult(id, &katypes.InvestigationResult{RCASummary: "original"})
+			store.SetResult(id, &katypes.InvestigationResult{RCASummary: "overwrite attempt"})
+
+			sess, err := store.Get(id)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(sess.Result).NotTo(BeNil(),
+				"SC-24: first SetResult on UserDriving must be accepted (first-write-wins)")
+			Expect(sess.Result.RCASummary).To(Equal("original"),
+				"SC-24: second SetResult must be blocked — first-write-wins protects the original result")
+		})
+	})
 })

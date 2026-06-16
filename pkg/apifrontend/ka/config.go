@@ -126,9 +126,19 @@ type DiscoveredWorkflow struct {
 	Parameters  []WorkflowParameterSchema `json:"parameters"`
 }
 
+// DiscoveryTarget identifies a Kubernetes resource involved in workflow discovery (#1437).
+type DiscoveryTarget struct {
+	APIVersion string `json:"api_version,omitempty"`
+	Kind       string `json:"kind"`
+	Name       string `json:"name"`
+	Namespace  string `json:"namespace"`
+}
+
 // DiscoverWorkflowsResult is the response from kubernaut_discover_workflows MCP call.
 type DiscoverWorkflowsResult struct {
-	Workflows []DiscoveredWorkflow `json:"workflows"`
+	Workflows      []DiscoveredWorkflow `json:"workflows"`
+	SearchedTarget *DiscoveryTarget     `json:"searched_target,omitempty"`
+	SignalTarget   *DiscoveryTarget     `json:"signal_target,omitempty"`
 }
 
 // investigateEnvelope matches the top-level fields of KA's InvestigateOutput.
@@ -138,16 +148,27 @@ type investigateEnvelope struct {
 	Response  string `json:"response"`
 }
 
+// kaDiscoveryTarget matches KA's DiscoveryTargetInfo JSON fields.
+type kaDiscoveryTarget struct {
+	APIVersion string `json:"api_version,omitempty"`
+	Kind       string `json:"kind"`
+	Name       string `json:"name"`
+	Namespace  string `json:"namespace"`
+}
+
 // kaWorkflowDiscoveryPayload matches the JSON inside the Response string
 // of KA's InvestigateOutput when action=discover_workflows.
 type kaWorkflowDiscoveryPayload struct {
-	Recommended  *kaDiscoveredWorkflow  `json:"recommended,omitempty"`
-	Alternatives []kaDiscoveredWorkflow `json:"alternatives,omitempty"`
+	Recommended    *kaDiscoveredWorkflow  `json:"recommended,omitempty"`
+	Alternatives   []kaDiscoveredWorkflow `json:"alternatives,omitempty"`
+	SearchedTarget *kaDiscoveryTarget     `json:"searched_target,omitempty"`
+	SignalTarget   *kaDiscoveryTarget     `json:"signal_target,omitempty"`
 }
 
 // kaDiscoveredWorkflow matches KA's internal DiscoveredWorkflow JSON fields.
 type kaDiscoveredWorkflow struct {
 	WorkflowID      string                 `json:"workflow_id"`
+	Name            string                 `json:"name,omitempty"`
 	ExecutionBundle string                 `json:"execution_bundle,omitempty"`
 	Confidence      float64                `json:"confidence"`
 	Rationale       string                 `json:"rationale"`
@@ -185,14 +206,30 @@ func ParseDiscoverWorkflowsResponse(raw json.RawMessage) (*DiscoverWorkflowsResu
 		workflows = append(workflows, mapKAWorkflow(alt))
 	}
 
-	return &DiscoverWorkflowsResult{Workflows: workflows}, nil
+	result := &DiscoverWorkflowsResult{Workflows: workflows}
+	if payload.SearchedTarget != nil {
+		result.SearchedTarget = &DiscoveryTarget{
+			APIVersion: payload.SearchedTarget.APIVersion,
+			Kind:       payload.SearchedTarget.Kind,
+			Name:       payload.SearchedTarget.Name,
+			Namespace:  payload.SearchedTarget.Namespace,
+		}
+	}
+	if payload.SignalTarget != nil {
+		result.SignalTarget = &DiscoveryTarget{
+			APIVersion: payload.SignalTarget.APIVersion,
+			Kind:       payload.SignalTarget.Kind,
+			Name:       payload.SignalTarget.Name,
+			Namespace:  payload.SignalTarget.Namespace,
+		}
+	}
+	return result, nil
 }
 
 func mapKAWorkflow(raw kaDiscoveredWorkflow) DiscoveredWorkflow {
-	name := raw.WorkflowID
 	return DiscoveredWorkflow{
 		WorkflowID:  raw.WorkflowID,
-		Name:        name,
+		Name:        raw.Name,
 		Description: raw.Rationale,
 		Confidence:  raw.Confidence,
 	}
@@ -287,6 +324,20 @@ type InvokeActionResult struct {
 	Data      json.RawMessage `json:"data,omitempty"`
 }
 
+// CompleteNoActionArgs is the input for the kubernaut_complete_no_action tool proxy.
+type CompleteNoActionArgs struct {
+	RRID             string `json:"rr_id"`
+	Reason           string `json:"reason,omitempty"`
+	EscalationReason string `json:"escalation_reason,omitempty"`
+}
+
+// CompleteNoActionResult is the response from kubernaut_complete_no_action.
+type CompleteNoActionResult struct {
+	Status           string `json:"status"`
+	Reason           string `json:"reason,omitempty"`
+	EscalationReason string `json:"escalation_reason,omitempty"`
+}
+
 // SSE event type constants matching KA's wire format.
 const (
 	EventTypeReasoningDelta = "reasoning_delta"
@@ -294,7 +345,9 @@ const (
 	EventTypeToolCallStart  = "tool_call_start"
 	EventTypeToolCall       = "tool_call"
 	EventTypeToolResult     = "tool_result"
-	EventTypeError          = "error"
-	EventTypeComplete       = "complete"
-	EventTypeCancelled      = "cancelled"
+	EventTypeError            = "error"
+	EventTypeComplete         = "complete"
+	EventTypeCancelled        = "cancelled"
+	EventTypeAlignmentVerdict = "alignment_verdict"
+	EventTypeSessionEnded    = "session_ended"
 )

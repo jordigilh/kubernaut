@@ -28,6 +28,11 @@ mcp:
   enabled: true
   sessionIdleTimeout: 5m
 
+interactive:
+  enabled: true
+  awaitSessionTimeout: 10s
+  bridgeInactivityTimeout: 15s
+
 agentCard:
   url: "https://apifrontend.kubernaut-system.svc:8443"
 

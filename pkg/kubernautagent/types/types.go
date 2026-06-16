@@ -27,6 +27,13 @@ const (
 	PhaseValidation        Phase = "validation"
 )
 
+// HumanReviewReasonAlignmentCheckFailed is the sentinel value for
+// InvestigationResult.HumanReviewReason when the shadow agent alignment
+// check has flagged suspicious content. Used across session lifecycle
+// (store, manager) and event emission to identify security escalations
+// that must bypass interactive hold.
+const HumanReviewReasonAlignmentCheckFailed = "alignment_check_failed"
+
 // PhaseToolMap defines which tool names are available in each phase (I4).
 type PhaseToolMap map[Phase][]string
 
@@ -84,6 +91,16 @@ type InvestigationResult struct {
 	// History of validation attempts during self-correction (DD-HAPI-002 v1.2).
 	// Populated by Validator.SelfCorrect when validation fails and retries occur.
 	ValidationAttemptsHistory []ValidationAttemptRecord `json:"validation_attempts_history,omitempty"`
+
+	// TotalLLMTurns tracks the total number of LLM inference calls made across
+	// all investigation phases (RCA + workflow selection). Surfaced in the
+	// structured decision payload for observability (#1396).
+	TotalLLMTurns int `json:"total_llm_turns,omitempty"`
+
+	// TotalToolCalls tracks the total number of tool executions dispatched
+	// across all investigation phases. Surfaced in the structured decision
+	// payload for observability (#1396).
+	TotalToolCalls int `json:"total_tool_calls,omitempty"`
 
 	// Cancelled indicates the investigation was aborted by operator action
 	// (BR-SESSION-001). When true, the result contains partial accumulated

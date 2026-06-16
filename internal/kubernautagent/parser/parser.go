@@ -68,6 +68,7 @@ func (p *ResultParser) Parse(content string) (*katypes.InvestigationResult, erro
 			applyFlatFields(&result, flat)
 			mergeNestedRemediationTarget(&result, coerced)
 			mergeNestedInvestigationAnalysis(&result, coerced)
+			mergeNestedSelectedWorkflow(&result, coerced)
 			applyOutcomeRouting(&result)
 			return &result, nil
 		}
@@ -655,6 +656,40 @@ func mergeNestedInvestigationAnalysis(result *katypes.InvestigationResult, jsonS
 		return
 	}
 	result.InvestigationAnalysis = rca.InvestigationAnalysis
+}
+
+// mergeNestedSelectedWorkflow extracts selected_workflow fields from a nested
+// JSON object when the flat parse path succeeded but WorkflowID is empty.
+// Handles hybrid JSON where the LLM returns flat rca_summary alongside a nested
+// selected_workflow (#1431). Top-level workflow_id (already populated by
+// json.Unmarshal) takes precedence.
+func mergeNestedSelectedWorkflow(result *katypes.InvestigationResult, jsonStr string) {
+	if result.WorkflowID != "" {
+		return
+	}
+	var resp llmResponse
+	if err := json.Unmarshal([]byte(jsonStr), &resp); err != nil {
+		return
+	}
+	if resp.Workflow == nil {
+		return
+	}
+	result.WorkflowID = resp.Workflow.WorkflowID
+	result.ExecutionBundle = resp.Workflow.ExecutionBundle
+	if resp.Workflow.Confidence > 0 {
+		result.Confidence = resp.Workflow.Confidence
+	}
+	result.Reason = resp.Workflow.Rationale
+	result.WorkflowRationale = resp.Workflow.Rationale
+	result.ExecutionEngine = resp.Workflow.ExecutionEngine
+	if resp.Workflow.Parameters != nil {
+		if result.Parameters == nil {
+			result.Parameters = make(map[string]interface{})
+		}
+		for k, v := range resp.Workflow.Parameters {
+			result.Parameters[k] = v
+		}
+	}
 }
 
 // applyFlatFields applies LLM-provided flat fields to the result:

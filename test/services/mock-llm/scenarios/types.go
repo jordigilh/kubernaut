@@ -34,8 +34,8 @@ type MockAlternativeWorkflow struct {
 
 // MultiToolCallEntry describes a single tool call within a multi-tool-call batch.
 type MultiToolCallEntry struct {
-	Name      string            `yaml:"name"`
-	Arguments map[string]string `yaml:"arguments,omitempty"`
+	Name      string                 `yaml:"name"`
+	Arguments map[string]interface{} `yaml:"arguments,omitempty"`
 }
 
 // MockScenarioConfig holds the static configuration for a mock scenario.
@@ -82,7 +82,7 @@ type MockScenarioConfig struct {
 	// and return a tool call with this name on the first request.
 	ToolCallName string
 	// ToolCallArgs provides the arguments for the custom tool call.
-	ToolCallArgs map[string]string
+	ToolCallArgs map[string]interface{}
 
 	// MultiToolCalls, when non-empty, causes the handler to return all
 	// listed tool calls in a single assistant message on the first request.
@@ -96,12 +96,23 @@ type MockScenarioConfig struct {
 	// keyword scenarios where each turn must trigger a distinct tool call.
 	RepeatToolCall bool
 
+	// NextToolCall, when set, is emitted on the second turn (after the
+	// initial ToolCallName's FunctionResponse arrives). This enables chained
+	// tool call scenarios like: investigate → discover_workflows without
+	// requiring a new user message between them.
+	NextToolCall *MultiToolCallEntry
+
 	// SecondTurnDelay, when > 0, causes the handler to sleep for the given
 	// duration on second-turn (tool-result-present) requests. The delay is
 	// context-aware: it aborts early if the HTTP client disconnects.
 	// Used by E2E tests (e.g. STREAM-03) that need to disconnect while the
 	// executor is blocked waiting for the LLM response.
 	SecondTurnDelay time.Duration
+
+	// ThoughtText, when non-empty, causes the response to include a Thought
+	// part (with thought=true) before the tool call or text response. This
+	// simulates Gemini's extended thinking mode for E2E reasoning tests.
+	ThoughtText string
 }
 
 // BoolPtr is a helper for creating *bool literals in scenario configs.

@@ -160,7 +160,7 @@ func (s *StreamingExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestC
 			if getErr != nil || resp == nil || resp.Session == nil {
 				break
 			}
-			if !session.NeedsReinvocation(isv1alpha1.SessionPhaseActive, resp.Session.Events(), reinvokeCount) {
+			if !session.NeedsReinvocationCtx(ctx, isv1alpha1.SessionPhaseActive, resp.Session.Events(), reinvokeCount) {
 				break
 			}
 			reinvokeCount++

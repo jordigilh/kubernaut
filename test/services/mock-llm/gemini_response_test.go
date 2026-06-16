@@ -98,8 +98,8 @@ var _ = Describe("Gemini Response Builders (issue #1157)", func() {
 	Describe("UT-MOCK-GEMINI-003: Gemini multi-tool call response builder", func() {
 		It("UT-MOCK-GEMINI-003-001: should produce multiple function calls in parts", func() {
 			entries := []scenarios.MultiToolCallEntry{
-				{Name: "kubectl_get_yaml", Arguments: map[string]string{"kind": "Pod", "namespace": "default"}},
-				{Name: "get_resource_context", Arguments: map[string]string{"kind": "Deployment", "name": "api"}},
+				{Name: "kubectl_get_yaml", Arguments: map[string]interface{}{"kind": "Pod", "namespace": "default"}},
+				{Name: "get_resource_context", Arguments: map[string]interface{}{"kind": "Deployment", "name": "api"}},
 			}
 			resp := response.BuildGeminiMultiToolCallResponse(entries)
 			Expect(resp.Candidates).To(HaveLen(1))
@@ -110,7 +110,7 @@ var _ = Describe("Gemini Response Builders (issue #1157)", func() {
 
 		It("UT-MOCK-GEMINI-003-002: should pass arguments correctly for each tool call", func() {
 			entries := []scenarios.MultiToolCallEntry{
-				{Name: "kubectl_get_yaml", Arguments: map[string]string{"kind": "Pod"}},
+				{Name: "kubectl_get_yaml", Arguments: map[string]interface{}{"kind": "Pod"}},
 			}
 			resp := response.BuildGeminiMultiToolCallResponse(entries)
 			args := resp.Candidates[0].Content.Parts[0].FunctionCall.Args

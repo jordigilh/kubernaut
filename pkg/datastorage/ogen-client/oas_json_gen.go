@@ -501,6 +501,406 @@ func (s *AIAgentAlignmentVerdictPayloadEventType) UnmarshalJSON(data []byte) err
 }
 
 // Encode implements json.Marshaler.
+func (s *AIAgentAuthDeniedPayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *AIAgentAuthDeniedPayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		e.FieldStart("event_id")
+		e.Str(s.EventID)
+	}
+	{
+		if s.SourceIP.Set {
+			e.FieldStart("source_ip")
+			s.SourceIP.Encode(e)
+		}
+	}
+	{
+		if s.Path.Set {
+			e.FieldStart("path")
+			s.Path.Encode(e)
+		}
+	}
+	{
+		if s.Method.Set {
+			e.FieldStart("method")
+			s.Method.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfAIAgentAuthDeniedPayload = [5]string{
+	0: "event_type",
+	1: "event_id",
+	2: "source_ip",
+	3: "path",
+	4: "method",
+}
+
+// Decode decodes AIAgentAuthDeniedPayload from json.
+func (s *AIAgentAuthDeniedPayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAgentAuthDeniedPayload to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "event_id":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.EventID = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_id\"")
+			}
+		case "source_ip":
+			if err := func() error {
+				s.SourceIP.Reset()
+				if err := s.SourceIP.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"source_ip\"")
+			}
+		case "path":
+			if err := func() error {
+				s.Path.Reset()
+				if err := s.Path.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"path\"")
+			}
+		case "method":
+			if err := func() error {
+				s.Method.Reset()
+				if err := s.Method.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"method\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode AIAgentAuthDeniedPayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000011,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfAIAgentAuthDeniedPayload) {
+					name = jsonFieldsNameOfAIAgentAuthDeniedPayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *AIAgentAuthDeniedPayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAgentAuthDeniedPayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AIAgentAuthDeniedPayloadEventType as json.
+func (s AIAgentAuthDeniedPayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes AIAgentAuthDeniedPayloadEventType from json.
+func (s *AIAgentAuthDeniedPayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAgentAuthDeniedPayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch AIAgentAuthDeniedPayloadEventType(v) {
+	case AIAgentAuthDeniedPayloadEventTypeAiagentAuthDenied:
+		*s = AIAgentAuthDeniedPayloadEventTypeAiagentAuthDenied
+	default:
+		*s = AIAgentAuthDeniedPayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s AIAgentAuthDeniedPayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAgentAuthDeniedPayloadEventType) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *AIAgentAuthFailurePayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *AIAgentAuthFailurePayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		e.FieldStart("event_id")
+		e.Str(s.EventID)
+	}
+	{
+		if s.SourceIP.Set {
+			e.FieldStart("source_ip")
+			s.SourceIP.Encode(e)
+		}
+	}
+	{
+		if s.Path.Set {
+			e.FieldStart("path")
+			s.Path.Encode(e)
+		}
+	}
+	{
+		if s.Method.Set {
+			e.FieldStart("method")
+			s.Method.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfAIAgentAuthFailurePayload = [5]string{
+	0: "event_type",
+	1: "event_id",
+	2: "source_ip",
+	3: "path",
+	4: "method",
+}
+
+// Decode decodes AIAgentAuthFailurePayload from json.
+func (s *AIAgentAuthFailurePayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAgentAuthFailurePayload to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "event_id":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.EventID = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_id\"")
+			}
+		case "source_ip":
+			if err := func() error {
+				s.SourceIP.Reset()
+				if err := s.SourceIP.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"source_ip\"")
+			}
+		case "path":
+			if err := func() error {
+				s.Path.Reset()
+				if err := s.Path.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"path\"")
+			}
+		case "method":
+			if err := func() error {
+				s.Method.Reset()
+				if err := s.Method.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"method\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode AIAgentAuthFailurePayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000011,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfAIAgentAuthFailurePayload) {
+					name = jsonFieldsNameOfAIAgentAuthFailurePayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *AIAgentAuthFailurePayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAgentAuthFailurePayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AIAgentAuthFailurePayloadEventType as json.
+func (s AIAgentAuthFailurePayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes AIAgentAuthFailurePayloadEventType from json.
+func (s *AIAgentAuthFailurePayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAgentAuthFailurePayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch AIAgentAuthFailurePayloadEventType(v) {
+	case AIAgentAuthFailurePayloadEventTypeAiagentAuthFailure:
+		*s = AIAgentAuthFailurePayloadEventTypeAiagentAuthFailure
+	default:
+		*s = AIAgentAuthFailurePayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s AIAgentAuthFailurePayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAgentAuthFailurePayloadEventType) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
 func (s *AIAgentEnrichmentCompletedPayload) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
@@ -2196,6 +2596,206 @@ func (s AIAgentRCACompletePayloadEventType) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *AIAgentRCACompletePayloadEventType) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *AIAgentRatelimitDeniedPayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *AIAgentRatelimitDeniedPayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		e.FieldStart("event_id")
+		e.Str(s.EventID)
+	}
+	{
+		if s.SourceIP.Set {
+			e.FieldStart("source_ip")
+			s.SourceIP.Encode(e)
+		}
+	}
+	{
+		if s.Path.Set {
+			e.FieldStart("path")
+			s.Path.Encode(e)
+		}
+	}
+	{
+		if s.Method.Set {
+			e.FieldStart("method")
+			s.Method.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfAIAgentRatelimitDeniedPayload = [5]string{
+	0: "event_type",
+	1: "event_id",
+	2: "source_ip",
+	3: "path",
+	4: "method",
+}
+
+// Decode decodes AIAgentRatelimitDeniedPayload from json.
+func (s *AIAgentRatelimitDeniedPayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAgentRatelimitDeniedPayload to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "event_id":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.EventID = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_id\"")
+			}
+		case "source_ip":
+			if err := func() error {
+				s.SourceIP.Reset()
+				if err := s.SourceIP.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"source_ip\"")
+			}
+		case "path":
+			if err := func() error {
+				s.Path.Reset()
+				if err := s.Path.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"path\"")
+			}
+		case "method":
+			if err := func() error {
+				s.Method.Reset()
+				if err := s.Method.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"method\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode AIAgentRatelimitDeniedPayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000011,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfAIAgentRatelimitDeniedPayload) {
+					name = jsonFieldsNameOfAIAgentRatelimitDeniedPayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *AIAgentRatelimitDeniedPayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAgentRatelimitDeniedPayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes AIAgentRatelimitDeniedPayloadEventType as json.
+func (s AIAgentRatelimitDeniedPayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes AIAgentRatelimitDeniedPayloadEventType from json.
+func (s *AIAgentRatelimitDeniedPayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode AIAgentRatelimitDeniedPayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch AIAgentRatelimitDeniedPayloadEventType(v) {
+	case AIAgentRatelimitDeniedPayloadEventTypeAiagentRatelimitDenied:
+		*s = AIAgentRatelimitDeniedPayloadEventTypeAiagentRatelimitDenied
+	default:
+		*s = AIAgentRatelimitDeniedPayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s AIAgentRatelimitDeniedPayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *AIAgentRatelimitDeniedPayloadEventType) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -17657,6 +18257,90 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
+	case AIAgentRatelimitDeniedPayloadAuditEventEventData:
+		e.FieldStart("event_type")
+		e.Str("aiagent.ratelimit.denied")
+		{
+			s := s.AIAgentRatelimitDeniedPayload
+			{
+				e.FieldStart("event_id")
+				e.Str(s.EventID)
+			}
+			{
+				if s.SourceIP.Set {
+					e.FieldStart("source_ip")
+					s.SourceIP.Encode(e)
+				}
+			}
+			{
+				if s.Path.Set {
+					e.FieldStart("path")
+					s.Path.Encode(e)
+				}
+			}
+			{
+				if s.Method.Set {
+					e.FieldStart("method")
+					s.Method.Encode(e)
+				}
+			}
+		}
+	case AIAgentAuthFailurePayloadAuditEventEventData:
+		e.FieldStart("event_type")
+		e.Str("aiagent.auth.failure")
+		{
+			s := s.AIAgentAuthFailurePayload
+			{
+				e.FieldStart("event_id")
+				e.Str(s.EventID)
+			}
+			{
+				if s.SourceIP.Set {
+					e.FieldStart("source_ip")
+					s.SourceIP.Encode(e)
+				}
+			}
+			{
+				if s.Path.Set {
+					e.FieldStart("path")
+					s.Path.Encode(e)
+				}
+			}
+			{
+				if s.Method.Set {
+					e.FieldStart("method")
+					s.Method.Encode(e)
+				}
+			}
+		}
+	case AIAgentAuthDeniedPayloadAuditEventEventData:
+		e.FieldStart("event_type")
+		e.Str("aiagent.auth.denied")
+		{
+			s := s.AIAgentAuthDeniedPayload
+			{
+				e.FieldStart("event_id")
+				e.Str(s.EventID)
+			}
+			{
+				if s.SourceIP.Set {
+					e.FieldStart("source_ip")
+					s.SourceIP.Encode(e)
+				}
+			}
+			{
+				if s.Path.Set {
+					e.FieldStart("path")
+					s.Path.Encode(e)
+				}
+			}
+			{
+				if s.Method.Set {
+					e.FieldStart("method")
+					s.Method.Encode(e)
+				}
+			}
+		}
 	case RemediationRequestWebhookAuditPayloadAuditEventEventData:
 		e.FieldStart("event_type")
 		e.Str("webhook.remediationrequest.timeout_modified")
@@ -19176,6 +19860,15 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 				case "aiagent.shadow.llm.response":
 					s.Type = ShadowLLMResponsePayloadAuditEventEventData
 					found = true
+				case "aiagent.ratelimit.denied":
+					s.Type = AIAgentRatelimitDeniedPayloadAuditEventEventData
+					found = true
+				case "aiagent.auth.failure":
+					s.Type = AIAgentAuthFailurePayloadAuditEventEventData
+					found = true
+				case "aiagent.auth.denied":
+					s.Type = AIAgentAuthDeniedPayloadAuditEventEventData
+					found = true
 				case "webhook.remediationrequest.timeout_modified":
 					s.Type = RemediationRequestWebhookAuditPayloadAuditEventEventData
 					found = true
@@ -19534,6 +20227,18 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 		}
 	case ShadowLLMResponsePayloadAuditEventEventData:
 		if err := s.ShadowLLMResponsePayload.Decode(d); err != nil {
+			return err
+		}
+	case AIAgentRatelimitDeniedPayloadAuditEventEventData:
+		if err := s.AIAgentRatelimitDeniedPayload.Decode(d); err != nil {
+			return err
+		}
+	case AIAgentAuthFailurePayloadAuditEventEventData:
+		if err := s.AIAgentAuthFailurePayload.Decode(d); err != nil {
+			return err
+		}
+	case AIAgentAuthDeniedPayloadAuditEventEventData:
+		if err := s.AIAgentAuthDeniedPayload.Decode(d); err != nil {
 			return err
 		}
 	case RemediationRequestWebhookAuditPayloadAuditEventEventData:
@@ -22416,6 +23121,90 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
+	case AIAgentRatelimitDeniedPayloadAuditEventRequestEventData:
+		e.FieldStart("event_type")
+		e.Str("aiagent.ratelimit.denied")
+		{
+			s := s.AIAgentRatelimitDeniedPayload
+			{
+				e.FieldStart("event_id")
+				e.Str(s.EventID)
+			}
+			{
+				if s.SourceIP.Set {
+					e.FieldStart("source_ip")
+					s.SourceIP.Encode(e)
+				}
+			}
+			{
+				if s.Path.Set {
+					e.FieldStart("path")
+					s.Path.Encode(e)
+				}
+			}
+			{
+				if s.Method.Set {
+					e.FieldStart("method")
+					s.Method.Encode(e)
+				}
+			}
+		}
+	case AIAgentAuthFailurePayloadAuditEventRequestEventData:
+		e.FieldStart("event_type")
+		e.Str("aiagent.auth.failure")
+		{
+			s := s.AIAgentAuthFailurePayload
+			{
+				e.FieldStart("event_id")
+				e.Str(s.EventID)
+			}
+			{
+				if s.SourceIP.Set {
+					e.FieldStart("source_ip")
+					s.SourceIP.Encode(e)
+				}
+			}
+			{
+				if s.Path.Set {
+					e.FieldStart("path")
+					s.Path.Encode(e)
+				}
+			}
+			{
+				if s.Method.Set {
+					e.FieldStart("method")
+					s.Method.Encode(e)
+				}
+			}
+		}
+	case AIAgentAuthDeniedPayloadAuditEventRequestEventData:
+		e.FieldStart("event_type")
+		e.Str("aiagent.auth.denied")
+		{
+			s := s.AIAgentAuthDeniedPayload
+			{
+				e.FieldStart("event_id")
+				e.Str(s.EventID)
+			}
+			{
+				if s.SourceIP.Set {
+					e.FieldStart("source_ip")
+					s.SourceIP.Encode(e)
+				}
+			}
+			{
+				if s.Path.Set {
+					e.FieldStart("path")
+					s.Path.Encode(e)
+				}
+			}
+			{
+				if s.Method.Set {
+					e.FieldStart("method")
+					s.Method.Encode(e)
+				}
+			}
+		}
 	case RemediationRequestWebhookAuditPayloadAuditEventRequestEventData:
 		e.FieldStart("event_type")
 		e.Str("webhook.remediationrequest.timeout_modified")
@@ -23935,6 +24724,15 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 				case "aiagent.shadow.llm.response":
 					s.Type = ShadowLLMResponsePayloadAuditEventRequestEventData
 					found = true
+				case "aiagent.ratelimit.denied":
+					s.Type = AIAgentRatelimitDeniedPayloadAuditEventRequestEventData
+					found = true
+				case "aiagent.auth.failure":
+					s.Type = AIAgentAuthFailurePayloadAuditEventRequestEventData
+					found = true
+				case "aiagent.auth.denied":
+					s.Type = AIAgentAuthDeniedPayloadAuditEventRequestEventData
+					found = true
 				case "webhook.remediationrequest.timeout_modified":
 					s.Type = RemediationRequestWebhookAuditPayloadAuditEventRequestEventData
 					found = true
@@ -24293,6 +25091,18 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 		}
 	case ShadowLLMResponsePayloadAuditEventRequestEventData:
 		if err := s.ShadowLLMResponsePayload.Decode(d); err != nil {
+			return err
+		}
+	case AIAgentRatelimitDeniedPayloadAuditEventRequestEventData:
+		if err := s.AIAgentRatelimitDeniedPayload.Decode(d); err != nil {
+			return err
+		}
+	case AIAgentAuthFailurePayloadAuditEventRequestEventData:
+		if err := s.AIAgentAuthFailurePayload.Decode(d); err != nil {
+			return err
+		}
+	case AIAgentAuthDeniedPayloadAuditEventRequestEventData:
+		if err := s.AIAgentAuthDeniedPayload.Decode(d); err != nil {
 			return err
 		}
 	case RemediationRequestWebhookAuditPayloadAuditEventRequestEventData:

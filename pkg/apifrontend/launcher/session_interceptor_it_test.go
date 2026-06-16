@@ -62,7 +62,7 @@ var _ = Describe("SessionInterceptor Integration (BR-SESS-020)", func() {
 		registry = launcher.NewActiveContextRegistry(2 * time.Hour)
 		logBuf = &syncBuffer{}
 		logger = funcr.New(func(prefix, args string) {
-			logBuf.WriteString(prefix + " " + args + "\n")
+			_, _ = logBuf.WriteString(prefix + " " + args + "\n")
 		}, funcr.Options{})
 	})
 

@@ -32,8 +32,8 @@ import (
 
 var _ = Describe("IT-KA-1351: Session wiring for user_driving guards", func() {
 
-	Describe("IT-KA-1351-STORE: SetResult + Manager user_driving guard (KA-HIGH-4)", func() {
-		It("rejects SetResult writes when session is StatusUserDriving", func() {
+	Describe("IT-KA-1351-STORE: SetResult first-write-wins + overwrite guard (KA-HIGH-4, #1425)", func() {
+		It("accepts first SetResult on UserDriving with nil result, blocks overwrite", func() {
 			store := session.NewStore(1 * time.Hour)
 			mgr := session.NewManager(store, logr.Discard(), nil, nil)
 
@@ -46,12 +46,21 @@ var _ = Describe("IT-KA-1351: Session wiring for user_driving guards", func() {
 			err = mgr.TransitionToUserDriving(id, "alice", nil)
 			Expect(err).NotTo(HaveOccurred())
 
-			store.SetResult(id, &katypes.InvestigationResult{RCASummary: "stale"})
+			first := &katypes.InvestigationResult{RCASummary: "preserved from investigation"}
+			store.SetResult(id, first)
 
 			sess, err := store.Get(id)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(sess.Result).To(BeNil(),
-				"SetResult must not write when session is StatusUserDriving (KA-HIGH-4)")
+			Expect(sess.Result).NotTo(BeNil(),
+				"#1425: first SetResult on UserDriving with nil result must be accepted (first-write-wins)")
+			Expect(sess.Result.RCASummary).To(Equal("preserved from investigation"))
+
+			store.SetResult(id, &katypes.InvestigationResult{RCASummary: "stale overwrite"})
+
+			sess, err = store.Get(id)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(sess.Result.RCASummary).To(Equal("preserved from investigation"),
+				"KA-HIGH-4: second SetResult on UserDriving must be blocked to prevent overwrite")
 		})
 	})
 

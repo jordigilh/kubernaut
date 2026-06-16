@@ -223,6 +223,7 @@ var _ = Describe("CNV DetectedLabels Integration (#1378)", Label("it", "ds", "cn
 
 	Describe("CNV fixture roundtrip and discovery", func() {
 		It("IT-DS-1378-003: fixture parse → serialize → extract → query preserves all 4 CNV fields [BR-WORKFLOW-004]", func() {
+			prefix := fmt.Sprintf("wf-cnv-%s-", testID)
 			rawFixture := testutil.LoadWorkflowFixture("cnv-vm-boot-failure")
 
 			parsedSchema, err := schemaParser.ParseAndValidate(rawFixture)
@@ -257,16 +258,16 @@ var _ = Describe("CNV DetectedLabels Integration (#1378)", Label("it", "ds", "cn
 				CDIManaged:     true,
 				StorageBackend: "odf-ceph",
 			})
-			results, totalCount, err := workflowRepo.ListWorkflowsByActionType(ctx, parsedSchema.ActionType, filters, 0, 10)
+			results, _, err := workflowRepo.ListWorkflowsByActionType(ctx, parsedSchema.ActionType, filters, 0, 100)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(totalCount).To(Equal(1))
-			Expect(results).To(HaveLen(1))
-			Expect(results[0].WorkflowName).To(Equal(workflowName))
-			Expect(results[0].DetectedLabels.VirtualMachine).To(BeTrue())
-			Expect(results[0].DetectedLabels.LiveMigratable).To(BeTrue())
-			Expect(results[0].DetectedLabels.CDIManaged).To(BeTrue())
-			Expect(results[0].DetectedLabels.StorageBackend).To(Equal("odf-ceph"))
+			ours := filterOurs(results, prefix)
+			Expect(ours).To(HaveLen(1))
+			Expect(ours[0].WorkflowName).To(Equal(workflowName))
+			Expect(ours[0].DetectedLabels.VirtualMachine).To(BeTrue())
+			Expect(ours[0].DetectedLabels.LiveMigratable).To(BeTrue())
+			Expect(ours[0].DetectedLabels.CDIManaged).To(BeTrue())
+			Expect(ours[0].DetectedLabels.StorageBackend).To(Equal("odf-ceph"))
 		})
 	})
 })

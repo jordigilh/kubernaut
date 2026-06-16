@@ -1,10 +1,13 @@
 package tools
 
 import (
+	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -13,6 +16,7 @@ import (
 
 	prom "github.com/jordigilh/kubernaut/pkg/apifrontend/prometheus"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/security"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
 )
 
@@ -68,11 +72,56 @@ type AlertSummary struct {
 	ActiveAt    time.Time         `json:"active_at,omitempty"`
 }
 
+// PrioritizedAlerts holds index-based references into the sorted alerts[] array.
+// SelectedIndex is the highest-severity, longest-firing (FIFO) alert.
+// TiedIndices contains indices of other alerts at the same severity as Selected.
+// AlsoActiveStart is the index where lower-severity alerts begin.
+type PrioritizedAlerts struct {
+	SelectedIndex   int   `json:"selected_index"`
+	TiedIndices     []int `json:"tied_indices,omitempty"`
+	AlsoActiveStart int   `json:"also_active_start,omitempty"`
+}
+
 // ListAlertsResult is the output of list_alerts.
 type ListAlertsResult struct {
-	Alerts    []AlertSummary `json:"alerts"`
-	Count     int            `json:"count"`
-	Truncated bool           `json:"truncated,omitempty"`
+	Alerts      []AlertSummary   `json:"alerts"`
+	Count       int              `json:"count"`
+	TotalCount  int              `json:"total_count,omitempty"`
+	Truncated   bool             `json:"truncated,omitempty"`
+	Prioritized *PrioritizedAlerts `json:"prioritized,omitempty"`
+}
+
+// PrioritizeAlerts sorts alerts by severity (descending) then ActiveAt (ascending, FIFO)
+// and returns index-based metadata identifying the selected alert, tied peers, and
+// where lower-severity alerts begin. The alerts slice is sorted in-place.
+func PrioritizeAlerts(alerts []AlertSummary) PrioritizedAlerts {
+	if len(alerts) == 0 {
+		return PrioritizedAlerts{}
+	}
+	slices.SortStableFunc(alerts, func(a, b AlertSummary) int {
+		sevCmp := severity.CompareSeverity(b.Labels["severity"], a.Labels["severity"])
+		if sevCmp != 0 {
+			return sevCmp
+		}
+		return cmp.Compare(a.ActiveAt.UnixNano(), b.ActiveAt.UnixNano())
+	})
+
+	selectedSev := alerts[0].Labels["severity"]
+	var tiedIndices []int
+	alsoActiveStart := len(alerts)
+	for i := 1; i < len(alerts); i++ {
+		if severity.CompareSeverity(alerts[i].Labels["severity"], selectedSev) == 0 {
+			tiedIndices = append(tiedIndices, i)
+		} else {
+			alsoActiveStart = i
+			break
+		}
+	}
+	return PrioritizedAlerts{
+		SelectedIndex:   0,
+		TiedIndices:     tiedIndices,
+		AlsoActiveStart: alsoActiveStart,
+	}
 }
 
 // GetAlertDetailsArgs defines the input for get_alert_details.
@@ -130,8 +179,70 @@ func HandleListAlerts(ctx context.Context, client prom.Client, args ListAlertsAr
 		})
 	}
 
-	result, truncated := TrimSliceToFit(result)
-	return ListAlertsResult{Alerts: result, Count: len(result), Truncated: truncated}, nil
+	totalCount := len(result)
+
+	var prioritized *PrioritizedAlerts
+	if len(result) > 0 {
+		p := PrioritizeAlerts(result)
+		prioritized = &p
+	}
+
+	out := ListAlertsResult{
+		Alerts:      result,
+		Count:       len(result),
+		TotalCount:  totalCount,
+		Prioritized: prioritized,
+	}
+
+	out = trimResultToFit(out)
+	return out, nil
+}
+
+// trimResultToFit serializes the full ListAlertsResult and removes alerts from
+// the tail (lowest priority) until the JSON fits within maxToolOutputBytes.
+// This accounts for the full struct size including the prioritized metadata,
+// preventing the session-level trimmer from replacing the response with a stub.
+func trimResultToFit(r ListAlertsResult) ListAlertsResult {
+	raw, err := json.Marshal(r)
+	if err != nil || len(raw) <= maxToolOutputBytes {
+		return r
+	}
+	r.Truncated = true
+	for len(r.Alerts) > 1 && len(raw) > maxToolOutputBytes {
+		r.Alerts = r.Alerts[:len(r.Alerts)-1]
+		r.Count = len(r.Alerts)
+		if r.Prioritized != nil {
+			r.Prioritized = recalcPrioritizedIndices(r.Alerts, r.Prioritized)
+		}
+		raw, err = json.Marshal(r)
+		if err != nil {
+			break
+		}
+	}
+	return r
+}
+
+// recalcPrioritizedIndices adjusts tied/also_active indices after trimming.
+func recalcPrioritizedIndices(alerts []AlertSummary, p *PrioritizedAlerts) *PrioritizedAlerts {
+	if len(alerts) == 0 {
+		return nil
+	}
+	selectedSev := alerts[0].Labels["severity"]
+	var tied []int
+	alsoActiveStart := len(alerts)
+	for i := 1; i < len(alerts); i++ {
+		if severity.CompareSeverity(alerts[i].Labels["severity"], selectedSev) == 0 {
+			tied = append(tied, i)
+		} else {
+			alsoActiveStart = i
+			break
+		}
+	}
+	return &PrioritizedAlerts{
+		SelectedIndex:   0,
+		TiedIndices:     tied,
+		AlsoActiveStart: alsoActiveStart,
+	}
 }
 
 // HandleGetAlertDetails implements the get_alert_details logic.

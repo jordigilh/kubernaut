@@ -288,6 +288,8 @@ func (s HumanReviewReason) Validate() error {
 		return nil
 	case "alignment_check_failed":
 		return nil
+	case "operator_escalation":
+		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}

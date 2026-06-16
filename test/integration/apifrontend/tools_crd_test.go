@@ -52,7 +52,7 @@ var _ = Describe("CRD Tools Integration (tools/ via envtest)", func() {
 				_ = dynamicClient.Resource(rrGVR).Namespace("default").Delete(ctx, "test-rr-035", metav1.DeleteOptions{})
 			})
 
-			result, err := tools.HandleListRemediations(ctx, dynamicClient, tools.ListRemediationsArgs{
+			result, err := tools.HandleListRemediations(ctx, k8sClient, tools.ListRemediationsArgs{
 				Namespace: "default",
 			})
 			Expect(err).NotTo(HaveOccurred())

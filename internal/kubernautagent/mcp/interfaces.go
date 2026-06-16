@@ -85,6 +85,17 @@ type InteractiveSession struct {
 	DiscoveryResult *WorkflowDiscoveryResult
 }
 
+// DiscoveryTargetInfo identifies a Kubernetes resource involved in workflow
+// discovery. Used to surface both the resource that was searched against the
+// catalog (searched_target) and the original alert resource (signal_target)
+// so the Console can explain cross-resource RCA scenarios (#1437).
+type DiscoveryTargetInfo struct {
+	APIVersion string `json:"api_version,omitempty"`
+	Kind       string `json:"kind"`
+	Name       string `json:"name"`
+	Namespace  string `json:"namespace"`
+}
+
 // WorkflowDiscoveryResult holds the Phase 3 recommendations returned to the user
 // by discover_workflows. Contains the selected + alternative workflows along with
 // the full InvestigationResult for final assembly in select_workflow.
@@ -93,6 +104,11 @@ type WorkflowDiscoveryResult struct {
 	Recommended *DiscoveredWorkflow `json:"recommended,omitempty"`
 	// Alternatives are additional workflows the user may choose from.
 	Alternatives []DiscoveredWorkflow `json:"alternatives,omitempty"`
+	// SearchedTarget is the resource that was searched against the workflow
+	// catalog. Sourced from workflowResult.RemediationTarget (#1437).
+	SearchedTarget *DiscoveryTargetInfo `json:"searched_target,omitempty"`
+	// SignalTarget is the original alert resource before any RCA override.
+	SignalTarget *DiscoveryTargetInfo `json:"signal_target,omitempty"`
 	// FullResult is the complete InvestigationResult from Phase 3 (includes RCA +
 	// workflow selection). Used to build the final result for the HTTP session.
 	FullResult *katypes.InvestigationResult `json:"-"`
@@ -101,6 +117,7 @@ type WorkflowDiscoveryResult struct {
 // DiscoveredWorkflow represents a single workflow recommendation from Phase 3.
 type DiscoveredWorkflow struct {
 	WorkflowID      string                 `json:"workflow_id"`
+	Name            string                 `json:"name,omitempty"`
 	ExecutionBundle string                 `json:"execution_bundle,omitempty"`
 	Confidence      float64                `json:"confidence"`
 	Rationale       string                 `json:"rationale"`

@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 
@@ -41,10 +42,20 @@ type WorkflowDetail struct {
 	Parameters  []WorkflowParameter `json:"parameters"`
 }
 
+// TargetInfo identifies a Kubernetes resource involved in workflow discovery (#1437).
+type TargetInfo struct {
+	APIVersion string `json:"api_version,omitempty"`
+	Kind       string `json:"kind"`
+	Name       string `json:"name"`
+	Namespace  string `json:"namespace"`
+}
+
 // DiscoverWorkflowsResult is the output of kubernaut_discover_workflows.
 type DiscoverWorkflowsResult struct {
-	Workflows []WorkflowDetail `json:"workflows"`
-	Count     int              `json:"count"`
+	Workflows      []WorkflowDetail `json:"workflows"`
+	Count          int              `json:"count"`
+	SearchedTarget *TargetInfo      `json:"searched_target,omitempty"`
+	SignalTarget   *TargetInfo      `json:"signal_target,omitempty"`
 }
 
 // HandleDiscoverWorkflows implements kubernaut_discover_workflows via KA MCP.
@@ -66,6 +77,9 @@ func HandleDiscoverWorkflows(ctx context.Context, mcpClient ka.MCPClient, args D
 		Kind:       args.Kind,
 	})
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			return DiscoverWorkflowsResult{Workflows: []WorkflowDetail{}, Count: 0}, nil
+		}
 		return DiscoverWorkflowsResult{}, fmt.Errorf("discover workflows: %w", err)
 	}
 
@@ -92,10 +106,27 @@ func HandleDiscoverWorkflows(ctx context.Context, mcpClient ka.MCPClient, args D
 		})
 	}
 
-	return DiscoverWorkflowsResult{
+	result := DiscoverWorkflowsResult{
 		Workflows: workflows,
 		Count:     len(workflows),
-	}, nil
+	}
+	if kaResult.SearchedTarget != nil {
+		result.SearchedTarget = &TargetInfo{
+			APIVersion: kaResult.SearchedTarget.APIVersion,
+			Kind:       kaResult.SearchedTarget.Kind,
+			Name:       kaResult.SearchedTarget.Name,
+			Namespace:  kaResult.SearchedTarget.Namespace,
+		}
+	}
+	if kaResult.SignalTarget != nil {
+		result.SignalTarget = &TargetInfo{
+			APIVersion: kaResult.SignalTarget.APIVersion,
+			Kind:       kaResult.SignalTarget.Kind,
+			Name:       kaResult.SignalTarget.Name,
+			Namespace:  kaResult.SignalTarget.Namespace,
+		}
+	}
+	return result, nil
 }
 
 // ValidateWorkflowParameters validates supplied parameters against a discovered schema.
@@ -256,18 +287,37 @@ func NewSelectWorkflowTool(mcpClient ka.MCPClient, auditor audit.Emitter) (tool.
 }
 
 // PresentDecisionArgs defines the input for present_decision.
+// RCAData is the structured root cause analysis data that the LLM passes
+// through from the kubernaut_investigate response into present_decision.
+// This field is required — ADK schema validation enforces self-correction
+// if omitted by the LLM (#1396).
+type RCAData struct {
+	Severity       string   `json:"severity"`
+	Confidence     float64  `json:"confidence"`
+	CausalChain    []string `json:"causal_chain,omitempty"`
+	Target         string   `json:"target"`
+	ToolCallsCount int      `json:"tool_calls_count"`
+	LLMTurns       int      `json:"llm_turns"`
+}
+
 type PresentDecisionArgs struct {
-	SessionID string           `json:"session_id"`
-	Summary   string           `json:"summary"`
-	Options   []WorkflowOption `json:"options"`
+	SessionID      string           `json:"session_id"`
+	Summary        string           `json:"summary"`
+	RCA            RCAData          `json:"rca"`
+	Options        []WorkflowOption `json:"options"`
+	SearchedTarget *TargetInfo      `json:"searched_target,omitempty"`
+	SignalTarget   *TargetInfo      `json:"signal_target,omitempty"`
 }
 
 // WorkflowOption represents a remediation workflow choice.
 type WorkflowOption struct {
-	WorkflowID  string `json:"workflow_id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Risk        string `json:"risk,omitempty"`
+	WorkflowID     string            `json:"workflow_id"`
+	Name           string            `json:"name"`
+	Description    string            `json:"description"`
+	Risk           string            `json:"risk,omitempty"`
+	Recommended    bool              `json:"recommended,omitempty"`
+	Parameters     map[string]string `json:"parameters,omitempty"`
+	RuledOutReason string            `json:"ruled_out_reason,omitempty"`
 }
 
 // PresentDecisionResult is the output of present_decision.
@@ -278,7 +328,11 @@ type PresentDecisionResult struct {
 
 // HandlePresentDecision formats RCA and options for user presentation.
 func HandlePresentDecision(args PresentDecisionArgs) PresentDecisionResult {
-	msg := fmt.Sprintf("Investigation complete.\n\nSummary: %s\n\nAvailable actions:", args.Summary)
+	msg := fmt.Sprintf("Investigation complete.\n\nSummary: %s", args.Summary)
+	if args.RCA.Severity != "" {
+		msg += fmt.Sprintf("\nSeverity: %s (confidence: %.2f)", args.RCA.Severity, args.RCA.Confidence)
+	}
+	msg += "\n\nAvailable actions:"
 	for i, opt := range args.Options {
 		msg += fmt.Sprintf("\n  %d. %s", i+1, opt.Name)
 		if opt.Description != "" {
@@ -300,4 +354,72 @@ func NewPresentDecisionTool() (tool.Tool, error) {
 	}, func(ctx tool.Context, args PresentDecisionArgs) (PresentDecisionResult, error) {
 		return HandlePresentDecision(args), nil
 	})
+}
+
+// CompleteNoActionArgs defines the input for kubernaut_complete_no_action.
+type CompleteNoActionArgs struct {
+	RRID             string `json:"rr_id"`
+	Reason           string `json:"reason,omitempty"`
+	EscalationReason string `json:"escalation_reason,omitempty"`
+}
+
+// CompleteNoActionResult is the output of kubernaut_complete_no_action.
+type CompleteNoActionResult struct {
+	Status           string `json:"status"`
+	Reason           string `json:"reason,omitempty"`
+	EscalationReason string `json:"escalation_reason,omitempty"`
+}
+
+// HandleCompleteNoAction implements kubernaut_complete_no_action via KA MCP proxy.
+func HandleCompleteNoAction(ctx context.Context, mcpClient ka.MCPClient, args CompleteNoActionArgs, auditor audit.Emitter) (CompleteNoActionResult, error) {
+	if mcpClient == nil {
+		return CompleteNoActionResult{}, fmt.Errorf("complete_no_action not available: MCP client not configured")
+	}
+	if err := validate.RRID(args.RRID); err != nil {
+		return CompleteNoActionResult{}, fmt.Errorf("invalid rr_id: %w", err)
+	}
+	if args.EscalationReason != "" {
+		if err := validate.EscalationReason(args.EscalationReason); err != nil {
+			return CompleteNoActionResult{}, err
+		}
+	}
+
+	kaResult, err := mcpClient.CompleteNoAction(ctx, ka.CompleteNoActionArgs{
+		RRID:             args.RRID,
+		Reason:           args.Reason,
+		EscalationReason: args.EscalationReason,
+	})
+	if err != nil {
+		return CompleteNoActionResult{}, fmt.Errorf("complete_no_action: %w", err)
+	}
+
+	if auditor != nil {
+		resultType := "completed"
+		if args.EscalationReason != "" {
+			resultType = "escalated"
+		}
+		detail := map[string]string{
+			"rr_id":           args.RRID,
+			"status":          kaResult.Status,
+			"result_type":     resultType,
+			"delegation_type": "interactive",
+			"tool_outcome":    "success",
+		}
+		if args.Reason != "" {
+			detail["reason"] = args.Reason
+		}
+		if args.EscalationReason != "" {
+			detail["escalation_reason"] = args.EscalationReason
+		}
+		auditor.Emit(ctx, &audit.Event{
+			Type:   audit.EventKAResultReceived,
+			Detail: detail,
+		})
+	}
+
+	return CompleteNoActionResult{
+		Status:           kaResult.Status,
+		Reason:           kaResult.Reason,
+		EscalationReason: kaResult.EscalationReason,
+	}, nil
 }

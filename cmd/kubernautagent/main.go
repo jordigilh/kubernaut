@@ -220,6 +220,10 @@ func main() {
 	}
 
 	ds := initDSClients(cfg, k8sInfra, dsTokenSource, logger)
+	if ds == nil {
+		logger.Error(nil, "FATAL: DataStorage client initialization failed — KA cannot operate without DS (workflow discovery, audit, enrichment all require it)")
+		os.Exit(1)
+	}
 	reg := buildToolRegistry(cfg, logger, k8sInfra, ds)
 	enricher := buildEnricher(cfg, ds, k8sInfra, auditStore, logger)
 	sanitizer := buildSanitizationPipeline(cfg, logger)
@@ -1244,7 +1248,12 @@ func buildMCPHandler(
 		mcpkg.WithInactivityTimeout(cfg.Interactive.InactivityTimeout),
 		mcpkg.WithMaxConcurrentSessions(cfg.Interactive.MaxConcurrentSessions),
 		mcpkg.WithSessionExpiredCallback(func(sessionID, rrID, reason string) {
+			// #1438: Emit terminal event BEFORE completing the HTTP session so
+			// EventLogBridge can forward it to AF before the channel closes.
+			autoMgr.EmitSessionEndedByRR(rrID, reason)
+			mcptools.CompleteHTTPSession(autoMgr, rrID, nil, logger, reason)
 			emitDisconnectAudit(sessionID, rrID, reason)
+			agentMetrics.RecordInteractiveSessionEnded()
 		}),
 	}
 	leaseMgr := mcpkg.NewLeaseSessionManagerConcrete(ctrlCli, namespace, logger, leaseOpts...)
@@ -1275,6 +1284,9 @@ func buildMCPHandler(
 				"session_id", sessionID)
 			// Snapshot correlationID before Release deletes the entry.
 			rrID, _ := leaseMgr.GetSessionInfo(sessionID)
+			// #1438: Emit terminal event BEFORE closing the HTTP session so the
+			// EventLogBridge can forward it to AF before the channel closes.
+			autoMgr.EmitSessionEndedByRR(rrID, "inactivity_timeout")
 			if err := leaseMgr.Release(sessionID, "inactivity_timeout"); err != nil {
 				logger.Error(err, "failed to release expired session",
 					"session_id", sessionID)
@@ -1309,6 +1321,10 @@ func buildMCPHandler(
 
 		// T1-1: Snapshot session info BEFORE Release deletes the entry.
 		rrID, signalMeta := leaseMgr.GetSessionInfo(interactiveSessionID)
+
+		// #1438: Emit terminal event BEFORE closing the HTTP session so the
+		// EventLogBridge can forward it to AF before the channel closes.
+		autoMgr.EmitSessionEndedByRR(rrID, "disconnect")
 
 		if err := leaseMgr.Release(interactiveSessionID, "disconnect"); err != nil {
 			logger.Info("failed to release disconnected session",
@@ -1364,6 +1380,10 @@ func buildMCPHandler(
 	// started directly via MCP without an AA payload).
 	signalResolver := mcpadapters.NewSessionSignalContextResolver(autoMgr, ctrlCli, namespace)
 
+	// Build the WorkflowCatalog adapter (shared between InvestigateTool and SelectWorkflowTool).
+	wfQuerier := wfclient.NewOgenWorkflowQuerier(ds.ogenClient)
+	catalogAdapter := mcpadapters.NewWorkflowCatalogAdapter(wfQuerier)
+
 	// Build the InvestigateTool with optional dependencies.
 	investigateOpts := []mcptools.InvestigateOption{
 		mcptools.WithToolMetrics(agentMetrics),
@@ -1374,25 +1394,21 @@ func buildMCPHandler(
 		mcptools.WithHTTPCompleter(autoMgr),
 		mcptools.WithAuditStore(auditStore, logger.WithName("mcp-audit")),
 		mcptools.WithSignalContextResolver(signalResolver),
+		mcptools.WithWorkflowCatalog(catalogAdapter),
 	}
 	investigateTool := mcptools.NewInvestigateTool(leaseMgr, investigatorRunner, recon, autoMgr, investigateOpts...)
 
-	// Build the WorkflowCatalog adapter and SelectWorkflowTool.
+	// Build SelectWorkflowTool (reuses the same catalogAdapter).
 	// #1012: enrichment is now internalized into select_workflow via WithEnrichmentRunner.
-	var selectWfTool *mcptools.SelectWorkflowTool
-	if ds != nil {
-		wfQuerier := wfclient.NewOgenWorkflowQuerier(ds.ogenClient)
-		catalogAdapter := mcpadapters.NewWorkflowCatalogAdapter(wfQuerier)
-		swOpts := []mcptools.SelectWorkflowOption{
-			mcptools.WithLogger(logger.WithName("select-workflow")),
-			mcptools.WithHTTPSessionCompleter(autoMgr),
-			mcptools.WithMutexProvider(investigateTool),
-		}
-		if enricher != nil {
-			swOpts = append(swOpts, mcptools.WithEnrichmentRunner(enricher))
-		}
-		selectWfTool = mcptools.NewSelectWorkflowTool(catalogAdapter, leaseMgr, swOpts...)
+	swOpts := []mcptools.SelectWorkflowOption{
+		mcptools.WithLogger(logger.WithName("select-workflow")),
+		mcptools.WithHTTPSessionCompleter(autoMgr),
+		mcptools.WithMutexProvider(investigateTool),
 	}
+	if enricher != nil {
+		swOpts = append(swOpts, mcptools.WithEnrichmentRunner(enricher))
+	}
+	selectWfTool := mcptools.NewSelectWorkflowTool(catalogAdapter, leaseMgr, swOpts...)
 
 	// Build the CompleteNoActionTool.
 	completeNoActionTool := mcptools.NewCompleteNoActionTool(leaseMgr,
@@ -1404,9 +1420,7 @@ func buildMCPHandler(
 	// Register tools with the MCP SDK server.
 	toolDeps := mcpkg.ToolDeps{}
 	toolDeps.Investigate = mcptools.InvestigateRegistration(investigateTool, eventStore, sessionNotifier, logger)
-	if selectWfTool != nil {
-		toolDeps.SelectWorkflow = mcptools.SelectWorkflowRegistration(selectWfTool, logger)
-	}
+	toolDeps.SelectWorkflow = mcptools.SelectWorkflowRegistration(selectWfTool, logger)
 	toolDeps.CompleteNoAction = mcptools.CompleteNoActionRegistration(completeNoActionTool, logger)
 
 	mcpKeepAlive := cfg.Interactive.MCPKeepAlive
@@ -1431,7 +1445,7 @@ func buildMCPHandler(
 
 	logger.Info("MCP interactive mode fully wired",
 		"investigate", true,
-		"select_workflow", selectWfTool != nil,
+		"select_workflow", true,
 		"complete_no_action", true,
 		"enrichment_in_select_workflow", enricher != nil,
 		"event_store", true,

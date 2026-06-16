@@ -4,16 +4,15 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
 	"golang.org/x/sync/singleflight"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/dynamic"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
@@ -50,6 +49,7 @@ type CreateRRResult struct {
 	AlreadyExists  bool   `json:"already_exists,omitempty"`
 	Severity       string `json:"severity,omitempty"`
 	SeveritySource string `json:"severity_source,omitempty"`
+	SignalName     string `json:"signal_name,omitempty"`
 }
 
 // rrCreateGroup provides singleflight deduplication per fingerprint.
@@ -68,22 +68,23 @@ func rrFingerprint(namespace, kind, name string) string {
 // checkExistingRRByFingerprint checks for an existing non-terminal RR by fingerprint.
 // This is the internal dedup check used by HandleCreateRR that skips input validation
 // (namespace validation already performed by caller).
-func checkExistingRRByFingerprint(ctx context.Context, client dynamic.Interface, controllerNS, fingerprint string) (CheckExistingRRResult, error) {
-	list, err := client.Resource(rrGVR).Namespace(controllerNS).List(ctx, metav1.ListOptions{})
-	if err != nil {
+func checkExistingRRByFingerprint(ctx context.Context, client crclient.Client, controllerNS, fingerprint string) (CheckExistingRRResult, error) {
+	var list remediationv1.RemediationRequestList
+	if err := client.List(ctx, &list, crclient.InNamespace(controllerNS)); err != nil {
 		return CheckExistingRRResult{}, ToUserFriendlyError(err)
 	}
-	for _, item := range list.Items {
-		fp, _, _ := unstructured.NestedString(item.Object, "spec", "signalFingerprint")
-		if fp != fingerprint {
+	for i := range list.Items {
+		item := &list.Items[i]
+		if item.Spec.SignalFingerprint != fingerprint {
 			continue
 		}
-		phase, _, _ := unstructured.NestedString(item.Object, "status", "overallPhase")
+		phase := string(item.Status.OverallPhase)
 		if !IsTerminalPhase(phase) {
 			return CheckExistingRRResult{
-				Exists: true,
-				RRID:   item.GetName(),
-				Phase:  phase,
+				Exists:   true,
+				RRID:     item.Name,
+				Phase:    phase,
+				Severity: item.Spec.Severity,
 			}, nil
 		}
 	}
@@ -97,7 +98,7 @@ func checkExistingRRByFingerprint(ctx context.Context, client dynamic.Interface,
 // args.Namespace is the workload namespace where the target resource lives — provided
 // by the LLM. Severity is resolved via the triage pipeline when a triager is
 // available, otherwise defaults to "medium".
-func HandleCreateRR(ctx context.Context, client dynamic.Interface, controllerNS string, args *CreateRRArgs, username string, triager *severity.Triager, auditor audit.Emitter) (CreateRRResult, error) {
+func HandleCreateRR(ctx context.Context, client crclient.Client, dynClient dynamic.Interface, controllerNS string, args *CreateRRArgs, username string, triager *severity.Triager, auditor audit.Emitter) (CreateRRResult, error) {
 	if client == nil {
 		return CreateRRResult{}, ErrK8sUnavailable
 	}
@@ -151,7 +152,7 @@ func HandleCreateRR(ctx context.Context, client dynamic.Interface, controllerNS 
 
 	signalName := args.SignalNameOverride
 	if signalName == "" {
-		signalName = deriveSignalName(ctx, client, args.Namespace, args, triageResult)
+		signalName = deriveSignalName(ctx, dynClient, args.Namespace, args, triageResult)
 	}
 	fingerprint := rrFingerprint(args.Namespace, args.Kind, args.Name)
 
@@ -165,6 +166,7 @@ func HandleCreateRR(ctx context.Context, client dynamic.Interface, controllerNS 
 				RRID:          existing.RRID,
 				Message:       fmt.Sprintf("RemediationRequest already exists (%s)", existing.Phase),
 				AlreadyExists: true,
+				Severity:      existing.Severity,
 			}, nil
 		}
 
@@ -174,53 +176,46 @@ func HandleCreateRR(ctx context.Context, client dynamic.Interface, controllerNS 
 		}
 		rrName := fmt.Sprintf("rr-%s-%s", fpPrefix, uuid.New().String()[:8])
 
-		now := time.Now().UTC().Format(time.RFC3339)
+		nowTime := metav1.Now()
 
-		spec := map[string]interface{}{
-			"signalName":        signalName,
-			"signalSource":      "a2a-agent",
-			"signalType":        "alert",
-			"signalFingerprint": fingerprint,
-			"severity":          resolvedSeverity,
-			"firingTime":        now,
-			"receivedTime":      now,
-			"targetType":        "kubernetes",
-			"targetResource": buildTargetResource(args),
-		}
-
-		if triageResult != nil {
-			signalLabels := map[string]interface{}{
-				"severity_source": string(triageResult.Source),
-			}
-			if triageResult.AlertName != "" {
-				signalLabels["severity_alert_name"] = triageResult.AlertName
-			}
-			if triageResult.RuleName != "" {
-				signalLabels["severity_rule_name"] = triageResult.RuleName
-			}
-			spec["signalLabels"] = signalLabels
-		}
-
-		rrObj := &unstructured.Unstructured{
-			Object: map[string]interface{}{
-				"apiVersion": "kubernaut.ai/v1alpha1",
-				"kind":       "RemediationRequest",
-				"metadata": map[string]interface{}{
-					"name":      rrName,
-					"namespace": controllerNS,
-				},
-				"spec": spec,
+		rrObj := &remediationv1.RemediationRequest{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      rrName,
+				Namespace: controllerNS,
+			},
+			Spec: remediationv1.RemediationRequestSpec{
+				SignalName:        signalName,
+				SignalSource:      "a2a-agent",
+				SignalType:        "alert",
+				SignalFingerprint: fingerprint,
+				Severity:          resolvedSeverity,
+				FiringTime:        nowTime,
+				ReceivedTime:      nowTime,
+				TargetType:        "kubernetes",
+				TargetResource:    buildTypedTargetResource(args),
 			},
 		}
 
-		created, createErr := client.Resource(rrGVR).Namespace(controllerNS).Create(ctx, rrObj, metav1.CreateOptions{})
-		if createErr != nil {
+		if triageResult != nil {
+			rrObj.Spec.SignalLabels = map[string]string{
+				"severity_source": string(triageResult.Source),
+			}
+			if triageResult.AlertName != "" {
+				rrObj.Spec.SignalLabels["severity_alert_name"] = triageResult.AlertName
+			}
+			if triageResult.RuleName != "" {
+				rrObj.Spec.SignalLabels["severity_rule_name"] = triageResult.RuleName
+			}
+		}
+
+		if createErr := client.Create(ctx, rrObj); createErr != nil {
 			return nil, ToUserFriendlyError(createErr)
 		}
 
 		out := &CreateRRResult{
-			RRID:    created.GetName(),
-			Message: fmt.Sprintf("RemediationRequest created for %s/%s by %s", args.Kind, args.Name, username),
+			RRID:       rrObj.Name,
+			Message:    fmt.Sprintf("RemediationRequest created for %s/%s by %s", args.Kind, args.Name, username),
+			SignalName: signalName,
 		}
 		if triageResult != nil {
 			out.Severity = triageResult.Severity
@@ -269,20 +264,20 @@ func HandleCreateRR(ctx context.Context, client dynamic.Interface, controllerNS 
 	return *res, nil
 }
 
-// buildTargetResource constructs the targetResource map for the RR CRD spec.
+// buildTypedTargetResource constructs the typed ResourceIdentifier for the RR CRD spec.
 // Includes apiVersion when available (#1372). Omits namespace for cluster-scoped resources.
-func buildTargetResource(args *CreateRRArgs) map[string]interface{} {
-	tr := map[string]interface{}{
-		"kind": args.Kind,
-		"name": args.Name,
+func buildTypedTargetResource(args *CreateRRArgs) remediationv1.ResourceIdentifier {
+	ri := remediationv1.ResourceIdentifier{
+		Kind: args.Kind,
+		Name: args.Name,
 	}
 	if args.Namespace != "" {
-		tr["namespace"] = args.Namespace
+		ri.Namespace = args.Namespace
 	}
 	if args.APIVersion != "" {
-		tr["apiVersion"] = args.APIVersion
+		ri.APIVersion = args.APIVersion
 	}
-	return tr
+	return ri
 }
 
 // deriveSignalName selects a grounded signal name using a priority cascade:

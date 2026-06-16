@@ -350,3 +350,131 @@ var _ = Describe("Prompt — Intent-Based Tool Redesign (#1332)", func() {
 		Expect(instruction).To(ContainSubstring("kubectl queries answer WHAT"))
 	})
 })
+
+// =============================================================================
+// Issue #1407: Progressive Flow — auto-proceed from investigation to discovery
+// =============================================================================
+
+var _ = Describe("Prompt — Progressive Flow (#1407)", func() {
+	var instruction string
+
+	BeforeEach(func() {
+		cfg := agentpkg.DefaultTestConfig()
+		instruction = cfg.Instruction
+	})
+
+	It("UT-AF-1407-010: SI-4 prompt does NOT contain unconditional MUST STOP after investigation", func() {
+		Expect(instruction).NotTo(ContainSubstring(
+			"you MUST STOP and ask the user what they want to do next"),
+			"SI-4: unconditional stop blocks progressive flow and audit trail continuity")
+	})
+
+	It("UT-AF-1407-011: SI-4 prompt contains proceed-to-discovery in OTHERWISE branch", func() {
+		Expect(instruction).To(ContainSubstring("Proceed to Phase 2"),
+			"SI-4: OTHERWISE branch must auto-proceed to workflow discovery for audit completeness")
+	})
+
+	It("UT-AF-1407-012: AU-3 prompt preserves investigate-only exception for explicit user requests", func() {
+		Expect(instruction).To(SatisfyAny(
+			ContainSubstring("just investigate"),
+			ContainSubstring("investigate only"),
+			ContainSubstring("only investigate"),
+		), "AU-3: user must be able to request investigation-only mode for audit separation")
+	})
+
+	It("UT-AF-1407-013: SI-4 prompt retains present_decision as final structured artifact", func() {
+		Expect(instruction).To(ContainSubstring("present_decision"),
+			"SI-4: present_decision must remain the structured decision artifact for audit trail")
+	})
+})
+
+// =============================================================================
+// Issue #1408: Structured investigation_summary — prompt directives
+// =============================================================================
+
+var _ = Describe("Prompt — Structured Artifact Contract (#1408)", func() {
+	var instruction string
+
+	BeforeEach(func() {
+		cfg := agentpkg.DefaultTestConfig()
+		instruction = cfg.Instruction
+	})
+
+	It("UT-AF-1408-020: SI-4 — prompt prohibits free-text narration after present_decision", func() {
+		Expect(instruction).To(ContainSubstring("NEVER narrate"),
+			"SI-4: free-text RCA narration after structured artifact causes double-render UX regression")
+	})
+
+	It("UT-AF-1408-021: SI-4 — prompt mandates present_decision for no-action scenarios", func() {
+		Expect(instruction).To(ContainSubstring("No remediation is needed"),
+			"SI-4: present_decision must be called even for no-action scenarios to ensure structured artifact")
+	})
+
+	It("UT-AF-1408-022: SI-4 — prompt mandates present_decision when no workflows found", func() {
+		Expect(instruction).To(ContainSubstring("No workflows are discovered"),
+			"SI-4: empty workflow discovery must still produce structured artifact via present_decision")
+	})
+
+	It("UT-AF-1408-023: SI-4 — prompt mandates present_decision on tool error paths", func() {
+		Expect(instruction).To(ContainSubstring("tool call fails"),
+			"SI-4: tool errors must still produce structured artifact for audit traceability")
+	})
+})
+
+var _ = Describe("Prompt — Tool Call Silence (#1408 Issue 1)", func() {
+	var instruction string
+
+	BeforeEach(func() {
+		cfg := agentpkg.DefaultTestConfig()
+		instruction = cfg.Instruction
+	})
+
+	It("UT-AF-1408-040: prompt prohibits text output before tool calls", func() {
+		Expect(instruction).To(ContainSubstring("NEVER produce text output before calling a tool"),
+			"Tool Call Silence: LLM must not narrate before invoking tools")
+	})
+
+	It("UT-AF-1408-041: prompt instructs direct tool invocation without preamble", func() {
+		Expect(instruction).To(ContainSubstring("Call tools directly"),
+			"Tool Call Silence: tools must be invoked without preamble narration")
+	})
+})
+
+// =============================================================================
+// Issue #1430: Skip workflow discovery when RCA concludes no action required
+// BR-HAPI-200: Handling non-actionable outcomes
+// =============================================================================
+
+var _ = Describe("Prompt #1430 / BR-HAPI-200: No-action exception in Phase 1 CRITICAL block", func() {
+	var instruction string
+
+	BeforeEach(func() {
+		cfg := agentpkg.DefaultTestConfig()
+		instruction = cfg.Instruction
+	})
+
+	// UT-AF-1430-001: Phase 1 CRITICAL uses conditional branching with no-action as first branch.
+	// FedRAMP SI-4: the agent's decision logic must be observable/auditable
+	// in the prompt contract.
+	It("UT-AF-1430-001: SI-4 prompt uses conditional branching for Phase 1 to Phase 2 decision", func() {
+		Expect(instruction).To(ContainSubstring("evaluate the RCA conclusion"),
+			"#1430 / SI-4: Phase 1 must require RCA evaluation before deciding next step")
+		Expect(instruction).To(ContainSubstring("Do NOT call kubernaut_discover_workflows"),
+			"#1430 / SI-4: no-action branch must explicitly prohibit workflow discovery")
+		Expect(instruction).To(ContainSubstring("self-resolved"),
+			"#1430 / SI-4: no-action branch must mention self-resolved signals")
+		Expect(instruction).NotTo(MatchRegexp(
+			`MUST automatically proceed to Phase 2.*without waiting`),
+			"#1430: unconditional MUST proceed directive must not appear (causes LLM to skip branch evaluation)")
+	})
+
+	// UT-AF-1430-002: Edge Scenarios section retained and consistent.
+	// FedRAMP AU-3: present_decision with empty options is the audit record
+	// for no-action outcomes.
+	It("UT-AF-1430-002: AU-3 prompt retains present_decision with options: [] for no-action", func() {
+		Expect(instruction).To(ContainSubstring("present_decision"),
+			"#1430 / AU-3: present_decision must remain in prompt for no-action path")
+		Expect(instruction).To(ContainSubstring("options: []"),
+			"#1430 / AU-3: prompt must document empty options list for no-action scenario")
+	})
+})

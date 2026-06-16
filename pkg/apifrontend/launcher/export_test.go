@@ -81,3 +81,22 @@ func LoggerForTest(cfg A2AConfig) logr.Logger {
 func StreamingExecutorLoggerForTest(se *StreamingExecutor) logr.Logger {
 	return se.logger
 }
+
+// StripEmojiForTest exports stripEmoji for unit testing.
+func StripEmojiForTest(s string) string {
+	return stripEmoji(s)
+}
+
+// EmitArtifactForTest exports EmitArtifact via bridge from context for testing.
+func EmitArtifactForTest(ctx context.Context, data map[string]any, textFallback string, meta map[string]any) error {
+	bridge := EventBridgeFromContext(ctx)
+	if bridge == nil {
+		return nil
+	}
+	return bridge.EmitArtifact(ctx, data, textFallback, meta)
+}
+
+// ValidatePayloadForTest exports ValidatePayload for testing.
+func ValidatePayloadForTest(schemaName string, data map[string]any) error {
+	return ValidatePayload(schemaName, data)
+}

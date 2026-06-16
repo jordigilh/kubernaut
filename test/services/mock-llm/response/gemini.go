@@ -38,6 +38,7 @@ type GeminiContent struct {
 // GeminiPart represents a single part within a content block.
 type GeminiPart struct {
 	Text             string               `json:"text,omitempty"`
+	Thought          bool                 `json:"thought,omitempty"`
 	FunctionCall     *GeminiFunctionCall  `json:"functionCall,omitempty"`
 	FunctionResponse *GeminiFunctionResp  `json:"functionResponse,omitempty"`
 }
@@ -106,19 +107,24 @@ func BuildGeminiTextResponse(cfg scenarios.MockScenarioConfig) GeminiResponse {
 // BuildGeminiToolCallResponse creates a Gemini response with a single function call.
 func BuildGeminiToolCallResponse(toolName string, cfg scenarios.MockScenarioConfig) GeminiResponse {
 	args := buildToolArguments(toolName, cfg)
+
+	parts := []GeminiPart{}
+	if cfg.ThoughtText != "" {
+		parts = append(parts, GeminiPart{Text: cfg.ThoughtText, Thought: true})
+	}
+	parts = append(parts, GeminiPart{
+		FunctionCall: &GeminiFunctionCall{
+			Name: toolName,
+			Args: args,
+		},
+	})
+
 	return GeminiResponse{
 		Candidates: []GeminiCandidate{
 			{
 				Content: GeminiContent{
-					Role: "model",
-					Parts: []GeminiPart{
-						{
-							FunctionCall: &GeminiFunctionCall{
-								Name: toolName,
-								Args: args,
-							},
-						},
-					},
+					Role:  "model",
+					Parts: parts,
 				},
 				FinishReason: "STOP",
 			},
@@ -131,14 +137,10 @@ func BuildGeminiToolCallResponse(toolName string, cfg scenarios.MockScenarioConf
 func BuildGeminiMultiToolCallResponse(toolEntries []scenarios.MultiToolCallEntry) GeminiResponse {
 	parts := make([]GeminiPart, len(toolEntries))
 	for i, entry := range toolEntries {
-		args := make(map[string]interface{}, len(entry.Arguments))
-		for k, v := range entry.Arguments {
-			args[k] = v
-		}
 		parts[i] = GeminiPart{
 			FunctionCall: &GeminiFunctionCall{
 				Name: entry.Name,
-				Args: args,
+				Args: entry.Arguments,
 			},
 		}
 	}

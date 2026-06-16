@@ -2731,6 +2731,9 @@ components:
             - $ref: '#/components/schemas/AIAgentAlignmentVerdictPayload'
             - $ref: '#/components/schemas/ShadowLLMRequestPayload'
             - $ref: '#/components/schemas/ShadowLLMResponsePayload'
+            - $ref: '#/components/schemas/AIAgentRatelimitDeniedPayload'
+            - $ref: '#/components/schemas/AIAgentAuthFailurePayload'
+            - $ref: '#/components/schemas/AIAgentAuthDeniedPayload'
             - $ref: '#/components/schemas/RemediationRequestWebhookAuditPayload'
             - $ref: '#/components/schemas/RemediationWorkflowWebhookAuditPayload'
             - $ref: '#/components/schemas/AuthwebhookWorkflowRegistrationFailedPayload'
@@ -2859,6 +2862,9 @@ components:
               'aiagent.alignment.verdict': '#/components/schemas/AIAgentAlignmentVerdictPayload'
               'aiagent.shadow.llm.request': '#/components/schemas/ShadowLLMRequestPayload'
               'aiagent.shadow.llm.response': '#/components/schemas/ShadowLLMResponsePayload'
+              'aiagent.ratelimit.denied': '#/components/schemas/AIAgentRatelimitDeniedPayload'
+              'aiagent.auth.failure': '#/components/schemas/AIAgentAuthFailurePayload'
+              'aiagent.auth.denied': '#/components/schemas/AIAgentAuthDeniedPayload'
               'effectiveness.health.assessed': '#/components/schemas/EffectivenessAssessmentAuditPayload'
               'effectiveness.hash.computed': '#/components/schemas/EffectivenessAssessmentAuditPayload'
               'effectiveness.alert.assessed': '#/components/schemas/EffectivenessAssessmentAuditPayload'
@@ -7478,6 +7484,72 @@ components:
         limit_value:
           type: string
           description: Configured limit value
+
+    AIAgentRatelimitDeniedPayload:
+      type: object
+      required: [event_type, event_id]
+      description: AI Agent rate limit denied event payload (aiagent.ratelimit.denied) — request rejected by per-IP rate limiter (FedRAMP AU-12, Issue #1401)
+      properties:
+        event_type:
+          type: string
+          enum: ['aiagent.ratelimit.denied']
+          description: Event type for discriminator (matches parent event_type)
+        event_id:
+          type: string
+          description: Unique event identifier
+        source_ip:
+          type: string
+          description: Source IP address of the rate-limited request
+        path:
+          type: string
+          description: HTTP request path
+        method:
+          type: string
+          description: HTTP request method
+
+    AIAgentAuthFailurePayload:
+      type: object
+      required: [event_type, event_id]
+      description: AI Agent authentication failure event payload (aiagent.auth.failure) — request failed authentication (FedRAMP AU-12/AC-7, Issue #1401)
+      properties:
+        event_type:
+          type: string
+          enum: ['aiagent.auth.failure']
+          description: Event type for discriminator (matches parent event_type)
+        event_id:
+          type: string
+          description: Unique event identifier
+        source_ip:
+          type: string
+          description: Source IP address of the failed request
+        path:
+          type: string
+          description: HTTP request path
+        method:
+          type: string
+          description: HTTP request method
+
+    AIAgentAuthDeniedPayload:
+      type: object
+      required: [event_type, event_id]
+      description: AI Agent authorization denied event payload (aiagent.auth.denied) — request denied by authorization policy (FedRAMP AU-12/AC-7, Issue #1401)
+      properties:
+        event_type:
+          type: string
+          enum: ['aiagent.auth.denied']
+          description: Event type for discriminator (matches parent event_type)
+        event_id:
+          type: string
+          description: Unique event identifier
+        source_ip:
+          type: string
+          description: Source IP address of the denied request
+        path:
+          type: string
+          description: HTTP request path
+        method:
+          type: string
+          description: HTTP request method
 
     ApifrontendCircuitbreakerTripPayload:
       type: object

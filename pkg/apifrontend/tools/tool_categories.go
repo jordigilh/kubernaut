@@ -13,14 +13,15 @@ package tools
 // See also: phase_guard.go (mcpDependentTools, driverEntryTools) for the A2A
 // runtime ordering constraint, which is orthogonal to registration filtering.
 var SessionDependentTools = map[string]bool{
-	"kubernaut_investigate":        true,
-	"kubernaut_discover_workflows": true,
-	"kubernaut_select_workflow":    true,
-	"kubernaut_present_decision":   true,
-	"kubernaut_message":            true,
-	"kubernaut_complete":           true,
-	"kubernaut_cancel":             true,
-	"kubernaut_status":             true,
-	"kubernaut_reconnect":          true,
-	"kubernaut_await_session":      true,
+	"kubernaut_investigate":          true,
+	"kubernaut_discover_workflows":   true,
+	"kubernaut_select_workflow":      true,
+	"kubernaut_present_decision":     true,
+	"kubernaut_message":              true,
+	"kubernaut_complete":             true,
+	"kubernaut_complete_no_action":   true,
+	"kubernaut_cancel":               true,
+	"kubernaut_status":               true,
+	"kubernaut_reconnect":            true,
+	"kubernaut_await_session":        true,
 }

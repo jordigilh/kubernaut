@@ -1,6 +1,7 @@
 package fullpipeline
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -319,5 +320,98 @@ func fpAssertNoISForRR(rrName, ns string) {
 				"autonomous flow must not create InvestigationSession for RR %s", rrName)
 		}
 	}
+}
+
+// fpAssertNoWEForRR asserts that no WorkflowExecution owned by the given RR
+// exists over a 10-second observation window. Pattern from RO E2E dryrun_e2e_test.go.
+// #1432 / BR-HAPI-200: Verifies no WE is created for the no-action path.
+func fpAssertNoWEForRR(rrName string) {
+	Consistently(func() int {
+		weList := &workflowexecutionv1.WorkflowExecutionList{}
+		if err := apiReader.List(ctx, weList, client.InNamespace(namespace)); err != nil {
+			return 0
+		}
+		count := 0
+		for _, we := range weList.Items {
+			for _, ref := range we.OwnerReferences {
+				if ref.Kind == "RemediationRequest" && ref.Name == rrName {
+					count++
+				}
+			}
+		}
+		return count
+	}, 10*time.Second, 1*time.Second).Should(Equal(0),
+		"#1432: no WorkflowExecution should be created for RR %s (no-action path)", rrName)
+}
+
+// gatewaySignalResponse mirrors the Gateway's ProcessingResponse for JSON unmarshaling.
+type gatewaySignalResponse struct {
+	Status                      string `json:"status"`
+	Message                     string `json:"message"`
+	Fingerprint                 string `json:"fingerprint"`
+	Duplicate                   bool   `json:"duplicate"`
+	RemediationRequestName      string `json:"remediationRequestName,omitempty"`
+	RemediationRequestNamespace string `json:"remediationRequestNamespace,omitempty"`
+}
+
+// fpPostSignalToGateway injects a K8s event signal via direct Gateway HTTP POST.
+// Retries with Eventually until HTTP 201 (handles scope informer propagation delay).
+// Returns the RemediationRequest name from the Gateway response.
+// #1432: First use of fpAuthToken for direct Gateway signal injection in FP suite.
+func fpPostSignalToGateway(reason, podName, podNamespace string) string {
+	gwURL := "http://localhost:30080/api/v1/signals/kubernetes-event"
+	now := time.Now()
+	payload := map[string]interface{}{
+		"type":    "Warning",
+		"reason":  reason,
+		"message": fmt.Sprintf("E2E injected signal: %s", reason),
+		"involvedObject": map[string]interface{}{
+			"kind":      "Pod",
+			"name":      podName,
+			"namespace": podNamespace,
+		},
+		"metadata": map[string]interface{}{
+			"name":      fmt.Sprintf("e2e-signal-%d", now.UnixNano()),
+			"namespace": podNamespace,
+		},
+		"firstTimestamp": now.Format(time.RFC3339),
+		"lastTimestamp":  now.Format(time.RFC3339),
+		"count":          1,
+	}
+	payloadBytes, err := json.Marshal(payload)
+	Expect(err).NotTo(HaveOccurred(), "failed to marshal signal payload")
+
+	var rrName string
+	httpClient := &http.Client{Timeout: 10 * time.Second}
+
+	Eventually(func() int {
+		req, reqErr := http.NewRequest("POST", gwURL, bytes.NewBuffer(payloadBytes))
+		if reqErr != nil {
+			return 0
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if fpAuthToken != "" {
+			req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", fpAuthToken))
+		}
+		resp, doErr := httpClient.Do(req)
+		if doErr != nil {
+			return 0
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode == http.StatusCreated {
+			body, _ := io.ReadAll(resp.Body)
+			var gwResp gatewaySignalResponse
+			if json.Unmarshal(body, &gwResp) == nil {
+				rrName = gwResp.RemediationRequestName
+			}
+		}
+		return resp.StatusCode
+	}, 30*time.Second, 1*time.Second).Should(Equal(http.StatusCreated),
+		"Gateway should accept signal %q and return HTTP 201", reason)
+
+	Expect(rrName).NotTo(BeEmpty(),
+		"Gateway response must include remediationRequestName for signal %q", reason)
+	return rrName
 }
 

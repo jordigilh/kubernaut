@@ -22,70 +22,48 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	dynamicfake "k8s.io/client-go/dynamic/fake"
-
+	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
 
-var isGVR = schema.GroupVersionResource{Group: "kubernaut.ai", Version: "v1alpha1", Resource: "investigationsessions"}
-
-func newUnstructuredIS(ns, name, rrName, phase string) *unstructured.Unstructured {
-	obj := &unstructured.Unstructured{
-		Object: map[string]interface{}{
-			"apiVersion": "kubernaut.ai/v1alpha1",
-			"kind":       "InvestigationSession",
-			"metadata": map[string]interface{}{
-				"name":      name,
-				"namespace": ns,
+func newTypedIS(ns, name, rrName string, phase isv1alpha1.SessionPhase) *isv1alpha1.InvestigationSession {
+	is := &isv1alpha1.InvestigationSession{
+		ObjectMeta: objMeta(ns, name),
+		Spec: isv1alpha1.InvestigationSessionSpec{
+			RemediationRequestRef: isv1alpha1.ObjectRef{Name: rrName},
+			A2ATaskID:             name,
+			UserIdentity: isv1alpha1.SessionUser{
+				Username: "admin",
 			},
-			"spec": map[string]interface{}{
-				"remediationRequestRef": map[string]interface{}{
-					"name":      rrName,
-					"namespace": ns,
-				},
-				"a2aTaskID": name,
-				"userIdentity": map[string]interface{}{
-					"username": "admin",
-				},
-				"joinMode": "takeover",
-			},
+			JoinMode: isv1alpha1.SessionJoinModeTakeover,
 		},
 	}
 	if phase != "" {
-		obj.Object["status"] = map[string]interface{}{
-			"phase": phase,
-		}
+		is.Status.Phase = phase
 	}
-	return obj
+	return is
 }
 
-func newISClient(objects ...*unstructured.Unstructured) *dynamicfake.FakeDynamicClient {
-	scheme := runtime.NewScheme()
-	client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme,
-		map[schema.GroupVersionResource]string{
-			isGVR: "InvestigationSessionList",
-		})
-	for _, obj := range objects {
-		ns := obj.GetNamespace()
-		_, _ = client.Resource(isGVR).Namespace(ns).Create(context.Background(), obj, metav1.CreateOptions{})
-	}
-	return client
+func newISTypedClient(objects ...crclient.Object) crclient.Client {
+	return fake.NewClientBuilder().
+		WithScheme(isTestScheme()).
+		WithObjects(objects...).
+		WithStatusSubresource(objects...).
+		Build()
 }
 
 var _ = Describe("AwaitISPhaseActive — BR-INTERACTIVE-010 IS phase polling", func() {
 
 	Describe("UT-AF-IS-POLL-001: returns true immediately when IS is already Active", func() {
 		It("should detect Active phase without delay", func() {
-			is := newUnstructuredIS("kubernaut-system", "isess-001", "rr-poll-001", "Active")
-			client := newISClient(is)
+			is := newTypedIS("kubernaut-system", "isess-001", "rr-poll-001", isv1alpha1.SessionPhaseActive)
+			tc := newISTypedClient(is)
 
 			start := time.Now()
-			result := tools.AwaitISPhaseActive(context.Background(), client, "kubernaut-system", "rr-poll-001")
+			result := tools.AwaitISPhaseActive(context.Background(), tc, "kubernaut-system", "rr-poll-001")
 			elapsed := time.Since(start)
 
 			Expect(result).To(BeTrue())
@@ -95,14 +73,14 @@ var _ = Describe("AwaitISPhaseActive — BR-INTERACTIVE-010 IS phase polling", f
 
 	Describe("UT-AF-IS-POLL-002: returns false on timeout when phase stays empty", func() {
 		It("should timeout when IS exists but phase is never set to Active", func() {
-			is := newUnstructuredIS("kubernaut-system", "isess-002", "rr-poll-002", "")
-			client := newISClient(is)
+			is := newTypedIS("kubernaut-system", "isess-002", "rr-poll-002", "")
+			tc := newISTypedClient(is)
 
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
 
 			start := time.Now()
-			result := tools.AwaitISPhaseActive(ctx, client, "kubernaut-system", "rr-poll-002")
+			result := tools.AwaitISPhaseActive(ctx, tc, "kubernaut-system", "rr-poll-002")
 			elapsed := time.Since(start)
 
 			Expect(result).To(BeFalse())
@@ -112,12 +90,12 @@ var _ = Describe("AwaitISPhaseActive — BR-INTERACTIVE-010 IS phase polling", f
 
 	Describe("UT-AF-IS-POLL-003: returns false when no IS CRD exists", func() {
 		It("should timeout gracefully when no IS exists for the given RR", func() {
-			client := newISClient()
+			tc := newISTypedClient()
 
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
 
-			result := tools.AwaitISPhaseActive(ctx, client, "kubernaut-system", "rr-missing")
+			result := tools.AwaitISPhaseActive(ctx, tc, "kubernaut-system", "rr-missing")
 			Expect(result).To(BeFalse())
 		})
 	})
@@ -131,61 +109,61 @@ var _ = Describe("AwaitISPhaseActive — BR-INTERACTIVE-010 IS phase polling", f
 
 	Describe("UT-AF-IS-POLL-005: returns false with empty namespace", func() {
 		It("should return false immediately when namespace is empty", func() {
-			client := newISClient()
-			result := tools.AwaitISPhaseActive(context.Background(), client, "", "rr-empty-ns")
+			tc := newISTypedClient()
+			result := tools.AwaitISPhaseActive(context.Background(), tc, "", "rr-empty-ns")
 			Expect(result).To(BeFalse())
 		})
 	})
 
 	Describe("UT-AF-IS-POLL-006: returns false with empty RR name", func() {
 		It("should return false immediately when RR name is empty", func() {
-			client := newISClient()
-			result := tools.AwaitISPhaseActive(context.Background(), client, "kubernaut-system", "")
+			tc := newISTypedClient()
+			result := tools.AwaitISPhaseActive(context.Background(), tc, "kubernaut-system", "")
 			Expect(result).To(BeFalse())
 		})
 	})
 
 	Describe("UT-AF-IS-POLL-007: ignores IS CRDs for different RR", func() {
 		It("should not match an Active IS belonging to a different RR", func() {
-			is := newUnstructuredIS("kubernaut-system", "isess-other", "rr-other", "Active")
-			client := newISClient(is)
+			is := newTypedIS("kubernaut-system", "isess-other", "rr-other", isv1alpha1.SessionPhaseActive)
+			tc := newISTypedClient(is)
 
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
 
-			result := tools.AwaitISPhaseActive(ctx, client, "kubernaut-system", "rr-mine")
+			result := tools.AwaitISPhaseActive(ctx, tc, "kubernaut-system", "rr-mine")
 			Expect(result).To(BeFalse())
 		})
 	})
 
 	Describe("UT-AF-IS-POLL-008: ignores terminal phase IS CRDs", func() {
 		It("should not match a Completed IS for the same RR", func() {
-			is := newUnstructuredIS("kubernaut-system", "isess-done", "rr-done", "Completed")
-			client := newISClient(is)
+			is := newTypedIS("kubernaut-system", "isess-done", "rr-done", isv1alpha1.SessionPhaseCompleted)
+			tc := newISTypedClient(is)
 
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
 
-			result := tools.AwaitISPhaseActive(ctx, client, "kubernaut-system", "rr-done")
+			result := tools.AwaitISPhaseActive(ctx, tc, "kubernaut-system", "rr-done")
 			Expect(result).To(BeFalse())
 		})
 	})
 
 	Describe("UT-AF-IS-POLL-009: detects Active phase set asynchronously", func() {
 		It("should detect when IS phase transitions to Active during polling", func() {
-			is := newUnstructuredIS("kubernaut-system", "isess-async", "rr-async", "")
-			client := newISClient(is)
+			is := newTypedIS("kubernaut-system", "isess-async", "rr-async", "")
+			tc := newISTypedClient(is)
 
-			// Simulate AA setting the phase after 1 second
 			go func() {
 				time.Sleep(1 * time.Second)
-				updated := newUnstructuredIS("kubernaut-system", "isess-async", "rr-async", "Active")
-				_, _ = client.Resource(isGVR).Namespace("kubernaut-system").Update(
-					context.Background(), updated, metav1.UpdateOptions{})
+				var existing isv1alpha1.InvestigationSession
+				_ = tc.Get(context.Background(), crclient.ObjectKey{Namespace: "kubernaut-system", Name: "isess-async"}, &existing)
+				existing.Status.Phase = isv1alpha1.SessionPhaseActive
+				_ = tc.Status().Update(context.Background(), &existing)
 			}()
 
 			start := time.Now()
-			result := tools.AwaitISPhaseActive(context.Background(), client, "kubernaut-system", "rr-async")
+			result := tools.AwaitISPhaseActive(context.Background(), tc, "kubernaut-system", "rr-async")
 			elapsed := time.Since(start)
 
 			Expect(result).To(BeTrue())
@@ -196,14 +174,14 @@ var _ = Describe("AwaitISPhaseActive — BR-INTERACTIVE-010 IS phase polling", f
 
 	Describe("UT-AF-IS-POLL-010: respects parent context cancellation", func() {
 		It("should return false when parent context is cancelled", func() {
-			is := newUnstructuredIS("kubernaut-system", "isess-cancel", "rr-cancel", "")
-			client := newISClient(is)
+			is := newTypedIS("kubernaut-system", "isess-cancel", "rr-cancel", "")
+			tc := newISTypedClient(is)
 
 			ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 			defer cancel()
 
 			start := time.Now()
-			result := tools.AwaitISPhaseActive(ctx, client, "kubernaut-system", "rr-cancel")
+			result := tools.AwaitISPhaseActive(ctx, tc, "kubernaut-system", "rr-cancel")
 			elapsed := time.Since(start)
 
 			Expect(result).To(BeFalse())

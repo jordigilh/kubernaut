@@ -1,0 +1,44 @@
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: kubernaut-e2e-alert-prioritization
+  namespace: prod
+  labels:
+    app.kubernetes.io/name: kubernaut-e2e
+    app.kubernetes.io/component: test-infrastructure
+spec:
+  groups:
+    - name: kubernaut-e2e-prioritization
+      rules:
+        - alert: KubePodCrashLooping
+          expr: rate(kube_pod_container_status_restarts_total{namespace="prod"}[5m]) > 0
+          for: 0m
+          labels:
+            severity: critical
+            namespace: prod
+            kind: Deployment
+            name: web-frontend
+          annotations:
+            summary: "Pod web-frontend is crash-looping"
+            description: "Application availability is degraded"
+
+        - alert: TargetDown
+          expr: up{namespace="prod"} == 0
+          for: 0m
+          labels:
+            severity: warning
+            namespace: prod
+          annotations:
+            summary: "Monitoring targets unreachable"
+            description: "50% of web-frontend targets have been unreachable"
+
+        - alert: KubeMemoryOvercommit
+          expr: kube_node_status_allocatable{resource="memory"} - kube_pod_container_resource_requests{resource="memory"} < 0
+          for: 0m
+          labels:
+            severity: info
+            namespace: prod
+          annotations:
+            summary: "Memory overcommit detected"
+            description: "Node memory is overcommitted"

@@ -12,12 +12,14 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/semaphore"
 	"k8s.io/client-go/dynamic"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ds"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
+	prom "github.com/jordigilh/kubernaut/pkg/apifrontend/prometheus"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ratelimit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/security"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
@@ -46,12 +48,17 @@ type ISSessionInitializer interface {
 
 // MCPBridgeConfig holds the configuration for the real MCP tool bridge.
 type MCPBridgeConfig struct {
+	// K8sClient is the dynamic K8s client. Not used by the bridge directly
+	// (kubernaut CRDs use TypedClient); retained for test compatibility and
+	// future kubectl/events tool registration if moved from the agent path.
 	K8sClient             dynamic.Interface
+	TypedClient           crclient.WithWatch
 	Namespace             string
 	KAMCPClient           ka.MCPClient
 	KADedicatedClient     ka.MCPClient
 	InvestigationRegistry *tools.MonitorRegistry
 	DSClient           ds.Client
+	PromClient         prom.Client
 	Triager            *severity.Triager
 	Authorizer         auth.ToolAuthorizer
 	Auditor            audit.Emitter
@@ -132,51 +139,51 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 	registerTool(srv, cfg, sem, "kubernaut_list_remediations", "List active and recent remediations",
 		func(ctx context.Context, args tools.ListRemediationsArgs) (any, error) {
 			args.Namespace = cfg.Namespace
-			return tools.HandleListRemediations(ctx, cfg.K8sClient, args)
+			return tools.HandleListRemediations(ctx, cfg.TypedClient, args)
 		})
 
 	registerTool(srv, cfg, sem, "kubernaut_get_remediation", "Get details of a specific remediation",
 		func(ctx context.Context, args tools.GetRemediationArgs) (any, error) {
 			args.Namespace = cfg.Namespace
-			return tools.HandleGetRemediation(ctx, cfg.K8sClient, args)
+			return tools.HandleGetRemediation(ctx, cfg.TypedClient, args)
 		})
 
 	registerTool(srv, cfg, sem, "kubernaut_list_approval_requests", "List remediation approval requests with optional filtering by decision status",
 		func(ctx context.Context, args tools.ListApprovalRequestsArgs) (any, error) {
 			args.Namespace = cfg.Namespace
-			return tools.HandleListApprovalRequests(ctx, cfg.K8sClient, args)
+			return tools.HandleListApprovalRequests(ctx, cfg.TypedClient, args)
 		})
 
 	registerTool(srv, cfg, sem, "kubernaut_get_approval_request", "Get full details of a specific remediation approval request",
 		func(ctx context.Context, args tools.GetApprovalRequestArgs) (any, error) {
 			args.Namespace = cfg.Namespace
-			return tools.HandleGetApprovalRequest(ctx, cfg.K8sClient, args)
+			return tools.HandleGetApprovalRequest(ctx, cfg.TypedClient, args)
 		})
 
 	registerTool(srv, cfg, sem, "kubernaut_approve", "Approve a remediation action",
 		func(ctx context.Context, args tools.ApproveArgs) (any, error) {
 			args.Namespace = cfg.Namespace
 			username := usernameFromCtx(ctx)
-			return tools.HandleApprove(ctx, cfg.K8sClient, args, username)
+			return tools.HandleApprove(ctx, cfg.TypedClient, args, username)
 		})
 
 	registerTool(srv, cfg, sem, "kubernaut_cancel_remediation", "Cancel an active remediation",
 		func(ctx context.Context, args tools.CancelRemediationArgs) (any, error) {
 			args.Namespace = cfg.Namespace
-			return tools.HandleCancelRemediation(ctx, cfg.K8sClient, args)
+			return tools.HandleCancelRemediation(ctx, cfg.TypedClient, args)
 		})
 
 	registerTool(srv, cfg, sem, "kubernaut_watch", "Watch for remediation state changes",
 		func(ctx context.Context, args tools.WatchArgs) (any, error) {
 			args.Namespace = cfg.Namespace
-			return tools.HandleWatch(ctx, cfg.K8sClient, args)
+			return tools.HandleWatch(ctx, cfg.TypedClient, args)
 		})
 
 	if shouldRegister("kubernaut_await_session") {
 		registerTool(srv, cfg, sem, "kubernaut_await_session", "Wait for KA investigation session to become ready",
 			func(ctx context.Context, args tools.AwaitSessionArgs) (any, error) {
 				args.Namespace = cfg.Namespace
-				return tools.HandleAwaitSession(ctx, cfg.K8sClient, args)
+				return tools.HandleAwaitSession(ctx, cfg.TypedClient, args)
 			})
 	}
 
@@ -195,7 +202,7 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 		}
 		registerTool(srv, cfg, sem, "kubernaut_investigate", "Investigate an infrastructure incident",
 			func(ctx context.Context, args tools.InvestigateMCPArgs) (any, error) {
-				return tools.HandleInvestigationMCPWithRegistry(ctx, dedicatedClient, cfg.K8sClient, cfg.Namespace, args, cfg.Auditor, cfg.InvestigationRegistry, onInvestigateStarted, false, nil, "", isSignaler, cfg.Triager)
+				return tools.HandleInvestigationMCPWithRegistry(ctx, dedicatedClient, cfg.TypedClient, cfg.Namespace, args, cfg.Auditor, cfg.InvestigationRegistry, onInvestigateStarted, false, nil, "", isSignaler, cfg.Triager)
 			})
 	}
 
@@ -294,6 +301,19 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 			})
 	}
 
+	if shouldRegister("kubernaut_complete_no_action") {
+		registerTool(srv, cfg, sem, "kubernaut_complete_no_action", "Complete an investigation without selecting a workflow — dismiss or escalate to a human team",
+			func(ctx context.Context, args tools.CompleteNoActionArgs) (any, error) {
+				result, err := tools.HandleCompleteNoAction(ctx, cfg.KAMCPClient, args, cfg.Auditor)
+				if err == nil && cfg.SessionFinalizer != nil {
+					if fErr := cfg.SessionFinalizer.FinalizeSessionByRR(ctx, cfg.Namespace, args.RRID, isv1alpha1.SessionPhaseCompleted); fErr != nil {
+						cfg.Logger.Error(fErr, "IS CRD phase finalization failed", "rr_id", args.RRID, "phase", "Completed")
+					}
+				}
+				return result, err
+			})
+	}
+
 	if shouldRegister("kubernaut_status") {
 		registerTool(srv, cfg, sem, "kubernaut_status", "Get the current status of an investigation session",
 			func(ctx context.Context, args tools.InteractiveActionArgs) (any, error) {
@@ -313,6 +333,14 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 	// Internal triage tools (kubectl_get, kubectl_list, kubectl_list_events,
 	// kubernaut_check_existing_remediation, kubernaut_remediate) are available
 	// only to AF's LLM agent (ADK path) and are not exposed via MCP.
+
+	// Alert observation tools (#1412) — registered when Prometheus/Thanos is configured.
+	if cfg.PromClient != nil {
+		registerTool(srv, cfg, sem, "kubernaut_list_alerts", "List currently firing or pending Prometheus/Thanos alerts, optionally filtered by namespace, severity, or state",
+			func(ctx context.Context, args tools.ListAlertsArgs) (any, error) {
+				return tools.HandleListAlerts(ctx, cfg.PromClient, args)
+			})
+	}
 }
 
 // registerTool is a generic helper that registers a single tool with all cross-cutting concerns:

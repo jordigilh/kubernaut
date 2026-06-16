@@ -5,52 +5,60 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	dynamicfake "k8s.io/client-go/dynamic/fake"
-	k8stesting "k8s.io/client-go/testing"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
 
-func newFakeRR(namespace, name, phase string) *unstructured.Unstructured {
-	return &unstructured.Unstructured{
-		Object: map[string]interface{}{
-			"apiVersion": "kubernaut.ai/v1alpha1",
-			"kind":       "RemediationRequest",
-			"metadata": map[string]interface{}{
-				"name":      name,
-				"namespace": namespace,
+func rrTestScheme() *runtime.Scheme {
+	s := runtime.NewScheme()
+	_ = remediationv1.AddToScheme(s)
+	return s
+}
+
+func newTypedRR(namespace, name, phase string) *remediationv1.RemediationRequest {
+	return &remediationv1.RemediationRequest{
+		ObjectMeta: objMeta(namespace, name),
+		Spec: remediationv1.RemediationRequestSpec{
+			TargetResource: remediationv1.ResourceIdentifier{
+				Kind: "Deployment",
+				Name: "api-server",
 			},
-			"spec": map[string]interface{}{
-				"targetResource": map[string]interface{}{
-					"kind": "Deployment",
-					"name": "api-server",
-				},
-			},
-			"status": map[string]interface{}{
-				"overallPhase": phase,
-			},
+		},
+		Status: remediationv1.RemediationRequestStatus{
+			OverallPhase: remediationv1.RemediationPhase(phase),
 		},
 	}
 }
 
-func newDynamicFakeClient(objects ...runtime.Object) *dynamicfake.FakeDynamicClient {
-	scheme := runtime.NewScheme()
-	scheme.AddKnownTypeWithName(
-		schema.GroupVersionKind{Group: "kubernaut.ai", Version: "v1alpha1", Kind: "RemediationRequestList"},
-		&unstructured.UnstructuredList{},
-	)
-	scheme.AddKnownTypeWithName(
-		schema.GroupVersionKind{Group: "kubernaut.ai", Version: "v1alpha1", Kind: "RemediationApprovalRequestList"},
-		&unstructured.UnstructuredList{},
-	)
-	scheme.AddKnownTypeWithName(
-		schema.GroupVersionKind{Group: "kubernaut.ai", Version: "v1alpha1", Kind: "SignalProcessingList"},
-		&unstructured.UnstructuredList{},
-	)
-	return dynamicfake.NewSimpleDynamicClient(scheme, objects...)
+func newTypedFakeClient(objects ...crclient.Object) crclient.Client {
+	return fake.NewClientBuilder().
+		WithScheme(rrTestScheme()).
+		WithStatusSubresource(&remediationv1.RemediationRequest{}, &remediationv1.RemediationApprovalRequest{}).
+		WithObjects(objects...).
+		Build()
+}
+
+func newTypedFakeClientWithError(err error) crclient.Client {
+	return newTypedFakeClientWithInterceptor(interceptor.Funcs{
+		List: func(ctx context.Context, client crclient.WithWatch, list crclient.ObjectList, opts ...crclient.ListOption) error {
+			return err
+		},
+		Get: func(ctx context.Context, client crclient.WithWatch, key crclient.ObjectKey, obj crclient.Object, opts ...crclient.GetOption) error {
+			return err
+		},
+	})
+}
+
+func newTypedFakeClientWithInterceptor(fns interceptor.Funcs) crclient.Client {
+	return fake.NewClientBuilder().
+		WithScheme(rrTestScheme()).
+		WithInterceptorFuncs(fns).
+		Build()
 }
 
 var _ = Describe("kubernaut_list_remediations", func() {
@@ -61,7 +69,7 @@ var _ = Describe("kubernaut_list_remediations", func() {
 	})
 
 	It("UT-AF-101-001: lists RRs in namespace", func() {
-		client := newDynamicFakeClient(newFakeRR("payments", "rr-1", "Executing"), newFakeRR("payments", "rr-2", "Pending"))
+		client := newTypedFakeClient(newTypedRR("payments", "rr-1", "Executing"), newTypedRR("payments", "rr-2", "Pending"))
 		result, err := tools.HandleListRemediations(ctx, client, tools.ListRemediationsArgs{Namespace: "payments"})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Count).To(Equal(2))
@@ -69,7 +77,7 @@ var _ = Describe("kubernaut_list_remediations", func() {
 	})
 
 	It("UT-AF-101-002: filters by phase", func() {
-		client := newDynamicFakeClient(newFakeRR("payments", "rr-1", "Executing"), newFakeRR("payments", "rr-2", "Pending"))
+		client := newTypedFakeClient(newTypedRR("payments", "rr-1", "Executing"), newTypedRR("payments", "rr-2", "Pending"))
 		result, err := tools.HandleListRemediations(ctx, client, tools.ListRemediationsArgs{Namespace: "payments", Phase: "Executing"})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Count).To(Equal(1))
@@ -77,7 +85,7 @@ var _ = Describe("kubernaut_list_remediations", func() {
 	})
 
 	It("UT-AF-101-003: filters by kind and name", func() {
-		client := newDynamicFakeClient(newFakeRR("payments", "rr-1", "Executing"))
+		client := newTypedFakeClient(newTypedRR("payments", "rr-1", "Executing"))
 		result, err := tools.HandleListRemediations(ctx, client, tools.ListRemediationsArgs{
 			Namespace: "payments",
 			Kind:      "Deployment",
@@ -88,7 +96,7 @@ var _ = Describe("kubernaut_list_remediations", func() {
 	})
 
 	It("UT-AF-101-004: returns empty list when no RRs match", func() {
-		client := newDynamicFakeClient()
+		client := newTypedFakeClient()
 		result, err := tools.HandleListRemediations(ctx, client, tools.ListRemediationsArgs{Namespace: "empty"})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Count).To(Equal(0))
@@ -96,10 +104,7 @@ var _ = Describe("kubernaut_list_remediations", func() {
 	})
 
 	It("UT-AF-101-005: returns user-friendly error on 403", func() {
-		client := newDynamicFakeClient()
-		client.PrependReactor("list", "remediationrequests", func(action k8stesting.Action) (bool, runtime.Object, error) {
-			return true, nil, newForbiddenError("remediationrequests")
-		})
+		client := newTypedFakeClientWithError(newForbiddenError("remediationrequests"))
 		_, err := tools.HandleListRemediations(ctx, client, tools.ListRemediationsArgs{Namespace: "forbidden"})
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("access denied"))
@@ -111,14 +116,14 @@ var _ = Describe("kubernaut_list_remediations", func() {
 	})
 
 	It("UT-AF-101-007: invalid namespace returns ErrInvalidInput", func() {
-		client := newDynamicFakeClient()
+		client := newTypedFakeClient()
 		_, err := tools.HandleListRemediations(ctx, client, tools.ListRemediationsArgs{Namespace: "../etc"})
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("invalid input"))
 	})
 
 	It("UT-AF-101-008: kind filter excludes non-matching RRs", func() {
-		client := newDynamicFakeClient(newFakeRR("payments", "rr-1", "Executing"))
+		client := newTypedFakeClient(newTypedRR("payments", "rr-1", "Executing"))
 		result, err := tools.HandleListRemediations(ctx, client, tools.ListRemediationsArgs{
 			Namespace: "payments",
 			Kind:      "StatefulSet",
@@ -128,7 +133,7 @@ var _ = Describe("kubernaut_list_remediations", func() {
 	})
 
 	It("UT-AF-101-009: name filter excludes non-matching RRs", func() {
-		client := newDynamicFakeClient(newFakeRR("payments", "rr-1", "Executing"))
+		client := newTypedFakeClient(newTypedRR("payments", "rr-1", "Executing"))
 		result, err := tools.HandleListRemediations(ctx, client, tools.ListRemediationsArgs{
 			Namespace: "payments",
 			Name:      "non-existent-target",

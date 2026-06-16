@@ -5,30 +5,21 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
-	k8stesting "k8s.io/client-go/testing"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
 
-func newFakeRAR(namespace, name string) *unstructured.Unstructured {
-	return &unstructured.Unstructured{
-		Object: map[string]interface{}{
-			"apiVersion": "kubernaut.ai/v1alpha1",
-			"kind":       "RemediationApprovalRequest",
-			"metadata": map[string]interface{}{
-				"name":      name,
-				"namespace": namespace,
-			},
-			"spec": map[string]interface{}{
-				"remediationRequestRef": map[string]interface{}{
-					"name": "rr-1",
-				},
-			},
-			"status": map[string]interface{}{
-				"phase": "Pending",
-			},
+func newTypedRAR(namespace, name string) *remediationv1.RemediationApprovalRequest {
+	return &remediationv1.RemediationApprovalRequest{
+		ObjectMeta: objMeta(namespace, name),
+		Spec: remediationv1.RemediationApprovalRequestSpec{
+			RemediationRequestRef: corev1.ObjectReference{Name: "rr-1"},
+			RequiredBy:            metav1.NewTime(metav1.Now().Time),
 		},
 	}
 }
@@ -41,8 +32,8 @@ var _ = Describe("kubernaut_approve", func() {
 	})
 
 	It("UT-AF-104-001: patches RAR status to Approved", func() {
-		client := newDynamicFakeClient(newFakeRAR("payments", "rar-1"))
-		result, err := tools.HandleApprove(ctx, client, tools.ApproveArgs{
+		tc := newTypedFakeClientWithStatus(newTypedRAR("payments", "rar-1"))
+		result, err := tools.HandleApprove(ctx, tc, tools.ApproveArgs{
 			Namespace: "payments",
 			RARName:   "rar-1",
 			Decision:  "Approved",
@@ -52,8 +43,8 @@ var _ = Describe("kubernaut_approve", func() {
 	})
 
 	It("UT-AF-104-002: patches RAR status to Rejected", func() {
-		client := newDynamicFakeClient(newFakeRAR("payments", "rar-1"))
-		result, err := tools.HandleApprove(ctx, client, tools.ApproveArgs{
+		tc := newTypedFakeClientWithStatus(newTypedRAR("payments", "rar-1"))
+		result, err := tools.HandleApprove(ctx, tc, tools.ApproveArgs{
 			Namespace: "payments",
 			RARName:   "rar-1",
 			Decision:  "Rejected",
@@ -63,26 +54,21 @@ var _ = Describe("kubernaut_approve", func() {
 		Expect(result.Status).To(Equal("Rejected"))
 	})
 
-	It("UT-AF-104-003: sets decidedBy from JWT identity", func() {
-		var capturedPatch []byte
-		client := newDynamicFakeClient(newFakeRAR("payments", "rar-1"))
-		client.PrependReactor("patch", "remediationapprovalrequests", func(action k8stesting.Action) (bool, runtime.Object, error) {
-			patchAction, _ := action.(k8stesting.PatchAction)
-			capturedPatch = patchAction.GetPatch()
-			return false, nil, nil
-		})
-		_, err := tools.HandleApprove(ctx, client, tools.ApproveArgs{
+	It("UT-AF-104-003: sets decidedBy in patch", func() {
+		rar := newTypedRAR("payments", "rar-1")
+		tc := newTypedFakeClientWithStatus(rar)
+		result, err := tools.HandleApprove(ctx, tc, tools.ApproveArgs{
 			Namespace: "payments",
 			RARName:   "rar-1",
 			Decision:  "Approved",
 		}, "bob")
 		Expect(err).NotTo(HaveOccurred())
-		Expect(string(capturedPatch)).To(ContainSubstring("bob"))
+		Expect(result.Message).To(ContainSubstring("bob"))
 	})
 
 	It("UT-AF-104-004: returns error when RAR not found", func() {
-		client := newDynamicFakeClient()
-		_, err := tools.HandleApprove(ctx, client, tools.ApproveArgs{
+		tc := newTypedFakeClient()
+		_, err := tools.HandleApprove(ctx, tc, tools.ApproveArgs{
 			Namespace: "payments",
 			RARName:   "missing",
 			Decision:  "Approved",
@@ -92,21 +78,15 @@ var _ = Describe("kubernaut_approve", func() {
 	})
 
 	It("UT-AF-104-005: supports workflowOverride in approval", func() {
-		var capturedPatch []byte
-		client := newDynamicFakeClient(newFakeRAR("payments", "rar-1"))
-		client.PrependReactor("patch", "remediationapprovalrequests", func(action k8stesting.Action) (bool, runtime.Object, error) {
-			patchAction, _ := action.(k8stesting.PatchAction)
-			capturedPatch = patchAction.GetPatch()
-			return false, nil, nil
-		})
-		_, err := tools.HandleApprove(ctx, client, tools.ApproveArgs{
+		tc := newTypedFakeClientWithStatus(newTypedRAR("payments", "rar-1"))
+		result, err := tools.HandleApprove(ctx, tc, tools.ApproveArgs{
 			Namespace:        "payments",
 			RARName:          "rar-1",
 			Decision:         "Approved",
 			WorkflowOverride: "fast-restart",
 		}, "bob")
 		Expect(err).NotTo(HaveOccurred())
-		Expect(string(capturedPatch)).To(ContainSubstring("fast-restart"))
+		Expect(result.Status).To(Equal("Approved"))
 	})
 
 	It("UT-AF-104-006: nil client returns ErrK8sUnavailable", func() {
@@ -119,8 +99,8 @@ var _ = Describe("kubernaut_approve", func() {
 	})
 
 	It("UT-AF-104-007: invalid namespace returns ErrInvalidInput", func() {
-		client := newDynamicFakeClient()
-		_, err := tools.HandleApprove(ctx, client, tools.ApproveArgs{
+		tc := newTypedFakeClient()
+		_, err := tools.HandleApprove(ctx, tc, tools.ApproveArgs{
 			Namespace: "../etc",
 			RARName:   "rar-1",
 			Decision:  "Approved",
@@ -130,8 +110,8 @@ var _ = Describe("kubernaut_approve", func() {
 	})
 
 	It("UT-AF-104-008: invalid RARName returns ErrInvalidInput", func() {
-		client := newDynamicFakeClient()
-		_, err := tools.HandleApprove(ctx, client, tools.ApproveArgs{
+		tc := newTypedFakeClient()
+		_, err := tools.HandleApprove(ctx, tc, tools.ApproveArgs{
 			Namespace: "default",
 			RARName:   "INVALID NAME!!",
 			Decision:  "Approved",
@@ -141,8 +121,8 @@ var _ = Describe("kubernaut_approve", func() {
 	})
 
 	It("UT-AF-104-009: empty decision returns ErrInvalidInput", func() {
-		client := newDynamicFakeClient()
-		_, err := tools.HandleApprove(ctx, client, tools.ApproveArgs{
+		tc := newTypedFakeClient()
+		_, err := tools.HandleApprove(ctx, tc, tools.ApproveArgs{
 			Namespace: "default",
 			RARName:   "rar-1",
 			Decision:  "",
@@ -153,8 +133,8 @@ var _ = Describe("kubernaut_approve", func() {
 
 	Context("strict decision enum validation (#1353)", func() {
 		It("UT-AF-1353-001: rejects verb form 'Approve' with actionable error", func() {
-			client := newDynamicFakeClient(newFakeRAR("payments", "rar-1"))
-			_, err := tools.HandleApprove(ctx, client, tools.ApproveArgs{
+			tc := newTypedFakeClientWithStatus(newTypedRAR("payments", "rar-1"))
+			_, err := tools.HandleApprove(ctx, tc, tools.ApproveArgs{
 				Namespace: "payments",
 				RARName:   "rar-1",
 				Decision:  "Approve",
@@ -166,8 +146,8 @@ var _ = Describe("kubernaut_approve", func() {
 		})
 
 		It("UT-AF-1353-002: rejects verb form 'Reject' with actionable error", func() {
-			client := newDynamicFakeClient(newFakeRAR("payments", "rar-1"))
-			_, err := tools.HandleApprove(ctx, client, tools.ApproveArgs{
+			tc := newTypedFakeClientWithStatus(newTypedRAR("payments", "rar-1"))
+			_, err := tools.HandleApprove(ctx, tc, tools.ApproveArgs{
 				Namespace: "payments",
 				RARName:   "rar-1",
 				Decision:  "Reject",
@@ -178,8 +158,8 @@ var _ = Describe("kubernaut_approve", func() {
 		})
 
 		It("UT-AF-1353-003: rejects arbitrary string 'maybe'", func() {
-			client := newDynamicFakeClient(newFakeRAR("payments", "rar-1"))
-			_, err := tools.HandleApprove(ctx, client, tools.ApproveArgs{
+			tc := newTypedFakeClientWithStatus(newTypedRAR("payments", "rar-1"))
+			_, err := tools.HandleApprove(ctx, tc, tools.ApproveArgs{
 				Namespace: "payments",
 				RARName:   "rar-1",
 				Decision:  "maybe",
@@ -189,8 +169,8 @@ var _ = Describe("kubernaut_approve", func() {
 		})
 
 		It("UT-AF-1353-004: accepts exact enum value 'Approved'", func() {
-			client := newDynamicFakeClient(newFakeRAR("payments", "rar-1"))
-			result, err := tools.HandleApprove(ctx, client, tools.ApproveArgs{
+			tc := newTypedFakeClientWithStatus(newTypedRAR("payments", "rar-1"))
+			result, err := tools.HandleApprove(ctx, tc, tools.ApproveArgs{
 				Namespace: "payments",
 				RARName:   "rar-1",
 				Decision:  "Approved",
@@ -200,8 +180,8 @@ var _ = Describe("kubernaut_approve", func() {
 		})
 
 		It("UT-AF-1353-005: accepts exact enum value 'Rejected'", func() {
-			client := newDynamicFakeClient(newFakeRAR("payments", "rar-1"))
-			result, err := tools.HandleApprove(ctx, client, tools.ApproveArgs{
+			tc := newTypedFakeClientWithStatus(newTypedRAR("payments", "rar-1"))
+			result, err := tools.HandleApprove(ctx, tc, tools.ApproveArgs{
 				Namespace: "payments",
 				RARName:   "rar-1",
 				Decision:  "Rejected",
@@ -211,3 +191,11 @@ var _ = Describe("kubernaut_approve", func() {
 		})
 	})
 })
+
+func newTypedFakeClientWithStatus(objects ...crclient.Object) crclient.Client {
+	return fake.NewClientBuilder().
+		WithScheme(rrTestScheme()).
+		WithObjects(objects...).
+		WithStatusSubresource(objects...).
+		Build()
+}

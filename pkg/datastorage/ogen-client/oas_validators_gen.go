@@ -220,6 +220,70 @@ func (s AIAgentAlignmentVerdictPayloadEventType) Validate() error {
 	}
 }
 
+func (s *AIAgentAuthDeniedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s AIAgentAuthDeniedPayloadEventType) Validate() error {
+	switch s {
+	case "aiagent.auth.denied":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *AIAgentAuthFailurePayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s AIAgentAuthFailurePayloadEventType) Validate() error {
+	switch s {
+	case "aiagent.auth.failure":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s *AIAgentEnrichmentCompletedPayload) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -628,6 +692,38 @@ func (s *AIAgentRCACompletePayload) Validate() error {
 func (s AIAgentRCACompletePayloadEventType) Validate() error {
 	switch s {
 	case "aiagent.rca.complete":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *AIAgentRatelimitDeniedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s AIAgentRatelimitDeniedPayloadEventType) Validate() error {
+	switch s {
+	case "aiagent.ratelimit.denied":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -3330,6 +3426,21 @@ func (s AuditEventEventData) Validate() error {
 			return err
 		}
 		return nil
+	case AIAgentRatelimitDeniedPayloadAuditEventEventData:
+		if err := s.AIAgentRatelimitDeniedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case AIAgentAuthFailurePayloadAuditEventEventData:
+		if err := s.AIAgentAuthFailurePayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case AIAgentAuthDeniedPayloadAuditEventEventData:
+		if err := s.AIAgentAuthDeniedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
 	case RemediationRequestWebhookAuditPayloadAuditEventEventData:
 		if err := s.RemediationRequestWebhookAuditPayload.Validate(); err != nil {
 			return err
@@ -3948,6 +4059,21 @@ func (s AuditEventRequestEventData) Validate() error {
 		return nil
 	case ShadowLLMResponsePayloadAuditEventRequestEventData:
 		if err := s.ShadowLLMResponsePayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case AIAgentRatelimitDeniedPayloadAuditEventRequestEventData:
+		if err := s.AIAgentRatelimitDeniedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case AIAgentAuthFailurePayloadAuditEventRequestEventData:
+		if err := s.AIAgentAuthFailurePayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case AIAgentAuthDeniedPayloadAuditEventRequestEventData:
+		if err := s.AIAgentAuthDeniedPayload.Validate(); err != nil {
 			return err
 		}
 		return nil

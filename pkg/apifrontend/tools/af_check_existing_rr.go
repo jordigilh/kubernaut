@@ -4,13 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/client-go/dynamic"
-
 	"google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
 )
 
@@ -25,9 +23,10 @@ type CheckExistingRRArgs struct {
 
 // CheckExistingRRResult is the output of kubernaut_check_existing_remediation.
 type CheckExistingRRResult struct {
-	Exists bool   `json:"exists"`
-	RRID   string `json:"rr_id,omitempty"`
-	Phase  string `json:"phase,omitempty"`
+	Exists   bool   `json:"exists"`
+	RRID     string `json:"rr_id,omitempty"`
+	Phase    string `json:"phase,omitempty"`
+	Severity string `json:"severity,omitempty"`
 }
 
 // HandleCheckExistingRR checks whether a non-terminal RemediationRequest already
@@ -35,7 +34,7 @@ type CheckExistingRRResult struct {
 //
 // controllerNS is where RR CRDs are stored (ADR-057) — used for listing.
 // args.Namespace is the workload namespace — used for fingerprint computation.
-func HandleCheckExistingRR(ctx context.Context, client dynamic.Interface, controllerNS string, args CheckExistingRRArgs) (CheckExistingRRResult, error) {
+func HandleCheckExistingRR(ctx context.Context, client crclient.Client, controllerNS string, args CheckExistingRRArgs) (CheckExistingRRResult, error) {
 	if client == nil {
 		return CheckExistingRRResult{}, ErrK8sUnavailable
 	}
@@ -57,21 +56,21 @@ func HandleCheckExistingRR(ctx context.Context, client dynamic.Interface, contro
 
 	fingerprint := rrFingerprint(args.Namespace, args.Kind, args.Name)
 
-	list, err := client.Resource(rrGVR).Namespace(controllerNS).List(ctx, metav1.ListOptions{})
-	if err != nil {
+	var list remediationv1.RemediationRequestList
+	if err := client.List(ctx, &list, crclient.InNamespace(controllerNS)); err != nil {
 		return CheckExistingRRResult{}, ToUserFriendlyError(err)
 	}
 
-	for _, item := range list.Items {
-		fp, _, _ := unstructured.NestedString(item.Object, "spec", "signalFingerprint")
-		if fp != fingerprint {
+	for i := range list.Items {
+		item := &list.Items[i]
+		if item.Spec.SignalFingerprint != fingerprint {
 			continue
 		}
-		phase, _, _ := unstructured.NestedString(item.Object, "status", "overallPhase")
+		phase := string(item.Status.OverallPhase)
 		if !IsTerminalPhase(phase) {
 			return CheckExistingRRResult{
 				Exists: true,
-				RRID:   item.GetName(),
+				RRID:   item.Name,
 				Phase:  phase,
 			}, nil
 		}
@@ -83,7 +82,7 @@ func HandleCheckExistingRR(ctx context.Context, client dynamic.Interface, contro
 // NewCheckExistingRemediationTool creates the kubernaut_check_existing_remediation tool.
 // controllerNS is injected at wiring time for CRD listing (ADR-057). The LLM
 // provides the workload namespace via args.Namespace for fingerprint matching.
-func NewCheckExistingRemediationTool(client dynamic.Interface, controllerNS string) (tool.Tool, error) {
+func NewCheckExistingRemediationTool(client crclient.Client, controllerNS string) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_check_existing_remediation",
 		Description: "Check if an active remediation already exists for a target resource (deduplication check)",

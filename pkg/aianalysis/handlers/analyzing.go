@@ -466,6 +466,10 @@ func (h *AnalyzingHandler) detectedLabelsToMap(dl *sharedtypes.DetectedLabels) m
 	labels["network_isolated"] = dl.NetworkIsolated
 	labels["service_mesh"] = dl.ServiceMesh
 	labels["resource_quota_constrained"] = dl.ResourceQuotaConstrained
+	labels["virtual_machine"] = dl.VirtualMachine
+	labels["live_migratable"] = dl.LiveMigratable
+	labels["cdi_managed"] = dl.CDIManaged
+	labels["storage_backend"] = dl.StorageBackend
 
 	return labels
 }

@@ -563,7 +563,7 @@ jobs:
         if: matrix.service == 'datastorage'
         run: make validate-openapi-datastorage
       - name: Collect must-gather logs on failure
-        if: failure()
+        if: failure() || cancelled()
         run: |
           echo "📋 Collecting must-gather logs for triage..."
           if [ -d "/tmp/kubernaut-must-gather" ]; then
@@ -578,7 +578,7 @@ jobs:
             echo "    This may be expected if tests failed before must-gather was triggered"
           fi
       - name: Upload must-gather logs as artifacts
-        if: failure()
+        if: failure() || cancelled()
         uses: actions/upload-artifact@v7
         with:
           name: must-gather-logs-integration-${{ matrix.service }}-${{ github.run_id }}
@@ -767,7 +767,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Collect must-gather logs on failure
-        if: failure()
+        if: failure() || cancelled()
         run: |
           echo "📋 Collecting must-gather logs for triage..."
           TIMESTAMP=$(date +%Y%m%d-%H%M%S)
@@ -808,7 +808,7 @@ jobs:
             fi
           fi
       - name: Upload must-gather logs as artifacts
-        if: failure()
+        if: failure() || cancelled()
         uses: actions/upload-artifact@v7
         with:
           name: must-gather-logs-e2e-${{ matrix.service }}-${{ github.run_id }}

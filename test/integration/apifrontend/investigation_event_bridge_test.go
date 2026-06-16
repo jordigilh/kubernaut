@@ -111,7 +111,7 @@ var _ = Describe("Investigation Event Bridge Wiring (IT-AF-1326)", func() {
 				},
 			}
 
-			result, err := tools.HandleInvestigationMCP(ctx, mockMCP, dynamicClient, ns, tools.InvestigateMCPArgs{
+			result, err := tools.HandleInvestigationMCP(ctx, mockMCP, k8sClient, ns, tools.InvestigateMCPArgs{
 				RRID: rrName,
 			}, nil)
 			Expect(err).NotTo(HaveOccurred())
@@ -134,7 +134,7 @@ var _ = Describe("Investigation Event Bridge Wiring (IT-AF-1326)", func() {
 
 			// No AIA CRD exists — HandleAwaitSession will timeout, but
 			// HandleInvestigationMCP proceeds anyway (best-effort).
-			result, err := tools.HandleInvestigationMCP(ctx, mockMCP, dynamicClient, "default", tools.InvestigateMCPArgs{
+			result, err := tools.HandleInvestigationMCP(ctx, mockMCP, k8sClient, "default", tools.InvestigateMCPArgs{
 				RRID: "rr-nonexistent-051",
 			}, nil)
 			Expect(err).NotTo(HaveOccurred())

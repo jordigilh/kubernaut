@@ -18,6 +18,7 @@ package alignment
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -25,6 +26,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/config"
 	kaserver "github.com/jordigilh/kubernaut/internal/kubernautagent/server"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
@@ -182,6 +184,7 @@ func (w *InvestigatorWrapper) Investigate(ctx context.Context, signal katypes.Si
 
 	result.AlignmentVerdict = mapVerdictToResult(verdict)
 
+	w.emitVerdictEvent(ctx, result.AlignmentVerdict)
 	w.emitAlignmentAudit(ctx, correlationID, verdict)
 
 	alignmentVerdictDuration.Observe(time.Since(start).Seconds())
@@ -243,6 +246,31 @@ func (w *InvestigatorWrapper) Investigate(ctx context.Context, signal katypes.Si
 	}
 
 	return result, nil
+}
+
+// emitVerdictEvent sends the alignment verdict onto the session event channel.
+// Uses the parent ctx (not investCtx) because the LazySink is attached to the
+// parent context in Manager.launchInvestigation. This also ensures the emit
+// succeeds even when the circuit breaker has cancelled investCtx.
+func (w *InvestigatorWrapper) emitVerdictEvent(ctx context.Context, avr *katypes.AlignmentVerdictResult) {
+	sink := session.EventSinkFromContext(ctx)
+	if sink == nil || avr == nil {
+		return
+	}
+	data, err := json.Marshal(avr)
+	if err != nil {
+		w.logger.Error(err, "failed to marshal AlignmentVerdictResult for event emission")
+		return
+	}
+	evt := session.InvestigationEvent{
+		Type: session.EventTypeAlignmentVerdict,
+		Data: data,
+	}
+	select {
+	case sink <- evt:
+	default:
+		w.logger.V(1).Info("alignment_verdict event dropped (channel full)")
+	}
 }
 
 func (w *InvestigatorWrapper) emitAlignmentAudit(ctx context.Context, correlationID string, verdict Verdict) {

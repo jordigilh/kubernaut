@@ -136,23 +136,129 @@ var _ = Describe("EventBridge", func() {
 			Expect(err).To(MatchError(context.Canceled))
 		})
 
-		It("UT-AF-1258-016: truncates text > 512 chars", func() {
+		It("UT-AF-1258-016: reasoning text under 4096 chars passes through (#1435 raised limit)", func() {
 			queue := &fakeQueue{}
 			taskID := a2a.TaskID("task-trunc-001")
 			ctx := launcher.WithEventBridge(context.Background(), queue, taskID, "", nil)
 			bridge := launcher.EventBridgeFromContext(ctx)
 
-			longText := make([]byte, 600)
-			for i := range longText {
-				longText[i] = 'a'
+			var sb strings.Builder
+			unit := "The alert KubePodCrashLooping is firing for pod web-frontend in namespace demo-webui. "
+			for sb.Len() < 600 {
+				sb.WriteString(unit)
 			}
-			err := bridge.EmitReasoning(ctx, string(longText))
+			longText := sb.String()[:600]
+			err := bridge.EmitReasoning(ctx, longText)
 			Expect(err).NotTo(HaveOccurred())
 
 			evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
 			textPart := evt.Status.Message.Parts[0].(a2a.TextPart)
-			Expect(len(textPart.Text)).To(BeNumerically("<=", 515)) // 512 + "..."
+			Expect(len(textPart.Text)).To(Equal(600),
+				"#1435: reasoning limit raised to 4096, 600 chars should not be truncated")
 			Expect(evt.Metadata["type"]).To(Equal("reasoning"))
+		})
+	})
+
+	Describe("Per-type truncation limits (#1435)", func() {
+		buildLongText := func(n int) string {
+			unit := "The alert KubePodCrashLooping is firing for pod web-frontend in namespace demo-webui. "
+			var sb strings.Builder
+			for sb.Len() < n {
+				sb.WriteString(unit)
+			}
+			return sb.String()[:n]
+		}
+
+		It("UT-AF-1435-001: reasoning text up to 4096 runes is NOT truncated", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-1435-001", "", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			longReasoning := buildLongText(4000)
+			err := bridge.EmitReasoning(ctx, longReasoning)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(queue.events).To(HaveLen(1))
+
+			evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			text := evt.Status.Message.Parts[0].(a2a.TextPart).Text
+			Expect(text).To(Equal(longReasoning),
+				"BR-AF-STREAM-001: reasoning text under 4096 runes must not be truncated")
+		})
+
+		It("UT-AF-1435-002: reasoning text beyond 4096 runes IS truncated with ellipsis", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-1435-002", "", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			longReasoning := buildLongText(5000)
+			err := bridge.EmitReasoning(ctx, longReasoning)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(queue.events).To(HaveLen(1))
+
+			evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			text := evt.Status.Message.Parts[0].(a2a.TextPart).Text
+			Expect(len([]rune(text))).To(BeNumerically("<=", 4099),
+				"reasoning text must be truncated at 4096 runes + ellipsis")
+			Expect(text).To(HaveSuffix("..."))
+		})
+
+		It("UT-AF-1435-003: status text still truncated at 512 runes", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-1435-003", "", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			longStatus := buildLongText(600)
+			err := bridge.EmitStatus(ctx, longStatus)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(queue.events).To(HaveLen(1))
+
+			evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			text := evt.Status.Message.Parts[0].(a2a.TextPart).Text
+			Expect(len([]rune(text))).To(BeNumerically("<=", 515),
+				"status text must still be bounded at 512 runes")
+			Expect(text).To(HaveSuffix("..."))
+		})
+
+		It("UT-AF-1435-004: output text uses 4096-rune limit (same as reasoning)", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-1435-004", "", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			longOutput := buildLongText(4000)
+			err := bridge.EmitOutput(ctx, longOutput)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(queue.events).To(HaveLen(1))
+
+			evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			text := evt.Status.Message.Parts[0].(a2a.TextPart).Text
+			Expect(text).To(Equal(longOutput),
+				"output text under 4096 runes must not be truncated")
+		})
+
+		It("UT-AF-1435-005: 700-char reasoning (issue scenario) passes through intact", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-1435-005", "", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			reasoning := "The target resource appears to be a Deployment called web-frontend in demo-webui namespace. " +
+				"Let me use kubernaut_investigate_alert with:\n\n" +
+				"alert_name: KubePodCrashLooping\n" +
+				"api_version: apps/v1\n" +
+				"kind: Deployment\n" +
+				"name: web-frontend\n" +
+				"namespace: demo-webui\n\n" +
+				"This will initiate a full investigation using the KA engine which will examine pod logs, events, " +
+				"and recent changes to determine the root cause of the crash loop. The investigation will also check " +
+				"for resource limits, OOM kills, and image pull failures as common causes."
+			err := bridge.EmitReasoning(ctx, reasoning)
+			Expect(err).NotTo(HaveOccurred())
+
+			evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			text := evt.Status.Message.Parts[0].(a2a.TextPart).Text
+			Expect(text).To(Equal(reasoning),
+				"BR-AF-STREAM-001: real-world reasoning text (~600 chars) must not be truncated")
+			Expect(text).To(ContainSubstring("kind: Deployment"),
+				"the truncated field from issue #1434 must now be present")
 		})
 	})
 
@@ -698,3 +804,356 @@ func (q *failingQueue) Read(_ context.Context) (a2a.Event, a2a.TaskVersion, erro
 func (q *failingQueue) Close() error { return nil }
 
 var _ eventqueue.Queue = (*failingQueue)(nil)
+
+var _ = Describe("stripEmoji (#1399)", func() {
+	DescribeTable("UT-AF-1399-005: removes common emoji codepoints",
+		func(input, expected string) {
+			result := launcher.StripEmojiForTest(input)
+			Expect(result).To(Equal(expected))
+		},
+		Entry("rocket emoji", "Hello \U0001F680 world", "Hello  world"),
+		Entry("check mark emoji", "Status: \u2705 Done", "Status:  Done"),
+		Entry("warning emoji", "Alert \u26A0\uFE0F critical", "Alert  critical"),
+		Entry("multiple emoji", "\U0001F525 Fire \U0001F4A5 Boom \U0001F389 Party", " Fire  Boom  Party"),
+		Entry("emoji at boundaries", "\U0001F600Hello\U0001F600", "Hello"),
+		Entry("no emoji", "Plain text without emoji", "Plain text without emoji"),
+		Entry("empty string", "", ""),
+	)
+
+	DescribeTable("UT-AF-1399-006: preserves non-emoji Unicode",
+		func(input string) {
+			result := launcher.StripEmojiForTest(input)
+			Expect(result).To(Equal(input))
+		},
+		Entry("math symbols", "\u2200x \u2208 \u2124: x\u00B2 \u2265 0"),
+		Entry("currency symbols", "Price: \u00A3100, \u00A5500, \u20AC75"),
+		Entry("CJK characters", "\u4F60\u597D\u4E16\u754C"),
+		Entry("accented Latin", "caf\u00E9, na\u00EFve, r\u00E9sum\u00E9"),
+		Entry("arrows", "\u2190 \u2191 \u2192 \u2193"),
+		Entry("box drawing", "\u250C\u2500\u2510\u2502\u2514\u2518"),
+	)
+})
+
+var _ = Describe("EmitArtifact (#1399)", func() {
+	It("UT-AF-1399-008: constructs TaskArtifactUpdateEvent with DataPart + TextPart", func() {
+		queue := &fakeQueue{}
+		ctx := launcher.WithEventBridge(context.Background(), queue, "task-art-008", "ctx-art-008", nil)
+
+		data := map[string]any{
+			"type":           "investigation_summary",
+			"schema_version": "1.0",
+			"session_id":     "sess-001",
+			"summary":        "OOMKill detected",
+			"rca":            map[string]any{"severity": "critical", "confidence": 0.92},
+		}
+		textFallback := "Investigation complete. Severity: critical (confidence: 0.92)"
+		meta := map[string]any{
+			"type":           "investigation_summary",
+			"schema_version": "1.0",
+		}
+
+		err := launcher.EmitArtifactForTest(ctx, data, textFallback, meta)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(queue.events).To(HaveLen(1))
+		evt, ok := queue.events[0].(*a2a.TaskArtifactUpdateEvent)
+		Expect(ok).To(BeTrue(), "expected TaskArtifactUpdateEvent")
+		Expect(evt.Artifact).NotTo(BeNil())
+		Expect(evt.Artifact.Parts).To(HaveLen(2))
+
+		dp, ok := evt.Artifact.Parts[0].(a2a.DataPart)
+		Expect(ok).To(BeTrue(), "first part must be DataPart")
+		Expect(dp.Data).To(HaveKeyWithValue("type", "investigation_summary"))
+
+		tp, ok := evt.Artifact.Parts[1].(a2a.TextPart)
+		Expect(ok).To(BeTrue(), "second part must be TextPart")
+		Expect(tp.Text).To(Equal(textFallback))
+	})
+
+	It("UT-AF-1399-009: sets artifact metadata from caller params", func() {
+		queue := &fakeQueue{}
+		ctx := launcher.WithEventBridge(context.Background(), queue, "task-art-009", "ctx-art-009", nil)
+
+		meta := map[string]any{
+			"type":           "investigation_summary",
+			"schema":         "investigation_summary",
+			"schema_version": "1.0",
+		}
+		err := launcher.EmitArtifactForTest(ctx, map[string]any{"type": "test"}, "fallback", meta)
+		Expect(err).NotTo(HaveOccurred())
+
+		evt := queue.events[0].(*a2a.TaskArtifactUpdateEvent)
+		Expect(evt.Artifact.Metadata).To(HaveKeyWithValue("type", "investigation_summary"))
+		Expect(evt.Artifact.Metadata).To(HaveKeyWithValue("schema_version", "1.0"))
+	})
+
+	It("UT-AF-1399-010: nil bridge returns nil (no panic)", func() {
+		ctx := context.Background()
+		err := launcher.EmitArtifactForTest(ctx, map[string]any{"x": 1}, "text", nil)
+		Expect(err).NotTo(HaveOccurred())
+	})
+})
+
+var _ = Describe("RR Context Enrichment — #1423 (AU-3, SI-4, SC-7)", func() {
+
+	Describe("SetRRContext + EmitStatus (AU-3: audit record content traceability)", func() {
+		It("UT-AF-1423-001: status events include all RR context fields after SetRRContext", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-1423-001", "ctx-1423-001", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			bridge.SetRRContext(&launcher.RRContext{
+				RRID:      "rr-47ec5289",
+				Namespace: "demo-gateway",
+				Kind:      "Deployment",
+				Target:    "api-frontend",
+				AlertName: "ScalingLimited",
+				Phase:     "Investigating",
+			})
+
+			err := bridge.EmitStatus(ctx, "Investigation starting...")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(queue.events).To(HaveLen(1))
+
+			evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			Expect(evt.Metadata).To(HaveKeyWithValue("type", "status"))
+			Expect(evt.Metadata).To(HaveKeyWithValue("rr_id", "rr-47ec5289"),
+				"AU-3: rr_id enables cross-event correlation in audit trail")
+			Expect(evt.Metadata).To(HaveKeyWithValue("namespace", "demo-gateway"))
+			Expect(evt.Metadata).To(HaveKeyWithValue("kind", "Deployment"))
+			Expect(evt.Metadata).To(HaveKeyWithValue("target", "api-frontend"))
+			Expect(evt.Metadata).To(HaveKeyWithValue("alert_name", "ScalingLimited"))
+			Expect(evt.Metadata).To(HaveKeyWithValue("phase", "Investigating"),
+				"SI-4: phase enables real-time monitoring of remediation lifecycle")
+		})
+
+		It("UT-AF-1423-002: status events without SetRRContext contain no RR fields (backward compat)", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-1423-002", "ctx-1423-002", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			err := bridge.EmitStatus(ctx, "No RR context yet")
+			Expect(err).NotTo(HaveOccurred())
+
+			evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			Expect(evt.Metadata).To(HaveKeyWithValue("type", "status"))
+			Expect(evt.Metadata).NotTo(HaveKey("rr_id"),
+				"SI-10: no RR fields injected when context is absent")
+			Expect(evt.Metadata).NotTo(HaveKey("namespace"))
+			Expect(evt.Metadata).NotTo(HaveKey("kind"))
+			Expect(evt.Metadata).NotTo(HaveKey("target"))
+			Expect(evt.Metadata).NotTo(HaveKey("alert_name"))
+			Expect(evt.Metadata).NotTo(HaveKey("phase"))
+		})
+	})
+
+	Describe("Caller metadata precedence (SI-10: server-sourced authority)", func() {
+		It("UT-AF-1423-003: caller-supplied metadata keys take precedence over RR context", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-1423-003", "ctx-1423-003", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			bridge.SetRRContext(&launcher.RRContext{
+				RRID:      "rr-from-context",
+				Namespace: "ns-from-context",
+				Phase:     "Investigating",
+			})
+
+			callerMeta := map[string]any{
+				"type":  launcher.MetaTypeAlignmentCheckFailed,
+				"rr_id": "rr-from-caller",
+			}
+			err := bridge.EmitStatusWithMeta(ctx, "Alignment check", callerMeta)
+			Expect(err).NotTo(HaveOccurred())
+
+			evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			Expect(evt.Metadata["rr_id"]).To(Equal("rr-from-caller"),
+				"SI-10: caller-supplied rr_id must NOT be overwritten by RR context")
+			Expect(evt.Metadata["namespace"]).To(Equal("ns-from-context"),
+				"AU-3: non-conflicting RR fields still merged")
+			Expect(evt.Metadata["phase"]).To(Equal("Investigating"))
+		})
+	})
+
+	Describe("EmitReasoning includes RR context (AU-3)", func() {
+		It("UT-AF-1423-004: reasoning events carry RR context for audit correlation", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-1423-004", "ctx-1423-004", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			bridge.SetRRContext(&launcher.RRContext{
+				RRID:   "rr-reasoning-001",
+				Target: "memory-eater",
+				Phase:  "Investigating",
+			})
+
+			err := bridge.EmitReasoning(ctx, "Checking pod status...")
+			Expect(err).NotTo(HaveOccurred())
+
+			evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			Expect(evt.Metadata["type"]).To(Equal("reasoning"))
+			Expect(evt.Metadata["rr_id"]).To(Equal("rr-reasoning-001"),
+				"AU-3: reasoning events include rr_id for audit trail correlation")
+			Expect(evt.Metadata["target"]).To(Equal("memory-eater"))
+		})
+	})
+
+	Describe("EmitKeepaliveDot includes RR context (SI-4)", func() {
+		It("UT-AF-1423-005: keepalive dots carry RR context for Console banner persistence", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-1423-005", "ctx-1423-005", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			bridge.SetRRContext(&launcher.RRContext{
+				RRID:      "rr-keepalive-001",
+				Namespace: "payments",
+				Kind:      "StatefulSet",
+				Target:    "db-primary",
+				Phase:     "Investigating",
+			})
+
+			err := bridge.EmitKeepaliveDot(ctx)
+			Expect(err).NotTo(HaveOccurred())
+
+			evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			Expect(evt.Metadata["type"]).To(Equal("keepalive"))
+			Expect(evt.Metadata["dot"]).To(Equal("."))
+			Expect(evt.Metadata["rr_id"]).To(Equal("rr-keepalive-001"),
+				"SI-4: keepalive events carry RR context so Console banner survives SSE reconnect")
+			Expect(evt.Metadata["namespace"]).To(Equal("payments"))
+			Expect(evt.Metadata["kind"]).To(Equal("StatefulSet"))
+			Expect(evt.Metadata["target"]).To(Equal("db-primary"))
+		})
+	})
+
+	Describe("UpdatePhase (SI-4: lifecycle monitoring)", func() {
+		It("UT-AF-1423-006: UpdatePhase changes phase on subsequent status events", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-1423-006", "ctx-1423-006", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			bridge.SetRRContext(&launcher.RRContext{
+				RRID:  "rr-phase-001",
+				Phase: "Investigating",
+			})
+
+			Expect(bridge.EmitStatus(ctx, "Starting investigation")).To(Succeed())
+
+			bridge.UpdatePhase("AwaitingApproval")
+			Expect(bridge.EmitStatus(ctx, "Approval required")).To(Succeed())
+
+			evt0 := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			Expect(evt0.Metadata["phase"]).To(Equal("Investigating"))
+
+			evt1 := queue.events[1].(*a2a.TaskStatusUpdateEvent)
+			Expect(evt1.Metadata["phase"]).To(Equal("AwaitingApproval"),
+				"SI-4: phase must reflect current lifecycle state for real-time monitoring")
+		})
+
+		It("UT-AF-1423-007: UpdatePhase is no-op when no RR context set", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-1423-007", "ctx-1423-007", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			bridge.UpdatePhase("AwaitingApproval")
+			Expect(bridge.EmitStatus(ctx, "No RR context")).To(Succeed())
+
+			evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			Expect(evt.Metadata).NotTo(HaveKey("phase"),
+				"UpdatePhase must be no-op without prior SetRRContext")
+		})
+	})
+
+	Describe("SetRRContextSafe (SC-7: nil-safe boundary protection)", func() {
+		It("UT-AF-1423-008: SetRRContextSafe is nil-safe when no bridge in context", func() {
+			ctx := context.Background()
+			Expect(func() {
+				launcher.SetRRContextSafe(ctx, &launcher.RRContext{RRID: "rr-nil-001"})
+			}).NotTo(Panic(), "SC-7: nil bridge must not panic")
+		})
+
+		It("UT-AF-1423-009: SetRRContextSafe enriches subsequent status events via context", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-1423-009", "ctx-1423-009", nil)
+
+			launcher.SetRRContextSafe(ctx, &launcher.RRContext{
+				RRID:      "rr-safe-001",
+				Namespace: "demo",
+				Kind:      "Deployment",
+				Target:    "web",
+				AlertName: "CrashLooping",
+				Phase:     "Investigating",
+			})
+
+			Expect(launcher.EmitStatusSafe(ctx, "After SetRRContextSafe")).To(Succeed())
+
+			evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			Expect(evt.Metadata["rr_id"]).To(Equal("rr-safe-001"),
+				"SC-7: SetRRContextSafe must propagate RR context through EventBridge")
+			Expect(evt.Metadata["alert_name"]).To(Equal("CrashLooping"))
+		})
+
+		It("UT-AF-1423-010: UpdatePhaseSafe is nil-safe when no bridge in context", func() {
+			ctx := context.Background()
+			Expect(func() {
+				launcher.UpdatePhaseSafe(ctx, "Executing")
+			}).NotTo(Panic())
+		})
+	})
+
+	Describe("Empty fields are omitted (SI-10: minimal data exposure)", func() {
+		It("UT-AF-1423-011: empty RR context fields are not included in metadata", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-1423-011", "ctx-1423-011", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			bridge.SetRRContext(&launcher.RRContext{
+				RRID:  "rr-partial-001",
+				Phase: "Investigating",
+			})
+
+			Expect(bridge.EmitStatus(ctx, "Partial context")).To(Succeed())
+
+			evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			Expect(evt.Metadata).To(HaveKeyWithValue("rr_id", "rr-partial-001"))
+			Expect(evt.Metadata).To(HaveKeyWithValue("phase", "Investigating"))
+			Expect(evt.Metadata).NotTo(HaveKey("namespace"),
+				"SI-10: empty fields must not appear in metadata to minimize data exposure")
+			Expect(evt.Metadata).NotTo(HaveKey("kind"))
+			Expect(evt.Metadata).NotTo(HaveKey("target"))
+			Expect(evt.Metadata).NotTo(HaveKey("alert_name"))
+		})
+	})
+
+	Describe("Thread safety (SC-7: concurrent access protection)", func() {
+		It("UT-AF-1423-012: concurrent SetRRContext and EmitStatus do not race", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-1423-012", "ctx-1423-012", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			var wg sync.WaitGroup
+			wg.Add(2)
+
+			go func() {
+				defer wg.Done()
+				for i := 0; i < 50; i++ {
+					bridge.SetRRContext(&launcher.RRContext{
+						RRID:  "rr-race-001",
+						Phase: "Investigating",
+					})
+				}
+			}()
+
+			go func() {
+				defer wg.Done()
+				for i := 0; i < 50; i++ {
+					_ = bridge.EmitStatus(ctx, "concurrent emit")
+				}
+			}()
+
+			wg.Wait()
+			Expect(queue.events).NotTo(BeEmpty(),
+				"SC-7: concurrent SetRRContext + EmitStatus must not panic or deadlock")
+		})
+	})
+})

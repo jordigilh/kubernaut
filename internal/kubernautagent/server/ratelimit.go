@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/time/rate"
 
@@ -152,7 +153,7 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 				rl.rateLimitedCounter.Inc()
 			}
 			if rl.auditStore != nil {
-				evt := audit.NewEvent(audit.EventTypeRateLimitDenied, "")
+				evt := audit.NewEvent(audit.EventTypeRateLimitDenied, "security-"+uuid.New().String())
 				evt.EventAction = audit.ActionRateLimitDenied
 				evt.EventOutcome = audit.OutcomeFailure
 				evt.Data["source_ip"] = ip

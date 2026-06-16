@@ -2,11 +2,14 @@ package launcher_test
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"google.golang.org/adk/model"
+	"google.golang.org/adk/session"
 	"google.golang.org/genai"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
@@ -23,7 +26,6 @@ func statusEventTextAt(queue *fakeQueue, idx int) string {
 	evt, ok := queue.events[idx].(*a2a.TaskStatusUpdateEvent)
 	Expect(ok).To(BeTrue(), "expected TaskStatusUpdateEvent at index %d", idx)
 	Expect(evt.Metadata).NotTo(BeNil())
-	Expect(evt.Metadata["type"]).To(Equal("status"))
 	tp, ok := evt.Status.Message.Parts[0].(a2a.TextPart)
 	Expect(ok).To(BeTrue())
 	return tp.Text
@@ -359,7 +361,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(queue.events).To(BeEmpty(), "LLM text must NOT emit status events")
 		})
 
-		It("UT-AF-1189-131: Text part with Thought=true -> activity indicator, not raw thought", func() {
+		It("UT-AF-1189-131: Text part with Thought=true -> reasoning event with actual content", func() {
 			part := &genai.Part{
 				Text:    "I should check the node resource utilization next.",
 				Thought: true,
@@ -368,7 +370,14 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			Expect(statusEventTextAt(queue, 0)).To(Equal("Analyzing...\n\n"))
+
+			Expect(queue.events).To(HaveLen(1))
+			evt, ok := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			Expect(ok).To(BeTrue())
+			Expect(evt.Metadata).To(HaveKeyWithValue("type", "reasoning"))
+			tp, ok := evt.Status.Message.Parts[0].(a2a.TextPart)
+			Expect(ok).To(BeTrue())
+			Expect(tp.Text).To(ContainSubstring("check the node resource utilization"))
 		})
 
 		It("UT-AF-1189-132: empty text part -> passed through (not dropped)", func() {
@@ -661,10 +670,10 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
 			text := statusEventTextAt(queue, 0)
-			Expect(text).To(HaveSuffix("..."),
-				"bridge sanitization truncates long status text after converter summarization")
-			Expect(len([]rune(text))).To(BeNumerically("<=", 515),
-				"bridge sanitization bounds status text to maxBridgeTextLen")
+			Expect(text).To(ContainSubstring("..."),
+				"converter truncation produces ellipsis for text exceeding maxSummaryLen")
+			Expect(len([]rune(text))).To(BeNumerically("<=", 1030),
+				"converter truncates at maxSummaryLen (1024); #1435 raised bridge reasoning limit to 4096 so no further truncation")
 		})
 	})
 
@@ -748,7 +757,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 	})
 
 	Describe("Thought-to-activity indicator (AC 10)", func() {
-		It("UT-AF-1189-167: Thought=true with long reasoning -> activity indicator, not raw thought", func() {
+		It("UT-AF-1189-167: Thought=true with long reasoning -> reasoning event with actual content", func() {
 			part := &genai.Part{
 				Text:    "Let me analyze the disk pressure situation. The node shows high emptyDir usage which is likely caused by the PostgreSQL StatefulSet writing temporary data.",
 				Thought: true,
@@ -757,7 +766,14 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			Expect(statusEventTextAt(queue, 0)).To(Equal("Analyzing...\n\n"))
+
+			Expect(queue.events).To(HaveLen(1))
+			evt, ok := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			Expect(ok).To(BeTrue())
+			Expect(evt.Metadata).To(HaveKeyWithValue("type", "reasoning"))
+			tp, ok := evt.Status.Message.Parts[0].(a2a.TextPart)
+			Expect(ok).To(BeTrue())
+			Expect(tp.Text).To(ContainSubstring("disk pressure situation"))
 		})
 
 		It("UT-AF-1189-168: Thought=false with text -> returned as artifact TextPart with trailing paragraph break", func() {
@@ -1110,7 +1126,7 @@ var _ = Describe("GenAIPartConverter — Streaming Mode (TP-1258)", func() {
 			Expect(statusEventTextAt(queue, 0)).To(ContainSubstring("Investigating"))
 		})
 
-		It("UT-AF-1258-036: Thought parts unchanged in streaming mode", func() {
+		It("UT-AF-1258-036: Thought parts emit reasoning in streaming mode", func() {
 			part := &genai.Part{
 				Text:    "Analyzing the disk usage patterns...",
 				Thought: true,
@@ -1119,7 +1135,14 @@ var _ = Describe("GenAIPartConverter — Streaming Mode (TP-1258)", func() {
 			result, err := convertStreaming(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			Expect(statusEventTextAt(queue, 0)).To(Equal("Analyzing...\n\n"))
+
+			Expect(queue.events).To(HaveLen(1))
+			evt, ok := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			Expect(ok).To(BeTrue())
+			Expect(evt.Metadata).To(HaveKeyWithValue("type", "reasoning"))
+			tp, ok := evt.Status.Message.Parts[0].(a2a.TextPart)
+			Expect(ok).To(BeTrue())
+			Expect(tp.Text).To(ContainSubstring("disk usage patterns"))
 		})
 	})
 
@@ -1174,6 +1197,847 @@ var _ = Describe("GenAIPartConverter — Streaming Mode (TP-1258)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
 			Expect(statusEventTextAt(queue, 0)).To(ContainSubstring("already exists"))
+		})
+	})
+})
+
+// ===========================================================================
+// AU-3: Content of Audit Records — Remediation Progress Observability
+// Proves that remediation execution steps are emitted as structured, machine-
+// parseable audit records so operators can observe and reconstruct the full
+// remediation timeline without reading free-form text.
+// ===========================================================================
+
+var _ = Describe("AU-3: Remediation progress produces structured audit records", func() {
+	var convertStreaming launcher.PartConverterFunc
+
+	BeforeEach(func() {
+		convertStreaming = launcher.BuildStreamingPartConverterForTest()
+	})
+
+	It("UT-AF-WATCH-OUTPUT-001: completed remediation produces structured step record with terminal state", func() {
+		part := &genai.Part{
+			FunctionResponse: &genai.FunctionResponse{
+				Name: "kubernaut_watch",
+				Response: map[string]any{
+					"events": []any{
+						map[string]any{"phase": "Executing", "resource": "RemediationRequest", "message": "Starting rollout undo"},
+						map[string]any{"phase": "Verifying", "resource": "RemediationRequest", "message": "Checking pod health"},
+					},
+					"status": "completed",
+				},
+			},
+		}
+		queue, ctx := partConverterBridgeCtx()
+		result, err := convertStreaming(ctx, nil, part)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(BeNil())
+
+		Expect(queue.events).To(HaveLen(1))
+		evt, ok := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+		Expect(ok).To(BeTrue())
+		Expect(evt.Metadata).NotTo(BeNil())
+		Expect(evt.Metadata["type"]).To(Equal("output"),
+			"AU-3: remediation steps must be classified as 'output' for audit separation")
+
+		tp, ok := evt.Status.Message.Parts[0].(a2a.TextPart)
+		Expect(ok).To(BeTrue())
+		Expect(tp.Text).To(ContainSubstring(`"steps"`))
+		Expect(tp.Text).To(ContainSubstring(`"completed":true`),
+			"AU-3: terminal state must be explicitly recorded")
+		Expect(tp.Text).To(ContainSubstring(`"s1"`))
+		Expect(tp.Text).To(ContainSubstring(`"s2"`))
+		Expect(tp.Text).To(ContainSubstring(`"done"`),
+			"AU-3: each step must record its final disposition")
+	})
+
+	It("UT-AF-WATCH-OUTPUT-002: in-progress remediation distinguishes pending from completed steps", func() {
+		part := &genai.Part{
+			FunctionResponse: &genai.FunctionResponse{
+				Name: "kubernaut_watch",
+				Response: map[string]any{
+					"events": []any{
+						map[string]any{"phase": "Submitted", "resource": "RemediationRequest", "message": "RR created"},
+						map[string]any{"phase": "Executing", "resource": "RemediationRequest", "message": "Rolling back"},
+					},
+					"status": "awaiting_approval",
+				},
+			},
+		}
+		queue, ctx := partConverterBridgeCtx()
+		result, err := convertStreaming(ctx, nil, part)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(BeNil())
+
+		Expect(queue.events).To(HaveLen(1))
+		evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+		Expect(evt.Metadata["type"]).To(Equal("output"))
+
+		tp := evt.Status.Message.Parts[0].(a2a.TextPart)
+		Expect(tp.Text).To(ContainSubstring(`"completed":false`),
+			"AU-3: non-terminal state must not claim completion")
+		Expect(tp.Text).To(ContainSubstring(`"state":"running"`),
+			"AU-3: active step must be distinguishable from historical steps")
+		Expect(tp.Text).To(ContainSubstring(`"state":"done"`))
+	})
+
+	It("UT-AF-WATCH-OUTPUT-003: remediation with no events still produces a valid audit record", func() {
+		part := &genai.Part{
+			FunctionResponse: &genai.FunctionResponse{
+				Name: "kubernaut_watch",
+				Response: map[string]any{
+					"events": []any{},
+					"status": "completed",
+				},
+			},
+		}
+		queue, ctx := partConverterBridgeCtx()
+		result, err := convertStreaming(ctx, nil, part)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(BeNil())
+
+		Expect(queue.events).To(HaveLen(1))
+		evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+		Expect(evt.Metadata["type"]).To(Equal("output"))
+
+		tp := evt.Status.Message.Parts[0].(a2a.TextPart)
+		Expect(tp.Text).To(ContainSubstring(`"steps":[]`),
+			"AU-3: empty remediation must still produce valid structured record")
+		Expect(tp.Text).To(ContainSubstring(`"completed":true`))
+	})
+
+	It("UT-AF-WATCH-OUTPUT-004: SI-17 fail-safe — nil response degrades gracefully without data loss", func() {
+		part := &genai.Part{
+			FunctionResponse: &genai.FunctionResponse{
+				Name:     "kubernaut_watch",
+				Response: nil,
+			},
+		}
+		queue, ctx := partConverterBridgeCtx()
+		result, err := convertStreaming(ctx, nil, part)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(BeNil())
+		Expect(queue.events).To(BeEmpty(),
+			"SI-17: nil response must not produce corrupt audit records")
+	})
+
+	It("UT-AF-WATCH-OUTPUT-005: AU-3 human-readable — step labels carry actionable context", func() {
+		part := &genai.Part{
+			FunctionResponse: &genai.FunctionResponse{
+				Name: "kubernaut_watch",
+				Response: map[string]any{
+					"events": []any{
+						map[string]any{"phase": "Executing", "resource": "RR"},
+						map[string]any{"phase": "Verifying", "resource": "RR", "message": "All pods healthy"},
+					},
+					"status": "completed",
+				},
+			},
+		}
+		queue, ctx := partConverterBridgeCtx()
+		_, _ = convertStreaming(ctx, nil, part)
+
+		evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+		tp := evt.Status.Message.Parts[0].(a2a.TextPart)
+		Expect(tp.Text).To(ContainSubstring(`"label":"Executing"`),
+			"AU-3: phase name used as fallback when no descriptive message present")
+		Expect(tp.Text).To(ContainSubstring(`"label":"All pods healthy"`),
+			"AU-3: descriptive message preferred over phase name for readability")
+	})
+})
+
+// ===========================================================================
+// AC-3: Access Enforcement — Streaming Mode Isolation
+// Proves that the streaming-only structured output path does not leak into
+// the non-streaming (send) path, ensuring that clients using message/send
+// receive the legacy text format and are not exposed to internal metadata.
+// ===========================================================================
+
+var _ = Describe("AC-3: Structured output confined to streaming path", func() {
+	It("UT-AF-WATCH-OUTPUT-006: non-streaming path preserves legacy text format for backward compatibility", func() {
+		convert := launcher.BuildPartConverterForTest()
+		part := &genai.Part{
+			FunctionResponse: &genai.FunctionResponse{
+				Name: "kubernaut_watch",
+				Response: map[string]any{
+					"events": []any{
+						map[string]any{"phase": "Executing", "resource": "RR"},
+					},
+					"status": "completed",
+				},
+			},
+		}
+		queue, ctx := partConverterBridgeCtx()
+		result, err := convert(ctx, nil, part)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(BeNil())
+		Expect(queue.events).To(HaveLen(1))
+		evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+		Expect(evt.Metadata["type"]).To(Equal("status"),
+			"AC-3: non-streaming clients must receive status-type events, not structured output")
+	})
+})
+
+// ===========================================================================
+// SI-4/AC-6: Decision Transparency & Least Privilege
+// Proves that remediation decisions present ALL options to the operator with
+// explicit recommendation markers, ensuring no hidden actions and auditable
+// human-in-the-loop decision points.
+// ===========================================================================
+
+var _ = Describe("SI-4: Decision records preserve all options with recommendation transparency", func() {
+	It("IT-AF-WATCH-OUTPUT-001: AU-3 — remediation progress record is valid JSON matching wire contract", func() {
+		convertStreaming := launcher.BuildStreamingPartConverterForTest()
+		part := &genai.Part{
+			FunctionResponse: &genai.FunctionResponse{
+				Name: "kubernaut_watch",
+				Response: map[string]any{
+					"events": []any{
+						map[string]any{"phase": "Submitted", "resource": "RemediationRequest", "message": "RR created"},
+						map[string]any{"phase": "Executing", "resource": "RemediationRequest", "message": "Rolling back deployment"},
+						map[string]any{"phase": "Verifying", "resource": "RemediationRequest", "message": "Pod health check"},
+					},
+					"status": "completed",
+				},
+			},
+		}
+		queue, ctx := partConverterBridgeCtx()
+		_, _ = convertStreaming(ctx, nil, part)
+
+		evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+		tp := evt.Status.Message.Parts[0].(a2a.TextPart)
+
+		var payload struct {
+			Steps []struct {
+				ID    string `json:"id"`
+				Label string `json:"label"`
+				State string `json:"state"`
+			} `json:"steps"`
+			Completed bool `json:"completed"`
+		}
+		err := json.Unmarshal([]byte(tp.Text), &payload)
+		Expect(err).NotTo(HaveOccurred(),
+			"AU-3: output payload must be machine-parseable for downstream audit tooling")
+		Expect(payload.Completed).To(BeTrue())
+		Expect(payload.Steps).To(HaveLen(3),
+			"AU-3: every observed phase transition must be recorded as a step")
+		Expect(payload.Steps[0].ID).To(Equal("s1"))
+		Expect(payload.Steps[0].Label).To(Equal("RR created"))
+		Expect(payload.Steps[0].State).To(Equal("done"))
+		Expect(payload.Steps[1].State).To(Equal("done"))
+		Expect(payload.Steps[2].State).To(Equal("done"))
+	})
+
+	It("IT-AF-WATCH-OUTPUT-002: AC-6 — decision payload preserves recommended flag for all workflow options", func() {
+		convertStreaming := launcher.BuildStreamingPartConverterForTest()
+		part := &genai.Part{
+			FunctionCall: &genai.FunctionCall{
+				Name: "kubernaut_present_decision",
+				Args: map[string]any{
+					"session_id": "sess-1",
+					"summary":    "OOM detected",
+					"options": []any{
+						map[string]any{"workflow_id": "wf-1", "name": "Rollback", "description": "undo last deploy", "recommended": true},
+						map[string]any{"workflow_id": "wf-2", "name": "Scale", "description": "add replicas"},
+					},
+				},
+			},
+		}
+		queue, ctx := partConverterBridgeCtx()
+		_, _ = convertStreaming(ctx, nil, part)
+
+		Expect(queue.events).To(HaveLen(1))
+		artifactEvt, ok := queue.events[0].(*a2a.TaskArtifactUpdateEvent)
+		Expect(ok).To(BeTrue(), "decision must emit TaskArtifactUpdateEvent")
+		Expect(artifactEvt.Artifact.Metadata["type"]).To(Equal("decision"),
+			"SI-4: decision events must be classified separately for audit tracing")
+
+		dp, ok := artifactEvt.Artifact.Parts[0].(a2a.DataPart)
+		Expect(ok).To(BeTrue(), "first part must be DataPart")
+		options, ok := dp.Data["options"].([]any)
+		Expect(ok).To(BeTrue())
+		opt0 := options[0].(map[string]any)
+		Expect(opt0["recommended"]).To(BeTrue(),
+			"AC-6: recommended flag must be preserved in structured DataPart")
+	})
+})
+
+// =============================================================================
+// TP-1395-1396 Integration Tests — prove wiring through production dispatch path
+// =============================================================================
+
+var _ = Describe("Structured Decision Payload Integration — TP-1395-1396", func() {
+
+	It("IT-AF-1395-001: SI-10 — decision payload > 512 chars passes through streaming converter without truncation", func() {
+		convertStreaming := launcher.BuildStreamingPartConverterForTest()
+		part := &genai.Part{
+			FunctionCall: &genai.FunctionCall{
+				Name: "kubernaut_present_decision",
+				Args: map[string]any{
+					"session_id": "sess-it-001",
+					"summary":    "OOMKill detected in production data-processor pod with critical severity and high confidence",
+					"rca": map[string]any{
+						"severity":         "critical",
+						"confidence":       0.92,
+						"causal_chain":     []any{"Memory leak in data-processor worker goroutine", "Container hit 512Mi memory limit", "Kernel sent OOMKill signal to container"},
+						"target":           "Deployment/data-processor in production",
+						"tool_calls_count": 19,
+						"llm_turns":        17,
+					},
+					"options": []any{
+						map[string]any{"workflow_id": "wf-restart", "name": "Restart Pod", "description": "Rolling restart of affected deployment pods to recover from OOM state immediately", "risk": "low", "recommended": true, "parameters": map[string]any{"namespace": "production", "deployment": "data-processor"}},
+						map[string]any{"workflow_id": "wf-scale", "name": "Increase Memory Limit", "description": "Scale memory limit from 512Mi to 1Gi to prevent future OOMKill events", "risk": "medium", "parameters": map[string]any{"new_limit": "1Gi"}},
+						map[string]any{"workflow_id": "wf-rollback", "name": "Rollback Deployment", "description": "Roll back to the previous stable revision that did not exhibit the memory leak", "risk": "low", "ruled_out_reason": "No previous revision available in cluster deployment history"},
+					},
+				},
+			},
+		}
+		queue, ctx := partConverterBridgeCtx()
+		_, _ = convertStreaming(ctx, nil, part)
+
+		Expect(queue.events).To(HaveLen(1))
+		artifactEvt, ok := queue.events[0].(*a2a.TaskArtifactUpdateEvent)
+		Expect(ok).To(BeTrue(), "decision must emit TaskArtifactUpdateEvent")
+		Expect(artifactEvt.Artifact.Metadata["type"]).To(Equal("decision"))
+
+		dp, ok := artifactEvt.Artifact.Parts[0].(a2a.DataPart)
+		Expect(ok).To(BeTrue(), "first part must be DataPart with structured JSON")
+		Expect(dp.Data).To(HaveKey("rca"), "SI-10: RCA field must be preserved without truncation")
+		Expect(dp.Data).To(HaveKey("options"), "SI-10: options must be preserved without truncation")
+
+		rca, ok := dp.Data["rca"].(map[string]any)
+		Expect(ok).To(BeTrue())
+		Expect(rca["severity"]).To(Equal("critical"))
+		Expect(rca["confidence"]).To(BeNumerically("~", 0.92, 0.001))
+	})
+
+	It("IT-AF-1396-001: AU-3 — RCA fields flow through decision event for audit tracing", func() {
+		convertStreaming := launcher.BuildStreamingPartConverterForTest()
+		part := &genai.Part{
+			FunctionCall: &genai.FunctionCall{
+				Name: "kubernaut_present_decision",
+				Args: map[string]any{
+					"session_id": "sess-it-002",
+					"summary":    "Certificate expired",
+					"rca": map[string]any{
+						"severity":         "high",
+						"confidence":       0.88,
+						"causal_chain":     []any{"TLS cert expired", "Mutual TLS handshake failed"},
+						"target":           "Secret/tls-cert in istio-system",
+						"tool_calls_count": 5,
+						"llm_turns":        3,
+					},
+					"options": []any{
+						map[string]any{"workflow_id": "wf-renew", "name": "Renew Certificate", "description": "Issue new cert via cert-manager", "recommended": true},
+					},
+				},
+			},
+		}
+		queue, ctx := partConverterBridgeCtx()
+		_, _ = convertStreaming(ctx, nil, part)
+
+		Expect(queue.events).To(HaveLen(1))
+		artifactEvt, ok := queue.events[0].(*a2a.TaskArtifactUpdateEvent)
+		Expect(ok).To(BeTrue())
+
+		dp, ok := artifactEvt.Artifact.Parts[0].(a2a.DataPart)
+		Expect(ok).To(BeTrue())
+		rca, ok := dp.Data["rca"].(map[string]any)
+		Expect(ok).To(BeTrue(), "AU-3: RCA must be present for audit tracing")
+		Expect(rca["severity"]).To(Equal("high"))
+		Expect(rca["confidence"]).To(BeNumerically("~", 0.88, 0.001))
+		causalChain, ok := rca["causal_chain"].([]any)
+		Expect(ok).To(BeTrue())
+		Expect(causalChain).To(HaveLen(2))
+		Expect(rca["target"]).To(Equal("Secret/tls-cert in istio-system"))
+		Expect(rca["tool_calls_count"]).To(BeNumerically("==", 5))
+		Expect(rca["llm_turns"]).To(BeNumerically("==", 3))
+	})
+
+	It("IT-AF-1396-002: AC-6 — extended WorkflowOption fields (Parameters, RuledOutReason) flow through", func() {
+		convertStreaming := launcher.BuildStreamingPartConverterForTest()
+		part := &genai.Part{
+			FunctionCall: &genai.FunctionCall{
+				Name: "kubernaut_present_decision",
+				Args: map[string]any{
+					"session_id": "sess-it-003",
+					"summary":    "Pod crash loop",
+					"rca": map[string]any{
+						"severity":   "medium",
+						"confidence": 0.75,
+						"target":     "Pod/worker-abc in staging",
+					},
+					"options": []any{
+						map[string]any{
+							"workflow_id": "wf-fix",
+							"name":       "Apply Fix",
+							"description": "Apply configuration fix",
+							"parameters": map[string]any{"image": "v2.1.0", "replicas": "3"},
+							"recommended": true,
+						},
+						map[string]any{
+							"workflow_id":      "wf-migrate",
+							"name":            "Migrate Database",
+							"description":     "Run database migration",
+							"ruled_out_reason": "No pending migrations detected in schema diff",
+						},
+					},
+				},
+			},
+		}
+		queue, ctx := partConverterBridgeCtx()
+		_, _ = convertStreaming(ctx, nil, part)
+
+		Expect(queue.events).To(HaveLen(1))
+		artifactEvt, ok := queue.events[0].(*a2a.TaskArtifactUpdateEvent)
+		Expect(ok).To(BeTrue())
+
+		dp, ok := artifactEvt.Artifact.Parts[0].(a2a.DataPart)
+		Expect(ok).To(BeTrue())
+		options, ok := dp.Data["options"].([]any)
+		Expect(ok).To(BeTrue())
+		Expect(options).To(HaveLen(2))
+
+		opt0 := options[0].(map[string]any)
+		params0, ok := opt0["parameters"].(map[string]any)
+		Expect(ok).To(BeTrue())
+		Expect(params0["image"]).To(Equal("v2.1.0"))
+		Expect(params0["replicas"]).To(Equal("3"))
+		Expect(opt0["recommended"]).To(BeTrue())
+
+		opt1 := options[1].(map[string]any)
+		Expect(opt1["ruled_out_reason"]).To(Equal("No pending migrations detected in schema diff"))
+	})
+})
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// #1399: A2A Streaming — Separate thinking from final output
+// Phase A RED: reasoning routing + emoji suppression
+// ═══════════════════════════════════════════════════════════════════════════════
+
+var _ = Describe("Reasoning Routing (#1399)", func() {
+	var convert launcher.PartConverterFunc
+
+	BeforeEach(func() {
+		convert = launcher.BuildPartConverterForTest()
+	})
+
+	Describe("Thought parts route to reasoning channel", func() {
+		It("UT-AF-1399-001: Thought=true emits metadata.type=reasoning with actual thought text", func() {
+			part := &genai.Part{
+				Text:    "I should check the node resource utilization next.",
+				Thought: true,
+			}
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(BeNil(), "Thought parts must not produce an artifact")
+
+			Expect(queue.events).To(HaveLen(1))
+			evt, ok := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			Expect(ok).To(BeTrue(), "expected TaskStatusUpdateEvent")
+			Expect(evt.Metadata).To(HaveKeyWithValue("type", "reasoning"),
+				"SI-4: Thought parts must be classified as reasoning")
+
+			tp, ok := evt.Status.Message.Parts[0].(a2a.TextPart)
+			Expect(ok).To(BeTrue())
+			Expect(tp.Text).To(ContainSubstring("check the node resource utilization"),
+				"SI-4: Thought content must be forwarded, not replaced with placeholder")
+		})
+	})
+
+	Describe("FunctionCall (non-decision) routes to reasoning channel", func() {
+		It("UT-AF-1399-002: non-decision FunctionCall emits metadata.type=reasoning", func() {
+			part := &genai.Part{
+				FunctionCall: &genai.FunctionCall{
+					Name: "kubernaut_investigate",
+					Args: map[string]any{
+						"namespace": "prod",
+						"kind":      "Deployment",
+						"name":      "api-server",
+					},
+				},
+			}
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(BeNil())
+
+			Expect(queue.events).To(HaveLen(1))
+			evt, ok := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			Expect(ok).To(BeTrue())
+			Expect(evt.Metadata).To(HaveKeyWithValue("type", "reasoning"),
+				"SI-4: Non-decision FunctionCall must be classified as reasoning")
+		})
+	})
+
+	Describe("FunctionResponse (non-decision) routes to reasoning channel", func() {
+		It("UT-AF-1399-003: non-decision FunctionResponse emits metadata.type=reasoning", func() {
+			part := &genai.Part{
+				FunctionResponse: &genai.FunctionResponse{
+					Name:     "kubernaut_investigate",
+					Response: map[string]any{"status": "completed", "findings": "disk pressure"},
+				},
+			}
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(BeNil())
+
+			Expect(queue.events).To(HaveLen(1))
+			evt, ok := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			Expect(ok).To(BeTrue())
+			Expect(evt.Metadata).To(HaveKeyWithValue("type", "reasoning"),
+				"SI-4: Non-decision FunctionResponse must be classified as reasoning")
+		})
+	})
+
+	Describe("present_decision FunctionCall still returns nil (no ADK artifact)", func() {
+		It("UT-AF-1399-004: present_decision FunctionCall returns nil from converter", func() {
+			part := &genai.Part{
+				FunctionCall: &genai.FunctionCall{
+					Name: "kubernaut_present_decision",
+					Args: map[string]any{
+						"session_id": "sess-001",
+						"summary":    "OOMKill detected",
+						"rca": map[string]any{
+							"severity":   "critical",
+							"confidence": 0.92,
+						},
+						"options": []any{
+							map[string]any{"workflow_id": "restart", "name": "Restart"},
+						},
+					},
+				},
+			}
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(BeNil(),
+				"AC-6: present_decision must return nil to prevent ADK artifact duplication")
+			Expect(queue.events).NotTo(BeEmpty(),
+				"present_decision must still emit events via EventBridge")
+		})
+	})
+
+	Describe("Final LLM text output has emoji stripped", func() {
+		It("UT-AF-1399-007: emoji in final text output is stripped before delivery", func() {
+			part := &genai.Part{
+				Text: "\U0001F680 Investigation complete! The root cause is \U0001F525 disk pressure.\n\n",
+			}
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
+			Expect(err).NotTo(HaveOccurred())
+
+			tp, ok := result.(a2a.TextPart)
+			Expect(ok).To(BeTrue(), "final text must be returned as TextPart")
+			Expect(tp.Text).NotTo(ContainSubstring("\U0001F680"),
+				"SC-7: emoji must be stripped from final output")
+			Expect(tp.Text).NotTo(ContainSubstring("\U0001F525"),
+				"SC-7: emoji must be stripped from final output")
+			Expect(tp.Text).To(ContainSubstring("Investigation complete"),
+				"non-emoji text must be preserved")
+			Expect(tp.Text).To(ContainSubstring("disk pressure"),
+				"non-emoji text must be preserved")
+			Expect(queue.events).To(BeEmpty(),
+				"final text must NOT emit status events")
+		})
+	})
+
+	Describe("Decision event uses EmitArtifact", func() {
+		It("UT-AF-1399-011: present_decision emits TaskArtifactUpdateEvent (not status-update)", func() {
+			part := &genai.Part{
+				FunctionCall: &genai.FunctionCall{
+					Name: "kubernaut_present_decision",
+					Args: map[string]any{
+						"session_id": "sess-structured-001",
+						"summary":    "OOMKill detected in production data-processor pod",
+						"rca": map[string]any{
+							"severity":   "critical",
+							"confidence": 0.92,
+							"causal_chain": []any{
+								"Memory leak in worker goroutine",
+								"Container hit 512Mi limit",
+							},
+						},
+						"options": []any{
+							map[string]any{"workflow_id": "restart", "name": "Restart Pod", "recommended": true},
+						},
+					},
+				},
+			}
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convert(ctx, nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(BeNil())
+
+			var hasArtifactEvent bool
+			for _, evt := range queue.events {
+				if _, ok := evt.(*a2a.TaskArtifactUpdateEvent); ok {
+					hasArtifactEvent = true
+					break
+				}
+			}
+			Expect(hasArtifactEvent).To(BeTrue(),
+				"AU-3: present_decision must emit TaskArtifactUpdateEvent with structured data")
+		})
+	})
+})
+
+// =============================================================================
+// #1408: Contract compliance — FunctionResponse suppression + schema fields
+// =============================================================================
+
+var _ = Describe("Contract Compliance #1408 — Structured investigation_summary", func() {
+	var convertStreaming launcher.PartConverterFunc
+
+	BeforeEach(func() {
+		convertStreaming = launcher.BuildStreamingPartConverterForTest()
+	})
+
+	Describe("FunctionResponse suppression", func() {
+		It("UT-AF-1408-001: SI-4 — present_decision FunctionResponse must NOT emit any event", func() {
+			part := &genai.Part{
+				FunctionResponse: &genai.FunctionResponse{
+					Name: "kubernaut_present_decision",
+					Response: map[string]any{
+						"presented": true,
+						"message":   "Investigation complete.\n\nSummary: OOM detected\nSeverity: critical",
+					},
+				},
+			}
+			queue, ctx := partConverterBridgeCtx()
+			result, err := convertStreaming(ctx, nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(BeNil(),
+				"SI-4: present_decision FunctionResponse must return nil (suppressed)")
+			Expect(queue.events).To(BeEmpty(),
+				"SI-4: present_decision FunctionResponse must NOT emit status events (prevents double-render)")
+		})
+	})
+
+	Describe("DataPart schema compliance", func() {
+		It("UT-AF-1408-002: SI-10 — DataPart.Data contains LLM-produced args without injected fields", func() {
+			part := &genai.Part{
+				FunctionCall: &genai.FunctionCall{
+					Name: "kubernaut_present_decision",
+					Args: map[string]any{
+						"session_id": "sess-1408-001",
+						"summary":    "OOM detected",
+						"rca": map[string]any{
+							"severity":   "critical",
+							"confidence": 0.92,
+							"explanation": "Memory limit exceeded",
+						},
+						"options": []any{
+							map[string]any{"workflow_id": "wf-1", "name": "Restart"},
+						},
+					},
+				},
+			}
+			queue, ctx := partConverterBridgeCtx()
+			_, _ = convertStreaming(ctx, nil, part)
+
+			Expect(queue.events).To(HaveLen(1))
+			artifactEvt, ok := queue.events[0].(*a2a.TaskArtifactUpdateEvent)
+			Expect(ok).To(BeTrue())
+			dp, ok := artifactEvt.Artifact.Parts[0].(a2a.DataPart)
+			Expect(ok).To(BeTrue())
+			Expect(dp.Data).NotTo(HaveKey("type"),
+				"SI-10: DataPart.Data must NOT contain injected type — prevents LLM context pollution (#1411)")
+			Expect(dp.Data).NotTo(HaveKey("schema_version"),
+				"SI-10: DataPart.Data must NOT contain injected schema_version — prevents LLM context pollution (#1411)")
+			Expect(dp.Data).To(HaveKey("summary"))
+			Expect(dp.Data).To(HaveKey("rca"))
+		})
+
+		It("UT-AF-1408-003: SI-10 — artifact metadata carries schema identification", func() {
+			part := &genai.Part{
+				FunctionCall: &genai.FunctionCall{
+					Name: "kubernaut_present_decision",
+					Args: map[string]any{
+						"session_id": "sess-1408-002",
+						"summary":    "Cert expired",
+						"rca": map[string]any{
+							"severity":    "high",
+							"confidence":  0.88,
+							"explanation": "TLS cert expired",
+						},
+						"options": []any{},
+					},
+				},
+			}
+			queue, ctx := partConverterBridgeCtx()
+			_, _ = convertStreaming(ctx, nil, part)
+
+			Expect(queue.events).To(HaveLen(1))
+			artifactEvt, ok := queue.events[0].(*a2a.TaskArtifactUpdateEvent)
+			Expect(ok).To(BeTrue())
+			Expect(artifactEvt.Artifact.Metadata).To(HaveKeyWithValue("schema", "investigation_summary"),
+				"SI-10: schema identification must live in artifact metadata, not body")
+			Expect(artifactEvt.Artifact.Metadata).To(HaveKeyWithValue("schema_version", "1.0"),
+				"SI-10: schema_version must live in artifact metadata, not body")
+		})
+
+		It("UT-AF-1408-004: SI-10 — DataPart.Data passes ValidatePayload for investigation_summary schema", func() {
+			part := &genai.Part{
+				FunctionCall: &genai.FunctionCall{
+					Name: "kubernaut_present_decision",
+					Args: map[string]any{
+						"session_id": "sess-1408-003",
+						"summary":    "OOM detected in production",
+						"rca": map[string]any{
+							"severity":    "critical",
+							"confidence":  0.95,
+							"explanation": "Container OOMKilled due to memory limit",
+							"causal_chain": []any{
+								"Memory leak in worker goroutine",
+								"Container hit 512Mi limit",
+							},
+							"target": "Deployment/data-processor",
+						},
+						"options": []any{
+							map[string]any{"workflow_id": "wf-restart", "name": "Restart Pod"},
+						},
+					},
+				},
+			}
+			queue, ctx := partConverterBridgeCtx()
+			_, _ = convertStreaming(ctx, nil, part)
+
+			Expect(queue.events).To(HaveLen(1))
+			artifactEvt, ok := queue.events[0].(*a2a.TaskArtifactUpdateEvent)
+			Expect(ok).To(BeTrue())
+			dp, ok := artifactEvt.Artifact.Parts[0].(a2a.DataPart)
+			Expect(ok).To(BeTrue())
+
+			err := launcher.ValidatePayloadForTest("investigation_summary", dp.Data)
+			Expect(err).NotTo(HaveOccurred(),
+				"SI-10: emitted DataPart.Data must pass schema validation for investigation_summary")
+		})
+	})
+
+	Describe("Single artifact emission (no duplicates)", func() {
+		It("UT-AF-1408-005: AU-3 — full FunctionCall+FunctionResponse cycle produces exactly one event", func() {
+			fcPart := &genai.Part{
+				FunctionCall: &genai.FunctionCall{
+					Name: "kubernaut_present_decision",
+					Args: map[string]any{
+						"session_id": "sess-1408-004",
+						"summary":    "Pod crash loop",
+						"rca": map[string]any{
+							"severity":    "medium",
+							"confidence":  0.75,
+							"explanation": "Bad config",
+						},
+						"options": []any{
+							map[string]any{"workflow_id": "wf-fix", "name": "Apply Fix"},
+						},
+					},
+				},
+			}
+			frPart := &genai.Part{
+				FunctionResponse: &genai.FunctionResponse{
+					Name: "kubernaut_present_decision",
+					Response: map[string]any{
+						"presented": true,
+						"message":   "Investigation complete.",
+					},
+				},
+			}
+			queue, ctx := partConverterBridgeCtx()
+			_, _ = convertStreaming(ctx, nil, fcPart)
+			_, _ = convertStreaming(ctx, nil, frPart)
+
+			Expect(queue.events).To(HaveLen(1),
+				"AU-3: full present_decision cycle must produce exactly 1 event (artifact only, no status duplicate)")
+			_, ok := queue.events[0].(*a2a.TaskArtifactUpdateEvent)
+			Expect(ok).To(BeTrue(),
+				"AU-3: the single event must be TaskArtifactUpdateEvent (not TaskStatusUpdateEvent)")
+		})
+	})
+})
+
+var _ = Describe("Event-aware text routing (#1410)", func() {
+	var convertStreaming launcher.PartConverterFunc
+
+	BeforeEach(func() {
+		convertStreaming = launcher.BuildStreamingPartConverterForTest()
+	})
+
+	Describe("Text in partial event", func() {
+		It("UT-AF-1410-001: text in partial event routes to reasoning, not artifact", func() {
+			event := &session.Event{
+				LLMResponse: model.LLMResponse{
+					Content: &genai.Content{
+						Parts: []*genai.Part{{Text: "Let me check the logs..."}},
+					},
+					Partial: true,
+				},
+			}
+			part := &genai.Part{Text: "Let me check the logs..."}
+			queue, ctx := partConverterBridgeCtx()
+
+			result, err := convertStreaming(ctx, event, part)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(BeNil(),
+				"Text in partial events must NOT become an artifact")
+
+			Expect(queue.events).To(HaveLen(1))
+			statusEvt, ok := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			Expect(ok).To(BeTrue(), "Partial text must be routed to reasoning via EventBridge")
+			Expect(statusEvt.Status.Message).NotTo(BeNil())
+		})
+	})
+
+	Describe("Text in event with FunctionCall", func() {
+		It("UT-AF-1410-002: text coexisting with FunctionCall routes to reasoning", func() {
+			event := &session.Event{
+				LLMResponse: model.LLMResponse{
+					Content: &genai.Content{
+						Parts: []*genai.Part{
+							{Text: "I'll investigate this pod."},
+							{FunctionCall: &genai.FunctionCall{Name: "kubernaut_investigate", Args: map[string]any{"namespace": "prod"}}},
+						},
+					},
+					Partial: false,
+				},
+			}
+			part := &genai.Part{Text: "I'll investigate this pod."}
+			queue, ctx := partConverterBridgeCtx()
+
+			result, err := convertStreaming(ctx, event, part)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(BeNil(),
+				"Text preamble in event with FunctionCall must NOT become an artifact")
+
+			Expect(queue.events).To(HaveLen(1))
+			_, ok := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			Expect(ok).To(BeTrue(), "Preamble text must be routed to reasoning")
+		})
+	})
+
+	Describe("Text in final event without FunctionCall", func() {
+		It("UT-AF-1410-003: text in final non-partial event becomes artifact", func() {
+			event := &session.Event{
+				LLMResponse: model.LLMResponse{
+					Content: &genai.Content{
+						Parts: []*genai.Part{{Text: "The investigation is complete. Here are the results."}},
+					},
+					Partial: false,
+				},
+			}
+			part := &genai.Part{Text: "The investigation is complete. Here are the results."}
+			_, ctx := partConverterBridgeCtx()
+
+			result, err := convertStreaming(ctx, event, part)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil(),
+				"Text in final event without FunctionCall MUST become an artifact")
+
+			textPart, ok := result.(a2a.TextPart)
+			Expect(ok).To(BeTrue())
+			Expect(textPart.Text).To(ContainSubstring("investigation is complete"))
 		})
 	})
 })

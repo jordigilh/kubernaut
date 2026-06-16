@@ -766,16 +766,17 @@ func newRealMCPTestStackWithDiscoveryAndResolver(k8sClient client.Client, namesp
 	)
 	stack.EventStore = mcpinternal.NewDelegatingEventStore()
 
+	wfQuerier := wfclient.NewOgenWorkflowQuerier(sharedDSClient)
+	catalog := mcpadapters.NewWorkflowCatalogAdapter(wfQuerier)
+
 	investigateOpts := []mcptools.InvestigateOption{
 		mcptools.WithRateLimiter(stack.RateLimiter),
 		mcptools.WithTimeoutTracker(stack.TimeoutMgr),
 		mcptools.WithNotifyFunc(stack.Notifier.Notify),
 		mcptools.WithSignalContextResolver(resolver),
+		mcptools.WithWorkflowCatalog(catalog),
 	}
 	investigateTool := mcptools.NewInvestigateTool(stack.SessionMgr, runner, recon, mcptools.NopAutonomousManager{}, investigateOpts...)
-
-	wfQuerier := wfclient.NewOgenWorkflowQuerier(sharedDSClient)
-	catalog := mcpadapters.NewWorkflowCatalogAdapter(wfQuerier)
 
 	selectTool := mcptools.NewSelectWorkflowTool(catalog, stack.SessionMgr,
 		mcptools.WithHTTPSessionCompleter(completer),
@@ -864,18 +865,19 @@ func newRealMCPTestStackWithDiscovery(k8sClient client.Client, namespace string,
 
 	resolver := &discoverySignalResolver{}
 
+	// Real catalog backed by DataStorage (#1174). Workflow UUIDs are resolved
+	// via the override file mounted into the Mock LLM container.
+	wfQuerier := wfclient.NewOgenWorkflowQuerier(sharedDSClient)
+	catalog := mcpadapters.NewWorkflowCatalogAdapter(wfQuerier)
+
 	investigateOpts := []mcptools.InvestigateOption{
 		mcptools.WithRateLimiter(stack.RateLimiter),
 		mcptools.WithTimeoutTracker(stack.TimeoutMgr),
 		mcptools.WithNotifyFunc(stack.Notifier.Notify),
 		mcptools.WithSignalContextResolver(resolver),
+		mcptools.WithWorkflowCatalog(catalog),
 	}
 	investigateTool := mcptools.NewInvestigateTool(stack.SessionMgr, runner, recon, mcptools.NopAutonomousManager{}, investigateOpts...)
-
-	// Real catalog backed by DataStorage (#1174). Workflow UUIDs are resolved
-	// via the override file mounted into the Mock LLM container.
-	wfQuerier := wfclient.NewOgenWorkflowQuerier(sharedDSClient)
-	catalog := mcpadapters.NewWorkflowCatalogAdapter(wfQuerier)
 
 	selectTool := mcptools.NewSelectWorkflowTool(catalog, stack.SessionMgr,
 		mcptools.WithHTTPSessionCompleter(completer),

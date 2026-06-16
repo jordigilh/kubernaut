@@ -1605,3 +1605,115 @@ func TestPromptPhase1RequiresInvestigateWithBlocking(t *testing.T) {
 		t.Error("WT-AF-1302-003 CM-3: Phase 1 must describe investigation as blocking until completion")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// IT-AF-1404-001: Factory routes vertex_ai + Claude model to AnthropicTriager
+// IT-AF-1404-002: Factory routes vertex_ai + Gemini model to GenAITriager
+// IT-AF-1404-003: Config resolution prefers severityTriage.llm over agent.llm
+// FedRAMP SI-4: Audit trail must reflect effective provider/model source
+// ---------------------------------------------------------------------------
+
+func TestTriageLLMSource_ExplicitConfig(t *testing.T) {
+	cfg := &config.Config{
+		Agent: config.AgentConfig{
+			LLM: config.LLMConfig{Provider: config.LLMProviderVertexAI, Model: "claude-sonnet-4-6"},
+		},
+		SeverityTriage: config.SeverityTriageConfig{
+			LLM: &config.LLMConfig{Provider: config.LLMProviderVertexAI, Model: "gemini-2.0-flash"},
+		},
+	}
+	src := triageLLMSource(cfg)
+	if src != "severityTriage.llm (explicit)" {
+		t.Errorf("IT-AF-1404-003: expected explicit source, got %q", src)
+	}
+}
+
+func TestTriageLLMSource_Inherited(t *testing.T) {
+	cfg := &config.Config{
+		Agent: config.AgentConfig{
+			LLM: config.LLMConfig{Provider: config.LLMProviderVertexAI, Model: "claude-sonnet-4-6"},
+		},
+		SeverityTriage: config.SeverityTriageConfig{},
+	}
+	src := triageLLMSource(cfg)
+	if src != "agent.llm (inherited)" {
+		t.Errorf("IT-AF-1404-003: expected inherited source, got %q", src)
+	}
+}
+
+func TestTriageConfigResolution_InheritsAgentLLM(t *testing.T) {
+	cfg := &config.Config{
+		Agent: config.AgentConfig{
+			LLM: config.LLMConfig{
+				Provider:       config.LLMProviderVertexAI,
+				Model:          "claude-sonnet-4-6",
+				VertexProject:  "my-project",
+				VertexLocation: "us-central1",
+			},
+		},
+		SeverityTriage: config.SeverityTriageConfig{
+			Enabled: true,
+			LLM:     nil,
+		},
+	}
+
+	// Resolve effective config (same logic as buildBackendDeps)
+	triageLLMCfg := cfg.Agent.LLM
+	if cfg.SeverityTriage.LLM != nil {
+		triageLLMCfg = *cfg.SeverityTriage.LLM
+	}
+
+	if triageLLMCfg.Provider != config.LLMProviderVertexAI {
+		t.Errorf("expected vertex_ai provider, got %q", triageLLMCfg.Provider)
+	}
+	if triageLLMCfg.Model != "claude-sonnet-4-6" {
+		t.Errorf("expected claude-sonnet-4-6 model, got %q", triageLLMCfg.Model)
+	}
+}
+
+func TestTriageConfigResolution_ExplicitOverridesAgent(t *testing.T) {
+	cfg := &config.Config{
+		Agent: config.AgentConfig{
+			LLM: config.LLMConfig{
+				Provider:       config.LLMProviderVertexAI,
+				Model:          "claude-sonnet-4-6",
+				VertexProject:  "my-project",
+				VertexLocation: "us-central1",
+			},
+		},
+		SeverityTriage: config.SeverityTriageConfig{
+			Enabled: true,
+			LLM: &config.LLMConfig{
+				Provider:       config.LLMProviderVertexAI,
+				Model:          "gemini-2.0-flash",
+				VertexProject:  "triage-project",
+				VertexLocation: "europe-west4",
+			},
+		},
+	}
+
+	triageLLMCfg := cfg.Agent.LLM
+	if cfg.SeverityTriage.LLM != nil {
+		triageLLMCfg = *cfg.SeverityTriage.LLM
+	}
+
+	if triageLLMCfg.Model != "gemini-2.0-flash" {
+		t.Errorf("expected gemini-2.0-flash from explicit override, got %q", triageLLMCfg.Model)
+	}
+	if triageLLMCfg.VertexProject != "triage-project" {
+		t.Errorf("expected triage-project, got %q", triageLLMCfg.VertexProject)
+	}
+}
+
+func TestNewLLMTriagerFromConfig_RejectsUnsupportedProvider(t *testing.T) {
+	logger := logr.Discard()
+	cfg := config.LLMConfig{Provider: "openai", Model: "gpt-4"}
+
+	_, err := newLLMTriagerFromConfig(context.Background(), cfg, logger)
+	if err == nil {
+		t.Fatal("IT-AF-1404-001: expected error for unsupported provider")
+	}
+	if !strings.Contains(err.Error(), "unsupported") {
+		t.Errorf("expected 'unsupported' in error, got: %v", err)
+	}
+}

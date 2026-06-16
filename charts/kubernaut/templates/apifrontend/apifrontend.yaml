@@ -134,6 +134,29 @@ data:
       {{- with .Values.apifrontend.config.auth.audience }}
       audience: {{ . | quote }}
       {{- end }}
+      {{- with .Values.apifrontend.config.auth.jwtProviders }}
+      jwtProviders:
+      {{- range . }}
+        - name: {{ .name | quote }}
+          issuerURL: {{ .issuerURL | quote }}
+          {{- with .jwksURL }}
+          jwksURL: {{ . | quote }}
+          {{- end }}
+          audiences:
+          {{- range .audiences }}
+            - {{ . | quote }}
+          {{- end }}
+          {{- with .claimMappings }}
+          claimMappings:
+            {{- with .username }}
+            username: {{ . | quote }}
+            {{- end }}
+            {{- with .groups }}
+            groups: {{ . | quote }}
+            {{- end }}
+          {{- end }}
+      {{- end }}
+      {{- end }}
     rbac:
       sarCacheTTL: {{ .Values.apifrontend.config.rbac.sarCacheTTL | default "30s" }}
     logging:

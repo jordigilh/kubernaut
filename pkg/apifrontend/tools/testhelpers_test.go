@@ -7,8 +7,41 @@ import (
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	aiav1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	eav1alpha1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
+	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 )
+
+func objMeta(namespace, name string) metav1.ObjectMeta {
+	return metav1.ObjectMeta{
+		Name:      name,
+		Namespace: namespace,
+	}
+}
+
+func isTestScheme() *runtime.Scheme {
+	s := runtime.NewScheme()
+	_ = isv1alpha1.AddToScheme(s)
+	return s
+}
+
+func aiaTestScheme() *runtime.Scheme {
+	s := runtime.NewScheme()
+	_ = aiav1alpha1.AddToScheme(s)
+	return s
+}
+
+func watchTestScheme() *runtime.Scheme {
+	s := runtime.NewScheme()
+	_ = remediationv1.AddToScheme(s)
+	_ = eav1alpha1.AddToScheme(s)
+	return s
+}
 
 func newForbiddenError(resource string) *errors.StatusError {
 	return errors.NewForbidden(

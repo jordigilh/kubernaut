@@ -157,9 +157,6 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 			skipPayloadCheck := map[string]bool{
 				audit.EventTypeGroundingRequest:  true,
 				audit.EventTypeGroundingResponse: true,
-				audit.EventTypeAuthFailure:       true,
-				audit.EventTypeAuthDenied:        true,
-				audit.EventTypeRateLimitDenied:   true,
 			}
 
 			for _, eventType := range audit.AllEventTypes {

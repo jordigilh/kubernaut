@@ -343,12 +343,13 @@ func resolveOpenAITemplateArgs(messages []openai.Message, cfg *scenarios.MockSce
 	if len(cfg.ToolCallArgs) == 0 {
 		return
 	}
-	cfg.ToolCallArgs = cloneStringMap(cfg.ToolCallArgs)
+	cfg.ToolCallArgs = cloneAnyMap(cfg.ToolCallArgs)
 	for k, v := range cfg.ToolCallArgs {
-		if !strings.HasPrefix(v, templatePrefix) {
+		sv, ok := v.(string)
+		if !ok || !strings.HasPrefix(sv, templatePrefix) {
 			continue
 		}
-		parts := strings.SplitN(v[len(templatePrefix):], ":", 2)
+		parts := strings.SplitN(sv[len(templatePrefix):], ":", 2)
 		if len(parts) != 2 {
 			continue
 		}

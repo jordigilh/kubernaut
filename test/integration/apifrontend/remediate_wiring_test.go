@@ -24,7 +24,7 @@ var _ = Describe("kubernaut_remediate wiring (#1332)", func() {
 		ctx := context.Background()
 		ns := "default"
 
-		result, err := tools.HandleRemediate(ctx, dynamicClient, ns, &tools.RemediateArgs{
+		result, err := tools.HandleRemediate(ctx, k8sClient, dynamicClient, ns, &tools.RemediateArgs{
 			Namespace:   ns,
 			Kind:        "Deployment",
 			Name:        "web-1332-w01",
@@ -48,7 +48,7 @@ var _ = Describe("kubernaut_remediate wiring (#1332)", func() {
 		ctx := context.Background()
 		ns := "default"
 
-		result, err := tools.HandleRemediate(ctx, dynamicClient, ns, &tools.RemediateArgs{
+		result, err := tools.HandleRemediate(ctx, k8sClient, dynamicClient, ns, &tools.RemediateArgs{
 			Namespace:   ns,
 			Kind:        "Deployment",
 			Name:        "web-1332-w02",
@@ -110,7 +110,7 @@ var _ = Describe("kubernaut_remediate wiring (#1332)", func() {
 			_ = dynamicClient.Resource(rrGVR).Namespace(ns).Delete(ctx, rrName, metav1.DeleteOptions{})
 		})
 
-		result, err := tools.HandleRemediate(ctx, dynamicClient, ns, &tools.RemediateArgs{
+		result, err := tools.HandleRemediate(ctx, k8sClient, dynamicClient, ns, &tools.RemediateArgs{
 			RRID: rrName,
 		}, "it-user", nil, nil)
 		Expect(err).NotTo(HaveOccurred())
@@ -122,7 +122,7 @@ var _ = Describe("kubernaut_remediate wiring (#1332)", func() {
 		ctx := context.Background()
 		ns := "default"
 
-		result, err := tools.HandleRemediate(ctx, dynamicClient, ns, &tools.RemediateArgs{
+		result, err := tools.HandleRemediate(ctx, k8sClient, dynamicClient, ns, &tools.RemediateArgs{
 			RRID: "rr-nonexistent-1332",
 		}, "it-user", nil, nil)
 		Expect(err).NotTo(HaveOccurred())
@@ -133,7 +133,7 @@ var _ = Describe("kubernaut_remediate wiring (#1332)", func() {
 	It("IT-AF-1332-W05: HandleRemediate with nil client returns ErrK8sUnavailable", func() {
 		ctx := context.Background()
 
-		_, err := tools.HandleRemediate(ctx, nil, "default", &tools.RemediateArgs{
+		_, err := tools.HandleRemediate(ctx, nil, nil, "default", &tools.RemediateArgs{
 			Namespace:   "default",
 			Kind:        "Deployment",
 			Name:        "web-nil",
@@ -148,7 +148,7 @@ var _ = Describe("kubernaut_remediate wiring (#1332)", func() {
 		ns := "default"
 		auditRecorder.Reset()
 
-		result, err := tools.HandleRemediate(ctx, dynamicClient, ns, &tools.RemediateArgs{
+		result, err := tools.HandleRemediate(ctx, k8sClient, dynamicClient, ns, &tools.RemediateArgs{
 			Namespace:   ns,
 			Kind:        "Deployment",
 			Name:        "web-1332-w06",

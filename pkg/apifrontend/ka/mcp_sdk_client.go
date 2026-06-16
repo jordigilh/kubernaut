@@ -244,7 +244,7 @@ func (c *SDKMCPClient) StartInvestigation(ctx context.Context, args StartInvesti
 		return nil, fmt.Errorf("user identity required: no identity in context")
 	}
 
-	eventCh := make(chan InvestigationEvent, 64)
+	eventCh := make(chan InvestigationEvent, DefaultEventChannelBuffer)
 	doneCh := make(chan struct{})
 
 	var eventsReceived int64
@@ -270,18 +270,14 @@ func (c *SDKMCPClient) StartInvestigation(ctx context.Context, args StartInvesti
 				return
 			}
 
-			select {
-			case <-doneCh:
-				c.logger.Info("LoggingMessageHandler: doneCh closed, dropping event",
-					"rr_id", args.RRID, "event_type", evt.Type, "total_received", eventsReceived)
-				return
-			default:
-			}
-			select {
-			case eventCh <- evt:
-			case <-doneCh:
-			default:
-				c.logger.Info("event channel full, dropping event", "event_type", evt.Type)
+			if PrioritySend(eventCh, doneCh, evt) {
+				if IsStructuralEvent(evt.Type) {
+					c.logger.Error(nil, "CRITICAL: structural event dropped after timeout",
+						"event_type", evt.Type, "rr_id", args.RRID, "total_received", eventsReceived)
+				} else {
+					c.logger.V(2).Info("streaming event dropped (channel full)",
+						"event_type", evt.Type)
+				}
 			}
 		},
 	})
@@ -378,6 +374,37 @@ func (c *SDKMCPClient) ConnectSession(ctx context.Context, transport *mcp.Stream
 		return nil, fmt.Errorf("MCP connect: %w", err)
 	}
 	return session, nil
+}
+
+// CompleteNoAction calls kubernaut_complete_no_action on KA's MCP server.
+func (c *SDKMCPClient) CompleteNoAction(ctx context.Context, args CompleteNoActionArgs) (*CompleteNoActionResult, error) {
+	identity := auth.UserIdentityFromContext(ctx)
+	if identity == nil {
+		return nil, fmt.Errorf("user identity required: no identity in context")
+	}
+
+	argsMap := map[string]any{
+		"rr_id":              args.RRID,
+		"acting_user":        identity.Username,
+		"acting_user_groups": identity.Groups,
+	}
+	if args.Reason != "" {
+		argsMap["reason"] = args.Reason
+	}
+	if args.EscalationReason != "" {
+		argsMap["escalation_reason"] = args.EscalationReason
+	}
+
+	result, err := c.callTool(ctx, "kubernaut_complete_no_action", argsMap)
+	if err != nil {
+		return nil, err
+	}
+
+	var cnaResult CompleteNoActionResult
+	if err := json.Unmarshal(result, &cnaResult); err != nil {
+		return nil, fmt.Errorf("parse complete_no_action response: %w", err)
+	}
+	return &cnaResult, nil
 }
 
 // Compile-time interface check.

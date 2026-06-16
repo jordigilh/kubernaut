@@ -28,9 +28,9 @@ import (
 	"github.com/go-logr/logr"
 	"google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/client-go/dynamic"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	aiav1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
@@ -39,11 +39,27 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/security"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 // isPhaseActivePollTimeout caps the IS phase Active polling after AIA readiness.
 // Short because the phase transition should follow almost immediately after AA submits.
 const isPhaseActivePollTimeout = 5 * time.Second
+
+type rrIDContextKey struct{}
+
+// WithRRID attaches the remediation request ID to the context so that
+// bridgeEventsCollectSummary can include it in structured event metadata.
+func WithRRID(ctx context.Context, rrID string) context.Context {
+	return context.WithValue(ctx, rrIDContextKey{}, rrID)
+}
+
+func extractRRIDFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(rrIDContextKey{}).(string); ok {
+		return v
+	}
+	return ""
+}
 
 // takeoverISPhaseTimeout is used for the takeover path where AA must cancel
 // the autonomous session and re-submit before setting IS phase=Active.
@@ -80,7 +96,21 @@ type InvestigateMCPResult struct {
 	Status    string `json:"status"`
 	Summary   string `json:"summary,omitempty"`
 	RRID      string `json:"rr_id,omitempty"`
-	Error     string `json:"error,omitempty"`
+	Error     string          `json:"error,omitempty"`
+	RCA       *InvestigateRCA `json:"rca,omitempty"`
+}
+
+// InvestigateRCA is the structured RCA data extracted from the KA complete event.
+// It carries the AF-relevant subset of InvestigationResult for the LLM to pass
+// through into present_decision (#1396).
+type InvestigateRCA struct {
+	Severity       string   `json:"severity,omitempty"`
+	Confidence     float64  `json:"confidence,omitempty"`
+	CausalChain    []string `json:"causal_chain,omitempty"`
+	Target         string   `json:"target,omitempty"`
+	RCASummary     string   `json:"rca_summary,omitempty"`
+	TotalLLMTurns  int      `json:"total_llm_turns,omitempty"`
+	TotalToolCalls int      `json:"total_tool_calls,omitempty"`
 }
 
 // SessionStartedHook is called after a successful StartInvestigation with the
@@ -99,8 +129,8 @@ type SessionStartedHook func(ctx context.Context, namespace, rrID, sessionID str
 // investigation launches successfully (InvestigationSessionID is populated).
 // If no pending session exists, the MCP session still acquires the interactive
 // lease but the Events channel may be nil or empty.
-func HandleInvestigationMCP(ctx context.Context, mcpClient ka.MCPClient, k8sClient dynamic.Interface, namespace string, args InvestigateMCPArgs, auditor audit.Emitter) (InvestigateMCPResult, error) {
-	return HandleInvestigationMCPWithRegistry(ctx, mcpClient, k8sClient, namespace, args, auditor, nil, nil, false, nil, "", nil, nil)
+func HandleInvestigationMCP(ctx context.Context, mcpClient ka.MCPClient, client crclient.Client, namespace string, args InvestigateMCPArgs, auditor audit.Emitter) (InvestigateMCPResult, error) {
+	return HandleInvestigationMCPWithRegistry(ctx, mcpClient, client, namespace, args, auditor, nil, nil, false, nil, "", nil, nil)
 }
 
 // HandleInvestigationMCPWithRegistry is like HandleInvestigationMCP but also
@@ -121,7 +151,7 @@ func HandleInvestigationMCP(ctx context.Context, mcpClient ka.MCPClient, k8sClie
 // (pure CRD-driven coordination per DD-INTERACTIVE-002). This enables AA to detect
 // interactive intent via IS watch and resubmit with interactive=true. After successful
 // MCP connect, UpdateCorrelation writes the KA session ID to the IS status.
-func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPClient, k8sClient dynamic.Interface, namespace string, args InvestigateMCPArgs, auditor audit.Emitter, registry *MonitorRegistry, onStarted SessionStartedHook, blocking bool, pool *ka.KASessionPool, username string, signaler ISSignaler, triager *severity.Triager) (InvestigateMCPResult, error) {
+func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPClient, client crclient.Client, namespace string, args InvestigateMCPArgs, auditor audit.Emitter, registry *MonitorRegistry, onStarted SessionStartedHook, blocking bool, pool *ka.KASessionPool, username string, signaler ISSignaler, triager *severity.Triager) (InvestigateMCPResult, error) {
 	if mcpClient == nil {
 		return InvestigateMCPResult{}, fmt.Errorf("KA MCP client unavailable")
 	}
@@ -141,6 +171,7 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 
 	identity := auth.UserIdentityFromContext(ctx)
 
+	var rrSeverity string
 	if !hasRRID && hasResourceArgs {
 		if err := validate.APIVersion(args.APIVersion); err != nil {
 			return InvestigateMCPResult{}, fmt.Errorf("%w", err)
@@ -155,7 +186,7 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 			return InvestigateMCPResult{}, fmt.Errorf("interactive investigation cannot be started by service accounts")
 		}
 
-		if k8sClient == nil {
+		if client == nil {
 			return InvestigateMCPResult{}, fmt.Errorf("k8s client unavailable for RR creation")
 		}
 
@@ -170,24 +201,47 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 		if identity != nil {
 			createUser = identity.Username
 		}
-		result, err := HandleCreateRR(ctx, k8sClient, namespace, createArgs, createUser, triager, auditor)
+		result, err := HandleCreateRR(ctx, client, nil, namespace, createArgs, createUser, triager, auditor)
 		if err != nil {
 			return InvestigateMCPResult{}, fmt.Errorf("create RR for investigation: %w", err)
 		}
 		args.RRID = result.RRID
+		rrSeverity = result.Severity
+
+		// #1423 (AU-3, SI-4): Set RR context on EventBridge so all
+		// subsequent status events include rr_id, namespace, kind, target,
+		// alert_name, and phase for Console banner population.
+		launcher.SetRRContextSafe(ctx, &launcher.RRContext{
+			RRID:      result.RRID,
+			Namespace: args.Namespace,
+			Kind:      args.Kind,
+			Target:    args.Name,
+			AlertName: result.SignalName,
+			Phase:     "Investigating",
+		})
 	}
 
 	if args.RRID == "" {
 		return InvestigateMCPResult{}, fmt.Errorf("rr_id is required for MCP investigation")
 	}
 
+	// For the existing-RR path (rr_id provided as input), set minimal RR context.
+	// Resource metadata may not be available without a K8s read; rr_id + phase
+	// is sufficient for Console escape-hatch buttons (#1423).
+	if !hasResourceArgs {
+		launcher.SetRRContextSafe(ctx, &launcher.RRContext{
+			RRID:  args.RRID,
+			Phase: "Investigating",
+		})
+	}
+
 	// Determine if this RR already has an autonomous investigation running.
 	// When signaler is available, create IS CRD BEFORE the await loop to signal
 	// interactive intent to AA (DD-INTERACTIVE-002, BR-INTERACTIVE-010).
 	var isCRDName string
-	if signaler != nil && k8sClient != nil && namespace != "" {
+	if signaler != nil && client != nil && namespace != "" {
 		joinMode := "start"
-		if isAutonomousInvestigation(ctx, k8sClient, namespace, args.RRID) {
+		if isAutonomousInvestigation(ctx, client, namespace, args.RRID) {
 			joinMode = "takeover"
 			_ = launcher.EmitStatusSafe(ctx, "Autonomous investigation detected, signaling takeover...")
 		}
@@ -216,13 +270,13 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 	// to KA with interactive=true and KA has created a pending session.
 	// Blocking path uses a longer timeout because the IS CRD (created by
 	// kubernaut_investigate) needs time for AA to detect and resubmit to KA.
-	if k8sClient != nil && namespace != "" {
+	if client != nil && namespace != "" {
 		awaitTimeout := 10 * time.Second
 		if blocking {
 			awaitTimeout = 60 * time.Second
 		}
 		checkCtx, checkCancel := context.WithTimeout(ctx, awaitTimeout)
-		awaitResult, awaitErr := HandleAwaitSession(checkCtx, k8sClient, AwaitSessionArgs{
+		awaitResult, awaitErr := HandleAwaitSession(checkCtx, client, AwaitSessionArgs{
 			Namespace: namespace,
 			RRName:    args.RRID,
 		})
@@ -240,7 +294,7 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 			isPhaseTimeout = takeoverISPhaseTimeout
 		}
 		isCtx, isCancel := context.WithTimeout(ctx, isPhaseTimeout)
-		if AwaitISPhaseActive(isCtx, k8sClient, namespace, args.RRID) {
+		if AwaitISPhaseActive(isCtx, client, namespace, args.RRID) {
 			_ = launcher.EmitStatusSafe(ctx, "Interactive session acknowledged by AA, starting investigation...")
 		}
 		isCancel()
@@ -257,6 +311,19 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 			driver := extractDriverFromSessionActiveError(err)
 			logger.Info("session_active from KA: returning structured result instead of error",
 				"rr_id", args.RRID, "driver", driver)
+
+			if rrSeverity != "" {
+				rca := &InvestigateRCA{
+					Severity:   rrSeverity,
+					Confidence: 0.6,
+					RCASummary: fmt.Sprintf("Severity assessed from resource metadata (investigation in progress by %s)", driver),
+				}
+				emitEarlyRCA(ctx, rca)
+				emitFallbackInvestigationArtifact(ctx, rca, args.RRID)
+				logger.Info("emitted early_rca on session_active path",
+					"rr_id", args.RRID, "severity", rrSeverity, "driver", driver)
+			}
+
 			return InvestigateMCPResult{
 				Status: "session_active",
 				RRID:   args.RRID,
@@ -330,7 +397,8 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 	if blocking {
 		logger.Info("bridgeEventsCollectSummary: starting blocking event bridge",
 			"rr_id", args.RRID, "session_id", result.SessionID, "ctx_err", ctx.Err())
-		summary := bridgeEventsCollectSummary(ctx, result.Events, BridgeInactivityTimeout)
+		bridgeCtx := WithRRID(ctx, args.RRID)
+		summary, rca := bridgeEventsCollectSummary(bridgeCtx, result.Events, BridgeInactivityTimeout)
 		status := "completed"
 		if ctx.Err() != nil {
 			status = "timeout"
@@ -340,14 +408,38 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 		logger.Info("bridgeEventsCollectSummary: finished",
 			"rr_id", args.RRID, "status", status, "summary_len", len(summary))
 
+		// Fallback: when KA produced no RCA (e.g. user-driving mode with
+		// no autonomous session) but severity triage completed during RR
+		// creation, emit progressive events using the triage data so the
+		// user gets immediate severity feedback.
+		if rca == nil && rrSeverity != "" {
+			rca = &InvestigateRCA{
+				Severity:   rrSeverity,
+				Confidence: 0.6,
+				RCASummary: "Severity assessed from resource metadata (full investigation pending)",
+			}
+			emitEarlyRCA(ctx, rca)
+			emitFallbackInvestigationArtifact(ctx, rca, args.RRID)
+			logger.Info("emitted fallback early_rca from severity triage",
+				"rr_id", args.RRID, "severity", rrSeverity)
+			if summary == "" {
+				summary = rca.RCASummary
+			}
+		}
+
 		// Hand off the MCP session to the pool so discover_workflows /
 		// select_workflow reuse the same connection and driver lease.
 		// If no pool is available, fall back to closing the session.
 		if pool != nil && result.Session != nil && username != "" {
-			pool.Inject(args.RRID, username, result.Session)
+			watchDone := make(chan struct{})
+			pool.InjectWithCleanup(args.RRID, username, result.Session, func() {
+				close(watchDone)
+			})
 			if registry != nil {
 				registry.Deregister(result.SessionID)
 			}
+			watchCtx := context.WithoutCancel(ctx)
+			go WatchTerminalEvents(watchCtx, result.Events, args.RRID, watchDone)
 			logger.Info("investigation session handed off to pool",
 				"rr_id", args.RRID, "session_id", result.SessionID, "username", username)
 		} else {
@@ -359,6 +451,7 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 			Status:    status,
 			Summary:   summary,
 			RRID:      args.RRID,
+			RCA:       rca,
 		}, nil
 	}
 
@@ -388,6 +481,15 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 // every 5s to prevent idle SSE timeouts during long KA tool executions.
 // This complements the streaming executor-level keepalive which covers
 // gaps between tool calls.
+//
+// NOTE: This is the non-blocking (legacy) bridge path. It does NOT handle
+// EventTypeAlignmentVerdict structured emission — that is handled only by
+// bridgeEventsCollectSummary (the blocking path used by the A2A agent).
+// The non-blocking path emits the raw event text via emitEventToA2A, but
+// FormatEventForUser returns "" for alignment_verdict, so the event is
+// effectively dropped. If the non-blocking path needs alignment verdict
+// support in the future, add a handler here and inject WithRRID on the
+// bridgeCtx at the call site (line ~438).
 func BridgeEventsToA2A(ctx context.Context, events <-chan ka.InvestigationEvent, inactivityTimeout time.Duration) {
 	keepalive := time.NewTicker(5 * time.Second)
 	defer keepalive.Stop()
@@ -415,6 +517,18 @@ func BridgeEventsToA2A(ctx context.Context, events <-chan ka.InvestigationEvent,
 			}
 			inactivity.Reset(inactivityTimeout)
 
+			if evt.Type == ka.EventTypeSessionEnded {
+				phase := mapReasonToPhase(evt.Phase)
+				_ = launcher.EmitStatusWithMetaSafe(ctx,
+					FormatEventForUser(evt),
+					map[string]any{
+						"type":     launcher.MetaTypeInvestigation,
+						"phase":    phase,
+						"reason":   evt.Phase,
+						"terminal": true,
+					})
+				return
+			}
 			emitEventToA2A(ctx, evt, FormatEventForUser(evt))
 			if evt.Type == ka.EventTypeComplete || evt.Type == ka.EventTypeCancelled {
 				return
@@ -436,12 +550,19 @@ var NonBlockingBridgeTTL = 15 * time.Minute
 // Exported so that tests can override it without modifying production code.
 var BridgeInactivityTimeout = 60 * time.Second
 
+// BridgeEventsCollectSummary is the exported entry point for bridgeEventsCollectSummary.
+// It is used by integration tests and the blocking MCP investigation path.
+func BridgeEventsCollectSummary(ctx context.Context, events <-chan ka.InvestigationEvent, inactivityTimeout time.Duration) (string, *InvestigateRCA) {
+	return bridgeEventsCollectSummary(ctx, events, inactivityTimeout)
+}
+
 // bridgeEventsCollectSummary bridges events (same as BridgeEventsToA2A) and
 // accumulates reasoning_delta text into a summary returned when the channel
 // closes, the context is cancelled, or no events arrive within
 // inactivityTimeout (hang detection).
-func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.InvestigationEvent, inactivityTimeout time.Duration) string {
+func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.InvestigationEvent, inactivityTimeout time.Duration) (string, *InvestigateRCA) {
 	var summary strings.Builder
+	var rcaResult *InvestigateRCA
 	keepalive := time.NewTicker(5 * time.Second)
 	defer keepalive.Stop()
 	inactivity := time.NewTimer(inactivityTimeout)
@@ -449,16 +570,29 @@ func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.Investigat
 	for {
 		select {
 		case <-ctx.Done():
-			return summary.String()
+			return summary.String(), rcaResult
 		case <-inactivity.C:
-			return summary.String()
+			return summary.String(), rcaResult
 		case <-keepalive.C:
 			_ = launcher.EmitKeepaliveDotSafe(ctx)
 		case evt, ok := <-events:
 			if !ok {
-				return summary.String()
+				return summary.String(), rcaResult
 			}
 			inactivity.Reset(inactivityTimeout)
+			// #1438: Handle session_ended before generic emit to avoid double-emit.
+			if evt.Type == ka.EventTypeSessionEnded {
+				phase := mapReasonToPhase(evt.Phase)
+				_ = launcher.EmitStatusWithMetaSafe(ctx,
+					FormatEventForUser(evt),
+					map[string]any{
+						"type":     launcher.MetaTypeInvestigation,
+						"phase":    phase,
+						"reason":   evt.Phase,
+						"terminal": true,
+					})
+				return summary.String(), rcaResult
+			}
 			emitEventToA2A(ctx, evt, FormatEventForUser(evt))
 			switch evt.Type {
 			case ka.EventTypeReasoningDelta:
@@ -469,12 +603,81 @@ func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.Investigat
 				if chunk := extractJSONField(evt.Data, "delta"); chunk != "" {
 					summary.WriteString(chunk)
 				}
-			}
-			if evt.Type == ka.EventTypeComplete || evt.Type == ka.EventTypeCancelled {
-				return summary.String()
+			case ka.EventTypeAlignmentVerdict:
+				if len(evt.Data) > 0 {
+					var avr katypes.AlignmentVerdictResult
+					if json.Unmarshal(evt.Data, &avr) == nil && avr.Result != "aligned" {
+						meta := map[string]any{
+							"type":  launcher.MetaTypeAlignmentCheckFailed,
+							"rr_id": extractRRIDFromContext(ctx),
+						}
+						_ = launcher.EmitStructuredMetaSafe(ctx, string(evt.Data), meta)
+					}
+				}
+			case ka.EventTypeComplete:
+				if len(evt.Data) > 0 {
+					var rca InvestigateRCA
+					if json.Unmarshal(evt.Data, &rca) == nil && rca.Severity != "" {
+						rcaResult = &rca
+						if rca.RCASummary != "" && summary.Len() == 0 {
+							summary.WriteString(rca.RCASummary)
+						}
+						emitEarlyRCA(ctx, &rca)
+					}
+				}
+				return summary.String(), rcaResult
+			case ka.EventTypeCancelled:
+				return summary.String(), rcaResult
 			}
 		}
 	}
+}
+
+// emitEarlyRCA emits a progressive RCA status-update via the EventBridge so
+// the console can render investigation findings immediately (before workflow
+// discovery completes). Uses metadata.type="decision" with schema="early_rca"
+// to differentiate from the final present_decision artifact.
+// FedRAMP: SI-4 (audit classification), AU-3 (content traceability).
+func emitEarlyRCA(ctx context.Context, rca *InvestigateRCA) {
+	if rca == nil {
+		return
+	}
+	payload := fmt.Sprintf(
+		`{"severity":"%s","confidence":%.2f,"target":"%s","rca_summary":"%s"}`,
+		rca.Severity, rca.Confidence, rca.Target, rca.RCASummary,
+	)
+	meta := map[string]any{
+		"type":           launcher.MetaTypeDecision,
+		"schema":         "early_rca",
+		"schema_version": "1.0",
+	}
+	_ = launcher.EmitStructuredMetaSafe(ctx, payload, meta)
+}
+
+// emitFallbackInvestigationArtifact emits an artifact-update event with the
+// investigation_summary schema when the KA bridge produced no events but
+// severity triage data is available. This ensures the Console gets a
+// structured artifact even when the KA investigation is slow or unavailable.
+// FedRAMP: SI-10 (data integrity through schema self-identification).
+func emitFallbackInvestigationArtifact(ctx context.Context, rca *InvestigateRCA, rrID string) {
+	if rca == nil {
+		return
+	}
+	data := map[string]any{
+		"session_id": rrID,
+		"summary":    rca.RCASummary,
+		"rca": map[string]any{
+			"explanation": rca.RCASummary,
+			"severity":    rca.Severity,
+			"confidence":  rca.Confidence,
+		},
+	}
+	meta := map[string]any{
+		"type":           launcher.MetaTypeDecision,
+		"schema":         "investigation_summary",
+		"schema_version": "1.0",
+	}
+	_ = launcher.EmitArtifactSafe(ctx, data, fmt.Sprintf("Severity: %s (confidence %.0f%%)\n%s", rca.Severity, rca.Confidence*100, rca.RCASummary), meta)
 }
 
 // FormatEventForUser converts an investigation event into user-readable text.
@@ -499,6 +702,14 @@ func FormatEventForUser(evt ka.InvestigationEvent) string {
 		return "Investigation error occurred"
 	case ka.EventTypeComplete:
 		return "Investigation complete."
+	case ka.EventTypeSessionEnded:
+		reason := evt.Phase
+		if reason == "" {
+			reason = "unknown"
+		}
+		return "Session ended: " + reason
+	case ka.EventTypeAlignmentVerdict:
+		return ""
 	default:
 		return ""
 	}
@@ -511,7 +722,7 @@ func FormatEventForUser(evt ka.InvestigationEvent) string {
 // errors belong on the status channel as ephemeral messages (AC-4).
 func isStatusEvent(evtType string) bool {
 	switch evtType {
-	case ka.EventTypeToolCallStart, ka.EventTypeComplete, ka.EventTypeCancelled, ka.EventTypeError:
+	case ka.EventTypeToolCallStart, ka.EventTypeComplete, ka.EventTypeCancelled, ka.EventTypeError, ka.EventTypeAlignmentVerdict, ka.EventTypeSessionEnded:
 		return true
 	default:
 		return false
@@ -529,6 +740,62 @@ func emitEventToA2A(ctx context.Context, evt ka.InvestigationEvent, text string)
 		_ = launcher.EmitStatusSafe(ctx, text)
 	} else {
 		_ = launcher.EmitReasoningSafe(ctx, text)
+	}
+}
+
+// WatchTerminalEvents watches a residual event channel for a session_ended
+// event after pool inject. When received, it emits a terminal
+// TaskStatusUpdateEvent to the A2A queue via the EventBridge in ctx.
+// Exits deterministically on: session_ended received, events closed, or
+// done closed (pool Release/EvictIdle/DrainAll).  No timer-based safety net.
+// #1438, SI-4.
+func WatchTerminalEvents(ctx context.Context, events <-chan ka.InvestigationEvent, rrID string, done <-chan struct{}) {
+	for {
+		select {
+		case evt, ok := <-events:
+			if !ok {
+				return
+			}
+			if evt.Type == ka.EventTypeSessionEnded {
+				emitWatcherTerminal(ctx, evt)
+				return
+			}
+		case <-done:
+			// Priority drain: a session_ended may already be buffered when
+			// the pool fires onRelease. Drain it before exiting (#1438).
+			select {
+			case evt, ok := <-events:
+				if ok && evt.Type == ka.EventTypeSessionEnded {
+					emitWatcherTerminal(ctx, evt)
+				}
+			default:
+			}
+			return
+		}
+	}
+}
+
+func emitWatcherTerminal(ctx context.Context, evt ka.InvestigationEvent) {
+	phase := mapReasonToPhase(evt.Phase)
+	launcher.UpdatePhaseSafe(ctx, phase)
+	_ = launcher.EmitStatusWithMetaSafe(ctx,
+		FormatEventForUser(evt),
+		map[string]any{
+			"type":     launcher.MetaTypeInvestigation,
+			"phase":    phase,
+			"reason":   evt.Phase,
+			"terminal": true,
+		})
+}
+
+func mapReasonToPhase(reason string) string {
+	switch reason {
+	case "inactivity_timeout", "ttl_expired":
+		return "TimedOut"
+	case "disconnect":
+		return "Disconnected"
+	default:
+		return reason
 	}
 }
 
@@ -618,14 +885,14 @@ func (r *MonitorRegistry) StopAll() {
 // The LLM receives the full results in the tool response and can proceed to
 // the next phase deterministically.
 //
-// k8sClient and namespace enable AIA CRD polling before starting the
-// investigation (BR-INTERACTIVE-010). Pass nil k8sClient to skip polling.
+// client and namespace enable AIA CRD polling before starting the
+// investigation (BR-INTERACTIVE-010). Pass nil client to skip polling.
 // registry is optional; when provided, sessions are tracked for graceful shutdown.
 // onStarted is called after a successful start to create the IS CRD.
 // pool is optional; when provided, the MCP session is handed off to the pool
 // after the investigation so that discover_workflows / select_workflow reuse
 // the same connection and driver lease.
-func NewInvestigateMCPTool(mcpClient ka.MCPClient, k8sClient dynamic.Interface, namespace string, auditor audit.Emitter, registry *MonitorRegistry, onStarted SessionStartedHook, pool *ka.KASessionPool, signaler ISSignaler, triager *severity.Triager) (tool.Tool, error) {
+func NewInvestigateMCPTool(mcpClient ka.MCPClient, client crclient.Client, namespace string, auditor audit.Emitter, registry *MonitorRegistry, onStarted SessionStartedHook, pool *ka.KASessionPool, signaler ISSignaler, triager *severity.Triager) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name: "kubernaut_investigate",
 		Description: "Investigate an infrastructure incident via MCP. " +
@@ -637,28 +904,27 @@ func NewInvestigateMCPTool(mcpClient ka.MCPClient, k8sClient dynamic.Interface, 
 			"to the user automatically while the investigation runs.",
 	}, func(ctx tool.Context, args InvestigateMCPArgs) (InvestigateMCPResult, error) {
 		user := usernameFromContext(ctx)
-		return HandleInvestigationMCPWithRegistry(ctx, mcpClient, k8sClient, namespace, args, auditor, registry, onStarted, true, pool, user, signaler, triager)
+		return HandleInvestigationMCPWithRegistry(ctx, mcpClient, client, namespace, args, auditor, registry, onStarted, true, pool, user, signaler, triager)
 	})
 }
 
 // isAutonomousInvestigation checks if the given RR has an active AIA CRD with
 // a session ID already assigned (indicating autonomous investigation in progress).
 // Returns true when a takeover is needed instead of a fresh start.
-func isAutonomousInvestigation(ctx context.Context, client dynamic.Interface, namespace, rrName string) bool {
+func isAutonomousInvestigation(ctx context.Context, client crclient.Client, namespace, rrName string) bool {
 	if client == nil || namespace == "" || rrName == "" {
 		return false
 	}
-	list, err := client.Resource(aianalysisGVR).Namespace(namespace).List(ctx, metav1.ListOptions{})
-	if err != nil {
+	var list aiav1alpha1.AIAnalysisList
+	if err := client.List(ctx, &list, crclient.InNamespace(namespace)); err != nil {
 		return false
 	}
-	for _, item := range list.Items {
-		specRR, _, _ := unstructured.NestedString(item.Object, "spec", "remediationRequestRef", "name")
-		if specRR != rrName {
+	for i := range list.Items {
+		item := &list.Items[i]
+		if item.Spec.RemediationRequestRef.Name != rrName {
 			continue
 		}
-		sessionID, _, _ := unstructured.NestedString(item.Object, "status", "investigationSession", "id")
-		if sessionID != "" {
+		if item.Status.KASession != nil && item.Status.KASession.ID != "" {
 			return true
 		}
 	}

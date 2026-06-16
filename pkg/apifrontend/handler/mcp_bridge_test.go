@@ -21,10 +21,14 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/watch"
-	"k8s.io/client-go/dynamic"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	k8stesting "k8s.io/client-go/testing"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
+	eav1alpha1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ds"
@@ -111,44 +115,61 @@ func (f *fakeAuditor) Reset() {
 	f.events = nil
 }
 
-// hookDynamicClient intercepts List and Get K8s verbs through a context-aware hook.
-// The hook runs instead of the real call; it can block, return an error, or panic.
-// Other verbs (Watch, Create, Patch, Delete) fall through to the embedded fake.
-type hookDynamicClient struct {
-	dynamic.Interface
-	hook func(ctx context.Context) error
+
+func bridgeTestScheme() *runtime.Scheme {
+	s := runtime.NewScheme()
+	_ = remediationv1.AddToScheme(s)
+	_ = eav1alpha1.AddToScheme(s)
+	return s
 }
 
-func (h *hookDynamicClient) Resource(gvr schema.GroupVersionResource) dynamic.NamespaceableResourceInterface {
-	return &hookNamespaceableResource{NamespaceableResourceInterface: h.Interface.Resource(gvr), hook: h.hook}
+func newBridgeTypedClient(objs ...crclient.Object) crclient.WithWatch {
+	return fake.NewClientBuilder().
+		WithScheme(bridgeTestScheme()).
+		WithObjects(objs...).
+		WithStatusSubresource(
+			&remediationv1.RemediationRequest{},
+			&remediationv1.RemediationApprovalRequest{},
+			&eav1alpha1.EffectivenessAssessment{},
+		).
+		Build()
 }
 
-type hookNamespaceableResource struct {
-	dynamic.NamespaceableResourceInterface
-	hook func(ctx context.Context) error
+func newBlockingTypedClient() crclient.WithWatch {
+	return fake.NewClientBuilder().
+		WithScheme(bridgeTestScheme()).
+		WithInterceptorFuncs(interceptor.Funcs{
+			List: func(ctx context.Context, _ crclient.WithWatch, _ crclient.ObjectList, _ ...crclient.ListOption) error {
+				<-ctx.Done()
+				return ctx.Err()
+			},
+		}).
+		Build()
 }
 
-func (h *hookNamespaceableResource) Namespace(ns string) dynamic.ResourceInterface {
-	return &hookResourceInterface{ResourceInterface: h.NamespaceableResourceInterface.Namespace(ns), hook: h.hook}
+func newErrorTypedClient(errFn func(ctx context.Context) error) crclient.WithWatch {
+	return fake.NewClientBuilder().
+		WithScheme(bridgeTestScheme()).
+		WithInterceptorFuncs(interceptor.Funcs{
+			List: func(ctx context.Context, _ crclient.WithWatch, _ crclient.ObjectList, _ ...crclient.ListOption) error {
+				return errFn(ctx)
+			},
+			Get: func(ctx context.Context, _ crclient.WithWatch, _ crclient.ObjectKey, _ crclient.Object, _ ...crclient.GetOption) error {
+				return errFn(ctx)
+			},
+		}).
+		Build()
 }
 
-type hookResourceInterface struct {
-	dynamic.ResourceInterface
-	hook func(ctx context.Context) error
-}
-
-func (h *hookResourceInterface) List(ctx context.Context, _ metav1.ListOptions) (*unstructured.UnstructuredList, error) {
-	if err := h.hook(ctx); err != nil {
-		return nil, err
-	}
-	return &unstructured.UnstructuredList{}, nil
-}
-
-func (h *hookResourceInterface) Get(ctx context.Context, _ string, _ metav1.GetOptions, _ ...string) (*unstructured.Unstructured, error) {
-	if err := h.hook(ctx); err != nil {
-		return nil, err
-	}
-	return &unstructured.Unstructured{}, nil
+func newPanicTypedClient() crclient.WithWatch {
+	return fake.NewClientBuilder().
+		WithScheme(bridgeTestScheme()).
+		WithInterceptorFuncs(interceptor.Funcs{
+			List: func(_ context.Context, _ crclient.WithWatch, _ crclient.ObjectList, _ ...crclient.ListOption) error {
+				panic("unexpected typed client panic")
+			},
+		}).
+		Build()
 }
 
 // newFakeDynamicClient creates a dynamic fake client with common list kinds registered.
@@ -342,12 +363,13 @@ func getCounterValue(cv *prometheus.CounterVec, labels prometheus.Labels) float6
 
 var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"), func() {
 	var (
-		h         http.Handler
-		fakeK8s   *dynamicfake.FakeDynamicClient
-		kaServer  *httptest.Server
-		auditor   *fakeAuditor
-		sessionID string
-		testUser  *auth.UserIdentity
+		h               http.Handler
+		fakeK8s         *dynamicfake.FakeDynamicClient
+		fakeTypedClient crclient.WithWatch
+		kaServer        *httptest.Server
+		auditor         *fakeAuditor
+		sessionID       string
+		testUser        *auth.UserIdentity
 	)
 
 	BeforeEach(func() {
@@ -456,6 +478,18 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 			return true, w, nil
 		})
 
+		typedRR := &remediationv1.RemediationRequest{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-rr", Namespace: "default"},
+			Spec: remediationv1.RemediationRequestSpec{
+				TargetResource: remediationv1.ResourceIdentifier{Kind: "Deployment", Name: "nginx"},
+			},
+			Status: remediationv1.RemediationRequestStatus{OverallPhase: "Investigating"},
+		}
+		typedRAR := &remediationv1.RemediationApprovalRequest{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-rar", Namespace: "default"},
+		}
+		fakeTypedClient = newBridgeTypedClient(typedRR, typedRAR)
+
 		testUser = &auth.UserIdentity{
 			Username: "sre-engineer",
 			Groups:   []string{"sre"},
@@ -467,8 +501,9 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 			ServerVersion: "v0.1.0-test",
 			Enabled:       true,
 		Bridge: &handler.MCPBridgeConfig{
-			K8sClient: fakeK8s,
-			Namespace: "default",
+			K8sClient:   fakeK8s,
+			TypedClient: fakeTypedClient,
+			Namespace:   "default",
 			KAMCPClient: &ka.MockMCPClient{
 				SelectWorkflowFn: func(_ context.Context, _ ka.SelectWorkflowArgs) (*ka.SelectWorkflowResult, error) {
 					return &ka.SelectWorkflowResult{Status: "selected", Message: "workflow selected"}, nil
@@ -503,7 +538,7 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 	})
 
 	Context("Tool registration", func() {
-		It("UT-AF-B-023: RegisterTools registers exactly 21 domain tools on the server (#1332)", func() {
+		It("UT-AF-B-023: RegisterTools registers exactly 22 domain tools on the server (#1418)", func() {
 			listReq := map[string]any{
 				"jsonrpc": "2.0",
 				"id":      3,
@@ -514,7 +549,7 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 			Expect(rec.Code).To(Equal(http.StatusOK))
 			body := rec.Body.String()
 			count := countToolsInResponse(body)
-			Expect(count).To(Equal(21))
+			Expect(count).To(Equal(22))
 		})
 	})
 
@@ -526,6 +561,7 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:          fakeK8s,
+					TypedClient:       newBridgeTypedClient(),
 					Namespace:          "default",
 					KAMCPClient:        &ka.MockMCPClient{},
 					DSClient:           newFakeDSClient(),
@@ -551,13 +587,14 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 			Expect(count).To(Equal(11), "only 11 stateless tools when interactive disabled")
 		})
 
-		It("IT-BRIDGE-1366-002: InteractiveEnabled=true registers all 21 tools", func() {
+		It("IT-BRIDGE-1366-002: InteractiveEnabled=true registers all 22 tools", func() {
 			cfg := handler.MCPConfig{
 				ServerName:    "kubernaut-apifrontend",
 				ServerVersion: "v0.1.0-test",
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:          fakeK8s,
+					TypedClient:       newBridgeTypedClient(),
 					Namespace:          "default",
 					KAMCPClient:        &ka.MockMCPClient{},
 					DSClient:           newFakeDSClient(),
@@ -580,7 +617,7 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 			rec := mcpPost(localH, localSess, listReq, testUser)
 			Expect(rec.Code).To(Equal(http.StatusOK))
 			count := countToolsInResponse(rec.Body.String())
-			Expect(count).To(Equal(21), "all 21 tools when interactive enabled")
+			Expect(count).To(Equal(22), "all 22 tools when interactive enabled")
 		})
 	})
 
@@ -615,6 +652,15 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 		})
 
 		It("UT-AF-B-006: kubernaut_watch dispatches and returns events", func() {
+			go func() {
+				defer GinkgoRecover()
+				time.Sleep(100 * time.Millisecond)
+				var rr remediationv1.RemediationRequest
+				Expect(fakeTypedClient.Get(context.Background(),
+					crclient.ObjectKey{Namespace: "default", Name: "test-rr"}, &rr)).To(Succeed())
+				rr.Status.OverallPhase = "Completed"
+				Expect(fakeTypedClient.Status().Update(context.Background(), &rr)).To(Succeed())
+			}()
 			_, body := mcpCallTool(h, sessionID, "kubernaut_watch",
 				map[string]any{"name": "test-rr"}, testUser)
 			text := extractTextContent(body)
@@ -656,7 +702,14 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 				map[string]any{
 					"session_id": "sess-1",
 					"summary":    "RCA complete",
-					"options":    []any{map[string]any{"workflow_id": "wf-1", "name": "Restart", "description": "Restart pods"}},
+					"rca": map[string]any{
+						"severity":         "high",
+						"confidence":       0.85,
+						"target":           "pod/nginx-abc123",
+						"tool_calls_count": 3,
+						"llm_turns":        2,
+					},
+					"options": []any{map[string]any{"workflow_id": "wf-1", "name": "Restart", "description": "Restart pods"}},
 				}, testUser)
 			text := extractTextContent(body)
 			Expect(text).To(ContainSubstring("Restart"))
@@ -767,6 +820,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
+					TypedClient:       newBridgeTypedClient(),
 					Namespace:         "default",
 
 					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"*"}}},
@@ -793,6 +847,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
+					TypedClient:       newBridgeTypedClient(),
 					Namespace:         "default",
 
 					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"*"}}},
@@ -821,6 +876,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
+					TypedClient:       newBridgeTypedClient(),
 					Namespace:         "default",
 
 					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"kubernaut_list_remediations"}}},
@@ -846,6 +902,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
+					TypedClient:       newBridgeTypedClient(),
 					Namespace:         "default",
 
 					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"kubernaut_list_remediations"}}},
@@ -874,6 +931,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
+					TypedClient:       newBridgeTypedClient(),
 					Namespace:         "default",
 
 					Authorizer:         &mapAuthorizer{roles: map[string][]string{"admin": {"*"}}},
@@ -899,6 +957,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
+					TypedClient:       newBridgeTypedClient(),
 					Namespace:         "default",
 
 					Authorizer:         &allowAllAuthorizer{},
@@ -924,6 +983,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
+					TypedClient:       newBridgeTypedClient(),
 					Namespace:         "default",
 
 					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"kubernaut_list_remediations"}}},
@@ -955,6 +1015,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
+					TypedClient:       newBridgeTypedClient(),
 					Namespace:         "default",
 
 					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"kubernaut_list_remediations"}}},
@@ -979,18 +1040,16 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 
 	Context("Error redaction", func() {
 		It("UT-AF-B-035: error messages redact JWT tokens", func() {
-			jwtClient := &hookDynamicClient{
-				Interface: newFakeDynamicClient(),
-				hook: func(_ context.Context) error {
-					return fmt.Errorf("auth error with token eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature_placeholder_padding_here")
-				},
+			jwtErr := func(_ context.Context) error {
+				return fmt.Errorf("auth error with token eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature_placeholder_padding_here")
 			}
 			cfg := handler.MCPConfig{
 				ServerName:    "kubernaut-apifrontend",
 				ServerVersion: "v0.1.0-test",
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
-					K8sClient:         jwtClient,
+					K8sClient:         fakeK8s,
+					TypedClient:       newErrorTypedClient(jwtErr),
 					Namespace:         "default",
 
 					Authorizer:         &allowAllAuthorizer{},
@@ -1011,18 +1070,16 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 		})
 
 		It("UT-AF-B-036: error messages redact file paths", func() {
-			pathClient := &hookDynamicClient{
-				Interface: newFakeDynamicClient(),
-				hook: func(_ context.Context) error {
-					return fmt.Errorf("failed reading /etc/kubernetes/pki/ca.crt")
-				},
+			pathErr := func(_ context.Context) error {
+				return fmt.Errorf("failed reading /etc/kubernetes/pki/ca.crt")
 			}
 			cfg := handler.MCPConfig{
 				ServerName:    "kubernaut-apifrontend",
 				ServerVersion: "v0.1.0-test",
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
-					K8sClient:         pathClient,
+					K8sClient:         fakeK8s,
+					TypedClient:       newErrorTypedClient(pathErr),
 					Namespace:         "default",
 
 					Authorizer:         &allowAllAuthorizer{},
@@ -1044,13 +1101,14 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 	})
 
 	Context("tools/list shows all tools regardless of RBAC", func() {
-		It("UT-AF-B-040: viewer sees all 21 tools in tools/list (#1332)", func() {
+		It("UT-AF-B-040: viewer sees all 22 tools in tools/list (#1418)", func() {
 			cfg := handler.MCPConfig{
 				ServerName:    "kubernaut-apifrontend",
 				ServerVersion: "v0.1.0-test",
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:          fakeK8s,
+					TypedClient:       newBridgeTypedClient(),
 					Namespace:          "default",
 					Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"*"}}},
 					Auditor:            auditor,
@@ -1074,7 +1132,7 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 			rec := mcpPost(h, sid, listReq, viewer)
 			Expect(rec.Code).To(Equal(http.StatusOK))
 			count := countToolsInResponse(rec.Body.String())
-			Expect(count).To(Equal(21))
+			Expect(count).To(Equal(22))
 		})
 	})
 })
@@ -1110,6 +1168,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
+					TypedClient:       newBridgeTypedClient(),
 					Namespace:         "default",
 
 					Authorizer:         &allowAllAuthorizer{},
@@ -1138,6 +1197,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
+					TypedClient:       newBridgeTypedClient(),
 					Namespace:         "default",
 
 					Authorizer:         &mapAuthorizer{roles: map[string][]string{"admin": {"*"}}},
@@ -1160,18 +1220,16 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 		})
 
 		It("UT-AF-B-048: tool error increments af_tool_calls_total with result=error", func() {
-			errClient := &hookDynamicClient{
-				Interface: newFakeDynamicClient(),
-				hook: func(_ context.Context) error {
-					return fmt.Errorf("connection refused")
-				},
+			connErr := func(_ context.Context) error {
+				return fmt.Errorf("connection refused")
 			}
 			cfg := handler.MCPConfig{
 				ServerName:    "kubernaut-apifrontend",
 				ServerVersion: "v0.1.0-test",
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
-					K8sClient:         errClient,
+					K8sClient:         fakeK8s,
+					TypedClient:       newErrorTypedClient(connErr),
 					Namespace:         "default",
 
 					Authorizer:         &allowAllAuthorizer{},
@@ -1200,6 +1258,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
+					TypedClient:       newBridgeTypedClient(),
 					Namespace:         "default",
 
 					Authorizer:         &allowAllAuthorizer{},
@@ -1235,6 +1294,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
+					TypedClient:       newBridgeTypedClient(),
 					Namespace:         "default",
 
 					Authorizer:         &allowAllAuthorizer{},
@@ -1273,6 +1333,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:          fakeK8s,
+					TypedClient:       newBridgeTypedClient(),
 					Namespace:         "default",
 
 					Authorizer:         &allowAllAuthorizer{},
@@ -1306,16 +1367,16 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 		})
 
 		It("UT-AF-B-051: failed tool call emits EventMCPToolFailed with redacted error", func() {
-			errClient := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme())
-			errClient.PrependReactor("*", "*", func(_ k8stesting.Action) (bool, runtime.Object, error) {
-				return true, nil, fmt.Errorf("secret error at /var/secrets/key.pem")
-			})
+			secretErr := func(_ context.Context) error {
+				return fmt.Errorf("secret error at /var/secrets/key.pem")
+			}
 			cfg := handler.MCPConfig{
 				ServerName:    "kubernaut-apifrontend",
 				ServerVersion: "v0.1.0-test",
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
-					K8sClient:         errClient,
+					K8sClient:         fakeK8s,
+					TypedClient:       newErrorTypedClient(secretErr),
 					Namespace:         "default",
 
 					Authorizer:         &allowAllAuthorizer{},
@@ -1354,6 +1415,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
+					TypedClient:       newBridgeTypedClient(),
 					Namespace:         "default",
 
 					Authorizer:         &allowAllAuthorizer{},
@@ -1376,19 +1438,13 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 
 	Context("Timeout enforcement", func() {
 		It("UT-AF-B-060: tool exceeding timeout returns context deadline exceeded", func() {
-			slowClient := &hookDynamicClient{
-				Interface: dynamicfake.NewSimpleDynamicClient(runtime.NewScheme()),
-				hook: func(ctx context.Context) error {
-					<-ctx.Done()
-					return ctx.Err()
-				},
-			}
 			cfg := handler.MCPConfig{
 				ServerName:    "kubernaut-apifrontend",
 				ServerVersion: "v0.1.0-test",
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
-					K8sClient:         slowClient,
+					K8sClient:         fakeK8s,
+					TypedClient:       newBlockingTypedClient(),
 					Namespace:         "default",
 
 					Authorizer:         &allowAllAuthorizer{},
@@ -1411,13 +1467,6 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 		})
 
 		It("UT-AF-B-060b: timeout records result=timeout metric and emits audit event", func() {
-			slowClient := &hookDynamicClient{
-				Interface: dynamicfake.NewSimpleDynamicClient(runtime.NewScheme()),
-				hook: func(ctx context.Context) error {
-					<-ctx.Done()
-					return ctx.Err()
-				},
-			}
 			localMetrics := newBridgeMetrics()
 			localAuditor := &fakeAuditor{}
 			cfg := handler.MCPConfig{
@@ -1425,7 +1474,8 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				ServerVersion: "v0.1.0-test",
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
-					K8sClient:         slowClient,
+					K8sClient:         fakeK8s,
+					TypedClient:       newBlockingTypedClient(),
 					Namespace:         "default",
 
 					Authorizer:         &allowAllAuthorizer{},
@@ -1467,24 +1517,27 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 			// the hook so the holder can return normally.
 			entered := make(chan struct{}, 1)
 			gate := make(chan struct{})
-			blockingClient := &hookDynamicClient{
-				Interface: dynamicfake.NewSimpleDynamicClient(runtime.NewScheme()),
-				hook: func(_ context.Context) error {
-					select {
-					case entered <- struct{}{}:
-					default:
-					}
-					<-gate
-					return nil
-				},
-			}
+			gatedTypedClient := fake.NewClientBuilder().
+				WithScheme(bridgeTestScheme()).
+				WithInterceptorFuncs(interceptor.Funcs{
+					List: func(_ context.Context, _ crclient.WithWatch, _ crclient.ObjectList, _ ...crclient.ListOption) error {
+						select {
+						case entered <- struct{}{}:
+						default:
+						}
+						<-gate
+						return nil
+					},
+				}).
+				Build()
 
 			cfg := handler.MCPConfig{
 				ServerName:    "kubernaut-apifrontend",
 				ServerVersion: "v0.1.0-test",
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
-					K8sClient:         blockingClient,
+					K8sClient:         fakeK8s,
+					TypedClient:       gatedTypedClient,
 					Namespace:         "default",
 
 					Authorizer:         &allowAllAuthorizer{},
@@ -1572,35 +1625,38 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 			// concurrency high-water mark before unblocking workers.
 			entered := make(chan struct{}, 6)
 			release := make(chan struct{})
-			gatedClient := &hookDynamicClient{
-				Interface: dynamicfake.NewSimpleDynamicClient(runtime.NewScheme()),
-				hook: func(ctx context.Context) error {
-					mu.Lock()
-					concurrency++
-					if concurrency > maxConcurrency {
-						maxConcurrency = concurrency
-					}
-					mu.Unlock()
+			concLimitTypedClient := fake.NewClientBuilder().
+				WithScheme(bridgeTestScheme()).
+				WithInterceptorFuncs(interceptor.Funcs{
+					List: func(ctx context.Context, _ crclient.WithWatch, _ crclient.ObjectList, _ ...crclient.ListOption) error {
+						mu.Lock()
+						concurrency++
+						if concurrency > maxConcurrency {
+							maxConcurrency = concurrency
+						}
+						mu.Unlock()
 
-					entered <- struct{}{}
-					select {
-					case <-ctx.Done():
-					case <-release:
-					}
+						entered <- struct{}{}
+						select {
+						case <-ctx.Done():
+						case <-release:
+						}
 
-					mu.Lock()
-					concurrency--
-					mu.Unlock()
-					return fmt.Errorf("test done")
-				},
-			}
+						mu.Lock()
+						concurrency--
+						mu.Unlock()
+						return fmt.Errorf("test done")
+					},
+				}).
+				Build()
 
 			cfg := handler.MCPConfig{
 				ServerName:    "kubernaut-apifrontend",
 				ServerVersion: "v0.1.0-test",
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
-					K8sClient:         gatedClient,
+					K8sClient:         fakeK8s,
+					TypedClient:       concLimitTypedClient,
 					Namespace:         "default",
 
 					Authorizer:         &allowAllAuthorizer{},
@@ -1645,18 +1701,13 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 
 	Context("Panic recovery", func() {
 		It("UT-AF-B-065: handler panic returns isError result with 'internal error'", func() {
-			panicClient := &hookDynamicClient{
-				Interface: dynamicfake.NewSimpleDynamicClient(runtime.NewScheme()),
-				hook: func(_ context.Context) error {
-					panic("deliberate test panic")
-				},
-			}
 			cfg := handler.MCPConfig{
 				ServerName:    "kubernaut-apifrontend",
 				ServerVersion: "v0.1.0-test",
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
-					K8sClient:         panicClient,
+					K8sClient:         fakeK8s,
+					TypedClient:       newPanicTypedClient(),
 					Namespace:         "default",
 
 					DSClient:           newFakeDSClient(),
@@ -1679,12 +1730,6 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 		})
 
 		It("UT-AF-B-066: panic records metrics with result=panic and emits audit", func() {
-			panicClient := &hookDynamicClient{
-				Interface: dynamicfake.NewSimpleDynamicClient(runtime.NewScheme()),
-				hook: func(_ context.Context) error {
-					panic("boom")
-				},
-			}
 			localMetrics := newBridgeMetrics()
 			localAuditor := &fakeAuditor{}
 			cfg := handler.MCPConfig{
@@ -1692,7 +1737,8 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				ServerVersion: "v0.1.0-test",
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
-					K8sClient:         panicClient,
+					K8sClient:         fakeK8s,
+					TypedClient:       newPanicTypedClient(),
 					Namespace:         "default",
 
 					DSClient:           newFakeDSClient(),
@@ -1762,6 +1808,7 @@ var _ = Describe("MCP Bridge - Tier 4: Adversarial Inputs", Label("tier4", "brid
 			Enabled:       true,
 			Bridge: &handler.MCPBridgeConfig{
 				K8sClient: fakeK8s,
+				TypedClient:       newBridgeTypedClient(),
 				Namespace: "default",
 
 				KAMCPClient: &ka.MockMCPClient{SelectWorkflowFn: func(_ context.Context, _ ka.SelectWorkflowArgs) (*ka.SelectWorkflowResult, error) {
@@ -1908,6 +1955,7 @@ var _ = Describe("MCP Bridge - Tier 5: Cross-Cutting", Label("tier5", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
+					TypedClient:       newBridgeTypedClient(),
 					Namespace:         "default",
 
 					DSClient:           newFakeDSClient(),
@@ -1936,6 +1984,7 @@ var _ = Describe("MCP Bridge - Tier 5: Cross-Cutting", Label("tier5", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
+					TypedClient:       newBridgeTypedClient(),
 					Namespace:         "default",
 
 					DSClient:           newFakeDSClient(),
@@ -1968,6 +2017,7 @@ var _ = Describe("MCP Bridge - Tier 5: Cross-Cutting", Label("tier5", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient: fakeK8s,
+					TypedClient:       newBridgeTypedClient(),
 					Namespace:         "default",
 	
 					DSClient:   newFakeDSClient(),
@@ -2018,6 +2068,7 @@ var _ = Describe("MCP Bridge - Tier 5: Cross-Cutting", Label("tier5", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
+					TypedClient:       newBridgeTypedClient(),
 					Namespace:         "default",
 
 					DSClient:           newFakeDSClient(),
@@ -2046,6 +2097,7 @@ var _ = Describe("MCP Bridge - Tier 5: Cross-Cutting", Label("tier5", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
+					TypedClient:       newBridgeTypedClient(),
 					Namespace:         "default",
 
 					DSClient:           nil,
@@ -2073,6 +2125,7 @@ var _ = Describe("MCP Bridge - Tier 5: Cross-Cutting", Label("tier5", "bridge"),
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
 					K8sClient:         fakeK8s,
+					TypedClient:       newBridgeTypedClient(),
 					Namespace:         "default",
 
 					DSClient:           newFakeDSClient(),
@@ -2261,6 +2314,7 @@ var _ = Describe("MCP Bridge - discover_workflows (#1176)", Label("bridge", "dis
 			Enabled:       true,
 			Bridge: &handler.MCPBridgeConfig{
 				K8sClient:          fakeK8s,
+				TypedClient:       newBridgeTypedClient(),
 				Namespace:          "default",
 				KAMCPClient:        mockMCP,
 				DSClient:           newFakeDSClient(),
@@ -2474,6 +2528,7 @@ var _ = Describe("MCP Bridge - Metrics Wiring", Label("metrics", "wiring"), func
 			Enabled:       true,
 			Bridge: &handler.MCPBridgeConfig{
 				K8sClient:          fakeK8s,
+				TypedClient:       newBridgeTypedClient(),
 				Namespace:          "default",
 				KAMCPClient:        mockMCP,
 				DSClient:           newFakeDSClient(),

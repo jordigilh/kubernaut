@@ -56,6 +56,7 @@ var severityRank = map[string]int{
 	"critical": 5,
 	"high":     4,
 	"medium":   3,
+	"warning":  3,
 	"low":      2,
 	"info":     1,
 }
@@ -64,6 +65,7 @@ var validSeverities = map[string]bool{
 	"critical": true,
 	"high":     true,
 	"medium":   true,
+	"warning":  true,
 	"low":      true,
 	"info":     true,
 }

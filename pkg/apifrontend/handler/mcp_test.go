@@ -93,14 +93,14 @@ var _ = Describe("MCP Handler", func() {
 		}
 	})
 
-	It("UT-AF-220-006: tools count matches 21 expected tools (#1332: kubernaut_takeover removed)", func() {
+	It("UT-AF-220-006: tools count matches 23 expected tools (#1418: kubernaut_complete_no_action added)", func() {
 		tools := handler.DefaultMCPTools(true)
-		Expect(tools).To(HaveLen(21))
+		Expect(tools).To(HaveLen(23))
 	})
 
 	It("UT-AF-1366-030: DefaultMCPTools(false) returns only stateless tools", func() {
 		tools := handler.DefaultMCPTools(false)
-		Expect(tools).To(HaveLen(11), "only 11 stateless tools when interactive disabled")
+		Expect(tools).To(HaveLen(12), "only 12 stateless tools when interactive disabled")
 		for _, t := range tools {
 			Expect(toolspkg.SessionDependentTools).NotTo(HaveKey(t.Name),
 				"session-dependent tool %q should be hidden in stub path", t.Name)
@@ -169,7 +169,7 @@ var _ = Describe("MCP Handler", func() {
 		Expect(ok).To(BeTrue())
 		registeredTools, ok := resultObj["tools"].([]any)
 		Expect(ok).To(BeTrue())
-		Expect(registeredTools).To(HaveLen(11), "stub path should only register 11 stateless tools")
+		Expect(registeredTools).To(HaveLen(12), "stub path should only register 12 stateless tools")
 	})
 
 	It("UT-AF-220-007: MCP server info includes correct name and version", func() {

@@ -229,4 +229,145 @@ var _ = Describe("Audit lifecycle against DataStorage contract — BR-AI-952 / G
 			Expect(order).To(Equal([]string{"corr-order-1", "corr-order-2", "corr-order-3"}))
 		})
 	})
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// #1401: Security audit events round-trip through DSAuditStore
+	// ═══════════════════════════════════════════════════════════════════════
+
+	Describe("IT-KA-1401-001: Security events pass OpenAPI validation and reach DS", func() {
+		It("rate-limit event round-trips through DSAuditStore with valid event_data", func() {
+			var captured []byte
+
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, readErr := io.ReadAll(r.Body)
+				Expect(readErr).NotTo(HaveOccurred())
+				captured = body
+
+				evID := uuid.New()
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusCreated)
+				_, _ = fmt.Fprintf(w, `{"event_id":%q,"event_timestamp":"2026-06-11T20:00:00Z","message":"accepted"}`,
+					evID.String())
+			}))
+			defer srv.Close()
+
+			cl, err := ogenclient.NewClient(srv.URL)
+			Expect(err).NotTo(HaveOccurred())
+
+			store := audit.NewDSAuditStore(cl)
+			event := audit.NewEvent(audit.EventTypeRateLimitDenied, "security-"+uuid.New().String())
+			event.EventAction = audit.ActionRateLimitDenied
+			event.EventOutcome = audit.OutcomeFailure
+			event.Data["source_ip"] = "10.0.0.1"
+			event.Data["path"] = "/api/v1/incident/analyze"
+			event.Data["method"] = "POST"
+
+			Expect(store.StoreAudit(context.Background(), event)).To(Succeed())
+
+			var envelope map[string]json.RawMessage
+			Expect(json.Unmarshal(captured, &envelope)).To(Succeed())
+			Expect(envelope).To(HaveKey("correlation_id"))
+			Expect(envelope).To(HaveKey("event_data"))
+
+			var corr string
+			Expect(json.Unmarshal(envelope["correlation_id"], &corr)).To(Succeed())
+			Expect(corr).To(HavePrefix("security-"), "correlation_id must have security- prefix")
+
+			var eventData map[string]json.RawMessage
+			Expect(json.Unmarshal(envelope["event_data"], &eventData)).To(Succeed())
+			Expect(eventData).To(HaveKey("event_type"))
+
+			var evType string
+			Expect(json.Unmarshal(eventData["event_type"], &evType)).To(Succeed())
+			Expect(evType).To(Equal("aiagent.ratelimit.denied"))
+		})
+	})
+
+	Describe("IT-KA-1401-002: Auth failure event round-trips through DSAuditStore", func() {
+		It("auth failure event persists with valid event_data discriminator", func() {
+			var captured []byte
+
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, readErr := io.ReadAll(r.Body)
+				Expect(readErr).NotTo(HaveOccurred())
+				captured = body
+
+				evID := uuid.New()
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusCreated)
+				_, _ = fmt.Fprintf(w, `{"event_id":%q,"event_timestamp":"2026-06-11T20:00:00Z","message":"accepted"}`,
+					evID.String())
+			}))
+			defer srv.Close()
+
+			cl, err := ogenclient.NewClient(srv.URL)
+			Expect(err).NotTo(HaveOccurred())
+
+			store := audit.NewDSAuditStore(cl)
+			event := audit.NewEvent(audit.EventTypeAuthFailure, "security-"+uuid.New().String())
+			event.EventAction = audit.ActionAuthFailure
+			event.EventOutcome = audit.OutcomeFailure
+			event.Data["source_ip"] = "192.168.1.50"
+			event.Data["path"] = "/api/v1/mcp"
+			event.Data["method"] = "GET"
+
+			Expect(store.StoreAudit(context.Background(), event)).To(Succeed())
+
+			var envelope map[string]json.RawMessage
+			Expect(json.Unmarshal(captured, &envelope)).To(Succeed())
+
+			var eventData map[string]json.RawMessage
+			Expect(json.Unmarshal(envelope["event_data"], &eventData)).To(Succeed())
+
+			var evType string
+			Expect(json.Unmarshal(eventData["event_type"], &evType)).To(Succeed())
+			Expect(evType).To(Equal("aiagent.auth.failure"))
+		})
+	})
+
+	Describe("IT-KA-1401-003: Auth denied event round-trips through DSAuditStore", func() {
+		It("auth denied event persists with valid event_data discriminator", func() {
+			var captured []byte
+
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, readErr := io.ReadAll(r.Body)
+				Expect(readErr).NotTo(HaveOccurred())
+				captured = body
+
+				evID := uuid.New()
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusCreated)
+				_, _ = fmt.Fprintf(w, `{"event_id":%q,"event_timestamp":"2026-06-11T20:00:00Z","message":"accepted"}`,
+					evID.String())
+			}))
+			defer srv.Close()
+
+			cl, err := ogenclient.NewClient(srv.URL)
+			Expect(err).NotTo(HaveOccurred())
+
+			store := audit.NewDSAuditStore(cl)
+			event := audit.NewEvent(audit.EventTypeAuthDenied, "security-"+uuid.New().String())
+			event.EventAction = audit.ActionAuthDenied
+			event.EventOutcome = audit.OutcomeFailure
+			event.Data["source_ip"] = "172.16.0.5"
+			event.Data["path"] = "/api/v1/session/join"
+			event.Data["method"] = "POST"
+
+			Expect(store.StoreAudit(context.Background(), event)).To(Succeed())
+
+			var envelope map[string]json.RawMessage
+			Expect(json.Unmarshal(captured, &envelope)).To(Succeed())
+
+			var eventData map[string]json.RawMessage
+			Expect(json.Unmarshal(envelope["event_data"], &eventData)).To(Succeed())
+
+			var evType string
+			Expect(json.Unmarshal(eventData["event_type"], &evType)).To(Succeed())
+			Expect(evType).To(Equal("aiagent.auth.denied"))
+
+			var sourceIP string
+			Expect(json.Unmarshal(eventData["source_ip"], &sourceIP)).To(Succeed())
+			Expect(sourceIP).To(Equal("172.16.0.5"))
+		})
+	})
 })

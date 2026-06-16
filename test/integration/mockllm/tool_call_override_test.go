@@ -137,7 +137,7 @@ var _ = Describe("Custom Tool Call Handler Bypass (BR-TESTING-657)", func() {
 						ForceText: &forceTextFalse,
 						ToolCall: &config.ToolCallOverride{
 							Name: "kubectl_get_yaml",
-							Arguments: map[string]string{
+							Arguments: map[string]interface{}{
 								"kind":      "ConfigMap",
 								"name":      "poisoned-cm",
 								"namespace": "default",
@@ -183,7 +183,7 @@ var _ = Describe("Custom Tool Call Handler Bypass (BR-TESTING-657)", func() {
 						ForceText: &forceTextFalse,
 						ToolCall: &config.ToolCallOverride{
 							Name: "kubectl_get_yaml",
-							Arguments: map[string]string{
+							Arguments: map[string]interface{}{
 								"kind":      "ConfigMap",
 								"name":      "poisoned-cm",
 								"namespace": "default",

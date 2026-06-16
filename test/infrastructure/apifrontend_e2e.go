@@ -264,7 +264,7 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\nPHASE 6: Waiting for deployments...")
 
-	for _, deploy := range []string{"datastorage", "kubernaut-agent", "dex", "apifrontend"} {
+	for _, deploy := range []string{"datastorage", "kubernaut-agent", "mock-llm", "dex", "apifrontend"} {
 		_, _ = fmt.Fprintf(writer, "  Waiting for %s...\n", deploy)
 		timeout := 120 * time.Second
 		if deploy == "datastorage" {

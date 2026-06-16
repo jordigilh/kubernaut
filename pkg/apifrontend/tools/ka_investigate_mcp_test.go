@@ -768,12 +768,12 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — AIA polling timeout cap
 				},
 			}
 
-			client := newSeededAIAnalysisClient()
+			tc := newTypedAIAnalysisClient()
 			registry := tools.NewMonitorRegistry()
 
 			start := time.Now()
 			result, err := tools.HandleInvestigationMCPWithRegistry(
-				context.Background(), mockMCP, client, "kubernaut-system",
+				context.Background(), mockMCP, tc, "kubernaut-system",
 				tools.InvestigateMCPArgs{RRID: "rr-timeout-001"},
 				nil, registry, nil, false, nil, "", nil, nil,
 			)
@@ -825,10 +825,10 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — AIA polling timeout cap
 				},
 			}
 
-			client := newDynamicFakeClient()
+			tc := newTypedClientForInvestigate()
 			start := time.Now()
 			result, err := tools.HandleInvestigationMCPWithRegistry(
-				context.Background(), mockMCP, client, "",
+				context.Background(), mockMCP, tc, "",
 				tools.InvestigateMCPArgs{RRID: "rr-nons-001"},
 				nil, nil, nil, false, nil, "", nil, nil,
 			)
@@ -853,13 +853,13 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — AIA polling timeout cap
 				},
 			}
 
-			aiaObj := newUnstructuredAIAnalysis("kubernaut-system", "aia-rr-aia-001", "rr-aia-001", "ka-sess-external")
-			client := newSeededAIAnalysisClient(aiaObj)
+			aiaObj := newTypedAIAnalysis("kubernaut-system", "aia-rr-aia-001", "rr-aia-001", "ka-sess-external")
+			tc := newTypedAIAnalysisClient(aiaObj)
 			registry := tools.NewMonitorRegistry()
 
 			start := time.Now()
 			result, err := tools.HandleInvestigationMCPWithRegistry(
-				context.Background(), mockMCP, client, "kubernaut-system",
+				context.Background(), mockMCP, tc, "kubernaut-system",
 				tools.InvestigateMCPArgs{RRID: "rr-aia-001"},
 				nil, registry, nil, false, nil, "", nil, nil,
 			)
@@ -884,13 +884,13 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — AIA polling timeout cap
 				},
 			}
 
-			client := newSeededAIAnalysisClient()
+			tc := newTypedAIAnalysisClient()
 			ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 			defer cancel()
 
 			start := time.Now()
 			result, err := tools.HandleInvestigationMCPWithRegistry(
-				ctx, mockMCP, client, "kubernaut-system",
+				ctx, mockMCP, tc, "kubernaut-system",
 				tools.InvestigateMCPArgs{RRID: "rr-cancel-001"},
 				nil, nil, nil, false, nil, "", nil, nil,
 			)

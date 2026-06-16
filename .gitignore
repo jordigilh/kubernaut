@@ -301,3 +301,10 @@ must-gather-*.tar.gz
 # SBOM and license report artifacts (generated during builds)
 /sbom-*/
 /license-report/
+
+# Code graph caches (IDE plugins)
+.codegraph-colbymchenry/
+.codegraph/
+
+# MCP server config (local)
+.mcp.json
