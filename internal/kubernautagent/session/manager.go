@@ -873,6 +873,52 @@ func (m *Manager) emitCompleteEvent(id string) {
 	}
 }
 
+// EmitSessionEndedByRR emits a terminal InvestigationEvent with the given
+// reason to the event channel of the user_driving session associated with the
+// given rrID. This signals SSE consumers (EventLogBridge -> AF -> A2A) that
+// the session is ending before the channel is closed (#1438, SI-4).
+// No-op if no user_driving session matches.
+func (m *Manager) EmitSessionEndedByRR(rrID, reason string) {
+	sessionID, found := m.FindUserDrivingByRemediationID(rrID)
+	if !found {
+		m.logger.V(1).Info("EmitSessionEndedByRR: no user_driving session for rr_id",
+			"rr_id", rrID, "reason", reason)
+		return
+	}
+	m.emitTerminalEvent(sessionID, reason)
+}
+
+// emitTerminalEvent sends an EventTypeSessionEnded to the event sink (if
+// active) with the given reason as Phase. Mirrors emitCompleteEvent but
+// carries the release reason for Console phase transition (#1438).
+func (m *Manager) emitTerminalEvent(id, reason string) {
+	m.store.mu.RLock()
+	sess, ok := m.store.sessions[id]
+	var sink *LazySink
+	if ok {
+		sink = sess.lazySink
+	}
+	m.store.mu.RUnlock()
+
+	if sink == nil {
+		m.logger.V(1).Info("emitTerminalEvent: no sink for session",
+			"session_id", id, "reason", reason)
+		return
+	}
+	ch := sink.Get()
+	if ch == nil {
+		m.logger.V(1).Info("emitTerminalEvent: sink channel is nil",
+			"session_id", id, "reason", reason)
+		return
+	}
+	select {
+	case ch <- InvestigationEvent{Type: EventTypeSessionEnded, Phase: reason}:
+	default:
+		m.logger.Info("terminal event dropped: channel full",
+			"session_id", id, "reason", reason)
+	}
+}
+
 // EmitAccessDenied records a failed session access attempt for SOC2 CC8.1
 // failed-access audit trail. Includes correlationID and session_owner for
 // forensic cross-event correlation (SEC-2). Fire-and-forget per ADR-038.
