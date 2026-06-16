@@ -59,7 +59,29 @@
       }
     },
     "severity": { "type": "string" },
-    "confidence": { "type": "number" }
+    "confidence": { "type": "number" },
+    "searched_target": {
+      "type": "object",
+      "description": "The Kubernetes resource that was searched against the workflow catalog. May differ from signal_target when RCA identifies a different root cause resource (#1437).",
+      "properties": {
+        "api_version": { "type": "string" },
+        "kind": { "type": "string" },
+        "name": { "type": "string" },
+        "namespace": { "type": "string" }
+      },
+      "required": ["kind", "name", "namespace"]
+    },
+    "signal_target": {
+      "type": "object",
+      "description": "The original Kubernetes resource from the alert signal, before any RCA target override (#1437).",
+      "properties": {
+        "api_version": { "type": "string" },
+        "kind": { "type": "string" },
+        "name": { "type": "string" },
+        "namespace": { "type": "string" }
+      },
+      "required": ["kind", "name", "namespace"]
+    }
   },
   "additionalProperties": true
 }

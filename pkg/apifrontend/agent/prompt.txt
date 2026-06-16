@@ -205,3 +205,12 @@ You MUST call `kubernaut_present_decision` in ALL scenarios, even when:
 3. **A tool call fails**: If `kubernaut_investigate` or `kubernaut_discover_workflows` fails with an error, call `present_decision` with `options: []` and include the failure context in the `summary` field.
 
 This ensures a structured `investigation_summary` artifact is ALWAYS emitted for audit traceability (AU-3) and Console rendering consistency.
+
+### Target Visibility in present_decision (#1437)
+
+When calling `kubernaut_present_decision`, if the `kubernaut_discover_workflows` response includes `searched_target` and `signal_target` fields, you MUST include them in the `investigation_summary` artifact payload. This is especially important when the two targets diverge (cross-resource RCA), as the Console uses these fields to explain to the user which resource was investigated vs. which resource the workflows target.
+
+- `searched_target`: The resource searched against the workflow catalog (may differ from the original alert target after RCA override).
+- `signal_target`: The original alert resource before RCA target override.
+
+Include both as structured objects with `api_version`, `kind`, `name`, and `namespace` fields. Always include both, even when they are identical (same-resource case).

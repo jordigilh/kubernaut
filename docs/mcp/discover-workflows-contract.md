@@ -57,9 +57,30 @@ The tool returns a JSON envelope with `status: "workflows_discovered"` and a `re
       "rationale": "string",
       "parameters": { "PARAM_NAME": "value", ... }
     }
-  ]
+  ],
+  "searched_target": {
+    "api_version": "string (optional, e.g. 'v1')",
+    "kind": "string (e.g. 'ConfigMap')",
+    "name": "string",
+    "namespace": "string"
+  },
+  "signal_target": {
+    "api_version": "string (optional, e.g. 'apps/v1')",
+    "kind": "string (e.g. 'Deployment')",
+    "name": "string",
+    "namespace": "string"
+  }
 }
 ```
+
+### Target Fields (#1437)
+
+| Field | Source | Description |
+|-------|--------|-------------|
+| `searched_target` | `workflowResult.RemediationTarget` | The resource that was searched against the workflow catalog. When RCA identifies a different root cause resource (e.g., ConfigMap instead of Deployment), this reflects the override. |
+| `signal_target` | Original alert signal | The resource from the original alert, before any RCA target override. |
+
+Both fields are always emitted as structured objects. When RCA does not override the target, both fields are identical. The Console uses the divergence between these fields to explain cross-resource RCA scenarios to the user.
 
 ### Parameter Semantics
 
