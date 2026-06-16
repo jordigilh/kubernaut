@@ -349,4 +349,5 @@ const (
 	EventTypeComplete         = "complete"
 	EventTypeCancelled        = "cancelled"
 	EventTypeAlignmentVerdict = "alignment_verdict"
+	EventTypeSessionEnded    = "session_ended"
 )

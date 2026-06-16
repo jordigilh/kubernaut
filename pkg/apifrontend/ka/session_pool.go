@@ -36,6 +36,7 @@ type poolEntry struct {
 	session   PoolSession
 	sessionID string
 	lastUsed  time.Time
+	onRelease func()
 }
 
 func extractSessionID(s PoolSession) string {
@@ -106,10 +107,15 @@ func (p *KASessionPool) Acquire(ctx context.Context, rrID, username string) (Poo
 			p.logger.Info("cached session failed health check, evicting",
 				"rr_id", rrID, "username", username, "mcp_session_id", sid, "error", err.Error())
 			p.mu.Lock()
+			var evictedEntry *poolEntry
 			if cur, ok := p.entries[key]; ok && cur.session == session {
+				evictedEntry = cur
 				delete(p.entries, key)
 			}
 			p.mu.Unlock()
+			if evictedEntry != nil && evictedEntry.onRelease != nil {
+				evictedEntry.onRelease()
+			}
 			_ = session.Close()
 		} else {
 			p.logger.Info("pool session reused (cache hit)",
@@ -171,6 +177,37 @@ func (p *KASessionPool) Inject(rrID, username string, session PoolSession) {
 	p.logger.Info("session injected into pool", "rr_id", rrID, "username", username, "mcp_session_id", sid)
 }
 
+// InjectWithCleanup is like Inject but additionally stores an onRelease
+// callback that is invoked when the entry is removed from the pool (by
+// Release, EvictIdle, DrainAll, Acquire stale-eviction, or replacement).
+// This enables deterministic cleanup of resources tied to the pooled session,
+// such as the watchTerminalEvents goroutine (#1438).
+func (p *KASessionPool) InjectWithCleanup(rrID, username string, session PoolSession, onRelease func()) {
+	key := poolKey{rrID: rrID, username: username}
+	sid := extractSessionID(session)
+
+	p.mu.Lock()
+	old, exists := p.entries[key]
+	p.entries[key] = &poolEntry{
+		session:   session,
+		sessionID: sid,
+		lastUsed:  time.Now(),
+		onRelease: onRelease,
+	}
+	p.mu.Unlock()
+
+	if exists {
+		if old.onRelease != nil {
+			old.onRelease()
+		}
+		if old.session != nil {
+			_ = old.session.Close()
+		}
+	}
+	p.logger.Info("session injected into pool (with cleanup)",
+		"rr_id", rrID, "username", username, "mcp_session_id", sid)
+}
+
 // Release closes and removes the session for the given (rrID, username).
 func (p *KASessionPool) Release(rrID, username string) {
 	key := poolKey{rrID: rrID, username: username}
@@ -182,10 +219,15 @@ func (p *KASessionPool) Release(rrID, username string) {
 	}
 	p.mu.Unlock()
 
-	if exists && entry.session != nil {
-		p.logger.Info("pool session released",
-			"rr_id", rrID, "username", username, "mcp_session_id", entry.sessionID)
-		_ = entry.session.Close()
+	if exists {
+		if entry.onRelease != nil {
+			entry.onRelease()
+		}
+		if entry.session != nil {
+			p.logger.Info("pool session released",
+				"rr_id", rrID, "username", username, "mcp_session_id", entry.sessionID)
+			_ = entry.session.Close()
+		}
 	}
 }
 
@@ -200,10 +242,13 @@ func (p *KASessionPool) DrainAll(ctx context.Context) error {
 	p.mu.Unlock()
 
 	for _, entry := range snapshot {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("drain interrupted: %w", err)
+		}
+		if entry.onRelease != nil {
+			entry.onRelease()
+		}
 		if entry.session != nil {
-			if err := ctx.Err(); err != nil {
-				return fmt.Errorf("drain interrupted: %w", err)
-			}
 			_ = entry.session.Close()
 		}
 	}
@@ -216,20 +261,23 @@ func (p *KASessionPool) EvictIdle() int {
 	cutoff := time.Now().Add(-p.idleTTL)
 
 	p.mu.Lock()
-	toClose := make([]PoolSession, 0, len(p.entries)) // #21: pre-allocate
+	toEvict := make([]*poolEntry, 0, len(p.entries))
 	var evicted int
 	for key, entry := range p.entries {
 		if entry.lastUsed.Before(cutoff) {
-			toClose = append(toClose, entry.session)
+			toEvict = append(toEvict, entry)
 			delete(p.entries, key)
 			evicted++
 		}
 	}
 	p.mu.Unlock()
 
-	for _, s := range toClose {
-		if s != nil {
-			_ = s.Close()
+	for _, e := range toEvict {
+		if e.onRelease != nil {
+			e.onRelease()
+		}
+		if e.session != nil {
+			_ = e.session.Close()
 		}
 	}
 	return evicted

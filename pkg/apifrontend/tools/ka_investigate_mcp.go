@@ -431,10 +431,15 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 		// select_workflow reuse the same connection and driver lease.
 		// If no pool is available, fall back to closing the session.
 		if pool != nil && result.Session != nil && username != "" {
-			pool.Inject(args.RRID, username, result.Session)
+			watchDone := make(chan struct{})
+			pool.InjectWithCleanup(args.RRID, username, result.Session, func() {
+				close(watchDone)
+			})
 			if registry != nil {
 				registry.Deregister(result.SessionID)
 			}
+			watchCtx := context.WithoutCancel(ctx)
+			go WatchTerminalEvents(watchCtx, result.Events, args.RRID, watchDone)
 			logger.Info("investigation session handed off to pool",
 				"rr_id", args.RRID, "session_id", result.SessionID, "username", username)
 		} else {
@@ -512,6 +517,18 @@ func BridgeEventsToA2A(ctx context.Context, events <-chan ka.InvestigationEvent,
 			}
 			inactivity.Reset(inactivityTimeout)
 
+			if evt.Type == ka.EventTypeSessionEnded {
+				phase := mapReasonToPhase(evt.Phase)
+				_ = launcher.EmitStatusWithMetaSafe(ctx,
+					FormatEventForUser(evt),
+					map[string]any{
+						"type":     launcher.MetaTypeInvestigation,
+						"phase":    phase,
+						"reason":   evt.Phase,
+						"terminal": true,
+					})
+				return
+			}
 			emitEventToA2A(ctx, evt, FormatEventForUser(evt))
 			if evt.Type == ka.EventTypeComplete || evt.Type == ka.EventTypeCancelled {
 				return
@@ -563,6 +580,19 @@ func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.Investigat
 				return summary.String(), rcaResult
 			}
 			inactivity.Reset(inactivityTimeout)
+			// #1438: Handle session_ended before generic emit to avoid double-emit.
+			if evt.Type == ka.EventTypeSessionEnded {
+				phase := mapReasonToPhase(evt.Phase)
+				_ = launcher.EmitStatusWithMetaSafe(ctx,
+					FormatEventForUser(evt),
+					map[string]any{
+						"type":     launcher.MetaTypeInvestigation,
+						"phase":    phase,
+						"reason":   evt.Phase,
+						"terminal": true,
+					})
+				return summary.String(), rcaResult
+			}
 			emitEventToA2A(ctx, evt, FormatEventForUser(evt))
 			switch evt.Type {
 			case ka.EventTypeReasoningDelta:
@@ -672,6 +702,12 @@ func FormatEventForUser(evt ka.InvestigationEvent) string {
 		return "Investigation error occurred"
 	case ka.EventTypeComplete:
 		return "Investigation complete."
+	case ka.EventTypeSessionEnded:
+		reason := evt.Phase
+		if reason == "" {
+			reason = "unknown"
+		}
+		return "Session ended: " + reason
 	case ka.EventTypeAlignmentVerdict:
 		return ""
 	default:
@@ -686,7 +722,7 @@ func FormatEventForUser(evt ka.InvestigationEvent) string {
 // errors belong on the status channel as ephemeral messages (AC-4).
 func isStatusEvent(evtType string) bool {
 	switch evtType {
-	case ka.EventTypeToolCallStart, ka.EventTypeComplete, ka.EventTypeCancelled, ka.EventTypeError, ka.EventTypeAlignmentVerdict:
+	case ka.EventTypeToolCallStart, ka.EventTypeComplete, ka.EventTypeCancelled, ka.EventTypeError, ka.EventTypeAlignmentVerdict, ka.EventTypeSessionEnded:
 		return true
 	default:
 		return false
@@ -704,6 +740,62 @@ func emitEventToA2A(ctx context.Context, evt ka.InvestigationEvent, text string)
 		_ = launcher.EmitStatusSafe(ctx, text)
 	} else {
 		_ = launcher.EmitReasoningSafe(ctx, text)
+	}
+}
+
+// WatchTerminalEvents watches a residual event channel for a session_ended
+// event after pool inject. When received, it emits a terminal
+// TaskStatusUpdateEvent to the A2A queue via the EventBridge in ctx.
+// Exits deterministically on: session_ended received, events closed, or
+// done closed (pool Release/EvictIdle/DrainAll).  No timer-based safety net.
+// #1438, SI-4.
+func WatchTerminalEvents(ctx context.Context, events <-chan ka.InvestigationEvent, rrID string, done <-chan struct{}) {
+	for {
+		select {
+		case evt, ok := <-events:
+			if !ok {
+				return
+			}
+			if evt.Type == ka.EventTypeSessionEnded {
+				emitWatcherTerminal(ctx, evt)
+				return
+			}
+		case <-done:
+			// Priority drain: a session_ended may already be buffered when
+			// the pool fires onRelease. Drain it before exiting (#1438).
+			select {
+			case evt, ok := <-events:
+				if ok && evt.Type == ka.EventTypeSessionEnded {
+					emitWatcherTerminal(ctx, evt)
+				}
+			default:
+			}
+			return
+		}
+	}
+}
+
+func emitWatcherTerminal(ctx context.Context, evt ka.InvestigationEvent) {
+	phase := mapReasonToPhase(evt.Phase)
+	launcher.UpdatePhaseSafe(ctx, phase)
+	_ = launcher.EmitStatusWithMetaSafe(ctx,
+		FormatEventForUser(evt),
+		map[string]any{
+			"type":     launcher.MetaTypeInvestigation,
+			"phase":    phase,
+			"reason":   evt.Phase,
+			"terminal": true,
+		})
+}
+
+func mapReasonToPhase(reason string) string {
+	switch reason {
+	case "inactivity_timeout", "ttl_expired":
+		return "TimedOut"
+	case "disconnect":
+		return "Disconnected"
+	default:
+		return reason
 	}
 }
 
