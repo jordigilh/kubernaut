@@ -89,7 +89,10 @@ type EventBridge struct {
 	rrCtx     *RRContext
 }
 
-const maxBridgeTextLen = 512
+const (
+	maxBridgeTextLen    = 512
+	maxReasoningTextLen = 4096
+)
 
 // SetRRContext stores RR metadata on the bridge so all subsequent status events
 // include rr_id, namespace, kind, target, alert_name, and phase in their
@@ -179,17 +182,33 @@ func EventBridgeFromContext(ctx context.Context) *EventBridge {
 }
 
 // EmitReasoning writes a TaskStatusUpdateEvent with metadata.type="reasoning"
-// for LLM inner thoughts and investigation reasoning deltas. The text is
-// sanitized (control characters stripped, secrets redacted) and truncated.
+// for LLM inner thoughts and investigation reasoning deltas. Uses a 4096-rune
+// limit (vs. 512 for ephemeral status) since reasoning can be multi-paragraph.
+// #1435: raised from 512 to prevent mid-sentence truncation in the Console.
 func (b *EventBridge) EmitReasoning(ctx context.Context, text string) error {
-	return b.EmitStatusWithMeta(ctx, text, map[string]any{"type": MetaTypeReasoning})
+	return b.emitWithLimit(ctx, text, maxReasoningTextLen, map[string]any{"type": MetaTypeReasoning})
 }
 
 // EmitOutput writes a TaskStatusUpdateEvent with metadata.type="output" for
-// final LLM response content (the markdown answer). Renderers display this
-// as primary content while reasoning/status events are secondary.
+// final LLM response content (the markdown answer). Uses a 4096-rune limit.
+// #1435: raised from 512 to prevent truncation of final answers.
 func (b *EventBridge) EmitOutput(ctx context.Context, text string) error {
-	return b.EmitStatusWithMeta(ctx, text, map[string]any{"type": MetaTypeOutput})
+	return b.emitWithLimit(ctx, text, maxReasoningTextLen, map[string]any{"type": MetaTypeOutput})
+}
+
+// emitWithLimit sanitizes text with a caller-specified rune limit and emits
+// a TaskStatusUpdateEvent. Used by EmitReasoning/EmitOutput (4096 runes) to
+// differentiate from EmitStatus/EmitStatusWithMeta (512 runes).
+func (b *EventBridge) emitWithLimit(ctx context.Context, text string, maxLen int, meta map[string]any) error {
+	text = sanitizeTextWithLimit(ctx, text, maxLen)
+	if text == "" {
+		return nil
+	}
+
+	b.mu.Lock()
+	err := b.emitStatusEventWithMeta(ctx, text, meta)
+	b.mu.Unlock()
+	return err
 }
 
 // EmitKeepaliveDot writes a metadata-only TaskStatusUpdateEvent to prevent
@@ -280,8 +299,16 @@ func (b *EventBridge) emitStatusEventWithMeta(ctx context.Context, text string, 
 }
 
 // sanitizeBridgeText applies SI-10 input validation (control char stripping),
-// SC-7 boundary protection (secret redaction), and length truncation.
+// SC-7 boundary protection (secret redaction), and length truncation at 512 runes.
+// Used for ephemeral status messages ("Connecting to KA...") which are short by nature.
 func sanitizeBridgeText(text string) string {
+	return sanitizeTextWithLimit(context.Background(), text, maxBridgeTextLen)
+}
+
+// sanitizeTextWithLimit applies SI-10 control-char stripping, SC-7 secret
+// redaction, and length truncation at the specified rune limit. Logs when
+// truncation occurs so operators can monitor payload sizing (#1435).
+func sanitizeTextWithLimit(ctx context.Context, text string, maxLen int) string {
 	text = strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) && r != '\n' && r != '\t' {
 			return -1
@@ -291,8 +318,14 @@ func sanitizeBridgeText(text string) string {
 
 	text = security.RedactText(text)
 
-	if len([]rune(text)) > maxBridgeTextLen {
-		text = string([]rune(text)[:maxBridgeTextLen]) + "..."
+	runeCount := len([]rune(text))
+	if runeCount > maxLen {
+		logr.FromContextOrDiscard(ctx).V(1).Info("bridge text truncated",
+			"original_runes", runeCount,
+			"max_runes", maxLen,
+			"truncated_runes", runeCount-maxLen,
+		)
+		text = string([]rune(text)[:maxLen]) + "..."
 	}
 	return text
 }

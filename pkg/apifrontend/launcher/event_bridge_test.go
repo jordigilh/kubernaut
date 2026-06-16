@@ -136,23 +136,129 @@ var _ = Describe("EventBridge", func() {
 			Expect(err).To(MatchError(context.Canceled))
 		})
 
-		It("UT-AF-1258-016: truncates text > 512 chars", func() {
+		It("UT-AF-1258-016: reasoning text under 4096 chars passes through (#1435 raised limit)", func() {
 			queue := &fakeQueue{}
 			taskID := a2a.TaskID("task-trunc-001")
 			ctx := launcher.WithEventBridge(context.Background(), queue, taskID, "", nil)
 			bridge := launcher.EventBridgeFromContext(ctx)
 
-			longText := make([]byte, 600)
-			for i := range longText {
-				longText[i] = 'a'
+			var sb strings.Builder
+			unit := "The alert KubePodCrashLooping is firing for pod web-frontend in namespace demo-webui. "
+			for sb.Len() < 600 {
+				sb.WriteString(unit)
 			}
-			err := bridge.EmitReasoning(ctx, string(longText))
+			longText := sb.String()[:600]
+			err := bridge.EmitReasoning(ctx, longText)
 			Expect(err).NotTo(HaveOccurred())
 
 			evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
 			textPart := evt.Status.Message.Parts[0].(a2a.TextPart)
-			Expect(len(textPart.Text)).To(BeNumerically("<=", 515)) // 512 + "..."
+			Expect(len(textPart.Text)).To(Equal(600),
+				"#1435: reasoning limit raised to 4096, 600 chars should not be truncated")
 			Expect(evt.Metadata["type"]).To(Equal("reasoning"))
+		})
+	})
+
+	Describe("Per-type truncation limits (#1435)", func() {
+		buildLongText := func(n int) string {
+			unit := "The alert KubePodCrashLooping is firing for pod web-frontend in namespace demo-webui. "
+			var sb strings.Builder
+			for sb.Len() < n {
+				sb.WriteString(unit)
+			}
+			return sb.String()[:n]
+		}
+
+		It("UT-AF-1435-001: reasoning text up to 4096 runes is NOT truncated", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-1435-001", "", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			longReasoning := buildLongText(4000)
+			err := bridge.EmitReasoning(ctx, longReasoning)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(queue.events).To(HaveLen(1))
+
+			evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			text := evt.Status.Message.Parts[0].(a2a.TextPart).Text
+			Expect(text).To(Equal(longReasoning),
+				"BR-AF-STREAM-001: reasoning text under 4096 runes must not be truncated")
+		})
+
+		It("UT-AF-1435-002: reasoning text beyond 4096 runes IS truncated with ellipsis", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-1435-002", "", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			longReasoning := buildLongText(5000)
+			err := bridge.EmitReasoning(ctx, longReasoning)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(queue.events).To(HaveLen(1))
+
+			evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			text := evt.Status.Message.Parts[0].(a2a.TextPart).Text
+			Expect(len([]rune(text))).To(BeNumerically("<=", 4099),
+				"reasoning text must be truncated at 4096 runes + ellipsis")
+			Expect(text).To(HaveSuffix("..."))
+		})
+
+		It("UT-AF-1435-003: status text still truncated at 512 runes", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-1435-003", "", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			longStatus := buildLongText(600)
+			err := bridge.EmitStatus(ctx, longStatus)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(queue.events).To(HaveLen(1))
+
+			evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			text := evt.Status.Message.Parts[0].(a2a.TextPart).Text
+			Expect(len([]rune(text))).To(BeNumerically("<=", 515),
+				"status text must still be bounded at 512 runes")
+			Expect(text).To(HaveSuffix("..."))
+		})
+
+		It("UT-AF-1435-004: output text uses 4096-rune limit (same as reasoning)", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-1435-004", "", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			longOutput := buildLongText(4000)
+			err := bridge.EmitOutput(ctx, longOutput)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(queue.events).To(HaveLen(1))
+
+			evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			text := evt.Status.Message.Parts[0].(a2a.TextPart).Text
+			Expect(text).To(Equal(longOutput),
+				"output text under 4096 runes must not be truncated")
+		})
+
+		It("UT-AF-1435-005: 700-char reasoning (issue scenario) passes through intact", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-1435-005", "", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			reasoning := "The target resource appears to be a Deployment called web-frontend in demo-webui namespace. " +
+				"Let me use kubernaut_investigate_alert with:\n\n" +
+				"alert_name: KubePodCrashLooping\n" +
+				"api_version: apps/v1\n" +
+				"kind: Deployment\n" +
+				"name: web-frontend\n" +
+				"namespace: demo-webui\n\n" +
+				"This will initiate a full investigation using the KA engine which will examine pod logs, events, " +
+				"and recent changes to determine the root cause of the crash loop. The investigation will also check " +
+				"for resource limits, OOM kills, and image pull failures as common causes."
+			err := bridge.EmitReasoning(ctx, reasoning)
+			Expect(err).NotTo(HaveOccurred())
+
+			evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			text := evt.Status.Message.Parts[0].(a2a.TextPart).Text
+			Expect(text).To(Equal(reasoning),
+				"BR-AF-STREAM-001: real-world reasoning text (~600 chars) must not be truncated")
+			Expect(text).To(ContainSubstring("kind: Deployment"),
+				"the truncated field from issue #1434 must now be present")
 		})
 	})
 

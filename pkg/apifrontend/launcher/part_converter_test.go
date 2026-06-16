@@ -670,10 +670,10 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
 			text := statusEventTextAt(queue, 0)
-			Expect(text).To(HaveSuffix("..."),
-				"bridge sanitization truncates long status text after converter summarization")
-			Expect(len([]rune(text))).To(BeNumerically("<=", 515),
-				"bridge sanitization bounds status text to maxBridgeTextLen")
+			Expect(text).To(ContainSubstring("..."),
+				"converter truncation produces ellipsis for text exceeding maxSummaryLen")
+			Expect(len([]rune(text))).To(BeNumerically("<=", 1030),
+				"converter truncates at maxSummaryLen (1024); #1435 raised bridge reasoning limit to 4096 so no further truncation")
 		})
 	})
 
