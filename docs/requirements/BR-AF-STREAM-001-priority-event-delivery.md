@@ -41,6 +41,32 @@ catalog to the user without entering a retry loop.
 4. Existing prioritization behavior (highest severity selected, FIFO tiebreak) is
    preserved.
 
+## Status Event Text Sizing (#1435)
+
+The EventBridge `sanitizeBridgeText` truncates all outbound text at 512 runes,
+including LLM reasoning and output text that operators see in the Console thinking
+panel. This causes mid-sentence truncation during live investigations.
+
+- **BR-AF-STREAM-001-R6**: Reasoning text (`metadata.type: "reasoning"`) and output
+  text (`metadata.type: "output"`) MUST support up to 4096 runes without truncation.
+  Ephemeral status messages (`metadata.type: "status"`) MAY remain capped at 512
+  runes since they are short by nature.
+
+- **BR-AF-STREAM-001-R7**: When the EventBridge truncates text, it MUST log the
+  truncation event with original size, max limit, and truncated rune count so
+  operators can monitor payload sizing.
+
+- **BR-AF-STREAM-001-R8**: The streaming executor MUST NOT re-invoke the agent
+  when the context is cancelled. Re-invocation after context cancellation produces
+  ghost sessions that fail immediately with `context canceled`.
+
+### Acceptance Criteria
+
+5. Reasoning text of 700 characters (typical investigation plan) passes through the
+   EventBridge without truncation.
+6. Truncation events are observable in AF pod logs at verbosity level 1.
+7. The streaming executor does not attempt re-invocation after `context.Canceled`.
+
 ## Non-Goals
 
 - Pagination with offset/cursor (existing filters suffice for the agent's workflow).
