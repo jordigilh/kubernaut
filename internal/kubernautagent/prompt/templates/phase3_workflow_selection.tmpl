@@ -68,7 +68,7 @@ If the response includes `pagination.hasNext`, call the tool again with `page: "
 **Step 2**: Call `list_workflows` with `action_type` set to your chosen action type from Step 1.
 DO NOT GUESS workflow IDs. You MUST call `list_workflows` to see what is available.
 **CRITICAL**: If the response includes `pagination.hasNext`, call the tool again with `page: "next"` and `cursor` set to the `nextCursor` value to review ALL workflows before selecting one.
-**DISPLAY RULE**: When presenting discovered workflows to the user, ALWAYS use the `workflow_name` (human-readable name) — NEVER display raw `workflow_id` UUIDs. Include the confidence score alongside the name.
+**DISPLAY RULE**: When presenting discovered workflows to the user, ALWAYS use the `workflow_name` (human-readable name) — NEVER display raw `workflow_id` UUIDs. Only present workflows that were actually returned by `list_workflows`. Do NOT assign or display confidence scores during discovery — confidence is determined at selection time in `submit_result_with_workflow`.
 
 **Step 3**: Call `get_workflow` with the `workflow_id` of your selected workflow to retrieve its full parameter schema.
 
@@ -165,7 +165,7 @@ Set `selected_workflow` to None, include `actionable: false`.
 - Call `submit_result_with_workflow` when a workflow is selected
 - Call `submit_result_no_workflow` when no workflow matches (self-resolved, inconclusive, not actionable, or no automated remediation)
 - Select ONE workflow per incident as `selected_workflow`
-- Include up to 2-3 `alternative_workflows` (for audit/context only)
+- Include up to 2-3 `alternative_workflows` ONLY if `list_workflows` returned other distinct workflows besides the selected one. Never repeat the selected workflow in alternatives. If only one workflow was returned by the tool call, leave `alternative_workflows` empty.
 - All fields in root_cause_analysis.summary and selected_workflow are required when actionable
 - Top-level severity must match root_cause_analysis.severity
 - Top-level confidence must match selected_workflow.confidence
