@@ -1,5 +1,0 @@
-scenarios:
-    generic-restart-v1:production:
-        workflow_id: 21448561-7541-5b38-ac43-c20544465a0d
-    oomkill-increase-memory-v1:production:
-        workflow_id: 92ca034f-cb25-571d-b698-48b7967f0a33
