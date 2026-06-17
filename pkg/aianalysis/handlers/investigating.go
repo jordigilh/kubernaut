@@ -424,7 +424,7 @@ func (h *InvestigatingHandler) checkISMismatchAndCancel(ctx context.Context, ana
 
 	case !hasIS && session.Interactive:
 		// IS disappeared after interactive submit → cancel (user removed session)
-		h.log.Info("IS CRD removed for interactive session — cancelling investigation",
+		h.log.Info("IS CRD no longer active for interactive session — cancelling investigation",
 			"sessionID", session.ID, "rrName", rrName)
 		if cancelErr := h.kaClient.CancelSession(ctx, session.ID); cancelErr != nil {
 			h.log.Error(cancelErr, "Failed to cancel session for IS deletion; will retry", "sessionID", session.ID)
@@ -829,6 +829,21 @@ func (h *InvestigatingHandler) handleSessionPollCancelled(ctx context.Context, a
 				analysis.Status.KASession.ID = ""
 				return ctrl.Result{Requeue: true}, nil
 			}
+
+			// No active IS — distinguish "IS deleted" from "IS in terminal phase"
+			phase, exists, phaseErr := h.isChecker.FindSessionPhase(ctx, rrName)
+			if phaseErr != nil {
+				h.log.Error(phaseErr, "Failed to check IS phase during cancellation, requeuing",
+					"rrName", rrName)
+				return ctrl.Result{RequeueAfter: h.sessionPollInterval}, nil
+			}
+			if exists && phase == isv1alpha1.SessionPhaseCompleted {
+				// IS completed but KA session cancelled (race) — fetch the result
+				h.log.Info("IS completed but KA session cancelled (race condition) — fetching result",
+					"rrName", rrName, "phase", phase)
+				return h.handleSessionPollCompleted(ctx, analysis)
+			}
+			// IS deleted or IS in Cancelled/Failed phase → user/system ended session
 		}
 	}
 
@@ -837,9 +852,9 @@ func (h *InvestigatingHandler) handleSessionPollCancelled(ctx context.Context, a
 	analysis.Status.Reason = aianalysisv1.ReasonInteractiveCancelled
 	analysis.Status.CompletedAt = &now
 	analysis.Status.ObservedGeneration = analysis.Generation
-	analysis.Status.Message = "Investigation cancelled (interactive session removed)"
+	analysis.Status.Message = "Investigation cancelled (interactive session ended)"
 
-	cancelErr := fmt.Errorf("KA session cancelled: interactive session deleted")
+	cancelErr := fmt.Errorf("KA session cancelled: interactive session ended")
 	if auditErr := h.auditClient.RecordAnalysisFailed(ctx, analysis, cancelErr); auditErr != nil {
 		h.log.V(1).Info("Failed to record cancellation audit", "error", auditErr)
 	}

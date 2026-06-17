@@ -119,6 +119,10 @@ type InvestigationSessionChecker interface {
 	// HasActiveSession returns true if an InvestigationSession CRD exists
 	// with spec.remediationRequestRef.name matching the given rrName.
 	HasActiveSession(ctx context.Context, rrName string) (bool, error)
+	// FindSessionPhase returns the phase of any IS CRD for the RR, regardless of
+	// terminal state. Returns ("", false, nil) if no IS exists at all.
+	// Used to distinguish "IS deleted" from "IS in terminal phase" in cancel handling.
+	FindSessionPhase(ctx context.Context, rrName string) (isv1alpha1.SessionPhase, bool, error)
 }
 
 // ISPhaseUpdater transitions an InvestigationSession CRD phase. AA uses this

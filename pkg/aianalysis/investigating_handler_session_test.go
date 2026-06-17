@@ -18,6 +18,7 @@ package aianalysis_test
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -1125,16 +1126,141 @@ var _ = Describe("InvestigatingHandler Canonical Plan Tests [BR-INTERACTIVE-010]
 			Expect(analysis.Status.Message).To(ContainSubstring("cancelled"))
 		})
 	})
+
+	Context("UT-AA-1455-001: Poll 'cancelled' + IS completed (race) → fetch result [#1455]", func() {
+		It("should fetch the session result when IS completed but KA session was cancelled", func() {
+			raceClient := mocks.NewMockAgentClient()
+			raceClient.WithSessionPollStatus("cancelled")
+			isChecker := &mockISChecker{
+				hasSession:    false,
+				sessionPhase:  isv1alpha1.SessionPhaseCompleted,
+				sessionExists: true,
+			}
+			testMetrics := metrics.NewMetrics()
+			h := handlers.NewInvestigatingHandler(raceClient, ctrl.Log.WithName("test-1455-race"), testMetrics, auditSpy,
+				handlers.WithSessionMode(), handlers.WithRecorder(recorder),
+				handlers.WithInvestigationSessionChecker(isChecker))
+
+			now := metav1.Now()
+			analysis := &aianalysisv1.AIAnalysis{
+				Spec: aianalysisv1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{Name: "rr-1455-race", Namespace: "default"},
+				},
+				Status: aianalysisv1.AIAnalysisStatus{
+					Phase: aianalysis.PhaseInvestigating,
+					KASession: &aianalysisv1.KASession{
+						ID:        "session-1455-race",
+						CreatedAt: &now,
+						PollCount: 5,
+					},
+				},
+			}
+
+			result, err := h.Handle(ctx, analysis)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(raceClient.GetResultCallCount).To(BeNumerically(">=", 1),
+				"#1455: must call GetSessionResult to retrieve the completed investigation")
+			Expect(analysis.Status.Phase).NotTo(Equal(aianalysis.PhaseFailed),
+				"#1455: IS-completed race must not produce PhaseFailed — result should be processed")
+			Expect(result.RequeueAfter).To(BeZero(),
+				"completed result processing should not requeue")
+		})
+	})
+
+	Context("UT-AA-1455-002: Poll 'cancelled' + FindSessionPhase error → requeue [#1455]", func() {
+		It("should requeue when FindSessionPhase returns a transient error", func() {
+			errClient := mocks.NewMockAgentClient()
+			errClient.WithSessionPollStatus("cancelled")
+			isChecker := &mockISChecker{
+				hasSession:   false,
+				findPhaseErr: fmt.Errorf("transient API server error"),
+			}
+			testMetrics := metrics.NewMetrics()
+			h := handlers.NewInvestigatingHandler(errClient, ctrl.Log.WithName("test-1455-phase-err"), testMetrics, auditSpy,
+				handlers.WithSessionMode(), handlers.WithRecorder(recorder),
+				handlers.WithInvestigationSessionChecker(isChecker))
+
+			now := metav1.Now()
+			analysis := &aianalysisv1.AIAnalysis{
+				Spec: aianalysisv1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{Name: "rr-1455-phase-err", Namespace: "default"},
+				},
+				Status: aianalysisv1.AIAnalysisStatus{
+					Phase: aianalysis.PhaseInvestigating,
+					KASession: &aianalysisv1.KASession{
+						ID:        "session-1455-phase-err",
+						CreatedAt: &now,
+						PollCount: 3,
+					},
+				},
+			}
+
+			result, err := h.Handle(ctx, analysis)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(handlers.DefaultSessionPollInterval),
+				"#1455: transient FindSessionPhase error must requeue, not produce terminal state")
+			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseInvestigating),
+				"phase must remain Investigating during transient error")
+		})
+	})
+
+	Context("UT-AA-1455-003: Poll 'cancelled' + IS in Failed phase → PhaseFailed [#1455]", func() {
+		It("should transition to PhaseFailed when IS is in a non-completed terminal phase", func() {
+			failClient := mocks.NewMockAgentClient()
+			failClient.WithSessionPollStatus("cancelled")
+			isChecker := &mockISChecker{
+				hasSession:    false,
+				sessionPhase:  isv1alpha1.SessionPhaseFailed,
+				sessionExists: true,
+			}
+			testMetrics := metrics.NewMetrics()
+			h := handlers.NewInvestigatingHandler(failClient, ctrl.Log.WithName("test-1455-is-failed"), testMetrics, auditSpy,
+				handlers.WithSessionMode(), handlers.WithRecorder(recorder),
+				handlers.WithInvestigationSessionChecker(isChecker))
+
+			now := metav1.Now()
+			analysis := &aianalysisv1.AIAnalysis{
+				Spec: aianalysisv1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{Name: "rr-1455-is-failed", Namespace: "default"},
+				},
+				Status: aianalysisv1.AIAnalysisStatus{
+					Phase: aianalysis.PhaseInvestigating,
+					KASession: &aianalysisv1.KASession{
+						ID:        "session-1455-is-failed",
+						CreatedAt: &now,
+						PollCount: 4,
+					},
+				},
+			}
+
+			result, err := h.Handle(ctx, analysis)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(BeZero(), "terminal state should not requeue")
+			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed),
+				"#1455: IS in Failed phase (not Completed) must produce terminal PhaseFailed")
+			Expect(analysis.Status.Reason).To(Equal(aianalysisv1.ReasonInteractiveCancelled))
+		})
+	})
 })
 
 // mockISChecker implements handlers.InvestigationSessionChecker for testing.
 type mockISChecker struct {
-	hasSession bool
-	err        error
+	hasSession    bool
+	err           error
+	sessionPhase  isv1alpha1.SessionPhase
+	sessionExists bool
+	findPhaseErr  error
 }
 
 func (m *mockISChecker) HasActiveSession(_ context.Context, _ string) (bool, error) {
 	return m.hasSession, m.err
+}
+
+func (m *mockISChecker) FindSessionPhase(_ context.Context, _ string) (isv1alpha1.SessionPhase, bool, error) {
+	if m.findPhaseErr != nil {
+		return "", false, m.findPhaseErr
+	}
+	return m.sessionPhase, m.sessionExists, m.err
 }
 
 // ========================================
