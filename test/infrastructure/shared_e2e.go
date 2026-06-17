@@ -339,6 +339,8 @@ spec:
           value: "8080"
         - name: MOCK_LLM_MODE
           value: "full"
+        - name: MOCK_LLM_FORCE_TEXT
+          value: "true"
         - name: MOCK_LLM_CONFIG_PATH
           value: "/config/scenarios.yaml"
         volumeMounts:
