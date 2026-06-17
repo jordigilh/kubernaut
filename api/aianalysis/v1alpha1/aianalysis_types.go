@@ -334,7 +334,7 @@ type AIAnalysisStatus struct {
 	// SubReason provides specific failure cause within the Reason category
 	// BR-HAPI-197: Maps to needs_human_review triggers from KA
 	// BR-HAPI-200: Added InvestigationInconclusive, ProblemResolved for new investigation outcomes
-	// +kubebuilder:validation:Enum=WorkflowNotFound;ImageMismatch;ParameterValidationFailed;NoMatchingWorkflows;LowConfidence;LLMParsingError;ValidationError;TransientError;PermanentError;InvestigationInconclusive;ProblemResolved;NotActionable;MaxRetriesExceeded;SessionRegenerationExceeded;RcaIncomplete;InvestigationFailed
+	// +kubebuilder:validation:Enum=WorkflowNotFound;ImageMismatch;ParameterValidationFailed;NoMatchingWorkflows;LowConfidence;LLMParsingError;ValidationError;TransientError;PermanentError;InvestigationInconclusive;ProblemResolved;NotActionable;MaxRetriesExceeded;SessionRegenerationExceeded;RcaIncomplete;InvestigationFailed;OperatorEscalation
 	// +optional
 	SubReason string `json:"subReason,omitempty"`
 
