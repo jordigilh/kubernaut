@@ -30,6 +30,8 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	"github.com/go-logr/logr"
+
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/aianalysis"
 	aiaudit "github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
@@ -106,7 +108,7 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 		It("should emit AIAnalysisCreated Normal event when reconciling Pending phase", func() {
 			recorder := record.NewFakeRecorder(20)
 			mockHolmes := mocks.NewMockAgentClient()
-			mockRego := mocks.NewMockRegoEvaluator()
+			mockRego := rego.NewEvaluator(rego.Config{PolicyPath: "testdata/policies/always_approve.rego"}, logr.Discard())
 			mockAuditStore := NewMockAuditStore()
 			auditClient := aiaudit.NewAuditClient(mockAuditStore, ctrl.Log.WithName("test-audit"))
 			testMetrics := metrics.NewMetrics()
@@ -181,7 +183,7 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 				"wf-restart-pod", "kubernaut.io/workflows/restart-pod:v1.0.0", 0.85,
 				"Restart pod to resolve OOM", false,
 			)
-			mockRego := mocks.NewMockRegoEvaluator()
+			mockRego := rego.NewEvaluator(rego.Config{PolicyPath: "testdata/policies/always_approve.rego"}, logr.Discard())
 			mockAuditStore := NewMockAuditStore()
 			auditClient := aiaudit.NewAuditClient(mockAuditStore, ctrl.Log.WithName("test-audit"))
 			testMetrics := metrics.NewMetrics()
@@ -248,7 +250,7 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 	Context("UT-AA-095-03: AnalysisCompleted event on Analyzing → Completed", func() {
 		It("should emit AnalysisCompleted Normal event on successful analysis", func() {
 			recorder := record.NewFakeRecorder(20)
-			mockRego := mocks.NewMockRegoEvaluator() // Default: auto-approve
+			mockRego := rego.NewEvaluator(rego.Config{PolicyPath: "testdata/policies/always_approve.rego"}, logr.Discard()) // Default: auto-approve
 			mockHolmes := mocks.NewMockAgentClient()
 			mockAuditStore := NewMockAuditStore()
 			auditClient := aiaudit.NewAuditClient(mockAuditStore, ctrl.Log.WithName("test-audit"))
@@ -323,7 +325,7 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 			recorder := record.NewFakeRecorder(20)
 			mockHolmes := mocks.NewMockAgentClient().
 				WithError(fmt.Errorf("permanent: KA returned 500"))
-			mockRego := mocks.NewMockRegoEvaluator()
+			mockRego := rego.NewEvaluator(rego.Config{PolicyPath: "testdata/policies/always_approve.rego"}, logr.Discard())
 			mockAuditStore := NewMockAuditStore()
 			auditClient := aiaudit.NewAuditClient(mockAuditStore, ctrl.Log.WithName("test-audit"))
 			testMetrics := metrics.NewMetrics()
@@ -386,13 +388,12 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 		})
 	})
 
-	// UT-AA-095-05: AnalysisFailed event on analyzing failure
-	Context("UT-AA-095-05: AnalysisFailed event on analyzing failure", func() {
-		It("should emit AnalysisFailed Warning event when Rego evaluation errors", func() {
+	// UT-AA-095-05: BR-AI-014 Graceful degradation when policy file is unavailable
+	Context("UT-AA-095-05: Degraded mode events on policy unavailability", func() {
+		It("should emit ApprovalRequired event with degraded mode when policy is missing (BR-AI-014)", func() {
 			recorder := record.NewFakeRecorder(20)
-			mockRego := mocks.NewMockRegoEvaluator()
-			mockRego.Err = fmt.Errorf("rego evaluation failed: policy compilation error")
-			mockRego.Result = nil
+			// Nonexistent policy path triggers graceful degradation
+			degradedRego := rego.NewEvaluator(rego.Config{PolicyPath: "testdata/nonexistent_policy.rego"}, logr.Discard())
 			mockHolmes := mocks.NewMockAgentClient()
 			mockAuditStore := NewMockAuditStore()
 			auditClient := aiaudit.NewAuditClient(mockAuditStore, ctrl.Log.WithName("test-audit"))
@@ -418,7 +419,6 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 				WithStatusSubresource(testAnalysis).
 				Build()
 
-			// Set phase to Analyzing with a selected workflow
 			testAnalysis.Status.Phase = aianalysis.PhaseAnalyzing
 			testAnalysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowID:     "wf-restart-pod",
@@ -432,7 +432,7 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 				mockHolmes, ctrl.Log.WithName("test"), testMetrics, auditClient,
 			)
 			analyzingHandler := handlers.NewAnalyzingHandler(
-				mockRego, ctrl.Log.WithName("test"), testMetrics, auditClient,
+				degradedRego, ctrl.Log.WithName("test"), testMetrics, auditClient,
 			)
 
 			reconciler := &aianalysis.AIAnalysisReconciler{
@@ -455,8 +455,10 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			evts := drainEvents(recorder)
-			Expect(containsEvent(evts, "Warning", events.EventReasonAnalysisFailed)).
-				To(BeTrue(), "Expected AnalysisFailed Warning event, got: %v", evts)
+			Expect(containsEvent(evts, "Normal", events.EventReasonApprovalRequired)).
+				To(BeTrue(), "Expected ApprovalRequired event in degraded mode, got: %v", evts)
+			Expect(containsEvent(evts, "Normal", events.EventReasonAnalysisCompleted)).
+				To(BeTrue(), "Expected AnalysisCompleted event (degraded completes with safe defaults), got: %v", evts)
 		})
 	})
 
@@ -464,12 +466,9 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 	Context("UT-AA-095-06: ApprovalRequired event", func() {
 		It("should emit ApprovalRequired Normal event when Rego requires approval", func() {
 			recorder := record.NewFakeRecorder(20)
-			mockRego := mocks.NewMockRegoEvaluator()
-			mockRego.Result = &rego.PolicyResult{
-				ApprovalRequired: true,
-				Reason:           "Confidence below threshold (0.85 < 0.90)",
-				Degraded:         false,
-			}
+			// Use the real approval policy — the test analysis below has no
+			// RemediationTarget, which triggers approval via BR-AI-085-005.
+			approvalRego := rego.NewEvaluator(rego.Config{PolicyPath: "testdata/policies/approval.rego"}, logr.Discard())
 			mockHolmes := mocks.NewMockAgentClient()
 			mockAuditStore := NewMockAuditStore()
 			auditClient := aiaudit.NewAuditClient(mockAuditStore, ctrl.Log.WithName("test-audit"))
@@ -509,7 +508,7 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 				mockHolmes, ctrl.Log.WithName("test"), testMetrics, auditClient,
 			)
 			analyzingHandler := handlers.NewAnalyzingHandler(
-				mockRego, ctrl.Log.WithName("test"), testMetrics, auditClient,
+				approvalRego, ctrl.Log.WithName("test"), testMetrics, auditClient,
 			)
 
 			reconciler := &aianalysis.AIAnalysisReconciler{
@@ -543,7 +542,7 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 			recorder := record.NewFakeRecorder(20)
 			mockHolmes := mocks.NewMockAgentClient().
 				WithHumanReviewRequired([]string{"Investigation inconclusive, needs human review"})
-			mockRego := mocks.NewMockRegoEvaluator()
+			mockRego := rego.NewEvaluator(rego.Config{PolicyPath: "testdata/policies/always_approve.rego"}, logr.Discard())
 			mockAuditStore := NewMockAuditStore()
 			auditClient := aiaudit.NewAuditClient(mockAuditStore, ctrl.Log.WithName("test-audit"))
 			testMetrics := metrics.NewMetrics()
@@ -611,7 +610,7 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 		It("should emit PhaseTransition event with from/to phases on Pending → Investigating", func() {
 			recorder := record.NewFakeRecorder(20)
 			mockHolmes := mocks.NewMockAgentClient()
-			mockRego := mocks.NewMockRegoEvaluator()
+			mockRego := rego.NewEvaluator(rego.Config{PolicyPath: "testdata/policies/always_approve.rego"}, logr.Discard())
 			mockAuditStore := NewMockAuditStore()
 			auditClient := aiaudit.NewAuditClient(mockAuditStore, ctrl.Log.WithName("test-audit"))
 			testMetrics := metrics.NewMetrics()

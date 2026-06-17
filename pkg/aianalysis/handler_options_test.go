@@ -18,6 +18,7 @@ limitations under the License.
 package aianalysis_test
 
 import (
+	"context"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -31,12 +32,14 @@ import (
 
 var _ = Describe("UT-AA-668-001: AnalyzingHandler WithConfidenceThreshold", func() {
 	It("BR-AI-011: should set operator-configurable confidence threshold", func() {
-		mockEval := mocks.NewMockRegoEvaluator()
+		ctx, cancel := context.WithCancel(context.Background())
+		DeferCleanup(cancel)
+		spy := newSpyEvaluator(ctx, "testdata/policies/always_approve.rego")
 		m := metrics.NewMetrics()
 		log := ctrl.Log.WithName("test")
 
 		threshold := 0.85
-		handler := handlers.NewAnalyzingHandler(mockEval, log, m, &noopAnalyzingAuditClient{}).
+		handler := handlers.NewAnalyzingHandler(spy, log, m, &noopAnalyzingAuditClient{}).
 			WithConfidenceThreshold(&threshold)
 
 		Expect(handler).NotTo(BeNil())
@@ -44,11 +47,13 @@ var _ = Describe("UT-AA-668-001: AnalyzingHandler WithConfidenceThreshold", func
 	})
 
 	It("BR-AI-011: should accept nil threshold to use policy default", func() {
-		mockEval := mocks.NewMockRegoEvaluator()
+		ctx, cancel := context.WithCancel(context.Background())
+		DeferCleanup(cancel)
+		spy := newSpyEvaluator(ctx, "testdata/policies/always_approve.rego")
 		m := metrics.NewMetrics()
 		log := ctrl.Log.WithName("test")
 
-		handler := handlers.NewAnalyzingHandler(mockEval, log, m, &noopAnalyzingAuditClient{}).
+		handler := handlers.NewAnalyzingHandler(spy, log, m, &noopAnalyzingAuditClient{}).
 			WithConfidenceThreshold(nil)
 
 		Expect(handler).NotTo(BeNil())

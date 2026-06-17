@@ -31,12 +31,15 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	"github.com/go-logr/logr"
+
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/aianalysis"
 	aiaudit "github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
+	"github.com/jordigilh/kubernaut/pkg/aianalysis/rego"
 	aistatus "github.com/jordigilh/kubernaut/pkg/aianalysis/status"
 	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
@@ -113,7 +116,7 @@ var _ = Describe("AA Controller Cascade Cancel to IS (#1421) [IR-4, AC-6, SI-4]"
 		mockAuditStore := &MockAuditStore{}
 		auditClient := aiaudit.NewAuditClient(mockAuditStore, ctrl.Log.WithName("test-1421-audit"))
 		statusManager := aistatus.NewManager(fakeClient, fakeClient)
-		mockRegoEvaluator := mocks.NewMockRegoEvaluator()
+		regoEvaluator := rego.NewEvaluator(rego.Config{PolicyPath: "testdata/policies/always_approve.rego"}, logr.Discard())
 
 		reconciler := &aianalysis.AIAnalysisReconciler{
 			Client:        fakeClient,
@@ -132,7 +135,7 @@ var _ = Describe("AA Controller Cascade Cancel to IS (#1421) [IR-4, AC-6, SI-4]"
 		)
 		reconciler.InvestigatingHandler.Store(investigatingHandler)
 		reconciler.AnalyzingHandler = handlers.NewAnalyzingHandler(
-			mockRegoEvaluator, ctrl.Log.WithName("test-1421-analyzing"), testMetrics, auditClient,
+			regoEvaluator, ctrl.Log.WithName("test-1421-analyzing"), testMetrics, auditClient,
 		)
 
 		return reconciler, mockClient

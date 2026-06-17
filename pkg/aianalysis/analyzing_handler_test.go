@@ -31,7 +31,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
-	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
 
 // ========================================
@@ -64,18 +63,19 @@ func (n *noopAnalyzingAuditClient) RecordAnalysisFailed(ctx context.Context, ana
 // BR-AI-012: AnalyzingHandler tests
 var _ = Describe("AnalyzingHandler", func() {
 	var (
-		handler       *handlers.AnalyzingHandler
-		mockEvaluator *mocks.MockRegoEvaluator
-		ctx           context.Context
+		handler *handlers.AnalyzingHandler
+		spy     *spyEvaluator
+		ctx     context.Context
+		cancel  context.CancelFunc
 	)
 
 	BeforeEach(func() {
-		ctx = context.Background()
-		mockEvaluator = mocks.NewMockRegoEvaluator()
-		// Create mock audit client (noop for unit tests) and metrics
+		ctx, cancel = context.WithCancel(context.Background())
+		DeferCleanup(cancel)
+		spy = newSpyEvaluator(ctx, "testdata/policies/approval.rego")
 		mockAuditClient := &noopAnalyzingAuditClient{}
 		testMetrics := metrics.NewMetrics()
-		handler = handlers.NewAnalyzingHandler(mockEvaluator, ctrl.Log.WithName("test"), testMetrics, mockAuditClient)
+		handler = handlers.NewAnalyzingHandler(spy, ctrl.Log.WithName("test"), testMetrics, mockAuditClient)
 	})
 
 	// Helper to create valid AIAnalysis in Analyzing phase
@@ -126,21 +126,25 @@ var _ = Describe("AnalyzingHandler", func() {
 		// BR-AI-012: Successful Rego evaluation with approval required
 		// Per reconciliation-phases.md v2.0: Analyzing → Completed (no Recommending phase)
 		Context("when Rego evaluation requires approval", func() {
-			BeforeEach(func() {
-				mockEvaluator.WithApprovalRequired("Production environment requires approval")
-			})
+			// Real policy triggers approval for production + low confidence + has remediation target.
+			// createTestAnalysis is overridden below to produce this condition.
 
 			// BR-AI-012: Business outcome - analysis completes with approval decision
 			It("should complete analysis and require approval for production", func() {
 				analysis := createTestAnalysis()
+				analysis.Status.SelectedWorkflow.Confidence = 0.5
+				analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+					Summary: "OOM detected",
+					RemediationTarget: &aianalysisv1.RemediationTarget{
+						Kind: "Deployment", Name: "api-server", Namespace: "production",
+					},
+				}
 
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				// Business outcome: Analysis completes successfully
 				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseCompleted), "Analysis should reach terminal Completed phase")
 				Expect(analysis.Status.CompletedAt).NotTo(BeNil(), "Completion timestamp should be set")
-				// Business outcome: Production requires approval
 				Expect(analysis.Status.ApprovalRequired).To(BeTrue(), "Production environment should require approval")
 				Expect(analysis.Status.ApprovalReason).NotTo(BeEmpty(), "Approval reason should explain why approval is needed")
 				Expect(analysis.Status.ApprovalReason).To(ContainSubstring("Production"), "Reason should mention production")
@@ -149,91 +153,107 @@ var _ = Describe("AnalyzingHandler", func() {
 			// BR-AI-019: ApprovalContext population
 			It("should populate ApprovalContext", func() {
 				analysis := createTestAnalysis()
-
-				_, err := handler.Handle(ctx, analysis)
-
-				Expect(err).NotTo(HaveOccurred())
-				Expect(analysis.Status.ApprovalContext).NotTo(BeNil())
-				Expect(analysis.Status.ApprovalContext.Reason).To(Equal("Production environment requires approval"))
-				Expect(analysis.Status.ApprovalContext.WhyApprovalRequired).To(Equal("Production environment requires approval"))
-			})
-
-			// BR-AI-019: Confidence level classification for operator visibility
-			// Business Value: Operators can quickly assess AI confidence without reading raw numbers
-			DescribeTable("should populate ApprovalContext with correct confidence level",
-				func(confidenceScore float64, expectedLevel string) {
-					analysis := createTestAnalysis()
-					analysis.Status.SelectedWorkflow.Confidence = confidenceScore
-
-					_, err := handler.Handle(ctx, analysis)
-
-					Expect(err).NotTo(HaveOccurred())
-					Expect(analysis.Status.ApprovalContext).NotTo(BeNil())
-					Expect(analysis.Status.ApprovalContext.ConfidenceScore).To(BeNumerically("~", confidenceScore, 0.01))
-					Expect(analysis.Status.ApprovalContext.ConfidenceLevel).To(Equal(expectedLevel))
-				},
-				// High confidence (≥0.8): AI is very confident
-				Entry("0.92 → high (above threshold)", 0.92, "high"),
-				Entry("0.80 → high (at threshold)", 0.80, "high"),
-				Entry("0.95 → high (near perfect)", 0.95, "high"),
-				// Medium confidence (0.6-0.8): AI has reasonable confidence
-				Entry("0.79 → medium (just below high threshold)", 0.79, "medium"),
-				Entry("0.70 → medium (typical medium)", 0.70, "medium"),
-				Entry("0.60 → medium (at threshold)", 0.60, "medium"),
-				// Low confidence (<0.6): AI has low confidence - needs careful review
-				Entry("0.59 → low (just below medium threshold)", 0.59, "low"),
-				Entry("0.40 → low (typical low)", 0.40, "low"),
-				Entry("0.10 → low (very uncertain)", 0.10, "low"),
-			)
-
-			It("should populate ApprovalContext with RecommendedActions from SelectedWorkflow", func() {
-				analysis := createTestAnalysis()
-
-				_, err := handler.Handle(ctx, analysis)
-
-				Expect(err).NotTo(HaveOccurred())
-				Expect(analysis.Status.ApprovalContext).NotTo(BeNil())
-				Expect(analysis.Status.ApprovalContext.RecommendedActions).To(HaveLen(1))
-				Expect(analysis.Status.ApprovalContext.RecommendedActions[0].WorkflowId).To(Equal("wf-restart-pod"))
-			})
-
-			// BR-AI-019: Investigation summary from RootCauseAnalysis
-			// Business Value: Operators see AI's investigation findings in approval context
-			It("should populate ApprovalContext with InvestigationSummary from RCA", func() {
-				analysis := createTestAnalysis()
+				analysis.Status.SelectedWorkflow.Confidence = 0.5
 				analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
-					Summary:             "Memory leak in application container",
-					ContributingFactors: []string{"OOM killed event", "Gradual memory increase over 2 hours"},
+					Summary: "OOM detected",
+					RemediationTarget: &aianalysisv1.RemediationTarget{
+						Kind: "Deployment", Name: "api-server", Namespace: "production",
+					},
 				}
 
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.ApprovalContext).NotTo(BeNil())
-				Expect(analysis.Status.ApprovalContext.InvestigationSummary).To(Equal("Memory leak in application container"))
-				Expect(analysis.Status.ApprovalContext.EvidenceCollected).To(HaveLen(2))
-				Expect(analysis.Status.ApprovalContext.EvidenceCollected).To(ContainElement("OOM killed event"))
+				Expect(analysis.Status.ApprovalContext.Reason).To(ContainSubstring("Production"))
+				Expect(analysis.Status.ApprovalContext.WhyApprovalRequired).To(ContainSubstring("Production"))
 			})
 
-			// BR-AI-019: Edge case - no RCA available
-			// Business Value: System handles missing investigation gracefully
-			It("should handle missing RootCauseAnalysis gracefully", func() {
+		// BR-AI-019: Confidence level classification for operator visibility
+		// Business Value: Operators can quickly assess AI confidence without reading raw numbers
+		DescribeTable("should populate ApprovalContext with correct confidence level",
+			func(confidenceScore float64, expectedLevel string) {
 				analysis := createTestAnalysis()
+				analysis.Status.SelectedWorkflow.Confidence = confidenceScore
+				// Ensure approval is triggered: missing remediation target guarantees it
 				analysis.Status.RootCauseAnalysis = nil
 
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.ApprovalContext).NotTo(BeNil())
-				Expect(analysis.Status.ApprovalContext.InvestigationSummary).To(BeEmpty())
-				Expect(analysis.Status.ApprovalContext.EvidenceCollected).To(BeNil())
-			})
+				Expect(analysis.Status.ApprovalContext.ConfidenceScore).To(BeNumerically("~", confidenceScore, 0.01))
+				Expect(analysis.Status.ApprovalContext.ConfidenceLevel).To(Equal(expectedLevel))
+			},
+			// High confidence (≥0.8): AI is very confident
+			Entry("0.92 → high (above threshold)", 0.92, "high"),
+			Entry("0.80 → high (at threshold)", 0.80, "high"),
+			Entry("0.95 → high (near perfect)", 0.95, "high"),
+			// Medium confidence (0.6-0.8): AI has reasonable confidence
+			Entry("0.79 → medium (just below high threshold)", 0.79, "medium"),
+			Entry("0.70 → medium (typical medium)", 0.70, "medium"),
+			Entry("0.60 → medium (at threshold)", 0.60, "medium"),
+			// Low confidence (<0.6): AI has low confidence - needs careful review
+			Entry("0.59 → low (just below medium threshold)", 0.59, "low"),
+			Entry("0.40 → low (typical low)", 0.40, "low"),
+			Entry("0.10 → low (very uncertain)", 0.10, "low"),
+		)
 
-			// BR-AI-019: AlternativesConsidered from AlternativeWorkflows
-			// Business Value: Operators can see what other options AI considered
-			It("should populate ApprovalContext with AlternativesConsidered", func() {
-				analysis := createTestAnalysis()
-				analysis.Status.AlternativeWorkflows = []aianalysisv1.AlternativeWorkflow{
+		It("should populate ApprovalContext with RecommendedActions from SelectedWorkflow", func() {
+			analysis := createTestAnalysis()
+			// Missing RemediationTarget triggers approval via real policy
+
+			_, err := handler.Handle(ctx, analysis)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(analysis.Status.ApprovalContext).NotTo(BeNil())
+			Expect(analysis.Status.ApprovalContext.RecommendedActions).To(HaveLen(1))
+			Expect(analysis.Status.ApprovalContext.RecommendedActions[0].WorkflowId).To(Equal("wf-restart-pod"))
+		})
+
+		// BR-AI-019: Investigation summary from RootCauseAnalysis
+		// Business Value: Operators see AI's investigation findings in approval context
+		It("should populate ApprovalContext with InvestigationSummary from RCA", func() {
+			analysis := createTestAnalysis()
+			analysis.Status.SelectedWorkflow.Confidence = 0.5
+			analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+				Summary:             "Memory leak in application container",
+				ContributingFactors: []string{"OOM killed event", "Gradual memory increase over 2 hours"},
+				RemediationTarget: &aianalysisv1.RemediationTarget{
+					Kind: "Deployment", Name: "api-server", Namespace: "production",
+				},
+			}
+
+			_, err := handler.Handle(ctx, analysis)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(analysis.Status.ApprovalContext).NotTo(BeNil())
+			Expect(analysis.Status.ApprovalContext.InvestigationSummary).To(Equal("Memory leak in application container"))
+			Expect(analysis.Status.ApprovalContext.EvidenceCollected).To(HaveLen(2))
+			Expect(analysis.Status.ApprovalContext.EvidenceCollected).To(ContainElement("OOM killed event"))
+		})
+
+		// BR-AI-019: Edge case - no RCA available
+		// Business Value: System handles missing investigation gracefully
+		It("should handle missing RootCauseAnalysis gracefully", func() {
+			analysis := createTestAnalysis()
+			analysis.Status.RootCauseAnalysis = nil
+			// Missing RemediationTarget triggers approval via real policy
+
+			_, err := handler.Handle(ctx, analysis)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(analysis.Status.ApprovalContext).NotTo(BeNil())
+			Expect(analysis.Status.ApprovalContext.InvestigationSummary).To(BeEmpty())
+			Expect(analysis.Status.ApprovalContext.EvidenceCollected).To(BeNil())
+		})
+
+		// BR-AI-019: AlternativesConsidered from AlternativeWorkflows
+		// Business Value: Operators can see what other options AI considered
+		It("should populate ApprovalContext with AlternativesConsidered", func() {
+			analysis := createTestAnalysis()
+			// Missing RemediationTarget triggers approval via real policy
+			analysis.Status.AlternativeWorkflows = []aianalysisv1.AlternativeWorkflow{
 					{
 						WorkflowID:     "wf-scale-up",
 						ExecutionBundle: "kubernaut.io/workflows/scale:v1.0.0",
@@ -257,22 +277,24 @@ var _ = Describe("AnalyzingHandler", func() {
 				Expect(analysis.Status.ApprovalContext.AlternativesConsidered[1].Approach).To(Equal("wf-rollback"))
 			})
 
-			// BR-AI-019: Edge case - no alternatives available
-			// Business Value: System handles single workflow scenarios
-			It("should handle empty AlternativeWorkflows gracefully", func() {
-				analysis := createTestAnalysis()
-				analysis.Status.AlternativeWorkflows = nil
+		// BR-AI-019: Edge case - no alternatives available
+		// Business Value: System handles single workflow scenarios
+		It("should handle empty AlternativeWorkflows gracefully", func() {
+			analysis := createTestAnalysis()
+			analysis.Status.AlternativeWorkflows = nil
+			// Missing RemediationTarget triggers approval via real policy
 
-				_, err := handler.Handle(ctx, analysis)
+			_, err := handler.Handle(ctx, analysis)
 
-				Expect(err).NotTo(HaveOccurred())
-				Expect(analysis.Status.ApprovalContext).NotTo(BeNil())
-				Expect(analysis.Status.ApprovalContext.AlternativesConsidered).To(BeNil())
-			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(analysis.Status.ApprovalContext).NotTo(BeNil())
+			Expect(analysis.Status.ApprovalContext.AlternativesConsidered).To(BeNil())
+		})
 
-			// BR-AI-019: Business outcome - operator can see policy decision in approval context
-			It("should include policy evaluation details for operator visibility", func() {
-				analysis := createTestAnalysis()
+		// BR-AI-019: Business outcome - operator can see policy decision in approval context
+		It("should include policy evaluation details for operator visibility", func() {
+			analysis := createTestAnalysis()
+			// Missing RemediationTarget triggers approval via real policy
 
 				_, err := handler.Handle(ctx, analysis)
 
@@ -290,36 +312,40 @@ var _ = Describe("AnalyzingHandler", func() {
 		// BR-AI-012: Successful Rego evaluation with auto-approve
 		// Per reconciliation-phases.md v2.0: Analyzing → Completed (no Recommending phase)
 		Context("when Rego evaluation auto-approves", func() {
-			BeforeEach(func() {
-				mockEvaluator.WithAutoApprove("Non-production environment - auto-approved")
-			})
+			// Real policy auto-approves for non-production with remediation target present.
 
 			// BR-AI-012: Business outcome - non-production auto-approves without operator intervention
 			It("should auto-approve and complete without requiring operator action", func() {
 				analysis := createTestAnalysis()
 				analysis.Spec.AnalysisRequest.SignalContext.Environment = "development"
+				analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+					Summary: "OOM detected",
+					RemediationTarget: &aianalysisv1.RemediationTarget{
+						Kind: "Deployment", Name: "api-server", Namespace: "default",
+					},
+				}
 
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				// Business outcome: Analysis completes for auto-approved scenarios
 				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseCompleted), "Analysis should complete")
 				Expect(analysis.Status.CompletedAt).NotTo(BeNil(), "Completion timestamp should be set")
-				// Business outcome: No approval needed - workflow can proceed immediately
 				Expect(analysis.Status.ApprovalRequired).To(BeFalse(), "Non-production should auto-approve")
-				// Business outcome: No ApprovalContext needed when auto-approved (reduces operator noise)
 				Expect(analysis.Status.ApprovalContext).To(BeNil(), "No approval context for auto-approved analysis")
 			})
 		})
 
 		// Issue #118 Gap 3: TotalAnalysisTime computation
 		Context("when analysis completes with StartedAt set", func() {
-			BeforeEach(func() {
-				mockEvaluator.WithAutoApprove("Non-production environment - auto-approved")
-			})
-
 			It("UT-AA-TAT-001: should compute TotalAnalysisTime in milliseconds from StartedAt to CompletedAt", func() {
 				analysis := createTestAnalysis()
+				analysis.Spec.AnalysisRequest.SignalContext.Environment = "development"
+				analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+					Summary: "OOM detected",
+					RemediationTarget: &aianalysisv1.RemediationTarget{
+						Kind: "Deployment", Name: "api-server", Namespace: "default",
+					},
+				}
 				analysis.Status.StartedAt = &metav1.Time{Time: time.Now().Add(-30 * time.Second)}
 
 				_, err := handler.Handle(ctx, analysis)
@@ -336,7 +362,12 @@ var _ = Describe("AnalyzingHandler", func() {
 		// BR-AI-014: Business outcome - graceful degradation ensures safety when policy fails
 		Context("when Rego evaluation fails gracefully (degraded mode)", func() {
 			BeforeEach(func() {
-				mockEvaluator.WithDegradedMode("Policy evaluation failed - defaulting to manual approval")
+				// Recreate handler with a degraded evaluator (nonexistent policy path)
+				degradedSpy := newDegradedSpyEvaluator()
+				spy = degradedSpy
+				mockAuditClient := &noopAnalyzingAuditClient{}
+				testMetrics := metrics.NewMetrics()
+				handler = handlers.NewAnalyzingHandler(spy, ctrl.Log.WithName("test"), testMetrics, mockAuditClient)
 			})
 
 			// BR-AI-014: Business outcome - system remains safe when policy infrastructure fails
@@ -346,14 +377,11 @@ var _ = Describe("AnalyzingHandler", func() {
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				// Business outcome: Analysis completes (doesn't block remediation flow)
 				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseCompleted), "Should complete despite policy failure")
 				Expect(analysis.Status.CompletedAt).NotTo(BeNil())
-				// Business outcome: Safe default - requires operator approval when uncertain
 				Expect(analysis.Status.ApprovalRequired).To(BeTrue(), "Degraded mode should require approval (safe default)")
-				// Business outcome: Operator sees degraded mode indicator
 				Expect(analysis.Status.DegradedMode).To(BeTrue(), "Operator should know system is in degraded mode")
-				Expect(analysis.Status.ApprovalReason).To(ContainSubstring("failed"), "Reason should explain degradation")
+				Expect(analysis.Status.ApprovalReason).NotTo(BeEmpty(), "Reason should explain degradation")
 			})
 
 			// BR-AI-019: Business outcome - operator sees clear degraded status
@@ -393,7 +421,7 @@ var _ = Describe("AnalyzingHandler", func() {
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(mockEvaluator.AssertNotCalled()).To(Succeed())
+				Expect(spy.CallCount).To(Equal(0), "Evaluator must not be called when SelectedWorkflow is nil")
 			})
 		})
 
@@ -406,8 +434,8 @@ var _ = Describe("AnalyzingHandler", func() {
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(mockEvaluator.LastInput).NotTo(BeNil())
-				Expect(mockEvaluator.LastInput.Environment).To(Equal("staging"))
+				Expect(spy.LastInput).NotTo(BeNil())
+				Expect(spy.LastInput.Environment).To(Equal("staging"))
 			})
 
 			It("should pass confidence from SelectedWorkflow", func() {
@@ -416,8 +444,8 @@ var _ = Describe("AnalyzingHandler", func() {
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(mockEvaluator.LastInput).NotTo(BeNil())
-				Expect(mockEvaluator.LastInput.Confidence).To(BeNumerically("~", 0.92, 0.01))
+				Expect(spy.LastInput).NotTo(BeNil())
+				Expect(spy.LastInput.Confidence).To(BeNumerically("~", 0.92, 0.01))
 			})
 
 			// ADR-055: TargetInOwnerChain replaced by RemediationTarget
@@ -436,11 +464,11 @@ var _ = Describe("AnalyzingHandler", func() {
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(mockEvaluator.LastInput).NotTo(BeNil())
-				Expect(mockEvaluator.LastInput.RemediationTarget).NotTo(BeNil())
-				Expect(mockEvaluator.LastInput.RemediationTarget.Kind).To(Equal("Deployment"))
-				Expect(mockEvaluator.LastInput.RemediationTarget.Name).To(Equal("api-server"))
-				Expect(mockEvaluator.LastInput.RemediationTarget.Namespace).To(Equal("production"))
+				Expect(spy.LastInput).NotTo(BeNil())
+				Expect(spy.LastInput.RemediationTarget).NotTo(BeNil())
+				Expect(spy.LastInput.RemediationTarget.Kind).To(Equal("Deployment"))
+				Expect(spy.LastInput.RemediationTarget.Name).To(Equal("api-server"))
+				Expect(spy.LastInput.RemediationTarget.Namespace).To(Equal("production"))
 			})
 
 			It("should pass Warnings from status", func() {
@@ -450,9 +478,9 @@ var _ = Describe("AnalyzingHandler", func() {
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(mockEvaluator.LastInput).NotTo(BeNil())
-				Expect(mockEvaluator.LastInput.Warnings).To(HaveLen(2))
-				Expect(mockEvaluator.LastInput.Warnings).To(ContainElement("High memory pressure"))
+				Expect(spy.LastInput).NotTo(BeNil())
+				Expect(spy.LastInput.Warnings).To(HaveLen(2))
+				Expect(spy.LastInput.Warnings).To(ContainElement("High memory pressure"))
 			})
 
 			// BR-AI-012: Extended PolicyInput fields (per IMPLEMENTATION_PLAN_V1.0.md)
@@ -465,10 +493,10 @@ var _ = Describe("AnalyzingHandler", func() {
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(mockEvaluator.LastInput).NotTo(BeNil())
-				Expect(mockEvaluator.LastInput.SignalType).To(Equal("OOMKilled"))
-				Expect(mockEvaluator.LastInput.Severity).To(Equal("critical"))
-				Expect(mockEvaluator.LastInput.BusinessPriority).To(Equal("P0"))
+				Expect(spy.LastInput).NotTo(BeNil())
+				Expect(spy.LastInput.SignalType).To(Equal("OOMKilled"))
+				Expect(spy.LastInput.Severity).To(Equal("critical"))
+				Expect(spy.LastInput.BusinessPriority).To(Equal("P0"))
 			})
 
 			It("should pass target resource fields", func() {
@@ -480,10 +508,10 @@ var _ = Describe("AnalyzingHandler", func() {
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(mockEvaluator.LastInput).NotTo(BeNil())
-				Expect(mockEvaluator.LastInput.TargetResource.Kind).To(Equal("Deployment"))
-				Expect(mockEvaluator.LastInput.TargetResource.Name).To(Equal("my-app"))
-				Expect(mockEvaluator.LastInput.TargetResource.Namespace).To(Equal("production"))
+				Expect(spy.LastInput).NotTo(BeNil())
+				Expect(spy.LastInput.TargetResource.Kind).To(Equal("Deployment"))
+				Expect(spy.LastInput.TargetResource.Name).To(Equal("my-app"))
+				Expect(spy.LastInput.TargetResource.Namespace).To(Equal("production"))
 			})
 
 			// BR-AI-012: CustomLabels population from EnrichmentResults
@@ -500,12 +528,12 @@ var _ = Describe("AnalyzingHandler", func() {
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(mockEvaluator.LastInput).NotTo(BeNil())
-				Expect(mockEvaluator.LastInput.CustomLabels).NotTo(BeNil())
-				Expect(mockEvaluator.LastInput.CustomLabels["constraint"]).To(ContainElement("cost-constrained"))
-				Expect(mockEvaluator.LastInput.CustomLabels["constraint"]).To(ContainElement("stateful-safe"))
-				Expect(mockEvaluator.LastInput.CustomLabels["team"]).To(ContainElement("name=payments"))
-				Expect(mockEvaluator.LastInput.CustomLabels["region"]).To(ContainElement("us-east-1"))
+				Expect(spy.LastInput).NotTo(BeNil())
+				Expect(spy.LastInput.CustomLabels).NotTo(BeNil())
+				Expect(spy.LastInput.CustomLabels["constraint"]).To(ContainElement("cost-constrained"))
+				Expect(spy.LastInput.CustomLabels["constraint"]).To(ContainElement("stateful-safe"))
+				Expect(spy.LastInput.CustomLabels["team"]).To(ContainElement("name=payments"))
+				Expect(spy.LastInput.CustomLabels["region"]).To(ContainElement("us-east-1"))
 			})
 
 			// BR-AI-012: Empty CustomLabels returns empty map
@@ -518,9 +546,9 @@ var _ = Describe("AnalyzingHandler", func() {
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(mockEvaluator.LastInput).NotTo(BeNil())
-				Expect(mockEvaluator.LastInput.CustomLabels).NotTo(BeNil())
-				Expect(mockEvaluator.LastInput.CustomLabels).To(BeEmpty())
+				Expect(spy.LastInput).NotTo(BeNil())
+				Expect(spy.LastInput.CustomLabels).NotTo(BeNil())
+				Expect(spy.LastInput.CustomLabels).To(BeEmpty())
 			})
 
 			// BR-SP-002, BR-SP-080, BR-SP-081: BusinessClassification pass-through to Rego policy
@@ -536,12 +564,12 @@ var _ = Describe("AnalyzingHandler", func() {
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(mockEvaluator.LastInput).NotTo(BeNil())
-				Expect(mockEvaluator.LastInput.BusinessClassification).NotTo(BeNil())
-				Expect(mockEvaluator.LastInput.BusinessClassification).To(HaveKeyWithValue("business_unit", "payments"))
-				Expect(mockEvaluator.LastInput.BusinessClassification).To(HaveKeyWithValue("service_owner", "team-checkout"))
-				Expect(mockEvaluator.LastInput.BusinessClassification).To(HaveKeyWithValue("criticality", string(sharedtypes.CriticalityCritical)))
-				Expect(mockEvaluator.LastInput.BusinessClassification).To(HaveKeyWithValue("sla_requirement", string(sharedtypes.SLARequirementPlatinum)))
+				Expect(spy.LastInput).NotTo(BeNil())
+				Expect(spy.LastInput.BusinessClassification).NotTo(BeNil())
+				Expect(spy.LastInput.BusinessClassification).To(HaveKeyWithValue("business_unit", "payments"))
+				Expect(spy.LastInput.BusinessClassification).To(HaveKeyWithValue("service_owner", "team-checkout"))
+				Expect(spy.LastInput.BusinessClassification).To(HaveKeyWithValue("criticality", string(sharedtypes.CriticalityCritical)))
+				Expect(spy.LastInput.BusinessClassification).To(HaveKeyWithValue("sla_requirement", string(sharedtypes.SLARequirementPlatinum)))
 			})
 
 			It("should not set BusinessClassification when nil in EnrichmentResults", func() {
@@ -551,8 +579,8 @@ var _ = Describe("AnalyzingHandler", func() {
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(mockEvaluator.LastInput).NotTo(BeNil())
-				Expect(mockEvaluator.LastInput.BusinessClassification).To(BeNil())
+				Expect(spy.LastInput).NotTo(BeNil())
+				Expect(spy.LastInput.BusinessClassification).To(BeNil())
 			})
 
 			It("should map only populated BusinessClassification fields", func() {
@@ -564,9 +592,9 @@ var _ = Describe("AnalyzingHandler", func() {
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(mockEvaluator.LastInput).NotTo(BeNil())
-				Expect(mockEvaluator.LastInput.BusinessClassification).To(HaveLen(1))
-				Expect(mockEvaluator.LastInput.BusinessClassification).To(HaveKeyWithValue("criticality", string(sharedtypes.CriticalityHigh)))
+				Expect(spy.LastInput).NotTo(BeNil())
+				Expect(spy.LastInput.BusinessClassification).To(HaveLen(1))
+				Expect(spy.LastInput.BusinessClassification).To(HaveKeyWithValue("criticality", string(sharedtypes.CriticalityHigh)))
 			})
 		})
 
@@ -578,7 +606,7 @@ var _ = Describe("AnalyzingHandler", func() {
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(mockEvaluator.AssertCalled(1)).To(Succeed())
+				Expect(spy.CallCount).To(Equal(1), "Evaluator should be called exactly once")
 			})
 		})
 	})

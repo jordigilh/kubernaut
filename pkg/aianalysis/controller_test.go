@@ -29,11 +29,14 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	"github.com/go-logr/logr"
+
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/aianalysis"
 	aiaudit "github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
+	"github.com/jordigilh/kubernaut/pkg/aianalysis/rego"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
@@ -127,7 +130,7 @@ var _ = Describe("AIAnalysis Controller", func() {
 
 			// Create test dependencies (P1 refactoring: handlers now required)
 			mockHolmesClient := mocks.NewMockAgentClient()
-			mockRegoEvaluator := mocks.NewMockRegoEvaluator()
+			regoEvaluator := rego.NewEvaluator(rego.Config{PolicyPath: "testdata/policies/always_approve.rego"}, logr.Discard())
 			mockAuditStore := NewMockAuditStore()
 			auditClient := aiaudit.NewAuditClient(mockAuditStore, ctrl.Log.WithName("test-audit"))
 			testMetrics := metrics.NewMetrics()
@@ -140,7 +143,7 @@ var _ = Describe("AIAnalysis Controller", func() {
 				auditClient,
 			)
 			analyzingHandler := handlers.NewAnalyzingHandler(
-				mockRegoEvaluator,
+				regoEvaluator,
 				ctrl.Log.WithName("test-analyzing"),
 				testMetrics,
 				auditClient,

@@ -40,22 +40,23 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
-	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
 
 var _ = Describe("AnalyzingHandler PostRCAContext Rego Integration (ADR-056)", func() {
 	var (
-		handler       *handlers.AnalyzingHandler
-		mockEvaluator *mocks.MockRegoEvaluator
-		ctx           context.Context
+		handler *handlers.AnalyzingHandler
+		spy     *spyEvaluator
+		ctx     context.Context
+		cancel  context.CancelFunc
 	)
 
 	BeforeEach(func() {
-		ctx = context.Background()
-		mockEvaluator = mocks.NewMockRegoEvaluator()
+		ctx, cancel = context.WithCancel(context.Background())
+		DeferCleanup(cancel)
+		spy = newSpyEvaluator(ctx, "testdata/policies/always_approve.rego")
 		mockAuditClient := &noopAnalyzingAuditClient{}
 		testMetrics := metrics.NewMetrics()
-		handler = handlers.NewAnalyzingHandler(mockEvaluator, ctrl.Log.WithName("test"), testMetrics, mockAuditClient)
+		handler = handlers.NewAnalyzingHandler(spy, ctrl.Log.WithName("test"), testMetrics, mockAuditClient)
 	})
 
 	createAnalysisWithPostRCA := func() *aianalysisv1.AIAnalysis {
@@ -125,10 +126,10 @@ var _ = Describe("AnalyzingHandler PostRCAContext Rego Integration (ADR-056)", f
 		_, err := handler.Handle(ctx, analysis)
 
 		Expect(err).NotTo(HaveOccurred())
-		Expect(mockEvaluator.LastInput).NotTo(BeNil())
-		Expect(mockEvaluator.LastInput.DetectedLabels).NotTo(BeNil())
+		Expect(spy.LastInput).NotTo(BeNil())
+		Expect(spy.LastInput.DetectedLabels).NotTo(BeNil())
 
-		dl := mockEvaluator.LastInput.DetectedLabels
+		dl := spy.LastInput.DetectedLabels
 		Expect(dl["git_ops_managed"]).To(BeTrue(), "gitOpsManaged from PostRCAContext")
 		Expect(dl["git_ops_tool"]).To(Equal("argocd"), "gitOpsTool from PostRCAContext")
 		Expect(dl["pdb_protected"]).To(BeTrue(), "pdbProtected from PostRCAContext")
@@ -151,10 +152,10 @@ var _ = Describe("AnalyzingHandler PostRCAContext Rego Integration (ADR-056)", f
 		_, err := handler.Handle(ctx, analysis)
 
 		Expect(err).NotTo(HaveOccurred())
-		Expect(mockEvaluator.LastInput).NotTo(BeNil())
-		Expect(mockEvaluator.LastInput.FailedDetections).To(HaveLen(2))
-		Expect(mockEvaluator.LastInput.FailedDetections).To(ContainElement("pdbProtected"))
-		Expect(mockEvaluator.LastInput.FailedDetections).To(ContainElement("hpaEnabled"))
+		Expect(spy.LastInput).NotTo(BeNil())
+		Expect(spy.LastInput.FailedDetections).To(HaveLen(2))
+		Expect(spy.LastInput.FailedDetections).To(ContainElement("pdbProtected"))
+		Expect(spy.LastInput.FailedDetections).To(ContainElement("hpaEnabled"))
 	})
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -170,8 +171,8 @@ var _ = Describe("AnalyzingHandler PostRCAContext Rego Integration (ADR-056)", f
 		_, err := handler.Handle(ctx, analysis)
 
 		Expect(err).NotTo(HaveOccurred())
-		Expect(mockEvaluator.LastInput).NotTo(BeNil())
-		dl := mockEvaluator.LastInput.DetectedLabels
+		Expect(spy.LastInput).NotTo(BeNil())
+		dl := spy.LastInput.DetectedLabels
 		Expect(dl["stateful"]).To(BeTrue(),
 			"ADR-056: DetectedLabels from PostRCAContext")
 		Expect(dl["git_ops_managed"]).To(BeTrue(),
@@ -190,10 +191,10 @@ var _ = Describe("AnalyzingHandler PostRCAContext Rego Integration (ADR-056)", f
 		_, err := handler.Handle(ctx, analysis)
 
 		Expect(err).NotTo(HaveOccurred())
-		Expect(mockEvaluator.LastInput).NotTo(BeNil())
-		Expect(mockEvaluator.LastInput.DetectedLabels).NotTo(BeNil(),
+		Expect(spy.LastInput).NotTo(BeNil())
+		Expect(spy.LastInput.DetectedLabels).NotTo(BeNil(),
 			"DetectedLabels must be non-nil empty map, not nil")
-		Expect(mockEvaluator.LastInput.DetectedLabels).To(BeEmpty(),
+		Expect(spy.LastInput.DetectedLabels).To(BeEmpty(),
 			"DetectedLabels must be empty when PostRCAContext is nil")
 	})
 
