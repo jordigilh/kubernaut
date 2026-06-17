@@ -31,14 +31,15 @@ import (
 // E2E-FP-1189-002 uses this for autonomous remediation (no IS creation).
 func afCreateRRConfig() MockScenarioConfig {
 	return MockScenarioConfig{
-		ScenarioName: "kubernaut_remediate",
-		ToolCallName: "kubernaut_remediate",
-		ResourceKind: "Deployment",
-		ResourceNS:   "kubernaut-system",
-		ResourceName: "memory-eater",
-		APIVersion:   "apps/v1",
+		ScenarioName:         "kubernaut_remediate",
+		ToolCallName:         "kubernaut_remediate",
+		ResourceKind:         "Deployment",
+		ResourceNS:           "kubernaut-system",
+		ResourceName:         "memory-eater",
+		APIVersion:           "apps/v1",
 		InvestigationOutcome: "actionable",
 		IsActionable:         BoolPtr(true),
+		ForceText:            BoolPtr(false),
 	}
 }
 
