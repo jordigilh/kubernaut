@@ -134,3 +134,53 @@ var _ = Describe("MCPClient — StartInvestigation (#1326 BR-MCP-002)", func() {
 		})
 	})
 })
+
+var _ = Describe("StartInvestigationArgs.SessionID (#1452 BR-INTERACTIVE-010)", func() {
+
+	Describe("UT-AF-1452-003 [SC-8]: SessionID included in StartInvestigationArgs when provided", func() {
+		It("should pass SessionID through to the mock function", func() {
+			var receivedArgs ka.StartInvestigationArgs
+			mock := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, args ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					receivedArgs = args
+					return &ka.StartInvestigationResult{
+						SessionID: "ka-sess-1452",
+						Status:    "started",
+					}, nil
+				},
+			}
+
+			_, err := mock.StartInvestigation(context.Background(), ka.StartInvestigationArgs{
+				RRID:      "rr-1452-003",
+				SessionID: "ka-sess-1452",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(receivedArgs.RRID).To(Equal("rr-1452-003"))
+			Expect(receivedArgs.SessionID).To(Equal("ka-sess-1452"),
+				"SC-8: SessionID must be transmitted unmodified through the MCPClient interface")
+		})
+	})
+
+	Describe("UT-AF-1452-004 [SC-8]: SessionID empty when not provided", func() {
+		It("should pass empty SessionID without error", func() {
+			var receivedArgs ka.StartInvestigationArgs
+			mock := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, args ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					receivedArgs = args
+					return &ka.StartInvestigationResult{
+						SessionID: "ka-new-sess",
+						Status:    "started",
+					}, nil
+				},
+			}
+
+			_, err := mock.StartInvestigation(context.Background(), ka.StartInvestigationArgs{
+				RRID: "rr-1452-004",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(receivedArgs.RRID).To(Equal("rr-1452-004"))
+			Expect(receivedArgs.SessionID).To(BeEmpty(),
+				"SC-8: empty SessionID must not inject spurious values into the protocol")
+		})
+	})
+})

@@ -319,6 +319,154 @@ var _ = Describe("Fix #1390: handleStart upgrade wiring — BR-INTERACTIVE-004",
 	})
 })
 
+var _ = Describe("Fix #1452: handleStart prefers AF-provided session ID — BR-INTERACTIVE-010", func() {
+
+	Describe("UT-KA-1452-001 [AC-4]: AF-provided SessionID used for direct pending session lookup", func() {
+		It("should use input.SessionID directly instead of RRID scan", func() {
+			sessionMgr := &mockSessionManager{
+				takeoverSession: &mcpinternal.InteractiveSession{
+					SessionID:     "lease-1452-001",
+					CorrelationID: "rr-1452-001",
+				},
+			}
+			autoMgr := &sessionIDTrackingAutoMgr{
+				launchOK: true,
+			}
+			runner := &mockInvestigatorRunner{}
+			recon := &mockContextReconstructor{turns: []mcpinternal.ConversationTurn{}}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, autoMgr)
+			out, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:      "rr-1452-001",
+				Action:    mcptools.ActionStart,
+				SessionID: "af-provided-sess-001",
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(out.Status).To(Equal("started"))
+			Expect(out.InvestigationSessionID).To(Equal("af-provided-sess-001"),
+				"AC-4: AF-provided session ID must be used for direct lookup, not RRID scan")
+			Expect(autoMgr.launchedID).To(Equal("af-provided-sess-001"),
+				"LaunchDeferredInvestigation must receive the AF-provided session ID")
+			Expect(autoMgr.findPendingCalled.Load()).To(Equal(int32(0)),
+				"FindPendingByRemediationID must NOT be called when AF provides a session ID")
+		})
+	})
+
+	Describe("UT-KA-1452-002 [AC-4]: empty SessionID falls back to RRID scan (existing behavior)", func() {
+		It("should call FindPendingByRemediationID when SessionID is empty", func() {
+			sessionMgr := &mockSessionManager{
+				takeoverSession: &mcpinternal.InteractiveSession{
+					SessionID:     "lease-1452-002",
+					CorrelationID: "rr-1452-002",
+				},
+			}
+			autoMgr := &sessionIDTrackingAutoMgr{
+				pendingResult: "rrid-scanned-sess-002",
+				pendingOK:     true,
+				launchOK:      true,
+			}
+			runner := &mockInvestigatorRunner{}
+			recon := &mockContextReconstructor{turns: []mcpinternal.ConversationTurn{}}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, autoMgr)
+			out, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-1452-002",
+				Action: mcptools.ActionStart,
+			}, mcpinternal.UserInfo{Username: "bob"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(out.Status).To(Equal("started"))
+			Expect(out.InvestigationSessionID).To(Equal("rrid-scanned-sess-002"),
+				"AC-4: RRID scan must be used as fallback when no AF session ID provided")
+			Expect(autoMgr.findPendingCalled.Load()).To(Equal(int32(1)),
+				"FindPendingByRemediationID must be called when SessionID is empty")
+		})
+	})
+
+	Describe("UT-KA-1452-003 [AC-4]: AF-provided SessionID with launch failure falls through gracefully", func() {
+		It("should handle launch failure for AF-provided session ID and continue to upgrade path", func() {
+			sessionMgr := &mockSessionManager{
+				takeoverSession: &mcpinternal.InteractiveSession{
+					SessionID:     "lease-1452-003",
+					CorrelationID: "rr-1452-003",
+				},
+			}
+			autoMgr := &sessionIDTrackingAutoMgr{
+				launchOK:   false,
+				launchErr:  errors.New("session not found"),
+				findResult: "auto-running-sess-003",
+				findOK:     true,
+			}
+			runner := &mockInvestigatorRunner{}
+			recon := &mockContextReconstructor{turns: []mcpinternal.ConversationTurn{}}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, autoMgr)
+			out, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:      "rr-1452-003",
+				Action:    mcptools.ActionStart,
+				SessionID: "af-stale-sess-003",
+			}, mcpinternal.UserInfo{Username: "charlie"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(out.Status).To(Equal("started"))
+			Expect(out.InvestigationSessionID).To(Equal("auto-running-sess-003"),
+				"AC-4: when AF-provided session launch fails, must fall through to UpgradeToInteractive path")
+		})
+	})
+})
+
+// sessionIDTrackingAutoMgr tracks the session ID passed to LaunchDeferredInvestigation
+// and whether FindPendingByRemediationID was called.
+type sessionIDTrackingAutoMgr struct {
+	findResult         string
+	findOK             bool
+	pendingResult      string
+	pendingOK          bool
+	launchOK           bool
+	launchErr          error
+	launchedID         string
+	findPendingCalled  atomic.Int32
+}
+
+func (m *sessionIDTrackingAutoMgr) FindByRemediationID(_ string) (string, bool) {
+	return m.findResult, m.findOK
+}
+func (m *sessionIDTrackingAutoMgr) CancelInvestigation(_ string) error  { return nil }
+func (m *sessionIDTrackingAutoMgr) SuspendInvestigation(_ string) error { return nil }
+func (m *sessionIDTrackingAutoMgr) TransitionToUserDriving(_ string, _ string, _ []string) error {
+	return nil
+}
+func (m *sessionIDTrackingAutoMgr) ForceTransitionToUserDriving(_ string, _ string, _ []string) error {
+	return nil
+}
+func (m *sessionIDTrackingAutoMgr) UpgradeToInteractive(_ string, _ string, _ []string) error {
+	return nil
+}
+func (m *sessionIDTrackingAutoMgr) FindPendingByRemediationID(_ string) (string, bool) {
+	m.findPendingCalled.Add(1)
+	return m.pendingResult, m.pendingOK
+}
+func (m *sessionIDTrackingAutoMgr) LaunchDeferredInvestigation(id string) error {
+	m.launchedID = id
+	if !m.launchOK {
+		return m.launchErr
+	}
+	return nil
+}
+func (m *sessionIDTrackingAutoMgr) StartInvestigation(_ context.Context, _ session.InvestigateFunc, _ map[string]string) (string, error) {
+	return "", nil
+}
+func (m *sessionIDTrackingAutoMgr) Subscribe(_ context.Context, _ string) (<-chan session.InvestigationEvent, error) {
+	return nil, nil
+}
+func (m *sessionIDTrackingAutoMgr) GetLatestRCASummaryByRemediationID(_ string) (string, bool) {
+	return "", false
+}
+func (m *sessionIDTrackingAutoMgr) GetLatestRCAResultByRemediationID(_ string) (*katypes.InvestigationResult, bool) {
+	return nil, false
+}
+func (m *sessionIDTrackingAutoMgr) GetSessionLazySink(_ string) (*session.LazySink, bool) {
+	return nil, false
+}
+
 // upgradeTrackingAutoMgr tracks calls to UpgradeToInteractive vs TransitionToUserDriving.
 type upgradeTrackingAutoMgr struct {
 	findResult       string

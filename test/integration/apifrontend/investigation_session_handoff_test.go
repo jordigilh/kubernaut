@@ -27,6 +27,13 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	aiav1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
@@ -552,3 +559,102 @@ var _ = Describe("InjectVerified Wiring at Investigation Handoff (#1442)", Label
 			"live session must remain open for reuse")
 	})
 })
+
+// =============================================================================
+// IT-AF-1452: Session ID Forwarding (BR-INTERACTIVE-010, #1452)
+//
+// Wiring Manifest rows covered:
+//   - StartInvestigationArgs.SessionID  (IT-AF-1452-001)
+//   - SDKMCPClient session_id argsMap   (IT-AF-1452-001)
+//
+// Pyramid Invariant:
+//   UT proves logic (ka_investigate_mcp_test.go, start_investigation_test.go).
+//   IT (this file) proves wiring through the AIA polling -> capture -> MCP forward path.
+// =============================================================================
+
+var _ = Describe("Session ID Forwarding (#1452)", Label("integration", "session-forwarding"), func() {
+
+	Describe("IT-AF-1452-001 [SI-4+SC-8]: AIA CRD session ID flows through AF to MCP client", func() {
+		It("should capture session ID from AIA CRD and forward it to StartInvestigation", func() {
+			const aiaSessionID = "ka-sess-it-1452-001"
+			var receivedArgs ka.StartInvestigationArgs
+			eventCh := make(chan ka.InvestigationEvent, 10)
+
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, args ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					receivedArgs = args
+					return &ka.StartInvestigationResult{
+						SessionID: aiaSessionID,
+						Status:    "started",
+						Events:    eventCh,
+						Closer:    func() { close(eventCh) },
+					}, nil
+				},
+			}
+
+			s := runtime.NewScheme()
+			_ = aiav1alpha1.AddToScheme(s)
+			_ = corev1.AddToScheme(s)
+
+			aiaObj := &aiav1alpha1.AIAnalysis{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "kubernaut-system",
+					Name:      "aia-rr-it-1452-001",
+				},
+				Spec: aiav1alpha1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						Name:      "rr-it-1452-001",
+						Namespace: "kubernaut-system",
+					},
+					RemediationID: "rr-it-1452-001",
+				},
+				Status: aiav1alpha1.AIAnalysisStatus{
+					KASession: &aiav1alpha1.KASession{
+						ID: aiaSessionID,
+					},
+				},
+			}
+			tc := fake.NewClientBuilder().
+				WithScheme(s).
+				WithObjects(aiaObj).
+				WithStatusSubresource(aiaObj).
+				Build()
+
+			recorder := &itAuditRecorder{}
+			registry := tools.NewMonitorRegistry()
+
+			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+				Username: "it-user-1452",
+				Groups:   []string{"sre"},
+			})
+
+			result, err := tools.HandleInvestigationMCPWithRegistry(
+				ctx, mockMCP, tc, "kubernaut-system",
+				tools.InvestigateMCPArgs{RRID: "rr-it-1452-001"},
+				recorder, registry, nil, false, nil, "", nil, nil,
+			)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.SessionID).To(Equal(aiaSessionID))
+
+			By("verifying session ID was forwarded to MCP client (SC-8: transmission integrity)")
+			Expect(receivedArgs.SessionID).To(Equal(aiaSessionID),
+				"SC-8: AIA CRD session ID must be forwarded unmodified through the full AF dispatch path")
+			Expect(receivedArgs.RRID).To(Equal("rr-it-1452-001"))
+
+			By("verifying audit event references KA-confirmed session ID (AU-3: audit records)")
+			Expect(recorder.events).To(HaveLen(1))
+			Expect(recorder.events[0].Detail["ka_correlation_id"]).To(Equal(aiaSessionID),
+				"AU-3: delegation audit event must reference the KA-confirmed session ID")
+		})
+	})
+})
+
+type itAuditRecorder struct {
+	events []*audit.Event
+}
+
+func (r *itAuditRecorder) Emit(_ context.Context, e *audit.Event) {
+	r.events = append(r.events, e)
+}
+
+var _ audit.Emitter = (*itAuditRecorder)(nil)

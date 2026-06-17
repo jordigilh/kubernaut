@@ -312,6 +312,9 @@ func (c *SDKMCPClient) StartInvestigation(ctx context.Context, args StartInvesti
 		"acting_user":        identity.Username,
 		"acting_user_groups": identity.Groups,
 	}
+	if args.SessionID != "" {
+		argsMap["session_id"] = args.SessionID
+	}
 
 	callCtx, callCancel := context.WithTimeout(ctx, 30*time.Second)
 	defer callCancel()

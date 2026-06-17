@@ -111,6 +111,54 @@ func (m *goldenPathAutoMgr) GetSessionLazySink(_ string) (*session.LazySink, boo
 	return nil, false
 }
 
+// sessionIDForwardingAutoMgr tracks whether AF-provided SessionID was used for direct lookup.
+type sessionIDForwardingAutoMgr struct {
+	launchOK           bool
+	launchedID         string
+	findPendingCalled  int32
+}
+
+func (m *sessionIDForwardingAutoMgr) FindByRemediationID(_ string) (string, bool) {
+	return "", false
+}
+func (m *sessionIDForwardingAutoMgr) CancelInvestigation(_ string) error  { return nil }
+func (m *sessionIDForwardingAutoMgr) SuspendInvestigation(_ string) error { return nil }
+func (m *sessionIDForwardingAutoMgr) TransitionToUserDriving(_ string, _ string, _ []string) error {
+	return nil
+}
+func (m *sessionIDForwardingAutoMgr) ForceTransitionToUserDriving(_ string, _ string, _ []string) error {
+	return nil
+}
+func (m *sessionIDForwardingAutoMgr) UpgradeToInteractive(_ string, _ string, _ []string) error {
+	return nil
+}
+func (m *sessionIDForwardingAutoMgr) FindPendingByRemediationID(_ string) (string, bool) {
+	m.findPendingCalled++
+	return "", false
+}
+func (m *sessionIDForwardingAutoMgr) LaunchDeferredInvestigation(id string) error {
+	m.launchedID = id
+	if !m.launchOK {
+		return fmt.Errorf("session not found")
+	}
+	return nil
+}
+func (m *sessionIDForwardingAutoMgr) StartInvestigation(_ context.Context, _ session.InvestigateFunc, _ map[string]string) (string, error) {
+	return "", nil
+}
+func (m *sessionIDForwardingAutoMgr) Subscribe(_ context.Context, _ string) (<-chan session.InvestigationEvent, error) {
+	return nil, nil
+}
+func (m *sessionIDForwardingAutoMgr) GetLatestRCASummaryByRemediationID(_ string) (string, bool) {
+	return "", false
+}
+func (m *sessionIDForwardingAutoMgr) GetLatestRCAResultByRemediationID(_ string) (*katypes.InvestigationResult, bool) {
+	return nil, false
+}
+func (m *sessionIDForwardingAutoMgr) GetSessionLazySink(_ string) (*session.LazySink, bool) {
+	return nil, false
+}
+
 var _ = Describe("Golden Path Lifecycle — IT-KA-GOLDEN-001 BR-INTERACTIVE-001", func() {
 	var (
 		tool    *mcptools.InvestigateTool
@@ -186,6 +234,37 @@ var _ = Describe("Golden Path Lifecycle — IT-KA-GOLDEN-001 BR-INTERACTIVE-001"
 			time.Sleep(100 * time.Millisecond)
 			goroutinesAfter := runtime.NumGoroutine()
 			Expect(goroutinesAfter - goroutinesBefore).To(BeNumerically("<=", 5))
+		})
+	})
+
+	Describe("IT-KA-1452-001 [AC-4]: AF-provided SessionID enables direct pending session lookup", func() {
+		It("should use input.SessionID for pending session lookup instead of RRID scan", func() {
+			user := mcpinternal.UserInfo{Username: "alice@example.com"}
+			ctx := context.Background()
+
+			pendingAutoMgr := &sessionIDForwardingAutoMgr{
+				launchOK: true,
+			}
+			sessMgr := mcpinternal.NewLeaseSessionManagerConcrete(sharedK8sClient, nsName, logr.Discard())
+			testTool := mcptools.NewInvestigateTool(sessMgr, runner, &goldenPathRecon{}, pendingAutoMgr)
+
+			out, err := testTool.Handle(ctx, mcptools.InvestigateInput{
+				RRID:      "rr-1452-it-001",
+				Action:    mcptools.ActionStart,
+				SessionID: "af-forwarded-sess-001",
+			}, user)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(out.Status).To(Equal("started"))
+
+			By("verifying AF-provided session ID was used for direct lookup (AC-4)")
+			Expect(pendingAutoMgr.launchedID).To(Equal("af-forwarded-sess-001"),
+				"AC-4: LaunchDeferredInvestigation must receive the AF-provided session ID, not an RRID-scanned one")
+			Expect(pendingAutoMgr.findPendingCalled).To(Equal(int32(0)),
+				"FindPendingByRemediationID must NOT be called when AF provides a session ID")
+
+			By("verifying InvestigationSessionID populated for EventLogBridge wiring (SI-4)")
+			Expect(out.InvestigationSessionID).To(Equal("af-forwarded-sess-001"),
+				"SI-4: InvestigationSessionID must be set to enable EventLogBridge for the correct session")
 		})
 	})
 
