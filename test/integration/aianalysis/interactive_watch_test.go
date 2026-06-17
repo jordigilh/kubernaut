@@ -631,7 +631,7 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			createActiveIS(isName, rrName)
 
 			By("creating Investigating AA with interactive session")
-			analysis := createInvestigatingAA(aaName, rrName, sessionID, true)
+			_ = createInvestigatingAA(aaName, rrName, sessionID, true)
 
 			By("waiting for controller to start polling (proves reconcile loop is active)")
 			Eventually(func() int {
