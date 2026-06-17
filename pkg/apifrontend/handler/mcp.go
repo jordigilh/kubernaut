@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"fmt"
+	"iter"
 	"net/http"
 	"sync"
 	"time"
@@ -84,6 +85,11 @@ func NewMCPHandler(cfg MCPConfig) (http.Handler, error) { //nolint:gocritic // h
 	}
 
 	auditor := cfg.Auditor
+
+	if auditor != nil {
+		opts.EventStore = newAuditingEventStore(auditor)
+	}
+
 	var seenSessions sync.Map
 	h := mcp.NewStreamableHTTPHandler(
 		func(r *http.Request) *mcp.Server {
@@ -175,4 +181,44 @@ func DefaultMCPTools(interactiveEnabled bool) []MCPToolDef {
 		})
 	}
 	return result
+}
+
+// auditingEventStore wraps the SDK's MemoryEventStore and emits an audit event
+// when a console-facing MCP session is closed (idle timeout or explicit close).
+// BR-OPS-013: session lifecycle events must be auditable.
+type auditingEventStore struct {
+	inner   *mcp.MemoryEventStore
+	auditor audit.Emitter
+}
+
+func newAuditingEventStore(auditor audit.Emitter) *auditingEventStore {
+	return &auditingEventStore{
+		inner:   mcp.NewMemoryEventStore(nil),
+		auditor: auditor,
+	}
+}
+
+func (s *auditingEventStore) Open(ctx context.Context, sessionID, streamID string) error {
+	return s.inner.Open(ctx, sessionID, streamID)
+}
+
+func (s *auditingEventStore) Append(ctx context.Context, sessionID, streamID string, data []byte) error {
+	return s.inner.Append(ctx, sessionID, streamID, data)
+}
+
+func (s *auditingEventStore) After(ctx context.Context, sessionID, streamID string, index int) iter.Seq2[[]byte, error] {
+	return s.inner.After(ctx, sessionID, streamID, index)
+}
+
+func (s *auditingEventStore) SessionClosed(ctx context.Context, sessionID string) error {
+	if s.auditor != nil {
+		s.auditor.Emit(ctx, &audit.Event{
+			Type: audit.EventMCPSessionClosed,
+			Detail: map[string]string{
+				"mcp_session_id": sessionID,
+				"reason":         "session_closed",
+			},
+		})
+	}
+	return s.inner.SessionClosed(ctx, sessionID)
 }
