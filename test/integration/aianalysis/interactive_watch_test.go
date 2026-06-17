@@ -78,7 +78,10 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 		return is
 	}
 
-	createInvestigatingAA := func(name, rrName, sessionID string, interactive bool) *aianalysisv1.AIAnalysis {
+	createInvestigatingAA := func(name, rrName, sessionID, signalName string, interactive bool) *aianalysisv1.AIAnalysis {
+		if signalName == "" {
+			signalName = "CrashLoopBackOff"
+		}
 		analysis := &aianalysisv1.AIAnalysis{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      name,
@@ -94,7 +97,7 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 					SignalContext: aianalysisv1.SignalContextInput{
 						Fingerprint:      "fp-interactive",
 						Severity:         "medium",
-						SignalName:       "CrashLoopBackOff",
+						SignalName:       signalName,
 						Environment:      "staging",
 						BusinessPriority: "P2",
 						TargetResource: aianalysisv1.TargetResource{
@@ -177,15 +180,7 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			rrName := helpers.UniqueTestName("rr-watch-create")
 			analysisName := helpers.UniqueTestName("aa-watch-create")
 
-			analysis := createInvestigatingAA(analysisName, rrName, "", false)
-			// Override signal name to trigger slow-investigation scenario in mock-LLM
-			Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
-				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis); err != nil {
-					return err
-				}
-				analysis.Spec.AnalysisRequest.SignalContext.SignalName = "slow-investigation-test"
-				return k8sClient.Update(ctx, analysis)
-			})).To(Succeed())
+			analysis := createInvestigatingAA(analysisName, rrName, "", "slow-investigation-test", false)
 
 			By("waiting for real KA session to be established (KASession.ID set)")
 			Eventually(func(g Gomega) {
@@ -219,14 +214,7 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			isName := helpers.UniqueTestName("is-watch-delete")
 			createActiveIS(isName, rrName)
 
-			analysis := createInvestigatingAA(analysisName, rrName, "", true)
-			Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
-				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis); err != nil {
-					return err
-				}
-				analysis.Spec.AnalysisRequest.SignalContext.SignalName = "slow-investigation-test"
-				return k8sClient.Update(ctx, analysis)
-			})).To(Succeed())
+			analysis := createInvestigatingAA(analysisName, rrName, "", "slow-investigation-test", true)
 
 			By("waiting for real KA session to be established")
 			Eventually(func(g Gomega) {
@@ -269,14 +257,7 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			rrName := helpers.UniqueTestName("rr-takeover")
 			analysisName := helpers.UniqueTestName("aa-takeover")
 
-			analysis := createInvestigatingAA(analysisName, rrName, "", false)
-			Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
-				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis); err != nil {
-					return err
-				}
-				analysis.Spec.AnalysisRequest.SignalContext.SignalName = "slow-investigation-test"
-				return k8sClient.Update(ctx, analysis)
-			})).To(Succeed())
+			analysis := createInvestigatingAA(analysisName, rrName, "", "slow-investigation-test", false)
 
 			By("waiting for real KA session to be established")
 			Eventually(func(g Gomega) {
@@ -336,14 +317,7 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			rrName := helpers.UniqueTestName("rr-1390-upgrade")
 			analysisName := helpers.UniqueTestName("aa-1390-upgrade")
 
-			analysis := createInvestigatingAA(analysisName, rrName, "", false)
-			Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
-				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis); err != nil {
-					return err
-				}
-				analysis.Spec.AnalysisRequest.SignalContext.SignalName = "slow-investigation-test"
-				return k8sClient.Update(ctx, analysis)
-			})).To(Succeed())
+			analysis := createInvestigatingAA(analysisName, rrName, "", "slow-investigation-test", false)
 
 			By("waiting for real KA session to be established")
 			Eventually(func(g Gomega) {
@@ -420,14 +394,7 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			createActiveIS(isName, rrName)
 
 			By("creating Investigating AA with oomkilled signal (mock-LLM produces quick completion)")
-			analysis := createInvestigatingAA(aaName, rrName, "", true)
-			Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
-				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis); err != nil {
-					return err
-				}
-				analysis.Spec.AnalysisRequest.SignalContext.SignalName = "oomkilled"
-				return k8sClient.Update(ctx, analysis)
-			})).To(Succeed())
+			analysis := createInvestigatingAA(aaName, rrName, "", "oomkilled", true)
 
 			By("verifying IS CRD transitions to Completed (wiring proof)")
 			Eventually(func(g Gomega) {
@@ -455,14 +422,7 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			createActiveIS(isName, rrName)
 
 			By("creating Investigating AA with slow scenario")
-			analysis := createInvestigatingAA(aaName, rrName, "", true)
-			Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
-				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis); err != nil {
-					return err
-				}
-				analysis.Spec.AnalysisRequest.SignalContext.SignalName = "slow-investigation-test"
-				return k8sClient.Update(ctx, analysis)
-			})).To(Succeed())
+			analysis := createInvestigatingAA(aaName, rrName, "", "slow-investigation-test", true)
 
 			By("waiting for session to be established")
 			Eventually(func(g Gomega) {
@@ -494,14 +454,7 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			createActiveIS(isName, rrName)
 
 			By("creating Investigating AA with slow scenario")
-			analysis := createInvestigatingAA(aaName, rrName, "", false)
-			Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
-				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis); err != nil {
-					return err
-				}
-				analysis.Spec.AnalysisRequest.SignalContext.SignalName = "slow-investigation-test"
-				return k8sClient.Update(ctx, analysis)
-			})).To(Succeed())
+			analysis := createInvestigatingAA(aaName, rrName, "", "slow-investigation-test", false)
 
 			By("waiting for session to be established then backdating")
 			Eventually(func(g Gomega) {
@@ -544,14 +497,7 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			createActiveIS(isName, rrName)
 
 			By("creating Investigating AA with slow scenario (interactive)")
-			analysis := createInvestigatingAA(aaName, rrName, "", true)
-			Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
-				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis); err != nil {
-					return err
-				}
-				analysis.Spec.AnalysisRequest.SignalContext.SignalName = "slow-investigation-test"
-				return k8sClient.Update(ctx, analysis)
-			})).To(Succeed())
+			analysis := createInvestigatingAA(aaName, rrName, "", "slow-investigation-test", true)
 
 			By("waiting for session to be established then backdating")
 			Eventually(func(g Gomega) {
@@ -622,14 +568,7 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			createActiveIS(isName, rrName)
 
 			By("creating Investigating AA with slow-investigation scenario")
-			analysis := createInvestigatingAA(aaName, rrName, "", true)
-			Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
-				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis); err != nil {
-					return err
-				}
-				analysis.Spec.AnalysisRequest.SignalContext.SignalName = "slow-investigation-test"
-				return k8sClient.Update(ctx, analysis)
-			})).To(Succeed())
+			analysis := createInvestigatingAA(aaName, rrName, "", "slow-investigation-test", true)
 
 			By("waiting for real KA session to be established")
 			Eventually(func(g Gomega) {
