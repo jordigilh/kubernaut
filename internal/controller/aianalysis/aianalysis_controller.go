@@ -274,7 +274,7 @@ func (r *AIAnalysisReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&aianalysisv1.AIAnalysis{}).
 		WatchesRawSource(source.Kind(mgr.GetCache(), &isv1alpha1.InvestigationSession{},
 			handler.TypedEnqueueRequestsFromMapFunc(r.mapISToAIAnalysis),
-			isEventPredicate(),
+			ISEventPredicate(),
 		)).
 		WithEventFilter(aiAnalysisUpdatePredicate()).
 		Complete(r)
@@ -309,8 +309,11 @@ func (r *AIAnalysisReconciler) mapISToAIAnalysis(ctx context.Context, is *isv1al
 	return requests
 }
 
-// isEventPredicate filters IS events to only create and delete (phase changes are not relevant).
-func isEventPredicate() predicate.TypedPredicate[*isv1alpha1.InvestigationSession] {
+// ISEventPredicate filters IS events: passes create, delete, and update events
+// where the new phase is terminal (Completed, Cancelled, Failed). Non-terminal
+// updates are dropped to avoid unnecessary reconciles.
+// #1449/SI-4: Terminal transitions must wake the AA controller immediately.
+func ISEventPredicate() predicate.TypedPredicate[*isv1alpha1.InvestigationSession] {
 	return predicate.TypedFuncs[*isv1alpha1.InvestigationSession]{
 		CreateFunc: func(e event.TypedCreateEvent[*isv1alpha1.InvestigationSession]) bool {
 			return true
@@ -319,7 +322,13 @@ func isEventPredicate() predicate.TypedPredicate[*isv1alpha1.InvestigationSessio
 			return true
 		},
 		UpdateFunc: func(e event.TypedUpdateEvent[*isv1alpha1.InvestigationSession]) bool {
-			return false
+			if e.ObjectOld == nil || e.ObjectNew == nil {
+				return false
+			}
+			newPhase := e.ObjectNew.Status.Phase
+			return newPhase == isv1alpha1.SessionPhaseCompleted ||
+				newPhase == isv1alpha1.SessionPhaseCancelled ||
+				newPhase == isv1alpha1.SessionPhaseFailed
 		},
 		GenericFunc: func(e event.TypedGenericEvent[*isv1alpha1.InvestigationSession]) bool {
 			return false
