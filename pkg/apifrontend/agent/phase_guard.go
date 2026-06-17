@@ -93,13 +93,25 @@ func newPhaseGuard(registry *launcher.ActiveContextRegistry) (llmagent.BeforeToo
 		isEntry := driverEntryTools[toolName]
 		isTerminal := sessionTerminalTools[toolName]
 
+		isSuccess := callErr == nil && resp != nil
+		if isSuccess {
+			if errVal, ok := resp["error"]; ok && errVal != nil {
+				isSuccess = false
+			}
+		}
+
+		// Refresh idle timer for any successful tool call to keep the
+		// active session alive during ongoing engagement (#1446, AU-3).
+		if registry != nil && isSuccess && !isEntry && !isTerminal {
+			if identity := auth.UserIdentityFromContext(ctx); identity != nil && identity.Username != "" {
+				registry.Refresh(identity.Username)
+			}
+		}
+
 		if !isEntry && !isTerminal {
 			return resp, callErr
 		}
-		if callErr != nil || resp == nil {
-			return resp, callErr
-		}
-		if errVal, ok := resp["error"]; ok && errVal != nil {
+		if !isSuccess {
 			return resp, callErr
 		}
 

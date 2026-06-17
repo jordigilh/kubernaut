@@ -937,7 +937,7 @@ func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps,
 		sessionSvcForAgent = sessInfra.SessionService
 	}
 
-	activeCtxRegistry := launcher.NewActiveContextRegistry(launcher.DefaultRegistryTTL)
+	activeCtxRegistry := launcher.NewActiveContextRegistry(launcher.DefaultRegistryTTL, launcher.DefaultRegistryIdleTimeout)
 
 	rootAgent, _, err := agentpkg.NewRootAgent(agentpkg.AgentConfig{
 		Instruction:           agentpkg.BuildInstruction(cfg.Session.Namespace),
