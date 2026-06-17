@@ -35,3 +35,17 @@ var IsWorkflowInDiscoveryResult = func(workflowID string, dr *mcpinternal.Workfl
 var ExtractDiscoveryResult = func(result *katypes.InvestigationResult) *mcpinternal.WorkflowDiscoveryResult {
 	return extractDiscoveryResult(result)
 }
+
+// GetReconstructedHistory exposes the reconHistory sync.Map for test assertions.
+// Returns nil if no history is stored for the given rrID.
+func (t *InvestigateTool) GetReconstructedHistory(rrID string) []LLMMessage {
+	val, ok := t.reconHistory.Load(rrID)
+	if !ok {
+		return nil
+	}
+	msgs, ok := val.([]LLMMessage)
+	if !ok {
+		return nil
+	}
+	return msgs
+}

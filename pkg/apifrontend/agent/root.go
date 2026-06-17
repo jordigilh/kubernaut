@@ -150,18 +150,19 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 			toolConstructor{"get_alert_details", func() (tool.Tool, error) {
 				return tools.NewGetAlertDetailsTool(cfg.PromClient)
 			}},
-			toolConstructor{"kubernaut_investigate_alert", func() (tool.Tool, error) {
-				return tools.NewInvestigateAlertTool(tools.InvestigateAlertConfig{
-					Client:             cfg.TypedClient,
-					DynClient:          cfg.K8sClient,
-					ControllerNS:       cfg.Namespace,
-					Triager:            cfg.Triager,
-					PromClient:         cfg.PromClient,
-					Auditor:            cfg.Auditor,
-					ValidationFailures: cfg.AlertValidationFailures,
-					Mapper:             cfg.RESTMapper,
-				})
-			}},
+		toolConstructor{"kubernaut_investigate_alert", func() (tool.Tool, error) {
+			return tools.NewInvestigateAlertTool(tools.InvestigateAlertConfig{
+				Client:             cfg.TypedClient,
+				DynClient:          cfg.K8sClient,
+				ControllerNS:       cfg.Namespace,
+				Triager:            cfg.Triager,
+				PromClient:         cfg.PromClient,
+				Auditor:            cfg.Auditor,
+				ValidationFailures: cfg.AlertValidationFailures,
+				Mapper:             cfg.RESTMapper,
+				Signaler:           buildAlertISSignaler(cfg),
+			})
+		}},
 		)
 	}
 
@@ -401,6 +402,32 @@ func (a *agentISSignalerAdapter) SignalInteractive(ctx context.Context, rrNamesp
 
 func (a *agentISSignalerAdapter) UpdateCorrelation(ctx context.Context, crdName, kaSessionID string) error {
 	return a.svc.UpdateISCorrelation(ctx, crdName, kaSessionID)
+}
+
+// buildAlertISSignaler returns an AlertISSignaler wired to the CRDSessionService.
+// Returns nil when no SessionService is configured (backward compat).
+func buildAlertISSignaler(cfg AgentConfig) tools.AlertISSignaler {
+	if cfg.SessionService == nil {
+		return nil
+	}
+	return &alertISSignalerAdapter{svc: cfg.SessionService, namespace: cfg.Namespace}
+}
+
+type alertISSignalerAdapter struct {
+	svc       *session.CRDSessionService
+	namespace string
+}
+
+func (a *alertISSignalerAdapter) SignalInteractive(ctx context.Context, taskID, rrName, username string, groups []string) error {
+	_, err := a.svc.CreateInvestigationSession(ctx, session.CreateISConfig{
+		RRNamespace: a.namespace,
+		RRName:      rrName,
+		TaskID:      taskID,
+		Username:    username,
+		Groups:      groups,
+		JoinMode:    isv1alpha1.SessionJoinModeStart,
+	})
+	return err
 }
 
 // newAuditToolCallback returns an AfterToolCallback that emits a structured

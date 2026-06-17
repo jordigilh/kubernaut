@@ -13,15 +13,26 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	apiprom "github.com/jordigilh/kubernaut/pkg/apifrontend/prometheus"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
 )
 
+// AlertISSignaler creates an InvestigationSession CRD to signal interactive
+// intent. Used by HandleInvestigateAlert to co-create the IS alongside the RR,
+// closing the temporal gap where AA might submit autonomously
+// (BR-INTERACTIVE-010, #1440). Best-effort: errors are logged but do not fail
+// the RR creation.
+type AlertISSignaler interface {
+	SignalInteractive(ctx context.Context, taskID, rrName, username string, groups []string) error
+}
+
 // InvestigateAlertConfig holds dependencies for kubernaut_investigate_alert.
 // All nil-safe: nil PromClient skips alert validation, nil Mapper skips
-// RESTMapper scope checks, nil ValidationFailures skips metric emission.
+// RESTMapper scope checks, nil ValidationFailures skips metric emission,
+// nil Signaler skips IS CRD co-creation (backward compat).
 type InvestigateAlertConfig struct {
 	Client             crclient.Client
 	DynClient          dynamic.Interface
@@ -31,6 +42,7 @@ type InvestigateAlertConfig struct {
 	Auditor            audit.Emitter
 	ValidationFailures *prometheus.CounterVec
 	Mapper             meta.RESTMapper
+	Signaler           AlertISSignaler
 }
 
 // InvestigateAlertArgs defines the LLM-supplied input for kubernaut_investigate_alert.
@@ -156,6 +168,18 @@ func HandleInvestigateAlert(
 		return InvestigateAlertResult{}, fmt.Errorf("create RR for alert investigation: %w", err)
 	}
 
+	if cfg.Signaler != nil {
+		rrName := extractRRNameFromID(result.RRID)
+		taskID := "a2a-" + rrName
+		signalerUsername, signalerGroups := resolveSignalerIdentity(ctx, username)
+		if signalErr := cfg.Signaler.SignalInteractive(ctx, taskID, rrName, signalerUsername, signalerGroups); signalErr != nil {
+			// Best-effort: do not fail RR creation (BR-INTERACTIVE-010 #1440).
+			// The signaler adapter logs internally; suppressing here avoids
+			// adding a logger dependency to this pure function.
+			_ = signalErr
+		}
+	}
+
 	launcher.SetRRContextSafe(ctx, &launcher.RRContext{
 		RRID:      result.RRID,
 		Namespace: args.Namespace,
@@ -174,6 +198,25 @@ func HandleInvestigateAlert(
 		Severity:       result.Severity,
 		SeveritySource: result.SeveritySource,
 	}, nil
+}
+
+// extractRRNameFromID extracts the RR name from an RRID like "namespace/name".
+func extractRRNameFromID(rrid string) string {
+	for i := len(rrid) - 1; i >= 0; i-- {
+		if rrid[i] == '/' {
+			return rrid[i+1:]
+		}
+	}
+	return rrid
+}
+
+// resolveSignalerIdentity extracts the username and groups from auth context,
+// falling back to the provided username if no identity is in context.
+func resolveSignalerIdentity(ctx context.Context, fallbackUsername string) (string, []string) {
+	if identity := auth.UserIdentityFromContext(ctx); identity != nil && identity.Username != "" {
+		return identity.Username, identity.Groups
+	}
+	return fallbackUsername, nil
 }
 
 // validateAlertExists checks if the given alert name exists in Prometheus active

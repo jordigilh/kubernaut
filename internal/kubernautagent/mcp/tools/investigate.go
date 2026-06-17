@@ -440,14 +440,29 @@ func (t *InvestigateTool) handleStart(ctx context.Context, input InvestigateInpu
 						t.logger.Error(forceErr, "start: force-transition to user-driving failed (session terminal)",
 							"rr_id", input.RRID, "auto_session_id", autoSessionID)
 					}
+					// #1440 SC-24: Terminal session — create fresh interactive session
+					// so the user always has an investigation to drive.
+					freshID := t.createFallbackSession(ctx, input.RRID, user)
+					if freshID != "" {
+						investigationSessionID = freshID
+					} else {
+						investigationSessionID = autoSessionID
+					}
 				} else {
 					t.logger.Error(upgradeErr, "start: upgrade autonomous session to interactive",
 						"rr_id", input.RRID, "auto_session_id", autoSessionID)
+					investigationSessionID = autoSessionID
 				}
+			} else {
+				investigationSessionID = autoSessionID
 			}
-			investigationSessionID = autoSessionID
 		} else {
-			if forceErr := t.autoMgr.ForceTransitionToUserDriving(input.RRID, user.Username, user.Groups); forceErr != nil {
+			// #1440 SC-24: No session exists for this RR — create fresh interactive
+			// session so the user is never left with a lease but no investigation.
+			freshID := t.createFallbackSession(ctx, input.RRID, user)
+			if freshID != "" {
+				investigationSessionID = freshID
+			} else if forceErr := t.autoMgr.ForceTransitionToUserDriving(input.RRID, user.Username, user.Groups); forceErr != nil {
 				t.logger.Error(forceErr, "start: force-transition to user-driving (no running session found)",
 					"rr_id", input.RRID)
 			}
@@ -1120,6 +1135,31 @@ func (t *InvestigateTool) handleStartAutonomous(ctx context.Context, input Inves
 		SessionID: sessionID,
 		Status:    "autonomous_started",
 	}, nil
+}
+
+// createFallbackSession creates a fresh interactive session when no viable
+// autonomous session exists (no session found, or terminal session). This
+// ensures the user always has an investigation to drive after acquiring the
+// MCP lease (SC-24, #1440).
+func (t *InvestigateTool) createFallbackSession(ctx context.Context, rrID string, user mcpinternal.UserInfo) string {
+	metadata := map[string]string{
+		"rr_id":    rrID,
+		"username": user.Username,
+		"mode":     "interactive_fallback",
+	}
+	investigateFn := session.InvestigateFunc(func(_ context.Context) (*katypes.InvestigationResult, error) {
+		return &katypes.InvestigationResult{
+			RCASummary:      "Interactive session — awaiting user direction",
+			InteractiveHold: true,
+		}, nil
+	})
+	sessionID, err := t.autoMgr.StartInvestigation(ctx, investigateFn, metadata)
+	if err != nil {
+		t.logger.Error(err, "start: fallback session creation failed",
+			"rr_id", rrID, "username", user.Username)
+		return ""
+	}
+	return sessionID
 }
 
 // storeReconstructedContext queries the reconstructor and caches prior turns
