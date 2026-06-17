@@ -880,6 +880,9 @@ data:
     runtime:
       logging:
         level: "debug"
+      session:
+        ttl: "5m"
+        maxConcurrentInvestigations: 50
       server:
         tls:
           certDir: /etc/tls

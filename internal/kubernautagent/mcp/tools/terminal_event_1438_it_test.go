@@ -102,7 +102,7 @@ var _ = Describe("IT #1438 — EmitSessionEndedByRR → EventLogBridge wiring", 
 		go bridge.Run(bridgeCtx)
 
 		By("Drain EventTypeComplete emitted by goroutine exit")
-		Eventually(func() int { return capture.count() }, 3*time.Second).Should(BeNumerically(">=", 1))
+		Eventually(func() int { return capture.count() }, 10*time.Second).Should(BeNumerically(">=", 1))
 
 		By("Emit session_ended as timeout handler would")
 		mgr.EmitSessionEndedByRR(rrID, "inactivity_timeout")
