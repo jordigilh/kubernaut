@@ -218,6 +218,10 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	// namespace from the prompt (ADR-057 split verification).
 	r.Register(afCreateRRCrossNSScenario())
 
+	// Slow investigation scenario for AA interactive watch ITs.
+	// Keeps KA session in "investigating" via a 30s second-turn delay.
+	r.Register(mockKeywordScenario("slow_investigation", "slow-investigation-test", slowInvestigationConfig()))
+
 	// Default fallback (lowest priority = 0.01)
 	r.Register(defaultFallbackScenario())
 
