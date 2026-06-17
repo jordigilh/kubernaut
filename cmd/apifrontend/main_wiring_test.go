@@ -887,7 +887,7 @@ func (m *mockPoolSession) CallTool(_ context.Context, _ *mcp.CallToolParams) (*m
 	return nil, nil
 }
 func (m *mockPoolSession) Ping(_ context.Context, _ *mcp.PingParams) error { return nil }
-func (m *mockPoolSession) Close() error                                     { return nil }
+func (m *mockPoolSession) Close() error { return nil }
 
 // ---------------------------------------------------------------------------
 // IT-AF-1234-W12: WithDownstreamDuration wired on SDKMCPClient

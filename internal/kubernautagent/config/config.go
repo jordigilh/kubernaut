@@ -213,12 +213,13 @@ type MCPConfig struct {
 // When Enabled=true, KA exposes an SSE-based MCP endpoint for user-driven
 // investigations. Feature is gated off by default.
 type InteractiveConfig struct {
-	Enabled               bool                `yaml:"enabled"`
-	SessionTTL            time.Duration       `yaml:"sessionTTL"`
-	InactivityTimeout     time.Duration       `yaml:"inactivityTimeout"`
-	MaxConcurrentSessions int                 `yaml:"maxConcurrentSessions"`
-	RateLimitPerUser      int                 `yaml:"rateLimitPerUser"`
-	MaxAnalyzingTimeout   time.Duration       `yaml:"maxAnalyzingTimeout"`
+	Enabled                bool                `yaml:"enabled"`
+	SessionTTL             time.Duration       `yaml:"sessionTTL"`
+	InactivityTimeout      time.Duration       `yaml:"inactivityTimeout"`
+	MaxConcurrentSessions  int                 `yaml:"maxConcurrentSessions"`
+	RateLimitPerUser       int                 `yaml:"rateLimitPerUser"`
+	MaxAnalyzingTimeout    time.Duration       `yaml:"maxAnalyzingTimeout"`
+	DisconnectGracePeriod  time.Duration       `yaml:"disconnectGracePeriod"`
 	JWTProviders []JWTProviderConfig `yaml:"jwtProviders,omitempty"`
 
 	// MCPKeepAlive is the server-side ping interval for MCP sessions (#1387).

@@ -76,6 +76,7 @@ type LeaseSessionManager struct {
 	activeCount       atomic.Int32
 	logger            logr.Logger
 	onSessionExpired  func(sessionID, rrID, reason string) // called on TTL/inactivity auto-release
+	onReconnect       func(sessionID string)               // called when Takeover detects same-user reconnect
 }
 
 type sessionEntry struct {
@@ -116,6 +117,13 @@ func WithSessionExpiredCallback(fn func(sessionID, rrID, reason string)) LeaseOp
 	return func(m *LeaseSessionManager) {
 		m.onSessionExpired = fn
 	}
+}
+
+// SetReconnectCallback sets a callback invoked when Takeover detects a same-user
+// reconnect for an existing session. Used to cancel pending grace-period releases
+// in GracefulSessionClosedHandler (BR-INTERACTIVE-001).
+func (m *LeaseSessionManager) SetReconnectCallback(fn func(sessionID string)) {
+	m.onReconnect = fn
 }
 
 // NewLeaseSessionManager creates a LeaseSessionManager backed by the given K8s client.
@@ -197,6 +205,9 @@ func (m *LeaseSessionManager) Takeover(ctx context.Context, rrID string, user Us
 					"rr_id", rrID,
 					"user", user.Username,
 				)
+				if m.onReconnect != nil {
+					m.onReconnect(entry.session.SessionID)
+				}
 				return entry.session, nil
 			}
 			return nil, fmt.Errorf("%w: held by %q since %s",

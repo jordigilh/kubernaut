@@ -817,3 +817,49 @@ var _ = Describe("IT-AF-1351: KASessionPool EvictIdle wiring", func() {
 		Expect(pool.Size()).To(Equal(0))
 	})
 })
+
+var _ = Describe("KASessionPool InjectVerified — BR-INTERACTIVE-001, #1442", Label("unit", "1442"), func() {
+
+	It("UT-AF-1442-002: InjectVerified rejects dead session (ping fails)", func() {
+		pool := ka.NewKASessionPool(ka.PoolConfig{
+			Factory: func(ctx context.Context) (ka.PoolSession, error) {
+				return &mockPoolSession{}, nil
+			},
+			MaxEntries: 10,
+			Logger:     logr.Discard(),
+		})
+
+		deadSession := &mockPoolSession{
+			id: 100,
+			pingFn: func(ctx context.Context, params *mcp.PingParams) error {
+				return fmt.Errorf("session not found")
+			},
+		}
+
+		err := pool.InjectVerified(context.Background(), "rr-dead", "alice", deadSession)
+		Expect(err).To(HaveOccurred(),
+			"InjectVerified must reject a session whose ping fails")
+		Expect(err.Error()).To(ContainSubstring("session dead on inject"))
+		Expect(pool.Size()).To(Equal(0),
+			"pool must not contain the dead session")
+		Expect(deadSession.IsClosed()).To(BeTrue(),
+			"dead session must be closed by InjectVerified")
+	})
+
+	It("UT-AF-1442-003: InjectVerified accepts live session (ping succeeds)", func() {
+		pool := ka.NewKASessionPool(ka.PoolConfig{
+			Factory: func(ctx context.Context) (ka.PoolSession, error) {
+				return &mockPoolSession{}, nil
+			},
+			MaxEntries: 10,
+			Logger:     logr.Discard(),
+		})
+
+		liveSession := &mockPoolSession{id: 200}
+
+		err := pool.InjectVerified(context.Background(), "rr-live", "bob", liveSession)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(pool.Size()).To(Equal(1),
+			"live session must be in the pool after InjectVerified")
+	})
+})

@@ -30,6 +30,7 @@ const (
 	EventA2AStreamClosed  EventType = "a2a.stream_closed"
 	EventMCPToolFailed    EventType = "mcp.tool_failed"
 	EventMCPSessionInit   EventType = "mcp.session_init"
+	EventMCPSessionClosed EventType = "mcp.session_closed"
 
 	EventSeverityTriageCompleted EventType = "severity_triage.completed"
 	EventSeverityTriageFailed    EventType = "severity_triage.failed"

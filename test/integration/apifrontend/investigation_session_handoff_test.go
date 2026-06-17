@@ -437,3 +437,118 @@ var _ = Describe("MCP Session Resilience — Ping-on-Acquire Wiring (#1387)", La
 			"SI-4: healthy session must NOT be closed")
 	})
 })
+
+// =============================================================================
+// IT-AF-1442: InjectVerified Wiring at Investigation Handoff (#1442)
+//
+// Pyramid Invariant:
+//   UT (session_pool_test.go) proves InjectVerified logic (ping fail/pass).
+//   IT (this block) proves InjectVerified is wired at the investigation
+//   handoff path: HandleInvestigationMCPWithRegistry → pool.InjectVerified.
+//   A dead session returned by StartInvestigation is rejected by InjectVerified
+//   and never enters the pool — exercised through the production dispatch path.
+// =============================================================================
+
+var _ = Describe("InjectVerified Wiring at Investigation Handoff (#1442)", Label("integration", "session-handoff", "1442"), func() {
+
+	It("IT-AF-1442-W01: dead session rejected by InjectVerified during investigation handoff", func() {
+		deadSession := &handoffSession{
+			id: "dead-handoff-session",
+			pingFn: func(_ context.Context, _ *mcp.PingParams) error {
+				return fmt.Errorf("transport closed")
+			},
+		}
+
+		eventCh := make(chan ka.InvestigationEvent, 10)
+		mockMCP := &ka.MockMCPClient{
+			StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+				go func() {
+					eventCh <- ka.InvestigationEvent{
+						Type: ka.EventTypeComplete,
+						Data: json.RawMessage(`{}`),
+					}
+					close(eventCh)
+				}()
+				return &ka.StartInvestigationResult{
+					SessionID: "sess-it-1442-w01",
+					Status:    "autonomous_started",
+					Events:    eventCh,
+					Closer:    func() {},
+					Session:   deadSession,
+				}, nil
+			},
+		}
+
+		pool := ka.NewKASessionPool(ka.PoolConfig{
+			Factory: func(_ context.Context) (ka.PoolSession, error) {
+				return &handoffSession{id: "factory-sentinel"}, nil
+			},
+			MaxEntries: 10,
+			Logger:     logr.Discard(),
+		})
+		registry := tools.NewMonitorRegistry()
+
+		result, err := tools.HandleInvestigationMCPWithRegistry(
+			context.Background(), mockMCP, nil, "",
+			tools.InvestigateMCPArgs{RRID: "rr-it-1442-w01"},
+			nil, registry, nil, true, pool, "alice", nil, nil,
+		)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Status).To(Equal("completed"))
+
+		By("verifying dead session was NOT injected into pool")
+		Expect(pool.Size()).To(Equal(0),
+			"InjectVerified must reject dead session — pool must remain empty")
+
+		By("verifying dead session was closed by InjectVerified")
+		Expect(deadSession.isClosed()).To(BeTrue(),
+			"InjectVerified must close the dead session after ping failure")
+	})
+
+	It("IT-AF-1442-W02: live session accepted by InjectVerified during investigation handoff", func() {
+		liveSession := &handoffSession{id: "live-handoff-session"}
+
+		eventCh := make(chan ka.InvestigationEvent, 10)
+		mockMCP := &ka.MockMCPClient{
+			StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+				go func() {
+					eventCh <- ka.InvestigationEvent{
+						Type: ka.EventTypeComplete,
+						Data: json.RawMessage(`{}`),
+					}
+					close(eventCh)
+				}()
+				return &ka.StartInvestigationResult{
+					SessionID: "sess-it-1442-w02",
+					Status:    "autonomous_started",
+					Events:    eventCh,
+					Closer:    func() {},
+					Session:   liveSession,
+				}, nil
+			},
+		}
+
+		pool := ka.NewKASessionPool(ka.PoolConfig{
+			Factory: func(_ context.Context) (ka.PoolSession, error) {
+				return &handoffSession{id: "factory-sentinel"}, nil
+			},
+			MaxEntries: 10,
+			Logger:     logr.Discard(),
+		})
+		registry := tools.NewMonitorRegistry()
+
+		result, err := tools.HandleInvestigationMCPWithRegistry(
+			context.Background(), mockMCP, nil, "",
+			tools.InvestigateMCPArgs{RRID: "rr-it-1442-w02"},
+			nil, registry, nil, true, pool, "bob", nil, nil,
+		)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Status).To(Equal("completed"))
+
+		By("verifying live session was injected into pool via InjectVerified")
+		Expect(pool.Size()).To(Equal(1),
+			"InjectVerified must accept live session — pool must contain it")
+		Expect(liveSession.isClosed()).To(BeFalse(),
+			"live session must remain open for reuse")
+	})
+})
