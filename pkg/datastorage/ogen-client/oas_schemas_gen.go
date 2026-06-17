@@ -5641,10 +5641,12 @@ func (s *ApifrontendKAResultReceivedPayloadEventType) UnmarshalText(data []byte)
 type ApifrontendKAResultReceivedPayloadResultType string
 
 const (
-	ApifrontendKAResultReceivedPayloadResultTypeRcaComplete ApifrontendKAResultReceivedPayloadResultType = "rca_complete"
-	ApifrontendKAResultReceivedPayloadResultTypeRcaFailed   ApifrontendKAResultReceivedPayloadResultType = "rca_failed"
-	ApifrontendKAResultReceivedPayloadResultTypeTimeout     ApifrontendKAResultReceivedPayloadResultType = "timeout"
-	ApifrontendKAResultReceivedPayloadResultTypeCancelled   ApifrontendKAResultReceivedPayloadResultType = "cancelled"
+	ApifrontendKAResultReceivedPayloadResultTypeRcaComplete        ApifrontendKAResultReceivedPayloadResultType = "rca_complete"
+	ApifrontendKAResultReceivedPayloadResultTypeRcaFailed          ApifrontendKAResultReceivedPayloadResultType = "rca_failed"
+	ApifrontendKAResultReceivedPayloadResultTypeTimeout            ApifrontendKAResultReceivedPayloadResultType = "timeout"
+	ApifrontendKAResultReceivedPayloadResultTypeCancelled          ApifrontendKAResultReceivedPayloadResultType = "cancelled"
+	ApifrontendKAResultReceivedPayloadResultTypeOperatorEscalation ApifrontendKAResultReceivedPayloadResultType = "operator_escalation"
+	ApifrontendKAResultReceivedPayloadResultTypeOperatorDismissed  ApifrontendKAResultReceivedPayloadResultType = "operator_dismissed"
 )
 
 // AllValues returns all ApifrontendKAResultReceivedPayloadResultType values.
@@ -5654,6 +5656,8 @@ func (ApifrontendKAResultReceivedPayloadResultType) AllValues() []ApifrontendKAR
 		ApifrontendKAResultReceivedPayloadResultTypeRcaFailed,
 		ApifrontendKAResultReceivedPayloadResultTypeTimeout,
 		ApifrontendKAResultReceivedPayloadResultTypeCancelled,
+		ApifrontendKAResultReceivedPayloadResultTypeOperatorEscalation,
+		ApifrontendKAResultReceivedPayloadResultTypeOperatorDismissed,
 	}
 }
 
@@ -5667,6 +5671,10 @@ func (s ApifrontendKAResultReceivedPayloadResultType) MarshalText() ([]byte, err
 	case ApifrontendKAResultReceivedPayloadResultTypeTimeout:
 		return []byte(s), nil
 	case ApifrontendKAResultReceivedPayloadResultTypeCancelled:
+		return []byte(s), nil
+	case ApifrontendKAResultReceivedPayloadResultTypeOperatorEscalation:
+		return []byte(s), nil
+	case ApifrontendKAResultReceivedPayloadResultTypeOperatorDismissed:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -5687,6 +5695,12 @@ func (s *ApifrontendKAResultReceivedPayloadResultType) UnmarshalText(data []byte
 		return nil
 	case ApifrontendKAResultReceivedPayloadResultTypeCancelled:
 		*s = ApifrontendKAResultReceivedPayloadResultTypeCancelled
+		return nil
+	case ApifrontendKAResultReceivedPayloadResultTypeOperatorEscalation:
+		*s = ApifrontendKAResultReceivedPayloadResultTypeOperatorEscalation
+		return nil
+	case ApifrontendKAResultReceivedPayloadResultTypeOperatorDismissed:
+		*s = ApifrontendKAResultReceivedPayloadResultTypeOperatorDismissed
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
