@@ -247,8 +247,8 @@ The migration is mechanical. Validated by Spike 5.
 ## Spike Findings (Phase 0.5)
 
 Five confidence-raising spikes were executed on 2026-06-17. All spike code lives
-in `pkg/apifrontend/launcher/spike/` (3 test files, 24 tests total). These are
-throwaway prototypes to be deleted before the actual migration begins.
+in `docs/spikes/a2a-v2-migration/` (3 test files, 24 tests total). These are
+throwaway prototypes for reference during the actual migration.
 
 ### Spike 1: Channel-Merge PoC (8 tests, PASS)
 
@@ -347,5 +347,5 @@ errors.
 - v2 local task manager: `github.com/a2aproject/a2a-go/v2@v2.3.1/internal/taskexec/local_manager.go`
 - Kagenti upstream: `github.com/kagenti/kagenti/kagenti/backend/app/routers/chat.py`
 - TextPart fix commit: `2e5f803e6`
-- Spike PoC code: `pkg/apifrontend/launcher/spike/` (throwaway, delete before migration)
+- Spike PoC code: `docs/spikes/a2a-v2-migration/`
 - Tracking issue: GitHub #1448

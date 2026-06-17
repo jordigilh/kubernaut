@@ -15,7 +15,7 @@ the circular dependency where wg.Wait blocks on auxiliaries that never stop.
 
 This is a throwaway spike -- not production code.
 */
-package spike
+package a2av2migration
 
 import (
 	"context"

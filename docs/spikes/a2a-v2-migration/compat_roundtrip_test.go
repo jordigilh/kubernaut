@@ -14,7 +14,7 @@ Test matrix:
 
 This is a throwaway spike -- not production code.
 */
-package spike
+package a2av2migration
 
 import (
 	"encoding/json"

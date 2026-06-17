@@ -24,7 +24,7 @@ This spike validates that the new pattern supports all existing test scenarios:
 
 This is a throwaway spike -- not production code.
 */
-package spike
+package a2av2migration
 
 import (
 	"context"
