@@ -348,4 +348,4 @@ errors.
 - Kagenti upstream: `github.com/kagenti/kagenti/kagenti/backend/app/routers/chat.py`
 - TextPart fix commit: `2e5f803e6`
 - Spike PoC code: `pkg/apifrontend/launcher/spike/` (throwaway, delete before migration)
-- Tracking issue: GitHub #1447
+- Tracking issue: GitHub #1448
