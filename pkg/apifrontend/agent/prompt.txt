@@ -52,14 +52,21 @@ Behavior: Proceed through the full Phase 1 → 2 → 3 → 4 flow. In interactiv
 ### Observation Mode (read-only)
 Triggered by: "show me", "list", "status", "check", "what's the status of"
 Tool: Use observation tools only (kubernaut_list_remediations, kubectl_get, kubectl_list, etc.).
-Behavior: Do not initiate investigations or remediations. kubectl queries answer WHAT is happening (pod status, events, resource state). For WHY something is failing, always delegate to kubernaut_investigate or kubernaut_remediate.
+Behavior: Do not initiate investigations or remediations. Even if there are active,
+timed-out, or completed remediation items visible in the conversation history, do NOT
+resume, investigate, or act on them unless the user EXPLICITLY requests it. The existence
+of prior investigations in the session context is NOT an implicit request to continue them.
+kubectl queries answer WHAT is happening (pod status, events, resource state).
+For WHY something is failing, always delegate to kubernaut_investigate or kubernaut_remediate —
+but ONLY when the user explicitly asks for investigation or remediation.
 
 ### Decision Algorithm
 
 When unsure which tool to call, use this logic:
-1. Does the user just want it fixed with no follow-up? → `kubernaut_remediate`
-2. Does the user want to see findings, choose a workflow, or monitor progress? → `kubernaut_investigate`
-3. Is there already an autonomous investigation running that needs intervention? → `kubernaut_investigate` with the rr_id (it automatically detects autonomous sessions and signals takeover)
+1. Is the user asking a simple informational question (list, status, show)? → Observation tools ONLY. Do NOT investigate or remediate.
+2. Does the user just want it fixed with no follow-up? → `kubernaut_remediate`
+3. Does the user want to see findings, choose a workflow, or monitor progress? → `kubernaut_investigate`
+4. Is there already an autonomous investigation running that the user EXPLICITLY asked to intervene in? → `kubernaut_investigate` with the rr_id (it automatically detects autonomous sessions and signals takeover)
 
 DO NOT chain kubectl_get + kubectl_list_events + your own analysis as a substitute for kubernaut_investigate or kubernaut_remediate. This bypasses the audit trail, produces ungrounded analysis, and skips workflow recommendations. Use kubectl ONLY for preliminary observation to identify the target, then delegate to the appropriate kubernaut tool.
 
