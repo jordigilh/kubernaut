@@ -280,6 +280,26 @@ Tests colocated with production code per kubernaut convention.
 
 **FedRAMP**: SI-4 + AC-4 (events routed through correct session, bridge functional end-to-end)
 
+#### E2E-FP-1452-001: AIA KASession.ID matches InteractiveSession.SessionID after takeover
+
+**File**: `test/e2e/fullpipeline/05_mcp_interactive_lifecycle_test.go`
+
+**Precondition**: Kind cluster with AF, KA, AA deployed. Mock LLM. Real MCP transport.
+
+**Action**:
+1. Create RR + IS CRD (pre-interactive pattern)
+2. Wait for AIA CRD to have `KASession.ID` (AA submits to KA, KA creates pending session)
+3. Capture `KASession.ID` as the session AF will poll and forward
+4. Perform MCP `action=takeover` through AF
+5. Wait for `InteractiveSession.SessionID` to appear on AIA CRD
+
+**Assertions**:
+- `InteractiveSession.SessionID == KASession.ID` — proves AF forwarded the session ID from the AIA CRD to KA, and KA used it for direct lookup (not RRID scan)
+
+**FedRAMP**: SI-4 + AC-4 (session identity preserved end-to-end through the full deployed pipeline)
+
+**Pyramid Invariant**: E2E proves the journey — UT proves logic, IT proves wiring, E2E proves that a real AF instance polls a real AIA CRD, forwards the session ID over real MCP to a real KA, which performs direct session lookup in a real Kind cluster.
+
 ## 7. TDD Execution Order
 
 Follows RED → GREEN → CHECKPOINT W → REFACTOR per kubernaut TDD methodology.
@@ -324,9 +344,10 @@ Follows RED → GREEN → CHECKPOINT W → REFACTOR per kubernaut TDD methodolog
 
 ## 8. Exit Criteria
 
-- All UT and IT tests in this plan PASS
+- All UT, IT, and E2E tests in this plan PASS
 - `go build ./...` succeeds (no compilation errors)
 - `golangci-lint run --timeout=5m` clean (no new warnings)
 - CHECKPOINT W: every Wiring Manifest row has production caller + passing IT
-- Pyramid Invariant: UT proves logic, IT proves wiring for all 3 wiring points
+- Pyramid Invariant: UT proves logic, IT proves wiring, E2E proves the journey
+- E2E-FP-1452-001: `InteractiveSession.SessionID == KASession.ID` in a Kind cluster
 - Existing tests in `ka_investigate_mcp_test.go`, `start_investigation_test.go`, `interactive_start_test.go` continue to pass (no regression)

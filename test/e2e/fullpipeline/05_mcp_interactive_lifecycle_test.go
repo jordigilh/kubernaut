@@ -636,3 +636,97 @@ var _ = Describe("FP-MCP-005c: complete_no_action through full pipeline", Label(
 		}, 15*time.Second, 1*time.Second).Should(Succeed())
 	})
 })
+
+// ── FP-MCP-1452: Session ID forwarding — AF→KA deterministic session lookup ──
+
+var _ = Describe("FP-MCP-1452: AF session ID forwarding (#1452)", Label("e2e", "fullpipeline", "interactive", "mcp", "1452"), func() {
+	It("E2E-FP-1452-001 [SI-4+AC-4]: AIA KASession.ID matches InteractiveSession.SessionID after takeover", func() {
+		By("Setting up MCP session")
+		setup, err := infrastructure.SetupMCPSession(ctx, namespace, "fp-mcp-1452-sa", kubeconfigPath, GinkgoWriter)
+		Expect(err).NotTo(HaveOccurred())
+		defer setup.Cleanup()
+
+		By("Creating direct RR")
+		rrName, err := infrastructure.CreateDirectRR(ctx, namespace, "fp-mcp-1452")
+		Expect(err).NotTo(HaveOccurred())
+
+		By("Pre-creating IS CRD to guarantee AA enters interactive mode")
+		isCRD := &isv1alpha1.InvestigationSession{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      fmt.Sprintf("is-%s", rrName),
+				Namespace: namespace,
+			},
+			Spec: isv1alpha1.InvestigationSessionSpec{
+				RemediationRequestRef: isv1alpha1.ObjectRef{
+					Name:      rrName,
+					Namespace: namespace,
+				},
+				A2ATaskID: "fp-mcp-1452-interactive",
+				UserIdentity: isv1alpha1.SessionUser{
+					Username: fmt.Sprintf("system:serviceaccount:%s:fp-mcp-1452-sa", namespace),
+				},
+				JoinMode: isv1alpha1.SessionJoinModeTakeover,
+			},
+		}
+		Expect(k8sClient.Create(ctx, isCRD)).To(Succeed())
+		DeferCleanup(func() {
+			_ = client.IgnoreNotFound(k8sClient.Delete(ctx, isCRD))
+		})
+
+		By("Waiting for AIA CRD to have KASession.ID (the session AF will forward)")
+		var aaName string
+		var aiaSessionID string
+		Eventually(func() bool {
+			aaList := &aianalysisv1.AIAnalysisList{}
+			if err := apiReader.List(ctx, aaList, client.InNamespace(namespace)); err != nil {
+				return false
+			}
+			for _, aa := range aaList.Items {
+				if aa.Spec.RemediationRequestRef.Name == rrName {
+					aaName = aa.Name
+					if aa.Status.KASession != nil && aa.Status.KASession.ID != "" {
+						aiaSessionID = aa.Status.KASession.ID
+						return true
+					}
+				}
+			}
+			return false
+		}, timeout, 1*time.Second).Should(BeTrue(),
+			"AIA CRD must have KASession.ID for AF to capture and forward")
+
+		GinkgoWriter.Printf("  AIA KASession.ID (pre-takeover): %s\n", aiaSessionID)
+
+		By("Performing MCP takeover — AF should forward AIA KASession.ID to KA")
+		callCtx, callCancel := context.WithTimeout(ctx, 30*time.Second)
+		defer callCancel()
+		result, err := infrastructure.CallInvestigate(callCtx, setup.Session, map[string]any{
+			"rr_id":  rrName,
+			"action": "takeover",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.IsError).To(BeFalse(), "takeover should succeed")
+
+		By("Verifying InteractiveSession.SessionID matches AIA KASession.ID")
+		aa := &aianalysisv1.AIAnalysis{}
+		Eventually(func(g Gomega) {
+			keepAliveCtx, keepAliveCancel := context.WithTimeout(ctx, 5*time.Second)
+			defer keepAliveCancel()
+			_, _ = infrastructure.CallInvestigate(keepAliveCtx, setup.Session, map[string]any{
+				"rr_id":  rrName,
+				"action": "status",
+			})
+
+			g.Expect(apiReader.Get(ctx, client.ObjectKey{Name: aaName, Namespace: namespace}, aa)).To(Succeed())
+			g.Expect(aa.Status.InteractiveSession).NotTo(BeNil())
+			g.Expect(aa.Status.InteractiveSession.SessionID).NotTo(BeEmpty())
+		}, 90*time.Second, 5*time.Second).Should(Succeed())
+
+		GinkgoWriter.Printf("  InteractiveSession.SessionID (post-takeover): %s\n",
+			aa.Status.InteractiveSession.SessionID)
+
+		Expect(aa.Status.InteractiveSession.SessionID).To(Equal(aiaSessionID),
+			"SI-4+AC-4: InteractiveSession.SessionID must match AIA KASession.ID — "+
+				"proves AF forwarded the session ID and KA used it for direct lookup "+
+				"instead of RRID scan (which could resolve a different session)")
+	})
+})
