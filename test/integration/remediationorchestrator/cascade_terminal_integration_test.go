@@ -121,44 +121,11 @@ var _ = Describe("Cascade Terminal to Children (#1421) [IR-4, AC-6, AU-12]", Lab
 		ai.Status.StartedAt = &now
 		Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
 
-		By("Creating a SignalProcessing in Enriching phase (child of RR)")
-		sp := &signalprocessingv1.SignalProcessing{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      spName,
-				Namespace: ROControllerNamespace,
-				OwnerReferences: []metav1.OwnerReference{
-					{
-						APIVersion: remediationv1.GroupVersion.String(),
-						Kind:       "RemediationRequest",
-						Name:       rrName,
-						UID:        rr.UID,
-						Controller: ptrBool(true),
-					},
-				},
-			},
-			Spec: signalprocessingv1.SignalProcessingSpec{
-				RemediationRequestRef: signalprocessingv1.ObjectReference{
-					APIVersion: remediationv1.GroupVersion.String(),
-					Kind:       "RemediationRequest",
-					Name:       rrName,
-					Namespace:  ROControllerNamespace,
-				},
-				Signal: signalprocessingv1.SignalData{
-					Fingerprint: "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
-					Name:        "TestHighMemoryAlert",
-					Severity:    "critical",
-					Type:        "alert",
-					TargetType:  "kubernetes",
-					TargetResource: signalprocessingv1.ResourceIdentifier{
-						Kind:      "Deployment",
-						Name:      "test-app",
-						Namespace: ROControllerNamespace,
-					},
-					ReceivedTime: metav1.Now(),
-				},
-			},
-		}
-		Expect(k8sClient.Create(ctx, sp)).To(Succeed())
+		By("Waiting for reconciler to create SignalProcessing (child of RR)")
+		sp := &signalprocessingv1.SignalProcessing{}
+		Eventually(func() error {
+			return k8sClient.Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, sp)
+		}, 10, 0.1).Should(Succeed(), "reconciler should create SP for the RR")
 
 		sp.Status.Phase = signalprocessingv1.PhaseEnriching
 		Expect(k8sClient.Status().Update(ctx, sp)).To(Succeed())
