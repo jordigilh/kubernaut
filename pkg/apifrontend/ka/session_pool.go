@@ -208,6 +208,27 @@ func (p *KASessionPool) InjectWithCleanup(rrID, username string, session PoolSes
 		"rr_id", rrID, "username", username, "mcp_session_id", sid)
 }
 
+// InjectVerified pings the session before injecting it into the pool. If the
+// session is dead (Ping fails), it is closed and an error is returned. This
+// avoids inserting sessions that died between creation and injection (#1442).
+// An optional onRelease callback is forwarded to InjectWithCleanup.
+func (p *KASessionPool) InjectVerified(ctx context.Context, rrID, username string, session PoolSession, onRelease ...func()) error {
+	pingCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	if err := session.Ping(pingCtx, nil); err != nil {
+		p.logger.Info("session dead on inject, skipping",
+			"rr_id", rrID, "username", username, "error", err.Error())
+		_ = session.Close()
+		return fmt.Errorf("session dead on inject: %w", err)
+	}
+	if len(onRelease) > 0 && onRelease[0] != nil {
+		p.InjectWithCleanup(rrID, username, session, onRelease[0])
+	} else {
+		p.Inject(rrID, username, session)
+	}
+	return nil
+}
+
 // Release closes and removes the session for the given (rrID, username).
 func (p *KASessionPool) Release(rrID, username string) {
 	key := poolKey{rrID: rrID, username: username}

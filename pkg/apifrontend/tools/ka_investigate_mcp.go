@@ -432,16 +432,22 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 		// If no pool is available, fall back to closing the session.
 		if pool != nil && result.Session != nil && username != "" {
 			watchDone := make(chan struct{})
-			pool.InjectWithCleanup(args.RRID, username, result.Session, func() {
-				close(watchDone)
-			})
-			if registry != nil {
-				registry.Deregister(result.SessionID)
+			onRelease := func() { close(watchDone) }
+			if injectErr := pool.InjectVerified(ctx, args.RRID, username, result.Session, onRelease); injectErr != nil {
+				logger.Info("investigation session dead on handoff, skipping pool inject",
+					"rr_id", args.RRID, "session_id", result.SessionID, "error", injectErr.Error())
+				if registry != nil {
+					registry.Deregister(result.SessionID)
+				}
+			} else {
+				if registry != nil {
+					registry.Deregister(result.SessionID)
+				}
+				watchCtx := context.WithoutCancel(ctx)
+				go WatchTerminalEvents(watchCtx, result.Events, args.RRID, watchDone)
+				logger.Info("investigation session handed off to pool",
+					"rr_id", args.RRID, "session_id", result.SessionID, "username", username)
 			}
-			watchCtx := context.WithoutCancel(ctx)
-			go WatchTerminalEvents(watchCtx, result.Events, args.RRID, watchDone)
-			logger.Info("investigation session handed off to pool",
-				"rr_id", args.RRID, "session_id", result.SessionID, "username", username)
 		} else {
 			cleanup()
 		}
