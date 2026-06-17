@@ -582,4 +582,80 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			}, timeout, interval).Should(Succeed())
 		})
 	})
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// Issue #1449 / FedRAMP SI-4: IS terminal transition wakes AA immediately
+	// ═══════════════════════════════════════════════════════════════════════
+	Context("#1449: IS terminal transition triggers immediate AA reconciliation (SI-4)", Serial, func() {
+		var (
+			savedHandler *handlers.InvestigatingHandler
+			mockClient   *mocks.MockAgentClient
+		)
+
+		swapMockHandlerForTerminalWatch := func() {
+			savedHandler = reconciler.InvestigatingHandler.Load()
+			mockClient = mocks.NewMockAgentClient()
+			mockClient.WithSessionPollStatus("investigating")
+
+			auditClient := aiaudit.NewAuditClient(auditStore, ctrl.Log.WithName("terminal-watch-test-audit"))
+			isChecker := handlers.NewK8sInvestigationSessionChecker(k8sClient, testNamespace)
+			reconciler.InvestigatingHandler.Store(handlers.NewInvestigatingHandler(
+				mockClient,
+				ctrl.Log.WithName("terminal-watch-mock-handler"),
+				testMetrics,
+				auditClient,
+				handlers.WithSessionMode(),
+				handlers.WithSessionPollInterval(30*time.Second),
+				handlers.WithInvestigationSessionChecker(isChecker),
+				handlers.WithRecorder(k8sManager.GetEventRecorderFor("aianalysis-controller")),
+			))
+		}
+
+		BeforeEach(func() {
+			swapMockHandlerForTerminalWatch()
+		})
+
+		AfterEach(func() {
+			if savedHandler != nil {
+				reconciler.InvestigatingHandler.Store(savedHandler)
+			}
+		})
+
+		It("IT-AA-1449-002: AA reconciler fires within 5s when IS transitions to Completed (not waiting for 30s poll)", func() {
+			rrName := helpers.UniqueTestName("rr-1449-watch")
+			isName := helpers.UniqueTestName("is-1449-watch")
+			aaName := helpers.UniqueTestName("aa-1449-watch")
+			sessionID := "session-1449-terminal"
+
+			By("creating Active IS for the RR")
+			createActiveIS(isName, rrName)
+
+			By("creating Investigating AA with interactive session")
+			analysis := createInvestigatingAA(aaName, rrName, sessionID, true)
+
+			By("waiting for controller to start polling (proves reconcile loop is active)")
+			Eventually(func() int {
+				return mockClient.GetPollCallCount()
+			}, 15*time.Second, interval).Should(BeNumerically(">=", 1))
+
+			By("recording poll count before IS transition")
+			pollCountBefore := mockClient.GetPollCallCount()
+
+			By("patching IS → Completed (simulating API Frontend completing the session)")
+			Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+				var is isv1alpha1.InvestigationSession
+				if err := k8sClient.Get(ctx, client.ObjectKey{Name: isName, Namespace: testNamespace}, &is); err != nil {
+					return err
+				}
+				is.Status.Phase = isv1alpha1.SessionPhaseCompleted
+				return k8sClient.Status().Update(ctx, &is)
+			})).To(Succeed())
+
+			By("verifying AA reconciler fires within 5s (not waiting for 30s poll interval)")
+			Eventually(func() int {
+				return mockClient.GetPollCallCount()
+			}, 5*time.Second, 200*time.Millisecond).Should(BeNumerically(">", pollCountBefore),
+				"SI-4: IS→Completed must trigger immediate AA reconciliation via watch predicate, not wait for 30s poll")
+		})
+	})
 })
