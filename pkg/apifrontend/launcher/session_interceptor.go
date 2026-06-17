@@ -56,8 +56,14 @@ func (s *SessionInterceptor) Before(ctx context.Context, callCtx *a2asrv.CallCon
 		return ctx, nil
 	}
 
+	hadEntry := s.registry.HasEntry(identity.Username)
 	activeCtx, found := s.registry.Get(identity.Username)
 	if !found {
+		if hadEntry {
+			s.logger.Info("clearing stale context — idle-expired session will not redirect (#1446)",
+				"user", identity.Username,
+			)
+		}
 		return ctx, nil
 	}
 

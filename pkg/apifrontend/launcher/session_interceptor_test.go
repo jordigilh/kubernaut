@@ -24,7 +24,7 @@ var _ = Describe("SessionInterceptor (BR-SESS-020, BR-SESS-021, BR-SESS-023)", f
 	)
 
 	BeforeEach(func() {
-		registry = launcher.NewActiveContextRegistry(2 * time.Hour)
+		registry = launcher.NewActiveContextRegistry(2*time.Hour, 10*time.Minute)
 		logBuf = &bytes.Buffer{}
 		logger := funcr.New(func(prefix, args string) {
 			logBuf.WriteString(prefix + " " + args + "\n")
@@ -177,6 +177,39 @@ var _ = Describe("SessionInterceptor (BR-SESS-020, BR-SESS-021, BR-SESS-023)", f
 		logOutput := logBuf.String()
 		Expect(logOutput).NotTo(ContainSubstring("overriding context_id"),
 			"No override log when explicit ContextID is provided")
+	})
+
+	It("UT-AF-1446-006: SC-7, AC-6 — Does NOT override contextId when session is idle-expired; clears stale entry (#1446)", func() {
+		shortIdle := launcher.NewActiveContextRegistry(2*time.Hour, 1*time.Millisecond)
+		logBuf.Reset()
+		logger := funcr.New(func(prefix, args string) {
+			logBuf.WriteString(prefix + " " + args + "\n")
+		}, funcr.Options{})
+		staleInterceptor := launcher.NewSessionInterceptor(shortIdle, logger)
+
+		shortIdle.Set("hank", "ctx-stale-investigation")
+		time.Sleep(5 * time.Millisecond)
+
+		ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+			Username: "hank", Groups: []string{"sre"},
+		})
+		callCtx := newTestCallContext()
+		msg := &a2a.Message{ContextID: ""}
+		req := &a2asrv.Request{
+			Payload: &a2a.MessageSendParams{Message: msg},
+		}
+
+		_, err := staleInterceptor.Before(ctx, callCtx, req)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(msg.ContextID).To(BeEmpty(),
+			"SC-7: idle-expired session must NOT hijack new conversations — contextId must remain empty")
+
+		_, ok := shortIdle.Get("hank")
+		Expect(ok).To(BeFalse(),
+			"AC-6: stale registry entry must be cleared to prevent repeated redirect attempts")
+
+		Expect(logBuf.String()).To(ContainSubstring("clearing stale context"),
+			"AU-3: stale entry clearing must be logged for audit traceability")
 	})
 
 	It("UT-AF-SESS-020-017: Overrides empty ContextID when active context exists (#1345)", func() {
