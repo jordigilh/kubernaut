@@ -704,6 +704,7 @@ spec:
                 - investigation_inconclusive
                 - rca_incomplete
                 - alignment_check_failed
+                - operator_escalation
                 type: string
               interactiveSession:
                 description: |-
@@ -1158,6 +1159,7 @@ spec:
                 - SessionRegenerationExceeded
                 - RcaIncomplete
                 - InvestigationFailed
+                - OperatorEscalation
                 type: string
               totalAnalysisTime:
                 description: TotalAnalysisTime is the total duration of the analysis

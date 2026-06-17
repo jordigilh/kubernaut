@@ -67,8 +67,10 @@ var _ = Describe("IT #1438 — EmitSessionEndedByRR → EventLogBridge wiring", 
 
 		rrID := "rr-it-1438-001"
 
+		readyCh := make(chan struct{})
 		pendingID, err := mgr.StartInteractiveSession(context.Background(),
 			func(ctx context.Context) (*katypes.InvestigationResult, error) {
+				<-readyCh
 				return &katypes.InvestigationResult{
 					InteractiveHold: true,
 					RCASummary:      "pod crash loop",
@@ -81,9 +83,19 @@ var _ = Describe("IT #1438 — EmitSessionEndedByRR → EventLogBridge wiring", 
 		err = mgr.LaunchDeferredInvestigation(pendingID)
 		Expect(err).NotTo(HaveOccurred())
 
-		By("Subscribe to activate LazySink and event channel")
+		By("Subscribe while goroutine is blocked — channel is set on the correct LazySink")
 		eventCh, subErr := mgr.Subscribe(context.Background(), pendingID)
 		Expect(subErr).NotTo(HaveOccurred())
+
+		By("Start EventLogBridge (production wiring)")
+		capture := &logCapture{}
+		bridge := mcptools.NewEventLogBridge(eventCh, capture.logFn, logr.Discard(), pendingID)
+		bridgeCtx, bridgeCancel := context.WithCancel(context.Background())
+		defer bridgeCancel()
+		go bridge.Run(bridgeCtx)
+
+		By("Release investigation goroutine — emitCompleteEvent will find the active channel")
+		close(readyCh)
 
 		By("Wait for UserDriving state")
 		Eventually(func() session.Status {
@@ -93,13 +105,6 @@ var _ = Describe("IT #1438 — EmitSessionEndedByRR → EventLogBridge wiring", 
 			}
 			return s.Status
 		}, 5*time.Second).Should(Equal(session.StatusUserDriving))
-
-		By("Start EventLogBridge (production wiring)")
-		capture := &logCapture{}
-		bridge := mcptools.NewEventLogBridge(eventCh, capture.logFn, logr.Discard(), pendingID)
-		bridgeCtx, bridgeCancel := context.WithCancel(context.Background())
-		defer bridgeCancel()
-		go bridge.Run(bridgeCtx)
 
 		By("Drain EventTypeComplete emitted by goroutine exit")
 		Eventually(func() int { return capture.count() }, 10*time.Second).Should(BeNumerically(">=", 1))
@@ -139,8 +144,10 @@ var _ = Describe("IT #1438 — EmitSessionEndedByRR → EventLogBridge wiring", 
 
 		rrID := "rr-it-1438-003"
 
+		readyCh := make(chan struct{})
 		pendingID, err := mgr.StartInteractiveSession(context.Background(),
 			func(ctx context.Context) (*katypes.InvestigationResult, error) {
+				<-readyCh
 				return &katypes.InvestigationResult{
 					InteractiveHold: true,
 					RCASummary:      "ttl expiry test",
@@ -156,6 +163,14 @@ var _ = Describe("IT #1438 — EmitSessionEndedByRR → EventLogBridge wiring", 
 		eventCh, subErr := mgr.Subscribe(context.Background(), pendingID)
 		Expect(subErr).NotTo(HaveOccurred())
 
+		capture := &logCapture{}
+		bridge := mcptools.NewEventLogBridge(eventCh, capture.logFn, logr.Discard(), pendingID)
+		bridgeCtx, bridgeCancel := context.WithCancel(context.Background())
+		defer bridgeCancel()
+		go bridge.Run(bridgeCtx)
+
+		close(readyCh)
+
 		Eventually(func() session.Status {
 			s, _ := mgr.GetSession(pendingID)
 			if s == nil {
@@ -163,12 +178,6 @@ var _ = Describe("IT #1438 — EmitSessionEndedByRR → EventLogBridge wiring", 
 			}
 			return s.Status
 		}, 5*time.Second).Should(Equal(session.StatusUserDriving))
-
-		capture := &logCapture{}
-		bridge := mcptools.NewEventLogBridge(eventCh, capture.logFn, logr.Discard(), pendingID)
-		bridgeCtx, bridgeCancel := context.WithCancel(context.Background())
-		defer bridgeCancel()
-		go bridge.Run(bridgeCtx)
 
 		Eventually(func() int { return capture.count() }, 3*time.Second).Should(BeNumerically(">=", 1))
 
@@ -208,8 +217,10 @@ var _ = Describe("IT #1438 — EmitSessionEndedByRR → EventLogBridge wiring", 
 
 		rrID := "rr-it-1438-002"
 
+		readyCh := make(chan struct{})
 		pendingID, err := mgr.StartInteractiveSession(context.Background(),
 			func(ctx context.Context) (*katypes.InvestigationResult, error) {
+				<-readyCh
 				return &katypes.InvestigationResult{
 					InteractiveHold: true,
 					RCASummary:      "node not ready",
@@ -225,6 +236,14 @@ var _ = Describe("IT #1438 — EmitSessionEndedByRR → EventLogBridge wiring", 
 		eventCh, subErr := mgr.Subscribe(context.Background(), pendingID)
 		Expect(subErr).NotTo(HaveOccurred())
 
+		capture := &logCapture{}
+		bridge := mcptools.NewEventLogBridge(eventCh, capture.logFn, logr.Discard(), pendingID)
+		bridgeCtx, bridgeCancel := context.WithCancel(context.Background())
+		defer bridgeCancel()
+		go bridge.Run(bridgeCtx)
+
+		close(readyCh)
+
 		Eventually(func() session.Status {
 			s, _ := mgr.GetSession(pendingID)
 			if s == nil {
@@ -232,12 +251,6 @@ var _ = Describe("IT #1438 — EmitSessionEndedByRR → EventLogBridge wiring", 
 			}
 			return s.Status
 		}, 5*time.Second).Should(Equal(session.StatusUserDriving))
-
-		capture := &logCapture{}
-		bridge := mcptools.NewEventLogBridge(eventCh, capture.logFn, logr.Discard(), pendingID)
-		bridgeCtx, bridgeCancel := context.WithCancel(context.Background())
-		defer bridgeCancel()
-		go bridge.Run(bridgeCtx)
 
 		Eventually(func() int { return capture.count() }, 3*time.Second).Should(BeNumerically(">=", 1))
 
