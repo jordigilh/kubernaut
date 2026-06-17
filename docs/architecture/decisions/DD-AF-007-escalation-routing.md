@@ -76,7 +76,7 @@ Console "Escalate" button click
 |-------|-------|
 | `rr_id` | The remediation request ID |
 | `status` | `"completed_no_action"` or `"escalated"` |
-| `result_type` | `"completed"` or `"escalated"` |
+| `result_type` | `"operator_dismissed"` or `"operator_escalation"` |
 | `delegation_type` | `"interactive"` |
 | `tool_outcome` | `"success"` |
 | `reason` | Dismiss reason (if provided) |

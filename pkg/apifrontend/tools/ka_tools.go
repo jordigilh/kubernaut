@@ -13,6 +13,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
 // WorkflowParameter describes a single input parameter for a workflow.
@@ -394,9 +395,9 @@ func HandleCompleteNoAction(ctx context.Context, mcpClient ka.MCPClient, args Co
 	}
 
 	if auditor != nil {
-		resultType := "completed"
+		resultType := string(ogenclient.ApifrontendKAResultReceivedPayloadResultTypeOperatorDismissed)
 		if args.EscalationReason != "" {
-			resultType = "escalated"
+			resultType = string(ogenclient.ApifrontendKAResultReceivedPayloadResultTypeOperatorEscalation)
 		}
 		detail := map[string]string{
 			"rr_id":           args.RRID,
