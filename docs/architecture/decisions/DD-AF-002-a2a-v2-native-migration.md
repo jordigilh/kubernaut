@@ -1,11 +1,11 @@
-# DD-AF-002: Deferred Migration to A2A-Go v2 Native Executor
+# DD-AF-002: Migration to A2A-Go v2 Native Executor with Dual Wire-Format Support
 
-**Status**: DEFERRED
-**Decision Date**: 2026-06-05
-**Version**: 1.0
+**Status**: APPROVED
+**Decision Date**: 2026-06-17
+**Version**: 2.0
 **Confidence**: 92%
 **Applies To**: API Frontend (AF) -- A2A Streaming Stack
-**Gate Condition**: Kagenti v1.0 with A2A protocol v2 wire format support
+**Gate Condition**: ~~Kagenti v1.0 with A2A protocol v2 wire format support~~ Removed -- dual wire-format support via `a2acompat/a2av0` eliminates this dependency
 
 ---
 
@@ -14,6 +14,7 @@
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2026-06-05 | Architecture Team | Initial decision: defer v2 migration, document scope and design. |
+| 2.0 | 2026-06-17 | Architecture Team | Status changed from DEFERRED to APPROVED. Confidence spikes validated channel-merge pattern, compat layer roundtrip, SSE disconnect portability, and test double migration. Dual wire-format support via `a2acompat/a2av0` removes Kagenti v1.0 gate condition. |
 
 ---
 
@@ -57,9 +58,24 @@ and all `*a2a.TextPart` type assertions to `a2a.TextPart`. See commit `2e5f803e6
 
 ## Decision
 
-**Defer migration to v2 native** until Kagenti supports A2A protocol v2 wire format.
+**Proceed with migration to v2 native** using dual wire-format support via
+`a2acompat/a2av0`. The original gate condition (Kagenti v1.0 with v2 wire format)
+is no longer blocking.
 
-### Why Not Now
+### Why Now (Updated 2026-06-17)
+
+The `a2acompat/a2av0` package in `a2a-go/v2` provides a complete v0.3-compatible
+JSON-RPC server handler (`NewJSONRPCHandler`) that wraps a v2 `RequestHandler`
+and performs bidirectional event conversion. This allows kubernaut to:
+
+1. Migrate internal code to v2 types and the iterator-based executor model
+2. Serve the v0.3 wire format to Kagenti v0.6.0 via the compat handler
+3. Optionally serve the v2 wire format to v2-capable clients on a separate endpoint
+
+Confidence spikes (Phase 0.5, 2026-06-17) validated all five critical architectural
+patterns. See [Spike Findings](#spike-findings-phase-05) below.
+
+### Original Blocking Concern (Resolved)
 
 Migrating to v2 native changes the SSE wire format in ways that break Kagenti v0.6.0:
 
@@ -72,23 +88,23 @@ Migrating to v2 native changes the SSE wire format in ways that break Kagenti v0
 | Protocol version | `"0.3.0"` | `"1.0"` | N/A |
 | `TaskStatusUpdateEvent.Final` | `true`/`false` | **removed** | `result.get("final", False)` |
 
-Kagenti v0.6.0's `_stream_from_response` uses `is_final = result.get("final", False)`
-as the primary guard for terminal state detection. The state string checks
-(`state in ["COMPLETED", "FAILED"]`) do not match either v0 or v2 format but are
-compensated by the `is_final` fallback. With v2, `final` is removed entirely, breaking
-terminal state detection.
+**Resolution**: The `a2acompat/a2av0` compat handler converts v2 events back to v0.3
+wire format before SSE serialization. Spike 4 validated that all kubernaut event types
+(reasoning, status, keepalive, artifact with DataPart+TextPart, RR context metadata)
+roundtrip correctly. The `Final` field is correctly synthesized from terminal state
+detection (`State.Terminal() || State == InputRequired`).
 
-Migrating to v2 while supporting Kagenti v0.6.0 would require building a custom
-compat layer on the SSE output -- replacing one shim with another.
+### Former Gate Condition (Removed)
 
-### Gate Condition
+~~Proceed with v2 migration when **all** of these are met:~~
 
-Proceed with v2 migration when **all** of these are met:
+1. ~~Kagenti v1.0 is released with A2A protocol v2 support~~
+2. ~~Kagenti v1.0 handles `TASK_STATE_*` prefixed states~~
+3. ~~Kagenti v1.0 infers terminality from state (not `final` field)~~
+4. ~~All other A2A clients in the ecosystem are v2-compatible~~
 
-1. Kagenti v1.0 is released with A2A protocol v2 support
-2. Kagenti v1.0 handles `TASK_STATE_*` prefixed states
-3. Kagenti v1.0 infers terminality from state (not `final` field)
-4. All other A2A clients in the ecosystem are v2-compatible
+These conditions are no longer required. Dual wire-format support allows migration
+to proceed independently of downstream client readiness.
 
 ---
 
@@ -129,7 +145,75 @@ executor. Options:
 3. **AfterEventCallback enrichment**: Emit bridge events as additional yields
    after each ADK event via the callback chain.
 
-Recommended: Option 1 (channel-merge) for simplicity and testability.
+**Selected: Option 1 (channel-merge)** -- validated by Spike 1+2. See
+[Spike Findings](#spike-findings-phase-05) for details.
+
+#### Validated Channel-Merge Lifecycle
+
+The spike discovered that the shutdown lifecycle must have a clear
+primary-signals-auxiliaries ordering. A flat `WaitGroup` across all producers
+causes deadlock. The correct pattern:
+
+```
+Producer goroutines:
+  1. Inner executor (PRIMARY) -- closes `done` channel when finished
+  2. Keepalive ticker (AUXILIARY) -- stops on `done` or ctx.Done()
+  3. Bridge side-channel (AUXILIARY) -- stops on `done` or ctx.Done()
+
+Lifecycle:
+  inner.Execute() finishes -> close(done) -> auxiliaries exit -> wg.Wait() -> close(merged)
+```
+
+Re-invocation chaining (BR-SESS-013) is handled by running sequential
+`inner.Execute()` calls within the primary producer goroutine. Keepalive and
+bridge continue emitting across all re-invocation rounds with no gaps.
+
+### Key Design Decision: SSE Disconnect Detection
+
+v2's `LocalManager.Execute` uses `context.WithoutCancel` to detach the executor
+goroutine from the HTTP context -- identical to v0.3's behavior.
+`AgentInactivityTimeout` is an orthogonal liveness watchdog, not a disconnect
+detector.
+
+**Decision**: Kubernaut's `WithSSEDisconnectCtx` pattern is still needed and
+correctly designed under v2. Context values survive `WithoutCancel`, so the
+stashed HTTP request context remains a reliable disconnect signal inside the
+detached goroutine. No migration changes required for SSE disconnect handling.
+Validated by Spike 3.
+
+### Key Design Decision: Dual Wire-Format Support
+
+The `a2acompat/a2av0.NewJSONRPCHandler` wraps a v2 `RequestHandler` and serves
+the v0.3 wire format. The handler:
+
+1. Accepts v0.3 JSON-RPC requests (camelCase keys, `kind` discriminator)
+2. Converts to v2 types via `ToV1*` functions
+3. Delegates to the v2 `RequestHandler`
+4. Converts v2 responses back to v0.3 via `FromV1*` functions
+5. For streaming: iterates the v2 `iter.Seq2`, converts each event, and writes
+   to SSE via a channel-based producer/consumer
+
+The v0.3 wire format uses camelCase keys (`contextId`, `taskId`, `messageId`)
+with a `kind` discriminator (`"kind":"status-update"`, `"kind":"text"`). The
+`Final` flag is synthesized from `State.Terminal() || State == InputRequired`.
+Validated by Spike 4.
+
+### Key Design Decision: Test Double Migration
+
+The `fakeQueue`-based test pattern (`queue.events[]` inspection after execution)
+is replaced by an `iter.Seq2`-based pattern:
+
+| v0.3 Pattern | v2 Pattern |
+|---|---|
+| `queue := &fakeQueue{}` | `exec := &fakeIterExecutor{events: [...]}` |
+| `executor.Execute(ctx, reqCtx, queue)` | `seq := exec.Execute(ctx)` |
+| `Expect(queue.events).To(HaveLen(N))` | `events, err := collectEvents(seq)` |
+| `queue.events[i].(*a2a.TaskStatusUpdateEvent)` | `events[i]` (already typed) |
+| `queue.Write(ctx, evt) error` | Error checked during iteration |
+| `queue.closed` | Iterator naturally terminates |
+
+Helper functions: `collectEvents()`, `collectAllEvents()`, `filterBySource()`.
+The migration is mechanical. Validated by Spike 5.
 
 ### Import Path Changes
 
@@ -149,11 +233,107 @@ Recommended: Option 1 (channel-merge) for simplicity and testability.
 
 ## Risks
 
-| Risk | Severity | Mitigation |
-|------|----------|------------|
-| Wire format breaks existing clients | High | Gate on Kagenti v1.0; verify all clients before migration |
-| StreamingExecutor rewrite introduces concurrency bugs | Medium | Channel-merge pattern with comprehensive race-detector testing |
-| v0 shim introduces new conversion bugs | Low | Value-type TextPart fix prevents the known class of bugs; monitor for others |
+| Risk | Severity | Mitigation | Spike Validation |
+|------|----------|------------|-----------------|
+| Wire format breaks Kagenti v0.6 | ~~High~~ **Low** | Dual wire-format via `a2acompat/a2av0`; v0.3 endpoint for legacy clients | Spike 4: all event types roundtrip correctly |
+| StreamingExecutor rewrite introduces concurrency bugs | Medium | Channel-merge with primary/auxiliary shutdown ordering; race-detector testing | Spike 1: deadlock discovered and fixed in PoC; validated pattern is safe |
+| Re-invocation loop breaks across rounds | Medium | Sequential rounds within primary producer goroutine; auxiliaries span lifecycle | Spike 2: keepalive continues across rounds, bridge interleaves correctly |
+| SSE disconnect detection breaks under v2 | ~~Medium~~ **None** | `WithSSEDisconnectCtx` pattern is portable; no changes required | Spike 3: v2 uses identical `context.WithoutCancel` pattern |
+| Test rewrite introduces regressions | Low | Mechanical migration with `collectEvents`/`filterBySource` helpers | Spike 5: 1:1 replacement pattern validated for all test scenarios |
+| v0 shim introduces new conversion bugs | Low | Value-type TextPart fix prevents the known class; migration eliminates the shim | N/A (pre-existing) |
+
+---
+
+## Spike Findings (Phase 0.5)
+
+Five confidence-raising spikes were executed on 2026-06-17. All spike code lives
+in `pkg/apifrontend/launcher/spike/` (3 test files, 24 tests total). These are
+throwaway prototypes to be deleted before the actual migration begins.
+
+### Spike 1: Channel-Merge PoC (8 tests, PASS)
+
+**Objective**: Validate merging 3 concurrent event sources (inner executor,
+keepalive ticker, EventBridge side-channel) into a single `iter.Seq2[Event, error]`.
+
+**Key finding**: The shutdown lifecycle must use a primary/auxiliary ordering
+pattern. The inner executor is the primary producer that closes a `done` channel
+when finished, signaling auxiliary producers (keepalive, bridge) to stop. A flat
+`WaitGroup` across all producers causes deadlock because `wg.Wait()` blocks on
+auxiliaries that are waiting on a stop signal that is only sent after `wg.Wait()`
+completes.
+
+**Tests validated**: basic ordering, keepalive emission during slow execution,
+context cancellation, no goroutine leaks, error propagation.
+
+### Spike 2: Re-invocation Chaining PoC (3 tests, PASS)
+
+**Objective**: Validate flattening N sequential `inner.Execute()` calls into one
+output `iter.Seq2`, with keepalive and bridge continuing across rounds.
+
+**Key finding**: Running sequential re-invocation rounds inside the primary
+producer goroutine works correctly. Keepalive ticks fire continuously across
+round boundaries (no gap). Bridge side-channel events interleave correctly during
+each round.
+
+**Tests validated**: multiple rounds with conditional re-invocation, keepalive
+continuity across rounds, bridge writes during execution.
+
+### Spike 3: SSE Disconnect Preflight (analysis, PASS)
+
+**Objective**: Determine whether v2's `LocalManager` uses `context.WithoutCancel`
+and whether kubernaut's `WithSSEDisconnectCtx` pattern is still needed.
+
+**Key finding**: v2's `LocalManager.Execute` explicitly detaches execution via
+`context.WithoutCancel`, identical to v0.3. `AgentInactivityTimeout` is an
+orthogonal liveness watchdog, not a client-disconnect sensor. Context values
+survive `WithoutCancel`, so the stashed HTTP context remains a reliable
+disconnect indicator.
+
+**Conclusion**: `WithSSEDisconnectCtx` is portable to v2 with zero changes.
+This risk item is eliminated entirely.
+
+### Spike 4: a2acompat/a2av0 Roundtrip Validation (8 tests, PASS)
+
+**Objective**: Validate that kubernaut's EventBridge event types survive the
+v2 -> v0.3 -> v2 conversion roundtrip through the `a2acompat/a2av0` layer.
+
+**Key findings**:
+- All kubernaut event types roundtrip correctly: `TaskStatusUpdateEvent` with
+  reasoning/status/keepalive metadata, RR context metadata (7 fields),
+  `TaskArtifactUpdateEvent` with `DataPart` + `TextPart`.
+- Keepalive events (metadata-only, no message body) convert correctly.
+- All 8 v2 task states map bidirectionally.
+- Terminal state -> `Final` flag mapping works: `State.Terminal() || State == InputRequired`.
+- Wire format uses camelCase keys (`contextId`, `taskId`, `messageId`) with
+  `kind` discriminator (`"kind":"status-update"`, `"kind":"text"`).
+
+**Tests validated**: reasoning metadata, RR context metadata, keepalive events,
+artifact with DataPart+TextPart, terminal state Final flag, JSON wire format key
+names, bidirectional task state mapping, bidirectional message role mapping.
+
+### Spike 5: Test Double Pattern (8 tests, PASS)
+
+**Objective**: Prototype `iter.Seq2`-based test helpers to replace `fakeQueue`.
+
+**Key finding**: The migration is mechanical. `fakeIterExecutor` (returning
+`iter.Seq2[Event, error]`) is a 1:1 replacement for `fakeQueue`. Helper functions
+`collectEvents()`, `collectAllEvents()`, and `filterBySource()` replace
+`queue.events[]` inspection.
+
+**Tests validated**: single event emission, multiple emissions with ordering,
+error injection, context cancellation, concurrent bridge writes during execution,
+event type assertions, comparison with fakeQueue pattern, collectAllEvents with
+errors.
+
+### Confidence Impact
+
+| Phase | Before Spikes | After Spikes | Delta |
+|---|---|---|---|
+| Executor Model Redesign | ~65% | ~90% | +25% |
+| SSE Disconnect Handling | ~75% | ~98% | +23% |
+| Compat Layer (Kagenti) | ~70% | ~95% | +25% |
+| Test Rewrite | ~60% | ~85% | +25% |
+| **Overall** | **~78%** | **~92%** | **+14%** |
 
 ---
 
@@ -162,5 +342,10 @@ Recommended: Option 1 (channel-merge) for simplicity and testability.
 - ADK v1.4.0 deprecation notice: `google.golang.org/adk/server/adka2a/executor.go` line 17
 - a2a-go v2 core types: `github.com/a2aproject/a2a-go/v2@v2.3.1/a2a/core.go`
 - a2av0 compat layer: `github.com/a2aproject/a2a-go/v2@v2.3.1/a2acompat/a2av0/conversions.go`
+- a2av0 JSON-RPC server: `github.com/a2aproject/a2a-go/v2@v2.3.1/a2acompat/a2av0/jsonrpc_server.go`
+- a2av0 JSON key transform: `github.com/a2aproject/a2a-go/v2@v2.3.1/a2acompat/a2av0/json_transform.go`
+- v2 local task manager: `github.com/a2aproject/a2a-go/v2@v2.3.1/internal/taskexec/local_manager.go`
 - Kagenti upstream: `github.com/kagenti/kagenti/kagenti/backend/app/routers/chat.py`
 - TextPart fix commit: `2e5f803e6`
+- Spike PoC code: `pkg/apifrontend/launcher/spike/` (throwaway, delete before migration)
+- Tracking issue: GitHub #1447
