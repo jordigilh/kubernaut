@@ -7325,7 +7325,7 @@ components:
           description: Correlation ID linking to the delegation event
         result_type:
           type: string
-          enum: [rca_complete, rca_failed, timeout, cancelled]
+          enum: [rca_complete, rca_failed, timeout, cancelled, escalated]
           description: Type of result received from KA
         investigation_duration_ms:
           type: integer
