@@ -22,6 +22,7 @@ import "errors"
 type InvestigateInput struct {
 	RRID             string   `json:"rr_id"`
 	Action           string   `json:"action"` // start, message, complete, cancel, takeover, status, reconnect, discover_workflows
+	SessionID        string   `json:"session_id,omitempty"` // #1452: AF-provided KA session ID for direct lookup
 	Message          string   `json:"message,omitempty"`
 	ActingUser       string   `json:"acting_user,omitempty"`
 	ActingUserGroups []string `json:"acting_user_groups,omitempty"`

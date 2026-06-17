@@ -378,7 +378,13 @@ func (t *InvestigateTool) handleStart(ctx context.Context, input InvestigateInpu
 	// the RCA goroutine prematurely.
 	var launchedPending bool
 	var investigationSessionID string
-	if pendingID, hasPending := t.autoMgr.FindPendingByRemediationID(input.RRID); hasPending {
+
+	pendingID := input.SessionID
+	hasPending := pendingID != ""
+	if !hasPending {
+		pendingID, hasPending = t.autoMgr.FindPendingByRemediationID(input.RRID)
+	}
+	if hasPending {
 		if launchErr := t.autoMgr.LaunchDeferredInvestigation(pendingID); launchErr != nil {
 			t.logger.Error(launchErr, "start: failed to launch deferred investigation",
 				"rr_id", input.RRID, "pending_session_id", pendingID)
