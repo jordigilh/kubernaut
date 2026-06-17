@@ -752,6 +752,7 @@ func (p *ResponseProcessor) mapEnumToSubReason(reason string) string {
 		"llm_parsing_error":           "LLMParsingError",
 		"investigation_inconclusive":  "InvestigationInconclusive", // BR-HAPI-200
 		"rca_incomplete":              "RcaIncomplete",             // BR-496 v2: root_owner missing from session_state
+		"operator_escalation":         "OperatorEscalation",        // #1449: KA complete_no_action escalation
 	}
 	if subReason, ok := mapping[reason]; ok {
 		return subReason

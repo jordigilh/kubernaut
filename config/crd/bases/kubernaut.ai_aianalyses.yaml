@@ -704,6 +704,7 @@ spec:
                 - investigation_inconclusive
                 - rca_incomplete
                 - alignment_check_failed
+                - operator_escalation
                 type: string
               interactiveSession:
                 description: |-
