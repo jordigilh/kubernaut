@@ -39,13 +39,12 @@
 | UT-KA-1442-005 | GracefulSessionClosedHandler | Context cancellation stops Run loop and cancels pending timers | All pending timers are cancelled; Run returns cleanly |
 | UT-KA-1442-006 | GracefulSessionClosedHandler | Multiple disconnects for different sessions are tracked independently | Each session gets its own timer; cancelling one does not affect others |
 
-### Integration Tests
+### Integration Tests (Wiring — exercises production dispatch path)
 
 | ID | Component | Scenario | Expected Outcome |
 |---|---|---|---|
-| IT-KA-1442-001 | KA disconnect grace | MCP disconnect within grace period followed by reconnect preserves lease | EventStore.SessionClosed fires; GracefulHandler defers release; new session re-registers same rrID; lease remains active |
-| IT-KA-1442-002 | KA reattach | ReattachMCPSession via production dispatch maps new MCP session | DelegatingEventStore shows new MCP session ID mapped to existing interactive session ID |
-| IT-KA-1442-003 | KA grace expiry | Grace period expires without reconnect triggers full release | After grace period, onClose callback fires; interactive session is released |
+| IT-KA-1442-001 | GracefulSessionClosedHandler + LeaseSessionManager | Disconnect → Takeover reconnect → CancelPendingRelease (full callback chain wired as in main.go) | EventStore.SessionClosed fires → grace timer starts → Takeover same user/rrID fires reconnect callback → CancelPendingRelease cancels timer → onClose never fires |
+| IT-KA-1442-002 | GracefulSessionClosedHandler + LeaseSessionManager | Disconnect without reconnect → grace expiry → onClose (full wiring) | EventStore.SessionClosed fires → grace timer starts → no Takeover → timer expires → onClose fires |
 
 ---
 
@@ -58,11 +57,12 @@
 | UT-AF-1442-002 | KASessionPool.InjectVerified | Dead session rejected on inject (Ping fails) | InjectVerified returns error; session is closed; pool size unchanged |
 | UT-AF-1442-003 | KASessionPool.InjectVerified | Live session accepted on inject (Ping succeeds) | InjectVerified returns nil; session is added to pool; Acquire returns injected session |
 
-### Integration Tests
+### Integration Tests (Wiring — exercises HandleInvestigationMCPWithRegistry production path)
 
 | ID | Component | Scenario | Expected Outcome |
 |---|---|---|---|
-| IT-AF-1442-001 | AF InjectVerified | Investigation handoff uses InjectVerified | Pool.Inject call site in ka_investigate_mcp.go replaced with InjectVerified; dead sessions are rejected at handoff |
+| IT-AF-1442-W01 | AF InjectVerified at handoff | Dead session rejected by InjectVerified during investigation handoff | HandleInvestigationMCPWithRegistry → pool.InjectVerified → ping fails → pool empty, session closed |
+| IT-AF-1442-W02 | AF InjectVerified at handoff | Live session accepted by InjectVerified during investigation handoff | HandleInvestigationMCPWithRegistry → pool.InjectVerified → ping succeeds → pool size 1, session open |
 
 ---
 
@@ -80,11 +80,11 @@
 
 | Component | Production Entry Point | Wiring Code Location | IT Test ID |
 |---|---|---|---|
-| GracefulSessionClosedHandler | `go disconnectHandler.Run(ctx)` | cmd/kubernautagent/main.go | IT-KA-1442-001 |
-| ReattachMCPSession | `leaseMgr.ReattachMCPSession()` on reconnect | internal/kubernautagent/mcp/session_manager.go | IT-KA-1442-002 |
-| CancelPendingRelease | `gracefulHandler.CancelPendingRelease()` on new session | cmd/kubernautagent/main.go | IT-KA-1442-003 |
-| InjectVerified | `pool.InjectVerified()` in investigation handoff | pkg/apifrontend/tools/ka_investigate_mcp.go | IT-AF-1442-001 |
-| AF MCP session close audit | `EventStore.SessionClosed` on console handler | pkg/apifrontend/handler/mcp.go | UT-AF-1442-001 |
+| GracefulSessionClosedHandler + SetReconnectCallback | `go disconnectHandler.Run(ctx)` + `leaseMgr.SetReconnectCallback(...)` | cmd/kubernautagent/main.go | IT-KA-1442-001 |
+| Grace expiry → onClose | `disconnectHandler.Run` timer fires → onClose callback | cmd/kubernautagent/main.go | IT-KA-1442-002 |
+| InjectVerified (dead session) | `pool.InjectVerified()` in investigation handoff | pkg/apifrontend/tools/ka_investigate_mcp.go | IT-AF-1442-W01 |
+| InjectVerified (live session) | `pool.InjectVerified()` in investigation handoff | pkg/apifrontend/tools/ka_investigate_mcp.go | IT-AF-1442-W02 |
+| AF MCP session close audit | `auditingEventStore.SessionClosed` on console handler | pkg/apifrontend/handler/mcp.go | UT-AF-1442-001 |
 
 ---
 
@@ -93,7 +93,7 @@
 | Test Category | Tests | Status |
 |---|---|---|
 | KA Unit Tests (UT-KA-1442-*) | 6 | Pending |
-| KA Integration Tests (IT-KA-1442-*) | 3 | Pending |
+| KA Integration Tests (IT-KA-1442-*) | 2 | Pending |
 | AF Unit Tests (UT-AF-1442-*) | 3 | Pending |
-| AF Integration Tests (IT-AF-1442-*) | 1 | Pending |
+| AF Integration Tests (IT-AF-1442-W*) | 2 | Pending |
 | **Total** | **13** | **Pending** |
