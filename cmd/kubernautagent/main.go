@@ -1305,8 +1305,15 @@ func buildMCPHandler(
 	reconRunner := mcpadapters.NewReconRunnerAdapter(inv)
 	reconSpawner := mcpkg.NewReconstructionSpawner(reconRunner, recon, logger)
 
-	// SessionClosedHandler: processes MCP disconnect events → release + reconstruct.
-	disconnectHandler := mcpkg.NewSessionClosedHandler(eventStore, func(mcpSessionID string) {
+	// GracefulSessionClosedHandler: processes MCP disconnect events with a
+	// configurable grace period before releasing the interactive lease.
+	// BR-INTERACTIVE-001: decouples MCP transport lifecycle from lease lifecycle.
+	// If a client reconnects during the grace period, the lease is preserved.
+	disconnectGracePeriod := cfg.Interactive.DisconnectGracePeriod
+	if disconnectGracePeriod <= 0 {
+		disconnectGracePeriod = 60 * time.Second
+	}
+	disconnectHandler := mcpkg.NewGracefulSessionClosedHandler(eventStore, func(mcpSessionID string) {
 		interactiveSessionID, ok := eventStore.LookupInteractiveSession(mcpSessionID)
 		if !ok {
 			logger.V(1).Info("MCP session closed without interactive mapping (autonomous or already released)",
@@ -1314,7 +1321,6 @@ func buildMCPHandler(
 			return
 		}
 
-		// Clean up the MCP-to-interactive mapping now that we've retrieved it.
 		eventStore.DeleteMCPSession(mcpSessionID)
 
 		timeoutMgr.StopTracking(interactiveSessionID)
@@ -1336,7 +1342,6 @@ func buildMCPHandler(
 		// KA-CRIT-2: Resolve the HTTP session so AA stops polling user_driving.
 		mcptools.CompleteHTTPSession(autoMgr, rrID, nil, logger, "disconnect")
 
-		// Emit audit event for disconnect-driven completion (M1: timeout/TTL/disconnect paths).
 		emitDisconnectAudit(interactiveSessionID, rrID, "disconnect")
 
 		// T1-4: Decrement gauge on disconnect to prevent drift.
@@ -1355,11 +1360,18 @@ func buildMCPHandler(
 					"correlationID", rrID, "sessionID", interactiveSessionID)
 			}
 		}()
-	}, logger)
+	}, disconnectGracePeriod, logger)
 
-	// Start disconnect handler goroutine. The handler terminates when the
-	// eventStore's closedSessions channel is closed during process exit,
-	// or via context cancellation if a parent context is provided.
+	// Wire reconnect callback: when Takeover detects a same-user reconnect,
+	// cancel the pending graceful release (BR-INTERACTIVE-001, #1442).
+	leaseMgr.SetReconnectCallback(func(sessionID string) {
+		if disconnectHandler.CancelPendingRelease(sessionID) {
+			logger.Info("pending disconnect release cancelled (client reconnected)",
+				"session_id", sessionID)
+		}
+	})
+
+	// Start disconnect handler goroutine.
 	go disconnectHandler.Run(ctx)
 
 	// Build the InvestigatorRunner adapter.
