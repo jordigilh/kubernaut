@@ -1145,6 +1145,133 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — pool handoff (session p
 	})
 })
 
+var _ = Describe("HandleInvestigationMCPWithRegistry — session ID forwarding (#1452 BR-INTERACTIVE-010)", func() {
+
+	Describe("UT-AF-1452-001 [SI-4]: AIA CRD session ID forwarded to StartInvestigation", func() {
+		It("should pass the AIA-provided session ID to the MCP client", func() {
+			var receivedArgs ka.StartInvestigationArgs
+			eventCh := make(chan ka.InvestigationEvent, 10)
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, args ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					receivedArgs = args
+					return &ka.StartInvestigationResult{
+						SessionID: "ka-sess-1452-001",
+						Status:    "started",
+						Events:    eventCh,
+						Closer:    func() { close(eventCh) },
+					}, nil
+				},
+			}
+
+			aiaObj := newTypedAIAnalysis("kubernaut-system", "aia-rr-1452-001", "rr-1452-001", "ka-sess-1452-001")
+			tc := newTypedAIAnalysisClient(aiaObj)
+			registry := tools.NewMonitorRegistry()
+
+			_, err := tools.HandleInvestigationMCPWithRegistry(
+				context.Background(), mockMCP, tc, "kubernaut-system",
+				tools.InvestigateMCPArgs{RRID: "rr-1452-001"},
+				nil, registry, nil, false, nil, "", nil, nil,
+			)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(receivedArgs.SessionID).To(Equal("ka-sess-1452-001"),
+				"SI-4: AIA CRD session ID must be forwarded to KA for deterministic session lookup")
+		})
+	})
+
+	Describe("UT-AF-1452-002 [SI-4]: timeout path forwards empty session ID (graceful degradation)", func() {
+		It("should pass empty SessionID when AIA CRD does not become ready", func() {
+			var receivedArgs ka.StartInvestigationArgs
+			eventCh := make(chan ka.InvestigationEvent, 10)
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, args ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					receivedArgs = args
+					return &ka.StartInvestigationResult{
+						SessionID: "ka-new-sess",
+						Status:    "started",
+						Events:    eventCh,
+						Closer:    func() { close(eventCh) },
+					}, nil
+				},
+			}
+
+			tc := newTypedAIAnalysisClient()
+			registry := tools.NewMonitorRegistry()
+
+			_, err := tools.HandleInvestigationMCPWithRegistry(
+				context.Background(), mockMCP, tc, "kubernaut-system",
+				tools.InvestigateMCPArgs{RRID: "rr-1452-002"},
+				nil, registry, nil, false, nil, "", nil, nil,
+			)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(receivedArgs.SessionID).To(BeEmpty(),
+				"SI-4: when AIA CRD times out, SessionID must be empty so KA falls back to RRID scan")
+		})
+	})
+
+	Describe("UT-AF-1452-005 [SC-8]: forwarded SessionID matches AIA CRD value exactly", func() {
+		It("should transmit the session ID unmodified from AIA CRD to MCP client", func() {
+			const aiaSessionID = "1d87a525-exact-match-test"
+			var receivedArgs ka.StartInvestigationArgs
+			eventCh := make(chan ka.InvestigationEvent, 10)
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, args ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					receivedArgs = args
+					return &ka.StartInvestigationResult{
+						SessionID: aiaSessionID,
+						Status:    "started",
+						Events:    eventCh,
+						Closer:    func() { close(eventCh) },
+					}, nil
+				},
+			}
+
+			aiaObj := newTypedAIAnalysis("kubernaut-system", "aia-rr-1452-005", "rr-1452-005", aiaSessionID)
+			tc := newTypedAIAnalysisClient(aiaObj)
+			registry := tools.NewMonitorRegistry()
+
+			_, err := tools.HandleInvestigationMCPWithRegistry(
+				context.Background(), mockMCP, tc, "kubernaut-system",
+				tools.InvestigateMCPArgs{RRID: "rr-1452-005"},
+				nil, registry, nil, false, nil, "", nil, nil,
+			)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(receivedArgs.SessionID).To(Equal(aiaSessionID),
+				"SC-8: session ID must be transmitted unmodified through the AF forwarding path")
+		})
+	})
+
+	Describe("UT-AF-1452-006 [AU-3]: audit event ka_correlation_id matches KA-confirmed session", func() {
+		It("should emit delegation audit event with ka_correlation_id from KA response", func() {
+			eventCh := make(chan ka.InvestigationEvent, 10)
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					return &ka.StartInvestigationResult{
+						SessionID: "ka-confirmed-1452-006",
+						Status:    "started",
+						Events:    eventCh,
+						Closer:    func() { close(eventCh) },
+					}, nil
+				},
+			}
+
+			aiaObj := newTypedAIAnalysis("kubernaut-system", "aia-rr-1452-006", "rr-1452-006", "ka-confirmed-1452-006")
+			tc := newTypedAIAnalysisClient(aiaObj)
+			recorder := &auditRecorder{}
+			registry := tools.NewMonitorRegistry()
+
+			_, err := tools.HandleInvestigationMCPWithRegistry(
+				context.Background(), mockMCP, tc, "kubernaut-system",
+				tools.InvestigateMCPArgs{RRID: "rr-1452-006"},
+				recorder, registry, nil, false, nil, "", nil, nil,
+			)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(recorder.events).To(HaveLen(1))
+			Expect(recorder.events[0].Detail["ka_correlation_id"]).To(Equal("ka-confirmed-1452-006"),
+				"AU-3: audit event must reference the KA-confirmed session ID for traceability")
+		})
+	})
+})
+
 // mockPoolSession implements ka.PoolSession for testing.
 type mockPoolSession struct{}
 

@@ -291,7 +291,8 @@ func ParseLoggingEvent(logger logr.Logger, raw json.RawMessage) (InvestigationEv
 
 // StartInvestigationArgs is the input for starting a dedicated MCP investigation session.
 type StartInvestigationArgs struct {
-	RRID string `json:"rr_id"`
+	RRID      string `json:"rr_id"`
+	SessionID string `json:"session_id,omitempty"` // #1452: KA session ID from AIA CRD, enables direct session lookup
 }
 
 // StartInvestigationResult holds the response from a dedicated MCP investigation

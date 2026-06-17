@@ -270,6 +270,7 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 	// to KA with interactive=true and KA has created a pending session.
 	// Blocking path uses a longer timeout because the IS CRD (created by
 	// kubernaut_investigate) needs time for AA to detect and resubmit to KA.
+	var kaSessionID string
 	if client != nil && namespace != "" {
 		awaitTimeout := 10 * time.Second
 		if blocking {
@@ -282,6 +283,7 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 		})
 		checkCancel()
 		if awaitErr == nil && awaitResult.Status == "ready" {
+			kaSessionID = awaitResult.SessionID
 			_ = launcher.EmitStatusSafe(ctx, "Investigation session ready, connecting to KA...")
 		}
 
@@ -301,10 +303,12 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 	}
 
 	logger := logr.FromContextOrDiscard(ctx)
-	logger.Info("StartInvestigation: calling MCP client", "rr_id", args.RRID, "ctx_err", ctx.Err())
+	logger.Info("StartInvestigation: calling MCP client",
+		"rr_id", args.RRID, "ka_session_id", kaSessionID, "ctx_err", ctx.Err())
 
 	result, err := mcpClient.StartInvestigation(ctx, ka.StartInvestigationArgs{
-		RRID: args.RRID,
+		RRID:      args.RRID,
+		SessionID: kaSessionID,
 	})
 	if err != nil {
 		if strings.Contains(err.Error(), "session_active") {
