@@ -87,12 +87,16 @@ func BuildInstruction(namespace string) string {
 // Raw group names are never included in output (AC-6).
 var roleGuidanceMap = map[string]string{
 	"sre": "You have full operational access. You may investigate, remediate, " +
-		"and manage all incidents. Proactively suggest root cause analysis " +
-		"and remediation workflows when issues are detected. " +
+		"and manage all incidents. When the user asks you to investigate or fix an issue, " +
+		"suggest root cause analysis and remediation workflows. " +
+		"Do NOT proactively investigate or act on existing incidents unless " +
+		"the user explicitly requests it. " +
 		"Approval/rejection actions are handled exclusively via the Console UI.",
 	"ai-orchestrator": "You have full operational access. You may investigate, remediate, " +
-		"and manage all incidents. Proactively suggest root cause analysis " +
-		"and remediation workflows when issues are detected. " +
+		"and manage all incidents. When the user asks you to investigate or fix an issue, " +
+		"suggest root cause analysis and remediation workflows. " +
+		"Do NOT proactively investigate or act on existing incidents unless " +
+		"the user explicitly requests it. " +
 		"Approval/rejection actions are handled exclusively via the Console UI.",
 	"observability": "You have read-only access. Focus on presenting cluster state, " +
 		"investigation results, and audit trails. Do not initiate remediations or approvals.",

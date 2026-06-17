@@ -59,7 +59,7 @@ var _ = Describe("SessionInterceptor Integration (BR-SESS-020)", func() {
 		})
 		Expect(err).NotTo(HaveOccurred())
 		sessionSvc = adksession.InMemoryService()
-		registry = launcher.NewActiveContextRegistry(2 * time.Hour)
+		registry = launcher.NewActiveContextRegistry(2*time.Hour, 10*time.Minute)
 		logBuf = &syncBuffer{}
 		logger = funcr.New(func(prefix, args string) {
 			_, _ = logBuf.WriteString(prefix + " " + args + "\n")
@@ -137,6 +137,60 @@ var _ = Describe("SessionInterceptor Integration (BR-SESS-020)", func() {
 		Expect(json.Unmarshal(rec2.Body.Bytes(), &resp2)).To(Succeed())
 		Expect(resp1).To(HaveKey("result"))
 		Expect(resp2).To(HaveKey("result"))
+	})
+
+	It("IT-AF-1446-004: SC-7 — Message with empty contextId is NOT redirected when registry entry is idle-expired (#1446)", func() {
+		shortIdleRegistry := launcher.NewActiveContextRegistry(2*time.Hour, 1*time.Millisecond)
+		shortIdleRegistry.Set("diana", "ctx-stale-investigation")
+
+		time.Sleep(5 * time.Millisecond)
+
+		interceptor := launcher.NewSessionInterceptor(shortIdleRegistry, logger)
+		h, err := launcher.NewA2AHandler(launcher.A2AConfig{
+			Agent:              rootAgent,
+			SessionService:     sessionSvc,
+			AppName:            "kubernaut-apifrontend",
+			Logger:             logger,
+			SessionInterceptor: interceptor,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		rec := sendMessage(h, "diana", "", "list active alerts")
+		Expect(rec.Code).To(Equal(http.StatusOK))
+
+		Expect(logBuf.String()).NotTo(ContainSubstring("overriding context_id"),
+			"SC-7: idle-expired sessions must NOT hijack new conversations through the full dispatch chain")
+		Expect(logBuf.String()).To(ContainSubstring("clearing stale context"),
+			"SC-7: interceptor must log stale entry clearing for audit trail")
+
+		_, ok := shortIdleRegistry.Get("diana")
+		Expect(ok).To(BeFalse(),
+			"SC-7: stale registry entry must be evicted after idle-expired redirect attempt")
+	})
+
+	It("IT-AF-1446-005: SC-7, AC-2 — Active session stays alive via Refresh through tool call sequence (#1446)", func() {
+		shortIdleRegistry := launcher.NewActiveContextRegistry(2*time.Hour, 50*time.Millisecond)
+		shortIdleRegistry.Set("edgar", "ctx-active-investigation")
+
+		interceptor := launcher.NewSessionInterceptor(shortIdleRegistry, logger)
+		h, err := launcher.NewA2AHandler(launcher.A2AConfig{
+			Agent:              rootAgent,
+			SessionService:     sessionSvc,
+			AppName:            "kubernaut-apifrontend",
+			Logger:             logger,
+			SessionInterceptor: interceptor,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		time.Sleep(30 * time.Millisecond)
+		shortIdleRegistry.Refresh("edgar")
+		time.Sleep(30 * time.Millisecond)
+
+		rec := sendMessage(h, "edgar", "", "show me the RCA")
+		Expect(rec.Code).To(Equal(http.StatusOK))
+
+		Expect(logBuf.String()).To(ContainSubstring("overriding context_id"),
+			"SC-7, AC-2: active sessions must maintain multi-turn continuity — boundary is intentional")
 	})
 
 	It("IT-AF-SESS-020-006: Explicit contextId is preserved even when active context exists (SC-7)", func() {

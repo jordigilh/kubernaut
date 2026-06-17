@@ -283,7 +283,7 @@ var _ = Describe("Phase Guard — ActiveContextRegistry Integration (BR-SESS-020
 	)
 
 	BeforeEach(func() {
-		registry = launcher.NewActiveContextRegistry(2 * time.Hour)
+		registry = launcher.NewActiveContextRegistry(2*time.Hour, 10*time.Minute)
 		state = newMapState()
 		ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
 			Username: "alice", Groups: []string{"sre"},
@@ -377,5 +377,48 @@ var _ = Describe("Phase Guard — ActiveContextRegistry Integration (BR-SESS-020
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result).NotTo(BeNil(),
 			"Phase guard must still block MCP-dependent tools before investigate when registry is present")
+	})
+
+	It("UT-AF-1446-007: AU-3 — Refresh called on successful non-entry/non-terminal tool call (#1446)", func() {
+		registry.Set("alice", "ctx-session-abc")
+
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+			"session_id": "ka-sess-001", "rr_id": "rr-123",
+		}, nil)
+
+		shortIdleRegistry := launcher.NewActiveContextRegistry(2*time.Hour, 10*time.Millisecond)
+		shortIdleRegistry.Set("alice", "ctx-session-abc")
+		_, afterShort := NewPhaseGuardWithRegistryForTest(shortIdleRegistry)
+
+		time.Sleep(5 * time.Millisecond)
+
+		_, _ = afterShort(toolCtx, fakeTool{name: "kubectl_get"}, nil, map[string]any{
+			"result": "pod/nginx Running",
+		}, nil)
+
+		time.Sleep(7 * time.Millisecond)
+
+		contextID, ok := shortIdleRegistry.Get("alice")
+		Expect(ok).To(BeTrue(),
+			"AU-3: successful non-entry tool call must refresh idle timer to keep session alive for audit scope accuracy")
+		Expect(contextID).To(Equal("ctx-session-abc"))
+	})
+
+	It("UT-AF-1446-008: AU-3 — Refresh NOT called on failed tool call (#1446)", func() {
+		shortIdleRegistry := launcher.NewActiveContextRegistry(2*time.Hour, 10*time.Millisecond)
+		shortIdleRegistry.Set("alice", "ctx-session-abc")
+		_, afterShort := NewPhaseGuardWithRegistryForTest(shortIdleRegistry)
+
+		time.Sleep(5 * time.Millisecond)
+
+		_, _ = afterShort(toolCtx, fakeTool{name: "kubectl_get"}, nil, map[string]any{
+			"error": "forbidden",
+		}, nil)
+
+		time.Sleep(7 * time.Millisecond)
+
+		_, ok := shortIdleRegistry.Get("alice")
+		Expect(ok).To(BeFalse(),
+			"AU-3: failed tool calls must not extend session lifetime — prevents phantom sessions from corrupting audit scope boundaries")
 	})
 })
