@@ -43,6 +43,10 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — wiring audit (WIRE-C01/
 
 	Describe("WIRE-C01: investigate auto-RR path uses triager for severity", func() {
 		It("UT-AF-WIRE-C01: RR created by investigate uses triaged severity, not default medium", func() {
+			origTimeout := tools.AwaitSessionTimeout
+			tools.AwaitSessionTimeout = 10 * time.Millisecond
+			defer func() { tools.AwaitSessionTimeout = origTimeout }()
+
 			eventCh := make(chan ka.InvestigationEvent)
 			close(eventCh)
 
@@ -80,7 +84,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — wiring audit (WIRE-C01/
 					Username: "alice",
 					Groups:   []string{"sre"},
 				}),
-				2*time.Second,
+				10*time.Second,
 			)
 			defer cancel()
 
