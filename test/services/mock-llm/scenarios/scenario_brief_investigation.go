@@ -15,16 +15,19 @@ limitations under the License.
 */
 package scenarios
 
-// briefInvestigationConfig returns a scenario that keeps a KA session alive for
-// exactly 3 LLM turns (two tool calls + final response) without any time delay.
+import "time"
+
+// briefInvestigationConfig returns a scenario that keeps a KA session alive
+// long enough for IT tests to create an IS and observe the terminal phase
+// transition, without the 30s delay of slowInvestigationConfig.
 //
-// Turn 1: ToolCallName → kubectl_get (initial investigation tool call)
-// Turn 2: NextToolCall → kubectl_get (extends session by one turn via Evaluate)
-// Turn 3: DAG final_analysis → text response (session completes)
+// Turn 1: ToolCallName → kubectl_get (immediate)
+// Turn 2: NextToolCall → kubectl_get (extends session via Evaluate, 2s delay)
+// Turn 3: DAG final_analysis → text response (session completes, 2s delay)
 //
-// This is the condition-based (Evaluate) alternative to slowInvestigationConfig's
-// 30s SecondTurnDelay. Session lifetime is measured in conversation turns, not
-// wall-clock time, making tests deterministic and fast (~500ms total).
+// The 2s SecondTurnDelay provides the minimum window for the test's Eventually
+// loop (200ms interval) to detect KASession.ID and create the IS before the
+// investigation completes. Total investigation time: ~4s (2 delayed turns).
 //
 // Used by IT tests (IT-AA-1376-001) that need the session to remain active
 // briefly for IS creation and upgrade detection, then complete naturally.
@@ -32,8 +35,8 @@ package scenarios
 // Matches the keyword "brief-investigation-test" with priority 1.0.
 func briefInvestigationConfig() MockScenarioConfig {
 	return MockScenarioConfig{
-		ScenarioName: "brief_investigation",
-		ToolCallName: "kubectl_get",
+		ScenarioName:    "brief_investigation",
+		ToolCallName:    "kubectl_get",
 		ToolCallArgs: map[string]interface{}{
 			"resource_type": "pod",
 			"namespace":     "default",
@@ -47,6 +50,7 @@ func briefInvestigationConfig() MockScenarioConfig {
 				"name":          "investigation-target-2",
 			},
 		},
-		ForceText: BoolPtr(false),
+		ForceText:       BoolPtr(false),
+		SecondTurnDelay: 2 * time.Second,
 	}
 }
