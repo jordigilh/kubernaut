@@ -68,6 +68,26 @@ var _ = Describe("Escalation Lifecycle [#1456 / FedRAMP IR-5, SI-4]", Label("e2e
 		Expect(result.IsError).To(BeFalse(), "start should succeed")
 		GinkgoWriter.Printf("  Investigation started: %s\n", infrastructure.ExtractToolResultText(result))
 
+		By("Step 3b: Waiting for AA controller to submit autonomous investigation to KA")
+		var aaName string
+		Eventually(func(g Gomega) {
+			aaList := &aianalysisv1.AIAnalysisList{}
+			g.Expect(apiReader.List(testCtx, aaList, client.InNamespace(namespace))).To(Succeed())
+			for _, aa := range aaList.Items {
+				if aa.Spec.RemediationRequestRef.Name == rrName {
+					g.Expect(aa.Status.KASession).NotTo(BeNil(),
+						"AA must have KASession before escalation")
+					g.Expect(aa.Status.KASession.ID).NotTo(BeEmpty(),
+						"KASession.ID must be populated (investigation submitted to KA)")
+					aaName = aa.Name
+					GinkgoWriter.Printf("  AA %s has KASession.ID=%s\n", aa.Name, aa.Status.KASession.ID)
+					return
+				}
+			}
+			g.Expect(false).To(BeTrue(), "AA for RR %s not found yet", rrName)
+		}, 90*time.Second, 2*time.Second).Should(Succeed())
+		GinkgoWriter.Printf("  AA %s investigation submitted, safe to escalate\n", aaName)
+
 		By("Step 4: Calling kubernaut_complete_no_action with escalation_reason")
 		cnaCtx, cnaCancel := context.WithTimeout(testCtx, 30*time.Second)
 		defer cnaCancel()
