@@ -981,4 +981,112 @@ keyword_scenarios:
 				"first turn must use the primary tool_call, not next_tool_call")
 		})
 	})
+
+	Describe("UT-ML-1407-004: OpenAI handler emits NextToolCall on second turn (CountToolResults==1)", func() {
+		It("should return next_tool_call when exactly 1 tool result is present", func() {
+			content := func(s string) *string { return &s }
+			registry := scenarios.DefaultRegistry()
+			router := handlers.NewRouter(registry, false, "")
+			ts := httptest.NewServer(router)
+			defer ts.Close()
+
+			reqBody := openai.ChatCompletionRequest{
+				Model: "gpt-4",
+				Messages: []openai.Message{
+					{Role: "user", Content: content("brief-investigation-test signal")},
+					{Role: "assistant", ToolCalls: []openai.ToolCall{{ID: "call_1", Type: "function", Function: openai.FunctionCall{Name: "kubectl_get", Arguments: `{"resource_type":"pod"}`}}}},
+					{Role: "tool", Content: content(`{"kind":"Pod","metadata":{"name":"investigation-target"}}`)},
+				},
+				Tools: []openai.Tool{{Type: "function", Function: openai.ToolDefinition{Name: "kubectl_get"}}},
+			}
+
+			body, err := json.Marshal(reqBody)
+			Expect(err).NotTo(HaveOccurred())
+
+			resp, err := http.Post(ts.URL+"/v1/chat/completions", "application/json", bytes.NewReader(body))
+			Expect(err).NotTo(HaveOccurred())
+			defer resp.Body.Close()
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+			var oaiResp openai.ChatCompletionResponse
+			Expect(json.NewDecoder(resp.Body).Decode(&oaiResp)).To(Succeed())
+			Expect(oaiResp.Choices).To(HaveLen(1))
+			Expect(oaiResp.Choices[0].Message.ToolCalls).To(HaveLen(1),
+				"second turn must emit NextToolCall (brief_investigation scenario)")
+			Expect(oaiResp.Choices[0].Message.ToolCalls[0].Function.Name).To(Equal("kubectl_get"),
+				"NextToolCall must be kubectl_get per briefInvestigationConfig")
+		})
+	})
+
+	Describe("UT-ML-1407-005: OpenAI handler does NOT emit NextToolCall on third turn (CountToolResults==2)", func() {
+		It("should fall through to DAG/text when 2 tool results are present", func() {
+			content := func(s string) *string { return &s }
+			registry := scenarios.DefaultRegistry()
+			router := handlers.NewRouter(registry, false, "")
+			ts := httptest.NewServer(router)
+			defer ts.Close()
+
+			reqBody := openai.ChatCompletionRequest{
+				Model: "gpt-4",
+				Messages: []openai.Message{
+					{Role: "user", Content: content("brief-investigation-test signal")},
+					{Role: "assistant", ToolCalls: []openai.ToolCall{{ID: "call_1", Type: "function", Function: openai.FunctionCall{Name: "kubectl_get", Arguments: `{"resource_type":"pod"}`}}}},
+					{Role: "tool", Content: content(`{"kind":"Pod","metadata":{"name":"investigation-target"}}`)},
+					{Role: "assistant", ToolCalls: []openai.ToolCall{{ID: "call_2", Type: "function", Function: openai.FunctionCall{Name: "kubectl_get", Arguments: `{"resource_type":"pod"}`}}}},
+					{Role: "tool", Content: content(`{"kind":"Pod","metadata":{"name":"investigation-target-2"}}`)},
+				},
+				Tools: []openai.Tool{{Type: "function", Function: openai.ToolDefinition{Name: "kubectl_get"}}},
+			}
+
+			body, err := json.Marshal(reqBody)
+			Expect(err).NotTo(HaveOccurred())
+
+			resp, err := http.Post(ts.URL+"/v1/chat/completions", "application/json", bytes.NewReader(body))
+			Expect(err).NotTo(HaveOccurred())
+			defer resp.Body.Close()
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+			var oaiResp openai.ChatCompletionResponse
+			Expect(json.NewDecoder(resp.Body).Decode(&oaiResp)).To(Succeed())
+			Expect(oaiResp.Choices).To(HaveLen(1))
+			Expect(oaiResp.Choices[0].Message.ToolCalls).To(BeEmpty(),
+				"third turn (2 tool results) must NOT emit NextToolCall — guard prevents infinite loops")
+			Expect(oaiResp.Choices[0].Message.Content).NotTo(BeNil(),
+				"third turn should produce text response via DAG final_analysis")
+		})
+	})
+
+	Describe("UT-ML-1407-006: OpenAI handler emits initial ToolCallName on first turn with NextToolCall configured", func() {
+		It("should return the primary ToolCallName before any chaining", func() {
+			content := func(s string) *string { return &s }
+			registry := scenarios.DefaultRegistry()
+			router := handlers.NewRouter(registry, false, "")
+			ts := httptest.NewServer(router)
+			defer ts.Close()
+
+			reqBody := openai.ChatCompletionRequest{
+				Model: "gpt-4",
+				Messages: []openai.Message{
+					{Role: "user", Content: content("brief-investigation-test signal")},
+				},
+				Tools: []openai.Tool{{Type: "function", Function: openai.ToolDefinition{Name: "kubectl_get"}}},
+			}
+
+			body, err := json.Marshal(reqBody)
+			Expect(err).NotTo(HaveOccurred())
+
+			resp, err := http.Post(ts.URL+"/v1/chat/completions", "application/json", bytes.NewReader(body))
+			Expect(err).NotTo(HaveOccurred())
+			defer resp.Body.Close()
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+			var oaiResp openai.ChatCompletionResponse
+			Expect(json.NewDecoder(resp.Body).Decode(&oaiResp)).To(Succeed())
+			Expect(oaiResp.Choices).To(HaveLen(1))
+			Expect(oaiResp.Choices[0].Message.ToolCalls).To(HaveLen(1),
+				"first turn must emit ToolCallName, not NextToolCall")
+			Expect(oaiResp.Choices[0].Message.ToolCalls[0].Function.Name).To(Equal("kubectl_get"),
+				"first turn must use the primary ToolCallName from briefInvestigationConfig")
+		})
+	})
 })

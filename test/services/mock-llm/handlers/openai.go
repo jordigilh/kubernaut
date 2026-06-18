@@ -226,6 +226,15 @@ func (h *handler) handleFullDAG(
 		return
 	}
 
+	if cfg.NextToolCall != nil && ctx.CountToolResults() == 1 {
+		h.trackToolCall(cfg.NextToolCall.Name)
+		writeJSON(w, http.StatusOK, response.BuildToolCallResponse(model, cfg.NextToolCall.Name, scenarios.MockScenarioConfig{
+			ToolCallName: cfg.NextToolCall.Name,
+			ToolCallArgs: cfg.NextToolCall.Arguments,
+		}))
+		return
+	}
+
 	dag := conversation.SelectDAG(req.Tools)
 	execResult, err := dag.Execute(ctx)
 	if err != nil {
