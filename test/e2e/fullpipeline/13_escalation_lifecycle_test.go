@@ -47,8 +47,8 @@ var _ = Describe("Escalation Lifecycle [#1456 / FedRAMP IR-5, SI-4]", Label("e2e
 		testCtx, testCancel := context.WithTimeout(ctx, 3*time.Minute)
 		defer testCancel()
 
-		By("Step 1: Creating direct RR")
-		rrName, err := infrastructure.CreateDirectRR(testCtx, namespace, "fp-e2e-1456")
+		By("Step 1: Creating direct RR with slow signal (keeps KA session alive for MCP escalation)")
+		rrName, err := infrastructure.CreateDirectRRWithSignal(testCtx, namespace, "fp-e2e-1456", "slow-investigation-test")
 		Expect(err).NotTo(HaveOccurred())
 		GinkgoWriter.Printf("  RR created: %s\n", rrName)
 
