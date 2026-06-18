@@ -87,12 +87,11 @@ func (h *handler) handleOpenAI(w http.ResponseWriter, r *http.Request) {
 		h.tracker.RecordScenario(result.Scenario.Name())
 	}
 
-	scenarioWithCfg, ok := result.Scenario.(scenarios.ScenarioWithConfig)
+	cfg, ok := resolveScenarioConfig(result.Scenario, detCtx)
 	if !ok {
 		writeJSON(w, http.StatusOK, response.BuildTextResponse(model, scenarios.MockScenarioConfig{}))
 		return
 	}
-	cfg := scenarioWithCfg.Config()
 
 	if !cfg.OverrideResource {
 		if res := ctx.ExtractResource(); res.Kind != "" && res.Name != "" {
@@ -318,6 +317,20 @@ func buildDetectionContext(ctx *conversation.Context) *scenarios.DetectionContex
 // isResolvedOutcome returns true when the scenario represents a resolved or
 // non-actionable investigation that should bypass the split submit tools and
 // use a text response so the KA parser handles investigation_outcome routing.
+// resolveScenarioConfig extracts the MockScenarioConfig from a scenario,
+// preferring ScenarioWithContextConfig (thread-safe, request-scoped extraction)
+// over ScenarioWithConfig (shared state). This prevents data races when
+// concurrent requests match the same dynamic scenario instance (#1458).
+func resolveScenarioConfig(s scenarios.Scenario, detCtx *scenarios.DetectionContext) (scenarios.MockScenarioConfig, bool) {
+	if ctxCfg, ok := s.(scenarios.ScenarioWithContextConfig); ok {
+		return ctxCfg.ConfigForContext(detCtx), true
+	}
+	if swc, ok := s.(scenarios.ScenarioWithConfig); ok {
+		return swc.Config(), true
+	}
+	return scenarios.MockScenarioConfig{}, false
+}
+
 func isResolvedOutcome(cfg scenarios.MockScenarioConfig) bool {
 	switch cfg.InvestigationOutcome {
 	case "problem_resolved", "predictive_no_action":

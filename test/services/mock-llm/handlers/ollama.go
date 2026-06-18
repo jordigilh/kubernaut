@@ -82,8 +82,8 @@ func (h *handler) handleOllama(w http.ResponseWriter, r *http.Request) {
 		ScenarioName: scenarioName, RootCause: "Unable to determine root cause", Severity: "medium",
 	}
 	if result != nil {
-		if s, ok := result.Scenario.(scenarios.ScenarioWithConfig); ok {
-			cfg = s.Config()
+		if resolved, rok := resolveScenarioConfig(result.Scenario, detCtx); rok {
+			cfg = resolved
 			scenarioName = cfg.ScenarioName
 		}
 		h.recordScenarioMetric(scenarioName, result.Method)

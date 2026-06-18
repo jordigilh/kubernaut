@@ -102,12 +102,11 @@ func (h *handler) handleGemini(w http.ResponseWriter, r *http.Request) {
 		h.tracker.RecordScenario(result.Scenario.Name())
 	}
 
-	scenarioWithCfg, ok := result.Scenario.(scenarios.ScenarioWithConfig)
+	cfg, ok := resolveScenarioConfig(result.Scenario, detCtx)
 	if !ok {
 		writeJSON(w, http.StatusOK, response.BuildGeminiTextResponse(scenarios.MockScenarioConfig{}))
 		return
 	}
-	cfg := scenarioWithCfg.Config()
 
 	resolveGeminiTemplateArgs(req.Contents, &cfg)
 

@@ -16,7 +16,6 @@ limitations under the License.
 package scenarios
 
 import (
-	"log"
 	"regexp"
 	"strings"
 	"time"
@@ -94,23 +93,6 @@ func afCreateRRCrossNSScenario() *afCreateRRDynScenario {
 		if !strings.Contains(combined, "cross-namespace remediation") {
 			return false, 0
 		}
-		// Reset per-request state to prevent leaking a prior match's values
-		// into a subsequent Config() call if the regex fails this time.
-		s.extractedName = ""
-		s.extractedNS = ""
-		// Extract namespace eagerly during Match; store in extractedName/NS
-		// so Config() doesn't need to re-parse from a possibly stale context.
-		for _, text := range []string{ctx.Content, ctx.AllText, ctx.LastUserContent} {
-			if m := deployNSRe.FindStringSubmatch(text); len(m) == 3 {
-				s.extractedName = m[1]
-				s.extractedNS = m[2]
-				log.Printf("[mock-llm/kubernaut_remediate_cross_ns] Match: extracted name=%q ns=%q", m[1], m[2])
-				break
-			}
-		}
-		if s.extractedNS == "" {
-			log.Printf("[mock-llm/kubernaut_remediate_cross_ns] Match: keyword found but regex did NOT match. contentLen=%d allTextLen=%d", len(ctx.Content), len(ctx.AllText))
-		}
 		return true, 0.95
 	}
 	return s
@@ -120,12 +102,14 @@ func afCreateRRCrossNSScenario() *afCreateRRDynScenario {
 // from the user prompt to forward as kubernaut_remediate tool args.
 // Post-#1282: namespace and severity are AF-resolved; only kind/name/description
 // are sent by the LLM.
+//
+// Thread-safety (#1458): resource extraction is performed in ConfigForContext()
+// from the DetectionContext passed by the handler, not from stored state.
+// This eliminates the data race where concurrent Detect() callers overwrote
+// lastCtx, causing kubernaut_remediate to create RRs with the wrong target name.
 type afCreateRRDynScenario struct {
 	baseConfig    MockScenarioConfig
-	lastCtx       *DetectionContext
 	matchOverride func(ctx *DetectionContext) (bool, float64)
-	extractedName string
-	extractedNS   string
 }
 
 func (s *afCreateRRDynScenario) Name() string { return s.baseConfig.ScenarioName }
@@ -138,35 +122,25 @@ func (s *afCreateRRDynScenario) DAG() *conversation.DAG { return nil }
 
 func (s *afCreateRRDynScenario) Match(ctx *DetectionContext) (bool, float64) {
 	if s.matchOverride != nil {
-		matched, conf := s.matchOverride(ctx)
-		if matched {
-			s.lastCtx = ctx
-		}
-		return matched, conf
+		return s.matchOverride(ctx)
 	}
 	combined := strings.ToLower(ctx.Content + " " + ctx.AllText)
 	if strings.Contains(combined, "create a remediation request") {
-		s.lastCtx = ctx
 		return true, 0.9
 	}
 	return false, 0
 }
 
 func (s *afCreateRRDynScenario) Config() MockScenarioConfig {
+	return s.baseConfig
+}
+
+func (s *afCreateRRDynScenario) ConfigForContext(ctx *DetectionContext) MockScenarioConfig {
 	cfg := s.baseConfig
-
-	// Prefer values extracted eagerly during Match() (cross-NS scenario).
-	if s.extractedNS != "" {
-		cfg.ResourceName = s.extractedName
-		cfg.ResourceNS = s.extractedNS
+	if ctx == nil {
 		return cfg
 	}
-
-	if s.lastCtx == nil {
-		return cfg
-	}
-	// Fallback: try regex extraction from the detection context.
-	for _, text := range []string{s.lastCtx.Content, s.lastCtx.AllText, s.lastCtx.LastUserContent} {
+	for _, text := range []string{ctx.Content, ctx.AllText, ctx.LastUserContent} {
 		if m := deployNSRe.FindStringSubmatch(text); len(m) == 3 {
 			cfg.ResourceName = m[1]
 			cfg.ResourceNS = m[2]

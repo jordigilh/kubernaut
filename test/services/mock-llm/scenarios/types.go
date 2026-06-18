@@ -146,6 +146,17 @@ type ScenarioWithConfig interface {
 	Config() MockScenarioConfig
 }
 
+// ScenarioWithContextConfig is implemented by dynamic scenarios that need the
+// DetectionContext during config construction. Handlers prefer this over
+// ScenarioWithConfig to avoid shared mutable state races when concurrent
+// requests match the same scenario instance. See #1458: afCreateRRDynScenario's
+// lastCtx field was overwritten by concurrent Detect() callers, causing
+// resource name mismatches in the kubernaut_remediate tool call.
+type ScenarioWithContextConfig interface {
+	Scenario
+	ConfigForContext(ctx *DetectionContext) MockScenarioConfig
+}
+
 // ScenarioWithSubmitNotify is implemented by stateful scenarios that need to
 // know when the handler actually responded with submit_result_with_workflow.
 // The handler calls MarkSubmitSent() after writing the response so the scenario
