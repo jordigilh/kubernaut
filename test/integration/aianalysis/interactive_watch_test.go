@@ -390,10 +390,7 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			isName := helpers.UniqueTestName("is-1376-complete")
 			aaName := helpers.UniqueTestName("aa-1376-complete")
 
-			By("creating Active IS first (guarantees IS exists before investigation completes)")
-			createActiveIS(isName, rrName)
-
-			By("creating Investigating AA (autonomous session starts with IS already present)")
+			By("creating Investigating AA first (autonomous session — no IS yet)")
 			analysis := createInvestigatingAA(aaName, rrName, "", "brief-investigation-test", false)
 
 			By("waiting for real KA session to be established")
@@ -403,20 +400,23 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 				g.Expect(analysis.Status.KASession.ID).NotTo(BeEmpty())
 			}, timeout, interval).Should(Succeed())
 
+			By("creating Active IS mid-investigation (triggers autonomous→interactive upgrade)")
+			createActiveIS(isName, rrName)
+
 			By("verifying IS CRD transitions to Completed (wiring proof)")
 			Eventually(func(g Gomega) {
 				var is isv1alpha1.InvestigationSession
 				g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: isName, Namespace: testNamespace}, &is)).To(Succeed())
 				g.Expect(is.Status.Phase).To(Equal(isv1alpha1.SessionPhaseCompleted),
 					"#1376: IS must transition to Completed when KA session completes")
-			}, 10*time.Second, interval).Should(Succeed())
+			}, timeout, interval).Should(Succeed())
 
 			By("verifying AA progresses past Investigating (sanity)")
 			Eventually(func(g Gomega) {
 				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
 				g.Expect(string(analysis.Status.Phase)).NotTo(Equal(string(aianalysisv1.PhaseInvestigating)),
 					"AA should have left Investigating phase after completed poll")
-			}, 10*time.Second, interval).Should(Succeed())
+			}, timeout, interval).Should(Succeed())
 		})
 
 		It("IT-AA-1376-002: IS transitions to Failed when KA session is cancelled [BR-INTERACTIVE-010, #1376]", func() {
