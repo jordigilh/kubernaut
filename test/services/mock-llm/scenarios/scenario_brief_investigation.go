@@ -25,9 +25,10 @@ import "time"
 // Turn 2: NextToolCall → kubectl_get (extends session via Evaluate, 2s delay)
 // Turn 3: DAG final_analysis → text response (session completes, 2s delay)
 //
-// The 6s SecondTurnDelay provides a reliable window for the test's Eventually
+// The 3s SecondTurnDelay provides a reliable window for the test's Eventually
 // loop (200ms interval) to detect KASession.ID and create the IS before the
-// investigation completes. Total investigation time: ~12s (2 delayed turns).
+// investigation completes. The delay applies per-phase (RCA, workflow_discovery,
+// etc.), so total investigation time is ~9-12s across all phases.
 //
 // Used by IT tests (IT-AA-1376-001) that need the session to remain active
 // briefly for IS creation and upgrade detection, then complete naturally.
@@ -51,6 +52,6 @@ func briefInvestigationConfig() MockScenarioConfig {
 			},
 		},
 		ForceText:       BoolPtr(false),
-		SecondTurnDelay: 6 * time.Second,
+		SecondTurnDelay: 3 * time.Second,
 	}
 }
