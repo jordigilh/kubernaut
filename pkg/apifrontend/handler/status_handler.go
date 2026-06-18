@@ -18,26 +18,36 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
 
-const heartbeatInterval = 15 * time.Second
+const defaultHeartbeatInterval = 15 * time.Second
 
 // StatusHandler serves the POST /a2a/status endpoint (DD-AF-008).
-// It parses JSON-RPC status/subscribe requests and initiates SSE streams
-// for RR phase transition events.
 type StatusHandler struct {
-	client    crclient.WithWatch
-	namespace string
-	logger    logr.Logger
+	client            crclient.WithWatch
+	namespace         string
+	logger            logr.Logger
+	heartbeatInterval time.Duration
 }
 
-// NewStatusHandler constructs a StatusHandler.
+// NewStatusHandler constructs a StatusHandler with the default 15s heartbeat.
 func NewStatusHandler(client crclient.WithWatch, namespace string, logger logr.Logger) *StatusHandler {
+	return newStatusHandler(client, namespace, logger, defaultHeartbeatInterval)
+}
+
+// NewStatusHandlerForTest constructs a StatusHandler with a custom heartbeat
+// interval. Production code should use NewStatusHandler.
+func NewStatusHandlerForTest(client crclient.WithWatch, namespace string, logger logr.Logger, heartbeat time.Duration) *StatusHandler {
+	return newStatusHandler(client, namespace, logger, heartbeat)
+}
+
+func newStatusHandler(client crclient.WithWatch, namespace string, logger logr.Logger, heartbeat time.Duration) *StatusHandler {
 	if logger.GetSink() == nil {
 		logger = logr.Discard()
 	}
 	return &StatusHandler{
-		client:    client,
-		namespace: namespace,
-		logger:    logger.WithName("status-handler"),
+		client:            client,
+		namespace:         namespace,
+		logger:            logger.WithName("status-handler"),
+		heartbeatInterval: heartbeat,
 	}
 }
 
@@ -98,6 +108,8 @@ func (h *StatusHandler) handleSubscribe(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
+	rrResourceVersion := rr.ResourceVersion
+
 	rrList := &remediationv1.RemediationRequestList{}
 	rrWatcher, err := h.client.Watch(ctx, rrList,
 		crclient.InNamespace(h.namespace),
@@ -108,12 +120,24 @@ func (h *StatusHandler) handleSubscribe(w http.ResponseWriter, r *http.Request, 
 	}
 	defer rrWatcher.Stop()
 
-	heartbeat := time.NewTicker(heartbeatInterval)
+	heartbeat := time.NewTicker(h.heartbeatInterval)
 	defer heartbeat.Stop()
 
 	var eaCh <-chan watch.Event
 	var eaWatcher watch.Interface
+	var prevEA *eav1alpha1.EffectivenessAssessment
+	var eaResourceVersion string
 	lastSeenPhase := phase
+
+	if phase == "Verifying" && ea != nil {
+		prevEA = ea.DeepCopy()
+		eaResourceVersion = ea.ResourceVersion
+		eaName := tools.ResolveEAName(&rr)
+		eaWatcher, eaCh = h.startEAWatch(ctx, eaName)
+		if eaWatcher != nil {
+			defer eaWatcher.Stop()
+		}
+	}
 
 	var deadlineTimer <-chan time.Time
 	if deadline, ok := ctx.Deadline(); ok {
@@ -140,6 +164,8 @@ func (h *StatusHandler) handleSubscribe(w http.ResponseWriter, r *http.Request, 
 
 		case evt, ok := <-rrWatcher.ResultChan():
 			if !ok {
+				logger.V(1).Info("RR watch closed, reconnecting", "resourceVersion", rrResourceVersion)
+				rrWatcher.Stop()
 				rrWatcher, err = h.client.Watch(ctx, rrList,
 					crclient.InNamespace(h.namespace),
 					crclient.MatchingFields{"metadata.name": req.Params.RRID})
@@ -156,6 +182,7 @@ func (h *StatusHandler) handleSubscribe(w http.ResponseWriter, r *http.Request, 
 			if !ok {
 				continue
 			}
+			rrResourceVersion = rrObj.ResourceVersion
 			newPhase := string(rrObj.Status.OverallPhase)
 			if newPhase == lastSeenPhase {
 				continue
@@ -164,16 +191,17 @@ func (h *StatusHandler) handleSubscribe(w http.ResponseWriter, r *http.Request, 
 
 			if newPhase == "Verifying" && eaCh == nil {
 				ea = h.fetchEA(ctx, rrObj)
+				if ea != nil {
+					prevEA = ea.DeepCopy()
+					eaResourceVersion = ea.ResourceVersion
+				}
 				eaName := tools.ResolveEAName(rrObj)
-				eaList := &eav1alpha1.EffectivenessAssessmentList{}
-				eaWatcher, err = h.client.Watch(ctx, eaList,
-					crclient.InNamespace(h.namespace),
-					crclient.MatchingFields{"metadata.name": eaName})
-				if err == nil {
-					eaCh = eaWatcher.ResultChan()
+				if eaWatcher != nil {
+					eaWatcher.Stop()
+				}
+				eaWatcher, eaCh = h.startEAWatch(ctx, eaName)
+				if eaWatcher != nil {
 					defer eaWatcher.Stop()
-				} else {
-					logger.V(1).Info("EA watch unavailable", "ea_name", eaName, "error", err)
 				}
 			}
 
@@ -187,15 +215,17 @@ func (h *StatusHandler) handleSubscribe(w http.ResponseWriter, r *http.Request, 
 
 		case eaEvt, ok := <-eaCh:
 			if !ok {
+				logger.V(1).Info("EA watch closed, reconnecting", "resourceVersion", eaResourceVersion)
 				eaCh = nil
-				eaName := tools.ResolveEAName(&rr)
-				eaList := &eav1alpha1.EffectivenessAssessmentList{}
-				eaWatcher, err = h.client.Watch(ctx, eaList,
-					crclient.InNamespace(h.namespace),
-					crclient.MatchingFields{"metadata.name": eaName})
-				if err == nil {
-					eaCh = eaWatcher.ResultChan()
-					defer eaWatcher.Stop()
+				if eaWatcher != nil {
+					eaWatcher.Stop()
+				}
+				if err := h.client.Get(ctx, key, &rr); err == nil {
+					eaName := tools.ResolveEAName(&rr)
+					eaWatcher, eaCh = h.startEAWatch(ctx, eaName)
+					if eaWatcher != nil {
+						defer eaWatcher.Stop()
+					}
 				}
 				continue
 			}
@@ -206,16 +236,37 @@ func (h *StatusHandler) handleSubscribe(w http.ResponseWriter, r *http.Request, 
 			if !ok {
 				continue
 			}
+			eaResourceVersion = eaObj.ResourceVersion
+
+			steps := tools.DiffEASteps(prevEA, eaObj)
+			prevEA = eaObj.DeepCopy()
 			ea = eaObj
+
+			if len(steps) == 0 {
+				continue
+			}
 
 			if err := h.client.Get(ctx, key, &rr); err != nil {
 				logger.V(1).Info("failed to refresh RR for EA event", "error", err)
 				continue
 			}
 			meta := BuildPhaseMetadata(&rr, ea)
+			meta["verification_steps"] = steps
 			h.writeStatusUpdate(w, flusher, req.Params.RRID, string(rr.Status.OverallPhase), false, meta)
 		}
 	}
+}
+
+func (h *StatusHandler) startEAWatch(ctx context.Context, eaName string) (watch.Interface, <-chan watch.Event) {
+	eaList := &eav1alpha1.EffectivenessAssessmentList{}
+	watcher, err := h.client.Watch(ctx, eaList,
+		crclient.InNamespace(h.namespace),
+		crclient.MatchingFields{"metadata.name": eaName})
+	if err != nil {
+		h.logger.V(1).Info("EA watch unavailable", "ea_name", eaName, "error", err)
+		return nil, nil
+	}
+	return watcher, watcher.ResultChan()
 }
 
 func (h *StatusHandler) fetchEA(ctx context.Context, rr *remediationv1.RemediationRequest) *eav1alpha1.EffectivenessAssessment {

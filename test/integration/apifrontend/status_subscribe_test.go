@@ -345,6 +345,115 @@ var _ = Describe("status/subscribe SSE endpoint (IT)", func() {
 		Expect(inner["phase"]).To(Equal("Completed"))
 	})
 
+	It("IT-AF-1460-013: watch reconnection re-establishes transparently", func() {
+		rr := createTestRR(ctx, "rr-reconnect", testNS, "Processing")
+
+		resp, err := http.Post(statusSrv.URL, "application/json",
+			bytes.NewReader(statusSubscribeBody(rr.Name)))
+		Expect(err).NotTo(HaveOccurred())
+		defer resp.Body.Close()
+
+		time.Sleep(200 * time.Millisecond)
+
+		Expect(k8sClient.Get(ctx, crclient.ObjectKeyFromObject(rr), rr)).To(Succeed())
+		rr.Status.OverallPhase = remediationv1.PhaseExecuting
+		now := metav1.Now()
+		rr.Status.ExecutingStartTime = &now
+		Expect(k8sClient.Status().Update(ctx, rr)).To(Succeed())
+
+		time.Sleep(200 * time.Millisecond)
+
+		Expect(k8sClient.Get(ctx, crclient.ObjectKeyFromObject(rr), rr)).To(Succeed())
+		rr.Status.OverallPhase = remediationv1.PhaseCompleted
+		rr.Status.Outcome = "Remediated"
+		Expect(k8sClient.Status().Update(ctx, rr)).To(Succeed())
+
+		events := collectSSEEvents(resp, 3, 5*time.Second)
+		Expect(len(events)).To(BeNumerically(">=", 2),
+			"stream must survive watch lifecycle and deliver multiple phase transitions")
+
+		var hasFinal bool
+		for _, evt := range events {
+			var data map[string]any
+			if json.Unmarshal([]byte(evt.Data), &data) != nil {
+				continue
+			}
+			inner, _ := data["params"].(map[string]any)
+			if inner != nil && inner["final"] == true {
+				hasFinal = true
+			}
+		}
+		Expect(hasFinal).To(BeTrue(), "stream must deliver terminal event")
+	})
+
+	It("IT-AF-1460-014: status/closing pre-warning before deadline", func() {
+		deadlineCtx, deadlineCancel := context.WithTimeout(ctx, 3*time.Second)
+		defer deadlineCancel()
+
+		sh := handler.NewStatusHandler(wc, testNS, logf.Log.WithName("status-it-deadline"))
+		deadlineSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			sh.ServeHTTP(w, r.WithContext(deadlineCtx))
+		}))
+		defer deadlineSrv.Close()
+
+		rr := createTestRR(ctx, "rr-closing", testNS, "Processing")
+
+		resp, err := http.Post(deadlineSrv.URL, "application/json",
+			bytes.NewReader(statusSubscribeBody(rr.Name)))
+		Expect(err).NotTo(HaveOccurred())
+		defer resp.Body.Close()
+
+		events := collectSSEEvents(resp, 2, 5*time.Second)
+
+		var hasClosing bool
+		for _, evt := range events {
+			if evt.Event == "status/closing" {
+				hasClosing = true
+				var data map[string]any
+				Expect(json.Unmarshal([]byte(evt.Data), &data)).To(Succeed())
+				inner, _ := data["params"].(map[string]any)
+				Expect(inner["reason"]).To(Equal("token_expiry"))
+				Expect(inner["reconnect"]).To(BeTrue())
+			}
+		}
+		Expect(hasClosing).To(BeTrue(),
+			"must receive status/closing event before context deadline kills stream")
+	})
+
+	It("IT-AF-1460-018: heartbeat received on idle stream", func() {
+		shortHeartbeat := handler.NewStatusHandlerForTest(wc, testNS,
+			logf.Log.WithName("status-it-hb"), 500*time.Millisecond)
+		hbSrv := httptest.NewServer(shortHeartbeat)
+		defer hbSrv.Close()
+
+		rr := createTestRR(ctx, "rr-heartbeat", testNS, "Processing")
+
+		resp, err := http.Post(hbSrv.URL, "application/json",
+			bytes.NewReader(statusSubscribeBody(rr.Name)))
+		Expect(err).NotTo(HaveOccurred())
+		defer resp.Body.Close()
+
+		done := make(chan bool, 1)
+		go func() {
+			scanner := bufio.NewScanner(resp.Body)
+			for scanner.Scan() {
+				line := scanner.Text()
+				if strings.TrimSpace(line) == ": heartbeat" {
+					done <- true
+					return
+				}
+			}
+			done <- false
+		}()
+
+		select {
+		case got := <-done:
+			Expect(got).To(BeTrue(), "must receive heartbeat comment frame")
+		case <-time.After(3 * time.Second):
+			Fail("timed out waiting for heartbeat frame")
+		}
+	})
+
 	It("IT-AF-1460-019: Blocked phase emits blocked_until, block_reason", func() {
 		rr := createTestRR(ctx, "rr-blocked", testNS, "Executing")
 		defer cleanupTestRR(ctx, rr.Name, testNS)

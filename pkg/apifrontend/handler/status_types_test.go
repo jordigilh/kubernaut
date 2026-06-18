@@ -78,6 +78,18 @@ var _ = Describe("BuildPhaseMetadata", func() {
 		Expect(meta).To(HaveKey("block_message"))
 	})
 
+	It("UT-AF-1460-008a: AwaitingApproval phase returns approval_request_name", func() {
+		rr := &remediationv1.RemediationRequest{
+			ObjectMeta: metav1.ObjectMeta{Name: "rr-approval-test"},
+			Status: remediationv1.RemediationRequestStatus{
+				OverallPhase: remediationv1.PhaseAwaitingApproval,
+			},
+		}
+		meta := handler.BuildPhaseMetadata(rr, nil)
+		Expect(meta).To(HaveKey("approval_request_name"))
+		Expect(meta["approval_request_name"]).To(Equal("rar-rr-approval-test"))
+	})
+
 	It("UT-AF-1460-008: terminal phases return outcome/failure_reason/skip_reason", func() {
 		rr := &remediationv1.RemediationRequest{
 			Status: remediationv1.RemediationRequestStatus{

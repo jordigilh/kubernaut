@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"time"
 
 	eav1alpha1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
@@ -47,6 +48,10 @@ const (
 	errCodeMethodNotFound = -32601
 	errCodeInvalidParams  = -32602
 	errCodeRRNotFound     = -32001
+	// errCodeAccessDenied is reserved for future per-resource authz (SAR).
+	// Today all authenticated users are implicitly authorized; the auth
+	// middleware returns HTTP 401/403 before reaching the handler.
+	errCodeAccessDenied = -32002 //nolint:unused // reserved per DD-AF-008 contract
 )
 
 // BuildPhaseMetadata constructs per-phase metadata from CRD status fields.
@@ -90,7 +95,8 @@ func BuildPhaseMetadata(rr *remediationv1.RemediationRequest, ea *eav1alpha1.Eff
 		}
 
 	case remediationv1.PhaseAwaitingApproval:
-		// Approval-related metadata can be extended when RAR ref is available
+		rarName := fmt.Sprintf("rar-%s", rr.Name)
+		meta["approval_request_name"] = rarName
 
 	case remediationv1.PhaseCompleted:
 		if rr.Status.Outcome != "" {
