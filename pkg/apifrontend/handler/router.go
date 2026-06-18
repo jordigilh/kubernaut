@@ -27,6 +27,7 @@ type RouterConfig struct {
 	ReadyChecker       func() bool
 	MaxPayloadBytes    int64
 	SSETracker         *streaming.ConnectionTracker
+	StatusHandler      http.Handler
 	Draining           *atomic.Bool
 }
 
@@ -100,6 +101,18 @@ func NewRouter(cfg RouterConfig) (http.Handler, error) { //nolint:gocritic // hu
 	mux.Handle("POST /a2a/invoke", a2aChain)
 	mux.Handle("POST /{$}", a2aChain)
 	mux.Handle("POST /mcp", mcpChain)
+
+	if cfg.StatusHandler != nil {
+		innerStatus := writeDeadlineMiddleware(maxBodyMiddleware(maxBytes, trackSSEConnection(cfg.SSETracker, cfg.StatusHandler)))
+		if cfg.PostAuthMiddleware != nil {
+			innerStatus = cfg.PostAuthMiddleware(innerStatus)
+		}
+		statusChain := cfg.AuthMiddleware(innerStatus)
+		if cfg.PreAuthMiddleware != nil {
+			statusChain = cfg.PreAuthMiddleware(statusChain)
+		}
+		mux.Handle("POST /a2a/status", statusChain)
+	}
 
 	recoverLogger := cfg.Logger
 	if recoverLogger.GetSink() == nil {

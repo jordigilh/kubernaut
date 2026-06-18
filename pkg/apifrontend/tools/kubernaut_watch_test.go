@@ -600,6 +600,45 @@ var _ = Describe("verification_step events in HandleWatch — #1427", func() {
 		}
 	})
 
+	It("UT-AF-1460-030: HandleWatch uses effectivenessAssessmentRef instead of EANameForRR", func() {
+		refEAName := "custom-ea-name-not-convention"
+		conventionEAName := tools.EANameForRR("rr-ref")
+		Expect(refEAName).NotTo(Equal(conventionEAName), "test precondition: ref name must differ from convention")
+
+		rr := newTypedRR("payments", "rr-ref", "Executing")
+		rr.Status.EffectivenessAssessmentRef = &corev1.ObjectReference{
+			Kind:       "EffectivenessAssessment",
+			Name:       refEAName,
+			Namespace:  "payments",
+			APIVersion: "kubernaut.ai/v1alpha1",
+		}
+
+		var capturedEAGetName string
+		wc := newWatchClientWithInterceptor(interceptor.Funcs{
+			Get: func(ctx context.Context, c crclient.WithWatch, key crclient.ObjectKey, obj crclient.Object, opts ...crclient.GetOption) error {
+				if _, ok := obj.(*eav1alpha1.EffectivenessAssessment); ok {
+					capturedEAGetName = key.Name
+				}
+				return c.Get(ctx, key, obj, opts...)
+			},
+		}, rr)
+
+		go func() {
+			time.Sleep(50 * time.Millisecond)
+			updateRRPhase(ctx, wc, "payments", "rr-ref", "Verifying")
+			time.Sleep(50 * time.Millisecond)
+			updateRRTerminal(ctx, wc, "payments", "rr-ref", "Completed", "Remediated", "done")
+		}()
+
+		result, err := tools.HandleWatch(ctx, wc, tools.WatchArgs{Namespace: "payments", Name: "rr-ref"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Status).To(Equal("completed"))
+
+		Expect(capturedEAGetName).To(Equal(refEAName),
+			"HandleWatch must use effectivenessAssessmentRef.Name (%q) for EA lookup, not EANameForRR convention (%q)",
+			refEAName, conventionEAName)
+	})
+
 	It("IT-AF-1427-004: SI-4, AU-3 — alert decay emits alert_check with in_progress and signal name in detail", func() {
 		rr := newTypedRR("payments", "rr-4", "Executing")
 		ea := &eav1alpha1.EffectivenessAssessment{

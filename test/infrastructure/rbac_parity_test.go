@@ -106,6 +106,7 @@ var _ = Describe("AF RBAC parity (UT-INFRA-RBAC-001)", func() {
 		Entry("pdbs",                "policy",       "poddisruptionbudgets",             []string{"get", "list"}),
 		Entry("leases",              "coordination.k8s.io", "leases",                   []string{"get", "list", "watch"}),
 		Entry("aianalyses",          "kubernaut.ai", "aianalyses",                      []string{"get", "list", "watch"}),
+		Entry("IT-AF-1460-040: EA CRD", "kubernaut.ai", "effectivenessassessments",     []string{"get", "list", "watch"}),
 		Entry("SAR",                 "authorization.k8s.io", "subjectaccessreviews",    []string{"create"}),
 		Entry("token reviews",       "authentication.k8s.io", "tokenreviews",           []string{"create"}),
 	)

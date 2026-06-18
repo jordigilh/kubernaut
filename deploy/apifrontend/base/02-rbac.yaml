@@ -59,10 +59,11 @@ rules:
   - apiGroups: ["kubernaut.ai"]
     resources: ["aianalyses"]
     verbs: ["get", "list", "watch"]
-  # EffectivenessAssessment read-only: fetch stabilizationWindow for progress artifacts (#1403)
+  # EffectivenessAssessment: fetch stabilizationWindow for progress artifacts (#1403),
+  # watch EA sub-phase transitions for status/subscribe SSE stream (#1460)
   - apiGroups: ["kubernaut.ai"]
     resources: ["effectivenessassessments"]
-    verbs: ["get"]
+    verbs: ["get", "list", "watch"]
   # SubjectAccessReview: SAR-based tool authorization (ADR-021)
   - apiGroups: ["authorization.k8s.io"]
     resources: ["subjectaccessreviews"]

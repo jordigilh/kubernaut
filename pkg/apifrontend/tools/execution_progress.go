@@ -10,6 +10,7 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	eav1alpha1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/resilience"
 )
 
@@ -34,6 +35,15 @@ func BuildProgressSnapshot(currentPhase, rrName, startedAt, completedAt string) 
 // pkg/remediationorchestrator/creator/effectivenessassessment.go.
 func EANameForRR(rrName string) string {
 	return fmt.Sprintf("ea-%s", rrName)
+}
+
+// ResolveEAName returns the EA name from the RR's EffectivenessAssessmentRef
+// if populated, falling back to EANameForRR for backward compatibility.
+func ResolveEAName(rr *remediationv1.RemediationRequest) string {
+	if rr.Status.EffectivenessAssessmentRef != nil && rr.Status.EffectivenessAssessmentRef.Name != "" {
+		return rr.Status.EffectivenessAssessmentRef.Name
+	}
+	return EANameForRR(rr.Name)
 }
 
 // EATimingMetadata holds timing fields extracted from an EffectivenessAssessment.

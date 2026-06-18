@@ -733,7 +733,7 @@ func HandleWatch(ctx context.Context, client crclient.WithWatch, args WatchArgs)
 			})
 			if phase == "Verifying" {
 				verifyingStartedAt = time.Now().UTC()
-				eaName := EANameForRR(args.Name)
+				eaName := ResolveEAName(rrObj)
 				timing := FetchEATimingMetadata(ctx, client, nil, args.Namespace, eaName)
 
 				statusMeta := map[string]any{"type": launcher.MetaTypeStatus}
@@ -769,7 +769,7 @@ func HandleWatch(ctx context.Context, client crclient.WithWatch, args WatchArgs)
 			}
 			progressMeta := map[string]any{"type": "execution_progress"}
 			if phase == "Verifying" {
-				eaName := EANameForRR(args.Name)
+				eaName := ResolveEAName(rrObj)
 				timing := FetchEATimingMetadata(ctx, client, nil, args.Namespace, eaName)
 				if timing.StabilizationWindow != "" {
 					progressMeta["stabilization_window"] = timing.StabilizationWindow

@@ -583,6 +583,11 @@ timeoutSeconds: 120
 
 	sseTracker := streaming.NewConnectionTracker(metricsRegistry.SSEActiveConnections, 30*time.Second)
 
+	watchClient, wcErr := client.NewWithWatch(restCfg, client.Options{Scheme: scheme})
+	Expect(wcErr).NotTo(HaveOccurred(), "WithWatch client must initialize for StatusHandler IT tests")
+
+	statusHandler := handler.NewStatusHandler(watchClient, "default", logf.Log.WithName("status-it"))
+
 	routerCfg := handler.RouterConfig{
 		MetricsRegistry:  metricsRegistry,
 		Logger:           logf.Log.WithName("router-it"),
@@ -593,6 +598,7 @@ timeoutSeconds: 120
 		ReadyChecker:     func() bool { return true },
 		MaxPayloadBytes:  1 << 20,
 		SSETracker:       sseTracker,
+		StatusHandler:    statusHandler,
 	}
 
 	testRouter, err = handler.NewRouter(routerCfg)
