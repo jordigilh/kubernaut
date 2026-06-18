@@ -399,7 +399,9 @@ var _ = Describe("status/subscribe SSE endpoint (IT)", func() {
 	})
 
 	It("IT-AF-1460-014: status/closing pre-warning before deadline", func() {
-		deadlineCtx, deadlineCancel := context.WithTimeout(ctx, 3*time.Second)
+		// Deadline must exceed the 5s pre-warning offset so the timer fires.
+		// With 8s deadline, pre-warning fires at ~3s into the stream.
+		deadlineCtx, deadlineCancel := context.WithTimeout(ctx, 8*time.Second)
 		defer deadlineCancel()
 
 		sh := handler.NewStatusHandler(wc, testNS, logf.Log.WithName("status-it-deadline"))
@@ -415,7 +417,7 @@ var _ = Describe("status/subscribe SSE endpoint (IT)", func() {
 		Expect(err).NotTo(HaveOccurred())
 		defer resp.Body.Close()
 
-		events := collectSSEEvents(resp, 2, 5*time.Second)
+		events := collectSSEEvents(resp, 2, 10*time.Second)
 
 		var hasClosing bool
 		for _, evt := range events {

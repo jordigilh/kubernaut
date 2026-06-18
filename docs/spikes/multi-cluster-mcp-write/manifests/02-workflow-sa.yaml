@@ -1,0 +1,31 @@
+# Workflow SA: scoped permissions for the remediation pod
+# This SA is referenced in the Job's template.spec.serviceAccountName
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kubernaut-wf-test
+  namespace: demo-hpa
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kubernaut-wf-test
+  namespace: demo-hpa
+rules:
+  - apiGroups: [autoscaling]
+    resources: [horizontalpodautoscalers]
+    verbs: [get, list, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kubernaut-wf-test
+  namespace: demo-hpa
+subjects:
+  - kind: ServiceAccount
+    name: kubernaut-wf-test
+    namespace: demo-hpa
+roleRef:
+  kind: Role
+  name: kubernaut-wf-test
+  apiGroup: rbac.authorization.k8s.io
