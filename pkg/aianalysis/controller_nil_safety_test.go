@@ -30,11 +30,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
+	"github.com/go-logr/logr"
+
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/aianalysis"
 	aiaudit "github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
+	"github.com/jordigilh/kubernaut/pkg/aianalysis/rego"
 	aistatus "github.com/jordigilh/kubernaut/pkg/aianalysis/status"
 	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
@@ -145,7 +148,7 @@ var _ = Describe("AIAnalysis Controller Nil Safety (#1116)", func() {
 			})
 			Expect(err).ToNot(HaveOccurred())
 
-			mockRegoEvaluator := mocks.NewMockRegoEvaluator()
+			mockRegoEvaluator := rego.NewEvaluator(rego.Config{PolicyPath: "testdata/policies/always_approve.rego"}, logr.Discard())
 			analyzingHandler := handlers.NewAnalyzingHandler(
 				mockRegoEvaluator, ctrl.Log.WithName("test"), testMetrics, auditClient,
 			)
@@ -219,7 +222,7 @@ var _ = Describe("AIAnalysis Controller Nil Safety (#1116)", func() {
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 
 			mockHolmesClient := mocks.NewMockAgentClient()
-			mockRegoEvaluator := mocks.NewMockRegoEvaluator()
+			mockRegoEvaluator := rego.NewEvaluator(rego.Config{PolicyPath: "testdata/policies/always_approve.rego"}, logr.Discard())
 
 			reconciler := &aianalysis.AIAnalysisReconciler{
 				Client:        fakeClient,

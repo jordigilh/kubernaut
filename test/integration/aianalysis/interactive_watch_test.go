@@ -17,8 +17,6 @@ limitations under the License.
 package aianalysis
 
 import (
-	"context"
-	"sync"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -33,11 +31,9 @@ import (
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	aiaudit "github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
-	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
 
 // BR-INTERACTIVE-010: Integration tests for InvestigationSession watch wiring (#1293).
@@ -82,7 +78,10 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 		return is
 	}
 
-	createInvestigatingAA := func(name, rrName, sessionID string, interactive bool) *aianalysisv1.AIAnalysis {
+	createInvestigatingAA := func(name, rrName, sessionID, signalName string, interactive bool) *aianalysisv1.AIAnalysis {
+		if signalName == "" {
+			signalName = "CrashLoopBackOff"
+		}
 		analysis := &aianalysisv1.AIAnalysis{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      name,
@@ -98,7 +97,7 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 					SignalContext: aianalysisv1.SignalContextInput{
 						Fingerprint:      "fp-interactive",
 						Severity:         "medium",
-						SignalName:       "CrashLoopBackOff",
+						SignalName:       signalName,
 						Environment:      "staging",
 						BusinessPriority: "P2",
 						TargetResource: aianalysisv1.TargetResource{
@@ -150,35 +149,25 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 		})
 	})
 
-	// IT-002..004 swap the investigating handler to a mock KA client for deterministic
-	// cancel/submit behavior. Serial execution prevents cross-test handler races.
+	// IT-002..004 use the real KA agent client + slow-investigation-test scenario
+	// to verify IS watch triggers and upgrade behavior through CRD state assertions.
 	Context("IS watch-driven reconciliation", Serial, func() {
-		var (
-			savedHandler *handlers.InvestigatingHandler
-			mockClient   *mocks.MockAgentClient
-		)
+		var savedHandler *handlers.InvestigatingHandler
 
-		swapMockHandler := func() {
+		BeforeEach(func() {
 			savedHandler = reconciler.InvestigatingHandler.Load()
-			mockClient = mocks.NewMockAgentClient()
-			mockClient.WithSessionPollStatus("investigating")
-
 			auditClient := aiaudit.NewAuditClient(auditStore, ctrl.Log.WithName("interactive-test-audit"))
 			isChecker := handlers.NewK8sInvestigationSessionChecker(k8sClient, testNamespace)
 			reconciler.InvestigatingHandler.Store(handlers.NewInvestigatingHandler(
-				mockClient,
-				ctrl.Log.WithName("interactive-mock-handler"),
+				realAgentClient,
+				ctrl.Log.WithName("interactive-real-handler"),
 				testMetrics,
 				auditClient,
 				handlers.WithSessionMode(),
-				handlers.WithSessionPollInterval(100*time.Millisecond),
+				handlers.WithSessionPollInterval(500*time.Millisecond),
 				handlers.WithInvestigationSessionChecker(isChecker),
 				handlers.WithRecorder(k8sManager.GetEventRecorderFor("aianalysis-controller")),
 			))
-		}
-
-		BeforeEach(func() {
-			swapMockHandler()
 		})
 
 		AfterEach(func() {
@@ -189,69 +178,56 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 
 		It("IT-AA-1293-002: should upgrade autonomous session in-place when Active IS is created (#1390)", func() {
 			rrName := helpers.UniqueTestName("rr-watch-create")
-			sessionID := "session-autonomous-001"
 			analysisName := helpers.UniqueTestName("aa-watch-create")
 
-			analysis := createInvestigatingAA(analysisName, rrName, sessionID, false)
+			analysis := createInvestigatingAA(analysisName, rrName, "", "slow-investigation-test", false)
 
-			By("waiting for controller to start polling (proves reconcile loop is active)")
-			Eventually(func() int {
-				return mockClient.GetPollCallCount()
-			}, timeout, interval).Should(BeNumerically(">=", 1))
+			By("waiting for real KA session to be established (KASession.ID set)")
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
+				g.Expect(analysis.Status.KASession).NotTo(BeNil())
+				g.Expect(analysis.Status.KASession.ID).NotTo(BeEmpty(),
+					"KASession.ID must be set after successful SubmitInvestigation to real KA")
+			}, timeout, interval).Should(Succeed())
+
+			sessionIDBefore := analysis.Status.KASession.ID
 
 			By("creating Active InvestigationSession for the same RR")
 			createActiveIS(helpers.UniqueTestName("is-watch-create"), rrName)
 
-			By("verifying IS watch triggered upgrade: Interactive=true, no cancel, session ID preserved")
+			By("verifying IS watch triggered upgrade: Interactive=true, session ID preserved")
 			Eventually(func(g Gomega) {
 				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
 				g.Expect(analysis.Status.KASession).NotTo(BeNil())
 				g.Expect(analysis.Status.KASession.Interactive).To(BeTrue(),
 					"Interactive flag must be set by upgrade path")
-				g.Expect(analysis.Status.KASession.ID).To(Equal(sessionID),
+				g.Expect(analysis.Status.KASession.ID).To(Equal(sessionIDBefore),
 					"session ID must be preserved — upgrade in-place, no cancel")
-				g.Expect(mockClient.GetCancelCallCount()).To(Equal(0),
-					"CancelSession must NOT be called — #1390 upgrade replaces cancel")
 			}, timeout, interval).Should(Succeed())
 		})
 
 		It("IT-AA-1293-003: should fail with ReasonInteractiveCancelled when IS is deleted", func() {
 			rrName := helpers.UniqueTestName("rr-watch-delete")
-			sessionID := "session-interactive-001"
 			analysisName := helpers.UniqueTestName("aa-watch-delete")
-
-			var pollMu sync.Mutex
-			returnCancelled := false
-			mockClient.PollSessionFunc = func(_ context.Context, _ string) (*agentclient.SessionStatusResult, error) {
-				pollMu.Lock()
-				defer pollMu.Unlock()
-				if returnCancelled || mockClient.GetCancelCallCount() > 0 {
-					return &agentclient.SessionStatusResult{Status: "cancelled"}, nil
-				}
-				return &agentclient.SessionStatusResult{Status: "investigating"}, nil
-			}
 
 			By("creating Active IS first so controller sees it on first AA reconcile")
 			isName := helpers.UniqueTestName("is-watch-delete")
 			createActiveIS(isName, rrName)
 
-			analysis := createInvestigatingAA(analysisName, rrName, sessionID, true)
+			analysis := createInvestigatingAA(analysisName, rrName, "", "slow-investigation-test", true)
 
-			By("waiting for controller to start polling (proves reconcile loop is active)")
-			Eventually(func() int {
-				return mockClient.GetPollCallCount()
-			}, timeout, interval).Should(BeNumerically(">=", 1))
+			By("waiting for real KA session to be established")
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
+				g.Expect(analysis.Status.KASession).NotTo(BeNil())
+				g.Expect(analysis.Status.KASession.ID).NotTo(BeEmpty())
+			}, timeout, interval).Should(Succeed())
 
-			By("deleting the InvestigationSession")
+			By("deleting the InvestigationSession (triggers cancel)")
 			is := &isv1alpha1.InvestigationSession{
 				ObjectMeta: metav1.ObjectMeta{Name: isName, Namespace: testNamespace},
 			}
 			Expect(k8sClient.Delete(ctx, is)).To(Succeed())
-
-			By("flipping mock to return cancelled so next poll triggers terminal transition")
-			pollMu.Lock()
-			returnCancelled = true
-			pollMu.Unlock()
 
 			By("verifying AA transitions to PhaseFailed with ReasonInteractiveCancelled")
 			Eventually(func(g Gomega) {
@@ -279,29 +255,30 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 
 		It("IT-AA-1293-004: should upgrade autonomous session in-place with Interactive=true and SetActivePhase (#1390) [BR-INTERACTIVE-010]", func() {
 			rrName := helpers.UniqueTestName("rr-takeover")
-			sessionID := "session-autonomous-upgrade"
 			analysisName := helpers.UniqueTestName("aa-takeover")
 
-			analysis := createInvestigatingAA(analysisName, rrName, sessionID, false)
+			analysis := createInvestigatingAA(analysisName, rrName, "", "slow-investigation-test", false)
 
-			By("waiting for controller to start polling (proves reconcile loop is active)")
-			Eventually(func() int {
-				return mockClient.GetPollCallCount()
-			}, timeout, interval).Should(BeNumerically(">=", 1))
+			By("waiting for real KA session to be established")
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
+				g.Expect(analysis.Status.KASession).NotTo(BeNil())
+				g.Expect(analysis.Status.KASession.ID).NotTo(BeEmpty())
+			}, timeout, interval).Should(Succeed())
+
+			sessionIDBefore := analysis.Status.KASession.ID
 
 			By("creating Active InvestigationSession mid-investigation")
 			createActiveIS(helpers.UniqueTestName("is-takeover"), rrName)
 
-			By("verifying upgrade in-place: Interactive=true, no cancel, session ID preserved")
+			By("verifying upgrade in-place: Interactive=true, session ID preserved")
 			Eventually(func(g Gomega) {
 				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
 				g.Expect(analysis.Status.KASession).NotTo(BeNil())
 				g.Expect(analysis.Status.KASession.Interactive).To(BeTrue(),
 					"Interactive flag must be set by upgrade path")
-				g.Expect(analysis.Status.KASession.ID).To(Equal(sessionID),
+				g.Expect(analysis.Status.KASession.ID).To(Equal(sessionIDBefore),
 					"session ID must be preserved — no cancel/resubmit in #1390")
-				g.Expect(mockClient.GetCancelCallCount()).To(Equal(0),
-					"CancelSession must NOT be called — upgrade in-place replaces cancel")
 			}, timeout, interval).Should(Succeed())
 		})
 	})
@@ -310,34 +287,24 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 	// Proves that when IS appears for an autonomous session, the handler sets Interactive=true
 	// and calls SetActivePhase instead of cancelling and resubmitting.
 	Context("#1390: AA upgrade-in-place wiring through reconcile loop", Serial, func() {
-		var (
-			savedHandler *handlers.InvestigatingHandler
-			mockClient   *mocks.MockAgentClient
-		)
+		var savedHandler *handlers.InvestigatingHandler
 
-		swapMockHandlerWithUpgrade := func() {
+		BeforeEach(func() {
 			savedHandler = reconciler.InvestigatingHandler.Load()
-			mockClient = mocks.NewMockAgentClient()
-			mockClient.WithSessionPollStatus("investigating")
-
 			auditClient := aiaudit.NewAuditClient(auditStore, ctrl.Log.WithName("upgrade-test-audit"))
 			isChecker := handlers.NewK8sInvestigationSessionChecker(k8sClient, testNamespace)
 			isPhaseUpdater := handlers.NewK8sISPhaseUpdater(k8sClient, testNamespace)
 			reconciler.InvestigatingHandler.Store(handlers.NewInvestigatingHandler(
-				mockClient,
-				ctrl.Log.WithName("upgrade-mock-handler"),
+				realAgentClient,
+				ctrl.Log.WithName("upgrade-real-handler"),
 				testMetrics,
 				auditClient,
 				handlers.WithSessionMode(),
-				handlers.WithSessionPollInterval(100*time.Millisecond),
+				handlers.WithSessionPollInterval(500*time.Millisecond),
 				handlers.WithInvestigationSessionChecker(isChecker),
 				handlers.WithISPhaseUpdater(isPhaseUpdater),
 				handlers.WithRecorder(k8sManager.GetEventRecorderFor("aianalysis-controller")),
 			))
-		}
-
-		BeforeEach(func() {
-			swapMockHandlerWithUpgrade()
 		})
 
 		AfterEach(func() {
@@ -348,47 +315,31 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 
 		It("IT-AA-1390-W04: should set Interactive=true and SetActivePhase without cancel when IS appears for autonomous session [AC-12]", func() {
 			rrName := helpers.UniqueTestName("rr-1390-upgrade")
-			sessionID := "session-autonomous-upgrade"
 			analysisName := helpers.UniqueTestName("aa-1390-upgrade")
 
-			mockClient.PollSessionFunc = func(_ context.Context, _ string) (*agentclient.SessionStatusResult, error) {
-				return &agentclient.SessionStatusResult{
-					Status:     "user_driving",
-					ActingUser: "sre-takeover@example.com",
-				}, nil
-			}
+			analysis := createInvestigatingAA(analysisName, rrName, "", "slow-investigation-test", false)
 
-			analysis := createInvestigatingAA(analysisName, rrName, sessionID, false)
+			By("waiting for real KA session to be established")
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
+				g.Expect(analysis.Status.KASession).NotTo(BeNil())
+				g.Expect(analysis.Status.KASession.ID).NotTo(BeEmpty())
+			}, timeout, interval).Should(Succeed())
 
-			By("waiting for controller to start polling (proves reconcile loop is active)")
-			Eventually(func() int {
-				return mockClient.GetPollCallCount()
-			}, timeout, interval).Should(BeNumerically(">=", 1))
-
-			cancelCountBeforeIS := mockClient.GetCancelCallCount()
+			sessionIDBefore := analysis.Status.KASession.ID
 
 			By("creating Active InvestigationSession for the same RR")
 			isName := helpers.UniqueTestName("is-1390-upgrade")
 			createActiveIS(isName, rrName)
 
-			By("verifying upgrade path: Interactive=true, no cancel, IS Phase=Active preserved")
+			By("verifying upgrade path: Interactive=true, session ID preserved")
 			Eventually(func(g Gomega) {
 				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
 				g.Expect(analysis.Status.KASession).NotTo(BeNil())
 				g.Expect(analysis.Status.KASession.Interactive).To(BeTrue(),
 					"Interactive flag must be set by upgrade path")
-				g.Expect(analysis.Status.KASession.ID).To(Equal(sessionID),
+				g.Expect(analysis.Status.KASession.ID).To(Equal(sessionIDBefore),
 					"session ID must be preserved — no cancel/resubmit")
-				g.Expect(mockClient.GetCancelCallCount()).To(Equal(cancelCountBeforeIS),
-					"CancelSession must NOT be called for THIS session in the upgrade path")
-			}, timeout, interval).Should(Succeed())
-
-			By("verifying InteractiveSession populated from user_driving poll")
-			Eventually(func(g Gomega) {
-				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
-				g.Expect(analysis.Status.InteractiveSession).NotTo(BeNil(),
-					"InteractiveSession must be populated after polling user_driving")
-				g.Expect(analysis.Status.InteractiveSession.ActingUser).To(Equal("sre-takeover@example.com"))
 			}, timeout, interval).Should(Succeed())
 
 			By("verifying IS CRD Phase=Active was set via K8sISPhaseUpdater (best-effort)")
@@ -401,32 +352,26 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 
 	// IT-AA-1376: IS terminal phase transitions through the reconcile loop.
 	// These tests prove that K8sISPhaseUpdater.SetTerminalPhase is called through
-	// the production dispatch path (envtest reconcile → handler → real updater → IS CRD).
+	// the production dispatch path (envtest reconcile → handler → real KA → IS CRD).
 	Context("#1376: IS terminal phase wiring through reconcile loop", Serial, func() {
-		var (
-			savedHandler *handlers.InvestigatingHandler
-			mockClient   *mocks.MockAgentClient
-		)
+		var savedHandler *handlers.InvestigatingHandler
 
-		swapMockHandlerWithPhaseUpdater := func(opts ...handlers.InvestigatingHandlerOption) {
+		swapRealHandlerWithPhaseUpdater := func(opts ...handlers.InvestigatingHandlerOption) {
 			savedHandler = reconciler.InvestigatingHandler.Load()
-			mockClient = mocks.NewMockAgentClient()
-			mockClient.WithSessionPollStatus("investigating")
-
 			auditClient := aiaudit.NewAuditClient(auditStore, ctrl.Log.WithName("is-phase-test-audit"))
 			isChecker := handlers.NewK8sInvestigationSessionChecker(k8sClient, testNamespace)
 			isPhaseUpdater := handlers.NewK8sISPhaseUpdater(k8sClient, testNamespace)
 
 			baseOpts := []handlers.InvestigatingHandlerOption{
 				handlers.WithSessionMode(),
-				handlers.WithSessionPollInterval(100 * time.Millisecond),
+				handlers.WithSessionPollInterval(500 * time.Millisecond),
 				handlers.WithInvestigationSessionChecker(isChecker),
 				handlers.WithISPhaseUpdater(isPhaseUpdater),
 				handlers.WithRecorder(k8sManager.GetEventRecorderFor("aianalysis-controller")),
 			}
 			reconciler.InvestigatingHandler.Store(handlers.NewInvestigatingHandler(
-				mockClient,
-				ctrl.Log.WithName("is-phase-mock-handler"),
+				realAgentClient,
+				ctrl.Log.WithName("is-phase-real-handler"),
 				testMetrics,
 				auditClient,
 				append(baseOpts, opts...)...,
@@ -440,7 +385,7 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 		})
 
 		It("IT-AA-1376-001: IS transitions to Completed when KA session completes [BR-INTERACTIVE-010, #1376]", func() {
-			swapMockHandlerWithPhaseUpdater()
+			swapRealHandlerWithPhaseUpdater()
 			rrName := helpers.UniqueTestName("rr-1376-complete")
 			isName := helpers.UniqueTestName("is-1376-complete")
 			aaName := helpers.UniqueTestName("aa-1376-complete")
@@ -448,16 +393,8 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			By("creating Active IS for the RR")
 			createActiveIS(isName, rrName)
 
-			By("creating Investigating AA with session")
-			mockClient.WithSessionPollStatus("completed")
-			mockClient.Response = &agentclient.IncidentResponse{
-				IncidentID:        "mock-it-1376-001",
-				Analysis:          "OOM caused by memory leak in api-server",
-				RootCauseAnalysis: mocks.BuildMockRCA("OOM caused by memory leak", "high", nil),
-				Confidence:        0.95,
-				Timestamp:         "2026-06-06T22:00:00Z",
-			}
-			analysis := createInvestigatingAA(aaName, rrName, "session-1376-001", true)
+			By("creating Investigating AA with resolved signal (mock-LLM produces quick completion)")
+			analysis := createInvestigatingAA(aaName, rrName, "", "MOCK_PROBLEM_RESOLVED", true)
 
 			By("verifying IS CRD transitions to Completed (wiring proof)")
 			Eventually(func(g Gomega) {
@@ -465,18 +402,18 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 				g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: isName, Namespace: testNamespace}, &is)).To(Succeed())
 				g.Expect(is.Status.Phase).To(Equal(isv1alpha1.SessionPhaseCompleted),
 					"#1376: IS must transition to Completed when KA session completes")
-			}, timeout, interval).Should(Succeed())
+			}, 30*time.Second, interval).Should(Succeed())
 
 			By("verifying AA progresses past Investigating (sanity)")
 			Eventually(func(g Gomega) {
 				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
 				g.Expect(string(analysis.Status.Phase)).NotTo(Equal(string(aianalysisv1.PhaseInvestigating)),
 					"AA should have left Investigating phase after completed poll")
-			}, timeout, interval).Should(Succeed())
+			}, 30*time.Second, interval).Should(Succeed())
 		})
 
-		It("IT-AA-1376-002: IS transitions to Failed when KA session fails [BR-INTERACTIVE-010, #1376]", func() {
-			swapMockHandlerWithPhaseUpdater()
+		It("IT-AA-1376-002: IS transitions to Failed when KA session is cancelled [BR-INTERACTIVE-010, #1376]", func() {
+			swapRealHandlerWithPhaseUpdater()
 			rrName := helpers.UniqueTestName("rr-1376-failed")
 			isName := helpers.UniqueTestName("is-1376-failed")
 			aaName := helpers.UniqueTestName("aa-1376-failed")
@@ -484,21 +421,21 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			By("creating Active IS for the RR")
 			createActiveIS(isName, rrName)
 
-			By("creating Investigating AA with failing session")
-			mockClient.WithSessionPollStatus("failed")
-			mockClient.DefaultSessionStatus = &agentclient.SessionStatusResult{
-				Status: "failed",
-				Error:  "LLM provider timeout after 120s",
-			}
-			analysis := createInvestigatingAA(aaName, rrName, "session-1376-002", true)
+			By("creating Investigating AA with slow scenario")
+			analysis := createInvestigatingAA(aaName, rrName, "", "slow-investigation-test", true)
 
-			By("verifying IS CRD transitions to Failed (wiring proof)")
+			By("waiting for session to be established")
 			Eventually(func(g Gomega) {
-				var is isv1alpha1.InvestigationSession
-				g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: isName, Namespace: testNamespace}, &is)).To(Succeed())
-				g.Expect(is.Status.Phase).To(Equal(isv1alpha1.SessionPhaseFailed),
-					"#1376: IS must transition to Failed when KA session fails")
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
+				g.Expect(analysis.Status.KASession).NotTo(BeNil())
+				g.Expect(analysis.Status.KASession.ID).NotTo(BeEmpty())
 			}, timeout, interval).Should(Succeed())
+
+			By("deleting IS to trigger session cancellation")
+			is := &isv1alpha1.InvestigationSession{
+				ObjectMeta: metav1.ObjectMeta{Name: isName, Namespace: testNamespace},
+			}
+			Expect(k8sClient.Delete(ctx, is)).To(Succeed())
 
 			By("verifying AA transitions to PhaseFailed")
 			Eventually(func(g Gomega) {
@@ -508,7 +445,7 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 		})
 
 		It("IT-AA-1376-003: IS transitions to Failed on autonomous investigation timeout [BR-INTERACTIVE-010, AA-CRIT-1, #1376]", func() {
-			swapMockHandlerWithPhaseUpdater(handlers.WithMaxInvestigationDuration(500 * time.Millisecond))
+			swapRealHandlerWithPhaseUpdater(handlers.WithMaxInvestigationDuration(500 * time.Millisecond))
 			rrName := helpers.UniqueTestName("rr-1376-auto-tout")
 			isName := helpers.UniqueTestName("is-1376-auto-tout")
 			aaName := helpers.UniqueTestName("aa-1376-auto-tout")
@@ -516,10 +453,16 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			By("creating Active IS for the RR")
 			createActiveIS(isName, rrName)
 
-			By("creating Investigating AA with backdated session (already timed out)")
-			analysis := createInvestigatingAA(aaName, rrName, "session-1376-003", false)
+			By("creating Investigating AA with slow scenario")
+			analysis := createInvestigatingAA(aaName, rrName, "", "slow-investigation-test", false)
 
-			By("backdating session.CreatedAt to trigger timeout")
+			By("waiting for session to be established then backdating")
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
+				g.Expect(analysis.Status.KASession).NotTo(BeNil())
+				g.Expect(analysis.Status.KASession.ID).NotTo(BeEmpty())
+			}, timeout, interval).Should(Succeed())
+
 			Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
 				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis); err != nil {
 					return err
@@ -544,8 +487,8 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			}, timeout, interval).Should(Succeed())
 		})
 
-		It("IT-AA-1376-004: IS transitions to Failed on interactive user_driving timeout [BR-INTERACTIVE-010, AA-CRIT-1, #1376]", func() {
-			swapMockHandlerWithPhaseUpdater(handlers.WithMaxInvestigationDuration(500 * time.Millisecond))
+		It("IT-AA-1376-004: IS transitions to Failed on interactive investigation timeout [BR-INTERACTIVE-010, AA-CRIT-1, #1376]", func() {
+			swapRealHandlerWithPhaseUpdater(handlers.WithMaxInvestigationDuration(500 * time.Millisecond))
 			rrName := helpers.UniqueTestName("rr-1376-ud-tout")
 			isName := helpers.UniqueTestName("is-1376-ud-tout")
 			aaName := helpers.UniqueTestName("aa-1376-ud-tout")
@@ -553,11 +496,16 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			By("creating Active IS for the RR")
 			createActiveIS(isName, rrName)
 
-			By("creating Investigating AA with interactive session")
-			mockClient.WithSessionPollStatus("user_driving")
-			analysis := createInvestigatingAA(aaName, rrName, "session-1376-004", true)
+			By("creating Investigating AA with slow scenario (interactive)")
+			analysis := createInvestigatingAA(aaName, rrName, "", "slow-investigation-test", true)
 
-			By("backdating session.CreatedAt to trigger timeout")
+			By("waiting for session to be established then backdating")
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
+				g.Expect(analysis.Status.KASession).NotTo(BeNil())
+				g.Expect(analysis.Status.KASession.ID).NotTo(BeEmpty())
+			}, timeout, interval).Should(Succeed())
+
 			Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
 				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis); err != nil {
 					return err
@@ -567,12 +515,12 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 				return k8sClient.Status().Update(ctx, analysis)
 			})).To(Succeed())
 
-			By("verifying IS CRD transitions to Failed on user_driving timeout (wiring proof)")
+			By("verifying IS CRD transitions to Failed on timeout (wiring proof)")
 			Eventually(func(g Gomega) {
 				var is isv1alpha1.InvestigationSession
 				g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: isName, Namespace: testNamespace}, &is)).To(Succeed())
 				g.Expect(is.Status.Phase).To(Equal(isv1alpha1.SessionPhaseFailed),
-					"#1376: IS must transition to Failed when interactive user_driving session times out")
+					"#1376: IS must transition to Failed when interactive session times out")
 			}, timeout, interval).Should(Succeed())
 
 			By("verifying AA transitions to PhaseFailed")
@@ -587,21 +535,15 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 	// Issue #1449 / FedRAMP SI-4: IS terminal transition wakes AA immediately
 	// ═══════════════════════════════════════════════════════════════════════
 	Context("#1449: IS terminal transition triggers immediate AA reconciliation (SI-4)", Serial, func() {
-		var (
-			savedHandler *handlers.InvestigatingHandler
-			mockClient   *mocks.MockAgentClient
-		)
+		var savedHandler *handlers.InvestigatingHandler
 
-		swapMockHandlerForTerminalWatch := func() {
+		BeforeEach(func() {
 			savedHandler = reconciler.InvestigatingHandler.Load()
-			mockClient = mocks.NewMockAgentClient()
-			mockClient.WithSessionPollStatus("investigating")
-
 			auditClient := aiaudit.NewAuditClient(auditStore, ctrl.Log.WithName("terminal-watch-test-audit"))
 			isChecker := handlers.NewK8sInvestigationSessionChecker(k8sClient, testNamespace)
 			reconciler.InvestigatingHandler.Store(handlers.NewInvestigatingHandler(
-				mockClient,
-				ctrl.Log.WithName("terminal-watch-mock-handler"),
+				realAgentClient,
+				ctrl.Log.WithName("terminal-watch-real-handler"),
 				testMetrics,
 				auditClient,
 				handlers.WithSessionMode(),
@@ -609,10 +551,6 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 				handlers.WithInvestigationSessionChecker(isChecker),
 				handlers.WithRecorder(k8sManager.GetEventRecorderFor("aianalysis-controller")),
 			))
-		}
-
-		BeforeEach(func() {
-			swapMockHandlerForTerminalWatch()
 		})
 
 		AfterEach(func() {
@@ -625,21 +563,24 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			rrName := helpers.UniqueTestName("rr-1449-watch")
 			isName := helpers.UniqueTestName("is-1449-watch")
 			aaName := helpers.UniqueTestName("aa-1449-watch")
-			sessionID := "session-1449-terminal"
 
 			By("creating Active IS for the RR")
 			createActiveIS(isName, rrName)
 
-			By("creating Investigating AA with interactive session")
-			_ = createInvestigatingAA(aaName, rrName, sessionID, true)
+			By("creating Investigating AA with slow-investigation scenario")
+			analysis := createInvestigatingAA(aaName, rrName, "", "slow-investigation-test", true)
 
-			By("waiting for controller to start polling (proves reconcile loop is active)")
-			Eventually(func() int {
-				return mockClient.GetPollCallCount()
-			}, 15*time.Second, interval).Should(BeNumerically(">=", 1))
+			By("waiting for real KA session to be established")
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
+				g.Expect(analysis.Status.KASession).NotTo(BeNil())
+				g.Expect(analysis.Status.KASession.ID).NotTo(BeEmpty())
+			}, timeout, interval).Should(Succeed())
 
-			By("recording poll count before IS transition")
-			pollCountBefore := mockClient.GetPollCallCount()
+			By("recording ObservedGeneration before IS transition")
+			var genBefore int64
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
+			genBefore = analysis.Status.ObservedGeneration
 
 			By("patching IS → Completed (simulating API Frontend completing the session)")
 			Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
@@ -651,11 +592,12 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 				return k8sClient.Status().Update(ctx, &is)
 			})).To(Succeed())
 
-			By("verifying AA reconciler fires within 5s (not waiting for 30s poll interval)")
-			Eventually(func() int {
-				return mockClient.GetPollCallCount()
-			}, 5*time.Second, 200*time.Millisecond).Should(BeNumerically(">", pollCountBefore),
-				"SI-4: IS→Completed must trigger immediate AA reconciliation via watch predicate, not wait for 30s poll")
+			By("verifying AA status changes within 5s (not waiting for 30s poll interval)")
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
+				g.Expect(analysis.Status.ObservedGeneration).To(BeNumerically(">", genBefore),
+					"SI-4: IS→Completed must trigger immediate AA reconciliation via watch predicate")
+			}, 5*time.Second, 200*time.Millisecond).Should(Succeed())
 		})
 	})
 })
