@@ -345,6 +345,12 @@ var _ = SynchronizedAfterSuite(
 			infrastructure.MustGatherPodLogs(clusterName, kp, "kubernaut-workflows", "fullpipeline", GinkgoWriter)
 		}
 
+		// Clean up all test-created CRs and namespaces so the cluster
+		// is ready for a retry run. Must-gather has already collected logs.
+		if !setupFailed {
+			infrastructure.CleanupFullPipelineTestResources(kubeconfigPath, GinkgoWriter)
+		}
+
 		// DD-TEST-007: Collect coverage before cluster deletion
 		if os.Getenv("E2E_COVERAGE") == "true" && !setupFailed {
 			// Collect coverage for each Go controller service
