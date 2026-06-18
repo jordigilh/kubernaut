@@ -47,7 +47,7 @@
 | ID | Scenario | Method | Expected | FedRAMP |
 |----|----------|--------|----------|---------|
 | IT-AF-1418-001 | Dismiss path through MCP proxy | MCP tools/call (no escalation_reason) | status="completed_no_action" | — |
-| IT-AF-1418-002 | Escalation path through MCP proxy (with audit) | MCP tools/call (with escalation_reason) | status="escalated", audit event emitted with full detail | AU-2 |
+| IT-AF-1418-002 | Escalation path through MCP proxy (with audit) | MCP tools/call (with escalation_reason) | status="escalated", audit event emitted with result_type="operator_escalation" | AU-2 |
 | IT-AF-1418-003 | RBAC denial for unauthorized user | MCP tools/call (no SAR grant) | MCP error response | AC-6 |
 | IT-AF-1418-004 | mcpClient error propagation | MCP tools/call (mock returns error) | Error propagated, no audit event | — |
 

@@ -22,6 +22,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 
@@ -150,6 +151,13 @@ func (r *AIAnalysisReconciler) reconcileInvestigating(ctx context.Context, analy
 
 			return nil
 		}); err != nil {
+			if apierrors.IsInvalid(err) {
+				log.Error(err, "CRD schema rejected status update — fail-close, will not retry",
+					"name", analysis.Name)
+				r.Recorder.Event(analysis, corev1.EventTypeWarning, "SchemaValidationFailed",
+					fmt.Sprintf("Status update permanently rejected by CRD schema: %v", err))
+				return ctrl.Result{}, nil
+			}
 			log.Error(err, "Failed to atomically update status after Investigating phase")
 			return ctrl.Result{}, err
 		}
@@ -233,6 +241,13 @@ func (r *AIAnalysisReconciler) reconcileAnalyzing(ctx context.Context, analysis 
 
 			return nil
 		}); err != nil {
+			if apierrors.IsInvalid(err) {
+				log.Error(err, "CRD schema rejected status update — fail-close, will not retry",
+					"name", analysis.Name)
+				r.Recorder.Event(analysis, corev1.EventTypeWarning, "SchemaValidationFailed",
+					fmt.Sprintf("Status update permanently rejected by CRD schema: %v", err))
+				return ctrl.Result{}, nil
+			}
 			log.Error(err, "Failed to atomically update status after Analyzing phase")
 			return ctrl.Result{}, err
 		}

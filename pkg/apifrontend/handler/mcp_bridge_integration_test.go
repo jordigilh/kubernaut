@@ -947,7 +947,7 @@ var _ = Describe("kubernaut_complete_no_action — AF MCP bridge proxy (#1418)",
 			evt := kaResultEvents[0]
 			Expect(evt.Detail).To(HaveKeyWithValue("rr_id", "rr-1418-it-002"))
 			Expect(evt.Detail).To(HaveKeyWithValue("status", "escalated"))
-			Expect(evt.Detail).To(HaveKeyWithValue("result_type", "escalated"))
+			Expect(evt.Detail).To(HaveKeyWithValue("result_type", "operator_escalation"))
 			Expect(evt.Detail).To(HaveKeyWithValue("delegation_type", "interactive"))
 			Expect(evt.Detail).To(HaveKeyWithValue("tool_outcome", "success"))
 			Expect(evt.Detail).To(HaveKeyWithValue("escalation_reason", "Needs SRE team"))

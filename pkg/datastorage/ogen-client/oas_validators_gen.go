@@ -2285,6 +2285,10 @@ func (s ApifrontendKAResultReceivedPayloadResultType) Validate() error {
 		return nil
 	case "cancelled":
 		return nil
+	case "operator_escalation":
+		return nil
+	case "operator_dismissed":
+		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}

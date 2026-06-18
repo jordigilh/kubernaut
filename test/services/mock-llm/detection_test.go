@@ -116,12 +116,12 @@ var _ = Describe("Scenario Detection Rules", func() {
 				Expect(result.Scenario.Name()).To(Equal("kubernaut_remediate_cross_ns"),
 					"cross-namespace remediation prompt must match the cross-NS scenario")
 
-				cfgScenario, ok := result.Scenario.(scenarios.ScenarioWithConfig)
-				Expect(ok).To(BeTrue())
-				cfg := cfgScenario.Config()
-				Expect(cfg.ResourceNS).To(Equal(expectedNS),
-					"ResourceNS must be the workload namespace extracted from the prompt, not the default controller namespace")
-				Expect(cfg.ResourceName).To(Equal(expectedName))
+			cfgScenario, ok := result.Scenario.(scenarios.ScenarioWithContextConfig)
+			Expect(ok).To(BeTrue(), "scenario should implement ScenarioWithContextConfig")
+			cfg := cfgScenario.ConfigForContext(ctx)
+			Expect(cfg.ResourceNS).To(Equal(expectedNS),
+				"ResourceNS must be the workload namespace extracted from the prompt, not the default controller namespace")
+			Expect(cfg.ResourceName).To(Equal(expectedName))
 			},
 			Entry("UT-MOCK-1292-001a: single-line prompt with spaces",
 				"cross-namespace remediation for deployment memory-eater in demo-workload namespace",
@@ -137,8 +137,7 @@ var _ = Describe("Scenario Detection Rules", func() {
 				"fp-e2e-1292-1779885620", "memory-eater"),
 		)
 
-		It("UT-MOCK-1292-002: stale extractedNS does not leak across calls when regex fails", func() {
-			// First call succeeds — namespace extracted.
+		It("UT-MOCK-1292-002: regex miss returns base default (no stale state)", func() {
 			ctx1 := &scenarios.DetectionContext{
 				Content:         "cross-namespace remediation for deployment memory-eater in staging namespace",
 				AllText:         "cross-namespace remediation for deployment memory-eater in staging namespace",
@@ -146,10 +145,9 @@ var _ = Describe("Scenario Detection Rules", func() {
 			}
 			r1 := registry.Detect(ctx1)
 			Expect(r1).NotTo(BeNil())
-			cfg1 := r1.Scenario.(scenarios.ScenarioWithConfig).Config()
+			cfg1 := r1.Scenario.(scenarios.ScenarioWithContextConfig).ConfigForContext(ctx1)
 			Expect(cfg1.ResourceNS).To(Equal("staging"))
 
-			// Second call has the keyword but a malformed resource pattern — regex cannot extract NS.
 			ctx2 := &scenarios.DetectionContext{
 				Content:         "cross-namespace remediation — no structured deployment reference here",
 				AllText:         "cross-namespace remediation — no structured deployment reference here",
@@ -158,9 +156,9 @@ var _ = Describe("Scenario Detection Rules", func() {
 			r2 := registry.Detect(ctx2)
 			Expect(r2).NotTo(BeNil())
 			Expect(r2.Scenario.Name()).To(Equal("kubernaut_remediate_cross_ns"))
-			cfg2 := r2.Scenario.(scenarios.ScenarioWithConfig).Config()
+			cfg2 := r2.Scenario.(scenarios.ScenarioWithContextConfig).ConfigForContext(ctx2)
 			Expect(cfg2.ResourceNS).To(Equal("kubernaut-system"),
-				"when regex fails, Config() must return the base default — not a stale value from a prior match")
+				"when regex fails, ConfigForContext() must return the base default")
 		})
 	})
 

@@ -234,6 +234,17 @@ rules:
 // Returns the RR name. A managed namespace is created for the target resource so
 // that the RO routing engine does not block the RR as UnmanagedResource.
 func CreateDirectRR(ctx context.Context, namespace, testID string) (string, error) {
+	return CreateDirectRRWithSignal(ctx, namespace, testID, "")
+}
+
+// CreateDirectRRWithSignal is like CreateDirectRR but lets the caller specify a
+// mock-LLM signal name. When signalName is empty, defaults to "e2e-<testID>-signal".
+// Use "slow-investigation-test" to keep the KA session alive for tests that need
+// to interact with it via MCP before completion.
+func CreateDirectRRWithSignal(ctx context.Context, namespace, testID, signalName string) (string, error) {
+	if signalName == "" {
+		signalName = fmt.Sprintf("e2e-%s-signal", testID)
+	}
 	rrName := fmt.Sprintf("rr-%s-%d", testID, time.Now().UnixMilli())
 	fingerprint := fmt.Sprintf("%x", sha256.Sum256([]byte(testID+"-"+rrName)))
 	now := metav1.Now()
@@ -277,7 +288,7 @@ func CreateDirectRR(ctx context.Context, namespace, testID string) (string, erro
 			},
 			"spec": map[string]interface{}{
 				"signalFingerprint": fingerprint,
-				"signalName":        fmt.Sprintf("e2e-%s-signal", testID),
+				"signalName":        signalName,
 				"signalType":        "alert",
 				"severity":          "high",
 				"targetType":        "kubernetes",

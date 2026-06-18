@@ -390,11 +390,23 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			isName := helpers.UniqueTestName("is-1376-complete")
 			aaName := helpers.UniqueTestName("aa-1376-complete")
 
-			By("creating Active IS for the RR")
-			createActiveIS(isName, rrName)
+			// brief-investigation-test uses 3s SecondTurnDelay applied across
+			// multiple investigator phases (RCA, workflow_discovery, etc.),
+			// so the full investigation takes ~9-12s.
+			completionTimeout := 25 * time.Second
 
-			By("creating Investigating AA with resolved signal (mock-LLM produces quick completion)")
-			analysis := createInvestigatingAA(aaName, rrName, "", "MOCK_PROBLEM_RESOLVED", true)
+			By("creating Investigating AA first (autonomous session — no IS yet)")
+			analysis := createInvestigatingAA(aaName, rrName, "", "brief-investigation-test", false)
+
+			By("waiting for real KA session to be established")
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
+				g.Expect(analysis.Status.KASession).NotTo(BeNil())
+				g.Expect(analysis.Status.KASession.ID).NotTo(BeEmpty())
+			}, timeout, interval).Should(Succeed())
+
+			By("creating Active IS mid-investigation (triggers autonomous→interactive upgrade)")
+			createActiveIS(isName, rrName)
 
 			By("verifying IS CRD transitions to Completed (wiring proof)")
 			Eventually(func(g Gomega) {
@@ -402,14 +414,14 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 				g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: isName, Namespace: testNamespace}, &is)).To(Succeed())
 				g.Expect(is.Status.Phase).To(Equal(isv1alpha1.SessionPhaseCompleted),
 					"#1376: IS must transition to Completed when KA session completes")
-			}, 30*time.Second, interval).Should(Succeed())
+			}, completionTimeout, interval).Should(Succeed())
 
 			By("verifying AA progresses past Investigating (sanity)")
 			Eventually(func(g Gomega) {
 				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
 				g.Expect(string(analysis.Status.Phase)).NotTo(Equal(string(aianalysisv1.PhaseInvestigating)),
 					"AA should have left Investigating phase after completed poll")
-			}, 30*time.Second, interval).Should(Succeed())
+			}, completionTimeout, interval).Should(Succeed())
 		})
 
 		It("IT-AA-1376-002: IS transitions to Failed when KA session is cancelled [BR-INTERACTIVE-010, #1376]", func() {

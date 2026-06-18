@@ -11553,6 +11553,10 @@ func (s *ApifrontendKAResultReceivedPayloadResultType) Decode(d *jx.Decoder) err
 		*s = ApifrontendKAResultReceivedPayloadResultTypeTimeout
 	case ApifrontendKAResultReceivedPayloadResultTypeCancelled:
 		*s = ApifrontendKAResultReceivedPayloadResultTypeCancelled
+	case ApifrontendKAResultReceivedPayloadResultTypeOperatorEscalation:
+		*s = ApifrontendKAResultReceivedPayloadResultTypeOperatorEscalation
+	case ApifrontendKAResultReceivedPayloadResultTypeOperatorDismissed:
+		*s = ApifrontendKAResultReceivedPayloadResultTypeOperatorDismissed
 	default:
 		*s = ApifrontendKAResultReceivedPayloadResultType(v)
 	}

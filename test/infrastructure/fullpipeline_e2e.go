@@ -595,6 +595,58 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	return builtImages, seededUUIDs, afRemediateNS, nil
 }
 
+// CleanupFullPipelineTestResources deletes all kubernaut CR instances and
+// test namespaces, leaving the cluster with deployed services but no test
+// state. This is called from SynchronizedAfterSuite so retries start clean.
+func CleanupFullPipelineTestResources(kubeconfigPath string, writer io.Writer) {
+	_, _ = fmt.Fprintln(writer, "\n🧹 Cleaning up test-created resources...")
+
+	crdKinds := []string{
+		"remediationrequests.kubernaut.ai",
+		"remediationapprovalrequests.kubernaut.ai",
+		"aianalyses.kubernaut.ai",
+		"signalprocessings.kubernaut.ai",
+		"workflowexecutions.kubernaut.ai",
+		"notificationrequests.kubernaut.ai",
+		"effectivenessassessments.kubernaut.ai",
+		"investigationsessions.kubernaut.ai",
+	}
+
+	for _, kind := range crdKinds {
+		cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+			"delete", kind, "--all-namespaces", "--all", "--ignore-not-found", "--wait=false")
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			_, _ = fmt.Fprintf(writer, "  ⚠️  %s cleanup: %s\n", kind, strings.TrimSpace(string(out)))
+		} else {
+			trimmed := strings.TrimSpace(string(out))
+			if trimmed != "" && trimmed != "No resources found" {
+				_, _ = fmt.Fprintf(writer, "  🗑️  %s: %s\n", kind, trimmed)
+			}
+		}
+	}
+
+	// Delete test namespaces matching known patterns (fp-am-*, fp-event-*)
+	nsCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+		"get", "namespaces", "-o", "jsonpath={.items[*].metadata.name}")
+	nsOut, err := nsCmd.Output()
+	if err == nil {
+		for _, ns := range strings.Fields(string(nsOut)) {
+			if strings.HasPrefix(ns, "fp-am-") || strings.HasPrefix(ns, "fp-event-") {
+				delCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+					"delete", "namespace", ns, "--ignore-not-found", "--wait=false")
+				if delOut, delErr := delCmd.CombinedOutput(); delErr != nil {
+					_, _ = fmt.Fprintf(writer, "  ⚠️  namespace %s: %s\n", ns, strings.TrimSpace(string(delOut)))
+				} else {
+					_, _ = fmt.Fprintf(writer, "  🗑️  namespace %s deleted\n", ns)
+				}
+			}
+		}
+	}
+
+	_, _ = fmt.Fprintln(writer, "✅ Test resource cleanup complete")
+}
+
 // ============================================================================
 // PHASE 1: Image Building (3 at a time concurrency for local builds)
 // ============================================================================

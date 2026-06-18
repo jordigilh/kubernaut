@@ -85,6 +85,17 @@ func CreateKindClusterWithExtraMounts(
 	}
 	_, _ = fmt.Fprintf(writer, "  ✅ Kind version validated: %s", versionStr)
 
+	// 0b. Reuse existing cluster if present (idempotent retry support).
+	// When --flake-attempts or CI retry re-runs the suite, the cluster from
+	// the failed attempt is still alive. Reuse it so cascade failures remain
+	// visible — cleaning up would mask correlations between tests.
+	checkCmd := exec.Command("kind", "get", "clusters")
+	checkOutput, _ := checkCmd.CombinedOutput()
+	if strings.Contains(string(checkOutput), clusterName) {
+		_, _ = fmt.Fprintf(writer, "  ♻️  Cluster %s already exists, reusing (retry-safe)\n", clusterName)
+		return exportKubeconfigIfNeeded(clusterName, kubeconfigPath, writer)
+	}
+
 	// 1. Find workspace root
 	workspaceRoot, err := findWorkspaceRoot()
 	if err != nil {

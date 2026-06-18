@@ -93,6 +93,29 @@ const ISFieldIndexRRName = "spec.remediationRequestRef.name"
 // Compile-time interface assertion.
 var _ InvestigationSessionChecker = (*K8sInvestigationSessionChecker)(nil)
 
+// FindSessionPhase returns the phase of any InvestigationSession CRD for the given
+// RR name, regardless of whether it is active or terminal. Returns ("", false, nil)
+// if no IS exists at all. Used by handleSessionPollCancelled to distinguish "IS
+// deleted" (user cancelled) from "IS in terminal phase" (completion race).
+func (k *K8sInvestigationSessionChecker) FindSessionPhase(ctx context.Context, rrName string) (isv1alpha1.SessionPhase, bool, error) {
+	if rrName == "" {
+		return "", false, nil
+	}
+
+	var list isv1alpha1.InvestigationSessionList
+	if err := k.reader.List(ctx, &list,
+		client.InNamespace(k.namespace),
+		client.MatchingFields{ISFieldIndexRRName: rrName},
+	); err != nil {
+		return "", false, fmt.Errorf("list InvestigationSessions for RR %s: %w", rrName, err)
+	}
+
+	if len(list.Items) == 0 {
+		return "", false, nil
+	}
+	return list.Items[0].Status.Phase, true, nil
+}
+
 // K8sISPhaseUpdater implements ISPhaseUpdater by updating InvestigationSession
 // CRD status via the controller-runtime client. AA calls SetActivePhase after
 // submitting to KA with interactive=true to signal AF that the session is ready.
