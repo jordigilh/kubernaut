@@ -390,7 +390,10 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			isName := helpers.UniqueTestName("is-1376-complete")
 			aaName := helpers.UniqueTestName("aa-1376-complete")
 
-			By("creating Investigating AA first (no IS yet → autonomous session starts immediately)")
+			By("creating Active IS first (guarantees IS exists before investigation completes)")
+			createActiveIS(isName, rrName)
+
+			By("creating Investigating AA (autonomous session starts with IS already present)")
 			analysis := createInvestigatingAA(aaName, rrName, "", "brief-investigation-test", false)
 
 			By("waiting for real KA session to be established")
@@ -399,9 +402,6 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 				g.Expect(analysis.Status.KASession).NotTo(BeNil())
 				g.Expect(analysis.Status.KASession.ID).NotTo(BeEmpty())
 			}, timeout, interval).Should(Succeed())
-
-			By("creating Active IS for the RR (before investigation completes)")
-			createActiveIS(isName, rrName)
 
 			By("verifying IS CRD transitions to Completed (wiring proof)")
 			Eventually(func(g Gomega) {
