@@ -296,7 +296,9 @@ func (h *StatusHandler) writeStatusUpdate(w http.ResponseWriter, flusher http.Fl
 		h.logger.Error(err, "failed to marshal status/update")
 		return
 	}
-	fmt.Fprintf(w, "event: status/update\ndata: %s\n\n", data)
+	if _, err = fmt.Fprintf(w, "event: status/update\ndata: %s\n\n", data); err != nil {
+		h.logger.V(1).Info("failed to write status/update frame", "error", err)
+	}
 	flusher.Flush()
 }
 
@@ -315,7 +317,9 @@ func (h *StatusHandler) writeStatusClosing(w http.ResponseWriter, flusher http.F
 		h.logger.Error(err, "failed to marshal status/closing")
 		return
 	}
-	fmt.Fprintf(w, "event: status/closing\ndata: %s\n\n", data)
+	if _, err = fmt.Fprintf(w, "event: status/closing\ndata: %s\n\n", data); err != nil {
+		h.logger.V(1).Info("failed to write status/closing frame", "error", err)
+	}
 	flusher.Flush()
 }
 

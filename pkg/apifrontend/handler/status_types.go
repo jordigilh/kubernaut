@@ -66,26 +66,26 @@ func BuildPhaseMetadata(rr *remediationv1.RemediationRequest, ea *eav1alpha1.Eff
 			meta["workflow_id"] = rr.Status.SelectedWorkflowRef.WorkflowID
 		}
 		if rr.Status.ExecutingStartTime != nil {
-			meta["started_at"] = rr.Status.ExecutingStartTime.Time.Format(time.RFC3339)
-		}
+		meta["started_at"] = rr.Status.ExecutingStartTime.Format(time.RFC3339)
+	}
 
 	case remediationv1.PhaseVerifying:
 		if rr.Status.VerificationDeadline != nil {
-			meta["verification_deadline"] = rr.Status.VerificationDeadline.Time.Format(time.RFC3339)
+			meta["verification_deadline"] = rr.Status.VerificationDeadline.Format(time.RFC3339)
 		}
 		if rr.Status.ExecutingStartTime != nil {
-			meta["started_at"] = rr.Status.ExecutingStartTime.Time.Format(time.RFC3339)
+			meta["started_at"] = rr.Status.ExecutingStartTime.Format(time.RFC3339)
 		}
 		if ea != nil {
 			meta["ea_phase"] = ea.Status.Phase
 			if ea.Status.PrometheusCheckAfter != nil {
-				meta["stabilization_deadline"] = ea.Status.PrometheusCheckAfter.Time.Format(time.RFC3339)
+				meta["stabilization_deadline"] = ea.Status.PrometheusCheckAfter.Format(time.RFC3339)
 			}
 		}
 
 	case remediationv1.PhaseBlocked:
 		if rr.Status.BlockedUntil != nil {
-			meta["blocked_until"] = rr.Status.BlockedUntil.Time.Format(time.RFC3339)
+			meta["blocked_until"] = rr.Status.BlockedUntil.Format(time.RFC3339)
 		}
 		if rr.Status.BlockReason != "" {
 			meta["block_reason"] = string(rr.Status.BlockReason)

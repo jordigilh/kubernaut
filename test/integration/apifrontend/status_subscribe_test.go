@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -43,15 +45,25 @@ func statusSubscribeBody(rrID string) []byte {
 }
 
 func createTestRR(ctx context.Context, name, ns, phase string) *remediationv1.RemediationRequest {
+	h := sha256.Sum256([]byte("status-it-" + name))
 	rr := &remediationv1.RemediationRequest{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: ns,
 		},
 		Spec: remediationv1.RemediationRequestSpec{
+			SignalFingerprint: hex.EncodeToString(h[:]),
+			SignalName:        "StatusITAlert",
+			Severity:          "critical",
+			SignalType:        "alert",
+			SignalSource:      "test-status-it",
+			TargetType:        "kubernetes",
+			FiringTime:        metav1.Now(),
+			ReceivedTime:      metav1.Now(),
 			TargetResource: remediationv1.ResourceIdentifier{
-				Kind: "Deployment",
-				Name: "api-server",
+				Kind:      "Deployment",
+				Name:      "api-server",
+				Namespace: ns,
 			},
 		},
 	}
