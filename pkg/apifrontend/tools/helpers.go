@@ -33,8 +33,9 @@ var ErrK8sUnavailable = errors.New("kubernetes cluster is not available — cont
 var ErrInvalidInput = errors.New("invalid input")
 
 // maxToolOutputBytes is the maximum serialized output size for tool results.
-// Matches the 4KB threshold used by session.TrimToolResult for etcd safety.
-const maxToolOutputBytes = 4096
+// Matches the 16KB threshold used by session.MaxToolResultBytes for
+// in-memory session size safety.
+const maxToolOutputBytes = 16384
 
 // ParseRRID resolves rr_id to namespace and name. The rr_id is always a plain
 // resource name (no namespace prefix). If rr_id is empty, the explicit
