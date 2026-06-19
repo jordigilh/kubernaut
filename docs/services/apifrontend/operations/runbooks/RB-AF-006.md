@@ -37,7 +37,7 @@
 
 1. If DS is slow → scale DS or increase its resource limits
 2. If DS is down → restore DS service; buffered events will flush once reconnected (within buffer capacity)
-3. If sustained high load → increase AF audit buffer size in code (default: 4096)
+3. If sustained high load → increase AF audit buffer size in code (default: 10000; see `audit.DefaultConfig()`)
 4. Emergency: if audit loss is unacceptable, consider draining AF traffic until DS recovers
 
 ## Prevention
