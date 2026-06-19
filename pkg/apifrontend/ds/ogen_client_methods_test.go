@@ -94,6 +94,22 @@ func TestOgenClient_GetAuditTrail_CorrectPath(t *testing.T) {
 	}
 }
 
+// UT-AF-038-035: GetAuditTrail sends limit=200 query parameter (AU-12)
+func TestOgenClient_GetAuditTrail_SendsLimit(t *testing.T) {
+	var capturedLimit string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		capturedLimit = r.URL.Query().Get("limit")
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+
+	client := newTestOgenClient(t, mux)
+	_, _ = client.GetAuditTrail(context.Background(), AuditTrailOpts{RRID: "rem-001"})
+	if capturedLimit != "200" {
+		t.Errorf("limit = %q, want \"200\"", capturedLimit)
+	}
+}
+
 // UT-AF-038-036: Error response returns wrapped error
 func TestOgenClient_ListWorkflows_ServerError(t *testing.T) {
 	mux := http.NewServeMux()

@@ -3,6 +3,8 @@ package tools
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 
 	"google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
@@ -165,18 +167,135 @@ type GetAuditTrailArgs struct {
 	EventType string `json:"event_type,omitempty"`
 }
 
-// AuditEvent represents a single audit trail entry.
-type AuditEvent struct {
-	Timestamp string `json:"timestamp"`
-	EventType string `json:"event_type"`
-	Actor     string `json:"actor"`
-	Detail    string `json:"detail,omitempty"`
+// PhaseGroup represents an aggregated group of audit events in one lifecycle phase.
+type PhaseGroup struct {
+	Phase      string `json:"phase"`
+	StartTime  string `json:"start_time"`
+	EndTime    string `json:"end_time"`
+	EventCount int    `json:"event_count"`
+	Outcome    string `json:"outcome,omitempty"`
+	KeyActions string `json:"key_actions"`
+	Actor      string `json:"actor,omitempty"`
 }
 
 // GetAuditTrailResult is the output of kubernaut_get_audit_trail.
 type GetAuditTrailResult struct {
-	Events []AuditEvent `json:"events"`
-	Count  int          `json:"count"`
+	Lifecycle   string       `json:"lifecycle"`
+	Phases      []PhaseGroup `json:"phases"`
+	TotalEvents int          `json:"total_events"`
+}
+
+// aggregateByPhase transforms raw DS audit events into a lifecycle-ordered
+// phase summary. Each PhaseGroup aggregates events sharing the same lifecycle
+// phase, tracking timestamps, actors, and key actions.
+func aggregateByPhase(events []ds.AuditEvent) GetAuditTrailResult {
+	if len(events) == 0 {
+		return GetAuditTrailResult{}
+	}
+
+	type phaseAccum struct {
+		startTime  string
+		endTime    string
+		eventCount int
+		actors     map[string]struct{}
+		actions    []string
+	}
+
+	accum := make(map[string]*phaseAccum)
+	for _, e := range events {
+		phase := resolvePhase(e.EventType)
+		a, ok := accum[phase]
+		if !ok {
+			a = &phaseAccum{
+				startTime: e.Timestamp,
+				endTime:   e.Timestamp,
+				actors:    make(map[string]struct{}),
+			}
+			accum[phase] = a
+		}
+		a.eventCount++
+		if e.Timestamp < a.startTime {
+			a.startTime = e.Timestamp
+		}
+		if e.Timestamp > a.endTime {
+			a.endTime = e.Timestamp
+		}
+		if e.Actor != "" {
+			a.actors[e.Actor] = struct{}{}
+		}
+		if e.Detail != "" {
+			a.actions = append(a.actions, e.Detail)
+		} else {
+			a.actions = append(a.actions, e.EventType)
+		}
+	}
+
+	var phases []PhaseGroup
+	var phaseNames []string
+	for _, name := range phaseOrder {
+		a, ok := accum[name]
+		if !ok {
+			continue
+		}
+		actorList := make([]string, 0, len(a.actors))
+		for actor := range a.actors {
+			actorList = append(actorList, actor)
+		}
+		sort.Strings(actorList)
+
+		phases = append(phases, PhaseGroup{
+			Phase:      name,
+			StartTime:  a.startTime,
+			EndTime:    a.endTime,
+			EventCount: a.eventCount,
+			KeyActions: capKeyActions(a.actions),
+			Actor:      strings.Join(actorList, ", "),
+		})
+		phaseNames = append(phaseNames, name)
+	}
+
+	return GetAuditTrailResult{
+		Lifecycle:   strings.Join(phaseNames, " -> "),
+		Phases:      phases,
+		TotalEvents: len(events),
+	}
+}
+
+// maxKeyActionsBytes caps the per-phase KeyActions string to keep the
+// aggregated result well within MaxToolResultBytes. 1024 bytes per phase
+// across 9 phases leaves ample headroom for the rest of the JSON envelope.
+const maxKeyActionsBytes = 1024
+
+// capKeyActions joins action strings with "; " and truncates to
+// maxKeyActionsBytes, appending "... and N more actions" when capped.
+func capKeyActions(actions []string) string {
+	joined := strings.Join(actions, "; ")
+	if len(joined) <= maxKeyActionsBytes {
+		return joined
+	}
+
+	included := 0
+	size := 0
+	for i, a := range actions {
+		need := len(a)
+		if i > 0 {
+			need += 2 // "; " separator
+		}
+		if size+need > maxKeyActionsBytes {
+			break
+		}
+		size += need
+		included++
+	}
+	if included == 0 {
+		included = 1
+	}
+	remaining := len(actions) - included
+	result := strings.Join(actions[:included], "; ")
+	if remaining > 0 {
+		result += fmt.Sprintf("... and %d more actions", remaining)
+	}
+	return result
 }
 
 // HandleGetAuditTrail implements the kubernaut_get_audit_trail logic.
@@ -191,14 +310,7 @@ func HandleGetAuditTrail(ctx context.Context, client ds.Client, args GetAuditTra
 		return GetAuditTrailResult{}, fmt.Errorf("querying audit trail: %w", err)
 	}
 
-	items := make([]AuditEvent, 0, len(events))
-	for _, e := range events {
-		items = append(items, AuditEvent{
-			Timestamp: e.Timestamp, EventType: e.EventType, Actor: e.Actor, Detail: e.Detail,
-		})
-	}
-
-	return GetAuditTrailResult{Events: items, Count: len(items)}, nil
+	return aggregateByPhase(events), nil
 }
 
 // NewGetAuditTrailTool creates the kubernaut_get_audit_trail tool.
