@@ -300,5 +300,35 @@ var _ = Describe("Router HTTP Integration (handler/)", func() {
 				"authenticated request with small body should reach stub handler")
 		})
 	})
+
+	Describe("AC-5: Status subscribe dispatch (#1460)", func() {
+		It("IT-AF-1460-020: POST /a2a/status dispatches through auth chain to StatusHandler", func() {
+			token := signValidToken("it-user-status-020")
+			body := `{"jsonrpc":"2.0","id":"sub-1","method":"status/subscribe","params":{"rr_id":"nonexistent-for-dispatch-test"}}`
+			req, err := http.NewRequest(http.MethodPost, routerServer.URL+"/a2a/status", strings.NewReader(body))
+			Expect(err).NotTo(HaveOccurred())
+			req.Header.Set("Authorization", "Bearer "+token)
+			req.Header.Set("Content-Type", "application/json")
+
+			resp, err := http.DefaultClient.Do(req)
+			Expect(err).NotTo(HaveOccurred())
+			defer resp.Body.Close()
+
+			Expect(resp.StatusCode).NotTo(Equal(http.StatusNotFound),
+				"POST /a2a/status must be routed (not 404)")
+			Expect(resp.StatusCode).NotTo(Equal(http.StatusUnauthorized),
+				"authenticated request must pass auth")
+
+			respBody, _ := io.ReadAll(resp.Body)
+			if resp.Header.Get("Content-Type") == "application/json" {
+				var data map[string]any
+				Expect(json.Unmarshal(respBody, &data)).To(Succeed())
+				if errObj, ok := data["error"].(map[string]any); ok {
+					Expect(errObj["code"]).To(BeNumerically("==", -32001),
+						"nonexistent RR should return rr_not_found, not a routing error")
+				}
+			}
+		})
+	})
 })
 

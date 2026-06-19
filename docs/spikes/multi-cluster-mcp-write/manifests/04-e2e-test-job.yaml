@@ -1,0 +1,37 @@
+# E2E test job submitted via MCP resources_create_or_update
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: wfe-e2e-patch-hpa
+  namespace: demo-hpa
+  labels:
+    kubernaut.ai/spike: e2e
+    kubernaut.ai/workflow: patch-hpa-v1
+    kubernaut.ai/wfe-id: "12345"
+spec:
+  ttlSecondsAfterFinished: 600
+  activeDeadlineSeconds: 120
+  template:
+    spec:
+      serviceAccountName: kubernaut-wf-test
+      restartPolicy: Never
+      containers:
+      - name: remediate
+        image: registry.redhat.io/openshift4/ose-cli:latest
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "Remediation started at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "Workflow: patch-hpa-v1"
+          echo "Checking HPA access..."
+          if oc auth can-i patch horizontalpodautoscalers -n demo-hpa; then
+            echo "RBAC verified: can patch HPAs"
+            echo "Simulating HPA patch..."
+            sleep 2
+            echo "Remediation completed successfully"
+            exit 0
+          else
+            echo "RBAC DENIED: cannot patch HPAs"
+            exit 1
+          fi

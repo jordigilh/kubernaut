@@ -106,7 +106,20 @@ var _ = Describe("AF RBAC parity (UT-INFRA-RBAC-001)", func() {
 		Entry("pdbs",                "policy",       "poddisruptionbudgets",             []string{"get", "list"}),
 		Entry("leases",              "coordination.k8s.io", "leases",                   []string{"get", "list", "watch"}),
 		Entry("aianalyses",          "kubernaut.ai", "aianalyses",                      []string{"get", "list", "watch"}),
+		Entry("IT-AF-1460-040: EA CRD", "kubernaut.ai", "effectivenessassessments",     []string{"get", "list", "watch"}),
 		Entry("SAR",                 "authorization.k8s.io", "subjectaccessreviews",    []string{"create"}),
 		Entry("token reviews",       "authentication.k8s.io", "tokenreviews",           []string{"create"}),
 	)
+})
+
+var _ = Describe("IT-AF-1460-021: StatusHandler production wiring", func() {
+	It("StatusHandler is constructed in cmd/apifrontend/main.go", func() {
+		mainPath := filepath.Join(getProjectRoot(), "cmd", "apifrontend", "main.go")
+		data, err := os.ReadFile(mainPath) //nolint:gosec // G304: known project path
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(data)).To(ContainSubstring("NewStatusHandler"),
+			"cmd/apifrontend/main.go must construct StatusHandler")
+		Expect(string(data)).To(ContainSubstring("StatusHandler:"),
+			"cmd/apifrontend/main.go must wire StatusHandler into RouterConfig")
+	})
 })

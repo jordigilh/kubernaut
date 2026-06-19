@@ -277,6 +277,11 @@ func run() int {
 		Metrics: metricsReg.RateLimitDenied,
 	})
 
+	var statusHandler http.Handler
+	if deps.TypedClient() != nil {
+		statusHandler = handler.NewStatusHandler(deps.TypedClient(), cfg.Session.Namespace, logger)
+	}
+
 	draining := &atomic.Bool{}
 	routerCfg := handler.RouterConfig{
 		MetricsRegistry:    metricsReg,
@@ -289,6 +294,7 @@ func run() int {
 		PostAuthMiddleware: postAuthMW,
 		ReadyChecker:       handler.AllReady(func() bool { return !draining.Load() }, depsReady, authReady, sessInfra.Healthy.Load),
 		SSETracker:         buildSSETracker(cfg, metricsReg),
+		StatusHandler:      statusHandler,
 		Draining:           draining,
 	}
 	router, err := handler.NewRouter(routerCfg)
