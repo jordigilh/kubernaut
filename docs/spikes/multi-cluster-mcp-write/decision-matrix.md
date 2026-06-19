@@ -1,7 +1,7 @@
 # MCP Write Path Spike -- Decision Matrix
 
 **Date**: 2026-06-18
-**Status**: All GO -- MCP server is viable as a unified read/write channel for remote workflow execution
+**Status**: All GO -- MCP is viable as a unified protocol for all three execution engines (K8s, Tekton, Ansible)
 **Cluster**: OCP 4.21 (dev.redhat-internal.com)
 
 ## Go/No-Go Questions
@@ -16,10 +16,12 @@
 | 6 | **Failure detection**: Can KA detect Job failures, timeouts, and RBAC errors? | All modes detectable | **GO** | `BackoffLimitExceeded`, `DeadlineExceeded`, and SA boundary violations all detectable via Job status conditions. |
 | 7 | **Idempotency**: Is `resources_create_or_update` safe to retry? | No duplicate creation | **GO** | Server-side apply is idempotent. Second call succeeds without creating duplicates. |
 | 8 | **TTL cleanup**: Does `ttlSecondsAfterFinished` auto-remove Jobs? | Automatic cleanup | **GO** | Job with `ttlSecondsAfterFinished: 10` auto-deleted within 18s of completion. |
+| 9 | **AAP MCP**: Can `ansible/aap-mcp-server` launch and poll Ansible jobs via MCP? | Working launch+poll | **GO** | `job_templates_launch_create` launches templates, `jobs_retrieve` polls status. Same Streamable HTTP transport as K8s MCP. Validated on AAP 2.5 (controller v4.6.21). |
+| 10 | **Unified protocol**: Do K8s MCP and AAP MCP work side-by-side? | Both respond simultaneously | **GO** | K8s Job creation (port 8080) and AAP Job launch (port 3001) succeed in parallel. Same JSON-RPC protocol, different tool names. |
 
 ## Overall Decision
 
-**GO** -- The `containers/kubernetes-mcp-server` is viable as a **unified investigation + execution channel** for Kubernaut's multi-cluster architecture. No separate write API is needed.
+**GO** -- MCP is viable as a **unified protocol for all three execution engines** (K8s Jobs, Tekton PipelineRuns, Ansible job templates). No separate AWX REST API or ManifestWork integration is needed. See [spike-aap-mcp-server.md](spike-aap-mcp-server.md) for the AAP MCP server spike details.
 
 ## Key Architectural Decisions
 

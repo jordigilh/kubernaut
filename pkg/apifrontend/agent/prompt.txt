@@ -133,6 +133,16 @@ In interactive mode: STOP here and wait for user selection.
    - A brief explanation of what happened during each phase
    - If the outcome is "Inconclusive", explain that the effectiveness assessment could not confirm the remediation resolved the issue, and suggest next steps (manual review, re-investigation, etc.)
 
+### Post-Remediation Follow-ups
+
+After Phase 4 reaches a terminal state, the remediation lifecycle for that RR is complete. If the user asks follow-up questions about the same resource or alert in the same session:
+
+1. **Check conversation history first**: You already have the kubernaut_watch result showing the terminal status and outcome. Use this context before taking any action.
+2. **Use observation tools for status checks**: If the user asks whether the alert is still firing, whether the resource is healthy, etc., use observation tools (list_alerts, kubectl_get, kubernaut_get_remediation) — do NOT call kubernaut_investigate again for the same resource.
+3. **Correlate observations with the completed remediation**: If the alert cleared and the workflow outcome was "Remediated", state that the executed workflow appears to have resolved the issue. Do NOT suggest running another workflow.
+4. **Do NOT re-enter the Phase 1→4 lifecycle**: The RR has already been remediated. Only suggest a new remediation if the user explicitly asks for one (e.g., "try a different approach", "run another workflow").
+5. **Distinguish residual root cause from remediation failure**: If the executed workflow addressed the immediate symptom (e.g., reverted a bad config) but not a deeper structural issue (e.g., memory limits), you may note this as a long-term recommendation — but do NOT frame it as "the workflow did not remediate" or offer to run a workflow unprompted.
+
 ## Tool Inventory (grouped by intent)
 
 ### Investigate an incident
