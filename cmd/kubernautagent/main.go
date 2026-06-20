@@ -50,6 +50,7 @@ import (
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	auth "github.com/jordigilh/kubernaut/pkg/shared/auth"
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
@@ -185,6 +186,35 @@ func main() {
 		os.Exit(1)
 	}
 
+	// #1470: Build per-phase SwappableClients. The resolver is created after
+	// the alignment evaluator, so that the PinDecorator can be set at
+	// construction time.
+	phaseSwappables := make(map[katypes.Phase]*llm.SwappableClient)
+	for phaseName, override := range llmRuntime.PhaseModels {
+		phaseLLM, phaseRT := llmRuntime.EffectivePhaseConfig(phaseName, cfg.AI.LLM, *llmRuntime)
+		phaseCfg := *cfg
+		phaseCfg.AI.LLM = phaseLLM
+		phaseClient, phaseErr := buildLLMClientFromConfig(context.Background(), &phaseCfg, &phaseRT)
+		if phaseErr != nil {
+			logger.Error(phaseErr, "failed to build phase LLM client",
+				"phase", phaseName, "model", override.Model)
+			os.Exit(1)
+		}
+		phaseSw, phaseSwErr := llm.NewSwappableClient(phaseClient, phaseRT.Model, llm.RuntimeParams{
+			Temperature:    phaseRT.Temperature,
+			TimeoutSeconds: phaseRT.TimeoutSeconds,
+			MaxRetries:     phaseRT.MaxRetries,
+		})
+		if phaseSwErr != nil {
+			logger.Error(phaseSwErr, "failed to create phase SwappableClient",
+				"phase", phaseName)
+			os.Exit(1)
+		}
+		phaseSwappables[katypes.Phase(phaseName)] = phaseSw
+		logger.Info("per-phase LLM client initialized",
+			"phase", phaseName, "model", phaseRT.Model, "override_model", override.Model)
+	}
+
 	promptBuilder, err := prompt.NewBuilder()
 	if err != nil {
 		logger.Error(err, "failed to create prompt builder")
@@ -288,6 +318,18 @@ func main() {
 		scopeResolver = investigator.NewMapperScopeResolver(k8sInfra.mapper)
 	}
 
+	// #1470: Build the PhaseResolver with the PinDecorator (if alignment is enabled).
+	var pinDecorator func(llm.Client) llm.Client
+	if alignEvaluator != nil {
+		pinDecorator = func(pinned llm.Client) llm.Client {
+			return alignment.NewLLMProxy(llm.NewInstrumentedClient(pinned))
+		}
+	}
+	phaseResolver := investigator.NewDefaultPhaseResolver(swappable, pinDecorator)
+	for phase, phaseSw := range phaseSwappables {
+		phaseResolver.SetPhaseSwappable(phase, phaseSw)
+	}
+
 	invCfg := investigator.Config{
 		Client:        effectiveLLM,
 		Builder:       promptBuilder,
@@ -302,6 +344,8 @@ func main() {
 		Swappable:     swappable,
 		ScopeResolver: scopeResolver,
 		Metrics:       agentMetrics,
+		PhaseResolver: phaseResolver,
+		PinDecorator:  pinDecorator,
 		Pipeline: investigator.Pipeline{
 			Sanitizer:         sanitizer,
 			AnomalyDetector:   anomalyDetector,
@@ -309,11 +353,6 @@ func main() {
 			Summarizer:        sum,
 			MaxToolOutputSize: cfg.AI.Summarizer.MaxToolOutputSize,
 		},
-	}
-	if alignEvaluator != nil {
-		invCfg.PinDecorator = func(pinned llm.Client) llm.Client {
-			return alignment.NewLLMProxy(llm.NewInstrumentedClient(pinned))
-		}
 	}
 	inv := investigator.New(invCfg)
 
@@ -527,7 +566,7 @@ func main() {
 	}
 
 	// Issue #916: Wire FileWatcher for LLM runtime config hot-reload
-	rtCallback := llmRuntimeReloadCallback(cfg, swappable, logger)
+	rtCallback := llmRuntimeReloadCallback(cfg, swappable, logger, phaseResolver)
 	rtWatcher, rtWatchErr := hotreload.NewFileWatcher(
 		llmRuntimePath,
 		rtCallback,
