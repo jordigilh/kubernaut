@@ -51,6 +51,11 @@ data:
         maxAttempts: 3
         initialBackoff: 100ms
         maxBackoff: 5s
+    {{- if .Values.gateway.fleet.enabled }}
+    fleet:
+      enabled: true
+      valkeyAddr: {{ .Values.gateway.fleet.valkeyAddr | quote }}
+    {{- end }}
 ---
 apiVersion: v1
 kind: ServiceAccount

@@ -82,6 +82,18 @@ type Config struct {
 	// TLSProfile selects the TLS security profile (Old/Intermediate/Modern).
 	// Issue #748: OCP-only — set by kubernaut-operator from the cluster APIServer CR.
 	TLSProfile string `yaml:"tlsProfile,omitempty"`
+
+	// Fleet enables multi-cluster federation scope checking (ADR-065).
+	// When enabled, RO uses FederatedScopeChecker backed by Valkey for remote scope checks.
+	Fleet FleetConfig `yaml:"fleet,omitempty"`
+}
+
+// FleetConfig holds multi-cluster federation settings for the RO (ADR-065).
+type FleetConfig struct {
+	// Enabled activates federated scope checking via Valkey cache.
+	Enabled bool `yaml:"enabled"`
+	// ValkeyAddr is the Valkey/Redis address for the fleet metadata cache.
+	ValkeyAddr string `yaml:"valkeyAddr"`
 }
 
 // RetentionConfig controls how long terminal RemediationRequest CRDs persist

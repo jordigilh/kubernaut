@@ -340,7 +340,16 @@
         "affinity": { "$ref": "#/definitions/affinity" },
         "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
         "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
-        "tolerations": { "$ref": "#/definitions/tolerations" }
+        "tolerations": { "$ref": "#/definitions/tolerations" },
+        "fleet": {
+          "type": "object",
+          "description": "Multi-cluster fleet configuration (BR-INTEGRATION-065)",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": false },
+            "valkeyAddr": { "type": "string", "default": "" }
+          }
+        }
       }
     },
     "datastorage": {
@@ -594,7 +603,16 @@
         "affinity": { "$ref": "#/definitions/affinity" },
         "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
         "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
-        "tolerations": { "$ref": "#/definitions/tolerations" }
+        "tolerations": { "$ref": "#/definitions/tolerations" },
+        "fleet": {
+          "type": "object",
+          "description": "Multi-cluster fleet configuration (BR-INTEGRATION-065)",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": false },
+            "valkeyAddr": { "type": "string", "default": "" }
+          }
+        }
       }
     },
     "workflowexecution": {
@@ -845,6 +863,25 @@
               }
             }
           }
+        },
+        "fleet": {
+          "type": "object",
+          "description": "Multi-cluster fleet configuration (ADR-065)",
+          "additionalProperties": false,
+          "properties": {
+            "endpoint": { "type": "string", "default": "", "description": "MCP Gateway endpoint URL" },
+            "oauth2": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean", "default": false },
+                "tokenURL": { "type": "string", "default": "" },
+                "clientID": { "type": "string", "default": "" },
+                "clientSecretFile": { "type": "string", "default": "" },
+                "credentialsSecretRef": { "type": "string", "default": "", "description": "K8s Secret with keys: client-id, client-secret" }
+              }
+            }
+          }
         }
       }
     },
@@ -963,6 +1000,30 @@
         "resources": { "$ref": "#/definitions/resources" },
         "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
         "tolerations": { "$ref": "#/definitions/tolerations" }
+      }
+    },
+    "fmcWriter": {
+      "type": "object",
+      "description": "FMC Writer: Fleet Metadata Cache writer service (BR-INTEGRATION-065)",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean", "default": false },
+        "replicas": { "type": "integer", "default": 1 },
+        "image": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "repository": { "type": "string", "default": "kubernaut/fmcwriter" },
+            "tag": { "type": "string", "default": "latest" },
+            "pullPolicy": { "type": "string", "default": "IfNotPresent" }
+          }
+        },
+        "syncInterval": { "type": "string", "default": "30s" },
+        "keyTTL": { "type": "string", "default": "45s" },
+        "mcpGatewayEndpoint": { "type": "string", "default": "" },
+        "valkeyAddr": { "type": "string", "default": "" },
+        "namespace": { "type": "string", "default": "kubernaut-system" },
+        "resources": { "$ref": "#/definitions/resources" }
       }
     },
     "apifrontend": {

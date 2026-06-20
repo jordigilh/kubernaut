@@ -53,6 +53,11 @@ data:
       ineffectiveTimeWindow: {{ .Values.remediationorchestrator.config.routing.ineffectiveTimeWindow | default "4h" | quote }}
     retention:
       period: {{ .Values.remediationorchestrator.config.retention.period | default "24h" | quote }}
+    {{- if .Values.remediationorchestrator.fleet.enabled }}
+    fleet:
+      enabled: true
+      valkeyAddr: {{ .Values.remediationorchestrator.fleet.valkeyAddr | quote }}
+    {{- end }}
 ---
 apiVersion: v1
 kind: ServiceAccount

@@ -49,6 +49,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 	scope "github.com/jordigilh/kubernaut/pkg/shared/scope"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
+	"github.com/jordigilh/kubernaut/pkg/fleet/scopecache"
 	config "github.com/jordigilh/kubernaut/internal/config/remediationorchestrator"
 	controller "github.com/jordigilh/kubernaut/internal/controller/remediationorchestrator"
 	"github.com/jordigilh/kubernaut/pkg/audit"
@@ -278,7 +279,18 @@ func main() {
 		IneffectiveTimeWindow:       cfg.Routing.IneffectiveTimeWindow,
 	}
 	scopeMgr := scope.NewManager(mgr.GetClient())
-	routingEngine := routing.NewRoutingEngine(mgr.GetClient(), mgr.GetAPIReader(), "", routingCfg, scopeMgr)
+
+	// ADR-065: Federated scope checking for multi-cluster fleet management.
+	// When fleet is enabled, wraps the local scope checker with FederatedScopeChecker
+	// backed by a Valkey cache for low-latency remote cluster scope lookups.
+	var scopeCheckerInstance scope.ScopeChecker = scopeMgr
+	if cfg.Fleet.Enabled && cfg.Fleet.ValkeyAddr != "" {
+		scopeCheckerInstance = scopecache.NewFederatedScopeCheckerFromAddr(scopeMgr, cfg.Fleet.ValkeyAddr, setupLog)
+		setupLog.Info("ADR-065: Federated scope checker enabled (Valkey-backed fleet cache)",
+			"valkey_addr", cfg.Fleet.ValkeyAddr)
+	}
+
+	routingEngine := routing.NewRoutingEngine(mgr.GetClient(), mgr.GetAPIReader(), "", routingCfg, scopeCheckerInstance)
 
 	// Issue #214: Wire DataStorage history querier for ineffective chain detection.
 	dsHistoryAdapter, err := routing.NewDSHistoryAdapterFromConfig(cfg.DataStorage.URL, cfg.DataStorage.Timeout)

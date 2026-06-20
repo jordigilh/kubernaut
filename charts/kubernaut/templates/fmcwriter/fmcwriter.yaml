@@ -1,0 +1,101 @@
+{{- if .Values.fmcWriter.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fmcwriter-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: fmcwriter
+    app.kubernetes.io/component: fleet-metadata-cache
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+data:
+  FMC_MCP_GATEWAY_ENDPOINT: {{ .Values.fmcWriter.mcpGatewayEndpoint | quote }}
+  FMC_VALKEY_ADDR: {{ .Values.fmcWriter.valkeyAddr | quote }}
+  FMC_NAMESPACE: {{ .Values.fmcWriter.namespace | quote }}
+  FMC_SYNC_INTERVAL: {{ .Values.fmcWriter.syncInterval | quote }}
+  FMC_KEY_TTL: {{ .Values.fmcWriter.keyTTL | quote }}
+  FMC_METRICS_ADDR: ":8081"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fmcwriter
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: fmcwriter
+    app.kubernetes.io/component: fleet-metadata-cache
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  replicas: {{ .Values.fmcWriter.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: fmcwriter
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: fmcwriter
+        app.kubernetes.io/component: fleet-metadata-cache
+    spec:
+      serviceAccountName: fmcwriter
+      containers:
+        - name: fmcwriter
+          image: "{{ .Values.fmcWriter.image.repository }}:{{ .Values.fmcWriter.image.tag }}"
+          imagePullPolicy: {{ .Values.fmcWriter.image.pullPolicy }}
+          envFrom:
+            - configMapRef:
+                name: fmcwriter-config
+          ports:
+            - name: metrics
+              containerPort: 8081
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: metrics
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: metrics
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.fmcWriter.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fmcwriter
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: fmcwriter
+    app.kubernetes.io/component: fleet-metadata-cache
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: fmcwriter
+  labels:
+    app.kubernetes.io/name: fmcwriter
+rules:
+  - apiGroups: ["mcp.kuadrant.io"]
+    resources: ["mcpserverregistrations"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: fmcwriter
+  labels:
+    app.kubernetes.io/name: fmcwriter
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: fmcwriter
+subjects:
+  - kind: ServiceAccount
+    name: fmcwriter
+    namespace: {{ .Release.Namespace }}
+{{- end }}
