@@ -18,8 +18,11 @@ package mcpclient_test
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
+	"time"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -32,7 +35,7 @@ func TestMCPClient(t *testing.T) {
 	RunSpecs(t, "Fleet MCPResourceClient Suite")
 }
 
-var _ = Describe("MCPResourceClient (BR-INTEGRATION-065)", func() {
+var _ = Describe("ResourceClient (BR-FLEET-002, Phase 0)", func() {
 	var (
 		ctx context.Context
 		gw  *mockgw.MockGateway
@@ -65,18 +68,19 @@ var _ = Describe("MCPResourceClient (BR-INTEGRATION-065)", func() {
 	})
 
 	Describe("Get", func() {
-		It("UT-FLEET-MCP-003: calls {clusterID}__get_resource and returns content", func() {
+		It("UT-FLEET-P0-001: returns typed unstructured.Unstructured from get_resource", func() {
 			gw = mockgw.NewMockGateway(mockgw.WithMultiCluster("prod-east"))
 
 			client, err := mcpclient.New(ctx, gw.URL())
 			Expect(err).ToNot(HaveOccurred())
 			defer client.Close()
 
-			result, err := client.Get(ctx, "prod-east", "Pod", "nginx", "default")
+			obj, err := client.Get(ctx, "prod-east", "Pod", "default", "nginx")
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result).To(ContainSubstring("prod-east"))
-			Expect(result).To(ContainSubstring("Pod"))
-			Expect(result).To(ContainSubstring("nginx"))
+			Expect(obj.GetKind()).To(Equal("Pod"))
+			Expect(obj.GetName()).To(Equal("nginx"))
+			Expect(obj.GetNamespace()).To(Equal("default"))
+			Expect(obj.GetLabels()).To(HaveKeyWithValue("kubernaut.ai/managed", "true"))
 
 			calls := gw.CallLog()
 			Expect(calls).To(HaveLen(1))
@@ -90,27 +94,60 @@ var _ = Describe("MCPResourceClient (BR-INTEGRATION-065)", func() {
 			Expect(err).ToNot(HaveOccurred())
 			defer client.Close()
 
-			_, err = client.Get(ctx, "unknown-cluster", "Pod", "nginx", "default")
+			_, err = client.Get(ctx, "unknown-cluster", "Pod", "default", "nginx")
 			Expect(err).To(HaveOccurred())
 		})
 	})
 
 	Describe("List", func() {
-		It("UT-FLEET-MCP-005: calls {clusterID}__list_resources and returns content", func() {
+		It("UT-FLEET-P0-002: returns typed unstructured list from list_resources", func() {
 			gw = mockgw.NewMockGateway(mockgw.WithMultiCluster("prod-west"))
 
 			client, err := mcpclient.New(ctx, gw.URL())
 			Expect(err).ToNot(HaveOccurred())
 			defer client.Close()
 
-			result, err := client.List(ctx, "prod-west", "Pod", "kube-system")
+			items, err := client.List(ctx, "prod-west", "Pod", "kube-system", nil)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result).To(ContainSubstring("prod-west"))
-			Expect(result).To(ContainSubstring("items"))
+			Expect(items).To(HaveLen(2))
+			Expect(items[0].GetKind()).To(Equal("Pod"))
+			Expect(items[0].GetName()).To(Equal("item-1"))
 
 			calls := gw.CallLog()
 			Expect(calls).To(HaveLen(1))
 			Expect(calls[0].ToolName).To(Equal("prod-west__list_resources"))
+		})
+
+		It("UT-FLEET-P0-003: passes labelSelector to list_resources", func() {
+			gw = mockgw.NewMockGateway(mockgw.WithMultiCluster("prod-west"))
+
+			client, err := mcpclient.New(ctx, gw.URL())
+			Expect(err).ToNot(HaveOccurred())
+			defer client.Close()
+
+			_, err = client.List(ctx, "prod-west", "Pod", "kube-system", map[string]string{"app": "nginx"})
+			Expect(err).ToNot(HaveOccurred())
+
+			calls := gw.CallLog()
+			Expect(calls).To(HaveLen(1))
+			var args map[string]any
+			Expect(json.Unmarshal(calls[0].Arguments, &args)).To(Succeed())
+			Expect(args["labelSelector"]).To(Equal("app=nginx"))
+		})
+	})
+
+	Describe("GetLabels", func() {
+		It("UT-FLEET-P0-004: returns metadata.labels from remote resource", func() {
+			gw = mockgw.NewMockGateway(mockgw.WithMultiCluster("prod-east"))
+
+			client, err := mcpclient.New(ctx, gw.URL())
+			Expect(err).ToNot(HaveOccurred())
+			defer client.Close()
+
+			labels, err := client.GetLabels(ctx, "prod-east", "Pod", "default", "nginx")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(labels).To(HaveKeyWithValue("kubernaut.ai/managed", "true"))
+			Expect(labels).To(HaveKey("app"))
 		})
 	})
 
@@ -134,6 +171,23 @@ var _ = Describe("MCPResourceClient (BR-INTEGRATION-065)", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(client).ToNot(BeNil())
 			Expect(client.Close()).To(Succeed())
+		})
+	})
+
+	Describe("ResilientClient interface compliance", func() {
+		It("UT-FLEET-P0-005: ResilientClient satisfies ResourceClient", func() {
+			gw = mockgw.NewMockGateway(mockgw.WithMultiCluster("cluster-res"))
+
+			cfg := mcpclient.DefaultResilienceConfig()
+			cfg.MaxElapsedTime = 5 * time.Second
+			rc, err := mcpclient.NewResilient(ctx, gw.URL(), cfg, logr.Discard())
+			Expect(err).ToNot(HaveOccurred())
+			defer rc.Close()
+
+			var client mcpclient.ResourceClient = rc
+			obj, err := client.Get(ctx, "cluster-res", "Pod", "default", "nginx")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(obj.GetName()).To(Equal("nginx"))
 		})
 	})
 })
