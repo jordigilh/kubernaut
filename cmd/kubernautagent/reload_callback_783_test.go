@@ -59,7 +59,7 @@ func (s *stubLLMClient) Close() error { return nil }
 
 func TestReloadRejectsEmptyContent(t *testing.T) {
 	sc := setupSwappable(t)
-	cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger())
+	cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger(), nil)
 
 	err := cb("")
 	if err == nil {
@@ -72,7 +72,7 @@ func TestReloadRejectsEmptyContent(t *testing.T) {
 
 func TestReloadRejectsWhitespaceContent(t *testing.T) {
 	sc := setupSwappable(t)
-	cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger())
+	cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger(), nil)
 
 	err := cb("   \n  \t  ")
 	if err == nil {
@@ -82,7 +82,7 @@ func TestReloadRejectsWhitespaceContent(t *testing.T) {
 
 func TestReloadAcceptsModelChange(t *testing.T) {
 	sc := setupSwappable(t)
-	cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger())
+	cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger(), nil)
 
 	err := cb(`model: gpt-4-turbo
 endpoint: http://localhost:11434
@@ -98,7 +98,7 @@ apiKey: test-key
 
 func TestReloadAcceptsEndpointChange(t *testing.T) {
 	sc := setupSwappable(t)
-	cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger())
+	cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger(), nil)
 
 	err := cb(`model: gpt-4
 endpoint: http://new-endpoint:8080
@@ -111,7 +111,7 @@ apiKey: test-key
 
 func TestReloadRejectsValidationFailure(t *testing.T) {
 	sc := setupSwappable(t)
-	cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger())
+	cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger(), nil)
 
 	err := cb(`model: ""
 endpoint: http://localhost:11434
@@ -127,7 +127,7 @@ apiKey: test-key
 
 func TestReloadAcceptsTemperatureChange(t *testing.T) {
 	sc := setupSwappable(t)
-	cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger())
+	cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger(), nil)
 
 	err := cb(`model: gpt-4
 endpoint: http://localhost:11434

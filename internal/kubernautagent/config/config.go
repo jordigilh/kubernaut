@@ -105,6 +105,56 @@ type LLMRuntimeConfig struct {
 	MaxRetries     int                          `yaml:"maxRetries"`
 	TimeoutSeconds int                          `yaml:"timeoutSeconds"`
 	CustomHeaders  []pkgconfig.HeaderDefinition `yaml:"customHeaders,omitempty"`
+	PhaseModels    map[string]*LLMOverrideConfig `yaml:"phaseModels,omitempty"`
+}
+
+// ValidPhaseNames enumerates the phase keys accepted in PhaseModels.
+var ValidPhaseNames = map[string]bool{
+	"rca":                true,
+	"workflow_discovery": true,
+	"validation":         true,
+}
+
+// EffectivePhaseConfig returns a merged set of static + runtime fields for the
+// given phase. If PhaseModels contains an override for the phase, non-empty
+// fields win over the base values. If no override exists, the base values are
+// returned unchanged. Follows the same merge pattern as
+// AlignmentCheckConfig.EffectiveLLM().
+func (r *LLMRuntimeConfig) EffectivePhaseConfig(phase string, baseLLM LLMConfig, baseRuntime LLMRuntimeConfig) (LLMConfig, LLMRuntimeConfig) {
+	if len(r.PhaseModels) == 0 {
+		return baseLLM, baseRuntime
+	}
+	override, ok := r.PhaseModels[phase]
+	if !ok || override == nil {
+		return baseLLM, baseRuntime
+	}
+	staticOut := baseLLM
+	runtimeOut := baseRuntime
+	if override.Provider != "" {
+		staticOut.Provider = override.Provider
+	}
+	if override.AzureAPIVersion != "" {
+		staticOut.AzureAPIVersion = override.AzureAPIVersion
+	}
+	if override.VertexProject != "" {
+		staticOut.VertexProject = override.VertexProject
+	}
+	if override.VertexLocation != "" {
+		staticOut.VertexLocation = override.VertexLocation
+	}
+	if override.BedrockRegion != "" {
+		staticOut.BedrockRegion = override.BedrockRegion
+	}
+	if override.Model != "" {
+		runtimeOut.Model = override.Model
+	}
+	if override.Endpoint != "" {
+		runtimeOut.Endpoint = override.Endpoint
+	}
+	if override.APIKey != "" {
+		runtimeOut.APIKey = override.APIKey
+	}
+	return staticOut, runtimeOut
 }
 
 // OAuth2Config holds OAuth2 client credentials configuration for enterprise
@@ -492,6 +542,17 @@ func (r *LLMRuntimeConfig) Validate(provider string) error {
 	if len(r.CustomHeaders) > 0 {
 		if err := pkgconfig.ValidateHeaderSources(r.CustomHeaders); err != nil {
 			return fmt.Errorf("customHeaders: %w", err)
+		}
+	}
+	for phase, override := range r.PhaseModels {
+		if !ValidPhaseNames[phase] {
+			return fmt.Errorf("phaseModels: unknown phase %q", phase)
+		}
+		if override == nil || (override.Provider == "" && override.Endpoint == "" &&
+			override.Model == "" && override.APIKey == "" &&
+			override.AzureAPIVersion == "" && override.VertexProject == "" &&
+			override.VertexLocation == "" && override.BedrockRegion == "") {
+			return fmt.Errorf("phaseModels[%q]: at least one override field must be set", phase)
 		}
 	}
 	return nil

@@ -27,7 +27,9 @@ import (
 
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/credentials"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/langchaingo"
 	internaltransport "github.com/jordigilh/kubernaut/internal/kubernautagent/llm/transport"
 	llmtransport "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/transport"
@@ -179,6 +181,7 @@ func llmRuntimeReloadCallback(
 	staticCfg *kaconfig.Config,
 	swappable *llm.SwappableClient,
 	logger logr.Logger,
+	phaseResolver *investigator.DefaultPhaseResolver,
 ) func(newContent string) error {
 	return func(newContent string) error {
 		oldModel := swappable.ModelName()
@@ -225,6 +228,86 @@ func llmRuntimeReloadCallback(
 			"new_model", rt.Model,
 			"new_endpoint", rt.Endpoint,
 		)
+
+		if phaseResolver != nil {
+			reloadPhaseClients(staticCfg, rt, phaseResolver, logger)
+		}
 		return nil
+	}
+}
+
+// reloadPhaseClients synchronizes the phase resolver with the new config.
+// It adds/updates phase-specific SwappableClients for each phase in PhaseModels
+// and removes phases that are no longer configured.
+func reloadPhaseClients(
+	staticCfg *kaconfig.Config,
+	rt *kaconfig.LLMRuntimeConfig,
+	resolver *investigator.DefaultPhaseResolver,
+	logger logr.Logger,
+) {
+	configuredPhases := make(map[katypes.Phase]bool)
+
+	for phaseName, override := range rt.PhaseModels {
+		phase := katypes.Phase(phaseName)
+		configuredPhases[phase] = true
+
+		phaseLLM, phaseRT := rt.EffectivePhaseConfig(phaseName, staticCfg.AI.LLM, *rt)
+
+		phaseCfg := *staticCfg
+		phaseCfg.AI.LLM = phaseLLM
+
+		phaseClient, err := buildLLMClientFromConfig(context.Background(), &phaseCfg, &phaseRT)
+		if err != nil {
+			logger.Error(err, "reload: failed to build phase LLM client",
+				"phase", phaseName, "model", override.Model)
+			continue
+		}
+
+		existing := resolver.PhaseSwappable(phase)
+		if existing != nil {
+			oldModel := existing.ModelName()
+			if swapErr := existing.Swap(phaseClient, phaseRT.Model, llm.RuntimeParams{
+				Temperature:    phaseRT.Temperature,
+				TimeoutSeconds: phaseRT.TimeoutSeconds,
+				MaxRetries:     phaseRT.MaxRetries,
+			}); swapErr != nil {
+				logger.Error(swapErr, "reload: failed to swap phase client",
+					"phase", phaseName)
+				continue
+			}
+			logger.Info("llm_runtime_reload phase_model updated",
+				"event", "llm_runtime_reload",
+				"phase", phaseName,
+				"old_model", oldModel,
+				"new_model", phaseRT.Model,
+			)
+		} else {
+			newSw, swErr := llm.NewSwappableClient(phaseClient, phaseRT.Model, llm.RuntimeParams{
+				Temperature:    phaseRT.Temperature,
+				TimeoutSeconds: phaseRT.TimeoutSeconds,
+				MaxRetries:     phaseRT.MaxRetries,
+			})
+			if swErr != nil {
+				logger.Error(swErr, "reload: failed to create phase SwappableClient",
+					"phase", phaseName)
+				continue
+			}
+			resolver.SetPhaseSwappable(phase, newSw)
+			logger.Info("llm_runtime_reload phase_model added",
+				"event", "llm_runtime_reload",
+				"phase", phaseName,
+				"model", phaseRT.Model,
+			)
+		}
+	}
+
+	for _, existingPhase := range resolver.Phases() {
+		if !configuredPhases[existingPhase] {
+			resolver.RemovePhaseSwappable(existingPhase)
+			logger.Info("llm_runtime_reload phase_model removed",
+				"event", "llm_runtime_reload",
+				"phase", string(existingPhase),
+			)
+		}
 	}
 }

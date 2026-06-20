@@ -175,6 +175,11 @@ type Config struct {
 	// shadow agent observes LLM reasoning steps (C-1 bypass fix).
 	// When nil, falls back to llm.NewInstrumentedClient(pinned).
 	PinDecorator func(llm.Client) llm.Client
+	// PhaseResolver provides per-phase LLM client resolution (#1470).
+	// When non-nil, each investigation method resolves its client through
+	// this resolver instead of using the legacy single-pin pattern.
+	// When nil, falls back to legacy Swappable + PinDecorator behavior.
+	PhaseResolver PhaseClientResolver
 }
 
 // Investigator orchestrates the two-invocation architecture:
@@ -193,13 +198,41 @@ type Investigator struct {
 	pipeline      Pipeline
 	modelName     string
 	scopeResolver ScopeResolver
-	swappable     *llm.SwappableClient
-	metrics       *metrics.Metrics
-	pinDecorator  func(llm.Client) llm.Client
+	swappable      *llm.SwappableClient
+	metrics        *metrics.Metrics
+	pinDecorator   func(llm.Client) llm.Client
+	phaseResolver  PhaseClientResolver
 }
 
 func (inv *Investigator) auditLog() logr.Logger {
 	return inv.logger
+}
+
+// resolveForPhase returns the LLM client, model name, and runtime params for
+// the given investigation phase. When a PhaseClientResolver is configured, it
+// delegates to the resolver (which may return a phase-specific client).
+// Otherwise, falls back to the legacy Swappable + PinDecorator pattern.
+func (inv *Investigator) resolveForPhase(phase katypes.Phase) (llm.Client, string, llm.RuntimeParams) {
+	if inv.phaseResolver != nil {
+		return inv.phaseResolver.ResolvePhase(phase)
+	}
+	client := inv.client
+	modelName := inv.modelName
+	var runtimeParams llm.RuntimeParams
+	if inv.swappable != nil {
+		pinned := inv.swappable.Snapshot()
+		if inv.pinDecorator != nil {
+			client = inv.pinDecorator(pinned)
+			if client == nil {
+				client = llm.NewInstrumentedClient(pinned)
+			}
+		} else {
+			client = llm.NewInstrumentedClient(pinned)
+		}
+		modelName = inv.swappable.ModelName()
+		runtimeParams = inv.swappable.RuntimeParameters()
+	}
+	return client, modelName, runtimeParams
 }
 
 // New creates an Investigator from the given configuration.
@@ -223,9 +256,10 @@ func New(cfg Config) *Investigator {
 		pipeline:      pipeline,
 		modelName:     cfg.ModelName,
 		scopeResolver: cfg.ScopeResolver,
-		swappable:     cfg.Swappable,
-		metrics:       cfg.Metrics,
-		pinDecorator:  cfg.PinDecorator,
+		swappable:      cfg.Swappable,
+		metrics:        cfg.Metrics,
+		pinDecorator:   cfg.PinDecorator,
+		phaseResolver:  cfg.PhaseResolver,
 	}
 }
 
@@ -233,22 +267,7 @@ func New(cfg Config) *Investigator {
 // Used by the MCP kubernaut_investigate tool for interactive sessions.
 // Uses PhaseRCA tool set. Streaming works via LazySink on context.
 func (inv *Investigator) RunInteractiveTurn(ctx context.Context, messages []llm.Message, correlationID string) (LoopResult, error) {
-	client := inv.client
-	modelName := inv.modelName
-	var runtimeParams llm.RuntimeParams
-	if inv.swappable != nil {
-		pinned := inv.swappable.Snapshot()
-		if inv.pinDecorator != nil {
-			client = inv.pinDecorator(pinned)
-			if client == nil {
-				client = llm.NewInstrumentedClient(pinned)
-			}
-		} else {
-			client = llm.NewInstrumentedClient(pinned)
-		}
-		modelName = inv.swappable.ModelName()
-		runtimeParams = inv.swappable.RuntimeParameters()
-	}
+	client, modelName, runtimeParams := inv.resolveForPhase(katypes.PhaseRCA)
 	return inv.runLLMLoop(ctx, messages, katypes.PhaseRCA, nil, correlationID, client, modelName, runtimeParams)
 }
 
@@ -258,20 +277,7 @@ func (inv *Investigator) RunInteractiveTurn(ctx context.Context, messages []llm.
 // Used by discover_workflows to extract structured RCA from interactive history.
 func (inv *Investigator) RunRCAExtractionFromConversation(ctx context.Context, messages []llm.Message, correlationID string) (*katypes.InvestigationResult, error) {
 	_ = correlationID // reserved for future audit event emission
-	client := inv.client
-	var runtimeParams llm.RuntimeParams
-	if inv.swappable != nil {
-		pinned := inv.swappable.Snapshot()
-		if inv.pinDecorator != nil {
-			client = inv.pinDecorator(pinned)
-			if client == nil {
-				client = llm.NewInstrumentedClient(pinned)
-			}
-		} else {
-			client = llm.NewInstrumentedClient(pinned)
-		}
-		runtimeParams = inv.swappable.RuntimeParameters()
-	}
+	client, _, runtimeParams := inv.resolveForPhase(katypes.PhaseRCA)
 
 	submitOnlyTools := []llm.ToolDefinition{
 		{
@@ -429,22 +435,7 @@ func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal
 		}
 	}
 
-	client := inv.client
-	modelName := inv.modelName
-	var runtimeParams llm.RuntimeParams
-	if inv.swappable != nil {
-		pinned := inv.swappable.Snapshot()
-		if inv.pinDecorator != nil {
-			client = inv.pinDecorator(pinned)
-			if client == nil {
-				client = llm.NewInstrumentedClient(pinned)
-			}
-		} else {
-			client = llm.NewInstrumentedClient(pinned)
-		}
-		modelName = inv.swappable.ModelName()
-		runtimeParams = inv.swappable.RuntimeParameters()
-	}
+	client, modelName, runtimeParams := inv.resolveForPhase(katypes.PhaseWorkflowDiscovery)
 
 	p1Ctx := BuildPhase1Context(rcaResult)
 	workflowResult, err := inv.runWorkflowSelection(ctx, signal, rcaResult.RCASummary, enrichData, p1Ctx, nil, correlationID, client, modelName, runtimeParams)
@@ -473,24 +464,10 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 	}()
 	inv.pipeline.AnomalyDetector.Reset()
 
-	// #783: Pin client, model name, and runtime params for the duration of
-	// this investigation. Subsequent hot-reload swaps do not affect in-flight work.
-	client := inv.client
-	modelName := inv.modelName
-	var runtimeParams llm.RuntimeParams
-	if inv.swappable != nil {
-		pinned := inv.swappable.Snapshot()
-		if inv.pinDecorator != nil {
-			client = inv.pinDecorator(pinned)
-			if client == nil {
-				client = llm.NewInstrumentedClient(pinned)
-			}
-		} else {
-			client = llm.NewInstrumentedClient(pinned)
-		}
-		modelName = inv.swappable.ModelName()
-		runtimeParams = inv.swappable.RuntimeParameters()
-	}
+	// #783 + #1470: Pin client per phase. Each phase resolves its own client,
+	// model name, and runtime params. Subsequent hot-reload swaps do not
+	// affect in-flight work.
+	rcaClient, rcaModelName, rcaRuntimeParams := inv.resolveForPhase(katypes.PhaseRCA)
 
 	correlationID := signal.RemediationID
 	enrichmentCache := make(map[string]*enrichment.EnrichmentResult)
@@ -501,7 +478,7 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 	promptEnrichment := toPromptEnrichment(enrichData)
 	tokens := &TokenAccumulator{}
 
-	rcaResult, err := inv.runRCA(ctx, signal, promptEnrichment, tokens, correlationID, client, modelName, runtimeParams)
+	rcaResult, err := inv.runRCA(ctx, signal, promptEnrichment, tokens, correlationID, rcaClient, rcaModelName, rcaRuntimeParams)
 	if err != nil {
 		return nil, fmt.Errorf("RCA invocation: %w", err)
 	}
@@ -635,9 +612,11 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 
 	inv.pipeline.AnomalyDetector.Reset()
 
+	wfClient, wfModelName, wfRuntimeParams := inv.resolveForPhase(katypes.PhaseWorkflowDiscovery)
+
 	p1Ctx := BuildPhase1Context(rcaResult)
 
-	workflowResult, err := inv.runWorkflowSelection(ctx, workflowSignal, rcaResult.RCASummary, promptEnrichment, p1Ctx, tokens, correlationID, client, modelName, runtimeParams)
+	workflowResult, err := inv.runWorkflowSelection(ctx, workflowSignal, rcaResult.RCASummary, promptEnrichment, p1Ctx, tokens, correlationID, wfClient, wfModelName, wfRuntimeParams)
 	if err != nil {
 		return nil, fmt.Errorf("workflow selection invocation: %w", err)
 	}
