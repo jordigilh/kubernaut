@@ -172,10 +172,10 @@ var _ = Describe("Fleet Wiring Integration Tests (BR-INTEGRATION-065)", func() {
 			args := json.RawMessage(`{"kind":"Pod","namespace":"default","name":"nginx"}`)
 			result, err := bt.Execute(ctx, args)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result).To(ContainSubstring("cluster-alpha"),
-				"response must contain cluster identifier")
 			Expect(result).To(ContainSubstring("nginx"),
 				"response must contain requested resource name")
+			Expect(result).To(ContainSubstring(`"kind":"Pod"`),
+				"response must contain resource kind from remote cluster")
 
 			calls := gw.CallLog()
 			Expect(calls).To(HaveLen(1))

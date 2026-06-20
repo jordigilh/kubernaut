@@ -165,8 +165,8 @@ func (gw *MockGateway) registerClusterTools(cluster string) {
 		}
 		_ = json.Unmarshal(req.Params.Arguments, &args)
 
-		response := fmt.Sprintf(`{"cluster":"%s","kind":"%s","namespace":"%s","name":"%s","status":"Running"}`,
-			cluster, args.Kind, args.Namespace, args.Name)
+		response := fmt.Sprintf(`{"apiVersion":"v1","kind":%q,"metadata":{"name":%q,"namespace":%q,"labels":{"kubernaut.ai/managed":"true","app":"nginx"}},"status":{"phase":"Running"}}`,
+			args.Kind, args.Name, args.Namespace)
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{Text: response}},
 		}, nil
@@ -176,17 +176,18 @@ func (gw *MockGateway) registerClusterTools(cluster string) {
 	gw.server.AddTool(&mcp.Tool{
 		Name:        listResourcesName,
 		Description: fmt.Sprintf("List Kubernetes resources from cluster %s", cluster),
-		InputSchema: json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"namespace":{"type":"string"}}}`),
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"namespace":{"type":"string"},"labelSelector":{"type":"string"}}}`),
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		gw.recordCall(req.Params.Name, req.Params.Arguments)
 		var args struct {
-			Kind      string `json:"kind"`
-			Namespace string `json:"namespace"`
+			Kind          string `json:"kind"`
+			Namespace     string `json:"namespace"`
+			LabelSelector string `json:"labelSelector"`
 		}
 		_ = json.Unmarshal(req.Params.Arguments, &args)
 
-		response := fmt.Sprintf(`{"cluster":"%s","items":[{"kind":"%s","name":"item-1"},{"kind":"%s","name":"item-2"}]}`,
-			cluster, args.Kind, args.Kind)
+		response := fmt.Sprintf(`{"apiVersion":"v1","kind":"List","items":[{"apiVersion":"v1","kind":%q,"metadata":{"name":"item-1","namespace":%q,"labels":{"app":"nginx"}}},{"apiVersion":"v1","kind":%q,"metadata":{"name":"item-2","namespace":%q,"labels":{"app":"nginx"}}}]}`,
+			args.Kind, args.Namespace, args.Kind, args.Namespace)
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{Text: response}},
 		}, nil
