@@ -26,6 +26,7 @@ import (
 
 // Compile-time interface compliance.
 var _ scope.ScopeChecker = (*FederatedScopeChecker)(nil)
+var _ scope.FederatedScopeChecker = (*FederatedScopeChecker)(nil)
 
 // FederatedScopeChecker implements scope.ScopeChecker by routing checks:
 //   - Empty clusterID (local hub): delegates to the local ScopeChecker (existing K8s-based)

@@ -669,14 +669,15 @@ func (r *RoutingEngine) CheckUnmanagedResource(
 ) *BlockingCondition {
 	logger := log.FromContext(ctx)
 
-	// ADR-057 bug fix: use target resource namespace, not CRD namespace.
-	// CRD lives in kubernaut-system; scope check must evaluate the workload's namespace.
-	managed, err := r.scopeChecker.IsManaged(ctx,
-		rr.Spec.TargetResource.Namespace,
-		rr.Spec.TargetResource.Kind,
-		rr.Spec.TargetResource.Name)
+	clusterCtx := "local"
+	if rr.Spec.ClusterID != "" {
+		clusterCtx = rr.Spec.ClusterID
+	}
+
+	managed, err := r.checkScopeForResource(ctx, rr)
 	if err != nil {
 		logger.Error(err, "Scope validation failed — blocking RR (fail-closed)",
+			"cluster", clusterCtx,
 			"namespace", rr.Spec.TargetResource.Namespace,
 			"kind", rr.Spec.TargetResource.Kind,
 			"name", rr.Spec.TargetResource.Name)
@@ -687,10 +688,10 @@ func (r *RoutingEngine) CheckUnmanagedResource(
 		return &BlockingCondition{
 			Blocked: true,
 			Reason:  string(remediationv1.BlockReasonUnmanagedResource),
-			Message: fmt.Sprintf("Scope validation error for %s/%s/%s: %v. "+
+			Message: fmt.Sprintf("Scope validation error for %s/%s/%s (cluster=%s): %v. "+
 				"Blocking until scope infrastructure recovers.",
 				rr.Spec.TargetResource.Namespace, rr.Spec.TargetResource.Kind,
-				rr.Spec.TargetResource.Name, err),
+				rr.Spec.TargetResource.Name, clusterCtx, err),
 			RequeueAfter: backoffDuration,
 			BlockedUntil: &blockedUntil,
 		}
@@ -700,12 +701,12 @@ func (r *RoutingEngine) CheckUnmanagedResource(
 		return nil
 	}
 
-	// Calculate backoff: 5s initial, 5min max, 2x multiplier (ADR-053 Decision #4)
-	retryCount := rr.Status.ConsecutiveFailureCount // reuse existing retry counter
+	retryCount := rr.Status.ConsecutiveFailureCount
 	backoffDuration := r.calculateScopeBackoff(retryCount)
 	blockedUntil := time.Now().Add(backoffDuration)
 
 	logger.Info("Blocking RR: target resource is not managed by Kubernaut",
+		"cluster", clusterCtx,
 		"targetNamespace", rr.Spec.TargetResource.Namespace,
 		"kind", rr.Spec.TargetResource.Kind,
 		"name", rr.Spec.TargetResource.Name,
@@ -715,12 +716,32 @@ func (r *RoutingEngine) CheckUnmanagedResource(
 	return &BlockingCondition{
 		Blocked: true,
 		Reason:  string(remediationv1.BlockReasonUnmanagedResource),
-		Message: fmt.Sprintf("Resource %s/%s/%s not managed by Kubernaut. "+
+		Message: fmt.Sprintf("Resource %s/%s/%s (cluster=%s) not managed by Kubernaut. "+
 			"Add label kubernaut.ai/managed=true to namespace or resource.",
-			rr.Spec.TargetResource.Namespace, rr.Spec.TargetResource.Kind, rr.Spec.TargetResource.Name),
+			rr.Spec.TargetResource.Namespace, rr.Spec.TargetResource.Kind,
+			rr.Spec.TargetResource.Name, clusterCtx),
 		RequeueAfter: backoffDuration,
 		BlockedUntil: &blockedUntil,
 	}
+}
+
+// checkScopeForResource routes scope checks based on RR's ClusterID (ADR-065).
+// Non-empty ClusterID: type-asserts to scope.FederatedScopeChecker for cross-cluster checks.
+// Empty ClusterID: falls through to standard local IsManaged (existing behavior).
+func (r *RoutingEngine) checkScopeForResource(ctx context.Context, rr *remediationv1.RemediationRequest) (bool, error) {
+	if rr.Spec.ClusterID != "" {
+		if fc, ok := r.scopeChecker.(scope.FederatedScopeChecker); ok {
+			return fc.IsManagedOnCluster(ctx,
+				rr.Spec.ClusterID,
+				rr.Spec.TargetResource.Namespace,
+				rr.Spec.TargetResource.Kind,
+				rr.Spec.TargetResource.Name)
+		}
+	}
+	return r.scopeChecker.IsManaged(ctx,
+		rr.Spec.TargetResource.Namespace,
+		rr.Spec.TargetResource.Kind,
+		rr.Spec.TargetResource.Name)
 }
 
 // calculateScopeBackoff computes the backoff duration for unmanaged resource blocking.
