@@ -223,7 +223,10 @@ func (a *PrometheusAdapter) Parse(ctx context.Context, rawData []byte) (*types.N
 			Namespace: ns,
 		}
 
-		fingerprint, resolvedResource, err := types.ResolveFingerprint(ctx, a.ownerResolver, resource, a.logger)
+		// BR-INTEGRATION-065: Extract cluster label from commonLabels (Thanos federation)
+		clusterID := webhook.CommonLabels[types.ClusterLabelKey]
+
+		fingerprint, resolvedResource, err := types.ResolveFingerprintWithCluster(ctx, clusterID, a.ownerResolver, resource, a.logger)
 		if err != nil {
 			lastErr = err
 			a.logger.Info("Skipping stale alert in batch",
@@ -247,6 +250,7 @@ func (a *PrometheusAdapter) Parse(ctx context.Context, rawData []byte) (*types.N
 
 		return &types.NormalizedSignal{
 			Fingerprint:  fingerprint,
+			ClusterID:    clusterID,
 			SignalName:    alert.Labels["alertname"],
 			Severity:     severity,
 			Namespace:    resolvedResource.Namespace,
@@ -300,7 +304,10 @@ func (a *PrometheusAdapter) ParseBatch(ctx context.Context, rawData []byte) ([]*
 			Namespace: ns,
 		}
 
-		fingerprint, resolvedResource, err := types.ResolveFingerprint(ctx, a.ownerResolver, resource, a.logger)
+		// BR-INTEGRATION-065: Extract cluster label from commonLabels (Thanos federation)
+		clusterID := webhook.CommonLabels[types.ClusterLabelKey]
+
+		fingerprint, resolvedResource, err := types.ResolveFingerprintWithCluster(ctx, clusterID, a.ownerResolver, resource, a.logger)
 		if err != nil {
 			a.logger.Info("Alert failed owner resolution in batch, skipping",
 				"alert", i, "resource", resource.String(), "error", err)
@@ -326,6 +333,7 @@ func (a *PrometheusAdapter) ParseBatch(ctx context.Context, rawData []byte) ([]*
 
 		signals = append(signals, &types.NormalizedSignal{
 			Fingerprint:  fingerprint,
+			ClusterID:    clusterID,
 			SignalName:   alert.Labels["alertname"],
 			Severity:     severity,
 			Namespace:    resolvedResource.Namespace,

@@ -51,6 +51,12 @@ type CreateRRArgs struct {
 	// directly as the RR spec.signalName. Used by kubernaut_investigate_alert
 	// where the alert name is the definitive signal (#1372).
 	SignalNameOverride string `json:"-"`
+	// ClusterID is the cluster identifier from Thanos external_labels.
+	// Empty string indicates local hub cluster (ADR-065).
+	ClusterID string `json:"cluster_id,omitempty"`
+	// ClusterName is the human-readable display name for the cluster.
+	// Populated from the MCPServerRegistration displayName (ADR-065).
+	ClusterName string `json:"cluster_name,omitempty"`
 }
 
 // CreateRRResult is the output of RR creation.
@@ -72,7 +78,18 @@ type CreateRRResult struct {
 var rrCreateGroup singleflight.Group
 
 func rrFingerprint(namespace, kind, name string) string {
-	h := sha256.Sum256([]byte(namespace + "/" + kind + "/" + name))
+	return rrFingerprintWithCluster("", namespace, kind, name)
+}
+
+// rrFingerprintWithCluster generates a dedup fingerprint that includes the cluster
+// context. Different clusters with the same resource produce different fingerprints,
+// preventing cross-cluster deduplication conflicts (ADR-065).
+func rrFingerprintWithCluster(clusterID, namespace, kind, name string) string {
+	input := namespace + "/" + kind + "/" + name
+	if clusterID != "" {
+		input = clusterID + "/" + input
+	}
+	h := sha256.Sum256([]byte(input))
 	return fmt.Sprintf("%x", h)
 }
 
@@ -165,7 +182,7 @@ func HandleCreateRR(ctx context.Context, d *ToolDeps, args *CreateRRArgs, userna
 	if signalName == "" {
 		signalName = deriveSignalName(ctx, d.DynClient, args.Namespace, args, triageResult)
 	}
-	fingerprint := rrFingerprint(args.Namespace, args.Kind, args.Name)
+	fingerprint := rrFingerprintWithCluster(args.ClusterID, args.Namespace, args.Kind, args.Name)
 
 	result, err, _ := rrCreateGroup.Do(fingerprint, func() (interface{}, error) {
 		existing, checkErr := checkExistingRRByFingerprint(ctx, d.Client, d.ControllerNS, fingerprint)
@@ -204,6 +221,8 @@ func HandleCreateRR(ctx context.Context, d *ToolDeps, args *CreateRRArgs, userna
 				ReceivedTime:      nowTime,
 				TargetType:        "kubernetes",
 				TargetResource:    buildTypedTargetResource(args),
+				ClusterID:         args.ClusterID,
+				ClusterName:       args.ClusterName,
 			},
 		}
 
