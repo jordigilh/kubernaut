@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"crypto/sha256"
 	"fmt"
 
 	"github.com/go-logr/logr"
@@ -16,6 +15,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
+	gwtypes "github.com/jordigilh/kubernaut/pkg/gateway/types"
 )
 
 // ToolDeps groups infrastructure dependencies shared by tool handler functions.
@@ -82,15 +82,14 @@ func rrFingerprint(namespace, kind, name string) string {
 }
 
 // rrFingerprintWithCluster generates a dedup fingerprint that includes the cluster
-// context. Different clusters with the same resource produce different fingerprints,
-// preventing cross-cluster deduplication conflicts (ADR-065).
+// context. Delegates to gwtypes.CalculateClusterAwareFingerprint to ensure GW and
+// AF produce identical fingerprints for the same resource (CC4.2: audit trail consistency).
 func rrFingerprintWithCluster(clusterID, namespace, kind, name string) string {
-	input := namespace + "/" + kind + "/" + name
-	if clusterID != "" {
-		input = clusterID + "/" + input
-	}
-	h := sha256.Sum256([]byte(input))
-	return fmt.Sprintf("%x", h)
+	return gwtypes.CalculateClusterAwareFingerprint(clusterID, gwtypes.ResourceIdentifier{
+		Namespace: namespace,
+		Kind:      kind,
+		Name:      name,
+	})
 }
 
 // checkExistingRRByFingerprint checks for an existing non-terminal RR by fingerprint.
