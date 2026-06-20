@@ -26,12 +26,13 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // Compile-time interface compliance.
 var _ ResourceClient = (*ResilientClient)(nil)
+var _ client.Reader = (*ResilientClient)(nil)
 
 // ResilienceConfig holds configuration for the resilient MCP client wrapper.
 type ResilienceConfig struct {
@@ -86,61 +87,42 @@ func (rc *ResilientClient) Ready() bool {
 	return rc.ready.Load()
 }
 
-// Get retrieves a single resource with automatic reconnection on transient errors.
-func (rc *ResilientClient) Get(ctx context.Context, clusterID, kind, namespace, name string) (*unstructured.Unstructured, error) {
+// Get implements client.Reader with automatic reconnection on transient errors.
+func (rc *ResilientClient) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
 	c := rc.client.Load()
 	if c == nil {
-		return nil, fmt.Errorf("MCP client not connected")
+		return fmt.Errorf("MCP client not connected")
 	}
 
-	result, err := c.Get(ctx, clusterID, kind, namespace, name)
+	err := c.Get(ctx, key, obj, opts...)
 	if err != nil && rc.isRetryableError(err) {
 		rc.logger.Info("Retryable error on Get, reconnecting", "error", err)
 		if reconnErr := rc.reconnect(ctx); reconnErr != nil {
-			return nil, fmt.Errorf("reconnect failed: %w (original: %w)", reconnErr, err)
+			return fmt.Errorf("reconnect failed: %w (original: %w)", reconnErr, err)
 		}
 		c = rc.client.Load()
-		return c.Get(ctx, clusterID, kind, namespace, name)
+		return c.Get(ctx, key, obj, opts...)
 	}
-	return result, err
+	return err
 }
 
-// List retrieves resources with automatic reconnection on transient errors.
-func (rc *ResilientClient) List(ctx context.Context, clusterID, kind, namespace string, labels map[string]string) ([]unstructured.Unstructured, error) {
+// List implements client.Reader with automatic reconnection on transient errors.
+func (rc *ResilientClient) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
 	c := rc.client.Load()
 	if c == nil {
-		return nil, fmt.Errorf("MCP client not connected")
+		return fmt.Errorf("MCP client not connected")
 	}
 
-	result, err := c.List(ctx, clusterID, kind, namespace, labels)
+	err := c.List(ctx, list, opts...)
 	if err != nil && rc.isRetryableError(err) {
 		rc.logger.Info("Retryable error on List, reconnecting", "error", err)
 		if reconnErr := rc.reconnect(ctx); reconnErr != nil {
-			return nil, fmt.Errorf("reconnect failed: %w (original: %w)", reconnErr, err)
+			return fmt.Errorf("reconnect failed: %w (original: %w)", reconnErr, err)
 		}
 		c = rc.client.Load()
-		return c.List(ctx, clusterID, kind, namespace, labels)
+		return c.List(ctx, list, opts...)
 	}
-	return result, err
-}
-
-// GetLabels fetches resource labels with automatic reconnection on transient errors.
-func (rc *ResilientClient) GetLabels(ctx context.Context, clusterID, kind, namespace, name string) (map[string]string, error) {
-	c := rc.client.Load()
-	if c == nil {
-		return nil, fmt.Errorf("MCP client not connected")
-	}
-
-	result, err := c.GetLabels(ctx, clusterID, kind, namespace, name)
-	if err != nil && rc.isRetryableError(err) {
-		rc.logger.Info("Retryable error on GetLabels, reconnecting", "error", err)
-		if reconnErr := rc.reconnect(ctx); reconnErr != nil {
-			return nil, fmt.Errorf("reconnect failed: %w (original: %w)", reconnErr, err)
-		}
-		c = rc.client.Load()
-		return c.GetLabels(ctx, clusterID, kind, namespace, name)
-	}
-	return result, err
+	return err
 }
 
 // Session returns the underlying MCP session. May be nil if disconnected.

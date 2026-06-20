@@ -27,6 +27,16 @@ type Option func(*clientConfig)
 type clientConfig struct {
 	httpClient *http.Client
 	timeout    time.Duration
+	clusterID  string
+}
+
+// WithClusterID binds the client to a specific remote cluster. The cluster ID
+// is injected as a tool-name prefix on every MCP call (e.g. "{clusterID}__get_resource"),
+// keeping the per-call API symmetric with K8s client.Reader.
+func WithClusterID(id string) Option {
+	return func(cfg *clientConfig) {
+		cfg.clusterID = id
+	}
 }
 
 // WithHTTPClient sets a custom HTTP client for the MCP transport.
