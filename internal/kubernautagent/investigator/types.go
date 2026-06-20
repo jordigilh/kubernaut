@@ -60,3 +60,10 @@ func DefaultPhaseToolMap() katypes.PhaseToolMap {
 		katypes.PhaseValidation:        {todo},
 	}
 }
+
+// AppendFleetToolsToRCA adds dynamically discovered fleet BridgeTool names
+// to the RCA phase tool list. Fleet tools are discovered at startup via
+// MCP Gateway tools/list and their names are not known at compile time.
+func AppendFleetToolsToRCA(ptm katypes.PhaseToolMap, toolNames []string) {
+	ptm[katypes.PhaseRCA] = append(ptm[katypes.PhaseRCA], toolNames...)
+}

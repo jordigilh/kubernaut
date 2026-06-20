@@ -275,7 +275,10 @@ func main() {
 		os.Exit(1)
 	}
 	reg := buildToolRegistry(cfg, logger, k8sInfra, ds)
-	fleetClient := registerFleetTools(context.Background(), cfg, reg, logger)
+	fleetClient, fleetToolNames := registerFleetTools(context.Background(), cfg, reg, logger)
+	if len(fleetToolNames) > 0 {
+		investigator.AppendFleetToolsToRCA(phaseTools, fleetToolNames)
+	}
 	enricher := buildEnricher(cfg, ds, k8sInfra, auditStore, logger)
 	sanitizer := buildSanitizationPipeline(cfg, logger)
 	anomalyDetector := buildAnomalyDetector(cfg, logger)
@@ -1109,11 +1112,12 @@ func buildToolRegistry(cfg *kaconfig.Config, logger logr.Logger, infra *k8sInfra
 
 // registerFleetTools connects to the MCP Gateway, discovers remote cluster tools
 // via tools/list, wraps them as BridgeTools, and registers them.
-// Returns the fleet client (must be closed on shutdown) or nil if fleet is disabled.
-func registerFleetTools(ctx context.Context, cfg *kaconfig.Config, reg *registry.Registry, logger logr.Logger) *fleetclient.MCPResourceClient {
+// Returns the fleet client (must be closed on shutdown) and the registered tool names,
+// or nil if fleet is disabled.
+func registerFleetTools(ctx context.Context, cfg *kaconfig.Config, reg *registry.Registry, logger logr.Logger) (*fleetclient.MCPResourceClient, []string) {
 	endpoint := cfg.Integrations.Fleet.Endpoint
 	if endpoint == "" {
-		return nil
+		return nil, nil
 	}
 
 	fleetLog := logger.WithName("fleet")
@@ -1148,7 +1152,7 @@ func registerFleetTools(ctx context.Context, cfg *kaconfig.Config, reg *registry
 	client, err := fleetclient.New(ctx, endpoint, opts...)
 	if err != nil {
 		fleetLog.Error(err, "failed to connect to MCP Gateway — fleet tools unavailable")
-		return nil
+		return nil, nil
 	}
 
 	session := client.Session()
@@ -1156,10 +1160,11 @@ func registerFleetTools(ctx context.Context, cfg *kaconfig.Config, reg *registry
 	if err != nil {
 		fleetLog.Error(err, "failed to discover fleet tools via tools/list")
 		_ = client.Close()
-		return nil
+		return nil, nil
 	}
 
 	var count int
+	var toolNames []string
 	for _, tool := range tools.Tools {
 		def := fleetclient.ToolDefinition{
 			Name:        tool.Name,
@@ -1175,11 +1180,12 @@ func registerFleetTools(ctx context.Context, cfg *kaconfig.Config, reg *registry
 		}
 		bt := fleetclient.NewBridgeTool(def, "fleet", session)
 		reg.Register(bt)
+		toolNames = append(toolNames, tool.Name)
 		count++
 	}
 
 	fleetLog.Info("registered fleet BridgeTools", "count", count, "endpoint", endpoint)
-	return client
+	return client, toolNames
 }
 
 func registerK8sTools(reg *registry.Registry, infra *k8sInfra, logger logr.Logger) {

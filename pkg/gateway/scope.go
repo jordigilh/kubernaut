@@ -17,6 +17,7 @@ limitations under the License.
 package gateway
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -29,6 +30,13 @@ import (
 // BR-SCOPE-002: Gateway Signal Filtering
 // ADR-053: Resource Scope Management Architecture
 type ScopeChecker = scope.ScopeChecker
+
+// fleetScopeChecker extends ScopeChecker with cluster-aware scope checking.
+// Used via type assertion in validateScope when signal.ClusterID is non-empty (ADR-065).
+type fleetScopeChecker interface {
+	scope.ScopeChecker
+	IsManagedOnCluster(ctx context.Context, clusterID, namespace, kind, name string) (bool, error)
+}
 
 // StatusRejected indicates the signal was rejected because the resource is not managed.
 // BR-SCOPE-002: Gateway rejects signals from unmanaged resources.

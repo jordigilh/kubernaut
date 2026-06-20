@@ -240,6 +240,7 @@ type SignalContext struct {
 	ResourceAPIVersion string `json:"resource_api_version,omitempty"`
 
 	// Environment context
+	ClusterID        string `json:"cluster_id,omitempty"`
 	ClusterName      string `json:"cluster_name,omitempty"`
 	Environment      string `json:"environment,omitempty"`
 	Priority         string `json:"priority,omitempty"`
