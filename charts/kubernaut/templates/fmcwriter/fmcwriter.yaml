@@ -38,10 +38,20 @@ spec:
         app.kubernetes.io/component: fleet-metadata-cache
     spec:
       serviceAccountName: fmcwriter
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: fmcwriter
           image: "{{ .Values.fmcWriter.image.repository }}:{{ .Values.fmcWriter.image.tag }}"
           imagePullPolicy: {{ .Values.fmcWriter.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           envFrom:
             - configMapRef:
                 name: fmcwriter-config
