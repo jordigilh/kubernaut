@@ -47,5 +47,18 @@ type ScopeChecker interface {
 	IsManaged(ctx context.Context, namespace, kind, name string) (bool, error)
 }
 
+// FederatedScopeChecker extends ScopeChecker with cluster-aware scope checking.
+// Services that need to validate scope across both local and remote clusters
+// accept this interface (e.g., Gateway, RO).
+//
+// The standard IsManaged method handles local (hub) cluster checks.
+// IsManagedOnCluster routes by clusterID: empty → local, non-empty → remote.
+//
+// References: ADR-065, ADR-068, BR-INTEGRATION-065
+type FederatedScopeChecker interface {
+	ScopeChecker
+	IsManagedOnCluster(ctx context.Context, clusterID, namespace, kind, name string) (bool, error)
+}
+
 // Compile-time interface compliance: Manager implements ScopeChecker.
 var _ ScopeChecker = (*Manager)(nil)
