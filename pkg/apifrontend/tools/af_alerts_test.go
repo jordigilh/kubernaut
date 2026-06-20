@@ -386,7 +386,7 @@ var _ = Describe("Alert Tools (#1367)", func() {
 			Expect(result.Truncated).To(BeTrue())
 		})
 
-		It("UT-AF-1434-003: 5 realistic alerts fit within maxToolOutputBytes (4096)", func() {
+		It("UT-AF-1434-003: 5 realistic alerts fit within maxToolOutputBytes (16384)", func() {
 			now := time.Now()
 			alerts := []prom.Alert{
 				{Labels: map[string]string{"alertname": "KubePodNotReady", "namespace": "production-payments", "severity": "critical", "pod": "payment-service-7d4f5b9c8-xk2nq", "container": "payment-processor", "instance": "10.128.0.45:9090", "job": "kube-state-metrics", "service": "kube-state-metrics", "prometheus": "monitoring/k8s", "endpoint": "https-main"}, Annotations: map[string]string{"summary": "Pod production-payments/payment-service-7d4f5b9c8-xk2nq has been in a non-ready state for longer than 15 minutes.", "description": "Pod payment-service-7d4f5b9c8-xk2nq in namespace production-payments has been in a non-ready state for longer than 15 minutes.", "runbook_url": "https://runbook.internal.corp/cpu"}, State: "firing", ActiveAt: now},
@@ -403,8 +403,8 @@ var _ = Describe("Alert Tools (#1367)", func() {
 
 			resultJSON, jsonErr := json.Marshal(result)
 			Expect(jsonErr).NotTo(HaveOccurred())
-			Expect(len(resultJSON)).To(BeNumerically("<=", 4096),
-				"full ListAlertsResult with 5 realistic alerts must fit in 4096 bytes, got %d", len(resultJSON))
+			Expect(len(resultJSON)).To(BeNumerically("<=", 16384),
+				"full ListAlertsResult with 5 realistic alerts must fit in 16384 bytes, got %d", len(resultJSON))
 		})
 
 		It("UT-AF-1434-004: prioritized uses indices not full alert copies", func() {
@@ -439,8 +439,8 @@ var _ = Describe("Alert Tools (#1367)", func() {
 
 			resultJSON, jsonErr := json.Marshal(result)
 			Expect(jsonErr).NotTo(HaveOccurred())
-			Expect(len(resultJSON)).To(BeNumerically("<=", 4096),
-				"trimmed result must fit in 4096 bytes, got %d", len(resultJSON))
+			Expect(len(resultJSON)).To(BeNumerically("<=", 16384),
+				"trimmed result must fit in 16384 bytes, got %d", len(resultJSON))
 			Expect(result.Count).To(BeNumerically(">=", 3), "should retain at least 3 alerts after trimming")
 		})
 	})

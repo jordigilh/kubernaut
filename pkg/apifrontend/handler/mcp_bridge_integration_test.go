@@ -233,7 +233,7 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 			Expect(text).To(ContainSubstring("0.92"))
 		})
 
-		It("IT-BRIDGE-007: kubernaut_get_audit_trail dispatches to DS", func() {
+		It("IT-BRIDGE-007: kubernaut_get_audit_trail dispatches to DS and returns aggregated phases (AU-6)", func() {
 			mockDS := &ds.MockClient{
 				ListWorkflowsFn: func(_ context.Context, _ ds.ListWorkflowsOpts) ([]ds.Workflow, error) {
 					return nil, nil
@@ -246,7 +246,9 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 				},
 				GetAuditTrailFn: func(_ context.Context, _ ds.AuditTrailOpts) ([]ds.AuditEvent, error) {
 					return []ds.AuditEvent{
-						{EventType: "remediation.approved", Actor: "admin", Timestamp: "2026-05-14T12:00:00Z"},
+						{EventType: "gateway.signal.received", Actor: "alertmanager", Timestamp: "2026-05-14T12:00:00Z"},
+						{EventType: "orchestrator.approval.granted", Actor: "admin", Timestamp: "2026-05-14T12:05:00Z"},
+						{EventType: "orchestrator.lifecycle.completed", Actor: "orchestrator", Timestamp: "2026-05-14T12:10:00Z"},
 					}, nil
 				},
 			}
@@ -261,7 +263,10 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 
 			Expect(status).To(Equal(http.StatusOK))
 			text := extractTextContent(body)
-			Expect(text).To(ContainSubstring("remediation.approved"))
+			Expect(text).To(ContainSubstring("lifecycle"), "response must contain lifecycle summary")
+			Expect(text).To(ContainSubstring("Signal Processing"), "response must contain Signal Processing phase")
+			Expect(text).To(ContainSubstring("Approval"), "response must contain Approval phase")
+			Expect(text).To(ContainSubstring("total_events"), "response must contain total_events count")
 		})
 	})
 

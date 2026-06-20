@@ -166,7 +166,7 @@ The `ErrInvalidInput` sentinel allows callers to distinguish validation failures
 
 ## 5. Output Safety
 
-Tool outputs are bounded to prevent excessive data from reaching the LLM context or etcd (via session storage).
+Tool outputs are bounded to prevent excessive data from reaching the LLM context or in-memory session storage.
 
 ### TrimSliceToFit Generic
 
@@ -174,10 +174,10 @@ Tool outputs are bounded to prevent excessive data from reaching the LLM context
 func TrimSliceToFit[T any](items []T) ([]T, bool)
 ```
 
-- Maximum output size: **4096 bytes** (JSON serialized)
+- Maximum output size: **16384 bytes** (16KB, JSON serialized)
 - Removes trailing elements until the serialization fits
 - Returns `(trimmedSlice, wasTrimmed)` so tools can signal truncation to the user
-- Matches the session `TrimToolResult` threshold for etcd safety
+- Matches the session `MaxToolResultBytes` threshold for in-memory session size safety
 
 ### Tools Using TrimSliceToFit
 

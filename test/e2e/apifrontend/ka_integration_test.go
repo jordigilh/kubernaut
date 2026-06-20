@@ -188,7 +188,7 @@ var _ = Describe("KA Integration (AF -> KA -> DS -> mock-LLM)", Label("e2e", "ph
 				"TC-E2E-DS-04: AF returned 503. Response: %v", result)
 		})
 
-		It("TC-E2E-DS-05: kubernaut_get_audit_trail returns response from DS", func() {
+		It("TC-E2E-DS-05: kubernaut_get_audit_trail returns aggregated response from DS (AU-6)", func() {
 			status, result := mcpToolCall("e2e-ds-05", "kubernaut_get_audit_trail", map[string]interface{}{
 				"rr_id": "nonexistent-rr",
 			})
@@ -197,6 +197,19 @@ var _ = Describe("KA Integration (AF -> KA -> DS -> mock-LLM)", Label("e2e", "ph
 				"TC-E2E-DS-05: AF returned 502 — DS unreachable. Response: %v", result)
 			Expect(status).NotTo(Equal(http.StatusServiceUnavailable),
 				"TC-E2E-DS-05: AF returned 503. Response: %v", result)
+
+			text := extractMCPResultText(result)
+			if text != "" {
+				var parsed map[string]interface{}
+				if json.Unmarshal([]byte(text), &parsed) == nil {
+					Expect(parsed).To(HaveKey("lifecycle"),
+						"TC-E2E-DS-05: audit trail response must include lifecycle summary")
+					Expect(parsed).To(HaveKey("phases"),
+						"TC-E2E-DS-05: audit trail response must include phases array")
+					Expect(parsed).To(HaveKey("total_events"),
+						"TC-E2E-DS-05: audit trail response must include total_events count")
+				}
+			}
 		})
 	})
 

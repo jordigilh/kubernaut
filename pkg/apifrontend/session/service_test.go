@@ -564,7 +564,7 @@ var _ = Describe("CRDSessionService", func() {
 
 		It("UT-AF-204-004: trims large FunctionResponse before delegation", func() {
 			largeResponse := map[string]any{
-				"items": strings.Repeat("x", 10000),
+				"items": strings.Repeat("x", 20000),
 			}
 			responseJSON, _ := json.Marshal(largeResponse)
 
@@ -604,7 +604,7 @@ var _ = Describe("CRDSessionService", func() {
 				"rr_id":      "rr-preserve-001",
 				"session_id": "sess-preserve-001",
 				"status":     "completed",
-				"summary":    strings.Repeat("Root cause analysis details... ", 200),
+				"summary":    strings.Repeat("Root cause analysis details... ", 600),
 			}
 
 			evt := adksession.NewEvent("inv-1")
@@ -634,7 +634,7 @@ var _ = Describe("CRDSessionService", func() {
 			storedResp := storedEvent.Content.Parts[0].FunctionResponse.Response
 
 			Expect(storedResp["truncated"]).To(Equal(true),
-				"response must be truncated (exceeds 4KB)")
+				"response must be truncated (exceeds 16KB)")
 			Expect(storedResp["rr_id"]).To(Equal("rr-preserve-001"),
 				"rr_id must survive trimming for cross-turn LLM context (BR-INTERACTIVE-010, AU-3)")
 			Expect(storedResp["session_id"]).To(Equal("sess-preserve-001"),

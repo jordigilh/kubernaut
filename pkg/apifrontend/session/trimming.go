@@ -8,9 +8,11 @@ import (
 
 const (
 	// MaxToolResultBytes is the maximum serialized size of a FunctionResponse
-	// before it is truncated. Prevents etcd bloat from large tool outputs
-	// like pod lists or metric dumps.
-	MaxToolResultBytes = 4096
+	// before it is truncated. Limits in-memory session size to prevent
+	// unbounded Go process memory growth from large tool outputs like pod
+	// lists or metric dumps. 16KB balances headroom for aggregated results
+	// against memory safety.
+	MaxToolResultBytes = 16384
 
 	// TrimSummaryPrefix is the number of bytes of the original JSON to include
 	// in the truncation summary for debugging context. Kept small (128B) to

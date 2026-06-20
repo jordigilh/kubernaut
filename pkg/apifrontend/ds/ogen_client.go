@@ -149,7 +149,9 @@ func (c *OgenClient) GetEffectiveness(ctx context.Context, opts EffectivenessOpt
 
 // GetAuditTrail queries the DS for audit events matching the given options.
 func (c *OgenClient) GetAuditTrail(ctx context.Context, opts AuditTrailOpts) ([]AuditEvent, error) {
-	params := ogenclient.QueryAuditEventsParams{}
+	params := ogenclient.QueryAuditEventsParams{
+		Limit: ogenclient.NewOptInt(200),
+	}
 	if opts.RRID != "" {
 		params.CorrelationID = ogenclient.NewOptString(opts.RRID)
 	}

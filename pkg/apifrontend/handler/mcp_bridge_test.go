@@ -738,11 +738,12 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 			Expect(text).To(ContainSubstring("success_rate"))
 		})
 
-		It("UT-AF-B-014: kubernaut_get_audit_trail dispatches correctly", func() {
+		It("UT-AF-B-014: kubernaut_get_audit_trail dispatches correctly (AU-3)", func() {
 			_, body := mcpCallTool(h, sessionID, "kubernaut_get_audit_trail",
 				map[string]any{"rr_id": "test-rr"}, testUser)
 			text := extractTextContent(body)
-			Expect(text).To(ContainSubstring("events"))
+			Expect(text).To(ContainSubstring("phases"), "response contract must include phases")
+			Expect(text).To(ContainSubstring("lifecycle"), "response contract must include lifecycle")
 		})
 	})
 
