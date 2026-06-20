@@ -1,10 +1,10 @@
 # ADR-065: Fleet Cluster Identity on RemediationRequest CRD
 
-**Status**: Accepted
-**Date**: 2026-06-12 (Proposed) | 2026-06-13 (Accepted)
+**Status**: Implemented
+**Date**: 2026-06-12 (Proposed) | 2026-06-13 (Accepted) | 2026-06-19 (Implemented)
 **Deciders**: Architecture Team
 **Context**: Fleet remediation requires per-RR cluster identity (#54, #1409)
-**Related**: ADR-064 (Multi-Cluster MCP Gateway), Issue #54, Issue #1409
+**Related**: ADR-064 (Multi-Cluster MCP Gateway), ADR-068 (Fleet Federation Architecture), Issue #54, Issue #1409
 
 ## Context
 
@@ -112,14 +112,18 @@ type RemediationRequestSpec struct {
 |-----------|----------------------|---------------------|---------|
 | ClusterID field | RemediationRequestSpec | api/remediation/v1alpha1/remediationrequest_types.go | CRD validation |
 | ClusterName field | RemediationRequestSpec | api/remediation/v1alpha1/remediationrequest_types.go | CRD validation |
-| Gateway population | adapter.CreateRR() | pkg/gateway/adapter/ (future) | — |
-| AF consumption | session start | pkg/apifrontend/agent/ (future) | — |
+| GW cluster extraction | PrometheusAdapter.Parse() | pkg/gateway/adapters/prometheus_adapter.go | IT-GW-FLEET-001 |
+| GW CRD population | CRDCreator.Create() | pkg/gateway/processing/crd_creator.go | IT-GW-FLEET-001 |
+| GW cluster-aware fingerprint | CalculateClusterAwareFingerprint | pkg/gateway/types/fingerprint.go | IT-GW-FLEET-002 |
+| KA SignalContext population | ResolveSignalContext() | internal/kubernautagent/mcp/adapters/signal_resolver.go | IT-KA-FLEET-001 |
+| AF RR creation | CreateRR tool | pkg/apifrontend/tools/af_create_rr.go | IT-AF-FLEET (pending) |
 
 ---
 
 ## Business Requirement Linkage
 
 - **BR-FLEET-001**: Fleet remediation requires cluster identity on every RR
+- **BR-INTEGRATION-065**: Multi-cluster signal routing and scope gating
 - **Issue #54**: Multi-cluster remediation tracking
 - **Issue #1409**: Console cluster context banner
 
@@ -127,7 +131,13 @@ type RemediationRequestSpec struct {
 
 ## Test Plan Reference
 
-Implementation test plan will be created when the CRD schema change lands. Current branch adds the `ClusterID`/`ClusterName` fields to the spec with `+optional` and `omitempty` for backward compatibility.
+| Test ID | Description | Status |
+|---------|-------------|--------|
+| IT-GW-FLEET-001 | Cluster label propagation to RR spec.clusterID | PASS |
+| IT-GW-FLEET-002 | Cluster-aware deduplication (different fingerprints) | PASS |
+| IT-GW-FLEET-003 | Backward compat (empty clusterID when no cluster label) | PASS |
+| IT-KA-FLEET-001 | Fleet tools visible in RCA phase after AppendFleetToolsToRCA | PASS |
+| IT-KA-FLEET-002 | Empty fleet tools do not corrupt phase map | PASS |
 
 ---
 
