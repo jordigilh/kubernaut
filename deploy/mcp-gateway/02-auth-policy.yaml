@@ -1,0 +1,32 @@
+# AuthPolicy for MCP Gateway — requires valid JWT from DEX for tool calls.
+# Used in E2E tests with DEX as the OAuth2/OIDC provider.
+#
+# In production, this would reference the organization's identity provider
+# (Keycloak, Azure AD, etc.) via the kubernaut-operator.
+apiVersion: kuadrant.io/v1
+kind: AuthPolicy
+metadata:
+  name: mcp-gateway-auth
+  namespace: kubernaut-system
+  labels:
+    app.kubernetes.io/part-of: kubernaut
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: mcp-gateway
+  rules:
+    authentication:
+      dex-jwt:
+        jwt:
+          issuerUrl: http://dex.kubernaut-system.svc:5556/dex
+        credentials:
+          authorizationHeader:
+            prefix: Bearer
+    authorization:
+      kubernaut-managed:
+        opa:
+          rego: |
+            allow {
+              input.auth.identity.groups[_] == "kubernaut-operators"
+            }
