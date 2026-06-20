@@ -163,7 +163,12 @@ func (s *Syncer) syncKind(ctx context.Context, cluster registry.ClusterInfo, kin
 
 	var written int
 	for _, res := range resources {
-		key := scopecache.BuildKey(cluster.ID, res.Group, res.Version, res.Kind, res.Namespace, res.Name)
+		key, keyErr := scopecache.BuildKey(cluster.ID, res.Group, res.Version, res.Kind, res.Namespace, res.Name)
+		if keyErr != nil {
+			s.logger.Error(keyErr, "Invalid resource metadata, skipping",
+				"cluster", cluster.ID, "kind", res.Kind, "name", res.Name)
+			continue
+		}
 		if err := s.writer.Set(ctx, key, s.config.KeyTTL); err != nil {
 			s.logger.Error(err, "Failed to write key",
 				"cluster", cluster.ID, "key", key)
