@@ -117,10 +117,6 @@ func newPhaseScriptedRCA(model string) *phaseScriptedClient {
 	return &phaseScriptedClient{model: model}
 }
 
-func newPhaseScriptedWF(model string) *phaseScriptedClient {
-	return &phaseScriptedClient{model: model}
-}
-
 func (s *phaseScriptedClient) Chat(_ context.Context, _ llm.ChatRequest) (llm.ChatResponse, error) {
 	s.mu.Lock()
 	call := s.calls

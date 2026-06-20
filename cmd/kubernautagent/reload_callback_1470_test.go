@@ -19,7 +19,6 @@ package main
 import (
 	"testing"
 
-	"github.com/go-logr/logr"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
@@ -141,11 +140,4 @@ apiKey: test-key
 	if sc.ModelName() != "gpt-4-turbo" {
 		t.Fatalf("expected model gpt-4-turbo, got %s", sc.ModelName())
 	}
-}
-
-// Helper to create a logger that captures log entries (for CM-3 audit trail).
-// For now, we use logr.Discard(); structured log assertions can be added
-// with a custom sink when CM-3 audit trail logging is implemented.
-func testReloadLoggerWithCapture() logr.Logger {
-	return logr.Discard()
 }
