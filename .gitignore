@@ -309,3 +309,4 @@ must-gather-*.tar.gz
 
 # MCP server config (local)
 .mcp.json
+fmcwriter

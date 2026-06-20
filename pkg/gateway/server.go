@@ -1513,7 +1513,20 @@ func (s *Server) validateScope(ctx context.Context, signal *types.NormalizedSign
 		return NewRejectedResponse(signal.Namespace, signal.Resource.Kind, signal.Resource.Name), nil
 	}
 
-	managed, err := s.scopeChecker.IsManaged(ctx, signal.Namespace, signal.Resource.Kind, signal.Resource.Name)
+	var managed bool
+	var err error
+	if signal.ClusterID != "" {
+		if fc, ok := s.scopeChecker.(fleetScopeChecker); ok {
+			managed, err = fc.IsManagedOnCluster(ctx, signal.ClusterID, signal.Namespace, signal.Resource.Kind, signal.Resource.Name)
+		} else {
+			logger.Info("Fleet signal received but scope checker is not fleet-aware — rejecting",
+				"clusterID", signal.ClusterID)
+			s.metricsInstance.SignalsRejectedTotal.WithLabelValues(RejectionReasonUnmanagedResource).Inc()
+			return NewRejectedResponse(signal.Namespace, signal.Resource.Kind, signal.Resource.Name), nil
+		}
+	} else {
+		managed, err = s.scopeChecker.IsManaged(ctx, signal.Namespace, signal.Resource.Kind, signal.Resource.Name)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("scope validation failed: %w", err)
 	}
