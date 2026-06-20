@@ -991,9 +991,6 @@ func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps,
 		SessionPhaseUpdater: sessionSvcForAgent,
 		SessionInterceptor: launcher.NewSessionInterceptor(
 			activeCtxRegistry, logger.WithName("session-interceptor"),
-			launcher.WithStaleSessionValidator(
-				launcher.NewInMemorySessionValidator(sessionSvc, "kubernaut-apifrontend", logger),
-			),
 		),
 		LLMSemaphore:        llmSemaphore,
 	}

@@ -324,7 +324,7 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 	if shouldRegister("kubernaut_reconnect") {
 		registerTool(srv, cfg, sem, "kubernaut_reconnect", "Reconnect to a disconnected investigation session",
 			func(ctx context.Context, args tools.InteractiveActionArgs) (any, error) {
-				return tools.HandleReconnect(ctx, cfg.KAMCPClient, args, cfg.Auditor)
+				return tools.HandleReconnect(ctx, cfg.KAMCPClient, cfg.TypedClient, cfg.Namespace, args, cfg.Auditor)
 			})
 	}
 

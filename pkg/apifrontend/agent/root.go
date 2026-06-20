@@ -130,7 +130,7 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 		{"complete", func() (tool.Tool, error) { return tools.NewCompleteTool(mcpC, cfg.Auditor) }},
 		{"cancel", func() (tool.Tool, error) { return tools.NewCancelInvestigationTool(mcpC, cfg.Auditor) }},
 		{"status", func() (tool.Tool, error) { return tools.NewStatusTool(mcpC, cfg.Auditor) }},
-		{"reconnect", func() (tool.Tool, error) { return tools.NewReconnectTool(mcpC, cfg.Auditor) }},
+		{"reconnect", func() (tool.Tool, error) { return tools.NewReconnectTool(mcpC, cfg.TypedClient, cfg.Namespace, cfg.Auditor) }},
 		// RR tools — AF SA writes AF-owned CRDs
 		{"check_existing_remediation", func() (tool.Tool, error) {
 			return tools.NewCheckExistingRemediationTool(cfg.TypedClient, cfg.Namespace)
