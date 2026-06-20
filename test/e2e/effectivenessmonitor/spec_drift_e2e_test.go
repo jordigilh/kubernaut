@@ -40,10 +40,16 @@ import (
 //   - DD-CRD-002: SpecIntegrity and AssessmentComplete conditions set correctly
 //   - BR-AUDIT-006: Audit trail contains spec_drift completion event
 //
-// Strategy:
-//   Same as IT-EM-SD-001: let EA complete naturally, then patch status back
-//   to Assessing with a fake PostRemediationSpecHash. The real EM controller
-//   in Kind detects the mismatch on re-reconcile and completes with spec_drift.
+// Strategy (updated for GenerationChangedPredicate, Issue #1466):
+//   Create EA with a stabilization window so the EM enters Stabilizing phase
+//   and schedules a RequeueAfter. During that window, patch status to Assessing
+//   with a FAKE PostRemediationSpecHash. When the RequeueAfter fires, the
+//   reconciler re-hashes the target and detects the mismatch => spec_drift.
+//
+//   Status().Update() alone does NOT trigger reconciliation because the EM
+//   uses GenerationChangedPredicate (#1466). The RequeueAfter timer from
+//   Stabilizing provides the guaranteed reconciliation trigger.
+//
 //   Unlike INT, E2E validates the FULL stack: CRD + audit trail in DS + scoring.
 // ============================================================================
 
@@ -63,7 +69,7 @@ var _ = Describe("Spec Drift Guard E2E Tests (DD-EM-002 v1.1)", Label("e2e"), fu
 	//                audit trail records it, DS scores 0.0
 	// ========================================================================
 	It("E2E-EM-SD-001: should detect spec drift, emit audit events, and DS should score 0.0", func() {
-		By("1. Creating a target pod and letting EA complete naturally")
+		By("1. Creating a target pod")
 		createTargetPod(testNS, "target-pod")
 		waitForPodReady(testNS, "target-pod")
 
@@ -75,23 +81,18 @@ var _ = Describe("Spec Drift Guard E2E Tests (DD-EM-002 v1.1)", Label("e2e"), fu
 		By("Seeding workflowexecution.workflow.completed event (full scope, #573 G4)")
 		seedWorkflowCompletedEvent(correlationID)
 
+		By("2. Creating EA with stabilization window (RequeueAfter trigger)")
 		createEA(testNS, name, correlationID,
 			withTargetPod("target-pod"),
+			withStabilizationWindow(30*time.Second),
 		)
 
-		// Wait for the EA to complete naturally with "full" reason
-		ea := waitForEAPhase(name, eav1.PhaseCompleted)
-		realHash := ea.Status.Components.PostRemediationSpecHash
-		Expect(realHash).ToNot(BeEmpty(), "PostRemediationSpecHash should be computed")
-		GinkgoWriter.Printf("EA completed naturally: reason=%s, hash=%s\n",
-			ea.Status.AssessmentReason, realHash)
+		By("3. Waiting for EA to enter Stabilizing phase (RequeueAfter scheduled)")
+		waitForEAPhase(name, eav1.PhaseStabilizing)
+		GinkgoWriter.Println("EA entered Stabilizing — RequeueAfter timer is pending")
 
-		By("2. Patching EA status back to Assessing with a FAKE PostRemediationSpecHash")
-		// This simulates a scenario where the target resource spec was modified
-		// after the RO recorded the post-remediation hash. The EM should detect
-		// the mismatch and complete with spec_drift.
+		By("4. Injecting Assessing state with a FAKE PostRemediationSpecHash")
 		fakeOldHash := "sha256:0000000000000000000000000000000000000000000000000000000000000000"
-		Expect(fakeOldHash).NotTo(Equal(realHash))
 
 		Eventually(func(g Gomega) {
 			fetchedEA := &eav1.EffectivenessAssessment{}
@@ -122,8 +123,9 @@ var _ = Describe("Spec Drift Guard E2E Tests (DD-EM-002 v1.1)", Label("e2e"), fu
 
 			g.Expect(k8sClient.Status().Update(ctx, fetchedEA)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
+		GinkgoWriter.Println("Status injected: Phase=Assessing, PostRemediationSpecHash=fake")
 
-		By("3. Waiting for EA to complete with spec_drift reason")
+		By("5. Waiting for EA to complete with spec_drift reason")
 		var driftedEA *eav1.EffectivenessAssessment
 		Eventually(func(g Gomega) {
 			fetched := &eav1.EffectivenessAssessment{}
@@ -138,14 +140,15 @@ var _ = Describe("Spec Drift Guard E2E Tests (DD-EM-002 v1.1)", Label("e2e"), fu
 		// ====================================================================
 		// BUSINESS OUTCOME 1: CRD correctness (BR-EM-004, DD-CRD-002)
 		// ====================================================================
-		By("4. Verifying CRD status: CurrentSpecHash matches real hash, not fake")
-		Expect(driftedEA.Status.Components.CurrentSpecHash).To(Equal(realHash),
-			"CORRECTNESS: CurrentSpecHash must be the actual resource hash, not the fake")
-		Expect(driftedEA.Status.Components.CurrentSpecHash).NotTo(Equal(fakeOldHash))
+		By("6. Verifying CRD status: CurrentSpecHash is real, not fake")
+		Expect(driftedEA.Status.Components.CurrentSpecHash).NotTo(BeEmpty(),
+			"CORRECTNESS: CurrentSpecHash must be computed by the drift guard")
+		Expect(driftedEA.Status.Components.CurrentSpecHash).NotTo(Equal(fakeOldHash),
+			"CORRECTNESS: CurrentSpecHash must differ from the fake PostRemediationSpecHash")
 		Expect(driftedEA.Status.CompletedAt).NotTo(BeNil(),
 			"CORRECTNESS: CompletedAt must be set on terminal phase")
 
-		By("5. Verifying Kubernetes Conditions (DD-CRD-002)")
+		By("7. Verifying Kubernetes Conditions (DD-CRD-002)")
 		specCond := meta.FindStatusCondition(driftedEA.Status.Conditions, conditions.ConditionSpecIntegrity)
 		Expect(specCond).NotTo(BeNil(), "BEHAVIOR: SpecIntegrity condition must be set")
 		Expect(specCond.Status).To(Equal(metav1.ConditionFalse),
@@ -163,7 +166,7 @@ var _ = Describe("Spec Drift Guard E2E Tests (DD-EM-002 v1.1)", Label("e2e"), fu
 		// ====================================================================
 		// BUSINESS OUTCOME 2: Audit trail in DataStorage (BR-AUDIT-006)
 		// ====================================================================
-		By("6. Verifying effectiveness.assessment.completed audit event in DS with spec_drift reason")
+		By("8. Verifying effectiveness.assessment.completed audit event in DS with spec_drift reason")
 		Eventually(func(g Gomega) {
 			params := ogenclient.QueryAuditEventsParams{
 				CorrelationID: ogenclient.NewOptString(correlationID),
@@ -173,9 +176,6 @@ var _ = Describe("Spec Drift Guard E2E Tests (DD-EM-002 v1.1)", Label("e2e"), fu
 			resp, err := auditClient.QueryAuditEvents(ctx, params)
 			g.Expect(err).ToNot(HaveOccurred())
 
-			// Find completed events and check for spec_drift reason in payload.
-			// There will be 2 completed events: one from the natural "full" completion
-			// and one from the re-triggered "spec_drift" completion.
 			var hasSpecDriftEvent bool
 			for _, evt := range resp.Data {
 				if evt.EventType != "effectiveness.assessment.completed" {
@@ -194,7 +194,7 @@ var _ = Describe("Spec Drift Guard E2E Tests (DD-EM-002 v1.1)", Label("e2e"), fu
 		// ====================================================================
 		// BUSINESS OUTCOME 3: DS scoring short-circuit (ADR-EM-001, DD-EM-002 v1.1)
 		// ====================================================================
-		By("7. Verifying DS effectiveness score is 0.0 for spec_drift")
+		By("9. Verifying DS effectiveness score is 0.0 for spec_drift")
 		Eventually(func(g Gomega) {
 			scoreResp, err := auditClient.GetEffectivenessScore(ctx,
 				ogenclient.GetEffectivenessScoreParams{
