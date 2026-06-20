@@ -504,4 +504,71 @@ var _ = Describe("Scope Manager", func() {
 			Expect(managed).To(BeFalse(), "Cluster-scoped resource with opt-out label should be unmanaged")
 		})
 	})
+
+	Describe("Unified ScopeChecker with ResourceIdentity (Phase 1)", func() {
+		It("UT-SCOPE-RI-001 [SI-10]: Manager implements UnifiedScopeChecker interface", func() {
+			setup()
+			var checker scope.UnifiedScopeChecker = mgr
+			Expect(checker).ToNot(BeNil())
+		})
+
+		It("UT-SCOPE-RI-002 [AC-4]: IsManaged accepts ResourceIdentity and resolves managed resource", func() {
+			deploy := &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "nginx",
+					Namespace: "production",
+					Labels:    map[string]string{scope.ManagedLabelKey: scope.ManagedLabelValueTrue},
+				},
+			}
+			setup(deploy)
+
+			managed, err := mgr.IsManagedResource(ctx, scope.ResourceIdentity{
+				Namespace: "production",
+				Kind:      "Deployment",
+				Name:      "nginx",
+				Group:     "apps",
+				Version:   "v1",
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(managed).To(BeTrue())
+		})
+
+		It("UT-SCOPE-RI-003 [AC-4]: IsManaged with empty Group/Version infers from Kind", func() {
+			deploy := &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "redis",
+					Namespace: "default",
+					Labels:    map[string]string{scope.ManagedLabelKey: scope.ManagedLabelValueTrue},
+				},
+			}
+			setup(deploy)
+
+			managed, err := mgr.IsManagedResource(ctx, scope.ResourceIdentity{
+				Namespace: "default",
+				Kind:      "Deployment",
+				Name:      "redis",
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(managed).To(BeTrue(), "Empty Group/Version should infer from Kind like existing Manager behavior")
+		})
+
+		It("UT-SCOPE-RI-004 [AC-4]: IsManaged with ClusterID set on local Manager returns error", func() {
+			_, err := mgr.IsManagedResource(ctx, scope.ResourceIdentity{
+				ClusterID: "prod-east",
+				Namespace: "default",
+				Kind:      "Pod",
+				Name:      "nginx",
+			})
+			Expect(err).To(HaveOccurred(), "Local Manager cannot resolve remote clusters")
+		})
+
+		It("UT-SCOPE-RI-005 [SI-10]: ResourceIdentity struct validates required fields", func() {
+			ri := scope.ResourceIdentity{Kind: "Pod", Name: "nginx", Namespace: "default"}
+			Expect(ri.Kind).To(Equal("Pod"))
+			Expect(ri.Name).To(Equal("nginx"))
+			Expect(ri.ClusterID).To(BeEmpty())
+			Expect(ri.Group).To(BeEmpty())
+			Expect(ri.Version).To(BeEmpty())
+		})
+	})
 })
