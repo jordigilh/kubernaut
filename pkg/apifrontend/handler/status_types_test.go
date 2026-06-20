@@ -90,6 +90,82 @@ var _ = Describe("BuildPhaseMetadata", func() {
 		Expect(meta["approval_request_name"]).To(Equal("rar-rr-approval-test"))
 	})
 
+	It("UT-AF-1468-001: metadata contains investigation identity fields from RR spec (AU-3)", func() {
+		rr := &remediationv1.RemediationRequest{
+			Spec: remediationv1.RemediationRequestSpec{
+				SignalName: "KubePodCrashLooping",
+				TargetResource: remediationv1.ResourceIdentifier{
+					Kind:      "Deployment",
+					Name:      "worker",
+					Namespace: "demo-storefront",
+				},
+			},
+			Status: remediationv1.RemediationRequestStatus{
+				OverallPhase: remediationv1.PhaseExecuting,
+			},
+		}
+
+		meta := handler.BuildPhaseMetadata(rr, nil)
+
+		Expect(meta).To(HaveKeyWithValue("namespace", "demo-storefront"))
+		Expect(meta).To(HaveKeyWithValue("target", "worker"))
+		Expect(meta).To(HaveKeyWithValue("kind", "Deployment"))
+		Expect(meta).To(HaveKeyWithValue("alert_name", "KubePodCrashLooping"))
+	})
+
+	It("UT-AF-1468-002: empty spec fields are omitted from metadata (SI-10)", func() {
+		rr := &remediationv1.RemediationRequest{
+			Spec: remediationv1.RemediationRequestSpec{
+				SignalName: "NodeNotReady",
+				TargetResource: remediationv1.ResourceIdentifier{
+					Kind: "Node",
+					Name: "node-1",
+					// Namespace intentionally empty (cluster-scoped resource)
+				},
+			},
+			Status: remediationv1.RemediationRequestStatus{
+				OverallPhase: remediationv1.PhaseExecuting,
+			},
+		}
+
+		meta := handler.BuildPhaseMetadata(rr, nil)
+
+		Expect(meta).NotTo(HaveKey("namespace"), "cluster-scoped resources must not emit empty namespace")
+		Expect(meta).To(HaveKeyWithValue("kind", "Node"))
+		Expect(meta).To(HaveKeyWithValue("target", "node-1"))
+		Expect(meta).To(HaveKeyWithValue("alert_name", "NodeNotReady"))
+	})
+
+	It("UT-AF-1468-003: spec context coexists with phase-specific fields (AU-3)", func() {
+		now := metav1.Now()
+		rr := &remediationv1.RemediationRequest{
+			Spec: remediationv1.RemediationRequestSpec{
+				SignalName: "KubePodCrashLooping",
+				TargetResource: remediationv1.ResourceIdentifier{
+					Kind:      "Deployment",
+					Name:      "api-server",
+					Namespace: "production",
+				},
+			},
+			Status: remediationv1.RemediationRequestStatus{
+				OverallPhase:       remediationv1.PhaseExecuting,
+				ExecutingStartTime: &now,
+				SelectedWorkflowRef: &remediationv1.WorkflowReference{
+					WorkflowID: "git-revert-v2",
+				},
+			},
+		}
+
+		meta := handler.BuildPhaseMetadata(rr, nil)
+
+		Expect(meta).To(HaveKeyWithValue("namespace", "production"))
+		Expect(meta).To(HaveKeyWithValue("target", "api-server"))
+		Expect(meta).To(HaveKeyWithValue("kind", "Deployment"))
+		Expect(meta).To(HaveKeyWithValue("alert_name", "KubePodCrashLooping"))
+		Expect(meta).To(HaveKeyWithValue("workflow_id", "git-revert-v2"))
+		Expect(meta).To(HaveKey("started_at"))
+	})
+
 	It("UT-AF-1460-008: terminal phases return outcome/failure_reason/skip_reason", func() {
 		rr := &remediationv1.RemediationRequest{
 			Status: remediationv1.RemediationRequestStatus{
