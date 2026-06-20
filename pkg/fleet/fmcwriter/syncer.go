@@ -22,56 +22,25 @@ package fmcwriter
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/go-logr/logr"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/prometheus/client_golang/prometheus"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 	"github.com/jordigilh/kubernaut/pkg/fleet/scopecache"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
-// MCPLister abstracts the MCP list_resources call across multiple clusters.
-// The FMC Writer iterates all known clusters each sync cycle, so it passes
-// clusterID per-call (unlike ResourceClient, which is bound to one cluster).
-// Production uses SessionLister; tests use a mock.
-type MCPLister interface {
-	List(ctx context.Context, clusterID, kind, namespace string) (string, error)
-}
-
-// SessionLister adapts an MCP client session to the MCPLister interface.
-// It constructs tool calls using the gateway's naming convention
-// ({clusterID}__list_resources) and returns the raw text response.
-type SessionLister struct {
-	session *mcp.ClientSession
-}
-
-// NewSessionLister creates an MCPLister backed by the given MCP session.
-func NewSessionLister(session *mcp.ClientSession) *SessionLister {
-	return &SessionLister{session: session}
-}
-
-func (s *SessionLister) List(ctx context.Context, clusterID, kind, namespace string) (string, error) {
-	toolName := clusterID + "__list_resources"
-	args := map[string]any{"kind": kind}
-	if namespace != "" {
-		args["namespace"] = namespace
-	}
-	result, err := s.session.CallTool(ctx, &mcp.CallToolParams{
-		Name:      toolName,
-		Arguments: args,
-	})
-	if err != nil {
-		return "", fmt.Errorf("call %s: %w", toolName, err)
-	}
-	return mcpclient.ExtractText(result), nil
-}
+// ReaderFactory creates a cluster-scoped client.Reader for the given clusterID.
+// The FMC Writer calls this once per cluster per sync cycle, enabling per-cluster
+// session reuse via NewFromSession without creating separate MCP connections.
+type ReaderFactory func(ctx context.Context, clusterID string) (client.Reader, error)
 
 // CacheWriter abstracts Valkey SET operations for writing managed resource keys.
 type CacheWriter interface {
@@ -97,12 +66,12 @@ func DefaultConfig() Config {
 
 // Syncer polls remote clusters for managed resources and writes them to the cache.
 type Syncer struct {
-	registry registry.ClusterRegistry
-	lister   MCPLister
-	writer   CacheWriter
-	config   Config
-	logger   logr.Logger
-	metrics  *Metrics
+	registry      registry.ClusterRegistry
+	readerFactory ReaderFactory
+	writer        CacheWriter
+	config        Config
+	logger        logr.Logger
+	metrics       *Metrics
 
 	mu      sync.Mutex
 	running bool
@@ -141,15 +110,16 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 	return m
 }
 
-// NewSyncer creates a new FMC Writer syncer.
-func NewSyncer(registry registry.ClusterRegistry, lister MCPLister, writer CacheWriter, config Config, logger logr.Logger, metrics *Metrics) *Syncer {
+// NewSyncerWithReaderFactory creates a new FMC Writer syncer backed by a ReaderFactory.
+// The factory creates per-cluster client.Reader instances each sync cycle.
+func NewSyncerWithReaderFactory(registry registry.ClusterRegistry, factory ReaderFactory, writer CacheWriter, config Config, logger logr.Logger, metrics *Metrics) *Syncer {
 	return &Syncer{
-		registry: registry,
-		lister:   lister,
-		writer:   writer,
-		config:   config,
-		logger:   logger,
-		metrics:  metrics,
+		registry:      registry,
+		readerFactory: factory,
+		writer:        writer,
+		config:        config,
+		logger:        logger,
+		metrics:       metrics,
 	}
 }
 
@@ -183,22 +153,31 @@ func (s *Syncer) SyncCluster(ctx context.Context, cluster registry.ClusterInfo) 
 }
 
 func (s *Syncer) syncKind(ctx context.Context, cluster registry.ClusterInfo, kind string) (int, error) {
-	response, err := s.lister.List(ctx, cluster.ID, kind, "")
+	reader, err := s.readerFactory(ctx, cluster.ID)
 	if err != nil {
-		return 0, fmt.Errorf("list %s on %s: %w", kind, cluster.ID, err)
+		return 0, fmt.Errorf("syncKind: create reader for kind=%s cluster=%s: %w", kind, cluster.ID, err)
 	}
 
-	resources, err := parseMCPListResponse(response)
+	list := &unstructured.UnstructuredList{}
+	list.SetGroupVersionKind(schema.GroupVersionKind{Kind: kind + "List"})
+
+	err = reader.List(ctx, list,
+		client.MatchingLabels{scope.ManagedLabelKey: scope.ManagedLabelValueTrue},
+	)
 	if err != nil {
-		return 0, fmt.Errorf("parse response for %s on %s: %w", kind, cluster.ID, err)
+		return 0, fmt.Errorf("syncKind: list kind=%s cluster=%s with label %s=%s: %w",
+			kind, cluster.ID, scope.ManagedLabelKey, scope.ManagedLabelValueTrue, err)
 	}
 
 	var written int
-	for _, res := range resources {
-		key, keyErr := scopecache.BuildKey(cluster.ID, res.Group, res.Version, res.Kind, res.Namespace, res.Name)
+	for i := range list.Items {
+		item := &list.Items[i]
+		gvk := item.GroupVersionKind()
+		key, keyErr := scopecache.BuildKey(cluster.ID, gvk.Group, gvk.Version, item.GetKind(), item.GetNamespace(), item.GetName())
 		if keyErr != nil {
 			s.logger.Error(keyErr, "Invalid resource metadata, skipping",
-				"cluster", cluster.ID, "kind", res.Kind, "name", res.Name)
+				"cluster", cluster.ID, "kind", item.GetKind(),
+				"namespace", item.GetNamespace(), "name", item.GetName())
 			continue
 		}
 		if err := s.writer.Set(ctx, key, s.config.KeyTTL); err != nil {
@@ -275,88 +254,3 @@ func (s *Syncer) handleClusterEvent(ctx context.Context, event registry.ClusterE
 	}
 }
 
-// resourceMeta holds the parsed metadata from a MCP list_resources response.
-type resourceMeta struct {
-	Group     string
-	Version   string
-	Kind      string
-	Namespace string
-	Name      string
-}
-
-// parseMCPListResponse extracts resource metadata from a kubernetes-mcp-server response.
-// The response is typically a YAML/JSON text listing of Kubernetes resources.
-func parseMCPListResponse(response string) ([]resourceMeta, error) {
-	if response == "" {
-		return nil, nil
-	}
-
-	var resources []resourceMeta
-
-	// Try JSON array format first (kubernetes-mcp-server may return JSON)
-	var items []map[string]interface{}
-	if err := json.Unmarshal([]byte(response), &items); err == nil {
-		for _, item := range items {
-			meta := extractResourceMeta(item)
-			if meta.Name != "" {
-				resources = append(resources, meta)
-			}
-		}
-		return resources, nil
-	}
-
-	// Try as a single JSON object with an "items" array (K8s List format)
-	var listObj map[string]interface{}
-	if err := json.Unmarshal([]byte(response), &listObj); err == nil {
-		if itemsRaw, ok := listObj["items"]; ok {
-			if itemList, ok := itemsRaw.([]interface{}); ok {
-				for _, itemRaw := range itemList {
-					if item, ok := itemRaw.(map[string]interface{}); ok {
-						meta := extractResourceMeta(item)
-						if meta.Name != "" {
-							resources = append(resources, meta)
-						}
-					}
-				}
-				return resources, nil
-			}
-		}
-		meta := extractResourceMeta(listObj)
-		if meta.Name != "" {
-			resources = append(resources, meta)
-		}
-		return resources, nil
-	}
-
-	return nil, fmt.Errorf("cannot parse MCP response: not valid JSON")
-}
-
-func extractResourceMeta(item map[string]interface{}) resourceMeta {
-	meta := resourceMeta{}
-
-	if apiVersion, ok := item["apiVersion"].(string); ok {
-		parts := strings.SplitN(apiVersion, "/", 2)
-		if len(parts) == 2 {
-			meta.Group = parts[0]
-			meta.Version = parts[1]
-		} else {
-			meta.Group = ""
-			meta.Version = parts[0]
-		}
-	}
-
-	if kind, ok := item["kind"].(string); ok {
-		meta.Kind = kind
-	}
-
-	if metadata, ok := item["metadata"].(map[string]interface{}); ok {
-		if name, ok := metadata["name"].(string); ok {
-			meta.Name = name
-		}
-		if ns, ok := metadata["namespace"].(string); ok {
-			meta.Namespace = ns
-		}
-	}
-
-	return meta
-}

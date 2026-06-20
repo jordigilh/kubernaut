@@ -36,6 +36,8 @@ import (
 	"k8s.io/client-go/dynamic"
 	ctrl "sigs.k8s.io/controller-runtime"
 
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
 	"github.com/jordigilh/kubernaut/pkg/fleet/fmcwriter"
 	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
@@ -114,8 +116,10 @@ func main() {
 		ResourceKinds: cfg.ResourceKinds,
 	}
 
-	lister := fmcwriter.NewSessionLister(mcpClient.Session())
-	syncer := fmcwriter.NewSyncer(clusterRegistry, lister, writer, syncerConfig, logger, metrics)
+	readerFactory := func(_ context.Context, clusterID string) (client.Reader, error) {
+		return mcpclient.NewFromSession(mcpClient.Session(), clusterID), nil
+	}
+	syncer := fmcwriter.NewSyncerWithReaderFactory(clusterRegistry, readerFactory, writer, syncerConfig, logger, metrics)
 
 	var ready atomic.Bool
 
