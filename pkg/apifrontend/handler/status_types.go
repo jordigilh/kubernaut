@@ -58,6 +58,24 @@ const (
 // The returned map uses raw CRD field names per the agreed console contract.
 func BuildPhaseMetadata(rr *remediationv1.RemediationRequest, ea *eav1alpha1.EffectivenessAssessment) map[string]any {
 	meta := make(map[string]any)
+
+	// RR identity context — present in every phase so the console can
+	// populate the investigation banner on reconnect (#1468).
+	// Field names match RRContext in event_bridge.go for cross-path
+	// consistency (AU-3 traceability, SC-7 server-sourced, SI-4 monitoring).
+	if rr.Spec.TargetResource.Namespace != "" {
+		meta["namespace"] = rr.Spec.TargetResource.Namespace
+	}
+	if rr.Spec.TargetResource.Name != "" {
+		meta["target"] = rr.Spec.TargetResource.Name
+	}
+	if rr.Spec.TargetResource.Kind != "" {
+		meta["kind"] = rr.Spec.TargetResource.Kind
+	}
+	if rr.Spec.SignalName != "" {
+		meta["alert_name"] = rr.Spec.SignalName
+	}
+
 	phase := rr.Status.OverallPhase
 
 	switch phase {
