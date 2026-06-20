@@ -29,28 +29,33 @@ var _ scope.ScopeChecker = (*FederatedScopeChecker)(nil)
 
 // FederatedScopeChecker implements scope.ScopeChecker by routing checks:
 //   - Empty clusterID (local hub): delegates to the local ScopeChecker (existing K8s-based)
-//   - Non-empty clusterID (remote): checks Valkey via the scope cache client
+//   - Non-empty clusterID (remote): delegates to the RemoteScopeResolver
+//
+// The RemoteScopeResolver is a pluggable interface. Two implementations exist:
+//   - Valkey-backed Client (FMC Writer syncs labels) — for environments without ACM
+//   - ACM Search GraphQL — for ACM environments (avoids FMC Writer + Valkey)
 //
 // This allows GW and RO to transparently handle both local and remote resources
-// using the existing ScopeChecker interface (ADR-065).
+// using the existing ScopeChecker interface (ADR-065, ADR-068).
 type FederatedScopeChecker struct {
-	local       scope.ScopeChecker
-	remoteCache *Client
-	logger      logr.Logger
+	local          scope.ScopeChecker
+	remoteResolver RemoteScopeResolver
+	logger         logr.Logger
 }
 
 // NewFederatedScopeChecker creates a federated checker that routes by cluster context.
-// localChecker handles hub cluster checks, remoteCache handles fleet checks.
-func NewFederatedScopeChecker(localChecker scope.ScopeChecker, remoteCache *Client, logger logr.Logger) *FederatedScopeChecker {
+// localChecker handles hub cluster checks, remoteResolver handles fleet checks via
+// the pluggable RemoteScopeResolver interface.
+func NewFederatedScopeChecker(localChecker scope.ScopeChecker, remoteResolver RemoteScopeResolver, logger logr.Logger) *FederatedScopeChecker {
 	return &FederatedScopeChecker{
-		local:       localChecker,
-		remoteCache: remoteCache,
-		logger:      logger.WithName("federated-scope"),
+		local:          localChecker,
+		remoteResolver: remoteResolver,
+		logger:         logger.WithName("federated-scope"),
 	}
 }
 
 // NewFederatedScopeCheckerFromAddr is a convenience factory that creates a federated checker
-// backed by Valkey at the given address. Reduces boilerplate in cmd/ wiring.
+// backed by a Valkey RemoteScopeResolver at the given address. Reduces boilerplate in cmd/ wiring.
 func NewFederatedScopeCheckerFromAddr(localChecker scope.ScopeChecker, valkeyAddr string, logger logr.Logger) *FederatedScopeChecker {
 	reader := NewValkeyCacheReader(valkeyAddr)
 	cacheClient := NewClient(reader)
@@ -65,15 +70,15 @@ func (f *FederatedScopeChecker) IsManaged(ctx context.Context, namespace, kind, 
 }
 
 // IsManagedOnCluster checks scope for a resource on a specific cluster.
-// Empty clusterID routes to local checker; non-empty routes to remote cache.
+// Empty clusterID routes to local checker; non-empty routes to RemoteScopeResolver.
 func (f *FederatedScopeChecker) IsManagedOnCluster(ctx context.Context, clusterID, namespace, kind, name string) (bool, error) {
 	if clusterID == "" {
 		return f.local.IsManaged(ctx, namespace, kind, name)
 	}
 
-	managed, err := f.remoteCache.IsManaged(ctx, clusterID, "", "", kind, namespace, name)
+	managed, err := f.remoteResolver.IsManaged(ctx, clusterID, "", "", kind, namespace, name)
 	if err != nil {
-		f.logger.V(1).Info("remote scope cache miss, falling back to unmanaged",
+		f.logger.V(1).Info("remote scope resolver error, falling back to unmanaged",
 			"cluster", clusterID, "namespace", namespace, "kind", kind, "name", name, "error", err)
 		return false, nil
 	}
