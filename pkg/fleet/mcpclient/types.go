@@ -17,18 +17,22 @@ limitations under the License.
 package mcpclient
 
 import (
-	"context"
-
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// ResourceClient provides typed access to Kubernetes resources on remote clusters
-// via the MCP Gateway. Shared by GW, SP, EM, and WE for federated resource access.
+// ResourceClient provides K8s-compatible read access to resources on a remote
+// cluster via the MCP Gateway. It embeds client.Reader so that any component
+// accepting client.Reader (e.g. K8sOwnerResolver) can transparently use an MCP-
+// backed implementation for remote clusters. The target cluster is bound at
+// construction time via WithClusterID, mirroring how a K8s client.Reader is
+// bound to a single cluster by its kubeconfig.
+//
+// Supported object types for Get: *unstructured.Unstructured and
+// *metav1.PartialObjectMetadata. Typed objects (e.g. *corev1.Pod) are not
+// supported and will return an error — use unstructured access instead.
 //
 // Authority: Issue #54, Fleet Federation Roadmap Phase 0 (BR-FLEET-002)
 type ResourceClient interface {
-	Get(ctx context.Context, clusterID, kind, namespace, name string) (*unstructured.Unstructured, error)
-	List(ctx context.Context, clusterID, kind, namespace string, labels map[string]string) ([]unstructured.Unstructured, error)
-	GetLabels(ctx context.Context, clusterID, kind, namespace, name string) (map[string]string, error)
+	client.Reader
 	Close() error
 }
