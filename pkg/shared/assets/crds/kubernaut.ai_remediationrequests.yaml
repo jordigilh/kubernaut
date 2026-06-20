@@ -38,6 +38,10 @@ spec:
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
+    - jsonPath: .spec.clusterID
+      name: Cluster
+      priority: 1
+      type: string
     - jsonPath: .spec.signalSource
       name: Source
       priority: 1
@@ -95,6 +99,23 @@ spec:
               Note: Individual field immutability (e.g., signalFingerprint) is redundant with full spec immutability,
               but retained for explicit documentation of critical fields.
             properties:
+              clusterID:
+                description: |-
+                  ClusterID is the unique identifier of the cluster where the signal originated.
+                  Corresponds to the MCPServerRegistration name in the MCP Gateway.
+                  Used by RO and WE for multi-cluster routing of remediation workflows.
+                  Empty string indicates the local (hub) cluster.
+                  Reference: ADR-065 (Multi-Cluster Federation)
+                maxLength: 253
+                type: string
+              clusterName:
+                description: |-
+                  ClusterName is a human-readable display name for the cluster.
+                  Used for audit trail, notifications, and operator-facing UIs.
+                  May differ from ClusterID (e.g., ClusterID="prod-east-1", ClusterName="Production US-East").
+                  Reference: ADR-065 (Multi-Cluster Federation)
+                maxLength: 253
+                type: string
               firingTime:
                 description: |-
                   Temporal Data
@@ -1130,6 +1151,7 @@ spec:
     - jsonPath: .spec.signalFingerprint
     - jsonPath: .spec.signalType
     - jsonPath: .spec.severity
+    - jsonPath: .spec.clusterID
     served: true
     storage: true
     subresources:
