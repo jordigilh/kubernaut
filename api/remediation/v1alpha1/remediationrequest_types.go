@@ -322,6 +322,27 @@ type RemediationRequestSpec struct {
 	// +kubebuilder:validation:Required
 	TargetResource ResourceIdentifier `json:"targetResource"`
 
+	// ========================================
+	// MULTI-CLUSTER IDENTIFICATION (ADR-065)
+	// ========================================
+
+	// ClusterID is the unique identifier of the cluster where the signal originated.
+	// Corresponds to the MCPServerRegistration name in the MCP Gateway.
+	// Used by RO and WE for multi-cluster routing of remediation workflows.
+	// Empty string indicates the local (hub) cluster.
+	// Reference: ADR-065 (Multi-Cluster Federation)
+	// +optional
+	// +kubebuilder:validation:MaxLength=253
+	ClusterID string `json:"clusterID,omitempty"`
+
+	// ClusterName is a human-readable display name for the cluster.
+	// Used for audit trail, notifications, and operator-facing UIs.
+	// May differ from ClusterID (e.g., ClusterID="prod-east-1", ClusterName="Production US-East").
+	// Reference: ADR-065 (Multi-Cluster Federation)
+	// +optional
+	// +kubebuilder:validation:MaxLength=253
+	ClusterName string `json:"clusterName,omitempty"`
+
 	// Temporal Data
 	// When the signal first started firing (from upstream source)
 	FiringTime metav1.Time `json:"firingTime"`
@@ -839,6 +860,7 @@ type DeduplicationStatus struct {
 // +kubebuilder:selectablefield:JSONPath=.spec.signalFingerprint
 // +kubebuilder:selectablefield:JSONPath=.spec.signalType
 // +kubebuilder:selectablefield:JSONPath=.spec.severity
+// +kubebuilder:selectablefield:JSONPath=.spec.clusterID
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.overallPhase`
 // +kubebuilder:printcolumn:name="Outcome",type=string,JSONPath=`.status.outcome`
 // +kubebuilder:printcolumn:name="Alert",type=string,JSONPath=`.spec.signalName`
@@ -846,6 +868,7 @@ type DeduplicationStatus struct {
 // +kubebuilder:printcolumn:name="Workflow",type=string,JSONPath=`.status.workflowDisplayName`
 // +kubebuilder:printcolumn:name="Confidence",type=string,JSONPath=`.status.confidence`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
+// +kubebuilder:printcolumn:name="Cluster",type=string,JSONPath=`.spec.clusterID`,priority=1
 // +kubebuilder:printcolumn:name="Source",type=string,JSONPath=`.spec.signalSource`,priority=1
 // +kubebuilder:printcolumn:name="Signal NS",type=string,JSONPath=`.spec.targetResource.namespace`,priority=1
 // +kubebuilder:printcolumn:name="Signal Target",type=string,JSONPath=`.status.signalTargetDisplay`,priority=1
