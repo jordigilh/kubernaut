@@ -114,7 +114,8 @@ func main() {
 		ResourceKinds: cfg.ResourceKinds,
 	}
 
-	syncer := fmcwriter.NewSyncer(clusterRegistry, mcpClient, writer, syncerConfig, logger, metrics)
+	lister := fmcwriter.NewSessionLister(mcpClient.Session())
+	syncer := fmcwriter.NewSyncer(clusterRegistry, lister, writer, syncerConfig, logger, metrics)
 
 	var ready atomic.Bool
 

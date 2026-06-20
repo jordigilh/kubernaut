@@ -29,16 +29,48 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 	"github.com/jordigilh/kubernaut/pkg/fleet/scopecache"
 )
 
-// MCPLister abstracts the MCP list_resources call for a single cluster.
-// Production uses MCPResourceClient; tests use a mock.
+// MCPLister abstracts the MCP list_resources call across multiple clusters.
+// The FMC Writer iterates all known clusters each sync cycle, so it passes
+// clusterID per-call (unlike ResourceClient, which is bound to one cluster).
+// Production uses SessionLister; tests use a mock.
 type MCPLister interface {
 	List(ctx context.Context, clusterID, kind, namespace string) (string, error)
+}
+
+// SessionLister adapts an MCP client session to the MCPLister interface.
+// It constructs tool calls using the gateway's naming convention
+// ({clusterID}__list_resources) and returns the raw text response.
+type SessionLister struct {
+	session *mcp.ClientSession
+}
+
+// NewSessionLister creates an MCPLister backed by the given MCP session.
+func NewSessionLister(session *mcp.ClientSession) *SessionLister {
+	return &SessionLister{session: session}
+}
+
+func (s *SessionLister) List(ctx context.Context, clusterID, kind, namespace string) (string, error) {
+	toolName := clusterID + "__list_resources"
+	args := map[string]any{"kind": kind}
+	if namespace != "" {
+		args["namespace"] = namespace
+	}
+	result, err := s.session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      toolName,
+		Arguments: args,
+	})
+	if err != nil {
+		return "", fmt.Errorf("call %s: %w", toolName, err)
+	}
+	return mcpclient.ExtractText(result), nil
 }
 
 // CacheWriter abstracts Valkey SET operations for writing managed resource keys.
