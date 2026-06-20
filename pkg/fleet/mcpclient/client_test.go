@@ -208,6 +208,33 @@ var _ = Describe("ResourceClient (BR-FLEET-002, Phase 0)", func() {
 		})
 	})
 
+	Describe("NewFromSession (Phase A)", func() {
+		It("UT-FLEET-P0-008 [SC-10]: creates a Client from an existing session without re-connecting, preserving session lifecycle", func() {
+			gw = mockgw.NewMockGateway(mockgw.WithMultiCluster("cluster-session"))
+
+			parent, err := mcpclient.New(ctx, gw.URL(), mcpclient.WithClusterID("cluster-session"))
+			Expect(err).ToNot(HaveOccurred())
+			defer parent.Close()
+
+			session := parent.Session()
+			Expect(session).ToNot(BeNil())
+
+			child := mcpclient.NewFromSession(session, "cluster-session")
+			Expect(child).ToNot(BeNil())
+			Expect(child.ClusterID()).To(Equal("cluster-session"),
+				"NewFromSession must bind the clusterID at construction time")
+
+			var reader client.Reader = child
+			obj := &unstructured.Unstructured{}
+			obj.SetGroupVersionKind(schema.GroupVersionKind{Version: "v1", Kind: "Pod"})
+
+			err = reader.Get(ctx, client.ObjectKey{Namespace: "default", Name: "nginx"}, obj)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(obj.GetName()).To(Equal("nginx"),
+				"NewFromSession client must be functional using the parent's session (SC-10: network disconnect does not corrupt state)")
+		})
+	})
+
 	Describe("ResilientClient interface compliance", func() {
 		It("UT-FLEET-P0-005: ResilientClient satisfies ResourceClient (embeds client.Reader)", func() {
 			gw = mockgw.NewMockGateway(mockgw.WithMultiCluster("cluster-res"))

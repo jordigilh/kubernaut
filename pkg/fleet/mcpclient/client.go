@@ -78,6 +78,20 @@ func New(ctx context.Context, endpoint string, opts ...Option) (*Client, error) 
 	return &Client{session: session, clusterID: cfg.clusterID}, nil
 }
 
+// NewFromSession creates a Client from an existing MCP session, skipping the
+// connection handshake. This is used by the FMC Writer to create per-cluster
+// readers from the shared ResilientClient's session, avoiding duplicate
+// connections to the MCP Gateway.
+//
+// Panics if session is nil, since a nil session invariably leads to nil-pointer
+// panics on the first tool call -- failing fast makes the root cause obvious.
+func NewFromSession(session *mcp.ClientSession, clusterID string) *Client {
+	if session == nil {
+		panic("mcpclient.NewFromSession: session must not be nil")
+	}
+	return &Client{session: session, clusterID: clusterID}
+}
+
 // Get implements client.Reader. It retrieves a single Kubernetes resource from
 // the bound remote cluster via MCP Gateway and populates obj in place.
 //
