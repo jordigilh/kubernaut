@@ -208,3 +208,94 @@ var _ = Describe("SessionInterceptor Integration (BR-SESS-020)", func() {
 		Expect(resp).To(HaveKey("result"))
 	})
 })
+
+var _ = Describe("SessionInterceptor stale context validation Integration (BR-SESS-025, #1472)", func() {
+	var (
+		rootAgent  agent.Agent
+		sessionSvc adksession.Service
+		registry   *launcher.ActiveContextRegistry
+		logBuf     *syncBuffer
+		logger     logr.Logger
+	)
+
+	BeforeEach(func() {
+		var err error
+		rootAgent, _, err = agentpkg.NewRootAgent(agentpkg.AgentConfig{
+			Instruction: "Test agent for stale session validation IT.",
+			SkipTools:   false,
+		})
+		Expect(err).NotTo(HaveOccurred())
+		sessionSvc = adksession.InMemoryService()
+		registry = launcher.NewActiveContextRegistry(2*time.Hour, 10*time.Minute)
+		logBuf = &syncBuffer{}
+		logger = funcr.New(func(prefix, args string) {
+			_, _ = logBuf.WriteString(prefix + " " + args + "\n")
+		}, funcr.Options{})
+	})
+
+	buildHandlerWithValidator := func(validator launcher.StaleSessionValidator) http.Handler {
+		var opts []launcher.SessionInterceptorOption
+		if validator != nil {
+			opts = append(opts, launcher.WithStaleSessionValidator(validator))
+		}
+		interceptor := launcher.NewSessionInterceptor(registry, logger, opts...)
+		h, err := launcher.NewA2AHandler(launcher.A2AConfig{
+			Agent:              rootAgent,
+			SessionService:     sessionSvc,
+			AppName:            "kubernaut-apifrontend",
+			Logger:             logger,
+			SessionInterceptor: interceptor,
+		})
+		Expect(err).NotTo(HaveOccurred())
+		return h
+	}
+
+	sendMessage := func(h http.Handler, username, contextID, text string) *httptest.ResponseRecorder {
+		body := fmt.Sprintf(
+			`{"jsonrpc":"2.0","id":"1","method":"message/send","params":{"message":{"messageId":"msg-%s","role":"user","contextId":"%s","parts":[{"kind":"text","text":"%s"}]}}}`,
+			contextID, contextID, text,
+		)
+		req := httptest.NewRequest("POST", "/a2a/invoke", bytes.NewReader([]byte(body)))
+		req.Header.Set("Content-Type", "application/json")
+		ctx := auth.WithUserIdentity(req.Context(), &auth.UserIdentity{
+			Username: username,
+			Groups:   []string{"sre"},
+		})
+		req = req.WithContext(ctx)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+
+	It("IT-AF-1472-001: Stale context cleared through full interceptor stack (SC-7, SI-10)", func() {
+		validator := launcher.NewInMemorySessionValidator(sessionSvc, "kubernaut-apifrontend", logger)
+		h := buildHandlerWithValidator(validator)
+
+		rec := sendMessage(h, "alice", "stale-ctx-from-previous-pod", "hello")
+		Expect(rec.Code).To(Equal(http.StatusOK))
+
+		Expect(logBuf.String()).To(ContainSubstring("stale-ctx-from-previous-pod"),
+			"SC-7: log must record the stale context_id that was cleared")
+
+		var resp map[string]any
+		Expect(json.Unmarshal(rec.Body.Bytes(), &resp)).To(Succeed())
+		Expect(resp).To(HaveKey("result"),
+			"A valid JSON-RPC response must be returned after stale context is cleared")
+	})
+
+	It("IT-AF-1472-002: Active session passes through full interceptor stack", func() {
+		validator := launcher.NewInMemorySessionValidator(sessionSvc, "kubernaut-apifrontend", logger)
+		h := buildHandlerWithValidator(validator)
+
+		rec1 := sendMessage(h, "bob", "ctx-first-msg", "hello")
+		Expect(rec1.Code).To(Equal(http.StatusOK))
+
+		rec2 := sendMessage(h, "bob", "ctx-first-msg", "continue conversation")
+		Expect(rec2.Code).To(Equal(http.StatusOK))
+
+		var resp map[string]any
+		Expect(json.Unmarshal(rec2.Body.Bytes(), &resp)).To(Succeed())
+		Expect(resp).To(HaveKey("result"),
+			"Second message with same context_id must succeed (session now exists in memory)")
+	})
+})

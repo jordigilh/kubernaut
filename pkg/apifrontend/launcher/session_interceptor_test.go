@@ -5,6 +5,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/go-logr/logr/funcr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -234,6 +235,163 @@ var _ = Describe("SessionInterceptor (BR-SESS-020, BR-SESS-021, BR-SESS-023)", f
 			"Override must be logged for audit trail")
 	})
 })
+
+var _ = Describe("SessionInterceptor stale context validation (BR-SESS-025, #1472)", func() {
+	var (
+		registry    *launcher.ActiveContextRegistry
+		logBuf      *bytes.Buffer
+	)
+
+	BeforeEach(func() {
+		registry = launcher.NewActiveContextRegistry(2*time.Hour, 10*time.Minute)
+		logBuf = &bytes.Buffer{}
+	})
+
+	newLogger := func() logr.Logger {
+		return funcr.New(func(prefix, args string) {
+			logBuf.WriteString(prefix + " " + args + "\n")
+		}, funcr.Options{})
+	}
+
+	It("UT-AF-1472-001: Validator returns false for non-existent session (SC-7, SI-10)", func() {
+		validator := &fakeStaleSessionValidator{valid: false}
+		logger := newLogger()
+		interceptor := launcher.NewSessionInterceptor(registry, logger, launcher.WithStaleSessionValidator(validator))
+
+		ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+			Username: "alice", Groups: []string{"sre"},
+		})
+		callCtx := newTestCallContext()
+		msg := &a2a.Message{ContextID: "stale-ctx-from-previous-pod"}
+		req := &a2asrv.Request{
+			Payload: &a2a.MessageSendParams{Message: msg},
+		}
+
+		_, err := interceptor.Before(ctx, callCtx, req)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(msg.ContextID).To(BeEmpty(),
+			"SC-7: stale context_id must be cleared when validator reports session not found")
+		Expect(validator.calledWith).To(Equal("stale-ctx-from-previous-pod"),
+			"Validator must be called with the original context_id")
+	})
+
+	It("UT-AF-1472-002: Validator returns true for existing session", func() {
+		validator := &fakeStaleSessionValidator{valid: true}
+		logger := newLogger()
+		interceptor := launcher.NewSessionInterceptor(registry, logger, launcher.WithStaleSessionValidator(validator))
+
+		ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+			Username: "bob", Groups: []string{"sre"},
+		})
+		callCtx := newTestCallContext()
+		msg := &a2a.Message{ContextID: "active-session-ctx"}
+		req := &a2asrv.Request{
+			Payload: &a2a.MessageSendParams{Message: msg},
+		}
+
+		_, err := interceptor.Before(ctx, callCtx, req)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(msg.ContextID).To(Equal("active-session-ctx"),
+			"Valid context_id must be preserved when session exists in memory")
+	})
+
+	It("UT-AF-1472-003: Validator returns true (fail-open) on unexpected error (SC-5)", func() {
+		validator := &fakeStaleSessionValidator{valid: true}
+		logger := newLogger()
+		interceptor := launcher.NewSessionInterceptor(registry, logger, launcher.WithStaleSessionValidator(validator))
+
+		ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+			Username: "carol", Groups: []string{"sre"},
+		})
+		callCtx := newTestCallContext()
+		msg := &a2a.Message{ContextID: "any-ctx-id"}
+		req := &a2asrv.Request{
+			Payload: &a2a.MessageSendParams{Message: msg},
+		}
+
+		_, err := interceptor.Before(ctx, callCtx, req)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(msg.ContextID).To(Equal("any-ctx-id"),
+			"SC-5: context_id must be preserved (fail-open) when validator cannot determine validity")
+	})
+
+	It("UT-AF-1472-004: Interceptor clears stale context_id and logs (SC-10, AU-3)", func() {
+		validator := &fakeStaleSessionValidator{valid: false}
+		logger := newLogger()
+		interceptor := launcher.NewSessionInterceptor(registry, logger, launcher.WithStaleSessionValidator(validator))
+
+		ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+			Username: "dave", Groups: []string{"sre"},
+		})
+		callCtx := newTestCallContext()
+		msg := &a2a.Message{ContextID: "stale-ctx-after-restart"}
+		req := &a2asrv.Request{
+			Payload: &a2a.MessageSendParams{Message: msg},
+		}
+
+		_, err := interceptor.Before(ctx, callCtx, req)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(msg.ContextID).To(BeEmpty(),
+			"SC-10: stale context_id must be cleared after post-restart detection")
+
+		logOutput := logBuf.String()
+		Expect(logOutput).To(ContainSubstring("stale-ctx-after-restart"),
+			"AU-3: log must contain the original stale context_id for traceability")
+		Expect(logOutput).To(ContainSubstring("dave"),
+			"AU-3: log must contain the username for audit correlation")
+	})
+
+	It("UT-AF-1472-005: Interceptor preserves valid context_id", func() {
+		validator := &fakeStaleSessionValidator{valid: true}
+		logger := newLogger()
+		interceptor := launcher.NewSessionInterceptor(registry, logger, launcher.WithStaleSessionValidator(validator))
+
+		ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+			Username: "eve", Groups: []string{"sre"},
+		})
+		callCtx := newTestCallContext()
+		msg := &a2a.Message{ContextID: "valid-active-ctx"}
+		req := &a2asrv.Request{
+			Payload: &a2a.MessageSendParams{Message: msg},
+		}
+
+		_, err := interceptor.Before(ctx, callCtx, req)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(msg.ContextID).To(Equal("valid-active-ctx"),
+			"Valid context_id must pass through unchanged")
+	})
+
+	It("UT-AF-1472-006: Interceptor skips validation for empty context_id", func() {
+		validator := &fakeStaleSessionValidator{valid: false}
+		logger := newLogger()
+		interceptor := launcher.NewSessionInterceptor(registry, logger, launcher.WithStaleSessionValidator(validator))
+
+		ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+			Username: "frank", Groups: []string{"sre"},
+		})
+		callCtx := newTestCallContext()
+		msg := &a2a.Message{ContextID: ""}
+		req := &a2asrv.Request{
+			Payload: &a2a.MessageSendParams{Message: msg},
+		}
+
+		_, err := interceptor.Before(ctx, callCtx, req)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(validator.calledWith).To(BeEmpty(),
+			"Validator must NOT be called when context_id is empty — existing registry logic handles routing")
+	})
+})
+
+// fakeStaleSessionValidator is a test double for StaleSessionValidator.
+type fakeStaleSessionValidator struct {
+	valid      bool
+	calledWith string
+}
+
+func (f *fakeStaleSessionValidator) IsContextValid(_ context.Context, contextID, _ string) bool {
+	f.calledWith = contextID
+	return f.valid
+}
 
 // newTestCallContext creates a minimal CallContext for interceptor testing.
 // In production, this is created by the JSON-RPC handler via WithCallContext.
