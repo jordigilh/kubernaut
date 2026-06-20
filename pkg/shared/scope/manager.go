@@ -46,6 +46,7 @@ package scope
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -191,6 +192,19 @@ func (m *Manager) IsManaged(ctx context.Context, namespace, kind, name string) (
 	// Step 4: Default — unmanaged (safe default per ADR-053)
 	logger.V(1).Info("No scope labels found — unmanaged (safe default)")
 	return false, nil
+}
+
+// IsManagedResource checks scope using the unified ResourceIdentity struct.
+// Routes by ClusterID: empty → local K8s label check, non-empty → error
+// (local Manager cannot resolve remote clusters; fleet adapters handle that).
+//
+// When Group/Version are empty, behavior matches the existing IsManaged method
+// which infers GVK from the static kindToGroup map.
+func (m *Manager) IsManagedResource(ctx context.Context, resource ResourceIdentity) (bool, error) {
+	if resource.ClusterID != "" {
+		return false, fmt.Errorf("scope: local Manager cannot resolve remote cluster %q; use a fleet adapter", resource.ClusterID)
+	}
+	return m.IsManaged(ctx, resource.Namespace, resource.Kind, resource.Name)
 }
 
 // checkResourceLabel fetches the resource metadata and checks its managed label.

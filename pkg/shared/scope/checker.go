@@ -60,5 +60,38 @@ type FederatedScopeChecker interface {
 	IsManagedOnCluster(ctx context.Context, clusterID, namespace, kind, name string) (bool, error)
 }
 
+// ResourceIdentity uniquely identifies a Kubernetes resource, optionally on a remote cluster.
+// Replaces positional string parameters across all scope checking interfaces.
+//
+// ClusterID is empty for local/hub cluster resources.
+// Group and Version are optional — when empty, the implementation infers them from Kind
+// (matching existing scope.Manager behavior with the static kindToGroup map).
+//
+// References: ADR-068 (Federated Control Plane Interface), SI-10 (Input Validation)
+type ResourceIdentity struct {
+	ClusterID string // empty for local/hub cluster
+	Group     string // API group (e.g., "apps", "" for core)
+	Version   string // API version (e.g., "v1")
+	Kind      string // e.g., "Deployment"
+	Namespace string // empty for cluster-scoped resources
+	Name      string
+}
+
+// UnifiedScopeChecker validates if a resource is within Kubernaut's management scope.
+// A single method handles both local and remote clusters — the implementation
+// routes internally based on ResourceIdentity.ClusterID.
+//
+// This interface supersedes ScopeChecker (3-string) and FederatedScopeChecker (5-string).
+// During migration, both old and new interfaces coexist. Once all callers are migrated,
+// UnifiedScopeChecker will be renamed to ScopeChecker and the old interfaces removed.
+//
+// References: ADR-068, BR-SCOPE-001, BR-SCOPE-002, BR-INTEGRATION-065
+type UnifiedScopeChecker interface {
+	IsManagedResource(ctx context.Context, resource ResourceIdentity) (bool, error)
+}
+
 // Compile-time interface compliance: Manager implements ScopeChecker.
 var _ ScopeChecker = (*Manager)(nil)
+
+// Compile-time interface compliance: Manager implements UnifiedScopeChecker.
+var _ UnifiedScopeChecker = (*Manager)(nil)
