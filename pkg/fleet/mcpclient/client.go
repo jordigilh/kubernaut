@@ -30,20 +30,24 @@ import (
 	"sync"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
-// MCPResourceClient provides access to Kubernetes resources on remote clusters
+// Compile-time interface compliance.
+var _ ResourceClient = (*Client)(nil)
+
+// Client provides typed access to Kubernetes resources on remote clusters
 // via the MCP Gateway. It wraps an MCP client session and uses the gateway's
 // tool naming convention: {clusterID}__get_resource, {clusterID}__list_resources.
-type MCPResourceClient struct {
+type Client struct {
 	session *mcp.ClientSession
 	mu      sync.Mutex
 	closed  bool
 }
 
-// New creates an MCPResourceClient connected to the given MCP Gateway endpoint.
+// New creates a Client connected to the given MCP Gateway endpoint.
 // The connection is established immediately; returns error if unreachable.
-func New(ctx context.Context, endpoint string, opts ...Option) (*MCPResourceClient, error) {
+func New(ctx context.Context, endpoint string, opts ...Option) (*Client, error) {
 	cfg := &clientConfig{}
 	for _, opt := range opts {
 		opt(cfg)
@@ -64,48 +68,76 @@ func New(ctx context.Context, endpoint string, opts ...Option) (*MCPResourceClie
 		return nil, fmt.Errorf("connect to MCP Gateway at %s: %w", endpoint, err)
 	}
 
-	return &MCPResourceClient{session: session}, nil
+	return &Client{session: session}, nil
 }
 
 // Get retrieves a single Kubernetes resource from a remote cluster via MCP Gateway.
-// Calls the tool "{clusterID}__get_resource" with kind, name, and namespace arguments.
-func (c *MCPResourceClient) Get(ctx context.Context, clusterID, kind, name, namespace string) (string, error) {
+func (c *Client) Get(ctx context.Context, clusterID, kind, namespace, name string) (*unstructured.Unstructured, error) {
 	toolName := clusterID + "__get_resource"
-	result, err := c.session.CallTool(ctx, &mcp.CallToolParams{
-		Name: toolName,
-		Arguments: map[string]any{
-			"kind":      kind,
-			"name":      name,
-			"namespace": namespace,
-		},
-	})
-	if err != nil {
-		return "", fmt.Errorf("call %s: %w", toolName, err)
+	args := map[string]any{
+		"kind": kind,
+		"name": name,
+	}
+	if namespace != "" {
+		args["namespace"] = namespace
 	}
 
-	return extractTextContent(result), nil
+	result, err := c.session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      toolName,
+		Arguments: args,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("call %s: %w", toolName, err)
+	}
+
+	text := extractTextContent(result)
+	obj, err := parseUnstructured(text)
+	if err != nil {
+		return nil, fmt.Errorf("parse Get response for %s/%s: %w", kind, name, err)
+	}
+	return obj, nil
 }
 
 // List retrieves Kubernetes resources of a given kind from a remote cluster via MCP Gateway.
-// Calls the tool "{clusterID}__list_resources" with kind and namespace arguments.
-func (c *MCPResourceClient) List(ctx context.Context, clusterID, kind, namespace string) (string, error) {
+func (c *Client) List(ctx context.Context, clusterID, kind, namespace string, labels map[string]string) ([]unstructured.Unstructured, error) {
 	toolName := clusterID + "__list_resources"
-	result, err := c.session.CallTool(ctx, &mcp.CallToolParams{
-		Name: toolName,
-		Arguments: map[string]any{
-			"kind":      kind,
-			"namespace": namespace,
-		},
-	})
-	if err != nil {
-		return "", fmt.Errorf("call %s: %w", toolName, err)
+	args := map[string]any{
+		"kind": kind,
+	}
+	if namespace != "" {
+		args["namespace"] = namespace
+	}
+	if len(labels) > 0 {
+		args["labelSelector"] = formatLabelSelector(labels)
 	}
 
-	return extractTextContent(result), nil
+	result, err := c.session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      toolName,
+		Arguments: args,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("call %s: %w", toolName, err)
+	}
+
+	text := extractTextContent(result)
+	items, err := parseUnstructuredList(text)
+	if err != nil {
+		return nil, fmt.Errorf("parse List response for %s: %w", kind, err)
+	}
+	return items, nil
+}
+
+// GetLabels fetches only the labels of a resource from a remote cluster.
+func (c *Client) GetLabels(ctx context.Context, clusterID, kind, namespace, name string) (map[string]string, error) {
+	obj, err := c.Get(ctx, clusterID, kind, namespace, name)
+	if err != nil {
+		return nil, err
+	}
+	return obj.GetLabels(), nil
 }
 
 // Close terminates the MCP session. Safe to call multiple times.
-func (c *MCPResourceClient) Close() error {
+func (c *Client) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.closed {
@@ -117,12 +149,20 @@ func (c *MCPResourceClient) Close() error {
 
 // Session returns the underlying MCP client session for direct tool calls.
 // Used by BridgeTool to call discovered tools without creating new sessions.
-func (c *MCPResourceClient) Session() *mcp.ClientSession {
+func (c *Client) Session() *mcp.ClientSession {
 	return c.session
 }
 
 func extractTextContent(result *mcp.CallToolResult) string {
 	return ExtractText(result)
+}
+
+func formatLabelSelector(labels map[string]string) string {
+	parts := make([]string, 0, len(labels))
+	for k, v := range labels {
+		parts = append(parts, k+"="+v)
+	}
+	return strings.Join(parts, ",")
 }
 
 // ExtractText extracts and concatenates all text content from an MCP tool result.
