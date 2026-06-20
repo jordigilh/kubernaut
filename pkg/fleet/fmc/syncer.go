@@ -14,11 +14,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package fmcwriter implements the Fleet Metadata Cache writer service.
+// Package fmc implements the Fleet Metadata Cache service.
 // It polls remote clusters via MCP Gateway for resources labeled
-// kubernaut.ai/managed=true and writes their metadata to Valkey for
-// low-latency scope checking by GW and RO services.
-package fmcwriter
+// kubernaut.ai/managed=true, caches their metadata in Valkey, and
+// exposes scope queries to GW and RO services.
+package fmc
 
 import (
 	"context"

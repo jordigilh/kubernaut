@@ -62,7 +62,7 @@ func NewFleetE2EHelper(config FleetE2EConfig, logger logr.Logger) *FleetE2EHelpe
 }
 
 // SeedValkeyScopeCache pre-seeds Valkey with managed resource keys for the mock cluster.
-// This simulates what the FMC Writer would do in production.
+// This simulates what the FMC service would do in production.
 func (h *FleetE2EHelper) SeedValkeyScopeCache(ctx context.Context, resources []SeedResource) error {
 	for _, res := range resources {
 		key, err := scopecache.BuildKey(h.config.MockClusterID, res.Group, res.Version, res.Kind, res.Namespace, res.Name)

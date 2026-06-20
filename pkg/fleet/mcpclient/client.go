@@ -79,7 +79,7 @@ func New(ctx context.Context, endpoint string, opts ...Option) (*Client, error) 
 }
 
 // NewFromSession creates a Client from an existing MCP session, skipping the
-// connection handshake. This is used by the FMC Writer to create per-cluster
+// connection handshake. This is used by the FMC service to create per-cluster
 // readers from the shared ResilientClient's session, avoiding duplicate
 // connections to the MCP Gateway.
 //

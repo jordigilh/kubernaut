@@ -24,7 +24,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/jordigilh/kubernaut/pkg/fleet/fmcwriter"
+	"github.com/jordigilh/kubernaut/pkg/fleet/fmc"
 	"github.com/jordigilh/kubernaut/pkg/fleet/scopecache"
 )
 
@@ -37,13 +37,13 @@ import (
 // that FMC Writer → Valkey → FederatedScopeChecker depends on.
 //
 // Wiring Manifest:
-//   ValkeyWriter     → cmd/fmcwriter/main.go
+//   ValkeyWriter     → cmd/fmc/main.go
 //   ValkeyCacheReader → pkg/gateway/server.go (via FederatedScopeChecker)
 //   FederatedScopeChecker → pkg/fleet/scopecache/federated_checker.go
 var _ = Describe("Fleet Scope Cache Valkey Integration (BR-INTEGRATION-065)", Ordered, Label("fleet", "valkey", "integration"), func() {
 	var (
 		ctx    context.Context
-		writer *fmcwriter.ValkeyWriter
+		writer *fmc.ValkeyWriter
 		reader *scopecache.ValkeyCacheReader
 		client *scopecache.Client
 		fc     *scopecache.FederatedScopeChecker
@@ -51,7 +51,7 @@ var _ = Describe("Fleet Scope Cache Valkey Integration (BR-INTEGRATION-065)", Or
 
 	BeforeAll(func() {
 		ctx = context.Background()
-		writer = fmcwriter.NewValkeyWriter(valkeyAddr)
+		writer = fmc.NewValkeyWriter(valkeyAddr)
 		reader = scopecache.NewValkeyCacheReader(valkeyAddr)
 		client = scopecache.NewClient(reader)
 

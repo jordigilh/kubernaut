@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package fmcwriter_test
+package fmc_test
 
 import (
 	"context"
@@ -27,7 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/jordigilh/kubernaut/pkg/fleet/fmcwriter"
+	"github.com/jordigilh/kubernaut/pkg/fleet/fmc"
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
@@ -70,14 +70,14 @@ var _ = Describe("Syncer with ReaderFactory (BR-FLEET-002, Phase A)", func() {
 	var (
 		ctx     context.Context
 		writer  *stubWriter
-		metrics *fmcwriter.Metrics
+		metrics *fmc.Metrics
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
 		writer = &stubWriter{}
 		reg := prometheus.NewPedanticRegistry()
-		metrics = fmcwriter.NewMetrics(reg)
+		metrics = fmc.NewMetrics(reg)
 	})
 
 	Describe("UT-FLEET-FMC-003 [AC-4]: managed-label filter in syncKind", func() {
@@ -99,11 +99,11 @@ var _ = Describe("Syncer with ReaderFactory (BR-FLEET-002, Phase A)", func() {
 				return spy, nil
 			}
 
-			syncer := fmcwriter.NewSyncerWithReaderFactory(
+			syncer := fmc.NewSyncerWithReaderFactory(
 				&stubRegistry{clusters: []registry.ClusterInfo{{ID: "cluster-a"}}},
 				readerFactory,
 				writer,
-			fmcwriter.Config{
+			fmc.Config{
 				KeyTTL:        30 * time.Second,
 				ResourceKinds: []string{"Pod"},
 			},

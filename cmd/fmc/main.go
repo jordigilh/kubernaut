@@ -38,7 +38,7 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/jordigilh/kubernaut/pkg/fleet/fmcwriter"
+	"github.com/jordigilh/kubernaut/pkg/fleet/fmc"
 	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 )
@@ -62,7 +62,7 @@ func main() {
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
 
 	reg := prometheus.NewRegistry()
-	metrics := fmcwriter.NewMetrics(reg)
+	metrics := fmc.NewMetrics(reg)
 
 	var opts []mcpclient.Option
 	if cfg.OAuth2Enabled {
@@ -98,7 +98,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	writer := fmcwriter.NewValkeyWriter(cfg.ValkeyAddr)
+	writer := fmc.NewValkeyWriter(cfg.ValkeyAddr)
 	defer func() { _ = writer.Close() }()
 
 	clusterRegistry := registry.NewCRDWatcher(dynClient, registry.CRDWatcherConfig{
@@ -110,7 +110,7 @@ func main() {
 	}
 	defer clusterRegistry.Stop()
 
-	syncerConfig := fmcwriter.Config{
+	syncerConfig := fmc.Config{
 		SyncInterval:  cfg.SyncInterval,
 		KeyTTL:        cfg.KeyTTL,
 		ResourceKinds: cfg.ResourceKinds,
@@ -119,7 +119,7 @@ func main() {
 	readerFactory := func(_ context.Context, clusterID string) (client.Reader, error) {
 		return mcpclient.NewFromSession(mcpClient.Session(), clusterID), nil
 	}
-	syncer := fmcwriter.NewSyncerWithReaderFactory(clusterRegistry, readerFactory, writer, syncerConfig, logger, metrics)
+	syncer := fmc.NewSyncerWithReaderFactory(clusterRegistry, readerFactory, writer, syncerConfig, logger, metrics)
 
 	var ready atomic.Bool
 
@@ -193,7 +193,7 @@ func loadConfig() config {
 		ResourceKinds:      []string{"Deployment", "StatefulSet", "DaemonSet", "Pod", "Service", "Node"},
 		OAuth2Enabled:      os.Getenv("FMC_OAUTH2_ENABLED") == "true",
 		OAuth2TokenURL:     envOrDefault("FMC_OAUTH2_TOKEN_URL", ""),
-		OAuth2SecretPath:   envOrDefault("FMC_OAUTH2_SECRET_PATH", "/etc/fmcwriter/fleet-oauth2"),
+		OAuth2SecretPath:   envOrDefault("FMC_OAUTH2_SECRET_PATH", "/etc/fmc/fleet-oauth2"),
 	}
 	return cfg
 }

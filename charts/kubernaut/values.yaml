@@ -528,7 +528,7 @@ fmcWriter:
   enabled: false
   replicas: 1
   image:
-    repository: kubernaut/fmcwriter
+    repository: kubernaut/fmc
     tag: latest
     pullPolicy: IfNotPresent
   syncInterval: "30s"

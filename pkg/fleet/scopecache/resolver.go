@@ -22,10 +22,10 @@ import "context"
 // by Kubernaut (has the kubernaut.ai/managed=true label). This is the pluggable
 // interface that allows different backend implementations:
 //
-//   - Valkey-backed Client (FMC Writer syncs labels to Valkey) — for environments
+//   - Valkey-backed Client (FMC syncs labels to Valkey) — for environments
 //     without a federated control plane (GitOps, manual cluster management)
 //   - ACM Search GraphQL — for environments with ACM deployed, querying managed
-//     labels directly without needing FMC Writer or Valkey
+//     labels directly without needing FMC or Valkey
 //
 // The FederatedScopeChecker accepts any RemoteScopeResolver, allowing operators
 // to choose the implementation that matches their environment.
