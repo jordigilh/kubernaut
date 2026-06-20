@@ -46,14 +46,14 @@ import (
 	sharedscope "github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
-// alwaysManagedScope is a mock ScopeChecker that always returns managed=true.
+// alwaysManagedScope is a mock UnifiedScopeChecker that always returns managed=true.
 type alwaysManagedScope struct{}
 
-func (a *alwaysManagedScope) IsManaged(_ context.Context, _, _, _ string) (bool, error) {
+func (a *alwaysManagedScope) IsManagedResource(_ context.Context, _ sharedscope.ResourceIdentity) (bool, error) {
 	return true, nil
 }
 
-var _ sharedscope.ScopeChecker = &alwaysManagedScope{}
+var _ sharedscope.UnifiedScopeChecker = &alwaysManagedScope{}
 
 var _ = Describe("Issue #673 C-ADV-2: Generic Processing Error (BR-GATEWAY-182)", Ordered, ContinueOnFailure, func() {
 

@@ -55,7 +55,7 @@ type RoutingEngine struct {
 	apiReader    client.Reader       // DD-STATUS-001: Cache-bypassed reader for fresh routing queries
 	namespace    string
 	config       Config
-	scopeChecker scope.ScopeChecker // BR-SCOPE-010: Mandatory scope validation (DI, same as RetryObserver)
+	scopeChecker scope.UnifiedScopeChecker // BR-SCOPE-010 + ADR-068: Mandatory scope validation (DI)
 	dsClient     RemediationHistoryQuerier // Issue #214: DataStorage client for ineffective chain detection
 }
 
@@ -153,7 +153,7 @@ type Config struct {
 // DD-STATUS-001: Accepts apiReader for cache-bypassed routing queries.
 // BR-SCOPE-010: scopeChecker is mandatory (panics on nil, same pattern as RetryObserver).
 // Issue #214: Optional dsClient for ineffective chain detection (nil = skip chain check).
-func NewRoutingEngine(client client.Client, apiReader client.Reader, namespace string, config Config, scopeChecker scope.ScopeChecker, dsClient ...RemediationHistoryQuerier) *RoutingEngine {
+func NewRoutingEngine(client client.Client, apiReader client.Reader, namespace string, config Config, scopeChecker scope.UnifiedScopeChecker, dsClient ...RemediationHistoryQuerier) *RoutingEngine {
 	if scopeChecker == nil {
 		panic("scopeChecker must not be nil — use mocks.AlwaysManagedScopeChecker{} in tests")
 	}
@@ -725,23 +725,15 @@ func (r *RoutingEngine) CheckUnmanagedResource(
 	}
 }
 
-// checkScopeForResource routes scope checks based on RR's ClusterID (ADR-065).
-// Non-empty ClusterID: type-asserts to scope.FederatedScopeChecker for cross-cluster checks.
-// Empty ClusterID: falls through to standard local IsManaged (existing behavior).
+// checkScopeForResource checks scope using the unified ScopeChecker (ADR-068).
+// ResourceIdentity.ClusterID routes internally: empty → local, non-empty → remote.
 func (r *RoutingEngine) checkScopeForResource(ctx context.Context, rr *remediationv1.RemediationRequest) (bool, error) {
-	if rr.Spec.ClusterID != "" {
-		if fc, ok := r.scopeChecker.(scope.FederatedScopeChecker); ok {
-			return fc.IsManagedOnCluster(ctx,
-				rr.Spec.ClusterID,
-				rr.Spec.TargetResource.Namespace,
-				rr.Spec.TargetResource.Kind,
-				rr.Spec.TargetResource.Name)
-		}
-	}
-	return r.scopeChecker.IsManaged(ctx,
-		rr.Spec.TargetResource.Namespace,
-		rr.Spec.TargetResource.Kind,
-		rr.Spec.TargetResource.Name)
+	return r.scopeChecker.IsManagedResource(ctx, scope.ResourceIdentity{
+		ClusterID: rr.Spec.ClusterID,
+		Kind:      rr.Spec.TargetResource.Kind,
+		Namespace: rr.Spec.TargetResource.Namespace,
+		Name:      rr.Spec.TargetResource.Name,
+	})
 }
 
 // calculateScopeBackoff computes the backoff duration for unmanaged resource blocking.

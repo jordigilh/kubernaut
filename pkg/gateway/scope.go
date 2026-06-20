@@ -24,16 +24,12 @@ import (
 )
 
 // ScopeChecker is an alias for the shared scope.ScopeChecker interface.
-// Both Gateway and RO use the same interface for scope validation DI.
-//
-// BR-SCOPE-002: Gateway Signal Filtering
-// ADR-053: Resource Scope Management Architecture
+// Deprecated: Use scope.UnifiedScopeChecker instead (ADR-068).
 type ScopeChecker = scope.ScopeChecker
 
 // FederatedScopeChecker is an alias for the shared scope.FederatedScopeChecker interface.
-// Used via type assertion in validateScope when signal.ClusterID is non-empty (ADR-065).
-// Previously a local unexported interface; now shared with RO for consistent
-// cross-service scope enforcement.
+// Deprecated: Use scope.UnifiedScopeChecker instead (ADR-068).
+// The type assertion pattern is no longer needed — validateScope now calls IsManagedResource.
 type FederatedScopeChecker = scope.FederatedScopeChecker
 
 // StatusRejected indicates the signal was rejected because the resource is not managed.

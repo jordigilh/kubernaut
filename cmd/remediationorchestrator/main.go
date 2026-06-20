@@ -280,14 +280,17 @@ func main() {
 	}
 	scopeMgr := scope.NewManager(mgr.GetClient())
 
-	// ADR-065: Federated scope checking for multi-cluster fleet management.
+	// ADR-068: Federated scope checking via pluggable backend adapters.
 	// When fleet is enabled, wraps the local scope checker with FederatedScopeChecker
-	// backed by a Valkey cache for low-latency remote cluster scope lookups.
-	var scopeCheckerInstance scope.ScopeChecker = scopeMgr
-	if cfg.Fleet.Enabled && cfg.Fleet.ValkeyAddr != "" {
-		scopeCheckerInstance = scopecache.NewFederatedScopeCheckerFromAddr(scopeMgr, cfg.Fleet.ValkeyAddr, setupLog)
-		setupLog.Info("ADR-065: Federated scope checker enabled (Valkey-backed fleet cache)",
-			"valkey_addr", cfg.Fleet.ValkeyAddr)
+	// backed by the configured backend (FMC, ACM, or legacy Valkey).
+	var scopeCheckerInstance scope.UnifiedScopeChecker = scopeMgr
+	if cfg.Fleet.Enabled {
+		endpoint := cfg.Fleet.EffectiveEndpoint()
+		if endpoint != "" {
+			scopeCheckerInstance = scopecache.NewFederatedScopeCheckerFromAddr(scopeMgr, endpoint, setupLog)
+			setupLog.Info("ADR-068: Federated scope checker enabled",
+				"backend", cfg.Fleet.Backend, "endpoint", endpoint)
+		}
 	}
 
 	routingEngine := routing.NewRoutingEngine(mgr.GetClient(), mgr.GetAPIReader(), "", routingCfg, scopeCheckerInstance)
