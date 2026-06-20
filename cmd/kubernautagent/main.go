@@ -1114,7 +1114,7 @@ func buildToolRegistry(cfg *kaconfig.Config, logger logr.Logger, infra *k8sInfra
 // via tools/list, wraps them as BridgeTools, and registers them.
 // Returns the fleet client (must be closed on shutdown) and the registered tool names,
 // or nil if fleet is disabled.
-func registerFleetTools(ctx context.Context, cfg *kaconfig.Config, reg *registry.Registry, logger logr.Logger) (*fleetclient.MCPResourceClient, []string) {
+func registerFleetTools(ctx context.Context, cfg *kaconfig.Config, reg *registry.Registry, logger logr.Logger) (*fleetclient.ResilientClient, []string) {
 	endpoint := cfg.Integrations.Fleet.Endpoint
 	if endpoint == "" {
 		return nil, nil
@@ -1125,41 +1125,35 @@ func registerFleetTools(ctx context.Context, cfg *kaconfig.Config, reg *registry
 
 	var opts []fleetclient.Option
 	if cfg.Integrations.Fleet.OAuth2.Enabled {
-		oauthCfg := fleetclient.OAuth2Config{
-			TokenURL:     cfg.Integrations.Fleet.OAuth2.TokenURL,
-			ClientID:     "", // resolved from mounted secret below
-			ClientSecret: "",
-		}
 		basePath := "/etc/kubernautagent/fleet-oauth2"
-		loaded, loadErr := fleetclient.LoadOAuth2ConfigFromFiles(
-			basePath+"/token-url",
-			basePath+"/client-id",
-			basePath+"/client-secret",
-		)
-		if loadErr != nil {
-			fleetLog.Error(loadErr, "failed to load fleet OAuth2 credentials — falling back to unauthenticated")
-		} else {
-			if oauthCfg.TokenURL == "" {
-				oauthCfg.TokenURL = loaded.TokenURL
-			}
-			oauthCfg.ClientID = loaded.ClientID
-			oauthCfg.ClientSecret = loaded.ClientSecret
-			opts = append(opts, fleetclient.WithOAuth2Transport(oauthCfg))
-			fleetLog.Info("fleet OAuth2 authentication configured", "token_url", oauthCfg.TokenURL)
+		if cfg.Integrations.Fleet.OAuth2.CredentialsSecretRef != "" {
+			basePath = "/etc/kubernautagent/" + cfg.Integrations.Fleet.OAuth2.CredentialsSecretRef
 		}
+		reloadCfg := fleetclient.ReloadableOAuth2Config{
+			TokenURL:         cfg.Integrations.Fleet.OAuth2.TokenURL,
+			ClientIDPath:     basePath + "/client-id",
+			ClientSecretPath: basePath + "/client-secret",
+			Scopes:           []string{"fleet"},
+			TokenTimeout:     10 * time.Second,
+		}
+		opts = append(opts, fleetclient.WithReloadableOAuth2Transport(reloadCfg, fleetLog))
+		fleetLog.Info("fleet OAuth2 authentication configured (hot-reloadable)",
+			"tokenURL", cfg.Integrations.Fleet.OAuth2.TokenURL,
+			"secretPath", basePath)
 	}
 
-	client, err := fleetclient.New(ctx, endpoint, opts...)
+	resilienceCfg := fleetclient.DefaultResilienceConfig()
+	resilientClient, err := fleetclient.NewResilient(ctx, endpoint, resilienceCfg, fleetLog, opts...)
 	if err != nil {
 		fleetLog.Error(err, "failed to connect to MCP Gateway — fleet tools unavailable")
 		return nil, nil
 	}
 
-	session := client.Session()
+	session := resilientClient.Session()
 	tools, err := session.ListTools(ctx, nil)
 	if err != nil {
 		fleetLog.Error(err, "failed to discover fleet tools via tools/list")
-		_ = client.Close()
+		_ = resilientClient.Close()
 		return nil, nil
 	}
 
@@ -1185,7 +1179,7 @@ func registerFleetTools(ctx context.Context, cfg *kaconfig.Config, reg *registry
 	}
 
 	fleetLog.Info("registered fleet BridgeTools", "count", count, "endpoint", endpoint)
-	return client, toolNames
+	return resilientClient, toolNames
 }
 
 func registerK8sTools(reg *registry.Registry, infra *k8sInfra, logger logr.Logger) {

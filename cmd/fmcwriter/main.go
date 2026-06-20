@@ -62,7 +62,23 @@ func main() {
 	reg := prometheus.NewRegistry()
 	metrics := fmcwriter.NewMetrics(reg)
 
-	mcpClient, err := mcpclient.New(ctx, cfg.MCPGatewayEndpoint)
+	var opts []mcpclient.Option
+	if cfg.OAuth2Enabled {
+		reloadCfg := mcpclient.ReloadableOAuth2Config{
+			TokenURL:         cfg.OAuth2TokenURL,
+			ClientIDPath:     cfg.OAuth2SecretPath + "/client-id",
+			ClientSecretPath: cfg.OAuth2SecretPath + "/client-secret",
+			Scopes:           []string{"fleet"},
+			TokenTimeout:     10 * time.Second,
+		}
+		opts = append(opts, mcpclient.WithReloadableOAuth2Transport(reloadCfg, logger))
+		logger.Info("OAuth2 authentication configured for MCP Gateway",
+			"tokenURL", cfg.OAuth2TokenURL,
+			"secretPath", cfg.OAuth2SecretPath)
+	}
+
+	resilienceCfg := mcpclient.DefaultResilienceConfig()
+	mcpClient, err := mcpclient.NewResilient(ctx, cfg.MCPGatewayEndpoint, resilienceCfg, logger, opts...)
 	if err != nil {
 		logger.Error(err, "Failed to connect to MCP Gateway")
 		os.Exit(1)
@@ -136,8 +152,8 @@ func main() {
 		}
 	}()
 
-	ready.Store(true)
-	logger.Info("FMC Writer ready")
+	ready.Store(mcpClient.Ready())
+	logger.Info("FMC Writer ready", "mcpConnected", mcpClient.Ready())
 
 	<-sigCh
 	logger.Info("Received shutdown signal")
@@ -156,6 +172,9 @@ type config struct {
 	KeyTTL             time.Duration
 	MetricsAddr        string
 	ResourceKinds      []string
+	OAuth2Enabled      bool
+	OAuth2TokenURL     string
+	OAuth2SecretPath   string
 }
 
 func loadConfig() config {
@@ -167,6 +186,9 @@ func loadConfig() config {
 		KeyTTL:             parseDuration("FMC_KEY_TTL", 45*time.Second),
 		MetricsAddr:        envOrDefault("FMC_METRICS_ADDR", ":8081"),
 		ResourceKinds:      []string{"Deployment", "StatefulSet", "DaemonSet", "Pod", "Service", "Node"},
+		OAuth2Enabled:      os.Getenv("FMC_OAUTH2_ENABLED") == "true",
+		OAuth2TokenURL:     envOrDefault("FMC_OAUTH2_TOKEN_URL", ""),
+		OAuth2SecretPath:   envOrDefault("FMC_OAUTH2_SECRET_PATH", "/etc/fmcwriter/fleet-oauth2"),
 	}
 	return cfg
 }
