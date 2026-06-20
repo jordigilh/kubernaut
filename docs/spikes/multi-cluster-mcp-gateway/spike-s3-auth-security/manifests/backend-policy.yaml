@@ -1,0 +1,46 @@
+{{- if and .Values.mcpGateway.enabled .Values.mcpGateway.aap.enabled }}
+---
+# BackendPolicy: Injects AAP Bearer token into upstream requests to the AAP MCP server.
+# K8s MCP backends use implicit ServiceAccount auth (no injection needed).
+# AAP MCP requires a Bearer token per request for authentication.
+#
+# Authority: Issue #54, WS6, spike finding "AAP auth difference"
+apiVersion: gateway.networking.k8s.io/v1alpha3
+kind: BackendTLSPolicy
+metadata:
+  name: {{ include "kubernaut.fullname" . }}-aap-backend
+  namespace: {{ .Values.mcpGateway.namespace | default "mcp-system" }}
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mcp-gateway
+spec:
+  targetRefs:
+    - group: ""
+      kind: Service
+      name: {{ .Values.mcpGateway.aap.serviceName | default "aap-mcp-server" }}
+  validation:
+    caCertificateRefs:
+      - name: {{ .Values.mcpGateway.aap.tlsSecret | default "aap-tls-ca" }}
+        group: ""
+        kind: Secret
+---
+# Header injection for AAP Bearer token via HTTPRoute filter.
+# The token is sourced from a K8s Secret referenced by the Helm values.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "kubernaut.fullname" . }}-aap-token
+  namespace: {{ .Values.mcpGateway.namespace | default "mcp-system" }}
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mcp-gateway
+  annotations:
+    kubernaut.ai/managed-by: helm
+type: Opaque
+data:
+  {{- if .Values.mcpGateway.aap.bearerToken }}
+  token: {{ .Values.mcpGateway.aap.bearerToken | b64enc | quote }}
+  {{- else }}
+  token: ""
+  {{- end }}
+{{- end }}

@@ -1,0 +1,210 @@
+# Fleet E2E Memory Budget Spike
+#
+# Purpose: Measure actual memory usage for fleet E2E scenarios
+# to determine what fits within GitHub Actions 6GB limit.
+#
+# Run manually via: gh workflow run fleet-e2e-memory-spike.yml
+#
+# Results appear in the workflow run artifacts as memory-report.txt
+
+name: "Spike: Fleet E2E Memory Budget"
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_two_clusters:
+        description: 'Also test Option B (two Kind clusters)?'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  KIND_EXPERIMENTAL_PROVIDER: podman
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  memory-spike:
+    name: Fleet E2E Memory Measurement
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Install Kind v0.30.0
+        run: |
+          KIND_VERSION="v0.30.0"
+          curl -Lo ./kind "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-amd64"
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+          kind version
+
+      - name: Install Podman
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman
+          podman --version
+
+      - name: Install kubectl
+        run: |
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+
+      # ========================================
+      # Baseline measurement
+      # ========================================
+      - name: "Measure: Baseline (no cluster)"
+        run: |
+          echo "=== BASELINE (no cluster) ===" | tee -a memory-report.txt
+          free -m | tee -a memory-report.txt
+          echo "" >> memory-report.txt
+
+      # ========================================
+      # Option A: Single cluster
+      # ========================================
+      - name: Create single Kind cluster (hub)
+        run: |
+          cat > /tmp/kind-config.yaml <<EOF
+          kind: Cluster
+          apiVersion: kind.x-k8s.io/v1alpha4
+          nodes:
+          - role: control-plane
+          EOF
+          kind create cluster --name fleet-hub --config /tmp/kind-config.yaml --wait 60s
+
+      - name: "Measure: After single Kind cluster"
+        run: |
+          echo "=== AFTER SINGLE CLUSTER ===" | tee -a memory-report.txt
+          free -m | tee -a memory-report.txt
+          echo "" >> memory-report.txt
+          echo "Pod memory usage:" | tee -a memory-report.txt
+          kubectl top pods -A --no-headers 2>/dev/null || echo "(metrics-server not available)" | tee -a memory-report.txt
+          echo "" >> memory-report.txt
+          echo "Container memory (podman):" | tee -a memory-report.txt
+          podman stats --no-stream --format "table {{.Name}} {{.MemUsage}}" | tee -a memory-report.txt
+          echo "" >> memory-report.txt
+
+      - name: Deploy mock MCP Gateway Pod
+        run: |
+          kubectl apply -f - <<EOF
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: mock-mcp-gateway
+            namespace: default
+            labels:
+              app: mock-mcp-gateway
+          spec:
+            containers:
+            - name: gateway
+              image: registry.k8s.io/pause:3.9
+              resources:
+                requests:
+                  memory: "32Mi"
+                  cpu: "50m"
+                limits:
+                  memory: "64Mi"
+                  cpu: "100m"
+          EOF
+          kubectl wait --for=condition=ready pod/mock-mcp-gateway --timeout=30s
+
+      - name: Deploy Valkey (Redis) Pod
+        run: |
+          kubectl apply -f - <<EOF
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: valkey
+            namespace: default
+            labels:
+              app: valkey
+          spec:
+            containers:
+            - name: valkey
+              image: docker.io/valkey/valkey:8-alpine
+              resources:
+                requests:
+                  memory: "32Mi"
+                  cpu: "50m"
+                limits:
+                  memory: "128Mi"
+                  cpu: "200m"
+              ports:
+              - containerPort: 6379
+          EOF
+          kubectl wait --for=condition=ready pod/valkey --timeout=60s
+
+      - name: "Measure: After mock services deployed"
+        run: |
+          echo "=== AFTER MOCK SERVICES (Option A final) ===" | tee -a memory-report.txt
+          free -m | tee -a memory-report.txt
+          echo "" >> memory-report.txt
+          echo "Container memory (podman):" | tee -a memory-report.txt
+          podman stats --no-stream --format "table {{.Name}} {{.MemUsage}}" | tee -a memory-report.txt
+          echo "" >> memory-report.txt
+
+      # ========================================
+      # Option B: Two clusters (optional)
+      # ========================================
+      - name: Create second Kind cluster (spoke)
+        if: inputs.test_two_clusters
+        run: |
+          cat > /tmp/kind-spoke-config.yaml <<EOF
+          kind: Cluster
+          apiVersion: kind.x-k8s.io/v1alpha4
+          nodes:
+          - role: control-plane
+          EOF
+          kind create cluster --name fleet-spoke --config /tmp/kind-spoke-config.yaml --wait 60s
+
+      - name: "Measure: After two clusters (Option B)"
+        if: inputs.test_two_clusters
+        run: |
+          echo "=== AFTER TWO CLUSTERS (Option B) ===" | tee -a memory-report.txt
+          free -m | tee -a memory-report.txt
+          echo "" >> memory-report.txt
+          echo "Container memory (podman):" | tee -a memory-report.txt
+          podman stats --no-stream --format "table {{.Name}} {{.MemUsage}}" | tee -a memory-report.txt
+          echo "" >> memory-report.txt
+
+      # ========================================
+      # Summary
+      # ========================================
+      - name: Print memory summary
+        run: |
+          echo "=== MEMORY REPORT SUMMARY ===" | tee -a memory-report.txt
+          echo "" >> memory-report.txt
+          echo "Total system memory:" | tee -a memory-report.txt
+          free -m | grep "Mem:" | tee -a memory-report.txt
+          echo "" >> memory-report.txt
+          echo "Recommendation:" | tee -a memory-report.txt
+          USED=$(free -m | grep "Mem:" | awk '{print $3}')
+          TOTAL=$(free -m | grep "Mem:" | awk '{print $2}')
+          AVAIL=$(free -m | grep "Mem:" | awk '{print $7}')
+          echo "  Used: ${USED}MB / ${TOTAL}MB (Available: ${AVAIL}MB)" | tee -a memory-report.txt
+          if [ "$AVAIL" -gt 2048 ]; then
+            echo "  STATUS: SUFFICIENT headroom for fleet E2E (Option A)" | tee -a memory-report.txt
+          else
+            echo "  STATUS: TIGHT - consider reducing services" | tee -a memory-report.txt
+          fi
+          echo "" >> memory-report.txt
+          cat memory-report.txt
+
+      # ========================================
+      # Cleanup
+      # ========================================
+      - name: Cleanup
+        if: always()
+        run: |
+          kind delete cluster --name fleet-hub 2>/dev/null || true
+          kind delete cluster --name fleet-spoke 2>/dev/null || true
+
+      - name: Upload memory report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fleet-e2e-memory-report
+          path: memory-report.txt
+          retention-days: 30

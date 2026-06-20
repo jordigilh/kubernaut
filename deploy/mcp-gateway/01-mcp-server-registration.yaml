@@ -1,0 +1,20 @@
+# MCPServerRegistration CRD instance for the local Kind cluster.
+# This registers the K8s MCP Server running on the hub cluster with
+# the Kuadrant MCP Gateway, making its tools discoverable via tools/list.
+#
+# In multi-cluster setups, each managed cluster would have its own
+# MCPServerRegistration with a unique name and endpoint.
+apiVersion: mcp.kuadrant.io/v1alpha1
+kind: MCPServerRegistration
+metadata:
+  name: hub-cluster
+  namespace: kubernaut-system
+  labels:
+    kubernaut.ai/managed: "true"
+    app.kubernetes.io/part-of: kubernaut
+spec:
+  endpoint: http://k8s-mcp-server.kubernaut-system.svc:8080
+  displayName: "Hub Cluster (local)"
+  metadata:
+    environment: development
+    provider: kind
