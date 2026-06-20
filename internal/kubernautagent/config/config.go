@@ -74,6 +74,22 @@ type IntegrationsConfig struct {
 	DataStorage DataStorageConfig `yaml:"dataStorage"`
 	Tools       ToolsConfig       `yaml:"tools"`
 	MCP         MCPConfig         `yaml:"mcp"`
+	Fleet       FleetConfig       `yaml:"fleet"`
+}
+
+// FleetConfig configures multi-cluster fleet access via MCP Gateway.
+// When Endpoint is non-empty, KA discovers remote cluster tools via
+// tools/list and registers them as BridgeTools (additive to local tools).
+type FleetConfig struct {
+	Endpoint string       `yaml:"endpoint"`
+	OAuth2   FleetOAuth2  `yaml:"oauth2"`
+}
+
+// FleetOAuth2 holds OAuth2 client credentials for MCP Gateway authentication.
+type FleetOAuth2 struct {
+	Enabled              bool   `yaml:"enabled"`
+	TokenURL             string `yaml:"tokenURL"`
+	CredentialsSecretRef string `yaml:"credentialsSecretRef"`
 }
 
 

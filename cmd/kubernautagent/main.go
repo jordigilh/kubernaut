@@ -87,6 +87,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/summarizer"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	wfclient "github.com/jordigilh/kubernaut/pkg/workflowexecution/client"
+	fleetclient "github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/client-go/rest"
 	metricsclient "k8s.io/metrics/pkg/client/clientset/versioned"
@@ -274,6 +275,7 @@ func main() {
 		os.Exit(1)
 	}
 	reg := buildToolRegistry(cfg, logger, k8sInfra, ds)
+	fleetClient := registerFleetTools(context.Background(), cfg, reg, logger)
 	enricher := buildEnricher(cfg, ds, k8sInfra, auditStore, logger)
 	sanitizer := buildSanitizationPipeline(cfg, logger)
 	anomalyDetector := buildAnomalyDetector(cfg, logger)
@@ -664,6 +666,10 @@ func main() {
 	shutdownServer(shutdownCtx, metricsServer, "metrics", logger)
 
 	eventEmitter.Shutdown()
+	if fleetClient != nil {
+		_ = fleetClient.Close()
+		logger.Info("fleet MCP client closed")
+	}
 	logger.Info("flushing audit store...")
 	auditCleanup()
 }
@@ -1099,6 +1105,81 @@ func buildToolRegistry(cfg *kaconfig.Config, logger logr.Logger, infra *k8sInfra
 
 	logger.Info("tool registry ready", "total_tools", len(reg.All()))
 	return reg
+}
+
+// registerFleetTools connects to the MCP Gateway, discovers remote cluster tools
+// via tools/list, wraps them as BridgeTools, and registers them.
+// Returns the fleet client (must be closed on shutdown) or nil if fleet is disabled.
+func registerFleetTools(ctx context.Context, cfg *kaconfig.Config, reg *registry.Registry, logger logr.Logger) *fleetclient.MCPResourceClient {
+	endpoint := cfg.Integrations.Fleet.Endpoint
+	if endpoint == "" {
+		return nil
+	}
+
+	fleetLog := logger.WithName("fleet")
+	fleetLog.Info("connecting to MCP Gateway for fleet tool discovery", "endpoint", endpoint)
+
+	var opts []fleetclient.Option
+	if cfg.Integrations.Fleet.OAuth2.Enabled {
+		oauthCfg := fleetclient.OAuth2Config{
+			TokenURL:     cfg.Integrations.Fleet.OAuth2.TokenURL,
+			ClientID:     "", // resolved from mounted secret below
+			ClientSecret: "",
+		}
+		basePath := "/etc/kubernautagent/fleet-oauth2"
+		loaded, loadErr := fleetclient.LoadOAuth2ConfigFromFiles(
+			basePath+"/token-url",
+			basePath+"/client-id",
+			basePath+"/client-secret",
+		)
+		if loadErr != nil {
+			fleetLog.Error(loadErr, "failed to load fleet OAuth2 credentials — falling back to unauthenticated")
+		} else {
+			if oauthCfg.TokenURL == "" {
+				oauthCfg.TokenURL = loaded.TokenURL
+			}
+			oauthCfg.ClientID = loaded.ClientID
+			oauthCfg.ClientSecret = loaded.ClientSecret
+			opts = append(opts, fleetclient.WithOAuth2Transport(oauthCfg))
+			fleetLog.Info("fleet OAuth2 authentication configured", "token_url", oauthCfg.TokenURL)
+		}
+	}
+
+	client, err := fleetclient.New(ctx, endpoint, opts...)
+	if err != nil {
+		fleetLog.Error(err, "failed to connect to MCP Gateway — fleet tools unavailable")
+		return nil
+	}
+
+	session := client.Session()
+	tools, err := session.ListTools(ctx, nil)
+	if err != nil {
+		fleetLog.Error(err, "failed to discover fleet tools via tools/list")
+		_ = client.Close()
+		return nil
+	}
+
+	var count int
+	for _, tool := range tools.Tools {
+		def := fleetclient.ToolDefinition{
+			Name:        tool.Name,
+			Description: tool.Description,
+		}
+		if tool.InputSchema != nil {
+			schema, marshalErr := json.Marshal(tool.InputSchema)
+			if marshalErr != nil {
+				fleetLog.Error(marshalErr, "failed to marshal tool schema", "tool", tool.Name)
+				continue
+			}
+			def.InputSchema = schema
+		}
+		bt := fleetclient.NewBridgeTool(def, "fleet", session)
+		reg.Register(bt)
+		count++
+	}
+
+	fleetLog.Info("registered fleet BridgeTools", "count", count, "endpoint", endpoint)
+	return client
 }
 
 func registerK8sTools(reg *registry.Registry, infra *k8sInfra, logger logr.Logger) {
