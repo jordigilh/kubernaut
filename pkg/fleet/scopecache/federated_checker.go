@@ -27,6 +27,7 @@ import (
 // Compile-time interface compliance.
 var _ scope.ScopeChecker = (*FederatedScopeChecker)(nil)
 var _ scope.FederatedScopeChecker = (*FederatedScopeChecker)(nil)
+var _ scope.UnifiedScopeChecker = (*FederatedScopeChecker)(nil)
 
 // FederatedScopeChecker implements scope.ScopeChecker by routing checks:
 //   - Empty clusterID (local hub): delegates to the local ScopeChecker (existing K8s-based)
@@ -70,8 +71,26 @@ func (f *FederatedScopeChecker) IsManaged(ctx context.Context, namespace, kind, 
 	return f.local.IsManaged(ctx, namespace, kind, name)
 }
 
+// IsManagedResource implements scope.UnifiedScopeChecker using ResourceIdentity.
+// Routes by ClusterID: empty → local checker, non-empty → remote resolver.
+func (f *FederatedScopeChecker) IsManagedResource(ctx context.Context, resource scope.ResourceIdentity) (bool, error) {
+	if resource.ClusterID == "" {
+		return f.local.IsManaged(ctx, resource.Namespace, resource.Kind, resource.Name)
+	}
+
+	managed, err := f.remoteResolver.IsManaged(ctx, resource.ClusterID, resource.Group, resource.Version, resource.Kind, resource.Namespace, resource.Name)
+	if err != nil {
+		f.logger.V(1).Info("remote scope resolver error, falling back to unmanaged",
+			"cluster", resource.ClusterID, "namespace", resource.Namespace,
+			"kind", resource.Kind, "name", resource.Name, "error", err)
+		return false, nil
+	}
+	return managed, nil
+}
+
 // IsManagedOnCluster checks scope for a resource on a specific cluster.
 // Empty clusterID routes to local checker; non-empty routes to RemoteScopeResolver.
+// Deprecated: Use IsManagedResource with ResourceIdentity instead.
 func (f *FederatedScopeChecker) IsManagedOnCluster(ctx context.Context, clusterID, namespace, kind, name string) (bool, error) {
 	if clusterID == "" {
 		return f.local.IsManaged(ctx, namespace, kind, name)

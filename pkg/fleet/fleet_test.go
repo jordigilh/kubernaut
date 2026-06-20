@@ -64,3 +64,71 @@ var _ = Describe("FleetConfig shared type (Phase E)", func() {
 			"disabled fleet should not require ValkeyAddr")
 	})
 })
+
+var _ = Describe("FleetConfig adapter pattern (Phase 2)", func() {
+	It("UT-FLEET-CFG-010 [CM-6]: FleetConfig exposes Backend and Endpoint fields", func() {
+		cfg := fleet.FleetConfig{
+			Enabled:  true,
+			Backend:  "fmc",
+			Endpoint: "http://fmc.kubernaut.svc:8080",
+		}
+
+		Expect(cfg.Backend).To(Equal("fmc"))
+		Expect(cfg.Endpoint).To(Equal("http://fmc.kubernaut.svc:8080"))
+	})
+
+	It("UT-FLEET-CFG-011 [CM-6]: Validate rejects empty Endpoint when fleet is enabled", func() {
+		cfg := fleet.FleetConfig{
+			Enabled:  true,
+			Backend:  "fmc",
+			Endpoint: "",
+		}
+
+		err := cfg.Validate()
+		Expect(err).To(HaveOccurred(),
+			"must reject empty Endpoint when fleet is enabled")
+	})
+
+	It("UT-FLEET-CFG-012 [CM-6]: Validate accepts disabled fleet without Backend/Endpoint", func() {
+		cfg := fleet.FleetConfig{
+			Enabled: false,
+		}
+
+		err := cfg.Validate()
+		Expect(err).ToNot(HaveOccurred())
+	})
+
+	It("UT-FLEET-CFG-013 [CM-6]: Validate rejects unsupported Backend value", func() {
+		cfg := fleet.FleetConfig{
+			Enabled:  true,
+			Backend:  "unsupported",
+			Endpoint: "http://something:8080",
+		}
+
+		err := cfg.Validate()
+		Expect(err).To(HaveOccurred(),
+			"must reject unknown backend types")
+	})
+
+	It("UT-FLEET-CFG-014 [CM-6]: Validate accepts fmc backend", func() {
+		cfg := fleet.FleetConfig{
+			Enabled:  true,
+			Backend:  "fmc",
+			Endpoint: "http://fmc.kubernaut.svc:8080",
+		}
+
+		err := cfg.Validate()
+		Expect(err).ToNot(HaveOccurred())
+	})
+
+	It("UT-FLEET-CFG-015 [CM-6]: Validate accepts acm backend", func() {
+		cfg := fleet.FleetConfig{
+			Enabled:  true,
+			Backend:  "acm",
+			Endpoint: "https://search-api.open-cluster-management.svc:4010",
+		}
+
+		err := cfg.Validate()
+		Expect(err).ToNot(HaveOccurred())
+	})
+})

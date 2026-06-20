@@ -200,3 +200,65 @@ var _ = Describe("RemoteScopeResolver typed params (Phase C)", func() {
 			"typed params must produce the same result as raw string params (SI-10: input validation)")
 	})
 })
+
+var _ = Describe("UnifiedScopeChecker on FederatedScopeChecker (Phase 2)", func() {
+	var (
+		ctx    context.Context
+		local  *mockLocalChecker
+		reader *mockCacheReader
+		fc     *scopecache.FederatedScopeChecker
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		local = &mockLocalChecker{managed: map[string]bool{
+			"default/Deployment/nginx": true,
+		}}
+		reader = &mockCacheReader{store: make(map[string]bool)}
+		cacheClient := scopecache.NewClient(reader)
+		fc = scopecache.NewFederatedScopeChecker(local, cacheClient, logr.Discard())
+	})
+
+	It("UT-FLEET-USI-001 [SI-10]: FederatedScopeChecker implements UnifiedScopeChecker interface", func() {
+		var checker scope.UnifiedScopeChecker = fc
+		Expect(checker).ToNot(BeNil())
+	})
+
+	It("UT-FLEET-USI-002 [AC-4]: IsManagedResource with empty ClusterID routes to local checker", func() {
+		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{
+			Namespace: "default",
+			Kind:      "Deployment",
+			Name:      "nginx",
+		})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(managed).To(BeTrue())
+	})
+
+	It("UT-FLEET-USI-003 [AC-4]: IsManagedResource with ClusterID routes to remote resolver", func() {
+		key, keyErr := scopecache.BuildKey("prod-east", "apps", "v1", "Deployment", "default", "nginx")
+		Expect(keyErr).ToNot(HaveOccurred())
+		reader.store[key] = true
+
+		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{
+			ClusterID: "prod-east",
+			Group:     "apps",
+			Version:   "v1",
+			Kind:      "Deployment",
+			Namespace: "default",
+			Name:      "nginx",
+		})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(managed).To(BeTrue())
+	})
+
+	It("UT-FLEET-USI-004 [AC-4]: IsManagedResource remote miss returns false (fail-safe)", func() {
+		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{
+			ClusterID: "prod-west",
+			Kind:      "Deployment",
+			Namespace: "default",
+			Name:      "unknown",
+		})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(managed).To(BeFalse())
+	})
+})
