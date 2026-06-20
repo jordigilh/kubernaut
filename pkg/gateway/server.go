@@ -66,6 +66,7 @@ import (
 	kubecors "github.com/jordigilh/kubernaut/pkg/http/cors"  // BR-HTTP-015: Shared CORS library
 	"github.com/jordigilh/kubernaut/pkg/shared/sanitization" // DD-005: Shared sanitization library
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"        // BR-SCOPE-002: Resource scope management
+	"github.com/jordigilh/kubernaut/pkg/fleet/scopecache"    // ADR-065: Federated scope checking
 )
 
 // Gateway Audit Event Type Constants (from OpenAPI spec)
@@ -658,6 +659,16 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 	// prevent duplicate CRDs and lock races), scope checking tolerates informer sync delay.
 	scopeMgr := scope.NewManager(ctrlClient)
 
+	// ADR-065: Federated scope checking for multi-cluster fleet management.
+	// When fleet is enabled, wraps the local scope checker with FederatedScopeChecker
+	// backed by a Valkey cache for low-latency remote cluster scope lookups.
+	var scopeCheckerInstance ScopeChecker = scopeMgr
+	if cfg.Fleet.Enabled && cfg.Fleet.ValkeyAddr != "" {
+		scopeCheckerInstance = scopecache.NewFederatedScopeCheckerFromAddr(scopeMgr, cfg.Fleet.ValkeyAddr, logger)
+		logger.Info("ADR-065: Federated scope checker enabled (Valkey-backed fleet cache)",
+			"valkey_addr", cfg.Fleet.ValkeyAddr)
+	}
+
 	authMW := newAuthMiddleware(authenticator, authorizer, controllerNS, logger)
 	if authMW != nil {
 		logger.Info("BR-GATEWAY-036/037: Auth middleware enabled",
@@ -677,7 +688,7 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 		ctrlClient:          ctrlClient,
 		apiReader:           apiReader, // ADR-057: Used for readiness K8s check (bypasses cache)
 		auditStore:          auditStore,
-		scopeChecker:        scopeMgr,     // BR-SCOPE-002: Label-based scope filtering
+		scopeChecker:        scopeCheckerInstance, // BR-SCOPE-002 + ADR-065: Label-based scope filtering (federated when fleet enabled)
 		controllerNamespace: controllerNS, // Issue #195: Used by ShouldDeduplicate
 		authMiddleware:      authMW,
 		metricsInstance:     metricsInstance,

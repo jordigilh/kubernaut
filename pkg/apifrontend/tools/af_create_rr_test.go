@@ -594,4 +594,61 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			Expect(err.Error()).To(ContainSubstring("namespace"))
 		})
 	})
+
+	Describe("Multi-Cluster ClusterID propagation (ADR-065, BR-INTEGRATION-065)", func() {
+		It("UT-AF-065-001: populates ClusterID and ClusterName on created RR", func() {
+			tc := newTypedFakeClient()
+			result, err := tools.HandleCreateRR(context.Background(), tc, nil, "kubernaut-system", &tools.CreateRRArgs{
+				Namespace:   "prod",
+				Kind:        "Deployment",
+				Name:        "nginx",
+				Description: "test",
+				APIVersion:  "apps/v1",
+				ClusterID:   "prod-east-1",
+				ClusterName: "Production US-East",
+			}, "user", nil, nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.AlreadyExists).To(BeFalse())
+
+			created := verifyTypedRR(tc, "kubernaut-system", extractRRName(result.RRID))
+			Expect(created.Spec.ClusterID).To(Equal("prod-east-1"))
+			Expect(created.Spec.ClusterName).To(Equal("Production US-East"))
+		})
+
+		It("UT-AF-065-002: empty ClusterID indicates local hub (backward compat)", func() {
+			tc := newTypedFakeClient()
+			result, err := tools.HandleCreateRR(context.Background(), tc, nil, "kubernaut-system", &tools.CreateRRArgs{
+				Namespace:   "prod",
+				Kind:        "Deployment",
+				Name:        "redis",
+				Description: "local test",
+				APIVersion:  "apps/v1",
+			}, "user", nil, nil)
+			Expect(err).NotTo(HaveOccurred())
+
+			created := verifyTypedRR(tc, "kubernaut-system", extractRRName(result.RRID))
+			Expect(created.Spec.ClusterID).To(BeEmpty())
+			Expect(created.Spec.ClusterName).To(BeEmpty())
+		})
+
+		It("UT-AF-065-003: different clusters produce different fingerprints (no cross-cluster dedup)", func() {
+			tc := newTypedFakeClient()
+
+			result1, err := tools.HandleCreateRR(context.Background(), tc, nil, "kubernaut-system", &tools.CreateRRArgs{
+				Namespace: "prod", Kind: "Deployment", Name: "web",
+				Description: "east", APIVersion: "apps/v1", ClusterID: "cluster-east",
+			}, "user", nil, nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result1.AlreadyExists).To(BeFalse())
+
+			result2, err := tools.HandleCreateRR(context.Background(), tc, nil, "kubernaut-system", &tools.CreateRRArgs{
+				Namespace: "prod", Kind: "Deployment", Name: "web",
+				Description: "west", APIVersion: "apps/v1", ClusterID: "cluster-west",
+			}, "user", nil, nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result2.AlreadyExists).To(BeFalse(),
+				"same resource on different clusters should NOT deduplicate")
+			Expect(result2.RRID).NotTo(Equal(result1.RRID))
+		})
+	})
 })
