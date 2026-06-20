@@ -17,7 +17,6 @@ limitations under the License.
 package gateway
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
@@ -31,12 +30,11 @@ import (
 // ADR-053: Resource Scope Management Architecture
 type ScopeChecker = scope.ScopeChecker
 
-// fleetScopeChecker extends ScopeChecker with cluster-aware scope checking.
+// FederatedScopeChecker is an alias for the shared scope.FederatedScopeChecker interface.
 // Used via type assertion in validateScope when signal.ClusterID is non-empty (ADR-065).
-type fleetScopeChecker interface {
-	scope.ScopeChecker
-	IsManagedOnCluster(ctx context.Context, clusterID, namespace, kind, name string) (bool, error)
-}
+// Previously a local unexported interface; now shared with RO for consistent
+// cross-service scope enforcement.
+type FederatedScopeChecker = scope.FederatedScopeChecker
 
 // StatusRejected indicates the signal was rejected because the resource is not managed.
 // BR-SCOPE-002: Gateway rejects signals from unmanaged resources.

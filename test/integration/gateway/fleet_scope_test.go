@@ -29,7 +29,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
 )
 
-// mockFleetScopeChecker implements both scope.ScopeChecker and fleetScopeChecker.
+// mockFleetScopeChecker implements scope.FederatedScopeChecker (gateway.FederatedScopeChecker).
 // It records calls for verification and returns configurable responses.
 type mockFleetScopeChecker struct {
 	isManagedResult      bool
