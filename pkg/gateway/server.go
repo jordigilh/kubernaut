@@ -1516,7 +1516,7 @@ func (s *Server) validateScope(ctx context.Context, signal *types.NormalizedSign
 	var managed bool
 	var err error
 	if signal.ClusterID != "" {
-		if fc, ok := s.scopeChecker.(fleetScopeChecker); ok {
+		if fc, ok := s.scopeChecker.(FederatedScopeChecker); ok {
 			managed, err = fc.IsManagedOnCluster(ctx, signal.ClusterID, signal.Namespace, signal.Resource.Kind, signal.Resource.Name)
 		} else {
 			logger.Info("Fleet signal received but scope checker is not fleet-aware — rejecting",

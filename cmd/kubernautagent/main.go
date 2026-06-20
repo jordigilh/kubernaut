@@ -1172,7 +1172,7 @@ func registerFleetTools(ctx context.Context, cfg *kaconfig.Config, reg *registry
 			}
 			def.InputSchema = schema
 		}
-		bt := fleetclient.NewBridgeTool(def, "fleet", session)
+		bt := fleetclient.NewBridgeToolFromSession(def, session)
 		reg.Register(bt)
 		toolNames = append(toolNames, tool.Name)
 		count++
