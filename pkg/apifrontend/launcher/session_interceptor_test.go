@@ -269,8 +269,10 @@ var _ = Describe("SessionInterceptor stale context validation (BR-SESS-025, #147
 
 		_, err := interceptor.Before(ctx, callCtx, req)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(msg.ContextID).To(BeEmpty(),
-			"SC-7: stale context_id must be cleared when validator reports session not found")
+		Expect(msg.ContextID).NotTo(Equal("stale-ctx-from-previous-pod"),
+			"SC-7: stale context_id must be replaced when validator reports session not found")
+		Expect(msg.ContextID).NotTo(BeEmpty(),
+			"SC-7: replaced context_id must be a fresh UUID, not empty")
 		Expect(validator.calledWith).To(Equal("stale-ctx-from-previous-pod"),
 			"Validator must be called with the original context_id")
 	})
@@ -331,8 +333,10 @@ var _ = Describe("SessionInterceptor stale context validation (BR-SESS-025, #147
 
 		_, err := interceptor.Before(ctx, callCtx, req)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(msg.ContextID).To(BeEmpty(),
-			"SC-10: stale context_id must be cleared after post-restart detection")
+		Expect(msg.ContextID).NotTo(Equal("stale-ctx-after-restart"),
+			"SC-10: stale context_id must be replaced after post-restart detection")
+		Expect(msg.ContextID).NotTo(BeEmpty(),
+			"SC-10: replaced context_id must be a fresh UUID, not empty")
 
 		logOutput := logBuf.String()
 		Expect(logOutput).To(ContainSubstring("stale-ctx-after-restart"),

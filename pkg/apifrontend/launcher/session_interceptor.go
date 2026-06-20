@@ -7,6 +7,7 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv"
 	"github.com/go-logr/logr"
+	"github.com/google/uuid"
 	adksession "google.golang.org/adk/session"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
@@ -83,11 +84,11 @@ func (s *SessionInterceptor) Before(ctx context.Context, callCtx *a2asrv.CallCon
 	// fresh session ID, preventing the misleading "reconnecting" UX.
 	if msg.ContextID != "" {
 		if s.validator != nil && !s.validator.IsContextValid(ctx, msg.ContextID, identity.Username) {
-			s.logger.Info("clearing stale context_id — no backing session in memory (post-restart, #1472)",
+			s.logger.Info("replacing stale context_id with fresh UUID — no backing session in memory (post-restart, #1472)",
 				"user", identity.Username,
 				"stale_context_id", msg.ContextID,
 			)
-			msg.ContextID = ""
+			msg.ContextID = uuid.New().String()
 			// Fall through to registry check below (which will also find
 			// nothing post-restart, resulting in a fresh conversation).
 		} else {
