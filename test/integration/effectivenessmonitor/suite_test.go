@@ -515,9 +515,11 @@ func createEffectivenessAssessment(namespace, name, correlationID string) *eav1.
 
 // createExpiredEffectivenessAssessment creates an EA with an already-expired validity deadline.
 // ValidityDeadline is computed by the EM controller on first reconcile. To test expired behavior,
-// we create the EA normally, then patch the status with an expired ValidityDeadline before the
-// controller's first reconcile (or we race with it). Using Status().Update() ensures the
-// reconciler will see the expired deadline on its next reconcile.
+// we create the EA normally, then patch the status with an expired ValidityDeadline while the
+// controller's RequeueAfter timer (from Stabilizing phase) is pending. The RequeueAfter ensures
+// the reconciler picks up the patched expired deadline on its next timed reconcile.
+// Note: With GenerationChangedPredicate (Issue #1466), Status().Update() alone does NOT
+// trigger reconciliation — the RequeueAfter timer provides the guaranteed trigger.
 func createExpiredEffectivenessAssessment(namespace, name, correlationID string) *eav1.EffectivenessAssessment {
 	ea := &eav1.EffectivenessAssessment{
 		ObjectMeta: metav1.ObjectMeta{

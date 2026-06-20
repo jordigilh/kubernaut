@@ -173,6 +173,118 @@ var _ = Describe("Alert Decay Detection Integration (Issue #369, BR-EM-012)", fu
 	})
 
 	// ========================================
+	// IT-EM-DECAY-003: Alert decay reconciliation rate bounded by RequeueAfter
+	// Issue #1466, BR-EM-012: Without GenerationChangedPredicate, each decay
+	// iteration writes a status update that triggers the controller-runtime watch,
+	// causing immediate re-reconciliation (~17/sec). With the predicate, status-only
+	// updates are filtered and reconciliation rate is bounded by RequeueAssessmentInProgress.
+	// ========================================
+	It("IT-EM-DECAY-003: should bound decay reconciliation rate (no hot loop on status-update watch)", func() {
+		ns := createTestNamespace("em-decay-003")
+		defer deleteTestNamespace(ns)
+
+		By("Creating a healthy target pod to enable positive health score")
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-app-decay-003",
+				Namespace: ns,
+				Labels:    map[string]string{"app": "test-app"},
+			},
+			Spec: corev1.PodSpec{
+				Containers: []corev1.Container{
+					{
+						Name:  "main",
+						Image: "registry.k8s.io/pause:3.9",
+					},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, pod)).To(Succeed())
+
+		By("Simulating pod readiness (Running + Ready)")
+		pod.Status = corev1.PodStatus{
+			Phase: corev1.PodRunning,
+			ContainerStatuses: []corev1.ContainerStatus{
+				{
+					Name:         "main",
+					Ready:        true,
+					RestartCount: 0,
+				},
+			},
+		}
+		Expect(k8sClient.Status().Update(ctx, pod)).To(Succeed())
+
+		By("Configuring mock AlertManager with a persistent firing alert")
+		mockAM.SetAlertsResponse([]infrastructure.AMAlert{
+			infrastructure.NewFiringAlert("HighMemory", map[string]string{
+				"namespace": ns,
+			}),
+		})
+
+		By("Creating an EA that will enter decay monitoring")
+		ea := &eav1.EffectivenessAssessment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "ea-decay-003",
+				Namespace: ns,
+			},
+			Spec: eav1.EffectivenessAssessmentSpec{
+				CorrelationID:           "rr-decay-003",
+				RemediationRequestPhase: "Verifying",
+				SignalName:              "HighMemory",
+				SignalTarget: eav1.TargetResource{
+					Kind:      "Deployment",
+					Name:      "test-app",
+					Namespace: ns,
+				},
+				RemediationTarget: eav1.TargetResource{
+					Kind:      "Deployment",
+					Name:      "test-app",
+					Namespace: ns,
+				},
+				Config: eav1.EAConfig{
+					StabilizationWindow: metav1.Duration{Duration: 1 * time.Second},
+				},
+				RemediationCreatedAt: &metav1.Time{Time: time.Now().Add(-5 * time.Minute)},
+			},
+		}
+		Expect(k8sClient.Create(ctx, ea)).To(Succeed())
+
+		By("Waiting for decay to be detected (AlertDecayRetries > 0)")
+		fetchedEA := &eav1.EffectivenessAssessment{}
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name: ea.Name, Namespace: ea.Namespace,
+			}, fetchedEA)).To(Succeed())
+			g.Expect(fetchedEA.Status.Components.AlertDecayRetries).To(BeNumerically(">", 0))
+		}, timeout, interval).Should(Succeed())
+
+		retrySnapshot := fetchedEA.Status.Components.AlertDecayRetries
+		GinkgoWriter.Printf("Decay detected at retries=%d, waiting 5s to measure rate\n", retrySnapshot)
+
+		By("Waiting 5 seconds and verifying bounded reconciliation rate")
+		time.Sleep(5 * time.Second)
+
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Name: ea.Name, Namespace: ea.Namespace,
+		}, fetchedEA)).To(Succeed())
+
+		retriesAfterWait := fetchedEA.Status.Components.AlertDecayRetries
+		retriesDelta := retriesAfterWait - retrySnapshot
+
+		GinkgoWriter.Printf("After 5s: retries=%d (delta=%d from snapshot=%d)\n",
+			retriesAfterWait, retriesDelta, retrySnapshot)
+
+		// With GenerationChangedPredicate, RequeueAssessmentInProgress=15s bounds the rate.
+		// In 5 seconds, at most 1 additional reconcile should fire (likely 0).
+		// Without the predicate, the hot loop produces ~85 retries in 5 seconds.
+		Expect(retriesDelta).To(BeNumerically("<", 10),
+			"Alert decay reconciliation rate should be bounded by RequeueAfter, not a hot loop (Issue #1466)")
+
+		By("Restoring mock AlertManager to default")
+		mockAM.SetAlertsResponse([]infrastructure.AMAlert{})
+	})
+
+	// ========================================
 	// IT-EM-DECAY-002: Proactive signal — metrics negative, alert is genuine
 	// BR-EM-012: When metrics show no improvement (proactive signal) and the
 	// alert is firing, the metrics gate in isAlertDecay prevents decay detection.

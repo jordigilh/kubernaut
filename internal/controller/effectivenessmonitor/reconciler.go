@@ -42,6 +42,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlcontroller "sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/alert"
@@ -220,7 +221,12 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager, maxConcurrentReconciles 
 	}
 
 	builder := ctrl.NewControllerManagedBy(mgr).
-		For(&eav1.EffectivenessAssessment{})
+		For(&eav1.EffectivenessAssessment{}).
+		// Issue #1466: Filter status-only watch events to prevent hot reconciliation
+		// loops during alert decay monitoring. EA spec is immutable (set once by RO)
+		// and EM is the sole status writer, matching the WE controller pattern
+		// (DD-CONTROLLER-001 v4.0 Pattern B-WE).
+		WithEventFilter(predicate.GenerationChangedPredicate{})
 
 	if len(maxConcurrentReconciles) > 0 && maxConcurrentReconciles[0] > 0 {
 		builder = builder.WithOptions(ctrlcontroller.TypedOptions[ctrl.Request]{

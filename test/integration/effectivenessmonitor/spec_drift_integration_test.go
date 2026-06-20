@@ -40,12 +40,17 @@ import (
 // With mock Prometheus/AlertManager in INT, all components resolve in a single
 // reconcile — the EA completes with "full" before we can modify the Deployment.
 // To test drift, we:
-//   1. Let the EA complete naturally with "full" (hash computed from spec A)
-//   2. Patch the EA status back to Assessing with a FAKE PostRemediationSpecHash
-//      This follows the same pattern as createExpiredEffectivenessAssessment in
-//      suite_test.go: Status().Update() triggers reconciliation via the watch
-//      (EM controller has no GenerationChangedPredicate).
-//   3. The reconciler re-hashes the target (spec A) and detects mismatch => drift
+//   1. Create EA with a stabilization window so the reconciler enters Stabilizing
+//      phase and schedules a RequeueAfter
+//   2. Patch the EA status to Assessing with a FAKE PostRemediationSpecHash
+//      while the RequeueAfter timer is pending (within the stabilization window)
+//   3. When the RequeueAfter fires, the reconciler re-hashes the target and
+//      detects the mismatch => drift
+//
+// Note: The EM controller uses GenerationChangedPredicate (Issue #1466) to
+// filter status-only watch events. Status().Update() alone does NOT trigger
+// reconciliation. The RequeueAfter timer from the Stabilizing phase provides
+// the guaranteed reconciliation trigger.
 // ============================================================================
 
 var _ = Describe("Spec Drift Guard (DD-EM-002 v1.1)", func() {
@@ -92,40 +97,52 @@ var _ = Describe("Spec Drift Guard (DD-EM-002 v1.1)", func() {
 		By("1. Creating a target Deployment in the namespace")
 		createTestDeployment(ns)
 
-		By("2. Creating an EA and waiting for it to complete naturally")
-		ea := createEffectivenessAssessment(ns, "ea-sd-001", "rr-sd-001")
+		By("2. Creating an EA with stabilization window to allow status injection")
+		ea := &eav1.EffectivenessAssessment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "ea-sd-001",
+				Namespace: ns,
+			},
+			Spec: eav1.EffectivenessAssessmentSpec{
+				CorrelationID:           "rr-sd-001",
+				RemediationRequestPhase: "Verifying",
+				SignalTarget: eav1.TargetResource{
+					Kind:      "Deployment",
+					Name:      "test-app",
+					Namespace: ns,
+				},
+				RemediationTarget: eav1.TargetResource{
+					Kind:      "Deployment",
+					Name:      "test-app",
+					Namespace: ns,
+				},
+				Config: eav1.EAConfig{
+					StabilizationWindow: metav1.Duration{Duration: 5 * time.Second},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, ea)).To(Succeed())
 
+		By("3. Waiting for EA to enter Stabilizing (RequeueAfter scheduled)")
 		fetchedEA := &eav1.EffectivenessAssessment{}
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, types.NamespacedName{
 				Name: ea.Name, Namespace: ea.Namespace,
 			}, fetchedEA)).To(Succeed())
-			g.Expect(fetchedEA.Status.Phase).To(Equal(eav1.PhaseCompleted))
+			g.Expect(fetchedEA.Status.Phase).To(Equal(eav1.PhaseStabilizing))
 		}, timeout, interval).Should(Succeed())
-		GinkgoWriter.Printf("EA completed naturally with reason: %s, hash: %s\n",
-			fetchedEA.Status.AssessmentReason, fetchedEA.Status.Components.PostRemediationSpecHash)
+		GinkgoWriter.Println("EA entered Stabilizing — RequeueAfter timer is pending")
 
-		realHash := fetchedEA.Status.Components.PostRemediationSpecHash
-		Expect(realHash).NotTo(BeEmpty(), "PostRemediationSpecHash should have been computed")
-
-		By("3. Patching EA status back to Assessing with a FAKE PostRemediationSpecHash")
-		// This simulates: the RO recorded a hash from a DIFFERENT spec version
-		// and the resource was subsequently modified (drift).
-		// Pattern: same as createExpiredEffectivenessAssessment — Status().Update()
-		// triggers reconciliation via the watch (no GenerationChangedPredicate).
+		By("4. Injecting Assessing state with a FAKE PostRemediationSpecHash")
 		fakeOldHash := "sha256:0000000000000000000000000000000000000000000000000000000000000000"
-		Expect(fakeOldHash).NotTo(Equal(realHash), "Fake hash must differ from real hash")
 
-		// Use Eventually to handle 409 conflicts with the reconciler
 		Eventually(func(g Gomega) {
-			// Re-fetch to get latest resourceVersion
 			g.Expect(k8sClient.Get(ctx, types.NamespacedName{
 				Name: ea.Name, Namespace: ea.Namespace,
 			}, fetchedEA)).To(Succeed())
 
-			// Reset to Assessing with fake hash — reconciler will re-process
 			deadline := metav1.NewTime(time.Now().Add(30 * time.Minute))
-			checkAfter := metav1.NewTime(time.Now().Add(-1 * time.Second)) // already past
+			checkAfter := metav1.NewTime(time.Now().Add(-1 * time.Second))
 
 			fetchedEA.Status.Phase = eav1.PhaseAssessing
 			fetchedEA.Status.CompletedAt = nil
@@ -137,24 +154,19 @@ var _ = Describe("Spec Drift Guard (DD-EM-002 v1.1)", func() {
 			fetchedEA.Status.Components.HashComputed = true
 			fetchedEA.Status.Components.PostRemediationSpecHash = fakeOldHash
 			fetchedEA.Status.Components.CurrentSpecHash = ""
-			// Reset component assessed flags so reconciler re-evaluates
 			fetchedEA.Status.Components.HealthAssessed = false
 			fetchedEA.Status.Components.AlertAssessed = false
 			fetchedEA.Status.Components.MetricsAssessed = false
 			fetchedEA.Status.Components.HealthScore = nil
 			fetchedEA.Status.Components.AlertScore = nil
 			fetchedEA.Status.Components.MetricsScore = nil
-			// Clear conditions
 			fetchedEA.Status.Conditions = nil
 
 			g.Expect(k8sClient.Status().Update(ctx, fetchedEA)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
-		GinkgoWriter.Println("Status patched: Phase=Assessing, PostRemediationSpecHash=fake")
+		GinkgoWriter.Println("Status injected: Phase=Assessing, PostRemediationSpecHash=fake")
 
-		By("4. Waiting for EA to complete with spec_drift reason")
-		// The Status().Update() triggers reconciliation via the watch.
-		// The reconciler runs Step 6.5, computes currentHash from real spec,
-		// detects mismatch with fakeOldHash, and completes with spec_drift.
+		By("5. Waiting for EA to complete with spec_drift reason")
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, types.NamespacedName{
 				Name: ea.Name, Namespace: ea.Namespace,
@@ -163,21 +175,19 @@ var _ = Describe("Spec Drift Guard (DD-EM-002 v1.1)", func() {
 			g.Expect(fetchedEA.Status.AssessmentReason).To(Equal(eav1.AssessmentReasonSpecDrift))
 		}, timeout, interval).Should(Succeed())
 
-		By("5. Verifying CurrentSpecHash matches real hash (not fake)")
+		By("6. Verifying CurrentSpecHash was computed and differs from fake")
 		Expect(fetchedEA.Status.Components.CurrentSpecHash).NotTo(BeEmpty(),
 			"CurrentSpecHash should be set by drift guard")
-		Expect(fetchedEA.Status.Components.CurrentSpecHash).To(Equal(realHash),
-			"CurrentSpecHash should match the real Deployment spec hash")
 		Expect(fetchedEA.Status.Components.CurrentSpecHash).NotTo(Equal(fakeOldHash),
 			"CurrentSpecHash should differ from the fake PostRemediationSpecHash")
 
-		By("6. Verifying SpecIntegrity condition is False with SpecDrifted reason")
+		By("7. Verifying SpecIntegrity condition is False with SpecDrifted reason")
 		specCond := meta.FindStatusCondition(fetchedEA.Status.Conditions, conditions.ConditionSpecIntegrity)
 		Expect(specCond).NotTo(BeNil(), "SpecIntegrity condition should be set")
 		Expect(specCond.Status).To(Equal(metav1.ConditionFalse))
 		Expect(specCond.Reason).To(Equal(conditions.ReasonSpecDrifted))
 
-		By("7. Verifying AssessmentComplete condition is True with SpecDrift reason")
+		By("8. Verifying AssessmentComplete condition is True with SpecDrift reason")
 		completeCond := meta.FindStatusCondition(fetchedEA.Status.Conditions, conditions.ConditionAssessmentComplete)
 		Expect(completeCond).NotTo(BeNil(), "AssessmentComplete condition should be set")
 		Expect(completeCond.Status).To(Equal(metav1.ConditionTrue))
