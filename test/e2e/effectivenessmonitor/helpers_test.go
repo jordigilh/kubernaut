@@ -159,6 +159,15 @@ func withTargetPod(name string) eaOption {
 	}
 }
 
+// withStabilizationWindow overrides the EA's stabilization window duration.
+// Useful for drift tests that need the EM to stay in Stabilizing long enough
+// to inject a fake hash before the RequeueAfter fires.
+func withStabilizationWindow(d time.Duration) eaOption {
+	return func(ea *eav1.EffectivenessAssessment) {
+		ea.Spec.Config.StabilizationWindow = metav1.Duration{Duration: d}
+	}
+}
+
 // ============================================================================
 // Pod Helpers
 // ============================================================================

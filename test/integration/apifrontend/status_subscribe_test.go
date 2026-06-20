@@ -507,4 +507,74 @@ var _ = Describe("status/subscribe SSE endpoint (IT)", func() {
 		}
 		Expect(hasBlocked).To(BeTrue(), "must receive Blocked event with metadata")
 	})
+
+	It("IT-AF-1468-001: initial SSE event includes server-sourced RR context (SC-7, SI-4)", func() {
+		rr := createTestRR(ctx, "rr-context-init", testNS, "Processing")
+		defer cleanupTestRR(ctx, rr.Name, testNS)
+
+		resp, err := http.Post(statusSrv.URL, "application/json",
+			bytes.NewReader(statusSubscribeBody(rr.Name)))
+		Expect(err).NotTo(HaveOccurred())
+		defer resp.Body.Close()
+
+		events := collectSSEEvents(resp, 1, 5*time.Second)
+		Expect(events).To(HaveLen(1), "must receive initial current-state event")
+
+		var data map[string]any
+		Expect(json.Unmarshal([]byte(events[0].Data), &data)).To(Succeed())
+		inner, _ := data["params"].(map[string]any)
+		meta, _ := inner["metadata"].(map[string]any)
+
+		Expect(meta).To(HaveKeyWithValue("namespace", testNS),
+			"namespace must be server-sourced from RR spec (SC-7)")
+		Expect(meta).To(HaveKeyWithValue("target", "api-server"),
+			"target must match RR spec TargetResource.Name")
+		Expect(meta).To(HaveKeyWithValue("kind", "Deployment"),
+			"kind must match RR spec TargetResource.Kind")
+		Expect(meta).To(HaveKeyWithValue("alert_name", "StatusITAlert"),
+			"alert_name must match RR spec SignalName (SI-4)")
+	})
+
+	It("IT-AF-1468-002: phase transition events preserve RR context (AU-3, SI-4)", func() {
+		rr := createTestRR(ctx, "rr-context-trans", testNS, "Processing")
+		defer cleanupTestRR(ctx, rr.Name, testNS)
+
+		resp, err := http.Post(statusSrv.URL, "application/json",
+			bytes.NewReader(statusSubscribeBody(rr.Name)))
+		Expect(err).NotTo(HaveOccurred())
+		defer resp.Body.Close()
+
+		time.Sleep(200 * time.Millisecond)
+		Expect(k8sClient.Get(ctx, crclient.ObjectKeyFromObject(rr), rr)).To(Succeed())
+		rr.Status.OverallPhase = remediationv1.PhaseExecuting
+		now := metav1.Now()
+		rr.Status.ExecutingStartTime = &now
+		rr.Status.SelectedWorkflowRef = &remediationv1.WorkflowReference{WorkflowID: "git-revert-v2"}
+		Expect(k8sClient.Status().Update(ctx, rr)).To(Succeed())
+
+		events := collectSSEEvents(resp, 2, 5*time.Second)
+		Expect(len(events)).To(BeNumerically(">=", 2))
+
+		var found bool
+		for _, evt := range events {
+			var d map[string]any
+			if json.Unmarshal([]byte(evt.Data), &d) != nil {
+				continue
+			}
+			inner, _ := d["params"].(map[string]any)
+			if inner == nil || inner["phase"] != "Executing" {
+				continue
+			}
+			meta, _ := inner["metadata"].(map[string]any)
+			Expect(meta).To(HaveKeyWithValue("namespace", testNS),
+				"context must persist across phase transitions (AU-3)")
+			Expect(meta).To(HaveKeyWithValue("target", "api-server"))
+			Expect(meta).To(HaveKeyWithValue("kind", "Deployment"))
+			Expect(meta).To(HaveKeyWithValue("alert_name", "StatusITAlert"))
+			Expect(meta).To(HaveKeyWithValue("workflow_id", "git-revert-v2"),
+				"phase-specific fields must coexist with context (SI-4)")
+			found = true
+		}
+		Expect(found).To(BeTrue(), "must receive Executing event with both context and phase metadata")
+	})
 })
