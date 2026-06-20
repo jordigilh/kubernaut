@@ -1013,7 +1013,7 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "repository": { "type": "string", "default": "kubernaut/fmcwriter" },
+            "repository": { "type": "string", "default": "kubernaut/fmc" },
             "tag": { "type": "string", "default": "latest" },
             "pullPolicy": { "type": "string", "default": "IfNotPresent" }
           }

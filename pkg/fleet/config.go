@@ -15,7 +15,7 @@ limitations under the License.
 */
 
 // Package fleet provides shared types and factories for multi-cluster federation.
-// Services that participate in fleet operations (GW, RO, FMC Writer) import this
+// Services that participate in fleet operations (GW, RO, FMC) import this
 // package for consistent configuration and connection management.
 package fleet
 

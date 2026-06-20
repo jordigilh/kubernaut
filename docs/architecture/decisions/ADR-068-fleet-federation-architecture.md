@@ -71,7 +71,7 @@ The key constraints are:
 | Component | Role | Package |
 |-----------|------|---------|
 | **Gateway (GW)** | Extracts `cluster` label from Thanos alerts, computes cluster-aware fingerprints, gates signals via FederatedScopeChecker | `pkg/gateway/` |
-| **FMC Writer** | Polls MCP Gateway for `kubernaut.ai/managed=true` resources, writes keys to Valkey with TTL | `cmd/fmcwriter/`, `pkg/fleet/fmcwriter/` |
+| **FMC (Fleet Metadata Cache)** | Polls MCP Gateway for `kubernaut.ai/managed=true` resources, caches metadata in Valkey, exposes scope queries via REST API | `cmd/fmc/`, `pkg/fleet/fmc/` |
 | **Fleet Metadata Cache (Valkey)** | Low-latency key-existence checks for remote scope validation | `pkg/fleet/scopecache/` |
 | **FederatedScopeChecker** | Routes scope checks: local → K8s API, remote → Valkey cache | `pkg/fleet/scopecache/federated_checker.go` |
 | **ResilientClient** | MCP client with backoff, reconnect, readiness gating | `pkg/fleet/mcpclient/resilience.go` |
@@ -181,13 +181,13 @@ The key constraints are:
 | fleetScopeChecker dispatch | validateScope() | pkg/gateway/server.go:1518 | IT-GW-FLEET-010/011/012 |
 | RemoteScopeResolver interface | FederatedScopeChecker | pkg/fleet/scopecache/resolver.go | UT-FLEET-FC-003/004/005 |
 | ResilientClient (KA) | registerFleetTools() | cmd/kubernautagent/main.go | IT-KA-FLEET-001 |
-| ResilientClient (FMC) | main() | cmd/fmcwriter/main.go | UT-FMC-001 |
+| ResilientClient (FMC) | main() | cmd/fmc/main.go | UT-FMC-001 |
 | ReloadableOAuth2Transport (KA) | registerFleetTools() | cmd/kubernautagent/main.go | UT-FLEET-RES-001 |
-| ReloadableOAuth2Transport (FMC) | main() | cmd/fmcwriter/main.go | UT-FLEET-RES-001 |
+| ReloadableOAuth2Transport (FMC) | main() | cmd/fmc/main.go | UT-FLEET-RES-001 |
 | AppendFleetToolsToRCA | registerFleetTools() → main | cmd/kubernautagent/main.go:231 | IT-KA-FLEET-001 |
-| CRDWatcher | main() | cmd/fmcwriter/main.go | UT-FMC-004 |
+| CRDWatcher | main() | cmd/fmc/main.go | UT-FMC-004 |
 | BuildKey validation | BuildKey() | pkg/fleet/scopecache/client.go | UT-FLEET-SC-006/007/008 |
-| fmcwriter securityContext | Helm template | charts/kubernaut/templates/fmcwriter/fmcwriter.yaml | helm template |
+| fmc securityContext | Helm template | charts/kubernaut/templates/fmc/fmc.yaml | helm template |
 
 ## Federated Control Plane Interface
 
@@ -299,7 +299,7 @@ MCP K8s, stores it in Valkey with TTL, and exposes a REST API that GW/RO query t
 
 | Aspect | Detail |
 |--------|--------|
-| **Service** | `cmd/fmcwriter/` — HTTP server + MCP poller + Valkey writer |
+| **Service** | `cmd/fmc/` — HTTP server + MCP poller + Valkey cache |
 | **Storage** | Valkey (co-owned with DataStorage) — internal to FMC, not exposed to consumers |
 | **Read API** | REST endpoint for scope checks and cluster listing |
 | **Latency** | p95 < 1ms (Valkey EXISTS behind the API) |
@@ -627,7 +627,7 @@ fleet:
 The current implementation has GW/RO directly constructing `scopecache.NewFederatedScopeCheckerFromAddr(scopeMgr, cfg.Fleet.ValkeyAddr, logger)` — coupling them to Valkey. The migration:
 
 1. **Phase 1** (current): `ValkeyAddr` in GW/RO config → direct Valkey client in-process
-2. **Phase 2**: Define `FederatedControlPlane` interface, implement FMC REST API (HTTP server in `cmd/fmcwriter/`), implement FMC client adapter
+2. **Phase 2**: Define `FederatedControlPlane` interface, implement FMC REST API (HTTP server in `cmd/fmc/`), implement FMC client adapter
 3. **Phase 3**: GW/RO switch from direct Valkey to `FederatedControlPlane` interface; `ValkeyAddr` removed from GW/RO config; only `backend` + `endpoint` remain
 4. **Phase 4**: Implement ACM/Rancher/Clusterpedia adapters as needed per deployment environment
 
@@ -640,9 +640,9 @@ During migration, both paths can coexist via feature flag (`fleet.backend: "valk
 | Authentication | OAuth2 client credentials grant (file-mounted JWT) |
 | Credential rotation | ReloadableOAuth2Transport with FileWatcher |
 | Token timeout | 10s context deadline on token refresh HTTP calls |
-| Least privilege | fmcwriter: readOnlyRootFilesystem, drop ALL caps, runAsNonRoot |
+| Least privilege | fmc: readOnlyRootFilesystem, drop ALL caps, runAsNonRoot |
 | Network policy | MCP Gateway accessible only from kubernaut-system namespace |
-| RBAC | fmcwriter: read-only on MCPServerRegistration CRDs |
+| RBAC | fmc: read-only on MCPServerRegistration CRDs |
 
 ## FedRAMP Implications
 

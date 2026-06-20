@@ -34,8 +34,8 @@ var _ scope.UnifiedScopeChecker = (*FederatedScopeChecker)(nil)
 //   - Non-empty clusterID (remote): delegates to the RemoteScopeResolver
 //
 // The RemoteScopeResolver is a pluggable interface. Two implementations exist:
-//   - Valkey-backed Client (FMC Writer syncs labels) — for environments without ACM
-//   - ACM Search GraphQL — for ACM environments (avoids FMC Writer + Valkey)
+//   - Valkey-backed Client (FMC syncs labels) — for environments without ACM
+//   - ACM Search GraphQL — for ACM environments (avoids FMC + Valkey)
 //
 // This allows GW and RO to transparently handle both local and remote resources
 // using the existing ScopeChecker interface (ADR-065, ADR-068).

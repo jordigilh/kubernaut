@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package fmcwriter_test
+package fmc_test
 
 import (
 	"testing"
@@ -23,7 +23,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestFMCWriter(t *testing.T) {
+func TestFMC(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "FMC Writer Suite")
+	RunSpecs(t, "Fleet Metadata Cache Suite")
 }
