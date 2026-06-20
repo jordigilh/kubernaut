@@ -26,8 +26,12 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
+	gwtypes "github.com/jordigilh/kubernaut/pkg/gateway/types"
 	mockgw "github.com/jordigilh/kubernaut/test/services/mock-mcp-gateway/testutil"
 )
 
@@ -184,6 +188,52 @@ var _ = Describe("Fleet Wiring Integration Tests (BR-INTEGRATION-065)", func() {
 		})
 	})
 
+	Describe("IT-FLEET-FMC-001 [AC-4]: NewFromSession + WithClusterID creates working reader for FMC Writer", func() {
+		It("creates a client.Reader from an existing session that can list resources through the MCP gateway", func() {
+			gw = mockgw.NewMockGateway(mockgw.WithMultiCluster("cluster-fmc"))
+
+			parent, err := mcpclient.New(ctx, gw.URL())
+			Expect(err).ToNot(HaveOccurred())
+			defer parent.Close()
+
+			session := parent.Session()
+			child := mcpclient.NewFromSession(session, "cluster-fmc")
+
+			var reader client.Reader = child
+			list := &unstructured.UnstructuredList{}
+			list.SetGroupVersionKind(schema.GroupVersionKind{Version: "v1", Kind: "PodList"})
+
+			err = reader.List(ctx, list)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(list.Items).ToNot(BeEmpty(),
+				"NewFromSession client must return resources through the FMC Writer pipeline (AC-4: managed resources only)")
+
+			calls := gw.CallLog()
+			Expect(calls).ToNot(BeEmpty())
+			Expect(calls[0].ToolName).To(Equal("cluster-fmc__list_resources"),
+				"reader must route List calls through the correct cluster-prefixed MCP tool")
+		})
+	})
+
+	Describe("UT-FLEET-BT-001 [SI-10]: BridgeTool auto-parses clusterID from tool name (Phase C)", func() {
+		It("extracts clusterID from '{clusterID}__tool_name' convention without explicit parameter", func() {
+			gw = mockgw.NewMockGateway(mockgw.WithMultiCluster("auto-cluster"))
+
+			parentClient, err := mcpclient.New(ctx, gw.URL())
+			Expect(err).ToNot(HaveOccurred())
+			defer parentClient.Close()
+
+			session := parentClient.Session()
+
+			bt := mcpclient.NewBridgeToolFromSession(mcpclient.ToolDefinition{
+				Name: "auto-cluster__get_resource",
+			}, session)
+
+			Expect(bt.ClusterID()).To(Equal("auto-cluster"),
+				"BridgeTool must auto-parse clusterID from tool name prefix (SI-10: input validation)")
+		})
+	})
+
 	Describe("IT-FLEET-005: cluster-aware fingerprint produces distinct dedup keys", func() {
 		It("same resource on different clusters is not deduplicated", func() {
 			_ = logr.Discard()
@@ -205,6 +255,32 @@ var _ = Describe("Fleet Wiring Integration Tests (BR-INTEGRATION-065)", func() {
 
 			Expect(btEast.Name()).ToNot(Equal(btWest.Name()),
 				"tools on different clusters must have distinct names preventing accidental collision")
+		})
+	})
+
+	Describe("UT-FLEET-FP-001 [CC4.2]: AF and GW fingerprints match for same resource (Phase D)", func() {
+		It("produces identical dedup fingerprints using the shared helper, preventing audit trail inconsistency", func() {
+			clusterID := "prod-east"
+			resource := gwtypes.ResourceIdentifier{
+				Namespace: "default",
+				Kind:      "Deployment",
+				Name:      "nginx",
+			}
+
+			gwFingerprint := gwtypes.CalculateClusterAwareFingerprint(clusterID, resource)
+
+			afFingerprint := gwtypes.CalculateClusterAwareFingerprint(clusterID, resource)
+
+			Expect(gwFingerprint).To(Equal(afFingerprint),
+				"GW and AF must produce identical fingerprints for the same resource (CC4.2: change tracking consistency)")
+
+			localGW := gwtypes.CalculateClusterAwareFingerprint("", resource)
+			localAF := gwtypes.CalculateClusterAwareFingerprint("", resource)
+			Expect(localGW).To(Equal(localAF),
+				"local cluster fingerprints must also be identical")
+
+			Expect(gwFingerprint).ToNot(Equal(localGW),
+				"cluster-aware fingerprint must differ from local fingerprint")
 		})
 	})
 })

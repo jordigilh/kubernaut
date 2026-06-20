@@ -23,6 +23,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // CacheReader abstracts the cache read operations for scope checking.
@@ -51,6 +54,12 @@ func (c *Client) IsManaged(ctx context.Context, clusterID, group, version, kind,
 		return false, err
 	}
 	return c.reader.Exists(ctx, key)
+}
+
+// IsManagedTyped is a type-safe wrapper for IsManaged that accepts GVK and ObjectKey
+// instead of raw strings, reducing the risk of parameter misalignment.
+func (c *Client) IsManagedTyped(ctx context.Context, clusterID string, gvk schema.GroupVersionKind, key client.ObjectKey) (bool, error) {
+	return c.IsManaged(ctx, clusterID, gvk.Group, gvk.Version, gvk.Kind, key.Namespace, key.Name)
 }
 
 // ErrEmptyClusterID is returned when clusterID is empty.

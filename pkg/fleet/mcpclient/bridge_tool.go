@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -64,6 +65,32 @@ func NewBridgeTool(def ToolDefinition, clusterID string, session Session) *Bridg
 	}
 }
 
+// NewBridgeToolFromSession creates a BridgeTool using a direct MCP session,
+// auto-parsing the clusterID from the tool name's "{clusterID}__" prefix.
+// Falls back to empty clusterID for tools without the prefix convention.
+func NewBridgeToolFromSession(def ToolDefinition, session *mcp.ClientSession) *BridgeTool {
+	clusterID := parseClusterIDFromToolName(def.Name)
+	return &BridgeTool{
+		name:        def.Name,
+		description: def.Description,
+		parameters:  def.InputSchema,
+		clusterID:   clusterID,
+		session:     session,
+	}
+}
+
+// ClusterID returns the cluster this tool is bound to.
+func (b *BridgeTool) ClusterID() string { return b.clusterID }
+
+// parseClusterIDFromToolName extracts the clusterID from a tool name following
+// the "{clusterID}__tool_name" convention. Returns empty string if no prefix found.
+func parseClusterIDFromToolName(name string) string {
+	if idx := strings.Index(name, "__"); idx > 0 {
+		return name[:idx]
+	}
+	return ""
+}
+
 func (b *BridgeTool) Name() string               { return b.name }
 func (b *BridgeTool) Description() string         { return b.description }
 func (b *BridgeTool) Parameters() json.RawMessage { return b.parameters }
@@ -88,12 +115,8 @@ func (b *BridgeTool) Execute(ctx context.Context, args json.RawMessage) (string,
 
 	if result.IsError {
 		return "", fmt.Errorf("remote tool %q (cluster %q) returned error: %s",
-			b.name, b.clusterID, bridgeExtractText(result))
+			b.name, b.clusterID, ExtractText(result))
 	}
 
 	return ExtractText(result), nil
-}
-
-func bridgeExtractText(result *mcp.CallToolResult) string {
-	return ExtractText(result)
 }

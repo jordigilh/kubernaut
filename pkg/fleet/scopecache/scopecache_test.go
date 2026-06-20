@@ -25,7 +25,11 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
 	"github.com/jordigilh/kubernaut/pkg/fleet/scopecache"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
 func TestScopeCache(t *testing.T) {
@@ -108,6 +112,19 @@ var _ = Describe("ScopeCache Client (BR-INTEGRATION-065)", func() {
 	})
 })
 
+var _ = Describe("FederatedScopeChecker shared interface compliance (Phase B)", func() {
+	It("UT-FLEET-FC-010 [CC6.1]: FederatedScopeChecker satisfies scope.FederatedScopeChecker interface for logical access security", func() {
+		local := &mockLocalChecker{managed: map[string]bool{}}
+		reader := &mockCacheReader{store: make(map[string]bool)}
+		client := scopecache.NewClient(reader)
+		fc := scopecache.NewFederatedScopeChecker(local, client, logr.Discard())
+
+		var iface scope.FederatedScopeChecker = fc
+		Expect(iface).ToNot(BeNil(),
+			"FederatedScopeChecker must implement the shared scope.FederatedScopeChecker interface (CC6.1: consistent logical access control)")
+	})
+})
+
 var _ = Describe("FederatedScopeChecker (BR-INTEGRATION-065)", func() {
 	var (
 		ctx    context.Context
@@ -162,5 +179,24 @@ var _ = Describe("FederatedScopeChecker (BR-INTEGRATION-065)", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(managed).To(BeFalse())
 		})
+	})
+})
+
+var _ = Describe("RemoteScopeResolver typed params (Phase C)", func() {
+	It("UT-FLEET-SC-010 [SI-10]: IsManaged accepts GVK + ObjectKey for type-safe input validation", func() {
+		reader := &mockCacheReader{store: make(map[string]bool)}
+		key, err := scopecache.BuildKey("prod-east", "apps", "v1", "Deployment", "default", "nginx")
+		Expect(err).ToNot(HaveOccurred())
+		reader.store[key] = true
+
+		resolver := scopecache.NewClient(reader)
+
+		gvk := schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "Deployment"}
+		objKey := client.ObjectKey{Namespace: "default", Name: "nginx"}
+
+		managed, err := resolver.IsManagedTyped(context.Background(), "prod-east", gvk, objKey)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(managed).To(BeTrue(),
+			"typed params must produce the same result as raw string params (SI-10: input validation)")
 	})
 })
