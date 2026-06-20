@@ -32,6 +32,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/config"
 	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	corev1 "k8s.io/api/core/v1"
@@ -77,9 +78,17 @@ func (m *mockScopeChecker) IsManaged(_ context.Context, namespace, kind, name st
 	return m.managed, m.err
 }
 
+func (m *mockScopeChecker) IsManagedResource(_ context.Context, resource scope.ResourceIdentity) (bool, error) {
+	m.callCount++
+	m.lastParams.namespace = resource.Namespace
+	m.lastParams.kind = resource.Kind
+	m.lastParams.name = resource.Name
+	return m.managed, m.err
+}
+
 // newTestGatewayServer creates a Gateway server for unit tests with the given scope checker.
 // ADR-057: Sets KUBERNAUT_CONTROLLER_NAMESPACE for namespace discovery in test environment.
-func newTestGatewayServer(k8sClient client.Client, metricsInstance *metrics.Metrics, scopeChecker gatewaypkg.ScopeChecker) (*gatewaypkg.Server, error) {
+func newTestGatewayServer(k8sClient client.Client, metricsInstance *metrics.Metrics, scopeChecker scope.UnifiedScopeChecker) (*gatewaypkg.Server, error) {
 	Expect(os.Setenv("KUBERNAUT_CONTROLLER_NAMESPACE", "kubernaut-system")).To(Succeed())
 	cfg := &config.ServerConfig{
 		Server: config.ServerSettings{

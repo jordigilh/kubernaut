@@ -1709,8 +1709,8 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 	})
 })
 
-// spyFederatedScopeChecker is a test double that satisfies scope.FederatedScopeChecker
-// and records whether IsManagedOnCluster was called with the correct clusterID.
+// spyFederatedScopeChecker is a test double that satisfies scope.UnifiedScopeChecker
+// and records whether IsManagedResource was called with a remote clusterID.
 type spyFederatedScopeChecker struct {
 	localManaged              bool
 	remoteManaged             bool
@@ -1718,14 +1718,13 @@ type spyFederatedScopeChecker struct {
 	capturedClusterID         string
 }
 
-var _ scope.FederatedScopeChecker = (*spyFederatedScopeChecker)(nil)
+var _ scope.UnifiedScopeChecker = (*spyFederatedScopeChecker)(nil)
 
-func (s *spyFederatedScopeChecker) IsManaged(_ context.Context, _, _, _ string) (bool, error) {
+func (s *spyFederatedScopeChecker) IsManagedResource(_ context.Context, resource scope.ResourceIdentity) (bool, error) {
+	if resource.ClusterID != "" {
+		s.calledIsManagedOnCluster = true
+		s.capturedClusterID = resource.ClusterID
+		return s.remoteManaged || s.localManaged, nil
+	}
 	return s.localManaged, nil
-}
-
-func (s *spyFederatedScopeChecker) IsManagedOnCluster(_ context.Context, clusterID, _, _, _ string) (bool, error) {
-	s.calledIsManagedOnCluster = true
-	s.capturedClusterID = clusterID
-	return s.remoteManaged || s.localManaged, nil
 }

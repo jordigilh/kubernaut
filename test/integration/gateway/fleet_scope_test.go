@@ -27,9 +27,10 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/gateway"
 	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
-// mockFleetScopeChecker implements scope.FederatedScopeChecker (gateway.FederatedScopeChecker).
+// mockFleetScopeChecker implements scope.UnifiedScopeChecker.
 // It records calls for verification and returns configurable responses.
 type mockFleetScopeChecker struct {
 	isManagedResult      bool
@@ -39,16 +40,15 @@ type mockFleetScopeChecker struct {
 	fleetCalls           int
 }
 
-func (m *mockFleetScopeChecker) IsManaged(ctx context.Context, namespace, kind, name string) (bool, error) {
-	m.localCalls++
-	return m.isManagedResult, m.isManagedErr
-}
-
-func (m *mockFleetScopeChecker) IsManagedOnCluster(ctx context.Context, clusterID, namespace, kind, name string) (bool, error) {
-	m.fleetCalls++
-	if m.isManagedOnClusterFn != nil {
-		return m.isManagedOnClusterFn(ctx, clusterID, namespace, kind, name)
+func (m *mockFleetScopeChecker) IsManagedResource(ctx context.Context, resource scope.ResourceIdentity) (bool, error) {
+	if resource.ClusterID != "" {
+		m.fleetCalls++
+		if m.isManagedOnClusterFn != nil {
+			return m.isManagedOnClusterFn(ctx, resource.ClusterID, resource.Namespace, resource.Kind, resource.Name)
+		}
+		return m.isManagedResult, m.isManagedErr
 	}
+	m.localCalls++
 	return m.isManagedResult, m.isManagedErr
 }
 

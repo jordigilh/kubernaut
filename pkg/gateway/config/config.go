@@ -25,6 +25,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	sharedconfig "github.com/jordigilh/kubernaut/internal/config"
+	"github.com/jordigilh/kubernaut/pkg/fleet"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 )
 
@@ -57,17 +58,9 @@ type ServerConfig struct {
 	// Issue #748: OCP-only — set by kubernaut-operator from the cluster APIServer CR.
 	TLSProfile string `yaml:"tlsProfile,omitempty"`
 
-	// Fleet enables multi-cluster federation scope checking (ADR-065).
-	// When enabled, GW uses FederatedScopeChecker backed by Valkey for remote scope checks.
-	Fleet FleetConfig `yaml:"fleet,omitempty"`
-}
-
-// FleetConfig holds multi-cluster federation settings for the Gateway (ADR-065).
-type FleetConfig struct {
-	// Enabled activates federated scope checking via Valkey cache.
-	Enabled bool `yaml:"enabled"`
-	// ValkeyAddr is the Valkey/Redis address for the fleet metadata cache.
-	ValkeyAddr string `yaml:"valkeyAddr"`
+	// Fleet enables multi-cluster federation scope checking (ADR-065, ADR-068).
+	// When enabled, GW uses FederatedScopeChecker via the configured backend adapter.
+	Fleet fleet.FleetConfig `yaml:"fleet,omitempty"`
 }
 
 // CORSConfig contains CORS settings for the Gateway HTTP API.

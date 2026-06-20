@@ -145,7 +145,7 @@ type Server struct {
 	phaseChecker  *processing.PhaseBasedDeduplicationChecker // Phase-based deduplication logic
 	crdCreator    *processing.CRDCreator
 	lockManager   *processing.DistributedLockManager // BR-GATEWAY-190: K8s Lease-based distributed locking
-	scopeChecker  ScopeChecker                       // BR-SCOPE-002: nil = no scope filtering (backward compat)
+	scopeChecker  scope.UnifiedScopeChecker            // BR-SCOPE-002 + ADR-068: nil = no scope filtering (backward compat)
 
 	// ADR-057: Controller namespace where all CRDs are created and queried
 	controllerNamespace string
@@ -286,7 +286,7 @@ func newAuthMiddleware(authenticator auth.Authenticator, authorizer auth.Authori
 //
 // USAGE: Unit tests only - allows testing audit failure scenarios
 // PRODUCTION: Use NewServer() or NewServerWithK8sClient() instead
-func NewServerForTesting(cfg *config.ServerConfig, logger logr.Logger, metricsInstance *metrics.Metrics, ctrlClient client.Client, auditStore audit.AuditStore, scopeChecker ScopeChecker, authenticator auth.Authenticator, authorizer auth.Authorizer) (*Server, error) {
+func NewServerForTesting(cfg *config.ServerConfig, logger logr.Logger, metricsInstance *metrics.Metrics, ctrlClient client.Client, auditStore audit.AuditStore, scopeChecker scope.UnifiedScopeChecker, authenticator auth.Authenticator, authorizer auth.Authorizer) (*Server, error) {
 	// Use provided Kubernetes client
 	k8sClient := k8s.NewClient(ctrlClient)
 
@@ -662,11 +662,14 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 	// ADR-065: Federated scope checking for multi-cluster fleet management.
 	// When fleet is enabled, wraps the local scope checker with FederatedScopeChecker
 	// backed by a Valkey cache for low-latency remote cluster scope lookups.
-	var scopeCheckerInstance ScopeChecker = scopeMgr
-	if cfg.Fleet.Enabled && cfg.Fleet.ValkeyAddr != "" {
-		scopeCheckerInstance = scopecache.NewFederatedScopeCheckerFromAddr(scopeMgr, cfg.Fleet.ValkeyAddr, logger)
-		logger.Info("ADR-065: Federated scope checker enabled (Valkey-backed fleet cache)",
-			"valkey_addr", cfg.Fleet.ValkeyAddr)
+	var scopeCheckerInstance scope.UnifiedScopeChecker = scopeMgr
+	if cfg.Fleet.Enabled {
+		endpoint := cfg.Fleet.EffectiveEndpoint()
+		if endpoint != "" {
+			scopeCheckerInstance = scopecache.NewFederatedScopeCheckerFromAddr(scopeMgr, endpoint, logger)
+			logger.Info("ADR-068: Federated scope checker enabled",
+				"backend", cfg.Fleet.Backend, "endpoint", endpoint)
+		}
 	}
 
 	authMW := newAuthMiddleware(authenticator, authorizer, controllerNS, logger)
@@ -1513,20 +1516,12 @@ func (s *Server) validateScope(ctx context.Context, signal *types.NormalizedSign
 		return NewRejectedResponse(signal.Namespace, signal.Resource.Kind, signal.Resource.Name), nil
 	}
 
-	var managed bool
-	var err error
-	if signal.ClusterID != "" {
-		if fc, ok := s.scopeChecker.(FederatedScopeChecker); ok {
-			managed, err = fc.IsManagedOnCluster(ctx, signal.ClusterID, signal.Namespace, signal.Resource.Kind, signal.Resource.Name)
-		} else {
-			logger.Info("Fleet signal received but scope checker is not fleet-aware — rejecting",
-				"clusterID", signal.ClusterID)
-			s.metricsInstance.SignalsRejectedTotal.WithLabelValues(RejectionReasonUnmanagedResource).Inc()
-			return NewRejectedResponse(signal.Namespace, signal.Resource.Kind, signal.Resource.Name), nil
-		}
-	} else {
-		managed, err = s.scopeChecker.IsManaged(ctx, signal.Namespace, signal.Resource.Kind, signal.Resource.Name)
-	}
+	managed, err := s.scopeChecker.IsManagedResource(ctx, scope.ResourceIdentity{
+		ClusterID: signal.ClusterID,
+		Kind:      signal.Resource.Kind,
+		Namespace: signal.Namespace,
+		Name:      signal.Resource.Name,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("scope validation failed: %w", err)
 	}
