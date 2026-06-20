@@ -36,7 +36,7 @@ import (
 var _ = Describe("MCP Client Resilience (Phase 6)", func() {
 	var logger = zap.New(zap.UseDevMode(true))
 
-	Context("IT-FLEET-RES-001: ReloadableOAuth2Transport", func() {
+	Context("UT-FLEET-RES-001: ReloadableOAuth2Transport", func() {
 		It("should rebuild TokenSource when credential file changes", func() {
 			tmpDir, err := os.MkdirTemp("", "oauth2-reload-test")
 			Expect(err).ToNot(HaveOccurred())
@@ -101,7 +101,7 @@ var _ = Describe("MCP Client Resilience (Phase 6)", func() {
 		})
 	})
 
-	Context("IT-FLEET-RES-002: Lazy reconnect on 401/session loss", func() {
+	Context("UT-FLEET-RES-002: Lazy reconnect on 401/session loss", func() {
 		It("should detect retryable errors correctly", func() {
 			cfg := mcpclient.DefaultResilienceConfig()
 			cfg.MaxElapsedTime = 2 * time.Second
@@ -128,7 +128,7 @@ var _ = Describe("MCP Client Resilience (Phase 6)", func() {
 		})
 	})
 
-	Context("IT-FLEET-RES-003: Startup retry with backoff", func() {
+	Context("UT-FLEET-RES-003: Startup retry with backoff", func() {
 		It("should retry with exponential backoff until success", func() {
 			var attempts atomic.Int32
 
@@ -157,7 +157,7 @@ var _ = Describe("MCP Client Resilience (Phase 6)", func() {
 		})
 	})
 
-	Context("IT-FLEET-RES-004: Token refresh timeout", func() {
+	Context("UT-FLEET-RES-004: Token refresh timeout", func() {
 		It("should timeout token refresh when IdP is slow", func() {
 			slowServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				time.Sleep(3 * time.Second)
@@ -191,7 +191,7 @@ var _ = Describe("MCP Client Resilience (Phase 6)", func() {
 		})
 	})
 
-	Context("IT-FLEET-RES-005: FileWatcher on secret directory", func() {
+	Context("UT-FLEET-RES-005: FileWatcher on secret directory", func() {
 		It("should detect file changes via hotreload.FileWatcher", func() {
 			tmpDir, err := os.MkdirTemp("", "filewatcher-test")
 			Expect(err).ToNot(HaveOccurred())
