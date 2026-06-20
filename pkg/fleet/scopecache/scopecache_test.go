@@ -69,7 +69,8 @@ var _ = Describe("ScopeCache Client (BR-INTEGRATION-065)", func() {
 
 	Describe("IsManaged", func() {
 		It("UT-FLEET-SC-001: returns true for managed resource", func() {
-			key := scopecache.BuildKey("prod-east", "apps", "v1", "Deployment", "default", "nginx")
+			key, err := scopecache.BuildKey("prod-east", "apps", "v1", "Deployment", "default", "nginx")
+			Expect(err).ToNot(HaveOccurred())
 			reader.store[key] = true
 
 			managed, err := client.IsManaged(ctx, "prod-east", "apps", "v1", "Deployment", "default", "nginx")
@@ -85,8 +86,24 @@ var _ = Describe("ScopeCache Client (BR-INTEGRATION-065)", func() {
 
 	Describe("BuildKey", func() {
 		It("UT-FLEET-SC-003: produces expected key format", func() {
-			key := scopecache.BuildKey("prod-east", "apps", "v1", "Deployment", "default", "nginx")
+			key, err := scopecache.BuildKey("prod-east", "apps", "v1", "Deployment", "default", "nginx")
+			Expect(err).ToNot(HaveOccurred())
 			Expect(key).To(Equal("kubernaut:managed:prod-east:apps/v1/Deployment:default/nginx"))
+		})
+
+		It("UT-FLEET-SC-006: rejects empty clusterID", func() {
+			_, err := scopecache.BuildKey("", "apps", "v1", "Deployment", "default", "nginx")
+			Expect(err).To(MatchError(scopecache.ErrEmptyClusterID))
+		})
+
+		It("UT-FLEET-SC-007: rejects empty kind", func() {
+			_, err := scopecache.BuildKey("prod-east", "apps", "v1", "", "default", "nginx")
+			Expect(err).To(MatchError(scopecache.ErrEmptyKind))
+		})
+
+		It("UT-FLEET-SC-008: rejects empty name", func() {
+			_, err := scopecache.BuildKey("prod-east", "apps", "v1", "Deployment", "default", "")
+			Expect(err).To(MatchError(scopecache.ErrEmptyName))
 		})
 	})
 })
@@ -131,7 +148,8 @@ var _ = Describe("FederatedScopeChecker (BR-INTEGRATION-065)", func() {
 		})
 
 		It("UT-FLEET-FC-004: non-empty clusterID routes to remote cache", func() {
-			key := scopecache.BuildKey("prod-east", "", "", "Deployment", "default", "nginx")
+			key, keyErr := scopecache.BuildKey("prod-east", "", "", "Deployment", "default", "nginx")
+			Expect(keyErr).ToNot(HaveOccurred())
 			reader.store[key] = true
 
 			managed, err := fc.IsManagedOnCluster(ctx, "prod-east", "default", "Deployment", "nginx")

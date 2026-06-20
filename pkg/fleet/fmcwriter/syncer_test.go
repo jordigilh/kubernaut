@@ -141,7 +141,7 @@ var _ = Describe("FMC Writer Syncer (BR-INTEGRATION-065)", func() {
 		}, testLogger, metrics)
 	})
 
-	It("IT-FMC-002: SyncCluster writes Valkey keys from MCP list_resources response", func() {
+	It("UT-FMC-002: SyncCluster writes Valkey keys from MCP list_resources response", func() {
 		deployments := []map[string]interface{}{
 			{
 				"apiVersion": "apps/v1",
@@ -169,16 +169,18 @@ var _ = Describe("FMC Writer Syncer (BR-INTEGRATION-065)", func() {
 		})
 		Expect(err).ToNot(HaveOccurred())
 
-		expectedKey1 := scopecache.BuildKey("prod-east", "apps", "v1", "Deployment", "default", "nginx")
-		expectedKey2 := scopecache.BuildKey("prod-east", "apps", "v1", "Deployment", "cache", "redis")
+		expectedKey1, keyErr := scopecache.BuildKey("prod-east", "apps", "v1", "Deployment", "default", "nginx")
+		Expect(keyErr).ToNot(HaveOccurred())
+		expectedKey2, keyErr := scopecache.BuildKey("prod-east", "apps", "v1", "Deployment", "cache", "redis")
+		Expect(keyErr).ToNot(HaveOccurred())
 
 		Expect(writer.HasKey(expectedKey1)).To(BeTrue(),
-			"IT-FMC-002: nginx Deployment key must be written to cache")
+			"UT-FMC-002: nginx Deployment key must be written to cache")
 		Expect(writer.HasKey(expectedKey2)).To(BeTrue(),
-			"IT-FMC-002: redis Deployment key must be written to cache")
+			"UT-FMC-002: redis Deployment key must be written to cache")
 	})
 
-	It("IT-FMC-003: ValkeyWriter.Set writes key with correct TTL", func() {
+	It("UT-FMC-003: ValkeyWriter.Set writes key with correct TTL", func() {
 		deployments := []map[string]interface{}{
 			{
 				"apiVersion": "v1",
@@ -198,18 +200,19 @@ var _ = Describe("FMC Writer Syncer (BR-INTEGRATION-065)", func() {
 		})
 		Expect(err).ToNot(HaveOccurred())
 
-		expectedKey := scopecache.BuildKey("prod-east", "", "v1", "Pod", "jobs", "worker-1")
+		expectedKey, keyErr := scopecache.BuildKey("prod-east", "", "v1", "Pod", "jobs", "worker-1")
+		Expect(keyErr).ToNot(HaveOccurred())
 		Expect(writer.HasKey(expectedKey)).To(BeTrue(),
-			"IT-FMC-003: Pod key must be written")
+			"UT-FMC-003: Pod key must be written")
 
 		writer.mu.Lock()
 		ttl := writer.keys[expectedKey]
 		writer.mu.Unlock()
 		Expect(ttl).To(Equal(45 * time.Second),
-			"IT-FMC-003: Key TTL must match configured value (45s)")
+			"UT-FMC-003: Key TTL must match configured value (45s)")
 	})
 
-	It("IT-FMC-004: Run reacts to cluster add event with immediate sync", func() {
+	It("UT-FMC-004: Run reacts to cluster add event with immediate sync", func() {
 		newCluster := registry.ClusterInfo{
 			ID:          "staging-west",
 			Name:        "Staging West",
@@ -245,15 +248,15 @@ var _ = Describe("FMC Writer Syncer (BR-INTEGRATION-065)", func() {
 		}
 
 		Eventually(func() bool {
-			key := scopecache.BuildKey("staging-west", "", "v1", "Pod", "staging", "api-pod")
+			key, _ := scopecache.BuildKey("staging-west", "", "v1", "Pod", "staging", "api-pod")
 			return writer.HasKey(key)
 		}, 2*time.Second, 50*time.Millisecond).Should(BeTrue(),
-			"IT-FMC-004: New cluster event must trigger immediate sync and write keys")
+			"UT-FMC-004: New cluster event must trigger immediate sync and write keys")
 
 		cancel()
 	})
 
-	It("IT-FMC-001: Run syncs all clusters on interval", func() {
+	It("UT-FMC-001: Run syncs all clusters on interval", func() {
 		deployments := []map[string]interface{}{
 			{
 				"apiVersion": "apps/v1",
@@ -278,11 +281,12 @@ var _ = Describe("FMC Writer Syncer (BR-INTEGRATION-065)", func() {
 		Eventually(func() int {
 			return writer.KeyCount()
 		}, 2*time.Second, 50*time.Millisecond).Should(BeNumerically(">=", 1),
-			"IT-FMC-001: Main loop must sync clusters and write keys")
+			"UT-FMC-001: Main loop must sync clusters and write keys")
 
-		expectedKey := scopecache.BuildKey("prod-east", "apps", "v1", "Deployment", "prod", "app")
+		expectedKey, keyErr := scopecache.BuildKey("prod-east", "apps", "v1", "Deployment", "prod", "app")
+		Expect(keyErr).ToNot(HaveOccurred())
 		Expect(writer.HasKey(expectedKey)).To(BeTrue(),
-			"IT-FMC-001: Expected deployment key must exist after sync")
+			"UT-FMC-001: Expected deployment key must exist after sync")
 
 		cancel()
 	})
@@ -319,8 +323,10 @@ var _ = Describe("FMC Writer Syncer (BR-INTEGRATION-065)", func() {
 		})
 		Expect(err).ToNot(HaveOccurred())
 
-		key1 := scopecache.BuildKey("prod-east", "", "v1", "Pod", "ns1", "pod-a")
-		key2 := scopecache.BuildKey("prod-east", "", "v1", "Pod", "ns2", "pod-b")
+		key1, keyErr := scopecache.BuildKey("prod-east", "", "v1", "Pod", "ns1", "pod-a")
+		Expect(keyErr).ToNot(HaveOccurred())
+		key2, keyErr := scopecache.BuildKey("prod-east", "", "v1", "Pod", "ns2", "pod-b")
+		Expect(keyErr).ToNot(HaveOccurred())
 		Expect(writer.HasKey(key1)).To(BeTrue())
 		Expect(writer.HasKey(key2)).To(BeTrue())
 	})

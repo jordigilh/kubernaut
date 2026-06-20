@@ -65,7 +65,10 @@ func NewFleetE2EHelper(config FleetE2EConfig, logger logr.Logger) *FleetE2EHelpe
 // This simulates what the FMC Writer would do in production.
 func (h *FleetE2EHelper) SeedValkeyScopeCache(ctx context.Context, resources []SeedResource) error {
 	for _, res := range resources {
-		key := scopecache.BuildKey(h.config.MockClusterID, res.Group, res.Version, res.Kind, res.Namespace, res.Name)
+		key, err := scopecache.BuildKey(h.config.MockClusterID, res.Group, res.Version, res.Kind, res.Namespace, res.Name)
+		if err != nil {
+			return fmt.Errorf("build key for %s/%s: %w", res.Kind, res.Name, err)
+		}
 		if err := h.valkey.Set(ctx, key, "1", 5*time.Minute).Err(); err != nil {
 			return fmt.Errorf("seed key %s: %w", key, err)
 		}

@@ -21,6 +21,7 @@ package scopecache
 
 import (
 	"context"
+	"errors"
 	"fmt"
 )
 
@@ -45,13 +46,35 @@ func NewClient(reader CacheReader) *Client {
 // IsManaged checks if a resource on a remote cluster is labeled kubernaut.ai/managed=true.
 // Returns (true, nil) if managed, (false, nil) if not found (cache miss treated as unmanaged).
 func (c *Client) IsManaged(ctx context.Context, clusterID, group, version, kind, namespace, name string) (bool, error) {
-	key := BuildKey(clusterID, group, version, kind, namespace, name)
+	key, err := BuildKey(clusterID, group, version, kind, namespace, name)
+	if err != nil {
+		return false, err
+	}
 	return c.reader.Exists(ctx, key)
 }
 
+// ErrEmptyClusterID is returned when clusterID is empty.
+var ErrEmptyClusterID = errors.New("scopecache: clusterID must not be empty")
+
+// ErrEmptyKind is returned when kind is empty.
+var ErrEmptyKind = errors.New("scopecache: kind must not be empty")
+
+// ErrEmptyName is returned when name is empty.
+var ErrEmptyName = errors.New("scopecache: name must not be empty")
+
 // BuildKey constructs the Valkey key for a managed resource entry.
-func BuildKey(clusterID, group, version, kind, namespace, name string) string {
+// Returns an error if required parameters (clusterID, kind, name) are empty.
+func BuildKey(clusterID, group, version, kind, namespace, name string) (string, error) {
+	if clusterID == "" {
+		return "", ErrEmptyClusterID
+	}
+	if kind == "" {
+		return "", ErrEmptyKind
+	}
+	if name == "" {
+		return "", ErrEmptyName
+	}
 	gvr := fmt.Sprintf("%s/%s/%s", group, version, kind)
 	nsName := fmt.Sprintf("%s/%s", namespace, name)
-	return fmt.Sprintf("kubernaut:managed:%s:%s:%s", clusterID, gvr, nsName)
+	return fmt.Sprintf("kubernaut:managed:%s:%s:%s", clusterID, gvr, nsName), nil
 }
