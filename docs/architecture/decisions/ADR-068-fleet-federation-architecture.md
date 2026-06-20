@@ -93,7 +93,9 @@ The key constraints are:
 
 6. **KA dynamic tool discovery** (not hard-coded): Fleet tools are registered at startup from `tools/list`. `AppendFleetToolsToRCA` makes them visible to the LLM investigator without code changes per cluster.
 
-7. **`MCPServerRegistration` as source of truth** (not ConfigMap): Kuadrant CRD is the authoritative registry of MCP backends. Kubernaut is a consumer, not an owner.
+7. **`MCPServerRegistration` as source of truth** (not ConfigMap): Kuadrant CRD is the authoritative registry of MCP backends. Kubernaut is a **read-only consumer** — it watches but never creates or modifies these CRDs. The control plane (ACM, Rancher, GitOps) owns their lifecycle.
+
+8. **Pluggable `RemoteScopeResolver`** (not hardcoded Valkey): Resource scope resolution uses an interface so that different backends can answer "is resource X managed?" depending on the environment. FMC+Valkey is the default; ACM Search GraphQL is the alternative for ACM environments.
 
 ## Alternatives Considered
 
@@ -114,8 +116,18 @@ The key constraints are:
 
 ### D. ConfigMap-based cluster registry
 - +: Simple, no CRD dependency
-- -: Drift risk; manual management; no reconciliation
-- **Rejected**: CRDWatcher on MCPServerRegistration is authoritative
+- -: Drift risk; manual management; no reconciliation; no standardized contract
+- **Rejected**: MCPServerRegistration CRD is the authoritative and universal contract
+
+### E. Native control-plane adapters (ACM ManagedCluster watcher, Rancher adapter)
+- +: Direct integration, potentially lower latency for cluster discovery
+- -: Kubernaut couples to specific control plane; N adapters to maintain; same info available via MCPServerRegistration
+- **Rejected**: MCPServerRegistration is the generic interface. Control planes own the creation of these CRDs.
+
+### F. Single hardcoded scope resolution backend (Valkey only)
+- +: Simpler implementation
+- -: Forces FMC+Valkey deployment even when ACM Search provides the same data natively
+- **Rejected**: Pluggable RemoteScopeResolver avoids unnecessary infrastructure in ACM environments
 
 ## Consequences
 
@@ -159,6 +171,7 @@ The key constraints are:
 |-----------|----------------------|---------------------|---------|
 | FederatedScopeChecker | NewServerWithMetrics() | pkg/gateway/server.go | IT-GW-FLEET-010 |
 | fleetScopeChecker dispatch | validateScope() | pkg/gateway/server.go:1518 | IT-GW-FLEET-010/011/012 |
+| RemoteScopeResolver interface | FederatedScopeChecker | pkg/fleet/scopecache/resolver.go | UT-FLEET-FC-003/004/005 |
 | ResilientClient (KA) | registerFleetTools() | cmd/kubernautagent/main.go | IT-KA-FLEET-001 |
 | ResilientClient (FMC) | main() | cmd/fmcwriter/main.go | UT-FMC-001 |
 | ReloadableOAuth2Transport (KA) | registerFleetTools() | cmd/kubernautagent/main.go | UT-FLEET-RES-001 |
@@ -167,6 +180,54 @@ The key constraints are:
 | CRDWatcher | main() | cmd/fmcwriter/main.go | UT-FMC-004 |
 | BuildKey validation | BuildKey() | pkg/fleet/scopecache/client.go | UT-FLEET-SC-006/007/008 |
 | fmcwriter securityContext | Helm template | charts/kubernaut/templates/fmcwriter/fmcwriter.yaml | helm template |
+
+## Pluggable Resource Scope Resolution
+
+### Design
+
+The `RemoteScopeResolver` interface (`pkg/fleet/scopecache/resolver.go`) defines the contract for checking whether a resource on a remote cluster is managed by Kubernaut:
+
+```go
+type RemoteScopeResolver interface {
+    IsManaged(ctx context.Context, clusterID, group, version, kind, namespace, name string) (bool, error)
+}
+```
+
+The `FederatedScopeChecker` accepts any `RemoteScopeResolver` implementation and routes:
+- Empty `clusterID` → local `scope.ScopeChecker` (K8s API)
+- Non-empty `clusterID` → `RemoteScopeResolver`
+
+### Implementation A: FMC Writer + Valkey (Default)
+
+For environments **without** a federated control plane (GitOps, manual cluster management):
+
+1. **FMC Writer** (`cmd/fmcwriter/`) polls MCP Gateway for resources labeled `kubernaut.ai/managed=true`
+2. Writes key-existence entries to Valkey with TTL
+3. `Client` (`pkg/fleet/scopecache/client.go`) implements `RemoteScopeResolver` via Valkey EXISTS
+
+**Trade-offs**: p95 < 1ms latency; stale cache window bounded by sync interval (30s); requires FMC Writer + Valkey deployment.
+
+### Implementation B: ACM Search GraphQL (ACM Environments)
+
+For environments **with** ACM deployed:
+
+1. Queries ACM Search API with GraphQL filter for `kubernaut.ai/managed=true` + cluster + resource identity
+2. No FMC Writer or Valkey needed — reuses existing ACM Search infrastructure
+
+**Trade-offs**: p95 ~10-50ms (higher latency); no sync delay (real-time); depends on ACM Search availability.
+
+### Operator Choice
+
+Helm values determine which `RemoteScopeResolver` implementation is injected:
+
+```yaml
+fleet:
+  scopeResolver: "valkey"  # or "acm-search"
+  valkey:
+    addr: "valkey.kubernaut-system.svc:6379"
+  acmSearch:
+    endpoint: "https://search-api.open-cluster-management.svc:4010"
+```
 
 ## Security Considerations
 
