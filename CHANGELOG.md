@@ -5,7 +5,22 @@ All notable changes to Kubernaut will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.5.0] - Unreleased
+## [1.5.1] - 2026-06-20
+
+### Added
+
+- **Kubernaut Console** — Web UI for interactive investigation, real-time agent chat, remediation monitoring, and workflow management ([kubernaut-console](https://github.com/jordigilh/kubernaut-console))
+
+### Fixed
+
+- **Stale session reactivation (#1472)** — `kubernaut_reconnect` now validates RR existence and phase before attempting reconnection. Prevents misleading "reconnecting" UX after pod restarts when the investigation no longer exists or has completed.
+- **Per-phase LLM routing (#1470)** — Investigation phases can now route to different LLM providers via `phaseModels` config with hot-reload support.
+- **Status/subscribe RR context (#1468)** — RR spec context now included in status/subscribe SSE metadata for richer UI state.
+- **EA hot-loop prevention (#1466)** — GenerationChangedPredicate prevents unnecessary reconciliation in Effectiveness Monitor.
+- **Audit trail truncation (#1464)** — Raised MaxToolResultBytes to 16KB and aggregates audit trail into lifecycle phases.
+- **Session ID forwarding (#1452)** — AF-provided session ID properly threaded through to KA for direct lookup.
+
+## [1.5.0] - 2026-06-10
 
 ### Added
 

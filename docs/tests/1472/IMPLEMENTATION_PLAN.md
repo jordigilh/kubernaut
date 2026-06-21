@@ -4,127 +4,103 @@
 
 ## 1. Summary
 
-Add a `StaleSessionValidator` interface to the `SessionInterceptor` that checks whether an explicit `context_id` has a backing in-memory session. If not (post-restart staleness), clear the context_id so ADK creates a fresh session instead of silently reactivating a ghost investigation.
+Validate RemediationRequest (RR) existence and lifecycle phase in the `kubernaut_reconnect` tool before allowing session reactivation. If the referenced RR does not exist or has reached a terminal phase, the reconnection is rejected with a `session_expired` status — preventing misleading "reconnecting to your investigation" UX after pod restarts or investigation completion.
+
+> **Note**: An earlier approach placed this validation in `SessionInterceptor` using ADK's `InMemoryService.Get()`. That approach was reverted because it could not distinguish genuinely new `context_id`s from stale ones (misclassifying all first-time IDs). The final implementation validates at the tool level using the Kubernetes API, which is authoritative for RR existence and phase.
 
 ## 2. Spike Outcomes (Informing Design)
 
 | Spike | Outcome | Design Impact |
 |---|---|---|
-| S-1: ADK InMemoryService.Get() | Returns `fmt.Errorf("session %+v not found", ...)` for missing sessions | Use error string detection or simply treat any `Get()` error as "not found" for the validator |
-| S-2: IS CRD lookup strategy | No field index for `a2aTaskID`; session hydration disabled (#1451); any context_id absent from memory is stale by definition | **No K8s API call needed** — validation is purely in-memory |
+| S-1: ADK InMemoryService.Get() | Cannot distinguish new vs. stale context_ids — replaces *all* first-time IDs, breaking tests | **Reverted** — interceptor-based approach abandoned |
+| S-2: RR CRD lookup via typed client | `crclient.Client.Get()` reliably checks RR existence and phase | Tool-level validation using K8s typed client |
 
 ## 3. Architecture
 
-### 3.1 Interface
+### 3.1 Validation Point
+
+Validation occurs inside `HandleReconnect` in `pkg/apifrontend/tools/ka_interactive.go`. This is the tool invoked when an operator attempts to reconnect to an existing investigation.
+
+### 3.2 Validation Logic
 
 ```go
-// StaleSessionValidator determines whether a context_id references a
-// valid in-memory session. Used by SessionInterceptor to detect stale
-// contexts after pod restarts (issue #1472).
-type StaleSessionValidator interface {
-    // IsContextValid returns true if the context_id has a backing session
-    // in memory OR if an error prevents determination (fail-open).
-    IsContextValid(ctx context.Context, contextID, username string) bool
-}
-```
+func HandleReconnect(ctx context.Context, log logr.Logger, registry ActiveContextRegistry,
+    k8sClient crclient.Client, namespace string, args ReconnectArgs) InteractiveActionResult {
 
-### 3.2 Implementation
-
-```go
-// inMemorySessionValidator implements StaleSessionValidator by probing
-// the ADK session service's in-memory store.
-type inMemorySessionValidator struct {
-    sessionService adksession.Service
-    appName        string
-    logger         logr.Logger
-}
-```
-
-The `IsContextValid` method calls `sessionService.Get()` with `appName`, `username`, and `contextID` as the session ID. If the session is found, returns `true`. If "not found" error, returns `false`. For any other error, returns `true` (fail-open, SC-5).
-
-### 3.3 Interceptor Change
-
-Current `Before()` at line 55-57:
-```go
-if msg.ContextID != "" {
-    return ctx, nil
-}
-```
-
-Changed to:
-```go
-if msg.ContextID != "" {
-    if s.validator != nil && !s.validator.IsContextValid(ctx, msg.ContextID, identity.Username) {
-        s.logger.Info("clearing stale context_id — no backing session in memory (post-restart)",
-            "user", identity.Username,
-            "stale_context_id", msg.ContextID,
-        )
-        msg.ContextID = ""
-        // Fall through to registry check below
-    } else {
-        return ctx, nil
+    // Defensive: skip validation if K8s client or namespace unavailable (fail-open, SC-5)
+    if k8sClient != nil && namespace != "" && args.RRID != "" {
+        rr := &remediationv1.RemediationRequest{}
+        key := crclient.ObjectKey{Namespace: namespace, Name: args.RRID}
+        if err := k8sClient.Get(ctx, key, rr); err != nil {
+            log.Info("RR not found for reconnect, rejecting", "rrid", args.RRID)
+            return InteractiveActionResult{Status: "session_expired", Message: "..."}
+        }
+        if IsTerminalPhase(string(rr.Status.OverallPhase)) {
+            log.Info("RR in terminal phase, rejecting reconnect", "rrid", args.RRID, "phase", rr.Status.OverallPhase)
+            return InteractiveActionResult{Status: "session_expired", Message: "..."}
+        }
     }
+    // ... existing reconnection logic
 }
 ```
 
-### 3.4 Fail-Open Safety
+### 3.3 Fail-Open Safety
 
-- If `validator` is `nil` (defensive): existing pass-through behavior preserved.
-- If `sessionService.Get()` returns a non-"not-found" error: treated as valid (fail-open).
-- Rationale: availability over correctness (SC-5 DoS protection).
+- If `k8sClient == nil`: validation skipped, reconnection proceeds (defensive, enables testing without K8s)
+- If `namespace == ""`: validation skipped (same rationale)
+- If `args.RRID == ""`: validation skipped (reconnect by other means)
+- Rationale: availability over correctness (SC-5 DoS protection)
 
 ## 4. Wiring Manifest
 
 | Component | Production Entry Point | Wiring Code Location | IT Test ID |
 |---|---|---|---|
-| `StaleSessionValidator` interface | `SessionInterceptor.Before()` | `pkg/apifrontend/launcher/session_interceptor.go` | IT-AF-1472-001 |
-| `inMemorySessionValidator` impl | `NewSessionInterceptor()` constructor | `pkg/apifrontend/launcher/session_interceptor.go` | IT-AF-1472-001 |
-| Production wiring | `cmd/apifrontend/main.go:992` | `launcher.NewSessionInterceptor(...)` call | IT-AF-1472-001 |
+| `HandleReconnect` RR validation | `NewReconnectTool()` callback | `pkg/apifrontend/tools/ka_interactive.go` | UT-AF-1472-001..006 |
+| K8s client injection | `root.go` agent setup | `pkg/apifrontend/agent/root.go` | — |
+| MCP bridge wiring | `registerTool("kubernaut_reconnect")` | `pkg/apifrontend/handler/mcp_bridge.go` | IT-AF-1234-W06 |
 
 ## 5. Files Modified
 
 | File | Change |
 |---|---|
-| `pkg/apifrontend/launcher/session_interceptor.go` | Add `StaleSessionValidator` interface, `inMemorySessionValidator` struct, modify `Before()`, update `NewSessionInterceptor()` |
-| `pkg/apifrontend/launcher/session_interceptor_test.go` | Add UT-AF-1472-001 through UT-AF-1472-006 |
-| `pkg/apifrontend/launcher/session_interceptor_it_test.go` | Add IT-AF-1472-001, IT-AF-1472-002 |
-| `cmd/apifrontend/main.go` | Pass `sessionService` and `appName` to `NewSessionInterceptor()` |
+| `pkg/apifrontend/tools/ka_interactive.go` | Add `k8sClient`, `namespace` params to `HandleReconnect` and `NewReconnectTool`; add RR validation logic |
+| `pkg/apifrontend/tools/ka_interactive_test.go` | Add UT-AF-1472-001 through UT-AF-1472-006 |
+| `pkg/apifrontend/agent/root.go` | Pass `cfg.TypedClient` and `cfg.Namespace` to `NewReconnectTool` |
+| `pkg/apifrontend/handler/mcp_bridge.go` | Pass `cfg.TypedClient` and `cfg.Namespace` to `HandleReconnect` in tool registration |
+| `test/e2e/apifrontend/stale_session_e2e_test.go` | E2E-AF-1472-001 proving full journey |
 
 ## 6. TDD Phases
 
 ### Phase 1: RED
 
-1. Add test file entries for UT-AF-1472-001..006 in `session_interceptor_test.go`
-2. Add test file entries for IT-AF-1472-001, IT-AF-1472-002 in `session_interceptor_it_test.go`
-3. Tests reference `StaleSessionValidator` interface and `NewSessionInterceptor` with new params — compilation fails (RED)
+1. Add UT-AF-1472-001..006 in `ka_interactive_test.go` — tests reference new signature params, compilation fails
+2. E2E test asserting fresh conversation after pod restart
 
 ### Phase 2: GREEN
 
-1. Define `StaleSessionValidator` interface in `session_interceptor.go`
-2. Implement `inMemorySessionValidator`
-3. Modify `SessionInterceptor` struct to hold optional validator
-4. Update `NewSessionInterceptor()` to accept validator (with option pattern or direct param)
-5. Implement the validation gate in `Before()`
-6. Update `cmd/apifrontend/main.go` to pass the validator
-7. **CHECKPOINT W**: Verify all wiring manifest rows have production callers + passing ITs
+1. Modify `HandleReconnect` signature to accept `crclient.Client` and `namespace`
+2. Implement RR existence check (`k8sClient.Get()`)
+3. Implement terminal phase check (`IsTerminalPhase()`)
+4. Update `NewReconnectTool` to pass through new params
+5. Update call sites in `root.go` and `mcp_bridge.go`
+6. **CHECKPOINT W**: All wiring manifest rows have production callers + passing tests
 
 ### Phase 3: REFACTOR
 
-1. Improve error messages with structured fields
-2. Validate edge cases (empty username, nil identity already handled upstream)
-3. Consider extracting validator to its own file if it grows
-4. Run `golangci-lint` for style compliance
+1. Add defensive nil/empty guards for fail-open
+2. Structured logging with `rrid`, `phase` fields
+3. `golangci-lint` compliance
 
 ## 7. Backward Compatibility
 
-- `NewSessionInterceptor()` signature changes (adds validator param) — callers in `cmd/` and tests must update
-- If `validator` is `nil`, behavior is identical to pre-fix (no breakage during migration)
-- All existing tests continue to pass with `nil` validator (or updated to pass a mock)
+- `HandleReconnect` and `NewReconnectTool` signatures changed (add `k8sClient`, `namespace` params)
+- Existing tests pass `nil, ""` for backward compatibility
+- If `k8sClient` is nil, validation is entirely skipped (no behavioral change for tests without K8s)
 
 ## 8. Acceptance Criteria (from Issue #1472)
 
-- [ ] After AF pod restart, sending a message with a stale `context_id` starts a fresh conversation (no "reconnecting" message)
-- [ ] Active sessions within the same pod lifetime continue to route correctly
-- [ ] Stale context clearing is logged for SRE observability
-- [ ] No K8s API calls added to the interceptor hot path
-- [ ] Fail-open on unexpected errors (availability preserved)
+- [x] After AF pod restart, sending a reconnect to a non-existent RR returns `session_expired`
+- [x] Active sessions with valid RRs continue to route correctly
+- [x] Terminal-phase RRs (Completed, Failed) are rejected for reconnection
+- [x] Fail-open on nil client or empty namespace (availability preserved)
+- [x] No interceptor changes — `SessionInterceptor` remains as-is

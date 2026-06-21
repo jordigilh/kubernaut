@@ -8,7 +8,7 @@ Each milestone builds on the previous: **control** → **external integration** 
 
 ---
 
-## v1.4 — Operator Overrides and Platform Hardening (current)
+## v1.4 — Operator Overrides and Platform Hardening (released)
 
 - **Prompt injection guardrails** — Shadow agent with a dedicated scanning model to protect the agentic pipeline against prompt injection attacks ([#601](https://github.com/jordigilh/kubernaut/issues/601))
 - **Operator workflow/parameter override** — Operators can override workflow selection and parameters during RAR approval, with authwebhook validation ([#594](https://github.com/jordigilh/kubernaut/issues/594))
@@ -36,12 +36,8 @@ Track progress on the [v1.4 milestone](https://github.com/jordigilh/kubernaut/mi
 
 - **MCP Server** — Investigate, enrich, and select workflows through any MCP-compatible interface — Claude, Cursor, Slack bots, or custom UIs ([#703](https://github.com/jordigilh/kubernaut/issues/703))
 - **A2A Protocol** — External AI agents delegate remediation to Kubernaut and track task lifecycle via the [Agent-to-Agent](https://a2aproject.github.io/A2A/latest/specification/) standard ([#705](https://github.com/jordigilh/kubernaut/issues/705))
-- **Kubernaut Console** — Web-based operator dashboard with chat UI, live remediation streaming, and workflow selection ([#713](https://github.com/jordigilh/kubernaut/issues/713))
+- **Kubernaut Console** — Web-based operator dashboard with chat UI, live remediation streaming, and workflow selection ([shipped in v1.5.1](https://github.com/jordigilh/kubernaut/releases/tag/v1.5.1) — [kubernaut-console](https://github.com/jordigilh/kubernaut-console))
 - **Natural language signal intake** — Trigger investigations by describing the problem in plain text; Kubernaut extracts a structured signal and runs the full pipeline ([#714](https://github.com/jordigilh/kubernaut/issues/714))
-
-<p align="center">
-  <img src="../architecture/diagrams/kubernaut-console-animated.gif" alt="Kubernaut Console — interactive investigation and remediation" width="800"/>
-</p>
 
 ---
 
