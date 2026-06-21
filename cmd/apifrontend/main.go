@@ -989,7 +989,9 @@ func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps,
 		Auditor:             auditor,
 		BridgeMetrics:       metricsReg,
 		SessionPhaseUpdater: sessionSvcForAgent,
-		SessionInterceptor:  launcher.NewSessionInterceptor(activeCtxRegistry, logger.WithName("session-interceptor")),
+		SessionInterceptor: launcher.NewSessionInterceptor(
+			activeCtxRegistry, logger.WithName("session-interceptor"),
+		),
 		LLMSemaphore:        llmSemaphore,
 	}
 

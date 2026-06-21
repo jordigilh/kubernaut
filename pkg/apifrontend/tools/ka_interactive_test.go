@@ -168,7 +168,7 @@ var _ = Describe("Interactive Action Handlers (G1)", func() {
 					return &ka.InvokeActionResult{Status: "active"}, nil
 				},
 			}
-			result, err := tools.HandleReconnect(ctx, mockMCP, tools.InteractiveActionArgs{
+			result, err := tools.HandleReconnect(ctx, mockMCP, nil, "", tools.InteractiveActionArgs{
 				RRID: "rr-prod-001",
 			}, spy)
 			Expect(err).NotTo(HaveOccurred())
@@ -181,7 +181,7 @@ var _ = Describe("Interactive Action Handlers (G1)", func() {
 					return nil, ka.ErrMCPUnavailable
 				},
 			}
-			_, err := tools.HandleReconnect(ctx, mockMCP, tools.InteractiveActionArgs{
+			_, err := tools.HandleReconnect(ctx, mockMCP, nil, "", tools.InteractiveActionArgs{
 				RRID: "rr-prod-001",
 			}, spy)
 			Expect(err).To(HaveOccurred())
@@ -212,7 +212,7 @@ var _ = Describe("Interactive Action Handlers (G1)", func() {
 				{"kubernaut_complete", func() (interface{ Name() string }, error) { return tools.NewCompleteTool(nil, nil) }},
 				{"kubernaut_cancel", func() (interface{ Name() string }, error) { return tools.NewCancelInvestigationTool(nil, nil) }},
 				{"kubernaut_status", func() (interface{ Name() string }, error) { return tools.NewStatusTool(nil, nil) }},
-				{"kubernaut_reconnect", func() (interface{ Name() string }, error) { return tools.NewReconnectTool(nil, nil) }},
+				{"kubernaut_reconnect", func() (interface{ Name() string }, error) { return tools.NewReconnectTool(nil, nil, "", nil) }},
 			}
 			for _, c := range constructors {
 				t, err := c.fn()
@@ -269,5 +269,93 @@ var _ = Describe("Interactive Action Handlers (G1)", func() {
 					"OpenAPI schema requires %s=%s in audit event", tc.key, tc.value)
 			})
 		}
+	})
+})
+
+var _ = Describe("HandleReconnect RR validation (#1472, BR-SESS-025)", func() {
+	var ctx context.Context
+
+	BeforeEach(func() {
+		ctx = context.Background()
+	})
+
+	It("UT-AF-1472-001: returns session_expired when RR does not exist (SI-10)", func() {
+		k8sClient := newTypedFakeClient()
+		result, err := tools.HandleReconnect(ctx, nil, k8sClient, "kubernaut-system", tools.InteractiveActionArgs{
+			RRID: "rr-nonexistent-001",
+		}, nil)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Status).To(Equal("session_expired"),
+			"SI-10: missing RR must return session_expired, not attempt reconnection")
+		Expect(result.Message).To(ContainSubstring("no longer exists"))
+	})
+
+	It("UT-AF-1472-002: returns session_expired when RR is in terminal phase (SI-10)", func() {
+		rr := newTypedRR("kubernaut-system", "rr-completed-001", "Completed")
+		k8sClient := newTypedFakeClient(rr)
+		result, err := tools.HandleReconnect(ctx, nil, k8sClient, "kubernaut-system", tools.InteractiveActionArgs{
+			RRID: "rr-completed-001",
+		}, nil)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Status).To(Equal("session_expired"),
+			"SI-10: terminal RR must return session_expired")
+		Expect(result.Message).To(ContainSubstring("terminal phase"))
+	})
+
+	It("UT-AF-1472-003: proceeds to MCP when RR exists and is non-terminal", func() {
+		rr := newTypedRR("kubernaut-system", "rr-active-001", "Processing")
+		k8sClient := newTypedFakeClient(rr)
+		mockMCP := &ka.MockMCPClient{
+			InvokeActionFn: func(_ context.Context, args ka.InvokeActionArgs) (*ka.InvokeActionResult, error) {
+				Expect(args.Action).To(Equal("reconnect"))
+				return &ka.InvokeActionResult{Status: "active", SessionID: "s-001"}, nil
+			},
+		}
+		result, err := tools.HandleReconnect(ctx, mockMCP, k8sClient, "kubernaut-system", tools.InteractiveActionArgs{
+			RRID: "rr-active-001",
+		}, nil)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Status).To(Equal("active"),
+			"Non-terminal RR must allow reconnection")
+	})
+
+	It("UT-AF-1472-004: skips validation when k8sClient is nil (fail-open, SC-5)", func() {
+		mockMCP := &ka.MockMCPClient{
+			InvokeActionFn: func(_ context.Context, _ ka.InvokeActionArgs) (*ka.InvokeActionResult, error) {
+				return &ka.InvokeActionResult{Status: "active"}, nil
+			},
+		}
+		result, err := tools.HandleReconnect(ctx, mockMCP, nil, "kubernaut-system", tools.InteractiveActionArgs{
+			RRID: "rr-prod-001",
+		}, nil)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Status).To(Equal("active"),
+			"SC-5: nil k8sClient must skip validation (fail-open)")
+	})
+
+	It("UT-AF-1472-005: skips validation when namespace is empty (fail-open, SC-5)", func() {
+		k8sClient := newTypedFakeClient()
+		mockMCP := &ka.MockMCPClient{
+			InvokeActionFn: func(_ context.Context, _ ka.InvokeActionArgs) (*ka.InvokeActionResult, error) {
+				return &ka.InvokeActionResult{Status: "active"}, nil
+			},
+		}
+		result, err := tools.HandleReconnect(ctx, mockMCP, k8sClient, "", tools.InteractiveActionArgs{
+			RRID: "rr-prod-001",
+		}, nil)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Status).To(Equal("active"),
+			"SC-5: empty namespace must skip validation (fail-open)")
+	})
+
+	It("UT-AF-1472-006: returns session_expired for Failed phase", func() {
+		rr := newTypedRR("kubernaut-system", "rr-failed-001", "Failed")
+		k8sClient := newTypedFakeClient(rr)
+		result, err := tools.HandleReconnect(ctx, nil, k8sClient, "kubernaut-system", tools.InteractiveActionArgs{
+			RRID: "rr-failed-001",
+		}, nil)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Status).To(Equal("session_expired"),
+			"SI-10: Failed RR must return session_expired")
 	})
 })

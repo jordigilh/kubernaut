@@ -4,9 +4,13 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/go-logr/logr"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
 	"google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
 
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
@@ -124,7 +128,36 @@ func HandleStatus(ctx context.Context, mcpClient ka.MCPClient, args InteractiveA
 }
 
 // HandleReconnect implements the kubernaut_reconnect tool.
-func HandleReconnect(ctx context.Context, mcpClient ka.MCPClient, args InteractiveActionArgs, auditor audit.Emitter) (InteractiveActionResult, error) {
+// Before delegating to the MCP client, it validates that the referenced RR
+// exists and is in a non-terminal phase. If the RR is missing or terminal,
+// the session is considered expired and a graceful result is returned,
+// preventing misleading "reconnecting" UX (#1472, BR-SESS-025).
+func HandleReconnect(ctx context.Context, mcpClient ka.MCPClient, k8sClient crclient.Client, namespace string, args InteractiveActionArgs, auditor audit.Emitter) (InteractiveActionResult, error) {
+	if k8sClient != nil && namespace != "" && args.RRID != "" {
+		var rr remediationv1.RemediationRequest
+		if err := k8sClient.Get(ctx, crclient.ObjectKey{Namespace: namespace, Name: args.RRID}, &rr); err != nil {
+			logger := logr.FromContextOrDiscard(ctx)
+			logger.Info("kubernaut_reconnect: RR not found — session expired (#1472, SI-10)",
+				"rr_id", args.RRID,
+				"error", err.Error(),
+			)
+			return InteractiveActionResult{
+				Status:  "session_expired",
+				Message: fmt.Sprintf("Investigation session expired: remediation request %q no longer exists. Start a new investigation.", args.RRID),
+			}, nil
+		}
+		if IsTerminalPhase(string(rr.Status.OverallPhase)) {
+			logger := logr.FromContextOrDiscard(ctx)
+			logger.Info("kubernaut_reconnect: RR in terminal phase — session expired (#1472, SI-10)",
+				"rr_id", args.RRID,
+				"phase", string(rr.Status.OverallPhase),
+			)
+			return InteractiveActionResult{
+				Status:  "session_expired",
+				Message: fmt.Sprintf("Investigation session expired: remediation request %q is in terminal phase %q. Start a new investigation.", args.RRID, rr.Status.OverallPhase),
+			}, nil
+		}
+	}
 	return invokeInteractiveAction(ctx, mcpClient, "reconnect", args, auditor, audit.EventKADelegated)
 }
 
@@ -170,11 +203,13 @@ func NewStatusTool(mcpClient ka.MCPClient, auditor audit.Emitter) (tool.Tool, er
 }
 
 // NewReconnectTool creates the kubernaut_reconnect tool.
-func NewReconnectTool(mcpClient ka.MCPClient, auditor audit.Emitter) (tool.Tool, error) {
+// The k8sClient and namespace are used to validate RR existence before
+// attempting reconnection (#1472, BR-SESS-025).
+func NewReconnectTool(mcpClient ka.MCPClient, k8sClient crclient.Client, namespace string, auditor audit.Emitter) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_reconnect",
 		Description: "Reconnect to a disconnected investigation session",
 	}, func(ctx tool.Context, args InteractiveActionArgs) (InteractiveActionResult, error) {
-		return HandleReconnect(ctx, mcpClient, args, auditor)
+		return HandleReconnect(ctx, mcpClient, k8sClient, namespace, args, auditor)
 	})
 }
