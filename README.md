@@ -11,13 +11,22 @@
 Kubernaut closes the loop from Kubernetes alert to automated remediation. It operates in two modes: **autonomously** — detecting signals, investigating root causes, and executing fixes end-to-end without human involvement — and **interactively** — letting operators join an in-progress investigation via MCP or A2A, guide the agent, and approve remediations in real time. The LLM-powered agent uses native Go client-go bindings against the Kubernetes API, Prometheus, and log endpoints to investigate, select a remediation workflow, and execute the fix — or escalate to a human with a full RCA when it can't.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/jordigilh/kubernaut-demo-scenarios/main/scenarios/crashloop/crashloop-lite.gif" alt="CrashLoopBackOff demo — from alert to automated fix in under 5 minutes" width="800"/>
+  <video src="https://github.com/jordigilh/kubernaut-demo-scenarios/raw/main/scenarios/gitops-drift/gitops-drift-demo.mp4" width="800" controls autoplay muted loop>
+    Your browser does not support the video tag.
+  </video>
 </p>
+
+<details>
+<summary>See autonomous mode demo (non-interactive)</summary>
+<p align="center">
+  <img src="https://raw.githubusercontent.com/jordigilh/kubernaut-demo-scenarios/main/scenarios/crashloop/crashloop-lite.gif" alt="CrashLoopBackOff demo — autonomous alert-to-fix" width="800"/>
+</p>
+</details>
 
 <p align="center">
   <a href="https://jordigilh.github.io/kubernaut-docs/"><strong>Full Documentation</strong></a> &nbsp;·&nbsp;
   <a href="https://github.com/jordigilh/kubernaut-demo-scenarios"><strong>Demo Scenarios</strong></a> &nbsp;·&nbsp;
-  <a href="https://github.com/jordigilh/kubernaut/releases/tag/v1.5.0"><strong>Latest Release (v1.5.0)</strong></a>
+  <a href="https://github.com/jordigilh/kubernaut/releases/tag/v1.5.1"><strong>Latest Release (v1.5.1)</strong></a>
 </p>
 
 ---
@@ -85,16 +94,13 @@ Kubernaut bridges that gap. It uses an LLM agent that investigates the actual ro
 - **Custom agent injection** — Pluggable investigation and remediation agents via the AgenticWorkflow CRD, enabling customers to inject domain-specific automation into the Kubernaut pipeline ([#1242](https://github.com/jordigilh/kubernaut/issues/1242), [#883](https://github.com/jordigilh/kubernaut/issues/883), [#711](https://github.com/jordigilh/kubernaut/issues/711))
 - **ServiceNow incident triage** — Consume ServiceNow incidents as signals through the API Frontend, enabling Kubernaut to investigate and remediate ITSM tickets alongside Kubernetes alerts ([#1338](https://github.com/jordigilh/kubernaut/issues/1338))
 
-### v1.6 — Fleet Management (next)
+### v1.5.1 — Kubernaut Console ([released](https://github.com/jordigilh/kubernaut/releases/tag/v1.5.1))
+
+- **Kubernaut Console** — Web UI for interactive investigation, real-time chat with the agent, remediation monitoring, and workflow management. Operators can view live RCA progress, approve actions, and inspect audit trails from a single pane of glass ([kubernaut-console](https://github.com/jordigilh/kubernaut-console))
+
+### v1.6 — Fleet Remediation (next)
 
 - **Fleet operations** — Multi-cluster remediation orchestration via ACM/OCM, enabling policy-driven remediation across fleet-scale Kubernetes environments
-- **Kubernaut Console** — Web UI for interactive investigation, remediation monitoring, and workflow management
-
-<p align="center">
-  <img src="docs/architecture/diagrams/kubernaut-console-animated.gif" alt="Kubernaut Console — interactive investigation and remediation" width="800"/>
-  <br/>
-  <em>Coming in v1.6 — Kubernaut Console: investigate, chat, and remediate from a single UI</em>
-</p>
 
 **[Full roadmap](docs/roadmap/ROADMAP.md)** — Fleet Operations (ACM/OCM), Collective Intelligence, and Operational Expansion (cost, security, non-K8s). For past releases, see the [CHANGELOG](CHANGELOG.md).
 
@@ -122,6 +128,7 @@ See the [Installation Guide](https://jordigilh.github.io/kubernaut-docs/latest/g
 | Repository | Description |
 |---|---|
 | [kubernaut-operator](https://github.com/jordigilh/kubernaut-operator) | OLM operator — deploys and manages Kubernaut services on OpenShift |
+| [kubernaut-console](https://github.com/jordigilh/kubernaut-console) | Kubernaut Console — web UI for interactive investigation and remediation |
 | [kubernaut-docs](https://github.com/jordigilh/kubernaut-docs) | Documentation website (MkDocs Material) |
 | [kubernaut-demo-scenarios](https://github.com/jordigilh/kubernaut-demo-scenarios) | Demo scenarios, scripts, and recordings |
 
