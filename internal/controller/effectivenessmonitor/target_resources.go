@@ -22,6 +22,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -156,8 +157,20 @@ func (r *Reconciler) getTargetFunctionalState(ctx context.Context, target eav1.T
 
 	obj := &unstructured.Unstructured{}
 	obj.SetGroupVersionKind(gvk)
+
+	ns := target.Namespace
+	if ns != "" {
+		if mapping, mapErr := r.restMapper.RESTMapping(gvk.GroupKind(), gvk.Version); mapErr == nil {
+			if mapping.Scope.Name() != meta.RESTScopeNameNamespace {
+				logger.Info("stripping namespace for cluster-scoped resource",
+					"kind", target.Kind, "stripped_namespace", ns)
+				ns = ""
+			}
+		}
+	}
+
 	key := client.ObjectKey{
-		Namespace: target.Namespace,
+		Namespace: ns,
 		Name:      target.Name,
 	}
 	if err := r.Get(ctx, key, obj); err != nil {
