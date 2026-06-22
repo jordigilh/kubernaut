@@ -293,7 +293,7 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Type:     notificationv1alpha1.NotificationTypeSimple,
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
-					Severity: routing.SeverityMedium,
+					Severity: routing.SeverityWarning,
 					Subject:  fmt.Sprintf("No Skip-Reason Test [%s]", uniqueSuffix),
 					Body:     "Testing fallback routing without skip-reason",
 					Extensions: map[string]string{

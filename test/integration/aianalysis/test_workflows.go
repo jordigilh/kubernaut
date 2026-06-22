@@ -128,7 +128,7 @@ func GetAIAnalysisTestWorkflows() []TestWorkflow {
 			Name:        "Generic Pod Restart",
 			Description: "Generic pod restart for unknown issues",
 			SignalType:  "Unknown",
-			Severity:    "medium",
+			Severity:    "warning",
 			Component:   []string{"apps/v1/Deployment"},
 			Priority:    "P2",
 			// Mock LLM "low_confidence" scenario returns: NAMESPACE, POD_NAME

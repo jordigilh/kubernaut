@@ -61,7 +61,7 @@ var _ = Describe("Workflow Selection Split Submit Tools — #760 v2", func() {
 	signal := katypes.SignalContext{
 		Name:          "api-server-quota-abc",
 		Namespace:     "demo-quota",
-		Severity:      "medium",
+		Severity:      "warning",
 		Message:       "ResourceQuota exhausted",
 		ResourceKind:  "Deployment",
 		ResourceName:  "api-server",
@@ -441,7 +441,7 @@ var _ = Describe("Workflow Selection Decline Classification — #760", func() {
 	signal := katypes.SignalContext{
 		Name:          "api-server-quota-abc",
 		Namespace:     "demo-quota",
-		Severity:      "medium",
+		Severity:      "warning",
 		Message:       "ResourceQuota exhausted",
 		ResourceKind:  "Deployment",
 		ResourceName:  "api-server",

@@ -265,11 +265,11 @@ func (m *mockPromClientForWiring) InstantQuery(_ context.Context, _ string) (*pr
 type noopLLMForWiring struct{}
 
 func (n *noopLLMForWiring) TriageWithRules(_ context.Context, _ []prom.Rule, _ severity.TriageInput) (severity.TriageResult, error) {
-	return severity.TriageResult{Severity: "medium", Source: severity.SourceLLMTriage}, nil
+	return severity.TriageResult{Severity: "warning", Source: severity.SourceLLMTriage}, nil
 }
 
 func (n *noopLLMForWiring) TriagePure(_ context.Context, _ severity.TriageInput) (severity.TriageResult, error) {
-	return severity.TriageResult{Severity: "medium", Source: severity.SourceLLMTriage}, nil
+	return severity.TriageResult{Severity: "warning", Source: severity.SourceLLMTriage}, nil
 }
 
 type auditSpy struct {

@@ -264,7 +264,7 @@ var _ = Describe("Pod-Based Alert Correlation", func() {
 				},
 			}
 			mockLLM := &mockLLM{
-				pureResult: severity.TriageResult{Severity: "medium", Source: severity.SourceLLMTriage},
+				pureResult: severity.TriageResult{Severity: "warning", Source: severity.SourceLLMTriage},
 			}
 
 			input := severity.TriageInput{
@@ -509,7 +509,7 @@ var _ = Describe("Pod-Based Alert Correlation", func() {
 				},
 			}
 			mockLLM := &mockLLM{
-				pureResult: severity.TriageResult{Severity: "medium", Source: severity.SourceLLMTriage},
+				pureResult: severity.TriageResult{Severity: "warning", Source: severity.SourceLLMTriage},
 			}
 
 			input := severity.TriageInput{
@@ -549,7 +549,7 @@ var _ = Describe("Pod-Based Alert Correlation", func() {
 				},
 			}
 			mockLLM := &mockLLM{
-				pureResult: severity.TriageResult{Severity: "medium", Source: severity.SourceLLMTriage},
+				pureResult: severity.TriageResult{Severity: "warning", Source: severity.SourceLLMTriage},
 			}
 
 			input := severity.TriageInput{

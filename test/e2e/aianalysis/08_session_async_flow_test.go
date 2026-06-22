@@ -61,7 +61,7 @@ var _ = Describe("E2E-AA-064: Session-Based Async Flow", Label("e2e", "session",
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "e2e-fingerprint-session-001",
-							Severity:         "medium",
+							Severity:         "warning",
 							SignalName:       "CrashLoopBackOff",
 							Environment:      "staging",
 							BusinessPriority: "P2",

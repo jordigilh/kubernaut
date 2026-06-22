@@ -73,7 +73,7 @@ var _ = Describe("ValidateMandatoryLabels severity wildcard", func() {
 
 		It("should still accept standard severity values", func() {
 			labels := &models.WorkflowSchemaLabels{
-				Severity:    []string{"critical", "high", "medium", "low"},
+				Severity:    []string{"critical", "high", "warning", "low"},
 				Component:   []string{"v1/Pod"},
 				Environment: []string{"production"},
 				Priority:    "P1",

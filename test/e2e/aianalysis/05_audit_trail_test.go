@@ -165,7 +165,7 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "e2e-audit-fingerprint",
-							Severity:        "medium",
+							Severity:        "warning",
 							SignalName:       "CrashLoopBackOff",
 							Environment:      "production",
 							BusinessPriority: "P1",
@@ -359,7 +359,7 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "e2e-audit-ka",
-							Severity:        "medium",
+							Severity:        "warning",
 							SignalName:       "HighMemory",
 							Environment:      "development",
 							BusinessPriority: "P1",
@@ -426,7 +426,7 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "e2e-audit-rego",
-							Severity:        "medium",
+							Severity:        "warning",
 							SignalName:       "CrashLoopBackOff",
 							Environment:      "staging", // Auto-approve in staging
 							BusinessPriority: "P1",

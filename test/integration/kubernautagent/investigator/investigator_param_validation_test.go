@@ -246,7 +246,7 @@ var _ = Describe("BR-HAPI-191: Parameter Validation Self-Correction Integration 
 			})
 
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
-				Name: "scale-alert", Namespace: "prod", Severity: "medium", Message: "High CPU",
+				Name: "scale-alert", Namespace: "prod", Severity: "warning", Message: "High CPU",
 				Environment: "Production", Priority: "P1",
 			})
 

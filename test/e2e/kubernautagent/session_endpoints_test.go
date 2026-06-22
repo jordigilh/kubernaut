@@ -406,7 +406,7 @@ var _ = Describe("E2E-KA-064: Session-Based Endpoints", Label("e2e", "ka", "sess
 				IncidentID:        "test-session-006",
 				RemediationID:     "test-rem-session-006",
 				SignalName:        "CrashLoopBackOff",
-				Severity:          "medium",
+				Severity:          "warning",
 				SignalSource:      "kubernetes",
 				ResourceNamespace: "default",
 				ResourceKind:      "Pod",

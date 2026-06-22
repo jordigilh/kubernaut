@@ -438,7 +438,7 @@ var _ = Describe("TP-433-ADV P6: HTTP Contract — GAP-004/015/016/018", func() 
 			req := &agentclient.IncidentRequest{
 				IncidentID:        "dedup-timing-test",
 				SignalName:        "HighMemoryUsage",
-				Severity:          agentclient.SeverityMedium,
+				Severity:          agentclient.SeverityWarning,
 				ResourceNamespace: "production",
 				ResourceKind:      "Deployment",
 				ResourceName:      "api-server",

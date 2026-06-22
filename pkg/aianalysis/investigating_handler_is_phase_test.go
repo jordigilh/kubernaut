@@ -203,7 +203,7 @@ var _ = Describe("InvestigatingHandler IS Phase Completion — #1376, BR-INTERAC
 			mockClient.Response = &agentclient.IncidentResponse{
 				IncidentID:        "mock-1376-003",
 				Analysis:          "Root cause identified",
-				RootCauseAnalysis: mocks.BuildMockRCA("Root cause identified", "medium", nil),
+				RootCauseAnalysis: mocks.BuildMockRCA("Root cause identified", "warning", nil),
 				Confidence:        0.90,
 				Timestamp:         "2026-06-06T10:00:00Z",
 			}
@@ -230,7 +230,7 @@ var _ = Describe("InvestigatingHandler IS Phase Completion — #1376, BR-INTERAC
 			mockClient.Response = &agentclient.IncidentResponse{
 				IncidentID:        "mock-1376-004",
 				Analysis:          "Root cause identified",
-				RootCauseAnalysis: mocks.BuildMockRCA("Root cause identified", "medium", nil),
+				RootCauseAnalysis: mocks.BuildMockRCA("Root cause identified", "warning", nil),
 				Confidence:        0.90,
 				Timestamp:         "2026-06-06T10:00:00Z",
 			}

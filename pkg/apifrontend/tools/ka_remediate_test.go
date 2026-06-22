@@ -105,7 +105,7 @@ var _ = Describe("kubernaut_remediate (#1332 Intent-Based Tool Redesign)", func(
 				Namespace: "prod", Kind: "Deployment", Name: "web-sev", APIVersion: "apps/v1",
 			}, "user", nil, nil)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Severity).To(Equal("medium"))
+			Expect(result.Severity).To(Equal("warning"))
 		})
 
 		It("UT-AF-1332-008: existing rr_id path looks up RR status (fixes status.phase bug)", func() {

@@ -125,7 +125,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 			Spec: remediationv1.RemediationRequestSpec{
 				SignalFingerprint: fingerprint,
 				SignalName:        "PhaseTransitionTest",
-				Severity:          "medium",
+				Severity:          "warning",
 				SignalType:        "alert",
 				TargetType:        "kubernetes",
 				TargetResource: remediationv1.ResourceIdentifier{

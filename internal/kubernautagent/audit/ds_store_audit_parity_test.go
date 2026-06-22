@@ -506,7 +506,8 @@ var _ = Describe("KA Audit Parity — TP-433-AUDIT-SOC2", func() {
 			}{
 				{"critical", "critical"},
 				{"high", "high"},
-				{"medium", "medium"},
+				{"warning", "warning"},
+				{"medium", "warning"},
 				{"low", "low"},
 				{"unknown", "unknown"},
 				{"invalid_value", "unknown"},

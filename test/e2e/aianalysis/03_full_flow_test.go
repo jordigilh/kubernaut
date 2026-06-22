@@ -59,7 +59,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "e2e-fingerprint-001",
-							Severity:        "medium",
+							Severity:        "warning",
 							SignalName:       "CrashLoopBackOff",
 							Environment:      "production",
 							BusinessPriority: "P1",
@@ -180,7 +180,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "e2e-fingerprint-002",
-							Severity:        "medium",
+							Severity:        "warning",
 							SignalName:       "OOMKilled",
 							Environment:      "staging", // Non-production = auto-approve
 							BusinessPriority: "P2",
@@ -236,7 +236,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "e2e-fingerprint-004",
-							Severity:        "medium",
+							Severity:        "warning",
 							SignalName:       "CrashLoopBackOff",
 							Environment:      "production",
 							BusinessPriority: "P2",
@@ -293,7 +293,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "e2e-fingerprint-low-conf",
-							Severity:         "medium",
+							Severity:         "warning",
 							SignalName:       "MOCK_LOW_CONFIDENCE", // Triggers mock scenario with alternative_workflows
 							Environment:      "staging",
 							BusinessPriority: "P2",
