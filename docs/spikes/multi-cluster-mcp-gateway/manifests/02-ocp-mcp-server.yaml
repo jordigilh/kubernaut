@@ -1,18 +1,27 @@
 # OCP MCP Server deployment for a workload cluster.
-# Deploy one instance per workload cluster with a cluster-scoped read-only ServiceAccount.
+# Deploy one instance per workload cluster with a cluster-scoped ServiceAccount.
 # The MCP server exposes K8s tools via HTTP/SSE transport.
+#
+# RBAC: mcp-operator grants both read and write access. The MCP Gateway's
+# Authorino OPA policy controls which callers can invoke write tools:
+#   - mcp-read role (KA, FMC): read-only tools
+#   - mcp-write role (WE): read + write tools (remediation execution)
+# The SA defines the ceiling; the gateway defines the floor.
+#
+# Authority: ADR-068 design decision #9 (unified MCP Gateway chokepoint)
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: mcp-viewer
+  name: mcp-operator
   namespace: kubernaut-mcp
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: mcp-viewer
+  name: mcp-operator
 rules:
+  # --- Read access (KA investigation, FMC sync, WE pre-action validation) ---
   - apiGroups: [""]
     resources: ["pods", "pods/log", "services", "endpoints", "configmaps",
                 "secrets", "events", "namespaces", "nodes", "nodes/proxy",
@@ -41,22 +50,56 @@ rules:
   - apiGroups: ["metrics.k8s.io"]
     resources: ["pods", "nodes"]
     verbs: ["get", "list"]
-  # CRD read access for kubernaut-specific resources
   - apiGroups: ["apiextensions.k8s.io"]
     resources: ["customresourcedefinitions"]
     verbs: ["get", "list"]
+  # --- Write access (WE remediation execution) ---
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["delete"]
+  - apiGroups: [""]
+    resources: ["pods/eviction"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["configmaps", "services", "persistentvolumeclaims"]
+    verbs: ["create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["patch", "update"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "daemonsets", "statefulsets"]
+    verbs: ["patch", "update"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "delete"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["create", "update", "patch", "delete"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["patch"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["patch"]
+  # Tekton (if installed on the cluster)
+  - apiGroups: ["tekton.dev"]
+    resources: ["pipelineruns", "taskruns"]
+    verbs: ["get", "list", "watch", "create", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: mcp-viewer
+  name: mcp-operator
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: mcp-viewer
+  name: mcp-operator
 subjects:
   - kind: ServiceAccount
-    name: mcp-viewer
+    name: mcp-operator
     namespace: kubernaut-mcp
 ---
 apiVersion: apps/v1
@@ -79,7 +122,7 @@ spec:
         app.kubernetes.io/name: ocp-mcp-server
         app.kubernetes.io/part-of: kubernaut
     spec:
-      serviceAccountName: mcp-viewer
+      serviceAccountName: mcp-operator
       securityContext:
         runAsNonRoot: true
       containers:
@@ -88,7 +131,6 @@ spec:
           image: ghcr.io/openshift/openshift-mcp-server:latest
           args:
             - "--port=9090"
-            - "--read-only"
             - "--stateless"
             - "--toolsets=core,config"
             - "--log-level=2"

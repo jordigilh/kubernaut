@@ -3,7 +3,7 @@
 **Status**: Implemented (MVP)
 **Date**: 2026-06-19
 **Deciders**: Architecture Team
-**Context**: Multi-cluster federation requires coordinated architecture across GW, KA, RO, and a new FMC Writer service (#54)
+**Context**: Multi-cluster federation requires coordinated architecture across GW, KA, RO, WE, and a new FMC Writer service (#54)
 **Related**: ADR-064 (MCP Gateway - deferred), ADR-065 (ClusterID on RR), ADR-067 (KA MCP Dynamic Tool Discovery)
 
 ## Context
@@ -13,7 +13,8 @@ Kubernaut's single-cluster architecture cannot federate remediation across multi
 1. **Signal ingestion** from remote clusters (via Thanos multi-cluster Prometheus)
 2. **Scope gating** — verifying remote resources are managed before creating RRs
 3. **Investigation** — KA must discover and use remote cluster tools for RCA
-4. **Deduplication** — same resource on different clusters must not be deduplicated
+4. **Remediation execution** — WE must create Jobs, Tekton PipelineRuns, and Ansible workflows on remote clusters
+5. **Deduplication** — same resource on different clusters must not be deduplicated
 
 The key constraints are:
 - p95 < 50ms latency for scope checks (GW critical path)
@@ -26,33 +27,41 @@ The key constraints are:
 ### Architecture Overview
 
 ```
-                    ┌──────────────────────────────────────────────────┐
-                    │                Management Cluster                 │
-                    │                                                   │
-┌────────┐         │  ┌────┐   ┌────┐   ┌────┐   ┌────────────────┐  │
-│ Thanos │─alerts──│─>│ GW │   │ KA │   │ RO │   │  FMC Writer    │  │
-│Querier │         │  └─┬──┘   └─┬──┘   └────┘   └───────┬────────┘  │
-└────────┘         │    │        │                        │           │
-                    │    │scope   │tools/list              │sync       │
-                    │    ▼        ▼                        ▼           │
-                    │  ┌─────────────────────────────────────┐        │
-                    │  │         MCP Gateway (Kuadrant)       │        │
-                    │  │   (routes to per-cluster MCP Servers)│        │
-                    │  └─────────────────────────────────────┘        │
-                    │                    │                             │
-                    │    ┌───────────────┼───────────────┐            │
-                    │    ▼               ▼               ▼            │
-                    │  ┌─────┐       ┌─────┐       ┌─────┐          │
-                    │  │K8s  │       │K8s  │       │K8s  │          │
-                    │  │MCP  │       │MCP  │       │MCP  │          │
-                    │  │Srv A│       │Srv B│       │Srv C│          │
-                    │  └─────┘       └─────┘       └─────┘          │
-                    │    │               │               │            │
-                    └────┼───────────────┼───────────────┼────────────┘
+                    ┌───────────────────────────────────────────────────────┐
+                    │                   Management Cluster                   │
+                    │                                                        │
+┌────────┐         │  ┌────┐ ┌────┐ ┌────┐ ┌────┐ ┌────┐ ┌────┐ ┌─────┐ │
+│ Thanos │─alerts──│─>│ GW │ │ KA │ │ RO │ │ SP │ │ AF │ │ EM │ │ FMC │ │
+│Querier │         │  └─┬──┘ └─┬──┘ └────┘ └─┬──┘ └─┬──┘ └─┬──┘ └──┬──┘ │
+└────────┘         │    │      │              │      │      │       │     │
+                    │    │      │  all read    │      │      │       │     │
+                    │    ▼      ▼              ▼      ▼      ▼       ▼     │
+                    │  ┌──────────────────────────────────────────────┐    │
+                    │  │            MCP Gateway (Kuadrant)             │    │
+                    │  │      (routes to per-cluster MCP Servers)      │    │
+                    │  │      Authorino: JWT auth + OPA authz         │    │
+                    │  │      mcp-read: GW,KA,RO,SP,AF,EM,FMC        │    │
+                    │  │      mcp-write: WE (remediation)             │    │
+                    │  └──────────────────────────────────────────────┘    │
+                    │                    │                                 │
+                    │    ┌───────────────┼───────────────┐                │
+                    │    ▼               ▼               ▼                │
+                    │  ┌─────┐       ┌─────┐       ┌─────┐              │
+                    │  │K8s  │       │K8s  │       │AAP  │              │
+                    │  │MCP  │       │MCP  │       │MCP  │              │
+                    │  │Srv A│       │Srv B│       │Srv C│              │
+                    │  └─────┘       └─────┘       └─────┘              │
+                    │    │               │               │                │
+                    └────┼───────────────┼───────────────┼────────────────┘
                          ▼               ▼               ▼
                     ┌─────────┐    ┌─────────┐    ┌─────────┐
                     │Cluster A│    │Cluster B│    │Cluster C│
+                    │(K8s)    │    │(K8s)    │    │(K8s+AAP)│
                     └─────────┘    └─────────┘    └─────────┘
+
+                    ┌────┐
+                    │ WE │──tools/call (read+write)──► MCP Gateway
+                    └────┘
 
                     ┌──────────────────────┐
                     │  Valkey (Fleet       │
@@ -71,6 +80,7 @@ The key constraints are:
 | Component | Role | Package |
 |-----------|------|---------|
 | **Gateway (GW)** | Extracts `cluster` label from Thanos alerts, computes cluster-aware fingerprints, gates signals via FederatedScopeChecker | `pkg/gateway/` |
+| **WorkflowExecution (WE)** | Executes remediation on remote clusters via MCP Gateway: creates Jobs, Tekton PipelineRuns, and Ansible workflows. Requires read+write access. | `internal/controller/workflowexecution/`, `pkg/workflowexecution/executor/` |
 | **FMC (Fleet Metadata Cache)** | Polls MCP Gateway for `kubernaut.ai/managed=true` resources, caches metadata in Valkey, exposes scope queries via REST API | `cmd/fmc/`, `pkg/fleet/fmc/` |
 | **Fleet Metadata Cache (Valkey)** | Low-latency key-existence checks for remote scope validation | `pkg/fleet/scopecache/` |
 | **FederatedScopeChecker** | Routes scope checks: local → scope.Manager, remote → backend adapter (scope.ScopeChecker) | `pkg/fleet/federated_checker.go` |
@@ -96,6 +106,8 @@ The key constraints are:
 7. **KA dynamic tool discovery** (not hard-coded): Fleet tools are registered at startup from `tools/list`. `AppendFleetToolsToRCA` makes them visible to the LLM investigator without code changes per cluster.
 
 8. **`MCPServerRegistration` as source of truth** (not ConfigMap): Kuadrant CRD is the authoritative registry of MCP backends. Kubernaut is a **read-only consumer** — it watches but never creates or modifies these CRDs. The control plane (ACM, Rancher, GitOps) owns their lifecycle.
+
+9. **MCP Gateway as unified chokepoint for all remote cluster access** (not separate auth paths per backend type): All Kubernaut services that interact with remote clusters — GW, KA, RO, SP, AF, EM (read-only), FMC (metadata sync), and WE (remediation execution) — access remote clusters exclusively through the MCP Gateway. The K8s MCP Server and AAP MCP Server are both registered as backends behind the same gateway. This eliminates the need for service-specific credential management (e.g., separate AAP bearer token injection). Auth is enforced at two layers: (a) Authorino validates caller JWT and enforces role-based access (`mcp-read` for GW/KA/RO/SP/AF/EM/FMC, `mcp-write` for WE), and (b) each MCP Server authenticates against its own local APIs using its own ServiceAccount. No per-cluster SA tokens are maintained by Kubernaut services.
 
 ## Alternatives Considered
 
@@ -137,6 +149,13 @@ The key constraints are:
 - -: Violates adapter pattern — consumers become coupled to providers
 - **Rejected**: FMC and other backends expose their own query APIs; GW/RO consume through the `FederatedControlPlane` interface
 
+### H. Separate auth path for AAP MCP Server (direct bearer token injection)
+- +: AAP MCP Server auth is self-contained; BackendTLSPolicy + token Secret per AAP backend
+- -: WE needs two auth paths: one for K8s MCP (via gateway) and one for AAP (direct token)
+- -: Separate credential management and rotation for AAP tokens outside the gateway
+- -: AAP MCP backends are treated differently from K8s MCP backends, violating the unified chokepoint principle
+- **Deferred**: AAP MCP Server is now registered as a standard backend behind the MCP Gateway, same as K8s MCP Servers. The gateway handles routing to both. WE calls tools through the gateway without knowing whether the backend is K8s-native or AAP. If AAP MCP requires its own auth, the gateway or the AAP MCP Server handles it internally — Kubernaut services are not involved.
+
 ## Consequences
 
 ### Positive
@@ -145,12 +164,16 @@ The key constraints are:
 - Credential rotation requires no service restart
 - New clusters auto-discovered via CRDWatcher
 - LLM investigator automatically gains remote cluster tools
+- Unified chokepoint: all remote access (read and write) flows through MCP Gateway
+- WE can execute Jobs, Tekton pipelines, and AAP workflows on any cluster through a single interface
+- No per-cluster credentials managed by Kubernaut services
 
 ### Negative
 - New service to deploy (FMC Writer)
 - Valkey dependency (already exists for other Kubernaut features)
 - Stale cache window (sync interval, default 30s)
 - MCP subscriptions not yet supported (polling fallback)
+- K8s MCP Server SA requires write permissions (larger blast radius than read-only); mitigated by gateway-level OPA authorization
 
 ### Risks and Mitigations
 
@@ -189,6 +212,206 @@ The key constraints are:
 | CRDWatcher | main() | cmd/fmc/main.go | UT-FMC-004 |
 | BuildKey validation | BuildKey() | pkg/fleet/scopecache/client.go | UT-FLEET-SC-006/007/008 |
 | fmc securityContext | Helm template | charts/kubernaut/templates/fmc/fmc.yaml | helm template |
+
+## MCP Gateway Access Model
+
+### Unified Chokepoint
+
+The MCP Gateway is the single entry point for all Kubernaut service interactions with remote
+clusters. All backend MCP Servers — K8s MCP Servers and AAP MCP Servers — are registered behind
+the gateway via `MCPServerRegistration` CRDs. Kubernaut services connect to the gateway, not to
+individual backends.
+
+```
+                   ┌──────────────────────────────────┐
+                   │          MCP Gateway              │
+                   │  ┌────────────────────────────┐   │
+                   │  │   Authorino (AuthPolicy)    │   │
+                   │  │   JWT validation + OPA      │   │
+                   │  └────────────────────────────┘   │
+                   │            │                       │
+                   │  ┌─────────┴──────────┐           │
+                   │  │    OPA Policy       │           │
+                   │  │  mcp-read:          │           │
+                   │  │   GW,KA,RO,SP,      │           │
+                   │  │   AF,EM,FMC         │           │
+                   │  │  mcp-write:         │           │
+                   │  │   WE                │           │
+                   │  └────────────────────┘           │
+                   └──────────────────────────────────┘
+                              │
+              ┌───────────────┼───────────────┐
+              ▼               ▼               ▼
+        K8s MCP Srv     K8s MCP Srv     AAP MCP Srv
+        (mcp-operator   (mcp-operator   (AAP-managed
+         SA, R+W)        SA, R+W)        identity)
+```
+
+### Per-Service Access Levels
+
+| Service | Gateway Role | Operations | Rationale |
+|---------|-------------|------------|-----------|
+| **GW** | `mcp-read` | Read-only `tools/call` | Scope gating: checks remote resource labels for `kubernaut.ai/managed=true` |
+| **KA** | `mcp-read` | `tools/list`, read-only `tools/call` | Investigation/RCA: reads cluster state (pods, logs, events, deployments) |
+| **RO** | `mcp-read` | Read-only `tools/call` | Remediation orchestration: reads remote resource state for scope validation |
+| **SP** | `mcp-read` | Read-only `tools/call` | Signal processing: reads remote cluster context for signal enrichment |
+| **AF** | `mcp-read` | Read-only `tools/call` | API frontend: reads remote cluster state for user-facing queries |
+| **EM** | `mcp-read` | Read-only `tools/call` | Effectiveness measurement: reads remote resource state for post-remediation assessment |
+| **FMC** | `mcp-read` | `tools/list`, read-only `tools/call` | Metadata sync: polls for `kubernaut.ai/managed=true` labels |
+| **WE** | `mcp-read` + `mcp-write` | `tools/list`, read+write `tools/call` | Remediation execution: reads state before acting, then creates/updates/deletes resources |
+
+### WE Remote Cluster Operations
+
+WE requires both read and write access on remote clusters through the MCP Gateway.
+
+**Read operations** (pre-action validation and status polling):
+
+| Resource | Group | Verbs | Purpose |
+|----------|-------|-------|---------|
+| Deployments, StatefulSets, DaemonSets | `apps` | get, list | Read state before scaling/restarting |
+| Pods | `""` | get, list, watch | Target lookup for eviction/restart |
+| ReplicaSets | `apps` | get, list, watch | Rollout status checks |
+| ConfigMaps, Secrets | `""` | get, list | Dependency validation |
+| Nodes | `""` | get, list | Node status for cordon/drain |
+| HPAs | `autoscaling` | get, list | Current HPA state before tuning |
+| PDBs | `policy` | get, list | Respect PDB during drain |
+| Jobs | `batch` | get, list | Status polling for running workflows |
+| PipelineRuns, TaskRuns | `tekton.dev` | get, list | Tekton workflow status |
+
+**Write operations** (remediation actions):
+
+| Resource | Group | Verbs | Purpose |
+|----------|-------|-------|---------|
+| Deployments, StatefulSets, DaemonSets | `apps` | patch, update | Scale, restart, rollback |
+| Pods | `""` | delete | Pod restart |
+| Pods/eviction | `""` | create | Graceful pod eviction |
+| Nodes | `""` | patch, update | Cordon/uncordon |
+| ConfigMaps | `""` | create, update, patch | Config remediation |
+| Secrets | `""` | create, update, patch, delete | Secret rotation |
+| HPAs | `autoscaling` | patch | HPA tuning |
+| PDBs | `policy` | patch | PDB adjustment during drain |
+| NetworkPolicies | `networking.k8s.io` | create, update, patch, delete | Network isolation |
+| Services | `""` | create, update, patch | Service endpoint updates |
+| PVCs | `""` | create, update, patch, delete | Storage remediation |
+| Jobs | `batch` | create, delete | K8s Job-based remediation workflows |
+| PipelineRuns | `tekton.dev` | create, delete | Tekton pipeline-based remediation |
+
+### K8s MCP Server Identity
+
+Each K8s MCP Server runs with its own ServiceAccount on its local cluster. The SA defines the
+**ceiling** of what any caller can do through the gateway. The gateway's OPA policy defines
+what each caller is **allowed** to do.
+
+For clusters where WE needs write access, the K8s MCP Server SA requires write verbs:
+
+```yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mcp-operator
+  namespace: kubernaut-mcp
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: mcp-operator
+rules:
+  # Read access (KA investigation + FMC sync + WE pre-action validation)
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "services", "endpoints", "configmaps",
+                "secrets", "events", "namespaces", "nodes",
+                "persistentvolumeclaims", "persistentvolumes",
+                "replicationcontrollers", "serviceaccounts", "resourcequotas",
+                "limitranges"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "daemonsets", "replicasets", "statefulsets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses", "networkpolicies"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses"]
+    verbs: ["get", "list"]
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods", "nodes"]
+    verbs: ["get", "list"]
+  - apiGroups: ["apiextensions.k8s.io"]
+    resources: ["customresourcedefinitions"]
+    verbs: ["get", "list"]
+  # Write access (WE remediation execution)
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["delete"]
+  - apiGroups: [""]
+    resources: ["pods/eviction"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets", "services", "persistentvolumeclaims"]
+    verbs: ["create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["patch", "update"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "daemonsets", "statefulsets"]
+    verbs: ["patch", "update"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "delete"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["create", "update", "patch", "delete"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["patch"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["patch"]
+  # Tekton (if installed on the cluster)
+  - apiGroups: ["tekton.dev"]
+    resources: ["pipelineruns", "taskruns"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+```
+
+The SA name changes from `mcp-viewer` to `mcp-operator` to reflect the expanded permissions.
+The `--read-only` flag is removed from the K8s MCP Server deployment args.
+
+### Auth Architecture: Two Independent Boundaries
+
+Auth is split into two independent concerns. No per-cluster SA tokens are maintained by
+Kubernaut services.
+
+**Boundary 1: Kubernaut service → MCP Gateway (north-south)**
+
+| Aspect | Detail |
+|--------|--------|
+| Mechanism | JWT (Keycloak/DEX) validated by Authorino |
+| Identity | Service identity: GW, KA, RO, SP, AF, EM, FMC, or WE |
+| Authorization | OPA policy: `mcp-read` (GW, KA, RO, SP, AF, EM, FMC) or `mcp-write` (WE) |
+| Credential mgmt | `ReloadableOAuth2Transport` with file-watched client credentials |
+
+**Boundary 2: MCP Gateway → Backend MCP Server (east-west)**
+
+| Aspect | Detail |
+|--------|--------|
+| In-cluster | Direct Service routing via HTTPRoute; no auth (same mesh) |
+| Cross-cluster | Istio ServiceEntry + DestinationRule with TLS |
+| Backend identity | Each MCP Server uses its own SA (`mcp-operator`) on its local cluster |
+| No token delegation | User/service identity stops at the gateway; backends act with fixed SA |
+
+This is architecturally distinct from the AF → KA pattern, where AF mints a JWT carrying
+user context (acting_user, acting_groups) for downstream identity delegation. In the MCP
+Gateway architecture, authorization is enforced at the edge (Authorino), and backends
+trust the gateway's routing decisions.
 
 ## Federated Control Plane Interface
 
@@ -641,20 +864,26 @@ Migration status:
 
 | Control | Implementation |
 |---------|---------------|
-| Authentication | OAuth2 client credentials grant (file-mounted JWT) |
+| Authentication (gateway) | OAuth2 client credentials grant (file-mounted JWT) validated by Authorino |
+| Authorization (gateway) | OPA policy enforces role-based tool access: `mcp-read` (GW, KA, RO, SP, AF, EM, FMC), `mcp-write` (WE) |
 | Credential rotation | ReloadableOAuth2Transport with FileWatcher |
 | Token timeout | 10s context deadline on token refresh HTTP calls |
-| Least privilege | fmc: readOnlyRootFilesystem, drop ALL caps, runAsNonRoot |
+| Least privilege (FMC) | readOnlyRootFilesystem, drop ALL caps, runAsNonRoot |
+| Least privilege (K8s MCP Server) | `mcp-operator` SA with scoped RBAC; no cluster-admin |
 | Network policy | MCP Gateway accessible only from kubernaut-system namespace |
-| RBAC | fmc: read-only on MCPServerRegistration CRDs |
+| RBAC (FMC) | Read-only on MCPServerRegistration CRDs |
+| RBAC (K8s MCP Server) | Read verbs for investigation/sync, write verbs for remediation; gateway OPA gates which callers can invoke write tools |
+| No credential leakage | Kubernaut services hold gateway OAuth2 credentials only; no per-cluster SA tokens or API keys |
 
 ## FedRAMP Implications
 
 | Control | Impact |
 |---------|--------|
-| AU-3 (Audit content) | Cluster provenance recorded per-RR |
+| AC-3 (Access enforcement) | Gateway OPA policy enforces `mcp-read` vs `mcp-write` per service identity; GW, KA, RO, SP, AF, EM, FMC get read-only; only WE can invoke write tools |
+| AC-6 (Least privilege) | K8s MCP Server SA has scoped RBAC (not cluster-admin); WE write access limited to remediation-relevant resource types |
+| AU-3 (Audit content) | Cluster provenance recorded per-RR; MCP Gateway logs all tool calls with caller identity |
 | SI-4 (Monitoring) | Cross-cluster correlation via ClusterID |
-| SC-7 (Boundary protection) | MCP Gateway as chokepoint for all remote access |
+| SC-7 (Boundary protection) | MCP Gateway as single chokepoint for all remote cluster access (read and write) |
 | IA-5 (Authenticator management) | Hot-reloadable credentials, bounded token lifetime |
 | SC-8 (Transmission confidentiality) | OAuth2 + TLS for all MCP connections |
 
