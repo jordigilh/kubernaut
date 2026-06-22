@@ -22,9 +22,12 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/vektah/gqlparser/v2"
+	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/acm"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
@@ -210,5 +213,30 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 		var checker scope.ScopeChecker = acm.NewClient("https://search-api.example.com:4010")
 		Expect(checker).ToNot(BeNil(),
 			"acm.Client must implement scope.ScopeChecker to be usable by the factory")
+	})
+
+	// Contract test: validates the adapter's GraphQL query against the
+	// upstream ACM Search SDL schema (vendored from stolostron/search-v2-api
+	// release-2.13, OCP 4.18 floor). If the upstream schema ever changes in
+	// a way that invalidates our query (renamed types, removed fields, changed
+	// signatures), this test fails immediately.
+	//
+	// Coverage: input types (SearchInput, SearchFilter), query signature
+	// (search), and response field selections (SearchResult.count).
+	It("UT-ACM-054-009 [AC-4,SC-7]: adapter query validates against ACM Search SDL schema (contract test)", func() {
+		schemaSDL, err := os.ReadFile("testdata/acm-search-schema.graphqls")
+		Expect(err).ToNot(HaveOccurred(), "vendored schema must be readable")
+
+		schema, parseErr := gqlparser.LoadSchema(&ast.Source{
+			Name:  "acm-search-schema.graphqls",
+			Input: string(schemaSDL),
+		})
+		Expect(parseErr).ToNot(HaveOccurred(), "vendored schema must parse without errors")
+
+		_, queryErrs := gqlparser.LoadQuery(schema, acm.SearchQuery)
+		Expect(queryErrs).To(BeEmpty(),
+			"AC-4/SC-7: adapter SearchQuery must be valid against the ACM Search SDL schema — "+
+				"if this fails, the upstream schema has drifted and the adapter's GraphQL "+
+				"contract (types, query signature, or response fields) is broken")
 	})
 })
