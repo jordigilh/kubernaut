@@ -101,11 +101,29 @@ var kindToGroup = map[string]string{
 // clusterScopedKinds identifies cluster-scoped resource kinds.
 // Cluster-scoped resources have no namespace fallback — only their own label is checked.
 var clusterScopedKinds = map[string]bool{
-	"Node":               true,
-	"PersistentVolume":   true,
-	"Namespace":          true,
-	"ClusterRole":        true,
-	"ClusterRoleBinding": true,
+	"Node":                           true,
+	"PersistentVolume":               true,
+	"Namespace":                      true,
+	"ClusterRole":                    true,
+	"ClusterRoleBinding":             true,
+	"StorageClass":                   true,
+	"CustomResourceDefinition":       true,
+	"ClusterOperator":                true,
+	"ClusterVersion":                 true,
+	"IngressClass":                   true,
+	"PriorityClass":                  true,
+	"ValidatingWebhookConfiguration": true,
+	"MutatingWebhookConfiguration":   true,
+	"CSIDriver":                      true,
+	"CSINode":                        true,
+	"VolumeAttachment":               true,
+	"RuntimeClass":                   true,
+	"APIService":                     true,
+	"CertificateSigningRequest":      true,
+	"FlowSchema":                     true,
+	"PriorityLevelConfiguration":     true,
+	"ClusterNetwork":                 true,
+	"Infrastructure":                 true,
 }
 
 // Manager validates resource scope using the 2-level hierarchy defined in ADR-053.
@@ -272,5 +290,11 @@ func kindToGVK(kind string) schema.GroupVersionKind {
 
 // isClusterScoped returns true if the resource kind is cluster-scoped.
 func isClusterScoped(kind string) bool {
+	return clusterScopedKinds[kind]
+}
+
+// IsClusterScopedKind returns true if the resource kind is known to be
+// cluster-scoped. Used as a static heuristic when a RESTMapper is unavailable.
+func IsClusterScopedKind(kind string) bool {
 	return clusterScopedKinds[kind]
 }

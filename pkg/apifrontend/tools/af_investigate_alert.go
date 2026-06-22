@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/go-logr/logr"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
@@ -123,10 +124,12 @@ func HandleInvestigateAlert(
 						ErrInvalidInput, args.Kind, args.APIVersion)
 				}
 				if !isNamespaced && args.Namespace != "" {
-					incFailure("scope_mismatch")
-					return InvestigateAlertResult{}, fmt.Errorf(
-						"%w: kind %q in apiVersion %q is cluster-scoped but namespace %q was provided",
-						ErrInvalidInput, args.Kind, args.APIVersion, args.Namespace)
+					logr.FromContextOrDiscard(ctx).Info("stripping namespace for cluster-scoped resource",
+						"kind", args.Kind,
+						"apiVersion", args.APIVersion,
+						"stripped_namespace", args.Namespace,
+					)
+					args.Namespace = ""
 				}
 				clusterScoped = !isNamespaced
 			}

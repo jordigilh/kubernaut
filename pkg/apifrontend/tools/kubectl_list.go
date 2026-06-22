@@ -4,8 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/dynamic"
 
 	"google.golang.org/adk/tool"
@@ -46,12 +47,21 @@ func HandleKubectlList(ctx context.Context, client dynamic.Interface, mapper met
 		return KubectlListResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
 	}
 
+	ns := ResolveEffectiveNamespace(mapper, args.Kind, args.Namespace, logr.FromContextOrDiscard(ctx))
+
 	opts := metav1.ListOptions{}
 	if args.LabelSelector != "" {
 		opts.LabelSelector = args.LabelSelector
 	}
 
-	list, err := client.Resource(gvr).Namespace(args.Namespace).List(ctx, opts)
+	var resClient dynamic.ResourceInterface
+	if ns != "" {
+		resClient = client.Resource(gvr).Namespace(ns)
+	} else {
+		resClient = client.Resource(gvr)
+	}
+
+	list, err := resClient.List(ctx, opts)
 	if err != nil {
 		return KubectlListResult{}, ToUserFriendlyError(err)
 	}

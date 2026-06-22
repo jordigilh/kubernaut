@@ -418,10 +418,10 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 			Expect(err.Error()).To(ContainSubstring("namespaced but namespace was not provided"))
 		})
 
-		It("UT-AF-1372-056: rejects cluster-scoped kind with namespace", func() {
+		It("UT-AF-1372-056: strips namespace for cluster-scoped kind (self-healing #1477)", func() {
 			cfg := baseCfg()
 			cfg.Mapper = newMapper()
-			_, err := tools.HandleInvestigateAlert(context.Background(), cfg,
+			result, err := tools.HandleInvestigateAlert(context.Background(), cfg,
 				&tools.InvestigateAlertArgs{
 					AlertName:  "KubeNodeNotReady",
 					APIVersion: "v1",
@@ -429,8 +429,8 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 					Name:       "worker-1",
 					Namespace:  "default",
 				}, "user")
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("cluster-scoped but namespace"))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RRID).NotTo(BeEmpty())
 		})
 
 		It("UT-AF-1372-057: allows cluster-scoped kind without namespace", func() {
