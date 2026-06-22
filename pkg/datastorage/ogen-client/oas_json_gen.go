@@ -32706,8 +32706,8 @@ func (s *IncidentResponseDataRootCauseAnalysisSeverity) Decode(d *jx.Decoder) er
 		*s = IncidentResponseDataRootCauseAnalysisSeverityCritical
 	case IncidentResponseDataRootCauseAnalysisSeverityHigh:
 		*s = IncidentResponseDataRootCauseAnalysisSeverityHigh
-	case IncidentResponseDataRootCauseAnalysisSeverityMedium:
-		*s = IncidentResponseDataRootCauseAnalysisSeverityMedium
+	case IncidentResponseDataRootCauseAnalysisSeverityWarning:
+		*s = IncidentResponseDataRootCauseAnalysisSeverityWarning
 	case IncidentResponseDataRootCauseAnalysisSeverityLow:
 		*s = IncidentResponseDataRootCauseAnalysisSeverityLow
 	case IncidentResponseDataRootCauseAnalysisSeverityUnknown:
@@ -34460,8 +34460,8 @@ func (s *MandatoryLabelsSeverityItem) Decode(d *jx.Decoder) error {
 		*s = MandatoryLabelsSeverityItem_critical
 	case MandatoryLabelsSeverityItem_high:
 		*s = MandatoryLabelsSeverityItem_high
-	case MandatoryLabelsSeverityItem_medium:
-		*s = MandatoryLabelsSeverityItem_medium
+	case MandatoryLabelsSeverityItem_warning:
+		*s = MandatoryLabelsSeverityItem_warning
 	case MandatoryLabelsSeverityItem_low:
 		*s = MandatoryLabelsSeverityItem_low
 	case MandatoryLabelsSeverityItem_:
@@ -47408,8 +47408,8 @@ func (s *SignalProcessingAuditPayloadCriticality) Decode(d *jx.Decoder) error {
 		*s = SignalProcessingAuditPayloadCriticalityCritical
 	case SignalProcessingAuditPayloadCriticalityHigh:
 		*s = SignalProcessingAuditPayloadCriticalityHigh
-	case SignalProcessingAuditPayloadCriticalityMedium:
-		*s = SignalProcessingAuditPayloadCriticalityMedium
+	case SignalProcessingAuditPayloadCriticalityWarning:
+		*s = SignalProcessingAuditPayloadCriticalityWarning
 	case SignalProcessingAuditPayloadCriticalityLow:
 		*s = SignalProcessingAuditPayloadCriticalityLow
 	default:
@@ -47626,8 +47626,8 @@ func (s *SignalProcessingAuditPayloadNormalizedSeverity) Decode(d *jx.Decoder) e
 		*s = SignalProcessingAuditPayloadNormalizedSeverityCritical
 	case SignalProcessingAuditPayloadNormalizedSeverityHigh:
 		*s = SignalProcessingAuditPayloadNormalizedSeverityHigh
-	case SignalProcessingAuditPayloadNormalizedSeverityMedium:
-		*s = SignalProcessingAuditPayloadNormalizedSeverityMedium
+	case SignalProcessingAuditPayloadNormalizedSeverityWarning:
+		*s = SignalProcessingAuditPayloadNormalizedSeverityWarning
 	case SignalProcessingAuditPayloadNormalizedSeverityLow:
 		*s = SignalProcessingAuditPayloadNormalizedSeverityLow
 	case SignalProcessingAuditPayloadNormalizedSeverityUnknown:
@@ -47808,8 +47808,8 @@ func (s *SignalProcessingAuditPayloadSeverity) Decode(d *jx.Decoder) error {
 		*s = SignalProcessingAuditPayloadSeverityCritical
 	case SignalProcessingAuditPayloadSeverityHigh:
 		*s = SignalProcessingAuditPayloadSeverityHigh
-	case SignalProcessingAuditPayloadSeverityMedium:
-		*s = SignalProcessingAuditPayloadSeverityMedium
+	case SignalProcessingAuditPayloadSeverityWarning:
+		*s = SignalProcessingAuditPayloadSeverityWarning
 	case SignalProcessingAuditPayloadSeverityLow:
 		*s = SignalProcessingAuditPayloadSeverityLow
 	case SignalProcessingAuditPayloadSeverityUnknown:
@@ -51747,8 +51747,8 @@ func (s *WorkflowSearchFiltersSeverity) Decode(d *jx.Decoder) error {
 		*s = WorkflowSearchFiltersSeverityCritical
 	case WorkflowSearchFiltersSeverityHigh:
 		*s = WorkflowSearchFiltersSeverityHigh
-	case WorkflowSearchFiltersSeverityMedium:
-		*s = WorkflowSearchFiltersSeverityMedium
+	case WorkflowSearchFiltersSeverityWarning:
+		*s = WorkflowSearchFiltersSeverityWarning
 	case WorkflowSearchFiltersSeverityLow:
 		*s = WorkflowSearchFiltersSeverityLow
 	default:

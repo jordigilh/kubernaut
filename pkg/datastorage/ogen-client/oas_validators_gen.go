@@ -5450,7 +5450,7 @@ func (s GetWorkflowByIDSeverity) Validate() error {
 		return nil
 	case "high":
 		return nil
-	case "medium":
+	case "warning":
 		return nil
 	case "low":
 		return nil
@@ -5669,7 +5669,7 @@ func (s IncidentResponseDataRootCauseAnalysisSeverity) Validate() error {
 		return nil
 	case "high":
 		return nil
-	case "medium":
+	case "warning":
 		return nil
 	case "low":
 		return nil
@@ -5984,7 +5984,7 @@ func (s ListAvailableActionsSeverity) Validate() error {
 		return nil
 	case "high":
 		return nil
-	case "medium":
+	case "warning":
 		return nil
 	case "low":
 		return nil
@@ -6014,7 +6014,7 @@ func (s ListWorkflowsByActionTypeSeverity) Validate() error {
 		return nil
 	case "high":
 		return nil
-	case "medium":
+	case "warning":
 		return nil
 	case "low":
 		return nil
@@ -6192,7 +6192,7 @@ func (s MandatoryLabelsSeverityItem) Validate() error {
 		return nil
 	case "high":
 		return nil
-	case "medium":
+	case "warning":
 		return nil
 	case "low":
 		return nil
@@ -9106,7 +9106,7 @@ func (s SignalProcessingAuditPayloadCriticality) Validate() error {
 		return nil
 	case "high":
 		return nil
-	case "medium":
+	case "warning":
 		return nil
 	case "low":
 		return nil
@@ -9179,7 +9179,7 @@ func (s SignalProcessingAuditPayloadNormalizedSeverity) Validate() error {
 		return nil
 	case "high":
 		return nil
-	case "medium":
+	case "warning":
 		return nil
 	case "low":
 		return nil
@@ -9245,7 +9245,7 @@ func (s SignalProcessingAuditPayloadSeverity) Validate() error {
 		return nil
 	case "high":
 		return nil
-	case "medium":
+	case "warning":
 		return nil
 	case "low":
 		return nil
@@ -9924,7 +9924,7 @@ func (s WorkflowSearchFiltersSeverity) Validate() error {
 		return nil
 	case "high":
 		return nil
-	case "medium":
+	case "warning":
 		return nil
 	case "low":
 		return nil

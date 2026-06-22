@@ -18111,7 +18111,7 @@ type GetWorkflowByIDSeverity string
 const (
 	GetWorkflowByIDSeverityCritical GetWorkflowByIDSeverity = "critical"
 	GetWorkflowByIDSeverityHigh     GetWorkflowByIDSeverity = "high"
-	GetWorkflowByIDSeverityMedium   GetWorkflowByIDSeverity = "medium"
+	GetWorkflowByIDSeverityWarning  GetWorkflowByIDSeverity = "warning"
 	GetWorkflowByIDSeverityLow      GetWorkflowByIDSeverity = "low"
 )
 
@@ -18120,7 +18120,7 @@ func (GetWorkflowByIDSeverity) AllValues() []GetWorkflowByIDSeverity {
 	return []GetWorkflowByIDSeverity{
 		GetWorkflowByIDSeverityCritical,
 		GetWorkflowByIDSeverityHigh,
-		GetWorkflowByIDSeverityMedium,
+		GetWorkflowByIDSeverityWarning,
 		GetWorkflowByIDSeverityLow,
 	}
 }
@@ -18132,7 +18132,7 @@ func (s GetWorkflowByIDSeverity) MarshalText() ([]byte, error) {
 		return []byte(s), nil
 	case GetWorkflowByIDSeverityHigh:
 		return []byte(s), nil
-	case GetWorkflowByIDSeverityMedium:
+	case GetWorkflowByIDSeverityWarning:
 		return []byte(s), nil
 	case GetWorkflowByIDSeverityLow:
 		return []byte(s), nil
@@ -18150,8 +18150,8 @@ func (s *GetWorkflowByIDSeverity) UnmarshalText(data []byte) error {
 	case GetWorkflowByIDSeverityHigh:
 		*s = GetWorkflowByIDSeverityHigh
 		return nil
-	case GetWorkflowByIDSeverityMedium:
-		*s = GetWorkflowByIDSeverityMedium
+	case GetWorkflowByIDSeverityWarning:
+		*s = GetWorkflowByIDSeverityWarning
 		return nil
 	case GetWorkflowByIDSeverityLow:
 		*s = GetWorkflowByIDSeverityLow
@@ -18473,7 +18473,7 @@ func (s *IncidentResponseDataHumanReviewReason) UnmarshalText(data []byte) error
 type IncidentResponseDataRootCauseAnalysis struct {
 	// Brief RCA summary.
 	Summary string `json:"summary"`
-	// Incident severity (BR-SEVERITY-001).
+	// Incident severity (BR-SEVERITY-001, ADR-066).
 	Severity IncidentResponseDataRootCauseAnalysisSeverity `json:"severity"`
 	// List of contributing factors.
 	ContributingFactors []string `json:"contributingFactors"`
@@ -18686,13 +18686,13 @@ func (s *IncidentResponseDataRootCauseAnalysisRemediationTarget) SetNamespace(va
 	s.Namespace = val
 }
 
-// Incident severity (BR-SEVERITY-001).
+// Incident severity (BR-SEVERITY-001, ADR-066).
 type IncidentResponseDataRootCauseAnalysisSeverity string
 
 const (
 	IncidentResponseDataRootCauseAnalysisSeverityCritical IncidentResponseDataRootCauseAnalysisSeverity = "critical"
 	IncidentResponseDataRootCauseAnalysisSeverityHigh     IncidentResponseDataRootCauseAnalysisSeverity = "high"
-	IncidentResponseDataRootCauseAnalysisSeverityMedium   IncidentResponseDataRootCauseAnalysisSeverity = "medium"
+	IncidentResponseDataRootCauseAnalysisSeverityWarning  IncidentResponseDataRootCauseAnalysisSeverity = "warning"
 	IncidentResponseDataRootCauseAnalysisSeverityLow      IncidentResponseDataRootCauseAnalysisSeverity = "low"
 	IncidentResponseDataRootCauseAnalysisSeverityUnknown  IncidentResponseDataRootCauseAnalysisSeverity = "unknown"
 )
@@ -18702,7 +18702,7 @@ func (IncidentResponseDataRootCauseAnalysisSeverity) AllValues() []IncidentRespo
 	return []IncidentResponseDataRootCauseAnalysisSeverity{
 		IncidentResponseDataRootCauseAnalysisSeverityCritical,
 		IncidentResponseDataRootCauseAnalysisSeverityHigh,
-		IncidentResponseDataRootCauseAnalysisSeverityMedium,
+		IncidentResponseDataRootCauseAnalysisSeverityWarning,
 		IncidentResponseDataRootCauseAnalysisSeverityLow,
 		IncidentResponseDataRootCauseAnalysisSeverityUnknown,
 	}
@@ -18715,7 +18715,7 @@ func (s IncidentResponseDataRootCauseAnalysisSeverity) MarshalText() ([]byte, er
 		return []byte(s), nil
 	case IncidentResponseDataRootCauseAnalysisSeverityHigh:
 		return []byte(s), nil
-	case IncidentResponseDataRootCauseAnalysisSeverityMedium:
+	case IncidentResponseDataRootCauseAnalysisSeverityWarning:
 		return []byte(s), nil
 	case IncidentResponseDataRootCauseAnalysisSeverityLow:
 		return []byte(s), nil
@@ -18735,8 +18735,8 @@ func (s *IncidentResponseDataRootCauseAnalysisSeverity) UnmarshalText(data []byt
 	case IncidentResponseDataRootCauseAnalysisSeverityHigh:
 		*s = IncidentResponseDataRootCauseAnalysisSeverityHigh
 		return nil
-	case IncidentResponseDataRootCauseAnalysisSeverityMedium:
-		*s = IncidentResponseDataRootCauseAnalysisSeverityMedium
+	case IncidentResponseDataRootCauseAnalysisSeverityWarning:
+		*s = IncidentResponseDataRootCauseAnalysisSeverityWarning
 		return nil
 	case IncidentResponseDataRootCauseAnalysisSeverityLow:
 		*s = IncidentResponseDataRootCauseAnalysisSeverityLow
@@ -19334,7 +19334,7 @@ type ListAvailableActionsSeverity string
 const (
 	ListAvailableActionsSeverityCritical ListAvailableActionsSeverity = "critical"
 	ListAvailableActionsSeverityHigh     ListAvailableActionsSeverity = "high"
-	ListAvailableActionsSeverityMedium   ListAvailableActionsSeverity = "medium"
+	ListAvailableActionsSeverityWarning  ListAvailableActionsSeverity = "warning"
 	ListAvailableActionsSeverityLow      ListAvailableActionsSeverity = "low"
 )
 
@@ -19343,7 +19343,7 @@ func (ListAvailableActionsSeverity) AllValues() []ListAvailableActionsSeverity {
 	return []ListAvailableActionsSeverity{
 		ListAvailableActionsSeverityCritical,
 		ListAvailableActionsSeverityHigh,
-		ListAvailableActionsSeverityMedium,
+		ListAvailableActionsSeverityWarning,
 		ListAvailableActionsSeverityLow,
 	}
 }
@@ -19355,7 +19355,7 @@ func (s ListAvailableActionsSeverity) MarshalText() ([]byte, error) {
 		return []byte(s), nil
 	case ListAvailableActionsSeverityHigh:
 		return []byte(s), nil
-	case ListAvailableActionsSeverityMedium:
+	case ListAvailableActionsSeverityWarning:
 		return []byte(s), nil
 	case ListAvailableActionsSeverityLow:
 		return []byte(s), nil
@@ -19373,8 +19373,8 @@ func (s *ListAvailableActionsSeverity) UnmarshalText(data []byte) error {
 	case ListAvailableActionsSeverityHigh:
 		*s = ListAvailableActionsSeverityHigh
 		return nil
-	case ListAvailableActionsSeverityMedium:
-		*s = ListAvailableActionsSeverityMedium
+	case ListAvailableActionsSeverityWarning:
+		*s = ListAvailableActionsSeverityWarning
 		return nil
 	case ListAvailableActionsSeverityLow:
 		*s = ListAvailableActionsSeverityLow
@@ -19535,7 +19535,7 @@ type ListWorkflowsByActionTypeSeverity string
 const (
 	ListWorkflowsByActionTypeSeverityCritical ListWorkflowsByActionTypeSeverity = "critical"
 	ListWorkflowsByActionTypeSeverityHigh     ListWorkflowsByActionTypeSeverity = "high"
-	ListWorkflowsByActionTypeSeverityMedium   ListWorkflowsByActionTypeSeverity = "medium"
+	ListWorkflowsByActionTypeSeverityWarning  ListWorkflowsByActionTypeSeverity = "warning"
 	ListWorkflowsByActionTypeSeverityLow      ListWorkflowsByActionTypeSeverity = "low"
 )
 
@@ -19544,7 +19544,7 @@ func (ListWorkflowsByActionTypeSeverity) AllValues() []ListWorkflowsByActionType
 	return []ListWorkflowsByActionTypeSeverity{
 		ListWorkflowsByActionTypeSeverityCritical,
 		ListWorkflowsByActionTypeSeverityHigh,
-		ListWorkflowsByActionTypeSeverityMedium,
+		ListWorkflowsByActionTypeSeverityWarning,
 		ListWorkflowsByActionTypeSeverityLow,
 	}
 }
@@ -19556,7 +19556,7 @@ func (s ListWorkflowsByActionTypeSeverity) MarshalText() ([]byte, error) {
 		return []byte(s), nil
 	case ListWorkflowsByActionTypeSeverityHigh:
 		return []byte(s), nil
-	case ListWorkflowsByActionTypeSeverityMedium:
+	case ListWorkflowsByActionTypeSeverityWarning:
 		return []byte(s), nil
 	case ListWorkflowsByActionTypeSeverityLow:
 		return []byte(s), nil
@@ -19574,8 +19574,8 @@ func (s *ListWorkflowsByActionTypeSeverity) UnmarshalText(data []byte) error {
 	case ListWorkflowsByActionTypeSeverityHigh:
 		*s = ListWorkflowsByActionTypeSeverityHigh
 		return nil
-	case ListWorkflowsByActionTypeSeverityMedium:
-		*s = ListWorkflowsByActionTypeSeverityMedium
+	case ListWorkflowsByActionTypeSeverityWarning:
+		*s = ListWorkflowsByActionTypeSeverityWarning
 		return nil
 	case ListWorkflowsByActionTypeSeverityLow:
 		*s = ListWorkflowsByActionTypeSeverityLow
@@ -19824,7 +19824,7 @@ type MandatoryLabelsSeverityItem string
 const (
 	MandatoryLabelsSeverityItem_critical MandatoryLabelsSeverityItem = "critical"
 	MandatoryLabelsSeverityItem_high     MandatoryLabelsSeverityItem = "high"
-	MandatoryLabelsSeverityItem_medium   MandatoryLabelsSeverityItem = "medium"
+	MandatoryLabelsSeverityItem_warning  MandatoryLabelsSeverityItem = "warning"
 	MandatoryLabelsSeverityItem_low      MandatoryLabelsSeverityItem = "low"
 	MandatoryLabelsSeverityItem_         MandatoryLabelsSeverityItem = "*"
 )
@@ -19834,7 +19834,7 @@ func (MandatoryLabelsSeverityItem) AllValues() []MandatoryLabelsSeverityItem {
 	return []MandatoryLabelsSeverityItem{
 		MandatoryLabelsSeverityItem_critical,
 		MandatoryLabelsSeverityItem_high,
-		MandatoryLabelsSeverityItem_medium,
+		MandatoryLabelsSeverityItem_warning,
 		MandatoryLabelsSeverityItem_low,
 		MandatoryLabelsSeverityItem_,
 	}
@@ -19847,7 +19847,7 @@ func (s MandatoryLabelsSeverityItem) MarshalText() ([]byte, error) {
 		return []byte(s), nil
 	case MandatoryLabelsSeverityItem_high:
 		return []byte(s), nil
-	case MandatoryLabelsSeverityItem_medium:
+	case MandatoryLabelsSeverityItem_warning:
 		return []byte(s), nil
 	case MandatoryLabelsSeverityItem_low:
 		return []byte(s), nil
@@ -19867,8 +19867,8 @@ func (s *MandatoryLabelsSeverityItem) UnmarshalText(data []byte) error {
 	case MandatoryLabelsSeverityItem_high:
 		*s = MandatoryLabelsSeverityItem_high
 		return nil
-	case MandatoryLabelsSeverityItem_medium:
-		*s = MandatoryLabelsSeverityItem_medium
+	case MandatoryLabelsSeverityItem_warning:
+		*s = MandatoryLabelsSeverityItem_warning
 		return nil
 	case MandatoryLabelsSeverityItem_low:
 		*s = MandatoryLabelsSeverityItem_low
@@ -29619,11 +29619,11 @@ type SignalProcessingAuditPayload struct {
 	Phase SignalProcessingAuditPayloadPhase `json:"phase"`
 	// Name of the signal being processed.
 	Signal string `json:"signal"`
-	// Normalized severity level (DD-SEVERITY-001 v1.1).
+	// Normalized severity level (DD-SEVERITY-001 v1.1, ADR-066).
 	Severity OptSignalProcessingAuditPayloadSeverity `json:"severity"`
 	// Original severity from external monitoring system (e.g., Sev1, P0, critical).
 	ExternalSeverity OptString `json:"external_severity"`
-	// Normalized severity determined by Rego policy (DD-SEVERITY-001 v1.1).
+	// Normalized severity determined by Rego policy (DD-SEVERITY-001 v1.1, ADR-066).
 	NormalizedSeverity OptSignalProcessingAuditPayloadNormalizedSeverity `json:"normalized_severity"`
 	// Source of severity determination for audit trail.
 	DeterminationSource OptSignalProcessingAuditPayloadDeterminationSource `json:"determination_source"`
@@ -29948,7 +29948,7 @@ type SignalProcessingAuditPayloadCriticality string
 const (
 	SignalProcessingAuditPayloadCriticalityCritical SignalProcessingAuditPayloadCriticality = "critical"
 	SignalProcessingAuditPayloadCriticalityHigh     SignalProcessingAuditPayloadCriticality = "high"
-	SignalProcessingAuditPayloadCriticalityMedium   SignalProcessingAuditPayloadCriticality = "medium"
+	SignalProcessingAuditPayloadCriticalityWarning  SignalProcessingAuditPayloadCriticality = "warning"
 	SignalProcessingAuditPayloadCriticalityLow      SignalProcessingAuditPayloadCriticality = "low"
 )
 
@@ -29957,7 +29957,7 @@ func (SignalProcessingAuditPayloadCriticality) AllValues() []SignalProcessingAud
 	return []SignalProcessingAuditPayloadCriticality{
 		SignalProcessingAuditPayloadCriticalityCritical,
 		SignalProcessingAuditPayloadCriticalityHigh,
-		SignalProcessingAuditPayloadCriticalityMedium,
+		SignalProcessingAuditPayloadCriticalityWarning,
 		SignalProcessingAuditPayloadCriticalityLow,
 	}
 }
@@ -29969,7 +29969,7 @@ func (s SignalProcessingAuditPayloadCriticality) MarshalText() ([]byte, error) {
 		return []byte(s), nil
 	case SignalProcessingAuditPayloadCriticalityHigh:
 		return []byte(s), nil
-	case SignalProcessingAuditPayloadCriticalityMedium:
+	case SignalProcessingAuditPayloadCriticalityWarning:
 		return []byte(s), nil
 	case SignalProcessingAuditPayloadCriticalityLow:
 		return []byte(s), nil
@@ -29987,8 +29987,8 @@ func (s *SignalProcessingAuditPayloadCriticality) UnmarshalText(data []byte) err
 	case SignalProcessingAuditPayloadCriticalityHigh:
 		*s = SignalProcessingAuditPayloadCriticalityHigh
 		return nil
-	case SignalProcessingAuditPayloadCriticalityMedium:
-		*s = SignalProcessingAuditPayloadCriticalityMedium
+	case SignalProcessingAuditPayloadCriticalityWarning:
+		*s = SignalProcessingAuditPayloadCriticalityWarning
 		return nil
 	case SignalProcessingAuditPayloadCriticalityLow:
 		*s = SignalProcessingAuditPayloadCriticalityLow
@@ -30215,13 +30215,13 @@ func (s *SignalProcessingAuditPayloadEventType) UnmarshalText(data []byte) error
 	}
 }
 
-// Normalized severity determined by Rego policy (DD-SEVERITY-001 v1.1).
+// Normalized severity determined by Rego policy (DD-SEVERITY-001 v1.1, ADR-066).
 type SignalProcessingAuditPayloadNormalizedSeverity string
 
 const (
 	SignalProcessingAuditPayloadNormalizedSeverityCritical SignalProcessingAuditPayloadNormalizedSeverity = "critical"
 	SignalProcessingAuditPayloadNormalizedSeverityHigh     SignalProcessingAuditPayloadNormalizedSeverity = "high"
-	SignalProcessingAuditPayloadNormalizedSeverityMedium   SignalProcessingAuditPayloadNormalizedSeverity = "medium"
+	SignalProcessingAuditPayloadNormalizedSeverityWarning  SignalProcessingAuditPayloadNormalizedSeverity = "warning"
 	SignalProcessingAuditPayloadNormalizedSeverityLow      SignalProcessingAuditPayloadNormalizedSeverity = "low"
 	SignalProcessingAuditPayloadNormalizedSeverityUnknown  SignalProcessingAuditPayloadNormalizedSeverity = "unknown"
 )
@@ -30231,7 +30231,7 @@ func (SignalProcessingAuditPayloadNormalizedSeverity) AllValues() []SignalProces
 	return []SignalProcessingAuditPayloadNormalizedSeverity{
 		SignalProcessingAuditPayloadNormalizedSeverityCritical,
 		SignalProcessingAuditPayloadNormalizedSeverityHigh,
-		SignalProcessingAuditPayloadNormalizedSeverityMedium,
+		SignalProcessingAuditPayloadNormalizedSeverityWarning,
 		SignalProcessingAuditPayloadNormalizedSeverityLow,
 		SignalProcessingAuditPayloadNormalizedSeverityUnknown,
 	}
@@ -30244,7 +30244,7 @@ func (s SignalProcessingAuditPayloadNormalizedSeverity) MarshalText() ([]byte, e
 		return []byte(s), nil
 	case SignalProcessingAuditPayloadNormalizedSeverityHigh:
 		return []byte(s), nil
-	case SignalProcessingAuditPayloadNormalizedSeverityMedium:
+	case SignalProcessingAuditPayloadNormalizedSeverityWarning:
 		return []byte(s), nil
 	case SignalProcessingAuditPayloadNormalizedSeverityLow:
 		return []byte(s), nil
@@ -30264,8 +30264,8 @@ func (s *SignalProcessingAuditPayloadNormalizedSeverity) UnmarshalText(data []by
 	case SignalProcessingAuditPayloadNormalizedSeverityHigh:
 		*s = SignalProcessingAuditPayloadNormalizedSeverityHigh
 		return nil
-	case SignalProcessingAuditPayloadNormalizedSeverityMedium:
-		*s = SignalProcessingAuditPayloadNormalizedSeverityMedium
+	case SignalProcessingAuditPayloadNormalizedSeverityWarning:
+		*s = SignalProcessingAuditPayloadNormalizedSeverityWarning
 		return nil
 	case SignalProcessingAuditPayloadNormalizedSeverityLow:
 		*s = SignalProcessingAuditPayloadNormalizedSeverityLow
@@ -30460,13 +30460,13 @@ func (s *SignalProcessingAuditPayloadPrioritySource) UnmarshalText(data []byte) 
 	}
 }
 
-// Normalized severity level (DD-SEVERITY-001 v1.1).
+// Normalized severity level (DD-SEVERITY-001 v1.1, ADR-066).
 type SignalProcessingAuditPayloadSeverity string
 
 const (
 	SignalProcessingAuditPayloadSeverityCritical SignalProcessingAuditPayloadSeverity = "critical"
 	SignalProcessingAuditPayloadSeverityHigh     SignalProcessingAuditPayloadSeverity = "high"
-	SignalProcessingAuditPayloadSeverityMedium   SignalProcessingAuditPayloadSeverity = "medium"
+	SignalProcessingAuditPayloadSeverityWarning  SignalProcessingAuditPayloadSeverity = "warning"
 	SignalProcessingAuditPayloadSeverityLow      SignalProcessingAuditPayloadSeverity = "low"
 	SignalProcessingAuditPayloadSeverityUnknown  SignalProcessingAuditPayloadSeverity = "unknown"
 )
@@ -30476,7 +30476,7 @@ func (SignalProcessingAuditPayloadSeverity) AllValues() []SignalProcessingAuditP
 	return []SignalProcessingAuditPayloadSeverity{
 		SignalProcessingAuditPayloadSeverityCritical,
 		SignalProcessingAuditPayloadSeverityHigh,
-		SignalProcessingAuditPayloadSeverityMedium,
+		SignalProcessingAuditPayloadSeverityWarning,
 		SignalProcessingAuditPayloadSeverityLow,
 		SignalProcessingAuditPayloadSeverityUnknown,
 	}
@@ -30489,7 +30489,7 @@ func (s SignalProcessingAuditPayloadSeverity) MarshalText() ([]byte, error) {
 		return []byte(s), nil
 	case SignalProcessingAuditPayloadSeverityHigh:
 		return []byte(s), nil
-	case SignalProcessingAuditPayloadSeverityMedium:
+	case SignalProcessingAuditPayloadSeverityWarning:
 		return []byte(s), nil
 	case SignalProcessingAuditPayloadSeverityLow:
 		return []byte(s), nil
@@ -30509,8 +30509,8 @@ func (s *SignalProcessingAuditPayloadSeverity) UnmarshalText(data []byte) error 
 	case SignalProcessingAuditPayloadSeverityHigh:
 		*s = SignalProcessingAuditPayloadSeverityHigh
 		return nil
-	case SignalProcessingAuditPayloadSeverityMedium:
-		*s = SignalProcessingAuditPayloadSeverityMedium
+	case SignalProcessingAuditPayloadSeverityWarning:
+		*s = SignalProcessingAuditPayloadSeverityWarning
 		return nil
 	case SignalProcessingAuditPayloadSeverityLow:
 		*s = SignalProcessingAuditPayloadSeverityLow
@@ -32342,7 +32342,7 @@ func (s *WorkflowResultAuditLabels) init() WorkflowResultAuditLabels {
 
 // Ref: #/components/schemas/WorkflowSearchFilters
 type WorkflowSearchFilters struct {
-	// Severity level (mandatory: critical, high, medium, low).
+	// Severity level (mandatory: critical, high, warning, low).
 	Severity WorkflowSearchFiltersSeverity `json:"severity"`
 	// Kubernetes resource GVK (apiVersion/Kind, e.g. apps/v1/Deployment, v1/Pod). Issue #1051.
 	Component string `json:"component"`
@@ -32482,13 +32482,13 @@ func (s *WorkflowSearchFiltersPriority) UnmarshalText(data []byte) error {
 	}
 }
 
-// Severity level (mandatory: critical, high, medium, low).
+// Severity level (mandatory: critical, high, warning, low).
 type WorkflowSearchFiltersSeverity string
 
 const (
 	WorkflowSearchFiltersSeverityCritical WorkflowSearchFiltersSeverity = "critical"
 	WorkflowSearchFiltersSeverityHigh     WorkflowSearchFiltersSeverity = "high"
-	WorkflowSearchFiltersSeverityMedium   WorkflowSearchFiltersSeverity = "medium"
+	WorkflowSearchFiltersSeverityWarning  WorkflowSearchFiltersSeverity = "warning"
 	WorkflowSearchFiltersSeverityLow      WorkflowSearchFiltersSeverity = "low"
 )
 
@@ -32497,7 +32497,7 @@ func (WorkflowSearchFiltersSeverity) AllValues() []WorkflowSearchFiltersSeverity
 	return []WorkflowSearchFiltersSeverity{
 		WorkflowSearchFiltersSeverityCritical,
 		WorkflowSearchFiltersSeverityHigh,
-		WorkflowSearchFiltersSeverityMedium,
+		WorkflowSearchFiltersSeverityWarning,
 		WorkflowSearchFiltersSeverityLow,
 	}
 }
@@ -32509,7 +32509,7 @@ func (s WorkflowSearchFiltersSeverity) MarshalText() ([]byte, error) {
 		return []byte(s), nil
 	case WorkflowSearchFiltersSeverityHigh:
 		return []byte(s), nil
-	case WorkflowSearchFiltersSeverityMedium:
+	case WorkflowSearchFiltersSeverityWarning:
 		return []byte(s), nil
 	case WorkflowSearchFiltersSeverityLow:
 		return []byte(s), nil
@@ -32527,8 +32527,8 @@ func (s *WorkflowSearchFiltersSeverity) UnmarshalText(data []byte) error {
 	case WorkflowSearchFiltersSeverityHigh:
 		*s = WorkflowSearchFiltersSeverityHigh
 		return nil
-	case WorkflowSearchFiltersSeverityMedium:
-		*s = WorkflowSearchFiltersSeverityMedium
+	case WorkflowSearchFiltersSeverityWarning:
+		*s = WorkflowSearchFiltersSeverityWarning
 		return nil
 	case WorkflowSearchFiltersSeverityLow:
 		*s = WorkflowSearchFiltersSeverityLow

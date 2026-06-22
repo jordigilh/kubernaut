@@ -5354,8 +5354,8 @@ func (s *Severity) Decode(d *jx.Decoder) error {
 		*s = SeverityCritical
 	case SeverityHigh:
 		*s = SeverityHigh
-	case SeverityMedium:
-		*s = SeverityMedium
+	case SeverityWarning:
+		*s = SeverityWarning
 	case SeverityLow:
 		*s = SeverityLow
 	case SeverityUnknown:
