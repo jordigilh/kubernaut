@@ -62,7 +62,7 @@ func NewClient(endpoint string) *Client {
 func (c *Client) IsManagedResource(ctx context.Context, r scope.ResourceIdentity) (bool, error) {
 	filters := buildFilters(r)
 	reqBody := graphQLRequest{
-		Query: searchQuery,
+		Query: SearchQuery,
 		Variables: map[string]interface{}{
 			"input": []searchInput{{Filters: filters}},
 		},

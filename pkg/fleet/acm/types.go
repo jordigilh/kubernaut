@@ -51,4 +51,6 @@ type searchInput struct {
 	Filters []searchFilter `json:"filters"`
 }
 
-const searchQuery = `query($input: [SearchInput]) { searchResult: search(input: $input) { count } }`
+// SearchQuery is the GraphQL query sent to ACM Search. Exported so the
+// contract test (UT-ACM-054-009) can validate it against the vendored SDL schema.
+const SearchQuery = `query($input: [SearchInput]) { searchResult: search(input: $input) { count } }`
