@@ -11,6 +11,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/semaphore"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/client-go/dynamic"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -57,22 +58,25 @@ type MCPBridgeConfig struct {
 	KAMCPClient           ka.MCPClient
 	KADedicatedClient     ka.MCPClient
 	InvestigationRegistry *tools.MonitorRegistry
-	DSClient           ds.Client
-	PromClient         prom.Client
-	Triager            *severity.Triager
-	Authorizer         auth.ToolAuthorizer
-	Auditor            audit.Emitter
-	Logger             logr.Logger
-	Metrics            *MCPBridgeMetrics
-	ToolTimeout        time.Duration
-	ToolTimeouts       map[string]time.Duration
-	MaxConcurrentTools int64
-	UserLimiter        *ratelimit.UserLimiter
-	SessionFinalizer    ISPhaseFinalizer
-	SessionInitializer  ISSessionInitializer
+	DSClient              ds.Client
+	PromClient            prom.Client
+	Triager               *severity.Triager
+	Authorizer            auth.ToolAuthorizer
+	Auditor               audit.Emitter
+	Logger                logr.Logger
+	Metrics               *MCPBridgeMetrics
+	ToolTimeout           time.Duration
+	ToolTimeouts          map[string]time.Duration
+	MaxConcurrentTools    int64
+	UserLimiter           *ratelimit.UserLimiter
+	SessionFinalizer      ISPhaseFinalizer
+	SessionInitializer    ISSessionInitializer
 	// InteractiveEnabled controls whether session-dependent tools are registered.
 	// When false, tools in tools.SessionDependentTools are skipped (#1366).
 	InteractiveEnabled bool
+	// RESTMapper resolves Kind strings to GVR for scope-aware namespace stripping.
+	// If nil, falls back to the static clusterScopedKinds map.
+	RESTMapper meta.RESTMapper
 }
 
 // MCPBridgeMetrics holds Prometheus collectors specific to MCP bridge operations.
@@ -202,6 +206,7 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 		}
 		registerTool(srv, cfg, sem, "kubernaut_investigate", "Investigate an infrastructure incident",
 			func(ctx context.Context, args tools.InvestigateMCPArgs) (any, error) {
+				ctx = tools.ContextWithRESTMapper(ctx, cfg.RESTMapper)
 				return tools.HandleInvestigationMCPWithRegistry(ctx, dedicatedClient, cfg.TypedClient, cfg.Namespace, args, cfg.Auditor, cfg.InvestigationRegistry, onInvestigateStarted, false, nil, "", isSignaler, cfg.Triager)
 			})
 	}
