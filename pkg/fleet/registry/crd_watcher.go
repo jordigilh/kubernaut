@@ -249,6 +249,11 @@ func (w *CRDWatcher) onDelete(obj interface{}) {
 }
 
 func (w *CRDWatcher) emit(event ClusterEvent) {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	if w.stopped {
+		return
+	}
 	select {
 	case w.eventCh <- event:
 	default:
