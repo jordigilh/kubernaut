@@ -21,6 +21,7 @@ import (
 
 	"github.com/go-logr/logr"
 
+	"github.com/jordigilh/kubernaut/pkg/fleet/acm"
 	"github.com/jordigilh/kubernaut/pkg/fleet/fmc"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
@@ -33,7 +34,7 @@ import (
 //
 // Supported backends:
 //   - "fmc": FMC HTTP client — queries the FMC REST API for scope checks (ADR-068)
-//   - "acm": ACM Search GraphQL adapter (not yet implemented)
+//   - "acm": ACM Search GraphQL adapter — queries ACM Search for scope checks (ADR-068)
 //
 // References: ADR-068, BR-INTEGRATION-065
 func NewScopeChecker(localChecker scope.ScopeChecker, cfg FleetConfig, logger logr.Logger) (scope.ScopeChecker, error) {
@@ -52,7 +53,8 @@ func NewScopeChecker(localChecker scope.ScopeChecker, cfg FleetConfig, logger lo
 		remoteChecker := fmc.NewHTTPClient(endpoint)
 		return NewFederatedScopeChecker(localChecker, remoteChecker, logger), nil
 	case BackendACM:
-		return nil, fmt.Errorf("fleet: ACM Search adapter not yet implemented")
+		remoteChecker := acm.NewClient(endpoint)
+		return NewFederatedScopeChecker(localChecker, remoteChecker, logger), nil
 	default:
 		return nil, fmt.Errorf("fleet: unsupported backend %q", backend)
 	}

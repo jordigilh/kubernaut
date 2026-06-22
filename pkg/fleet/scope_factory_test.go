@@ -68,12 +68,16 @@ var _ = Describe("NewScopeChecker factory (BR-INTEGRATION-065)", func() {
 			"factory must reject legacy valkey backend")
 	})
 
-	It("UT-FLEET-FAC-005: BackendACM returns not-yet-implemented error", func() {
+	It("UT-FLEET-FAC-005 [AC-4]: BackendACM with endpoint returns FederatedScopeChecker using ACM client", func() {
 		cfg := fleet.FleetConfig{Enabled: true, Backend: "acm", Endpoint: "https://search-api:4010"}
 		checker, err := fleet.NewScopeChecker(local, cfg, logr.Discard())
-		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("not yet implemented"))
-		Expect(checker).To(BeNil())
+		Expect(err).ToNot(HaveOccurred())
+		Expect(checker).ToNot(BeIdenticalTo(local),
+			"acm backend must wrap local checker with FederatedScopeChecker")
+
+		_, isFederated := checker.(*fleet.FederatedScopeChecker)
+		Expect(isFederated).To(BeTrue(),
+			"factory must return *fleet.FederatedScopeChecker for acm backend")
 	})
 
 	It("UT-FLEET-FAC-006: unknown backend returns error", func() {
