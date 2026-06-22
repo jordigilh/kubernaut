@@ -58,7 +58,7 @@ import (
 // ========================================
 
 // mockScopeChecker is a configurable mock for the ScopeChecker interface.
-// It allows tests to control the IsManaged return value.
+// It allows tests to control the IsManagedResource return value.
 type mockScopeChecker struct {
 	managed    bool
 	err        error
@@ -68,14 +68,6 @@ type mockScopeChecker struct {
 		kind      string
 		name      string
 	}
-}
-
-func (m *mockScopeChecker) IsManaged(_ context.Context, namespace, kind, name string) (bool, error) {
-	m.callCount++
-	m.lastParams.namespace = namespace
-	m.lastParams.kind = kind
-	m.lastParams.name = name
-	return m.managed, m.err
 }
 
 func (m *mockScopeChecker) IsManagedResource(_ context.Context, resource scope.ResourceIdentity) (bool, error) {
@@ -88,7 +80,7 @@ func (m *mockScopeChecker) IsManagedResource(_ context.Context, resource scope.R
 
 // newTestGatewayServer creates a Gateway server for unit tests with the given scope checker.
 // ADR-057: Sets KUBERNAUT_CONTROLLER_NAMESPACE for namespace discovery in test environment.
-func newTestGatewayServer(k8sClient client.Client, metricsInstance *metrics.Metrics, scopeChecker scope.UnifiedScopeChecker) (*gatewaypkg.Server, error) {
+func newTestGatewayServer(k8sClient client.Client, metricsInstance *metrics.Metrics, scopeChecker scope.ScopeChecker) (*gatewaypkg.Server, error) {
 	Expect(os.Setenv("KUBERNAUT_CONTROLLER_NAMESPACE", "kubernaut-system")).To(Succeed())
 	cfg := &config.ServerConfig{
 		Server: config.ServerSettings{

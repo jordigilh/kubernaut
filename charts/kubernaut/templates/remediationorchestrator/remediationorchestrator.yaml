@@ -56,7 +56,12 @@ data:
     {{- if .Values.remediationorchestrator.fleet.enabled }}
     fleet:
       enabled: true
-      valkeyAddr: {{ .Values.remediationorchestrator.fleet.valkeyAddr | quote }}
+      {{- if .Values.remediationorchestrator.fleet.backend }}
+      backend: {{ .Values.remediationorchestrator.fleet.backend | quote }}
+      {{- end }}
+      {{- if .Values.remediationorchestrator.fleet.endpoint }}
+      endpoint: {{ .Values.remediationorchestrator.fleet.endpoint | quote }}
+      {{- end }}
     {{- end }}
 ---
 apiVersion: v1

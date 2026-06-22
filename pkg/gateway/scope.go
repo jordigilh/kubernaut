@@ -23,15 +23,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
-// ScopeChecker is an alias for the shared scope.ScopeChecker interface.
-// Deprecated: Use scope.UnifiedScopeChecker instead (ADR-068).
-type ScopeChecker = scope.ScopeChecker
-
-// FederatedScopeChecker is an alias for the shared scope.FederatedScopeChecker interface.
-// Deprecated: Use scope.UnifiedScopeChecker instead (ADR-068).
-// The type assertion pattern is no longer needed — validateScope now calls IsManagedResource.
-type FederatedScopeChecker = scope.FederatedScopeChecker
-
 // StatusRejected indicates the signal was rejected because the resource is not managed.
 // BR-SCOPE-002: Gateway rejects signals from unmanaged resources.
 const StatusRejected = "rejected"

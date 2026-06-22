@@ -96,12 +96,15 @@ gateway:
     #       serviceAccount: alertmanager-kube-prometheus-stack-alertmanager
     #       namespace: monitoring
     signalSources: []
-  # -- Multi-cluster fleet configuration (BR-INTEGRATION-065).
+  # -- Multi-cluster fleet configuration (BR-INTEGRATION-065, ADR-068).
   # When enabled, GW includes clusterID in signal fingerprints and populates
-  # spec.clusterID on RemediationRequests. Requires Valkey for federated scope checks.
+  # spec.clusterID on RemediationRequests. The backend adapter handles federated scope checks.
   fleet:
     enabled: false
-    valkeyAddr: ""  # e.g., "valkey:6379" — uses shared Valkey instance
+    # -- Backend adapter: "fmc" (FMC HTTP API) or "acm" (ACM Search).
+    backend: ""
+    # -- Endpoint for the selected backend (FMC HTTP URL or ACM GraphQL URL).
+    endpoint: ""
 
 # -- DataStorage service (audit trail, workflow catalog)
 datastorage:
@@ -253,12 +256,15 @@ remediationorchestrator:
       notifySelfResolved: false
     retention:
       period: "24h"  # Issue #265: CRD retention TTL before automatic cleanup
-  # -- Multi-cluster fleet configuration (BR-INTEGRATION-065).
-  # When enabled, RO performs federated scope checks via Valkey before accepting
-  # RemediationRequests with non-empty clusterID.
+  # -- Multi-cluster fleet configuration (BR-INTEGRATION-065, ADR-068).
+  # When enabled, RO performs federated scope checks before accepting
+  # RemediationRequests with non-empty clusterID. Backend adapter selected by backend field.
   fleet:
     enabled: false
-    valkeyAddr: ""  # e.g., "valkey:6379" — uses shared Valkey instance
+    # -- Backend adapter: "fmc" (FMC HTTP API) or "acm" (ACM Search).
+    backend: ""
+    # -- Endpoint for the selected backend (FMC HTTP URL or ACM GraphQL URL).
+    endpoint: ""
 
 # -- WorkflowExecution controller
 workflowexecution:

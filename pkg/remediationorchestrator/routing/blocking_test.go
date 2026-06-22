@@ -1658,8 +1658,8 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 		})
 	})
 
-	Describe("UT-FLEET-RO-001 [AC-4]: cluster-aware CheckUnmanagedResource (Phase B)", func() {
-		It("uses IsManagedOnCluster when RR has non-empty ClusterID, enforcing cross-cluster information flow control", func() {
+	Describe("UT-FLEET-RO-001 [AC-4]: cluster-aware CheckUnmanagedResource", func() {
+		It("routes to remote scope check when RR has non-empty ClusterID, enforcing cross-cluster information flow control", func() {
 			scheme := runtime.NewScheme()
 			Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
 			Expect(workflowexecutionv1.AddToScheme(scheme)).To(Succeed())
@@ -1699,30 +1699,30 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 
 			result := engine.CheckUnmanagedResource(ctx, rr)
 
-			Expect(spy.calledIsManagedOnCluster).To(BeTrue(),
-				"RO must call IsManagedOnCluster (not IsManaged) when ClusterID is non-empty (AC-4: cross-cluster information flow)")
+			Expect(spy.calledRemote).To(BeTrue(),
+				"RO must route to remote scope check when ClusterID is non-empty (AC-4: cross-cluster information flow)")
 			Expect(spy.capturedClusterID).To(Equal("prod-east"),
-				"clusterID from RR spec must be passed to IsManagedOnCluster")
+				"clusterID from RR spec must be passed to IsManagedResource")
 			Expect(result).To(BeNil(),
 				"managed remote resource should not be blocked")
 		})
 	})
 })
 
-// spyFederatedScopeChecker is a test double that satisfies scope.UnifiedScopeChecker
+// spyFederatedScopeChecker is a test double that satisfies scope.ScopeChecker
 // and records whether IsManagedResource was called with a remote clusterID.
 type spyFederatedScopeChecker struct {
-	localManaged              bool
-	remoteManaged             bool
-	calledIsManagedOnCluster  bool
-	capturedClusterID         string
+	localManaged      bool
+	remoteManaged     bool
+	calledRemote      bool
+	capturedClusterID string
 }
 
-var _ scope.UnifiedScopeChecker = (*spyFederatedScopeChecker)(nil)
+var _ scope.ScopeChecker = (*spyFederatedScopeChecker)(nil)
 
 func (s *spyFederatedScopeChecker) IsManagedResource(_ context.Context, resource scope.ResourceIdentity) (bool, error) {
 	if resource.ClusterID != "" {
-		s.calledIsManagedOnCluster = true
+		s.calledRemote = true
 		s.capturedClusterID = resource.ClusterID
 		return s.remoteManaged || s.localManaged, nil
 	}
