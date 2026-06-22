@@ -45,12 +45,11 @@ import (
 	eav1alpha1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	"github.com/jordigilh/kubernaut/internal/controller/apifrontend"
 	agentpkg "github.com/jordigilh/kubernaut/pkg/apifrontend/agent"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
-	sharedaudit "github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/config"
-	"github.com/jordigilh/kubernaut/internal/controller/apifrontend"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ds"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/handler"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
@@ -61,9 +60,10 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/resilience"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
-	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/streaming"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tlswiring"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
+	sharedaudit "github.com/jordigilh/kubernaut/pkg/audit"
 )
 
 const configPath = "/etc/apifrontend/config.yaml"
@@ -464,7 +464,6 @@ func loadConfig() (*config.Config, error) {
 	}
 	return config.Load(data)
 }
-
 
 type caWatcherEntry struct {
 	name    string
@@ -873,20 +872,21 @@ func buildMCPHandler(cfg *config.Config, deps *backendDeps, sessInfra *sessionIn
 		KAMCPClient:           deps.MCPClient,
 		KADedicatedClient:     deps.DedicatedClient,
 		InvestigationRegistry: deps.InvestigationRegistry,
-		DSClient:           deps.DSClient,
-		PromClient:         deps.PromClient,
-		Triager:            deps.Triager,
-		Authorizer:         authorizer,
-		Auditor:            auditor,
-		Logger:             logger.WithName("bridge"),
-		Metrics:            bridgeMetricsFrom(metricsReg),
-		ToolTimeout:        cfg.MCP.ToolTimeout,
-		ToolTimeouts:       cfg.MCP.ToolTimeouts,
-		MaxConcurrentTools: 10,
-		UserLimiter:        userLimiter,
-		SessionFinalizer:   sessFinalizer,
-		SessionInitializer: sessInitializer,
-		InteractiveEnabled: cfg.Interactive.Enabled,
+		DSClient:              deps.DSClient,
+		PromClient:            deps.PromClient,
+		Triager:               deps.Triager,
+		Authorizer:            authorizer,
+		Auditor:               auditor,
+		Logger:                logger.WithName("bridge"),
+		Metrics:               bridgeMetricsFrom(metricsReg),
+		ToolTimeout:           cfg.MCP.ToolTimeout,
+		ToolTimeouts:          cfg.MCP.ToolTimeouts,
+		MaxConcurrentTools:    10,
+		UserLimiter:           userLimiter,
+		SessionFinalizer:      sessFinalizer,
+		SessionInitializer:    sessInitializer,
+		InteractiveEnabled:    cfg.Interactive.Enabled,
+		RESTMapper:            deps.Mapper,
 	}
 
 	mcpSessionTimeout := cfg.MCP.SessionIdleTimeout
@@ -934,7 +934,7 @@ func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps,
 
 	hasCustomTransport := cfg.Agent.LLM.TLSCaFile != "" || cfg.Agent.LLM.OAuth2.Enabled
 	if hasCustomTransport && (cfg.Agent.LLM.Provider == config.LLMProviderVertexAI || cfg.Agent.LLM.Provider == config.LLMProviderAnthropic) {
-		logger.Info("WARNING: mTLS/OAuth2 transport config is set but CANNOT be applied to "+cfg.Agent.LLM.Provider+
+		logger.Info("WARNING: mTLS/OAuth2 transport config is set but CANNOT be applied to " + cfg.Agent.LLM.Provider +
 			" — upstream ADK wrapper lacks HTTP client injection (blocked by issue #1342)")
 	}
 
@@ -992,7 +992,7 @@ func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps,
 		SessionInterceptor: launcher.NewSessionInterceptor(
 			activeCtxRegistry, logger.WithName("session-interceptor"),
 		),
-		LLMSemaphore:        llmSemaphore,
+		LLMSemaphore: llmSemaphore,
 	}
 
 	h, err := launcher.NewA2AHandler(a2aCfg)
@@ -1255,7 +1255,6 @@ func (t *bearerTokenTransport) RoundTrip(req *http.Request) (*http.Response, err
 	return base.RoundTrip(r)
 }
 
-
 // buildHealthMux constructs the health server mux with dependency-aware readyz.
 // WIRE-01: /readyz must check depsReady, not just draining.
 func buildHealthMux(depsReady handler.ReadyChecker, draining *atomic.Bool) *http.ServeMux {
@@ -1511,4 +1510,3 @@ func preflightSessionChecks(restCfg *rest.Config, namespace string, auditor audi
 		})
 	}
 }
-

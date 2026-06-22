@@ -28,6 +28,7 @@ import (
 	"github.com/go-logr/logr"
 	"google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
+	"k8s.io/apimachinery/pkg/api/meta"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	aiav1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
@@ -40,6 +41,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
 // isPhaseActivePollTimeout caps the IS phase Active polling after AIA readiness.
@@ -92,10 +94,10 @@ type InvestigateMCPArgs struct {
 
 // InvestigateMCPResult is the output of the MCP investigate tool.
 type InvestigateMCPResult struct {
-	SessionID string `json:"session_id"`
-	Status    string `json:"status"`
-	Summary   string `json:"summary,omitempty"`
-	RRID      string `json:"rr_id,omitempty"`
+	SessionID string          `json:"session_id"`
+	Status    string          `json:"status"`
+	Summary   string          `json:"summary,omitempty"`
+	RRID      string          `json:"rr_id,omitempty"`
 	Error     string          `json:"error,omitempty"`
 	RCA       *InvestigateRCA `json:"rca,omitempty"`
 }
@@ -181,6 +183,24 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 		}
 
 		clusterScoped := args.Namespace == ""
+		if !clusterScoped {
+			mapper := RESTMapperFromContext(ctx)
+			if mapper != nil {
+				resolved := ResolveEffectiveNamespace(mapper, args.Kind, args.Namespace, logr.FromContextOrDiscard(ctx))
+				clusterScoped = resolved == ""
+			} else {
+				clusterScoped = scope.IsClusterScopedKind(args.Kind)
+				if clusterScoped {
+					logr.FromContextOrDiscard(ctx).Info("stripping namespace for cluster-scoped resource (static fallback)",
+						"kind", args.Kind,
+						"stripped_namespace", args.Namespace,
+					)
+				}
+			}
+		}
+		if clusterScoped && args.Namespace != "" {
+			args.Namespace = ""
+		}
 
 		if identity != nil && identity.IsServiceAccount {
 			return InvestigateMCPResult{}, fmt.Errorf("interactive investigation cannot be started by service accounts")
@@ -902,7 +922,7 @@ func (r *MonitorRegistry) StopAll() {
 // pool is optional; when provided, the MCP session is handed off to the pool
 // after the investigation so that discover_workflows / select_workflow reuse
 // the same connection and driver lease.
-func NewInvestigateMCPTool(mcpClient ka.MCPClient, client crclient.Client, namespace string, auditor audit.Emitter, registry *MonitorRegistry, onStarted SessionStartedHook, pool *ka.KASessionPool, signaler ISSignaler, triager *severity.Triager) (tool.Tool, error) {
+func NewInvestigateMCPTool(mcpClient ka.MCPClient, client crclient.Client, namespace string, auditor audit.Emitter, registry *MonitorRegistry, onStarted SessionStartedHook, pool *ka.KASessionPool, signaler ISSignaler, triager *severity.Triager, mapper meta.RESTMapper) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name: "kubernaut_investigate",
 		Description: "Investigate an infrastructure incident via MCP. " +
@@ -914,7 +934,8 @@ func NewInvestigateMCPTool(mcpClient ka.MCPClient, client crclient.Client, names
 			"to the user automatically while the investigation runs.",
 	}, func(ctx tool.Context, args InvestigateMCPArgs) (InvestigateMCPResult, error) {
 		user := usernameFromContext(ctx)
-		return HandleInvestigationMCPWithRegistry(ctx, mcpClient, client, namespace, args, auditor, registry, onStarted, true, pool, user, signaler, triager)
+		toolCtx := ContextWithRESTMapper(ctx, mapper)
+		return HandleInvestigationMCPWithRegistry(toolCtx, mcpClient, client, namespace, args, auditor, registry, onStarted, true, pool, user, signaler, triager)
 	})
 }
 

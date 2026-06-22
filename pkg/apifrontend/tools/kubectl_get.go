@@ -4,8 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 
@@ -52,7 +53,16 @@ func HandleKubectlGet(ctx context.Context, client dynamic.Interface, mapper meta
 		return KubectlGetResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
 	}
 
-	obj, err := client.Resource(gvr).Namespace(args.Namespace).Get(ctx, args.Name, metav1.GetOptions{})
+	ns := ResolveEffectiveNamespace(mapper, args.Kind, args.Namespace, logr.FromContextOrDiscard(ctx))
+
+	var resClient dynamic.ResourceInterface
+	if ns != "" {
+		resClient = client.Resource(gvr).Namespace(ns)
+	} else {
+		resClient = client.Resource(gvr)
+	}
+
+	obj, err := resClient.Get(ctx, args.Name, metav1.GetOptions{})
 	if err != nil {
 		return KubectlGetResult{}, ToUserFriendlyError(err)
 	}
