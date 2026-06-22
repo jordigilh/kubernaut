@@ -38,7 +38,7 @@ import (
 // Issue #274: signalName removed — LLM selects by actionType, not signalName.
 type MandatoryLabels struct {
 	// Severity is the severity level(s) this workflow is designed for (REQUIRED)
-	// Values: "critical", "high", "medium", "low", "*" (wildcard for all)
+	// Values: "critical", "high", "warning", "low", "*" (wildcard for all)
 	// Source: Alert/Event (auto-populated by Signal Processing)
 	// DD-WORKFLOW-001 v2.8: Always stored as JSONB array. Supports "*" wildcard (like environment).
 	Severity []string `json:"severity" validate:"required,min=1"`
