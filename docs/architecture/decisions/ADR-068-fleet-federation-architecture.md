@@ -573,7 +573,9 @@ or Valkey needed. ACM Search already indexes all managed cluster resources via t
 | **Staleness** | Near-real-time (ACM Search collector push) |
 | **Dependencies** | ACM hub cluster, `klusterlet-addon-search` enabled on managed clusters |
 | **Config** | `fleet.backend: "acm"`, `fleet.endpoint: "https://search-search-api.open-cluster-management.svc:4010"` |
-| **Auth** | Service account token or OAuth2 bearer token |
+| **Auth** | Service account bearer token with scoped RBAC (see setup guide below) |
+| **TLS** | Served by `openshift-service-serving-signer` CA; in-cluster CA inject via `service.beta.openshift.io/inject-cabundle: "true"` ConfigMap annotation |
+| **Implementation** | `pkg/fleet/acm/client.go` (hand-rolled HTTP+JSON, zero dependencies) |
 
 **ACM Search GraphQL contract**:
 
@@ -624,14 +626,66 @@ query listClusters($input: [SearchInput]) {
 | **ACM version** | 2.7+ (Search v2 with GraphQL API) |
 | **Managed cluster addon** | `klusterlet-addon-search` enabled on every managed cluster. Configured via `KlusterletAddonConfig.spec.searchCollector.enabled: true` in each managed cluster's namespace on the hub. |
 | **Search API endpoint** | `search-search-api` Service in `open-cluster-management` namespace (port 4010, HTTPS). If Kubernaut runs outside the ACM hub cluster, create a passthrough Route: `oc create route passthrough search-api --service=search-search-api -n open-cluster-management` |
-| **TLS** | The `search-search-api` Service uses TLS. Kubernaut's HTTP client must trust the serving CA. For in-cluster access, the cluster CA is sufficient. For cross-cluster, mount the ACM hub's CA bundle. |
-| **Authentication** | ACM Search enforces K8s authentication. Kubernaut needs a bearer token from a ServiceAccount on the ACM hub. The token is passed as `Authorization: Bearer <token>` header. |
-| **ServiceAccount (hub)** | Create a dedicated SA (e.g., `kubernaut-fleet-reader`) in the `kubernaut-system` namespace on the ACM hub. If Kubernaut runs on the same cluster as ACM, the SA token is auto-mounted. If cross-cluster, create a long-lived token and mount it as a Secret. |
-| **RBAC (hub)** | ACM Search respects K8s RBAC — it only returns resources the authenticated user can `list`. The SA needs a ClusterRole granting `list` on all resource types that Kubernaut manages (Pods, Deployments, StatefulSets, DaemonSets, Nodes, Services, etc.) across all namespaces and clusters. |
-| **Network policy** | Kubernaut pods (GW, RO) must be able to reach the `search-search-api` Service on port 4010. If NetworkPolicies are enforced, add an egress rule from `kubernaut-system` to `open-cluster-management` namespace. |
-| **Kubernaut config** | `fleet.backend: "acm"`, `fleet.acm.endpoint: "https://search-search-api.open-cluster-management.svc:4010"`. If cross-cluster: `fleet.acm.tokenSecretRef: "acm-search-token"`, `fleet.acm.caBundle: "/etc/kubernaut/acm-ca/ca.crt"`. |
+| **TLS** | The `search-search-api` Service uses TLS with certificates issued by `openshift-service-serving-signer`. For in-cluster access, inject the CA bundle via a ConfigMap with `service.beta.openshift.io/inject-cabundle: "true"` annotation and mount it into the Kubernaut pod. For cross-cluster, export the CA and mount it as a Secret. |
+| **Authentication** | ACM Search enforces K8s authentication. Kubernaut needs a bearer token from a ServiceAccount on the ACM hub, passed as `Authorization: Bearer <token>`. |
+| **Network policy** | Kubernaut pods (GW, RO) must reach the `search-search-api` Service on port 4010. If NetworkPolicies are enforced, add an egress rule from `kubernaut-system` to `open-cluster-management` namespace. |
+| **Kubernaut config** | `fleet.backend: "acm"`, `fleet.endpoint: "https://search-search-api.open-cluster-management.svc:4010"`. If cross-cluster: `fleet.acm.tokenSecretRef: "acm-search-token"`, `fleet.acm.caBundle: "/etc/kubernaut/acm-ca/ca.crt"`. |
 
-**RBAC example (ACM hub)**:
+#### ACM Search Production Setup Guide
+
+> **Validated**: OCP 4.21.5, ACM 2.17.0, 2026-06-22. All steps below were tested
+> end-to-end on a live cluster. See `docs/spikes/multi-cluster-mcp-gateway/spike-acm-search/`
+> for raw spike data.
+
+Kubernaut's ACM adapter queries the Search GraphQL API for resource metadata (name,
+namespace, kind, cluster, labels). ACM Search controls result visibility through two
+independent RBAC layers:
+
+1. **K8s RBAC** — standard ClusterRole/ClusterRoleBinding for API access
+2. **ACM managed cluster visibility** — RoleBinding in each managed cluster's hub
+   namespace (e.g., `local-cluster`, `prod-east`) using the built-in `view` ClusterRole
+
+Both layers are required. K8s RBAC alone returns `count: 0` because the search-api's
+fine-grained RBAC checks the `userpermissions` virtual API (served by `ocm-proxyserver`)
+to determine which clusters the caller can see. The `userpermissions` API only recognizes
+well-known Kubernetes aggregate roles (`admin`, `view`, `edit`) bound in managed cluster
+namespaces.
+
+**Step 1: Enable fine-grained RBAC on the ACM hub**
+
+ACM Search defaults to `fine-grained-rbac: false` (a MulticlusterHub component), which
+requires `cluster-admin` for any search results. Enable via the MCH component override:
+
+```bash
+oc patch mch multiclusterhub -n open-cluster-management --type json \
+  -p '[{"op":"replace","path":"/spec/overrides/components","value":[
+    ... existing components ...,
+    {"name":"fine-grained-rbac","enabled":true,"configOverrides":{}}
+  ]}]'
+```
+
+Or, if the `fine-grained-rbac` component is already listed in the MCH spec (check with
+`oc get mch multiclusterhub -o jsonpath='{.spec.overrides.components}'`), patch just its
+`enabled` field:
+
+```bash
+# Find the array index of fine-grained-rbac, then:
+oc patch mch multiclusterhub -n open-cluster-management --type json \
+  -p '[{"op":"replace","path":"/spec/overrides/components/<INDEX>/enabled","value":true}]'
+```
+
+Verify the search-api pod restarts and shows `FineGrainedRbac: true` in its startup config:
+
+```bash
+oc logs deploy/search-api -n open-cluster-management | grep -A3 Features
+# Expected: "FineGrainedRbac": true
+```
+
+> **Important**: The Search CR annotation `fine-grained-rbac` and the Search CR spec
+> field `FineGrainedRbac` are NOT the correct mechanism. The MCH component override is
+> the only mechanism validated to propagate the setting to the search-api pod.
+
+**Step 2: Create the Kubernaut fleet reader ServiceAccount**
 
 ```yaml
 apiVersion: v1
@@ -639,51 +693,180 @@ kind: ServiceAccount
 metadata:
   name: kubernaut-fleet-reader
   namespace: kubernaut-system
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: kubernaut-fleet-search-reader
-rules:
-  - apiGroups: [""]
-    resources: ["pods", "services", "nodes", "namespaces", "configmaps", "secrets"]
-    verbs: ["list"]
-  - apiGroups: ["apps"]
-    resources: ["deployments", "statefulsets", "daemonsets", "replicasets"]
-    verbs: ["list"]
-  - apiGroups: ["batch"]
-    resources: ["jobs", "cronjobs"]
-    verbs: ["list"]
-  - apiGroups: ["cluster.open-cluster-management.io"]
-    resources: ["managedclusters"]
-    verbs: ["list"]
----
+```
+
+**Step 3: Grant search API access**
+
+The `global-search-user` ClusterRole grants access to the Search API endpoint itself:
+
+```yaml
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: kubernaut-fleet-search-reader
+  name: kubernaut-search-api-access
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: kubernaut-fleet-search-reader
+  name: global-search-user
 subjects:
   - kind: ServiceAccount
     name: kubernaut-fleet-reader
     namespace: kubernaut-system
 ```
 
-**Cross-cluster token (if Kubernaut is not on the ACM hub)**:
+**Step 4: Grant userpermissions API access**
+
+The search-api queries the `userpermissions` virtual API (served by `ocm-proxyserver`)
+to determine what each caller can see. The SA needs `list` access to this API:
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubernaut-search-userpermissions
+rules:
+  - apiGroups: ["clusterview.open-cluster-management.io"]
+    resources: ["userpermissions"]
+    verbs: ["list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubernaut-search-userpermissions
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kubernaut-search-userpermissions
+subjects:
+  - kind: ServiceAccount
+    name: kubernaut-fleet-reader
+    namespace: kubernaut-system
+```
+
+Without this, the search-api returns: `"unable to resolve query because of error while
+refreshing user permissions"`.
+
+**Step 5: Grant managed cluster visibility**
+
+This is the critical step. The `userpermissions` virtual API determines cluster visibility
+by checking RoleBindings in each managed cluster's hub namespace. Only the built-in
+Kubernetes aggregate roles (`admin`, `view`, `edit`) are recognized — custom ClusterRoles
+are ignored.
+
+Create a `view` RoleBinding in **each managed cluster namespace** the SA needs to query:
+
+```yaml
+# Repeat for each managed cluster (e.g., local-cluster, prod-east, staging-west)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kubernaut-fleet-reader-view
+  namespace: local-cluster    # ← managed cluster namespace on the hub
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: view
+subjects:
+  - kind: ServiceAccount
+    name: kubernaut-fleet-reader
+    namespace: kubernaut-system
+```
+
+> **Why `view` and not a custom role?**: The `userpermissions` API (served by
+> `ocm-proxyserver`) only maps well-known Kubernetes aggregate roles to managed cluster
+> permissions. A custom ClusterRole bound in the managed cluster namespace returns empty
+> items from `userpermissions`, resulting in `count: 0` from search queries. This was
+> validated by testing both approaches on ACM 2.17.0.
+
+> **Scope**: The `view` RoleBinding in the managed cluster namespace does NOT grant
+> K8s API access to resources on the managed cluster. It only tells the search-api
+> that the SA has "view" level visibility for search results from that cluster.
+
+For environments with many managed clusters, automate this with a Placement +
+PolicySet or a simple script:
 
 ```bash
-# On the ACM hub cluster:
-oc create token kubernaut-fleet-reader -n kubernaut-system --duration=8760h
-# Store the token as a Secret on the Kubernaut cluster and reference it in fleet.acm.tokenSecretRef
+for cluster in $(oc get managedcluster -o jsonpath='{.items[*].metadata.name}'); do
+  oc create rolebinding kubernaut-fleet-reader-view \
+    --clusterrole=view \
+    --serviceaccount=kubernaut-system:kubernaut-fleet-reader \
+    -n "$cluster" --dry-run=client -o yaml | oc apply -f -
+done
 ```
+
+**Step 6: Generate a token (cross-cluster deployments only)**
+
+If Kubernaut runs on a different cluster than the ACM hub:
+
+```bash
+# On the ACM hub cluster — create a bound token with rotation
+oc create token kubernaut-fleet-reader -n kubernaut-system --duration=8760h
+
+# Store the token as a Secret on the Kubernaut cluster
+kubectl create secret generic acm-search-token \
+  -n kubernaut-system \
+  --from-literal=token=<token-value>
+```
+
+For production, prefer short-lived tokens with automated rotation over long-lived tokens.
+
+**Step 7: Inject the TLS CA bundle (in-cluster)**
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: acm-search-ca
+  namespace: kubernaut-system
+  annotations:
+    service.beta.openshift.io/inject-cabundle: "true"
+data: {}
+```
+
+Mount this ConfigMap in the Kubernaut pod and configure
+`fleet.acm.caBundle: "/etc/kubernaut/acm-ca/service-ca.crt"`.
+
+**Verification**
+
+After completing setup, verify the SA can query ACM Search:
+
+```bash
+TOKEN=$(oc create token kubernaut-fleet-reader -n kubernaut-system)
+curl -sk -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  https://search-search-api.open-cluster-management.svc:4010/searchapi/graphql \
+  -d '{"query":"query($input:[SearchInput]){searchResult:search(input:$input){count}}","variables":{"input":[{"filters":[{"property":"kind","values":["Deployment"]},{"property":"cluster","values":["local-cluster"]}]}]}}'
+# Expected: {"data":{"searchResult":[{"count":N}]}} where N > 0
+```
+
+If `count: 0` is returned despite managed clusters existing, check:
+1. `fine-grained-rbac` component is enabled in the MCH (`oc get mch -o jsonpath='{.items[0].spec.overrides.components}'`)
+2. The search-api shows `FineGrainedRbac: true` in startup logs
+3. `userpermissions` API access is granted (Step 4)
+4. `view` RoleBinding exists in the managed cluster namespace (Step 5)
+5. Verify userpermissions returns items: `curl -sk -H "Authorization: Bearer $TOKEN" $(oc whoami --show-server)/apis/clusterview.open-cluster-management.io/v1alpha1/userpermissions`
+
+**Validated RBAC summary** (OCP 4.21.5, ACM 2.17.0):
+
+| RBAC Component | Purpose | Required |
+|----------------|---------|----------|
+| MCH `fine-grained-rbac` component enabled | Switches search-api from cluster-admin-only to RBAC-based filtering | Yes |
+| `global-search-user` ClusterRoleBinding | Grants SA access to the Search API endpoint | Yes |
+| `userpermissions` ClusterRole + ClusterRoleBinding | Allows search-api to check SA's permissions | Yes |
+| `view` RoleBinding in managed cluster namespace | Makes SA visible to `userpermissions` API for that cluster | Yes (per cluster) |
 
 **ACM Search schema verification**: Filter properties (`kind`, `name`, `namespace`, `cluster`,
 `label`) are confirmed in the ACM Search schema (`searchSchema` query returns `allProperties`).
 Label values use `key=value` format per the
 [Search Query API spec](https://github.com/stolostron/search-v2-operator/wiki/Search-Query-API).
+
+**Cluster listing item shape** (validated by spike, ACM 2.17.0): each item in
+`searchResult[0].items` is a flat `map[string]string` containing:
+- `name` / `cluster` — cluster identifier (same value in both fields)
+- `apiEndpoint` — Kubernetes API URL
+- `kubernetesVersion` — cluster K8s version
+- `label` — semicolon-delimited label string
+- `ManagedClusterConditionAvailable` — `"True"` / `"False"`
+- `ManagedClusterJoined` — `"True"` / `"False"`
 
 ### Backend C: Rancher
 
@@ -857,8 +1040,8 @@ Migration status:
 1. **Phase 1** (complete): Unified `scope.ScopeChecker` interface with `ResourceIdentity`. `FederatedScopeChecker` moved to `pkg/fleet/`, decoupled from Valkey. Factory centralized in `pkg/fleet/scope_factory.go`.
 2. **Phase 2** (complete): FMC REST API (`GET /api/v1/scope/check`, `GET /api/v1/clusters`) implemented in `cmd/fmc/`. `fmc.HTTPClient` adapter implementing `scope.ScopeChecker` created. Factory `BackendFMC` path uses `fmc.NewHTTPClient`.
 3. **Phase 3** (complete): `BackendValkey` removed from config/factory/Helm. `ValkeyAddr` removed from GW/RO `FleetConfig`. `scopecache` package isolated to FMC internals only. GW/RO use only `backend` + `endpoint`.
-4. **Phase 4** (next): Server-side ClusterID validation in FMC handler via `registry.Get(clusterID)`.
-5. **Phase 5** (blocked on spike): ACM Search adapter — requires live OCP 4.21 GraphQL contract validation.
+4. **Phase 4** (complete): Server-side ClusterID validation in FMC handler via `registry.Get(clusterID)`.
+5. **Phase 5** (complete): ACM Search adapter — `pkg/fleet/acm/client.go` implements `scope.ScopeChecker` via GraphQL. Contract validated against live OCP 4.21.5 / ACM 2.17.0. Spike findings in `docs/spikes/multi-cluster-mcp-gateway/spike-acm-search/`.
 
 ## Security Considerations
 

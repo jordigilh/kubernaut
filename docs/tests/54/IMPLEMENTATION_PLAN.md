@@ -67,6 +67,9 @@ Tests in this plan provide behavioral assurance for the following NIST 800-53 co
 | `FederatedScopeChecker` | `NewFederatedScopeChecker(local, remote, logger)` | `pkg/fleet/scope_factory.go:53` | **E2E-FMC-054-001** | PASS |
 | `scopecache.Client` | `scopecache.NewClient(cacheReader)` | `cmd/fmc/main.go` | IT-FLEET-VALKEY-004, **E2E-FMC-054-001** | PASS |
 | Remove `BackendValkey` | Factory no longer accepts `"valkey"` | `pkg/fleet/scope_factory.go` | UT-SF-054-002 | PASS |
+| `acm.Client` | `acm.NewClient(endpoint)` | `pkg/fleet/scope_factory.go:56` | **IT-ACM-054-001** | PASS |
+| Factory `BackendACM` → ACM | `fleet.NewScopeChecker(...)` | `pkg/fleet/scope_factory.go:55` | **IT-ACM-054-001** | PASS |
+| `FederatedScopeChecker` wrapping ACM | `NewFederatedScopeChecker(local, remote, logger)` | `pkg/fleet/scope_factory.go:57` | **IT-ACM-054-001** | PASS |
 
 **Pyramid Invariant coverage** (added 2026-06-22): IT-FMC-054-001/010/020 prove HTTP wiring through real Valkey + real envtest CRDWatcher. E2E-FMC-054-001 proves the full factory-to-Valkey journey. Test files: `test/integration/fmc/fmc_http_api_test.go`, `test/integration/fmc/fmc_e2e_test.go`.
 
@@ -308,38 +311,55 @@ No changes to `FederatedScopeChecker`, factory, or GW/RO code.
 
 **Goal**: Implement ACM Search GraphQL adapter implementing `scope.ScopeChecker`.
 
-**Confidence**: ~55% (BLOCKED — below 90% threshold)
+**Confidence**: 92% (spike complete)
 
-**Blocker**: The GraphQL contract documented in ADR-068 is based on ACM documentation but has never been validated against a live ACM Search instance. No spike exists, no GraphQL client dependency in go.mod, no test environment confirmed. Building against unvalidated docs risks silent incorrect scope decisions.
+**Pattern**: Follows `pkg/fleet/fmc/http_client.go` — hand-rolled HTTP+JSON, fail-safe on all errors, compile-time interface guard, zero new dependencies.
 
-### Phase 5 Prerequisite: Spike — Validate ACM Search Contract
+### Phase 5 Prerequisite: Spike — Validate ACM Search Contract (COMPLETE)
 
-**Environment**: OCP 4.21 cluster (available)
+**Environment**: OCP 4.21.5 (parodos.dev), ACM 2.17.0
+**Findings**: `docs/spikes/multi-cluster-mcp-gateway/spike-acm-search/`
 
-| Step | Task |
-|------|------|
-| S1 | Install ACM Search GraphQL plugin on OCP 4.21 cluster |
-| S2 | Send the `scopeCheck` GraphQL query from ADR-068 against the live endpoint |
-| S3 | Confirm response shape matches ADR-068 contract (field names, nesting, types) |
-| S4 | Confirm `searchComplete` query returns valid cluster list |
-| S5 | Test auth flow: SA bearer token creation, RBAC, TLS CA trust |
-| S6 | Evaluate GraphQL client options for Go (hand-rolled HTTP+JSON vs library) |
-| S7 | Document findings in `docs/spikes/multi-cluster-mcp-gateway/spike-acm-search/` |
+| Step | Task | Result |
+|------|------|--------|
+| S1 | Install ACM operator + MultiClusterHub on OCP | PASS — MCH Running, 28 pods |
+| S2 | Send `scopeCheck` GraphQL query against live Search API | PASS — exact ADR-068 match |
+| S3 | Confirm response shape, test negative case (count=0) | PASS — positive=1, negative=0 |
+| S4 | Validate cluster listing query, record items shape | PASS — flat `map[string]string` |
+| S5 | Test SA bearer token auth, determine RBAC, note TLS CA | PASS — requires `cluster-admin` |
+| S6 | Evaluate Go GraphQL client options | Option A: hand-rolled HTTP+JSON |
+| S7 | Document findings in spike directory | PASS |
 
-**Exit criteria**: Spike raises confidence to 90%+. If the contract differs from ADR-068, update the ADR before proceeding.
+**Exit criteria met**: Confidence raised from 55% to 92%. Two non-breaking contract deltas documented in `contract_delta.md` (D1: cluster item fields, D2: corrected RBAC role name).
 
-### Phase 5 RED — Failing Tests (after spike passes)
+### Phase 5 RED — Failing Tests
 
-**File**: `pkg/fleet/acm/client_test.go`
+**File**: `pkg/fleet/acm/client_test.go` (new)
+
+All fail because `acm.Client` does not exist yet. Each UT uses an `httptest.Server` returning canned GraphQL JSON (same pattern as `pkg/fleet/fmc/http_client_test.go`).
 
 | Test ID | Description | Why it fails | Control |
 |---------|-------------|-------------|---------|
-| UT-ACM-054-001 [AC-4] | `IsManagedResource` returns true for ACM-managed resource | `acm.Client` doesn't exist | AC-4 |
-| UT-ACM-054-002 [AC-4] | `IsManagedResource` returns false for unmanaged resource | Same | AC-4 |
-| UT-ACM-054-003 [SC-7] | GraphQL error falls back to unmanaged (fail-safe) | Same | SC-7 |
-| UT-ACM-054-004 | `acm.Client` satisfies `scope.ScopeChecker` interface | Same | — |
+| UT-ACM-054-001 [AC-4] | `IsManagedResource` returns true when Search API returns `count > 0` | `acm.Client` doesn't exist | AC-4 |
+| UT-ACM-054-002 [AC-4] | `IsManagedResource` returns false when Search API returns `count == 0` | Same | AC-4 |
+| UT-ACM-054-003 [SC-7] | Connection error falls back to `(false, nil)` (fail-safe) | Same | SC-7 |
+| UT-ACM-054-004 [SC-7] | Non-200 HTTP response falls back to `(false, nil)` (fail-safe) | Same | SC-7 |
+| UT-ACM-054-005 [SC-7] | Malformed JSON response falls back to `(false, nil)` (fail-safe) | Same | SC-7 |
+| UT-ACM-054-006 [SC-7] | GraphQL-level error (`errors` field) falls back to `(false, nil)` | Same | SC-7 |
+| UT-ACM-054-007 [SI-10] | Request body contains correct GraphQL query, variables, and filter mapping | Same | SI-10 |
+| UT-ACM-054-008 | `acm.Client` satisfies `scope.ScopeChecker` interface (compile-time) | Same | — |
 
-### Phase 5 GREEN
+**File**: `test/integration/acm/acm_factory_test.go` (new)
+
+| Test ID | Description | Why it fails | Control |
+|---------|-------------|-------------|---------|
+| IT-ACM-054-001 [AC-4] | `fleet.NewScopeChecker` with `BackendACM` produces a working `FederatedScopeChecker` that dispatches through `acm.Client` to a fake GraphQL server | Factory returns "not yet implemented" error | AC-4 |
+
+IT-ACM-054-001 proves the wiring: starts `httptest.Server` mimicking ACM Search GraphQL, calls `fleet.NewScopeChecker(localAlwaysFalse, FleetConfig{Backend: "acm", Endpoint: server.URL}, logger)`, asserts `IsManagedResource` reaches the fake GraphQL server. Tests both positive (count=1) and negative (count=0) cases through the full factory → FederatedScopeChecker → acm.Client stack.
+
+Suite file (`test/integration/acm/suite_test.go`) is minimal — no Valkey, no envtest needed. ACM adapter only needs `httptest`.
+
+### Phase 5 GREEN — Minimal Implementation
 
 **File**: `pkg/fleet/acm/client.go` (new package)
 
@@ -349,20 +369,99 @@ type Client struct {
     httpClient *http.Client
 }
 
+var _ scope.ScopeChecker = (*Client)(nil)
+
 func NewClient(endpoint string) *Client
 func (c *Client) IsManagedResource(ctx context.Context, r scope.ResourceIdentity) (bool, error)
 ```
 
-**File**: `pkg/fleet/scope_factory.go`
+Implementation:
+1. `NewClient` creates `http.Client` with 10s timeout
+2. `IsManagedResource` builds `graphQLRequest`, POSTs to `{endpoint}/searchapi/graphql`, decodes `searchResponse`
+3. Filters map `ResourceIdentity` → ACM Search filter properties: `kind`, `name`, `namespace`, `cluster` (from ClusterID)
+4. **Fail-safe**: any error (network, non-200, decode, GraphQL `errors` field) returns `(false, nil)` (SC-7)
 
-Update `BackendACM` case from error to `acm.NewClient(endpoint)`.
+**File**: `pkg/fleet/acm/types.go` (new)
 
-### Phase 5 Checkpoint
+Internal types for GraphQL request/response (validated by spike):
 
-- [ ] Spike documented with validated contract
-- [ ] UT-ACM-054-001..004 PASS
-- [ ] Factory `BackendACM` path works
-- [ ] `go build ./...` succeeds
+```go
+type graphQLRequest struct {
+    Query     string         `json:"query"`
+    Variables graphQLVars    `json:"variables"`
+}
+
+type searchResponse struct {
+    Data struct {
+        SearchResult []searchResult `json:"searchResult"`
+    } `json:"data"`
+    Errors []graphQLError `json:"errors,omitempty"`
+}
+
+type searchResult struct {
+    Count int                 `json:"count"`
+    Items []map[string]string `json:"items,omitempty"`
+}
+```
+
+**File**: `pkg/fleet/scope_factory.go` (modify)
+
+Replace:
+```go
+case BackendACM:
+    return nil, fmt.Errorf("fleet: ACM Search adapter not yet implemented")
+```
+With:
+```go
+case BackendACM:
+    remoteChecker := acm.NewClient(endpoint)
+    return NewFederatedScopeChecker(localChecker, remoteChecker, logger), nil
+```
+
+Add import: `"github.com/jordigilh/kubernaut/pkg/fleet/acm"`
+
+**Tests passing after**: UT-ACM-054-001..008, IT-ACM-054-001
+
+### Phase 5 CHECKPOINT W — Wiring Verification (PASSED)
+
+For each component in the Wiring Manifest:
+- [x] `acm.NewClient` called in `pkg/fleet/scope_factory.go` (grep evidence: line 56)
+- [x] IT-ACM-054-001 exercises production dispatch path (`fleet.NewScopeChecker` → `acm.Client` → HTTP) and PASSES (2 sub-cases)
+- [x] No `acm.Client` usage only in test files — production caller in `scope_factory.go`
+
+### Phase 5 REFACTOR
+
+| Task | Description |
+|------|-------------|
+| Logging consistency | `acm.Client` logs at same verbosity levels as `fmc.HTTPClient` (V(1) for normal, V(0) for errors) |
+| Error context | Wrap errors with `fmt.Errorf("acm: ...: %w", err)` before fail-safe return, for structured logging |
+| Timeout configurability | Consider `WithTimeout` option if default 10s needs tuning |
+| ADR-068 updates | Back-port spike deltas D1 (cluster item fields) and D2 (correct RBAC role name, `cluster-admin` requirement) into ADR-068 |
+| Plan status | Update this file: mark Phase 5 complete, update confidence and execution order table |
+
+### Phase 5 Checkpoint (Final) — ALL PASSED
+
+- [x] Spike documented with validated contract (`docs/spikes/multi-cluster-mcp-gateway/spike-acm-search/`)
+- [x] UT-ACM-054-001..008 PASS (8/8 — all tied to FedRAMP controls AC-4, SC-7, SI-10)
+- [x] IT-ACM-054-001 PASS (2 sub-cases: managed=true, managed=false through factory path)
+- [x] CHECKPOINT W: `acm.NewClient` called in `scope_factory.go:56` (production caller verified)
+- [x] Factory `BackendACM` path works end-to-end
+- [x] `go build ./...` succeeds (zero errors)
+- [x] All existing fleet/fmc tests pass (no regressions)
+- [x] ADR-068 updated with spike deltas (D1: cluster item shape, D2: RBAC model, TLS CA)
+- [x] Race detector: zero data races (`go test -race`)
+
+### Phase 5 Files Summary
+
+| File | Action | TDD Phase |
+|------|--------|-----------|
+| `pkg/fleet/acm/client.go` | Create | GREEN |
+| `pkg/fleet/acm/types.go` | Create | GREEN |
+| `pkg/fleet/acm/client_test.go` | Create | RED |
+| `pkg/fleet/scope_factory.go` | Modify (1 line + import) | GREEN |
+| `test/integration/acm/suite_test.go` | Create | RED |
+| `test/integration/acm/acm_factory_test.go` | Create | RED |
+| `docs/architecture/decisions/ADR-068-fleet-federation-architecture.md` | Update (deltas D1, D2, TLS) | REFACTOR |
 
 ---
 
@@ -374,9 +473,14 @@ Update `BackendACM` case from error to `acm.NewClient(endpoint)`.
 | **2** | Phase 1 | 95% | **Complete** | HTTP client adapter; factory uses HTTP instead of Valkey |
 | **3** | Phase 2 | 93% | **Complete** | Legacy Valkey path removed; `scopecache` internal to FMC (9 files) |
 | **4** | Phase 1 | 92% | **Complete** | Server-side ClusterID validation in FMC handler |
-| **5** | Phase 5 Spike (90%+) | 55% (BLOCKED) | Pending | ACM Search adapter for non-FMC environments |
+| **5** | Phase 5 Spike (92%) | 95% | **Complete** | ACM Search adapter for non-FMC environments |
 
-Phases 1-4 are complete. Phase 5 is blocked on its spike reaching 90%+ confidence.
+Phases 1-5 complete. All FedRAMP controls (AC-4, SC-7, SI-10, CM-6) have behavioral test assurance.
+
+**Production RBAC Validation** (2026-06-22): The remaining 5% risk (unvalidated
+`FineGrainedRbac: true` + scoped RBAC chain) was closed by end-to-end validation on
+OCP 4.21.5 / ACM 2.17.0. Confidence raised from 95% to 100%. See ADR-068 for the
+validated production setup guide.
 
 ---
 
@@ -388,3 +492,4 @@ Phases 1-4 are complete. Phase 5 is blocked on its spike reaching 90%+ confidenc
 4. Every new component has a production caller verified by CHECKPOINT W
 5. FedRAMP controls AC-4, SC-7, SI-10, CM-6 have behavioral test assurance
 6. `go build ./...` and all fleet tests pass at every phase boundary
+7. ACM Search adapter implements `scope.ScopeChecker` with validated GraphQL contract
