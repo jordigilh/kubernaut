@@ -14,9 +14,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// FMC Writer: Fleet Metadata Cache writer service.
-// Polls remote clusters via MCP Gateway for resources labeled kubernaut.ai/managed=true
-// and writes their metadata to Valkey for low-latency federated scope checking.
+// FMC: Fleet Metadata Cache service.
+// Writes: Polls remote clusters via MCP Gateway for resources labeled kubernaut.ai/managed=true
+// and writes their metadata to Valkey.
+// Reads: Serves an HTTP API for federated scope checking (ADR-068), so GW/RO
+// query FMC instead of connecting to Valkey directly.
 package main
 
 import (
@@ -41,6 +43,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/fleet/fmc"
 	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
+	"github.com/jordigilh/kubernaut/pkg/fleet/scopecache"
 )
 
 func main() {
@@ -49,10 +52,11 @@ func main() {
 	logger := zapr.NewLogger(zapLogger)
 
 	cfg := loadConfig()
-	logger.Info("FMC Writer starting",
+	logger.Info("FMC starting",
 		"syncInterval", cfg.SyncInterval,
 		"valkeyAddr", cfg.ValkeyAddr,
 		"mcpEndpoint", cfg.MCPGatewayEndpoint,
+		"apiAddr", cfg.APIAddr,
 		"metricsAddr", cfg.MetricsAddr)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -101,6 +105,9 @@ func main() {
 	writer := fmc.NewValkeyWriter(cfg.ValkeyAddr)
 	defer func() { _ = writer.Close() }()
 
+	cacheReader := scopecache.NewValkeyCacheReader(cfg.ValkeyAddr)
+	defer func() { _ = cacheReader.Close() }()
+
 	clusterRegistry := registry.NewCRDWatcher(dynClient, registry.CRDWatcherConfig{
 		Namespace: cfg.Namespace,
 	}, registry.NewMetricsWithRegistry(reg), logger)
@@ -123,30 +130,46 @@ func main() {
 
 	var ready atomic.Bool
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+	// API server: scope check + cluster listing (ADR-068)
+	scopeClient := scopecache.NewClient(cacheReader)
+	apiHandler := fmc.NewHandler(scopeClient, clusterRegistry, logger)
+	apiMux := http.NewServeMux()
+	apiHandler.RegisterRoutes(apiMux)
+	apiMux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
-	mux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) {
-		if ready.Load() {
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte("ok"))
-		} else {
-			w.WriteHeader(http.StatusServiceUnavailable)
-			_, _ = w.Write([]byte("not ready"))
-		}
-	})
-	mux.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
+	apiMux.HandleFunc("/readyz", fmc.ReadyzHandler(ready.Load, cacheReader))
 
-	server := &http.Server{
-		Addr:    cfg.MetricsAddr,
-		Handler: mux,
+	apiServer := &http.Server{
+		Addr:              cfg.APIAddr,
+		Handler:           apiMux,
+		ReadHeaderTimeout: 5 * time.Second,
 	}
 
+	// Metrics server: Prometheus + health probes (operational)
+	metricsMux := http.NewServeMux()
+	metricsMux.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
+
+	metricsServer := &http.Server{
+		Addr:              cfg.MetricsAddr,
+		Handler:           metricsMux,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+
+	apiErrors := make(chan error, 1)
 	go func() {
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Error(err, "Metrics server failed")
+		logger.Info("API server listening", "addr", apiServer.Addr)
+		if err := apiServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			apiErrors <- err
+		}
+	}()
+
+	metricsErrors := make(chan error, 1)
+	go func() {
+		logger.Info("Metrics server listening", "addr", metricsServer.Addr)
+		if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			metricsErrors <- err
 		}
 	}()
 
@@ -158,15 +181,26 @@ func main() {
 	}()
 
 	ready.Store(mcpClient.Ready())
-	logger.Info("FMC Writer ready", "mcpConnected", mcpClient.Ready())
+	logger.Info("FMC ready", "mcpConnected", mcpClient.Ready())
 
-	<-sigCh
-	logger.Info("Received shutdown signal")
+	select {
+	case <-sigCh:
+		logger.Info("Received shutdown signal")
+	case err := <-apiErrors:
+		logger.Error(err, "API server failed")
+	case err := <-metricsErrors:
+		logger.Error(err, "Metrics server failed")
+	}
 	cancel()
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
-	_ = server.Shutdown(shutdownCtx)
+	if err := apiServer.Shutdown(shutdownCtx); err != nil {
+		logger.Error(err, "API server shutdown failed")
+	}
+	if err := metricsServer.Shutdown(shutdownCtx); err != nil {
+		logger.Error(err, "Metrics server shutdown failed")
+	}
 }
 
 type config struct {
@@ -175,6 +209,7 @@ type config struct {
 	Namespace          string
 	SyncInterval       time.Duration
 	KeyTTL             time.Duration
+	APIAddr            string
 	MetricsAddr        string
 	ResourceKinds      []string
 	OAuth2Enabled      bool
@@ -189,6 +224,7 @@ func loadConfig() config {
 		Namespace:          envOrDefault("FMC_NAMESPACE", "kubernaut-system"),
 		SyncInterval:       parseDuration("FMC_SYNC_INTERVAL", 30*time.Second),
 		KeyTTL:             parseDuration("FMC_KEY_TTL", 45*time.Second),
+		APIAddr:            envOrDefault("FMC_API_ADDR", ":8080"),
 		MetricsAddr:        envOrDefault("FMC_METRICS_ADDR", ":8081"),
 		ResourceKinds:      []string{"Deployment", "StatefulSet", "DaemonSet", "Pod", "Service", "Node"},
 		OAuth2Enabled:      os.Getenv("FMC_OAUTH2_ENABLED") == "true",
