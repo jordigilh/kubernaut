@@ -30,6 +30,9 @@ import (
 
 // FleetE2EConfig holds configuration for fleet E2E test infrastructure.
 type FleetE2EConfig struct {
+	// FMCEndpoint is the FMC service HTTP endpoint used for scope checks.
+	FMCEndpoint string
+	// ValkeyAddr is the Valkey address used for seeding/cleanup (E2E infra only).
 	ValkeyAddr         string
 	MockClusterID      string
 	MockClusterName    string
@@ -39,6 +42,7 @@ type FleetE2EConfig struct {
 // DefaultFleetE2EConfig returns defaults for fleet E2E testing.
 func DefaultFleetE2EConfig() FleetE2EConfig {
 	return FleetE2EConfig{
+		FMCEndpoint:     "http://localhost:8080",
 		ValkeyAddr:      "localhost:6379",
 		MockClusterID:   "mock-spoke",
 		MockClusterName: "Mock Spoke Cluster",

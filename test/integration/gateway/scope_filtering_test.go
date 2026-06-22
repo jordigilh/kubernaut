@@ -227,7 +227,7 @@ var _ = Describe("BR-SCOPE-002: Gateway Scope Filtering (Integration)", Ordered,
 		const iterations = 100
 		start := time.Now()
 		for i := 0; i < iterations; i++ {
-			_, err := scopeMgr.IsManaged(ctx, managedNS, "Pod", "test-pod-managed")
+			_, err := scopeMgr.IsManagedResource(ctx, scope.ResourceIdentity{Namespace: managedNS, Kind: "Pod", Name: "test-pod-managed"})
 			Expect(err).ToNot(HaveOccurred())
 		}
 		totalDuration := time.Since(start)
