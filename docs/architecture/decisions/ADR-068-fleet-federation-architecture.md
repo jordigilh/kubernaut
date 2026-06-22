@@ -73,7 +73,7 @@ The key constraints are:
 | **Gateway (GW)** | Extracts `cluster` label from Thanos alerts, computes cluster-aware fingerprints, gates signals via FederatedScopeChecker | `pkg/gateway/` |
 | **FMC (Fleet Metadata Cache)** | Polls MCP Gateway for `kubernaut.ai/managed=true` resources, caches metadata in Valkey, exposes scope queries via REST API | `cmd/fmc/`, `pkg/fleet/fmc/` |
 | **Fleet Metadata Cache (Valkey)** | Low-latency key-existence checks for remote scope validation | `pkg/fleet/scopecache/` |
-| **FederatedScopeChecker** | Routes scope checks: local → K8s API, remote → Valkey cache | `pkg/fleet/scopecache/federated_checker.go` |
+| **FederatedScopeChecker** | Routes scope checks: local → scope.Manager, remote → backend adapter (scope.ScopeChecker) | `pkg/fleet/federated_checker.go` |
 | **ResilientClient** | MCP client with backoff, reconnect, readiness gating | `pkg/fleet/mcpclient/resilience.go` |
 | **ReloadableOAuth2Transport** | Hot-reloadable OAuth2 credentials via FileWatcher | `pkg/fleet/mcpclient/reloadable_auth.go` |
 | **CRDWatcher** | Discovers clusters from `MCPServerRegistration` CRDs | `pkg/fleet/registry/` |
@@ -179,7 +179,8 @@ The key constraints are:
 |-----------|----------------------|---------------------|---------|
 | FederatedScopeChecker | NewServerWithMetrics() | pkg/gateway/server.go | IT-GW-FLEET-010 |
 | fleetScopeChecker dispatch | validateScope() | pkg/gateway/server.go:1518 | IT-GW-FLEET-010/011/012 |
-| RemoteScopeResolver interface | FederatedScopeChecker | pkg/fleet/scopecache/resolver.go | UT-FLEET-FC-003/004/005 |
+| scope.ScopeChecker (remote backend) | FederatedScopeChecker | pkg/fleet/federated_checker.go | UT-FLEET-FC-003/004/005 |
+| fleet.NewScopeChecker factory | NewServer() / main() | pkg/fleet/scope_factory.go | UT-FLEET-FAC-001..006 |
 | ResilientClient (KA) | registerFleetTools() | cmd/kubernautagent/main.go | IT-KA-FLEET-001 |
 | ResilientClient (FMC) | main() | cmd/fmc/main.go | UT-FMC-001 |
 | ReloadableOAuth2Transport (KA) | registerFleetTools() | cmd/kubernautagent/main.go | UT-FLEET-RES-001 |
@@ -217,9 +218,9 @@ GW/RO config **does not** contain storage addresses (e.g., `valkeyAddr`). It con
 
 ### Interface Contract
 
-The unified `ScopeChecker` interface replaces the current multi-interface stack
-(`scope.ScopeChecker`, `scope.FederatedScopeChecker`, `RemoteScopeResolver`, `IsManagedTyped`)
-with a single method accepting a `ResourceIdentity` struct:
+The unified `ScopeChecker` interface replaced the previous multi-interface stack
+(`scope.ScopeChecker` (3-string), `scope.FederatedScopeChecker`, `RemoteScopeResolver`, `IsManagedTyped`)
+with a single method accepting a `ResourceIdentity` struct. This migration is complete.
 
 ```go
 // ResourceIdentity uniquely identifies a Kubernetes resource, optionally on a remote cluster.
@@ -244,14 +245,14 @@ type ScopeChecker interface {
 }
 ```
 
-**What this replaces:**
+**What this replaced** (all removed):
 
-| Removed | Problem |
-|---------|---------|
-| `scope.ScopeChecker.IsManaged(ctx, ns, kind, name)` | No clusterID, no GVK |
-| `scope.FederatedScopeChecker.IsManagedOnCluster(ctx, clusterID, ns, kind, name)` | Separate method forces conditionals at every call site |
-| `RemoteScopeResolver.IsManaged(ctx, clusterID, group, version, kind, ns, name)` | 7 positional strings |
-| `Client.IsManagedTyped(ctx, clusterID, gvk, key)` | Workaround wrapper |
+| Removed | Problem | Status |
+|---------|---------|--------|
+| `scope.ScopeChecker.IsManaged(ctx, ns, kind, name)` | No clusterID, no GVK | Deleted |
+| `scope.FederatedScopeChecker.IsManagedOnCluster(ctx, clusterID, ns, kind, name)` | Separate method forces conditionals at every call site | Deleted |
+| `RemoteScopeResolver.IsManaged(ctx, clusterID, group, version, kind, ns, name)` | 7 positional strings, leaked Valkey abstraction | Deleted |
+| `Client.IsManagedTyped(ctx, clusterID, gvk, key)` | Workaround wrapper | Deleted |
 
 **Factory pattern** — the only change is at construction time in `cmd/`:
 
@@ -624,14 +625,17 @@ fleet:
 
 ### Migration Path: Current → Target
 
-The current implementation has GW/RO directly constructing `scopecache.NewFederatedScopeCheckerFromAddr(scopeMgr, cfg.Fleet.ValkeyAddr, logger)` — coupling them to Valkey. The migration:
+GW/RO now use `fleet.NewScopeChecker(scopeMgr, cfg.Fleet, logger)` — the factory selects the
+backend adapter based on `FleetConfig.Backend`. `FederatedScopeChecker` accepts any
+`scope.ScopeChecker` for both local and remote, with zero knowledge of Valkey or any specific backend.
 
-1. **Phase 1** (current): `ValkeyAddr` in GW/RO config → direct Valkey client in-process
-2. **Phase 2**: Define `FederatedControlPlane` interface, implement FMC REST API (HTTP server in `cmd/fmc/`), implement FMC client adapter
-3. **Phase 3**: GW/RO switch from direct Valkey to `FederatedControlPlane` interface; `ValkeyAddr` removed from GW/RO config; only `backend` + `endpoint` remain
-4. **Phase 4**: Implement ACM/Rancher/Clusterpedia adapters as needed per deployment environment
+Migration status:
 
-During migration, both paths can coexist via feature flag (`fleet.backend: "valkey-direct"` for legacy, `"fmc"` for new).
+1. **Phase 1** (complete): Unified `scope.ScopeChecker` interface with `ResourceIdentity`. `FederatedScopeChecker` moved to `pkg/fleet/`, decoupled from Valkey. Factory centralized in `pkg/fleet/scope_factory.go`.
+2. **Phase 2** (complete): FMC REST API (`GET /api/v1/scope/check`, `GET /api/v1/clusters`) implemented in `cmd/fmc/`. `fmc.HTTPClient` adapter implementing `scope.ScopeChecker` created. Factory `BackendFMC` path uses `fmc.NewHTTPClient`.
+3. **Phase 3** (complete): `BackendValkey` removed from config/factory/Helm. `ValkeyAddr` removed from GW/RO `FleetConfig`. `scopecache` package isolated to FMC internals only. GW/RO use only `backend` + `endpoint`.
+4. **Phase 4** (next): Server-side ClusterID validation in FMC handler via `registry.Get(clusterID)`.
+5. **Phase 5** (blocked on spike): ACM Search adapter — requires live OCP 4.21 GraphQL contract validation.
 
 ## Security Considerations
 
