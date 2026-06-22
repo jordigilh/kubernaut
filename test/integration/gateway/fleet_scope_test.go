@@ -30,7 +30,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
-// mockFleetScopeChecker implements scope.UnifiedScopeChecker.
+// mockFleetScopeChecker implements scope.ScopeChecker.
 // It records calls for verification and returns configurable responses.
 type mockFleetScopeChecker struct {
 	isManagedResult      bool
@@ -74,8 +74,8 @@ var _ = Describe("GW Fleet Scope Dispatch (BR-INTEGRATION-065, ADR-065)", Ordere
 		Expect(err).ToNot(HaveOccurred(), "Failed to create Gateway server")
 	})
 
-	// IT-GW-FLEET-010: Fleet signal dispatches to IsManagedOnCluster
-	It("IT-GW-FLEET-010: should dispatch to IsManagedOnCluster when signal has ClusterID", func() {
+	// IT-GW-FLEET-010: Fleet signal dispatches to remote scope check
+	It("IT-GW-FLEET-010: should dispatch to remote scope check when signal has ClusterID", func() {
 		signal := createNormalizedSignal(SignalBuilder{
 			AlertName:    "RemoteHighCPU",
 			Namespace:    "remote-ns",
@@ -123,7 +123,7 @@ var _ = Describe("GW Fleet Scope Dispatch (BR-INTEGRATION-065, ADR-065)", Ordere
 	})
 
 	// IT-GW-FLEET-012: Fleet signal rejected when resource is not managed on remote cluster
-	It("IT-GW-FLEET-012: should reject fleet signal when IsManagedOnCluster returns false", func() {
+	It("IT-GW-FLEET-012: should reject fleet signal when remote scope check returns false", func() {
 		scopeChecker.localCalls = 0
 		scopeChecker.fleetCalls = 0
 

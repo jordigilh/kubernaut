@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package fleet
+package fmc_test
 
 import (
 	"context"
@@ -24,8 +24,10 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/jordigilh/kubernaut/pkg/fleet"
 	"github.com/jordigilh/kubernaut/pkg/fleet/fmc"
 	"github.com/jordigilh/kubernaut/pkg/fleet/scopecache"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
 // IT-FLEET-VALKEY-001 through IT-FLEET-VALKEY-005
@@ -34,19 +36,20 @@ import (
 // scope checking for remote clusters. These tests prove the production
 // ValkeyWriter and ValkeyCacheReader correctly write and read keys from
 // a real Redis/Valkey instance, validating the end-to-end data path
-// that FMC Writer → Valkey → FederatedScopeChecker depends on.
+// that FMC Writer -> Valkey -> FederatedScopeChecker depends on.
 //
 // Wiring Manifest:
-//   ValkeyWriter     → cmd/fmc/main.go
-//   ValkeyCacheReader → pkg/gateway/server.go (via FederatedScopeChecker)
-//   FederatedScopeChecker → pkg/fleet/scopecache/federated_checker.go
-var _ = Describe("Fleet Scope Cache Valkey Integration (BR-INTEGRATION-065)", Ordered, Label("fleet", "valkey", "integration"), func() {
+//
+//	ValkeyWriter        -> cmd/fmc/main.go
+//	ValkeyCacheReader   -> pkg/fleet/scope_factory.go (transitional, will be FMC HTTP client)
+//	FederatedScopeChecker -> pkg/fleet/federated_checker.go
+var _ = Describe("Fleet Scope Cache Valkey Integration (BR-INTEGRATION-065)", Ordered, Label("fmc", "valkey", "integration"), func() {
 	var (
 		ctx    context.Context
 		writer *fmc.ValkeyWriter
 		reader *scopecache.ValkeyCacheReader
 		client *scopecache.Client
-		fc     *scopecache.FederatedScopeChecker
+		fc     *fleet.FederatedScopeChecker
 	)
 
 	BeforeAll(func() {
@@ -56,7 +59,7 @@ var _ = Describe("Fleet Scope Cache Valkey Integration (BR-INTEGRATION-065)", Or
 		client = scopecache.NewClient(reader)
 
 		local := &localAlwaysFalse{}
-		fc = scopecache.NewFederatedScopeChecker(local, client, logr.Discard())
+		fc = fleet.NewFederatedScopeChecker(local, client, logr.Discard())
 	})
 
 	AfterAll(func() {
@@ -113,24 +116,27 @@ var _ = Describe("Fleet Scope Cache Valkey Integration (BR-INTEGRATION-065)", Or
 		Expect(err).ToNot(HaveOccurred())
 		Expect(writer.Set(ctx, key, 30*time.Second)).To(Succeed())
 
-		managed, err := fc.IsManagedOnCluster(ctx, "prod-east", "data", "StatefulSet", "redis-master")
+		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{
+			ClusterID: "prod-east",
+			Kind:      "StatefulSet",
+			Namespace: "data",
+			Name:      "redis-master",
+		})
 		Expect(err).ToNot(HaveOccurred())
 		Expect(managed).To(BeTrue(),
 			"IT-FLEET-VALKEY-004: FederatedScopeChecker must find managed resource via Valkey")
 	})
 
 	It("IT-FLEET-VALKEY-005: FederatedScopeChecker returns false for unmanaged remote resource", func() {
-		managed, err := fc.IsManagedOnCluster(ctx, "prod-east", "orphan-ns", "Deployment", "no-such-deploy")
+		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{
+			ClusterID: "prod-east",
+			Kind:      "Deployment",
+			Namespace: "orphan-ns",
+			Name:      "no-such-deploy",
+		})
 		Expect(err).ToNot(HaveOccurred())
 		Expect(managed).To(BeFalse(),
 			"IT-FLEET-VALKEY-005: Unmanaged resource must return false from FederatedScopeChecker")
 	})
 })
 
-// localAlwaysFalse is a mock local scope checker that always returns false.
-// In these tests we only validate the remote (Valkey) path.
-type localAlwaysFalse struct{}
-
-func (l *localAlwaysFalse) IsManaged(_ context.Context, _, _, _ string) (bool, error) {
-	return false, nil
-}
