@@ -23,7 +23,7 @@ input_schema:
           description: Kubernetes namespace where the alert fired
         severity:
           type: string
-          enum: [critical, high, medium, low]
+          enum: [critical, high, warning, low]
         resource_kind:
           type: string
           description: Kubernetes resource kind (e.g., Pod, Deployment)
@@ -79,7 +79,7 @@ output_schema:
           description: Human-readable RCA summary
         severity:
           type: string
-          enum: [critical, high, medium, low]
+          enum: [critical, high, warning, low]
           description: Assessed severity (may differ from alert severity)
         affected_resource:
           type: object
