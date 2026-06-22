@@ -890,7 +890,7 @@ endef
 ##@ Cursor Rule Compliance
 
 .PHONY: lint-rules
-lint-rules: lint-test-patterns lint-business-integration lint-tdd-compliance lint-naming-convention lint-openapi-crd-drift ## Run all cursor rule compliance checks
+lint-rules: lint-test-patterns lint-business-integration lint-tdd-compliance lint-naming-convention lint-openapi-crd-drift lint-acm-schema-drift ## Run all cursor rule compliance checks
 
 .PHONY: lint-naming-convention
 lint-naming-convention: ## Check for legacy holmesgpt-api references (#691)
@@ -922,6 +922,11 @@ lint-tdd-compliance: ## Check TDD compliance (BDD framework, BR references)
 lint-openapi-crd-drift: manifests ## Check CRD-to-OpenAPI enum alignment (Issue #838)
 	@echo "🔍 Checking CRD-to-OpenAPI enum drift..."
 	@go run ./scripts/validation/check-openapi-crd-enum-drift/...
+
+.PHONY: lint-acm-schema-drift
+lint-acm-schema-drift: ## Check vendored ACM Search GraphQL schema against upstream (BR-INTEGRATION-065)
+	@echo "🔍 Checking ACM Search schema drift..."
+	@./scripts/check-acm-schema-drift.sh
 
 ##@ Image Build & Push
 
