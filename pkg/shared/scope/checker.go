@@ -18,48 +18,6 @@ package scope
 
 import "context"
 
-// ScopeChecker validates if a resource is within Kubernaut's management scope.
-//
-// This interface abstracts the scope validation logic so that:
-//   - Production uses *scope.Manager (backed by metadata-only cache per ADR-053)
-//   - Unit/integration tests use a mock implementation via dependency injection
-//
-// Both Gateway and Remediation Orchestrator inject this as a mandatory dependency.
-// The pattern follows the same DI approach as processing.RetryObserver.
-//
-// Business Requirements:
-//
-//	BR-SCOPE-001: Resource Scope Management (2-level hierarchy)
-//	BR-SCOPE-002: Gateway Signal Filtering
-//	BR-SCOPE-010: RO Scope Blocking
-//
-// Architecture:
-//
-//	ADR-053: Resource Scope Management Architecture
-type ScopeChecker interface {
-	// IsManaged checks whether a Kubernetes resource is managed by Kubernaut.
-	// Returns (true, nil) if managed, (false, nil) if unmanaged, or (false, error) on failure.
-	//
-	// The 2-level hierarchy (ADR-053):
-	//  1. Resource label: kubernaut.ai/managed=true → managed
-	//  2. Namespace label: kubernaut.ai/managed=true → managed
-	//  3. Default: unmanaged (safe default)
-	IsManaged(ctx context.Context, namespace, kind, name string) (bool, error)
-}
-
-// FederatedScopeChecker extends ScopeChecker with cluster-aware scope checking.
-// Services that need to validate scope across both local and remote clusters
-// accept this interface (e.g., Gateway, RO).
-//
-// The standard IsManaged method handles local (hub) cluster checks.
-// IsManagedOnCluster routes by clusterID: empty → local, non-empty → remote.
-//
-// References: ADR-065, ADR-068, BR-INTEGRATION-065
-type FederatedScopeChecker interface {
-	ScopeChecker
-	IsManagedOnCluster(ctx context.Context, clusterID, namespace, kind, name string) (bool, error)
-}
-
 // ResourceIdentity uniquely identifies a Kubernetes resource, optionally on a remote cluster.
 // Replaces positional string parameters across all scope checking interfaces.
 //
@@ -77,21 +35,30 @@ type ResourceIdentity struct {
 	Name      string
 }
 
-// UnifiedScopeChecker validates if a resource is within Kubernaut's management scope.
+// ScopeChecker validates if a resource is within Kubernaut's management scope.
 // A single method handles both local and remote clusters — the implementation
 // routes internally based on ResourceIdentity.ClusterID.
 //
-// This interface supersedes ScopeChecker (3-string) and FederatedScopeChecker (5-string).
-// During migration, both old and new interfaces coexist. Once all callers are migrated,
-// UnifiedScopeChecker will be renamed to ScopeChecker and the old interfaces removed.
+// Production implementations:
+//   - *scope.Manager: local K8s label checks (ADR-053)
+//   - *fleet.FederatedScopeChecker: routes local/remote via factory (ADR-068)
 //
-// References: ADR-068, BR-SCOPE-001, BR-SCOPE-002, BR-INTEGRATION-065
-type UnifiedScopeChecker interface {
+// Both Gateway and Remediation Orchestrator inject this as a mandatory dependency.
+//
+// Business Requirements:
+//
+//	BR-SCOPE-001: Resource Scope Management (2-level hierarchy)
+//	BR-SCOPE-002: Gateway Signal Filtering
+//	BR-SCOPE-010: RO Scope Blocking
+//	BR-INTEGRATION-065: Multi-cluster federation scope resolution
+//
+// Architecture:
+//
+//	ADR-053: Resource Scope Management Architecture
+//	ADR-068: Federated Control Plane Interface
+type ScopeChecker interface {
 	IsManagedResource(ctx context.Context, resource ResourceIdentity) (bool, error)
 }
 
 // Compile-time interface compliance: Manager implements ScopeChecker.
 var _ ScopeChecker = (*Manager)(nil)
-
-// Compile-time interface compliance: Manager implements UnifiedScopeChecker.
-var _ UnifiedScopeChecker = (*Manager)(nil)

@@ -56,6 +56,7 @@ import (
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
+	"github.com/jordigilh/kubernaut/pkg/fleet"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/remediationapprovalrequest"
@@ -135,6 +136,9 @@ type Reconciler struct {
 	// Prevents duplicate WFEs when concurrent reconciles target the same resource.
 	// nil = locking disabled (single-replica deployments).
 	lockManager *locking.DistributedLockManager
+
+	// ADR-068: Fleet config for federated scope checking in default routing engine fallback.
+	fleetConfig fleet.FleetConfig
 
 	// #835: Guards hot-reloadable config fields. Setters acquire write lock,
 	// getters acquire read lock. Per DD-INFRA-001 thread-safety requirement.
@@ -246,8 +250,13 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 		routingNamespace := ""
 		// BR-SCOPE-010: Create scope manager using cached client for metadata-only informers (ADR-053)
 		scopeMgr := scope.NewManager(c)
+		// ADR-068: Wrap local scope manager with fleet-aware checker if fleet is configured.
+		scopeChecker, scopeErr := fleet.NewScopeChecker(scopeMgr, fleet.FleetConfig{}, log.Log)
+		if scopeErr != nil {
+			scopeChecker = scopeMgr
+		}
 		// DD-STATUS-001: Pass apiReader for cache-bypassed routing queries
-		routingEngine = routing.NewRoutingEngine(c, apiReader, routingNamespace, routingConfig, scopeMgr)
+		routingEngine = routing.NewRoutingEngine(c, apiReader, routingNamespace, routingConfig, scopeChecker)
 	}
 
 	// ========================================
@@ -3179,6 +3188,16 @@ func (r *Reconciler) SetClusterIdentity(name, uuid string) {
 // nil = locking disabled (single-replica deployments).
 func (r *Reconciler) SetLockManager(lm *locking.DistributedLockManager) {
 	r.lockManager = lm
+}
+
+// SetFleetConfig configures the fleet settings for federated scope checking.
+// ADR-068: Used in the default routing engine fallback path (routingEngine == nil)
+// to wrap the local scope.Manager with fleet.NewScopeChecker.
+// Called from cmd/remediationorchestrator/main.go.
+func (r *Reconciler) SetFleetConfig(cfg fleet.FleetConfig) {
+	r.configMu.Lock()
+	r.fleetConfig = cfg
+	r.configMu.Unlock()
 }
 
 // resolveDualTargets resolves both signal and remediation targets for the EA (DD-EM-003).

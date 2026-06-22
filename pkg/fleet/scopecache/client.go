@@ -24,8 +24,7 @@ import (
 	"errors"
 	"fmt"
 
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
 // CacheReader abstracts the cache read operations for scope checking.
@@ -56,11 +55,14 @@ func (c *Client) IsManaged(ctx context.Context, clusterID, group, version, kind,
 	return c.reader.Exists(ctx, key)
 }
 
-// IsManagedTyped is a type-safe wrapper for IsManaged that accepts GVK and ObjectKey
-// instead of raw strings, reducing the risk of parameter misalignment.
-func (c *Client) IsManagedTyped(ctx context.Context, clusterID string, gvk schema.GroupVersionKind, key client.ObjectKey) (bool, error) {
-	return c.IsManaged(ctx, clusterID, gvk.Group, gvk.Version, gvk.Kind, key.Namespace, key.Name)
+// IsManagedResource implements scope.ScopeChecker for remote cluster scope checks.
+// Delegates to the underlying IsManaged with fields extracted from ResourceIdentity.
+func (c *Client) IsManagedResource(ctx context.Context, resource scope.ResourceIdentity) (bool, error) {
+	return c.IsManaged(ctx, resource.ClusterID, resource.Group, resource.Version, resource.Kind, resource.Namespace, resource.Name)
 }
+
+// Compile-time verification that Client satisfies scope.ScopeChecker.
+var _ scope.ScopeChecker = (*Client)(nil)
 
 // ErrEmptyClusterID is returned when clusterID is empty.
 var ErrEmptyClusterID = errors.New("scopecache: clusterID must not be empty")

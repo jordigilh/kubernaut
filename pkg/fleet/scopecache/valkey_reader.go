@@ -43,6 +43,11 @@ func (v *ValkeyCacheReader) Exists(ctx context.Context, key string) (bool, error
 	return result > 0, nil
 }
 
+// Ping checks connectivity to the Valkey backend.
+func (v *ValkeyCacheReader) Ping(ctx context.Context) error {
+	return v.client.Ping(ctx).Err()
+}
+
 // Close terminates the underlying Redis connection.
 func (v *ValkeyCacheReader) Close() error {
 	return v.client.Close()

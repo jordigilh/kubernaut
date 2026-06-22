@@ -55,7 +55,7 @@ type RoutingEngine struct {
 	apiReader    client.Reader       // DD-STATUS-001: Cache-bypassed reader for fresh routing queries
 	namespace    string
 	config       Config
-	scopeChecker scope.UnifiedScopeChecker // BR-SCOPE-010 + ADR-068: Mandatory scope validation (DI)
+	scopeChecker scope.ScopeChecker // BR-SCOPE-010 + ADR-068: Mandatory scope validation (DI)
 	dsClient     RemediationHistoryQuerier // Issue #214: DataStorage client for ineffective chain detection
 }
 
@@ -153,7 +153,7 @@ type Config struct {
 // DD-STATUS-001: Accepts apiReader for cache-bypassed routing queries.
 // BR-SCOPE-010: scopeChecker is mandatory (panics on nil, same pattern as RetryObserver).
 // Issue #214: Optional dsClient for ineffective chain detection (nil = skip chain check).
-func NewRoutingEngine(client client.Client, apiReader client.Reader, namespace string, config Config, scopeChecker scope.UnifiedScopeChecker, dsClient ...RemediationHistoryQuerier) *RoutingEngine {
+func NewRoutingEngine(client client.Client, apiReader client.Reader, namespace string, config Config, scopeChecker scope.ScopeChecker, dsClient ...RemediationHistoryQuerier) *RoutingEngine {
 	if scopeChecker == nil {
 		panic("scopeChecker must not be nil — use mocks.AlwaysManagedScopeChecker{} in tests")
 	}

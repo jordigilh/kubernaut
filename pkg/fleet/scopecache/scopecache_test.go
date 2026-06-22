@@ -21,12 +21,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/scopecache"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
@@ -49,15 +45,6 @@ func (m *mockCacheReader) Exists(_ context.Context, key string) (bool, error) {
 	return val, nil
 }
 
-type mockLocalChecker struct {
-	managed map[string]bool
-}
-
-func (m *mockLocalChecker) IsManaged(_ context.Context, namespace, kind, name string) (bool, error) {
-	key := namespace + "/" + kind + "/" + name
-	return m.managed[key], nil
-}
-
 var _ = Describe("ScopeCache Client (BR-INTEGRATION-065)", func() {
 	var (
 		ctx    context.Context
@@ -71,7 +58,7 @@ var _ = Describe("ScopeCache Client (BR-INTEGRATION-065)", func() {
 		client = scopecache.NewClient(reader)
 	})
 
-	Describe("IsManaged", func() {
+	Describe("IsManaged (Valkey cache lookup)", func() {
 		It("UT-FLEET-SC-001: returns true for managed resource", func() {
 			key, err := scopecache.BuildKey("prod-east", "apps", "v1", "Deployment", "default", "nginx")
 			Expect(err).ToNot(HaveOccurred())
@@ -85,6 +72,30 @@ var _ = Describe("ScopeCache Client (BR-INTEGRATION-065)", func() {
 		It("UT-FLEET-SC-002: returns error for cache miss", func() {
 			_, err := client.IsManaged(ctx, "prod-west", "apps", "v1", "Deployment", "default", "redis")
 			Expect(err).To(HaveOccurred())
+		})
+	})
+
+	Describe("IsManagedResource (scope.ScopeChecker)", func() {
+		It("UT-FLEET-SC-009: Client implements scope.ScopeChecker", func() {
+			var checker scope.ScopeChecker = client
+			Expect(checker).ToNot(BeNil())
+		})
+
+		It("UT-FLEET-SC-010: IsManagedResource delegates to IsManaged with ResourceIdentity fields", func() {
+			key, err := scopecache.BuildKey("prod-east", "apps", "v1", "Deployment", "default", "nginx")
+			Expect(err).ToNot(HaveOccurred())
+			reader.store[key] = true
+
+			managed, err := client.IsManagedResource(ctx, scope.ResourceIdentity{
+				ClusterID: "prod-east",
+				Group:     "apps",
+				Version:   "v1",
+				Kind:      "Deployment",
+				Namespace: "default",
+				Name:      "nginx",
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(managed).To(BeTrue())
 		})
 	})
 
@@ -109,156 +120,5 @@ var _ = Describe("ScopeCache Client (BR-INTEGRATION-065)", func() {
 			_, err := scopecache.BuildKey("prod-east", "apps", "v1", "Deployment", "default", "")
 			Expect(err).To(MatchError(scopecache.ErrEmptyName))
 		})
-	})
-})
-
-var _ = Describe("FederatedScopeChecker shared interface compliance (Phase B)", func() {
-	It("UT-FLEET-FC-010 [CC6.1]: FederatedScopeChecker satisfies scope.FederatedScopeChecker interface for logical access security", func() {
-		local := &mockLocalChecker{managed: map[string]bool{}}
-		reader := &mockCacheReader{store: make(map[string]bool)}
-		client := scopecache.NewClient(reader)
-		fc := scopecache.NewFederatedScopeChecker(local, client, logr.Discard())
-
-		var iface scope.FederatedScopeChecker = fc
-		Expect(iface).ToNot(BeNil(),
-			"FederatedScopeChecker must implement the shared scope.FederatedScopeChecker interface (CC6.1: consistent logical access control)")
-	})
-})
-
-var _ = Describe("FederatedScopeChecker (BR-INTEGRATION-065)", func() {
-	var (
-		ctx    context.Context
-		local  *mockLocalChecker
-		reader *mockCacheReader
-		fc     *scopecache.FederatedScopeChecker
-	)
-
-	BeforeEach(func() {
-		ctx = context.Background()
-		local = &mockLocalChecker{managed: map[string]bool{
-			"default/Deployment/nginx": true,
-		}}
-		reader = &mockCacheReader{store: make(map[string]bool)}
-		client := scopecache.NewClient(reader)
-		fc = scopecache.NewFederatedScopeChecker(local, client, logr.Discard())
-	})
-
-	Describe("IsManaged (standard interface)", func() {
-		It("UT-FLEET-FC-001: delegates to local checker", func() {
-			managed, err := fc.IsManaged(ctx, "default", "Deployment", "nginx")
-			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeTrue())
-		})
-
-		It("UT-FLEET-FC-002: returns false for unmanaged local resource", func() {
-			managed, err := fc.IsManaged(ctx, "default", "Deployment", "redis")
-			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeFalse())
-		})
-	})
-
-	Describe("IsManagedOnCluster", func() {
-		It("UT-FLEET-FC-003: empty clusterID routes to local", func() {
-			managed, err := fc.IsManagedOnCluster(ctx, "", "default", "Deployment", "nginx")
-			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeTrue())
-		})
-
-		It("UT-FLEET-FC-004: non-empty clusterID routes to remote cache", func() {
-			key, keyErr := scopecache.BuildKey("prod-east", "", "", "Deployment", "default", "nginx")
-			Expect(keyErr).ToNot(HaveOccurred())
-			reader.store[key] = true
-
-			managed, err := fc.IsManagedOnCluster(ctx, "prod-east", "default", "Deployment", "nginx")
-			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeTrue())
-		})
-
-		It("UT-FLEET-FC-005: cache miss on remote returns false (fail-safe)", func() {
-			managed, err := fc.IsManagedOnCluster(ctx, "prod-west", "default", "Deployment", "unknown")
-			Expect(err).ToNot(HaveOccurred())
-			Expect(managed).To(BeFalse())
-		})
-	})
-})
-
-var _ = Describe("RemoteScopeResolver typed params (Phase C)", func() {
-	It("UT-FLEET-SC-010 [SI-10]: IsManaged accepts GVK + ObjectKey for type-safe input validation", func() {
-		reader := &mockCacheReader{store: make(map[string]bool)}
-		key, err := scopecache.BuildKey("prod-east", "apps", "v1", "Deployment", "default", "nginx")
-		Expect(err).ToNot(HaveOccurred())
-		reader.store[key] = true
-
-		resolver := scopecache.NewClient(reader)
-
-		gvk := schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "Deployment"}
-		objKey := client.ObjectKey{Namespace: "default", Name: "nginx"}
-
-		managed, err := resolver.IsManagedTyped(context.Background(), "prod-east", gvk, objKey)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(managed).To(BeTrue(),
-			"typed params must produce the same result as raw string params (SI-10: input validation)")
-	})
-})
-
-var _ = Describe("UnifiedScopeChecker on FederatedScopeChecker (Phase 2)", func() {
-	var (
-		ctx    context.Context
-		local  *mockLocalChecker
-		reader *mockCacheReader
-		fc     *scopecache.FederatedScopeChecker
-	)
-
-	BeforeEach(func() {
-		ctx = context.Background()
-		local = &mockLocalChecker{managed: map[string]bool{
-			"default/Deployment/nginx": true,
-		}}
-		reader = &mockCacheReader{store: make(map[string]bool)}
-		cacheClient := scopecache.NewClient(reader)
-		fc = scopecache.NewFederatedScopeChecker(local, cacheClient, logr.Discard())
-	})
-
-	It("UT-FLEET-USI-001 [SI-10]: FederatedScopeChecker implements UnifiedScopeChecker interface", func() {
-		var checker scope.UnifiedScopeChecker = fc
-		Expect(checker).ToNot(BeNil())
-	})
-
-	It("UT-FLEET-USI-002 [AC-4]: IsManagedResource with empty ClusterID routes to local checker", func() {
-		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{
-			Namespace: "default",
-			Kind:      "Deployment",
-			Name:      "nginx",
-		})
-		Expect(err).ToNot(HaveOccurred())
-		Expect(managed).To(BeTrue())
-	})
-
-	It("UT-FLEET-USI-003 [AC-4]: IsManagedResource with ClusterID routes to remote resolver", func() {
-		key, keyErr := scopecache.BuildKey("prod-east", "apps", "v1", "Deployment", "default", "nginx")
-		Expect(keyErr).ToNot(HaveOccurred())
-		reader.store[key] = true
-
-		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{
-			ClusterID: "prod-east",
-			Group:     "apps",
-			Version:   "v1",
-			Kind:      "Deployment",
-			Namespace: "default",
-			Name:      "nginx",
-		})
-		Expect(err).ToNot(HaveOccurred())
-		Expect(managed).To(BeTrue())
-	})
-
-	It("UT-FLEET-USI-004 [AC-4]: IsManagedResource remote miss returns false (fail-safe)", func() {
-		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{
-			ClusterID: "prod-west",
-			Kind:      "Deployment",
-			Namespace: "default",
-			Name:      "unknown",
-		})
-		Expect(err).ToNot(HaveOccurred())
-		Expect(managed).To(BeFalse())
 	})
 })

@@ -66,7 +66,7 @@ import (
 	kubecors "github.com/jordigilh/kubernaut/pkg/http/cors"  // BR-HTTP-015: Shared CORS library
 	"github.com/jordigilh/kubernaut/pkg/shared/sanitization" // DD-005: Shared sanitization library
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"        // BR-SCOPE-002: Resource scope management
-	"github.com/jordigilh/kubernaut/pkg/fleet/scopecache"    // ADR-065: Federated scope checking
+	"github.com/jordigilh/kubernaut/pkg/fleet" // ADR-068: Federated scope checking factory
 )
 
 // Gateway Audit Event Type Constants (from OpenAPI spec)
@@ -145,7 +145,7 @@ type Server struct {
 	phaseChecker  *processing.PhaseBasedDeduplicationChecker // Phase-based deduplication logic
 	crdCreator    *processing.CRDCreator
 	lockManager   *processing.DistributedLockManager // BR-GATEWAY-190: K8s Lease-based distributed locking
-	scopeChecker  scope.UnifiedScopeChecker            // BR-SCOPE-002 + ADR-068: nil = no scope filtering (backward compat)
+	scopeChecker  scope.ScopeChecker            // BR-SCOPE-002 + ADR-068: nil = no scope filtering (backward compat)
 
 	// ADR-057: Controller namespace where all CRDs are created and queried
 	controllerNamespace string
@@ -286,7 +286,7 @@ func newAuthMiddleware(authenticator auth.Authenticator, authorizer auth.Authori
 //
 // USAGE: Unit tests only - allows testing audit failure scenarios
 // PRODUCTION: Use NewServer() or NewServerWithK8sClient() instead
-func NewServerForTesting(cfg *config.ServerConfig, logger logr.Logger, metricsInstance *metrics.Metrics, ctrlClient client.Client, auditStore audit.AuditStore, scopeChecker scope.UnifiedScopeChecker, authenticator auth.Authenticator, authorizer auth.Authorizer) (*Server, error) {
+func NewServerForTesting(cfg *config.ServerConfig, logger logr.Logger, metricsInstance *metrics.Metrics, ctrlClient client.Client, auditStore audit.AuditStore, scopeChecker scope.ScopeChecker, authenticator auth.Authenticator, authorizer auth.Authorizer) (*Server, error) {
 	// Use provided Kubernetes client
 	k8sClient := k8s.NewClient(ctrlClient)
 
@@ -659,17 +659,14 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 	// prevent duplicate CRDs and lock races), scope checking tolerates informer sync delay.
 	scopeMgr := scope.NewManager(ctrlClient)
 
-	// ADR-065: Federated scope checking for multi-cluster fleet management.
-	// When fleet is enabled, wraps the local scope checker with FederatedScopeChecker
-	// backed by a Valkey cache for low-latency remote cluster scope lookups.
-	var scopeCheckerInstance scope.UnifiedScopeChecker = scopeMgr
-	if cfg.Fleet.Enabled {
-		endpoint := cfg.Fleet.EffectiveEndpoint()
-		if endpoint != "" {
-			scopeCheckerInstance = scopecache.NewFederatedScopeCheckerFromAddr(scopeMgr, endpoint, logger)
-			logger.Info("ADR-068: Federated scope checker enabled",
-				"backend", cfg.Fleet.Backend, "endpoint", endpoint)
-		}
+	// ADR-068: Federated scope checking via fleet.NewScopeChecker factory.
+	scopeCheckerInstance, err := fleet.NewScopeChecker(scopeMgr, cfg.Fleet, logger)
+	if err != nil {
+		return nil, fmt.Errorf("fleet scope checker: %w", err)
+	}
+	if cfg.Fleet.Enabled && cfg.Fleet.EffectiveEndpoint() != "" {
+		logger.Info("ADR-068: Federated scope checker enabled",
+			"backend", cfg.Fleet.Backend, "endpoint", cfg.Fleet.EffectiveEndpoint())
 	}
 
 	authMW := newAuthMiddleware(authenticator, authorizer, controllerNS, logger)

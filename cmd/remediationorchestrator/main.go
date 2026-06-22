@@ -49,7 +49,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 	scope "github.com/jordigilh/kubernaut/pkg/shared/scope"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
-	"github.com/jordigilh/kubernaut/pkg/fleet/scopecache"
+	"github.com/jordigilh/kubernaut/pkg/fleet"
 	config "github.com/jordigilh/kubernaut/internal/config/remediationorchestrator"
 	controller "github.com/jordigilh/kubernaut/internal/controller/remediationorchestrator"
 	"github.com/jordigilh/kubernaut/pkg/audit"
@@ -280,17 +280,15 @@ func main() {
 	}
 	scopeMgr := scope.NewManager(mgr.GetClient())
 
-	// ADR-068: Federated scope checking via pluggable backend adapters.
-	// When fleet is enabled, wraps the local scope checker with FederatedScopeChecker
-	// backed by the configured backend (FMC, ACM, or legacy Valkey).
-	var scopeCheckerInstance scope.UnifiedScopeChecker = scopeMgr
-	if cfg.Fleet.Enabled {
-		endpoint := cfg.Fleet.EffectiveEndpoint()
-		if endpoint != "" {
-			scopeCheckerInstance = scopecache.NewFederatedScopeCheckerFromAddr(scopeMgr, endpoint, setupLog)
-			setupLog.Info("ADR-068: Federated scope checker enabled",
-				"backend", cfg.Fleet.Backend, "endpoint", endpoint)
-		}
+	// ADR-068: Federated scope checking via fleet.NewScopeChecker factory.
+	scopeCheckerInstance, err := fleet.NewScopeChecker(scopeMgr, cfg.Fleet, setupLog)
+	if err != nil {
+		setupLog.Error(err, "Failed to create fleet scope checker")
+		os.Exit(1)
+	}
+	if cfg.Fleet.Enabled && cfg.Fleet.EffectiveEndpoint() != "" {
+		setupLog.Info("ADR-068: Federated scope checker enabled",
+			"backend", cfg.Fleet.Backend, "endpoint", cfg.Fleet.EffectiveEndpoint())
 	}
 
 	routingEngine := routing.NewRoutingEngine(mgr.GetClient(), mgr.GetAPIReader(), "", routingCfg, scopeCheckerInstance)
@@ -369,6 +367,8 @@ func main() {
 		setupLog.Info("Distributed lock manager configured", "holderID", podName, "namespace", controllerNS)
 	}
 
+	// ADR-068: Wire fleet config for federated scope fallback path
+	roReconciler.SetFleetConfig(cfg.Fleet)
 	// #265: Wire CRD retention period for TTL enforcement
 	roReconciler.SetRetentionPeriod(cfg.Retention.Period)
 	// #712, #736: Wire dry-run mode configuration

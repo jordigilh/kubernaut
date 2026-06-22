@@ -41,7 +41,7 @@ limitations under the License.
 // alert volume. The Manager implements the ScopeChecker interface for DI (see checker.go).
 //
 //	mgr := scope.NewManager(cachedClient) // Gateway + RO: informer-backed reads
-//	managed, err := mgr.IsManaged(ctx, "production", "Deployment", "payment-api")
+//	managed, err := mgr.IsManagedResource(ctx, scope.ResourceIdentity{Namespace: "production", Kind: "Deployment", Name: "payment-api"})
 package scope
 
 import (
@@ -142,7 +142,7 @@ func NewManager(c client.Reader) *Manager {
 	return &Manager{client: c}
 }
 
-// IsManaged checks whether a Kubernetes resource is managed by Kubernaut.
+// IsManagedResource checks whether a Kubernetes resource is managed by Kubernaut.
 //
 // The 2-level hierarchy (ADR-053):
 //  1. Check resource label: "true" → managed, "false" → unmanaged, missing/invalid → continue
@@ -152,16 +152,18 @@ func NewManager(c client.Reader) *Manager {
 // Resource not found: falls through to namespace check.
 // Namespace not found: returns false, nil (unmanaged, not an error).
 //
-// Parameters:
-//   - namespace: the resource's namespace (empty for cluster-scoped resources like Node, PV)
-//   - kind: the Kubernetes resource kind (e.g., "Pod", "Deployment", "Node")
-//   - name: the resource instance name
-func (m *Manager) IsManaged(ctx context.Context, namespace, kind, name string) (bool, error) {
+// ClusterID must be empty — the local Manager cannot resolve remote clusters.
+// For remote checks, use a fleet adapter (e.g., FederatedScopeChecker).
+func (m *Manager) IsManagedResource(ctx context.Context, resource ResourceIdentity) (bool, error) {
+	if resource.ClusterID != "" {
+		return false, fmt.Errorf("scope: local Manager cannot resolve remote cluster %q; use a fleet adapter", resource.ClusterID)
+	}
+
+	namespace, kind, name := resource.Namespace, resource.Kind, resource.Name
 	logger := log.FromContext(ctx).WithName("scope").WithValues(
 		"namespace", namespace, "kind", kind, "name", name,
 	)
 
-	// Step 1: Check resource label (Level 1)
 	resourceManaged, found, err := m.checkResourceLabel(ctx, namespace, kind, name)
 	if err != nil {
 		logger.Error(err, "Failed to check resource label")
@@ -172,13 +174,11 @@ func (m *Manager) IsManaged(ctx context.Context, namespace, kind, name string) (
 		return resourceManaged, nil
 	}
 
-	// Step 2: For cluster-scoped resources (namespace==""), no namespace fallback
 	if isClusterScoped(kind) || namespace == "" {
 		logger.V(1).Info("Cluster-scoped resource without label — unmanaged (safe default)")
 		return false, nil
 	}
 
-	// Step 3: Check namespace label (Level 2)
 	nsManaged, found, err := m.checkNamespaceLabel(ctx, namespace)
 	if err != nil {
 		logger.Error(err, "Failed to check namespace label")
@@ -189,22 +189,8 @@ func (m *Manager) IsManaged(ctx context.Context, namespace, kind, name string) (
 		return nsManaged, nil
 	}
 
-	// Step 4: Default — unmanaged (safe default per ADR-053)
 	logger.V(1).Info("No scope labels found — unmanaged (safe default)")
 	return false, nil
-}
-
-// IsManagedResource checks scope using the unified ResourceIdentity struct.
-// Routes by ClusterID: empty → local K8s label check, non-empty → error
-// (local Manager cannot resolve remote clusters; fleet adapters handle that).
-//
-// When Group/Version are empty, behavior matches the existing IsManaged method
-// which infers GVK from the static kindToGroup map.
-func (m *Manager) IsManagedResource(ctx context.Context, resource ResourceIdentity) (bool, error) {
-	if resource.ClusterID != "" {
-		return false, fmt.Errorf("scope: local Manager cannot resolve remote cluster %q; use a fleet adapter", resource.ClusterID)
-	}
-	return m.IsManaged(ctx, resource.Namespace, resource.Kind, resource.Name)
 }
 
 // checkResourceLabel fetches the resource metadata and checks its managed label.

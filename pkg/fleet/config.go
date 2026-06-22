@@ -27,15 +27,12 @@ const (
 	BackendFMC = "fmc"
 	// BackendACM uses ACM Search GraphQL API (ADR-068).
 	BackendACM = "acm"
-	// BackendValkey uses direct Valkey connection (legacy, pre-ADR-068).
-	BackendValkey = "valkey"
 )
 
 // supportedBackends is the set of valid Backend values.
 var supportedBackends = map[string]bool{
-	BackendFMC:    true,
-	BackendACM:    true,
-	BackendValkey: true,
+	BackendFMC: true,
+	BackendACM: true,
 }
 
 // FleetConfig holds multi-cluster federation settings shared across all services.
@@ -47,18 +44,13 @@ type FleetConfig struct {
 	// Enabled activates federated scope checking.
 	Enabled bool `yaml:"enabled"`
 
-	// Backend selects the federated control plane adapter: "fmc", "acm", or "valkey" (legacy).
+	// Backend selects the federated control plane adapter: "fmc" or "acm".
 	Backend string `yaml:"backend,omitempty"`
 
 	// Endpoint is the service address for the chosen backend.
 	// For fmc: HTTP URL (e.g., "http://fmc.kubernaut.svc:8080")
 	// For acm: GraphQL URL (e.g., "https://search-api.open-cluster-management.svc:4010")
-	// For valkey: Valkey address (e.g., "valkey:6379") — legacy, maps to ValkeyAddr
 	Endpoint string `yaml:"endpoint,omitempty"`
-
-	// ValkeyAddr is the Valkey/Redis address for the fleet metadata cache.
-	// Deprecated: Use Backend="valkey" + Endpoint instead. Kept for backward compatibility.
-	ValkeyAddr string `yaml:"valkeyAddr,omitempty"`
 }
 
 // Validate checks that FleetConfig has all required fields when enabled.
@@ -81,21 +73,12 @@ func (c FleetConfig) Validate() error {
 	return nil
 }
 
-// effectiveBackend returns the backend to use, defaulting to "valkey" for backward compat.
+// effectiveBackend returns the configured backend, or empty if not set.
 func (c FleetConfig) effectiveBackend() string {
-	if c.Backend != "" {
-		return c.Backend
-	}
-	if c.ValkeyAddr != "" {
-		return BackendValkey
-	}
-	return ""
+	return c.Backend
 }
 
-// EffectiveEndpoint returns the endpoint to use, falling back to ValkeyAddr for legacy configs.
+// EffectiveEndpoint returns the configured endpoint.
 func (c FleetConfig) EffectiveEndpoint() string {
-	if c.Endpoint != "" {
-		return c.Endpoint
-	}
-	return c.ValkeyAddr
+	return c.Endpoint
 }

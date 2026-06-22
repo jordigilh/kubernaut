@@ -31,37 +31,68 @@ func TestFleet(t *testing.T) {
 }
 
 var _ = Describe("FleetConfig shared type (Phase E)", func() {
-	It("UT-FLEET-CFG-001 [CM-6]: FleetConfig provides unified configuration for all fleet services", func() {
+	It("UT-FLEET-CFG-001 [CM-6]: FleetConfig provides unified configuration via Backend+Endpoint", func() {
 		cfg := fleet.FleetConfig{
-			Enabled:    true,
-			ValkeyAddr: "valkey:6379",
+			Enabled:  true,
+			Backend:  "fmc",
+			Endpoint: "http://fmc:8080",
 		}
 
 		Expect(cfg.Enabled).To(BeTrue())
-		Expect(cfg.ValkeyAddr).To(Equal("valkey:6379"),
-			"FleetConfig must expose ValkeyAddr for consistent configuration across services (CM-6)")
+		Expect(cfg.Backend).To(Equal("fmc"))
+		Expect(cfg.Endpoint).To(Equal("http://fmc:8080"))
 	})
 
-	It("UT-FLEET-CFG-002 [CM-6]: Validate rejects empty ValkeyAddr when fleet is enabled", func() {
+	It("UT-FLEET-CFG-002 [CM-6]: Validate rejects empty Endpoint when fleet is enabled", func() {
 		cfg := fleet.FleetConfig{
-			Enabled:    true,
-			ValkeyAddr: "",
+			Enabled: true,
+			Backend: "fmc",
 		}
 
 		err := cfg.Validate()
 		Expect(err).To(HaveOccurred(),
-			"FleetConfig.Validate must reject empty ValkeyAddr when enabled (CM-6: configuration settings)")
+			"FleetConfig.Validate must reject empty Endpoint when enabled (CM-6)")
 	})
 
-	It("UT-FLEET-CFG-003 [CM-6]: Validate accepts disabled fleet with empty ValkeyAddr", func() {
+	It("UT-FLEET-CFG-003 [CM-6]: Validate accepts disabled fleet without Backend/Endpoint", func() {
 		cfg := fleet.FleetConfig{
-			Enabled:    false,
-			ValkeyAddr: "",
+			Enabled: false,
 		}
 
 		err := cfg.Validate()
 		Expect(err).ToNot(HaveOccurred(),
-			"disabled fleet should not require ValkeyAddr")
+			"disabled fleet should not require Backend or Endpoint")
+	})
+})
+
+var _ = Describe("FleetConfig — BackendValkey removal (Phase 3)", func() {
+	It("UT-SF-054-002 [CM-6]: Validate rejects BackendValkey as unsupported", func() {
+		cfg := fleet.FleetConfig{
+			Enabled:  true,
+			Backend:  "valkey",
+			Endpoint: "valkey:6379",
+		}
+
+		err := cfg.Validate()
+		Expect(err).To(HaveOccurred(),
+			"valkey backend must be rejected after legacy removal")
+		Expect(err.Error()).To(ContainSubstring("unsupported backend"))
+	})
+
+	It("UT-SF-054-003 [CM-6]: EffectiveEndpoint returns only Endpoint, no ValkeyAddr fallback", func() {
+		cfg := fleet.FleetConfig{
+			Enabled:  true,
+			Backend:  "fmc",
+			Endpoint: "http://fmc:8080",
+		}
+		Expect(cfg.EffectiveEndpoint()).To(Equal("http://fmc:8080"))
+
+		cfgEmpty := fleet.FleetConfig{
+			Enabled: true,
+			Backend: "fmc",
+		}
+		Expect(cfgEmpty.EffectiveEndpoint()).To(BeEmpty(),
+			"with no Endpoint and no ValkeyAddr fallback, must return empty string")
 	})
 })
 
