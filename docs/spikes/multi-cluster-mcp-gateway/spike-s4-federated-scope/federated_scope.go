@@ -52,18 +52,19 @@ func NewFederatedScopeChecker(local scope.ScopeChecker, remote MCPResourceClient
 	}
 }
 
-// IsManaged implements scope.ScopeChecker using the 2-level hierarchy (ADR-053):
+// IsManagedResource implements scope.ScopeChecker using the 2-level hierarchy (ADR-053):
 //  1. Resource label: kubernaut.ai/managed=true -> managed
 //  2. Namespace label: kubernaut.ai/managed=true -> managed
 //  3. Default: unmanaged (safe default)
 //
 // For remote clusters (clusterPrefix != ""), it uses MCPResourceClient to fetch labels.
 // For local cluster (clusterPrefix == ""), it delegates to the local ScopeChecker.
-func (f *FederatedScopeChecker) IsManaged(ctx context.Context, namespace, kind, name string) (bool, error) {
+func (f *FederatedScopeChecker) IsManagedResource(ctx context.Context, resource scope.ResourceIdentity) (bool, error) {
 	if f.clusterPrefix == "" {
-		return f.local.IsManaged(ctx, namespace, kind, name)
+		return f.local.IsManagedResource(ctx, resource)
 	}
 
+	namespace, kind, name := resource.Namespace, resource.Kind, resource.Name
 	resourceLabels, err := f.remote.GetLabels(ctx, f.clusterPrefix, kind, namespace, name)
 	if err != nil {
 		f.logger.Info("resource label check failed, falling through to namespace",
