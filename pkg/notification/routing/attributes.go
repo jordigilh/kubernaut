@@ -101,7 +101,7 @@ const (
 const (
 	SeverityCritical = "critical"
 	SeverityHigh     = "high"
-	SeverityMedium   = "medium"
+	SeverityWarning  = "warning"
 	SeverityLow      = "low"
 )
 

@@ -49,8 +49,8 @@ func toSignalProcessingAuditPayloadSeverity(value string) api.SignalProcessingAu
 		return api.SignalProcessingAuditPayloadSeverityCritical
 	case "high":
 		return api.SignalProcessingAuditPayloadSeverityHigh
-	case "medium":
-		return api.SignalProcessingAuditPayloadSeverityMedium
+	case "warning", "medium":
+		return api.SignalProcessingAuditPayloadSeverityWarning
 	case "low":
 		return api.SignalProcessingAuditPayloadSeverityLow
 	case "unknown":
@@ -67,8 +67,8 @@ func toSignalProcessingAuditPayloadNormalizedSeverity(value string) api.SignalPr
 		return api.SignalProcessingAuditPayloadNormalizedSeverityCritical
 	case "high":
 		return api.SignalProcessingAuditPayloadNormalizedSeverityHigh
-	case "medium":
-		return api.SignalProcessingAuditPayloadNormalizedSeverityMedium
+	case "warning", "medium":
+		return api.SignalProcessingAuditPayloadNormalizedSeverityWarning
 	case "low":
 		return api.SignalProcessingAuditPayloadNormalizedSeverityLow
 	case "unknown":
@@ -152,8 +152,8 @@ func toSignalProcessingAuditPayloadCriticality(value string) api.SignalProcessin
 		return api.SignalProcessingAuditPayloadCriticalityCritical
 	case "high":
 		return api.SignalProcessingAuditPayloadCriticalityHigh
-	case "medium":
-		return api.SignalProcessingAuditPayloadCriticalityMedium
+	case "warning", "medium":
+		return api.SignalProcessingAuditPayloadCriticalityWarning
 	case "low":
 		return api.SignalProcessingAuditPayloadCriticalityLow
 	default:

@@ -143,7 +143,7 @@ func (c *Client) Analyze(ctx context.Context, req AnalyzeRequest) (string, error
 		IncidentID:        fmt.Sprintf("af-%d", time.Now().UnixNano()),
 		RemediationID:     fmt.Sprintf("af-rr-%d", time.Now().UnixNano()),
 		SignalName:        "ManualInvestigation",
-		Severity:          "medium",
+		Severity:          "warning",
 		SignalSource:      "apifrontend",
 		ResourceNamespace: req.Namespace,
 		ResourceKind:      req.Kind,

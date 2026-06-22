@@ -383,7 +383,7 @@ func (e *Evaluator) EvaluateCustomLabels(ctx context.Context, input PolicyInput)
 
 func isValidSeverity(severity string) bool {
 	switch severity {
-	case "critical", "high", "medium", "low", "unknown":
+	case "critical", "high", "warning", "medium", "low", "unknown":
 		return true
 	default:
 		return false
