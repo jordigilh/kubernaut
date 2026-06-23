@@ -1178,6 +1178,103 @@ extract_cluster_prefix(tool_name) = prefix {
 - The Keycloak claim and OPA policy are standard Authorino/Kuadrant patterns, not
   Kubernaut-specific code
 
+## Phase 3: WE MCP Executor (Remote Workflow Execution)
+
+### Overview
+
+The WorkflowExecution (WE) controller gains the ability to create Jobs and
+Tekton PipelineRuns on remote clusters by routing K8s write operations through
+the MCP Gateway. This extends the read-only MCP client (`mcpclient.Client`)
+with a separate `WriterClient` type and introduces a `ClientFactory` pattern
+for transparent local/remote routing.
+
+### CRD Change: Spec.ClusterID
+
+`WorkflowExecutionSpec` gains an optional `ClusterID` field:
+
+```yaml
+spec:
+  clusterID: "prod-east-1"    # empty = local hub cluster
+  executionEngine: "job"
+  workflowRef:
+    workflowID: "restart-pod"
+    executionBundle: "quay.io/kubernaut/workflow-restart:v1"
+```
+
+When `ClusterID` is empty (default), execution runs on the local hub cluster
+exactly as before. When set, the executor routes operations to the remote
+cluster via MCP Gateway.
+
+### Design: ClientFactory Pattern
+
+The `ClientFactory` interface provides `ExecutorClient` instances based on
+cluster ID:
+
+```go
+type ClientFactory interface {
+    ClientFor(ctx context.Context, clusterID string) (ExecutorClient, error)
+}
+```
+
+Two implementations exist:
+
+- **localClientFactory**: Always returns the injected controller-runtime client.
+  Used in non-fleet deployments.
+- **mcpClientFactory**: Returns the local client for empty ClusterID; returns a
+  composite `remoteClient` (MCP Reader + MCP WriterClient) for non-empty IDs.
+
+### Design: WriterClient Isolation
+
+Write operations to remote clusters use `mcpclient.WriterClient`, a dedicated
+type that is intentionally separate from `mcpclient.Client` (read-only). This
+prevents read-only consumers (SP ReaderFactory, FMC) from gaining accidental
+write access through interface widening.
+
+`WriterClient` implements a narrow `ResourceWriter` interface (Create, Delete,
+Update) rather than the full `client.Writer` interface, since Patch, DeleteAllOf,
+and Apply are not supported via MCP tool calls.
+
+### Executor Refactoring
+
+Both `JobExecutor` and `TektonExecutor` were refactored:
+
+- Internal field changed from `client.Client` to `ClientFactory`
+- Each method calls `factory.ClientFor(ctx, wfe.Spec.ClusterID)` to get the
+  appropriate client before performing K8s operations
+- Backward-compatible constructors preserved: `NewJobExecutor(client.Client)`
+  wraps the client in a `localClientFactory` internally
+- New constructors added: `NewJobExecutorWithFactory(ClientFactory)` and
+  `NewTektonExecutorWithFactory(ClientFactory)` for fleet-enabled deployments
+
+### Wiring in cmd/workflowexecution/main.go
+
+```
+if cfg.Fleet.Endpoint != "" {
+    fleetResilientClient = connect to MCP Gateway
+    clientFactory = NewMCPClientFactory(mgr.GetClient(), session)
+} else {
+    clientFactory = NewLocalClientFactory(mgr.GetClient())
+}
+
+executorRegistry.Register("job", NewJobExecutorWithFactory(clientFactory))
+executorRegistry.Register("tekton", NewTektonExecutorWithFactory(clientFactory))
+```
+
+### MCP Tool Mapping
+
+| Operation | MCP Tool Name | Arguments |
+|-----------|---------------|-----------|
+| Create    | `{clusterID}__create_resource` | `manifest` (JSON string) |
+| Delete    | `{clusterID}__delete_resource` | `kind`, `name`, `namespace` |
+| Get       | `{clusterID}__get_resource` | `kind`, `name`, `namespace` |
+
+### Backward Compatibility
+
+- Empty `ClusterID` (default) preserves pre-fleet behavior exactly
+- Existing tests pass without modification due to backward-compatible constructors
+- No changes to the Executor interface signature
+- No changes to the reconciler dispatch logic
+
 ## References
 
 - Issue #54: Multi-cluster federation
