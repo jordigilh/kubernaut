@@ -157,7 +157,7 @@ var _ = Describe("Fleet Wiring Integration Tests (BR-INTEGRATION-065)", func() {
 
 			var getResourceTool mcpclient.ToolDefinition
 			for _, t := range tools.Tools {
-				if t.Name == "cluster-alpha__get_resource" {
+				if t.Name == "cluster-alpha__resources_get" {
 					getResourceTool = mcpclient.ToolDefinition{
 						Name:        t.Name,
 						Description: t.Description,
@@ -170,7 +170,7 @@ var _ = Describe("Fleet Wiring Integration Tests (BR-INTEGRATION-065)", func() {
 				}
 			}
 			Expect(getResourceTool.Name).ToNot(BeEmpty(),
-				"cluster-alpha__get_resource must be discoverable via tools/list")
+				"cluster-alpha__resources_get must be discoverable via tools/list")
 
 			bt := mcpclient.NewBridgeTool(getResourceTool, "cluster-alpha", session)
 			args := json.RawMessage(`{"kind":"Pod","namespace":"default","name":"nginx"}`)
@@ -183,7 +183,7 @@ var _ = Describe("Fleet Wiring Integration Tests (BR-INTEGRATION-065)", func() {
 
 			calls := gw.CallLog()
 			Expect(calls).To(HaveLen(1))
-			Expect(calls[0].ToolName).To(Equal("cluster-alpha__get_resource"),
+			Expect(calls[0].ToolName).To(Equal("cluster-alpha__resources_get"),
 				"mock gateway must record the tool call through the production dispatch path")
 		})
 	})
@@ -210,7 +210,7 @@ var _ = Describe("Fleet Wiring Integration Tests (BR-INTEGRATION-065)", func() {
 
 			calls := gw.CallLog()
 			Expect(calls).ToNot(BeEmpty())
-			Expect(calls[0].ToolName).To(Equal("cluster-fmc__list_resources"),
+			Expect(calls[0].ToolName).To(Equal("cluster-fmc__resources_list"),
 				"reader must route List calls through the correct cluster-prefixed MCP tool")
 		})
 	})
@@ -226,7 +226,7 @@ var _ = Describe("Fleet Wiring Integration Tests (BR-INTEGRATION-065)", func() {
 			session := parentClient.Session()
 
 			bt := mcpclient.NewBridgeToolFromSession(mcpclient.ToolDefinition{
-				Name: "auto-cluster__get_resource",
+				Name: "auto-cluster__resources_get",
 			}, session)
 
 			Expect(bt.ClusterID()).To(Equal("auto-cluster"),
@@ -247,10 +247,10 @@ var _ = Describe("Fleet Wiring Integration Tests (BR-INTEGRATION-065)", func() {
 			session := client.Session()
 
 			btEast := mcpclient.NewBridgeTool(mcpclient.ToolDefinition{
-				Name: "east__get_resource",
+				Name: "east__resources_get",
 			}, "east", session)
 			btWest := mcpclient.NewBridgeTool(mcpclient.ToolDefinition{
-				Name: "west__get_resource",
+				Name: "west__resources_get",
 			}, "west", session)
 
 			Expect(btEast.Name()).ToNot(Equal(btWest.Name()),

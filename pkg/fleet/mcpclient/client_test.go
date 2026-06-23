@@ -91,7 +91,7 @@ var _ = Describe("ResourceClient (BR-FLEET-002, Phase 0)", func() {
 
 			calls := gw.CallLog()
 			Expect(calls).To(HaveLen(1))
-			Expect(calls[0].ToolName).To(Equal("prod-east__get_resource"))
+			Expect(calls[0].ToolName).To(Equal("prod-east__resources_get"))
 		})
 
 		It("UT-FLEET-P0-006: populates *metav1.PartialObjectMetadata with ownerReferences", func() {
@@ -158,7 +158,7 @@ var _ = Describe("ResourceClient (BR-FLEET-002, Phase 0)", func() {
 
 			calls := gw.CallLog()
 			Expect(calls).To(HaveLen(1))
-			Expect(calls[0].ToolName).To(Equal("prod-west__list_resources"))
+			Expect(calls[0].ToolName).To(Equal("prod-west__resources_list"))
 		})
 
 		It("UT-FLEET-P0-003: passes MatchingLabels to list_resources", func() {
