@@ -408,7 +408,7 @@ REGOEOF
   cat > "$POLICY_SP_FILE" <<'REGOEOF'
 package signalprocessing
 import rego.v1
-default severity := "low"
+default severity := "info"
 severity := "high" if { input.labels.severity == "critical" }
 REGOEOF
 }

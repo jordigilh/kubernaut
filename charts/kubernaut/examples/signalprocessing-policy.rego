@@ -57,8 +57,8 @@ environment := {"environment": "Development", "source": "namespace-labels"} if {
 }
 
 # ========== Severity Determination (BR-SP-105) ==========
-# Returns: string (critical/high/medium/low/unknown)
-# Maps external monitoring severity values to kubernaut-normalized values.
+# Returns: string (critical/high/warning/info/unknown)
+# Maps external monitoring severity values to kubernaut-normalized values (ADR-066).
 # Add else clauses for your monitoring tool's severity scheme.
 
 default severity := "unknown"
@@ -69,12 +69,12 @@ severity := "critical" if { lower(input.signal.severity) == "p0" }
 severity := "high" if { lower(input.signal.severity) == "high" }
 severity := "high" if { lower(input.signal.severity) == "sev2" }
 severity := "high" if { lower(input.signal.severity) == "p2" }
-severity := "medium" if { lower(input.signal.severity) == "medium" }
-severity := "medium" if { lower(input.signal.severity) == "warning" }
-severity := "medium" if { lower(input.signal.severity) == "sev3" }
-severity := "low" if { lower(input.signal.severity) == "low" }
-severity := "low" if { lower(input.signal.severity) == "info" }
-severity := "low" if { lower(input.signal.severity) == "sev4" }
+severity := "warning" if { lower(input.signal.severity) == "warning" }
+severity := "warning" if { lower(input.signal.severity) == "medium" }
+severity := "warning" if { lower(input.signal.severity) == "sev3" }
+severity := "info" if { lower(input.signal.severity) == "info" }
+severity := "info" if { lower(input.signal.severity) == "low" }
+severity := "info" if { lower(input.signal.severity) == "sev4" }
 
 # ========== Priority Assignment (BR-SP-070) ==========
 # Returns: {"priority": string, "policy_name": string}

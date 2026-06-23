@@ -1,8 +1,8 @@
 # Enterprise Severity Scheme (Sev1-4) - Test Fixture
-# DD-SEVERITY-001 v1.1: Custom severity mapping for testing
+# DD-SEVERITY-001 v1.1, ADR-066: Custom severity mapping for testing
 #
 # This policy demonstrates Enterprise "Sev" severity scheme mapping
-# to normalized severity values (critical, high, medium, low, unknown)
+# to normalized severity values (critical, high, warning, info, unknown)
 # using a map-based lookup with lower() normalization.
 #
 # Usage in tests:
@@ -18,8 +18,8 @@ import rego.v1
 severity_map := {
     "sev1": "critical",
     "sev2": "high",
-    "sev3": "medium",
-    "sev4": "low",
+    "sev3": "warning",
+    "sev4": "info",
 }
 
 result := {"severity": severity_map[lower(input.signal.severity)], "source": "rego-policy"} if {

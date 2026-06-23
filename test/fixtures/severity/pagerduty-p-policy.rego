@@ -1,8 +1,8 @@
 # PagerDuty Priority Scheme (P0-P4) - Test Fixture
-# DD-SEVERITY-001 v1.1: Custom severity mapping for testing
+# DD-SEVERITY-001 v1.1, ADR-066: Custom severity mapping for testing
 #
 # This policy demonstrates PagerDuty "P" priority scheme mapping
-# to normalized severity values (critical, high, medium, low, unknown)
+# to normalized severity values (critical, high, warning, info, unknown)
 # using a map-based lookup with lower() normalization.
 #
 # Usage in tests:
@@ -20,8 +20,8 @@ severity_map := {
     "p0": "critical",
     "p1": "critical",
     "p2": "high",
-    "p3": "medium",
-    "p4": "low",
+    "p3": "warning",
+    "p4": "info",
 }
 
 result := {"severity": severity_map[lower(input.signal.severity)], "source": "rego-policy"} if {
