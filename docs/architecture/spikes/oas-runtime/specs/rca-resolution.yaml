@@ -17,7 +17,7 @@ input_schema:
       properties:
         name: { type: string }
         namespace: { type: string }
-        severity: { type: string, enum: [critical, high, warning, low] }
+        severity: { type: string, enum: [critical, high, warning, info] }
         resource_kind: { type: string }
         resource_name: { type: string }
     root_cause_analysis:
