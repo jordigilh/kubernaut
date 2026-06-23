@@ -1136,7 +1136,7 @@ type IncidentRequest struct {
 	RemediationID string `json:"remediation_id"`
 	// Canonical signal name (e.g., OOMKilled, CrashLoopBackOff).
 	SignalName string `json:"signal_name"`
-	// Signal severity (BR-SEVERITY-001: critical, high, warning, low, unknown).
+	// Signal severity (BR-SEVERITY-001: critical, high, warning, info, unknown).
 	Severity Severity `json:"severity"`
 	// Monitoring system.
 	SignalSource string `json:"signal_source"`
@@ -2995,7 +2995,7 @@ func (*SessionStreamAPIV1IncidentSessionSessionIDStreamGetOK) sessionStreamAPIV1
 // - critical: Immediate remediation required (>50% users affected)
 // - high: Urgent remediation needed (10-50% users affected)
 // - warning: Remediation recommended (<10% users affected)
-// - low: Remediation optional (no user impact)
+// - info: Informational, remediation optional (no user impact)
 // - unknown: Human triage required (investigation inconclusive).
 // Ref: #/components/schemas/Severity
 type Severity string
@@ -3004,7 +3004,7 @@ const (
 	SeverityCritical Severity = "critical"
 	SeverityHigh     Severity = "high"
 	SeverityWarning  Severity = "warning"
-	SeverityLow      Severity = "low"
+	SeverityInfo     Severity = "info"
 	SeverityUnknown  Severity = "unknown"
 )
 
@@ -3014,7 +3014,7 @@ func (Severity) AllValues() []Severity {
 		SeverityCritical,
 		SeverityHigh,
 		SeverityWarning,
-		SeverityLow,
+		SeverityInfo,
 		SeverityUnknown,
 	}
 }
@@ -3028,7 +3028,7 @@ func (s Severity) MarshalText() ([]byte, error) {
 		return []byte(s), nil
 	case SeverityWarning:
 		return []byte(s), nil
-	case SeverityLow:
+	case SeverityInfo:
 		return []byte(s), nil
 	case SeverityUnknown:
 		return []byte(s), nil
@@ -3049,8 +3049,8 @@ func (s *Severity) UnmarshalText(data []byte) error {
 	case SeverityWarning:
 		*s = SeverityWarning
 		return nil
-	case SeverityLow:
-		*s = SeverityLow
+	case SeverityInfo:
+		*s = SeverityInfo
 		return nil
 	case SeverityUnknown:
 		*s = SeverityUnknown

@@ -511,7 +511,7 @@ spec:
               severity:
                 description: |-
                   Severity determination (DD-SEVERITY-001 v1.1, ADR-066)
-                  Normalized severity determined by Rego policy: "critical", "high", "warning", "low", or "unknown"
+                  Normalized severity determined by Rego policy: "critical", "high", "warning", "info", or "unknown"
                   Aligned with KA/workflow catalog severity levels for consistency across platform
                   Enables downstream services (AIAnalysis, RemediationOrchestrator, Notification)
                   to interpret alert urgency without understanding external severity schemes.
@@ -519,7 +519,7 @@ spec:
                 - critical
                 - high
                 - warning
-                - low
+                - info
                 - unknown
                 type: string
               signalMode:
