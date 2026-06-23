@@ -195,6 +195,7 @@ The key constraints are:
 | Phase 5 | CRD schema (ClusterID on RR) | Complete |
 | Phase 6 | MCP client resilience | Complete |
 | Remediation | Security, wiring, validation hardening | Complete |
+| SP Enrichment | SP remote cluster enrichment via MCP Gateway (BR-INTEGRATION-054) | Complete |
 
 ## Wiring Manifest
 
@@ -212,6 +213,10 @@ The key constraints are:
 | CRDWatcher | main() | cmd/fmc/main.go | UT-FMC-004 |
 | BuildKey validation | BuildKey() | pkg/fleet/scopecache/client.go | UT-FLEET-SC-006/007/008 |
 | fmc securityContext | Helm template | charts/kubernaut/templates/fmc/fmc.yaml | helm template |
+| ResilientClient (SP) | main() | cmd/signalprocessing/main.go | IT-SP-054-001 |
+| MCPReaderFactory (SP) | main() | cmd/signalprocessing/main.go | IT-SP-054-001 |
+| K8sEnricher.SetReaderFactory | main() | cmd/signalprocessing/main.go | IT-SP-054-001/002 |
+| enrichRemote | Enrich() | pkg/signalprocessing/enricher/k8s_enricher.go | UT-SP-054-003a/b/c |
 
 ## MCP Gateway Access Model
 
@@ -1069,6 +1074,109 @@ Migration status:
 | SC-7 (Boundary protection) | MCP Gateway as single chokepoint for all remote cluster access (read and write) |
 | IA-5 (Authenticator management) | Hot-reloadable credentials, bounded token lifetime |
 | SC-8 (Transmission confidentiality) | OAuth2 + TLS for all MCP connections |
+
+## SP Remote Enrichment (BR-INTEGRATION-054)
+
+### Overview
+
+Signal Processing (SP) enriches signals with Kubernetes context metadata (labels,
+annotations, owner chain). When a signal originates from a remote cluster (non-empty
+`ClusterID` on `SignalData`), SP reads the resource metadata from the remote cluster
+via the MCP Gateway instead of the local K8s API.
+
+### Architecture
+
+```
+SignalData.ClusterID != "" ?
+    ├── YES → enrichRemote() → ReaderFactory.ReaderFor(clusterID)
+    │                              → mcpclient.NewFromSession(session, clusterID)
+    │                                  → MCP Gateway → K8s MCP Server → remote K8s API
+    │
+    └── NO → existing local enrichment (enrichPodSignal, enrichDeploymentSignal, etc.)
+```
+
+### SP Fleet Configuration
+
+Add to the SP controller's `config.yaml`:
+
+```yaml
+fleet:
+  endpoint: "http://mcp-gateway.kubernaut-system.svc:8080"  # MCP Gateway URL
+  oauth2:
+    enabled: true
+    tokenURL: "https://keycloak.example.com/realms/kubernaut/protocol/openid-connect/token"
+    credentialsSecretRef: "sp-fleet-oauth2"  # Secret with client_id + client_secret
+```
+
+When `fleet.endpoint` is empty (default), SP operates in local-only mode with zero
+overhead — no MCP connection is attempted.
+
+### Degraded Mode Behavior
+
+SP gracefully degrades when remote enrichment fails:
+
+| Failure | Behavior |
+|---------|----------|
+| MCP Gateway unreachable at boot | `fleetErr` logged, remote enrichment disabled, local enrichment works normally |
+| ReaderFactory.ReaderFor() fails | `DegradedMode=true` on KubernetesContext, enrichment continues |
+| Remote resource not found | `DegradedMode=true`, namespace context still populated if available |
+| MCP session drops mid-request | ResilientClient auto-reconnects on next call |
+
+## Per-Cluster Authorization: BYO (Bring Your Own)
+
+### Scope
+
+Per-cluster authorization — controlling which Kubernaut service can access which
+managed cluster — is a **deployment-time configuration** responsibility, not a Kubernaut
+code concern. Kubernaut authenticates to the MCP Gateway via OAuth2 (Boundary 1). What
+happens at the gateway's authorization layer (Boundary 2) is owned by the platform team.
+
+### Configuration Requirements
+
+Platform teams deploying Kubernaut with multi-cluster federation MUST configure:
+
+1. **Keycloak client scope mapper** — Add a `kubernaut_allowed_clusters` claim to the
+   Keycloak client used by Kubernaut services. This claim carries the list of clusters
+   each service identity is authorized to access.
+
+2. **OPA Rego policy in Authorino AuthPolicy** — Extend the MCP Gateway's OPA policy
+   to extract the cluster prefix from the MCP tool name (e.g., `prod-east-1` from
+   `prod-east-1__get_resource`) and verify it appears in the caller's
+   `kubernaut_allowed_clusters` claim.
+
+### Example Rego Policy (Reference Only)
+
+```rego
+# This is a reference example. Kubernaut does NOT ship or manage this policy.
+# Platform teams deploy it via Authorino AuthPolicy on the MCP Gateway.
+
+package mcp_gateway_authz
+
+default allow = false
+
+allow {
+    input.context.request.http.method == "POST"
+    tool_name := input.parsed_body.params.name
+    cluster := extract_cluster_prefix(tool_name)
+    token := input.auth.identity
+    cluster in token.kubernaut_allowed_clusters
+}
+
+extract_cluster_prefix(tool_name) = prefix {
+    parts := split(tool_name, "__")
+    count(parts) >= 2
+    prefix := parts[0]
+}
+```
+
+### Why BYO
+
+- Authorization policies vary widely between organizations (different IdPs, different
+  cluster naming conventions, different OPA rule structures)
+- Kubernaut is a read-only consumer of the MCP Gateway — it does not own the gateway's
+  AuthPolicy configuration
+- The Keycloak claim and OPA policy are standard Authorino/Kuadrant patterns, not
+  Kubernaut-specific code
 
 ## References
 
