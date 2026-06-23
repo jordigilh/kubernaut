@@ -508,7 +508,7 @@ var _ = Describe("KA Audit Parity — TP-433-AUDIT-SOC2", func() {
 				{"high", "high"},
 				{"warning", "warning"},
 				{"medium", "warning"},
-				{"low", "low"},
+				{"low", "info"},
 				{"unknown", "unknown"},
 				{"invalid_value", "unknown"},
 				{"", "unknown"},
@@ -530,7 +530,7 @@ var _ = Describe("KA Audit Parity — TP-433-AUDIT-SOC2", func() {
 			store := audit.NewDSAuditStore(recorder)
 
 			event := audit.NewEvent(audit.EventTypeResponseComplete, "corr-minimal")
-			event.Data["response_data"] = `{"rca_summary":"minimal","severity":"low","confidence":0.5}`
+			event.Data["response_data"] = `{"rca_summary":"minimal","severity":"info","confidence":0.5}`
 
 			err := store.StoreAudit(context.Background(), event)
 			Expect(err).NotTo(HaveOccurred())
@@ -675,7 +675,7 @@ var _ = Describe("KA Audit Parity — TP-433-AUDIT-SOC2", func() {
 			store := audit.NewDSAuditStore(recorder)
 
 			event := audit.NewEvent(audit.EventTypeResponseComplete, "corr-ap-018")
-			event.Data["response_data"] = `{"rca_summary":"token test","severity":"low","confidence":0.5}`
+			event.Data["response_data"] = `{"rca_summary":"token test","severity":"info","confidence":0.5}`
 			event.Data["total_prompt_tokens"] = 4500
 			event.Data["total_completion_tokens"] = 2100
 
@@ -693,7 +693,7 @@ var _ = Describe("KA Audit Parity — TP-433-AUDIT-SOC2", func() {
 			store := audit.NewDSAuditStore(recorder)
 
 			event := audit.NewEvent(audit.EventTypeResponseComplete, "corr-ap-018-zero")
-			event.Data["response_data"] = `{"rca_summary":"no tokens","severity":"low","confidence":0.5}`
+			event.Data["response_data"] = `{"rca_summary":"no tokens","severity":"info","confidence":0.5}`
 
 			err := store.StoreAudit(context.Background(), event)
 			Expect(err).NotTo(HaveOccurred())
@@ -805,7 +805,7 @@ var _ = Describe("KA Audit Parity — TP-433-AUDIT-SOC2", func() {
 			store := audit.NewDSAuditStore(recorder)
 
 			event := audit.NewEvent(audit.EventTypeRCAComplete, "corr-rca-minimal")
-			event.Data["response_data"] = `{"rca_summary":"minimal RCA","severity":"low","confidence":0.5}`
+			event.Data["response_data"] = `{"rca_summary":"minimal RCA","severity":"info","confidence":0.5}`
 
 			err := store.StoreAudit(context.Background(), event)
 			Expect(err).NotTo(HaveOccurred())
@@ -823,7 +823,7 @@ var _ = Describe("KA Audit Parity — TP-433-AUDIT-SOC2", func() {
 			store := audit.NewDSAuditStore(recorder)
 
 			event := audit.NewEvent(audit.EventTypeRCAComplete, "corr-rca-no-tokens")
-			event.Data["response_data"] = `{"rca_summary":"test","severity":"low","confidence":0.5}`
+			event.Data["response_data"] = `{"rca_summary":"test","severity":"info","confidence":0.5}`
 
 			err := store.StoreAudit(context.Background(), event)
 			Expect(err).NotTo(HaveOccurred())
@@ -845,7 +845,7 @@ var _ = Describe("KA Audit Parity — TP-433-AUDIT-SOC2", func() {
 			store := audit.NewDSAuditStore(recorder)
 
 			event := audit.NewEvent(audit.EventTypeResponseComplete, "corr-warn")
-			event.Data["response_data"] = `{"rca_summary":"test","severity":"low","confidence":0.9}`
+			event.Data["response_data"] = `{"rca_summary":"test","severity":"info","confidence":0.9}`
 			event.Data["total_prompt_tokens"] = 100
 			event.Data["total_completion_tokens"] = 50
 

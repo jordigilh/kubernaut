@@ -123,7 +123,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 			// E2E-AA-163-001: RootCauseAnalysis populated from mock LLM response
 			Expect(analysis.Status.RootCauseAnalysis).NotTo(BeNil())
 			Expect(analysis.Status.RootCauseAnalysis.Summary).NotTo(BeEmpty())
-			Expect(analysis.Status.RootCauseAnalysis.Severity).To(BeElementOf("critical", "high", "medium", "low", "unknown"))
+			Expect(analysis.Status.RootCauseAnalysis.Severity).To(BeElementOf("critical", "high", "warning", "info", "unknown"))
 			Expect(analysis.Status.RootCauseAnalysis.SignalType).NotTo(BeEmpty())
 			Expect(analysis.Status.RootCauseAnalysis.ContributingFactors).To(ContainElement("invalid_configuration_directive"))
 

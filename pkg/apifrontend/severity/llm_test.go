@@ -68,16 +68,16 @@ var _ = Describe("LLM Triage", func() {
 	})
 
 	Describe("Response Validation", func() {
-		It("UT-AF-T-049: valid severity accepted", func() {
+		It("UT-AF-T-049: valid severity accepted (ADR-066: critical > high > warning > info)", func() {
 			Expect(severity.ValidateSeverity("critical")).To(BeTrue())
 			Expect(severity.ValidateSeverity("high")).To(BeTrue())
 			Expect(severity.ValidateSeverity("warning")).To(BeTrue())
-			Expect(severity.ValidateSeverity("low")).To(BeTrue())
 			Expect(severity.ValidateSeverity("info")).To(BeTrue())
 		})
 
-		It("UT-AF-T-049b: medium is no longer a valid canonical severity (ADR-066)", func() {
+		It("UT-AF-T-049b: medium and low are no longer valid canonical severities (ADR-066)", func() {
 			Expect(severity.ValidateSeverity("medium")).To(BeFalse())
+			Expect(severity.ValidateSeverity("low")).To(BeFalse())
 		})
 
 		It("UT-AF-T-050: invalid severity string rejected", func() {

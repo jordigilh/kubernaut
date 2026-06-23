@@ -219,7 +219,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 
 				// V1.0: Use structured MandatoryLabels (Issue #274: signalName removed)
 				labels := models.MandatoryLabels{
-					Severity:    []string{"low"},
+					Severity:    []string{"info"},
 					Component:   []string{"test"},
 					Priority:    "P3",
 					Environment: []string{"test"},
@@ -286,7 +286,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 
 			// V1.0: Use structured MandatoryLabels
 			labels := models.MandatoryLabels{
-				Severity:    []string{"low"},
+				Severity:    []string{"info"},
 				Component:   []string{"test"},
 				Priority:    "P3",
 				Environment: []string{"test"},
@@ -334,7 +334,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				Expect(retrievedWorkflow.UpdatedAt).ToNot(BeZero())
 
 			// CRITICAL: Verify structured labels deserialized correctly (Issue #274: signalName removed)
-			Expect(retrievedWorkflow.Labels.Severity).To(Equal([]string{"low"}))
+			Expect(retrievedWorkflow.Labels.Severity).To(Equal([]string{"info"}))
 			Expect(retrievedWorkflow.Labels.Component).To(Equal([]string{"test"}))
 			Expect(retrievedWorkflow.Labels.Priority).To(Equal("P3"))
 			// DD-WORKFLOW-001 v2.5: Environment is now []string
@@ -376,7 +376,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 
 				// V1.0: Use structured MandatoryLabels (Issue #274: signalName removed)
 				labels := models.MandatoryLabels{
-					Severity:    []string{"low"},
+					Severity:    []string{"info"},
 					Component:   []string{"test"},
 					Priority:    "P3",
 					Environment: []string{"test"},
@@ -514,7 +514,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 
 			// V1.0: Use structured MandatoryLabels (Issue #274: signalName removed)
 			labels := models.MandatoryLabels{
-				Severity:    []string{"low"},
+				Severity:    []string{"info"},
 				Component:   []string{"test"},
 				Priority:    "P3",
 				Environment: []string{"test"},

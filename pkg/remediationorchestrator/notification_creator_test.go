@@ -474,7 +474,7 @@ var _ = Describe("NotificationCreator", func() {
 
 				Expect(nr.Spec.RemediationRequestRef.Name).To(Equal("test-rr"))
 				Expect(nr.Spec.Type).To(Equal(notificationv1.NotificationTypeSimple))
-				Expect(nr.Spec.Severity).To(Equal("low"))
+				Expect(nr.Spec.Severity).To(Equal("info"))
 				Expect(nr.Labels).To(BeNil())
 			})
 		})

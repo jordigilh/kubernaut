@@ -266,7 +266,7 @@ var _ = Describe("E2E-DS-017-001: Three-Step Workflow Discovery (DD-HAPI-017)", 
 			// GetWorkflow with MISMATCHED context — should return 404
 			step3Resp, err := DSClient.GetWorkflowByID(testCtx, dsgen.GetWorkflowByIDParams{
 				WorkflowID:  workflowUUID,
-				Severity:    dsgen.NewOptGetWorkflowByIDSeverity(dsgen.GetWorkflowByIDSeverityLow),   // mismatch: low != critical
+				Severity:    dsgen.NewOptGetWorkflowByIDSeverity(dsgen.GetWorkflowByIDSeverityInfo),   // mismatch: info != critical
 				Component:   dsgen.NewOptString("apps/v1/StatefulSet"),                              // mismatch: StatefulSet != Pod
 				Environment: dsgen.NewOptString("staging"),                                           // mismatch: staging != production
 				Priority:    dsgen.NewOptGetWorkflowByIDPriority(dsgen.GetWorkflowByIDPriorityP3),    // mismatch: P3 != P0

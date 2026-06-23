@@ -91,7 +91,7 @@ var _ = Describe("Kubernaut Agent audit coverage 668 (BR-HAPI-197 DD-AUDIT-002)"
 
 			rd, err := json.Marshal(map[string]interface{}{
 				"rca_summary":          "x",
-				"severity":           "low",
+				"severity":           "info",
 				"confidence":         0.1,
 				"needs_human_review": true,
 				"human_review_reason":  "free_text_from_model",

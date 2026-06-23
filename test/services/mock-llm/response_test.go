@@ -120,7 +120,7 @@ var _ = Describe("Response Builders", func() {
 		It("UT-MOCK-030-002: problem_resolved scenario includes actionable=false", func() {
 			resolvedCfg := scenarios.MockScenarioConfig{
 				ScenarioName:         "problem_resolved",
-				Severity:             "low",
+				Severity:             "info",
 				Confidence:           0.85,
 				RootCause:            "Problem self-resolved",
 				InvestigationOutcome: "problem_resolved",

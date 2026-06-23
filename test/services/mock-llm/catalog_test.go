@@ -75,7 +75,7 @@ var _ = Describe("Scenario Catalog Validation", func() {
 			uuid.DeterministicUUID("generic-restart-v1"), 0.35,
 			"human judgment"),
 		Entry("UT-MOCK-026-007: problem_resolved",
-			"problem_resolved", "MOCK_PROBLEM_RESOLVED", "low",
+			"problem_resolved", "MOCK_PROBLEM_RESOLVED", "info",
 			"", 0.85,
 			"self-resolved"),
 		Entry("UT-MOCK-026-008: rca_incomplete",
@@ -91,7 +91,7 @@ var _ = Describe("Scenario Catalog Validation", func() {
 			uuid.DeterministicUUID("fix-certificate-v1"), 0.92,
 			"Certificate stuck"),
 		Entry("UT-MOCK-026-011: not_actionable",
-			"not_actionable", "MOCK_NOT_ACTIONABLE", "low",
+			"not_actionable", "MOCK_NOT_ACTIONABLE", "info",
 			"", 0.0,
 			"Orphaned PVC"),
 	)

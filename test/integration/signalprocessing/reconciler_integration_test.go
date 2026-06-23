@@ -1124,7 +1124,7 @@ labels["team"] := ["platform"  // Missing closing bracket
 				Namespace: ns,
 			}
 			rrName := "backoff-init-rr"
-			rr := CreateTestRemediationRequest(rrName, ns, ValidTestFingerprints["backoff-02"], "low", targetResource)
+			rr := CreateTestRemediationRequest(rrName, ns, ValidTestFingerprints["backoff-02"], "info", targetResource)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			By("Creating SignalProcessing CR")

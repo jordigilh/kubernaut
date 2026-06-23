@@ -15,7 +15,7 @@ spec:
   actionType: RestartPod
   
   labels:
-    severity: [low, warning, high]
+    severity: [info, warning, high]
     environment: [production, staging, test]
     component: [v1/Pod]
     priority: P2

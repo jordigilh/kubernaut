@@ -392,8 +392,8 @@ severity := "high" if { input.signal.severity == "sev2" }
 severity := "high" if { input.signal.severity == "p2" }
 severity := "medium" if { input.signal.severity == "sev3" }
 severity := "medium" if { input.signal.severity == "p3" }
-severity := "low" if { input.signal.severity == "sev4" }
-severity := "low" if { input.signal.severity == "p4" }
+severity := "info" if { input.signal.severity == "sev4" }
+severity := "info" if { input.signal.severity == "p4" }
 severity := "invalid-severity-enum" if {
     input.signal.severity == "trigger-error"
 }

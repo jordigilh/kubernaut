@@ -296,7 +296,7 @@ var _ = Describe("BR-NOT-057: Priority-Based Processing", Label("integration", "
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Type:     notificationv1alpha1.NotificationTypeSimple,
 					Priority: notificationv1alpha1.NotificationPriorityLow,
-					Severity: "low",
+					Severity: "info",
 					Subject:  "ℹ️ Routine Maintenance Completed",
 					Body:     "Info: Scheduled maintenance completed successfully. No action required.",
 				},

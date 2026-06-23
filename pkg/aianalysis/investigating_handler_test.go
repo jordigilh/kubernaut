@@ -685,7 +685,7 @@ var _ = Describe("InvestigatingHandler", func() {
 					[]string{"Transient failure - recovered"},
 					"Memory pressure subsided after pod restart",
 					"OOM caused by temporary memory spike",
-					"low",
+					"info",
 				)
 			})
 
@@ -714,7 +714,7 @@ var _ = Describe("InvestigatingHandler", func() {
 					[]string{},
 					"Orphaned PVCs from completed batch jobs that were not properly cleaned up",
 					"Orphaned PVCs consuming disk space",
-					"low",
+					"info",
 				)
 			})
 
@@ -743,7 +743,7 @@ var _ = Describe("InvestigatingHandler", func() {
 				BeforeEach(func() {
 					rcaMap := mocks.BuildMockRCA(
 						"Problem self-resolved. Pod recovered from transient OOM",
-						"low",
+						"info",
 						[]string{"Transient condition", "Auto-recovery"},
 					)
 					mockClient.Response = &agentclient.IncidentResponse{
@@ -816,7 +816,7 @@ var _ = Describe("InvestigatingHandler", func() {
 				BeforeEach(func() {
 					rcaMap := mocks.BuildMockRCA(
 						"Problem self-resolved. Temporary memory spike subsided after pod restart",
-						"low",
+						"info",
 						[]string{"Temporary memory spike", "Transient condition"},
 					)
 					mockClient.Response = &agentclient.IncidentResponse{
@@ -1101,7 +1101,7 @@ var _ = Describe("InvestigatingHandler", func() {
 			BeforeEach(func() {
 				rcaMap := mocks.BuildMockRCA(
 					"Orphaned PVCs from completed batch jobs — not impacting any workload",
-					"low",
+					"info",
 					[]string{"Completed batch job artifacts"},
 				)
 				mockClient.Response = &agentclient.IncidentResponse{
@@ -1152,7 +1152,7 @@ var _ = Describe("InvestigatingHandler", func() {
 			BeforeEach(func() {
 				rcaMap := mocks.BuildMockRCA(
 					"Multiple orphaned PVCs detected consuming 15GB of storage",
-					"low",
+					"info",
 					[]string{"Completed batch job artifacts", "No PVC cleanup policy configured"},
 				)
 				mockClient.Response = &agentclient.IncidentResponse{
@@ -1198,7 +1198,7 @@ var _ = Describe("InvestigatingHandler", func() {
 			BeforeEach(func() {
 				rcaMap := mocks.BuildMockRCA(
 					"Orphaned PVCs from completed batch jobs — not impacting any workload",
-					"low",
+					"info",
 					[]string{"Completed batch job artifacts"},
 				)
 				mockClient.Response = &agentclient.IncidentResponse{
@@ -1233,7 +1233,7 @@ var _ = Describe("InvestigatingHandler", func() {
 			BeforeEach(func() {
 				rcaMap := mocks.BuildMockRCA(
 					"Orphaned PVCs from completed batch jobs",
-					"low",
+					"info",
 					[]string{"Completed batch job artifacts"},
 				)
 				mockClient.Response = &agentclient.IncidentResponse{

@@ -59,7 +59,7 @@ severity := "high" if {
 severity := "warning" if {
     input.signal.severity == "medium"
 }
-severity := "low" if {
+severity := "info" if {
     input.signal.severity == "low"
 }
 
@@ -181,7 +181,7 @@ default labels := {}
 			Entry("critical", "critical", "critical"),
 			Entry("high", "high", "high"),
 			Entry("medium", "medium", "warning"),
-			Entry("low", "low", "low"),
+			Entry("low (normalized to info)", "low", "info"),
 			Entry("unmapped (default)", "Warning", "unknown"),
 		)
 

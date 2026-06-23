@@ -16,7 +16,7 @@ spec:
   actionType: RestartPod
   
   labels:
-    severity: [low]
+    severity: [info]
     environment: [test]
     component: [apps/v1/Deployment]
     priority: P3

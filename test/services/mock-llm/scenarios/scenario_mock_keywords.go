@@ -50,7 +50,7 @@ func lowConfidenceConfig() MockScenarioConfig {
 
 func problemResolvedConfig() MockScenarioConfig {
 	return MockScenarioConfig{
-		ScenarioName: "problem_resolved", SignalName: "MOCK_PROBLEM_RESOLVED", Severity: "low",
+		ScenarioName: "problem_resolved", SignalName: "MOCK_PROBLEM_RESOLVED", Severity: "info",
 		Confidence:   0.85,
 		RootCause:    "Problem self-resolved through auto-scaling or transient condition cleared",
 		ResourceKind: "Pod", ResourceNS: "production", ResourceName: "recovered-pod",
@@ -63,7 +63,7 @@ func problemResolvedConfig() MockScenarioConfig {
 
 func problemResolvedContradictionConfig() MockScenarioConfig {
 	return MockScenarioConfig{
-		ScenarioName: "problem_resolved_contradiction", SignalName: "MOCK_PROBLEM_RESOLVED_CONTRADICTION", Severity: "low",
+		ScenarioName: "problem_resolved_contradiction", SignalName: "MOCK_PROBLEM_RESOLVED_CONTRADICTION", Severity: "info",
 		Confidence:   0.85,
 		RootCause:    "Problem self-resolved. Transient OOM cleared after pod restart",
 		ResourceKind: "Pod", ResourceNS: "production", ResourceName: "recovered-pod",
@@ -89,7 +89,7 @@ func maxRetriesExhaustedConfig() MockScenarioConfig {
 
 func notActionableConfig() MockScenarioConfig {
 	return MockScenarioConfig{
-		ScenarioName: "not_actionable", SignalName: "MOCK_NOT_ACTIONABLE", Severity: "low",
+		ScenarioName: "not_actionable", SignalName: "MOCK_NOT_ACTIONABLE", Severity: "info",
 		Confidence:   0.0,
 		Rationale:    "Orphaned PVC from completed batch job; no active workload references it",
 		RootCause:    "Orphaned PVC from completed batch job — no active workload references this volume",

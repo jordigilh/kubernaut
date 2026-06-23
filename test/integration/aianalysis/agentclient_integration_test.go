@@ -336,7 +336,7 @@ var _ = Describe("KA Integration", Label("integration", "kubernaut-agent"), func
 				IncidentID:        "test-resolved-contradiction-001",
 				RemediationID:     "req-resolved-contradiction-001",
 				SignalName:        "MOCK_PROBLEM_RESOLVED_CONTRADICTION",
-				Severity:          "low",
+				Severity:          "info",
 				SignalSource:      "kubernaut",
 				ResourceNamespace: testNamespace,
 				ResourceKind:      "Pod",
