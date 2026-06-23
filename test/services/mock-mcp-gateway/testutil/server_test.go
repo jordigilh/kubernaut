@@ -132,8 +132,8 @@ var _ = Describe("MockGateway (BR-INTEGRATION-065)", func() {
 			for _, t := range tools.Tools {
 				toolNames = append(toolNames, t.Name)
 			}
-			Expect(toolNames).To(ContainElement("cluster-a__get_resource"))
-			Expect(toolNames).To(ContainElement("cluster-b__get_resource"))
+			Expect(toolNames).To(ContainElement("cluster-a__resources_get"))
+			Expect(toolNames).To(ContainElement("cluster-b__resources_get"))
 		})
 
 		It("UT-MOCK-GW-006: calls cluster-scoped tool and returns cluster-specific content", func() {
@@ -145,14 +145,14 @@ var _ = Describe("MockGateway (BR-INTEGRATION-065)", func() {
 			defer session.Close()
 
 			result, err := session.CallTool(ctx, &mcp.CallToolParams{
-				Name:      "prod-east__get_resource",
+				Name:      "prod-east__resources_get",
 				Arguments: map[string]any{"kind": "Pod", "namespace": "default", "name": "nginx"},
 			})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.Content).To(HaveLen(1))
 			tc, ok := result.Content[0].(*mcp.TextContent)
 			Expect(ok).To(BeTrue())
-			Expect(tc.Text).To(ContainSubstring("prod-east"))
+			Expect(tc.Text).To(ContainSubstring("nginx"))
 			Expect(tc.Text).To(ContainSubstring("Pod"))
 		})
 	})

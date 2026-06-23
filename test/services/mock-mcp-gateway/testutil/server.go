@@ -151,7 +151,7 @@ func (gw *MockGateway) registerTool(td toolDef) {
 func (gw *MockGateway) registerClusterTools(cluster string) {
 	schema := json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"namespace":{"type":"string"},"name":{"type":"string"}}}`)
 
-	getResourceName := cluster + "__get_resource"
+	getResourceName := cluster + "__resources_get"
 	gw.server.AddTool(&mcp.Tool{
 		Name:        getResourceName,
 		Description: fmt.Sprintf("Get a Kubernetes resource from cluster %s", cluster),
@@ -172,7 +172,36 @@ func (gw *MockGateway) registerClusterTools(cluster string) {
 		}, nil
 	})
 
-	listResourcesName := cluster + "__list_resources"
+	createResourceName := cluster + "__resources_create_or_update"
+	gw.server.AddTool(&mcp.Tool{
+		Name:        createResourceName,
+		Description: fmt.Sprintf("Create a Kubernetes resource on cluster %s", cluster),
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"manifest":{"type":"string"}},"required":["manifest"]}`),
+	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		gw.recordCall(req.Params.Name, req.Params.Arguments)
+		var args struct {
+			Manifest string `json:"manifest"`
+		}
+		_ = json.Unmarshal(req.Params.Arguments, &args)
+
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: args.Manifest}},
+		}, nil
+	})
+
+	deleteResourceName := cluster + "__resources_delete"
+	gw.server.AddTool(&mcp.Tool{
+		Name:        deleteResourceName,
+		Description: fmt.Sprintf("Delete a Kubernetes resource from cluster %s", cluster),
+		InputSchema: schema,
+	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		gw.recordCall(req.Params.Name, req.Params.Arguments)
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: `{"status":"deleted"}`}},
+		}, nil
+	})
+
+	listResourcesName := cluster + "__resources_list"
 	gw.server.AddTool(&mcp.Tool{
 		Name:        listResourcesName,
 		Description: fmt.Sprintf("List Kubernetes resources from cluster %s", cluster),

@@ -180,7 +180,7 @@ func (c *Client) Session() *mcp.ClientSession {
 
 // getResource calls the MCP get_resource tool and returns the parsed unstructured object.
 func (c *Client) getResource(ctx context.Context, kind, namespace, name string) (*unstructured.Unstructured, error) {
-	toolName := c.clusterID + "__get_resource"
+	toolName := ClusterTool(c.clusterID, ToolGet)
 	args := map[string]any{
 		"kind": kind,
 		"name": name,
@@ -207,7 +207,7 @@ func (c *Client) getResource(ctx context.Context, kind, namespace, name string) 
 
 // listResources calls the MCP list_resources tool and returns parsed unstructured items.
 func (c *Client) listResources(ctx context.Context, kind, namespace string, labels map[string]string) ([]unstructured.Unstructured, error) {
-	toolName := c.clusterID + "__list_resources"
+	toolName := ClusterTool(c.clusterID, ToolList)
 	args := map[string]any{
 		"kind": kind,
 	}
