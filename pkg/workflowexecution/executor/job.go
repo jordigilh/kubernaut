@@ -40,15 +40,22 @@ const (
 // DD-WE-005 v2.0: SA is read from WFE spec at execution time, not from executor config.
 //
 // Authority: BR-WE-014 (Kubernetes Job Execution Backend)
+// BR-FLEET-054: Uses ClientFactory for local/remote client routing.
 type JobExecutor struct {
-	Client client.Client
+	factory ClientFactory
 }
 
-// NewJobExecutor creates a new JobExecutor.
+// NewJobExecutor creates a new JobExecutor using the given client for local
+// (hub cluster) execution only. For fleet-enabled deployments that need remote
+// execution, use NewJobExecutorWithFactory instead.
 func NewJobExecutor(c client.Client) *JobExecutor {
-	return &JobExecutor{
-		Client: c,
-	}
+	return &JobExecutor{factory: NewLocalClientFactory(c)}
+}
+
+// NewJobExecutorWithFactory creates a JobExecutor that routes K8s API calls
+// through the given ClientFactory, enabling remote cluster execution via MCP.
+func NewJobExecutorWithFactory(f ClientFactory) *JobExecutor {
+	return &JobExecutor{factory: f}
 }
 
 // Engine returns "job".
@@ -63,9 +70,14 @@ func (j *JobExecutor) Engine() string {
 // injected as environment variables. DD-WE-006: opts.Dependencies are mounted
 // as volumes at /run/kubernaut/secrets/<name> and /run/kubernaut/configmaps/<name>.
 func (j *JobExecutor) Create(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string, opts CreateOptions) (*CreateResult, error) {
+	c, err := j.factory.ClientFor(ctx, wfe.Spec.ClusterID)
+	if err != nil {
+		return nil, fmt.Errorf("get client for cluster %q: %w", wfe.Spec.ClusterID, err)
+	}
+
 	job := j.buildJob(ctx, wfe, namespace, opts)
 
-	if err := j.Client.Create(ctx, job); err != nil {
+	if err := c.Create(ctx, job); err != nil {
 		return nil, err // Preserve original error for IsAlreadyExists checks
 	}
 	return &CreateResult{ResourceName: job.Name}, nil
@@ -83,8 +95,13 @@ func (j *JobExecutor) GetStatus(ctx context.Context, wfe *workflowexecutionv1alp
 		return nil, fmt.Errorf("no execution ref set on WFE %s/%s", wfe.Namespace, wfe.Name)
 	}
 
+	c, err := j.factory.ClientFor(ctx, wfe.Spec.ClusterID)
+	if err != nil {
+		return nil, fmt.Errorf("get client for cluster %q: %w", wfe.Spec.ClusterID, err)
+	}
+
 	var job batchv1.Job
-	if err := j.Client.Get(ctx, client.ObjectKey{
+	if err := c.Get(ctx, client.ObjectKey{
 		Name:      wfe.Status.ExecutionRef.Name,
 		Namespace: namespace,
 	}, &job); err != nil {
@@ -134,9 +151,14 @@ func (j *JobExecutor) GetStatus(ctx context.Context, wfe *workflowexecutionv1alp
 // Returns (false, nil) if the Job is still running (no terminal condition).
 // Returns (false, err) if the Job cannot be fetched (e.g., NotFound race).
 func (j *JobExecutor) IsCompleted(ctx context.Context, targetResource string, namespace string) (bool, error) {
+	c, err := j.factory.ClientFor(ctx, "")
+	if err != nil {
+		return false, fmt.Errorf("get local client: %w", err)
+	}
+
 	jobName := ExecutionResourceName(targetResource)
 	var job batchv1.Job
-	if err := j.Client.Get(ctx, client.ObjectKey{Name: jobName, Namespace: namespace}, &job); err != nil {
+	if err := c.Get(ctx, client.ObjectKey{Name: jobName, Namespace: namespace}, &job); err != nil {
 		return false, err
 	}
 
@@ -159,10 +181,15 @@ func (j *JobExecutor) IsCompleted(ctx context.Context, targetResource string, na
 // from TargetResource), a newer WFE for the same target may have already
 // replaced the Job. Deleting without this check would destroy the new WFE's Job.
 func (j *JobExecutor) Cleanup(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string) error {
+	c, err := j.factory.ClientFor(ctx, wfe.Spec.ClusterID)
+	if err != nil {
+		return fmt.Errorf("get client for cluster %q: %w", wfe.Spec.ClusterID, err)
+	}
+
 	jobName := ExecutionResourceName(wfe.Spec.TargetResource)
 
 	var existing batchv1.Job
-	if err := j.Client.Get(ctx, client.ObjectKey{Name: jobName, Namespace: namespace}, &existing); err != nil {
+	if err := c.Get(ctx, client.ObjectKey{Name: jobName, Namespace: namespace}, &existing); err != nil {
 		if client.IgnoreNotFound(err) == nil {
 			return nil // Already gone
 		}
@@ -174,7 +201,7 @@ func (j *JobExecutor) Cleanup(ctx context.Context, wfe *workflowexecutionv1alpha
 	}
 
 	propagation := metav1.DeletePropagationBackground
-	if err := j.Client.Delete(ctx, &existing, &client.DeleteOptions{
+	if err := c.Delete(ctx, &existing, &client.DeleteOptions{
 		PropagationPolicy: &propagation,
 	}); err != nil {
 		if client.IgnoreNotFound(err) == nil {

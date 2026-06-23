@@ -37,15 +37,22 @@ import (
 
 // TektonExecutor implements the Executor interface for Tekton PipelineRuns.
 // DD-WE-005 v2.0: SA is read from WFE spec at execution time, not from executor config.
+// BR-FLEET-054: Uses ClientFactory for local/remote client routing.
 type TektonExecutor struct {
-	Client client.Client
+	factory ClientFactory
 }
 
-// NewTektonExecutor creates a new TektonExecutor.
+// NewTektonExecutor creates a new TektonExecutor using the given client for
+// local (hub cluster) execution only. For fleet-enabled deployments that need
+// remote execution, use NewTektonExecutorWithFactory instead.
 func NewTektonExecutor(c client.Client) *TektonExecutor {
-	return &TektonExecutor{
-		Client: c,
-	}
+	return &TektonExecutor{factory: NewLocalClientFactory(c)}
+}
+
+// NewTektonExecutorWithFactory creates a TektonExecutor that routes K8s API
+// calls through the given ClientFactory, enabling remote cluster execution.
+func NewTektonExecutorWithFactory(f ClientFactory) *TektonExecutor {
+	return &TektonExecutor{factory: f}
 }
 
 // Engine returns "tekton".
@@ -60,9 +67,14 @@ func (t *TektonExecutor) Engine() string {
 // DD-WE-003: Deterministic name for atomic locking
 // DD-WE-006: opts.Dependencies are added as workspace bindings.
 func (t *TektonExecutor) Create(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string, opts CreateOptions) (*CreateResult, error) {
+	c, err := t.factory.ClientFor(ctx, wfe.Spec.ClusterID)
+	if err != nil {
+		return nil, fmt.Errorf("get client for cluster %q: %w", wfe.Spec.ClusterID, err)
+	}
+
 	pr := t.BuildPipelineRun(ctx, wfe, namespace, opts)
 
-	if err := t.Client.Create(ctx, pr); err != nil {
+	if err := c.Create(ctx, pr); err != nil {
 		return nil, err // Preserve original error for IsAlreadyExists checks
 	}
 	return &CreateResult{ResourceName: pr.Name}, nil
@@ -75,8 +87,13 @@ func (t *TektonExecutor) GetStatus(ctx context.Context, wfe *workflowexecutionv1
 		return nil, fmt.Errorf("no execution ref set on WFE %s/%s", wfe.Namespace, wfe.Name)
 	}
 
+	c, err := t.factory.ClientFor(ctx, wfe.Spec.ClusterID)
+	if err != nil {
+		return nil, fmt.Errorf("get client for cluster %q: %w", wfe.Spec.ClusterID, err)
+	}
+
 	var pr tektonv1.PipelineRun
-	if err := t.Client.Get(ctx, client.ObjectKey{
+	if err := c.Get(ctx, client.ObjectKey{
 		Name:      wfe.Status.ExecutionRef.Name,
 		Namespace: namespace,
 	}, &pr); err != nil {
@@ -84,7 +101,7 @@ func (t *TektonExecutor) GetStatus(ctx context.Context, wfe *workflowexecutionv1
 	}
 
 	// Build status summary
-	summary := t.buildStatusSummary(ctx, &pr)
+	summary := t.buildStatusSummary(ctx, c, &pr)
 
 	// Map Tekton condition to execution result
 	succeededCond := pr.Status.GetCondition(apis.ConditionSucceeded)
@@ -130,10 +147,15 @@ func (t *TektonExecutor) GetStatus(ctx context.Context, wfe *workflowexecutionv1
 // kubernaut.ai/workflow-execution label matches this WFE's name to avoid
 // destroying a newer WFE's execution resource that shares the deterministic name.
 func (t *TektonExecutor) Cleanup(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string) error {
+	c, err := t.factory.ClientFor(ctx, wfe.Spec.ClusterID)
+	if err != nil {
+		return fmt.Errorf("get client for cluster %q: %w", wfe.Spec.ClusterID, err)
+	}
+
 	prName := ExecutionResourceName(wfe.Spec.TargetResource)
 
 	var existing tektonv1.PipelineRun
-	if err := t.Client.Get(ctx, client.ObjectKey{Name: prName, Namespace: namespace}, &existing); err != nil {
+	if err := c.Get(ctx, client.ObjectKey{Name: prName, Namespace: namespace}, &existing); err != nil {
 		if client.IgnoreNotFound(err) == nil {
 			return nil // Already gone
 		}
@@ -144,7 +166,7 @@ func (t *TektonExecutor) Cleanup(ctx context.Context, wfe *workflowexecutionv1al
 		return nil // PipelineRun belongs to a different WFE; leave it alone
 	}
 
-	if err := t.Client.Delete(ctx, &existing); err != nil {
+	if err := c.Delete(ctx, &existing); err != nil {
 		if client.IgnoreNotFound(err) == nil {
 			return nil
 		}
@@ -231,7 +253,7 @@ func buildDependencyWorkspaces(deps *models.WorkflowDependencies) []tektonv1.Wor
 }
 
 // buildStatusSummary creates a lightweight status summary from a PipelineRun.
-func (t *TektonExecutor) buildStatusSummary(ctx context.Context, pr *tektonv1.PipelineRun) *workflowexecutionv1alpha1.ExecutionStatusSummary {
+func (t *TektonExecutor) buildStatusSummary(ctx context.Context, c ExecutorClient, pr *tektonv1.PipelineRun) *workflowexecutionv1alpha1.ExecutionStatusSummary {
 	summary := &workflowexecutionv1alpha1.ExecutionStatusSummary{
 		Status: corev1.ConditionUnknown,
 	}
@@ -244,7 +266,7 @@ func (t *TektonExecutor) buildStatusSummary(ctx context.Context, pr *tektonv1.Pi
 			continue
 		}
 		var tr tektonv1.TaskRun
-		if err := t.Client.Get(ctx, client.ObjectKey{
+		if err := c.Get(ctx, client.ObjectKey{
 			Name:      ref.Name,
 			Namespace: pr.Namespace,
 		}, &tr); err != nil {
