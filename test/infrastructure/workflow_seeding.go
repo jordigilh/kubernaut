@@ -56,7 +56,7 @@ type TestWorkflow struct {
 	Name            string
 	Description     string
 	ActionType      string // DD-WORKFLOW-016: FK to action_type_taxonomy (e.g., "ScaleReplicas", "RestartPod")
-	Severity        string // Metadata only: "critical", "high", "medium", "low" (actual value from fixture)
+	Severity        string // Metadata only: "critical", "high", "warning", "info" (ADR-066 canonical values)
 	Component       []string // Metadata only: e.g. []string{"deployment"}, []string{"pod"} (actual value from fixture)
 	Environment     string // Metadata only + map key: "staging", "production", "test" (actual value from fixture)
 	Priority        string // Metadata only: "P0", "P1", "P2", "P3" (actual value from fixture)

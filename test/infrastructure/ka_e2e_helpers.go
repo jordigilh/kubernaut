@@ -152,7 +152,7 @@ func GetKAE2ETestWorkflows() []TestWorkflow {
 				{Name: "DRAIN_TIMEOUT_SECONDS", Type: "integer", Required: false, Description: "Timeout for drain operation in seconds"},
 			}},
 		{WorkflowID: "image-pull-backoff-fix-credentials", Name: "ImagePullBackOff - Fix Registry Credentials", Description: "Fixes ImagePullBackOff errors by updating registry credentials", ActionType: "RollbackDeployment", Severity: "high", Component: []string{"v1/Pod"}, Priority: "P1", SchemaImage: kaWorkflowRegistry + "/imagepull-fix-creds:v1.0.0"},
-		{WorkflowID: "generic-restart-v1", Name: "Generic Pod Restart", Description: "Generic pod restart for unknown issues", ActionType: "RestartPod", Severity: "medium", Component: []string{"apps/v1/Deployment"}, Priority: "P2", SchemaImage: kaWorkflowRegistry + "/generic-restart:v1.0.0",
+		{WorkflowID: "generic-restart-v1", Name: "Generic Pod Restart", Description: "Generic pod restart for unknown issues", ActionType: "RestartPod", Severity: "warning", Component: []string{"apps/v1/Deployment"}, Priority: "P2", SchemaImage: kaWorkflowRegistry + "/generic-restart:v1.0.0",
 			SchemaParameters: []models.WorkflowParameter{
 				{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target namespace"},
 				{Name: "POD_NAME", Type: "string", Required: true, Description: "Name of the pod to restart"},
