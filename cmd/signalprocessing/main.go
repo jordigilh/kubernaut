@@ -37,6 +37,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -59,6 +60,7 @@ import (
 	scope "github.com/jordigilh/kubernaut/pkg/shared/scope"
 	"github.com/jordigilh/kubernaut/internal/controller/signalprocessing"
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/audit"
+	fleetclient "github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	spaudit "github.com/jordigilh/kubernaut/pkg/signalprocessing/audit"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/classifier"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/config"
@@ -281,6 +283,41 @@ func main() {
 		"cacheTTL", cfg.Enrichment.CacheTTL)
 
 	// ========================================
+	// BR-INTEGRATION-054: FLEET MCP GATEWAY (OPTIONAL)
+	// When fleet.endpoint is configured, SP connects to the MCP Gateway
+	// for remote cluster enrichment via ReaderFactory.
+	// ========================================
+	var fleetResilientClient *fleetclient.ResilientClient
+	if cfg.Fleet.Endpoint != "" {
+		setupLog.Info("Fleet MCP Gateway configured, connecting...",
+			"endpoint", cfg.Fleet.Endpoint,
+			"oauth2Enabled", cfg.Fleet.OAuth2.Enabled)
+
+		fleetOpts := []fleetclient.Option{}
+		if cfg.Fleet.OAuth2.Enabled {
+			fleetOpts = append(fleetOpts,
+				fleetclient.WithTokenRefreshTimeout(10*time.Second),
+			)
+		}
+
+		resilienceCfg := fleetclient.DefaultResilienceConfig()
+		var fleetErr error
+		fleetResilientClient, fleetErr = fleetclient.NewResilient(
+			ctx, cfg.Fleet.Endpoint, resilienceCfg,
+			ctrl.Log.WithName("fleet-client"), fleetOpts...,
+		)
+		if fleetErr != nil {
+			setupLog.Error(fleetErr, "Fleet MCP Gateway connection failed, remote enrichment disabled",
+				"endpoint", cfg.Fleet.Endpoint)
+		} else {
+			readerFactory := enricher.NewMCPReaderFactory(mgr.GetClient(), fleetResilientClient.Session())
+			k8sEnricher.SetReaderFactory(readerFactory)
+			setupLog.Info("Fleet MCP Gateway connected, remote enrichment enabled",
+				"endpoint", cfg.Fleet.Endpoint)
+		}
+	}
+
+	// ========================================
 	// DD-PERF-001: Atomic Status Updates
 	// Status Manager for reducing K8s API calls by 66-75%
 	// Consolidates multiple status field updates into single atomic operations
@@ -363,6 +400,16 @@ func main() {
 			setupLog.Info("Log level hot-reload watcher started", "path", configFile)
 			defer logLevelWatcher.Stop()
 		}
+	}
+
+	// BR-INTEGRATION-054: Graceful shutdown for fleet MCP client
+	if fleetResilientClient != nil {
+		defer func() {
+			setupLog.Info("Closing fleet MCP Gateway connection")
+			if err := fleetResilientClient.Close(); err != nil {
+				setupLog.Error(err, "Failed to close fleet MCP client gracefully")
+			}
+		}()
 	}
 
 	// ADR-032 §2: No Audit Loss - MUST flush pending events on any exit path.

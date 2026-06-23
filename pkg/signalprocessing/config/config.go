@@ -47,12 +47,31 @@ type Config struct {
 	DataStorage sharedconfig.DataStorageConfig `yaml:"datastorage"`
 	Controller  ControllerConfig              `yaml:"controller"`
 
+	// Fleet configuration for multi-cluster enrichment via MCP Gateway.
+	// BR-INTEGRATION-054: When Endpoint is set, SP connects to MCP Gateway
+	// for remote cluster resource reads.
+	Fleet FleetConfig `yaml:"fleet"`
+
 	// Logging configuration (Issue #875: config-file-only log level with hot-reload)
 	Logging sharedconfig.LoggingConfig `yaml:"logging"`
 
 	// TLSProfile selects the TLS security profile (Old/Intermediate/Modern).
 	// Issue #748: OCP-only — set by kubernaut-operator from the cluster APIServer CR.
 	TLSProfile string `yaml:"tlsProfile,omitempty"`
+}
+
+// FleetConfig holds MCP Gateway connectivity settings for multi-cluster support.
+// BR-INTEGRATION-054: Optional -- when Endpoint is empty, SP operates in local-only mode.
+type FleetConfig struct {
+	Endpoint string     `yaml:"endpoint"`
+	OAuth2   FleetOAuth2 `yaml:"oauth2"`
+}
+
+// FleetOAuth2 holds OAuth2 credentials for MCP Gateway authentication.
+type FleetOAuth2 struct {
+	Enabled              bool   `yaml:"enabled"`
+	TokenURL             string `yaml:"tokenURL"`
+	CredentialsSecretRef string `yaml:"credentialsSecretRef"`
 }
 
 // EnrichmentConfig holds settings for K8s context enrichment.

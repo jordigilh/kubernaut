@@ -64,13 +64,15 @@ const MaxOwnerChainDepth = 5
 // DD-WORKFLOW-001 v1.8: Namespace, Kind, Name ONLY (no APIVersion/UID)
 // BR-SP-100: Max depth 5, owners only (source not included)
 type Builder struct {
-	client client.Client
+	client client.Reader
 	logger logr.Logger
 }
 
 // NewBuilder creates a new OwnerChain builder.
 // Per BR-SP-100: K8s ownerReference traversal for enrichment.
-func NewBuilder(c client.Client, logger logr.Logger) *Builder {
+// Accepts client.Reader (not client.Client) so the builder works with both
+// local K8s clients and remote MCP-backed readers (BR-INTEGRATION-054).
+func NewBuilder(c client.Reader, logger logr.Logger) *Builder {
 	return &Builder{
 		client: c,
 		logger: logger.WithName("ownerchain"),
