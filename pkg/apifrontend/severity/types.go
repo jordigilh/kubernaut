@@ -56,7 +56,6 @@ var severityRank = map[string]int{
 	"critical": 5,
 	"high":     4,
 	"warning":  3,
-	"low":      2,
 	"info":     1,
 }
 
@@ -64,7 +63,6 @@ var validSeverities = map[string]bool{
 	"critical": true,
 	"high":     true,
 	"warning":  true,
-	"low":      true,
 	"info":     true,
 }
 
@@ -74,13 +72,9 @@ func ValidateSeverity(s string) bool {
 }
 
 // NormalizeSeverity lowercases and validates the severity string.
-// Returns "warning" as default for invalid/empty input.
-// Backward-compat: stored "medium" values are normalized to "warning" (ADR-066).
+// Returns "warning" as default for invalid/empty input (ADR-066).
 func NormalizeSeverity(s string) string {
 	lower := strings.TrimSpace(strings.ToLower(s))
-	if lower == "medium" {
-		return "warning"
-	}
 	if validSeverities[lower] {
 		return lower
 	}
@@ -140,6 +134,6 @@ func BuildTriagePrompt(input TriageInput, rules interface{}) string {
 		}
 	}
 
-	sb.WriteString("\nRespond with exactly one of: critical, high, warning, low, info\n")
+	sb.WriteString("\nRespond with exactly one of: critical, high, warning, info\n")
 	return sb.String()
 }

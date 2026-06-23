@@ -114,6 +114,9 @@ func (t *Triager) Triage(ctx context.Context, input TriageInput) (TriageResult, 
 		}
 		return result, err
 	}
+	if result.Severity != "" {
+		result.Severity = NormalizeSeverity(result.Severity)
+	}
 	if result.Severity != "" && t.auditor != nil {
 		t.auditor.Emit(ctx, &audit.Event{
 			Type: audit.EventSeverityTriageCompleted,
