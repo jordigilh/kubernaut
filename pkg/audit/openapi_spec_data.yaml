@@ -134,7 +134,7 @@ paths:
           required: true
           schema:
             type: string
-            enum: [critical, high, warning, low]
+            enum: [critical, high, warning, info]
           description: Signal severity level (always provided by Signal Processing)
         - name: component
           in: query
@@ -250,7 +250,7 @@ paths:
           required: true
           schema:
             type: string
-            enum: [critical, high, warning, low]
+            enum: [critical, high, warning, info]
           description: Signal severity level (always provided by Signal Processing)
         - name: component
           in: query
@@ -514,7 +514,7 @@ paths:
           required: false
           schema:
             type: string
-            enum: [critical, high, warning, low]
+            enum: [critical, high, warning, info]
           description: "Security gate: signal severity level"
         - name: component
           in: query
@@ -3215,8 +3215,8 @@ components:
       properties:
         severity:
           type: string
-          description: "Severity level (mandatory: critical, high, warning, low)"
-          enum: [critical, high, warning, low]
+          description: "Severity level (mandatory: critical, high, warning, info)"
+          enum: [critical, high, warning, info]
           example: "critical"
         component:
           type: string
@@ -3255,7 +3255,7 @@ components:
           type: array
           items:
             type: string
-            enum: [critical, high, warning, low, "*"]
+            enum: [critical, high, warning, info, "*"]
           minItems: 1
           description: "Severity level(s) this workflow is designed for. Always an array. Use '*' to match any severity."
           example: [critical]
@@ -4193,7 +4193,7 @@ components:
           example: "high-memory-payment-api-abc123"
         severity:
           type: string
-          enum: [critical, high, warning, low, unknown]
+          enum: [critical, high, warning, info, unknown]
           description: Normalized severity level (DD-SEVERITY-001 v1.1, ADR-066)
 
         # DD-SEVERITY-001: Severity Determination Fields (conditional)
@@ -4203,7 +4203,7 @@ components:
           example: "Sev2"
         normalized_severity:
           type: string
-          enum: [critical, high, warning, low, unknown]
+          enum: [critical, high, warning, info, unknown]
           description: Normalized severity determined by Rego policy (DD-SEVERITY-001 v1.1, ADR-066)
           example: "high"
         determination_source:
@@ -5738,7 +5738,7 @@ components:
               description: Brief RCA summary
             severity:
               type: string
-              enum: [critical, high, warning, low, unknown]
+              enum: [critical, high, warning, info, unknown]
               description: Incident severity (BR-SEVERITY-001, ADR-066)
               example: "high"
             contributingFactors:
