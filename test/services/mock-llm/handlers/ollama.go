@@ -79,7 +79,7 @@ func (h *handler) handleOllama(w http.ResponseWriter, r *http.Request) {
 	result := h.registry.Detect(detCtx)
 	scenarioName := "default"
 	cfg := scenarios.MockScenarioConfig{
-		ScenarioName: scenarioName, RootCause: "Unable to determine root cause", Severity: "medium",
+		ScenarioName: scenarioName, RootCause: "Unable to determine root cause", Severity: "warning",
 	}
 	if result != nil {
 		if resolved, rok := resolveScenarioConfig(result.Scenario, detCtx); rok {

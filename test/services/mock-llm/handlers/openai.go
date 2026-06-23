@@ -76,7 +76,7 @@ func (h *handler) handleOpenAI(w http.ResponseWriter, r *http.Request) {
 	if result == nil {
 		actionable := true
 		writeJSON(w, http.StatusOK, response.BuildTextResponse(model, scenarios.MockScenarioConfig{
-			ScenarioName: "default", RootCause: "Unable to determine root cause", Severity: "medium",
+			ScenarioName: "default", RootCause: "Unable to determine root cause", Severity: "warning",
 			InvestigationOutcome: "actionable", IsActionable: &actionable, Confidence: 0.5,
 		}))
 		h.recordRequestMetric(r.URL.Path, http.StatusOK, "default", time.Since(start).Seconds())

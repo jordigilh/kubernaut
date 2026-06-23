@@ -276,7 +276,7 @@ Mock LLM comes with 7 built-in scenarios:
 class MockScenario:
     name: str                  # Scenario identifier
     signal_type: str           # Expected signal type (OOMKilled, CrashLoopBackOff, etc.)
-    severity: str              # Severity level (critical, high, medium, low)
+    severity: str              # Severity level (critical, high, warning, info)
     workflow_name: str         # Workflow name for UUID lookup
     workflow_id: str           # UUID of selected workflow (overridden by config file)
     workflow_title: str        # Human-readable workflow title

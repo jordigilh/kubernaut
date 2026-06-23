@@ -19,7 +19,7 @@ import "github.com/jordigilh/kubernaut/pkg/shared/uuid"
 
 func defaultConfig() MockScenarioConfig {
 	return MockScenarioConfig{
-		ScenarioName: "default", SignalName: "Unknown", Severity: "medium",
+		ScenarioName: "default", SignalName: "Unknown", Severity: "warning",
 		WorkflowName: "generic-restart-v1", WorkflowID: uuid.DeterministicUUID("generic-restart-v1"),
 		WorkflowTitle: "Generic Pod Restart", Confidence: 0.75,
 		RootCause:    "Unable to determine specific root cause",
