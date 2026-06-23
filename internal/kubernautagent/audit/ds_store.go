@@ -769,10 +769,10 @@ func mapSeverity(s string) ogenclient.IncidentResponseDataRootCauseAnalysisSever
 		return ogenclient.IncidentResponseDataRootCauseAnalysisSeverityCritical
 	case "high":
 		return ogenclient.IncidentResponseDataRootCauseAnalysisSeverityHigh
-	case "warning", "medium":
+	case "warning":
 		return ogenclient.IncidentResponseDataRootCauseAnalysisSeverityWarning
-	case "low":
-		return ogenclient.IncidentResponseDataRootCauseAnalysisSeverityLow
+	case "info":
+		return ogenclient.IncidentResponseDataRootCauseAnalysisSeverityInfo
 	default:
 		return ogenclient.IncidentResponseDataRootCauseAnalysisSeverityUnknown
 	}

@@ -142,9 +142,9 @@ type WorkflowMaintainer struct {
 // Issue #274: signalName removed — LLM selects by actionType + structured descriptions.
 type WorkflowSchemaLabels struct {
 	// Severity is the severity level(s) this workflow is designed for (REQUIRED)
-	// Values: "critical", "high", "warning", "low", "*" (wildcard for all)
+	// Values: "critical", "high", "warning", "info", "*" (wildcard for all)
 	// DD-WORKFLOW-001 v2.8: Always an array in workflow-schema.yaml. Supports "*" wildcard.
-	// Examples: severity: [critical] or severity: [low, warning, high] or severity: ["*"]
+	// ADR-066: "low" replaced by "info". Examples: severity: [critical] or severity: [info, warning, high] or severity: ["*"]
 	Severity []string `yaml:"severity" json:"severity" validate:"required,min=1"`
 
 	// Environment is the target environment(s) (REQUIRED)
@@ -543,11 +543,11 @@ func (l *WorkflowSchemaLabels) ValidateMandatoryLabels() error {
 	// Validate each severity value is in the allowed set
 	// DD-WORKFLOW-001 v2.8: "*" wildcard restored for severity (matches any level)
 	// ADR-066: "medium" replaced by "warning"
-	allowedSeverities := map[string]bool{"critical": true, "high": true, "warning": true, "low": true, "*": true}
+	allowedSeverities := map[string]bool{"critical": true, "high": true, "warning": true, "info": true, "*": true}
 	for _, sev := range l.Severity {
 		if !allowedSeverities[sev] {
 			return NewSchemaValidationError("labels.severity",
-				fmt.Sprintf("invalid severity %q: must be one of critical, high, warning, low, * (wildcard)", sev))
+				fmt.Sprintf("invalid severity %q: must be one of critical, high, warning, info, * (wildcard)", sev))
 		}
 	}
 	if len(l.Environment) == 0 {

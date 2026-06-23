@@ -264,7 +264,7 @@ func (r *Repository) GetWorkflowWithContextFilters(ctx context.Context, workflow
 // Shared across all three discovery methods (REFACTOR: extracted per TDD methodology).
 //
 // DD-WORKFLOW-016 v2.1: Label values in OCI workflow schemas can be either
-// scalar strings (e.g., "high") or JSON arrays (e.g., ["low", "warning"]).
+// scalar strings (e.g., "high") or JSON arrays (e.g., ["info", "warning"]).
 // The SQL must handle both types using CASE WHEN jsonb_typeof() checks.
 // Component comparison is case-insensitive (Kubernetes Kind is PascalCase,
 // but OCI labels store lowercase).
