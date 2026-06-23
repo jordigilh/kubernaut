@@ -48,6 +48,8 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -66,6 +68,7 @@ type K8sEnricher struct {
 	metrics           *metrics.Metrics
 	timeout           time.Duration
 	ownerChainBuilder *ownerchain.Builder // BR-SP-100: Full owner chain traversal
+	readerFactory     ReaderFactory       // BR-INTEGRATION-054: nil = local-only mode
 }
 
 // NewK8sEnricher creates a new K8s context enricher.
@@ -88,6 +91,13 @@ func NewK8sEnricher(c client.Client, apiReader client.Reader, logger logr.Logger
 		ownerChainBuilder: ownerchain.NewBuilder(c, logger), // BR-SP-100: Full owner chain traversal
 		timeout:           timeout,
 	}
+}
+
+// SetReaderFactory configures a ReaderFactory for remote cluster support.
+// When set and signal.ClusterID is non-empty, enrichment uses the factory
+// to obtain a client.Reader for the remote cluster (BR-INTEGRATION-054).
+func (e *K8sEnricher) SetReaderFactory(rf ReaderFactory) {
+	e.readerFactory = rf
 }
 
 // Enrich fetches Kubernetes context based on signal type.
@@ -113,6 +123,10 @@ func (e *K8sEnricher) Enrich(ctx context.Context, signal *signalprocessingv1alph
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	default:
+	}
+
+	if signal.ClusterID != "" && e.readerFactory != nil {
+		return e.enrichRemote(ctx, signal)
 	}
 
 	result := &signalprocessingv1alpha1.KubernetesContext{}
@@ -514,6 +528,98 @@ func (e *K8sEnricher) populateNamespaceContext(result *signalprocessingv1alpha1.
 		Name:        ns.Name,
 		Labels:      ensureMap(ns.Labels),
 		Annotations: ensureMap(ns.Annotations),
+	}
+}
+
+// enrichRemote fetches metadata from a remote cluster via ReaderFactory.
+// Uses PartialObjectMetadata for efficient metadata-only reads over MCP Gateway.
+// BR-INTEGRATION-054: Remote enrichment path for multi-cluster signals.
+func (e *K8sEnricher) enrichRemote(ctx context.Context, signal *signalprocessingv1alpha1.SignalData) (*signalprocessingv1alpha1.KubernetesContext, error) {
+	result := &signalprocessingv1alpha1.KubernetesContext{
+		ClusterID: signal.ClusterID,
+	}
+
+	reader, err := e.readerFactory.ReaderFor(ctx, signal.ClusterID)
+	if err != nil {
+		e.logger.Error(err, "Failed to get reader for remote cluster, entering degraded mode",
+			"clusterID", signal.ClusterID)
+		result.DegradedMode = true
+		e.metrics.RecordEnrichmentError("remote_reader_unavailable")
+		return result, nil
+	}
+
+	// Fetch namespace metadata from remote cluster
+	if signal.TargetResource.Namespace != "" {
+		nsMeta := &metav1.PartialObjectMetadata{}
+		nsMeta.SetGroupVersionKind(schema.GroupVersionKind{Version: "v1", Kind: "Namespace"})
+		if nsErr := reader.Get(ctx, types.NamespacedName{Name: signal.TargetResource.Namespace}, nsMeta); nsErr != nil {
+			e.logger.V(1).Info("Remote namespace fetch failed, continuing without namespace context",
+				"namespace", signal.TargetResource.Namespace, "clusterID", signal.ClusterID, "error", nsErr)
+		} else {
+			result.Namespace = &signalprocessingv1alpha1.NamespaceContext{
+				Name:        nsMeta.Name,
+				Labels:      ensureMap(nsMeta.Labels),
+				Annotations: ensureMap(nsMeta.Annotations),
+			}
+		}
+	}
+
+	// Fetch workload metadata from remote cluster
+	workloadMeta := &metav1.PartialObjectMetadata{}
+	workloadMeta.SetGroupVersionKind(kindToGVK(signal.TargetResource.Kind))
+	key := types.NamespacedName{
+		Namespace: signal.TargetResource.Namespace,
+		Name:      signal.TargetResource.Name,
+	}
+	if wErr := reader.Get(ctx, key, workloadMeta); wErr != nil {
+		e.logger.Info("Remote workload not found, entering degraded mode",
+			"kind", signal.TargetResource.Kind, "name", signal.TargetResource.Name,
+			"clusterID", signal.ClusterID, "error", wErr)
+		result.DegradedMode = true
+		e.metrics.RecordEnrichmentError("remote_not_found")
+		return result, nil
+	}
+	result.Workload = &signalprocessingv1alpha1.WorkloadDetails{
+		Kind:        signal.TargetResource.Kind,
+		Name:        workloadMeta.Name,
+		Labels:      ensureMap(workloadMeta.Labels),
+		Annotations: ensureMap(workloadMeta.Annotations),
+	}
+
+	// Build owner chain on remote cluster
+	if signal.TargetResource.Kind == "Pod" {
+		remoteBuilder := ownerchain.NewBuilder(reader, e.logger)
+		chain, chainErr := remoteBuilder.Build(ctx, signal.TargetResource.Namespace,
+			signal.TargetResource.Kind, signal.TargetResource.Name)
+		if chainErr != nil {
+			e.logger.V(1).Info("Remote owner chain build failed", "error", chainErr)
+		} else {
+			result.OwnerChain = chain
+		}
+	}
+
+	return result, nil
+}
+
+// kindToGVK maps common workload kinds to their GroupVersionKind.
+func kindToGVK(kind string) schema.GroupVersionKind {
+	switch kind {
+	case "Pod":
+		return schema.GroupVersionKind{Version: "v1", Kind: "Pod"}
+	case "Deployment":
+		return schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "Deployment"}
+	case "StatefulSet":
+		return schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "StatefulSet"}
+	case "DaemonSet":
+		return schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "DaemonSet"}
+	case "ReplicaSet":
+		return schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "ReplicaSet"}
+	case "Service":
+		return schema.GroupVersionKind{Version: "v1", Kind: "Service"}
+	case "Node":
+		return schema.GroupVersionKind{Version: "v1", Kind: "Node"}
+	default:
+		return schema.GroupVersionKind{Version: "v1", Kind: kind}
 	}
 }
 
