@@ -124,10 +124,15 @@ Phase 1 has been fully implemented in the `feat/structured-decision-payload` bra
 
 | ADR Statement | Implementation | Notes |
 |--------------|----------------|-------|
-| "Add `warning: 3` alongside `medium: 3`" | Done: both map to rank 3 | Forward-compatible |
-| "Both vocabularies work simultaneously" | Done: `validSeverities` accepts both | — |
-| Phase 2: emit `warning` instead of `medium` | Not yet done | Future work |
-| Phase 3: backward-compat reads | Not yet done | Requires DataStorage migration |
-| Phase 4-5: schema + cleanup | Not yet done | Tracked in #1417 |
+| "Add `warning: 3` alongside `medium: 3`" | Done → superseded | Phase 1 forward-compat removed in Phase 5 |
+| "Both vocabularies work simultaneously" | Superseded | Only canonical 4 values accepted |
+| Phase 2: emit `warning` instead of `medium` | Done: #1417 | All emitters use `warning` |
+| Phase 3: backward-compat reads | Skipped | No backward compat — invalid inputs default to `warning` |
+| Phase 4: schema updates | Done: #1417 | CRD enums, OAS spec, ogen regenerated |
+| Phase 5: cleanup | Done: #1417 | `medium` removed from `severityRank`/`validSeverities` |
+| Phase 2: emit `info` instead of `low` | Done: #1417 | All emitters use `info` |
+| Phase 3: backward-compat reads (`low` → `info`) | Skipped | No backward compat — invalid inputs default to `warning` |
+| Phase 4: schema updates (`low` → `info`) | Done: #1417 | CRD enums, OAS spec, ogen regenerated |
+| Phase 5: cleanup (`low` removed) | Done: #1417 | `low` removed from `severityRank`/`validSeverities` |
 
-**Drift note**: Code still accepts `medium` and `low` in all input paths (`validAlertSeverities`, `validSeverities`). This is intentional for Phase 1 (forward-compatibility). Phases 2-5 will progressively remove the legacy vocabulary.
+**Note**: Neither `medium` nor `low` are valid canonical severities. No backward compatibility is provided — all systems must emit canonical values (`critical`, `high`, `warning`, `info`) directly. Invalid inputs to `NormalizeSeverity` default to `warning`. A DataStorage SQL migration (`UPDATE ... SET severity = 'warning' WHERE severity = 'medium'; UPDATE ... SET severity = 'info' WHERE severity = 'low'`) must run before deployment.

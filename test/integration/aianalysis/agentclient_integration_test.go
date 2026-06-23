@@ -104,7 +104,7 @@ var _ = Describe("KA Integration", Label("integration", "kubernaut-agent"), func
 				IncidentID:        "test-memory-001",
 				RemediationID:     "req-test-002",
 				SignalName:        "MemoryPressure",
-				Severity:          "medium", // DD-SEVERITY-001: Use normalized severity enum
+				Severity:          "warning", // DD-SEVERITY-001: Use normalized severity enum
 				SignalSource:      "kubernaut",
 				ResourceNamespace: testNamespace, // DD-TEST-002: Use dynamic namespace
 				ResourceKind:      "Pod",
@@ -262,7 +262,7 @@ var _ = Describe("KA Integration", Label("integration", "kubernaut-agent"), func
 					IncidentID:        "test-hr-" + tc.signalType,
 					RemediationID:     "req-hr-" + tc.signalType,
 					SignalName:        tc.signalType,
-					Severity:          "medium",
+					Severity:          "warning",
 					SignalSource:      "kubernaut",
 					ResourceNamespace: testNamespace,
 					ResourceKind:      "Pod",
@@ -302,7 +302,7 @@ var _ = Describe("KA Integration", Label("integration", "kubernaut-agent"), func
 				IncidentID:        "test-resolved-001",
 				RemediationID:     "req-resolved-001",
 				SignalName:        "MOCK_PROBLEM_RESOLVED", // Mock LLM scenario trigger
-				Severity:          "medium",
+				Severity:          "warning",
 				SignalSource:      "kubernaut",
 				ResourceNamespace: testNamespace,
 				ResourceKind:      "Pod",
@@ -336,7 +336,7 @@ var _ = Describe("KA Integration", Label("integration", "kubernaut-agent"), func
 				IncidentID:        "test-resolved-contradiction-001",
 				RemediationID:     "req-resolved-contradiction-001",
 				SignalName:        "MOCK_PROBLEM_RESOLVED_CONTRADICTION",
-				Severity:          "low",
+				Severity:          "info",
 				SignalSource:      "kubernaut",
 				ResourceNamespace: testNamespace,
 				ResourceKind:      "Pod",
@@ -405,7 +405,7 @@ var _ = Describe("KA Integration", Label("integration", "kubernaut-agent"), func
 				IncidentID:        "test-inconclusive-001",
 				RemediationID:     "req-inconclusive-001",
 				SignalName:        "NetworkFailure",
-				Severity:          "medium", // DD-SEVERITY-001: Use normalized severity enum
+				Severity:          "warning", // DD-SEVERITY-001: Use normalized severity enum
 				SignalSource:      "kubernaut",
 				ResourceNamespace: testNamespace, // DD-TEST-002: Use dynamic namespace
 				ResourceKind:      "Pod",
@@ -435,7 +435,7 @@ var _ = Describe("KA Integration", Label("integration", "kubernaut-agent"), func
 				IncidentID:        "test-validation-001",
 				RemediationID:     "req-validation-001",
 				SignalName:        "DatabaseTimeout",
-				Severity:          "medium", // DD-SEVERITY-001: Use normalized severity enum
+				Severity:          "warning", // DD-SEVERITY-001: Use normalized severity enum
 				SignalSource:      "kubernaut",
 				ResourceNamespace: "staging",
 				ResourceKind:      "Pod",

@@ -71,7 +71,7 @@ var _ = Describe("Investigation Event Bridge Wiring (IT-AF-1326)", func() {
 						"analysisTypes": []interface{}{"Investigation"},
 						"signalContext": map[string]interface{}{
 							"fingerprint": "fp-it-050",
-							"severity":    "medium",
+							"severity":    "warning",
 							"signalName":  "OOMKilled",
 							"environment": "test",
 							"targetResource": map[string]interface{}{

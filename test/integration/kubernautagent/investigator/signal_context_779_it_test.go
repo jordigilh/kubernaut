@@ -177,7 +177,7 @@ var _ = Describe("IT-KA-779: Signal context propagation through investigator to 
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name:               "web-app",
 				Namespace:          "dev-ns",
-				Severity:           "medium",
+				Severity:           "warning",
 				Message:            "CrashLoopBackOff",
 				ResourceKind:       "Deployment",
 				ResourceAPIVersion: "apps/v1",
@@ -189,7 +189,7 @@ var _ = Describe("IT-KA-779: Signal context propagation through investigator to 
 			Expect(capturingDS.workflowsCalled).To(BeTrue(),
 				"list_workflows must have been called during workflow selection")
 
-			Expect(string(capturingDS.listWorkflowsParams.Severity)).To(Equal("medium"),
+			Expect(string(capturingDS.listWorkflowsParams.Severity)).To(Equal("warning"),
 				"DS Severity should match signal")
 			Expect(capturingDS.listWorkflowsParams.Component).To(Equal("apps/v1/Deployment"),
 				"DS Component should be signal ComponentGVK (apiVersion/kind)")

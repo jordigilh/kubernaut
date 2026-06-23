@@ -16,7 +16,7 @@ spec:
   actionType: ReconfigureResource
   
   labels:
-    severity: [high, medium]
+    severity: [high, warning]
     environment: [production, staging, test]
     component: ["*"]
     priority: "*"

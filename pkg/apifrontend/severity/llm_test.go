@@ -54,26 +54,30 @@ var _ = Describe("LLM Triage", func() {
 		It("UT-AF-T-048: prompt includes resource context", func() {
 			capturedInput := severity.TriageInput{}
 			mock := &promptCaptureLLM{
-				result: severity.TriageResult{Severity: "medium", Source: severity.SourceLLMTriage},
+				result: severity.TriageResult{Severity: "warning", Source: severity.SourceLLMTriage},
 				captureInput: func(input severity.TriageInput) {
 					capturedInput = input
 				},
 			}
 			result, err := mock.TriagePure(context.Background(), defaultInput)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Severity).To(Equal("medium"))
+			Expect(result.Severity).To(Equal("warning"))
 			Expect(capturedInput.Namespace).To(Equal("prod"))
 			Expect(capturedInput.Kind).To(Equal("Deployment"))
 		})
 	})
 
 	Describe("Response Validation", func() {
-		It("UT-AF-T-049: valid severity accepted", func() {
+		It("UT-AF-T-049: valid severity accepted (ADR-066: critical > high > warning > info)", func() {
 			Expect(severity.ValidateSeverity("critical")).To(BeTrue())
 			Expect(severity.ValidateSeverity("high")).To(BeTrue())
-			Expect(severity.ValidateSeverity("medium")).To(BeTrue())
-			Expect(severity.ValidateSeverity("low")).To(BeTrue())
+			Expect(severity.ValidateSeverity("warning")).To(BeTrue())
 			Expect(severity.ValidateSeverity("info")).To(BeTrue())
+		})
+
+		It("UT-AF-T-049b: medium and low are no longer valid canonical severities (ADR-066)", func() {
+			Expect(severity.ValidateSeverity("medium")).To(BeFalse())
+			Expect(severity.ValidateSeverity("low")).To(BeFalse())
 		})
 
 		It("UT-AF-T-050: invalid severity string rejected", func() {
@@ -83,9 +87,9 @@ var _ = Describe("LLM Triage", func() {
 			Expect(severity.ValidateSeverity("p1")).To(BeFalse())
 		})
 
-		It("UT-AF-T-082: empty LLM response defaults to medium", func() {
+		It("UT-AF-T-082: empty LLM response defaults to warning", func() {
 			normalized := severity.NormalizeSeverity("")
-			Expect(normalized).To(Equal("medium"))
+			Expect(normalized).To(Equal("warning"))
 		})
 
 		It("UT-AF-T-083: CRITICAL (wrong case) normalized to critical", func() {
@@ -109,21 +113,21 @@ var _ = Describe("LLM Triage", func() {
 	})
 
 	Describe("NoopLLMTriager", func() {
-		It("UT-AF-T-090: TriagePure always returns medium with full confidence", func() {
+		It("UT-AF-T-090: TriagePure always returns warning with full confidence", func() {
 			noop := severity.NewNoopLLMTriager(logr.Discard())
 			result, err := noop.TriagePure(context.Background(), defaultInput)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Severity).To(Equal("medium"))
+			Expect(result.Severity).To(Equal("warning"))
 			Expect(result.Confidence).To(Equal(1.0))
 			Expect(result.Source).To(BeZero())
 		})
 
-		It("UT-AF-T-091: TriageWithRules always returns medium with full confidence", func() {
+		It("UT-AF-T-091: TriageWithRules always returns warning with full confidence", func() {
 			noop := severity.NewNoopLLMTriager(logr.Discard())
 			rules := []prom.Rule{{Name: "SomeRule", Query: "up == 0"}}
 			result, err := noop.TriageWithRules(context.Background(), rules, defaultInput)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Severity).To(Equal("medium"))
+			Expect(result.Severity).To(Equal("warning"))
 			Expect(result.Confidence).To(Equal(1.0))
 		})
 	})

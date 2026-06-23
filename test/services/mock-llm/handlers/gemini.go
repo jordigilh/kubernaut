@@ -91,7 +91,7 @@ func (h *handler) handleGemini(w http.ResponseWriter, r *http.Request) {
 	result := h.registry.Detect(detCtx)
 	if result == nil {
 		writeJSON(w, http.StatusOK, response.BuildGeminiTextResponse(scenarios.MockScenarioConfig{
-			ScenarioName: "default", RootCause: "Unable to determine root cause", Severity: "medium",
+			ScenarioName: "default", RootCause: "Unable to determine root cause", Severity: "warning",
 			InvestigationOutcome: "actionable", IsActionable: scenarios.BoolPtr(true), Confidence: 0.5,
 		}))
 		h.recordRequestMetric(r.URL.Path, http.StatusOK, "default", time.Since(start).Seconds())

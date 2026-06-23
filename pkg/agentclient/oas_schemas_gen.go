@@ -326,7 +326,7 @@ type BusinessClassification struct {
 	BusinessUnit OptNilString `json:"businessUnit"`
 	// Service owner team or individual.
 	ServiceOwner OptNilString `json:"serviceOwner"`
-	// Business criticality: critical, high, medium, low.
+	// Business criticality: critical, high, warning, low.
 	Criticality OptNilString `json:"criticality"`
 	// SLA tier: platinum, gold, silver, bronze.
 	SlaRequirement OptNilString `json:"slaRequirement"`
@@ -1136,7 +1136,7 @@ type IncidentRequest struct {
 	RemediationID string `json:"remediation_id"`
 	// Canonical signal name (e.g., OOMKilled, CrashLoopBackOff).
 	SignalName string `json:"signal_name"`
-	// Signal severity (BR-SEVERITY-001: critical, high, medium, low, unknown).
+	// Signal severity (BR-SEVERITY-001: critical, high, warning, info, unknown).
 	Severity Severity `json:"severity"`
 	// Monitoring system.
 	SignalSource string `json:"signal_source"`
@@ -2988,13 +2988,14 @@ func (*SessionStreamAPIV1IncidentSessionSessionIDStreamGetOK) sessionStreamAPIV1
 // Canonical severity levels for Kubernaut.
 // Business Requirement: BR-SEVERITY-001 (Standardized Severity Levels)
 // Design Decision: DD-SEVERITY-001 v1.1 (Severity Determination Refactoring)
+// ADR-066: 4-level severity model (critical > high > warning > info)
 // These are the ONLY valid severity values across all internal components
 // (CRDs, LLM prompts, workflow catalog labels, metrics, audit events).
 // Levels (most to least severe):
 // - critical: Immediate remediation required (>50% users affected)
 // - high: Urgent remediation needed (10-50% users affected)
-// - medium: Remediation recommended (<10% users affected)
-// - low: Remediation optional (no user impact)
+// - warning: Remediation recommended (<10% users affected)
+// - info: Informational, remediation optional (no user impact)
 // - unknown: Human triage required (investigation inconclusive).
 // Ref: #/components/schemas/Severity
 type Severity string
@@ -3002,8 +3003,8 @@ type Severity string
 const (
 	SeverityCritical Severity = "critical"
 	SeverityHigh     Severity = "high"
-	SeverityMedium   Severity = "medium"
-	SeverityLow      Severity = "low"
+	SeverityWarning  Severity = "warning"
+	SeverityInfo     Severity = "info"
 	SeverityUnknown  Severity = "unknown"
 )
 
@@ -3012,8 +3013,8 @@ func (Severity) AllValues() []Severity {
 	return []Severity{
 		SeverityCritical,
 		SeverityHigh,
-		SeverityMedium,
-		SeverityLow,
+		SeverityWarning,
+		SeverityInfo,
 		SeverityUnknown,
 	}
 }
@@ -3025,9 +3026,9 @@ func (s Severity) MarshalText() ([]byte, error) {
 		return []byte(s), nil
 	case SeverityHigh:
 		return []byte(s), nil
-	case SeverityMedium:
+	case SeverityWarning:
 		return []byte(s), nil
-	case SeverityLow:
+	case SeverityInfo:
 		return []byte(s), nil
 	case SeverityUnknown:
 		return []byte(s), nil
@@ -3045,11 +3046,11 @@ func (s *Severity) UnmarshalText(data []byte) error {
 	case SeverityHigh:
 		*s = SeverityHigh
 		return nil
-	case SeverityMedium:
-		*s = SeverityMedium
+	case SeverityWarning:
+		*s = SeverityWarning
 		return nil
-	case SeverityLow:
-		*s = SeverityLow
+	case SeverityInfo:
+		*s = SeverityInfo
 		return nil
 	case SeverityUnknown:
 		*s = SeverityUnknown

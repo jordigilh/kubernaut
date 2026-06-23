@@ -39,10 +39,8 @@ var validStates = map[string]bool{
 var validAlertSeverities = map[string]bool{
 	"critical": true,
 	"high":     true,
-	"medium":   true,
-	"low":      true,
-	"info":     true,
 	"warning":  true,
+	"info":     true,
 }
 
 // SensitiveAlertKeys lists label keys stripped before returning alert data to
@@ -148,7 +146,7 @@ func HandleListAlerts(ctx context.Context, client prom.Client, args ListAlertsAr
 		}
 	}
 	if args.Severity != "" && !validAlertSeverities[strings.ToLower(args.Severity)] {
-		return ListAlertsResult{}, fmt.Errorf("%w: severity must be one of critical, high, medium, low, info, warning", ErrInvalidInput)
+		return ListAlertsResult{}, fmt.Errorf("%w: severity must be one of critical, high, warning, info", ErrInvalidInput)
 	}
 	if args.State != "" && !validStates[strings.ToLower(args.State)] {
 		return ListAlertsResult{}, fmt.Errorf("%w: state must be firing or pending", ErrInvalidInput)

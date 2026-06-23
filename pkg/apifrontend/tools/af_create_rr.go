@@ -97,7 +97,7 @@ func checkExistingRRByFingerprint(ctx context.Context, client crclient.Client, c
 // wiring time from AF's deployment context (ADR-057).
 // args.Namespace is the workload namespace where the target resource lives — provided
 // by the LLM. Severity is resolved via the triage pipeline when a triager is
-// available, otherwise defaults to "medium".
+// available, otherwise defaults to "warning".
 func HandleCreateRR(ctx context.Context, client crclient.Client, dynClient dynamic.Interface, controllerNS string, args *CreateRRArgs, username string, triager *severity.Triager, auditor audit.Emitter) (CreateRRResult, error) {
 	if client == nil {
 		return CreateRRResult{}, ErrK8sUnavailable
@@ -130,7 +130,7 @@ func HandleCreateRR(ctx context.Context, client crclient.Client, dynClient dynam
 		args.Description = args.Description[:maxDescriptionLen]
 	}
 
-	resolvedSeverity := "medium"
+	resolvedSeverity := "warning"
 	var triageResult *severity.TriageResult
 	if triager != nil {
 		input := severity.TriageInput{

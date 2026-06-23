@@ -96,7 +96,7 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 				AnalysisRequest: aianalysisv1.AnalysisRequest{
 					SignalContext: aianalysisv1.SignalContextInput{
 						Fingerprint:      "fp-interactive",
-						Severity:         "medium",
+						Severity:         "warning",
 						SignalName:       signalName,
 						Environment:      "staging",
 						BusinessPriority: "P2",

@@ -197,18 +197,18 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 				routing.SeverityHigh,
 				notificationv1alpha1.NotificationPhaseSent),
 
-			// LOW: ResourceBusy - temporary condition
-			Entry("ResourceBusy (LOW)",
+			// INFO: ResourceBusy - temporary condition
+			Entry("ResourceBusy (INFO)",
 				routing.SkipReasonResourceBusy,
 				"resource-busy", // RFC 1123 slug
-				routing.SeverityLow,
+				routing.SeverityInfo,
 				notificationv1alpha1.NotificationPhaseSent),
 
-			// LOW: RecentlyRemediated - cooldown active
-			Entry("RecentlyRemediated (LOW)",
+			// INFO: RecentlyRemediated - cooldown active
+			Entry("RecentlyRemediated (INFO)",
 				routing.SkipReasonRecentlyRemediated,
 				"recently-remediated", // RFC 1123 slug
-				routing.SeverityLow,
+				routing.SeverityInfo,
 				notificationv1alpha1.NotificationPhaseSent),
 		)
 	})
@@ -293,7 +293,7 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Type:     notificationv1alpha1.NotificationTypeSimple,
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
-					Severity: routing.SeverityMedium,
+					Severity: routing.SeverityWarning,
 					Subject:  fmt.Sprintf("No Skip-Reason Test [%s]", uniqueSuffix),
 					Body:     "Testing fallback routing without skip-reason",
 					Extensions: map[string]string{

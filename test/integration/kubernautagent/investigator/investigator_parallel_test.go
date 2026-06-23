@@ -204,7 +204,7 @@ var _ = Describe("BR-PERFORMANCE-970: Parallel Tool Execution in runLLMLoop", fu
 						Message:   llm.Message{Role: "assistant", Content: "checking all"},
 						ToolCalls: toolCalls,
 					},
-					{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"done","confidence":0.9,"severity":"low","signal_name":"test"}`}},
+					{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"done","confidence":0.9,"severity":"info","signal_name":"test"}`}},
 					wfToolResp(`{"workflow_id":"noop","confidence":0.5}`),
 				},
 			}

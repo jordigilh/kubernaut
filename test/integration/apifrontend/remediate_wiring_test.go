@@ -92,7 +92,7 @@ var _ = Describe("kubernaut_remediate wiring (#1332)", func() {
 					"signalName":      "test-signal-w03",
 					"signalType":      "alert",
 					"signalFingerprint": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
-					"severity":        "medium",
+					"severity":        "warning",
 					"firingTime":      now,
 					"receivedTime":    now,
 					"targetType":      "kubernetes",

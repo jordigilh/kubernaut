@@ -272,7 +272,7 @@ var _ = Describe("Kubernaut Agent Prompt Builder — #433", func() {
 				Expect(err).NotTo(HaveOccurred())
 
 				phase1 := &prompt.Phase1Data{
-					Severity:             "medium",
+					Severity:             "warning",
 					InvestigationOutcome: "inconclusive",
 					Confidence:           0.45,
 					ContributingFactors:  []string{"intermittent network timeouts"},

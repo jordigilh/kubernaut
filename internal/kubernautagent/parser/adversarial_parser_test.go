@@ -575,7 +575,7 @@ End of analysis.`
 
 		It("should prefer top-level severity over nested when both present", func() {
 			input := `{
-				"root_cause_analysis": {"summary": "OOM", "severity": "low"},
+				"root_cause_analysis": {"summary": "OOM", "severity": "info"},
 				"severity": "critical",
 				"confidence": 0.9
 			}`

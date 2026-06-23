@@ -1,12 +1,12 @@
 # Severity Determination Policy - Example
 # BR-SP-105: Severity Determination via Rego Policy
 # DD-SEVERITY-001 v1.1: Strategy B - Policy-Defined Fallback
+# ADR-066: 4-level severity model (critical > high > warning > info)
 #
 # This policy demonstrates severity determination with operator-controlled fallback.
 # Operators MUST define fallback behavior (no system-imposed "unknown" fallback).
 #
-# DD-SEVERITY-001 v1.1: Normalized severity values aligned with HAPI/workflow catalog
-# Valid normalized values: "critical", "high", "medium", "low", "unknown"
+# Valid normalized values: "critical", "high", "warning", "info", "unknown"
 #
 # Two example strategies shown:
 # 1. Conservative: unmapped severities escalate to "critical" (safety-first)
@@ -20,7 +20,7 @@ package signalprocessing.severity
 # ========================================
 # Unmapped severity values escalate to "critical" for safety
 
-# Standard normalized severity values (DD-SEVERITY-001 v1.1: aligned with HAPI/workflow catalog)
+# Standard normalized severity values (ADR-066: 4-level model)
 # Uses lower() for case-insensitive matching of external monitoring severity values.
 determine_severity := "critical" if {
 	lower(input.signal.severity) == "critical"
@@ -30,11 +30,19 @@ determine_severity := "high" if {
 	lower(input.signal.severity) == "high"
 }
 
-determine_severity := "medium" if {
+determine_severity := "warning" if {
+	lower(input.signal.severity) == "warning"
+}
+
+determine_severity := "warning" if {
 	lower(input.signal.severity) == "medium"
 }
 
-determine_severity := "low" if {
+determine_severity := "info" if {
+	lower(input.signal.severity) == "info"
+}
+
+determine_severity := "info" if {
 	lower(input.signal.severity) == "low"
 }
 
@@ -55,11 +63,11 @@ determine_severity := "high" if {
 	lower(input.signal.severity) == "p2"
 }
 
-determine_severity := "medium" if {
+determine_severity := "warning" if {
 	lower(input.signal.severity) == "p3"
 }
 
-determine_severity := "low" if {
+determine_severity := "info" if {
 	lower(input.signal.severity) == "p4"
 }
 
@@ -72,11 +80,11 @@ determine_severity := "high" if {
 	lower(input.signal.severity) == "sev2"
 }
 
-determine_severity := "medium" if {
+determine_severity := "warning" if {
 	lower(input.signal.severity) == "sev3"
 }
 
-determine_severity := "low" if {
+determine_severity := "info" if {
 	lower(input.signal.severity) == "sev4"
 }
 
@@ -102,12 +110,12 @@ determine_severity := "critical" if {
 # 	input.signal.severity == "high"
 # }
 #
-# determine_severity := "medium" if {
-# 	input.signal.severity == "medium"
+# determine_severity := "warning" if {
+# 	input.signal.severity == "warning"
 # }
 #
-# determine_severity := "low" if {
-# 	input.signal.severity == "low"
+# determine_severity := "info" if {
+# 	input.signal.severity == "info"
 # }
 #
 # # PERMISSIVE FALLBACK: Unmapped severities downgrade to unknown
@@ -118,13 +126,13 @@ determine_severity := "critical" if {
 # }
 
 # ========================================
-# POLICY REQUIREMENTS (DD-SEVERITY-001 v1.1)
+# POLICY REQUIREMENTS (ADR-066)
 # ========================================
-# 1. MUST return one of: "critical", "high", "medium", "low", "unknown"
+# 1. MUST return one of: "critical", "high", "warning", "info", "unknown"
 # 2. MUST include catch-all else clause (operator-defined fallback behavior)
 # 3. MUST compile successfully (validated at controller startup)
 # 4. Policy updates via ConfigMap hot-reload (5-second fsnotify)
-# 5. DD-SEVERITY-001 v1.1: Values aligned with HAPI/workflow catalog
+# 5. ADR-066: 4-level model aligned with Prometheus vocabulary
 #
 # Example validation:
 #   opa eval -d severity.rego 'data.signalprocessing.severity.determine_severity' \

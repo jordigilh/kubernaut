@@ -39,7 +39,7 @@ func oomkilledPredictiveConfig() MockScenarioConfig {
 
 func predictiveNoActionConfig() MockScenarioConfig {
 	return MockScenarioConfig{
-		ScenarioName: "predictive_no_action", SignalName: "OOMKilled", Severity: "medium",
+		ScenarioName: "predictive_no_action", SignalName: "OOMKilled", Severity: "warning",
 		Confidence:   0.82,
 		RootCause:    "Predicted OOMKill based on trend analysis, but current assessment shows the trend is reversing. Memory usage has stabilized at 60% of limit after recent deployment rollout. No preemptive action needed — the prediction is unlikely to materialize.",
 		ResourceKind: "Pod", ResourceNS: "production", ResourceName: "api-server-def456",

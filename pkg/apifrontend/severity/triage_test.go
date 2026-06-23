@@ -201,7 +201,7 @@ var _ = Describe("Triage Orchestrator", func() {
 		It("UT-AF-1369-009: resource-specific match blocks lower-priority matches even if they have higher severity", func() {
 			mockProm := &mockPromClient{
 				alerts: []prom.Alert{
-					{Labels: map[string]string{"alertname": "HighCPU", "namespace": "prod", "kind": "Deployment", "name": "web-api", "severity": "low"}, State: "firing"},
+					{Labels: map[string]string{"alertname": "HighCPU", "namespace": "prod", "kind": "Deployment", "name": "web-api", "severity": "info"}, State: "firing"},
 					{Labels: map[string]string{"alertname": "IstioHighDenyRate", "namespace": "prod", "severity": "critical"}, State: "firing"},
 					{Labels: map[string]string{"alertname": "etcdHighCommit", "severity": "critical"}, State: "firing"},
 				},
@@ -210,7 +210,7 @@ var _ = Describe("Triage Orchestrator", func() {
 			result, err := triager.Triage(context.Background(), defaultInput)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.AlertName).To(Equal("HighCPU"), "resource-specific match wins regardless of severity")
-			Expect(result.Severity).To(Equal("low"))
+			Expect(result.Severity).To(Equal("info"))
 			Expect(result.Source).To(Equal(severity.SourceFiringAlert))
 		})
 	})
@@ -325,7 +325,7 @@ var _ = Describe("Triage Orchestrator", func() {
 			}
 			cfg := defaultCfg
 			cfg.MaxQueriesPerCall = 10
-			triager := severity.NewTriager(mockProm, &mockLLM{pureResult: severity.TriageResult{Severity: "medium", Source: severity.SourceLLMTriage}}, cfg, logr.Discard())
+			triager := severity.NewTriager(mockProm, &mockLLM{pureResult: severity.TriageResult{Severity: "warning", Source: severity.SourceLLMTriage}}, cfg, logr.Discard())
 			_, err := triager.Triage(context.Background(), defaultInput)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(queryCount).To(BeNumerically("<=", 10))
@@ -365,7 +365,7 @@ var _ = Describe("Triage Orchestrator", func() {
 				ruleGroups: []prom.RuleGroup{},
 			}
 			mockLLM := &mockLLM{
-				pureResult: severity.TriageResult{Severity: "medium", Source: severity.SourceLLMTriage},
+				pureResult: severity.TriageResult{Severity: "warning", Source: severity.SourceLLMTriage},
 			}
 			triager := severity.NewTriager(mockProm, mockLLM, defaultCfg, logr.Discard())
 			result, err := triager.Triage(context.Background(), defaultInput)
@@ -381,12 +381,12 @@ var _ = Describe("Triage Orchestrator", func() {
 				ruleGroups: []prom.RuleGroup{},
 			}
 			mockLLM := &mockLLM{
-				pureResult: severity.TriageResult{Severity: "low", Source: severity.SourceLLMTriage},
+				pureResult: severity.TriageResult{Severity: "info", Source: severity.SourceLLMTriage},
 			}
 			triager := severity.NewTriager(mockProm, mockLLM, defaultCfg, logr.Discard())
 			result, err := triager.Triage(context.Background(), defaultInput)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Severity).To(Equal("low"))
+			Expect(result.Severity).To(Equal("info"))
 			Expect(result.Source).To(Equal(severity.SourceLLMTriage))
 		})
 	})
@@ -420,7 +420,7 @@ var _ = Describe("Triage Orchestrator", func() {
 				ruleGroups: []prom.RuleGroup{},
 			}
 			mockLLM := &mockLLM{
-				pureResult: severity.TriageResult{Severity: "medium", Source: severity.SourceLLMTriage},
+				pureResult: severity.TriageResult{Severity: "warning", Source: severity.SourceLLMTriage},
 			}
 			triager := severity.NewTriager(mockProm, mockLLM, defaultCfg, logr.Discard())
 			result, err := triager.Triage(context.Background(), defaultInput)
@@ -430,29 +430,29 @@ var _ = Describe("Triage Orchestrator", func() {
 	})
 
 	Describe("Severity Ordering", func() {
-		It("UT-AF-T-035: critical > high > medium > low > info", func() {
+		It("UT-AF-T-035: critical > high > warning > info (ADR-066)", func() {
 			Expect(severity.CompareSeverity("critical", "high")).To(BeNumerically(">", 0))
-			Expect(severity.CompareSeverity("high", "medium")).To(BeNumerically(">", 0))
-			Expect(severity.CompareSeverity("medium", "low")).To(BeNumerically(">", 0))
-			Expect(severity.CompareSeverity("low", "info")).To(BeNumerically(">", 0))
+			Expect(severity.CompareSeverity("high", "warning")).To(BeNumerically(">", 0))
+			Expect(severity.CompareSeverity("warning", "info")).To(BeNumerically(">", 0))
 			Expect(severity.CompareSeverity("critical", "info")).To(BeNumerically(">", 0))
-			Expect(severity.CompareSeverity("medium", "medium")).To(BeNumerically("==", 0))
-			Expect(severity.CompareSeverity("low", "critical")).To(BeNumerically("<", 0))
+			Expect(severity.CompareSeverity("warning", "warning")).To(BeNumerically("==", 0))
+			Expect(severity.CompareSeverity("info", "critical")).To(BeNumerically("<", 0))
 
-			Expect(severity.HighestSeverity([]string{"low", "critical", "medium"})).To(Equal("critical"))
+			Expect(severity.HighestSeverity([]string{"info", "critical", "warning"})).To(Equal("critical"))
 			Expect(severity.HighestSeverity([]string{"info"})).To(Equal("info"))
 			Expect(severity.HighestSeverity([]string{})).To(BeEmpty())
 		})
 
-		It("UT-AF-1412-001: warning ranks correctly in Prometheus vocabulary", func() {
+		It("UT-AF-1412-001: warning ranks correctly in severity model (ADR-066)", func() {
 			Expect(severity.CompareSeverity("warning", "info")).To(BeNumerically(">", 0))
-			Expect(severity.CompareSeverity("warning", "medium")).To(BeNumerically("==", 0))
 			Expect(severity.CompareSeverity("critical", "warning")).To(BeNumerically(">", 0))
 			Expect(severity.CompareSeverity("high", "warning")).To(BeNumerically(">", 0))
-			Expect(severity.CompareSeverity("warning", "low")).To(BeNumerically(">", 0))
 			Expect(severity.HighestSeverity([]string{"warning", "info"})).To(Equal("warning"))
-			Expect(severity.HighestSeverity([]string{"warning", "medium"})).To(Equal("warning"))
 			Expect(severity.ValidateSeverity("warning")).To(BeTrue())
+		})
+
+		It("UT-AF-1417-001: NormalizeSeverity maps medium to warning (backward-compat)", func() {
+			Expect(severity.NormalizeSeverity("medium")).To(Equal("warning"))
 		})
 	})
 
@@ -481,7 +481,7 @@ var _ = Describe("Triage Orchestrator", func() {
 				rulesErr:  errors.New("connection refused"),
 			}
 			mockLLM := &mockLLM{
-				pureResult: severity.TriageResult{Severity: "medium", Source: severity.SourceLLMTriage},
+				pureResult: severity.TriageResult{Severity: "warning", Source: severity.SourceLLMTriage},
 			}
 			triager := severity.NewTriager(mockProm, mockLLM, defaultCfg, logr.Discard())
 			result, err := triager.Triage(context.Background(), defaultInput)
@@ -494,7 +494,7 @@ var _ = Describe("Triage Orchestrator", func() {
 		It("UT-AF-T-043: empty resource labels skips Prometheus, goes to Tier 3", func() {
 			mockProm := &mockPromClient{}
 			mockLLM := &mockLLM{
-				pureResult: severity.TriageResult{Severity: "medium", Source: severity.SourceLLMTriage},
+				pureResult: severity.TriageResult{Severity: "warning", Source: severity.SourceLLMTriage},
 			}
 			input := severity.TriageInput{
 				Namespace:   "prod",
@@ -529,7 +529,7 @@ var _ = Describe("Triage Orchestrator", func() {
 			cfg := defaultCfg
 			cfg.MaxRulesEvaluated = 100
 			cfg.MaxQueriesPerCall = 100
-			triager := severity.NewTriager(mockProm, &mockLLM{pureResult: severity.TriageResult{Severity: "medium", Source: severity.SourceLLMTriage}}, cfg, logr.Discard())
+			triager := severity.NewTriager(mockProm, &mockLLM{pureResult: severity.TriageResult{Severity: "warning", Source: severity.SourceLLMTriage}}, cfg, logr.Discard())
 			_, err := triager.Triage(context.Background(), defaultInput)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(queryCount).To(BeNumerically("<=", 100))
@@ -581,7 +581,7 @@ var _ = Describe("Triage Orchestrator", func() {
 	})
 
 	Describe("Confidence Threshold", func() {
-		It("UT-AF-T-051: LLM confidence below threshold downgrades to medium (Tier 3)", func() {
+		It("UT-AF-T-051: LLM confidence below threshold downgrades to warning (Tier 3)", func() {
 			mockProm := &mockPromClient{
 				alerts:     []prom.Alert{},
 				ruleGroups: []prom.RuleGroup{},
@@ -594,7 +594,7 @@ var _ = Describe("Triage Orchestrator", func() {
 			triager := severity.NewTriager(mockProm, mockLLM, cfg, logr.Discard())
 			result, err := triager.Triage(context.Background(), defaultInput)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Severity).To(Equal("medium"))
+			Expect(result.Severity).To(Equal("warning"))
 			Expect(result.Source).To(Equal(severity.SourceLLMTriage))
 		})
 
@@ -635,7 +635,7 @@ var _ = Describe("Triage Orchestrator", func() {
 			triager := severity.NewTriager(mockProm, mockLLM, cfg, logr.Discard())
 			result, err := triager.Triage(context.Background(), defaultInput)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Severity).To(Equal("medium"))
+			Expect(result.Severity).To(Equal("warning"))
 			Expect(result.Source).To(Equal(severity.SourceLLMRuleInform))
 		})
 

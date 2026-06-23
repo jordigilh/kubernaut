@@ -573,7 +573,7 @@ var _ = Describe("Kubernaut Agent Result Parser — #433", func() {
 
 		It("should parse section headers with RCA only (no workflow)", func() {
 			rcaOnly := `# root_cause_analysis
-{"summary": "Transient network issue", "severity": "low"}
+{"summary": "Transient network issue", "severity": "info"}
 
 # confidence
 0.80

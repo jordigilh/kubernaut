@@ -249,14 +249,14 @@ spec:
                         maxLength: 64
                         type: string
                       severity:
-                        description: 'Signal severity: critical, high, medium, low,
+                        description: 'Signal severity: critical, high, warning, info,
                           unknown (normalized by SignalProcessing Rego - DD-SEVERITY-001
-                          v1.1)'
+                          v1.1, ADR-066)'
                         enum:
                         - critical
                         - high
-                        - medium
-                        - low
+                        - warning
+                        - info
                         - unknown
                         type: string
                       signalAnnotations:
@@ -1049,13 +1049,13 @@ spec:
                     type: object
                   severity:
                     description: |-
-                      Severity determined by RCA (normalized per DD-SEVERITY-001 v1.1)
-                      DD-SEVERITY-001 v1.1: Aligned with KA/workflow catalog (critical, high, medium, low, unknown)
+                      Severity determined by RCA (normalized per DD-SEVERITY-001 v1.1, ADR-066)
+                      DD-SEVERITY-001 v1.1: Aligned with KA/workflow catalog (critical, high, warning, info, unknown)
                     enum:
                     - critical
                     - high
-                    - medium
-                    - low
+                    - warning
+                    - info
                     - unknown
                     type: string
                   signalType:

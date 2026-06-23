@@ -125,7 +125,7 @@ var _ = Describe("Investigator skip workflow discovery (#1430 / BR-HAPI-200)", f
 			})
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "worker-pod", Namespace: "staging",
-				Severity: "low", Message: "HighLatency",
+				Severity: "info", Message: "HighLatency",
 				Environment: "Staging", Priority: "P3",
 			})
 			Expect(err).NotTo(HaveOccurred())
@@ -198,7 +198,7 @@ var _ = Describe("Investigator skip workflow discovery (#1430 / BR-HAPI-200)", f
 			})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "hpa-target", Namespace: "production",
-				Severity: "low", Message: "ScalingEvent",
+				Severity: "info", Message: "ScalingEvent",
 				RemediationID: "rr-hpa-002",
 				Environment: "Production", Priority: "P3",
 			})

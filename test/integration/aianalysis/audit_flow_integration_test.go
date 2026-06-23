@@ -848,7 +848,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      fmt.Sprintf("fp-phases-%s", uuid.New().String()[:8]),
-							Severity:         "medium", // DD-SEVERITY-001: Use normalized severity enum
+							Severity:         "warning", // DD-SEVERITY-001: Use normalized severity enum
 							SignalName:       "HighMemoryUsage",
 							Environment:      "development",
 							BusinessPriority: "P3",

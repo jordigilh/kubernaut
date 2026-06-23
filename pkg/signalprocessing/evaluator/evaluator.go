@@ -286,7 +286,7 @@ func (e *Evaluator) EvaluateSeverity(ctx context.Context, input PolicyInput) (*S
 	}
 
 	if !isValidSeverity(severityValue) {
-		return nil, fmt.Errorf("policy returned invalid severity %q - must be critical/high/medium/low/unknown", severityValue)
+		return nil, fmt.Errorf("policy returned invalid severity %q - must be critical/high/warning/info/unknown", severityValue)
 	}
 
 	return &SeverityResult{
@@ -383,7 +383,7 @@ func (e *Evaluator) EvaluateCustomLabels(ctx context.Context, input PolicyInput)
 
 func isValidSeverity(severity string) bool {
 	switch severity {
-	case "critical", "high", "medium", "low", "unknown":
+	case "critical", "high", "warning", "info", "unknown":
 		return true
 	default:
 		return false

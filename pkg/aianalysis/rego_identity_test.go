@@ -87,7 +87,7 @@ var _ = Describe("Rego Identity Input — #774, BR-AI-085, BR-INTERACTIVE-001", 
 		It("should not panic when Identity is nil (autonomous flow)", func() {
 			input := &rego.PolicyInput{
 				SignalType: "alert",
-				Severity:   "medium",
+				Severity:   "warning",
 				Confidence: 0.9,
 				Identity:   nil,
 			}

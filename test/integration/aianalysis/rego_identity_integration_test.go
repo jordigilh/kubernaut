@@ -105,7 +105,7 @@ var _ = Describe("Rego Identity Integration — #774, BR-AI-085", Label("integra
 		It("should require approval when PolicyInput has nil identity (autonomous flow)", func() {
 			input := &rego.PolicyInput{
 				SignalType:  "alert",
-				Severity:    "medium",
+				Severity:    "warning",
 				Environment: "staging",
 				Confidence:  0.90,
 				TargetResource: rego.TargetResourceInput{

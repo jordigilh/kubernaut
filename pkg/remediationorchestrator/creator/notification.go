@@ -525,7 +525,7 @@ func (c *NotificationCreator) CreateBulkDuplicateNotification(
 			},
 			Type:     notificationv1.NotificationTypeSimple,
 			Priority: notificationv1.NotificationPriorityLow,
-			Severity: "low",
+			Severity: "info",
 			Subject:  fmt.Sprintf("Remediation Completed with %d Duplicates", rr.Status.DuplicateCount),
 			Body:     c.buildBulkDuplicateBody(rr),
 			Context: &notificationv1.NotificationContext{

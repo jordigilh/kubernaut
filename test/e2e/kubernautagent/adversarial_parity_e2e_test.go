@@ -46,9 +46,9 @@ var _ = Describe("E2E-KA-433-ADV: Adversarial Parity Tests", Label("e2e", "ka", 
 		case "high":
 			sev = agentclient.SeverityHigh
 		case "medium":
-			sev = agentclient.SeverityMedium
-		case "low":
-			sev = agentclient.SeverityLow
+			sev = agentclient.SeverityWarning
+		case "info":
+			sev = agentclient.SeverityInfo
 		}
 		return &agentclient.IncidentRequest{
 			IncidentID:        incidentID,

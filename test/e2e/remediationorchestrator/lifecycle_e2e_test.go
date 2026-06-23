@@ -70,7 +70,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: fingerprint,
 					SignalName:        "HighCPUUsage",
-					Severity:          "medium",
+					Severity:          "warning",
 					SignalType:        "alert",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
@@ -272,7 +272,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: fingerprint,
 					SignalName:        "TransientError",
-					Severity:          "low",
+					Severity:          "info",
 					SignalType:        "alert",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
@@ -339,7 +339,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: fingerprint,
 					SignalName:        "CascadeTest",
-					Severity:          "medium",
+					Severity:          "warning",
 					SignalType:        "alert",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
@@ -394,7 +394,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: fingerprint,
 					SignalName:        "DedupTest",
-					Severity:          "medium",
+					Severity:          "warning",
 					SignalType:        "alert",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{

@@ -114,6 +114,9 @@ func (t *Triager) Triage(ctx context.Context, input TriageInput) (TriageResult, 
 		}
 		return result, err
 	}
+	if result.Severity != "" {
+		result.Severity = NormalizeSeverity(result.Severity)
+	}
 	if result.Severity != "" && t.auditor != nil {
 		t.auditor.Emit(ctx, &audit.Event{
 			Type: audit.EventSeverityTriageCompleted,
@@ -363,9 +366,9 @@ func (t *Triager) runTier25(ctx context.Context, input TriageInput, matchedRules
 	}
 	result.Source = SourceLLMRuleInform
 	if result.Confidence > 0 && result.Confidence < t.config.LLMConfidence {
-		t.logger.Info("LLM confidence below threshold, defaulting to medium",
+		t.logger.Info("LLM confidence below threshold, defaulting to warning",
 			"tier", "2.5", "confidence", result.Confidence, "threshold", t.config.LLMConfidence)
-		result.Severity = "medium"
+		result.Severity = "warning"
 	}
 	return result, true
 }
@@ -377,9 +380,9 @@ func (t *Triager) runTier3(ctx context.Context, input TriageInput) (TriageResult
 	}
 	result.Source = SourceLLMTriage
 	if result.Confidence > 0 && result.Confidence < t.config.LLMConfidence {
-		t.logger.Info("LLM confidence below threshold, defaulting to medium",
+		t.logger.Info("LLM confidence below threshold, defaulting to warning",
 			"tier", "3", "confidence", result.Confidence, "threshold", t.config.LLMConfidence)
-		result.Severity = "medium"
+		result.Severity = "warning"
 	}
 	return result, nil
 }

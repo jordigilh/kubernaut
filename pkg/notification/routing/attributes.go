@@ -29,7 +29,7 @@ const (
 	AttrType = "type"
 
 	// AttrSeverity is the routing attribute key for severity.
-	// Maps to spec.severity. Values: critical, high, medium, low
+	// Maps to spec.severity. Values: critical, high, warning, info (ADR-066)
 	AttrSeverity = "severity"
 
 	// AttrEnvironment is the routing attribute key for environment.
@@ -98,11 +98,12 @@ const (
 )
 
 // SeverityValues are the standard severity routing values.
+// ADR-066: 4-level model (critical > high > warning > info)
 const (
 	SeverityCritical = "critical"
 	SeverityHigh     = "high"
-	SeverityMedium   = "medium"
-	SeverityLow      = "low"
+	SeverityWarning  = "warning"
+	SeverityInfo     = "info"
 )
 
 // EnvironmentValues are the standard environment routing values.

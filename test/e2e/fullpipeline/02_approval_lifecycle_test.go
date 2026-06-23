@@ -194,8 +194,8 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 
 		// BR-SP-070: Verify priority assignment for production signal.
 		// The gateway may produce either OOMKilled (critical) or BackOff (warning)
-		// signals depending on timing. Rego normalizes warning→medium. For production:
-		//   critical → P0, high/medium → P1, other → P2
+		// signals depending on timing. Rego normalizes to canonical values (ADR-066). For production:
+		//   critical → P0, high/warning → P1, other → P2
 		By("Step 4c: Verifying SP assigned priority for production signal [BR-SP-070]")
 		Expect(matchedSP.Status.PriorityAssignment).ToNot(BeNil(),
 			"SP PriorityAssignment must be populated for production signal")
@@ -243,9 +243,9 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 		Expect(sc.Environment).To(Equal(string(signalprocessingv1.EnvironmentProduction)),
 			"AA SignalContext.Environment should be 'Production' (propagated from SP EnvironmentClassification)")
 		Expect(sc.BusinessPriority).To(BeElementOf(string(signalprocessingv1.PriorityP0), string(signalprocessingv1.PriorityP1)),
-			"AA SignalContext.BusinessPriority should be P0 (critical) or P1 (medium) for production")
-		Expect(sc.Severity).To(BeElementOf("critical", "high", "medium"),
-			"AA SignalContext.Severity should reflect SP normalized severity (OOMKill→critical, BackOff→medium)")
+			"AA SignalContext.BusinessPriority should be P0 (critical) or P1 (warning) for production")
+		Expect(sc.Severity).To(BeElementOf("critical", "high", "warning"),
+			"AA SignalContext.Severity should reflect SP normalized severity (OOMKill→critical, BackOff→warning)")
 		Expect(sc.SignalMode).To(BeElementOf("reactive", "proactive"),
 			"AA SignalContext.SignalMode must be populated (BR-AI-084)")
 		GinkgoWriter.Printf("  ✅ AA signal context: env=%s, priority=%s, severity=%s, mode=%s\n",

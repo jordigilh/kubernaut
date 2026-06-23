@@ -32706,10 +32706,10 @@ func (s *IncidentResponseDataRootCauseAnalysisSeverity) Decode(d *jx.Decoder) er
 		*s = IncidentResponseDataRootCauseAnalysisSeverityCritical
 	case IncidentResponseDataRootCauseAnalysisSeverityHigh:
 		*s = IncidentResponseDataRootCauseAnalysisSeverityHigh
-	case IncidentResponseDataRootCauseAnalysisSeverityMedium:
-		*s = IncidentResponseDataRootCauseAnalysisSeverityMedium
-	case IncidentResponseDataRootCauseAnalysisSeverityLow:
-		*s = IncidentResponseDataRootCauseAnalysisSeverityLow
+	case IncidentResponseDataRootCauseAnalysisSeverityWarning:
+		*s = IncidentResponseDataRootCauseAnalysisSeverityWarning
+	case IncidentResponseDataRootCauseAnalysisSeverityInfo:
+		*s = IncidentResponseDataRootCauseAnalysisSeverityInfo
 	case IncidentResponseDataRootCauseAnalysisSeverityUnknown:
 		*s = IncidentResponseDataRootCauseAnalysisSeverityUnknown
 	default:
@@ -34460,10 +34460,10 @@ func (s *MandatoryLabelsSeverityItem) Decode(d *jx.Decoder) error {
 		*s = MandatoryLabelsSeverityItem_critical
 	case MandatoryLabelsSeverityItem_high:
 		*s = MandatoryLabelsSeverityItem_high
-	case MandatoryLabelsSeverityItem_medium:
-		*s = MandatoryLabelsSeverityItem_medium
-	case MandatoryLabelsSeverityItem_low:
-		*s = MandatoryLabelsSeverityItem_low
+	case MandatoryLabelsSeverityItem_warning:
+		*s = MandatoryLabelsSeverityItem_warning
+	case MandatoryLabelsSeverityItem_info:
+		*s = MandatoryLabelsSeverityItem_info
 	case MandatoryLabelsSeverityItem_:
 		*s = MandatoryLabelsSeverityItem_
 	default:
@@ -47408,8 +47408,8 @@ func (s *SignalProcessingAuditPayloadCriticality) Decode(d *jx.Decoder) error {
 		*s = SignalProcessingAuditPayloadCriticalityCritical
 	case SignalProcessingAuditPayloadCriticalityHigh:
 		*s = SignalProcessingAuditPayloadCriticalityHigh
-	case SignalProcessingAuditPayloadCriticalityMedium:
-		*s = SignalProcessingAuditPayloadCriticalityMedium
+	case SignalProcessingAuditPayloadCriticalityWarning:
+		*s = SignalProcessingAuditPayloadCriticalityWarning
 	case SignalProcessingAuditPayloadCriticalityLow:
 		*s = SignalProcessingAuditPayloadCriticalityLow
 	default:
@@ -47626,10 +47626,10 @@ func (s *SignalProcessingAuditPayloadNormalizedSeverity) Decode(d *jx.Decoder) e
 		*s = SignalProcessingAuditPayloadNormalizedSeverityCritical
 	case SignalProcessingAuditPayloadNormalizedSeverityHigh:
 		*s = SignalProcessingAuditPayloadNormalizedSeverityHigh
-	case SignalProcessingAuditPayloadNormalizedSeverityMedium:
-		*s = SignalProcessingAuditPayloadNormalizedSeverityMedium
-	case SignalProcessingAuditPayloadNormalizedSeverityLow:
-		*s = SignalProcessingAuditPayloadNormalizedSeverityLow
+	case SignalProcessingAuditPayloadNormalizedSeverityWarning:
+		*s = SignalProcessingAuditPayloadNormalizedSeverityWarning
+	case SignalProcessingAuditPayloadNormalizedSeverityInfo:
+		*s = SignalProcessingAuditPayloadNormalizedSeverityInfo
 	case SignalProcessingAuditPayloadNormalizedSeverityUnknown:
 		*s = SignalProcessingAuditPayloadNormalizedSeverityUnknown
 	default:
@@ -47808,10 +47808,10 @@ func (s *SignalProcessingAuditPayloadSeverity) Decode(d *jx.Decoder) error {
 		*s = SignalProcessingAuditPayloadSeverityCritical
 	case SignalProcessingAuditPayloadSeverityHigh:
 		*s = SignalProcessingAuditPayloadSeverityHigh
-	case SignalProcessingAuditPayloadSeverityMedium:
-		*s = SignalProcessingAuditPayloadSeverityMedium
-	case SignalProcessingAuditPayloadSeverityLow:
-		*s = SignalProcessingAuditPayloadSeverityLow
+	case SignalProcessingAuditPayloadSeverityWarning:
+		*s = SignalProcessingAuditPayloadSeverityWarning
+	case SignalProcessingAuditPayloadSeverityInfo:
+		*s = SignalProcessingAuditPayloadSeverityInfo
 	case SignalProcessingAuditPayloadSeverityUnknown:
 		*s = SignalProcessingAuditPayloadSeverityUnknown
 	default:
@@ -51747,10 +51747,10 @@ func (s *WorkflowSearchFiltersSeverity) Decode(d *jx.Decoder) error {
 		*s = WorkflowSearchFiltersSeverityCritical
 	case WorkflowSearchFiltersSeverityHigh:
 		*s = WorkflowSearchFiltersSeverityHigh
-	case WorkflowSearchFiltersSeverityMedium:
-		*s = WorkflowSearchFiltersSeverityMedium
-	case WorkflowSearchFiltersSeverityLow:
-		*s = WorkflowSearchFiltersSeverityLow
+	case WorkflowSearchFiltersSeverityWarning:
+		*s = WorkflowSearchFiltersSeverityWarning
+	case WorkflowSearchFiltersSeverityInfo:
+		*s = WorkflowSearchFiltersSeverityInfo
 	default:
 		*s = WorkflowSearchFiltersSeverity(v)
 	}

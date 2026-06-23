@@ -230,9 +230,10 @@ type WorkflowSearchFilters struct {
 	// Issue #274: SignalName removed — LLM selects by actionType.
 
 	// Severity filters by severity level (MANDATORY)
-	// Values: "critical", "high", "medium", "low"
+	// Values: "critical", "high", "warning", "info"
 	// DD-WORKFLOW-001 v1.6: camelCase JSON tag
-	Severity string `json:"severity" validate:"required,oneof=critical high medium low"`
+	// ADR-066: "medium" replaced by "warning", "low" replaced by "info"
+	Severity string `json:"severity" validate:"required,oneof=critical high warning info"`
 
 	// Component filters by Kubernetes resource type (MANDATORY)
 	// Example: "pod", "deployment", "node", "service"

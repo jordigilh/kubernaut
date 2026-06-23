@@ -631,12 +631,12 @@ data:
     severity := "high" if { lower(input.signal.severity) == "high" }
     severity := "high" if { lower(input.signal.severity) == "sev2" }
     severity := "high" if { lower(input.signal.severity) == "p2" }
-    severity := "medium" if { lower(input.signal.severity) == "medium" }
-    severity := "medium" if { lower(input.signal.severity) == "warning" }
-    severity := "medium" if { lower(input.signal.severity) == "sev3" }
-    severity := "low" if { lower(input.signal.severity) == "low" }
-    severity := "low" if { lower(input.signal.severity) == "info" }
-    severity := "low" if { lower(input.signal.severity) == "sev4" }
+    severity := "warning" if { lower(input.signal.severity) == "medium" }
+    severity := "warning" if { lower(input.signal.severity) == "warning" }
+    severity := "warning" if { lower(input.signal.severity) == "sev3" }
+    severity := "info" if { lower(input.signal.severity) == "low" }
+    severity := "info" if { lower(input.signal.severity) == "info" }
+    severity := "info" if { lower(input.signal.severity) == "sev4" }
 
     # ========== Priority Assignment (BR-SP-070) ==========
     default priority := {"priority": "P3", "policy_name": "default"}
@@ -649,9 +649,9 @@ data:
         environment.environment == "production"
         severity == "high"
     }
-    priority := {"priority": "P1", "policy_name": "production-medium"} if {
+    priority := {"priority": "P1", "policy_name": "production-warning"} if {
         environment.environment == "production"
-        severity == "medium"
+        severity == "warning"
     }
     priority := {"priority": "P1", "policy_name": "staging-critical"} if {
         environment.environment == "staging"

@@ -90,7 +90,7 @@ var _ = Describe("BR-INTERACTIVE-010: Interactive Signal Mapping — #1293", fun
 				IncidentID:        "int-test-003",
 				RemediationID:     "rem-interactive-003",
 				SignalName:        "HighMemory",
-				Severity:          agentclient.SeverityMedium,
+				Severity:          agentclient.SeverityWarning,
 				ResourceNamespace: "prod",
 				ResourceKind:      "Deployment",
 				ResourceName:      "api",

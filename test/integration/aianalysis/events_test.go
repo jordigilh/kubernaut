@@ -97,7 +97,7 @@ var _ = Describe("AIAnalysis K8s Event Observability (DD-EVENT-001, BR-AA-095)",
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "test-fingerprint-events-001",
-							Severity:         "medium",
+							Severity:         "warning",
 							SignalName:       "CrashLoopBackOff",
 							Environment:      "staging",
 							BusinessPriority: "P2",
@@ -170,7 +170,7 @@ var _ = Describe("AIAnalysis K8s Event Observability (DD-EVENT-001, BR-AA-095)",
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "test-fingerprint-events-fail",
-							Severity:         "medium",
+							Severity:         "warning",
 							SignalName:       "MOCK_RCA_PERMANENT_ERROR",
 							Environment:      "staging",
 							BusinessPriority: "P2",
@@ -307,7 +307,7 @@ var _ = Describe("AIAnalysis K8s Event Observability (DD-EVENT-001, BR-AA-095)",
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "test-fingerprint-session-created",
-							Severity:         "medium",
+							Severity:         "warning",
 							SignalName:       "CrashLoopBackOff",
 							Environment:      "staging",
 							BusinessPriority: "P2",

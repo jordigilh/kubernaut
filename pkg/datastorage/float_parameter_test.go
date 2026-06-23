@@ -35,7 +35,7 @@ import (
 // floatParamBaseCRD returns a CRD tailored for float parameter tests.
 func floatParamBaseCRD() *models.WorkflowSchemaCRD {
 	crd := testutil.NewTestWorkflowCRD("float-param-test", "ScaleMemory", "tekton")
-	crd.Spec.Labels.Severity = []string{"medium"}
+	crd.Spec.Labels.Severity = []string{"warning"}
 	return crd
 }
 

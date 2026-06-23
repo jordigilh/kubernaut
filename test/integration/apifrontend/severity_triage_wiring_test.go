@@ -79,7 +79,7 @@ var _ = Describe("Severity Triage LLM Wiring", func() {
 			Description: "test workload failing",
 		})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(result.Severity).To(Equal("medium"),
-			"NoopLLMTriager must return 'medium' — this is the control case")
+		Expect(result.Severity).To(Equal("warning"),
+			"NoopLLMTriager must return 'warning' — this is the control case")
 	})
 })

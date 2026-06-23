@@ -912,7 +912,7 @@
               }
             ],
             "title": "Criticality",
-            "description": "Business criticality: critical, high, medium, low"
+            "description": "Business criticality: critical, high, warning, low"
           },
           "slaRequirement": {
             "anyOf": [
@@ -1083,7 +1083,7 @@
           },
           "severity": {
             "$ref": "#/components/schemas/Severity",
-            "description": "Signal severity (BR-SEVERITY-001: critical, high, medium, low, unknown)"
+            "description": "Signal severity (BR-SEVERITY-001: critical, high, warning, info, unknown)"
           },
           "signal_source": {
             "type": "string",
@@ -1518,12 +1518,12 @@
         "enum": [
           "critical",
           "high",
-          "medium",
-          "low",
+          "warning",
+          "info",
           "unknown"
         ],
         "title": "Severity",
-        "description": "Canonical severity levels for Kubernaut.\n\nBusiness Requirement: BR-SEVERITY-001 (Standardized Severity Levels)\nDesign Decision: DD-SEVERITY-001 v1.1 (Severity Determination Refactoring)\n\nThese are the ONLY valid severity values across all internal components\n(CRDs, LLM prompts, workflow catalog labels, metrics, audit events).\n\nLevels (most to least severe):\n- critical: Immediate remediation required (>50% users affected)\n- high: Urgent remediation needed (10-50% users affected)\n- medium: Remediation recommended (<10% users affected)\n- low: Remediation optional (no user impact)\n- unknown: Human triage required (investigation inconclusive)"
+        "description": "Canonical severity levels for Kubernaut.\n\nBusiness Requirement: BR-SEVERITY-001 (Standardized Severity Levels)\nDesign Decision: DD-SEVERITY-001 v1.1 (Severity Determination Refactoring)\nADR-066: 4-level severity model (critical > high > warning > info)\n\nThese are the ONLY valid severity values across all internal components\n(CRDs, LLM prompts, workflow catalog labels, metrics, audit events).\n\nLevels (most to least severe):\n- critical: Immediate remediation required (>50% users affected)\n- high: Urgent remediation needed (10-50% users affected)\n- warning: Remediation recommended (<10% users affected)\n- info: Informational, remediation optional (no user impact)\n- unknown: Human triage required (investigation inconclusive)"
       },
       "SignalMode": {
         "type": "string",

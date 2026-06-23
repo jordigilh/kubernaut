@@ -58,7 +58,7 @@ const noWorkflowResultSchemaJSON = `{
       "type": "object",
       "properties": {
         "summary": { "type": "string" },
-        "severity": { "type": "string", "enum": ["critical", "high", "medium", "low", "info", "unknown"] },
+        "severity": { "type": "string", "enum": ["critical", "high", "warning", "info", "unknown"] },
         "signal_name": { "type": "string" },
         "contributing_factors": { "type": "array", "items": { "type": "string" } },
         "remediation_target": {
@@ -75,7 +75,7 @@ const noWorkflowResultSchemaJSON = `{
       "required": ["summary"]
     },
     "reasoning": { "type": "string", "description": "Explanation of why no workflow matches the incident" },
-    "severity": { "type": "string", "enum": ["critical", "high", "medium", "low", "info", "unknown"] },
+    "severity": { "type": "string", "enum": ["critical", "high", "warning", "info", "unknown"] },
     "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
     "investigation_outcome": { "type": "string", "enum": ["actionable", "not_actionable", "problem_resolved", "insufficient_data", "inconclusive"] }
   },
@@ -89,7 +89,7 @@ const rcaResultSchemaJSON = `{
       "type": "object",
       "properties": {
         "summary": { "type": "string" },
-        "severity": { "type": "string", "enum": ["critical", "high", "medium", "low", "info", "unknown"] },
+        "severity": { "type": "string", "enum": ["critical", "high", "warning", "info", "unknown"] },
         "signal_name": { "type": "string" },
         "contributing_factors": { "type": "array", "items": { "type": "string" } },
         "remediation_target": {
@@ -127,7 +127,7 @@ const rcaResultSchemaJSON = `{
       },
       "required": ["summary", "causal_chain", "due_diligence"]
     },
-    "severity": { "type": "string", "enum": ["critical", "high", "medium", "low", "info", "unknown"] },
+    "severity": { "type": "string", "enum": ["critical", "high", "warning", "info", "unknown"] },
     "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
     "investigation_outcome": { "type": "string", "enum": ["actionable", "not_actionable", "problem_resolved", "insufficient_data", "inconclusive"] },
     "actionable": { "type": "boolean" },
@@ -143,7 +143,7 @@ const investigationResultSchemaJSON = `{
       "type": "object",
       "properties": {
         "summary": { "type": "string" },
-        "severity": { "type": "string", "enum": ["critical", "high", "medium", "low", "info", "unknown"] },
+        "severity": { "type": "string", "enum": ["critical", "high", "warning", "info", "unknown"] },
         "signal_name": { "type": "string" },
         "contributing_factors": { "type": "array", "items": { "type": "string" } },
         "remediation_target": {
@@ -184,7 +184,7 @@ const investigationResultSchemaJSON = `{
         "required": ["workflow_id", "confidence"]
       }
     },
-    "severity": { "type": "string", "enum": ["critical", "high", "medium", "low", "info", "unknown"] },
+    "severity": { "type": "string", "enum": ["critical", "high", "warning", "info", "unknown"] },
     "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
     "investigation_outcome": { "type": "string", "enum": ["actionable", "not_actionable", "problem_resolved", "insufficient_data", "inconclusive"] },
     "actionable": { "type": "boolean" },

@@ -206,12 +206,12 @@ type SignalProcessingStatus struct {
 	PriorityAssignment        *PriorityAssignment        `json:"priorityAssignment,omitempty"`
 	BusinessClassification    *BusinessClassification    `json:"businessClassification,omitempty"`
 
-	// Severity determination (DD-SEVERITY-001 v1.1)
-	// Normalized severity determined by Rego policy: "critical", "high", "medium", "low", or "unknown"
+	// Severity determination (DD-SEVERITY-001 v1.1, ADR-066)
+	// Normalized severity determined by Rego policy: "critical", "high", "warning", "info", or "unknown"
 	// Aligned with KA/workflow catalog severity levels for consistency across platform
 	// Enables downstream services (AIAnalysis, RemediationOrchestrator, Notification)
 	// to interpret alert urgency without understanding external severity schemes.
-	// +kubebuilder:validation:Enum=critical;high;medium;low;unknown
+	// +kubebuilder:validation:Enum=critical;high;warning;info;unknown
 	// +optional
 	Severity string `json:"severity,omitempty"`
 

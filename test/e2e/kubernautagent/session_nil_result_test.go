@@ -38,7 +38,7 @@ var _ = Describe("E2E-KA-1390-001: Nil-Result Resilience", Label("e2e", "ka", "1
 			IncidentID:        "test-nil-result-1390",
 			RemediationID:     "rem-nil-result-1390",
 			SignalName:        "CrashLoopBackOff",
-			Severity:          "medium",
+			Severity:          "warning",
 			SignalSource:      "kubernetes",
 			ResourceNamespace: "default",
 			ResourceKind:      "Pod",

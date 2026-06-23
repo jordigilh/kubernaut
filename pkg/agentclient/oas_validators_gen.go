@@ -502,9 +502,9 @@ func (s Severity) Validate() error {
 		return nil
 	case "high":
 		return nil
-	case "medium":
+	case "warning":
 		return nil
-	case "low":
+	case "info":
 		return nil
 	case "unknown":
 		return nil

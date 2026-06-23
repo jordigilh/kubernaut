@@ -73,7 +73,7 @@ type AgentConfig struct {
 	Namespace string
 	// Triager performs severity triage for kubernaut_remediate and
 	// kubernaut_investigate (when auto-creating RRs from namespace/kind/name).
-	// If nil, severity defaults to "medium" without source attribution.
+	// If nil, severity defaults to "warning" without source attribution.
 	Triager *severity.Triager
 	// SessionService is the CRD session service for deferred CRD materialization (G6).
 	// When non-nil, used by kubernaut_investigate to create the InvestigationSession

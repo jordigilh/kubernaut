@@ -287,7 +287,7 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 							// This triggers KA to return investigation_outcome="resolved"
 							// with confidence >= 0.7 and selected_workflow=null
 							SignalName:       "MOCK_PROBLEM_RESOLVED",
-							Severity:         "low", // DD-SEVERITY-001 v1.1: Use normalized severity (critical, high, medium, low, unknown)
+							Severity:         "info", // ADR-066: Use canonical severity (critical, high, warning, info)
 							Environment:      "production",
 							BusinessPriority: "P2",
 							Fingerprint:      "test-fingerprint-" + testID,
@@ -462,7 +462,7 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							SignalName:       "MOCK_PROBLEM_RESOLVED_CONTRADICTION",
-							Severity:         "low",
+							Severity:         "info",
 							Environment:      "production",
 							BusinessPriority: "P2",
 							Fingerprint:      fmt.Sprintf("fp-contra-%s", shortID),

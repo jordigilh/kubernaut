@@ -82,16 +82,18 @@ func SimulateSPCompletion(ctx context.Context, k8sClient client.Client, sp *sign
 }
 
 // normalizeSeverity maps raw severity values (from RR/signal sources) to the
-// SP CRD status enum: critical, high, medium, low, unknown.
-// The SP spec.signal.severity has no enum restriction, but status.severity does.
+// SP CRD status enum: critical, high, warning, info, unknown.
+// ADR-066: canonical model is critical > high > warning > info.
 func normalizeSeverity(raw string) string {
 	switch strings.ToLower(raw) {
-	case "critical", "high", "medium", "low", "unknown":
+	case "critical", "high", "warning", "info", "unknown":
 		return strings.ToLower(raw)
-	case "warning":
-		return "medium"
-	case "info", "informational":
-		return "low"
+	case "medium":
+		return "warning"
+	case "low":
+		return "info"
+	case "informational":
+		return "info"
 	default:
 		return "unknown"
 	}

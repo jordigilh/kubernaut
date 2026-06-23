@@ -50,7 +50,7 @@ func TestLLMIntegration_RealClassification(t *testing.T) {
 		t.Fatalf("TriagePure: %v", err)
 	}
 
-	validSeverities := map[string]bool{"critical": true, "high": true, "medium": true, "low": true}
+	validSeverities := map[string]bool{"critical": true, "high": true, "warning": true, "info": true}
 	if !validSeverities[result.Severity] {
 		t.Errorf("unexpected severity %q (not in valid set)", result.Severity)
 	}

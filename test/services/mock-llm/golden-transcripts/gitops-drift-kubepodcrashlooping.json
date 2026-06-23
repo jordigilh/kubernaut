@@ -524,7 +524,7 @@
       {
         "index": 13,
         "tool": "list_available_actions",
-        "description": "List available actions (severity=medium, component=PodDisruptionBudget, env=Production)",
+        "description": "List available actions (severity=warning, component=PodDisruptionBudget, env=Production)",
         "durationSec": 0.02,
         "outputChars": 3151
       },
@@ -545,7 +545,7 @@
       {
         "index": 1,
         "tool": "list_available_actions",
-        "description": "List available actions (severity=medium, component=PodDisruptionBudget, env=Production)",
+        "description": "List available actions (severity=warning, component=PodDisruptionBudget, env=Production)",
         "durationSec": 0.01,
         "outputChars": 3623
       },

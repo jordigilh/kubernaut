@@ -168,7 +168,7 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-HAPI-197)", func() {
 			}, 60*time.Second, 500*time.Millisecond).Should(Succeed())
 
 			// Step 3: Complete SignalProcessing
-			Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted, "medium")).To(Succeed())
+			Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted, "warning")).To(Succeed())
 
 			// Step 4: Wait for RO to create AIAnalysis
 			aiName := "ai-" + rrName
@@ -321,7 +321,7 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-HAPI-197)", func() {
 				return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: spName, Namespace: ROControllerNamespace}, sp)
 			}, 60*time.Second, 500*time.Millisecond).Should(Succeed(), "SignalProcessing should be created by RO")
 
-			Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted, "medium")).To(Succeed())
+			Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted, "warning")).To(Succeed())
 
 			aiName := "ai-" + rrName
 			var analysis *aianalysisv1.AIAnalysis

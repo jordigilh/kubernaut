@@ -461,7 +461,7 @@ var _ = Describe("NotificationRequest Retry (#281)", func() {
 			Spec: notificationv1.NotificationRequestSpec{
 				Type:     notificationv1.NotificationTypeSimple,
 				Priority: notificationv1.NotificationPriorityLow,
-				Severity: "low",
+				Severity: "info",
 				Subject:  "Bulk Duplicate",
 				Body:     "Bulk duplicate notification",
 			},

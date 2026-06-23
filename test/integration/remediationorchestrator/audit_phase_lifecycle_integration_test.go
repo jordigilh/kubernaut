@@ -125,7 +125,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 			Spec: remediationv1.RemediationRequestSpec{
 				SignalFingerprint: fingerprint,
 				SignalName:        "PhaseTransitionTest",
-				Severity:          "medium",
+				Severity:          "warning",
 				SignalType:        "alert",
 				TargetType:        "kubernetes",
 				TargetResource: remediationv1.ResourceIdentifier{
@@ -232,7 +232,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 				return err == nil
 			}, timeout, interval).Should(BeTrue())
 
-			Expect(updateSPStatus(ROControllerNamespace, sp.Name, signalprocessingv1.PhaseCompleted, "medium")).To(Succeed())
+			Expect(updateSPStatus(ROControllerNamespace, sp.Name, signalprocessingv1.PhaseCompleted, "warning")).To(Succeed())
 
 			// Wait for RO to create AIAnalysis
 			ai := &aianalysisv1.AIAnalysis{}
@@ -256,7 +256,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 			// that share the same ROControllerNamespace (e.g., IT-AUDIT-COMPLETION-001).
 			ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 				Summary:    "Test root cause",
-				Severity:   "medium",
+				Severity:   "warning",
 				SignalType: "alert",
 				RemediationTarget: &aianalysisv1.RemediationTarget{
 					Kind:      "Pod",
@@ -342,7 +342,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 				return err == nil
 			}, timeout, interval).Should(BeTrue())
 
-			Expect(updateSPStatus(ROControllerNamespace, sp.Name, signalprocessingv1.PhaseCompleted, "medium")).To(Succeed())
+			Expect(updateSPStatus(ROControllerNamespace, sp.Name, signalprocessingv1.PhaseCompleted, "warning")).To(Succeed())
 
 			// Complete AIAnalysis
 			ai := &aianalysisv1.AIAnalysis{}
@@ -363,7 +363,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 			// DD-HAPI-006: RemediationTarget is required for routing to WorkflowExecution
 			ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 				Summary:    "Test root cause",
-				Severity:   "medium",
+				Severity:   "warning",
 				SignalType: "alert",
 				RemediationTarget: &aianalysisv1.RemediationTarget{
 					Kind:      "Pod",
@@ -505,7 +505,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 				return err == nil
 			}, timeout, interval).Should(BeTrue())
 
-			Expect(updateSPStatus(ROControllerNamespace, sp.Name, signalprocessingv1.PhaseCompleted, "medium")).To(Succeed())
+			Expect(updateSPStatus(ROControllerNamespace, sp.Name, signalprocessingv1.PhaseCompleted, "warning")).To(Succeed())
 
 			// Fail AIAnalysis to trigger remediation failure
 			ai := &aianalysisv1.AIAnalysis{}

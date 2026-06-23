@@ -114,7 +114,7 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 				// THEN: Normalized severity is persisted in Status
 				g.Expect(updated.Status.Severity).ToNot(BeEmpty(),
 					"Controller should write normalized severity to Status.Severity")
-				g.Expect(updated.Status.Severity).To(BeElementOf([]string{"critical", "high", "medium", "low"}),
+				g.Expect(updated.Status.Severity).To(BeElementOf([]string{"critical", "high", "warning", "info"}),
 					"Status.Severity should be normalized value per operator policy (not external 'Sev1')")
 			}, "30s", "1s").Should(Succeed())
 
@@ -177,7 +177,7 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 					Name:      sp.Name,
 					Namespace: sp.Namespace,
 				}, &updated)).To(Succeed())
-				g.Expect(updated.Status.Severity).To(BeElementOf([]string{"critical", "high", "medium", "low"}),
+				g.Expect(updated.Status.Severity).To(BeElementOf([]string{"critical", "high", "warning", "info"}),
 					"CUSTOM_VALUE should be mapped to a normalized severity by policy")
 				// Note: Could capture initial severity and compare after reload in REFACTOR phase
 			}, "30s", "1s").Should(Succeed())
@@ -197,7 +197,7 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 				}, &updated)).To(Succeed())
 
 				// Verify severity can be re-evaluated (policy hot-reload functional)
-				g.Expect(updated.Status.Severity).To(BeElementOf([]string{"critical", "high", "medium", "low"}),
+				g.Expect(updated.Status.Severity).To(BeElementOf([]string{"critical", "high", "warning", "info"}),
 					"Severity determination should continue working after policy reload")
 			}, "60s", "2s").Should(Succeed())
 
@@ -283,7 +283,7 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 			// Validate normalized severity is captured
 			Expect(payload.NormalizedSeverity.IsSet()).To(BeTrue(), "Normalized severity should be set")
 			normalizedSev := string(payload.NormalizedSeverity.Value)
-			Expect(normalizedSev).To(BeElementOf([]string{"critical", "high", "medium", "low", "unknown"}),
+			Expect(normalizedSev).To(BeElementOf([]string{"critical", "high", "warning", "info", "unknown"}),
 				"Normalized severity should be standard value")
 
 			// Validate determination source for audit trail
@@ -365,7 +365,7 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 
 			// Fallback should be critical/warning/info per operator policy (NOT "unknown")
 			normalizedSeverity := string(payload.NormalizedSeverity.Value)
-			Expect(normalizedSeverity).To(BeElementOf([]string{"critical", "high", "medium", "low"}),
+			Expect(normalizedSeverity).To(BeElementOf([]string{"critical", "high", "warning", "info"}),
 				"Normalized severity should be operator-defined (critical/warning/info), NOT system 'unknown'")
 
 			// Source should be rego-policy (operator-defined behavior)
@@ -560,7 +560,7 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 					Name:      sp.Name,
 					Namespace: sp.Namespace,
 				}, &updated)).To(Succeed())
-				g.Expect(updated.Status.Severity).To(BeElementOf([]string{"critical", "high", "medium", "low"}),
+				g.Expect(updated.Status.Severity).To(BeElementOf([]string{"critical", "high", "warning", "info"}),
 					"CustomSeverity should be mapped to normalized severity by policy")
 				initialSeverity = updated.Status.Severity
 			}, "30s", "1s").Should(Succeed())
@@ -570,7 +570,7 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 			// Hot-reload pattern verified by existing environment/priority classifiers (lines 205-239 in main.go)
 			// fsnotify detects ConfigMap file changes → reloads policy → new determinations use updated policy
 
-			Expect(initialSeverity).To(BeElementOf([]string{"critical", "high", "medium", "low"}),
+			Expect(initialSeverity).To(BeElementOf([]string{"critical", "high", "warning", "info"}),
 				"Initial severity determination should work with loaded policy")
 
 			// Full ConfigMap update → policy reload → new determination tested in E2E tier
@@ -623,7 +623,7 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 					// THEN: All CRDs have severity determined correctly
 					g.Expect(updated.Status.Severity).ToNot(BeEmpty(),
 						"Concurrent CRD %s should have severity determined", spName)
-					g.Expect(updated.Status.Severity).To(BeElementOf([]string{"critical", "high", "medium", "low"}),
+					g.Expect(updated.Status.Severity).To(BeElementOf([]string{"critical", "high", "warning", "info"}),
 						"Concurrent CRD %s should have valid normalized severity per operator policy", spName)
 				}
 			}, "60s", "2s").Should(Succeed())

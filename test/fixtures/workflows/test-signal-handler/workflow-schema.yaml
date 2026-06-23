@@ -15,7 +15,7 @@ spec:
   actionType: DeletePod
   
   labels:
-    severity: [low]
+    severity: [info]
     environment: [test]
     component: [v1/Pod]
     priority: P3

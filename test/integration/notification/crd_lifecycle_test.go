@@ -299,7 +299,7 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Type:     notificationv1alpha1.NotificationTypeSimple,
-					Severity: "medium",
+					Severity: "warning",
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Optional Fields Test",
 					Body:     "Testing with optional fields omitted",

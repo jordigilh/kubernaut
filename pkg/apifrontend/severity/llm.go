@@ -121,7 +121,7 @@ func extractText(resp *genai.GenerateContentResponse) string {
 }
 
 // NoopLLMTriager is a stub LLMTriager for dev/CI environments without LLM credentials.
-// It always returns "medium" severity with full confidence.
+// It always returns "warning" severity with full confidence.
 type NoopLLMTriager struct {
 	logger logr.Logger
 }
@@ -132,22 +132,22 @@ func NewNoopLLMTriager(logger logr.Logger) *NoopLLMTriager {
 	if logger.GetSink() == nil {
 		logger = logr.Discard()
 	}
-	logger.Info("WARNING: using NoopLLMTriager — all LLM triage calls will return 'medium'")
+	logger.Info("WARNING: using NoopLLMTriager — all LLM triage calls will return 'warning'")
 	return &NoopLLMTriager{logger: logger}
 }
 
-// TriageWithRules returns a static "medium" result (noop implementation).
+// TriageWithRules returns a static "warning" result (noop implementation).
 func (n *NoopLLMTriager) TriageWithRules(_ context.Context, _ []prom.Rule, _ TriageInput) (TriageResult, error) {
 	return TriageResult{
-		Severity:   "medium",
+		Severity:   "warning",
 		Confidence: 1.0,
 	}, nil
 }
 
-// TriagePure returns a static "medium" result (noop implementation).
+// TriagePure returns a static "warning" result (noop implementation).
 func (n *NoopLLMTriager) TriagePure(_ context.Context, _ TriageInput) (TriageResult, error) {
 	return TriageResult{
-		Severity:   "medium",
+		Severity:   "warning",
 		Confidence: 1.0,
 	}, nil
 }

@@ -502,7 +502,7 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 				Namespace: ns,
 			}
 			rrName := "audit-test-rr-03"
-			rr := CreateTestRemediationRequest(rrName, ns, ValidTestFingerprints["audit-003"], "low", targetResource)
+			rr := CreateTestRemediationRequest(rrName, ns, ValidTestFingerprints["audit-003"], "info", targetResource)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			correlationID := rrName

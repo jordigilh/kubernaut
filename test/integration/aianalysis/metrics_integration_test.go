@@ -353,7 +353,7 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "test-fp-005",
-							Severity:         "medium", // DD-SEVERITY-001: Use normalized severity enum
+							Severity:         "warning", // DD-SEVERITY-001: Use normalized severity enum
 							SignalName:       "PodEviction",
 							Environment:      "development",
 							BusinessPriority: "P3",

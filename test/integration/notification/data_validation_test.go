@@ -225,7 +225,7 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Type:     notificationv1alpha1.NotificationTypeSimple,
-					Severity: "low",
+					Severity: "info",
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Test Optional Fields",
 					Body:     "Testing with optional fields omitted",
@@ -274,7 +274,7 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Type:     notificationv1alpha1.NotificationTypeSimple,
-					Severity: "medium",
+					Severity: "warning",
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Subject:  "Test Empty Channels - Routing Rules",
 					Body:     "Should succeed with routing rules",

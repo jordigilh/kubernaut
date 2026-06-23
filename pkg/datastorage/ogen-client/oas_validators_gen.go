@@ -5450,9 +5450,9 @@ func (s GetWorkflowByIDSeverity) Validate() error {
 		return nil
 	case "high":
 		return nil
-	case "medium":
+	case "warning":
 		return nil
-	case "low":
+	case "info":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -5669,9 +5669,9 @@ func (s IncidentResponseDataRootCauseAnalysisSeverity) Validate() error {
 		return nil
 	case "high":
 		return nil
-	case "medium":
+	case "warning":
 		return nil
-	case "low":
+	case "info":
 		return nil
 	case "unknown":
 		return nil
@@ -5984,9 +5984,9 @@ func (s ListAvailableActionsSeverity) Validate() error {
 		return nil
 	case "high":
 		return nil
-	case "medium":
+	case "warning":
 		return nil
-	case "low":
+	case "info":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -6014,9 +6014,9 @@ func (s ListWorkflowsByActionTypeSeverity) Validate() error {
 		return nil
 	case "high":
 		return nil
-	case "medium":
+	case "warning":
 		return nil
-	case "low":
+	case "info":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -6192,9 +6192,9 @@ func (s MandatoryLabelsSeverityItem) Validate() error {
 		return nil
 	case "high":
 		return nil
-	case "medium":
+	case "warning":
 		return nil
-	case "low":
+	case "info":
 		return nil
 	case "*":
 		return nil
@@ -9106,7 +9106,7 @@ func (s SignalProcessingAuditPayloadCriticality) Validate() error {
 		return nil
 	case "high":
 		return nil
-	case "medium":
+	case "warning":
 		return nil
 	case "low":
 		return nil
@@ -9179,9 +9179,9 @@ func (s SignalProcessingAuditPayloadNormalizedSeverity) Validate() error {
 		return nil
 	case "high":
 		return nil
-	case "medium":
+	case "warning":
 		return nil
-	case "low":
+	case "info":
 		return nil
 	case "unknown":
 		return nil
@@ -9245,9 +9245,9 @@ func (s SignalProcessingAuditPayloadSeverity) Validate() error {
 		return nil
 	case "high":
 		return nil
-	case "medium":
+	case "warning":
 		return nil
-	case "low":
+	case "info":
 		return nil
 	case "unknown":
 		return nil
@@ -9924,9 +9924,9 @@ func (s WorkflowSearchFiltersSeverity) Validate() error {
 		return nil
 	case "high":
 		return nil
-	case "medium":
+	case "warning":
 		return nil
-	case "low":
+	case "info":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)

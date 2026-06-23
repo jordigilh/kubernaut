@@ -1563,7 +1563,7 @@ var _ = Describe("Structured Decision Payload Integration — TP-1395-1396", fun
 					"session_id": "sess-it-003",
 					"summary":    "Pod crash loop",
 					"rca": map[string]any{
-						"severity":   "medium",
+						"severity":   "warning",
 						"confidence": 0.75,
 						"target":     "Pod/worker-abc in staging",
 					},
@@ -1926,7 +1926,7 @@ var _ = Describe("Contract Compliance #1408 — Structured investigation_summary
 						"session_id": "sess-1408-004",
 						"summary":    "Pod crash loop",
 						"rca": map[string]any{
-							"severity":    "medium",
+							"severity":    "warning",
 							"confidence":  0.75,
 							"explanation": "Bad config",
 						},
