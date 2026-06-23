@@ -110,6 +110,14 @@ type SignalData struct {
 	// +kubebuilder:validation:MaxLength=63
 	Source string `json:"source,omitempty"`
 
+	// ClusterID identifies the cluster where the signal originated.
+	// Empty string indicates the local hub cluster.
+	// When non-empty, the enricher reads from the remote cluster via MCP Gateway.
+	// Reference: ADR-065 (Multi-Cluster Federation), BR-INTEGRATION-054
+	// +optional
+	// +kubebuilder:validation:MaxLength=253
+	ClusterID string `json:"clusterID,omitempty"`
+
 	// Target system type.
 	// V2.0 PLACEHOLDER (Issue #419): Currently only "kubernetes" is supported by the enricher.
 	// Non-kubernetes values are accepted by validation but enrichment will run in degraded mode.
