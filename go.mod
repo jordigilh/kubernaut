@@ -6,8 +6,9 @@ require (
 	github.com/Alcova-AI/adk-anthropic-go v0.1.18
 	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/a2aproject/a2a-go v0.3.15
+	github.com/a2aproject/a2a-go/v2 v2.3.1
 	github.com/alicebob/miniredis/v2 v2.38.0
-	github.com/anthropics/anthropic-sdk-go v1.50.2
+	github.com/anthropics/anthropic-sdk-go v1.51.1
 	github.com/aws/aws-sdk-go-v2/config v1.32.25
 	github.com/aws/aws-sdk-go-v2/service/bedrockruntime v1.54.0
 	github.com/fsnotify/fsnotify v1.10.1
@@ -21,7 +22,7 @@ require (
 	github.com/go-logr/zapr v1.3.0
 	github.com/go-playground/validator/v10 v10.30.3
 	github.com/google/cel-go v0.28.1
-	github.com/google/go-containerregistry v0.21.6
+	github.com/google/go-containerregistry v0.21.7
 	github.com/google/jsonschema-go v0.4.3
 	github.com/google/uuid v1.6.0
 	github.com/itchyny/gojq v0.12.19
@@ -31,15 +32,15 @@ require (
 	github.com/lestrrat-go/jwx/v3 v3.1.1
 	github.com/lib/pq v1.12.3
 	github.com/modelcontextprotocol/go-sdk v1.6.1
-	github.com/ogen-go/ogen v1.21.0
-	github.com/onsi/ginkgo/v2 v2.31.0
+	github.com/ogen-go/ogen v1.22.0
+	github.com/onsi/ginkgo/v2 v2.32.0
 	github.com/onsi/gomega v1.42.0
 	github.com/open-policy-agent/opa v1.17.1
 	github.com/pressly/goose/v3 v3.27.1
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/client_model v0.6.2
 	github.com/prometheus/prometheus v0.312.0
-	github.com/redis/go-redis/v9 v9.20.1
+	github.com/redis/go-redis/v9 v9.21.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 	github.com/slack-go/slack v0.26.0
 	github.com/sony/gobreaker/v2 v2.4.0
@@ -53,7 +54,7 @@ require (
 	golang.org/x/sync v0.21.0
 	golang.org/x/time v0.15.0
 	google.golang.org/adk v1.4.0
-	google.golang.org/genai v1.60.0
+	google.golang.org/genai v1.61.0
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/api v0.35.6
 	k8s.io/apiextensions-apiserver v0.35.6
@@ -78,7 +79,6 @@ require (
 	cloud.google.com/go/longrunning v0.8.0 // indirect
 	cloud.google.com/go/vertexai v0.12.0 // indirect
 	github.com/Masterminds/semver/v3 v3.4.0 // indirect
-	github.com/a2aproject/a2a-go/v2 v2.3.1 // indirect
 	github.com/agnivade/levenshtein v1.2.1 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.42.0 // indirect
@@ -104,7 +104,7 @@ require (
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1 // indirect
 	github.com/dennwc/varint v1.0.0 // indirect
 	github.com/dlclark/regexp2 v1.12.0 // indirect
-	github.com/docker/cli v29.4.3+incompatible // indirect
+	github.com/docker/cli v29.5.3+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.9.5 // indirect
 	github.com/emicklei/go-restful/v3 v3.13.0 // indirect
 	github.com/evanphx/json-patch/v5 v5.9.11 // indirect
