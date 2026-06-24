@@ -926,8 +926,8 @@ var _ = Describe("Tier 9: LLM Config Validation (Issue #1252)", func() {
 
 	It("rejects unknown LLM provider", func() {
 		cfg := validConfig()
-		cfg.Agent.LLM.Provider = "openai"
-		cfg.Agent.LLM.Model = "gpt-4"
+		cfg.Agent.LLM.Provider = "totally_unknown"
+		cfg.Agent.LLM.Model = "some-model"
 		err := cfg.Validate()
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("agent.llm.provider"))
@@ -1440,6 +1440,76 @@ auth:
 			},
 		}
 		Expect(cfg.Validate()).To(Succeed())
+	})
+})
+
+var _ = Describe("Tier 11: OpenAI-Compatible LLM Provider Config (Issue #1254)", func() {
+
+	// UT-AF-1254-001 [SI-10, CM-6]: Operator configuring provider: openai passes validation
+	It("UT-AF-1254-001 accepts openai provider with valid model+endpoint+apiKeyFile", func() {
+		cfg := validConfig()
+		cfg.Agent.LLM.Provider = config.LLMProviderOpenAI
+		cfg.Agent.LLM.Model = "gpt-4o"
+		cfg.Agent.LLM.Endpoint = "https://api.openai.com/v1"
+		cfg.Agent.LLM.APIKeyFile = "/etc/secrets/openai-key"
+		Expect(cfg.Validate()).To(Succeed())
+	})
+
+	// UT-AF-1254-002 [SI-10, CM-6]: Operator configuring provider: openai_compatible passes validation
+	It("UT-AF-1254-002 accepts openai_compatible provider with valid model+endpoint", func() {
+		cfg := validConfig()
+		cfg.Agent.LLM.Provider = config.LLMProviderOpenAICompatible
+		cfg.Agent.LLM.Model = "llama3.1"
+		cfg.Agent.LLM.Endpoint = "http://llamastack:8080/v1"
+		Expect(cfg.Validate()).To(Succeed())
+	})
+
+	// UT-AF-1254-003 [SI-10]: Unknown provider is rejected at startup
+	It("UT-AF-1254-003 rejects unknown provider", func() {
+		cfg := validConfig()
+		cfg.Agent.LLM.Provider = "unknown_provider"
+		cfg.Agent.LLM.Model = "some-model"
+		err := cfg.Validate()
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("provider"))
+	})
+
+	// UT-AF-1254-004 [SI-10, CM-6]: Endpoint required for OpenAI providers
+	DescribeTable("UT-AF-1254-004 requires endpoint for OpenAI providers",
+		func(provider string) {
+			cfg := validConfig()
+			cfg.Agent.LLM.Provider = provider
+			cfg.Agent.LLM.Model = "gpt-4o"
+			cfg.Agent.LLM.Endpoint = ""
+			cfg.Agent.LLM.APIKeyFile = "/etc/secrets/key"
+			err := cfg.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("endpoint"))
+		},
+		Entry("openai without endpoint", config.LLMProviderOpenAI),
+		Entry("openai_compatible without endpoint", config.LLMProviderOpenAICompatible),
+	)
+
+	// UT-AF-1254-005 [IA-5, CM-6]: apiKeyFile optional for openai_compatible (keyless LlamaStack)
+	It("UT-AF-1254-005 accepts openai_compatible without apiKeyFile (keyless)", func() {
+		cfg := validConfig()
+		cfg.Agent.LLM.Provider = config.LLMProviderOpenAICompatible
+		cfg.Agent.LLM.Model = "llama3.1"
+		cfg.Agent.LLM.Endpoint = "http://llamastack:8080/v1"
+		cfg.Agent.LLM.APIKeyFile = ""
+		Expect(cfg.Validate()).To(Succeed())
+	})
+
+	// UT-AF-1254-006 [IA-5, SI-10]: apiKeyFile required for openai (not openai_compatible)
+	It("UT-AF-1254-006 rejects openai without apiKeyFile", func() {
+		cfg := validConfig()
+		cfg.Agent.LLM.Provider = config.LLMProviderOpenAI
+		cfg.Agent.LLM.Model = "gpt-4o"
+		cfg.Agent.LLM.Endpoint = "https://api.openai.com/v1"
+		cfg.Agent.LLM.APIKeyFile = ""
+		err := cfg.Validate()
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("apiKeyFile"))
 	})
 })
 

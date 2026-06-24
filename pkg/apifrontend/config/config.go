@@ -212,9 +212,11 @@ const DefaultLLMTimeoutSeconds = 120
 
 // Supported LLM provider values.
 const (
-	LLMProviderVertexAI  = "vertex_ai"
-	LLMProviderGemini    = "gemini"
-	LLMProviderAnthropic = "anthropic"
+	LLMProviderVertexAI         = "vertex_ai"
+	LLMProviderGemini           = "gemini"
+	LLMProviderAnthropic        = "anthropic"
+	LLMProviderOpenAI           = "openai"
+	LLMProviderOpenAICompatible = "openai_compatible"
 )
 
 // MCPConfig holds Model Context Protocol feature flags.
@@ -433,10 +435,12 @@ func validateLLMConfig(prefix string, llm *LLMConfig) error {
 		return nil
 	}
 	switch llm.Provider {
-	case LLMProviderVertexAI, LLMProviderGemini, LLMProviderAnthropic:
+	case LLMProviderVertexAI, LLMProviderGemini, LLMProviderAnthropic,
+		LLMProviderOpenAI, LLMProviderOpenAICompatible:
 	default:
-		return fmt.Errorf("%s.provider must be one of %q, %q, %q; got %q",
-			prefix, LLMProviderVertexAI, LLMProviderGemini, LLMProviderAnthropic, llm.Provider)
+		return fmt.Errorf("%s.provider must be one of %q, %q, %q, %q, %q; got %q",
+			prefix, LLMProviderVertexAI, LLMProviderGemini, LLMProviderAnthropic,
+			LLMProviderOpenAI, LLMProviderOpenAICompatible, llm.Provider)
 	}
 	if llm.Model == "" {
 		return fmt.Errorf("%s.model is required when provider is set", prefix)
@@ -450,6 +454,12 @@ func validateLLMConfig(prefix string, llm *LLMConfig) error {
 		}
 	}
 	if (llm.Provider == LLMProviderGemini || llm.Provider == LLMProviderAnthropic) && llm.APIKeyFile == "" && !llm.OAuth2.Enabled {
+		return fmt.Errorf("%s.apiKeyFile (or oauth2) is required for provider %q", prefix, llm.Provider)
+	}
+	if (llm.Provider == LLMProviderOpenAI || llm.Provider == LLMProviderOpenAICompatible) && llm.Endpoint == "" {
+		return fmt.Errorf("%s.endpoint is required for provider %q", prefix, llm.Provider)
+	}
+	if llm.Provider == LLMProviderOpenAI && llm.APIKeyFile == "" && !llm.OAuth2.Enabled {
 		return fmt.Errorf("%s.apiKeyFile (or oauth2) is required for provider %q", prefix, llm.Provider)
 	}
 	if llm.APIKeyFile != "" && !filepath.IsAbs(llm.APIKeyFile) {
