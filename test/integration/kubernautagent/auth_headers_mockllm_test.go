@@ -25,7 +25,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/jordigilh/kubernaut/pkg/kubernautagent/config"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 	llmclient "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 )
 
@@ -95,7 +95,7 @@ var _ = Describe("Auth Headers Mock LLM Verification — #417", func() {
 		})
 
 		It("should verify headers via Mock LLM verification API", func() {
-			hdefs := []config.HeaderDefinition{
+			hdefs := []types.LLMHeaderDef{
 				{Name: "Authorization", Value: "Bearer test-token-e2e"},
 			}
 			client, err := llmclient.NewLLMClient(server.URL, hdefs)
@@ -122,7 +122,7 @@ var _ = Describe("Auth Headers Mock LLM Verification — #417", func() {
 		})
 
 		It("should process chat completion normally despite auth headers", func() {
-			hdefs := []config.HeaderDefinition{
+			hdefs := []types.LLMHeaderDef{
 				{Name: "Authorization", Value: "Bearer test-token-e2e"},
 				{Name: "x-correlation-id", Value: "req-001"},
 			}

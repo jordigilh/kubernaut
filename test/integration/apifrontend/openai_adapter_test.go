@@ -13,8 +13,8 @@ import (
 	"google.golang.org/adk/model"
 	"google.golang.org/genai"
 
-	"github.com/jordigilh/kubernaut/pkg/apifrontend/config"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 var _ = Describe("OpenAI Adapter Wiring (BR-INTEGRATION-1254)", func() {
@@ -71,8 +71,8 @@ var _ = Describe("OpenAI Adapter Wiring (BR-INTEGRATION-1254)", func() {
 
 	// IT-AF-1254-001 [CM-6]: Factory dispatches to OpenAI adapter
 	It("IT-AF-1254-001 NewModelFromConfig with openai_compatible returns working model.LLM", func() {
-		cfg := config.LLMConfig{
-			Provider: config.LLMProviderOpenAICompatible,
+		cfg := types.LLMConfig{
+			Provider: types.LLMProviderOpenAICompatible,
 			Model:    "llama3.1",
 			Endpoint: mockServer.URL,
 			APIKey:   "test-api-key",
@@ -86,8 +86,8 @@ var _ = Describe("OpenAI Adapter Wiring (BR-INTEGRATION-1254)", func() {
 
 	// IT-AF-1254-002 [IA-5]: Factory wiring works without API key (keyless LlamaStack)
 	It("IT-AF-1254-002 NewModelFromConfig with openai_compatible and no API key works", func() {
-		cfg := config.LLMConfig{
-			Provider: config.LLMProviderOpenAICompatible,
+		cfg := types.LLMConfig{
+			Provider: types.LLMProviderOpenAICompatible,
 			Model:    "llama3.1",
 			Endpoint: mockServer.URL,
 			APIKey:   "",
@@ -115,11 +115,11 @@ var _ = Describe("OpenAI Adapter Wiring (BR-INTEGRATION-1254)", func() {
 		}))
 		defer customServer.Close()
 
-		cfg := config.LLMConfig{
-			Provider: config.LLMProviderOpenAICompatible,
+		cfg := types.LLMConfig{
+			Provider: types.LLMProviderOpenAICompatible,
 			Model:    "llama3.1",
 			Endpoint: customServer.URL,
-			CustomHeaders: []config.LLMHeader{
+			CustomHeaders: []types.LLMHeaderDef{
 				{Name: "X-Kubernaut-Tenant", Value: "test-tenant"},
 			},
 		}
@@ -179,8 +179,8 @@ var _ = Describe("OpenAI Adapter Wiring (BR-INTEGRATION-1254)", func() {
 		}))
 		defer roundTripServer.Close()
 
-		cfg := config.LLMConfig{
-			Provider: config.LLMProviderOpenAICompatible,
+		cfg := types.LLMConfig{
+			Provider: types.LLMProviderOpenAICompatible,
 			Model:    "gpt-4o",
 			Endpoint: roundTripServer.URL,
 			APIKey:   "roundtrip-key",
