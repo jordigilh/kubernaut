@@ -27,10 +27,9 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
-	"github.com/jordigilh/kubernaut/pkg/kubernautagent/config"
 	oauth2transport "github.com/jordigilh/kubernaut/internal/kubernautagent/llm/transport"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/transport"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // newMockIdPServer returns an httptest.Server that responds to OAuth2 token
@@ -63,7 +62,7 @@ var _ = Describe("OAuth2 Client Credentials Transport — #417", func() {
 			defer idpServer.Close()
 
 			inner := &capturingTransport{}
-			cfg := kaconfig.OAuth2Config{
+			cfg := types.LLMOAuth2Config{
 				Enabled:      true,
 				TokenURL:     idpServer.URL,
 				ClientID:     "test-client",
@@ -91,7 +90,7 @@ var _ = Describe("OAuth2 Client Credentials Transport — #417", func() {
 			idpServer := newMockIdPServer("token-nil-base")
 			defer idpServer.Close()
 
-			cfg := kaconfig.OAuth2Config{
+			cfg := types.LLMOAuth2Config{
 				Enabled:      true,
 				TokenURL:     idpServer.URL,
 				ClientID:     "test-client",
@@ -119,13 +118,13 @@ var _ = Describe("OAuth2 Client Credentials Transport — #417", func() {
 			idpServer := newMockIdPServer("chain-test-jwt")
 			defer idpServer.Close()
 
-			oauth2Cfg := kaconfig.OAuth2Config{
+			oauth2Cfg := types.LLMOAuth2Config{
 				Enabled:      true,
 				TokenURL:     idpServer.URL,
 				ClientID:     "chain-client",
 				ClientSecret: "chain-secret",
 			}
-			authHeaders := []config.HeaderDefinition{
+			authHeaders := []types.LLMHeaderDef{
 				{Name: "X-Tenant-Id", Value: "kubernaut-prod"},
 			}
 

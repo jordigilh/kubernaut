@@ -55,6 +55,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 	sharedtransport "github.com/jordigilh/kubernaut/pkg/shared/transport"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/alignment"
 	"github.com/jordigilh/kubernaut/internal/version"
@@ -133,6 +134,15 @@ func main() {
 		os.Exit(1)
 	}
 
+	if llmRuntime.APIKeyFile != "" {
+		data, readErr := os.ReadFile(llmRuntime.APIKeyFile)
+		if readErr != nil {
+			logger.Info("apiKeyFile resolution failed, falling back to credentials dir",
+				"error", readErr, "apiKeyFile", llmRuntime.APIKeyFile)
+		} else {
+			llmRuntime.APIKey = strings.TrimSpace(string(data))
+		}
+	}
 	if llmRuntime.APIKey == "" {
 		const credDir = "/etc/kubernaut-agent/credentials" // pre-commit:allow-sensitive (mount path)
 		llmRuntime.APIKey = credentials.ResolveCredentialsFile(cfg.AI.LLM.Provider, credDir, logger)
@@ -170,7 +180,7 @@ func main() {
 
 	logger.Info("starting Kubernaut Agent", "addr", addr, "config", configPath)
 
-	llmClient, err := buildLLMClientFromConfig(context.Background(), cfg, llmRuntime)
+	llmClient, err := buildLLMClientFromConfig(context.Background(), mergeLLMConfig(cfg.AI.LLM, llmRuntime))
 	if err != nil {
 		logger.Error(err, "failed to create LLM client", "provider", cfg.AI.LLM.Provider)
 		os.Exit(1)
@@ -192,9 +202,7 @@ func main() {
 	phaseSwappables := make(map[katypes.Phase]*llm.SwappableClient)
 	for phaseName, override := range llmRuntime.PhaseModels {
 		phaseLLM, phaseRT := llmRuntime.EffectivePhaseConfig(phaseName, cfg.AI.LLM, *llmRuntime)
-		phaseCfg := *cfg
-		phaseCfg.AI.LLM = phaseLLM
-		phaseClient, phaseErr := buildLLMClientFromConfig(context.Background(), &phaseCfg, &phaseRT)
+		phaseClient, phaseErr := buildLLMClientFromConfig(context.Background(), mergeLLMConfig(phaseLLM, &phaseRT))
 		if phaseErr != nil {
 			logger.Error(phaseErr, "failed to build phase LLM client",
 				"phase", phaseName, "model", override.Model)
@@ -281,9 +289,7 @@ func main() {
 			logger.Error(nil, "shadow agent shares investigation LLM client — shadow requests will compete with primary investigation; configure ai.alignmentCheck.llm for dedicated shadow model")
 		} else {
 			alignStaticCfg, alignRtCfg := cfg.AI.AlignmentCheck.EffectiveLLM(cfg.AI.LLM, *llmRuntime)
-			alignCfgMerge := *cfg
-			alignCfgMerge.AI.LLM = alignStaticCfg
-			raw, alignErr := buildLLMClientFromConfig(context.Background(), &alignCfgMerge, &alignRtCfg)
+			raw, alignErr := buildLLMClientFromConfig(context.Background(), mergeLLMConfig(alignStaticCfg, &alignRtCfg))
 			if alignErr != nil {
 				logger.Error(alignErr, "alignment check LLM client failed (fail-closed): alignment is enabled but shadow client unavailable")
 				os.Exit(1)
@@ -847,7 +853,7 @@ func newK8sAdapterWithLogger(infra *k8sInfra, logger logr.Logger) *enrichment.K8
 // client. When caFile is set, uses a custom TLS transport with the specified CA;
 // otherwise falls back to the shared default transport with retry.
 // Issue #951: Wire DataStorageConfig.TLS.CAFile to DS HTTP client.
-func buildDSBaseTransport(caFile string, cbCfg kaconfig.CircuitBreakerCfg) (http.RoundTripper, error) {
+func buildDSBaseTransport(caFile string, cbCfg types.LLMCircuitBreaker) (http.RoundTripper, error) {
 	var base http.RoundTripper
 	if caFile != "" {
 		tlsTransport, err := sharedtls.NewTLSTransport(caFile)

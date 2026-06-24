@@ -23,7 +23,7 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/clientcredentials"
 
-	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // NewOAuth2ClientCredentialsTransport creates an http.RoundTripper that
@@ -40,7 +40,7 @@ import (
 // If base is nil, http.DefaultTransport is used.
 //
 // Authority: Issue #417 — Enterprise LLM gateway OAuth2 authentication
-func NewOAuth2ClientCredentialsTransport(cfg kaconfig.OAuth2Config, base http.RoundTripper) http.RoundTripper {
+func NewOAuth2ClientCredentialsTransport(cfg types.LLMOAuth2Config, base http.RoundTripper) http.RoundTripper {
 	if base == nil {
 		base = http.DefaultTransport
 	}

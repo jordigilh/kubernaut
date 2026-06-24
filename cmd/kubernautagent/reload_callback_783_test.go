@@ -32,6 +32,7 @@ func testReloadLogger() logr.Logger {
 func staticCfg() *kaconfig.Config {
 	cfg := kaconfig.DefaultConfig()
 	cfg.AI.LLM.Provider = "openai"
+	cfg.AI.LLM.APIKey = "test-static-key" // pre-commit:allow-sensitive (test-only value)
 	return cfg
 }
 

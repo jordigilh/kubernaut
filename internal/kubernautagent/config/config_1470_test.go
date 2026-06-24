@@ -21,6 +21,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/config"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 var _ = Describe("Per-Phase LLM Model Routing — #1470", func() {
@@ -92,7 +93,7 @@ phaseModels:
 				Model:    "default-model",
 				Endpoint: "http://default",
 			}
-			baseLLM := config.LLMConfig{Provider: "openai"}
+			baseLLM := types.LLMConfig{Provider: "openai"}
 			baseRT := config.LLMRuntimeConfig{Model: "base-model", Endpoint: "http://base"}
 
 			outLLM, outRT := rt.EffectivePhaseConfig("rca", baseLLM, baseRT)
@@ -111,7 +112,7 @@ phaseModels:
 					"workflow_discovery": {Model: "fast-model"},
 				},
 			}
-			baseLLM := config.LLMConfig{Provider: "openai"}
+			baseLLM := types.LLMConfig{Provider: "openai"}
 			baseRT := config.LLMRuntimeConfig{Model: "base-model", Endpoint: "http://base", Temperature: 0.7}
 
 			outLLM, outRT := rt.EffectivePhaseConfig("workflow_discovery", baseLLM, baseRT)
@@ -134,7 +135,7 @@ phaseModels:
 					},
 				},
 			}
-			baseLLM := config.LLMConfig{Provider: "openai"}
+			baseLLM := types.LLMConfig{Provider: "openai"}
 			baseRT := config.LLMRuntimeConfig{Model: "gpt-4", Endpoint: "http://openai-api"}
 
 			outLLM, outRT := rt.EffectivePhaseConfig("rca", baseLLM, baseRT)
@@ -152,7 +153,7 @@ phaseModels:
 					"workflow_discovery": {Model: "fast-model", Provider: "anthropic"},
 				},
 			}
-			baseLLM := config.LLMConfig{Provider: "openai"}
+			baseLLM := types.LLMConfig{Provider: "openai"}
 			baseRT := config.LLMRuntimeConfig{Model: "base-model", Endpoint: "http://base"}
 
 			_, _ = rt.EffectivePhaseConfig("workflow_discovery", baseLLM, baseRT)

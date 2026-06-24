@@ -16,14 +16,14 @@ limitations under the License.
 
 package transport
 
-import "github.com/jordigilh/kubernaut/pkg/kubernautagent/config"
+import "github.com/jordigilh/kubernaut/pkg/shared/types"
 
 // IsSensitiveSource returns true if the header value comes from a secret-backed
 // source (secretKeyRef or filePath). Value-sourced headers are considered
 // non-sensitive since they are placed in plaintext config by the operator.
 //
 // Authority: DD-HAPI-019-003 (G4: Credential Scrubbing)
-func IsSensitiveSource(def config.HeaderDefinition) bool {
+func IsSensitiveSource(def types.LLMHeaderDef) bool {
 	return def.SecretKeyRef != "" || def.FilePath != ""
 }
 

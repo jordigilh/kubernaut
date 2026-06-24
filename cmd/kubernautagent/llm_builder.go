@@ -28,30 +28,31 @@ import (
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/credentials"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
-	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
-	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
-	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/langchaingo"
 	internaltransport "github.com/jordigilh/kubernaut/internal/kubernautagent/llm/transport"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/langchaingo"
 	llmtransport "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/transport"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/vertexanthropic"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 	"github.com/jordigilh/kubernaut/pkg/shared/transport"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
-// buildLLMClientFromConfig constructs an llm.Client from the static config and
-// runtime config. This is a pure function used both at startup and by the
-// hot-reload callback. It does not mutate either config.
-func buildLLMClientFromConfig(ctx context.Context, cfg *kaconfig.Config, rt *kaconfig.LLMRuntimeConfig) (llm.Client, error) {
-	switch cfg.AI.LLM.Provider {
-	case "vertex_ai":
+// buildLLMClientFromConfig constructs an llm.Client from a merged LLMConfig
+// that contains both static and runtime fields. This is a pure function used
+// both at startup and by the hot-reload callback.
+func buildLLMClientFromConfig(ctx context.Context, cfg types.LLMConfig) (llm.Client, error) {
+	switch cfg.Provider {
+	case types.LLMProviderVertexAI:
 		var vertexOpts []vertexanthropic.Option
 		timeout := 120 * time.Second
-		if rt.TimeoutSeconds > 0 {
-			timeout = time.Duration(rt.TimeoutSeconds) * time.Second
+		if cfg.TimeoutSeconds > 0 {
+			timeout = time.Duration(cfg.TimeoutSeconds) * time.Second
 		}
 		vertexOpts = append(vertexOpts, vertexanthropic.WithHTTPTimeout(timeout))
 
-		chain, err := buildTransportChain(cfg, rt)
+		chain, err := buildTransportChain(cfg)
 		if err != nil {
 			return nil, fmt.Errorf("vertex_ai transport chain: %w", err)
 		}
@@ -60,43 +61,43 @@ func buildLLMClientFromConfig(ctx context.Context, cfg *kaconfig.Config, rt *kac
 		}
 
 		return vertexanthropic.New(ctx,
-			rt.Model, []byte(rt.APIKey),
-			cfg.AI.LLM.VertexProject, cfg.AI.LLM.VertexLocation,
+			cfg.Model, []byte(cfg.APIKey),
+			cfg.VertexProject, cfg.VertexLocation,
 			vertexOpts...)
 	default:
-		providerOpts, err := buildLLMProviderOpts(cfg, rt)
+		providerOpts, err := buildLLMProviderOpts(cfg)
 		if err != nil {
 			return nil, err
 		}
-		return langchaingo.New(cfg.AI.LLM.Provider, rt.Endpoint, rt.Model, rt.APIKey,
+		return langchaingo.New(cfg.Provider, cfg.Endpoint, cfg.Model, cfg.APIKey,
 			providerOpts...)
 	}
 }
 
 // buildLLMProviderOpts returns provider-specific LangChainGo options.
-func buildLLMProviderOpts(cfg *kaconfig.Config, rt *kaconfig.LLMRuntimeConfig) ([]langchaingo.Option, error) {
+func buildLLMProviderOpts(cfg types.LLMConfig) ([]langchaingo.Option, error) {
 	var opts []langchaingo.Option
-	if cfg.AI.LLM.AzureAPIVersion != "" {
-		opts = append(opts, langchaingo.WithAzureAPIVersion(cfg.AI.LLM.AzureAPIVersion))
+	if cfg.AzureAPIVersion != "" {
+		opts = append(opts, langchaingo.WithAzureAPIVersion(cfg.AzureAPIVersion))
 	}
-	if cfg.AI.LLM.VertexProject != "" {
-		opts = append(opts, langchaingo.WithVertexProject(cfg.AI.LLM.VertexProject))
+	if cfg.VertexProject != "" {
+		opts = append(opts, langchaingo.WithVertexProject(cfg.VertexProject))
 	}
-	if cfg.AI.LLM.VertexLocation != "" {
-		opts = append(opts, langchaingo.WithVertexLocation(cfg.AI.LLM.VertexLocation))
+	if cfg.VertexLocation != "" {
+		opts = append(opts, langchaingo.WithVertexLocation(cfg.VertexLocation))
 	}
-	if cfg.AI.LLM.BedrockRegion != "" {
-		opts = append(opts, langchaingo.WithBedrockRegion(cfg.AI.LLM.BedrockRegion))
+	if cfg.BedrockRegion != "" {
+		opts = append(opts, langchaingo.WithBedrockRegion(cfg.BedrockRegion))
 	}
 
 	const defaultLLMClientTimeout = 120 * time.Second
 
 	timeout := defaultLLMClientTimeout
-	if rt.TimeoutSeconds > 0 {
-		timeout = time.Duration(rt.TimeoutSeconds) * time.Second
+	if cfg.TimeoutSeconds > 0 {
+		timeout = time.Duration(cfg.TimeoutSeconds) * time.Second
 	}
 
-	customTransport, err := buildTransportChain(cfg, rt)
+	customTransport, err := buildTransportChain(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("llm transport chain: %w", err)
 	}
@@ -116,24 +117,23 @@ func buildLLMProviderOpts(cfg *kaconfig.Config, rt *kaconfig.LLMRuntimeConfig) (
 	return opts, nil
 }
 
-// buildTransportChain composes the HTTP transport stack from static (TLS CA,
-// OAuth2) and runtime (CustomHeaders) config layers, optionally wrapped with
-// a circuit breaker (OPS-2).
+// buildTransportChain composes the HTTP transport stack from the merged config,
+// optionally wrapped with a circuit breaker (OPS-2).
 //
 // Chain order (outermost first): CircuitBreaker -> Auth/Headers -> OAuth2 -> TLS/base
 //
 // Issue #902: When tlsCaFile is set, uses sharedtls.NewTLSTransport as the
 // base instead of http.DefaultTransport.
-func buildTransportChain(cfg *kaconfig.Config, rt *kaconfig.LLMRuntimeConfig) (http.RoundTripper, error) {
+func buildTransportChain(cfg types.LLMConfig) (http.RoundTripper, error) {
 	var base = http.DefaultTransport
 	needsCustom := false
 
-	if cfg.AI.LLM.TLSCaFile != "" {
+	if cfg.TLSCaFile != "" {
 		var tlsOpts []sharedtls.TLSTransportOption
-		if cfg.AI.LLM.TLSCertFile != "" {
-			tlsOpts = append(tlsOpts, sharedtls.WithClientCert(cfg.AI.LLM.TLSCertFile, cfg.AI.LLM.TLSKeyFile))
+		if cfg.TLSCertFile != "" {
+			tlsOpts = append(tlsOpts, sharedtls.WithClientCert(cfg.TLSCertFile, cfg.TLSKeyFile))
 		}
-		tlsTransport, err := sharedtls.NewTLSTransport(cfg.AI.LLM.TLSCaFile, tlsOpts...)
+		tlsTransport, err := sharedtls.NewTLSTransport(cfg.TLSCaFile, tlsOpts...)
 		if err != nil {
 			return nil, fmt.Errorf("llm TLS transport: %w", err)
 		}
@@ -141,17 +141,17 @@ func buildTransportChain(cfg *kaconfig.Config, rt *kaconfig.LLMRuntimeConfig) (h
 		needsCustom = true
 	}
 
-	if cfg.AI.LLM.OAuth2.Enabled {
-		base = internaltransport.NewOAuth2ClientCredentialsTransport(cfg.AI.LLM.OAuth2, base)
+	if cfg.OAuth2.Enabled {
+		base = internaltransport.NewOAuth2ClientCredentialsTransport(cfg.OAuth2, base)
 		needsCustom = true
 	}
-	if len(rt.CustomHeaders) > 0 {
-		base = llmtransport.NewAuthHeadersTransport(rt.CustomHeaders, base)
+	if len(cfg.CustomHeaders) > 0 {
+		base = llmtransport.NewAuthHeadersTransport(cfg.CustomHeaders, base)
 		needsCustom = true
 	}
 
-	if cfg.AI.LLM.CircuitBreaker.Enabled {
-		cb := cfg.AI.LLM.CircuitBreaker
+	if cfg.CircuitBreaker.Enabled {
+		cb := cfg.CircuitBreaker
 		base = transport.NewCircuitBreakerTransport(base, transport.CircuitBreakerConfig{
 			Enabled:          true,
 			Name:             "llm",
@@ -170,13 +170,35 @@ func buildTransportChain(cfg *kaconfig.Config, rt *kaconfig.LLMRuntimeConfig) (h
 	return base, nil
 }
 
+// mergeLLMConfig merges runtime (hot-reloadable) fields from an LLMRuntimeConfig
+// into a base types.LLMConfig. Static fields (provider, TLS, OAuth2, CB) come from
+// the base; runtime fields (model, endpoint, apiKeyFile, temperature, etc.) come from rt.
+func mergeLLMConfig(base types.LLMConfig, rt *kaconfig.LLMRuntimeConfig) types.LLMConfig {
+	merged := base
+	merged.Model = rt.Model
+	merged.Endpoint = rt.Endpoint
+	if rt.APIKeyFile != "" {
+		merged.APIKeyFile = rt.APIKeyFile
+	}
+	if rt.APIKey != "" {
+		merged.APIKey = rt.APIKey
+	}
+	merged.TimeoutSeconds = rt.TimeoutSeconds
+	merged.CustomHeaders = rt.CustomHeaders
+	if rt.Temperature != 0 {
+		t := rt.Temperature
+		merged.Temperature = &t
+	}
+	if rt.MaxRetries != 0 {
+		r := rt.MaxRetries
+		merged.MaxRetries = &r
+	}
+	return merged
+}
+
 // llmRuntimeReloadCallback creates a hotreload.ReloadCallback for LLM runtime
-// config file changes. It parses the new content, validates it, builds a new
-// LLM client, and swaps it into the SwappableClient.
-//
-// Since the runtime file only contains hot-reloadable fields (model, endpoint,
-// apiKey, temperature, maxRetries, timeoutSeconds, customHeaders), no safety
-// checks are needed — all fields are safe to change at runtime.
+// config file changes. It parses the new content, validates it, merges with
+// static config, builds a new LLM client, and swaps it into the SwappableClient.
 func llmRuntimeReloadCallback(
 	staticCfg *kaconfig.Config,
 	swappable *llm.SwappableClient,
@@ -203,12 +225,21 @@ func llmRuntimeReloadCallback(
 			return fmt.Errorf("reload: validation failed: %w", err)
 		}
 
-		if rt.APIKey == "" {
-			const credDir = "/etc/kubernaut-agent/credentials" // pre-commit:allow-sensitive (mount path)
-			rt.APIKey = credentials.ResolveCredentialsFile(staticCfg.AI.LLM.Provider, credDir, logger)
-		}
+		merged := mergeLLMConfig(staticCfg.AI.LLM, rt)
 
-		newClient, err := buildLLMClientFromConfig(context.Background(), staticCfg, rt)
+		if merged.APIKey == "" {
+			if merged.APIKeyFile != "" {
+				if err := merged.ResolveAPIKey(); err != nil {
+					logger.Info("llm_runtime_reload: apiKeyFile resolution failed, falling back to credentials dir",
+						"error", err, "apiKeyFile", merged.APIKeyFile)
+				}
+			}
+			if merged.APIKey == "" {
+				const credDir = "/etc/kubernaut-agent/credentials" // pre-commit:allow-sensitive (mount path)
+				merged.APIKey = credentials.ResolveCredentialsFile(staticCfg.AI.LLM.Provider, credDir, logger)
+			}
+		}
+		newClient, err := buildLLMClientFromConfig(context.Background(), merged)
 		if err != nil {
 			return fmt.Errorf("reload: building LLM client: %w", err)
 		}
@@ -252,11 +283,9 @@ func reloadPhaseClients(
 		configuredPhases[phase] = true
 
 		phaseLLM, phaseRT := rt.EffectivePhaseConfig(phaseName, staticCfg.AI.LLM, *rt)
+		merged := mergeLLMConfig(phaseLLM, &phaseRT)
 
-		phaseCfg := *staticCfg
-		phaseCfg.AI.LLM = phaseLLM
-
-		phaseClient, err := buildLLMClientFromConfig(context.Background(), &phaseCfg, &phaseRT)
+		phaseClient, err := buildLLMClientFromConfig(context.Background(), merged)
 		if err != nil {
 			logger.Error(err, "reload: failed to build phase LLM client",
 				"phase", phaseName, "model", override.Model)

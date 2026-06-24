@@ -23,6 +23,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/config"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 var _ = Describe("Custom Header Config — #417", func() {
@@ -30,7 +31,7 @@ var _ = Describe("Custom Header Config — #417", func() {
 	// UT-KA-417-012: Config rejects malformed header definitions
 	Describe("UT-KA-417-012: Config validation rejects malformed definitions", func() {
 		It("should reject a header with missing name", func() {
-			defs := []config.HeaderDefinition{
+			defs := []types.LLMHeaderDef{
 				{Name: "", Value: "some-value"},
 			}
 			_, err := config.ParseCustomHeaders(defs)
@@ -39,7 +40,7 @@ var _ = Describe("Custom Header Config — #417", func() {
 		})
 
 		It("should reject a header with no value source", func() {
-			defs := []config.HeaderDefinition{
+			defs := []types.LLMHeaderDef{
 				{Name: "x-api-key"},
 			}
 			_, err := config.ParseCustomHeaders(defs)
@@ -48,7 +49,7 @@ var _ = Describe("Custom Header Config — #417", func() {
 		})
 
 		It("should reject a header with both value and secretKeyRef set", func() {
-			defs := []config.HeaderDefinition{
+			defs := []types.LLMHeaderDef{
 				{Name: "x-api-key", Value: "literal", SecretKeyRef: "SECRET_ENV"},
 			}
 			_, err := config.ParseCustomHeaders(defs)
@@ -57,7 +58,7 @@ var _ = Describe("Custom Header Config — #417", func() {
 		})
 
 		It("should reject duplicate header names", func() {
-			defs := []config.HeaderDefinition{
+			defs := []types.LLMHeaderDef{
 				{Name: "Authorization", Value: "Bearer a"},
 				{Name: "Authorization", Value: "Bearer b"},
 			}
@@ -71,7 +72,7 @@ var _ = Describe("Custom Header Config — #417", func() {
 	Describe("UT-KA-417-011: Reserved header name rejection", func() {
 		DescribeTable("should reject reserved header names",
 			func(name string) {
-				defs := []config.HeaderDefinition{
+				defs := []types.LLMHeaderDef{
 					{Name: name, Value: "some-value"},
 				}
 				_, err := config.ParseCustomHeaders(defs)
@@ -86,7 +87,7 @@ var _ = Describe("Custom Header Config — #417", func() {
 		)
 
 		It("should allow non-reserved header names", func() {
-			defs := []config.HeaderDefinition{
+			defs := []types.LLMHeaderDef{
 				{Name: "Authorization", Value: "Bearer token"},
 				{Name: "x-api-key", Value: "key-123"},
 			}
@@ -100,7 +101,7 @@ var _ = Describe("Custom Header Config — #417", func() {
 	Describe("UT-KA-417-010: Startup fail-fast on missing secret", func() {
 		It("should return error when secretKeyRef env var is unset", func() {
 			Expect(os.Unsetenv("KA_TEST_MISSING_SECRET")).To(Succeed())
-			defs := []config.HeaderDefinition{
+			defs := []types.LLMHeaderDef{
 				{Name: "Authorization", SecretKeyRef: "KA_TEST_MISSING_SECRET"},
 			}
 			err := config.ValidateHeaderSources(defs)
@@ -112,7 +113,7 @@ var _ = Describe("Custom Header Config — #417", func() {
 			Expect(os.Setenv("KA_TEST_EMPTY_SECRET", "")).To(Succeed())
 			DeferCleanup(os.Unsetenv, "KA_TEST_EMPTY_SECRET")
 
-			defs := []config.HeaderDefinition{
+			defs := []types.LLMHeaderDef{
 				{Name: "Authorization", SecretKeyRef: "KA_TEST_EMPTY_SECRET"},
 			}
 			err := config.ValidateHeaderSources(defs)
@@ -124,7 +125,7 @@ var _ = Describe("Custom Header Config — #417", func() {
 			Expect(os.Setenv("KA_TEST_VALID_SECRET", "my-api-key")).To(Succeed())
 			DeferCleanup(os.Unsetenv, "KA_TEST_VALID_SECRET")
 
-			defs := []config.HeaderDefinition{
+			defs := []types.LLMHeaderDef{
 				{Name: "Authorization", SecretKeyRef: "KA_TEST_VALID_SECRET"},
 			}
 			err := config.ValidateHeaderSources(defs)
@@ -132,7 +133,7 @@ var _ = Describe("Custom Header Config — #417", func() {
 		})
 
 		It("should not validate value or filePath sources", func() {
-			defs := []config.HeaderDefinition{
+			defs := []types.LLMHeaderDef{
 				{Name: "x-tenant-id", Value: "prod"},
 				{Name: "Authorization", FilePath: "/tmp/token.txt"},
 			}
@@ -150,7 +151,7 @@ var _ = Describe("Custom Header Config — #417", func() {
 		})
 
 		It("should return empty slice and no error for empty slice input", func() {
-			result, err := config.ParseCustomHeaders([]config.HeaderDefinition{})
+			result, err := config.ParseCustomHeaders([]types.LLMHeaderDef{})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeEmpty())
 		})

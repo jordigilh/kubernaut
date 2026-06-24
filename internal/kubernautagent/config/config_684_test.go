@@ -88,14 +88,14 @@ endpoint: "https://europe-west1-aiplatform.googleapis.com" # pre-commit:allow-se
 			Expect(rt.Endpoint).To(Equal("https://europe-west1-aiplatform.googleapis.com")) // pre-commit:allow-sensitive (test fixture)
 		})
 
-		It("UT-KA-684-004: parses apiKey from runtime config", func() {
+		It("UT-KA-684-004: parses apiKeyFile from runtime config", func() {
 			rtYAML := []byte(`
 model: "claude-sonnet-4-6"
-apiKey: "sk-test-from-config"
+apiKeyFile: "/etc/credentials/api_key"
 `)
 			rt, err := config.LoadLLMRuntime(rtYAML)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(rt.APIKey).To(Equal("sk-test-from-config"))
+			Expect(rt.APIKeyFile).To(Equal("/etc/credentials/api_key"))
 		})
 
 		It("UT-KA-684-005: parses temperature from runtime config", func() {
