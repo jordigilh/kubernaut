@@ -114,9 +114,9 @@ func sseServer(chunks []map[string]any) *httptest.Server {
 		w.Header().Set("Content-Type", "text/event-stream")
 		for _, chunk := range chunks {
 			data, _ := json.Marshal(chunk)
-			fmt.Fprintf(w, "data: %s\n\n", data)
+			_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
 		}
-		fmt.Fprintf(w, "data: [DONE]\n\n")
+		_, _ = fmt.Fprintf(w, "data: [DONE]\n\n")
 		if f, ok := w.(http.Flusher); ok {
 			f.Flush()
 		}
@@ -218,9 +218,9 @@ var _ = Describe("OpenAI Adapter (BR-INTEGRATION-1254)", func() {
 		It("UT-AF-1254-020 converts user message to OpenAI format", func() {
 			var receivedBody map[string]any
 			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				json.NewDecoder(r.Body).Decode(&receivedBody)
+				_ = json.NewDecoder(r.Body).Decode(&receivedBody)
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(chatCompletionResponse("hello back"))
+				_ = json.NewEncoder(w).Encode(chatCompletionResponse("hello back"))
 			}))
 
 			m = openaimodel.NewModel("gpt-4o", server.URL, "")
@@ -247,9 +247,9 @@ var _ = Describe("OpenAI Adapter (BR-INTEGRATION-1254)", func() {
 		It("UT-AF-1254-021 converts system instruction to system message", func() {
 			var receivedBody map[string]any
 			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				json.NewDecoder(r.Body).Decode(&receivedBody)
+				_ = json.NewDecoder(r.Body).Decode(&receivedBody)
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(chatCompletionResponse("acknowledged"))
+				_ = json.NewEncoder(w).Encode(chatCompletionResponse("acknowledged"))
 			}))
 
 			m = openaimodel.NewModel("gpt-4o", server.URL, "")
@@ -281,9 +281,9 @@ var _ = Describe("OpenAI Adapter (BR-INTEGRATION-1254)", func() {
 		It("UT-AF-1254-022 converts tool declarations to OpenAI tools", func() {
 			var receivedBody map[string]any
 			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				json.NewDecoder(r.Body).Decode(&receivedBody)
+				_ = json.NewDecoder(r.Body).Decode(&receivedBody)
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(chatCompletionResponse("ok"))
+				_ = json.NewEncoder(w).Encode(chatCompletionResponse("ok"))
 			}))
 
 			m = openaimodel.NewModel("gpt-4o", server.URL, "")
@@ -341,7 +341,7 @@ var _ = Describe("OpenAI Adapter (BR-INTEGRATION-1254)", func() {
 		It("UT-AF-1254-026 maps non-streaming response to LLMResponse", func() {
 			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(chatCompletionResponse("The answer is 42."))
+				_ = json.NewEncoder(w).Encode(chatCompletionResponse("The answer is 42."))
 			}))
 
 			m := openaimodel.NewModel("gpt-4o", server.URL, "")
@@ -376,7 +376,7 @@ var _ = Describe("OpenAI Adapter (BR-INTEGRATION-1254)", func() {
 		It("UT-AF-1254-026b maps tool call response to LLMResponse with FunctionCall parts", func() {
 			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(chatCompletionWithToolCalls())
+				_ = json.NewEncoder(w).Encode(chatCompletionWithToolCalls())
 			}))
 
 			m := openaimodel.NewModel("gpt-4o", server.URL, "")
@@ -519,9 +519,9 @@ var _ = Describe("OpenAI Adapter (BR-INTEGRATION-1254)", func() {
 		It("UT-AF-1254-027 forwards temperature, topP, maxTokens, stop sequences", func() {
 			var receivedBody map[string]any
 			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				json.NewDecoder(r.Body).Decode(&receivedBody)
+				_ = json.NewDecoder(r.Body).Decode(&receivedBody)
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(chatCompletionResponse("tuned response"))
+				_ = json.NewEncoder(w).Encode(chatCompletionResponse("tuned response"))
 			}))
 
 			temp := float32(0.7)
@@ -556,9 +556,9 @@ var _ = Describe("OpenAI Adapter (BR-INTEGRATION-1254)", func() {
 		It("UT-AF-1254-028 forwards response schema as OpenAI JSON schema format", func() {
 			var receivedBody map[string]any
 			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				json.NewDecoder(r.Body).Decode(&receivedBody)
+				_ = json.NewDecoder(r.Body).Decode(&receivedBody)
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(chatCompletionResponse(`{"severity":"high"}`))
+				_ = json.NewEncoder(w).Encode(chatCompletionResponse(`{"severity":"high"}`))
 			}))
 
 			m := openaimodel.NewModel("gpt-4o", server.URL, "")

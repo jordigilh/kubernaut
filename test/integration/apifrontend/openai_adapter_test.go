@@ -27,7 +27,7 @@ var _ = Describe("OpenAI Adapter Wiring (BR-INTEGRATION-1254)", func() {
 	chatCompletionHandler := func(w http.ResponseWriter, r *http.Request) {
 		requestCount.Add(1)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"id":      "chatcmpl-it",
 			"object":  "chat.completion",
 			"created": 1700000000,
@@ -143,9 +143,9 @@ var _ = Describe("OpenAI Adapter Wiring (BR-INTEGRATION-1254)", func() {
 	It("IT-AF-1254-004 adapter round-trips chat completion with content and tool calls", func() {
 		var receivedBody map[string]any
 		roundTripServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			json.NewDecoder(r.Body).Decode(&receivedBody)
+			_ = json.NewDecoder(r.Body).Decode(&receivedBody)
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]any{
+			_ = json.NewEncoder(w).Encode(map[string]any{
 				"id":      "chatcmpl-rt",
 				"object":  "chat.completion",
 				"created": 1700000000,
