@@ -80,33 +80,18 @@ Kubernaut bridges that gap. It uses an LLM agent that investigates the actual ro
 
 ## Roadmap
 
-### v1.5 — Agentic Integration ([released](https://github.com/jordigilh/kubernaut/releases/tag/v1.5.0))
-
-- **Dual-mode investigation** — Kubernaut operates **autonomously** (alert-to-fix with zero human involvement) and **interactively** (operator joins via MCP/A2A, guides the agent, approves actions). Operators can take over an autonomous session mid-flight without restarting the investigation ([#703](https://github.com/jordigilh/kubernaut/issues/703), [#823](https://github.com/jordigilh/kubernaut/issues/823))
-- **API Frontend service** — Unified external protocol layer (MCP + A2A) with OIDC authentication, severity triage pipeline, and natural language signal intake
-- **Severity triage pipeline** — Multi-tier severity resolution (Prometheus alerts, rule evaluation, LLM-based triage) with pod correlation and signal name derivation
-- **A2A protocol** — Agent-to-Agent integration enabling external AI agents and automation platforms to trigger investigations and remediations via JSON-RPC
-
 ### v1.5.2 — OpenAI Adapter & Severity Model ([released](https://github.com/jordigilh/kubernaut/releases/tag/v1.5.2))
 
 - **OpenAI-compatible LLM adapter** — In-house adapter for OpenAI-compatible endpoints (LlamaStack, vLLM, Ollama, Azure OpenAI) with mTLS transport chain injection, streaming, and tool call support ([#1487](https://github.com/jordigilh/kubernaut/pull/1487), BR-INTEGRATION-1254)
 - **4-level severity model** — Replaced `medium`/`low` with `warning`/`info` across CRDs, APIs, policies, and prompts ([#1484](https://github.com/jordigilh/kubernaut/pull/1484), ADR-066)
 - **Cluster-scoped resource fixes** — Dynamic scope resolution for namespace handling in KA investigate, AF, and Effectiveness Monitor ([#1480](https://github.com/jordigilh/kubernaut/pull/1480))
 
-### v1.5.1 — Kubernaut Console ([released](https://github.com/jordigilh/kubernaut/releases/tag/v1.5.1))
-
-- **Kubernaut Console** — Web UI for interactive investigation, real-time chat with the agent, remediation monitoring, and workflow management. Operators can view live RCA progress, approve actions, and inspect audit trails from a single pane of glass ([kubernaut-console](https://github.com/jordigilh/kubernaut-console))
-
 ### v1.6 — Fleet Remediation & ITSM (next)
 
 - **Fleet operations** — Multi-cluster remediation orchestration via ACM/OCM, enabling policy-driven remediation across fleet-scale Kubernetes environments ([#54](https://github.com/jordigilh/kubernaut/issues/54))
 - **ServiceNow incident triage** — Consume ServiceNow incidents as signals through the API Frontend, enabling Kubernaut to investigate and remediate ITSM tickets alongside Kubernetes alerts ([#1338](https://github.com/jordigilh/kubernaut/issues/1338))
 
-### Future
-
-- **Custom agent injection** — Pluggable investigation and remediation agents via the AgenticWorkflow CRD, enabling customers to inject domain-specific automation into the Kubernaut pipeline ([#1242](https://github.com/jordigilh/kubernaut/issues/1242), [#883](https://github.com/jordigilh/kubernaut/issues/883), [#711](https://github.com/jordigilh/kubernaut/issues/711))
-
-**[Full roadmap](docs/roadmap/ROADMAP.md)** — Fleet Operations (ACM/OCM), Collective Intelligence, and Operational Expansion (cost, security, non-K8s). For past releases, see the [CHANGELOG](CHANGELOG.md).
+**[Full roadmap](docs/roadmap/ROADMAP.md)** — For past releases, see the [CHANGELOG](CHANGELOG.md).
 
 ---
 
