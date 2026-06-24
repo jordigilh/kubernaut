@@ -10,6 +10,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/config"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // validConfig returns a Config that passes Validate() for use as a base in tests.
@@ -754,8 +755,8 @@ resilience:
 		cfg := validConfig()
 		cfg.SeverityTriage.Enabled = true
 		cfg.SeverityTriage.PrometheusURL = "http://prometheus:9090"
-		cfg.SeverityTriage.LLM = &config.LLMConfig{
-			Provider:       config.LLMProviderVertexAI,
+		cfg.SeverityTriage.LLM = &types.LLMConfig{
+			Provider:       types.LLMProviderVertexAI,
 			Model:          "gemini-2.0-flash",
 			VertexProject:  "triage-project",
 			VertexLocation: "us-central1",
@@ -767,8 +768,8 @@ resilience:
 		cfg := validConfig()
 		cfg.SeverityTriage.Enabled = true
 		cfg.SeverityTriage.PrometheusURL = "http://prometheus:9090"
-		cfg.SeverityTriage.LLM = &config.LLMConfig{
-			Provider:   config.LLMProviderGemini,
+		cfg.SeverityTriage.LLM = &types.LLMConfig{
+			Provider:   types.LLMProviderGemini,
 			Model:      "gemini-2.0-flash",
 			APIKeyFile: "/etc/secrets/gemini-key",
 		}
@@ -779,8 +780,8 @@ resilience:
 		cfg := validConfig()
 		cfg.SeverityTriage.Enabled = true
 		cfg.SeverityTriage.PrometheusURL = "http://prometheus:9090"
-		cfg.SeverityTriage.LLM = &config.LLMConfig{
-			Provider:       config.LLMProviderVertexAI,
+		cfg.SeverityTriage.LLM = &types.LLMConfig{
+			Provider:       types.LLMProviderVertexAI,
 			Model:          "",
 			VertexProject:  "triage-project",
 			VertexLocation: "us-central1",
@@ -794,7 +795,7 @@ resilience:
 		cfg := validConfig()
 		cfg.SeverityTriage.Enabled = true
 		cfg.SeverityTriage.PrometheusURL = "http://prometheus:9090"
-		cfg.SeverityTriage.LLM = &config.LLMConfig{
+		cfg.SeverityTriage.LLM = &types.LLMConfig{
 			Provider: "invalid_provider",
 			Model:    "some-model",
 		}
@@ -815,8 +816,8 @@ resilience:
 		cfg := validConfig()
 		cfg.SeverityTriage.Enabled = true
 		cfg.SeverityTriage.PrometheusURL = "http://prometheus:9090"
-		cfg.SeverityTriage.LLM = &config.LLMConfig{
-			Provider:       config.LLMProviderVertexAI,
+		cfg.SeverityTriage.LLM = &types.LLMConfig{
+			Provider:       types.LLMProviderVertexAI,
 			Model:          "gemini-2.0-flash",
 			VertexProject:  "",
 			VertexLocation: "us-central1",
@@ -935,7 +936,7 @@ var _ = Describe("Tier 9: LLM Config Validation (Issue #1252)", func() {
 
 	It("requires model when provider is set", func() {
 		cfg := validConfig()
-		cfg.Agent.LLM.Provider = config.LLMProviderGemini
+		cfg.Agent.LLM.Provider = types.LLMProviderGemini
 		cfg.Agent.LLM.Model = ""
 		err := cfg.Validate()
 		Expect(err).To(HaveOccurred())
@@ -944,7 +945,7 @@ var _ = Describe("Tier 9: LLM Config Validation (Issue #1252)", func() {
 
 	It("requires vertexProject for vertex_ai provider", func() {
 		cfg := validConfig()
-		cfg.Agent.LLM.Provider = config.LLMProviderVertexAI
+		cfg.Agent.LLM.Provider = types.LLMProviderVertexAI
 		cfg.Agent.LLM.Model = "claude-sonnet-4-20250514"
 		cfg.Agent.LLM.VertexProject = ""
 		cfg.Agent.LLM.VertexLocation = "us-central1"
@@ -955,7 +956,7 @@ var _ = Describe("Tier 9: LLM Config Validation (Issue #1252)", func() {
 
 	It("requires vertexLocation for vertex_ai provider", func() {
 		cfg := validConfig()
-		cfg.Agent.LLM.Provider = config.LLMProviderVertexAI
+		cfg.Agent.LLM.Provider = types.LLMProviderVertexAI
 		cfg.Agent.LLM.Model = "claude-sonnet-4-20250514"
 		cfg.Agent.LLM.VertexProject = "my-project"
 		cfg.Agent.LLM.VertexLocation = ""
@@ -966,7 +967,7 @@ var _ = Describe("Tier 9: LLM Config Validation (Issue #1252)", func() {
 
 	It("accepts gemini provider", func() {
 		cfg := validConfig()
-		cfg.Agent.LLM.Provider = config.LLMProviderGemini
+		cfg.Agent.LLM.Provider = types.LLMProviderGemini
 		cfg.Agent.LLM.Model = "gemini-2.0-flash"
 		cfg.Agent.LLM.APIKeyFile = "/etc/secrets/llm-key"
 		Expect(cfg.Validate()).To(Succeed())
@@ -974,7 +975,7 @@ var _ = Describe("Tier 9: LLM Config Validation (Issue #1252)", func() {
 
 	It("accepts anthropic provider", func() {
 		cfg := validConfig()
-		cfg.Agent.LLM.Provider = config.LLMProviderAnthropic
+		cfg.Agent.LLM.Provider = types.LLMProviderAnthropic
 		cfg.Agent.LLM.Model = "claude-sonnet-4-20250514"
 		cfg.Agent.LLM.APIKeyFile = "/etc/secrets/llm-key"
 		Expect(cfg.Validate()).To(Succeed())
@@ -982,7 +983,7 @@ var _ = Describe("Tier 9: LLM Config Validation (Issue #1252)", func() {
 
 	It("requires credentials for gemini provider", func() {
 		cfg := validConfig()
-		cfg.Agent.LLM.Provider = config.LLMProviderGemini
+		cfg.Agent.LLM.Provider = types.LLMProviderGemini
 		cfg.Agent.LLM.Model = "gemini-2.0-flash"
 		err := cfg.Validate()
 		Expect(err).To(HaveOccurred())
@@ -991,7 +992,7 @@ var _ = Describe("Tier 9: LLM Config Validation (Issue #1252)", func() {
 
 	It("rejects relative apiKeyFile path", func() {
 		cfg := validConfig()
-		cfg.Agent.LLM.Provider = config.LLMProviderGemini
+		cfg.Agent.LLM.Provider = types.LLMProviderGemini
 		cfg.Agent.LLM.Model = "gemini-2.0-flash"
 		cfg.Agent.LLM.APIKeyFile = "relative/path/key"
 		err := cfg.Validate()
@@ -1001,7 +1002,7 @@ var _ = Describe("Tier 9: LLM Config Validation (Issue #1252)", func() {
 
 	It("requires tokenURL when oauth2 enabled", func() {
 		cfg := validConfig()
-		cfg.Agent.LLM.Provider = config.LLMProviderGemini
+		cfg.Agent.LLM.Provider = types.LLMProviderGemini
 		cfg.Agent.LLM.Model = "gemini-2.0-flash"
 		cfg.Agent.LLM.OAuth2.Enabled = true
 		cfg.Agent.LLM.OAuth2.TokenURL = ""
@@ -1013,7 +1014,7 @@ var _ = Describe("Tier 9: LLM Config Validation (Issue #1252)", func() {
 
 	It("requires credentialsDir when oauth2 enabled", func() {
 		cfg := validConfig()
-		cfg.Agent.LLM.Provider = config.LLMProviderGemini
+		cfg.Agent.LLM.Provider = types.LLMProviderGemini
 		cfg.Agent.LLM.Model = "gemini-2.0-flash"
 		cfg.Agent.LLM.OAuth2.Enabled = true
 		cfg.Agent.LLM.OAuth2.TokenURL = "https://auth.example.com/token"
@@ -1080,7 +1081,7 @@ agent:
 `)
 		cfg, err := config.Load(data)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(cfg.Agent.LLM.Provider).To(Equal(config.LLMProviderAnthropic))
+		Expect(cfg.Agent.LLM.Provider).To(Equal(types.LLMProviderAnthropic))
 		Expect(cfg.Agent.LLM.Model).To(Equal("claude-sonnet-4-20250514"))
 		Expect(cfg.Agent.LLM.Endpoint).To(Equal("https://anthropic.example.com"))
 		Expect(cfg.Agent.LLM.OAuth2.Enabled).To(BeTrue())
@@ -1098,7 +1099,7 @@ var _ = Describe("Tier 10: LLM mTLS Config Validation (Issue #1342)", func() {
 	// UT-AF-1342-010: tlsCertFile without tlsKeyFile is rejected
 	It("UT-AF-1342-010: rejects tlsCertFile without tlsKeyFile", func() {
 		cfg := validConfig()
-		cfg.Agent.LLM.Provider = config.LLMProviderGemini
+		cfg.Agent.LLM.Provider = types.LLMProviderGemini
 		cfg.Agent.LLM.Model = "gemini-2.0-flash"
 		cfg.Agent.LLM.APIKeyFile = "/etc/secrets/llm-key"
 		cfg.Agent.LLM.TLSCaFile = "/etc/ca/ca.pem"
@@ -1113,7 +1114,7 @@ var _ = Describe("Tier 10: LLM mTLS Config Validation (Issue #1342)", func() {
 	// UT-AF-1342-011: tlsKeyFile without tlsCertFile is rejected
 	It("UT-AF-1342-011: rejects tlsKeyFile without tlsCertFile", func() {
 		cfg := validConfig()
-		cfg.Agent.LLM.Provider = config.LLMProviderGemini
+		cfg.Agent.LLM.Provider = types.LLMProviderGemini
 		cfg.Agent.LLM.Model = "gemini-2.0-flash"
 		cfg.Agent.LLM.APIKeyFile = "/etc/secrets/llm-key"
 		cfg.Agent.LLM.TLSCaFile = "/etc/ca/ca.pem"
@@ -1127,7 +1128,7 @@ var _ = Describe("Tier 10: LLM mTLS Config Validation (Issue #1342)", func() {
 	// UT-AF-1342-012: relative tlsCertFile path is rejected
 	It("UT-AF-1342-012: rejects relative tlsCertFile path", func() {
 		cfg := validConfig()
-		cfg.Agent.LLM.Provider = config.LLMProviderGemini
+		cfg.Agent.LLM.Provider = types.LLMProviderGemini
 		cfg.Agent.LLM.Model = "gemini-2.0-flash"
 		cfg.Agent.LLM.APIKeyFile = "/etc/secrets/llm-key"
 		cfg.Agent.LLM.TLSCaFile = "/etc/ca/ca.pem"
@@ -1142,7 +1143,7 @@ var _ = Describe("Tier 10: LLM mTLS Config Validation (Issue #1342)", func() {
 	// UT-AF-1342-013: relative tlsKeyFile path is rejected
 	It("UT-AF-1342-013: rejects relative tlsKeyFile path", func() {
 		cfg := validConfig()
-		cfg.Agent.LLM.Provider = config.LLMProviderGemini
+		cfg.Agent.LLM.Provider = types.LLMProviderGemini
 		cfg.Agent.LLM.Model = "gemini-2.0-flash"
 		cfg.Agent.LLM.APIKeyFile = "/etc/secrets/llm-key"
 		cfg.Agent.LLM.TLSCaFile = "/etc/ca/ca.pem"
@@ -1157,7 +1158,7 @@ var _ = Describe("Tier 10: LLM mTLS Config Validation (Issue #1342)", func() {
 	// UT-AF-1342-014: mTLS without tlsCaFile is rejected (SC-8: server verification mandatory)
 	It("UT-AF-1342-014: rejects mTLS without tlsCaFile", func() {
 		cfg := validConfig()
-		cfg.Agent.LLM.Provider = config.LLMProviderGemini
+		cfg.Agent.LLM.Provider = types.LLMProviderGemini
 		cfg.Agent.LLM.Model = "gemini-2.0-flash"
 		cfg.Agent.LLM.APIKeyFile = "/etc/secrets/llm-key"
 		cfg.Agent.LLM.TLSCaFile = ""
@@ -1172,7 +1173,7 @@ var _ = Describe("Tier 10: LLM mTLS Config Validation (Issue #1342)", func() {
 	// UT-AF-1342-015: valid mTLS config accepted
 	It("UT-AF-1342-015: accepts valid mTLS config", func() {
 		cfg := validConfig()
-		cfg.Agent.LLM.Provider = config.LLMProviderGemini
+		cfg.Agent.LLM.Provider = types.LLMProviderGemini
 		cfg.Agent.LLM.Model = "gemini-2.0-flash"
 		cfg.Agent.LLM.APIKeyFile = "/etc/secrets/llm-key"
 		cfg.Agent.LLM.TLSCaFile = "/etc/ca/ca.pem"
@@ -1184,7 +1185,7 @@ var _ = Describe("Tier 10: LLM mTLS Config Validation (Issue #1342)", func() {
 	// UT-AF-1342-016: vertex_ai with transport options is accepted (gate removed)
 	It("UT-AF-1342-016: accepts vertex_ai with transport options", func() {
 		cfg := validConfig()
-		cfg.Agent.LLM.Provider = config.LLMProviderVertexAI
+		cfg.Agent.LLM.Provider = types.LLMProviderVertexAI
 		cfg.Agent.LLM.Model = "claude-sonnet-4-20250514"
 		cfg.Agent.LLM.VertexProject = "my-project"
 		cfg.Agent.LLM.VertexLocation = "us-central1"
@@ -1197,7 +1198,7 @@ var _ = Describe("Tier 10: LLM mTLS Config Validation (Issue #1342)", func() {
 	// UT-AF-1342-017: anthropic with transport options is accepted (gate removed)
 	It("UT-AF-1342-017: accepts anthropic with transport options", func() {
 		cfg := validConfig()
-		cfg.Agent.LLM.Provider = config.LLMProviderAnthropic
+		cfg.Agent.LLM.Provider = types.LLMProviderAnthropic
 		cfg.Agent.LLM.Model = "claude-sonnet-4-20250514"
 		cfg.Agent.LLM.APIKeyFile = "/etc/secrets/llm-key"
 		cfg.Agent.LLM.TLSCaFile = "/etc/ca/ca.pem"
@@ -1448,7 +1449,7 @@ var _ = Describe("Tier 11: OpenAI-Compatible LLM Provider Config (Issue #1254)",
 	// UT-AF-1254-001 [SI-10, CM-6]: Operator configuring provider: openai passes validation
 	It("UT-AF-1254-001 accepts openai provider with valid model+endpoint+apiKeyFile", func() {
 		cfg := validConfig()
-		cfg.Agent.LLM.Provider = config.LLMProviderOpenAI
+		cfg.Agent.LLM.Provider = types.LLMProviderOpenAI
 		cfg.Agent.LLM.Model = "gpt-4o"
 		cfg.Agent.LLM.Endpoint = "https://api.openai.com/v1"
 		cfg.Agent.LLM.APIKeyFile = "/etc/secrets/openai-key"
@@ -1458,7 +1459,7 @@ var _ = Describe("Tier 11: OpenAI-Compatible LLM Provider Config (Issue #1254)",
 	// UT-AF-1254-002 [SI-10, CM-6]: Operator configuring provider: openai_compatible passes validation
 	It("UT-AF-1254-002 accepts openai_compatible provider with valid model+endpoint", func() {
 		cfg := validConfig()
-		cfg.Agent.LLM.Provider = config.LLMProviderOpenAICompatible
+		cfg.Agent.LLM.Provider = types.LLMProviderOpenAICompatible
 		cfg.Agent.LLM.Model = "llama3.1"
 		cfg.Agent.LLM.Endpoint = "http://llamastack:8080/v1"
 		Expect(cfg.Validate()).To(Succeed())
@@ -1486,14 +1487,14 @@ var _ = Describe("Tier 11: OpenAI-Compatible LLM Provider Config (Issue #1254)",
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("endpoint"))
 		},
-		Entry("openai without endpoint", config.LLMProviderOpenAI),
-		Entry("openai_compatible without endpoint", config.LLMProviderOpenAICompatible),
+		Entry("openai without endpoint", types.LLMProviderOpenAI),
+		Entry("openai_compatible without endpoint", types.LLMProviderOpenAICompatible),
 	)
 
 	// UT-AF-1254-005 [IA-5, CM-6]: apiKeyFile optional for openai_compatible (keyless LlamaStack)
 	It("UT-AF-1254-005 accepts openai_compatible without apiKeyFile (keyless)", func() {
 		cfg := validConfig()
-		cfg.Agent.LLM.Provider = config.LLMProviderOpenAICompatible
+		cfg.Agent.LLM.Provider = types.LLMProviderOpenAICompatible
 		cfg.Agent.LLM.Model = "llama3.1"
 		cfg.Agent.LLM.Endpoint = "http://llamastack:8080/v1"
 		cfg.Agent.LLM.APIKeyFile = ""
@@ -1503,7 +1504,7 @@ var _ = Describe("Tier 11: OpenAI-Compatible LLM Provider Config (Issue #1254)",
 	// UT-AF-1254-006 [IA-5, SI-10]: apiKeyFile required for openai (not openai_compatible)
 	It("UT-AF-1254-006 rejects openai without apiKeyFile", func() {
 		cfg := validConfig()
-		cfg.Agent.LLM.Provider = config.LLMProviderOpenAI
+		cfg.Agent.LLM.Provider = types.LLMProviderOpenAI
 		cfg.Agent.LLM.Model = "gpt-4o"
 		cfg.Agent.LLM.Endpoint = "https://api.openai.com/v1"
 		cfg.Agent.LLM.APIKeyFile = ""

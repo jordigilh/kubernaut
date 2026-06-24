@@ -15,8 +15,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/jordigilh/kubernaut/pkg/apifrontend/config"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 func generateTestCertPair(dir string) (certFile, keyFile string) {
@@ -47,8 +47,8 @@ func generateTestCertPair(dir string) (certFile, keyFile string) {
 var _ = Describe("Transport Chain", func() {
 	Describe("BuildTransportChain", func() {
 		It("UT-AF-1252-TC-001: returns nil when no transport config is set", func() {
-			cfg := config.LLMConfig{
-				Provider: config.LLMProviderGemini,
+			cfg := types.LLMConfig{
+				Provider: types.LLMProviderGemini,
 				Model:    "gemini-2.0-flash",
 				APIKey:   "test-key",
 			}
@@ -62,8 +62,8 @@ var _ = Describe("Transport Chain", func() {
 			caFile := filepath.Join(dir, "ca.crt")
 			Expect(os.WriteFile(caFile, []byte(testCACert), 0o600)).To(Succeed())
 
-			cfg := config.LLMConfig{
-				Provider:  config.LLMProviderGemini,
+			cfg := types.LLMConfig{
+				Provider:  types.LLMProviderGemini,
 				Model:     "gemini-2.0-flash",
 				APIKey:    "test-key",
 				TLSCaFile: caFile,
@@ -74,8 +74,8 @@ var _ = Describe("Transport Chain", func() {
 		})
 
 		It("UT-AF-1252-TC-003: returns error for invalid TLS CA file", func() {
-			cfg := config.LLMConfig{
-				Provider:  config.LLMProviderGemini,
+			cfg := types.LLMConfig{
+				Provider:  types.LLMProviderGemini,
 				Model:     "gemini-2.0-flash",
 				APIKey:    "test-key",
 				TLSCaFile: "/nonexistent/ca.crt",
@@ -87,11 +87,11 @@ var _ = Describe("Transport Chain", func() {
 		})
 
 		It("UT-AF-1252-TC-004: constructs circuit-breaker-only transport chain", func() {
-			cfg := config.LLMConfig{
-				Provider: config.LLMProviderGemini,
+			cfg := types.LLMConfig{
+				Provider: types.LLMProviderGemini,
 				Model:    "gemini-2.0-flash",
 				APIKey:   "test-key",
-				CircuitBreaker: config.LLMCircuitBreaker{
+				CircuitBreaker: types.LLMCircuitBreaker{
 					Enabled:          true,
 					MaxRequests:      3,
 					Interval:         10 * time.Second,
@@ -105,11 +105,11 @@ var _ = Describe("Transport Chain", func() {
 		})
 
 		It("UT-AF-1252-TC-005: returns error when OAuth2 credential files are missing", func() {
-			cfg := config.LLMConfig{
-				Provider: config.LLMProviderGemini,
+			cfg := types.LLMConfig{
+				Provider: types.LLMProviderGemini,
 				Model:    "gemini-2.0-flash",
 				APIKey:   "test-key",
-				OAuth2: config.LLMOAuth2Config{
+				OAuth2: types.LLMOAuth2Config{
 					Enabled:        true,
 					TokenURL:       "https://auth.example.com/token",
 					CredentialsDir: "/nonexistent/creds",
@@ -129,8 +129,8 @@ var _ = Describe("Transport Chain", func() {
 
 			certFile, keyFile := generateTestCertPair(dir)
 
-			cfg := config.LLMConfig{
-				Provider:    config.LLMProviderGemini,
+			cfg := types.LLMConfig{
+				Provider:    types.LLMProviderGemini,
 				Model:       "gemini-2.0-flash",
 				APIKey:      "test-key",
 				TLSCaFile:   caFile,
@@ -148,8 +148,8 @@ var _ = Describe("Transport Chain", func() {
 			caFile := filepath.Join(dir, "ca.crt")
 			Expect(os.WriteFile(caFile, []byte(testCACert), 0o600)).To(Succeed())
 
-			cfg := config.LLMConfig{
-				Provider:    config.LLMProviderGemini,
+			cfg := types.LLMConfig{
+				Provider:    types.LLMProviderGemini,
 				Model:       "gemini-2.0-flash",
 				APIKey:      "test-key",
 				TLSCaFile:   caFile,
@@ -165,8 +165,8 @@ var _ = Describe("Transport Chain", func() {
 
 	Describe("BuildLLMHTTPClient", func() {
 		It("UT-AF-1252-TC-006: returns nil client when no transport config", func() {
-			cfg := config.LLMConfig{
-				Provider: config.LLMProviderGemini,
+			cfg := types.LLMConfig{
+				Provider: types.LLMProviderGemini,
 				Model:    "gemini-2.0-flash",
 				APIKey:   "test-key",
 			}
@@ -180,8 +180,8 @@ var _ = Describe("Transport Chain", func() {
 			caFile := filepath.Join(dir, "ca.crt")
 			Expect(os.WriteFile(caFile, []byte(testCACert), 0o600)).To(Succeed())
 
-			cfg := config.LLMConfig{
-				Provider:       config.LLMProviderGemini,
+			cfg := types.LLMConfig{
+				Provider:       types.LLMProviderGemini,
 				Model:          "gemini-2.0-flash",
 				APIKey:         "test-key",
 				TLSCaFile:      caFile,
@@ -198,8 +198,8 @@ var _ = Describe("Transport Chain", func() {
 			caFile := filepath.Join(dir, "ca.crt")
 			Expect(os.WriteFile(caFile, []byte(testCACert), 0o600)).To(Succeed())
 
-			cfg := config.LLMConfig{
-				Provider:  config.LLMProviderGemini,
+			cfg := types.LLMConfig{
+				Provider:  types.LLMProviderGemini,
 				Model:     "gemini-2.0-flash",
 				APIKey:    "test-key",
 				TLSCaFile: caFile,
@@ -207,7 +207,7 @@ var _ = Describe("Transport Chain", func() {
 			client, err := launcher.BuildLLMHTTPClientForTest(cfg)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(client).NotTo(BeNil())
-			Expect(client.Timeout).To(Equal(time.Duration(config.DefaultLLMTimeoutSeconds) * time.Second))
+			Expect(client.Timeout).To(Equal(time.Duration(types.DefaultLLMTimeoutSeconds) * time.Second))
 		})
 	})
 })

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 	"gopkg.in/yaml.v3"
 )
 
@@ -52,8 +53,8 @@ type SessionConfig struct {
 
 // SeverityTriageConfig holds settings for the Prometheus-based severity triage pipeline.
 type SeverityTriageConfig struct {
-	Enabled                   bool       `yaml:"enabled"`
-	LLM                       *LLMConfig `yaml:"llm,omitempty"`
+	Enabled                   bool              `yaml:"enabled"`
+	LLM                       *types.LLMConfig  `yaml:"llm,omitempty"`
 	PrometheusURL             string     `yaml:"prometheusURL,omitempty"`
 	PrometheusTLSCaFile       string     `yaml:"prometheusTlsCaFile,omitempty"`
 	PrometheusBearerTokenFile string     `yaml:"prometheusBearerTokenFile,omitempty"`
@@ -152,72 +153,16 @@ type ServerTLSConfig struct {
 
 // AgentConfig holds ADK agent and backend connectivity settings.
 type AgentConfig struct {
-	KABaseURL          string    `yaml:"kaBaseURL"`
-	KAMCPEndpoint      string    `yaml:"kaMCPEndpoint"`
-	DSBaseURL          string    `yaml:"dsBaseURL"`
-	DSBearerTokenFile  string    `yaml:"dsBearerTokenFile,omitempty"`
-	KABearerTokenFile  string    `yaml:"kaBearerTokenFile,omitempty"`
-	KATLSCaFile        string    `yaml:"kaTlsCaFile,omitempty"`
-	DSTLSCaFile        string    `yaml:"dsTlsCaFile,omitempty"`
-	LLM                LLMConfig `yaml:"llm"`
+	KABaseURL          string          `yaml:"kaBaseURL"`
+	KAMCPEndpoint      string          `yaml:"kaMCPEndpoint"`
+	DSBaseURL          string          `yaml:"dsBaseURL"`
+	DSBearerTokenFile  string          `yaml:"dsBearerTokenFile,omitempty"`
+	KABearerTokenFile  string          `yaml:"kaBearerTokenFile,omitempty"`
+	KATLSCaFile        string          `yaml:"kaTlsCaFile,omitempty"`
+	DSTLSCaFile        string          `yaml:"dsTlsCaFile,omitempty"`
+	LLM                types.LLMConfig `yaml:"llm"`
 }
 
-// LLMConfig holds LLM provider settings for the A2A handler. The schema
-// mirrors KA's ai.llm section so operators use one config style across services.
-// When Provider is empty, the A2A handler returns 501 (not configured).
-type LLMConfig struct {
-	Provider       string            `yaml:"provider"`
-	Model          string            `yaml:"model"`
-	Endpoint       string            `yaml:"endpoint,omitempty"`
-	APIKeyFile     string            `yaml:"apiKeyFile,omitempty"`
-	VertexProject  string            `yaml:"vertexProject,omitempty"`
-	VertexLocation string            `yaml:"vertexLocation,omitempty"`
-	TLSCaFile      string            `yaml:"tlsCaFile,omitempty"`
-	TLSCertFile    string            `yaml:"tlsCertFile,omitempty"`
-	TLSKeyFile     string            `yaml:"tlsKeyFile,omitempty"`
-	TimeoutSeconds int               `yaml:"timeoutSeconds,omitempty"`
-	OAuth2         LLMOAuth2Config   `yaml:"oauth2,omitempty"`
-	CircuitBreaker LLMCircuitBreaker `yaml:"circuitBreaker,omitempty"`
-	CustomHeaders  []LLMHeader       `yaml:"customHeaders,omitempty"`
-	// APIKey is resolved from APIKeyFile at startup. Not serialized.
-	APIKey string `yaml:"-"`
-}
-
-// LLMOAuth2Config holds OAuth2 client credentials for auth-gated LLM gateways.
-type LLMOAuth2Config struct {
-	Enabled        bool     `yaml:"enabled"`
-	TokenURL       string   `yaml:"tokenURL"`
-	Scopes         []string `yaml:"scopes,omitempty"`
-	CredentialsDir string   `yaml:"credentialsDir"`
-}
-
-// LLMCircuitBreaker configures resilience for LLM HTTP calls.
-type LLMCircuitBreaker struct {
-	Enabled          bool          `yaml:"enabled"`
-	MaxRequests      uint32        `yaml:"maxRequests"`
-	Interval         time.Duration `yaml:"interval"`
-	Timeout          time.Duration `yaml:"timeout"`
-	FailureThreshold uint32        `yaml:"failureThreshold"`
-}
-
-// LLMHeader describes a custom HTTP header injected into outbound LLM requests.
-type LLMHeader struct {
-	Name     string `yaml:"name"`
-	Value    string `yaml:"value,omitempty"`
-	FilePath string `yaml:"filePath,omitempty"`
-}
-
-// DefaultLLMTimeoutSeconds is the fallback HTTP timeout for LLM requests.
-const DefaultLLMTimeoutSeconds = 120
-
-// Supported LLM provider values.
-const (
-	LLMProviderVertexAI         = "vertex_ai"
-	LLMProviderGemini           = "gemini"
-	LLMProviderAnthropic        = "anthropic"
-	LLMProviderOpenAI           = "openai"
-	LLMProviderOpenAICompatible = "openai_compatible"
-)
 
 // MCPConfig holds Model Context Protocol feature flags.
 type MCPConfig struct {
@@ -251,7 +196,7 @@ func DefaultConfig() *Config {
 			KABaseURL:     "http://localhost:8080",
 			KAMCPEndpoint: "http://localhost:8080/api/v1/mcp/",
 			DSBaseURL:     "http://localhost:9090",
-			LLM: LLMConfig{
+			LLM: types.LLMConfig{
 				VertexLocation: "us-central1",
 			},
 		},
@@ -430,75 +375,9 @@ func (c *Config) validateLLM() error {
 
 // validateLLMConfig validates an LLMConfig under the given prefix.
 // Shared by agent.llm and severityTriage.llm validation paths.
-func validateLLMConfig(prefix string, llm *LLMConfig) error {
-	if llm.Provider == "" {
-		return nil
-	}
-	switch llm.Provider {
-	case LLMProviderVertexAI, LLMProviderGemini, LLMProviderAnthropic,
-		LLMProviderOpenAI, LLMProviderOpenAICompatible:
-	default:
-		return fmt.Errorf("%s.provider must be one of %q, %q, %q, %q, %q; got %q",
-			prefix, LLMProviderVertexAI, LLMProviderGemini, LLMProviderAnthropic,
-			LLMProviderOpenAI, LLMProviderOpenAICompatible, llm.Provider)
-	}
-	if llm.Model == "" {
-		return fmt.Errorf("%s.model is required when provider is set", prefix)
-	}
-	if llm.Provider == LLMProviderVertexAI {
-		if llm.VertexProject == "" {
-			return fmt.Errorf("%s.vertexProject is required for provider %q", prefix, llm.Provider)
-		}
-		if llm.VertexLocation == "" {
-			return fmt.Errorf("%s.vertexLocation is required for provider %q", prefix, llm.Provider)
-		}
-	}
-	if (llm.Provider == LLMProviderGemini || llm.Provider == LLMProviderAnthropic) && llm.APIKeyFile == "" && !llm.OAuth2.Enabled {
-		return fmt.Errorf("%s.apiKeyFile (or oauth2) is required for provider %q", prefix, llm.Provider)
-	}
-	if (llm.Provider == LLMProviderOpenAI || llm.Provider == LLMProviderOpenAICompatible) && llm.Endpoint == "" {
-		return fmt.Errorf("%s.endpoint is required for provider %q", prefix, llm.Provider)
-	}
-	if llm.Provider == LLMProviderOpenAI && llm.APIKeyFile == "" && !llm.OAuth2.Enabled {
-		return fmt.Errorf("%s.apiKeyFile (or oauth2) is required for provider %q", prefix, llm.Provider)
-	}
-	if llm.APIKeyFile != "" && !filepath.IsAbs(llm.APIKeyFile) {
-		return fmt.Errorf("%s.apiKeyFile must be an absolute path, got %q", prefix, llm.APIKeyFile)
-	}
-	if llm.TLSCaFile != "" && !filepath.IsAbs(llm.TLSCaFile) {
-		return fmt.Errorf("%s.tlsCaFile must be an absolute path, got %q", prefix, llm.TLSCaFile)
-	}
-	if err := validateTLSCertPair(prefix, llm.TLSCertFile, llm.TLSKeyFile, llm.TLSCaFile); err != nil {
-		return err
-	}
-	if llm.Endpoint != "" {
-		if err := validateURL(prefix+".endpoint", llm.Endpoint); err != nil {
-			return err
-		}
-	}
-	if llm.OAuth2.Enabled {
-		if llm.OAuth2.TokenURL == "" {
-			return fmt.Errorf("%s.oauth2.tokenURL is required when oauth2 is enabled", prefix)
-		}
-		if err := validateURL(prefix+".oauth2.tokenURL", llm.OAuth2.TokenURL); err != nil {
-			return err
-		}
-		if llm.OAuth2.CredentialsDir == "" {
-			return fmt.Errorf("%s.oauth2.credentialsDir is required when oauth2 is enabled", prefix)
-		}
-		if !filepath.IsAbs(llm.OAuth2.CredentialsDir) {
-			return fmt.Errorf("%s.oauth2.credentialsDir must be an absolute path, got %q", prefix, llm.OAuth2.CredentialsDir)
-		}
-	}
-	if llm.CircuitBreaker.Enabled {
-		if llm.CircuitBreaker.FailureThreshold == 0 || llm.CircuitBreaker.FailureThreshold > 100 {
-			return fmt.Errorf("%s.circuitBreaker.failureThreshold must be 1-100, got %d", prefix, llm.CircuitBreaker.FailureThreshold)
-		}
-		if llm.CircuitBreaker.Timeout <= 0 {
-			return fmt.Errorf("%s.circuitBreaker.timeout must be positive", prefix)
-		}
-	}
-	return nil
+// Delegates to the shared types.LLMConfig.Validate().
+func validateLLMConfig(prefix string, llm *types.LLMConfig) error {
+	return llm.Validate(prefix)
 }
 
 func (c *Config) validateAuth() error {
@@ -677,7 +556,7 @@ func (c *Config) ResolveDefaults() error {
 }
 
 // resolveLLMKey reads the API key from the mounted secret file if configured.
-func resolveLLMKey(llm *LLMConfig) error {
+func resolveLLMKey(llm *types.LLMConfig) error {
 	if llm.APIKey == "" && llm.APIKeyFile != "" {
 		data, err := os.ReadFile(llm.APIKeyFile)
 		if err != nil {

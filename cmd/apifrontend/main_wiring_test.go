@@ -25,6 +25,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/config"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ds"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/handler"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/metrics"
@@ -585,7 +586,7 @@ func TestBuildA2AHandler_WithLLMEndpoint_ReturnsHandler(t *testing.T) {
 	t.Cleanup(mockLLM.Close)
 
 	cfg := &config.Config{}
-	cfg.Agent.LLM.Provider = config.LLMProviderGemini
+	cfg.Agent.LLM.Provider = types.LLMProviderGemini
 	cfg.Agent.LLM.Endpoint = mockLLM.URL
 	cfg.Agent.LLM.Model = "mock-model"
 	cfg.Agent.LLM.APIKey = "test-key"
@@ -610,7 +611,7 @@ func TestBuildA2AHandler_WithSessionInfra_UsesDecorator(t *testing.T) {
 	t.Cleanup(mockLLM.Close)
 
 	cfg := &config.Config{}
-	cfg.Agent.LLM.Provider = config.LLMProviderGemini
+	cfg.Agent.LLM.Provider = types.LLMProviderGemini
 	cfg.Agent.LLM.Endpoint = mockLLM.URL
 	cfg.Agent.LLM.Model = "mock-model"
 	cfg.Agent.LLM.APIKey = "test-key"
@@ -642,7 +643,7 @@ func TestBuildA2AHandler_ThreadsK8sClient(t *testing.T) {
 	t.Cleanup(mockLLM.Close)
 
 	cfg := &config.Config{}
-	cfg.Agent.LLM.Provider = config.LLMProviderGemini
+	cfg.Agent.LLM.Provider = types.LLMProviderGemini
 	cfg.Agent.LLM.Endpoint = mockLLM.URL
 	cfg.Agent.LLM.Model = "mock-model"
 	cfg.Agent.LLM.APIKey = "test-key"
@@ -674,7 +675,7 @@ func TestBuildA2AHandler_ThreadsKAClient(t *testing.T) {
 	t.Cleanup(mockLLM.Close)
 
 	cfg := &config.Config{}
-	cfg.Agent.LLM.Provider = config.LLMProviderGemini
+	cfg.Agent.LLM.Provider = types.LLMProviderGemini
 	cfg.Agent.LLM.Endpoint = mockLLM.URL
 	cfg.Agent.LLM.Model = "mock-model"
 	cfg.Agent.LLM.APIKey = "test-key"
@@ -708,7 +709,7 @@ func TestBuildA2AHandler_ThreadsDSClient(t *testing.T) {
 	t.Cleanup(dsBackend.Close)
 
 	cfg := &config.Config{}
-	cfg.Agent.LLM.Provider = config.LLMProviderGemini
+	cfg.Agent.LLM.Provider = types.LLMProviderGemini
 	cfg.Agent.LLM.Endpoint = mockLLM.URL
 	cfg.Agent.LLM.Model = "mock-model"
 	cfg.Agent.LLM.APIKey = "test-key"
@@ -742,7 +743,7 @@ func TestBuildA2AHandler_ThreadsUserLimiter(t *testing.T) {
 	t.Cleanup(mockLLM.Close)
 
 	cfg := &config.Config{}
-	cfg.Agent.LLM.Provider = config.LLMProviderGemini
+	cfg.Agent.LLM.Provider = types.LLMProviderGemini
 	cfg.Agent.LLM.Endpoint = mockLLM.URL
 	cfg.Agent.LLM.Model = "mock-model"
 	cfg.Agent.LLM.APIKey = "test-key"
@@ -1173,7 +1174,7 @@ func TestBuildA2AHandler_ThreadsLoggerIntoLauncher(t *testing.T) {
 	t.Cleanup(mockLLM.Close)
 
 	cfg := &config.Config{}
-	cfg.Agent.LLM.Provider = config.LLMProviderGemini
+	cfg.Agent.LLM.Provider = types.LLMProviderGemini
 	cfg.Agent.LLM.Endpoint = mockLLM.URL
 	cfg.Agent.LLM.Model = "mock-model"
 	cfg.Agent.LLM.APIKey = "test-key"
@@ -1616,10 +1617,10 @@ func TestPromptPhase1RequiresInvestigateWithBlocking(t *testing.T) {
 func TestTriageLLMSource_ExplicitConfig(t *testing.T) {
 	cfg := &config.Config{
 		Agent: config.AgentConfig{
-			LLM: config.LLMConfig{Provider: config.LLMProviderVertexAI, Model: "claude-sonnet-4-6"},
+			LLM: types.LLMConfig{Provider: types.LLMProviderVertexAI, Model: "claude-sonnet-4-6"},
 		},
 		SeverityTriage: config.SeverityTriageConfig{
-			LLM: &config.LLMConfig{Provider: config.LLMProviderVertexAI, Model: "gemini-2.0-flash"},
+			LLM: &types.LLMConfig{Provider: types.LLMProviderVertexAI, Model: "gemini-2.0-flash"},
 		},
 	}
 	src := triageLLMSource(cfg)
@@ -1631,7 +1632,7 @@ func TestTriageLLMSource_ExplicitConfig(t *testing.T) {
 func TestTriageLLMSource_Inherited(t *testing.T) {
 	cfg := &config.Config{
 		Agent: config.AgentConfig{
-			LLM: config.LLMConfig{Provider: config.LLMProviderVertexAI, Model: "claude-sonnet-4-6"},
+			LLM: types.LLMConfig{Provider: types.LLMProviderVertexAI, Model: "claude-sonnet-4-6"},
 		},
 		SeverityTriage: config.SeverityTriageConfig{},
 	}
@@ -1644,8 +1645,8 @@ func TestTriageLLMSource_Inherited(t *testing.T) {
 func TestTriageConfigResolution_InheritsAgentLLM(t *testing.T) {
 	cfg := &config.Config{
 		Agent: config.AgentConfig{
-			LLM: config.LLMConfig{
-				Provider:       config.LLMProviderVertexAI,
+			LLM: types.LLMConfig{
+				Provider:       types.LLMProviderVertexAI,
 				Model:          "claude-sonnet-4-6",
 				VertexProject:  "my-project",
 				VertexLocation: "us-central1",
@@ -1663,7 +1664,7 @@ func TestTriageConfigResolution_InheritsAgentLLM(t *testing.T) {
 		triageLLMCfg = *cfg.SeverityTriage.LLM
 	}
 
-	if triageLLMCfg.Provider != config.LLMProviderVertexAI {
+	if triageLLMCfg.Provider != types.LLMProviderVertexAI {
 		t.Errorf("expected vertex_ai provider, got %q", triageLLMCfg.Provider)
 	}
 	if triageLLMCfg.Model != "claude-sonnet-4-6" {
@@ -1674,8 +1675,8 @@ func TestTriageConfigResolution_InheritsAgentLLM(t *testing.T) {
 func TestTriageConfigResolution_ExplicitOverridesAgent(t *testing.T) {
 	cfg := &config.Config{
 		Agent: config.AgentConfig{
-			LLM: config.LLMConfig{
-				Provider:       config.LLMProviderVertexAI,
+			LLM: types.LLMConfig{
+				Provider:       types.LLMProviderVertexAI,
 				Model:          "claude-sonnet-4-6",
 				VertexProject:  "my-project",
 				VertexLocation: "us-central1",
@@ -1683,8 +1684,8 @@ func TestTriageConfigResolution_ExplicitOverridesAgent(t *testing.T) {
 		},
 		SeverityTriage: config.SeverityTriageConfig{
 			Enabled: true,
-			LLM: &config.LLMConfig{
-				Provider:       config.LLMProviderVertexAI,
+			LLM: &types.LLMConfig{
+				Provider:       types.LLMProviderVertexAI,
 				Model:          "gemini-2.0-flash",
 				VertexProject:  "triage-project",
 				VertexLocation: "europe-west4",
@@ -1707,7 +1708,7 @@ func TestTriageConfigResolution_ExplicitOverridesAgent(t *testing.T) {
 
 func TestNewLLMTriagerFromConfig_RejectsUnsupportedProvider(t *testing.T) {
 	logger := logr.Discard()
-	cfg := config.LLMConfig{Provider: "openai", Model: "gpt-4"}
+	cfg := types.LLMConfig{Provider: "openai", Model: "gpt-4"}
 
 	_, err := newLLMTriagerFromConfig(context.Background(), cfg, logger)
 	if err == nil {

@@ -10,7 +10,7 @@ import (
 	"google.golang.org/adk/session"
 	"google.golang.org/genai"
 
-	"github.com/jordigilh/kubernaut/pkg/apifrontend/config"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // EnrichRRDetailForTest exports enrichRRDetail for unit testing.
@@ -48,12 +48,12 @@ func ExpectedOutputMode() adka2a.OutputMode {
 }
 
 // BuildTransportChainForTest exports buildTransportChain for unit testing.
-func BuildTransportChainForTest(cfg config.LLMConfig) (http.RoundTripper, error) {
+func BuildTransportChainForTest(cfg types.LLMConfig) (http.RoundTripper, error) {
 	return buildTransportChain(cfg)
 }
 
 // BuildLLMHTTPClientForTest exports buildLLMHTTPClient for unit testing.
-func BuildLLMHTTPClientForTest(cfg config.LLMConfig) (*http.Client, error) {
+func BuildLLMHTTPClientForTest(cfg types.LLMConfig) (*http.Client, error) {
 	return buildLLMHTTPClient(cfg)
 }
 
