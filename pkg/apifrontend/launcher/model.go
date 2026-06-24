@@ -35,6 +35,7 @@ import (
 	pkgconfig "github.com/jordigilh/kubernaut/pkg/kubernautagent/config"
 	llmtransport "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/transport"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/config"
+	openaimodel "github.com/jordigilh/kubernaut/pkg/apifrontend/launcher/openai"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 	"github.com/jordigilh/kubernaut/pkg/shared/transport"
 )
@@ -50,6 +51,8 @@ func NewModelFromConfig(ctx context.Context, cfg config.LLMConfig) (model.LLM, e
 		return newGeminiModel(ctx, cfg)
 	case config.LLMProviderAnthropic:
 		return newAnthropicModel(ctx, cfg)
+	case config.LLMProviderOpenAI, config.LLMProviderOpenAICompatible:
+		return newOpenAICompatibleModel(cfg)
 	default:
 		return nil, fmt.Errorf("unsupported LLM provider: %q", cfg.Provider)
 	}
@@ -197,6 +200,20 @@ func buildTransportChain(cfg config.LLMConfig) (http.RoundTripper, error) {
 		return nil, nil
 	}
 	return base, nil
+}
+
+func newOpenAICompatibleModel(cfg config.LLMConfig) (model.LLM, error) {
+	var opts []openaimodel.Option
+
+	httpClient, err := buildLLMHTTPClient(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("build HTTP client: %w", err)
+	}
+	if httpClient != nil {
+		opts = append(opts, openaimodel.WithHTTPClient(httpClient))
+	}
+
+	return openaimodel.NewModel(cfg.Model, cfg.Endpoint, cfg.APIKey, opts...), nil
 }
 
 // resolveOAuth2Secrets reads client-id and client-secret from the mounted
