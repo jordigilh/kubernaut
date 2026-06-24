@@ -87,7 +87,7 @@ func (m *Model) GenerateContent(ctx context.Context, req *model.LLMRequest, stre
 			yield(nil, fmt.Errorf("send request: %w", err))
 			return
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {
 			bodyBytes, _ := io.ReadAll(resp.Body)
