@@ -24,7 +24,7 @@ Kubernaut closes the loop from Kubernetes alert to automated remediation. It ope
 <p align="center">
   <a href="https://jordigilh.github.io/kubernaut-docs/"><strong>Full Documentation</strong></a> &nbsp;·&nbsp;
   <a href="https://github.com/jordigilh/kubernaut-demo-scenarios"><strong>Demo Scenarios</strong></a> &nbsp;·&nbsp;
-  <a href="https://github.com/jordigilh/kubernaut/releases/tag/v1.5.1"><strong>Latest Release (v1.5.1)</strong></a>
+  <a href="https://github.com/jordigilh/kubernaut/releases/tag/v1.5.2"><strong>Latest Release (v1.5.2)</strong></a>
 </p>
 
 ---
@@ -86,6 +86,12 @@ Kubernaut bridges that gap. It uses an LLM agent that investigates the actual ro
 - **API Frontend service** — Unified external protocol layer (MCP + A2A) with OIDC authentication, severity triage pipeline, and natural language signal intake
 - **Severity triage pipeline** — Multi-tier severity resolution (Prometheus alerts, rule evaluation, LLM-based triage) with pod correlation and signal name derivation
 - **A2A protocol** — Agent-to-Agent integration enabling external AI agents and automation platforms to trigger investigations and remediations via JSON-RPC
+
+### v1.5.2 — OpenAI Adapter & Severity Model ([released](https://github.com/jordigilh/kubernaut/releases/tag/v1.5.2))
+
+- **OpenAI-compatible LLM adapter** — In-house adapter for OpenAI-compatible endpoints (LlamaStack, vLLM, Ollama, Azure OpenAI) with mTLS transport chain injection, streaming, and tool call support ([#1487](https://github.com/jordigilh/kubernaut/pull/1487), BR-INTEGRATION-1254)
+- **4-level severity model** — Replaced `medium`/`low` with `warning`/`info` across CRDs, APIs, policies, and prompts ([#1484](https://github.com/jordigilh/kubernaut/pull/1484), ADR-066)
+- **Cluster-scoped resource fixes** — Dynamic scope resolution for namespace handling in KA investigate, AF, and Effectiveness Monitor ([#1480](https://github.com/jordigilh/kubernaut/pull/1480))
 
 ### v1.5.1 — Kubernaut Console ([released](https://github.com/jordigilh/kubernaut/releases/tag/v1.5.1))
 

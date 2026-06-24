@@ -5,6 +5,29 @@ All notable changes to Kubernaut will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.2] - 2026-06-24
+
+### Added
+
+- **OpenAI-compatible LLM adapter (#1487, BR-INTEGRATION-1254)** — In-house `model.LLM` adapter for OpenAI-compatible endpoints (LlamaStack, vLLM, Ollama, Azure OpenAI) using `net/http` with `http.Client` injection for mTLS transport chains. Supports streaming (SSE), tool call accumulation, finish reason mapping, and generation config forwarding. Factory-wired via `openai_compatible` provider in `NewModelFromConfig`.
+
+### Changed
+
+- **4-level severity model (#1484, ADR-066)** — Replaced `medium` with `warning` and `low` with `info` across all CRD enums, OpenAPI specs, rego policies, LLM prompt templates, mock-LLM handlers, golden transcripts, and test fixtures. Regenerated ogen clients and CRD manifests.
+
+### Fixed
+
+- **Cluster-scoped namespace strip (#1480, #1477)** — Dynamic scope resolution via RESTMapper for `ka_investigate_mcp`, self-healing namespace strip for cluster-scoped resources in AF, and scope-aware namespace resolution in Effectiveness Monitor target resource fetch.
+
+### Security
+
+- **CVE remediation in db-migrate (#1485)** — Pinned `x/crypto` and `x/net` in db-migrate image to resolve known CVEs.
+
+### Dependencies
+
+- Bump Go module dependencies (15 updates) via Dependabot (#1479)
+- Bump `actions/checkout` from 6 to 7 (#1478)
+
 ## [1.5.1] - 2026-06-20
 
 ### Added
