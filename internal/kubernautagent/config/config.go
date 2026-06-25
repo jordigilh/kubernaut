@@ -39,10 +39,18 @@ type Config struct {
 
 // RuntimeConfig holds operational infrastructure settings.
 type RuntimeConfig struct {
-	Logging internalconfig.LoggingConfig `yaml:"logging"`
-	Server  ServerConfig                 `yaml:"server"`
-	Session SessionConfig                `yaml:"session"`
-	Audit   AuditConfig                  `yaml:"audit"`
+	Logging  internalconfig.LoggingConfig `yaml:"logging"`
+	Server   ServerConfig                 `yaml:"server"`
+	Session  SessionConfig                `yaml:"session"`
+	Audit    AuditConfig                  `yaml:"audit"`
+	Shutdown ShutdownConfig               `yaml:"shutdown"`
+}
+
+// ShutdownConfig holds graceful shutdown parameters.
+// The operator renders runtime.shutdown.drainSeconds from the CRD's
+// spec.kubernautAgent.shutdown.drainSeconds field.
+type ShutdownConfig struct {
+	DrainSeconds int `yaml:"drainSeconds"`
 }
 
 // AIConfig holds LLM, investigation behavior, and safety guardrails.
@@ -231,6 +239,9 @@ type ClaimMappings struct {
 }
 
 const maxURLLength = 2048
+
+// maxDrainSeconds mirrors the operator CRD's max(300) for shutdown.drainSeconds.
+const maxDrainSeconds = 300
 
 // validateJWTProviders checks all configured JWT providers for required fields,
 // validates URL format and length, applies claim mapping defaults, and rejects
@@ -515,6 +526,15 @@ func (c *Config) Validate() error {
 	default:
 		return fmt.Errorf("runtime.audit.verbosity must be full, standard, or minimal, got %q", c.Runtime.Audit.Verbosity)
 	}
+	if c.Runtime.Shutdown.DrainSeconds <= 0 {
+		return fmt.Errorf("runtime.shutdown.drainSeconds must be positive, got %d; "+
+			"the operator default is 30s", c.Runtime.Shutdown.DrainSeconds)
+	}
+	if c.Runtime.Shutdown.DrainSeconds > maxDrainSeconds {
+		return fmt.Errorf("runtime.shutdown.drainSeconds must not exceed %d, got %d; "+
+			"the operator enforces this upper bound via CRD validation",
+			maxDrainSeconds, c.Runtime.Shutdown.DrainSeconds)
+	}
 
 	if c.AI.Investigation.MaxTurns <= 0 {
 		return fmt.Errorf("ai.investigation.maxTurns must be positive, got %d", c.AI.Investigation.MaxTurns)
@@ -635,6 +655,7 @@ func DefaultConfig() *Config {
 				BatchSize:  10,
 				Verbosity:  "full",
 			},
+			Shutdown: ShutdownConfig{DrainSeconds: 30},
 		},
 		AI: AIConfig{
 			LLM:           types.LLMConfig{Provider: "openai"},
