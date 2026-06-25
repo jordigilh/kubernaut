@@ -134,6 +134,10 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Resolve API key: static config apiKeyFile -> runtime apiKeyFile -> credentials dir
+	if err := cfg.AI.LLM.ResolveAPIKey(); err != nil {
+		logger.Info("static apiKeyFile resolution failed", "error", err)
+	}
 	if llmRuntime.APIKeyFile != "" {
 		data, readErr := os.ReadFile(llmRuntime.APIKeyFile)
 		if readErr != nil {
@@ -143,7 +147,7 @@ func main() {
 			llmRuntime.APIKey = strings.TrimSpace(string(data))
 		}
 	}
-	if llmRuntime.APIKey == "" {
+	if cfg.AI.LLM.APIKey == "" && llmRuntime.APIKey == "" {
 		const credDir = "/etc/kubernaut-agent/credentials" // pre-commit:allow-sensitive (mount path)
 		llmRuntime.APIKey = credentials.ResolveCredentialsFile(cfg.AI.LLM.Provider, credDir, logger)
 	}

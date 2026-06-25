@@ -116,11 +116,11 @@ func (c *LLMConfig) ResolveAPIKey() error {
 	if c.APIKeyFile == "" {
 		return nil
 	}
-	data, err := os.ReadFile(c.APIKeyFile)
+	v, err := readSecretFile(c.APIKeyFile)
 	if err != nil {
 		return fmt.Errorf("reading API key from %q: %w", c.APIKeyFile, err)
 	}
-	c.APIKey = strings.TrimSpace(string(data))
+	c.APIKey = v
 	return nil
 }
 
@@ -285,7 +285,7 @@ func validateTLSCertPair(prefix, certFile, keyFile, caFile string) error {
 }
 
 func readSecretFile(path string) (string, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // path comes from validated config, not user input
 	if err != nil {
 		return "", err
 	}

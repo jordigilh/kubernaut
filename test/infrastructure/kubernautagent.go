@@ -896,7 +896,7 @@ data:
     ai:
       llm:
         provider: "openai"
-        apiKey: "mock-api-key-for-e2e"
+        apiKeyFile: "/etc/kubernautagent/llm-runtime/api-key"
       alignmentCheck:
         enabled: true
         timeout: "10s"
@@ -905,7 +905,7 @@ data:
           provider: "openai"
           model: "shadow-eval"
           endpoint: "http://mock-llm-shadow:8080"
-          apiKey: "mock-shadow-key"
+          apiKeyFile: "/etc/kubernautagent/llm-runtime/shadow-api-key"
     integrations:
       dataStorage:
         url: "https://data-storage-service:8080"
@@ -923,6 +923,8 @@ metadata:
   name: kubernaut-agent-llm-runtime
   namespace: %s
 data:
+  api-key: "mock-api-key-for-e2e"
+  shadow-api-key: "mock-shadow-key"
   llm-runtime.yaml: |
     model: "mock-model"
     endpoint: "http://mock-llm:8080"
