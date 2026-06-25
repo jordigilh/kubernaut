@@ -180,4 +180,4 @@ Components `MaterializeCRD`, `KASessionPool`, 6 interactive handlers, stream bri
 
 - **[00-kubernaut-core-rules.mdc](mdc:.cursor/rules/00-kubernaut-core-rules.mdc)**: APDC Plan phase must include Wiring Manifest; GREEN phase must pass CHECKPOINT W
 - **[03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc)**: Pyramid Invariant extends the defense-in-depth model
-- **[07-business-code-integration.mdc](mdc:.cursor/rules/07-business-code-integration.mdc)**: CHECKPOINT W enforces the cmd/ integration mandate with IT test evidence
+- **[00-kubernaut-core-rules.mdc](mdc:.cursor/rules/00-kubernaut-core-rules.mdc)**: CHECKPOINT W enforces the cmd/ integration mandate with IT test evidence

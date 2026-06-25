@@ -235,5 +235,5 @@ func (c *Client) HealthCheck(ctx context.Context) error {
 
 - [00-core-development-methodology.mdc](mdc:.cursor/rules/00-core-development-methodology.mdc) - TDD and core principles
 - [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc) - Testing framework and mock strategy
-- [04-ai-ml-guidelines.mdc](mdc:.cursor/rules/04-ai-ml-guidelines.mdc) - AI/ML integration patterns
+- [04-ai-ml.mdc](mdc:.cursor/rules/04-ai-ml.mdc) - AI/ML integration patterns
 - [05-kubernetes-safety.mdc](mdc:.cursor/rules/05-kubernetes-safety.mdc) - Kubernetes safety patterns

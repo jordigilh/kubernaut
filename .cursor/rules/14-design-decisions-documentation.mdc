@@ -444,7 +444,7 @@ Before merging code with architectural changes:
 This rule **complements**:
 - [00-core-development-methodology.mdc](mdc:.cursor/rules/00-core-development-methodology.mdc) - APDC Analysis phase
 - [06-documentation-standards.mdc](mdc:.cursor/rules/06-documentation-standards.mdc) - General documentation
-- [13-conflict-resolution-matrix.mdc](mdc:.cursor/rules/13-conflict-resolution-matrix.mdc) - Priority hierarchy
+- [00-kubernaut-core-rules.mdc](mdc:.cursor/rules/00-kubernaut-core-rules.mdc) - Priority hierarchy and methodology
 
 **Priority**: BEHAVIORAL (Level 4) - Enforces documentation within APDC framework
 

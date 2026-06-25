@@ -334,8 +334,8 @@ make lint-tdd-compliance           # TDD and BDD framework
 - **[Anti-Pattern Detection](mdc:docs/testing/ANTI_PATTERN_DETECTION.md)** - Violation detection guide
 
 ### Technical Standards
-- **[Go Coding Standards](mdc:.cursor/rules/02-go-coding-standards.mdc)** - Go implementation patterns
-- **[Technical Implementation](mdc:.cursor/rules/02-technical-implementation.mdc)** - Technical architecture
+- **[Go Standards](mdc:.cursor/rules/02-go-standards.mdc)** - Go implementation patterns and conventions
+- **[AI/ML](mdc:.cursor/rules/04-ai-ml.mdc)** - AI provider architecture and development methodology
 - **[Kubernetes Safety](mdc:.cursor/rules/05-kubernetes-safety.mdc)** - K8s operational safety
 
 ---
