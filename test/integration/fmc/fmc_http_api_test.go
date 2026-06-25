@@ -70,8 +70,8 @@ var _ = Describe("FMC HTTP API Integration (BR-INTEGRATION-065)", Ordered, Label
 		clusterReg = registry.NewCRDWatcher(dynClient, registry.CRDWatcherConfig{}, nil, logr.Discard())
 		Expect(clusterReg.Start(ctx)).To(Succeed(), "CRDWatcher should start against envtest")
 
-		By("Creating MCPServerRegistration 'it-cluster' in envtest")
-		createMCPServerRegistration(ctx, "it-cluster", "IT Cluster")
+		By("Creating Backend 'it-cluster' in envtest")
+		createBackend(ctx, "it-cluster", "IT Cluster")
 		Eventually(func() bool {
 			_, ok := clusterReg.Get("it-cluster")
 			return ok
@@ -103,7 +103,7 @@ var _ = Describe("FMC HTTP API Integration (BR-INTEGRATION-065)", Ordered, Label
 		if redisClient != nil {
 			_ = redisClient.Close()
 		}
-		deleteMCPServerRegistration(context.Background(), "it-cluster")
+		deleteBackend(context.Background(), "it-cluster")
 	})
 
 	Describe("IT-FMC-054-001 [AC-4]: FMC HTTP API serves scope check through production router", func() {

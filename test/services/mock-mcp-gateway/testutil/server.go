@@ -15,9 +15,10 @@ limitations under the License.
 */
 
 // Package testutil provides a mock MCP gateway for integration tests.
-// It simulates a Kuadrant MCP Gateway routing tool calls to per-cluster
-// K8s MCP servers, enabling testing of multi-cluster federation without
-// requiring a real gateway deployment.
+// It simulates an Envoy AI Gateway routing tool calls to per-cluster
+// K8s MCP servers via the {backendName}__{toolName} prefix convention,
+// enabling testing of multi-cluster federation without requiring a real
+// gateway deployment.
 package testutil
 
 import (
@@ -72,7 +73,7 @@ func WithMultiCluster(clusters ...string) Option {
 	}
 }
 
-// MockGateway is a test MCP server that simulates the Kuadrant MCP Gateway.
+// MockGateway is a test MCP server that simulates the Envoy AI Gateway MCP Gateway.
 type MockGateway struct {
 	server     *mcp.Server
 	httpServer *httptest.Server
