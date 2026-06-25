@@ -15,23 +15,24 @@ limitations under the License.
 */
 
 // Package registry implements the ClusterRegistry interface for multi-cluster
-// federation. It discovers managed clusters by watching MCPServerRegistration
-// CRDs labeled with kubernaut.ai/managed=true.
+// federation. It discovers managed clusters by watching Envoy AI Gateway Backend
+// CRDs labeled with kubernaut.ai/managed=true. Each Backend represents a managed
+// cluster's K8s MCP Server endpoint behind the MCP Gateway.
 package registry
 
 import "context"
 
 // ClusterInfo holds metadata about a discovered managed cluster.
 type ClusterInfo struct {
-	// ID is the unique identifier (MCPServerRegistration name).
+	// ID is the unique identifier (Backend CR name in Envoy AI Gateway).
 	ID string
 	// Name is the human-readable cluster display name.
 	Name string
 	// MCPEndpoint is the URL to reach the cluster's MCP server through the gateway.
 	MCPEndpoint string
-	// Labels from the MCPServerRegistration resource.
+	// Labels from the MCP Gateway CRD resource.
 	Labels map[string]string
-	// Namespace where the MCPServerRegistration was found.
+	// Namespace where the MCP Gateway CRD was found.
 	Namespace string
 }
 
@@ -61,7 +62,7 @@ type ClusterRegistry interface {
 	WatchClusters() <-chan ClusterEvent
 	// Ready reports whether the registry has completed at least one successful sync.
 	Ready() bool
-	// Start begins watching for MCPServerRegistration CRDs.
+	// Start begins watching for Envoy AI Gateway Backend CRDs.
 	Start(ctx context.Context) error
 	// Stop halts the watcher and closes subscriber channels.
 	Stop()

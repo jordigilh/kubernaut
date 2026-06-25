@@ -219,7 +219,7 @@ type config struct {
 
 func loadConfig() config {
 	cfg := config{
-		MCPGatewayEndpoint: envOrDefault("FMC_MCP_GATEWAY_ENDPOINT", "http://mcp-gateway:8080/mcp"),
+		MCPGatewayEndpoint: envOrDefault("FMC_MCP_GATEWAY_ENDPOINT", "http://envoy-ai-gateway:8080/mcp"),
 		ValkeyAddr:         envOrDefault("FMC_VALKEY_ADDR", "valkey:6379"),
 		Namespace:          envOrDefault("FMC_NAMESPACE", "kubernaut-system"),
 		SyncInterval:       parseDuration("FMC_SYNC_INTERVAL", 30*time.Second),

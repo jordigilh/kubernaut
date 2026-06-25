@@ -32,7 +32,7 @@ import (
 )
 
 const (
-	// ManagedLabel is the label that marks an MCPServerRegistration as managed by Kubernaut.
+	// ManagedLabel is the label that marks an MCP Gateway Backend as managed by Kubernaut.
 	ManagedLabel = "kubernaut.ai/managed"
 
 	// defaultChannelSize for event subscriber channels.
@@ -42,11 +42,22 @@ const (
 	defaultResyncPeriod = 5 * time.Minute
 )
 
-// MCPServerRegistrationGVR is the GroupVersionResource for Kuadrant's MCPServerRegistration CRD.
-var MCPServerRegistrationGVR = schema.GroupVersionResource{
-	Group:    "mcp.kuadrant.io",
+// BackendGVR is the GroupVersionResource for Envoy AI Gateway's Backend CRD.
+// Each Backend represents a managed cluster's K8s MCP Server endpoint.
+// The Backend name serves as the cluster ID and tool name prefix ({backendName}__{toolName}).
+var BackendGVR = schema.GroupVersionResource{
+	Group:    "gateway.envoyproxy.io",
 	Version:  "v1alpha1",
-	Resource: "mcpserverregistrations",
+	Resource: "backends",
+}
+
+// MCPRouteGVR is the GroupVersionResource for Envoy AI Gateway's MCPRoute CRD.
+// MCPRoute aggregates multiple Backends into a single MCP endpoint with
+// tool prefixing, OAuth, and CEL authorization.
+var MCPRouteGVR = schema.GroupVersionResource{
+	Group:    "aigateway.envoyproxy.io",
+	Version:  "v1beta1",
+	Resource: "mcproutes",
 }
 
 // CRDWatcherConfig configures the CRDWatcher.
@@ -59,7 +70,7 @@ type CRDWatcherConfig struct {
 	ChannelSize int
 }
 
-// CRDWatcher implements ClusterRegistry by watching MCPServerRegistration CRDs
+// CRDWatcher implements ClusterRegistry by watching Envoy AI Gateway Backend CRDs
 // via a dynamic informer. Only resources labeled kubernaut.ai/managed=true are tracked.
 type CRDWatcher struct {
 	client  dynamic.Interface
@@ -126,7 +137,7 @@ func (w *CRDWatcher) Ready() bool {
 	return w.ready
 }
 
-// Start begins watching MCPServerRegistration CRDs.
+// Start begins watching Envoy AI Gateway Backend CRDs.
 func (w *CRDWatcher) Start(ctx context.Context) error {
 	factory := dynamicinformer.NewFilteredDynamicSharedInformerFactory(
 		w.client,
@@ -137,7 +148,7 @@ func (w *CRDWatcher) Start(ctx context.Context) error {
 		},
 	)
 
-	informer := factory.ForResource(MCPServerRegistrationGVR).Informer()
+	informer := factory.ForResource(BackendGVR).Informer()
 
 	_, err := informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    w.onAdd,
@@ -263,13 +274,13 @@ func (w *CRDWatcher) emit(event ClusterEvent) {
 	}
 }
 
-// ExtractClusterInfo extracts ClusterInfo from an unstructured MCPServerRegistration.
-// The MCP endpoint is derived from the status.endpoint field if present,
-// otherwise falls back to constructing it from the resource name.
+// ExtractClusterInfo extracts ClusterInfo from an unstructured Envoy AI Gateway Backend CRD.
+// The MCP endpoint is derived from spec.endpoints[0].fqdn if present,
+// otherwise falls back to status.endpoint or spec.endpoint for compatibility.
 func ExtractClusterInfo(u *unstructured.Unstructured) (ClusterInfo, error) {
 	name := u.GetName()
 	if name == "" {
-		return ClusterInfo{}, fmt.Errorf("MCPServerRegistration has empty name")
+		return ClusterInfo{}, fmt.Errorf("Backend CRD has empty name")
 	}
 
 	info := ClusterInfo{

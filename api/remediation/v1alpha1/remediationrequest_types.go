@@ -327,7 +327,7 @@ type RemediationRequestSpec struct {
 	// ========================================
 
 	// ClusterID is the unique identifier of the cluster where the signal originated.
-	// Corresponds to the MCPServerRegistration name in the MCP Gateway.
+	// Corresponds to the Backend CR name in the Envoy AI Gateway.
 	// Used by RO and WE for multi-cluster routing of remediation workflows.
 	// Empty string indicates the local (hub) cluster.
 	// Reference: ADR-065 (Multi-Cluster Federation)

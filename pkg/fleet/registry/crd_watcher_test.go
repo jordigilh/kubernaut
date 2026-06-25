@@ -37,11 +37,11 @@ var _ = Describe("extractClusterInfo (BR-INTEGRATION-065)", func() {
 	It("UT-FLEET-003-001: populates all ClusterInfo fields including MCPEndpoint from status", func() {
 		u := &unstructured.Unstructured{
 			Object: map[string]interface{}{
-				"apiVersion": "mcp.kuadrant.io/v1alpha1",
-				"kind":       "MCPServerRegistration",
+				"apiVersion": "gateway.envoyproxy.io/v1alpha1",
+				"kind":       "Backend",
 				"metadata": map[string]interface{}{
 					"name":      "prod-east-1",
-					"namespace": "kuadrant-system",
+					"namespace": "kubernaut-system",
 					"labels": map[string]interface{}{
 						"kubernaut.ai/managed": "true",
 						"env":                  "production",
@@ -61,7 +61,7 @@ var _ = Describe("extractClusterInfo (BR-INTEGRATION-065)", func() {
 		Expect(info.ID).To(Equal("prod-east-1"))
 		Expect(info.Name).To(Equal("Production US-East"))
 		Expect(info.MCPEndpoint).To(Equal("https://mcp-gateway.example.com/clusters/prod-east-1/mcp"))
-		Expect(info.Namespace).To(Equal("kuadrant-system"))
+		Expect(info.Namespace).To(Equal("kubernaut-system"))
 		Expect(info.Labels).To(HaveKeyWithValue("kubernaut.ai/managed", "true"))
 		Expect(info.Labels).To(HaveKeyWithValue("env", "production"))
 	})
@@ -69,11 +69,11 @@ var _ = Describe("extractClusterInfo (BR-INTEGRATION-065)", func() {
 	It("UT-FLEET-003-002: returns error if name is empty (schema drift protection)", func() {
 		u := &unstructured.Unstructured{
 			Object: map[string]interface{}{
-				"apiVersion": "mcp.kuadrant.io/v1alpha1",
-				"kind":       "MCPServerRegistration",
+				"apiVersion": "gateway.envoyproxy.io/v1alpha1",
+				"kind":       "Backend",
 				"metadata": map[string]interface{}{
 					"name":      "",
-					"namespace": "kuadrant-system",
+					"namespace": "kubernaut-system",
 				},
 			},
 		}
@@ -86,11 +86,11 @@ var _ = Describe("extractClusterInfo (BR-INTEGRATION-065)", func() {
 	It("UT-FLEET-003-003: falls back to name as display name when annotation missing", func() {
 		u := &unstructured.Unstructured{
 			Object: map[string]interface{}{
-				"apiVersion": "mcp.kuadrant.io/v1alpha1",
-				"kind":       "MCPServerRegistration",
+				"apiVersion": "gateway.envoyproxy.io/v1alpha1",
+				"kind":       "Backend",
 				"metadata": map[string]interface{}{
 					"name":      "staging-west",
-					"namespace": "kuadrant-system",
+					"namespace": "kubernaut-system",
 					"labels": map[string]interface{}{
 						"kubernaut.ai/managed": "true",
 					},
@@ -106,11 +106,11 @@ var _ = Describe("extractClusterInfo (BR-INTEGRATION-065)", func() {
 	It("UT-FLEET-003-004: extracts MCPEndpoint from spec.endpoint when status.endpoint absent", func() {
 		u := &unstructured.Unstructured{
 			Object: map[string]interface{}{
-				"apiVersion": "mcp.kuadrant.io/v1alpha1",
-				"kind":       "MCPServerRegistration",
+				"apiVersion": "gateway.envoyproxy.io/v1alpha1",
+				"kind":       "Backend",
 				"metadata": map[string]interface{}{
 					"name":      "dev-local",
-					"namespace": "kuadrant-system",
+					"namespace": "kubernaut-system",
 					"labels": map[string]interface{}{
 						"kubernaut.ai/managed": "true",
 					},
