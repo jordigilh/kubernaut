@@ -527,8 +527,8 @@ var _ = Describe("status/subscribe SSE endpoint (IT)", func() {
 
 		Expect(meta).To(HaveKeyWithValue("namespace", testNS),
 			"namespace must be server-sourced from RR spec (SC-7)")
-		Expect(meta).To(HaveKeyWithValue("target", "api-server"),
-			"target must match RR spec TargetResource.Name")
+		Expect(meta).To(HaveKeyWithValue("target", "Deployment/api-server"),
+			"target must use Kind/Name format per FormatResourceDisplay (AU-3, SI-10)")
 		Expect(meta).To(HaveKeyWithValue("kind", "Deployment"),
 			"kind must match RR spec TargetResource.Kind")
 		Expect(meta).To(HaveKeyWithValue("alert_name", "StatusITAlert"),
@@ -568,7 +568,7 @@ var _ = Describe("status/subscribe SSE endpoint (IT)", func() {
 			meta, _ := inner["metadata"].(map[string]any)
 			Expect(meta).To(HaveKeyWithValue("namespace", testNS),
 				"context must persist across phase transitions (AU-3)")
-			Expect(meta).To(HaveKeyWithValue("target", "api-server"))
+			Expect(meta).To(HaveKeyWithValue("target", "Deployment/api-server"))
 			Expect(meta).To(HaveKeyWithValue("kind", "Deployment"))
 			Expect(meta).To(HaveKeyWithValue("alert_name", "StatusITAlert"))
 			Expect(meta).To(HaveKeyWithValue("workflow_id", "git-revert-v2"),
