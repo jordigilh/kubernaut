@@ -1133,7 +1133,7 @@ func registerFleetTools(ctx context.Context, cfg *kaconfig.Config, reg *registry
 			TokenURL:         cfg.Integrations.Fleet.OAuth2.TokenURL,
 			ClientIDPath:     basePath + "/client-id",
 			ClientSecretPath: basePath + "/client-secret",
-			Scopes:           []string{"fleet"},
+			Scopes:           fleetclient.DefaultFleetScopes(cfg.Integrations.Fleet.OAuth2.Scopes),
 			TokenTimeout:     10 * time.Second,
 		}
 		opts = append(opts, fleetclient.WithReloadableOAuth2Transport(reloadCfg, fleetLog))

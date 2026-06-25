@@ -291,11 +291,26 @@ func main() {
 			"endpoint", cfg.Fleet.Endpoint,
 			"oauth2Enabled", cfg.Fleet.OAuth2.Enabled)
 
+		fleetLog := ctrl.Log.WithName("fleet-oauth2")
 		fleetOpts := []fleetclient.Option{}
 		if cfg.Fleet.OAuth2.Enabled {
+			basePath := "/etc/workflowexecution/fleet-oauth2"
+			if cfg.Fleet.OAuth2.CredentialsSecretRef != "" {
+				basePath = "/etc/workflowexecution/" + cfg.Fleet.OAuth2.CredentialsSecretRef
+			}
+			reloadCfg := fleetclient.ReloadableOAuth2Config{
+				TokenURL:         cfg.Fleet.OAuth2.TokenURL,
+				ClientIDPath:     basePath + "/client-id",
+				ClientSecretPath: basePath + "/client-secret",
+				Scopes:           fleetclient.DefaultFleetScopes(cfg.Fleet.OAuth2.Scopes),
+				TokenTimeout:     10 * time.Second,
+			}
 			fleetOpts = append(fleetOpts,
-				fleetclient.WithTokenRefreshTimeout(10*time.Second),
+				fleetclient.WithReloadableOAuth2Transport(reloadCfg, fleetLog),
 			)
+			setupLog.Info("fleet OAuth2 authentication configured (hot-reloadable)",
+				"tokenURL", cfg.Fleet.OAuth2.TokenURL,
+				"secretPath", basePath)
 		}
 
 		resilienceCfg := fleetclient.DefaultResilienceConfig()
