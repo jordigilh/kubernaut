@@ -1,6 +1,10 @@
+---
+description: "Container image, deployment, and Helm chart standards for kubernaut"
+globs: "Dockerfile,docker/**/*,charts/**/*,.github/workflows/**/*"
+---
 # Container and Deployment Standards
 
-## 🐳 **Container Image Standards - MANDATORY**
+## Container Image Standards - MANDATORY
 
 ### Final Service Image Registry
 **MANDATORY**: All final service images MUST use the standardized registry prefix:
@@ -19,7 +23,7 @@ quay.io/jordigilh/
 
 **Examples**:
 ```dockerfile
-# ✅ CORRECT: Use official base images for building
+# CORRECT: Use official base images for building
 FROM registry.access.redhat.com/ubi10/go-toolset:1.26 AS builder
 FROM registry.access.redhat.com/ubi10/ubi-minimal:latest
 
@@ -39,19 +43,19 @@ FROM alpine:latest
 4. **Official language images** - For build stages only
 
 ```dockerfile
-# ✅ PREFERRED: Red Hat UBI for enterprise services
+# PREFERRED: Red Hat UBI for enterprise services
 FROM registry.access.redhat.com/ubi10/go-toolset:1.26 AS builder
 FROM registry.access.redhat.com/ubi10/ubi-minimal:latest
 
-# ✅ ACCEPTABLE: Alpine for minimal services
+# ACCEPTABLE: Alpine for minimal services
 FROM golang:1.23-alpine AS builder
 FROM alpine:latest
 
-# ❌ AVOID: Random third-party base images
+# AVOID: Random third-party base images
 FROM some-random-registry/custom-image:latest
 ```
 
-## 🏗️ **Dockerfile Standards**
+## Dockerfile Standards
 
 ### Multi-Stage Build Pattern
 **MANDATORY**: Use multi-stage builds for all services
@@ -88,25 +92,25 @@ ENTRYPOINT ["/usr/local/bin/service-name"]
 **MANDATORY**: All containers must follow security best practices
 
 ```dockerfile
-# ✅ REQUIRED: Non-root user
+# REQUIRED: Non-root user
 RUN useradd -r -u 1001 -g root service-user
 USER service-user
 
-# ✅ REQUIRED: Minimal attack surface
+# REQUIRED: Minimal attack surface
 FROM quay.io/jordigilh/kubernaut-minimal:latest
 
-# ✅ REQUIRED: Health checks
+# REQUIRED: Health checks
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
     CMD ["/usr/local/bin/service-name", "--health-check"] || exit 1
 
-# ✅ REQUIRED: Proper labels
+# REQUIRED: Proper labels
 LABEL name="kubernaut-service-name" \
       vendor="Kubernaut" \
       version="1.0.0" \
       maintainer="kubernaut-team@example.com"
 ```
 
-## 📦 **Image Versioning Strategy**
+## Image Versioning Strategy
 
 ### Version Tags
 **Format**: Semantic versioning with environment tags
@@ -140,7 +144,7 @@ quay.io/jordigilh/webhook-service:prod-v1.2.3
     docker push ${IMAGE_TAG}
 ```
 
-## 🚀 **Deployment Standards**
+## Deployment Standards
 
 ### Kubernetes Manifests
 **MANDATORY**: Use standardized image references
@@ -175,7 +179,7 @@ image:
 image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}:{{ .Values.image.tag }}"
 ```
 
-## 🔧 **Development Workflow**
+## Development Workflow
 
 ### Local Development
 **Pattern**: Use consistent local image names
@@ -201,7 +205,7 @@ export IMAGE_TAG="${REGISTRY}/${SERVICE_NAME}:${VERSION}"
 docker build -t ${IMAGE_TAG} -f docker/${SERVICE_NAME}.Dockerfile .
 ```
 
-## 📋 **Registry Management**
+## Registry Management
 
 ### Image Scanning
 **MANDATORY**: All images must pass security scanning
@@ -222,7 +226,7 @@ trivy image quay.io/jordigilh/webhook-service:v1.2.3
 # Cleanup images older than 90 days (except latest, stable tags)
 ```
 
-## 🔍 **Monitoring and Observability**
+## Monitoring and Observability
 
 ### Image Metrics
 **Track**: Image size, build time, vulnerability count
@@ -247,16 +251,16 @@ time docker build -t quay.io/jordigilh/service:tag .
     version: "v1.2.3"
 ```
 
-## 🚨 **Anti-Patterns - FORBIDDEN**
+## Anti-Patterns - FORBIDDEN
 
 ### Registry Anti-Patterns
 ```dockerfile
-# ❌ WRONG: Mixed registries
+# WRONG: Mixed registries
 FROM docker.io/alpine:latest
 FROM gcr.io/project/base:latest
 FROM registry.redhat.io/ubi8/ubi:latest
 
-# ❌ WRONG: Hardcoded external registries
+# WRONG: Hardcoded external registries
 FROM nginx:latest
 FROM postgres:13
 FROM redis:alpine
@@ -264,30 +268,30 @@ FROM redis:alpine
 
 ### Security Anti-Patterns
 ```dockerfile
-# ❌ WRONG: Running as root
+# WRONG: Running as root
 USER root
 USER 0
 
-# ❌ WRONG: No health checks
+# WRONG: No health checks
 # Missing HEALTHCHECK instruction
 
-# ❌ WRONG: Exposing unnecessary ports
+# WRONG: Exposing unnecessary ports
 EXPOSE 22 3306 5432
 ```
 
 ### Versioning Anti-Patterns
 ```bash
-# ❌ WRONG: Inconsistent naming
+# WRONG: Inconsistent naming
 quay.io/different-org/webhook:v1.0.0
 docker.io/jordigilh/webhook:latest
 gcr.io/project/webhook-svc:1.0
 
-# ❌ WRONG: No versioning strategy
+# WRONG: No versioning strategy
 quay.io/jordigilh/webhook:random-tag
 quay.io/jordigilh/webhook:build-123
 ```
 
-## 📚 **Documentation Requirements**
+## Documentation Requirements
 
 ### Service Documentation
 **MANDATORY**: Each service must document its container usage
@@ -315,7 +319,7 @@ image: quay.io/jordigilh/service-name:v1.2.3
 **Location**: `docs/operations/deployment/CONTAINER_REGISTRY.md`
 **Content**: Registry access, credentials, policies
 
-## 🔗 **Integration Points**
+## Integration Points
 
 **Enforces**: [05-kubernetes-safety.mdc](mdc:.cursor/rules/05-kubernetes-safety.mdc) deployment safety
 **Supports**: [06-documentation-standards.mdc](mdc:.cursor/rules/06-documentation-standards.mdc) documentation requirements

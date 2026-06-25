@@ -1,0 +1,239 @@
+---
+globs: "*.go,pkg/**/*,internal/**/*,cmd/**/*"
+description: "Go coding standards: naming, errors, context, logging (DD-005), K8s patterns, concurrency, performance"
+---
+# Go Coding Standards
+
+## Code Organization
+
+- Use clear, descriptive names reflecting business domain (`EffectivenessAssessor`, `WorkflowEngine`)
+- **MANDATORY**: Every component must serve a documented business requirement (BR-[CATEGORY]-[NUMBER])
+- Group related functionality into cohesive packages following DDD principles
+- Implement interfaces over concrete types for testability and flexibility
+- **AVOID** duplicating structure names - use unique, business-aligned identifiers
+
+### Anti-Patterns
+
+```go
+// WRONG: Generic/vague naming
+type Manager struct{}
+type Service struct{}
+
+// CORRECT: Business-domain naming
+type WorkflowEngine struct{}
+type EffectivenessAssessor struct{}
+```
+
+## Error Handling
+
+- Always wrap errors with context using `fmt.Errorf("operation description: %w", err)`
+- Use structured error types from `internal/errors/` for consistent categorization
+- Never ignore errors from operations that can fail
+
+```go
+// Wrap with context
+return fmt.Errorf("workflow execution failed: %w", err)
+
+// Structured error types
+return &internal.BusinessError{
+    Operation: "workflow execution",
+    Cause:     err,
+    Context:   map[string]interface{}{"workflowID": id},
+}
+
+// WRONG: Ignoring errors
+result, _ := riskyOperation()
+
+// CORRECT: Handle every error
+result, err := riskyOperation()
+if err != nil {
+    return fmt.Errorf("operation failed: %w", err)
+}
+```
+
+## Context and Cancellation
+
+```go
+// Always accept context as first parameter
+func ProcessWorkflow(ctx context.Context, workflow *Workflow) error
+
+// Respect context cancellation in loops
+for {
+    select {
+    case <-ctx.Done():
+        return ctx.Err()
+    default:
+        // Continue processing
+    }
+}
+
+// Use context for request-scoped values
+traceID := ctx.Value("traceID").(string)
+```
+
+## Type System Guidelines
+
+- **MANDATORY**: Avoid using `any` or `interface{}` unless absolutely necessary
+- **ALWAYS** use structured field values with specific types
+- **AVOID** local type definitions to resolve import cycles
+- Use shared types from `pkg/shared/types/` package instead
+- Prefer strongly-typed interfaces that reflect business domain concepts
+
+## Logging Standards (DD-005 v2.0)
+
+- **Unified Interface**: Use `github.com/go-logr/logr` as the standard logging interface for ALL services
+- **Backend**: Use `go.uber.org/zap` via `github.com/go-logr/zapr` adapter for performance
+
+### Logger Construction by Service Type
+
+| Service Type | Construction Method | Example |
+|---|---|---|
+| **Stateless services** (Gateway, Data Storage) | `zapr.NewLogger(zapLogger)` | Direct zap-backed logger |
+| **CRD controllers** (Signal Processing, Notification) | `ctrl.Log.WithName("component")` | Native controller-runtime logger |
+| **Shared libraries** (`pkg/*`) | Accept `logr.Logger` parameter | Library must NOT create its own logger |
+
+### Usage Patterns
+
+```go
+// Error logging: error as first argument
+logger.Error(err, "message", "key", "value")
+
+// Debug logging: verbosity levels
+logger.V(1).Info("message", "key", "value")
+
+// Key-value pairs: alternating key-value, NOT zap.String() helpers
+logger.Info("processing workflow",
+    "workflowID", wf.ID,
+    "step", currentStep,
+    "duration", elapsed,
+)
+```
+
+## Kubernetes Client Patterns
+
+```go
+// Use shared client
+k8sClient := k8s.NewClient(config.Kubernetes)
+defer k8sClient.Close()
+
+// Safety checks before destructive operations
+if err := k8sClient.ValidateAccess(ctx, namespace, resource); err != nil {
+    return fmt.Errorf("insufficient permissions: %w", err)
+}
+
+// Dry-run validation
+if err := k8sClient.DryRun(ctx, operation); err != nil {
+    return fmt.Errorf("dry-run failed: %w", err)
+}
+```
+
+- Use the shared client from `pkg/platform/k8s/client.go`
+- Implement safety checks before destructive operations
+- Always use dry-run mode when possible for validation
+- Handle Kubernetes API rate limiting gracefully
+
+## Concurrency Patterns
+
+```go
+// Worker pools with resource limits
+pool := workerpool.New(maxWorkers)
+
+// Circuit breakers for external services
+breaker := circuitbreaker.New(failureThreshold)
+
+// sync.Once for expensive initialization
+var once sync.Once
+once.Do(func() { initializeExpensiveResource() })
+
+// Prefer channels over shared memory
+results := make(chan ProcessingResult, bufferSize)
+```
+
+## Database Access
+
+```go
+// PostgreSQL with connection pooling
+db := postgresql.NewPool(config.Database)
+
+// Prepared statements
+stmt, err := db.Prepare("SELECT * FROM workflows WHERE id = $1")
+
+// Transaction management
+tx, err := db.Begin()
+defer tx.Rollback()
+// ... operations
+tx.Commit()
+```
+
+- Use connection pooling and prepared statements
+- Implement proper transaction management for multi-step operations
+- Handle database migrations through `migrations/` directory
+
+## Configuration Management
+
+```go
+type Config struct {
+    Database   DatabaseConfig `yaml:"database"`
+    AI         AIConfig       `yaml:"ai"`
+    Kubernetes K8sConfig      `yaml:"kubernetes"`
+}
+
+func LoadConfig() (*Config, error) {
+    config := &Config{}
+    if err := yaml.Unmarshal(configData, config); err != nil {
+        return nil, err
+    }
+    // Override with environment variables
+    if endpoint := os.Getenv("LLM_ENDPOINT"); endpoint != "" {
+        config.AI.Endpoint = endpoint
+    }
+    return config.Validate()
+}
+```
+
+- Use YAML configuration files in `config/` directory
+- Implement environment variable overrides for deployment flexibility
+- Validate configuration at startup with clear error messages
+- Use defaults that work for local development
+
+## Performance and Monitoring
+
+```go
+// Caching strategy
+cache := redis.NewClient(config.Redis)
+embeddings := cache.GetEmbeddings(query)
+if embeddings == nil {
+    embeddings = generateEmbeddings(query)
+    cache.SetEmbeddings(query, embeddings, ttl)
+}
+
+// Batch processing
+alerts := collectAlertsForBatch(batchSize)
+
+// Metrics collection
+metrics.Counter("requests_total").WithLabelValues(component).Inc()
+metrics.Histogram("response_duration").Observe(duration.Seconds())
+
+// Health checks
+func (c *Client) HealthCheck(ctx context.Context) error {
+    _, err := c.Ping(ctx)
+    return err
+}
+```
+
+## Testing
+
+- **MANDATORY**: Follow TDD methodology per [00-core-development-methodology.mdc](mdc:.cursor/rules/00-core-development-methodology.mdc)
+- Use Ginkgo/Gomega BDD testing framework
+- Follow pyramid strategy: 70%+ unit, <20% integration, <10% e2e (per [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc))
+- All tests must reference specific business requirements (BR-[CATEGORY]-[NUMBER])
+- Test business outcomes, not implementation details
+- Use mock factories from `pkg/testutil/mock_factory.go` for consistent test doubles
+- **NEVER mock business logic** - use real components with external mocks only
+
+## Related Rules
+
+- [00-core-development-methodology.mdc](mdc:.cursor/rules/00-core-development-methodology.mdc) - TDD and core principles
+- [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc) - Testing framework and mock strategy
+- [04-ai-ml-guidelines.mdc](mdc:.cursor/rules/04-ai-ml-guidelines.mdc) - AI/ML integration patterns
+- [05-kubernetes-safety.mdc](mdc:.cursor/rules/05-kubernetes-safety.mdc) - Kubernetes safety patterns

@@ -10,16 +10,16 @@ Before executing any significant action (tests, commits, refactors, new implemen
 ### When to Pause and Share
 
 **ALWAYS share if you have:**
-- ❓ **Questions**: Ambiguities, missing information, or unclear requirements
-- ⚠️ **Concerns**: Potential issues, risks, conflicts, or anti-patterns
-- 🔄 **Alternatives**: Different approaches worth considering
-- 📊 **Confidence Gaps**: Uncertainty about the approach (<90% confidence)
-- 💡 **Recommendations**: Suggested improvements or optimizations with rationale
+- **Questions**: Ambiguities, missing information, or unclear requirements
+- **Concerns**: Potential issues, risks, conflicts, or anti-patterns
+- **Alternatives**: Different approaches worth considering
+- **Confidence Gaps**: Uncertainty about the approach (<90% confidence)
+- **Recommendations**: Suggested improvements or optimizations with rationale
 
 **SKIP if:**
-- ✅ Everything is clear, straightforward, and routine
-- ✅ High confidence (>95%) with no concerns
-- ✅ User explicitly said "proceed without asking"
+- Everything is clear, straightforward, and routine
+- High confidence (>95%) with no concerns
+- User explicitly said "proceed without asking"
 
 ### Scope: Significant Actions
 
@@ -41,69 +41,12 @@ When pausing, provide:
 4. **Confidence**: High/Medium/Low + explain gaps
 5. **Recommendations**: What do you suggest and why?
 
-### Example
-
-```
-Before running E2E tests, I want to share:
-
-❓ Questions:
-- Should we run all E2E tests or just the BR-HAPI-197 subset?
-
-⚠️ Concerns:
-- E2E tests take ~10 minutes and create a full Kind cluster
-- Mock LLM scenario "mock_rca_incomplete" may not be loaded in ConfigMap yet
-
-🔄 Alternatives:
-A) Run just BR-HAPI-197 tests (faster, focused)
-B) Run full suite (comprehensive, but 20+ min)
-
-📊 Confidence: Medium (75%)
-- Mock LLM integration is untested with new scenario
-
-💡 Recommendation: Run BR-HAPI-197 tests first (Option A), validate Mock LLM scenario works, then run full suite
-
-Proceed with Option A?
-```
-
 ---
 
-## Rule 2: Strict TDD Adherence
-
-Follow RED-GREEN-REFACTOR cycle rigorously:
-1. **RED**: Write failing test first
-2. **GREEN**: Implement minimal code to pass
-3. **REFACTOR**: Improve code quality, reduce duplication
-
-Never skip REFACTOR phase. Self-check for TDD compliance in assessments.
-
----
-
-## Rule 3: No Pending Tests
+## Rule 2: No Pending Tests
 
 Never use `XIt` or pending tests. Either:
 - Implement the test (following TDD)
 - Remove it from the test plan
 
 Pending tests violate Kubernaut's TDD philosophy.
-
----
-
-## Rule 4: Follow Authoritative Documentation
-
-Always consult and align with:
-- Business Requirements (BRs)
-- Architecture Decision Records (ADRs)
-- Design Documents (DDs)
-- Testing Guidelines
-
-Flag conflicts between docs and implementation.
-
----
-
-## Rule 5: Code Quality Standards
-
-- Reuse existing patterns (don't reinvent)
-- Avoid duplication (extract helpers)
-- Use table-driven tests where appropriate
-- Follow existing naming conventions
-- Preserve exact indentation (tabs/spaces)

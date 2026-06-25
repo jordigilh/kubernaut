@@ -1,0 +1,220 @@
+---
+globs: "pkg/ai/**/*,pkg/workflow/**/*,pkg/intelligence/**/*,test/**/*ai*"
+description: "AI/ML architecture, development methodology, and integration patterns for kubernaut"
+---
+
+# AI/ML Guidelines and Development Methodology
+
+## Architecture
+
+### Interface Reuse Principles - MANDATORY
+
+- **FORBIDDEN**: Creating new AI interfaces - use existing `pkg/ai/llm.Client`
+- **MANDATORY**: Enhance existing AI clients rather than creating new ones
+- **INTEGRATION**: All AI components must integrate with main applications (`cmd/*/main.go`)
+
+### Supported AI Providers
+
+| Provider | Purpose |
+|----------|---------|
+| **HolmesGPT** | Primary AI service ([pkg/ai/holmesgpt/client.go](mdc:pkg/ai/holmesgpt/client.go)) |
+| **OpenAI** | GPT-3.5, GPT-4 models |
+| **Anthropic** | Claude models |
+| **Azure OpenAI** | Enterprise OpenAI deployment |
+| **AWS Bedrock** | Amazon's AI service |
+| **Ollama** | Local LLM deployment |
+| **Ramalama** | Local model serving |
+
+### Client Usage
+
+```go
+import "pkg/ai/llm"
+
+llmClient := llm.NewClient(config.LLM)
+response, err := llmClient.AnalyzeAlert(ctx, alertData)
+if err != nil {
+    return fmt.Errorf("AI analysis failed: %w", err)
+}
+```
+
+### Context Enrichment
+
+- **Kubernetes Context**: Real-time cluster data ([pkg/platform/k8s/client.go](mdc:pkg/platform/k8s/client.go))
+- **Historical Context**: Action patterns from PostgreSQL ([pkg/ai/context/](mdc:pkg/ai/context/))
+- **Vector Context**: Similarity search from vector database
+
+### Workflow Engine Integration
+
+- **Intelligent Workflow Builder**: [pkg/workflow/engine/intelligent_workflow_builder_impl.go](mdc:pkg/workflow/engine/intelligent_workflow_builder_impl.go) - AI-generated multi-step remediation workflows, dynamic template generation
+- **AI Condition Evaluator**: [pkg/workflow/engine/ai_condition_evaluator_impl.go](mdc:pkg/workflow/engine/ai_condition_evaluator_impl.go) - Intelligent step condition evaluation, context-aware decisions
+
+### Vector Database Integration
+
+- **Embedding Generation**: [pkg/ai/embedding/pipeline.go](mdc:pkg/ai/embedding/pipeline.go) - Multiple models (OpenAI, HuggingFace), caching for performance
+- **Vector Storage**: [pkg/storage/vector/](mdc:pkg/storage/vector/) - PostgreSQL with pgvector, similarity search, RAG enhancement
+
+---
+
+## Development Methodology
+
+AI-specific TDD patterns that integrate with [00-kubernaut-core-rules.mdc](mdc:.cursor/rules/00-kubernaut-core-rules.mdc) APDC methodology.
+
+### AI Discovery Phase (5-10 min)
+
+Search existing AI interfaces BEFORE creating new.
+
+**Mandatory Checks**:
+```bash
+grep -r "Client.*interface" pkg/ai/ --include="*.go"
+grep -r "AI\|LLM\|Holmes" cmd/ --include="*.go"
+```
+
+**Success**: Found existing AI interfaces to enhance, confirmed main app integration.
+
+### AI RED Phase (15-20 min)
+
+Import existing AI interfaces (`pkg/ai/llm.Client`). Never create new interfaces.
+
+```go
+var _ = Describe("AI Context Optimization", func() {
+    It("should optimize context using AI analysis (BR-AI-045)", func() {
+        llmClient := testutil.NewMockLLMClient()
+        analysis, err := llmClient.AnalyzeContext(ctx, "test content")
+        Expect(err).ToNot(HaveOccurred())
+        Expect(analysis.Quality).To(BeNumerically(">", 0.8))
+    })
+})
+```
+
+### AI GREEN Phase (20-25 min)
+
+Enhance existing AI client (e.g., `ClientImpl`). Add to main app (`cmd/*/main.go`).
+
+```go
+type Client interface {
+    // ... existing methods ...
+    AnalyzeContext(ctx context.Context, content string) (*ContextAnalysis, error)
+}
+
+func (c *ClientImpl) AnalyzeContext(ctx context.Context, content string) (*ContextAnalysis, error) {
+    return &ContextAnalysis{Quality: 0.8}, nil
+}
+```
+
+**Integration**: Wire into `cmd/*/main.go` via `llm.NewClient(config.LLM)`.
+
+### AI REFACTOR Phase (25-35 min)
+
+Enhance same AI methods tests call. No new AI types, files, or interfaces.
+
+### AI TDD Checklist
+
+**Discovery**: searched `pkg/ai/` interfaces, confirmed `cmd/` integration, chose enhancement over creation.
+**RED**: used existing `pkg/ai/llm.Client`, used existing mock factories, tests failing appropriately.
+**GREEN**: enhanced existing client, integrated in `cmd/*/main.go`, minimal implementation passes.
+**REFACTOR**: enhanced existing methods only, no new types/files, integration preserved.
+
+---
+
+## Validation Pipeline
+
+1. **Structure Validation**: Ensure response matches expected schema
+2. **Confidence Scoring**: Evaluate AI recommendation confidence (>0.8 high, 0.5-0.8 medium, <0.5 low)
+3. **Safety Validation**: Check recommendations against safety policies
+4. **Business Rule Validation**: Ensure recommendations align with business logic
+
+### Fallback Chain
+
+1. **Primary**: HolmesGPT with full context
+2. **Secondary**: Direct LLM provider with reduced context
+3. **Fallback**: Rule-based decision making
+4. **Emergency**: Safe default actions only
+
+### Circuit Breaker
+
+```go
+breaker := circuitbreaker.New(&Config{
+    Timeout:     30 * time.Second,
+    MaxRequests: 100,
+    Interval:    60 * time.Second,
+})
+```
+
+### Rate Limiting
+
+- Respect AI provider rate limits
+- Implement exponential backoff for retries
+- Monitor AI service usage and costs
+- Prioritize high-criticality alerts
+
+---
+
+## Mock Strategy
+
+**AUTHORITY**: Follow comprehensive mock usage matrix in [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc)
+
+### Mock Decision Matrix
+
+| Component | Action |
+|-----------|--------|
+| **External AI APIs** (HolmesGPT, OpenAI) | MOCK |
+| **AI Business Logic** (analysis algorithms) | REAL |
+| **Error Simulation** | MOCK |
+| **Performance Testing** | MOCK |
+
+### AI-Specific Testing
+
+- **Unit Tests**: Mock external AI APIs ([pkg/testutil/mocks/ai_mocks.go](mdc:pkg/testutil/mocks/ai_mocks.go))
+- **Business Logic**: Always test real AI analysis algorithms
+- **CI/CD**: Use mock LLM for reliability (`USE_MOCK_LLM=true`)
+- **Error Testing**: Include error simulation and timeout testing
+
+### Conflict Resolution
+
+When AI rules conflict with general TDD:
+1. Use AI-specific search patterns (`pkg/ai/`)
+2. Use existing `pkg/ai/llm.Client` interface
+3. Enhance existing clients, don't create new
+4. Focus on method enhancement, not structural changes
+
+---
+
+## Anti-Patterns
+
+### Creating Parallel AI Components
+**Violation**: Creating new AI service during REFACTOR.
+**Rule**: Enhance existing AI methods only.
+
+### AI-Only Testing
+**Violation**: AI components only used in tests.
+**Rule**: MANDATORY integration in `cmd/*/main.go`.
+
+### Hardcoded AI Endpoints
+**Violation**: Hardcoded LLM URLs in code.
+**Rule**: Use configuration for all AI endpoints.
+
+### AI Without Business Validation
+**Violation**: Testing AI technical function without business outcome.
+**Rule**: Validate business value delivered (confidence, accuracy, recommendations).
+
+---
+
+## Learning, Performance, and Observability
+
+- **Effectiveness Assessment**: [pkg/ai/insights/assessor.go](mdc:pkg/ai/insights/assessor.go) - Track outcomes, adjust confidence scores
+- **Pattern Discovery**: [pkg/intelligence/patterns/pattern_discovery_engine.go](mdc:pkg/intelligence/patterns/pattern_discovery_engine.go) - Recurring alert patterns, action-outcome correlation
+- **Caching**: Cache embedding results with TTL; store frequent AI responses in Redis
+- **Batch Processing**: Group similar alerts for batch analysis; balance latency vs. throughput
+- **Monitoring**: Track response times, success rates, confidence distributions, and costs per provider
+- **Cost Management**: Implement budget alerts/quotas; optimize prompt size; use appropriate model tiers
+
+---
+
+## Related Documentation
+
+- **[Testing Strategy](mdc:.cursor/rules/03-testing-strategy.mdc)** - Mock strategy and test pyramid
+- **[Core Rules](mdc:.cursor/rules/00-kubernaut-core-rules.mdc)** - APDC methodology and TDD workflow
+
+---
+
+**Remember**: AI components must integrate with main applications, use existing interfaces, and follow the same APDC and TDD methodology as all other code.
