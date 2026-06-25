@@ -28,12 +28,12 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
-func createMCPServerRegistration(ctx context.Context, name, displayName string) {
+func createBackend(ctx context.Context, name, displayName string) {
 	GinkgoHelper()
-	reg := &unstructured.Unstructured{
+	backend := &unstructured.Unstructured{
 		Object: map[string]interface{}{
-			"apiVersion": "mcp.kuadrant.io/v1alpha1",
-			"kind":       "MCPServerRegistration",
+			"apiVersion": "gateway.envoyproxy.io/v1alpha1",
+			"kind":       "Backend",
 			"metadata": map[string]interface{}{
 				"name":      name,
 				"namespace": "default",
@@ -46,12 +46,12 @@ func createMCPServerRegistration(ctx context.Context, name, displayName string) 
 			},
 		},
 	}
-	_, err := dynClient.Resource(registry.MCPServerRegistrationGVR).Namespace("default").Create(ctx, reg, metav1.CreateOptions{})
-	Expect(err).ToNot(HaveOccurred(), "MCPServerRegistration %s should be created in envtest", name)
+	_, err := dynClient.Resource(registry.BackendGVR).Namespace("default").Create(ctx, backend, metav1.CreateOptions{})
+	Expect(err).ToNot(HaveOccurred(), "Backend %s should be created in envtest", name)
 }
 
-func deleteMCPServerRegistration(ctx context.Context, name string) {
-	_ = dynClient.Resource(registry.MCPServerRegistrationGVR).Namespace("default").Delete(ctx, name, metav1.DeleteOptions{})
+func deleteBackend(ctx context.Context, name string) {
+	_ = dynClient.Resource(registry.BackendGVR).Namespace("default").Delete(ctx, name, metav1.DeleteOptions{})
 }
 
 // localAlwaysFalse is a stub local scope checker that always returns false,

@@ -83,8 +83,8 @@ var _ = Describe("Fleet Federation E2E: Factory -> FMC -> Valkey (BR-INTEGRATION
 		clusterReg = registry.NewCRDWatcher(dynClient, registry.CRDWatcherConfig{}, nil, logr.Discard())
 		Expect(clusterReg.Start(ctx)).To(Succeed(), "CRDWatcher should start against envtest")
 
-		By("Creating MCPServerRegistration 'e2e-cluster' in envtest")
-		createMCPServerRegistration(ctx, "e2e-cluster", "E2E Cluster")
+		By("Creating Backend 'e2e-cluster' in envtest")
+		createBackend(ctx, "e2e-cluster", "E2E Cluster")
 		Eventually(func() bool {
 			_, ok := clusterReg.Get("e2e-cluster")
 			return ok
@@ -124,7 +124,7 @@ var _ = Describe("Fleet Federation E2E: Factory -> FMC -> Valkey (BR-INTEGRATION
 		if redisClient != nil {
 			_ = redisClient.Close()
 		}
-		deleteMCPServerRegistration(context.Background(), "e2e-cluster")
+		deleteBackend(context.Background(), "e2e-cluster")
 	})
 
 	Describe("E2E-FMC-054-001 [AC-4, SC-7]: Full factory-to-Valkey journey", func() {

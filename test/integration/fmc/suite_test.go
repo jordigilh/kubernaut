@@ -60,7 +60,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	Expect(infrastructure.WaitForRedisReady(fmcRedisContainerName, GinkgoWriter)).To(Succeed(),
 		"Valkey failed to become ready")
 
-	By("Starting envtest with MCPServerRegistration CRD")
+	By("Starting envtest with Backend CRD (Envoy AI Gateway)")
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths: []string{
 			"../../../config/crd/bases",
