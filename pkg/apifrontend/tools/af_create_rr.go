@@ -55,7 +55,7 @@ type CreateRRArgs struct {
 	// Empty string indicates local hub cluster (ADR-065).
 	ClusterID string `json:"cluster_id,omitempty"`
 	// ClusterName is the human-readable display name for the cluster.
-	// Populated from the MCPServerRegistration displayName (ADR-065).
+	// Populated from the MCP Gateway Backend CRD displayName (ADR-065).
 	ClusterName string `json:"cluster_name,omitempty"`
 }
 

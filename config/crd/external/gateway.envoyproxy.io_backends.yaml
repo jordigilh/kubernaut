@@ -1,20 +1,20 @@
 ---
-# Minimal MCPServerRegistration CRD for envtest.
-# This is an external Kuadrant CRD; only the fields needed by
+# Minimal Backend CRD for envtest.
+# This is an external Envoy AI Gateway CRD; only the fields needed by
 # registry.CRDWatcher and registry.ExtractClusterInfo are defined.
+# The Backend CR name serves as the cluster ID and tool name prefix
+# ({backendName}__{toolName}).
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
-  name: mcpserverregistrations.mcp.kuadrant.io
+  name: backends.gateway.envoyproxy.io
 spec:
-  group: mcp.kuadrant.io
+  group: gateway.envoyproxy.io
   names:
-    kind: MCPServerRegistration
-    listKind: MCPServerRegistrationList
-    plural: mcpserverregistrations
-    singular: mcpserverregistration
-    shortNames:
-      - mcpreg
+    kind: Backend
+    listKind: BackendList
+    plural: backends
+    singular: backend
   scope: Namespaced
   versions:
     - name: v1alpha1
@@ -27,9 +27,18 @@ spec:
             spec:
               type: object
               properties:
-                endpoint:
-                  type: string
-                  description: MCP endpoint URL for the cluster.
+                endpoints:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      fqdn:
+                        type: object
+                        properties:
+                          hostname:
+                            type: string
+                          port:
+                            type: integer
               x-kubernetes-preserve-unknown-fields: true
             status:
               type: object
