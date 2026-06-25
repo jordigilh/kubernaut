@@ -742,4 +742,84 @@ var _ = Describe("Config.Validate — GAP-C3 (#954)", func() {
 		cfg := config.DefaultConfig()
 		Expect(cfg.Validate()).To(Succeed())
 	})
+
+	Context("UT-KA-054-CFG-001 [IA-5]: KA FleetOAuth2 config parses scopes and validates (BR-INTEGRATION-054)", func() {
+		It("rejects fleet OAuth2 enabled without tokenURL", func() {
+			cfg := config.DefaultConfig()
+			cfg.Integrations.Fleet.OAuth2.Enabled = true
+			cfg.Integrations.Fleet.OAuth2.CredentialsSecretRef = "fleet-creds"
+			err := cfg.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("tokenURL"))
+		})
+
+		It("rejects fleet OAuth2 enabled without credentialsSecretRef", func() {
+			cfg := config.DefaultConfig()
+			cfg.Integrations.Fleet.OAuth2.Enabled = true
+			cfg.Integrations.Fleet.OAuth2.TokenURL = "https://dex.local/token"
+			err := cfg.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("credentialsSecretRef"))
+		})
+
+		It("accepts fleet OAuth2 enabled with all required fields", func() {
+			cfg := config.DefaultConfig()
+			cfg.Integrations.Fleet.OAuth2.Enabled = true
+			cfg.Integrations.Fleet.OAuth2.TokenURL = "https://dex.local/token"
+			cfg.Integrations.Fleet.OAuth2.CredentialsSecretRef = "fleet-creds"
+			Expect(cfg.Validate()).To(Succeed())
+		})
+
+		It("parses Scopes from YAML config", func() {
+			yamlContent := `
+runtime:
+  server:
+    port: 9443
+    maxConcurrentRequests: 20
+    rateLimit:
+      requestsPerSecond: 10.0
+      burst: 20
+  session:
+    ttl: 30m
+    maxConcurrentInvestigations: 5
+  audit:
+    enabled: false
+    bufferSize: 100
+    batchSize: 10
+    flushInterval: 5s
+  logging:
+    level: info
+ai:
+  investigation:
+    maxTurns: 25
+  summarizer:
+    maxToolOutputSize: 4096
+  enrichment:
+    maxRetries: 3
+  safety:
+    anomaly:
+      maxToolCallsPerTool: 10
+      maxTotalToolCalls: 50
+      maxRepeatedFailures: 3
+  llm:
+    provider: openai
+  alignmentCheck:
+    enabled: false
+integrations:
+  fleet:
+    endpoint: "http://mcp-gateway:1975/mcp"
+    oauth2:
+      enabled: true
+      tokenURL: "https://dex.local/token"
+      credentialsSecretRef: "fleet-creds"
+      scopes:
+        - openid
+        - groups
+        - fleet-read
+`
+			cfg, err := config.Load([]byte(yamlContent))
+			Expect(err).ToNot(HaveOccurred())
+			Expect(cfg.Integrations.Fleet.OAuth2.Scopes).To(Equal([]string{"openid", "groups", "fleet-read"}))
+		})
+	})
 })

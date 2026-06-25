@@ -81,7 +81,7 @@ var _ = Describe("OAuth2 Auth Transport (BR-INTEGRATION-065)", func() {
 			Expect(cfg.ClientSecret).To(Equal("s3cr3t"))
 		})
 
-		It("UT-FLEET-AUTH-004: returns error for missing file", func() {
+		It("UT-FLEET-AUTH-004: returns error for missing token URL file", func() {
 			_, err := mcpclient.LoadOAuth2ConfigFromFiles(
 				filepath.Join(tmpDir, "nonexistent"),
 				filepath.Join(tmpDir, "client-id"),
@@ -89,6 +89,31 @@ var _ = Describe("OAuth2 Auth Transport (BR-INTEGRATION-065)", func() {
 			)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("token URL"))
+		})
+
+		It("UT-FLEET-AUTH-006 [IA-5]: returns error for missing client ID file", func() {
+			Expect(os.WriteFile(filepath.Join(tmpDir, "token-url"), []byte("https://dex.local/token"), 0600)).To(Succeed())
+
+			_, err := mcpclient.LoadOAuth2ConfigFromFiles(
+				filepath.Join(tmpDir, "token-url"),
+				filepath.Join(tmpDir, "nonexistent-client-id"),
+				filepath.Join(tmpDir, "client-secret"),
+			)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("client ID"))
+		})
+
+		It("UT-FLEET-AUTH-007 [IA-5]: returns error for missing client secret file", func() {
+			Expect(os.WriteFile(filepath.Join(tmpDir, "token-url"), []byte("https://dex.local/token"), 0600)).To(Succeed())
+			Expect(os.WriteFile(filepath.Join(tmpDir, "client-id"), []byte("kubernaut-fleet"), 0600)).To(Succeed())
+
+			_, err := mcpclient.LoadOAuth2ConfigFromFiles(
+				filepath.Join(tmpDir, "token-url"),
+				filepath.Join(tmpDir, "client-id"),
+				filepath.Join(tmpDir, "nonexistent-secret"),
+			)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("client secret"))
 		})
 	})
 
