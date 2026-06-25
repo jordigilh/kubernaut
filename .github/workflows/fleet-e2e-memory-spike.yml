@@ -86,7 +86,7 @@ jobs:
           podman stats --no-stream --format "table {{.Name}} {{.MemUsage}}" | tee -a memory-report.txt
           echo "" >> memory-report.txt
 
-      - name: Deploy mock MCP Gateway Pod
+      - name: Deploy mock MCP Gateway Pod (Envoy AI Gateway stub)
         run: |
           kubectl apply -f - <<EOF
           apiVersion: v1
