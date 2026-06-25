@@ -39,6 +39,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/security"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
+	"github.com/jordigilh/kubernaut/pkg/remediationrequest"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
@@ -235,7 +236,7 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 			RRID:      result.RRID,
 			Namespace: args.Namespace,
 			Kind:      args.Kind,
-			Target:    args.Name,
+			Target:    remediationrequest.FormatResourceDisplay(args.Kind, args.Name),
 			AlertName: result.SignalName,
 			Phase:     "Investigating",
 		})

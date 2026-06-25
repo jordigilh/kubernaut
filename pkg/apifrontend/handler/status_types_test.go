@@ -78,16 +78,34 @@ var _ = Describe("BuildPhaseMetadata", func() {
 		Expect(meta).To(HaveKey("block_message"))
 	})
 
-	It("UT-AF-1460-008a: AwaitingApproval phase returns approval_request_name", func() {
+	It("UT-AF-1493-006 (was UT-AF-1460-008a): AwaitingApproval phase returns approval_request_name with namespace prefix", func() {
 		rr := &remediationv1.RemediationRequest{
-			ObjectMeta: metav1.ObjectMeta{Name: "rr-approval-test"},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "rr-approval-test",
+				Namespace: "kubernaut-system",
+			},
 			Status: remediationv1.RemediationRequestStatus{
 				OverallPhase: remediationv1.PhaseAwaitingApproval,
 			},
 		}
 		meta := handler.BuildPhaseMetadata(rr, nil)
 		Expect(meta).To(HaveKey("approval_request_name"))
-		Expect(meta["approval_request_name"]).To(Equal("rar-rr-approval-test"))
+		Expect(meta["approval_request_name"]).To(Equal("kubernaut-system/rar-rr-approval-test"))
+	})
+
+	It("IT-AF-1493-002: namespace prefix flows through BuildPhaseMetadata for AwaitingApproval", func() {
+		rr := &remediationv1.RemediationRequest{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "rr-payment-fix",
+				Namespace: "payments",
+			},
+			Status: remediationv1.RemediationRequestStatus{
+				OverallPhase: remediationv1.PhaseAwaitingApproval,
+			},
+		}
+		meta := handler.BuildPhaseMetadata(rr, nil)
+		Expect(meta).To(HaveKey("approval_request_name"))
+		Expect(meta["approval_request_name"]).To(Equal("payments/rar-rr-payment-fix"))
 	})
 
 	It("UT-AF-1468-001: metadata contains investigation identity fields from RR spec (AU-3)", func() {
@@ -107,10 +125,14 @@ var _ = Describe("BuildPhaseMetadata", func() {
 
 		meta := handler.BuildPhaseMetadata(rr, nil)
 
-		Expect(meta).To(HaveKeyWithValue("namespace", "demo-storefront"))
-		Expect(meta).To(HaveKeyWithValue("target", "worker"))
-		Expect(meta).To(HaveKeyWithValue("kind", "Deployment"))
-		Expect(meta).To(HaveKeyWithValue("alert_name", "KubePodCrashLooping"))
+		Expect(meta).To(HaveKeyWithValue("namespace", "demo-storefront"),
+			"AU-3: namespace enables scoping audit records to the correct tenant boundary")
+		Expect(meta).To(HaveKeyWithValue("target", "Deployment/worker"),
+			"AU-3: target must use Kind/Name format so audit records unambiguously identify the resource without requiring namespace inference")
+		Expect(meta).To(HaveKeyWithValue("kind", "Deployment"),
+			"AU-3: kind preserved as a separate structured field for programmatic consumers")
+		Expect(meta).To(HaveKeyWithValue("alert_name", "KubePodCrashLooping"),
+			"AU-3: alert_name links the remediation to its triggering signal for causal traceability")
 	})
 
 	It("UT-AF-1468-002: empty spec fields are omitted from metadata (SI-10)", func() {
@@ -130,9 +152,11 @@ var _ = Describe("BuildPhaseMetadata", func() {
 
 		meta := handler.BuildPhaseMetadata(rr, nil)
 
-		Expect(meta).NotTo(HaveKey("namespace"), "cluster-scoped resources must not emit empty namespace")
+		Expect(meta).NotTo(HaveKey("namespace"),
+			"SI-10: cluster-scoped resources must not emit empty namespace to minimize data exposure")
 		Expect(meta).To(HaveKeyWithValue("kind", "Node"))
-		Expect(meta).To(HaveKeyWithValue("target", "node-1"))
+		Expect(meta).To(HaveKeyWithValue("target", "Node/node-1"),
+			"AU-3: cluster-scoped target still uses Kind/Name for unambiguous identification")
 		Expect(meta).To(HaveKeyWithValue("alert_name", "NodeNotReady"))
 	})
 
@@ -158,8 +182,10 @@ var _ = Describe("BuildPhaseMetadata", func() {
 
 		meta := handler.BuildPhaseMetadata(rr, nil)
 
-		Expect(meta).To(HaveKeyWithValue("namespace", "production"))
-		Expect(meta).To(HaveKeyWithValue("target", "api-server"))
+		Expect(meta).To(HaveKeyWithValue("namespace", "production"),
+			"AU-3: namespace present alongside phase fields for complete audit record")
+		Expect(meta).To(HaveKeyWithValue("target", "Deployment/api-server"),
+			"AU-3: Kind/Name target persists through phase transitions for continuous traceability")
 		Expect(meta).To(HaveKeyWithValue("kind", "Deployment"))
 		Expect(meta).To(HaveKeyWithValue("alert_name", "KubePodCrashLooping"))
 		Expect(meta).To(HaveKeyWithValue("workflow_id", "git-revert-v2"))

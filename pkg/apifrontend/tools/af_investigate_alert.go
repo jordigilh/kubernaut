@@ -19,6 +19,7 @@ import (
 	apiprom "github.com/jordigilh/kubernaut/pkg/apifrontend/prometheus"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
+	"github.com/jordigilh/kubernaut/pkg/remediationrequest"
 )
 
 // AlertISSignaler creates an InvestigationSession CRD to signal interactive
@@ -187,7 +188,7 @@ func HandleInvestigateAlert(
 		RRID:      result.RRID,
 		Namespace: args.Namespace,
 		Kind:      args.Kind,
-		Target:    args.Name,
+		Target:    remediationrequest.FormatResourceDisplay(args.Kind, args.Name),
 		AlertName: args.AlertName,
 		Phase:     "Investigating",
 	})

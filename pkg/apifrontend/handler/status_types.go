@@ -6,6 +6,7 @@ import (
 
 	eav1alpha1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/remediationrequest"
 )
 
 // StatusSubscribeRequest represents a JSON-RPC 2.0 status/subscribe request.
@@ -66,8 +67,9 @@ func BuildPhaseMetadata(rr *remediationv1.RemediationRequest, ea *eav1alpha1.Eff
 	if rr.Spec.TargetResource.Namespace != "" {
 		meta["namespace"] = rr.Spec.TargetResource.Namespace
 	}
-	if rr.Spec.TargetResource.Name != "" {
-		meta["target"] = rr.Spec.TargetResource.Name
+	if targetDisplay := remediationrequest.FormatResourceDisplay(
+		rr.Spec.TargetResource.Kind, rr.Spec.TargetResource.Name); targetDisplay != "" {
+		meta["target"] = targetDisplay
 	}
 	if rr.Spec.TargetResource.Kind != "" {
 		meta["kind"] = rr.Spec.TargetResource.Kind
@@ -114,7 +116,7 @@ func BuildPhaseMetadata(rr *remediationv1.RemediationRequest, ea *eav1alpha1.Eff
 
 	case remediationv1.PhaseAwaitingApproval:
 		rarName := fmt.Sprintf("rar-%s", rr.Name)
-		meta["approval_request_name"] = rarName
+		meta["approval_request_name"] = rr.Namespace + "/" + rarName
 
 	case remediationv1.PhaseCompleted:
 		if rr.Status.Outcome != "" {

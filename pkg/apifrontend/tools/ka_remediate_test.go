@@ -192,7 +192,8 @@ var _ = Describe("kubernaut_remediate (#1332 Intent-Based Tool Redesign)", func(
 					Expect(meta["namespace"]).To(Equal("prod"),
 						"AU-3: namespace must be present for audit trail correlation")
 					Expect(meta["kind"]).To(Equal("Deployment"))
-					Expect(meta["target"]).To(Equal("web-enriched"))
+					Expect(meta["target"]).To(Equal("Deployment/web-enriched"),
+						"AU-3: target must use Kind/Name format for unambiguous resource identification in audit trail")
 					Expect(meta["phase"]).To(Equal("Investigating"),
 						"SI-4: initial phase must be Investigating")
 				}

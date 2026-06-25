@@ -1125,6 +1125,33 @@ var _ = Describe("RR Context Enrichment — #1423 (AU-3, SI-4, SC-7)", func() {
 		})
 	})
 
+	Describe("Kind/Name target format — #1492 (AU-3: unambiguous resource identity)", func() {
+		It("IT-AF-1492-001: Kind/Name target propagates through RRContext to SSE metadata", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-1492-001", "ctx-1492-001", nil)
+
+			launcher.SetRRContextSafe(ctx, &launcher.RRContext{
+				RRID:      "rr-1492-001",
+				Namespace: "demo-gateway",
+				Kind:      "Deployment",
+				Target:    "Deployment/api-frontend",
+				AlertName: "ScalingLimited",
+				Phase:     "Investigating",
+			})
+
+			Expect(launcher.EmitStatusSafe(ctx, "Investigation starting...")).To(Succeed())
+			Expect(queue.events).To(HaveLen(1))
+
+			evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			Expect(evt.Metadata).To(HaveKeyWithValue("target", "Deployment/api-frontend"),
+				"AU-3: target in SSE metadata must use Kind/Name format so audit consumers can unambiguously identify the resource without namespace inference")
+			Expect(evt.Metadata).To(HaveKeyWithValue("kind", "Deployment"),
+				"SC-7: server-sourced kind field crosses the SSE boundary for structured consumers")
+			Expect(evt.Metadata).To(HaveKeyWithValue("namespace", "demo-gateway"),
+				"SC-7: server-sourced namespace prevents client-side guessing at the boundary")
+		})
+	})
+
 	Describe("Thread safety (SC-7: concurrent access protection)", func() {
 		It("UT-AF-1423-012: concurrent SetRRContext and EmitStatus do not race", func() {
 			queue := &fakeQueue{}
