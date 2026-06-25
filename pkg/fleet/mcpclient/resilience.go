@@ -189,6 +189,10 @@ func (rc *ResilientClient) reconnect(ctx context.Context) error {
 
 	old := rc.client.Load()
 	if old != nil {
+		if t := rc.findReloadableTransport(); t != nil {
+			t.InvalidateToken()
+			rc.logger.Info("OAuth2 token invalidated before reconnect")
+		}
 		_ = old.Close()
 	}
 
@@ -201,6 +205,21 @@ func (rc *ResilientClient) reconnect(ctx context.Context) error {
 	rc.client.Store(c)
 	rc.ready.Store(true)
 	rc.logger.Info("Reconnected to MCP Gateway")
+	return nil
+}
+
+// findReloadableTransport walks the option chain to find a ReloadableOAuth2Transport.
+func (rc *ResilientClient) findReloadableTransport() *ReloadableOAuth2Transport {
+	cfg := &clientConfig{}
+	for _, opt := range rc.opts {
+		opt(cfg)
+	}
+	if cfg.httpClient == nil || cfg.httpClient.Transport == nil {
+		return nil
+	}
+	if t, ok := cfg.httpClient.Transport.(*ReloadableOAuth2Transport); ok {
+		return t
+	}
 	return nil
 }
 
