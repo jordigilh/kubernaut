@@ -109,7 +109,7 @@ KA manages N connections, applies prefixes via `BridgeTool`, and handles per-ser
 
 #### MCP Gateway (Large Fleet, 10+ Clusters)
 
-KA connects to a single MCP Gateway endpoint. The gateway (Kuadrant / Red Hat Connectivity Link) aggregates per-cluster MCP servers, applies prefixes, and handles connection management.
+KA connects to a single MCP Gateway endpoint. The gateway (Envoy AI Gateway) aggregates per-cluster MCP servers, applies `{backendName}__{toolName}` prefixes, and handles connection management.
 
 ```
 KA ──▶ MCP Gateway ──▶ OCP MCP Server (cluster-a) ──▶ Cluster A K8s API
@@ -129,7 +129,7 @@ When using the MCP Gateway (v0.7.0+), KA uses the gateway's built-in meta-tools 
 | Meta-Tool | Purpose | Called By |
 |-----------|---------|-----------|
 | `discover_tools` | Lightweight catalog: server names, categories, hints, tool names | KA Go code |
-| `filter_tools_by_tags` | Filter tools by tags on `MCPServerRegistration` (e.g., `cluster:prod-east`) | KA Go code |
+| `filter_tools_by_tags` | Filter tools by tags on `Backend` CRD (e.g., `cluster:prod-east`) | KA Go code |
 | `select_tools` | Scope the MCP session to a chosen subset of tools | KA Go code |
 
 **Per-investigation flow with gateway:**
@@ -148,21 +148,20 @@ tools/list → 20 tools with JSON Schemas
 // 4. Bridge, strip prefix, build prompt, invoke LLM
 ```
 
-**No per-cluster configuration in KA.** The cluster-to-tag mapping lives on the gateway's `MCPServerRegistration` resources:
+**No per-cluster configuration in KA.** The cluster-to-tag mapping lives on the gateway's `Backend` resources:
 
 ```yaml
-apiVersion: mcp.kuadrant.io/v1alpha1
-kind: MCPServerRegistration
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: Backend
 metadata:
   name: prod-east
+  labels:
+    cluster: prod-east
 spec:
-  prefix: "prod_east_"
-  category: ["kubernetes", "openshift"]
-  hint: "OCP MCP server for production-east cluster"
-  tags: ["cluster:prod-east", "env:production", "region:us-east"]
-  targetRef:
-    kind: HTTPRoute
-    name: prod-east-route
+  endpoints:
+    - fqdn:
+        hostname: k8s-mcp-server.prod-east.svc
+        port: 8080
 ```
 
 Adding or removing clusters is a gateway-side operation. KA is untouched.
@@ -248,7 +247,7 @@ LLM uses discovery meta-tools as part of the investigation prompt.
 
 KA maintains a ConfigMap mapping cluster names to MCP prefixes.
 
-**Rejected for gateway topology**: Requires per-cluster config in KA, negating gateway's "zero KA config" benefit. The gateway's `tags` on `MCPServerRegistration` serve as the mapping.
+**Rejected for gateway topology**: Requires per-cluster config in KA, negating gateway's "zero KA config" benefit. The gateway's labels on `Backend` CRDs serve as the mapping.
 
 **Acceptable for direct topology**: When not using a gateway, the `MCPServerBinding` CRD (v1.6) carries the prefix alongside the connection URL.
 
@@ -269,7 +268,7 @@ KA maintains a ConfigMap mapping cluster names to MCP prefixes.
 
 This ADR supersedes portions of **ADR-064**:
 - ADR-064 deferred the MCP Gateway to v1.6+. This ADR retains that timeline but adds the programmatic discovery approach and the `MCPServerBinding` CRD evolution path.
-- ADR-064's `ClusterResolver` ConfigMap is replaced by gateway `tags` for the gateway topology and by the `MCPServerBinding` CRD for the direct topology.
+- ADR-064's `ClusterResolver` ConfigMap is replaced by gateway `Backend` CRD labels for the gateway topology and by the `MCPServerBinding` CRD for the direct topology.
 - ADR-064's Alternative C (direct connections) is no longer rejected -- it is supported as a valid small-fleet topology alongside the gateway.
 
 ---
@@ -280,11 +279,9 @@ This ADR supersedes portions of **ADR-064**:
 - ADR-065: Fleet Cluster Identity on RR
 - Spike 3: KA MCP Client (`docs/spikes/multi-cluster-mcp-gateway/spike-3-ka-mcp-client.md`)
 - Spike 4: Cluster Routing (`docs/spikes/multi-cluster-mcp-gateway/spike-4-cluster-routing.md`)
-- MCP Gateway Tool Discovery: https://docs.kuadrant.io/dev/mcp-gateway/docs/guides/tool-discovery/
-- MCPServerRegistration CRD: https://docs.kuadrant.io/dev/mcp-gateway/docs/reference/mcpserverregistration/
+- Envoy AI Gateway MCP: https://aigateway.envoyproxy.io/docs/capabilities/mcp/
 - OCP MCP Server: https://github.com/openshift/openshift-mcp-server
-- Kuadrant MCP Gateway: https://github.com/Kuadrant/mcp-gateway
-- Red Hat Connectivity Link 1.4: https://docs.redhat.com/en/documentation/red_hat_connectivity_link/1.4/html/registering_mcp_servers_and_creating_policies/mcp-gateway-register-on-prem-mcp-servers
+- Envoy AI Gateway: https://github.com/envoyproxy/ai-gateway
 
 ---
 

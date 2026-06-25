@@ -1,20 +1,42 @@
-# MCPServerRegistration CRD instance for the local Kind cluster.
+# Envoy AI Gateway MCPRoute + Backend for the local Kind cluster.
 # This registers the K8s MCP Server running on the hub cluster with
-# the Kuadrant MCP Gateway, making its tools discoverable via tools/list.
+# the Envoy AI Gateway, making its tools discoverable via tools/list
+# with the {backendName}__{toolName} prefix convention.
 #
 # In multi-cluster setups, each managed cluster would have its own
-# MCPServerRegistration with a unique name and endpoint.
-apiVersion: mcp.kuadrant.io/v1alpha1
-kind: MCPServerRegistration
+# Backend + backendRef entry in the MCPRoute.
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: Backend
 metadata:
   name: hub-cluster
   namespace: kubernaut-system
   labels:
     kubernaut.ai/managed: "true"
     app.kubernetes.io/part-of: kubernaut
+  annotations:
+    kubernaut.ai/cluster-name: "Hub Cluster (local)"
 spec:
-  endpoint: http://k8s-mcp-server.kubernaut-system.svc:8080
-  displayName: "Hub Cluster (local)"
-  metadata:
-    environment: development
-    provider: kind
+  endpoints:
+    - fqdn:
+        hostname: k8s-mcp-server.kubernaut-system.svc
+        port: 8080
+---
+apiVersion: aigateway.envoyproxy.io/v1beta1
+kind: MCPRoute
+metadata:
+  name: kubernaut-fleet
+  namespace: kubernaut-system
+  labels:
+    app.kubernetes.io/part-of: kubernaut
+spec:
+  parentRefs:
+    - name: aigw
+      kind: Gateway
+      group: gateway.networking.k8s.io
+  path: "/mcp"
+  backendRefs:
+    - name: hub-cluster
+      kind: Backend
+      group: gateway.envoyproxy.io
+      path: "/mcp"

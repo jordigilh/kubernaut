@@ -1,5 +1,9 @@
 # Spike: AAP MCP Server as Unified Ansible Execution Channel
 
+> **Note**: This spike references Kuadrant MCP Gateway. The project has since switched
+> to **Envoy AI Gateway** (see ADR-068). The AAP MCP Server findings remain valid --
+> only the gateway infrastructure has changed.
+
 **Date**: 2026-06-18
 **Status**: GO -- AAP MCP server works as a third execution engine alongside K8s Jobs and Tekton
 **Cluster**: OCP 4.21 (dev.redhat-internal.com), AAP 2.5 (controller v4.6.21)

@@ -181,37 +181,29 @@ If SPIRE is not present:
 
 **Severity**: Decision needed (depends on OCP environment)
 
-Kagenti includes an MCP Gateway (Kuadrant/mcp-gateway, Envoy-based) for cluster-wide
-MCP tool discovery and routing. If present, the API Frontend's tools should be registered:
+Kagenti includes an MCP Gateway (Envoy AI Gateway) for cluster-wide MCP tool
+discovery and routing. If present, the API Frontend's tools should be registered
+as a Backend + MCPRoute backendRef:
 
 ```yaml
-# HTTPRoute — route MCP traffic to API Frontend
-apiVersion: gateway.networking.k8s.io/v1
-kind: HTTPRoute
-metadata:
-  name: kubernaut-apifrontend-mcp
-  labels:
-    mcp-server: "true"
-spec:
-  parentRefs:
-    - name: mcp-gateway
-      namespace: gateway-system
-  rules:
-    - backendRefs:
-        - name: kubernaut-apifrontend
-          port: 8443
-
-# MCPServerRegistration — register tools with gateway
-apiVersion: mcp.kagenti.com/v1alpha1
-kind: MCPServerRegistration
+# Backend — API Frontend as an MCP server endpoint
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: Backend
 metadata:
   name: kubernaut-tools
+  namespace: kubernaut-system
 spec:
-  toolPrefix: kubernaut_
-  targetRef:
-    group: gateway.networking.k8s.io
-    kind: HTTPRoute
-    name: kubernaut-apifrontend-mcp
+  endpoints:
+    - fqdn:
+        hostname: kubernaut-apifrontend.kubernaut-system.svc
+        port: 8443
+
+# MCPRoute backendRef — register tools with gateway
+# Add this to the existing MCPRoute's spec.backendRefs:
+#   - name: kubernaut-tools
+#     kind: Backend
+#     group: gateway.envoyproxy.io
+#     path: "/mcp"
 ```
 
 **Decision status**: Open — depends on whether MCP Gateway is deployed in target OCP.
@@ -259,4 +251,4 @@ app.kubernetes.io/part-of: kubernaut            # Parent application
 - [Google ADK Go — A2A Quickstart](https://google.github.io/adk-docs/a2a/quickstart-exposing-go/) — Exposing agents via A2A
 - [ADK Go — A2A Launcher](https://github.com/google/adk-go/blob/main/cmd/launcher/web/a2a/a2a.go) — Agent Card auto-generation
 - [A2A Protocol](https://a2aprotocol.ai/) — Agent Card specification
-- [Kuadrant MCP Gateway](https://github.com/Kuadrant/mcp-gateway) — MCP tool routing
+- [Envoy AI Gateway](https://aigateway.envoyproxy.io/docs/capabilities/mcp/) — MCP tool routing
