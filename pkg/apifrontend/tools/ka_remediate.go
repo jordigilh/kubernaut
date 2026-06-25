@@ -14,6 +14,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
+	"github.com/jordigilh/kubernaut/pkg/remediationrequest"
 )
 
 // RemediateArgs defines the LLM-supplied input for kubernaut_remediate.
@@ -92,7 +93,7 @@ func HandleRemediate(ctx context.Context, client crclient.Client, dynClient dyna
 		RRID:      result.RRID,
 		Namespace: args.Namespace,
 		Kind:      args.Kind,
-		Target:    args.Name,
+		Target:    remediationrequest.FormatResourceDisplay(args.Kind, args.Name),
 		AlertName: result.SignalName,
 		Phase:     "Investigating",
 	})

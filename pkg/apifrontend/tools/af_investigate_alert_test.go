@@ -509,7 +509,8 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 					Expect(meta["namespace"]).To(Equal("demo-gateway"),
 						"AU-3: namespace must be present for audit trail correlation")
 					Expect(meta["kind"]).To(Equal("Deployment"))
-					Expect(meta["target"]).To(Equal("api-frontend"))
+					Expect(meta["target"]).To(Equal("Deployment/api-frontend"),
+						"AU-3: target must use Kind/Name format for unambiguous resource identification in audit trail")
 					Expect(meta["alert_name"]).To(Equal("ScalingLimited"),
 						"AU-3: alert_name must match the triggering alert")
 					Expect(meta["phase"]).To(Equal("Investigating"),
