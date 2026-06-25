@@ -212,6 +212,62 @@ var _ = Describe("WriterClient (BR-FLEET-054)", func() {
 		})
 	})
 
+	Describe("UT-WE-054-003 [AC-3]: WriterClient.Update serializes and routes update to correct remote cluster via MCP gateway (BR-INTEGRATION-054)", func() {
+		It("sends an updated Job object via resources_create_or_update", func() {
+			gw = mockgw.NewMockGateway(mockgw.WithMultiCluster("prod-east"))
+
+			parentClient, err := mcpclient.New(ctx, gw.URL())
+			Expect(err).ToNot(HaveOccurred())
+			defer parentClient.Close()
+
+			writer := mcpclient.NewWriterFromSession(parentClient.Session(), "prod-east")
+
+			job := &batchv1.Job{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "wfe-update-me",
+					Namespace: "kubernaut-workflows",
+					Labels:    map[string]string{"version": "v2"},
+				},
+				Spec: batchv1.JobSpec{
+					Template: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							RestartPolicy: corev1.RestartPolicyNever,
+							Containers: []corev1.Container{
+								{Name: "workflow", Image: "busybox:v2"},
+							},
+						},
+					},
+				},
+			}
+			job.SetGroupVersionKind(batchv1.SchemeGroupVersion.WithKind("Job"))
+
+			err = writer.Update(ctx, job)
+			Expect(err).ToNot(HaveOccurred())
+
+			calls := gw.CallLog()
+			var found bool
+			for _, call := range calls {
+				if call.ToolName == "prod-east__resources_create_or_update" {
+					found = true
+					var args map[string]interface{}
+					Expect(json.Unmarshal(call.Arguments, &args)).To(Succeed())
+					Expect(args).To(HaveKey("manifest"))
+
+					manifestStr, ok := args["manifest"].(string)
+					Expect(ok).To(BeTrue(), "manifest must be a JSON string")
+
+					var manifest map[string]interface{}
+					Expect(json.Unmarshal([]byte(manifestStr), &manifest)).To(Succeed())
+					Expect(manifest["metadata"].(map[string]interface{})["name"]).To(Equal("wfe-update-me"))
+					Expect(manifest["metadata"].(map[string]interface{})["labels"].(map[string]interface{})["version"]).To(Equal("v2"))
+					break
+				}
+			}
+			Expect(found).To(BeTrue(),
+				"WriterClient.Update must call {clusterID}__resources_create_or_update")
+		})
+	})
+
 	Describe("WriterClient compile-time interface compliance", func() {
 		It("satisfies ResourceWriter interface", func() {
 			var _ mcpclient.ResourceWriter = (*mcpclient.WriterClient)(nil)
