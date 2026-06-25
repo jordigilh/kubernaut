@@ -600,6 +600,97 @@ var _ = Describe("AlignmentCheck EffectiveLLM merge — BR-AI-601", func() {
 	})
 })
 
+var _ = Describe("ShutdownConfig — BR-PLATFORM-1329", func() {
+
+	Describe("UT-KA-1329-001: runtime.shutdown.drainSeconds YAML round-trip (CM-6)", func() {
+		It("should parse drainSeconds from YAML", func() {
+			yaml := []byte(`
+runtime:
+  shutdown:
+    drainSeconds: 45
+  session:
+    ttl: 30m
+`)
+			cfg, err := config.Load(yaml)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(cfg.Runtime.Shutdown.DrainSeconds).To(Equal(45),
+				"CM-6: shutdown drain duration must be configurable via YAML config")
+		})
+	})
+
+	Describe("UT-KA-1329-002: DefaultConfig sets drainSeconds to 30 (CM-6)", func() {
+		It("should default to 30s matching operator default", func() {
+			cfg := config.DefaultConfig()
+			Expect(cfg.Runtime.Shutdown.DrainSeconds).To(Equal(30),
+				"CM-6: default drain duration must match operator default of 30s")
+		})
+	})
+
+	Describe("UT-KA-1329-003: Validate rejects drainSeconds <= 0 (SC-5)", func() {
+		It("should reject zero drainSeconds", func() {
+			cfg := config.DefaultConfig()
+			cfg.Runtime.Shutdown.DrainSeconds = 0
+			err := cfg.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("runtime.shutdown.drainSeconds"),
+				"SC-5: invalid drain duration must be rejected to prevent premature termination")
+		})
+
+		It("should reject negative drainSeconds", func() {
+			cfg := config.DefaultConfig()
+			cfg.Runtime.Shutdown.DrainSeconds = -5
+			err := cfg.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("runtime.shutdown.drainSeconds"))
+		})
+
+		It("should reject drainSeconds exceeding operator max of 300", func() {
+			cfg := config.DefaultConfig()
+			cfg.Runtime.Shutdown.DrainSeconds = 301
+			err := cfg.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("must not exceed 300"))
+		})
+
+		It("should accept drainSeconds at operator max boundary", func() {
+			cfg := config.DefaultConfig()
+			cfg.Runtime.Shutdown.DrainSeconds = 300
+			Expect(cfg.Validate()).To(Succeed())
+		})
+	})
+})
+
+var _ = Describe("LoggingConfig Format — BR-PLATFORM-1330", func() {
+
+	Describe("UT-KA-1330-005: runtime.logging.format YAML round-trip (CM-6)", func() {
+		It("should parse format from YAML", func() {
+			yaml := []byte(`
+runtime:
+  logging:
+    level: INFO
+    format: console
+  session:
+    ttl: 30m
+`)
+			cfg, err := config.Load(yaml)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(cfg.Runtime.Logging.Format).To(Equal("console"),
+				"CM-6: log format must be configurable via YAML config")
+		})
+	})
+
+	Describe("UT-KA-1330-006: KA Validate delegates format validation (CM-6)", func() {
+		It("should reject invalid format via shared LoggingConfig.Validate", func() {
+			cfg := config.DefaultConfig()
+			cfg.Runtime.Logging.Format = "yaml"
+			err := cfg.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("log format"),
+				"CM-6: invalid format must be rejected by validation")
+		})
+	})
+})
+
 var _ = Describe("Config.Validate — GAP-C3 (#954)", func() {
 	DescribeTable("should reject invalid config values",
 		func(mutate func(*config.Config), substr string) {
@@ -639,6 +730,12 @@ var _ = Describe("Config.Validate — GAP-C3 (#954)", func() {
 			c.AI.AlignmentCheck.Enabled = true
 			c.AI.AlignmentCheck.MaxRetries = -1
 		}, "maxRetries"),
+		Entry("shutdown drainSeconds=0", func(c *config.Config) {
+			c.Runtime.Shutdown.DrainSeconds = 0
+		}, "drainSeconds"),
+		Entry("shutdown drainSeconds=301 exceeds max", func(c *config.Config) {
+			c.Runtime.Shutdown.DrainSeconds = 301
+		}, "drainSeconds"),
 	)
 
 	It("should accept DefaultConfig as valid", func() {
