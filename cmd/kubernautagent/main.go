@@ -118,10 +118,16 @@ func main() {
 	}
 
 	atomicLevel := cfg.Runtime.Logging.NewAtomicLevel()
-	logger = kubelog.NewLoggerWithAtomicLevel(kubelog.Options{ServiceName: "kubernaut-agent"}, atomicLevel)
+	logger = kubelog.NewLoggerWithAtomicLevel(kubelog.Options{
+		ServiceName: "kubernaut-agent",
+		Development: cfg.Runtime.Logging.IsConsoleFormat(),
+	}, atomicLevel)
 	defer kubelog.Sync(logger)
 
-	logger.Info("log level configured", "level", cfg.Runtime.Logging.Level)
+	logger.Info("logging configured",
+		"level", cfg.Runtime.Logging.Level,
+		"format", cfg.Runtime.Logging.Format,
+	)
 
 	llmRtData, err := os.ReadFile(llmRuntimePath)
 	if err != nil {
@@ -645,7 +651,7 @@ func main() {
 	logger.Info("shutting down...")
 	mgr.Shutdown()
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout(cfg))
 	defer cancel()
 
 	if sessionDrainer != nil {
@@ -659,6 +665,13 @@ func main() {
 	eventEmitter.Shutdown()
 	logger.Info("flushing audit store...")
 	auditCleanup()
+}
+
+func shutdownTimeout(cfg *kaconfig.Config) time.Duration {
+	if cfg.Runtime.Shutdown.DrainSeconds > 0 {
+		return time.Duration(cfg.Runtime.Shutdown.DrainSeconds) * time.Second
+	}
+	return 30 * time.Second
 }
 
 func shutdownServer(ctx context.Context, srv *http.Server, name string, logger logr.Logger) {

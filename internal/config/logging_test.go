@@ -93,6 +93,63 @@ var _ = Describe("Shared LoggingConfig — BR-PLATFORM-875", func() {
 		)
 	})
 
+	Describe("UT-CFG-1330-001: DefaultLoggingConfig returns Format json (AU-3)", func() {
+		It("should default to json for machine-parseable audit trail", func() {
+			cfg := config.DefaultLoggingConfig()
+			Expect(cfg.Format).To(Equal("json"),
+				"AU-3: default log format must be JSON for structured audit records")
+		})
+	})
+
+	Describe("UT-CFG-1330-002: Validate accepts valid formats, rejects invalid (CM-3)", func() {
+		DescribeTable("valid formats",
+			func(format string) {
+				cfg := config.LoggingConfig{Level: "INFO", Format: format}
+				Expect(cfg.Validate()).To(Succeed())
+			},
+			Entry("json", "json"),
+			Entry("console", "console"),
+			Entry("JSON (case-insensitive)", "JSON"),
+			Entry("Console (case-insensitive)", "Console"),
+			Entry("empty (backward compat)", ""),
+		)
+
+		DescribeTable("invalid formats",
+			func(format string) {
+				cfg := config.LoggingConfig{Level: "INFO", Format: format}
+				err := cfg.Validate()
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("log format"))
+			},
+			Entry("yaml", "yaml"),
+			Entry("text", "text"),
+			Entry("logfmt", "logfmt"),
+			Entry("XML", "XML"),
+		)
+	})
+
+	Describe("UT-CFG-1330-003: IsConsoleFormat returns correct boolean (AU-3)", func() {
+		DescribeTable("format detection",
+			func(format string, expected bool) {
+				cfg := config.LoggingConfig{Format: format}
+				Expect(cfg.IsConsoleFormat()).To(Equal(expected))
+			},
+			Entry("console -> true", "console", true),
+			Entry("CONSOLE -> true (case-insensitive)", "CONSOLE", true),
+			Entry("json -> false", "json", false),
+			Entry("JSON -> false (case-insensitive)", "JSON", false),
+			Entry("empty -> false (default JSON)", "", false),
+		)
+	})
+
+	Describe("UT-CFG-1330-004: empty Format defaults to JSON behavior (AU-3)", func() {
+		It("should treat empty format as JSON", func() {
+			cfg := config.LoggingConfig{Format: ""}
+			Expect(cfg.IsConsoleFormat()).To(BeFalse(),
+				"AU-3: empty format must default to JSON for production audit compliance")
+		})
+	})
+
 	Describe("UT-CFG-875-007: ParseAndSetLevel hot-reload helper", func() {
 		It("should update AtomicLevel from INFO to DEBUG", func() {
 			al := zap.NewAtomicLevelAt(zapcore.InfoLevel)

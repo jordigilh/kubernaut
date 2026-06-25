@@ -15,12 +15,13 @@ import (
 // changing log level requires configmaps write access, not deployments.
 // Combined with hot-reload, level changes take effect without pod restarts.
 type LoggingConfig struct {
-	Level string `yaml:"level"` // DEBUG, INFO, WARN, ERROR
+	Level  string `yaml:"level"`            // DEBUG, INFO, WARN, ERROR
+	Format string `yaml:"format,omitempty"` // json, console
 }
 
 // DefaultLoggingConfig returns production defaults.
 func DefaultLoggingConfig() LoggingConfig {
-	return LoggingConfig{Level: "INFO"}
+	return LoggingConfig{Level: "INFO", Format: "json"}
 }
 
 // ValidLevels contains the accepted log level strings.
@@ -31,15 +32,28 @@ var ValidLevels = map[string]bool{
 	"ERROR": true,
 }
 
-// Validate checks that the configured level is recognised.
+// ValidFormats contains the accepted log format strings.
+var ValidFormats = map[string]bool{
+	"json":    true,
+	"console": true,
+}
+
+// Validate checks that the configured level and format are recognised.
 func (l LoggingConfig) Validate() error {
-	if l.Level == "" {
-		return nil
-	}
-	if !ValidLevels[strings.ToUpper(l.Level)] {
+	if l.Level != "" && !ValidLevels[strings.ToUpper(l.Level)] {
 		return fmt.Errorf("invalid log level: %s (must be DEBUG, INFO, WARN, or ERROR)", l.Level)
 	}
+	if l.Format != "" && !ValidFormats[strings.ToLower(l.Format)] {
+		return fmt.Errorf("invalid log format: %s (must be json or console)", l.Format)
+	}
 	return nil
+}
+
+// IsConsoleFormat returns true when the configured format is "console",
+// which maps to human-readable development-mode output. Returns false
+// for "json", empty string (default), or any other value.
+func (l LoggingConfig) IsConsoleFormat() bool {
+	return strings.ToLower(l.Format) == "console"
 }
 
 // ZapLevel converts the configured level string to a zapcore.Level.
