@@ -86,6 +86,17 @@ func LoadOAuth2ConfigFromFiles(tokenURLPath, clientIDPath, clientSecretPath stri
 	}, nil
 }
 
+// DefaultFleetScopes returns the provided scopes if non-empty, or the
+// minimal default scopes ["openid", "groups"] required for service identity
+// tokens. The "groups" scope is needed for DEX to include role-bearing claims
+// (mcp-read, mcp-write) used by the gateway's CEL authorization rules.
+func DefaultFleetScopes(scopes []string) []string {
+	if len(scopes) > 0 {
+		return scopes
+	}
+	return []string{"openid", "groups"}
+}
+
 func readTrimmedFile(path string) (string, error) {
 	data, err := os.ReadFile(path) //nolint:gosec // paths are from trusted config, not user input
 	if err != nil {

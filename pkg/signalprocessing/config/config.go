@@ -69,9 +69,10 @@ type FleetConfig struct {
 
 // FleetOAuth2 holds OAuth2 credentials for MCP Gateway authentication.
 type FleetOAuth2 struct {
-	Enabled              bool   `yaml:"enabled"`
-	TokenURL             string `yaml:"tokenURL"`
-	CredentialsSecretRef string `yaml:"credentialsSecretRef"`
+	Enabled              bool     `yaml:"enabled"`
+	TokenURL             string   `yaml:"tokenURL"`
+	CredentialsSecretRef string   `yaml:"credentialsSecretRef"`
+	Scopes               []string `yaml:"scopes,omitempty"`
 }
 
 // EnrichmentConfig holds settings for K8s context enrichment.
@@ -161,6 +162,15 @@ func (c *Config) Validate() error {
 	// ADR-030: Validate DataStorage section
 	if err := sharedconfig.ValidateDataStorageConfig(&c.DataStorage); err != nil {
 		return err
+	}
+
+	if c.Fleet.OAuth2.Enabled {
+		if c.Fleet.OAuth2.TokenURL == "" {
+			return fmt.Errorf("fleet.oauth2.tokenURL is required when oauth2.enabled=true")
+		}
+		if c.Fleet.OAuth2.CredentialsSecretRef == "" {
+			return fmt.Errorf("fleet.oauth2.credentialsSecretRef is required when oauth2.enabled=true")
+		}
 	}
 
 	// Issue #875: Logging validation

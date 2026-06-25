@@ -87,9 +87,10 @@ type FleetConfig struct {
 
 // FleetOAuth2 holds OAuth2 client credentials for MCP Gateway authentication.
 type FleetOAuth2 struct {
-	Enabled              bool   `yaml:"enabled"`
-	TokenURL             string `yaml:"tokenURL"`
-	CredentialsSecretRef string `yaml:"credentialsSecretRef"`
+	Enabled              bool     `yaml:"enabled"`
+	TokenURL             string   `yaml:"tokenURL"`
+	CredentialsSecretRef string   `yaml:"credentialsSecretRef"`
+	Scopes               []string `yaml:"scopes,omitempty"`
 }
 
 
@@ -589,6 +590,14 @@ func (c *Config) Validate() error {
 	}
 	if err := validateTLSCertPair("ai.llm", c.AI.LLM.TLSCertFile, c.AI.LLM.TLSKeyFile, c.AI.LLM.TLSCaFile); err != nil {
 		return err
+	}
+	if c.Integrations.Fleet.OAuth2.Enabled {
+		if c.Integrations.Fleet.OAuth2.TokenURL == "" {
+			return fmt.Errorf("integrations.fleet.oauth2.tokenURL is required when oauth2.enabled=true")
+		}
+		if c.Integrations.Fleet.OAuth2.CredentialsSecretRef == "" {
+			return fmt.Errorf("integrations.fleet.oauth2.credentialsSecretRef is required when oauth2.enabled=true")
+		}
 	}
 	if c.Runtime.Server.RateLimit.RequestsPerSecond <= 0 {
 		return fmt.Errorf("runtime.server.rateLimit.requestsPerSecond must be positive, got %v", c.Runtime.Server.RateLimit.RequestsPerSecond)
