@@ -1,0 +1,124 @@
+# Test Plan: Fleet OAuth2 Auth + E2E Lane (BR-INTEGRATION-054, BR-INTEGRATION-065)
+
+**Issue**: #54
+**ADR**: [ADR-068-fleet-federation-architecture](../../architecture/decisions/ADR-068-fleet-federation-architecture.md)
+**Branch**: `feature/multi-cluster-federation`
+**Created**: 2026-06-25
+**Status**: Draft
+
+---
+
+## Overview
+
+This test plan covers Phases 2 and 3 of the fleet federation authentication and E2E infrastructure:
+
+- **Phase 2**: Wire OAuth2 `client_credentials` grant for SP, fix hardcoded scopes in KA/WE
+- **Phase 3**: Fleet E2E Lane with real EAIGW + K8s MCP Server in Kind, DEX `client_credentials`, SP remote enrichment E2E, auth rejection handling
+
+### Business Requirements
+
+- **BR-INTEGRATION-054**: SP remote enrichment via MCP Gateway -- services authenticate with the MCP Gateway using OAuth2 client_credentials grant to access remote K8s cluster data
+- **BR-INTEGRATION-065**: Multi-cluster federation scope gating -- each service identity carries scoped claims; the gateway enforces per-cluster authorization via CEL rules
+
+### Authority
+
+- [ADR-068: Fleet Federation Architecture](../../architecture/decisions/ADR-068-fleet-federation-architecture.md)
+- [ADR-065: Fleet Cluster Identity on RR](../../architecture/decisions/ADR-065-fleet-cluster-identity-on-rr.md)
+
+---
+
+## FedRAMP Control Mapping
+
+Tests in this plan provide behavioral assurance for the following NIST 800-53 controls (per ADR-068 FedRAMP Implications):
+
+| Control | Title | Relevance |
+|---------|-------|-----------|
+| **AC-3** | Access Enforcement | Gateway CEL authorization rules enforce `mcp-read` vs `mcp-write` per service identity. IT tests prove the IdP issues role-bearing tokens and unauthorized callers are rejected. |
+| **AC-6** | Least Privilege | K8s MCP Server SA has scoped RBAC; service scopes are operator-configurable. IT tests prove scopes are read from config, not hardcoded. |
+| **AU-3** | Audit Content | Cluster provenance recorded per-RR. E2E test proves `status.clusterID` is set after cross-cluster enrichment. |
+| **IA-5** | Authenticator Management | Hot-reloadable credentials, bounded token lifetime. UT tests prove default scopes enforce minimal permissions and config validation rejects misconfigured deployments. |
+| **SC-7** | Boundary Protection | MCP Gateway as single chokepoint for all remote cluster access. IT/E2E tests prove all tool calls route through the gateway with namespace isolation. |
+| **SC-8** | Transmission Confidentiality | OAuth2 + TLS for all MCP connections. UT tests prove token requests include correct grant type and configured scopes. |
+| **SI-4** | Monitoring | Cross-cluster correlation via ClusterID. E2E test records cluster provenance. |
+| **SI-10** | Input Validation | MCP response parser handles all K8s MCP Server response formats safely. UT tests cover all parsing branches including malformed input. |
+
+---
+
+## Test Scenario Inventory
+
+### Core Plan Tests
+
+| ID | Tier | Business-Level Behavior Description | Control | BR | Test File |
+|----|------|-------------------------------------|---------|-----|-----------|
+| UT-FLEET-SCOPE-001 | UT | [IA-5] Service identity requests minimal scopes by default, ensuring no over-permissioned tokens are issued | IA-5 | BR-INTEGRATION-054 | `pkg/fleet/mcpclient/auth_scope_test.go` |
+| UT-FLEET-SCOPE-002 | UT | [SC-8] Token request includes only the configured scopes and correct grant type, preventing credential scope escalation | SC-8 | BR-INTEGRATION-054 | `pkg/fleet/mcpclient/auth_scope_test.go` |
+| IT-SP-054-OAuth2 | IT | [SC-7] SP authenticates to the MCP Gateway before accessing remote cluster data, proving boundary protection is enforced for every cross-cluster call | SC-7 | BR-INTEGRATION-054 | `test/integration/signalprocessing/fleet/sp_fleet_auth_test.go` |
+| IT-FLEET-006 | IT | [AC-6] Service scopes are operator-configurable (not hardcoded), enabling least-privilege enforcement per deployment | AC-6 | BR-INTEGRATION-065 | `test/integration/kubernautagent/fleet/fleet_wiring_test.go` |
+| IT-FLEET-EAIGW-001 | IT | [SC-7] All remote cluster tool calls are routed through the gateway chokepoint with per-cluster namespace isolation | SC-7 | BR-INTEGRATION-054 | `test/integration/kubernautagent/fleet/fleet_eaigw_test.go` |
+| IT-FLEET-DEXCC-001 | IT | [AC-3] IdP issues service identity tokens with role-bearing claims that distinguish read-only from write-capable services | AC-3 | BR-INTEGRATION-054 | `test/integration/kubernautagent/fleet/fleet_dex_cc_test.go` |
+| IT-FLEET-AUTH-REJECT-001 | IT | [AC-3] Unauthorized callers are rejected at the gateway boundary and the client surfaces the denial (not silent pass-through) | AC-3 | BR-INTEGRATION-065 | `test/integration/kubernautagent/fleet/fleet_wiring_test.go` |
+| E2E-FLEET-SP-001 | E2E | [SC-7] Fleet infrastructure deploys with the gateway as the sole entry point for remote cluster access | SC-7 | BR-INTEGRATION-054 | `test/e2e/signalprocessing/fleet_infra_test.go` |
+| E2E-SP-054-REMOTE | E2E | [AU-3] SP enriches an RR with remote cluster context and records cluster provenance, proving the full authenticated cross-cluster journey | AU-3, SC-7 | BR-INTEGRATION-054 | `test/e2e/signalprocessing/fleet_enrichment_test.go` |
+
+### Coverage-Gap Tests (Business Logic Completeness)
+
+| ID | Tier | Business-Level Behavior Description | Control | BR | Test File |
+|----|------|-------------------------------------|---------|-----|-----------|
+| UT-SP-054-CFG-001 | UT | [IA-5] SP FleetOAuth2 config parses, validates, and defaults correctly at startup, rejecting misconfigured deployments before runtime | IA-5 | BR-INTEGRATION-054 | `pkg/signalprocessing/config/config_test.go` |
+| UT-WE-054-CFG-001 | UT | [IA-5] WE FleetOAuth2 config parses, validates, and defaults correctly at startup | IA-5 | BR-INTEGRATION-054 | `pkg/workflowexecution/config/config_test.go` |
+| UT-KA-054-CFG-001 | UT | [IA-5] KA FleetOAuth2 config parses scopes from YAML and applies safe defaults when omitted | IA-5 | BR-INTEGRATION-054 | `internal/kubernautagent/config/config_test.go` |
+| UT-FLEET-RES-006 | UT | [AC-3] Resilience layer correctly classifies all retryable error patterns (401, session loss, connection reset, EOF, connection refused) and rejects non-retryable errors | AC-3 | BR-INTEGRATION-065 | `pkg/fleet/mcpclient/resilience_test.go` |
+| UT-FLEET-PARSE-001 | UT | [SI-10] MCP response parser handles all K8s MCP Server response formats: empty text, single object, list with items key, raw JSON array, and invalid JSON | SI-10 | BR-INTEGRATION-054 | `pkg/fleet/mcpclient/parse_test.go` |
+| UT-FLEET-PARSE-002 | UT | [SI-10] ExtractText extracts text content from MCP results and falls back to JSON serialization for non-text content types | SI-10 | BR-INTEGRATION-054 | `pkg/fleet/mcpclient/parse_test.go` |
+| UT-FLEET-TOOL-001 | UT | [SC-7] ClusterTool constructs the correct gateway-prefixed tool name for multi-cluster routing | SC-7 | BR-INTEGRATION-054 | `pkg/fleet/mcpclient/tool_names_test.go` |
+| UT-FLEET-AUTH-006 | UT | [IA-5] LoadOAuth2ConfigFromFiles rejects missing clientID and missing clientSecret files with actionable error messages | IA-5 | BR-INTEGRATION-065 | `pkg/fleet/mcpclient/auth_test.go` |
+| UT-WE-054-003 | UT | [AC-3] WriterClient.Update serializes and routes the update to the correct remote cluster via MCP gateway | AC-3 | BR-INTEGRATION-054 | `pkg/fleet/mcpclient/writer_test.go` |
+
+### Deferred Tests (Depends on ADR-068 Phase 3 / Spike S11)
+
+| ID | Tier | Business-Level Behavior Description | Control | BR | Status |
+|----|------|-------------------------------------|---------|-----|--------|
+| E2E-WE-065-REMOTE | E2E | [AC-3, SC-7] WE executes remediation workflows on a remote cluster through the MCP Gateway using write-scoped credentials | AC-3, SC-7 | BR-INTEGRATION-065 | Not Implemented -- depends on WriterClient, ClientFactory, executor refactoring |
+
+---
+
+## Coverage Targets
+
+| Tier | Target | Projected |
+|------|--------|-----------|
+| Unit | >=80% of unit-testable code | ~90-95% |
+| Integration | >=80% of integration-testable code | ~85-90% |
+| E2E | >=80% of full service code | ~75-80% (WE E2E deferred) |
+| All Tiers Merged | >=80% | ~90%+ |
+
+---
+
+## FedRAMP Control Coverage Matrix
+
+| Control | Covered By |
+|---------|-----------|
+| AC-3 (Access enforcement) | IT-FLEET-DEXCC-001, IT-FLEET-AUTH-REJECT-001, UT-FLEET-RES-006, UT-WE-054-003 |
+| AC-6 (Least privilege) | IT-FLEET-006 |
+| AU-3 (Audit content) | E2E-SP-054-REMOTE |
+| IA-5 (Authenticator management) | UT-FLEET-SCOPE-001, UT-SP-054-CFG-001, UT-WE-054-CFG-001, UT-KA-054-CFG-001, UT-FLEET-AUTH-006 |
+| SC-7 (Boundary protection) | IT-SP-054-OAuth2, IT-FLEET-EAIGW-001, E2E-FLEET-SP-001, E2E-SP-054-REMOTE, UT-FLEET-TOOL-001 |
+| SC-8 (Transmission confidentiality) | UT-FLEET-SCOPE-002 |
+| SI-4 (Monitoring) | E2E-SP-054-REMOTE |
+| SI-10 (Input validation) | UT-FLEET-PARSE-001, UT-FLEET-PARSE-002 |
+
+---
+
+## Prerequisites
+
+- DEX upgrade to `master`/`v2.46.0` with `DEX_CLIENT_CREDENTIAL_GRANT_ENABLED_BY_DEFAULT=true`
+- Explicit `grantTypes: ["authorization_code", "password", "client_credentials"]` on static clients
+- Fleet static clients with `clientCredentialsClaims` for `groups` propagation
+
+---
+
+## References
+
+- [ADR-068: Fleet Federation Architecture](../../architecture/decisions/ADR-068-fleet-federation-architecture.md)
+- [ADR-065: Fleet Cluster Identity on RR](../../architecture/decisions/ADR-065-fleet-cluster-identity-on-rr.md)
+- Issue #54: Multi-cluster federation
+- Spike S11: WE Remote Execution via MCP Gateway
