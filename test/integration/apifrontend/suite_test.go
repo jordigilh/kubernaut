@@ -424,6 +424,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 ai:
   llm:
     provider: "openai"
+    apiKey: "mock-api-key-for-af-integration-tests"
 integrations:
   dataStorage:
     url: "%s"
@@ -435,7 +436,6 @@ integrations:
 	Expect(os.Chmod(kaLLMRuntimeDir, 0755)).To(Succeed())
 	kaLLMContent := fmt.Sprintf(`model: "mock-model"
 endpoint: "%s"
-apiKey: "mock-api-key-for-af-integration-tests"
 temperature: 0.7
 maxRetries: 3
 timeoutSeconds: 120

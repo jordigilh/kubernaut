@@ -896,6 +896,7 @@ data:
     ai:
       llm:
         provider: "openai"
+        apiKey: "mock-api-key-for-e2e"
       alignmentCheck:
         enabled: true
         timeout: "10s"
@@ -925,7 +926,6 @@ data:
   llm-runtime.yaml: |
     model: "mock-model"
     endpoint: "http://mock-llm:8080"
-    apiKey: "mock-api-key-for-e2e"
     temperature: 0.7
     maxRetries: 3
     timeoutSeconds: 120
