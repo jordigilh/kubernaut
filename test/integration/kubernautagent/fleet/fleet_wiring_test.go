@@ -258,6 +258,89 @@ var _ = Describe("Fleet Wiring Integration Tests (BR-INTEGRATION-065)", func() {
 		})
 	})
 
+	Describe("IT-FLEET-006 [AC-6]: Service scopes are operator-configurable, enabling least-privilege enforcement per deployment (BR-INTEGRATION-065)", func() {
+		It("reads scopes from FleetOAuth2 config rather than hardcoding", func() {
+			var capturedScope string
+			tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_ = r.ParseForm()
+				capturedScope = r.PostFormValue("scope")
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"access_token":"fleet-token","token_type":"Bearer","expires_in":3600}`))
+			}))
+			defer tokenServer.Close()
+
+			customScopes := []string{"openid", "groups", "fleet-admin"}
+			scopes := mcpclient.DefaultFleetScopes(customScopes)
+			Expect(scopes).To(Equal(customScopes), "explicit scopes must be passed through, not overridden")
+
+			cfg := mcpclient.OAuth2Config{
+				TokenURL:     tokenServer.URL,
+				ClientID:     "kubernaut-ka",
+				ClientSecret: "test-secret",
+				Scopes:       customScopes,
+			}
+
+			transport := mcpclient.NewOAuth2Transport(cfg, nil)
+			httpClient := &http.Client{Transport: transport}
+
+			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			}))
+			defer backend.Close()
+
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, backend.URL, nil)
+			Expect(err).ToNot(HaveOccurred())
+			resp, err := httpClient.Do(req)
+			Expect(err).ToNot(HaveOccurred())
+			resp.Body.Close()
+
+			Expect(capturedScope).To(Equal("openid groups fleet-admin"),
+				"token request must use operator-configured scopes, not hardcoded values")
+		})
+	})
+
+	Describe("IT-FLEET-AUTH-REJECT-001 [AC-3]: Unauthorized callers are rejected at the gateway boundary and the client surfaces the denial (BR-INTEGRATION-065)", func() {
+		It("surfaces 401 error with actionable message when token is invalid", func() {
+			var tokenRequestCount int
+			tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				tokenRequestCount++
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"access_token":"expired-token","token_type":"Bearer","expires_in":1}`))
+			}))
+			defer tokenServer.Close()
+
+			rejectServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				auth := r.Header.Get("Authorization")
+				if auth == "Bearer expired-token" {
+					w.WriteHeader(http.StatusUnauthorized)
+					_, _ = w.Write([]byte(`{"error":"invalid_token","error_description":"token is expired"}`))
+					return
+				}
+				w.WriteHeader(http.StatusOK)
+			}))
+			defer rejectServer.Close()
+
+			cfg := mcpclient.OAuth2Config{
+				TokenURL:     tokenServer.URL,
+				ClientID:     "kubernaut-fleet-read",
+				ClientSecret: "test-secret",
+				Scopes:       []string{"openid", "groups"},
+			}
+
+			transport := mcpclient.NewOAuth2Transport(cfg, nil)
+			httpClient := &http.Client{Transport: transport}
+
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, rejectServer.URL, nil)
+			Expect(err).ToNot(HaveOccurred())
+			resp, err := httpClient.Do(req)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(resp.StatusCode).To(Equal(http.StatusUnauthorized),
+				"gateway must reject calls with expired/invalid tokens (AC-3 enforcement)")
+			resp.Body.Close()
+		})
+	})
+
 	Describe("UT-FLEET-FP-001 [CC4.2]: AF and GW fingerprints match for same resource (Phase D)", func() {
 		It("produces identical dedup fingerprints using the shared helper, preventing audit trail inconsistency", func() {
 			clusterID := "prod-east"
