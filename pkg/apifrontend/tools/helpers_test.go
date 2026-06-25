@@ -88,6 +88,44 @@ var _ = Describe("ParseRRID — name-only rr_id format (#E2E-FIX)", func() {
 	})
 })
 
+var _ = Describe("ParseRARID — tolerant rar_id parser (#1493)", func() {
+
+	Describe("UT-AF-1493-001: bare name resolves with injected namespace", func() {
+		It("should pair bare rar_id with the explicit namespace argument", func() {
+			ns, name, err := tools.ParseRARID("rar-oom-1", "payments", "")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(ns).To(Equal("payments"))
+			Expect(name).To(Equal("rar-oom-1"))
+		})
+	})
+
+	Describe("UT-AF-1493-002: namespace/name format is accepted and split", func() {
+		It("should split on slash when rar_id contains namespace/name", func() {
+			ns, name, err := tools.ParseRARID("payments/rar-oom-1", "injected-ns", "")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(ns).To(Equal("payments"))
+			Expect(name).To(Equal("rar-oom-1"))
+		})
+	})
+
+	Describe("UT-AF-1493-003: empty rar_id falls back to explicit namespace + name", func() {
+		It("should use explicit args when rar_id is empty", func() {
+			ns, name, err := tools.ParseRARID("", "pay", "rar-fallback-1")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(ns).To(Equal("pay"))
+			Expect(name).To(Equal("rar-fallback-1"))
+		})
+	})
+
+	Describe("UT-AF-1493-004: empty rar_id + empty name returns error", func() {
+		It("should require name when rar_id is not provided", func() {
+			_, _, err := tools.ParseRARID("", "ns", "")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("name is required"))
+		})
+	})
+})
+
 var _ = Describe("IsTerminalPhase", func() {
 	DescribeTable("UT-AF-TERM-001: classifies phases correctly",
 		func(phase string, expected bool) {

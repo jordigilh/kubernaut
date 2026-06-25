@@ -338,7 +338,7 @@ func HandleGetApprovalRequest(ctx context.Context, client crclient.Client, args 
 		return GetApprovalRequestResult{}, ErrK8sUnavailable
 	}
 
-	ns, name, err := ParseResourceID(args.RARID, args.Namespace, args.Name)
+	ns, name, err := ParseRARID(args.RARID, args.Namespace, args.Name)
 	if err != nil {
 		return GetApprovalRequestResult{}, err
 	}
