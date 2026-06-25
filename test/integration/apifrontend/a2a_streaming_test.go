@@ -31,7 +31,7 @@ import (
 
 	agentpkg "github.com/jordigilh/kubernaut/pkg/apifrontend/agent"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
-	"github.com/jordigilh/kubernaut/pkg/apifrontend/config"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 )
 
@@ -52,8 +52,8 @@ var _ = Describe("A2A Progressive Streaming Integration (issue #1258)", func() {
 		}))
 
 		ctx := context.Background()
-		llmModel, err := launcher.NewModelFromConfig(ctx, config.LLMConfig{
-			Provider: config.LLMProviderGemini,
+		llmModel, err := launcher.NewModelFromConfig(ctx, types.LLMConfig{
+			Provider: types.LLMProviderGemini,
 			Model:    "mock-model",
 			Endpoint: mockLLMSrv.URL,
 			APIKey:   "test-key",
@@ -244,8 +244,8 @@ var _ = Describe("A2A Progressive Streaming Integration (issue #1258)", func() {
 			defer failLLM.Close()
 
 			ctx := context.Background()
-			llmModel, err := launcher.NewModelFromConfig(ctx, config.LLMConfig{
-				Provider: config.LLMProviderGemini,
+			llmModel, err := launcher.NewModelFromConfig(ctx, types.LLMConfig{
+				Provider: types.LLMProviderGemini,
 				Model:    "mock-model",
 				Endpoint: failLLM.URL,
 				APIKey:   "test-key",
@@ -311,8 +311,8 @@ var _ = Describe("A2A Streaming — Paragraph Breaks & Bridge Policy (TP-1301-13
 		}))
 
 		ctx := context.Background()
-		llmModel, err := launcher.NewModelFromConfig(ctx, config.LLMConfig{
-			Provider: config.LLMProviderGemini,
+		llmModel, err := launcher.NewModelFromConfig(ctx, types.LLMConfig{
+			Provider: types.LLMProviderGemini,
 			Model:    "mock-model",
 			Endpoint: mockLLMSrv.URL,
 			APIKey:   "test-key",

@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 var reservedHeaders = map[string]struct{}{
@@ -29,22 +31,11 @@ var reservedHeaders = map[string]struct{}{
 	"user-agent":   {},
 }
 
-// HeaderDefinition describes a custom HTTP header to inject into outbound LLM requests.
-// Exactly one value source (Value, SecretKeyRef, or FilePath) must be set.
-//
-// Authority: Issue #417 — Support custom authentication headers for LLM proxy endpoints
-type HeaderDefinition struct {
-	Name         string `yaml:"name"`
-	Value        string `yaml:"value,omitempty"`
-	SecretKeyRef string `yaml:"secretKeyRef,omitempty"`
-	FilePath     string `yaml:"filePath,omitempty"`
-}
-
 // ParseCustomHeaders validates a slice of header definitions, returning the validated
 // slice or an error if any definition is malformed. Returns an empty slice for nil/empty input.
-func ParseCustomHeaders(defs []HeaderDefinition) ([]HeaderDefinition, error) {
+func ParseCustomHeaders(defs []types.LLMHeaderDef) ([]types.LLMHeaderDef, error) {
 	if len(defs) == 0 {
-		return []HeaderDefinition{}, nil
+		return []types.LLMHeaderDef{}, nil
 	}
 
 	seen := make(map[string]struct{}, len(defs))
@@ -62,7 +53,7 @@ func ParseCustomHeaders(defs []HeaderDefinition) ([]HeaderDefinition, error) {
 }
 
 // ValidateSource checks that exactly one value source is set on a header definition.
-func ValidateSource(def HeaderDefinition) error {
+func ValidateSource(def types.LLMHeaderDef) error {
 	count := 0
 	if def.Value != "" {
 		count++
@@ -90,7 +81,7 @@ func ValidateHeaderName(name string) error {
 // ValidateHeaderSources checks that all secretKeyRef sources resolve to non-empty
 // environment variables at startup. Value and filePath sources are not validated here
 // (filePath is validated at request time, value is always available).
-func ValidateHeaderSources(defs []HeaderDefinition) error {
+func ValidateHeaderSources(defs []types.LLMHeaderDef) error {
 	for _, def := range defs {
 		if def.SecretKeyRef != "" {
 			val := os.Getenv(def.SecretKeyRef)
@@ -102,7 +93,7 @@ func ValidateHeaderSources(defs []HeaderDefinition) error {
 	return nil
 }
 
-func validateDefinition(def HeaderDefinition) error {
+func validateDefinition(def types.LLMHeaderDef) error {
 	if strings.TrimSpace(def.Name) == "" {
 		return fmt.Errorf("header name is required")
 	}

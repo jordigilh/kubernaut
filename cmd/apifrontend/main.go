@@ -64,6 +64,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tlswiring"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/audit"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 const configPath = "/etc/apifrontend/config.yaml"
@@ -770,23 +771,23 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 //   - vertex_ai + other model → GenAITriager (Google GenAI SDK)
 //   - gemini → GenAITriager (Gemini API)
 //   - anthropic → AnthropicTriager (direct Anthropic API)
-func newLLMTriagerFromConfig(ctx context.Context, llmCfg config.LLMConfig, logger logr.Logger) (severity.LLMTriager, error) {
+func newLLMTriagerFromConfig(ctx context.Context, llmCfg types.LLMConfig, logger logr.Logger) (severity.LLMTriager, error) {
 	switch llmCfg.Provider {
-	case config.LLMProviderVertexAI:
+	case types.LLMProviderVertexAI:
 		if severity.IsAnthropicModel(llmCfg.Model) {
 			return newAnthropicTriagerForVertex(ctx, llmCfg, logger)
 		}
 		return newGenAITriagerForVertex(ctx, llmCfg, logger)
-	case config.LLMProviderGemini:
+	case types.LLMProviderGemini:
 		return newGenAITriagerForGemini(ctx, llmCfg, logger)
-	case config.LLMProviderAnthropic:
+	case types.LLMProviderAnthropic:
 		return newAnthropicTriagerDirect(ctx, llmCfg, logger)
 	default:
 		return nil, fmt.Errorf("unsupported triage LLM provider: %q", llmCfg.Provider)
 	}
 }
 
-func newGenAITriagerForVertex(ctx context.Context, llmCfg config.LLMConfig, logger logr.Logger) (severity.LLMTriager, error) {
+func newGenAITriagerForVertex(ctx context.Context, llmCfg types.LLMConfig, logger logr.Logger) (severity.LLMTriager, error) {
 	clientCfg := &genai.ClientConfig{
 		Project:  llmCfg.VertexProject,
 		Location: llmCfg.VertexLocation,
@@ -806,7 +807,7 @@ func newGenAITriagerForVertex(ctx context.Context, llmCfg config.LLMConfig, logg
 	}), nil
 }
 
-func newGenAITriagerForGemini(ctx context.Context, llmCfg config.LLMConfig, logger logr.Logger) (severity.LLMTriager, error) {
+func newGenAITriagerForGemini(ctx context.Context, llmCfg types.LLMConfig, logger logr.Logger) (severity.LLMTriager, error) {
 	clientCfg := &genai.ClientConfig{
 		APIKey:  llmCfg.APIKey,
 		Backend: genai.BackendGeminiAPI,
@@ -825,7 +826,7 @@ func newGenAITriagerForGemini(ctx context.Context, llmCfg config.LLMConfig, logg
 	}), nil
 }
 
-func newAnthropicTriagerForVertex(ctx context.Context, llmCfg config.LLMConfig, logger logr.Logger) (severity.LLMTriager, error) {
+func newAnthropicTriagerForVertex(ctx context.Context, llmCfg types.LLMConfig, logger logr.Logger) (severity.LLMTriager, error) {
 	client, err := severity.NewAnthropicVertexClient(ctx, llmCfg.VertexProject, llmCfg.VertexLocation)
 	if err != nil {
 		return nil, fmt.Errorf("vertex_ai Anthropic client: %w", err)
@@ -837,7 +838,7 @@ func newAnthropicTriagerForVertex(ctx context.Context, llmCfg config.LLMConfig, 
 	}), nil
 }
 
-func newAnthropicTriagerDirect(_ context.Context, llmCfg config.LLMConfig, logger logr.Logger) (severity.LLMTriager, error) {
+func newAnthropicTriagerDirect(_ context.Context, llmCfg types.LLMConfig, logger logr.Logger) (severity.LLMTriager, error) {
 	client, err := severity.NewAnthropicDirectClient(llmCfg.APIKey)
 	if err != nil {
 		return nil, fmt.Errorf("anthropic direct client: %w", err)
@@ -933,7 +934,7 @@ func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps,
 	}
 
 	hasCustomTransport := cfg.Agent.LLM.TLSCaFile != "" || cfg.Agent.LLM.OAuth2.Enabled
-	if hasCustomTransport && (cfg.Agent.LLM.Provider == config.LLMProviderVertexAI || cfg.Agent.LLM.Provider == config.LLMProviderAnthropic) {
+	if hasCustomTransport && (cfg.Agent.LLM.Provider == types.LLMProviderVertexAI || cfg.Agent.LLM.Provider == types.LLMProviderAnthropic) {
 		logger.Info("WARNING: mTLS/OAuth2 transport config is set but CANNOT be applied to " + cfg.Agent.LLM.Provider +
 			" — upstream ADK wrapper lacks HTTP client injection (blocked by issue #1342)")
 	}

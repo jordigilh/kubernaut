@@ -22,7 +22,7 @@ import (
 
 	"github.com/go-logr/logr"
 
-	"github.com/jordigilh/kubernaut/pkg/kubernautagent/config"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // AuthHeadersTransport implements http.RoundTripper to inject custom
@@ -33,19 +33,19 @@ import (
 // Authority: Issue #417, DD-HAPI-019-003 (G4: Credential Scrubbing)
 type AuthHeadersTransport struct {
 	base    http.RoundTripper
-	headers []config.HeaderDefinition
+	headers []types.LLMHeaderDef
 	logger  logr.Logger
 }
 
 // NewAuthHeadersTransport wraps a base transport, injecting the given
 // headers into every outbound request. If base is nil, http.DefaultTransport is used.
-func NewAuthHeadersTransport(headers []config.HeaderDefinition, base http.RoundTripper) *AuthHeadersTransport {
+func NewAuthHeadersTransport(headers []types.LLMHeaderDef, base http.RoundTripper) *AuthHeadersTransport {
 	return NewAuthHeadersTransportWithLogger(headers, base, logr.Discard())
 }
 
 // NewAuthHeadersTransportWithLogger wraps a base transport with structured logging.
 // Header values are redacted in log output per DD-HAPI-019-003 (G4).
-func NewAuthHeadersTransportWithLogger(headers []config.HeaderDefinition, base http.RoundTripper, logger logr.Logger) *AuthHeadersTransport {
+func NewAuthHeadersTransportWithLogger(headers []types.LLMHeaderDef, base http.RoundTripper, logger logr.Logger) *AuthHeadersTransport {
 	if base == nil {
 		base = http.DefaultTransport
 	}
@@ -79,7 +79,7 @@ func (t *AuthHeadersTransport) RoundTrip(req *http.Request) (*http.Response, err
 	return t.base.RoundTrip(reqClone)
 }
 
-func resolveHeader(def config.HeaderDefinition) (string, error) {
+func resolveHeader(def types.LLMHeaderDef) (string, error) {
 	switch {
 	case def.Value != "":
 		return ResolveValue(def.Value), nil

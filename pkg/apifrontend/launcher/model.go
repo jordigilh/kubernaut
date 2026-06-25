@@ -30,35 +30,33 @@ import (
 	"google.golang.org/adk/model/gemini"
 	"google.golang.org/genai"
 
-	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
 	internaltransport "github.com/jordigilh/kubernaut/internal/kubernautagent/llm/transport"
-	pkgconfig "github.com/jordigilh/kubernaut/pkg/kubernautagent/config"
 	llmtransport "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/transport"
-	"github.com/jordigilh/kubernaut/pkg/apifrontend/config"
 	openaimodel "github.com/jordigilh/kubernaut/pkg/apifrontend/launcher/openai"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 	"github.com/jordigilh/kubernaut/pkg/shared/transport"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // NewModelFromConfig constructs an ADK model.LLM from the AF LLM configuration.
 // It builds the appropriate transport chain (TLS CA, OAuth2, custom headers,
 // circuit breaker) and creates the provider-specific model client.
-func NewModelFromConfig(ctx context.Context, cfg config.LLMConfig) (model.LLM, error) {
+func NewModelFromConfig(ctx context.Context, cfg types.LLMConfig) (model.LLM, error) {
 	switch cfg.Provider {
-	case config.LLMProviderVertexAI:
+	case types.LLMProviderVertexAI:
 		return newVertexAIModel(ctx, cfg)
-	case config.LLMProviderGemini:
+	case types.LLMProviderGemini:
 		return newGeminiModel(ctx, cfg)
-	case config.LLMProviderAnthropic:
+	case types.LLMProviderAnthropic:
 		return newAnthropicModel(ctx, cfg)
-	case config.LLMProviderOpenAI, config.LLMProviderOpenAICompatible:
+	case types.LLMProviderOpenAI, types.LLMProviderOpenAICompatible:
 		return newOpenAICompatibleModel(cfg)
 	default:
 		return nil, fmt.Errorf("unsupported LLM provider: %q", cfg.Provider)
 	}
 }
 
-func newVertexAIModel(ctx context.Context, cfg config.LLMConfig) (m model.LLM, err error) {
+func newVertexAIModel(ctx context.Context, cfg types.LLMConfig) (m model.LLM, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("vertex_ai: GCP ADC unavailable — set GOOGLE_APPLICATION_CREDENTIALS or provide credentials: %v", r)
@@ -75,7 +73,7 @@ func newVertexAIModel(ctx context.Context, cfg config.LLMConfig) (m model.LLM, e
 	return adkanthropic.NewModel(ctx, anthropic.Model(cfg.Model), adkCfg)
 }
 
-func newGeminiModel(ctx context.Context, cfg config.LLMConfig) (model.LLM, error) {
+func newGeminiModel(ctx context.Context, cfg types.LLMConfig) (model.LLM, error) {
 	clientCfg := &genai.ClientConfig{
 		APIKey:  cfg.APIKey,
 		Backend: genai.BackendGeminiAPI,
@@ -97,7 +95,7 @@ func newGeminiModel(ctx context.Context, cfg config.LLMConfig) (model.LLM, error
 	return gemini.NewModel(ctx, cfg.Model, clientCfg)
 }
 
-func newAnthropicModel(ctx context.Context, cfg config.LLMConfig) (model.LLM, error) {
+func newAnthropicModel(ctx context.Context, cfg types.LLMConfig) (model.LLM, error) {
 	adkCfg := &adkanthropic.Config{
 		Variant: adkanthropic.VariantAnthropicAPI,
 		APIKey:  cfg.APIKey,
@@ -111,7 +109,7 @@ func newAnthropicModel(ctx context.Context, cfg config.LLMConfig) (model.LLM, er
 // buildLLMHTTPClient constructs an HTTP client with the transport chain
 // (TLS CA, OAuth2, custom headers, circuit breaker) when any auth/resilience
 // options are configured. Returns (nil, nil) when no custom transport is needed.
-func buildLLMHTTPClient(cfg config.LLMConfig) (*http.Client, error) {
+func buildLLMHTTPClient(cfg types.LLMConfig) (*http.Client, error) {
 	rt, err := buildTransportChain(cfg)
 	if err != nil {
 		return nil, err
@@ -119,7 +117,7 @@ func buildLLMHTTPClient(cfg config.LLMConfig) (*http.Client, error) {
 	if rt == nil {
 		return nil, nil
 	}
-	timeout := time.Duration(config.DefaultLLMTimeoutSeconds) * time.Second
+	timeout := time.Duration(types.DefaultLLMTimeoutSeconds) * time.Second
 	if cfg.TimeoutSeconds > 0 {
 		timeout = time.Duration(cfg.TimeoutSeconds) * time.Second
 	}
@@ -140,7 +138,7 @@ func buildLLMHTTPClient(cfg config.LLMConfig) (*http.Client, error) {
 // once merged, newVertexAIModel and newAnthropicModel should call
 // buildLLMHTTPClient. The AF validation gate for these providers has been
 // removed (Phase 3) to allow transport config in preparation.
-func buildTransportChain(cfg config.LLMConfig) (http.RoundTripper, error) {
+func buildTransportChain(cfg types.LLMConfig) (http.RoundTripper, error) {
 	base := http.DefaultTransport
 	needsCustom := false
 
@@ -158,12 +156,7 @@ func buildTransportChain(cfg config.LLMConfig) (http.RoundTripper, error) {
 	}
 
 	if cfg.OAuth2.Enabled {
-		oauth2Cfg := kaconfig.OAuth2Config{
-			Enabled:        cfg.OAuth2.Enabled,
-			TokenURL:       cfg.OAuth2.TokenURL,
-			Scopes:         cfg.OAuth2.Scopes,
-			CredentialsDir: cfg.OAuth2.CredentialsDir,
-		}
+		oauth2Cfg := cfg.OAuth2
 		if err := resolveOAuth2Secrets(&oauth2Cfg); err != nil {
 			return nil, fmt.Errorf("resolve OAuth2 secrets: %w", err)
 		}
@@ -172,15 +165,7 @@ func buildTransportChain(cfg config.LLMConfig) (http.RoundTripper, error) {
 	}
 
 	if len(cfg.CustomHeaders) > 0 {
-		headers := make([]pkgconfig.HeaderDefinition, 0, len(cfg.CustomHeaders))
-		for _, h := range cfg.CustomHeaders {
-			headers = append(headers, pkgconfig.HeaderDefinition{
-				Name:     h.Name,
-				Value:    h.Value,
-				FilePath: h.FilePath,
-			})
-		}
-		base = llmtransport.NewAuthHeadersTransport(headers, base)
+		base = llmtransport.NewAuthHeadersTransport(cfg.CustomHeaders, base)
 		needsCustom = true
 	}
 
@@ -202,7 +187,7 @@ func buildTransportChain(cfg config.LLMConfig) (http.RoundTripper, error) {
 	return base, nil
 }
 
-func newOpenAICompatibleModel(cfg config.LLMConfig) (model.LLM, error) {
+func newOpenAICompatibleModel(cfg types.LLMConfig) (model.LLM, error) {
 	var opts []openaimodel.Option
 
 	httpClient, err := buildLLMHTTPClient(cfg)
@@ -218,7 +203,7 @@ func newOpenAICompatibleModel(cfg config.LLMConfig) (model.LLM, error) {
 
 // resolveOAuth2Secrets reads client-id and client-secret from the mounted
 // secrets directory (same layout as KA: <credentialsDir>/client-id, client-secret).
-func resolveOAuth2Secrets(cfg *kaconfig.OAuth2Config) error {
+func resolveOAuth2Secrets(cfg *types.LLMOAuth2Config) error {
 	if cfg.CredentialsDir == "" {
 		return nil
 	}

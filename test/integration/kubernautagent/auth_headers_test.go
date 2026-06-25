@@ -28,7 +28,7 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
-	"github.com/jordigilh/kubernaut/pkg/kubernautagent/config"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 	llmclient "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 )
 
@@ -66,7 +66,7 @@ var _ = Describe("Auth Headers Integration — #417", func() {
 			err = os.WriteFile(tmpFile.Name(), []byte("jwt-token-xyz"), 0644)
 			Expect(err).NotTo(HaveOccurred())
 
-			hdefs := []config.HeaderDefinition{
+			hdefs := []types.LLMHeaderDef{
 				{Name: "x-api-key", SecretKeyRef: "KA_IT_TEST_API_KEY"},
 				{Name: "Authorization", FilePath: tmpFile.Name()},
 				{Name: "x-tenant-id", Value: "kubernaut-prod"},
@@ -126,7 +126,7 @@ var _ = Describe("Auth Headers Integration — #417", func() {
 			}))
 			defer ollama.Close()
 
-			hdefs := []config.HeaderDefinition{
+			hdefs := []types.LLMHeaderDef{
 				{Name: "Authorization", Value: "Bearer shared-token"},
 			}
 			client, err := llmclient.NewLLMClient("", hdefs)
@@ -160,7 +160,7 @@ var _ = Describe("Auth Headers Integration — #417", func() {
 			zl := zap.New(core)
 			logger := zapr.NewLogger(zl)
 
-			hdefs := []config.HeaderDefinition{
+			hdefs := []types.LLMHeaderDef{
 				{Name: "Authorization", SecretKeyRef: "KA_IT_SCRUB_SECRET"},
 			}
 			Expect(os.Setenv("KA_IT_SCRUB_SECRET", "Bearer super-secret-key-do-not-leak")).To(Succeed())
@@ -194,7 +194,7 @@ var _ = Describe("Auth Headers Integration — #417", func() {
 			err = os.WriteFile(tmpFile.Name(), []byte("token-v1"), 0644)
 			Expect(err).NotTo(HaveOccurred())
 
-			hdefs := []config.HeaderDefinition{
+			hdefs := []types.LLMHeaderDef{
 				{Name: "Authorization", FilePath: tmpFile.Name()},
 			}
 			client, err := llmclient.NewLLMClient(server.URL, hdefs)

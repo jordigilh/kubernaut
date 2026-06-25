@@ -19,14 +19,13 @@ package config
 import (
 	"fmt"
 	"net/url"
-	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	internalconfig "github.com/jordigilh/kubernaut/internal/config"
 	pkgconfig "github.com/jordigilh/kubernaut/pkg/kubernautagent/config"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 	"gopkg.in/yaml.v3"
 )
 
@@ -48,7 +47,7 @@ type RuntimeConfig struct {
 
 // AIConfig holds LLM, investigation behavior, and safety guardrails.
 type AIConfig struct {
-	LLM            LLMConfig            `yaml:"llm"`
+	LLM            types.LLMConfig      `yaml:"llm"`
 	Investigation  InvestigationConfig  `yaml:"investigation"`
 	Summarizer     SummarizerConfig     `yaml:"summarizer"`
 	Enrichment     EnrichmentConfig     `yaml:"enrichment"`
@@ -69,30 +68,6 @@ type IntegrationsConfig struct {
 	MCP         MCPConfig         `yaml:"mcp"`
 }
 
-// LLMConfig holds static LLM provider settings that require a pod restart to change.
-type LLMConfig struct {
-	Provider        string              `yaml:"provider"`
-	AzureAPIVersion string              `yaml:"azureApiVersion"`
-	VertexProject   string              `yaml:"vertexProject"`
-	VertexLocation  string              `yaml:"vertexLocation"`
-	BedrockRegion   string              `yaml:"bedrockRegion"`
-	TLSCaFile       string              `yaml:"tlsCaFile,omitempty"`
-	TLSCertFile     string              `yaml:"tlsCertFile,omitempty"`
-	TLSKeyFile      string              `yaml:"tlsKeyFile,omitempty"`
-	OAuth2          OAuth2Config        `yaml:"oauth2,omitempty"`
-	CircuitBreaker  CircuitBreakerCfg   `yaml:"circuitBreaker,omitempty"`
-}
-
-// CircuitBreakerCfg configures the gobreaker circuit breaker for HTTP clients.
-// Defaults match the gateway K8s API breaker (BR-GATEWAY-093).
-type CircuitBreakerCfg struct {
-	Enabled          bool          `yaml:"enabled"`
-	MaxRequests      uint32        `yaml:"maxRequests"`
-	Interval         time.Duration `yaml:"interval"`
-	Timeout          time.Duration `yaml:"timeout"`
-	FailureThreshold uint32        `yaml:"failureThreshold"`
-	FailureRatio     float64       `yaml:"failureRatio"`
-}
 
 // LLMRuntimeConfig holds hot-reloadable LLM settings that can change without restart.
 // This struct maps to a separate ConfigMap (kubernaut-agent-llm-runtime) watched by
@@ -100,12 +75,14 @@ type CircuitBreakerCfg struct {
 type LLMRuntimeConfig struct {
 	Model          string                       `yaml:"model"`
 	Endpoint       string                       `yaml:"endpoint"`
-	APIKey         string                       `yaml:"apiKey"`
+	APIKeyFile     string                       `yaml:"apiKeyFile,omitempty"`
 	Temperature    float64                      `yaml:"temperature"`
 	MaxRetries     int                          `yaml:"maxRetries"`
 	TimeoutSeconds int                          `yaml:"timeoutSeconds"`
-	CustomHeaders  []pkgconfig.HeaderDefinition `yaml:"customHeaders,omitempty"`
+	CustomHeaders  []types.LLMHeaderDef `yaml:"customHeaders,omitempty"`
 	PhaseModels    map[string]*LLMOverrideConfig `yaml:"phaseModels,omitempty"`
+	// Resolved at runtime from APIKeyFile. Not serialized.
+	APIKey string `yaml:"-"`
 }
 
 // ValidPhaseNames enumerates the phase keys accepted in PhaseModels.
@@ -120,7 +97,7 @@ var ValidPhaseNames = map[string]bool{
 // fields win over the base values. If no override exists, the base values are
 // returned unchanged. Follows the same merge pattern as
 // AlignmentCheckConfig.EffectiveLLM().
-func (r *LLMRuntimeConfig) EffectivePhaseConfig(phase string, baseLLM LLMConfig, baseRuntime LLMRuntimeConfig) (LLMConfig, LLMRuntimeConfig) {
+func (r *LLMRuntimeConfig) EffectivePhaseConfig(phase string, baseLLM types.LLMConfig, baseRuntime LLMRuntimeConfig) (types.LLMConfig, LLMRuntimeConfig) {
 	if len(r.PhaseModels) == 0 {
 		return baseLLM, baseRuntime
 	}
@@ -151,70 +128,18 @@ func (r *LLMRuntimeConfig) EffectivePhaseConfig(phase string, baseLLM LLMConfig,
 	if override.Endpoint != "" {
 		runtimeOut.Endpoint = override.Endpoint
 	}
-	if override.APIKey != "" {
-		runtimeOut.APIKey = override.APIKey
+	if override.APIKeyFile != "" {
+		runtimeOut.APIKeyFile = override.APIKeyFile
 	}
 	return staticOut, runtimeOut
 }
 
-// OAuth2Config holds OAuth2 client credentials configuration for enterprise
-// LLM gateway authentication. When enabled, KA acquires and refreshes JWTs
-// automatically via the client credentials grant (RFC 6749 s4.4).
-//
-// Security: clientID and clientSecret are resolved from mounted Secret files
-// at runtime (not stored in ConfigMap). Only tokenURL, scopes, and
-// credentialsDir are configured via YAML.
-type OAuth2Config struct {
-	Enabled        bool     `yaml:"enabled"`
-	TokenURL       string   `yaml:"tokenURL"`
-	Scopes         []string `yaml:"scopes,omitempty"`
-	CredentialsDir string   `yaml:"credentialsDir"`
-	ClientID       string   `yaml:"-"`
-	ClientSecret   string   `yaml:"-"`
-}
-
-// ResolveOAuth2Credentials reads clientID and clientSecret from mounted
-// Secret files in the configured credentialsDir. Expected file layout:
-//
-//	<credentialsDir>/client-id
-//	<credentialsDir>/client-secret
-func (c *OAuth2Config) ResolveOAuth2Credentials() error {
-	if !c.Enabled {
-		return nil
-	}
-	if c.CredentialsDir == "" {
-		return fmt.Errorf("oauth2.credentialsDir is required when oauth2.enabled=true")
-	}
-	clientID, err := readSecretFile(filepath.Join(c.CredentialsDir, "client-id"))
-	if err != nil {
-		return fmt.Errorf("reading oauth2 client-id: %w", err)
-	}
-	clientSecret, err := readSecretFile(filepath.Join(c.CredentialsDir, "client-secret"))
-	if err != nil {
-		return fmt.Errorf("reading oauth2 client-secret: %w", err)
-	}
-	c.ClientID = clientID
-	c.ClientSecret = clientSecret
-	return nil
-}
-
-func readSecretFile(path string) (string, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
-	}
-	v := strings.TrimSpace(string(data))
-	if v == "" {
-		return "", fmt.Errorf("file %s is empty", path)
-	}
-	return v, nil
-}
 
 type DataStorageConfig struct {
 	URL            string              `yaml:"url"`
 	SATokenPath    string              `yaml:"saTokenPath"`
 	TLS            sharedtls.TLSConfig `yaml:"tls,omitempty"`
-	CircuitBreaker CircuitBreakerCfg   `yaml:"circuitBreaker,omitempty"`
+	CircuitBreaker types.LLMCircuitBreaker `yaml:"circuitBreaker,omitempty"`
 }
 
 type ServerConfig struct {
@@ -467,7 +392,7 @@ type LLMOverrideConfig struct {
 	Provider        string `yaml:"provider"`
 	Endpoint        string `yaml:"endpoint"`
 	Model           string `yaml:"model"`
-	APIKey          string `yaml:"apiKey"`
+	APIKeyFile      string `yaml:"apiKeyFile,omitempty"`
 	AzureAPIVersion string `yaml:"azureApiVersion"`
 	VertexProject   string `yaml:"vertexProject"`
 	VertexLocation  string `yaml:"vertexLocation"`
@@ -476,7 +401,7 @@ type LLMOverrideConfig struct {
 
 // EffectiveLLM returns a merged set of static + runtime fields for the
 // alignment checker client builder. If override fields are set, they win.
-func (c *AlignmentCheckConfig) EffectiveLLM(base LLMConfig, runtime LLMRuntimeConfig) (LLMConfig, LLMRuntimeConfig) {
+func (c *AlignmentCheckConfig) EffectiveLLM(base types.LLMConfig, runtime LLMRuntimeConfig) (types.LLMConfig, LLMRuntimeConfig) {
 	if c.LLM == nil {
 		return base, runtime
 	}
@@ -503,8 +428,8 @@ func (c *AlignmentCheckConfig) EffectiveLLM(base LLMConfig, runtime LLMRuntimeCo
 	if c.LLM.Endpoint != "" {
 		runtimeOut.Endpoint = c.LLM.Endpoint
 	}
-	if c.LLM.APIKey != "" {
-		runtimeOut.APIKey = c.LLM.APIKey
+	if c.LLM.APIKeyFile != "" {
+		runtimeOut.APIKeyFile = c.LLM.APIKeyFile
 	}
 	return staticOut, runtimeOut
 }
@@ -549,7 +474,7 @@ func (r *LLMRuntimeConfig) Validate(provider string) error {
 			return fmt.Errorf("phaseModels: unknown phase %q", phase)
 		}
 		if override == nil || (override.Provider == "" && override.Endpoint == "" &&
-			override.Model == "" && override.APIKey == "" &&
+			override.Model == "" && override.APIKeyFile == "" &&
 			override.AzureAPIVersion == "" && override.VertexProject == "" &&
 			override.VertexLocation == "" && override.BedrockRegion == "") {
 			return fmt.Errorf("phaseModels[%q]: at least one override field must be set", phase)
@@ -712,7 +637,7 @@ func DefaultConfig() *Config {
 			},
 		},
 		AI: AIConfig{
-			LLM:           LLMConfig{Provider: "openai"},
+			LLM:           types.LLMConfig{Provider: "openai"},
 			Investigation: InvestigationConfig{MaxTurns: 40},
 			Summarizer: SummarizerConfig{
 				Threshold:         8000,

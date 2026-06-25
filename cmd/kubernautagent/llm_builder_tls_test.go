@@ -28,9 +28,9 @@ func TestBuildTransportChain_TLSCaFile(t *testing.T) {
 	cfg := kaconfig.DefaultConfig()
 	cfg.AI.LLM.TLSCaFile = caPath
 
-	rt := &kaconfig.LLMRuntimeConfig{}
+	merged := mergeLLMConfig(cfg.AI.LLM, &kaconfig.LLMRuntimeConfig{})
 
-	transport, err := buildTransportChain(cfg, rt)
+	transport, err := buildTransportChain(merged)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -41,9 +41,10 @@ func TestBuildTransportChain_TLSCaFile(t *testing.T) {
 
 func TestBuildTransportChain_NoTLSCaFile(t *testing.T) {
 	cfg := kaconfig.DefaultConfig()
-	rt := &kaconfig.LLMRuntimeConfig{}
 
-	transport, err := buildTransportChain(cfg, rt)
+	merged := mergeLLMConfig(cfg.AI.LLM, &kaconfig.LLMRuntimeConfig{})
+
+	transport, err := buildTransportChain(merged)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -57,9 +58,9 @@ func TestBuildTransportChain_InvalidCaFile(t *testing.T) {
 	cfg := kaconfig.DefaultConfig()
 	cfg.AI.LLM.TLSCaFile = "/nonexistent/ca.crt"
 
-	rt := &kaconfig.LLMRuntimeConfig{}
+	merged := mergeLLMConfig(cfg.AI.LLM, &kaconfig.LLMRuntimeConfig{})
 
-	_, err := buildTransportChain(cfg, rt)
+	_, err := buildTransportChain(merged)
 	if err == nil {
 		t.Fatal("expected error for invalid CA file, got nil")
 	}
@@ -76,9 +77,9 @@ func TestBuildTransportChain_mTLS(t *testing.T) {
 	cfg.AI.LLM.TLSCertFile = certPath
 	cfg.AI.LLM.TLSKeyFile = keyPath
 
-	rt := &kaconfig.LLMRuntimeConfig{}
+	merged := mergeLLMConfig(cfg.AI.LLM, &kaconfig.LLMRuntimeConfig{})
 
-	chain, err := buildTransportChain(cfg, rt)
+	chain, err := buildTransportChain(merged)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

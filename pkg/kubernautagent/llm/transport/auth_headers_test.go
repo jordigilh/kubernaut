@@ -27,8 +27,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/jordigilh/kubernaut/pkg/kubernautagent/config"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/transport"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // capturingTransport records the request forwarded by the outer RoundTripper.
@@ -47,7 +47,7 @@ var _ = Describe("AuthHeadersTransport — #417", func() {
 	Describe("UT-KA-417-016: Request cloning contract", func() {
 		It("should not mutate the original request", func() {
 			inner := &capturingTransport{}
-			headers := []config.HeaderDefinition{
+			headers := []types.LLMHeaderDef{
 				{Name: "Authorization", Value: "Bearer test"},
 			}
 			rt := transport.NewAuthHeadersTransport(headers, inner)
@@ -72,7 +72,7 @@ var _ = Describe("AuthHeadersTransport — #417", func() {
 	Describe("UT-KA-417-001: Inject all configured headers", func() {
 		It("should inject all headers into the outbound request", func() {
 			inner := &capturingTransport{}
-			headers := []config.HeaderDefinition{
+			headers := []types.LLMHeaderDef{
 				{Name: "x-api-key", Value: "test-key"},
 				{Name: "x-tenant-id", Value: "prod"},
 				{Name: "Authorization", Value: "Bearer abc123"},
@@ -106,7 +106,7 @@ var _ = Describe("AuthHeadersTransport — #417", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			inner := &capturingTransport{}
-			headers := []config.HeaderDefinition{
+			headers := []types.LLMHeaderDef{
 				{Name: "x-api-key", SecretKeyRef: "KA_TEST_MIXED_SECRET"},
 				{Name: "Authorization", FilePath: tmpFile.Name()},
 				{Name: "x-tenant-id", Value: "kubernaut-prod"},
@@ -133,7 +133,7 @@ var _ = Describe("AuthHeadersTransport — #417", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			inner := &echoTransport{}
-			headers := []config.HeaderDefinition{
+			headers := []types.LLMHeaderDef{
 				{Name: "Authorization", FilePath: tmpFile.Name()},
 			}
 			rt := transport.NewAuthHeadersTransport(headers, inner)
@@ -166,7 +166,7 @@ var _ = Describe("AuthHeadersTransport — #417", func() {
 	Describe("UT-KA-417-017: Header values do not appear in request body", func() {
 		It("should not modify the request body", func() {
 			inner := &capturingTransport{}
-			headers := []config.HeaderDefinition{
+			headers := []types.LLMHeaderDef{
 				{Name: "Authorization", Value: "Bearer secret-token-xyz"},
 			}
 			rt := transport.NewAuthHeadersTransport(headers, inner)

@@ -25,6 +25,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/config"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 var _ = Describe("Kubernaut Agent Configuration — #433", func() {
@@ -469,7 +470,7 @@ ai:
 			Expect(os.WriteFile(filepath.Join(dir, "client-id"), []byte("my-client\n"), 0600)).To(Succeed())
 			Expect(os.WriteFile(filepath.Join(dir, "client-secret"), []byte("s3cret\n"), 0600)).To(Succeed())
 
-			oauth2Cfg := &config.OAuth2Config{
+			oauth2Cfg := &types.LLMOAuth2Config{
 				Enabled:        true,
 				TokenURL:       "https://keycloak.acme.com/token",
 				CredentialsDir: dir,
@@ -486,7 +487,7 @@ ai:
 
 			Expect(os.WriteFile(filepath.Join(dir, "client-secret"), []byte("s3cret"), 0600)).To(Succeed())
 
-			oauth2Cfg := &config.OAuth2Config{
+			oauth2Cfg := &types.LLMOAuth2Config{
 				Enabled:        true,
 				TokenURL:       "https://keycloak.acme.com/token",
 				CredentialsDir: dir,
@@ -497,7 +498,7 @@ ai:
 		})
 
 		It("should return error when credentialsDir is empty", func() {
-			oauth2Cfg := &config.OAuth2Config{
+			oauth2Cfg := &types.LLMOAuth2Config{
 				Enabled:  true,
 				TokenURL: "https://keycloak.acme.com/token",
 			}
@@ -507,7 +508,7 @@ ai:
 		})
 
 		It("should be a no-op when oauth2 is disabled", func() {
-			oauth2Cfg := &config.OAuth2Config{Enabled: false}
+			oauth2Cfg := &types.LLMOAuth2Config{Enabled: false}
 			Expect(oauth2Cfg.ResolveOAuth2Credentials()).To(Succeed())
 			Expect(oauth2Cfg.ClientID).To(BeEmpty())
 		})
@@ -517,24 +518,24 @@ ai:
 var _ = Describe("AlignmentCheck EffectiveLLM merge — BR-AI-601", func() {
 
 	var (
-		base    config.LLMConfig
+		base    types.LLMConfig
 		runtime config.LLMRuntimeConfig
 	)
 
 	BeforeEach(func() {
-		base = config.LLMConfig{
+		base = types.LLMConfig{
 			Provider:        "openai",
 			AzureAPIVersion: "2024-02",
 			VertexProject:   "proj-base",
 			VertexLocation:  "us-central1",
 			BedrockRegion:   "us-east-1",
 			TLSCaFile:       "/certs/ca.pem",
-			OAuth2:          config.OAuth2Config{Enabled: true, TokenURL: "https://auth.example.com/token"},
+			OAuth2:          types.LLMOAuth2Config{Enabled: true, TokenURL: "https://auth.example.com/token"},
 		}
 		runtime = config.LLMRuntimeConfig{
-			Model:    "gpt-4o",
-			Endpoint: "https://api.openai.com/v1",
-			APIKey:   "sk-base-key",
+			Model:      "gpt-4o",
+			Endpoint:   "https://api.openai.com/v1",
+			APIKeyFile: "/etc/credentials/base-key",
 		}
 	})
 
@@ -548,7 +549,7 @@ var _ = Describe("AlignmentCheck EffectiveLLM merge — BR-AI-601", func() {
 	})
 
 	Describe("UT-GAP1-002: partial override (model only) inherits other fields", func() {
-		It("should override model but inherit provider, endpoint, apiKey from base/runtime", func() {
+		It("should override model but inherit provider, endpoint, apiKeyFile from base/runtime", func() {
 			cfg := config.AlignmentCheckConfig{
 				LLM: &config.LLMOverrideConfig{Model: "claude-3-opus"},
 			}
@@ -556,7 +557,7 @@ var _ = Describe("AlignmentCheck EffectiveLLM merge — BR-AI-601", func() {
 			Expect(sOut.Provider).To(Equal("openai"))
 			Expect(rOut.Model).To(Equal("claude-3-opus"))
 			Expect(rOut.Endpoint).To(Equal("https://api.openai.com/v1"))
-			Expect(rOut.APIKey).To(Equal("sk-base-key"))
+			Expect(rOut.APIKeyFile).To(Equal("/etc/credentials/base-key"))
 		})
 	})
 
@@ -567,7 +568,7 @@ var _ = Describe("AlignmentCheck EffectiveLLM merge — BR-AI-601", func() {
 					Provider:        "anthropic",
 					Model:           "claude-3-haiku",
 					Endpoint:        "https://api.anthropic.com",
-					APIKey:          "sk-shadow-key",
+					APIKeyFile:      "/etc/credentials/shadow-key",
 					AzureAPIVersion: "2025-01",
 					VertexProject:   "proj-shadow",
 					VertexLocation:  "europe-west1",
@@ -582,7 +583,7 @@ var _ = Describe("AlignmentCheck EffectiveLLM merge — BR-AI-601", func() {
 			Expect(sOut.BedrockRegion).To(Equal("eu-west-1"))
 			Expect(rOut.Model).To(Equal("claude-3-haiku"))
 			Expect(rOut.Endpoint).To(Equal("https://api.anthropic.com"))
-			Expect(rOut.APIKey).To(Equal("sk-shadow-key"))
+			Expect(rOut.APIKeyFile).To(Equal("/etc/credentials/shadow-key"))
 		})
 	})
 

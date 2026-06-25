@@ -22,8 +22,8 @@ import (
 
 	"github.com/go-logr/logr"
 
-	"github.com/jordigilh/kubernaut/pkg/kubernautagent/config"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/transport"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // llmClientTimeout is the maximum time an LLM HTTP request may take end-to-end.
@@ -36,7 +36,7 @@ const llmClientTimeout = 5 * time.Minute
 // transport is still installed but operates as a no-op pass-through.
 //
 // Authority: Issue #417 — Support custom authentication headers for LLM proxy endpoints
-func NewLLMClient(baseURL string, headers []config.HeaderDefinition) (*http.Client, error) {
+func NewLLMClient(baseURL string, headers []types.LLMHeaderDef) (*http.Client, error) {
 	rt := transport.NewAuthHeadersTransport(headers, http.DefaultTransport)
 	return &http.Client{Transport: rt, Timeout: llmClientTimeout}, nil
 }
@@ -44,7 +44,7 @@ func NewLLMClient(baseURL string, headers []config.HeaderDefinition) (*http.Clie
 // NewLLMClientWithLogger creates an http.Client with custom authentication headers
 // and structured logging. Header injection events are logged with sensitive values
 // redacted per DD-HAPI-019-003 (G4: Credential Scrubbing).
-func NewLLMClientWithLogger(baseURL string, headers []config.HeaderDefinition, logger logr.Logger) (*http.Client, error) {
+func NewLLMClientWithLogger(baseURL string, headers []types.LLMHeaderDef, logger logr.Logger) (*http.Client, error) {
 	rt := transport.NewAuthHeadersTransportWithLogger(headers, http.DefaultTransport, logger)
 	return &http.Client{Transport: rt, Timeout: llmClientTimeout}, nil
 }

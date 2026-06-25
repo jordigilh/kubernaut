@@ -20,8 +20,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/jordigilh/kubernaut/pkg/kubernautagent/config"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/transport"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 var _ = Describe("Credential Scrubbing — #417", func() {
@@ -39,17 +39,17 @@ var _ = Describe("Credential Scrubbing — #417", func() {
 		})
 
 		It("should identify secretKeyRef as sensitive source", func() {
-			def := config.HeaderDefinition{Name: "Authorization", SecretKeyRef: "SECRET_ENV"}
+			def := types.LLMHeaderDef{Name: "Authorization", SecretKeyRef: "SECRET_ENV"}
 			Expect(transport.IsSensitiveSource(def)).To(BeTrue())
 		})
 
 		It("should identify filePath as sensitive source", func() {
-			def := config.HeaderDefinition{Name: "Authorization", FilePath: "/var/run/token"}
+			def := types.LLMHeaderDef{Name: "Authorization", FilePath: "/var/run/token"}
 			Expect(transport.IsSensitiveSource(def)).To(BeTrue())
 		})
 
 		It("should identify value as NOT sensitive source", func() {
-			def := config.HeaderDefinition{Name: "x-tenant-id", Value: "prod"}
+			def := types.LLMHeaderDef{Name: "x-tenant-id", Value: "prod"}
 			Expect(transport.IsSensitiveSource(def)).To(BeFalse())
 		})
 	})

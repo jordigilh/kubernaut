@@ -553,6 +553,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 ai:
   llm:
     provider: "openai"
+    apiKeyFile: "/etc/kubernautagent-llm-runtime/api-key"
 integrations:
   dataStorage:
     url: "%s"
@@ -566,12 +567,13 @@ integrations:
 	Expect(os.Chmod(kaLLMRuntimeDir, 0755)).To(Succeed())
 	kaLLMRuntimeContent := fmt.Sprintf(`model: "mock-model"
 endpoint: "%s"
-apiKey: "mock-api-key-for-integration-tests"
 temperature: 0.7
 maxRetries: 3
 timeoutSeconds: 120
 `, llmEndpoint)
 	err = os.WriteFile(filepath.Join(kaLLMRuntimeDir, "llm-runtime.yaml"), []byte(kaLLMRuntimeContent), 0644)
+	Expect(err).ToNot(HaveOccurred())
+	err = os.WriteFile(filepath.Join(kaLLMRuntimeDir, "api-key"), []byte("mock-api-key-for-integration-tests"), 0644)
 	Expect(err).ToNot(HaveOccurred())
 
 	kaContainerConfig := infrastructure.GenericContainerConfig{

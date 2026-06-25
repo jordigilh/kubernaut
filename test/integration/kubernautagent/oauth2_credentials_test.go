@@ -28,7 +28,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/llm/transport"
 )
 
@@ -61,7 +61,7 @@ var _ = Describe("OAuth2 Client Credentials Integration — #417", func() {
 			}))
 			defer idpServer.Close()
 
-			cfg := kaconfig.OAuth2Config{
+			cfg := types.LLMOAuth2Config{
 				Enabled:      true,
 				TokenURL:     idpServer.URL,
 				ClientID:     "kubernaut-agent",
@@ -109,7 +109,7 @@ var _ = Describe("OAuth2 Client Credentials Integration — #417", func() {
 			}))
 			defer llmServer.Close()
 
-			cfg := kaconfig.OAuth2Config{
+			cfg := types.LLMOAuth2Config{
 				Enabled:      true,
 				TokenURL:     idpServer.URL,
 				ClientID:     "kubernaut-agent",
@@ -151,7 +151,7 @@ var _ = Describe("OAuth2 Client Credentials Integration — #417", func() {
 
 	Describe("IT-KA-417-012: IdP unavailable produces actionable error", func() {
 		It("should return a clear error when the token endpoint is unreachable", func() {
-			cfg := kaconfig.OAuth2Config{
+			cfg := types.LLMOAuth2Config{
 				Enabled:      true,
 				TokenURL:     "http://127.0.0.1:1/nonexistent-idp/token",
 				ClientID:     "kubernaut-agent",

@@ -32,7 +32,7 @@ import (
 	adksession "google.golang.org/adk/session"
 
 	agentpkg "github.com/jordigilh/kubernaut/pkg/apifrontend/agent"
-	"github.com/jordigilh/kubernaut/pkg/apifrontend/config"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 )
@@ -140,8 +140,8 @@ var _ = Describe("A2A Investigation Tool Error Transparency (TP-1310)", func() {
 		}
 
 		ctx := context.Background()
-		llmModel, err := launcher.NewModelFromConfig(ctx, config.LLMConfig{
-			Provider: config.LLMProviderGemini,
+		llmModel, err := launcher.NewModelFromConfig(ctx, types.LLMConfig{
+			Provider: types.LLMProviderGemini,
 			Model:    "mock-model",
 			Endpoint: llmServer.URL,
 			APIKey:   "test-key",
