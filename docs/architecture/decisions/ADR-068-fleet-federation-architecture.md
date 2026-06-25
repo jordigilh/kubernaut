@@ -24,6 +24,30 @@ The key constraints are:
 
 ## Decision
 
+### MCP Gateway Technology: Envoy AI Gateway
+
+**Chosen**: Envoy AI Gateway (v1.0, `envoyproxy/ai-gateway`)
+**Rejected**: Kuadrant MCP Gateway (evaluated via spike, 2026-06-25)
+
+Envoy AI Gateway was selected over Kuadrant MCP Gateway for the following reasons:
+
+| Criterion | Envoy AI Gateway | Kuadrant MCP Gateway |
+|-----------|-----------------|---------------------|
+| **Istio dependency** | None | Hard dependency (requires `istiod` + `EnvoyFilter`) |
+| **Components to deploy** | 1 (single Deployment or standalone binary) | 3+ (Kuadrant controller + broker + Istio control plane) |
+| **Memory footprint** | ~122 MB | ~400-700 MB (Istio + Kuadrant stack) |
+| **Tool prefixing** | `{backendName}__{toolName}` (identical to Kubernaut convention) | `{toolPrefix}{toolName}` (configurable, compatible) |
+| **Auth model** | Built-in OAuth + CEL authorization (no external engines) | Authorino (external) + OPA Rego policies |
+| **Standalone mode** | `aigw run` CLI (IT testing without K8s) | Not available (requires K8s + Istio) |
+| **Maturity** | v1.0 GA (Bloomberg/Tetrate backing) | Technology Preview |
+| **CRD model** | `MCPRoute` + `Backend` (Envoy Gateway standard) | `MCPServerRegistration` + `MCPGatewayExtension` |
+| **MCP spec compliance** | June 2025 MCP spec (streamable HTTP) | Earlier MCP spec |
+
+The spike (2026-06-25) validated that Envoy AI Gateway's `{backendName}__{toolName}` prefix
+is identical to the convention used by `mcpclient.ClusterTool()`, requiring zero code changes
+in the MCP client layer. The CRDWatcher in `pkg/fleet/registry/` needs to watch `MCPRoute`
+and `Backend` CRDs instead of `MCPServerRegistration`.
+
 ### Architecture Overview
 
 ```
@@ -37,9 +61,9 @@ The key constraints are:
                     │    │      │  all read    │      │      │       │     │
                     │    ▼      ▼              ▼      ▼      ▼       ▼     │
                     │  ┌──────────────────────────────────────────────┐    │
-                    │  │            MCP Gateway (Kuadrant)             │    │
+                    │  │        MCP Gateway (Envoy AI Gateway)         │    │
                     │  │      (routes to per-cluster MCP Servers)      │    │
-                    │  │      Authorino: JWT auth + OPA authz         │    │
+                    │  │      OAuth + CEL authz (built-in)            │    │
                     │  │      mcp-read: GW,KA,RO,SP,AF,EM,FMC        │    │
                     │  │      mcp-write: WE (remediation)             │    │
                     │  └──────────────────────────────────────────────┘    │
@@ -86,7 +110,7 @@ The key constraints are:
 | **FederatedScopeChecker** | Routes scope checks: local → scope.Manager, remote → backend adapter (scope.ScopeChecker) | `pkg/fleet/federated_checker.go` |
 | **ResilientClient** | MCP client with backoff, reconnect, readiness gating | `pkg/fleet/mcpclient/resilience.go` |
 | **ReloadableOAuth2Transport** | Hot-reloadable OAuth2 credentials via FileWatcher | `pkg/fleet/mcpclient/reloadable_auth.go` |
-| **CRDWatcher** | Discovers clusters from `MCPServerRegistration` CRDs | `pkg/fleet/registry/` |
+| **CRDWatcher** | Discovers clusters from `MCPRoute` / `Backend` CRDs (Envoy AI Gateway) | `pkg/fleet/registry/` |
 | **KA Fleet Tools** | Dynamic BridgeTool registration from MCP Gateway `tools/list` | `cmd/kubernautagent/main.go` |
 
 ### Key Design Decisions
@@ -105,9 +129,9 @@ The key constraints are:
 
 7. **KA dynamic tool discovery** (not hard-coded): Fleet tools are registered at startup from `tools/list`. `AppendFleetToolsToRCA` makes them visible to the LLM investigator without code changes per cluster.
 
-8. **`MCPServerRegistration` as source of truth** (not ConfigMap): Kuadrant CRD is the authoritative registry of MCP backends. Kubernaut is a **read-only consumer** — it watches but never creates or modifies these CRDs. The control plane (ACM, Rancher, GitOps) owns their lifecycle.
+8. **`MCPRoute` + `Backend` as source of truth** (not ConfigMap): Envoy AI Gateway CRDs are the authoritative registry of MCP backends. Kubernaut is a **read-only consumer** — it watches but never creates or modifies these CRDs. The control plane (ACM, Rancher, GitOps) owns their lifecycle.
 
-9. **MCP Gateway as unified chokepoint for all remote cluster access** (not separate auth paths per backend type): All Kubernaut services that interact with remote clusters — GW, KA, RO, SP, AF, EM (read-only), FMC (metadata sync), and WE (remediation execution) — access remote clusters exclusively through the MCP Gateway. The K8s MCP Server and AAP MCP Server are both registered as backends behind the same gateway. This eliminates the need for service-specific credential management (e.g., separate AAP bearer token injection). Auth is enforced at two layers: (a) Authorino validates caller JWT and enforces role-based access (`mcp-read` for GW/KA/RO/SP/AF/EM/FMC, `mcp-write` for WE), and (b) each MCP Server authenticates against its own local APIs using its own ServiceAccount. No per-cluster SA tokens are maintained by Kubernaut services.
+9. **MCP Gateway as unified chokepoint for all remote cluster access** (not separate auth paths per backend type): All Kubernaut services that interact with remote clusters — GW, KA, RO, SP, AF, EM (read-only), FMC (metadata sync), and WE (remediation execution) — access remote clusters exclusively through the MCP Gateway. The K8s MCP Server and AAP MCP Server are both registered as backends behind the same gateway. This eliminates the need for service-specific credential management (e.g., separate AAP bearer token injection). Auth is enforced at two layers: (a) Envoy AI Gateway validates caller JWT via built-in OAuth and enforces role-based access through CEL authorization rules (`mcp-read` for GW/KA/RO/SP/AF/EM/FMC, `mcp-write` for WE), and (b) each MCP Server authenticates against its own local APIs using its own ServiceAccount. No per-cluster SA tokens are maintained by Kubernaut services.
 
 ## Alternatives Considered
 
@@ -129,12 +153,17 @@ The key constraints are:
 ### D. ConfigMap-based cluster registry
 - +: Simple, no CRD dependency
 - -: Drift risk; manual management; no reconciliation; no standardized contract
-- **Rejected**: MCPServerRegistration CRD is the authoritative and universal contract
+- **Rejected**: Envoy AI Gateway `MCPRoute`/`Backend` CRDs are the authoritative and universal contract
 
 ### E. Native control-plane adapters (ACM ManagedCluster watcher, Rancher adapter)
 - +: Direct integration, potentially lower latency for cluster discovery
-- -: Kubernaut couples to specific control plane; N adapters to maintain; same info available via MCPServerRegistration
-- **Rejected**: MCPServerRegistration is the generic interface. Control planes own the creation of these CRDs.
+- -: Kubernaut couples to specific control plane; N adapters to maintain; same info available via gateway CRDs
+- **Rejected**: Envoy AI Gateway CRDs are the generic interface. Control planes own the creation of these CRDs.
+
+### I. Kuadrant MCP Gateway (instead of Envoy AI Gateway)
+- +: Mature MCP server registration model, Kuadrant ecosystem integration
+- -: Hard dependency on Istio (requires `istiod` + `EnvoyFilter` CRDs); 3 components to deploy (controller + broker + Istio); ~400-700 MB memory for the full stack; cannot run standalone (requires Kubernetes)
+- **Rejected**: Envoy AI Gateway provides the same tool prefixing convention (`{backend}__{tool}`), same MCP protocol support, built-in OAuth + CEL authorization (no external Authorino/OPA needed), single-component deployment (~122 MB), standalone mode for IT testing, and is backed by Bloomberg/Tetrate in production (v1.0). Spike validated identical `__` prefix behavior and successful tool routing.
 
 ### F. Single hardcoded scope resolution backend (Valkey only)
 - +: Simpler implementation
@@ -154,7 +183,7 @@ The key constraints are:
 - -: WE needs two auth paths: one for K8s MCP (via gateway) and one for AAP (direct token)
 - -: Separate credential management and rotation for AAP tokens outside the gateway
 - -: AAP MCP backends are treated differently from K8s MCP backends, violating the unified chokepoint principle
-- **Deferred**: AAP MCP Server is now registered as a standard backend behind the MCP Gateway, same as K8s MCP Servers. The gateway handles routing to both. WE calls tools through the gateway without knowing whether the backend is K8s-native or AAP. If AAP MCP requires its own auth, the gateway or the AAP MCP Server handles it internally — Kubernaut services are not involved.
+- **Deferred**: AAP MCP Server is now registered as a standard `Backend` behind the MCP Gateway, same as K8s MCP Servers. The gateway handles routing to both. WE calls tools through the gateway without knowing whether the backend is K8s-native or AAP. If AAP MCP requires its own auth, the `MCPRoute.backendRefs[].securityPolicy` handles upstream credential injection — Kubernaut services are not involved.
 
 ## Consequences
 
@@ -162,7 +191,7 @@ The key constraints are:
 - Fleet scope checking achieves p95 < 1ms (Valkey EXISTS)
 - Zero regression for single-cluster (fleet disabled by default)
 - Credential rotation requires no service restart
-- New clusters auto-discovered via CRDWatcher
+- New clusters auto-discovered via CRDWatcher (watches `MCPRoute`/`Backend` CRDs)
 - LLM investigator automatically gains remote cluster tools
 - Unified chokepoint: all remote access (read and write) flows through MCP Gateway
 - WE can execute Jobs, Tekton pipelines, and AAP workflows on any cluster through a single interface
@@ -173,7 +202,7 @@ The key constraints are:
 - Valkey dependency (already exists for other Kubernaut features)
 - Stale cache window (sync interval, default 30s)
 - MCP subscriptions not yet supported (polling fallback)
-- K8s MCP Server SA requires write permissions (larger blast radius than read-only); mitigated by gateway-level OPA authorization
+- K8s MCP Server SA requires write permissions (larger blast radius than read-only); mitigated by gateway-level CEL authorization rules
 
 ### Risks and Mitigations
 
@@ -224,19 +253,19 @@ The key constraints are:
 
 The MCP Gateway is the single entry point for all Kubernaut service interactions with remote
 clusters. All backend MCP Servers — K8s MCP Servers and AAP MCP Servers — are registered behind
-the gateway via `MCPServerRegistration` CRDs. Kubernaut services connect to the gateway, not to
-individual backends.
+the gateway via Envoy AI Gateway `MCPRoute` + `Backend` CRDs. Kubernaut services connect to
+the gateway, not to individual backends.
 
 ```
                    ┌──────────────────────────────────┐
-                   │          MCP Gateway              │
+                   │    MCP Gateway (Envoy AI GW)      │
                    │  ┌────────────────────────────┐   │
-                   │  │   Authorino (AuthPolicy)    │   │
-                   │  │   JWT validation + OPA      │   │
+                   │  │   Built-in OAuth (JWT)      │   │
+                   │  │   + CEL Authorization       │   │
                    │  └────────────────────────────┘   │
                    │            │                       │
                    │  ┌─────────┴──────────┐           │
-                   │  │    OPA Policy       │           │
+                   │  │  CEL Auth Rules     │           │
                    │  │  mcp-read:          │           │
                    │  │   GW,KA,RO,SP,      │           │
                    │  │   AF,EM,FMC         │           │
@@ -399,23 +428,23 @@ Kubernaut services.
 
 | Aspect | Detail |
 |--------|--------|
-| Mechanism | JWT (Keycloak/DEX) validated by Authorino |
+| Mechanism | JWT (Keycloak/DEX) validated by Envoy AI Gateway's built-in OAuth |
 | Identity | Service identity: GW, KA, RO, SP, AF, EM, FMC, or WE |
-| Authorization | OPA policy: `mcp-read` (GW, KA, RO, SP, AF, EM, FMC) or `mcp-write` (WE) |
+| Authorization | CEL authorization rules on `MCPRoute`: JWT scopes `mcp-read` (GW, KA, RO, SP, AF, EM, FMC) or `mcp-write` (WE); per-cluster gating via `request.mcp.backend in request.auth.jwt.claims.kubernaut_allowed_clusters` |
 | Credential mgmt | `ReloadableOAuth2Transport` with file-watched client credentials |
 
 **Boundary 2: MCP Gateway → Backend MCP Server (east-west)**
 
 | Aspect | Detail |
 |--------|--------|
-| In-cluster | Direct Service routing via HTTPRoute; no auth (same mesh) |
-| Cross-cluster | Istio ServiceEntry + DestinationRule with TLS |
+| In-cluster | Direct Service routing via `Backend` CRD; no auth (same network) |
+| Cross-cluster | `Backend` CRD with TLS endpoint + `securityPolicy.apiKey` for upstream auth |
 | Backend identity | Each MCP Server uses its own SA (`mcp-operator`) on its local cluster |
 | No token delegation | User/service identity stops at the gateway; backends act with fixed SA |
 
 This is architecturally distinct from the AF → KA pattern, where AF mints a JWT carrying
 user context (acting_user, acting_groups) for downstream identity delegation. In the MCP
-Gateway architecture, authorization is enforced at the edge (Authorino), and backends
+Gateway architecture, authorization is enforced at the edge (Envoy AI Gateway), and backends
 trust the gateway's routing decisions.
 
 ## Federated Control Plane Interface
@@ -1052,14 +1081,14 @@ Migration status:
 
 | Control | Implementation |
 |---------|---------------|
-| Authentication (gateway) | OAuth2 client credentials grant (file-mounted JWT) validated by Authorino |
-| Authorization (gateway) | OPA policy enforces role-based tool access: `mcp-read` (GW, KA, RO, SP, AF, EM, FMC), `mcp-write` (WE) |
+| Authentication (gateway) | OAuth2 client credentials grant (file-mounted JWT) validated by Envoy AI Gateway's built-in OAuth |
+| Authorization (gateway) | CEL authorization rules enforce role-based tool access: `mcp-read` (GW, KA, RO, SP, AF, EM, FMC), `mcp-write` (WE) |
 | Credential rotation | ReloadableOAuth2Transport with FileWatcher |
 | Token timeout | 10s context deadline on token refresh HTTP calls |
 | Least privilege (FMC) | readOnlyRootFilesystem, drop ALL caps, runAsNonRoot |
 | Least privilege (K8s MCP Server) | `mcp-operator` SA with scoped RBAC; no cluster-admin |
 | Network policy | MCP Gateway accessible only from kubernaut-system namespace |
-| RBAC (FMC) | Read-only on MCPServerRegistration CRDs |
+| RBAC (FMC) | Read-only on MCPRoute / Backend CRDs |
 | RBAC (K8s MCP Server) | Read verbs for investigation/sync, write verbs for remediation; gateway OPA gates which callers can invoke write tools |
 | No credential leakage | Kubernaut services hold gateway OAuth2 credentials only; no per-cluster SA tokens or API keys |
 
@@ -1067,8 +1096,8 @@ Migration status:
 
 | Control | Impact |
 |---------|--------|
-| AC-3 (Access enforcement) | Gateway OPA policy enforces `mcp-read` vs `mcp-write` per service identity; GW, KA, RO, SP, AF, EM, FMC get read-only; only WE can invoke write tools |
-| AC-6 (Least privilege) | K8s MCP Server SA has scoped RBAC (not cluster-admin); WE write access limited to remediation-relevant resource types |
+| AC-3 (Access enforcement) | Gateway CEL authorization rules enforce `mcp-read` vs `mcp-write` per service identity; GW, KA, RO, SP, AF, EM, FMC get read-only; only WE can invoke write tools |
+| AC-6 (Least privilege) | K8s MCP Server SA has scoped RBAC (not cluster-admin); WE write access limited to remediation-relevant resource types; gateway `toolSelector` restricts exposed tools per backend |
 | AU-3 (Audit content) | Cluster provenance recorded per-RR; MCP Gateway logs all tool calls with caller identity |
 | SI-4 (Monitoring) | Cross-cluster correlation via ClusterID |
 | SC-7 (Boundary protection) | MCP Gateway as single chokepoint for all remote cluster access (read and write) |
@@ -1101,7 +1130,7 @@ Add to the SP controller's `config.yaml`:
 
 ```yaml
 fleet:
-  endpoint: "http://mcp-gateway.kubernaut-system.svc:8080"  # MCP Gateway URL
+  endpoint: "http://envoy-ai-gateway.kubernaut-system.svc:8080"  # MCP Gateway (Envoy AI Gateway) URL
   oauth2:
     enabled: true
     tokenURL: "https://keycloak.example.com/realms/kubernaut/protocol/openid-connect/token"
@@ -1139,44 +1168,52 @@ Platform teams deploying Kubernaut with multi-cluster federation MUST configure:
    Keycloak client used by Kubernaut services. This claim carries the list of clusters
    each service identity is authorized to access.
 
-2. **OPA Rego policy in Authorino AuthPolicy** — Extend the MCP Gateway's OPA policy
-   to extract the cluster prefix from the MCP tool name (e.g., `prod-east-1` from
-   `prod-east-1__get_resource`) and verify it appears in the caller's
-   `kubernaut_allowed_clusters` claim.
+2. **CEL authorization rules on MCPRoute** — Extend the `MCPRoute.spec.securityPolicy.authorization`
+   to gate tool calls by cluster. Envoy AI Gateway exposes `request.mcp.backend` (the backend
+   name, which maps to the cluster ID), enabling direct matching without parsing tool name prefixes.
 
-### Example Rego Policy (Reference Only)
+### Example CEL Authorization Policy (Reference Only)
 
-```rego
+```yaml
 # This is a reference example. Kubernaut does NOT ship or manage this policy.
-# Platform teams deploy it via Authorino AuthPolicy on the MCP Gateway.
-
-package mcp_gateway_authz
-
-default allow = false
-
-allow {
-    input.context.request.http.method == "POST"
-    tool_name := input.parsed_body.params.name
-    cluster := extract_cluster_prefix(tool_name)
-    token := input.auth.identity
-    cluster in token.kubernaut_allowed_clusters
-}
-
-extract_cluster_prefix(tool_name) = prefix {
-    parts := split(tool_name, "__")
-    count(parts) >= 2
-    prefix := parts[0]
-}
+# Platform teams configure it on the MCPRoute's securityPolicy.authorization.
+apiVersion: aigateway.envoyproxy.io/v1beta1
+kind: MCPRoute
+metadata:
+  name: kubernaut-fleet
+spec:
+  securityPolicy:
+    oauth:
+      issuer: "https://keycloak.example.com/realms/kubernaut"
+      audiences:
+        - "https://mcp-gateway.kubernaut-system.svc"
+    authorization:
+      defaultAction: Deny
+      rules:
+        # WE (mcp-write scope) can call write tools on allowed clusters
+        - source:
+            jwt:
+              scopes: ["mcp-write"]
+          cel: request.mcp.backend in request.auth.jwt.claims.kubernaut_allowed_clusters
+        # All other services (mcp-read scope) can call read tools on allowed clusters
+        - source:
+            jwt:
+              scopes: ["mcp-read"]
+          target:
+            tools:
+              - tool: "resources_get"
+              - tool: "resources_list"
+          cel: request.mcp.backend in request.auth.jwt.claims.kubernaut_allowed_clusters
 ```
 
 ### Why BYO
 
 - Authorization policies vary widely between organizations (different IdPs, different
-  cluster naming conventions, different OPA rule structures)
+  cluster naming conventions, different CEL/policy rule structures)
 - Kubernaut is a read-only consumer of the MCP Gateway — it does not own the gateway's
-  AuthPolicy configuration
-- The Keycloak claim and OPA policy are standard Authorino/Kuadrant patterns, not
-  Kubernaut-specific code
+  authorization configuration
+- The Keycloak claim and CEL authorization rules are standard Envoy AI Gateway patterns,
+  not Kubernaut-specific code
 
 ## Phase 3: WE MCP Executor (Remote Workflow Execution)
 
@@ -1262,11 +1299,17 @@ executorRegistry.Register("tekton", NewTektonExecutorWithFactory(clientFactory))
 
 ### MCP Tool Mapping
 
+Tool names use the `{backendName}__{toolName}` prefix convention, where `backendName`
+is the Envoy AI Gateway `Backend` CR name (which maps to the cluster ID) and `toolName`
+is the real `kubernetes-mcp-server` tool name. Constants are defined in
+`pkg/fleet/mcpclient/tool_names.go`.
+
 | Operation | MCP Tool Name | Arguments |
 |-----------|---------------|-----------|
-| Create    | `{clusterID}__create_resource` | `manifest` (JSON string) |
-| Delete    | `{clusterID}__delete_resource` | `kind`, `name`, `namespace` |
-| Get       | `{clusterID}__get_resource` | `kind`, `name`, `namespace` |
+| Get       | `{clusterID}__resources_get` | `kind`, `name`, `namespace` |
+| List      | `{clusterID}__resources_list` | `kind`, `namespace` |
+| Create/Update | `{clusterID}__resources_create_or_update` | `manifest` (JSON string) |
+| Delete    | `{clusterID}__resources_delete` | `kind`, `name`, `namespace` |
 
 ### Backward Compatibility
 
@@ -1285,9 +1328,11 @@ executorRegistry.Register("tekton", NewTektonExecutorWithFactory(clientFactory))
 - Spike S8: Real K8s MCP Server with envtest
 - Spike S9: ScopeChecker interface redesign
 - Spike S10: K8s MCP Server CRD support
+- Spike S11: Envoy AI Gateway evaluation (2026-06-25) — validated `__` prefix convention, standalone mode, memory footprint, CEL auth
 
 ### Backend-Specific Documentation
 
+- **Envoy AI Gateway (MCP)**: [MCP Gateway Documentation](https://aigateway.envoyproxy.io/docs/capabilities/mcp/) — MCPRoute configuration, OAuth, CEL authorization, tool filtering, server multiplexing
 - **ACM Search API**: [Red Hat ACM Search Documentation (2.16)](https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/2.16/html-single/search/index) — GraphQL-based search across managed clusters via `search-api` service
 - **ACM Search Query API wiki**: [stolostron/search-v2-operator Search Query API](https://github.com/stolostron/search-v2-operator/wiki/Search-Query-API)
 - **Rancher v3 API Guide**: [Rancher API Reference](https://ranchermanager.docs.rancher.com/api/v3-rancher-api-guide) — REST API for cluster management, K8s proxy for resource access

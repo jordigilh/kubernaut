@@ -39,9 +39,10 @@ Management Cluster
 
 5. **Dual tool path**: K8s-originated signals continue using local `client-go` tools. ServiceNow signals use MCP Bridge tools for remote cluster access.
 
-## Why Not MCP Gateway
+## Why Not MCP Gateway (for ADR-064's Direct-Connect Use Case)
 
-The MCP Gateway (Kuadrant / Connectivity Link) was evaluated in the spike (4 spikes, all GO). It was **removed** from the architecture because:
+The MCP Gateway was evaluated in the spike (4 spikes, all GO). It was **removed** from
+this ADR's architecture because KA's direct-connect use case does not benefit from aggregation:
 
 | Gateway Capability | Does KA need it? | Reason |
 |-------------------|-----------------|--------|
@@ -50,11 +51,15 @@ The MCP Gateway (Kuadrant / Connectivity Link) was evaluated in the spike (4 spi
 | Rate limiting | **No** | KA self-limits; investigation tool calls are sequential |
 | Observability | **No** | KA instruments its own MCP calls |
 
-**Net effect of removing the gateway:**
-- Eliminates Istio + Gateway API + MCP Gateway operator dependency
-- Eliminates Technology Preview risk (MCP Gateway is not GA)
+**Net effect of removing the gateway for this use case:**
 - ~10-50ms lower latency per tool call (no gateway hop)
 - Simpler deployment: OCP MCP server per cluster + cluster registry Secret
+
+> **Note**: The MCP Gateway is used in the fleet federation architecture (ADR-068) where
+> multiple Kubernaut services (GW, KA, RO, SP, AF, EM, FMC, WE) need aggregated access
+> to all managed clusters. ADR-068 uses **Envoy AI Gateway** (not Kuadrant) for this
+> purpose — Kuadrant was evaluated and rejected due to its Istio dependency. See ADR-068
+> Alternative I for the full comparison.
 
 ## Consequences
 
@@ -85,11 +90,14 @@ The MCP Gateway (Kuadrant / Connectivity Link) was evaluated in the spike (4 spi
 
 ## Alternatives Considered
 
-### A: MCP Gateway (Kuadrant) -- Rejected
+### A: MCP Gateway (Kuadrant) -- Rejected for Direct-Connect
 
 **Approach**: Deploy MCP Gateway in management cluster, register per-cluster OCP MCP servers with tool prefixes.
 
-**Rejected because**: Gateway adds infrastructure complexity (Istio + Gateway API + operator) without value -- KA already knows the target cluster and doesn't need tool aggregation. Technology Preview risk. Spike validated it works but the simpler direct approach is preferred.
+**Rejected for this use case because**: Gateway adds infrastructure complexity without value -- KA already knows the target cluster and doesn't need tool aggregation. The simpler direct approach is preferred for single-server-per-investigation patterns.
+
+> **Note**: For fleet federation (ADR-068), an MCP Gateway IS used but with **Envoy AI Gateway**
+> instead of Kuadrant, eliminating the Istio dependency.
 
 ### B: Multi-kubeconfig in KA -- Rejected
 

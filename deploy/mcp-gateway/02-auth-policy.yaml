@@ -1,32 +1,47 @@
-# AuthPolicy for MCP Gateway — requires valid JWT from DEX for tool calls.
+# OAuth + CEL Authorization for MCP Gateway — requires valid JWT from DEX.
 # Used in E2E tests with DEX as the OAuth2/OIDC provider.
 #
 # In production, this would reference the organization's identity provider
 # (Keycloak, Azure AD, etc.) via the kubernaut-operator.
-apiVersion: kuadrant.io/v1
-kind: AuthPolicy
-metadata:
-  name: mcp-gateway-auth
-  namespace: kubernaut-system
-  labels:
-    app.kubernetes.io/part-of: kubernaut
-spec:
-  targetRef:
-    group: gateway.networking.k8s.io
-    kind: HTTPRoute
-    name: mcp-gateway
-  rules:
-    authentication:
-      dex-jwt:
-        jwt:
-          issuerUrl: http://dex.kubernaut-system.svc:5556/dex
-        credentials:
-          authorizationHeader:
-            prefix: Bearer
-    authorization:
-      kubernaut-managed:
-        opa:
-          rego: |
-            allow {
-              input.auth.identity.groups[_] == "kubernaut-operators"
-            }
+#
+# Authorization rules enforce:
+#   - mcp-write scope: WE can call write tools (resources_create_or_update, resources_delete)
+#   - mcp-read scope: all other services can call read tools (resources_get, resources_list)
+#   - Per-cluster gating: request.mcp.backend must be in the caller's allowed clusters claim
+#
+# Note: This is configured directly on the MCPRoute's securityPolicy in Envoy AI Gateway,
+# replacing the previous Kuadrant AuthPolicy + Authorino + OPA approach.
+#
+# Example MCPRoute securityPolicy (merge with 01-mcp-server-registration.yaml in production):
+#
+# spec:
+#   securityPolicy:
+#     oauth:
+#       issuer: "http://dex.kubernaut-system.svc:5556/dex"
+#       audiences:
+#         - "kubernaut-mcp-gateway"
+#     authorization:
+#       defaultAction: Deny
+#       rules:
+#         - source:
+#             jwt:
+#               scopes: ["mcp-write"]
+#               claims:
+#                 - name: groups
+#                   valueType: StringArray
+#                   values:
+#                     - kubernaut-operators
+#           cel: request.mcp.backend in request.auth.jwt.claims.kubernaut_allowed_clusters
+#         - source:
+#             jwt:
+#               scopes: ["mcp-read"]
+#               claims:
+#                 - name: groups
+#                   valueType: StringArray
+#                   values:
+#                     - kubernaut-operators
+#           target:
+#             tools:
+#               - tool: "resources_get"
+#               - tool: "resources_list"
+#           cel: request.mcp.backend in request.auth.jwt.claims.kubernaut_allowed_clusters
