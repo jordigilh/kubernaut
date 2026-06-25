@@ -32,18 +32,12 @@ import (
 
 // GW Fleet Signal Ingestion (BR-INTEGRATION-065)
 //
-// Phase 1 RED tests for cluster-aware signal ingestion.
+// Integration tests for cluster-aware signal ingestion.
 // These tests validate that:
 // 1. PrometheusAdapter extracts the cluster label from commonLabels
 // 2. NormalizedSignal carries a ClusterID field
 // 3. CRDCreator populates spec.clusterID on the RemediationRequest
 // 4. Fingerprint calculation includes clusterID for cluster-aware dedup
-//
-// All tests are expected to FAIL (RED) because:
-// - NormalizedSignal does not yet have a ClusterID field
-// - PrometheusAdapter does not extract cluster from commonLabels
-// - CRDCreator does not populate spec.clusterID from the signal
-// - CalculateOwnerFingerprint does not factor in clusterID
 var _ = Describe("GW Fleet Signal Ingestion (BR-INTEGRATION-065)", Ordered, Label("fleet", "integration"), func() {
 	var (
 		testLogger    logr.Logger
@@ -85,10 +79,6 @@ var _ = Describe("GW Fleet Signal Ingestion (BR-INTEGRATION-065)", Ordered, Labe
 	// RemediationRequest has spec.clusterID="prod-east". This enables downstream
 	// services (RO, WE) to route remediation to the correct cluster.
 	//
-	// RED because:
-	// - NormalizedSignal has no ClusterID field
-	// - PrometheusAdapter.Parse does not extract cluster from commonLabels
-	// - CRDCreator does not set spec.clusterID from signal.ClusterID
 	It("IT-GW-FLEET-001: should propagate cluster label to RR spec.clusterID", func() {
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		testLogger.Info("IT-GW-FLEET-001: Cluster label → spec.clusterID propagation")
@@ -102,9 +92,6 @@ var _ = Describe("GW Fleet Signal Ingestion (BR-INTEGRATION-065)", Ordered, Labe
 			Severity:     "critical",
 			Source:       "prometheus",
 		})
-		// RED: NormalizedSignal.ClusterID does not exist yet.
-		// When implemented, PrometheusAdapter will set this from commonLabels.cluster.
-		// For now, we set it directly to demonstrate the expected contract.
 		signal.ClusterID = "prod-east"
 
 		response, err := gwServer.ProcessSignal(ctx, signal)
@@ -229,9 +216,6 @@ var _ = Describe("GW Fleet Signal Ingestion (BR-INTEGRATION-065)", Ordered, Labe
 	// a fingerprint matching the current (non-cluster-aware) algorithm. This ensures
 	// zero regression for existing users who are not using multi-cluster federation.
 	//
-	// RED because:
-	// - NormalizedSignal has no ClusterID field (compilation failure)
-	// - Even if it compiled, CRDCreator does not set spec.clusterID at all
 	It("IT-GW-FLEET-003: should create RR with empty clusterID when no cluster label present", func() {
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		testLogger.Info("IT-GW-FLEET-003: Backward compatibility (no cluster label)")

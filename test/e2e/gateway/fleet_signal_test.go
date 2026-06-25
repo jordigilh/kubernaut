@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -35,8 +36,13 @@ import (
 // This test exercises the full HTTP path:
 //   POST /api/v1/signals/prometheus → PrometheusAdapter → CRDCreator → K8s API
 var _ = Describe("E2E-FLEET-004: GW Cluster-Aware Signal Ingestion", Label("fleet", "e2e"), func() {
+	BeforeEach(func() {
+		if os.Getenv("FLEET_E2E") != "true" {
+			Skip("FLEET_E2E=true required for fleet E2E tests")
+		}
+	})
+
 	It("should create RR with spec.clusterID when alert has cluster label", func() {
-		Skip("Fleet E2E requires Kind cluster with fleet infrastructure deployed")
 
 		payload := buildPrometheusAlertWithCluster("HighMemory", "default", "critical",
 			"Deployment", "nginx", "prod-east")
@@ -65,7 +71,6 @@ var _ = Describe("E2E-FLEET-004: GW Cluster-Aware Signal Ingestion", Label("flee
 	})
 
 	It("should produce different fingerprints for same resource on different clusters", func() {
-		Skip("Fleet E2E requires Kind cluster with fleet infrastructure deployed")
 
 		payloadEast := buildPrometheusAlertWithCluster("HighCPU", "default", "warning",
 			"Deployment", "nginx", "prod-east")
