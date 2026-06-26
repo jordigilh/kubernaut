@@ -219,9 +219,19 @@ func run() int {
 		}()
 	}
 
-	activeCtxRegistry := launcher.NewActiveContextRegistry(launcher.DefaultRegistryTTL, launcher.DefaultRegistryIdleTimeout)
+	hDeps := &handlerDeps{
+		Cfg:               cfg,
+		Backends:          deps,
+		SessInfra:         sessInfra,
+		MetricsReg:        metricsReg,
+		Authorizer:        sarChecker,
+		Auditor:           auditor,
+		Logger:            logger,
+		UserLimiter:       userLimiter,
+		ActiveCtxRegistry: launcher.NewActiveContextRegistry(launcher.DefaultRegistryTTL, launcher.DefaultRegistryIdleTimeout),
+	}
 
-	mcpHandler, depsReady, err := buildMCPHandler(cfg, deps, sessInfra, metricsReg, sarChecker, auditor, logger, userLimiter, activeCtxRegistry)
+	mcpHandler, depsReady, err := buildMCPHandler(hDeps)
 	if err != nil {
 		logger.Error(err, "failed to create MCP handler")
 		return 1
@@ -261,7 +271,7 @@ func run() int {
 	}
 	agentCardHandler := handler.WithAgentCardAudit(agentCardBase, auditor)
 
-	a2aHandler, err := buildA2AHandler(ctx, cfg, deps, sessInfra, metricsReg, sarChecker, auditor, logger, userLimiter, activeCtxRegistry)
+	a2aHandler, err := buildA2AHandler(ctx, hDeps)
 	if err != nil {
 		logger.Error(err, "failed to create A2A handler")
 		return 1
@@ -471,6 +481,21 @@ func loadConfig() (*config.Config, error) {
 type caWatcherEntry struct {
 	name    string
 	watcher *hotreload.FileWatcher
+}
+
+// handlerDeps groups the shared dependencies consumed by both buildMCPHandler
+// and buildA2AHandler. Constructed once in run() to avoid excessive positional
+// parameters on the builder functions.
+type handlerDeps struct {
+	Cfg               *config.Config
+	Backends          *backendDeps
+	SessInfra         *sessionInfra
+	MetricsReg        *metrics.Registry
+	Authorizer        auth.ToolAuthorizer
+	Auditor           audit.Emitter
+	Logger            logr.Logger
+	UserLimiter       *ratelimit.UserLimiter
+	ActiveCtxRegistry *launcher.ActiveContextRegistry
 }
 
 // backendDeps holds shared backend clients used by both the MCP and A2A handlers.
@@ -861,48 +886,48 @@ func triageLLMSource(cfg *config.Config) string {
 	return "agent.llm (inherited)"
 }
 
-func buildMCPHandler(cfg *config.Config, deps *backendDeps, sessInfra *sessionInfra, metricsReg *metrics.Registry, authorizer auth.ToolAuthorizer, auditor audit.Emitter, logger logr.Logger, userLimiter *ratelimit.UserLimiter, activeCtxRegistry *launcher.ActiveContextRegistry) (http.Handler, func() bool, error) {
+func buildMCPHandler(d *handlerDeps) (http.Handler, func() bool, error) {
 	var sessFinalizer handler.ISPhaseFinalizer
 	var sessInitializer handler.ISSessionInitializer
-	if sessInfra != nil && sessInfra.SessionService != nil {
-		sessFinalizer = sessInfra.SessionService
-		sessInitializer = sessInfra.SessionService
+	if d.SessInfra != nil && d.SessInfra.SessionService != nil {
+		sessFinalizer = d.SessInfra.SessionService
+		sessInitializer = d.SessInfra.SessionService
 	}
 	bridgeCfg := &handler.MCPBridgeConfig{
-		K8sClient:             deps.K8sClient(),
-		TypedClient:           deps.TypedClient(),
-		Namespace:             cfg.Session.Namespace,
-		KAMCPClient:           deps.MCPClient,
-		KADedicatedClient:     deps.DedicatedClient,
-		InvestigationRegistry: deps.InvestigationRegistry,
-		DSClient:              deps.DSClient,
-		PromClient:            deps.PromClient,
-		Triager:               deps.Triager,
-		Authorizer:            authorizer,
-		Auditor:               auditor,
-		Logger:                logger.WithName("bridge"),
-		Metrics:               bridgeMetricsFrom(metricsReg),
-		ToolTimeout:           cfg.MCP.ToolTimeout,
-		ToolTimeouts:          cfg.MCP.ToolTimeouts,
+		K8sClient:             d.Backends.K8sClient(),
+		TypedClient:           d.Backends.TypedClient(),
+		Namespace:             d.Cfg.Session.Namespace,
+		KAMCPClient:           d.Backends.MCPClient,
+		KADedicatedClient:     d.Backends.DedicatedClient,
+		InvestigationRegistry: d.Backends.InvestigationRegistry,
+		DSClient:              d.Backends.DSClient,
+		PromClient:            d.Backends.PromClient,
+		Triager:               d.Backends.Triager,
+		Authorizer:            d.Authorizer,
+		Auditor:               d.Auditor,
+		Logger:                d.Logger.WithName("bridge"),
+		Metrics:               bridgeMetricsFrom(d.MetricsReg),
+		ToolTimeout:           d.Cfg.MCP.ToolTimeout,
+		ToolTimeouts:          d.Cfg.MCP.ToolTimeouts,
 		MaxConcurrentTools:    10,
-		UserLimiter:           userLimiter,
+		UserLimiter:           d.UserLimiter,
 		SessionFinalizer:      sessFinalizer,
 		SessionInitializer:    sessInitializer,
-		InteractiveEnabled:    cfg.Interactive.Enabled,
-		ActiveContextRegistry: activeCtxRegistry,
-		RESTMapper:            deps.Mapper,
+		InteractiveEnabled:    d.Cfg.Interactive.Enabled,
+		ActiveContextRegistry: d.ActiveCtxRegistry,
+		RESTMapper:            d.Backends.Mapper,
 	}
 
-	mcpSessionTimeout := cfg.MCP.SessionIdleTimeout
+	mcpSessionTimeout := d.Cfg.MCP.SessionIdleTimeout
 	if mcpSessionTimeout == 0 {
 		mcpSessionTimeout = 30 * time.Minute
 	}
 	h, err := handler.NewMCPHandler(handler.MCPConfig{
 		ServerName:     "kubernaut-apifrontend",
 		ServerVersion:  version(),
-		Enabled:        cfg.MCP.Enabled,
+		Enabled:        d.Cfg.MCP.Enabled,
 		Bridge:         bridgeCfg,
-		Auditor:        auditor,
+		Auditor:        d.Auditor,
 		SessionTimeout: mcpSessionTimeout,
 	})
 	if err != nil {
@@ -910,8 +935,8 @@ func buildMCPHandler(cfg *config.Config, deps *backendDeps, sessInfra *sessionIn
 	}
 
 	depsReady := handler.AllReady(
-		deps.KAClient.Healthy,
-		deps.DSResilientTransport.Healthy,
+		d.Backends.KAClient.Healthy,
+		d.Backends.DSResilientTransport.Healthy,
 	)
 	return h, depsReady, nil
 }
@@ -923,76 +948,76 @@ func buildMCPHandler(cfg *config.Config, deps *backendDeps, sessInfra *sessionIn
 // The LLM model and transport chain are built once at startup and are NOT
 // reloaded when the ConfigMap changes. Changes to agent.llm fields require
 // a pod restart (consistent with KA's LLM wiring pattern).
-func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps, sessInfra *sessionInfra, metricsReg *metrics.Registry, authorizer auth.ToolAuthorizer, auditor audit.Emitter, logger logr.Logger, userLimiter *ratelimit.UserLimiter, activeCtxRegistry *launcher.ActiveContextRegistry) (http.Handler, error) {
-	if cfg.Agent.LLM.Provider == "" {
-		logger.Info("LLM provider not configured — A2A handler returns 501")
+func buildA2AHandler(ctx context.Context, d *handlerDeps) (http.Handler, error) {
+	if d.Cfg.Agent.LLM.Provider == "" {
+		d.Logger.Info("LLM provider not configured — A2A handler returns 501")
 		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			http.Error(w, "A2A not configured", http.StatusNotImplemented)
 		}), nil
 	}
 
-	llmModel, err := launcher.NewModelFromConfig(ctx, cfg.Agent.LLM)
+	llmModel, err := launcher.NewModelFromConfig(ctx, d.Cfg.Agent.LLM)
 	if err != nil {
 		return nil, fmt.Errorf("create LLM model: %w", err)
 	}
 
-	hasCustomTransport := cfg.Agent.LLM.TLSCaFile != "" || cfg.Agent.LLM.OAuth2.Enabled
-	if hasCustomTransport && (cfg.Agent.LLM.Provider == types.LLMProviderVertexAI || cfg.Agent.LLM.Provider == types.LLMProviderAnthropic) {
-		logger.Info("WARNING: mTLS/OAuth2 transport config is set but CANNOT be applied to " + cfg.Agent.LLM.Provider +
+	hasCustomTransport := d.Cfg.Agent.LLM.TLSCaFile != "" || d.Cfg.Agent.LLM.OAuth2.Enabled
+	if hasCustomTransport && (d.Cfg.Agent.LLM.Provider == types.LLMProviderVertexAI || d.Cfg.Agent.LLM.Provider == types.LLMProviderAnthropic) {
+		d.Logger.Info("WARNING: mTLS/OAuth2 transport config is set but CANNOT be applied to " + d.Cfg.Agent.LLM.Provider +
 			" — upstream ADK wrapper lacks HTTP client injection (blocked by issue #1342)")
 	}
 
 	var sessionSvcForAgent *session.CRDSessionService
-	if sessInfra != nil {
-		sessionSvcForAgent = sessInfra.SessionService
+	if d.SessInfra != nil {
+		sessionSvcForAgent = d.SessInfra.SessionService
 	}
 
 	rootAgent, _, err := agentpkg.NewRootAgent(agentpkg.AgentConfig{
-		Instruction:           agentpkg.BuildInstruction(cfg.Session.Namespace),
-		InstructionProvider:   agentpkg.NewInstructionProvider(cfg.Session.Namespace),
+		Instruction:           agentpkg.BuildInstruction(d.Cfg.Session.Namespace),
+		InstructionProvider:   agentpkg.NewInstructionProvider(d.Cfg.Session.Namespace),
 		LLMModel:              llmModel,
-		Namespace:             cfg.Session.Namespace,
-		K8sClient:             deps.K8sClient(),
-		TypedClient:           deps.TypedClient(),
-		DSClient:              deps.DSClient,
-		MCPClient:             deps.MCPClient,
-		DedicatedClient:       deps.DedicatedClient,
-		InvestigationRegistry: deps.InvestigationRegistry,
-		Pool:                  deps.Pool,
-		Authorizer:            authorizer,
-		Auditor:               auditor,
-		Triager:               deps.Triager,
-		RESTMapper:            deps.Mapper,
+		Namespace:             d.Cfg.Session.Namespace,
+		K8sClient:             d.Backends.K8sClient(),
+		TypedClient:           d.Backends.TypedClient(),
+		DSClient:              d.Backends.DSClient,
+		MCPClient:             d.Backends.MCPClient,
+		DedicatedClient:       d.Backends.DedicatedClient,
+		InvestigationRegistry: d.Backends.InvestigationRegistry,
+		Pool:                  d.Backends.Pool,
+		Authorizer:            d.Authorizer,
+		Auditor:               d.Auditor,
+		Triager:               d.Backends.Triager,
+		RESTMapper:            d.Backends.Mapper,
 		SessionService:        sessionSvcForAgent,
-		ToolCallsTotal:        metricsReg.ToolCallsTotal,
-		ToolCallDuration:      metricsReg.ToolCallDuration,
-		UserLimiter:           userLimiter,
-		ActiveContextRegistry: activeCtxRegistry,
-		InteractiveEnabled:    cfg.Interactive.Enabled,
-		PromClient:            deps.PromClient,
+		ToolCallsTotal:        d.MetricsReg.ToolCallsTotal,
+		ToolCallDuration:      d.MetricsReg.ToolCallDuration,
+		UserLimiter:           d.UserLimiter,
+		ActiveContextRegistry: d.ActiveCtxRegistry,
+		InteractiveEnabled:    d.Cfg.Interactive.Enabled,
+		PromClient:            d.Backends.PromClient,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create root agent: %w", err)
 	}
 
 	var sessionSvc adksession.Service
-	if sessInfra != nil && sessInfra.SessionService != nil {
-		sessionSvc = session.NewServiceDecorator(sessInfra.SessionService)
+	if d.SessInfra != nil && d.SessInfra.SessionService != nil {
+		sessionSvc = session.NewServiceDecorator(d.SessInfra.SessionService)
 	} else {
 		sessionSvc = adksession.InMemoryService()
 	}
 
-	llmSemaphore := ratelimit.NewLLMSemaphore(cfg.RateLimit.MaxConcurrentSessions)
+	llmSemaphore := ratelimit.NewLLMSemaphore(d.Cfg.RateLimit.MaxConcurrentSessions)
 	a2aCfg := launcher.A2AConfig{
 		Agent:               rootAgent,
 		SessionService:      sessionSvc,
 		AppName:             "kubernaut-apifrontend",
-		Logger:              logger.WithName("a2a-launcher"),
-		Auditor:             auditor,
-		BridgeMetrics:       metricsReg,
+		Logger:              d.Logger.WithName("a2a-launcher"),
+		Auditor:             d.Auditor,
+		BridgeMetrics:       d.MetricsReg,
 		SessionPhaseUpdater: sessionSvcForAgent,
 		SessionInterceptor: launcher.NewSessionInterceptor(
-			activeCtxRegistry, logger.WithName("session-interceptor"),
+			d.ActiveCtxRegistry, d.Logger.WithName("session-interceptor"),
 		),
 		LLMSemaphore: llmSemaphore,
 	}
@@ -1002,9 +1027,9 @@ func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps,
 		return nil, fmt.Errorf("create A2A handler: %w", err)
 	}
 
-	logger.Info("A2A handler wired with LLM backend",
-		"provider", cfg.Agent.LLM.Provider,
-		"model", cfg.Agent.LLM.Model,
+	d.Logger.Info("A2A handler wired with LLM backend",
+		"provider", d.Cfg.Agent.LLM.Provider,
+		"model", d.Cfg.Agent.LLM.Model,
 	)
 	return h, nil
 }
