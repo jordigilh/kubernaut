@@ -40,6 +40,7 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/jordigilh/kubernaut/pkg/fleet"
 	"github.com/jordigilh/kubernaut/pkg/fleet/fmc"
 	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
@@ -108,7 +109,7 @@ func main() {
 	cacheReader := scopecache.NewValkeyCacheReader(cfg.ValkeyAddr)
 	defer func() { _ = cacheReader.Close() }()
 
-	clusterRegistry := registry.NewCRDWatcher(dynClient, registry.CRDWatcherConfig{
+	clusterRegistry := registry.NewBackendInformerRegistry(dynClient, registry.BackendInformerRegistryConfig{
 		Namespace: cfg.Namespace,
 	}, registry.NewMetricsWithRegistry(reg), logger)
 	if err := clusterRegistry.Start(ctx); err != nil {
@@ -123,9 +124,9 @@ func main() {
 		ResourceKinds: cfg.ResourceKinds,
 	}
 
-	readerFactory := func(_ context.Context, clusterID string) (client.Reader, error) {
+	readerFactory := fleet.ReaderFactoryFunc(func(_ context.Context, clusterID string) (client.Reader, error) {
 		return mcpclient.NewFromSession(mcpClient.Session(), clusterID), nil
-	}
+	})
 	syncer := fmc.NewSyncerWithReaderFactory(clusterRegistry, readerFactory, writer, syncerConfig, logger, metrics)
 
 	var ready atomic.Bool

@@ -80,15 +80,16 @@ func (w *WriterClient) Create(ctx context.Context, obj client.Object, _ ...clien
 // Delete implements client.Writer. It sends a delete request to the remote
 // cluster via the MCP delete_resource tool.
 func (w *WriterClient) Delete(ctx context.Context, obj client.Object, _ ...client.DeleteOption) error {
-	kind := obj.GetObjectKind().GroupVersionKind().Kind
-	if kind == "" {
+	gvk := obj.GetObjectKind().GroupVersionKind()
+	if gvk.Kind == "" {
 		return fmt.Errorf("object GVK Kind must be set before calling Delete")
 	}
 
 	toolName := ClusterTool(w.clusterID, ToolDelete)
 	args := map[string]any{
-		"kind": kind,
-		"name": obj.GetName(),
+		"kind":       gvk.Kind,
+		"apiVersion": gvk.GroupVersion().String(),
+		"name":       obj.GetName(),
 	}
 	if ns := obj.GetNamespace(); ns != "" {
 		args["namespace"] = ns

@@ -27,9 +27,9 @@ import (
 // construction time via WithClusterID, mirroring how a K8s client.Reader is
 // bound to a single cluster by its kubeconfig.
 //
-// Supported object types for Get: *unstructured.Unstructured and
-// *metav1.PartialObjectMetadata. Typed objects (e.g. *corev1.Pod) are not
-// supported and will return an error — use unstructured access instead.
+// Supported object types for Get: *unstructured.Unstructured,
+// *metav1.PartialObjectMetadata, and typed objects (e.g. *corev1.Pod) via
+// JSON round-trip.
 //
 // Authority: Issue #54, Fleet Federation Roadmap Phase 0 (BR-FLEET-002)
 type ResourceClient interface {

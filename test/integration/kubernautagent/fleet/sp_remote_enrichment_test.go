@@ -31,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/fleet"
 	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/enricher"
 	spmetrics "github.com/jordigilh/kubernaut/pkg/signalprocessing/metrics"
@@ -71,7 +72,7 @@ var _ = Describe("SP Remote Enrichment via MCP Gateway (BR-INTEGRATION-054)", fu
 		}
 		localClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(localNS).Build()
 
-		readerFactory := enricher.NewMCPReaderFactory(localClient, mcpClient.Session())
+		readerFactory := mcpclient.NewMCPReaderFactory(localClient, mcpClient.Session())
 
 		reg := prometheus.NewRegistry()
 		m := spmetrics.NewMetricsWithRegistry(reg)
@@ -116,7 +117,7 @@ var _ = Describe("SP Remote Enrichment via MCP Gateway (BR-INTEGRATION-054)", fu
 		}
 		localClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(localNS).Build()
 
-		readerFactory := enricher.NewLocalReaderFactory(localClient)
+		readerFactory := fleet.NewLocalReaderFactory(localClient)
 
 		reg := prometheus.NewRegistry()
 		m := spmetrics.NewMetricsWithRegistry(reg)
