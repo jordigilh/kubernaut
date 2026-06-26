@@ -38,17 +38,25 @@ var _ = Describe("UT-FLEET-TOOL-001 [SC-7]: ClusterTool constructs correct gatew
 	)
 })
 
-var _ = Describe("ClusterToolWithPrefix (MCP Gateway Adapter)", func() {
-	It("UT-MCP-TN-001 [AC-3]: ClusterToolWithPrefix constructs correct prefixed tool name", func() {
-		Expect(mcpclient.ClusterToolWithPrefix("prod-east__", "resources_get")).To(Equal("prod-east__resources_get"))
-		Expect(mcpclient.ClusterToolWithPrefix("loopback_cluster_", "resources_list")).To(Equal("loopback_cluster_resources_list"))
-	})
+var _ = Describe("UT-MCP-TN: ClusterToolWithPrefix (MCP Gateway Adapter)", func() {
+	DescribeTable("constructs correct prefixed tool name for both EAIGW and Kuadrant conventions",
+		func(prefix, tool, expected string) {
+			Expect(mcpclient.ClusterToolWithPrefix(prefix, tool)).To(Equal(expected))
+		},
+		Entry("EAIGW: standard cluster + get", "prod-east__", "resources_get", "prod-east__resources_get"),
+		Entry("EAIGW: standard cluster + list", "prod-west__", "resources_list", "prod-west__resources_list"),
+		Entry("EAIGW: standard cluster + create_or_update", "staging__", "resources_create_or_update", "staging__resources_create_or_update"),
+		Entry("EAIGW: standard cluster + delete", "dev-cluster__", "resources_delete", "dev-cluster__resources_delete"),
+		Entry("Kuadrant: single underscore prefix + get", "loopback_cluster_", "resources_get", "loopback_cluster_resources_get"),
+		Entry("Kuadrant: single underscore prefix + list", "loopback_cluster_", "resources_list", "loopback_cluster_resources_list"),
+		Entry("Kuadrant: single underscore prefix + create_or_update", "loopback_cluster_", "resources_create_or_update", "loopback_cluster_resources_create_or_update"),
+		Entry("Kuadrant: single underscore prefix + delete", "loopback_cluster_", "resources_delete", "loopback_cluster_resources_delete"),
+		Entry("Kuadrant: multi-segment prefix", "prod_east_1_", "resources_get", "prod_east_1_resources_get"),
+		Entry("Kuadrant: hyphenated prefix", "spoke-a-", "resources_list", "spoke-a-resources_list"),
+		Entry("empty prefix returns bare tool name (defensive)", "", "resources_get", "resources_get"),
+	)
 
 	It("UT-MCP-TN-002 [AC-3]: ClusterTool backward-compat applies EAIGW {id}__ convention", func() {
 		Expect(mcpclient.ClusterTool("prod-east", "resources_get")).To(Equal("prod-east__resources_get"))
-	})
-
-	It("UT-MCP-TN-003 [SI-10]: ClusterToolWithPrefix with empty prefix returns bare tool name (defensive)", func() {
-		Expect(mcpclient.ClusterToolWithPrefix("", "resources_get")).To(Equal("resources_get"))
 	})
 })
