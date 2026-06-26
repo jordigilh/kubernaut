@@ -29,6 +29,7 @@ import (
 
 	internalconfig "github.com/jordigilh/kubernaut/internal/config"
 	"github.com/jordigilh/kubernaut/internal/version"
+	fleetclient "github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	"github.com/jordigilh/kubernaut/pkg/gateway"
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
 	"github.com/jordigilh/kubernaut/pkg/gateway/config"
@@ -159,6 +160,51 @@ func main() {
 	prometheusAdapter := adapters.NewPrometheusAdapter(ownerResolver, apiRegistry, logger)
 	prometheusAdapter.SetOwnerResolutionMetric(srv.GetMetrics().OwnerResolutionTotal)
 	prometheusAdapter.SetParseDroppedMetric(srv.GetMetrics().SignalsParseDroppedTotal)
+
+	// BR-INTEGRATION-065: Fleet MCP Gateway for remote owner chain resolution.
+	// When mcpGatewayEndpoint is configured, GW constructs a ReaderFactory that
+	// dispatches owner resolution to the remote cluster's K8s API via MCP.
+	var fleetResilientClient *fleetclient.ResilientClient
+	if serverCfg.Fleet.Enabled && serverCfg.Fleet.MCPGatewayEndpoint != "" {
+		logger.Info("Fleet MCP Gateway configured for remote owner chain resolution",
+			"endpoint", serverCfg.Fleet.MCPGatewayEndpoint,
+			"oauth2Enabled", serverCfg.Fleet.OAuth2.Enabled)
+
+		fleetLog := logger.WithName("fleet-oauth2")
+		fleetOpts := []fleetclient.Option{}
+		if serverCfg.Fleet.OAuth2.Enabled {
+			basePath := "/etc/gateway/fleet-oauth2"
+			if serverCfg.Fleet.OAuth2.CredentialsSecretRef != "" {
+				basePath = "/etc/gateway/" + serverCfg.Fleet.OAuth2.CredentialsSecretRef
+			}
+			reloadCfg := fleetclient.ReloadableOAuth2Config{
+				TokenURL:         serverCfg.Fleet.OAuth2.TokenURL,
+				ClientIDPath:     basePath + "/client-id",
+				ClientSecretPath: basePath + "/client-secret",
+				Scopes:           fleetclient.DefaultFleetScopes(serverCfg.Fleet.OAuth2.Scopes),
+			}
+			fleetOpts = append(fleetOpts,
+				fleetclient.WithReloadableOAuth2Transport(reloadCfg, fleetLog),
+			)
+		}
+
+		resilienceCfg := fleetclient.DefaultResilienceConfig()
+		var fleetErr error
+		fleetResilientClient, fleetErr = fleetclient.NewResilient(
+			serverCtx, serverCfg.Fleet.MCPGatewayEndpoint, resilienceCfg,
+			logger.WithName("fleet-client"), fleetOpts...,
+		)
+		if fleetErr != nil {
+			logger.Error(fleetErr, "Fleet MCP Gateway connection failed, remote owner resolution disabled",
+				"endpoint", serverCfg.Fleet.MCPGatewayEndpoint)
+		} else {
+			readerFactory := fleetclient.NewMCPReaderFactory(srv.GetCachedClient(), fleetResilientClient.Session())
+			prometheusAdapter.SetReaderFactory(readerFactory)
+			logger.Info("Fleet MCP Gateway connected, remote owner chain resolution enabled",
+				"endpoint", serverCfg.Fleet.MCPGatewayEndpoint)
+		}
+	}
+
 	if err := srv.RegisterAdapter(prometheusAdapter); err != nil {
 		logger.Error(err, "Failed to register Prometheus adapter")
 		os.Exit(1)
@@ -247,6 +293,14 @@ func main() {
 	// Graceful shutdown with 30-second timeout
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer shutdownCancel()
+
+	// BR-INTEGRATION-054: Graceful shutdown for fleet MCP client
+	if fleetResilientClient != nil {
+		logger.Info("Closing fleet MCP Gateway connection")
+		if err := fleetResilientClient.Close(); err != nil {
+			logger.Error(err, "Failed to close fleet MCP client gracefully")
+		}
+	}
 
 	// DD-GATEWAY-012: Redis close REMOVED - Gateway is now Redis-free
 	logger.Info("Initiating graceful shutdown...")
