@@ -268,6 +268,138 @@ var _ = Describe("WriterClient (BR-FLEET-054)", func() {
 		})
 	})
 
+	Describe("UT-WE-KUA-001: WriterClient.Create uses Kuadrant prefix when WithToolPrefix is set", func() {
+		It("emits {prefix}resources_create_or_update instead of {id}__resources_create_or_update", func() {
+			gw = mockgw.NewMockGateway(mockgw.WithKuadrantCluster("spoke-c", "spoke_c_"))
+
+			parentClient, err := mcpclient.New(ctx, gw.URL())
+			Expect(err).ToNot(HaveOccurred())
+			defer parentClient.Close()
+
+			writer := mcpclient.NewWriterFromSession(parentClient.Session(), "spoke-c",
+				mcpclient.WithToolPrefix("spoke_c_"))
+
+			job := &batchv1.Job{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "kuadrant-job",
+					Namespace: "default",
+				},
+				Spec: batchv1.JobSpec{
+					Template: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							RestartPolicy: corev1.RestartPolicyNever,
+							Containers:    []corev1.Container{{Name: "test", Image: "alpine"}},
+						},
+					},
+				},
+			}
+			job.SetGroupVersionKind(batchv1.SchemeGroupVersion.WithKind("Job"))
+
+			err = writer.Create(ctx, job)
+			Expect(err).ToNot(HaveOccurred())
+
+			calls := gw.CallLog()
+			Expect(calls).ToNot(BeEmpty())
+			Expect(calls[0].ToolName).To(Equal("spoke_c_resources_create_or_update"),
+				"WriterClient.Create must use Kuadrant prefix")
+		})
+	})
+
+	Describe("UT-WE-KUA-002: WriterClient.Delete uses Kuadrant prefix when WithToolPrefix is set", func() {
+		It("emits {prefix}resources_delete instead of {id}__resources_delete", func() {
+			gw = mockgw.NewMockGateway(mockgw.WithKuadrantCluster("spoke-d", "spoke_d_"))
+
+			parentClient, err := mcpclient.New(ctx, gw.URL())
+			Expect(err).ToNot(HaveOccurred())
+			defer parentClient.Close()
+
+			writer := mcpclient.NewWriterFromSession(parentClient.Session(), "spoke-d",
+				mcpclient.WithToolPrefix("spoke_d_"))
+
+			job := &batchv1.Job{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "delete-me",
+					Namespace: "workflows",
+				},
+			}
+			job.SetGroupVersionKind(batchv1.SchemeGroupVersion.WithKind("Job"))
+
+			err = writer.Delete(ctx, job)
+			Expect(err).ToNot(HaveOccurred())
+
+			calls := gw.CallLog()
+			Expect(calls).ToNot(BeEmpty())
+			Expect(calls[0].ToolName).To(Equal("spoke_d_resources_delete"),
+				"WriterClient.Delete must use Kuadrant prefix")
+		})
+	})
+
+	Describe("UT-WE-KUA-003: WriterClient.Update uses Kuadrant prefix when WithToolPrefix is set", func() {
+		It("emits {prefix}resources_create_or_update for Update calls", func() {
+			gw = mockgw.NewMockGateway(mockgw.WithKuadrantCluster("spoke-e", "spoke_e_"))
+
+			parentClient, err := mcpclient.New(ctx, gw.URL())
+			Expect(err).ToNot(HaveOccurred())
+			defer parentClient.Close()
+
+			writer := mcpclient.NewWriterFromSession(parentClient.Session(), "spoke-e",
+				mcpclient.WithToolPrefix("spoke_e_"))
+
+			job := &batchv1.Job{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "update-me",
+					Namespace: "workflows",
+					Labels:    map[string]string{"version": "v2"},
+				},
+				Spec: batchv1.JobSpec{
+					Template: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							RestartPolicy: corev1.RestartPolicyNever,
+							Containers:    []corev1.Container{{Name: "test", Image: "alpine:v2"}},
+						},
+					},
+				},
+			}
+			job.SetGroupVersionKind(batchv1.SchemeGroupVersion.WithKind("Job"))
+
+			err = writer.Update(ctx, job)
+			Expect(err).ToNot(HaveOccurred())
+
+			calls := gw.CallLog()
+			Expect(calls).ToNot(BeEmpty())
+			Expect(calls[0].ToolName).To(Equal("spoke_e_resources_create_or_update"),
+				"WriterClient.Update must use Kuadrant prefix")
+		})
+	})
+
+	Describe("UT-WE-KUA-004: WriterClient without WithToolPrefix falls back to EAIGW convention", func() {
+		It("emits {id}__resources_create_or_update when no prefix is set", func() {
+			gw = mockgw.NewMockGateway(mockgw.WithMultiCluster("eaigw-cluster"))
+
+			parentClient, err := mcpclient.New(ctx, gw.URL())
+			Expect(err).ToNot(HaveOccurred())
+			defer parentClient.Close()
+
+			writer := mcpclient.NewWriterFromSession(parentClient.Session(), "eaigw-cluster")
+
+			obj := &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"apiVersion": "batch/v1",
+					"kind":       "Job",
+					"metadata":   map[string]interface{}{"name": "fallback-job", "namespace": "default"},
+				},
+			}
+
+			err = writer.Create(ctx, obj)
+			Expect(err).ToNot(HaveOccurred())
+
+			calls := gw.CallLog()
+			Expect(calls).ToNot(BeEmpty())
+			Expect(calls[0].ToolName).To(Equal("eaigw-cluster__resources_create_or_update"),
+				"without WithToolPrefix, must use EAIGW {id}__ convention")
+		})
+	})
+
 	Describe("WriterClient compile-time interface compliance", func() {
 		It("satisfies ResourceWriter interface", func() {
 			var _ mcpclient.ResourceWriter = (*mcpclient.WriterClient)(nil)

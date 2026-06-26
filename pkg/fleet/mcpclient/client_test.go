@@ -208,6 +208,77 @@ var _ = Describe("ResourceClient (BR-FLEET-002, Phase 0)", func() {
 		})
 	})
 
+	Describe("Get with Kuadrant prefix (WithToolPrefix)", func() {
+		It("UT-FLEET-KUA-001: uses Kuadrant prefix for Get tool call instead of EAIGW convention", func() {
+			gw = mockgw.NewMockGateway(mockgw.WithKuadrantCluster("spoke-a", "spoke_a_"))
+
+			parentClient, err := mcpclient.New(ctx, gw.URL())
+			Expect(err).ToNot(HaveOccurred())
+			defer parentClient.Close()
+
+			child := mcpclient.NewFromSession(parentClient.Session(), "spoke-a",
+				mcpclient.WithToolPrefix("spoke_a_"))
+
+			obj := &unstructured.Unstructured{}
+			obj.SetGroupVersionKind(schema.GroupVersionKind{Version: "v1", Kind: "Pod"})
+
+			err = child.Get(ctx, client.ObjectKey{Namespace: "default", Name: "nginx"}, obj)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(obj.GetName()).To(Equal("nginx"))
+
+			calls := gw.CallLog()
+			Expect(calls).To(HaveLen(1))
+			Expect(calls[0].ToolName).To(Equal("spoke_a_resources_get"),
+				"Kuadrant prefix must produce '{prefix}resources_get', not '{id}__resources_get'")
+		})
+	})
+
+	Describe("List with Kuadrant prefix (WithToolPrefix)", func() {
+		It("UT-FLEET-KUA-002: uses Kuadrant prefix for List tool call", func() {
+			gw = mockgw.NewMockGateway(mockgw.WithKuadrantCluster("spoke-b", "spoke_b_"))
+
+			parentClient, err := mcpclient.New(ctx, gw.URL())
+			Expect(err).ToNot(HaveOccurred())
+			defer parentClient.Close()
+
+			child := mcpclient.NewFromSession(parentClient.Session(), "spoke-b",
+				mcpclient.WithToolPrefix("spoke_b_"))
+
+			list := &unstructured.UnstructuredList{}
+			list.SetGroupVersionKind(schema.GroupVersionKind{Version: "v1", Kind: "PodList"})
+
+			err = child.List(ctx, list, client.InNamespace("kube-system"))
+			Expect(err).ToNot(HaveOccurred())
+			Expect(list.Items).To(HaveLen(2))
+
+			calls := gw.CallLog()
+			Expect(calls).To(HaveLen(1))
+			Expect(calls[0].ToolName).To(Equal("spoke_b_resources_list"),
+				"Kuadrant prefix must produce '{prefix}resources_list'")
+		})
+	})
+
+	Describe("resolveToolName fallback: no toolPrefix uses EAIGW convention", func() {
+		It("UT-FLEET-KUA-003: without WithToolPrefix, falls back to EAIGW {id}__ convention", func() {
+			gw = mockgw.NewMockGateway(mockgw.WithMultiCluster("fallback-cluster"))
+
+			c, err := mcpclient.New(ctx, gw.URL(), mcpclient.WithClusterID("fallback-cluster"))
+			Expect(err).ToNot(HaveOccurred())
+			defer c.Close()
+
+			obj := &unstructured.Unstructured{}
+			obj.SetGroupVersionKind(schema.GroupVersionKind{Version: "v1", Kind: "Pod"})
+
+			err = c.Get(ctx, client.ObjectKey{Namespace: "default", Name: "nginx"}, obj)
+			Expect(err).ToNot(HaveOccurred())
+
+			calls := gw.CallLog()
+			Expect(calls).To(HaveLen(1))
+			Expect(calls[0].ToolName).To(Equal("fallback-cluster__resources_get"),
+				"without WithToolPrefix, must use EAIGW {id}__ convention")
+		})
+	})
+
 	Describe("NewFromSession (Phase A)", func() {
 		It("UT-FLEET-P0-008 [SC-10]: creates a Client from an existing session without re-connecting, preserving session lifecycle", func() {
 			gw = mockgw.NewMockGateway(mockgw.WithMultiCluster("cluster-session"))
