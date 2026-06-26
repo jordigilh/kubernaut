@@ -126,9 +126,11 @@ var _ = Describe("Investigation Session Handoff (#1332)", Label("integration", "
 			registry := tools.NewMonitorRegistry()
 
 			result, err := tools.HandleInvestigationMCPWithRegistry(
-				context.Background(), mockMCP, nil, "",
-				tools.InvestigateMCPArgs{RRID: "rr-it-1332-010"},
-				nil, registry, nil, true, pool, "alice", nil, nil,
+				context.Background(), &tools.InvestigateConfig{
+					MCPClient: mockMCP,
+					Registry:  registry,
+					Pool:      pool,
+				}, tools.InvestigateMCPArgs{RRID: "rr-it-1332-010"}, true, "alice",
 			)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Status).To(Equal("completed"))
@@ -212,9 +214,11 @@ var _ = Describe("Investigation Session Handoff (#1332)", Label("integration", "
 
 			By("completing the investigation (blocking path with handoff)")
 			_, err := tools.HandleInvestigationMCPWithRegistry(
-				context.Background(), mockMCP, nil, "",
-				tools.InvestigateMCPArgs{RRID: "rr-it-1332-020"},
-				nil, registry, nil, true, pool, "bob", nil, nil,
+				context.Background(), &tools.InvestigateConfig{
+					MCPClient: mockMCP,
+					Registry:  registry,
+					Pool:      pool,
+				}, tools.InvestigateMCPArgs{RRID: "rr-it-1332-020"}, true, "bob",
 			)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -264,9 +268,9 @@ var _ = Describe("Investigation Session Handoff (#1332)", Label("integration", "
 			}
 
 			result, err := tools.HandleInvestigationMCPWithRegistry(
-				context.Background(), mockMCP, nil, "",
-				tools.InvestigateMCPArgs{RRID: "rr-it-1332-030"},
-				nil, nil, nil, true, nil, "", nil, nil,
+				context.Background(), &tools.InvestigateConfig{
+					MCPClient: mockMCP,
+				}, tools.InvestigateMCPArgs{RRID: "rr-it-1332-030"}, true, "",
 			)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Status).To(Equal("completed"))
@@ -496,9 +500,11 @@ var _ = Describe("InjectVerified Wiring at Investigation Handoff (#1442)", Label
 		registry := tools.NewMonitorRegistry()
 
 		result, err := tools.HandleInvestigationMCPWithRegistry(
-			context.Background(), mockMCP, nil, "",
-			tools.InvestigateMCPArgs{RRID: "rr-it-1442-w01"},
-			nil, registry, nil, true, pool, "alice", nil, nil,
+			context.Background(), &tools.InvestigateConfig{
+				MCPClient: mockMCP,
+				Registry:  registry,
+				Pool:      pool,
+			}, tools.InvestigateMCPArgs{RRID: "rr-it-1442-w01"}, true, "alice",
 		)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).To(Equal("completed"))
@@ -545,9 +551,11 @@ var _ = Describe("InjectVerified Wiring at Investigation Handoff (#1442)", Label
 		registry := tools.NewMonitorRegistry()
 
 		result, err := tools.HandleInvestigationMCPWithRegistry(
-			context.Background(), mockMCP, nil, "",
-			tools.InvestigateMCPArgs{RRID: "rr-it-1442-w02"},
-			nil, registry, nil, true, pool, "bob", nil, nil,
+			context.Background(), &tools.InvestigateConfig{
+				MCPClient: mockMCP,
+				Registry:  registry,
+				Pool:      pool,
+			}, tools.InvestigateMCPArgs{RRID: "rr-it-1442-w02"}, true, "bob",
 		)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Status).To(Equal("completed"))
@@ -629,9 +637,13 @@ var _ = Describe("Session ID Forwarding (#1452)", Label("integration", "session-
 			})
 
 			result, err := tools.HandleInvestigationMCPWithRegistry(
-				ctx, mockMCP, tc, "kubernaut-system",
-				tools.InvestigateMCPArgs{RRID: "rr-it-1452-001"},
-				recorder, registry, nil, false, nil, "", nil, nil,
+				ctx, &tools.InvestigateConfig{
+					MCPClient: mockMCP,
+					Client:    tc,
+					Namespace: "kubernaut-system",
+					Auditor:   recorder,
+					Registry:  registry,
+				}, tools.InvestigateMCPArgs{RRID: "rr-it-1452-001"}, false, "",
 			)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.SessionID).To(Equal(aiaSessionID))

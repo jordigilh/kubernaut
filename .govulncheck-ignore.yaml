@@ -5,9 +5,13 @@
 # See: https://github.com/tk-l2002/govulncheck-wrapper
 
 GO-2026-4730:
-  reason: "No fix available (Fixed in: N/A through v1.12.0). Tekton controller panic via long resolver name in TaskRun/PipelineRun. Mitigated: Kubernaut controls resolver names via workflow engine; attacker requires cluster RBAC to inject malicious TaskRun."
+  reason: "FALSE POSITIVE — fixed in Tekton v1.10.2+; kubernaut uses v1.13.1. Go vuln DB entry has incorrect version ranges (UNREVIEWED). Correction requested: https://github.com/golang/vulndb/issues/5797"
   date: 2026-10-01T00:00:00Z
 
 GO-2023-1901:
-  reason: "No fix available (Fixed in: N/A through v1.12.0). Tekton does not validate child TaskRun UIDs against parent PipelineRun. Mitigated: requires cluster-level access to forge child runs; Kubernaut monitors PipelineRun status holistically."
+  reason: "No fix available (all Tekton versions). Tekton does not validate child TaskRun UIDs against parent PipelineRun. Low severity (CVSS 3.7); requires cluster-level RBAC to forge child runs. Kubernaut monitors PipelineRun status holistically."
+  date: 2026-10-01T00:00:00Z
+
+GO-2026-5662:
+  reason: "FALSE POSITIVE — fixed in Prometheus 3.11.2; kubernaut uses v0.312.0 (= 3.12.0). Go vuln DB cannot map Prometheus non-standard module versioning (noted in report itself). Web UI XSS; kubernaut does not expose Prometheus UI to end users."
   date: 2026-10-01T00:00:00Z
