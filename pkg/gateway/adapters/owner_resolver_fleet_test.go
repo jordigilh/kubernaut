@@ -26,29 +26,10 @@ import (
 	. "github.com/onsi/gomega"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/jordigilh/kubernaut/pkg/fleet"
+	"github.com/jordigilh/kubernaut/pkg/fleet/fleettest"
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
 )
-
-// stubReaderFactory implements fleet.ReaderFactory for testing.
-type stubReaderFactory struct {
-	readers map[string]client.Reader
-	err     error
-}
-
-func (f *stubReaderFactory) ReaderFor(_ context.Context, clusterID string) (client.Reader, error) {
-	if f.err != nil {
-		return nil, f.err
-	}
-	r, ok := f.readers[clusterID]
-	if !ok {
-		return nil, fmt.Errorf("unknown cluster %q", clusterID)
-	}
-	return r, nil
-}
-
-var _ fleet.ReaderFactory = (*stubReaderFactory)(nil)
 
 var _ = Describe("PrometheusAdapter — Fleet remote owner chain (P1)", func() {
 	var (
@@ -66,7 +47,7 @@ var _ = Describe("PrometheusAdapter — Fleet remote owner chain (P1)", func() {
 				ownerName: "nginx",
 			}
 			adapter := adapters.NewPrometheusAdapter(localResolver, nil, logr.Discard())
-			adapter.SetReaderFactory(&stubReaderFactory{readers: map[string]client.Reader{}})
+			adapter.SetReaderFactory(&fleettest.StubReaderFactory{Readers: map[string]client.Reader{}})
 
 			payload := buildAlertPayload("", "default", "Pod", "nginx-abc")
 			signal, err := adapter.Parse(ctx, payload)
@@ -82,8 +63,8 @@ var _ = Describe("PrometheusAdapter — Fleet remote owner chain (P1)", func() {
 				ownerName: "local-nginx",
 			}
 			adapter := adapters.NewPrometheusAdapter(localResolver, nil, logr.Discard())
-			adapter.SetReaderFactory(&stubReaderFactory{
-				readers: map[string]client.Reader{
+			adapter.SetReaderFactory(&fleettest.StubReaderFactory{
+				Readers: map[string]client.Reader{
 					"prod-east": nil,
 				},
 			})
@@ -116,8 +97,8 @@ var _ = Describe("PrometheusAdapter — Fleet remote owner chain (P1)", func() {
 				ownerName: "nginx",
 			}
 			adapter := adapters.NewPrometheusAdapter(localResolver, nil, logr.Discard())
-			adapter.SetReaderFactory(&stubReaderFactory{
-				err: fmt.Errorf("MCP session unavailable"),
+			adapter.SetReaderFactory(&fleettest.StubReaderFactory{
+				Err: fmt.Errorf("MCP session unavailable"),
 			})
 
 			payload := buildAlertPayload("prod-east", "default", "Pod", "nginx-abc")
