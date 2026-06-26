@@ -128,3 +128,78 @@ var _ = Describe("FederatedScopeChecker (BR-INTEGRATION-065)", func() {
 		Expect(managed).To(BeFalse(), "remote error should fall back to unmanaged (fail-safe)")
 	})
 })
+
+// mockClusterLookup implements fleet.ClusterLookup for testing.
+type mockClusterLookup struct {
+	known map[string]bool
+}
+
+func (m *mockClusterLookup) IsKnownCluster(clusterID string) bool {
+	return m.known[clusterID]
+}
+
+var _ = Describe("FederatedScopeChecker — Cluster-level precondition (P1)", func() {
+	var (
+		ctx     context.Context
+		local   *mockLocalChecker
+		remote  *mockRemoteChecker
+		cluster *mockClusterLookup
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		local = &mockLocalChecker{managed: map[string]bool{
+			"default/Deployment/nginx": true,
+		}}
+		remote = &mockRemoteChecker{managed: map[string]bool{
+			"prod-east/default/Deployment/nginx": true,
+		}}
+		cluster = &mockClusterLookup{known: map[string]bool{
+			"prod-east": true,
+		}}
+	})
+
+	It("UT-SCOPE-P1-001 [AC-3]: rejects resource from unknown cluster", func() {
+		fc := fleet.NewFederatedScopeChecker(local, remote, logr.Discard(),
+			fleet.WithClusterLookup(cluster))
+
+		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{
+			ClusterID: "unknown-cluster",
+			Kind:      "Deployment",
+			Namespace: "default",
+			Name:      "nginx",
+		})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(managed).To(BeFalse(),
+			"resource from unknown cluster must be rejected at cluster level")
+	})
+
+	It("UT-SCOPE-P1-002 [AC-3]: passes resource from known cluster to remote checker", func() {
+		fc := fleet.NewFederatedScopeChecker(local, remote, logr.Discard(),
+			fleet.WithClusterLookup(cluster))
+
+		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{
+			ClusterID: "prod-east",
+			Kind:      "Deployment",
+			Namespace: "default",
+			Name:      "nginx",
+		})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(managed).To(BeTrue(),
+			"resource from known cluster must proceed to resource-level check")
+	})
+
+	It("UT-SCOPE-P1-003 [AC-3]: skips cluster check when no ClusterLookup is configured", func() {
+		fc := fleet.NewFederatedScopeChecker(local, remote, logr.Discard())
+
+		managed, err := fc.IsManagedResource(ctx, scope.ResourceIdentity{
+			ClusterID: "any-cluster",
+			Kind:      "Deployment",
+			Namespace: "default",
+			Name:      "nginx",
+		})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(managed).To(BeFalse(),
+			"without cluster lookup, remote check proceeds normally (backward compat)")
+	})
+})
