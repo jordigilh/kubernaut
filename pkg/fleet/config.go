@@ -23,6 +23,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 )
 
 // Supported backend types for federated scope checking.
@@ -38,6 +40,17 @@ var supportedBackends = map[string]bool{
 	BackendFMC: true,
 	BackendACM: true,
 }
+
+// MCPGatewayType is a type alias for registry.MCPGatewayType, kept here so
+// consumers of FleetConfig do not need to import registry directly.
+type MCPGatewayType = registry.MCPGatewayType
+
+const (
+	// GatewayEAIGW selects Envoy AI Gateway (gateway.envoyproxy.io Backend CRDs).
+	GatewayEAIGW = registry.GatewayEAIGW
+	// GatewayKuadrant selects Kuadrant MCP Gateway (mcp.kuadrant.io MCPServerRegistration CRDs).
+	GatewayKuadrant = registry.GatewayKuadrant
+)
 
 // FleetConfig holds multi-cluster federation settings shared across all services.
 // GW and RO use Backend + Endpoint to connect to the federated control plane;
@@ -56,10 +69,14 @@ type FleetConfig struct {
 	// For acm: GraphQL URL (e.g., "https://search-api.open-cluster-management.svc:4010")
 	Endpoint string `yaml:"endpoint,omitempty"`
 
-	// MCPGatewayEndpoint is the Envoy AI Gateway SSE endpoint for remote K8s reads.
+	// MCPGatewayEndpoint is the MCP Gateway SSE endpoint for remote K8s reads.
 	// When set, services that need remote cluster data (GW owner chain, SP enrichment)
 	// connect to the MCP Gateway to issue K8s MCP tool calls against managed clusters.
 	MCPGatewayEndpoint string `yaml:"mcpGatewayEndpoint,omitempty"`
+
+	// MCPGatewayType selects the MCP Gateway implementation: "eaigw" (Envoy AI Gateway)
+	// or "kuadrant" (Kuadrant MCP Gateway). Defaults to "eaigw" when empty.
+	MCPGatewayType MCPGatewayType `yaml:"mcpGatewayType,omitempty"`
 
 	// OAuth2 holds optional OAuth2 credentials for MCP Gateway authentication.
 	OAuth2 FleetOAuth2Config `yaml:"oauth2,omitempty"`
@@ -90,7 +107,22 @@ func (c FleetConfig) Validate() error {
 		return fmt.Errorf("fleet: endpoint must not be empty when fleet is enabled (backend=%s)", backend)
 	}
 
+	if c.MCPGatewayEndpoint != "" && c.MCPGatewayType != "" {
+		if !registry.SupportedGateways[c.MCPGatewayType] {
+			return fmt.Errorf("fleet: unsupported mcpGatewayType %q; must be one of: eaigw, kuadrant", c.MCPGatewayType)
+		}
+	}
+
 	return nil
+}
+
+// EffectiveMCPGatewayType returns the configured MCPGatewayType, defaulting to
+// GatewayEAIGW when the field is empty.
+func (c FleetConfig) EffectiveMCPGatewayType() MCPGatewayType {
+	if c.MCPGatewayType == "" {
+		return GatewayEAIGW
+	}
+	return c.MCPGatewayType
 }
 
 // effectiveBackend returns the configured backend, or empty if not set.

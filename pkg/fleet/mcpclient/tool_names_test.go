@@ -37,3 +37,18 @@ var _ = Describe("UT-FLEET-TOOL-001 [SC-7]: ClusterTool constructs correct gatew
 		Entry("empty clusterID", "", "resources_get", "__resources_get"),
 	)
 })
+
+var _ = Describe("ClusterToolWithPrefix (MCP Gateway Adapter)", func() {
+	It("UT-MCP-TN-001 [AC-3]: ClusterToolWithPrefix constructs correct prefixed tool name", func() {
+		Expect(mcpclient.ClusterToolWithPrefix("prod-east__", "resources_get")).To(Equal("prod-east__resources_get"))
+		Expect(mcpclient.ClusterToolWithPrefix("loopback_cluster_", "resources_list")).To(Equal("loopback_cluster_resources_list"))
+	})
+
+	It("UT-MCP-TN-002 [AC-3]: ClusterTool backward-compat applies EAIGW {id}__ convention", func() {
+		Expect(mcpclient.ClusterTool("prod-east", "resources_get")).To(Equal("prod-east__resources_get"))
+	})
+
+	It("UT-MCP-TN-003 [SI-10]: ClusterToolWithPrefix with empty prefix returns bare tool name (defensive)", func() {
+		Expect(mcpclient.ClusterToolWithPrefix("", "resources_get")).To(Equal("resources_get"))
+	})
+})

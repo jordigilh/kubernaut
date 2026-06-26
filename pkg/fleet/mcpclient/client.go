@@ -40,14 +40,15 @@ var _ client.Reader = (*Client)(nil)
 
 // Client provides K8s-compatible read access to resources on a remote cluster
 // via the MCP Gateway. The target cluster is fixed at construction time via
-// WithClusterID and injected into each MCP tool call as a name prefix
-// (e.g. "{clusterID}__get_resource"), keeping the API symmetric with K8s
-// client.Reader.
+// WithClusterID and injected into each MCP tool call as a name prefix.
+// When WithToolPrefix is set, tool names use the gateway-specific prefix;
+// otherwise the EAIGW "{clusterID}__{tool}" convention is applied.
 type Client struct {
-	session   *mcp.ClientSession
-	clusterID string
-	mu        sync.Mutex
-	closed    bool
+	session    *mcp.ClientSession
+	clusterID  string
+	toolPrefix string
+	mu         sync.Mutex
+	closed     bool
 }
 
 // New creates a Client connected to the given MCP Gateway endpoint.
@@ -74,7 +75,7 @@ func New(ctx context.Context, endpoint string, opts ...Option) (*Client, error) 
 		return nil, fmt.Errorf("connect to MCP Gateway at %s: %w", endpoint, err)
 	}
 
-	return &Client{session: session, clusterID: cfg.clusterID}, nil
+	return &Client{session: session, clusterID: cfg.clusterID, toolPrefix: cfg.toolPrefix}, nil
 }
 
 // NewFromSession creates a Client from an existing MCP session, skipping the
@@ -82,13 +83,19 @@ func New(ctx context.Context, endpoint string, opts ...Option) (*Client, error) 
 // readers from the shared ResilientClient's session, avoiding duplicate
 // connections to the MCP Gateway.
 //
+// Options (optional): WithToolPrefix sets the gateway-specific tool prefix.
+//
 // Panics if session is nil, since a nil session invariably leads to nil-pointer
 // panics on the first tool call -- failing fast makes the root cause obvious.
-func NewFromSession(session *mcp.ClientSession, clusterID string) *Client {
+func NewFromSession(session *mcp.ClientSession, clusterID string, opts ...Option) *Client {
 	if session == nil {
 		panic("mcpclient.NewFromSession: session must not be nil")
 	}
-	return &Client{session: session, clusterID: clusterID}
+	cfg := &clientConfig{}
+	for _, opt := range opts {
+		opt(cfg)
+	}
+	return &Client{session: session, clusterID: clusterID, toolPrefix: cfg.toolPrefix}
 }
 
 // Get implements client.Reader. It retrieves a single Kubernetes resource from
@@ -181,10 +188,20 @@ func (c *Client) Session() *mcp.ClientSession {
 	return c.session
 }
 
+// resolveToolName returns the gateway-prefixed tool name. When toolPrefix is
+// set (e.g. from ClusterInfo.ToolPrefix), it uses ClusterToolWithPrefix;
+// otherwise falls back to the EAIGW convention via ClusterTool.
+func (c *Client) resolveToolName(tool string) string {
+	if c.toolPrefix != "" {
+		return ClusterToolWithPrefix(c.toolPrefix, tool)
+	}
+	return ClusterTool(c.clusterID, tool)
+}
+
 // getResource calls the MCP get_resource tool and returns the parsed unstructured object.
 // apiVersion is a mandatory parameter required by the K8s MCP Server.
 func (c *Client) getResource(ctx context.Context, kind, apiVersion, namespace, name string) (*unstructured.Unstructured, error) {
-	toolName := ClusterTool(c.clusterID, ToolGet)
+	toolName := c.resolveToolName(ToolGet)
 	args := map[string]any{
 		"kind":       kind,
 		"apiVersion": apiVersion,
@@ -213,7 +230,7 @@ func (c *Client) getResource(ctx context.Context, kind, apiVersion, namespace, n
 // listResources calls the MCP list_resources tool and returns parsed unstructured items.
 // apiVersion is a mandatory parameter required by the K8s MCP Server.
 func (c *Client) listResources(ctx context.Context, kind, apiVersion, namespace string, labels map[string]string) ([]unstructured.Unstructured, error) {
-	toolName := ClusterTool(c.clusterID, ToolList)
+	toolName := c.resolveToolName(ToolList)
 	args := map[string]any{
 		"kind":       kind,
 		"apiVersion": apiVersion,

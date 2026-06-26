@@ -24,19 +24,28 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/jordigilh/kubernaut/pkg/fleet"
+	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 )
 
 type mcpReaderFactory struct {
-	localClient client.Reader
-	session     *mcp.ClientSession
+	localClient    client.Reader
+	session        *mcp.ClientSession
+	prefixResolver registry.ToolPrefixResolver
 }
 
 // NewMCPReaderFactory creates a fleet.ReaderFactory that returns local clients for
 // empty ClusterID and MCP-backed readers for remote clusters.
-func NewMCPReaderFactory(localClient client.Reader, session *mcp.ClientSession) fleet.ReaderFactory {
+// An optional ToolPrefixResolver enables gateway-specific tool prefix lookup;
+// when nil, the EAIGW "{clusterID}__" convention is used.
+func NewMCPReaderFactory(localClient client.Reader, session *mcp.ClientSession, resolver ...registry.ToolPrefixResolver) fleet.ReaderFactory {
+	var pr registry.ToolPrefixResolver
+	if len(resolver) > 0 {
+		pr = resolver[0]
+	}
 	return &mcpReaderFactory{
-		localClient: localClient,
-		session:     session,
+		localClient:    localClient,
+		session:        session,
+		prefixResolver: pr,
 	}
 }
 
@@ -47,5 +56,11 @@ func (f *mcpReaderFactory) ReaderFor(_ context.Context, clusterID string) (clien
 	if f.session == nil {
 		return nil, fmt.Errorf("MCP session not available for remote cluster %q", clusterID)
 	}
-	return NewFromSession(f.session, clusterID), nil
+	var opts []Option
+	if f.prefixResolver != nil {
+		if prefix := f.prefixResolver.ToolPrefixFor(clusterID); prefix != "" {
+			opts = append(opts, WithToolPrefix(prefix))
+		}
+	}
+	return NewFromSession(f.session, clusterID, opts...), nil
 }
