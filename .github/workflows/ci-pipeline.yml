@@ -2,7 +2,7 @@ name: CI Pipeline
 
 # 4-Stage CI Pipeline with Registry-Aware Image Reuse
 #
-# Stage 1: Lint, License Scan & Unit Tests (parallel: 1 lint + 1 license scan + 10 unit test jobs) ~1-2 min
+# Stage 1: Lint, License Scan & Unit Tests (parallel: 1 lint + 1 license scan + 11 unit test jobs) ~1-2 min
 # Stage 2: Build & Push Images
 #   - 2a: amd64 images (parallel matrix: 13 images, multi-stage Dockerfile) ~5 min
 #   - 2b: arm64 images (parallel matrix: 11 Go services, native cross-compile) ~5 min
@@ -223,6 +223,7 @@ jobs:
           - authwebhook
           - datastorage
           - effectivenessmonitor
+          - fmc
           - gateway
           - kubernautagent
           - notification
@@ -340,6 +341,9 @@ jobs:
           - service: workflowexecution
             dockerfile: docker/workflowexecution-controller.Dockerfile
             image_name: workflowexecution  # Operator SDK convention: image name without -controller suffix
+          - service: fmc
+            dockerfile: docker/fmc.Dockerfile
+            image_name: fmc
           - service: effectivenessmonitor
             dockerfile: docker/effectivenessmonitor-controller.Dockerfile
             image_name: effectivenessmonitor  # Operator SDK convention: image name without -controller suffix
@@ -610,7 +614,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [signalprocessing, aianalysis, authwebhook, workflowexecution, remediationorchestrator, notification, gateway, datastorage, effectivenessmonitor, kubernautagent, apifrontend]
+        service: [signalprocessing, aianalysis, authwebhook, workflowexecution, remediationorchestrator, notification, gateway, datastorage, effectivenessmonitor, kubernautagent, apifrontend, fmc]
         include:
           - service: signalprocessing
             service_name: "Signal Processing"
@@ -618,6 +622,9 @@ jobs:
           - service: aianalysis
             service_name: "AI Analysis"
             timeout: 15
+          - service: fmc
+            service_name: "Fleet Metadata Cache"
+            timeout: 10
           - service: authwebhook
             service_name: "Auth Webhook"
             timeout: 10
@@ -1294,11 +1301,11 @@ jobs:
           echo "  ✅ Sequential stages ensure images ready before use"
           echo ""
           echo "Optimizations:"
-          echo "  ✅ Stage 1: All parallel (1 lint + 11 unit tests)"
+          echo "  ✅ Stage 1: All parallel (1 lint + 12 unit tests)"
           echo "  ✅ No redundant builds (code compiled once in image builds)"
-          echo "  ✅ Parallel image builds & push to ghcr.io (matrix: 12 images)"
+          echo "  ✅ Parallel image builds & push to ghcr.io (matrix: 13 images)"
           echo "  ✅ Integration tests reuse registry images (saves ~60% disk, ~30% time)"
-          echo "  ✅ Parallel integration tests (matrix: 10 services)"
+          echo "  ✅ Parallel integration tests (matrix: 11 services)"
           echo "  ✅ E2E tests reuse registry images (saves ~60% disk, ~30% time)"
           echo "  ✅ Parallel E2E tests (matrix: 11 services)"
           echo "  ✅ Automatic fallback to local build if registry pull fails"

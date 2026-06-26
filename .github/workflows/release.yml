@@ -101,6 +101,7 @@ jobs:
           - effectivenessmonitor
           - kubernautagent
           - apifrontend
+          - fmc
           - must-gather
           - db-migrate
     steps:
@@ -178,6 +179,7 @@ jobs:
           - effectivenessmonitor
           - kubernautagent
           - apifrontend
+          - fmc
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
