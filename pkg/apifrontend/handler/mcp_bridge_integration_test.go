@@ -196,7 +196,7 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 			}), mockDS)
 
 			status, body := mcpCallTool(h, sessionID, "kubernaut_get_remediation_history", map[string]any{
-				"namespace": "prod",
+				"namespace": "prod", "kind": "Deployment", "name": "api", "spec_hash": "sha256:abc123",
 			}, testUser)
 
 			Expect(status).To(Equal(http.StatusOK))
