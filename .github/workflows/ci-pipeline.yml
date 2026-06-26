@@ -3,12 +3,17 @@ name: CI Pipeline
 # 4-Stage CI Pipeline with Registry-Aware Image Reuse
 #
 # Stage 1: Lint, License Scan & Unit Tests (parallel: 1 lint + 1 license scan + 10 unit test jobs) ~1-2 min
-# Stage 2: Build & Push Images (parallel matrix: 12 images) ~5 min
-# Stage 3: Integration Tests (parallel matrix: 10 services) ~15 min
-# Stage 4: E2E Tests (parallel jobs: 10 services, when enabled) ~30 min each
+# Stage 2: Build & Push Images
+#   - 2a: amd64 images (parallel matrix: 13 images, multi-stage Dockerfile) ~5 min
+#   - 2b: arm64 images (parallel matrix: 11 Go services, native cross-compile) ~5 min
+#   - 2c: Multi-arch manifests (single job, loop over 11 Go services) ~1 min
+# Stage 3: Integration Tests (parallel matrix: 11 services) ~15 min
+# Stage 4: E2E Tests (parallel jobs: 12 services, when enabled) ~30 min each
 #
 # CI/CD Optimization (Registry-Aware):
 #   - All images pushed to ghcr.io after unit tests pass
+#   - arm64 images built via native Go cross-compile (no QEMU, no extra time)
+#   - Multi-arch manifests enable transparent arch-aware pulls (Issue #1500)
 #   - Integration tests pull dependency images (DataStorage, KA, Mock LLM) from registry
 #   - E2E tests pull service images from registry
 #   - Automatic fallback to local build if registry pull fails
@@ -427,6 +432,153 @@ jobs:
           format: cyclonedx-json
           output-file: sbom-${{ matrix.image_name }}.cdx.json
           artifact-name: sbom-${{ matrix.image_name }}
+
+  # ========================================
+  # STAGE 2b: BUILD & PUSH arm64 IMAGES (ghcr.io)
+  # Cross-compile 11 Go services for arm64 (native, no QEMU).
+  # Uses make cross-build-% + make image-runtime-% (scratch-based).
+  # Enables developers to pull CI images on Apple Silicon for local testing.
+  # Authority: Issue #1500
+  # ========================================
+
+  build-arm64-images:
+    name: "Build & Push arm64 (${{ matrix.service }})"
+    needs: [detect-changes]
+    if: needs.detect-changes.outputs.code_changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - datastorage
+          - gateway
+          - aianalysis
+          - authwebhook
+          - notification
+          - remediationorchestrator
+          - signalprocessing
+          - workflowexecution
+          - effectivenessmonitor
+          - kubernautagent
+          - apifrontend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          submodules: true
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.4'
+          cache: true
+
+      - name: Generate required files
+        run: |
+          export PATH="${{ github.workspace }}/bin:$PATH"
+          make generate
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate image tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            echo "tag=pr-${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=main-${{ github.sha }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Cross-compile binary (native, no QEMU)
+        run: |
+          echo "Cross-compiling ${{ matrix.service }} for arm64 (native)..."
+          make cross-build-${{ matrix.service }} IMAGE_ARCH=arm64
+
+      - name: Build and push arm64 runtime image
+        env:
+          IMAGE_TAG: ${{ steps.tag.outputs.tag }}
+          IMAGE_ARCH: arm64
+          CONTAINER_TOOL: docker
+        run: |
+          IMAGE="${IMAGE_REGISTRY}/${{ matrix.service }}:${IMAGE_TAG}-arm64"
+          echo "Building runtime image ${IMAGE} (no QEMU)..."
+          make image-runtime-${{ matrix.service }}
+          echo "Pushing ${IMAGE}..."
+          docker push "${IMAGE}"
+
+      - name: Scan arm64 image for CVEs (Trivy)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE_REGISTRY }}/${{ matrix.service }}:${{ steps.tag.outputs.tag }}-arm64
+          format: table
+          exit-code: 1
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+
+      - name: Generate arm64 SBOM (CycloneDX)
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          image: ${{ env.IMAGE_REGISTRY }}/${{ matrix.service }}:${{ steps.tag.outputs.tag }}-arm64
+          format: cyclonedx-json
+          output-file: sbom-${{ matrix.service }}-arm64.cdx.json
+          artifact-name: sbom-${{ matrix.service }}-arm64
+
+  # ========================================
+  # STAGE 2c: MULTI-ARCH MANIFESTS (ghcr.io)
+  # Creates manifest lists so docker/podman pull resolves the correct
+  # arch automatically. Only covers the 11 Go services that have both
+  # amd64 and arm64 images. Single job with loop (fast API calls only).
+  # Authority: Issue #1500
+  # ========================================
+
+  create-ci-manifests:
+    name: "Multi-Arch Manifests"
+    needs: [detect-changes, build-and-push-images, build-arm64-images]
+    if: needs.detect-changes.outputs.code_changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create and push multi-arch manifests
+        env:
+          IMAGE_TAG: ${{ needs.build-and-push-images.outputs.tag }}
+        run: |
+          SERVICES="datastorage gateway aianalysis authwebhook notification remediationorchestrator signalprocessing workflowexecution effectivenessmonitor kubernautagent apifrontend"
+
+          for svc in ${SERVICES}; do
+            BASE="${IMAGE_REGISTRY}/${svc}"
+            echo "Creating manifest: ${BASE}:${IMAGE_TAG} [amd64 + arm64]..."
+
+            docker manifest create "${BASE}:${IMAGE_TAG}" \
+              "${BASE}:${IMAGE_TAG}" \
+              "${BASE}:${IMAGE_TAG}-arm64"
+
+            docker manifest push "${BASE}:${IMAGE_TAG}"
+            echo "  pushed ${svc}"
+          done
+
+          echo ""
+          echo "All 11 multi-arch manifests created and pushed."
 
   # ========================================
   # STAGE 3: INTEGRATION TESTS
@@ -959,7 +1111,7 @@ jobs:
   # ========================================
   summary:
     name: Test Suite Summary
-    needs: [detect-changes, lint-go, unit-tests, build-and-push-images, integration-tests, e2e-tests, helm-smoke-test]
+    needs: [detect-changes, lint-go, unit-tests, build-and-push-images, build-arm64-images, create-ci-manifests, integration-tests, e2e-tests, helm-smoke-test]
     if: always() && needs.detect-changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -1114,7 +1266,9 @@ jobs:
           echo "  Unit Tests (11):  ${{ needs.unit-tests.result }}"
           echo ""
           echo "STAGE 2 - Build & Push Images (Parallel Matrix):"
-          echo "  All Images (12 services): ${{ needs.build-and-push-images.result }}"
+          echo "  amd64 Images (13 services): ${{ needs.build-and-push-images.result }}"
+          echo "  arm64 Images (11 Go svcs):  ${{ needs.build-arm64-images.result }}"
+          echo "  Multi-Arch Manifests:       ${{ needs.create-ci-manifests.result }}"
           echo "  Registry: ghcr.io (CI/CD ephemeral images, 14-day retention)"
           echo ""
           echo "STAGE 3 - Integration Tests (Parallel Matrix):"
@@ -1249,7 +1403,8 @@ jobs:
     name: Merge Gate
     if: always()
     needs: [detect-changes, lint-go, license-scan, unit-tests, build-and-push-images,
-            integration-tests, e2e-tests, helm-smoke-test, summary]
+            build-arm64-images, create-ci-manifests, integration-tests, e2e-tests,
+            helm-smoke-test, summary]
     runs-on: ubuntu-latest
     steps:
       - name: Evaluate CI results
@@ -1266,6 +1421,8 @@ jobs:
           echo "  license-scan:         ${{ needs.license-scan.result }}"
           echo "  unit-tests:           ${{ needs.unit-tests.result }}"
           echo "  build-and-push:       ${{ needs.build-and-push-images.result }}"
+          echo "  build-arm64:          ${{ needs.build-arm64-images.result }}"
+          echo "  multi-arch-manifests: ${{ needs.create-ci-manifests.result }}"
           echo "  integration-tests:    ${{ needs.integration-tests.result }}"
           echo "  e2e-tests:            ${{ needs.e2e-tests.result }}"
           echo "  helm-smoke-test:      ${{ needs.helm-smoke-test.result }}"
