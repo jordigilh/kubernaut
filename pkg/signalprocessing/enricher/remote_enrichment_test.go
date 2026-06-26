@@ -18,7 +18,6 @@ package enricher_test
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -33,25 +32,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/fleet/fleettest"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/enricher"
 	spmetrics "github.com/jordigilh/kubernaut/pkg/signalprocessing/metrics"
 )
-
-// fakeReaderFactory implements fleet.ReaderFactory for testing.
-type fakeReaderFactory struct {
-	readers map[string]client.Reader
-}
-
-func (f *fakeReaderFactory) ReaderFor(_ context.Context, clusterID string) (client.Reader, error) {
-	if clusterID == "" {
-		return nil, fmt.Errorf("fakeReaderFactory: empty clusterID should use local path")
-	}
-	r, ok := f.readers[clusterID]
-	if !ok {
-		return nil, fmt.Errorf("fakeReaderFactory: unknown cluster %q", clusterID)
-	}
-	return r, nil
-}
 
 var _ = Describe("K8sEnricher Remote Enrichment (BR-INTEGRATION-054)", func() {
 	var (
@@ -98,8 +82,8 @@ var _ = Describe("K8sEnricher Remote Enrichment (BR-INTEGRATION-054)", func() {
 			WithObjects(remoteDeploy, remoteNS).
 			Build()
 
-		factory := &fakeReaderFactory{
-			readers: map[string]client.Reader{"prod-east-1": remoteClient},
+		factory := &fleettest.StubReaderFactory{
+			Readers: map[string]client.Reader{"prod-east-1": remoteClient},
 		}
 
 		logger := zap.New(zap.UseDevMode(true))
@@ -144,7 +128,7 @@ var _ = Describe("K8sEnricher Remote Enrichment (BR-INTEGRATION-054)", func() {
 
 		logger := zap.New(zap.UseDevMode(true))
 		e := enricher.NewK8sEnricher(localClient, nil, logger, m, 5*time.Second, 30*time.Second)
-		e.SetReaderFactory(&fakeReaderFactory{})
+		e.SetReaderFactory(&fleettest.StubReaderFactory{})
 
 		signal := &signalprocessingv1.SignalData{
 			TargetResource: signalprocessingv1.ResourceIdentifier{
@@ -162,8 +146,8 @@ var _ = Describe("K8sEnricher Remote Enrichment (BR-INTEGRATION-054)", func() {
 	})
 
 	It("UT-SP-054-003c [AC-4]: enters degraded mode when remote reader fails", func() {
-		factory := &fakeReaderFactory{
-			readers: map[string]client.Reader{},
+		factory := &fleettest.StubReaderFactory{
+			Readers: map[string]client.Reader{},
 		}
 
 		logger := zap.New(zap.UseDevMode(true))
