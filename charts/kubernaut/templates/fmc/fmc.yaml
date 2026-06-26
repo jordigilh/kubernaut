@@ -11,6 +11,7 @@ metadata:
     app.kubernetes.io/managed-by: {{ .Release.Service }}
 data:
   FMC_MCP_GATEWAY_ENDPOINT: {{ .Values.fmc.mcpGatewayEndpoint | quote }}
+  FMC_GATEWAY_TYPE: {{ .Values.fmc.gatewayType | quote }}
   FMC_VALKEY_ADDR: {{ .Values.fmc.valkeyAddr | quote }}
   FMC_NAMESPACE: {{ .Values.fmc.namespace | quote }}
   FMC_SYNC_INTERVAL: {{ .Values.fmc.syncInterval | quote }}
@@ -117,12 +118,21 @@ metadata:
   labels:
     app.kubernetes.io/name: fmc
 rules:
+{{- if eq .Values.fmc.gatewayType "kuadrant" }}
+  - apiGroups: ["mcp.kuadrant.io"]
+    resources: ["mcpserverregistrations"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["gateways", "httproutes"]
+    verbs: ["get", "list", "watch"]
+{{- else }}
   - apiGroups: ["gateway.envoyproxy.io"]
     resources: ["backends"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["aigateway.envoyproxy.io"]
     resources: ["mcproutes"]
     verbs: ["get", "list", "watch"]
+{{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

@@ -24,6 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
+	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 )
 
 // ExecutorClient is the narrow interface that executors use for K8s CRUD.
@@ -65,15 +66,23 @@ func (f *localClientFactory) ClientFor(_ context.Context, clusterID string) (Exe
 // mcpClientFactory returns local clients for empty ClusterID and MCP-backed
 // composite clients for remote clusters.
 type mcpClientFactory struct {
-	localClient client.Client
-	session     *mcp.ClientSession
+	localClient    client.Client
+	session        *mcp.ClientSession
+	prefixResolver registry.ToolPrefixResolver
 }
 
 // NewMCPClientFactory creates a ClientFactory that supports both local and remote execution.
-func NewMCPClientFactory(localClient client.Client, session *mcp.ClientSession) ClientFactory {
+// An optional ToolPrefixResolver enables gateway-specific tool prefix lookup;
+// when nil, the EAIGW "{clusterID}__" convention is used.
+func NewMCPClientFactory(localClient client.Client, session *mcp.ClientSession, resolver ...registry.ToolPrefixResolver) ClientFactory {
+	var pr registry.ToolPrefixResolver
+	if len(resolver) > 0 {
+		pr = resolver[0]
+	}
 	return &mcpClientFactory{
-		localClient: localClient,
-		session:     session,
+		localClient:    localClient,
+		session:        session,
+		prefixResolver: pr,
 	}
 }
 
@@ -81,8 +90,14 @@ func (f *mcpClientFactory) ClientFor(_ context.Context, clusterID string) (Execu
 	if clusterID == "" {
 		return f.localClient, nil
 	}
-	reader := mcpclient.NewFromSession(f.session, clusterID)
-	writer := mcpclient.NewWriterFromSession(f.session, clusterID)
+	var opts []mcpclient.Option
+	if f.prefixResolver != nil {
+		if prefix := f.prefixResolver.ToolPrefixFor(clusterID); prefix != "" {
+			opts = append(opts, mcpclient.WithToolPrefix(prefix))
+		}
+	}
+	reader := mcpclient.NewFromSession(f.session, clusterID, opts...)
+	writer := mcpclient.NewWriterFromSession(f.session, clusterID, opts...)
 	return &remoteClient{reader: reader, writer: writer}, nil
 }
 
