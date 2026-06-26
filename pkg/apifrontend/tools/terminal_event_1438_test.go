@@ -63,7 +63,7 @@ var _ = Describe("Terminal event emission to A2A — #1438", func() {
 				Phase: "inactivity_timeout",
 			}
 
-			summary, _ := tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
+			summary, _, _ := tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
 			_ = summary
 
 			queuedEvents := queue.Events()
@@ -190,7 +190,7 @@ var _ = Describe("Terminal event emission to A2A — #1438", func() {
 				Phase: "inactivity_timeout",
 			}
 
-			tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
+			_, _, _ = tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
 
 			queuedEvents := queue.Events()
 			statusCount := 0
