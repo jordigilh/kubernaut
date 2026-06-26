@@ -136,9 +136,11 @@ var _ = Describe("IT #1438 — AF terminal event wiring through production path"
 		defer cancel()
 
 		_, err := tools.HandleInvestigationMCPWithRegistry(
-			ctx, mockMCP, nil, "",
-			tools.InvestigateMCPArgs{RRID: "rr-it-1438-030"},
-			nil, nil, nil, true, pool, "alice", nil, nil,
+			ctx, &tools.InvestigateConfig{
+				MCPClient: mockMCP,
+				Pool:      pool,
+			}, tools.InvestigateMCPArgs{RRID: "rr-it-1438-030"},
+			true, "alice",
 		)
 		Expect(err).NotTo(HaveOccurred())
 

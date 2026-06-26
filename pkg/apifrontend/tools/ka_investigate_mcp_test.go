@@ -132,9 +132,12 @@ var _ = Describe("HandleInvestigationMCP — #1326 BR-MCP-002 non-blocking MCP i
 			}
 
 			registry := tools.NewMonitorRegistry()
-			result, err := tools.HandleInvestigationMCPWithRegistry(context.Background(), mockMCP, nil, "", tools.InvestigateMCPArgs{
+			result, err := tools.HandleInvestigationMCPWithRegistry(context.Background(), &tools.InvestigateConfig{
+				MCPClient: mockMCP,
+				Registry:  registry,
+			}, tools.InvestigateMCPArgs{
 				RRID: "rr-monitor-001",
-			}, nil, registry, nil, false, nil, "", nil, nil)
+			}, false, "")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.SessionID).To(Equal("sess-monitor-001"))
 
@@ -158,9 +161,12 @@ var _ = Describe("HandleInvestigationMCP — #1326 BR-MCP-002 non-blocking MCP i
 			}
 
 			registry := tools.NewMonitorRegistry()
-			_, err := tools.HandleInvestigationMCPWithRegistry(context.Background(), mockMCP, nil, "", tools.InvestigateMCPArgs{
+			_, err := tools.HandleInvestigationMCPWithRegistry(context.Background(), &tools.InvestigateConfig{
+				MCPClient: mockMCP,
+				Registry:  registry,
+			}, tools.InvestigateMCPArgs{
 				RRID: "rr-stop-001",
-			}, nil, registry, nil, false, nil, "", nil, nil)
+			}, false, "")
 			Expect(err).NotTo(HaveOccurred())
 
 			registry.Stop("sess-stop-001")
@@ -627,9 +633,11 @@ var _ = Describe("AF-C1: Non-blocking bridge context detachment (#1356)", func()
 
 			registry := tools.NewMonitorRegistry()
 			result, err := tools.HandleInvestigationMCPWithRegistry(
-				parentCtx, mockMCP, nil, "",
-				tools.InvestigateMCPArgs{RRID: "rr-af-c1-001"},
-				nil, registry, nil, false, nil, "", nil, nil,
+				parentCtx, &tools.InvestigateConfig{
+					MCPClient: mockMCP,
+					Registry:  registry,
+				}, tools.InvestigateMCPArgs{RRID: "rr-af-c1-001"},
+				false, "",
 			)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.SessionID).To(Equal("sess-af-c1-001"))
@@ -691,9 +699,11 @@ var _ = Describe("AF-C1: Non-blocking bridge context detachment (#1356)", func()
 
 			registry := tools.NewMonitorRegistry()
 			_, err := tools.HandleInvestigationMCPWithRegistry(
-				context.Background(), mockMCP, nil, "",
-				tools.InvestigateMCPArgs{RRID: "rr-af-c1-003"},
-				nil, registry, nil, false, nil, "", nil, nil,
+				context.Background(), &tools.InvestigateConfig{
+					MCPClient: mockMCP,
+					Registry:  registry,
+				}, tools.InvestigateMCPArgs{RRID: "rr-af-c1-003"},
+				false, "",
 			)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -773,9 +783,13 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — AIA polling timeout cap
 
 			start := time.Now()
 			result, err := tools.HandleInvestigationMCPWithRegistry(
-				context.Background(), mockMCP, tc, "kubernaut-system",
-				tools.InvestigateMCPArgs{RRID: "rr-timeout-001"},
-				nil, registry, nil, false, nil, "", nil, nil,
+				context.Background(), &tools.InvestigateConfig{
+					MCPClient: mockMCP,
+					Client:    tc,
+					Namespace: "kubernaut-system",
+					Registry:  registry,
+				}, tools.InvestigateMCPArgs{RRID: "rr-timeout-001"},
+				false, "",
 			)
 			elapsed := time.Since(start)
 
@@ -800,9 +814,10 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — AIA polling timeout cap
 
 			start := time.Now()
 			result, err := tools.HandleInvestigationMCPWithRegistry(
-				context.Background(), mockMCP, nil, "",
-				tools.InvestigateMCPArgs{RRID: "rr-nok8s-001"},
-				nil, nil, nil, false, nil, "", nil, nil,
+				context.Background(), &tools.InvestigateConfig{
+					MCPClient: mockMCP,
+				}, tools.InvestigateMCPArgs{RRID: "rr-nok8s-001"},
+				false, "",
 			)
 			elapsed := time.Since(start)
 
@@ -828,9 +843,11 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — AIA polling timeout cap
 			tc := newTypedClientForInvestigate()
 			start := time.Now()
 			result, err := tools.HandleInvestigationMCPWithRegistry(
-				context.Background(), mockMCP, tc, "",
-				tools.InvestigateMCPArgs{RRID: "rr-nons-001"},
-				nil, nil, nil, false, nil, "", nil, nil,
+				context.Background(), &tools.InvestigateConfig{
+					MCPClient: mockMCP,
+					Client:    tc,
+				}, tools.InvestigateMCPArgs{RRID: "rr-nons-001"},
+				false, "",
 			)
 			elapsed := time.Since(start)
 
@@ -859,9 +876,13 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — AIA polling timeout cap
 
 			start := time.Now()
 			result, err := tools.HandleInvestigationMCPWithRegistry(
-				context.Background(), mockMCP, tc, "kubernaut-system",
-				tools.InvestigateMCPArgs{RRID: "rr-aia-001"},
-				nil, registry, nil, false, nil, "", nil, nil,
+				context.Background(), &tools.InvestigateConfig{
+					MCPClient: mockMCP,
+					Client:    tc,
+					Namespace: "kubernaut-system",
+					Registry:  registry,
+				}, tools.InvestigateMCPArgs{RRID: "rr-aia-001"},
+				false, "",
 			)
 			elapsed := time.Since(start)
 
@@ -890,9 +911,12 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — AIA polling timeout cap
 
 			start := time.Now()
 			result, err := tools.HandleInvestigationMCPWithRegistry(
-				ctx, mockMCP, tc, "kubernaut-system",
-				tools.InvestigateMCPArgs{RRID: "rr-cancel-001"},
-				nil, nil, nil, false, nil, "", nil, nil,
+				ctx, &tools.InvestigateConfig{
+					MCPClient: mockMCP,
+					Client:    tc,
+					Namespace: "kubernaut-system",
+				}, tools.InvestigateMCPArgs{RRID: "rr-cancel-001"},
+				false, "",
 			)
 			elapsed := time.Since(start)
 
@@ -936,9 +960,10 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — blocking mode (A2A path
 			}
 
 			result, err := tools.HandleInvestigationMCPWithRegistry(
-				context.Background(), mockMCP, nil, "",
-				tools.InvestigateMCPArgs{RRID: "rr-block-001"},
-				nil, nil, nil, true, nil, "", nil, nil,
+				context.Background(), &tools.InvestigateConfig{
+					MCPClient: mockMCP,
+				}, tools.InvestigateMCPArgs{RRID: "rr-block-001"},
+				true, "",
 			)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.SessionID).To(Equal("sess-block-001"))
@@ -972,9 +997,10 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — blocking mode (A2A path
 			}
 
 			result, err := tools.HandleInvestigationMCPWithRegistry(
-				ctx, mockMCP, nil, "",
-				tools.InvestigateMCPArgs{RRID: "rr-block-timeout-001"},
-				nil, nil, nil, true, nil, "", nil, nil,
+				ctx, &tools.InvestigateConfig{
+					MCPClient: mockMCP,
+				}, tools.InvestigateMCPArgs{RRID: "rr-block-timeout-001"},
+				true, "",
 			)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Status).To(Equal("timeout"))
@@ -997,9 +1023,10 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — blocking mode (A2A path
 
 			start := time.Now()
 			result, err := tools.HandleInvestigationMCPWithRegistry(
-				context.Background(), mockMCP, nil, "",
-				tools.InvestigateMCPArgs{RRID: "rr-nil-events-001"},
-				nil, nil, nil, true, nil, "", nil, nil,
+				context.Background(), &tools.InvestigateConfig{
+					MCPClient: mockMCP,
+				}, tools.InvestigateMCPArgs{RRID: "rr-nil-events-001"},
+				true, "",
 			)
 			elapsed := time.Since(start)
 
@@ -1040,9 +1067,10 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — blocking mode (A2A path
 			}
 
 			result, err := tools.HandleInvestigationMCPWithRegistry(
-				context.Background(), mockMCP, nil, "",
-				tools.InvestigateMCPArgs{RRID: "rr-filter-001"},
-				nil, nil, nil, true, nil, "", nil, nil,
+				context.Background(), &tools.InvestigateConfig{
+					MCPClient: mockMCP,
+				}, tools.InvestigateMCPArgs{RRID: "rr-filter-001"},
+				true, "",
 			)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Summary).To(Equal("Root cause: memory limit too low."))
@@ -1090,9 +1118,12 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — pool handoff (session p
 			})
 
 			result, err := tools.HandleInvestigationMCPWithRegistry(
-				context.Background(), mockMCP, nil, "",
-				tools.InvestigateMCPArgs{RRID: "rr-handoff-001"},
-				nil, registry, nil, true, pool, "alice", nil, nil,
+				context.Background(), &tools.InvestigateConfig{
+					MCPClient: mockMCP,
+					Registry:  registry,
+					Pool:      pool,
+				}, tools.InvestigateMCPArgs{RRID: "rr-handoff-001"},
+				true, "alice",
 			)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Status).To(Equal("completed"))
@@ -1133,9 +1164,10 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — pool handoff (session p
 			}
 
 			result, err := tools.HandleInvestigationMCPWithRegistry(
-				context.Background(), mockMCP, nil, "",
-				tools.InvestigateMCPArgs{RRID: "rr-nil-pool-001"},
-				nil, nil, nil, true, nil, "", nil, nil,
+				context.Background(), &tools.InvestigateConfig{
+					MCPClient: mockMCP,
+				}, tools.InvestigateMCPArgs{RRID: "rr-nil-pool-001"},
+				true, "",
 			)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Status).To(Equal("completed"))
@@ -1168,9 +1200,13 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — session ID forwarding (
 			registry := tools.NewMonitorRegistry()
 
 			_, err := tools.HandleInvestigationMCPWithRegistry(
-				context.Background(), mockMCP, tc, "kubernaut-system",
-				tools.InvestigateMCPArgs{RRID: "rr-1452-001"},
-				nil, registry, nil, false, nil, "", nil, nil,
+				context.Background(), &tools.InvestigateConfig{
+					MCPClient: mockMCP,
+					Client:    tc,
+					Namespace: "kubernaut-system",
+					Registry:  registry,
+				}, tools.InvestigateMCPArgs{RRID: "rr-1452-001"},
+				false, "",
 			)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(receivedArgs.SessionID).To(Equal("ka-sess-1452-001"),
@@ -1198,9 +1234,13 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — session ID forwarding (
 			registry := tools.NewMonitorRegistry()
 
 			_, err := tools.HandleInvestigationMCPWithRegistry(
-				context.Background(), mockMCP, tc, "kubernaut-system",
-				tools.InvestigateMCPArgs{RRID: "rr-1452-002"},
-				nil, registry, nil, false, nil, "", nil, nil,
+				context.Background(), &tools.InvestigateConfig{
+					MCPClient: mockMCP,
+					Client:    tc,
+					Namespace: "kubernaut-system",
+					Registry:  registry,
+				}, tools.InvestigateMCPArgs{RRID: "rr-1452-002"},
+				false, "",
 			)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(receivedArgs.SessionID).To(BeEmpty(),
@@ -1230,9 +1270,13 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — session ID forwarding (
 			registry := tools.NewMonitorRegistry()
 
 			_, err := tools.HandleInvestigationMCPWithRegistry(
-				context.Background(), mockMCP, tc, "kubernaut-system",
-				tools.InvestigateMCPArgs{RRID: "rr-1452-005"},
-				nil, registry, nil, false, nil, "", nil, nil,
+				context.Background(), &tools.InvestigateConfig{
+					MCPClient: mockMCP,
+					Client:    tc,
+					Namespace: "kubernaut-system",
+					Registry:  registry,
+				}, tools.InvestigateMCPArgs{RRID: "rr-1452-005"},
+				false, "",
 			)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(receivedArgs.SessionID).To(Equal(aiaSessionID),
@@ -1260,9 +1304,14 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — session ID forwarding (
 			registry := tools.NewMonitorRegistry()
 
 			_, err := tools.HandleInvestigationMCPWithRegistry(
-				context.Background(), mockMCP, tc, "kubernaut-system",
-				tools.InvestigateMCPArgs{RRID: "rr-1452-006"},
-				recorder, registry, nil, false, nil, "", nil, nil,
+				context.Background(), &tools.InvestigateConfig{
+					MCPClient: mockMCP,
+					Client:    tc,
+					Namespace: "kubernaut-system",
+					Auditor:   recorder,
+					Registry:  registry,
+				}, tools.InvestigateMCPArgs{RRID: "rr-1452-006"},
+				false, "",
 			)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(recorder.events).To(HaveLen(1))

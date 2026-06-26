@@ -121,6 +121,20 @@ type InvestigateRCA struct {
 // Errors are logged but do not fail the investigation.
 type SessionStartedHook func(ctx context.Context, namespace, rrID, sessionID string) error
 
+// InvestigateConfig bundles the dependencies for HandleInvestigationMCPWithRegistry
+// and NewInvestigateMCPTool, replacing positional parameters.
+type InvestigateConfig struct {
+	MCPClient ka.MCPClient
+	Client    crclient.Client
+	Namespace string
+	Auditor   audit.Emitter
+	Registry  *MonitorRegistry
+	OnStarted SessionStartedHook
+	Pool      *ka.KASessionPool
+	Signaler  ISSignaler
+	Triager   *severity.Triager
+}
+
 // HandleInvestigationMCP starts a dedicated MCP investigation session. When a
 // K8s client and namespace are provided, it first polls the AIAnalysis CRD to
 // wait for AA to submit the investigation to KA (BR-INTERACTIVE-010). After
@@ -133,7 +147,12 @@ type SessionStartedHook func(ctx context.Context, namespace, rrID, sessionID str
 // If no pending session exists, the MCP session still acquires the interactive
 // lease but the Events channel may be nil or empty.
 func HandleInvestigationMCP(ctx context.Context, mcpClient ka.MCPClient, client crclient.Client, namespace string, args InvestigateMCPArgs, auditor audit.Emitter) (InvestigateMCPResult, error) {
-	return HandleInvestigationMCPWithRegistry(ctx, mcpClient, client, namespace, args, auditor, nil, nil, false, nil, "", nil, nil)
+	return HandleInvestigationMCPWithRegistry(ctx, &InvestigateConfig{
+		MCPClient: mcpClient,
+		Client:    client,
+		Namespace: namespace,
+		Auditor:   auditor,
+	}, args, false, "")
 }
 
 // HandleInvestigationMCPWithRegistry is like HandleInvestigationMCP but also
@@ -154,8 +173,8 @@ func HandleInvestigationMCP(ctx context.Context, mcpClient ka.MCPClient, client 
 // (pure CRD-driven coordination per DD-INTERACTIVE-002). This enables AA to detect
 // interactive intent via IS watch and resubmit with interactive=true. After successful
 // MCP connect, UpdateCorrelation writes the KA session ID to the IS status.
-func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPClient, client crclient.Client, namespace string, args InvestigateMCPArgs, auditor audit.Emitter, registry *MonitorRegistry, onStarted SessionStartedHook, blocking bool, pool *ka.KASessionPool, username string, signaler ISSignaler, triager *severity.Triager) (InvestigateMCPResult, error) {
-	if mcpClient == nil {
+func HandleInvestigationMCPWithRegistry(ctx context.Context, cfg *InvestigateConfig, args InvestigateMCPArgs, blocking bool, username string) (InvestigateMCPResult, error) {
+	if cfg.MCPClient == nil {
 		return InvestigateMCPResult{}, fmt.Errorf("KA MCP client unavailable")
 	}
 
@@ -207,7 +226,7 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 			return InvestigateMCPResult{}, fmt.Errorf("interactive investigation cannot be started by service accounts")
 		}
 
-		if client == nil {
+		if cfg.Client == nil {
 			return InvestigateMCPResult{}, fmt.Errorf("k8s client unavailable for RR creation")
 		}
 
@@ -222,7 +241,7 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 		if identity != nil {
 			createUser = identity.Username
 		}
-		result, err := HandleCreateRR(ctx, client, nil, namespace, createArgs, createUser, triager, auditor)
+		result, err := HandleCreateRR(ctx, &ToolDeps{Client: cfg.Client, ControllerNS: cfg.Namespace, Triager: cfg.Triager, Auditor: cfg.Auditor}, createArgs, createUser)
 		if err != nil {
 			return InvestigateMCPResult{}, fmt.Errorf("create RR for investigation: %w", err)
 		}
@@ -260,9 +279,9 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 	// When signaler is available, create IS CRD BEFORE the await loop to signal
 	// interactive intent to AA (DD-INTERACTIVE-002, BR-INTERACTIVE-010).
 	var isCRDName string
-	if signaler != nil && client != nil && namespace != "" {
+	if cfg.Signaler != nil && cfg.Client != nil && cfg.Namespace != "" {
 		joinMode := "start"
-		if isAutonomousInvestigation(ctx, client, namespace, args.RRID) {
+		if isAutonomousInvestigation(ctx, cfg.Client, cfg.Namespace, args.RRID) {
 			joinMode = "takeover"
 			_ = launcher.EmitStatusSafe(ctx, "Autonomous investigation detected, signaling takeover...")
 		}
@@ -276,7 +295,7 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 
 		taskID := fmt.Sprintf("a2a-%s", args.RRID)
 		var sigErr error
-		isCRDName, sigErr = signaler.SignalInteractive(ctx, namespace, args.RRID, taskID, username, groups, joinMode)
+		isCRDName, sigErr = cfg.Signaler.SignalInteractive(ctx, cfg.Namespace, args.RRID, taskID, username, groups, joinMode)
 		if sigErr != nil {
 			logger := logr.FromContextOrDiscard(ctx)
 			if strings.Contains(sigErr.Error(), "session_active") {
@@ -292,14 +311,14 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 	// Blocking path uses a longer timeout because the IS CRD (created by
 	// kubernaut_investigate) needs time for AA to detect and resubmit to KA.
 	var kaSessionID string
-	if client != nil && namespace != "" {
+	if cfg.Client != nil && cfg.Namespace != "" {
 		awaitTimeout := 10 * time.Second
 		if blocking {
 			awaitTimeout = 60 * time.Second
 		}
 		checkCtx, checkCancel := context.WithTimeout(ctx, awaitTimeout)
-		awaitResult, awaitErr := HandleAwaitSession(checkCtx, client, AwaitSessionArgs{
-			Namespace: namespace,
+		awaitResult, awaitErr := HandleAwaitSession(checkCtx, cfg.Client, AwaitSessionArgs{
+			Namespace: cfg.Namespace,
 			RRName:    args.RRID,
 		})
 		checkCancel()
@@ -317,7 +336,7 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 			isPhaseTimeout = takeoverISPhaseTimeout
 		}
 		isCtx, isCancel := context.WithTimeout(ctx, isPhaseTimeout)
-		if AwaitISPhaseActive(isCtx, client, namespace, args.RRID) {
+		if AwaitISPhaseActive(isCtx, cfg.Client, cfg.Namespace, args.RRID) {
 			_ = launcher.EmitStatusSafe(ctx, "Interactive session acknowledged by AA, starting investigation...")
 		}
 		isCancel()
@@ -327,7 +346,7 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 	logger.Info("StartInvestigation: calling MCP client",
 		"rr_id", args.RRID, "ka_session_id", kaSessionID, "ctx_err", ctx.Err())
 
-	result, err := mcpClient.StartInvestigation(ctx, ka.StartInvestigationArgs{
+	result, err := cfg.MCPClient.StartInvestigation(ctx, ka.StartInvestigationArgs{
 		RRID:      args.RRID,
 		SessionID: kaSessionID,
 	})
@@ -365,8 +384,8 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 		"rr_id", args.RRID, "session_id", result.SessionID,
 		"status", result.Status, "events_nil", result.Events == nil)
 
-	if auditor != nil {
-		auditor.Emit(ctx, &audit.Event{
+	if cfg.Auditor != nil {
+		cfg.Auditor.Emit(ctx, &audit.Event{
 			Type: audit.EventKADelegated,
 			Detail: map[string]string{
 				"rr_id":             args.RRID,
@@ -377,19 +396,19 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 		})
 	}
 
-	if onStarted != nil && result.SessionID != "" {
-		if hookErr := onStarted(ctx, namespace, args.RRID, result.SessionID); hookErr != nil {
+	if cfg.OnStarted != nil && result.SessionID != "" {
+		if hookErr := cfg.OnStarted(ctx, cfg.Namespace, args.RRID, result.SessionID); hookErr != nil {
 			logr.FromContextOrDiscard(ctx).Error(hookErr, "IS CRD creation failed after investigate",
 				"rr_id", args.RRID,
 				"session_id", result.SessionID,
-				"namespace", namespace,
+				"namespace", cfg.Namespace,
 			)
 			_ = launcher.EmitStatusSafe(ctx, fmt.Sprintf("Warning: IS CRD creation failed (%s), investigation continues", security.RedactError(hookErr)))
 		}
 	}
 
-	if signaler != nil && isCRDName != "" && result.SessionID != "" {
-		if corrErr := signaler.UpdateCorrelation(ctx, isCRDName, result.SessionID); corrErr != nil {
+	if cfg.Signaler != nil && isCRDName != "" && result.SessionID != "" {
+		if corrErr := cfg.Signaler.UpdateCorrelation(ctx, isCRDName, result.SessionID); corrErr != nil {
 			logger.Error(corrErr, "IS CRD correlation update failed (non-fatal)",
 				"crd_name", isCRDName, "session_id", result.SessionID)
 		}
@@ -397,16 +416,16 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 
 	// Track session in registry before starting goroutine so StopAll can
 	// force-close on SIGTERM. The goroutine deregisters on natural exit.
-	if registry != nil {
-		registry.Register(result.SessionID, result.Closer)
+	if cfg.Registry != nil {
+		cfg.Registry.Register(result.SessionID, result.Closer)
 	}
 
 	cleanup := func() {
 		if result.Closer != nil {
 			result.Closer()
 		}
-		if registry != nil {
-			registry.Deregister(result.SessionID)
+		if cfg.Registry != nil {
+			cfg.Registry.Deregister(result.SessionID)
 		}
 	}
 
@@ -455,18 +474,18 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 		// Hand off the MCP session to the pool so discover_workflows /
 		// select_workflow reuse the same connection and driver lease.
 		// If no pool is available, fall back to closing the session.
-		if pool != nil && result.Session != nil && username != "" {
+		if cfg.Pool != nil && result.Session != nil && username != "" {
 			watchDone := make(chan struct{})
 			onRelease := func() { close(watchDone) }
-			if injectErr := pool.InjectVerified(ctx, args.RRID, username, result.Session, onRelease); injectErr != nil {
+			if injectErr := cfg.Pool.InjectVerified(ctx, args.RRID, username, result.Session, onRelease); injectErr != nil {
 				logger.Info("investigation session dead on handoff, skipping pool inject",
 					"rr_id", args.RRID, "session_id", result.SessionID, "error", injectErr.Error())
-				if registry != nil {
-					registry.Deregister(result.SessionID)
+				if cfg.Registry != nil {
+					cfg.Registry.Deregister(result.SessionID)
 				}
 			} else {
-				if registry != nil {
-					registry.Deregister(result.SessionID)
+				if cfg.Registry != nil {
+					cfg.Registry.Deregister(result.SessionID)
 				}
 				watchCtx := context.WithoutCancel(ctx)
 				go WatchTerminalEvents(watchCtx, result.Events, args.RRID, watchDone)
@@ -923,7 +942,7 @@ func (r *MonitorRegistry) StopAll() {
 // pool is optional; when provided, the MCP session is handed off to the pool
 // after the investigation so that discover_workflows / select_workflow reuse
 // the same connection and driver lease.
-func NewInvestigateMCPTool(mcpClient ka.MCPClient, client crclient.Client, namespace string, auditor audit.Emitter, registry *MonitorRegistry, onStarted SessionStartedHook, pool *ka.KASessionPool, signaler ISSignaler, triager *severity.Triager, mapper meta.RESTMapper) (tool.Tool, error) {
+func NewInvestigateMCPTool(cfg *InvestigateConfig, mapper meta.RESTMapper) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name: "kubernaut_investigate",
 		Description: "Investigate an infrastructure incident via MCP. " +
@@ -936,7 +955,7 @@ func NewInvestigateMCPTool(mcpClient ka.MCPClient, client crclient.Client, names
 	}, func(ctx tool.Context, args InvestigateMCPArgs) (InvestigateMCPResult, error) {
 		user := usernameFromContext(ctx)
 		toolCtx := ContextWithRESTMapper(ctx, mapper)
-		return HandleInvestigationMCPWithRegistry(toolCtx, mcpClient, client, namespace, args, auditor, registry, onStarted, true, pool, user, signaler, triager)
+		return HandleInvestigationMCPWithRegistry(toolCtx, cfg, args, true, user)
 	})
 }
 

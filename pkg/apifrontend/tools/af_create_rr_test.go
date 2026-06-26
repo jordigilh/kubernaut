@@ -82,13 +82,13 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 		It("UT-AF-1282-MIN-001: creates RR with only Kind, Name, Description", func() {
 			tc := newTypedFakeClient()
 
-			result, err := tools.HandleCreateRR(context.Background(), tc, nil, "prod", &tools.CreateRRArgs{
+			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "prod"}, &tools.CreateRRArgs{
 				Namespace:   "prod",
 				Kind:        "Deployment",
 				Name:        "web",
 				Description: "Pod CrashLoopBackOff detected",
 				APIVersion:  "apps/v1",
-			}, "sre-user", nil, nil)
+			}, "sre-user")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RRID).NotTo(BeEmpty())
 			Expect(result.AlreadyExists).To(BeFalse())
@@ -97,17 +97,17 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 
 		It("UT-AF-1282-MIN-002: empty kind rejected", func() {
 			tc := newTypedFakeClient()
-			_, err := tools.HandleCreateRR(context.Background(), tc, nil, "prod", &tools.CreateRRArgs{
+			_, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "prod"}, &tools.CreateRRArgs{
 				Namespace: "prod", Kind: "", Name: "web", Description: "x", APIVersion: "apps/v1",
-			}, "user", nil, nil)
+			}, "user")
 			Expect(err).To(MatchError(ContainSubstring("invalid input")))
 		})
 
 		It("UT-AF-1282-MIN-003: empty name rejected", func() {
 			tc := newTypedFakeClient()
-			_, err := tools.HandleCreateRR(context.Background(), tc, nil, "prod", &tools.CreateRRArgs{
+			_, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "prod"}, &tools.CreateRRArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "", Description: "x", APIVersion: "apps/v1",
-			}, "user", nil, nil)
+			}, "user")
 			Expect(err).To(MatchError(ContainSubstring("invalid input")))
 		})
 
@@ -118,9 +118,9 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 				longDesc[i] = 'a'
 			}
 
-			result, err := tools.HandleCreateRR(context.Background(), tc, nil, "prod", &tools.CreateRRArgs{
+			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "prod"}, &tools.CreateRRArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "web", Description: string(longDesc), APIVersion: "apps/v1",
-			}, "user", nil, nil)
+			}, "user")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RRID).NotTo(BeEmpty())
 		})
@@ -136,9 +136,9 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 				wg.Add(1)
 				go func(idx int) {
 					defer wg.Done()
-					results[idx], errs[idx] = tools.HandleCreateRR(context.Background(), tc, nil, "prod", &tools.CreateRRArgs{
+					results[idx], errs[idx] = tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "prod"}, &tools.CreateRRArgs{
 						Namespace: "prod", Kind: "Deployment", Name: "dedup-target", Description: "concurrent test", APIVersion: "apps/v1",
-					}, "user", nil, nil)
+					}, "user")
 				}(i)
 			}
 			wg.Wait()
@@ -159,9 +159,9 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			cfg := severity.DefaultConfig()
 			triager := severity.NewTriager(&noopPromClient{}, noopLLM, cfg, logr.Discard())
 
-			result, err := tools.HandleCreateRR(context.Background(), tc, nil, "prod", &tools.CreateRRArgs{
+			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "prod", Triager: triager}, &tools.CreateRRArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "web", Description: "test triage", APIVersion: "apps/v1",
-			}, "alice", triager, nil)
+			}, "alice")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RRID).NotTo(BeEmpty())
 		})
@@ -169,9 +169,9 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 		It("UT-AF-1282-MIN-007: nil Triager defaults severity to medium", func() {
 			tc := newTypedFakeClient()
 
-			result, err := tools.HandleCreateRR(context.Background(), tc, nil, "prod", &tools.CreateRRArgs{
+			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "prod"}, &tools.CreateRRArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "web", Description: "no triager", APIVersion: "apps/v1",
-			}, "user", nil, nil)
+			}, "user")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RRID).NotTo(BeEmpty())
 		})
@@ -181,26 +181,26 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 		It("UT-AF-1282-NS-005: namespace comes from AF, not LLM args", func() {
 			tc := newTypedFakeClient()
 
-			result, err := tools.HandleCreateRR(context.Background(), tc, nil, "kubernaut-system", &tools.CreateRRArgs{
+			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "kubernaut-system"}, &tools.CreateRRArgs{
 				Namespace: "kubernaut-system", Kind: "Deployment", Name: "web", Description: "ns from AF", APIVersion: "apps/v1",
-			}, "user", nil, nil)
+			}, "user")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RRID).To(HavePrefix("rr-"))
 		})
 
 		It("UT-AF-1282-NS-006: empty namespace from AF is rejected", func() {
 			tc := newTypedFakeClient()
-			_, err := tools.HandleCreateRR(context.Background(), tc, nil, "", &tools.CreateRRArgs{
+			_, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: ""}, &tools.CreateRRArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "web", Description: "x", APIVersion: "apps/v1",
-			}, "user", nil, nil)
+			}, "user")
 			Expect(err).To(MatchError(ContainSubstring("invalid input")))
 		})
 
 		It("UT-AF-1282-NS-007: invalid namespace from AF (path traversal) rejected", func() {
 			tc := newTypedFakeClient()
-			_, err := tools.HandleCreateRR(context.Background(), tc, nil, "../../etc", &tools.CreateRRArgs{
+			_, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "../../etc"}, &tools.CreateRRArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "web", Description: "x", APIVersion: "apps/v1",
-			}, "user", nil, nil)
+			}, "user")
 			Expect(err).To(MatchError(ContainSubstring("invalid input")))
 		})
 	})
@@ -209,9 +209,9 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 		It("UT-AF-1282-SRC-001: created RR has signalSource=a2a-agent", func() {
 			tc := newTypedFakeClient()
 
-			result, err := tools.HandleCreateRR(context.Background(), tc, nil, "prod", &tools.CreateRRArgs{
+			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "prod"}, &tools.CreateRRArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "web", Description: "check source", APIVersion: "apps/v1",
-			}, "user", nil, nil)
+			}, "user")
 			Expect(err).NotTo(HaveOccurred())
 
 			created := verifyTypedRR(tc, "prod", extractRRName(result.RRID))
@@ -222,9 +222,9 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			rr := newTypedRRWithFingerprint("prod", "rr-deploy-web-existing", "Executing", "Deployment", "web")
 			tc := newTypedFakeClient(rr)
 
-			result, err := tools.HandleCreateRR(context.Background(), tc, nil, "prod", &tools.CreateRRArgs{
+			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "prod"}, &tools.CreateRRArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "web", Description: "dup", APIVersion: "apps/v1",
-			}, "user", nil, nil)
+			}, "user")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.AlreadyExists).To(BeTrue())
 		})
@@ -235,9 +235,9 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			tc := newTypedFakeClient()
 			dc := newDynEventClient()
 
-			result, err := tools.HandleCreateRR(context.Background(), tc, dc, "prod", &tools.CreateRRArgs{
+			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, DynClient: dc, ControllerNS: "prod"}, &tools.CreateRRArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "web", Description: "check signal name", APIVersion: "apps/v1",
-			}, "user", nil, nil)
+			}, "user")
 			Expect(err).NotTo(HaveOccurred())
 
 			created := verifyTypedRR(tc, "prod", extractRRName(result.RRID))
@@ -249,9 +249,9 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			dc := newDynEventClient(ev)
 			tc := newTypedFakeClient()
 
-			result, err := tools.HandleCreateRR(context.Background(), tc, dc, "prod", &tools.CreateRRArgs{
+			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, DynClient: dc, ControllerNS: "prod"}, &tools.CreateRRArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "web", Description: "OOM detected", APIVersion: "apps/v1",
-			}, "user", nil, nil)
+			}, "user")
 			Expect(err).NotTo(HaveOccurred())
 
 			created := verifyTypedRR(tc, "prod", extractRRName(result.RRID))
@@ -261,9 +261,9 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 		It("UT-AF-1282-SIG-010: no events and no triager → unknown fallback", func() {
 			tc := newTypedFakeClient()
 
-			result, err := tools.HandleCreateRR(context.Background(), tc, nil, "prod", &tools.CreateRRArgs{
+			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "prod"}, &tools.CreateRRArgs{
 				Namespace: "prod", Kind: "StatefulSet", Name: "db", Description: "no events", APIVersion: "apps/v1",
-			}, "user", nil, nil)
+			}, "user")
 			Expect(err).NotTo(HaveOccurred())
 
 			created := verifyTypedRR(tc, "prod", extractRRName(result.RRID))
@@ -290,9 +290,9 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			}
 			triager := severity.NewTriager(mockProm, noopLLM, cfg, logr.Discard())
 
-			result, err := tools.HandleCreateRR(context.Background(), tc, dc, "prod", &tools.CreateRRArgs{
+			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, DynClient: dc, ControllerNS: "prod", Triager: triager}, &tools.CreateRRArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "web", Description: "alert-based", APIVersion: "apps/v1",
-			}, "user", triager, nil)
+			}, "user")
 			Expect(err).NotTo(HaveOccurred())
 
 			created := verifyTypedRR(tc, "prod", extractRRName(result.RRID))
@@ -324,9 +324,9 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 		}
 		triager := severity.NewTriager(mockProm, noopLLM, cfg, logr.Discard())
 
-		result, err := tools.HandleCreateRR(context.Background(), tc, dc, "prod", &tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, DynClient: dc, ControllerNS: "prod", Triager: triager}, &tools.CreateRRArgs{
 			Namespace: "prod", Kind: "Deployment", Name: "api", Description: "rule-based", APIVersion: "apps/v1",
-		}, "user", triager, nil)
+		}, "user")
 		Expect(err).NotTo(HaveOccurred())
 
 		created := verifyTypedRR(tc, "prod", extractRRName(result.RRID))
@@ -340,9 +340,9 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 		dc := newDynEventClient(deployEv, podEv)
 		tc := newTypedFakeClient()
 
-		result, err := tools.HandleCreateRR(context.Background(), tc, dc, "prod", &tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, DynClient: dc, ControllerNS: "prod"}, &tools.CreateRRArgs{
 			Namespace: "prod", Kind: "Deployment", Name: "web", Description: "pod crash", APIVersion: "apps/v1",
-		}, "user", nil, nil)
+		}, "user")
 		Expect(err).NotTo(HaveOccurred())
 
 		created := verifyTypedRR(tc, "prod", extractRRName(result.RRID))
@@ -355,9 +355,9 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 		dc := newDynEventClient(podEv)
 		tc := newTypedFakeClient()
 
-		result, err := tools.HandleCreateRR(context.Background(), tc, dc, "prod", &tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, DynClient: dc, ControllerNS: "prod"}, &tools.CreateRRArgs{
 			Namespace: "prod", Kind: "Pod", Name: "worker-1", Description: "pod check", APIVersion: "apps/v1",
-		}, "user", nil, nil)
+		}, "user")
 		Expect(err).NotTo(HaveOccurred())
 
 		created := verifyTypedRR(tc, "prod", extractRRName(result.RRID))
@@ -371,9 +371,9 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 		dc := newDynEventClient(deployEv, unrelatedPodEv)
 		tc := newTypedFakeClient()
 
-		result, err := tools.HandleCreateRR(context.Background(), tc, dc, "prod", &tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, DynClient: dc, ControllerNS: "prod"}, &tools.CreateRRArgs{
 			Namespace: "prod", Kind: "Deployment", Name: "web", Description: "check filter", APIVersion: "apps/v1",
-		}, "user", nil, nil)
+		}, "user")
 		Expect(err).NotTo(HaveOccurred())
 
 		created := verifyTypedRR(tc, "prod", extractRRName(result.RRID))
@@ -399,9 +399,9 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 		}
 		triager := severity.NewTriager(mockProm, noopLLM, cfg, logr.Discard())
 
-		result, err := tools.HandleCreateRR(context.Background(), tc, nil, "kubernaut-system", &tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "kubernaut-system", Triager: triager}, &tools.CreateRRArgs{
 			Namespace: "production", Kind: "Deployment", Name: "web-server", Description: "cross-ns triage", APIVersion: "apps/v1",
-		}, "user", triager, nil)
+		}, "user")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Severity).To(Equal("critical"),
 			"triager should match alert by kind+name even when AF namespace differs from signal source namespace")
@@ -414,13 +414,13 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			controllerNS := "kubernaut-system"
 			workloadNS := "production"
 
-			result, err := tools.HandleCreateRR(context.Background(), tc, nil, controllerNS, &tools.CreateRRArgs{
+			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: controllerNS}, &tools.CreateRRArgs{
 				Namespace:   workloadNS,
 				Kind:        "Deployment",
 				Name:        "web",
 				Description: "cross-namespace RR creation",
 				APIVersion:  "apps/v1",
-			}, "user", nil, nil)
+			}, "user")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RRID).To(HavePrefix("rr-"))
 
@@ -449,13 +449,13 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			}
 			tc := newTypedFakeClient(existingRR)
 
-			result, err := tools.HandleCreateRR(context.Background(), tc, nil, controllerNS, &tools.CreateRRArgs{
+			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: controllerNS}, &tools.CreateRRArgs{
 				Namespace:   workloadNS,
 				Kind:        "Deployment",
 				Name:        "web",
 				Description: "should dedup on workload NS fingerprint",
 				APIVersion:  "apps/v1",
-			}, "user", nil, nil)
+			}, "user")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.AlreadyExists).To(BeTrue(),
 				"fingerprint(production/Deployment/web) should match the pre-seeded RR")
@@ -468,13 +468,13 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			dc := newDynEventClient(ev)
 			tc := newTypedFakeClient()
 
-			result, err := tools.HandleCreateRR(context.Background(), tc, dc, controllerNS, &tools.CreateRRArgs{
+			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, DynClient: dc, ControllerNS: controllerNS}, &tools.CreateRRArgs{
 				Namespace:   workloadNS,
 				Kind:        "Deployment",
 				Name:        "web",
 				Description: "events in workload NS",
 				APIVersion:  "apps/v1",
-			}, "user", nil, nil)
+			}, "user")
 			Expect(err).NotTo(HaveOccurred())
 
 			created := verifyTypedRR(tc, controllerNS, extractRRName(result.RRID))
@@ -485,13 +485,13 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 		It("UT-AF-1292-NS-004: empty workload namespace rejected (BR-SAFETY-002)", func() {
 			tc := newTypedFakeClient()
 
-			_, err := tools.HandleCreateRR(context.Background(), tc, nil, "kubernaut-system", &tools.CreateRRArgs{
+			_, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "kubernaut-system"}, &tools.CreateRRArgs{
 				Namespace:   "",
 				Kind:        "Deployment",
 				Name:        "web",
 				Description: "empty workload NS",
 				APIVersion:  "apps/v1",
-			}, "user", nil, nil)
+			}, "user")
 			Expect(err).To(MatchError(ContainSubstring("invalid input")),
 				"empty workload namespace must be rejected")
 		})
@@ -520,13 +520,13 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			}
 			triager := severity.NewTriager(mockProm, noopLLM, cfg, logr.Discard())
 
-			result, err := tools.HandleCreateRR(context.Background(), tc, nil, controllerNS, &tools.CreateRRArgs{
+			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: controllerNS, Triager: triager}, &tools.CreateRRArgs{
 				Namespace:   workloadNS,
 				Kind:        "Deployment",
 				Name:        "web",
 				Description: "triage with workload NS labels",
 				APIVersion:  "apps/v1",
-			}, "user", triager, nil)
+			}, "user")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.SeveritySource).To(Equal("rule_evaluation"),
 				"Tier 2 must match because TriageInput.Labels['namespace'] = workloadNS matches the rule query")
@@ -536,9 +536,9 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 	})
 
 	It("UT-AF-1282-K8S: nil client returns ErrK8sUnavailable", func() {
-		_, err := tools.HandleCreateRR(context.Background(), nil, nil, "prod", &tools.CreateRRArgs{
+		_, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: nil, ControllerNS: "prod"}, &tools.CreateRRArgs{
 			Namespace: "prod", Kind: "Deployment", Name: "web", Description: "x", APIVersion: "apps/v1",
-		}, "user", nil, nil)
+		}, "user")
 		Expect(err).To(MatchError(tools.ErrK8sUnavailable))
 	})
 
@@ -546,9 +546,9 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 		rr := newTypedRRWithFingerprint("prod", "rr-deploy-web-existing", "Executing", "Deployment", "web")
 		tc := newTypedFakeClient(rr)
 
-		result, err := tools.HandleCreateRR(context.Background(), tc, nil, "prod", &tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "prod"}, &tools.CreateRRArgs{
 			Namespace: "prod", Kind: "Deployment", Name: "web", Description: "duplicate", APIVersion: "apps/v1",
-		}, "sre-user", nil, nil)
+		}, "sre-user")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.AlreadyExists).To(BeTrue())
 		Expect(result.RRID).To(Equal("rr-deploy-web-existing"))
@@ -557,12 +557,12 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 	Describe("APIVersion and ClusterScoped (#1372)", func() {
 		It("UT-AF-1372-060: RR created with targetResource.apiVersion populated", func() {
 			tc := newTypedFakeClient()
-			result, err := tools.HandleCreateRR(context.Background(), tc, nil, "kubernaut-system", &tools.CreateRRArgs{
+			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "kubernaut-system"}, &tools.CreateRRArgs{
 				Namespace:  "prod",
 				Kind:       "Deployment",
 				Name:       "web",
 				APIVersion: "apps/v1",
-			}, "user", nil, nil)
+			}, "user")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RRID).NotTo(BeEmpty())
 
@@ -572,24 +572,24 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 
 		It("UT-AF-1372-061: cluster-scoped RR (Node) with empty namespace creates successfully", func() {
 			tc := newTypedFakeClient()
-			result, err := tools.HandleCreateRR(context.Background(), tc, nil, "kubernaut-system", &tools.CreateRRArgs{
+			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "kubernaut-system"}, &tools.CreateRRArgs{
 				Kind:          "Node",
 				Name:          "worker-03",
 				APIVersion:    "v1",
 				ClusterScoped: true,
-			}, "user", nil, nil)
+			}, "user")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RRID).NotTo(BeEmpty())
 		})
 
 		It("UT-AF-1372-062: namespaced RR with empty namespace rejects", func() {
 			tc := newTypedFakeClient()
-			_, err := tools.HandleCreateRR(context.Background(), tc, nil, "kubernaut-system", &tools.CreateRRArgs{
+			_, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "kubernaut-system"}, &tools.CreateRRArgs{
 				Kind:          "Deployment",
 				Name:          "web",
 				APIVersion:    "apps/v1",
 				ClusterScoped: false,
-			}, "user", nil, nil)
+			}, "user")
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("namespace"))
 		})

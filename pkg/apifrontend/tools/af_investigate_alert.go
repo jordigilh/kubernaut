@@ -167,7 +167,7 @@ func HandleInvestigateAlert(
 		SignalNameOverride: args.AlertName,
 	}
 
-	result, err := HandleCreateRR(ctx, cfg.Client, cfg.DynClient, cfg.ControllerNS, createArgs, username, cfg.Triager, cfg.Auditor)
+	result, err := HandleCreateRR(ctx, &ToolDeps{Client: cfg.Client, DynClient: cfg.DynClient, ControllerNS: cfg.ControllerNS, Triager: cfg.Triager, Auditor: cfg.Auditor}, createArgs, username)
 	if err != nil {
 		return InvestigateAlertResult{}, fmt.Errorf("create RR for alert investigation: %w", err)
 	}

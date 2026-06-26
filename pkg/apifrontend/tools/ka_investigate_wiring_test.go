@@ -90,14 +90,18 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — wiring audit (WIRE-C01/
 
 			tc := newTypedClientForInvestigate()
 			result, err := tools.HandleInvestigationMCPWithRegistry(
-				ctx, mockMCP, tc, "kubernaut-system",
-				tools.InvestigateMCPArgs{
+				ctx, &tools.InvestigateConfig{
+					MCPClient: mockMCP,
+					Client:    tc,
+					Namespace: "kubernaut-system",
+					Triager:   triager,
+				}, tools.InvestigateMCPArgs{
 					APIVersion: "apps/v1",
 					Namespace:  "prod",
 					Kind:       "Deployment",
 					Name:       "web-app",
 				},
-				nil, nil, nil, true, nil, "", nil, triager,
+				true, "",
 			)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RRID).NotTo(BeEmpty())
@@ -198,9 +202,11 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — session_active structur
 			})
 
 			result, err := tools.HandleInvestigationMCPWithRegistry(
-				ctx, mockMCP, nil, "kubernaut-system",
-				tools.InvestigateMCPArgs{RRID: "rr-session-001"},
-				nil, nil, nil, true, nil, "admin", nil, nil,
+				ctx, &tools.InvestigateConfig{
+					MCPClient: mockMCP,
+					Namespace: "kubernaut-system",
+				}, tools.InvestigateMCPArgs{RRID: "rr-session-001"},
+				true, "admin",
 			)
 			Expect(err).NotTo(HaveOccurred(), "session_active should not propagate as Go error")
 			Expect(result.Status).To(Equal("session_active"))
@@ -220,9 +226,11 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — session_active structur
 			})
 
 			result, err := tools.HandleInvestigationMCPWithRegistry(
-				ctx, mockMCP, nil, "kubernaut-system",
-				tools.InvestigateMCPArgs{RRID: "rr-session-002"},
-				nil, nil, nil, true, nil, "alice", nil, nil,
+				ctx, &tools.InvestigateConfig{
+					MCPClient: mockMCP,
+					Namespace: "kubernaut-system",
+				}, tools.InvestigateMCPArgs{RRID: "rr-session-002"},
+				true, "alice",
 			)
 			Expect(err).NotTo(HaveOccurred(), "session_active should not propagate as Go error")
 			Expect(result.Error).NotTo(BeEmpty(), "Error field must provide actionable guidance")
@@ -235,9 +243,10 @@ var _ = Describe("mcpClient nil guard (WIRE-W04)", func() {
 	Describe("WIRE-W04: HandleInvestigationMCPWithRegistry rejects nil mcpClient", func() {
 		It("UT-AF-WIRE-W04: returns error when mcpClient is nil", func() {
 			_, err := tools.HandleInvestigationMCPWithRegistry(
-				context.Background(), nil, nil, "ns",
-				tools.InvestigateMCPArgs{RRID: "rr-test"},
-				nil, nil, nil, false, nil, "", nil, nil,
+				context.Background(), &tools.InvestigateConfig{
+					Namespace: "ns",
+				}, tools.InvestigateMCPArgs{RRID: "rr-test"},
+				false, "",
 			)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("KA MCP client unavailable"))
@@ -318,9 +327,10 @@ var _ = Describe("Progressive RCA Emission Wiring — #1407", func() {
 		defer cancel()
 
 		result, err := tools.HandleInvestigationMCPWithRegistry(
-			ctx, mockMCP, nil, "",
-			tools.InvestigateMCPArgs{RRID: "rr-1407-test"},
-			nil, nil, nil, true, nil, "alice", nil, nil,
+			ctx, &tools.InvestigateConfig{
+				MCPClient: mockMCP,
+			}, tools.InvestigateMCPArgs{RRID: "rr-1407-test"},
+			true, "alice",
 		)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.RCA).NotTo(BeNil(), "RCA must be populated from investigation complete event")

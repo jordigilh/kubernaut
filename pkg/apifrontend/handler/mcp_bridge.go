@@ -212,7 +212,16 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 		registerTool(srv, cfg, sem, "kubernaut_investigate", "Investigate an infrastructure incident",
 			func(ctx context.Context, args tools.InvestigateMCPArgs) (any, error) {
 				ctx = tools.ContextWithRESTMapper(ctx, cfg.RESTMapper)
-				return tools.HandleInvestigationMCPWithRegistry(ctx, dedicatedClient, cfg.TypedClient, cfg.Namespace, args, cfg.Auditor, cfg.InvestigationRegistry, onInvestigateStarted, false, nil, "", isSignaler, cfg.Triager)
+				return tools.HandleInvestigationMCPWithRegistry(ctx, &tools.InvestigateConfig{
+					MCPClient: dedicatedClient,
+					Client:    cfg.TypedClient,
+					Namespace: cfg.Namespace,
+					Auditor:   cfg.Auditor,
+					Registry:  cfg.InvestigationRegistry,
+					OnStarted: onInvestigateStarted,
+					Signaler:  isSignaler,
+					Triager:   cfg.Triager,
+				}, args, false, "")
 			})
 	}
 

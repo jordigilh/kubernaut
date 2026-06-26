@@ -46,18 +46,18 @@ type RemediateResult struct {
 //
 // If args.RRID is set, it looks up the existing RR status (deduplication path).
 // Otherwise, it delegates to HandleCreateRR for CRD creation.
-func HandleRemediate(ctx context.Context, client crclient.Client, dynClient dynamic.Interface, controllerNS string, args *RemediateArgs, username string, triager *severity.Triager, auditor audit.Emitter) (RemediateResult, error) {
-	if client == nil {
+func HandleRemediate(ctx context.Context, d *ToolDeps, args *RemediateArgs, username string) (RemediateResult, error) {
+	if d.Client == nil {
 		return RemediateResult{}, ErrK8sUnavailable
 	}
 
 	if args.RRID != "" {
-		ns, name, parseErr := ParseRRID(args.RRID, controllerNS, "")
+		ns, name, parseErr := ParseRRID(args.RRID, d.ControllerNS, "")
 		if parseErr != nil {
 			return RemediateResult{}, fmt.Errorf("lookup existing RR: %w", parseErr)
 		}
 		var rr remediationv1.RemediationRequest
-		if getErr := client.Get(ctx, crclient.ObjectKey{Namespace: ns, Name: name}, &rr); getErr != nil {
+		if getErr := d.Client.Get(ctx, crclient.ObjectKey{Namespace: ns, Name: name}, &rr); getErr != nil {
 			return RemediateResult{
 				RRID:          args.RRID,
 				Message:       "RemediationRequest not found",
@@ -84,7 +84,7 @@ func HandleRemediate(ctx context.Context, client crclient.Client, dynClient dyna
 		ClusterScoped: args.Namespace == "",
 	}
 
-	result, err := HandleCreateRR(ctx, client, dynClient, controllerNS, createArgs, username, triager, auditor)
+	result, err := HandleCreateRR(ctx, d, createArgs, username)
 	if err != nil {
 		return RemediateResult{}, err
 	}
@@ -105,10 +105,17 @@ func HandleRemediate(ctx context.Context, client crclient.Client, dynClient dyna
 // It creates RRs without InvestigationSessions — the pipeline handles analysis
 // autonomously without user interaction.
 func NewRemediateTool(client crclient.Client, dynClient dynamic.Interface, controllerNS string, triager *severity.Triager, auditor audit.Emitter) (tool.Tool, error) {
+	d := &ToolDeps{
+		Client:       client,
+		DynClient:    dynClient,
+		ControllerNS: controllerNS,
+		Triager:      triager,
+		Auditor:      auditor,
+	}
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_remediate",
 		Description: "Create a RemediationRequest for autonomous remediation. Use when fixing issues without interactive investigation. The pipeline will analyze and remediate automatically.",
 	}, func(ctx tool.Context, args RemediateArgs) (RemediateResult, error) {
-		return HandleRemediate(ctx, client, dynClient, controllerNS, &args, usernameFromContext(ctx), triager, auditor)
+		return HandleRemediate(ctx, d, &args, usernameFromContext(ctx))
 	})
 }

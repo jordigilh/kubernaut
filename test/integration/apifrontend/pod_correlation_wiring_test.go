@@ -93,12 +93,12 @@ var _ = Describe("Pod Correlation Wiring (#triage)", func() {
 			severity.WithPodResolver(resolver),
 		)
 
-		result, err := tools.HandleCreateRR(ctx, k8sClient, dynamicClient, ns, &tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: ns, Triager: triager}, &tools.CreateRRArgs{
 			Namespace:   ns,
 			Kind:        "Deployment",
 			Name:        "worker",
 			Description: "CrashLoopBackOff on worker pod",
-		}, "it-user", triager, nil)
+		}, "it-user")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.RRID).To(HavePrefix("rr-"))
 		Expect(result.Severity).To(Equal("warning"))
@@ -171,12 +171,12 @@ var _ = Describe("Pod Correlation Wiring (#triage)", func() {
 			severity.WithPodResolver(resolver),
 		)
 
-		result, err := tools.HandleCreateRR(ctx, k8sClient, dynamicClient, ns, &tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: ns, Triager: triager}, &tools.CreateRRArgs{
 			Namespace:   ns,
 			Kind:        "Deployment",
 			Name:        "api-server",
 			Description: "Pod crash looping",
-		}, "it-user", triager, nil)
+		}, "it-user")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.RRID).To(HavePrefix("rr-"))
 
@@ -247,12 +247,12 @@ var _ = Describe("Pod Correlation Wiring (#triage)", func() {
 			severity.WithPodResolver(severity.NewK8sPodResolver(dynamicClient, logr.Discard())),
 		)
 
-		result, err := tools.HandleCreateRR(ctx, k8sClient, dynamicClient, ns, &tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: ns, Triager: triager}, &tools.CreateRRArgs{
 			Namespace:   ns,
 			Kind:        "Deployment",
 			Name:        "web",
 			Description: "High memory usage",
-		}, "it-user", triager, nil)
+		}, "it-user")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Severity).To(Equal("high"))
 		Expect(result.SeveritySource).To(Equal("firing_alert"))
