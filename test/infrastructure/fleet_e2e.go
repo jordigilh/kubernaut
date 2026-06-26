@@ -30,6 +30,68 @@ import (
 // v0.0.63: supports HTTP mode, in-cluster auth, core toolsets.
 const KubeMCPServerImage = "ghcr.io/containers/kubernetes-mcp-server:latest"
 
+// SetupFleetE2EInfrastructure deploys the complete fleet E2E stack:
+// all fullpipeline services + EAIGW + K8s MCP Server.
+//
+// It composes on the fullpipeline setup (which already deploys GW, SP, RO, WE,
+// AA, EM, KA, AF, DS, DEX, Prometheus, AlertManager, etc.) and adds the fleet-
+// specific infrastructure on top. The Kind cluster config must include the fleet
+// NodePort mappings (31975 for EAIGW MCP, 31064 for EAIGW health) -- these are
+// already present in kind-fullpipeline-config.yaml.
+//
+// The loopback pattern is used: the K8s MCP Server connects to the same cluster
+// where it runs, but kubernaut treats it as a remote cluster with clusterID
+// "loopback-cluster". This validates the full remote code path without needing
+// a second Kind cluster.
+//
+// Total additional memory over fullpipeline: ~66 MB (EAIGW 50 MB + K8s MCP 16 MB).
+//
+// Authority: Issue #54, ADR-068
+func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) (builtImages map[string]string, seededUUIDs map[string]string, afRemediateNS map[string]string, err error) {
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "🚀 Fleet E2E Infrastructure (Issue #54)")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "  Base: Full Pipeline (all services)")
+	_, _ = fmt.Fprintln(writer, "  Fleet: EAIGW + K8s MCP Server (loopback pattern)")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	builtImages, seededUUIDs, afRemediateNS, err = SetupFullPipelineInfrastructure(ctx, clusterName, kubeconfigPath, writer)
+	if err != nil {
+		return builtImages, seededUUIDs, afRemediateNS, fmt.Errorf("fullpipeline base setup failed: %w", err)
+	}
+
+	namespace := "kubernaut-system"
+
+	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "🌐 FLEET PHASE: Deploying MCP Gateway infrastructure...")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	_, _ = fmt.Fprintln(writer, "  📦 Pre-loading fleet external images...")
+	if loadErr := PreloadExternalImage(KubeMCPServerImage, clusterName, writer); loadErr != nil {
+		_, _ = fmt.Fprintf(writer, "  ⚠️  K8s MCP Server image preload failed (will pull on-demand): %v\n", loadErr)
+	}
+	if loadErr := PreloadExternalImage(EAIGWImage, clusterName, writer); loadErr != nil {
+		_, _ = fmt.Fprintf(writer, "  ⚠️  EAIGW image preload failed (will pull on-demand): %v\n", loadErr)
+	}
+
+	if deployErr := DeployFleetInfra(ctx, namespace, kubeconfigPath, writer); deployErr != nil {
+		return builtImages, seededUUIDs, afRemediateNS, fmt.Errorf("fleet infra deployment failed: %w", deployErr)
+	}
+
+	if readyErr := WaitForFleetReady(writer); readyErr != nil {
+		return builtImages, seededUUIDs, afRemediateNS, fmt.Errorf("fleet readiness check failed: %w", readyErr)
+	}
+
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "✅ Fleet E2E Infrastructure READY")
+	_, _ = fmt.Fprintln(writer, "  EAIGW MCP:    http://localhost:31975")
+	_, _ = fmt.Fprintln(writer, "  EAIGW Health: http://localhost:31064")
+	_, _ = fmt.Fprintln(writer, "  Loopback cluster ID: loopback-cluster")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	return builtImages, seededUUIDs, afRemediateNS, nil
+}
+
 // DeployFleetInfra deploys the fleet E2E infrastructure in the Kind cluster:
 // 1. K8s MCP Server (in-cluster, ServiceAccount-based auth)
 // 2. EAIGW (Envoy AI Gateway CLI, --mcp-config JSON, single chokepoint)

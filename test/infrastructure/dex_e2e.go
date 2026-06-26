@@ -154,6 +154,16 @@ func GetDexClientCredentialsToken(cfg DexFleetTokenConfig) (string, error) {
 	return tokenResp.AccessToken, nil
 }
 
+// DeployDexInfra deploys DEX and waits for it to be ready. This is the
+// exported entry point for E2E suites that need OIDC/JWT authentication
+// (fleet OAuth2 client_credentials, AF password grant).
+func DeployDexInfra(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	if err := deployDexInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return err
+	}
+	return waitForDexReady(writer)
+}
+
 // deployDexInNamespace deploys DEX as an OIDC provider in the Kind cluster
 // for E2E JWT/OIDC testing. DEX is configured with:
 //   - Static password user (e2e-user@kubernaut.test)

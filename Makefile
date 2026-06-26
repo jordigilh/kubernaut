@@ -775,6 +775,19 @@ test-e2e-fullpipeline: ginkgo ensure-coverage-dirs ## Run full pipeline E2E test
 	@$(GINKGO) -v --race --timeout=50m --procs=$(TEST_PROCS) ./test/e2e/fullpipeline/...
 	@echo "✅ Full Pipeline E2E tests completed!"
 
+# Fleet E2E: Full pipeline + EAIGW + K8s MCP Server (loopback pattern)
+# Validates multi-cluster remediation via MCP gateway (Issue #54, ADR-068)
+# Requires ~6GB RAM (fullpipeline + ~66MB fleet infra)
+.PHONY: test-e2e-fleet
+test-e2e-fleet: ginkgo ensure-coverage-dirs ## Run fleet E2E tests (multi-cluster, Kind cluster, ~35 min)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 Fleet E2E Tests (Issue #54)"
+	@echo "   Full pipeline + EAIGW + K8s MCP Server (loopback pattern)"
+	@echo "   Alert → GW → SP(MCP enrich) → RO → WE(MCP dispatch) → EM"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@FLEET_E2E=true $(GINKGO) -v --race --timeout=50m --procs=$(TEST_PROCS) ./test/e2e/fleet/...
+	@echo "✅ Fleet E2E tests completed!"
+
 ##@ Legacy Aliases (Backward Compatibility)
 
 .PHONY: test-gateway
