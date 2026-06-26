@@ -38,9 +38,11 @@ import (
 )
 
 // ReaderFactory creates a cluster-scoped client.Reader for the given clusterID.
-// The FMC Writer calls this once per cluster per sync cycle, enabling per-cluster
-// session reuse via NewFromSession without creating separate MCP connections.
-type ReaderFactory func(ctx context.Context, clusterID string) (client.Reader, error)
+// Structurally compatible with fleet.ReaderFactory -- defined locally to avoid
+// import cycles between pkg/fleet and pkg/fleet/fmc.
+type ReaderFactory interface {
+	ReaderFor(ctx context.Context, clusterID string) (client.Reader, error)
+}
 
 // CacheWriter abstracts Valkey SET operations for writing managed resource keys.
 type CacheWriter interface {
@@ -153,7 +155,7 @@ func (s *Syncer) SyncCluster(ctx context.Context, cluster registry.ClusterInfo) 
 }
 
 func (s *Syncer) syncKind(ctx context.Context, cluster registry.ClusterInfo, kind string) (int, error) {
-	reader, err := s.readerFactory(ctx, cluster.ID)
+	reader, err := s.readerFactory.ReaderFor(ctx, cluster.ID)
 	if err != nil {
 		return 0, fmt.Errorf("syncKind: create reader for kind=%s cluster=%s: %w", kind, cluster.ID, err)
 	}

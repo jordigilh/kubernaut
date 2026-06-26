@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package enricher
+package mcpclient
 
 import (
 	"context"
@@ -23,25 +23,17 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
+	"github.com/jordigilh/kubernaut/pkg/fleet"
 )
-
-// ReaderFactory abstracts how client.Reader instances are obtained based on
-// ClusterID. When ClusterID is empty, the local K8s client is returned.
-// When non-empty, a remote MCP-backed reader for that cluster is returned.
-// BR-INTEGRATION-054: Enables K8sEnricher to read from local or remote clusters.
-type ReaderFactory interface {
-	ReaderFor(ctx context.Context, clusterID string) (client.Reader, error)
-}
 
 type mcpReaderFactory struct {
 	localClient client.Reader
 	session     *mcp.ClientSession
 }
 
-// NewMCPReaderFactory creates a ReaderFactory that returns local clients for
+// NewMCPReaderFactory creates a fleet.ReaderFactory that returns local clients for
 // empty ClusterID and MCP-backed readers for remote clusters.
-func NewMCPReaderFactory(localClient client.Reader, session *mcp.ClientSession) ReaderFactory {
+func NewMCPReaderFactory(localClient client.Reader, session *mcp.ClientSession) fleet.ReaderFactory {
 	return &mcpReaderFactory{
 		localClient: localClient,
 		session:     session,
@@ -55,19 +47,5 @@ func (f *mcpReaderFactory) ReaderFor(_ context.Context, clusterID string) (clien
 	if f.session == nil {
 		return nil, fmt.Errorf("MCP session not available for remote cluster %q", clusterID)
 	}
-	return mcpclient.NewFromSession(f.session, clusterID), nil
-}
-
-type localReaderFactory struct {
-	localClient client.Reader
-}
-
-// NewLocalReaderFactory creates a ReaderFactory that always returns the local
-// client regardless of ClusterID. Used when MCP Gateway is not configured.
-func NewLocalReaderFactory(localClient client.Reader) ReaderFactory {
-	return &localReaderFactory{localClient: localClient}
-}
-
-func (f *localReaderFactory) ReaderFor(_ context.Context, _ string) (client.Reader, error) {
-	return f.localClient, nil
+	return NewFromSession(f.session, clusterID), nil
 }

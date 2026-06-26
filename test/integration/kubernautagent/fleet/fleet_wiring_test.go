@@ -173,7 +173,7 @@ var _ = Describe("Fleet Wiring Integration Tests (BR-INTEGRATION-065)", func() {
 				"cluster-alpha__resources_get must be discoverable via tools/list")
 
 			bt := mcpclient.NewBridgeTool(getResourceTool, "cluster-alpha", session)
-			args := json.RawMessage(`{"kind":"Pod","namespace":"default","name":"nginx"}`)
+			args := json.RawMessage(`{"kind":"Pod","apiVersion":"v1","namespace":"default","name":"nginx"}`)
 			result, err := bt.Execute(ctx, args)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result).To(ContainSubstring("nginx"),

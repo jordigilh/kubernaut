@@ -37,7 +37,7 @@ import (
 	spmetrics "github.com/jordigilh/kubernaut/pkg/signalprocessing/metrics"
 )
 
-// fakeReaderFactory implements enricher.ReaderFactory for testing.
+// fakeReaderFactory implements fleet.ReaderFactory for testing.
 type fakeReaderFactory struct {
 	readers map[string]client.Reader
 }

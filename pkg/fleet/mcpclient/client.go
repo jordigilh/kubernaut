@@ -30,7 +30,6 @@ import (
 	"sync"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -95,19 +94,21 @@ func NewFromSession(session *mcp.ClientSession, clusterID string) *Client {
 // Get implements client.Reader. It retrieves a single Kubernetes resource from
 // the bound remote cluster via MCP Gateway and populates obj in place.
 //
-// The kind is extracted from obj.GetObjectKind().GroupVersionKind().Kind, which
-// the caller must set before calling (same contract as controller-runtime).
+// The GVK must be set on the object before calling (same contract as controller-runtime).
+// The apiVersion is derived from the GVK and sent as a mandatory parameter to the
+// K8s MCP Server.
 //
 // Supported object types:
 //   - *unstructured.Unstructured: full object populated
 //   - *metav1.PartialObjectMetadata: metadata fields populated (ownerReferences, labels, etc.)
+//   - Typed objects (e.g. *corev1.Pod): populated via JSON round-trip
 func (c *Client) Get(ctx context.Context, key client.ObjectKey, obj client.Object, _ ...client.GetOption) error {
-	kind := obj.GetObjectKind().GroupVersionKind().Kind
-	if kind == "" {
+	gvk := obj.GetObjectKind().GroupVersionKind()
+	if gvk.Kind == "" {
 		return fmt.Errorf("object GVK Kind must be set before calling Get")
 	}
 
-	fetched, err := c.getResource(ctx, kind, key.Namespace, key.Name)
+	fetched, err := c.getResource(ctx, gvk.Kind, gvk.GroupVersion().String(), key.Namespace, key.Name)
 	if err != nil {
 		return err
 	}
@@ -118,12 +119,13 @@ func (c *Client) Get(ctx context.Context, key client.ObjectKey, obj client.Objec
 // List implements client.Reader. It retrieves Kubernetes resources of a given
 // kind from the bound remote cluster via MCP Gateway.
 //
-// The kind is extracted from list.GetObjectKind().GroupVersionKind().Kind. For
-// list types the Kind typically has a "List" suffix (e.g. "PodList"); the suffix
-// is stripped to derive the item kind for the MCP tool call.
+// The GVK must be set on the list object before calling. The Kind typically has
+// a "List" suffix (e.g. "PodList"); the suffix is stripped to derive the item
+// kind for the MCP tool call. The apiVersion is derived from the GVK.
 //
 // Supported list types:
-//   - *unstructured.UnstructuredList: items populated
+//   - *unstructured.UnstructuredList: items populated directly
+//   - Typed ObjectLists (e.g. *corev1.PodList): populated via JSON round-trip
 //
 // Supported ListOptions: InNamespace, MatchingLabels. Other options are ignored.
 func (c *Client) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
@@ -132,28 +134,29 @@ func (c *Client) List(ctx context.Context, list client.ObjectList, opts ...clien
 		o.ApplyToList(&listOpts)
 	}
 
-	kind := list.GetObjectKind().GroupVersionKind().Kind
-	if kind == "" {
+	gvk := list.GetObjectKind().GroupVersionKind()
+	if gvk.Kind == "" {
 		return fmt.Errorf("list object GVK Kind must be set before calling List")
 	}
-	itemKind := strings.TrimSuffix(kind, "List")
+	itemKind := strings.TrimSuffix(gvk.Kind, "List")
+	apiVersion := gvk.GroupVersion().String()
 
 	var labels map[string]string
 	if listOpts.LabelSelector != nil {
 		labels = parseSelectorToMap(listOpts.LabelSelector.String())
 	}
 
-	items, err := c.listResources(ctx, itemKind, listOpts.Namespace, labels)
+	items, err := c.listResources(ctx, itemKind, apiVersion, listOpts.Namespace, labels)
 	if err != nil {
 		return err
 	}
 
-	ul, ok := list.(*unstructured.UnstructuredList)
-	if !ok {
-		return fmt.Errorf("unsupported list type %T; only *unstructured.UnstructuredList is supported for MCP-backed List", list)
+	if ul, ok := list.(*unstructured.UnstructuredList); ok {
+		ul.Items = items
+		return nil
 	}
-	ul.Items = items
-	return nil
+
+	return populateListObject(items, list)
 }
 
 // Close terminates the MCP session. Safe to call multiple times.
@@ -179,11 +182,13 @@ func (c *Client) Session() *mcp.ClientSession {
 }
 
 // getResource calls the MCP get_resource tool and returns the parsed unstructured object.
-func (c *Client) getResource(ctx context.Context, kind, namespace, name string) (*unstructured.Unstructured, error) {
+// apiVersion is a mandatory parameter required by the K8s MCP Server.
+func (c *Client) getResource(ctx context.Context, kind, apiVersion, namespace, name string) (*unstructured.Unstructured, error) {
 	toolName := ClusterTool(c.clusterID, ToolGet)
 	args := map[string]any{
-		"kind": kind,
-		"name": name,
+		"kind":       kind,
+		"apiVersion": apiVersion,
+		"name":       name,
 	}
 	if namespace != "" {
 		args["namespace"] = namespace
@@ -206,10 +211,12 @@ func (c *Client) getResource(ctx context.Context, kind, namespace, name string) 
 }
 
 // listResources calls the MCP list_resources tool and returns parsed unstructured items.
-func (c *Client) listResources(ctx context.Context, kind, namespace string, labels map[string]string) ([]unstructured.Unstructured, error) {
+// apiVersion is a mandatory parameter required by the K8s MCP Server.
+func (c *Client) listResources(ctx context.Context, kind, apiVersion, namespace string, labels map[string]string) ([]unstructured.Unstructured, error) {
 	toolName := ClusterTool(c.clusterID, ToolList)
 	args := map[string]any{
-		"kind": kind,
+		"kind":       kind,
+		"apiVersion": apiVersion,
 	}
 	if namespace != "" {
 		args["namespace"] = namespace
@@ -235,24 +242,43 @@ func (c *Client) listResources(ctx context.Context, kind, namespace string, labe
 }
 
 // populateObject copies data from a fetched unstructured object into the target
-// client.Object. Supports *unstructured.Unstructured and *metav1.PartialObjectMetadata.
+// client.Object. Handles *unstructured.Unstructured directly, all other types
+// (including *metav1.PartialObjectMetadata and typed objects like *corev1.Pod)
+// via JSON round-trip.
 func populateObject(fetched *unstructured.Unstructured, target client.Object) error {
-	switch t := target.(type) {
-	case *unstructured.Unstructured:
+	if t, ok := target.(*unstructured.Unstructured); ok {
 		t.Object = fetched.Object
 		return nil
-	case *metav1.PartialObjectMetadata:
-		data, err := json.Marshal(fetched.Object)
-		if err != nil {
-			return fmt.Errorf("marshal fetched object: %w", err)
-		}
-		if err := json.Unmarshal(data, t); err != nil {
-			return fmt.Errorf("unmarshal into PartialObjectMetadata: %w", err)
-		}
-		return nil
-	default:
-		return fmt.Errorf("unsupported object type %T; use *unstructured.Unstructured or *metav1.PartialObjectMetadata for MCP-backed Get", target)
 	}
+
+	data, err := json.Marshal(fetched.Object)
+	if err != nil {
+		return fmt.Errorf("marshal fetched object: %w", err)
+	}
+	if err := json.Unmarshal(data, target); err != nil {
+		return fmt.Errorf("unmarshal into %T: %w", target, err)
+	}
+	return nil
+}
+
+// populateListObject converts unstructured items into a typed ObjectList via JSON
+// round-trip. This enables typed list queries (e.g. *corev1.PodList) over MCP.
+func populateListObject(items []unstructured.Unstructured, list client.ObjectList) error {
+	rawItems := make([]map[string]any, len(items))
+	for i, item := range items {
+		rawItems[i] = item.Object
+	}
+	wrapper := map[string]any{
+		"items": rawItems,
+	}
+	data, err := json.Marshal(wrapper)
+	if err != nil {
+		return fmt.Errorf("marshal items for typed list: %w", err)
+	}
+	if err := json.Unmarshal(data, list); err != nil {
+		return fmt.Errorf("unmarshal into %T: %w", list, err)
+	}
+	return nil
 }
 
 // parseSelectorToMap converts a simple "key=value,key2=value2" selector string

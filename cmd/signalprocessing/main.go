@@ -325,7 +325,7 @@ func main() {
 			setupLog.Error(fleetErr, "Fleet MCP Gateway connection failed, remote enrichment disabled",
 				"endpoint", cfg.Fleet.Endpoint)
 		} else {
-			readerFactory := enricher.NewMCPReaderFactory(mgr.GetClient(), fleetResilientClient.Session())
+			readerFactory := fleetclient.NewMCPReaderFactory(mgr.GetClient(), fleetResilientClient.Session())
 			k8sEnricher.SetReaderFactory(readerFactory)
 			setupLog.Info("Fleet MCP Gateway connected, remote enrichment enabled",
 				"endpoint", cfg.Fleet.Endpoint)

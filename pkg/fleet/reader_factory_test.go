@@ -14,11 +14,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package enricher_test
+package fleet_test
 
 import (
 	"context"
-	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -26,13 +25,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"github.com/jordigilh/kubernaut/pkg/signalprocessing/enricher"
+	"github.com/jordigilh/kubernaut/pkg/fleet"
+	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 )
-
-func TestReaderFactory(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "ReaderFactory Suite")
-}
 
 var _ = Describe("ReaderFactory (BR-INTEGRATION-054)", func() {
 	var (
@@ -47,16 +42,15 @@ var _ = Describe("ReaderFactory (BR-INTEGRATION-054)", func() {
 	})
 
 	Describe("LocalReaderFactory", func() {
-		It("UT-SP-054-002a: returns local client for empty ClusterID", func() {
-			// RED: NewLocalReaderFactory does not exist yet
-			factory := enricher.NewLocalReaderFactory(localClient)
+		It("UT-FLEET-RF-001: returns local client for empty ClusterID", func() {
+			factory := fleet.NewLocalReaderFactory(localClient)
 			reader, err := factory.ReaderFor(ctx, "")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(reader).To(Equal(localClient))
 		})
 
-		It("UT-SP-054-002b: returns local client for any ClusterID (local-only mode)", func() {
-			factory := enricher.NewLocalReaderFactory(localClient)
+		It("UT-FLEET-RF-002: returns local client for any ClusterID (local-only mode)", func() {
+			factory := fleet.NewLocalReaderFactory(localClient)
 			reader, err := factory.ReaderFor(ctx, "remote-cluster-1")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(reader).To(Equal(localClient),
@@ -65,19 +59,33 @@ var _ = Describe("ReaderFactory (BR-INTEGRATION-054)", func() {
 	})
 
 	Describe("MCPReaderFactory", func() {
-		It("UT-SP-054-002c: returns local client for empty ClusterID", func() {
-			// RED: NewMCPReaderFactory does not exist yet
-			factory := enricher.NewMCPReaderFactory(localClient, nil)
+		It("UT-FLEET-RF-003: returns local client for empty ClusterID", func() {
+			factory := mcpclient.NewMCPReaderFactory(localClient, nil)
 			reader, err := factory.ReaderFor(ctx, "")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(reader).To(Equal(localClient))
 		})
 
-		It("UT-SP-054-002d: returns error for remote ClusterID when session is nil", func() {
-			factory := enricher.NewMCPReaderFactory(localClient, nil)
+		It("UT-FLEET-RF-004: returns error for remote ClusterID when session is nil", func() {
+			factory := mcpclient.NewMCPReaderFactory(localClient, nil)
 			_, err := factory.ReaderFor(ctx, "remote-cluster-1")
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("MCP session not available"))
+		})
+	})
+
+	Describe("ReaderFactoryFunc", func() {
+		It("UT-FLEET-RF-005: adapts a plain function to the ReaderFactory interface", func() {
+			called := false
+			fn := fleet.ReaderFactoryFunc(func(_ context.Context, clusterID string) (client.Reader, error) {
+				called = true
+				Expect(clusterID).To(Equal("test-cluster"))
+				return localClient, nil
+			})
+			reader, err := fn.ReaderFor(ctx, "test-cluster")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(reader).To(Equal(localClient))
+			Expect(called).To(BeTrue())
 		})
 	})
 })

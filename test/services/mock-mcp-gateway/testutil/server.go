@@ -150,24 +150,33 @@ func (gw *MockGateway) registerTool(td toolDef) {
 }
 
 func (gw *MockGateway) registerClusterTools(cluster string) {
-	schema := json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"namespace":{"type":"string"},"name":{"type":"string"}}}`)
+	getListSchema := json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"apiVersion":{"type":"string"},"namespace":{"type":"string"},"name":{"type":"string"}},"required":["kind","apiVersion"]}`)
+	deleteSchema := json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"apiVersion":{"type":"string"},"namespace":{"type":"string"},"name":{"type":"string"}},"required":["kind","apiVersion","name"]}`)
 
 	getResourceName := cluster + "__resources_get"
 	gw.server.AddTool(&mcp.Tool{
 		Name:        getResourceName,
 		Description: fmt.Sprintf("Get a Kubernetes resource from cluster %s", cluster),
-		InputSchema: schema,
+		InputSchema: getListSchema,
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		gw.recordCall(req.Params.Name, req.Params.Arguments)
 		var args struct {
-			Kind      string `json:"kind"`
-			Namespace string `json:"namespace"`
-			Name      string `json:"name"`
+			Kind       string `json:"kind"`
+			APIVersion string `json:"apiVersion"`
+			Namespace  string `json:"namespace"`
+			Name       string `json:"name"`
 		}
 		_ = json.Unmarshal(req.Params.Arguments, &args)
 
-		response := fmt.Sprintf(`{"apiVersion":"v1","kind":%q,"metadata":{"name":%q,"namespace":%q,"labels":{"kubernaut.ai/managed":"true","app":"nginx"}},"status":{"phase":"Running"}}`,
-			args.Kind, args.Name, args.Namespace)
+		if args.APIVersion == "" {
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: `{"error":"apiVersion is required"}`}},
+				IsError: true,
+			}, nil
+		}
+
+		response := fmt.Sprintf(`{"apiVersion":%q,"kind":%q,"metadata":{"name":%q,"namespace":%q,"labels":{"kubernaut.ai/managed":"true","app":"nginx"}},"status":{"phase":"Running"}}`,
+			args.APIVersion, args.Kind, args.Name, args.Namespace)
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{Text: response}},
 		}, nil
@@ -194,9 +203,22 @@ func (gw *MockGateway) registerClusterTools(cluster string) {
 	gw.server.AddTool(&mcp.Tool{
 		Name:        deleteResourceName,
 		Description: fmt.Sprintf("Delete a Kubernetes resource from cluster %s", cluster),
-		InputSchema: schema,
+		InputSchema: deleteSchema,
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		gw.recordCall(req.Params.Name, req.Params.Arguments)
+		var args struct {
+			Kind       string `json:"kind"`
+			APIVersion string `json:"apiVersion"`
+		}
+		_ = json.Unmarshal(req.Params.Arguments, &args)
+
+		if args.APIVersion == "" {
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: `{"error":"apiVersion is required"}`}},
+				IsError: true,
+			}, nil
+		}
+
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{Text: `{"status":"deleted"}`}},
 		}, nil
@@ -206,18 +228,27 @@ func (gw *MockGateway) registerClusterTools(cluster string) {
 	gw.server.AddTool(&mcp.Tool{
 		Name:        listResourcesName,
 		Description: fmt.Sprintf("List Kubernetes resources from cluster %s", cluster),
-		InputSchema: json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"namespace":{"type":"string"},"labelSelector":{"type":"string"}}}`),
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"apiVersion":{"type":"string"},"namespace":{"type":"string"},"labelSelector":{"type":"string"}},"required":["kind","apiVersion"]}`),
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		gw.recordCall(req.Params.Name, req.Params.Arguments)
 		var args struct {
 			Kind          string `json:"kind"`
+			APIVersion    string `json:"apiVersion"`
 			Namespace     string `json:"namespace"`
 			LabelSelector string `json:"labelSelector"`
 		}
 		_ = json.Unmarshal(req.Params.Arguments, &args)
 
-		response := fmt.Sprintf(`{"apiVersion":"v1","kind":"List","items":[{"apiVersion":"v1","kind":%q,"metadata":{"name":"item-1","namespace":%q,"labels":{"app":"nginx"}}},{"apiVersion":"v1","kind":%q,"metadata":{"name":"item-2","namespace":%q,"labels":{"app":"nginx"}}}]}`,
-			args.Kind, args.Namespace, args.Kind, args.Namespace)
+		if args.APIVersion == "" {
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: `{"error":"apiVersion is required"}`}},
+				IsError: true,
+			}, nil
+		}
+
+		apiVersion := args.APIVersion
+		response := fmt.Sprintf(`{"apiVersion":%q,"kind":"List","items":[{"apiVersion":%q,"kind":%q,"metadata":{"name":"item-1","namespace":%q,"labels":{"app":"nginx"}}},{"apiVersion":%q,"kind":%q,"metadata":{"name":"item-2","namespace":%q,"labels":{"app":"nginx"}}}]}`,
+			apiVersion, apiVersion, args.Kind, args.Namespace, apiVersion, args.Kind, args.Namespace)
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{Text: response}},
 		}, nil

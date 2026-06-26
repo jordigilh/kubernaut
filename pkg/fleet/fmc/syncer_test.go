@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/jordigilh/kubernaut/pkg/fleet"
 	"github.com/jordigilh/kubernaut/pkg/fleet/fmc"
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
@@ -95,9 +96,9 @@ var _ = Describe("Syncer with ReaderFactory (BR-FLEET-002, Phase A)", func() {
 				},
 			}
 
-			readerFactory := func(_ context.Context, _ string) (client.Reader, error) {
+			readerFactory := fleet.ReaderFactoryFunc(func(_ context.Context, _ string) (client.Reader, error) {
 				return spy, nil
-			}
+			})
 
 			syncer := fmc.NewSyncerWithReaderFactory(
 				&stubRegistry{clusters: []registry.ClusterInfo{{ID: "cluster-a"}}},
@@ -197,9 +198,9 @@ var _ = Describe("UT-FLEET-FMC-LIFE: Syncer lifecycle", func() {
 			stubReg := newStubRegistry()
 			syncer := fmc.NewSyncerWithReaderFactory(
 				stubReg,
-				func(_ context.Context, _ string) (client.Reader, error) {
+				fleet.ReaderFactoryFunc(func(_ context.Context, _ string) (client.Reader, error) {
 					return &spyReader{}, nil
-				},
+				}),
 				writer,
 				fmc.Config{SyncInterval: time.Hour, KeyTTL: 30 * time.Second, ResourceKinds: []string{"Pod"}},
 				logr.Discard(),
@@ -222,9 +223,9 @@ var _ = Describe("UT-FLEET-FMC-LIFE: Syncer lifecycle", func() {
 			stubReg := newStubRegistry()
 			syncer := fmc.NewSyncerWithReaderFactory(
 				stubReg,
-				func(_ context.Context, _ string) (client.Reader, error) {
+				fleet.ReaderFactoryFunc(func(_ context.Context, _ string) (client.Reader, error) {
 					return &spyReader{}, nil
-				},
+				}),
 				writer,
 				fmc.Config{SyncInterval: time.Hour, KeyTTL: 30 * time.Second, ResourceKinds: []string{"Pod"}},
 				logr.Discard(),
@@ -246,9 +247,9 @@ var _ = Describe("UT-FLEET-FMC-LIFE: Syncer lifecycle", func() {
 			stubReg := newStubRegistry()
 			syncer := fmc.NewSyncerWithReaderFactory(
 				stubReg,
-				func(_ context.Context, _ string) (client.Reader, error) {
+				fleet.ReaderFactoryFunc(func(_ context.Context, _ string) (client.Reader, error) {
 					return &spyReader{}, nil
-				},
+				}),
 				writer,
 				fmc.Config{SyncInterval: time.Hour, KeyTTL: 30 * time.Second, ResourceKinds: []string{"Pod"}},
 				logr.Discard(),
@@ -273,9 +274,9 @@ var _ = Describe("UT-FLEET-FMC-LIFE: Syncer lifecycle", func() {
 			stubReg := newStubRegistry()
 			syncer := fmc.NewSyncerWithReaderFactory(
 				stubReg,
-				func(_ context.Context, _ string) (client.Reader, error) {
+				fleet.ReaderFactoryFunc(func(_ context.Context, _ string) (client.Reader, error) {
 					return spy, nil
-				},
+				}),
 				writer,
 				fmc.Config{SyncInterval: time.Hour, KeyTTL: 30 * time.Second, ResourceKinds: []string{"Pod"}},
 				logr.Discard(),
@@ -318,9 +319,9 @@ var _ = Describe("UT-FLEET-FMC-LIFE: Syncer lifecycle", func() {
 			)
 			syncer := fmc.NewSyncerWithReaderFactory(
 				stubReg,
-				func(_ context.Context, _ string) (client.Reader, error) {
+				fleet.ReaderFactoryFunc(func(_ context.Context, _ string) (client.Reader, error) {
 					return spy, nil
-				},
+				}),
 				writer,
 				fmc.Config{SyncInterval: time.Hour, KeyTTL: 30 * time.Second, ResourceKinds: []string{"Pod"}},
 				logr.Discard(),

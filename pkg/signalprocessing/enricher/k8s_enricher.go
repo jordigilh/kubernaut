@@ -54,6 +54,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/fleet"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/cache"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/metrics"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/ownerchain"
@@ -68,7 +69,7 @@ type K8sEnricher struct {
 	metrics           *metrics.Metrics
 	timeout           time.Duration
 	ownerChainBuilder *ownerchain.Builder // BR-SP-100: Full owner chain traversal
-	readerFactory     ReaderFactory       // BR-INTEGRATION-054: nil = local-only mode
+	readerFactory     fleet.ReaderFactory // BR-INTEGRATION-054: nil = local-only mode
 }
 
 // NewK8sEnricher creates a new K8s context enricher.
@@ -96,7 +97,7 @@ func NewK8sEnricher(c client.Client, apiReader client.Reader, logger logr.Logger
 // SetReaderFactory configures a ReaderFactory for remote cluster support.
 // When set and signal.ClusterID is non-empty, enrichment uses the factory
 // to obtain a client.Reader for the remote cluster (BR-INTEGRATION-054).
-func (e *K8sEnricher) SetReaderFactory(rf ReaderFactory) {
+func (e *K8sEnricher) SetReaderFactory(rf fleet.ReaderFactory) {
 	e.readerFactory = rf
 }
 
