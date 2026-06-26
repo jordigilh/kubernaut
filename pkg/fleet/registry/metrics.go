@@ -29,7 +29,7 @@ const (
 	MetricNameEventDropTotal   = "fleet_registry_event_drop_total"
 )
 
-// Metrics holds Prometheus metrics for the BackendInformerRegistry.
+// Metrics holds Prometheus metrics for the cluster registry.
 // DD-005 Compliant: {service}_{metric_name}_{unit} naming.
 // DD-METRICS-001 Compliant: Dependency-injected, nil-safe.
 type Metrics struct {
