@@ -1,0 +1,200 @@
+# TEMPORARY SPIKE: Validate Cosign keyless signing + SLSA attestation against Quay.io
+# Delete this workflow after results are confirmed.
+# Authority: Issue #1315, #1319
+
+name: "Spike: Cosign + SLSA on Quay.io"
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+  packages: write
+
+env:
+  TEST_IMAGE: quay.io/kubernaut-ai/authwebhook
+  TEST_TAG: 1.5.2-amd64
+
+jobs:
+  spike-cosign-slsa:
+    name: "Spike: Cosign sign + SLSA attest (Quay.io)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3.8.2
+
+      - name: Login to Quay.io
+        run: |
+          podman login -u "${{ secrets.QUAY_ROBOT_USERNAME }}" \
+                       -p "${{ secrets.QUAY_ROBOT_TOKEN }}" \
+                       quay.io
+
+      - name: Get image digest
+        id: digest
+        run: |
+          FULL_REF="${TEST_IMAGE}:${TEST_TAG}"
+          echo "Resolving digest for ${FULL_REF}..."
+
+          DIGEST=$(podman inspect --format='{{.Digest}}' "docker://${FULL_REF}" 2>/dev/null || true)
+
+          if [ -z "$DIGEST" ]; then
+            echo "podman inspect failed, trying skopeo..."
+            DIGEST=$(skopeo inspect "docker://${FULL_REF}" | jq -r '.Digest')
+          fi
+
+          if [ -z "$DIGEST" ] || [ "$DIGEST" = "null" ]; then
+            echo "::error::Could not resolve digest for ${FULL_REF}"
+            exit 1
+          fi
+
+          echo "digest=${DIGEST}" >> $GITHUB_OUTPUT
+          echo "Resolved digest: ${DIGEST}"
+
+      # ============================================================
+      # TEST 1: Cosign keyless sign
+      # Signs the image using GitHub OIDC identity (no key needed).
+      # If Quay.io rejects OCI artifact push, this step fails and
+      # the error message tells us why.
+      # ============================================================
+      - name: "Test 1: Cosign keyless sign"
+        id: cosign_sign
+        continue-on-error: true
+        run: |
+          REF="${TEST_IMAGE}@${{ steps.digest.outputs.digest }}"
+          echo "Signing ${REF} (keyless, GitHub OIDC)..."
+          cosign sign --yes "${REF}" 2>&1 | tee /tmp/cosign-sign.log
+          echo "cosign_sign_exit=$?" >> $GITHUB_OUTPUT
+
+      # ============================================================
+      # TEST 2: Cosign verify
+      # Confirms the signature is stored and retrievable from the
+      # registry. Only runs if signing succeeded.
+      # ============================================================
+      - name: "Test 2: Cosign verify"
+        id: cosign_verify
+        if: steps.cosign_sign.outcome == 'success'
+        continue-on-error: true
+        run: |
+          REF="${TEST_IMAGE}@${{ steps.digest.outputs.digest }}"
+          echo "Verifying signature for ${REF}..."
+          cosign verify \
+            --certificate-identity-regexp "https://github.com/${{ github.repository }}/" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "${REF}" 2>&1 | tee /tmp/cosign-verify.log
+          echo "cosign_verify_exit=$?" >> $GITHUB_OUTPUT
+
+      # ============================================================
+      # TEST 3: SLSA provenance attestation (push to registry)
+      # Uses actions/attest to generate build provenance and push
+      # it to the registry. This may fail if Quay.io doesn't
+      # support GitHub's attestation format.
+      # ============================================================
+      - name: "Test 3: SLSA attestation (push-to-registry)"
+        id: slsa_push
+        continue-on-error: true
+        uses: actions/attest@v2
+        with:
+          subject-name: ${{ env.TEST_IMAGE }}
+          subject-digest: ${{ steps.digest.outputs.digest }}
+          push-to-registry: true
+
+      # ============================================================
+      # TEST 3b: SLSA attestation (no push, fallback)
+      # If push-to-registry failed, try without push to confirm
+      # attestation generation itself works.
+      # ============================================================
+      - name: "Test 3b: SLSA attestation (no push, fallback)"
+        id: slsa_nopush
+        if: steps.slsa_push.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/attest@v2
+        with:
+          subject-name: ${{ env.TEST_IMAGE }}
+          subject-digest: ${{ steps.digest.outputs.digest }}
+          push-to-registry: false
+
+      # ============================================================
+      # SUMMARY: Report results of all tests
+      # ============================================================
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Spike Results: Cosign + SLSA on Quay.io" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Target image**: \`${TEST_IMAGE}:${TEST_TAG}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Digest**: \`${{ steps.digest.outputs.digest }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Test | Result | Notes |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|--------|-------|" >> $GITHUB_STEP_SUMMARY
+
+          COSIGN_SIGN="${{ steps.cosign_sign.outcome }}"
+          COSIGN_VERIFY="${{ steps.cosign_verify.outcome }}"
+          SLSA_PUSH="${{ steps.slsa_push.outcome }}"
+          SLSA_NOPUSH="${{ steps.slsa_nopush.outcome }}"
+
+          if [ "$COSIGN_SIGN" = "success" ]; then
+            echo "| Cosign sign | PASS | Keyless signature stored in Quay.io |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Cosign sign | FAIL | Quay.io rejected OCI artifact push |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "$COSIGN_VERIFY" = "success" ]; then
+            echo "| Cosign verify | PASS | Signature verifiable from registry |" >> $GITHUB_STEP_SUMMARY
+          elif [ "$COSIGN_VERIFY" = "skipped" ]; then
+            echo "| Cosign verify | SKIP | Skipped (sign failed) |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Cosign verify | FAIL | Signature not retrievable |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "$SLSA_PUSH" = "success" ]; then
+            echo "| SLSA attest (push) | PASS | Provenance stored in registry |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| SLSA attest (push) | FAIL | Registry push failed |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "$SLSA_NOPUSH" = "success" ]; then
+            echo "| SLSA attest (no push) | PASS | Provenance generated (artifact only) |" >> $GITHUB_STEP_SUMMARY
+          elif [ "$SLSA_NOPUSH" = "skipped" ]; then
+            echo "| SLSA attest (no push) | SKIP | Push succeeded, fallback not needed |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| SLSA attest (no push) | FAIL | Attestation generation failed |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Decision Matrix" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$COSIGN_SIGN" = "success" ] && [ "$SLSA_PUSH" = "success" ]; then
+            echo "Both registry-attached: implement Cosign + SLSA with \`push-to-registry: true\`" >> $GITHUB_STEP_SUMMARY
+          elif [ "$COSIGN_SIGN" = "success" ] && [ "$SLSA_PUSH" != "success" ]; then
+            echo "Cosign in registry, SLSA as release artifact" >> $GITHUB_STEP_SUMMARY
+          elif [ "$COSIGN_SIGN" != "success" ] && [ "$SLSA_PUSH" = "success" ]; then
+            echo "SLSA in registry, Cosign signatures as release artifacts" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Both as release artifacts (registry does not support OCI artifacts)" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Logs" >> $GITHUB_STEP_SUMMARY
+          if [ -f /tmp/cosign-sign.log ]; then
+            echo "<details><summary>Cosign sign log</summary>" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            cat /tmp/cosign-sign.log >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "</details>" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ -f /tmp/cosign-verify.log ]; then
+            echo "<details><summary>Cosign verify log</summary>" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            cat /tmp/cosign-verify.log >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "</details>" >> $GITHUB_STEP_SUMMARY
+          fi
