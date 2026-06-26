@@ -70,6 +70,7 @@ type GetRemediationHistoryArgs struct {
 	Kind      string `json:"kind,omitempty"`
 	Name      string `json:"name,omitempty"`
 	Since     string `json:"since,omitempty"`
+	SpecHash  string `json:"spec_hash,omitempty"`
 }
 
 // HistoricalRemediation is a past remediation record from the Data Store.
@@ -92,8 +93,20 @@ func HandleGetRemediationHistory(ctx context.Context, client ds.Client, args Get
 	if client == nil {
 		return GetRemediationHistoryResult{}, ErrDSUnavailable
 	}
+	if args.Kind == "" {
+		return GetRemediationHistoryResult{}, fmt.Errorf("kind is required for remediation history lookup")
+	}
+	if args.Name == "" {
+		return GetRemediationHistoryResult{}, fmt.Errorf("name is required for remediation history lookup")
+	}
+	if args.SpecHash == "" {
+		return GetRemediationHistoryResult{}, fmt.Errorf("spec_hash is required for remediation history lookup")
+	}
+	if !strings.HasPrefix(args.SpecHash, "sha256:") {
+		return GetRemediationHistoryResult{}, fmt.Errorf("spec_hash must use sha256: prefix (got %q)", args.SpecHash)
+	}
 	history, err := client.GetRemediationHistory(ctx, ds.HistoryOpts{
-		Namespace: args.Namespace, Kind: args.Kind, Name: args.Name, Since: args.Since,
+		Namespace: args.Namespace, Kind: args.Kind, Name: args.Name, Since: args.Since, SpecHash: args.SpecHash,
 	})
 	if err != nil {
 		return GetRemediationHistoryResult{}, fmt.Errorf("querying remediation history: %w", err)
@@ -113,7 +126,7 @@ func HandleGetRemediationHistory(ctx context.Context, client ds.Client, args Get
 func NewGetRemediationHistoryTool(client ds.Client) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_get_remediation_history",
-		Description: "Query historical remediations from the Data Store with optional filtering",
+		Description: "Query historical remediations from the Data Store. Required params: kind, name, spec_hash. Optional: namespace, since.",
 	}, func(ctx tool.Context, args GetRemediationHistoryArgs) (GetRemediationHistoryResult, error) {
 		return HandleGetRemediationHistory(ctx, client, args)
 	})

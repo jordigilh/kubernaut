@@ -347,9 +347,9 @@ var _ = Describe("Prometheus Adapter - Resource Extraction for Workflow Selectio
 				"exported_namespace supports federated Prometheus multi-cluster monitoring")
 		})
 
-		It("uses default namespace when not specified", func() {
-			// BUSINESS OUTCOME: Cluster-scoped resources get default namespace
-			// Node alerts don't have namespace - default used for CRD creation
+		It("uses empty namespace for cluster-scoped resources (#1371)", func() {
+			// BUSINESS OUTCOME: Cluster-scoped resources get empty namespace
+			// Node alerts don't have namespace - empty string for CRD creation
 			payload := map[string]interface{}{
 				"alerts": []map[string]interface{}{
 					{
@@ -372,8 +372,136 @@ var _ = Describe("Prometheus Adapter - Resource Extraction for Workflow Selectio
 			signal, err := adapter.Parse(ctx, payloadBytes)
 
 			Expect(err).NotTo(HaveOccurred())
-			Expect(signal.Namespace).To(Equal("default"),
-				"Default namespace used for cluster-scoped resources (Node, ClusterRole)")
+			Expect(signal.Namespace).To(BeEmpty(),
+				"Cluster-scoped resources (Node) get empty namespace (#1371)")
+		})
+	})
+})
+
+var _ = Describe("Prometheus Adapter - Scope-Aware Namespace Resolution (#1371)", func() {
+	var (
+		adapter *adapters.PrometheusAdapter
+		ctx     context.Context
+	)
+
+	BeforeEach(func() {
+		adapter = adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
+		ctx = context.Background()
+	})
+
+	Context("BR-GATEWAY-001, BR-GATEWAY-004: Scope-Aware Namespace Resolution (#1371)", func() {
+		It("UT-GW-1371-011: cluster-scoped Node alert without namespace label gets empty namespace", func() {
+			payload := map[string]interface{}{
+				"alerts": []map[string]interface{}{
+					{
+						"labels": map[string]interface{}{
+							"alertname": "KubeNodeNotReady",
+							"node":      "worker-node-1",
+							"severity":  "critical",
+						},
+						"annotations": map[string]interface{}{
+							"summary": "Node is not ready",
+						},
+						"status":      "firing",
+						"startsAt":    time.Now().Format(time.RFC3339),
+						"fingerprint": "test-fingerprint",
+					},
+				},
+			}
+
+			payloadBytes, _ := json.Marshal(payload)
+			signal, err := adapter.Parse(ctx, payloadBytes)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(signal.Resource.Kind).To(Equal("Node"))
+			Expect(signal.Resource.Namespace).To(BeEmpty(),
+				"Cluster-scoped Node alert must have empty namespace, not 'default'")
+		})
+
+		It("UT-GW-1371-012: namespaced Deployment alert without namespace label gets 'default'", func() {
+			payload := map[string]interface{}{
+				"alerts": []map[string]interface{}{
+					{
+						"labels": map[string]interface{}{
+							"alertname":  "DeploymentReplicasMismatch",
+							"deployment": "payment-api",
+							"severity":   "warning",
+						},
+						"annotations": map[string]interface{}{
+							"summary": "Deployment replicas mismatch",
+						},
+						"status":      "firing",
+						"startsAt":    time.Now().Format(time.RFC3339),
+						"fingerprint": "test-fingerprint",
+					},
+				},
+			}
+
+			payloadBytes, _ := json.Marshal(payload)
+			signal, err := adapter.Parse(ctx, payloadBytes)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(signal.Resource.Kind).To(Equal("Deployment"))
+			Expect(signal.Resource.Namespace).To(Equal("default"),
+				"Namespaced kind without explicit namespace falls back to 'default'")
+		})
+
+		It("UT-GW-1371-013: namespaced Deployment alert with explicit namespace uses provided value", func() {
+			payload := map[string]interface{}{
+				"alerts": []map[string]interface{}{
+					{
+						"labels": map[string]interface{}{
+							"alertname":  "DeploymentReplicasMismatch",
+							"deployment": "payment-api",
+							"namespace":  "production",
+							"severity":   "warning",
+						},
+						"annotations": map[string]interface{}{
+							"summary": "Deployment replicas mismatch",
+						},
+						"status":      "firing",
+						"startsAt":    time.Now().Format(time.RFC3339),
+						"fingerprint": "test-fingerprint",
+					},
+				},
+			}
+
+			payloadBytes, _ := json.Marshal(payload)
+			signal, err := adapter.Parse(ctx, payloadBytes)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(signal.Resource.Kind).To(Equal("Deployment"))
+			Expect(signal.Resource.Namespace).To(Equal("production"),
+				"Explicit namespace always honored regardless of kind scope")
+		})
+
+		It("UT-GW-1371-014: cluster-scoped Node alert with explicit namespace label honors it", func() {
+			payload := map[string]interface{}{
+				"alerts": []map[string]interface{}{
+					{
+						"labels": map[string]interface{}{
+							"alertname": "KubeNodeNotReady",
+							"node":      "worker-node-1",
+							"namespace": "monitoring",
+							"severity":  "critical",
+						},
+						"annotations": map[string]interface{}{
+							"summary": "Node is not ready",
+						},
+						"status":      "firing",
+						"startsAt":    time.Now().Format(time.RFC3339),
+						"fingerprint": "test-fingerprint",
+					},
+				},
+			}
+
+			payloadBytes, _ := json.Marshal(payload)
+			signal, err := adapter.Parse(ctx, payloadBytes)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(signal.Resource.Kind).To(Equal("Node"))
+			Expect(signal.Resource.Namespace).To(Equal("monitoring"),
+				"Explicit namespace label honored even for cluster-scoped resources")
 		})
 	})
 })

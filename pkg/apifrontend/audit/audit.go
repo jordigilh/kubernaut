@@ -58,9 +58,10 @@ const (
 	EventTriageCompleted  EventType = "triage.completed"
 	EventRRCreated        EventType = "rr.created"
 	EventRRDeduplicated   EventType = "rr.deduplicated"
-	EventKADelegated      EventType = "ka.delegated"
-	EventKAResultReceived EventType = "ka.result_received"
-	EventUserDecision     EventType = "user.decision"
+	EventKADelegated              EventType = "ka.delegated"
+	EventKAResultReceived         EventType = "ka.result_received"
+	EventUserDecision             EventType = "user.decision"
+	EventInvestigationTimeout     EventType = "investigation.timeout"
 )
 
 // Event represents a SOC2-compatible audit event.

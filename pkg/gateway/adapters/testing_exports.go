@@ -17,6 +17,9 @@ limitations under the License.
 package adapters
 
 import (
+	"time"
+
+	"github.com/go-logr/logr"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	fakeclientset "k8s.io/client-go/kubernetes/fake"
@@ -27,8 +30,9 @@ import (
 // of passing a nil registry to NewPrometheusAdapter.
 //
 // Registered resources: Deployment, StatefulSet, DaemonSet, ReplicaSet (apps/v1),
-// Pod, Node, Service, PersistentVolumeClaim (v1), Job, CronJob (batch/v1),
-// HorizontalPodAutoscaler (autoscaling/v2), PodDisruptionBudget (policy/v1).
+// Pod, Node, Service, PersistentVolume, PersistentVolumeClaim (v1),
+// Job, CronJob (batch/v1), HorizontalPodAutoscaler (autoscaling/v2),
+// PodDisruptionBudget (policy/v1), ClusterRole (rbac.authorization.k8s.io/v1).
 func NewTestAPIResourceRegistry() *APIResourceRegistry {
 	cs := fakeclientset.NewSimpleClientset()
 	fd := cs.Discovery().(*fakediscovery.FakeDiscovery)
@@ -48,7 +52,14 @@ func NewTestAPIResourceRegistry() *APIResourceRegistry {
 				{Name: "pods", SingularName: "pod", Kind: "Pod", Namespaced: true},
 				{Name: "nodes", SingularName: "node", Kind: "Node", Namespaced: false},
 				{Name: "services", SingularName: "service", Kind: "Service", Namespaced: true},
+				{Name: "persistentvolumes", SingularName: "persistentvolume", Kind: "PersistentVolume", Namespaced: false},
 				{Name: "persistentvolumeclaims", SingularName: "persistentvolumeclaim", Kind: "PersistentVolumeClaim", Namespaced: true},
+			},
+		},
+		{
+			GroupVersion: "rbac.authorization.k8s.io/v1",
+			APIResources: []metav1.APIResource{
+				{Name: "clusterroles", SingularName: "clusterrole", Kind: "ClusterRole", Namespaced: false},
 			},
 		},
 		{
@@ -78,6 +89,19 @@ func NewTestAPIResourceRegistry() *APIResourceRegistry {
 	return registry
 }
 
+// NewTestAPIResourceRegistryNilSnapshot creates an APIResourceRegistry with a
+// nil snapshot, simulating the state before discovery has completed. Used to
+// test graceful degradation of IsNamespacedKind and other snapshot-dependent
+// methods.
+func NewTestAPIResourceRegistryNilSnapshot() *APIResourceRegistry {
+	return &APIResourceRegistry{
+		cache:        make(map[string]existenceCacheEntry),
+		cacheTTL:     30 * time.Second,
+		maxCacheSize: DefaultMaxCacheSize,
+		logger:       logr.Discard(),
+	}
+}
+
 // NewTestAPIResourceRegistryWithNamespace creates an APIResourceRegistry that
 // includes the core/v1 Namespace resource alongside the standard resources.
 // In production clusters, the Namespace resource is always present; its absence
@@ -103,7 +127,14 @@ func NewTestAPIResourceRegistryWithNamespace() *APIResourceRegistry {
 				{Name: "nodes", SingularName: "node", Kind: "Node", Namespaced: false},
 				{Name: "services", SingularName: "service", Kind: "Service", Namespaced: true},
 				{Name: "namespaces", SingularName: "namespace", Kind: "Namespace", Namespaced: false},
+				{Name: "persistentvolumes", SingularName: "persistentvolume", Kind: "PersistentVolume", Namespaced: false},
 				{Name: "persistentvolumeclaims", SingularName: "persistentvolumeclaim", Kind: "PersistentVolumeClaim", Namespaced: true},
+			},
+		},
+		{
+			GroupVersion: "rbac.authorization.k8s.io/v1",
+			APIResources: []metav1.APIResource{
+				{Name: "clusterroles", SingularName: "clusterrole", Kind: "ClusterRole", Namespaced: false},
 			},
 		},
 		{

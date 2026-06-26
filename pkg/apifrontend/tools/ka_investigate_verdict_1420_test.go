@@ -62,7 +62,7 @@ var _ = Describe("Issue #1420: AF Bridge Alignment Verdict Handling (SC-7)", fun
 		ctx := launcher.WithEventBridge(context.Background(), q, taskID, "ctx-1420", nil)
 		ctx = tools.WithRRID(ctx, "rr-1420-001")
 
-		summary, _ := tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
+		summary, _, _ := tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
 		_ = summary
 
 		found := false
@@ -111,7 +111,7 @@ var _ = Describe("Issue #1420: AF Bridge Alignment Verdict Handling (SC-7)", fun
 		ctx := launcher.WithEventBridge(context.Background(), q, taskID, "ctx-1420-002", nil)
 		ctx = tools.WithRRID(ctx, "rr-1420-002")
 
-		tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
+		_, _, _ = tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
 
 		found := false
 		for _, evt := range q.Events() {

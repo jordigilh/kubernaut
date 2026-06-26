@@ -125,6 +125,24 @@ func TestOgenClient_ListWorkflows_ServerError(t *testing.T) {
 	}
 }
 
+// UT-AF-1462-007: GetRemediationHistory sends currentSpecHash in query params
+func TestOgenClient_GetRemediationHistory_SendsSpecHash(t *testing.T) {
+	var capturedSpecHash string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		capturedSpecHash = r.URL.Query().Get("currentSpecHash")
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+
+	client := newTestOgenClient(t, mux)
+	_, _ = client.GetRemediationHistory(context.Background(), HistoryOpts{
+		Kind: "Deployment", Name: "api", Namespace: "prod", SpecHash: "sha256:abc123",
+	})
+	if capturedSpecHash != "sha256:abc123" {
+		t.Errorf("currentSpecHash = %q, want %q", capturedSpecHash, "sha256:abc123")
+	}
+}
+
 // UT-AF-038-037: Network failure returns wrapped error
 func TestOgenClient_NetworkFailure(t *testing.T) {
 	client, err := NewOgenClient(OgenClientConfig{

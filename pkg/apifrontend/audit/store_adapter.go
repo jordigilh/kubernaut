@@ -196,6 +196,7 @@ var actionMap = map[EventType]string{
 	EventKAResultReceived:        "received",
 	EventUserDecision:            "decided",
 	EventAgentCardAccessed:       "accessed",
+	EventInvestigationTimeout:    "timed_out",
 }
 
 func eventAction(t EventType) string {

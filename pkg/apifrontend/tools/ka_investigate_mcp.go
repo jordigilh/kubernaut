@@ -442,15 +442,23 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, cfg *InvestigateCon
 		logger.Info("bridgeEventsCollectSummary: starting blocking event bridge",
 			"rr_id", args.RRID, "session_id", result.SessionID, "ctx_err", ctx.Err())
 		bridgeCtx := WithRRID(ctx, args.RRID)
-		summary, rca := bridgeEventsCollectSummary(bridgeCtx, result.Events, BridgeInactivityTimeout)
-		status := "completed"
-		if ctx.Err() != nil {
-			status = "timeout"
-			logger.Info("bridgeEventsCollectSummary: context cancelled",
-				"rr_id", args.RRID, "ctx_err", ctx.Err(), "summary_len", len(summary))
-		}
+		summary, rca, exitReason := bridgeEventsCollectSummary(bridgeCtx, result.Events, BridgeInactivityTimeout)
+		status := ExitReasonToStatus(exitReason)
 		logger.Info("bridgeEventsCollectSummary: finished",
-			"rr_id", args.RRID, "status", status, "summary_len", len(summary))
+			"rr_id", args.RRID, "status", status, "exit_reason", exitReason, "summary_len", len(summary))
+
+		if exitReason == ExitReasonInactivityTimeout && cfg.Auditor != nil {
+			cfg.Auditor.Emit(ctx, &audit.Event{
+				Type: audit.EventInvestigationTimeout,
+				Detail: map[string]string{
+					"rr_id":              args.RRID,
+					"session_id":         result.SessionID,
+					"exit_reason":        exitReason,
+					"inactivity_timeout": BridgeInactivityTimeout.String(),
+					"summary_len":        fmt.Sprintf("%d", len(summary)),
+				},
+			})
+		}
 
 		// Fallback: when KA produced no RCA (e.g. user-driving mode with
 		// no autonomous session) but severity triage completed during RR
@@ -598,19 +606,39 @@ var NonBlockingBridgeTTL = 15 * time.Minute
 // so investigations of any wall-clock duration succeed as long as KA keeps
 // producing events (token deltas, tool calls, keepalives).
 // Exported so that tests can override it without modifying production code.
-var BridgeInactivityTimeout = 60 * time.Second
+var BridgeInactivityTimeout = 180 * time.Second
+
+// Exit reason constants returned as the third value from bridgeEventsCollectSummary.
+const (
+	ExitReasonInactivityTimeout = "inactivity_timeout"
+	ExitReasonChannelClosed     = "channel_closed"
+	ExitReasonCtxCancelled      = "ctx_cancelled"
+)
 
 // BridgeEventsCollectSummary is the exported entry point for bridgeEventsCollectSummary.
 // It is used by integration tests and the blocking MCP investigation path.
-func BridgeEventsCollectSummary(ctx context.Context, events <-chan ka.InvestigationEvent, inactivityTimeout time.Duration) (string, *InvestigateRCA) {
+func BridgeEventsCollectSummary(ctx context.Context, events <-chan ka.InvestigationEvent, inactivityTimeout time.Duration) (string, *InvestigateRCA, string) {
 	return bridgeEventsCollectSummary(ctx, events, inactivityTimeout)
+}
+
+// ExitReasonToStatus maps the exit reason returned by bridgeEventsCollectSummary
+// to a user-facing investigation status string.
+func ExitReasonToStatus(exitReason string) string {
+	switch exitReason {
+	case ExitReasonInactivityTimeout:
+		return "timed_out"
+	case ExitReasonCtxCancelled:
+		return "timeout"
+	default:
+		return "completed"
+	}
 }
 
 // bridgeEventsCollectSummary bridges events (same as BridgeEventsToA2A) and
 // accumulates reasoning_delta text into a summary returned when the channel
 // closes, the context is cancelled, or no events arrive within
 // inactivityTimeout (hang detection).
-func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.InvestigationEvent, inactivityTimeout time.Duration) (string, *InvestigateRCA) {
+func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.InvestigationEvent, inactivityTimeout time.Duration) (string, *InvestigateRCA, string) {
 	var summary strings.Builder
 	var rcaResult *InvestigateRCA
 	keepalive := time.NewTicker(5 * time.Second)
@@ -620,14 +648,14 @@ func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.Investigat
 	for {
 		select {
 		case <-ctx.Done():
-			return summary.String(), rcaResult
+			return summary.String(), rcaResult, ExitReasonCtxCancelled
 		case <-inactivity.C:
-			return summary.String(), rcaResult
+			return summary.String(), rcaResult, ExitReasonInactivityTimeout
 		case <-keepalive.C:
 			_ = launcher.EmitKeepaliveDotSafe(ctx)
 		case evt, ok := <-events:
 			if !ok {
-				return summary.String(), rcaResult
+				return summary.String(), rcaResult, ExitReasonChannelClosed
 			}
 			inactivity.Reset(inactivityTimeout)
 			// #1438: Handle session_ended before generic emit to avoid double-emit.
@@ -641,7 +669,7 @@ func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.Investigat
 						"reason":   evt.Phase,
 						"terminal": true,
 					})
-				return summary.String(), rcaResult
+				return summary.String(), rcaResult, ExitReasonChannelClosed
 			}
 			emitEventToA2A(ctx, evt, FormatEventForUser(evt))
 			switch evt.Type {
@@ -675,9 +703,9 @@ func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.Investigat
 						emitEarlyRCA(ctx, &rca)
 					}
 				}
-				return summary.String(), rcaResult
+				return summary.String(), rcaResult, ExitReasonChannelClosed
 			case ka.EventTypeCancelled:
-				return summary.String(), rcaResult
+				return summary.String(), rcaResult, ExitReasonChannelClosed
 			}
 		}
 	}

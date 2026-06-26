@@ -54,7 +54,14 @@ func standardResources() []*metav1.APIResourceList {
 				{Name: "pods", SingularName: "pod", Kind: "Pod", Namespaced: true},
 				{Name: "nodes", SingularName: "node", Kind: "Node", Namespaced: false},
 				{Name: "services", SingularName: "service", Kind: "Service", Namespaced: true},
+				{Name: "persistentvolumes", SingularName: "persistentvolume", Kind: "PersistentVolume", Namespaced: false},
 				{Name: "persistentvolumeclaims", SingularName: "persistentvolumeclaim", Kind: "PersistentVolumeClaim", Namespaced: true},
+			},
+		},
+		{
+			GroupVersion: "rbac.authorization.k8s.io/v1",
+			APIResources: []metav1.APIResource{
+				{Name: "clusterroles", SingularName: "clusterrole", Kind: "ClusterRole", Namespaced: false},
 			},
 		},
 		{
@@ -505,6 +512,73 @@ var _ = Describe("API Resource Registry (#1029)", func() {
 			Expect(registry.LabelToKind("completely_unknown_label")).To(BeEmpty())
 			Expect(registry.LabelToKind("alertname")).To(BeEmpty())
 			Expect(registry.LabelToKind("severity")).To(BeEmpty())
+		})
+	})
+
+	// =========================================================================
+	// Scope Detection: IsNamespacedKind (#1371)
+	// =========================================================================
+	Context("IsNamespacedKind (#1371)", func() {
+		It("UT-GW-1371-001: returns true for namespaced kind (Deployment)", func() {
+			fd := newFakeDiscovery(standardResources())
+			registry, err := adapters.NewAPIResourceRegistry(fd)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(registry.IsNamespacedKind("Deployment")).To(BeTrue(),
+				"Deployment is namespaced — namespace required")
+		})
+
+		It("UT-GW-1371-002: returns false for cluster-scoped kind (Node)", func() {
+			fd := newFakeDiscovery(standardResources())
+			registry, err := adapters.NewAPIResourceRegistry(fd)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(registry.IsNamespacedKind("Node")).To(BeFalse(),
+				"Node is cluster-scoped — no namespace")
+		})
+
+		It("UT-GW-1371-003: returns false for cluster-scoped kind (Namespace)", func() {
+			fd := newFakeDiscovery(standardResources(), namespaceResource())
+			registry, err := adapters.NewAPIResourceRegistry(fd)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(registry.IsNamespacedKind("Namespace")).To(BeFalse(),
+				"Namespace resource is itself cluster-scoped")
+		})
+
+		It("UT-GW-1371-004: returns false for cluster-scoped kind (PersistentVolume)", func() {
+			registry := adapters.NewTestAPIResourceRegistry()
+			Expect(registry.IsNamespacedKind("PersistentVolume")).To(BeFalse(),
+				"PersistentVolume is cluster-scoped (PVCs are namespaced, PVs are not)")
+		})
+
+		It("UT-GW-1371-E01: returns false for cluster-scoped kind (ClusterRole)", func() {
+			registry := adapters.NewTestAPIResourceRegistry()
+			Expect(registry.IsNamespacedKind("ClusterRole")).To(BeFalse(),
+				"ClusterRole is cluster-scoped — RBAC roles at cluster level")
+		})
+
+		It("UT-GW-1371-E02: PersistentVolumeClaim remains namespaced alongside PersistentVolume", func() {
+			registry := adapters.NewTestAPIResourceRegistry()
+			Expect(registry.IsNamespacedKind("PersistentVolumeClaim")).To(BeTrue(),
+				"PVC is namespaced even though PV is cluster-scoped")
+			Expect(registry.IsNamespacedKind("PersistentVolume")).To(BeFalse(),
+				"PV is cluster-scoped")
+		})
+
+		It("UT-GW-1371-005: returns true for unknown kind (conservative default)", func() {
+			fd := newFakeDiscovery(standardResources())
+			registry, err := adapters.NewAPIResourceRegistry(fd)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(registry.IsNamespacedKind("UnknownKind")).To(BeTrue(),
+				"Unknown kind defaults to namespaced (conservative — avoids dropping namespace)")
+		})
+
+		It("UT-GW-1371-006: returns true with nil snapshot (graceful degradation)", func() {
+			nilRegistry := adapters.NewTestAPIResourceRegistryNilSnapshot()
+			Expect(nilRegistry.IsNamespacedKind("AnyKind")).To(BeTrue(),
+				"Nil snapshot returns true for graceful degradation before registry is ready")
 		})
 	})
 

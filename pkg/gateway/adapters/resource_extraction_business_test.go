@@ -120,10 +120,8 @@ var _ = Describe("Prometheus Adapter - Resource Extraction for Workflow Selectio
 				"Kind=Node enables RO to select cluster infrastructure workflows")
 			Expect(signal.Resource.Name).To(Equal("worker-node-1"),
 				"Node name enables WE to target: kubectl cordon worker-node-1")
-			// Note: extractNamespace() defaults to "default" when no namespace label present
-			// This is safe behavior for cluster-scoped resources
-			Expect(signal.Resource.Namespace).To(Equal("default"),
-				"Nodes get default namespace (safe fallback for cluster-scoped resources)")
+			Expect(signal.Resource.Namespace).To(BeEmpty(),
+				"Cluster-scoped resources (Node) get empty namespace (#1371)")
 		})
 
 		It("extracts StatefulSet kind for stateful application workflows", func() {
@@ -239,8 +237,8 @@ var _ = Describe("Prometheus Adapter - Resource Extraction for Workflow Selectio
 				"Federated Prometheus: exported_namespace fallback preserves multi-cluster context")
 		})
 
-		It("defaults to 'default' namespace when not specified", func() {
-			// BUSINESS OUTCOME: Cluster-scoped alerts without namespace use safe default
+		It("uses empty namespace for cluster-scoped resources (#1371)", func() {
+			// BUSINESS OUTCOME: Cluster-scoped alerts (Node) get empty namespace
 			payload := `{
 				"alerts": [{
 					"status": "firing",
@@ -255,8 +253,8 @@ var _ = Describe("Prometheus Adapter - Resource Extraction for Workflow Selectio
 			signal, err := adapter.Parse(context.Background(), []byte(payload))
 
 			Expect(err).NotTo(HaveOccurred())
-			Expect(signal.Namespace).To(Equal("default"),
-				"Safe default namespace prevents remediation errors")
+			Expect(signal.Namespace).To(BeEmpty(),
+				"Cluster-scoped resources (Node) get empty namespace (#1371)")
 		})
 	})
 
