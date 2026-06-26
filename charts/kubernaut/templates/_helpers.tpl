@@ -223,6 +223,14 @@ https://data-storage-service.{{ .Release.Namespace }}.svc.cluster.local:8080
 {{- end }}
 
 {{/*
+Return the in-cluster FMC service URL.
+FMC uses HTTP by default (internal scope query API, ADR-068).
+*/}}
+{{- define "kubernaut.fmc.url" -}}
+http://fmc-service.{{ .Release.Namespace }}.svc.cluster.local:8080
+{{- end }}
+
+{{/*
 Return the in-cluster Gateway service URL.
 Issue #678: switches to https:// when tls.interService.enabled is true.
 */}}

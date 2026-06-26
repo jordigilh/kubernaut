@@ -1004,9 +1004,9 @@
         "tolerations": { "$ref": "#/definitions/tolerations" }
       }
     },
-    "fmcWriter": {
+    "fmc": {
       "type": "object",
-      "description": "FMC Writer: Fleet Metadata Cache writer service (BR-INTEGRATION-065)",
+      "description": "FMC: Fleet Metadata Cache service (BR-INTEGRATION-065, ADR-068)",
       "additionalProperties": false,
       "properties": {
         "enabled": { "type": "boolean", "default": false },

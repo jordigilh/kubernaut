@@ -101,9 +101,9 @@ gateway:
   # spec.clusterID on RemediationRequests. The backend adapter handles federated scope checks.
   fleet:
     enabled: false
-    # -- Backend adapter: "fmc" (FMC HTTP API) or "acm" (ACM Search).
+    # -- Backend adapter: "fmc" (FMC HTTP API) or "acm" (ACM Search). Defaults to "fmc".
     backend: ""
-    # -- Endpoint for the selected backend (FMC HTTP URL or ACM GraphQL URL).
+    # -- Endpoint for the selected backend. Auto-derived for fmc; required for acm.
     endpoint: ""
 
 # -- DataStorage service (audit trail, workflow catalog)
@@ -261,9 +261,9 @@ remediationorchestrator:
   # RemediationRequests with non-empty clusterID. Backend adapter selected by backend field.
   fleet:
     enabled: false
-    # -- Backend adapter: "fmc" (FMC HTTP API) or "acm" (ACM Search).
+    # -- Backend adapter: "fmc" (FMC HTTP API) or "acm" (ACM Search). Defaults to "fmc".
     backend: ""
-    # -- Endpoint for the selected backend (FMC HTTP URL or ACM GraphQL URL).
+    # -- Endpoint for the selected backend. Auto-derived for fmc; required for acm.
     endpoint: ""
 
 # -- WorkflowExecution controller
@@ -527,10 +527,10 @@ valkey:
       memory: 256Mi
       cpu: 200m
 
-# -- FMC Writer: Fleet Metadata Cache writer service (BR-INTEGRATION-065).
-# Polls remote clusters via MCP Gateway and writes managed resource metadata to Valkey.
-# Required for federated scope checking in GW and RO.
-fmcWriter:
+# -- FMC: Fleet Metadata Cache service (BR-INTEGRATION-065, ADR-068).
+# Polls remote clusters via MCP Gateway and caches managed resource metadata in Valkey.
+# Serves an HTTP API for federated scope checking consumed by GW and RO.
+fmc:
   enabled: false
   replicas: 1
   image:
