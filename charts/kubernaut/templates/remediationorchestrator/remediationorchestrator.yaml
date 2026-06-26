@@ -61,6 +61,8 @@ data:
       {{- end }}
       {{- if .Values.remediationorchestrator.fleet.endpoint }}
       endpoint: {{ .Values.remediationorchestrator.fleet.endpoint | quote }}
+      {{- else if eq (default "fmc" .Values.remediationorchestrator.fleet.backend) "fmc" }}
+      endpoint: {{ include "kubernaut.fmc.url" . | quote }}
       {{- end }}
     {{- end }}
 ---
