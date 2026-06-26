@@ -24,29 +24,38 @@ The key constraints are:
 
 ## Decision
 
-### MCP Gateway Technology: Envoy AI Gateway
+### MCP Gateway Technology
 
-**Chosen**: Envoy AI Gateway (v1.0, `envoyproxy/ai-gateway`)
-**Rejected**: Kuadrant MCP Gateway (evaluated via spike, 2026-06-25)
-
-Envoy AI Gateway was selected over Kuadrant MCP Gateway for the following reasons:
+**Supported**: Both Envoy AI Gateway and Kuadrant MCP Gateway are supported via
+the MCP Gateway Adapter Pattern (`pkg/fleet/registry/`). The MCP Gateway is
+**external infrastructure** — it must be deployed before Kubernaut, similar to
+PostgreSQL, Redis, or Prometheus. Kubernaut's Helm chart does not install the
+gateway; platform teams choose and deploy their preferred implementation.
 
 | Criterion | Envoy AI Gateway | Kuadrant MCP Gateway |
 |-----------|-----------------|---------------------|
-| **Istio dependency** | None | Hard dependency (requires `istiod` + `EnvoyFilter`) |
+| **Istio dependency** | None | Requires `istiod` (sidecar injection disabled) |
 | **Components to deploy** | 1 (single Deployment or standalone binary) | 3+ (Kuadrant controller + broker + Istio control plane) |
-| **Memory footprint** | ~122 MB | ~400-700 MB (Istio + Kuadrant stack) |
-| **Tool prefixing** | `{backendName}__{toolName}` (identical to Kubernaut convention) | `{toolPrefix}{toolName}` (configurable, compatible) |
-| **Auth model** | Built-in OAuth + CEL authorization (no external engines) | Authorino (external) + OPA Rego policies |
+| **Memory footprint** | ~122 MB | ~388 MB (Istio + Kuadrant + kube-mcp-server) |
+| **Tool prefixing** | `{backendName}__{toolName}` | `{toolPrefix}{toolName}` (configurable via `MCPServerRegistration.spec.prefix`) |
+| **Auth model** | Built-in OAuth + CEL authorization | Authorino (external) + OPA Rego policies |
 | **Standalone mode** | `aigw run` CLI (IT testing without K8s) | Not available (requires K8s + Istio) |
 | **Maturity** | v1.0 GA (Bloomberg/Tetrate backing) | Technology Preview |
 | **CRD model** | `MCPRoute` + `Backend` (Envoy Gateway standard) | `MCPServerRegistration` + `MCPGatewayExtension` |
-| **MCP spec compliance** | June 2025 MCP spec (streamable HTTP) | Earlier MCP spec |
+| **E2E validation** | IT container test (`fleet_eaigw_test.go`) | E2E fleet lane (Kind + Istio + Kuadrant, spike-s14) |
 
-The spike (2026-06-25) validated that Envoy AI Gateway's `{backendName}__{toolName}` prefix
-is identical to the convention used by `mcpclient.ClusterTool()`, requiring zero code changes
-in the MCP client layer. The CRDWatcher in `pkg/fleet/registry/` needs to watch `MCPRoute`
-and `Backend` CRDs instead of `MCPServerRegistration`.
+**Design principle: business logic is gateway-agnostic.** Kubernaut services connect
+to the MCP Gateway endpoint and discover tools via `tools/list`. Tool names carry the
+gateway-specific prefix (e.g., `cluster-a__resources_get` for EAIGW,
+`cluster_a_resources_get` for Kuadrant). Services use discovered tool names as-is —
+they never need to know which gateway implementation is running. KA registers
+discovered tools as BridgeTools for LLM investigation, enabling multi-cluster
+correlation within a single session.
+
+The only gateway-aware component is the cluster registry (`pkg/fleet/registry/`),
+which watches gateway-specific CRDs (`Backend` for EAIGW, `MCPServerRegistration`
+for Kuadrant) to build the cluster-to-prefix mapping used by `ReaderFactory`.
+This awareness is isolated to FMC and does not leak into other services' business logic.
 
 ### Architecture Overview
 
@@ -61,9 +70,9 @@ and `Backend` CRDs instead of `MCPServerRegistration`.
                     │    │      │  all read    │      │      │       │     │
                     │    ▼      ▼              ▼      ▼      ▼       ▼     │
                     │  ┌──────────────────────────────────────────────┐    │
-                    │  │        MCP Gateway (Envoy AI Gateway)         │    │
+                    │  │        MCP Gateway (EAIGW or Kuadrant)        │    │
                     │  │      (routes to per-cluster MCP Servers)      │    │
-                    │  │      OAuth + CEL authz (built-in)            │    │
+                    │  │      Gateway-native authz                    │    │
                     │  │      mcp-read: GW,KA,RO,SP,AF,EM,FMC        │    │
                     │  │      mcp-write: WE (remediation)             │    │
                     │  └──────────────────────────────────────────────┘    │
@@ -110,7 +119,7 @@ and `Backend` CRDs instead of `MCPServerRegistration`.
 | **FederatedScopeChecker** | Routes scope checks: local → scope.Manager, remote → backend adapter (scope.ScopeChecker) | `pkg/fleet/federated_checker.go` |
 | **ResilientClient** | MCP client with backoff, reconnect, readiness gating | `pkg/fleet/mcpclient/resilience.go` |
 | **ReloadableOAuth2Transport** | Hot-reloadable OAuth2 credentials via FileWatcher | `pkg/fleet/mcpclient/reloadable_auth.go` |
-| **CRDWatcher** | Discovers clusters from `MCPRoute` / `Backend` CRDs (Envoy AI Gateway) | `pkg/fleet/registry/` |
+| **CRDWatcher** | Discovers clusters from gateway CRDs (`MCPRoute`/`Backend` for EAIGW, `MCPServerRegistration` for Kuadrant) via adapter pattern | `pkg/fleet/registry/` |
 | **KA Fleet Tools** | Dynamic BridgeTool registration from MCP Gateway `tools/list` | `cmd/kubernautagent/main.go` |
 
 ### Key Design Decisions
@@ -129,9 +138,11 @@ and `Backend` CRDs instead of `MCPServerRegistration`.
 
 7. **KA dynamic tool discovery** (not hard-coded): Fleet tools are registered at startup from `tools/list`. `AppendFleetToolsToRCA` makes them visible to the LLM investigator without code changes per cluster.
 
-8. **`MCPRoute` + `Backend` as source of truth** (not ConfigMap): Envoy AI Gateway CRDs are the authoritative registry of MCP backends. Kubernaut is a **read-only consumer** — it watches but never creates or modifies these CRDs. The control plane (ACM, Rancher, GitOps) owns their lifecycle.
+8. **Gateway CRDs as source of truth** (not ConfigMap): The gateway's native CRDs (`MCPRoute`/`Backend` for EAIGW, `MCPServerRegistration` for Kuadrant) are the authoritative registry of MCP backends. Kubernaut is a **read-only consumer** — it watches but never creates or modifies these CRDs. The control plane (ACM, Rancher, GitOps) owns their lifecycle.
 
-9. **MCP Gateway as unified chokepoint for all remote cluster access** (not separate auth paths per backend type): All Kubernaut services that interact with remote clusters — GW, KA, RO, SP, AF, EM (read-only), FMC (metadata sync), and WE (remediation execution) — access remote clusters exclusively through the MCP Gateway. The K8s MCP Server and AAP MCP Server are both registered as backends behind the same gateway. This eliminates the need for service-specific credential management (e.g., separate AAP bearer token injection). Auth is enforced at two layers: (a) Envoy AI Gateway validates caller JWT via built-in OAuth and enforces role-based access through CEL authorization rules (`mcp-read` for GW/KA/RO/SP/AF/EM/FMC, `mcp-write` for WE), and (b) each MCP Server authenticates against its own local APIs using its own ServiceAccount. No per-cluster SA tokens are maintained by Kubernaut services.
+9. **MCP Gateway as unified chokepoint for all remote cluster access** (not separate auth paths per backend type): All Kubernaut services that interact with remote clusters — GW, KA, RO, SP, AF, EM (read-only), FMC (metadata sync), and WE (remediation execution) — access remote clusters exclusively through the MCP Gateway. The K8s MCP Server and AAP MCP Server are both registered as backends behind the same gateway. This eliminates the need for service-specific credential management (e.g., separate AAP bearer token injection). Auth is enforced at two layers: (a) the gateway validates caller credentials via its native auth model (OAuth + CEL for EAIGW, Authorino + OPA for Kuadrant), and (b) each MCP Server authenticates against its own local APIs using its own ServiceAccount. No per-cluster SA tokens are maintained by Kubernaut services.
+
+10. **Gateway-agnostic business logic** (not per-gateway code paths): Kubernaut services discover tools at startup via `tools/list` and use discovered tool names as-is. The gateway-specific prefix convention (`{backend}__{tool}` for EAIGW, `{prefix}{tool}` for Kuadrant) is transparent to business logic. The only gateway-aware component is the cluster registry in FMC (`pkg/fleet/registry/`), which uses an adapter pattern to watch the correct CRDs. All other services obtain their tool prefix from `ReaderFactory`/`WriterClient` configuration, which itself is derived from registry data at initialization time.
 
 ## Alternatives Considered
 
@@ -160,10 +171,10 @@ and `Backend` CRDs instead of `MCPServerRegistration`.
 - -: Kubernaut couples to specific control plane; N adapters to maintain; same info available via gateway CRDs
 - **Rejected**: Envoy AI Gateway CRDs are the generic interface. Control planes own the creation of these CRDs.
 
-### I. Kuadrant MCP Gateway (instead of Envoy AI Gateway)
-- +: Mature MCP server registration model, Kuadrant ecosystem integration
-- -: Hard dependency on Istio (requires `istiod` + `EnvoyFilter` CRDs); 3 components to deploy (controller + broker + Istio); ~400-700 MB memory for the full stack; cannot run standalone (requires Kubernetes)
-- **Rejected**: Envoy AI Gateway provides the same tool prefixing convention (`{backend}__{tool}`), same MCP protocol support, built-in OAuth + CEL authorization (no external Authorino/OPA needed), single-component deployment (~122 MB), standalone mode for IT testing, and is backed by Bloomberg/Tetrate in production (v1.0). Spike validated identical `__` prefix behavior and successful tool routing.
+### I. Kuadrant MCP Gateway (alongside Envoy AI Gateway)
+- +: Mature MCP server registration model, Kuadrant ecosystem integration, configurable tool prefix
+- -: Requires Istio as Gateway API provider; 3+ components to deploy; ~388 MB memory footprint; cannot run standalone (requires K8s + Istio)
+- **Accepted**: Both gateways are supported via the MCP Gateway Adapter Pattern. Spike-s14 (2026-06-25) validated Kuadrant in Kind with all go/no-go criteria passed. The E2E fleet lane uses Kuadrant; EAIGW is validated via container IT. Platform teams choose based on their infrastructure.
 
 ### F. Single hardcoded scope resolution backend (Valkey only)
 - +: Simpler implementation
@@ -253,15 +264,15 @@ and `Backend` CRDs instead of `MCPServerRegistration`.
 
 The MCP Gateway is the single entry point for all Kubernaut service interactions with remote
 clusters. All backend MCP Servers — K8s MCP Servers and AAP MCP Servers — are registered behind
-the gateway via Envoy AI Gateway `MCPRoute` + `Backend` CRDs. Kubernaut services connect to
-the gateway, not to individual backends.
+the gateway via its native CRDs (`MCPRoute`/`Backend` for EAIGW, `MCPServerRegistration` for
+Kuadrant). Kubernaut services connect to the gateway, not to individual backends.
 
 ```
                    ┌──────────────────────────────────┐
-                   │    MCP Gateway (Envoy AI GW)      │
+                   │    MCP Gateway (EAIGW / Kuadrant) │
                    │  ┌────────────────────────────┐   │
-                   │  │   Built-in OAuth (JWT)      │   │
-                   │  │   + CEL Authorization       │   │
+                   │  │   Gateway-native authz      │   │
+                   │  │   (OAuth+CEL / Authorino)   │   │
                    │  └────────────────────────────┘   │
                    │            │                       │
                    │  ┌─────────┴──────────┐           │
