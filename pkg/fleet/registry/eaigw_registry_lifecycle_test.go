@@ -26,9 +26,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
-func newTestWatcher() *BackendInformerRegistry {
+func newTestWatcher() *EAIGWRegistry {
 	logger := zap.New(zap.UseDevMode(true))
-	return NewBackendInformerRegistry(nil, BackendInformerRegistryConfig{
+	return NewEAIGWRegistry(nil, EAIGWRegistryConfig{
 		ChannelSize:  8,
 		ResyncPeriod: time.Minute,
 	}, nil, logger)
@@ -53,11 +53,11 @@ func newBackendUnstructured(name, namespace, endpoint string) *unstructured.Unst
 	}
 }
 
-// UT-FLEET-CRD: BackendInformerRegistry lifecycle unit tests
+// UT-REG-EAIGW: EAIGWRegistry lifecycle unit tests
 // Authority: BR-INTEGRATION-065 (Multi-Cluster Fleet Registry)
 // FedRAMP: SI-4 (Information System Monitoring) -- cluster event tracking
-var _ = Describe("UT-FLEET-CRD: BackendInformerRegistry lifecycle", func() {
-	var w *BackendInformerRegistry
+var _ = Describe("UT-REG-EAIGW: EAIGWRegistry lifecycle", func() {
+	var w *EAIGWRegistry
 
 	BeforeEach(func() {
 		w = newTestWatcher()
@@ -68,14 +68,14 @@ var _ = Describe("UT-FLEET-CRD: BackendInformerRegistry lifecycle", func() {
 	})
 
 	Describe("Initial state", func() {
-		It("UT-FLEET-CRD-001: should start with empty cluster list and not ready", func() {
+		It("UT-REG-EAIGW-002: should start with empty cluster list and not ready", func() {
 			Expect(w.List()).To(BeEmpty())
 			Expect(w.Ready()).To(BeFalse())
 		})
 	})
 
 	Describe("onAdd", func() {
-		It("UT-FLEET-CRD-002: should add cluster to registry and emit Added event", func() {
+		It("UT-REG-EAIGW-003: should add cluster to registry and emit Added event", func() {
 			u := newBackendUnstructured("prod-east", "kubernaut-system",
 				"https://mcp.example.com/prod-east")
 
@@ -96,14 +96,14 @@ var _ = Describe("UT-FLEET-CRD: BackendInformerRegistry lifecycle", func() {
 			})))
 		})
 
-		It("UT-FLEET-CRD-003: should ignore non-Unstructured objects", func() {
+		It("UT-REG-EAIGW-004: should ignore non-Unstructured objects", func() {
 			w.onAdd("not-an-unstructured")
 			Expect(w.List()).To(BeEmpty())
 		})
 	})
 
 	Describe("onUpdate", func() {
-		It("UT-FLEET-CRD-004: should update existing cluster and emit Updated event", func() {
+		It("UT-REG-EAIGW-005: should update existing cluster and emit Updated event", func() {
 			u1 := newBackendUnstructured("staging", "kubernaut-system",
 				"https://old-endpoint.com/staging")
 			w.onAdd(u1)
@@ -126,7 +126,7 @@ var _ = Describe("UT-FLEET-CRD: BackendInformerRegistry lifecycle", func() {
 	})
 
 	Describe("onDelete", func() {
-		It("UT-FLEET-CRD-005: should remove cluster from registry and emit Deleted event", func() {
+		It("UT-REG-EAIGW-006: should remove cluster from registry and emit Deleted event", func() {
 			u := newBackendUnstructured("dev-west", "kubernaut-system",
 				"https://mcp.example.com/dev-west")
 			w.onAdd(u)
@@ -144,7 +144,7 @@ var _ = Describe("UT-FLEET-CRD: BackendInformerRegistry lifecycle", func() {
 			)))
 		})
 
-		It("UT-FLEET-CRD-006: should handle tombstone objects on delete", func() {
+		It("UT-REG-EAIGW-007: should handle tombstone objects on delete", func() {
 			u := newBackendUnstructured("tombstone-cluster", "kubernaut-system",
 				"https://mcp.example.com/tombstone")
 			w.onAdd(u)
@@ -159,7 +159,7 @@ var _ = Describe("UT-FLEET-CRD: BackendInformerRegistry lifecycle", func() {
 			Expect(w.List()).To(BeEmpty())
 		})
 
-		It("UT-FLEET-CRD-007: should no-op when deleting unknown cluster", func() {
+		It("UT-REG-EAIGW-008: should no-op when deleting unknown cluster", func() {
 			u := newBackendUnstructured("unknown", "kubernaut-system", "")
 			w.onDelete(u)
 			Expect(w.List()).To(BeEmpty())
@@ -167,7 +167,7 @@ var _ = Describe("UT-FLEET-CRD: BackendInformerRegistry lifecycle", func() {
 	})
 
 	Describe("emit", func() {
-		It("UT-FLEET-CRD-008: should not panic after Stop is called", func() {
+		It("UT-REG-EAIGW-009: should not panic after Stop is called", func() {
 			w.Stop()
 			Expect(func() {
 				w.emit(ClusterEvent{Type: EventAdded, Cluster: ClusterInfo{ID: "post-stop"}})

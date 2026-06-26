@@ -103,6 +103,30 @@ var _ = Describe("extractClusterInfo (BR-INTEGRATION-065)", func() {
 		Expect(info.Name).To(Equal("staging-west"))
 	})
 
+	It("UT-REG-EAIGW-001 [AC-3]: ExtractClusterInfo sets ToolPrefix to {name}__ for EAIGW Backend CRDs", func() {
+		u := &unstructured.Unstructured{
+			Object: map[string]interface{}{
+				"apiVersion": "gateway.envoyproxy.io/v1alpha1",
+				"kind":       "Backend",
+				"metadata": map[string]interface{}{
+					"name":      "prod-east-1",
+					"namespace": "kubernaut-system",
+					"labels": map[string]interface{}{
+						"kubernaut.ai/managed": "true",
+					},
+				},
+				"status": map[string]interface{}{
+					"endpoint": "https://mcp.example.com/prod-east-1/mcp",
+				},
+			},
+		}
+
+		info, err := registry.ExtractClusterInfo(u)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(info.ToolPrefix).To(Equal("prod-east-1__"),
+			"EAIGW ToolPrefix must follow {name}__ convention")
+	})
+
 	It("UT-FLEET-003-004: extracts MCPEndpoint from spec.endpoint when status.endpoint absent", func() {
 		u := &unstructured.Unstructured{
 			Object: map[string]interface{}{

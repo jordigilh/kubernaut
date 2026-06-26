@@ -60,8 +60,8 @@ var MCPRouteGVR = schema.GroupVersionResource{
 	Resource: "mcproutes",
 }
 
-// BackendInformerRegistryConfig configures the BackendInformerRegistry.
-type BackendInformerRegistryConfig struct {
+// EAIGWRegistryConfig configures the EAIGWRegistry.
+type EAIGWRegistryConfig struct {
 	// Namespace restricts watching to a specific namespace. Empty watches all.
 	Namespace string
 	// ResyncPeriod for the informer. Defaults to 5 minutes.
@@ -70,11 +70,11 @@ type BackendInformerRegistryConfig struct {
 	ChannelSize int
 }
 
-// BackendInformerRegistry implements ClusterRegistry by watching Envoy AI Gateway Backend CRDs
+// EAIGWRegistry implements ClusterRegistry by watching Envoy AI Gateway Backend CRDs
 // via a dynamic informer. Only resources labeled kubernaut.ai/managed=true are tracked.
-type BackendInformerRegistry struct {
+type EAIGWRegistry struct {
 	client  dynamic.Interface
-	config  BackendInformerRegistryConfig
+	config  EAIGWRegistryConfig
 	metrics *Metrics
 	logger  logr.Logger
 
@@ -87,15 +87,15 @@ type BackendInformerRegistry struct {
 	stopped bool
 }
 
-// NewBackendInformerRegistry creates a new BackendInformerRegistry.
-func NewBackendInformerRegistry(client dynamic.Interface, cfg BackendInformerRegistryConfig, metrics *Metrics, logger logr.Logger) *BackendInformerRegistry {
+// NewEAIGWRegistry creates a new EAIGWRegistry.
+func NewEAIGWRegistry(client dynamic.Interface, cfg EAIGWRegistryConfig, metrics *Metrics, logger logr.Logger) *EAIGWRegistry {
 	if cfg.ResyncPeriod == 0 {
 		cfg.ResyncPeriod = defaultResyncPeriod
 	}
 	if cfg.ChannelSize == 0 {
 		cfg.ChannelSize = defaultChannelSize
 	}
-	return &BackendInformerRegistry{
+	return &EAIGWRegistry{
 		client:   client,
 		config:   cfg,
 		metrics:  metrics,
@@ -107,7 +107,7 @@ func NewBackendInformerRegistry(client dynamic.Interface, cfg BackendInformerReg
 }
 
 // List returns all known managed clusters.
-func (w *BackendInformerRegistry) List() []ClusterInfo {
+func (w *EAIGWRegistry) List() []ClusterInfo {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 	result := make([]ClusterInfo, 0, len(w.clusters))
@@ -118,7 +118,7 @@ func (w *BackendInformerRegistry) List() []ClusterInfo {
 }
 
 // Get returns cluster info by ID.
-func (w *BackendInformerRegistry) Get(clusterID string) (ClusterInfo, bool) {
+func (w *EAIGWRegistry) Get(clusterID string) (ClusterInfo, bool) {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 	info, ok := w.clusters[clusterID]
@@ -126,19 +126,19 @@ func (w *BackendInformerRegistry) Get(clusterID string) (ClusterInfo, bool) {
 }
 
 // WatchClusters returns the event channel.
-func (w *BackendInformerRegistry) WatchClusters() <-chan ClusterEvent {
+func (w *EAIGWRegistry) WatchClusters() <-chan ClusterEvent {
 	return w.eventCh
 }
 
 // Ready reports whether the watcher has completed initial sync.
-func (w *BackendInformerRegistry) Ready() bool {
+func (w *EAIGWRegistry) Ready() bool {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 	return w.ready
 }
 
 // Start begins watching Envoy AI Gateway Backend CRDs.
-func (w *BackendInformerRegistry) Start(ctx context.Context) error {
+func (w *EAIGWRegistry) Start(ctx context.Context) error {
 	factory := dynamicinformer.NewFilteredDynamicSharedInformerFactory(
 		w.client,
 		w.config.ResyncPeriod,
@@ -172,12 +172,12 @@ func (w *BackendInformerRegistry) Start(ctx context.Context) error {
 	w.mu.Unlock()
 
 	w.metrics.NilSafeIncReconcile()
-	w.logger.Info("BackendInformerRegistry started and synced", "clusters", len(w.clusters))
+	w.logger.Info("EAIGWRegistry started and synced", "clusters", len(w.clusters))
 	return nil
 }
 
 // Stop halts the watcher and closes the event channel.
-func (w *BackendInformerRegistry) Stop() {
+func (w *EAIGWRegistry) Stop() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.stopped {
@@ -186,10 +186,10 @@ func (w *BackendInformerRegistry) Stop() {
 	w.stopped = true
 	close(w.stopCh)
 	close(w.eventCh)
-	w.logger.Info("BackendInformerRegistry stopped")
+	w.logger.Info("EAIGWRegistry stopped")
 }
 
-func (w *BackendInformerRegistry) onAdd(obj interface{}) {
+func (w *EAIGWRegistry) onAdd(obj interface{}) {
 	u, ok := obj.(*unstructured.Unstructured)
 	if !ok {
 		return
@@ -211,7 +211,7 @@ func (w *BackendInformerRegistry) onAdd(obj interface{}) {
 	w.logger.Info("cluster added", "id", info.ID, "endpoint", info.MCPEndpoint)
 }
 
-func (w *BackendInformerRegistry) onUpdate(oldObj, newObj interface{}) {
+func (w *EAIGWRegistry) onUpdate(oldObj, newObj interface{}) {
 	u, ok := newObj.(*unstructured.Unstructured)
 	if !ok {
 		return
@@ -232,7 +232,7 @@ func (w *BackendInformerRegistry) onUpdate(oldObj, newObj interface{}) {
 	w.logger.V(1).Info("cluster updated", "id", info.ID)
 }
 
-func (w *BackendInformerRegistry) onDelete(obj interface{}) {
+func (w *EAIGWRegistry) onDelete(obj interface{}) {
 	u, ok := obj.(*unstructured.Unstructured)
 	if !ok {
 		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
@@ -259,7 +259,7 @@ func (w *BackendInformerRegistry) onDelete(obj interface{}) {
 	}
 }
 
-func (w *BackendInformerRegistry) emit(event ClusterEvent) {
+func (w *EAIGWRegistry) emit(event ClusterEvent) {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 	if w.stopped {
@@ -284,9 +284,10 @@ func ExtractClusterInfo(u *unstructured.Unstructured) (ClusterInfo, error) {
 	}
 
 	info := ClusterInfo{
-		ID:        name,
-		Namespace: u.GetNamespace(),
-		Labels:    u.GetLabels(),
+		ID:         name,
+		Namespace:  u.GetNamespace(),
+		Labels:     u.GetLabels(),
+		ToolPrefix: name + "__",
 	}
 
 	// Extract display name from annotation or label.

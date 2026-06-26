@@ -15,21 +15,24 @@ limitations under the License.
 */
 
 // Package registry implements the ClusterRegistry interface for multi-cluster
-// federation. It discovers managed clusters by watching Envoy AI Gateway Backend
-// CRDs labeled with kubernaut.ai/managed=true. Each Backend represents a managed
-// cluster's K8s MCP Server endpoint behind the MCP Gateway.
+// federation. It discovers managed clusters by watching MCP Gateway CRDs
+// labeled with kubernaut.ai/managed=true. Concrete implementations exist for
+// Envoy AI Gateway (EAIGWRegistry) and Kuadrant (KuadrantRegistry).
 package registry
 
 import "context"
 
 // ClusterInfo holds metadata about a discovered managed cluster.
 type ClusterInfo struct {
-	// ID is the unique identifier (Backend CR name in Envoy AI Gateway).
+	// ID is the unique identifier (CR name in the MCP Gateway).
 	ID string
 	// Name is the human-readable cluster display name.
 	Name string
 	// MCPEndpoint is the URL to reach the cluster's MCP server through the gateway.
 	MCPEndpoint string
+	// ToolPrefix is the prefix used by the MCP Gateway for this cluster's tools.
+	// EAIGW uses "{name}__", Kuadrant reads it from MCPServerRegistration spec.prefix.
+	ToolPrefix string
 	// Labels from the MCP Gateway CRD resource.
 	Labels map[string]string
 	// Namespace where the MCP Gateway CRD was found.
@@ -51,6 +54,13 @@ const (
 	EventDeleted EventType = "Deleted"
 )
 
+// ToolPrefixResolver resolves the gateway-specific tool prefix for a cluster.
+// Implementations typically wrap a ClusterRegistry and return ClusterInfo.ToolPrefix.
+// When nil or returning empty, callers fall back to the EAIGW "{clusterID}__" convention.
+type ToolPrefixResolver interface {
+	ToolPrefixFor(clusterID string) string
+}
+
 // ClusterRegistry provides access to discovered managed clusters.
 type ClusterRegistry interface {
 	// List returns all currently known managed clusters.
@@ -62,7 +72,7 @@ type ClusterRegistry interface {
 	WatchClusters() <-chan ClusterEvent
 	// Ready reports whether the registry has completed at least one successful sync.
 	Ready() bool
-	// Start begins watching for Envoy AI Gateway Backend CRDs.
+	// Start begins watching for MCP Gateway CRDs.
 	Start(ctx context.Context) error
 	// Stop halts the watcher and closes subscriber channels.
 	Stop()

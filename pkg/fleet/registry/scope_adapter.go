@@ -32,3 +32,26 @@ func (a *ClusterLookupAdapter) IsKnownCluster(clusterID string) bool {
 	_, found := a.registry.Get(clusterID)
 	return found
 }
+
+// ToolPrefixAdapter adapts a ClusterRegistry to ToolPrefixResolver,
+// returning the ToolPrefix stored in ClusterInfo for a given cluster ID.
+type ToolPrefixAdapter struct {
+	registry ClusterRegistry
+}
+
+// Compile-time interface compliance.
+var _ ToolPrefixResolver = (*ToolPrefixAdapter)(nil)
+
+// NewToolPrefixAdapter wraps a ClusterRegistry as a ToolPrefixResolver.
+func NewToolPrefixAdapter(registry ClusterRegistry) *ToolPrefixAdapter {
+	return &ToolPrefixAdapter{registry: registry}
+}
+
+// ToolPrefixFor returns the ToolPrefix for the given cluster, or empty if unknown.
+func (a *ToolPrefixAdapter) ToolPrefixFor(clusterID string) string {
+	info, found := a.registry.Get(clusterID)
+	if !found {
+		return ""
+	}
+	return info.ToolPrefix
+}
