@@ -19,7 +19,11 @@ limitations under the License.
 // package for consistent configuration and connection management.
 package fleet
 
-import "fmt"
+import (
+	"fmt"
+	"os"
+	"strings"
+)
 
 // Supported backend types for federated scope checking.
 const (
@@ -79,7 +83,7 @@ func (c FleetConfig) Validate() error {
 	endpoint := c.EffectiveEndpoint()
 
 	if !supportedBackends[backend] {
-		return fmt.Errorf("fleet: unsupported backend %q; must be one of: fmc, acm, valkey", backend)
+		return fmt.Errorf("fleet: unsupported backend %q; must be one of: fmc, acm", backend)
 	}
 
 	if endpoint == "" {
@@ -94,7 +98,36 @@ func (c FleetConfig) effectiveBackend() string {
 	return c.Backend
 }
 
-// EffectiveEndpoint returns the configured endpoint.
+// FMC service discovery constants.
+const (
+	fmcServiceName = "fmc-service"
+	fmcServicePort = "8080"
+)
+
+// EffectiveEndpoint returns the configured endpoint, or derives it for the FMC
+// backend when no explicit endpoint is set. Auto-derivation uses the same
+// namespace detection pattern as DataStorage (POD_NAMESPACE env > SA mount > "default").
 func (c FleetConfig) EffectiveEndpoint() string {
-	return c.Endpoint
+	if c.Endpoint != "" {
+		return c.Endpoint
+	}
+	if c.Backend == BackendFMC {
+		ns := detectNamespace()
+		return fmt.Sprintf("http://%s.%s.svc.cluster.local:%s", fmcServiceName, ns, fmcServicePort)
+	}
+	return ""
+}
+
+// detectNamespace returns the Kubernetes namespace this pod is running in.
+// Priority: POD_NAMESPACE env var > ServiceAccount mount > "default".
+func detectNamespace() string {
+	if ns := os.Getenv("POD_NAMESPACE"); ns != "" {
+		return ns
+	}
+	if data, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace"); err == nil {
+		if ns := strings.TrimSpace(string(data)); ns != "" {
+			return ns
+		}
+	}
+	return "default"
 }

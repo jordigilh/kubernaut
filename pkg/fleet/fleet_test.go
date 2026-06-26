@@ -43,15 +43,15 @@ var _ = Describe("FleetConfig shared type (Phase E)", func() {
 		Expect(cfg.Endpoint).To(Equal("http://fmc:8080"))
 	})
 
-	It("UT-FLEET-CFG-002 [CM-6]: Validate rejects empty Endpoint when fleet is enabled", func() {
+	It("UT-FLEET-CFG-002 [CM-6]: Validate rejects empty Endpoint for non-FMC backends", func() {
 		cfg := fleet.FleetConfig{
 			Enabled: true,
-			Backend: "fmc",
+			Backend: "acm",
 		}
 
 		err := cfg.Validate()
 		Expect(err).To(HaveOccurred(),
-			"FleetConfig.Validate must reject empty Endpoint when enabled (CM-6)")
+			"FleetConfig.Validate must reject empty Endpoint for acm backend (CM-6)")
 	})
 
 	It("UT-FLEET-CFG-003 [CM-6]: Validate accepts disabled fleet without Backend/Endpoint", func() {
@@ -79,7 +79,7 @@ var _ = Describe("FleetConfig — BackendValkey removal (Phase 3)", func() {
 		Expect(err.Error()).To(ContainSubstring("unsupported backend"))
 	})
 
-	It("UT-SF-054-003 [CM-6]: EffectiveEndpoint returns only Endpoint, no ValkeyAddr fallback", func() {
+	It("UT-SF-054-003 [CM-6]: EffectiveEndpoint returns explicit Endpoint when set, auto-derives for fmc when empty", func() {
 		cfg := fleet.FleetConfig{
 			Enabled:  true,
 			Backend:  "fmc",
@@ -91,8 +91,15 @@ var _ = Describe("FleetConfig — BackendValkey removal (Phase 3)", func() {
 			Enabled: true,
 			Backend: "fmc",
 		}
-		Expect(cfgEmpty.EffectiveEndpoint()).To(BeEmpty(),
-			"with no Endpoint and no ValkeyAddr fallback, must return empty string")
+		Expect(cfgEmpty.EffectiveEndpoint()).To(ContainSubstring("fmc-service"),
+			"FMC backend auto-derives endpoint from namespace when Endpoint is empty")
+
+		cfgACMEmpty := fleet.FleetConfig{
+			Enabled: true,
+			Backend: "acm",
+		}
+		Expect(cfgACMEmpty.EffectiveEndpoint()).To(BeEmpty(),
+			"non-FMC backends must return empty when Endpoint is not set")
 	})
 })
 
@@ -108,16 +115,16 @@ var _ = Describe("FleetConfig adapter pattern (Phase 2)", func() {
 		Expect(cfg.Endpoint).To(Equal("http://fmc.kubernaut.svc:8080"))
 	})
 
-	It("UT-FLEET-CFG-011 [CM-6]: Validate rejects empty Endpoint when fleet is enabled", func() {
+	It("UT-FLEET-CFG-011 [CM-6]: Validate rejects empty Endpoint for non-FMC backends", func() {
 		cfg := fleet.FleetConfig{
 			Enabled:  true,
-			Backend:  "fmc",
+			Backend:  "acm",
 			Endpoint: "",
 		}
 
 		err := cfg.Validate()
 		Expect(err).To(HaveOccurred(),
-			"must reject empty Endpoint when fleet is enabled")
+			"must reject empty Endpoint for acm backend")
 	})
 
 	It("UT-FLEET-CFG-012 [CM-6]: Validate accepts disabled fleet without Backend/Endpoint", func() {
@@ -161,5 +168,82 @@ var _ = Describe("FleetConfig adapter pattern (Phase 2)", func() {
 
 		err := cfg.Validate()
 		Expect(err).ToNot(HaveOccurred())
+	})
+})
+
+var _ = Describe("FleetConfig FMC endpoint auto-derivation (BR-INTEGRATION-065)", func() {
+	It("UT-FLEET-CFG-020 [CM-6]: EffectiveEndpoint derives FMC URL from POD_NAMESPACE when Endpoint is empty", func() {
+		GinkgoT().Setenv("POD_NAMESPACE", "kubernaut-system")
+
+		cfg := fleet.FleetConfig{
+			Enabled: true,
+			Backend: "fmc",
+		}
+
+		Expect(cfg.EffectiveEndpoint()).To(Equal("http://fmc-service.kubernaut-system.svc.cluster.local:8080"),
+			"FMC endpoint must be auto-derived from POD_NAMESPACE when not explicitly set")
+	})
+
+	It("UT-FLEET-CFG-021 [CM-6]: EffectiveEndpoint returns explicit Endpoint even when POD_NAMESPACE is set", func() {
+		GinkgoT().Setenv("POD_NAMESPACE", "kubernaut-system")
+
+		cfg := fleet.FleetConfig{
+			Enabled:  true,
+			Backend:  "fmc",
+			Endpoint: "http://custom-fmc:9090",
+		}
+
+		Expect(cfg.EffectiveEndpoint()).To(Equal("http://custom-fmc:9090"),
+			"explicit Endpoint must take precedence over auto-derivation")
+	})
+
+	It("UT-FLEET-CFG-022 [CM-6]: EffectiveEndpoint falls back to 'default' namespace when POD_NAMESPACE is unset", func() {
+		GinkgoT().Setenv("POD_NAMESPACE", "")
+
+		cfg := fleet.FleetConfig{
+			Enabled: true,
+			Backend: "fmc",
+		}
+
+		Expect(cfg.EffectiveEndpoint()).To(Equal("http://fmc-service.default.svc.cluster.local:8080"),
+			"must use 'default' namespace when POD_NAMESPACE is not set and SA mount unavailable")
+	})
+
+	It("UT-FLEET-CFG-023 [CM-6]: EffectiveEndpoint does NOT auto-derive for acm backend", func() {
+		GinkgoT().Setenv("POD_NAMESPACE", "kubernaut-system")
+
+		cfg := fleet.FleetConfig{
+			Enabled: true,
+			Backend: "acm",
+		}
+
+		Expect(cfg.EffectiveEndpoint()).To(BeEmpty(),
+			"auto-derivation must only apply to fmc backend, not acm")
+	})
+
+	It("UT-FLEET-CFG-024 [CM-6]: Validate accepts fmc backend without explicit Endpoint (auto-derived)", func() {
+		GinkgoT().Setenv("POD_NAMESPACE", "kubernaut-system")
+
+		cfg := fleet.FleetConfig{
+			Enabled: true,
+			Backend: "fmc",
+		}
+
+		err := cfg.Validate()
+		Expect(err).ToNot(HaveOccurred(),
+			"Validate must accept fmc backend with auto-derived endpoint")
+	})
+
+	It("UT-FLEET-CFG-025 [CM-6]: Validate still rejects acm backend without explicit Endpoint", func() {
+		GinkgoT().Setenv("POD_NAMESPACE", "kubernaut-system")
+
+		cfg := fleet.FleetConfig{
+			Enabled: true,
+			Backend: "acm",
+		}
+
+		err := cfg.Validate()
+		Expect(err).To(HaveOccurred(),
+			"acm backend must still require explicit Endpoint")
 	})
 })

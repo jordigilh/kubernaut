@@ -39,12 +39,12 @@ var _ = Describe("NewScopeChecker factory (BR-INTEGRATION-065)", func() {
 			"disabled fleet must return the exact same local checker instance")
 	})
 
-	It("UT-FLEET-FAC-002: enabled fleet with empty endpoint returns local checker", func() {
-		cfg := fleet.FleetConfig{Enabled: true, Backend: "fmc", Endpoint: ""}
+	It("UT-FLEET-FAC-002: enabled fleet with empty endpoint and non-FMC backend returns local checker", func() {
+		cfg := fleet.FleetConfig{Enabled: true, Backend: "acm", Endpoint: ""}
 		checker, err := fleet.NewScopeChecker(local, cfg, logr.Discard())
 		Expect(err).ToNot(HaveOccurred())
 		Expect(checker).To(BeIdenticalTo(local),
-			"empty endpoint must fall back to local checker")
+			"empty endpoint for non-FMC backend must fall back to local checker")
 	})
 
 	It("UT-FLEET-FAC-003 [AC-4]: BackendFMC with HTTP endpoint returns FederatedScopeChecker using FMC HTTP client", func() {
