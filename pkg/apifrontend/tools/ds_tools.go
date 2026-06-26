@@ -102,6 +102,9 @@ func HandleGetRemediationHistory(ctx context.Context, client ds.Client, args Get
 	if args.SpecHash == "" {
 		return GetRemediationHistoryResult{}, fmt.Errorf("spec_hash is required for remediation history lookup")
 	}
+	if !strings.HasPrefix(args.SpecHash, "sha256:") {
+		return GetRemediationHistoryResult{}, fmt.Errorf("spec_hash must use sha256: prefix (got %q)", args.SpecHash)
+	}
 	history, err := client.GetRemediationHistory(ctx, ds.HistoryOpts{
 		Namespace: args.Namespace, Kind: args.Kind, Name: args.Name, Since: args.Since, SpecHash: args.SpecHash,
 	})

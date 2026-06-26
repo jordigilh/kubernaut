@@ -146,6 +146,33 @@ var _ = Describe("kubernaut_get_remediation_history", func() {
 		Expect(capturedOpts.Namespace).To(BeEmpty())
 	})
 
+	It("UT-AF-1462-E01: spec_hash without sha256: prefix returns format error", func() {
+		mock := &ds.MockClient{
+			GetRemediationHistoryFn: func(ctx context.Context, opts ds.HistoryOpts) ([]ds.HistoricalRemediation, error) {
+				Fail("DS client should not be called with malformed spec_hash")
+				return nil, nil
+			},
+		}
+		_, err := tools.HandleGetRemediationHistory(ctx, mock, tools.GetRemediationHistoryArgs{
+			Kind: "Deployment", Name: "api", SpecHash: "md5:badprefix",
+		})
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("sha256: prefix"))
+	})
+
+	It("UT-AF-1462-E02: spec_hash with valid sha256: prefix passes validation", func() {
+		mock := &ds.MockClient{
+			GetRemediationHistoryFn: func(ctx context.Context, opts ds.HistoryOpts) ([]ds.HistoricalRemediation, error) {
+				return []ds.HistoricalRemediation{{ID: "rr-1"}}, nil
+			},
+		}
+		result, err := tools.HandleGetRemediationHistory(ctx, mock, tools.GetRemediationHistoryArgs{
+			Kind: "Deployment", Name: "api", SpecHash: "sha256:e3b0c44298fc1c149afbf4c8996fb924",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Count).To(Equal(1))
+	})
+
 	It("UT-AF-1462-006: since parameter passes through correctly", func() {
 		var capturedOpts ds.HistoryOpts
 		mock := &ds.MockClient{
