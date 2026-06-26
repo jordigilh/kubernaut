@@ -31,9 +31,17 @@ const (
 	ToolDelete         = "resources_delete"
 )
 
-// ClusterTool returns the MCP Gateway-prefixed tool name for a given cluster.
-// The MCP Gateway uses the convention "{clusterID}__{toolName}" to route tool
-// calls to the correct backend K8s MCP Server.
+// ClusterTool returns the MCP Gateway-prefixed tool name for a given cluster
+// using the EAIGW convention "{clusterID}__{toolName}".
 func ClusterTool(clusterID, tool string) string {
 	return clusterID + "__" + tool
 }
+
+// ClusterToolWithPrefix constructs a tool name by prepending the given prefix.
+// The prefix is gateway-specific: EAIGW uses "{id}__", Kuadrant uses the value
+// from MCPServerRegistration spec.prefix (e.g., "cluster_a_").
+// If prefix is empty, the bare tool name is returned (defensive).
+func ClusterToolWithPrefix(prefix, tool string) string {
+	return prefix + tool
+}
+

@@ -28,7 +28,7 @@ import (
 var _ scope.ScopeChecker = (*FederatedScopeChecker)(nil)
 
 // ClusterLookup checks whether a cluster is known to Kubernaut's fleet registry.
-// Implemented by BackendInformerRegistry via the adapter below.
+// Implemented by EAIGWRegistry/KuadrantRegistry via the adapter below.
 type ClusterLookup interface {
 	IsKnownCluster(clusterID string) bool
 }

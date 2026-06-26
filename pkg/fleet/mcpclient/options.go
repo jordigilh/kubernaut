@@ -28,6 +28,7 @@ type clientConfig struct {
 	httpClient *http.Client
 	timeout    time.Duration
 	clusterID  string
+	toolPrefix string
 }
 
 // WithClusterID binds the client to a specific remote cluster. The cluster ID
@@ -36,6 +37,17 @@ type clientConfig struct {
 func WithClusterID(id string) Option {
 	return func(cfg *clientConfig) {
 		cfg.clusterID = id
+	}
+}
+
+// WithToolPrefix sets the gateway-specific tool prefix used when constructing
+// MCP tool call names. When set, tool names are resolved as "{prefix}{tool}"
+// via ClusterToolWithPrefix instead of the default EAIGW "{clusterID}__{tool}"
+// convention. This enables Kuadrant and other gateways that use different
+// prefix schemes.
+func WithToolPrefix(prefix string) Option {
+	return func(cfg *clientConfig) {
+		cfg.toolPrefix = prefix
 	}
 }
 

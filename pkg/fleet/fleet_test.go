@@ -171,6 +171,57 @@ var _ = Describe("FleetConfig adapter pattern (Phase 2)", func() {
 	})
 })
 
+var _ = Describe("FleetConfig MCPGatewayType (MCP Gateway Adapter)", func() {
+	It("UT-FLEET-CFG-030 [CM-6]: Validate accepts valid MCPGatewayType eaigw", func() {
+		cfg := fleet.FleetConfig{
+			Enabled:            true,
+			Backend:            "fmc",
+			Endpoint:           "http://fmc:8080",
+			MCPGatewayEndpoint: "http://gw:8080/mcp",
+			MCPGatewayType:     fleet.GatewayEAIGW,
+		}
+		Expect(cfg.Validate()).ToNot(HaveOccurred())
+	})
+
+	It("UT-FLEET-CFG-031 [CM-6]: Validate accepts valid MCPGatewayType kuadrant", func() {
+		cfg := fleet.FleetConfig{
+			Enabled:            true,
+			Backend:            "fmc",
+			Endpoint:           "http://fmc:8080",
+			MCPGatewayEndpoint: "http://gw:8080/mcp",
+			MCPGatewayType:     fleet.GatewayKuadrant,
+		}
+		Expect(cfg.Validate()).ToNot(HaveOccurred())
+	})
+
+	It("UT-FLEET-CFG-032 [CM-6]: Validate rejects unsupported MCPGatewayType with descriptive error", func() {
+		cfg := fleet.FleetConfig{
+			Enabled:            true,
+			Backend:            "fmc",
+			Endpoint:           "http://fmc:8080",
+			MCPGatewayEndpoint: "http://gw:8080/mcp",
+			MCPGatewayType:     fleet.MCPGatewayType("invalid-gw"),
+		}
+		err := cfg.Validate()
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("unsupported mcpGatewayType"))
+	})
+
+	It("UT-FLEET-CFG-033 [CM-6]: EffectiveMCPGatewayType defaults to eaigw when field is empty", func() {
+		cfg := fleet.FleetConfig{}
+		Expect(cfg.EffectiveMCPGatewayType()).To(Equal(fleet.GatewayEAIGW))
+	})
+
+	It("UT-FLEET-CFG-034 [CM-6]: Validate skips MCPGatewayType check when MCPGatewayEndpoint is empty", func() {
+		cfg := fleet.FleetConfig{
+			Enabled:  true,
+			Backend:  "fmc",
+			Endpoint: "http://fmc:8080",
+		}
+		Expect(cfg.Validate()).ToNot(HaveOccurred())
+	})
+})
+
 var _ = Describe("FleetConfig FMC endpoint auto-derivation (BR-INTEGRATION-065)", func() {
 	It("UT-FLEET-CFG-020 [CM-6]: EffectiveEndpoint derives FMC URL from POD_NAMESPACE when Endpoint is empty", func() {
 		GinkgoT().Setenv("POD_NAMESPACE", "kubernaut-system")

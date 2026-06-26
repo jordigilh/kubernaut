@@ -36,18 +36,33 @@ var _ ResourceWriter = (*WriterClient)(nil)
 // read-only consumers (SP, FMC) never gain write access.
 //
 // The target cluster is fixed at construction time via clusterID.
+// When toolPrefix is set, tool names use the gateway-specific prefix;
+// otherwise the EAIGW "{clusterID}__{tool}" convention is applied.
 type WriterClient struct {
-	session   *mcp.ClientSession
-	clusterID string
+	session    *mcp.ClientSession
+	clusterID  string
+	toolPrefix string
 }
 
 // NewWriterFromSession creates a WriterClient from an existing MCP session.
+// Options (optional): WithToolPrefix sets the gateway-specific tool prefix.
 // Panics if session is nil (fail-fast, same contract as NewFromSession).
-func NewWriterFromSession(session *mcp.ClientSession, clusterID string) *WriterClient {
+func NewWriterFromSession(session *mcp.ClientSession, clusterID string, opts ...Option) *WriterClient {
 	if session == nil {
 		panic("mcpclient.NewWriterFromSession: session must not be nil")
 	}
-	return &WriterClient{session: session, clusterID: clusterID}
+	cfg := &clientConfig{}
+	for _, opt := range opts {
+		opt(cfg)
+	}
+	return &WriterClient{session: session, clusterID: clusterID, toolPrefix: cfg.toolPrefix}
+}
+
+func (w *WriterClient) resolveToolName(tool string) string {
+	if w.toolPrefix != "" {
+		return ClusterToolWithPrefix(w.toolPrefix, tool)
+	}
+	return ClusterTool(w.clusterID, tool)
 }
 
 // Create implements client.Writer. It serializes the object to JSON and sends
@@ -58,7 +73,7 @@ func (w *WriterClient) Create(ctx context.Context, obj client.Object, _ ...clien
 		return fmt.Errorf("serialize object for Create: %w", err)
 	}
 
-	toolName := ClusterTool(w.clusterID, ToolCreateOrUpdate)
+	toolName := w.resolveToolName(ToolCreateOrUpdate)
 	result, err := w.session.CallTool(ctx, &mcp.CallToolParams{
 		Name: toolName,
 		Arguments: map[string]any{
@@ -85,7 +100,7 @@ func (w *WriterClient) Delete(ctx context.Context, obj client.Object, _ ...clien
 		return fmt.Errorf("object GVK Kind must be set before calling Delete")
 	}
 
-	toolName := ClusterTool(w.clusterID, ToolDelete)
+	toolName := w.resolveToolName(ToolDelete)
 	args := map[string]any{
 		"kind":       gvk.Kind,
 		"apiVersion": gvk.GroupVersion().String(),
@@ -113,7 +128,7 @@ func (w *WriterClient) Update(ctx context.Context, obj client.Object, _ ...clien
 		return fmt.Errorf("serialize object for Update: %w", err)
 	}
 
-	toolName := ClusterTool(w.clusterID, ToolCreateOrUpdate)
+	toolName := w.resolveToolName(ToolCreateOrUpdate)
 	result, err := w.session.CallTool(ctx, &mcp.CallToolParams{
 		Name: toolName,
 		Arguments: map[string]any{
