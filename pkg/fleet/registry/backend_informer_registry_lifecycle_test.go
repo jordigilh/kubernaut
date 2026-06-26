@@ -26,9 +26,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
-func newTestWatcher() *CRDWatcher {
+func newTestWatcher() *BackendInformerRegistry {
 	logger := zap.New(zap.UseDevMode(true))
-	return NewCRDWatcher(nil, CRDWatcherConfig{
+	return NewBackendInformerRegistry(nil, BackendInformerRegistryConfig{
 		ChannelSize:  8,
 		ResyncPeriod: time.Minute,
 	}, nil, logger)
@@ -53,11 +53,11 @@ func newBackendUnstructured(name, namespace, endpoint string) *unstructured.Unst
 	}
 }
 
-// UT-FLEET-CRD: CRDWatcher lifecycle unit tests
+// UT-FLEET-CRD: BackendInformerRegistry lifecycle unit tests
 // Authority: BR-INTEGRATION-065 (Multi-Cluster Fleet Registry)
 // FedRAMP: SI-4 (Information System Monitoring) -- cluster event tracking
-var _ = Describe("UT-FLEET-CRD: CRDWatcher lifecycle", func() {
-	var w *CRDWatcher
+var _ = Describe("UT-FLEET-CRD: BackendInformerRegistry lifecycle", func() {
+	var w *BackendInformerRegistry
 
 	BeforeEach(func() {
 		w = newTestWatcher()

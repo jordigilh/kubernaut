@@ -60,8 +60,8 @@ var MCPRouteGVR = schema.GroupVersionResource{
 	Resource: "mcproutes",
 }
 
-// CRDWatcherConfig configures the CRDWatcher.
-type CRDWatcherConfig struct {
+// BackendInformerRegistryConfig configures the BackendInformerRegistry.
+type BackendInformerRegistryConfig struct {
 	// Namespace restricts watching to a specific namespace. Empty watches all.
 	Namespace string
 	// ResyncPeriod for the informer. Defaults to 5 minutes.
@@ -70,11 +70,11 @@ type CRDWatcherConfig struct {
 	ChannelSize int
 }
 
-// CRDWatcher implements ClusterRegistry by watching Envoy AI Gateway Backend CRDs
+// BackendInformerRegistry implements ClusterRegistry by watching Envoy AI Gateway Backend CRDs
 // via a dynamic informer. Only resources labeled kubernaut.ai/managed=true are tracked.
-type CRDWatcher struct {
+type BackendInformerRegistry struct {
 	client  dynamic.Interface
-	config  CRDWatcherConfig
+	config  BackendInformerRegistryConfig
 	metrics *Metrics
 	logger  logr.Logger
 
@@ -87,15 +87,15 @@ type CRDWatcher struct {
 	stopped bool
 }
 
-// NewCRDWatcher creates a new CRDWatcher.
-func NewCRDWatcher(client dynamic.Interface, cfg CRDWatcherConfig, metrics *Metrics, logger logr.Logger) *CRDWatcher {
+// NewBackendInformerRegistry creates a new BackendInformerRegistry.
+func NewBackendInformerRegistry(client dynamic.Interface, cfg BackendInformerRegistryConfig, metrics *Metrics, logger logr.Logger) *BackendInformerRegistry {
 	if cfg.ResyncPeriod == 0 {
 		cfg.ResyncPeriod = defaultResyncPeriod
 	}
 	if cfg.ChannelSize == 0 {
 		cfg.ChannelSize = defaultChannelSize
 	}
-	return &CRDWatcher{
+	return &BackendInformerRegistry{
 		client:   client,
 		config:   cfg,
 		metrics:  metrics,
@@ -107,7 +107,7 @@ func NewCRDWatcher(client dynamic.Interface, cfg CRDWatcherConfig, metrics *Metr
 }
 
 // List returns all known managed clusters.
-func (w *CRDWatcher) List() []ClusterInfo {
+func (w *BackendInformerRegistry) List() []ClusterInfo {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 	result := make([]ClusterInfo, 0, len(w.clusters))
@@ -118,7 +118,7 @@ func (w *CRDWatcher) List() []ClusterInfo {
 }
 
 // Get returns cluster info by ID.
-func (w *CRDWatcher) Get(clusterID string) (ClusterInfo, bool) {
+func (w *BackendInformerRegistry) Get(clusterID string) (ClusterInfo, bool) {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 	info, ok := w.clusters[clusterID]
@@ -126,19 +126,19 @@ func (w *CRDWatcher) Get(clusterID string) (ClusterInfo, bool) {
 }
 
 // WatchClusters returns the event channel.
-func (w *CRDWatcher) WatchClusters() <-chan ClusterEvent {
+func (w *BackendInformerRegistry) WatchClusters() <-chan ClusterEvent {
 	return w.eventCh
 }
 
 // Ready reports whether the watcher has completed initial sync.
-func (w *CRDWatcher) Ready() bool {
+func (w *BackendInformerRegistry) Ready() bool {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 	return w.ready
 }
 
 // Start begins watching Envoy AI Gateway Backend CRDs.
-func (w *CRDWatcher) Start(ctx context.Context) error {
+func (w *BackendInformerRegistry) Start(ctx context.Context) error {
 	factory := dynamicinformer.NewFilteredDynamicSharedInformerFactory(
 		w.client,
 		w.config.ResyncPeriod,
@@ -172,12 +172,12 @@ func (w *CRDWatcher) Start(ctx context.Context) error {
 	w.mu.Unlock()
 
 	w.metrics.NilSafeIncReconcile()
-	w.logger.Info("CRDWatcher started and synced", "clusters", len(w.clusters))
+	w.logger.Info("BackendInformerRegistry started and synced", "clusters", len(w.clusters))
 	return nil
 }
 
 // Stop halts the watcher and closes the event channel.
-func (w *CRDWatcher) Stop() {
+func (w *BackendInformerRegistry) Stop() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.stopped {
@@ -186,10 +186,10 @@ func (w *CRDWatcher) Stop() {
 	w.stopped = true
 	close(w.stopCh)
 	close(w.eventCh)
-	w.logger.Info("CRDWatcher stopped")
+	w.logger.Info("BackendInformerRegistry stopped")
 }
 
-func (w *CRDWatcher) onAdd(obj interface{}) {
+func (w *BackendInformerRegistry) onAdd(obj interface{}) {
 	u, ok := obj.(*unstructured.Unstructured)
 	if !ok {
 		return
@@ -211,7 +211,7 @@ func (w *CRDWatcher) onAdd(obj interface{}) {
 	w.logger.Info("cluster added", "id", info.ID, "endpoint", info.MCPEndpoint)
 }
 
-func (w *CRDWatcher) onUpdate(oldObj, newObj interface{}) {
+func (w *BackendInformerRegistry) onUpdate(oldObj, newObj interface{}) {
 	u, ok := newObj.(*unstructured.Unstructured)
 	if !ok {
 		return
@@ -232,7 +232,7 @@ func (w *CRDWatcher) onUpdate(oldObj, newObj interface{}) {
 	w.logger.V(1).Info("cluster updated", "id", info.ID)
 }
 
-func (w *CRDWatcher) onDelete(obj interface{}) {
+func (w *BackendInformerRegistry) onDelete(obj interface{}) {
 	u, ok := obj.(*unstructured.Unstructured)
 	if !ok {
 		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
@@ -259,7 +259,7 @@ func (w *CRDWatcher) onDelete(obj interface{}) {
 	}
 }
 
-func (w *CRDWatcher) emit(event ClusterEvent) {
+func (w *BackendInformerRegistry) emit(event ClusterEvent) {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 	if w.stopped {
