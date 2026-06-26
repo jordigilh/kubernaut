@@ -26,18 +26,37 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
+// ScopeCheckerOption configures optional behavior for NewScopeChecker.
+type ScopeCheckerOption func(*scopeCheckerOptions)
+
+type scopeCheckerOptions struct {
+	clusterLookup ClusterLookup
+}
+
+// WithClusterRegistry adds a cluster-level precondition to scope checks using
+// the provided ClusterLookup. When set, remote scope checks first verify the
+// cluster is known before proceeding to resource-level checks.
+func WithClusterRegistry(lookup ClusterLookup) ScopeCheckerOption {
+	return func(o *scopeCheckerOptions) {
+		o.clusterLookup = lookup
+	}
+}
+
 // NewScopeChecker creates a scope.ScopeChecker appropriate for the given FleetConfig.
 //
 // When fleet is disabled (or no endpoint configured), returns the local checker unchanged.
 // When fleet is enabled, wraps the local checker with a FederatedScopeChecker that
 // routes local checks to scope.Manager and remote checks to the configured backend.
 //
+// Options:
+//   - WithClusterRegistry: adds cluster-level precondition (3-level hierarchy)
+//
 // Supported backends:
 //   - "fmc": FMC HTTP client — queries the FMC REST API for scope checks (ADR-068)
 //   - "acm": ACM Search GraphQL adapter — queries ACM Search for scope checks (ADR-068)
 //
 // References: ADR-068, BR-INTEGRATION-065
-func NewScopeChecker(localChecker scope.ScopeChecker, cfg FleetConfig, logger logr.Logger) (scope.ScopeChecker, error) {
+func NewScopeChecker(localChecker scope.ScopeChecker, cfg FleetConfig, logger logr.Logger, opts ...ScopeCheckerOption) (scope.ScopeChecker, error) {
 	if !cfg.Enabled {
 		return localChecker, nil
 	}
@@ -47,14 +66,24 @@ func NewScopeChecker(localChecker scope.ScopeChecker, cfg FleetConfig, logger lo
 		return localChecker, nil
 	}
 
+	o := &scopeCheckerOptions{}
+	for _, opt := range opts {
+		opt(o)
+	}
+
+	var checkerOpts []FederatedScopeCheckerOption
+	if o.clusterLookup != nil {
+		checkerOpts = append(checkerOpts, WithClusterLookup(o.clusterLookup))
+	}
+
 	backend := cfg.effectiveBackend()
 	switch backend {
 	case BackendFMC:
 		remoteChecker := fmc.NewHTTPClient(endpoint)
-		return NewFederatedScopeChecker(localChecker, remoteChecker, logger), nil
+		return NewFederatedScopeChecker(localChecker, remoteChecker, logger, checkerOpts...), nil
 	case BackendACM:
 		remoteChecker := acm.NewClient(endpoint)
-		return NewFederatedScopeChecker(localChecker, remoteChecker, logger), nil
+		return NewFederatedScopeChecker(localChecker, remoteChecker, logger, checkerOpts...), nil
 	default:
 		return nil, fmt.Errorf("fleet: unsupported backend %q", backend)
 	}

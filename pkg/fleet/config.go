@@ -51,6 +51,22 @@ type FleetConfig struct {
 	// For fmc: HTTP URL (e.g., "http://fmc.kubernaut.svc:8080")
 	// For acm: GraphQL URL (e.g., "https://search-api.open-cluster-management.svc:4010")
 	Endpoint string `yaml:"endpoint,omitempty"`
+
+	// MCPGatewayEndpoint is the Envoy AI Gateway SSE endpoint for remote K8s reads.
+	// When set, services that need remote cluster data (GW owner chain, SP enrichment)
+	// connect to the MCP Gateway to issue K8s MCP tool calls against managed clusters.
+	MCPGatewayEndpoint string `yaml:"mcpGatewayEndpoint,omitempty"`
+
+	// OAuth2 holds optional OAuth2 credentials for MCP Gateway authentication.
+	OAuth2 FleetOAuth2Config `yaml:"oauth2,omitempty"`
+}
+
+// FleetOAuth2Config holds OAuth2 credentials for MCP Gateway authentication.
+type FleetOAuth2Config struct {
+	Enabled              bool     `yaml:"enabled"`
+	TokenURL             string   `yaml:"tokenURL"`
+	CredentialsSecretRef string   `yaml:"credentialsSecretRef"`
+	Scopes               []string `yaml:"scopes,omitempty"`
 }
 
 // Validate checks that FleetConfig has all required fields when enabled.
