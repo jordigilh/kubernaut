@@ -540,8 +540,9 @@ fmc:
   syncInterval: "30s"
   keyTTL: "45s"
   mcpGatewayEndpoint: ""  # e.g., "http://envoy-ai-gateway.kubernaut-system.svc:8080/mcp"
+  gatewayType: "eaigw"  # MCP Gateway type: "eaigw" (Envoy AI Gateway) or "kuadrant" (Kuadrant MCP Gateway)
   valkeyAddr: ""  # e.g., "valkey:6379" — uses shared Valkey instance
-  namespace: "kubernaut-system"  # namespace to watch for Backend CRDs (Envoy AI Gateway)
+  namespace: "kubernaut-system"  # namespace to watch for MCP Gateway CRDs
   resources:
     requests:
       memory: 64Mi

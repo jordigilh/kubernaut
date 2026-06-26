@@ -57,6 +57,7 @@ func main() {
 		"syncInterval", cfg.SyncInterval,
 		"valkeyAddr", cfg.ValkeyAddr,
 		"mcpEndpoint", cfg.MCPGatewayEndpoint,
+		"gatewayType", cfg.GatewayType,
 		"apiAddr", cfg.APIAddr,
 		"metricsAddr", cfg.MetricsAddr)
 
@@ -84,6 +85,11 @@ func main() {
 			"secretPath", cfg.OAuth2SecretPath)
 	}
 
+	if cfg.MCPGatewayEndpoint == "" {
+		logger.Error(nil, "FMC_MCP_GATEWAY_ENDPOINT must be set")
+		os.Exit(1)
+	}
+
 	resilienceCfg := mcpclient.DefaultResilienceConfig()
 	mcpClient, err := mcpclient.NewResilient(ctx, cfg.MCPGatewayEndpoint, resilienceCfg, logger, opts...)
 	if err != nil {
@@ -109,9 +115,13 @@ func main() {
 	cacheReader := scopecache.NewValkeyCacheReader(cfg.ValkeyAddr)
 	defer func() { _ = cacheReader.Close() }()
 
-	clusterRegistry := registry.NewBackendInformerRegistry(dynClient, registry.BackendInformerRegistryConfig{
+	clusterRegistry, err := registry.NewClusterRegistry(registry.MCPGatewayType(cfg.GatewayType), dynClient, registry.RegistryConfig{
 		Namespace: cfg.Namespace,
 	}, registry.NewMetricsWithRegistry(reg), logger)
+	if err != nil {
+		logger.Error(err, "Failed to create cluster registry", "gatewayType", cfg.GatewayType)
+		os.Exit(1)
+	}
 	if err := clusterRegistry.Start(ctx); err != nil {
 		logger.Error(err, "Failed to start cluster registry")
 		os.Exit(1)
@@ -125,7 +135,11 @@ func main() {
 	}
 
 	readerFactory := fleet.ReaderFactoryFunc(func(_ context.Context, clusterID string) (client.Reader, error) {
-		return mcpclient.NewFromSession(mcpClient.Session(), clusterID), nil
+		var opts []mcpclient.Option
+		if info, found := clusterRegistry.Get(clusterID); found && info.ToolPrefix != "" {
+			opts = append(opts, mcpclient.WithToolPrefix(info.ToolPrefix))
+		}
+		return mcpclient.NewFromSession(mcpClient.Session(), clusterID, opts...), nil
 	})
 	syncer := fmc.NewSyncerWithReaderFactory(clusterRegistry, readerFactory, writer, syncerConfig, logger, metrics)
 
@@ -206,6 +220,7 @@ func main() {
 
 type config struct {
 	MCPGatewayEndpoint string
+	GatewayType        string
 	ValkeyAddr         string
 	Namespace          string
 	SyncInterval       time.Duration
@@ -220,7 +235,8 @@ type config struct {
 
 func loadConfig() config {
 	cfg := config{
-		MCPGatewayEndpoint: envOrDefault("FMC_MCP_GATEWAY_ENDPOINT", "http://envoy-ai-gateway:8080/mcp"),
+		MCPGatewayEndpoint: envOrDefault("FMC_MCP_GATEWAY_ENDPOINT", ""),
+		GatewayType:        envOrDefault("FMC_GATEWAY_TYPE", "eaigw"),
 		ValkeyAddr:         envOrDefault("FMC_VALKEY_ADDR", "valkey:6379"),
 		Namespace:          envOrDefault("FMC_NAMESPACE", "kubernaut-system"),
 		SyncInterval:       parseDuration("FMC_SYNC_INTERVAL", 30*time.Second),

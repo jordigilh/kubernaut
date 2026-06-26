@@ -130,8 +130,9 @@ var _ = Describe("ClientFactory (BR-FLEET-054)", func() {
 
 			calls := gw.CallLog()
 			var found bool
+			expectedTool := mcpclient.ClusterTool("prod-east", mcpclient.ToolCreateOrUpdate)
 			for _, call := range calls {
-				if call.ToolName == "prod-east__create_resource" {
+				if call.ToolName == expectedTool {
 					found = true
 					break
 				}

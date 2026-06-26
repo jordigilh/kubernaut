@@ -1023,6 +1023,7 @@
         "syncInterval": { "type": "string", "default": "30s" },
         "keyTTL": { "type": "string", "default": "45s" },
         "mcpGatewayEndpoint": { "type": "string", "default": "" },
+        "gatewayType": { "type": "string", "enum": ["eaigw", "kuadrant"], "default": "eaigw", "description": "MCP Gateway type: eaigw (Envoy AI Gateway) or kuadrant (Kuadrant MCP Gateway)" },
         "valkeyAddr": { "type": "string", "default": "" },
         "namespace": { "type": "string", "default": "kubernaut-system" },
         "resources": { "$ref": "#/definitions/resources" }
