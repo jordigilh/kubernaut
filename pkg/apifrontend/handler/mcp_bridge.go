@@ -18,6 +18,7 @@ import (
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ds"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
 	prom "github.com/jordigilh/kubernaut/pkg/apifrontend/prometheus"
@@ -71,6 +72,10 @@ type MCPBridgeConfig struct {
 	UserLimiter           *ratelimit.UserLimiter
 	SessionFinalizer      ISPhaseFinalizer
 	SessionInitializer    ISSessionInitializer
+	// ActiveContextRegistry enables clearing the per-user session mapping when
+	// a terminal MCP tool (e.g. kubernaut_complete_no_action) succeeds (#1496).
+	// When non-nil, the CNA handler calls Clear(username) on success.
+	ActiveContextRegistry *launcher.ActiveContextRegistry
 	// InteractiveEnabled controls whether session-dependent tools are registered.
 	// When false, tools in tools.SessionDependentTools are skipped (#1366).
 	InteractiveEnabled bool
@@ -313,6 +318,11 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 				if err == nil && cfg.SessionFinalizer != nil {
 					if fErr := cfg.SessionFinalizer.FinalizeSessionByRR(ctx, cfg.Namespace, args.RRID, isv1alpha1.SessionPhaseCompleted); fErr != nil {
 						cfg.Logger.Error(fErr, "IS CRD phase finalization failed", "rr_id", args.RRID, "phase", "Completed")
+					}
+				}
+				if err == nil && cfg.ActiveContextRegistry != nil {
+					if username := usernameFromCtx(ctx); username != "system" {
+						cfg.ActiveContextRegistry.Clear(username)
 					}
 				}
 				return result, err

@@ -219,7 +219,9 @@ func run() int {
 		}()
 	}
 
-	mcpHandler, depsReady, err := buildMCPHandler(cfg, deps, sessInfra, metricsReg, sarChecker, auditor, logger, userLimiter)
+	activeCtxRegistry := launcher.NewActiveContextRegistry(launcher.DefaultRegistryTTL, launcher.DefaultRegistryIdleTimeout)
+
+	mcpHandler, depsReady, err := buildMCPHandler(cfg, deps, sessInfra, metricsReg, sarChecker, auditor, logger, userLimiter, activeCtxRegistry)
 	if err != nil {
 		logger.Error(err, "failed to create MCP handler")
 		return 1
@@ -259,7 +261,7 @@ func run() int {
 	}
 	agentCardHandler := handler.WithAgentCardAudit(agentCardBase, auditor)
 
-	a2aHandler, err := buildA2AHandler(ctx, cfg, deps, sessInfra, metricsReg, sarChecker, auditor, logger, userLimiter)
+	a2aHandler, err := buildA2AHandler(ctx, cfg, deps, sessInfra, metricsReg, sarChecker, auditor, logger, userLimiter, activeCtxRegistry)
 	if err != nil {
 		logger.Error(err, "failed to create A2A handler")
 		return 1
@@ -859,7 +861,7 @@ func triageLLMSource(cfg *config.Config) string {
 	return "agent.llm (inherited)"
 }
 
-func buildMCPHandler(cfg *config.Config, deps *backendDeps, sessInfra *sessionInfra, metricsReg *metrics.Registry, authorizer auth.ToolAuthorizer, auditor audit.Emitter, logger logr.Logger, userLimiter *ratelimit.UserLimiter) (http.Handler, func() bool, error) {
+func buildMCPHandler(cfg *config.Config, deps *backendDeps, sessInfra *sessionInfra, metricsReg *metrics.Registry, authorizer auth.ToolAuthorizer, auditor audit.Emitter, logger logr.Logger, userLimiter *ratelimit.UserLimiter, activeCtxRegistry *launcher.ActiveContextRegistry) (http.Handler, func() bool, error) {
 	var sessFinalizer handler.ISPhaseFinalizer
 	var sessInitializer handler.ISSessionInitializer
 	if sessInfra != nil && sessInfra.SessionService != nil {
@@ -887,6 +889,7 @@ func buildMCPHandler(cfg *config.Config, deps *backendDeps, sessInfra *sessionIn
 		SessionFinalizer:      sessFinalizer,
 		SessionInitializer:    sessInitializer,
 		InteractiveEnabled:    cfg.Interactive.Enabled,
+		ActiveContextRegistry: activeCtxRegistry,
 		RESTMapper:            deps.Mapper,
 	}
 
@@ -920,7 +923,7 @@ func buildMCPHandler(cfg *config.Config, deps *backendDeps, sessInfra *sessionIn
 // The LLM model and transport chain are built once at startup and are NOT
 // reloaded when the ConfigMap changes. Changes to agent.llm fields require
 // a pod restart (consistent with KA's LLM wiring pattern).
-func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps, sessInfra *sessionInfra, metricsReg *metrics.Registry, authorizer auth.ToolAuthorizer, auditor audit.Emitter, logger logr.Logger, userLimiter *ratelimit.UserLimiter) (http.Handler, error) {
+func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps, sessInfra *sessionInfra, metricsReg *metrics.Registry, authorizer auth.ToolAuthorizer, auditor audit.Emitter, logger logr.Logger, userLimiter *ratelimit.UserLimiter, activeCtxRegistry *launcher.ActiveContextRegistry) (http.Handler, error) {
 	if cfg.Agent.LLM.Provider == "" {
 		logger.Info("LLM provider not configured — A2A handler returns 501")
 		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -943,8 +946,6 @@ func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps,
 	if sessInfra != nil {
 		sessionSvcForAgent = sessInfra.SessionService
 	}
-
-	activeCtxRegistry := launcher.NewActiveContextRegistry(launcher.DefaultRegistryTTL, launcher.DefaultRegistryIdleTimeout)
 
 	rootAgent, _, err := agentpkg.NewRootAgent(agentpkg.AgentConfig{
 		Instruction:           agentpkg.BuildInstruction(cfg.Session.Namespace),

@@ -20,6 +20,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ds"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/handler"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
 
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
@@ -1055,6 +1056,170 @@ var _ = Describe("IT-AF-1418-005: SessionFinalizer wiring for complete_no_action
 		Expect(finalizer.calls[0].rrNamespace).To(Equal("kubernaut-system"))
 		Expect(finalizer.calls[0].rrName).To(Equal("rr-1418-finalizer"))
 		Expect(finalizer.calls[0].phase).To(Equal(isv1alpha1.SessionPhaseCompleted))
+	})
+})
+
+var _ = Describe("kubernaut_complete_no_action — ActiveContextRegistry clearing (#1496)", func() {
+
+	var (
+		testUser *auth.UserIdentity
+	)
+
+	BeforeEach(func() {
+		testUser = &auth.UserIdentity{Username: "sre@kubernaut.ai", Groups: []string{"sre"}}
+	})
+
+	setupCNAWithRegistry := func(
+		registry *launcher.ActiveContextRegistry,
+		cnaFn func(context.Context, ka.CompleteNoActionArgs) (*ka.CompleteNoActionResult, error),
+		authorizer auth.ToolAuthorizer,
+	) (http.Handler, string) {
+		mockMCP := &ka.MockMCPClient{
+			CompleteNoActionFn: cnaFn,
+			StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+				return &ka.StartInvestigationResult{SessionID: "sess-1496", Status: "autonomous_started", Closer: func() {}}, nil
+			},
+		}
+
+		cfg := handler.MCPConfig{
+			ServerName:    "af-it-1496",
+			ServerVersion: "0.0.1-test",
+			Enabled:       true,
+			Bridge: &handler.MCPBridgeConfig{
+				K8sClient:             newFakeDynamicClient(),
+				TypedClient:           newBridgeTypedClient(),
+				KAMCPClient:           mockMCP,
+				DSClient:              newFakeDSClient(),
+				Authorizer:            authorizer,
+				Logger:                logr.Discard(),
+				Auditor:               &fakeAuditor{},
+				Metrics:               newBridgeMetrics(),
+				ToolTimeout:           5 * time.Second,
+				MaxConcurrentTools:    10,
+				InteractiveEnabled:    true,
+				ActiveContextRegistry: registry,
+			},
+		}
+
+		h, err := handler.NewMCPHandler(cfg)
+		Expect(err).NotTo(HaveOccurred())
+		sid := mcpInitialize(h, testUser)
+		return h, sid
+	}
+
+	Describe("IT-AF-1496-001: Dismiss path clears registry on success", func() {
+		It("should clear ActiveContextRegistry entry after successful dismiss", func() {
+			registry := launcher.NewActiveContextRegistry(2*time.Hour, 10*time.Minute)
+			registry.Set("sre@kubernaut.ai", "ctx-active-session")
+
+			h, sid := setupCNAWithRegistry(registry,
+				func(_ context.Context, _ ka.CompleteNoActionArgs) (*ka.CompleteNoActionResult, error) {
+					return &ka.CompleteNoActionResult{Status: "completed_no_action", Reason: "dismissed"}, nil
+				}, &mapAuthorizer{roles: map[string][]string{"sre": {"*"}}})
+
+			status, body := mcpCallTool(h, sid, "kubernaut_complete_no_action", map[string]any{
+				"rr_id":  "rr-1496-001",
+				"reason": "not actionable",
+			}, testUser)
+
+			Expect(status).To(Equal(http.StatusOK))
+			Expect(extractTextContent(body)).To(ContainSubstring("completed_no_action"))
+
+			_, ok := registry.Get("sre@kubernaut.ai")
+			Expect(ok).To(BeFalse(),
+				"registry must be cleared after successful dismiss (#1496)")
+		})
+	})
+
+	Describe("IT-AF-1496-002: Escalation path clears registry on success", func() {
+		It("should clear ActiveContextRegistry entry after successful escalation", func() {
+			registry := launcher.NewActiveContextRegistry(2*time.Hour, 10*time.Minute)
+			registry.Set("sre@kubernaut.ai", "ctx-active-session")
+
+			h, sid := setupCNAWithRegistry(registry,
+				func(_ context.Context, _ ka.CompleteNoActionArgs) (*ka.CompleteNoActionResult, error) {
+					return &ka.CompleteNoActionResult{Status: "escalated", EscalationReason: "Needs SRE"}, nil
+				}, &mapAuthorizer{roles: map[string][]string{"sre": {"*"}}})
+
+			status, body := mcpCallTool(h, sid, "kubernaut_complete_no_action", map[string]any{
+				"rr_id":             "rr-1496-002",
+				"escalation_reason": "Needs SRE",
+			}, testUser)
+
+			Expect(status).To(Equal(http.StatusOK))
+			Expect(extractTextContent(body)).To(ContainSubstring("escalated"))
+
+			_, ok := registry.Get("sre@kubernaut.ai")
+			Expect(ok).To(BeFalse(),
+				"registry must be cleared after successful escalation (#1496)")
+		})
+	})
+
+	Describe("IT-AF-1496-003: KA error preserves registry entry", func() {
+		It("should NOT clear ActiveContextRegistry when CNA fails", func() {
+			registry := launcher.NewActiveContextRegistry(2*time.Hour, 10*time.Minute)
+			registry.Set("sre@kubernaut.ai", "ctx-active-session")
+
+			h, sid := setupCNAWithRegistry(registry,
+				func(_ context.Context, _ ka.CompleteNoActionArgs) (*ka.CompleteNoActionResult, error) {
+					return nil, fmt.Errorf("session expired: connection reset")
+				}, &mapAuthorizer{roles: map[string][]string{"sre": {"*"}}})
+
+			status, _ := mcpCallTool(h, sid, "kubernaut_complete_no_action", map[string]any{
+				"rr_id":  "rr-1496-003",
+				"reason": "dismiss attempt",
+			}, testUser)
+
+			Expect(status).To(Equal(http.StatusOK))
+
+			contextID, ok := registry.Get("sre@kubernaut.ai")
+			Expect(ok).To(BeTrue(),
+				"registry must NOT be cleared when CNA fails (#1496)")
+			Expect(contextID).To(Equal("ctx-active-session"))
+		})
+	})
+
+	Describe("IT-AF-1496-004: RBAC denied preserves registry entry", func() {
+		It("should NOT clear ActiveContextRegistry when RBAC denies CNA", func() {
+			registry := launcher.NewActiveContextRegistry(2*time.Hour, 10*time.Minute)
+			registry.Set("sre@kubernaut.ai", "ctx-active-session")
+
+			h, sid := setupCNAWithRegistry(registry,
+				func(_ context.Context, _ ka.CompleteNoActionArgs) (*ka.CompleteNoActionResult, error) {
+					Fail("should not reach KA handler when RBAC denied")
+					return nil, nil
+				}, &mapAuthorizer{roles: map[string][]string{"sre": {"kubernaut_investigate"}}})
+
+			status, _ := mcpCallTool(h, sid, "kubernaut_complete_no_action", map[string]any{
+				"rr_id":  "rr-1496-004",
+				"reason": "should be blocked",
+			}, testUser)
+
+			Expect(status).To(Equal(http.StatusOK))
+
+			contextID, ok := registry.Get("sre@kubernaut.ai")
+			Expect(ok).To(BeTrue(),
+				"registry must NOT be cleared when RBAC denies the tool call (#1496)")
+			Expect(contextID).To(Equal("ctx-active-session"))
+		})
+	})
+
+	Describe("IT-AF-1496-005: Nil registry graceful degradation", func() {
+		It("should succeed without panic when ActiveContextRegistry is nil", func() {
+			h, sid := setupCNAWithRegistry(nil,
+				func(_ context.Context, _ ka.CompleteNoActionArgs) (*ka.CompleteNoActionResult, error) {
+					return &ka.CompleteNoActionResult{Status: "completed_no_action", Reason: "dismissed"}, nil
+				}, &mapAuthorizer{roles: map[string][]string{"sre": {"*"}}})
+
+			status, body := mcpCallTool(h, sid, "kubernaut_complete_no_action", map[string]any{
+				"rr_id":  "rr-1496-005",
+				"reason": "nil registry test",
+			}, testUser)
+
+			Expect(status).To(Equal(http.StatusOK))
+			Expect(extractTextContent(body)).To(ContainSubstring("completed_no_action"),
+				"CNA must succeed even when registry is nil (backward compat)")
+		})
 	})
 })
 
