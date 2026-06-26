@@ -17,7 +17,9 @@ limitations under the License.
 package infrastructure
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -30,21 +32,32 @@ import (
 // v0.0.63: supports HTTP mode, in-cluster auth, core toolsets.
 const KubeMCPServerImage = "ghcr.io/containers/kubernetes-mcp-server:latest"
 
+const (
+	kuadrantControllerImage  = "ghcr.io/kuadrant/mcp-controller:v0.7.1"
+	kuadrantBrokerImage      = "ghcr.io/kuadrant/mcp-gateway:v0.7.1"
+	valkeyImage              = "docker.io/valkey/valkey:8.1"
+	gatewayAPICRDsURL        = "https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.4.1/standard-install.yaml"
+	kuadrantCRDsKustomize    = "https://github.com/Kuadrant/mcp-gateway/config/crd?ref=v0.7.1"
+	kuadrantOverlayKustomize = "https://github.com/Kuadrant/mcp-gateway/config/mcp-gateway/overlays/mcp-system?ref=v0.7.1"
+	istioHelmRepoURL         = "https://istio-release.storage.googleapis.com/charts"
+)
+
 // SetupFleetE2EInfrastructure deploys the complete fleet E2E stack:
-// all fullpipeline services + EAIGW + K8s MCP Server.
+// all fullpipeline services + Kuadrant MCP Gateway + FMC + Valkey.
 //
 // It composes on the fullpipeline setup (which already deploys GW, SP, RO, WE,
 // AA, EM, KA, AF, DS, DEX, Prometheus, AlertManager, etc.) and adds the fleet-
 // specific infrastructure on top. The Kind cluster config must include the fleet
-// NodePort mappings (31975 for EAIGW MCP, 31064 for EAIGW health) -- these are
-// already present in kind-fullpipeline-config.yaml.
+// NodePort mapping (31975 for Kuadrant MCP) -- already present in
+// kind-fullpipeline-config.yaml.
 //
 // The loopback pattern is used: the K8s MCP Server connects to the same cluster
 // where it runs, but kubernaut treats it as a remote cluster with clusterID
 // "loopback-cluster". This validates the full remote code path without needing
 // a second Kind cluster.
 //
-// Total additional memory over fullpipeline: ~66 MB (EAIGW 50 MB + K8s MCP 16 MB).
+// Total additional memory over fullpipeline: ~388 MB
+// (Istio ~250 MB + Kuadrant ~60 MB + kube-mcp-server ~16 MB + Valkey ~30 MB + FMC ~32 MB).
 //
 // Authority: Issue #54, ADR-068
 func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) (builtImages map[string]string, seededUUIDs map[string]string, afRemediateNS map[string]string, err error) {
@@ -52,7 +65,7 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 	_, _ = fmt.Fprintln(writer, "🚀 Fleet E2E Infrastructure (Issue #54)")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "  Base: Full Pipeline (all services)")
-	_, _ = fmt.Fprintln(writer, "  Fleet: EAIGW + K8s MCP Server (loopback pattern)")
+	_, _ = fmt.Fprintln(writer, "  Fleet: Kuadrant MCP Gateway + FMC + Valkey (loopback pattern)")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	builtImages, seededUUIDs, afRemediateNS, err = SetupFullPipelineInfrastructure(ctx, clusterName, kubeconfigPath, writer)
@@ -63,18 +76,22 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 	namespace := "kubernaut-system"
 
 	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	_, _ = fmt.Fprintln(writer, "🌐 FLEET PHASE: Deploying MCP Gateway infrastructure...")
+	_, _ = fmt.Fprintln(writer, "🌐 FLEET PHASE: Deploying Kuadrant MCP Gateway infrastructure...")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	_, _ = fmt.Fprintln(writer, "  📦 Pre-loading fleet external images...")
-	if loadErr := PreloadExternalImage(KubeMCPServerImage, clusterName, writer); loadErr != nil {
-		_, _ = fmt.Fprintf(writer, "  ⚠️  K8s MCP Server image preload failed (will pull on-demand): %v\n", loadErr)
-	}
-	if loadErr := PreloadExternalImage(EAIGWImage, clusterName, writer); loadErr != nil {
-		_, _ = fmt.Fprintf(writer, "  ⚠️  EAIGW image preload failed (will pull on-demand): %v\n", loadErr)
+	for _, img := range []string{KubeMCPServerImage, kuadrantControllerImage, kuadrantBrokerImage, valkeyImage} {
+		if loadErr := PreloadExternalImage(img, clusterName, writer); loadErr != nil {
+			_, _ = fmt.Fprintf(writer, "  ⚠️  Image preload failed (will pull on-demand): %s: %v\n", img, loadErr)
+		}
 	}
 
-	if deployErr := DeployFleetInfra(ctx, namespace, kubeconfigPath, writer); deployErr != nil {
+	fmcImage := builtImages["fmc"]
+	if fmcImage == "" {
+		return builtImages, seededUUIDs, afRemediateNS, fmt.Errorf("FMC image not found in builtImages (was it built in Phase 1?)")
+	}
+
+	if deployErr := DeployFleetInfra(ctx, namespace, kubeconfigPath, fmcImage, writer); deployErr != nil {
 		return builtImages, seededUUIDs, afRemediateNS, fmt.Errorf("fleet infra deployment failed: %w", deployErr)
 	}
 
@@ -84,27 +101,159 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "✅ Fleet E2E Infrastructure READY")
-	_, _ = fmt.Fprintln(writer, "  EAIGW MCP:    http://localhost:31975")
-	_, _ = fmt.Fprintln(writer, "  EAIGW Health: http://localhost:31064")
+	_, _ = fmt.Fprintln(writer, "  MCP Gateway:  http://localhost:31975/mcp")
 	_, _ = fmt.Fprintln(writer, "  Loopback cluster ID: loopback-cluster")
+	_, _ = fmt.Fprintln(writer, "  Loopback tool prefix: loopback_cluster_")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	return builtImages, seededUUIDs, afRemediateNS, nil
 }
 
 // DeployFleetInfra deploys the fleet E2E infrastructure in the Kind cluster:
-// 1. K8s MCP Server (in-cluster, ServiceAccount-based auth)
-// 2. EAIGW (Envoy AI Gateway CLI, --mcp-config JSON, single chokepoint)
 //
-// The K8s MCP Server runs with --cluster-provider in-cluster and uses a
-// scoped ServiceAccount with ClusterRoleBinding for least-privilege access.
-// EAIGW routes tool calls to the K8s MCP Server via the loopback-cluster backend.
+// Phase 1: Gateway API CRDs + Istio (control plane only, mesh disabled)
+// Phase 2: Istio Gateway + NodePort + Kuadrant MCP Gateway
+// Phase 3: kube-mcp-server backend + MCPServerRegistration
+// Phase 4: Valkey + FMC
 //
-// Total memory: ~66 MB (EAIGW 50 MB + K8s MCP Server 16 MB).
-func DeployFleetInfra(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+// Istio is deployed via `helm template | kubectl apply` (Helm as renderer only,
+// no Helm release). All other components use `kubectl apply` with inline YAML
+// or upstream Kustomize URLs.
+//
+// Total memory: ~388 MB.
+func DeployFleetInfra(ctx context.Context, namespace, kubeconfigPath, fmcImage string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "🚀 Deploying Fleet E2E Infrastructure...")
 
-	manifest := fmt.Sprintf(`---
+	// ── Phase 1: CRDs and Istio ─────────────────────────────────────────
+	_, _ = fmt.Fprintln(writer, "\n  📋 Phase 1: Installing CRDs and Istio control plane...")
+
+	_, _ = fmt.Fprintln(writer, "    Installing Gateway API CRDs...")
+	if err := runKubectl(ctx, kubeconfigPath, writer, "apply", "-f", gatewayAPICRDsURL); err != nil {
+		return fmt.Errorf("Gateway API CRDs install failed: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "    Adding Istio Helm repo...")
+	addRepo := exec.CommandContext(ctx, "helm", "repo", "add", "istio", istioHelmRepoURL)
+	addRepo.Stdout = writer
+	addRepo.Stderr = writer
+	_ = addRepo.Run() // ignore if already exists
+
+	updateRepo := exec.CommandContext(ctx, "helm", "repo", "update", "istio")
+	updateRepo.Stdout = writer
+	updateRepo.Stderr = writer
+	if err := updateRepo.Run(); err != nil {
+		return fmt.Errorf("Helm repo update failed: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "    Installing Istio base (CRDs)...")
+	if err := runHelmTemplateApply(ctx, kubeconfigPath, writer,
+		"istio-base", "istio/base", "istio-system",
+		"--version", "1.30.2",
+		"--create-namespace",
+	); err != nil {
+		return fmt.Errorf("Istio base install failed: %w", err)
+	}
+
+	// Ensure istio-system namespace exists (helm template doesn't create it)
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, `
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: istio-system
+`); err != nil {
+		return fmt.Errorf("istio-system namespace creation failed: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "    Installing Istio control plane (mesh disabled)...")
+	if err := runHelmTemplateApply(ctx, kubeconfigPath, writer,
+		"istiod", "istio/istiod", "istio-system",
+		"--version", "1.30.2",
+		"--set", "global.proxy.autoInject=disabled",
+		"--set", "sidecarInjectorWebhook.enableNamespacesByDefault=false",
+	); err != nil {
+		return fmt.Errorf("Istio istiod install failed: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "    Waiting for istiod to be ready...")
+	if err := waitForDeployment(ctx, "istiod", "istio-system", kubeconfigPath, 180*time.Second, writer); err != nil {
+		return fmt.Errorf("istiod rollout failed: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "    ✅ Istio control plane ready")
+
+	// ── Phase 2: Gateway and Kuadrant ───────────────────────────────────
+	_, _ = fmt.Fprintln(writer, "\n  🌐 Phase 2: Creating Gateway and deploying Kuadrant...")
+
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, `
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gateway-system
+`); err != nil {
+		return fmt.Errorf("gateway-system namespace creation failed: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "    Creating Istio Gateway (listener mcp:8080)...")
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, `
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: mcp-gateway
+  namespace: gateway-system
+  annotations:
+    networking.istio.io/service-type: NodePort
+spec:
+  gatewayClassName: istio
+  listeners:
+  - name: mcp
+    port: 8080
+    protocol: HTTP
+    hostname: "*.127-0-0-1.sslip.io"
+    allowedRoutes:
+      namespaces:
+        from: All
+`); err != nil {
+		return fmt.Errorf("Gateway resource creation failed: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "    Waiting for Istio gateway service...")
+	if err := waitForResource(ctx, kubeconfigPath, "service", "mcp-gateway-istio", "gateway-system", 60*time.Second); err != nil {
+		return fmt.Errorf("Istio gateway service not found: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "    Patching NodePort to 31975 (MCP) and 31500 (status)...")
+	if err := runKubectl(ctx, kubeconfigPath, writer,
+		"patch", "service", "mcp-gateway-istio", "-n", "gateway-system",
+		"--type=json",
+		`-p=[{"op":"replace","path":"/spec/ports/0/nodePort","value":31500},{"op":"replace","path":"/spec/ports/1/nodePort","value":31975}]`,
+	); err != nil {
+		return fmt.Errorf("NodePort patch failed: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "    Installing Kuadrant CRDs...")
+	if err := runKubectl(ctx, kubeconfigPath, writer, "apply", "-k", kuadrantCRDsKustomize); err != nil {
+		return fmt.Errorf("Kuadrant CRDs install failed: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "    Deploying Kuadrant MCP Gateway (controller + broker + HTTPRoute)...")
+	if err := runKubectl(ctx, kubeconfigPath, writer, "apply", "-k", kuadrantOverlayKustomize); err != nil {
+		return fmt.Errorf("Kuadrant deployment failed: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "    Waiting for Kuadrant controller...")
+	if err := waitForDeployment(ctx, "mcp-gateway-controller", "mcp-system", kubeconfigPath, 120*time.Second, writer); err != nil {
+		return fmt.Errorf("Kuadrant controller rollout failed: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "    Waiting for Kuadrant broker (created by controller)...")
+	if err := waitForDeployment(ctx, "mcp-gateway", "mcp-system", kubeconfigPath, 120*time.Second, writer); err != nil {
+		return fmt.Errorf("Kuadrant broker rollout failed: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "    ✅ Kuadrant MCP Gateway ready")
+
+	// ── Phase 3: Backend MCP Server ─────────────────────────────────────
+	_, _ = fmt.Fprintln(writer, "\n  🔌 Phase 3: Deploying kube-mcp-server backend...")
+
+	kubeMCPManifest := fmt.Sprintf(`---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -152,6 +301,7 @@ spec:
         - "--cluster-provider=in-cluster"
         - "--toolsets=core"
         - "--transport=http"
+        - "--stateless"
         ports:
         - name: http
           containerPort: 8080
@@ -190,147 +340,387 @@ spec:
     targetPort: 8080
   selector:
     app: kube-mcp-server
----
-apiVersion: v1
-kind: ConfigMap
+`, namespace, KubeMCPServerImage)
+
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, kubeMCPManifest); err != nil {
+		return fmt.Errorf("kube-mcp-server deployment failed: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "    Waiting for kube-mcp-server...")
+	if err := waitForDeployment(ctx, "kube-mcp-server", namespace, kubeconfigPath, 120*time.Second, writer); err != nil {
+		return fmt.Errorf("kube-mcp-server rollout failed: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "    ✅ kube-mcp-server ready")
+
+	_, _ = fmt.Fprintln(writer, "    Creating HTTPRoute + MCPServerRegistration...")
+	routeManifest := fmt.Sprintf(`---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
 metadata:
-  name: eaigw-mcp-config
+  name: kube-mcp-server-route
   namespace: %[1]s
-data:
-  mcp-servers.json: |
-    [{"name": "loopback-cluster", "host": "http://kube-mcp-server.%[1]s.svc.cluster.local:8080/mcp"}]
+spec:
+  hostnames:
+  - kube-mcp-server.127-0-0-1.sslip.io
+  parentRefs:
+  - name: mcp-gateway
+    namespace: gateway-system
+    sectionName: mcp
+  rules:
+  - backendRefs:
+    - name: kube-mcp-server
+      port: 8080
 ---
+apiVersion: mcp.kuadrant.io/v1alpha1
+kind: MCPServerRegistration
+metadata:
+  name: loopback-cluster
+  namespace: %[1]s
+  labels:
+    kubernaut.ai/managed: "true"
+spec:
+  prefix: "loopback_cluster_"
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: kube-mcp-server-route
+    namespace: %[1]s
+`, namespace)
+
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, routeManifest); err != nil {
+		return fmt.Errorf("HTTPRoute/MCPServerRegistration creation failed: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "    ✅ MCPServerRegistration 'loopback-cluster' created")
+
+	// ── Phase 4: FMC Stack (Valkey + FMC) ───────────────────────────────
+	_, _ = fmt.Fprintln(writer, "\n  💾 Phase 4: Deploying FMC stack (Valkey + FMC)...")
+
+	valkeyManifest := fmt.Sprintf(`---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: eaigw
+  name: valkey
   namespace: %[1]s
   labels:
-    app: eaigw
+    app: valkey
     component: fleet
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: eaigw
+      app: valkey
   template:
     metadata:
       labels:
-        app: eaigw
+        app: valkey
         component: fleet
     spec:
       containers:
-      - name: eaigw
-        image: %[3]s
-        args:
-        - "run"
-        - "--mcp-config=/etc/aigw/mcp-servers.json"
-        - "--run-id=0"
+      - name: valkey
+        image: %[2]s
         ports:
-        - name: mcp
-          containerPort: 1975
-        - name: health
-          containerPort: 1064
+        - name: valkey
+          containerPort: 6379
         readinessProbe:
-          httpGet:
-            path: /health
-            port: 1064
-          initialDelaySeconds: 5
+          tcpSocket:
+            port: 6379
+          initialDelaySeconds: 3
           periodSeconds: 5
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 1064
-          initialDelaySeconds: 10
-          periodSeconds: 10
-        volumeMounts:
-        - name: mcp-config
-          mountPath: /etc/aigw
-          readOnly: true
         resources:
           requests:
-            memory: "50Mi"
-            cpu: "50m"
+            memory: "30Mi"
+            cpu: "25m"
           limits:
-            memory: "100Mi"
-            cpu: "200m"
-      volumes:
-      - name: mcp-config
-        configMap:
-          name: eaigw-mcp-config
+            memory: "64Mi"
+            cpu: "100m"
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: eaigw
+  name: valkey
   namespace: %[1]s
   labels:
-    app: eaigw
+    app: valkey
     component: fleet
 spec:
-  type: NodePort
   ports:
-  - name: mcp
-    port: 1975
-    targetPort: 1975
-    nodePort: 31975
-  - name: health
-    port: 1064
-    targetPort: 1064
-    nodePort: 31064
+  - name: valkey
+    port: 6379
+    targetPort: 6379
   selector:
-    app: eaigw
-`, namespace, KubeMCPServerImage, EAIGWImage)
+    app: valkey
+`, namespace, valkeyImage)
 
-	cmd := exec.CommandContext(ctx, "kubectl", "apply", "--kubeconfig", kubeconfigPath, "-f", "-")
-	cmd.Stdin = strings.NewReader(manifest)
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to deploy fleet infra: %w", err)
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, valkeyManifest); err != nil {
+		return fmt.Errorf("Valkey deployment failed: %w", err)
 	}
-	_, _ = fmt.Fprintln(writer, "  ✅ Fleet manifests applied")
 
-	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for K8s MCP Server to be ready...")
-	waitMCP := exec.CommandContext(ctx, "kubectl", "rollout", "status", "deployment/kube-mcp-server",
-		"-n", namespace, "--kubeconfig", kubeconfigPath, "--timeout=120s")
-	waitMCP.Stdout = writer
-	waitMCP.Stderr = writer
-	if err := waitMCP.Run(); err != nil {
-		return fmt.Errorf("K8s MCP Server rollout failed: %w", err)
+	_, _ = fmt.Fprintln(writer, "    Waiting for Valkey...")
+	if err := waitForDeployment(ctx, "valkey", namespace, kubeconfigPath, 60*time.Second, writer); err != nil {
+		return fmt.Errorf("Valkey rollout failed: %w", err)
 	}
-	_, _ = fmt.Fprintln(writer, "  ✅ K8s MCP Server ready")
+	_, _ = fmt.Fprintln(writer, "    ✅ Valkey ready")
 
-	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for EAIGW to be ready...")
-	waitGW := exec.CommandContext(ctx, "kubectl", "rollout", "status", "deployment/eaigw",
-		"-n", namespace, "--kubeconfig", kubeconfigPath, "--timeout=120s")
-	waitGW.Stdout = writer
-	waitGW.Stderr = writer
-	if err := waitGW.Run(); err != nil {
-		return fmt.Errorf("EAIGW rollout failed: %w", err)
+	fmcManifest := fmt.Sprintf(`---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fmc
+  namespace: %[1]s
+  labels:
+    app: fmc
+    component: fleet
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: fmc
+  labels:
+    app: fmc
+rules:
+- apiGroups: ["mcp.kuadrant.io"]
+  resources: ["mcpserverregistrations"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["gateway.networking.k8s.io"]
+  resources: ["gateways", "httproutes"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: fmc
+  labels:
+    app: fmc
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: fmc
+subjects:
+- kind: ServiceAccount
+  name: fmc
+  namespace: %[1]s
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fmc-config
+  namespace: %[1]s
+  labels:
+    app: fmc
+    component: fleet
+data:
+  FMC_MCP_GATEWAY_ENDPOINT: "http://mcp-gateway.mcp-system.svc:8080/mcp"
+  FMC_GATEWAY_TYPE: "kuadrant"
+  FMC_VALKEY_ADDR: "valkey.%[1]s.svc:6379"
+  FMC_NAMESPACE: "%[1]s"
+  FMC_SYNC_INTERVAL: "10s"
+  FMC_KEY_TTL: "30s"
+  FMC_API_ADDR: ":8080"
+  FMC_METRICS_ADDR: ":8081"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fmc
+  namespace: %[1]s
+  labels:
+    app: fmc
+    component: fleet
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fmc
+  template:
+    metadata:
+      labels:
+        app: fmc
+        component: fleet
+    spec:
+      serviceAccountName: fmc
+      containers:
+      - name: fmc
+        image: %[2]s
+        imagePullPolicy: IfNotPresent
+        envFrom:
+        - configMapRef:
+            name: fmc-config
+        ports:
+        - name: api
+          containerPort: 8080
+        - name: metrics
+          containerPort: 8081
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: api
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: api
+          initialDelaySeconds: 3
+          periodSeconds: 5
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "25m"
+          limits:
+            memory: "64Mi"
+            cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fmc-service
+  namespace: %[1]s
+  labels:
+    app: fmc
+    component: fleet
+spec:
+  ports:
+  - name: api
+    port: 8080
+    targetPort: api
+  - name: metrics
+    port: 8081
+    targetPort: metrics
+  selector:
+    app: fmc
+`, namespace, fmcImage)
+
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, fmcManifest); err != nil {
+		return fmt.Errorf("FMC deployment failed: %w", err)
 	}
-	_, _ = fmt.Fprintln(writer, "  ✅ EAIGW ready")
-	_, _ = fmt.Fprintln(writer, "✅ Fleet E2E infrastructure deployed (~66 MB)")
 
+	_, _ = fmt.Fprintln(writer, "    Waiting for FMC...")
+	if err := waitForDeployment(ctx, "fmc", namespace, kubeconfigPath, 120*time.Second, writer); err != nil {
+		return fmt.Errorf("FMC rollout failed: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "    ✅ FMC ready")
+
+	_, _ = fmt.Fprintln(writer, "✅ Fleet E2E infrastructure deployed (~388 MB)")
 	return nil
 }
 
-// WaitForFleetReady polls the EAIGW health endpoint via NodePort until ready.
+// WaitForFleetReady verifies the Kuadrant MCP Gateway is reachable via NodePort
+// by performing an MCP initialize handshake.
 func WaitForFleetReady(writer io.Writer) error {
-	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for EAIGW health endpoint...")
-	deadline := time.Now().Add(90 * time.Second)
+	_, _ = fmt.Fprintln(writer, "  ⏳ Verifying MCP Gateway reachability via NodePort...")
+
+	deadline := time.Now().Add(120 * time.Second)
 	client := &http.Client{Timeout: 5 * time.Second}
+
+	initReq := map[string]interface{}{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "initialize",
+		"params": map[string]interface{}{
+			"protocolVersion": "2025-03-26",
+			"capabilities":    map[string]interface{}{},
+			"clientInfo": map[string]string{
+				"name":    "fleet-e2e-healthcheck",
+				"version": "0.1",
+			},
+		},
+	}
+	body, _ := json.Marshal(initReq)
+
 	for time.Now().Before(deadline) {
-		resp, err := client.Get("http://localhost:31064/health")
+		req, _ := http.NewRequest("POST", "http://localhost:31975/mcp", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json, text/event-stream")
+
+		resp, err := client.Do(req)
 		if err == nil && resp.StatusCode == http.StatusOK {
 			_ = resp.Body.Close()
-			_, _ = fmt.Fprintln(writer, "  ✅ EAIGW health endpoint reachable")
+			_, _ = fmt.Fprintln(writer, "  ✅ MCP Gateway reachable (initialize → 200 OK)")
 			return nil
 		}
 		if resp != nil {
 			_ = resp.Body.Close()
 		}
-		time.Sleep(2 * time.Second)
+		time.Sleep(3 * time.Second)
 	}
-	return fmt.Errorf("EAIGW health endpoint not responsive after 90 seconds")
+	return fmt.Errorf("MCP Gateway not responsive at http://localhost:31975/mcp after 120 seconds")
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────────
+
+// runKubectl executes `kubectl --kubeconfig <path> <args...>`.
+func runKubectl(ctx context.Context, kubeconfigPath string, writer io.Writer, args ...string) error {
+	fullArgs := append([]string{"--kubeconfig", kubeconfigPath}, args...)
+	cmd := exec.CommandContext(ctx, "kubectl", fullArgs...)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	return cmd.Run()
+}
+
+// kubectlApplyManifest applies an inline YAML manifest via stdin.
+func kubectlApplyManifest(ctx context.Context, kubeconfigPath string, writer io.Writer, manifest string) error {
+	cmd := exec.CommandContext(ctx, "kubectl", "apply", "--kubeconfig", kubeconfigPath, "-f", "-")
+	cmd.Stdin = strings.NewReader(manifest)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	return cmd.Run()
+}
+
+// runHelmTemplateApply renders a Helm chart and pipes the output to kubectl apply.
+// Helm is used purely as a YAML renderer -- no Helm release is created.
+func runHelmTemplateApply(ctx context.Context, kubeconfigPath string, writer io.Writer, releaseName, chart, namespace string, extraArgs ...string) error {
+	helmArgs := []string{"template", releaseName, chart, "-n", namespace}
+	helmArgs = append(helmArgs, extraArgs...)
+	helmCmd := strings.Join(append([]string{"helm"}, helmArgs...), " ")
+	kubectlCmd := fmt.Sprintf("kubectl apply --kubeconfig %s -f -", kubeconfigPath)
+
+	script := helmCmd + " | " + kubectlCmd
+	cmd := exec.CommandContext(ctx, "sh", "-c", script)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	return cmd.Run()
+}
+
+// waitForDeployment polls until a deployment exists and then waits for rollout.
+func waitForDeployment(ctx context.Context, name, namespace, kubeconfigPath string, timeout time.Duration, writer io.Writer) error {
+	deadline := time.Now().Add(timeout)
+
+	for time.Now().Before(deadline) {
+		check := exec.CommandContext(ctx, "kubectl", "get", "deployment", name,
+			"-n", namespace, "--kubeconfig", kubeconfigPath,
+			"-o", "name")
+		if check.Run() == nil {
+			break
+		}
+		time.Sleep(5 * time.Second)
+	}
+
+	remaining := time.Until(deadline)
+	if remaining <= 0 {
+		return fmt.Errorf("deployment %s/%s not found within %v", namespace, name, timeout)
+	}
+
+	rollout := exec.CommandContext(ctx, "kubectl", "rollout", "status",
+		fmt.Sprintf("deployment/%s", name),
+		"-n", namespace,
+		"--kubeconfig", kubeconfigPath,
+		fmt.Sprintf("--timeout=%ds", int(remaining.Seconds())))
+	rollout.Stdout = writer
+	rollout.Stderr = writer
+	return rollout.Run()
+}
+
+// waitForResource polls until a Kubernetes resource exists.
+func waitForResource(ctx context.Context, kubeconfigPath, kind, name, namespace string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		check := exec.CommandContext(ctx, "kubectl", "get", kind, name,
+			"-n", namespace, "--kubeconfig", kubeconfigPath,
+			"-o", "name")
+		if check.Run() == nil {
+			return nil
+		}
+		time.Sleep(3 * time.Second)
+	}
+	return fmt.Errorf("%s %s/%s not found within %v", kind, namespace, name, timeout)
 }

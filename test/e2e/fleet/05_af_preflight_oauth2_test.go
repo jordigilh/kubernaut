@@ -18,7 +18,6 @@ package fleet
 
 import (
 	"context"
-	"net/http"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -34,7 +33,7 @@ import (
 // Authority: Issue #54, ADR-068
 // FedRAMP: IA-5 (authenticator management), SC-8 (transmission confidentiality)
 var _ = Describe("E2E-FLEET-006 [IA-5, SC-8]: AF performs preflight checks via MCP gateway with OAuth2 client_credentials (BR-INTEGRATION-054)", Label("fleet"), func() {
-	It("should obtain DEX client_credentials token and verify EAIGW accepts authenticated requests", func() {
+	It("should obtain DEX client_credentials token and verify MCP gateway accepts authenticated requests", func() {
 		By("Obtaining OAuth2 client_credentials token from DEX (IA-5)")
 		cfg := infrastructure.DefaultDexFleetReadConfig()
 		cfg.TokenEndpoint = "http://localhost:30556/dex/token"
@@ -42,18 +41,21 @@ var _ = Describe("E2E-FLEET-006 [IA-5, SC-8]: AF performs preflight checks via M
 		Expect(err).ToNot(HaveOccurred(), "DEX should issue client_credentials token")
 		Expect(token).ToNot(BeEmpty(), "IA-5: token must be non-empty")
 
-		By("Verifying EAIGW health endpoint is accessible")
-		healthResp, err := http.Get(eaigwHealthURL)
-		Expect(err).ToNot(HaveOccurred())
-		defer healthResp.Body.Close()
-		Expect(healthResp.StatusCode).To(Equal(http.StatusOK),
-			"EAIGW health endpoint must be accessible")
+		By("Verifying MCP gateway is reachable via NodePort")
+		mcpCtx := context.Background()
+		mcpClient, err := mcpclient.New(mcpCtx, mcpGatewayURL)
+		Expect(err).ToNot(HaveOccurred(), "MCP gateway must be reachable via NodePort")
+		defer mcpClient.Close()
+
+		tools, err := mcpClient.Session().ListTools(mcpCtx, nil)
+		Expect(err).ToNot(HaveOccurred(), "MCP gateway must respond to tool listing")
+		Expect(tools.Tools).ToNot(BeEmpty(), "MCP gateway must expose tools")
 	})
 
 	It("should execute a preflight read via MCP gateway to validate cluster accessibility", func() {
 		mcpCtx := context.Background()
-		mcpClient, err := mcpclient.New(mcpCtx, eaigwMCPURL, mcpclient.WithClusterID("loopback-cluster"))
-		Expect(err).ToNot(HaveOccurred(), "should connect to EAIGW for preflight")
+		mcpClient, err := mcpclient.New(mcpCtx, mcpGatewayURL, mcpclient.WithClusterID("loopback-cluster"))
+		Expect(err).ToNot(HaveOccurred(), "should connect to MCP gateway for preflight")
 		defer mcpClient.Close()
 
 		By("Performing preflight namespace list via MCP gateway (SC-8: secure channel)")
@@ -79,7 +81,7 @@ var _ = Describe("E2E-FLEET-006 [IA-5, SC-8]: AF performs preflight checks via M
 
 	It("should list pods in kubernaut-system via MCP gateway with label selector", func() {
 		mcpCtx := context.Background()
-		mcpClient, err := mcpclient.New(mcpCtx, eaigwMCPURL, mcpclient.WithClusterID("loopback-cluster"))
+		mcpClient, err := mcpclient.New(mcpCtx, mcpGatewayURL, mcpclient.WithClusterID("loopback-cluster"))
 		Expect(err).ToNot(HaveOccurred())
 		defer mcpClient.Close()
 

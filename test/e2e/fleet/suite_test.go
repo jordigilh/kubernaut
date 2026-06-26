@@ -16,14 +16,16 @@ limitations under the License.
 
 // Package fleet contains the Fleet E2E test suite (Issue #54).
 //
-// This suite deploys ALL Kubernaut services plus fleet infrastructure (EAIGW +
-// K8s MCP Server + DEX) in a single Kind cluster and validates the complete
-// multi-cluster remediation lifecycle using the loopback pattern:
+// This suite deploys ALL Kubernaut services plus fleet infrastructure (Kuadrant
+// MCP Gateway + FMC + Valkey + K8s MCP Server + DEX) in a single Kind cluster
+// and validates the complete multi-cluster remediation lifecycle using the
+// loopback pattern:
 //
 //	Alert → Gateway → SP(MCP enrich) → RO → WE(MCP dispatch) → EM
 //
 // The loopback pattern treats the same cluster as both local (hub) and remote
-// (loopback-cluster) by routing MCP calls through EAIGW → K8s MCP Server.
+// (loopback-cluster) by routing MCP calls through Kuadrant → K8s MCP Server.
+// Tool names use the `loopback_cluster_` prefix from MCPServerRegistration.
 //
 // Authority: Issue #54, ADR-068
 //
@@ -31,7 +33,7 @@ limitations under the License.
 //
 //	FLEET_E2E=true ginkgo -v ./test/e2e/fleet/...
 //
-// IMPORTANT: This suite requires significant resources (~6GB RAM).
+// IMPORTANT: This suite requires significant resources (~6.1GB RAM).
 package fleet
 
 import (
@@ -74,8 +76,7 @@ const (
 	clusterName = "fleet-e2e"
 	namespace   = "kubernaut-system"
 
-	eaigwMCPURL    = "http://localhost:31975/mcp"
-	eaigwHealthURL = "http://localhost:31064"
+	mcpGatewayURL = "http://localhost:31975/mcp"
 )
 
 var (
