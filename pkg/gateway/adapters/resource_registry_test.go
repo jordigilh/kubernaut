@@ -509,6 +509,70 @@ var _ = Describe("API Resource Registry (#1029)", func() {
 	})
 
 	// =========================================================================
+	// Scope Detection: IsNamespacedKind (#1371)
+	// =========================================================================
+	Context("IsNamespacedKind (#1371)", func() {
+		It("UT-GW-1371-001: returns true for namespaced kind (Deployment)", func() {
+			fd := newFakeDiscovery(standardResources())
+			registry, err := adapters.NewAPIResourceRegistry(fd)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(registry.IsNamespacedKind("Deployment")).To(BeTrue(),
+				"Deployment is namespaced — namespace required")
+		})
+
+		It("UT-GW-1371-002: returns false for cluster-scoped kind (Node)", func() {
+			fd := newFakeDiscovery(standardResources())
+			registry, err := adapters.NewAPIResourceRegistry(fd)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(registry.IsNamespacedKind("Node")).To(BeFalse(),
+				"Node is cluster-scoped — no namespace")
+		})
+
+		It("UT-GW-1371-003: returns false for cluster-scoped kind (Namespace)", func() {
+			fd := newFakeDiscovery(standardResources(), namespaceResource())
+			registry, err := adapters.NewAPIResourceRegistry(fd)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(registry.IsNamespacedKind("Namespace")).To(BeFalse(),
+				"Namespace resource is itself cluster-scoped")
+		})
+
+		It("UT-GW-1371-004: returns false for cluster-scoped kind (PersistentVolume)", func() {
+			pvResource := []*metav1.APIResourceList{
+				{
+					GroupVersion: "v1",
+					APIResources: []metav1.APIResource{
+						{Name: "persistentvolumes", SingularName: "persistentvolume", Kind: "PersistentVolume", Namespaced: false},
+					},
+				},
+			}
+			fd := newFakeDiscovery(standardResources(), pvResource)
+			registry, err := adapters.NewAPIResourceRegistry(fd)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(registry.IsNamespacedKind("PersistentVolume")).To(BeFalse(),
+				"PersistentVolume is cluster-scoped (PVCs are namespaced, PVs are not)")
+		})
+
+		It("UT-GW-1371-005: returns true for unknown kind (conservative default)", func() {
+			fd := newFakeDiscovery(standardResources())
+			registry, err := adapters.NewAPIResourceRegistry(fd)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(registry.IsNamespacedKind("UnknownKind")).To(BeTrue(),
+				"Unknown kind defaults to namespaced (conservative — avoids dropping namespace)")
+		})
+
+		It("UT-GW-1371-006: returns true with nil snapshot (graceful degradation)", func() {
+			nilRegistry := adapters.NewTestAPIResourceRegistryNilSnapshot()
+			Expect(nilRegistry.IsNamespacedKind("AnyKind")).To(BeTrue(),
+				"Nil snapshot returns true for graceful degradation before registry is ready")
+		})
+	})
+
+	// =========================================================================
 	// OpenShift CRD Discovery (supplement for Phase 1)
 	// =========================================================================
 	Context("OpenShift CRD Discovery", func() {

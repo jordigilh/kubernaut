@@ -208,8 +208,15 @@ func (a *PrometheusAdapter) Parse(ctx context.Context, rawData []byte) (*types.N
 	// from previous scenario runs) must be skipped rather than dropping the entire batch.
 	var lastErr error
 	for i, alert := range webhook.Alerts {
-		ns := extractNamespace(alert.Labels)
+		ns, nsFound := extractNamespace(alert.Labels)
 		kind, name := extractTargetResource(ctx, alert.Labels, ns, a.registry)
+		if !nsFound {
+			if a.registry != nil && !a.registry.IsNamespacedKind(kind) {
+				ns = ""
+			} else {
+				ns = "default"
+			}
+		}
 		resource := types.ResourceIdentifier{
 			Kind:      kind,
 			Name:      name,
@@ -278,8 +285,15 @@ func (a *PrometheusAdapter) ParseBatch(ctx context.Context, rawData []byte) ([]*
 
 	var signals []*types.NormalizedSignal
 	for i, alert := range webhook.Alerts {
-		ns := extractNamespace(alert.Labels)
+		ns, nsFound := extractNamespace(alert.Labels)
 		kind, name := extractTargetResource(ctx, alert.Labels, ns, a.registry)
+		if !nsFound {
+			if a.registry != nil && !a.registry.IsNamespacedKind(kind) {
+				ns = ""
+			} else {
+				ns = "default"
+			}
+		}
 		resource := types.ResourceIdentifier{
 			Kind:      kind,
 			Name:      name,
@@ -379,7 +393,7 @@ func (a *PrometheusAdapter) GetMetadata() AdapterMetadata {
 //
 // Examples (with OwnerResolver):
 // - Pod "payment-api-789" owned by Deployment "payment-api" → SHA256(prod:Deployment:payment-api)
-// - Node "worker-node-1" (no owner) → SHA256(default:Node:worker-node-1)
+// - Node "worker-node-1" (no owner) → SHA256(:Node:worker-node-1)
 //
 // Examples (without OwnerResolver):
 // - SHA256(prod:Pod:payment-api-789) — resource from labels, no alertname
@@ -459,19 +473,19 @@ func extractTargetResource(ctx context.Context, labels map[string]string, namesp
 // Extraction order (#1029 update — exported_namespace takes precedence):
 // 1. exported_namespace label (for federated Prometheus — points to the real namespace)
 // 2. namespace label
-// 3. default → "default"
+// 3. ("", false) — caller decides based on resource kind scope (#1371)
 //
 // In federated setups, the "namespace" label often points to the federation
 // namespace (e.g., "monitoring"), while "exported_namespace" contains the
 // actual workload namespace (e.g., "production").
-func extractNamespace(labels map[string]string) string {
+func extractNamespace(labels map[string]string) (string, bool) {
 	if ns, ok := labels["exported_namespace"]; ok && ns != "" && isValidK8sName(ns) {
-		return ns
+		return ns, true
 	}
 	if ns, ok := labels["namespace"]; ok && isValidK8sName(ns) {
-		return ns
+		return ns, true
 	}
-	return "default"
+	return "", false
 }
 
 // isValidK8sName returns true if s conforms to RFC 1123 label naming rules

@@ -17,6 +17,9 @@ limitations under the License.
 package adapters
 
 import (
+	"time"
+
+	"github.com/go-logr/logr"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	fakeclientset "k8s.io/client-go/kubernetes/fake"
@@ -76,6 +79,19 @@ func NewTestAPIResourceRegistry() *APIResourceRegistry {
 		panic("NewTestAPIResourceRegistry: " + err.Error())
 	}
 	return registry
+}
+
+// NewTestAPIResourceRegistryNilSnapshot creates an APIResourceRegistry with a
+// nil snapshot, simulating the state before discovery has completed. Used to
+// test graceful degradation of IsNamespacedKind and other snapshot-dependent
+// methods.
+func NewTestAPIResourceRegistryNilSnapshot() *APIResourceRegistry {
+	return &APIResourceRegistry{
+		cache:        make(map[string]existenceCacheEntry),
+		cacheTTL:     30 * time.Second,
+		maxCacheSize: DefaultMaxCacheSize,
+		logger:       logr.Discard(),
+	}
 }
 
 // NewTestAPIResourceRegistryWithNamespace creates an APIResourceRegistry that

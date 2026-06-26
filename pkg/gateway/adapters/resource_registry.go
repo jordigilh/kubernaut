@@ -49,9 +49,10 @@ var (
 )
 
 type registrySnapshot struct {
-	labelToKind map[string]string
-	kindToGVR   map[string]schema.GroupVersionResource
-	kindToGroup map[string]string
+	labelToKind    map[string]string
+	kindToGVR      map[string]schema.GroupVersionResource
+	kindToGroup    map[string]string
+	kindNamespaced map[string]bool
 }
 
 type existenceCacheEntry struct {
@@ -184,6 +185,7 @@ func buildSnapshot(dc discovery.DiscoveryInterface) (*registrySnapshot, error) {
 	labelToKind := make(map[string]string, totalResources)
 	kindToGVR := make(map[string]schema.GroupVersionResource, totalResources)
 	kindToGroup := make(map[string]string, totalResources)
+	kindNamespaced := make(map[string]bool, totalResources)
 
 	for _, list := range lists {
 		if list == nil {
@@ -211,6 +213,7 @@ func buildSnapshot(dc discovery.DiscoveryInterface) (*registrySnapshot, error) {
 			if _, exists := kindToGVR[res.Kind]; !exists {
 				kindToGVR[res.Kind] = gvr
 				kindToGroup[res.Kind] = gv.Group
+				kindNamespaced[res.Kind] = res.Namespaced
 			}
 
 			singular := res.SingularName
@@ -231,9 +234,10 @@ func buildSnapshot(dc discovery.DiscoveryInterface) (*registrySnapshot, error) {
 	}
 
 	return &registrySnapshot{
-		labelToKind: labelToKind,
-		kindToGVR:   kindToGVR,
-		kindToGroup: kindToGroup,
+		labelToKind:    labelToKind,
+		kindToGVR:      kindToGVR,
+		kindToGroup:    kindToGroup,
+		kindNamespaced: kindNamespaced,
 	}, nil
 }
 
@@ -261,6 +265,24 @@ func (r *APIResourceRegistry) KindToGVR(kind string) (schema.GroupVersionResourc
 	}
 	gvr, ok := snap.kindToGVR[kind]
 	return gvr, ok
+}
+
+// IsNamespacedKind returns true if the given Kind is namespaced according to
+// API discovery. Returns true (conservative default) for unknown kinds or when
+// the registry snapshot is not yet initialized — this avoids accidentally
+// dropping namespace information for resources that actually need it.
+func (r *APIResourceRegistry) IsNamespacedKind(kind string) bool {
+	r.mu.RLock()
+	snap := r.snapshot
+	r.mu.RUnlock()
+	if snap == nil {
+		return true
+	}
+	namespaced, ok := snap.kindNamespaced[kind]
+	if !ok {
+		return true
+	}
+	return namespaced
 }
 
 // TierForKind returns the priority tier for a given Kind.
