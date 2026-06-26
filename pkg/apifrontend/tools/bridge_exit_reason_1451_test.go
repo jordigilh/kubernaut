@@ -134,6 +134,21 @@ var _ = Describe("bridgeEventsCollectSummary exit reason — #1451 (BR-AF-MCP-00
 		})
 	})
 
+	Describe("Audit Emission on Timeout (AU-3)", func() {
+
+		It("UT-AF-1451-E01: ExitReasonToStatus returns timed_out for inactivity_timeout", func() {
+			Expect(tools.ExitReasonToStatus(tools.ExitReasonInactivityTimeout)).To(Equal("timed_out"))
+		})
+
+		It("UT-AF-1451-E02: ExitReasonToStatus returns completed for channel_closed", func() {
+			Expect(tools.ExitReasonToStatus(tools.ExitReasonChannelClosed)).To(Equal("completed"))
+		})
+
+		It("UT-AF-1451-E03: ExitReasonToStatus returns timeout for ctx_cancelled", func() {
+			Expect(tools.ExitReasonToStatus(tools.ExitReasonCtxCancelled)).To(Equal("timeout"))
+		})
+	})
+
 	Describe("Data Preservation on Timeout (AU-3)", func() {
 
 		It("UT-AF-1451-009: summary text accumulated before timeout is preserved", func() {

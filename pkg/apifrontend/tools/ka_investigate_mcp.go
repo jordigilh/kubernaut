@@ -447,6 +447,19 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, cfg *InvestigateCon
 		logger.Info("bridgeEventsCollectSummary: finished",
 			"rr_id", args.RRID, "status", status, "exit_reason", exitReason, "summary_len", len(summary))
 
+		if exitReason == ExitReasonInactivityTimeout && cfg.Auditor != nil {
+			cfg.Auditor.Emit(ctx, &audit.Event{
+				Type: audit.EventInvestigationTimeout,
+				Detail: map[string]string{
+					"rr_id":              args.RRID,
+					"session_id":         result.SessionID,
+					"exit_reason":        exitReason,
+					"inactivity_timeout": BridgeInactivityTimeout.String(),
+					"summary_len":        fmt.Sprintf("%d", len(summary)),
+				},
+			})
+		}
+
 		// Fallback: when KA produced no RCA (e.g. user-driving mode with
 		// no autonomous session) but severity triage completed during RR
 		// creation, emit progressive events using the triage data so the
