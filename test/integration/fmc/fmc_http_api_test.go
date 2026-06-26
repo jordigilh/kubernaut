@@ -39,7 +39,7 @@ import (
 //
 // Pyramid Invariant: IT proves wiring.
 // These tests construct the same FMC HTTP stack as cmd/fmc/main.go
-// and exercise it through real HTTP, real Valkey, and a real BackendInformerRegistry
+// and exercise it through real HTTP, real Valkey, and a real EAIGWRegistry
 // connected to envtest.
 //
 // Wiring Manifest:
@@ -53,7 +53,7 @@ var _ = Describe("FMC HTTP API Integration (BR-INTEGRATION-065)", Ordered, Label
 		cancel      context.CancelFunc
 		writer      *fmc.ValkeyWriter
 		cacheReader *scopecache.ValkeyCacheReader
-		clusterReg  *registry.BackendInformerRegistry
+		clusterReg  *registry.EAIGWRegistry
 		server      *httptest.Server
 		redisClient *redis.Client
 	)
@@ -66,9 +66,9 @@ var _ = Describe("FMC HTTP API Integration (BR-INTEGRATION-065)", Ordered, Label
 		cacheReader = scopecache.NewValkeyCacheReader(valkeyAddr)
 		redisClient = redis.NewClient(&redis.Options{Addr: valkeyAddr})
 
-		By("Creating real BackendInformerRegistry from envtest")
-		clusterReg = registry.NewBackendInformerRegistry(dynClient, registry.BackendInformerRegistryConfig{}, nil, logr.Discard())
-		Expect(clusterReg.Start(ctx)).To(Succeed(), "BackendInformerRegistry should start against envtest")
+		By("Creating real EAIGWRegistry from envtest")
+		clusterReg = registry.NewEAIGWRegistry(dynClient, registry.EAIGWRegistryConfig{}, nil, logr.Discard())
+		Expect(clusterReg.Start(ctx)).To(Succeed(), "EAIGWRegistry should start against envtest")
 
 		By("Creating Backend 'it-cluster' in envtest")
 		createBackend(ctx, "it-cluster", "IT Cluster")
@@ -76,7 +76,7 @@ var _ = Describe("FMC HTTP API Integration (BR-INTEGRATION-065)", Ordered, Label
 			_, ok := clusterReg.Get("it-cluster")
 			return ok
 		}, 5*time.Second, 100*time.Millisecond).Should(BeTrue(),
-			"BackendInformerRegistry should discover it-cluster")
+			"EAIGWRegistry should discover it-cluster")
 
 		By("Starting httptest.Server with real FMC handler stack")
 		scopeClient := scopecache.NewClient(cacheReader)
@@ -211,7 +211,7 @@ var _ = Describe("FMC HTTP API Integration (BR-INTEGRATION-065)", Ordered, Label
 			})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(managed).To(BeFalse(),
-				"IT-FMC-054-020: unknown cluster must be rejected by BackendInformerRegistry.Get() before reaching Valkey cache")
+				"IT-FMC-054-020: unknown cluster must be rejected by EAIGWRegistry.Get() before reaching Valkey cache")
 
 			By("Verifying the Valkey key still exists (cache was not the rejection reason)")
 			exists, err := redisClient.Exists(ctx, valkeyKey).Result()
