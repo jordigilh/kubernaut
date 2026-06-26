@@ -1346,7 +1346,7 @@ fields for services that need remote K8s reads via the MCP Gateway.
 
 | Component | Production Entry Point | Wiring Code Location | IT Test ID |
 |-----------|----------------------|---------------------|------------|
-| BackendInformerRegistry | NewBackendInformerRegistry() | pkg/fleet/registry/ | UT-FLEET-CRD-* |
+| EAIGWRegistry | NewEAIGWRegistry() | pkg/fleet/registry/ | UT-REG-EAIGW-* |
 | ClusterLookupAdapter | NewClusterLookupAdapter() | pkg/fleet/registry/scope_adapter.go | UT-SCOPE-P1-001 |
 | SetReaderFactory | prometheusAdapter.SetReaderFactory() | cmd/gateway/main.go | IT-GW-P1-001 |
 | resolverForCluster | Parse/ParseBatch dispatch | pkg/gateway/adapters/prometheus_adapter.go | UT-GW-P1-001..007 |
