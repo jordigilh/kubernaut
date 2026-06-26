@@ -30,8 +30,9 @@ import (
 // of passing a nil registry to NewPrometheusAdapter.
 //
 // Registered resources: Deployment, StatefulSet, DaemonSet, ReplicaSet (apps/v1),
-// Pod, Node, Service, PersistentVolumeClaim (v1), Job, CronJob (batch/v1),
-// HorizontalPodAutoscaler (autoscaling/v2), PodDisruptionBudget (policy/v1).
+// Pod, Node, Service, PersistentVolume, PersistentVolumeClaim (v1),
+// Job, CronJob (batch/v1), HorizontalPodAutoscaler (autoscaling/v2),
+// PodDisruptionBudget (policy/v1), ClusterRole (rbac.authorization.k8s.io/v1).
 func NewTestAPIResourceRegistry() *APIResourceRegistry {
 	cs := fakeclientset.NewSimpleClientset()
 	fd := cs.Discovery().(*fakediscovery.FakeDiscovery)
@@ -51,7 +52,14 @@ func NewTestAPIResourceRegistry() *APIResourceRegistry {
 				{Name: "pods", SingularName: "pod", Kind: "Pod", Namespaced: true},
 				{Name: "nodes", SingularName: "node", Kind: "Node", Namespaced: false},
 				{Name: "services", SingularName: "service", Kind: "Service", Namespaced: true},
+				{Name: "persistentvolumes", SingularName: "persistentvolume", Kind: "PersistentVolume", Namespaced: false},
 				{Name: "persistentvolumeclaims", SingularName: "persistentvolumeclaim", Kind: "PersistentVolumeClaim", Namespaced: true},
+			},
+		},
+		{
+			GroupVersion: "rbac.authorization.k8s.io/v1",
+			APIResources: []metav1.APIResource{
+				{Name: "clusterroles", SingularName: "clusterrole", Kind: "ClusterRole", Namespaced: false},
 			},
 		},
 		{
@@ -119,7 +127,14 @@ func NewTestAPIResourceRegistryWithNamespace() *APIResourceRegistry {
 				{Name: "nodes", SingularName: "node", Kind: "Node", Namespaced: false},
 				{Name: "services", SingularName: "service", Kind: "Service", Namespaced: true},
 				{Name: "namespaces", SingularName: "namespace", Kind: "Namespace", Namespaced: false},
+				{Name: "persistentvolumes", SingularName: "persistentvolume", Kind: "PersistentVolume", Namespaced: false},
 				{Name: "persistentvolumeclaims", SingularName: "persistentvolumeclaim", Kind: "PersistentVolumeClaim", Namespaced: true},
+			},
+		},
+		{
+			GroupVersion: "rbac.authorization.k8s.io/v1",
+			APIResources: []metav1.APIResource{
+				{Name: "clusterroles", SingularName: "clusterrole", Kind: "ClusterRole", Namespaced: false},
 			},
 		},
 		{

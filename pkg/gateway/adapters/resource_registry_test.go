@@ -54,7 +54,14 @@ func standardResources() []*metav1.APIResourceList {
 				{Name: "pods", SingularName: "pod", Kind: "Pod", Namespaced: true},
 				{Name: "nodes", SingularName: "node", Kind: "Node", Namespaced: false},
 				{Name: "services", SingularName: "service", Kind: "Service", Namespaced: true},
+				{Name: "persistentvolumes", SingularName: "persistentvolume", Kind: "PersistentVolume", Namespaced: false},
 				{Name: "persistentvolumeclaims", SingularName: "persistentvolumeclaim", Kind: "PersistentVolumeClaim", Namespaced: true},
+			},
+		},
+		{
+			GroupVersion: "rbac.authorization.k8s.io/v1",
+			APIResources: []metav1.APIResource{
+				{Name: "clusterroles", SingularName: "clusterrole", Kind: "ClusterRole", Namespaced: false},
 			},
 		},
 		{
@@ -540,20 +547,23 @@ var _ = Describe("API Resource Registry (#1029)", func() {
 		})
 
 		It("UT-GW-1371-004: returns false for cluster-scoped kind (PersistentVolume)", func() {
-			pvResource := []*metav1.APIResourceList{
-				{
-					GroupVersion: "v1",
-					APIResources: []metav1.APIResource{
-						{Name: "persistentvolumes", SingularName: "persistentvolume", Kind: "PersistentVolume", Namespaced: false},
-					},
-				},
-			}
-			fd := newFakeDiscovery(standardResources(), pvResource)
-			registry, err := adapters.NewAPIResourceRegistry(fd)
-			Expect(err).ToNot(HaveOccurred())
-
+			registry := adapters.NewTestAPIResourceRegistry()
 			Expect(registry.IsNamespacedKind("PersistentVolume")).To(BeFalse(),
 				"PersistentVolume is cluster-scoped (PVCs are namespaced, PVs are not)")
+		})
+
+		It("UT-GW-1371-E01: returns false for cluster-scoped kind (ClusterRole)", func() {
+			registry := adapters.NewTestAPIResourceRegistry()
+			Expect(registry.IsNamespacedKind("ClusterRole")).To(BeFalse(),
+				"ClusterRole is cluster-scoped — RBAC roles at cluster level")
+		})
+
+		It("UT-GW-1371-E02: PersistentVolumeClaim remains namespaced alongside PersistentVolume", func() {
+			registry := adapters.NewTestAPIResourceRegistry()
+			Expect(registry.IsNamespacedKind("PersistentVolumeClaim")).To(BeTrue(),
+				"PVC is namespaced even though PV is cluster-scoped")
+			Expect(registry.IsNamespacedKind("PersistentVolume")).To(BeFalse(),
+				"PV is cluster-scoped")
 		})
 
 		It("UT-GW-1371-005: returns true for unknown kind (conservative default)", func() {
