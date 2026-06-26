@@ -44,7 +44,7 @@ import (
 //       -> fmc.HTTPClient (production HTTP client)
 //         -> real HTTP transport
 //           -> fmc.Handler (production handler)
-//             -> registry.BackendInformerRegistry.Get (real envtest K8s API)
+//             -> registry.EAIGWRegistry.Get (real envtest K8s API)
 //             -> scopecache.Client (real business logic)
 //               -> ValkeyCacheReader (real Valkey)
 //
@@ -57,7 +57,7 @@ import (
 //	FederatedScopeChecker         -> pkg/fleet/federated_checker.go -> E2E-FMC-054-001
 //	fmc.HTTPClient                -> pkg/fleet/fmc/http_client.go  -> E2E-FMC-054-001
 //	fmc.Handler + RegisterRoutes  -> cmd/fmc/main.go               -> E2E-FMC-054-001
-//	registry.BackendInformerRegistry.Get       -> pkg/fleet/fmc/handler.go      -> E2E-FMC-054-001
+//	registry.EAIGWRegistry.Get       -> pkg/fleet/fmc/handler.go      -> E2E-FMC-054-001
 //	scopecache.Client             -> pkg/fleet/scopecache/client.go -> E2E-FMC-054-001
 var _ = Describe("Fleet Federation E2E: Factory -> FMC -> Valkey (BR-INTEGRATION-065)", Ordered, Label("fmc", "e2e"), func() {
 	var (
@@ -65,7 +65,7 @@ var _ = Describe("Fleet Federation E2E: Factory -> FMC -> Valkey (BR-INTEGRATION
 		cancel      context.CancelFunc
 		writer      *fmc.ValkeyWriter
 		cacheReader *scopecache.ValkeyCacheReader
-		clusterReg  *registry.BackendInformerRegistry
+		clusterReg  *registry.EAIGWRegistry
 		fmcServer   *httptest.Server
 		redisClient *redis.Client
 		fedChecker  scope.ScopeChecker
@@ -80,8 +80,8 @@ var _ = Describe("Fleet Federation E2E: Factory -> FMC -> Valkey (BR-INTEGRATION
 		redisClient = redis.NewClient(&redis.Options{Addr: valkeyAddr})
 
 		scopeClient := scopecache.NewClient(cacheReader)
-		clusterReg = registry.NewBackendInformerRegistry(dynClient, registry.BackendInformerRegistryConfig{}, nil, logr.Discard())
-		Expect(clusterReg.Start(ctx)).To(Succeed(), "BackendInformerRegistry should start against envtest")
+		clusterReg = registry.NewEAIGWRegistry(dynClient, registry.EAIGWRegistryConfig{}, nil, logr.Discard())
+		Expect(clusterReg.Start(ctx)).To(Succeed(), "EAIGWRegistry should start against envtest")
 
 		By("Creating Backend 'e2e-cluster' in envtest")
 		createBackend(ctx, "e2e-cluster", "E2E Cluster")
@@ -89,7 +89,7 @@ var _ = Describe("Fleet Federation E2E: Factory -> FMC -> Valkey (BR-INTEGRATION
 			_, ok := clusterReg.Get("e2e-cluster")
 			return ok
 		}, 5*time.Second, 100*time.Millisecond).Should(BeTrue(),
-			"BackendInformerRegistry should discover e2e-cluster")
+			"EAIGWRegistry should discover e2e-cluster")
 
 		handler := fmc.NewHandler(scopeClient, clusterReg, logr.Discard())
 		mux := http.NewServeMux()
@@ -145,7 +145,7 @@ var _ = Describe("Fleet Federation E2E: Factory -> FMC -> Valkey (BR-INTEGRATION
 			Expect(err).ToNot(HaveOccurred())
 			Expect(managed).To(BeTrue(),
 				"E2E-FMC-054-001A: managed resource on a known cluster must return true "+
-					"through the full factory -> FederatedScopeChecker -> HTTPClient -> FMC handler -> BackendInformerRegistry -> Valkey path")
+					"through the full factory -> FederatedScopeChecker -> HTTPClient -> FMC handler -> EAIGWRegistry -> Valkey path")
 		})
 
 		It("Sub-case B: unmanaged resource (Valkey key absent) returns managed=false", func() {
