@@ -778,7 +778,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [signalprocessing, aianalysis, authwebhook, workflowexecution, remediationorchestrator, notification, gateway, datastorage, effectivenessmonitor, kubernautagent, apifrontend, fullpipeline]
+        service: [signalprocessing, aianalysis, authwebhook, workflowexecution, remediationorchestrator, notification, gateway, datastorage, effectivenessmonitor, kubernautagent, apifrontend, fullpipeline, fleet]
         include:
           - service: signalprocessing
             service_name: "Signal Processing"
@@ -816,13 +816,16 @@ jobs:
           - service: fullpipeline
             service_name: "Full Pipeline"
             timeout: 20
+          - service: fleet
+            service_name: "Fleet Multi-Cluster"
+            timeout: 35
     steps:
       - uses: actions/checkout@v7
         with:
           submodules: true
 
       - name: Free disk space (AWX-heavy E2E jobs)
-        if: matrix.service == 'workflowexecution' || matrix.service == 'fullpipeline'
+        if: matrix.service == 'workflowexecution' || matrix.service == 'fullpipeline' || matrix.service == 'fleet'
         run: |
           echo "Disk before cleanup:"
           df -h /
@@ -865,7 +868,7 @@ jobs:
           sudo mv tkn /usr/local/bin/tkn
           tkn version
       - name: Disable AppArmor rsyslog profile (for AWX)
-        if: matrix.service == 'workflowexecution' || matrix.service == 'fullpipeline'
+        if: matrix.service == 'workflowexecution' || matrix.service == 'fullpipeline' || matrix.service == 'fleet'
         run: |
           # Issue #440: AWX rsyslog sidecar crash-loops on Ubuntu runners because
           # AppArmor denies rsyslogd read access to /var/lib/awx/rsyslog/rsyslog.conf.

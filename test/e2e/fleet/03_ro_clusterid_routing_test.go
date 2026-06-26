@@ -1,0 +1,68 @@
+/*
+Copyright 2026 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package fleet
+
+import (
+	"encoding/json"
+	"io"
+	"net/http"
+	"strings"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+)
+
+// E2E-FLEET-004: RO creates RR with clusterID and routes to fleet-aware workflow
+// Authority: Issue #54, ADR-068
+// FedRAMP: AC-6 (least privilege -- cluster-scoped workflow routing)
+var _ = Describe("E2E-FLEET-004 [AC-6]: RO creates RR with clusterID and routes to fleet-aware workflow (BR-INTEGRATION-054)", Label("fleet"), func() {
+	It("should route alert with cluster_id to a workflow that respects cluster scope", func() {
+		payload := buildPrometheusAlertWithCluster("FleetRouting", "default", "critical",
+			"Deployment", "nginx-fleet-004", "loopback-cluster")
+
+		gatewayURL := "http://localhost:30080"
+		resp, err := http.Post(
+			gatewayURL+"/api/v1/signals/prometheus",
+			"application/json",
+			strings.NewReader(string(payload)))
+		Expect(err).ToNot(HaveOccurred())
+		defer resp.Body.Close()
+		Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+		body, _ := io.ReadAll(resp.Body)
+		var response map[string]interface{}
+		Expect(json.Unmarshal(body, &response)).To(Succeed())
+		Expect(response["status"]).To(Equal("created"))
+
+		rrName := response["remediationRequestName"].(string)
+
+		By("Verifying RR has clusterID=loopback-cluster and enters workflow processing (AC-6)")
+		Eventually(func(g Gomega) {
+			var rr remediationv1.RemediationRequest
+			g.Expect(k8sClient.Get(ctx, client.ObjectKey{
+				Name: rrName, Namespace: namespace,
+			}, &rr)).To(Succeed())
+			g.Expect(rr.Spec.ClusterID).To(Equal("loopback-cluster"),
+				"AC-6: RR must carry cluster identity for scoped workflow routing")
+			g.Expect(rr.Status.OverallPhase).ToNot(BeEmpty(),
+				"RR should enter workflow processing via RO")
+		}, timeout, interval).Should(Succeed())
+	})
+})

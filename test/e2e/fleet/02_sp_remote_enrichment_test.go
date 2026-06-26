@@ -1,0 +1,81 @@
+/*
+Copyright 2026 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package fleet
+
+import (
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+)
+
+// E2E-FLEET-003: SP remote enrichment via MCP gateway
+// Authority: Issue #54, ADR-068
+// FedRAMP: SI-4 (information system monitoring -- remote enrichment)
+var _ = Describe("E2E-FLEET-003 [SI-4]: SP remote enrichment via MCP gateway populates KubernetesContext without degraded mode (BR-INTEGRATION-054)", Label("fleet"), func() {
+	It("enriches a SignalProcessing CR targeting a remote-cluster resource via loopback MCP gateway", func() {
+		sp := &signalprocessingv1.SignalProcessing{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "fleet-003-remote-enrich",
+				Namespace: namespace,
+			},
+			Spec: signalprocessingv1.SignalProcessingSpec{
+				RemediationRequestRef: signalprocessingv1.ObjectReference{
+					APIVersion: "kubernaut.ai/v1alpha1",
+					Kind:       "RemediationRequest",
+					Name:       "fleet-003-rr-ref",
+					Namespace:  namespace,
+				},
+				Signal: signalprocessingv1.SignalData{
+					Fingerprint:  "fleet003abcdef1234567890abcdef1234567890abcdef1234567890abcdef12",
+					Name:         "FleetRemoteEnrichment",
+					Severity:     "high",
+					Type:         "alert",
+					TargetType:   "kubernetes",
+					ClusterID:    "loopback-cluster",
+					ReceivedTime: metav1.Now(),
+					TargetResource: signalprocessingv1.ResourceIdentifier{
+						Kind:      "Pod",
+						Name:      "coredns",
+						Namespace: "kube-system",
+					},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, sp)).To(Succeed())
+
+		By("Waiting for KubernetesContext enrichment via MCP gateway (remote cluster loopback)")
+		Eventually(func() bool {
+			var updated signalprocessingv1.SignalProcessing
+			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &updated); err != nil {
+				return false
+			}
+			return updated.Status.KubernetesContext != nil
+		}, timeout, interval).Should(BeTrue(),
+			"SP should enrich signal with KubernetesContext from remote cluster via MCP gateway")
+
+		By("Verifying enrichment completed without degraded mode (SI-4: monitoring integrity)")
+		var enriched signalprocessingv1.SignalProcessing
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &enriched)).To(Succeed())
+
+		Expect(enriched.Status.KubernetesContext.DegradedMode).To(BeFalse(),
+			"SI-4: enrichment via fleet MCP gateway must succeed without degraded mode")
+	})
+})

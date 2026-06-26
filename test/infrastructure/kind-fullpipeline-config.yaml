@@ -78,6 +78,14 @@ nodes:
   - containerPort: 30556  # DEX NodePort
     hostPort: 30556       # DD-TEST-001: DEX for AF
     protocol: TCP
+  # Fleet: EAIGW MCP Gateway (multi-cluster tool routing, Issue #54)
+  - containerPort: 31975  # EAIGW MCP NodePort
+    hostPort: 31975       # DD-TEST-001: EAIGW MCP
+    protocol: TCP
+  # Fleet: EAIGW Health (fleet readiness probe, Issue #54)
+  - containerPort: 31064  # EAIGW Health NodePort
+    hostPort: 31064       # DD-TEST-001: EAIGW Health
+    protocol: TCP
   # Extra mounts for coverage data collection (DD-TEST-007) and notification output
   # Note: ALL extraMounts are added programmatically in SetupFullPipelineInfrastructure
   # based on OS (macOS vs Linux) to handle path differences between environments

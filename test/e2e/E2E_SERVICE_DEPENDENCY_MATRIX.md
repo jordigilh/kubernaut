@@ -31,6 +31,7 @@ This matrix documents the **actual dependencies** deployed by each E2E test suit
 | **signalprocessing** | `signalprocessing`, `datastorage` | None | PostgreSQL 16, Redis | `kind-signalprocessing-config.yaml` | Signal enrichment with DS audit |
 | **workflowexecution** | `workflowexecution`, `datastorage`, `authwebhook` | None | PostgreSQL 16, Redis, Tekton v1.7.0 | `kind-workflowexecution-config.yaml` | Requires DS + AW + Tekton |
 | **kubernaut-agent** | `kubernaut-agent`, `datastorage`, `mock-llm` | None | PostgreSQL 16, Redis | (uses workflowexecution config) | KA with Mock LLM + DS audit |
+| **fleet** | ALL service images | ALL services | PostgreSQL 16, Redis, EAIGW, K8s MCP Server, DEX | `kind-fullpipeline-config.yaml` (with fleet ports) | Full multi-cluster journey (loopback pattern) |
 
 ---
 
@@ -71,6 +72,14 @@ workflowexecution
 kubernaut-agent
     ├─ datastorage (audit trails)
     └─ mock-llm (cost-free LLM simulation)
+
+fleet (full multi-cluster journey)
+    ├─ ALL services above
+    ├─ apifrontend (preflight checks via MCP)
+    ├─ dex (OAuth2 client_credentials for fleet auth)
+    ├─ prometheus + alertmanager (fleet-aware metrics)
+    ├─ eaigw (MCP Gateway, multi-cluster routing)
+    └─ kube-mcp-server (K8s API via MCP, loopback)
 ```
 
 ---
@@ -107,6 +116,27 @@ kubernaut-agent
 - **Purpose**: DLQ fallback, caching
 - **Deployment**: Kind cluster (Deployment or Sentinel HA)
 - **Port**: NodePort varies by service
+
+### EAIGW (Envoy AI Gateway CLI) v1.0.0
+- **Used by**: fleet only
+- **Purpose**: MCP Gateway for multi-cluster tool routing
+- **Deployment**: Kind cluster (Deployment)
+- **Image**: `docker.io/envoyproxy/ai-gateway-cli:v1.0.0`
+- **Port**: NodePort 31975 (MCP), NodePort 31064 (health)
+
+### K8s MCP Server
+- **Used by**: fleet only
+- **Purpose**: Kubernetes API access via MCP protocol
+- **Deployment**: Kind cluster (Deployment with ServiceAccount)
+- **Image**: `ghcr.io/containers/kubernetes-mcp-server:latest`
+- **Port**: ClusterIP 8080 (internal to cluster)
+
+### DEX OIDC v2.46.0
+- **Used by**: fleet, fullpipeline, apifrontend
+- **Purpose**: OAuth2/OIDC provider for JWT and client_credentials auth
+- **Deployment**: Kind cluster (Deployment)
+- **Image**: `ghcr.io/dexidp/dex:v2.46.0`
+- **Port**: NodePort 30556
 
 ### Tekton Pipelines v1.7.0
 - **Used by**: workflowexecution only
@@ -240,6 +270,9 @@ Each service uses a unique port range to avoid conflicts in parallel E2E executi
 | signalprocessing | 30082 → (varies) | 30182 | 30081 |
 | workflowexecution | (varies) | 30185 → 9185 | 30081 |
 | kubernaut-agent | 30088 → 8088 | (varies) | 30081 |
+| fleet: EAIGW MCP | 31975 → 31975 | N/A | N/A |
+| fleet: EAIGW Health | 31064 → 31064 | N/A | N/A |
+| fleet: DEX OIDC | 30556 → 30556 | N/A | N/A |
 
 **Authority**: DD-TEST-001 (Port Allocation Standard)
 
