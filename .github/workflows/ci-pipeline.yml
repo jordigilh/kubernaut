@@ -860,6 +860,11 @@ jobs:
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind
           kind version
+      - name: Install Helm (fleet E2E deploys Istio via helm template)
+        if: matrix.service == 'fleet'
+        run: |
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+          helm version
       - name: Install Tekton CLI (tkn)
         run: |
           TKN_VERSION="0.40.0"
