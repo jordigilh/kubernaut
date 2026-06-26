@@ -29,9 +29,13 @@ jobs:
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3.8.2
 
-      - name: Login to Quay.io
+      - name: Login to Quay.io (Podman + Cosign)
         run: |
           podman login -u "${{ secrets.QUAY_ROBOT_USERNAME }}" \
+                       -p "${{ secrets.QUAY_ROBOT_TOKEN }}" \
+                       quay.io
+
+          cosign login -u "${{ secrets.QUAY_ROBOT_USERNAME }}" \
                        -p "${{ secrets.QUAY_ROBOT_TOKEN }}" \
                        quay.io
 
@@ -90,30 +94,29 @@ jobs:
           echo "cosign_verify_exit=$?" >> $GITHUB_OUTPUT
 
       # ============================================================
-      # TEST 3: SLSA provenance attestation (push to registry)
-      # Uses actions/attest to generate build provenance and push
-      # it to the registry. This may fail if Quay.io doesn't
-      # support GitHub's attestation format.
+      # TEST 3: SLSA build provenance (push to registry)
+      # Uses actions/attest-build-provenance to auto-generate
+      # SLSA v1.0 provenance and push to the registry.
       # ============================================================
-      - name: "Test 3: SLSA attestation (push-to-registry)"
+      - name: "Test 3: SLSA build provenance (push-to-registry)"
         id: slsa_push
         continue-on-error: true
-        uses: actions/attest@v2
+        uses: actions/attest-build-provenance@v2
         with:
           subject-name: ${{ env.TEST_IMAGE }}
           subject-digest: ${{ steps.digest.outputs.digest }}
           push-to-registry: true
 
       # ============================================================
-      # TEST 3b: SLSA attestation (no push, fallback)
+      # TEST 3b: SLSA build provenance (no push, fallback)
       # If push-to-registry failed, try without push to confirm
       # attestation generation itself works.
       # ============================================================
-      - name: "Test 3b: SLSA attestation (no push, fallback)"
+      - name: "Test 3b: SLSA build provenance (no push, fallback)"
         id: slsa_nopush
         if: steps.slsa_push.outcome == 'failure'
         continue-on-error: true
-        uses: actions/attest@v2
+        uses: actions/attest-build-provenance@v2
         with:
           subject-name: ${{ env.TEST_IMAGE }}
           subject-digest: ${{ steps.digest.outputs.digest }}
