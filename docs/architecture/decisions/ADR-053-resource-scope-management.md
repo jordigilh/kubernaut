@@ -750,6 +750,31 @@ the fallback eliminates technical debt and simplifies the CRD creation path.
 
 ---
 
-**Document Version**: 1.2
-**Last Updated**: February 8, 2026
-**Next Review**: April 20, 2026 (3 months)
+### Fleet 3-Level Scope Hierarchy (DD-FLEET-001, Issue #54 P1)
+
+When fleet mode is enabled, `FederatedScopeChecker` adds a **cluster-level
+precondition** to the scope check pipeline:
+
+```
+1. Cluster managed?  (ClusterLookup.IsKnownCluster)
+2. Resource managed? (ScopeChecker.IsManagedResource — local or remote)
+3. Namespace managed? (implicit in resource scope check)
+```
+
+The `ClusterLookup` interface is injected via `WithClusterLookup` option on
+`NewFederatedScopeChecker`. The production implementation uses
+`BackendInformerRegistry` (watching Backend CRDs with `kubernaut.ai/managed` label)
+adapted via `ClusterLookupAdapter`.
+
+If a signal arrives with a `clusterID` that is not registered in the cluster
+registry, the resource is immediately classified as unmanaged without making
+any remote calls. This prevents unnecessary MCP tool calls to unknown clusters
+and provides fail-fast behavior.
+
+See DD-FLEET-001 for full design details.
+
+---
+
+**Document Version**: 1.3
+**Last Updated**: June 25, 2026
+**Next Review**: September 25, 2026 (3 months)
