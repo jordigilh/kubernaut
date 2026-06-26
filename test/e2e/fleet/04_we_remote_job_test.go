@@ -39,14 +39,14 @@ import (
 var _ = Describe("E2E-FLEET-005 [AC-3]: WE dispatches remote Job via MCP gateway to loopback cluster (BR-INTEGRATION-054)", Label("fleet"), func() {
 	It("should discover job-creation tools via MCP gateway and verify tool availability", func() {
 		mcpCtx := context.Background()
-		mcpClient, err := mcpclient.New(mcpCtx, eaigwMCPURL)
-		Expect(err).ToNot(HaveOccurred(), "should connect to EAIGW via NodePort")
+		mcpClient, err := mcpclient.New(mcpCtx, mcpGatewayURL)
+		Expect(err).ToNot(HaveOccurred(), "should connect to MCP gateway via NodePort")
 		defer mcpClient.Close()
 
 		tools, err := mcpClient.Session().ListTools(mcpCtx, nil)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(tools.Tools).ToNot(BeEmpty(),
-			"EAIGW should expose K8s MCP Server tools")
+			"MCP gateway should expose K8s MCP Server tools")
 
 		By("Verifying resource creation tools are available for remote execution (AC-3)")
 		toolNames := make(map[string]bool)
@@ -54,16 +54,16 @@ var _ = Describe("E2E-FLEET-005 [AC-3]: WE dispatches remote Job via MCP gateway
 			toolNames[tool.Name] = true
 		}
 
-		Expect(toolNames).To(HaveKey("loopback-cluster__resources_create"),
+		Expect(toolNames).To(HaveKey("loopback_cluster_resources_create"),
 			"AC-3: resources_create tool must be available for remote Job dispatch")
-		Expect(toolNames).To(HaveKey("loopback-cluster__resources_get"),
+		Expect(toolNames).To(HaveKey("loopback_cluster_resources_get"),
 			"resources_get tool needed for WE status polling")
 	})
 
 	It("should execute a read operation on the remote cluster via MCP gateway", func() {
 		mcpCtx := context.Background()
-		mcpClient, err := mcpclient.New(mcpCtx, eaigwMCPURL, mcpclient.WithClusterID("loopback-cluster"))
-		Expect(err).ToNot(HaveOccurred(), "should connect to EAIGW via NodePort")
+		mcpClient, err := mcpclient.New(mcpCtx, mcpGatewayURL, mcpclient.WithClusterID("loopback-cluster"))
+		Expect(err).ToNot(HaveOccurred(), "should connect to MCP gateway via NodePort")
 		defer mcpClient.Close()
 
 		By("Reading a well-known resource (kube-system pods) via MCP gateway")

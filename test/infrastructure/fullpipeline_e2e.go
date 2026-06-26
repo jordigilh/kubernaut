@@ -99,6 +99,7 @@ var fullPipelineImageConfigs = []E2EImageConfig{
 	{ServiceName: "mock-llm", ImageName: "kubernaut/mock-llm", DockerfilePath: "test/services/mock-llm/go.Dockerfile", BuildContextPath: ""},
 	{ServiceName: "effectivenessmonitor", ImageName: "kubernaut/effectivenessmonitor", DockerfilePath: "docker/effectivenessmonitor-controller.Dockerfile"},
 	{ServiceName: "apifrontend", ImageName: "kubernaut/apifrontend", DockerfilePath: "docker/apifrontend.Dockerfile"},
+	{ServiceName: "fmc", ImageName: "kubernaut/fmc", DockerfilePath: "docker/fmc.Dockerfile"},
 }
 
 // SetupFullPipelineInfrastructure deploys the complete Kubernaut service pipeline
