@@ -14,11 +14,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package testutil provides a mock MCP gateway for integration tests.
-// It simulates an Envoy AI Gateway routing tool calls to per-cluster
-// K8s MCP servers via the {backendName}__{toolName} prefix convention,
-// enabling testing of multi-cluster federation without requiring a real
-// gateway deployment.
+// Package testutil provides a mock MCP gateway for unit and integration tests.
+// It simulates MCP Gateway tool routing using configurable prefix conventions:
+// EAIGW ("{clusterID}__{tool}") via WithMultiCluster, or Kuadrant-style
+// ("{prefix}{tool}") via WithKuadrantCluster.
 package testutil
 
 import (
@@ -48,9 +47,14 @@ type toolDef struct {
 	handler     mcp.ToolHandler
 }
 
+type clusterEntry struct {
+	id     string
+	prefix string
+}
+
 type gatewayConfig struct {
-	tools    []toolDef
-	clusters []string
+	tools          []toolDef
+	clusterEntries []clusterEntry
 }
 
 // WithTool registers a static tool on the mock gateway.
@@ -66,14 +70,25 @@ func WithTool(name, description string, inputSchema json.RawMessage, handler mcp
 }
 
 // WithMultiCluster registers a set of cluster-scoped tools using the
-// naming convention "{clusterID}__{toolName}" as the MCP Gateway does.
+// EAIGW naming convention "{clusterID}__{toolName}".
 func WithMultiCluster(clusters ...string) Option {
 	return func(cfg *gatewayConfig) {
-		cfg.clusters = append(cfg.clusters, clusters...)
+		for _, c := range clusters {
+			cfg.clusterEntries = append(cfg.clusterEntries, clusterEntry{id: c, prefix: c + "__"})
+		}
 	}
 }
 
-// MockGateway is a test MCP server that simulates the Envoy AI Gateway MCP Gateway.
+// WithKuadrantCluster registers cluster-scoped tools using a Kuadrant-style
+// prefix (e.g., "cluster_a_"). The prefix is the full string prepended to
+// tool names, matching MCPServerRegistration.spec.prefix behavior.
+func WithKuadrantCluster(clusterID, prefix string) Option {
+	return func(cfg *gatewayConfig) {
+		cfg.clusterEntries = append(cfg.clusterEntries, clusterEntry{id: clusterID, prefix: prefix})
+	}
+}
+
+// MockGateway is a test MCP server that simulates an MCP Gateway.
 type MockGateway struct {
 	server     *mcp.Server
 	httpServer *httptest.Server
@@ -100,8 +115,8 @@ func NewMockGateway(opts ...Option) *MockGateway {
 		gw.registerTool(td)
 	}
 
-	for _, cluster := range cfg.clusters {
-		gw.registerClusterTools(cluster)
+	for _, entry := range cfg.clusterEntries {
+		gw.registerClusterToolsWithPrefix(entry.id, entry.prefix)
 	}
 
 	gw.handler = mcp.NewStreamableHTTPHandler(
@@ -149,11 +164,11 @@ func (gw *MockGateway) registerTool(td toolDef) {
 	}, wrappedHandler)
 }
 
-func (gw *MockGateway) registerClusterTools(cluster string) {
+func (gw *MockGateway) registerClusterToolsWithPrefix(cluster, prefix string) {
 	getListSchema := json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"apiVersion":{"type":"string"},"namespace":{"type":"string"},"name":{"type":"string"}},"required":["kind","apiVersion"]}`)
 	deleteSchema := json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"apiVersion":{"type":"string"},"namespace":{"type":"string"},"name":{"type":"string"}},"required":["kind","apiVersion","name"]}`)
 
-	getResourceName := cluster + "__resources_get"
+	getResourceName := prefix + "resources_get"
 	gw.server.AddTool(&mcp.Tool{
 		Name:        getResourceName,
 		Description: fmt.Sprintf("Get a Kubernetes resource from cluster %s", cluster),
@@ -182,7 +197,7 @@ func (gw *MockGateway) registerClusterTools(cluster string) {
 		}, nil
 	})
 
-	createResourceName := cluster + "__resources_create_or_update"
+	createResourceName := prefix + "resources_create_or_update"
 	gw.server.AddTool(&mcp.Tool{
 		Name:        createResourceName,
 		Description: fmt.Sprintf("Create a Kubernetes resource on cluster %s", cluster),
@@ -199,7 +214,7 @@ func (gw *MockGateway) registerClusterTools(cluster string) {
 		}, nil
 	})
 
-	deleteResourceName := cluster + "__resources_delete"
+	deleteResourceName := prefix + "resources_delete"
 	gw.server.AddTool(&mcp.Tool{
 		Name:        deleteResourceName,
 		Description: fmt.Sprintf("Delete a Kubernetes resource from cluster %s", cluster),
@@ -224,7 +239,7 @@ func (gw *MockGateway) registerClusterTools(cluster string) {
 		}, nil
 	})
 
-	listResourcesName := cluster + "__resources_list"
+	listResourcesName := prefix + "resources_list"
 	gw.server.AddTool(&mcp.Tool{
 		Name:        listResourcesName,
 		Description: fmt.Sprintf("List Kubernetes resources from cluster %s", cluster),
