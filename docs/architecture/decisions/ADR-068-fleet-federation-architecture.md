@@ -1306,10 +1306,14 @@ is the real `kubernetes-mcp-server` tool name. Constants are defined in
 
 | Operation | MCP Tool Name | Arguments |
 |-----------|---------------|-----------|
-| Get       | `{clusterID}__resources_get` | `kind`, `name`, `namespace` |
-| List      | `{clusterID}__resources_list` | `kind`, `namespace` |
+| Get       | `{clusterID}__resources_get` | `apiVersion`, `kind`, `name`, `namespace` |
+| List      | `{clusterID}__resources_list` | `apiVersion`, `kind`, `namespace` |
 | Create/Update | `{clusterID}__resources_create_or_update` | `manifest` (JSON string) |
-| Delete    | `{clusterID}__resources_delete` | `kind`, `name`, `namespace` |
+| Delete    | `{clusterID}__resources_delete` | `apiVersion`, `kind`, `name`, `namespace` |
+
+**Note**: `apiVersion` is a mandatory parameter for all K8s MCP Server tool calls. The
+`mcpclient` extracts it from the `GroupVersionKind` set on the `client.Object` before
+calling. The mock gateway validates its presence.
 
 ### Backward Compatibility
 
@@ -1317,6 +1321,37 @@ is the real `kubernetes-mcp-server` tool name. Constants are defined in
 - Existing tests pass without modification due to backward-compatible constructors
 - No changes to the Executor interface signature
 - No changes to the reconciler dispatch logic
+
+### P1 Addendum: Remote Owner Chain and Scope Hierarchy (DD-FLEET-001)
+
+**BackendInformerRegistry**: The `CRDWatcher` component was renamed to
+`BackendInformerRegistry` to better reflect its role as a Kubernetes informer-based
+registry for Backend CRDs. All struct names, constructors, config types, file names,
+and references were updated.
+
+**Shared across services**: `BackendInformerRegistry` is used by GW, RO, and FMC (not
+just FMC) to provide cluster-level scope checks. The `ClusterLookupAdapter` adapts
+`ClusterRegistry` to the `ClusterLookup` interface consumed by `FederatedScopeChecker`.
+
+**Remote owner chain resolution**: The Gateway's `PrometheusAdapter` gains an optional
+`readerFactory` for remote owner chain resolution. When a signal carries a non-empty
+`clusterID` and a `ReaderFactory` is configured, the adapter constructs a
+`K8sOwnerResolver` backed by a remote `client.Reader` from the MCP Gateway. This
+enables consistent Pod-to-Deployment fingerprinting for remote cluster signals.
+
+**FleetConfig extension**: `FleetConfig` now includes `MCPGatewayEndpoint` and `OAuth2`
+fields for services that need remote K8s reads via the MCP Gateway.
+
+**Updated Wiring Manifest (P1)**:
+
+| Component | Production Entry Point | Wiring Code Location | IT Test ID |
+|-----------|----------------------|---------------------|------------|
+| BackendInformerRegistry | NewBackendInformerRegistry() | pkg/fleet/registry/ | UT-FLEET-CRD-* |
+| ClusterLookupAdapter | NewClusterLookupAdapter() | pkg/fleet/registry/scope_adapter.go | UT-SCOPE-P1-001 |
+| SetReaderFactory | prometheusAdapter.SetReaderFactory() | cmd/gateway/main.go | IT-GW-P1-001 |
+| resolverForCluster | Parse/ParseBatch dispatch | pkg/gateway/adapters/prometheus_adapter.go | UT-GW-P1-001..007 |
+| FleetResilientClient (GW) | fleetclient.NewResilient() | cmd/gateway/main.go | IT-GW-P1-001 |
+| FleetResilientClient shutdown | fleetResilientClient.Close() | cmd/gateway/main.go | - |
 
 ## References
 
