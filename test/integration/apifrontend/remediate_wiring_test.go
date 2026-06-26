@@ -24,13 +24,13 @@ var _ = Describe("kubernaut_remediate wiring (#1332)", func() {
 		ctx := context.Background()
 		ns := "default"
 
-		result, err := tools.HandleRemediate(ctx, k8sClient, dynamicClient, ns, &tools.RemediateArgs{
+		result, err := tools.HandleRemediate(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: ns}, &tools.RemediateArgs{
 			Namespace:   ns,
 			Kind:        "Deployment",
 			Name:        "web-1332-w01",
 			Description: "kubernaut_remediate wiring IT",
 			APIVersion:  "apps/v1",
-		}, "it-user", nil, nil)
+		}, "it-user")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.RRID).To(HavePrefix("rr-"))
 		Expect(result.AlreadyExists).To(BeFalse())
@@ -48,13 +48,13 @@ var _ = Describe("kubernaut_remediate wiring (#1332)", func() {
 		ctx := context.Background()
 		ns := "default"
 
-		result, err := tools.HandleRemediate(ctx, k8sClient, dynamicClient, ns, &tools.RemediateArgs{
+		result, err := tools.HandleRemediate(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: ns}, &tools.RemediateArgs{
 			Namespace:   ns,
 			Kind:        "Deployment",
 			Name:        "web-1332-w02",
 			Description: "no IS expected",
 			APIVersion:  "apps/v1",
-		}, "it-user", nil, nil)
+		}, "it-user")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.RRID).To(HavePrefix("rr-"))
 
@@ -110,9 +110,9 @@ var _ = Describe("kubernaut_remediate wiring (#1332)", func() {
 			_ = dynamicClient.Resource(rrGVR).Namespace(ns).Delete(ctx, rrName, metav1.DeleteOptions{})
 		})
 
-		result, err := tools.HandleRemediate(ctx, k8sClient, dynamicClient, ns, &tools.RemediateArgs{
+		result, err := tools.HandleRemediate(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: ns}, &tools.RemediateArgs{
 			RRID: rrName,
-		}, "it-user", nil, nil)
+		}, "it-user")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.AlreadyExists).To(BeTrue())
 		Expect(result.RRID).To(Equal(rrName))
@@ -122,9 +122,9 @@ var _ = Describe("kubernaut_remediate wiring (#1332)", func() {
 		ctx := context.Background()
 		ns := "default"
 
-		result, err := tools.HandleRemediate(ctx, k8sClient, dynamicClient, ns, &tools.RemediateArgs{
+		result, err := tools.HandleRemediate(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: ns}, &tools.RemediateArgs{
 			RRID: "rr-nonexistent-1332",
-		}, "it-user", nil, nil)
+		}, "it-user")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.AlreadyExists).To(BeFalse())
 		Expect(result.Message).To(ContainSubstring("not found"))
@@ -133,13 +133,13 @@ var _ = Describe("kubernaut_remediate wiring (#1332)", func() {
 	It("IT-AF-1332-W05: HandleRemediate with nil client returns ErrK8sUnavailable", func() {
 		ctx := context.Background()
 
-		_, err := tools.HandleRemediate(ctx, nil, nil, "default", &tools.RemediateArgs{
+		_, err := tools.HandleRemediate(ctx, &tools.ToolDeps{Client: nil, ControllerNS: "default"}, &tools.RemediateArgs{
 			Namespace:   "default",
 			Kind:        "Deployment",
 			Name:        "web-nil",
 			Description: "nil client test",
 			APIVersion:  "apps/v1",
-		}, "it-user", nil, nil)
+		}, "it-user")
 		Expect(err).To(MatchError(tools.ErrK8sUnavailable))
 	})
 
@@ -148,13 +148,13 @@ var _ = Describe("kubernaut_remediate wiring (#1332)", func() {
 		ns := "default"
 		auditRecorder.Reset()
 
-		result, err := tools.HandleRemediate(ctx, k8sClient, dynamicClient, ns, &tools.RemediateArgs{
+		result, err := tools.HandleRemediate(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: ns, Auditor: auditRecorder}, &tools.RemediateArgs{
 			Namespace:   ns,
 			Kind:        "Deployment",
 			Name:        "web-1332-w06",
 			Description: "audit wiring IT",
 			APIVersion:  "apps/v1",
-		}, "audit-user-1332", nil, auditRecorder)
+		}, "audit-user-1332")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.RRID).NotTo(BeEmpty())
 

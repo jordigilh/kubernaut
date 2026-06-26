@@ -41,8 +41,9 @@ var driverEntryTools = map[string]bool{
 // sessionTerminalTools end the active investigation session.
 // A successful call clears the ActiveContextRegistry entry (BR-SESS-022).
 var sessionTerminalTools = map[string]bool{
-	"kubernaut_complete": true,
-	"kubernaut_cancel":   true,
+	"kubernaut_complete":           true,
+	"kubernaut_cancel":             true,
+	"kubernaut_complete_no_action": true,
 }
 
 // newPhaseGuard returns a BeforeToolCallback that blocks MCP-dependent tools

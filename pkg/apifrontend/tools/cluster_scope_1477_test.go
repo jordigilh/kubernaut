@@ -203,13 +203,16 @@ var _ = Describe("Cluster-scoped namespace stripping (#1477)", func() {
 			}
 
 			result, err := tools.HandleInvestigationMCPWithRegistry(
-				ctx, mockMCP, cfg.Client, "kubernaut-system",
-				tools.InvestigateMCPArgs{
+				ctx, &tools.InvestigateConfig{
+					MCPClient: mockMCP,
+					Client:    cfg.Client,
+					Namespace: "kubernaut-system",
+				}, tools.InvestigateMCPArgs{
 					APIVersion: "v1",
 					Kind:       "Node",
 					Name:       "worker-1",
 					Namespace:  "kube-system",
-				}, nil, nil, nil, false, nil, "", nil, nil)
+				}, false, "")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.SessionID).NotTo(BeEmpty())
 			Expect(sink.messages).To(ContainElement("stripping namespace for cluster-scoped resource"))

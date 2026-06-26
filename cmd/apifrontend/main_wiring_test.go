@@ -516,19 +516,17 @@ func TestBuildMCPHandler_ReturnsHandlerAndReadyChecker(t *testing.T) {
 	}))
 	t.Cleanup(kaBackend.Close)
 
-	cfg := &config.Config{}
-	cfg.MCP.Enabled = true
-	reg := metrics.NewRegistry()
-
-	deps := &backendDeps{
-		KAClient: ka.NewClient(ka.Config{BaseURL: kaBackend.URL}),
-		DSResilientTransport: resilience.NewCircuitBreakerTransport(
+	d := testHandlerDeps(func(d *handlerDeps) {
+		d.Cfg.MCP.Enabled = true
+		d.Backends.KAClient = ka.NewClient(ka.Config{BaseURL: kaBackend.URL})
+		d.Backends.DSResilientTransport = resilience.NewCircuitBreakerTransport(
 			http.DefaultTransport,
 			&resilience.CircuitBreakerConfig{Name: "test-ds"},
-		),
-	}
+		)
+		d.Authorizer = &allowAllToolAuthorizer{}
+	})
 
-	h, depsReady, err := buildMCPHandler(cfg, deps, nil, reg, &allowAllToolAuthorizer{}, nil, logr.Discard(), nil)
+	h, depsReady, err := buildMCPHandler(d)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -552,12 +550,23 @@ func testBackendDeps() *backendDeps {
 	return &backendDeps{}
 }
 
+func testHandlerDeps(overrides ...func(*handlerDeps)) *handlerDeps {
+	d := &handlerDeps{
+		Cfg:      &config.Config{},
+		Backends: testBackendDeps(),
+		MetricsReg: metrics.NewRegistry(),
+		Logger:   logr.Discard(),
+	}
+	for _, fn := range overrides {
+		fn(d)
+	}
+	return d
+}
+
 func TestBuildA2AHandler_NoLLMEndpoint_Returns501Stub(t *testing.T) {
 	t.Parallel()
 
-	cfg := &config.Config{}
-	reg := metrics.NewRegistry()
-	h, err := buildA2AHandler(context.Background(), cfg, testBackendDeps(), nil, reg, nil, nil, logr.Discard(), nil)
+	h, err := buildA2AHandler(context.Background(), testHandlerDeps())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -585,14 +594,14 @@ func TestBuildA2AHandler_WithLLMEndpoint_ReturnsHandler(t *testing.T) {
 	}))
 	t.Cleanup(mockLLM.Close)
 
-	cfg := &config.Config{}
-	cfg.Agent.LLM.Provider = types.LLMProviderGemini
-	cfg.Agent.LLM.Endpoint = mockLLM.URL
-	cfg.Agent.LLM.Model = "mock-model"
-	cfg.Agent.LLM.APIKey = "test-key"
-	reg := metrics.NewRegistry()
+	d := testHandlerDeps(func(d *handlerDeps) {
+		d.Cfg.Agent.LLM.Provider = types.LLMProviderGemini
+		d.Cfg.Agent.LLM.Endpoint = mockLLM.URL
+		d.Cfg.Agent.LLM.Model = "mock-model"
+		d.Cfg.Agent.LLM.APIKey = "test-key"
+	})
 
-	h, err := buildA2AHandler(context.Background(), cfg, testBackendDeps(), nil, reg, nil, nil, logr.Discard(), nil)
+	h, err := buildA2AHandler(context.Background(), d)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -610,20 +619,21 @@ func TestBuildA2AHandler_WithSessionInfra_UsesDecorator(t *testing.T) {
 	}))
 	t.Cleanup(mockLLM.Close)
 
-	cfg := &config.Config{}
-	cfg.Agent.LLM.Provider = types.LLMProviderGemini
-	cfg.Agent.LLM.Endpoint = mockLLM.URL
-	cfg.Agent.LLM.Model = "mock-model"
-	cfg.Agent.LLM.APIKey = "test-key"
-	reg := metrics.NewRegistry()
+	d := testHandlerDeps(func(d *handlerDeps) {
+		d.Cfg.Agent.LLM.Provider = types.LLMProviderGemini
+		d.Cfg.Agent.LLM.Endpoint = mockLLM.URL
+		d.Cfg.Agent.LLM.Model = "mock-model"
+		d.Cfg.Agent.LLM.APIKey = "test-key"
+	})
 
-	infra, infraErr := buildSessionInfra(cfg, reg, nil, logr.Discard())
+	infra, infraErr := buildSessionInfra(d.Cfg, d.MetricsReg, nil, d.Logger)
 	if infraErr != nil {
 		t.Skipf("skipping (no kubeconfig available): %v", infraErr)
 	}
 	defer infra.StopFunc()
+	d.SessInfra = infra
 
-	h, err := buildA2AHandler(context.Background(), cfg, testBackendDeps(), infra, reg, nil, nil, logr.Discard(), nil)
+	h, err := buildA2AHandler(context.Background(), d)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -642,15 +652,14 @@ func TestBuildA2AHandler_ThreadsK8sClient(t *testing.T) {
 	}))
 	t.Cleanup(mockLLM.Close)
 
-	cfg := &config.Config{}
-	cfg.Agent.LLM.Provider = types.LLMProviderGemini
-	cfg.Agent.LLM.Endpoint = mockLLM.URL
-	cfg.Agent.LLM.Model = "mock-model"
-	cfg.Agent.LLM.APIKey = "test-key"
-	reg := metrics.NewRegistry()
+	d := testHandlerDeps(func(d *handlerDeps) {
+		d.Cfg.Agent.LLM.Provider = types.LLMProviderGemini
+		d.Cfg.Agent.LLM.Endpoint = mockLLM.URL
+		d.Cfg.Agent.LLM.Model = "mock-model"
+		d.Cfg.Agent.LLM.APIKey = "test-key"
+	})
 
-	deps := testBackendDeps()
-	h, err := buildA2AHandler(context.Background(), cfg, deps, nil, reg, nil, nil, logr.Discard(), nil)
+	h, err := buildA2AHandler(context.Background(), d)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -674,17 +683,15 @@ func TestBuildA2AHandler_ThreadsKAClient(t *testing.T) {
 	}))
 	t.Cleanup(mockLLM.Close)
 
-	cfg := &config.Config{}
-	cfg.Agent.LLM.Provider = types.LLMProviderGemini
-	cfg.Agent.LLM.Endpoint = mockLLM.URL
-	cfg.Agent.LLM.Model = "mock-model"
-	cfg.Agent.LLM.APIKey = "test-key"
-	reg := metrics.NewRegistry()
+	d := testHandlerDeps(func(d *handlerDeps) {
+		d.Cfg.Agent.LLM.Provider = types.LLMProviderGemini
+		d.Cfg.Agent.LLM.Endpoint = mockLLM.URL
+		d.Cfg.Agent.LLM.Model = "mock-model"
+		d.Cfg.Agent.LLM.APIKey = "test-key"
+		d.Backends.KAClient = ka.NewClient(ka.Config{BaseURL: kaBackend.URL}, nil)
+	})
 
-	deps := testBackendDeps()
-	deps.KAClient = ka.NewClient(ka.Config{BaseURL: kaBackend.URL}, nil)
-
-	h, err := buildA2AHandler(context.Background(), cfg, deps, nil, reg, nil, nil, logr.Discard(), nil)
+	h, err := buildA2AHandler(context.Background(), d)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -708,22 +715,20 @@ func TestBuildA2AHandler_ThreadsDSClient(t *testing.T) {
 	}))
 	t.Cleanup(dsBackend.Close)
 
-	cfg := &config.Config{}
-	cfg.Agent.LLM.Provider = types.LLMProviderGemini
-	cfg.Agent.LLM.Endpoint = mockLLM.URL
-	cfg.Agent.LLM.Model = "mock-model"
-	cfg.Agent.LLM.APIKey = "test-key"
-	reg := metrics.NewRegistry()
-
 	dsClient, dsErr := ds.NewOgenClient(ds.OgenClientConfig{BaseURL: dsBackend.URL})
 	if dsErr != nil {
 		t.Fatalf("failed to create DS client: %v", dsErr)
 	}
 
-	deps := testBackendDeps()
-	deps.DSClient = dsClient
+	d := testHandlerDeps(func(d *handlerDeps) {
+		d.Cfg.Agent.LLM.Provider = types.LLMProviderGemini
+		d.Cfg.Agent.LLM.Endpoint = mockLLM.URL
+		d.Cfg.Agent.LLM.Model = "mock-model"
+		d.Cfg.Agent.LLM.APIKey = "test-key"
+		d.Backends.DSClient = dsClient
+	})
 
-	h, err := buildA2AHandler(context.Background(), cfg, deps, nil, reg, nil, nil, logr.Discard(), nil)
+	h, err := buildA2AHandler(context.Background(), d)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -742,13 +747,6 @@ func TestBuildA2AHandler_ThreadsUserLimiter(t *testing.T) {
 	}))
 	t.Cleanup(mockLLM.Close)
 
-	cfg := &config.Config{}
-	cfg.Agent.LLM.Provider = types.LLMProviderGemini
-	cfg.Agent.LLM.Endpoint = mockLLM.URL
-	cfg.Agent.LLM.Model = "mock-model"
-	cfg.Agent.LLM.APIKey = "test-key"
-	reg := metrics.NewRegistry()
-
 	limiter := ratelimit.NewUserLimiter(ratelimit.PerUserConfig{
 		RequestsPerMinute:     60,
 		MaxConcurrentSessions: 5,
@@ -758,8 +756,15 @@ func TestBuildA2AHandler_ThreadsUserLimiter(t *testing.T) {
 	})
 	t.Cleanup(limiter.Stop)
 
-	deps := testBackendDeps()
-	h, err := buildA2AHandler(context.Background(), cfg, deps, nil, reg, nil, nil, logr.Discard(), limiter)
+	d := testHandlerDeps(func(d *handlerDeps) {
+		d.Cfg.Agent.LLM.Provider = types.LLMProviderGemini
+		d.Cfg.Agent.LLM.Endpoint = mockLLM.URL
+		d.Cfg.Agent.LLM.Model = "mock-model"
+		d.Cfg.Agent.LLM.APIKey = "test-key"
+		d.UserLimiter = limiter
+	})
+
+	h, err := buildA2AHandler(context.Background(), d)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -940,26 +945,24 @@ func TestBuildMCPHandler_ReturnsHandler(t *testing.T) {
 	}))
 	t.Cleanup(kaBackend.Close)
 
-	cfg := &config.Config{}
-	cfg.MCP.Enabled = true
-	reg := metrics.NewRegistry()
-
 	pool := ka.NewKASessionPool(ka.PoolConfig{
 		Factory:    func(_ context.Context) (ka.PoolSession, error) { return nil, nil },
 		MaxEntries: 10,
 		Logger:     logr.Discard(),
 	})
 
-	deps := &backendDeps{
-		KAClient: ka.NewClient(ka.Config{BaseURL: kaBackend.URL}),
-		Pool:     pool,
-		DSResilientTransport: resilience.NewCircuitBreakerTransport(
+	d := testHandlerDeps(func(d *handlerDeps) {
+		d.Cfg.MCP.Enabled = true
+		d.Backends.KAClient = ka.NewClient(ka.Config{BaseURL: kaBackend.URL})
+		d.Backends.Pool = pool
+		d.Backends.DSResilientTransport = resilience.NewCircuitBreakerTransport(
 			http.DefaultTransport,
 			&resilience.CircuitBreakerConfig{Name: "test-ds"},
-		),
-	}
+		)
+		d.Authorizer = &allowAllToolAuthorizer{}
+	})
 
-	h, _, err := buildMCPHandler(cfg, deps, nil, reg, &allowAllToolAuthorizer{}, nil, logr.Discard(), nil)
+	h, _, err := buildMCPHandler(d)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1015,27 +1018,24 @@ func TestBuildMCPHandler_WiresSessionInitializer(t *testing.T) {
 	}))
 	t.Cleanup(kaBackend.Close)
 
-	cfg := &config.Config{}
-	cfg.MCP.Enabled = true
-	reg := metrics.NewRegistry()
-
-	deps := &backendDeps{
-		KAClient: ka.NewClient(ka.Config{BaseURL: kaBackend.URL}),
-		DSResilientTransport: resilience.NewCircuitBreakerTransport(
+	d := testHandlerDeps(func(d *handlerDeps) {
+		d.Cfg.MCP.Enabled = true
+		d.Backends.KAClient = ka.NewClient(ka.Config{BaseURL: kaBackend.URL})
+		d.Backends.DSResilientTransport = resilience.NewCircuitBreakerTransport(
 			http.DefaultTransport,
 			&resilience.CircuitBreakerConfig{Name: "test-ds"},
-		),
-	}
+		)
+		d.Authorizer = &allowAllToolAuthorizer{}
+		d.SessInfra = &sessionInfra{
+			SessionService: session.NewCRDSessionService(
+				adksession.InMemoryService(), nil, nil, "test-ns",
+			),
+			Healthy:  &atomic.Bool{},
+			StopFunc: func() {},
+		}
+	})
 
-	sessInfra := &sessionInfra{
-		SessionService: session.NewCRDSessionService(
-			adksession.InMemoryService(), nil, nil, "test-ns",
-		),
-		Healthy:  &atomic.Bool{},
-		StopFunc: func() {},
-	}
-
-	h, _, err := buildMCPHandler(cfg, deps, sessInfra, reg, &allowAllToolAuthorizer{}, nil, logr.Discard(), nil)
+	h, _, err := buildMCPHandler(d)
 	if err != nil {
 		t.Fatalf("IT-AF-1293-W01: unexpected error: %v", err)
 	}
@@ -1173,14 +1173,14 @@ func TestBuildA2AHandler_ThreadsLoggerIntoLauncher(t *testing.T) {
 	}))
 	t.Cleanup(mockLLM.Close)
 
-	cfg := &config.Config{}
-	cfg.Agent.LLM.Provider = types.LLMProviderGemini
-	cfg.Agent.LLM.Endpoint = mockLLM.URL
-	cfg.Agent.LLM.Model = "mock-model"
-	cfg.Agent.LLM.APIKey = "test-key"
-	reg := metrics.NewRegistry()
+	d := testHandlerDeps(func(d *handlerDeps) {
+		d.Cfg.Agent.LLM.Provider = types.LLMProviderGemini
+		d.Cfg.Agent.LLM.Endpoint = mockLLM.URL
+		d.Cfg.Agent.LLM.Model = "mock-model"
+		d.Cfg.Agent.LLM.APIKey = "test-key"
+	})
 
-	h, err := buildA2AHandler(context.Background(), cfg, testBackendDeps(), nil, reg, nil, nil, logr.Discard(), nil)
+	h, err := buildA2AHandler(context.Background(), d)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

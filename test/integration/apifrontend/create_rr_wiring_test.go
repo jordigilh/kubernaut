@@ -51,12 +51,12 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 			_ = k8sClient.Delete(ctx, nsObj)
 		})
 
-		result, err := tools.HandleCreateRR(ctx, k8sClient, dynamicClient, ns, &tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: ns}, &tools.CreateRRArgs{
 			Namespace:   ns,
 			Kind:        "Deployment",
 			Name:        "web-w01",
 			Description: "IT wiring test",
-		}, "it-user", nil, nil)
+		}, "it-user")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.RRID).To(HavePrefix("rr-"))
 		Expect(result.AlreadyExists).To(BeFalse())
@@ -78,12 +78,12 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 	It("IT-AF-1282-W02: created RR has signalSource=a2a-agent in envtest", func() {
 		ctx := context.Background()
 
-		result, err := tools.HandleCreateRR(ctx, k8sClient, dynamicClient, "default", &tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: "default"}, &tools.CreateRRArgs{
 			Namespace:   "default",
 			Kind:        "Deployment",
 			Name:        "web-w02",
 			Description: "signal source check",
-		}, "it-user", nil, nil)
+		}, "it-user")
 		Expect(err).NotTo(HaveOccurred())
 
 		created, getErr := dynamicClient.Resource(rrGVR).Namespace("default").Get(ctx, result.RRID, metav1.GetOptions{})
@@ -100,12 +100,12 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 	It("IT-AF-1282-W03: signalName falls back to unknown in envtest", func() {
 		ctx := context.Background()
 
-		result, err := tools.HandleCreateRR(ctx, k8sClient, dynamicClient, "default", &tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: "default"}, &tools.CreateRRArgs{
 			Namespace:   "default",
 			Kind:        "Deployment",
 			Name:        "web-w03",
 			Description: "signal name check",
-		}, "it-user", nil, nil)
+		}, "it-user")
 		Expect(err).NotTo(HaveOccurred())
 
 		created, getErr := dynamicClient.Resource(rrGVR).Namespace("default").Get(ctx, result.RRID, metav1.GetOptions{})
@@ -148,12 +148,12 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 			_ = dynamicClient.Resource(eventsGVR).Namespace("default").Delete(ctx, "oom-event-w03b", metav1.DeleteOptions{})
 		})
 
-		result, err := tools.HandleCreateRR(ctx, k8sClient, dynamicClient, "default", &tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: "default"}, &tools.CreateRRArgs{
 			Namespace:   "default",
 			Kind:        "Deployment",
 			Name:        "web-w03b",
 			Description: "OOM event in envtest",
-		}, "it-user", nil, nil)
+		}, "it-user")
 		Expect(err).NotTo(HaveOccurred())
 
 		created, getErr := dynamicClient.Resource(rrGVR).Namespace("default").Get(ctx, result.RRID, metav1.GetOptions{})
@@ -173,12 +173,12 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 		cfg := severity.DefaultConfig()
 		triager := severity.NewTriager(&noopPromClientIT{}, noopLLM, cfg, logr.Discard())
 
-		result, err := tools.HandleCreateRR(ctx, k8sClient, dynamicClient, "default", &tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: "default", Triager: triager}, &tools.CreateRRArgs{
 			Namespace:   "default",
 			Kind:        "Deployment",
 			Name:        "web-w04",
 			Description: "triage wiring IT",
-		}, "it-user", triager, nil)
+		}, "it-user")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.RRID).NotTo(BeEmpty())
 		Expect(result.Severity).NotTo(BeEmpty())
@@ -205,12 +205,12 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 			_ = k8sClient.Delete(ctx, workloadNSObj)
 		})
 
-		result, err := tools.HandleCreateRR(ctx, k8sClient, dynamicClient, controllerNS, &tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: controllerNS}, &tools.CreateRRArgs{
 			Namespace:   workloadNS,
 			Kind:        "Deployment",
 			Name:        "web-1292-w01",
 			Description: "ADR-057 namespace split IT",
-		}, "it-user", nil, nil)
+		}, "it-user")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.RRID).To(HavePrefix("rr-"))
 
@@ -262,12 +262,12 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 		ctx := context.Background()
 		auditRecorder.Reset()
 
-		result, err := tools.HandleCreateRR(ctx, k8sClient, dynamicClient, "default", &tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: "default", Auditor: auditRecorder}, &tools.CreateRRArgs{
 			Namespace:   "default",
 			Kind:        "Deployment",
 			Name:        "web-w06",
 			Description: "audit IT",
-		}, "audit-user", nil, auditRecorder)
+		}, "audit-user")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.AlreadyExists).To(BeFalse())
 

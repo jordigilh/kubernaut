@@ -379,6 +379,51 @@ var _ = Describe("Phase Guard — ActiveContextRegistry Integration (BR-SESS-020
 			"Phase guard must still block MCP-dependent tools before investigate when registry is present")
 	})
 
+	It("UT-AF-1496-001: Clears context on kubernaut_complete_no_action success (#1496, BR-SESS-022)", func() {
+		registry.Set("alice", "ctx-session-abc")
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+			"session_id": "ka-sess-001",
+		}, nil)
+
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_complete_no_action"}, nil, map[string]any{
+			"status": "completed_no_action",
+		}, nil)
+
+		_, ok := registry.Get("alice")
+		Expect(ok).To(BeFalse(),
+			"Registry must be cleared after kubernaut_complete_no_action succeeds (#1496)")
+	})
+
+	It("UT-AF-1496-002: Does NOT clear context on kubernaut_complete_no_action failure (#1496)", func() {
+		registry.Set("alice", "ctx-session-abc")
+
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_complete_no_action"}, nil, map[string]any{
+			"error": "no active session",
+		}, nil)
+
+		contextID, ok := registry.Get("alice")
+		Expect(ok).To(BeTrue(),
+			"Registry must NOT be cleared when kubernaut_complete_no_action returns an error")
+		Expect(contextID).To(Equal("ctx-session-abc"))
+	})
+
+	It("UT-AF-1496-003: kubernaut_complete_no_action does NOT refresh idle timer (#1496)", func() {
+		shortIdleRegistry := launcher.NewActiveContextRegistry(2*time.Hour, 200*time.Millisecond)
+		shortIdleRegistry.Set("alice", "ctx-session-abc")
+		_, afterShort := NewPhaseGuardWithRegistryForTest(shortIdleRegistry)
+
+		time.Sleep(50 * time.Millisecond)
+
+		_, _ = afterShort(toolCtx, fakeTool{name: "kubernaut_complete_no_action"}, nil, map[string]any{
+			"status": "completed_no_action",
+		}, nil)
+
+		// Terminal tools clear (not refresh). After clearing, Get must return false.
+		_, ok := shortIdleRegistry.Get("alice")
+		Expect(ok).To(BeFalse(),
+			"terminal tools must clear the registry, not refresh the idle timer (#1496)")
+	})
+
 	It("UT-AF-1446-007: AU-3 — Refresh called on successful non-entry/non-terminal tool call (#1446)", func() {
 		registry.Set("alice", "ctx-session-abc")
 

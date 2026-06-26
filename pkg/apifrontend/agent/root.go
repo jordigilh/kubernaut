@@ -113,7 +113,16 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 		{"cancel_remediation", func() (tool.Tool, error) { return tools.NewCancelRemediationTool(cfg.TypedClient, cfg.Namespace) }},
 		{"watch", func() (tool.Tool, error) { return tools.NewWatchTool(cfg.TypedClient, cfg.Namespace) }},
 		{"investigate", func() (tool.Tool, error) {
-			return tools.NewInvestigateMCPTool(dedicatedC, cfg.TypedClient, cfg.Namespace, cfg.Auditor, cfg.InvestigationRegistry, nil, cfg.Pool, buildAgentISSignaler(cfg), cfg.Triager, cfg.RESTMapper)
+			return tools.NewInvestigateMCPTool(&tools.InvestigateConfig{
+				MCPClient: dedicatedC,
+				Client:    cfg.TypedClient,
+				Namespace: cfg.Namespace,
+				Auditor:   cfg.Auditor,
+				Registry:  cfg.InvestigationRegistry,
+				Pool:      cfg.Pool,
+				Signaler:  buildAgentISSignaler(cfg),
+				Triager:   cfg.Triager,
+			}, cfg.RESTMapper)
 		}},
 		{"discover_workflows", func() (tool.Tool, error) { return tools.NewDiscoverWorkflowsTool(mcpC) }},
 		{"select_workflow", func() (tool.Tool, error) { return tools.NewSelectWorkflowTool(mcpC, cfg.Auditor) }},

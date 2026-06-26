@@ -18,6 +18,17 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
 )
 
+// ToolDeps groups infrastructure dependencies shared by tool handler functions.
+// Constructed once at wiring time; per-call data (args, username) remains as
+// separate parameters.
+type ToolDeps struct {
+	Client       crclient.Client
+	DynClient    dynamic.Interface
+	ControllerNS string
+	Triager      *severity.Triager
+	Auditor      audit.Emitter
+}
+
 // maxDescriptionLen is the maximum length for RR description (truncated, not rejected).
 const maxDescriptionLen = 2048
 
@@ -98,11 +109,11 @@ func checkExistingRRByFingerprint(ctx context.Context, client crclient.Client, c
 // args.Namespace is the workload namespace where the target resource lives — provided
 // by the LLM. Severity is resolved via the triage pipeline when a triager is
 // available, otherwise defaults to "warning".
-func HandleCreateRR(ctx context.Context, client crclient.Client, dynClient dynamic.Interface, controllerNS string, args *CreateRRArgs, username string, triager *severity.Triager, auditor audit.Emitter) (CreateRRResult, error) {
-	if client == nil {
+func HandleCreateRR(ctx context.Context, d *ToolDeps, args *CreateRRArgs, username string) (CreateRRResult, error) {
+	if d.Client == nil {
 		return CreateRRResult{}, ErrK8sUnavailable
 	}
-	if err := validate.Namespace(controllerNS); err != nil {
+	if err := validate.Namespace(d.ControllerNS); err != nil {
 		return CreateRRResult{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
 	if args.ClusterScoped {
@@ -132,7 +143,7 @@ func HandleCreateRR(ctx context.Context, client crclient.Client, dynClient dynam
 
 	resolvedSeverity := "warning"
 	var triageResult *severity.TriageResult
-	if triager != nil {
+	if d.Triager != nil {
 		input := severity.TriageInput{
 			Namespace:   args.Namespace,
 			Kind:        args.Kind,
@@ -140,7 +151,7 @@ func HandleCreateRR(ctx context.Context, client crclient.Client, dynClient dynam
 			Description: args.Description,
 			Labels:      map[string]string{"namespace": args.Namespace, "kind": args.Kind, "name": args.Name},
 		}
-		result, err := triager.Triage(ctx, input)
+		result, err := d.Triager.Triage(ctx, input)
 		if err != nil {
 			return CreateRRResult{}, fmt.Errorf("severity triage failed: %w", err)
 		}
@@ -152,12 +163,12 @@ func HandleCreateRR(ctx context.Context, client crclient.Client, dynClient dynam
 
 	signalName := args.SignalNameOverride
 	if signalName == "" {
-		signalName = deriveSignalName(ctx, dynClient, args.Namespace, args, triageResult)
+		signalName = deriveSignalName(ctx, d.DynClient, args.Namespace, args, triageResult)
 	}
 	fingerprint := rrFingerprint(args.Namespace, args.Kind, args.Name)
 
 	result, err, _ := rrCreateGroup.Do(fingerprint, func() (interface{}, error) {
-		existing, checkErr := checkExistingRRByFingerprint(ctx, client, controllerNS, fingerprint)
+		existing, checkErr := checkExistingRRByFingerprint(ctx, d.Client, d.ControllerNS, fingerprint)
 		if checkErr != nil {
 			return nil, checkErr
 		}
@@ -181,7 +192,7 @@ func HandleCreateRR(ctx context.Context, client crclient.Client, dynClient dynam
 		rrObj := &remediationv1.RemediationRequest{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      rrName,
-				Namespace: controllerNS,
+				Namespace: d.ControllerNS,
 			},
 			Spec: remediationv1.RemediationRequestSpec{
 				SignalName:        signalName,
@@ -208,7 +219,7 @@ func HandleCreateRR(ctx context.Context, client crclient.Client, dynClient dynam
 			}
 		}
 
-		if createErr := client.Create(ctx, rrObj); createErr != nil {
+		if createErr := d.Client.Create(ctx, rrObj); createErr != nil {
 			return nil, ToUserFriendlyError(createErr)
 		}
 
@@ -234,24 +245,24 @@ func HandleCreateRR(ctx context.Context, client crclient.Client, dynClient dynam
 		return CreateRRResult{}, fmt.Errorf("create RR: unexpected singleflight result type")
 	}
 
-	if auditor != nil {
+	if d.Auditor != nil {
 		if res.AlreadyExists {
-			auditor.Emit(ctx, &audit.Event{
+			d.Auditor.Emit(ctx, &audit.Event{
 				Type:   audit.EventRRDeduplicated,
 				UserID: username,
 				Detail: map[string]string{
-					"namespace":   controllerNS,
+					"namespace":   d.ControllerNS,
 					"kind":        args.Kind,
 					"name":        args.Name,
 					"existing_rr": res.RRID,
 				},
 			})
 		} else {
-			auditor.Emit(ctx, &audit.Event{
+			d.Auditor.Emit(ctx, &audit.Event{
 				Type:   audit.EventRRCreated,
 				UserID: username,
 				Detail: map[string]string{
-					"namespace": controllerNS,
+					"namespace": d.ControllerNS,
 					"kind":      args.Kind,
 					"name":      args.Name,
 					"rr_id":     res.RRID,
