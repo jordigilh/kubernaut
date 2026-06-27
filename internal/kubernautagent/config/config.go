@@ -80,9 +80,12 @@ type IntegrationsConfig struct {
 // FleetConfig configures multi-cluster fleet access via MCP Gateway.
 // When Endpoint is non-empty, KA discovers remote cluster tools via
 // tools/list and registers them as BridgeTools (additive to local tools).
+// GatewayType selects the discovery strategy: "eaigw" or "kuadrant".
+// When GatewayType is empty, fleet is disabled regardless of Endpoint.
 type FleetConfig struct {
-	Endpoint string       `yaml:"endpoint"`
-	OAuth2   FleetOAuth2  `yaml:"oauth2"`
+	Endpoint    string       `yaml:"endpoint"`
+	GatewayType string       `yaml:"gatewayType"`
+	OAuth2      FleetOAuth2  `yaml:"oauth2"`
 }
 
 // FleetOAuth2 holds OAuth2 client credentials for MCP Gateway authentication.

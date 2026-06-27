@@ -113,7 +113,10 @@ func (c FleetConfig) Validate() error {
 		return fmt.Errorf("fleet: endpoint must not be empty when fleet is enabled (backend=%s)", backend)
 	}
 
-	if c.MCPGatewayEndpoint != "" && c.MCPGatewayType != "" {
+	if c.MCPGatewayEndpoint != "" {
+		if c.MCPGatewayType == "" {
+			return fmt.Errorf("fleet: mcpGatewayType is required when fleet is enabled (mcpGatewayEndpoint is set)")
+		}
 		if !registry.SupportedGateways[c.MCPGatewayType] {
 			return fmt.Errorf("fleet: unsupported mcpGatewayType %q; must be one of: eaigw, kuadrant", c.MCPGatewayType)
 		}
@@ -122,12 +125,10 @@ func (c FleetConfig) Validate() error {
 	return nil
 }
 
-// EffectiveMCPGatewayType returns the configured MCPGatewayType, defaulting to
-// GatewayEAIGW when the field is empty.
+// EffectiveMCPGatewayType returns the configured MCPGatewayType.
+// Returns empty string when MCPGatewayType is not set, indicating fleet is
+// disabled. Callers must check for empty before using the value.
 func (c FleetConfig) EffectiveMCPGatewayType() MCPGatewayType {
-	if c.MCPGatewayType == "" {
-		return GatewayEAIGW
-	}
 	return c.MCPGatewayType
 }
 
