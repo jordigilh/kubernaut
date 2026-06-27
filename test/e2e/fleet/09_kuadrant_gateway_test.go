@@ -76,11 +76,11 @@ var _ = Describe("E2E-FLEET-KUA: Kuadrant MCP Gateway Pipeline", Label("fleet"),
 	It("E2E-FLEET-KUA-003 [CM-6]: FMC is running and healthy with gatewayType=kuadrant", func() {
 		By("Verifying FMC deployment has ready replicas")
 		cmd := exec.CommandContext(context.Background(),
-			"kubectl", "get", "deployment", "fmc",
+			"kubectl", "get", "deployment", "fleetmetadatacache",
 			"-n", namespace, "--kubeconfig", kubeconfigPath,
 			"-o", "jsonpath={.status.readyReplicas}")
 		out, err := cmd.Output()
-		Expect(err).ToNot(HaveOccurred(), "kubectl get fmc deployment must succeed")
+		Expect(err).ToNot(HaveOccurred(), "kubectl get fleetmetadatacache deployment must succeed")
 		Expect(strings.TrimSpace(string(out))).To(Equal("1"),
 			"CM-6: FMC deployment must have 1 ready replica")
 

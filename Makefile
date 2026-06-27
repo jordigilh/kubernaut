@@ -283,17 +283,17 @@ test-unit-gateway: ginkgo ensure-coverage-dirs ## Run gateway unit tests (coverp
 		go tool cover -func=coverage_unit_gateway.out | grep total || echo "No coverage data"; \
 	fi
 
-# FMC unit tests: code lives at pkg/fleet/fmc/ (not pkg/fmc/)
-.PHONY: test-unit-fmc
-test-unit-fmc: ginkgo ensure-coverage-dirs ## Run FMC unit tests (coverpkg: pkg/fleet/fmc)
+# Fleet Metadata Cache unit tests: code lives at pkg/fleet/fmc/
+.PHONY: test-unit-fleetmetadatacache
+test-unit-fleetmetadatacache: ginkgo ensure-coverage-dirs ## Run Fleet Metadata Cache unit tests (coverpkg: pkg/fleet/fmc)
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 fmc - Unit Tests ($(TEST_PROCS) procs)"
+	@echo "🧪 fleetmetadatacache - Unit Tests ($(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_fmc.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/fleet/fmc/... ./pkg/fleet/fmc/...
-	@if [ -f coverage_unit_fmc.out ]; then \
+	@$(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_fleetmetadatacache.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/fleet/fmc/... ./pkg/fleet/fmc/...
+	@if [ -f coverage_unit_fleetmetadatacache.out ]; then \
 		echo ""; \
-		echo "📊 Coverage report generated: coverage_unit_fmc.out"; \
-		go tool cover -func=coverage_unit_fmc.out | grep total || echo "No coverage data"; \
+		echo "📊 Coverage report generated: coverage_unit_fleetmetadatacache.out"; \
+		go tool cover -func=coverage_unit_fleetmetadatacache.out | grep total || echo "No coverage data"; \
 	fi
 
 # Shared packages unit tests: tests for pkg/audit, pkg/cache, pkg/http, pkg/k8sutil, pkg/shared
@@ -972,7 +972,7 @@ BUILD_DATE  ?= $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
 LDFLAGS ?= -ldflags "-X github.com/jordigilh/kubernaut/internal/version.Version=$(APP_VERSION) -X github.com/jordigilh/kubernaut/internal/version.GitCommit=$(GIT_COMMIT) -X github.com/jordigilh/kubernaut/internal/version.BuildDate=$(BUILD_DATE)"
 
 # All Go services with their Dockerfile mappings
-IMAGE_SERVICES := datastorage gateway aianalysis authwebhook notification remediationorchestrator signalprocessing workflowexecution effectivenessmonitor kubernautagent apifrontend fmc db-migrate
+IMAGE_SERVICES := datastorage gateway aianalysis authwebhook notification remediationorchestrator signalprocessing workflowexecution effectivenessmonitor kubernautagent apifrontend fleetmetadatacache db-migrate
 IMAGE_DOCKERFILES_datastorage := docker/data-storage.Dockerfile
 IMAGE_DOCKERFILES_gateway := docker/gateway.Dockerfile
 IMAGE_DOCKERFILES_aianalysis := docker/aianalysis.Dockerfile
@@ -984,7 +984,7 @@ IMAGE_DOCKERFILES_workflowexecution := docker/workflowexecution-controller.Docke
 IMAGE_DOCKERFILES_effectivenessmonitor := docker/effectivenessmonitor-controller.Dockerfile
 IMAGE_DOCKERFILES_kubernautagent := docker/kubernautagent.Dockerfile
 IMAGE_DOCKERFILES_apifrontend := docker/apifrontend.Dockerfile
-IMAGE_DOCKERFILES_fmc := docker/fmc.Dockerfile
+IMAGE_DOCKERFILES_fleetmetadatacache := docker/fleetmetadatacache.Dockerfile
 IMAGE_DOCKERFILES_db-migrate := docker/db-migrate.Dockerfile
 
 # IMAGE_TARGET: Dockerfile --target stage to build. Empty = last stage (development).
@@ -1082,7 +1082,7 @@ BINARY_NAME_kubernautagent := kubernautagent
 BINARY_NAME_apifrontend := apifrontend
 
 # Go services that support host-native cross-compilation (excludes db-migrate, must-gather)
-CROSS_SERVICES := datastorage gateway aianalysis authwebhook notification remediationorchestrator signalprocessing workflowexecution effectivenessmonitor kubernautagent apifrontend
+CROSS_SERVICES := datastorage gateway aianalysis authwebhook notification remediationorchestrator signalprocessing workflowexecution effectivenessmonitor kubernautagent apifrontend fleetmetadatacache
 
 # Runtime Dockerfile mapping (production scratch images for pre-built binaries)
 RUNTIME_DOCKERFILES_datastorage := docker/data-storage.runtime.Dockerfile
@@ -1096,7 +1096,7 @@ RUNTIME_DOCKERFILES_workflowexecution := docker/workflowexecution-controller.run
 RUNTIME_DOCKERFILES_effectivenessmonitor := docker/effectivenessmonitor-controller.runtime.Dockerfile
 RUNTIME_DOCKERFILES_kubernautagent := docker/kubernautagent.runtime.Dockerfile
 RUNTIME_DOCKERFILES_apifrontend := docker/apifrontend.runtime.Dockerfile
-RUNTIME_DOCKERFILES_fmc := docker/fmc.Dockerfile
+RUNTIME_DOCKERFILES_fleetmetadatacache := docker/fleetmetadatacache.Dockerfile
 
 .PHONY: cross-build-%
 cross-build-%: ## Cross-compile a Go service binary for target arch (no container, no QEMU)

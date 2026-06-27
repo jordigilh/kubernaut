@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package fmc_test
+package fleetmetadatacache_test
 
 import (
 	"context"
@@ -38,13 +38,13 @@ import (
 // IT-FMC-054-001, IT-FMC-054-010, IT-FMC-054-020
 //
 // Pyramid Invariant: IT proves wiring.
-// These tests construct the same FMC HTTP stack as cmd/fmc/main.go
+// These tests construct the same FMC HTTP stack as cmd/fleetmetadatacache/main.go
 // and exercise it through real HTTP, real Valkey, and a real EAIGWRegistry
 // connected to envtest.
 //
 // Wiring Manifest:
 //
-//	fmc.Handler + RegisterRoutes  -> cmd/fmc/main.go:135-137  -> IT-FMC-054-001
+//	fmc.Handler + RegisterRoutes  -> cmd/fleetmetadatacache/main.go:135-137  -> IT-FMC-054-001
 //	fmc.HTTPClient                -> pkg/fleet/scope_factory.go:54 -> IT-FMC-054-010
 //	registry.Get guard            -> pkg/fleet/fmc/handler.go:89   -> IT-FMC-054-020
 var _ = Describe("FMC HTTP API Integration (BR-INTEGRATION-065)", Ordered, Label("fmc", "integration"), func() {

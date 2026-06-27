@@ -1,12 +1,12 @@
-# FMC (Fleet Metadata Cache) - Multi-Architecture Dockerfile (ADR-027)
+# Fleet Metadata Cache - Multi-Architecture Dockerfile (ADR-027)
 #
 # Build targets (Issue #80):
 #   production:  scratch runtime -- zero CVE surface, no shell (release.yml)
 #   development: ubi10-minimal runtime -- debug tools, coverage support (ci-pipeline.yml)
 #
 # Usage:
-#   Production:  podman build --target production -t fmc:v1.0 -f docker/fmc.Dockerfile .
-#   Development: podman build --build-arg GOFLAGS=-cover -t fmc:dev -f docker/fmc.Dockerfile .
+#   Production:  podman build --target production -t fleetmetadatacache:v1.0 -f docker/fleetmetadatacache.Dockerfile .
+#   Development: podman build --build-arg GOFLAGS=-cover -t fleetmetadatacache:dev -f docker/fleetmetadatacache.Dockerfile .
 
 ARG BUILDER_IMAGE=registry.access.redhat.com/ubi10/go-toolset:1.26
 ARG BASE_IMAGE=registry.access.redhat.com/ubi10/ubi-minimal:latest
@@ -43,13 +43,13 @@ RUN if [ "${GOFLAGS}" = "-cover" ]; then \
 	CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} GOFLAGS=${GOFLAGS} go build \
 	-mod=mod \
 	-ldflags="-X github.com/jordigilh/kubernaut/internal/version.Version=${APP_VERSION} -X github.com/jordigilh/kubernaut/internal/version.GitCommit=${GIT_COMMIT} -X github.com/jordigilh/kubernaut/internal/version.BuildDate=${BUILD_DATE}" \
-	-o fmc ./cmd/fmc; \
+	-o fleetmetadatacache ./cmd/fleetmetadatacache; \
 	else \
 	echo "Building production binary (with symbol stripping)..."; \
 	CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build \
 	-mod=mod \
 	-ldflags="-s -w -X github.com/jordigilh/kubernaut/internal/version.Version=${APP_VERSION} -X github.com/jordigilh/kubernaut/internal/version.GitCommit=${GIT_COMMIT} -X github.com/jordigilh/kubernaut/internal/version.BuildDate=${BUILD_DATE}" \
-	-o fmc ./cmd/fmc; \
+	-o fleetmetadatacache ./cmd/fleetmetadatacache; \
 	fi
 
 # ============================================================================
@@ -61,10 +61,10 @@ FROM scratch AS production
 COPY --from=builder /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem /etc/ssl/certs/ca-certificates.crt
 COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
 COPY --from=builder /etc/passwd /etc/passwd
-COPY --from=builder /opt/app-root/src/fmc /fmc
+COPY --from=builder /opt/app-root/src/fleetmetadatacache /fleetmetadatacache
 USER 65534
 EXPOSE 8080 8081
-ENTRYPOINT ["/fmc"]
+ENTRYPOINT ["/fleetmetadatacache"]
 
 ARG APP_VERSION
 ARG GIT_COMMIT
@@ -74,20 +74,20 @@ LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \
     org.opencontainers.image.version="${APP_VERSION}" \
     org.opencontainers.image.revision="${GIT_COMMIT}" \
     org.opencontainers.image.created="${BUILD_DATE}" \
-    org.opencontainers.image.title="kubernaut-fmc" \
+    org.opencontainers.image.title="kubernaut-fleetmetadatacache" \
     org.opencontainers.image.description="Fleet Metadata Cache service that polls MCP Gateway for managed cluster resources, caches metadata in Valkey, and exposes scope queries via REST API." \
     org.opencontainers.image.vendor="Kubernaut"
 
-LABEL name="kubernaut-fmc" \
+LABEL name="kubernaut-fleetmetadatacache" \
 	vendor="Kubernaut" \
 	summary="Kubernaut Fleet Metadata Cache" \
 	description="Fleet Metadata Cache service that polls MCP Gateway for managed cluster resources, caches metadata in Valkey, and exposes scope queries via REST API for federated scope checking." \
 	maintainer="jgil@redhat.com" \
-	component="fmc" \
+	component="fleetmetadatacache" \
 	part-of="kubernaut" \
 	io.k8s.description="Fleet Metadata Cache for Kubernaut" \
-	io.k8s.display-name="Kubernaut FMC" \
-	io.openshift.tags="kubernaut,fmc,fleet,metadata,cache,multi-cluster,microservice"
+	io.k8s.display-name="Kubernaut Fleet Metadata Cache" \
+	io.openshift.tags="kubernaut,fleetmetadatacache,fleet,metadata,cache,multi-cluster,microservice"
 
 # ============================================================================
 # Stage 2b: Development/E2E runtime (ubi10-minimal -- debug + coverage, DD-TEST-007)
@@ -99,12 +99,12 @@ FROM ${BASE_IMAGE} AS development
 RUN microdnf update -y && \
     microdnf install -y ca-certificates tzdata shadow-utils && \
     microdnf clean all
-RUN useradd -r -u 1001 -g root fmc-user
-COPY --from=builder /opt/app-root/src/fmc /usr/local/bin/fmc
-RUN chmod +x /usr/local/bin/fmc
+RUN useradd -r -u 1001 -g root fleetmetadatacache-user
+COPY --from=builder /opt/app-root/src/fleetmetadatacache /usr/local/bin/fleetmetadatacache
+RUN chmod +x /usr/local/bin/fleetmetadatacache
 USER 1001
 EXPOSE 8080 8081
-ENTRYPOINT ["/usr/local/bin/fmc"]
+ENTRYPOINT ["/usr/local/bin/fleetmetadatacache"]
 
 ARG APP_VERSION
 ARG GIT_COMMIT
@@ -114,6 +114,6 @@ LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \
     org.opencontainers.image.version="${APP_VERSION}" \
     org.opencontainers.image.revision="${GIT_COMMIT}" \
     org.opencontainers.image.created="${BUILD_DATE}" \
-    org.opencontainers.image.title="kubernaut-fmc" \
+    org.opencontainers.image.title="kubernaut-fleetmetadatacache" \
     org.opencontainers.image.description="Fleet Metadata Cache service that polls MCP Gateway for managed cluster resources, caches metadata in Valkey, and exposes scope queries via REST API." \
     org.opencontainers.image.vendor="Kubernaut"

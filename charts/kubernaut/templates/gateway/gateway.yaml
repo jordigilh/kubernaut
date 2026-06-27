@@ -59,8 +59,8 @@ data:
       {{- end }}
       {{- if .Values.gateway.fleet.endpoint }}
       endpoint: {{ .Values.gateway.fleet.endpoint | quote }}
-      {{- else if eq (default "fmc" .Values.gateway.fleet.backend) "fmc" }}
-      endpoint: {{ include "kubernaut.fmc.url" . | quote }}
+      {{- else if eq (default "fleetmetadatacache" .Values.gateway.fleet.backend) "fleetmetadatacache" }}
+      endpoint: {{ include "kubernaut.fleetmetadatacache.url" . | quote }}
       {{- end }}
     {{- end }}
 ---

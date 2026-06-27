@@ -223,11 +223,11 @@ https://data-storage-service.{{ .Release.Namespace }}.svc.cluster.local:8080
 {{- end }}
 
 {{/*
-Return the in-cluster FMC service URL.
-FMC uses HTTP by default (internal scope query API, ADR-068).
+Return the in-cluster FleetMetadataCache service URL.
+FleetMetadataCache uses HTTP by default (internal scope query API, ADR-068).
 */}}
-{{- define "kubernaut.fmc.url" -}}
-http://fmc-service.{{ .Release.Namespace }}.svc.cluster.local:8080
+{{- define "kubernaut.fleetmetadatacache.url" -}}
+http://fleetmetadatacache-service.{{ .Release.Namespace }}.svc.cluster.local:8080
 {{- end }}
 
 {{/*

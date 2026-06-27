@@ -34,12 +34,12 @@ var _ = Describe("FleetConfig shared type (Phase E)", func() {
 	It("UT-FLEET-CFG-001 [CM-6]: FleetConfig provides unified configuration via Backend+Endpoint", func() {
 		cfg := fleet.FleetConfig{
 			Enabled:  true,
-			Backend:  "fmc",
+			Backend:  "fleetmetadatacache",
 			Endpoint: "http://fmc:8080",
 		}
 
 		Expect(cfg.Enabled).To(BeTrue())
-		Expect(cfg.Backend).To(Equal("fmc"))
+		Expect(cfg.Backend).To(Equal("fleetmetadatacache"))
 		Expect(cfg.Endpoint).To(Equal("http://fmc:8080"))
 	})
 
@@ -82,16 +82,16 @@ var _ = Describe("FleetConfig — BackendValkey removal (Phase 3)", func() {
 	It("UT-SF-054-003 [CM-6]: EffectiveEndpoint returns explicit Endpoint when set, auto-derives for fmc when empty", func() {
 		cfg := fleet.FleetConfig{
 			Enabled:  true,
-			Backend:  "fmc",
+			Backend:  "fleetmetadatacache",
 			Endpoint: "http://fmc:8080",
 		}
 		Expect(cfg.EffectiveEndpoint()).To(Equal("http://fmc:8080"))
 
 		cfgEmpty := fleet.FleetConfig{
 			Enabled: true,
-			Backend: "fmc",
+			Backend: "fleetmetadatacache",
 		}
-		Expect(cfgEmpty.EffectiveEndpoint()).To(ContainSubstring("fmc-service"),
+		Expect(cfgEmpty.EffectiveEndpoint()).To(ContainSubstring("fleetmetadatacache-service"),
 			"FMC backend auto-derives endpoint from namespace when Endpoint is empty")
 
 		cfgACMEmpty := fleet.FleetConfig{
@@ -107,11 +107,11 @@ var _ = Describe("FleetConfig adapter pattern (Phase 2)", func() {
 	It("UT-FLEET-CFG-010 [CM-6]: FleetConfig exposes Backend and Endpoint fields", func() {
 		cfg := fleet.FleetConfig{
 			Enabled:  true,
-			Backend:  "fmc",
+			Backend:  "fleetmetadatacache",
 			Endpoint: "http://fmc.kubernaut.svc:8080",
 		}
 
-		Expect(cfg.Backend).To(Equal("fmc"))
+		Expect(cfg.Backend).To(Equal("fleetmetadatacache"))
 		Expect(cfg.Endpoint).To(Equal("http://fmc.kubernaut.svc:8080"))
 	})
 
@@ -151,7 +151,7 @@ var _ = Describe("FleetConfig adapter pattern (Phase 2)", func() {
 	It("UT-FLEET-CFG-014 [CM-6]: Validate accepts fmc backend", func() {
 		cfg := fleet.FleetConfig{
 			Enabled:  true,
-			Backend:  "fmc",
+			Backend:  "fleetmetadatacache",
 			Endpoint: "http://fmc.kubernaut.svc:8080",
 		}
 
@@ -175,7 +175,7 @@ var _ = Describe("FleetConfig MCPGatewayType (MCP Gateway Adapter)", func() {
 	It("UT-FLEET-CFG-030 [CM-6]: Validate accepts valid MCPGatewayType eaigw", func() {
 		cfg := fleet.FleetConfig{
 			Enabled:            true,
-			Backend:            "fmc",
+			Backend:            "fleetmetadatacache",
 			Endpoint:           "http://fmc:8080",
 			MCPGatewayEndpoint: "http://gw:8080/mcp",
 			MCPGatewayType:     fleet.GatewayEAIGW,
@@ -186,7 +186,7 @@ var _ = Describe("FleetConfig MCPGatewayType (MCP Gateway Adapter)", func() {
 	It("UT-FLEET-CFG-031 [CM-6]: Validate accepts valid MCPGatewayType kuadrant", func() {
 		cfg := fleet.FleetConfig{
 			Enabled:            true,
-			Backend:            "fmc",
+			Backend:            "fleetmetadatacache",
 			Endpoint:           "http://fmc:8080",
 			MCPGatewayEndpoint: "http://gw:8080/mcp",
 			MCPGatewayType:     fleet.GatewayKuadrant,
@@ -197,7 +197,7 @@ var _ = Describe("FleetConfig MCPGatewayType (MCP Gateway Adapter)", func() {
 	It("UT-FLEET-CFG-032 [CM-6]: Validate rejects unsupported MCPGatewayType with descriptive error", func() {
 		cfg := fleet.FleetConfig{
 			Enabled:            true,
-			Backend:            "fmc",
+			Backend:            "fleetmetadatacache",
 			Endpoint:           "http://fmc:8080",
 			MCPGatewayEndpoint: "http://gw:8080/mcp",
 			MCPGatewayType:     fleet.MCPGatewayType("invalid-gw"),
@@ -215,7 +215,7 @@ var _ = Describe("FleetConfig MCPGatewayType (MCP Gateway Adapter)", func() {
 	It("UT-FLEET-CFG-034 [CM-6]: Validate skips MCPGatewayType check when MCPGatewayEndpoint is empty", func() {
 		cfg := fleet.FleetConfig{
 			Enabled:  true,
-			Backend:  "fmc",
+			Backend:  "fleetmetadatacache",
 			Endpoint: "http://fmc:8080",
 		}
 		Expect(cfg.Validate()).ToNot(HaveOccurred())
@@ -228,10 +228,10 @@ var _ = Describe("FleetConfig FMC endpoint auto-derivation (BR-INTEGRATION-065)"
 
 		cfg := fleet.FleetConfig{
 			Enabled: true,
-			Backend: "fmc",
+			Backend: "fleetmetadatacache",
 		}
 
-		Expect(cfg.EffectiveEndpoint()).To(Equal("http://fmc-service.kubernaut-system.svc.cluster.local:8080"),
+		Expect(cfg.EffectiveEndpoint()).To(Equal("http://fleetmetadatacache-service.kubernaut-system.svc.cluster.local:8080"),
 			"FMC endpoint must be auto-derived from POD_NAMESPACE when not explicitly set")
 	})
 
@@ -240,7 +240,7 @@ var _ = Describe("FleetConfig FMC endpoint auto-derivation (BR-INTEGRATION-065)"
 
 		cfg := fleet.FleetConfig{
 			Enabled:  true,
-			Backend:  "fmc",
+			Backend:  "fleetmetadatacache",
 			Endpoint: "http://custom-fmc:9090",
 		}
 
@@ -253,10 +253,10 @@ var _ = Describe("FleetConfig FMC endpoint auto-derivation (BR-INTEGRATION-065)"
 
 		cfg := fleet.FleetConfig{
 			Enabled: true,
-			Backend: "fmc",
+			Backend: "fleetmetadatacache",
 		}
 
-		Expect(cfg.EffectiveEndpoint()).To(Equal("http://fmc-service.default.svc.cluster.local:8080"),
+		Expect(cfg.EffectiveEndpoint()).To(Equal("http://fleetmetadatacache-service.default.svc.cluster.local:8080"),
 			"must use 'default' namespace when POD_NAMESPACE is not set and SA mount unavailable")
 	})
 
@@ -277,7 +277,7 @@ var _ = Describe("FleetConfig FMC endpoint auto-derivation (BR-INTEGRATION-065)"
 
 		cfg := fleet.FleetConfig{
 			Enabled: true,
-			Backend: "fmc",
+			Backend: "fleetmetadatacache",
 		}
 
 		err := cfg.Validate()

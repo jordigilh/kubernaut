@@ -47,7 +47,7 @@ var _ = Describe("FMC ServiceConfig [BR-FLEET-054, ADR-030]", func() {
 			Expect(cfg.Sync.ResourceKinds).To(ConsistOf(
 				"Deployment", "StatefulSet", "DaemonSet", "Pod", "Service", "Node",
 			))
-			Expect(cfg.OAuth2.CredentialsDir).To(Equal("/etc/fmc/fleet-oauth2"))
+			Expect(cfg.OAuth2.CredentialsDir).To(Equal("/etc/fleetmetadatacache/fleet-oauth2"))
 			Expect(cfg.OAuth2.TokenURL).To(BeEmpty())
 		})
 	})
@@ -174,7 +174,7 @@ oauth2:
 
 	Describe("DefaultConfigPath", func() {
 		It("UT-FMC-CFG-011: matches ADR-030 /etc/{service}/config.yaml convention", func() {
-			Expect(config.DefaultConfigPath).To(Equal("/etc/fmc/config.yaml"))
+			Expect(config.DefaultConfigPath).To(Equal("/etc/fleetmetadatacache/config.yaml"))
 		})
 	})
 })

@@ -86,7 +86,7 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 		}
 	}
 
-	fmcImage := builtImages["fmc"]
+	fmcImage := builtImages["fleetmetadatacache"]
 	if fmcImage == "" {
 		return builtImages, seededUUIDs, afRemediateNS, fmt.Errorf("FMC image not found in builtImages (was it built in Phase 1?)")
 	}
@@ -465,18 +465,18 @@ spec:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: fmc
+  name: fleetmetadatacache
   namespace: %[1]s
   labels:
-    app: fmc
+    app: fleetmetadatacache
     component: fleet
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: fmc
+  name: fleetmetadatacache
   labels:
-    app: fmc
+    app: fleetmetadatacache
 rules:
 - apiGroups: ["mcp.kuadrant.io"]
   resources: ["mcpserverregistrations"]
@@ -488,25 +488,25 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: fmc
+  name: fleetmetadatacache
   labels:
-    app: fmc
+    app: fleetmetadatacache
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: fmc
+  name: fleetmetadatacache
 subjects:
 - kind: ServiceAccount
-  name: fmc
+  name: fleetmetadatacache
   namespace: %[1]s
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: fmc-config
+  name: fleetmetadatacache-config
   namespace: %[1]s
   labels:
-    app: fmc
+    app: fleetmetadatacache
     component: fleet
 data:
   FMC_MCP_GATEWAY_ENDPOINT: "http://mcp-gateway.mcp-system.svc:8080/mcp"
@@ -521,30 +521,30 @@ data:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: fmc
+  name: fleetmetadatacache
   namespace: %[1]s
   labels:
-    app: fmc
+    app: fleetmetadatacache
     component: fleet
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: fmc
+      app: fleetmetadatacache
   template:
     metadata:
       labels:
-        app: fmc
+        app: fleetmetadatacache
         component: fleet
     spec:
-      serviceAccountName: fmc
+      serviceAccountName: fleetmetadatacache
       containers:
-      - name: fmc
+      - name: fleetmetadatacache
         image: %[2]s
         imagePullPolicy: IfNotPresent
         envFrom:
         - configMapRef:
-            name: fmc-config
+            name: fleetmetadatacache-config
         ports:
         - name: api
           containerPort: 8080
@@ -573,10 +573,10 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: fmc-service
+  name: fleetmetadatacache-service
   namespace: %[1]s
   labels:
-    app: fmc
+    app: fleetmetadatacache
     component: fleet
 spec:
   ports:
@@ -587,7 +587,7 @@ spec:
     port: 8081
     targetPort: metrics
   selector:
-    app: fmc
+    app: fleetmetadatacache
 `, namespace, fmcImage)
 
 	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, fmcManifest); err != nil {
@@ -595,7 +595,7 @@ spec:
 	}
 
 	_, _ = fmt.Fprintln(writer, "    Waiting for FMC...")
-	if err := waitForDeployment(ctx, "fmc", namespace, kubeconfigPath, 120*time.Second, writer); err != nil {
+	if err := waitForDeployment(ctx, "fleetmetadatacache", namespace, kubeconfigPath, 120*time.Second, writer); err != nil {
 		return fmt.Errorf("FMC rollout failed: %w", err)
 	}
 	_, _ = fmt.Fprintln(writer, "    ✅ FMC ready")

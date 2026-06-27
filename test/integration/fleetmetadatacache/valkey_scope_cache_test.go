@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package fmc_test
+package fleetmetadatacache_test
 
 import (
 	"context"
@@ -40,7 +40,7 @@ import (
 //
 // Wiring Manifest:
 //
-//	ValkeyWriter        -> cmd/fmc/main.go
+//	ValkeyWriter        -> cmd/fleetmetadatacache/main.go
 //	ValkeyCacheReader   -> pkg/fleet/scope_factory.go (transitional, will be FMC HTTP client)
 //	FederatedScopeChecker -> pkg/fleet/federated_checker.go
 var _ = Describe("Fleet Scope Cache Valkey Integration (BR-INTEGRATION-065)", Ordered, Label("fmc", "valkey", "integration"), func() {
