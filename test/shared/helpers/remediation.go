@@ -39,6 +39,7 @@ type RemediationRequestOpts struct {
 	TargetNamespace string // For cluster-scoped resources, leave empty
 	Phase           string
 	TimeoutConfig   *remediationv1.TimeoutConfig // BR-ORCH-028: Per-phase timeout configuration
+	ClusterID       string                       // BR-FLEET-054: Remote cluster identifier
 }
 
 // NewRemediationRequest creates a test RemediationRequest with sensible defaults.
@@ -122,6 +123,11 @@ func NewRemediationRequest(name, namespace string, opts ...RemediationRequestOpt
 	// Apply TimeoutConfig if provided (BR-ORCH-028)
 	if len(opts) > 0 && opts[0].TimeoutConfig != nil {
 		rr.Status.TimeoutConfig = opts[0].TimeoutConfig
+	}
+
+	// Apply ClusterID if provided (BR-FLEET-054)
+	if len(opts) > 0 && opts[0].ClusterID != "" {
+		rr.Spec.ClusterID = opts[0].ClusterID
 	}
 
 	return rr

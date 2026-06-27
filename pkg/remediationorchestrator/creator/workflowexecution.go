@@ -124,8 +124,8 @@ func (c *WorkflowExecutionCreator) Create(
 		// over the RR's TargetResource (e.g., Pod) when available.
 		// The LLM often identifies the correct higher-level resource to patch.
 			TargetResource: resolveTargetResource(rr, ai),
-			// Parameters: Direct pass-through from AIAnalysis
-			Parameters: ai.Status.SelectedWorkflow.Parameters,
+			ClusterID:      rr.Spec.ClusterID,
+			Parameters:     ai.Status.SelectedWorkflow.Parameters,
 			// Audit fields from AIAnalysis
 			Confidence: ai.Status.SelectedWorkflow.Confidence,
 			Rationale:  ai.Status.SelectedWorkflow.Rationale,

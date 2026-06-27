@@ -114,6 +114,7 @@ func (c *AIAnalysisCreator) Create(
 				aianalysisv1.AnalysisTypeWorkflowSelection,
 			},
 			},
+			ClusterID: rr.Spec.ClusterID,
 		},
 	}
 

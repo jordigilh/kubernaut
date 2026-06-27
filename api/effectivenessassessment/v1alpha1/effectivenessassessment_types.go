@@ -146,6 +146,13 @@ type EffectivenessAssessmentSpec struct {
 	// Reference: ADR-EM-001, DD-EM-002
 	// +optional
 	PreRemediationSpecHash string `json:"preRemediationSpecHash,omitempty"`
+
+	// BR-FLEET-054: Remote cluster identifier for fleet-managed signals.
+	// When non-empty, the EM routes target-facing reads (health, alert, hash)
+	// to the remote cluster via ReaderFactory.
+	// Propagated from RemediationRequest.Spec.ClusterID by the Remediation Orchestrator.
+	// +optional
+	ClusterID string `json:"clusterID,omitempty"`
 }
 
 // TargetResource identifies a Kubernetes resource by kind, name, and namespace.
