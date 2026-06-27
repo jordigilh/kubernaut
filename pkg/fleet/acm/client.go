@@ -22,7 +22,6 @@ package acm
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -42,18 +41,33 @@ type Client struct {
 
 var _ scope.ScopeChecker = (*Client)(nil)
 
+// ClientOption configures the ACM Search client.
+type ClientOption func(*Client)
+
+// WithHTTPClient overrides the default http.Client used for ACM Search queries.
+// Use this to inject a client with proper TLS configuration (e.g., via
+// sharedtls.CAReloader) instead of relying on InsecureSkipVerify.
+func WithHTTPClient(c *http.Client) ClientOption {
+	return func(client *Client) {
+		client.httpClient = c
+	}
+}
+
 // NewClient creates an ACM Search client targeting the given GraphQL endpoint.
 // The endpoint should be the base URL without the path (e.g. "https://search-api:4010").
-func NewClient(endpoint string) *Client {
-	return &Client{
+// By default, the client uses a plain http.Client with no TLS verification.
+// Use WithHTTPClient to provide a client configured with the cluster's CA cert.
+func NewClient(endpoint string, opts ...ClientOption) *Client {
+	c := &Client{
 		endpoint: endpoint,
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // in-cluster service-serving CA; configurable TLS is a REFACTOR item
-			},
 		},
 	}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c
 }
 
 // IsManagedResource checks whether a resource exists on a managed cluster

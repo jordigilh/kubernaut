@@ -150,10 +150,10 @@ func (j *JobExecutor) GetStatus(ctx context.Context, wfe *workflowexecutionv1alp
 // Returns (true, nil) if the Job has a terminal condition (JobComplete or JobFailed).
 // Returns (false, nil) if the Job is still running (no terminal condition).
 // Returns (false, err) if the Job cannot be fetched (e.g., NotFound race).
-func (j *JobExecutor) IsCompleted(ctx context.Context, targetResource string, namespace string) (bool, error) {
-	c, err := j.factory.ClientFor(ctx, "")
+func (j *JobExecutor) IsCompleted(ctx context.Context, clusterID string, targetResource string, namespace string) (bool, error) {
+	c, err := j.factory.ClientFor(ctx, clusterID)
 	if err != nil {
-		return false, fmt.Errorf("get local client: %w", err)
+		return false, fmt.Errorf("get client for cluster %q: %w", clusterID, err)
 	}
 
 	jobName := ExecutionResourceName(targetResource)

@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -213,6 +214,58 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 		var checker scope.ScopeChecker = acm.NewClient("https://search-api.example.com:4010")
 		Expect(checker).ToNot(BeNil(),
 			"acm.Client must implement scope.ScopeChecker to be usable by the factory")
+	})
+
+	Describe("UT-ACM-TLS [SC-8]: TLS transport security", func() {
+		It("UT-ACM-TLS-001 [SC-8]: should connect to TLS server when CA cert is provided via WithHTTPClient", func() {
+			server = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"data":{"searchResult":[{"count":1}]}}`))
+			}))
+
+			client = acm.NewClient(server.URL, acm.WithHTTPClient(server.Client()))
+
+			managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{
+				ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(managed).To(BeTrue(),
+				"SC-8: TLS connection with valid CA must succeed")
+		})
+
+		It("UT-ACM-TLS-002 [SC-8]: should fail-safe when TLS server cert is untrusted (no InsecureSkipVerify)", func() {
+			server = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"data":{"searchResult":[{"count":1}]}}`))
+			}))
+
+			client = acm.NewClient(server.URL)
+
+			managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{
+				ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
+			})
+			Expect(err).ToNot(HaveOccurred(),
+				"SC-8: TLS failure must be absorbed (fail-safe per SC-7)")
+			Expect(managed).To(BeFalse(),
+				"SC-8: untrusted TLS cert must not allow managed=true — prevents MITM")
+		})
+
+		It("UT-ACM-TLS-003 [SC-8]: WithHTTPClient overrides default transport", func() {
+			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"data":{"searchResult":[{"count":1}]}}`))
+			}))
+
+			customClient := &http.Client{Timeout: 5 * time.Second}
+			client = acm.NewClient(server.URL, acm.WithHTTPClient(customClient))
+
+			managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{
+				ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(managed).To(BeTrue(),
+				"SC-8: WithHTTPClient option must be applied correctly")
+		})
 	})
 
 	// Contract test: validates the adapter's GraphQL query against the

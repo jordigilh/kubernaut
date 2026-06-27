@@ -78,6 +78,12 @@ type FleetConfig struct {
 	// or "kuadrant" (Kuadrant MCP Gateway). Defaults to "eaigw" when empty.
 	MCPGatewayType MCPGatewayType `yaml:"mcpGatewayType,omitempty"`
 
+	// TLSCAFile is the path to the CA certificate bundle for verifying TLS connections
+	// to the fleet backend (ACM Search, FMC). When set, the ACM client uses this CA
+	// instead of InsecureSkipVerify. Typically mounted from the service-ca operator.
+	// +optional
+	TLSCAFile string `yaml:"tlsCAFile,omitempty"`
+
 	// OAuth2 holds optional OAuth2 credentials for MCP Gateway authentication.
 	OAuth2 FleetOAuth2Config `yaml:"oauth2,omitempty"`
 }
