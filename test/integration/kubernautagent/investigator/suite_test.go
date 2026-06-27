@@ -86,10 +86,6 @@ func (c *capturingAuditStore) StoreAudit(ctx context.Context, event *audit.Audit
 	return c.real.StoreAudit(ctx, event)
 }
 
-func (c *capturingAuditStore) reset() {
-	c.events = nil
-}
-
 var _ audit.AuditStore = (*capturingAuditStore)(nil)
 
 var _ = SynchronizedBeforeSuite(
