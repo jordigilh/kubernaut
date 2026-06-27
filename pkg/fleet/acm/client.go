@@ -97,7 +97,7 @@ func (c *Client) IsManagedResource(ctx context.Context, r scope.ResourceIdentity
 	if err != nil {
 		return false, nil
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return false, nil

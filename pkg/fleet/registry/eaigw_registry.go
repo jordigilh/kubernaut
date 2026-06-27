@@ -280,7 +280,7 @@ func (w *EAIGWRegistry) emit(event ClusterEvent) {
 func ExtractClusterInfo(u *unstructured.Unstructured) (ClusterInfo, error) {
 	name := u.GetName()
 	if name == "" {
-		return ClusterInfo{}, fmt.Errorf("Backend CRD has empty name")
+		return ClusterInfo{}, fmt.Errorf("backend CRD has empty name")
 	}
 
 	info := ClusterInfo{

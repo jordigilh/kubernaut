@@ -81,7 +81,7 @@ oauth2:
   credentialsDir: "/custom/creds"
 `
 			tmpFile := writeYAMLToTemp(yamlContent)
-			defer os.Remove(tmpFile)
+			defer func() { _ = os.Remove(tmpFile) }()
 
 			cfg, err := config.LoadFromFile(tmpFile)
 			Expect(err).NotTo(HaveOccurred())
@@ -106,7 +106,7 @@ oauth2:
   tokenUrl: "https://idp/token"
 `
 			tmpFile := writeYAMLToTemp(yamlContent)
-			defer os.Remove(tmpFile)
+			defer func() { _ = os.Remove(tmpFile) }()
 
 			cfg, err := config.LoadFromFile(tmpFile)
 			Expect(err).NotTo(HaveOccurred())
@@ -124,7 +124,7 @@ oauth2:
 
 		It("UT-FMC-CFG-006: returns error for malformed YAML [SI-10]", func() {
 			tmpFile := writeYAMLToTemp("invalid: [yaml: {broken")
-			defer os.Remove(tmpFile)
+			defer func() { _ = os.Remove(tmpFile) }()
 
 			_, err := config.LoadFromFile(tmpFile)
 			Expect(err).To(HaveOccurred())
