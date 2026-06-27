@@ -43,7 +43,17 @@ var _ = Describe("E2E-FLEET-SP-001 [SC-7]: Fleet infrastructure deploys with the
 		}
 		namespace := "kubernaut-system"
 
-		err := infrastructure.DeployFleetInfra(ctx, namespace, kubeconfigPath, GinkgoWriter)
+		imageRegistry := os.Getenv("IMAGE_REGISTRY")
+		imageTag := os.Getenv("IMAGE_TAG")
+		if imageRegistry == "" {
+			imageRegistry = "ghcr.io/jordigilh/kubernaut"
+		}
+		if imageTag == "" {
+			imageTag = "latest"
+		}
+		fmcImage := imageRegistry + "/fmc:" + imageTag
+
+		err := infrastructure.DeployFleetInfra(ctx, namespace, kubeconfigPath, fmcImage, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred(), "Fleet infrastructure should deploy successfully")
 
 		err = infrastructure.WaitForFleetReady(GinkgoWriter)
