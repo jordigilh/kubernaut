@@ -19,15 +19,17 @@ package investigator_test
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
 
+	"github.com/go-logr/logr"
+	"github.com/google/uuid"
+	_ "github.com/jackc/pgx/v5/stdlib"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
-	"github.com/go-logr/logr"
-	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
@@ -87,6 +89,37 @@ func (c *capturingAuditStore) StoreAudit(ctx context.Context, event *audit.Audit
 }
 
 var _ audit.AuditStore = (*capturingAuditStore)(nil)
+
+// seedAuditEvent inserts an audit event directly into PostgreSQL.
+// Used by investigator ITs that need remediation history or other
+// audit-sourced data to be present before the enricher runs.
+func seedAuditEvent(
+	ctx context.Context,
+	eventType, eventCategory, correlationID string,
+	eventData map[string]interface{},
+	ts time.Time,
+) {
+	GinkgoHelper()
+	eventDataJSON, err := json.Marshal(eventData)
+	Expect(err).ToNot(HaveOccurred())
+
+	_, err = seedDB.ExecContext(ctx,
+		`INSERT INTO audit_events (
+			event_id, event_date, event_timestamp, event_type, event_version,
+			event_category, event_action, event_outcome, correlation_id,
+			resource_type, resource_id, actor_id, actor_type,
+			retention_days, is_sensitive, event_data
+		) VALUES (
+			$1, $2, $3, $4, '1.0',
+			$5, 'create', 'success', $6,
+			'test', 'test', 'test', 'system',
+			90, false, $7
+		)`,
+		uuid.New().String(), ts.Format("2006-01-02"), ts, eventType,
+		eventCategory, correlationID, eventDataJSON,
+	)
+	Expect(err).ToNot(HaveOccurred(), "seedAuditEvent INSERT should succeed")
+}
 
 var _ = SynchronizedBeforeSuite(
 	func() []byte {

@@ -93,7 +93,7 @@ func (f *k8sFixtureClient) GetOwnerChain(_ context.Context, _, _, _, _ string) (
 }
 
 func (f *k8sFixtureClient) GetSpecHash(_ context.Context, _, _, _, _ string) (string, error) {
-	return "", nil
+	return "sha256:fixture-hash", nil
 }
 
 // resourceAwareFixtureClient returns different owner chains based on resource name.
@@ -110,7 +110,7 @@ func (r *resourceAwareFixtureClient) GetOwnerChain(_ context.Context, _, name, _
 }
 
 func (r *resourceAwareFixtureClient) GetSpecHash(_ context.Context, _, _, _, _ string) (string, error) {
-	return "", nil
+	return "sha256:fixture-hash", nil
 }
 
 type fakeTool struct {
@@ -359,11 +359,46 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 
 	Describe("IT-KA-433W-005: Investigation prompt excludes enrichment, workflow selection includes it", func() {
 		It("should NOT include enrichment in RCA prompt; remediation history appears in Phase 3 only", func() {
+			By("Seeding remediation history into PostgreSQL so the real DS returns it")
+			testCtx := context.Background()
+			specHash := "sha256:fixture-hash"
+			corrID := "oom-increase-memory"
+			target := "production/Pod/api-server-abc"
+			now := time.Now()
+			seedAuditEvent(testCtx, "remediation.workflow_created", "remediation", corrID,
+				map[string]interface{}{
+					"target_resource":           target,
+					"pre_remediation_spec_hash": specHash,
+					"action_type":               "IncreaseMemory",
+					"signal_type":               "OOMKilled",
+					"signal_fingerprint":        "fp-test-433w005",
+					"outcome":                   "success",
+				}, now.Add(-30*time.Minute))
+			seedAuditEvent(testCtx, "effectiveness.hash.computed", "effectiveness", corrID,
+				map[string]interface{}{
+					"pre_remediation_spec_hash":  specHash,
+					"post_remediation_spec_hash": "sha256:post-fixture",
+				}, now.Add(-25*time.Minute))
+			DeferCleanup(func() {
+				_, _ = seedDB.ExecContext(testCtx,
+					"DELETE FROM audit_events WHERE correlation_id = $1", corrID)
+			})
+
+			By("Using k8sFixtureClient so enrichment succeeds with controlled data")
+			fixtureK8s := &k8sFixtureClient{
+				ownerChain: []enrichment.OwnerChainEntry{
+					{Kind: "Pod", Name: "api-server-abc", Namespace: "production"},
+					{Kind: "ReplicaSet", Name: "api-server-rs", Namespace: "production"},
+					{Kind: "Deployment", Name: "api-server", Namespace: "production"},
+				},
+			}
+			fixtureEnricher := enrichment.NewEnricher(fixtureK8s, suiteDSAdapter, auditStore, invLogger)
+
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Memory pressure detected"}`}},
 				wfToolResp(`{"workflow_id":"oom-increase-memory","confidence":0.9}`),
 			}
-			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools})
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: fixtureEnricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name:        "api-server-abc",
 				Namespace:   "production",
@@ -510,11 +545,19 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 
 	Describe("IT-KA-433-009: Investigation emits audit events", func() {
 		It("should emit audit events at correct investigation points", func() {
+			fixtureK8s := &k8sFixtureClient{
+				ownerChain: []enrichment.OwnerChainEntry{
+					{Kind: "Pod", Name: "api-server", Namespace: "production"},
+					{Kind: "Deployment", Name: "api-server", Namespace: "production"},
+				},
+			}
+			fixtureEnricher := enrichment.NewEnricher(fixtureK8s, suiteDSAdapter, auditStore, invLogger)
+
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"found issue"}`}},
 				wfToolResp(`{"workflow_id":"oom-increase-memory","confidence":0.85}`),
 			}
-			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools})
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: fixtureEnricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api-server", Namespace: "production", Severity: "critical", Message: "OOMKilled",
 				Environment: "Production", Priority: "P0",
