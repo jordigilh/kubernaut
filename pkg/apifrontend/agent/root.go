@@ -131,9 +131,16 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 		{"get_effectiveness", func() (tool.Tool, error) { return tools.NewGetEffectivenessTool(dsC) }},
 		{"get_audit_trail", func() (tool.Tool, error) { return tools.NewGetAuditTrailTool(dsC) }},
 		// Generic K8s triage tools (#1230) — AF SA reads; access gated by MCP RBAC
-		{"kubectl_get", func() (tool.Tool, error) { return tools.NewKubectlGetTool(saFactory, cfg.RESTMapper) }},
-		{"kubectl_list", func() (tool.Tool, error) { return tools.NewKubectlListTool(saFactory, cfg.RESTMapper) }},
+		{"kubectl_get", func() (tool.Tool, error) { return tools.NewKubectlGetTool(saFactory, cfg.RESTMapper, cfg.FleetReaderFactory) }},
+		{"kubectl_list", func() (tool.Tool, error) { return tools.NewKubectlListTool(saFactory, cfg.RESTMapper, cfg.FleetReaderFactory) }},
 		{"kubectl_list_events", func() (tool.Tool, error) { return tools.NewKubectlListEventsTool(saFactory) }},
+		// Fleet cluster discovery (BR-FLEET-054) — registered only when fleet is configured
+		{"list_clusters", func() (tool.Tool, error) {
+			if cfg.ClusterRegistry == nil {
+				return nil, nil
+			}
+			return tools.NewListClustersTool(cfg.ClusterRegistry)
+		}},
 		// Interactive investigation tools — KA MCP backed
 		{"message", func() (tool.Tool, error) { return tools.NewMessageTool(mcpC, cfg.Auditor) }},
 		{"complete", func() (tool.Tool, error) { return tools.NewCompleteTool(mcpC, cfg.Auditor) }},
@@ -180,6 +187,9 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 		t, err := c.fn()
 		if err != nil {
 			return nil, fmt.Errorf("creating tool %q: %w", c.name, err)
+		}
+		if t == nil {
+			continue
 		}
 		if !cfg.InteractiveEnabled && tools.SessionDependentTools[t.Name()] {
 			continue

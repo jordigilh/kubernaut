@@ -141,7 +141,7 @@ var _ = Describe("Cluster-scoped namespace stripping (#1477)", func() {
 			)
 			mapper := newScopeAwareMapper()
 
-			result, err := tools.HandleKubectlGet(ctx, client, mapper, tools.KubectlGetArgs{
+			result, err := tools.HandleKubectlGet(ctx, &tools.DynamicResourceReader{Client: client}, mapper, tools.KubectlGetArgs{
 				Kind:      "Node",
 				Name:      "worker-1",
 				Namespace: "default",
@@ -166,7 +166,7 @@ var _ = Describe("Cluster-scoped namespace stripping (#1477)", func() {
 			)
 			mapper := newScopeAwareMapper()
 
-			result, err := tools.HandleKubectlList(ctx, client, mapper, tools.KubectlListArgs{
+			result, err := tools.HandleKubectlList(ctx, &tools.DynamicResourceReader{Client: client}, mapper, tools.KubectlListArgs{
 				Kind:      "Namespace",
 				Namespace: "default",
 			})

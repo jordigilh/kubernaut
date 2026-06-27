@@ -22,7 +22,7 @@ var _ = Describe("kubectl_list", func() {
 			newUnstructuredService("prod", "api-svc", "10.0.0.2"),
 		)
 
-		result, err := tools.HandleKubectlList(context.Background(), client, nil, tools.KubectlListArgs{
+		result, err := tools.HandleKubectlList(context.Background(), &tools.DynamicResourceReader{Client: client}, nil, tools.KubectlListArgs{
 			Kind:      "Service",
 			Namespace: "prod",
 		})
@@ -35,7 +35,7 @@ var _ = Describe("kubectl_list", func() {
 		scheme := runtime.NewScheme()
 		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, kubectlGVRs)
 
-		result, err := tools.HandleKubectlList(context.Background(), client, nil, tools.KubectlListArgs{
+		result, err := tools.HandleKubectlList(context.Background(), &tools.DynamicResourceReader{Client: client}, nil, tools.KubectlListArgs{
 			Kind:      "Service",
 			Namespace: "empty-ns",
 		})
@@ -55,7 +55,7 @@ var _ = Describe("kubectl_list", func() {
 			svcWithLabel, svcNoLabel,
 		)
 
-		result, err := tools.HandleKubectlList(context.Background(), client, nil, tools.KubectlListArgs{
+		result, err := tools.HandleKubectlList(context.Background(), &tools.DynamicResourceReader{Client: client}, nil, tools.KubectlListArgs{
 			Kind:          "Service",
 			Namespace:     "prod",
 			LabelSelector: "app=web",
@@ -71,7 +71,7 @@ var _ = Describe("kubectl_list", func() {
 			newUnstructuredSecret("prod", "api-keys"),
 		)
 
-		result, err := tools.HandleKubectlList(context.Background(), client, nil, tools.KubectlListArgs{
+		result, err := tools.HandleKubectlList(context.Background(), &tools.DynamicResourceReader{Client: client}, nil, tools.KubectlListArgs{
 			Kind:      "Secret",
 			Namespace: "prod",
 		})
@@ -93,7 +93,7 @@ var _ = Describe("kubectl_list", func() {
 		scheme := runtime.NewScheme()
 		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, kubectlGVRs)
 
-		_, err := tools.HandleKubectlList(context.Background(), client, nil, tools.KubectlListArgs{
+		_, err := tools.HandleKubectlList(context.Background(), &tools.DynamicResourceReader{Client: client}, nil, tools.KubectlListArgs{
 			Kind:      "",
 			Namespace: "prod",
 		})
@@ -104,7 +104,7 @@ var _ = Describe("kubectl_list", func() {
 		scheme := runtime.NewScheme()
 		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, kubectlGVRs)
 
-		_, err := tools.HandleKubectlList(context.Background(), client, nil, tools.KubectlListArgs{
+		_, err := tools.HandleKubectlList(context.Background(), &tools.DynamicResourceReader{Client: client}, nil, tools.KubectlListArgs{
 			Kind:      "Service",
 			Namespace: "../etc",
 		})
@@ -127,7 +127,7 @@ var _ = Describe("kubectl_list", func() {
 		}
 		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, kubectlGVRs, objects...)
 
-		result, err := tools.HandleKubectlList(context.Background(), client, nil, tools.KubectlListArgs{
+		result, err := tools.HandleKubectlList(context.Background(), &tools.DynamicResourceReader{Client: client}, nil, tools.KubectlListArgs{
 			Kind:      "Service",
 			Namespace: "prod",
 		})
@@ -147,7 +147,7 @@ var _ = Describe("kubectl_list", func() {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				_, err := tools.HandleKubectlList(context.Background(), client, nil, tools.KubectlListArgs{
+				_, err := tools.HandleKubectlList(context.Background(), &tools.DynamicResourceReader{Client: client}, nil, tools.KubectlListArgs{
 					Kind:      "Service",
 					Namespace: "test",
 				})
