@@ -283,6 +283,19 @@ test-unit-gateway: ginkgo ensure-coverage-dirs ## Run gateway unit tests (coverp
 		go tool cover -func=coverage_unit_gateway.out | grep total || echo "No coverage data"; \
 	fi
 
+# FMC unit tests: code lives at pkg/fleet/fmc/ (not pkg/fmc/)
+.PHONY: test-unit-fmc
+test-unit-fmc: ginkgo ensure-coverage-dirs ## Run FMC unit tests (coverpkg: pkg/fleet/fmc)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 fmc - Unit Tests ($(TEST_PROCS) procs)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@$(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_fmc.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/fleet/fmc/... ./pkg/fleet/fmc/...
+	@if [ -f coverage_unit_fmc.out ]; then \
+		echo ""; \
+		echo "📊 Coverage report generated: coverage_unit_fmc.out"; \
+		go tool cover -func=coverage_unit_fmc.out | grep total || echo "No coverage data"; \
+	fi
+
 # Shared packages unit tests: tests for pkg/audit, pkg/cache, pkg/http, pkg/k8sutil, pkg/shared
 # These packages are not standalone services (no cmd/ entry), so they have no service-level
 # test target. This consolidated target runs all shared infrastructure package tests.
