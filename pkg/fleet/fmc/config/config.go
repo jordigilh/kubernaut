@@ -68,8 +68,10 @@ type SyncConfig struct {
 // OAuth2 is mandatory for FMC — the MCP Gateway always requires authentication
 // in production fleet deployments. There is no unauthenticated fallback.
 type OAuth2Config struct {
-	TokenURL       string `yaml:"tokenUrl"`
-	CredentialsDir string `yaml:"credentialsDir"`
+	TokenURL       string        `yaml:"tokenUrl"`
+	CredentialsDir string        `yaml:"credentialsDir"`
+	Scopes         []string      `yaml:"scopes"`
+	TokenTimeout   time.Duration `yaml:"tokenTimeout"`
 }
 
 // DefaultServiceConfig returns production defaults.
@@ -93,6 +95,8 @@ func DefaultServiceConfig() *ServiceConfig {
 		},
 		OAuth2: OAuth2Config{
 			CredentialsDir: "/etc/fleetmetadatacache/fleet-oauth2",
+			Scopes:         []string{"openid", "groups"},
+			TokenTimeout:   10 * time.Second,
 		},
 	}
 }

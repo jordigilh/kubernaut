@@ -16,6 +16,11 @@ data:
     oauth2:
       skipApprovalScreen: true
       passwordConnector: local
+      grantTypes:
+        - authorization_code
+        - password
+        - client_credentials
+        - refresh_token
       responseTypes: ["code", "token", "id_token"]
 
     staticClients:
@@ -24,6 +29,23 @@ data:
         secret: e2e-client-secret
         redirectURIs:
           - "http://localhost:18443/callback"
+      - id: kubernaut-fleet-read
+        name: "Kubernaut Fleet Read (E2E)"
+        secret: e2e-fleet-secret
+        grantTypes:
+          - client_credentials
+        clientCredentialsClaims:
+          groups:
+            - mcp-read
+      - id: kubernaut-fleet-write
+        name: "Kubernaut Fleet Write (E2E)"
+        secret: e2e-fleet-secret
+        grantTypes:
+          - client_credentials
+        clientCredentialsClaims:
+          groups:
+            - mcp-write
+            - mcp-read
 
     enablePasswordDB: true
     staticPasswords:
@@ -114,7 +136,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: dex
-          image: ghcr.io/dexidp/dex:v2.45.1
+          image: ghcr.io/dexidp/dex:latest
           command: ["dex", "serve", "/etc/dex/config.yaml"]
           ports:
             - name: http

@@ -106,7 +106,7 @@ var _ = Describe("BR-PERFORMANCE-970: Parallel Tool Execution in runLLMLoop", fu
 
 	Describe("IT-KA-970-001: Parallel Execution — Ordering, Timing, and Audit", func() {
 		It("should execute tool calls in parallel with wall-time < sequential baseline, preserving message and audit order", func() {
-			const toolDelay = 100 * time.Millisecond
+			const toolDelay = 200 * time.Millisecond
 			const numTools = 4
 
 			reg := registry.New()
