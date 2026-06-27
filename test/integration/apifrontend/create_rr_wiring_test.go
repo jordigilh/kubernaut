@@ -261,14 +261,14 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 	It("IT-FLEET-004: HandleCreateRR with ClusterID produces RR with cluster fields in envtest (BR-INTEGRATION-065)", func() {
 		ctx := context.Background()
 
-		result, err := tools.HandleCreateRR(ctx, k8sClient, dynamicClient, "default", &tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: "default"}, &tools.CreateRRArgs{
 			Namespace:   "default",
 			Kind:        "Deployment",
 			Name:        "web-fleet-004-" + uuid.New().String()[:6],
 			Description: "fleet cluster wiring IT",
 			ClusterID:   "prod-east-1",
 			ClusterName: "Production US-East",
-		}, "fleet-user", nil, nil)
+		}, "fleet-user")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.RRID).To(HavePrefix("rr-"))
 
@@ -291,23 +291,23 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 		ctx := context.Background()
 		baseName := "web-fleet-005-" + uuid.New().String()[:6]
 
-		result1, err := tools.HandleCreateRR(ctx, k8sClient, dynamicClient, "default", &tools.CreateRRArgs{
+		result1, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: "default"}, &tools.CreateRRArgs{
 			Namespace:   "default",
 			Kind:        "Deployment",
 			Name:        baseName,
 			Description: "east cluster",
 			ClusterID:   "cluster-east",
-		}, "fleet-user", nil, nil)
+		}, "fleet-user")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result1.AlreadyExists).To(BeFalse())
 
-		result2, err := tools.HandleCreateRR(ctx, k8sClient, dynamicClient, "default", &tools.CreateRRArgs{
+		result2, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: "default"}, &tools.CreateRRArgs{
 			Namespace:   "default",
 			Kind:        "Deployment",
 			Name:        baseName,
 			Description: "west cluster",
 			ClusterID:   "cluster-west",
-		}, "fleet-user", nil, nil)
+		}, "fleet-user")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result2.AlreadyExists).To(BeFalse(),
 			"same resource on a different cluster must NOT be deduplicated (ADR-065)")
