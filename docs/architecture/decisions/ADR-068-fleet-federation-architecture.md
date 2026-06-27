@@ -236,6 +236,12 @@ This awareness is isolated to FMC and does not leak into other services' busines
 | Phase 6 | MCP client resilience | Complete |
 | Remediation | Security, wiring, validation hardening | Complete |
 | SP Enrichment | SP remote cluster enrichment via MCP Gateway (BR-INTEGRATION-054) | Complete |
+| RO Fleet Scope | RO scope routing via FederatedScopeChecker (BR-FLEET-054) | Complete |
+| WE Fleet Routing | WE JobExecutor.IsCompleted ClusterID propagation (BR-FLEET-054) | Complete |
+| EM Fleet Routing | EM target-read routing via ReaderFactory (BR-FLEET-054) | Complete |
+| AF Fleet Routing | AF kubectl_get/kubectl_list ResourceReader abstraction + list_clusters tool (BR-FLEET-054) | Complete |
+| Rancher Adapter | Rancher v3 API adapter for cluster discovery and scope checks | Planned (v1.6) |
+| Clusterpedia Adapter | Clusterpedia Aggregated API adapter for scope checks | Planned (v1.6) |
 
 ## Wiring Manifest
 
@@ -596,8 +602,9 @@ GET /healthz
 | **FMC service** | FMC must be deployed in the same cluster as GW/RO. Exposes REST API on port 8080. Handles both the write side (MCP polling → Valkey) and the read side (REST API → Valkey EXISTS). |
 | **Valkey** | Internal to FMC — GW/RO do not connect to Valkey. FMC manages its own Valkey connection (co-owned with DataStorage). Configured in FMC's own config. |
 | **MCP Gateway** | FMC polls MCP Gateway for managed cluster resources. Configured via OAuth2 in FMC's config (ReloadableOAuth2Transport). |
-| **Authentication** | GW/RO → FMC: in-cluster Service access (no auth required if same namespace, or mTLS if cross-namespace). FMC → Valkey: password-based or mTLS. FMC → MCP Gateway: OAuth2. |
-| **Network** | GW/RO pods must reach FMC Service on port 8080. FMC must reach Valkey (6379) and MCP Gateway. If NetworkPolicies are enforced, add egress rules accordingly. |
+| **Authentication** | GW/RO → FMC: in-cluster Service access (no auth required if same namespace, or mTLS if cross-namespace). FMC → Valkey: password-based or mTLS. **FMC → MCP Gateway: OAuth2 (mandatory)** — there is no unauthenticated fallback. `oauth2.tokenUrl` and `oauth2.credentialsSecretRef` are required when `fmc.enabled=true`. |
+| **Network** | GW/RO pods must reach FMC Service on port 8080. FMC must reach Valkey (6379) and MCP Gateway. A `NetworkPolicy` restricts ingress to GW/RO pods and egress to Valkey + MCP Gateway + DNS. |
+| **Configuration** | FMC uses structured YAML configuration per ADR-030 (not env vars). The Helm chart mounts the config at `/etc/fmc/config.yaml` and OAuth2 credentials at `/etc/fmc/fleet-oauth2/`. Fields use camelCase per CRD_FIELD_NAMING_CONVENTION.md. See `pkg/fleet/fmc/config/config.go`. |
 | **Kubernaut config** | `fleet.backend: "fmc"`, `fleet.fmc.endpoint: "http://fmc.kubernaut-system.svc:8080"`. |
 
 ### Backend B: ACM (Advanced Cluster Management)
