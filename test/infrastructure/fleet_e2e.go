@@ -240,6 +240,29 @@ spec:
 		return fmt.Errorf("kuadrant deployment failed: %w", err)
 	}
 
+	// ReferenceGrant: MCPGatewayExtension in mcp-system references a Gateway
+	// in gateway-system. Without this grant the controller refuses to create
+	// the broker deployment (status: ReferenceGrantRequired).
+	// Authority: https://docs.kuadrant.io/dev/mcp-gateway/docs/guides/isolated-gateway-deployment/
+	_, _ = fmt.Fprintln(writer, "    Creating ReferenceGrant (mcp-system → gateway-system)...")
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, `
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: allow-mcp-extension
+  namespace: gateway-system
+spec:
+  from:
+  - group: mcp.kuadrant.io
+    kind: MCPGatewayExtension
+    namespace: mcp-system
+  to:
+  - group: gateway.networking.k8s.io
+    kind: Gateway
+`); err != nil {
+		return fmt.Errorf("ReferenceGrant creation failed: %w", err)
+	}
+
 	_, _ = fmt.Fprintln(writer, "    Waiting for Kuadrant controller...")
 	if err := waitForDeployment(ctx, "mcp-gateway-controller", "mcp-system", kubeconfigPath, 120*time.Second, writer); err != nil {
 		return fmt.Errorf("kuadrant controller rollout failed: %w", err)
@@ -301,7 +324,6 @@ spec:
         - "--port=8080"
         - "--cluster-provider=in-cluster"
         - "--toolsets=core"
-        - "--transport=http"
         - "--stateless"
         ports:
         - name: http
@@ -510,14 +532,35 @@ metadata:
     app: fleetmetadatacache
     component: fleet
 data:
-  FMC_MCP_GATEWAY_ENDPOINT: "http://mcp-gateway.mcp-system.svc:8080/mcp"
-  FMC_GATEWAY_TYPE: "kuadrant"
-  FMC_VALKEY_ADDR: "valkey.%[1]s.svc:6379"
-  FMC_NAMESPACE: "%[1]s"
-  FMC_SYNC_INTERVAL: "10s"
-  FMC_KEY_TTL: "30s"
-  FMC_API_ADDR: ":8080"
-  FMC_METRICS_ADDR: ":8081"
+  config.yaml: |
+    server:
+      apiAddr: ":8080"
+      metricsAddr: ":8081"
+    mcpGateway:
+      endpoint: "http://mcp-gateway.mcp-system.svc:8080/mcp"
+      gatewayType: "kuadrant"
+      namespace: "%[1]s"
+    valkey:
+      addr: "valkey.%[1]s.svc:6379"
+    sync:
+      interval: "10s"
+      keyTtl: "30s"
+    oauth2:
+      tokenUrl: "http://dex.%[1]s.svc:5556/dex/token"
+      credentialsDir: "/etc/fleetmetadatacache/fleet-oauth2"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: fleetmetadatacache-oauth2
+  namespace: %[1]s
+  labels:
+    app: fleetmetadatacache
+    component: fleet
+type: Opaque
+stringData:
+  client-id: kubernaut-fleet-read
+  client-secret: e2e-fleet-secret
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -543,9 +586,13 @@ spec:
       - name: fleetmetadatacache
         image: %[2]s
         imagePullPolicy: IfNotPresent
-        envFrom:
-        - configMapRef:
-            name: fleetmetadatacache-config
+        volumeMounts:
+        - name: config
+          mountPath: /etc/fleetmetadatacache
+          readOnly: true
+        - name: oauth2-creds
+          mountPath: /etc/fleetmetadatacache/fleet-oauth2
+          readOnly: true
         ports:
         - name: api
           containerPort: 8080
@@ -570,6 +617,13 @@ spec:
           limits:
             memory: "64Mi"
             cpu: "100m"
+      volumes:
+      - name: config
+        configMap:
+          name: fleetmetadatacache-config
+      - name: oauth2-creds
+        secret:
+          secretName: fleetmetadatacache-oauth2
 ---
 apiVersion: v1
 kind: Service

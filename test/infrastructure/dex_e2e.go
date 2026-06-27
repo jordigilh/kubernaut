@@ -29,9 +29,10 @@ import (
 )
 
 // dexImage is the DEX OIDC provider image used for E2E JWT testing.
-// master (>= v2.46.0) includes client_credentials grant support
+// latest (master) includes client_credentials grant support (PR #4583)
 // for service-to-service fleet authentication (BR-INTEGRATION-054).
-const dexImage = "ghcr.io/dexidp/dex:v2.46.0"
+// No official release contains this yet (v2.45.1 is latest release).
+const dexImage = "ghcr.io/dexidp/dex:latest"
 
 // DexE2EConfig holds the DEX E2E user credentials for token acquisition.
 type DexE2EConfig struct {
@@ -192,6 +193,11 @@ data:
     enablePasswordDB: true
     oauth2:
       passwordConnector: local
+      grantTypes:
+        - authorization_code
+        - password
+        - client_credentials
+        - refresh_token
       responseTypes: ["code", "token", "id_token"]
       skipApprovalScreen: true
     staticPasswords:
@@ -246,9 +252,6 @@ spec:
       - name: dex
         image: %s
         command: ["dex", "serve", "/etc/dex/config.yaml"]
-        env:
-        - name: DEX_CLIENT_CREDENTIAL_GRANT_ENABLED_BY_DEFAULT
-          value: "true"
         ports:
         - name: http
           containerPort: 5556

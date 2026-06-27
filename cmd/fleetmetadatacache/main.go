@@ -88,8 +88,8 @@ func main() {
 		TokenURL:         cfg.OAuth2.TokenURL,
 		ClientIDPath:     cfg.OAuth2.CredentialsDir + "/client-id",
 		ClientSecretPath: cfg.OAuth2.CredentialsDir + "/client-secret",
-		Scopes:           []string{"fleet"},
-		TokenTimeout:     10 * time.Second,
+		Scopes:           cfg.OAuth2.Scopes,
+		TokenTimeout:     cfg.OAuth2.TokenTimeout,
 	}
 	opts := []mcpclient.Option{
 		mcpclient.WithReloadableOAuth2Transport(reloadCfg, logger),

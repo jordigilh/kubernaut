@@ -49,6 +49,8 @@ var _ = Describe("FMC ServiceConfig [BR-FLEET-054, ADR-030]", func() {
 			))
 			Expect(cfg.OAuth2.CredentialsDir).To(Equal("/etc/fleetmetadatacache/fleet-oauth2"))
 			Expect(cfg.OAuth2.TokenURL).To(BeEmpty())
+			Expect(cfg.OAuth2.Scopes).To(Equal([]string{"openid", "groups"}))
+			Expect(cfg.OAuth2.TokenTimeout).To(Equal(10 * time.Second))
 		})
 	})
 
@@ -79,6 +81,10 @@ sync:
 oauth2:
   tokenUrl: "https://keycloak.example.com/token"
   credentialsDir: "/custom/creds"
+  scopes:
+    - openid
+    - fleet-access
+  tokenTimeout: 30s
 `
 			tmpFile := writeYAMLToTemp(yamlContent)
 			defer func() { _ = os.Remove(tmpFile) }()
@@ -96,6 +102,8 @@ oauth2:
 			Expect(cfg.Sync.ResourceKinds).To(Equal([]string{"Deployment", "Pod"}))
 			Expect(cfg.OAuth2.TokenURL).To(Equal("https://keycloak.example.com/token"))
 			Expect(cfg.OAuth2.CredentialsDir).To(Equal("/custom/creds"))
+			Expect(cfg.OAuth2.Scopes).To(Equal([]string{"openid", "fleet-access"}))
+			Expect(cfg.OAuth2.TokenTimeout).To(Equal(30 * time.Second))
 		})
 
 		It("UT-FMC-CFG-004: partial YAML preserves unset defaults [ADR-030]", func() {
@@ -114,6 +122,8 @@ oauth2:
 			Expect(cfg.Server.APIAddr).To(Equal(":8080"), "unset fields keep defaults")
 			Expect(cfg.Valkey.Addr).To(Equal("valkey:6379"), "unset fields keep defaults")
 			Expect(cfg.Sync.Interval).To(Equal(30 * time.Second), "unset fields keep defaults")
+			Expect(cfg.OAuth2.Scopes).To(Equal([]string{"openid", "groups"}), "unset scopes keep defaults")
+			Expect(cfg.OAuth2.TokenTimeout).To(Equal(10*time.Second), "unset tokenTimeout keeps default")
 		})
 
 		It("UT-FMC-CFG-005: returns error for non-existent file [IA-5]", func() {
