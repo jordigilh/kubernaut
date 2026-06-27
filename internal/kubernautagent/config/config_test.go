@@ -822,4 +822,69 @@ integrations:
 			Expect(cfg.Integrations.Fleet.OAuth2.Scopes).To(Equal([]string{"openid", "groups", "fleet-read"}))
 		})
 	})
+
+	Describe("KA FleetConfig.GatewayType (CM-6, ADR-068 #11)", func() {
+		It("UT-KA-CFG-001: FleetConfig parses gatewayType from YAML", func() {
+			yamlContent := `
+runtime:
+  server:
+    port: 8443
+    rateLimit:
+      requestsPerSecond: 5
+      burst: 10
+  session:
+    ttl: 30m
+    maxConcurrentInvestigations: 10
+  shutdown:
+    drainSeconds: 30
+ai:
+  investigation:
+    maxTurns: 40
+  safety:
+    anomaly:
+      maxToolCallsPerTool: 10
+      maxTotalToolCalls: 30
+      maxRepeatedFailures: 3
+integrations:
+  fleet:
+    endpoint: "http://mcp-gateway:1975/mcp"
+    gatewayType: "kuadrant"
+`
+			cfg, err := config.Load([]byte(yamlContent))
+			Expect(err).ToNot(HaveOccurred())
+			Expect(cfg.Integrations.Fleet.GatewayType).To(Equal("kuadrant"),
+				"gatewayType must be parsed from YAML")
+		})
+
+		It("UT-KA-CFG-002: FleetConfig with empty gatewayType means fleet disabled", func() {
+			yamlContent := `
+runtime:
+  server:
+    port: 8443
+    rateLimit:
+      requestsPerSecond: 5
+      burst: 10
+  session:
+    ttl: 30m
+    maxConcurrentInvestigations: 10
+  shutdown:
+    drainSeconds: 30
+ai:
+  investigation:
+    maxTurns: 40
+  safety:
+    anomaly:
+      maxToolCallsPerTool: 10
+      maxTotalToolCalls: 30
+      maxRepeatedFailures: 3
+integrations:
+  fleet:
+    endpoint: "http://mcp-gateway:1975/mcp"
+`
+			cfg, err := config.Load([]byte(yamlContent))
+			Expect(err).ToNot(HaveOccurred())
+			Expect(cfg.Integrations.Fleet.GatewayType).To(BeEmpty(),
+				"empty gatewayType means fleet is disabled")
+		})
+	})
 })

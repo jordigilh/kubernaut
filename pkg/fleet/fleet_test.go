@@ -207,9 +207,10 @@ var _ = Describe("FleetConfig MCPGatewayType (MCP Gateway Adapter)", func() {
 		Expect(err.Error()).To(ContainSubstring("unsupported mcpGatewayType"))
 	})
 
-	It("UT-FLEET-CFG-033 [CM-6]: EffectiveMCPGatewayType defaults to eaigw when field is empty", func() {
+	It("UT-FLEET-CFG-033 [CM-6]: EffectiveMCPGatewayType returns empty when field is empty (fleet disabled)", func() {
 		cfg := fleet.FleetConfig{}
-		Expect(cfg.EffectiveMCPGatewayType()).To(Equal(fleet.GatewayEAIGW))
+		Expect(cfg.EffectiveMCPGatewayType()).To(Equal(fleet.MCPGatewayType("")),
+			"empty MCPGatewayType means fleet is disabled, no default")
 	})
 
 	It("UT-FLEET-CFG-034 [CM-6]: Validate skips MCPGatewayType check when MCPGatewayEndpoint is empty", func() {
@@ -219,6 +220,19 @@ var _ = Describe("FleetConfig MCPGatewayType (MCP Gateway Adapter)", func() {
 			Endpoint: "http://fmc:8080",
 		}
 		Expect(cfg.Validate()).ToNot(HaveOccurred())
+	})
+
+	It("UT-FLEET-CFG-035 [CM-6]: Empty MCPGatewayType with non-empty endpoint fails validation", func() {
+		cfg := fleet.FleetConfig{
+			Enabled:            true,
+			Backend:            "fleetmetadatacache",
+			Endpoint:           "http://fmc:8080",
+			MCPGatewayEndpoint: "http://gw:8080/mcp",
+			MCPGatewayType:     "",
+		}
+		err := cfg.Validate()
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("mcpGatewayType is required when fleet is enabled"))
 	})
 })
 
