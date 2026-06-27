@@ -153,7 +153,7 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           version: v2.9.0
-          args: cmd/... pkg/... internal/... test/...
+          args: --timeout=10m cmd/... pkg/... internal/... test/...
           only-new-issues: true
 
       - name: Dependency vulnerability scan (govulncheck)
