@@ -23,7 +23,7 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"flag"
 	"net/http"
 	"os"
 	"os/signal"
@@ -42,24 +42,38 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/fleet"
 	"github.com/jordigilh/kubernaut/pkg/fleet/fmc"
+	fmcconfig "github.com/jordigilh/kubernaut/pkg/fleet/fmc/config"
 	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 	"github.com/jordigilh/kubernaut/pkg/fleet/scopecache"
 )
 
 func main() {
+	var configPath string
+	flag.StringVar(&configPath, "config", fmcconfig.DefaultConfigPath, "Path to YAML config file (ADR-030)")
+	flag.Parse()
+
 	zapLogger, _ := zap.NewProduction()
 	defer func() { _ = zapLogger.Sync() }()
 	logger := zapr.NewLogger(zapLogger)
 
-	cfg := loadConfig()
+	cfg, err := fmcconfig.LoadFromFile(configPath)
+	if err != nil {
+		logger.Error(err, "Failed to load configuration", "path", configPath)
+		os.Exit(1)
+	}
+	if err := cfg.Validate(); err != nil {
+		logger.Error(err, "Invalid configuration")
+		os.Exit(1)
+	}
+
 	logger.Info("FMC starting",
-		"syncInterval", cfg.SyncInterval,
-		"valkeyAddr", cfg.ValkeyAddr,
-		"mcpEndpoint", cfg.MCPGatewayEndpoint,
-		"gatewayType", cfg.GatewayType,
-		"apiAddr", cfg.APIAddr,
-		"metricsAddr", cfg.MetricsAddr)
+		"syncInterval", cfg.Sync.Interval,
+		"valkeyAddr", cfg.Valkey.Addr,
+		"mcpEndpoint", cfg.MCPGateway.Endpoint,
+		"gatewayType", cfg.MCPGateway.GatewayType,
+		"apiAddr", cfg.Server.APIAddr,
+		"metricsAddr", cfg.Server.MetricsAddr)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -70,28 +84,22 @@ func main() {
 	reg := prometheus.NewRegistry()
 	metrics := fmc.NewMetrics(reg)
 
-	var opts []mcpclient.Option
-	if cfg.OAuth2Enabled {
-		reloadCfg := mcpclient.ReloadableOAuth2Config{
-			TokenURL:         cfg.OAuth2TokenURL,
-			ClientIDPath:     cfg.OAuth2SecretPath + "/client-id",
-			ClientSecretPath: cfg.OAuth2SecretPath + "/client-secret",
-			Scopes:           []string{"fleet"},
-			TokenTimeout:     10 * time.Second,
-		}
-		opts = append(opts, mcpclient.WithReloadableOAuth2Transport(reloadCfg, logger))
-		logger.Info("OAuth2 authentication configured for MCP Gateway",
-			"tokenURL", cfg.OAuth2TokenURL,
-			"secretPath", cfg.OAuth2SecretPath)
+	reloadCfg := mcpclient.ReloadableOAuth2Config{
+		TokenURL:         cfg.OAuth2.TokenURL,
+		ClientIDPath:     cfg.OAuth2.CredentialsDir + "/client-id",
+		ClientSecretPath: cfg.OAuth2.CredentialsDir + "/client-secret",
+		Scopes:           []string{"fleet"},
+		TokenTimeout:     10 * time.Second,
 	}
-
-	if cfg.MCPGatewayEndpoint == "" {
-		logger.Error(nil, "FMC_MCP_GATEWAY_ENDPOINT must be set")
-		os.Exit(1)
+	opts := []mcpclient.Option{
+		mcpclient.WithReloadableOAuth2Transport(reloadCfg, logger),
 	}
+	logger.Info("OAuth2 authentication configured for MCP Gateway",
+		"tokenURL", cfg.OAuth2.TokenURL,
+		"credentialsDir", cfg.OAuth2.CredentialsDir)
 
 	resilienceCfg := mcpclient.DefaultResilienceConfig()
-	mcpClient, err := mcpclient.NewResilient(ctx, cfg.MCPGatewayEndpoint, resilienceCfg, logger, opts...)
+	mcpClient, err := mcpclient.NewResilient(ctx, cfg.MCPGateway.Endpoint, resilienceCfg, logger, opts...)
 	if err != nil {
 		logger.Error(err, "Failed to connect to MCP Gateway")
 		os.Exit(1)
@@ -109,17 +117,17 @@ func main() {
 		os.Exit(1)
 	}
 
-	writer := fmc.NewValkeyWriter(cfg.ValkeyAddr)
+	writer := fmc.NewValkeyWriter(cfg.Valkey.Addr)
 	defer func() { _ = writer.Close() }()
 
-	cacheReader := scopecache.NewValkeyCacheReader(cfg.ValkeyAddr)
+	cacheReader := scopecache.NewValkeyCacheReader(cfg.Valkey.Addr)
 	defer func() { _ = cacheReader.Close() }()
 
-	clusterRegistry, err := registry.NewClusterRegistry(registry.MCPGatewayType(cfg.GatewayType), dynClient, registry.RegistryConfig{
-		Namespace: cfg.Namespace,
+	clusterRegistry, err := registry.NewClusterRegistry(registry.MCPGatewayType(cfg.MCPGateway.GatewayType), dynClient, registry.RegistryConfig{
+		Namespace: cfg.MCPGateway.Namespace,
 	}, registry.NewMetricsWithRegistry(reg), logger)
 	if err != nil {
-		logger.Error(err, "Failed to create cluster registry", "gatewayType", cfg.GatewayType)
+		logger.Error(err, "Failed to create cluster registry", "gatewayType", cfg.MCPGateway.GatewayType)
 		os.Exit(1)
 	}
 	if err := clusterRegistry.Start(ctx); err != nil {
@@ -129,9 +137,9 @@ func main() {
 	defer clusterRegistry.Stop()
 
 	syncerConfig := fmc.Config{
-		SyncInterval:  cfg.SyncInterval,
-		KeyTTL:        cfg.KeyTTL,
-		ResourceKinds: cfg.ResourceKinds,
+		SyncInterval:  cfg.Sync.Interval,
+		KeyTTL:        cfg.Sync.KeyTTL,
+		ResourceKinds: cfg.Sync.ResourceKinds,
 	}
 
 	readerFactory := fleet.ReaderFactoryFunc(func(_ context.Context, clusterID string) (client.Reader, error) {
@@ -145,7 +153,6 @@ func main() {
 
 	var ready atomic.Bool
 
-	// API server: scope check + cluster listing (ADR-068)
 	scopeClient := scopecache.NewClient(cacheReader)
 	apiHandler := fmc.NewHandler(scopeClient, clusterRegistry, logger)
 	apiMux := http.NewServeMux()
@@ -157,17 +164,16 @@ func main() {
 	apiMux.HandleFunc("/readyz", fmc.ReadyzHandler(ready.Load, cacheReader))
 
 	apiServer := &http.Server{
-		Addr:              cfg.APIAddr,
+		Addr:              cfg.Server.APIAddr,
 		Handler:           apiMux,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	// Metrics server: Prometheus + health probes (operational)
 	metricsMux := http.NewServeMux()
 	metricsMux.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
 
 	metricsServer := &http.Server{
-		Addr:              cfg.MetricsAddr,
+		Addr:              cfg.Server.MetricsAddr,
 		Handler:           metricsMux,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
@@ -216,57 +222,4 @@ func main() {
 	if err := metricsServer.Shutdown(shutdownCtx); err != nil {
 		logger.Error(err, "Metrics server shutdown failed")
 	}
-}
-
-type config struct {
-	MCPGatewayEndpoint string
-	GatewayType        string
-	ValkeyAddr         string
-	Namespace          string
-	SyncInterval       time.Duration
-	KeyTTL             time.Duration
-	APIAddr            string
-	MetricsAddr        string
-	ResourceKinds      []string
-	OAuth2Enabled      bool
-	OAuth2TokenURL     string
-	OAuth2SecretPath   string
-}
-
-func loadConfig() config {
-	cfg := config{
-		MCPGatewayEndpoint: envOrDefault("FMC_MCP_GATEWAY_ENDPOINT", ""),
-		GatewayType:        envOrDefault("FMC_GATEWAY_TYPE", "eaigw"),
-		ValkeyAddr:         envOrDefault("FMC_VALKEY_ADDR", "valkey:6379"),
-		Namespace:          envOrDefault("FMC_NAMESPACE", "kubernaut-system"),
-		SyncInterval:       parseDuration("FMC_SYNC_INTERVAL", 30*time.Second),
-		KeyTTL:             parseDuration("FMC_KEY_TTL", 45*time.Second),
-		APIAddr:            envOrDefault("FMC_API_ADDR", ":8080"),
-		MetricsAddr:        envOrDefault("FMC_METRICS_ADDR", ":8081"),
-		ResourceKinds:      []string{"Deployment", "StatefulSet", "DaemonSet", "Pod", "Service", "Node"},
-		OAuth2Enabled:      os.Getenv("FMC_OAUTH2_ENABLED") == "true",
-		OAuth2TokenURL:     envOrDefault("FMC_OAUTH2_TOKEN_URL", ""),
-		OAuth2SecretPath:   envOrDefault("FMC_OAUTH2_SECRET_PATH", "/etc/fmc/fleet-oauth2"),
-	}
-	return cfg
-}
-
-func envOrDefault(key, defaultVal string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return defaultVal
-}
-
-func parseDuration(key string, defaultVal time.Duration) time.Duration {
-	v := os.Getenv(key)
-	if v == "" {
-		return defaultVal
-	}
-	d, err := time.ParseDuration(v)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "WARNING: invalid duration for %s=%q, using default %v\n", key, v, defaultVal)
-		return defaultVal
-	}
-	return d
 }
