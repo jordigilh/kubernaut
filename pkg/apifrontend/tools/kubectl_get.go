@@ -6,9 +6,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/api/meta"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/dynamic"
 
 	"google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
@@ -23,6 +21,7 @@ type KubectlGetArgs struct {
 	Kind      string `json:"kind"`
 	Name      string `json:"name"`
 	Namespace string `json:"namespace"`
+	ClusterID string `json:"cluster_id,omitempty"`
 }
 
 // KubectlGetResult is the output of kubectl_get.
@@ -34,8 +33,9 @@ type KubectlGetResult struct {
 }
 
 // HandleKubectlGet retrieves a single Kubernetes resource by kind/name/namespace.
-func HandleKubectlGet(ctx context.Context, client dynamic.Interface, mapper meta.RESTMapper, args KubectlGetArgs) (KubectlGetResult, error) {
-	if client == nil {
+// Accepts ResourceReader to support both local (dynamic.Interface) and fleet (client.Reader) access.
+func HandleKubectlGet(ctx context.Context, reader ResourceReader, mapper meta.RESTMapper, args KubectlGetArgs) (KubectlGetResult, error) {
+	if reader == nil {
 		return KubectlGetResult{}, ErrK8sUnavailable
 	}
 	if err := validate.Kind(args.Kind); err != nil {
@@ -48,21 +48,14 @@ func HandleKubectlGet(ctx context.Context, client dynamic.Interface, mapper meta
 		return KubectlGetResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
 	}
 
-	gvr, err := resolveGVR(mapper, args.Kind)
+	gvr, gvk, err := resolveGVRAndGVK(mapper, args.Kind)
 	if err != nil {
 		return KubectlGetResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
 	}
 
 	ns := ResolveEffectiveNamespace(mapper, args.Kind, args.Namespace, logr.FromContextOrDiscard(ctx))
 
-	var resClient dynamic.ResourceInterface
-	if ns != "" {
-		resClient = client.Resource(gvr).Namespace(ns)
-	} else {
-		resClient = client.Resource(gvr)
-	}
-
-	obj, err := resClient.Get(ctx, args.Name, metav1.GetOptions{})
+	obj, err := reader.GetResource(ctx, gvr, gvk, ns, args.Name)
 	if err != nil {
 		return KubectlGetResult{}, ToUserFriendlyError(err)
 	}
@@ -77,15 +70,16 @@ func HandleKubectlGet(ctx context.Context, client dynamic.Interface, mapper meta
 	}, nil
 }
 
-// resolveGVR maps a Kind string to a GroupVersionResource using the static
-// table in pkg/shared/k8s and UnsafeGuessKindToResource for pluralization.
-func resolveGVR(mapper meta.RESTMapper, kind string) (schema.GroupVersionResource, error) {
+// resolveGVRAndGVK maps a Kind string to both GroupVersionResource and
+// GroupVersionKind using the static table in pkg/shared/k8s. Both are
+// needed: GVR for dynamic.Interface and GVK for client.Reader dispatch.
+func resolveGVRAndGVK(mapper meta.RESTMapper, kind string) (schema.GroupVersionResource, schema.GroupVersionKind, error) {
 	gvk, err := sharedK8s.ResolveGVKForKind(mapper, kind)
 	if err != nil {
-		return schema.GroupVersionResource{}, err
+		return schema.GroupVersionResource{}, schema.GroupVersionKind{}, err
 	}
 	plural, _ := meta.UnsafeGuessKindToResource(gvk)
-	return plural, nil
+	return plural, gvk, nil
 }
 
 // sanitizeObject removes sensitive fields from resource objects.
@@ -116,15 +110,31 @@ func redactMapField(obj map[string]interface{}, field string) {
 }
 
 // NewKubectlGetTool creates the kubectl_get ADK tool.
-func NewKubectlGetTool(factory auth.DynamicClientFactory, mapper meta.RESTMapper) (tool.Tool, error) {
+// When readerFactory is non-nil, fleet routing is enabled: non-empty ClusterID
+// in args routes the read through the MCP gateway to the target cluster.
+func NewKubectlGetTool(factory auth.DynamicClientFactory, mapper meta.RESTMapper, readerFactory ResourceReaderFactory) (tool.Tool, error) {
+	desc := "Get a single Kubernetes resource by kind, name, and namespace. Secret .data is redacted."
+	if readerFactory != nil {
+		desc += " Set cluster_id to read from a remote fleet cluster."
+	}
 	return functiontool.New(functiontool.Config{
 		Name:        "kubectl_get",
-		Description: "Get a single Kubernetes resource by kind, name, and namespace. Secret .data is redacted.",
+		Description: desc,
 	}, func(ctx tool.Context, args KubectlGetArgs) (KubectlGetResult, error) {
-		client, err := factory(ctx)
-		if err != nil {
-			return KubectlGetResult{}, fmt.Errorf("%w", ErrK8sUnavailable)
+		var reader ResourceReader
+		if readerFactory != nil && args.ClusterID != "" {
+			r, err := readerFactory(ctx, args.ClusterID)
+			if err != nil {
+				return KubectlGetResult{}, fmt.Errorf("fleet reader for cluster %q: %w", args.ClusterID, err)
+			}
+			reader = r
+		} else {
+			client, err := factory(ctx)
+			if err != nil {
+				return KubectlGetResult{}, fmt.Errorf("%w", ErrK8sUnavailable)
+			}
+			reader = &DynamicResourceReader{Client: client}
 		}
-		return HandleKubectlGet(ctx, client, mapper, args)
+		return HandleKubectlGet(ctx, reader, mapper, args)
 	})
 }

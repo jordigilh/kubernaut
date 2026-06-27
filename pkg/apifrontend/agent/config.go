@@ -21,6 +21,7 @@ import (
 	sessionpkg "github.com/jordigilh/kubernaut/pkg/apifrontend/session"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
+	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 )
 
 // AgentConfig holds the configuration for creating the ADK root agent.
@@ -99,6 +100,15 @@ type AgentConfig struct {
 	// input validation failures (#1372). When nil, validation failures are
 	// not tracked in metrics (test-safe).
 	AlertValidationFailures *prometheus.CounterVec
+	// FleetReaderFactory provides ResourceReader instances for remote fleet
+	// clusters (BR-FLEET-054). When non-nil, kubectl_get/kubectl_list tools
+	// accept a cluster_id argument to read from managed clusters via MCP gateway.
+	// When nil, fleet routing is disabled (single-cluster mode).
+	FleetReaderFactory tools.ResourceReaderFactory
+	// ClusterRegistry provides the list of managed fleet clusters (BR-FLEET-054).
+	// When non-nil, the list_clusters tool is registered so the LLM can discover
+	// available clusters. When nil, the tool is not registered.
+	ClusterRegistry registry.ClusterRegistry
 }
 
 // Option applies a configuration override to AgentConfig.

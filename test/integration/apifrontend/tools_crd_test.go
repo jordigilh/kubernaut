@@ -62,7 +62,7 @@ var _ = Describe("CRD Tools Integration (tools/ via envtest)", func() {
 		It("IT-AF-1195-036: kubectl_list returns pod list from envtest", func() {
 			ctx := context.Background()
 
-			result, err := tools.HandleKubectlList(ctx, dynamicClient, nil, tools.KubectlListArgs{
+			result, err := tools.HandleKubectlList(ctx, &tools.DynamicResourceReader{Client: dynamicClient}, nil, tools.KubectlListArgs{
 				Kind:      "Pod",
 				Namespace: "default",
 			})
@@ -73,7 +73,7 @@ var _ = Describe("CRD Tools Integration (tools/ via envtest)", func() {
 		It("IT-AF-1195-037: kubectl_list returns workload list from envtest", func() {
 			ctx := context.Background()
 
-			result, err := tools.HandleKubectlList(ctx, dynamicClient, nil, tools.KubectlListArgs{
+			result, err := tools.HandleKubectlList(ctx, &tools.DynamicResourceReader{Client: dynamicClient}, nil, tools.KubectlListArgs{
 				Kind:      "Deployment",
 				Namespace: "default",
 			})

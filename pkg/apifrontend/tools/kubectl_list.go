@@ -7,7 +7,6 @@ import (
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/dynamic"
 
 	"google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
@@ -21,6 +20,7 @@ type KubectlListArgs struct {
 	Kind          string `json:"kind"`
 	Namespace     string `json:"namespace"`
 	LabelSelector string `json:"label_selector,omitempty"`
+	ClusterID     string `json:"cluster_id,omitempty"`
 }
 
 // KubectlListResult is the output of kubectl_list.
@@ -31,8 +31,9 @@ type KubectlListResult struct {
 }
 
 // HandleKubectlList lists Kubernetes resources by kind/namespace with optional label selector.
-func HandleKubectlList(ctx context.Context, client dynamic.Interface, mapper meta.RESTMapper, args KubectlListArgs) (KubectlListResult, error) {
-	if client == nil {
+// Accepts ResourceReader to support both local (dynamic.Interface) and fleet (client.Reader) access.
+func HandleKubectlList(ctx context.Context, reader ResourceReader, mapper meta.RESTMapper, args KubectlListArgs) (KubectlListResult, error) {
+	if reader == nil {
 		return KubectlListResult{}, ErrK8sUnavailable
 	}
 	if err := validate.Kind(args.Kind); err != nil {
@@ -42,7 +43,7 @@ func HandleKubectlList(ctx context.Context, client dynamic.Interface, mapper met
 		return KubectlListResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
 	}
 
-	gvr, err := resolveGVR(mapper, args.Kind)
+	gvr, gvk, err := resolveGVRAndGVK(mapper, args.Kind)
 	if err != nil {
 		return KubectlListResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
 	}
@@ -54,14 +55,7 @@ func HandleKubectlList(ctx context.Context, client dynamic.Interface, mapper met
 		opts.LabelSelector = args.LabelSelector
 	}
 
-	var resClient dynamic.ResourceInterface
-	if ns != "" {
-		resClient = client.Resource(gvr).Namespace(ns)
-	} else {
-		resClient = client.Resource(gvr)
-	}
-
-	list, err := resClient.List(ctx, opts)
+	list, err := reader.ListResources(ctx, gvr, gvk, ns, opts)
 	if err != nil {
 		return KubectlListResult{}, ToUserFriendlyError(err)
 	}
@@ -82,15 +76,31 @@ func HandleKubectlList(ctx context.Context, client dynamic.Interface, mapper met
 }
 
 // NewKubectlListTool creates the kubectl_list ADK tool.
-func NewKubectlListTool(factory auth.DynamicClientFactory, mapper meta.RESTMapper) (tool.Tool, error) {
+// When readerFactory is non-nil, fleet routing is enabled: non-empty ClusterID
+// in args routes the read through the MCP gateway to the target cluster.
+func NewKubectlListTool(factory auth.DynamicClientFactory, mapper meta.RESTMapper, readerFactory ResourceReaderFactory) (tool.Tool, error) {
+	desc := "List Kubernetes resources by kind and namespace with optional label selector. Secret .data is redacted."
+	if readerFactory != nil {
+		desc += " Set cluster_id to list from a remote fleet cluster."
+	}
 	return functiontool.New(functiontool.Config{
 		Name:        "kubectl_list",
-		Description: "List Kubernetes resources by kind and namespace with optional label selector. Secret .data is redacted.",
+		Description: desc,
 	}, func(ctx tool.Context, args KubectlListArgs) (KubectlListResult, error) {
-		client, err := factory(ctx)
-		if err != nil {
-			return KubectlListResult{}, fmt.Errorf("%w", ErrK8sUnavailable)
+		var reader ResourceReader
+		if readerFactory != nil && args.ClusterID != "" {
+			r, err := readerFactory(ctx, args.ClusterID)
+			if err != nil {
+				return KubectlListResult{}, fmt.Errorf("fleet reader for cluster %q: %w", args.ClusterID, err)
+			}
+			reader = r
+		} else {
+			client, err := factory(ctx)
+			if err != nil {
+				return KubectlListResult{}, fmt.Errorf("%w", ErrK8sUnavailable)
+			}
+			reader = &DynamicResourceReader{Client: client}
 		}
-		return HandleKubectlList(ctx, client, mapper, args)
+		return HandleKubectlList(ctx, reader, mapper, args)
 	})
 }
