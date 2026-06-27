@@ -36,7 +36,7 @@ var _ = Describe("Workflow Selection Split Submit Tools — #760 v2", func() {
 
 	var (
 		invLogger  logr.Logger
-		auditStore *recordingAuditStore
+		auditStore *capturingAuditStore
 		builder    *prompt.Builder
 		rp         *parser.ResultParser
 		enricher   *enrichment.Enricher
@@ -45,16 +45,15 @@ var _ = Describe("Workflow Selection Split Submit Tools — #760 v2", func() {
 
 	BeforeEach(func() {
 		invLogger = logr.Discard()
-		auditStore = &recordingAuditStore{}
+		auditStore = newCapturingAuditStore(suiteAuditStore)
 		builder, _ = prompt.NewBuilder()
 		rp = parser.NewResultParser()
-		k8sClient := &fakeK8sClient{
+		k8sClient := &k8sFixtureClient{
 			ownerChain: []enrichment.OwnerChainEntry{
 				{Kind: "Deployment", Name: "api-server", Namespace: "demo-quota"},
 			},
 		}
-		dsClient := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-		enricher = enrichment.NewEnricher(k8sClient, dsClient, auditStore, invLogger)
+		enricher = enrichment.NewEnricher(k8sClient, suiteDSAdapter, auditStore, invLogger)
 		phaseTools = investigator.DefaultPhaseToolMap()
 	})
 
@@ -416,7 +415,7 @@ var _ = Describe("Workflow Selection Decline Classification — #760", func() {
 
 	var (
 		invLogger  logr.Logger
-		auditStore *recordingAuditStore
+		auditStore *capturingAuditStore
 		builder    *prompt.Builder
 		rp         *parser.ResultParser
 		enricher   *enrichment.Enricher
@@ -425,16 +424,15 @@ var _ = Describe("Workflow Selection Decline Classification — #760", func() {
 
 	BeforeEach(func() {
 		invLogger = logr.Discard()
-		auditStore = &recordingAuditStore{}
+		auditStore = newCapturingAuditStore(suiteAuditStore)
 		builder, _ = prompt.NewBuilder()
 		rp = parser.NewResultParser()
-		k8sClient := &fakeK8sClient{
+		k8sClient := &k8sFixtureClient{
 			ownerChain: []enrichment.OwnerChainEntry{
 				{Kind: "Deployment", Name: "api-server", Namespace: "demo-quota"},
 			},
 		}
-		dsClient := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-		enricher = enrichment.NewEnricher(k8sClient, dsClient, auditStore, invLogger)
+		enricher = enrichment.NewEnricher(k8sClient, suiteDSAdapter, auditStore, invLogger)
 		phaseTools = investigator.DefaultPhaseToolMap()
 	})
 

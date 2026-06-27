@@ -44,7 +44,7 @@ var _ = Describe("Investigator skip workflow discovery (#1430 / BR-HAPI-200)", f
 
 	var (
 		invLogger    logr.Logger
-		auditStore   *recordingAuditStore
+		auditStore   *capturingAuditStore
 		mockClient   *mockLLMClient
 		builder      *prompt.Builder
 		rp           *parser.ResultParser
@@ -54,17 +54,16 @@ var _ = Describe("Investigator skip workflow discovery (#1430 / BR-HAPI-200)", f
 
 	BeforeEach(func() {
 		invLogger = logr.Discard()
-		auditStore = &recordingAuditStore{}
+		auditStore = newCapturingAuditStore(suiteAuditStore)
 		mockClient = &mockLLMClient{}
 		builder, _ = prompt.NewBuilder()
 		rp = parser.NewResultParser()
-		k8sClient := &fakeK8sClient{
+		k8sClient := &k8sFixtureClient{
 			ownerChain: []enrichment.OwnerChainEntry{
 				{Kind: "Deployment", Name: "api-server", Namespace: "production"},
 			},
 		}
-		dsClient := &fakeDataStorageClient{}
-		enricher = enrichment.NewEnricher(k8sClient, dsClient, auditStore, invLogger)
+		enricher = enrichment.NewEnricher(k8sClient, suiteDSAdapter, auditStore, invLogger)
 		phaseTools = investigator.DefaultPhaseToolMap()
 	})
 
