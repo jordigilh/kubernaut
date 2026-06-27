@@ -88,6 +88,7 @@ import (
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	wfclient "github.com/jordigilh/kubernaut/pkg/workflowexecution/client"
 	fleetclient "github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
+	fleetregistry "github.com/jordigilh/kubernaut/pkg/fleet/registry"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/client-go/rest"
 	metricsclient "k8s.io/metrics/pkg/client/clientset/versioned"
@@ -1110,18 +1111,23 @@ func buildToolRegistry(cfg *kaconfig.Config, logger logr.Logger, infra *k8sInfra
 	return reg
 }
 
-// registerFleetTools connects to the MCP Gateway, discovers remote cluster tools
-// via tools/list, wraps them as BridgeTools, and registers them.
+// registerFleetTools connects to the MCP Gateway, creates a GatewayDiscoverer
+// for the configured gateway type, pre-scopes tools for the target cluster,
+// and registers list_clusters + list_tools_for_cluster for LLM-driven discovery.
 // Returns the fleet client (must be closed on shutdown) and the registered tool names,
 // or nil if fleet is disabled.
+//
+// Authority: ADR-068 decision #11
 func registerFleetTools(ctx context.Context, cfg *kaconfig.Config, reg *registry.Registry, logger logr.Logger) (*fleetclient.ResilientClient, []string) {
+	gatewayType := cfg.Integrations.Fleet.GatewayType
 	endpoint := cfg.Integrations.Fleet.Endpoint
-	if endpoint == "" {
+	if gatewayType == "" || endpoint == "" {
 		return nil, nil
 	}
 
 	fleetLog := logger.WithName("fleet")
-	fleetLog.Info("connecting to MCP Gateway for fleet tool discovery", "endpoint", endpoint)
+	fleetLog.Info("connecting to MCP Gateway for fleet tool discovery",
+		"endpoint", endpoint, "gatewayType", gatewayType)
 
 	var opts []fleetclient.Option
 	if cfg.Integrations.Fleet.OAuth2.Enabled {
@@ -1150,35 +1156,25 @@ func registerFleetTools(ctx context.Context, cfg *kaconfig.Config, reg *registry
 	}
 
 	session := resilientClient.Session()
-	tools, err := session.ListTools(ctx, nil)
+
+	discoverer, err := fleetclient.NewDiscoverer(fleetregistry.MCPGatewayType(gatewayType), session)
 	if err != nil {
-		fleetLog.Error(err, "failed to discover fleet tools via tools/list")
+		fleetLog.Error(err, "failed to create GatewayDiscoverer", "gatewayType", gatewayType)
 		_ = resilientClient.Close()
 		return nil, nil
 	}
 
-	var count int
-	var toolNames []string
-	for _, tool := range tools.Tools {
-		def := fleetclient.ToolDefinition{
-			Name:        tool.Name,
-			Description: tool.Description,
-		}
-		if tool.InputSchema != nil {
-			schema, marshalErr := json.Marshal(tool.InputSchema)
-			if marshalErr != nil {
-				fleetLog.Error(marshalErr, "failed to marshal tool schema", "tool", tool.Name)
-				continue
-			}
-			def.InputSchema = schema
-		}
-		bt := fleetclient.NewBridgeToolFromSession(def, session)
-		reg.Register(bt)
-		toolNames = append(toolNames, tool.Name)
-		count++
-	}
+	listClustersTool := fleetclient.NewListClustersTool(discoverer)
+	listToolsTool := fleetclient.NewListToolsForClusterTool(discoverer, reg, session)
 
-	fleetLog.Info("registered fleet BridgeTools", "count", count, "endpoint", endpoint)
+	reg.Register(listClustersTool)
+	reg.Register(listToolsTool)
+
+	var toolNames []string
+	toolNames = append(toolNames, listClustersTool.Name(), listToolsTool.Name())
+
+	fleetLog.Info("registered fleet discovery tools",
+		"tools", toolNames, "endpoint", endpoint, "gatewayType", gatewayType)
 	return resilientClient, toolNames
 }
 

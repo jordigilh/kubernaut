@@ -32,6 +32,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	gwtypes "github.com/jordigilh/kubernaut/pkg/gateway/types"
+	toolregistry "github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
 	mockgw "github.com/jordigilh/kubernaut/test/services/mock-mcp-gateway/testutil"
 )
 
@@ -338,6 +339,98 @@ var _ = Describe("Fleet Wiring Integration Tests (BR-INTEGRATION-065)", func() {
 			Expect(resp.StatusCode).To(Equal(http.StatusUnauthorized),
 				"gateway must reject calls with expired/invalid tokens (AC-3 enforcement)")
 			resp.Body.Close()
+		})
+	})
+
+	Describe("IT-KA-FLEET-010: registerFleetTools with gatewayType=kuadrant registers list_clusters tool", func() {
+		It("creates GatewayDiscoverer and registers list_clusters + list_tools_for_cluster", func() {
+			gw = mockgw.NewMockGateway(mockgw.WithDiscoverableTools(
+				mockgw.DiscoverableClusterOption{
+					Name:       "prod-east",
+					Prefix:     "prod_east_",
+					Categories: []string{"k8s"},
+					Hint:       "Production cluster",
+				},
+			))
+
+			client, err := mcpclient.New(ctx, gw.URL())
+			Expect(err).ToNot(HaveOccurred())
+			defer client.Close()
+
+			session := client.Session()
+			disc, err := mcpclient.NewDiscoverer("kuadrant", session)
+			Expect(err).ToNot(HaveOccurred())
+
+			reg := toolregistry.New()
+			listClustersTool := mcpclient.NewListClustersTool(disc)
+			listToolsTool := mcpclient.NewListToolsForClusterTool(disc, reg, session)
+			reg.Register(listClustersTool)
+			reg.Register(listToolsTool)
+
+			t, err := reg.Get("list_clusters")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(t.Name()).To(Equal("list_clusters"))
+
+			t2, err := reg.Get("list_tools_for_cluster")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(t2.Name()).To(Equal("list_tools_for_cluster"))
+		})
+	})
+
+	Describe("IT-KA-FLEET-011: registerFleetTools with gatewayType=eaigw registers list_tools_for_cluster tool", func() {
+		It("creates EAIGWDiscoverer and registers discovery tools", func() {
+			gw = mockgw.NewMockGateway(mockgw.WithMultiCluster("cluster-alpha", "cluster-beta"))
+
+			client, err := mcpclient.New(ctx, gw.URL())
+			Expect(err).ToNot(HaveOccurred())
+			defer client.Close()
+
+			session := client.Session()
+			disc, err := mcpclient.NewDiscoverer("eaigw", session)
+			Expect(err).ToNot(HaveOccurred())
+
+			reg := toolregistry.New()
+			listClustersTool := mcpclient.NewListClustersTool(disc)
+			listToolsTool := mcpclient.NewListToolsForClusterTool(disc, reg, session)
+			reg.Register(listClustersTool)
+			reg.Register(listToolsTool)
+
+			t, err := reg.Get("list_tools_for_cluster")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(t.Name()).To(Equal("list_tools_for_cluster"))
+
+			result, execErr := t.Execute(ctx, json.RawMessage(`{"cluster_id":"cluster-alpha"}`))
+			Expect(execErr).ToNot(HaveOccurred())
+			Expect(result).To(ContainSubstring("cluster-alpha__resources_get"))
+		})
+	})
+
+	Describe("IT-KA-FLEET-012: registerFleetTools pre-scopes target cluster tools as BridgeTools", func() {
+		It("discovered tools are registered in the registry as BridgeTools", func() {
+			gw = mockgw.NewMockGateway(mockgw.WithMultiCluster("target-cluster"))
+
+			client, err := mcpclient.New(ctx, gw.URL())
+			Expect(err).ToNot(HaveOccurred())
+			defer client.Close()
+
+			session := client.Session()
+			disc, err := mcpclient.NewDiscoverer("eaigw", session)
+			Expect(err).ToNot(HaveOccurred())
+
+			reg := toolregistry.New()
+			listToolsTool := mcpclient.NewListToolsForClusterTool(disc, reg, session)
+			reg.Register(listToolsTool)
+
+			_, err = listToolsTool.Execute(ctx, json.RawMessage(`{"cluster_id":"target-cluster"}`))
+			Expect(err).ToNot(HaveOccurred())
+
+			getResourceTool, err := reg.Get("target-cluster__resources_get")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(getResourceTool).ToNot(BeNil())
+
+			listResourceTool, err := reg.Get("target-cluster__resources_list")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(listResourceTool).ToNot(BeNil())
 		})
 	})
 
