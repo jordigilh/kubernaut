@@ -49,6 +49,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
 	"github.com/jordigilh/kubernaut/pkg/gateway/config"
 	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
 var _ = Describe("Issue #673 L-3: K8s API Timeout (BR-GATEWAY-102)", Ordered, ContinueOnFailure, func() {
@@ -74,7 +75,10 @@ var _ = Describe("Issue #673 L-3: K8s API Timeout (BR-GATEWAY-102)", Ordered, Co
 			Expect(remediationv1alpha1.AddToScheme(scheme)).To(Succeed())
 
 			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{Name: "kubernaut-system"},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "kubernaut-system",
+					Labels: map[string]string{"kubernaut.ai/managed": "true"},
+				},
 			}
 
 			// Fake client with interceptor that introduces 200ms delay on List
@@ -118,7 +122,7 @@ var _ = Describe("Issue #673 L-3: K8s API Timeout (BR-GATEWAY-102)", Ordered, Co
 				metricsInstance,
 				slowClient,
 				nil,
-				&alwaysManagedScope{},
+				scope.NewManager(slowClient),
 				nil,
 				nil,
 			)
@@ -237,7 +241,10 @@ var _ = Describe("Issue #673 L-3: K8s API Timeout (BR-GATEWAY-102)", Ordered, Co
 			Expect(remediationv1alpha1.AddToScheme(scheme)).To(Succeed())
 
 			ns := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{Name: "kubernaut-system"},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "kubernaut-system",
+					Labels: map[string]string{"kubernaut.ai/managed": "true"},
+				},
 			}
 
 			normalClient := fake.NewClientBuilder().
@@ -270,7 +277,7 @@ var _ = Describe("Issue #673 L-3: K8s API Timeout (BR-GATEWAY-102)", Ordered, Co
 				metricsInstance,
 				normalClient,
 				nil,
-				&alwaysManagedScope{},
+				scope.NewManager(normalClient),
 				nil,
 				nil,
 			)
@@ -315,4 +322,3 @@ var _ = Describe("Issue #673 L-3: K8s API Timeout (BR-GATEWAY-102)", Ordered, Co
 	})
 })
 
-// alwaysManagedScope is defined in security_integration_test.go
