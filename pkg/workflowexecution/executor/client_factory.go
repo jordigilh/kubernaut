@@ -90,6 +90,9 @@ func (f *mcpClientFactory) ClientFor(ctx context.Context, clusterID string) (Exe
 	if clusterID == "" {
 		return f.localClient, nil
 	}
+	if f.session == nil {
+		panic("session must not be nil for remote cluster access — fleet MCP session was not configured")
+	}
 	var opts []mcpclient.Option
 	if f.prefixResolver != nil {
 		if prefix := f.prefixResolver.ToolPrefixFor(clusterID); prefix != "" {
