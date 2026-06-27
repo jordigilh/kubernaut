@@ -1,4 +1,10 @@
 {{- if .Values.fmc.enabled }}
+{{- if not .Values.fmc.oauth2.tokenURL }}
+{{- fail "fmc.oauth2.tokenURL is required when fmc.enabled=true — MCP Gateway requires OAuth2 authentication" }}
+{{- end }}
+{{- if not .Values.fmc.oauth2.credentialsSecretRef }}
+{{- fail "fmc.oauth2.credentialsSecretRef is required when fmc.enabled=true (Secret must contain keys: client-id, client-secret)" }}
+{{- end }}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -10,14 +16,22 @@ metadata:
     app.kubernetes.io/component: fleet-metadata-cache
     app.kubernetes.io/managed-by: {{ .Release.Service }}
 data:
-  FMC_MCP_GATEWAY_ENDPOINT: {{ .Values.fmc.mcpGatewayEndpoint | quote }}
-  FMC_GATEWAY_TYPE: {{ .Values.fmc.gatewayType | quote }}
-  FMC_VALKEY_ADDR: {{ .Values.fmc.valkeyAddr | quote }}
-  FMC_NAMESPACE: {{ .Values.fmc.namespace | quote }}
-  FMC_SYNC_INTERVAL: {{ .Values.fmc.syncInterval | quote }}
-  FMC_KEY_TTL: {{ .Values.fmc.keyTTL | quote }}
-  FMC_API_ADDR: ":8080"
-  FMC_METRICS_ADDR: ":8081"
+  config.yaml: |
+    server:
+      apiAddr: ":8080"
+      metricsAddr: ":8081"
+    mcpGateway:
+      endpoint: {{ .Values.fmc.mcpGatewayEndpoint | quote }}
+      gatewayType: {{ .Values.fmc.gatewayType | quote }}
+      namespace: {{ .Values.fmc.namespace | quote }}
+    valkey:
+      addr: {{ .Values.fmc.valkeyAddr | quote }}
+    sync:
+      interval: {{ .Values.fmc.syncInterval | quote }}
+      keyTtl: {{ .Values.fmc.keyTTL | quote }}
+    oauth2:
+      tokenUrl: {{ .Values.fmc.oauth2.tokenURL | quote }}
+      credentialsDir: "/etc/fmc/fleet-oauth2"
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -54,9 +68,8 @@ spec:
             capabilities:
               drop:
                 - ALL
-          envFrom:
-            - configMapRef:
-                name: fmc-config
+          args:
+            - "--config=/etc/fmc/config.yaml"
           ports:
             - name: api
               containerPort: 8080
@@ -78,6 +91,20 @@ spec:
             periodSeconds: 5
           resources:
             {{- toYaml .Values.fmc.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/fmc
+              readOnly: true
+            - name: oauth2-credentials
+              mountPath: /etc/fmc/fleet-oauth2
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: fmc-config
+        - name: oauth2-credentials
+          secret:
+            secretName: {{ .Values.fmc.oauth2.credentialsSecretRef }}
 ---
 apiVersion: v1
 kind: Service
@@ -148,4 +175,56 @@ subjects:
   - kind: ServiceAccount
     name: fmc
     namespace: {{ .Release.Namespace }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: fmc
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: fmc
+    app.kubernetes.io/component: fleet-metadata-cache
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: fmc
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: gateway
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: remediationorchestrator
+      ports:
+        - protocol: TCP
+          port: 8080
+    - from:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 8081
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: valkey
+      ports:
+        - protocol: TCP
+          port: 6379
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 8080
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
 {{- end }}

@@ -1015,8 +1015,8 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "repository": { "type": "string", "default": "kubernaut/fmc" },
-            "tag": { "type": "string", "default": "latest" },
+            "repository": { "type": "string", "default": "quay.io/kubernaut-ai/fmc" },
+            "tag": { "type": "string", "default": "v1.6.0" },
             "pullPolicy": { "type": "string", "default": "IfNotPresent" }
           }
         },
@@ -1026,6 +1026,15 @@
         "gatewayType": { "type": "string", "enum": ["eaigw", "kuadrant"], "default": "eaigw", "description": "MCP Gateway type: eaigw (Envoy AI Gateway) or kuadrant (Kuadrant MCP Gateway)" },
         "valkeyAddr": { "type": "string", "default": "" },
         "namespace": { "type": "string", "default": "kubernaut-system" },
+        "oauth2": {
+          "type": "object",
+          "description": "OAuth2 client_credentials for MCP Gateway authentication. Required when fmc.enabled=true — there is no unauthenticated fallback.",
+          "additionalProperties": false,
+          "properties": {
+            "tokenURL": { "type": "string", "default": "", "description": "OAuth2 token endpoint URL (REQUIRED)" },
+            "credentialsSecretRef": { "type": "string", "default": "", "description": "Secret with client-id and client-secret keys (REQUIRED)" }
+          }
+        },
         "resources": { "$ref": "#/definitions/resources" }
       }
     },

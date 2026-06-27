@@ -534,8 +534,8 @@ fmc:
   enabled: false
   replicas: 1
   image:
-    repository: kubernaut/fmc
-    tag: latest
+    repository: quay.io/kubernaut-ai/fmc
+    tag: v1.6.0
     pullPolicy: IfNotPresent
   syncInterval: "30s"
   keyTTL: "45s"
@@ -543,6 +543,9 @@ fmc:
   gatewayType: "eaigw"  # MCP Gateway type: "eaigw" (Envoy AI Gateway) or "kuadrant" (Kuadrant MCP Gateway)
   valkeyAddr: ""  # e.g., "valkey:6379" — uses shared Valkey instance
   namespace: "kubernaut-system"  # namespace to watch for MCP Gateway CRDs
+  oauth2:
+    tokenURL: ""  # REQUIRED — e.g., "https://dex.kubernaut-system.svc:5556/token"
+    credentialsSecretRef: ""  # REQUIRED — Secret containing keys: client-id, client-secret
   resources:
     requests:
       memory: 64Mi
