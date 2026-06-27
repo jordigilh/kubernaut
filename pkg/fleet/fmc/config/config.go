@@ -28,7 +28,7 @@ import (
 
 // DefaultConfigPath is the standard Kubernetes ConfigMap mount path for FMC.
 // ADR-030: All services MUST use /etc/{service}/config.yaml as the default.
-const DefaultConfigPath = "/etc/fmc/config.yaml"
+const DefaultConfigPath = "/etc/fleetmetadatacache/config.yaml"
 
 // ServiceConfig is the top-level configuration for the FMC service.
 type ServiceConfig struct {
@@ -92,7 +92,7 @@ func DefaultServiceConfig() *ServiceConfig {
 			ResourceKinds: []string{"Deployment", "StatefulSet", "DaemonSet", "Pod", "Service", "Node"},
 		},
 		OAuth2: OAuth2Config{
-			CredentialsDir: "/etc/fmc/fleet-oauth2",
+			CredentialsDir: "/etc/fleetmetadatacache/fleet-oauth2",
 		},
 	}
 }

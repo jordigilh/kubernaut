@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package fmc_test
+package fleetmetadatacache_test
 
 import (
 	"context"
@@ -56,7 +56,7 @@ import (
 //	fleet.NewScopeChecker factory -> pkg/fleet/scope_factory.go   -> E2E-FMC-054-001
 //	FederatedScopeChecker         -> pkg/fleet/federated_checker.go -> E2E-FMC-054-001
 //	fmc.HTTPClient                -> pkg/fleet/fmc/http_client.go  -> E2E-FMC-054-001
-//	fmc.Handler + RegisterRoutes  -> cmd/fmc/main.go               -> E2E-FMC-054-001
+//	fmc.Handler + RegisterRoutes  -> cmd/fleetmetadatacache/main.go               -> E2E-FMC-054-001
 //	registry.EAIGWRegistry.Get       -> pkg/fleet/fmc/handler.go      -> E2E-FMC-054-001
 //	scopecache.Client             -> pkg/fleet/scopecache/client.go -> E2E-FMC-054-001
 var _ = Describe("Fleet Federation E2E: Factory -> FMC -> Valkey (BR-INTEGRATION-065)", Ordered, Label("fmc", "e2e"), func() {
@@ -74,7 +74,7 @@ var _ = Describe("Fleet Federation E2E: Factory -> FMC -> Valkey (BR-INTEGRATION
 	BeforeAll(func() {
 		ctx, cancel = context.WithCancel(context.Background())
 
-		By("Setting up real FMC server stack (mirrors cmd/fmc/main.go)")
+		By("Setting up real FMC server stack (mirrors cmd/fleetmetadatacache/main.go)")
 		writer = fmc.NewValkeyWriter(valkeyAddr)
 		cacheReader = scopecache.NewValkeyCacheReader(valkeyAddr)
 		redisClient = redis.NewClient(&redis.Options{Addr: valkeyAddr})

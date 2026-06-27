@@ -51,7 +51,7 @@ var _ = Describe("E2E-FLEET-SP-001 [SC-7]: Fleet infrastructure deploys with the
 		if imageTag == "" {
 			imageTag = "latest"
 		}
-		fmcImage := imageRegistry + "/fmc:" + imageTag
+		fmcImage := imageRegistry + "/fleetmetadatacache:" + imageTag
 
 		err := infrastructure.DeployFleetInfra(ctx, namespace, kubeconfigPath, fmcImage, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred(), "Fleet infrastructure should deploy successfully")

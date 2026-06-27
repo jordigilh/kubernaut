@@ -48,7 +48,7 @@ var _ = Describe("NewScopeChecker factory (BR-INTEGRATION-065)", func() {
 	})
 
 	It("UT-FLEET-FAC-003 [AC-4]: BackendFMC with HTTP endpoint returns FederatedScopeChecker using FMC HTTP client", func() {
-		cfg := fleet.FleetConfig{Enabled: true, Backend: "fmc", Endpoint: "http://fmc:8080"}
+		cfg := fleet.FleetConfig{Enabled: true, Backend: "fleetmetadatacache", Endpoint: "http://fmc:8080"}
 		checker, err := fleet.NewScopeChecker(local, cfg, logr.Discard())
 		Expect(err).ToNot(HaveOccurred())
 		Expect(checker).ToNot(BeIdenticalTo(local),

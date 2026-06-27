@@ -30,7 +30,7 @@ import (
 // Supported backend types for federated scope checking.
 const (
 	// BackendFMC uses the Fleet Metadata Cache HTTP service (ADR-068).
-	BackendFMC = "fmc"
+	BackendFMC = "fleetmetadatacache"
 	// BackendACM uses ACM Search GraphQL API (ADR-068).
 	BackendACM = "acm"
 )
@@ -106,7 +106,7 @@ func (c FleetConfig) Validate() error {
 	endpoint := c.EffectiveEndpoint()
 
 	if !supportedBackends[backend] {
-		return fmt.Errorf("fleet: unsupported backend %q; must be one of: fmc, acm", backend)
+		return fmt.Errorf("fleet: unsupported backend %q; must be one of: fleetmetadatacache, acm", backend)
 	}
 
 	if endpoint == "" {
@@ -138,7 +138,7 @@ func (c FleetConfig) effectiveBackend() string {
 
 // FMC service discovery constants.
 const (
-	fmcServiceName = "fmc-service"
+	fmcServiceName = "fleetmetadatacache-service"
 	fmcServicePort = "8080"
 )
 

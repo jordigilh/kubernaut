@@ -347,7 +347,7 @@
           "additionalProperties": false,
           "properties": {
             "enabled": { "type": "boolean", "default": false },
-            "backend": { "type": "string", "default": "", "description": "Backend adapter: fmc or acm" },
+            "backend": { "type": "string", "default": "", "description": "Backend adapter: fleetmetadatacache or acm" },
             "endpoint": { "type": "string", "default": "", "description": "Endpoint for the selected backend" }
           }
         }
@@ -611,7 +611,7 @@
           "additionalProperties": false,
           "properties": {
             "enabled": { "type": "boolean", "default": false },
-            "backend": { "type": "string", "default": "", "description": "Backend adapter: fmc or acm" },
+            "backend": { "type": "string", "default": "", "description": "Backend adapter: fleetmetadatacache or acm" },
             "endpoint": { "type": "string", "default": "", "description": "Endpoint for the selected backend" }
           }
         }
@@ -1004,9 +1004,9 @@
         "tolerations": { "$ref": "#/definitions/tolerations" }
       }
     },
-    "fmc": {
+    "fleetmetadatacache": {
       "type": "object",
-      "description": "FMC: Fleet Metadata Cache service (BR-INTEGRATION-065, ADR-068)",
+      "description": "FleetMetadataCache: Fleet Metadata Cache service (BR-INTEGRATION-065, ADR-068)",
       "additionalProperties": false,
       "properties": {
         "enabled": { "type": "boolean", "default": false },
@@ -1015,7 +1015,7 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "repository": { "type": "string", "default": "quay.io/kubernaut-ai/fmc" },
+            "repository": { "type": "string", "default": "quay.io/kubernaut-ai/fleetmetadatacache" },
             "tag": { "type": "string", "default": "v1.6.0" },
             "pullPolicy": { "type": "string", "default": "IfNotPresent" }
           }
@@ -1028,7 +1028,7 @@
         "namespace": { "type": "string", "default": "kubernaut-system" },
         "oauth2": {
           "type": "object",
-          "description": "OAuth2 client_credentials for MCP Gateway authentication. Required when fmc.enabled=true — there is no unauthenticated fallback.",
+          "description": "OAuth2 client_credentials for MCP Gateway authentication. Required when fleetmetadatacache.enabled=true — there is no unauthenticated fallback.",
           "additionalProperties": false,
           "properties": {
             "tokenURL": { "type": "string", "default": "", "description": "OAuth2 token endpoint URL (REQUIRED)" },
