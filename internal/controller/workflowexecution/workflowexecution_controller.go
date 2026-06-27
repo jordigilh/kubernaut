@@ -1141,7 +1141,7 @@ func (r *WorkflowExecutionReconciler) handleJobAlreadyExists(
 		return nil, false, false, ""
 	}
 
-	completed, checkErr := jobExec.IsCompleted(ctx, wfe.Spec.TargetResource, r.ExecutionNamespace)
+	completed, checkErr := jobExec.IsCompleted(ctx, wfe.Spec.ClusterID, wfe.Spec.TargetResource, r.ExecutionNamespace)
 	if checkErr != nil {
 		logger.V(1).Info("Could not check existing Job state (may have been deleted)", "error", checkErr)
 		return nil, false, false, ""

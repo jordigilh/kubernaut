@@ -1220,7 +1220,7 @@ var _ = Describe("JobExecutor IsCompleted (Issue #374, DD-WE-003)", func() {
 		k8sClient = fake.NewClientBuilder().WithScheme(scheme).WithObjects(job).Build()
 		jobExec = executor.NewJobExecutor(k8sClient)
 
-		completed, err := jobExec.IsCompleted(ctx, "default/deployment/my-app", "kubernaut-workflows")
+		completed, err := jobExec.IsCompleted(ctx, "", "default/deployment/my-app", "kubernaut-workflows")
 		Expect(err).ToNot(HaveOccurred())
 		Expect(completed).To(BeTrue(), "Completed Job should be reported as completed so it can be cleaned up")
 	})
@@ -1239,7 +1239,7 @@ var _ = Describe("JobExecutor IsCompleted (Issue #374, DD-WE-003)", func() {
 		k8sClient = fake.NewClientBuilder().WithScheme(scheme).WithObjects(job).Build()
 		jobExec = executor.NewJobExecutor(k8sClient)
 
-		completed, err := jobExec.IsCompleted(ctx, "default/deployment/running-app", "kubernaut-workflows")
+		completed, err := jobExec.IsCompleted(ctx, "", "default/deployment/running-app", "kubernaut-workflows")
 		Expect(err).ToNot(HaveOccurred())
 		Expect(completed).To(BeFalse(), "Running Job should preserve the concurrent lock (BR-WE-009)")
 	})
@@ -1265,7 +1265,7 @@ var _ = Describe("JobExecutor IsCompleted (Issue #374, DD-WE-003)", func() {
 		k8sClient = fake.NewClientBuilder().WithScheme(scheme).WithObjects(job).Build()
 		jobExec = executor.NewJobExecutor(k8sClient)
 
-		completed, err := jobExec.IsCompleted(ctx, "default/deployment/failed-app", "kubernaut-workflows")
+		completed, err := jobExec.IsCompleted(ctx, "", "default/deployment/failed-app", "kubernaut-workflows")
 		Expect(err).ToNot(HaveOccurred())
 		Expect(completed).To(BeTrue(), "Failed Job should be reported as completed so stale locks are released (BR-WE-011)")
 	})
@@ -1274,7 +1274,7 @@ var _ = Describe("JobExecutor IsCompleted (Issue #374, DD-WE-003)", func() {
 		k8sClient = fake.NewClientBuilder().WithScheme(scheme).Build()
 		jobExec = executor.NewJobExecutor(k8sClient)
 
-		completed, err := jobExec.IsCompleted(ctx, "default/deployment/vanished-app", "kubernaut-workflows")
+		completed, err := jobExec.IsCompleted(ctx, "", "default/deployment/vanished-app", "kubernaut-workflows")
 		Expect(err).To(HaveOccurred(), "Should return error when Job does not exist (race condition)")
 		Expect(completed).To(BeFalse())
 	})

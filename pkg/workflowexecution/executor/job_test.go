@@ -47,6 +47,17 @@ func (m *mockClientFactory) ClientFor(_ context.Context, _ string) (executor.Exe
 	return m.client, nil
 }
 
+// recordingClientFactory records the clusterID passed to ClientFor for assertion.
+type recordingClientFactory struct {
+	client        executor.ExecutorClient
+	lastClusterID string
+}
+
+func (r *recordingClientFactory) ClientFor(_ context.Context, clusterID string) (executor.ExecutorClient, error) {
+	r.lastClusterID = clusterID
+	return r.client, nil
+}
+
 func newTestScheme() *runtime.Scheme {
 	scheme := runtime.NewScheme()
 	Expect(corev1.AddToScheme(scheme)).To(Succeed())
@@ -344,7 +355,7 @@ var _ = Describe("UT-WE-054-JOB: JobExecutor", func() {
 			factory := &mockClientFactory{client: fakeClient}
 			je := executor.NewJobExecutorWithFactory(factory)
 
-			completed, err := je.IsCompleted(ctx, targetResource, namespace)
+			completed, err := je.IsCompleted(ctx, "prod-east", targetResource, namespace)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(completed).To(BeTrue())
 		})
@@ -360,9 +371,53 @@ var _ = Describe("UT-WE-054-JOB: JobExecutor", func() {
 			factory := &mockClientFactory{client: fakeClient}
 			je := executor.NewJobExecutorWithFactory(factory)
 
-			completed, err := je.IsCompleted(ctx, targetResource, namespace)
+			completed, err := je.IsCompleted(ctx, "", targetResource, namespace)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(completed).To(BeFalse())
+		})
+
+		It("UT-WE-054-IC-001 [AC-3]: should route remote clusterID to ClientFactory", func() {
+			targetResource := "default/deployment/remote-app"
+			jobName := executor.ExecutionResourceName(targetResource)
+			job := &batchv1.Job{
+				ObjectMeta: metav1.ObjectMeta{Name: jobName, Namespace: namespace},
+				Status: batchv1.JobStatus{
+					Conditions: []batchv1.JobCondition{
+						{Type: batchv1.JobComplete, Status: corev1.ConditionTrue},
+					},
+				},
+			}
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(job).Build()
+			factory := &recordingClientFactory{client: fakeClient}
+			je := executor.NewJobExecutorWithFactory(factory)
+
+			completed, err := je.IsCompleted(ctx, "prod-east", targetResource, namespace)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(completed).To(BeTrue())
+			Expect(factory.lastClusterID).To(Equal("prod-east"),
+				"AC-3: IsCompleted must route to remote cluster, not hardcode empty clusterID")
+		})
+
+		It("UT-WE-054-IC-002 [AC-3]: should route empty clusterID to local client", func() {
+			targetResource := "default/deployment/local-app"
+			jobName := executor.ExecutionResourceName(targetResource)
+			job := &batchv1.Job{
+				ObjectMeta: metav1.ObjectMeta{Name: jobName, Namespace: namespace},
+				Status: batchv1.JobStatus{
+					Conditions: []batchv1.JobCondition{
+						{Type: batchv1.JobComplete, Status: corev1.ConditionTrue},
+					},
+				},
+			}
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(job).Build()
+			factory := &recordingClientFactory{client: fakeClient}
+			je := executor.NewJobExecutorWithFactory(factory)
+
+			completed, err := je.IsCompleted(ctx, "", targetResource, namespace)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(completed).To(BeTrue())
+			Expect(factory.lastClusterID).To(Equal(""),
+				"AC-3: IsCompleted with empty clusterID should use local client")
 		})
 	})
 })

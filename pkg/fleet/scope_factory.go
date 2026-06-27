@@ -18,12 +18,15 @@ package fleet
 
 import (
 	"fmt"
+	"net/http"
+	"time"
 
 	"github.com/go-logr/logr"
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/acm"
 	"github.com/jordigilh/kubernaut/pkg/fleet/fmc"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 )
 
 // ScopeCheckerOption configures optional behavior for NewScopeChecker.
@@ -82,7 +85,18 @@ func NewScopeChecker(localChecker scope.ScopeChecker, cfg FleetConfig, logger lo
 		remoteChecker := fmc.NewHTTPClient(endpoint)
 		return NewFederatedScopeChecker(localChecker, remoteChecker, logger, checkerOpts...), nil
 	case BackendACM:
-		remoteChecker := acm.NewClient(endpoint)
+		var acmOpts []acm.ClientOption
+		if cfg.TLSCAFile != "" {
+			reloader, err := sharedtls.NewCAReloaderFromFile(cfg.TLSCAFile)
+			if err != nil {
+				return nil, fmt.Errorf("fleet: failed to load ACM TLS CA from %s: %w", cfg.TLSCAFile, err)
+			}
+			acmOpts = append(acmOpts, acm.WithHTTPClient(&http.Client{
+				Timeout:   10 * time.Second,
+				Transport: reloader,
+			}))
+		}
+		remoteChecker := acm.NewClient(endpoint, acmOpts...)
 		return NewFederatedScopeChecker(localChecker, remoteChecker, logger, checkerOpts...), nil
 	default:
 		return nil, fmt.Errorf("fleet: unsupported backend %q", backend)
