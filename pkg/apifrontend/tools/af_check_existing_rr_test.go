@@ -2,8 +2,6 @@ package tools_test
 
 import (
 	"context"
-	"crypto/sha256"
-	"fmt"
 	"sync"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -11,11 +9,15 @@ import (
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
+	gwtypes "github.com/jordigilh/kubernaut/pkg/gateway/types"
 )
 
 func testFingerprint(ns, kind, name string) string {
-	h := sha256.Sum256([]byte(ns + "/" + kind + "/" + name))
-	return fmt.Sprintf("%x", h)
+	return gwtypes.CalculateClusterAwareFingerprint("", gwtypes.ResourceIdentifier{
+		Namespace: ns,
+		Kind:      kind,
+		Name:      name,
+	})
 }
 
 func newTypedRRWithFingerprint(namespace, name, phase, targetKind, targetName string) *remediationv1.RemediationRequest {
