@@ -74,7 +74,7 @@ var _ = Describe("IT-KA-779: Signal context propagation through investigator to 
 
 	var (
 		invLogger  logr.Logger
-		auditStore *recordingAuditStore
+		auditStore *capturingAuditStore
 		builder    *prompt.Builder
 		rp         *parser.ResultParser
 		phaseTools katypes.PhaseToolMap
@@ -82,7 +82,7 @@ var _ = Describe("IT-KA-779: Signal context propagation through investigator to 
 
 	BeforeEach(func() {
 		invLogger = logr.Discard()
-		auditStore = &recordingAuditStore{}
+		auditStore = newCapturingAuditStore(suiteAuditStore)
 		builder, _ = prompt.NewBuilder()
 		rp = parser.NewResultParser()
 		phaseTools = investigator.DefaultPhaseToolMap()
@@ -109,9 +109,8 @@ var _ = Describe("IT-KA-779: Signal context propagation through investigator to 
 				},
 			}
 
-			k8sClient := &fakeK8sClient{ownerChain: []enrichment.OwnerChainEntry{}}
-			dsClient := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, invLogger)
+			k8sClient := &k8sFixtureClient{ownerChain: []enrichment.OwnerChainEntry{}}
+			enricher := enrichment.NewEnricher(k8sClient, suiteDSAdapter, auditStore, invLogger)
 
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
@@ -164,9 +163,8 @@ var _ = Describe("IT-KA-779: Signal context propagation through investigator to 
 				},
 			}
 
-			k8sClient := &fakeK8sClient{ownerChain: []enrichment.OwnerChainEntry{}}
-			dsClient := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, invLogger)
+			k8sClient := &k8sFixtureClient{ownerChain: []enrichment.OwnerChainEntry{}}
+			enricher := enrichment.NewEnricher(k8sClient, suiteDSAdapter, auditStore, invLogger)
 
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,

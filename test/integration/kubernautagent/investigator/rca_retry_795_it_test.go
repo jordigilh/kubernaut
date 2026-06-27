@@ -38,7 +38,7 @@ var _ = Describe("IT-KA-795: RCA parse retry on failure", func() {
 
 	var (
 		invLogger  logr.Logger
-		auditStore *recordingAuditStore
+		auditStore *capturingAuditStore
 		builder    *prompt.Builder
 		rp         *parser.ResultParser
 		phaseTools katypes.PhaseToolMap
@@ -46,7 +46,7 @@ var _ = Describe("IT-KA-795: RCA parse retry on failure", func() {
 
 	BeforeEach(func() {
 		invLogger = logr.Discard()
-		auditStore = &recordingAuditStore{}
+		auditStore = newCapturingAuditStore(suiteAuditStore)
 		builder, _ = prompt.NewBuilder()
 		rp = parser.NewResultParser()
 		phaseTools = investigator.DefaultPhaseToolMap()
@@ -81,12 +81,11 @@ var _ = Describe("IT-KA-795: RCA parse retry on failure", func() {
 				},
 			}
 
-			k8sClient := &fakeK8sClient{ownerChain: []enrichment.OwnerChainEntry{
+			k8sClient := &k8sFixtureClient{ownerChain: []enrichment.OwnerChainEntry{
 				{Kind: "ReplicaSet", Name: "api-rs-abc", Namespace: "production"},
 				{Kind: "Deployment", Name: "api", Namespace: "production"},
 			}}
-			dsClient := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, invLogger)
+			enricher := enrichment.NewEnricher(k8sClient, suiteDSAdapter, auditStore, invLogger)
 
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
@@ -144,11 +143,10 @@ var _ = Describe("IT-KA-795: RCA parse retry on failure", func() {
 				},
 			}
 
-			k8sClient := &fakeK8sClient{ownerChain: []enrichment.OwnerChainEntry{
+			k8sClient := &k8sFixtureClient{ownerChain: []enrichment.OwnerChainEntry{
 				{Kind: "Deployment", Name: "api", Namespace: "production"},
 			}}
-			dsClient := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, invLogger)
+			enricher := enrichment.NewEnricher(k8sClient, suiteDSAdapter, auditStore, invLogger)
 
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
@@ -203,12 +201,11 @@ var _ = Describe("IT-KA-795: RCA parse retry on failure", func() {
 				},
 			}
 
-			k8sClient := &fakeK8sClient{ownerChain: []enrichment.OwnerChainEntry{
+			k8sClient := &k8sFixtureClient{ownerChain: []enrichment.OwnerChainEntry{
 				{Kind: "ReplicaSet", Name: "web-frontend-rs", Namespace: "demo-gitops"},
 				{Kind: "Deployment", Name: "web-frontend", Namespace: "demo-gitops"},
 			}}
-			dsClient := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, invLogger)
+			enricher := enrichment.NewEnricher(k8sClient, suiteDSAdapter, auditStore, invLogger)
 
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
@@ -268,11 +265,10 @@ var _ = Describe("IT-KA-795: RCA parse retry on failure", func() {
 				},
 			}
 
-			k8sClient := &fakeK8sClient{ownerChain: []enrichment.OwnerChainEntry{
+			k8sClient := &k8sFixtureClient{ownerChain: []enrichment.OwnerChainEntry{
 				{Kind: "Deployment", Name: "api", Namespace: "production"},
 			}}
-			dsClient := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, invLogger)
+			enricher := enrichment.NewEnricher(k8sClient, suiteDSAdapter, auditStore, invLogger)
 
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,

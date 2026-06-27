@@ -38,7 +38,7 @@ var _ = Describe("Kubernaut Agent Sanitization Wiring — TP-433-WIR Phase 3", f
 
 	var (
 		invLogger  logr.Logger
-		auditStore *recordingAuditStore
+		auditStore *capturingAuditStore
 		mockClient *mockLLMClient
 		builder    *prompt.Builder
 		rp         *parser.ResultParser
@@ -49,13 +49,12 @@ var _ = Describe("Kubernaut Agent Sanitization Wiring — TP-433-WIR Phase 3", f
 
 	BeforeEach(func() {
 		invLogger = logr.Discard()
-		auditStore = &recordingAuditStore{}
+		auditStore = newCapturingAuditStore(suiteAuditStore)
 		mockClient = &mockLLMClient{}
 		builder, _ = prompt.NewBuilder()
 		rp = parser.NewResultParser()
-		k8sClient := &fakeK8sClient{ownerChain: []enrichment.OwnerChainEntry{}}
-		dsClient := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-		enricher = enrichment.NewEnricher(k8sClient, dsClient, auditStore, invLogger)
+		k8sClient := &k8sFixtureClient{ownerChain: []enrichment.OwnerChainEntry{}}
+		enricher = enrichment.NewEnricher(k8sClient, suiteDSAdapter, auditStore, invLogger)
 		phaseTools = investigator.DefaultPhaseToolMap()
 
 		pipeline = sanitization.NewPipeline(

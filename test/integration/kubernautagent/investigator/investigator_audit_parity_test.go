@@ -103,7 +103,7 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 
 	var (
 		invLogger  logr.Logger
-		auditStore *recordingAuditStore
+		auditStore *capturingAuditStore
 		mockClient *mockLLMClient
 		builder    *prompt.Builder
 		rp         *parser.ResultParser
@@ -113,19 +113,16 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 
 	BeforeEach(func() {
 		invLogger = logr.Discard()
-		auditStore = &recordingAuditStore{}
+		auditStore = newCapturingAuditStore(suiteAuditStore)
 		mockClient = &mockLLMClient{}
 		builder, _ = prompt.NewBuilder()
 		rp = parser.NewResultParser()
-		k8sClient := &fakeK8sClient{
+		k8sClient := &k8sFixtureClient{
 			ownerChain: []enrichment.OwnerChainEntry{
 				{Kind: "Deployment", Name: "api-server", Namespace: "production"},
 			},
 		}
-		dsClient := &fakeDataStorageClient{
-			history: &enrichment.RemediationHistoryResult{},
-		}
-		enricher = enrichment.NewEnricher(k8sClient, dsClient, auditStore, invLogger)
+		enricher = enrichment.NewEnricher(k8sClient, suiteDSAdapter, auditStore, invLogger)
 		phaseTools = investigator.DefaultPhaseToolMap()
 	})
 
@@ -504,7 +501,7 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 			testMapper.Add(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ResourceQuota"}, meta.RESTScopeNamespace)
 			ld := enrichment.NewLabelDetector(dynClient, testMapper, invLogger)
 
-			k8sClientForLabels := &resourceAwareK8sClient{
+			k8sClientForLabels := &resourceAwareFixtureClient{
 				chains: map[string][]enrichment.OwnerChainEntry{
 					"api-server": {{Kind: "Deployment", Name: "api-server", Namespace: "production"}},
 					"worker":     {{Kind: "Deployment", Name: "worker", Namespace: "production"}},
@@ -512,7 +509,7 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 			}
 			labelEnricher := enrichment.NewEnricher(
 				k8sClientForLabels,
-				&fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}},
+				suiteDSAdapter,
 				auditStore,
 				invLogger,
 			).WithLabelDetector(ld)
@@ -582,12 +579,11 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 	Describe("IT-KA-433-AP-004: Investigation emits validation_attempt per self-correction attempt", func() {
 		It("should emit one failure validation_attempt then one success when correction succeeds", func() {
 			itInvLog := logr.Discard()
-			auditStore := &recordingAuditStore{}
+			auditStore := newCapturingAuditStore(suiteAuditStore)
 			builder, _ := prompt.NewBuilder()
 			rp := parser.NewResultParser()
-			k8sClient := &fakeK8sClient{ownerChain: []enrichment.OwnerChainEntry{}}
-			dsClient := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, itInvLog)
+			k8sClient := &k8sFixtureClient{ownerChain: []enrichment.OwnerChainEntry{}}
+			enricher := enrichment.NewEnricher(k8sClient, suiteDSAdapter, auditStore, itInvLog)
 			phaseTools := investigator.DefaultPhaseToolMap()
 
 			validator := parser.NewValidator([]string{"restart", "scale-up"})
@@ -636,12 +632,11 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 
 		It("should emit isValid=false on final event when validation is exhausted", func() {
 			itInvLog := logr.Discard()
-			auditStore := &recordingAuditStore{}
+			auditStore := newCapturingAuditStore(suiteAuditStore)
 			builder, _ := prompt.NewBuilder()
 			rp := parser.NewResultParser()
-			k8sClient := &fakeK8sClient{ownerChain: []enrichment.OwnerChainEntry{}}
-			dsClient := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, itInvLog)
+			k8sClient := &k8sFixtureClient{ownerChain: []enrichment.OwnerChainEntry{}}
+			enricher := enrichment.NewEnricher(k8sClient, suiteDSAdapter, auditStore, itInvLog)
 			phaseTools := investigator.DefaultPhaseToolMap()
 
 			validator := parser.NewValidator([]string{"restart", "scale-up"})
@@ -687,7 +682,7 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 
 var _ = Describe("IT-KA-947: Alignment audit events emitted during investigation — BR-AI-601", func() {
 	var (
-		auditStore *recordingAuditStore
+		auditStore *capturingAuditStore
 		builder    *prompt.Builder
 		rp         *parser.ResultParser
 		enricher   *enrichment.Enricher
@@ -695,18 +690,15 @@ var _ = Describe("IT-KA-947: Alignment audit events emitted during investigation
 	)
 
 	BeforeEach(func() {
-		auditStore = &recordingAuditStore{}
+		auditStore = newCapturingAuditStore(suiteAuditStore)
 		builder, _ = prompt.NewBuilder()
 		rp = parser.NewResultParser()
-		k8sClient := &fakeK8sClient{
+		k8sClient := &k8sFixtureClient{
 			ownerChain: []enrichment.OwnerChainEntry{
 				{Kind: "Deployment", Name: "api-server", Namespace: "production"},
 			},
 		}
-		dsClient := &fakeDataStorageClient{
-			history: &enrichment.RemediationHistoryResult{},
-		}
-		enricher = enrichment.NewEnricher(k8sClient, dsClient, auditStore, logr.Discard())
+		enricher = enrichment.NewEnricher(k8sClient, suiteDSAdapter, auditStore, logr.Discard())
 		phaseTools = investigator.DefaultPhaseToolMap()
 	})
 

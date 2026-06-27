@@ -36,7 +36,7 @@ var _ = Describe("Phase 1-to-Phase 3 Context Propagation — #715", func() {
 
 	var (
 		invLogger  logr.Logger
-		auditStore *recordingAuditStore
+		auditStore *capturingAuditStore
 		mockClient *mockLLMClient
 		builder    *prompt.Builder
 		rp         *parser.ResultParser
@@ -46,24 +46,17 @@ var _ = Describe("Phase 1-to-Phase 3 Context Propagation — #715", func() {
 
 	BeforeEach(func() {
 		invLogger = logr.Discard()
-		auditStore = &recordingAuditStore{}
+		auditStore = newCapturingAuditStore(suiteAuditStore)
 		mockClient = &mockLLMClient{}
 		builder, _ = prompt.NewBuilder()
 		rp = parser.NewResultParser()
-		k8sClient := &fakeK8sClient{
+		k8sClient := &k8sFixtureClient{
 			ownerChain: []enrichment.OwnerChainEntry{
 				{Kind: "Deployment", Name: "api-server", Namespace: "production"},
 				{Kind: "ReplicaSet", Name: "api-server-abc", Namespace: "production"},
 			},
 		}
-		dsClient := &fakeDataStorageClient{
-			history: &enrichment.RemediationHistoryResult{
-				Tier1: []enrichment.Tier1Entry{
-					{RemediationUID: "oom-increase-memory", Outcome: "success"},
-				},
-			},
-		}
-		enricher = enrichment.NewEnricher(k8sClient, dsClient, auditStore, invLogger)
+		enricher = enrichment.NewEnricher(k8sClient, suiteDSAdapter, auditStore, invLogger)
 		phaseTools = investigator.DefaultPhaseToolMap()
 	})
 

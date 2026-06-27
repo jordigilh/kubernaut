@@ -53,7 +53,7 @@ var _ = Describe("TP-1044: apiVersionValidationGate Integration — Full Investi
 
 	var (
 		invLogger  logr.Logger
-		auditStore *recordingAuditStore
+		auditStore *capturingAuditStore
 		mockClient *mockLLMClient
 		builder    *prompt.Builder
 		rp         *parser.ResultParser
@@ -62,7 +62,7 @@ var _ = Describe("TP-1044: apiVersionValidationGate Integration — Full Investi
 
 	BeforeEach(func() {
 		invLogger = logr.Discard()
-		auditStore = &recordingAuditStore{}
+		auditStore = newCapturingAuditStore(suiteAuditStore)
 		mockClient = &mockLLMClient{}
 		builder, _ = prompt.NewBuilder()
 		rp = parser.NewResultParser()
@@ -82,9 +82,8 @@ var _ = Describe("TP-1044: apiVersionValidationGate Integration — Full Investi
 
 	Describe("IT-KA-1044-001: Full pipeline — ambiguous kind, retry succeeds", func() {
 		It("should complete pipeline with correct api_version after gate retry (BR-AI-1044 AC2)", func() {
-			k8s := &fakeK8sClient{ownerChain: nil, err: nil}
-			ds := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			localEnricher := enrichment.NewEnricher(k8s, ds, auditStore, invLogger)
+			k8s := &k8sFixtureClient{ownerChain: nil, err: nil}
+			localEnricher := enrichment.NewEnricher(k8s, suiteDSAdapter, auditStore, invLogger)
 			resolver := investigator.NewMapperScopeResolver(newITAmbiguousMapper())
 
 			mockClient.responses = []llm.ChatResponse{
@@ -126,9 +125,8 @@ var _ = Describe("TP-1044: apiVersionValidationGate Integration — Full Investi
 
 	Describe("IT-KA-1044-002: Full pipeline — ambiguous kind, exhaustion → human review", func() {
 		It("should set HumanReviewNeeded=true and stop before workflow selection (BR-AI-1044 AC3 Security)", func() {
-			k8s := &fakeK8sClient{ownerChain: nil, err: nil}
-			ds := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			localEnricher := enrichment.NewEnricher(k8s, ds, auditStore, invLogger)
+			k8s := &k8sFixtureClient{ownerChain: nil, err: nil}
+			localEnricher := enrichment.NewEnricher(k8s, suiteDSAdapter, auditStore, invLogger)
 			resolver := investigator.NewMapperScopeResolver(newITAmbiguousMapper())
 
 			mockClient.responses = []llm.ChatResponse{
@@ -166,13 +164,12 @@ var _ = Describe("TP-1044: apiVersionValidationGate Integration — Full Investi
 
 	Describe("IT-KA-1044-003: Full pipeline — unambiguous kind, gate skips", func() {
 		It("should proceed normally for Deployment without gate intervention (BR-AI-1044 AC4)", func() {
-			k8s := &fakeK8sClient{
+			k8s := &k8sFixtureClient{
 				ownerChain: []enrichment.OwnerChainEntry{
 					{Kind: "Deployment", Name: "api-server", Namespace: "production"},
 				},
 			}
-			ds := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			localEnricher := enrichment.NewEnricher(k8s, ds, auditStore, invLogger)
+			localEnricher := enrichment.NewEnricher(k8s, suiteDSAdapter, auditStore, invLogger)
 			resolver := investigator.NewMapperScopeResolver(newITAmbiguousMapper())
 
 			mockClient.responses = []llm.ChatResponse{
@@ -213,9 +210,8 @@ var _ = Describe("TP-1044: apiVersionValidationGate Integration — Full Investi
 
 	Describe("IT-KA-1044-004: Chained gates — same-kind fires, then api_version gate on retry", func() {
 		It("should apply both gates sequentially when signal kind matches RCA target (BR-AI-1044 AC9)", func() {
-			k8s := &fakeK8sClient{ownerChain: nil, err: nil}
-			ds := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			localEnricher := enrichment.NewEnricher(k8s, ds, auditStore, invLogger)
+			k8s := &k8sFixtureClient{ownerChain: nil, err: nil}
+			localEnricher := enrichment.NewEnricher(k8s, suiteDSAdapter, auditStore, invLogger)
 			resolver := investigator.NewMapperScopeResolver(newITAmbiguousMapper())
 
 			mockClient.responses = []llm.ChatResponse{
@@ -267,9 +263,8 @@ var _ = Describe("TP-1044: apiVersionValidationGate Integration — Full Investi
 
 	Describe("IT-KA-1044-005: Audit event for api_version_validation_gate persisted", func() {
 		It("should emit audit event with gate action and ambiguity details (BR-AI-1044 AC6)", func() {
-			k8s := &fakeK8sClient{ownerChain: nil, err: nil}
-			ds := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			localEnricher := enrichment.NewEnricher(k8s, ds, auditStore, invLogger)
+			k8s := &k8sFixtureClient{ownerChain: nil, err: nil}
+			localEnricher := enrichment.NewEnricher(k8s, suiteDSAdapter, auditStore, invLogger)
 			resolver := investigator.NewMapperScopeResolver(newITAmbiguousMapper())
 
 			mockClient.responses = []llm.ChatResponse{

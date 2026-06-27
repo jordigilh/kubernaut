@@ -53,7 +53,7 @@ var _ = Describe("Kubernaut Agent Tool Output Truncation Pipeline — #752", fun
 
 	var (
 		invLogger  logr.Logger
-		auditStore *recordingAuditStore
+		auditStore *capturingAuditStore
 		builder    *prompt.Builder
 		rp         *parser.ResultParser
 		enricher   *enrichment.Enricher
@@ -62,12 +62,11 @@ var _ = Describe("Kubernaut Agent Tool Output Truncation Pipeline — #752", fun
 
 	BeforeEach(func() {
 		invLogger = logr.Discard()
-		auditStore = &recordingAuditStore{}
+		auditStore = newCapturingAuditStore(suiteAuditStore)
 		builder, _ = prompt.NewBuilder()
 		rp = parser.NewResultParser()
-		k8sClient := &fakeK8sClient{ownerChain: []enrichment.OwnerChainEntry{}}
-		dsClient := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-		enricher = enrichment.NewEnricher(k8sClient, dsClient, auditStore, invLogger)
+		k8sClient := &k8sFixtureClient{ownerChain: []enrichment.OwnerChainEntry{}}
+		enricher = enrichment.NewEnricher(k8sClient, suiteDSAdapter, auditStore, invLogger)
 		phaseTools = investigator.DefaultPhaseToolMap()
 	})
 
