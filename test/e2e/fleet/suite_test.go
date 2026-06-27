@@ -21,7 +21,7 @@ limitations under the License.
 // and validates the complete multi-cluster remediation lifecycle using the
 // loopback pattern:
 //
-//	Alert → Gateway → SP(MCP enrich) → RO → WE(MCP dispatch) → EM
+//	Alert → GW → SP(MCP enrich) → AA(MCP investigate) → WE(MCP dispatch) → EM → NT
 //
 // The loopback pattern treats the same cluster as both local (hub) and remote
 // (loopback-cluster) by routing MCP calls through Kuadrant → K8s MCP Server.
@@ -65,6 +65,7 @@ import (
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
@@ -101,6 +102,47 @@ var (
 	anyTestFailed bool
 )
 
+// newFleetMCPClient creates an MCP client with auto-discovered tool prefix.
+// Kuadrant uses "loopback_cluster_" (from MCPServerRegistration spec.prefix),
+// not the EAIGW "{clusterID}__" convention. DiscoverToolPrefix queries
+// tools/list and extracts the correct prefix for the given cluster.
+//
+// Retries up to 90s to handle the broker sync delay where the MCP gateway
+// hasn't finished syncing tools from kube-mcp-server yet (~60s observed in
+// spike S15).
+func newFleetMCPClient(ctx context.Context, clusterID string) (*mcpclient.Client, error) {
+	const (
+		maxRetries    = 18
+		retryInterval = 5 * time.Second
+	)
+
+	var lastErr error
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		c, err := mcpclient.New(ctx, mcpGatewayURL)
+		if err != nil {
+			lastErr = fmt.Errorf("connect to MCP gateway (attempt %d/%d): %w", attempt+1, maxRetries+1, err)
+			time.Sleep(retryInterval)
+			continue
+		}
+
+		prefix, err := mcpclient.DiscoverToolPrefix(ctx, c.Session(), clusterID)
+		if err != nil {
+			c.Close()
+			lastErr = fmt.Errorf("discover tool prefix for %q (attempt %d/%d): %w", clusterID, attempt+1, maxRetries+1, err)
+			if attempt < maxRetries {
+				GinkgoWriter.Printf("  Waiting for broker sync (attempt %d/%d): %v\n", attempt+1, maxRetries+1, err)
+				time.Sleep(retryInterval)
+				continue
+			}
+			return nil, lastErr
+		}
+		c.Close()
+
+		return mcpclient.New(ctx, mcpGatewayURL, mcpclient.WithClusterID(clusterID), mcpclient.WithToolPrefix(prefix))
+	}
+	return nil, fmt.Errorf("broker sync timeout after %d attempts: %w", maxRetries+1, lastErr)
+}
+
 func TestFleetE2E(t *testing.T) {
 	if os.Getenv("FLEET_E2E") != "true" {
 		t.Skip("FLEET_E2E=true required for fleet E2E tests")
@@ -118,6 +160,22 @@ var _ = SynchronizedBeforeSuite(
 		Expect(err).ToNot(HaveOccurred())
 		tempKubeconfigPath := fmt.Sprintf("%s/.kube/%s-config", homeDir, clusterName)
 		GinkgoWriter.Printf("Using isolated kubeconfig: %s\n", tempKubeconfigPath)
+
+		if os.Getenv("FLEET_E2E_REUSE_CLUSTER") == "true" {
+			GinkgoWriter.Println("⚡ FLEET_E2E_REUSE_CLUSTER=true — skipping infrastructure setup, reusing existing cluster")
+
+			By("Retrieving existing ServiceAccount tokens")
+			ctx := context.Background()
+			token, tokenErr := infrastructure.GetServiceAccountToken(ctx, namespace, "fleet-e2e-sa", tempKubeconfigPath)
+			Expect(tokenErr).ToNot(HaveOccurred(), "fleet-e2e-sa must exist in reused cluster")
+			gatewayToken, gwErr := infrastructure.GetServiceAccountToken(ctx, namespace, "fleet-gateway-sa", tempKubeconfigPath)
+			Expect(gwErr).ToNot(HaveOccurred(), "fleet-gateway-sa must exist in reused cluster")
+
+			Expect(os.Setenv("KUBECONFIG", tempKubeconfigPath)).To(Succeed())
+			GinkgoWriter.Println("Fleet E2E reuse-cluster ready (Process 1)")
+
+			return []byte(fmt.Sprintf("%s|%s|%s|%s|%s", tempKubeconfigPath, token, "{}", gatewayToken, "{}"))
+		}
 
 		By("Setting up Fleet E2E infrastructure (Issue #54)")
 		ctx := context.Background()
@@ -280,7 +338,7 @@ var _ = SynchronizedAfterSuite(
 		setupFailed := k8sClient == nil
 		anyFailure := setupFailed || anyTestFailed || infrastructure.CheckTestFailure(clusterName)
 		defer infrastructure.CleanupFailureMarker(clusterName)
-		preserveCluster := os.Getenv("PRESERVE_E2E_CLUSTER") == "true" || os.Getenv("KEEP_CLUSTER") == "true"
+		preserveCluster := os.Getenv("PRESERVE_E2E_CLUSTER") == "true" || os.Getenv("KEEP_CLUSTER") == "true" || os.Getenv("FLEET_E2E_REUSE_CLUSTER") == "true"
 
 		if preserveCluster {
 			GinkgoWriter.Println("CLUSTER PRESERVED FOR DEBUGGING")

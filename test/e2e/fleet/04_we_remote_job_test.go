@@ -62,7 +62,7 @@ var _ = Describe("E2E-FLEET-005 [AC-3]: WE dispatches remote Job via MCP gateway
 
 	It("should execute a read operation on the remote cluster via MCP gateway", func() {
 		mcpCtx := context.Background()
-		mcpClient, err := mcpclient.New(mcpCtx, mcpGatewayURL, mcpclient.WithClusterID("loopback-cluster"))
+		mcpClient, err := newFleetMCPClient(mcpCtx, "loopback-cluster")
 		Expect(err).ToNot(HaveOccurred(), "should connect to MCP gateway via NodePort")
 		defer mcpClient.Close()
 

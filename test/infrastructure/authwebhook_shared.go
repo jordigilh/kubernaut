@@ -197,7 +197,12 @@ func generateWebhookCerts(kubeconfigPath, namespace string, writer io.Writer) er
 		return fmt.Errorf("openssl req failed: %w", err)
 	}
 
-	// Create K8s TLS secret directly
+	// Delete existing secret if present (idempotent re-run support)
+	delCmd := exec.Command("kubectl", "delete", "secret", "authwebhook-tls",
+		"--kubeconfig", kubeconfigPath,
+		"-n", namespace, "--ignore-not-found")
+	_, _ = delCmd.CombinedOutput()
+
 	cmd = exec.Command("kubectl", "create", "secret", "tls", "authwebhook-tls",
 		"--kubeconfig", kubeconfigPath,
 		"-n", namespace,
