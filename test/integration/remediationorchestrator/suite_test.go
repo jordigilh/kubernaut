@@ -96,6 +96,10 @@ const (
 	// Per DD-TEST-001 v2.2: Each service gets a unique port to enable parallel test execution
 	ROIntegrationDataStoragePort = 18140
 
+	// roRedisPort is the Redis/Valkey port for RO integration tests.
+	// Reused by FMC scope cache in fleet tests (same instance, disjoint key prefixes).
+	roRedisPort = 16381
+
 	// ROControllerNamespace is where RO creates and watches all CRDs (ADR-057).
 	// Must match Cache.ByObject in suite setup - tests create RR in this namespace.
 	ROControllerNamespace = "kubernaut-system"
