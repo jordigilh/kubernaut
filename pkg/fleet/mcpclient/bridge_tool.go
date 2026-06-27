@@ -53,6 +53,20 @@ type ToolDefinition struct {
 	InputSchema json.RawMessage
 }
 
+// toolDefinitionFromMCP converts an mcp.Tool to a ToolDefinition by marshaling
+// the input schema from the SDK's typed representation to raw JSON.
+func toolDefinitionFromMCP(t *mcp.Tool) ToolDefinition {
+	var schema json.RawMessage
+	if t.InputSchema != nil {
+		schema, _ = json.Marshal(t.InputSchema)
+	}
+	return ToolDefinition{
+		Name:        t.Name,
+		Description: t.Description,
+		InputSchema: schema,
+	}
+}
+
 // NewBridgeTool creates a bridge tool that executes a remote MCP tool via the
 // given session. The clusterID is used for audit logging context.
 func NewBridgeTool(def ToolDefinition, clusterID string, session Session) *BridgeTool {
