@@ -1080,6 +1080,7 @@ BINARY_NAME_workflowexecution := workflowexecution
 BINARY_NAME_effectivenessmonitor := effectivenessmonitor-controller
 BINARY_NAME_kubernautagent := kubernautagent
 BINARY_NAME_apifrontend := apifrontend
+BINARY_NAME_fleetmetadatacache := fleetmetadatacache
 
 # Go services that support host-native cross-compilation (excludes db-migrate, must-gather)
 CROSS_SERVICES := datastorage gateway aianalysis authwebhook notification remediationorchestrator signalprocessing workflowexecution effectivenessmonitor kubernautagent apifrontend fleetmetadatacache
@@ -1096,7 +1097,7 @@ RUNTIME_DOCKERFILES_workflowexecution := docker/workflowexecution-controller.run
 RUNTIME_DOCKERFILES_effectivenessmonitor := docker/effectivenessmonitor-controller.runtime.Dockerfile
 RUNTIME_DOCKERFILES_kubernautagent := docker/kubernautagent.runtime.Dockerfile
 RUNTIME_DOCKERFILES_apifrontend := docker/apifrontend.runtime.Dockerfile
-RUNTIME_DOCKERFILES_fleetmetadatacache := docker/fleetmetadatacache.Dockerfile
+RUNTIME_DOCKERFILES_fleetmetadatacache := docker/fleetmetadatacache.runtime.Dockerfile
 
 .PHONY: cross-build-%
 cross-build-%: ## Cross-compile a Go service binary for target arch (no container, no QEMU)
