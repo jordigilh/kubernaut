@@ -73,6 +73,12 @@ type AIAnalysisSpec struct {
 	// If nil, AIAnalysis controller uses defaults (Investigating: 60s, Analyzing: 5s)
 	// +optional
 	TimeoutConfig *AIAnalysisTimeoutConfig `json:"timeoutConfig,omitempty"`
+
+	// BR-FLEET-054: Remote cluster identifier for fleet-managed signals.
+	// When non-empty, identifies the remote cluster where the signal originated.
+	// Propagated from RemediationRequest.Spec.ClusterID by the Remediation Orchestrator.
+	// +optional
+	ClusterID string `json:"clusterID,omitempty"`
 }
 
 // AIAnalysisTimeoutConfig defines timeout settings for AIAnalysis phases

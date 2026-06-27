@@ -165,6 +165,7 @@ func (c *EffectivenessAssessmentCreator) CreateEffectivenessAssessment(
 			RemediationCreatedAt:   rrCreatedAt,
 			SignalName:             rr.Spec.SignalName,
 			PreRemediationSpecHash: rr.Status.PreRemediationSpecHash,
+			ClusterID:              rr.Spec.ClusterID,
 		},
 	}
 

@@ -407,6 +407,43 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 		})
 	})
 
+	Describe("ClusterID propagation (BR-FLEET-054)", func() {
+		It("UT-WE-054-PROP-001: propagates ClusterID from RemediationRequest to WorkflowExecution", func() {
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme, nil)
+			rr := helpers.NewRemediationRequest("test-remote-cluster", "default",
+				helpers.RemediationRequestOpts{ClusterID: "prod-east-1"})
+			ai := helpers.NewCompletedAIAnalysis("ai-test-remote-cluster", "default")
+			ctx := context.Background()
+
+			name, err := weCreator.Create(ctx, rr, ai)
+			Expect(err).ToNot(HaveOccurred())
+
+			created := &workflowexecutionv1.WorkflowExecution{}
+			err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, created)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(created.Spec.ClusterID).To(Equal("prod-east-1"),
+				"BR-FLEET-054: ClusterID must be propagated from RR to WFE for remote execution routing")
+		})
+
+		It("UT-WE-054-PROP-002: leaves ClusterID empty for local hub cluster", func() {
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme, nil)
+			rr := helpers.NewRemediationRequest("test-local-cluster", "default")
+			ai := helpers.NewCompletedAIAnalysis("ai-test-local-cluster", "default")
+			ctx := context.Background()
+
+			name, err := weCreator.Create(ctx, rr, ai)
+			Expect(err).ToNot(HaveOccurred())
+
+			created := &workflowexecutionv1.WorkflowExecution{}
+			err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, created)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(created.Spec.ClusterID).To(BeEmpty(),
+				"BR-FLEET-054: empty ClusterID indicates local hub cluster execution")
+		})
+	})
+
 	Describe("buildExecutionConfig", func() {
 		It("should set timeout when TimeoutConfig is provided per BR-ORCH-028", func() {
 			// Arrange
