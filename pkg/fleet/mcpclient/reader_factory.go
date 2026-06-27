@@ -49,7 +49,7 @@ func NewMCPReaderFactory(localClient client.Reader, session *mcp.ClientSession, 
 	}
 }
 
-func (f *mcpReaderFactory) ReaderFor(_ context.Context, clusterID string) (client.Reader, error) {
+func (f *mcpReaderFactory) ReaderFor(ctx context.Context, clusterID string) (client.Reader, error) {
 	if clusterID == "" {
 		return f.localClient, nil
 	}
@@ -61,6 +61,12 @@ func (f *mcpReaderFactory) ReaderFor(_ context.Context, clusterID string) (clien
 		if prefix := f.prefixResolver.ToolPrefixFor(clusterID); prefix != "" {
 			opts = append(opts, WithToolPrefix(prefix))
 		}
+	} else {
+		prefix, err := DiscoverToolPrefix(ctx, f.session, clusterID)
+		if err != nil {
+			return nil, fmt.Errorf("resolve tool prefix for cluster %q: %w", clusterID, err)
+		}
+		opts = append(opts, WithToolPrefix(prefix))
 	}
 	return NewFromSession(f.session, clusterID, opts...), nil
 }

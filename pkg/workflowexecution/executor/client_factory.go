@@ -86,7 +86,7 @@ func NewMCPClientFactory(localClient client.Client, session *mcp.ClientSession, 
 	}
 }
 
-func (f *mcpClientFactory) ClientFor(_ context.Context, clusterID string) (ExecutorClient, error) {
+func (f *mcpClientFactory) ClientFor(ctx context.Context, clusterID string) (ExecutorClient, error) {
 	if clusterID == "" {
 		return f.localClient, nil
 	}
@@ -95,6 +95,12 @@ func (f *mcpClientFactory) ClientFor(_ context.Context, clusterID string) (Execu
 		if prefix := f.prefixResolver.ToolPrefixFor(clusterID); prefix != "" {
 			opts = append(opts, mcpclient.WithToolPrefix(prefix))
 		}
+	} else {
+		prefix, err := mcpclient.DiscoverToolPrefix(ctx, f.session, clusterID)
+		if err != nil {
+			return nil, fmt.Errorf("resolve tool prefix for cluster %q: %w", clusterID, err)
+		}
+		opts = append(opts, mcpclient.WithToolPrefix(prefix))
 	}
 	reader := mcpclient.NewFromSession(f.session, clusterID, opts...)
 	writer := mcpclient.NewWriterFromSession(f.session, clusterID, opts...)
