@@ -631,30 +631,6 @@ func validatePortsDistinct(apiPort, metricsPort, healthPort int) error {
 	return nil
 }
 
-// validateTLSCertPair validates that tlsCertFile and tlsKeyFile are set
-// together, use absolute paths, and require tlsCaFile (server verification
-// remains mandatory per SC-8).
-func validateTLSCertPair(prefix, certFile, keyFile, caFile string) error {
-	hasCert := certFile != ""
-	hasKey := keyFile != ""
-	if hasCert != hasKey {
-		return fmt.Errorf("%s.tlsCertFile and %s.tlsKeyFile must both be set or both be empty", prefix, prefix)
-	}
-	if !hasCert {
-		return nil
-	}
-	if !filepath.IsAbs(certFile) {
-		return fmt.Errorf("%s.tlsCertFile must be an absolute path, got %q", prefix, certFile)
-	}
-	if !filepath.IsAbs(keyFile) {
-		return fmt.Errorf("%s.tlsKeyFile must be an absolute path, got %q", prefix, keyFile)
-	}
-	if caFile == "" {
-		return fmt.Errorf("%s.tlsCaFile is required when client certificates are configured (server verification is mandatory)", prefix)
-	}
-	return nil
-}
-
 func validateURL(field, raw string) error {
 	u, err := url.Parse(raw)
 	if err != nil {

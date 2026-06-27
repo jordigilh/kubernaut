@@ -18,7 +18,6 @@ package fleet_test
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -78,7 +77,7 @@ var _ = Describe("SP Fleet OAuth2 Integration (BR-INTEGRATION-054)", func() {
 					capturedAuth = auth
 				}
 				w.WriteHeader(http.StatusOK)
-				_, _ = w.Write([]byte(fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"result":{"serverInfo":{"name":"proxy","version":"0.1"},"capabilities":{}}}`)))
+				_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"serverInfo":{"name":"proxy","version":"0.1"},"capabilities":{}}}`))
 			}))
 			defer authCheckProxy.Close()
 

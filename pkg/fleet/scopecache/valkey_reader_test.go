@@ -51,7 +51,7 @@ var _ = Describe("UT-FLEET-VALKEY-READ: ValkeyCacheReader", func() {
 
 	Describe("Exists", func() {
 		It("UT-FLEET-VALKEY-READ-001: should return true for existing key", func() {
-			mr.Set("fleet:cluster-a:v1:Pod:default:nginx", "1")
+			_ = mr.Set("fleet:cluster-a:v1:Pod:default:nginx", "1")
 
 			exists, err := reader.Exists(ctx, "fleet:cluster-a:v1:Pod:default:nginx")
 			Expect(err).ToNot(HaveOccurred())

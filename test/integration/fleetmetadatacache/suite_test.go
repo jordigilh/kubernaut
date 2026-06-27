@@ -82,8 +82,8 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	valkeyAddr = parts[0]
 	kubeconfigPath := parts[1]
 
-	fmt.Fprintf(os.Stdout, "FMC IT using Valkey at %s\n", valkeyAddr)
-	fmt.Fprintf(os.Stdout, "FMC IT using envtest kubeconfig at %s\n", kubeconfigPath)
+	_, _ = fmt.Fprintf(os.Stdout, "FMC IT using Valkey at %s\n", valkeyAddr)
+	_, _ = fmt.Fprintf(os.Stdout, "FMC IT using envtest kubeconfig at %s\n", kubeconfigPath)
 
 	k8sCfg, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
 	Expect(err).ToNot(HaveOccurred(), "kubeconfig should be loadable")

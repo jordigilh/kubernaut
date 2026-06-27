@@ -88,7 +88,7 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 
 	fmcImage := builtImages["fleetmetadatacache"]
 	if fmcImage == "" {
-		return builtImages, seededUUIDs, afRemediateNS, fmt.Errorf("FMC image not found in builtImages (was it built in Phase 1?)")
+		return builtImages, seededUUIDs, afRemediateNS, fmt.Errorf("fmc image not found in builtImages (was it built in Phase 1?)")
 	}
 
 	if deployErr := DeployFleetInfra(ctx, namespace, kubeconfigPath, fmcImage, writer); deployErr != nil {
@@ -129,7 +129,7 @@ func DeployFleetInfra(ctx context.Context, namespace, kubeconfigPath, fmcImage s
 
 	_, _ = fmt.Fprintln(writer, "    Installing Gateway API CRDs...")
 	if err := runKubectl(ctx, kubeconfigPath, writer, "apply", "-f", gatewayAPICRDsURL); err != nil {
-		return fmt.Errorf("Gateway API CRDs install failed: %w", err)
+		return fmt.Errorf("gateway API CRDs install failed: %w", err)
 	}
 
 	_, _ = fmt.Fprintln(writer, "    Adding Istio Helm repo...")
@@ -142,7 +142,7 @@ func DeployFleetInfra(ctx context.Context, namespace, kubeconfigPath, fmcImage s
 	updateRepo.Stdout = writer
 	updateRepo.Stderr = writer
 	if err := updateRepo.Run(); err != nil {
-		return fmt.Errorf("Helm repo update failed: %w", err)
+		return fmt.Errorf("helm repo update failed: %w", err)
 	}
 
 	_, _ = fmt.Fprintln(writer, "    Installing Istio base (CRDs)...")
@@ -151,7 +151,7 @@ func DeployFleetInfra(ctx context.Context, namespace, kubeconfigPath, fmcImage s
 		"--version", "1.30.2",
 		"--create-namespace",
 	); err != nil {
-		return fmt.Errorf("Istio base install failed: %w", err)
+		return fmt.Errorf("istio base install failed: %w", err)
 	}
 
 	// Ensure istio-system namespace exists (helm template doesn't create it)
@@ -171,7 +171,7 @@ metadata:
 		"--set", "global.proxy.autoInject=disabled",
 		"--set", "sidecarInjectorWebhook.enableNamespacesByDefault=false",
 	); err != nil {
-		return fmt.Errorf("Istio istiod install failed: %w", err)
+		return fmt.Errorf("istio istiod install failed: %w", err)
 	}
 
 	_, _ = fmt.Fprintln(writer, "    Waiting for istiod to be ready...")
@@ -212,12 +212,12 @@ spec:
       namespaces:
         from: All
 `); err != nil {
-		return fmt.Errorf("Gateway resource creation failed: %w", err)
+		return fmt.Errorf("gateway resource creation failed: %w", err)
 	}
 
 	_, _ = fmt.Fprintln(writer, "    Waiting for Istio gateway service...")
 	if err := waitForResource(ctx, kubeconfigPath, "service", "mcp-gateway-istio", "gateway-system", 60*time.Second); err != nil {
-		return fmt.Errorf("Istio gateway service not found: %w", err)
+		return fmt.Errorf("istio gateway service not found: %w", err)
 	}
 
 	_, _ = fmt.Fprintln(writer, "    Patching NodePort to 31975 (MCP) and 31500 (status)...")
@@ -226,27 +226,27 @@ spec:
 		"--type=json",
 		`-p=[{"op":"replace","path":"/spec/ports/0/nodePort","value":31500},{"op":"replace","path":"/spec/ports/1/nodePort","value":31975}]`,
 	); err != nil {
-		return fmt.Errorf("NodePort patch failed: %w", err)
+		return fmt.Errorf("nodePort patch failed: %w", err)
 	}
 
 	_, _ = fmt.Fprintln(writer, "    Installing Kuadrant CRDs...")
 	if err := runKubectl(ctx, kubeconfigPath, writer, "apply", "-k", kuadrantCRDsKustomize); err != nil {
-		return fmt.Errorf("Kuadrant CRDs install failed: %w", err)
+		return fmt.Errorf("kuadrant CRDs install failed: %w", err)
 	}
 
 	_, _ = fmt.Fprintln(writer, "    Deploying Kuadrant MCP Gateway (controller + broker + HTTPRoute)...")
 	if err := runKubectl(ctx, kubeconfigPath, writer, "apply", "-k", kuadrantOverlayKustomize); err != nil {
-		return fmt.Errorf("Kuadrant deployment failed: %w", err)
+		return fmt.Errorf("kuadrant deployment failed: %w", err)
 	}
 
 	_, _ = fmt.Fprintln(writer, "    Waiting for Kuadrant controller...")
 	if err := waitForDeployment(ctx, "mcp-gateway-controller", "mcp-system", kubeconfigPath, 120*time.Second, writer); err != nil {
-		return fmt.Errorf("Kuadrant controller rollout failed: %w", err)
+		return fmt.Errorf("kuadrant controller rollout failed: %w", err)
 	}
 
 	_, _ = fmt.Fprintln(writer, "    Waiting for Kuadrant broker (created by controller)...")
 	if err := waitForDeployment(ctx, "mcp-gateway", "mcp-system", kubeconfigPath, 120*time.Second, writer); err != nil {
-		return fmt.Errorf("Kuadrant broker rollout failed: %w", err)
+		return fmt.Errorf("kuadrant broker rollout failed: %w", err)
 	}
 	_, _ = fmt.Fprintln(writer, "    ✅ Kuadrant MCP Gateway ready")
 
@@ -388,7 +388,7 @@ spec:
 `, namespace)
 
 	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, routeManifest); err != nil {
-		return fmt.Errorf("HTTPRoute/MCPServerRegistration creation failed: %w", err)
+		return fmt.Errorf("httpRoute/MCPServerRegistration creation failed: %w", err)
 	}
 	_, _ = fmt.Fprintln(writer, "    ✅ MCPServerRegistration 'loopback-cluster' created")
 
@@ -452,12 +452,12 @@ spec:
 `, namespace, valkeyImage)
 
 	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, valkeyManifest); err != nil {
-		return fmt.Errorf("Valkey deployment failed: %w", err)
+		return fmt.Errorf("valkey deployment failed: %w", err)
 	}
 
 	_, _ = fmt.Fprintln(writer, "    Waiting for Valkey...")
 	if err := waitForDeployment(ctx, "valkey", namespace, kubeconfigPath, 60*time.Second, writer); err != nil {
-		return fmt.Errorf("Valkey rollout failed: %w", err)
+		return fmt.Errorf("valkey rollout failed: %w", err)
 	}
 	_, _ = fmt.Fprintln(writer, "    ✅ Valkey ready")
 
@@ -591,12 +591,12 @@ spec:
 `, namespace, fmcImage)
 
 	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, fmcManifest); err != nil {
-		return fmt.Errorf("FMC deployment failed: %w", err)
+		return fmt.Errorf("fmc deployment failed: %w", err)
 	}
 
 	_, _ = fmt.Fprintln(writer, "    Waiting for FMC...")
 	if err := waitForDeployment(ctx, "fleetmetadatacache", namespace, kubeconfigPath, 120*time.Second, writer); err != nil {
-		return fmt.Errorf("FMC rollout failed: %w", err)
+		return fmt.Errorf("fmc rollout failed: %w", err)
 	}
 	_, _ = fmt.Fprintln(writer, "    ✅ FMC ready")
 
@@ -643,7 +643,7 @@ func WaitForFleetReady(writer io.Writer) error {
 		}
 		time.Sleep(3 * time.Second)
 	}
-	return fmt.Errorf("MCP Gateway not responsive at http://localhost:31975/mcp after 120 seconds")
+	return fmt.Errorf("mcp gateway not responsive at http://localhost:31975/mcp after 120 seconds")
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────

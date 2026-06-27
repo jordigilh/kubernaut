@@ -94,7 +94,6 @@ var (
 
 	afBaseURL    string
 	afHTTPClient *http.Client
-	afAuthToken  string
 
 	workflowUUIDs map[string]string
 	fpRemediateNS map[string]string

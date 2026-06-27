@@ -87,15 +87,16 @@ var _ = Describe("UT-SP-054-KINDS: K8sEnricher local signal kind branches", func
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result).ToNot(BeNil())
 
-			if kind == "Node" {
+			switch kind {
+			case "Node":
 				Expect(result.Namespace).To(BeNil(),
 					"Node signals should not have namespace context")
-			} else if kind == "CustomKind" {
+			case "CustomKind":
 				Expect(result.Namespace).ToNot(BeNil(),
 					"Unknown kinds should still have namespace context")
 				Expect(result.Workload).To(BeNil(),
 					"Unknown kinds should not have workload context")
-			} else {
+			default:
 				Expect(result.Namespace).ToNot(BeNil(),
 					kind+" signals should include namespace context")
 				Expect(result.Workload).ToNot(BeNil(),
