@@ -63,8 +63,9 @@ type Metrics struct {
 	// ExternalCallErrors counts external service errors.
 	ExternalCallErrors *prometheus.CounterVec
 
-	// ValidityExpirationsTotal counts assessments that expired.
-	ValidityExpirationsTotal prometheus.Counter
+	// ValidityExpirationsTotal counts assessments that expired, partitioned by cluster.
+	// BR-FLEET-054: "cluster" label enables per-cluster expiration monitoring [SI-4, AU-3].
+	ValidityExpirationsTotal *prometheus.CounterVec
 }
 
 // NewMetrics creates and registers all EM metrics with the controller-runtime registry.
@@ -106,11 +107,12 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 			},
 			[]string{"service", "operation", "error_type"}, // error_type: timeout/connection/http_error
 		),
-		ValidityExpirationsTotal: prometheus.NewCounter(
+		ValidityExpirationsTotal: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: MetricNameValidityExpirationsTotal,
 				Help: "Total number of assessments that expired.",
 			},
+			[]string{"cluster"},
 		),
 	}
 
@@ -145,6 +147,8 @@ func (m *Metrics) RecordExternalCallError(service, operation, errorType string) 
 }
 
 // RecordValidityExpiration records an assessment that expired.
-func (m *Metrics) RecordValidityExpiration() {
-	m.ValidityExpirationsTotal.Inc()
+// BR-FLEET-054: cluster label identifies which cluster's assessment expired [SI-4, AU-3].
+// Empty string for local-cluster assessments.
+func (m *Metrics) RecordValidityExpiration(cluster string) {
+	m.ValidityExpirationsTotal.WithLabelValues(cluster).Inc()
 }

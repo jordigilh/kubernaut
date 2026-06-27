@@ -105,7 +105,7 @@ func (r *Reconciler) handleExpired(ctx context.Context, rctx *reconcileContext) 
 	r.Recorder.Event(ea, corev1.EventTypeWarning, events.EventReasonAssessmentExpired,
 		fmt.Sprintf("Validity window expired for correlation %s; completing with available data",
 			ea.Spec.CorrelationID))
-	r.Metrics.RecordValidityExpiration()
+	r.Metrics.RecordValidityExpiration(ea.Spec.ClusterID)
 
 	result, err := r.completeAssessment(ctx, ea)
 	return result, true, err

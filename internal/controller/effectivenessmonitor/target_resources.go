@@ -40,7 +40,7 @@ import (
 // Non-pod-owning resources (ConfigMap, Secret, Node, etc.) are checked for
 // existence only -- they have no pod health to assess.
 // DD-EM-003: Health uses RemediationTarget (#275), hash uses RemediationTarget.
-func (r *Reconciler) getTargetHealthStatus(ctx context.Context, target eav1.TargetResource, remediationStartedAt *metav1.Time) health.TargetStatus {
+func (r *Reconciler) getTargetHealthStatus(ctx context.Context, reader client.Reader, target eav1.TargetResource, remediationStartedAt *metav1.Time) health.TargetStatus {
 	logger := log.FromContext(ctx)
 
 	targetKind := target.Kind
@@ -52,7 +52,7 @@ func (r *Reconciler) getTargetHealthStatus(ctx context.Context, target eav1.Targ
 	switch targetKind {
 	case "Deployment", "ReplicaSet", "StatefulSet", "DaemonSet":
 		podList = &corev1.PodList{}
-		err := r.List(ctx, podList,
+		err := reader.List(ctx, podList,
 			client.InNamespace(targetNs),
 			client.MatchingLabels{"app": targetName},
 		)
@@ -64,7 +64,7 @@ func (r *Reconciler) getTargetHealthStatus(ctx context.Context, target eav1.Targ
 
 	case "Pod":
 		pod := &corev1.Pod{}
-		err := r.Get(ctx, client.ObjectKey{Name: targetName, Namespace: targetNs}, pod)
+		err := reader.Get(ctx, client.ObjectKey{Name: targetName, Namespace: targetNs}, pod)
 		if err != nil {
 			logger.V(1).Info("Target pod not found", "name", targetName, "error", err)
 			return health.TargetStatus{TargetExists: false}
@@ -91,7 +91,7 @@ func (r *Reconciler) getTargetHealthStatus(ctx context.Context, target eav1.Targ
 // listActivePodNames returns the names of currently running pods for a workload
 // target (Deployment, ReplicaSet, StatefulSet, DaemonSet). Returns nil for non-
 // workload kinds or when the listing fails (#269: stale alert pod correlation).
-func (r *Reconciler) listActivePodNames(ctx context.Context, target eav1.TargetResource) []string {
+func (r *Reconciler) listActivePodNames(ctx context.Context, reader client.Reader, target eav1.TargetResource) []string {
 	switch target.Kind {
 	case "Deployment", "ReplicaSet", "StatefulSet", "DaemonSet":
 	default:
@@ -99,7 +99,7 @@ func (r *Reconciler) listActivePodNames(ctx context.Context, target eav1.TargetR
 	}
 
 	podList := &corev1.PodList{}
-	if err := r.List(ctx, podList,
+	if err := reader.List(ctx, podList,
 		client.InNamespace(target.Namespace),
 		client.MatchingLabels{"app": target.Name},
 	); err != nil {
@@ -130,7 +130,7 @@ func (r *Reconciler) listActivePodNames(ctx context.Context, target eav1.TargetR
 //   - (emptyMap, emptyMap, "reason") when degraded: Forbidden, transient API errors (Issue #546)
 //
 // DD-EM-002 v2.0 (#765): Returns full object for resource fingerprint.
-func (r *Reconciler) getTargetFunctionalState(ctx context.Context, target eav1.TargetResource) (map[string]interface{}, map[string]interface{}, string) {
+func (r *Reconciler) getTargetFunctionalState(ctx context.Context, reader client.Reader, target eav1.TargetResource) (map[string]interface{}, map[string]interface{}, string) {
 	logger := log.FromContext(ctx)
 
 	if r.restMapper == nil {
@@ -173,7 +173,7 @@ func (r *Reconciler) getTargetFunctionalState(ctx context.Context, target eav1.T
 		Namespace: ns,
 		Name:      target.Name,
 	}
-	if err := r.Get(ctx, key, obj); err != nil {
+	if err := reader.Get(ctx, key, obj); err != nil {
 		if apierrors.IsNotFound(err) {
 			logger.Info("Target resource not found, computing hash from empty spec",
 				"kind", target.Kind,
@@ -221,11 +221,13 @@ func (r *Reconciler) queryPreRemediationHash(ctx context.Context, correlationID 
 }
 
 // resolveConfigMapHashes extracts ConfigMap references from the resource spec,
-// fetches each ConfigMap via the uncached apiReader (bypassing the informer cache),
-// and returns a map of name -> content hash.
+// fetches each ConfigMap via the provided reader, and returns a map of name -> content hash.
+// For local reads, the reader is typically the uncached apiReader (bypassing informer cache).
+// For fleet reads, the reader routes through the MCP gateway.
 // Missing/forbidden ConfigMaps produce a deterministic sentinel hash.
 func (r *Reconciler) resolveConfigMapHashes(
 	ctx context.Context,
+	reader client.Reader,
 	spec map[string]interface{},
 	target eav1.TargetResource,
 ) map[string]string {
@@ -240,7 +242,7 @@ func (r *Reconciler) resolveConfigMapHashes(
 	for _, cmName := range refs {
 		cm := &corev1.ConfigMap{}
 		key := client.ObjectKey{Name: cmName, Namespace: target.Namespace}
-		if err := r.apiReader.Get(ctx, key, cm); err != nil {
+		if err := reader.Get(ctx, key, cm); err != nil {
 			// All fetch errors (404, 403, transient) use sentinel to ensure deterministic
 			// hash computation: the same set of ConfigMap names always contributes to the
 			// composite hash, preventing false-positive drift from intermittent failures.
