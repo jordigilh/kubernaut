@@ -17,18 +17,67 @@ limitations under the License.
 package gateway
 
 import (
+	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"time"
 
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/prometheus/client_golang/prometheus"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/fleet"
+	"github.com/jordigilh/kubernaut/pkg/fleet/fmc"
+	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
+	"github.com/jordigilh/kubernaut/pkg/fleet/scopecache"
 	"github.com/jordigilh/kubernaut/pkg/gateway"
+	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
+
+// staticClusterRegistry implements registry.ClusterRegistry with a fixed set of clusters.
+// Used in GW fleet signal ITs where we need a real FMC handler backed by known clusters
+// without requiring envtest Backend CRDs (which are only available in the FMC IT suite).
+type staticClusterRegistry struct {
+	clusters map[string]registry.ClusterInfo
+}
+
+func newStaticClusterRegistry(ids ...string) *staticClusterRegistry {
+	r := &staticClusterRegistry{clusters: make(map[string]registry.ClusterInfo, len(ids))}
+	for _, id := range ids {
+		r.clusters[id] = registry.ClusterInfo{ID: id, Name: id}
+	}
+	return r
+}
+
+func (r *staticClusterRegistry) List() []registry.ClusterInfo {
+	out := make([]registry.ClusterInfo, 0, len(r.clusters))
+	for _, c := range r.clusters {
+		out = append(out, c)
+	}
+	return out
+}
+
+func (r *staticClusterRegistry) Get(clusterID string) (registry.ClusterInfo, bool) {
+	c, ok := r.clusters[clusterID]
+	return c, ok
+}
+
+func (r *staticClusterRegistry) WatchClusters() <-chan registry.ClusterEvent {
+	ch := make(chan registry.ClusterEvent)
+	close(ch)
+	return ch
+}
+
+func (r *staticClusterRegistry) Ready() bool                    { return true }
+func (r *staticClusterRegistry) Start(_ context.Context) error  { return nil }
+func (r *staticClusterRegistry) Stop()                          {}
 
 // GW Fleet Signal Ingestion (BR-INTEGRATION-065)
 //
@@ -38,11 +87,16 @@ import (
 // 2. NormalizedSignal carries a ClusterID field
 // 3. CRDCreator populates spec.clusterID on the RemediationRequest
 // 4. Fingerprint calculation includes clusterID for cluster-aware dedup
+//
+// Architecture: Uses a real FMC stack (miniredis + scopecache + FMC handler + httptest)
+// to handle remote cluster scope checks. This avoids mocking and exercises the real
+// FMC HTTP path that production GW uses (ADR-068).
 var _ = Describe("GW Fleet Signal Ingestion (BR-INTEGRATION-065)", Ordered, Label("fleet", "integration"), func() {
 	var (
 		testLogger    logr.Logger
 		testNamespace string
 		gwServer      *gateway.Server
+		fmcServer     *httptest.Server
 	)
 
 	BeforeAll(func() {
@@ -54,16 +108,52 @@ var _ = Describe("GW Fleet Signal Ingestion (BR-INTEGRATION-065)", Ordered, Labe
 
 		testNamespace = helpers.CreateTestNamespace(ctx, k8sClient, "fleet-signal-int")
 
+		valkeyAddr := fmt.Sprintf("127.0.0.1:%d", gatewayRedisPort)
+
+		By("Seeding shared Redis with managed resources for remote clusters")
+		writer := fmc.NewValkeyWriter(valkeyAddr)
+		for _, cluster := range []string{"prod-east", "prod-west"} {
+			// GW passes ResourceIdentity with empty Group/Version (only Kind is set),
+			// so Valkey keys must match that format.
+			key, kerr := scopecache.BuildKey(cluster, "", "", "Deployment", testNamespace, "nginx")
+			Expect(kerr).ToNot(HaveOccurred())
+			Expect(writer.Set(ctx, key, 5*time.Minute)).To(Succeed())
+			keyDefault, kerr := scopecache.BuildKey(cluster, "", "", "Deployment", "default", "nginx")
+			Expect(kerr).ToNot(HaveOccurred())
+			Expect(writer.Set(ctx, keyDefault, 5*time.Minute)).To(Succeed())
+		}
+		_ = writer.Close()
+
+		By("Creating real FMC HTTP stack (scopecache + handler + httptest)")
+		cacheReader := scopecache.NewValkeyCacheReader(valkeyAddr)
+		scopeClient := scopecache.NewClient(cacheReader)
+		clusterReg := newStaticClusterRegistry("prod-east", "prod-west")
+		handler := fmc.NewHandler(scopeClient, clusterReg, testLogger)
+		mux := http.NewServeMux()
+		handler.RegisterRoutes(mux)
+		fmcServer = httptest.NewServer(mux)
+
+		By("Creating FederatedScopeChecker backed by real FMC")
+		localChecker := scope.NewManager(k8sClient)
+		remoteChecker := fmc.NewHTTPClient(fmcServer.URL)
+		federatedChecker := fleet.NewFederatedScopeChecker(localChecker, remoteChecker, testLogger)
+
+		By("Creating Gateway server with federated scope checker")
 		gwConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
+		testRegistry := prometheus.NewRegistry()
+		metricsInstance := metrics.NewMetricsWithRegistry(testRegistry)
 		var err error
-		gwServer, err = createGatewayServer(gwConfig, testLogger, k8sClient, sharedAuditStore)
+		gwServer, err = gateway.NewServerForTesting(gwConfig, testLogger, metricsInstance, k8sClient, sharedAuditStore, federatedChecker, suiteAuthenticator, suiteAuthorizer)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create Gateway server")
 
 		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
-		testLogger.Info("✅ Gateway server created with shared K8s client")
+		testLogger.Info("✅ Gateway server created with real FMC-backed federated scope checker")
 	})
 
 	AfterAll(func() {
+		if fmcServer != nil {
+			fmcServer.Close()
+		}
 		if CurrentSpecReport().Failed() {
 			testLogger.Info("⚠️  Test FAILED - Preserving namespace", "namespace", testNamespace)
 			return
