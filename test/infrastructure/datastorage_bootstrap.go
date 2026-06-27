@@ -195,21 +195,14 @@ func tryPullFromRegistry(ctx context.Context, serviceName, localImageName string
 	registryImage := fmt.Sprintf("%s/%s:%s", registry, serviceName, tag)
 	_, _ = fmt.Fprintf(writer, "   🔄 Registry mode detected (IMAGE_REGISTRY + IMAGE_TAG set)\n")
 
-	// 🚀 OPTIMIZATION: Use skopeo inspect instead of podman pull
-	// Benefits:
-	// - No disk space used (metadata only, ~2KB vs multi-GB image)
-	// - No network transfer of layers (90%+ bandwidth savings)
-	// - Faster execution (~1s vs 10-30s for full pull)
-	// - Kubernetes will pull automatically during pod deployment
 	exists, err := VerifyImageExistsInRegistry(registryImage, writer)
-
 	if err != nil || !exists {
 		_, _ = fmt.Fprintf(writer, "   ⚠️  Registry verification failed: %v\n", err)
 		_, _ = fmt.Fprintf(writer, "   ⚠️  Falling back to local build...\n")
-		return "", false, nil // Verification failed, caller should build locally
+		return "", false, nil
 	}
 
-	_, _ = fmt.Fprintf(writer, "   ✅ Image verified in registry, pulling...\n")
+	_, _ = fmt.Fprintf(writer, "   📥 Pulling image from registry: %s\n", registryImage)
 	pullCmd := exec.CommandContext(ctx, "podman", "pull", registryImage)
 	pullCmd.Stdout = writer
 	pullCmd.Stderr = writer
