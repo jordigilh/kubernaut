@@ -145,16 +145,9 @@ func DeployFleetInfra(ctx context.Context, namespace, kubeconfigPath, fmcImage s
 		return fmt.Errorf("helm repo update failed: %w", err)
 	}
 
-	_, _ = fmt.Fprintln(writer, "    Installing Istio base (CRDs)...")
-	if err := runHelmTemplateApply(ctx, kubeconfigPath, writer,
-		"istio-base", "istio/base", "istio-system",
-		"--version", "1.30.2",
-		"--create-namespace",
-	); err != nil {
-		return fmt.Errorf("istio base install failed: %w", err)
-	}
-
-	// Ensure istio-system namespace exists (helm template doesn't create it)
+	// Create istio-system namespace before applying Istio base CRDs.
+	// helm template renders namespaced resources (e.g. ValidatingWebhookConfiguration
+	// with service references) that fail if the namespace doesn't exist yet.
 	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, `
 apiVersion: v1
 kind: Namespace
@@ -162,6 +155,14 @@ metadata:
   name: istio-system
 `); err != nil {
 		return fmt.Errorf("istio-system namespace creation failed: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "    Installing Istio base (CRDs)...")
+	if err := runHelmTemplateApply(ctx, kubeconfigPath, writer,
+		"istio-base", "istio/base", "istio-system",
+		"--version", "1.30.2",
+	); err != nil {
+		return fmt.Errorf("istio base install failed: %w", err)
 	}
 
 	_, _ = fmt.Fprintln(writer, "    Installing Istio control plane (mesh disabled)...")
