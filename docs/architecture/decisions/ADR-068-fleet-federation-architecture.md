@@ -38,6 +38,7 @@ gateway; platform teams choose and deploy their preferred implementation.
 | **Components to deploy** | 1 (single Deployment or standalone binary) | 3+ (Kuadrant controller + broker + Istio control plane) |
 | **Memory footprint** | ~122 MB | ~388 MB (Istio + Kuadrant + kube-mcp-server) |
 | **Tool prefixing** | `{backendName}__{toolName}` | `{toolPrefix}{toolName}` (configurable via `MCPServerRegistration.spec.prefix`) |
+| **Tool discovery** | All tools in `tools/list`; cluster prefixes parsed client-side | `discover_tools`/`select_tools` meta-tools with `--discovery-tool-threshold`; server-side session scoping |
 | **Auth model** | Built-in OAuth + CEL authorization | Authorino (external) + OPA Rego policies |
 | **Standalone mode** | `aigw run` CLI (IT testing without K8s) | Not available (requires K8s + Istio) |
 | **Maturity** | v1.0 GA (Bloomberg/Tetrate backing) | Technology Preview |
@@ -45,17 +46,24 @@ gateway; platform teams choose and deploy their preferred implementation.
 | **E2E validation** | IT container test (`fleet_eaigw_test.go`) | E2E fleet lane (Kind + Istio + Kuadrant, spike-s14) |
 
 **Design principle: business logic is gateway-agnostic.** Kubernaut services connect
-to the MCP Gateway endpoint and discover tools via `tools/list`. Tool names carry the
-gateway-specific prefix (e.g., `cluster-a__resources_get` for EAIGW,
-`cluster_a_resources_get` for Kuadrant). Services use discovered tool names as-is —
-they never need to know which gateway implementation is running. KA registers
-discovered tools as BridgeTools for LLM investigation, enabling multi-cluster
-correlation within a single session.
+to the MCP Gateway endpoint and discover clusters/tools via the `GatewayDiscoverer`
+interface (decision #11). Tool names carry the gateway-specific prefix (e.g.,
+`cluster-a__resources_get` for EAIGW, `cluster_a_resources_get` for Kuadrant).
+Services use discovered tool names as-is — they never need to know which gateway
+implementation is running.
 
-The only gateway-aware component is the cluster registry (`pkg/fleet/registry/`),
-which watches gateway-specific CRDs (`Backend` for EAIGW, `MCPServerRegistration`
-for Kuadrant) to build the cluster-to-prefix mapping used by `ReaderFactory`.
-This awareness is isolated to FMC and does not leak into other services' business logic.
+KA pre-scopes the MCP session to the alert's target cluster and registers two
+LLM-callable tools (`list_clusters`, `list_tools_for_cluster`) for optional
+multi-cluster investigation. This keeps the LLM context lean (~20 tool schemas)
+while enabling cross-cluster correlation when the LLM determines it is needed.
+Services (SP, WE, FMC) use `GatewayDiscoverer.ToolsForCluster()` programmatically.
+
+The only gateway-aware components are:
+- The `GatewayDiscoverer` implementations (`pkg/fleet/mcpclient/discovery/`)
+- The cluster registry in FMC (`pkg/fleet/registry/`)
+
+This awareness is isolated by interfaces and does not leak into other services'
+business logic.
 
 ### Architecture Overview
 
@@ -120,7 +128,8 @@ This awareness is isolated to FMC and does not leak into other services' busines
 | **ResilientClient** | MCP client with backoff, reconnect, readiness gating | `pkg/fleet/mcpclient/resilience.go` |
 | **ReloadableOAuth2Transport** | Hot-reloadable OAuth2 credentials via FileWatcher | `pkg/fleet/mcpclient/reloadable_auth.go` |
 | **CRDWatcher** | Discovers clusters from gateway CRDs (`MCPRoute`/`Backend` for EAIGW, `MCPServerRegistration` for Kuadrant) via adapter pattern | `pkg/fleet/registry/` |
-| **KA Fleet Tools** | Dynamic BridgeTool registration from MCP Gateway `tools/list` | `cmd/kubernautagent/main.go` |
+| **GatewayDiscoverer** | Two-phase cluster/tool discovery for LLM context efficiency. Gateway-specific implementations for Kuadrant (`discover_tools`/`select_tools`) and EAIGW (`tools/list` prefix scan). Exposed to LLM as `list_clusters` and `list_tools_for_cluster` tools. | `pkg/fleet/mcpclient/discovery/` |
+| **KA Fleet Tools** | Dynamic BridgeTool registration from MCP Gateway. Pre-scopes to target cluster, registers `list_clusters` and `list_tools_for_cluster` as LLM-callable tools for multi-cluster investigation. | `cmd/kubernautagent/main.go` |
 
 ### Key Design Decisions
 
@@ -142,7 +151,42 @@ This awareness is isolated to FMC and does not leak into other services' busines
 
 9. **MCP Gateway as unified chokepoint for all remote cluster access** (not separate auth paths per backend type): All Kubernaut services that interact with remote clusters — GW, KA, RO, SP, AF, EM (read-only), FMC (metadata sync), and WE (remediation execution) — access remote clusters exclusively through the MCP Gateway. The K8s MCP Server and AAP MCP Server are both registered as backends behind the same gateway. This eliminates the need for service-specific credential management (e.g., separate AAP bearer token injection). Auth is enforced at two layers: (a) the gateway validates caller credentials via its native auth model (OAuth + CEL for EAIGW, Authorino + OPA for Kuadrant), and (b) each MCP Server authenticates against its own local APIs using its own ServiceAccount. No per-cluster SA tokens are maintained by Kubernaut services.
 
-10. **Gateway-agnostic business logic** (not per-gateway code paths): Services that need to call MCP tools on a remote cluster (GW, SP, WE) discover the gateway-specific tool prefix dynamically via `DiscoverToolPrefix`. This function calls `tools/list`, matches the cluster ID against discovered tool names using string prefix/suffix matching, and extracts whatever prefix the gateway applied — no gateway type configuration needed. KA discovers tools via `tools/list` and registers them as BridgeTools directly. The only gateway-aware component is the cluster registry in FMC (`pkg/fleet/registry/`), which watches gateway-specific CRDs to build the cluster catalog. All other services are fully gateway-agnostic.
+10. **Gateway-agnostic business logic** (not per-gateway code paths): Services that need to call MCP tools on a remote cluster use the `GatewayDiscoverer` interface (decision #11) to discover clusters and tools. The only gateway-aware components are the `GatewayDiscoverer` implementations and the cluster registry in FMC (`pkg/fleet/registry/`). All other services — GW, SP, WE, KA, RO, AF, EM — are fully gateway-agnostic.
+
+11. **GatewayDiscoverer: two-phase tool discovery for LLM context efficiency** (not raw `tools/list` scan): At fleet scale (100+ clusters, 1800+ tools), presenting all tools to the LLM wastes context tokens and causes hallucination. The `GatewayDiscoverer` interface provides two operations — `ListClusters()` and `ToolsForCluster(clusterID)` — that map to two KA-registered tools the LLM can call:
+
+    - **`list_clusters`**: Returns cluster names, categories, and hints — no tool names, no schemas. The LLM uses this only when it needs to investigate beyond the pre-scoped target cluster.
+    - **`list_tools_for_cluster(cluster_id)`**: Returns the tools available on a specific cluster and makes them callable. Tool names carry the gateway-assigned cluster prefix (e.g., `prod_cluster_01_resources_get`), which disambiguates tools across clusters in the LLM context.
+
+    **LLM context management**: KA pre-scopes the session to the alert's target cluster at investigation start. The LLM begins with only that cluster's ~18 tools plus the two discovery tools (~20 total). If the LLM determines it needs another cluster (e.g., a cross-cluster dependency), it calls `list_clusters` to browse and `list_tools_for_cluster` to add that cluster's tools. In 99% of investigations, discovery is never called — the pre-scoped tools suffice.
+
+    | Moment | Tools in LLM context | Token cost |
+    |--------|---------------------|-----------|
+    | Start | 18 target-cluster tools + `list_clusters` + `list_tools_for_cluster` | ~20 schemas |
+    | After `list_tools_for_cluster("cluster-02")` | 18 + 18 + 2 = 38 | Lean |
+    | Never needed another cluster (99% of cases) | 20 | Minimal |
+
+    **Gateway-specific implementations**: The `GatewayDiscoverer` interface has one implementation per supported gateway, selected by `gatewayType` configuration (same config FMC already uses):
+
+    ```go
+    type GatewayDiscoverer interface {
+        ListClusters(ctx context.Context) ([]ClusterInfo, error)
+        ToolsForCluster(ctx context.Context, clusterID string) ([]ToolDefinition, error)
+    }
+    ```
+
+    | Gateway | `ListClusters()` | `ToolsForCluster()` |
+    |---------|-----------------|-------------------|
+    | **Kuadrant** | Calls `discover_tools` meta-tool → returns server metadata | Calls `select_tools` → server-side session scoping, returns tool list |
+    | **EAIGW** | Calls `tools/list`, parses unique `__` prefixes | Filters `tools/list` by prefix (client-side filtering) |
+
+    Kuadrant's `discover_tools` / `select_tools` are meta-tools controlled by the `--discovery-tool-threshold` flag. At threshold=0 (default), all tools appear in `tools/list` alongside meta-tools. At threshold > 0, `tools/list` returns only meta-tools, forcing the Discover → Select → Work flow. The `KuadrantDiscoverer` handles both modes transparently.
+
+    **Configuration**: The `gatewayType` is a single field on the Kubernaut CRD (`spec.fleet.gatewayType`). The operator propagates it to both KA's and FMC's configs during reconciliation — one knob, two consumers, zero duplication. Services never need to auto-detect the gateway type.
+
+    **Adding a new gateway**: Implement `GatewayDiscoverer` for the new gateway and register it in the factory. Add the new value to the `gatewayType` enum on the CRD. No changes to KA, services, or LLM tooling.
+
+    **Authority**: Spike S15 (2026-06-27) — validated Kuadrant `discover_tools` / `select_tools` response format, threshold behavior, and tool prefix conventions against live Kuadrant MCP Gateway v0.7.0 in Kind.
 
 ## Alternatives Considered
 
@@ -240,6 +284,7 @@ This awareness is isolated to FMC and does not leak into other services' busines
 | WE Fleet Routing | WE JobExecutor.IsCompleted ClusterID propagation (BR-FLEET-054) | Complete |
 | EM Fleet Routing | EM target-read routing via ReaderFactory (BR-FLEET-054) | Complete |
 | AF Fleet Routing | AF kubectl_get/kubectl_list ResourceReader abstraction + list_clusters tool (BR-FLEET-054) | Complete |
+| GatewayDiscoverer | Two-phase tool discovery (`list_clusters`/`list_tools_for_cluster`) with Kuadrant and EAIGW implementations | Planned (v1.5 GA) |
 | Rancher Adapter | Rancher v3 API adapter for cluster discovery and scope checks | Planned (v1.6) |
 | Clusterpedia Adapter | Clusterpedia Aggregated API adapter for scope checks | Planned (v1.6) |
 
@@ -1317,9 +1362,13 @@ executorRegistry.Register("tekton", NewTektonExecutorWithFactory(clientFactory))
 
 ### MCP Tool Mapping
 
-Tool names use the `{backendName}__{toolName}` prefix convention, where `backendName`
-is the Envoy AI Gateway `Backend` CR name (which maps to the cluster ID) and `toolName`
-is the real `kubernetes-mcp-server` tool name. Constants are defined in
+Tool names use a gateway-specific prefix convention:
+- **EAIGW**: `{backendName}__{toolName}` — `backendName` is the `Backend` CR name
+- **Kuadrant**: `{prefix}{toolName}` — `prefix` from `MCPServerRegistration.spec.prefix`
+
+The `GatewayDiscoverer` (decision #11) resolves tool names per gateway. Services
+never construct prefixed tool names directly — they receive fully qualified names
+from `ToolsForCluster()`. Constants for base tool names are defined in
 `pkg/fleet/mcpclient/tool_names.go`.
 
 | Operation | MCP Tool Name | Arguments |
@@ -1382,10 +1431,13 @@ fields for services that need remote K8s reads via the MCP Gateway.
 - Spike S9: ScopeChecker interface redesign
 - Spike S10: K8s MCP Server CRD support
 - Spike S11: Envoy AI Gateway evaluation (2026-06-25) — validated `__` prefix convention, standalone mode, memory footprint, CEL auth
+- Spike S15: Kuadrant tool discovery (2026-06-27) — validated `discover_tools`/`select_tools` response format, `--discovery-tool-threshold` behavior, tool prefix conventions. Designed `GatewayDiscoverer` interface for two-phase LLM-efficient tool discovery.
 
 ### Backend-Specific Documentation
 
 - **Envoy AI Gateway (MCP)**: [MCP Gateway Documentation](https://aigateway.envoyproxy.io/docs/capabilities/mcp/) — MCPRoute configuration, OAuth, CEL authorization, tool filtering, server multiplexing
+- **Kuadrant MCP Gateway Tool Discovery**: [Tool Discovery Guide](https://docs.kuadrant.io/dev/mcp-gateway/docs/guides/tool-discovery/) — `discover_tools`/`select_tools` meta-tools, `--discovery-tool-threshold` configuration, category filtering, session scoping
+- **Kuadrant MCPServerRegistration**: [MCPServerRegistration Reference](https://docs.kuadrant.io/dev/mcp-gateway/docs/reference/mcpserverregistration/) — CRD spec including `prefix`, `category`, `hint` fields for tool discovery
 - **ACM Search API**: [Red Hat ACM Search Documentation (2.16)](https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/2.16/html-single/search/index) — GraphQL-based search across managed clusters via `search-api` service
 - **ACM Search Query API wiki**: [stolostron/search-v2-operator Search Query API](https://github.com/stolostron/search-v2-operator/wiki/Search-Query-API)
 - **Rancher v3 API Guide**: [Rancher API Reference](https://ranchermanager.docs.rancher.com/api/v3-rancher-api-guide) — REST API for cluster management, K8s proxy for resource access
