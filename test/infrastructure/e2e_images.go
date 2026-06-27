@@ -496,27 +496,27 @@ func CleanupE2EImages(imageNames []string, writer io.Writer) error {
 // - bool: true if image exists and is accessible
 // - error: Any errors during verification (authentication, network, etc.)
 func VerifyImageExistsInRegistry(registryImage string, writer io.Writer) (bool, error) {
-	_, _ = fmt.Fprintf(writer, "   🔍 Verifying image exists in registry (skopeo inspect): %s\n", registryImage)
+	_, _ = fmt.Fprintf(writer, "   🔍 Verifying image exists in registry: %s\n", registryImage)
 
-	// Use skopeo inspect to check image existence without pulling
-	// Format: docker://registry.url/image:tag
+	// Use skopeo inspect --raw to verify image existence. The --raw flag
+	// returns the manifest as-is without resolving a platform-specific image,
+	// so it works correctly with multi-arch manifest lists (unlike the default
+	// skopeo inspect which fails when the local arch isn't in the manifest).
 	inspectURL := registryImage
 	if !strings.HasPrefix(registryImage, "docker://") {
 		inspectURL = "docker://" + registryImage
 	}
 
-	cmd := exec.Command("skopeo", "inspect", inspectURL)
+	cmd := exec.Command("skopeo", "inspect", "--raw", inspectURL)
 	output, err := cmd.CombinedOutput()
 
 	if err != nil {
-		// Image doesn't exist or is not accessible
 		_, _ = fmt.Fprintf(writer, "   ❌ Image verification failed: %v\n", err)
 		_, _ = fmt.Fprintf(writer, "   📋 Output: %s\n", string(output))
 		return false, fmt.Errorf("image not found or not accessible: %w", err)
 	}
 
 	_, _ = fmt.Fprintf(writer, "   ✅ Image exists in registry (verified without pull)\n")
-	_, _ = fmt.Fprintf(writer, "   💡 Kubernetes/Podman will pull when needed during deployment\n")
 	return true, nil
 }
 
