@@ -18,7 +18,6 @@ package config_test
 
 import (
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -181,9 +180,10 @@ oauth2:
 })
 
 func writeYAMLToTemp(content string) string {
-	tmpDir := os.TempDir()
-	tmpFile := filepath.Join(tmpDir, "fmc-test-config.yaml")
-	err := os.WriteFile(tmpFile, []byte(content), 0644)
+	f, err := os.CreateTemp("", "fmc-test-config-*.yaml")
 	Expect(err).NotTo(HaveOccurred())
-	return tmpFile
+	_, err = f.WriteString(content)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(f.Close()).To(Succeed())
+	return f.Name()
 }
