@@ -259,6 +259,20 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 5.7: Deploy Prometheus + AlertManager (#1507)
+	// Required for get_alerts/get_silences/nodes_log/nodes_stats_summary
+	// tool E2E validation. Uses existing DeployPrometheus/DeployAlertManager
+	// helpers from prometheus_alertmanager_e2e.go.
+	// ═══════════════════════════════════════════════════════════════════════
+	_, _ = fmt.Fprintln(writer, "\n📊 PHASE 5.7: Deploying Prometheus + AlertManager (#1507)...")
+	if err := DeployPrometheus(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to deploy Prometheus: %w", err)
+	}
+	if err := DeployAlertManager(ctx, namespace, kubeconfigPath, "", writer); err != nil {
+		return fmt.Errorf("failed to deploy AlertManager: %w", err)
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 5.8: Deploy DEX OIDC Provider for JWT E2E testing (#1009)
 	// Must be ready BEFORE KA starts so JWKS pre-warm succeeds.
 	// DD-AUTH-MCP-001 v2.0: Pattern B validation with real OIDC provider.
@@ -774,7 +788,7 @@ metadata:
     component: investigation
 rules:
   - apiGroups: [""]
-    resources: ["pods", "pods/log", "events", "services", "configmaps", "nodes", "namespaces", "replicationcontrollers", "persistentvolumeclaims"]
+    resources: ["pods", "pods/log", "events", "services", "configmaps", "nodes", "nodes/proxy", "namespaces", "replicationcontrollers", "persistentvolumeclaims"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["apps"]
     resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
@@ -909,6 +923,11 @@ data:
     integrations:
       dataStorage:
         url: "https://data-storage-service:8080"
+      tools:
+        prometheus:
+          url: "http://prometheus-svc.%s.svc.cluster.local:9090"
+        alertmanager:
+          url: "http://alertmanager-svc.%s.svc.cluster.local:9093"
     interactive:
       enabled: true
       sessionTTL: "5m"
@@ -1040,7 +1059,7 @@ spec:
     nodePort: 30988
   selector:
     app: kubernaut-agent
-`, namespace, jwtConfigSection, namespace, namespace, imageTag, imagePullPolicy, covEnv, covMount, covVol, namespace)
+`, namespace, namespace, namespace, jwtConfigSection, namespace, namespace, imageTag, imagePullPolicy, covEnv, covMount, covVol, namespace)
 
 	cmd := exec.Command("kubectl", "apply", "--kubeconfig", kubeconfigPath, "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
