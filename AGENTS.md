@@ -211,26 +211,49 @@ REFACTOR: Clean up
 
 ### Detection Commands
 
-Use `gopls` for precise, type-safe verification of production callers:
+**Preference hierarchy**: gopls MCP > gopls CLI > grep
 
+#### gopls (preferred -- type-safe, import-aware)
+
+gopls provides precise reference lookups using the Go type system. Results are identical
+regardless of interface; MCP is preferred for AI agents because it avoids shell parsing.
+
+**Setup**:
 ```bash
-# Verify a symbol has production callers (gopls MCP tool: go_symbol_references)
-# Returns all reference locations -- filter for cmd/ or handler/ paths (exclude _test.go)
-gopls references <file>:<line>:<col>  # CLI equivalent
+# Install gopls (prerequisite: Go toolchain)
+go install golang.org/x/tools/gopls@latest
 
-# Find all references to a specific exported symbol
-# MCP: go_symbol_references(file="/path/to/file.go", symbol="NewComponent")
-# MCP: go_symbol_references(file="/path/to/file.go", symbol="HandleX")
-
-# Search for symbols by name across the workspace
-# MCP: go_search(query="NewComponent")
+# Start as MCP server (for AI agents that support MCP)
+gopls mcp
+# or with remote caching:
+gopls -remote=auto mcp
 ```
 
-For AI agents with MCP access, use `go_symbol_references` to verify that each new exported
-function/type has at least one caller in production code (`cmd/` or `handler/` paths, excluding `_test.go`).
-This is more reliable than grep because it uses the Go type system and resolves imports correctly.
+For Cursor IDE, the gopls MCP server is pre-configured (`user-gopls`). For other
+MCP-compatible agents (Claude Code, Windsurf, etc.), add `gopls mcp` to your MCP
+server configuration. For human developers, your IDE's "Find All References" uses
+gopls under the hood.
 
-Fallback (when gopls is unavailable):
+**MCP usage** (AI agents):
+```
+go_symbol_references(file="/path/to/file.go", symbol="NewComponent")
+go_symbol_references(file="/path/to/file.go", symbol="pkg.HandleX")
+go_search(query="NewComponent")
+```
+
+**CLI usage** (universal):
+```bash
+# Find all references to a symbol at a specific position
+gopls references /path/to/file.go:42:6
+
+# Search symbols by name
+gopls symbols -query="NewComponent"
+```
+
+Verify that each new exported function/type has at least one caller in production code
+(`cmd/` or `handler/` paths, excluding `_test.go`).
+
+#### grep (fallback -- when gopls is unavailable)
 
 ```bash
 # Verify new components have production callers
