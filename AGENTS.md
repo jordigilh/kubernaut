@@ -360,6 +360,54 @@ Integration and E2E tests serve wiring proof and control assessment respectively
 their value is measured by **what they prove** (wiring completeness, control objective coverage),
 not by line coverage percentage. Individual IT/E2E line coverage is reported but not gated.
 
+### How Coverage Is Measured
+
+This methodology distinguishes **structural coverage** (line/branch) from **requirements-based coverage**
+(ISO/IEC/IEEE 29119-4:2021, Section 5.2.10 and 6.2.12). Unit tests use structural coverage. Integration
+and E2E tests use requirements-based coverage derived from compliance mandates.
+
+**Unit Test Coverage (structural -- line coverage)**:
+- Measured automatically by `go tool cover` and reported by `scripts/coverage/coverage_report.py`
+- CI gate: `--check-gate` on the `unit_testable` and `all_tiers` columns
+- Target: 100% of business logic (unit-testable code as categorized in `.coverage-patterns.yaml`)
+- Rationale: Google's engineering practices recommend per-commit coverage gates with high thresholds
+  for business-critical code (ref: "Software Engineering at Google", Ch. 11, Arguelles 2024)
+
+**Integration Test Coverage (requirements-based -- wiring completeness)**:
+- Measured by the **Wiring Manifest** created during the Plan phase of each feature
+- Each row = one wiring point: component + production entry point + IT test ID
+- Coverage = rows with passing IT / total rows in manifest (target: 100%)
+- Enforcement: CHECKPOINT W during TDD GREEN phase (verified per-PR in review)
+- Additionally: every FedRAMP control mapped in the BR must have at least one IT proving
+  the implementation is wired (ref: NIST SP 800-53A Rev. 5 -- all applicable controls must
+  be assessed during the authorization period; FedRAMP Consolidated Rules 2026 --
+  "Providers MUST have all applicable Rev5 Controls included in independent assessments")
+
+**E2E Coverage (requirements-based -- control objective assessment)**:
+- Measured by mapping SOC2/FedRAMP control objectives to E2E test scenarios
+- The BR Coverage Matrix (`docs/services/*/BR_COVERAGE_MATRIX.md`) tracks which controls have proving journeys
+- Coverage = control objectives with at least one passing E2E / total control objectives in scope (target: 100%)
+- Enforcement: pre-merge review validates control coverage for compliance-mapped BRs
+- Rationale: SOC2 Type 2 audits require sampling from a **complete population** of all control activities
+  (AICPA TSC CC8.1); FedRAMP requires 100% of applicable controls assessed (NIST SP 800-53A Rev. 5, Ch. 4)
+
+**All Tiers Merged (structural -- CI gate)**:
+- Measured by `scripts/coverage/coverage_report.py` using line-by-line deduplication across all tiers
+- A line covered by ANY tier counts once (logical OR merge)
+- CI gate: >= 80% (currently non-blocking during V1.5 rollout, becomes blocking after Phase 9)
+- Rationale: 80% merged all-tiers aligns with industry benchmarks (Google guidelines: 60% acceptable,
+  75% commendable, 90% exemplary; 80% is a pragmatic floor validated by actual PR data)
+
+### Authoritative References
+
+| Standard | Relevance |
+|----------|-----------|
+| ISO/IEC/IEEE 29119-4:2021 | Defines requirements-based test coverage (Section 6.2.12) vs structural coverage (Section 6.3) |
+| NIST SP 800-53A Rev. 5 | "All controls are assessed during the authorization period" (Ch. 4) |
+| FedRAMP Consolidated Rules 2026 | "Providers MUST have all applicable Rev5 Controls included in independent assessments" |
+| AICPA TSC (SOC2) CC8.1 | All changes authorized, tested, documented; auditor samples from complete population |
+| Software Engineering at Google, Ch. 11 | Coverage as floor not ceiling; per-commit gates; behavior-focused testing |
+
 ### Mock Strategy
 
 **Mock ONLY external dependencies:**

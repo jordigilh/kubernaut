@@ -465,9 +465,12 @@ def output_markdown(services: list[ServiceCoverage]) -> str:
         "",
         "### 🎯 Quality Targets",
         "",
-        "- Unit-Testable: ≥80%",
-        "- Integration-Testable: ≥80%",
-        "- All Tiers: ≥80%",
+        "- Unit-Testable: 100% of business logic (structural line coverage)",
+        "- Integration-Testable: 100% of wiring points assessed (requirements-based, per ISO/IEC/IEEE 29119-4)",
+        "- E2E: 100% of FedRAMP/SOC2 control objectives have proving journeys (requirements-based)",
+        "- All Tiers (merged): ≥80% line coverage (CI gate)",
+        "",
+        "IT/E2E line coverage is reported for visibility but not gated. See AGENTS.md for full methodology.",
         "",
         "---",
         "",
@@ -500,9 +503,11 @@ def output_table(services: list[ServiceCoverage]) -> str:
         "   • All Tiers: Line-by-line merged coverage where ANY tier covering a line counts (true total coverage)",
         "",
         "🎯 QUALITY TARGETS:",
-        "   - Unit-Testable: ≥80% (TDD: all business logic must be tested)",
-        "   - Integration-Testable: ≥80% (TDD: all I/O code paths must be tested)",
-        "   - All Tiers: ≥80% (overall coverage goal)",
+        "   - Unit-Testable: 100% of business logic (structural line coverage)",
+        "   - Integration-Testable: 100% of wiring points assessed (requirements-based, per ISO/IEC/IEEE 29119-4)",
+        "   - E2E: 100% of FedRAMP/SOC2 control objectives have proving journeys (requirements-based)",
+        "   - All Tiers (merged): ≥80% line coverage (CI gate)",
+        "   IT/E2E line coverage reported for visibility, not gated. See AGENTS.md.",
         "",
         "📈 Run 'make test-tier-unit test-tier-integration test-tier-e2e' to update all coverage files.",
     ])
@@ -529,7 +534,11 @@ def output_json(services: list[ServiceCoverage]) -> str:
 
 
 def check_coverage_gate(services: list[ServiceCoverage], threshold: float) -> bool:
-    """Check that all services meet the per-tier coverage threshold.
+    """Check that unit-testable and all-tiers-merged meet the coverage threshold.
+
+    Only gates on structural (line) coverage for unit tests and the merged total.
+    Integration and E2E are measured by requirements-based coverage (wiring completeness,
+    control objective assessment) not line percentage -- see AGENTS.md.
 
     Returns True if all services pass, False otherwise.
     Prints details to stderr so stdout remains clean for piping.

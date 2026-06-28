@@ -227,9 +227,15 @@ Edit `.coverage-patterns.yaml` to adjust which packages are unit-testable vs int
 
 ## 🎯 Quality Targets
 
-- **Unit-Testable**: ≥70% (pure logic should be well-tested)
-- **Integration**: ≥60% (handlers/servers should have good integration coverage)
-- **All Tiers**: ≥80% (overall coverage goal)
+- **Unit-Testable**: 100% of business logic (structural line coverage)
+- **Integration**: 100% of wiring points assessed (requirements-based, per ISO/IEC/IEEE 29119-4)
+- **E2E**: 100% of FedRAMP/SOC2 control objectives have proving journeys (requirements-based)
+- **All Tiers (merged)**: ≥80% line coverage (CI gate)
+
+IT/E2E line coverage is reported for visibility but is not gated. Coverage for
+integration and E2E tiers is measured by **what they prove** (wiring completeness,
+control objective assessment), not by line percentage. See `AGENTS.md` for the
+full methodology and authoritative references.
 
 ## 📚 References
 
