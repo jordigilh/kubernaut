@@ -321,7 +321,15 @@ type InvestigationConfig struct {
 }
 
 type ToolsConfig struct {
-	Prometheus PrometheusToolConfig `yaml:"prometheus"`
+	Prometheus   PrometheusToolConfig   `yaml:"prometheus"`
+	Alertmanager AlertmanagerToolConfig `yaml:"alertmanager"`
+}
+
+type AlertmanagerToolConfig struct {
+	URL       string        `yaml:"url"`
+	Timeout   time.Duration `yaml:"timeout"`
+	SizeLimit int           `yaml:"sizeLimit"`
+	TLSCaFile string        `yaml:"tlsCaFile"`
 }
 
 type PrometheusToolConfig struct {

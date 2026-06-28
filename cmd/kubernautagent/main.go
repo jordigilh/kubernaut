@@ -77,6 +77,7 @@ import (
 	kaserver "github.com/jordigilh/kubernaut/internal/kubernautagent/server"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/tools/custom"
+	amtools "github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/alertmanager"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/investigation"
 	k8stools "github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/k8s"
 	logtools "github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/logs"
@@ -1062,6 +1063,32 @@ func buildToolRegistry(cfg *kaconfig.Config, logger logr.Logger, infra *k8sInfra
 		}
 	}
 
+	if cfg.Integrations.Tools.Alertmanager.URL != "" {
+		amCfg := amtools.ClientConfig{
+			URL:       cfg.Integrations.Tools.Alertmanager.URL,
+			Timeout:   cfg.Integrations.Tools.Alertmanager.Timeout,
+			SizeLimit: cfg.Integrations.Tools.Alertmanager.SizeLimit,
+		}
+		if cfg.Integrations.Tools.Alertmanager.TLSCaFile != "" {
+			amBase, amTLSErr := sharedtls.NewTLSTransport(cfg.Integrations.Tools.Alertmanager.TLSCaFile)
+			if amTLSErr != nil {
+				logger.Error(amTLSErr, "failed to create Alertmanager TLS transport", "ca_file", cfg.Integrations.Tools.Alertmanager.TLSCaFile)
+			} else {
+				amCfg.Transport = auth.NewAuthTransport(auth.NewDefaultTokenSource(), amBase)
+				logger.Info("Alertmanager client configured with TLS + SA bearer auth", "ca_file", cfg.Integrations.Tools.Alertmanager.TLSCaFile)
+			}
+		}
+		amClient, amErr := amtools.NewClient(amCfg)
+		if amErr != nil {
+			logger.Error(amErr, "failed to create Alertmanager client")
+		} else {
+			for _, t := range amtools.NewAllTools(amClient) {
+				reg.Register(t)
+			}
+			logger.Info("registered Alertmanager tools", "count", len(amtools.AllToolNames))
+		}
+	}
+
 	if ds != nil {
 		custom.RegisterAll(reg, ds.ogenClient, ds.dsAdapter, ds.k8sAdapter, logger)
 		logger.Info("registered custom tools", "count", len(custom.AllToolNames))
@@ -1099,6 +1126,12 @@ func registerK8sTools(reg *registry.Registry, infra *k8sInfra, logger logr.Logge
 		}
 		logger.Info("registered metrics tools", "count", len(k8stools.MetricsToolNames))
 	}
+
+	npc := k8stools.NewNodeProxyClient(infra.clientset)
+	for _, t := range k8stools.NewNodeProxyTools(npc, 30000) {
+		reg.Register(t)
+	}
+	logger.Info("registered node proxy tools", "count", len(k8stools.NodeProxyToolNames))
 }
 
 // dsCatalogFetcher implements investigator.CatalogFetcher by querying

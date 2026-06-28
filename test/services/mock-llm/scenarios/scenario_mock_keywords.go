@@ -122,6 +122,26 @@ func parallelToolsConfig() MockScenarioConfig {
 	}
 }
 
+func alertmanagerNodeToolsConfig() MockScenarioConfig {
+	actionable := true
+	return MockScenarioConfig{
+		ScenarioName: "alertmanager_node_tools", SignalName: "MOCK_ALERTMANAGER_NODE_TOOLS", Severity: "high",
+		WorkflowName: "oom-increase-memory-v1", WorkflowID: uuid.DeterministicUUID("oom-increase-memory-v1"),
+		WorkflowTitle: "Increase Memory Limits", Confidence: 0.88,
+		RootCause:    "Node resource exhaustion correlated with active alerts",
+		ResourceKind: "Pod", ResourceNS: "production", ResourceName: "api-server-abc",
+		APIVersion:           "v1",
+		Parameters:           map[string]string{"NAMESPACE": "production", "POD_NAME": "api-server-abc"},
+		InvestigationOutcome: "actionable",
+		IsActionable:         &actionable,
+		ForceText:            BoolPtr(false),
+		MultiToolCalls: []MultiToolCallEntry{
+			{Name: "get_alerts", Arguments: map[string]interface{}{}},
+			{Name: "nodes_stats_summary", Arguments: map[string]interface{}{"node": "kubernaut-agent-e2e-control-plane"}},
+		},
+	}
+}
+
 func rcaIncompleteConfig() MockScenarioConfig {
 	return MockScenarioConfig{
 		ScenarioName: "rca_incomplete", SignalName: "MOCK_RCA_INCOMPLETE", Severity: "critical",
