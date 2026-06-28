@@ -325,6 +325,7 @@ spec:
         - "--cluster-provider=in-cluster"
         - "--toolsets=core"
         - "--stateless"
+        - "--list-output=yaml"
         ports:
         - name: http
           containerPort: 8080
@@ -408,12 +409,42 @@ spec:
     kind: HTTPRoute
     name: kube-mcp-server-route
     namespace: %[1]s
+---
+apiVersion: mcp.kuadrant.io/v1alpha1
+kind: MCPServerRegistration
+metadata:
+  name: prod-east
+  namespace: %[1]s
+  labels:
+    kubernaut.ai/managed: "true"
+spec:
+  prefix: "prod_east_"
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: kube-mcp-server-route
+    namespace: %[1]s
+---
+apiVersion: mcp.kuadrant.io/v1alpha1
+kind: MCPServerRegistration
+metadata:
+  name: prod-west
+  namespace: %[1]s
+  labels:
+    kubernaut.ai/managed: "true"
+spec:
+  prefix: "prod_west_"
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: kube-mcp-server-route
+    namespace: %[1]s
 `, namespace)
 
 	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, routeManifest); err != nil {
 		return fmt.Errorf("httpRoute/MCPServerRegistration creation failed: %w", err)
 	}
-	_, _ = fmt.Fprintln(writer, "    ✅ MCPServerRegistration 'loopback-cluster' created")
+	_, _ = fmt.Fprintln(writer, "    ✅ MCPServerRegistrations created (loopback-cluster, prod-east, prod-west)")
 
 	// ── Phase 4: FMC Stack (Valkey + FMC) ───────────────────────────────
 	_, _ = fmt.Fprintln(writer, "\n  💾 Phase 4: Deploying FMC stack (Valkey + FMC)...")
@@ -654,6 +685,57 @@ spec:
 		return fmt.Errorf("fmc rollout failed: %w", err)
 	}
 	_, _ = fmt.Fprintln(writer, "    ✅ FMC ready")
+
+	// ── Phase 5: Enable fleet scope checking in Gateway ──────────────────
+	_, _ = fmt.Fprintln(writer, "\n  🔧 Phase 5: Patching Gateway config with fleet scope checking...")
+
+	gatewayConfigPatch := fmt.Sprintf(`---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gateway-config
+  namespace: %[1]s
+data:
+  config.yaml: |
+    server:
+      listenAddr: ":8080"
+      maxConcurrentRequests: 100
+      readTimeout: 30s
+      writeTimeout: 30s
+      idleTimeout: 120s
+    datastorage:
+      url: "https://data-storage-service.%[1]s.svc.cluster.local:8080"
+      timeout: 10s
+      buffer:
+        bufferSize: 10000
+        batchSize: 100
+        flushInterval: 1s
+        maxRetries: 3
+    processing:
+      environment:
+        cacheTtl: 5s
+        configmapNamespace: "%[1]s"
+        configmapName: "kubernaut-environment-overrides"
+    fleet:
+      enabled: true
+      backend: fleetmetadatacache
+      mcpGatewayEndpoint: "http://mcp-gateway-istio.gateway-system.svc:8080/mcp"
+      mcpGatewayType: kuadrant
+`, namespace)
+
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, gatewayConfigPatch); err != nil {
+		return fmt.Errorf("gateway-config fleet patch failed: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "    Restarting Gateway to pick up fleet config...")
+	if err := runKubectl(ctx, kubeconfigPath, writer,
+		"rollout", "restart", "deployment/gateway", "-n", namespace); err != nil {
+		return fmt.Errorf("gateway restart failed: %w", err)
+	}
+	if err := waitForDeployment(ctx, "gateway", namespace, kubeconfigPath, 120*time.Second, writer); err != nil {
+		return fmt.Errorf("gateway rollout after fleet config patch failed: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "    ✅ Gateway restarted with fleet scope checking enabled")
 
 	_, _ = fmt.Fprintln(writer, "✅ Fleet E2E infrastructure deployed (~388 MB)")
 	return nil

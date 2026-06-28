@@ -198,7 +198,13 @@ func parseUnstructured(text string) (*unstructured.Unstructured, error) {
 
 	obj := &unstructured.Unstructured{}
 	if err := json.Unmarshal([]byte(text), &obj.Object); err != nil {
-		return nil, fmt.Errorf("unmarshaling resource: %w", err)
+		jsonData, yamlErr := sigsyaml.YAMLToJSON([]byte(text))
+		if yamlErr != nil {
+			return nil, fmt.Errorf("unmarshaling resource: %w", err)
+		}
+		if err2 := json.Unmarshal(jsonData, &obj.Object); err2 != nil {
+			return nil, fmt.Errorf("unmarshaling resource: %w", err2)
+		}
 	}
 	return obj, nil
 }

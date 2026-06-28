@@ -111,6 +111,7 @@ func postWithFleetAuth(url, contentType string, body io.Reader) (*http.Response,
 		return nil, err
 	}
 	req.Header.Set("Content-Type", contentType)
+	req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 	if fpAuthToken != "" {
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", fpAuthToken))
 	}

@@ -35,8 +35,8 @@ import (
 // FedRAMP: AC-6 (least privilege -- cluster-scoped workflow routing)
 var _ = Describe("E2E-FLEET-004 [AC-6]: RO creates RR with clusterID and routes to fleet-aware workflow (BR-INTEGRATION-054)", Label("fleet"), func() {
 	It("should route alert with cluster_id to a workflow that respects cluster scope", func() {
-		payload := buildPrometheusAlertWithCluster("FleetRouting", "default", "critical",
-			"Deployment", "nginx-fleet-004", "loopback-cluster")
+		payload := buildPrometheusAlertWithCluster("FleetRouting", namespace, "critical",
+			"Deployment", "memory-eater", "loopback-cluster")
 
 		gatewayURL := "http://localhost:30080"
 		resp, err := postWithFleetAuth(
@@ -45,7 +45,7 @@ var _ = Describe("E2E-FLEET-004 [AC-6]: RO creates RR with clusterID and routes 
 			strings.NewReader(string(payload)))
 		Expect(err).ToNot(HaveOccurred())
 		defer resp.Body.Close()
-		Expect(resp.StatusCode).To(Equal(http.StatusOK))
+		Expect(resp.StatusCode).To(Equal(http.StatusCreated))
 
 		body, _ := io.ReadAll(resp.Body)
 		var response map[string]interface{}

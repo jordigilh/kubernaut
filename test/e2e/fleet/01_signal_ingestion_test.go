@@ -36,8 +36,8 @@ import (
 // FedRAMP: AC-4 (information flow enforcement -- cluster provenance)
 var _ = Describe("E2E-FLEET-001 [AC-4]: Signal ingestion with cluster_id creates RR with spec.clusterID (BR-INTEGRATION-054)", Label("fleet"), func() {
 	It("should create RR with spec.clusterID when alert has cluster label", func() {
-		payload := buildPrometheusAlertWithCluster("FleetSignalIngestion", "default", "critical",
-			"Deployment", "nginx-fleet-001", "prod-east")
+		payload := buildPrometheusAlertWithCluster("FleetSignalIngestion", namespace, "critical",
+			"Deployment", "memory-eater", "prod-east")
 
 		gatewayURL := "http://localhost:30080"
 		resp, err := postWithFleetAuth(
@@ -47,7 +47,7 @@ var _ = Describe("E2E-FLEET-001 [AC-4]: Signal ingestion with cluster_id creates
 		Expect(err).ToNot(HaveOccurred())
 		defer resp.Body.Close()
 
-		Expect(resp.StatusCode).To(Equal(http.StatusOK),
+		Expect(resp.StatusCode).To(Equal(http.StatusCreated),
 			"Gateway should accept alert with cluster label")
 
 		body, _ := io.ReadAll(resp.Body)
@@ -77,23 +77,23 @@ var _ = Describe("E2E-FLEET-001 [AC-4]: Signal ingestion with cluster_id creates
 // FedRAMP: AC-3 (access enforcement -- distinct cluster identities)
 var _ = Describe("E2E-FLEET-002 [AC-3]: Cluster-scoped dedup produces distinct fingerprints (BR-INTEGRATION-054)", Label("fleet"), func() {
 	It("should produce different RRs for same resource on different clusters", func() {
-		payloadEast := buildPrometheusAlertWithCluster("FleetDedup", "default", "warning",
-			"Deployment", "nginx-fleet-002", "prod-east")
-		payloadWest := buildPrometheusAlertWithCluster("FleetDedup", "default", "warning",
-			"Deployment", "nginx-fleet-002", "prod-west")
+		payloadEast := buildPrometheusAlertWithCluster("FleetDedup", namespace, "warning",
+			"Deployment", "memory-eater", "prod-east")
+		payloadWest := buildPrometheusAlertWithCluster("FleetDedup", namespace, "warning",
+			"Deployment", "memory-eater", "prod-west")
 
 		gatewayURL := "http://localhost:30080"
 		respEast, err := postWithFleetAuth(gatewayURL+"/api/v1/signals/prometheus",
 			"application/json", strings.NewReader(string(payloadEast)))
 		Expect(err).ToNot(HaveOccurred())
 		defer respEast.Body.Close()
-		Expect(respEast.StatusCode).To(Equal(http.StatusOK))
+		Expect(respEast.StatusCode).To(Equal(http.StatusCreated))
 
 		respWest, err := postWithFleetAuth(gatewayURL+"/api/v1/signals/prometheus",
 			"application/json", strings.NewReader(string(payloadWest)))
 		Expect(err).ToNot(HaveOccurred())
 		defer respWest.Body.Close()
-		Expect(respWest.StatusCode).To(Equal(http.StatusOK))
+		Expect(respWest.StatusCode).To(Equal(http.StatusCreated))
 
 		var eastResp, westResp map[string]interface{}
 		bodyEast, _ := io.ReadAll(respEast.Body)
