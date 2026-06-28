@@ -3,6 +3,9 @@ globs: "docs/**/*,*.md"
 description: "Documentation standards and architecture guidelines for kubernaut"
 ---
 
+> **Policy Authority**: [AGENTS.md](../../AGENTS.md) defines all mandatory methodology.
+> This file provides documentation formatting patterns.
+
 # Documentation Standards for Kubernaut
 
 ## Documentation Structure
@@ -16,7 +19,7 @@ Technical documentation for developers and contributors, organized into 7 direct
 - **[docs/requirements/](mdc:docs/requirements/)** - Business requirements (`BR-*`), module documentation
 - **[docs/testing/](mdc:docs/testing/)** - Test plans, testing guidelines, patterns reference, per-issue test documentation
 - **[docs/operations/](mdc:docs/operations/)** - Deployment guides, build guides, CI/CD, troubleshooting, runbooks
-- **[docs/development/](mdc:docs/development/)** - APDC methodology, coding guidelines, getting-started guides, technical debt tracking
+- **[docs/development/](mdc:docs/development/)** - Development methodology, coding guidelines, getting-started guides, technical debt tracking
 - **[docs/services/](mdc:docs/services/)** - Per-service documentation split into `stateless/` and `crd-controllers/`
 
 ### User-Facing Documentation

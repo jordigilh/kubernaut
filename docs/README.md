@@ -77,7 +77,7 @@ Stakeholder-facing materials demonstrating kubernaut's business value and ROI.
 ### 🚀 **Getting Started**
 New to Kubernaut? Start here for quick setup and integration examples.
 
-- **[APDC Quick Reference](development/methodology/APDC_QUICK_REFERENCE.md)** - 🆕 Essential APDC methodology commands and concepts
+- **[APDC Quick Reference](development/methodology/APDC_QUICK_REFERENCE.md)** - *(Deprecated -- see [AGENTS.md](../AGENTS.md) for current methodology)* Legacy APDC reference
 - **[Quick Reference Card](development/getting-started/QUICK_REFERENCE_CARD.md)** - Essential commands and concepts
 - **[Integration Example](development/getting-started/INTEGRATION_EXAMPLE.md)** - Step-by-step integration walkthrough
 - **Setup Guides**:
@@ -107,8 +107,8 @@ Production deployment and operational configuration.
 ### 👨‍💻 **Development**
 Resources for contributors and developers extending Kubernaut.
 
-- **[APDC Development Methodology](development/methodology/APDC_FRAMEWORK.md)** - 🆕 Systematic Analysis-Plan-Do-Check development framework
-- **[Development Guidelines](development/project%20guidelines.md)** - Code standards and practices with APDC integration
+- **[Development Methodology](../AGENTS.md)** - Pre-Implementation Workflow, TDD, and quality gates
+- **[Development Guidelines](development/project%20guidelines.md)** - Code standards and practices
 - **[Testing Framework](TESTING_FRAMEWORK.md)** - Comprehensive testing approach
 - **[E2E Testing Plan](development/E2E_TESTING_PLAN.md)** - End-to-end testing strategy
 - **Business Requirements**:

@@ -1237,10 +1237,11 @@ jobs:
             exit 1
           fi
       
-      - name: Enforce coverage gate (>=80% per tier)
+      - name: Enforce coverage gate (unit + all-tiers merged >=80%)
         if: always()
         run: |
-          echo "🔒 Coverage Gate: Checking >=80% per-tier threshold..."
+          echo "🔒 Coverage Gate: Checking unit-testable + all-tiers-merged >=80%..."
+          echo "   (IT/E2E measured by wiring + control completeness, not line %. See AGENTS.md)"
           if python3 scripts/coverage/coverage_report.py --check-gate 80 > /dev/null 2>&1; then
             echo "✅ Coverage gate PASSED"
           else

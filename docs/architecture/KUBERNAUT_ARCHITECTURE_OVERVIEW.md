@@ -260,7 +260,7 @@ flowchart LR
 - **[HolmesGPT Integration](HOLMESGPT_REST_API_ARCHITECTURE.md)** - Investigation service details
 
 ### **Implementation Guides**
-- **[APDC Development Methodology](../development/methodology/APDC_FRAMEWORK.md)** - Development process
+- **[Development Methodology](../../AGENTS.md)** - Pre-Implementation Workflow and TDD
 - **[Testing Framework](../TESTING_FRAMEWORK.md)** - Quality assurance approach
 - **[Quick Reference Card](../development/getting-started/QUICK_REFERENCE_CARD.md)** - Developer guidelines
 

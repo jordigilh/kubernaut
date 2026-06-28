@@ -311,7 +311,7 @@ The only consideration: commit your changes first so you can review what gopls m
 
 - [gopls Documentation](https://go.dev/gopls/features/transformation)
 - [BATS Documentation](https://bats-core.readthedocs.io/)
-- [Kubernaut TDD Guidelines](../../../docs/development/methodology/APDC_FRAMEWORK.md)
+- [Kubernaut TDD Guidelines](../../../AGENTS.md#tdd-workflow)
 - [LSP Specification](https://microsoft.github.io/language-server-protocol/)
 
 ---

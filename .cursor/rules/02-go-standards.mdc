@@ -2,17 +2,14 @@
 globs: "*.go,pkg/**/*,internal/**/*,cmd/**/*"
 description: "Go coding standards: naming, errors, context, logging (DD-005), K8s patterns, concurrency, performance"
 ---
-# Go Coding Standards
 
-## Code Organization
+> **Policy Authority**: [AGENTS.md](../../AGENTS.md) defines all mandatory methodology,
+> including business requirement mandate, error handling rules, type system rules,
+> and the Go anti-pattern checklist. This file provides Cursor-specific code examples.
 
-- Use clear, descriptive names reflecting business domain (`EffectivenessAssessor`, `WorkflowEngine`)
-- **MANDATORY**: Every component must serve a documented business requirement (BR-[CATEGORY]-[NUMBER])
-- Group related functionality into cohesive packages following DDD principles
-- Implement interfaces over concrete types for testability and flexibility
-- **AVOID** duplicating structure names - use unique, business-aligned identifiers
+# Go Coding Patterns
 
-### Anti-Patterns
+## Naming Conventions
 
 ```go
 // WRONG: Generic/vague naming
@@ -24,11 +21,12 @@ type WorkflowEngine struct{}
 type EffectivenessAssessor struct{}
 ```
 
-## Error Handling
+- Use clear, descriptive names reflecting business domain
+- Group related functionality into cohesive packages following DDD principles
+- Implement interfaces over concrete types for testability and flexibility
+- AVOID duplicating structure names -- use unique, business-aligned identifiers
 
-- Always wrap errors with context using `fmt.Errorf("operation description: %w", err)`
-- Use structured error types from `internal/errors/` for consistent categorization
-- Never ignore errors from operations that can fail
+## Error Handling Patterns
 
 ```go
 // Wrap with context
@@ -70,14 +68,6 @@ for {
 // Use context for request-scoped values
 traceID := ctx.Value("traceID").(string)
 ```
-
-## Type System Guidelines
-
-- **MANDATORY**: Avoid using `any` or `interface{}` unless absolutely necessary
-- **ALWAYS** use structured field values with specific types
-- **AVOID** local type definitions to resolve import cycles
-- Use shared types from `pkg/shared/types/` package instead
-- Prefer strongly-typed interfaces that reflect business domain concepts
 
 ## Logging Standards (DD-005 v2.0)
 
@@ -221,19 +211,23 @@ func (c *Client) HealthCheck(ctx context.Context) error {
 }
 ```
 
-## Testing
+## Type System Patterns
 
-- **MANDATORY**: Follow TDD methodology per [00-core-development-methodology.mdc](mdc:.cursor/rules/00-core-development-methodology.mdc)
-- Use Ginkgo/Gomega BDD testing framework
-- Follow pyramid strategy: 70%+ unit, <20% integration, <10% e2e (per [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc))
-- All tests must reference specific business requirements (BR-[CATEGORY]-[NUMBER])
-- Test business outcomes, not implementation details
-- Use mock factories from `pkg/testutil/mock_factory.go` for consistent test doubles
-- **NEVER mock business logic** - use real components with external mocks only
+- Prefer strongly-typed interfaces that reflect business domain concepts
+- Use shared types from `pkg/shared/types/` package instead of local type definitions
+- Avoid `any`/`interface{}` -- use generics or specific types
+
+```go
+// WRONG: Untyped
+func Process(data any) any { ... }
+
+// CORRECT: Typed
+func ProcessWorkflow(wf *WorkflowSpec) (*WorkflowResult, error) { ... }
+```
 
 ## Related Rules
 
-- [00-core-development-methodology.mdc](mdc:.cursor/rules/00-core-development-methodology.mdc) - TDD and core principles
-- [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc) - Testing framework and mock strategy
-- [04-ai-ml.mdc](mdc:.cursor/rules/04-ai-ml.mdc) - AI/ML integration patterns
-- [05-kubernetes-safety.mdc](mdc:.cursor/rules/05-kubernetes-safety.mdc) - Kubernetes safety patterns
+- [AGENTS.md](../../AGENTS.md) - Mandatory methodology and anti-pattern checklist
+- [03-testing-strategy.mdc](.cursor/rules/03-testing-strategy.mdc) - Testing framework patterns
+- [04-ai-ml.mdc](.cursor/rules/04-ai-ml.mdc) - AI/ML integration patterns
+- [05-kubernetes-safety.mdc](.cursor/rules/05-kubernetes-safety.mdc) - Kubernetes safety patterns

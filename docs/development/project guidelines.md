@@ -28,7 +28,7 @@ ALWAYS follow these principles:
 /refactor-apdc          # APDC refactoring
 ```
 
-📖 **[Complete APDC Guide](methodology/APDC_FRAMEWORK.md)** - Comprehensive methodology documentation
+📖 **[Development Methodology](../../AGENTS.md)** - Authoritative methodology (Pre-Implementation Workflow, TDD, quality gates)
 
 ---
 

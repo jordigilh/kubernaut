@@ -32,11 +32,18 @@ Line-by-line deduplication across all three tiers. A statement covered by **any*
 
 ## Quality Targets
 
-| Tier | Target |
-|------|--------|
-| Unit-Testable | >= 80% |
-| Integration-Testable | >= 80% |
-| All Tiers (Merged) | >= 80% |
+| Tier | Target | Metric Type |
+|------|--------|-------------|
+| Unit-Testable | 100% of business logic | Structural (line coverage) |
+| Integration-Testable | 100% of wiring points + FedRAMP controls assessed | Requirements-based (ISO/IEC/IEEE 29119-4, Sec 6.2.12) |
+| E2E | 100% of SOC2/FedRAMP control objectives with proving journeys | Requirements-based |
+| All Tiers (Merged) | >= 80% | Structural (line-by-line dedup, CI gate) |
+
+IT/E2E line coverage is reported for visibility but is not a gate. Integration and E2E
+tests are measured by what they prove -- wiring completeness and control objective
+assessment -- not by line coverage percentage.
+
+See `AGENTS.md` for the full methodology, measurement details, and authoritative references.
 
 ---
 

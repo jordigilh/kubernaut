@@ -78,7 +78,7 @@ correctness under the K8s reconciler model.
 
 - [Testing Strategy](../../../.cursor/rules/03-testing-strategy.mdc)
 - [Testing Guidelines](../../development/business-requirements/TESTING_GUIDELINES.md)
-- [APDC Framework](../../development/methodology/APDC_FRAMEWORK.md)
+- [APDC Framework](../../development/methodology/APDC_FRAMEWORK.md) *(Deprecated -- see [AGENTS.md](../../../AGENTS.md) for current methodology)*
 - [DD-RO-002-ADDENDUM: Blocked Phase Semantics](../../architecture/decisions/DD-RO-002-ADDENDUM-blocked-phase-semantics.md)
 
 ---
