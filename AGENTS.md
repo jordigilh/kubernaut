@@ -346,13 +346,19 @@ WORKFLOW, AI, INTEGRATION, SECURITY, PLATFORM, API, STORAGE, MONITORING, SAFETY,
 - **Test identification**: Test Scenario IDs (`UT-WF-197-001`, `IT-GW-045-010`) or BR references
 - **Test plans**: Create formal test plan BEFORE implementation using the [IEEE 829-2008 hybrid template](docs/testing/TEST_PLAN_TEMPLATE.md)
 
-### Per-Tier Coverage (>= 80% each)
+### Coverage Targets
 
-| Tier | Scope | Target |
-|------|-------|--------|
-| Unit | Pure logic: config, validators, scoring, builders | >= 80% of unit-testable code |
-| Integration | I/O: reconcilers, K8s clients, HTTP handlers, DB adapters | >= 80% of integration-testable code |
-| E2E | Full stack execution in Kind | >= 80% of full service code |
+| Tier | Target | Metric | Rationale |
+|------|--------|--------|-----------|
+| Unit | 100% of business logic | Line coverage of unit-testable code | Every BR has a UT verifying behavior tied to FedRAMP/SOC2 control objectives |
+| Integration | 100% of wiring points + 100% of FedRAMP controls assessed | Wiring Manifest completeness + control objective coverage | IT proves components are wired and controls are implemented -- not line % |
+| E2E | 100% of SOC2/FedRAMP control objectives have at least one proving journey | Control objective coverage | Validates end-to-end compliance flows in production-like conditions |
+| All Tiers (merged) | >= 80% | Line-by-line dedup across all tiers | Any tier covering a line counts; this is the CI gate |
+
+Unit tests are the foundation -- they verify business-level behavior, not implementation details.
+Integration and E2E tests serve wiring proof and control assessment respectively;
+their value is measured by **what they prove** (wiring completeness, control objective coverage),
+not by line coverage percentage. Individual IT/E2E line coverage is reported but not gated.
 
 ### Mock Strategy
 
@@ -478,8 +484,8 @@ A 13-dimension quality gate applied before declaring a service or feature produc
 |---|-----------|--------------|
 | 1 | **Build** | `go build ./...` succeeds with zero errors |
 | 2 | **Lint** | `golangci-lint run` produces zero new warnings |
-| 3 | **Unit Tests** | 100% pass rate, >= 80% coverage on unit-testable code |
-| 4 | **Integration Tests** | 100% pass rate, >= 80% coverage on integration-testable code |
+| 3 | **Unit Tests** | 100% pass rate, 100% coverage on business logic |
+| 4 | **Integration Tests** | 100% pass rate, all wiring points + FedRAMP controls assessed |
 | 5 | **Wiring Verification** | CHECKPOINT W passes for all components |
 | 6 | **BDD Framework** | Zero standard `testing.T` usage in business tests |
 | 7 | **Test ID Assignment** | All tests have scenario IDs or BR references |
