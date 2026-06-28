@@ -325,7 +325,6 @@ spec:
         - "--cluster-provider=in-cluster"
         - "--toolsets=core"
         - "--stateless"
-        - "--list-output=yaml"
         ports:
         - name: http
           containerPort: 8080
