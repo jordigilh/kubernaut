@@ -63,6 +63,8 @@ type gatewayConfig struct {
 	tools                []toolDef
 	clusterEntries       []clusterEntry
 	discoverableClusters []discoverableCluster
+	listOutputFormat     string
+	structuredContent    []map[string]any
 }
 
 // WithTool registers a static tool on the mock gateway.
@@ -84,6 +86,22 @@ func WithMultiCluster(clusters ...string) Option {
 		for _, c := range clusters {
 			cfg.clusterEntries = append(cfg.clusterEntries, clusterEntry{id: c, prefix: c + "__"})
 		}
+	}
+}
+
+// WithListOutputFormat configures the mock to return responses in the specified
+// format ("table" or "yaml") for resources_list calls instead of JSON.
+func WithListOutputFormat(format string) Option {
+	return func(cfg *gatewayConfig) {
+		cfg.listOutputFormat = format
+	}
+}
+
+// WithStructuredContent configures the mock to return StructuredContent for
+// resources_list calls. When set, this takes priority over text content.
+func WithStructuredContent(data []map[string]any) Option {
+	return func(cfg *gatewayConfig) {
+		cfg.structuredContent = data
 	}
 }
 
@@ -150,7 +168,7 @@ func NewMockGateway(opts ...Option) *MockGateway {
 	}
 
 	for _, entry := range cfg.clusterEntries {
-		gw.registerClusterToolsWithPrefix(entry.id, entry.prefix)
+		gw.registerClusterToolsWithPrefix(entry.id, entry.prefix, cfg)
 	}
 
 	if len(cfg.discoverableClusters) > 0 {
@@ -202,7 +220,7 @@ func (gw *MockGateway) registerTool(td toolDef) {
 	}, wrappedHandler)
 }
 
-func (gw *MockGateway) registerClusterToolsWithPrefix(cluster, prefix string) {
+func (gw *MockGateway) registerClusterToolsWithPrefix(cluster, prefix string, cfg *gatewayConfig) {
 	getListSchema := json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"apiVersion":{"type":"string"},"namespace":{"type":"string"},"name":{"type":"string"}},"required":["kind","apiVersion"]}`)
 	deleteSchema := json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"apiVersion":{"type":"string"},"namespace":{"type":"string"},"name":{"type":"string"}},"required":["kind","apiVersion","name"]}`)
 
@@ -278,6 +296,8 @@ func (gw *MockGateway) registerClusterToolsWithPrefix(cluster, prefix string) {
 	})
 
 	listResourcesName := prefix + "resources_list"
+	listOutputFormat := cfg.listOutputFormat
+	structuredContent := cfg.structuredContent
 	gw.server.AddTool(&mcp.Tool{
 		Name:        listResourcesName,
 		Description: fmt.Sprintf("List Kubernetes resources from cluster %s", cluster),
@@ -299,12 +319,38 @@ func (gw *MockGateway) registerClusterToolsWithPrefix(cluster, prefix string) {
 			}, nil
 		}
 
+		if len(structuredContent) > 0 {
+			sc := make([]any, len(structuredContent))
+			for i, m := range structuredContent {
+				sc[i] = m
+			}
+			return &mcp.CallToolResult{
+				Content:           []mcp.Content{&mcp.TextContent{Text: "structured content provided"}},
+				StructuredContent: sc,
+			}, nil
+		}
+
 		apiVersion := args.APIVersion
-		response := fmt.Sprintf(`{"apiVersion":%q,"kind":"List","items":[{"apiVersion":%q,"kind":%q,"metadata":{"name":"item-1","namespace":%q,"labels":{"app":"nginx"}}},{"apiVersion":%q,"kind":%q,"metadata":{"name":"item-2","namespace":%q,"labels":{"app":"nginx"}}}]}`,
-			apiVersion, apiVersion, args.Kind, args.Namespace, apiVersion, args.Kind, args.Namespace)
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{&mcp.TextContent{Text: response}},
-		}, nil
+		switch listOutputFormat {
+		case "table":
+			table := fmt.Sprintf("NAMESPACE           APIVERSION   KIND           NAME                  LABELS\n%-20s%-13s%-15s%-22sapp=spike-web,kubernaut.ai/managed=true",
+				args.Namespace, apiVersion, args.Kind, "spike-managed-web")
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: table}},
+			}, nil
+		case "yaml":
+			yaml := fmt.Sprintf("- apiVersion: %s\n  kind: %s\n  metadata:\n    labels:\n      app: spike-web\n      kubernaut.ai/managed: \"true\"\n    name: spike-managed-web\n    namespace: %s",
+				apiVersion, args.Kind, args.Namespace)
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: yaml}},
+			}, nil
+		default:
+			response := fmt.Sprintf(`{"apiVersion":%q,"kind":"List","items":[{"apiVersion":%q,"kind":%q,"metadata":{"name":"item-1","namespace":%q,"labels":{"app":"nginx"}}},{"apiVersion":%q,"kind":%q,"metadata":{"name":"item-2","namespace":%q,"labels":{"app":"nginx"}}}]}`,
+				apiVersion, apiVersion, args.Kind, args.Namespace, apiVersion, args.Kind, args.Namespace)
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: response}},
+			}, nil
+		}
 	})
 }
 
