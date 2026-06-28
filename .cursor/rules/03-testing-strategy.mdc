@@ -3,7 +3,12 @@ globs: "*_test.go,test/**/*"
 description: "Testing strategy, anti-patterns, interface validation, and coverage standards for kubernaut"
 ---
 
-# Testing Strategy for Kubernaut
+> **Policy Authority**: [AGENTS.md](../../AGENTS.md) defines all mandatory methodology,
+> including TDD workflow, Pyramid Invariant, coverage thresholds (>=80% per tier),
+> mock strategy policy, and testing anti-patterns. This file provides Cursor-specific
+> implementation patterns and code examples.
+
+# Testing Patterns for Kubernaut
 
 ## CRITICAL: KUBERNETES CLIENT MANDATE
 
@@ -15,94 +20,20 @@ description: "Testing strategy, anti-patterns, interface validation, and coverag
 | **Integration Tests** | Real K8s API (envtest/KIND) | `sigs.k8s.io/controller-runtime/pkg/client` |
 | **E2E Tests** | Real K8s API (OCP/KIND) | `sigs.k8s.io/controller-runtime/pkg/client` |
 
-**FORBIDDEN**: Custom `MockK8sClient` implementations - use fake client instead.
+**FORBIDDEN**: Custom `MockK8sClient` implementations -- use fake client instead.
 **APPROVED**: `fake.NewClientBuilder()` for all unit tests requiring K8s interaction.
 
-**See**: [ADR-004: Fake Kubernetes Client for Unit Testing](mdc:docs/architecture/decisions/ADR-004-fake-kubernetes-client.md)
+**See**: [ADR-004: Fake Kubernetes Client for Unit Testing](docs/architecture/decisions/ADR-004-fake-kubernetes-client.md)
 
 ---
 
-## Defense-in-Depth Testing Pyramid
-
-### The Pyramid Invariant
-
-> **UT proves logic. IT proves wiring. E2E proves the journey.**
-
-Each tier has a distinct purpose that cannot be replaced by another tier:
-
-| Tier | Proves | Example |
-|------|--------|---------|
-| **UT** | Component logic in isolation | `MaterializeCRD` correctly creates a K8s resource from a pending config |
-| **IT** | Component is wired into production code | `af_create_rr` after-callback triggers `MaterializeCRD` through the real dispatch path |
-| **E2E** | Full user journey works end-to-end | Interactive session creates IS CRD only after first remediation request |
-
-**A component with only UT coverage is NOT implemented -- it is prototyped.** GREEN phase is not complete until the IT test for every wiring point passes.
-
-**See**: [Wiring Verification Rule](mdc:.cursor/rules/10-wiring-verification.mdc)
-
----
-
-## Coverage Standards (AUTHORITATIVE)
-
-### Per-Tier Testable Code Coverage (>=80%)
-
-Coverage is measured **per tier against the tier-specific code subset** (see `scripts/coverage/coverage_report.py`).
-
-| Tier | Code Coverage Target | Code Subset |
-|------|---------------------|-------------|
-| **Unit** | >=80% of unit-testable code | Pure logic: config, validators, scoring, builders, types |
-| **Integration** | >=80% of integration-testable code | I/O: reconciler, K8s clients, HTTP handlers, DB adapters |
-| **E2E** | >=80% of full service code | Full stack execution |
-| **All Tiers** | >=80% merged | Line-by-line dedup across all tiers |
-
-**Code Partitioning**: Each service defines `unit_exclude`/`int_include` patterns in `scripts/coverage/coverage_report.py`.
-
-**Measurement**: `make coverage-report`
-
-### Business Requirement (BR) Coverage - OVERLAPPING
-
-- **Unit**: 70%+ of ALL BRs (maximum coverage foundation)
-- **Integration**: >50% of ALL BRs (critical interactions)
-- **E2E**: <10% BR coverage (essential user journeys)
-
-Same BRs tested at multiple tiers (e.g., retry logic in unit, integration, AND E2E).
-
-### Incorrect Standards to AVOID
-
-```markdown
-WRONG: Unit Tests: 70% (flat, not per-tier)
-WRONG: Integration Tests: <20% or 20% or >50% (must be >=80% of integration-testable code)
-WRONG: E2E Tests: <10% or 10-15% (must be >=80% of full service code)
-```
-
-### Standard Phrasing for Documentation
-
-**For Markdown**:
-```markdown
-Kubernaut follows a **defense-in-depth testing pyramid** with **>=80% per-tier code coverage**:
-- **Unit Tests**: >=80% of unit-testable code (pure logic: config, validators, scoring, builders)
-- **Integration Tests**: >=80% of integration-testable code (I/O: reconciler, K8s clients, HTTP handlers)
-- **E2E Tests**: >=80% of full service code (full stack execution)
-- **All Tiers**: >=80% merged (line-by-line dedup across all tiers)
-```
-
-**For test file comments**:
-```go
-// Defense-in-Depth Strategy (per 03-testing-strategy.mdc):
-// - Unit tests (>=80% of unit-testable code): Business logic in isolation
-// - Integration tests (>=80% of integration-testable code): Infrastructure interaction
-// - E2E tests (>=80% of full service code): Complete workflow validation
-```
-
----
-
-## Test Tier Specifications
+## Test Tier Patterns
 
 ### Unit Tests
 
 **Location**: Colocated with production code in `pkg/` and `internal/` (black-box `package <name>_test`).
 **Execution**: `make test-unit-<service>` or `go test ./pkg/<service>/...`
-**Framework**: Ginkgo/Gomega BDD (MANDATORY - no standard Go testing)
+**Framework**: Ginkgo/Gomega BDD (MANDATORY)
 
 **Mock Strategy**:
 ```go
@@ -134,22 +65,9 @@ Zero mocks for internal components. Real Kubernetes clusters. Mock LLM MAY be ac
 
 ---
 
-## Mock Strategy
+## Mock Reuse Patterns
 
-### What to Mock vs Keep Real
-
-| Category | Action |
-|----------|--------|
-| **External APIs** (LLM, HolmesGPT, OpenAI) | Mock |
-| **Databases** (PostgreSQL, Vector DB, Redis) | Mock in UT, real in IT |
-| **Kubernetes API** | `fake.NewClientBuilder()` in UT, real in IT/E2E |
-| **Network services** (external HTTP/gRPC) | Mock |
-| **ALL business logic** (`pkg/` code) | Keep REAL |
-| **ALL internal algorithms** | Keep REAL |
-| **Configuration** | Use real config with test values |
-| **Utilities** | Keep REAL |
-
-### Mock Reuse Decision Matrix
+### Mock Decision Matrix
 
 | Component Type | Action |
 |---------------|--------|
@@ -162,11 +80,9 @@ Zero mocks for internal components. Real Kubernetes clusters. Mock LLM MAY be ac
 
 ---
 
-## Anti-Patterns - FORBIDDEN
+## Anti-Pattern Code Examples
 
-### 1. NULL-TESTING (Most Critical)
-
-Testing for basic existence rather than business outcomes.
+### NULL-TESTING (Most Critical)
 
 ```go
 // FORBIDDEN
@@ -179,9 +95,7 @@ Expect(workflow.SafetyValidation).To(ContainElement("resource-limits"))
 Expect(analysis.ConfidenceScore).To(BeNumerically(">=", 0.8))
 ```
 
-### 2. STATIC DATA TESTING
-
-Testing hardcoded values instead of business logic.
+### STATIC DATA TESTING
 
 ```go
 // FORBIDDEN
@@ -193,9 +107,7 @@ input := testutil.GenerateAlertName()
 Expect(result.Name).To(MatchRegexp("^alert-[0-9]+$"))
 ```
 
-### 3. LIBRARY TESTING
-
-Testing third-party libraries instead of business logic. Rule: if it's not in `pkg/`, don't test it.
+### LIBRARY TESTING
 
 ```go
 // FORBIDDEN
@@ -208,9 +120,7 @@ logger.LogWorkflowEvent("workflow-123", "completed")
 Expect(logger.GetLastEvent().WorkflowID).To(Equal("workflow-123"))
 ```
 
-### 4. IMPLEMENTATION TESTING
-
-Testing how code works instead of what business outcome it produces.
+### IMPLEMENTATION TESTING
 
 ```go
 // FORBIDDEN
@@ -224,9 +134,7 @@ Expect(workflow.Status).To(Equal(business.StatusReady))
 Expect(workflow.CanExecute()).To(BeTrue())
 ```
 
-### 5. MOCK OVERUSE
-
-Mocking internal business logic instead of external dependencies.
+### MOCK OVERUSE
 
 ```go
 // FORBIDDEN: All business logic mocked = testing nothing
@@ -240,9 +148,7 @@ analyzer := business.NewPerformanceAnalyzer()
 engine := NewEngine(validator, analyzer, mockLLMClient, mockK8sClient)
 ```
 
-### 6. ENVIRONMENT VARIABLE CONFIGURATION - Python (ADR-030)
-
-Using environment variables for configuration instead of YAML files.
+### ENVIRONMENT VARIABLE CONFIGURATION - Python (ADR-030)
 
 ```python
 # FORBIDDEN
@@ -257,7 +163,6 @@ url = config['data_storage']['url']
 ```
 
 **ONLY Exception**: `CONFIG_FILE` env var to specify YAML file location.
-**Detection**: `grep -r "os.getenv" kubernaut-agent/ --include="*.py" | grep -v "CONFIG_FILE"`
 
 ### Anti-Pattern Quick Reference
 
@@ -274,30 +179,15 @@ url = config['data_storage']['url']
 
 ## Interface and Method Validation
 
-### MANDATORY: Validation Before Code Generation
-
-Before generating ANY test code that calls methods or uses types:
-
-1. **Interface Verification**: Search for actual interface definitions
-2. **Method Existence Check**: Confirm all called methods exist with EXACT signatures
-3. **Type Validation**: Verify all referenced types and struct fields exist
-4. **Compilation Verification**: MANDATORY compilation check after interface usage
-5. **Import Consistency Check**: Verify all imports are used and correct
-
 ### Code Generation Halt Protocol
 
-**BEFORE generating ANY line of code:**
+**BEFORE generating ANY line of test code:**
 
 1. Search for existing real implementations, then existing mock implementations
 2. If real business logic exists, PREFER it over mocks; if using mocks, use existing ones
 3. Check for common build error patterns
 4. Verify all imports exist and are properly used
 5. If attempting to create duplicate mocks, IMMEDIATELY STOP and use existing
-
-**Enforcement Trigger Words**:
-- Creating any type with "Mock" in name -> TRIGGER validation
-- Using `NewMock*` -> TRIGGER existing pattern search
-- Implementing interfaces -> TRIGGER interface validation
 
 ### Validation Sequence
 
@@ -329,43 +219,19 @@ go mod tidy && goimports -w [test_file.go]
 go build [test_file.go] 2>&1 | grep "imported and not used"
 ```
 
-### Quality Gates
-
-- Interface must exist before usage
-- Method signatures must match exactly
-- Existing mocks must be reused (never create duplicates)
-- Code must compile after interface usage
-- All imports must be used and correct
-
 ---
 
-## Mandatory Requirements
-
-### Business Requirement Mapping
-
-ALL tests must reference test plan IDs (preferred) or business requirements.
-
-**Priority**:
-1. Test Scenario ID (e.g., UT-WF-197-001, IT-GW-045-010)
-2. Business Requirement (BR-[CATEGORY]-[NUMBER]) as fallback
+## BDD Framework Patterns
 
 ```go
-// PREFERRED: With Test Plan ID
+// Test identification: prefer Test Scenario ID, fallback to BR reference
 Describe("UT-WF-197-001: Workflow Creation with Safety Validation", func() { ... })
-
-// FALLBACK: With BR Reference
 Describe("BR-WORKFLOW-001: Intelligent Workflow Generation", func() { ... })
-```
 
-### BDD Framework
-
-MANDATORY: Use Ginkgo/Gomega for ALL tests (no standard Go testing).
-
-```go
-// FORBIDDEN
+// FORBIDDEN: standard Go testing
 func TestWorkflow(t *testing.T) { }
 
-// CORRECT
+// CORRECT: Ginkgo/Gomega
 var _ = Describe("Workflow Engine", func() {
     It("should process workflows", func() { ... })
 })
@@ -389,9 +255,8 @@ make lint-test-patterns            # Detect NULL-TESTING, mock overuse
 make lint-business-integration     # Check cmd/ integration
 make lint-tdd-compliance           # Check BDD framework, BR references
 
-# Coverage standard detection
-grep -rE "Integration.*(>50%|<20%|20%)" --include="*.md" --include="*_test.go" --exclude-dir="archive" .
-grep -rE ">=80%" --include="*.md" --include="*_test.go" .
+# Coverage measurement
+make coverage-report
 
 # Python env-var detection (ADR-030)
 grep -r "os.getenv" kubernaut-agent/ --include="*.py" | grep -v "CONFIG_FILE"
@@ -401,13 +266,10 @@ grep -r "os.getenv" kubernaut-agent/ --include="*.py" | grep -v "CONFIG_FILE"
 
 ## Documentation References
 
-- [Testing Strategy Guide](mdc:docs/testing/README.md)
-- [Wiring Verification](mdc:.cursor/rules/10-wiring-verification.mdc)
-- [Testing Patterns Quick Reference](mdc:docs/testing/TESTING_PATTERNS_QUICK_REFERENCE.md)
-- [Anti-Pattern Detection](mdc:docs/testing/ANTI_PATTERN_DETECTION.md)
-- [Integration/E2E No-Mocks Policy](mdc:docs/testing/INTEGRATION_E2E_NO_MOCKS_POLICY.md)
-- [TESTING_GUIDELINES.md](mdc:docs/development/business-requirements/TESTING_GUIDELINES.md)
-
----
-
-**Remember**: Mock external dependencies, use real business logic, validate business outcomes. If a feature has no test, it risks not being implemented. UT proves logic, IT proves wiring, E2E proves the journey.
+- [AGENTS.md](../../AGENTS.md) - Mandatory methodology, TDD workflow, coverage policy
+- [Testing Strategy Guide](docs/testing/README.md)
+- [Wiring Verification](../../AGENTS.md#wiring-verification)
+- [Testing Patterns Quick Reference](docs/testing/TESTING_PATTERNS_QUICK_REFERENCE.md)
+- [Anti-Pattern Detection](docs/testing/ANTI_PATTERN_DETECTION.md)
+- [Integration/E2E No-Mocks Policy](docs/testing/INTEGRATION_E2E_NO_MOCKS_POLICY.md)
+- [TESTING_GUIDELINES.md](docs/development/business-requirements/TESTING_GUIDELINES.md)

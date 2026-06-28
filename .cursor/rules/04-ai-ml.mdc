@@ -3,21 +3,25 @@ globs: "pkg/ai/**/*,pkg/workflow/**/*,pkg/intelligence/**/*,test/**/*ai*"
 description: "AI/ML architecture, development methodology, and integration patterns for kubernaut"
 ---
 
-# AI/ML Guidelines and Development Methodology
+> **Policy Authority**: [AGENTS.md](../../AGENTS.md) defines all mandatory methodology,
+> including TDD workflow, business integration mandate, and wiring
+> verification. This file provides AI/ML-specific implementation patterns.
+
+# AI/ML Implementation Patterns
 
 ## Architecture
 
-### Interface Reuse Principles - MANDATORY
+### Interface Reuse Principles
 
-- **FORBIDDEN**: Creating new AI interfaces - use existing `pkg/ai/llm.Client`
+- **FORBIDDEN**: Creating new AI interfaces -- use existing `pkg/ai/llm.Client`
 - **MANDATORY**: Enhance existing AI clients rather than creating new ones
-- **INTEGRATION**: All AI components must integrate with main applications (`cmd/*/main.go`)
+- All AI components must integrate with main applications (`cmd/*/main.go`)
 
 ### Supported AI Providers
 
 | Provider | Purpose |
 |----------|---------|
-| **HolmesGPT** | Primary AI service ([pkg/ai/holmesgpt/client.go](mdc:pkg/ai/holmesgpt/client.go)) |
+| **HolmesGPT** | Primary AI service ([pkg/ai/holmesgpt/client.go](pkg/ai/holmesgpt/client.go)) |
 | **OpenAI** | GPT-3.5, GPT-4 models |
 | **Anthropic** | Claude models |
 | **Azure OpenAI** | Enterprise OpenAI deployment |
@@ -39,37 +43,32 @@ if err != nil {
 
 ### Context Enrichment
 
-- **Kubernetes Context**: Real-time cluster data ([pkg/platform/k8s/client.go](mdc:pkg/platform/k8s/client.go))
-- **Historical Context**: Action patterns from PostgreSQL ([pkg/ai/context/](mdc:pkg/ai/context/))
+- **Kubernetes Context**: Real-time cluster data ([pkg/platform/k8s/client.go](pkg/platform/k8s/client.go))
+- **Historical Context**: Action patterns from PostgreSQL ([pkg/ai/context/](pkg/ai/context/))
 - **Vector Context**: Similarity search from vector database
 
 ### Workflow Engine Integration
 
-- **Intelligent Workflow Builder**: [pkg/workflow/engine/intelligent_workflow_builder_impl.go](mdc:pkg/workflow/engine/intelligent_workflow_builder_impl.go) - AI-generated multi-step remediation workflows, dynamic template generation
-- **AI Condition Evaluator**: [pkg/workflow/engine/ai_condition_evaluator_impl.go](mdc:pkg/workflow/engine/ai_condition_evaluator_impl.go) - Intelligent step condition evaluation, context-aware decisions
+- **Intelligent Workflow Builder**: [pkg/workflow/engine/intelligent_workflow_builder_impl.go](pkg/workflow/engine/intelligent_workflow_builder_impl.go) -- AI-generated multi-step remediation workflows, dynamic template generation
+- **AI Condition Evaluator**: [pkg/workflow/engine/ai_condition_evaluator_impl.go](pkg/workflow/engine/ai_condition_evaluator_impl.go) -- Intelligent step condition evaluation, context-aware decisions
 
 ### Vector Database Integration
 
-- **Embedding Generation**: [pkg/ai/embedding/pipeline.go](mdc:pkg/ai/embedding/pipeline.go) - Multiple models (OpenAI, HuggingFace), caching for performance
-- **Vector Storage**: [pkg/storage/vector/](mdc:pkg/storage/vector/) - PostgreSQL with pgvector, similarity search, RAG enhancement
+- **Embedding Generation**: [pkg/ai/embedding/pipeline.go](pkg/ai/embedding/pipeline.go) -- Multiple models (OpenAI, HuggingFace), caching for performance
+- **Vector Storage**: [pkg/storage/vector/](pkg/storage/vector/) -- PostgreSQL with pgvector, similarity search, RAG enhancement
 
 ---
 
-## Development Methodology
-
-AI-specific TDD patterns that integrate with [00-kubernaut-core-rules.mdc](mdc:.cursor/rules/00-kubernaut-core-rules.mdc) APDC methodology.
+## AI-Specific TDD Patterns
 
 ### AI Discovery Phase (5-10 min)
 
 Search existing AI interfaces BEFORE creating new.
 
-**Mandatory Checks**:
 ```bash
 grep -r "Client.*interface" pkg/ai/ --include="*.go"
 grep -r "AI\|LLM\|Holmes" cmd/ --include="*.go"
 ```
-
-**Success**: Found existing AI interfaces to enhance, confirmed main app integration.
 
 ### AI RED Phase (15-20 min)
 
@@ -109,10 +108,10 @@ Enhance same AI methods tests call. No new AI types, files, or interfaces.
 
 ### AI TDD Checklist
 
-**Discovery**: searched `pkg/ai/` interfaces, confirmed `cmd/` integration, chose enhancement over creation.
-**RED**: used existing `pkg/ai/llm.Client`, used existing mock factories, tests failing appropriately.
-**GREEN**: enhanced existing client, integrated in `cmd/*/main.go`, minimal implementation passes.
-**REFACTOR**: enhanced existing methods only, no new types/files, integration preserved.
+- **Discovery**: searched `pkg/ai/` interfaces, confirmed `cmd/` integration, chose enhancement over creation
+- **RED**: used existing `pkg/ai/llm.Client`, used existing mock factories, tests failing appropriately
+- **GREEN**: enhanced existing client, integrated in `cmd/*/main.go`, minimal implementation passes
+- **REFACTOR**: enhanced existing methods only, no new types/files, integration preserved
 
 ---
 
@@ -149,11 +148,7 @@ breaker := circuitbreaker.New(&Config{
 
 ---
 
-## Mock Strategy
-
-**AUTHORITY**: Follow comprehensive mock usage matrix in [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc)
-
-### Mock Decision Matrix
+## Mock Strategy for AI
 
 | Component | Action |
 |-----------|--------|
@@ -164,7 +159,7 @@ breaker := circuitbreaker.New(&Config{
 
 ### AI-Specific Testing
 
-- **Unit Tests**: Mock external AI APIs ([pkg/testutil/mocks/ai_mocks.go](mdc:pkg/testutil/mocks/ai_mocks.go))
+- **Unit Tests**: Mock external AI APIs ([pkg/testutil/mocks/ai_mocks.go](pkg/testutil/mocks/ai_mocks.go))
 - **Business Logic**: Always test real AI analysis algorithms
 - **CI/CD**: Use mock LLM for reliability (`USE_MOCK_LLM=true`)
 - **Error Testing**: Include error simulation and timeout testing
@@ -187,7 +182,7 @@ When AI rules conflict with general TDD:
 
 ### AI-Only Testing
 **Violation**: AI components only used in tests.
-**Rule**: MANDATORY integration in `cmd/*/main.go`.
+**Rule**: Integration in `cmd/*/main.go` is mandatory.
 
 ### Hardcoded AI Endpoints
 **Violation**: Hardcoded LLM URLs in code.
@@ -201,8 +196,8 @@ When AI rules conflict with general TDD:
 
 ## Learning, Performance, and Observability
 
-- **Effectiveness Assessment**: [pkg/ai/insights/assessor.go](mdc:pkg/ai/insights/assessor.go) - Track outcomes, adjust confidence scores
-- **Pattern Discovery**: [pkg/intelligence/patterns/pattern_discovery_engine.go](mdc:pkg/intelligence/patterns/pattern_discovery_engine.go) - Recurring alert patterns, action-outcome correlation
+- **Effectiveness Assessment**: [pkg/ai/insights/assessor.go](pkg/ai/insights/assessor.go) -- Track outcomes, adjust confidence scores
+- **Pattern Discovery**: [pkg/intelligence/patterns/pattern_discovery_engine.go](pkg/intelligence/patterns/pattern_discovery_engine.go) -- Recurring alert patterns, action-outcome correlation
 - **Caching**: Cache embedding results with TTL; store frequent AI responses in Redis
 - **Batch Processing**: Group similar alerts for batch analysis; balance latency vs. throughput
 - **Monitoring**: Track response times, success rates, confidence distributions, and costs per provider
@@ -212,9 +207,5 @@ When AI rules conflict with general TDD:
 
 ## Related Documentation
 
-- **[Testing Strategy](mdc:.cursor/rules/03-testing-strategy.mdc)** - Mock strategy and test pyramid
-- **[Core Rules](mdc:.cursor/rules/00-kubernaut-core-rules.mdc)** - APDC methodology and TDD workflow
-
----
-
-**Remember**: AI components must integrate with main applications, use existing interfaces, and follow the same APDC and TDD methodology as all other code.
+- [AGENTS.md](../../AGENTS.md) - Mandatory methodology and TDD workflow
+- [Testing Strategy](03-testing-strategy.mdc) - Mock strategy and test pyramid patterns

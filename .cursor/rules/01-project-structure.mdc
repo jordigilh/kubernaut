@@ -1,6 +1,9 @@
 ---
 alwaysApply: false
 ---
+> **Policy Authority**: [AGENTS.md](../../AGENTS.md) defines all mandatory methodology.
+> This file provides project layout reference.
+
 # Kubernaut Project Structure Guide
 
 ## Core Architecture
@@ -80,7 +83,7 @@ Organized into 7 top-level directories:
 - [docs/requirements/](mdc:docs/requirements/) - Business requirements (BR-*) and module docs
 - [docs/testing/](mdc:docs/testing/) - Test plans, guidelines, patterns, per-issue test docs
 - [docs/operations/](mdc:docs/operations/) - Deployment, build, CI/CD, troubleshooting, runbooks
-- [docs/development/](mdc:docs/development/) - Methodology (APDC), guidelines, getting-started, guides
+- [docs/development/](mdc:docs/development/) - Methodology, guidelines, getting-started, guides
 - [docs/services/](mdc:docs/services/) - Per-service documentation (stateless + CRD controllers)
 
 User-facing documentation lives at [kubernaut-docs](https://jordigilh.github.io/kubernaut-docs/).

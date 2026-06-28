@@ -3,6 +3,9 @@ globs: "docs/**/*,internal/**/*.go,pkg/**/*.go,cmd/**/*.go,*.md"
 description: "Design Decision Documentation (DD-XXX) standards for architectural choices"
 ---
 
+> **Policy Authority**: [AGENTS.md](../../AGENTS.md) defines all mandatory methodology.
+> This file provides DD-XXX documentation format and architectural decision templates.
+
 # Design Decision Documentation Standards
 
 ## 🎯 **Purpose**
@@ -15,7 +18,7 @@ This rule ensures **all major architectural decisions** are documented using the
 
 **Related Rules**:
 - [06-documentation-standards.mdc](mdc:.cursor/rules/06-documentation-standards.mdc) - General documentation standards
-- [00-kubernaut-core-rules.mdc](mdc:.cursor/rules/00-kubernaut-core-rules.mdc) - APDC methodology (Analysis includes decision documentation)
+- [AGENTS.md](mdc:AGENTS.md) - Development methodology (Preflight includes decision documentation)
 
 ---
 
@@ -386,18 +389,18 @@ AI assistant should track:
 
 ---
 
-## 🎯 **APDC Integration**
+## Workflow Integration
 
-This rule integrates with APDC methodology:
+This rule integrates with the [Pre-Implementation Workflow](../../AGENTS.md#pre-implementation-workflow):
 
-| APDC Phase | DD-XXX Integration |
+| Workflow Step | DD-XXX Integration |
 |---|---|
-| **Analysis** | Search for similar patterns, identify alternatives |
+| **Preflight** | Search for similar patterns, identify alternatives |
 | **Plan** | Document alternatives, get user approval, create DD-XXX |
-| **Do** | Reference DD-XXX in code comments and implementation docs |
-| **Check** | Verify DD-XXX documentation complete and accurate |
+| **TDD Implementation** | Reference DD-XXX in code comments and implementation docs |
+| **Verification** | Verify DD-XXX documentation complete and accurate |
 
-**Priority**: BEHAVIORAL - Controls AI assistant documentation behavior within APDC framework
+**Priority**: BEHAVIORAL - Controls AI assistant documentation behavior within the development workflow
 
 ---
 
@@ -439,14 +442,14 @@ Before merging code with architectural changes:
 
 ---
 
-## 🔗 **Integration with Other Rules**
+## Integration with Other Rules
 
 This rule **complements**:
-- [00-core-development-methodology.mdc](mdc:.cursor/rules/00-core-development-methodology.mdc) - APDC Analysis phase
+- [AGENTS.md](mdc:AGENTS.md) - Pre-Implementation Workflow (Preflight phase)
 - [06-documentation-standards.mdc](mdc:.cursor/rules/06-documentation-standards.mdc) - General documentation
-- [00-kubernaut-core-rules.mdc](mdc:.cursor/rules/00-kubernaut-core-rules.mdc) - Priority hierarchy and methodology
+- [AGENTS.md](mdc:AGENTS.md) - Priority hierarchy and methodology
 
-**Priority**: BEHAVIORAL (Level 4) - Enforces documentation within APDC framework
+**Priority**: BEHAVIORAL (Level 4) - Enforces documentation within the development workflow
 
 ---
 

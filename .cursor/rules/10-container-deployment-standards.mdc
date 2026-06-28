@@ -2,6 +2,9 @@
 description: "Container image, deployment, and Helm chart standards for kubernaut"
 globs: "Dockerfile,docker/**/*,charts/**/*,.github/workflows/**/*"
 ---
+> **Policy Authority**: [AGENTS.md](../../AGENTS.md) defines all mandatory methodology.
+> This file provides container image, Helm chart, and deployment patterns.
+
 # Container and Deployment Standards
 
 ## Container Image Standards - MANDATORY
