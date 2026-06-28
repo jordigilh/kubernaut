@@ -77,6 +77,15 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 			"../../../config/crd/external",
 		},
 		ErrorIfCRDPathMissing: true,
+		ControlPlane: envtest.ControlPlane{
+			APIServer: &envtest.APIServer{
+				SecureServing: envtest.SecureServing{
+					ListenAddr: envtest.ListenAddr{
+						Address: "0.0.0.0",
+					},
+				},
+			},
+		},
 	}
 	sharedK8sConfig, err := testEnv.Start()
 	Expect(err).ToNot(HaveOccurred(), "envtest should start")
