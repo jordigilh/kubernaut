@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -146,16 +145,13 @@ var _ = SynchronizedAfterSuite(func() {}, func() {
 })
 
 // writeContainerKubeconfig writes an envtest kubeconfig suitable for mounting
-// into Podman containers. Follows DD-AUTH-014 macOS/Linux pattern:
-//   - Linux: server URL unchanged (host network)
-//   - macOS: rewrites 127.0.0.1 -> host.containers.internal, skips TLS verify
+// into Podman containers. Per DD-AUTH-014, bridge-network containers on ALL
+// platforms must use host.containers.internal to reach the host's envtest API
+// server (127.0.0.1 inside a container resolves to the container's own loopback).
+// TLS verification is skipped because the envtest cert is issued for "localhost".
 func writeContainerKubeconfig(apiServerURL string, certData, keyData []byte) (string, error) {
-	containerAPIServer := apiServerURL
-	skipTLS := false
-	if runtime.GOOS != "linux" {
-		containerAPIServer = strings.Replace(apiServerURL, "127.0.0.1", "host.containers.internal", 1)
-		skipTLS = true
-	}
+	containerAPIServer := strings.Replace(apiServerURL, "127.0.0.1", "host.containers.internal", 1)
+	skipTLS := true
 
 	kubeconfig := clientcmdapi.Config{
 		Clusters: map[string]*clientcmdapi.Cluster{
