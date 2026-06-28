@@ -51,46 +51,6 @@ var _ = Describe("MCP Response Parsing (BR-INTEGRATION-054)", func() {
 			})
 		})
 
-		Context("parseUnstructuredList", func() {
-			It("returns nil,nil for empty text", func() {
-				items, err := parseUnstructuredList("")
-				Expect(err).ToNot(HaveOccurred())
-				Expect(items).To(BeNil())
-			})
-
-			It("parses map with items key into list of Unstructured", func() {
-				input := `{"items":[{"kind":"Pod","metadata":{"name":"pod-1"}},{"kind":"Pod","metadata":{"name":"pod-2"}}]}`
-				items, err := parseUnstructuredList(input)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(items).To(HaveLen(2))
-				Expect(items[0].GetName()).To(Equal("pod-1"))
-				Expect(items[1].GetName()).To(Equal("pod-2"))
-			})
-
-			It("parses raw JSON array into list of Unstructured", func() {
-				input := `[{"kind":"Pod","metadata":{"name":"arr-1"}},{"kind":"Pod","metadata":{"name":"arr-2"}}]`
-				items, err := parseUnstructuredList(input)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(items).To(HaveLen(2))
-				Expect(items[0].GetName()).To(Equal("arr-1"))
-				Expect(items[1].GetName()).To(Equal("arr-2"))
-			})
-
-			It("falls back to single-object wrapping when map has no items key", func() {
-				input := `{"kind":"Namespace","metadata":{"name":"default"}}`
-				items, err := parseUnstructuredList(input)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(items).To(HaveLen(1))
-				Expect(items[0].GetName()).To(Equal("default"))
-			})
-
-			It("returns error for invalid JSON", func() {
-				items, err := parseUnstructuredList("invalid{json")
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("unmarshaling list response"))
-				Expect(items).To(BeNil())
-			})
-		})
 	})
 
 	Describe("UT-FLEET-PARSE-002 [SI-10]: ExtractText handles all content types", func() {

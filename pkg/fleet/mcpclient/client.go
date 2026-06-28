@@ -250,8 +250,16 @@ func (c *Client) listResources(ctx context.Context, kind, apiVersion, namespace 
 		return nil, fmt.Errorf("call %s: %w", toolName, err)
 	}
 
+	if sc := extractStructured(result); sc != nil {
+		items := make([]unstructured.Unstructured, len(sc))
+		for i, m := range sc {
+			items[i] = unstructured.Unstructured{Object: m}
+		}
+		return items, nil
+	}
+
 	text := ExtractText(result)
-	items, err := parseUnstructuredList(text)
+	items, err := parseMultiFormat(text)
 	if err != nil {
 		return nil, fmt.Errorf("parse List response for %s: %w", kind, err)
 	}
@@ -324,6 +332,25 @@ func formatLabelSelector(labels map[string]string) string {
 		parts = append(parts, k+"="+v)
 	}
 	return strings.Join(parts, ",")
+}
+
+// extractStructured extracts items from StructuredContent if present.
+// Returns nil when StructuredContent is absent, empty, or not a []any of maps.
+func extractStructured(result *mcp.CallToolResult) []map[string]any {
+	if result == nil || result.StructuredContent == nil {
+		return nil
+	}
+	items, ok := result.StructuredContent.([]any)
+	if !ok {
+		return nil
+	}
+	var out []map[string]any
+	for _, item := range items {
+		if m, ok := item.(map[string]any); ok {
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 // ExtractText extracts and concatenates all text content from an MCP tool result.
