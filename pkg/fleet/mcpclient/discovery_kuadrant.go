@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -77,8 +78,14 @@ func (d *KuadrantDiscoverer) ListClusters(ctx context.Context, category string) 
 
 	clusters := make([]ClusterInfo, 0, len(resp.Servers))
 	for _, s := range resp.Servers {
+		name := s.Name
+		// Kuadrant MCP Gateway returns server names as "namespace/name";
+		// strip the namespace prefix for caller-facing identity.
+		if idx := strings.LastIndex(name, "/"); idx >= 0 {
+			name = name[idx+1:]
+		}
 		clusters = append(clusters, ClusterInfo{
-			Name:       s.Name,
+			Name:       name,
 			Categories: s.Categories,
 			Hint:       s.Hint,
 			Tools:      s.Tools,
