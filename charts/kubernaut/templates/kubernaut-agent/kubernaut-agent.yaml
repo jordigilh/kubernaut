@@ -274,10 +274,22 @@ data:
         tls:
           caFile: "{{ include "kubernaut.agent.tlsCaDir" . }}/{{ include "kubernaut.agent.tlsCaKey" . }}"
 {{- end }}
-{{- if include "kubernaut.monitoring.prometheus.enabled" . }}
+{{- if or (include "kubernaut.monitoring.prometheus.enabled" .) (include "kubernaut.monitoring.alertManager.enabled" .) }}
       tools:
+{{- if include "kubernaut.monitoring.prometheus.enabled" . }}
         prometheus:
           url: {{ include "kubernaut.monitoring.prometheus.url" . | quote }}
+{{- if include "kubernaut.monitoring.prometheus.tlsCaFile" . }}
+          tlsCaFile: {{ include "kubernaut.monitoring.prometheus.tlsCaFile" . | quote }}
+{{- end }}
+{{- end }}
+{{- if include "kubernaut.monitoring.alertManager.enabled" . }}
+        alertmanager:
+          url: {{ include "kubernaut.monitoring.alertManager.url" . | quote }}
+{{- if include "kubernaut.monitoring.alertManager.tlsCaFile" . }}
+          tlsCaFile: {{ include "kubernaut.monitoring.alertManager.tlsCaFile" . | quote }}
+{{- end }}
+{{- end }}
 {{- end }}
 {{/* DEPRECATED v1.4 (Issue #848): OCP service-ca inject-cabundle ConfigMap.
      Will be removed in v1.5 — use the Kubernaut Operator for OCP. */}}

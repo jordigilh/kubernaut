@@ -18,6 +18,7 @@ package investigator
 
 import (
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/alertmanager"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/investigation"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/k8s"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/logs"
@@ -35,12 +36,14 @@ var resourceContextTools = []string{
 func DefaultPhaseToolMap() katypes.PhaseToolMap {
 	todo := investigation.ToolName
 
-	rcaCap := len(k8s.AllToolNames) + len(k8s.MetricsToolNames) + 1 + len(prometheus.AllToolNames) + len(resourceContextTools) + 1
+	rcaCap := len(k8s.AllToolNames) + len(k8s.MetricsToolNames) + len(k8s.NodeProxyToolNames) + 1 + len(prometheus.AllToolNames) + len(alertmanager.AllToolNames) + len(resourceContextTools) + 1
 	rca := make([]string, 0, rcaCap)
 	rca = append(rca, k8s.AllToolNames...)
 	rca = append(rca, k8s.MetricsToolNames...)
+	rca = append(rca, k8s.NodeProxyToolNames...)
 	rca = append(rca, logs.ToolName)
 	rca = append(rca, prometheus.AllToolNames...)
+	rca = append(rca, alertmanager.AllToolNames...)
 	rca = append(rca, resourceContextTools...)
 	rca = append(rca, todo)
 
