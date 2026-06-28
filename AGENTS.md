@@ -211,6 +211,27 @@ REFACTOR: Clean up
 
 ### Detection Commands
 
+Use `gopls` for precise, type-safe verification of production callers:
+
+```bash
+# Verify a symbol has production callers (gopls MCP tool: go_symbol_references)
+# Returns all reference locations -- filter for cmd/ or handler/ paths (exclude _test.go)
+gopls references <file>:<line>:<col>  # CLI equivalent
+
+# Find all references to a specific exported symbol
+# MCP: go_symbol_references(file="/path/to/file.go", symbol="NewComponent")
+# MCP: go_symbol_references(file="/path/to/file.go", symbol="HandleX")
+
+# Search for symbols by name across the workspace
+# MCP: go_search(query="NewComponent")
+```
+
+For AI agents with MCP access, use `go_symbol_references` to verify that each new exported
+function/type has at least one caller in production code (`cmd/` or `handler/` paths, excluding `_test.go`).
+This is more reliable than grep because it uses the Go type system and resolves imports correctly.
+
+Fallback (when gopls is unavailable):
+
 ```bash
 # Verify new components have production callers
 grep -r "NewComponent\|HandleX\|RegisterY" cmd/ pkg/*/handler/ --include="*.go" | grep -v "_test.go"
@@ -454,6 +475,8 @@ Mandatory validation gates for AI coding agents. Human contributors should follo
 **Trigger**: Creating new business types or interfaces.
 
 **Action**: Verify main application integration. Business code MUST be integrated in `cmd/`.
+Use `go_symbol_references` (gopls) to confirm the new type/function has at least one production caller
+outside of test files.
 
 **Violation**: Business component without `cmd/` integration -- STOP.
 
