@@ -72,6 +72,14 @@ spec:
 
               To change execution parameters, delete and recreate the WorkflowExecution.
             properties:
+              clusterID:
+                description: |-
+                  ClusterID identifies the target cluster for remote execution.
+                  When empty, execution runs on the local (hub) cluster.
+                  When set, execution resources (Jobs, PipelineRuns) are created on the
+                  remote cluster via the MCP Gateway (BR-FLEET-054).
+                  Propagated from RemediationRequest.Spec.ClusterID by the RO creator.
+                type: string
               confidence:
                 description: Confidence score from LLM (for audit trail)
                 type: number

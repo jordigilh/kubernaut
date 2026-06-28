@@ -136,6 +136,13 @@ spec:
                             description: 'Kubernetes resource context (classification-focused:
                               namespace, workload labels, owner chain)'
                             properties:
+                              clusterID:
+                                description: |-
+                                  ClusterID identifies the cluster this context was enriched from.
+                                  Empty string indicates the local hub cluster.
+                                  BR-INTEGRATION-054: Propagated from SignalData.ClusterID so downstream
+                                  consumers know which cluster the enrichment data came from.
+                                type: string
                               customLabels:
                                 additionalProperties:
                                   items:
@@ -317,6 +324,12 @@ spec:
                 - analysisTypes
                 - signalContext
                 type: object
+              clusterID:
+                description: |-
+                  BR-FLEET-054: Remote cluster identifier for fleet-managed signals.
+                  When non-empty, identifies the remote cluster where the signal originated.
+                  Propagated from RemediationRequest.Spec.ClusterID by the Remediation Orchestrator.
+                type: string
               remediationId:
                 description: Remediation ID for audit correlation (DD-WORKFLOW-002
                   v2.2)
