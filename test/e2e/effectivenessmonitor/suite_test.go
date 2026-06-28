@@ -243,6 +243,10 @@ var _ = SynchronizedAfterSuite(
 			return
 		}
 
+		if anyFailure && !setupFailed {
+			infrastructure.MustGatherPodLogs(clusterName, kubeconfigPath, "kubernaut-system", "effectivenessmonitor", GinkgoWriter)
+		}
+
 		// DD-TEST-007: Collect E2E binary coverage BEFORE cluster deletion
 		if os.Getenv("E2E_COVERAGE") == "true" && !setupFailed {
 			if err := infrastructure.CollectE2EBinaryCoverage(infrastructure.E2ECoverageOptions{
