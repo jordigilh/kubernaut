@@ -75,7 +75,7 @@ TP-433 validates individual component correctness (unit tests for sanitization p
 
 - [TP-433-v1.0](./TEST_PLAN.md) — Component-level test plan (106 scenarios)
 - [Testing Guidelines](../../development/business-requirements/TESTING_GUIDELINES.md) — Anti-patterns, coverage targets, tier definitions
-- [APDC Quick Reference](../../development/methodology/APDC_QUICK_REFERENCE.md)
+- [APDC Quick Reference](../../development/methodology/APDC_QUICK_REFERENCE.md) *(Deprecated -- see [AGENTS.md](../../../AGENTS.md) for current methodology)*
 - Issue #433: Kubernaut Agent Go rewrite
 
 ---

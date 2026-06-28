@@ -428,7 +428,7 @@ Complex tasks follow four phases:
 3. **Do** (Variable) — RED (failing test) -> GREEN (minimal passing implementation) -> REFACTOR (improve quality).
 4. **Check** (5-10 min) — Validate coverage, run lints, provide a confidence assessment (60-100%).
 
-Full guide: [APDC Framework](development/methodology/APDC_FRAMEWORK.md)
+Full guide: [AGENTS.md](../AGENTS.md#pre-implementation-workflow)
 
 ### TDD RED-GREEN-REFACTOR
 
