@@ -37,6 +37,18 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
+// kindToGVK maps synced resource Kind names to their full GroupVersionKind.
+// kube-mcp-server requires apiVersion as a mandatory parameter; omitting it
+// causes "missing argument apiVersion" errors.
+var kindToGVK = map[string]schema.GroupVersionKind{
+	"Deployment":  {Group: "apps", Version: "v1", Kind: "Deployment"},
+	"StatefulSet": {Group: "apps", Version: "v1", Kind: "StatefulSet"},
+	"DaemonSet":   {Group: "apps", Version: "v1", Kind: "DaemonSet"},
+	"Pod":         {Group: "", Version: "v1", Kind: "Pod"},
+	"Service":     {Group: "", Version: "v1", Kind: "Service"},
+	"Node":        {Group: "", Version: "v1", Kind: "Node"},
+}
+
 // ReaderFactory creates a cluster-scoped client.Reader for the given clusterID.
 // Structurally compatible with fleet.ReaderFactory -- defined locally to avoid
 // import cycles between pkg/fleet and pkg/fleet/fmc.
@@ -160,8 +172,13 @@ func (s *Syncer) syncKind(ctx context.Context, cluster registry.ClusterInfo, kin
 		return 0, fmt.Errorf("syncKind: create reader for kind=%s cluster=%s: %w", kind, cluster.ID, err)
 	}
 
+	gvk, ok := kindToGVK[kind]
+	if !ok {
+		return 0, fmt.Errorf("syncKind: unknown resource kind %q (add to kindToGVK map)", kind)
+	}
+
 	list := &unstructured.UnstructuredList{}
-	list.SetGroupVersionKind(schema.GroupVersionKind{Kind: kind + "List"})
+	list.SetGroupVersionKind(gvk.GroupVersion().WithKind(kind + "List"))
 
 	err = reader.List(ctx, list,
 		client.MatchingLabels{scope.ManagedLabelKey: scope.ManagedLabelValueTrue},
