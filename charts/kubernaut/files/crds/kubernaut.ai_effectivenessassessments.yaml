@@ -64,6 +64,13 @@ spec:
               The spec is set by the Remediation Orchestrator at creation time and is immutable.
               Immutability is enforced by CEL validation (self == oldSelf) to prevent tampering.
             properties:
+              clusterID:
+                description: |-
+                  BR-FLEET-054: Remote cluster identifier for fleet-managed signals.
+                  When non-empty, the EM routes target-facing reads (health, alert, hash)
+                  to the remote cluster via ReaderFactory.
+                  Propagated from RemediationRequest.Spec.ClusterID by the Remediation Orchestrator.
+                type: string
               config:
                 description: Config contains the assessment configuration parameters.
                 properties:

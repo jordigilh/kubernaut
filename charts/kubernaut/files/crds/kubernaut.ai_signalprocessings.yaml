@@ -120,6 +120,14 @@ spec:
                     description: Signal annotations extracted from provider-specific
                       data
                     type: object
+                  clusterID:
+                    description: |-
+                      ClusterID identifies the cluster where the signal originated.
+                      Empty string indicates the local hub cluster.
+                      When non-empty, the enricher reads from the remote cluster via MCP Gateway.
+                      Reference: ADR-065 (Multi-Cluster Federation), BR-INTEGRATION-054
+                    maxLength: 253
+                    type: string
                   fingerprint:
                     description: Unique fingerprint for deduplication (SHA256 of signal
                       key fields)
@@ -345,6 +353,13 @@ spec:
               kubernetesContext:
                 description: Enrichment results
                 properties:
+                  clusterID:
+                    description: |-
+                      ClusterID identifies the cluster this context was enriched from.
+                      Empty string indicates the local hub cluster.
+                      BR-INTEGRATION-054: Propagated from SignalData.ClusterID so downstream
+                      consumers know which cluster the enrichment data came from.
+                    type: string
                   customLabels:
                     additionalProperties:
                       items:
