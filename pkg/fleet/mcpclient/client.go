@@ -190,10 +190,15 @@ func (c *Client) Session() *mcp.ClientSession {
 
 // resolveToolName returns the gateway-prefixed tool name. When toolPrefix is
 // set (e.g. from ClusterInfo.ToolPrefix), it uses ClusterToolWithPrefix;
-// otherwise falls back to the EAIGW convention via ClusterTool.
+// when only clusterID is set, falls back to the EAIGW convention via
+// ClusterTool. When neither is set (direct connection to kube-mcp-server
+// without a gateway), returns the bare tool name.
 func (c *Client) resolveToolName(tool string) string {
 	if c.toolPrefix != "" {
 		return ClusterToolWithPrefix(c.toolPrefix, tool)
+	}
+	if c.clusterID == "" {
+		return tool
 	}
 	return ClusterTool(c.clusterID, tool)
 }

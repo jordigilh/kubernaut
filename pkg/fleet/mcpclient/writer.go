@@ -62,6 +62,9 @@ func (w *WriterClient) resolveToolName(tool string) string {
 	if w.toolPrefix != "" {
 		return ClusterToolWithPrefix(w.toolPrefix, tool)
 	}
+	if w.clusterID == "" {
+		return tool
+	}
 	return ClusterTool(w.clusterID, tool)
 }
 
