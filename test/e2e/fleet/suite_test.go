@@ -41,6 +41,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -101,6 +102,20 @@ var (
 
 	anyTestFailed bool
 )
+
+// postWithFleetAuth sends an authenticated POST request to the Gateway.
+// Uses fpAuthToken (BR-GATEWAY-036/037) provisioned in BeforeSuite.
+func postWithFleetAuth(url, contentType string, body io.Reader) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", contentType)
+	if fpAuthToken != "" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", fpAuthToken))
+	}
+	return http.DefaultClient.Do(req)
+}
 
 // newFleetMCPClient creates an MCP client with auto-discovered tool prefix.
 // Kuadrant uses "loopback_cluster_" (from MCPServerRegistration spec.prefix),

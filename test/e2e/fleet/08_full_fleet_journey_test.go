@@ -47,7 +47,7 @@ var _ = Describe("E2E-FLEET-009 [AC-3, AC-4, SI-4]: Full fleet journey from aler
 			"Deployment", "nginx-fleet-009", "loopback-cluster")
 
 		gatewayURL := "http://localhost:30080"
-		resp, err := http.Post(
+		resp, err := postWithFleetAuth(
 			gatewayURL+"/api/v1/signals/prometheus",
 			"application/json",
 			strings.NewReader(string(payload)))

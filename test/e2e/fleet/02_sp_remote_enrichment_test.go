@@ -44,7 +44,7 @@ var _ = Describe("E2E-FLEET-003 [SI-4]: SP remote enrichment via MCP gateway pop
 					Namespace:  namespace,
 				},
 				Signal: signalprocessingv1.SignalData{
-					Fingerprint:  "fleet003abcdef1234567890abcdef1234567890abcdef1234567890abcdef12",
+					Fingerprint:  "f1ee7003abcdef1234567890abcdef1234567890abcdef1234567890abcdef12",
 					Name:         "FleetRemoteEnrichment",
 					Severity:     "high",
 					Type:         "alert",
