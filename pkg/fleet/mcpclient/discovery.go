@@ -43,12 +43,14 @@ type GatewayDiscoverer interface {
 }
 
 // ClusterInfo holds metadata about a cluster discovered through the gateway.
-// It intentionally omits tool schemas to keep the LLM context lean.
+// Tool names are included for select_tools but full schemas are omitted
+// to keep the LLM context lean.
 type ClusterInfo struct {
 	Name       string   `json:"name"`
 	Categories []string `json:"categories,omitempty"`
 	Hint       string   `json:"hint,omitempty"`
 	Prefix     string   `json:"prefix,omitempty"`
+	Tools      []string `json:"tools,omitempty"`
 }
 
 // NewDiscoverer creates a GatewayDiscoverer for the given gateway type and session.

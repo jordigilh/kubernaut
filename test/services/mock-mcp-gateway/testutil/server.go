@@ -358,8 +358,20 @@ func (gw *MockGateway) registerClusterToolsWithPrefix(cluster, prefix string, cf
 // that simulate Kuadrant MCP Gateway's progressive discovery API.
 func (gw *MockGateway) registerDiscoveryMetaTools(clusters []discoverableCluster) {
 	clusterIndex := make(map[string]discoverableCluster, len(clusters))
+	clusterToolNames := make(map[string][]string, len(clusters))
+	toolToCluster := make(map[string]string)
 	for _, c := range clusters {
 		clusterIndex[c.name] = c
+		tools := []string{
+			c.prefix + "resources_get",
+			c.prefix + "resources_create_or_update",
+			c.prefix + "resources_delete",
+			c.prefix + "resources_list",
+		}
+		clusterToolNames[c.name] = tools
+		for _, t := range tools {
+			toolToCluster[t] = c.name
+		}
 	}
 
 	discoverSchema := json.RawMessage(`{"type":"object","properties":{"category":{"type":"string","description":"Optional category filter"}},"additionalProperties":false}`)
@@ -381,6 +393,7 @@ func (gw *MockGateway) registerDiscoveryMetaTools(clusters []discoverableCluster
 			Name       string   `json:"name"`
 			Categories []string `json:"categories"`
 			Hint       string   `json:"hint,omitempty"`
+			Tools      []string `json:"tools"`
 		}
 		var servers []serverInfo
 		for _, c := range clusters {
@@ -400,6 +413,7 @@ func (gw *MockGateway) registerDiscoveryMetaTools(clusters []discoverableCluster
 				Name:       c.name,
 				Categories: c.categories,
 				Hint:       c.hint,
+				Tools:      clusterToolNames[c.name],
 			})
 		}
 
@@ -409,29 +423,37 @@ func (gw *MockGateway) registerDiscoveryMetaTools(clusters []discoverableCluster
 		}, nil
 	})
 
-	selectSchema := json.RawMessage(`{"type":"object","properties":{"server_name":{"type":"string","description":"Server name from discover_tools"}},"required":["server_name"],"additionalProperties":false}`)
+	selectSchema := json.RawMessage(`{"type":"object","properties":{"tools":{"type":"array","items":{"type":"string"},"description":"Tool names to scope the session to"}},"required":["tools"],"additionalProperties":false}`)
 	gw.server.AddTool(&mcp.Tool{
 		Name:        "select_tools",
-		Description: "Select a server and scope the session to its tools",
+		Description: "Select tools and scope the session to them",
 		InputSchema: selectSchema,
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		gw.recordCall(req.Params.Name, req.Params.Arguments)
 
 		var args struct {
-			ServerName string `json:"server_name"`
+			Tools []string `json:"tools"`
 		}
 		_ = json.Unmarshal(req.Params.Arguments, &args)
 
-		c, ok := clusterIndex[args.ServerName]
+		if len(args.Tools) == 0 {
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: `{"error":"invalid tools parameter"}`}},
+				IsError: true,
+			}, nil
+		}
+
+		clusterName, ok := toolToCluster[args.Tools[0]]
 		if !ok {
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{
-					Text: fmt.Sprintf(`{"error":"unknown server %q"}`, args.ServerName),
+					Text: fmt.Sprintf(`{"error":"unknown tool %q"}`, args.Tools[0]),
 				}},
 				IsError: true,
 			}, nil
 		}
 
+		c := clusterIndex[clusterName]
 		resp, _ := json.Marshal(map[string]any{
 			"selected": c.name,
 			"prefix":   c.prefix,

@@ -39,7 +39,7 @@ var _ = Describe("E2E-FLEET-004 [AC-6]: RO creates RR with clusterID and routes 
 			"Deployment", "nginx-fleet-004", "loopback-cluster")
 
 		gatewayURL := "http://localhost:30080"
-		resp, err := http.Post(
+		resp, err := postWithFleetAuth(
 			gatewayURL+"/api/v1/signals/prometheus",
 			"application/json",
 			strings.NewReader(string(payload)))

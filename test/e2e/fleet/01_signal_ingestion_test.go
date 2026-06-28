@@ -40,7 +40,7 @@ var _ = Describe("E2E-FLEET-001 [AC-4]: Signal ingestion with cluster_id creates
 			"Deployment", "nginx-fleet-001", "prod-east")
 
 		gatewayURL := "http://localhost:30080"
-		resp, err := http.Post(
+		resp, err := postWithFleetAuth(
 			gatewayURL+"/api/v1/signals/prometheus",
 			"application/json",
 			strings.NewReader(string(payload)))
@@ -83,13 +83,13 @@ var _ = Describe("E2E-FLEET-002 [AC-3]: Cluster-scoped dedup produces distinct f
 			"Deployment", "nginx-fleet-002", "prod-west")
 
 		gatewayURL := "http://localhost:30080"
-		respEast, err := http.Post(gatewayURL+"/api/v1/signals/prometheus",
+		respEast, err := postWithFleetAuth(gatewayURL+"/api/v1/signals/prometheus",
 			"application/json", strings.NewReader(string(payloadEast)))
 		Expect(err).ToNot(HaveOccurred())
 		defer respEast.Body.Close()
 		Expect(respEast.StatusCode).To(Equal(http.StatusOK))
 
-		respWest, err := http.Post(gatewayURL+"/api/v1/signals/prometheus",
+		respWest, err := postWithFleetAuth(gatewayURL+"/api/v1/signals/prometheus",
 			"application/json", strings.NewReader(string(payloadWest)))
 		Expect(err).ToNot(HaveOccurred())
 		defer respWest.Body.Close()

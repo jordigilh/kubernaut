@@ -20,7 +20,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -45,7 +44,7 @@ type KuadrantDiscoverer struct {
 }
 
 // ListClusters calls discover_tools on the Kuadrant gateway and returns cluster
-// metadata without tool schemas. An optional category filter narrows results.
+// metadata including tool names. An optional category filter narrows results.
 func (d *KuadrantDiscoverer) ListClusters(ctx context.Context, category string) ([]ClusterInfo, error) {
 	args := map[string]any{}
 	if category != "" {
@@ -69,6 +68,7 @@ func (d *KuadrantDiscoverer) ListClusters(ctx context.Context, category string) 
 			Name       string   `json:"name"`
 			Categories []string `json:"categories"`
 			Hint       string   `json:"hint"`
+			Tools      []string `json:"tools"`
 		} `json:"servers"`
 	}
 	if err := json.Unmarshal([]byte(text), &resp); err != nil {
@@ -81,17 +81,38 @@ func (d *KuadrantDiscoverer) ListClusters(ctx context.Context, category string) 
 			Name:       s.Name,
 			Categories: s.Categories,
 			Hint:       s.Hint,
+			Tools:      s.Tools,
 		})
 	}
 	return clusters, nil
 }
 
-// ToolsForCluster calls select_tools to scope the session to the given cluster,
-// then calls ListTools to retrieve the scoped tool schemas.
+// ToolsForCluster discovers tool names via discover_tools, then calls
+// select_tools with {"tools": [...]} to scope the session, and finally
+// calls ListTools to retrieve the scoped tool schemas.
+//
+// The Kuadrant MCP Gateway requires the tools array (not server_name)
+// as the select_tools parameter. See Kuadrant API docs.
 func (d *KuadrantDiscoverer) ToolsForCluster(ctx context.Context, clusterID string) ([]ToolDefinition, error) {
+	clusters, err := d.ListClusters(ctx, "")
+	if err != nil {
+		return nil, fmt.Errorf("discover tools for cluster %q: %w", clusterID, err)
+	}
+
+	var toolNames []string
+	for _, c := range clusters {
+		if c.Name == clusterID {
+			toolNames = c.Tools
+			break
+		}
+	}
+	if len(toolNames) == 0 {
+		return nil, fmt.Errorf("cluster %q not found in discover_tools response or has no tools", clusterID)
+	}
+
 	selectResult, err := d.session.CallTool(ctx, &mcp.CallToolParams{
 		Name:      MetaToolSelectTools,
-		Arguments: map[string]any{"server_name": clusterID},
+		Arguments: map[string]any{"tools": toolNames},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("call select_tools for cluster %q: %w", clusterID, err)
@@ -100,17 +121,14 @@ func (d *KuadrantDiscoverer) ToolsForCluster(ctx context.Context, clusterID stri
 		return nil, fmt.Errorf("select_tools for cluster %q returned error: %s", clusterID, ExtractText(selectResult))
 	}
 
-	var selectResp struct {
-		Prefix string `json:"prefix"`
-	}
-	selectText := ExtractText(selectResult)
-	if err := json.Unmarshal([]byte(selectText), &selectResp); err != nil {
-		return nil, fmt.Errorf("parse select_tools response for cluster %q: %w", clusterID, err)
-	}
-
 	toolsResult, err := d.session.ListTools(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("list tools after select_tools for cluster %q: %w", clusterID, err)
+	}
+
+	selectedSet := make(map[string]bool, len(toolNames))
+	for _, name := range toolNames {
+		selectedSet[name] = true
 	}
 
 	defs := make([]ToolDefinition, 0, len(toolsResult.Tools))
@@ -118,10 +136,9 @@ func (d *KuadrantDiscoverer) ToolsForCluster(ctx context.Context, clusterID stri
 		if t.Name == MetaToolDiscoverTools || t.Name == MetaToolSelectTools {
 			continue
 		}
-		if selectResp.Prefix != "" && !strings.HasPrefix(t.Name, selectResp.Prefix) {
-			continue
+		if selectedSet[t.Name] {
+			defs = append(defs, toolDefinitionFromMCP(t))
 		}
-		defs = append(defs, toolDefinitionFromMCP(t))
 	}
 	return defs, nil
 }
