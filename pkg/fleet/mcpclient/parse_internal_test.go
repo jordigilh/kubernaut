@@ -42,10 +42,20 @@ var _ = Describe("UT-FLEET-MCP-PARSE: MCP response parsing", func() {
 			Expect(err.Error()).To(ContainSubstring("empty response"))
 		})
 
-		It("UT-FLEET-MCP-PARSE-003: returns error for invalid JSON", func() {
-			_, err := parseUnstructured("{not-valid-json}")
+		It("UT-FLEET-MCP-PARSE-003: returns error for unparseable content", func() {
+			_, err := parseUnstructured("\x00\x01binary-garbage\x02\x03")
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("unmarshaling resource"))
+		})
+
+		It("UT-FLEET-MCP-PARSE-003b: parses YAML resource response", func() {
+			yamlText := "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: nginx\n  namespace: default\n"
+			obj, err := parseUnstructured(yamlText)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(obj).ToNot(BeNil())
+			Expect(obj.GetKind()).To(Equal("Deployment"))
+			Expect(obj.GetName()).To(Equal("nginx"))
+			Expect(obj.GetNamespace()).To(Equal("default"))
 		})
 	})
 
