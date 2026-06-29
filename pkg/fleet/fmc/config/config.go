@@ -72,6 +72,7 @@ type OAuth2Config struct {
 	CredentialsDir string        `yaml:"credentialsDir"`
 	Scopes         []string      `yaml:"scopes"`
 	TokenTimeout   time.Duration `yaml:"tokenTimeout"`
+	TlsCaFile      string        `yaml:"tlsCaFile"`
 }
 
 // DefaultServiceConfig returns production defaults.

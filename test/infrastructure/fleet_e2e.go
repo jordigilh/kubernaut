@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -71,6 +72,10 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 	builtImages, seededUUIDs, afRemediateNS, err = SetupFullPipelineInfrastructure(ctx, clusterName, kubeconfigPath, writer)
 	if err != nil {
 		return builtImages, seededUUIDs, afRemediateNS, fmt.Errorf("fullpipeline base setup failed: %w", err)
+	}
+
+	if oidcErr := patchAPIServerForOIDC(ctx, clusterName, kubeconfigPath, writer); oidcErr != nil {
+		return builtImages, seededUUIDs, afRemediateNS, fmt.Errorf("API server OIDC patching failed: %w", oidcErr)
 	}
 
 	namespace := "kubernaut-system"
@@ -445,6 +450,60 @@ spec:
 	}
 	_, _ = fmt.Fprintln(writer, "    ✅ MCPServerRegistrations created (loopback-cluster, prod-east, prod-west)")
 
+	// ── Phase 3b: RBAC for Dex OIDC identities (fleet passthrough auth) ─
+	_, _ = fmt.Fprintln(writer, "\n  🔑 Phase 3b: Creating RBAC for Dex-authenticated fleet identities...")
+
+	oidcRBACManifest := `---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: fleet-mcp-reader
+rules:
+- apiGroups: ["", "apps"]
+  resources: ["pods", "services", "nodes", "deployments", "statefulsets", "daemonsets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["namespaces"]
+  verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: fleet-dex-mcp-read
+  labels:
+    app: fleet-oidc
+    component: fleet
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: fleet-mcp-reader
+subjects:
+- kind: Group
+  name: "dex:mcp-read"
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: fleet-dex-mcp-write
+  labels:
+    app: fleet-oidc
+    component: fleet
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: fleet-mcp-reader
+subjects:
+- kind: Group
+  name: "dex:mcp-write"
+  apiGroup: rbac.authorization.k8s.io
+`
+
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, oidcRBACManifest); err != nil {
+		return fmt.Errorf("fleet OIDC RBAC creation failed: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "    ✅ Fleet OIDC RBAC bindings created (dex:mcp-read, dex:mcp-write)")
+
 	// ── Phase 4: FMC Stack (Valkey + FMC) ───────────────────────────────
 	_, _ = fmt.Fprintln(writer, "\n  💾 Phase 4: Deploying FMC stack (Valkey + FMC)...")
 
@@ -567,7 +626,7 @@ data:
       apiAddr: ":8080"
       metricsAddr: ":8081"
     mcpGateway:
-      endpoint: "http://mcp-gateway.mcp-system.svc:8080/mcp"
+      endpoint: "http://mcp-gateway-istio.gateway-system.svc:8080/mcp"
       gatewayType: "kuadrant"
       namespace: "%[1]s"
     valkey:
@@ -576,8 +635,9 @@ data:
       interval: "10s"
       keyTtl: "30s"
     oauth2:
-      tokenUrl: "http://dex.%[1]s.svc:5556/dex/token"
+      tokenUrl: "https://dex:5556/dex/token"
       credentialsDir: "/etc/fleetmetadatacache/fleet-oauth2"
+      tlsCaFile: "/etc/fleetmetadatacache/tls-ca/ca.crt"
 ---
 apiVersion: v1
 kind: Secret
@@ -623,6 +683,9 @@ spec:
         - name: oauth2-creds
           mountPath: /etc/fleetmetadatacache/fleet-oauth2
           readOnly: true
+        - name: tls-ca
+          mountPath: /etc/fleetmetadatacache/tls-ca
+          readOnly: true
         ports:
         - name: api
           containerPort: 8080
@@ -654,6 +717,9 @@ spec:
       - name: oauth2-creds
         secret:
           secretName: fleetmetadatacache-oauth2
+      - name: tls-ca
+        configMap:
+          name: inter-service-ca
 ---
 apiVersion: v1
 kind: Service
@@ -780,6 +846,99 @@ func WaitForFleetReady(writer io.Writer) error {
 		time.Sleep(3 * time.Second)
 	}
 	return fmt.Errorf("mcp gateway not responsive at http://localhost:31975/mcp after 120 seconds")
+}
+
+// patchAPIServerForOIDC adds OIDC flags to the API server static pod manifest
+// on the Kind node, enabling the K8s API server to accept Dex-issued JWTs.
+//
+// This must be called AFTER Dex is deployed and running (the API server performs
+// OIDC discovery on restart, requiring the issuer to be reachable). The kubelet
+// detects the manifest change and automatically restarts the API server pod.
+//
+// The issuer URL must match Dex's configured issuer exactly so that the `iss`
+// claim in JWT tokens matches the API server's expected value.
+func patchAPIServerForOIDC(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) error {
+	_, _ = fmt.Fprintln(writer, "\n🔑 Patching API server for OIDC (fleet kube-mcp-server passthrough auth)...")
+	nodeName := clusterName + "-control-plane"
+
+	// Copy the inter-service CA to the Kind node so the API server can verify
+	// Dex's TLS certificate during OIDC discovery.
+	caPEMPath := InterServiceCAPath(kubeconfigPath)
+	caPEM, err := os.ReadFile(caPEMPath)
+	if err != nil {
+		return fmt.Errorf("failed to read inter-service CA from %s: %w", caPEMPath, err)
+	}
+
+	const nodeCAPath = "/etc/kubernetes/pki/dex-ca.crt"
+	writeCACmd := fmt.Sprintf("cat > %s << 'CAPEM'\n%sCAPEM", nodeCAPath, string(caPEM))
+	cpCmd := exec.CommandContext(ctx, "podman", "exec", nodeName, "bash", "-c", writeCACmd)
+	cpCmd.Stdout = writer
+	cpCmd.Stderr = writer
+	if err := cpCmd.Run(); err != nil {
+		return fmt.Errorf("failed to write CA to Kind node at %s: %w", nodeCAPath, err)
+	}
+	_, _ = fmt.Fprintf(writer, "  CA certificate written to Kind node at %s\n", nodeCAPath)
+
+	// Values ending with ':' must be quoted in YAML (otherwise parsed as mapping keys)
+	oidcFlags := []string{
+		`"--oidc-groups-prefix=dex:"`,
+		"--oidc-groups-claim=groups",
+		`"--oidc-username-prefix=dex:"`,
+		"--oidc-username-claim=sub",
+		"--oidc-client-id=kubernaut-fleet-read",
+		fmt.Sprintf("--oidc-ca-file=%s", nodeCAPath),
+		`"--oidc-issuer-url=https://dex:5556/dex"`,
+	}
+
+	// Insert flags one at a time (reverse order) so they appear in correct order
+	// after the anchor line. Each `sed -i` appends one line after --tls-private-key-file.
+	manifest := "/etc/kubernetes/manifests/kube-apiserver.yaml"
+	for _, flag := range oidcFlags {
+		sedCmd := fmt.Sprintf(`sed -i '/--tls-private-key-file/a\    - %s' %s`, flag, manifest)
+		cmd := exec.CommandContext(ctx, "podman", "exec", nodeName, "bash", "-c", sedCmd)
+		cmd.Stdout = writer
+		cmd.Stderr = writer
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("failed to insert %s: %w", flag, err)
+		}
+	}
+	_, _ = fmt.Fprintln(writer, "  Manifest patched, waiting for API server restart...")
+
+	// The kubelet detects the manifest change and restarts the API server.
+	// It can take multiple restart cycles, so we wait for the OIDC flags to
+	// appear in the running API server process, then confirm readyz stability.
+	_, _ = fmt.Fprintln(writer, "  Waiting for API server to restart with OIDC flags...")
+
+	deadline := time.Now().Add(120 * time.Second)
+
+	// Phase 1: Wait until the OIDC flag appears in the running kube-apiserver process
+	for time.Now().Before(deadline) {
+		checkCmd := exec.CommandContext(ctx, "podman", "exec", nodeName, "bash", "-c",
+			"pgrep -a kube-apiserver | grep -q oidc-issuer-url")
+		if err := checkCmd.Run(); err == nil {
+			_, _ = fmt.Fprintln(writer, "  OIDC flags detected in running API server process")
+			break
+		}
+		time.Sleep(3 * time.Second)
+	}
+
+	// Phase 2: Wait for the new API server to become fully ready (5 consecutive readyz)
+	consecutiveOK := 0
+	for time.Now().Before(deadline) {
+		checkCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+			"get", "--raw", "/readyz")
+		if err := checkCmd.Run(); err == nil {
+			consecutiveOK++
+			if consecutiveOK >= 5 {
+				_, _ = fmt.Fprintln(writer, "  ✅ API server restarted with OIDC enabled (readyz stable)")
+				return nil
+			}
+		} else {
+			consecutiveOK = 0
+		}
+		time.Sleep(3 * time.Second)
+	}
+	return fmt.Errorf("API server did not recover after OIDC patching within 120s")
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────
