@@ -120,7 +120,7 @@ func StartGenericContainer(cfg GenericContainerConfig, writer io.Writer) (*Conta
 	registry := os.Getenv("IMAGE_REGISTRY")
 	tag := os.Getenv("IMAGE_TAG")
 
-	if registry != "" && tag != "" {
+	if registry != "" && tag != "" && !isExternalImage(cfg.Image, registry) {
 		_, _ = fmt.Fprintf(writer, "   🔄 Registry mode detected (IMAGE_REGISTRY + IMAGE_TAG set)\n")
 
 		// Extract service name from image name
@@ -282,6 +282,26 @@ func StopGenericContainer(instance *ContainerInstance, writer io.Writer) error {
 
 	_, _ = fmt.Fprintf(writer, "✅ Container stopped: %s\n", instance.Name)
 	return nil
+}
+
+// isExternalImage returns true if the image is from an external registry that
+// should not be overridden with IMAGE_REGISTRY/IMAGE_TAG. Third-party images
+// (e.g. ghcr.io/containers/kubernetes-mcp-server) have their own versioning
+// and should be used as-is.
+func isExternalImage(image, registry string) bool {
+	registryHost := strings.SplitN(registry, "/", 2)[0]
+
+	if strings.HasPrefix(image, "localhost/") || !strings.Contains(image, "/") {
+		return false
+	}
+	imageHost := strings.SplitN(image, "/", 2)[0]
+	if imageHost == registryHost {
+		return false
+	}
+	if strings.Contains(imageHost, ".") || strings.Contains(imageHost, ":") {
+		return true
+	}
+	return false
 }
 
 // extractServiceNameFromImage extracts the service name from various image name formats
