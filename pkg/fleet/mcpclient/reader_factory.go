@@ -28,9 +28,10 @@ import (
 )
 
 type mcpReaderFactory struct {
-	localClient    client.Reader
-	session        *mcp.ClientSession
-	prefixResolver registry.ToolPrefixResolver
+	localClient     client.Reader
+	session         *mcp.ClientSession
+	sessionProvider SessionProvider
+	prefixResolver  registry.ToolPrefixResolver
 }
 
 // NewMCPReaderFactory creates a fleet.ReaderFactory that returns local clients for
@@ -49,24 +50,49 @@ func NewMCPReaderFactory(localClient client.Reader, session *mcp.ClientSession, 
 	}
 }
 
+// NewMCPReaderFactoryWithProvider is like NewMCPReaderFactory but uses a
+// SessionProvider for lazy session resolution. Per-cluster readers created by
+// this factory automatically follow ResilientClient reconnections.
+func NewMCPReaderFactoryWithProvider(localClient client.Reader, provider SessionProvider, resolver ...registry.ToolPrefixResolver) fleet.ReaderFactory {
+	var pr registry.ToolPrefixResolver
+	if len(resolver) > 0 {
+		pr = resolver[0]
+	}
+	return &mcpReaderFactory{
+		localClient:     localClient,
+		sessionProvider: provider,
+		prefixResolver:  pr,
+	}
+}
+
 func (f *mcpReaderFactory) ReaderFor(ctx context.Context, clusterID string) (client.Reader, error) {
 	if clusterID == "" {
 		return f.localClient, nil
 	}
-	if f.session == nil {
+
+	session := f.session
+	if f.sessionProvider != nil {
+		session = f.sessionProvider()
+	}
+	if session == nil {
 		return nil, fmt.Errorf("MCP session not available for remote cluster %q", clusterID)
 	}
+
 	var opts []Option
 	if f.prefixResolver != nil {
 		if prefix := f.prefixResolver.ToolPrefixFor(clusterID); prefix != "" {
 			opts = append(opts, WithToolPrefix(prefix))
 		}
 	} else {
-		prefix, err := DiscoverToolPrefix(ctx, f.session, clusterID)
+		prefix, err := DiscoverToolPrefix(ctx, session, clusterID)
 		if err != nil {
 			return nil, fmt.Errorf("resolve tool prefix for cluster %q: %w", clusterID, err)
 		}
 		opts = append(opts, WithToolPrefix(prefix))
 	}
-	return NewFromSession(f.session, clusterID, opts...), nil
+
+	if f.sessionProvider != nil {
+		return NewFromSessionProvider(f.sessionProvider, clusterID, opts...), nil
+	}
+	return NewFromSession(session, clusterID, opts...), nil
 }

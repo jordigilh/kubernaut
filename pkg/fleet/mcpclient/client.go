@@ -38,17 +38,23 @@ import (
 var _ ResourceClient = (*Client)(nil)
 var _ client.Reader = (*Client)(nil)
 
+// SessionProvider returns the current active MCP session. Implementations must
+// be safe for concurrent use. Used by Client for lazy session resolution so
+// that per-cluster clients automatically follow ResilientClient reconnections.
+type SessionProvider func() *mcp.ClientSession
+
 // Client provides K8s-compatible read access to resources on a remote cluster
 // via the MCP Gateway. The target cluster is fixed at construction time via
 // WithClusterID and injected into each MCP tool call as a name prefix.
 // When WithToolPrefix is set, tool names use the gateway-specific prefix;
 // otherwise the EAIGW "{clusterID}__{tool}" convention is applied.
 type Client struct {
-	session    *mcp.ClientSession
-	clusterID  string
-	toolPrefix string
-	mu         sync.Mutex
-	closed     bool
+	session         *mcp.ClientSession
+	sessionProvider SessionProvider
+	clusterID       string
+	toolPrefix      string
+	mu              sync.Mutex
+	closed          bool
 }
 
 // New creates a Client connected to the given MCP Gateway endpoint.
@@ -96,6 +102,21 @@ func NewFromSession(session *mcp.ClientSession, clusterID string, opts ...Option
 		opt(cfg)
 	}
 	return &Client{session: session, clusterID: clusterID, toolPrefix: cfg.toolPrefix}
+}
+
+// NewFromSessionProvider creates a Client that lazily resolves the MCP session
+// on each call via the provided SessionProvider. This ensures per-cluster
+// clients automatically follow ResilientClient reconnections instead of holding
+// a stale session reference.
+func NewFromSessionProvider(provider SessionProvider, clusterID string, opts ...Option) *Client {
+	if provider == nil {
+		panic("mcpclient.NewFromSessionProvider: provider must not be nil")
+	}
+	cfg := &clientConfig{}
+	for _, opt := range opts {
+		opt(cfg)
+	}
+	return &Client{sessionProvider: provider, clusterID: clusterID, toolPrefix: cfg.toolPrefix}
 }
 
 // Get implements client.Reader. It retrieves a single Kubernetes resource from
@@ -166,7 +187,19 @@ func (c *Client) List(ctx context.Context, list client.ObjectList, opts ...clien
 	return populateListObject(items, list)
 }
 
+// currentSession returns the active MCP session. When a SessionProvider is
+// set (lazy resolution), the provider is called on each invocation to get the
+// current session. Otherwise the fixed session reference is returned.
+func (c *Client) currentSession() *mcp.ClientSession {
+	if c.sessionProvider != nil {
+		return c.sessionProvider()
+	}
+	return c.session
+}
+
 // Close terminates the MCP session. Safe to call multiple times.
+// When using a SessionProvider, Close is a no-op since the session lifecycle
+// is managed by the provider owner (typically ResilientClient).
 func (c *Client) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -174,6 +207,9 @@ func (c *Client) Close() error {
 		return nil
 	}
 	c.closed = true
+	if c.sessionProvider != nil {
+		return nil
+	}
 	return c.session.Close()
 }
 
@@ -185,7 +221,7 @@ func (c *Client) ClusterID() string {
 // Session returns the underlying MCP client session for direct tool calls.
 // Used by BridgeTool to call discovered tools without creating new sessions.
 func (c *Client) Session() *mcp.ClientSession {
-	return c.session
+	return c.currentSession()
 }
 
 // resolveToolName returns the gateway-prefixed tool name. When toolPrefix is
@@ -216,12 +252,20 @@ func (c *Client) getResource(ctx context.Context, kind, apiVersion, namespace, n
 		args["namespace"] = namespace
 	}
 
-	result, err := c.session.CallTool(ctx, &mcp.CallToolParams{
+	session := c.currentSession()
+	if session == nil {
+		return nil, fmt.Errorf("call %s: no active MCP session", toolName)
+	}
+	result, err := session.CallTool(ctx, &mcp.CallToolParams{
 		Name:      toolName,
 		Arguments: args,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("call %s: %w", toolName, err)
+	}
+
+	if result.IsError {
+		return nil, fmt.Errorf("call %s returned error: %s", toolName, ExtractText(result))
 	}
 
 	text := ExtractText(result)
@@ -247,12 +291,20 @@ func (c *Client) listResources(ctx context.Context, kind, apiVersion, namespace 
 		args["labelSelector"] = formatLabelSelector(labels)
 	}
 
-	result, err := c.session.CallTool(ctx, &mcp.CallToolParams{
+	session := c.currentSession()
+	if session == nil {
+		return nil, fmt.Errorf("call %s: no active MCP session", toolName)
+	}
+	result, err := session.CallTool(ctx, &mcp.CallToolParams{
 		Name:      toolName,
 		Arguments: args,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("call %s: %w", toolName, err)
+	}
+
+	if result.IsError {
+		return nil, fmt.Errorf("call %s returned error: %s", toolName, ExtractText(result))
 	}
 
 	if sc := extractStructured(result); sc != nil {
