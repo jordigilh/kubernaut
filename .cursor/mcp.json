@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "hindsight-docs": {
+      "type": "http",
+      "url": "http://localhost:8888/mcp/kubernaut-docs/"
+    },
+    "hindsight-issues": {
+      "type": "http",
+      "url": "http://localhost:8888/mcp/kubernaut-issues/"
+    },
+    "cocoindex-code": {
+      "command": "/Users/jgil/.hindsight/venv/bin/python3",
+      "args": ["/Users/jgil/.hindsight/cocoindex-search.py"],
+      "type": "stdio",
+      "env": {
+        "COCOINDEX_PG_URL": "postgresql://hindsight:hindsight@localhost:5432/hindsight"
+      }
+    }
+  }
+}
