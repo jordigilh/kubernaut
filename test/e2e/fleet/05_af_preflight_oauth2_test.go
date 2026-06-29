@@ -36,7 +36,7 @@ var _ = Describe("E2E-FLEET-006 [IA-5, SC-8]: AF performs preflight checks via M
 	It("should obtain DEX client_credentials token and verify MCP gateway accepts authenticated requests", func() {
 		By("Obtaining OAuth2 client_credentials token from DEX (IA-5)")
 		cfg := infrastructure.DefaultDexFleetReadConfig()
-		cfg.TokenEndpoint = "http://localhost:30556/dex/token"
+		cfg.TokenEndpoint = "https://localhost:30556/dex/token"
 		token, err := infrastructure.GetDexClientCredentialsToken(cfg)
 		Expect(err).ToNot(HaveOccurred(), "DEX should issue client_credentials token")
 		Expect(token).ToNot(BeEmpty(), "IA-5: token must be non-empty")

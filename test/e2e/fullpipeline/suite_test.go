@@ -287,7 +287,10 @@ func getAFToken() string {
 	if afAuthToken != "" {
 		return afAuthToken
 	}
-	resp, err := http.PostForm("http://localhost:30556/dex/token", url.Values{
+	tlsClient, tlsErr := infrastructure.NewTLSAwareClient(kubeconfigPath, 10*time.Second)
+	Expect(tlsErr).NotTo(HaveOccurred(), "TLS client for Dex token endpoint")
+
+	resp, err := tlsClient.PostForm("https://localhost:30556/dex/token", url.Values{
 		"grant_type":    {"password"},
 		"client_id":     {"kubernaut-apifrontend"},
 		"client_secret": {"e2e-client-secret"},

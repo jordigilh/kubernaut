@@ -64,7 +64,7 @@ var _ = Describe("E2E-FP-AF-001: AF audit trace coverage in happy-path MCP lifec
 
 		BeforeEach(func() {
 			afBaseURL = envOrDefault("AF_FP_BASE_URL", "https://localhost:30443")
-			afDexURL = envOrDefault("AF_FP_DEX_URL", "http://localhost:5556/dex")
+			afDexURL = envOrDefault("AF_FP_DEX_URL", "https://localhost:5556/dex")
 			afClientID = envOrDefault("AF_FP_CLIENT_ID", "kubernaut-apifrontend")
 			afClientSec = envOrDefault("AF_FP_CLIENT_SECRET", "e2e-client-secret")
 
@@ -202,7 +202,13 @@ func fpFetchDEXToken(dexURL, clientID, clientSecret, username, password string) 
 		"password":      {password},
 		"scope":         {"openid email profile groups"},
 	}
-	resp, err := http.PostForm(dexURL+"/token", data)
+	tlsClient := &http.Client{
+		Timeout: 10 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // G402: E2E self-signed certs
+		},
+	}
+	resp, err := tlsClient.PostForm(dexURL+"/token", data)
 	if err != nil {
 		return "", fmt.Errorf("token request: %w", err)
 	}
