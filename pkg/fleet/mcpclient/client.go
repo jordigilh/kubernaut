@@ -268,6 +268,10 @@ func (c *Client) getResource(ctx context.Context, kind, apiVersion, namespace, n
 		return nil, fmt.Errorf("call %s returned error: %s", toolName, ExtractText(result))
 	}
 
+	if m := extractStructuredGet(result); m != nil {
+		return &unstructured.Unstructured{Object: m}, nil
+	}
+
 	text := ExtractText(result)
 	obj, err := parseUnstructured(text)
 	if err != nil {
@@ -307,7 +311,7 @@ func (c *Client) listResources(ctx context.Context, kind, apiVersion, namespace 
 		return nil, fmt.Errorf("call %s returned error: %s", toolName, ExtractText(result))
 	}
 
-	if sc := extractStructured(result); sc != nil {
+	if sc := extractStructuredList(result); sc != nil {
 		items := make([]unstructured.Unstructured, len(sc))
 		for i, m := range sc {
 			items[i] = unstructured.Unstructured{Object: m}
@@ -391,23 +395,56 @@ func formatLabelSelector(labels map[string]string) string {
 	return strings.Join(parts, ",")
 }
 
-// extractStructured extracts items from StructuredContent if present.
-// Returns nil when StructuredContent is absent, empty, or not a []any of maps.
-func extractStructured(result *mcp.CallToolResult) []map[string]any {
+// extractStructuredList extracts items from StructuredContent for list responses.
+// Handles two shapes:
+//   - map[string]any{"items": [...]}: kube-mcp-server with --list-output=yaml
+//   - []any of maps: legacy/mock format
+//
+// Returns nil when StructuredContent is absent, empty, or unrecognized.
+func extractStructuredList(result *mcp.CallToolResult) []map[string]any {
 	if result == nil || result.StructuredContent == nil {
 		return nil
 	}
-	items, ok := result.StructuredContent.([]any)
-	if !ok {
+
+	var rawItems []any
+
+	switch sc := result.StructuredContent.(type) {
+	case map[string]any:
+		items, ok := sc["items"].([]any)
+		if !ok {
+			return nil
+		}
+		rawItems = items
+	case []any:
+		rawItems = sc
+	default:
 		return nil
 	}
+
 	var out []map[string]any
-	for _, item := range items {
+	for _, item := range rawItems {
 		if m, ok := item.(map[string]any); ok {
 			out = append(out, m)
 		}
 	}
 	return out
+}
+
+// extractStructuredGet extracts a single object from StructuredContent for get responses.
+// Returns the map when StructuredContent is map[string]any with a "kind" key
+// (full K8s object). Returns nil otherwise.
+func extractStructuredGet(result *mcp.CallToolResult) map[string]any {
+	if result == nil || result.StructuredContent == nil {
+		return nil
+	}
+	m, ok := result.StructuredContent.(map[string]any)
+	if !ok {
+		return nil
+	}
+	if _, hasKind := m["kind"]; !hasKind {
+		return nil
+	}
+	return m
 }
 
 // ExtractText extracts and concatenates all text content from an MCP tool result.

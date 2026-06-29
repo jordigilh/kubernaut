@@ -246,10 +246,23 @@ func (gw *MockGateway) registerClusterToolsWithPrefix(cluster, prefix string, cf
 			}, nil
 		}
 
-		response := fmt.Sprintf(`{"apiVersion":%q,"kind":%q,"metadata":{"name":%q,"namespace":%q,"labels":{"kubernaut.ai/managed":"true","app":"nginx"}},"status":{"phase":"Running"}}`,
-			args.APIVersion, args.Kind, args.Name, args.Namespace)
+		obj := map[string]any{
+			"apiVersion": args.APIVersion,
+			"kind":       args.Kind,
+			"metadata": map[string]any{
+				"name":      args.Name,
+				"namespace": args.Namespace,
+				"labels": map[string]any{
+					"kubernaut.ai/managed": "true",
+					"app":                  "nginx",
+				},
+			},
+			"status": map[string]any{"phase": "Running"},
+		}
+		response, _ := json.Marshal(obj)
 		return &mcp.CallToolResult{
-			Content: []mcp.Content{&mcp.TextContent{Text: response}},
+			Content:           []mcp.Content{&mcp.TextContent{Text: string(response)}},
+			StructuredContent: obj,
 		}, nil
 	})
 
@@ -320,13 +333,13 @@ func (gw *MockGateway) registerClusterToolsWithPrefix(cluster, prefix string, cf
 		}
 
 		if len(structuredContent) > 0 {
-			sc := make([]any, len(structuredContent))
+			items := make([]any, len(structuredContent))
 			for i, m := range structuredContent {
-				sc[i] = m
+				items[i] = m
 			}
 			return &mcp.CallToolResult{
 				Content:           []mcp.Content{&mcp.TextContent{Text: "structured content provided"}},
-				StructuredContent: sc,
+				StructuredContent: map[string]any{"items": items},
 			}, nil
 		}
 
