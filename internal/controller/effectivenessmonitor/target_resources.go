@@ -221,9 +221,11 @@ func (r *Reconciler) queryPreRemediationHash(ctx context.Context, correlationID 
 }
 
 // resolveConfigMapHashes extracts ConfigMap references from the resource spec,
-// fetches each ConfigMap via the provided reader, and returns a map of name -> content hash.
-// For local reads, the reader is typically the uncached apiReader (bypassing informer cache).
-// For fleet reads, the reader routes through the MCP gateway.
+// fetches each ConfigMap, and returns a map of name -> content hash.
+// Uses r.apiReader for local reads (direct API, no informer cache) so that
+// hash computation always reflects the latest ConfigMap state.
+// For fleet reads (non-nil readerFactory), uses the provided reader which
+// routes through the MCP gateway (also a direct call).
 // Missing/forbidden ConfigMaps produce a deterministic sentinel hash.
 func (r *Reconciler) resolveConfigMapHashes(
 	ctx context.Context,
@@ -239,10 +241,17 @@ func (r *Reconciler) resolveConfigMapHashes(
 	logger := log.FromContext(ctx)
 	configMapHashes := make(map[string]string, len(refs))
 
+	// Use the uncached apiReader for local reads to avoid creating a
+	// cluster-scope informer; for fleet the passed reader is already direct.
+	cmReader := r.apiReader
+	if r.readerFactory != nil {
+		cmReader = reader
+	}
+
 	for _, cmName := range refs {
 		cm := &corev1.ConfigMap{}
 		key := client.ObjectKey{Name: cmName, Namespace: target.Namespace}
-		if err := reader.Get(ctx, key, cm); err != nil {
+		if err := cmReader.Get(ctx, key, cm); err != nil {
 			// All fetch errors (404, 403, transient) use sentinel to ensure deterministic
 			// hash computation: the same set of ConfigMap names always contributes to the
 			// composite hash, preventing false-positive drift from intermittent failures.
