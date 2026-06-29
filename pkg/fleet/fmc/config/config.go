@@ -59,9 +59,10 @@ type ValkeyConfig struct {
 
 // SyncConfig contains syncer timing and resource settings.
 type SyncConfig struct {
-	Interval      time.Duration `yaml:"interval"`
-	KeyTTL        time.Duration `yaml:"keyTtl"`
-	ResourceKinds []string      `yaml:"resourceKinds"`
+	Interval           time.Duration `yaml:"interval"`
+	KeyTTL             time.Duration `yaml:"keyTtl"`
+	ResourceKinds      []string      `yaml:"resourceKinds"`
+	WaitForBrokerReady bool          `yaml:"waitForBrokerReady"`
 }
 
 // OAuth2Config contains OAuth2 client_credentials settings.
@@ -90,9 +91,10 @@ func DefaultServiceConfig() *ServiceConfig {
 			Addr: "valkey:6379",
 		},
 		Sync: SyncConfig{
-			Interval:      30 * time.Second,
-			KeyTTL:        45 * time.Second,
-			ResourceKinds: []string{"Deployment", "StatefulSet", "DaemonSet", "Pod", "Service", "Node"},
+			Interval:           30 * time.Second,
+			KeyTTL:             45 * time.Second,
+			ResourceKinds:      []string{"Deployment", "StatefulSet", "DaemonSet", "Pod", "Service", "Node"},
+			WaitForBrokerReady: true,
 		},
 		OAuth2: OAuth2Config{
 			CredentialsDir: "/etc/fleetmetadatacache/fleet-oauth2",

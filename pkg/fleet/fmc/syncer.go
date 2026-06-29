@@ -64,9 +64,15 @@ type CacheWriter interface {
 
 // Config holds FMC Writer configuration.
 type Config struct {
-	SyncInterval time.Duration
-	KeyTTL       time.Duration
-	ResourceKinds []string
+	SyncInterval       time.Duration
+	KeyTTL             time.Duration
+	ResourceKinds      []string
+	WaitForBrokerReady bool
+
+	// Broker readiness probe backoff settings. Zero values use production defaults.
+	BrokerProbeInitialInterval time.Duration
+	BrokerProbeMaxInterval     time.Duration
+	BrokerProbeTimeout         time.Duration
 }
 
 // DefaultConfig returns production defaults for FMC Writer.
@@ -226,6 +232,15 @@ func (s *Syncer) Run(ctx context.Context) error {
 		s.mu.Unlock()
 	}()
 
+	if s.config.WaitForBrokerReady {
+		s.waitForBrokerReady(ctx)
+	}
+
+	if ctx.Err() != nil {
+		s.logger.Info("FMC Writer shutting down (cancelled during readiness probe)")
+		return nil
+	}
+
 	ticker := time.NewTicker(s.config.SyncInterval)
 	defer ticker.Stop()
 
@@ -246,6 +261,75 @@ func (s *Syncer) Run(ctx context.Context) error {
 				return nil
 			}
 			s.handleClusterEvent(ctx, event)
+		}
+	}
+}
+
+const (
+	defaultBrokerProbeInitialInterval = 2 * time.Second
+	defaultBrokerProbeMaxInterval     = 15 * time.Second
+	defaultBrokerProbeTimeout         = 2 * time.Minute
+)
+
+func (s *Syncer) brokerProbeInterval() time.Duration {
+	if s.config.BrokerProbeInitialInterval > 0 {
+		return s.config.BrokerProbeInitialInterval
+	}
+	return defaultBrokerProbeInitialInterval
+}
+
+func (s *Syncer) brokerProbeMax() time.Duration {
+	if s.config.BrokerProbeMaxInterval > 0 {
+		return s.config.BrokerProbeMaxInterval
+	}
+	return defaultBrokerProbeMaxInterval
+}
+
+func (s *Syncer) brokerProbeDeadline() time.Duration {
+	if s.config.BrokerProbeTimeout > 0 {
+		return s.config.BrokerProbeTimeout
+	}
+	return defaultBrokerProbeTimeout
+}
+
+// waitForBrokerReady probes the ReaderFactory with exponential backoff until
+// at least one registered cluster returns a successful reader, or the timeout
+// or context cancellation is reached. When no clusters are registered, it
+// returns immediately (nothing to probe).
+func (s *Syncer) waitForBrokerReady(ctx context.Context) {
+	clusters := s.registry.List()
+	if len(clusters) == 0 {
+		s.logger.Info("No clusters registered, skipping broker readiness probe")
+		return
+	}
+
+	probeCluster := clusters[0].ID
+	interval := s.brokerProbeInterval()
+	maxInterval := s.brokerProbeMax()
+	deadline := time.After(s.brokerProbeDeadline())
+
+	s.logger.Info("Waiting for broker readiness", "cluster", probeCluster)
+
+	for {
+		_, err := s.readerFactory.ReaderFor(ctx, probeCluster)
+		if err == nil {
+			s.logger.Info("Broker ready", "cluster", probeCluster)
+			return
+		}
+
+		s.logger.V(1).Info("Broker not ready, retrying", "cluster", probeCluster, "error", err, "nextRetry", interval)
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-deadline:
+			s.logger.Info("Broker readiness probe timed out, proceeding with periodic sync", "cluster", probeCluster)
+			return
+		case <-time.After(interval):
+			interval *= 2
+			if interval > maxInterval {
+				interval = maxInterval
+			}
 		}
 	}
 }
