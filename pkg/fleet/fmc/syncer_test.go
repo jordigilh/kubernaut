@@ -18,6 +18,7 @@ package fmc_test
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -298,6 +299,156 @@ var _ = Describe("UT-FLEET-FMC-LIFE: Syncer lifecycle", func() {
 			time.Sleep(100 * time.Millisecond)
 			cancel()
 			Eventually(done).Should(Receive(BeNil()))
+		})
+	})
+
+	Describe("broker readiness probe [SI-4, SC-5]", func() {
+		It("UT-FLEET-FMC-010 [SI-4, SC-5]: syncer waits for broker readiness with exponential backoff before starting sync cycles, preventing startup storms against an unready MCP gateway (BR-FLEET-002)", func() {
+			attempts := 0
+			failingFactory := fleet.ReaderFactoryFunc(func(_ context.Context, _ string) (client.Reader, error) {
+				attempts++
+				if attempts <= 3 {
+					return nil, fmt.Errorf("broker not ready: tools not synced (attempt %d)", attempts)
+				}
+				return &spyReader{}, nil
+			})
+
+			stubReg := newStubRegistry(registry.ClusterInfo{ID: "cluster-a"})
+			syncer := fmc.NewSyncerWithReaderFactory(
+				stubReg,
+				failingFactory,
+				writer,
+				fmc.Config{
+					SyncInterval:               time.Hour,
+					KeyTTL:                      30 * time.Second,
+					ResourceKinds:               []string{"Pod"},
+					WaitForBrokerReady:          true,
+					BrokerProbeInitialInterval:  5 * time.Millisecond,
+					BrokerProbeMaxInterval:      20 * time.Millisecond,
+					BrokerProbeTimeout:          5 * time.Second,
+				},
+				logr.Discard(),
+				metrics,
+			)
+
+			done := make(chan error, 1)
+			go func() {
+				done <- syncer.Run(ctx)
+			}()
+
+			time.Sleep(500 * time.Millisecond)
+			cancel()
+			Eventually(done, 5*time.Second).Should(Receive(BeNil()))
+
+			Expect(attempts).To(BeNumerically(">=", 4),
+				"Should retry ReaderFor at least 4 times (3 failures + 1 success)")
+		})
+
+		It("UT-FLEET-FMC-011 [SI-4]: syncer proceeds immediately to sync cycles when readiness probe is disabled, preserving backward compatibility (BR-FLEET-002)", func() {
+			attempts := 0
+			failingFactory := fleet.ReaderFactoryFunc(func(_ context.Context, _ string) (client.Reader, error) {
+				attempts++
+				return nil, fmt.Errorf("broker not ready")
+			})
+
+			stubReg := newStubRegistry(registry.ClusterInfo{ID: "cluster-a"})
+			syncer := fmc.NewSyncerWithReaderFactory(
+				stubReg,
+				failingFactory,
+				writer,
+				fmc.Config{
+					SyncInterval:       time.Hour,
+					KeyTTL:             30 * time.Second,
+					ResourceKinds:      []string{"Pod"},
+					WaitForBrokerReady: false,
+				},
+				logr.Discard(),
+				metrics,
+			)
+
+			done := make(chan error, 1)
+			go func() {
+				done <- syncer.Run(ctx)
+			}()
+
+			time.Sleep(100 * time.Millisecond)
+			cancel()
+			Eventually(done, 5*time.Second).Should(Receive(BeNil()))
+
+			// Without readiness probe, Run enters main loop immediately.
+			// ReaderFor is only called during syncAll (1 call per kind).
+			Expect(attempts).To(BeNumerically("<=", 6),
+				"Without probe, only syncAll calls ReaderFor (1 per kind)")
+		})
+
+		It("UT-FLEET-FMC-012 [SC-5]: syncer skips readiness probe when no clusters are registered, avoiding unnecessary network probes against an empty registry (BR-FLEET-002)", func() {
+			probeAttempts := 0
+			factory := fleet.ReaderFactoryFunc(func(_ context.Context, _ string) (client.Reader, error) {
+				probeAttempts++
+				return &spyReader{}, nil
+			})
+
+			emptyReg := newStubRegistry() // no clusters
+			syncer := fmc.NewSyncerWithReaderFactory(
+				emptyReg,
+				factory,
+				writer,
+				fmc.Config{
+					SyncInterval:       time.Hour,
+					KeyTTL:             30 * time.Second,
+					ResourceKinds:      []string{"Pod"},
+					WaitForBrokerReady: true,
+				},
+				logr.Discard(),
+				metrics,
+			)
+
+			done := make(chan error, 1)
+			go func() {
+				done <- syncer.Run(ctx)
+			}()
+
+			time.Sleep(100 * time.Millisecond)
+			cancel()
+			Eventually(done, 5*time.Second).Should(Receive(BeNil()))
+
+			Expect(probeAttempts).To(Equal(0),
+				"No clusters means no readiness probe, so ReaderFor should not be called")
+		})
+
+		It("UT-FLEET-FMC-013 [SI-4]: syncer shuts down cleanly when context is cancelled during readiness probe, ensuring graceful termination during deployment rollouts (BR-FLEET-002)", func() {
+			probeCtx, probeCancel := context.WithCancel(context.Background())
+			factory := fleet.ReaderFactoryFunc(func(_ context.Context, _ string) (client.Reader, error) {
+				return nil, fmt.Errorf("broker not ready")
+			})
+
+			stubReg := newStubRegistry(registry.ClusterInfo{ID: "cluster-a"})
+			syncer := fmc.NewSyncerWithReaderFactory(
+				stubReg,
+				factory,
+				writer,
+				fmc.Config{
+					SyncInterval:               time.Hour,
+					KeyTTL:                      30 * time.Second,
+					ResourceKinds:               []string{"Pod"},
+					WaitForBrokerReady:          true,
+					BrokerProbeInitialInterval:  5 * time.Millisecond,
+					BrokerProbeMaxInterval:      20 * time.Millisecond,
+					BrokerProbeTimeout:          5 * time.Second,
+				},
+				logr.Discard(),
+				metrics,
+			)
+
+			done := make(chan error, 1)
+			go func() {
+				done <- syncer.Run(probeCtx)
+			}()
+
+			time.Sleep(50 * time.Millisecond)
+			probeCancel()
+
+			Eventually(done, 5*time.Second).Should(Receive(BeNil()))
 		})
 	})
 

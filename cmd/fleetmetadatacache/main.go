@@ -138,9 +138,10 @@ func main() {
 	defer clusterRegistry.Stop()
 
 	syncerConfig := fmc.Config{
-		SyncInterval:  cfg.Sync.Interval,
-		KeyTTL:        cfg.Sync.KeyTTL,
-		ResourceKinds: cfg.Sync.ResourceKinds,
+		SyncInterval:       cfg.Sync.Interval,
+		KeyTTL:             cfg.Sync.KeyTTL,
+		ResourceKinds:      cfg.Sync.ResourceKinds,
+		WaitForBrokerReady: cfg.Sync.WaitForBrokerReady,
 	}
 
 	sessionProvider := mcpClient.SessionProvider()
