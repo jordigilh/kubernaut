@@ -122,6 +122,10 @@ type Reconciler struct {
 	// DD-EM-002: Uncached API reader for pre-remediation hash capture
 	apiReader client.Reader
 
+	// BR-FLEET-054: Fleet reader factory for remote cluster reads.
+	// nil = local-only mode (all reads go through apiReader).
+	readerFactory fleet.ReaderFactory
+
 	// DD-EM-004 v2.0, Issue #253: Config-driven async propagation delays.
 	// Used by createEffectivenessAssessmentIfNeeded to compute HashComputeDelay
 	// from gitOpsSyncDelay/operatorReconcileDelay instead of stabilization window.
@@ -351,8 +355,12 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 			}
 			return r.lockManager.ReleaseLock(ctx, target)
 		},
-		CapturePreRemediationHash: func(ctx context.Context, kind, name, namespace string) (string, string, error) {
-			return CapturePreRemediationHash(ctx, r.apiReader, r.restMapper, kind, name, namespace)
+		CapturePreRemediationHash: func(ctx context.Context, kind, name, namespace, clusterID string) (string, string, error) {
+			reader, err := r.readerForHash(ctx, clusterID)
+			if err != nil {
+				return "", "", fmt.Errorf("failed to get reader for cluster %s: %w", clusterID, err)
+			}
+			return CapturePreRemediationHash(ctx, reader, r.restMapper, kind, name, namespace)
 		},
 		ResolveDualTargets: func(rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) DualTargetResult {
 			dt := resolveDualTargets(rr, ai)
@@ -412,8 +420,12 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 			}
 			return r.lockManager.ReleaseLock(ctx, target)
 		},
-		CapturePreRemediationHash: func(ctx context.Context, kind, name, namespace string) (string, string, error) {
-			return CapturePreRemediationHash(ctx, r.apiReader, r.restMapper, kind, name, namespace)
+		CapturePreRemediationHash: func(ctx context.Context, kind, name, namespace, clusterID string) (string, string, error) {
+			reader, err := r.readerForHash(ctx, clusterID)
+			if err != nil {
+				return "", "", fmt.Errorf("failed to get reader for cluster %s: %w", clusterID, err)
+			}
+			return CapturePreRemediationHash(ctx, reader, r.restMapper, kind, name, namespace)
 		},
 		ResolveDualTargets: func(rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) DualTargetResult {
 			dt := resolveDualTargets(rr, ai)
@@ -3132,6 +3144,23 @@ func (r *Reconciler) validateTimeoutConfig(rr *remediationv1.RemediationRequest)
 // DD-EM-002: Called from cmd/remediationorchestrator/main.go after manager setup.
 func (r *Reconciler) SetRESTMapper(mapper meta.RESTMapper) {
 	r.restMapper = mapper
+}
+
+// SetReaderFactory configures fleet-aware target reads (BR-FLEET-054).
+// When set, CapturePreRemediationHash routes reads to the remote cluster
+// via ReaderFactory for RRs with a non-empty ClusterID.
+func (r *Reconciler) SetReaderFactory(rf fleet.ReaderFactory) {
+	r.readerFactory = rf
+}
+
+// readerForHash returns the appropriate client.Reader for pre-remediation
+// hash capture. Uses apiReader (uncached, direct API) for local clusters,
+// and the fleet reader for remote clusters (BR-FLEET-054).
+func (r *Reconciler) readerForHash(ctx context.Context, clusterID string) (client.Reader, error) {
+	if clusterID == "" || r.readerFactory == nil {
+		return r.apiReader, nil
+	}
+	return r.readerFactory.ReaderFor(ctx, clusterID)
 }
 
 // SetAsyncPropagation configures propagation delays for async-managed targets.
