@@ -18,10 +18,12 @@ package mcpclient
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -40,17 +42,25 @@ var _ = Describe("UT-FLEET-RES-006 [AC-3]: Resilience layer correctly classifies
 	})
 
 	DescribeTable("isRetryableError classification",
-		func(errMsg string, expected bool) {
-			Expect(rc.isRetryableError(fmt.Errorf("%s", errMsg))).To(Equal(expected))
+		func(err error, expected bool) {
+			Expect(rc.isRetryableError(err)).To(Equal(expected))
 		},
-		Entry("401 unauthorized is retryable", "HTTP 401 Unauthorized", true),
-		Entry("session not found is retryable", "session not found for id abc123", true),
-		Entry("connection refused is retryable", "dial tcp 127.0.0.1:1975: connection refused", true),
-		Entry("EOF is retryable", "unexpected EOF", true),
-		Entry("connection reset is retryable", "read: connection reset by peer", true),
-		Entry("generic error is not retryable", "object not found: Pod/nginx", false),
-		Entry("permission denied is not retryable", "forbidden: user lacks permission", false),
-		Entry("validation error is not retryable", "admission webhook denied the request", false),
+		Entry("401 unauthorized is retryable",
+			fmt.Errorf("HTTP 401 Unauthorized"), true),
+		Entry("ErrSessionMissing is retryable",
+			fmt.Errorf("tool call failed: %w", mcp.ErrSessionMissing), true),
+		Entry("ErrConnectionClosed is retryable",
+			fmt.Errorf("calling tools/call: %w", mcp.ErrConnectionClosed), true),
+		Entry("net.OpError (connection refused) is retryable",
+			&net.OpError{Op: "dial", Net: "tcp", Err: fmt.Errorf("connection refused")}, true),
+		Entry("net.OpError (connection reset) is retryable",
+			&net.OpError{Op: "read", Net: "tcp", Err: fmt.Errorf("connection reset by peer")}, true),
+		Entry("generic error is not retryable",
+			fmt.Errorf("object not found: Pod/nginx"), false),
+		Entry("permission denied is not retryable",
+			fmt.Errorf("forbidden: user lacks permission"), false),
+		Entry("validation error is not retryable",
+			fmt.Errorf("admission webhook denied the request"), false),
 	)
 })
 

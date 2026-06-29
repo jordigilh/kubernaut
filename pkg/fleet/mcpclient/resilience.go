@@ -18,7 +18,9 @@ package mcpclient
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"sync/atomic"
@@ -126,12 +128,28 @@ func (rc *ResilientClient) List(ctx context.Context, list client.ObjectList, opt
 }
 
 // Session returns the underlying MCP session. May be nil if disconnected.
+//
+// WARNING: The returned session becomes stale when the ResilientClient
+// reconnects. Prefer SessionProvider() for long-lived per-cluster clients.
 func (rc *ResilientClient) Session() *mcp.ClientSession {
 	c := rc.client.Load()
 	if c == nil {
 		return nil
 	}
 	return c.Session()
+}
+
+// SessionProvider returns a function that always resolves the current active
+// session. Use this instead of Session() when creating per-cluster Client
+// instances that must survive ResilientClient reconnections.
+func (rc *ResilientClient) SessionProvider() SessionProvider {
+	return func() *mcp.ClientSession {
+		c := rc.client.Load()
+		if c == nil {
+			return nil
+		}
+		return c.Session()
+	}
 }
 
 // Close terminates the underlying client connection.
@@ -227,12 +245,15 @@ func (rc *ResilientClient) isRetryableError(err error) bool {
 	if err == nil {
 		return false
 	}
+	if errors.Is(err, mcp.ErrConnectionClosed) || errors.Is(err, mcp.ErrSessionMissing) {
+		return true
+	}
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		return true
+	}
 	msg := err.Error()
-	return strings.Contains(msg, "401") ||
-		strings.Contains(msg, "session not found") ||
-		strings.Contains(msg, "connection refused") ||
-		strings.Contains(msg, "EOF") ||
-		strings.Contains(msg, "connection reset")
+	return strings.Contains(msg, "401")
 }
 
 // WithTokenRefreshTimeout returns an Option that bounds the OAuth2 token

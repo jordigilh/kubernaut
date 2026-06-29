@@ -90,6 +90,7 @@ func main() {
 		ClientSecretPath: cfg.OAuth2.CredentialsDir + "/client-secret",
 		Scopes:           cfg.OAuth2.Scopes,
 		TokenTimeout:     cfg.OAuth2.TokenTimeout,
+		TlsCaFile:        cfg.OAuth2.TlsCaFile,
 	}
 	opts := []mcpclient.Option{
 		mcpclient.WithReloadableOAuth2Transport(reloadCfg, logger),
@@ -142,12 +143,13 @@ func main() {
 		ResourceKinds: cfg.Sync.ResourceKinds,
 	}
 
+	sessionProvider := mcpClient.SessionProvider()
 	readerFactory := fleet.ReaderFactoryFunc(func(_ context.Context, clusterID string) (client.Reader, error) {
 		var opts []mcpclient.Option
 		if info, found := clusterRegistry.Get(clusterID); found && info.ToolPrefix != "" {
 			opts = append(opts, mcpclient.WithToolPrefix(info.ToolPrefix))
 		}
-		return mcpclient.NewFromSession(mcpClient.Session(), clusterID, opts...), nil
+		return mcpclient.NewFromSessionProvider(sessionProvider, clusterID, opts...), nil
 	})
 	syncer := fmc.NewSyncerWithReaderFactory(clusterRegistry, readerFactory, writer, syncerConfig, logger, metrics)
 
