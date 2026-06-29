@@ -41,6 +41,7 @@ gateway; platform teams choose and deploy their preferred implementation.
 | **Tool discovery** | All tools in `tools/list`; cluster prefixes parsed client-side | `discover_tools`/`select_tools` meta-tools with `--discovery-tool-threshold`; server-side session scoping |
 | **Auth model** | Built-in OAuth + CEL authorization | Authorino (external) + OPA Rego policies |
 | **Standalone mode** | `aigw run` CLI (IT testing without K8s) | Not available (requires K8s + Istio) |
+| **kube-mcp-server flags** | `--list-output=yaml` required (Decision #12) | `--list-output=yaml` required (Decision #12) |
 | **Maturity** | v1.0 GA (Bloomberg/Tetrate backing) | Technology Preview |
 | **CRD model** | `MCPRoute` + `Backend` (Envoy Gateway standard) | `MCPServerRegistration` + `MCPGatewayExtension` |
 | **E2E validation** | IT container test (`fleet_eaigw_test.go`) | E2E fleet lane (Kind + Istio + Kuadrant, spike-s14) |
@@ -188,6 +189,19 @@ business logic.
 
     **Authority**: Spike S15 (2026-06-27) — validated Kuadrant `discover_tools` / `select_tools` response format, threshold behavior, and tool prefix conventions against live Kuadrant MCP Gateway v0.7.0 in Kind.
 
+12. **kube-mcp-server MUST be deployed with `--list-output=yaml`** (not the default `table`): Kubernaut's `mcpclient` consumes `structuredContent` from `CallToolResult` to build `unstructured.Unstructured` objects without fragile text parsing. The `structuredContent` shape depends on this flag:
+
+    - **`--list-output=table` (default)**: `resources_list` returns flat table-row maps (`{"Name":"x","Status":"y","Age":"5m"}`) in `structuredContent`. These lack `metadata.name`/`metadata.namespace` — `unstructured.GetName()` returns `""`, breaking FMC syncer scope cache keys and any consumer using standard K8s object accessors.
+    - **`--list-output=yaml`**: `resources_list` returns full K8s objects (`{"apiVersion":"v1","kind":"Pod","metadata":{"name":"x","namespace":"y",...},"spec":{...},"status":{...}}`) in `structuredContent`. All `unstructured.Unstructured` accessors work correctly.
+
+    `resources_get` returns full K8s objects in `structuredContent` regardless of this flag (it always uses YAML output internally). The flag only affects `resources_list`.
+
+    **Trade-off**: YAML output produces larger responses than table output (~220KB vs ~6KB for 20 pods). This is acceptable for programmatic clients (FMC, SP, WE). LLM-facing sessions (KA investigation) should use a separate kube-mcp-server instance with `--list-output=table` if context window size is a concern.
+
+    **Text parsing fallback**: When `structuredContent` is nil (older kube-mcp-server versions without PR #1232), the client falls back to parsing `Content[0].Text` via `parseMultiFormat` (JSON → YAML → table detection). This degraded path is retained for backward compatibility but logs a warning. The primary data path is `structuredContent`.
+
+    **Authority**: Spike S16 (2026-06-29) — validated against live Kind cluster with Kuadrant MCP Gateway. kube-mcp-server PR #1232 (merged 2026-06-29) adds `structuredContent` via `PrintObjStructured` + `NewToolCallResultFull`.
+
 ## Alternatives Considered
 
 ### A. Direct MCP calls for scope checking
@@ -284,7 +298,7 @@ business logic.
 | WE Fleet Routing | WE JobExecutor.IsCompleted ClusterID propagation (BR-FLEET-054) | Complete |
 | EM Fleet Routing | EM target-read routing via ReaderFactory (BR-FLEET-054) | Complete |
 | AF Fleet Routing | AF kubectl_get/kubectl_list ResourceReader abstraction + list_clusters tool (BR-FLEET-054) | Complete |
-| GatewayDiscoverer | Two-phase tool discovery (`list_clusters`/`list_tools_for_cluster`) with Kuadrant and EAIGW implementations | Planned (v1.5 GA) |
+| GatewayDiscoverer | Two-phase tool discovery (`list_clusters`/`list_tools_for_cluster`) with Kuadrant and EAIGW implementations | Planned (v1.6) |
 | Rancher Adapter | Rancher v3 API adapter for cluster discovery and scope checks | Planned (v1.6) |
 | Clusterpedia Adapter | Clusterpedia Aggregated API adapter for scope checks | Planned (v1.6) |
 
@@ -1382,6 +1396,9 @@ from `ToolsForCluster()`. Constants for base tool names are defined in
 `mcpclient` extracts it from the `GroupVersionKind` set on the `client.Object` before
 calling. The mock gateway validates its presence.
 
+**Note**: kube-mcp-server MUST be deployed with `--list-output=yaml` so that
+`resources_list` returns full K8s objects in `structuredContent`. See Decision #12.
+
 ### Backward Compatibility
 
 - Empty `ClusterID` (default) preserves pre-fleet behavior exactly
@@ -1432,6 +1449,7 @@ fields for services that need remote K8s reads via the MCP Gateway.
 - Spike S10: K8s MCP Server CRD support
 - Spike S11: Envoy AI Gateway evaluation (2026-06-25) — validated `__` prefix convention, standalone mode, memory footprint, CEL auth
 - Spike S15: Kuadrant tool discovery (2026-06-27) — validated `discover_tools`/`select_tools` response format, `--discovery-tool-threshold` behavior, tool prefix conventions. Designed `GatewayDiscoverer` interface for two-phase LLM-efficient tool discovery.
+- Spike S16: structuredContent validation (2026-06-29) — validated kube-mcp-server PR #1232 `structuredContent` against live Kind cluster with Kuadrant MCP Gateway. Established `--list-output=yaml` as hard deployment requirement (Decision #12).
 
 ### Backend-Specific Documentation
 
