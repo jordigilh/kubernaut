@@ -50,7 +50,7 @@ func InterServiceCAPath(kubeconfigPath string) string {
 // leaf certificates, creates the corresponding Kubernetes Secrets and ConfigMap,
 // and writes the CA PEM to the deterministic path from InterServiceCAPath.
 //
-// Services: data-storage-service, gateway-service, kubernaut-agent
+// Services: data-storage-service, gateway-service, kubernaut-agent, apifrontend, dex
 //
 // Issue #753 (S-4): Uses ECDSA P-256 instead of RSA 2048.
 // Issue #753 (C-2): Returns caPEMPath for host-side TLS-aware test clients.
@@ -173,6 +173,18 @@ data:
 				fmt.Sprintf("apifrontend.%s", namespace),
 				fmt.Sprintf("apifrontend.%s.svc", namespace),
 				fmt.Sprintf("apifrontend.%s.svc.cluster.local", namespace),
+			},
+			ipAddrs: []net.IP{net.IPv4(127, 0, 0, 1)},
+		},
+		{
+			name:       "dex",
+			secretName: "dex-tls",
+			dnsNames: []string{
+				"localhost",
+				"dex",
+				fmt.Sprintf("dex.%s", namespace),
+				fmt.Sprintf("dex.%s.svc", namespace),
+				fmt.Sprintf("dex.%s.svc.cluster.local", namespace),
 			},
 			ipAddrs: []net.IP{net.IPv4(127, 0, 0, 1)},
 		},

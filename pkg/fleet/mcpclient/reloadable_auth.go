@@ -18,7 +18,11 @@ package mcpclient
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"fmt"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -48,6 +52,7 @@ type ReloadableOAuth2Transport struct {
 	clientSecretPath string
 	scopes           []string
 	tokenTimeout     time.Duration
+	tlsCaFile        string
 }
 
 // ReloadableOAuth2Config holds paths for the file-watched OAuth2 credentials.
@@ -57,6 +62,7 @@ type ReloadableOAuth2Config struct {
 	ClientSecretPath string
 	Scopes           []string
 	TokenTimeout     time.Duration
+	TlsCaFile        string
 }
 
 // NewReloadableOAuth2Transport creates a transport that watches credential files
@@ -78,6 +84,7 @@ func NewReloadableOAuth2Transport(cfg ReloadableOAuth2Config, base http.RoundTri
 		clientSecretPath: cfg.ClientSecretPath,
 		scopes:           cfg.Scopes,
 		tokenTimeout:     cfg.TokenTimeout,
+		tlsCaFile:        cfg.TlsCaFile,
 	}
 
 	if err := t.rebuildTokenSource(); err != nil {
@@ -161,10 +168,24 @@ func (t *ReloadableOAuth2Transport) rebuildTokenSource() error {
 	}
 
 	ctx := context.Background()
-	if t.tokenTimeout > 0 {
-		httpClient := &http.Client{Timeout: t.tokenTimeout}
-		ctx = context.WithValue(ctx, oauth2.HTTPClient, httpClient)
+	httpClient := &http.Client{Timeout: t.tokenTimeout}
+	if t.tlsCaFile != "" {
+		caPEM, caErr := os.ReadFile(t.tlsCaFile)
+		if caErr != nil {
+			return fmt.Errorf("failed to read TLS CA file %s: %w", t.tlsCaFile, caErr)
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(caPEM) {
+			return fmt.Errorf("no valid PEM certificates found in %s", t.tlsCaFile)
+		}
+		httpClient.Transport = &http.Transport{
+			TLSClientConfig: &tls.Config{
+				RootCAs:    pool,
+				MinVersion: tls.VersionTLS12,
+			},
+		}
 	}
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, httpClient)
 
 	t.mu.Lock()
 	t.tokenSource = ccConfig.TokenSource(ctx)

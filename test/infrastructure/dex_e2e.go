@@ -18,6 +18,7 @@ package infrastructure
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -36,27 +37,29 @@ const dexImage = "ghcr.io/dexidp/dex:latest"
 
 // DexE2EConfig holds the DEX E2E user credentials for token acquisition.
 type DexE2EConfig struct {
-	TokenEndpoint string // e.g. http://localhost:5556/dex/token
+	TokenEndpoint string       // e.g. https://localhost:5556/dex/token
 	ClientID      string
 	ClientSecret  string
-	Username      string // email for static password user
+	Username      string       // email for static password user
 	Password      string
+	HTTPClient    *http.Client // optional TLS-aware client; defaults to InsecureSkipVerify for HTTPS
 }
 
 // DexFleetTokenConfig holds configuration for obtaining a client_credentials
 // token from DEX for fleet service-to-service authentication.
 type DexFleetTokenConfig struct {
-	TokenEndpoint string   // e.g. http://localhost:5556/dex/token
-	ClientID      string   // e.g. kubernaut-fleet-read
-	ClientSecret  string   // e.g. e2e-fleet-secret
-	Scopes        []string // e.g. ["openid", "groups"]
+	TokenEndpoint string       // e.g. https://localhost:5556/dex/token
+	ClientID      string       // e.g. kubernaut-fleet-read
+	ClientSecret  string       // e.g. e2e-fleet-secret
+	Scopes        []string     // e.g. ["openid", "groups"]
+	HTTPClient    *http.Client // optional TLS-aware client; defaults to InsecureSkipVerify for HTTPS
 }
 
 // DefaultDexE2EConfig returns the default DEX config matching the static
 // passwords and clients deployed by deployDexInNamespace.
 func DefaultDexE2EConfig() DexE2EConfig {
 	return DexE2EConfig{
-		TokenEndpoint: "http://localhost:5556/dex/token",
+		TokenEndpoint: "https://localhost:5556/dex/token",
 		ClientID:      "kubernaut-agent",
 		ClientSecret:  "e2e-client-secret",
 		Username:      "e2e-user@kubernaut.test",
@@ -76,7 +79,8 @@ func GetDexIDToken(cfg DexE2EConfig) (string, error) {
 		"client_secret": {cfg.ClientSecret},
 	}
 
-	resp, err := http.PostForm(cfg.TokenEndpoint, data)
+	client := dexHTTPClient(cfg.HTTPClient)
+	resp, err := client.PostForm(cfg.TokenEndpoint, data)
 	if err != nil {
 		return "", fmt.Errorf("DEX token request failed: %w", err)
 	}
@@ -108,7 +112,7 @@ func GetDexIDToken(cfg DexE2EConfig) (string, error) {
 // matching the static clients deployed by deployDexInNamespace.
 func DefaultDexFleetReadConfig() DexFleetTokenConfig {
 	return DexFleetTokenConfig{
-		TokenEndpoint: "http://localhost:5556/dex/token",
+		TokenEndpoint: "https://localhost:5556/dex/token",
 		ClientID:      "kubernaut-fleet-read",
 		ClientSecret:  "e2e-fleet-secret",
 		Scopes:        []string{"openid", "groups"},
@@ -126,7 +130,8 @@ func GetDexClientCredentialsToken(cfg DexFleetTokenConfig) (string, error) {
 		"client_secret": {cfg.ClientSecret},
 	}
 
-	resp, err := http.PostForm(cfg.TokenEndpoint, data)
+	client := dexHTTPClient(cfg.HTTPClient)
+	resp, err := client.PostForm(cfg.TokenEndpoint, data)
 	if err != nil {
 		return "", fmt.Errorf("DEX client_credentials token request failed: %w", err)
 	}
@@ -185,11 +190,13 @@ metadata:
   namespace: %s
 data:
   config.yaml: |
-    issuer: http://dex:5556/dex
+    issuer: https://dex:5556/dex
     storage:
       type: memory
     web:
-      http: 0.0.0.0:5556
+      https: 0.0.0.0:5556
+      tlsCert: /etc/dex/tls/tls.crt
+      tlsKey: /etc/dex/tls/tls.key
     enablePasswordDB: true
     oauth2:
       passwordConnector: local
@@ -253,22 +260,27 @@ spec:
         image: %s
         command: ["dex", "serve", "/etc/dex/config.yaml"]
         ports:
-        - name: http
+        - name: https
           containerPort: 5556
         volumeMounts:
         - name: config
           mountPath: /etc/dex
           readOnly: true
+        - name: tls-certs
+          mountPath: /etc/dex/tls
+          readOnly: true
         readinessProbe:
           httpGet:
             path: /dex/healthz
             port: 5556
+            scheme: HTTPS
           initialDelaySeconds: 3
           periodSeconds: 5
         livenessProbe:
           httpGet:
             path: /dex/healthz
             port: 5556
+            scheme: HTTPS
           initialDelaySeconds: 5
           periodSeconds: 10
         resources:
@@ -282,6 +294,9 @@ spec:
       - name: config
         configMap:
           name: dex-config
+      - name: tls-certs
+        secret:
+          secretName: dex-tls
 ---
 apiVersion: v1
 kind: Service
@@ -291,7 +306,7 @@ metadata:
 spec:
   type: NodePort
   ports:
-  - name: http
+  - name: https
     port: 5556
     targetPort: 5556
     nodePort: 30556
@@ -323,16 +338,26 @@ spec:
 }
 
 // waitForDexReady polls the DEX health endpoint via NodePort until it responds
-// or the timeout is reached.
+// or the timeout is reached. Uses a TLS-skipping client because the inter-service
+// CA may not yet be available at this point (health check runs during deployment).
 func waitForDexReady(writer io.Writer) error {
-	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for DEX OIDC endpoint to be reachable...")
+	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for DEX OIDC endpoint to be reachable (HTTPS)...")
+
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true, //nolint:gosec // G402: health check during deployment
+			},
+		},
+	}
 
 	deadline := time.Now().Add(90 * time.Second)
 	for time.Now().Before(deadline) {
-		resp, err := http.Get("http://localhost:5556/dex/healthz")
+		resp, err := client.Get("https://localhost:5556/dex/healthz")
 		if err == nil && resp.StatusCode == http.StatusOK {
 			_ = resp.Body.Close()
-			_, _ = fmt.Fprintln(writer, "  ✅ DEX OIDC endpoint reachable")
+			_, _ = fmt.Fprintln(writer, "  ✅ DEX OIDC endpoint reachable (HTTPS)")
 			return nil
 		}
 		if resp != nil {
@@ -392,6 +417,22 @@ subjects:
 	}
 	_, _ = fmt.Fprintln(writer, "  ✅ DEX E2E user RBAC created")
 	return nil
+}
+
+// dexHTTPClient returns the provided client if non-nil, or a default HTTPS client
+// that skips TLS verification (for E2E test token endpoints using self-signed certs).
+func dexHTTPClient(c *http.Client) *http.Client {
+	if c != nil {
+		return c
+	}
+	return &http.Client{
+		Timeout: 10 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true, //nolint:gosec // G402: E2E test with self-signed certs
+			},
+		},
+	}
 }
 
 // PreloadDexImage pulls the DEX image and loads it into the Kind cluster.

@@ -1,0 +1,40 @@
+# AuthenticationConfiguration for Fleet E2E OIDC via Dex
+#
+# Authority: ADR-068, Issue #54
+#
+# Configures the K8s API server to accept Dex-issued JWTs so that
+# kube-mcp-server (running in passthrough mode) can forward the
+# FMC/SP/KA bearer tokens to the API server for authentication.
+#
+# In a fleet deployment, each cluster's API server must accept the
+# same IDP's JWTs -- there is no token proxy between kube-mcp-server
+# and the API server.
+#
+# STATUS: Reserved for future use with --authentication-config flag.
+# Currently the Kind E2E cluster uses legacy --oidc-* flags in
+# kind-fullpipeline-config.yaml because the structured auth config
+# requires the OIDC provider to be reachable at API server startup,
+# but Dex deploys after the cluster is created.
+#
+# TODO(v1.7): Switch to --authentication-config when Dex is deployed
+# externally or via a sidecar/init-container that starts before
+# the API server.
+#
+# Uses v1 for K8s 1.32+ (GA). Use v1beta1 for K8s 1.31 compat.
+# Minimum K8s version: 1.31 (StructuredAuthenticationConfiguration beta)
+apiVersion: apiserver.config.k8s.io/v1
+kind: AuthenticationConfiguration
+jwt:
+- issuer:
+    url: "https://dex:5556/dex"
+    audiences:
+    - "kubernaut-fleet-read"
+    - "kubernaut-fleet-write"
+    - "kubernaut-agent"
+  claimMappings:
+    username:
+      claim: "sub"
+      prefix: "dex:"
+    groups:
+      claim: "groups"
+      prefix: "dex:"

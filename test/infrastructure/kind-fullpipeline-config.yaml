@@ -91,6 +91,8 @@ nodes:
   # Note: ALL extraMounts are added programmatically in SetupFullPipelineInfrastructure
   # based on OS (macOS vs Linux) to handle path differences between environments
   # Increase API server rate limits for parallel integration testing
+  # OIDC for fleet: configured post-deploy by patchAPIServerForOIDC() in fleet_e2e.go
+  # (Dex must be running before the API server can perform OIDC discovery)
   kubeadmConfigPatches:
   - |
     kind: ClusterConfiguration
