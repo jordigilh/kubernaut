@@ -2,8 +2,8 @@
 
 **Status**: Proposed
 **Decision Date**: 2026-05-29
-**Version**: 1.0
-**Confidence**: 85%
+**Version**: 1.1
+**Confidence**: 88%
 **Deciders**: Architecture Team
 **Applies To**: kubernaut-apifrontend, kubernaut-agent, data-storage
 
@@ -24,6 +24,7 @@
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 1.1 | 2026-06-29 | AI-assisted | Added: Cryptographic Key Management (rotation lifecycle, key hierarchy), Audit Event Binding (JWT-to-event integrity), FedRAMP/SOC2 control mapping. Addresses AU-9, SC-12, CC8.1 compliance gaps. |
 | 1.0 | 2026-05-29 | AI-assisted | Initial enhancement proposal |
 
 ---
@@ -214,6 +215,146 @@ DS receives request:
 
 **Alternative**: K8s `TokenRequest` API with a custom audience (e.g., `kubernaut-audit-identity`). AF requests a projected SA token with the user's identity encoded in annotations. This avoids custom key management but has weaker claim flexibility.
 
+### Cryptographic Key Lifecycle (AU-9, SC-12)
+
+This section addresses FedRAMP SC-12 (Cryptographic Key Establishment and Management) and AU-9 (Protection of Audit Information) requirements for the identity JWT signing infrastructure.
+
+#### Key Hierarchy
+
+| Layer | Purpose | Algorithm | Key Size | Storage |
+|-------|---------|-----------|----------|---------|
+| **Signing key (active)** | Signs identity JWTs in AF | RSA-PSS | 2048-bit minimum, 3072-bit recommended | K8s Secret (`kubernaut-identity-signing-key`) |
+| **Verification key(s)** | Validates identity JWTs in KA/DS | RSA public key | Matches signing key | K8s Secret (`kubernaut-identity-verify-keys`) or ConfigMap |
+| **Previous key (rollover)** | Validates JWTs signed before rotation | RSA public key | Matches previous signing key | Same Secret as verification key(s), indexed by `kid` |
+
+The verification Secret holds a JWKS-format array of public keys, each identified by a `kid` (Key ID) header. This allows KA/DS to validate JWTs signed by either the current or previous key during rotation windows.
+
+#### Rotation Lifecycle
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    KEY ROTATION TIMELINE                          │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  T=0: Generate new key pair (K2)                                 │
+│  T=0: Add K2 public key to verification JWKS (kid=K2)           │
+│  T=0: AF continues signing with K1                               │
+│       KA/DS can now verify both K1 and K2 signatures             │
+│                                                                   │
+│  T+propagation (≤60s): All pods have refreshed Secret mount     │
+│                                                                   │
+│  T+propagation: Switch AF signing key to K2 (set kid=K2 header) │
+│       New JWTs signed with K2; old K1-signed JWTs still valid    │
+│                                                                   │
+│  T+propagation+TTL (≤5m): All K1-signed JWTs have expired       │
+│                                                                   │
+│  T+2*TTL (≤10m): Remove K1 from verification JWKS               │
+│       Rotation complete                                           │
+│                                                                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Rotation frequency**: Every 90 days (calendar-driven), or immediately upon suspected compromise.
+
+**Rotation trigger**: Helm upgrade with new key material, or automated via CronJob that generates a new key pair and patches the K8s Secret. The dual-key overlap window (propagation + TTL ≤ 10 minutes) ensures zero-downtime rotation with no rejected valid JWTs.
+
+**Operational procedure** (SSP-documentable):
+
+1. Generate new RSA key pair: `openssl genpkey -algorithm RSA-PSS -pkeyopt rsa_keygen_bits:3072`
+2. Add new public key to verification JWKS Secret (append, do not replace)
+3. Wait for Secret propagation to all pods (kubelet sync period, default 60s)
+4. Update signing key Secret with new private key
+5. Wait for max JWT TTL (5 minutes) to ensure all old-key JWTs expire
+6. Remove old public key from verification JWKS Secret
+7. Log rotation event to audit trail: `identity_key.rotated` (actor: operator, resource: key ID)
+
+**Emergency rotation** (key compromise): Steps 1-4 executed immediately. Step 6 executed after TTL instead of waiting for the standard overlap. All JWTs signed with the compromised key become unverifiable after removal, triggering graceful degradation (SA-attributed audit) for any in-flight requests.
+
+#### Cryptographic Requirements (SC-12 Compliance)
+
+| Requirement | Implementation | FedRAMP Level |
+|-------------|---------------|---------------|
+| Algorithm selection | RSA-PSS (FIPS 186-5) or ECDSA P-256 (FIPS 186-5) | Moderate+ |
+| Minimum key size | RSA 2048-bit (NIST SP 800-57 Part 1, Table 2) | Moderate |
+| Recommended key size | RSA 3072-bit or ECDSA P-256 | High |
+| Key generation | Go `crypto/rand` (OS entropy source) | Moderate+ |
+| Key storage | K8s Secret with RBAC (only AF SA reads private key) | Moderate |
+| Key storage (High) | K8s Secret backed by KMS provider (e.g., AWS KMS, HashiCorp Vault) | High |
+| Key destruction | Previous private key overwritten in Secret; garbage collected by etcd compaction | Moderate+ |
+| Crypto library | Go stdlib `crypto/rsa`, `crypto/ecdsa` (BoringCrypto build tag for FIPS mode) | High |
+
+**FIPS 140-2/140-3 path**: For FedRAMP High, compile AF/KA/DS with `GOEXPERIMENT=boringcrypto` to use the BoringSSL-backed crypto module (FIPS 140-2 validated, certificate #4407). No code changes required — the BoringCrypto module is a drop-in replacement activated at build time.
+
+### Audit Event Binding (AU-9)
+
+This section documents how the identity JWT integrates with ADR-034's unified audit table to provide end-to-end integrity for user attribution in audit records.
+
+#### Problem
+
+AU-9 requires that audit information is protected from unauthorized modification. The identity JWT proves *who initiated* an action, but the audit event records *what happened*. Without a binding between the two, an attacker with database write access could modify `actor_id` in an audit event without detection.
+
+#### Binding Mechanism
+
+The identity JWT's `jti` (JWT ID) claim provides the cryptographic binding:
+
+```
+Identity JWT:
+  { "jti": "req-abc123", "sub": "alice@example.com", ... }
+
+Audit Event (ADR-034 schema):
+  { "event_id": "...", "actor_id": "alice@example.com",
+    "event_metadata": { "identity_jti": "req-abc123" } }
+```
+
+**Verification path**: Given an audit event, an auditor can:
+1. Extract `identity_jti` from `event_metadata`
+2. Locate the corresponding identity JWT (logged at AF emission time or retained in short-term cache)
+3. Verify the JWT signature proves that `sub` = `actor_id` was cryptographically asserted by AF at the time of the request
+
+#### Integration with ADR-034 Integrity Layers
+
+| ADR-034 Layer | What it protects | How identity JWT enhances it |
+|---------------|-----------------|------------------------------|
+| **Append-only table** (immutable events) | Events cannot be modified after insertion | `actor_id` is locked at insert time with `identity_jti` binding |
+| **Hash chain** (event linkage) | Parent-child event ordering is tamper-evident | Identity JWT `jti` is included in the event payload before hashing, making actor attribution part of the chain |
+| **Correlation ID** (cross-service tracing) | Groups events from a single remediation flow | All events in a correlation share the same originating `sub`, verifiable via their respective `identity_jti` claims |
+| **Retention policy** (7-year minimum) | Events persist for compliance period | JWT verification keys are retained in a key archive for the retention period (public keys only — no storage cost concern) |
+
+#### Audit Event Schema Extension
+
+The `event_metadata` JSONB field (already present in ADR-034) carries the binding:
+
+```json
+{
+  "identity_jti": "req-abc123",
+  "identity_iss": "kubernaut-apifrontend",
+  "identity_exp": 1748530300,
+  "identity_verified": true
+}
+```
+
+When `identity_verified` is `false` (graceful degradation), the audit event is attributed to the calling SA and `identity_jti` is omitted. This makes the degradation condition visible in audit queries:
+
+```sql
+SELECT COUNT(*) AS degraded_events
+FROM audit_events
+WHERE event_metadata->>'identity_verified' = 'false'
+  AND event_timestamp > NOW() - INTERVAL '24 hours';
+```
+
+A non-zero count triggers an operational alert (potential key misconfiguration or AF signing failure).
+
+#### Key Archive for Retention Compliance (AU-11)
+
+Public verification keys are archived alongside their validity period:
+
+| Key ID | Valid From | Valid Until | Algorithm | Archived Location |
+|--------|-----------|-------------|-----------|-------------------|
+| `k1-2026Q3` | 2026-07-01 | 2026-10-01 | RSA-PSS 3072 | `kubernaut-identity-key-archive` ConfigMap |
+| `k2-2026Q4` | 2026-10-01 | 2027-01-01 | RSA-PSS 3072 | Same |
+
+This ensures that an auditor performing a retrospective investigation (up to 7 years later per AU-11) can verify the signature on any historical `identity_jti` by retrieving the public key that was active at the JWT's `iat` timestamp.
+
 ### Wire Format Options
 
 **Option 1 — HTTP header** (recommended for REST paths):
@@ -276,10 +417,30 @@ KA and DS middleware extract the header, call the validator, and inject the resu
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|-----------|--------|------------|
-| Signing key compromise | Low | Medium | Key rotation; K8s Secret RBAC; short-lived JWTs limit blast radius |
+| Signing key compromise | Low | Medium | 90-day rotation; K8s Secret RBAC (only AF SA reads private); short-lived JWTs (5m) limit blast radius; emergency rotation procedure documented |
 | Key provisioning adds deployment complexity | Medium | Low | Helm chart handles it; optional feature gate for environments that don't need it |
 | JWT validation adds latency | Low | Low | Signature verification is <1ms; no network calls |
 | Teams forget to include identity JWT in new service integrations | Medium | Low | Shared transport layer (DD-AUTH-005 pattern) injects it automatically |
+| Key rotation causes transient validation failures | Low | Low | Dual-key overlap window (propagation + TTL ≤ 10m); `kid` header routing; graceful degradation |
+| Retrospective audit verification impossible after key destruction | Low | Medium | Public key archive retained for full AU-11 retention period (7 years) |
+
+---
+
+## FedRAMP / SOC2 Control Mapping
+
+This section maps the DD-AUTH-016 design to the specific FedRAMP and SOC2 controls it satisfies, providing traceability for assessors.
+
+| Control | Requirement | How DD-AUTH-016 Satisfies |
+|---------|-------------|--------------------------|
+| **AU-2** (Audit Events) | System must generate audit records for defined events | Identity JWT enables user-attributed audit events at every service hop (AF, KA, DS), not just AF |
+| **AU-3** (Content of Audit Records) | Records must contain: what, when, where, source, outcome, identity | `sub` (who), `groups` (role), `iat`/`exp` (when), `jti` (correlation to event), `iss` (source) — all cryptographically bound |
+| **AU-9** (Protection of Audit Information) | Audit information protected from unauthorized modification | JWT signature makes `actor_id` tamper-evident; `identity_jti` binding in audit events enables post-hoc verification; key archive enables retrospective validation |
+| **AU-11** (Audit Record Retention) | Retain audit records per retention policy | Public key archive parallels ADR-034's 7-year event retention, enabling signature verification across the full retention window |
+| **SC-12** (Cryptographic Key Establishment) | Keys established and managed per policy | RSA-PSS/ECDSA per FIPS 186-5; 90-day rotation; documented lifecycle; RBAC-protected storage; BoringCrypto path for FIPS 140-2 |
+| **SC-8** (Transmission Confidentiality) | Protect transmitted information | Identity JWT travels over TLS (existing requirement); JWT itself is signed (integrity) not encrypted (confidentiality of claims is not required — they are audit metadata, not secrets) |
+| **CC8.1** (SOC2 Audit Completeness) | Complete reconstruction of business operations from audit traces | Every audit event carries verifiable human attribution via `identity_jti` → JWT → `sub` chain; cross-service `correlation_id` reconstruction now includes cryptographic actor proof at each hop |
+| **CC6.8** (SOC2 Non-Repudiation) | Defensible rationale for actions | Signed JWT with `exp` provides temporal non-repudiation; a user cannot deny having initiated an action if the identity JWT was validly signed at that timestamp |
+| **CC7.2** (SOC2 Monitoring) | Decision audit trails | Identity JWT makes the audit trail self-verifying — no need to trust application code for actor attribution |
 
 ---
 
@@ -289,14 +450,16 @@ KA and DS middleware extract the header, call the validator, and inject the resu
 
 | Component | Change | Effort |
 |-----------|--------|--------|
-| `pkg/shared/auth/` | New: `identity_jwt.go` (minter + validator) | Small |
-| `pkg/apifrontend/auth/` | Mint identity JWT after OIDC validation | Small |
+| `pkg/shared/auth/` | New: `identity_jwt.go` (minter + validator + key loading) | Small |
+| `pkg/shared/auth/` | New: `identity_jwks.go` (multi-key JWKS verification, `kid` routing) | Small |
+| `pkg/apifrontend/auth/` | Mint identity JWT after OIDC validation; include `kid` header | Small |
 | `pkg/apifrontend/ka/` | Include identity JWT in MCP calls (replacing `acting_user` string) | Small |
-| `cmd/apifrontend/main.go` | Load signing key from Secret/file | Small |
+| `cmd/apifrontend/main.go` | Load signing key from Secret/file; watch for key rotation | Small |
 | `pkg/shared/auth/transport.go` | Propagate `X-Kubernaut-Identity-Token` header in `AuthTransport` | Small |
-| `cmd/kubernautagent/main.go` | Load public key; add identity JWT middleware | Small |
-| `pkg/datastorage/server/` | Add identity JWT middleware; use claims in audit attribution | Small |
-| Helm chart | New Secret template for signing key pair | Small |
+| `cmd/kubernautagent/main.go` | Load public key(s); add identity JWT middleware; emit `identity_jti` in audit metadata | Small |
+| `pkg/datastorage/server/` | Add identity JWT middleware; use claims in audit attribution; persist `identity_jti` in `event_metadata` | Small |
+| Helm chart | New Secret templates: signing key, verification JWKS, key archive ConfigMap | Small |
+| Helm chart | CronJob template for automated 90-day key rotation (optional) | Small |
 
 ### Not Affected
 
@@ -312,10 +475,14 @@ KA and DS middleware extract the header, call the validator, and inject the resu
 ## Validation Strategy
 
 1. **Unit tests**: Identity JWT minting and validation (signature, expiry, claim extraction, invalid token handling, graceful degradation)
-2. **Integration tests**: AF → KA flow with identity JWT; verify audit events attribute correct user
-3. **Integration tests**: AF → DS flow with identity JWT; verify DS audit events attribute correct user
-4. **Negative tests**: Missing JWT falls back to SA attribution; expired JWT triggers warning + SA fallback; tampered JWT is rejected
-5. **E2E tests**: Full flow from OIDC login → AF → KA → DS; verify end-to-end audit trail attributes human identity at every hop
+2. **Unit tests**: Multi-key JWKS validation (`kid` routing, key rollover during rotation window)
+3. **Integration tests**: AF → KA flow with identity JWT; verify audit events attribute correct user with `identity_jti` in `event_metadata`
+4. **Integration tests**: AF → DS flow with identity JWT; verify DS audit events attribute correct user with `identity_jti` in `event_metadata`
+5. **Negative tests**: Missing JWT falls back to SA attribution; expired JWT triggers warning + SA fallback; tampered JWT is rejected
+6. **Rotation tests**: Simulate key rotation — JWTs signed with old key remain valid during overlap; JWTs signed with new key validate immediately; old-key JWTs rejected after overlap window
+7. **Audit binding tests**: Verify `identity_jti` in audit event can be correlated back to the original JWT claims; verify `identity_verified: false` is recorded on degradation
+8. **E2E tests**: Full flow from OIDC login → AF → KA → DS; verify end-to-end audit trail attributes human identity at every hop
+9. **Compliance tests**: Query audit events by `correlation_id`; verify all events in the chain carry consistent `sub` attribution traceable to signed JWTs (SOC2 CC8.1 reconstruction proof)
 
 ---
 
@@ -331,9 +498,13 @@ KA and DS middleware extract the header, call the validator, and inject the resu
 - DD-AUTH-MCP-001 v3.0: Current trusted intermediary model (production baseline)
 - DD-AUTH-005: DataStorage client authentication pattern (transport layer injection)
 - DD-AUTH-014: Middleware-based SAR authentication
+- ADR-034: Unified audit table design (event sourcing, hash chain integrity, retention)
 - kubernaut#31: SPIRE workload identity binding (v1.6 roadmap)
+- [NIST SP 800-57 Part 1 Rev. 5](https://csrc.nist.gov/publications/detail/sp/800-57-part-1/rev-5/final): Recommendation for Key Management (key sizes, rotation)
+- [NIST SP 800-53 Rev. 5 — SC-12](https://csrc.nist.gov/publications/detail/sp/800-53/rev-5/final): Cryptographic Key Establishment and Management
+- [FIPS 186-5](https://csrc.nist.gov/publications/detail/fips/186/5/final): Digital Signature Standard (RSA-PSS, ECDSA)
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: 2026-05-29
+**Document Version**: 1.1
+**Last Updated**: 2026-06-29
