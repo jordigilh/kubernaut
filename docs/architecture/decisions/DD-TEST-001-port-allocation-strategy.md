@@ -40,6 +40,7 @@ Integration and E2E tests require running multiple services (PostgreSQL, Redis, 
 | **Kubernaut Agent** | 8084 | 18120-18129 | 28120-28129 | 18120-28129 |
 | **Dynamic Toolset** | 8085 | 18130-18139 | 28130-28139 | 18130-28139 |
 | **Mock LLM Service** | N/A | 18140-18149 | ClusterIP only | 18140-18149 |
+| **Fleet Metadata Cache** | 8150 | 18150-18159 | ClusterIP only | 18150-28159 |
 | **PostgreSQL** | 5432 | 15433-15442 | 25433-25442 | 15433-25442 |
 | **Redis** | 6379 | 16379-16388 | 26379-26388 | 16379-26388 |
 | **Embedding Service** | 8000 | 18000-18009 | 28000-28009 | 18000-28009 |
@@ -259,6 +260,46 @@ Note: No NodePort needed - Mock LLM accessed only by services inside Kind cluste
 **Pattern**: Shared Mock LLM instance accessed via simplified Kubernetes DNS (same namespace)
 **Access**: Test runner → KA (NodePort 30088) → Mock LLM (`http://mock-llm:8080`)
 **DNS Benefit**: Kubernetes automatically resolves `mock-llm` to `mock-llm.kubernaut-system.svc.cluster.local` within namespace
+
+---
+
+### **Fleet Metadata Cache (FMC)** (Fleet Infrastructure)
+
+#### **Integration Tests** (`test/integration/fleetmetadatacache/`)
+
+**Created**: 2026-06-29 (Fleet MCP Gateway - BR-FLEET-002, ADR-068)
+
+```yaml
+Valkey (Cache):
+  Host Port: 16391
+  Container Port: 6379
+  Connection: 127.0.0.1:16391
+  Purpose: FMC metadata cache backend
+
+kube-mcp-server (table format):
+  Host Port: 18150
+  Network: host (--network=host, container binds directly)
+  Connection: http://127.0.0.1:18150
+  Purpose: Real kube-mcp-server for IT-FMC-PARSE table format parsing
+
+kube-mcp-server (yaml format):
+  Host Port: 18151
+  Network: host (--network=host, container binds directly)
+  Connection: http://127.0.0.1:18151
+  Purpose: Real kube-mcp-server for IT-FMC-PARSE yaml format parsing
+```
+
+**Configuration Files**:
+- `test/integration/fleetmetadatacache/suite_test.go` - Port constants, container lifecycle
+- `test/infrastructure/fleet_e2e.go` - `KubeMCPServerImage` constant
+
+**Infrastructure**: envtest (K8s API) + Podman containers (Valkey, kube-mcp-server with `--network=host`)
+**Pattern**: Ginkgo `SynchronizedBeforeSuite` with `--network=host` for kube-mcp-server (eliminates bridge-network routing issues)
+
+**Port Allocation Rationale**:
+- **Valkey 16391**: Next available port in Redis range (16379-16399)
+- **kube-mcp-server 18150-18151**: New FMC range (18150-18159); containers use `--network=host` so they bind directly to these ports (no port mapping)
+- **Why --network=host**: kube-mcp-server containers must reach the envtest API server at `127.0.0.1:PORT`. Bridge-network routing via `host.containers.internal` is unreliable on rootless podman (slirp4netns) in CI
 
 ---
 
@@ -901,6 +942,7 @@ var _ = SynchronizedBeforeSuite(
 | **WorkflowExecution (CRD)** | 15441 | 16388 | N/A | Data Storage: 18097 |
 | **Kubernaut Agent (Go)** | 15439 | 16387 | 18120 | Data Storage: 18098 |
 | **Auth Webhook (Admission)** | 15442 | 16386 | N/A | Data Storage: 18099 |
+| **Fleet Metadata Cache** | N/A | 16391 | N/A | kube-mcp-server: 18150, 18151 |
 
 ✅ **No Conflicts** - All services can run integration tests in parallel
 
@@ -967,6 +1009,7 @@ ginkgo -p -procs=4 test/e2e/datastorage/
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 3.4 | 2026-06-29 | AI Assistant | **FMC INTEGRATION (BR-FLEET-002, ADR-068)**: Added Fleet Metadata Cache (FMC) integration test port allocations; kube-mcp-server containers use `--network=host` with dedicated ports 18150 (table) and 18151 (yaml) to eliminate bridge-network routing issues on rootless podman in CI; Valkey on 16391; New range 18150-18159 for FMC; Updated Port Collision Matrix; Migrated from prior 18090/18091 which collided with Data Storage range |
 | 3.3 | 2026-05-18 | AI Assistant | **API Frontend E2E (Issue #1184)**: Added AF port allocations for monorepo E2E; HTTPS NodePort 30443 (host 18443), Health NodePort 30081 (host 18081), Prometheus NodePort 30190 (host 9190); AF shares Kind cluster with KA (`kind-kubernautagent-config.yaml`); No conflicts within cluster — 30081 only used by DS in separate clusters (gateway, RO, WE, fullpipeline); Added AF to NodePort Summary and authoritative table |
 | 3.2 | 2026-05-01 | AI Assistant | **KA MCP IT (Issue #703, CP-5)**: Allocated freed Immudb range 13330-13333 for KA MCP integration tests DataStorage stack (PostgreSQL: 13330, Redis: 13331, DataStorage: 13332, Metrics: 13333); KA Custom Tools already uses 13322-13325, KA Enrichment uses 13326-13329; MCP IT also uses Mock LLM on existing KA port 18140 (mode=interactive); No port conflicts — verified against Port Collision Matrix |
 | 3.1 | 2026-03-19 | AI Assistant | **DATA STORAGE METRICS (Issue #283)**: Added dedicated metrics NodePort 30181 (host port 28091) for DataStorage E2E tests; Issue #283 moved `/metrics` from the API server (port 8080) to a dedicated Prometheus metrics server (port 9090); E2E test `17_metrics_api_test.go` updated to use `metricsURL` instead of `dataStorageURL + "/metrics"`; Kind config updated with new `extraPortMapping`; Service definition updated with `nodePort: 30181`; Corrected Data Storage host ports in NodePort Allocation Summary (28090/28091); Updated Port Collision Matrix |

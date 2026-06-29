@@ -41,8 +41,8 @@ const (
 
 	kmcpTableContainerName = "fmc_kmcp_table_it"
 	kmcpYAMLContainerName  = "fmc_kmcp_yaml_it"
-	kmcpTablePort          = 18090
-	kmcpYAMLPort           = 18091
+	kmcpTablePort          = 18150 // DD-TEST-001 v3.4: FMC integration range 18150-18159
+	kmcpYAMLPort           = 18151 // DD-TEST-001 v3.4: FMC integration range 18150-18159
 )
 
 func TestFMC(t *testing.T) {
@@ -94,12 +94,12 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	kubeconfigPath, err := infrastructure.WriteEnvtestKubeconfigToFile(sharedK8sConfig, "fmc-it")
 	Expect(err).ToNot(HaveOccurred(), "Failed to write envtest kubeconfig")
 
-	By("Writing container-specific kubeconfig for kube-mcp-server")
-	containerKubeconfigPath, err := writeContainerKubeconfig(sharedK8sConfig.Host, sharedK8sConfig.CertData, sharedK8sConfig.KeyData)
-	Expect(err).ToNot(HaveOccurred(), "Failed to write container kubeconfig")
+	By("Writing kubeconfig for kube-mcp-server (host-network: 127.0.0.1)")
+	containerKubeconfigPath, err := writeHostNetworkKubeconfig(sharedK8sConfig.Host, sharedK8sConfig.CertData, sharedK8sConfig.KeyData)
+	Expect(err).ToNot(HaveOccurred(), "Failed to write kubeconfig")
 	GinkgoWriter.Printf("container kubeconfig: %s\n", containerKubeconfigPath)
 
-	By("Starting kube-mcp-server containers (table + yaml)")
+	By("Starting kube-mcp-server containers (table + yaml, host network)")
 	infrastructure.CleanupContainers([]string{kmcpTableContainerName, kmcpYAMLContainerName}, GinkgoWriter)
 
 	tableURL, yamlURL, startErr := startKMCPServerContainers(containerKubeconfigPath)
@@ -153,20 +153,17 @@ var _ = SynchronizedAfterSuite(func() {}, func() {
 	}, GinkgoWriter)
 })
 
-// writeContainerKubeconfig writes an envtest kubeconfig suitable for mounting
-// into Podman containers. Per DD-AUTH-014, bridge-network containers on ALL
-// platforms must use host.containers.internal to reach the host's envtest API
-// server (127.0.0.1 inside a container resolves to the container's own loopback).
+// writeHostNetworkKubeconfig writes an envtest kubeconfig for kube-mcp-server
+// containers running with --network=host. Host-network containers share the
+// host's network namespace, so 127.0.0.1 reaches envtest directly without
+// needing host.containers.internal or bridge-network routing.
 // TLS verification is skipped because the envtest cert is issued for "localhost".
-func writeContainerKubeconfig(apiServerURL string, certData, keyData []byte) (string, error) {
-	containerAPIServer := strings.Replace(apiServerURL, "127.0.0.1", "host.containers.internal", 1)
-	skipTLS := true
-
+func writeHostNetworkKubeconfig(apiServerURL string, certData, keyData []byte) (string, error) {
 	kubeconfig := clientcmdapi.Config{
 		Clusters: map[string]*clientcmdapi.Cluster{
 			"envtest": {
-				Server:                containerAPIServer,
-				InsecureSkipTLSVerify: skipTLS,
+				Server:                apiServerURL,
+				InsecureSkipTLSVerify: true,
 			},
 		},
 		AuthInfos: map[string]*clientcmdapi.AuthInfo{
@@ -206,6 +203,11 @@ func writeContainerKubeconfig(apiServerURL string, certData, keyData []byte) (st
 //   - table format on port kmcpTablePort
 //   - yaml format on port kmcpYAMLPort
 //
+// Uses --network=host so containers share the host's network namespace.
+// This eliminates podman bridge-network issues (slirp4netns/host.containers.internal
+// routing) by letting kube-mcp-server reach the envtest API server at 127.0.0.1
+// directly. Each container listens on a distinct port to avoid conflicts.
+//
 // Returns base URLs (e.g. "http://127.0.0.1:18090") or error.
 func startKMCPServerContainers(kubeconfigPath string) (tableURL, yamlURL string, err error) {
 	configs := []struct {
@@ -220,15 +222,14 @@ func startKMCPServerContainers(kubeconfigPath string) (tableURL, yamlURL string,
 	urls := make([]string, 2)
 	for i, c := range configs {
 		cfg := infrastructure.GenericContainerConfig{
-			Name:  c.name,
-			Image: infrastructure.KubeMCPServerImage,
-			Ports: map[int]int{8080: c.port},
+			Name:    c.name,
+			Image:   infrastructure.KubeMCPServerImage,
+			Network: "host",
 			Volumes: map[string]string{
 				kubeconfigPath: "/tmp/kubeconfig.yaml",
 			},
-			ExtraHosts: []string{"host.containers.internal:host-gateway"},
 			Cmd: []string{
-				fmt.Sprintf("--port=%d", 8080),
+				fmt.Sprintf("--port=%d", c.port),
 				"--cluster-provider=kubeconfig",
 				"--kubeconfig=/tmp/kubeconfig.yaml",
 				fmt.Sprintf("--list-output=%s", c.format),
