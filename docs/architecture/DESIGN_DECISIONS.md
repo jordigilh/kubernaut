@@ -109,6 +109,7 @@
 | DD-TESTING-002 | Integration Test Diagnostics (Must-Gather Pattern) | ✅ Approved | 2026-01-14 | [DD-TESTING-002-integration-test-diagnostics-must-gather.md](decisions/DD-TESTING-002-integration-test-diagnostics-must-gather.md) |
 | DD-AUTH-004 | OpenShift OAuth-Proxy for SOC2 Legal Hold Authentication | ✅ Approved | 2026-01-07 | [DD-AUTH-004-openshift-oauth-proxy-legal-hold.md](decisions/DD-AUTH-004-openshift-oauth-proxy-legal-hold.md) |
 | DD-AUTH-005 | DataStorage Client Authentication Pattern (Authoritative) | ✅ Approved | 2026-01-07 | [DD-AUTH-005-datastorage-client-authentication-pattern.md](decisions/DD-AUTH-005-datastorage-client-authentication-pattern.md) |
+| DD-FLEET-002 | Cluster-Scoped Workflow Targeting via Rego Policy Classification | ✅ Approved | 2026-06-28 | [DD-FLEET-002-cluster-scoped-workflow-targeting.md](decisions/DD-FLEET-002-cluster-scoped-workflow-targeting.md) |
 
 **Note**: For complete decision details, alternatives considered, implementation guidance, and consequences, see the individual DD-* files in `docs/architecture/decisions/`.
 
