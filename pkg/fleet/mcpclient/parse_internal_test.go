@@ -315,28 +315,28 @@ var _ = Describe("UT-FLEET-PARSE: Multi-format MCP response parsing (BR-FLEET-00
 		})
 	})
 
-	Describe("extractStructured [SI-10]", func() {
+	Describe("extractStructuredList [SI-10]", func() {
 		It("UT-FLEET-PARSE-028 [SI-10]: returns nil for nil result", func() {
-			Expect(extractStructured(nil)).To(BeNil())
+			Expect(extractStructuredList(nil)).To(BeNil())
 		})
 
 		It("UT-FLEET-PARSE-028b [SI-10]: returns nil for nil StructuredContent", func() {
 			result := &mcp.CallToolResult{}
-			Expect(extractStructured(result)).To(BeNil())
+			Expect(extractStructuredList(result)).To(BeNil())
 		})
 
 		It("UT-FLEET-PARSE-028c [SI-10]: returns nil for non-slice StructuredContent", func() {
 			result := &mcp.CallToolResult{StructuredContent: "not a slice"}
-			Expect(extractStructured(result)).To(BeNil())
+			Expect(extractStructuredList(result)).To(BeNil())
 		})
 
-		It("UT-FLEET-PARSE-028d [SI-10]: extracts valid []any of maps", func() {
+		It("UT-FLEET-PARSE-028d [SI-10]: extracts valid []any of maps (legacy format)", func() {
 			data := []any{
 				map[string]any{"kind": "Pod", "metadata": map[string]any{"name": "p1"}},
 				map[string]any{"kind": "Pod", "metadata": map[string]any{"name": "p2"}},
 			}
 			result := &mcp.CallToolResult{StructuredContent: data}
-			items := extractStructured(result)
+			items := extractStructuredList(result)
 			Expect(items).To(HaveLen(2))
 			Expect(items[0]["kind"]).To(Equal("Pod"))
 		})
@@ -348,8 +348,83 @@ var _ = Describe("UT-FLEET-PARSE: Multi-format MCP response parsing (BR-FLEET-00
 				42,
 			}
 			result := &mcp.CallToolResult{StructuredContent: data}
-			items := extractStructured(result)
+			items := extractStructuredList(result)
 			Expect(items).To(HaveLen(1))
+		})
+
+		It("UT-FLEET-PARSE-028f [SI-10]: extracts items from map envelope (kube-mcp-server --list-output=yaml)", func() {
+			data := map[string]any{
+				"items": []any{
+					map[string]any{
+						"apiVersion": "v1",
+						"kind":       "Namespace",
+						"metadata":   map[string]any{"name": "default"},
+					},
+					map[string]any{
+						"apiVersion": "v1",
+						"kind":       "Namespace",
+						"metadata":   map[string]any{"name": "kube-system"},
+					},
+				},
+			}
+			result := &mcp.CallToolResult{StructuredContent: data}
+			items := extractStructuredList(result)
+			Expect(items).To(HaveLen(2))
+			Expect(items[0]["kind"]).To(Equal("Namespace"))
+			meta, ok := items[0]["metadata"].(map[string]any)
+			Expect(ok).To(BeTrue())
+			Expect(meta["name"]).To(Equal("default"))
+		})
+
+		It("UT-FLEET-PARSE-028g [SI-10]: returns nil for map envelope without items key", func() {
+			data := map[string]any{"kind": "Namespace", "metadata": map[string]any{"name": "x"}}
+			result := &mcp.CallToolResult{StructuredContent: data}
+			Expect(extractStructuredList(result)).To(BeNil())
+		})
+
+		It("UT-FLEET-PARSE-028h [SI-10]: returns nil for map envelope with non-array items", func() {
+			data := map[string]any{"items": "not an array"}
+			result := &mcp.CallToolResult{StructuredContent: data}
+			Expect(extractStructuredList(result)).To(BeNil())
+		})
+	})
+
+	Describe("extractStructuredGet [SI-10]", func() {
+		It("UT-FLEET-PARSE-029 [SI-10]: returns nil for nil result", func() {
+			Expect(extractStructuredGet(nil)).To(BeNil())
+		})
+
+		It("UT-FLEET-PARSE-029b [SI-10]: returns nil for nil StructuredContent", func() {
+			result := &mcp.CallToolResult{}
+			Expect(extractStructuredGet(result)).To(BeNil())
+		})
+
+		It("UT-FLEET-PARSE-029c [SI-10]: returns nil for non-map StructuredContent", func() {
+			result := &mcp.CallToolResult{StructuredContent: "not a map"}
+			Expect(extractStructuredGet(result)).To(BeNil())
+		})
+
+		It("UT-FLEET-PARSE-029d [SI-10]: returns full K8s object from map with kind", func() {
+			data := map[string]any{
+				"apiVersion": "v1",
+				"kind":       "Namespace",
+				"metadata":   map[string]any{"name": "default", "uid": "abc-123"},
+				"spec":       map[string]any{"finalizers": []any{"kubernetes"}},
+				"status":     map[string]any{"phase": "Active"},
+			}
+			result := &mcp.CallToolResult{StructuredContent: data}
+			obj := extractStructuredGet(result)
+			Expect(obj).ToNot(BeNil())
+			Expect(obj["kind"]).To(Equal("Namespace"))
+			meta, ok := obj["metadata"].(map[string]any)
+			Expect(ok).To(BeTrue())
+			Expect(meta["name"]).To(Equal("default"))
+		})
+
+		It("UT-FLEET-PARSE-029e [SI-10]: returns nil for map without kind key", func() {
+			data := map[string]any{"metadata": map[string]any{"name": "x"}}
+			result := &mcp.CallToolResult{StructuredContent: data}
+			Expect(extractStructuredGet(result)).To(BeNil())
 		})
 	})
 
