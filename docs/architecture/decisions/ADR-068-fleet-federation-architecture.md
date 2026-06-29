@@ -189,6 +189,10 @@ business logic.
 
     **Authority**: Spike S15 (2026-06-27) — validated Kuadrant `discover_tools` / `select_tools` response format, threshold behavior, and tool prefix conventions against live Kuadrant MCP Gateway v0.7.0 in Kind.
 
+    **Known-prefix direct-call semantics**: Programmatic clients (FMC syncer, SP enricher, WE executor, EM target reader) know the target cluster's tool prefix at call time — it comes from the cluster registry, the `RemediationRequest.Spec.ClusterID`, or the service configuration. These clients call `mcpclient.Client` methods (`Get`, `List`) which internally construct the prefixed tool name (e.g., `prod_east__resources_list`) and call it directly via `CallTool`. They **never** invoke `GatewayDiscoverer` — discovery is exclusively for LLM-facing sessions where the model navigates clusters dynamically.
+
+    This means discovery is **cross-cluster navigation for the LLM**, not a boot prerequisite for programmatic services. FMC, SP, WE, and EM function correctly even if `GatewayDiscoverer` is not yet implemented (v1.6 planned). The only consumer that requires `GatewayDiscoverer` is KA's `list_clusters` / `list_tools_for_cluster` tool pair, which enables the LLM to browse and scope clusters during investigation.
+
 12. **kube-mcp-server MUST be deployed with `--list-output=yaml`** (not the default `table`): Kubernaut's `mcpclient` consumes `structuredContent` from `CallToolResult` to build `unstructured.Unstructured` objects without fragile text parsing. The `structuredContent` shape depends on this flag:
 
     - **`--list-output=table` (default)**: `resources_list` returns flat table-row maps (`{"Name":"x","Status":"y","Age":"5m"}`) in `structuredContent`. These lack `metadata.name`/`metadata.namespace` — `unstructured.GetName()` returns `""`, breaking FMC syncer scope cache keys and any consumer using standard K8s object accessors.
