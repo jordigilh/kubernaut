@@ -218,7 +218,7 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 	_ = os.Setenv("AF_E2E_CERT_DIR", certDir)
 	_ = os.Setenv("CERT_DIR", certDir)
 	_ = os.Setenv("AF_E2E_CA_CERT", filepath.Join(certDir, "ca.crt"))
-	_ = os.Setenv("AF_E2E_DEX_URL", "http://localhost:5556/dex")
+	_ = os.Setenv("AF_E2E_DEX_URL", "https://localhost:5556/dex")
 	_ = os.Setenv("KUBECONFIG", kubeconfigPath)
 
 	_, _ = fmt.Fprintln(writer, "Phase 5: Deploy AF (programmatic)")
@@ -701,14 +701,15 @@ func afPatchKAJWTAudience(ctx context.Context, kubeconfigPath, namespace string,
 	}
 	currentConfig := string(out)
 
-	jwtBlock := fmt.Sprintf(`  jwtProviders:
+	jwtBlock := `  jwtProviders:
     - name: dex-e2e
-      issuer: "http://dex.%s.svc:5556/dex"
-      jwksURL: "http://dex.%s.svc:5556/dex/keys"
+      issuer: "https://dex:5556/dex"
+      jwksURL: "https://dex:5556/dex/keys"
       audience: "kubernaut-apifrontend"
+      tlsCaFile: /etc/apifrontend/inter-service-ca/ca.crt
       claimMappings:
         username: "email"
-        groups: "groups"`, namespace, namespace)
+        groups: "groups"`
 
 	anchor := "rateLimitPerUser: 20"
 	if !strings.Contains(currentConfig, anchor) {
