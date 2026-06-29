@@ -59,7 +59,7 @@ func noopAwaitingCallbacks() prodcontroller.AwaitingApprovalCallbacks {
 		},
 		AcquireLock: func(_ context.Context, _ string) (bool, error) { return true, nil },
 		ReleaseLock: func(_ context.Context, _ string) error { return nil },
-		CapturePreRemediationHash: func(_ context.Context, _, _, _ string) (string, string, error) { return "", "", nil },
+		CapturePreRemediationHash: func(_ context.Context, _, _, _, _ string) (string, string, error) { return "", "", nil },
 		ResolveDualTargets: func(_ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) prodcontroller.DualTargetResult {
 			return prodcontroller.DualTargetResult{Remediation: prodcontroller.TargetRef{Kind: "Deployment", Name: "app", Namespace: "default"}}
 		},

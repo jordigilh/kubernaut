@@ -72,7 +72,7 @@ func noopAnalyzingCallbacks() prodcontroller.AnalyzingCallbacks {
 		},
 		AcquireLock: func(_ context.Context, _ string) (bool, error) { return true, nil },
 		ReleaseLock: func(_ context.Context, _ string) error { return nil },
-		CapturePreRemediationHash: func(_ context.Context, _, _, _ string) (string, string, error) { return "", "", nil },
+		CapturePreRemediationHash: func(_ context.Context, _, _, _, _ string) (string, string, error) { return "", "", nil },
 		ResolveDualTargets: func(_ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) prodcontroller.DualTargetResult {
 			return prodcontroller.DualTargetResult{
 				Remediation: prodcontroller.TargetRef{Kind: "Deployment", Name: "app", Namespace: "default"},
@@ -407,7 +407,7 @@ var _ = Describe("Issue #666: AnalyzingHandler (BR-ORCH-036/037)", func() {
 			cbs.FetchFreshRR = func(_ context.Context, _ client.ObjectKey) (*remediationv1.RemediationRequest, error) {
 				return rr, nil
 			}
-			cbs.CapturePreRemediationHash = func(_ context.Context, _, _, _ string) (string, string, error) {
+			cbs.CapturePreRemediationHash = func(_ context.Context, _, _, _, _ string) (string, string, error) {
 				return "", "", fmt.Errorf("hash computation failed")
 			}
 
@@ -429,7 +429,7 @@ var _ = Describe("Issue #666: AnalyzingHandler (BR-ORCH-036/037)", func() {
 			cbs.FetchFreshRR = func(_ context.Context, _ client.ObjectKey) (*remediationv1.RemediationRequest, error) {
 				return rr, nil
 			}
-			cbs.CapturePreRemediationHash = func(_ context.Context, _, _, _ string) (string, string, error) {
+			cbs.CapturePreRemediationHash = func(_ context.Context, _, _, _, _ string) (string, string, error) {
 				return "", "resource has no spec", nil
 			}
 

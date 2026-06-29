@@ -65,7 +65,7 @@ type AnalyzingCallbacks struct {
 	HandleBlocked                  func(ctx context.Context, rr *remediationv1.RemediationRequest, bc *routing.BlockingCondition, fromPhase, workflowID string) (ctrl.Result, error)
 	AcquireLock                    func(ctx context.Context, target string) (bool, error)
 	ReleaseLock                    func(ctx context.Context, target string) error
-	CapturePreRemediationHash      func(ctx context.Context, kind, name, namespace string) (hash string, degradedReason string, err error)
+	CapturePreRemediationHash      func(ctx context.Context, kind, name, namespace, clusterID string) (hash string, degradedReason string, err error)
 	ResolveDualTargets             func(rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) DualTargetResult
 	PersistPreHash                 func(ctx context.Context, rr *remediationv1.RemediationRequest, preHash string) error
 	IsDryRun                       func() bool // #712, #736: returns true when dry-run mode is enabled
@@ -258,7 +258,7 @@ func (h *AnalyzingHandler) handleDirectExecution(ctx context.Context, rr *remedi
 	remTarget := h.callbacks.ResolveDualTargets(rr, ai).Remediation
 
 	preHash, degradedReason, hashErr := h.callbacks.CapturePreRemediationHash(
-		ctx, remTarget.Kind, remTarget.Name, remTarget.Namespace)
+		ctx, remTarget.Kind, remTarget.Name, remTarget.Namespace, rr.Spec.ClusterID)
 	if hashErr != nil {
 		logger.Error(hashErr, "Failed to capture pre-remediation hash (terminal)")
 		if updateErr := helpers.UpdateRemediationRequestStatus(ctx, h.k8sClient, rr, func(rr *remediationv1.RemediationRequest) error {
