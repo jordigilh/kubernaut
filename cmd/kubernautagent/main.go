@@ -440,9 +440,17 @@ func main() {
 	// liveness probe kills the pod before the health server ever starts.
 	var shutdownFlag int32
 
+	// apiServerReady is set to 1 only once the main API server (port 8443/8080)
+	// goroutine is about to start listening. Without this gate, /readyz would
+	// report ready as soon as the health server starts (immediately), while
+	// the main API server is still blocked behind the JWKS pre-warm inside the
+	// route-setup closure below -- causing clients to see "connection reset"
+	// for requests sent right after Kubernetes reports the pod Ready.
+	var apiServerReady int32
+
 	healthMux := http.NewServeMux()
 	healthMux.HandleFunc("/healthz", healthHandler)
-	healthMux.HandleFunc("/readyz", readinessHandler(&shutdownFlag, swappable, ds, interactiveReadiness))
+	healthMux.HandleFunc("/readyz", readinessHandler(&shutdownFlag, &apiServerReady, swappable, ds, interactiveReadiness))
 	healthMux.HandleFunc("/config", configHandler(cfg, swappable))
 	if !cfg.Runtime.Server.DisableAdminEndpoints {
 		healthMux.Handle("/admin/loglevel", atomicLevel)
@@ -638,6 +646,11 @@ func main() {
 
 	store.StartCleanupLoop(ctx, cfg.Runtime.Session.TTL/2)
 
+	// Route setup (including the JWKS pre-warm inside newAuthMiddleware) has
+	// completed by this point; only the network bind remains. Mark the API
+	// server ready now so /readyz does not report ready any earlier than this.
+	atomic.StoreInt32(&apiServerReady, 1)
+
 	go func() {
 		logger.Info("HTTP server listening", "addr", addr)
 		var listenErr error
@@ -702,6 +715,11 @@ func healthHandler(w http.ResponseWriter, _ *http.Request) {
 // dependency checks instead of returning a static 200. Checks:
 //   - shutdownFlag: set after SIGTERM/SIGINT received; makes probe fail
 //     so k8s stops routing traffic during graceful shutdown.
+//   - apiServerReady: set once the main API server goroutine is about to
+//     start listening. Guards against the readiness probe reporting ready
+//     before the main API server (auth middleware + JWKS pre-warm) has
+//     finished initializing, which would otherwise let traffic hit a port
+//     that isn't accepting connections yet.
 //   - swappable: verifies the LLM client has a non-empty model name
 //     (proxy for "LLM client was successfully initialized").
 //   - ds: if non-nil, verifies the ogen client is initialized (DS is
@@ -709,7 +727,7 @@ func healthHandler(w http.ResponseWriter, _ *http.Request) {
 //   - interactive: reports the interactive mode status (#891). This is
 //     informational (does not fail the probe) since autonomous mode
 //     continues to function even when interactive is soft-disabled.
-func readinessHandler(shutdownFlag *int32, swappable *llm.SwappableClient, ds *dsClients, interactive *karbac.InteractiveReadiness) http.HandlerFunc {
+func readinessHandler(shutdownFlag, apiServerReady *int32, swappable *llm.SwappableClient, ds *dsClients, interactive *karbac.InteractiveReadiness) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
@@ -718,6 +736,15 @@ func readinessHandler(shutdownFlag *int32, swappable *llm.SwappableClient, ds *d
 			_ = json.NewEncoder(w).Encode(map[string]string{
 				"status": "not_ready",
 				"reason": "shutting_down",
+			})
+			return
+		}
+
+		if atomic.LoadInt32(apiServerReady) == 0 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"status": "not_ready",
+				"reason": "api_server_starting",
 			})
 			return
 		}
