@@ -434,6 +434,58 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	// Start health/metrics servers BEFORE the route setup closure so that
+	// liveness/readiness probes are served even while the JWKS pre-warm
+	// (up to 15 s) blocks inside newAuthMiddleware. Without this, the
+	// liveness probe kills the pod before the health server ever starts.
+	var shutdownFlag int32
+
+	healthMux := http.NewServeMux()
+	healthMux.HandleFunc("/healthz", healthHandler)
+	healthMux.HandleFunc("/readyz", readinessHandler(&shutdownFlag, swappable, ds, interactiveReadiness))
+	healthMux.HandleFunc("/config", configHandler(cfg, swappable))
+	if !cfg.Runtime.Server.DisableAdminEndpoints {
+		healthMux.Handle("/admin/loglevel", atomicLevel)
+	}
+	healthMux.HandleFunc("/openapi.json", kaapi.SpecHandler())
+	if !cfg.Runtime.Server.DisableProfiling {
+		healthMux.HandleFunc("/debug/pprof/", pprof.Index)
+		healthMux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+		healthMux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+		healthMux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+		healthMux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	}
+	healthServer := &http.Server{
+		Addr:              cfg.Runtime.Server.HealthAddr,
+		Handler:           healthMux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
+	}
+	metricsMux := http.NewServeMux()
+	metricsMux.Handle("/metrics", promhttp.Handler())
+	metricsServer := &http.Server{
+		Addr:              cfg.Runtime.Server.MetricsAddr,
+		Handler:           metricsMux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       5 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       30 * time.Second,
+	}
+
+	go func() {
+		logger.Info("health server listening", "addr", cfg.Runtime.Server.HealthAddr)
+		if err := healthServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Error(err, "health server error")
+		}
+	}()
+	go func() {
+		logger.Info("metrics server listening", "addr", cfg.Runtime.Server.MetricsAddr)
+		if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Error(err, "metrics server error")
+		}
+	}()
+
 	var sessionDrainer *mcpkg.SessionDrainer
 
 	r.Route("/api/v1", func(r chi.Router) {
@@ -531,42 +583,6 @@ func main() {
 		}
 	}
 
-	var shutdownFlag int32
-
-	// Dedicated health server (plain HTTP, never TLS). /config moved here from API port (SEC-4).
-	healthMux := http.NewServeMux()
-	healthMux.HandleFunc("/healthz", healthHandler)
-	healthMux.HandleFunc("/readyz", readinessHandler(&shutdownFlag, swappable, ds, interactiveReadiness))
-	healthMux.HandleFunc("/config", configHandler(cfg, swappable))
-	if !cfg.Runtime.Server.DisableAdminEndpoints {
-		healthMux.Handle("/admin/loglevel", atomicLevel)
-	}
-	healthMux.HandleFunc("/openapi.json", kaapi.SpecHandler())
-	if !cfg.Runtime.Server.DisableProfiling {
-		healthMux.HandleFunc("/debug/pprof/", pprof.Index)
-		healthMux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
-		healthMux.HandleFunc("/debug/pprof/profile", pprof.Profile)
-		healthMux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
-		healthMux.HandleFunc("/debug/pprof/trace", pprof.Trace)
-	}
-	healthServer := &http.Server{
-		Addr:              cfg.Runtime.Server.HealthAddr,
-		Handler:           healthMux,
-		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       10 * time.Second,
-		WriteTimeout:      10 * time.Second,
-	}
-	metricsMux := http.NewServeMux()
-	metricsMux.Handle("/metrics", promhttp.Handler())
-	metricsServer := &http.Server{
-		Addr:              cfg.Runtime.Server.MetricsAddr,
-		Handler:           metricsMux,
-		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       5 * time.Second,
-		WriteTimeout:      10 * time.Second,
-		IdleTimeout:       30 * time.Second,
-	}
-
 	// Issue #756: Wire FileWatcher for server cert hot-reload
 	if certReloader != nil {
 		certWatcher, watchErr := hotreload.NewFileWatcher(
@@ -621,20 +637,6 @@ func main() {
 	}
 
 	store.StartCleanupLoop(ctx, cfg.Runtime.Session.TTL/2)
-
-	// Issue #753: Start dedicated health and metrics servers
-	go func() {
-		logger.Info("health server listening", "addr", cfg.Runtime.Server.HealthAddr)
-		if err := healthServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Error(err, "health server error")
-		}
-	}()
-	go func() {
-		logger.Info("metrics server listening", "addr", cfg.Runtime.Server.MetricsAddr)
-		if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Error(err, "metrics server error")
-		}
-	}()
 
 	go func() {
 		logger.Info("HTTP server listening", "addr", addr)
