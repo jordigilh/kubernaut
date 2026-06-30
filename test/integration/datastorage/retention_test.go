@@ -343,7 +343,7 @@ var _ = Describe("Retention Enforcement — Integration Tests", Ordered, Continu
 
 	// IT-DS-485-008: SOC2 CC6.1 — legal_hold cannot be set to FALSE via UPDATE
 	// BR-AUDIT-004: Immutability / integrity of audit records
-	Describe("IT-DS-485-008: SOC2 — legal_hold immutable once true", func() {
+	Describe("IT-DS-485-008: SOC2 — legal_hold immutable once true [AU-9, CC6.1]", func() {
 		corrID := "test-ret-485-008"
 
 		BeforeAll(func() {

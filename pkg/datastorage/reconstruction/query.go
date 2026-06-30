@@ -51,7 +51,9 @@ func QueryAuditEventsForReconstruction(
 			  'aianalysis.analysis.completed',
 			  'workflowexecution.selection.completed',
 			  'workflowexecution.execution.started',
-			  'orchestrator.lifecycle.created'
+			  'orchestrator.lifecycle.created',
+			  'orchestrator.lifecycle.completed',
+			  'orchestrator.lifecycle.failed'
 		  )
 		ORDER BY event_timestamp ASC, event_id ASC
 		LIMIT 1000
@@ -192,6 +194,32 @@ func QueryAuditEventsForReconstruction(
 				payload,
 			)
 
+		case "orchestrator.lifecycle.completed":
+			var payload ogenclient.RemediationOrchestratorAuditPayload
+			if err := json.Unmarshal(eventDataJSON, &payload); err != nil {
+				logger.Error(err, "Failed to unmarshal orchestrator completed event_data",
+					"correlationID", correlationID,
+					"eventID", eventID)
+				return nil, fmt.Errorf("failed to unmarshal orchestrator completed event_data: %w", err)
+			}
+			event.EventData.SetRemediationOrchestratorAuditPayload(
+				ogenclient.AuditEventEventDataOrchestratorLifecycleCompletedAuditEventEventData,
+				payload,
+			)
+
+		case "orchestrator.lifecycle.failed":
+			var payload ogenclient.RemediationOrchestratorAuditPayload
+			if err := json.Unmarshal(eventDataJSON, &payload); err != nil {
+				logger.Error(err, "Failed to unmarshal orchestrator failed event_data",
+					"correlationID", correlationID,
+					"eventID", eventID)
+				return nil, fmt.Errorf("failed to unmarshal orchestrator failed event_data: %w", err)
+			}
+			event.EventData.SetRemediationOrchestratorAuditPayload(
+				ogenclient.AuditEventEventDataOrchestratorLifecycleFailedAuditEventEventData,
+				payload,
+			)
+
 		case "aianalysis.analysis.completed":
 			var payload ogenclient.AIAnalysisAuditPayload
 			if err := json.Unmarshal(eventDataJSON, &payload); err != nil {
@@ -266,6 +294,8 @@ func IsReconstructionRelevant(eventType string) bool {
 		"workflowexecution.selection.completed":     true, // Gap #5
 		"workflowexecution.execution.started":       true, // Gap #6
 		"orchestrator.lifecycle.created":            true, // Gap #8
+		"orchestrator.lifecycle.completed":          true, // CC8.1: outcome/duration for RR status
+		"orchestrator.lifecycle.failed":             true, // CC8.1: error_details for RR status
 	}
 	return relevantTypes[eventType]
 }
