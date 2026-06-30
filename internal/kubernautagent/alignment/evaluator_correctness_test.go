@@ -78,4 +78,79 @@ var _ = Describe("Correctness fixes — BR-AI-601", func() {
 			Expect(wr.Observations).To(HaveLen(1))
 		})
 	})
+
+	Describe("UT-SA-601-FLEET-001: Cluster-origin metadata in shadow evaluation", func() {
+		It("should include cluster= in evaluator prompt for fleet tools", func() {
+			client := &mockLLMClient{responses: []llm.ChatResponse{cleanResponse()}}
+			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
+				Timeout: 5 * time.Second, MaxStepTokens: 4000, MaxRetries: 1,
+			}, "", alignment.WithLogger(logr.Discard()))
+
+			step := alignment.Step{
+				Index:     0,
+				Kind:      alignment.StepKindToolResult,
+				Tool:      "prod-east__resources_get",
+				ClusterID: "prod-east",
+				Content:   `{"kind":"Pod","metadata":{"name":"nginx"}}`,
+			}
+			obs := evaluator.EvaluateStep(context.Background(), step)
+			Expect(obs.Suspicious).To(BeFalse())
+
+			Expect(client.capturedRequestContents).To(HaveLen(1))
+			Expect(client.capturedRequestContents[0]).To(ContainSubstring("cluster=prod-east"))
+			Expect(client.capturedRequestContents[0]).To(ContainSubstring("tool=prod-east__resources_get"))
+		})
+
+		It("should not include cluster= for local tools", func() {
+			client := &mockLLMClient{responses: []llm.ChatResponse{cleanResponse()}}
+			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
+				Timeout: 5 * time.Second, MaxStepTokens: 4000, MaxRetries: 1,
+			}, "", alignment.WithLogger(logr.Discard()))
+
+			step := alignment.Step{
+				Index:   0,
+				Kind:    alignment.StepKindToolResult,
+				Tool:    "get_pods",
+				Content: `{"kind":"Pod"}`,
+			}
+			obs := evaluator.EvaluateStep(context.Background(), step)
+			Expect(obs.Suspicious).To(BeFalse())
+
+			Expect(client.capturedRequestContents).To(HaveLen(1))
+			Expect(client.capturedRequestContents[0]).NotTo(ContainSubstring("cluster="))
+		})
+	})
+
+	Describe("UT-SA-601-FLEET-002: SubmitToolStep extracts cluster ID from tool name", func() {
+		It("should populate ClusterID for fleet tool names", func() {
+			client := &mockLLMClient{responses: []llm.ChatResponse{cleanResponse()}}
+			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
+				Timeout: 5 * time.Second, MaxStepTokens: 4000, MaxRetries: 1,
+			}, "")
+			observer, err := alignment.NewObserver(evaluator)
+			Expect(err).NotTo(HaveOccurred())
+			ctx := alignment.WithObserver(context.Background(), observer)
+
+			alignment.SubmitToolStep(ctx, "staging__resources_list", `{"items":[]}`)
+			wr := observer.WaitForCompletion(5 * time.Second)
+			Expect(wr.Observations).To(HaveLen(1))
+			Expect(wr.Observations[0].Step.ClusterID).To(Equal("staging"))
+			Expect(wr.Observations[0].Step.Tool).To(Equal("staging__resources_list"))
+		})
+
+		It("should leave ClusterID empty for local tool names", func() {
+			client := &mockLLMClient{responses: []llm.ChatResponse{cleanResponse()}}
+			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
+				Timeout: 5 * time.Second, MaxStepTokens: 4000, MaxRetries: 1,
+			}, "")
+			observer, err := alignment.NewObserver(evaluator)
+			Expect(err).NotTo(HaveOccurred())
+			ctx := alignment.WithObserver(context.Background(), observer)
+
+			alignment.SubmitToolStep(ctx, "get_pods", `{"items":[]}`)
+			wr := observer.WaitForCompletion(5 * time.Second)
+			Expect(wr.Observations).To(HaveLen(1))
+			Expect(wr.Observations[0].Step.ClusterID).To(BeEmpty())
+		})
+	})
 })

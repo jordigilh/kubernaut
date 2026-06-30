@@ -600,6 +600,56 @@ var _ = Describe("AlignmentCheck EffectiveLLM merge — BR-AI-601", func() {
 	})
 })
 
+var _ = Describe("FleetConfig.AlignmentCheck — BR-AI-601", func() {
+	Describe("UT-SA-601-FLEET-010: fleet alignment check YAML round-trip", func() {
+		It("should parse fleet-specific alignment check from YAML", func() {
+			yamlData := []byte(`
+integrations:
+  fleet:
+    endpoint: "https://mcp-gw.example.com"
+    gatewayType: "eaigw"
+    alignmentCheck:
+      enabled: true
+      mode: enforce
+      timeout: 15s
+      maxStepTokens: 800
+      maxRetries: 2
+      verdictTimeout: 45s
+      llm:
+        provider: anthropic
+        model: claude-3-haiku
+        endpoint: "https://api.anthropic.com/v1"
+`)
+			cfg, err := config.Load(yamlData)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(cfg.Integrations.Fleet.AlignmentCheck).NotTo(BeNil())
+			Expect(cfg.Integrations.Fleet.AlignmentCheck.Enabled).To(BeTrue())
+			Expect(cfg.Integrations.Fleet.AlignmentCheck.Mode).To(Equal(config.AlignmentModeEnforce))
+			Expect(cfg.Integrations.Fleet.AlignmentCheck.Timeout).To(Equal(15 * time.Second))
+			Expect(cfg.Integrations.Fleet.AlignmentCheck.MaxStepTokens).To(Equal(800))
+			Expect(cfg.Integrations.Fleet.AlignmentCheck.MaxRetries).To(Equal(2))
+			Expect(cfg.Integrations.Fleet.AlignmentCheck.VerdictTimeout).To(Equal(45 * time.Second))
+			Expect(cfg.Integrations.Fleet.AlignmentCheck.LLM).NotTo(BeNil())
+			Expect(cfg.Integrations.Fleet.AlignmentCheck.LLM.Provider).To(Equal("anthropic"))
+			Expect(cfg.Integrations.Fleet.AlignmentCheck.LLM.Model).To(Equal("claude-3-haiku"))
+		})
+	})
+
+	Describe("UT-SA-601-FLEET-011: fleet alignment check defaults to nil (inherits global)", func() {
+		It("should leave AlignmentCheck nil when not specified in fleet config", func() {
+			yamlData := []byte(`
+integrations:
+  fleet:
+    endpoint: "https://mcp-gw.example.com"
+    gatewayType: "eaigw"
+`)
+			cfg, err := config.Load(yamlData)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(cfg.Integrations.Fleet.AlignmentCheck).To(BeNil())
+		})
+	})
+})
+
 var _ = Describe("ShutdownConfig — BR-PLATFORM-1329", func() {
 
 	Describe("UT-KA-1329-001: runtime.shutdown.drainSeconds YAML round-trip (CM-6)", func() {
