@@ -83,9 +83,10 @@ type IntegrationsConfig struct {
 // GatewayType selects the discovery strategy: "eaigw" or "kuadrant".
 // When GatewayType is empty, fleet is disabled regardless of Endpoint.
 type FleetConfig struct {
-	Endpoint    string       `yaml:"endpoint"`
-	GatewayType string       `yaml:"gatewayType"`
-	OAuth2      FleetOAuth2  `yaml:"oauth2"`
+	Endpoint       string                `yaml:"endpoint"`
+	GatewayType    string                `yaml:"gatewayType"`
+	OAuth2         FleetOAuth2           `yaml:"oauth2"`
+	AlignmentCheck *AlignmentCheckConfig `yaml:"alignmentCheck,omitempty"`
 }
 
 // FleetOAuth2 holds OAuth2 client credentials for MCP Gateway authentication.

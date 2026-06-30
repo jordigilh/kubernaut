@@ -122,6 +122,9 @@ func (e *Evaluator) EvaluateStep(ctx context.Context, step Step) Observation {
 	if step.Tool != "" {
 		userMsg += fmt.Sprintf(" tool=%s", step.Tool)
 	}
+	if step.ClusterID != "" {
+		userMsg += fmt.Sprintf(" cluster=%s", step.ClusterID)
+	}
 	userMsg += fmt.Sprintf("\n\n%s", wrapped)
 
 	messages := []llm.Message{

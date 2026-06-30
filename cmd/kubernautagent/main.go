@@ -299,13 +299,14 @@ func main() {
 	var effectiveReg registry.ToolRegistry = reg
 	var alignEvaluator *alignment.Evaluator
 
-	if cfg.AI.AlignmentCheck.Enabled {
+	alignCfg := resolveAlignmentCheckConfig(cfg)
+	if alignCfg.Enabled {
 		var shadowClient llm.Client
-		if cfg.AI.AlignmentCheck.LLM == nil {
+		if alignCfg.LLM == nil {
 			shadowClient = instrumentedLLM
 			logger.Error(nil, "shadow agent shares investigation LLM client — shadow requests will compete with primary investigation; configure ai.alignmentCheck.llm for dedicated shadow model")
 		} else {
-			alignStaticCfg, alignRtCfg := cfg.AI.AlignmentCheck.EffectiveLLM(cfg.AI.LLM, *llmRuntime)
+			alignStaticCfg, alignRtCfg := alignCfg.EffectiveLLM(cfg.AI.LLM, *llmRuntime)
 			raw, alignErr := buildLLMClientFromConfig(context.Background(), mergeLLMConfig(alignStaticCfg, &alignRtCfg))
 			if alignErr != nil {
 				logger.Error(alignErr, "alignment check LLM client failed (fail-closed): alignment is enabled but shadow client unavailable")
@@ -317,17 +318,13 @@ func main() {
 		}
 		if shadowClient != nil {
 			alignEvaluator = alignment.NewEvaluator(shadowClient, alignment.EvaluatorConfig{
-				Timeout:               cfg.AI.AlignmentCheck.Timeout,
-				MaxStepTokens:         cfg.AI.AlignmentCheck.MaxStepTokens,
-				MaxRetries:            cfg.AI.AlignmentCheck.MaxRetries,
-				MaxConversationTokens: cfg.AI.AlignmentCheck.GroundingReview.MaxConversationTokens,
+				Timeout:               alignCfg.Timeout,
+				MaxStepTokens:         alignCfg.MaxStepTokens,
+				MaxRetries:            alignCfg.MaxRetries,
+				MaxConversationTokens: alignCfg.GroundingReview.MaxConversationTokens,
 			}, alignprompt.SystemPrompt(), alignment.WithLogger(logger), alignment.WithAuditStore(auditStore))
 			effectiveLLM = alignment.NewLLMProxy(instrumentedLLM)
 			effectiveReg = alignment.NewToolProxy(reg)
-			// #1059: Shadow audit emits aiagent.shadow.llm.request/response events.
-			// data-storage must deploy the updated OpenAPI schema (ShadowLLMRequestPayload,
-			// ShadowLLMResponsePayload) BEFORE this kubernaut-agent version is rolled out,
-			// otherwise DS will reject the unknown event_type discriminator values.
 			logger.Info("shadow agent alignment check enabled (shadow LLM audit active: request/response events will be emitted per step)")
 		}
 	}
@@ -384,12 +381,12 @@ func main() {
 		wrapper, wrapErr := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
 			Inner:                 inv,
 			Evaluator:             alignEvaluator,
-			VerdictTimeout:        cfg.AI.AlignmentCheck.VerdictTimeout,
+			VerdictTimeout:        alignCfg.VerdictTimeout,
 			AuditStore:            instrumentedAudit,
 			Logger:                logger,
-			Mode:                  cfg.AI.AlignmentCheck.Mode,
-			CanaryForceEscalation: cfg.AI.AlignmentCheck.Canary.ForceEscalation,
-			GroundingEnabled:      cfg.AI.AlignmentCheck.GroundingReview.Enabled,
+			Mode:                  alignCfg.Mode,
+			CanaryForceEscalation: alignCfg.Canary.ForceEscalation,
+			GroundingEnabled:      alignCfg.GroundingReview.Enabled,
 		})
 		if wrapErr != nil {
 			logger.Error(wrapErr, "failed to create alignment wrapper")
@@ -1109,6 +1106,19 @@ func buildToolRegistry(cfg *kaconfig.Config, logger logr.Logger, infra *k8sInfra
 
 	logger.Info("tool registry ready", "total_tools", len(reg.All()))
 	return reg
+}
+
+// resolveAlignmentCheckConfig returns the effective AlignmentCheckConfig.
+// When fleet mode is active and defines its own alignment check, the fleet
+// override takes precedence over the global ai.alignmentCheck. This allows
+// operators to enforce cross-model shadow evaluation specifically for
+// multi-cluster investigations where prompt injection risk is higher.
+func resolveAlignmentCheckConfig(cfg *kaconfig.Config) kaconfig.AlignmentCheckConfig {
+	fleetCfg := cfg.Integrations.Fleet
+	if fleetCfg.GatewayType != "" && fleetCfg.Endpoint != "" && fleetCfg.AlignmentCheck != nil {
+		return *fleetCfg.AlignmentCheck
+	}
+	return cfg.AI.AlignmentCheck
 }
 
 // registerFleetTools connects to the MCP Gateway, creates a GatewayDiscoverer
