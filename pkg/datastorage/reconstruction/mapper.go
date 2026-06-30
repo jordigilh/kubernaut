@@ -64,6 +64,11 @@ func MapToRRFields(parsedData *ParsedAuditData) (*ReconstructedRRFields, error) 
 			result.Spec.OriginalPayload = parsedData.OriginalPayload
 		}
 
+		// DD-AUDIT-003 v2.2: Map cluster_name to Spec.ClusterID for fleet reconstruction (CC8.1)
+		if parsedData.ClusterName != "" {
+			result.Spec.ClusterID = parsedData.ClusterName
+		}
+
 	case "orchestrator.lifecycle.created":
 		// Map Orchestrator audit data to RR Status (Gap #8)
 		if parsedData.TimeoutConfig != nil {
@@ -133,9 +138,19 @@ func MapToRRFields(parsedData *ParsedAuditData) (*ReconstructedRRFields, error) 
 			}
 		}
 
-	// Add other event types as they become relevant
-	// case "orchestrator.lifecycle.completed":
-	// case "webhook.remediationrequest.timeout_modified":
+	case "orchestrator.lifecycle.completed", "orchestrator.lifecycle.failed":
+		// Map completion/failure data to RR Status (CC8.1)
+		if parsedData.Outcome != "" {
+			result.Status.Outcome = parsedData.Outcome
+		}
+		if parsedData.FailurePhase != "" {
+			fp := remediationv1.FailurePhase(parsedData.FailurePhase)
+			result.Status.FailurePhase = &fp
+		}
+		if parsedData.ErrorDetails != nil && parsedData.ErrorDetails.Message != "" {
+			reason := parsedData.ErrorDetails.Message
+			result.Status.FailureReason = &reason
+		}
 
 	default:
 		// Unknown event types are silently ignored for now
@@ -189,6 +204,10 @@ func MergeAuditData(events []ParsedAuditData) (*ReconstructedRRFields, error) {
 			if eventFields.Spec.SignalFingerprint != "" {
 				result.Spec.SignalFingerprint = eventFields.Spec.SignalFingerprint
 			}
+			// DD-AUDIT-003 v2.2: Merge ClusterID for fleet reconstruction (CC8.1)
+			if eventFields.Spec.ClusterID != "" {
+				result.Spec.ClusterID = eventFields.Spec.ClusterID
+			}
 			if eventFields.Spec.SignalLabels != nil {
 				if result.Spec.SignalLabels == nil {
 					result.Spec.SignalLabels = make(map[string]string)
@@ -218,6 +237,16 @@ func MergeAuditData(events []ParsedAuditData) (*ReconstructedRRFields, error) {
 		if eventFields.Status != nil {
 			if eventFields.Status.TimeoutConfig != nil {
 				result.Status.TimeoutConfig = eventFields.Status.TimeoutConfig
+			}
+			// CC8.1: Merge outcome for completion/failure reconstruction
+			if eventFields.Status.Outcome != "" {
+				result.Status.Outcome = eventFields.Status.Outcome
+			}
+			if eventFields.Status.FailurePhase != nil {
+				result.Status.FailurePhase = eventFields.Status.FailurePhase
+			}
+			if eventFields.Status.FailureReason != nil {
+				result.Status.FailureReason = eventFields.Status.FailureReason
 			}
 			// Gap #5: Merge SelectedWorkflowRef from workflow selection event
 			if eventFields.Status.SelectedWorkflowRef != nil {
