@@ -5,6 +5,13 @@ metadata:
   name: {{ include "kubernaut.workflowNamespace" . }}
   labels:
     {{- include "kubernaut.labels" . | nindent 4 }}
+    # BR-WE-018: Pod Security Admission backstop. Spawned Job/PipelineRun pods are
+    # already hardened to "restricted" in code (pkg/workflowexecution/executor); this
+    # label provides an independent, API-server-enforced guarantee in case that code
+    # ever regresses. Not configurable -- see BR-WE-018 for rationale.
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
 ---
 apiVersion: v1
 kind: ServiceAccount
