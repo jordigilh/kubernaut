@@ -2396,6 +2396,13 @@ components:
           description: |
             Correlation ID used for reconstruction.
           example: "rr-prometheus-alert-highcpu-abc123"
+        cluster_name:
+          type: string
+          description: |
+            Cluster name where the remediation originated (DD-AUDIT-003 v2.2).
+            Empty for single-cluster deployments (backward compatible).
+            Used by auditors to attribute fleet remediations to source clusters (SOC2 CC8.1).
+          example: "prod-east"
 
     ValidationResult:
       type: object
