@@ -63,7 +63,6 @@ type gatewayConfig struct {
 	tools                []toolDef
 	clusterEntries       []clusterEntry
 	discoverableClusters []discoverableCluster
-	listOutputFormat     string
 	structuredContent    []map[string]any
 }
 
@@ -89,16 +88,10 @@ func WithMultiCluster(clusters ...string) Option {
 	}
 }
 
-// WithListOutputFormat configures the mock to return responses in the specified
-// format ("table" or "yaml") for resources_list calls instead of JSON.
-func WithListOutputFormat(format string) Option {
-	return func(cfg *gatewayConfig) {
-		cfg.listOutputFormat = format
-	}
-}
-
-// WithStructuredContent configures the mock to return StructuredContent for
-// resources_list calls. When set, this takes priority over text content.
+// WithStructuredContent configures the mock to return custom StructuredContent
+// for resources_list calls. When set, this takes priority over the default
+// table-format flat maps. Use for tests that need to inject specific shapes
+// (e.g., full K8s objects or malformed data).
 func WithStructuredContent(data []map[string]any) Option {
 	return func(cfg *gatewayConfig) {
 		cfg.structuredContent = data
@@ -309,7 +302,6 @@ func (gw *MockGateway) registerClusterToolsWithPrefix(cluster, prefix string, cf
 	})
 
 	listResourcesName := prefix + "resources_list"
-	listOutputFormat := cfg.listOutputFormat
 	structuredContent := cfg.structuredContent
 	gw.server.AddTool(&mcp.Tool{
 		Name:        listResourcesName,
@@ -343,27 +335,33 @@ func (gw *MockGateway) registerClusterToolsWithPrefix(cluster, prefix string, cf
 			}, nil
 		}
 
-		apiVersion := args.APIVersion
-		switch listOutputFormat {
-		case "table":
-			table := fmt.Sprintf("NAMESPACE           APIVERSION   KIND           NAME                  LABELS\n%-20s%-13s%-15s%-22sapp=spike-web,kubernaut.ai/managed=true",
-				args.Namespace, apiVersion, args.Kind, "spike-managed-web")
-			return &mcp.CallToolResult{
-				Content: []mcp.Content{&mcp.TextContent{Text: table}},
-			}, nil
-		case "yaml":
-			yaml := fmt.Sprintf("- apiVersion: %s\n  kind: %s\n  metadata:\n    labels:\n      app: spike-web\n      kubernaut.ai/managed: \"true\"\n    name: spike-managed-web\n    namespace: %s",
-				apiVersion, args.Kind, args.Namespace)
-			return &mcp.CallToolResult{
-				Content: []mcp.Content{&mcp.TextContent{Text: yaml}},
-			}, nil
-		default:
-			response := fmt.Sprintf(`{"apiVersion":%q,"kind":"List","items":[{"apiVersion":%q,"kind":%q,"metadata":{"name":"item-1","namespace":%q,"labels":{"app":"nginx"}}},{"apiVersion":%q,"kind":%q,"metadata":{"name":"item-2","namespace":%q,"labels":{"app":"nginx"}}}]}`,
-				apiVersion, apiVersion, args.Kind, args.Namespace, apiVersion, args.Kind, args.Namespace)
-			return &mcp.CallToolResult{
-				Content: []mcp.Content{&mcp.TextContent{Text: response}},
-			}, nil
+		// Default: table-format structuredContent (flat maps matching
+		// kube-mcp-server --list-output=table). Shape validated by Spike S17.
+		item1 := map[string]any{
+			"Name":   "item-1",
+			"Ready":  "1/1",
+			"Status": "Running",
+			"Age":    "5m",
 		}
+		item2 := map[string]any{
+			"Name":   "item-2",
+			"Ready":  "1/1",
+			"Status": "Running",
+			"Age":    "3m",
+		}
+		if args.Namespace != "" {
+			item1["Namespace"] = args.Namespace
+			item2["Namespace"] = args.Namespace
+		}
+
+		tableText := fmt.Sprintf("NAMESPACE   NAME     READY   STATUS    AGE\n%-12s%-9s%-8s%-10s%s\n%-12s%-9s%-8s%-10s%s",
+			args.Namespace, "item-1", "1/1", "Running", "5m",
+			args.Namespace, "item-2", "1/1", "Running", "3m")
+
+		return &mcp.CallToolResult{
+			Content:           []mcp.Content{&mcp.TextContent{Text: tableText}},
+			StructuredContent: map[string]any{"items": []any{item1, item2}},
+		}, nil
 	})
 }
 
