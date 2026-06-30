@@ -1,13 +1,16 @@
 ## Security Configuration
 
-**Version**: 4.2
-**Last Updated**: 2026-03-21
+**Version**: 4.3
+**Last Updated**: 2026-06-30
 **CRD API Group**: `kubernaut.ai/v1alpha1`
-**Status**: ✅ Updated for Dedicated Execution Namespace (DD-WE-002) and per-workflow ServiceAccounts (DD-WE-005 v2.0)
+**Status**: ✅ Updated for Dedicated Execution Namespace (DD-WE-002), per-workflow ServiceAccounts (DD-WE-005 v2.0), and spawned execution pod hardening (BR-WE-018)
 
 ---
 
 ## Changelog
+
+### Version 4.3 (2026-06-30)
+- ✅ **BR-WE-018** (GitHub #1505 GAP-03): Spawned Job/Tekton execution pods now carry a restricted `SecurityContext`, plus a Pod Security Admission backstop on the `kubernaut-workflows` namespace. See [Spawned Execution Pod Security Context](#spawned-execution-pod-security-context-br-we-018).
 
 ### Version 4.2 (2026-03-21)
 - ✅ **DD-WE-005 v2.0**: PipelineRun execution uses operator-managed **per-workflow** ServiceAccounts referenced from the workflow schema (`serviceAccountName`). Kubernaut no longer ships a platform-managed runner SA via Helm. If no SA is set, Kubernetes uses the execution namespace’s default ServiceAccount.
@@ -611,5 +614,72 @@ spec:
 - **drop ALL capabilities**: Minimal Linux capabilities
 - **seccompProfile**: Syscall filtering for defense-in-depth
 - **emptyDir volumes**: Writable directories for tmp files only
+
+---
+
+### Spawned Execution Pod Security Context (BR-WE-018)
+
+The section above hardens the **WE controller's own pod**. This section covers the pods the controller *spawns* to execute remediation workflows — Kubernetes Jobs (`JobExecutor.buildJob`) and Tekton PipelineRuns (`TektonExecutor.BuildPipelineRun`) — which carry the same restricted profile as of **BR-WE-018** (closing GAP-03 from the GA Readiness Audit, [#1505](https://github.com/jordigilh/kubernaut/issues/1505)).
+
+**This profile is intentionally non-configurable.** There is no CRD field to relax it to a "baseline" profile. See [BR-WE-018](../../../requirements/BR-WE-018-execution-pod-security-hardening.md) for the full rationale, including why a configurable escape hatch was deliberately rejected (an AI/LLM-driven `WorkflowExecution` creation pipeline should not have a runtime lever to weaken pod hardening).
+
+**Kubernetes Job** (`pkg/workflowexecution/executor/job.go`):
+
+```yaml
+spec:
+  template:
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: workflow
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          capabilities:
+            drop: ["ALL"]
+        env:
+        - name: HOME
+          value: /tmp
+        - name: TMPDIR
+          value: /tmp
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: tmp
+        emptyDir: {}
+```
+
+The `tmp` `emptyDir` volume (mounted at `/tmp`, with `HOME`/`TMPDIR` pointed at it) provides writable scratch space so tools like `kubectl` — which expect to write a discovery cache under `$HOME` — keep working under `readOnlyRootFilesystem: true`.
+
+**Tekton PipelineRun** (`pkg/workflowexecution/executor/tekton.go`) — **pod-level only**:
+
+```yaml
+spec:
+  taskRunTemplate:
+    podTemplate:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+```
+
+**Asymmetric hardening — why Tekton has no container-level settings**: Tekton's `PipelineRunSpec.TaskRunTemplate.PodTemplate` (`github.com/tektoncd/pipeline/pkg/apis/pipeline/pod.PodTemplate`) exposes only a pod-level `SecurityContext`. Container-level settings (`allowPrivilegeEscalation`, `readOnlyRootFilesystem`, capabilities) belong to the `Task` spec resolved from the OCI bundle at execution time — outside the WE controller's authoring control. This is an accepted, API-level constraint, not a gap.
+
+**Defense in depth — Pod Security Admission backstop**: the `kubernaut-workflows` namespace (Helm-managed, `charts/kubernaut/templates/workflowexecution/workflowexecution.yaml`) carries the Kubernetes built-in Pod Security Admission `restricted` labels:
+
+```yaml
+metadata:
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+```
+
+Since every pod built above already satisfies `restricted`, this is a no-op under normal operation — it exists purely as an independent, API-server-enforced backstop in case the controller's `SecurityContext`-authoring code ever regresses. The same hardening is tracked for the `kubernaut-operator` repository (which builds its own `Namespace` object independently) under milestone v1.6.
 
 ---
