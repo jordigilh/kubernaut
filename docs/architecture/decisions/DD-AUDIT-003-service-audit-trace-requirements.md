@@ -2,10 +2,17 @@
 
 **Status**: ✅ **APPROVED** (Production Standard)
 **Date**: November 8, 2025
-**Last Reviewed**: May 23, 2026
-**Version**: 2.1
+**Last Reviewed**: June 29, 2026
+**Version**: 2.2
 **Confidence**: 95%
 **Authority Level**: SYSTEM-WIDE - Defines audit requirements for all 13 services
+
+**Recent Changes** (v2.2 - June 29, 2026):
+- **Fleet Cluster-Scoped Audit Requirements**: Added new section documenting that `cluster_name` MUST be populated on every audit event originating from or targeting a remote cluster
+- **Per-Service Wiring**: Documented ClusterID source and wiring point for all 8 audit-emitting services (GW, SP, RO, WE, EM, NT, AF, KA)
+- **Reconstruction Impact**: `mapper.go` must map `cluster_name` to `ReconstructedRRFields.Spec.ClusterID`; `ReconstructionResponse` must include `cluster_name`
+- **Authority**: BR-AUDIT-005 v2.0, ADR-065 (Multi-Cluster Federation), Issue #54
+- **Controls**: SOC2 CC8.1 (complete reconstruction), FedRAMP AU-2 (audit events), AU-3 (structured payloads)
 
 **Recent Changes** (v2.1 - May 23, 2026):
 - **Auth Webhook**: Added RemediationWorkflow audit events per ADR-058 / Issue #1246:
@@ -968,8 +975,94 @@ context_api:
 
 ---
 
+---
+
+## Fleet Cluster-Scoped Audit Requirements (v2.2 - June 2026)
+
+**Status**: ✅ **APPROVED** (June 29, 2026)
+**Authority**: BR-AUDIT-005 v2.0, ADR-065 (Multi-Cluster Federation), Issue #54
+**Controls**: SOC2 CC8.1, FedRAMP AU-2, AU-3
+
+### Requirement
+
+Every audit event originating from or targeting a **remote cluster** MUST populate the `cluster_name` field (ADR-034 schema column) with the cluster identifier from the RemediationRequest or NormalizedSignal.
+
+### Rationale
+
+SOC2 CC8.1 requires complete remediation request reconstruction from audit traces alone. In a fleet (multi-cluster) deployment, an auditor must be able to determine which cluster a remediation targeted. Without `cluster_name` in audit events, fleet remediations are indistinguishable from local hub remediations in the audit trail, violating CC8.1 completeness.
+
+### Per-Service Requirements
+
+| Service | ClusterID Source | Wiring Point | Notes |
+|---------|-----------------|--------------|-------|
+| Gateway (GW) | `signal.ClusterID` | All 4 `emit*Audit()` functions | ClusterID extracted from alert labels by adapter |
+| Signal Processing (SP) | `rr.Spec.ClusterID` via CRD spec | All `Emit*()` functions in audit manager | Propagated from RR by RO SignalProcessing creator |
+| Remediation Orchestrator (RO) | `rr.Spec.ClusterID` | All `Emit*()` functions in audit manager | Direct access to RR in reconciler |
+| Workflow Execution (WE) | `rr.Spec.ClusterID` via WFE spec | All `Emit*()` functions in audit manager | Propagated from RR by RO WFE creator |
+| Effectiveness Monitor (EM) | `rr.Spec.ClusterID` via EA spec | All `Emit*()` functions in audit manager | Propagated from RR by RO EA creator |
+| Notification (NT) | `rr.Spec.ClusterID` via NR spec | All `Emit*()` functions in audit manager | Propagated from RR by RO NR creator |
+| API Frontend (AF) | `CreateRRArgs.ClusterName` | `audit.Event.ClusterName` → `AuditEventRequest.ClusterName` | Uses `audit.Event` struct; `StoreAdapter.Emit()` copies to `req.ClusterName` |
+| Kubernaut Agent (KA) | `SessionContext.Signal.ClusterName` via `audit.WithClusterName(ctx)` | `AuditEvent.ClusterName` → `AuditEventRequest.ClusterName` | Context-injected in `launchInvestigation`; `StoreBestEffort` inherits from context |
+
+### Backward Compatibility
+
+- `cluster_name` remains nullable in the ADR-034 schema for single-cluster backward compatibility
+- Empty `cluster_name` indicates local hub cluster (ADR-065 convention)
+- Existing single-cluster audit events are unaffected
+
+### Reconstruction Impact
+
+The reconstruction pipeline (`pkg/datastorage/reconstruction/`) MUST:
+1. Read `cluster_name` from audit events (already retrieved by `query.go`)
+2. Map `cluster_name` to `ReconstructedRRFields.Spec.ClusterID` (currently discarded in `mapper.go`)
+3. Include `cluster_name` in the `ReconstructionResponse` struct
+
+### KA Narrative vs Table Inconsistency
+
+DD-AUDIT-003 v2.0 narrative describes KA as P0 MUST (via the `aiagent` category, v1.3 update). The summary table at Section "Summary Table" correctly lists HolmesGPT API Service as P0 MUST with `aiagent.*` events emitted by KA (per v1.3 clarification). No action needed -- the naming reflects the KA Go rewrite (v1.3).
+
+## API Frontend (AF) Event Catalog (v2.2)
+
+The AF emits 30+ typed audit events under the `apifrontend` event category.
+Events are produced via `pkg/apifrontend/audit.StoreAdapter`, which converts
+AF's internal `audit.Event` to OpenAPI-typed `AuditEventRequest` payloads.
+
+### Event Categories
+
+| Category | Event Types | SOC2/FedRAMP | Notes |
+|----------|------------|-------------|-------|
+| **Auth** | `auth.success`, `auth.failure`, `auth.access_denied` | AU-2, AC-6 | Per-request auth lifecycle |
+| **Sessions** | `session.created`, `session.phase_changed`, `session.deleted`, `session.auto_cancelled`, `session.retention_deleted`, `session.completed` | AU-2, CC8.1 | User investigation sessions |
+| **A2A Tasks** | `a2a.task_started`, `a2a.task_completed`, `a2a.task_failed` | AU-2 | Agent-to-Agent task lifecycle |
+| **Tools** | `tool.executed` | AU-2, AC-6 | MCP/K8s tool execution with RBAC |
+| **MCP** | `mcp.session_init`, `mcp.session_closed`, `mcp.tool_failed` | AU-2 | MCP protocol sessions |
+| **Triage** | `triage.started`, `triage.completed`, `severity_triage.completed`, `severity_triage.failed` | CC8.1 | Signal severity classification |
+| **Remediation** | `rr.created`, `rr.deduplicated` | CC8.1 | RR lifecycle (carries `cluster_name` for fleet) |
+| **KA Delegation** | `ka.delegated`, `ka.result_received` | CC8.1 | KA investigation delegation |
+| **User Decisions** | `user.decision` | CC8.1, AU-3 | Operator workflow accept/reject |
+| **Resilience** | `ratelimit.denied`, `circuitbreaker.trip` | SI-10 | Protective mechanisms |
+| **Config** | `config.reloaded`, `config.rejected` | AU-2 | Hot-reload lifecycle |
+| **JWT** | `jwt.delegation` | AU-2 | Token delegation for service calls |
+| **Preflight** | `preflight.crd_check`, `preflight.rbac_check` | SI-10, AC-6 | Startup diagnostics |
+| **Discovery** | `discovery.agent_card_accessed` | AU-2 | Agent card A2A discovery |
+| **Investigation** | `investigation.timeout` | CC8.1 | Investigation inactivity timeout |
+
+### Fleet Cluster Provenance (v2.2)
+
+Events emitted during RR creation (`rr.created`, `rr.deduplicated`) carry
+`cluster_name` from `CreateRRArgs.ClusterName` via `audit.Event.ClusterName`.
+The `StoreAdapter` copies this to `AuditEventRequest.ClusterName` for
+persistence in the unified audit table, enabling fleet-scoped CC8.1 reconstruction.
+
+### Implementation Files
+
+- `pkg/apifrontend/audit/audit.go` — Event types, `Event` struct, `Emitter` interface
+- `pkg/apifrontend/audit/store_adapter.go` — `StoreAdapter` (bridges to shared audit store)
+
+---
+
 **Maintained By**: Kubernaut Architecture Team
-**Last Updated**: March 9, 2026
+**Last Updated**: June 29, 2026
 **Review Cycle**: Annually or when new services are added
 
 ---
