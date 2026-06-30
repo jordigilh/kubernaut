@@ -598,7 +598,7 @@ jobs:
 
   sign-and-attest:
     name: "Sign & Attest ${{ matrix.service }}"
-    needs: [prepare, create-manifests]
+    needs: [prepare, create-manifests, security-scan-amd64, security-scan-arm64]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
@@ -672,6 +672,29 @@ jobs:
           subject-name: ${{ env.IMAGE_REGISTRY }}/${{ matrix.service }}
           subject-digest: ${{ steps.digests.outputs.manifest }}
           push-to-registry: true
+
+      - name: Download SBOM artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: sbom-${{ matrix.service }}-*
+          path: sboms/
+          merge-multiple: true
+
+      - name: Cosign attest SBOM (amd64)
+        run: |
+          cosign attest --yes \
+            --predicate "sboms/sbom-${{ matrix.service }}-amd64.cdx.json" \
+            --type cyclonedx \
+            "${IMAGE_REGISTRY}/${{ matrix.service }}@${{ steps.digests.outputs.amd64 }}"
+          echo "  Attested ${{ matrix.service }} amd64 SBOM"
+
+      - name: Cosign attest SBOM (arm64)
+        run: |
+          cosign attest --yes \
+            --predicate "sboms/sbom-${{ matrix.service }}-arm64.cdx.json" \
+            --type cyclonedx \
+            "${IMAGE_REGISTRY}/${{ matrix.service }}@${{ steps.digests.outputs.arm64 }}"
+          echo "  Attested ${{ matrix.service }} arm64 SBOM"
 
   # ========================================
   # STAGE 4: HELM CHART PUBLISH
