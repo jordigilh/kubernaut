@@ -130,6 +130,7 @@ func (m *Manager) BuildRemediationCreatedEvent(
 	correlationID string,
 	namespace string,
 	rrName string,
+	clusterName string,
 	timeoutConfig *TimeoutConfig,
 ) (*api.AuditEventRequest, error) {
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
@@ -143,6 +144,10 @@ func (m *Manager) BuildRemediationCreatedEvent(
 	audit.SetResource(event, "RemediationRequest", rrName)
 	audit.SetCorrelationID(event, correlationID)
 	audit.SetNamespace(event, namespace)
+	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
+	if clusterName != "" {
+		audit.SetClusterName(event, clusterName)
+	}
 
 	// Gap #8: Build timeout_config structure for audit
 	// Convert TimeoutConfig to OptTimeoutConfig (ogen union type)
@@ -184,6 +189,7 @@ func (m *Manager) BuildLifecycleStartedEvent(
 	correlationID string,
 	namespace string,
 	rrName string,
+	clusterName string,
 ) (*api.AuditEventRequest, error) {
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
@@ -196,6 +202,10 @@ func (m *Manager) BuildLifecycleStartedEvent(
 	audit.SetResource(event, "RemediationRequest", rrName)
 	audit.SetCorrelationID(event, correlationID)
 	audit.SetNamespace(event, namespace)
+	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
+	if clusterName != "" {
+		audit.SetClusterName(event, clusterName)
+	}
 
 	// Use ogen union constructor (OGEN-MIGRATION)
 	payload := api.RemediationOrchestratorAuditPayload{
@@ -214,6 +224,7 @@ func (m *Manager) BuildLifecycleVerifyingStartedEvent(
 	correlationID string,
 	namespace string,
 	rrName string,
+	clusterName string,
 ) (*api.AuditEventRequest, error) {
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
@@ -225,6 +236,10 @@ func (m *Manager) BuildLifecycleVerifyingStartedEvent(
 	audit.SetResource(event, "RemediationRequest", rrName)
 	audit.SetCorrelationID(event, correlationID)
 	audit.SetNamespace(event, namespace)
+	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
+	if clusterName != "" {
+		audit.SetClusterName(event, clusterName)
+	}
 
 	payload := api.RemediationOrchestratorAuditPayload{
 		EventType: api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleVerifyingStarted,
@@ -242,6 +257,7 @@ func (m *Manager) BuildLifecycleVerificationCompletedEvent(
 	correlationID string,
 	namespace string,
 	rrName string,
+	clusterName string,
 	eaName string,
 	outcome string,
 	durationMs int64,
@@ -256,6 +272,10 @@ func (m *Manager) BuildLifecycleVerificationCompletedEvent(
 	audit.SetResource(event, "RemediationRequest", rrName)
 	audit.SetCorrelationID(event, correlationID)
 	audit.SetNamespace(event, namespace)
+	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
+	if clusterName != "" {
+		audit.SetClusterName(event, clusterName)
+	}
 
 	payload := api.RemediationOrchestratorAuditPayload{
 		EventType:  api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleVerificationCompleted,
@@ -275,6 +295,7 @@ func (m *Manager) BuildLifecycleVerificationTimedOutEvent(
 	correlationID string,
 	namespace string,
 	rrName string,
+	clusterName string,
 	eaName string,
 	durationMs int64,
 ) (*api.AuditEventRequest, error) {
@@ -288,6 +309,10 @@ func (m *Manager) BuildLifecycleVerificationTimedOutEvent(
 	audit.SetResource(event, "RemediationRequest", rrName)
 	audit.SetCorrelationID(event, correlationID)
 	audit.SetNamespace(event, namespace)
+	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
+	if clusterName != "" {
+		audit.SetClusterName(event, clusterName)
+	}
 
 	payload := api.RemediationOrchestratorAuditPayload{
 		EventType:  api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleVerificationTimedOut,
@@ -317,6 +342,7 @@ func (m *Manager) BuildPhaseTransitionEvent(
 	correlationID string,
 	namespace string,
 	rrName string,
+	clusterName string,
 	fromPhase string,
 	toPhase string,
 ) (*api.AuditEventRequest, error) {
@@ -331,6 +357,10 @@ func (m *Manager) BuildPhaseTransitionEvent(
 	audit.SetResource(event, "RemediationRequest", rrName)
 	audit.SetCorrelationID(event, correlationID)
 	audit.SetNamespace(event, namespace)
+	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
+	if clusterName != "" {
+		audit.SetClusterName(event, clusterName)
+	}
 
 	// Event data (DD-AUDIT-002 V2.2: Direct struct assignment, zero unstructured data)
 	payload := api.RemediationOrchestratorAuditPayload{
@@ -363,6 +393,7 @@ func (m *Manager) BuildCompletionEvent(
 	correlationID string,
 	namespace string,
 	rrName string,
+	clusterName string,
 	outcome string,
 	durationMs int64,
 ) (*api.AuditEventRequest, error) {
@@ -377,6 +408,10 @@ func (m *Manager) BuildCompletionEvent(
 	audit.SetResource(event, "RemediationRequest", rrName)
 	audit.SetCorrelationID(event, correlationID)
 	audit.SetNamespace(event, namespace)
+	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
+	if clusterName != "" {
+		audit.SetClusterName(event, clusterName)
+	}
 	audit.SetDuration(event, int(durationMs))
 
 	// Event data (DD-AUDIT-002 V2.2: Direct struct assignment, zero unstructured data)
@@ -407,6 +442,7 @@ func (m *Manager) BuildFailureEvent(
 	correlationID string,
 	namespace string,
 	rrName string,
+	clusterName string,
 	failurePhase string,
 	failureErr error,
 	durationMs int64,
@@ -441,6 +477,10 @@ func (m *Manager) BuildFailureEvent(
 	audit.SetResource(event, "RemediationRequest", rrName)
 	audit.SetCorrelationID(event, correlationID)
 	audit.SetNamespace(event, namespace)
+	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
+	if clusterName != "" {
+		audit.SetClusterName(event, clusterName)
+	}
 	audit.SetDuration(event, int(durationMs))
 
 	// Use structured audit payload (eliminates map[string]interface{})
@@ -480,6 +520,7 @@ func (m *Manager) BuildApprovalRequestedEvent(
 	correlationID string,
 	namespace string,
 	rrName string,
+	clusterName string,
 	rarName string,
 	workflowID string,
 	confidence string,
@@ -496,6 +537,10 @@ func (m *Manager) BuildApprovalRequestedEvent(
 	audit.SetResource(event, "RemediationApprovalRequest", rarName)
 	audit.SetCorrelationID(event, correlationID)
 	audit.SetNamespace(event, namespace)
+	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
+	if clusterName != "" {
+		audit.SetClusterName(event, clusterName)
+	}
 
 	// Event data (DD-AUDIT-002 V2.2: Direct struct assignment, zero unstructured data)
 	payload := api.RemediationOrchestratorAuditPayload{
@@ -522,6 +567,7 @@ func (m *Manager) BuildApprovalDecisionEvent(
 	correlationID string,
 	namespace string,
 	rrName string,
+	clusterName string,
 	rarName string,
 	decision string,
 	decidedBy string,
@@ -544,6 +590,10 @@ func (m *Manager) BuildApprovalDecisionEvent(
 	audit.SetResource(event, "RemediationApprovalRequest", rarName)
 	audit.SetCorrelationID(event, correlationID)
 	audit.SetNamespace(event, namespace)
+	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
+	if clusterName != "" {
+		audit.SetClusterName(event, clusterName)
+	}
 
 	// Event data (DD-AUDIT-002 V2.2: Direct struct assignment, zero unstructured data)
 	payload := api.RemediationOrchestratorAuditPayload{
@@ -579,6 +629,7 @@ func (m *Manager) BuildManualReviewEvent(
 	correlationID string,
 	namespace string,
 	rrName string,
+	clusterName string,
 	reason string,
 	subReason string,
 	notificationName string,
@@ -594,6 +645,10 @@ func (m *Manager) BuildManualReviewEvent(
 	audit.SetResource(event, "RemediationRequest", rrName)
 	audit.SetCorrelationID(event, correlationID)
 	audit.SetNamespace(event, namespace)
+	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
+	if clusterName != "" {
+		audit.SetClusterName(event, clusterName)
+	}
 	audit.SetSeverity(event, "warning")
 
 	// Event data (DD-AUDIT-002 V2.2: Direct struct assignment, zero unstructured data)
@@ -638,6 +693,7 @@ func (m *Manager) BuildRoutingBlockedEvent(
 	correlationID string,
 	namespace string,
 	rrName string,
+	clusterName string,
 	fromPhase string,
 	blockData *RoutingBlockedData,
 ) (*api.AuditEventRequest, error) {
@@ -652,6 +708,10 @@ func (m *Manager) BuildRoutingBlockedEvent(
 	audit.SetResource(event, "RemediationRequest", rrName)
 	audit.SetCorrelationID(event, correlationID)
 	audit.SetNamespace(event, namespace)
+	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
+	if clusterName != "" {
+		audit.SetClusterName(event, clusterName)
+	}
 
 	// Event data (DD-AUDIT-002 V2.2: Direct struct assignment, zero unstructured data)
 	// F-3 SOC2 Fix: Use matching discriminator so outer event_type == EventData.Type
@@ -697,6 +757,7 @@ func (m *Manager) BuildRemediationWorkflowCreatedEvent(
 	correlationID string,
 	namespace string,
 	rrName string,
+	clusterName string,
 	data RemediationWorkflowCreatedData,
 ) (*api.AuditEventRequest, error) {
 	event := audit.NewAuditEventRequest()
@@ -709,6 +770,10 @@ func (m *Manager) BuildRemediationWorkflowCreatedEvent(
 	audit.SetResource(event, "RemediationRequest", rrName)
 	audit.SetCorrelationID(event, correlationID)
 	audit.SetNamespace(event, namespace)
+	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
+	if clusterName != "" {
+		audit.SetClusterName(event, clusterName)
+	}
 
 	payload := api.RemediationOrchestratorAuditPayload{
 		EventType:              api.RemediationOrchestratorAuditPayloadEventTypeRemediationWorkflowCreated,
@@ -756,6 +821,7 @@ func (m *Manager) BuildEACreatedEvent(
 	correlationID string,
 	namespace string,
 	rrName string,
+	clusterName string,
 	data EACreatedData,
 ) (*api.AuditEventRequest, error) {
 	event := audit.NewAuditEventRequest()
@@ -768,6 +834,10 @@ func (m *Manager) BuildEACreatedEvent(
 	audit.SetResource(event, "EffectivenessAssessment", data.EAName)
 	audit.SetCorrelationID(event, correlationID)
 	audit.SetNamespace(event, namespace)
+	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
+	if clusterName != "" {
+		audit.SetClusterName(event, clusterName)
+	}
 
 	payload := api.RemediationOrchestratorAuditPayload{
 		EventType: api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorEaCreated,

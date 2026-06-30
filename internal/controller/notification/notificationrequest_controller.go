@@ -423,8 +423,8 @@ func (r *NotificationRequestReconciler) auditMessageSent(ctx context.Context, no
 		return nil
 	}
 
-	// Create audit event
-	event, err := r.AuditManager.CreateMessageSentEvent(notification, channel)
+	// Create audit event (DD-AUDIT-003 v2.2: ClusterID from NR spec)
+	event, err := r.AuditManager.CreateMessageSentEvent(notification, channel, notification.Spec.ClusterID)
 	if err != nil {
 		log.Error(err, "Failed to create audit event - audit creation is MANDATORY per ADR-032 §1", "event_type", "message.sent", "channel", channel)
 		return fmt.Errorf("failed to create audit event (ADR-032 §1): %w", err)
@@ -478,8 +478,8 @@ func (r *NotificationRequestReconciler) auditMessageFailed(ctx context.Context, 
 		return nil
 	}
 
-	// Create audit event with error details
-	event, err := r.AuditManager.CreateMessageFailedEvent(notification, channel, deliveryErr)
+	// Create audit event with error details (DD-AUDIT-003 v2.2: ClusterID from NR spec)
+	event, err := r.AuditManager.CreateMessageFailedEvent(notification, channel, deliveryErr, notification.Spec.ClusterID)
 	if err != nil {
 		log.Error(err, "Failed to create audit event - audit creation is MANDATORY per ADR-032 §1", "event_type", "message.failed", "channel", channel)
 		return fmt.Errorf("failed to create audit event (ADR-032 §1): %w", err)
@@ -518,7 +518,8 @@ func (r *NotificationRequestReconciler) auditMessageAcknowledged(ctx context.Con
 		return nil
 	}
 
-	event, err := r.AuditManager.CreateMessageAcknowledgedEvent(notification)
+	// DD-AUDIT-003 v2.2: ClusterID from NR spec
+	event, err := r.AuditManager.CreateMessageAcknowledgedEvent(notification, notification.Spec.ClusterID)
 	if err != nil {
 		log.Error(err, "Failed to create audit event - audit creation is MANDATORY per ADR-032 §1", "event_type", "message.acknowledged")
 		return fmt.Errorf("failed to create audit event (ADR-032 §1): %w", err)
@@ -552,7 +553,8 @@ func (r *NotificationRequestReconciler) auditMessageEscalated(ctx context.Contex
 		return nil
 	}
 
-	event, err := r.AuditManager.CreateMessageEscalatedEvent(notification)
+	// DD-AUDIT-003 v2.2: ClusterID from NR spec
+	event, err := r.AuditManager.CreateMessageEscalatedEvent(notification, notification.Spec.ClusterID)
 	if err != nil {
 		log.Error(err, "Failed to create audit event - audit creation is MANDATORY per ADR-032 §1", "event_type", "message.escalated")
 		return fmt.Errorf("failed to create audit event (ADR-032 §1): %w", err)

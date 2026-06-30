@@ -131,7 +131,7 @@ func NewManager(serviceName string) *Manager {
 // Returns:
 //   - *ogenclient.AuditEventRequest: The created audit event (OpenAPI type)
 //   - error: Error if event creation fails (e.g., nil notification, empty channel)
-func (m *Manager) CreateMessageSentEvent(notification *notificationv1alpha1.NotificationRequest, channel string) (*ogenclient.AuditEventRequest, error) {
+func (m *Manager) CreateMessageSentEvent(notification *notificationv1alpha1.NotificationRequest, channel string, clusterName string) (*ogenclient.AuditEventRequest, error) {
 	// Input validation
 	if notification == nil {
 		return nil, fmt.Errorf("notification cannot be nil")
@@ -177,6 +177,8 @@ func (m *Manager) CreateMessageSentEvent(notification *notificationv1alpha1.Noti
 	audit.SetResource(event, "NotificationRequest", notification.Name)
 	audit.SetCorrelationID(event, correlationID)
 	audit.SetNamespace(event, notification.Namespace)
+	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
+	audit.SetClusterName(event, clusterName)
 	// V3.0: OGEN - Use constructor to create discriminated union (DD-AUDIT-004 v1.4)
 	event.EventData = ogenclient.NewNotificationMessageSentPayloadAuditEventRequestEventData(payload)
 
@@ -200,7 +202,7 @@ func (m *Manager) CreateMessageSentEvent(notification *notificationv1alpha1.Noti
 //   - error: Error if event creation fails (e.g., nil notification, empty channel)
 //
 // DD-AUDIT-002 V2.0: Uses OpenAPI types directly
-func (m *Manager) CreateMessageFailedEvent(notification *notificationv1alpha1.NotificationRequest, channel string, err error) (*ogenclient.AuditEventRequest, error) {
+func (m *Manager) CreateMessageFailedEvent(notification *notificationv1alpha1.NotificationRequest, channel string, err error, clusterName string) (*ogenclient.AuditEventRequest, error) {
 	// Input validation
 	if notification == nil {
 		return nil, fmt.Errorf("notification cannot be nil")
@@ -248,6 +250,8 @@ func (m *Manager) CreateMessageFailedEvent(notification *notificationv1alpha1.No
 	audit.SetResource(event, "NotificationRequest", notification.Name)
 	audit.SetCorrelationID(event, correlationID)
 	audit.SetNamespace(event, notification.Namespace)
+	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
+	audit.SetClusterName(event, clusterName)
 	// V3.0: OGEN - Use constructor to create discriminated union (DD-AUDIT-004 v1.4)
 	event.EventData = ogenclient.NewNotificationMessageFailedPayloadAuditEventRequestEventData(payload)
 
@@ -269,7 +273,7 @@ func (m *Manager) CreateMessageFailedEvent(notification *notificationv1alpha1.No
 //   - error: Error if event creation fails (e.g., nil notification)
 //
 // DD-AUDIT-002 V2.0: Uses OpenAPI types directly
-func (m *Manager) CreateMessageAcknowledgedEvent(notification *notificationv1alpha1.NotificationRequest) (*ogenclient.AuditEventRequest, error) {
+func (m *Manager) CreateMessageAcknowledgedEvent(notification *notificationv1alpha1.NotificationRequest, clusterName string) (*ogenclient.AuditEventRequest, error) {
 	// Input validation
 	if notification == nil {
 		return nil, fmt.Errorf("notification cannot be nil")
@@ -307,6 +311,8 @@ func (m *Manager) CreateMessageAcknowledgedEvent(notification *notificationv1alp
 	audit.SetResource(event, "NotificationRequest", notification.Name)
 	audit.SetCorrelationID(event, correlationID)
 	audit.SetNamespace(event, notification.Namespace)
+	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
+	audit.SetClusterName(event, clusterName)
 	// V3.0: OGEN - Use constructor to create discriminated union (DD-AUDIT-004 v1.4)
 	event.EventData = ogenclient.NewNotificationMessageAcknowledgedPayloadAuditEventRequestEventData(payload)
 
@@ -328,7 +334,7 @@ func (m *Manager) CreateMessageAcknowledgedEvent(notification *notificationv1alp
 //   - error: Error if event creation fails (e.g., nil notification)
 //
 // DD-AUDIT-002 V2.0: Uses OpenAPI types directly
-func (m *Manager) CreateMessageEscalatedEvent(notification *notificationv1alpha1.NotificationRequest) (*ogenclient.AuditEventRequest, error) {
+func (m *Manager) CreateMessageEscalatedEvent(notification *notificationv1alpha1.NotificationRequest, clusterName string) (*ogenclient.AuditEventRequest, error) {
 	// Input validation
 	if notification == nil {
 		return nil, fmt.Errorf("notification cannot be nil")
@@ -367,6 +373,8 @@ func (m *Manager) CreateMessageEscalatedEvent(notification *notificationv1alpha1
 	audit.SetResource(event, "NotificationRequest", notification.Name)
 	audit.SetCorrelationID(event, correlationID)
 	audit.SetNamespace(event, notification.Namespace)
+	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
+	audit.SetClusterName(event, clusterName)
 	// V3.0: OGEN - Use constructor to create discriminated union (DD-AUDIT-004 v1.4)
 	event.EventData = ogenclient.NewNotificationMessageEscalatedPayloadAuditEventRequestEventData(payload)
 

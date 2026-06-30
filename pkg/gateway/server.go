@@ -1971,6 +1971,10 @@ func (s *Server) emitSignalReceivedAudit(ctx context.Context, signal *types.Norm
 	audit.SetResource(event, "Signal", signal.Fingerprint)
 	audit.SetCorrelationID(event, rrName) // Use RR name as correlation
 	audit.SetNamespace(event, signal.Namespace)
+	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
+	if signal.ClusterID != "" {
+		audit.SetClusterName(event, signal.ClusterID)
+	}
 
 	// Event data with Gateway-specific fields + RR reconstruction fields
 	//
@@ -2052,6 +2056,10 @@ func (s *Server) emitSignalDeduplicatedAudit(ctx context.Context, signal *types.
 	audit.SetResource(event, "Signal", signal.Fingerprint)
 	audit.SetCorrelationID(event, rrName)
 	audit.SetNamespace(event, signal.Namespace)
+	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
+	if signal.ClusterID != "" {
+		audit.SetClusterName(event, signal.ClusterID)
+	}
 
 	// Event data with RR reconstruction fields (same as signal.received for consistency)
 	// Extract RR reconstruction fields with defensive nil handling (REFACTOR phase)
@@ -2113,6 +2121,10 @@ func (s *Server) emitCRDCreatedAudit(ctx context.Context, signal *types.Normaliz
 	audit.SetResource(event, "RemediationRequest", fmt.Sprintf("%s/%s", rrNamespace, rrName))
 	audit.SetCorrelationID(event, rrName) // Use RR name as correlation
 	audit.SetNamespace(event, signal.Namespace)
+	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
+	if signal.ClusterID != "" {
+		audit.SetClusterName(event, signal.ClusterID)
+	}
 
 	// Use structured audit payload (eliminates map[string]interface{})
 	// Per DD-AUDIT-004: Zero unstructured data in audit events
@@ -2186,6 +2198,10 @@ func (s *Server) emitCRDCreationFailedAudit(ctx context.Context, signal *types.N
 	audit.SetResource(event, "RemediationRequest", correlationID)
 	audit.SetCorrelationID(event, correlationID)
 	audit.SetNamespace(event, signal.Namespace)
+	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
+	if signal.ClusterID != "" {
+		audit.SetClusterName(event, signal.ClusterID)
+	}
 
 	// BR-AUDIT-005 Gap #7: Standardized error_details
 	// GW-INT-AUD-019 (BR-GATEWAY-093): Detect circuit breaker errors for audit compliance

@@ -71,6 +71,9 @@ func (s *DSAuditStore) StoreAudit(ctx context.Context, event *AuditEvent) error 
 	if event.ParentEventID != nil {
 		req.ParentEventID.SetTo(*event.ParentEventID)
 	}
+	if event.ClusterName != "" {
+		req.ClusterName.SetTo(event.ClusterName)
+	}
 
 	if ed, ok := buildEventData(event); ok {
 		req.EventData = ed
@@ -885,6 +888,9 @@ func (s *BufferedDSAuditStore) StoreAudit(ctx context.Context, event *AuditEvent
 		}
 		req.ActorType.SetTo(bActorType)
 		req.ActorID.SetTo(bActorID)
+	}
+	if event.ClusterName != "" {
+		req.ClusterName.SetTo(event.ClusterName)
 	}
 
 	if ed, ok := buildEventData(event); ok {
