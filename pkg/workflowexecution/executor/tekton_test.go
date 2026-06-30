@@ -112,6 +112,30 @@ var _ = Describe("UT-WE-054-TEK: TektonExecutor", func() {
 			Expect(wsNames).To(ContainElement("secret-tls-cert"))
 			Expect(wsNames).To(ContainElement("configmap-pipeline-config"))
 		})
+
+		// BR-WE-018: spawned Tekton pods must be hardened to the restricted pod-level
+		// SecurityContext (FedRAMP AC-6/CM-7). Container-level settings are not
+		// controllable via the PipelineRun API -- see BR-WE-018 for the asymmetry
+		// rationale vs. the Job backend.
+		It("UT-WE-054-TEK-007: should apply restricted pod-level SecurityContext via TaskRunTemplate.PodTemplate", func() {
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			factory := &mockClientFactory{client: fakeClient}
+			te := executor.NewTektonExecutorWithFactory(factory)
+			wfe := newTestWFE("wfe-tekton-secctx", "default/deployment/frontend", "")
+
+			result, err := te.Create(ctx, wfe, namespace, executor.CreateOptions{})
+			Expect(err).ToNot(HaveOccurred())
+
+			var pr tektonv1.PipelineRun
+			Expect(fakeClient.Get(ctx, client.ObjectKey{Name: result.ResourceName, Namespace: namespace}, &pr)).To(Succeed())
+
+			podTemplate := pr.Spec.TaskRunTemplate.PodTemplate
+			Expect(podTemplate).ToNot(BeNil())
+			Expect(podTemplate.SecurityContext).ToNot(BeNil())
+			Expect(*podTemplate.SecurityContext.RunAsNonRoot).To(BeTrue())
+			Expect(podTemplate.SecurityContext.SeccompProfile).ToNot(BeNil())
+			Expect(podTemplate.SecurityContext.SeccompProfile.Type).To(Equal(corev1.SeccompProfileTypeRuntimeDefault))
+		})
 	})
 
 	Describe("GetStatus", func() {

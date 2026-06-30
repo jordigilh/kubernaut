@@ -216,11 +216,17 @@ func (j *JobExecutor) Cleanup(ctx context.Context, wfe *workflowexecutionv1alpha
 // Parameters are injected as environment variables.
 // DD-WE-006: deps are mounted as volumes when non-nil.
 // #243: Parameters are filtered against DeclaredParameterNames before injection.
+// BR-WE-018: pod and container are hardened to the restricted SecurityContext
+// profile, with a /tmp scratch volume so tools needing writable space (e.g.
+// kubectl's discovery cache) still function under readOnlyRootFilesystem.
 func (j *JobExecutor) buildJob(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string, opts CreateOptions) *batchv1.Job {
 	logger := log.FromContext(ctx).WithValues("wfe", wfe.Name, "workflowID", wfe.Spec.WorkflowRef.WorkflowID)
 	params := FilterDeclaredParameters(wfe.Spec.Parameters, opts.DeclaredParameterNames, logger)
 	envVars := buildEnvVars(wfe.Spec.TargetResource, params)
+	envVars = append(envVars, scratchSpaceEnvVars()...)
 	volumes, mounts := buildDependencyVolumes(opts.Dependencies)
+	volumes = append(volumes, scratchSpaceVolume())
+	mounts = append(mounts, scratchSpaceVolumeMount())
 
 	jobName := ExecutionResourceName(wfe.Spec.TargetResource)
 
@@ -255,13 +261,15 @@ func (j *JobExecutor) buildJob(ctx context.Context, wfe *workflowexecutionv1alph
 				Spec: corev1.PodSpec{
 					RestartPolicy:      corev1.RestartPolicyNever,
 					ServiceAccountName: wfe.Status.ServiceAccountName,
+					SecurityContext:    restrictedPodSecurityContext(),
 					Volumes:            volumes,
 					Containers: []corev1.Container{
 						{
-							Name:         "workflow",
-							Image:        wfe.Spec.WorkflowRef.ExecutionBundle,
-							Env:          envVars,
-							VolumeMounts: mounts,
+							Name:            "workflow",
+							Image:           wfe.Spec.WorkflowRef.ExecutionBundle,
+							Env:             envVars,
+							VolumeMounts:    mounts,
+							SecurityContext: restrictedContainerSecurityContext(),
 						},
 					},
 				},

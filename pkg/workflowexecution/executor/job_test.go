@@ -181,6 +181,66 @@ var _ = Describe("UT-WE-054-JOB: JobExecutor", func() {
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("get client for cluster"))
 		})
+
+		// BR-WE-018: spawned Job pods must be hardened to the restricted SecurityContext
+		// profile (FedRAMP AC-6/CM-7), matching the WE controller's own pod hardening.
+		It("UT-WE-054-JOB-014: should apply restricted pod and container SecurityContext", func() {
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			factory := &mockClientFactory{client: fakeClient}
+			je := executor.NewJobExecutorWithFactory(factory)
+			wfe := newTestWFE("wfe-secctx", "default/deployment/nginx", "")
+
+			result, err := je.Create(ctx, wfe, namespace, executor.CreateOptions{})
+			Expect(err).ToNot(HaveOccurred())
+
+			var job batchv1.Job
+			Expect(fakeClient.Get(ctx, client.ObjectKey{Name: result.ResourceName, Namespace: namespace}, &job)).To(Succeed())
+
+			podSC := job.Spec.Template.Spec.SecurityContext
+			Expect(podSC).ToNot(BeNil())
+			Expect(*podSC.RunAsNonRoot).To(BeTrue())
+			Expect(podSC.SeccompProfile).ToNot(BeNil())
+			Expect(podSC.SeccompProfile.Type).To(Equal(corev1.SeccompProfileTypeRuntimeDefault))
+
+			containerSC := job.Spec.Template.Spec.Containers[0].SecurityContext
+			Expect(containerSC).ToNot(BeNil())
+			Expect(*containerSC.AllowPrivilegeEscalation).To(BeFalse())
+			Expect(*containerSC.ReadOnlyRootFilesystem).To(BeTrue())
+			Expect(*containerSC.RunAsNonRoot).To(BeTrue())
+			Expect(containerSC.Capabilities).ToNot(BeNil())
+			Expect(containerSC.Capabilities.Drop).To(ConsistOf(corev1.Capability("ALL")))
+		})
+
+		It("UT-WE-054-JOB-015: should mount a writable /tmp scratch volume for readOnlyRootFilesystem compatibility", func() {
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			factory := &mockClientFactory{client: fakeClient}
+			je := executor.NewJobExecutorWithFactory(factory)
+			wfe := newTestWFE("wfe-scratch", "default/deployment/nginx", "")
+
+			result, err := je.Create(ctx, wfe, namespace, executor.CreateOptions{})
+			Expect(err).ToNot(HaveOccurred())
+
+			var job batchv1.Job
+			Expect(fakeClient.Get(ctx, client.ObjectKey{Name: result.ResourceName, Namespace: namespace}, &job)).To(Succeed())
+
+			Expect(job.Spec.Template.Spec.Volumes).To(ContainElement(And(
+				HaveField("Name", "tmp"),
+				HaveField("VolumeSource.EmptyDir", Not(BeNil())),
+			)))
+
+			container := job.Spec.Template.Spec.Containers[0]
+			Expect(container.VolumeMounts).To(ContainElement(And(
+				HaveField("Name", "tmp"),
+				HaveField("MountPath", "/tmp"),
+			)))
+
+			envByName := map[string]string{}
+			for _, e := range container.Env {
+				envByName[e.Name] = e.Value
+			}
+			Expect(envByName).To(HaveKeyWithValue("HOME", "/tmp"))
+			Expect(envByName).To(HaveKeyWithValue("TMPDIR", "/tmp"))
+		})
 	})
 
 	Describe("GetStatus", func() {

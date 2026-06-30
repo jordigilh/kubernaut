@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/tektoncd/pipeline/pkg/apis/pipeline/pod"
 	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -178,6 +179,10 @@ func (t *TektonExecutor) Cleanup(ctx context.Context, wfe *workflowexecutionv1al
 // BuildPipelineRun creates a PipelineRun with bundle resolver.
 // DD-WE-006: deps are added as workspace bindings when non-nil.
 // #243: Parameters are filtered against DeclaredParameterNames before conversion.
+// BR-WE-018: pod-level SecurityContext is hardened to the restricted profile.
+// Container-level settings are not controllable here -- they belong to the
+// Task spec resolved from the OCI bundle (see BR-WE-018 for the asymmetry
+// rationale vs. the Job backend).
 func (t *TektonExecutor) BuildPipelineRun(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string, opts CreateOptions) *tektonv1.PipelineRun {
 	logger := log.FromContext(ctx).WithValues("wfe", wfe.Name, "workflowID", wfe.Spec.WorkflowRef.WorkflowID)
 	filteredParams := FilterDeclaredParameters(wfe.Spec.Parameters, opts.DeclaredParameterNames, logger)
@@ -219,6 +224,9 @@ func (t *TektonExecutor) BuildPipelineRun(ctx context.Context, wfe *workflowexec
 			Workspaces: workspaces,
 			TaskRunTemplate: tektonv1.PipelineTaskRunTemplate{
 				ServiceAccountName: wfe.Status.ServiceAccountName,
+				PodTemplate: &pod.PodTemplate{
+					SecurityContext: restrictedPodSecurityContext(),
+				},
 			},
 		},
 	}
