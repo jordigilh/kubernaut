@@ -19,6 +19,7 @@ package creator_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -29,6 +30,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
@@ -53,6 +56,8 @@ var _ = Describe("SignalProcessingCreator ClusterID Propagation (BR-INTEGRATION-
 		scheme = runtime.NewScheme()
 		Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
 		Expect(signalprocessingv1.AddToScheme(scheme)).To(Succeed())
+		Expect(notificationv1.AddToScheme(scheme)).To(Succeed())
+		Expect(aianalysisv1.AddToScheme(scheme)).To(Succeed())
 		reg := prometheus.NewRegistry()
 		m = rometrics.NewMetricsWithRegistry(reg)
 	})
@@ -141,5 +146,112 @@ var _ = Describe("SignalProcessingCreator ClusterID Propagation (BR-INTEGRATION-
 		// RED: This field does not exist yet -- compilation will fail
 		Expect(sp.Spec.Signal.ClusterID).To(BeEmpty(),
 			"AC-4: empty ClusterID indicates local hub cluster")
+	})
+
+	It("UT-NT-054-001 [AC-4]: propagates ClusterID from RemediationRequest to NotificationRequest", func() {
+		rr := &remediationv1.RemediationRequest{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "rr-test-notification-cluster",
+				Namespace: "kubernaut-system",
+				UID:       "test-uid-nr-001",
+			},
+			Spec: remediationv1.RemediationRequestSpec{
+				SignalFingerprint: "aabbccdd1234567890abcdef1234567890abcdef1234567890abcdef12345678",
+				SignalName:        "HighDiskUsage",
+				Severity:          "warning",
+				SignalType:        "alert",
+				TargetType:        "kubernetes",
+				TargetResource: remediationv1.ResourceIdentifier{
+					Kind:      "StatefulSet",
+					Name:      "db-primary",
+					Namespace: "database",
+				},
+				FiringTime:   metav1.Now(),
+				ReceivedTime: metav1.Now(),
+				ClusterID:    "prod-east-1",
+			},
+			Status: remediationv1.RemediationRequestStatus{
+				DuplicateCount: 3,
+			},
+		}
+
+		k8sClient = fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(rr).
+			WithStatusSubresource(rr).
+			Build()
+
+		ntCreator := creator.NewNotificationCreator(k8sClient, scheme, m)
+		name, err := ntCreator.CreateBulkDuplicateNotification(ctx, rr)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(name).ToNot(BeEmpty())
+
+		nr := &notificationv1.NotificationRequest{}
+		err = k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: "kubernaut-system"}, nr)
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(nr.Spec.ClusterID).To(Equal("prod-east-1"),
+			"AC-4: ClusterID must be propagated from RemediationRequest to NotificationRequest")
+	})
+
+	It("UT-RAR-054-001 [AC-4]: propagates ClusterID from RemediationRequest to RemediationApprovalRequest", func() {
+		rr := &remediationv1.RemediationRequest{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "rr-test-approval-cluster",
+				Namespace: "kubernaut-system",
+				UID:       "test-uid-rar-001",
+			},
+			Spec: remediationv1.RemediationRequestSpec{
+				SignalFingerprint: "ddccbbaa1234567890abcdef1234567890abcdef1234567890abcdef12345678",
+				SignalName:        "HighLatency",
+				Severity:          "critical",
+				SignalType:        "alert",
+				TargetType:        "kubernetes",
+				TargetResource: remediationv1.ResourceIdentifier{
+					Kind:      "Deployment",
+					Name:      "payment-service",
+					Namespace: "payments",
+				},
+				FiringTime:   metav1.Now(),
+				ReceivedTime: metav1.Now(),
+				ClusterID:    "prod-east-1",
+			},
+		}
+
+		ai := &aianalysisv1.AIAnalysis{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "aa-test-approval-cluster",
+				Namespace: "kubernaut-system",
+			},
+			Status: aianalysisv1.AIAnalysisStatus{
+				SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
+					WorkflowID:      "restart-pod",
+					Version:         "1.0.0",
+					ExecutionBundle: "oci://registry/workflows/restart-pod:v1.0.0",
+					Confidence:      0.85,
+					Rationale:       "Pod restart recommended for high latency",
+				},
+				ApprovalReason: "High severity requires approval",
+				RootCause:      "Memory leak detected",
+			},
+		}
+
+		k8sClient = fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(rr).
+			WithStatusSubresource(rr, &remediationv1.RemediationApprovalRequest{}).
+			Build()
+
+		approvalCreator := creator.NewApprovalCreator(k8sClient, scheme, m, 15*time.Minute)
+		name, err := approvalCreator.Create(ctx, rr, ai)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(name).ToNot(BeEmpty())
+
+		rar := &remediationv1.RemediationApprovalRequest{}
+		err = k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: "kubernaut-system"}, rar)
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(rar.Spec.ClusterID).To(Equal("prod-east-1"),
+			"AC-4: ClusterID must be propagated from RemediationRequest to RemediationApprovalRequest")
 	})
 })

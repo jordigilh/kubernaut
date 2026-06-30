@@ -159,6 +159,10 @@ func (m *Manager) RecordWorkflowSelectionCompleted(ctx context.Context, wfe *wor
 	correlationID := wfe.Spec.RemediationRequestRef.Name
 	audit.SetCorrelationID(event, correlationID)
 	audit.SetNamespace(event, wfe.Namespace)
+	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
+	if wfe.Spec.ClusterID != "" {
+		audit.SetClusterName(event, wfe.Spec.ClusterID)
+	}
 
 	// Gap #5: Use structured audit payload (eliminates map[string]interface{})
 	// Per DD-AUDIT-004: Zero unstructured data in audit events
@@ -239,6 +243,10 @@ func (m *Manager) RecordExecutionWorkflowStarted(
 	correlationID := wfe.Spec.RemediationRequestRef.Name
 	audit.SetCorrelationID(event, correlationID)
 	audit.SetNamespace(event, wfe.Namespace)
+	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
+	if wfe.Spec.ClusterID != "" {
+		audit.SetClusterName(event, wfe.Spec.ClusterID)
+	}
 
 	// Gap #6: Use structured audit payload (eliminates map[string]interface{})
 	// Per DD-AUDIT-004: Zero unstructured data in audit events
@@ -342,6 +350,10 @@ func (m *Manager) recordAuditEvent(
 
 	// Set namespace context
 	audit.SetNamespace(event, wfe.Namespace)
+	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
+	if wfe.Spec.ClusterID != "" {
+		audit.SetClusterName(event, wfe.Spec.ClusterID)
+	}
 
 	// Build structured event data (type-safe per DD-AUDIT-004)
 	// Eliminates map[string]interface{} per 02-go-coding-standards.mdc
@@ -491,6 +503,10 @@ func (m *Manager) recordFailureAuditWithDetails(ctx context.Context, wfe *workfl
 	correlationID := wfe.Spec.RemediationRequestRef.Name
 	audit.SetCorrelationID(event, correlationID)
 	audit.SetNamespace(event, wfe.Namespace)
+	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
+	if wfe.Spec.ClusterID != "" {
+		audit.SetClusterName(event, wfe.Spec.ClusterID)
+	}
 
 	// Build structured event data (type-safe per DD-AUDIT-004)
 	// Eliminates map[string]interface{} per 02-go-coding-standards.mdc

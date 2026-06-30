@@ -143,11 +143,12 @@ func (r *RARReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		"correlationID", parentRRName,
 		"namespace", rar.Namespace)
 
-	// Build approval audit event using RO audit manager (category="orchestration" per ADR-034 v1.7)
+	// Build approval audit event using RO audit manager (DD-AUDIT-003 v2.2: ClusterID from RAR spec)
 	event, err := r.auditManager.BuildApprovalDecisionEvent(
 		parentRRName,               // correlation_id = parent RR name
 		rar.Namespace,              // namespace
 		parentRRName,               // rr_name
+		rar.Spec.ClusterID,         // clusterName (DD-AUDIT-003 v2.2)
 		rar.Name,                   // rar_name
 		decision,                   // decision (Approved/Rejected/Expired)
 		decidedBy,                  // decided_by (from AuthWebhook)

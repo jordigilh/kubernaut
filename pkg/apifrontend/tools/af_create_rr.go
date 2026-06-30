@@ -266,8 +266,9 @@ func HandleCreateRR(ctx context.Context, d *ToolDeps, args *CreateRRArgs, userna
 	if d.Auditor != nil {
 		if res.AlreadyExists {
 			d.Auditor.Emit(ctx, &audit.Event{
-				Type:   audit.EventRRDeduplicated,
-				UserID: username,
+				Type:        audit.EventRRDeduplicated,
+				UserID:      username,
+				ClusterName: args.ClusterName,
 				Detail: map[string]string{
 					"namespace":   d.ControllerNS,
 					"kind":        args.Kind,
@@ -277,8 +278,9 @@ func HandleCreateRR(ctx context.Context, d *ToolDeps, args *CreateRRArgs, userna
 			})
 		} else {
 			d.Auditor.Emit(ctx, &audit.Event{
-				Type:   audit.EventRRCreated,
-				UserID: username,
+				Type:        audit.EventRRCreated,
+				UserID:      username,
+				ClusterName: args.ClusterName,
 				Detail: map[string]string{
 					"namespace": d.ControllerNS,
 					"kind":      args.Kind,

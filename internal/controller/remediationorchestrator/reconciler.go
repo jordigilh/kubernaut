@@ -1956,6 +1956,7 @@ func (r *Reconciler) emitRemediationCreatedAudit(ctx context.Context, rr *remedi
 		correlationID,
 		rr.Namespace,
 		rr.Name,
+		rr.Spec.ClusterID,
 		auditTimeoutConfig,
 	)
 	if err != nil {
@@ -2001,7 +2002,7 @@ func (r *Reconciler) emitWorkflowCreatedAudit(ctx context.Context, rr *remediati
 	}
 
 	event, err := r.auditManager.BuildRemediationWorkflowCreatedEvent(
-		correlationID, rr.Namespace, rr.Name,
+		correlationID, rr.Namespace, rr.Name, rr.Spec.ClusterID,
 		roaudit.RemediationWorkflowCreatedData{
 			PreRemediationSpecHash: preHash,
 			TargetResource:         targetResource,
@@ -2051,7 +2052,7 @@ func (r *Reconciler) emitEACreatedAudit(ctx context.Context, rr *remediationv1.R
 		data.OperatorReconcileDelay = auditAsyncCfg.OperatorReconcileDelay
 	}
 
-	event, err := r.auditManager.BuildEACreatedEvent(rr.Name, rr.Namespace, rr.Name, data)
+	event, err := r.auditManager.BuildEACreatedEvent(rr.Name, rr.Namespace, rr.Name, rr.Spec.ClusterID, data)
 	if err != nil {
 		logger.Error(err, "Failed to build EA created audit event")
 		return
@@ -2090,6 +2091,7 @@ func (r *Reconciler) emitLifecycleStartedAudit(ctx context.Context, rr *remediat
 		correlationID,
 		rr.Namespace,
 		rr.Name,
+		rr.Spec.ClusterID,
 	)
 	if err != nil {
 		logger.Error(err, "Failed to build lifecycle started audit event")
@@ -2109,7 +2111,7 @@ func (r *Reconciler) emitVerifyingStartedAudit(ctx context.Context, rr *remediat
 		return
 	}
 
-	event, err := r.auditManager.BuildLifecycleVerifyingStartedEvent(rr.Name, rr.Namespace, rr.Name)
+	event, err := r.auditManager.BuildLifecycleVerifyingStartedEvent(rr.Name, rr.Namespace, rr.Name, rr.Spec.ClusterID)
 	if err != nil {
 		logger.Error(err, "Failed to build verifying_started audit event")
 		return
@@ -2133,7 +2135,7 @@ func (r *Reconciler) emitVerificationCompletedAudit(ctx context.Context, rr *rem
 	}
 	durationMs := time.Since(rr.CreationTimestamp.Time).Milliseconds()
 	event, err := r.auditManager.BuildLifecycleVerificationCompletedEvent(
-		rr.Name, rr.Namespace, rr.Name, eaName, rr.Status.Outcome, durationMs)
+		rr.Name, rr.Namespace, rr.Name, rr.Spec.ClusterID, eaName, rr.Status.Outcome, durationMs)
 	if err != nil {
 		logger.Error(err, "Failed to build verification_completed audit event")
 		return
@@ -2157,7 +2159,7 @@ func (r *Reconciler) emitVerificationTimedOutAudit(ctx context.Context, rr *reme
 	}
 	durationMs := time.Since(rr.CreationTimestamp.Time).Milliseconds()
 	event, err := r.auditManager.BuildLifecycleVerificationTimedOutEvent(
-		rr.Name, rr.Namespace, rr.Name, eaName, durationMs)
+		rr.Name, rr.Namespace, rr.Name, rr.Spec.ClusterID, eaName, durationMs)
 	if err != nil {
 		logger.Error(err, "Failed to build verification_timed_out audit event")
 		return
@@ -2197,6 +2199,7 @@ func (r *Reconciler) emitPhaseTransitionAudit(ctx context.Context, rr *remediati
 		correlationID,
 		rr.Namespace,
 		rr.Name,
+		rr.Spec.ClusterID,
 		fromPhase,
 		toPhase,
 	)
@@ -2238,6 +2241,7 @@ func (r *Reconciler) emitCompletionAudit(ctx context.Context, rr *remediationv1.
 		correlationID,
 		rr.Namespace,
 		rr.Name,
+		rr.Spec.ClusterID,
 		outcome,
 		durationMs,
 	)
@@ -2280,6 +2284,7 @@ func (r *Reconciler) emitFailureAudit(ctx context.Context, rr *remediationv1.Rem
 		correlationID,
 		rr.Namespace,
 		rr.Name,
+		rr.Spec.ClusterID,
 		string(failurePhase),
 		failureErr,
 		durationMs,
@@ -2351,6 +2356,7 @@ func (r *Reconciler) emitRoutingBlockedAudit(ctx context.Context, rr *remediatio
 		correlationID,
 		rr.Namespace,
 		rr.Name,
+		rr.Spec.ClusterID,
 		fromPhase,
 		blockData,
 	)
@@ -2394,6 +2400,7 @@ func (r *Reconciler) emitApprovalRequestedAudit(ctx context.Context, rr *remedia
 		correlationID,
 		rr.Namespace,
 		rr.Name,
+		rr.Spec.ClusterID,
 		rarName,
 		workflowID,
 		fmt.Sprintf("%.2f", confidence),
@@ -2440,6 +2447,10 @@ func (r *Reconciler) emitTimeoutAudit(ctx context.Context, rr *remediationv1.Rem
 	audit.SetResource(event, "RemediationRequest", rr.Name)
 	audit.SetCorrelationID(event, correlationID)
 	audit.SetNamespace(event, rr.Namespace)
+	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
+	if rr.Spec.ClusterID != "" {
+		audit.SetClusterName(event, rr.Spec.ClusterID)
+	}
 	audit.SetDuration(event, int(durationMs))
 
 	// Build payload using ogen types (timeout is represented as failure)
@@ -2494,6 +2505,10 @@ func (r *Reconciler) emitRetentionCleanupAudit(ctx context.Context, rr *remediat
 	audit.SetResource(event, "RemediationRequest", rr.Name)
 	audit.SetCorrelationID(event, correlationID)
 	audit.SetNamespace(event, rr.Namespace)
+	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
+	if rr.Spec.ClusterID != "" {
+		audit.SetClusterName(event, rr.Spec.ClusterID)
+	}
 
 	payload := api.RemediationOrchestratorAuditPayload{
 		EventType: api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleCompleted,

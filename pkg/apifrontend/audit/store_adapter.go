@@ -58,6 +58,10 @@ func (a *StoreAdapter) Emit(ctx context.Context, e *Event) {
 		req.ActorIP.SetTo(e.SourceIP)
 	}
 
+	if e.ClusterName != "" {
+		req.ClusterName.SetTo(e.ClusterName)
+	}
+
 	if !hasTypedPayload(e.Type) {
 		a.logger.V(2).Info("skipping store for event without typed payload schema (logged only)",
 			"event_type", req.EventType)

@@ -72,6 +72,7 @@ type Event struct {
 	RequestID     string            `json:"request_id,omitempty"`
 	UserID        string            `json:"user_id,omitempty"`
 	SourceIP      string            `json:"source_ip,omitempty"`
+	ClusterName   string            `json:"cluster_name,omitempty"`
 	Detail        map[string]string `json:"detail,omitempty"`
 }
 

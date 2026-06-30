@@ -57,7 +57,7 @@ var _ = Describe("Audit Helpers", func() {
 
 			// ===== BEHAVIOR TESTING ===== (Gap 2 Fix)
 			// Question: Does CreateMessageSentEvent() work without errors?
-			event, err := helpers.CreateMessageSentEvent(notification, "slack")
+			event, err := helpers.CreateMessageSentEvent(notification, "slack", "")
 			Expect(err).ToNot(HaveOccurred(), "Event creation should not error")
 			Expect(event).ToNot(BeNil(), "Event should be created")
 
@@ -146,7 +146,7 @@ var _ = Describe("Audit Helpers", func() {
 			deliveryError := fmt.Errorf("Slack API rate limit exceeded")
 
 			// ===== BEHAVIOR TESTING =====
-			event, err := helpers.CreateMessageFailedEvent(notification, "slack", deliveryError)
+			event, err := helpers.CreateMessageFailedEvent(notification, "slack", deliveryError, "")
 			Expect(err).ToNot(HaveOccurred(), "Event creation should not error")
 			Expect(event).ToNot(BeNil(), "Event should be created")
 
@@ -188,7 +188,7 @@ var _ = Describe("Audit Helpers", func() {
 			// BR-NOT-062: Unified audit table integration
 
 			// ===== BEHAVIOR TESTING =====
-			event, err := helpers.CreateMessageAcknowledgedEvent(notification)
+			event, err := helpers.CreateMessageAcknowledgedEvent(notification, "")
 			Expect(err).ToNot(HaveOccurred())
 
 			// ===== CORRECTNESS TESTING =====
@@ -227,7 +227,7 @@ var _ = Describe("Audit Helpers", func() {
 			// BR-NOT-062: Unified audit table integration
 
 			// ===== BEHAVIOR TESTING =====
-			event, err := helpers.CreateMessageEscalatedEvent(notification)
+			event, err := helpers.CreateMessageEscalatedEvent(notification, "")
 			Expect(err).ToNot(HaveOccurred())
 
 			// ===== CORRECTNESS TESTING =====
@@ -307,60 +307,60 @@ var _ = Describe("Audit Helpers", func() {
 			Entry("message sent successfully (BR-NOT-062)",
 				"notification.message.sent", "sent", "success",
 				func() (*ogenclient.AuditEventRequest, error) {
-					return helpers.CreateMessageSentEvent(notification, "slack")
+					return helpers.CreateMessageSentEvent(notification, "slack", "")
 				}, true, ""),
 			Entry("message delivery failed (BR-NOT-062)",
 				"notification.message.failed", "sent", "failure",
 				func() (*ogenclient.AuditEventRequest, error) {
-					return helpers.CreateMessageFailedEvent(notification, "slack", fmt.Errorf("rate limited"))
+					return helpers.CreateMessageFailedEvent(notification, "slack", fmt.Errorf("rate limited"), "")
 				}, true, ""),
 			Entry("message acknowledged (BR-NOT-062)",
 				"notification.message.acknowledged", "acknowledged", "success",
 				func() (*ogenclient.AuditEventRequest, error) {
-					return helpers.CreateMessageAcknowledgedEvent(notification)
+					return helpers.CreateMessageAcknowledgedEvent(notification, "")
 				}, true, ""),
 			Entry("message escalated (BR-NOT-062)",
 				"notification.message.escalated", "escalated", "success",
 				func() (*ogenclient.AuditEventRequest, error) {
-					return helpers.CreateMessageEscalatedEvent(notification)
+					return helpers.CreateMessageEscalatedEvent(notification, "")
 				}, true, ""),
 
 			// ERROR CASES (Edge Cases) - CreateMessageSentEvent
 			Entry("nil notification for CreateMessageSentEvent returns error",
 				"", "", "",
 				func() (*ogenclient.AuditEventRequest, error) {
-					return helpers.CreateMessageSentEvent(nil, "slack")
+					return helpers.CreateMessageSentEvent(nil, "slack", "")
 				}, false, "notification cannot be nil"),
 			Entry("empty channel for CreateMessageSentEvent returns error",
 				"", "", "",
 				func() (*ogenclient.AuditEventRequest, error) {
-					return helpers.CreateMessageSentEvent(notification, "")
+					return helpers.CreateMessageSentEvent(notification, "", "")
 				}, false, "channel cannot be empty"),
 
 			// ERROR CASES - CreateMessageFailedEvent (100% coverage fix)
 			Entry("nil notification for CreateMessageFailedEvent returns error",
 				"", "", "",
 				func() (*ogenclient.AuditEventRequest, error) {
-					return helpers.CreateMessageFailedEvent(nil, "slack", fmt.Errorf("test error"))
+					return helpers.CreateMessageFailedEvent(nil, "slack", fmt.Errorf("test error"), "")
 				}, false, "notification cannot be nil"),
 			Entry("empty channel for CreateMessageFailedEvent returns error",
 				"", "", "",
 				func() (*ogenclient.AuditEventRequest, error) {
-					return helpers.CreateMessageFailedEvent(notification, "", fmt.Errorf("test error"))
+					return helpers.CreateMessageFailedEvent(notification, "", fmt.Errorf("test error"), "")
 				}, false, "channel cannot be empty"),
 
 			// ERROR CASES - CreateMessageAcknowledgedEvent (100% coverage fix)
 			Entry("nil notification for CreateMessageAcknowledgedEvent returns error",
 				"", "", "",
 				func() (*ogenclient.AuditEventRequest, error) {
-					return helpers.CreateMessageAcknowledgedEvent(nil)
+					return helpers.CreateMessageAcknowledgedEvent(nil, "")
 				}, false, "notification cannot be nil"),
 
 			// ERROR CASES - CreateMessageEscalatedEvent (100% coverage fix)
 			Entry("nil notification for CreateMessageEscalatedEvent returns error",
 				"", "", "",
 				func() (*ogenclient.AuditEventRequest, error) {
-					return helpers.CreateMessageEscalatedEvent(nil)
+					return helpers.CreateMessageEscalatedEvent(nil, "")
 				}, false, "notification cannot be nil"),
 		)
 	})
@@ -380,7 +380,7 @@ var _ = Describe("Audit Helpers", func() {
 				notification.Spec.Context = nil
 				notification.Spec.Extensions = map[string]string{}
 
-				event, err := helpers.CreateMessageSentEvent(notification, "slack")
+				event, err := helpers.CreateMessageSentEvent(notification, "slack", "")
 
 				Expect(err).ToNot(HaveOccurred())
 				Expect(event.CorrelationID).To(Equal(string(notification.UID)),
@@ -393,7 +393,7 @@ var _ = Describe("Audit Helpers", func() {
 				// Edge Case: Empty namespace
 				notification.Namespace = "" // Empty namespace
 
-				_, err := helpers.CreateMessageSentEvent(notification, "slack")
+				_, err := helpers.CreateMessageSentEvent(notification, "slack", "")
 
 				Expect(err).ToNot(HaveOccurred())
 				// Namespace will be empty string, which is valid for non-namespaced scenarios
@@ -403,7 +403,7 @@ var _ = Describe("Audit Helpers", func() {
 		Context("when notification is nil", func() {
 			It("should return error 'notification cannot be nil'", func() {
 				// Edge Case: Nil input validation
-				event, err := helpers.CreateMessageSentEvent(nil, "slack")
+				event, err := helpers.CreateMessageSentEvent(nil, "slack", "")
 
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("notification cannot be nil"))
@@ -414,7 +414,7 @@ var _ = Describe("Audit Helpers", func() {
 		Context("when channel is empty string", func() {
 			It("should return error 'channel cannot be empty'", func() {
 				// Edge Case: Empty channel validation
-				event, err := helpers.CreateMessageSentEvent(notification, "")
+				event, err := helpers.CreateMessageSentEvent(notification, "", "")
 
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("channel cannot be empty"))
@@ -433,7 +433,7 @@ var _ = Describe("Audit Helpers", func() {
 				notification.Spec.Context = nil
 				notification.Spec.Extensions = nil
 
-				event, err := helpers.CreateMessageSentEvent(notification, "slack")
+				event, err := helpers.CreateMessageSentEvent(notification, "slack", "")
 
 				Expect(err).ToNot(HaveOccurred(),
 					"BEHAVIOR: Event creation should succeed with nil Context and Extensions")
@@ -447,7 +447,7 @@ var _ = Describe("Audit Helpers", func() {
 				// Edge Case: nil error for failed event
 				// BEHAVIOR: Event creation succeeds
 				// CORRECTNESS: event_data has no "error" key
-				event, err := helpers.CreateMessageFailedEvent(notification, "slack", nil)
+				event, err := helpers.CreateMessageFailedEvent(notification, "slack", nil, "")
 
 				Expect(err).ToNot(HaveOccurred(),
 					"BEHAVIOR: Event creation should succeed with nil error")
@@ -475,7 +475,7 @@ var _ = Describe("Audit Helpers", func() {
 				}
 				notification.Spec.Subject = string(longSubjectBytes)
 
-				event, err := helpers.CreateMessageSentEvent(notification, "slack")
+				event, err := helpers.CreateMessageSentEvent(notification, "slack", "")
 
 				Expect(err).ToNot(HaveOccurred())
 				// Validate event_data can handle large strings (PostgreSQL JSONB supports up to 1GB)
@@ -494,7 +494,7 @@ var _ = Describe("Audit Helpers", func() {
 				// Edge Case: Empty boundary value
 				notification.Spec.Subject = ""
 
-				event, err := helpers.CreateMessageSentEvent(notification, "slack")
+				event, err := helpers.CreateMessageSentEvent(notification, "slack", "")
 
 				Expect(err).ToNot(HaveOccurred())
 				// V2.2: EventData is structured type, convert to map for testing
@@ -517,7 +517,7 @@ var _ = Describe("Audit Helpers", func() {
 				}
 				notification.Spec.Body = string(largeBodyBytes)
 
-				event, err := helpers.CreateMessageSentEvent(notification, "slack")
+				event, err := helpers.CreateMessageSentEvent(notification, "slack", "")
 
 				Expect(err).ToNot(HaveOccurred())
 				eventDataBytes, _ := json.Marshal(event.EventData)
@@ -535,7 +535,7 @@ var _ = Describe("Audit Helpers", func() {
 				// Edge Case: SQL injection attempt (should be safe in JSONB)
 				maliciousChannel := "slack'; DROP TABLE audit_events; --"
 
-				event, err := helpers.CreateMessageSentEvent(notification, maliciousChannel)
+				event, err := helpers.CreateMessageSentEvent(notification, maliciousChannel, "")
 
 				Expect(err).ToNot(HaveOccurred())
 				// V2.2: EventData is structured type, convert to map for testing
@@ -568,7 +568,7 @@ var _ = Describe("Audit Helpers", func() {
 					go func(id int) {
 						defer wg.Done()
 						notif := createTestNotificationWithID(id)
-						event, err := helpers.CreateMessageSentEvent(notif, "slack")
+						event, err := helpers.CreateMessageSentEvent(notif, "slack", "")
 						Expect(err).ToNot(HaveOccurred())
 
 						// Non-blocking audit write
@@ -599,7 +599,7 @@ var _ = Describe("Audit Helpers", func() {
 				// Create 100 events rapidly
 				for i := 0; i < burstCount; i++ {
 					notif := createTestNotificationWithID(i)
-					event, err := helpers.CreateMessageSentEvent(notif, "slack")
+					event, err := helpers.CreateMessageSentEvent(notif, "slack", "")
 					Expect(err).ToNot(HaveOccurred())
 					events = append(events, event)
 				}
@@ -632,7 +632,7 @@ var _ = Describe("Audit Helpers", func() {
 	Describe("ADR-034 Compliance Validation", func() {
 		Context("Event Type Format", func() {
 			It("should use event_type format: <service>.<category>.<action>", func() {
-				event, _ := helpers.CreateMessageSentEvent(notification, "slack")
+				event, _ := helpers.CreateMessageSentEvent(notification, "slack", "")
 				Expect(event.EventType).To(MatchRegexp(`^notification\.(message|status)\.(sent|failed|acknowledged|escalated)$`),
 					"Event type must follow ADR-034 format: <service>.<category>.<action>")
 			})
@@ -643,7 +643,7 @@ var _ = Describe("Audit Helpers", func() {
 
 		Context("Event Data Structure", func() {
 			It("should populate event_data as valid JSONB", func() {
-				event, _ := helpers.CreateMessageSentEvent(notification, "slack")
+				event, _ := helpers.CreateMessageSentEvent(notification, "slack", "")
 				// V2.2: EventData is structured type, verify it's marshalable
 				Expect(event.EventData).ToNot(BeNil(),
 					"Event data must be populated with notification context")
@@ -655,7 +655,7 @@ var _ = Describe("Audit Helpers", func() {
 
 		Context("Actor Type", func() {
 			It("should set actor_type to 'service' for controller actions", func() {
-				event, _ := helpers.CreateMessageSentEvent(notification, "slack")
+				event, _ := helpers.CreateMessageSentEvent(notification, "slack", "")
 				Expect(event.ActorType.IsSet()).To(BeTrue())
 				Expect(event.ActorType.Value).To(Equal("service"),
 					"Actor type must be 'service' for Kubernetes controller actions (not 'user' or 'external')")
@@ -664,7 +664,7 @@ var _ = Describe("Audit Helpers", func() {
 
 		Context("Correlation ID", func() {
 			It("should use metadata['remediationRequestName'] as correlation_id for workflow tracing", func() {
-				event, _ := helpers.CreateMessageSentEvent(notification, "slack")
+				event, _ := helpers.CreateMessageSentEvent(notification, "slack", "")
 				Expect(event.CorrelationID).To(Equal("remediation-123"),
 					"Correlation ID must match remediationRequestName for end-to-end workflow tracing (BR-NOT-064)")
 			})
@@ -672,7 +672,7 @@ var _ = Describe("Audit Helpers", func() {
 
 		Context("Event Version", func() {
 			It("should set version to '1.0'", func() {
-				event, _ := helpers.CreateMessageSentEvent(notification, "slack")
+				event, _ := helpers.CreateMessageSentEvent(notification, "slack", "")
 				Expect(event.Version).To(Equal("1.0"),
 					"Version must be '1.0' for initial ADR-034 implementation")
 			})
@@ -680,7 +680,7 @@ var _ = Describe("Audit Helpers", func() {
 
 		Context("Resource Identification", func() {
 			It("should populate resource_type and resource_id for CRD identification", func() {
-				event, _ := helpers.CreateMessageSentEvent(notification, "slack")
+				event, _ := helpers.CreateMessageSentEvent(notification, "slack", "")
 				Expect(event.ResourceType.IsSet()).To(BeTrue())
 				Expect(event.ResourceType.Value).To(Equal("NotificationRequest"),
 					"Resource type must match CRD kind")
