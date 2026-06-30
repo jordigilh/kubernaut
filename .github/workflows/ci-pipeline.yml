@@ -861,13 +861,21 @@ jobs:
         with:
           submodules: true
 
-      - name: Free disk space (AWX-heavy E2E jobs)
+      - name: Free disk space (E2E jobs need headroom for Kind + images)
         if: matrix.service == 'workflowexecution' || matrix.service == 'fullpipeline' || matrix.service == 'fleet'
         run: |
           echo "Disk before cleanup:"
           df -h /
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          sudo apt-get purge -y \
+            google-cloud-cli azure-cli microsoft-edge-stable google-chrome-stable \
+            dotnet-sdk-* powershell mono-devel 2>/dev/null || true
+          sudo apt-get autoremove -y 2>/dev/null || true
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /usr/share/swift /opt/hostedtoolcache/CodeQL \
+            /usr/local/share/chromium /usr/local/share/powershell \
+            /usr/local/share/edge_driver /opt/microsoft 2>/dev/null || true
           sudo docker image prune -a -f 2>/dev/null || true
+          sudo podman system prune -a -f 2>/dev/null || true
           echo "Disk after cleanup:"
           df -h /
 
