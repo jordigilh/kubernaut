@@ -706,7 +706,7 @@ func afPatchKAJWTAudience(ctx context.Context, kubeconfigPath, namespace string,
       issuer: "https://dex:5556/dex"
       jwksURL: "https://dex:5556/dex/keys"
       audience: "kubernaut-apifrontend"
-      tlsCaFile: /etc/apifrontend/inter-service-ca/ca.crt
+      tlsCaFile: /etc/tls-ca/ca.crt
       claimMappings:
         username: "email"
         groups: "groups"`

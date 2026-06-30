@@ -1354,6 +1354,7 @@ func newAuthMiddleware(infra *k8sInfra, interactiveCfg kaconfig.InteractiveConfi
 				Audience:      p.Audience,
 				UsernameClaim: p.ClaimMappings.Username,
 				GroupsClaim:   p.ClaimMappings.Groups,
+				TLSCAFile:     p.TLSCaFile,
 			}
 		}
 

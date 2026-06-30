@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -28,6 +29,8 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/lestrrat-go/jwx/v3/jws"
 	"github.com/lestrrat-go/jwx/v3/jwt"
+
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 )
 
 // ErrIssuerNotFound indicates the JWT's issuer claim does not match any
@@ -49,6 +52,11 @@ type JWTProviderEntry struct {
 	Audience      string
 	UsernameClaim string
 	GroupsClaim   string
+	// TLSCAFile is an optional path to a PEM-encoded CA bundle used to verify
+	// the JWKSURL's TLS certificate when it is signed by a private/internal
+	// CA (e.g. an in-cluster inter-service CA) rather than a public CA.
+	// When empty, the process default HTTP client (system trust store) is used.
+	TLSCAFile string
 }
 
 type jwtProvider struct {
@@ -90,14 +98,41 @@ func NewJWTAuthenticator(entries []JWTProviderEntry, logger logr.Logger) (*JWTAu
 			cancel()
 			return nil, fmt.Errorf("creating JWKS cache for provider %q: %w", e.Issuer, err)
 		}
-		if err := c.Register(ctx, e.JWKSURL); err != nil {
+
+		var registerOpts []jwk.RegisterOption
+		if e.TLSCAFile != "" {
+			transport, tlsErr := sharedtls.NewTLSTransport(e.TLSCAFile)
+			if tlsErr != nil {
+				cancel()
+				return nil, fmt.Errorf("loading TLS CA for provider %q (%s): %w", e.Issuer, e.TLSCAFile, tlsErr)
+			}
+			registerOpts = append(registerOpts, jwk.WithHTTPClient(&http.Client{
+				Transport: transport,
+				Timeout:   jwksPreWarmTimeout,
+			}))
+		}
+
+		// Bound the registration's initial fetch-and-wait with the same
+		// timeout used for the warm-up Lookup below. httprc's Controller.Add
+		// (called by Register, WithWaitReady defaults to true) blocks on
+		// Resource.Ready(ctx) until the first successful fetch -- and that
+		// wait does NOT time out unless the passed context has a deadline
+		// (see lestrrat-go/httprc Controller.Add godoc). Without this bound,
+		// a permanently unreachable or TLS-untrusted JWKS endpoint hangs
+		// kubernautagent's startup forever instead of failing fast, since
+		// every retry attempt fails identically and the resource never
+		// becomes ready.
+		warmCtx, warmCancel := context.WithTimeout(ctx, jwksPreWarmTimeout)
+		err = c.Register(warmCtx, e.JWKSURL, registerOpts...)
+		warmCancel()
+		if err != nil {
 			cancel()
 			return nil, fmt.Errorf("registering JWKS URL %q for provider %q: %w", e.JWKSURL, e.Issuer, err)
 		}
 
-		warmCtx, warmCancel := context.WithTimeout(ctx, jwksPreWarmTimeout)
-		_, err = c.Lookup(warmCtx, e.JWKSURL)
-		warmCancel()
+		lookupCtx, lookupCancel := context.WithTimeout(ctx, jwksPreWarmTimeout)
+		_, err = c.Lookup(lookupCtx, e.JWKSURL)
+		lookupCancel()
 		if err != nil {
 			cancel()
 			return nil, fmt.Errorf("JWKS pre-warm failed for provider %q (%s): %w", e.Issuer, e.JWKSURL, err)

@@ -245,10 +245,14 @@ const (
 // identity from verified claims. Multiple providers support KEP-3331
 // multi-issuer architecture (v1.5: Keycloak, v1.6: + SPIRE).
 type JWTProviderConfig struct {
-	Name          string        `yaml:"name"`
-	Issuer        string        `yaml:"issuer"`
-	JWKSURL       string        `yaml:"jwksURL"`
-	Audience      string        `yaml:"audience"`
+	Name     string `yaml:"name"`
+	Issuer   string `yaml:"issuer"`
+	JWKSURL  string `yaml:"jwksURL"`
+	Audience string `yaml:"audience"`
+	// TLSCaFile is an optional path to a PEM-encoded CA bundle used to verify
+	// the JWKSURL's TLS certificate when signed by a private CA (e.g. an
+	// in-cluster inter-service CA). Empty uses the system trust store.
+	TLSCaFile     string        `yaml:"tlsCaFile,omitempty"`
 	ClaimMappings ClaimMappings `yaml:"claimMappings,omitempty"`
 }
 

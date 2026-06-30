@@ -20,8 +20,14 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -482,6 +488,127 @@ var _ = Describe("JWTAuthenticator — #1009", func() {
 			info, err := jwtAuth.ValidateTokenFull(ctx, string(signed))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(info.Username).To(Equal("user@corp"))
+		})
+	})
+})
+
+// Regression coverage for a production incident (apifrontend E2E, CI run
+// 28479808170): a JWT-provider config patch + rollout restart caused the
+// kubernaut-agent deployment to never become ready. Root cause: a single
+// failed JWKS fetch attempt during NewJWTAuthenticator's pre-warm caused
+// jwk.Cache.Register to block on an unbounded context (httprc's
+// Controller.Add docs: "the Ready() call will NOT timeout unless you
+// configure your context object with context.WithTimeout"), combined with
+// httprc's default 15-minute retry backoff after a failed fetch
+// (httprc.DefaultMinInterval). The fix bounds Register's wait with the same
+// jwksPreWarmTimeout used for the warm-up Lookup, and adds TLSCAFile support
+// so JWKS endpoints behind a private CA (e.g. Dex behind the inter-service
+// CA) can be verified instead of failing every fetch attempt.
+var _ = Describe("JWTAuthenticator — JWKS pre-warm robustness (CI incident: AF E2E hang)", func() {
+	Describe("UT-KA-1009-015: unreachable JWKS endpoint fails fast instead of hanging", func() {
+		It("should return an error within the pre-warm timeout window, not hang indefinitely", func() {
+			// Reserve a port, then close it immediately so the connection is
+			// refused -- simulating a permanently unreachable JWKS endpoint.
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			Expect(err).NotTo(HaveOccurred())
+			unreachableURL := fmt.Sprintf("http://%s/jwks.json", listener.Addr().String())
+			Expect(listener.Close()).To(Succeed())
+
+			done := make(chan struct{})
+			var authErr error
+			start := time.Now()
+			go func() {
+				defer close(done)
+				_, authErr = auth.NewJWTAuthenticator([]auth.JWTProviderEntry{
+					{
+						Issuer:        "https://unreachable.example.com",
+						JWKSURL:       unreachableURL,
+						Audience:      "kubernaut-agent",
+						UsernameClaim: "preferred_username",
+						GroupsClaim:   "groups",
+					},
+				}, logr.Discard())
+			}()
+
+			// httprc's default retry backoff after a failed fetch is 15
+			// minutes (DefaultMinInterval); before the fix, Register()'s
+			// wait had no deadline and would block for that entire window.
+			// 25s gives generous headroom over the 15s jwksPreWarmTimeout
+			// while remaining far shorter than the 15-minute regression.
+			Eventually(done, 25*time.Second, 100*time.Millisecond).Should(BeClosed(),
+				"NewJWTAuthenticator must fail fast on a permanently unreachable JWKS endpoint, not hang for httprc's 15-minute retry backoff")
+			Expect(authErr).To(HaveOccurred())
+			Expect(time.Since(start)).To(BeNumerically("<", 20*time.Second),
+				"pre-warm should be bounded by jwksPreWarmTimeout, not httprc's default retry interval")
+		})
+	})
+
+	Describe("UT-KA-1009-016: custom CA file used to verify JWKS endpoint over HTTPS", func() {
+		It("should successfully fetch JWKS over HTTPS when the server cert is trusted via TLSCAFile", func() {
+			mux := http.NewServeMux()
+			mux.HandleFunc("/jwks.json", func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"keys":[]}`))
+			})
+			tlsServer := httptest.NewTLSServer(mux)
+			defer tlsServer.Close()
+
+			// httptest.NewTLSServer's certificate is self-signed; trusting the
+			// exact leaf certificate as a root is a standard test technique
+			// for exercising a custom CA pool without building a full PKI chain.
+			leafCert := tlsServer.Certificate()
+			caPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leafCert.Raw})
+
+			tmpDir, err := os.MkdirTemp("", "jwt-auth-ca-test")
+			Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = os.RemoveAll(tmpDir) }()
+			caFile := filepath.Join(tmpDir, "ca.crt")
+			Expect(os.WriteFile(caFile, caPEM, 0600)).To(Succeed())
+
+			authedClient, err := auth.NewJWTAuthenticator([]auth.JWTProviderEntry{
+				{
+					Issuer:        "https://dex.example.com",
+					JWKSURL:       tlsServer.URL + "/jwks.json",
+					Audience:      "kubernaut-agent",
+					UsernameClaim: "preferred_username",
+					GroupsClaim:   "groups",
+					TLSCAFile:     caFile,
+				},
+			}, logr.Discard())
+			Expect(err).NotTo(HaveOccurred(),
+				"JWKS fetch must succeed when the server's TLS cert is trusted via the configured CA file")
+			defer authedClient.Close()
+		})
+
+		It("should fail fast (not hang) when TLSCAFile is omitted and the JWKS endpoint uses an untrusted cert", func() {
+			mux := http.NewServeMux()
+			mux.HandleFunc("/jwks.json", func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"keys":[]}`))
+			})
+			tlsServer := httptest.NewTLSServer(mux)
+			defer tlsServer.Close()
+
+			done := make(chan struct{})
+			var authErr error
+			go func() {
+				defer close(done)
+				_, authErr = auth.NewJWTAuthenticator([]auth.JWTProviderEntry{
+					{
+						Issuer:        "https://dex.example.com",
+						JWKSURL:       tlsServer.URL + "/jwks.json",
+						Audience:      "kubernaut-agent",
+						UsernameClaim: "preferred_username",
+						GroupsClaim:   "groups",
+						// TLSCAFile intentionally omitted: the server cert is
+						// self-signed and untrusted by the system pool.
+					},
+				}, logr.Discard())
+			}()
+
+			Eventually(done, 25*time.Second, 100*time.Millisecond).Should(BeClosed(),
+				"an untrusted TLS cert must fail the pre-warm fast, not hang for httprc's 15-minute retry backoff")
+			Expect(authErr).To(HaveOccurred())
 		})
 	})
 })
