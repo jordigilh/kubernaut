@@ -112,6 +112,11 @@ spec:
                   - prosCons
                   type: object
                 type: array
+              clusterID:
+                description: |-
+                  ClusterID identifies the source cluster for fleet-scoped remediations (DD-AUDIT-003 v2.2).
+                  Propagated from RemediationRequest.Spec.ClusterID for audit correlation (SOC2 CC8.1).
+                type: string
               confidence:
                 description: |-
                   Confidence score from AI analysis (0.0-1.0)

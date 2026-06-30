@@ -72,6 +72,11 @@ type RemediationApprovalRequestSpec struct {
 	// +kubebuilder:validation:Required
 	AIAnalysisRef ObjectRef `json:"aiAnalysisRef"`
 
+	// ClusterID identifies the source cluster for fleet-scoped remediations (DD-AUDIT-003 v2.2).
+	// Propagated from RemediationRequest.Spec.ClusterID for audit correlation (SOC2 CC8.1).
+	// +optional
+	ClusterID string `json:"clusterID,omitempty"`
+
 	// ========================================
 	// APPROVAL CONTEXT
 	// ========================================

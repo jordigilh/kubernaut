@@ -412,6 +412,11 @@ type NotificationRequestSpec struct {
 	// +optional
 	RemediationRequestRef *corev1.ObjectReference `json:"remediationRequestRef,omitempty"`
 
+	// ClusterID identifies the source cluster for fleet-scoped remediations (DD-AUDIT-003 v2.2).
+	// Propagated from RemediationRequest.Spec.ClusterID for audit correlation (SOC2 CC8.1).
+	// +optional
+	ClusterID string `json:"clusterID,omitempty"`
+
 	// Type of notification (escalation, simple, status-update)
 	// +kubebuilder:validation:Required
 	Type NotificationType `json:"type"`

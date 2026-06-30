@@ -100,6 +100,11 @@ spec:
                 description: Notification body content
                 minLength: 1
                 type: string
+              clusterID:
+                description: |-
+                  ClusterID identifies the source cluster for fleet-scoped remediations (DD-AUDIT-003 v2.2).
+                  Propagated from RemediationRequest.Spec.ClusterID for audit correlation (SOC2 CC8.1).
+                type: string
               context:
                 description: |-
                   Context provides typed, structured notification context replacing the

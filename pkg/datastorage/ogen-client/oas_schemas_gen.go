@@ -25972,6 +25972,10 @@ type ReconstructionResponse struct {
 	ReconstructedAt OptDateTime `json:"reconstructed_at"`
 	// Correlation ID used for reconstruction.
 	CorrelationID OptString `json:"correlation_id"`
+	// Cluster name where the remediation originated (DD-AUDIT-003 v2.2).
+	// Empty for single-cluster deployments (backward compatible).
+	// Used by auditors to attribute fleet remediations to source clusters (SOC2 CC8.1).
+	ClusterName OptString `json:"cluster_name"`
 }
 
 // GetRemediationRequestYaml returns the value of RemediationRequestYaml.
@@ -25994,6 +25998,11 @@ func (s *ReconstructionResponse) GetCorrelationID() OptString {
 	return s.CorrelationID
 }
 
+// GetClusterName returns the value of ClusterName.
+func (s *ReconstructionResponse) GetClusterName() OptString {
+	return s.ClusterName
+}
+
 // SetRemediationRequestYaml sets the value of RemediationRequestYaml.
 func (s *ReconstructionResponse) SetRemediationRequestYaml(val string) {
 	s.RemediationRequestYaml = val
@@ -26012,6 +26021,11 @@ func (s *ReconstructionResponse) SetReconstructedAt(val OptDateTime) {
 // SetCorrelationID sets the value of CorrelationID.
 func (s *ReconstructionResponse) SetCorrelationID(val OptString) {
 	s.CorrelationID = val
+}
+
+// SetClusterName sets the value of ClusterName.
+func (s *ReconstructionResponse) SetClusterName(val OptString) {
+	s.ClusterName = val
 }
 
 func (*ReconstructionResponse) reconstructRemediationRequestRes() {}
