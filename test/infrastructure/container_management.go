@@ -288,16 +288,18 @@ func StopGenericContainer(instance *ContainerInstance, writer io.Writer) error {
 // should not be overridden with IMAGE_REGISTRY/IMAGE_TAG. Third-party images
 // (e.g. ghcr.io/containers/kubernetes-mcp-server) have their own versioning
 // and should be used as-is.
+//
+// Compares the full registry path prefix (not just hostname) because
+// images from the same host but different orgs (e.g. ghcr.io/containers/
+// vs ghcr.io/jordigilh/) are external to each other.
 func isExternalImage(image, registry string) bool {
-	registryHost := strings.SplitN(registry, "/", 2)[0]
-
 	if strings.HasPrefix(image, "localhost/") || !strings.Contains(image, "/") {
 		return false
 	}
-	imageHost := strings.SplitN(image, "/", 2)[0]
-	if imageHost == registryHost {
+	if strings.HasPrefix(image, registry+"/") {
 		return false
 	}
+	imageHost := strings.SplitN(image, "/", 2)[0]
 	if strings.Contains(imageHost, ".") || strings.Contains(imageHost, ":") {
 		return true
 	}
