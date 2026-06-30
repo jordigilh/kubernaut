@@ -326,11 +326,10 @@ var _ = Describe("ResourceClient (BR-FLEET-002, Phase 0)", func() {
 		})
 	})
 
-	Describe("IT-FLEET-PARSE: Multi-format response parsing wiring (BR-FLEET-002)", func() {
-		It("IT-FLEET-PARSE-001 [AC-4]: List with table format returns correctly parsed items", func() {
+	Describe("IT-FLEET-PARSE: Structured content parsing wiring (BR-FLEET-002)", func() {
+		It("IT-FLEET-PARSE-001 [AC-4]: List normalizes table-format structuredContent into proper Unstructured", func() {
 			gw = mockgw.NewMockGateway(
 				mockgw.WithMultiCluster("table-cluster"),
-				mockgw.WithListOutputFormat("table"),
 			)
 
 			c, err := mcpclient.New(ctx, gw.URL(), mcpclient.WithClusterID("table-cluster"))
@@ -338,38 +337,16 @@ var _ = Describe("ResourceClient (BR-FLEET-002, Phase 0)", func() {
 			defer c.Close()
 
 			list := &unstructured.UnstructuredList{}
-			list.SetGroupVersionKind(schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "DeploymentList"})
+			list.SetGroupVersionKind(schema.GroupVersionKind{Version: "v1", Kind: "PodList"})
 
-			err = c.List(ctx, list, client.InNamespace("kubernaut-spike"))
+			err = c.List(ctx, list, client.InNamespace("kube-system"))
 			Expect(err).ToNot(HaveOccurred())
-			Expect(list.Items).To(HaveLen(1))
-			Expect(list.Items[0].GetKind()).To(Equal("Deployment"))
-			Expect(list.Items[0].GetName()).To(Equal("spike-managed-web"))
-			Expect(list.Items[0].GetNamespace()).To(Equal("kubernaut-spike"))
-			Expect(list.Items[0].GetLabels()).To(HaveKeyWithValue("kubernaut.ai/managed", "true"))
-		})
-
-		It("IT-FLEET-PARSE-002 [AC-4]: List with YAML format returns correctly parsed items", func() {
-			gw = mockgw.NewMockGateway(
-				mockgw.WithMultiCluster("yaml-cluster"),
-				mockgw.WithListOutputFormat("yaml"),
-			)
-
-			c, err := mcpclient.New(ctx, gw.URL(), mcpclient.WithClusterID("yaml-cluster"))
-			Expect(err).ToNot(HaveOccurred())
-			defer c.Close()
-
-			list := &unstructured.UnstructuredList{}
-			list.SetGroupVersionKind(schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "DeploymentList"})
-
-			err = c.List(ctx, list, client.InNamespace("kubernaut-spike"))
-			Expect(err).ToNot(HaveOccurred())
-			Expect(list.Items).To(HaveLen(1))
-			Expect(list.Items[0].GetKind()).To(Equal("Deployment"))
-			Expect(list.Items[0].GetAPIVersion()).To(Equal("apps/v1"))
-			Expect(list.Items[0].GetName()).To(Equal("spike-managed-web"))
-			Expect(list.Items[0].GetNamespace()).To(Equal("kubernaut-spike"))
-			Expect(list.Items[0].GetLabels()).To(HaveKeyWithValue("kubernaut.ai/managed", "true"))
+			Expect(list.Items).To(HaveLen(2))
+			Expect(list.Items[0].GetKind()).To(Equal("Pod"))
+			Expect(list.Items[0].GetAPIVersion()).To(Equal("v1"))
+			Expect(list.Items[0].GetName()).To(Equal("item-1"))
+			Expect(list.Items[0].GetNamespace()).To(Equal("kube-system"))
+			Expect(list.Items[1].GetName()).To(Equal("item-2"))
 		})
 
 		It("IT-FLEET-PARSE-003 [AC-4]: List with StructuredContent returns items from structured data", func() {

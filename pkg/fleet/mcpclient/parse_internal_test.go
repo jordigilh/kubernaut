@@ -109,211 +109,10 @@ var _ = Describe("UT-FLEET-MCP-PARSE: MCP response parsing", func() {
 	})
 })
 
-// Real captured output from kube-mcp-server v0.0.63 against OCP dev cluster.
-// Authority: spike-s15-fmc-multiformat-parse/parse_spike_test.go
-const tableDeploymentNamespaced = `NAMESPACE         APIVERSION   KIND         NAME                READY   UP-TO-DATE   AVAILABLE   AGE   CONTAINERS   IMAGES       SELECTOR        LABELS
-kubernaut-spike   apps/v1      Deployment   spike-managed-web   0/1     1            0           89s   nginx        nginx:1.27   app=spike-web   app=spike-web,kubernaut.ai/managed=true`
-
-const tableNodeClusterScoped = `APIVERSION   KIND   NAME                               STATUS   ROLES    AGE    VERSION    INTERNAL-IP       EXTERNAL-IP   OS-IMAGE                                                KERNEL-VERSION                  CONTAINER-RUNTIME                             LABELS
-v1           Node   dev-worker-0.redhat-internal.com   Ready    worker   3d9h   v1.31.14   192.168.122.228   <none>        Red Hat Enterprise Linux CoreOS 418.94.202606051320-0   5.14.0-427.130.1.el9_4.x86_64   cri-o://1.31.13-10.rhaos4.18.git817a650.el9   beta.kubernetes.io/arch=amd64,beta.kubernetes.io/os=linux,kubernaut.ai/managed=true,kubernetes.io/arch=amd64,kubernetes.io/hostname=dev-worker-0.redhat-internal.com,kubernetes.io/os=linux,node-role.kubernetes.io/worker=,node.openshift.io/os_id=rhcos,topology.topolvm.io/node=dev-worker-0.redhat-internal.com`
-
-const tableServiceNamespaced = `NAMESPACE         APIVERSION   KIND      NAME                TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)   AGE   SELECTOR        LABELS
-kubernaut-spike   v1           Service   spike-managed-svc   ClusterIP   172.30.47.244   <none>        80/TCP    89s   app=spike-web   app=spike-svc,kubernaut.ai/managed=true`
-
-const tableMultiRow = `NAMESPACE         APIVERSION   KIND   NAME    READY   STATUS    RESTARTS   AGE   IP           NODE       LABELS
-kubernaut-spike   v1           Pod    pod-a   1/1     Running   0          5m    10.0.0.1     node-1     app=web,kubernaut.ai/managed=true
-kubernaut-spike   v1           Pod    pod-b   1/1     Running   0          3m    10.0.0.2     node-1     app=api,kubernaut.ai/managed=true
-kubernaut-spike   v1           Pod    pod-c   1/1     Running   0          1m    10.0.0.3     node-2     tier=backend`
-
-const yamlDeploymentList = `- apiVersion: apps/v1
-  kind: Deployment
-  metadata:
-    labels:
-      app: spike-web
-      kubernaut.ai/managed: "true"
-    name: spike-managed-web
-    namespace: kubernaut-spike
-    resourceVersion: "3512410"
-    uid: ef7214f7-6501-4770-9290-9593c9986d86
-  spec:
-    replicas: 1
-  status:
-    observedGeneration: 1`
-
-const yamlSingleGet = `apiVersion: apps/v1
-kind: Deployment
-metadata:
-  labels:
-    app: spike-web
-    kubernaut.ai/managed: "true"
-  name: spike-managed-web
-  namespace: kubernaut-spike
-spec:
-  replicas: 1`
-
-// UT-FLEET-PARSE-020 through 046: Multi-format table parser tests
+// UT-FLEET-PARSE: structured content extraction and normalization
 // Authority: BR-FLEET-002, ADR-068
 // FedRAMP: SI-10 (Information Input Validation) -- validates MCP response parsing
-var _ = Describe("UT-FLEET-PARSE: Multi-format MCP response parsing (BR-FLEET-002)", func() {
-
-	Describe("parseTableText [SI-10]", func() {
-		It("UT-FLEET-PARSE-020 [SI-10]: extracts metadata from namespaced Deployment table", func() {
-			rows, err := parseTableText(tableDeploymentNamespaced)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(rows).To(HaveLen(1))
-			Expect(rows[0].Namespace).To(Equal("kubernaut-spike"))
-			Expect(rows[0].Name).To(Equal("spike-managed-web"))
-			Expect(rows[0].Kind).To(Equal("Deployment"))
-			Expect(rows[0].APIVersion).To(Equal("apps/v1"))
-		})
-
-		It("UT-FLEET-PARSE-021 [SI-10]: handles cluster-scoped Node table (no NAMESPACE column)", func() {
-			rows, err := parseTableText(tableNodeClusterScoped)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(rows).To(HaveLen(1))
-			Expect(rows[0].Namespace).To(BeEmpty())
-			Expect(rows[0].Name).To(Equal("dev-worker-0.redhat-internal.com"))
-			Expect(rows[0].Kind).To(Equal("Node"))
-			Expect(rows[0].APIVersion).To(Equal("v1"))
-		})
-
-		It("UT-FLEET-PARSE-022 [SI-10]: extracts labels from table row", func() {
-			rows, err := parseTableText(tableDeploymentNamespaced)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(rows).To(HaveLen(1))
-			Expect(rows[0].Labels).To(HaveKeyWithValue("kubernaut.ai/managed", "true"))
-			Expect(rows[0].Labels).To(HaveKeyWithValue("app", "spike-web"))
-		})
-
-		It("UT-FLEET-PARSE-023 [SI-10]: returns error for header-only input (no data rows)", func() {
-			_, err := parseTableText("NAME   KIND   APIVERSION")
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("at least"))
-		})
-
-		It("UT-FLEET-PARSE-046 [SI-10]: parses multi-row table with multiple data rows", func() {
-			rows, err := parseTableText(tableMultiRow)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(rows).To(HaveLen(3))
-			Expect(rows[0].Name).To(Equal("pod-a"))
-			Expect(rows[1].Name).To(Equal("pod-b"))
-			Expect(rows[2].Name).To(Equal("pod-c"))
-			Expect(rows[0].Namespace).To(Equal("kubernaut-spike"))
-			Expect(rows[2].Labels).To(HaveKeyWithValue("tier", "backend"))
-		})
-	})
-
-	Describe("parseLabels [SI-10]", func() {
-		It("UT-FLEET-PARSE-026 [SI-10]: handles empty, <none>, and key-only labels", func() {
-			Expect(parseLabels("")).To(BeNil())
-			Expect(parseLabels("<none>")).To(BeNil())
-
-			m := parseLabels("node-role.kubernetes.io/worker=")
-			Expect(m).To(HaveKeyWithValue("node-role.kubernetes.io/worker", ""))
-		})
-
-		It("UT-FLEET-PARSE-045 [SI-10]: handles value containing equals sign", func() {
-			m := parseLabels("config=key=value,app=nginx")
-			Expect(m).To(HaveKeyWithValue("config", "key=value"))
-			Expect(m).To(HaveKeyWithValue("app", "nginx"))
-		})
-	})
-
-	Describe("looksLikeTable [SI-10]", func() {
-		It("UT-FLEET-PARSE-027 [SI-10]: detects table and non-table formats", func() {
-			Expect(looksLikeTable(tableDeploymentNamespaced)).To(BeTrue())
-			Expect(looksLikeTable(tableNodeClusterScoped)).To(BeTrue())
-			Expect(looksLikeTable(tableServiceNamespaced)).To(BeTrue())
-
-			Expect(looksLikeTable(yamlDeploymentList)).To(BeFalse())
-			Expect(looksLikeTable(yamlSingleGet)).To(BeFalse())
-			Expect(looksLikeTable(`{"items":[]}`)).To(BeFalse())
-			Expect(looksLikeTable("")).To(BeFalse())
-		})
-	})
-
-	Describe("parseTableColumns [SI-10]", func() {
-		It("UT-FLEET-PARSE-040 [SI-10]: handles empty header, single column, trailing spaces", func() {
-			Expect(parseTableColumns("")).To(BeEmpty())
-
-			cols := parseTableColumns("NAME")
-			Expect(cols).To(HaveLen(1))
-			Expect(cols[0].name).To(Equal("NAME"))
-			Expect(cols[0].end).To(Equal(-1))
-
-			cols = parseTableColumns("NAME   KIND   ")
-			Expect(cols).To(HaveLen(2))
-			Expect(cols[0].name).To(Equal("NAME"))
-			Expect(cols[1].name).To(Equal("KIND"))
-			Expect(cols[1].end).To(Equal(-1))
-		})
-	})
-
-	Describe("extractTableField [SI-10]", func() {
-		It("UT-FLEET-PARSE-041 [SI-10]: handles row shorter than column start and boundary", func() {
-			col := tableColumn{name: "NAME", start: 20, end: 30}
-			Expect(extractTableField("short", col)).To(BeEmpty())
-
-			col = tableColumn{name: "LABELS", start: 5, end: -1}
-			Expect(extractTableField("HELLO WORLD", col)).To(Equal("WORLD"))
-		})
-	})
-
-	Describe("findColumn [SI-10]", func() {
-		It("UT-FLEET-PARSE-042 [SI-10]: case-insensitive match, missing column returns false", func() {
-			cols := []tableColumn{
-				{name: "NAME", start: 0, end: 10},
-				{name: "KIND", start: 10, end: 20},
-			}
-			col, ok := findColumn(cols, "name")
-			Expect(ok).To(BeTrue())
-			Expect(col.name).To(Equal("NAME"))
-
-			_, ok = findColumn(cols, "MISSING")
-			Expect(ok).To(BeFalse())
-		})
-	})
-
-	Describe("tableRowsToUnstructured [SI-10]", func() {
-		It("UT-FLEET-PARSE-043 [SI-10]: handles empty rows and partial metadata", func() {
-			items := tableRowsToUnstructured(nil)
-			Expect(items).To(BeEmpty())
-
-			rows := []parsedTableRow{{Kind: "Pod", APIVersion: "v1"}}
-			items = tableRowsToUnstructured(rows)
-			Expect(items).To(HaveLen(1))
-			Expect(items[0].GetKind()).To(Equal("Pod"))
-			Expect(items[0].GetName()).To(BeEmpty())
-		})
-
-		It("UT-FLEET-PARSE-044 [SI-10]: row with no labels produces no labels key in metadata", func() {
-			rows := []parsedTableRow{{Name: "test", Kind: "Pod", APIVersion: "v1"}}
-			items := tableRowsToUnstructured(rows)
-			Expect(items).To(HaveLen(1))
-			Expect(items[0].GetLabels()).To(BeNil())
-		})
-	})
-
-	Describe("parseMultiFormat YAML fallback [SI-10]", func() {
-		It("UT-FLEET-PARSE-024 [SI-10]: parses YAML array list", func() {
-			items, err := parseMultiFormat(yamlDeploymentList)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(items).To(HaveLen(1))
-			Expect(items[0].GetKind()).To(Equal("Deployment"))
-			Expect(items[0].GetAPIVersion()).To(Equal("apps/v1"))
-			Expect(items[0].GetName()).To(Equal("spike-managed-web"))
-			Expect(items[0].GetNamespace()).To(Equal("kubernaut-spike"))
-			Expect(items[0].GetLabels()).To(HaveKeyWithValue("kubernaut.ai/managed", "true"))
-		})
-
-		It("UT-FLEET-PARSE-025 [SI-10]: parses YAML single-object", func() {
-			items, err := parseMultiFormat(yamlSingleGet)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(items).To(HaveLen(1))
-			Expect(items[0].GetKind()).To(Equal("Deployment"))
-			Expect(items[0].GetName()).To(Equal("spike-managed-web"))
-		})
-	})
+var _ = Describe("UT-FLEET-PARSE: Structured content extraction (BR-FLEET-002)", func() {
 
 	Describe("extractStructuredList [SI-10]", func() {
 		It("UT-FLEET-PARSE-028 [SI-10]: returns nil for nil result", func() {
@@ -352,7 +151,7 @@ var _ = Describe("UT-FLEET-PARSE: Multi-format MCP response parsing (BR-FLEET-00
 			Expect(items).To(HaveLen(1))
 		})
 
-		It("UT-FLEET-PARSE-028f [SI-10]: extracts items from map envelope (kube-mcp-server --list-output=yaml)", func() {
+		It("UT-FLEET-PARSE-028f [SI-10]: extracts items from map envelope (kube-mcp-server)", func() {
 			data := map[string]any{
 				"items": []any{
 					map[string]any{
@@ -428,93 +227,134 @@ var _ = Describe("UT-FLEET-PARSE: Multi-format MCP response parsing (BR-FLEET-00
 		})
 	})
 
-	Describe("parseMultiFormat priority chain [CM-6] [SI-4]", func() {
-		It("UT-FLEET-PARSE-030 [SI-10]: JSON K8s list with items has highest priority", func() {
-			jsonList := `{"items":[{"kind":"Pod","metadata":{"name":"a"}},{"kind":"Pod","metadata":{"name":"b"}}]}`
-			items, err := parseMultiFormat(jsonList)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(items).To(HaveLen(2))
-			Expect(items[0].GetName()).To(Equal("a"))
+	Describe("normalizeTableItems [SI-10]", func() {
+		It("UT-FLEET-NORM-001 [SI-10]: normalizes namespaced flat table-row map", func() {
+			flatMaps := []map[string]any{
+				{"Name": "pod-1", "Namespace": "prod", "Ready": "1/1", "Status": "Running", "Age": "5m"},
+			}
+			items := normalizeTableItems(flatMaps, "Pod", "v1")
+			Expect(items).To(HaveLen(1))
+			Expect(items[0].GetName()).To(Equal("pod-1"))
+			Expect(items[0].GetNamespace()).To(Equal("prod"))
+			Expect(items[0].GetKind()).To(Equal("Pod"))
+			Expect(items[0].GetAPIVersion()).To(Equal("v1"))
 		})
 
-		It("UT-FLEET-PARSE-030b [SI-10]: JSON raw array", func() {
-			jsonArray := `[{"kind":"Pod","metadata":{"name":"x"}}]`
-			items, err := parseMultiFormat(jsonArray)
-			Expect(err).ToNot(HaveOccurred())
+		It("UT-FLEET-NORM-002 [SI-10]: normalizes cluster-scoped flat map (no Namespace)", func() {
+			flatMaps := []map[string]any{
+				{"Name": "worker-1.example.com", "Ready": "1/1", "Status": "Running", "Age": "3d"},
+			}
+			items := normalizeTableItems(flatMaps, "Node", "v1")
 			Expect(items).To(HaveLen(1))
-			Expect(items[0].GetName()).To(Equal("x"))
-		})
-
-		It("UT-FLEET-PARSE-030c [SI-10]: JSON single object", func() {
-			jsonSingle := `{"kind":"ConfigMap","metadata":{"name":"solo"}}`
-			items, err := parseMultiFormat(jsonSingle)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(items).To(HaveLen(1))
-			Expect(items[0].GetName()).To(Equal("solo"))
-		})
-
-		It("UT-FLEET-PARSE-031 [SI-10]: YAML fallback when JSON fails", func() {
-			items, err := parseMultiFormat(yamlDeploymentList)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(items).To(HaveLen(1))
-			Expect(items[0].GetKind()).To(Equal("Deployment"))
-		})
-
-		It("UT-FLEET-PARSE-032 [SI-10]: table fallback when JSON and YAML fail", func() {
-			items, err := parseMultiFormat(tableDeploymentNamespaced)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(items).To(HaveLen(1))
-			Expect(items[0].GetKind()).To(Equal("Deployment"))
-			Expect(items[0].GetName()).To(Equal("spike-managed-web"))
-		})
-
-		It("UT-FLEET-PARSE-033 [SI-10]: cluster-scoped table (no NAMESPACE column)", func() {
-			items, err := parseMultiFormat(tableNodeClusterScoped)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(items).To(HaveLen(1))
+			Expect(items[0].GetName()).To(Equal("worker-1.example.com"))
+			Expect(items[0].GetNamespace()).To(BeEmpty())
 			Expect(items[0].GetKind()).To(Equal("Node"))
+			Expect(items[0].GetAPIVersion()).To(Equal("v1"))
+		})
+
+		It("UT-FLEET-NORM-003 [SI-10]: normalizes multiple items", func() {
+			flatMaps := []map[string]any{
+				{"Name": "pod-a", "Namespace": "ns-1"},
+				{"Name": "pod-b", "Namespace": "ns-1"},
+				{"Name": "pod-c", "Namespace": "ns-2"},
+			}
+			items := normalizeTableItems(flatMaps, "Pod", "v1")
+			Expect(items).To(HaveLen(3))
+			Expect(items[0].GetName()).To(Equal("pod-a"))
+			Expect(items[1].GetName()).To(Equal("pod-b"))
+			Expect(items[2].GetName()).To(Equal("pod-c"))
+			Expect(items[2].GetNamespace()).To(Equal("ns-2"))
+		})
+
+		It("UT-FLEET-NORM-004 [SI-10]: passes through full K8s objects unchanged", func() {
+			fullMaps := []map[string]any{
+				{
+					"apiVersion": "apps/v1",
+					"kind":       "Deployment",
+					"metadata":   map[string]any{"name": "web", "namespace": "prod"},
+					"spec":       map[string]any{"replicas": int64(3)},
+				},
+			}
+			items := normalizeTableItems(fullMaps, "Deployment", "apps/v1")
+			Expect(items).To(HaveLen(1))
+			Expect(items[0].GetName()).To(Equal("web"))
+			Expect(items[0].GetNamespace()).To(Equal("prod"))
+			Expect(items[0].GetKind()).To(Equal("Deployment"))
+			spec, ok := items[0].Object["spec"].(map[string]any)
+			Expect(ok).To(BeTrue())
+			Expect(spec["replicas"]).To(Equal(int64(3)))
+		})
+
+		It("UT-FLEET-NORM-005 [SI-10]: handles empty items slice", func() {
+			items := normalizeTableItems(nil, "Pod", "v1")
+			Expect(items).To(BeEmpty())
+		})
+
+		It("UT-FLEET-NORM-006 [SI-10]: handles flat map with empty Namespace", func() {
+			flatMaps := []map[string]any{
+				{"Name": "my-ns", "Namespace": "", "Status": "Active"},
+			}
+			items := normalizeTableItems(flatMaps, "Namespace", "v1")
+			Expect(items).To(HaveLen(1))
+			Expect(items[0].GetName()).To(Equal("my-ns"))
 			Expect(items[0].GetNamespace()).To(BeEmpty())
 		})
+	})
 
-		It("UT-FLEET-PARSE-034 [SI-10]: empty input returns nil without error", func() {
-			items, err := parseMultiFormat("")
-			Expect(err).ToNot(HaveOccurred())
-			Expect(items).To(BeNil())
-		})
+	Describe("normalizeTableItems contract with upstream [SI-10]", func() {
+		It("UT-FLEET-NORM-CONTRACT-001 [SI-10]: normalizes output.Table.PrintObjStructured Pod (namespaced)", func() {
+			pod := testPod("nginx-abc", "prod", map[string]string{"app": "nginx"})
+			result := buildKMCPTableStructured(pod)
+			Expect(result).ToNot(BeNil())
 
-		It("UT-FLEET-PARSE-035 [SI-4]: unparseable input returns error", func() {
-			_, err := parseMultiFormat("@@@totally garbage@@@")
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("unable to parse"))
-		})
+			flatItems, ok := result.([]map[string]any)
+			Expect(ok).To(BeTrue(), "upstream table structured must be []map[string]any")
 
-		It("UT-FLEET-PARSE-036 [CM-6]: valid JSON is never parsed as table even if it contains NAME", func() {
-			jsonWithNAME := `{"kind":"Pod","metadata":{"name":"NAME"}}`
-			items, err := parseMultiFormat(jsonWithNAME)
-			Expect(err).ToNot(HaveOccurred())
+			items := normalizeTableItems(flatItems, "Pod", "v1")
 			Expect(items).To(HaveLen(1))
-			Expect(items[0].GetName()).To(Equal("NAME"))
+			Expect(items[0].GetName()).To(Equal("nginx-abc"))
+			Expect(items[0].GetNamespace()).To(Equal("prod"))
+			Expect(items[0].GetKind()).To(Equal("Pod"))
+			Expect(items[0].GetAPIVersion()).To(Equal("v1"))
 		})
 
-		It("UT-FLEET-PARSE-037 [SI-4]: malformed table returns error, not panic", func() {
-			malformed := "NAME   KIND\n"
-			_, err := parseMultiFormat(malformed)
-			Expect(err).To(HaveOccurred())
+		It("UT-FLEET-NORM-CONTRACT-002 [SI-10]: normalizes output.Table.PrintObjStructured Node (cluster-scoped)", func() {
+			node := testNode("worker-1", map[string]string{"kubernetes.io/arch": "amd64"})
+			result := buildKMCPTableStructured(node)
+			Expect(result).ToNot(BeNil())
+
+			flatItems, ok := result.([]map[string]any)
+			Expect(ok).To(BeTrue())
+
+			items := normalizeTableItems(flatItems, "Node", "v1")
+			Expect(items).To(HaveLen(1))
+			Expect(items[0].GetName()).To(Equal("worker-1"))
+			Expect(items[0].GetNamespace()).To(BeEmpty())
+			Expect(items[0].GetKind()).To(Equal("Node"))
 		})
 
-		It("UT-FLEET-PARSE-038 [SI-4]: binary/garbage input returns error, not panic", func() {
-			Expect(func() {
-				_, _ = parseMultiFormat("\x00\x01\x02\xff")
-			}).ToNot(Panic())
+		It("UT-FLEET-NORM-CONTRACT-003 [SI-10]: normalizes output.Table.PrintObjStructured Deployment (namespaced)", func() {
+			dep := testDeployment("web-app", "staging", map[string]string{"app": "web"})
+			result := buildKMCPTableStructured(dep)
+			Expect(result).ToNot(BeNil())
+
+			flatItems, ok := result.([]map[string]any)
+			Expect(ok).To(BeTrue())
+
+			items := normalizeTableItems(flatItems, "Deployment", "apps/v1")
+			Expect(items).To(HaveLen(1))
+			Expect(items[0].GetName()).To(Equal("web-app"))
+			Expect(items[0].GetNamespace()).To(Equal("staging"))
+			Expect(items[0].GetKind()).To(Equal("Deployment"))
+			Expect(items[0].GetAPIVersion()).To(Equal("apps/v1"))
 		})
 	})
 })
 
-// buildKMCPTableResponse constructs a kube-mcp-server table-format response
-// from real K8s objects using the upstream output.Table formatter.
-// The K8s API returns resources as metav1.Table when requested with the Table
-// accept header; this helper builds that same representation.
-func buildKMCPTableResponse(objs ...*unstructured.Unstructured) string {
+// buildKMCPTableStructured constructs table-format structuredContent using the
+// upstream output.Table.PrintObjStructured, matching what kube-mcp-server
+// returns with --list-output=table (default). Returns the Structured field only.
+func buildKMCPTableStructured(objs ...*unstructured.Unstructured) any {
 	columns := []metav1.TableColumnDefinition{
 		{Name: "Name", Type: "string", Format: "name"},
 		{Name: "Ready", Type: "string"},
@@ -525,10 +365,7 @@ func buildKMCPTableResponse(objs ...*unstructured.Unstructured) string {
 
 	rows := make([]metav1.TableRow, 0, len(objs))
 	for _, obj := range objs {
-		raw, err := json.Marshal(obj.Object)
-		if err != nil {
-			panic("buildKMCPTableResponse: marshal object: " + err.Error())
-		}
+		raw, _ := json.Marshal(obj.Object)
 		rows = append(rows, metav1.TableRow{
 			Cells:  []any{obj.GetName(), "1/1", "Running", "0", "5m"},
 			Object: runtime.RawExtension{Raw: raw},
@@ -546,38 +383,16 @@ func buildKMCPTableResponse(objs ...*unstructured.Unstructured) string {
 
 	data, err := runtime.DefaultUnstructuredConverter.ToUnstructured(table)
 	if err != nil {
-		panic("buildKMCPTableResponse: ToUnstructured: " + err.Error())
+		panic("buildKMCPTableStructured: ToUnstructured: " + err.Error())
 	}
 	u := &unstructured.Unstructured{Object: data}
 	u.SetGroupVersionKind(metav1.SchemeGroupVersion.WithKind("Table"))
 
-	text, err := output.Table.PrintObj(u)
+	result, err := output.Table.PrintObjStructured(u)
 	if err != nil {
-		panic("buildKMCPTableResponse: PrintObj: " + err.Error())
+		panic("buildKMCPTableStructured: PrintObjStructured: " + err.Error())
 	}
-	return text
-}
-
-// buildKMCPYAMLListResponse constructs a kube-mcp-server YAML list response.
-func buildKMCPYAMLListResponse(objs ...*unstructured.Unstructured) string {
-	list := &unstructured.UnstructuredList{}
-	for _, obj := range objs {
-		list.Items = append(list.Items, *obj.DeepCopy())
-	}
-	text, err := output.MarshalYaml(list)
-	if err != nil {
-		panic("buildKMCPYAMLListResponse: " + err.Error())
-	}
-	return text
-}
-
-// buildKMCPYAMLGetResponse constructs a kube-mcp-server YAML single-object response.
-func buildKMCPYAMLGetResponse(obj *unstructured.Unstructured) string {
-	text, err := output.MarshalYaml(obj)
-	if err != nil {
-		panic("buildKMCPYAMLGetResponse: " + err.Error())
-	}
-	return text
+	return result.Structured
 }
 
 // testDeployment creates a test Deployment as Unstructured.
@@ -622,18 +437,6 @@ func testNode(name string, labels map[string]string) *unstructured.Unstructured 
 	return obj
 }
 
-// testService creates a test Service as Unstructured.
-func testService(name, namespace string) *unstructured.Unstructured {
-	return &unstructured.Unstructured{Object: map[string]any{
-		"apiVersion": "v1",
-		"kind":       "Service",
-		"metadata": map[string]any{
-			"name":      name,
-			"namespace": namespace,
-		},
-	}}
-}
-
 // testPod creates a test Pod as Unstructured.
 func testPod(name, namespace string, labels map[string]string) *unstructured.Unstructured {
 	obj := &unstructured.Unstructured{Object: map[string]any{
@@ -653,137 +456,3 @@ func testPod(name, namespace string, labels map[string]string) *unstructured.Uns
 	}
 	return obj
 }
-
-// UT-FLEET-PARSE-CONTRACT: Contract tests using real kube-mcp-server formatters.
-// Authority: BR-FLEET-002 (Fleet Metadata Caching), ADR-068
-// FedRAMP: SI-10 (Information Input Validation) -- validates parsers against upstream output
-//
-// These tests generate text using the same output.Table / output.Yaml code
-// that kube-mcp-server uses, then verify our parsers correctly extract
-// structured K8s objects. If upstream changes their format, these tests fail.
-//
-// Table format limitation: The upstream cli-runtime TablePrinter does NOT add
-// APIVERSION/KIND columns (it only prefixes kind to the Name cell when
-// PrintOptions.Kind is set, which kube-mcp-server does not set). The
-// APIVERSION/KIND columns seen in real OCP deployments come from the K8s API
-// server's Table column definitions, not from the printer. The contract tests
-// validate that our parser handles BOTH cases:
-//   - Table without APIVERSION/KIND columns (upstream formatter output)
-//   - Table with APIVERSION/KIND columns (existing static fixture tests UT-020-046)
-var _ = Describe("UT-FLEET-PARSE-CONTRACT: Parser contract tests with upstream formatters (BR-FLEET-002)", func() {
-
-	Describe("parseMultiFormat with upstream Table output [SI-10]", func() {
-		It("UT-FLEET-PARSE-050 [SI-10]: Table Deployment (namespaced) -- contract test", func() {
-			dep := testDeployment("web", "prod", map[string]string{
-				"app":                  "web",
-				"kubernaut.ai/managed": "true",
-			})
-			text := buildKMCPTableResponse(dep)
-			Expect(text).ToNot(BeEmpty(), "upstream formatter must produce non-empty output")
-
-			items, err := parseMultiFormat(text)
-			Expect(err).ToNot(HaveOccurred(), "parseMultiFormat must handle real upstream table output")
-			Expect(items).To(HaveLen(1))
-			Expect(items[0].GetName()).To(Equal("web"))
-			Expect(items[0].GetNamespace()).To(Equal("prod"))
-			Expect(items[0].GetLabels()).To(HaveKeyWithValue("kubernaut.ai/managed", "true"))
-			Expect(items[0].GetLabels()).To(HaveKeyWithValue("app", "web"))
-		})
-
-		It("UT-FLEET-PARSE-052 [SI-10]: Table Node (cluster-scoped) -- contract test", func() {
-			node := testNode("worker-1", map[string]string{
-				"kubernetes.io/arch":   "amd64",
-				"kubernaut.ai/managed": "true",
-			})
-			text := buildKMCPTableResponse(node)
-
-			items, err := parseMultiFormat(text)
-			Expect(err).ToNot(HaveOccurred(), "parseMultiFormat must handle cluster-scoped table output")
-			Expect(items).To(HaveLen(1))
-			Expect(items[0].GetName()).To(Equal("worker-1"))
-			Expect(items[0].GetNamespace()).To(BeEmpty(), "cluster-scoped resources have no namespace")
-			Expect(items[0].GetLabels()).To(HaveKeyWithValue("kubernaut.ai/managed", "true"))
-			Expect(items[0].GetLabels()).To(HaveKeyWithValue("kubernetes.io/arch", "amd64"))
-		})
-
-		It("UT-FLEET-PARSE-053 [SI-10]: Table Service (namespaced) -- contract test", func() {
-			svc := testService("api-svc", "prod")
-			text := buildKMCPTableResponse(svc)
-
-			items, err := parseMultiFormat(text)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(items).To(HaveLen(1))
-			Expect(items[0].GetName()).To(Equal("api-svc"))
-			Expect(items[0].GetNamespace()).To(Equal("prod"))
-		})
-
-		It("UT-FLEET-PARSE-054 [SI-10]: Table Pod (namespaced) -- contract test", func() {
-			pod := testPod("api-pod-0", "prod", nil)
-			text := buildKMCPTableResponse(pod)
-
-			items, err := parseMultiFormat(text)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(items).To(HaveLen(1))
-			Expect(items[0].GetName()).To(Equal("api-pod-0"))
-			Expect(items[0].GetNamespace()).To(Equal("prod"))
-		})
-
-		It("UT-FLEET-PARSE-056 [SI-10]: Table multi-row (multiple Pods) -- contract test", func() {
-			pods := []*unstructured.Unstructured{
-				testPod("pod-a", "ns-a", map[string]string{"app": "web"}),
-				testPod("pod-b", "ns-a", map[string]string{"app": "api"}),
-				testPod("pod-c", "ns-a", map[string]string{"tier": "backend"}),
-			}
-			text := buildKMCPTableResponse(pods...)
-
-			items, err := parseMultiFormat(text)
-			Expect(err).ToNot(HaveOccurred(), "parseMultiFormat must handle multi-row table")
-			Expect(items).To(HaveLen(3))
-			Expect(items[0].GetName()).To(Equal("pod-a"))
-			Expect(items[1].GetName()).To(Equal("pod-b"))
-			Expect(items[2].GetName()).To(Equal("pod-c"))
-			Expect(items[0].GetNamespace()).To(Equal("ns-a"))
-			Expect(items[0].GetLabels()).To(HaveKeyWithValue("app", "web"))
-			Expect(items[2].GetLabels()).To(HaveKeyWithValue("tier", "backend"))
-		})
-	})
-
-	Describe("parseMultiFormat with upstream YAML output [SI-10]", func() {
-		It("UT-FLEET-PARSE-051 [SI-10]: YAML Deployment (namespaced) -- contract test", func() {
-			dep := testDeployment("web", "prod", map[string]string{
-				"app":                  "web",
-				"kubernaut.ai/managed": "true",
-			})
-			text := buildKMCPYAMLListResponse(dep)
-			Expect(text).ToNot(BeEmpty())
-
-			items, err := parseMultiFormat(text)
-			Expect(err).ToNot(HaveOccurred(), "parseMultiFormat must handle real upstream YAML output")
-			Expect(items).To(HaveLen(1))
-			Expect(items[0].GetKind()).To(Equal("Deployment"))
-			Expect(items[0].GetAPIVersion()).To(Equal("apps/v1"))
-			Expect(items[0].GetName()).To(Equal("web"))
-			Expect(items[0].GetNamespace()).To(Equal("prod"))
-			Expect(items[0].GetLabels()).To(HaveKeyWithValue("kubernaut.ai/managed", "true"))
-		})
-	})
-
-	Describe("parseUnstructured with upstream YAML output [SI-10]", func() {
-		It("UT-FLEET-PARSE-055 [SI-10]: YAML single Get (Deployment) -- contract test", func() {
-			dep := testDeployment("web", "prod", map[string]string{
-				"app":                  "web",
-				"kubernaut.ai/managed": "true",
-			})
-			text := buildKMCPYAMLGetResponse(dep)
-			Expect(text).ToNot(BeEmpty())
-
-			obj, err := parseUnstructured(text)
-			Expect(err).ToNot(HaveOccurred(), "parseUnstructured must handle real upstream YAML output")
-			Expect(obj.GetKind()).To(Equal("Deployment"))
-			Expect(obj.GetAPIVersion()).To(Equal("apps/v1"))
-			Expect(obj.GetName()).To(Equal("web"))
-			Expect(obj.GetNamespace()).To(Equal("prod"))
-			Expect(obj.GetLabels()).To(HaveKeyWithValue("kubernaut.ai/managed", "true"))
-		})
-	})
-})

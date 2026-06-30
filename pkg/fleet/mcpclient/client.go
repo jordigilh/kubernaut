@@ -311,20 +311,12 @@ func (c *Client) listResources(ctx context.Context, kind, apiVersion, namespace 
 		return nil, fmt.Errorf("call %s returned error: %s", toolName, ExtractText(result))
 	}
 
-	if sc := extractStructuredList(result); sc != nil {
-		items := make([]unstructured.Unstructured, len(sc))
-		for i, m := range sc {
-			items[i] = unstructured.Unstructured{Object: m}
-		}
-		return items, nil
+	sc := extractStructuredList(result)
+	if sc == nil {
+		return nil, fmt.Errorf("call %s: structuredContent required but not present in response", toolName)
 	}
 
-	text := ExtractText(result)
-	items, err := parseMultiFormat(text)
-	if err != nil {
-		return nil, fmt.Errorf("parse List response for %s: %w", kind, err)
-	}
-	return items, nil
+	return normalizeTableItems(sc, kind, apiVersion), nil
 }
 
 // populateObject copies data from a fetched unstructured object into the target
