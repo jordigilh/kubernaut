@@ -161,6 +161,10 @@ func (m *Manager) launchInvestigation(ctx context.Context, id string, fn Investi
 	bgCtx = WithLazySink(bgCtx, ls)
 	bgCtx = WithSessionID(bgCtx, id)
 	bgCtx = audit.WithClusterName(bgCtx, clusterName)
+	// GAP-13 (Issue #1505): correlationID on ctx lets deep call sites (e.g.
+	// the K8s resolver's secret-access observer) emit correctly-correlated
+	// audit events without threading correlationID through every signature.
+	bgCtx = audit.WithCorrelationID(bgCtx, correlationID)
 
 	m.store.mu.Lock()
 	sess := m.store.sessions[id]
@@ -195,9 +199,9 @@ func (m *Manager) launchInvestigation(ctx context.Context, id string, fn Investi
 					"session_id", id,
 					"attempted_status", string(StatusFailed),
 					"reason", updateErr.Error())
-			if bgCtx.Err() != nil {
-				m.storePartialResult(id, result)
-			}
+				if bgCtx.Err() != nil {
+					m.storePartialResult(id, result)
+				}
 			} else {
 				m.closeEventChan(id)
 				m.emitSessionEvent(context.Background(), audit.EventTypeSessionFailed, audit.ActionSessionFailed, audit.OutcomeFailure, id, correlationID, fnErr)

@@ -58,25 +58,27 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/alignment"
-	"github.com/jordigilh/kubernaut/internal/version"
-	kaapi "github.com/jordigilh/kubernaut/internal/kubernautagent/api"
 	alignprompt "github.com/jordigilh/kubernaut/internal/kubernautagent/alignment/prompt"
+	kaapi "github.com/jordigilh/kubernaut/internal/kubernautagent/api"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/credentials"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
-	karbac "github.com/jordigilh/kubernaut/internal/kubernautagent/rbac"
 	mcpkg "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	mcpadapters "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/adapters"
 	mcptools "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
 	kametrics "github.com/jordigilh/kubernaut/internal/kubernautagent/metrics"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
-	dsschema "github.com/jordigilh/kubernaut/pkg/datastorage/schema"
+	karbac "github.com/jordigilh/kubernaut/internal/kubernautagent/rbac"
 	kaserver "github.com/jordigilh/kubernaut/internal/kubernautagent/server"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/tools/custom"
+	"github.com/jordigilh/kubernaut/internal/version"
+	dsschema "github.com/jordigilh/kubernaut/pkg/datastorage/schema"
+	fleetclient "github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
+	fleetregistry "github.com/jordigilh/kubernaut/pkg/fleet/registry"
 	amtools "github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/alertmanager"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/investigation"
 	k8stools "github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/k8s"
@@ -87,8 +89,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/summarizer"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	wfclient "github.com/jordigilh/kubernaut/pkg/workflowexecution/client"
-	fleetclient "github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
-	fleetregistry "github.com/jordigilh/kubernaut/pkg/fleet/registry"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/client-go/rest"
 	metricsclient "k8s.io/metrics/pkg/client/clientset/versioned"
@@ -275,7 +275,7 @@ func main() {
 		logger.Error(nil, "FATAL: DataStorage client initialization failed — KA cannot operate without DS (workflow discovery, audit, enrichment all require it)")
 		os.Exit(1)
 	}
-	reg := buildToolRegistry(cfg, logger, k8sInfra, ds)
+	reg := buildToolRegistry(cfg, logger, k8sInfra, ds, auditStore)
 	fleetClient, fleetToolNames := registerFleetTools(context.Background(), cfg, reg, logger)
 	if len(fleetToolNames) > 0 {
 		investigator.AppendFleetToolsToRCA(phaseTools, fleetToolNames)
@@ -1066,11 +1066,11 @@ func buildAnomalyDetector(cfg *kaconfig.Config, logger logr.Logger) *investigato
 }
 
 // buildToolRegistry creates and populates the tool registry with all available tool sets.
-func buildToolRegistry(cfg *kaconfig.Config, logger logr.Logger, infra *k8sInfra, ds *dsClients) *registry.Registry {
+func buildToolRegistry(cfg *kaconfig.Config, logger logr.Logger, infra *k8sInfra, ds *dsClients, auditStore audit.AuditStore) *registry.Registry {
 	reg := registry.New()
 
 	if infra != nil {
-		registerK8sTools(reg, infra, logger)
+		registerK8sTools(reg, infra, logger, auditStore)
 	}
 
 	if cfg.Integrations.Tools.Prometheus.URL != "" {
@@ -1217,13 +1217,14 @@ func registerFleetTools(ctx context.Context, cfg *kaconfig.Config, reg *registry
 	return resilientClient, toolNames
 }
 
-func registerK8sTools(reg *registry.Registry, infra *k8sInfra, logger logr.Logger) {
+func registerK8sTools(reg *registry.Registry, infra *k8sInfra, logger logr.Logger, auditStore audit.AuditStore) {
 	kindIndex, err := k8stools.BuildKindIndex(infra.clientset.Discovery())
 	if err != nil {
 		logger.Info("failed to build kind index, using empty index", "error", err)
 		kindIndex = make(map[string]schema.GroupKind)
 	}
-	resolver := k8stools.NewDynamicResolver(infra.dynClient, infra.mapper, kindIndex, logger.WithName("k8s-resolver"))
+	resolver := k8stools.NewDynamicResolver(infra.dynClient, infra.mapper, kindIndex, logger.WithName("k8s-resolver"),
+		k8stools.WithSecretAccessObserver(newSecretAccessObserver(auditStore, logger.WithName("secret-access-audit"))))
 
 	for _, t := range k8stools.NewAllTools(infra.clientset, resolver) {
 		reg.Register(t)
@@ -1248,6 +1249,39 @@ func registerK8sTools(reg *registry.Registry, infra *k8sInfra, logger logr.Logge
 		reg.Register(t)
 	}
 	logger.Info("registered node proxy tools", "count", len(k8stools.NodeProxyToolNames))
+}
+
+// newSecretAccessObserver builds the k8stools.SecretAccessObserver wired into
+// the K8s resource resolver (GAP-13, Issue #1505). It is the detective
+// control compensating for KubernautAgent's intentionally broad read RBAC on
+// Secrets (see docs/services/stateless/kubernaut-agent/security-configuration.md):
+// every Secret Get/List — success or failure — becomes an independently
+// queryable aiagent.secret.accessed audit event, correlated to the
+// investigation via the correlationID set on ctx by
+// session.Manager.launchInvestigation.
+func newSecretAccessObserver(auditStore audit.AuditStore, logger logr.Logger) func(ctx context.Context, verb, name, namespace string, err error) {
+	return func(ctx context.Context, verb, name, namespace string, accessErr error) {
+		if auditStore == nil {
+			return
+		}
+		correlationID, _ := audit.CorrelationIDFromContext(ctx)
+
+		event := audit.NewEvent(audit.EventTypeSecretAccessed, correlationID)
+		event.EventAction = audit.ActionSecretAccessed
+		event.EventOutcome = audit.OutcomeSuccess
+		event.Data["verb"] = verb
+		if namespace != "" {
+			event.Data["namespace"] = namespace
+		}
+		if name != "" {
+			event.Data["secret_name"] = name
+		}
+		if accessErr != nil {
+			event.EventOutcome = audit.OutcomeFailure
+			event.Data["outcome_detail"] = accessErr.Error()
+		}
+		audit.StoreBestEffort(ctx, auditStore, event, logger)
+	}
 }
 
 // dsCatalogFetcher implements investigator.CatalogFetcher by querying
@@ -1418,8 +1452,6 @@ func buildMCPHandler(
 		logger.Error(nil, "MCP interactive mode: investigator unavailable")
 		return nil, nil
 	}
-
-	
 
 	// SEC-07: Build controller-runtime client with MCP-specific timeouts.
 	// Scheme includes remediationv1 for RR existence validation (HARM-004)

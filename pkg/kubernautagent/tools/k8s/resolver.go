@@ -45,11 +45,24 @@ type ResourceResolver interface {
 }
 
 type dynamicResourceResolver struct {
-	client    dynamic.Interface
-	mapper    meta.RESTMapper
-	kindIndex map[string]schema.GroupKind
-	logger    logr.Logger
+	client         dynamic.Interface
+	mapper         meta.RESTMapper
+	kindIndex      map[string]schema.GroupKind
+	logger         logr.Logger
+	secretObserver SecretAccessObserver
 }
+
+// SecretAccessObserver is invoked every time the resolver performs a Get or
+// List that resolves to the core Secret resource, regardless of outcome
+// (GAP-13, Issue #1505 — SOC2 CC7.2 / FedRAMP AU-12 detective control).
+// KubernautAgent intentionally keeps broad read RBAC on Secrets for
+// investigation completeness (missing RBAC degrades RCA quality — see
+// docs/services/stateless/kubernaut-agent/security-configuration.md); this
+// hook lets callers record every access as a dedicated, queryable audit
+// event instead of narrowing that RBAC. verb is "get" or "list"; name is
+// empty for List. err is the outcome of the underlying API call (nil on
+// success). Implementations must not block (fire-and-forget).
+type SecretAccessObserver func(ctx context.Context, verb, name, namespace string, err error)
 
 // resettableMapper is implemented by mappers that support Reset() for cache
 // invalidation (e.g. restmapper.DeferredDiscoveryRESTMapper).
@@ -57,11 +70,39 @@ type resettableMapper interface {
 	Reset()
 }
 
+// ResolverOption configures optional behavior on a dynamicResourceResolver.
+type ResolverOption func(*dynamicResourceResolver)
+
+// WithSecretAccessObserver registers a callback invoked on every Get/List
+// that resolves to the core Secret resource (GAP-13, Issue #1505).
+func WithSecretAccessObserver(observer SecretAccessObserver) ResolverOption {
+	return func(r *dynamicResourceResolver) { r.secretObserver = observer }
+}
+
 // NewDynamicResolver creates a ResourceResolver backed by the Kubernetes dynamic client.
 // The kindIndex maps lowercase kind strings to canonical GroupKind values for
 // case-insensitive resolution (e.g. "replicaset" -> {Group:"apps", Kind:"ReplicaSet"}).
-func NewDynamicResolver(client dynamic.Interface, mapper meta.RESTMapper, kindIndex map[string]schema.GroupKind, logger logr.Logger) ResourceResolver {
-	return &dynamicResourceResolver{client: client, mapper: mapper, kindIndex: kindIndex, logger: logger}
+func NewDynamicResolver(client dynamic.Interface, mapper meta.RESTMapper, kindIndex map[string]schema.GroupKind, logger logr.Logger, opts ...ResolverOption) ResourceResolver {
+	r := &dynamicResourceResolver{client: client, mapper: mapper, kindIndex: kindIndex, logger: logger}
+	for _, opt := range opts {
+		opt(r)
+	}
+	return r
+}
+
+// notifySecretAccess invokes the configured SecretAccessObserver only when
+// mapping resolves to the core ("") group's "secrets" resource — resolved via
+// the RESTMapper rather than string-matching the caller-supplied kind, so a
+// differently-cased/aliased kind argument or a same-named CRD in another API
+// group cannot spoof (or evade) the audit hook.
+func (r *dynamicResourceResolver) notifySecretAccess(ctx context.Context, mapping *meta.RESTMapping, verb, name, namespace string, err error) {
+	if r.secretObserver == nil || mapping == nil {
+		return
+	}
+	if mapping.Resource.Group != "" || mapping.Resource.Resource != "secrets" {
+		return
+	}
+	r.secretObserver(ctx, verb, name, namespace, err)
 }
 
 // BuildKindIndex builds a case-insensitive kind-to-GroupKind index from the
@@ -219,7 +260,9 @@ func (r *dynamicResourceResolver) Get(ctx context.Context, kind, name, namespace
 	}
 
 	var lastErr error
+	var lastMapping *meta.RESTMapping
 	for _, mapping := range mappings {
+		lastMapping = mapping
 		obj, getErr := r.scopedClient(mapping, namespace).Get(ctx, name, metav1.GetOptions{})
 		if getErr == nil {
 			if len(mappings) > 1 {
@@ -229,13 +272,16 @@ func (r *dynamicResourceResolver) Get(ctx context.Context, kind, name, namespace
 					"gvr", mapping.Resource.String(),
 					"result", "success")
 			}
+			r.notifySecretAccess(ctx, mapping, "get", name, namespace, nil)
 			return obj, nil
 		}
 		lastErr = getErr
 		if !errors.IsNotFound(getErr) && !errors.IsForbidden(getErr) {
+			r.notifySecretAccess(ctx, mapping, "get", name, namespace, getErr)
 			return nil, fmt.Errorf("get %s/%s in %s: %w", kind, name, namespace, getErr)
 		}
 	}
+	r.notifySecretAccess(ctx, lastMapping, "get", name, namespace, lastErr)
 	return nil, fmt.Errorf("get %s/%s in %s: %w", kind, name, namespace, lastErr)
 }
 
@@ -246,10 +292,13 @@ func (r *dynamicResourceResolver) List(ctx context.Context, kind, namespace, api
 	}
 
 	var lastResult interface{}
+	var lastMapping *meta.RESTMapping
 	for _, mapping := range mappings {
+		lastMapping = mapping
 		result, listErr := r.scopedClient(mapping, namespace).List(ctx, metav1.ListOptions{})
 		if listErr != nil {
 			if !errors.IsNotFound(listErr) && !errors.IsForbidden(listErr) {
+				r.notifySecretAccess(ctx, mapping, "list", "", namespace, listErr)
 				return nil, fmt.Errorf("list %s in %s: %w", kind, namespace, listErr)
 			}
 			continue
@@ -264,11 +313,15 @@ func (r *dynamicResourceResolver) List(ctx context.Context, kind, namespace, api
 					"result", "success",
 					"items", len(result.Items))
 			}
+			r.notifySecretAccess(ctx, mapping, "list", "", namespace, nil)
 			return result, nil
 		}
 	}
 	if lastResult != nil {
+		r.notifySecretAccess(ctx, lastMapping, "list", "", namespace, nil)
 		return lastResult, nil
 	}
-	return nil, fmt.Errorf("list %s in %s: no results from any API group", kind, namespace)
+	err = fmt.Errorf("list %s in %s: no results from any API group", kind, namespace)
+	r.notifySecretAccess(ctx, lastMapping, "list", "", namespace, err)
+	return nil, err
 }
