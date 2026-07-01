@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/jordigilh/kubernaut/pkg/shared/backoff"
+
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
@@ -534,18 +536,30 @@ func (s *BufferedAuditStore) backgroundWriter() {
 	}
 }
 
-// writeBatchWithRetry writes a batch with exponential backoff retry logic.
+// writeBatchWithRetryBackoff configures the exponential backoff (with jitter)
+// applied between retry attempts in writeBatchWithRetry.
+//
+// DD-AUDIT-003: This is application-level retry, intentionally NOT wrapped by
+// pkg/shared/transport.RetryTransport (see pkg/shared/tls/tls.go) to avoid
+// multiplying attempts across two retry layers.
+var writeBatchWithRetryBackoff = backoff.Config{
+	BasePeriod:    1 * time.Second,
+	MaxPeriod:     30 * time.Second,
+	Multiplier:    2.0,
+	JitterPercent: 10, // Anti-thundering-herd: avoids every replica retrying DataStorage in lockstep
+}
+
+// writeBatchWithRetry writes a batch with exponential backoff (+ jitter) retry logic.
 //
 // Retry strategy (GAP-10/GAP-11: Error differentiation):
 // - 4xx errors (client errors): Do NOT retry - indicates invalid data
 // - 5xx errors (server errors): Retry with exponential backoff
 // - Network errors: Retry with exponential backoff
 //
-// Retry timing:
+// Retry timing (pkg/shared/backoff.Config, BasePeriod=1s, Multiplier=2.0, ±10% jitter):
 // - Attempt 1: Immediate
-// - Attempt 2: 1 second delay
-// - Attempt 3: 4 seconds delay
-// - Attempt 4: 9 seconds delay
+// - Attempt 2: ~1 second delay
+// - Attempt 3: ~2 second delay
 // - After MaxRetries: Drop batch and log
 func (s *BufferedAuditStore) writeBatchWithRetry(batch []*ogenclient.AuditEventRequest) {
 	start := time.Now()
@@ -586,11 +600,10 @@ func (s *BufferedAuditStore) writeBatchWithRetry(batch []*ogenclient.AuditEventR
 			}
 
 			if attempt < s.config.MaxRetries {
-				// Exponential backoff: 1s, 4s, 9s
-				backoff := time.Duration(attempt*attempt) * time.Second
+				delay := writeBatchWithRetryBackoff.Calculate(int32(attempt))
 				// Context-aware sleep: abort retry if store is shutting down
 				select {
-				case <-time.After(backoff):
+				case <-time.After(delay):
 				case <-s.ctx.Done():
 					// Shutdown requested, drop remaining retries
 					s.logger.Info("Shutdown during retry backoff, dropping batch",

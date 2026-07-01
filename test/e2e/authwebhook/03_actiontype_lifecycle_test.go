@@ -398,7 +398,8 @@ var _ = Describe("E2E: ActionType CRD Lifecycle (#300)", Ordered, ContinueOnFail
 		// immediately, but the cross-service actiontype.admitted.create event
 		// must traverse: authwebhook buffer -> 5s flush -> HTTP POST -> DS.
 		// Use 60s timeout to match aianalysis/05_audit_trail_test.go pattern
-		// and accommodate writeBatchWithRetry backoff (1s+4s+9s) under CI pressure.
+		// and accommodate writeBatchWithRetry's exponential backoff with jitter
+		// (~1s+2s across MaxRetries=3, see pkg/shared/backoff.Config) under CI pressure.
 		// ADR-034 v1.8: event_category=actiontype (domain-based category)
 		var eventTypes []string
 		queryURL := fmt.Sprintf("%s/api/v1/audit/events?event_category=actiontype&limit=50", dataStorageURL)
