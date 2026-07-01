@@ -24,9 +24,9 @@ import (
 	"os"
 	"time"
 
-	"gopkg.in/yaml.v3"
 	"github.com/go-logr/zapr"
 	zaplog "go.uber.org/zap"
+	"gopkg.in/yaml.v3"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -38,19 +38,19 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
-	"github.com/jordigilh/kubernaut/internal/version"
-	"github.com/jordigilh/kubernaut/pkg/shared/auth"
-	scope "github.com/jordigilh/kubernaut/pkg/shared/scope"
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	internalconfig "github.com/jordigilh/kubernaut/internal/config"
 	config "github.com/jordigilh/kubernaut/internal/config/effectivenessmonitor"
 	controller "github.com/jordigilh/kubernaut/internal/controller/effectivenessmonitor"
+	"github.com/jordigilh/kubernaut/internal/version"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	emaudit "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/audit"
 	emclient "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/client"
 	emmetrics "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/metrics"
 	"github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/startup"
+	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
+	scope "github.com/jordigilh/kubernaut/pkg/shared/scope"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 	//+kubebuilder:scaffold:imports
 )
@@ -354,15 +354,17 @@ func main() {
 	// CONTROLLER SETUP
 	// ========================================
 	emReconciler := controller.NewReconciler(
-		mgr.GetClient(),
-		mgr.GetAPIReader(),
-		mgr.GetScheme(),
-		mgr.GetEventRecorderFor("effectivenessmonitor-controller"),
-		emMetrics,
-		promClient,
-		amClient,
-		auditManager,
-		dsQuerier,
+		controller.ReconcilerDeps{
+			Client:             mgr.GetClient(),
+			APIReader:          mgr.GetAPIReader(),
+			Scheme:             mgr.GetScheme(),
+			Recorder:           mgr.GetEventRecorderFor("effectivenessmonitor-controller"),
+			Metrics:            emMetrics,
+			PrometheusClient:   promClient,
+			AlertManagerClient: amClient,
+			AuditManager:       auditManager,
+			DSQuerier:          dsQuerier,
+		},
 		func() controller.ReconcilerConfig {
 			c := controller.DefaultReconcilerConfig()
 			c.ValidityWindow = cfg.Assessment.ValidityWindow
