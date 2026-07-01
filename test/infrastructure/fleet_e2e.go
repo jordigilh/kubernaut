@@ -30,7 +30,6 @@ import (
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 )
@@ -1030,6 +1029,16 @@ func waitForAuthenticatedMCPGateway(writer io.Writer) error {
 // probeAuthenticatedResourcesList performs a single authenticated resources_list
 // call against the loopback-cluster MCPServerRegistration, returning nil only on
 // a genuinely successful (non-error) MCP response.
+//
+// Queries Node (cluster-scoped, unfiltered) rather than mirroring FMC's actual
+// kubernaut.ai/managed=true-filtered queries: this probe runs during
+// infrastructure setup, before any test has labeled a resource, so a
+// label-filtered query would legitimately return zero items. kube-mcp-server
+// (with --list-output=yaml) omits structuredContent for empty result sets, and
+// pkg/fleet/mcpclient.Client.List requires it -- an empty-but-successful result
+// would otherwise be indistinguishable from an unconverged AuthPolicy here.
+// Node always has at least one item (the Kind control-plane node) and exercises
+// the identical OAuth2 -> Kuadrant -> kube-mcp-server round trip FMC depends on.
 func probeAuthenticatedResourcesList(tokenCfg DexFleetTokenConfig) error {
 	token, err := GetDexClientCredentialsToken(tokenCfg)
 	if err != nil {
@@ -1054,9 +1063,12 @@ func probeAuthenticatedResourcesList(tokenCfg DexFleetTokenConfig) error {
 	defer func() { _ = mcpConn.Close() }()
 
 	list := &unstructured.UnstructuredList{}
-	list.SetGroupVersionKind(schema.GroupVersionKind{Version: "v1", Kind: "ServiceList"})
-	if err := mcpConn.List(ctx, list, client.MatchingLabels{"kubernaut.ai/managed": "true"}); err != nil {
+	list.SetGroupVersionKind(schema.GroupVersionKind{Version: "v1", Kind: "NodeList"})
+	if err := mcpConn.List(ctx, list); err != nil {
 		return fmt.Errorf("authenticated resources_list call: %w", err)
+	}
+	if len(list.Items) == 0 {
+		return fmt.Errorf("authenticated resources_list call: succeeded but returned zero Nodes (unexpected)")
 	}
 	return nil
 }
