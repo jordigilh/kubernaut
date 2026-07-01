@@ -61,11 +61,16 @@ var _ = Describe("Issue #643 v2: Workflow Name Resolution via DataStorage", func
 			Build()
 
 		recorder := record.NewFakeRecorder(20)
-		reconciler := prodcontroller.NewReconciler(
-			fakeClient, fakeClient, scheme,
-			nil, recorder,
-			rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			prodcontroller.TimeoutConfig{}, &MockRoutingEngine{})
+		reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+			Client:        fakeClient,
+			APIReader:     fakeClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			Timeouts:      prodcontroller.TimeoutConfig{},
+			RoutingEngine: &MockRoutingEngine{},
+		})
 
 		reconciler.SetWorkflowResolver(&MockWorkflowResolver{
 			Responses: map[string]*routing.WorkflowDisplayInfo{
@@ -110,11 +115,16 @@ var _ = Describe("Issue #643 v2: Workflow Name Resolution via DataStorage", func
 			Build()
 
 		recorder := record.NewFakeRecorder(20)
-		reconciler := prodcontroller.NewReconciler(
-			fakeClient, fakeClient, scheme,
-			nil, recorder,
-			rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			prodcontroller.TimeoutConfig{}, &MockRoutingEngine{})
+		reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+			Client:        fakeClient,
+			APIReader:     fakeClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			Timeouts:      prodcontroller.TimeoutConfig{},
+			RoutingEngine: &MockRoutingEngine{},
+		})
 
 		reconciler.SetWorkflowResolver(&MockWorkflowResolver{
 			Responses: map[string]*routing.WorkflowDisplayInfo{},
@@ -151,11 +161,16 @@ var _ = Describe("Issue #643 v2: Workflow Name Resolution via DataStorage", func
 			Build()
 
 		recorder := record.NewFakeRecorder(20)
-		reconciler := prodcontroller.NewReconciler(
-			fakeClient, fakeClient, scheme,
-			nil, recorder,
-			rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			prodcontroller.TimeoutConfig{}, &MockRoutingEngine{})
+		reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+			Client:        fakeClient,
+			APIReader:     fakeClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			Timeouts:      prodcontroller.TimeoutConfig{},
+			RoutingEngine: &MockRoutingEngine{},
+		})
 		// Do NOT call SetWorkflowResolver — resolver stays nil
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{

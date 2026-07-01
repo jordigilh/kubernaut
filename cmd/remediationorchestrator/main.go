@@ -23,9 +23,9 @@ import (
 	"os"
 	"time"
 
-	"gopkg.in/yaml.v3"
 	"github.com/go-logr/zapr"
 	zaplog "go.uber.org/zap"
+	"gopkg.in/yaml.v3"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -44,19 +44,19 @@ import (
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	internalconfig "github.com/jordigilh/kubernaut/internal/config"
-	"github.com/jordigilh/kubernaut/internal/version"
-	clusterid "github.com/jordigilh/kubernaut/pkg/shared/cluster"
-	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
-	scope "github.com/jordigilh/kubernaut/pkg/shared/scope"
-	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
-	"github.com/jordigilh/kubernaut/pkg/fleet"
 	config "github.com/jordigilh/kubernaut/internal/config/remediationorchestrator"
 	controller "github.com/jordigilh/kubernaut/internal/controller/remediationorchestrator"
+	"github.com/jordigilh/kubernaut/internal/version"
 	"github.com/jordigilh/kubernaut/pkg/audit"
+	"github.com/jordigilh/kubernaut/pkg/fleet"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/locking"
 	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/routing"
+	clusterid "github.com/jordigilh/kubernaut/pkg/shared/cluster"
+	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
+	scope "github.com/jordigilh/kubernaut/pkg/shared/scope"
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -265,18 +265,18 @@ func main() {
 	// ADR-030: Routing thresholds from YAML config (not hardcoded)
 	// ========================================
 	routingCfg := routing.Config{
-		ConsecutiveFailureThreshold:  cfg.Routing.ConsecutiveFailureThreshold,
-		ConsecutiveFailureCooldown:   int64(cfg.Routing.ConsecutiveFailureCooldown / time.Second),
-		RecentlyRemediatedCooldown:   int64(cfg.Routing.RecentlyRemediatedCooldown / time.Second),
-		ExponentialBackoffBase:       int64(cfg.Routing.ExponentialBackoffBase / time.Second),
-		ExponentialBackoffMax:        int64(cfg.Routing.ExponentialBackoffMax / time.Second),
+		ConsecutiveFailureThreshold:   cfg.Routing.ConsecutiveFailureThreshold,
+		ConsecutiveFailureCooldown:    int64(cfg.Routing.ConsecutiveFailureCooldown / time.Second),
+		RecentlyRemediatedCooldown:    int64(cfg.Routing.RecentlyRemediatedCooldown / time.Second),
+		ExponentialBackoffBase:        int64(cfg.Routing.ExponentialBackoffBase / time.Second),
+		ExponentialBackoffMax:         int64(cfg.Routing.ExponentialBackoffMax / time.Second),
 		ExponentialBackoffMaxExponent: cfg.Routing.ExponentialBackoffMaxExponent,
-		ScopeBackoffBase:            int64(cfg.Routing.ScopeBackoffBase / time.Second),
-		ScopeBackoffMax:             int64(cfg.Routing.ScopeBackoffMax / time.Second),
-		NoActionRequiredDelayHours:  cfg.Routing.NoActionRequiredDelayHours, // Issue #353
-		IneffectiveChainThreshold:   cfg.Routing.IneffectiveChainThreshold,
-		RecurrenceCountThreshold:    cfg.Routing.RecurrenceCountThreshold,
-		IneffectiveTimeWindow:       cfg.Routing.IneffectiveTimeWindow,
+		ScopeBackoffBase:              int64(cfg.Routing.ScopeBackoffBase / time.Second),
+		ScopeBackoffMax:               int64(cfg.Routing.ScopeBackoffMax / time.Second),
+		NoActionRequiredDelayHours:    cfg.Routing.NoActionRequiredDelayHours, // Issue #353
+		IneffectiveChainThreshold:     cfg.Routing.IneffectiveChainThreshold,
+		RecurrenceCountThreshold:      cfg.Routing.RecurrenceCountThreshold,
+		IneffectiveTimeWindow:         cfg.Routing.IneffectiveTimeWindow,
 	}
 	scopeMgr := scope.NewManager(mgr.GetClient())
 
@@ -310,14 +310,14 @@ func main() {
 
 	// Setup RemediationOrchestrator controller with audit store and comprehensive timeout config
 	// ADR-030: Timeouts from YAML config (not CLI flags)
-	roReconciler := controller.NewReconciler(
-		mgr.GetClient(),
-		mgr.GetAPIReader(), // DD-STATUS-001: API reader for cache-bypassed status refetches
-		mgr.GetScheme(),
-		auditStore,
-		mgr.GetEventRecorderFor("remediationorchestrator-controller"), // V1.0 P1: EventRecorder for debugging
-		roMetrics, // V1.0 P0: Metrics for observability (DD-METRICS-001)
-		controller.TimeoutConfig{
+	roReconciler := controller.NewReconciler(controller.ReconcilerDeps{
+		Client:     mgr.GetClient(),
+		APIReader:  mgr.GetAPIReader(), // DD-STATUS-001: API reader for cache-bypassed status refetches
+		Scheme:     mgr.GetScheme(),
+		AuditStore: auditStore,
+		Recorder:   mgr.GetEventRecorderFor("remediationorchestrator-controller"), // V1.0 P1: EventRecorder for debugging
+		Metrics:    roMetrics,                                                     // V1.0 P0: Metrics for observability (DD-METRICS-001)
+		Timeouts: controller.TimeoutConfig{
 			Global:           cfg.Timeouts.Global,
 			Processing:       cfg.Timeouts.Processing,
 			Analyzing:        cfg.Timeouts.Analyzing,
@@ -325,9 +325,8 @@ func main() {
 			AwaitingApproval: cfg.Timeouts.AwaitingApproval,
 			Verifying:        cfg.Timeouts.Verifying,
 		},
-		routingEngine, // DD-RO-002: Routing engine built from YAML config
-		eaCreator,     // ADR-EM-001: EA creation on terminal phases
-	)
+		RoutingEngine: routingEngine, // DD-RO-002: Routing engine built from YAML config
+	}, eaCreator) // ADR-EM-001: EA creation on terminal phases
 	// Issue #643 v2: Wire DS-backed workflow display resolver.
 	dsWorkflowAdapter, err := routing.NewDSWorkflowAdapterFromConfig(cfg.DataStorage.URL, cfg.DataStorage.Timeout)
 	if err != nil {

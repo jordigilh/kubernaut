@@ -75,7 +75,16 @@ var _ = Describe("DD-INTERACTIVE-002: Interactive Timeout Extension", func() {
 	makeReconciler := func(c client.Client, timeouts prodcontroller.TimeoutConfig) *prodcontroller.Reconciler {
 		recorder := record.NewFakeRecorder(20)
 		m := rometrics.NewMetricsWithRegistry(prometheus.NewRegistry())
-		return prodcontroller.NewReconciler(c, c, scheme, nil, recorder, m, timeouts, nil)
+		return prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+			Client:        c,
+			APIReader:     c,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       m,
+			Timeouts:      timeouts,
+			RoutingEngine: nil,
+		})
 	}
 
 	analyzingRR := func(name string, aiRefName string, analyzingStartedAgo time.Duration) *remediationv1.RemediationRequest {
@@ -90,7 +99,7 @@ var _ = Describe("DD-INTERACTIVE-002: Interactive Timeout Extension", func() {
 				SignalFingerprint: "abc123def456abc123def456abc123def456abc123def456abc123def456abc123de",
 				SignalName:        "TestAlert",
 				Severity:          "warning",
-				SignalType:         "alert",
+				SignalType:        "alert",
 				TargetType:        "kubernetes",
 				TargetResource: remediationv1.ResourceIdentifier{
 					Kind:      "Pod",
@@ -245,7 +254,7 @@ var _ = Describe("DD-INTERACTIVE-002: Interactive Timeout Extension", func() {
 					SignalFingerprint: "proc123proc123proc123proc123proc123proc123proc123proc123proc123pr",
 					SignalName:        "ProcessingAlert",
 					Severity:          "warning",
-					SignalType:         "alert",
+					SignalType:        "alert",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
 						Kind:      "Pod",

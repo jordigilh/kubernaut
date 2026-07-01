@@ -361,14 +361,14 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 				&eav1.EffectivenessAssessment{}: {
 					Namespaces: map[string]cache.Config{ROControllerNamespace: {}},
 				},
-			&remediationv1.RemediationApprovalRequest{}: {
-				Namespaces: map[string]cache.Config{ROControllerNamespace: {}},
+				&remediationv1.RemediationApprovalRequest{}: {
+					Namespaces: map[string]cache.Config{ROControllerNamespace: {}},
+				},
+				// R8: RW cache for operator override resolution (#594)
+				&remediationworkflowv1.RemediationWorkflow{}: {
+					Namespaces: map[string]cache.Config{ROControllerNamespace: {}},
+				},
 			},
-			// R8: RW cache for operator override resolution (#594)
-			&remediationworkflowv1.RemediationWorkflow{}: {
-				Namespaces: map[string]cache.Config{ROControllerNamespace: {}},
-			},
-		},
 		},
 		Metrics: metricsserver.Options{
 			BindAddress: ":0", // Dynamic port allocation (prevents conflicts with E2E tests)
@@ -422,14 +422,14 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		k8sManager.GetAPIReader(), // Cache-bypassed reader for fresh routing decisions
 		"",                        // No namespace filter - all namespaces
 		routing.Config{
-			ConsecutiveFailureThreshold:  3,
-			ConsecutiveFailureCooldown:   3600, // 1 hour
-			RecentlyRemediatedCooldown:   300,  // 5 minutes
-			ExponentialBackoffBase:       60,   // 1 minute
-			ExponentialBackoffMax:        3600, // 1 hour
-			ScopeBackoffBase:             5,    // 5 seconds (ADR-053)
-			ScopeBackoffMax:              300,  // 5 minutes (ADR-053)
-			NoActionRequiredDelayHours:   24,   // Issue #353: 24h suppression window
+			ConsecutiveFailureThreshold: 3,
+			ConsecutiveFailureCooldown:  3600, // 1 hour
+			RecentlyRemediatedCooldown:  300,  // 5 minutes
+			ExponentialBackoffBase:      60,   // 1 minute
+			ExponentialBackoffMax:       3600, // 1 hour
+			ScopeBackoffBase:            5,    // 5 seconds (ADR-053)
+			ScopeBackoffMax:             300,  // 5 minutes (ADR-053)
+			NoActionRequiredDelayHours:  24,   // Issue #353: 24h suppression window
 		},
 		scopeMgr, // BR-SCOPE-010: Mandatory scope checker
 	)
@@ -443,17 +443,16 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		30*time.Second, // Stabilization window for integration tests
 	)
 
-	reconciler := controller.NewReconciler(
-		k8sManager.GetClient(),
-		k8sManager.GetAPIReader(), // DD-STATUS-001: API reader for cache-bypassed status refetches
-		k8sManager.GetScheme(),
-		auditStore,                                                             // Real audit store for ADR-032 compliance
-		k8sManager.GetEventRecorderFor("remediationorchestrator-controller"), // DD-EVENT-001: Real EventRecorder for K8s event integration tests
-		roMetrics,                                                            // DD-METRICS-001: Real metrics for integration tests (enables M-INT-1 through M-INT-6)
-		controller.TimeoutConfig{}, // Use defaults: Global=1h, Processing=5m, Analyzing=10m, Executing=30m (BR-ORCH-027/028)
-		routingEngine,              // Real routing engine for integration tests (BR-ORCH-042)
-		eaCreator,                  // ADR-EM-001: EA creation on terminal phases
-	)
+	reconciler := controller.NewReconciler(controller.ReconcilerDeps{
+		Client:        k8sManager.GetClient(),
+		APIReader:     k8sManager.GetAPIReader(), // DD-STATUS-001: API reader for cache-bypassed status refetches
+		Scheme:        k8sManager.GetScheme(),
+		AuditStore:    auditStore,                                                           // Real audit store for ADR-032 compliance
+		Recorder:      k8sManager.GetEventRecorderFor("remediationorchestrator-controller"), // DD-EVENT-001: Real EventRecorder for K8s event integration tests
+		Metrics:       roMetrics,                                                            // DD-METRICS-001: Real metrics for integration tests (enables M-INT-1 through M-INT-6)
+		Timeouts:      controller.TimeoutConfig{},                                           // Use defaults: Global=1h, Processing=5m, Analyzing=10m, Executing=30m (BR-ORCH-027/028)
+		RoutingEngine: routingEngine,                                                        // Real routing engine for integration tests (BR-ORCH-042)
+	}, eaCreator) // ADR-EM-001: EA creation on terminal phases
 	// DD-EM-002: Set REST mapper for pre-remediation hash Kind resolution
 	reconciler.SetRESTMapper(k8sManager.GetRESTMapper())
 	// DD-EM-004 v2.0, Issue #253: Config-driven async propagation delays for IT
@@ -751,8 +750,8 @@ func updateSPStatusProactive(namespace, name string, normalizedType, originalTyp
 	sp.Status.Phase = signalprocessingv1.PhaseCompleted
 	sp.Status.CompletionTime = &now
 	sp.Status.Severity = severity
-		// BR-SP-106: Proactive signal mode fields
-		sp.Status.SignalMode = "proactive"
+	// BR-SP-106: Proactive signal mode fields
+	sp.Status.SignalMode = "proactive"
 	sp.Status.SignalName = normalizedType
 	sp.Status.SourceSignalName = originalType
 	// Standard classification fields

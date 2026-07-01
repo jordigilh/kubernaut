@@ -69,13 +69,16 @@ var _ = Describe("Issue #265: CRD Retention TTL Enforcement", func() {
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler := prodcontroller.NewReconciler(
-				fakeClient, fakeClient, scheme, nil,
-				record.NewFakeRecorder(20),
-				rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
-				&MockRoutingEngine{},
-			)
+			reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+				Client:        fakeClient,
+				APIReader:     fakeClient,
+				Scheme:        scheme,
+				AuditStore:    nil,
+				Recorder:      record.NewFakeRecorder(20),
+				Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				Timeouts:      prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
+				RoutingEngine: &MockRoutingEngine{},
+			})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: "default"},
@@ -109,13 +112,16 @@ var _ = Describe("Issue #265: CRD Retention TTL Enforcement", func() {
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler := prodcontroller.NewReconciler(
-				fakeClient, fakeClient, scheme, nil,
-				record.NewFakeRecorder(20),
-				rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
-				&MockRoutingEngine{},
-			)
+			reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+				Client:        fakeClient,
+				APIReader:     fakeClient,
+				Scheme:        scheme,
+				AuditStore:    nil,
+				Recorder:      record.NewFakeRecorder(20),
+				Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				Timeouts:      prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
+				RoutingEngine: &MockRoutingEngine{},
+			})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "test-rr-failed", Namespace: "default"},
@@ -143,13 +149,16 @@ var _ = Describe("Issue #265: CRD Retention TTL Enforcement", func() {
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler := prodcontroller.NewReconciler(
-				fakeClient, fakeClient, scheme, nil,
-				record.NewFakeRecorder(20),
-				rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
-				&MockRoutingEngine{},
-			)
+			reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+				Client:        fakeClient,
+				APIReader:     fakeClient,
+				Scheme:        scheme,
+				AuditStore:    nil,
+				Recorder:      record.NewFakeRecorder(20),
+				Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				Timeouts:      prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
+				RoutingEngine: &MockRoutingEngine{},
+			})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "test-rr-timedout", Namespace: "default"},
@@ -175,13 +184,16 @@ var _ = Describe("Issue #265: CRD Retention TTL Enforcement", func() {
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler := prodcontroller.NewReconciler(
-				fakeClient, fakeClient, scheme, nil,
-				record.NewFakeRecorder(20),
-				rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
-				&MockRoutingEngine{},
-			)
+			reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+				Client:        fakeClient,
+				APIReader:     fakeClient,
+				Scheme:        scheme,
+				AuditStore:    nil,
+				Recorder:      record.NewFakeRecorder(20),
+				Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				Timeouts:      prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
+				RoutingEngine: &MockRoutingEngine{},
+			})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "test-rr-cancelled", Namespace: "default"},
@@ -210,13 +222,16 @@ var _ = Describe("Issue #265: CRD Retention TTL Enforcement", func() {
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler := prodcontroller.NewReconciler(
-				fakeClient, fakeClient, scheme, nil,
-				record.NewFakeRecorder(20),
-				rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
-				&MockRoutingEngine{},
-			)
+			reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+				Client:        fakeClient,
+				APIReader:     fakeClient,
+				Scheme:        scheme,
+				AuditStore:    nil,
+				Recorder:      record.NewFakeRecorder(20),
+				Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				Timeouts:      prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
+				RoutingEngine: &MockRoutingEngine{},
+			})
 
 			_, _ = reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "test-rr-pending", Namespace: "default"},
@@ -243,13 +258,16 @@ var _ = Describe("Issue #265: CRD Retention TTL Enforcement", func() {
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler := prodcontroller.NewReconciler(
-				fakeClient, fakeClient, scheme, nil,
-				record.NewFakeRecorder(20),
-				rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
-				&MockRoutingEngine{},
-			)
+			reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+				Client:        fakeClient,
+				APIReader:     fakeClient,
+				Scheme:        scheme,
+				AuditStore:    nil,
+				Recorder:      record.NewFakeRecorder(20),
+				Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				Timeouts:      prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
+				RoutingEngine: &MockRoutingEngine{},
+			})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "test-rr-existing", Namespace: "default"},
@@ -280,13 +298,16 @@ var _ = Describe("Issue #265: CRD Retention TTL Enforcement", func() {
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler := prodcontroller.NewReconciler(
-				fakeClient, fakeClient, scheme, nil,
-				record.NewFakeRecorder(20),
-				rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
-				&MockRoutingEngine{},
-			)
+			reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+				Client:        fakeClient,
+				APIReader:     fakeClient,
+				Scheme:        scheme,
+				AuditStore:    nil,
+				Recorder:      record.NewFakeRecorder(20),
+				Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				Timeouts:      prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
+				RoutingEngine: &MockRoutingEngine{},
+			})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "test-rr-expired", Namespace: "default"},
@@ -317,13 +338,16 @@ var _ = Describe("Issue #265: CRD Retention TTL Enforcement", func() {
 				Build()
 
 			mockAudit := &MockAuditStore{}
-			reconciler := prodcontroller.NewReconciler(
-				fakeClient, fakeClient, scheme, mockAudit,
-				record.NewFakeRecorder(20),
-				rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
-				&MockRoutingEngine{},
-			)
+			reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+				Client:        fakeClient,
+				APIReader:     fakeClient,
+				Scheme:        scheme,
+				AuditStore:    mockAudit,
+				Recorder:      record.NewFakeRecorder(20),
+				Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				Timeouts:      prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
+				RoutingEngine: &MockRoutingEngine{},
+			})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "test-rr-audit-del", Namespace: "default"},
@@ -365,13 +389,16 @@ var _ = Describe("Issue #265: CRD Retention TTL Enforcement", func() {
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler := prodcontroller.NewReconciler(
-				fakeClient, fakeClient, scheme, nil,
-				record.NewFakeRecorder(20),
-				rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
-				&MockRoutingEngine{},
-			)
+			reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+				Client:        fakeClient,
+				APIReader:     fakeClient,
+				Scheme:        scheme,
+				AuditStore:    nil,
+				Recorder:      record.NewFakeRecorder(20),
+				Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				Timeouts:      prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
+				RoutingEngine: &MockRoutingEngine{},
+			})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "test-rr-future", Namespace: "default"},
@@ -398,18 +425,21 @@ var _ = Describe("Issue #265: CRD Retention TTL Enforcement", func() {
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler := prodcontroller.NewReconciler(
-				fakeClient, fakeClient, scheme, nil,
-				record.NewFakeRecorder(20),
-				rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				prodcontroller.TimeoutConfig{
+			reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+				Client:     fakeClient,
+				APIReader:  fakeClient,
+				Scheme:     scheme,
+				AuditStore: nil,
+				Recorder:   record.NewFakeRecorder(20),
+				Metrics:    rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				Timeouts: prodcontroller.TimeoutConfig{
 					Global:     1 * time.Hour,
 					Processing: 5 * time.Minute,
 					Analyzing:  10 * time.Minute,
 					Executing:  30 * time.Minute,
 				},
-				&MockRoutingEngine{},
-			)
+				RoutingEngine: &MockRoutingEngine{},
+			})
 
 			_, _ = reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "test-rr-fail-ts", Namespace: "default"},
@@ -436,13 +466,16 @@ var _ = Describe("Issue #265: CRD Retention TTL Enforcement", func() {
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler := prodcontroller.NewReconciler(
-				fakeClient, fakeClient, scheme, nil,
-				record.NewFakeRecorder(20),
-				rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
-				&MockRoutingEngine{},
-			)
+			reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+				Client:        fakeClient,
+				APIReader:     fakeClient,
+				Scheme:        scheme,
+				AuditStore:    nil,
+				Recorder:      record.NewFakeRecorder(20),
+				Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				Timeouts:      prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
+				RoutingEngine: &MockRoutingEngine{},
+			})
 
 			_, _ = reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "test-rr-timeout-ts", Namespace: "default"},

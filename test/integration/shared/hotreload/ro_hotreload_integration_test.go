@@ -53,14 +53,14 @@ var _ = Describe("RO Config Hot-Reload via FileWatcher (IT-RO-835)", func() {
 	BeforeEach(func() {
 		scheme := setupScheme()
 		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-		reconciler = controller.NewReconciler(
-			fakeClient,
-			fakeClient,
-			scheme,
-			nil,
-			nil,
-			rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			controller.TimeoutConfig{
+		reconciler = controller.NewReconciler(controller.ReconcilerDeps{
+			Client:     fakeClient,
+			APIReader:  fakeClient,
+			Scheme:     scheme,
+			AuditStore: nil,
+			Recorder:   nil,
+			Metrics:    rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			Timeouts: controller.TimeoutConfig{
 				Global:           1 * time.Hour,
 				Processing:       5 * time.Minute,
 				Analyzing:        10 * time.Minute,
@@ -68,9 +68,8 @@ var _ = Describe("RO Config Hot-Reload via FileWatcher (IT-RO-835)", func() {
 				AwaitingApproval: 15 * time.Minute,
 				Verifying:        30 * time.Minute,
 			},
-			nil, // routing engine (not needed for config reload)
-			nil, // eaCreator
-		)
+			RoutingEngine: nil, // routing engine (not needed for config reload)
+		}, nil) // eaCreator
 		reconciler.SetRetentionPeriod(24 * time.Hour)
 		reconciler.SetDryRun(false, 1*time.Hour)
 
@@ -196,12 +195,12 @@ datastorage:
 
 		Eventually(func() time.Duration {
 			return reconciler.GetRetentionPeriodExported()
-		}, 3*time.Second, 100*time.Millisecond).Should(Equal(72 * time.Hour),
+		}, 3*time.Second, 100*time.Millisecond).Should(Equal(72*time.Hour),
 			"retentionPeriod should update to 72h")
 
 		Eventually(func() time.Duration {
 			return reconciler.GetDryRunHoldPeriodExported()
-		}, 3*time.Second, 100*time.Millisecond).Should(Equal(4 * time.Hour),
+		}, 3*time.Second, 100*time.Millisecond).Should(Equal(4*time.Hour),
 			"dryRunHoldPeriod should update to 4h")
 
 		asyncCfg := reconciler.GetAsyncPropagationExported()
@@ -287,7 +286,7 @@ retention:
 		// ✅ APPROVED EXCEPTION: intentional wait for fsnotify debounce (200ms) + processing
 		time.Sleep(500 * time.Millisecond)
 
-		Expect(reconciler.GetRetentionPeriodExported()).To(Equal(24 * time.Hour),
+		Expect(reconciler.GetRetentionPeriodExported()).To(Equal(24*time.Hour),
 			"retention should remain unchanged after invalid config rejected")
 
 		Expect(watcher.GetErrorCount()).To(BeNumerically(">=", int64(1)),

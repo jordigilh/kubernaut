@@ -98,11 +98,16 @@ var _ = Describe("Issue #88: Terminal-phase notification tracking", func() {
 				Build()
 
 			recorder := record.NewFakeRecorder(20)
-			reconciler := prodcontroller.NewReconciler(
-				fakeClient, fakeClient, scheme, nil, recorder,
-				rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				prodcontroller.TimeoutConfig{}, nil,
-			)
+			reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+				Client:        fakeClient,
+				APIReader:     fakeClient,
+				Scheme:        scheme,
+				AuditStore:    nil,
+				Recorder:      recorder,
+				Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				Timeouts:      prodcontroller.TimeoutConfig{},
+				RoutingEngine: nil,
+			})
 
 			// Reconcile — this simulates the controller-runtime enqueue from NT status change
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
@@ -167,11 +172,16 @@ var _ = Describe("Issue #88: Terminal-phase notification tracking", func() {
 				Build()
 
 			recorder := record.NewFakeRecorder(20)
-			reconciler := prodcontroller.NewReconciler(
-				fakeClient, fakeClient, scheme, nil, recorder,
-				rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				prodcontroller.TimeoutConfig{}, nil,
-			)
+			reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+				Client:        fakeClient,
+				APIReader:     fakeClient,
+				Scheme:        scheme,
+				AuditStore:    nil,
+				Recorder:      recorder,
+				Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				Timeouts:      prodcontroller.TimeoutConfig{},
+				RoutingEngine: nil,
+			})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: rrName, Namespace: namespace},
@@ -237,11 +247,16 @@ var _ = Describe("Issue #88: Terminal-phase notification tracking", func() {
 				Build()
 
 			recorder := record.NewFakeRecorder(20)
-			reconciler := prodcontroller.NewReconciler(
-				fakeClient, fakeClient, scheme, nil, recorder,
-				rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				prodcontroller.TimeoutConfig{}, nil,
-			)
+			reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+				Client:        fakeClient,
+				APIReader:     fakeClient,
+				Scheme:        scheme,
+				AuditStore:    nil,
+				Recorder:      recorder,
+				Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				Timeouts:      prodcontroller.TimeoutConfig{},
+				RoutingEngine: nil,
+			})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: rrName, Namespace: namespace},

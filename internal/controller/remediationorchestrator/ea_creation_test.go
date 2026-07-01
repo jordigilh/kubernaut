@@ -85,13 +85,16 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 		roMetrics := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
 		recorder := record.NewFakeRecorder(20)
 		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, stabilizationWindow)
-		reconciler := controller.NewReconciler(
-			k8sClient, k8sClient, scheme,
-			nil, recorder, roMetrics,
-			controller.TimeoutConfig{},
-			&MockRoutingEngine{},
-			eaCreator,
-		)
+		reconciler := controller.NewReconciler(controller.ReconcilerDeps{
+			Client:        k8sClient,
+			APIReader:     k8sClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       roMetrics,
+			Timeouts:      controller.TimeoutConfig{},
+			RoutingEngine: &MockRoutingEngine{},
+		}, eaCreator)
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: rrName, Namespace: namespace},
@@ -145,13 +148,16 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 		roMetrics := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
 		recorder := record.NewFakeRecorder(20)
 		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, stabilizationWindow)
-		reconciler := controller.NewReconciler(
-			k8sClient, k8sClient, scheme,
-			nil, recorder, roMetrics,
-			controller.TimeoutConfig{},
-			&MockRoutingEngine{},
-			eaCreator,
-		)
+		reconciler := controller.NewReconciler(controller.ReconcilerDeps{
+			Client:        k8sClient,
+			APIReader:     k8sClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       roMetrics,
+			Timeouts:      controller.TimeoutConfig{},
+			RoutingEngine: &MockRoutingEngine{},
+		}, eaCreator)
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: rrName, Namespace: namespace},
@@ -188,13 +194,16 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 		roMetrics := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
 		recorder := record.NewFakeRecorder(20)
 		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, stabilizationWindow)
-		reconciler := controller.NewReconciler(
-			k8sClient, k8sClient, scheme,
-			nil, recorder, roMetrics,
-			controller.TimeoutConfig{},
-			&MockRoutingEngine{},
-			eaCreator,
-		)
+		reconciler := controller.NewReconciler(controller.ReconcilerDeps{
+			Client:        k8sClient,
+			APIReader:     k8sClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       roMetrics,
+			Timeouts:      controller.TimeoutConfig{},
+			RoutingEngine: &MockRoutingEngine{},
+		}, eaCreator)
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: rrName, Namespace: namespace},
@@ -251,13 +260,16 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 		roMetrics := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
 		recorder := record.NewFakeRecorder(20)
 		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, stabilizationWindow)
-		reconciler := controller.NewReconciler(
-			k8sClient, k8sClient, scheme,
-			nil, recorder, roMetrics,
-			controller.TimeoutConfig{},
-			&MockRoutingEngine{},
-			eaCreator,
-		)
+		reconciler := controller.NewReconciler(controller.ReconcilerDeps{
+			Client:        k8sClient,
+			APIReader:     k8sClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       roMetrics,
+			Timeouts:      controller.TimeoutConfig{},
+			RoutingEngine: &MockRoutingEngine{},
+		}, eaCreator)
 
 		// Should not error
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
@@ -295,13 +307,16 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 		roMetrics := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
 		recorder := record.NewFakeRecorder(20)
 		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, stabilizationWindow)
-		reconciler := controller.NewReconciler(
-			k8sClient, k8sClient, scheme,
-			nil, recorder, roMetrics,
-			controller.TimeoutConfig{},
-			&MockRoutingEngine{},
-			eaCreator,
-		)
+		reconciler := controller.NewReconciler(controller.ReconcilerDeps{
+			Client:        k8sClient,
+			APIReader:     k8sClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       roMetrics,
+			Timeouts:      controller.TimeoutConfig{},
+			RoutingEngine: &MockRoutingEngine{},
+		}, eaCreator)
 
 		// Transition should still succeed despite EA creation failure
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
@@ -337,13 +352,16 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 		roMetrics := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
 		recorder := record.NewFakeRecorder(20)
 		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, customWindow)
-		reconciler := controller.NewReconciler(
-			k8sClient, k8sClient, scheme,
-			nil, recorder, roMetrics,
-			controller.TimeoutConfig{},
-			&MockRoutingEngine{},
-			eaCreator,
-		)
+		reconciler := controller.NewReconciler(controller.ReconcilerDeps{
+			Client:        k8sClient,
+			APIReader:     k8sClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       roMetrics,
+			Timeouts:      controller.TimeoutConfig{},
+			RoutingEngine: &MockRoutingEngine{},
+		}, eaCreator)
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: rrName, Namespace: namespace},
@@ -380,13 +398,16 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 		roMetrics := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
 		recorder := record.NewFakeRecorder(20)
 		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, 30*time.Second)
-		reconciler := controller.NewReconciler(
-			k8sClient, k8sClient, scheme,
-			nil, recorder, roMetrics,
-			controller.TimeoutConfig{},
-			&MockRoutingEngine{},
-			eaCreator,
-		)
+		reconciler := controller.NewReconciler(controller.ReconcilerDeps{
+			Client:        k8sClient,
+			APIReader:     k8sClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       roMetrics,
+			Timeouts:      controller.TimeoutConfig{},
+			RoutingEngine: &MockRoutingEngine{},
+		}, eaCreator)
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: rrName, Namespace: namespace},
@@ -440,13 +461,16 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 		roMetrics := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
 		recorder := record.NewFakeRecorder(20)
 		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, stabilizationWindow)
-		reconciler := controller.NewReconciler(
-			k8sClient, k8sClient, scheme,
-			nil, recorder, roMetrics,
-			controller.TimeoutConfig{},
-			&MockRoutingEngine{},
-			eaCreator,
-		)
+		reconciler := controller.NewReconciler(controller.ReconcilerDeps{
+			Client:        k8sClient,
+			APIReader:     k8sClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       roMetrics,
+			Timeouts:      controller.TimeoutConfig{},
+			RoutingEngine: &MockRoutingEngine{},
+		}, eaCreator)
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: rrName, Namespace: namespace},
@@ -510,13 +534,16 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 		roMetrics := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
 		recorder := record.NewFakeRecorder(20)
 		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, stabilizationWindow)
-		reconciler := controller.NewReconciler(
-			k8sClient, k8sClient, scheme,
-			nil, recorder, roMetrics,
-			controller.TimeoutConfig{},
-			&MockRoutingEngine{},
-			eaCreator,
-		)
+		reconciler := controller.NewReconciler(controller.ReconcilerDeps{
+			Client:        k8sClient,
+			APIReader:     k8sClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       roMetrics,
+			Timeouts:      controller.TimeoutConfig{},
+			RoutingEngine: &MockRoutingEngine{},
+		}, eaCreator)
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: rrName, Namespace: namespace},
@@ -564,13 +591,16 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 		roMetrics := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
 		recorder := record.NewFakeRecorder(20)
 		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, stabilizationWindow)
-		reconciler := controller.NewReconciler(
-			k8sClient, k8sClient, scheme,
-			nil, recorder, roMetrics,
-			controller.TimeoutConfig{},
-			&MockRoutingEngine{},
-			eaCreator,
-		)
+		reconciler := controller.NewReconciler(controller.ReconcilerDeps{
+			Client:        k8sClient,
+			APIReader:     k8sClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       roMetrics,
+			Timeouts:      controller.TimeoutConfig{},
+			RoutingEngine: &MockRoutingEngine{},
+		}, eaCreator)
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: rrName, Namespace: namespace},
@@ -618,18 +648,21 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 		roMetrics := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
 		recorder := record.NewFakeRecorder(20)
 		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, stabilizationWindow)
-		reconciler := controller.NewReconciler(
-			k8sClient, k8sClient, scheme,
-			nil, recorder, roMetrics,
-			controller.TimeoutConfig{
+		reconciler := controller.NewReconciler(controller.ReconcilerDeps{
+			Client:     k8sClient,
+			APIReader:  k8sClient,
+			Scheme:     scheme,
+			AuditStore: nil,
+			Recorder:   recorder,
+			Metrics:    roMetrics,
+			Timeouts: controller.TimeoutConfig{
 				Global:     1 * time.Hour,
 				Processing: 5 * time.Minute,
 				Analyzing:  10 * time.Minute,
 				Executing:  30 * time.Minute,
 			},
-			&MockRoutingEngine{},
-			eaCreator,
-		)
+			RoutingEngine: &MockRoutingEngine{},
+		}, eaCreator)
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: rrName, Namespace: namespace},
@@ -679,13 +712,16 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 		roMetrics := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
 		recorder := record.NewFakeRecorder(20)
 		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, stabilizationWindow)
-		reconciler := controller.NewReconciler(
-			k8sClient, k8sClient, scheme,
-			nil, recorder, roMetrics,
-			controller.TimeoutConfig{},
-			&MockRoutingEngine{},
-			eaCreator,
-		)
+		reconciler := controller.NewReconciler(controller.ReconcilerDeps{
+			Client:        k8sClient,
+			APIReader:     k8sClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       roMetrics,
+			Timeouts:      controller.TimeoutConfig{},
+			RoutingEngine: &MockRoutingEngine{},
+		}, eaCreator)
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: rrName, Namespace: namespace},
@@ -735,13 +771,16 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 		roMetrics := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
 		recorder := record.NewFakeRecorder(20)
 		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, stabilizationWindow)
-		reconciler := controller.NewReconciler(
-			k8sClient, k8sClient, scheme,
-			nil, recorder, roMetrics,
-			controller.TimeoutConfig{},
-			&MockRoutingEngine{},
-			eaCreator,
-		)
+		reconciler := controller.NewReconciler(controller.ReconcilerDeps{
+			Client:        k8sClient,
+			APIReader:     k8sClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       roMetrics,
+			Timeouts:      controller.TimeoutConfig{},
+			RoutingEngine: &MockRoutingEngine{},
+		}, eaCreator)
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: rrName, Namespace: namespace},
@@ -780,13 +819,16 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 		roMetrics := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
 		recorder := record.NewFakeRecorder(20)
 		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, stabilizationWindow)
-		reconciler := controller.NewReconciler(
-			k8sClient, k8sClient, scheme,
-			nil, recorder, roMetrics,
-			controller.TimeoutConfig{},
-			&MockRoutingEngine{},
-			eaCreator,
-		)
+		reconciler := controller.NewReconciler(controller.ReconcilerDeps{
+			Client:        k8sClient,
+			APIReader:     k8sClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       roMetrics,
+			Timeouts:      controller.TimeoutConfig{},
+			RoutingEngine: &MockRoutingEngine{},
+		}, eaCreator)
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: rrName, Namespace: namespace},
@@ -846,13 +888,16 @@ var _ = Describe("EA Dual-Target Creation (DD-EM-003)", func() {
 		roMetrics := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
 		recorder := record.NewFakeRecorder(20)
 		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, stabilizationWindow)
-		reconciler := controller.NewReconciler(
-			k8sClient, k8sClient, scheme,
-			nil, recorder, roMetrics,
-			controller.TimeoutConfig{},
-			&MockRoutingEngine{},
-			eaCreator,
-		)
+		reconciler := controller.NewReconciler(controller.ReconcilerDeps{
+			Client:        k8sClient,
+			APIReader:     k8sClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       roMetrics,
+			Timeouts:      controller.TimeoutConfig{},
+			RoutingEngine: &MockRoutingEngine{},
+		}, eaCreator)
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: rrName, Namespace: namespace},
@@ -905,13 +950,16 @@ var _ = Describe("EA Dual-Target Creation (DD-EM-003)", func() {
 		roMetrics := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
 		recorder := record.NewFakeRecorder(20)
 		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, stabilizationWindow)
-		reconciler := controller.NewReconciler(
-			k8sClient, k8sClient, scheme,
-			nil, recorder, roMetrics,
-			controller.TimeoutConfig{},
-			&MockRoutingEngine{},
-			eaCreator,
-		)
+		reconciler := controller.NewReconciler(controller.ReconcilerDeps{
+			Client:        k8sClient,
+			APIReader:     k8sClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       roMetrics,
+			Timeouts:      controller.TimeoutConfig{},
+			RoutingEngine: &MockRoutingEngine{},
+		}, eaCreator)
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: rrName, Namespace: namespace},
@@ -960,13 +1008,16 @@ var _ = Describe("EA Dual-Target Creation (DD-EM-003)", func() {
 		roMetrics := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
 		recorder := record.NewFakeRecorder(20)
 		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, stabilizationWindow)
-		reconciler := controller.NewReconciler(
-			k8sClient, k8sClient, scheme,
-			nil, recorder, roMetrics,
-			controller.TimeoutConfig{},
-			&MockRoutingEngine{},
-			eaCreator,
-		)
+		reconciler := controller.NewReconciler(controller.ReconcilerDeps{
+			Client:        k8sClient,
+			APIReader:     k8sClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       roMetrics,
+			Timeouts:      controller.TimeoutConfig{},
+			RoutingEngine: &MockRoutingEngine{},
+		}, eaCreator)
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: rrName, Namespace: controllerNS},

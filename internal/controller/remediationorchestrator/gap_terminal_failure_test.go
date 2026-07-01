@@ -69,13 +69,16 @@ var _ = Describe("BR-ORCH-036 GAP-4: transitionToFailed Escalation NR (#808)", f
 			WithStatusSubresource(&remediationv1.RemediationRequest{}).
 			Build()
 
-		reconciler := prodcontroller.NewReconciler(
-			fakeClient, fakeClient, scheme,
-			nil, recorder,
-			rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			prodcontroller.TimeoutConfig{},
-			&MockRoutingEngine{},
-		)
+		reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+			Client:        fakeClient,
+			APIReader:     fakeClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			Timeouts:      prodcontroller.TimeoutConfig{},
+			RoutingEngine: &MockRoutingEngine{},
+		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: rrName, Namespace: "default"},
@@ -112,13 +115,16 @@ var _ = Describe("BR-ORCH-036 GAP-4: transitionToFailed Escalation NR (#808)", f
 			WithStatusSubresource(&remediationv1.RemediationRequest{}).
 			Build()
 
-		reconciler := prodcontroller.NewReconciler(
-			fakeClient, fakeClient, scheme,
-			nil, recorder,
-			rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			prodcontroller.TimeoutConfig{},
-			&MockRoutingEngine{},
-		)
+		reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+			Client:        fakeClient,
+			APIReader:     fakeClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			Timeouts:      prodcontroller.TimeoutConfig{},
+			RoutingEngine: &MockRoutingEngine{},
+		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: rrName, Namespace: "default"},
@@ -152,13 +158,16 @@ var _ = Describe("BR-ORCH-036 GAP-4: transitionToFailed Escalation NR (#808)", f
 			WithStatusSubresource(&remediationv1.RemediationRequest{}).
 			Build()
 
-		reconciler := prodcontroller.NewReconciler(
-			fakeClient, fakeClient, scheme,
-			nil, recorder,
-			rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			prodcontroller.TimeoutConfig{},
-			&MockRoutingEngine{},
-		)
+		reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+			Client:        fakeClient,
+			APIReader:     fakeClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			Timeouts:      prodcontroller.TimeoutConfig{},
+			RoutingEngine: &MockRoutingEngine{},
+		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: rrName, Namespace: "default"},
@@ -205,13 +214,16 @@ var _ = Describe("BR-ORCH-036 GAP-4: transitionToFailed Escalation NR (#808)", f
 			WithStatusSubresource(&remediationv1.RemediationRequest{}).
 			Build()
 
-		reconciler := prodcontroller.NewReconciler(
-			fakeClient, fakeClient, scheme,
-			nil, recorder,
-			rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			prodcontroller.TimeoutConfig{},
-			&MockRoutingEngine{},
-		)
+		reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+			Client:        fakeClient,
+			APIReader:     fakeClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			Timeouts:      prodcontroller.TimeoutConfig{},
+			RoutingEngine: &MockRoutingEngine{},
+		})
 
 		// First reconcile
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
@@ -260,13 +272,16 @@ var _ = Describe("BR-ORCH-036 GAP-5: transitionToFailedTerminal Escalation NR (#
 			WithStatusSubresource(&remediationv1.RemediationRequest{}).
 			Build()
 
-		reconciler := prodcontroller.NewReconciler(
-			fakeClient, fakeClient, scheme,
-			nil, recorder,
-			rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			prodcontroller.TimeoutConfig{},
-			&MockRoutingEngine{},
-		)
+		reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+			Client:        fakeClient,
+			APIReader:     fakeClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			Timeouts:      prodcontroller.TimeoutConfig{},
+			RoutingEngine: &MockRoutingEngine{},
+		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: rrName, Namespace: "default"},

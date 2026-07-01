@@ -78,13 +78,16 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler := prodcontroller.NewReconciler(
-				fakeClient, fakeClient, scheme, nil,
-				record.NewFakeRecorder(20),
-				rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
-				&MockRoutingEngine{},
-			)
+			reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+				Client:        fakeClient,
+				APIReader:     fakeClient,
+				Scheme:        scheme,
+				AuditStore:    nil,
+				Recorder:      record.NewFakeRecorder(20),
+				Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				Timeouts:      prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
+				RoutingEngine: &MockRoutingEngine{},
+			})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "dup-rr-001", Namespace: "default"},
@@ -122,13 +125,16 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler := prodcontroller.NewReconciler(
-				fakeClient, fakeClient, scheme, nil,
-				record.NewFakeRecorder(20),
-				rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
-				&MockRoutingEngine{},
-			)
+			reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+				Client:        fakeClient,
+				APIReader:     fakeClient,
+				Scheme:        scheme,
+				AuditStore:    nil,
+				Recorder:      record.NewFakeRecorder(20),
+				Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				Timeouts:      prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
+				RoutingEngine: &MockRoutingEngine{},
+			})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "dup-rr-002", Namespace: "default"},
@@ -167,13 +173,16 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler := prodcontroller.NewReconciler(
-				fakeClient, fakeClient, scheme, nil,
-				record.NewFakeRecorder(20),
-				rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
-				&MockRoutingEngine{},
-			)
+			reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+				Client:        fakeClient,
+				APIReader:     fakeClient,
+				Scheme:        scheme,
+				AuditStore:    nil,
+				Recorder:      record.NewFakeRecorder(20),
+				Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				Timeouts:      prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
+				RoutingEngine: &MockRoutingEngine{},
+			})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "dup-rr-003", Namespace: "default"},
@@ -215,13 +224,16 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 				}).
 				Build()
 
-			reconciler := prodcontroller.NewReconciler(
-				fakeClient, fakeClient, scheme, nil,
-				record.NewFakeRecorder(20),
-				rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
-				&MockRoutingEngine{},
-			)
+			reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+				Client:        fakeClient,
+				APIReader:     fakeClient,
+				Scheme:        scheme,
+				AuditStore:    nil,
+				Recorder:      record.NewFakeRecorder(20),
+				Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				Timeouts:      prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
+				RoutingEngine: &MockRoutingEngine{},
+			})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "dup-rr-004", Namespace: "default"},
@@ -254,13 +266,16 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler := prodcontroller.NewReconciler(
-				fakeClient, fakeClient, scheme, nil,
-				record.NewFakeRecorder(20),
-				m,
-				prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
-				&MockRoutingEngine{},
-			)
+			reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+				Client:        fakeClient,
+				APIReader:     fakeClient,
+				Scheme:        scheme,
+				AuditStore:    nil,
+				Recorder:      record.NewFakeRecorder(20),
+				Metrics:       m,
+				Timeouts:      prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
+				RoutingEngine: &MockRoutingEngine{},
+			})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "dup-rr-005", Namespace: "default"},
@@ -289,13 +304,16 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler := prodcontroller.NewReconciler(
-				fakeClient, fakeClient, scheme, nil,
-				record.NewFakeRecorder(20),
-				m,
-				prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
-				&MockRoutingEngine{},
-			)
+			reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+				Client:        fakeClient,
+				APIReader:     fakeClient,
+				Scheme:        scheme,
+				AuditStore:    nil,
+				Recorder:      record.NewFakeRecorder(20),
+				Metrics:       m,
+				Timeouts:      prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
+				RoutingEngine: &MockRoutingEngine{},
+			})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "dup-rr-006", Namespace: "default"},
@@ -322,13 +340,16 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler := prodcontroller.NewReconciler(
-				fakeClient, fakeClient, scheme, nil,
-				fakeRecorder,
-				rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
-				&MockRoutingEngine{},
-			)
+			reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+				Client:        fakeClient,
+				APIReader:     fakeClient,
+				Scheme:        scheme,
+				AuditStore:    nil,
+				Recorder:      fakeRecorder,
+				Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				Timeouts:      prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
+				RoutingEngine: &MockRoutingEngine{},
+			})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "dup-rr-007", Namespace: "default"},
@@ -362,13 +383,16 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler := prodcontroller.NewReconciler(
-				fakeClient, fakeClient, scheme, nil,
-				fakeRecorder,
-				rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
-				&MockRoutingEngine{},
-			)
+			reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+				Client:        fakeClient,
+				APIReader:     fakeClient,
+				Scheme:        scheme,
+				AuditStore:    nil,
+				Recorder:      fakeRecorder,
+				Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				Timeouts:      prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
+				RoutingEngine: &MockRoutingEngine{},
+			})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "dup-rr-008", Namespace: "default"},
@@ -401,13 +425,16 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler := prodcontroller.NewReconciler(
-				fakeClient, fakeClient, scheme, nil,
-				record.NewFakeRecorder(20),
-				rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
-				&MockRoutingEngine{},
-			)
+			reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+				Client:        fakeClient,
+				APIReader:     fakeClient,
+				Scheme:        scheme,
+				AuditStore:    nil,
+				Recorder:      record.NewFakeRecorder(20),
+				Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				Timeouts:      prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
+				RoutingEngine: &MockRoutingEngine{},
+			})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "dup-rr-009", Namespace: "default"},
@@ -436,13 +463,16 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler := prodcontroller.NewReconciler(
-				fakeClient, fakeClient, scheme, nil,
-				record.NewFakeRecorder(20),
-				m,
-				prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
-				&MockRoutingEngine{},
-			)
+			reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+				Client:        fakeClient,
+				APIReader:     fakeClient,
+				Scheme:        scheme,
+				AuditStore:    nil,
+				Recorder:      record.NewFakeRecorder(20),
+				Metrics:       m,
+				Timeouts:      prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
+				RoutingEngine: &MockRoutingEngine{},
+			})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "dup-rr-010", Namespace: "default"},
@@ -473,13 +503,16 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler := prodcontroller.NewReconciler(
-				fakeClient, fakeClient, scheme, nil,
-				record.NewFakeRecorder(20),
-				rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
-				&MockRoutingEngine{},
-			)
+			reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+				Client:        fakeClient,
+				APIReader:     fakeClient,
+				Scheme:        scheme,
+				AuditStore:    nil,
+				Recorder:      record.NewFakeRecorder(20),
+				Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				Timeouts:      prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
+				RoutingEngine: &MockRoutingEngine{},
+			})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "dup-rr-011", Namespace: "default"},
@@ -503,13 +536,16 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler := prodcontroller.NewReconciler(
-				fakeClient, fakeClient, scheme, nil,
-				record.NewFakeRecorder(20),
-				rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
-				&MockRoutingEngine{},
-			)
+			reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+				Client:        fakeClient,
+				APIReader:     fakeClient,
+				Scheme:        scheme,
+				AuditStore:    nil,
+				Recorder:      record.NewFakeRecorder(20),
+				Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				Timeouts:      prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
+				RoutingEngine: &MockRoutingEngine{},
+			})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "dup-rr-012", Namespace: "default"},
@@ -544,13 +580,16 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler := prodcontroller.NewReconciler(
-				fakeClient, fakeClient, scheme, nil,
-				fakeRecorder,
-				rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
-				&MockRoutingEngine{},
-			)
+			reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+				Client:        fakeClient,
+				APIReader:     fakeClient,
+				Scheme:        scheme,
+				AuditStore:    nil,
+				Recorder:      fakeRecorder,
+				Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				Timeouts:      prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
+				RoutingEngine: &MockRoutingEngine{},
+			})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "dup-rr-f3", Namespace: "default"},
