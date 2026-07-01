@@ -109,6 +109,14 @@ linters:
           - gosec
         text: "G404"
         path: "pkg/shared/backoff/"
+      # govet shadow: not enabled today (see settings.govet above), but pre-declared here
+      # so that if it is ever turned on, the ~114 `if err := ...; err != nil` idiomatic
+      # re-declarations reviewed and accepted in GO-ANTIPATTERN-AUDIT-2026-07-01 §8
+      # (Variable Shadowing) do not immediately break CI. Only the benign `err`/`ok`
+      # re-declaration pattern is excluded; shadowing of other identifiers still fails.
+      - linters:
+          - govet
+        text: 'shadow: declaration of "(err|ok)" shadows declaration'
 
 issues:
   max-issues-per-linter: 0

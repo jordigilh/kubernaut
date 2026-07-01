@@ -131,6 +131,10 @@ func (d DateOnly) Value() (interface{}, error) {
 //
 // Type mapping: legal_hold_placed_at and event_timestamp map to PostgreSQL TIMESTAMP WITH TIME ZONE (UTC);
 // event_date and parent_event_date map to DATE (partition keys); ParentEventDate uses *time.Time in JSON for API ergonomics.
+//
+// Wide DTO by design: reviewed in GO-ANTIPATTERN-AUDIT-2026-07-01 §4a (God Structs).
+// Splitting it would fragment the persistence boundary this struct exists to mirror,
+// for no behavioral gain, so it is intentionally not decomposed.
 type AuditEvent struct {
 	// ========================================
 	// PRIMARY IDENTIFIERS (4 columns)

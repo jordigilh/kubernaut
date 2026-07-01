@@ -22,6 +22,11 @@ import (
 
 // RemediationAudit represents a complete remediation workflow audit
 // BR-STORAGE-001: Audit trail for remediation workflows
+//
+// Wide DTO by design: reviewed in GO-ANTIPATTERN-AUDIT-2026-07-01 §4a (God Structs).
+// It mirrors a DB row schema field-for-field; splitting it would fragment the
+// persistence/serialization boundary for no behavioral gain, so it is
+// intentionally not decomposed.
 type RemediationAudit struct {
 	ID                   int64      `json:"id" db:"id"`
 	Name                 string     `json:"name" db:"name"`

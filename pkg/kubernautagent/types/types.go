@@ -39,6 +39,11 @@ type PhaseToolMap map[Phase][]string
 
 // InvestigationResult holds the final output of an investigation.
 // Fields align with the OpenAPI IncidentResponse schema in api/openapi.json.
+//
+// Wide DTO by design: reviewed in GO-ANTIPATTERN-AUDIT-2026-07-01 §4a (God Structs).
+// It mirrors an external API schema field-for-field; splitting it would fragment
+// the JSON serialization boundary for no behavioral gain, so it is intentionally
+// not decomposed.
 type InvestigationResult struct {
 	// Core RCA output
 	RCASummary        string                 `json:"rca_summary"`
@@ -223,6 +228,11 @@ type RemediationTarget struct {
 
 // SignalContext holds the input signal data for an investigation.
 // Fields align with the OpenAPI IncidentRequest schema in api/openapi.json.
+//
+// Wide DTO by design: reviewed in GO-ANTIPATTERN-AUDIT-2026-07-01 §4a (God Structs).
+// It mirrors an external API schema field-for-field; splitting it would fragment
+// the JSON serialization boundary for no behavioral gain, so it is intentionally
+// not decomposed.
 type SignalContext struct {
 	// Required fields
 	Name      string `json:"name"`
