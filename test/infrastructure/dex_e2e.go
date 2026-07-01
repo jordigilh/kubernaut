@@ -163,11 +163,14 @@ func GetDexClientCredentialsToken(cfg DexFleetTokenConfig) (string, error) {
 // DeployDexInfra deploys DEX and waits for it to be ready. This is the
 // exported entry point for E2E suites that need OIDC/JWT authentication
 // (fleet OAuth2 client_credentials, AF password grant).
-func DeployDexInfra(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+//
+// hostPort must match the Kind extraPortMappings host port for the Dex
+// NodePort (30556) in the caller's Kind config -- see waitForDexReady.
+func DeployDexInfra(ctx context.Context, namespace, kubeconfigPath string, hostPort int, writer io.Writer) error {
 	if err := deployDexInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return err
 	}
-	return waitForDexReady(writer)
+	return waitForDexReady(hostPort, writer)
 }
 
 // deployDexInNamespace deploys DEX as an OIDC provider in the Kind cluster
@@ -340,7 +343,13 @@ spec:
 // waitForDexReady polls the DEX health endpoint via NodePort until it responds
 // or the timeout is reached. Uses a TLS-skipping client because the inter-service
 // CA may not yet be available at this point (health check runs during deployment).
-func waitForDexReady(writer io.Writer) error {
+//
+// hostPort is the Kind extraPortMappings host port that maps to the Dex
+// NodePort (30556) in the running cluster. Kind configs are inconsistent here:
+// kind-kubernautagent-config.yaml maps host 5556, while kind-fullpipeline-config.yaml
+// and kind-fleetmetadatacache-config.yaml map host 30556 directly (matching the
+// NodePort number). Callers must pass the value used in their own Kind config.
+func waitForDexReady(hostPort int, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for DEX OIDC endpoint to be reachable (HTTPS)...")
 
 	client := &http.Client{
@@ -352,9 +361,10 @@ func waitForDexReady(writer io.Writer) error {
 		},
 	}
 
+	healthzURL := fmt.Sprintf("https://localhost:%d/dex/healthz", hostPort)
 	deadline := time.Now().Add(90 * time.Second)
 	for time.Now().Before(deadline) {
-		resp, err := client.Get("https://localhost:5556/dex/healthz")
+		resp, err := client.Get(healthzURL)
 		if err == nil && resp.StatusCode == http.StatusOK {
 			_ = resp.Body.Close()
 			_, _ = fmt.Fprintln(writer, "  ✅ DEX OIDC endpoint reachable (HTTPS)")

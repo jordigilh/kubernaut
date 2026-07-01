@@ -284,7 +284,7 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 	if err := deployDexInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy DEX: %w", err)
 	}
-	if err := waitForDexReady(writer); err != nil {
+	if err := waitForDexReady(5556, writer); err != nil {
 		return fmt.Errorf("DEX not ready: %w", err)
 	}
 	if err := createDexUserRBAC(ctx, namespace, kubeconfigPath, writer); err != nil {

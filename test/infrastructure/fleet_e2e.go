@@ -116,7 +116,89 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 	return builtImages, seededUUIDs, afRemediateNS, nil
 }
 
-// DeployFleetInfra deploys the fleet E2E infrastructure in the Kind cluster:
+// DeployFleetInfra deploys the fleet E2E infrastructure in the Kind cluster,
+// then enables fleet scope checking in Gateway and RemediationOrchestrator.
+//
+// This is a thin wrapper around DeployFleetCoreInfra (Phases 1-4, shared with
+// the dedicated FMC E2E lane) plus Phase 5/5b, which assume Gateway and RO are
+// already deployed in the cluster (true for the "fleet" full-pipeline suite,
+// not true for a lighter FMC-only lane -- see DeployFleetCoreInfra).
+//
+// Total memory: ~388 MB.
+func DeployFleetInfra(ctx context.Context, namespace, kubeconfigPath, fmcImage string, writer io.Writer) error {
+	if err := DeployFleetCoreInfra(ctx, namespace, kubeconfigPath, fmcImage, writer); err != nil {
+		return err
+	}
+
+	// ── Phase 5: Enable fleet scope checking in Gateway ──────────────────
+	_, _ = fmt.Fprintln(writer, "\n  🔧 Phase 5: Patching Gateway config with fleet scope checking...")
+
+	gatewayConfigPatch := fmt.Sprintf(`---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gateway-config
+  namespace: %[1]s
+data:
+  config.yaml: |
+    server:
+      listenAddr: ":8080"
+      maxConcurrentRequests: 100
+      readTimeout: 30s
+      writeTimeout: 30s
+      idleTimeout: 120s
+    datastorage:
+      url: "https://data-storage-service.%[1]s.svc.cluster.local:8080"
+      timeout: 10s
+      buffer:
+        bufferSize: 10000
+        batchSize: 100
+        flushInterval: 1s
+        maxRetries: 3
+    processing:
+      environment:
+        cacheTtl: 5s
+        configmapNamespace: "%[1]s"
+        configmapName: "kubernaut-environment-overrides"
+    fleet:
+      enabled: true
+      backend: fleetmetadatacache
+      mcpGatewayEndpoint: "http://mcp-gateway-istio.gateway-system.svc:8080/mcp"
+      mcpGatewayType: kuadrant
+`, namespace)
+
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, gatewayConfigPatch); err != nil {
+		return fmt.Errorf("gateway-config fleet patch failed: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "    Restarting Gateway to pick up fleet config...")
+	if err := runKubectl(ctx, kubeconfigPath, writer,
+		"rollout", "restart", "deployment/gateway", "-n", namespace); err != nil {
+		return fmt.Errorf("gateway restart failed: %w", err)
+	}
+	if err := waitForDeployment(ctx, "gateway", namespace, kubeconfigPath, 120*time.Second, writer); err != nil {
+		return fmt.Errorf("gateway rollout after fleet config patch failed: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "    ✅ Gateway restarted with fleet scope checking enabled")
+
+	// ── Phase 5b: Enable fleet scope checking in RemediationOrchestrator ─
+	// Without this, RO's fleet.NewScopeChecker factory (cmd/remediationorchestrator/main.go)
+	// falls back to the plain (non-federated) scope.Manager, which unconditionally
+	// rejects any ClusterID-scoped resource with "local Manager cannot resolve
+	// remote cluster; use a fleet adapter" — blocking every fleet RR at the
+	// CheckUnmanagedResource pre-analysis gate (routing/blocking.go).
+	_, _ = fmt.Fprintln(writer, "\n  🔧 Phase 5b: Patching RemediationOrchestrator config with fleet scope checking...")
+	if err := patchRemediationOrchestratorConfigForFleet(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("remediationorchestrator-config fleet patch failed: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "    ✅ RemediationOrchestrator restarted with fleet scope checking enabled")
+
+	_, _ = fmt.Fprintln(writer, "✅ Fleet E2E infrastructure deployed (~388 MB)")
+	return nil
+}
+
+// DeployFleetCoreInfra deploys the fleet-core infrastructure in the Kind
+// cluster, independent of any Kubernaut service:
 //
 // Phase 1: Gateway API CRDs + Istio (control plane only, mesh disabled)
 // Phase 2: Istio Gateway + NodePort + Kuadrant MCP Gateway
@@ -127,9 +209,15 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 // no Helm release). All other components use `kubectl apply` with inline YAML
 // or upstream Kustomize URLs.
 //
+// This function has no dependency on Gateway or RemediationOrchestrator being
+// deployed, unlike DeployFleetInfra's Phase 5/5b -- it is shared between the
+// full "fleet" E2E suite (via DeployFleetInfra) and the dedicated
+// fleetmetadatacache E2E lane (SetupFMCE2EInfrastructure), which deploys only
+// DataStorage + Dex + this core alongside FMC.
+//
 // Total memory: ~388 MB.
-func DeployFleetInfra(ctx context.Context, namespace, kubeconfigPath, fmcImage string, writer io.Writer) error {
-	_, _ = fmt.Fprintln(writer, "🚀 Deploying Fleet E2E Infrastructure...")
+func DeployFleetCoreInfra(ctx context.Context, namespace, kubeconfigPath, fmcImage string, writer io.Writer) error {
+	_, _ = fmt.Fprintln(writer, "🚀 Deploying Fleet Core E2E Infrastructure...")
 
 	// ── Phase 1: CRDs and Istio ─────────────────────────────────────────
 	_, _ = fmt.Fprintln(writer, "\n  📋 Phase 1: Installing CRDs and Istio control plane...")
@@ -797,70 +885,7 @@ spec:
 	}
 	_, _ = fmt.Fprintln(writer, "    ✅ FMC ready")
 
-	// ── Phase 5: Enable fleet scope checking in Gateway ──────────────────
-	_, _ = fmt.Fprintln(writer, "\n  🔧 Phase 5: Patching Gateway config with fleet scope checking...")
-
-	gatewayConfigPatch := fmt.Sprintf(`---
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: gateway-config
-  namespace: %[1]s
-data:
-  config.yaml: |
-    server:
-      listenAddr: ":8080"
-      maxConcurrentRequests: 100
-      readTimeout: 30s
-      writeTimeout: 30s
-      idleTimeout: 120s
-    datastorage:
-      url: "https://data-storage-service.%[1]s.svc.cluster.local:8080"
-      timeout: 10s
-      buffer:
-        bufferSize: 10000
-        batchSize: 100
-        flushInterval: 1s
-        maxRetries: 3
-    processing:
-      environment:
-        cacheTtl: 5s
-        configmapNamespace: "%[1]s"
-        configmapName: "kubernaut-environment-overrides"
-    fleet:
-      enabled: true
-      backend: fleetmetadatacache
-      mcpGatewayEndpoint: "http://mcp-gateway-istio.gateway-system.svc:8080/mcp"
-      mcpGatewayType: kuadrant
-`, namespace)
-
-	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, gatewayConfigPatch); err != nil {
-		return fmt.Errorf("gateway-config fleet patch failed: %w", err)
-	}
-
-	_, _ = fmt.Fprintln(writer, "    Restarting Gateway to pick up fleet config...")
-	if err := runKubectl(ctx, kubeconfigPath, writer,
-		"rollout", "restart", "deployment/gateway", "-n", namespace); err != nil {
-		return fmt.Errorf("gateway restart failed: %w", err)
-	}
-	if err := waitForDeployment(ctx, "gateway", namespace, kubeconfigPath, 120*time.Second, writer); err != nil {
-		return fmt.Errorf("gateway rollout after fleet config patch failed: %w", err)
-	}
-	_, _ = fmt.Fprintln(writer, "    ✅ Gateway restarted with fleet scope checking enabled")
-
-	// ── Phase 5b: Enable fleet scope checking in RemediationOrchestrator ─
-	// Without this, RO's fleet.NewScopeChecker factory (cmd/remediationorchestrator/main.go)
-	// falls back to the plain (non-federated) scope.Manager, which unconditionally
-	// rejects any ClusterID-scoped resource with "local Manager cannot resolve
-	// remote cluster; use a fleet adapter" — blocking every fleet RR at the
-	// CheckUnmanagedResource pre-analysis gate (routing/blocking.go).
-	_, _ = fmt.Fprintln(writer, "\n  🔧 Phase 5b: Patching RemediationOrchestrator config with fleet scope checking...")
-	if err := patchRemediationOrchestratorConfigForFleet(ctx, namespace, kubeconfigPath, writer); err != nil {
-		return fmt.Errorf("remediationorchestrator-config fleet patch failed: %w", err)
-	}
-	_, _ = fmt.Fprintln(writer, "    ✅ RemediationOrchestrator restarted with fleet scope checking enabled")
-
-	_, _ = fmt.Fprintln(writer, "✅ Fleet E2E infrastructure deployed (~388 MB)")
+	_, _ = fmt.Fprintln(writer, "✅ Fleet Core E2E infrastructure deployed (~388 MB)")
 	return nil
 }
 

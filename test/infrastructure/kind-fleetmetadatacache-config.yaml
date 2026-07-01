@@ -1,0 +1,80 @@
+# Kind cluster configuration for Fleet Metadata Cache (FMC) E2E tests
+# Reference: DD-TEST-001 Port Allocation Strategy
+#
+# This lane deploys only what FMC's own journeys need: DataStorage (audit
+# trail dependency), Dex (OAuth2 IdP), and the fleet-core stack (Istio +
+# Kuadrant MCP Gateway + kube-mcp-server + Valkey + FMC) via
+# infrastructure.DeployFleetCoreInfra -- NOT the other 10+ Kubernaut services
+# deployed by the "fleet" (full pipeline) E2E suite.
+#
+# Port Allocation (from DD-TEST-001):
+#   FMC API:              hostPort 8150,  NodePort 30150 (new -- mirrors FMC's
+#                          production port 8150; DD-TEST-001 previously listed
+#                          FMC E2E as "ClusterIP only", which is now stale)
+#   Data Storage API:    hostPort 30081, NodePort 30081
+#   Data Storage Health: hostPort 30281, NodePort 30281
+#   Dex OIDC:             hostPort 30556, NodePort 30556
+#   Kuadrant MCP Gateway: hostPort 31975, NodePort 31975
+#
+# The DS/Dex/Kuadrant ports are reused verbatim from other isolated Kind
+# clusters (30081/30281 already used by DS in gateway/RO/WE/EM/fullpipeline
+# clusters, 30556 already used by Dex in the KA/AF cluster, 31975 already used
+# by Kuadrant in the fullpipeline/fleet cluster). This is safe because each
+# Kind cluster is its own isolated network namespace and CI matrix jobs run on
+# separate runners. Per DD-TEST-001 policy, FMC's own API is exposed via
+# NodePort (not kubectl port-forward) through a dedicated Service created by
+# SetupFMCE2EInfrastructure (fleetmetadatacache_e2e.go), additive to the
+# ClusterIP Service that DeployFleetCoreInfra creates for in-cluster callers
+# (GW/RO in the full "fleet" suite).
+#
+# Dependencies:
+#   - PostgreSQL (in-cluster) - Data Storage persistence
+#   - Redis (in-cluster) - Data Storage DLQ
+#   - Data Storage (port 30081) - Audit events
+#   - Dex (port 30556) - OAuth2 client_credentials IdP for FMC and API server OIDC
+#   - Kuadrant MCP Gateway (port 31975) - MCP entry point, proxies to kube-mcp-server
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+  image: kindest/node:v1.34.0@sha256:7416a61b42b1662ca6ca89f02028ac133a309a2a30ba309614e8ec94d976dc5a  # K8s 1.34.0 with containerd 2.1.3 (avoids v2.2.0 mount-manager regression)
+  extraMounts:
+  - hostPath: ./coverdata
+    containerPath: /coverdata
+    readOnly: false
+  extraPortMappings:
+  # FMC's own API (scope check + cluster listing) -- DD-TEST-001 mandates
+  # NodePort over kubectl port-forward for E2E test stability.
+  - containerPort: 30150  # FMC API NodePort
+    hostPort: 8150        # DD-TEST-001: FMC API (mirrors production port 8150)
+    protocol: TCP
+  # Data Storage dependency (audit trail - AGENTS.md SOC2/FedRAMP mandate)
+  - containerPort: 30081  # Data Storage NodePort in cluster
+    hostPort: 30081       # DD-TEST-001: DataStorage API
+    protocol: TCP
+  - containerPort: 30281  # Data Storage health NodePort (Issue #753)
+    hostPort: 30281       # DD-TEST-001: DataStorage health
+    protocol: TCP
+  # Dex OIDC (client_credentials IdP for FMC + API server OIDC discovery)
+  - containerPort: 30556  # Dex NodePort
+    hostPort: 30556       # DD-TEST-001: Dex OIDC
+    protocol: TCP
+  # Fleet: Kuadrant MCP Gateway (multi-cluster tool routing entry point)
+  - containerPort: 31975  # Kuadrant Istio gateway MCP NodePort
+    hostPort: 31975       # DD-TEST-001: MCP Gateway
+    protocol: TCP
+  # OIDC for fleet: configured post-deploy by patchAPIServerForOIDC() in fleet_e2e.go
+  # (Dex must be running before the API server can perform OIDC discovery)
+  kubeadmConfigPatches:
+  - |
+    kind: ClusterConfiguration
+    apiServer:
+      extraArgs:
+        # Increase API server rate limits for parallel integration testing
+        max-requests-inflight: "800"
+        max-mutating-requests-inflight: "400"
+    controllerManager:
+      extraArgs:
+        # Increase controller manager QPS for CRD operations
+        kube-api-qps: "100"
+        kube-api-burst: "200"

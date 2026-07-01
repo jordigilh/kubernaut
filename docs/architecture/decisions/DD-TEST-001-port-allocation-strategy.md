@@ -2,8 +2,8 @@
 
 **Status**: ✅ Approved
 **Date**: 2025-11-26
-**Last Updated**: 2026-05-18
-**Version**: 3.3
+**Last Updated**: 2026-06-29
+**Version**: 3.5
 **Author**: AI Assistant
 **Reviewers**: TBD
 **Related**: [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc)
@@ -40,7 +40,7 @@ Integration and E2E tests require running multiple services (PostgreSQL, Redis, 
 | **Kubernaut Agent** | 8084 | 18120-18129 | 28120-28129 | 18120-28129 |
 | **Dynamic Toolset** | 8085 | 18130-18139 | 28130-28139 | 18130-28139 |
 | **Mock LLM Service** | N/A | 18140-18149 | ClusterIP only | 18140-18149 |
-| **Fleet Metadata Cache** | 8150 | 18150-18159 | ClusterIP only | 18150-28159 |
+| **Fleet Metadata Cache** | 8150 | 18150-18159 | NodePort 30150 (host 8150) | 18150-28159 |
 | **PostgreSQL** | 5432 | 15433-15442 | 25433-25442 | 15433-25442 |
 | **Redis** | 6379 | 16379-16388 | 26379-26388 | 16379-26388 |
 | **Embedding Service** | 8000 | 18000-18009 | 28000-28009 | 18000-28009 |
@@ -82,6 +82,12 @@ Integration and E2E tests require running multiple services (PostgreSQL, Redis, 
 | &nbsp;&nbsp;→ Prometheus | 9190 | 30190 | — | — | — | — | (EM metric comparison - remote write receiver) |
 | &nbsp;&nbsp;→ AlertManager | 9193 | 30193 | — | — | — | — | (EM alert resolution queries) |
 | &nbsp;&nbsp;→ AuthWebhook | — | 30099 | — | — | — | — | (Webhook admission endpoint - `test/e2e/authwebhook/kind-config.yaml`) |
+| &nbsp;&nbsp;→ Fleet: Kuadrant MCP Gateway | 31975 | 31975 | — | — | — | — | (Multi-cluster tool routing entry point, Issue #54; shared by `kind-fullpipeline-config.yaml` and `kind-fleetmetadatacache-config.yaml`) |
+| **Fleet Metadata Cache (FMC) E2E** | — | — | — | — | — | — | `test/infrastructure/kind-fleetmetadatacache-config.yaml` |
+| &nbsp;&nbsp;→ FMC API | 8150 | 30150 | — | — | — | — | (Scope check + cluster listing REST API, `pkg/fleet/fmc/handler.go`; NodePort Service created by `SetupFMCE2EInfrastructure`, additive to the ClusterIP Service from `DeployFleetCoreInfra`) |
+| &nbsp;&nbsp;→ Data Storage | 30081 | 30081 | 30281 | 30281 | — | — | (Audit trail dependency, AGENTS.md SOC2/FedRAMP mandate) |
+| &nbsp;&nbsp;→ DEX OIDC | 30556 | 30556 | — | — | — | — | (OAuth2 client_credentials IdP for FMC + API server OIDC discovery) |
+| &nbsp;&nbsp;→ Kuadrant MCP Gateway | 31975 | 31975 | — | — | — | — | (MCP entry point, proxies to kube-mcp-server) |
 
 **Note**:
 - Health ports (8184/30284) are only needed for services with separate health probe endpoints. Most services expose health on their API port.
@@ -300,6 +306,69 @@ kube-mcp-server (yaml format):
 - **Valkey 16391**: Next available port in Redis range (16379-16399)
 - **kube-mcp-server 18150-18151**: New FMC range (18150-18159); containers use `--network=host` so they bind directly to these ports (no port mapping)
 - **Why --network=host**: kube-mcp-server containers must reach the envtest API server at `127.0.0.1:PORT`. Bridge-network routing via `host.containers.internal` is unreliable on rootless podman (slirp4netns) in CI
+
+#### **E2E Tests** (`test/e2e/fleetmetadatacache/`)
+
+**Created**: 2026-06-29 (Issue #54 SOC2 gap remediation, pyramid invariant -- FMC's own journeys were previously only exercised indirectly through Gateway/RO fleet tests gated behind `FLEET_E2E=true`, which is never set in CI)
+
+```yaml
+FMC API (in Kind):
+  Host Port: 8150
+  NodePort: 30150
+  Container Port: 8080
+  Connection: http://127.0.0.1:8150
+  Purpose: Real scope-check + cluster-listing REST API (pkg/fleet/fmc/handler.go)
+  Service: fleetmetadatacache-e2e-nodeport (additive to the ClusterIP
+    fleetmetadatacache-service that DeployFleetCoreInfra creates for
+    in-cluster GW/RO callers)
+
+Data Storage (Dependency):
+  Host Port: 30081 / 30281 (health)
+  NodePort: 30081 / 30281
+  Purpose: Audit trail dependency (AGENTS.md SOC2/FedRAMP mandate)
+
+DEX OIDC (Dependency):
+  Host Port: 30556
+  NodePort: 30556
+  Purpose: OAuth2 client_credentials IdP for FMC + API server OIDC discovery
+
+Kuadrant MCP Gateway (Dependency):
+  Host Port: 31975
+  NodePort: 31975
+  Purpose: MCP entry point, proxies to kube-mcp-server (shared allocation with
+    kind-fullpipeline-config.yaml / the "fleet" E2E suite)
+```
+
+**Configuration Files**:
+- `test/infrastructure/kind-fleetmetadatacache-config.yaml` - Kind cluster config
+- `test/infrastructure/fleetmetadatacache_e2e.go` - `SetupFMCE2EInfrastructure` orchestrator
+- `test/infrastructure/fleet_e2e.go` - `DeployFleetCoreInfra` (Phases 1-4 of `DeployFleetInfra`, shared with the "fleet" suite)
+- `test/e2e/fleetmetadatacache/suite_test.go` - Test suite setup
+
+**Infrastructure**: Kind cluster deploying ONLY DataStorage + DEX + fleet-core
+(Istio + Kuadrant MCP Gateway + kube-mcp-server + Valkey + FMC) -- NOT the
+other 10+ Kubernaut services deployed by the "fleet" (full pipeline) E2E
+suite. ~450MB memory footprint vs ~6.1GB for the full "fleet" suite.
+
+**Pattern**: Ginkgo `SynchronizedBeforeSuite` calling `SetupFMCE2EInfrastructure`,
+which composes existing E2E infra helpers (`DeployDataStorageTestServices`,
+`DeployDexInfra`, `GenerateInterServiceTLS`, `GenerateSigningCertSecret`,
+`patchAPIServerForOIDC`, `DeployFleetCoreInfra`, `WaitForFleetReady`) --
+no duplicated deployment logic with the "fleet" suite.
+
+**Port Allocation Rationale**:
+- **FMC API 30150 (host 8150)**: New allocation mirroring FMC's production port
+  (8150); DD-TEST-001 v3.4 and earlier listed FMC E2E as "ClusterIP only" --
+  this was stale (no FMC E2E lane existed yet to require host access).
+  Per DD-TEST-001 policy (NodePort mandatory over `kubectl port-forward`),
+  a NodePort Service is created additively by `SetupFMCE2EInfrastructure`.
+- **Data Storage 30081/30281, DEX 30556**: Reused verbatim from other isolated
+  Kind clusters (gateway/RO/WE/EM/fullpipeline for DS; KA/AF for DEX). Safe
+  because each Kind cluster is its own isolated Docker network namespace and
+  CI matrix jobs run on separate runners.
+- **Kuadrant MCP Gateway 31975**: Reused from `kind-fullpipeline-config.yaml`
+  (documented retroactively below -- this port was already in use by the
+  "fleet" E2E suite before this DD entry was added).
 
 ---
 
@@ -957,6 +1026,7 @@ var _ = SynchronizedBeforeSuite(
 | **RemediationOrchestrator** | N/A | N/A | N/A | Data Storage: 8089 |
 | **WorkflowExecution** | N/A | N/A | N/A | Data Storage: 8092, AWX: 30095 |
 | **Auth Webhook** | 25442 | 26386 | N/A | Data Storage: 28099 |
+| **Fleet Metadata Cache** | N/A | N/A | 30150 (host 8150) | Data Storage: 30081/30281, DEX: 30556, Kuadrant MCP: 31975 |
 
 ✅ **No Conflicts** - All services can run E2E tests in parallel
 
@@ -1009,6 +1079,7 @@ ginkgo -p -procs=4 test/e2e/datastorage/
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 3.5 | 2026-06-29 | AI Assistant | **FMC E2E LANE (Issue #54, pyramid invariant)**: Added a dedicated Fleet Metadata Cache (FMC) E2E test lane (`test/e2e/fleetmetadatacache/`) to close a pyramid-invariant gap -- FMC's own journeys (real DEX OAuth2 -> Kuadrant MCP Gateway -> kube-mcp-server discovery, scope-check API) were previously only exercised indirectly through Gateway/RO fleet tests gated behind `FLEET_E2E=true`, which is never set in CI; New Kind config `kind-fleetmetadatacache-config.yaml` deploys only DataStorage + DEX + fleet-core (not the other 10+ Kubernaut services); Allocated FMC API NodePort 30150 (host 8150), correcting the stale "ClusterIP only" entry in the Stateless Services table (previously accurate only in the absence of an FMC E2E lane); Retroactively documented the Kuadrant MCP Gateway NodePort 31975 (already in use by `kind-fullpipeline-config.yaml`/the "fleet" suite but not previously listed in the authoritative table); Reused DS (30081/30281) and DEX (30556) NodePorts verbatim from other isolated Kind clusters; Extracted `DeployFleetCoreInfra` (Phases 1-4) from `DeployFleetInfra` in `test/infrastructure/fleet_e2e.go` to share deployment logic between the "fleet" and "fleetmetadatacache" E2E suites without duplication; Updated E2E Port Collision Matrix |
 | 3.4 | 2026-06-29 | AI Assistant | **FMC INTEGRATION (BR-FLEET-002, ADR-068)**: Added Fleet Metadata Cache (FMC) integration test port allocations; kube-mcp-server containers use `--network=host` with dedicated ports 18150 (table) and 18151 (yaml) to eliminate bridge-network routing issues on rootless podman in CI; Valkey on 16391; New range 18150-18159 for FMC; Updated Port Collision Matrix; Migrated from prior 18090/18091 which collided with Data Storage range |
 | 3.3 | 2026-05-18 | AI Assistant | **API Frontend E2E (Issue #1184)**: Added AF port allocations for monorepo E2E; HTTPS NodePort 30443 (host 18443), Health NodePort 30081 (host 18081), Prometheus NodePort 30190 (host 9190); AF shares Kind cluster with KA (`kind-kubernautagent-config.yaml`); No conflicts within cluster — 30081 only used by DS in separate clusters (gateway, RO, WE, fullpipeline); Added AF to NodePort Summary and authoritative table |
 | 3.2 | 2026-05-01 | AI Assistant | **KA MCP IT (Issue #703, CP-5)**: Allocated freed Immudb range 13330-13333 for KA MCP integration tests DataStorage stack (PostgreSQL: 13330, Redis: 13331, DataStorage: 13332, Metrics: 13333); KA Custom Tools already uses 13322-13325, KA Enrichment uses 13326-13329; MCP IT also uses Mock LLM on existing KA port 18140 (mode=interactive); No port conflicts — verified against Port Collision Matrix |

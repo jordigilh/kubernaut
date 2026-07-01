@@ -815,7 +815,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [signalprocessing, aianalysis, authwebhook, workflowexecution, remediationorchestrator, notification, gateway, datastorage, effectivenessmonitor, kubernautagent, apifrontend, fullpipeline, fleet]
+        service: [signalprocessing, aianalysis, authwebhook, workflowexecution, remediationorchestrator, notification, gateway, datastorage, effectivenessmonitor, kubernautagent, apifrontend, fullpipeline, fleet, fleetmetadatacache]
         include:
           - service: signalprocessing
             service_name: "Signal Processing"
@@ -856,6 +856,9 @@ jobs:
           - service: fleet
             service_name: "Fleet Multi-Cluster"
             timeout: 35
+          - service: fleetmetadatacache
+            service_name: "Fleet Metadata Cache"
+            timeout: 15
     steps:
       - uses: actions/checkout@v7
         with:
@@ -898,8 +901,8 @@ jobs:
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind
           kind version
-      - name: Install Helm (fleet E2E deploys Istio via helm template)
-        if: matrix.service == 'fleet'
+      - name: Install Helm (fleet/fleetmetadatacache E2E deploy Istio via helm template)
+        if: matrix.service == 'fleet' || matrix.service == 'fleetmetadatacache'
         run: |
           curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
           helm version

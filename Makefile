@@ -801,6 +801,22 @@ test-e2e-fleet: ginkgo ensure-coverage-dirs ## Run fleet E2E tests (multi-cluste
 	@FLEET_E2E=true $(GINKGO) -v --race --timeout=50m --procs=$(TEST_PROCS) ./test/e2e/fleet/...
 	@echo "✅ Fleet E2E tests completed!"
 
+# Fleet Metadata Cache (FMC) E2E: FMC's own journeys in isolation (Issue #54)
+# Deploys ONLY DataStorage + DEX + fleet-core (Istio/Kuadrant/kube-mcp-server/
+# Valkey/FMC) -- NOT the other 10+ Kubernaut services the "fleet" suite deploys.
+# Closes a pyramid-invariant gap: FMC's real DEX OAuth2 + Kuadrant discovery +
+# kube-mcp-server sync pipeline was previously only exercised indirectly via
+# Gateway/RO fleet tests gated behind FLEET_E2E=true (never set in CI).
+# Requires ~450MB RAM (substantially lighter than the "fleet" suite's ~6.1GB).
+.PHONY: test-e2e-fleetmetadatacache
+test-e2e-fleetmetadatacache: ginkgo ensure-coverage-dirs ## Run Fleet Metadata Cache E2E tests (Kind cluster, ~10 min)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 Fleet Metadata Cache E2E Tests (Issue #54)"
+	@echo "   DataStorage + DEX + Fleet Core (Istio/Kuadrant/kube-mcp-server/Valkey/FMC)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@$(GINKGO) -v --race --timeout=25m --procs=$(TEST_PROCS) ./test/e2e/fleetmetadatacache/...
+	@echo "✅ Fleet Metadata Cache E2E tests completed!"
+
 ##@ Legacy Aliases (Backward Compatibility)
 
 .PHONY: test-gateway
