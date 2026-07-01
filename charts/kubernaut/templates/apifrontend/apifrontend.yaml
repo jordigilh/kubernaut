@@ -157,6 +157,15 @@ data:
           {{- end }}
       {{- end }}
       {{- end }}
+      {{- if .Values.apifrontend.config.auth.replayCache.enabled }}
+      # GAP-08 (Issue #1505): distributed jti replay cache shared across all
+      # APIFrontend replicas via the cluster's Valkey instance.
+      replayCache:
+        backend: redis
+        redisAddr: {{ include "kubernaut.valkey.addr" . }}
+        redisDB: {{ .Values.apifrontend.config.auth.replayCache.redisDB | default 1 }}
+        credentialsPath: "/etc/apifrontend/valkey/valkey-secrets.yaml"
+      {{- end }}
     rbac:
       sarCacheTTL: {{ .Values.apifrontend.config.rbac.sarCacheTTL | default "30s" }}
     logging:
@@ -234,6 +243,11 @@ spec:
             - name: tls-certs
               mountPath: /etc/apifrontend/tls
               readOnly: true
+            {{- if .Values.apifrontend.config.auth.replayCache.enabled }}
+            - name: valkey-secrets
+              mountPath: /etc/apifrontend/valkey
+              readOnly: true
+            {{- end }}
           readinessProbe:
             httpGet:
               path: /readyz
@@ -259,6 +273,14 @@ spec:
           secret:
             secretName: apifrontend-tls
             optional: true
+        {{- if .Values.apifrontend.config.auth.replayCache.enabled }}
+        - name: valkey-secrets
+          secret:
+            secretName: {{ include "kubernaut.valkey.secretName" . }}
+            items:
+              - key: valkey-secrets.yaml
+                path: valkey-secrets.yaml
+        {{- end }}
 ---
 apiVersion: v1
 kind: Service
