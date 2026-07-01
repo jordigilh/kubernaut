@@ -178,6 +178,16 @@ var _ = SynchronizedAfterSuite(
 
 		if anyFailure && !setupFailed {
 			infrastructure.MustGatherPodLogs(clusterName, kubeconfigPath, namespace, "fleetmetadatacache", GinkgoWriter)
+
+			// Kuadrant's controller+broker (mcp-system) and the Istio Gateway/Envoy
+			// proxy (gateway-system, istio-system) are deployed by DeployFleetCoreInfra
+			// but live outside kubernaut-system, so the call above never captures them.
+			// A prior FMC E2E failure (Issue #54 RCA: syncKind calls rejected upstream
+			// with an empty-Content-Type Envoy local reply) went undiagnosed at the
+			// Envoy/AuthPolicy layer because these namespaces were never gathered.
+			for _, ns := range []string{"mcp-system", "gateway-system", "istio-system"} {
+				infrastructure.MustGatherPodLogs(clusterName, kubeconfigPath, ns, "fleetmetadatacache", GinkgoWriter)
+			}
 		}
 
 		if os.Getenv("E2E_COVERAGE") == "true" && !setupFailed {

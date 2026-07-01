@@ -27,6 +27,12 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 )
 
 // KubeMCPServerImage is the Go-native K8s MCP server image.
@@ -972,7 +978,7 @@ func WaitForFleetReady(writer io.Writer) error {
 		if err == nil && resp.StatusCode == http.StatusOK {
 			_ = resp.Body.Close()
 			_, _ = fmt.Fprintln(writer, "  ✅ MCP Gateway reachable (initialize → 200 OK)")
-			return nil
+			return waitForAuthenticatedMCPGateway(writer)
 		}
 		if resp != nil {
 			_ = resp.Body.Close()
@@ -980,6 +986,94 @@ func WaitForFleetReady(writer io.Writer) error {
 		time.Sleep(3 * time.Second)
 	}
 	return fmt.Errorf("mcp gateway not responsive at http://localhost:31975/mcp after 120 seconds")
+}
+
+// waitForAuthenticatedMCPGateway performs a real authenticated tools/call against
+// the Kuadrant MCP Gateway to verify Kuadrant's AuthPolicy/Envoy config has fully
+// converged -- not just that the gateway pod is Ready and answers a bare,
+// unauthenticated `initialize` (see the check above).
+//
+// Issue #54 FMC E2E RCA: fleetmetadatacache's syncer failed every syncKind call
+// with `unsupported content type ""` -- the modelcontextprotocol/go-sdk client's
+// error for a response with no Content-Type header, the signature of an Envoy
+// local-reply auth denial rather than a real backend response -- even though
+// WaitForFleetReady's plain `initialize` probe had already succeeded. kube-mcp-server's
+// own logs showed zero resources_list invocations reaching it, confirming the calls
+// were rejected upstream at Kuadrant/Envoy. The dedicated fleetmetadatacache E2E lane
+// reaches FMC's first sync tick far sooner than the "fleet" suite (which spends ~10
+// extra minutes deploying 10+ other services first), exposing a readiness race that
+// "fleet" was accidentally masking via its longer boot time.
+//
+// This probe mirrors the real call FMC's syncer makes (pkg/fleet/fmc/syncer.go):
+// a DEX OAuth2 client_credentials token, then a tools/call against the
+// "loopback-cluster" MCPServerRegistration created earlier in Phase 3.
+func waitForAuthenticatedMCPGateway(writer io.Writer) error {
+	_, _ = fmt.Fprintln(writer, "  ⏳ Verifying authenticated tools/call succeeds (Kuadrant AuthPolicy convergence)...")
+
+	tokenCfg := DefaultDexFleetReadConfig()
+	tokenCfg.TokenEndpoint = "https://localhost:30556/dex/token"
+
+	deadline := time.Now().Add(90 * time.Second)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		if err := probeAuthenticatedResourcesList(tokenCfg); err != nil {
+			lastErr = err
+			time.Sleep(3 * time.Second)
+			continue
+		}
+		_, _ = fmt.Fprintln(writer, "  ✅ Authenticated tools/call succeeded (Kuadrant AuthPolicy converged)")
+		return nil
+	}
+	return fmt.Errorf("authenticated MCP tools/call did not succeed within 90s (Kuadrant AuthPolicy convergence failure): %w", lastErr)
+}
+
+// probeAuthenticatedResourcesList performs a single authenticated resources_list
+// call against the loopback-cluster MCPServerRegistration, returning nil only on
+// a genuinely successful (non-error) MCP response.
+func probeAuthenticatedResourcesList(tokenCfg DexFleetTokenConfig) error {
+	token, err := GetDexClientCredentialsToken(tokenCfg)
+	if err != nil {
+		return fmt.Errorf("acquire DEX token: %w", err)
+	}
+
+	authClient := &http.Client{
+		Timeout:   10 * time.Second,
+		Transport: &bearerTokenTransport{token: token, base: http.DefaultTransport},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	mcpConn, err := mcpclient.New(ctx, "http://localhost:31975/mcp",
+		mcpclient.WithToolPrefix("loopback_cluster_"),
+		mcpclient.WithHTTPClient(authClient),
+	)
+	if err != nil {
+		return fmt.Errorf("connect to MCP Gateway: %w", err)
+	}
+	defer func() { _ = mcpConn.Close() }()
+
+	list := &unstructured.UnstructuredList{}
+	list.SetGroupVersionKind(schema.GroupVersionKind{Version: "v1", Kind: "ServiceList"})
+	if err := mcpConn.List(ctx, list, client.MatchingLabels{"kubernaut.ai/managed": "true"}); err != nil {
+		return fmt.Errorf("authenticated resources_list call: %w", err)
+	}
+	return nil
+}
+
+// bearerTokenTransport injects a static Authorization: Bearer header into every
+// outbound request. Used for the short-lived readiness probe above, where a
+// single fetched token is sufficient (unlike production's WithReloadableOAuth2Transport,
+// which refreshes on expiry for a long-running process).
+type bearerTokenTransport struct {
+	token string
+	base  http.RoundTripper
+}
+
+func (t *bearerTokenTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	cloned := req.Clone(req.Context())
+	cloned.Header.Set("Authorization", "Bearer "+t.token)
+	return t.base.RoundTrip(cloned)
 }
 
 // patchAPIServerForOIDC adds OIDC flags to the API server static pod manifest
