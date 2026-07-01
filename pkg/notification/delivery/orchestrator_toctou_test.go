@@ -93,9 +93,13 @@ var _ = Describe("Orchestrator TOCTOU Race Prevention (DD-NOT-008)", func() {
 						ctx, notification,
 						[]notificationv1alpha1.Channel{notificationv1alpha1.ChannelFile},
 						policy,
-						noopSucceeded, noopPermanent, getAttemptCount,
-						noopAuditSent, noopAuditFail,
-						nil,
+						delivery.DeliveryCallbacks{
+							ChannelAlreadySucceeded:  noopSucceeded,
+							HasChannelPermanentError: noopPermanent,
+							GetChannelAttemptCount:   getAttemptCount,
+							AuditMessageSent:         noopAuditSent,
+							AuditMessageFailed:       noopAuditFail,
+						},
 					)
 				}()
 			}
@@ -149,9 +153,13 @@ var _ = Describe("Orchestrator TOCTOU Race Prevention (DD-NOT-008)", func() {
 				ctx, notification,
 				[]notificationv1alpha1.Channel{notificationv1alpha1.ChannelFile},
 				policy,
-				channelSucceeded, noopPermanent, getAttemptCount,
-				noopAuditSent, noopAuditFail,
-				nil,
+				delivery.DeliveryCallbacks{
+					ChannelAlreadySucceeded:  channelSucceeded,
+					HasChannelPermanentError: noopPermanent,
+					GetChannelAttemptCount:   getAttemptCount,
+					AuditMessageSent:         noopAuditSent,
+					AuditMessageFailed:       noopAuditFail,
+				},
 			)
 			Expect(err).ToNot(HaveOccurred())
 
