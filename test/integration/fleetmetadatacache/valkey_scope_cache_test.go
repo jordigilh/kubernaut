@@ -112,7 +112,16 @@ var _ = Describe("Fleet Scope Cache Valkey Integration (BR-INTEGRATION-065)", Or
 	})
 
 	It("IT-FLEET-VALKEY-004: FederatedScopeChecker reads through to Valkey for remote cluster", func() {
-		key, err := scopecache.BuildKey("prod-east", "", "", "StatefulSet", "data", "redis-master")
+		// Issue #54 SOC2 gap RCA: pkg/fleet/fmc/syncer.go always writes cache
+		// keys using the resource's real GVK read from the K8s API ("apps/v1"
+		// for StatefulSet), never an empty group/version. This fixture must
+		// match that production write path -- scope.ResourceIdentity below
+		// intentionally leaves Group/Version empty (as real callers such as
+		// Gateway's validateScope do) and relies on
+		// scopecache.Client.IsManagedResource inferring "apps/v1" from Kind
+		// (see pkg/shared/scope.InferGVK), exactly as scope.Manager already
+		// does for local checks.
+		key, err := scopecache.BuildKey("prod-east", "apps", "v1", "StatefulSet", "data", "redis-master")
 		Expect(err).ToNot(HaveOccurred())
 		Expect(writer.Set(ctx, key, 30*time.Second)).To(Succeed())
 
