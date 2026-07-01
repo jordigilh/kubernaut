@@ -46,7 +46,7 @@ import (
 	eav1alpha1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	"github.com/jordigilh/kubernaut/internal/controller/apifrontend"
+	controller "github.com/jordigilh/kubernaut/internal/controller/apifrontend"
 	agentpkg "github.com/jordigilh/kubernaut/pkg/apifrontend/agent"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
@@ -291,104 +291,35 @@ func run() int {
 		Metrics: metricsReg.RateLimitDenied,
 	})
 
-	var statusHandler http.Handler
-	if deps.TypedClient() != nil {
-		statusHandler = handler.NewStatusHandler(deps.TypedClient(), cfg.Session.Namespace, logger)
-	}
-
 	draining := &atomic.Bool{}
-	routerCfg := handler.RouterConfig{
-		MetricsRegistry:    metricsReg,
-		Logger:             logger,
-		A2AHandler:         a2aHandler,
-		MCPHandler:         mcpHandler,
-		AgentCardHandler:   agentCardHandler,
-		AuthMiddleware:     authMiddleware,
-		PreAuthMiddleware:  preAuthMW,
-		PostAuthMiddleware: postAuthMW,
-		ReadyChecker:       handler.AllReady(func() bool { return !draining.Load() }, depsReady, authReady, sessInfra.Healthy.Load),
-		SSETracker:         buildSSETracker(cfg, metricsReg),
-		StatusHandler:      statusHandler,
-		Draining:           draining,
-	}
-	router, err := handler.NewRouter(routerCfg)
+	rs, stopTLSWatchers, err := buildRouterAndServers(ctx, routerBuildParams{
+		HDeps:            hDeps,
+		MCPHandler:       mcpHandler,
+		DepsReady:        depsReady,
+		AgentCardHandler: agentCardHandler,
+		A2AHandler:       a2aHandler,
+		AuthMiddleware:   authMiddleware,
+		AuthReady:        authReady,
+		PreAuthMW:        preAuthMW,
+		PostAuthMW:       postAuthMW,
+		Draining:         draining,
+	})
 	if err != nil {
-		logger.Error(err, "failed to create router")
+		// buildRouterAndServers already logged the specific failure.
 		return 1
 	}
+	defer stopTLSWatchers()
+	routerCfg := rs.RouterCfg
+	httpServer := rs.HTTPServer
+	healthServer := rs.HealthServer
+	metricsServer := rs.MetricsServer
 
-	addr := fmt.Sprintf(":%d", cfg.Server.Port)
-
-	httpServer := &http.Server{
-		Addr:              addr,
-		Handler:           router,
-		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       30 * time.Second,
-		IdleTimeout:       120 * time.Second,
-	}
-
-	healthAddr := fmt.Sprintf(":%d", cfg.Server.HealthPort)
-	metricsAddr := fmt.Sprintf(":%d", cfg.Server.MetricsPort)
-
-	healthMux := buildHealthMux(handler.AllReady(depsReady, authReady, sessInfra.Healthy.Load), draining)
-	healthServer := &http.Server{
-		Addr:              healthAddr,
-		Handler:           healthMux,
-		ReadHeaderTimeout: 5 * time.Second,
-	}
-
-	metricsMux := http.NewServeMux()
-	metricsMux.Handle("/metrics", metricsReg.Handler())
-	metricsServer := &http.Server{
-		Addr:              metricsAddr,
-		Handler:           metricsMux,
-		ReadHeaderTimeout: 5 * time.Second,
-	}
-
-	tlsEnabled, certReloader, err := tlswiring.ConfigureServer(httpServer, cfg.Server.TLS.CertDir)
-	if err != nil {
-		logger.Error(err, "failed to configure TLS")
-		return 1
-	}
-	if tlsEnabled {
-		logger.Info("TLS enabled with hot-reloadable certificates", "certDir", cfg.Server.TLS.CertDir)
-	} else {
-		// F-006: Warn loudly when TLS is disabled; production deployments must use
-		// either application TLS or document mesh/ingress TLS as compensating control.
-		if warn := tlswiring.CheckPartialTLSMaterial(cfg.Server.TLS.CertDir); warn != "" {
-			logger.Info("WARNING: "+warn, "certDir", cfg.Server.TLS.CertDir)
-		}
-		if cfg.Server.TLS.Required {
-			logger.Error(fmt.Errorf("TLS required but no certificates found"), "server.tls.required is true but certDir is empty or missing certs")
-			return 1
-		}
-		logger.Info("WARNING: TLS disabled, serving plain HTTP — not suitable for FedRAMP production")
-	}
-
-	certWatcher, err := tlswiring.StartCertFileWatcher(ctx, cfg.Server.TLS.CertDir, certReloader, logger)
-	if err != nil {
-		logger.Error(err, "failed to start certificate file watcher")
-		return 1
-	}
-	if certWatcher != nil {
-		defer certWatcher.Stop()
-	}
-
-	caWatcher, err := tlswiring.StartCAFileWatcher(ctx, logger)
-	if err != nil {
-		logger.Error(err, "failed to start CA file watcher")
-		return 1
-	}
-	if caWatcher != nil {
-		defer caWatcher.Stop()
-	}
-
-	go startServerTLS(httpServer, tlsEnabled, "API", logger)
+	go startServerTLS(httpServer, rs.TLSEnabled, "API", logger)
 	go startServer(healthServer, "health", logger)
 	go startServer(metricsServer, "metrics", logger)
 
 	logger.Info("kubernaut-apifrontend started",
-		"addr", addr, "tls", tlsEnabled, "mcp_enabled", cfg.MCP.Enabled, "tools", 20)
+		"addr", rs.Addr, "tls", rs.TLSEnabled, "mcp_enabled", cfg.MCP.Enabled, "tools", 20)
 
 	<-ctx.Done()
 	draining.Store(true)
@@ -426,6 +357,159 @@ func run() int {
 
 	logger.Info("shutdown complete")
 	return 0
+}
+
+// routerBuildParams groups the dependencies needed to build the router and
+// the three HTTP servers (API/health/metrics). Extracted per AGENTS.md's
+// 8+-param Options-pattern rule (GO-ANTIPATTERN-AUDIT-2026-07-01 Phase 4g).
+type routerBuildParams struct {
+	HDeps            *handlerDeps
+	MCPHandler       http.Handler
+	DepsReady        func() bool
+	AgentCardHandler http.Handler
+	A2AHandler       http.Handler
+	AuthMiddleware   func(http.Handler) http.Handler
+	AuthReady        func() bool
+	PreAuthMW        func(http.Handler) http.Handler
+	PostAuthMW       func(http.Handler) http.Handler
+	Draining         *atomic.Bool
+}
+
+// routerAndServers groups the router config and the three HTTP servers
+// (API/health/metrics) constructed by buildRouterAndServers. run() keeps
+// RouterCfg.SSETracker to drain in-flight SSE connections at shutdown.
+type routerAndServers struct {
+	RouterCfg     handler.RouterConfig
+	HTTPServer    *http.Server
+	HealthServer  *http.Server
+	MetricsServer *http.Server
+	TLSEnabled    bool
+	Addr          string
+}
+
+// buildRouterAndServers constructs the chi router, wires TLS (with
+// hot-reloadable certs), and builds the API/health/metrics *http.Server
+// instances. On any wiring failure it logs the specific cause itself
+// (identical messages to the original inline run() code) and returns a
+// non-nil error; callers should simply `return 1` without re-logging.
+//
+// Returns a cleanup function that stops the cert and CA file watchers, if
+// started. The caller must defer it in run()'s own scope so the watchers
+// live for the server's lifetime, not just this function's call
+// (GO-ANTIPATTERN-AUDIT-2026-07-01 Phase 4g — same pattern as
+// watchLoopState.stopEAWatcher in Phase 4e / wireHotReload in KA's Phase 4f).
+func buildRouterAndServers(ctx context.Context, p routerBuildParams) (*routerAndServers, func(), error) {
+	cfg := p.HDeps.Cfg
+	logger := p.HDeps.Logger
+	metricsReg := p.HDeps.MetricsReg
+	sessInfra := p.HDeps.SessInfra
+
+	var statusHandler http.Handler
+	if p.HDeps.Backends.TypedClient() != nil {
+		statusHandler = handler.NewStatusHandler(p.HDeps.Backends.TypedClient(), cfg.Session.Namespace, logger)
+	}
+
+	routerCfg := handler.RouterConfig{
+		MetricsRegistry:    metricsReg,
+		Logger:             logger,
+		A2AHandler:         p.A2AHandler,
+		MCPHandler:         p.MCPHandler,
+		AgentCardHandler:   p.AgentCardHandler,
+		AuthMiddleware:     p.AuthMiddleware,
+		PreAuthMiddleware:  p.PreAuthMW,
+		PostAuthMiddleware: p.PostAuthMW,
+		ReadyChecker:       handler.AllReady(func() bool { return !p.Draining.Load() }, p.DepsReady, p.AuthReady, sessInfra.Healthy.Load),
+		SSETracker:         buildSSETracker(cfg, metricsReg),
+		StatusHandler:      statusHandler,
+		Draining:           p.Draining,
+	}
+	router, err := handler.NewRouter(routerCfg)
+	if err != nil {
+		logger.Error(err, "failed to create router")
+		return nil, nil, err
+	}
+
+	addr := fmt.Sprintf(":%d", cfg.Server.Port)
+
+	httpServer := &http.Server{
+		Addr:              addr,
+		Handler:           router,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+
+	healthAddr := fmt.Sprintf(":%d", cfg.Server.HealthPort)
+	metricsAddr := fmt.Sprintf(":%d", cfg.Server.MetricsPort)
+
+	healthMux := buildHealthMux(handler.AllReady(p.DepsReady, p.AuthReady, sessInfra.Healthy.Load), p.Draining)
+	healthServer := &http.Server{
+		Addr:              healthAddr,
+		Handler:           healthMux,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+
+	metricsMux := http.NewServeMux()
+	metricsMux.Handle("/metrics", metricsReg.Handler())
+	metricsServer := &http.Server{
+		Addr:              metricsAddr,
+		Handler:           metricsMux,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+
+	tlsEnabled, certReloader, err := tlswiring.ConfigureServer(httpServer, cfg.Server.TLS.CertDir)
+	if err != nil {
+		logger.Error(err, "failed to configure TLS")
+		return nil, nil, err
+	}
+	if tlsEnabled {
+		logger.Info("TLS enabled with hot-reloadable certificates", "certDir", cfg.Server.TLS.CertDir)
+	} else {
+		// F-006: Warn loudly when TLS is disabled; production deployments must use
+		// either application TLS or document mesh/ingress TLS as compensating control.
+		if warn := tlswiring.CheckPartialTLSMaterial(cfg.Server.TLS.CertDir); warn != "" {
+			logger.Info("WARNING: "+warn, "certDir", cfg.Server.TLS.CertDir)
+		}
+		if cfg.Server.TLS.Required {
+			reqErr := fmt.Errorf("TLS required but no certificates found")
+			logger.Error(reqErr, "server.tls.required is true but certDir is empty or missing certs")
+			return nil, nil, reqErr
+		}
+		logger.Info("WARNING: TLS disabled, serving plain HTTP — not suitable for FedRAMP production")
+	}
+
+	var stoppers []func()
+
+	certWatcher, err := tlswiring.StartCertFileWatcher(ctx, cfg.Server.TLS.CertDir, certReloader, logger)
+	if err != nil {
+		logger.Error(err, "failed to start certificate file watcher")
+		return nil, nil, err
+	}
+	if certWatcher != nil {
+		stoppers = append(stoppers, certWatcher.Stop)
+	}
+
+	caWatcher, err := tlswiring.StartCAFileWatcher(ctx, logger)
+	if err != nil {
+		logger.Error(err, "failed to start CA file watcher")
+		return nil, nil, err
+	}
+	if caWatcher != nil {
+		stoppers = append(stoppers, caWatcher.Stop)
+	}
+
+	return &routerAndServers{
+			RouterCfg:     routerCfg,
+			HTTPServer:    httpServer,
+			HealthServer:  healthServer,
+			MetricsServer: metricsServer,
+			TLSEnabled:    tlsEnabled,
+			Addr:          addr,
+		}, func() {
+			for _, stop := range stoppers {
+				stop()
+			}
+		}, nil
 }
 
 func newZapLogger(level zapcore.Level) *zap.Logger {
