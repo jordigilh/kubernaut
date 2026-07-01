@@ -2,10 +2,14 @@
 
 **Status**: ✅ **APPROVED** (Production Standard)
 **Date**: November 8, 2025
-**Last Reviewed**: June 29, 2026
-**Version**: 2.2
+**Last Reviewed**: July 1, 2026
+**Version**: 2.3
 **Confidence**: 95%
-**Authority Level**: SYSTEM-WIDE - Defines audit requirements for all 13 services
+**Authority Level**: SYSTEM-WIDE - Defines audit requirements for all 14 services
+
+**Recent Changes** (v2.3 - July 1, 2026):
+- **Fleet Metadata Cache (FMC) Declaration**: FMC (Issue #54, ADR-068) was introduced without an explicit audit-scope declaration, leaving it absent from the service inventory below even though the codebase confirms it emits zero audit events (`grep -r "audit\|AuditEvent" pkg/fleet/fmc/ cmd/fleetmetadatacache/` returns no matches). Added as service #13 under "NO Audit Traces Needed": read-only scope-check/cluster-listing cache with no CRD writes, no external notifications, no LLM calls -- same category as Context API / Dynamic Toolset
+- **Authority**: AGENTS.md ("New services must declare audit requirements before implementation"), Issue #54
 
 **Recent Changes** (v2.2 - June 29, 2026):
 - **Fleet Cluster-Scoped Audit Requirements**: Added new section documenting that `cluster_name` MUST be populated on every audit event originating from or targeting a remote cluster
@@ -761,6 +765,33 @@ context_api:
 
 ---
 
+#### 13. Fleet Metadata Cache (FMC) Service ❌
+
+**Status**: ⚠️ **NO** audit traces needed
+
+**Rationale**:
+- ❌ **Read-Only**: Polls remote clusters via MCP Gateway for `kubernaut.ai/managed=true` resources and caches metadata in Valkey; never mutates cluster state
+- ❌ **No CRD Writes**: Does not create, update, or delete any Kubernetes resource
+- ❌ **Not in the Remediation CRD Chain**: FMC is a scope-lookup dependency consulted by Gateway/RemediationOrchestrator (via `FederatedScopeChecker`), not a participant in the signal -> analysis -> workflow -> execution -> verification -> notification lifecycle that BR-AUDIT-005's CC8.1 reconstruction targets
+- ❌ **No External Interactions**: Internal service; its own network egress is to the Kuadrant MCP Gateway (SC-7 chokepoint), which is not a compliance-relevant external system on FMC's behalf
+- ✅ **Alternative**: Application logs + Prometheus metrics (`fmc_sync_total`, `fmc_sync_errors_total`, `fmc_keys_written_total`) sufficient for debugging sync health
+
+**Why No Audit Traces**:
+- FMC is a **cache/lookup service** (like a CDN or read replica) -- its own sync cycles and scope-check responses are operational, not business-decision events
+- Industry standard: cache population and read-only scope lookups are not audited; the *consumer* of the scope decision (Gateway, RO) is responsible for auditing what it did with that decision
+- Same category as Context API (#10) and Dynamic Toolset (#12): configuration/cache provider consulted by other services, not itself a decision-maker in a compliance-relevant workflow
+
+**Alternative Observability**:
+- ✅ Application logs (structured logging of sync cycles, cache misses)
+- ✅ Prometheus metrics (`pkg/fleet/fmc/syncer.go`: sync duration, errors, keys written per cluster)
+- ✅ `/readyz` health probe (Valkey connectivity)
+
+**Industry Precedent**: AWS ElastiCache read-through cache population (not audited), Kubernetes informer cache resyncs (not audited)
+
+**Authority**: Issue #54, ADR-068 (Fleet Federation Architecture)
+
+---
+
 ## 📊 **Summary Table**
 
 | Service | Audit Traces? | Priority | Rationale |
@@ -778,8 +809,9 @@ context_api:
 | **Context API Service** | ❌ **NO** | N/A | Read-only, no state changes |
 | **HolmesGPT API Service** | ✅ **MUST** | P0 | LLM interactions and investigation outcomes (DD-AUDIT-005, BR-AUDIT-005). Emits `aiagent.*` events: `aiagent.llm.request`, `aiagent.llm.response`, `aiagent.llm.tool_call`, `aiagent.workflow.validation_attempt`, `aiagent.response.complete`, `aiagent.response.failed`, `aiagent.enrichment.completed`, `aiagent.enrichment.failed` |
 | **Dynamic Toolset Service** | ❌ **NO** | N/A | Configuration, read-only |
+| **Fleet Metadata Cache Service** | ❌ **NO** | N/A | Read-only scope cache, not a chain participant (Issue #54, ADR-068) |
 
-**Total**: **11 out of 13 services** generate audit traces (85%)
+**Total**: **11 out of 14 services** generate audit traces (79%)
 
 ---
 

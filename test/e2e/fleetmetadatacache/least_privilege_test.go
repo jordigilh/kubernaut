@@ -27,6 +27,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // canI runs `kubectl auth can-i <verb> <resource>` impersonating the given
@@ -94,6 +95,51 @@ var _ = Describe("E2E-FMC-054-011: FMC enforces least-privilege scope boundaries
 			g.Expect(managed).To(BeFalse(),
 				"scope check against an unregistered cluster must fail closed")
 		}, timeout, interval).Should(Succeed())
+	})
+
+	// This proves a boundary transition no lower tier can prove: IT-FLEET-VALKEY-003
+	// only proves Valkey's own TTL eviction mechanics against a manually-seeded key
+	// (see valkey_scope_cache_test.go) -- it never proves that FMC's real sync
+	// pipeline actually STOPS refreshing a key once the label disappears. Without
+	// this, a stale "managed=true" cache entry (never refreshed, but also never
+	// actively invalidated) would be a genuine SC-7 boundary leak: a resource an
+	// operator explicitly un-scoped from Kubernaut would keep granting Gateway/RO
+	// access until an operator noticed and manually flushed Valkey.
+	It("stops reporting managed=true once the kubernaut.ai/managed label is removed (SC-7, real resync)", func() {
+		svc := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "fmc-e2e-delabeled-svc",
+				Namespace: testNS.Name,
+				Labels:    map[string]string{"kubernaut.ai/managed": "true"},
+			},
+			Spec: corev1.ServiceSpec{
+				Ports: []corev1.ServicePort{{Port: 80}},
+			},
+		}
+		Expect(k8sClient.Create(ctx, svc)).To(Succeed())
+
+		By("Confirming FMC's real sync pipeline first marks it managed")
+		Eventually(func(g Gomega) {
+			managed := scopeCheck(g, "loopback-cluster", "", "v1", "Service", testNS.Name, "fmc-e2e-delabeled-svc")
+			g.Expect(managed).To(BeTrue(), "resource must be marked managed before the label is removed")
+		}, fmcSyncTimeout, interval).Should(Succeed())
+
+		By("Removing the kubernaut.ai/managed label")
+		Eventually(func(g Gomega) error {
+			latest := &corev1.Service{}
+			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(svc), latest); err != nil {
+				return err
+			}
+			delete(latest.Labels, "kubernaut.ai/managed")
+			return k8sClient.Update(ctx, latest)
+		}, timeout, interval).Should(Succeed())
+
+		By("Confirming FMC's cache entry is not refreshed and eventually expires (SC-7 boundary re-closes)")
+		Eventually(func(g Gomega) {
+			managed := scopeCheck(g, "loopback-cluster", "", "v1", "Service", testNS.Name, "fmc-e2e-delabeled-svc")
+			g.Expect(managed).To(BeFalse(),
+				"a de-labeled resource must stop being reported as managed once its cache key's TTL lapses")
+		}, fmcSyncTimeout, interval).Should(Succeed())
 	})
 
 	It("restricts FMC's ServiceAccount to read-only MCP Gateway resources (AC-6 least privilege)", func() {

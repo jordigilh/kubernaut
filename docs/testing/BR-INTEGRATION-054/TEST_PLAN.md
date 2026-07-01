@@ -82,6 +82,39 @@ Tests in this plan provide behavioral assurance for the following NIST 800-53 co
 
 ---
 
+### Fleet Metadata Cache (FMC) Dedicated E2E Lane
+
+FMC (`test/e2e/fleetmetadatacache/`) is a separate, lighter-weight E2E lane (Istio +
+Kuadrant MCP Gateway + kube-mcp-server + Valkey + FMC + DEX, no Gateway/RO/other
+Kubernaut services -- see the package doc comment in `suite_test.go`) that proves FMC's
+own journeys directly, closing a pyramid invariant gap: before this lane existed, FMC
+was only exercised transitively through `FLEET_E2E`-gated tests that were never enabled
+in CI (see `docs/architecture/decisions/DD-TEST-001-port-allocation-strategy.md` for the
+lane's port allocations).
+
+FMC is **not** in DD-AUDIT-003's audit-emitting service inventory (declared as
+"NO audit traces needed", v2.3) -- it is a read-only scope-cache dependency consulted
+by Gateway/RO, not a participant in the audited remediation lifecycle. Its E2E control
+scope is therefore narrower than the full fleet-architecture set above.
+
+| ID | Tier | Business-Level Behavior Description | Control | BR | Test File |
+|----|------|-------------------------------------|---------|-----|-----------|
+| E2E-FMC-054-010 | E2E | [SC-7, AC-3] FMC discovers `loopback-cluster`/`prod-east`/`prod-west` via real MCPServerRegistration discovery and marks a `kubernaut.ai/managed=true` Service as managed after a real DEX+Kuadrant+kube-mcp-server sync cycle | SC-7, AC-3 | BR-INTEGRATION-065 | `test/e2e/fleetmetadatacache/sync_journey_test.go` |
+| E2E-FMC-054-011 | E2E | [SC-7, AC-6] FMC's scope-check API fails closed for unlabeled resources and unregistered clusters, stops reporting a resource as managed once its label is removed and the cache entry lapses (real resync, no lower tier proves this transition), and FMC's own ServiceAccount is restricted to read-only MCP Gateway RBAC | SC-7, AC-6 | BR-INTEGRATION-065 | `test/e2e/fleetmetadatacache/least_privilege_test.go` |
+| E2E-FMC-054-012 | E2E | [SI-4, CP-10] FMC's `/readyz` genuinely degrades to 503 when the real Valkey dependency fails, then auto-recovers and resumes writing fresh cache entries once Valkey self-heals, without requiring FMC's own restart | SI-4, CP-10 | BR-INTEGRATION-065 | `test/e2e/fleetmetadatacache/resilience_test.go` |
+| E2E-FMC-054-013 | E2E | [SI-4, CM-6] FMC's cluster registry reacts live to a real MCPServerRegistration CRD being created and deleted, without disturbing the fixed cluster set | SI-4, CM-6 | BR-INTEGRATION-065 | `test/e2e/fleetmetadatacache/dynamic_registration_test.go` |
+
+**Note on cross-cluster isolation**: the 3 fixed clusters (`loopback-cluster`,
+`prod-east`, `prod-west`) are a loopback pattern -- all 3 `MCPServerRegistration`s
+target the *same* `HTTPRoute`/backend (single physical Kind cluster), differentiated
+only by MCP tool-name prefix. This validates the multi-cluster *code path* but cannot
+prove genuine cross-cluster data isolation (a resource "leaking" as managed across two
+truly separate API servers). A dedicated second Kind cluster with real cross-cluster
+networking would be required to close that specific gap; deferred as a follow-up
+(tracked alongside the planned Dex->Keycloak IdP migration for this lane).
+
+---
+
 ## Coverage Targets
 
 | Tier | Target | Projected |
@@ -97,13 +130,15 @@ Tests in this plan provide behavioral assurance for the following NIST 800-53 co
 
 | Control | Covered By |
 |---------|-----------|
-| AC-3 (Access enforcement) | IT-FLEET-DEXCC-001, IT-FLEET-AUTH-REJECT-001, UT-FLEET-RES-006, UT-WE-054-003 |
-| AC-6 (Least privilege) | IT-FLEET-006 |
+| AC-3 (Access enforcement) | IT-FLEET-DEXCC-001, IT-FLEET-AUTH-REJECT-001, UT-FLEET-RES-006, UT-WE-054-003, E2E-FMC-054-010 |
+| AC-6 (Least privilege) | IT-FLEET-006, E2E-FMC-054-011 |
 | AU-3 (Audit content) | E2E-SP-054-REMOTE |
+| CM-6 (Configuration change) | E2E-FMC-054-013 |
+| CP-10 (Auto-reconstitution) | E2E-FMC-054-012 |
 | IA-5 (Authenticator management) | UT-FLEET-SCOPE-001, UT-SP-054-CFG-001, UT-WE-054-CFG-001, UT-KA-054-CFG-001, UT-FLEET-AUTH-006 |
-| SC-7 (Boundary protection) | IT-SP-054-OAuth2, IT-FLEET-EAIGW-001, E2E-FLEET-SP-001, E2E-SP-054-REMOTE, UT-FLEET-TOOL-001 |
+| SC-7 (Boundary protection) | IT-SP-054-OAuth2, IT-FLEET-EAIGW-001, E2E-FLEET-SP-001, E2E-SP-054-REMOTE, UT-FLEET-TOOL-001, E2E-FMC-054-010, E2E-FMC-054-011 |
 | SC-8 (Transmission confidentiality) | UT-FLEET-SCOPE-002 |
-| SI-4 (Monitoring) | E2E-SP-054-REMOTE |
+| SI-4 (Monitoring) | E2E-SP-054-REMOTE, E2E-FMC-054-012, E2E-FMC-054-013 |
 | SI-10 (Input validation) | UT-FLEET-PARSE-001, UT-FLEET-PARSE-002 |
 
 ---

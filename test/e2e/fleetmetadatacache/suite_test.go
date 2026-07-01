@@ -28,12 +28,24 @@ limitations under the License.
 //   - Real resource sync (kubernaut.ai/managed=true label) via kube-mcp-server
 //   - FMC's /api/v1/clusters and /api/v1/scope/check REST endpoints
 //   - AC-6 least privilege: FMC's ServiceAccount RBAC surface
+//   - SC-7 boundary re-closure: a de-labeled resource stops being reported
+//     managed once its cache entry lapses (real resync, not a seeded key)
+//   - SI-4/CP-10 resilience: /readyz genuinely degrades and auto-recovers
+//     across a real Valkey pod restart
+//   - SI-4/CM-6 dynamic reconfiguration: a real MCPServerRegistration
+//     create/delete is reflected live in FMC's cluster registry
 //
 // Before this suite existed, FMC's own journeys were only exercised
 // indirectly through Gateway/RO fleet tests gated behind FLEET_E2E=true,
 // which was never set in CI -- a pyramid invariant violation (E2E claims
 // coverage that unit/integration tests cannot prove: real OAuth2 + real
 // Kuadrant discovery + real kube-mcp-server calls).
+//
+// Test scenarios: E2E-FMC-054-010 (sync_journey_test.go), E2E-FMC-054-011
+// (least_privilege_test.go), E2E-FMC-054-012 (resilience_test.go),
+// E2E-FMC-054-013 (dynamic_registration_test.go). See
+// docs/testing/BR-INTEGRATION-054/TEST_PLAN.md for the full scenario
+// inventory and FedRAMP control coverage matrix.
 //
 // Authority: Issue #54, ADR-068, BR-INTEGRATION-065.
 //
