@@ -88,39 +88,56 @@ type SessionMutexProvider interface {
 	GetSessionMutex(rrID string) *sync.Mutex
 }
 
-// AutonomousSessionManager provides lookup, suspension, and user-driving
-// transition of autonomous investigation sessions. Used by handleTakeover
-// to transition the running autonomous session to user-driven mode before
-// acquiring the interactive Lease.
+// AutonomousSessionQuerier provides read-only lookups of autonomous
+// investigation session state. Split out from AutonomousSessionManager for
+// ISP (GO-ANTIPATTERN-AUDIT-2026-07-01 Phase 5) — none of these methods
+// mutate session state.
+type AutonomousSessionQuerier interface {
+	FindByRemediationID(rrID string) (string, bool)
+	// BR-INTERACTIVE-010: Find pending interactive session by remediation ID.
+	FindPendingByRemediationID(rrID string) (string, bool)
+	// BR-INTERACTIVE-010: Get RCA summary from latest completed session for context reconstruction.
+	GetLatestRCASummaryByRemediationID(rrID string) (string, bool)
+	// Get full RCA result from latest completed session for workflow discovery.
+	GetLatestRCAResultByRemediationID(rrID string) (*katypes.InvestigationResult, bool)
+	// #1384: Get the LazySink for a session so workflow_discovery can stream events.
+	GetSessionLazySink(id string) (*session.LazySink, bool)
+}
+
+// AutonomousSessionLifecycle provides suspension, user-driving transition,
+// and start/subscribe control of autonomous investigation sessions. Used by
+// handleTakeover to transition the running autonomous session to
+// user-driven mode before acquiring the interactive Lease. Split out from
+// AutonomousSessionManager for ISP (GO-ANTIPATTERN-AUDIT-2026-07-01 Phase 5).
 //
 // v1.5: TransitionToUserDriving replaces SuspendInvestigation in the takeover
 // path (BR-INTERACTIVE-004, #774). It cancels the autonomous goroutine, sets
 // StatusUserDriving, and writes identity metadata so the poll response carries
 // acting_user / acting_user_groups to AA for Rego policy evaluation.
-type AutonomousSessionManager interface {
-	FindByRemediationID(rrID string) (string, bool)
+type AutonomousSessionLifecycle interface {
 	CancelInvestigation(id string) error
 	SuspendInvestigation(id string) error
 	TransitionToUserDriving(id, username string, groups []string) error
 	ForceTransitionToUserDriving(rrID, username string, groups []string) error
 	// #1390: Upgrade a running autonomous session to interactive in-place.
 	UpgradeToInteractive(id, username string, groups []string) error
-
-	// BR-INTERACTIVE-010: Find pending interactive session by remediation ID.
-	FindPendingByRemediationID(rrID string) (string, bool)
 	// BR-INTERACTIVE-010: Launch a deferred investigation for a pending session.
 	LaunchDeferredInvestigation(id string) error
-	// BR-INTERACTIVE-010: Get RCA summary from latest completed session for context reconstruction.
-	GetLatestRCASummaryByRemediationID(rrID string) (string, bool)
-	// Get full RCA result from latest completed session for workflow discovery.
-	GetLatestRCAResultByRemediationID(rrID string) (*katypes.InvestigationResult, bool)
-
 	// BR-MCP-002: Start an autonomous investigation and return the session ID.
 	StartInvestigation(ctx context.Context, fn session.InvestigateFunc, metadata map[string]string) (string, error)
 	// BR-MCP-003: Subscribe to the event channel for a running investigation, activating the LazySink.
 	Subscribe(ctx context.Context, id string) (<-chan session.InvestigationEvent, error)
-	// #1384: Get the LazySink for a session so workflow_discovery can stream events.
-	GetSessionLazySink(id string) (*session.LazySink, bool)
+}
+
+// AutonomousSessionManager composes the query and lifecycle role interfaces
+// for InvestigateTool's single autoMgr dependency (*session.Manager in
+// production). Kept as a named union — rather than inlining the two
+// interfaces at the call site — so existing implementers/mocks (which
+// already implement every method) need no changes (GO-ANTIPATTERN-AUDIT-2026-07-01
+// Phase 5; see docs/architecture/audits for rationale).
+type AutonomousSessionManager interface {
+	AutonomousSessionQuerier
+	AutonomousSessionLifecycle
 }
 
 // RRExistenceChecker validates that a RemediationRequest exists before
