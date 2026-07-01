@@ -17,6 +17,7 @@ limitations under the License.
 package fleet
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -26,6 +27,12 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -42,11 +49,37 @@ var _ = Describe("E2E-FLEET-001 [AC-4]: Signal ingestion with cluster_id creates
 		// pkg/gateway/types/fingerprint.go CalculateClusterAwareFingerprint). Ginkgo
 		// runs these independent Describe blocks across parallel processes with no
 		// ordering guarantee, so the two specs raced for the same dedup slot and
-		// non-deterministically returned 500/200 instead of 201. The resource does not
-		// need to exist as a real K8s object: scope validation falls through to the
-		// already-managed namespace label on NotFound (pkg/shared/scope/manager.go).
+		// non-deterministically returned 500/200 instead of 201.
+		//
+		// The renamed target must exist as a real K8s object: Gateway's owner
+		// resolution (pkg/gateway/types/fingerprint.go ResolveFingerprintWithCluster,
+		// invoked via prometheus_adapter.go resolverForCluster) does a live lookup of
+		// the target resource -- falling back to the local K8s API when the cluster's
+		// MCP tools aren't registered (as is the case for the synthetic "prod-east"
+		// cluster ID) -- and drops the signal with a 400/500 when the resource is not
+		// found. It does NOT fall through gracefully like the separate scope/managed
+		// check (pkg/shared/scope/manager.go) does.
+		const targetName = "memory-eater-signalingest"
+		dep := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{Name: targetName, Namespace: namespace},
+			Spec: appsv1.DeploymentSpec{
+				Replicas: ptr.To[int32](0),
+				Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": targetName}},
+				Template: corev1.PodTemplateSpec{
+					ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": targetName}},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{{Name: "app", Image: "busybox:1.36"}},
+					},
+				},
+			},
+		}
+		if createErr := k8sClient.Create(ctx, dep); createErr != nil && !apierrors.IsAlreadyExists(createErr) {
+			Expect(createErr).NotTo(HaveOccurred(), "Failed to create %s fixture", targetName)
+		}
+		DeferCleanup(func() { _ = k8sClient.Delete(context.Background(), dep) })
+
 		payload := buildPrometheusAlertWithCluster("FleetSignalIngestion", namespace, "critical",
-			"Deployment", "memory-eater-signalingest", "prod-east")
+			"Deployment", targetName, "prod-east")
 
 		gatewayURL := "http://localhost:30080"
 		resp, err := postWithFleetAuth(
