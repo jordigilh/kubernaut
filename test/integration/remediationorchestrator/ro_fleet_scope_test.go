@@ -103,21 +103,25 @@ var _ = Describe("BR-FLEET-054: RO Fleet Scope Routing (Integration)", Ordered, 
 		valkeyAddr := fmt.Sprintf("127.0.0.1:%d", roRedisPort)
 
 		By("Seeding shared Redis with managed resources for remote clusters")
+		// Cache keys use the real GVK ("apps/v1" for Deployment/StatefulSet) matching
+		// what pkg/fleet/fmc/syncer.go writes from the K8s API, and what
+		// scopecache.Client.IsManagedResource now infers via scope.InferGVK when
+		// the caller's ResourceIdentity leaves Group/Version empty (Issue #54 RCA).
 		writer := fmc.NewValkeyWriter(valkeyAddr)
 		for _, cluster := range []string{"prod-east", "staging-west", "dr-site-east", "any-cluster"} {
-			key, err := scopecache.BuildKey(cluster, "", "", "Deployment", "production", "api-server")
+			key, err := scopecache.BuildKey(cluster, "apps", "v1", "Deployment", "production", "api-server")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(writer.Set(ctx, key, 5*time.Minute)).To(Succeed())
 
-			key2, err := scopecache.BuildKey(cluster, "", "", "StatefulSet", "databases", "postgres")
+			key2, err := scopecache.BuildKey(cluster, "apps", "v1", "StatefulSet", "databases", "postgres")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(writer.Set(ctx, key2, 5*time.Minute)).To(Succeed())
 
-			key3, err := scopecache.BuildKey(cluster, "", "", "Deployment", "ecommerce", "cart-svc")
+			key3, err := scopecache.BuildKey(cluster, "apps", "v1", "Deployment", "ecommerce", "cart-svc")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(writer.Set(ctx, key3, 5*time.Minute)).To(Succeed())
 
-			key4, err := scopecache.BuildKey(cluster, "", "", "Deployment", "ns", "app")
+			key4, err := scopecache.BuildKey(cluster, "apps", "v1", "Deployment", "ns", "app")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(writer.Set(ctx, key4, 5*time.Minute)).To(Succeed())
 		}

@@ -113,12 +113,15 @@ var _ = Describe("GW Fleet Signal Ingestion (BR-INTEGRATION-065)", Ordered, Labe
 		By("Seeding shared Redis with managed resources for remote clusters")
 		writer := fmc.NewValkeyWriter(valkeyAddr)
 		for _, cluster := range []string{"prod-east", "prod-west"} {
-			// GW passes ResourceIdentity with empty Group/Version (only Kind is set),
-			// so Valkey keys must match that format.
-			key, kerr := scopecache.BuildKey(cluster, "", "", "Deployment", testNamespace, "nginx")
+			// GW passes ResourceIdentity with empty Group/Version (only Kind is set);
+			// scopecache.Client.IsManagedResource infers Group/Version from Kind via
+			// scope.InferGVK before building the lookup key (Issue #54 SOC2 gap RCA),
+			// exactly like pkg/fleet/fmc/syncer.go does when writing from the real
+			// K8s API. Deployment resolves to group "apps", version "v1".
+			key, kerr := scopecache.BuildKey(cluster, "apps", "v1", "Deployment", testNamespace, "nginx")
 			Expect(kerr).ToNot(HaveOccurred())
 			Expect(writer.Set(ctx, key, 5*time.Minute)).To(Succeed())
-			keyDefault, kerr := scopecache.BuildKey(cluster, "", "", "Deployment", "default", "nginx")
+			keyDefault, kerr := scopecache.BuildKey(cluster, "apps", "v1", "Deployment", "default", "nginx")
 			Expect(kerr).ToNot(HaveOccurred())
 			Expect(writer.Set(ctx, keyDefault, 5*time.Minute)).To(Succeed())
 		}
