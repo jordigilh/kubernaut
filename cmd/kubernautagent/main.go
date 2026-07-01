@@ -872,7 +872,7 @@ func initDSClients(cfg *kaconfig.Config, infra *k8sInfra, dsTokenSource *auth.To
 
 	const defaultDSClientTimeout = 30 * time.Second
 
-	var opts []ogenclient.ClientOption
+	opts := make([]ogenclient.ClientOption, 0, 1)
 	opts = append(opts, ogenclient.WithClient(&http.Client{
 		Transport: auth.NewAuthTransport(dsTokenSource, dsBase),
 		Timeout:   defaultDSClientTimeout,
@@ -1209,7 +1209,7 @@ func registerFleetTools(ctx context.Context, cfg *kaconfig.Config, reg *registry
 	reg.Register(listClustersTool)
 	reg.Register(listToolsTool)
 
-	var toolNames []string
+	toolNames := make([]string, 0, 2)
 	toolNames = append(toolNames, listClustersTool.Name(), listToolsTool.Name())
 
 	fleetLog.Info("registered fleet discovery tools",

@@ -84,7 +84,7 @@ func (inv *Investigator) sameKindValidationGate(
 		},
 	}
 
-	retryMessages := make([]llm.Message, len(history))
+	retryMessages := make([]llm.Message, len(history), len(history)+1)
 	copy(retryMessages, history)
 	retryMessages = append(retryMessages,
 		llm.Message{Role: "user", Content: correctionMsg},
@@ -234,7 +234,7 @@ func (inv *Investigator) apiVersionValidationGate(
 		},
 	}
 
-	retryMessages := make([]llm.Message, len(history))
+	retryMessages := make([]llm.Message, len(history), len(history)+1)
 	copy(retryMessages, history)
 	retryMessages = append(retryMessages,
 		llm.Message{Role: "user", Content: correctionMsg},

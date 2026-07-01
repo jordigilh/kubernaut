@@ -232,10 +232,10 @@ func (c *Client) buildParams(req llm.ChatRequest) anthropic.MessageNewParams {
 				}
 				params.Messages = append(params.Messages,
 					anthropic.NewAssistantMessage(parts...))
-		} else if m.Content != "" {
-			params.Messages = append(params.Messages,
-				anthropic.NewAssistantMessage(anthropic.NewTextBlock(m.Content)))
-		}
+			} else if m.Content != "" {
+				params.Messages = append(params.Messages,
+					anthropic.NewAssistantMessage(anthropic.NewTextBlock(m.Content)))
+			}
 		case "tool":
 			pendingToolResults = append(pendingToolResults,
 				anthropic.NewToolResultBlock(m.ToolCallID, m.Content, false))
@@ -244,7 +244,7 @@ func (c *Client) buildParams(req llm.ChatRequest) anthropic.MessageNewParams {
 	flushToolResults()
 
 	if len(req.Tools) > 0 {
-		var tools []anthropic.ToolUnionParam
+		tools := make([]anthropic.ToolUnionParam, 0, len(req.Tools))
 		for _, td := range req.Tools {
 			schema := parseInputSchema(td.Parameters, c.logger)
 			tools = append(tools, anthropic.ToolUnionParam{
