@@ -469,6 +469,27 @@ func NewServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger, metricsI
 		return nil, fmt.Errorf("failed to create fingerprint field index: %w", err)
 	}
 
+	// Issue #54 SOC2 gap fix: eagerly start informers for every scope/owner-resolution
+	// kind (Deployment, Namespace, Pod, etc. — see adapters.OwnerChainCacheObjects) so
+	// the WaitForCacheSync call below also gates readiness on them.
+	//
+	// Without this, these informers are created LAZILY on the first scope-check or
+	// owner-resolution request after Gateway (re)starts. pkg/shared/scope/manager.go's
+	// Get() call blocks until that informer's cache is synced, bounded by a defensive
+	// scopeLookupTimeout (5s) to avoid hanging forever when RBAC is missing. Under CI/
+	// production load the FIRST-ever List+Watch establishment for a kind can exceed 5s,
+	// so the defensive timeout fires, checkResourceLabel/checkNamespaceLabel silently
+	// fall through as "not found", and a correctly-labeled resource gets misclassified
+	// as unmanaged (BR-SCOPE-001) until the informer catches up. Eagerly starting these
+	// informers here — and covering them with the existing 30s WaitForCacheSync —
+	// ensures the readiness probe does not report ready until scope checks are reliable.
+	for obj := range byObject {
+		if _, err := k8sCache.GetInformer(ctx, obj); err != nil {
+			cancel()
+			return nil, fmt.Errorf("failed to start informer for %T: %w", obj, err)
+		}
+	}
+
 	// Start cache in background
 	go func() {
 		if err := k8sCache.Start(ctx); err != nil {

@@ -117,7 +117,14 @@ var _ = Describe("E2E-FLEET-SI10-001 [SI-10]: Fleet input validation rejects mal
 		// target as a real (zero-replica) Deployment so resolution succeeds.
 		const targetName = "validation-test-app"
 		dep := &appsv1.Deployment{
-			ObjectMeta: metav1.ObjectMeta{Name: targetName, Namespace: namespace},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      targetName,
+				Namespace: namespace,
+				// BR-SCOPE-001/ADR-053: label the resource directly (see the detailed
+				// note in 01_signal_ingestion_test.go for why the namespace-level
+				// fallback alone was not sufficient).
+				Labels: map[string]string{"kubernaut.ai/managed": "true"},
+			},
 			Spec: appsv1.DeploymentSpec{
 				Replicas: ptr.To[int32](0),
 				Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": targetName}},

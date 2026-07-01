@@ -61,7 +61,17 @@ var _ = Describe("E2E-FLEET-001 [AC-4]: Signal ingestion with cluster_id creates
 		// check (pkg/shared/scope/manager.go) does.
 		const targetName = "memory-eater-signalingest"
 		dep := &appsv1.Deployment{
-			ObjectMeta: metav1.ObjectMeta{Name: targetName, Namespace: namespace},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      targetName,
+				Namespace: namespace,
+				// BR-SCOPE-001/ADR-053: the resource-level label is required. The
+				// namespace is also labeled kubernaut.ai/managed=true (SynchronizedBeforeSuite),
+				// but relying on that fallback alone was observed to still return
+				// "resource not managed by Kubernaut" for unlabeled fixtures, so label
+				// the resource directly like the shared memory-eater fixture does
+				// (test/infrastructure/fullpipeline_e2e.go DeployMemoryEaterWithLimits).
+				Labels: map[string]string{"kubernaut.ai/managed": "true"},
+			},
 			Spec: appsv1.DeploymentSpec{
 				Replicas: ptr.To[int32](0),
 				Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": targetName}},

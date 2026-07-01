@@ -62,7 +62,14 @@ var _ = Describe("E2E-FLEET-009 [AC-3, AC-4, SI-4]: Full fleet journey from aler
 		// in 01_signal_ingestion_test.go for the full explanation).
 		const targetName = "memory-eater-journey"
 		dep := &appsv1.Deployment{
-			ObjectMeta: metav1.ObjectMeta{Name: targetName, Namespace: namespace},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      targetName,
+				Namespace: namespace,
+				// BR-SCOPE-001/ADR-053: label the resource directly (see the detailed
+				// note in 01_signal_ingestion_test.go for why the namespace-level
+				// fallback alone was not sufficient).
+				Labels: map[string]string{"kubernaut.ai/managed": "true"},
+			},
 			Spec: appsv1.DeploymentSpec{
 				Replicas: ptr.To[int32](0),
 				Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": targetName}},
