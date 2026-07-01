@@ -524,7 +524,11 @@ func main() {
 
 		if cfg.Interactive.Enabled {
 			var mcpHandler http.Handler
-			mcpHandler, sessionDrainer = buildMCPHandler(ctx, cfg, k8sInfra, ds, inv, enricher, mgr, authMw, agentMetrics, instrumentedAudit, logger)
+			mcpHandler, sessionDrainer = buildMCPHandler(mcpHandlerParams{
+				ctx: ctx, cfg: cfg, infra: k8sInfra, ds: ds, inv: inv, enricher: enricher,
+				autoMgr: mgr, authMw: authMw, agentMetrics: agentMetrics,
+				auditStore: instrumentedAudit, logger: logger,
+			})
 			if mcpHandler != nil {
 				// SEC-02: Per-user rate limiting for MCP interactive endpoint.
 				userRL := kaserver.NewUserRateLimiter(
@@ -1398,19 +1402,27 @@ func newAuthMiddleware(infra *k8sInfra, interactiveCfg kaconfig.InteractiveConfi
 // buildMCPHandler constructs the fully-wired MCP interactive handler with all
 // tools registered. Returns nil if prerequisites are missing (K8s infra or DS).
 // PR6a: Production wiring for MCP interactive mode (BR-INTERACTIVE-001..008).
-func buildMCPHandler(
-	ctx context.Context,
-	cfg *kaconfig.Config,
-	infra *k8sInfra,
-	ds *dsClients,
-	inv *investigator.Investigator,
-	enricher *enrichment.Enricher,
-	autoMgr *session.Manager,
-	authMw *auth.Middleware,
-	agentMetrics *kametrics.Metrics,
-	auditStore audit.AuditStore,
-	logger logr.Logger,
-) (http.Handler, *mcpkg.SessionDrainer) {
+// mcpHandlerParams groups the dependencies needed to build the MCP
+// interactive-mode HTTP handler. Extracted per AGENTS.md's 8+-param
+// Options-pattern rule.
+type mcpHandlerParams struct {
+	ctx          context.Context
+	cfg          *kaconfig.Config
+	infra        *k8sInfra
+	ds           *dsClients
+	inv          *investigator.Investigator
+	enricher     *enrichment.Enricher
+	autoMgr      *session.Manager
+	authMw       *auth.Middleware
+	agentMetrics *kametrics.Metrics
+	auditStore   audit.AuditStore
+	logger       logr.Logger
+}
+
+func buildMCPHandler(p mcpHandlerParams) (http.Handler, *mcpkg.SessionDrainer) {
+	ctx, cfg, infra, ds, inv, enricher, autoMgr, authMw, agentMetrics, auditStore, logger :=
+		p.ctx, p.cfg, p.infra, p.ds, p.inv, p.enricher, p.autoMgr, p.authMw, p.agentMetrics, p.auditStore, p.logger
+
 	if infra == nil || infra.kubeConfig == nil {
 		logger.Error(nil, "MCP interactive mode: K8s infrastructure unavailable")
 		return nil, nil
