@@ -18,6 +18,7 @@ package fleetmetadatacache
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -45,7 +46,10 @@ func newDynamicClusterRegistration(name string) *unstructured.Unstructured {
 	obj.SetName(name)
 	obj.SetNamespace(namespace)
 	obj.SetLabels(map[string]string{"kubernaut.ai/managed": "true"})
-	_ = unstructured.SetNestedField(obj.Object, fmt.Sprintf("%s_", name), "spec", "prefix")
+	// spec.prefix is CRD-validated against ^[a-z0-9][a-z0-9_]*$ (no hyphens),
+	// unlike metadata.name which allows the RFC 1123 hyphenated form.
+	prefix := strings.ReplaceAll(name, "-", "_") + "_"
+	_ = unstructured.SetNestedField(obj.Object, prefix, "spec", "prefix")
 	_ = unstructured.SetNestedMap(obj.Object, map[string]interface{}{
 		"group":     "gateway.networking.k8s.io",
 		"kind":      "HTTPRoute",

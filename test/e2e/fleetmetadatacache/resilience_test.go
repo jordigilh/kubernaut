@@ -49,15 +49,24 @@ func readyzStatus(g Gomega) int {
 //     backoff loop against a fake ReaderFactoryFunc closure that returns errors --
 //     never a real Valkey process dying and a real Kubernetes Deployment healing it.
 //
-// This test kills the real Valkey pod, confirms FMC's /readyz genuinely flips to 503
-// (SI-4: proactive failure detection, not a silent false-healthy), waits for the
-// Deployment to self-heal, and confirms FMC reconnects and resumes writing fresh
-// cache entries WITHOUT requiring FMC's own restart (CP-10: auto-reconstitution).
+// The outage is induced by scaling the Valkey Deployment to 0 replicas (not
+// `kubectl delete pod --force`): a force-deleted pod's API-level removal is not
+// synchronized with the kubelet actually tearing down the container/network, so
+// the old Valkey process can keep serving traffic for a window after the delete
+// call returns, making a "genuinely unreachable" assertion racy. Scaling to 0
+// guarantees zero backing pods -- and thus zero Service endpoints -- for a
+// deterministic outage window; scaling back to 1 exercises the same real
+// Deployment self-heal path.
+//
+// This test confirms FMC's /readyz genuinely flips to 503 while Valkey has no
+// replicas (SI-4: proactive failure detection, not a silent false-healthy), then
+// confirms FMC reconnects and resumes writing fresh cache entries once Valkey is
+// scaled back up, WITHOUT requiring FMC's own restart (CP-10: auto-reconstitution).
 //
 // Serial: this suite runs with --procs>1 (Makefile test-e2e-fleetmetadatacache) against
-// one shared Kind cluster. Killing the shared Valkey pod would corrupt any
-// concurrently-running spec in E2E-FMC-054-010/011 that depends on cache continuity,
-// so this Describe is marked Serial to guarantee no other spec runs while Valkey is down.
+// one shared Kind cluster. Taking Valkey down would corrupt any concurrently-running
+// spec in E2E-FMC-054-010/011 that depends on cache continuity, so this Describe is
+// marked Serial to guarantee no other spec runs while Valkey is down.
 //
 // Authority: Issue #54, ADR-068 (SI-4 health detection, CP-10 auto-reconstitution).
 var _ = Describe("E2E-FMC-054-012: FMC recovers from a real Valkey dependency failure", Ordered, Serial, func() {
@@ -75,29 +84,44 @@ var _ = Describe("E2E-FMC-054-012: FMC recovers from a real Valkey dependency fa
 		})
 	})
 
-	It("degrades /readyz then auto-recovers after a real Valkey pod restart (SI-4, CP-10)", func() {
+	It("degrades /readyz then auto-recovers after a real Valkey outage (SI-4, CP-10)", func() {
 		By("Confirming baseline: /readyz is healthy before the failure")
 		Eventually(func(g Gomega) int {
 			return readyzStatus(g)
 		}, timeout, interval).Should(Equal(http.StatusOK), "baseline /readyz must be healthy")
 
-		By("Killing the Valkey pod to simulate a real dependency failure")
-		delCtx, delCancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer delCancel()
-		delCmd := exec.CommandContext(delCtx, "kubectl", "--kubeconfig", kubeconfigPath,
-			"-n", namespace, "delete", "pod", "-l", "app=valkey",
-			"--grace-period=0", "--force")
-		delCmd.Stdout = GinkgoWriter
-		delCmd.Stderr = GinkgoWriter
-		Expect(delCmd.Run()).To(Succeed(), "kubectl delete pod -l app=valkey should succeed")
+		By("Scaling Valkey to 0 replicas to induce a genuine, deterministic outage")
+		scaleDownCtx, scaleDownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer scaleDownCancel()
+		scaleDownCmd := exec.CommandContext(scaleDownCtx, "kubectl", "--kubeconfig", kubeconfigPath,
+			"-n", namespace, "scale", "deployment/valkey", "--replicas=0")
+		scaleDownCmd.Stdout = GinkgoWriter
+		scaleDownCmd.Stderr = GinkgoWriter
+		Expect(scaleDownCmd.Run()).To(Succeed(), "kubectl scale deployment/valkey --replicas=0 should succeed")
+
+		waitDownCtx, waitDownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer waitDownCancel()
+		waitDownCmd := exec.CommandContext(waitDownCtx, "kubectl", "--kubeconfig", kubeconfigPath,
+			"-n", namespace, "wait", "--for=delete", "pod", "-l", "app=valkey", "--timeout=30s")
+		waitDownCmd.Stdout = GinkgoWriter
+		waitDownCmd.Stderr = GinkgoWriter
+		Expect(waitDownCmd.Run()).To(Succeed(), "Valkey pod must actually terminate before asserting an outage")
 
 		By("Verifying FMC detects the failure: /readyz reports 503 (SI-4 -- no silent false-healthy)")
 		Eventually(func(g Gomega) int {
 			return readyzStatus(g)
 		}, 30*time.Second, 500*time.Millisecond).Should(Equal(http.StatusServiceUnavailable),
-			"SI-4: /readyz must report 503 while Valkey is unreachable")
+			"SI-4: /readyz must report 503 while Valkey has zero replicas")
 
-		By("Waiting for the Valkey Deployment to self-heal")
+		By("Scaling Valkey back to 1 replica to let it self-heal")
+		scaleUpCtx, scaleUpCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer scaleUpCancel()
+		scaleUpCmd := exec.CommandContext(scaleUpCtx, "kubectl", "--kubeconfig", kubeconfigPath,
+			"-n", namespace, "scale", "deployment/valkey", "--replicas=1")
+		scaleUpCmd.Stdout = GinkgoWriter
+		scaleUpCmd.Stderr = GinkgoWriter
+		Expect(scaleUpCmd.Run()).To(Succeed(), "kubectl scale deployment/valkey --replicas=1 should succeed")
+
 		waitCtx, waitCancel := context.WithTimeout(context.Background(), 120*time.Second)
 		defer waitCancel()
 		rolloutCmd := exec.CommandContext(waitCtx, "kubectl", "--kubeconfig", kubeconfigPath,
