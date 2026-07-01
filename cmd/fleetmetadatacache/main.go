@@ -146,7 +146,13 @@ func main() {
 
 	sessionProvider := mcpClient.SessionProvider()
 	readerFactory := fleet.ReaderFactoryFunc(func(_ context.Context, clusterID string) (client.Reader, error) {
-		var opts []mcpclient.Option
+		// WithReconnect: SessionProvider() alone only re-reads whatever session
+		// mcpClient currently holds -- it cannot repair a session that died from
+		// a protocol-level error (e.g. a malformed response during a startup
+		// race with the MCP Gateway broker's config reload). Without this, a
+		// single early failure permanently breaks every sync cycle for the rest
+		// of the FMC pod's lifetime, even after the Gateway becomes healthy.
+		opts := []mcpclient.Option{mcpclient.WithReconnect(mcpClient.Reconnect)}
 		if info, found := clusterRegistry.Get(clusterID); found && info.ToolPrefix != "" {
 			opts = append(opts, mcpclient.WithToolPrefix(info.ToolPrefix))
 		}

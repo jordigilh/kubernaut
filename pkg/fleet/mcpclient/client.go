@@ -51,6 +51,7 @@ type SessionProvider func() *mcp.ClientSession
 type Client struct {
 	session         *mcp.ClientSession
 	sessionProvider SessionProvider
+	reconnect       func(context.Context) error
 	clusterID       string
 	toolPrefix      string
 	mu              sync.Mutex
@@ -108,6 +109,12 @@ func NewFromSession(session *mcp.ClientSession, clusterID string, opts ...Option
 // on each call via the provided SessionProvider. This ensures per-cluster
 // clients automatically follow ResilientClient reconnections instead of holding
 // a stale session reference.
+//
+// Pass WithReconnect(rc.Reconnect) (where rc is the owning ResilientClient) so
+// that a dead session (e.g. after a protocol-level failure during a startup
+// race) is actively repaired instead of silently returning stale/no-op reads
+// forever -- SessionProvider alone only re-reads whatever session is
+// currently stored, it never repairs a broken one.
 func NewFromSessionProvider(provider SessionProvider, clusterID string, opts ...Option) *Client {
 	if provider == nil {
 		panic("mcpclient.NewFromSessionProvider: provider must not be nil")
@@ -116,7 +123,7 @@ func NewFromSessionProvider(provider SessionProvider, clusterID string, opts ...
 	for _, opt := range opts {
 		opt(cfg)
 	}
-	return &Client{sessionProvider: provider, clusterID: clusterID, toolPrefix: cfg.toolPrefix}
+	return &Client{sessionProvider: provider, reconnect: cfg.reconnect, clusterID: clusterID, toolPrefix: cfg.toolPrefix}
 }
 
 // Get implements client.Reader. It retrieves a single Kubernetes resource from
@@ -239,6 +246,45 @@ func (c *Client) resolveToolName(tool string) string {
 	return ClusterTool(c.clusterID, tool)
 }
 
+// callTool invokes the named MCP tool against the current session, retrying
+// once via the reconnect callback (if set) when the call fails with a
+// retryable session error (connection closed, session missing, etc.).
+//
+// This mirrors ResilientClient.Get/List's retry-on-reconnect behavior. It is
+// required for session-provider Clients (NewFromSessionProvider) because
+// SessionProvider() only re-reads whatever session ResilientClient currently
+// holds -- it has no way to notice or repair a session that died from a
+// protocol-level error (e.g. a malformed response during a startup race with
+// the MCP Gateway), which would otherwise leave the Client permanently unable
+// to sync, even after the Gateway becomes healthy again.
+func (c *Client) callTool(ctx context.Context, toolName string, args map[string]any) (*mcp.CallToolResult, error) {
+	session := c.currentSession()
+	if session == nil {
+		return nil, fmt.Errorf("call %s: no active MCP session", toolName)
+	}
+	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: toolName, Arguments: args})
+	if err == nil {
+		return result, nil
+	}
+	if c.reconnect == nil || !isRetryableSessionError(err) {
+		return nil, fmt.Errorf("call %s: %w", toolName, err)
+	}
+
+	if reconnErr := c.reconnect(ctx); reconnErr != nil {
+		return nil, fmt.Errorf("call %s: reconnect failed: %w (original: %w)", toolName, reconnErr, err)
+	}
+
+	session = c.currentSession()
+	if session == nil {
+		return nil, fmt.Errorf("call %s: no active MCP session after reconnect", toolName)
+	}
+	result, err = session.CallTool(ctx, &mcp.CallToolParams{Name: toolName, Arguments: args})
+	if err != nil {
+		return nil, fmt.Errorf("call %s: %w", toolName, err)
+	}
+	return result, nil
+}
+
 // getResource calls the MCP get_resource tool and returns the parsed unstructured object.
 // apiVersion is a mandatory parameter required by the K8s MCP Server.
 func (c *Client) getResource(ctx context.Context, kind, apiVersion, namespace, name string) (*unstructured.Unstructured, error) {
@@ -252,16 +298,9 @@ func (c *Client) getResource(ctx context.Context, kind, apiVersion, namespace, n
 		args["namespace"] = namespace
 	}
 
-	session := c.currentSession()
-	if session == nil {
-		return nil, fmt.Errorf("call %s: no active MCP session", toolName)
-	}
-	result, err := session.CallTool(ctx, &mcp.CallToolParams{
-		Name:      toolName,
-		Arguments: args,
-	})
+	result, err := c.callTool(ctx, toolName, args)
 	if err != nil {
-		return nil, fmt.Errorf("call %s: %w", toolName, err)
+		return nil, err
 	}
 
 	if result.IsError {
@@ -295,16 +334,9 @@ func (c *Client) listResources(ctx context.Context, kind, apiVersion, namespace 
 		args["labelSelector"] = formatLabelSelector(labels)
 	}
 
-	session := c.currentSession()
-	if session == nil {
-		return nil, fmt.Errorf("call %s: no active MCP session", toolName)
-	}
-	result, err := session.CallTool(ctx, &mcp.CallToolParams{
-		Name:      toolName,
-		Arguments: args,
-	})
+	result, err := c.callTool(ctx, toolName, args)
 	if err != nil {
-		return nil, fmt.Errorf("call %s: %w", toolName, err)
+		return nil, err
 	}
 
 	if result.IsError {

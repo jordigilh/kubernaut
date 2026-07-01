@@ -202,6 +202,15 @@ func (rc *ResilientClient) connectWithBackoff(ctx context.Context) error {
 	return nil
 }
 
+// Reconnect forces a fresh connection to the MCP Gateway, closing any
+// existing (possibly dead) session first. Exposed so session-provider
+// Clients (NewFromSessionProvider) can repair a session that died from a
+// protocol-level error -- pass this method as WithReconnect when
+// constructing per-cluster readers from SessionProvider().
+func (rc *ResilientClient) Reconnect(ctx context.Context) error {
+	return rc.reconnect(ctx)
+}
+
 func (rc *ResilientClient) reconnect(ctx context.Context) error {
 	rc.ready.Store(false)
 
@@ -242,6 +251,15 @@ func (rc *ResilientClient) findReloadableTransport() *ReloadableOAuth2Transport 
 }
 
 func (rc *ResilientClient) isRetryableError(err error) bool {
+	return isRetryableSessionError(err)
+}
+
+// isRetryableSessionError classifies errors that indicate a dead or
+// unauthenticated MCP session that reconnecting can repair: closed
+// connections, missing sessions, network-level failures, and 401s. Shared by
+// ResilientClient.Get/List and session-provider Client.callTool so both
+// retry-on-reconnect paths use identical semantics.
+func isRetryableSessionError(err error) bool {
 	if err == nil {
 		return false
 	}

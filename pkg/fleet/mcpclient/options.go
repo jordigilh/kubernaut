@@ -17,6 +17,7 @@ limitations under the License.
 package mcpclient
 
 import (
+	"context"
 	"net/http"
 	"time"
 )
@@ -29,6 +30,7 @@ type clientConfig struct {
 	timeout    time.Duration
 	clusterID  string
 	toolPrefix string
+	reconnect  func(context.Context) error
 }
 
 // WithClusterID binds the client to a specific remote cluster. The cluster ID
@@ -56,6 +58,23 @@ func WithToolPrefix(prefix string) Option {
 func WithHTTPClient(c *http.Client) Option {
 	return func(cfg *clientConfig) {
 		cfg.httpClient = c
+	}
+}
+
+// WithReconnect binds a reconnection callback to a session-provider Client
+// (created via NewFromSessionProvider). When a tool call fails with a
+// retryable session error (connection closed, session missing, etc.), the
+// Client invokes reconnect once and retries the call against the refreshed
+// session returned by the SessionProvider.
+//
+// Without this option, a session-provider Client that observes a dead
+// session has no way to trigger recovery: SessionProvider() only reads the
+// currently stored session, it does not repair it. ResilientClient.Reconnect
+// is the intended callback for per-cluster readers built from
+// ResilientClient.SessionProvider().
+func WithReconnect(reconnect func(context.Context) error) Option {
+	return func(cfg *clientConfig) {
+		cfg.reconnect = reconnect
 	}
 }
 

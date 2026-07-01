@@ -306,6 +306,65 @@ var _ = Describe("ResourceClient (BR-FLEET-002, Phase 0)", func() {
 		})
 	})
 
+	Describe("Session-provider Client reconnect-on-failure (CI incident: FMC sync permanently broken)", func() {
+		// Regression coverage for a production incident (Fleet E2E, local repro):
+		// FMC's syncer builds per-cluster readers via NewFromSessionProvider,
+		// wrapping ResilientClient.SessionProvider(). SessionProvider() only
+		// re-reads whatever session ResilientClient currently holds -- it does
+		// NOT repair a session that died from a protocol-level error. Once the
+		// very first tools/call raced the MCP Gateway during startup and failed,
+		// every subsequent call kept using the same dead session forever, even
+		// after the Gateway became healthy seconds later. FMC's Valkey cache was
+		// never populated, so every fleet-scoped Gateway signal was rejected as
+		// "not managed" (BR-INTEGRATION-054, ADR-068).
+		It("UT-FLEET-MCP-010 [AC-3]: Get recovers via WithReconnect after the underlying session dies", func() {
+			gw = mockgw.NewMockGateway(mockgw.WithMultiCluster("prod-east"))
+
+			cfg := mcpclient.DefaultResilienceConfig()
+			cfg.MaxElapsedTime = 5 * time.Second
+			rc, err := mcpclient.NewResilient(ctx, gw.URL(), cfg, logr.Discard(), mcpclient.WithClusterID("prod-east"))
+			Expect(err).ToNot(HaveOccurred())
+			defer rc.Close()
+
+			child := mcpclient.NewFromSessionProvider(rc.SessionProvider(), "prod-east",
+				mcpclient.WithReconnect(rc.Reconnect))
+
+			// Simulate the session dying from a protocol-level error while the
+			// Gateway itself stays healthy -- exactly the observed production
+			// scenario (broker healthy, client session dead).
+			Expect(rc.Session().Close()).ToNot(HaveOccurred())
+
+			obj := &unstructured.Unstructured{}
+			obj.SetGroupVersionKind(schema.GroupVersionKind{Version: "v1", Kind: "Pod"})
+
+			err = child.Get(ctx, client.ObjectKey{Namespace: "default", Name: "nginx"}, obj)
+			Expect(err).ToNot(HaveOccurred(),
+				"Get must recover by reconnecting once the session is dead, not fail forever")
+			Expect(obj.GetName()).To(Equal("nginx"))
+		})
+
+		It("UT-FLEET-MCP-011 [AC-3]: without WithReconnect, a dead session fails every call (no silent recovery)", func() {
+			gw = mockgw.NewMockGateway(mockgw.WithMultiCluster("prod-west"))
+
+			cfg := mcpclient.DefaultResilienceConfig()
+			cfg.MaxElapsedTime = 5 * time.Second
+			rc, err := mcpclient.NewResilient(ctx, gw.URL(), cfg, logr.Discard(), mcpclient.WithClusterID("prod-west"))
+			Expect(err).ToNot(HaveOccurred())
+			defer rc.Close()
+
+			child := mcpclient.NewFromSessionProvider(rc.SessionProvider(), "prod-west")
+
+			Expect(rc.Session().Close()).ToNot(HaveOccurred())
+
+			obj := &unstructured.Unstructured{}
+			obj.SetGroupVersionKind(schema.GroupVersionKind{Version: "v1", Kind: "Pod"})
+
+			err = child.Get(ctx, client.ObjectKey{Namespace: "default", Name: "nginx"}, obj)
+			Expect(err).To(HaveOccurred(),
+				"without a reconnect callback there is no way to repair a dead session")
+		})
+	})
+
 	Describe("ResilientClient interface compliance", func() {
 		It("UT-FLEET-P0-005: ResilientClient satisfies ResourceClient (embeds client.Reader)", func() {
 			gw = mockgw.NewMockGateway(mockgw.WithMultiCluster("cluster-res"))
