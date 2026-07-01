@@ -30,7 +30,7 @@ None of the audit-only linters (`funlen`, `gocognit`, `nestif`, `maintidx`, `cyc
 
 | Category | Count | AGENTS.md rule | Status |
 |---|---|---|---|
-| Functions with 8+ parameters | **32** (2 have 12) | 8+ params → Options pattern | 🔴 Needs fixing |
+| Functions with 8+ parameters | **32** (2 have 12) — corrected to **21** real production functions after `revive argument-limit` re-verification | 8+ params → Options pattern | ✅ RESOLVED (Phase 2) |
 | God structs (15+ fields) | **30** | 15+ fields → decompose | 🟡 Mixed (some are legit DTOs) |
 | Interface pollution (5+ methods) | **16** | 5+ methods → split into role interfaces | 🟡 Needs review |
 | `context.Context` stored in struct | **2** | Pass as first param | 🟡 Both have documented rationale |
@@ -203,6 +203,31 @@ All 13/13 fixed across two commits. The first 10 (single-source-length capacity,
 
 ---
 
+## 7b. Functions with 8+ Parameters — 21 found (`revive argument-limit`) — ✅ RESOLVED (Phase 2)
+
+Preflight with `revive argument-limit: 7` corrected the initial 32-count estimate (which double-counted some findings across `funlen`/`gocognit` overlap and missed 2 functions later discovered during remediation) to **21 real production functions**, all fixed via the Options-pattern (a dedicated `*Params`/`*Deps` struct grouping the excess arguments), following AGENTS.md's TDD mandate: for every zero-coverage target, a characterization/smoke test was written first to pin existing behavior before the signature change.
+
+| Function(s) | File | Coverage before fix | Fix |
+|---|---|---|---|
+| `BuildApprovalRequestedEvent`, `BuildApprovalDecisionEvent` | `pkg/remediationorchestrator/audit/manager.go` | Existing UTs (8 call sites) | `ApprovalEventContext` struct |
+| `NewOperationError`, `NewCRDCreationError` | `pkg/gateway/processing/errors.go` | Existing UTs | `OperationErrorParams`, `CRDCreationErrorParams` structs |
+| `DeliverToChannels` | `pkg/notification/delivery/orchestrator.go` | Existing UTs incl. TOCTOU race test | `DeliveryCallbacks` struct (6 callbacks) |
+| `runRCA`, `retryRCASubmit`, `runWorkflowSelection`, `retryWorkflowSubmit`, `runLLMLoop`, `sameKindValidationGate`, `apiVersionValidationGate` | `internal/kubernautagent/investigator/{investigator,investigator_gates}.go` | Indirect coverage (32 test files) | shared `LLMInvocationContext` struct |
+| `launchInvestigation`, `emitSessionEvent` | `internal/kubernautagent/session/manager.go` | Indirect coverage (22 test files) | `investigationLaunchParams`, `sessionEventParams` structs |
+| `buildMCPHandler` | `cmd/kubernautagent/main.go` | **Zero** — new characterization test added (`mcp_handler_guards_test.go`) | `mcpHandlerParams` struct |
+| `NewReconciler` (EffectivenessMonitor) | `internal/controller/effectivenessmonitor/reconciler.go` | **Zero** — new smoke test added (`reconciler_new_test.go`) | `ReconcilerDeps` struct |
+| `detectCNV` | `internal/kubernautagent/enrichment/label_detector.go` | Existing UTs (5 test files) | `cnvDetectionTarget` struct |
+| `fetchRemediationHistory` | `internal/kubernautagent/tools/custom/resource_context.go` | Existing UTs | `remediationHistoryQuery` struct |
+| `createServerWithClients`, `NewServerForTesting` | `pkg/gateway/server.go` | Existing UTs (14+ test files); `NewServerForTesting` discovered mid-batch (also 8 params, 11 call sites across 8 test files) | `serverClients`, `ServerTestDeps` structs |
+| `buildCompletionBody` | `pkg/remediationorchestrator/creator/notification.go` | Existing UTs (7 test files, indirect via `CreateCompletionNotification`) | `completionBodyParams` struct; dropped an unused `*AIAnalysis` param |
+| `NewReconciler` (RemediationOrchestrator) | `internal/controller/remediationorchestrator/reconciler.go` | Existing UTs — **largest blast radius**: ~124 call sites across 28 files (1 production, 27 test) | `ReconcilerDeps` struct (8 fields + preserved variadic `eaCreator`) |
+
+**Verification per batch**: `go build ./...`, targeted `go test` (all passing, zero regressions — the RO batch alone re-ran 370 Ginkgo specs), `gofmt -l` clean, and `golangci-lint run` (repo config + a scratch `argument-limit: 7` config) confirming 0 issues.
+
+**Process note — a real near-miss, corrected**: the EffectivenessMonitor `NewReconciler` batch was declared complete after fixing its one production call site (`cmd/effectivenessmonitor/main.go`) and running `go build ./...`, which does **not** compile `_test.go` files. 18 call sites in `pkg/effectivenessmonitor/*_test.go` and `test/integration/effectivenessmonitor/**` were left on the old positional signature — a silent break that `go build` could not catch. It was caught by a final repo-wide `go vet ./...` sanity pass (which does compile test files) run at the end of Phase 2, and fixed in a follow-up commit. **Action item for future phases**: always run `go vet ./...` (not just `go build ./...`) across the full repo before declaring a signature-changing refactor complete, since `go build` alone gives false confidence when call sites live only in test files.
+
+---
+
 ## 8. Variable Shadowing — 120 found, mostly low-risk
 
 114/120 are `err` shadowing (`if err := f(); err != nil` repeated in the same scope — the single most common and least dangerous shadow pattern in Go, which is exactly why `govet -shadow` isn't part of default `go vet`). 1 `ctx` shadow, 1 `result`, 1 `username`, 1 `ok`, 1 `isString`. **No goroutine-closure-captures-loop-variable pattern was found** (the genuinely dangerous shadow bug) — none of the 120 hits are in a `for ... go func()` or `for ... defer func()` body.
@@ -226,13 +251,13 @@ These AGENTS.md checks returned **zero findings** project-wide — no action nee
 
 Per AGENTS.md, REFACTOR-phase cleanup must not introduce new types/components, must keep `go build ./...` green after every step, and needs explicit user approval before starting (Collaboration Rule 1 & 3 — this is a "refactoring that affects system complexity" architectural-adjacent change). Suggested phasing if approved:
 
-| Phase | Scope | Risk | Est. effort |
-|---|---|---|---|
-| 1 | Mechanical, zero-behavior-change: `prealloc` (13), safe `err`-shadow renames if desired | Very low | 0.5 day |
-| 2 | Options-pattern extraction for the 12 worst 8+-param functions (`DeliverToChannels`, `buildMCPHandler`, `NewReconciler` ×2, the 4 `Build*Event` audit builders) | Low-medium (touches call sites, needs UT re-run) | 2-3 days |
-| 3 | Split `reconciler.go` (3,414→?) and `pkg/gateway/server.go` (2,511→?) into cohesive files following the existing `*_handler.go` pattern already used in RemediationOrchestrator | Medium (large diff, no logic change) | 3-4 days |
-| 4 | Decompose the top complexity offenders: `buildEventData` (88), `HandleWatch` (cognitive 133), `Config.Validate` ×2, `main()` in `cmd/kubernautagent` and `cmd/apifrontend` | Medium-high (behavior-preserving refactor of dense logic, needs careful UT coverage first) | 5-7 days |
-| 5 | Interface segregation for `AutonomousSessionManager` (13 methods) and `AWXClient` (11 methods) | Medium (ripples to all implementers/mocks) | 2-3 days |
+| Phase | Scope | Risk | Est. effort | Status |
+|---|---|---|---|---|
+| 1 | Mechanical, zero-behavior-change: `prealloc` (13), safe `err`-shadow renames if desired | Very low | 0.5 day | ✅ Done |
+| 2 | Options-pattern extraction for all 21 real 8+-param functions (corrected scope, see §7b) | Low-medium (touches call sites, needs UT re-run) | 2-3 days | ✅ Done |
+| 3 | Split `reconciler.go` (3,414→?) and `pkg/gateway/server.go` (2,511→?) into cohesive files following the existing `*_handler.go` pattern already used in RemediationOrchestrator | Medium (large diff, no logic change) | 3-4 days | 🔴 Not started |
+| 4 | Decompose the top complexity offenders: `buildEventData` (88), `HandleWatch` (cognitive 133), `Config.Validate` ×2, `main()` in `cmd/kubernautagent` and `cmd/apifrontend` | Medium-high (behavior-preserving refactor of dense logic, needs careful UT coverage first) | 5-7 days | 🔴 Not started |
+| 5 | Interface segregation for `AutonomousSessionManager` (13 methods) and `AWXClient` (11 methods) | Medium (ripples to all implementers/mocks) | 2-3 days | 🔴 Not started |
 
 **Not recommended for action**: DTO/data-model "god structs" (category 4a), `context.Context` struct fields (both documented), `any`/`interface{}` usage (spot-checked — the ~849 raw hits are overwhelmingly idiomatic JSON-decoding, `sync.Map`/`singleflight` third-party API signatures, and generic-JSON-passthrough code; no material violations found beyond one worth a look: `BuildTriagePrompt(input TriageInput, rules interface{})` in `pkg/apifrontend/severity/types.go:113`).
 
