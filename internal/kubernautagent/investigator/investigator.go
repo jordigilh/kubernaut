@@ -198,10 +198,10 @@ type Investigator struct {
 	pipeline      Pipeline
 	modelName     string
 	scopeResolver ScopeResolver
-	swappable      *llm.SwappableClient
-	metrics        *metrics.Metrics
-	pinDecorator   func(llm.Client) llm.Client
-	phaseResolver  PhaseClientResolver
+	swappable     *llm.SwappableClient
+	metrics       *metrics.Metrics
+	pinDecorator  func(llm.Client) llm.Client
+	phaseResolver PhaseClientResolver
 }
 
 func (inv *Investigator) auditLog() logr.Logger {
@@ -256,10 +256,10 @@ func New(cfg Config) *Investigator {
 		pipeline:      pipeline,
 		modelName:     cfg.ModelName,
 		scopeResolver: cfg.ScopeResolver,
-		swappable:      cfg.Swappable,
-		metrics:        cfg.Metrics,
-		pinDecorator:   cfg.PinDecorator,
-		phaseResolver:  cfg.PhaseResolver,
+		swappable:     cfg.Swappable,
+		metrics:       cfg.Metrics,
+		pinDecorator:  cfg.PinDecorator,
+		phaseResolver: cfg.PhaseResolver,
 	}
 }
 
@@ -268,7 +268,12 @@ func New(cfg Config) *Investigator {
 // Uses PhaseRCA tool set. Streaming works via LazySink on context.
 func (inv *Investigator) RunInteractiveTurn(ctx context.Context, messages []llm.Message, correlationID string) (LoopResult, error) {
 	client, modelName, runtimeParams := inv.resolveForPhase(katypes.PhaseRCA)
-	return inv.runLLMLoop(ctx, messages, katypes.PhaseRCA, nil, correlationID, client, modelName, runtimeParams)
+	return inv.runLLMLoop(ctx, messages, katypes.PhaseRCA, LLMInvocationContext{
+		CorrelationID: correlationID,
+		Client:        client,
+		ModelName:     modelName,
+		RuntimeParams: runtimeParams,
+	})
 }
 
 // RunRCAExtractionFromConversation appends a submit-RCA prompt to an existing
@@ -438,7 +443,12 @@ func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal
 	client, modelName, runtimeParams := inv.resolveForPhase(katypes.PhaseWorkflowDiscovery)
 
 	p1Ctx := BuildPhase1Context(rcaResult)
-	workflowResult, err := inv.runWorkflowSelection(ctx, signal, rcaResult.RCASummary, enrichData, p1Ctx, nil, correlationID, client, modelName, runtimeParams)
+	workflowResult, err := inv.runWorkflowSelection(ctx, signal, rcaResult.RCASummary, enrichData, p1Ctx, LLMInvocationContext{
+		CorrelationID: correlationID,
+		Client:        client,
+		ModelName:     modelName,
+		RuntimeParams: runtimeParams,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -478,7 +488,13 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 	promptEnrichment := toPromptEnrichment(enrichData)
 	tokens := &TokenAccumulator{}
 
-	rcaResult, err := inv.runRCA(ctx, signal, promptEnrichment, tokens, correlationID, rcaClient, rcaModelName, rcaRuntimeParams)
+	rcaResult, err := inv.runRCA(ctx, signal, promptEnrichment, LLMInvocationContext{
+		Tokens:        tokens,
+		CorrelationID: correlationID,
+		Client:        rcaClient,
+		ModelName:     rcaModelName,
+		RuntimeParams: rcaRuntimeParams,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("RCA invocation: %w", err)
 	}
@@ -616,7 +632,13 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 
 	p1Ctx := BuildPhase1Context(rcaResult)
 
-	workflowResult, err := inv.runWorkflowSelection(ctx, workflowSignal, rcaResult.RCASummary, promptEnrichment, p1Ctx, tokens, correlationID, wfClient, wfModelName, wfRuntimeParams)
+	workflowResult, err := inv.runWorkflowSelection(ctx, workflowSignal, rcaResult.RCASummary, promptEnrichment, p1Ctx, LLMInvocationContext{
+		Tokens:        tokens,
+		CorrelationID: correlationID,
+		Client:        wfClient,
+		ModelName:     wfModelName,
+		RuntimeParams: wfRuntimeParams,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("workflow selection invocation: %w", err)
 	}
@@ -714,7 +736,21 @@ func (inv *Investigator) resolveEnrichment(ctx context.Context, kind, name, name
 	return result
 }
 
-func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContext, enrichData *prompt.EnrichmentData, tokens *TokenAccumulator, correlationID string, client llm.Client, modelName string, runtimeParams llm.RuntimeParams) (result *katypes.InvestigationResult, retErr error) {
+// LLMInvocationContext groups the LLM call parameters shared by the
+// investigation pipeline's internal phase-runner and retry-gate methods:
+// token accounting, correlation, the resolved client/model for the current
+// phase, and runtime params. Extracted per AGENTS.md's 8+-param
+// Options-pattern rule.
+type LLMInvocationContext struct {
+	Tokens        *TokenAccumulator
+	CorrelationID string
+	Client        llm.Client
+	ModelName     string
+	RuntimeParams llm.RuntimeParams
+}
+
+func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContext, enrichData *prompt.EnrichmentData, llmCtx LLMInvocationContext) (result *katypes.InvestigationResult, retErr error) {
+	correlationID := llmCtx.CorrelationID
 	promptSignal := SignalToPrompt(signal)
 	LogLabelOverrideOrRejection(inv.logger, signal, promptSignal, correlationID, "RCA")
 	systemPrompt, err := inv.builder.RenderInvestigation(promptSignal)
@@ -727,7 +763,7 @@ func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContex
 		{Role: "user", Content: fmt.Sprintf("Investigate: %s %s in %s — %s", signal.Severity, signal.Name, signal.Namespace, signal.Message)},
 	}
 
-	loopRes, err := inv.runLLMLoop(ctx, messages, katypes.PhaseRCA, tokens, correlationID, client, modelName, runtimeParams)
+	loopRes, err := inv.runLLMLoop(ctx, messages, katypes.PhaseRCA, llmCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -767,7 +803,7 @@ func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContex
 
 	result, parseErr := inv.resultParser.Parse(content)
 	if parseErr != nil {
-		if retried := inv.retryRCASubmit(ctx, content, messages, tokens, correlationID, client, modelName, runtimeParams); retried != nil {
+		if retried := inv.retryRCASubmit(ctx, content, messages, llmCtx); retried != nil {
 			result = retried
 			parseErr = nil
 		}
@@ -791,7 +827,7 @@ func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContex
 	// remediation_target.kind matches the signal's resource_kind, the LLM may
 	// be targeting the symptom reporter instead of the actual root cause.
 	// Inject a single correction message and re-run. Max 1 retry.
-	result = inv.sameKindValidationGate(ctx, result, signal, messages, tokens, correlationID, client, modelName, runtimeParams)
+	result = inv.sameKindValidationGate(ctx, result, signal, messages, llmCtx)
 
 	// Defense-in-depth: RCA phase must never abort the pipeline via
 	// needs_human_review from the parser. Only gate-level exhaustion (#1044)
@@ -810,7 +846,7 @@ func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContex
 	// exists in multiple API groups and api_version is missing, the gate retries
 	// once. On exhaustion it sets HumanReviewNeeded=true — a valid RCA abort.
 	// Runs after clearing so its decision is authoritative and not cleared.
-	result = inv.apiVersionValidationGate(ctx, result, messages, tokens, correlationID, client, modelName, runtimeParams)
+	result = inv.apiVersionValidationGate(ctx, result, messages, llmCtx)
 
 	return result, nil
 }
@@ -820,7 +856,9 @@ const maxRCAParseRetries = 1
 // retryRCASubmit performs a single correction attempt when the RCA parse fails
 // (e.g. double-serialized JSON that wasn't caught by the unwrap heuristic, or
 // garbage fields). Mirrors retryWorkflowSubmit but scoped to the RCA phase.
-func (inv *Investigator) retryRCASubmit(ctx context.Context, lastContent string, history []llm.Message, tokens *TokenAccumulator, correlationID string, client llm.Client, modelName string, runtimeParams llm.RuntimeParams) *katypes.InvestigationResult {
+func (inv *Investigator) retryRCASubmit(ctx context.Context, lastContent string, history []llm.Message, llmCtx LLMInvocationContext) *katypes.InvestigationResult {
+	tokens, correlationID, client, modelName, runtimeParams :=
+		llmCtx.Tokens, llmCtx.CorrelationID, llmCtx.Client, llmCtx.ModelName, llmCtx.RuntimeParams
 	submitOnlyTools := []llm.ToolDefinition{
 		{
 			Name:        SubmitResultToolName,
@@ -913,8 +951,8 @@ CRITICAL: root_cause_analysis must be a JSON object, NOT a string. Do NOT wrap i
 	return nil
 }
 
-
-func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katypes.SignalContext, rcaSummary string, enrichData *prompt.EnrichmentData, p1Ctx *prompt.Phase1Data, tokens *TokenAccumulator, correlationID string, client llm.Client, modelName string, runtimeParams llm.RuntimeParams) (result *katypes.InvestigationResult, retErr error) {
+func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katypes.SignalContext, rcaSummary string, enrichData *prompt.EnrichmentData, p1Ctx *prompt.Phase1Data, llmCtx LLMInvocationContext) (result *katypes.InvestigationResult, retErr error) {
+	correlationID := llmCtx.CorrelationID
 	// Apply signal label overrides (target_resource_kind / target_resource_name)
 	// before attaching to context. This ensures workflow discovery tools
 	// (list_available_actions, list_workflows) filter by the correct component.
@@ -945,7 +983,7 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 		{Role: "user", Content: fmt.Sprintf("RCA findings: %s\n\nSelect the appropriate remediation workflow.", rcaSummary)},
 	}
 
-	loopRes, err := inv.runLLMLoop(ctx, messages, katypes.PhaseWorkflowDiscovery, tokens, correlationID, client, modelName, runtimeParams)
+	loopRes, err := inv.runLLMLoop(ctx, messages, katypes.PhaseWorkflowDiscovery, llmCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -999,7 +1037,7 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 				"correlation_id", correlationID)
 			content = r.Content
 		} else {
-			retryResult := inv.retryWorkflowSubmit(ctx, r.Content, messages, rcaSummary, tokens, correlationID, client, modelName, runtimeParams)
+			retryResult := inv.retryWorkflowSubmit(ctx, r.Content, messages, rcaSummary, llmCtx)
 			if retryResult != nil {
 				return retryResult, nil
 			}
@@ -1023,7 +1061,7 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 
 	result, parseErr := inv.resultParser.Parse(content)
 	if parseErr != nil {
-		retryResult := inv.retryWorkflowSubmit(ctx, content, messages, rcaSummary, tokens, correlationID, client, modelName, runtimeParams)
+		retryResult := inv.retryWorkflowSubmit(ctx, content, messages, rcaSummary, llmCtx)
 		if retryResult != nil {
 			return retryResult, nil
 		}
@@ -1071,7 +1109,7 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 			messages = append(messages, llm.Message{Role: "assistant", Content: content})
 			messages = append(messages, llm.Message{Role: "user", Content: correctionMsg})
 
-			corrLoopRes, corrErr := inv.runLLMLoop(ctx, messages, katypes.PhaseWorkflowDiscovery, tokens, correlationID, client, modelName, runtimeParams)
+			corrLoopRes, corrErr := inv.runLLMLoop(ctx, messages, katypes.PhaseWorkflowDiscovery, llmCtx)
 			if corrErr != nil {
 				return nil, corrErr
 			}
@@ -1131,7 +1169,9 @@ const maxParseRetries = 2
 // Each retry sends a correction message with examples of both submit tools,
 // with only the two submit tools available (prevents re-investigation).
 // Returns non-nil *InvestigationResult on success or nil when retries exhaust.
-func (inv *Investigator) retryWorkflowSubmit(ctx context.Context, lastContent string, history []llm.Message, rcaSummary string, tokens *TokenAccumulator, correlationID string, client llm.Client, modelName string, runtimeParams llm.RuntimeParams) *katypes.InvestigationResult {
+func (inv *Investigator) retryWorkflowSubmit(ctx context.Context, lastContent string, history []llm.Message, rcaSummary string, llmCtx LLMInvocationContext) *katypes.InvestigationResult {
+	tokens, correlationID, client, modelName, runtimeParams :=
+		llmCtx.Tokens, llmCtx.CorrelationID, llmCtx.Client, llmCtx.ModelName, llmCtx.RuntimeParams
 	submitOnlyTools := []llm.ToolDefinition{
 		{
 			Name:        SubmitResultWithWorkflowToolName,
@@ -1237,7 +1277,9 @@ Do NOT respond with plain text. You MUST call one of the above tools.`
 	return nil
 }
 
-func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message, phase katypes.Phase, tokens *TokenAccumulator, correlationID string, client llm.Client, modelName string, runtimeParams llm.RuntimeParams) (LoopResult, error) {
+func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message, phase katypes.Phase, llmCtx LLMInvocationContext) (LoopResult, error) {
+	tokens, correlationID, client, modelName, runtimeParams :=
+		llmCtx.Tokens, llmCtx.CorrelationID, llmCtx.Client, llmCtx.ModelName, llmCtx.RuntimeParams
 	toolDefs := inv.toolDefinitionsForPhase(phase)
 	loopStart := time.Now()
 	truncationRetried := false
