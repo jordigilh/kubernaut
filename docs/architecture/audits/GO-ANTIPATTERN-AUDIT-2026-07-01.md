@@ -182,6 +182,8 @@ Two distinct sub-categories, **treated differently**:
 
 `AutonomousSessionManager` (13 methods) and `AWXClient` (11 methods) are the two clearest candidates — both mix lifecycle management, querying, and mutation in one interface. Recommended split: separate read-only query interfaces from lifecycle/mutation interfaces (ISP — Interface Segregation Principle), consistent with AGENTS.md's "split into focused role interfaces."
 
+**✅ RESOLVED (Phase 5, see §7g)**: both split into focused role interfaces, composed back under their original names for the existing single consumer of each.
+
 ---
 
 ## 6. `context.Context` Stored in Struct Fields — 2 found
@@ -327,6 +329,21 @@ Each private validator returns a plain `error`; `Validate()` itself is now a fla
 
 ---
 
+## 7g. Phase 5: Interface Segregation for `AutonomousSessionManager` and `AWXClient` — ✅ RESOLVED
+
+Preflight mapped both interfaces to exactly **one** production consumer and **one** production implementer each (`AutonomousSessionManager` → `InvestigateTool`/`*session.Manager`; `AWXClient` → `AnsibleExecutor`/`AWXHTTPClient`), with all call sites and ~6 test doubles confined to 2 files per interface and zero type assertions to either interface anywhere in the repo. A spike confirmed the mechanical approach: because Go interfaces are structurally typed, splitting each into focused role interfaces and re-composing them under the original name (`type AutonomousSessionManager interface { AutonomousSessionQuerier; AutonomousSessionLifecycle }`, mirroring `io.ReadWriter`) requires **zero** changes to any implementer, mock, or call site — only the interface declaration itself changes. This made the blast radius smaller than any Phase 4 target, and no DD was required (interface composition into a named union is standard idiomatic Go, not a new pattern for this codebase).
+
+| Original interface | Split into | Grouping rationale |
+|---|---|---|
+| `AutonomousSessionManager` (13, `internal/kubernautagent/mcp/tools/investigate.go`) | `AutonomousSessionQuerier` (5: `FindByRemediationID`, `FindPendingByRemediationID`, `GetLatestRCASummaryByRemediationID`, `GetLatestRCAResultByRemediationID`, `GetSessionLazySink`) + `AutonomousSessionLifecycle` (8: `CancelInvestigation`, `SuspendInvestigation`, `TransitionToUserDriving`, `ForceTransitionToUserDriving`, `UpgradeToInteractive`, `LaunchDeferredInvestigation`, `StartInvestigation`, `Subscribe`) | Read-only lookups vs. state-mutating/session-lifecycle actions, per the audit's own §5 recommendation |
+| `AWXClient` (11, `pkg/workflowexecution/executor/ansible.go`) | `AWXJobClient` (5: `LaunchJobTemplate`, `LaunchJobTemplateWithCreds`, `GetJobStatus`, `CancelJob`, `FindJobTemplateByName`) + `AWXCredentialClient` (6: `CreateCredentialType`, `FindCredentialTypeByName`, `FindCredentialTypeByKind`, `CreateCredential`, `DeleteCredential`, `GetJobTemplateCredentials`) | Job-template operations vs. credential-lifecycle operations (BR-WE-015) — two distinct AWX/AAP API resource domains |
+
+**Caveat, documented rather than hidden**: both interfaces have exactly one consumer today, so this is lower-value than typical ISP remediation (no second caller is currently blocked by the wide interface) — it was done because it was in the approved roadmap and effectively free (mechanical, zero downstream changes), and it sets up a clean seam if a narrower second consumer appears later.
+
+**Verification**: `go build ./...`, `go vet ./...` (both repo-wide), `golangci-lint run` on both affected package trees (0 issues), and the full existing test suites for `internal/kubernautagent/mcp/...` and `pkg/workflowexecution/...` (0 test changes required, all green) — confirming the spike's zero-blast-radius prediction. Phase 5 is now complete; the remediation roadmap has no further open items.
+
+---
+
 ## 8. Variable Shadowing — 120 found, mostly low-risk
 
 114/120 are `err` shadowing (`if err := f(); err != nil` repeated in the same scope — the single most common and least dangerous shadow pattern in Go, which is exactly why `govet -shadow` isn't part of default `go vet`). 1 `ctx` shadow, 1 `result`, 1 `username`, 1 `ok`, 1 `isString`. **No goroutine-closure-captures-loop-variable pattern was found** (the genuinely dangerous shadow bug) — none of the 120 hits are in a `for ... go func()` or `for ... defer func()` body.
@@ -358,7 +375,7 @@ Per AGENTS.md, REFACTOR-phase cleanup must not introduce new types/components, m
 | 3a | Split `reconciler.go` (3,435→1,023 across 7 files, see §7d) into cohesive files following the existing `*_handler.go` pattern already used in RemediationOrchestrator | Medium (large diff, no logic change) | 3-4 days | ✅ Done |
 | 3b | Split `pkg/gateway/server.go` (2,552→633 across 6 files, see §7e) into cohesive files (HTTP plumbing/construction/audit emission, mirroring the `processing/`/`adapters/`/`k8s/`/`middleware/` subpackage split already in Gateway) | Medium (large diff, no logic change) | 1-2 days | ✅ Done |
 | 4 | Decompose the top complexity offenders: `buildEventData` (88), `HandleWatch` (cognitive 133), `Config.Validate` ×2, `main()` in `cmd/kubernautagent` and `cmd/apifrontend` | Medium-high (behavior-preserving refactor of dense logic, needs careful UT coverage first) | 5-7 days | ✅ Done (see §7f) |
-| 5 | Interface segregation for `AutonomousSessionManager` (13 methods) and `AWXClient` (11 methods) | Medium (ripples to all implementers/mocks) | 2-3 days | 🔴 Not started |
+| 5 | Interface segregation for `AutonomousSessionManager` (13 methods) and `AWXClient` (11 methods) | Medium (ripples to all implementers/mocks) | 2-3 days | ✅ Done (see §7g) |
 
 **Not recommended for action**: DTO/data-model "god structs" (category 4a), `context.Context` struct fields (both documented), `any`/`interface{}` usage (spot-checked — the ~849 raw hits are overwhelmingly idiomatic JSON-decoding, `sync.Map`/`singleflight` third-party API signatures, and generic-JSON-passthrough code; no material violations found beyond one worth a look: `BuildTriagePrompt(input TriageInput, rules interface{})` in `pkg/apifrontend/severity/types.go:113`).
 
