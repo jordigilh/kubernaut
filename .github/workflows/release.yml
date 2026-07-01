@@ -70,10 +70,10 @@ jobs:
   # Helm smoke tests depend on this stage completing (Issue #569).
   #
   # Services (14):
-  #   Go (12): gateway, signalprocessing, aianalysis, authwebhook,
+  #   Go (13): gateway, signalprocessing, aianalysis, authwebhook,
   #            remediationorchestrator, workflowexecution, notification,
   #            datastorage, effectivenessmonitor, db-migrate, kubernautagent,
-  #            apifrontend
+  #            apifrontend, fleetmetadatacache
   #   Bash (1): must-gather
   #
   # Strategy:
@@ -360,6 +360,7 @@ jobs:
           - effectivenessmonitor
           - kubernautagent
           - apifrontend
+          - fleetmetadatacache
           - must-gather
           - db-migrate
     steps:
@@ -406,6 +407,7 @@ jobs:
           - effectivenessmonitor
           - kubernautagent
           - apifrontend
+          - fleetmetadatacache
           - must-gather
           - db-migrate
     steps:
@@ -578,7 +580,7 @@ jobs:
           for svc in datastorage gateway aianalysis authwebhook notification \
                      remediationorchestrator signalprocessing workflowexecution \
                      effectivenessmonitor kubernautagent apifrontend \
-                     must-gather db-migrate; do
+                     fleetmetadatacache must-gather db-migrate; do
             echo "  Tagging $svc:latest..."
             podman manifest rm ${IMAGE_REGISTRY}/$svc:latest 2>/dev/null || true
             podman manifest create ${IMAGE_REGISTRY}/$svc:latest \
@@ -616,6 +618,7 @@ jobs:
           - effectivenessmonitor
           - kubernautagent
           - apifrontend
+          - fleetmetadatacache
           - must-gather
           - db-migrate
     steps:
