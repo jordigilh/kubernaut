@@ -118,6 +118,43 @@ func postWithFleetAuth(url, contentType string, body io.Reader) (*http.Response,
 	return http.DefaultClient.Do(req)
 }
 
+// postFleetAlertUntilAccepted posts a Prometheus alert payload to the Gateway and
+// retries while the response status is not one of acceptableStatus (defaults to
+// 201 Created).
+//
+// Issue #54 flakiness fix: this absorbs the eventual-consistency window between a
+// test creating/labeling a target resource via k8sClient and Gateway's own
+// watch-based informer cache (BR-SCOPE-001, ADR-053) observing that write.
+// Gateway's scope check (pkg/shared/scope/manager.go) reads from its cache, not
+// directly from the API server, so a signal sent immediately after fixture
+// creation can transiently see a stale (pre-creation/pre-label) cache and reject
+// a correctly-labeled resource with "unmanaged_resource" (HTTP 200) until the
+// watch event propagates -- typically well under a second, but not bounded.
+// Rejected responses have no side effects (no RR is created), so retrying the
+// POST is safe.
+func postFleetAlertUntilAccepted(gatewayURL string, payload []byte, acceptableStatus ...int) (int, []byte) {
+	if len(acceptableStatus) == 0 {
+		acceptableStatus = []int{http.StatusCreated}
+	}
+	var (
+		statusCode int
+		respBody   []byte
+	)
+	Eventually(func(g Gomega) {
+		resp, err := postWithFleetAuth(gatewayURL+"/api/v1/signals/prometheus",
+			"application/json", strings.NewReader(string(payload)))
+		g.Expect(err).ToNot(HaveOccurred())
+		body, readErr := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		g.Expect(readErr).ToNot(HaveOccurred())
+
+		statusCode, respBody = resp.StatusCode, body
+		g.Expect(acceptableStatus).To(ContainElement(resp.StatusCode),
+			"Gateway should accept the alert (body: %s)", string(body))
+	}, 15*time.Second, 500*time.Millisecond).Should(Succeed())
+	return statusCode, respBody
+}
+
 // newFleetMCPClient creates an MCP client with auto-discovered tool prefix.
 // Kuadrant uses "loopback_cluster_" (from MCPServerRegistration spec.prefix),
 // not the EAIGW "{clusterID}__" convention. DiscoverToolPrefix queries

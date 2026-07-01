@@ -20,6 +20,7 @@ import (
 	"context"
 	"os/exec"
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -43,18 +44,26 @@ var _ = Describe("E2E-FLEET-KUA: Kuadrant MCP Gateway Pipeline", Label("fleet"),
 		Expect(err).ToNot(HaveOccurred(), "should connect to Kuadrant MCP gateway via NodePort")
 		defer mcpClient.Close()
 
-		By("Listing tools via Kuadrant MCP gateway")
-		tools, err := mcpClient.Session().ListTools(mcpCtx, nil)
-		Expect(err).ToNot(HaveOccurred(), "tools/list must succeed through Kuadrant broker")
-		Expect(tools.Tools).ToNot(BeEmpty(), "Kuadrant broker must expose kube-mcp-server tools")
+		// Issue #54 flakiness fix: the Kuadrant broker only exposes the generic
+		// "discover_tools"/"select_tools" meta-tools until it finishes syncing
+		// cluster-specific tools from kube-mcp-server (~60s observed in spike
+		// S15 -- see newFleetMCPClient's identical retry rationale above). List
+		// immediately after connecting can race that sync, so poll instead of
+		// asserting on the first response.
+		By("Listing tools via Kuadrant MCP gateway (polling for post-sync tool set)")
+		var toolNames []string
+		Eventually(func(g Gomega) {
+			tools, listErr := mcpClient.Session().ListTools(mcpCtx, nil)
+			g.Expect(listErr).ToNot(HaveOccurred(), "tools/list must succeed through Kuadrant broker")
+			g.Expect(tools.Tools).ToNot(BeEmpty(), "Kuadrant broker must expose kube-mcp-server tools")
 
-		By("Verifying tool names use loopback_cluster_ prefix from MCPServerRegistration")
-		toolNames := make([]string, 0, len(tools.Tools))
-		for _, tool := range tools.Tools {
-			toolNames = append(toolNames, tool.Name)
-		}
-		Expect(toolNames).To(ContainElement(HavePrefix("loopback_cluster_")),
-			"CM-6: tool names must use prefix from MCPServerRegistration.spec.prefix")
+			toolNames = make([]string, 0, len(tools.Tools))
+			for _, tool := range tools.Tools {
+				toolNames = append(toolNames, tool.Name)
+			}
+			g.Expect(toolNames).To(ContainElement(HavePrefix("loopback_cluster_")),
+				"CM-6: tool names must use prefix from MCPServerRegistration.spec.prefix")
+		}, 90*time.Second, 5*time.Second).Should(Succeed())
 	})
 
 	It("E2E-FLEET-KUA-002 [AC-3]: tool call routes through Kuadrant broker to kube-mcp-server backend", func() {

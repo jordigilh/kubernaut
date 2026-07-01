@@ -18,7 +18,6 @@ package fleet
 
 import (
 	"context"
-	"io"
 	"net/http"
 	"strings"
 
@@ -144,18 +143,6 @@ var _ = Describe("E2E-FLEET-SI10-001 [SI-10]: Fleet input validation rejects mal
 		payload := buildPrometheusAlertWithCluster("FleetSI10Valid", namespace, "warning",
 			"Deployment", targetName, "prod-west")
 
-		resp, err := postWithFleetAuth(
-			gatewayURL+"/api/v1/signals/prometheus",
-			"application/json",
-			strings.NewReader(string(payload)))
-		Expect(err).ToNot(HaveOccurred())
-		defer resp.Body.Close()
-
-		body, _ := io.ReadAll(resp.Body)
-
-		Expect(resp.StatusCode).To(SatisfyAny(
-			Equal(http.StatusCreated),
-			Equal(http.StatusAccepted),
-		), "SI-10: well-formed fleet alert must be accepted (got body: %s)", string(body))
+		postFleetAlertUntilAccepted(gatewayURL, payload, http.StatusCreated, http.StatusAccepted)
 	})
 })

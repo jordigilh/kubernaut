@@ -19,9 +19,6 @@ package fleet
 import (
 	"context"
 	"encoding/json"
-	"io"
-	"net/http"
-	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -90,15 +87,8 @@ var _ = Describe("E2E-FLEET-009 [AC-3, AC-4, SI-4]: Full fleet journey from aler
 			"Deployment", targetName, "loopback-cluster")
 
 		gatewayURL := "http://localhost:30080"
-		resp, err := postWithFleetAuth(
-			gatewayURL+"/api/v1/signals/prometheus",
-			"application/json",
-			strings.NewReader(string(payload)))
-		Expect(err).ToNot(HaveOccurred())
-		defer resp.Body.Close()
-		Expect(resp.StatusCode).To(Equal(http.StatusCreated))
+		_, body := postFleetAlertUntilAccepted(gatewayURL, payload)
 
-		body, _ := io.ReadAll(resp.Body)
 		var response map[string]interface{}
 		Expect(json.Unmarshal(body, &response)).To(Succeed())
 		Expect(response["status"]).To(Equal("created"))

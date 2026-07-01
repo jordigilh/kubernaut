@@ -20,8 +20,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 	"time"
 
@@ -92,17 +90,8 @@ var _ = Describe("E2E-FLEET-001 [AC-4]: Signal ingestion with cluster_id creates
 			"Deployment", targetName, "prod-east")
 
 		gatewayURL := "http://localhost:30080"
-		resp, err := postWithFleetAuth(
-			gatewayURL+"/api/v1/signals/prometheus",
-			"application/json",
-			strings.NewReader(string(payload)))
-		Expect(err).ToNot(HaveOccurred())
-		defer resp.Body.Close()
+		_, body := postFleetAlertUntilAccepted(gatewayURL, payload)
 
-		Expect(resp.StatusCode).To(Equal(http.StatusCreated),
-			"Gateway should accept alert with cluster label")
-
-		body, _ := io.ReadAll(resp.Body)
 		var response map[string]interface{}
 		Expect(json.Unmarshal(body, &response)).To(Succeed())
 
@@ -135,21 +124,10 @@ var _ = Describe("E2E-FLEET-002 [AC-3]: Cluster-scoped dedup produces distinct f
 			"Deployment", "memory-eater", "prod-west")
 
 		gatewayURL := "http://localhost:30080"
-		respEast, err := postWithFleetAuth(gatewayURL+"/api/v1/signals/prometheus",
-			"application/json", strings.NewReader(string(payloadEast)))
-		Expect(err).ToNot(HaveOccurred())
-		defer respEast.Body.Close()
-		Expect(respEast.StatusCode).To(Equal(http.StatusCreated))
-
-		respWest, err := postWithFleetAuth(gatewayURL+"/api/v1/signals/prometheus",
-			"application/json", strings.NewReader(string(payloadWest)))
-		Expect(err).ToNot(HaveOccurred())
-		defer respWest.Body.Close()
-		Expect(respWest.StatusCode).To(Equal(http.StatusCreated))
+		_, bodyEast := postFleetAlertUntilAccepted(gatewayURL, payloadEast)
+		_, bodyWest := postFleetAlertUntilAccepted(gatewayURL, payloadWest)
 
 		var eastResp, westResp map[string]interface{}
-		bodyEast, _ := io.ReadAll(respEast.Body)
-		bodyWest, _ := io.ReadAll(respWest.Body)
 		Expect(json.Unmarshal(bodyEast, &eastResp)).To(Succeed())
 		Expect(json.Unmarshal(bodyWest, &westResp)).To(Succeed())
 
