@@ -228,6 +228,29 @@ Preflight with `revive argument-limit: 7` corrected the initial 32-count estimat
 
 ---
 
+## 7c. Pre-Phase-3 Coverage Gate — Audit-Emission Gap Closure (BR-AUDIT-005, SOC2 CC8.1) — ✅ RESOLVED
+
+Before starting Phase 3 (splitting `reconciler.go` and `pkg/gateway/server.go`), per-function coverage was pulled for both files (`go test -coverprofile` + `go tool cover -func`) to confirm regressions from the mechanical split would be caught by tests.
+
+**RemediationOrchestrator `reconciler.go` — real gap found and closed.** Four audit-emission functions sat at 15.8–36.4% line coverage: `emitEACreatedAudit`, `emitVerificationCompletedAudit`, `emitVerificationTimedOutAudit`, `emitCompletionAudit`. Tracing every call site (`ea_creation_test.go`, `verifying_phase_test.go`, `cascade_terminal_test.go`, `apply_transition_test.go`, `characterization_test.go`) showed every one of them wires `AuditStore: nil` — so only the `if r.auditStore == nil { return }` guard clause was ever exercised. The actual business logic (EA-name/duration extraction from the RR, GitOps/CRD propagation-delay breakdown, correlation-ID wiring) had **zero** verification, which is a direct BR-AUDIT-005 / SOC2 CC8.1 (audit completeness) / DD-AUDIT-003 gap: these are exactly the events required to reconstruct the remediation lifecycle from audit traces.
+
+Added `internal/controller/remediationorchestrator/audit_coverage_gaps_test.go` (6 new Ginkgo specs, `AE-COV-001..006`), each driving the reconciler through its public API (`Reconcile`/`ApplyTransition`) with a `MockAuditStore` and asserting on the emitted event's `RemediationOrchestratorAuditPayload` fields:
+
+| Test | Function(s) exercised | Business assertion |
+|---|---|---|
+| AE-COV-001 | `emitEACreatedAudit` | plain Deployment target → `isGitopsManaged=false`, `isCrd=false`, no delay fields set |
+| AE-COV-002 | `emitEACreatedAudit` | RCA-detected GitOps target → `isGitopsManaged=true`, `GitopsSyncDelay`/`HashComputeDelay` populated (BR-RO-103.2) |
+| AE-COV-003 | `emitVerificationCompletedAudit` | EA terminal → correct `EaName`/`DurationMs` extracted from RR status |
+| AE-COV-004 | `emitVerificationTimedOutAudit` + `emitCompletionAudit` | expired `VerificationDeadline` → both events fire, `CrdOutcome=VerificationTimedOut` |
+| AE-COV-005 | `emitCompletionAudit` | inherited completion → `CrdOutcome=InheritedCompleted` |
+| AE-COV-006 | `emitCompletionAudit` | dry-run completion (#712/#736) → `CrdOutcome=DryRun` |
+
+**Result**: `emitEACreatedAudit` 15.8%→73.7%, `emitVerificationCompletedAudit` 23.1%→76.9%, `emitVerificationTimedOutAudit` 23.1%→76.9%, `emitCompletionAudit` 36.4%→72.7%; package coverage 73.6%→75.1%. All 6 new specs pass, full package suite (376 specs) green, `go build ./...` and `golangci-lint run` (repo config) both clean. Remaining uncovered lines are the `BuildXxxEvent`/`StoreAudit` error-logging branches (require a failing audit-manager/store double; lower value, deferred).
+
+**Gateway `pkg/gateway/server.go` — no action needed (pyramid is working as designed).** UT-only coverage on the `emit*Audit` functions looks low (`emitSignalReceivedAudit` 9.1%, `emitSignalDeduplicatedAudit`/`emitCRDCreationFailedAudit` 0%, `emitCRDCreatedAudit` 12.5%), but `test/integration/gateway/audit_emission_integration_test.go` has 20 dedicated `GW-INT-AUD-*` scenarios (envtest-backed) mapped 1:1 to `BR-GATEWAY-055/056/057/058` that assert on these exact events and fields (correlation IDs, `occurrence_count`, `error_type` transient-vs-permanent, target-resource metadata). This matches the intended pyramid shape (UT proves logic in isolable pieces; IT proves the K8s-CRD-creation wiring these functions depend on) rather than a genuine gap. Caveat: this could not be re-verified by running the IT suite in this environment (no `envtest`/`etcd` binaries available locally) — confirmed instead by reading the IT spec descriptions and confirming field-level assertions exist for each function's behavior.
+
+---
+
 ## 8. Variable Shadowing — 120 found, mostly low-risk
 
 114/120 are `err` shadowing (`if err := f(); err != nil` repeated in the same scope — the single most common and least dangerous shadow pattern in Go, which is exactly why `govet -shadow` isn't part of default `go vet`). 1 `ctx` shadow, 1 `result`, 1 `username`, 1 `ok`, 1 `isString`. **No goroutine-closure-captures-loop-variable pattern was found** (the genuinely dangerous shadow bug) — none of the 120 hits are in a `for ... go func()` or `for ... defer func()` body.
@@ -255,6 +278,7 @@ Per AGENTS.md, REFACTOR-phase cleanup must not introduce new types/components, m
 |---|---|---|---|---|
 | 1 | Mechanical, zero-behavior-change: `prealloc` (13), safe `err`-shadow renames if desired | Very low | 0.5 day | ✅ Done |
 | 2 | Options-pattern extraction for all 21 real 8+-param functions (corrected scope, see §7b) | Low-medium (touches call sites, needs UT re-run) | 2-3 days | ✅ Done |
+| 2.5 | Coverage gate before Phase 3: audit-emission gap closure on `reconciler.go` (see §7c) | Low (additive tests only) | 0.5 day | ✅ Done |
 | 3 | Split `reconciler.go` (3,414→?) and `pkg/gateway/server.go` (2,511→?) into cohesive files following the existing `*_handler.go` pattern already used in RemediationOrchestrator | Medium (large diff, no logic change) | 3-4 days | 🔴 Not started |
 | 4 | Decompose the top complexity offenders: `buildEventData` (88), `HandleWatch` (cognitive 133), `Config.Validate` ×2, `main()` in `cmd/kubernautagent` and `cmd/apifrontend` | Medium-high (behavior-preserving refactor of dense logic, needs careful UT coverage first) | 5-7 days | 🔴 Not started |
 | 5 | Interface segregation for `AutonomousSessionManager` (13 methods) and `AWXClient` (11 methods) | Medium (ripples to all implementers/mocks) | 2-3 days | 🔴 Not started |
