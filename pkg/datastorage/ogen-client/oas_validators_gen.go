@@ -879,6 +879,60 @@ func (s AIAgentResponsePayloadEventType) Validate() error {
 	}
 }
 
+func (s *AIAgentSecretAccessedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := s.Verb.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "verb",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s AIAgentSecretAccessedPayloadEventType) Validate() error {
+	switch s {
+	case "aiagent.secret.accessed":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s AIAgentSecretAccessedPayloadVerb) Validate() error {
+	switch s {
+	case "get":
+		return nil
+	case "list":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s *AIAgentSessionAccessDeniedPayload) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -3220,6 +3274,8 @@ func (s AuditEventEventCategory) Validate() error {
 		return nil
 	case "apifrontend":
 		return nil
+	case "security":
+		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}
@@ -3392,6 +3448,11 @@ func (s AuditEventEventData) Validate() error {
 		return nil
 	case AIAgentInteractiveK8sCallPayloadAuditEventEventData:
 		if err := s.AIAgentInteractiveK8sCallPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case AIAgentSecretAccessedPayloadAuditEventEventData:
+		if err := s.AIAgentSecretAccessedPayload.Validate(); err != nil {
 			return err
 		}
 		return nil
@@ -3645,6 +3706,21 @@ func (s AuditEventEventData) Validate() error {
 			return err
 		}
 		return nil
+	case DatastorageRatelimitDeniedPayloadAuditEventEventData:
+		if err := s.DatastorageRatelimitDeniedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case GatewayConfigReloadedPayloadAuditEventEventData:
+		if err := s.GatewayConfigReloadedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case GatewayConfigRejectedPayloadAuditEventEventData:
+		if err := s.GatewayConfigRejectedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
 	default:
 		return errors.Errorf("invalid type %q", s.Type)
 	}
@@ -3856,6 +3932,8 @@ func (s AuditEventRequestEventCategory) Validate() error {
 		return nil
 	case "apifrontend":
 		return nil
+	case "security":
+		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}
@@ -4028,6 +4106,11 @@ func (s AuditEventRequestEventData) Validate() error {
 		return nil
 	case AIAgentInteractiveK8sCallPayloadAuditEventRequestEventData:
 		if err := s.AIAgentInteractiveK8sCallPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case AIAgentSecretAccessedPayloadAuditEventRequestEventData:
+		if err := s.AIAgentSecretAccessedPayload.Validate(); err != nil {
 			return err
 		}
 		return nil
@@ -4278,6 +4361,21 @@ func (s AuditEventRequestEventData) Validate() error {
 		return nil
 	case ApifrontendConfigRejectedPayloadAuditEventRequestEventData:
 		if err := s.ApifrontendConfigRejectedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case DatastorageRatelimitDeniedPayloadAuditEventRequestEventData:
+		if err := s.DatastorageRatelimitDeniedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case GatewayConfigReloadedPayloadAuditEventRequestEventData:
+		if err := s.GatewayConfigReloadedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case GatewayConfigRejectedPayloadAuditEventRequestEventData:
+		if err := s.GatewayConfigRejectedPayload.Validate(); err != nil {
 			return err
 		}
 		return nil
@@ -4593,6 +4691,38 @@ func (s CustomLabels) Validate() error {
 		return &validate.Error{Fields: failures}
 	}
 	return nil
+}
+
+func (s *DatastorageRatelimitDeniedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s DatastorageRatelimitDeniedPayloadEventType) Validate() error {
+	switch s {
+	case "datastorage.ratelimit.denied":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
 }
 
 func (s *DetectedLabels) Validate() error {
@@ -5423,6 +5553,70 @@ func (s GatewayAuditPayloadEventType) Validate() error {
 func (s GatewayAuditPayloadSignalType) Validate() error {
 	switch s {
 	case "alert":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *GatewayConfigRejectedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s GatewayConfigRejectedPayloadEventType) Validate() error {
+	switch s {
+	case "gateway.config.rejected":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *GatewayConfigReloadedPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s GatewayConfigReloadedPayloadEventType) Validate() error {
+	switch s {
+	case "gateway.config.reloaded":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
