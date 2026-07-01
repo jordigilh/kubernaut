@@ -205,10 +205,14 @@ func collectTeamsCredentialRefs(config *routing.Config) []string {
 
 // collectAllCredentialRefs aggregates credential refs from all credential-bound channels.
 func collectAllCredentialRefs(config *routing.Config) []string {
-	var refs []string
-	refs = append(refs, collectSlackCredentialRefs(config)...)
-	refs = append(refs, collectPagerDutyCredentialRefs(config)...)
-	refs = append(refs, collectTeamsCredentialRefs(config)...)
+	slackRefs := collectSlackCredentialRefs(config)
+	pagerDutyRefs := collectPagerDutyCredentialRefs(config)
+	teamsRefs := collectTeamsCredentialRefs(config)
+
+	refs := make([]string, 0, len(slackRefs)+len(pagerDutyRefs)+len(teamsRefs))
+	refs = append(refs, slackRefs...)
+	refs = append(refs, pagerDutyRefs...)
+	refs = append(refs, teamsRefs...)
 	return refs
 }
 

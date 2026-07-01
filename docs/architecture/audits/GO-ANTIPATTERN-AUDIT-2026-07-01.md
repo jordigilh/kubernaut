@@ -193,11 +193,13 @@ Both are the "object-lifecycle context" exception Go teams generally tolerate (v
 
 ---
 
-## 7. Missing Slice/Map Pre-allocation — 13 found (`prealloc` linter)
+## 7. Missing Slice/Map Pre-allocation — 13 found (`prealloc` linter) — ✅ RESOLVED (Phase 1)
 
-Small, mechanical, zero-risk fixes — safe to batch:
+Small, mechanical, zero-risk fixes:
 
 `cmd/kubernautagent/main.go:848,1185`, `cmd/workflowexecution/main.go:346`, `internal/controller/notification/routing_handler.go:208`, `internal/kubernautagent/investigator/investigator_gates.go:87,237`, `pkg/datastorage/server/server.go:377`, `pkg/kubernautagent/llm/vertexanthropic/client.go:247`, `pkg/kubernautagent/tools/k8s/tools.go:61`, `pkg/notification/delivery/teams_cards.go:84`, `pkg/shared/hash/configmap.go:171`, `pkg/shared/tls/profile.go:90`, `pkg/workflowexecution/executor/job.go:330`.
+
+All 13/13 fixed across two commits. The first 10 (single-source-length capacity, e.g. `make([]T, 0, len(src))`) landed directly. The remaining 3 aggregate capacity from multiple sub-slices/literals (`collectAllCredentialRefs`, `NewAllTools`, `buildCardBody`) and were initially deferred as "low value" — that judgment call was reassessed on request: the fix is equally mechanical (capture each sub-result in a local, sum `len()`s, `make` once), so all 3 were fixed too. `collectAllCredentialRefs` had zero prior test coverage and got a new characterization test (`routing_handler_test.go`) pinning aggregation order and empty-ref filtering before the refactor; the other two already had indirect coverage (`NewAllTools` via 4 existing test files, `buildCardBody` via `BuildTeamsPayload` tests). Zero regressions; `go build ./...`, targeted package tests, and `golangci-lint run` (repo config) all clean.
 
 ---
 
