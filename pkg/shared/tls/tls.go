@@ -114,7 +114,7 @@ func LoadCACert(caFile string) (*x509.CertPool, error) {
 // on error -- prevents permanent failure if CA file isn't yet mounted.
 var (
 	caReloaderInstance *CAReloader
-	singletonMu       sync.Mutex
+	singletonMu        sync.Mutex
 )
 
 // DefaultBaseTransport returns an http.RoundTripper pre-configured with the CA
@@ -180,7 +180,13 @@ func ResetDefaultTransportForTesting() {
 // StartCAFileWatcher initializes the CA reloader singleton and starts a
 // FileWatcher on $TLS_CA_FILE. Returns nil watcher if TLS_CA_FILE is unset.
 // The returned watcher must be stopped by the caller (defer watcher.Stop()).
-func StartCAFileWatcher(ctx context.Context, logger logr.Logger) (*hotreload.FileWatcher, error) {
+// StartCAFileWatcher watches TLS_CA_FILE for changes and hot-reloads the
+// shared CA transport. onReload, if provided, is invoked after every reload
+// attempt (initial load and every subsequent change) with the callback's
+// error (nil on success) — letting callers emit an audit event without this
+// widely-shared helper depending on any particular audit implementation
+// (GAP-11, Issue #1505). At most the first onReload function is used.
+func StartCAFileWatcher(ctx context.Context, logger logr.Logger, onReload ...func(error)) (*hotreload.FileWatcher, error) {
 	caFile := os.Getenv("TLS_CA_FILE")
 	if caFile == "" {
 		return nil, nil
@@ -196,9 +202,19 @@ func StartCAFileWatcher(ctx context.Context, logger logr.Logger) (*hotreload.Fil
 		return nil, nil
 	}
 
+	callback := reloader.ReloadCallback
+	if len(onReload) > 0 && onReload[0] != nil {
+		notify := onReload[0]
+		callback = func(newContent string) error {
+			err := reloader.ReloadCallback(newContent)
+			notify(err)
+			return err
+		}
+	}
+
 	watcher, err := hotreload.NewFileWatcher(
 		caFile,
-		reloader.ReloadCallback,
+		callback,
 		logger.WithName("ca-reloader"),
 	)
 	if err != nil {

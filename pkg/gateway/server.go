@@ -31,18 +31,18 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-logr/logr"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/jordigilh/kubernaut/pkg/shared/circuitbreaker" // BR-GATEWAY-093: Circuit breaker detection
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	gwerrors "github.com/jordigilh/kubernaut/pkg/gateway/errors"
 
 	"github.com/jordigilh/kubernaut/pkg/audit"                       // DD-AUDIT-003: Audit integration
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client" // Ogen generated audit types
-	"github.com/jordigilh/kubernaut/pkg/shared/auth"                 // BR-GATEWAY-036/037: Shared auth middleware
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit"    // BR-AUDIT-005 Gap #7: Standardized error details
+	"github.com/jordigilh/kubernaut/pkg/shared/auth"                 // BR-GATEWAY-036/037: Shared auth middleware
 	"github.com/jordigilh/kubernaut/pkg/shared/backoff"              // ADR-052 Addendum 001: Exponential backoff with jitter
-	sharedhealth "github.com/jordigilh/kubernaut/pkg/shared/health"   // Issue #753: Dedicated health server
-	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"             // Issue #756: FileWatcher for cert rotation
+	sharedhealth "github.com/jordigilh/kubernaut/pkg/shared/health"  // Issue #753: Dedicated health server
+	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"            // Issue #756: FileWatcher for cert rotation
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"        // Issue #493/#678: Conditional TLS
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -56,6 +56,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/fleet" // ADR-068: Federated scope checking factory
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
 	"github.com/jordigilh/kubernaut/pkg/gateway/config"
 	"github.com/jordigilh/kubernaut/pkg/gateway/k8s"
@@ -66,7 +67,6 @@ import (
 	kubecors "github.com/jordigilh/kubernaut/pkg/http/cors"  // BR-HTTP-015: Shared CORS library
 	"github.com/jordigilh/kubernaut/pkg/shared/sanitization" // DD-005: Shared sanitization library
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"        // BR-SCOPE-002: Resource scope management
-	"github.com/jordigilh/kubernaut/pkg/fleet" // ADR-068: Federated scope checking factory
 )
 
 // Gateway Audit Event Type Constants (from OpenAPI spec)
@@ -76,9 +76,11 @@ const (
 	EventTypeSignalDeduplicated = "gateway.signal.deduplicated" // BR-GATEWAY-191: Duplicate signal detected
 	EventTypeCRDCreated         = "gateway.crd.created"         // DD-AUDIT-003: RR CRD successfully created
 	EventTypeCRDFailed          = "gateway.crd.failed"          // DD-AUDIT-003: RR CRD creation failed
+	EventTypeConfigReloaded     = "gateway.config.reloaded"     // GAP-11 (Issue #1505): Hot-reload accepted (log level, CA cert)
+	EventTypeConfigRejected     = "gateway.config.rejected"     // GAP-11 (Issue #1505): Hot-reload rejected, previous config kept
 	CategoryGateway             = "gateway"                     // Service-level category per ADR-034
 	// EventCategoryGateway is an alias for consistency with other services
-	EventCategoryGateway        = CategoryGateway
+	EventCategoryGateway = CategoryGateway
 )
 
 // Gateway Audit Event Action Constants (ADR-034 event_action field)
@@ -88,6 +90,8 @@ const (
 	ActionDeduplicated = "deduplicated" // Signal was deduplicated to existing RR
 	ActionCreated      = "created"      // RemediationRequest CRD was created
 	ActionFailed       = "failed"       // Operation failed
+	ActionReloaded     = "reloaded"     // GAP-11: Hot-reloadable config accepted
+	ActionRejected     = "rejected"     // GAP-11: Hot-reloadable config rejected
 )
 
 // Server is the main Gateway HTTP server
@@ -127,12 +131,12 @@ const (
 type Server struct {
 	// HTTP servers (Issue #753: 3-port standard — API :8080, Health :8081, Metrics :9090)
 	httpServer    *http.Server
-	healthServer  *http.Server // Issue #753: dedicated health probe server (/healthz, /readyz)
-	metricsServer *http.Server // Issue #753: dedicated metrics server (/metrics)
-	router        chi.Router   // Chi router for adapter registration and route grouping
-	certReloader  *sharedtls.CertReloader      // Issue #756: nil when TLS disabled
-	certWatcher   *hotreload.FileWatcher        // Issue #756: nil when TLS disabled
-	tlsCertDir    string                        // Issue #756: cert dir for FileWatcher path
+	healthServer  *http.Server            // Issue #753: dedicated health probe server (/healthz, /readyz)
+	metricsServer *http.Server            // Issue #753: dedicated metrics server (/metrics)
+	router        chi.Router              // Chi router for adapter registration and route grouping
+	certReloader  *sharedtls.CertReloader // Issue #756: nil when TLS disabled
+	certWatcher   *hotreload.FileWatcher  // Issue #756: nil when TLS disabled
+	tlsCertDir    string                  // Issue #756: cert dir for FileWatcher path
 
 	// Configuration
 	config *config.ServerConfig // ADR-030: Service configuration (needed for middleware setup)
@@ -145,7 +149,7 @@ type Server struct {
 	phaseChecker  *processing.PhaseBasedDeduplicationChecker // Phase-based deduplication logic
 	crdCreator    *processing.CRDCreator
 	lockManager   *processing.DistributedLockManager // BR-GATEWAY-190: K8s Lease-based distributed locking
-	scopeChecker  scope.ScopeChecker            // BR-SCOPE-002 + ADR-068: nil = no scope filtering (backward compat)
+	scopeChecker  scope.ScopeChecker                 // BR-SCOPE-002 + ADR-068: nil = no scope filtering (backward compat)
 
 	// ADR-057: Controller namespace where all CRDs are created and queried
 	controllerNamespace string
@@ -334,9 +338,9 @@ func NewServerForTesting(cfg *config.ServerConfig, logger logr.Logger, metricsIn
 		phaseChecker:        phaseChecker,
 		k8sClient:           k8sClient,
 		ctrlClient:          ctrlClient,
-		apiReader:           ctrlClient, // Test env: ctrlClient is uncached, works for readiness List
-		lockManager:         lockManager, // BR-GATEWAY-190: Multi-replica deduplication safety
-		auditStore:          auditStore, // Injected for testing
+		apiReader:           ctrlClient,   // Test env: ctrlClient is uncached, works for readiness List
+		lockManager:         lockManager,  // BR-GATEWAY-190: Multi-replica deduplication safety
+		auditStore:          auditStore,   // Injected for testing
 		scopeChecker:        scopeChecker, // BR-SCOPE-002: nil = no scope filtering
 		controllerNamespace: controllerNS, // Issue #195: Used by ShouldDeduplicate
 		authMiddleware:      newAuthMiddleware(authenticator, authorizer, controllerNS, logger),
@@ -689,7 +693,7 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 		apiReader:           apiReader, // ADR-057: Used for readiness K8s check (bypasses cache)
 		auditStore:          auditStore,
 		scopeChecker:        scopeCheckerInstance, // BR-SCOPE-002 + ADR-065: Label-based scope filtering (federated when fleet enabled)
-		controllerNamespace: controllerNS, // Issue #195: Used by ShouldDeduplicate
+		controllerNamespace: controllerNS,         // Issue #195: Used by ShouldDeduplicate
 		authMiddleware:      authMW,
 		metricsInstance:     metricsInstance,
 		logger:              logger,
@@ -1548,11 +1552,11 @@ func (s *Server) validateScope(ctx context.Context, signal *types.NormalizedSign
 // TDD REFACTOR: Simplified by extracting helper methods.
 //
 // Pipeline stages:
-// 1. Scope validation → validateScope() rejects unmanaged resources
-// 2. Optional distributed lock (DD-GATEWAY-013) for multi-replica safety
-// 3. Deduplication check → K8s status lookup (DD-GATEWAY-011); if duplicate,
-//    update status.deduplication on the existing RemediationRequest and return HTTP 202
-// 4. CRD creation → createRemediationRequestCRD() for new signals; return HTTP 201
+//  1. Scope validation → validateScope() rejects unmanaged resources
+//  2. Optional distributed lock (DD-GATEWAY-013) for multi-replica safety
+//  3. Deduplication check → K8s status lookup (DD-GATEWAY-011); if duplicate,
+//     update status.deduplication on the existing RemediationRequest and return HTTP 202
+//  4. CRD creation → createRemediationRequestCRD() for new signals; return HTTP 201
 //
 // Note: Environment classification and Priority assignment removed (2025-12-06).
 // These are now owned by Signal Processing service per DD-CATEGORIZATION-001.
@@ -1775,7 +1779,7 @@ func (s *Server) readinessHandler(w http.ResponseWriter, r *http.Request) {
 // writeReadinessUnavailable writes a 503 RFC 7807 response for the readiness probe.
 // logReason appears in the structured log; detail appears in the response body.
 func (s *Server) writeReadinessUnavailable(w http.ResponseWriter, r *http.Request, logReason, detail string) {
-	s.logger.Info("Readiness check failed: "+logReason)
+	s.logger.Info("Readiness check failed: " + logReason)
 
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(http.StatusServiceUnavailable)
@@ -1799,12 +1803,12 @@ func (s *Server) writeReadinessUnavailable(w http.ResponseWriter, r *http.Reques
 // AlertManager/webhook callers don't need this information - they only need to know
 // if the alert was accepted (HTTP status code).
 type ProcessingResponse struct {
-	Status                      string `json:"status"` // "created", "duplicate", or "rejected"
-	Message                     string `json:"message"`
-	Fingerprint                 string `json:"fingerprint"`
-	Duplicate                   bool   `json:"duplicate"`
-	RemediationRequestName      string `json:"remediationRequestName,omitempty"`
-	RemediationRequestNamespace string `json:"remediationRequestNamespace,omitempty"`
+	Status                      string                            `json:"status"` // "created", "duplicate", or "rejected"
+	Message                     string                            `json:"message"`
+	Fingerprint                 string                            `json:"fingerprint"`
+	Duplicate                   bool                              `json:"duplicate"`
+	RemediationRequestName      string                            `json:"remediationRequestName,omitempty"`
+	RemediationRequestNamespace string                            `json:"remediationRequestNamespace,omitempty"`
 	Metadata                    *processing.DeduplicationMetadata `json:"metadata,omitempty"`
 	// BR-SCOPE-002: Rejection details for unmanaged resource signals
 	Rejection *RejectionResponse `json:"rejection,omitempty"`
@@ -1946,6 +1950,56 @@ func extractRRReconstructionFields(signal *types.NormalizedSignal) (
 	return labels, annotations, originalPayload
 }
 
+// EmitConfigReloadAudit emits 'gateway.config.reloaded' (reloadErr == nil) or
+// 'gateway.config.rejected' (reloadErr != nil) for a hot-reloadable Gateway
+// component (GAP-11, Issue #1505 — SOC2 CC7.2 change management, FedRAMP AU-12).
+//
+// component identifies which hot-reloadable setting was affected, e.g.
+// "log_level" (cmd/gateway/main.go log-level FileWatcher) or "ca_cert"
+// (sharedtls.StartCAFileWatcher). Exported for use from cmd/gateway/main.go,
+// which owns both FileWatcher lifecycles.
+func (s *Server) EmitConfigReloadAudit(ctx context.Context, component string, reloadErr error) {
+	if s.auditStore == nil {
+		// ❌ CRITICAL: This should NEVER happen if init is fixed (ADR-032 §2)
+		s.logger.Error(fmt.Errorf("AuditStore is nil"), "CRITICAL: Cannot record audit event (ADR-032 §1.5 violation)")
+		return
+	}
+
+	event := audit.NewAuditEventRequest()
+	event.Version = "1.0"
+	audit.SetEventCategory(event, CategoryGateway)
+	audit.SetActor(event, "service", "gateway")
+	audit.SetResource(event, "Config", component)
+	audit.SetCorrelationID(event, fmt.Sprintf("config-reload-%s-%d", component, time.Now().UnixNano()))
+
+	if reloadErr != nil {
+		audit.SetEventType(event, EventTypeConfigRejected)
+		audit.SetEventAction(event, ActionRejected)
+		audit.SetEventOutcome(event, audit.OutcomeFailure)
+		payload := api.GatewayConfigRejectedPayload{
+			EventType:       api.GatewayConfigRejectedPayloadEventTypeGatewayConfigRejected,
+			Component:       component,
+			RejectionReason: reloadErr.Error(),
+		}
+		event.EventData = api.NewGatewayConfigRejectedPayloadAuditEventRequestEventData(payload)
+	} else {
+		audit.SetEventType(event, EventTypeConfigReloaded)
+		audit.SetEventAction(event, ActionReloaded)
+		audit.SetEventOutcome(event, audit.OutcomeSuccess)
+		payload := api.GatewayConfigReloadedPayload{
+			EventType: api.GatewayConfigReloadedPayloadEventTypeGatewayConfigReloaded,
+			Component: component,
+		}
+		event.EventData = api.NewGatewayConfigReloadedPayloadAuditEventRequestEventData(payload)
+	}
+
+	// Fire-and-forget: StoreAudit is non-blocking per DD-AUDIT-002
+	if err := s.auditStore.StoreAudit(ctx, event); err != nil {
+		s.logger.Info("DD-AUDIT-003: Failed to emit config reload audit event",
+			"error", err, "component", component)
+	}
+}
+
 // emitSignalReceivedAudit emits 'gateway.signal.received' audit event (BR-GATEWAY-190)
 // This is called when a NEW signal is received and RR is created
 func (s *Server) emitSignalReceivedAudit(ctx context.Context, signal *types.NormalizedSignal, rrName, rrNamespace string) {
@@ -1997,7 +2051,7 @@ func (s *Server) emitSignalReceivedAudit(ctx context.Context, signal *types.Norm
 
 		// Gateway-Specific Metadata
 		SignalType:  toGatewayAuditPayloadSignalType(signal.SourceType),
-		SignalName:   signal.SignalName,
+		SignalName:  signal.SignalName,
 		Namespace:   signal.Namespace,
 		Fingerprint: signal.Fingerprint,
 	}
@@ -2072,7 +2126,7 @@ func (s *Server) emitSignalDeduplicatedAudit(ctx context.Context, signal *types.
 
 		// Gateway-Specific Metadata
 		SignalType:  toGatewayAuditPayloadSignalType(signal.SourceType),
-		SignalName:   signal.SignalName,
+		SignalName:  signal.SignalName,
 		Namespace:   signal.Namespace,
 		Fingerprint: signal.Fingerprint,
 	}
@@ -2132,7 +2186,7 @@ func (s *Server) emitCRDCreatedAudit(ctx context.Context, signal *types.Normaliz
 		EventType: EventTypeCRDCreated, // Required for discriminator
 
 		SignalType:  toGatewayAuditPayloadSignalType(signal.SourceType),
-		SignalName:   signal.SignalName,
+		SignalName:  signal.SignalName,
 		Namespace:   signal.Namespace,
 		Fingerprint: signal.Fingerprint,
 	}
@@ -2232,7 +2286,7 @@ func (s *Server) emitCRDCreationFailedAudit(ctx context.Context, signal *types.N
 		EventType: EventTypeCRDFailed, // Required for discriminator
 
 		SignalType:  toGatewayAuditPayloadSignalType(signal.SourceType),
-		SignalName:   signal.SignalName,
+		SignalName:  signal.SignalName,
 		Namespace:   signal.Namespace,
 		Fingerprint: signal.Fingerprint,
 	}
