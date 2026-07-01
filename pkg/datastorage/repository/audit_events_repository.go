@@ -18,6 +18,7 @@ package repository
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
@@ -186,8 +187,14 @@ type AuditEvent struct {
 	// ========================================
 	// SOC2 Gap #9: Tamper-Evidence (Hash Chain)
 	// ========================================
-	EventHash         string `json:"event_hash"`          // SHA256 hash of (previous_event_hash + event_json)
+	EventHash         string `json:"event_hash"`          // Hash of (previous_event_hash + event_json); see HashAlgorithm
 	PreviousEventHash string `json:"previous_event_hash"` // Hash of the previous event in the chain
+
+	// HashAlgorithm records which algorithm produced EventHash: HashAlgorithmHMACSHA256
+	// (keyed, GAP-05/Issue #1505) or HashAlgorithmSHA256Unkeyed (legacy default).
+	// Excluded from the hash payload itself (see PrepareEventForHashing) so that
+	// events written before GAP-05 continue to verify against their original hash.
+	HashAlgorithm string `json:"hash_algorithm,omitempty"`
 
 	// ========================================
 	// SOC2 Gap #8: Legal Hold & Retention
@@ -207,14 +214,45 @@ type AuditEvent struct {
 type AuditEventsRepository struct {
 	db     *sql.DB
 	logger logr.Logger
+
+	// hmacKey enables keyed HMAC-SHA256 hash chaining (GAP-05, Issue #1505) for
+	// newly written events. When empty, the repository falls back to the legacy
+	// unkeyed SHA256 algorithm for backward compatibility with environments that
+	// have not yet provisioned the datastorage audit HMAC key secret.
+	hmacKey []byte
+}
+
+// AuditEventsRepositoryOption configures optional AuditEventsRepository behavior.
+type AuditEventsRepositoryOption func(*AuditEventsRepository)
+
+// WithHMACKey enables keyed HMAC-SHA256 hash chaining (GAP-05, Issue #1505).
+// A nil/empty key is a no-op, preserving the legacy unkeyed SHA256 algorithm.
+func WithHMACKey(key []byte) AuditEventsRepositoryOption {
+	return func(r *AuditEventsRepository) {
+		if len(key) > 0 {
+			r.hmacKey = key
+		}
+	}
 }
 
 // NewAuditEventsRepository creates a new repository instance
-func NewAuditEventsRepository(db *sql.DB, logger logr.Logger) *AuditEventsRepository {
-	return &AuditEventsRepository{
+func NewAuditEventsRepository(db *sql.DB, logger logr.Logger, opts ...AuditEventsRepositoryOption) *AuditEventsRepository {
+	r := &AuditEventsRepository{
 		db:     db,
 		logger: logger,
 	}
+	for _, opt := range opts {
+		opt(r)
+	}
+	return r
+}
+
+// HMACKey returns the configured HMAC key, or nil when keyed hashing is disabled.
+// GAP-05 (Issue #1505): exposed so verification paths outside this package (e.g.
+// the /api/v1/audit/verify-chain HTTP handler) can recompute hmac-sha256 hashes
+// using the same key the repository uses at write time.
+func (r *AuditEventsRepository) HMACKey() []byte {
+	return r.hmacKey
 }
 
 // ========================================
@@ -223,15 +261,34 @@ func NewAuditEventsRepository(db *sql.DB, logger logr.Logger) *AuditEventsReposi
 // SOC2 Requirement: Tamper-evident audit logs (SOC 2 Type II, NIST 800-53, Sarbanes-Oxley)
 // ========================================
 
+// GAP-05 (Issue #1505): Hash chain algorithm identifiers, stored per-row in the
+// hash_algorithm column so a mixed-algorithm chain is supported during HMAC key
+// rollout (existing rows keep sha256-unkeyed; new writes use hmac-sha256 once a
+// key is configured).
+const (
+	// HashAlgorithmSHA256Unkeyed is the legacy algorithm used before GAP-05: a
+	// plain SHA256 of (previous_hash + event_json), computable by anyone without
+	// a secret. A DB-privileged attacker can recompute this hash after tampering.
+	HashAlgorithmSHA256Unkeyed = "sha256-unkeyed"
+
+	// HashAlgorithmHMACSHA256 is the GAP-05 keyed algorithm: HMAC-SHA256 of
+	// (previous_hash + event_json) using a key stored outside the database
+	// (Kubernetes Secret). Forging a valid hash without the key is infeasible.
+	HashAlgorithmHMACSHA256 = "hmac-sha256"
+)
+
 // PrepareEventForHashing returns a copy of the event with excluded fields zeroed out.
 // This MUST be used by all hash calculation paths (write-time, export, verify-chain)
 // to ensure consistent hashing across the entire audit pipeline.
 //
 // Excluded fields:
-// 1. EventHash, PreviousEventHash — not yet calculated at write time
-// 2. EventDate — derived from EventTimestamp (DB-generated)
-// 3. LegalHold, LegalHoldReason, LegalHoldPlacedBy, LegalHoldPlacedAt — can change
-//    after event creation (SOC2 Gap #8)
+//  1. EventHash, PreviousEventHash — not yet calculated at write time
+//  2. EventDate — derived from EventTimestamp (DB-generated)
+//  3. LegalHold, LegalHoldReason, LegalHoldPlacedBy, LegalHoldPlacedAt — can change
+//     after event creation (SOC2 Gap #8)
+//  4. HashAlgorithm — GAP-05 metadata describing which algorithm produced EventHash,
+//     not part of the hashed content. Excluding it keeps pre-GAP-05 hashes verifiable
+//     (their original JSON payload never contained this field).
 //
 // Note: EventTimestamp IS included in hash (set before calculation during INSERT).
 func PrepareEventForHashing(event *AuditEvent) AuditEvent {
@@ -239,6 +296,7 @@ func PrepareEventForHashing(event *AuditEvent) AuditEvent {
 	eventCopy.EventHash = ""
 	eventCopy.PreviousEventHash = ""
 	eventCopy.EventDate = DateOnly{}
+	eventCopy.HashAlgorithm = ""
 
 	// SOC2 Gap #8: Legal hold fields can change after event creation
 	eventCopy.LegalHold = false
@@ -252,6 +310,10 @@ func PrepareEventForHashing(event *AuditEvent) AuditEvent {
 // calculateEventHash computes SHA256 hash for blockchain-style chain
 // Hash = SHA256(previous_event_hash + event_json)
 // This creates an immutable chain where tampering with ANY event breaks the chain
+//
+// GAP-05 (Issue #1505): kept for the legacy HashAlgorithmSHA256Unkeyed algorithm.
+// New writes prefer calculateEventHashHMAC when a key is configured (see
+// AuditEventsRepository.hashEvent).
 func calculateEventHash(previousHash string, event *AuditEvent) (string, error) {
 	eventForHashing := PrepareEventForHashing(event)
 
@@ -268,6 +330,71 @@ func calculateEventHash(previousHash string, event *AuditEvent) (string, error) 
 	hashBytes := hasher.Sum(nil)
 
 	return hex.EncodeToString(hashBytes), nil
+}
+
+// calculateEventHashHMAC computes a keyed HMAC-SHA256 hash chain link.
+// Hash = HMAC-SHA256(key, previous_event_hash + event_json)
+//
+// GAP-05 (Issue #1505): unlike calculateEventHash (plain SHA256), forging a
+// valid hash without the key is computationally infeasible even for an
+// attacker with full read/write access to the database — closing the gap
+// where a DB-privileged attacker could tamper with an event and recompute a
+// self-consistent unkeyed SHA256 chain.
+func calculateEventHashHMAC(key []byte, previousHash string, event *AuditEvent) (string, error) {
+	eventForHashing := PrepareEventForHashing(event)
+
+	eventJSON, err := json.Marshal(eventForHashing)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal event for hashing: %w", err)
+	}
+
+	mac := hmac.New(sha256.New, key)
+	mac.Write([]byte(previousHash))
+	mac.Write(eventJSON)
+	hashBytes := mac.Sum(nil)
+
+	return hex.EncodeToString(hashBytes), nil
+}
+
+// hashEvent computes the hash chain link for event using this repository's
+// configured algorithm (HMAC-SHA256 when an HMAC key is set, else the legacy
+// unkeyed SHA256) and stamps event.HashAlgorithm accordingly. Used by both
+// Create and CreateBatch so the algorithm decision lives in exactly one place.
+func (r *AuditEventsRepository) hashEvent(previousHash string, event *AuditEvent) (string, error) {
+	if len(r.hmacKey) > 0 {
+		event.HashAlgorithm = HashAlgorithmHMACSHA256
+		return calculateEventHashHMAC(r.hmacKey, previousHash, event)
+	}
+	event.HashAlgorithm = HashAlgorithmSHA256Unkeyed
+	return calculateEventHash(previousHash, event)
+}
+
+// CalculateHashForVerification computes the expected hash for verification,
+// honoring the event's own HashAlgorithm (set at write time). GAP-05 (Issue
+// #1505): supports both the legacy unkeyed SHA256 algorithm and the newer
+// keyed HMAC-SHA256 algorithm within the same chain, since an HMAC key
+// rollout does not retroactively re-hash pre-existing events.
+//
+// hmacKey may be nil when the caller has no HMAC key configured. Verifying a
+// hmac-sha256 event without a key returns an error rather than silently
+// falling back to the unkeyed formula, which would always mismatch and
+// misleadingly report "tampered" for events that are actually intact.
+// Shared by repository.Export and the /api/v1/audit/verify-chain handler so
+// both verification paths apply identical logic.
+func CalculateHashForVerification(hmacKey []byte, previousHash string, event *AuditEvent) (string, error) {
+	switch event.HashAlgorithm {
+	case HashAlgorithmHMACSHA256:
+		if len(hmacKey) == 0 {
+			return "", fmt.Errorf("event %s uses hash_algorithm=%s but no HMAC key is configured for verification", event.EventID, HashAlgorithmHMACSHA256)
+		}
+		return calculateEventHashHMAC(hmacKey, previousHash, event)
+	case HashAlgorithmSHA256Unkeyed, "":
+		// Empty HashAlgorithm covers rows read before the hash_algorithm column
+		// existed (pre-GAP-05 code paths / tests using bare AuditEvent structs).
+		return calculateEventHash(previousHash, event)
+	default:
+		return "", fmt.Errorf("event %s has unrecognized hash_algorithm %q", event.EventID, event.HashAlgorithm)
+	}
 }
 
 // getPreviousEventHash retrieves the hash of the most recent event for a given correlation_id
@@ -415,7 +542,7 @@ func (r *AuditEventsRepository) Create(ctx context.Context, event *AuditEvent) (
 			return fmt.Errorf("failed to get previous event hash: %w", txErr)
 		}
 
-		eventHash, txErr := calculateEventHash(previousHash, event)
+		eventHash, txErr := r.hashEvent(previousHash, event)
 		if txErr != nil {
 			return fmt.Errorf("failed to calculate event hash: %w", txErr)
 		}
@@ -432,7 +559,7 @@ func (r *AuditEventsRepository) Create(ctx context.Context, event *AuditEvent) (
 				actor_id, actor_type, actor_ip,
 				severity, duration_ms, error_code, error_message,
 				retention_days, is_sensitive, event_data,
-				event_hash, previous_event_hash,
+				event_hash, previous_event_hash, hash_algorithm,
 				legal_hold, legal_hold_reason, legal_hold_placed_by, legal_hold_placed_at
 			) VALUES (
 				$1, $2, $3, $4, $5,
@@ -442,8 +569,8 @@ func (r *AuditEventsRepository) Create(ctx context.Context, event *AuditEvent) (
 				$16, $17, $18,
 				$19, $20, $21, $22,
 				$23, $24, $25,
-				$26, $27,
-				$28, $29, $30, $31
+				$26, $27, $28,
+				$29, $30, $31, $32
 			)
 			RETURNING event_timestamp
 		`
@@ -492,6 +619,7 @@ func (r *AuditEventsRepository) Create(ctx context.Context, event *AuditEvent) (
 			eventDataJSON,
 			event.EventHash,
 			event.PreviousEventHash,
+			event.HashAlgorithm,
 			event.LegalHold,
 			sqlutil.ToNullStringValue(event.LegalHoldReason),
 			sqlutil.ToNullStringValue(event.LegalHoldPlacedBy),
@@ -602,6 +730,7 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 		for _, event := range events {
 			event.EventHash = ""
 			event.PreviousEventHash = ""
+			event.HashAlgorithm = ""
 		}
 
 		tx, txErr := r.db.BeginTx(ctx, nil)
@@ -623,7 +752,7 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 				actor_id, actor_type, actor_ip,
 				severity, duration_ms, error_code, error_message,
 				retention_days, is_sensitive, event_data,
-				event_hash, previous_event_hash,
+				event_hash, previous_event_hash, hash_algorithm,
 				legal_hold, legal_hold_reason, legal_hold_placed_by, legal_hold_placed_at
 			) VALUES (
 				$1, $2, $3, $4, $5,
@@ -633,8 +762,8 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 				$16, $17, $18,
 				$19, $20, $21, $22,
 				$23, $24, $25,
-				$26, $27,
-				$28, $29, $30, $31
+				$26, $27, $28,
+				$29, $30, $31, $32
 			)
 			RETURNING event_timestamp
 		`
@@ -661,15 +790,15 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 			for _, ie := range correlationEvents {
 				event := ie.event
 
-			eventDataJSON, marshalErr := json.Marshal(event.EventData)
-			if marshalErr != nil {
-				txErr = fmt.Errorf("failed to marshal event_data for event %s in batch insert: %w", event.EventID, marshalErr)
-				return txErr
-			}
-			eventDate := event.EventTimestamp.Truncate(24 * time.Hour)
+				eventDataJSON, marshalErr := json.Marshal(event.EventData)
+				if marshalErr != nil {
+					txErr = fmt.Errorf("failed to marshal event_data for event %s in batch insert: %w", event.EventID, marshalErr)
+					return txErr
+				}
+				eventDate := event.EventTimestamp.Truncate(24 * time.Hour)
 
 				previousHash := lastHashByCorrelation[event.CorrelationID]
-				eventHash, hashErr := calculateEventHash(previousHash, event)
+				eventHash, hashErr := r.hashEvent(previousHash, event)
 				if hashErr != nil {
 					txErr = fmt.Errorf("failed to calculate event hash for event %s: %w", event.EventID, hashErr)
 					return txErr
@@ -722,6 +851,7 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 					eventDataJSON,
 					event.EventHash,
 					event.PreviousEventHash,
+					event.HashAlgorithm,
 					event.LegalHold,
 					sqlutil.ToNullStringValue(event.LegalHoldReason),
 					sqlutil.ToNullStringValue(event.LegalHoldPlacedBy),

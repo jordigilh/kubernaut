@@ -58,6 +58,7 @@ type Config struct {
 	Database  DatabaseConfig  `yaml:"database"`
 	Redis     RedisConfig     `yaml:"redis"`
 	Retention RetentionConfig `yaml:"retention"`
+	Audit     AuditConfig     `yaml:"audit,omitempty"`
 
 	// TLSProfile selects the TLS security profile (Old/Intermediate/Modern).
 	// Issue #748: OCP-only — set by kubernaut-operator from the cluster APIServer CR.
@@ -97,6 +98,37 @@ type ServerConfig struct {
 	// #1088 Phase 7 / SRE-L1: Time to wait for K8s endpoint removal propagation.
 	// e.g., "5s" (default: 5s). Overrides the hardcoded endpointRemovalPropagationDelay.
 	EndpointPropagationDelay string `yaml:"endpointPropagationDelay,omitempty"`
+
+	// GAP-09 (Issue #1505) / SC-5: Per-IP rate limiting for the HTTP API.
+	// Disabled by default for backward compatibility with existing deployments
+	// that rely on an external ingress/proxy for rate limiting.
+	RateLimit RateLimitConfig `yaml:"rateLimit,omitempty"`
+}
+
+// RateLimitConfig configures per-IP rate limiting on the Data Storage HTTP
+// API (GAP-09, Issue #1505 / SC-5).
+type RateLimitConfig struct {
+	Enabled           bool    `yaml:"enabled"`
+	RequestsPerSecond float64 `yaml:"requestsPerSecond,omitempty"`
+	Burst             int     `yaml:"burst,omitempty"`
+}
+
+// GetRequestsPerSecond returns the configured per-IP request rate, defaulting
+// to 50 req/s when unset or non-positive.
+func (r *RateLimitConfig) GetRequestsPerSecond() float64 {
+	if r.RequestsPerSecond <= 0 {
+		return 50
+	}
+	return r.RequestsPerSecond
+}
+
+// GetBurst returns the configured per-IP burst size, defaulting to 100 when
+// unset or non-positive.
+func (r *RateLimitConfig) GetBurst() int {
+	if r.Burst <= 0 {
+		return 100
+	}
+	return r.Burst
 }
 
 // LoggingConfig contains logging configuration
@@ -179,6 +211,22 @@ type RedisConfig struct {
 	PasswordKey string `yaml:"passwordKey"` // Key name for password in secret file (e.g., "password")
 
 	TLS RedisTLSConfig `yaml:"tls"` // #1048 Phase 5 / AU-9: Redis TLS for audit data transport
+}
+
+// AuditConfig contains audit hash-chain configuration.
+// GAP-05 (Issue #1505): Optional keyed HMAC-SHA256 hash chain. When
+// HashKeySecretsFile is unset, the datastorage falls back to the legacy
+// unkeyed SHA256 algorithm for backward compatibility with environments that
+// have not yet provisioned the audit HMAC key secret.
+type AuditConfig struct {
+	// Secret file configuration (ADR-030 Section 6), same pattern as
+	// Database.SecretsFile / Redis.SecretsFile. Optional: leave unset to keep
+	// using the legacy unkeyed SHA256 hash chain.
+	HashKeySecretsFile string `yaml:"hashKeySecretsFile,omitempty"`
+	HashKeyKey         string `yaml:"hashKeyKey,omitempty"` // Key name in the secret file (e.g., "hmacKey")
+
+	// HMACKey is NOT in YAML - loaded from secret file via LoadSecrets().
+	HMACKey []byte `yaml:"-"`
 }
 
 // RetentionConfig contains retention worker configuration.
@@ -308,6 +356,39 @@ func (c *Config) LoadSecrets() error {
 	}
 
 	c.Redis.Password = redisPasswordStr
+
+	// GAP-05 (Issue #1505): Load optional HMAC key for keyed audit hash chain.
+	// Unlike database/redis secrets, this is OPTIONAL — omitting it preserves
+	// the legacy unkeyed SHA256 algorithm for backward compatibility.
+	if c.Audit.HashKeySecretsFile != "" {
+		if c.Audit.HashKeyKey == "" {
+			return fmt.Errorf("audit hashKeyKey required when hashKeySecretsFile is set (GAP-05)")
+		}
+
+		auditSecrets, err := loadSecretFile(c.Audit.HashKeySecretsFile)
+		if err != nil {
+			return fmt.Errorf("failed to load audit hash key secrets from %s: %w",
+				c.Audit.HashKeySecretsFile, err)
+		}
+
+		hmacKeyRaw, ok := auditSecrets[c.Audit.HashKeyKey]
+		if !ok {
+			return fmt.Errorf("hash key '%s' not found in audit secret file %s",
+				c.Audit.HashKeyKey, c.Audit.HashKeySecretsFile)
+		}
+
+		hmacKeyStr, isString := hmacKeyRaw.(string)
+		if !isString {
+			return fmt.Errorf("audit hash key '%s' in secret file is not a string",
+				c.Audit.HashKeyKey)
+		}
+		if hmacKeyStr == "" {
+			return fmt.Errorf("audit hash key '%s' in secret file %s is empty",
+				c.Audit.HashKeyKey, c.Audit.HashKeySecretsFile)
+		}
+
+		c.Audit.HMACKey = []byte(hmacKeyStr)
+	}
 
 	return nil
 }

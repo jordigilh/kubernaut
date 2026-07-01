@@ -38,14 +38,15 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/cert"
+	dsaudit "github.com/jordigilh/kubernaut/pkg/datastorage/audit"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/config"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
 	dsmetrics "github.com/jordigilh/kubernaut/pkg/datastorage/metrics"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/oci"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/partition"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
-	"github.com/jordigilh/kubernaut/pkg/datastorage/retention"
 	actiontyperepo "github.com/jordigilh/kubernaut/pkg/datastorage/repository/actiontype"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/retention"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/schema"
 	dsmiddleware "github.com/jordigilh/kubernaut/pkg/datastorage/server/middleware"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
@@ -126,6 +127,10 @@ type Server struct {
 
 	// #1048 Phase 4: Max request body size in bytes (SC-5 DoS protection)
 	maxBodySize int64
+
+	// GAP-09 (Issue #1505) / SC-5: Optional per-IP rate limiter for the HTTP API.
+	// nil when disabled (default) — see appCfg.Server.RateLimit.Enabled.
+	ipLimiter *dsmiddleware.IPLimiter
 }
 
 func defaultMaxBatchSize(v int) int {
@@ -292,9 +297,17 @@ func NewServer(deps ServerDeps) (*Server, error) {
 	// Create BR-STORAGE-033: Unified audit events repository (ADR-034)
 	// SOC2 Gap #9: PostgreSQL with custom hash chains for tamper detection
 	logger.V(1).Info("Creating ADR-034 unified audit events repository (PostgreSQL)...")
-	auditEventsRepo := repository.NewAuditEventsRepository(db, logger)
+	// GAP-05 (Issue #1505): Enable keyed HMAC-SHA256 hash chaining when an HMAC
+	// key has been provisioned; otherwise fall back to the legacy unkeyed
+	// SHA256 algorithm (backward-compatible default).
+	hashChainAlgorithm := repository.HashAlgorithmSHA256Unkeyed
+	if len(appCfg.Audit.HMACKey) > 0 {
+		hashChainAlgorithm = repository.HashAlgorithmHMACSHA256
+	}
+	auditEventsRepo := repository.NewAuditEventsRepository(db, logger, repository.WithHMACKey(appCfg.Audit.HMACKey))
 	logger.V(1).Info("ADR-034 audit events repository created (PostgreSQL-backed, SOC2 Gap #9)",
-		"audit_events_repo_nil", auditEventsRepo == nil)
+		"audit_events_repo_nil", auditEventsRepo == nil,
+		"hash_chain_algorithm", hashChainAlgorithm)
 
 	// Create BR-STORAGE-012: Self-auditing audit store (DD-STORAGE-012)
 	// Uses InternalAuditClient to avoid circular dependency (cannot call own REST API)
@@ -414,6 +427,19 @@ func NewServer(deps ServerDeps) (*Server, error) {
 		PartitionDropEnabled: appCfg.Retention.PartitionDropEnabled,
 	}, logger)
 
+	// GAP-09 (Issue #1505) / SC-5: Optional per-IP rate limiter, disabled by default.
+	var ipLimiter *dsmiddleware.IPLimiter
+	if appCfg.Server.RateLimit.Enabled {
+		ipLimiter = dsmiddleware.NewIPLimiter(dsmiddleware.IPLimiterConfig{
+			RequestsPerSecond: appCfg.Server.RateLimit.GetRequestsPerSecond(),
+			Burst:             appCfg.Server.RateLimit.GetBurst(),
+		})
+		cleanups = append(cleanups, func() { ipLimiter.Stop() })
+		logger.Info("Per-IP rate limiting enabled (GAP-09, SC-5)",
+			"requestsPerSecond", appCfg.Server.RateLimit.GetRequestsPerSecond(),
+			"burst", appCfg.Server.RateLimit.GetBurst())
+	}
+
 	// DS-FLAKY-003 FIX: Create server with handler assigned to httpServer
 	// This allows graceful shutdown to work in both Start() and httptest scenarios
 	// Previously, handler was only assigned in Start(), causing Shutdown() to hang in tests
@@ -444,6 +470,7 @@ func NewServer(deps ServerDeps) (*Server, error) {
 		openapiValidator:         openapiValidator,
 		corsAllowedOrigins:       appCfg.Server.GetCORSAllowedOrigins(),
 		maxBodySize:              appCfg.Server.GetMaxBodySize(),
+		ipLimiter:                ipLimiter, // GAP-09 (Issue #1505): nil when disabled
 	}
 
 	// DS-FLAKY-003 FIX: Assign handler immediately so Shutdown() can work
@@ -478,6 +505,26 @@ func (s *Server) Handler() http.Handler {
 	// #1048 Phase 4 / SC-5: Request body size limit (DoS protection).
 	// Applied before OpenAPI validation so the body is capped before spec parsing.
 	r.Use(dsmiddleware.MaxBytesReaderMiddleware(s.maxBodySize, s.logger))
+
+	// GAP-09 (Issue #1505) / SC-5: Optional per-IP rate limiting, pre-authentication.
+	// Placed before auth so an unauthenticated flood does not reach TokenReview/SAR calls.
+	if s.ipLimiter != nil {
+		r.Use(dsmiddleware.IPRateLimitMiddleware(dsmiddleware.IPRateLimitMiddlewareConfig{
+			Limiter: s.ipLimiter,
+			Logger:  s.logger,
+			AuditFunc: func(ctx context.Context, sourceIP, path, method string) {
+				if s.auditStore == nil {
+					return
+				}
+				auditCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+				defer cancel()
+				if err := s.auditStore.StoreAudit(auditCtx, dsaudit.NewRatelimitDeniedAuditEvent(sourceIP, path, method)); err != nil {
+					s.logger.Error(err, "Failed to persist rate-limit denial audit event",
+						"source_ip", sourceIP, "path", path, "method", method)
+				}
+			},
+		}))
+	}
 
 	// AC-4: CORS with configurable origins (ADR-030).
 	// SEC-C1: go-chi/cors treats empty AllowedOrigins as "allow all".
@@ -678,7 +725,7 @@ func (s *Server) Start() error {
 //  3. Drain in-flight HTTP connections
 //     3.5 Stop DLQ retry worker (DD-009)
 //  4. Drain DLQ messages to PostgreSQL (DD-008)
-//  4.5. Stop retention worker (AU-11) after DLQ drain, before closing DB
+//     4.5. Stop retention worker (AU-11) after DLQ drain, before closing DB
 //  5. Close external resources (audit store, PostgreSQL)
 //
 // Returns a joined error if any step failed; individual step errors are
@@ -892,6 +939,11 @@ func (s *Server) shutdownStep5CloseResources(shutdownID string) error {
 				"shutdown_id", shutdownID,
 				"dd", "DD-007-step-5-audit-complete")
 		}
+	}
+
+	// GAP-09 (Issue #1505): Stop the per-IP rate limiter's eviction goroutine, if enabled.
+	if s.ipLimiter != nil {
+		s.ipLimiter.Stop()
 	}
 
 	// Close PostgreSQL connection

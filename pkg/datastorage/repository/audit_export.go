@@ -18,9 +18,7 @@ package repository
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -48,13 +46,13 @@ import (
 
 // ExportFilters contains the query filters for audit export
 type ExportFilters struct {
-	StartTime      *time.Time
-	EndTime        *time.Time
-	CorrelationID  string
-	EventCategory  string
-	Offset         int
-	Limit          int
-	RedactPII      bool // SOC2 Day 10.2: Enable PII redaction for privacy compliance
+	StartTime     *time.Time
+	EndTime       *time.Time
+	CorrelationID string
+	EventCategory string
+	Offset        int
+	Limit         int
+	RedactPII     bool // SOC2 Day 10.2: Enable PII redaction for privacy compliance
 }
 
 // ExportEvent represents an audit event with hash chain validation
@@ -65,13 +63,13 @@ type ExportEvent struct {
 
 // ExportResult contains the exported events and verification statistics
 type ExportResult struct {
-	Events                 []*ExportEvent
-	TotalEventsQueried     int
-	ValidChainEvents       int
-	BrokenChainEvents      int
-	ChainIntegrityPercent  float32
-	TamperedEventIDs       *[]string // Pointer to slice to match OpenAPI client expectation
-	VerificationTimestamp  time.Time
+	Events                []*ExportEvent
+	TotalEventsQueried    int
+	ValidChainEvents      int
+	BrokenChainEvents     int
+	ChainIntegrityPercent float32
+	TamperedEventIDs      *[]string // Pointer to slice to match OpenAPI client expectation
+	VerificationTimestamp time.Time
 }
 
 // Export retrieves audit events matching the filters and verifies hash chain integrity
@@ -86,7 +84,7 @@ func (r *AuditEventsRepository) Export(ctx context.Context, filters ExportFilter
 			namespace, cluster_name, actor_id, actor_type, actor_ip,
 			severity, duration_ms, error_code, error_message,
 			retention_days, is_sensitive, event_data,
-			event_hash, previous_event_hash, legal_hold
+			event_hash, previous_event_hash, hash_algorithm, legal_hold
 		FROM audit_events
 		WHERE 1=1
 	`
@@ -181,6 +179,7 @@ func (r *AuditEventsRepository) Export(ctx context.Context, filters ExportFilter
 			&eventDataJSON,
 			&event.EventHash,
 			&event.PreviousEventHash,
+			&event.HashAlgorithm,
 			&legalHold,
 		)
 		if err != nil {
@@ -195,26 +194,26 @@ func (r *AuditEventsRepository) Export(ctx context.Context, filters ExportFilter
 		// To ensure hash verification works, we must convert to UTC here.
 		event.EventTimestamp = event.EventTimestamp.UTC()
 
-	// Convert sql.NullString to regular strings
-	// NULL → empty string, which will be omitted by `omitempty` JSON tags during hash calculation
-	// This preserves the original JSON structure for hash verification
-	event.ResourceType = resourceType.String
-	event.ResourceID = resourceID.String
-	event.ResourceNamespace = resourceNamespace.String
-	event.ClusterID = clusterID.String
-	event.ActorID = actorID.String
-	event.ActorType = actorType.String
-	event.ActorIP = actorIP.String
-	event.Severity = severity.String
-	event.ErrorCode = errorCode.String
-	event.ErrorMessage = errorMessage.String
+		// Convert sql.NullString to regular strings
+		// NULL → empty string, which will be omitted by `omitempty` JSON tags during hash calculation
+		// This preserves the original JSON structure for hash verification
+		event.ResourceType = resourceType.String
+		event.ResourceID = resourceID.String
+		event.ResourceNamespace = resourceNamespace.String
+		event.ClusterID = clusterID.String
+		event.ActorID = actorID.String
+		event.ActorType = actorType.String
+		event.ActorIP = actorIP.String
+		event.Severity = severity.String
+		event.ErrorCode = errorCode.String
+		event.ErrorMessage = errorMessage.String
 
-	// Convert sql.NullInt64 to int
-	// NULL → 0, which will be omitted by `omitempty` JSON tag during hash calculation
-	event.DurationMs = int(durationMs.Int64)
+		// Convert sql.NullInt64 to int
+		// NULL → 0, which will be omitted by `omitempty` JSON tag during hash calculation
+		event.DurationMs = int(durationMs.Int64)
 
-	// Set legal_hold flag from scanned value
-	event.LegalHold = legalHold
+		// Set legal_hold flag from scanned value
+		event.LegalHold = legalHold
 
 		// Unmarshal event_data JSON
 		// Note: Numbers will be float64 (Go's default for JSON numbers), which matches
@@ -239,12 +238,12 @@ func (r *AuditEventsRepository) Export(ctx context.Context, filters ExportFilter
 	// This ensures JSON serialization produces [] instead of null, matching OpenAPI client expectations
 	tamperedIDs := make([]string, 0)
 	result := &ExportResult{
-		Events:                 make([]*ExportEvent, 0, len(events)),
-		TotalEventsQueried:     len(events),
-		ValidChainEvents:       0,
-		BrokenChainEvents:      0,
-		TamperedEventIDs:       &tamperedIDs,
-		VerificationTimestamp:  time.Now().UTC(),
+		Events:                make([]*ExportEvent, 0, len(events)),
+		TotalEventsQueried:    len(events),
+		ValidChainEvents:      0,
+		BrokenChainEvents:     0,
+		TamperedEventIDs:      &tamperedIDs,
+		VerificationTimestamp: time.Now().UTC(),
 	}
 
 	if len(events) == 0 {
@@ -289,8 +288,8 @@ func (r *AuditEventsRepository) Export(ctx context.Context, filters ExportFilter
 					"expected_previous_hash", previousHash,
 					"actual_previous_hash", event.PreviousEventHash)
 			} else {
-				// Calculate expected hash for this event
-				expectedHash, err := calculateEventHashForVerification(previousHash, event)
+				// Calculate expected hash for this event (GAP-05: algorithm-aware)
+				expectedHash, err := CalculateHashForVerification(r.hmacKey, previousHash, event)
 				if err != nil {
 					r.logger.Error(err, "Failed to calculate expected hash", "event_id", event.EventID)
 					return nil, fmt.Errorf("failed to calculate expected hash: %w", err)
@@ -344,22 +343,3 @@ func (r *AuditEventsRepository) Export(ctx context.Context, filters ExportFilter
 
 	return result, nil
 }
-
-// calculateEventHashForVerification computes the expected SHA256 hash for verification.
-// Uses PrepareEventForHashing to ensure identical field-clearing logic as write-time.
-func calculateEventHashForVerification(previousHash string, event *AuditEvent) (string, error) {
-	eventCopy := PrepareEventForHashing(event)
-
-	eventJSON, err := json.Marshal(eventCopy)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal event for hashing: %w", err)
-	}
-
-	hasher := sha256.New()
-	hasher.Write([]byte(previousHash))
-	hasher.Write(eventJSON)
-	hashBytes := hasher.Sum(nil)
-
-	return hex.EncodeToString(hashBytes), nil
-}
-

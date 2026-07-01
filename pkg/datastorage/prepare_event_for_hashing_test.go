@@ -61,6 +61,7 @@ var _ = Describe("PrepareEventForHashing", func() {
 			IsSensitive:       true,
 			EventHash:         "abc123hash",
 			PreviousEventHash: "prev456hash",
+			HashAlgorithm:     repository.HashAlgorithmHMACSHA256,
 			LegalHold:         true,
 			LegalHoldReason:   "SOX compliance",
 			LegalHoldPlacedBy: "compliance-officer",
@@ -74,6 +75,7 @@ var _ = Describe("PrepareEventForHashing", func() {
 
 		Expect(result.EventHash).To(BeEmpty(), "EventHash should be cleared")
 		Expect(result.PreviousEventHash).To(BeEmpty(), "PreviousEventHash should be cleared")
+		Expect(result.HashAlgorithm).To(BeEmpty(), "HashAlgorithm should be cleared (GAP-05: keeps pre-GAP-05 hashes verifiable)")
 		Expect(result.EventDate).To(Equal(repository.DateOnly{}), "EventDate should be zeroed")
 		Expect(result.LegalHold).To(BeFalse(), "LegalHold should be false")
 		Expect(result.LegalHoldReason).To(BeEmpty(), "LegalHoldReason should be cleared")
@@ -113,6 +115,7 @@ var _ = Describe("PrepareEventForHashing", func() {
 		// Save original values before call
 		originalHash := original.EventHash
 		originalPrevHash := original.PreviousEventHash
+		originalHashAlgorithm := original.HashAlgorithm
 		originalEventDate := original.EventDate
 		originalLegalHold := original.LegalHold
 		originalLegalHoldReason := original.LegalHoldReason
@@ -123,6 +126,7 @@ var _ = Describe("PrepareEventForHashing", func() {
 
 		Expect(original.EventHash).To(Equal(originalHash), "Original EventHash should not be mutated")
 		Expect(original.PreviousEventHash).To(Equal(originalPrevHash), "Original PreviousEventHash should not be mutated")
+		Expect(original.HashAlgorithm).To(Equal(originalHashAlgorithm), "Original HashAlgorithm should not be mutated")
 		Expect(original.EventDate).To(Equal(originalEventDate), "Original EventDate should not be mutated")
 		Expect(original.LegalHold).To(Equal(originalLegalHold), "Original LegalHold should not be mutated")
 		Expect(original.LegalHoldReason).To(Equal(originalLegalHoldReason), "Original LegalHoldReason should not be mutated")
