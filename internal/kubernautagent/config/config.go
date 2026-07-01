@@ -529,7 +529,37 @@ func (r *LLMRuntimeConfig) Validate(provider string) error {
 
 // Validate checks required fields and value constraints for the static config.
 // Runtime LLM fields are validated separately via LLMRuntimeConfig.Validate().
+//
+// Decomposed into per-section validators (GO-ANTIPATTERN-AUDIT-2026-07-01
+// Phase 4b) purely for readability/complexity — behavior, order, and error
+// messages are unchanged from the pre-decomposition implementation.
 func (c *Config) Validate() error {
+	if err := c.validateRuntime(); err != nil {
+		return err
+	}
+	if err := c.validateAI(); err != nil {
+		return err
+	}
+	if err := c.validateLLMOAuth2AndTLS(); err != nil {
+		return err
+	}
+	if err := c.validateFleetIntegration(); err != nil {
+		return err
+	}
+	if c.Runtime.Server.RateLimit.RequestsPerSecond <= 0 {
+		return fmt.Errorf("runtime.server.rateLimit.requestsPerSecond must be positive, got %v", c.Runtime.Server.RateLimit.RequestsPerSecond)
+	}
+	if c.Runtime.Server.RateLimit.Burst <= 0 {
+		return fmt.Errorf("runtime.server.rateLimit.burst must be positive, got %d", c.Runtime.Server.RateLimit.Burst)
+	}
+	if err := c.validateAlignmentCheck(); err != nil {
+		return err
+	}
+	return c.validateInteractive()
+}
+
+// validateRuntime checks the runtime server/session/audit/shutdown sections.
+func (c *Config) validateRuntime() error {
 	if err := c.Runtime.Logging.Validate(); err != nil {
 		return err
 	}
@@ -568,7 +598,11 @@ func (c *Config) Validate() error {
 			"the operator enforces this upper bound via CRD validation",
 			maxDrainSeconds, c.Runtime.Shutdown.DrainSeconds)
 	}
+	return nil
+}
 
+// validateAI checks the AI investigation/summarizer/enrichment/anomaly-safety sections.
+func (c *Config) validateAI() error {
 	if c.AI.Investigation.MaxTurns <= 0 {
 		return fmt.Errorf("ai.investigation.maxTurns must be positive, got %d", c.AI.Investigation.MaxTurns)
 	}
@@ -587,7 +621,11 @@ func (c *Config) Validate() error {
 	if c.AI.Safety.Anomaly.MaxRepeatedFailures <= 0 {
 		return fmt.Errorf("ai.safety.anomaly.maxRepeatedFailures must be positive, got %d", c.AI.Safety.Anomaly.MaxRepeatedFailures)
 	}
+	return nil
+}
 
+// validateLLMOAuth2AndTLS checks the AI.LLM OAuth2 and mTLS settings (SC-8).
+func (c *Config) validateLLMOAuth2AndTLS() error {
 	if c.AI.LLM.OAuth2.Enabled {
 		if c.AI.LLM.OAuth2.TokenURL == "" {
 			return fmt.Errorf("ai.llm.oauth2.tokenURL is required when oauth2.enabled=true")
@@ -596,9 +634,11 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("ai.llm.oauth2.credentialsDir is required when oauth2.enabled=true")
 		}
 	}
-	if err := validateTLSCertPair("ai.llm", c.AI.LLM.TLSCertFile, c.AI.LLM.TLSKeyFile, c.AI.LLM.TLSCaFile); err != nil {
-		return err
-	}
+	return validateTLSCertPair("ai.llm", c.AI.LLM.TLSCertFile, c.AI.LLM.TLSKeyFile, c.AI.LLM.TLSCaFile)
+}
+
+// validateFleetIntegration checks the Fleet OAuth2 integration settings.
+func (c *Config) validateFleetIntegration() error {
 	if c.Integrations.Fleet.OAuth2.Enabled {
 		if c.Integrations.Fleet.OAuth2.TokenURL == "" {
 			return fmt.Errorf("integrations.fleet.oauth2.tokenURL is required when oauth2.enabled=true")
@@ -607,69 +647,72 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("integrations.fleet.oauth2.credentialsSecretRef is required when oauth2.enabled=true")
 		}
 	}
-	if c.Runtime.Server.RateLimit.RequestsPerSecond <= 0 {
-		return fmt.Errorf("runtime.server.rateLimit.requestsPerSecond must be positive, got %v", c.Runtime.Server.RateLimit.RequestsPerSecond)
+	return nil
+}
+
+// validateAlignmentCheck checks the AI alignment-check (shadow evaluator) settings.
+func (c *Config) validateAlignmentCheck() error {
+	if !c.AI.AlignmentCheck.Enabled {
+		return nil
 	}
-	if c.Runtime.Server.RateLimit.Burst <= 0 {
-		return fmt.Errorf("runtime.server.rateLimit.burst must be positive, got %d", c.Runtime.Server.RateLimit.Burst)
+	if c.AI.AlignmentCheck.Timeout <= 0 {
+		return fmt.Errorf("ai.alignmentCheck.timeout must be positive when enabled, got %v", c.AI.AlignmentCheck.Timeout)
 	}
-	if c.AI.AlignmentCheck.Enabled {
-		if c.AI.AlignmentCheck.Timeout <= 0 {
-			return fmt.Errorf("ai.alignmentCheck.timeout must be positive when enabled, got %v", c.AI.AlignmentCheck.Timeout)
-		}
-		if c.AI.AlignmentCheck.MaxStepTokens <= 0 {
-			return fmt.Errorf("ai.alignmentCheck.maxStepTokens must be positive when enabled, got %d", c.AI.AlignmentCheck.MaxStepTokens)
-		}
-		if c.AI.AlignmentCheck.VerdictTimeout <= 0 {
-			return fmt.Errorf("ai.alignmentCheck.verdictTimeout must be positive when enabled, got %v", c.AI.AlignmentCheck.VerdictTimeout)
-		}
-		if c.AI.AlignmentCheck.MaxRetries < 0 {
-			return fmt.Errorf("ai.alignmentCheck.maxRetries must be non-negative when enabled, got %d", c.AI.AlignmentCheck.MaxRetries)
-		}
-		switch c.AI.AlignmentCheck.Mode {
-		case AlignmentModeEnforce, AlignmentModeMonitor:
-		default:
-			return fmt.Errorf("ai.alignmentCheck.mode must be 'enforce' or 'monitor', got %q", c.AI.AlignmentCheck.Mode)
-		}
-		if c.AI.AlignmentCheck.GroundingReview.Enabled {
-			if c.AI.AlignmentCheck.GroundingReview.Timeout <= 0 {
-				return fmt.Errorf("ai.alignmentCheck.groundingReview.timeout must be positive when enabled, got %v", c.AI.AlignmentCheck.GroundingReview.Timeout)
-			}
-			if c.AI.AlignmentCheck.GroundingReview.MaxConversationTokens <= 0 {
-				return fmt.Errorf("ai.alignmentCheck.groundingReview.maxConversationTokens must be positive when enabled, got %d", c.AI.AlignmentCheck.GroundingReview.MaxConversationTokens)
-			}
-		}
+	if c.AI.AlignmentCheck.MaxStepTokens <= 0 {
+		return fmt.Errorf("ai.alignmentCheck.maxStepTokens must be positive when enabled, got %d", c.AI.AlignmentCheck.MaxStepTokens)
 	}
-	if c.Interactive.Enabled {
-		if c.Interactive.SessionTTL <= 0 {
-			return fmt.Errorf("interactive.sessionTTL must be positive when enabled, got %v", c.Interactive.SessionTTL)
+	if c.AI.AlignmentCheck.VerdictTimeout <= 0 {
+		return fmt.Errorf("ai.alignmentCheck.verdictTimeout must be positive when enabled, got %v", c.AI.AlignmentCheck.VerdictTimeout)
+	}
+	if c.AI.AlignmentCheck.MaxRetries < 0 {
+		return fmt.Errorf("ai.alignmentCheck.maxRetries must be non-negative when enabled, got %d", c.AI.AlignmentCheck.MaxRetries)
+	}
+	switch c.AI.AlignmentCheck.Mode {
+	case AlignmentModeEnforce, AlignmentModeMonitor:
+	default:
+		return fmt.Errorf("ai.alignmentCheck.mode must be 'enforce' or 'monitor', got %q", c.AI.AlignmentCheck.Mode)
+	}
+	if c.AI.AlignmentCheck.GroundingReview.Enabled {
+		if c.AI.AlignmentCheck.GroundingReview.Timeout <= 0 {
+			return fmt.Errorf("ai.alignmentCheck.groundingReview.timeout must be positive when enabled, got %v", c.AI.AlignmentCheck.GroundingReview.Timeout)
 		}
-		if c.Interactive.SessionTTL > time.Hour {
-			return fmt.Errorf("interactive.sessionTTL must not exceed 1h, got %v", c.Interactive.SessionTTL)
-		}
-		if c.Interactive.InactivityTimeout <= 0 {
-			return fmt.Errorf("interactive.inactivityTimeout must be positive when enabled, got %v", c.Interactive.InactivityTimeout)
-		}
-		if c.Interactive.InactivityTimeout > 30*time.Minute {
-			return fmt.Errorf("interactive.inactivityTimeout must not exceed 30m, got %v", c.Interactive.InactivityTimeout)
-		}
-		if c.Interactive.MaxConcurrentSessions <= 0 {
-			return fmt.Errorf("interactive.maxConcurrentSessions must be positive when enabled, got %d", c.Interactive.MaxConcurrentSessions)
-		}
-		if c.Interactive.MaxConcurrentSessions > 100 {
-			return fmt.Errorf("interactive.maxConcurrentSessions must not exceed 100, got %d", c.Interactive.MaxConcurrentSessions)
-		}
-		if c.Interactive.RateLimitPerUser <= 0 {
-			c.Interactive.RateLimitPerUser = 10
-		}
-		if c.Interactive.RateLimitPerUser > 100 {
-			return fmt.Errorf("interactive.rateLimitPerUser must not exceed 100, got %d", c.Interactive.RateLimitPerUser)
-		}
-		if err := c.Interactive.validateJWTProviders(); err != nil {
-			return err
+		if c.AI.AlignmentCheck.GroundingReview.MaxConversationTokens <= 0 {
+			return fmt.Errorf("ai.alignmentCheck.groundingReview.maxConversationTokens must be positive when enabled, got %d", c.AI.AlignmentCheck.GroundingReview.MaxConversationTokens)
 		}
 	}
 	return nil
+}
+
+// validateInteractive checks the interactive-session settings.
+func (c *Config) validateInteractive() error {
+	if !c.Interactive.Enabled {
+		return nil
+	}
+	if c.Interactive.SessionTTL <= 0 {
+		return fmt.Errorf("interactive.sessionTTL must be positive when enabled, got %v", c.Interactive.SessionTTL)
+	}
+	if c.Interactive.SessionTTL > time.Hour {
+		return fmt.Errorf("interactive.sessionTTL must not exceed 1h, got %v", c.Interactive.SessionTTL)
+	}
+	if c.Interactive.InactivityTimeout <= 0 {
+		return fmt.Errorf("interactive.inactivityTimeout must be positive when enabled, got %v", c.Interactive.InactivityTimeout)
+	}
+	if c.Interactive.InactivityTimeout > 30*time.Minute {
+		return fmt.Errorf("interactive.inactivityTimeout must not exceed 30m, got %v", c.Interactive.InactivityTimeout)
+	}
+	if c.Interactive.MaxConcurrentSessions <= 0 {
+		return fmt.Errorf("interactive.maxConcurrentSessions must be positive when enabled, got %d", c.Interactive.MaxConcurrentSessions)
+	}
+	if c.Interactive.MaxConcurrentSessions > 100 {
+		return fmt.Errorf("interactive.maxConcurrentSessions must not exceed 100, got %d", c.Interactive.MaxConcurrentSessions)
+	}
+	if c.Interactive.RateLimitPerUser <= 0 {
+		c.Interactive.RateLimitPerUser = 10
+	}
+	if c.Interactive.RateLimitPerUser > 100 {
+		return fmt.Errorf("interactive.rateLimitPerUser must not exceed 100, got %d", c.Interactive.RateLimitPerUser)
+	}
+	return c.Interactive.validateJWTProviders()
 }
 
 // DefaultConfig returns a Config with production defaults applied.
