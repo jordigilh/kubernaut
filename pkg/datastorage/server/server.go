@@ -374,7 +374,8 @@ func NewServer(deps ServerDeps) (*Server, error) {
 	// BR-AUDIT-006: Pass sqlDB for reconstruction queries
 	// GAP-WF-1: WithWorkflowLifecycleRepository enables enable/disable/deprecate handlers
 	// Build handler options: fixed options + caller-provided options (e.g. WithDependencyValidator)
-	opts := []HandlerOption{
+	opts := make([]HandlerOption, 0, 10+len(deps.HandlerOpts))
+	opts = append(opts,
 		WithLogger(logger),
 		WithWorkflowRepository(workflowRepo),
 		WithWorkflowLifecycleRepository(workflowRepo),
@@ -385,7 +386,7 @@ func NewServer(deps ServerDeps) (*Server, error) {
 		WithSchemaExtractor(schemaExtractor),
 		WithRemediationHistoryQuerier(remHistoryQuerier),
 		WithActionTypeRepository(actionTypeRepo),
-	}
+	)
 	opts = append(opts, deps.HandlerOpts...)
 	handler := NewHandler(opts...)
 

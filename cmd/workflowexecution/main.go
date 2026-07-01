@@ -24,8 +24,8 @@ import (
 	"os"
 	"time"
 
-	"gopkg.in/yaml.v3"
 	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
+	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -43,13 +43,14 @@ import (
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	internalconfig "github.com/jordigilh/kubernaut/internal/config"
-	"github.com/jordigilh/kubernaut/internal/version"
-	scope "github.com/jordigilh/kubernaut/pkg/shared/scope"
-	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 	"github.com/jordigilh/kubernaut/internal/controller/workflowexecution"
+	"github.com/jordigilh/kubernaut/internal/version"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	dsvalidation "github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 	fleetclient "github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
+	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
+	scope "github.com/jordigilh/kubernaut/pkg/shared/scope"
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 	weaudit "github.com/jordigilh/kubernaut/pkg/workflowexecution/audit"
 	weclient "github.com/jordigilh/kubernaut/pkg/workflowexecution/client"
 	weconfig "github.com/jordigilh/kubernaut/pkg/workflowexecution/config"
@@ -57,7 +58,6 @@ import (
 	wemetrics "github.com/jordigilh/kubernaut/pkg/workflowexecution/metrics"
 	wephase "github.com/jordigilh/kubernaut/pkg/workflowexecution/phase"
 	westatus "github.com/jordigilh/kubernaut/pkg/workflowexecution/status"
-	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -343,7 +343,7 @@ func main() {
 	executorRegistry := weexecutor.NewRegistry()
 	executorRegistry.Register("job", weexecutor.NewJobExecutorWithFactory(clientFactory))
 
-	var knownOptionalEngines []string
+	knownOptionalEngines := make([]string, 0, 2)
 
 	// Tekton: auto-discover CRDs unless explicitly disabled (Issue #868)
 	knownOptionalEngines = append(knownOptionalEngines, "tekton")
