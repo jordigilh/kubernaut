@@ -58,7 +58,10 @@ var AllToolNames = []string{
 // get/list operations via the dynamic client; the typed client is used for
 // tools that need subresource access (logs) or typed field access (memory, events).
 func NewAllTools(client kubernetes.Interface, resolver ResourceResolver) []tools.Tool {
-	result := []tools.Tool{
+	jqTools := newJQTools(resolver)
+
+	result := make([]tools.Tool, 0, 18+len(jqTools))
+	result = append(result,
 		newDescribe(resolver),
 		newGetByName(resolver),
 		newGetByNameInCluster(resolver),
@@ -77,8 +80,8 @@ func NewAllTools(client kubernetes.Interface, resolver ResourceResolver) []tools
 		newPreviousLogsAllContainers(client),
 		newLogsGrep(client),
 		newLogsAllContainersGrep(client),
-	}
-	result = append(result, newJQTools(resolver)...)
+	)
+	result = append(result, jqTools...)
 	return result
 }
 
@@ -111,14 +114,14 @@ type logArgs struct {
 const apiGroupDesc = `API group for disambiguation when a kind exists in multiple groups (e.g. empty string for core, apps for Deployments, operators.coreos.com for OLM). Omit for unambiguous kinds.`
 
 var (
-	objParams             = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"name":{"type":"string"},"namespace":{"type":"string"},"api_group":{"type":"string","description":"` + apiGroupDesc + `"}},"required":["kind","name","namespace"]}`)
-	clusterObjParams      = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string","description":"Kubernetes resource kind"},"name":{"type":"string","description":"Exact resource name to find across all namespaces"},"api_group":{"type":"string","description":"` + apiGroupDesc + `"}},"required":["kind","name"]}`)
-	listParams            = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"namespace":{"type":"string"},"api_group":{"type":"string","description":"` + apiGroupDesc + `"}},"required":["kind","namespace"]}`)
-	clusterListParams     = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"api_group":{"type":"string","description":"` + apiGroupDesc + `"}},"required":["kind"]}`)
-	findParams            = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"keyword":{"type":"string","description":"Substring to match in resource name, namespace, or labels"},"api_group":{"type":"string","description":"` + apiGroupDesc + `"}},"required":["kind","keyword"]}`)
-	nsOnlyParams          = json.RawMessage(`{"type":"object","properties":{"namespace":{"type":"string"}},"required":["namespace"]}`)
-	noParams              = json.RawMessage(`{"type":"object","properties":{}}`)
-	logParams             = json.RawMessage(`{"type":"object","properties":{"name":{"type":"string"},"namespace":{"type":"string"},"container":{"type":"string"},"tailLines":{"type":"integer"},"limitBytes":{"type":"integer"},"pattern":{"type":"string"}},"required":["name","namespace"]}`)
+	objParams         = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"name":{"type":"string"},"namespace":{"type":"string"},"api_group":{"type":"string","description":"` + apiGroupDesc + `"}},"required":["kind","name","namespace"]}`)
+	clusterObjParams  = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string","description":"Kubernetes resource kind"},"name":{"type":"string","description":"Exact resource name to find across all namespaces"},"api_group":{"type":"string","description":"` + apiGroupDesc + `"}},"required":["kind","name"]}`)
+	listParams        = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"namespace":{"type":"string"},"api_group":{"type":"string","description":"` + apiGroupDesc + `"}},"required":["kind","namespace"]}`)
+	clusterListParams = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"api_group":{"type":"string","description":"` + apiGroupDesc + `"}},"required":["kind"]}`)
+	findParams        = json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"keyword":{"type":"string","description":"Substring to match in resource name, namespace, or labels"},"api_group":{"type":"string","description":"` + apiGroupDesc + `"}},"required":["kind","keyword"]}`)
+	nsOnlyParams      = json.RawMessage(`{"type":"object","properties":{"namespace":{"type":"string"}},"required":["namespace"]}`)
+	noParams          = json.RawMessage(`{"type":"object","properties":{}}`)
+	logParams         = json.RawMessage(`{"type":"object","properties":{"name":{"type":"string"},"namespace":{"type":"string"},"container":{"type":"string"},"tailLines":{"type":"integer"},"limitBytes":{"type":"integer"},"pattern":{"type":"string"}},"required":["name","namespace"]}`)
 )
 
 // resourceTool is a shared base for tools that fetch K8s resources.
@@ -131,7 +134,7 @@ type resourceTool struct {
 	fetchFunc func(ctx context.Context, a resourceArgs) (interface{}, error)
 }
 
-func (t *resourceTool) Name() string               { return t.toolName }
+func (t *resourceTool) Name() string                { return t.toolName }
 func (t *resourceTool) Description() string         { return t.desc }
 func (t *resourceTool) Parameters() json.RawMessage { return t.params }
 
@@ -201,7 +204,7 @@ func newGetByNameInCluster(resolver ResourceResolver) *getByNameInClusterTool {
 	return &getByNameInClusterTool{resolver: resolver}
 }
 
-func (t *getByNameInClusterTool) Name() string               { return "kubectl_get_by_name_in_cluster" }
+func (t *getByNameInClusterTool) Name() string { return "kubectl_get_by_name_in_cluster" }
 func (t *getByNameInClusterTool) Description() string {
 	return "Get a single Kubernetes resource by exact name across all namespaces (avoids listing all resources of a kind)"
 }
@@ -261,8 +264,10 @@ func newFindResource(resolver ResourceResolver) *findResourceTool {
 	return &findResourceTool{resolver: resolver}
 }
 
-func (t *findResourceTool) Name() string               { return "kubectl_find_resource" }
-func (t *findResourceTool) Description() string         { return "Find resources by kind with keyword substring filter across all namespaces" }
+func (t *findResourceTool) Name() string { return "kubectl_find_resource" }
+func (t *findResourceTool) Description() string {
+	return "Find resources by kind with keyword substring filter across all namespaces"
+}
 func (t *findResourceTool) Parameters() json.RawMessage { return findParams }
 
 func (t *findResourceTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
@@ -328,7 +333,7 @@ func newGetYAML(resolver ResourceResolver) *getYAMLTool {
 	return &getYAMLTool{resolver: resolver}
 }
 
-func (t *getYAMLTool) Name() string               { return "kubectl_get_yaml" }
+func (t *getYAMLTool) Name() string                { return "kubectl_get_yaml" }
 func (t *getYAMLTool) Description() string         { return "Get a Kubernetes resource as YAML output" }
 func (t *getYAMLTool) Parameters() json.RawMessage { return objParams }
 
@@ -355,11 +360,11 @@ func (t *getYAMLTool) Execute(ctx context.Context, args json.RawMessage) (string
 // --- memory request tools ---
 
 type memoryRequestsTool struct {
-	client    kubernetes.Interface
-	toolName  string
-	desc      string
-	params    json.RawMessage
-	allNS     bool
+	client   kubernetes.Interface
+	toolName string
+	desc     string
+	params   json.RawMessage
+	allNS    bool
 }
 
 func newMemoryRequestsAllNamespaces(c kubernetes.Interface) *memoryRequestsTool {
@@ -378,7 +383,7 @@ func newMemoryRequestsNamespace(c kubernetes.Interface) *memoryRequestsTool {
 	}
 }
 
-func (t *memoryRequestsTool) Name() string               { return t.toolName }
+func (t *memoryRequestsTool) Name() string                { return t.toolName }
 func (t *memoryRequestsTool) Description() string         { return t.desc }
 func (t *memoryRequestsTool) Parameters() json.RawMessage { return t.params }
 
@@ -441,7 +446,7 @@ func newEvents(c kubernetes.Interface) *eventsTool {
 	return &eventsTool{client: c}
 }
 
-func (t *eventsTool) Name() string               { return "kubectl_events" }
+func (t *eventsTool) Name() string                { return "kubectl_events" }
 func (t *eventsTool) Description() string         { return "Get events for a Kubernetes resource" }
 func (t *eventsTool) Parameters() json.RawMessage { return objParams }
 
@@ -478,12 +483,12 @@ func (t *eventsTool) Execute(ctx context.Context, args json.RawMessage) (string,
 // --- log tools ---
 
 type logTool struct {
-	client    kubernetes.Interface
-	toolName  string
-	desc      string
-	previous  bool
-	allConts  bool
-	grep      bool
+	client   kubernetes.Interface
+	toolName string
+	desc     string
+	previous bool
+	allConts bool
+	grep     bool
 }
 
 func newLogs(c kubernetes.Interface, previous, allConts bool) *logTool {
@@ -511,7 +516,7 @@ func newLogsAllContainersGrep(c kubernetes.Interface) *logTool {
 	return &logTool{client: c, toolName: "kubectl_logs_all_containers_grep", desc: "Get logs from all containers filtered by grep pattern", allConts: true, grep: true}
 }
 
-func (t *logTool) Name() string               { return t.toolName }
+func (t *logTool) Name() string                { return t.toolName }
 func (t *logTool) Description() string         { return t.desc }
 func (t *logTool) Parameters() json.RawMessage { return logParams }
 
@@ -598,4 +603,3 @@ func grepLines(text, pattern string) string {
 	}
 	return strings.Join(matched, "\n")
 }
-
