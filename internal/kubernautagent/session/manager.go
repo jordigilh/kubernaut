@@ -112,7 +112,14 @@ func (m *Manager) StartInvestigation(ctx context.Context, fn InvestigateFunc, me
 		startExtra = append(startExtra, "created_by", v)
 	}
 
-	return m.launchInvestigation(ctx, id, fn, correlationID, metadata["signal_name"], metadata["severity"], "", startExtra)
+	return m.launchInvestigation(ctx, investigationLaunchParams{
+		ID:            id,
+		Fn:            fn,
+		CorrelationID: correlationID,
+		SignalName:    metadata["signal_name"],
+		Severity:      metadata["severity"],
+		StartExtra:    startExtra,
+	})
 }
 
 // StartInvestigationWithContext creates a new session with typed SessionContext
@@ -148,13 +155,36 @@ func (m *Manager) StartInvestigationWithContext(ctx context.Context, fn Investig
 		startExtra = append(startExtra, "created_by", sctx.CreatedBy)
 	}
 
-	return m.launchInvestigation(ctx, id, fn, correlationID, sctx.Signal.Name, sctx.Signal.Severity, sctx.Signal.ClusterName, startExtra)
+	return m.launchInvestigation(ctx, investigationLaunchParams{
+		ID:            id,
+		Fn:            fn,
+		CorrelationID: correlationID,
+		SignalName:    sctx.Signal.Name,
+		Severity:      sctx.Signal.Severity,
+		ClusterName:   sctx.Signal.ClusterName,
+		StartExtra:    startExtra,
+	})
+}
+
+// investigationLaunchParams groups the arguments shared by launchInvestigation's
+// callers. Extracted per AGENTS.md's 8+-param Options-pattern rule.
+type investigationLaunchParams struct {
+	ID            string
+	Fn            InvestigateFunc
+	CorrelationID string
+	SignalName    string
+	Severity      string
+	ClusterName   string
+	StartExtra    []string
 }
 
 // launchInvestigation is the shared goroutine launcher used by both
 // StartInvestigation and StartInvestigationWithContext. It wires the cancel
 // context, lazy sink, emits the started audit event, and spawns the goroutine.
-func (m *Manager) launchInvestigation(ctx context.Context, id string, fn InvestigateFunc, correlationID, signalName, severity, clusterName string, startExtra []string) (string, error) {
+func (m *Manager) launchInvestigation(ctx context.Context, p investigationLaunchParams) (string, error) {
+	id, fn, correlationID, signalName, severity, clusterName, startExtra :=
+		p.ID, p.Fn, p.CorrelationID, p.SignalName, p.Severity, p.ClusterName, p.StartExtra
+
 	bgCtx, cancelFn := context.WithCancel(context.Background())
 
 	ls := &LazySink{}
@@ -182,7 +212,10 @@ func (m *Manager) launchInvestigation(ctx context.Context, id string, fn Investi
 			"session_id", id, "target_status", string(StatusRunning))
 	}
 
-	m.emitSessionEvent(ctx, audit.EventTypeSessionStarted, audit.ActionSessionStarted, audit.OutcomeSuccess, id, correlationID, nil, startExtra...)
+	m.emitSessionEvent(ctx, sessionEventParams{
+		EventType: audit.EventTypeSessionStarted, Action: audit.ActionSessionStarted,
+		Outcome: audit.OutcomeSuccess, SessionID: id, CorrelationID: correlationID,
+	}, nil, startExtra...)
 	m.metrics.RecordSessionStarted(signalName, severity)
 
 	go func() {
@@ -204,7 +237,10 @@ func (m *Manager) launchInvestigation(ctx context.Context, id string, fn Investi
 				}
 			} else {
 				m.closeEventChan(id)
-				m.emitSessionEvent(context.Background(), audit.EventTypeSessionFailed, audit.ActionSessionFailed, audit.OutcomeFailure, id, correlationID, fnErr)
+				m.emitSessionEvent(context.Background(), sessionEventParams{
+					EventType: audit.EventTypeSessionFailed, Action: audit.ActionSessionFailed,
+					Outcome: audit.OutcomeFailure, SessionID: id, CorrelationID: correlationID,
+				}, fnErr)
 			}
 			return
 		}
@@ -227,7 +263,10 @@ func (m *Manager) launchInvestigation(ctx context.Context, id string, fn Investi
 			if targetStatus != StatusUserDriving {
 				m.closeEventChan(id)
 			}
-			m.emitSessionEvent(context.Background(), audit.EventTypeSessionCompleted, audit.ActionSessionCompleted, audit.OutcomeSuccess, id, correlationID, nil)
+			m.emitSessionEvent(context.Background(), sessionEventParams{
+				EventType: audit.EventTypeSessionCompleted, Action: audit.ActionSessionCompleted,
+				Outcome: audit.OutcomeSuccess, SessionID: id, CorrelationID: correlationID,
+			}, nil)
 		}
 	}()
 
@@ -325,7 +364,14 @@ func (m *Manager) LaunchDeferredInvestigation(id string) error {
 		startExtra = append(startExtra, "remediation_id", v)
 	}
 
-	_, err := m.launchInvestigation(context.Background(), id, fn, correlationID, signalName, severity, "", startExtra)
+	_, err := m.launchInvestigation(context.Background(), investigationLaunchParams{
+		ID:            id,
+		Fn:            fn,
+		CorrelationID: correlationID,
+		SignalName:    signalName,
+		Severity:      severity,
+		StartExtra:    startExtra,
+	})
 	return err
 }
 
@@ -362,10 +408,10 @@ func (m *Manager) UpgradeToInteractive(id string, username string, groups []stri
 		"acting_user", username,
 		"remediation_id", correlationID)
 
-	m.emitSessionEvent(context.Background(),
-		audit.EventTypeSessionSuspended, audit.ActionSessionSuspended,
-		audit.OutcomeSuccess, id, correlationID, nil,
-		"acting_user", username, "upgrade_type", "jump_in")
+	m.emitSessionEvent(context.Background(), sessionEventParams{
+		EventType: audit.EventTypeSessionSuspended, Action: audit.ActionSessionSuspended,
+		Outcome: audit.OutcomeSuccess, SessionID: id, CorrelationID: correlationID,
+	}, nil, "acting_user", username, "upgrade_type", "jump_in")
 
 	return nil
 }
@@ -415,7 +461,10 @@ func (m *Manager) terminateSession(id, eventType, action string) error {
 	correlationID := sess.Metadata["remediation_id"]
 	m.store.mu.Unlock()
 
-	m.emitSessionEvent(context.Background(), eventType, action, audit.OutcomeSuccess, id, correlationID, nil)
+	m.emitSessionEvent(context.Background(), sessionEventParams{
+		EventType: eventType, Action: action,
+		Outcome: audit.OutcomeSuccess, SessionID: id, CorrelationID: correlationID,
+	}, nil)
 	if eventType == audit.EventTypeSessionSuspended {
 		m.metrics.RecordSessionSuspended()
 	}
@@ -462,10 +511,10 @@ func (m *Manager) TransitionToUserDriving(id, username string, groups []string) 
 	correlationID := sess.Metadata["remediation_id"]
 	m.store.mu.Unlock()
 
-	m.emitSessionEvent(context.Background(),
-		audit.EventTypeSessionSuspended, audit.ActionSessionSuspended,
-		audit.OutcomeSuccess, id, correlationID, nil,
-		"acting_user", username)
+	m.emitSessionEvent(context.Background(), sessionEventParams{
+		EventType: audit.EventTypeSessionSuspended, Action: audit.ActionSessionSuspended,
+		Outcome: audit.OutcomeSuccess, SessionID: id, CorrelationID: correlationID,
+	}, nil, "acting_user", username)
 
 	m.logger.Info("Session transitioned to user-driving",
 		"session_id", id, "acting_user", username,
@@ -651,7 +700,10 @@ func (m *Manager) Subscribe(ctx context.Context, id string) (<-chan Investigatio
 	if sessionOwner != "" {
 		extra = append(extra, "session_owner", sessionOwner)
 	}
-	m.emitSessionEvent(ctx, audit.EventTypeSessionObserved, audit.ActionSessionObserved, audit.OutcomeSuccess, id, correlationID, nil, extra...)
+	m.emitSessionEvent(ctx, sessionEventParams{
+		EventType: audit.EventTypeSessionObserved, Action: audit.ActionSessionObserved,
+		Outcome: audit.OutcomeSuccess, SessionID: id, CorrelationID: correlationID,
+	}, nil, extra...)
 
 	return ch, nil
 }
@@ -756,10 +808,10 @@ func (m *Manager) CompleteUserDriving(id string, result *katypes.InvestigationRe
 	}
 	m.store.mu.RUnlock()
 
-	m.emitSessionEvent(context.Background(),
-		audit.EventTypeSessionCompleted, audit.ActionSessionCompleted,
-		audit.OutcomeSuccess, id, correlationID, nil,
-		"completion_mode", "user_driving")
+	m.emitSessionEvent(context.Background(), sessionEventParams{
+		EventType: audit.EventTypeSessionCompleted, Action: audit.ActionSessionCompleted,
+		Outcome: audit.OutcomeSuccess, SessionID: id, CorrelationID: correlationID,
+	}, nil, "completion_mode", "user_driving")
 	m.logger.Info("User-driven session completed",
 		"session_id", id, "has_workflow", result != nil && result.WorkflowID != "")
 	return nil
@@ -851,7 +903,10 @@ func (m *Manager) recoverPanic(id, correlationID string) {
 		m.logger.Error(updateErr, "failed to update session after panic",
 			"session_id", id, "target_status", string(StatusFailed))
 	}
-	m.emitSessionEvent(context.Background(), audit.EventTypeSessionFailed, audit.ActionSessionFailed, audit.OutcomeFailure, id, correlationID, fmt.Errorf("panic: %v", r))
+	m.emitSessionEvent(context.Background(), sessionEventParams{
+		EventType: audit.EventTypeSessionFailed, Action: audit.ActionSessionFailed,
+		Outcome: audit.OutcomeFailure, SessionID: id, CorrelationID: correlationID,
+	}, fmt.Errorf("panic: %v", r))
 }
 
 // emitCompleteEvent sends an EventTypeComplete to the event sink (if active)
@@ -966,13 +1021,23 @@ func (m *Manager) recordSessionMetrics(id string, start time.Time) {
 	m.metrics.RecordSessionCompleted(outcome, duration)
 }
 
+// sessionEventParams groups the fixed arguments shared by emitSessionEvent's
+// callers. Extracted per AGENTS.md's 8+-param Options-pattern rule.
+type sessionEventParams struct {
+	EventType     string
+	Action        string
+	Outcome       string
+	SessionID     string
+	CorrelationID string
+}
+
 // emitSessionEvent builds and stores an audit event for a session lifecycle
 // transition. Optional extraData key-value pairs are merged into the event
 // data. Errors are fire-and-forget per ADR-038.
-func (m *Manager) emitSessionEvent(ctx context.Context, eventType, action, outcome, sessionID, correlationID string, fnErr error, extraData ...string) {
-	event := audit.NewEvent(eventType, correlationID, audit.WithSessionID(sessionID))
-	event.EventAction = action
-	event.EventOutcome = outcome
+func (m *Manager) emitSessionEvent(ctx context.Context, p sessionEventParams, fnErr error, extraData ...string) {
+	event := audit.NewEvent(p.EventType, p.CorrelationID, audit.WithSessionID(p.SessionID))
+	event.EventAction = p.Action
+	event.EventOutcome = p.Outcome
 	if fnErr != nil {
 		event.Data["error"] = fnErr.Error()
 	}
