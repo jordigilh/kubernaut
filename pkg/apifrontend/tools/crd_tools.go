@@ -26,7 +26,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
 )
 
-
 // ListRemediationsArgs defines the input for kubernaut_list_remediations.
 type ListRemediationsArgs struct {
 	Namespace string `json:"-"`
@@ -185,14 +184,14 @@ type ListApprovalRequestsResult struct {
 
 // ApprovalRequestSummary is a compact view of a RemediationApprovalRequest.
 type ApprovalRequestSummary struct {
-	Name                string  `json:"name"`
-	Namespace           string  `json:"namespace"`
-	Decision            string  `json:"decision"`
-	RemediationRequest  string  `json:"remediation_request"`
-	Confidence          float64 `json:"confidence"`
-	ConfidenceLevel     string  `json:"confidence_level"`
-	TimeRemaining       string  `json:"time_remaining,omitempty"`
-	RequiredBy          string  `json:"required_by,omitempty"`
+	Name               string  `json:"name"`
+	Namespace          string  `json:"namespace"`
+	Decision           string  `json:"decision"`
+	RemediationRequest string  `json:"remediation_request"`
+	Confidence         float64 `json:"confidence"`
+	ConfidenceLevel    string  `json:"confidence_level"`
+	TimeRemaining      string  `json:"time_remaining,omitempty"`
+	RequiredBy         string  `json:"required_by,omitempty"`
 }
 
 // HandleListApprovalRequests implements the kubernaut_list_approval_requests logic.
@@ -293,25 +292,25 @@ func (a GetApprovalRequestArgs) AuditFields() map[string]string {
 
 // GetApprovalRequestResult is the detailed output of kubernaut_get_approval_request.
 type GetApprovalRequestResult struct {
-	Name                   string                      `json:"name"`
-	Namespace              string                      `json:"namespace"`
-	RemediationRequest     string                      `json:"remediation_request"`
-	AIAnalysis             string                      `json:"ai_analysis"`
-	Confidence             float64                     `json:"confidence"`
-	ConfidenceLevel        string                      `json:"confidence_level"`
-	Reason                 string                      `json:"reason"`
-	InvestigationSummary   string                      `json:"investigation_summary"`
-	WhyApprovalRequired    string                      `json:"why_approval_required"`
-	RecommendedWorkflow    RecommendedWorkflowInfo     `json:"recommended_workflow"`
-	RecommendedActions     []RecommendedActionSummary  `json:"recommended_actions"`
-	EvidenceCollected      []string                    `json:"evidence_collected"`
-	AlternativesConsidered []AlternativeSummary        `json:"alternatives_considered"`
-	RequiredBy             string                      `json:"required_by,omitempty"`
-	Decision               string                      `json:"decision"`
-	DecidedBy              string                      `json:"decided_by,omitempty"`
-	DecidedAt              string                      `json:"decided_at,omitempty"`
-	TimeRemaining          string                      `json:"time_remaining,omitempty"`
-	Expired                bool                        `json:"expired"`
+	Name                   string                     `json:"name"`
+	Namespace              string                     `json:"namespace"`
+	RemediationRequest     string                     `json:"remediation_request"`
+	AIAnalysis             string                     `json:"ai_analysis"`
+	Confidence             float64                    `json:"confidence"`
+	ConfidenceLevel        string                     `json:"confidence_level"`
+	Reason                 string                     `json:"reason"`
+	InvestigationSummary   string                     `json:"investigation_summary"`
+	WhyApprovalRequired    string                     `json:"why_approval_required"`
+	RecommendedWorkflow    RecommendedWorkflowInfo    `json:"recommended_workflow"`
+	RecommendedActions     []RecommendedActionSummary `json:"recommended_actions"`
+	EvidenceCollected      []string                   `json:"evidence_collected"`
+	AlternativesConsidered []AlternativeSummary       `json:"alternatives_considered"`
+	RequiredBy             string                     `json:"required_by,omitempty"`
+	Decision               string                     `json:"decision"`
+	DecidedBy              string                     `json:"decided_by,omitempty"`
+	DecidedAt              string                     `json:"decided_at,omitempty"`
+	TimeRemaining          string                     `json:"time_remaining,omitempty"`
+	Expired                bool                       `json:"expired"`
 }
 
 // RecommendedWorkflowInfo is a compact view of a recommended workflow in an approval request.
@@ -690,114 +689,26 @@ func HandleWatch(ctx context.Context, client crclient.WithWatch, args WatchArgs)
 		rarCh = rarWatcher.ResultChan()
 	}
 
-	var (
-		events             []WatchEvent
-		lastSeenPhase      string
-		lastRARDecision    string
-		startedAt          = time.Now().UTC().Format(time.RFC3339)
-		eaCh               <-chan watch.Event
-		prevEA             *eav1alpha1.EffectivenessAssessment
-		verifyingStartedAt time.Time
-	)
+	state := &watchLoopState{startedAt: time.Now().UTC().Format(time.RFC3339)}
+	defer state.stopEAWatcher()
 
 	_ = launcher.EmitStatusSafe(ctx, "Watching remediation progress...\n")
 
 	for {
 		select {
 		case <-ctx.Done():
-			return WatchResult{Events: events, Status: "cancelled"}, nil
+			return WatchResult{Events: state.events, Status: "cancelled"}, nil
 
 		case evt, ok := <-rrWatcher.ResultChan():
 			if !ok {
-				return WatchResult{Events: events, Status: "completed"}, nil
+				return WatchResult{Events: state.events, Status: "completed"}, nil
 			}
-			if evt.Type != watch.Modified && evt.Type != watch.Added {
-				continue
+			done, result, herr := state.handleRREvent(ctx, watchCtx, client, args, logger, rarName, evt)
+			if herr != nil {
+				return WatchResult{}, herr
 			}
-			rrObj, ok := evt.Object.(*remediationv1.RemediationRequest)
-			if !ok {
-				continue
-			}
-			phase := string(rrObj.Status.OverallPhase)
-			if phase == lastSeenPhase {
-				continue
-			}
-			lastSeenPhase = phase
-			launcher.UpdatePhaseSafe(ctx, phase)
-			msg := fmt.Sprintf("Phase changed to %s", phase)
-			events = append(events, WatchEvent{
-				Timestamp: time.Now().UTC().Format(time.RFC3339),
-				Resource:  "RemediationRequest",
-				Phase:     phase,
-				Message:   msg,
-			})
-			if phase == "Verifying" {
-				verifyingStartedAt = time.Now().UTC()
-				eaName := ResolveEAName(rrObj)
-				timing := FetchEATimingMetadata(ctx, client, nil, args.Namespace, eaName)
-
-				statusMeta := map[string]any{"type": launcher.MetaTypeStatus}
-				if timing.StabilizationWindow != "" {
-					statusMeta["stabilization_window"] = timing.StabilizationWindow
-					statusMeta["started_at"] = verifyingStartedAt.Format(time.RFC3339)
-				}
-				if timing.ValidityDeadline != "" {
-					statusMeta["validity_deadline"] = timing.ValidityDeadline
-				}
-				_ = launcher.EmitStatusWithMetaSafe(ctx, fmt.Sprintf("Remediation phase: %s\n", phase), statusMeta)
-
-				if eaCh == nil {
-					eaList := &eav1alpha1.EffectivenessAssessmentList{}
-					eaWatcher, eaErr := client.Watch(watchCtx, eaList,
-						crclient.InNamespace(args.Namespace),
-						crclient.MatchingFields{"metadata.name": eaName})
-					if eaErr != nil {
-						logger.V(1).Info("EA watch unavailable, verification_step events will not be emitted",
-							"ea_name", eaName, "error", eaErr)
-					} else {
-						defer eaWatcher.Stop()
-						eaCh = eaWatcher.ResultChan()
-					}
-				}
-			} else {
-				_ = launcher.EmitStatusSafe(ctx, fmt.Sprintf("Remediation phase: %s\n", phase))
-			}
-
-			completedAt := ""
-			if IsTerminalPhase(phase) {
-				completedAt = time.Now().UTC().Format(time.RFC3339)
-			}
-			progressMeta := map[string]any{"type": "execution_progress"}
-			if phase == "Verifying" {
-				eaName := ResolveEAName(rrObj)
-				timing := FetchEATimingMetadata(ctx, client, nil, args.Namespace, eaName)
-				if timing.StabilizationWindow != "" {
-					progressMeta["stabilization_window"] = timing.StabilizationWindow
-				}
-			}
-			snapshot := BuildProgressSnapshot(phase, args.Name, startedAt, completedAt)
-			_ = launcher.EmitArtifactSafe(ctx, snapshot, fmt.Sprintf("Progress: %s", phase), progressMeta)
-
-			if IsTerminalPhase(phase) {
-				return WatchResult{Events: events, Status: "completed", Outcome: rrObj.Status.Outcome, Message: rrObj.Status.Message}, nil
-			}
-			if phase == "AwaitingApproval" {
-				var rarObj remediationv1.RemediationApprovalRequest
-				getErr := client.Get(ctx, crclient.ObjectKey{Namespace: args.Namespace, Name: rarName}, &rarObj)
-				if getErr == nil {
-					if payload, mErr := MarshalApprovalRequestPayload(&rarObj); mErr == nil {
-						_ = launcher.EmitStructuredMetaSafe(ctx, payload, map[string]any{"type": launcher.MetaTypeApprovalRequest})
-					}
-					if rarObj.Status.Decision != "" {
-						if resolved, mErr := MarshalApprovalResolvedPayload(&rarObj); mErr == nil {
-							_ = launcher.EmitStructuredMetaSafe(ctx, resolved, map[string]any{"type": launcher.MetaTypeApprovalRequestResolved})
-						}
-					}
-				} else {
-					logger.V(1).Info("RAR GET for structured event failed, continuing with text-only",
-						"rar_name", rarName, "error", getErr)
-				}
-				return WatchResult{Events: events, Status: "awaiting_approval"}, nil
+			if done {
+				return result, nil
 			}
 
 		case evt, ok := <-rarCh:
@@ -805,87 +716,223 @@ func HandleWatch(ctx context.Context, client crclient.WithWatch, args WatchArgs)
 				rarCh = nil
 				continue
 			}
-			if evt.Type != watch.Modified && evt.Type != watch.Added {
-				continue
-			}
-			rarObj, ok := evt.Object.(*remediationv1.RemediationApprovalRequest)
-			if !ok {
-				continue
-			}
-			decision := string(rarObj.Status.Decision)
-			if decision == lastRARDecision {
-				continue
-			}
-			lastRARDecision = decision
+			state.handleRAREvent(ctx, evt)
 
-			var rarMsg string
-			switch decision {
-			case "":
-				rarMsg = "Approval requested — awaiting human decision"
-			case "Approved":
-				if rarObj.Status.DecidedBy != "" {
-					rarMsg = fmt.Sprintf("Approval granted by %s", rarObj.Status.DecidedBy)
-				} else {
-					rarMsg = "Approval granted"
-				}
-			case "Rejected":
-				if rarObj.Status.DecidedBy != "" {
-					rarMsg = fmt.Sprintf("Approval rejected by %s", rarObj.Status.DecidedBy)
-				} else {
-					rarMsg = "Approval rejected"
-				}
-			case "Expired":
-				rarMsg = "Approval expired"
-			default:
-				rarMsg = fmt.Sprintf("Approval status: %s", decision)
-			}
-
-			events = append(events, WatchEvent{
-				Timestamp: time.Now().UTC().Format(time.RFC3339),
-				Resource:  "RemediationApprovalRequest",
-				Phase:     decision,
-				Message:   rarMsg,
-			})
-			_ = launcher.EmitStatusSafe(ctx, rarMsg+"\n")
-			if resolved, mErr := MarshalApprovalResolvedPayload(rarObj); mErr == nil {
-				_ = launcher.EmitStructuredMetaSafe(ctx, resolved, map[string]any{"type": launcher.MetaTypeApprovalRequestResolved})
-			}
-
-		case evt, ok := <-eaCh:
+		case evt, ok := <-state.eaCh:
 			if !ok {
-				eaCh = nil
+				state.eaCh = nil
 				continue
 			}
-			if evt.Type != watch.Modified && evt.Type != watch.Added {
-				continue
-			}
-			currEA, ok := evt.Object.(*eav1alpha1.EffectivenessAssessment)
-			if !ok {
-				continue
-			}
-			steps := DiffEASteps(prevEA, currEA)
-			for _, step := range steps {
-				stepMeta := map[string]any{
-					"type": launcher.MetaTypeVerificationStep,
-					"step": step.Step,
-				}
-				for k, v := range step.Data {
-					stepMeta[k] = v
-				}
-				if !verifyingStartedAt.IsZero() {
-					stepMeta["elapsed_s"] = int(time.Since(verifyingStartedAt).Seconds())
-				}
-				_ = launcher.EmitStatusWithMetaSafe(ctx, step.Message+"\n", stepMeta)
-				events = append(events, WatchEvent{
-					Timestamp: time.Now().UTC().Format(time.RFC3339),
-					Resource:  "EffectivenessAssessment",
-					Phase:     step.Step,
-					Message:   step.Message,
-				})
-			}
-			prevEA = currEA.DeepCopy()
+			state.handleEAEvent(ctx, evt)
 		}
 	}
+}
+
+// watchLoopState carries the mutable state shared across watch-loop
+// iterations in HandleWatch (GO-ANTIPATTERN-AUDIT-2026-07-01 Phase 4e).
+// eaWatcher is stopped via a single deferred call registered once in
+// HandleWatch, since the EA watcher is created lazily on first entry into
+// the "Verifying" phase (inside handleRREvent) rather than up front.
+type watchLoopState struct {
+	events             []WatchEvent
+	lastSeenPhase      string
+	lastRARDecision    string
+	startedAt          string
+	eaCh               <-chan watch.Event
+	eaWatcher          watch.Interface
+	prevEA             *eav1alpha1.EffectivenessAssessment
+	verifyingStartedAt time.Time
+}
+
+// stopEAWatcher stops the lazily-created EA watcher, if one was started.
+func (s *watchLoopState) stopEAWatcher() {
+	if s.eaWatcher != nil {
+		s.eaWatcher.Stop()
+	}
+}
+
+// handleRREvent processes one RemediationRequest watch event. It returns
+// done=true when the watch should terminate (terminal phase or
+// awaiting-approval), along with the WatchResult to return to the caller.
+func (s *watchLoopState) handleRREvent(
+	ctx, watchCtx context.Context,
+	client crclient.WithWatch,
+	args WatchArgs,
+	logger logr.Logger,
+	rarName string,
+	evt watch.Event,
+) (bool, WatchResult, error) {
+	if evt.Type != watch.Modified && evt.Type != watch.Added {
+		return false, WatchResult{}, nil
+	}
+	rrObj, ok := evt.Object.(*remediationv1.RemediationRequest)
+	if !ok {
+		return false, WatchResult{}, nil
+	}
+	phase := string(rrObj.Status.OverallPhase)
+	if phase == s.lastSeenPhase {
+		return false, WatchResult{}, nil
+	}
+	s.lastSeenPhase = phase
+	launcher.UpdatePhaseSafe(ctx, phase)
+	msg := fmt.Sprintf("Phase changed to %s", phase)
+	s.events = append(s.events, WatchEvent{
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Resource:  "RemediationRequest",
+		Phase:     phase,
+		Message:   msg,
+	})
+	if phase == "Verifying" {
+		s.verifyingStartedAt = time.Now().UTC()
+		eaName := ResolveEAName(rrObj)
+		timing := FetchEATimingMetadata(ctx, client, nil, args.Namespace, eaName)
+
+		statusMeta := map[string]any{"type": launcher.MetaTypeStatus}
+		if timing.StabilizationWindow != "" {
+			statusMeta["stabilization_window"] = timing.StabilizationWindow
+			statusMeta["started_at"] = s.verifyingStartedAt.Format(time.RFC3339)
+		}
+		if timing.ValidityDeadline != "" {
+			statusMeta["validity_deadline"] = timing.ValidityDeadline
+		}
+		_ = launcher.EmitStatusWithMetaSafe(ctx, fmt.Sprintf("Remediation phase: %s\n", phase), statusMeta)
+
+		if s.eaCh == nil {
+			eaList := &eav1alpha1.EffectivenessAssessmentList{}
+			eaWatcher, eaErr := client.Watch(watchCtx, eaList,
+				crclient.InNamespace(args.Namespace),
+				crclient.MatchingFields{"metadata.name": eaName})
+			if eaErr != nil {
+				logger.V(1).Info("EA watch unavailable, verification_step events will not be emitted",
+					"ea_name", eaName, "error", eaErr)
+			} else {
+				s.eaWatcher = eaWatcher
+				s.eaCh = eaWatcher.ResultChan()
+			}
+		}
+	} else {
+		_ = launcher.EmitStatusSafe(ctx, fmt.Sprintf("Remediation phase: %s\n", phase))
+	}
+
+	completedAt := ""
+	if IsTerminalPhase(phase) {
+		completedAt = time.Now().UTC().Format(time.RFC3339)
+	}
+	progressMeta := map[string]any{"type": "execution_progress"}
+	if phase == "Verifying" {
+		eaName := ResolveEAName(rrObj)
+		timing := FetchEATimingMetadata(ctx, client, nil, args.Namespace, eaName)
+		if timing.StabilizationWindow != "" {
+			progressMeta["stabilization_window"] = timing.StabilizationWindow
+		}
+	}
+	snapshot := BuildProgressSnapshot(phase, args.Name, s.startedAt, completedAt)
+	_ = launcher.EmitArtifactSafe(ctx, snapshot, fmt.Sprintf("Progress: %s", phase), progressMeta)
+
+	if IsTerminalPhase(phase) {
+		return true, WatchResult{Events: s.events, Status: "completed", Outcome: rrObj.Status.Outcome, Message: rrObj.Status.Message}, nil
+	}
+	if phase == "AwaitingApproval" {
+		var rarObj remediationv1.RemediationApprovalRequest
+		getErr := client.Get(ctx, crclient.ObjectKey{Namespace: args.Namespace, Name: rarName}, &rarObj)
+		if getErr == nil {
+			if payload, mErr := MarshalApprovalRequestPayload(&rarObj); mErr == nil {
+				_ = launcher.EmitStructuredMetaSafe(ctx, payload, map[string]any{"type": launcher.MetaTypeApprovalRequest})
+			}
+			if rarObj.Status.Decision != "" {
+				if resolved, mErr := MarshalApprovalResolvedPayload(&rarObj); mErr == nil {
+					_ = launcher.EmitStructuredMetaSafe(ctx, resolved, map[string]any{"type": launcher.MetaTypeApprovalRequestResolved})
+				}
+			}
+		} else {
+			logger.V(1).Info("RAR GET for structured event failed, continuing with text-only",
+				"rar_name", rarName, "error", getErr)
+		}
+		return true, WatchResult{Events: s.events, Status: "awaiting_approval"}, nil
+	}
+	return false, WatchResult{}, nil
+}
+
+// handleRAREvent processes one RemediationApprovalRequest watch event.
+func (s *watchLoopState) handleRAREvent(ctx context.Context, evt watch.Event) {
+	if evt.Type != watch.Modified && evt.Type != watch.Added {
+		return
+	}
+	rarObj, ok := evt.Object.(*remediationv1.RemediationApprovalRequest)
+	if !ok {
+		return
+	}
+	decision := string(rarObj.Status.Decision)
+	if decision == s.lastRARDecision {
+		return
+	}
+	s.lastRARDecision = decision
+
+	var rarMsg string
+	switch decision {
+	case "":
+		rarMsg = "Approval requested — awaiting human decision"
+	case "Approved":
+		if rarObj.Status.DecidedBy != "" {
+			rarMsg = fmt.Sprintf("Approval granted by %s", rarObj.Status.DecidedBy)
+		} else {
+			rarMsg = "Approval granted"
+		}
+	case "Rejected":
+		if rarObj.Status.DecidedBy != "" {
+			rarMsg = fmt.Sprintf("Approval rejected by %s", rarObj.Status.DecidedBy)
+		} else {
+			rarMsg = "Approval rejected"
+		}
+	case "Expired":
+		rarMsg = "Approval expired"
+	default:
+		rarMsg = fmt.Sprintf("Approval status: %s", decision)
+	}
+
+	s.events = append(s.events, WatchEvent{
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Resource:  "RemediationApprovalRequest",
+		Phase:     decision,
+		Message:   rarMsg,
+	})
+	_ = launcher.EmitStatusSafe(ctx, rarMsg+"\n")
+	if resolved, mErr := MarshalApprovalResolvedPayload(rarObj); mErr == nil {
+		_ = launcher.EmitStructuredMetaSafe(ctx, resolved, map[string]any{"type": launcher.MetaTypeApprovalRequestResolved})
+	}
+}
+
+// handleEAEvent processes one EffectivenessAssessment watch event, emitting
+// a verification_step event for each step diff since the previous snapshot.
+func (s *watchLoopState) handleEAEvent(ctx context.Context, evt watch.Event) {
+	if evt.Type != watch.Modified && evt.Type != watch.Added {
+		return
+	}
+	currEA, ok := evt.Object.(*eav1alpha1.EffectivenessAssessment)
+	if !ok {
+		return
+	}
+	steps := DiffEASteps(s.prevEA, currEA)
+	for _, step := range steps {
+		stepMeta := map[string]any{
+			"type": launcher.MetaTypeVerificationStep,
+			"step": step.Step,
+		}
+		for k, v := range step.Data {
+			stepMeta[k] = v
+		}
+		if !s.verifyingStartedAt.IsZero() {
+			stepMeta["elapsed_s"] = int(time.Since(s.verifyingStartedAt).Seconds())
+		}
+		_ = launcher.EmitStatusWithMetaSafe(ctx, step.Message+"\n", stepMeta)
+		s.events = append(s.events, WatchEvent{
+			Timestamp: time.Now().UTC().Format(time.RFC3339),
+			Resource:  "EffectivenessAssessment",
+			Phase:     step.Step,
+			Message:   step.Message,
+		})
+	}
+	s.prevEA = currEA.DeepCopy()
 }
 
 // NewWatchTool creates the kubernaut_watch tool.
@@ -903,7 +950,6 @@ func NewWatchTool(client crclient.WithWatch, controllerNS string) (tool.Tool, er
 // kubernaut_await_session: Wait for KA investigation session readiness
 // BR-INTERACTIVE-010: AF waits for AA to submit to KA before connecting
 // ========================================
-
 
 // AwaitSessionArgs defines the input for kubernaut_await_session.
 type AwaitSessionArgs struct {
@@ -1033,7 +1079,6 @@ func NewAwaitSessionTool(client crclient.Client, controllerNS string) (tool.Tool
 // AwaitISPhaseActive: Poll IS CRD until AA sets Phase=Active
 // BR-INTERACTIVE-010: AF waits for AA to acknowledge the interactive session
 // ========================================
-
 
 const (
 	isPhaseInitialInterval = 500 * time.Millisecond
