@@ -194,23 +194,22 @@ var _ = Describe("Issue #573: ADR-EM-001 Implementation Gaps", func() {
 				WithStatusSubresource(&eav1.EffectivenessAssessment{}).
 				Build()
 
-			r := controller.NewReconciler(
-				fc,
-				fc,
-				s,
-				fakeRecorder,
-				localMetrics,
-				nil, // no Prometheus (not needed for partial path)
-				nil, // no AlertManager
-				nil, // no AuditManager
-				dsQuerier,
-				func() controller.ReconcilerConfig {
-					c := controller.DefaultReconcilerConfig()
-					c.PrometheusEnabled = false
-					c.AlertManagerEnabled = false
-					return c
-				}(),
-			)
+			r := controller.NewReconciler(controller.ReconcilerDeps{
+				Client:             fc,
+				APIReader:          fc,
+				Scheme:             s,
+				Recorder:           fakeRecorder,
+				Metrics:            localMetrics,
+				PrometheusClient:   nil, // no Prometheus (not needed for partial path)
+				AlertManagerClient: nil, // no AlertManager
+				AuditManager:       nil, // no AuditManager
+				DSQuerier:          dsQuerier,
+			}, func() controller.ReconcilerConfig {
+				c := controller.DefaultReconcilerConfig()
+				c.PrometheusEnabled = false
+				c.AlertManagerEnabled = false
+				return c
+			}())
 			return r, fc
 		}
 

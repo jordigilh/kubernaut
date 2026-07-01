@@ -68,15 +68,14 @@ var _ = Describe("Assessment Reason: metrics_timed_out (ADR-EM-001, Batch 3)", f
 		// Very short validity to ensure expiration
 		cfg.ValidityWindow = 1 * time.Millisecond
 
-		r := controller.NewReconciler(
-			fakeClient, fakeClient,
-			s,
-			record.NewFakeRecorder(100),
-			emmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			nil, nil, // Prom + AM clients
-			nil, nil, // AuditManager, DSQuerier
-			cfg,
-		)
+		r := controller.NewReconciler(controller.ReconcilerDeps{
+			Client:    fakeClient,
+			APIReader: fakeClient,
+			Scheme:    s,
+			Recorder:  record.NewFakeRecorder(100),
+			Metrics:   emmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			// PrometheusClient, AlertManagerClient, AuditManager, DSQuerier: nil
+		}, cfg)
 		return r, fakeClient
 	}
 

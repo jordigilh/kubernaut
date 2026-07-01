@@ -71,16 +71,15 @@ var _ = Describe("Config-Disabled Reconciler (BR-EM-006, BR-EM-007, BR-EM-008)",
 		cfg.PrometheusEnabled = promEnabled
 		cfg.AlertManagerEnabled = amEnabled
 
-		r := controller.NewReconciler(
-			fakeClient,
-			fakeClient,
-			s,
-			record.NewFakeRecorder(100),
-			emmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			nil, nil, // Prom + AM clients: nil (tests verify nil safety)
-			nil, nil, // AuditManager, DSQuerier
-			cfg,
-		)
+		r := controller.NewReconciler(controller.ReconcilerDeps{
+			Client:    fakeClient,
+			APIReader: fakeClient,
+			Scheme:    s,
+			Recorder:  record.NewFakeRecorder(100),
+			Metrics:   emmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			// PrometheusClient, AlertManagerClient: nil (tests verify nil safety)
+			// AuditManager, DSQuerier: nil
+		}, cfg)
 		return r, fakeClient
 	}
 

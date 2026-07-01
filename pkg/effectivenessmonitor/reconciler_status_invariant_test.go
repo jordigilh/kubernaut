@@ -22,12 +22,13 @@ limitations under the License.
 // SubResource update calls and asserts the exact count for each path.
 //
 // Per-path matrix (from audit §17.1):
-//   WFP persist:          1 (then return)
-//   Stabilizing:          1 (then return)
-//   Alert deferral 7b:    0 or 1 (then return)
-//   Step 9 (Assessing):   1 (then return)
-//   completeAssessment:   1 (separate call stack)
-//   failAssessment:       1 (separate call stack)
+//
+//	WFP persist:          1 (then return)
+//	Stabilizing:          1 (then return)
+//	Alert deferral 7b:    0 or 1 (then return)
+//	Step 9 (Assessing):   1 (then return)
+//	completeAssessment:   1 (separate call stack)
+//	failAssessment:       1 (separate call stack)
 //
 // No two Status().Update calls execute in the same Reconcile invocation.
 package effectivenessmonitor_test
@@ -87,15 +88,17 @@ var _ = Describe("Status Update Invariant (UT-EM-254-003, #254)", func() {
 		cfg.PrometheusEnabled = false
 		cfg.AlertManagerEnabled = false
 
-		r := controller.NewReconciler(
-			fakeClient, fakeClient,
-			s,
-			record.NewFakeRecorder(100),
-			emmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			nil, nil,
-			nil, nil,
-			cfg,
-		)
+		r := controller.NewReconciler(controller.ReconcilerDeps{
+			Client:             fakeClient,
+			APIReader:          fakeClient,
+			Scheme:             s,
+			Recorder:           record.NewFakeRecorder(100),
+			Metrics:            emmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			PrometheusClient:   nil,
+			AlertManagerClient: nil,
+			AuditManager:       nil,
+			DSQuerier:          nil,
+		}, cfg)
 		return r, fakeClient, &updateCount
 	}
 

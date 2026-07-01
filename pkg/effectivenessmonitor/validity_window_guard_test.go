@@ -67,15 +67,17 @@ var _ = Describe("Validity Window Runtime Guard (Issue #188, BR-EM-009)", func()
 		cfg := controller.DefaultReconcilerConfig()
 		cfg.ValidityWindow = validityWindow
 
-		r := controller.NewReconciler(
-			fakeClient, fakeClient,
-			s,
-			record.NewFakeRecorder(100),
-			emmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			nil, nil,
-			nil, nil,
-			cfg,
-		)
+		r := controller.NewReconciler(controller.ReconcilerDeps{
+			Client:             fakeClient,
+			APIReader:          fakeClient,
+			Scheme:             s,
+			Recorder:           record.NewFakeRecorder(100),
+			Metrics:            emmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			PrometheusClient:   nil,
+			AlertManagerClient: nil,
+			AuditManager:       nil,
+			DSQuerier:          nil,
+		}, cfg)
 		return r, fakeClient
 	}
 

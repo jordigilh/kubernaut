@@ -47,12 +47,17 @@ var _ = Describe("Fleet Routing (BR-FLEET-054)", func() {
 				},
 			}
 
-			rec := controller.NewReconciler(
-				fake.NewClientBuilder().Build(),
-				fake.NewClientBuilder().Build(),
-				nil, nil, nil, nil, nil, nil, nil,
-				controller.DefaultReconcilerConfig(),
-			)
+			rec := controller.NewReconciler(controller.ReconcilerDeps{
+				Client:             fake.NewClientBuilder().Build(),
+				APIReader:          fake.NewClientBuilder().Build(),
+				Scheme:             nil,
+				Recorder:           nil,
+				Metrics:            nil,
+				PrometheusClient:   nil,
+				AlertManagerClient: nil,
+				AuditManager:       nil,
+				DSQuerier:          nil,
+			}, controller.DefaultReconcilerConfig())
 			rec.SetReaderFactory(factory)
 
 			reader, err := rec.ReaderFor(context.Background(), "prod-east-1")
@@ -68,12 +73,17 @@ var _ = Describe("Fleet Routing (BR-FLEET-054)", func() {
 		It("should return the local targetReader when ClusterID is empty", func() {
 			localClient := fake.NewClientBuilder().Build()
 
-			rec := controller.NewReconciler(
-				localClient,
-				fake.NewClientBuilder().Build(),
-				nil, nil, nil, nil, nil, nil, nil,
-				controller.DefaultReconcilerConfig(),
-			)
+			rec := controller.NewReconciler(controller.ReconcilerDeps{
+				Client:             localClient,
+				APIReader:          fake.NewClientBuilder().Build(),
+				Scheme:             nil,
+				Recorder:           nil,
+				Metrics:            nil,
+				PrometheusClient:   nil,
+				AlertManagerClient: nil,
+				AuditManager:       nil,
+				DSQuerier:          nil,
+			}, controller.DefaultReconcilerConfig())
 
 			reader, err := rec.ReaderFor(context.Background(), "")
 			Expect(err).ToNot(HaveOccurred())
