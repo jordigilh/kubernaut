@@ -25,7 +25,8 @@ import (
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
-	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
+	mcpclient "github.com/jordigilh/kubernaut/docs/spikes/multi-cluster-mcp-gateway/spike-s4-federated-scope"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
 var _ = Describe("FederatedScopeChecker — Spike S4", func() {
@@ -35,7 +36,7 @@ var _ = Describe("FederatedScopeChecker — Spike S4", func() {
 			local := &mockScopeChecker{managed: true}
 			checker := mcpclient.NewFederatedScopeChecker(local, nil, "", logr.Discard())
 
-			managed, err := checker.IsManaged(context.Background(), "default", "Pod", "test-pod")
+			managed, err := checker.IsManagedResource(context.Background(), scope.ResourceIdentity{Namespace: "default", Kind: "Pod", Name: "test-pod"})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(managed).To(BeTrue())
 		})
@@ -50,7 +51,7 @@ var _ = Describe("FederatedScopeChecker — Spike S4", func() {
 			}
 			checker := mcpclient.NewFederatedScopeChecker(nil, remote, "cluster_a_", logr.Discard())
 
-			managed, err := checker.IsManaged(context.Background(), "default", "Pod", "test-pod")
+			managed, err := checker.IsManagedResource(context.Background(), scope.ResourceIdentity{Namespace: "default", Kind: "Pod", Name: "test-pod"})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(managed).To(BeTrue())
 		})
@@ -60,13 +61,13 @@ var _ = Describe("FederatedScopeChecker — Spike S4", func() {
 		It("should check namespace label when resource label is absent", func() {
 			remote := &mockMCPResourceClient{
 				labelsByKey: map[string]map[string]string{
-					"cluster_a_Pod/default/test-pod":      {},
-					"cluster_a_Namespace//default": {"kubernaut.ai/managed": "true"},
+					"cluster_a_Pod/default/test-pod": {},
+					"cluster_a_Namespace//default":   {"kubernaut.ai/managed": "true"},
 				},
 			}
 			checker := mcpclient.NewFederatedScopeChecker(nil, remote, "cluster_a_", logr.Discard())
 
-			managed, err := checker.IsManaged(context.Background(), "default", "Pod", "test-pod")
+			managed, err := checker.IsManagedResource(context.Background(), scope.ResourceIdentity{Namespace: "default", Kind: "Pod", Name: "test-pod"})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(managed).To(BeTrue())
 		})
@@ -76,13 +77,13 @@ var _ = Describe("FederatedScopeChecker — Spike S4", func() {
 		It("should return false (safe default) when no labels match", func() {
 			remote := &mockMCPResourceClient{
 				labelsByKey: map[string]map[string]string{
-					"cluster_a_Pod/default/test-pod":      {"app": "nginx"},
-					"cluster_a_Namespace//default": {"env": "dev"},
+					"cluster_a_Pod/default/test-pod": {"app": "nginx"},
+					"cluster_a_Namespace//default":   {"env": "dev"},
 				},
 			}
 			checker := mcpclient.NewFederatedScopeChecker(nil, remote, "cluster_a_", logr.Discard())
 
-			managed, err := checker.IsManaged(context.Background(), "default", "Pod", "test-pod")
+			managed, err := checker.IsManagedResource(context.Background(), scope.ResourceIdentity{Namespace: "default", Kind: "Pod", Name: "test-pod"})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(managed).To(BeFalse())
 		})
@@ -98,7 +99,7 @@ var _ = Describe("FederatedScopeChecker — Spike S4", func() {
 			}
 			checker := mcpclient.NewFederatedScopeChecker(nil, remote, "cluster_a_", logr.Discard())
 
-			managed, err := checker.IsManaged(context.Background(), "default", "Pod", "test-pod")
+			managed, err := checker.IsManagedResource(context.Background(), scope.ResourceIdentity{Namespace: "default", Kind: "Pod", Name: "test-pod"})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(managed).To(BeTrue())
 		})
@@ -111,7 +112,7 @@ var _ = Describe("FederatedScopeChecker — Spike S4", func() {
 			}
 			checker := mcpclient.NewFederatedScopeChecker(nil, remote, "cluster_a_", logr.Discard())
 
-			_, err := checker.IsManaged(context.Background(), "default", "Pod", "test-pod")
+			_, err := checker.IsManagedResource(context.Background(), scope.ResourceIdentity{Namespace: "default", Kind: "Pod", Name: "test-pod"})
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("checking namespace"))
 		})
@@ -155,7 +156,7 @@ type mockScopeChecker struct {
 	err     error
 }
 
-func (m *mockScopeChecker) IsManaged(_ context.Context, _, _, _ string) (bool, error) {
+func (m *mockScopeChecker) IsManagedResource(_ context.Context, _ scope.ResourceIdentity) (bool, error) {
 	return m.managed, m.err
 }
 
