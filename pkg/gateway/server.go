@@ -268,7 +268,11 @@ func NewServerWithK8sClient(cfg *config.ServerConfig, logger logr.Logger, metric
 
 	// DD-STATUS-001: Use ctrlClient as apiReader for cache-bypassed reads
 	// In test environments, this provides direct K8s API access
-	return createServerWithClients(cfg, logger, metricsInstance, ctrlClient, ctrlClient, k8sClient, authenticator, authorizer)
+	return createServerWithClients(serverClients{
+		Config: cfg, Logger: logger, MetricsInstance: metricsInstance,
+		CtrlClient: ctrlClient, APIReader: ctrlClient, K8sClient: k8sClient,
+		Authenticator: authenticator, Authorizer: authorizer,
+	})
 }
 
 // newAuthMiddleware creates the auth middleware if both authenticator and authorizer are provided.
@@ -285,12 +289,28 @@ func newAuthMiddleware(authenticator auth.Authenticator, authorizer auth.Authori
 	}, logger)
 }
 
+// ServerTestDeps groups the injected dependencies for NewServerForTesting.
+// Extracted per AGENTS.md's 8+-param Options-pattern rule.
+type ServerTestDeps struct {
+	Config          *config.ServerConfig
+	Logger          logr.Logger
+	MetricsInstance *metrics.Metrics
+	CtrlClient      client.Client
+	AuditStore      audit.AuditStore
+	ScopeChecker    scope.ScopeChecker
+	Authenticator   auth.Authenticator
+	Authorizer      auth.Authorizer
+}
+
 // NewServerForTesting creates a Gateway server with injected dependencies for testing.
 // This constructor allows injecting a mock audit store for unit tests.
 //
 // USAGE: Unit tests only - allows testing audit failure scenarios
 // PRODUCTION: Use NewServer() or NewServerWithK8sClient() instead
-func NewServerForTesting(cfg *config.ServerConfig, logger logr.Logger, metricsInstance *metrics.Metrics, ctrlClient client.Client, auditStore audit.AuditStore, scopeChecker scope.ScopeChecker, authenticator auth.Authenticator, authorizer auth.Authorizer) (*Server, error) {
+func NewServerForTesting(deps ServerTestDeps) (*Server, error) {
+	cfg, logger, metricsInstance, ctrlClient, auditStore, scopeChecker, authenticator, authorizer :=
+		deps.Config, deps.Logger, deps.MetricsInstance, deps.CtrlClient, deps.AuditStore, deps.ScopeChecker, deps.Authenticator, deps.Authorizer
+
 	// Use provided Kubernetes client
 	k8sClient := k8s.NewClient(ctrlClient)
 
@@ -528,7 +548,11 @@ func NewServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger, metricsI
 	// DD-STATUS-001: Pass separate cached client and uncached apiReader
 	// ctrlClient: Cached reads/writes for normal operations
 	// apiReader: Uncached reads for fresh data (status refetch after CRD creation)
-	server, err := createServerWithClients(cfg, logger, metricsInstance, ctrlClient, apiReader, k8sClient, authenticator, authorizer)
+	server, err := createServerWithClients(serverClients{
+		Config: cfg, Logger: logger, MetricsInstance: metricsInstance,
+		CtrlClient: ctrlClient, APIReader: apiReader, K8sClient: k8sClient,
+		Authenticator: authenticator, Authorizer: authorizer,
+	})
 	if err != nil {
 		cancel()
 		return nil, err
@@ -541,13 +565,30 @@ func NewServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger, metricsI
 	return server, nil
 }
 
+// serverClients groups the constructor-injected dependencies for
+// createServerWithClients. Extracted per AGENTS.md's 8+-param
+// Options-pattern rule.
+type serverClients struct {
+	Config          *config.ServerConfig
+	Logger          logr.Logger
+	MetricsInstance *metrics.Metrics
+	CtrlClient      client.Client
+	APIReader       client.Client
+	K8sClient       *k8s.Client
+	Authenticator   auth.Authenticator
+	Authorizer      auth.Authorizer
+}
+
 // createServerWithClients is the common server creation logic
 // DD-005: Uses logr.Logger for unified logging interface
 // DD-GATEWAY-012: Redis REMOVED - Gateway is now Redis-free, K8s-native service
 // DD-AUDIT-003: Audit store initialization for P0 service compliance
 // DD-STATUS-001: apiReader parameter added for cache-bypassed status refetch (adopted from RO)
 // BR-GATEWAY-190: apiReader is client.Client (not just client.Reader) for distributed locking Create/Update/Delete operations
-func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metricsInstance *metrics.Metrics, ctrlClient client.Client, apiReader client.Client, k8sClient *k8s.Client, authenticator auth.Authenticator, authorizer auth.Authorizer) (*Server, error) {
+func createServerWithClients(deps serverClients) (*Server, error) {
+	cfg, logger, metricsInstance, ctrlClient, apiReader, k8sClient, authenticator, authorizer :=
+		deps.Config, deps.Logger, deps.MetricsInstance, deps.CtrlClient, deps.APIReader, deps.K8sClient, deps.Authenticator, deps.Authorizer
+
 	// Metrics are mandatory for observability
 	// If nil, create a new metrics instance with default registry (production mode)
 	if metricsInstance == nil {

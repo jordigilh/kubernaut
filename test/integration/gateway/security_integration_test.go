@@ -45,7 +45,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
-
 var _ = Describe("Issue #673 C-ADV-2: Generic Processing Error (BR-GATEWAY-182)", Ordered, ContinueOnFailure, func() {
 
 	var (
@@ -99,16 +98,10 @@ var _ = Describe("Issue #673 C-ADV-2: Generic Processing Error (BR-GATEWAY-182)"
 		registry := prometheus.NewRegistry()
 		metricsInstance := metrics.NewMetricsWithRegistry(registry)
 
-		gwServer, err := gateway.NewServerForTesting(
-			cfg,
-			logr.Discard(),
-			metricsInstance,
-			brokenClient,
-			nil,
-			scope.NewManager(brokenClient),
-			nil,
-			nil,
-		)
+		gwServer, err := gateway.NewServerForTesting(gateway.ServerTestDeps{
+			Config: cfg, Logger: logr.Discard(), MetricsInstance: metricsInstance,
+			CtrlClient: brokenClient, ScopeChecker: scope.NewManager(brokenClient),
+		})
 		Expect(err).ToNot(HaveOccurred())
 
 		prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())

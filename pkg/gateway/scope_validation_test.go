@@ -103,7 +103,10 @@ func newTestGatewayServer(k8sClient client.Client, metricsInstance *metrics.Metr
 	}
 
 	logger := logr.Discard()
-	return gatewaypkg.NewServerForTesting(cfg, logger, metricsInstance, k8sClient, nil, scopeChecker, nil, nil)
+	return gatewaypkg.NewServerForTesting(gatewaypkg.ServerTestDeps{
+		Config: cfg, Logger: logger, MetricsInstance: metricsInstance,
+		CtrlClient: k8sClient, ScopeChecker: scopeChecker,
+	})
 }
 
 // newTestK8sClient creates a fake K8s client with the required scheme and field index.
@@ -194,11 +197,11 @@ var _ = Describe("BR-SCOPE-002: Gateway Scope Validation", func() {
 
 		response, err := gwServer.ProcessSignal(ctx, signal)
 
-	By("4. Verify signal is rejected (not an error — just a rejection)")
-	Expect(err).ToNot(HaveOccurred(),
-		"BR-SCOPE-002: Rejection is not an error — signal simply rejected")
-	Expect(response.Status).To(Equal(gatewaypkg.StatusRejected),
-		"BR-SCOPE-002: Response status must be 'rejected' for unmanaged resources")
+		By("4. Verify signal is rejected (not an error — just a rejection)")
+		Expect(err).ToNot(HaveOccurred(),
+			"BR-SCOPE-002: Rejection is not an error — signal simply rejected")
+		Expect(response.Status).To(Equal(gatewaypkg.StatusRejected),
+			"BR-SCOPE-002: Response status must be 'rejected' for unmanaged resources")
 
 		By("5. Verify no RR CRD was created")
 		var rrList remediationv1alpha1.RemediationRequestList
@@ -225,10 +228,10 @@ var _ = Describe("BR-SCOPE-002: Gateway Scope Validation", func() {
 
 		response, err := gwServer.ProcessSignal(ctx, signal)
 
-	By("4. Verify signal is accepted and RR CRD is created")
-	Expect(err).ToNot(HaveOccurred())
-	Expect(response.Status).To(Equal(gatewaypkg.StatusCreated),
-		"BR-SCOPE-002: Managed signal should result in CRD creation")
+		By("4. Verify signal is accepted and RR CRD is created")
+		Expect(err).ToNot(HaveOccurred())
+		Expect(response.Status).To(Equal(gatewaypkg.StatusCreated),
+			"BR-SCOPE-002: Managed signal should result in CRD creation")
 		Expect(response.RemediationRequestName).ToNot(BeEmpty(),
 			"BR-SCOPE-002: Response must include the created RR name")
 	})
@@ -250,10 +253,10 @@ var _ = Describe("BR-SCOPE-002: Gateway Scope Validation", func() {
 
 		response, err := gwServer.ProcessSignal(ctx, signal)
 
-	By("4. Verify signal is rejected")
-	Expect(err).ToNot(HaveOccurred())
-	Expect(response.Status).To(Equal(gatewaypkg.StatusRejected),
-		"BR-SCOPE-002: Resource opt-out must result in rejection")
+		By("4. Verify signal is rejected")
+		Expect(err).ToNot(HaveOccurred())
+		Expect(response.Status).To(Equal(gatewaypkg.StatusRejected),
+			"BR-SCOPE-002: Resource opt-out must result in rejection")
 
 		By("5. Verify no RR CRD was created")
 		var rrList remediationv1alpha1.RemediationRequestList
@@ -280,12 +283,12 @@ var _ = Describe("BR-SCOPE-002: Gateway Scope Validation", func() {
 
 		response, err := gwServer.ProcessSignal(ctx, signal)
 
-	By("4. Verify rejection response contains actionable information")
-	Expect(err).ToNot(HaveOccurred())
-	Expect(response.Status).To(Equal(gatewaypkg.StatusRejected))
+		By("4. Verify rejection response contains actionable information")
+		Expect(err).ToNot(HaveOccurred())
+		Expect(response.Status).To(Equal(gatewaypkg.StatusRejected))
 
-	Expect(response.Rejection).ToNot(BeNil(),
-		"BR-SCOPE-002: Rejection response must include structured rejection details")
+		Expect(response.Rejection).ToNot(BeNil(),
+			"BR-SCOPE-002: Rejection response must include structured rejection details")
 		Expect(response.Rejection.Reason).To(Equal(gatewaypkg.RejectionReasonUnmanagedResource),
 			"BR-SCOPE-002: Reason must be 'unmanaged_resource'")
 		Expect(response.Rejection.Resource).ToNot(BeEmpty(),
@@ -344,11 +347,11 @@ var _ = Describe("BR-SCOPE-002: Gateway Scope Validation", func() {
 		// Note: Structured log validation is best done at integration level
 		// with a captured log sink. At unit level, we verify the rejection
 		// response includes all fields that would be logged.
-	Expect(err).ToNot(HaveOccurred())
-	Expect(response.Status).To(Equal(gatewaypkg.StatusRejected))
+		Expect(err).ToNot(HaveOccurred())
+		Expect(response.Status).To(Equal(gatewaypkg.StatusRejected))
 
-	// Verify the scope checker was called with correct parameters
-	Expect(mockScope.callCount).To(Equal(1),
+		// Verify the scope checker was called with correct parameters
+		Expect(mockScope.callCount).To(Equal(1),
 			"BR-SCOPE-002: Scope checker should be called exactly once per signal")
 		Expect(mockScope.lastParams.namespace).To(Equal(testNamespace),
 			"BR-SCOPE-002: Scope checker must receive the signal namespace")
@@ -426,7 +429,7 @@ var _ = Describe("BR-SCOPE-002: Gateway Scope Validation", func() {
 		By("3. Construct signal for cluster-scoped resource (Node)")
 		signal := &types.NormalizedSignal{
 			Fingerprint: "test-fingerprint-node-001",
-			SignalName:   "NodeNotReady",
+			SignalName:  "NodeNotReady",
 			Severity:    "critical",
 			Namespace:   "", // cluster-scoped: no namespace
 			Resource: types.ResourceIdentifier{
@@ -437,11 +440,11 @@ var _ = Describe("BR-SCOPE-002: Gateway Scope Validation", func() {
 
 		response, err := gwServer.ProcessSignal(ctx, signal)
 
-	By("4. Verify rejection response has no namespace prefix")
-	Expect(err).ToNot(HaveOccurred())
-	Expect(response.Status).To(Equal(gatewaypkg.StatusRejected))
-	Expect(response.Rejection).ToNot(BeNil(),
-		"BR-SCOPE-002: Cluster-scoped rejection must include structured rejection details")
+		By("4. Verify rejection response has no namespace prefix")
+		Expect(err).ToNot(HaveOccurred())
+		Expect(response.Status).To(Equal(gatewaypkg.StatusRejected))
+		Expect(response.Rejection).ToNot(BeNil(),
+			"BR-SCOPE-002: Cluster-scoped rejection must include structured rejection details")
 		Expect(response.Rejection.Resource).To(Equal("Node:worker-1"),
 			"BR-SCOPE-002: Cluster-scoped rejection must not include namespace prefix")
 

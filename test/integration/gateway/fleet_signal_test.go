@@ -75,9 +75,9 @@ func (r *staticClusterRegistry) WatchClusters() <-chan registry.ClusterEvent {
 	return ch
 }
 
-func (r *staticClusterRegistry) Ready() bool                    { return true }
-func (r *staticClusterRegistry) Start(_ context.Context) error  { return nil }
-func (r *staticClusterRegistry) Stop()                          {}
+func (r *staticClusterRegistry) Ready() bool                   { return true }
+func (r *staticClusterRegistry) Start(_ context.Context) error { return nil }
+func (r *staticClusterRegistry) Stop()                         {}
 
 // GW Fleet Signal Ingestion (BR-INTEGRATION-065)
 //
@@ -143,7 +143,11 @@ var _ = Describe("GW Fleet Signal Ingestion (BR-INTEGRATION-065)", Ordered, Labe
 		testRegistry := prometheus.NewRegistry()
 		metricsInstance := metrics.NewMetricsWithRegistry(testRegistry)
 		var err error
-		gwServer, err = gateway.NewServerForTesting(gwConfig, testLogger, metricsInstance, k8sClient, sharedAuditStore, federatedChecker, suiteAuthenticator, suiteAuthorizer)
+		gwServer, err = gateway.NewServerForTesting(gateway.ServerTestDeps{
+			Config: gwConfig, Logger: testLogger, MetricsInstance: metricsInstance,
+			CtrlClient: k8sClient, AuditStore: sharedAuditStore, ScopeChecker: federatedChecker,
+			Authenticator: suiteAuthenticator, Authorizer: suiteAuthorizer,
+		})
 		Expect(err).ToNot(HaveOccurred(), "Failed to create Gateway server")
 
 		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)

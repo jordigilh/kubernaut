@@ -190,10 +190,10 @@ func (c *NotificationCreator) CreateApprovalNotification(
 			},
 			ClusterID: rr.Spec.ClusterID,
 			Type:      notificationv1.NotificationTypeApproval,
-			Priority: c.mapPriority(ai.Spec.AnalysisRequest.SignalContext.BusinessPriority),
-			Severity: rr.Spec.Severity,
-			Subject:  fmt.Sprintf("Approval Required: %s", rr.Spec.SignalName),
-			Body:     c.buildApprovalBody(rr, ai, resolveNotificationTargetResource(rr, ai)),
+			Priority:  c.mapPriority(ai.Spec.AnalysisRequest.SignalContext.BusinessPriority),
+			Severity:  rr.Spec.Severity,
+			Subject:   fmt.Sprintf("Approval Required: %s", rr.Spec.SignalName),
+			Body:      c.buildApprovalBody(rr, ai, resolveNotificationTargetResource(rr, ai)),
 			Context: &notificationv1.NotificationContext{
 				Lineage: &notificationv1.LineageContext{
 					RemediationRequest: rr.Name,
@@ -242,7 +242,6 @@ func (c *NotificationCreator) CreateApprovalNotification(
 	return name, nil
 }
 
-
 // mapPriority maps remediation priority string to NotificationPriority enum.
 func (c *NotificationCreator) mapPriority(priority string) notificationv1.NotificationPriority {
 	switch priority {
@@ -290,14 +289,14 @@ func (c *NotificationCreator) buildApprovalBody(rr *remediationv1.RemediationReq
 **Proposed Workflow**: %s
 
 **Approval Reason**: %s`,
-		rr.Spec.SignalName,
-		rr.Spec.Severity,
-		formatTargetResource(target),
-		rootCause,
-		ai.Status.SelectedWorkflow.Confidence*100,
-		workflowLabel,
-		approvalReason,
-	)
+			rr.Spec.SignalName,
+			rr.Spec.Severity,
+			formatTargetResource(target),
+			rootCause,
+			ai.Status.SelectedWorkflow.Confidence*100,
+			workflowLabel,
+			approvalReason,
+		)
 
 	body += "\n\nPlease review and approve/reject the remediation."
 
@@ -377,10 +376,18 @@ func (c *NotificationCreator) CreateCompletionNotification(
 			},
 			ClusterID: rr.Spec.ClusterID,
 			Type:      notificationv1.NotificationTypeCompletion,
-			Priority: notificationv1.NotificationPriorityLow,
-			Severity: rr.Spec.Severity,
-			Subject:  fmt.Sprintf("Remediation Completed: %s", rr.Spec.SignalName),
-			Body:     c.buildCompletionBody(rr, ai, rootCause, workflowID, executionEngine, actionType, rationale, resolveNotificationTargetResource(rr, ai), verificationText),
+			Priority:  notificationv1.NotificationPriorityLow,
+			Severity:  rr.Spec.Severity,
+			Subject:   fmt.Sprintf("Remediation Completed: %s", rr.Spec.SignalName),
+			Body: c.buildCompletionBody(rr, completionBodyParams{
+				RootCause:        rootCause,
+				WorkflowID:       workflowID,
+				ExecutionEngine:  executionEngine,
+				ActionType:       actionType,
+				Rationale:        rationale,
+				Target:           resolveNotificationTargetResource(rr, ai),
+				VerificationText: verificationText,
+			}),
 			Context: &notificationv1.NotificationContext{
 				Lineage: &notificationv1.LineageContext{
 					RemediationRequest: rr.Name,
@@ -431,15 +438,25 @@ func (c *NotificationCreator) CreateCompletionNotification(
 	return name, nil
 }
 
+// completionBodyParams groups the completion-notification content fields
+// for buildCompletionBody. Extracted per AGENTS.md's 8+-param
+// Options-pattern rule.
+type completionBodyParams struct {
+	RootCause        string
+	WorkflowID       string
+	ExecutionEngine  string
+	ActionType       string
+	Rationale        string
+	Target           remediationv1.ResourceIdentifier
+	VerificationText string
+}
+
 // buildCompletionBody builds the completion notification body.
 // #318: verificationText is appended as a "Verification Results" section before the closing tagline.
-func (c *NotificationCreator) buildCompletionBody(
-	rr *remediationv1.RemediationRequest,
-	_ *aianalysisv1.AIAnalysis,
-	rootCause, workflowID, executionEngine, actionType, rationale string,
-	target remediationv1.ResourceIdentifier,
-	verificationText string,
-) string {
+func (c *NotificationCreator) buildCompletionBody(rr *remediationv1.RemediationRequest, p completionBodyParams) string {
+	rootCause, workflowID, executionEngine, actionType, rationale, target, verificationText :=
+		p.RootCause, p.WorkflowID, p.ExecutionEngine, p.ActionType, p.Rationale, p.Target, p.VerificationText
+
 	workflowLabel := workflowID
 	if actionType != "" {
 		workflowLabel = fmt.Sprintf("%s (%s)", actionType, workflowID)
@@ -461,14 +478,14 @@ func (c *NotificationCreator) buildCompletionBody(
 
 **Workflow Executed**: %s
 **Execution Engine**: %s`,
-		rr.Status.Outcome,
-		rr.Spec.SignalName,
-		rr.Spec.Severity,
-		formatTargetResource(target),
-		rootCause,
-		workflowLabel,
-		executionEngine,
-	)
+			rr.Status.Outcome,
+			rr.Spec.SignalName,
+			rr.Spec.Severity,
+			formatTargetResource(target),
+			rootCause,
+			workflowLabel,
+			executionEngine,
+		)
 
 	if rationale != "" {
 		body += fmt.Sprintf("\n\n**Selection Rationale**:\n%s", rationale)
@@ -527,10 +544,10 @@ func (c *NotificationCreator) CreateBulkDuplicateNotification(
 			},
 			ClusterID: rr.Spec.ClusterID,
 			Type:      notificationv1.NotificationTypeSimple,
-			Priority: notificationv1.NotificationPriorityLow,
-			Severity: "info",
-			Subject:  fmt.Sprintf("Remediation Completed with %d Duplicates", rr.Status.DuplicateCount),
-			Body:     c.buildBulkDuplicateBody(rr),
+			Priority:  notificationv1.NotificationPriorityLow,
+			Severity:  "info",
+			Subject:   fmt.Sprintf("Remediation Completed with %d Duplicates", rr.Status.DuplicateCount),
+			Body:      c.buildBulkDuplicateBody(rr),
 			Context: &notificationv1.NotificationContext{
 				Lineage: &notificationv1.LineageContext{
 					RemediationRequest: rr.Name,
@@ -586,11 +603,11 @@ func (c *NotificationCreator) buildBulkDuplicateBody(rr *remediationv1.Remediati
 **Duplicate Remediations**: %d
 
 All duplicate signals have been handled by this remediation.`,
-		rr.Spec.SignalName,
-		rr.Status.OverallPhase,
-		formatTargetResource(rr.Spec.TargetResource),
-		rr.Status.DuplicateCount,
-	)
+			rr.Spec.SignalName,
+			rr.Status.OverallPhase,
+			formatTargetResource(rr.Spec.TargetResource),
+			rr.Status.DuplicateCount,
+		)
 }
 
 // ========================================
@@ -715,10 +732,10 @@ func (c *NotificationCreator) CreateEscalationNotification(
 			},
 			ClusterID: rr.Spec.ClusterID,
 			Type:      notificationv1.NotificationTypeEscalation,
-			Priority: notificationv1.NotificationPriorityHigh,
-			Severity: rr.Spec.Severity,
-			Subject:  subject,
-			Body:     body,
+			Priority:  notificationv1.NotificationPriorityHigh,
+			Severity:  rr.Spec.Severity,
+			Subject:   subject,
+			Body:      body,
 		},
 	}
 
@@ -793,10 +810,10 @@ func (c *NotificationCreator) CreateBlockNotification(
 			},
 			ClusterID: rr.Spec.ClusterID,
 			Type:      nrType,
-			Priority: priority,
-			Severity: rr.Spec.Severity,
-			Subject:  subject,
-			Body:     body,
+			Priority:  priority,
+			Severity:  rr.Spec.Severity,
+			Subject:   subject,
+			Body:      body,
 		},
 	}
 
@@ -994,7 +1011,6 @@ func (c *NotificationCreator) mapManualReviewPriority(ctx *ManualReviewContext) 
 	}
 }
 
-
 // buildManualReviewContext builds typed notification context for manual review notifications.
 func (c *NotificationCreator) buildManualReviewContext(rr *remediationv1.RemediationRequest, ctx *ManualReviewContext) *notificationv1.NotificationContext {
 	nCtx := &notificationv1.NotificationContext{
@@ -1057,12 +1073,12 @@ func (c *NotificationCreator) buildManualReviewBody(rr *remediationv1.Remediatio
 
 **Failure Source**: %s
 **Reason**: %s`,
-		rr.Spec.SignalName,
-		rr.Spec.Severity,
-		formatTargetResource(rr.Spec.TargetResource),
-		ctx.Source,
-		ctx.Reason,
-	)
+			rr.Spec.SignalName,
+			rr.Spec.Severity,
+			formatTargetResource(rr.Spec.TargetResource),
+			ctx.Source,
+			ctx.Reason,
+		)
 
 	if ctx.SubReason != "" {
 		body += fmt.Sprintf("\n**Sub-Reason**: %s", ctx.SubReason)
@@ -1206,10 +1222,10 @@ func (c *NotificationCreator) CreateSelfResolvedNotification(
 			},
 			ClusterID: rr.Spec.ClusterID,
 			Type:      notificationv1.NotificationTypeStatusUpdate,
-			Priority: notificationv1.NotificationPriorityLow,
-			Severity: rr.Spec.Severity,
-			Subject:  fmt.Sprintf("ℹ️ Auto-Resolved: %s", rr.Spec.SignalName),
-			Body:     c.buildSelfResolvedBody(rr, ai, rootCause, resolveNotificationTargetResource(rr, ai)),
+			Priority:  notificationv1.NotificationPriorityLow,
+			Severity:  rr.Spec.Severity,
+			Subject:   fmt.Sprintf("ℹ️ Auto-Resolved: %s", rr.Spec.SignalName),
+			Body:      c.buildSelfResolvedBody(rr, ai, rootCause, resolveNotificationTargetResource(rr, ai)),
 			Context: &notificationv1.NotificationContext{
 				Lineage: &notificationv1.LineageContext{
 					RemediationRequest: rr.Name,
@@ -1260,10 +1276,10 @@ func (c *NotificationCreator) buildSelfResolvedBody(
 
 **Affected Resource**:
 %s`,
-		rr.Spec.SignalName,
-		rr.Spec.Severity,
-		formatTargetResource(target),
-	)
+			rr.Spec.SignalName,
+			rr.Spec.Severity,
+			formatTargetResource(target),
+		)
 
 	if ai.Status.Message != "" {
 		body += fmt.Sprintf("\n\n**AI Assessment**:\n%s", ai.Status.Message)
@@ -1297,8 +1313,8 @@ func (c *NotificationCreator) BuildGlobalTimeoutBody(
 **Timed Out**: %s
 
 The remediation was in %s phase when it timed out. Please investigate why the remediation did not complete within the expected timeframe.`,
-		signalName, timeoutPhase, timeoutDuration, startTime, timeoutTime, timeoutPhase,
-	)
+			signalName, timeoutPhase, timeoutDuration, startTime, timeoutTime, timeoutPhase,
+		)
 	return FormatClusterLine(c.clusterName, c.clusterUUID) + FormatRemediationLine(rrName) + body
 }
 
@@ -1316,8 +1332,8 @@ func (c *NotificationCreator) BuildPhaseTimeoutBody(
 **Timed Out**: %s
 
 The %s phase did not complete within the expected timeframe. Please investigate why this phase is taking longer than expected.`,
-		signalName, phase, phaseTimeout, startTime, timeoutTime, phase,
-	)
+			signalName, phase, phaseTimeout, startTime, timeoutTime, phase,
+		)
 	return FormatClusterLine(c.clusterName, c.clusterUUID) + FormatRemediationLine(rrName) + body
 }
 
