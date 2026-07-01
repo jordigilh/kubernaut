@@ -469,9 +469,9 @@ func NewServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger, metricsI
 		return nil, fmt.Errorf("failed to create fingerprint field index: %w", err)
 	}
 
-	// Issue #54 SOC2 gap fix: eagerly start informers for every scope/owner-resolution
-	// kind (Deployment, Namespace, Pod, etc. — see adapters.OwnerChainCacheObjects) so
-	// the WaitForCacheSync call below also gates readiness on them.
+	// Issue #54 SOC2 gap fix: eagerly start informers for scope/owner-resolution kinds
+	// (Deployment, Namespace, Pod, etc. — see adapters.OwnerChainCacheObjects) so the
+	// WaitForCacheSync call below also gates readiness on them.
 	//
 	// Without this, these informers are created LAZILY on the first scope-check or
 	// owner-resolution request after Gateway (re)starts. pkg/shared/scope/manager.go's
@@ -483,7 +483,18 @@ func NewServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger, metricsI
 	// as unmanaged (BR-SCOPE-001) until the informer catches up. Eagerly starting these
 	// informers here — and covering them with the existing 30s WaitForCacheSync —
 	// ensures the readiness probe does not report ready until scope checks are reliable.
+	//
+	// ConfigMap and Secret are intentionally excluded: RBAC for these two kinds is not
+	// consistently granted cluster-wide across deployment manifests (the Helm chart
+	// grants ConfigMap only namespace-scoped via a separate Role, and Secret access was
+	// deliberately removed entirely — Issue #673 H-3, "gateway has no business need for
+	// secret access"). Eagerly starting their informers would make WaitForCacheSync hang
+	// until timeout wherever that narrower RBAC applies, crash-looping Gateway. They keep
+	// their pre-existing lazy-informer behavior.
 	for obj := range byObject {
+		if kind := obj.GetObjectKind().GroupVersionKind().Kind; kind == "ConfigMap" || kind == "Secret" {
+			continue
+		}
 		if _, err := k8sCache.GetInformer(ctx, obj); err != nil {
 			cancel()
 			return nil, fmt.Errorf("failed to start informer for %T: %w", obj, err)
