@@ -270,6 +270,24 @@ Split `internal/controller/remediationorchestrator/reconciler.go` (3,435 lines) 
 
 ---
 
+## 7e. Phase 3b: `server.go` File Split — ✅ RESOLVED
+
+Split `pkg/gateway/server.go` (2,552 lines) into 6 same-package files, in leaf-first order, one commit per file, verified after each extraction with `go build ./...`, `go vet ./...` (repo-wide), the full Gateway Ginkgo suite (154 specs), `gofmt -l`, and `golangci-lint run`. Pure structural moves — zero behavior change, zero public-API change, no test files touched (same-package moves are invisible to Go's symbol resolution).
+
+| File | Contents | Lines |
+|---|---|---|
+| `server.go` (trimmed) | `Server` struct, event-type/action consts, `LivenessHandler`/`ReadinessHandler`/`MarkCacheReady`/`GetMetrics`, `setupRoutes`/`wrapWithMiddleware`/`performanceLoggingMiddleware`/`Handler`/`GetCachedClient`/`GetAPIReader`, `Start`/`Stop`, `healthHandler`/`readinessHandler`/`writeReadinessUnavailable` | 633 |
+| `signal_ingestion.go` | `RegisterAdapter`, `createAdapterHandler`, `handleBatchRequest`, `processSingleSignal`, `processMultiSignalBatch`, `readParseValidateSignal`, `handleProcessingError`, `sendSuccessResponse`, `validateScope`, `ProcessSignal`, `handleDuplicateSignal`, `createRemediationRequestCRD` | 761 |
+| `server_constructors.go` | `NewServer`, `NewServerWithK8sClient`, `newAuthMiddleware`, `ServerTestDeps`, `NewServerForTesting`, `NewServerWithMetrics`, `serverClients`, `createServerWithClients` | 642 |
+| `audit_emission.go` | `extractRRReconstructionFields`, `EmitConfigReloadAudit`, `emitSignalReceivedAudit`, `emitSignalDeduplicatedAudit`, `emitCRDCreatedAudit`, `retryAuditObserver`+`OnRetryAttempt`, `emitCRDCreationFailedAudit`, `constructReadableCorrelationID` (DD-AUDIT-003) | 485 |
+| `response_types.go` | `ProcessingResponse`, `StatusCreated`/`StatusDeduplicated`, `BatchProcessingResponse`, `ProcessingResult`, `BatchSummary`, `NewDuplicateResponseFromRR`, `NewCRDCreatedResponse` | 147 |
+| `http_errors.go` | `writeJSONError`, `getErrorTypeAndTitle`, `writeValidationError`, `writeInternalError` | 121 |
+| **Total** | | **2,789** |
+
+**Result**: `server.go` shrank from 2,552 → 633 lines (largest remaining file across the split is `signal_ingestion.go` at 761). All 154 Ginkgo specs in `pkg/gateway` pass identically before and after every one of the 5 extraction commits; `go build ./...`, `go vet ./...` (repo-wide — the two pre-existing failures in `docs/spikes/multi-cluster-mcp-gateway/` predate this change and are unrelated to `pkg/gateway`), `gofmt -l`, and `golangci-lint run` all report zero issues on the final layout. Phase 3 (both sub-phases) is now complete.
+
+---
+
 ## 8. Variable Shadowing — 120 found, mostly low-risk
 
 114/120 are `err` shadowing (`if err := f(); err != nil` repeated in the same scope — the single most common and least dangerous shadow pattern in Go, which is exactly why `govet -shadow` isn't part of default `go vet`). 1 `ctx` shadow, 1 `result`, 1 `username`, 1 `ok`, 1 `isString`. **No goroutine-closure-captures-loop-variable pattern was found** (the genuinely dangerous shadow bug) — none of the 120 hits are in a `for ... go func()` or `for ... defer func()` body.
@@ -299,7 +317,7 @@ Per AGENTS.md, REFACTOR-phase cleanup must not introduce new types/components, m
 | 2 | Options-pattern extraction for all 21 real 8+-param functions (corrected scope, see §7b) | Low-medium (touches call sites, needs UT re-run) | 2-3 days | ✅ Done |
 | 2.5 | Coverage gate before Phase 3: audit-emission gap closure on `reconciler.go` (see §7c) | Low (additive tests only) | 0.5 day | ✅ Done |
 | 3a | Split `reconciler.go` (3,435→1,023 across 7 files, see §7d) into cohesive files following the existing `*_handler.go` pattern already used in RemediationOrchestrator | Medium (large diff, no logic change) | 3-4 days | ✅ Done |
-| 3b | Split `pkg/gateway/server.go` (2,552→?) into cohesive files (HTTP plumbing/construction/audit emission, mirroring the `processing/`/`adapters/`/`k8s/`/`middleware/` subpackage split already in Gateway) | Medium (large diff, no logic change) | 1-2 days | 🔴 Not started |
+| 3b | Split `pkg/gateway/server.go` (2,552→633 across 6 files, see §7e) into cohesive files (HTTP plumbing/construction/audit emission, mirroring the `processing/`/`adapters/`/`k8s/`/`middleware/` subpackage split already in Gateway) | Medium (large diff, no logic change) | 1-2 days | ✅ Done |
 | 4 | Decompose the top complexity offenders: `buildEventData` (88), `HandleWatch` (cognitive 133), `Config.Validate` ×2, `main()` in `cmd/kubernautagent` and `cmd/apifrontend` | Medium-high (behavior-preserving refactor of dense logic, needs careful UT coverage first) | 5-7 days | 🔴 Not started |
 | 5 | Interface segregation for `AutonomousSessionManager` (13 methods) and `AWXClient` (11 methods) | Medium (ripples to all implementers/mocks) | 2-3 days | 🔴 Not started |
 
