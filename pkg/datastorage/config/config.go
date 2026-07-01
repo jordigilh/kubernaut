@@ -418,8 +418,38 @@ func loadSecretFile(secretFilePath string) (map[string]interface{}, error) {
 
 // Validate checks if the configuration is valid and returns an error if not
 // ADR-030: Validate configuration before service startup
+//
+// Decomposed into per-section validators (GO-ANTIPATTERN-AUDIT-2026-07-01
+// Phase 4a) purely for readability/complexity — behavior, order, and error
+// messages are unchanged from the pre-decomposition implementation.
 func (c *Config) Validate() error {
-	// Validate database configuration
+	if err := c.validateDatabase(); err != nil {
+		return err
+	}
+	if err := c.validateServer(); err != nil {
+		return err
+	}
+	if err := c.validateRedis(); err != nil {
+		return err
+	}
+	if err := c.validateProductionConstraints(); err != nil {
+		return err
+	}
+	if err := c.validateRetention(); err != nil {
+		return err
+	}
+	if err := c.validateLogging(); err != nil {
+		return err
+	}
+	if err := c.validateTimeouts(); err != nil {
+		return err
+	}
+	return c.validateCORS()
+}
+
+// validateDatabase checks required PostgreSQL connection fields and applies
+// safe defaults for the connection pool and per-statement/per-lock timeouts.
+func (c *Config) validateDatabase() error {
 	if c.Database.Host == "" {
 		return fmt.Errorf("database host required")
 	}
@@ -457,8 +487,12 @@ func (c *Config) Validate() error {
 	if _, err := time.ParseDuration(c.Database.LockTimeout); err != nil {
 		return fmt.Errorf("invalid lockTimeout: %w", err)
 	}
+	return nil
+}
 
-	// Validate server configuration
+// validateServer checks required HTTP server fields and applies safe
+// defaults for the metrics/health ports and max batch size.
+func (c *Config) validateServer() error {
 	if c.Server.Port == 0 {
 		return fmt.Errorf("server port required")
 	}
@@ -486,8 +520,12 @@ func (c *Config) Validate() error {
 	if c.Server.MetricsPort < 1024 || c.Server.MetricsPort > 65535 {
 		return fmt.Errorf("server metricsPort must be between 1024 and 65535, got: %d", c.Server.MetricsPort)
 	}
+	return nil
+}
 
-	// Validate Redis configuration
+// validateRedis checks required Redis fields and rejects a half-configured
+// TLS setup (enabled but no trust anchor) regardless of environment (SC-8).
+func (c *Config) validateRedis() error {
 	if c.Redis.Addr == "" {
 		return fmt.Errorf("redis address required")
 	}
@@ -496,23 +534,31 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("redis TLS enabled but no caFile specified; mount the CA certificate (SC-8)")
 		}
 	}
+	return nil
+}
 
-	// FED-C1/SC-8: In production, reject insecure transport configurations.
-	if c.IsProduction() {
-		if c.Database.SSLMode == "" || c.Database.SSLMode == "disable" {
-			return fmt.Errorf("database sslMode must not be 'disable' in production (SC-8); use verify-full or verify-ca")
-		}
-		if !c.Redis.TLS.Enabled {
-			return fmt.Errorf("redis TLS must be enabled in production (SC-8); set redis.tls.enabled=true")
-		}
-		for _, origin := range c.Server.CORSAllowedOrigins {
-			if origin == "*" {
-				return fmt.Errorf("CORS wildcard origin '*' is not allowed in production (AC-4); use explicit origins")
-			}
+// validateProductionConstraints rejects insecure transport/CORS
+// configurations when Environment is "production" (FED-C1/SC-8, AC-4).
+func (c *Config) validateProductionConstraints() error {
+	if !c.IsProduction() {
+		return nil
+	}
+	if c.Database.SSLMode == "" || c.Database.SSLMode == "disable" {
+		return fmt.Errorf("database sslMode must not be 'disable' in production (SC-8); use verify-full or verify-ca")
+	}
+	if !c.Redis.TLS.Enabled {
+		return fmt.Errorf("redis TLS must be enabled in production (SC-8); set redis.tls.enabled=true")
+	}
+	for _, origin := range c.Server.CORSAllowedOrigins {
+		if origin == "*" {
+			return fmt.Errorf("CORS wildcard origin '*' is not allowed in production (AC-4); use explicit origins")
 		}
 	}
+	return nil
+}
 
-	// Validate retention configuration
+// validateRetention checks the audit-retention worker configuration (AU-11).
+func (c *Config) validateRetention() error {
 	if c.Retention.Interval != "" {
 		if _, err := time.ParseDuration(c.Retention.Interval); err != nil {
 			return fmt.Errorf("invalid retention interval: %w", err)
@@ -521,8 +567,11 @@ func (c *Config) Validate() error {
 	if c.Retention.DefaultDays < 0 {
 		return fmt.Errorf("retention defaultDays must be non-negative, got: %d", c.Retention.DefaultDays)
 	}
+	return nil
+}
 
-	// Validate logging configuration (case-insensitive per Issue #875)
+// validateLogging checks the configured log level (case-insensitive per Issue #875).
+func (c *Config) validateLogging() error {
 	validLevels := map[string]bool{
 		"DEBUG": true,
 		"INFO":  true,
@@ -532,8 +581,12 @@ func (c *Config) Validate() error {
 	if c.Logging.Level != "" && !validLevels[strings.ToUpper(c.Logging.Level)] {
 		return fmt.Errorf("invalid log level: %s (must be DEBUG, INFO, WARN, or ERROR)", c.Logging.Level)
 	}
+	return nil
+}
 
-	// Validate timeout durations (parse to ensure valid format)
+// validateTimeouts parses every configurable duration/size field to fail
+// fast at startup instead of silently defaulting at runtime (SI-10).
+func (c *Config) validateTimeouts() error {
 	if c.Server.ReadTimeout != "" {
 		if _, err := time.ParseDuration(c.Server.ReadTimeout); err != nil {
 			return fmt.Errorf("invalid readTimeout: %w", err)
@@ -573,8 +626,12 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("invalid maxBodySize %q: must be an integer (bytes)", c.Server.MaxBodySize)
 		}
 	}
+	return nil
+}
 
-	// AC-4: Validate CORS origin format aligned with go-chi/cors semantics.
+// validateCORS checks each configured CORS origin's format, aligned with
+// go-chi/cors semantics (AC-4/SI-10).
+func (c *Config) validateCORS() error {
 	for i, origin := range c.Server.CORSAllowedOrigins {
 		trimmed := strings.TrimSpace(origin)
 		if trimmed == "" {
@@ -588,7 +645,6 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("corsAllowedOrigins[%d] %q: must start with http:// or https:// (or be \"*\")", i, origin)
 		}
 	}
-
 	return nil
 }
 
