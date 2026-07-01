@@ -78,13 +78,17 @@ var _ = Describe("EM Failed Phase (#573, ADR-EM-001 section 11)", func() {
 				WithStatusSubresource(ea).
 				Build()
 
-			reconciler := controller.NewReconciler(
-				fakeClient, fakeClient, s,
-				record.NewFakeRecorder(10),
-				emmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				nil, nil, nil, nil,
-				controller.DefaultReconcilerConfig(),
-			)
+			reconciler := controller.NewReconciler(controller.ReconcilerDeps{
+				Client:             fakeClient,
+				APIReader:          fakeClient,
+				Scheme:             s,
+				Recorder:           record.NewFakeRecorder(10),
+				Metrics:            emmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				PrometheusClient:   nil,
+				AlertManagerClient: nil,
+				AuditManager:       nil,
+				DSQuerier:          nil,
+			}, controller.DefaultReconcilerConfig())
 
 			_, err := reconciler.Reconcile(context.Background(), ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "ea-no-correlation", Namespace: "default"},
@@ -118,13 +122,17 @@ var _ = Describe("EM Failed Phase (#573, ADR-EM-001 section 11)", func() {
 				WithStatusSubresource(ea).
 				Build()
 
-			reconciler := controller.NewReconciler(
-				fakeClient, fakeClient, s,
-				record.NewFakeRecorder(10),
-				emmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				nil, nil, nil, nil,
-				controller.DefaultReconcilerConfig(),
-			)
+			reconciler := controller.NewReconciler(controller.ReconcilerDeps{
+				Client:             fakeClient,
+				APIReader:          fakeClient,
+				Scheme:             s,
+				Recorder:           record.NewFakeRecorder(10),
+				Metrics:            emmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				PrometheusClient:   nil,
+				AlertManagerClient: nil,
+				AuditManager:       nil,
+				DSQuerier:          nil,
+			}, controller.DefaultReconcilerConfig())
 
 			beforeReconcile := time.Now().Add(-1 * time.Second)
 			_, _ = reconciler.Reconcile(context.Background(), ctrl.Request{

@@ -70,14 +70,17 @@ var _ = Describe("Golden Snapshot — Stabilizing Path (UT-EM-254-002, #254)", f
 		cfg.PrometheusEnabled = false
 		cfg.AlertManagerEnabled = false
 
-		r := controller.NewReconciler(
-			fakeClient, fakeClient,
-			s, recorder,
-			emmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			nil, nil,
-			nil, nil,
-			cfg,
-		)
+		r := controller.NewReconciler(controller.ReconcilerDeps{
+			Client:             fakeClient,
+			APIReader:          fakeClient,
+			Scheme:             s,
+			Recorder:           recorder,
+			Metrics:            emmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			PrometheusClient:   nil,
+			AlertManagerClient: nil,
+			AuditManager:       nil,
+			DSQuerier:          nil,
+		}, cfg)
 		return r, fakeClient
 	}
 

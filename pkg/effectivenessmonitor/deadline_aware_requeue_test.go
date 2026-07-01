@@ -91,15 +91,17 @@ var _ = Describe("Deadline-Aware Requeue (BR-EM-007, Issue #591)", func() {
 		cfg.AlertManagerEnabled = false
 		cfg.RequeueAssessmentInProgress = requeueInterval
 
-		r := controller.NewReconciler(
-			fakeClient, fakeClient,
-			s,
-			record.NewFakeRecorder(100),
-			emmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			&emptyPromQuerier{}, nil,
-			nil, nil,
-			cfg,
-		)
+		r := controller.NewReconciler(controller.ReconcilerDeps{
+			Client:             fakeClient,
+			APIReader:          fakeClient,
+			Scheme:             s,
+			Recorder:           record.NewFakeRecorder(100),
+			Metrics:            emmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			PrometheusClient:   &emptyPromQuerier{},
+			AlertManagerClient: nil,
+			AuditManager:       nil,
+			DSQuerier:          nil,
+		}, cfg)
 		return r, fakeClient
 	}
 
@@ -131,10 +133,10 @@ var _ = Describe("Deadline-Aware Requeue (BR-EM-007, Issue #591)", func() {
 				Phase:            eav1.PhaseAssessing,
 				ValidityDeadline: &dl,
 				Components: eav1.EAComponents{
-					HashComputed:   true,
-					HealthAssessed: true,
-					HealthScore:    &healthScore,
-					AlertAssessed:  true,
+					HashComputed:    true,
+					HealthAssessed:  true,
+					HealthScore:     &healthScore,
+					AlertAssessed:   true,
 					MetricsAssessed: false,
 				},
 			},

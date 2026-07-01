@@ -289,7 +289,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 			map[string]string{"__name__": "container_cpu_usage_seconds_total", "namespace": "default"},
 			[][]interface{}{
 				{preRemediationTime, "0.500000"}, // pre-remediation: 50% CPU
-				{now, "0.250000"},                 // post-remediation: 25% CPU (improvement)
+				{now, "0.250000"},                // post-remediation: 25% CPU (improvement)
 			},
 		),
 	})
@@ -354,23 +354,22 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	auditManager := emaudit.NewManager(auditStore, ctrl.Log.WithName("audit"))
 
-	reconciler := controller.NewReconciler(
-		k8sManager.GetClient(),
-		k8sManager.GetAPIReader(),
-		k8sManager.GetScheme(),
-		k8sManager.GetEventRecorderFor("effectivenessmonitor-controller"),
-		controllerMetrics,
-		promClient,
-		amClient,
-		auditManager,
-		nil, // DSQuerier: nil for integration tests (DS querier tested separately)
-		func() controller.ReconcilerConfig {
-			c := controller.DefaultReconcilerConfig()
-			c.PrometheusEnabled = true
-			c.AlertManagerEnabled = true
-			return c
-		}(),
-	)
+	reconciler := controller.NewReconciler(controller.ReconcilerDeps{
+		Client:             k8sManager.GetClient(),
+		APIReader:          k8sManager.GetAPIReader(),
+		Scheme:             k8sManager.GetScheme(),
+		Recorder:           k8sManager.GetEventRecorderFor("effectivenessmonitor-controller"),
+		Metrics:            controllerMetrics,
+		PrometheusClient:   promClient,
+		AlertManagerClient: amClient,
+		AuditManager:       auditManager,
+		DSQuerier:          nil, // DSQuerier: nil for integration tests (DS querier tested separately)
+	}, func() controller.ReconcilerConfig {
+		c := controller.DefaultReconcilerConfig()
+		c.PrometheusEnabled = true
+		c.AlertManagerEnabled = true
+		return c
+	}())
 	reconciler.SetRESTMapper(k8sManager.GetRESTMapper())
 	err = reconciler.SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
@@ -510,8 +509,6 @@ func createEffectivenessAssessment(namespace, name, correlationID string) *eav1.
 	GinkgoWriter.Printf("✅ Created EffectivenessAssessment: %s/%s (correlationID: %s)\n", namespace, name, correlationID)
 	return ea
 }
-
-
 
 // createExpiredEffectivenessAssessment creates an EA with an already-expired validity deadline.
 // ValidityDeadline is computed by the EM controller on first reconcile. To test expired behavior,

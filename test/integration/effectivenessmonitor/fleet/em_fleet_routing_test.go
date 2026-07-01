@@ -85,15 +85,17 @@ var _ = Describe("EM Fleet Routing Integration (BR-FLEET-054)", func() {
 			registry := prometheus.NewPedanticRegistry()
 			m := emmetrics.NewMetricsWithRegistry(registry)
 
-			rec := controller.NewReconciler(
-				localReader,
-				localReader,
-				scheme,
-				nil,
-				m,
-				nil, nil, nil, nil,
-				controller.DefaultReconcilerConfig(),
-			)
+			rec := controller.NewReconciler(controller.ReconcilerDeps{
+				Client:             localReader,
+				APIReader:          localReader,
+				Scheme:             scheme,
+				Recorder:           nil,
+				Metrics:            m,
+				PrometheusClient:   nil,
+				AlertManagerClient: nil,
+				AuditManager:       nil,
+				DSQuerier:          nil,
+			}, controller.DefaultReconcilerConfig())
 			rec.SetReaderFactory(factory)
 
 			By("ReaderFor with remote ClusterID returns fleet reader")
@@ -144,15 +146,17 @@ var _ = Describe("EM Fleet Routing Integration (BR-FLEET-054)", func() {
 			registry := prometheus.NewPedanticRegistry()
 			m := emmetrics.NewMetricsWithRegistry(registry)
 
-			rec := controller.NewReconciler(
-				localClient,
-				localClient,
-				scheme,
-				nil,
-				m,
-				nil, nil, nil, nil,
-				controller.DefaultReconcilerConfig(),
-			)
+			rec := controller.NewReconciler(controller.ReconcilerDeps{
+				Client:             localClient,
+				APIReader:          localClient,
+				Scheme:             scheme,
+				Recorder:           nil,
+				Metrics:            m,
+				PrometheusClient:   nil,
+				AlertManagerClient: nil,
+				AuditManager:       nil,
+				DSQuerier:          nil,
+			}, controller.DefaultReconcilerConfig())
 			rec.SetReaderFactory(factory)
 
 			reader, err := rec.ReaderFor(ctx, "")
@@ -181,15 +185,17 @@ var _ = Describe("EM Fleet Routing Integration (BR-FLEET-054)", func() {
 			registry := prometheus.NewPedanticRegistry()
 			m := emmetrics.NewMetricsWithRegistry(registry)
 
-			rec := controller.NewReconciler(
-				fake.NewClientBuilder().Build(),
-				fake.NewClientBuilder().Build(),
-				scheme,
-				nil,
-				m,
-				nil, nil, nil, nil,
-				controller.DefaultReconcilerConfig(),
-			)
+			rec := controller.NewReconciler(controller.ReconcilerDeps{
+				Client:             fake.NewClientBuilder().Build(),
+				APIReader:          fake.NewClientBuilder().Build(),
+				Scheme:             scheme,
+				Recorder:           nil,
+				Metrics:            m,
+				PrometheusClient:   nil,
+				AlertManagerClient: nil,
+				AuditManager:       nil,
+				DSQuerier:          nil,
+			}, controller.DefaultReconcilerConfig())
 			rec.SetReaderFactory(factory)
 
 			_, err := rec.ReaderFor(ctx, "unknown-cluster")
