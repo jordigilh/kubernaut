@@ -57,8 +57,23 @@ func (c *Client) IsManaged(ctx context.Context, clusterID, group, version, kind,
 
 // IsManagedResource implements scope.ScopeChecker for remote cluster scope checks.
 // Delegates to the underlying IsManaged with fields extracted from ResourceIdentity.
+//
+// Per the scope.ResourceIdentity contract (pkg/shared/scope/checker.go), Group
+// and Version are optional and MUST be inferred from Kind when empty. Callers
+// such as Gateway's validateScope (pkg/gateway/server.go) intentionally leave
+// them empty -- alert-derived signals carry only a Kind label, never an
+// apiVersion. pkg/fleet/fmc/syncer.go, however, writes cache keys using the
+// resource's real GVK read from the K8s API (e.g. "apps/v1" for Deployment).
+// Without this inference the read-side key would never match the write-side
+// key, causing every federated scope check to permanently and deterministically
+// resolve to "not managed" (Issue #54 SOC2 gap RCA, CI run 28495045499).
 func (c *Client) IsManagedResource(ctx context.Context, resource scope.ResourceIdentity) (bool, error) {
-	return c.IsManaged(ctx, resource.ClusterID, resource.Group, resource.Version, resource.Kind, resource.Namespace, resource.Name)
+	group, version := resource.Group, resource.Version
+	if group == "" && version == "" {
+		gvk := scope.InferGVK(resource.Kind)
+		group, version = gvk.Group, gvk.Version
+	}
+	return c.IsManaged(ctx, resource.ClusterID, group, version, resource.Kind, resource.Namespace, resource.Name)
 }
 
 // Compile-time verification that Client satisfies scope.ScopeChecker.

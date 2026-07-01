@@ -97,6 +97,49 @@ var _ = Describe("ScopeCache Client (BR-INTEGRATION-065)", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(managed).To(BeTrue())
 		})
+
+		// Issue #54 SOC2 gap RCA (CI run 28495045499): every fleet E2E caller
+		// (pkg/gateway/server.go validateScope) builds a scope.ResourceIdentity
+		// with Group/Version left empty -- exactly as documented on
+		// scope.ResourceIdentity ("optional -- inferred from Kind when empty").
+		// pkg/fleet/fmc/syncer.go, however, writes cache keys using the
+		// resource's REAL GVK obtained from the K8s API (e.g. "apps/v1" for
+		// Deployment). Without inferring Group/Version here the same way
+		// scope.Manager already does (pkg/shared/scope/manager.go InferGVK),
+		// the read-side key ("kubernaut:managed:...://Deployment:...") never
+		// matches the write-side key ("kubernaut:managed:...:apps/v1/Deployment:..."),
+		// so every federated scope check permanently and deterministically
+		// resolves to "not managed" regardless of any sync/cache timing.
+		It("UT-FLEET-SC-011 [AC-4]: IsManagedResource with empty Group/Version infers from Kind like scope.Manager", func() {
+			key, err := scopecache.BuildKey("loopback-cluster", "apps", "v1", "Deployment", "kubernaut-system", "memory-eater")
+			Expect(err).ToNot(HaveOccurred())
+			reader.store[key] = true
+
+			managed, err := client.IsManagedResource(ctx, scope.ResourceIdentity{
+				ClusterID: "loopback-cluster",
+				Kind:      "Deployment",
+				Namespace: "kubernaut-system",
+				Name:      "memory-eater",
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(managed).To(BeTrue(),
+				"empty Group/Version must be inferred from Kind (apps/v1 for Deployment) to match syncer-written keys")
+		})
+
+		It("UT-FLEET-SC-012 [AC-4]: IsManagedResource infers core-group empty-string GVK for Pod", func() {
+			key, err := scopecache.BuildKey("loopback-cluster", "", "v1", "Pod", "kubernaut-system", "web-0")
+			Expect(err).ToNot(HaveOccurred())
+			reader.store[key] = true
+
+			managed, err := client.IsManagedResource(ctx, scope.ResourceIdentity{
+				ClusterID: "loopback-cluster",
+				Kind:      "Pod",
+				Namespace: "kubernaut-system",
+				Name:      "web-0",
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(managed).To(BeTrue())
+		})
 	})
 
 	Describe("BuildKey", func() {

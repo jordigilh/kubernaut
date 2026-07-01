@@ -211,7 +211,7 @@ func (m *Manager) checkResourceLabel(ctx context.Context, namespace, kind, name 
 		return false, false, nil
 	}
 
-	gvk := kindToGVK(kind)
+	gvk := InferGVK(kind)
 
 	obj := &metav1.PartialObjectMetadata{}
 	obj.SetGroupVersionKind(gvk)
@@ -279,8 +279,12 @@ func checkLabelValue(labels map[string]string) (bool, bool, error) {
 	}
 }
 
-// kindToGVK resolves a Kubernetes resource kind string to its GroupVersionKind.
-func kindToGVK(kind string) schema.GroupVersionKind {
+// InferGVK resolves a Kubernetes resource kind string to its GroupVersionKind
+// using the static kindToGroup mapping. Exported so that other ScopeChecker
+// implementations (e.g. pkg/fleet/scopecache.Client) can honor the
+// ResourceIdentity contract documented on checker.go: Group/Version are
+// optional and MUST be inferred from Kind when empty.
+func InferGVK(kind string) schema.GroupVersionKind {
 	group := ""
 	if g, ok := kindToGroup[kind]; ok {
 		group = g
