@@ -93,45 +93,57 @@ const (
 	EventTypeShadowLLMRequest  = "aiagent.shadow.llm.request"
 	EventTypeShadowLLMResponse = "aiagent.shadow.llm.response"
 
-	EventTypeAuthFailure      = "aiagent.auth.failure"
-	EventTypeAuthDenied       = "aiagent.auth.denied"
-	EventTypeRateLimitDenied  = "aiagent.ratelimit.denied"
+	EventTypeAuthFailure     = "aiagent.auth.failure"
+	EventTypeAuthDenied      = "aiagent.auth.denied"
+	EventTypeRateLimitDenied = "aiagent.ratelimit.denied"
+
+	// EventTypeSecretAccessed is emitted every time KubernautAgent's K8s
+	// resource resolver reads a core Secret (Get or List), regardless of
+	// outcome (GAP-13, Issue #1505). KubernautAgent intentionally retains
+	// broad read RBAC on Secrets for investigation completeness (see
+	// docs/services/stateless/kubernaut-agent/security-configuration.md);
+	// this event is the detective control that compensates for not
+	// narrowing that RBAC — every Secret read is independently queryable
+	// for SOC2 CC7.2 / FedRAMP AU-12 review, separate from the generic
+	// aiagent.llm.tool_call event already emitted for every tool call.
+	EventTypeSecretAccessed = "aiagent.secret.accessed"
 )
 
 const (
-	ActionLLMRequest        = "llm_request"
-	ActionLLMResponse       = "llm_response"
-	ActionToolExecution     = "tool_execution"
-	ActionValidation        = "validation"
-	ActionResponseSent      = "response_sent"
-	ActionResponseFailed    = "response_failed"
-	ActionAlignmentEvaluate          = "alignment_evaluate"
-	ActionAlignmentVerdict           = "alignment_verdict"
-	ActionSameKindGate               = "same_kind_validation_gate"
-	ActionAPIVersionGate             = "api_version_validation_gate"
-	ActionWorkflowAlignmentGate      = "workflow_target_alignment_gate"
-	ActionShadowLLMRequest           = "shadow_llm_request"
-	ActionShadowLLMResponse          = "shadow_llm_response"
-	ActionGroundingRequest           = "grounding_request"
-	ActionGroundingResponse          = "grounding_response"
-	ActionTruncationDetected         = "truncation_detected"
-	ActionEnriched                   = "enriched"
+	ActionLLMRequest            = "llm_request"
+	ActionLLMResponse           = "llm_response"
+	ActionToolExecution         = "tool_execution"
+	ActionValidation            = "validation"
+	ActionResponseSent          = "response_sent"
+	ActionResponseFailed        = "response_failed"
+	ActionAlignmentEvaluate     = "alignment_evaluate"
+	ActionAlignmentVerdict      = "alignment_verdict"
+	ActionSameKindGate          = "same_kind_validation_gate"
+	ActionAPIVersionGate        = "api_version_validation_gate"
+	ActionWorkflowAlignmentGate = "workflow_target_alignment_gate"
+	ActionShadowLLMRequest      = "shadow_llm_request"
+	ActionShadowLLMResponse     = "shadow_llm_response"
+	ActionGroundingRequest      = "grounding_request"
+	ActionGroundingResponse     = "grounding_response"
+	ActionTruncationDetected    = "truncation_detected"
+	ActionEnriched              = "enriched"
 
-	ActionSessionStarted        = "session_started"
-	ActionSessionCancelled      = "session_cancelled"
-	ActionSessionCompleted      = "session_completed"
-	ActionSessionFailed         = "session_failed"
+	ActionSessionStarted         = "session_started"
+	ActionSessionCancelled       = "session_cancelled"
+	ActionSessionCompleted       = "session_completed"
+	ActionSessionFailed          = "session_failed"
 	ActionInvestigationCancelled = "investigation_cancelled"
-	ActionSessionObserved       = "session_observed"
-	ActionSessionAccessDenied   = "session_access_denied"
-	ActionSessionSuspended      = "session_suspended"
-	ActionInteractiveStarted    = "interactive_started"
-	ActionInteractiveCompleted  = "interactive_completed"
-	ActionSessionResumed        = "session_resumed"
-	ActionInteractiveK8sCall    = "interactive_k8s_call"
-	ActionAuthFailure           = "auth_failure"
-	ActionAuthDenied            = "auth_denied"
-	ActionRateLimitDenied       = "ratelimit_denied"
+	ActionSessionObserved        = "session_observed"
+	ActionSessionAccessDenied    = "session_access_denied"
+	ActionSessionSuspended       = "session_suspended"
+	ActionInteractiveStarted     = "interactive_started"
+	ActionInteractiveCompleted   = "interactive_completed"
+	ActionSessionResumed         = "session_resumed"
+	ActionInteractiveK8sCall     = "interactive_k8s_call"
+	ActionAuthFailure            = "auth_failure"
+	ActionAuthDenied             = "auth_denied"
+	ActionRateLimitDenied        = "ratelimit_denied"
+	ActionSecretAccessed         = "secret_accessed"
 )
 
 const (
@@ -172,6 +184,7 @@ var AllEventTypes = []string{
 	EventTypeAuthFailure,
 	EventTypeAuthDenied,
 	EventTypeRateLimitDenied,
+	EventTypeSecretAccessed,
 }
 
 // AuditEvent represents an audit event to be stored.
@@ -251,6 +264,29 @@ func WithClusterName(ctx context.Context, clusterName string) context.Context {
 // ClusterNameFromContext extracts the cluster name from the context.
 func ClusterNameFromContext(ctx context.Context) (string, bool) {
 	v, ok := ctx.Value(clusterNameContextKey{}).(string)
+	return v, ok
+}
+
+type correlationIDContextKey struct{}
+
+// WithCorrelationID returns a context carrying the investigation's
+// correlation ID (typically the RemediationRequest name/RemediationID).
+// Set once per investigation in session.Manager.launchInvestigation, it lets
+// deep call sites — e.g. the K8s resource resolver's secret-access observer
+// (GAP-13, Issue #1505) — emit correctly-correlated audit events without
+// threading correlationID through every function signature down to the tool
+// layer.
+func WithCorrelationID(ctx context.Context, correlationID string) context.Context {
+	if correlationID == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, correlationIDContextKey{}, correlationID)
+}
+
+// CorrelationIDFromContext extracts the investigation correlation ID set by
+// WithCorrelationID.
+func CorrelationIDFromContext(ctx context.Context) (string, bool) {
+	v, ok := ctx.Value(correlationIDContextKey{}).(string)
 	return v, ok
 }
 

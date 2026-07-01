@@ -66,8 +66,8 @@ var _ = Describe("Kubernaut Agent Audit Emitter — #433", func() {
 			Entry("aiagent.shadow.llm.response", audit.EventTypeShadowLLMResponse),
 		)
 
-		It("should define exactly 30 event types", func() {
-			Expect(audit.AllEventTypes).To(HaveLen(30))
+		It("should define exactly 31 event types", func() {
+			Expect(audit.AllEventTypes).To(HaveLen(31))
 		})
 
 		It("should include aiagent.rca.complete in AllEventTypes", func() {
@@ -344,6 +344,26 @@ var _ = Describe("Kubernaut Agent Audit Emitter — #433", func() {
 			Expect(store.events).To(HaveLen(1))
 			Expect(store.events[0].ClusterName).To(BeEmpty(),
 				"Single-cluster scenario: ClusterName must remain empty")
+		})
+	})
+
+	Describe("GAP-13 (Issue #1505): WithCorrelationID context pattern", func() {
+		It("WithCorrelationID/CorrelationIDFromContext round-trip", func() {
+			ctx := audit.WithCorrelationID(context.Background(), "rr-1505")
+			id, ok := audit.CorrelationIDFromContext(ctx)
+			Expect(ok).To(BeTrue())
+			Expect(id).To(Equal("rr-1505"))
+		})
+
+		It("CorrelationIDFromContext returns false for empty context", func() {
+			_, ok := audit.CorrelationIDFromContext(context.Background())
+			Expect(ok).To(BeFalse())
+		})
+
+		It("WithCorrelationID with empty string returns original context", func() {
+			ctx := audit.WithCorrelationID(context.Background(), "")
+			_, ok := audit.CorrelationIDFromContext(ctx)
+			Expect(ok).To(BeFalse(), "empty correlation ID should not be stored in context")
 		})
 	})
 })
