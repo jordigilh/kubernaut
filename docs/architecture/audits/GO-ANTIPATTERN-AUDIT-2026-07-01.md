@@ -151,6 +151,8 @@ Two distinct sub-categories, **treated differently**:
 **a) Legitimate wide data models / DTOs** (lower priority — flattening would hurt, not help, readability):
 `RemediationWorkflow` (43 fields, DB row mapping), `InvestigationResult` (35), `AuditEvent` ×2 (32, 28), `SignalContext` (29), `RemediationAuditResult`, `RemediationAudit`, `WorkflowSearchResult` — these mirror external schemas (DB tables, OpenAPI payloads) and splitting them would require touching serialization boundaries for no behavioral gain.
 
+**✅ Annotated**: no golangci-lint linter in this repo's toolchain checks struct field count (the 30-count above comes from this audit's own regex-based scan, not a `go vet`/`golangci-lint` rule), so there is no lint suppression to apply here. Instead, each of the 8 hand-written DTOs above (excluding OpenAPI-generated `ogen-client` schemas, which are regenerated and would lose manual comments) got a short doc-comment addition pointing back to this section, for the benefit of future readers/auditors who re-run this scan: `pkg/kubernautagent/types/types.go` (`InvestigationResult`, `SignalContext`), `pkg/datastorage/models/workflow.go` (`RemediationWorkflow`, `WorkflowSearchResult`), `pkg/datastorage/models/audit.go` (`RemediationAudit`), `pkg/datastorage/query/types.go` (`RemediationAuditResult`), `pkg/audit/event.go` and `pkg/datastorage/repository/audit_events_repository.go` (the two `AuditEvent` structs).
+
 **b) Behavioral "god objects"** (real anti-pattern — flag for decomposition):
 
 | Fields | Struct | Location |
@@ -194,6 +196,8 @@ Both have **documented design rationale** in code comments — flag for lead rev
 2. `internal/kubernautagent/alignment/observer.go:68` — `evalCtx context.Context` in `Observer`, with an explicit `ARCH-3` comment explaining it decouples shadow-evaluation cancellation from the parent investigation context on purpose.
 
 Both are the "object-lifecycle context" exception Go teams generally tolerate (vs. the forbidden "request context in struct" pattern) — but neither is unit-tested for the cancellation behavior it claims to provide. **Recommendation**: keep the pattern, add a short code comment reference to this audit + a targeted unit test proving the cancellation semantics, rather than restructuring.
+
+**✅ Annotated**: both fields now carry `//nolint:containedctx // ... reviewed and accepted in GO-ANTIPATTERN-AUDIT-2026-07-01 §6` directives. The `containedctx` linter (available in golangci-lint v2.9.0, confirmed via `golangci-lint linters`) is not enabled in the committed `.golangci.yml` today, so this is a forward-looking suppression — if a future PR enables `containedctx` repo-wide, these two pre-reviewed fields won't break CI while every other struct-embedded context is still caught. The targeted unit test proving cancellation semantics remains open follow-up work, not covered by this annotation pass.
 
 ---
 
@@ -349,6 +353,8 @@ Preflight mapped both interfaces to exactly **one** production consumer and **on
 114/120 are `err` shadowing (`if err := f(); err != nil` repeated in the same scope — the single most common and least dangerous shadow pattern in Go, which is exactly why `govet -shadow` isn't part of default `go vet`). 1 `ctx` shadow, 1 `result`, 1 `username`, 1 `ok`, 1 `isString`. **No goroutine-closure-captures-loop-variable pattern was found** (the genuinely dangerous shadow bug) — none of the 120 hits are in a `for ... go func()` or `for ... defer func()` body.
 
 **Recommendation**: low priority. Worth a mechanical rename pass only if the team wants `go vet -shadow` enabled permanently in CI; otherwise not worth the diff churn on its own.
+
+**✅ Annotated**: rather than 114 scattered inline suppressions, `.golangci.yml` gained one `issues.exclusions.rules` entry excluding the `govet` `shadow: declaration of "(err|ok)" shadows declaration` message text. `govet`'s `shadow` analyzer is not in `settings.govet.enable` today, so this rule is inert until someone opts in — at which point the reviewed, idiomatic `err`/`ok` re-declarations are pre-excluded while shadowing of any other identifier still fails the build.
 
 ---
 
