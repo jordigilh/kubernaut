@@ -36,8 +36,17 @@ import (
 // FedRAMP: AC-4 (information flow enforcement -- cluster provenance)
 var _ = Describe("E2E-FLEET-001 [AC-4]: Signal ingestion with cluster_id creates RR with spec.clusterID (BR-INTEGRATION-054)", Label("fleet"), func() {
 	It("should create RR with spec.clusterID when alert has cluster label", func() {
+		// Issue #54 flakiness fix: distinct resource name from E2E-FLEET-002's east
+		// payload below. Both used "memory-eater" + "prod-east", producing an identical
+		// SHA256(clusterID:namespace:kind:name) fingerprint (see
+		// pkg/gateway/types/fingerprint.go CalculateClusterAwareFingerprint). Ginkgo
+		// runs these independent Describe blocks across parallel processes with no
+		// ordering guarantee, so the two specs raced for the same dedup slot and
+		// non-deterministically returned 500/200 instead of 201. The resource does not
+		// need to exist as a real K8s object: scope validation falls through to the
+		// already-managed namespace label on NotFound (pkg/shared/scope/manager.go).
 		payload := buildPrometheusAlertWithCluster("FleetSignalIngestion", namespace, "critical",
-			"Deployment", "memory-eater", "prod-east")
+			"Deployment", "memory-eater-signalingest", "prod-east")
 
 		gatewayURL := "http://localhost:30080"
 		resp, err := postWithFleetAuth(

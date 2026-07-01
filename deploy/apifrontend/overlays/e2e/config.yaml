@@ -40,7 +40,7 @@ auth:
   issuerURL: "https://dex:5556/dex"
   jwksURL: "https://dex:5556/dex/keys"
   audience: "kubernaut-apifrontend"
-  tlsCaFile: /etc/apifrontend/inter-service-ca/ca.crt
+  oidcCaFile: /etc/apifrontend/inter-service-ca/ca.crt
 
 rbac:
   groupMapping:

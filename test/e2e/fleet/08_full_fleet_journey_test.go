@@ -43,8 +43,13 @@ import (
 var _ = Describe("E2E-FLEET-009 [AC-3, AC-4, SI-4]: Full fleet journey from alert to enrichment (BR-INTEGRATION-054)", Label("fleet"), func() {
 	It("should complete the full fleet remediation pipeline: alert -> RR -> SP enrichment", func() {
 		By("Step 1: Sending alert with cluster_id=loopback-cluster to Gateway (AC-4)")
+		// Issue #54 flakiness fix: distinct resource name from E2E-FLEET-004
+		// (03_ro_clusterid_routing_test.go), which also used "memory-eater" +
+		// "loopback-cluster" and therefore produced an identical dedup fingerprint
+		// (see pkg/gateway/types/fingerprint.go). Running in parallel Ginkgo
+		// processes, the two specs raced for the same dedup slot.
 		payload := buildPrometheusAlertWithCluster("FleetJourney", namespace, "critical",
-			"Deployment", "memory-eater", "loopback-cluster")
+			"Deployment", "memory-eater-journey", "loopback-cluster")
 
 		gatewayURL := "http://localhost:30080"
 		resp, err := postWithFleetAuth(

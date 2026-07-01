@@ -17,6 +17,8 @@ limitations under the License.
 package fleet
 
 import (
+	corev1 "k8s.io/api/core/v1"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -31,6 +33,19 @@ import (
 // FedRAMP: SI-4 (information system monitoring -- remote enrichment)
 var _ = Describe("E2E-FLEET-003 [SI-4]: SP remote enrichment via MCP gateway populates KubernetesContext without degraded mode (BR-INTEGRATION-054)", Label("fleet"), func() {
 	It("enriches a SignalProcessing CR targeting a remote-cluster resource via loopback MCP gateway", func() {
+		// Issue #54 flakiness fix: real Kubernetes Pods get a generated name
+		// suffix (e.g. "coredns-66bc5c9577-dmj24"), so hardcoding "coredns" as
+		// the target Pod name never resolves and the k8s-enricher permanently
+		// enters degraded mode ("Target pod not found, entering degraded
+		// mode"). Discover an actual running CoreDNS pod name instead.
+		var podList corev1.PodList
+		Expect(k8sClient.List(ctx, &podList,
+			client.InNamespace("kube-system"),
+			client.MatchingLabels{"k8s-app": "kube-dns"},
+		)).To(Succeed())
+		Expect(podList.Items).ToNot(BeEmpty(), "kube-system must have a running CoreDNS pod for this fixture")
+		corednsPodName := podList.Items[0].Name
+
 		sp := &signalprocessingv1.SignalProcessing{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "fleet-003-remote-enrich",
@@ -53,7 +68,7 @@ var _ = Describe("E2E-FLEET-003 [SI-4]: SP remote enrichment via MCP gateway pop
 					ReceivedTime: metav1.Now(),
 					TargetResource: signalprocessingv1.ResourceIdentifier{
 						Kind:      "Pod",
-						Name:      "coredns",
+						Name:      corednsPodName,
 						Namespace: "kube-system",
 					},
 				},
