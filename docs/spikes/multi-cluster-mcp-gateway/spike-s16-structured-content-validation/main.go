@@ -33,7 +33,7 @@ func main() {
 		log.Fatalf("connect: %v", err)
 	}
 	defer session.Close()
-	fmt.Println("Connected.\n")
+	fmt.Println("Connected.")
 
 	tests := []struct {
 		label string
