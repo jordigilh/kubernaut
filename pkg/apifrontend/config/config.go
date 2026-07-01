@@ -100,6 +100,39 @@ type AuthConfig struct {
 	AllowInsecureIssuers   bool   `yaml:"allowInsecureIssuers,omitempty"`
 	// Multi-provider JWT configuration (#1436)
 	JWTProviders []JWTProviderConfig `yaml:"jwtProviders,omitempty"`
+	// ReplayCache selects the jti replay-detection backend (GAP-08, #1505).
+	// When set with backend "redis"/"valkey", replay detection is shared across
+	// all APIFrontend replicas via Valkey — closing the HA gap of the in-memory
+	// cache (a token replayed against a different replica would otherwise go
+	// undetected). When nil, EnableReplayProtection controls the legacy
+	// single-process in-memory cache for backward compatibility.
+	ReplayCache *ReplayCacheConfig `yaml:"replayCache,omitempty"`
+}
+
+// ReplayCacheConfig configures the jti replay-detection backend. Mirrors the
+// afReplayCacheYAML contract emitted by kubernaut-operator's DataStorageConfigMap
+// equivalent for APIFrontend, so the same config shape works whether the
+// deployment is Helm-managed or operator-managed.
+type ReplayCacheConfig struct {
+	// Backend is "redis" (or "valkey", equivalent) for the distributed cache, or
+	// "memory"/"" for the legacy single-process in-memory cache.
+	Backend string `yaml:"backend"`
+	// RedisAddr is the host:port of the shared Valkey/Redis instance. Required
+	// when Backend is "redis"/"valkey".
+	RedisAddr string `yaml:"redisAddr,omitempty"`
+	// RedisDB selects the logical Redis database index (default 0).
+	RedisDB int `yaml:"redisDB,omitempty"`
+	// CredentialsPath points to a YAML file containing a "password" key,
+	// mounted from a Kubernetes Secret (e.g. the shared valkey-secrets.yaml
+	// projection at /etc/apifrontend/valkey/valkey-secrets.yaml). Optional —
+	// leave empty for an unauthenticated Valkey instance.
+	CredentialsPath string `yaml:"credentialsPath,omitempty"`
+}
+
+// IsDistributed reports whether the configured backend is the distributed
+// Valkey/Redis replay cache (as opposed to the legacy in-memory cache).
+func (r *ReplayCacheConfig) IsDistributed() bool {
+	return r != nil && (r.Backend == "redis" || r.Backend == "valkey")
 }
 
 // JWTProviderConfig defines a single JWT provider within the multi-provider
@@ -387,6 +420,9 @@ func (c *Config) validateAuth() error {
 	if err := c.validateJWTProviders(); err != nil {
 		return err
 	}
+	if err := c.validateReplayCache(); err != nil {
+		return err
+	}
 	if c.Auth.IssuerURL == "" {
 		return nil
 	}
@@ -400,6 +436,27 @@ func (c *Config) validateAuth() error {
 	}
 	if c.Auth.OIDCCaFile != "" && !filepath.IsAbs(c.Auth.OIDCCaFile) {
 		return fmt.Errorf("auth.oidcCaFile must be an absolute path, got %q", c.Auth.OIDCCaFile)
+	}
+	return nil
+}
+
+func (c *Config) validateReplayCache() error {
+	rc := c.Auth.ReplayCache
+	if rc == nil {
+		return nil
+	}
+	switch rc.Backend {
+	case "redis", "valkey":
+		if rc.RedisAddr == "" {
+			return fmt.Errorf("auth.replayCache.redisAddr is required when backend is %q", rc.Backend)
+		}
+	case "memory", "":
+		// No additional fields required for the in-memory backend.
+	default:
+		return fmt.Errorf("auth.replayCache.backend must be one of: redis, valkey, memory; got %q", rc.Backend)
+	}
+	if rc.CredentialsPath != "" && !filepath.IsAbs(rc.CredentialsPath) {
+		return fmt.Errorf("auth.replayCache.credentialsPath must be an absolute path, got %q", rc.CredentialsPath)
 	}
 	return nil
 }

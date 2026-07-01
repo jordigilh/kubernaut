@@ -356,6 +356,58 @@ auth:
 		Expect(cfg.Auth.EnableReplayProtection).To(BeTrue())
 	})
 
+	It("GAP-08 (#1505) loads a distributed redis replay cache config", func() {
+		data := []byte(`
+auth:
+  issuerURL: "https://sso.example.com/realms/kubernaut"
+  audience: "apifrontend"
+  replayCache:
+    backend: redis
+    redisAddr: "valkey.kubernaut-system.svc:6379"
+    redisDB: 1
+    credentialsPath: "/etc/apifrontend/valkey/valkey-secrets.yaml"
+`)
+		cfg, err := config.Load(data)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.Validate()).To(Succeed())
+		Expect(cfg.Auth.ReplayCache).NotTo(BeNil())
+		Expect(cfg.Auth.ReplayCache.Backend).To(Equal("redis"))
+		Expect(cfg.Auth.ReplayCache.RedisAddr).To(Equal("valkey.kubernaut-system.svc:6379"))
+		Expect(cfg.Auth.ReplayCache.RedisDB).To(Equal(1))
+		Expect(cfg.Auth.ReplayCache.IsDistributed()).To(BeTrue())
+	})
+
+	It("GAP-08 (#1505) rejects a redis replay cache config missing redisAddr", func() {
+		data := []byte(`
+auth:
+  issuerURL: "https://sso.example.com/realms/kubernaut"
+  audience: "apifrontend"
+  replayCache:
+    backend: redis
+`)
+		cfg, err := config.Load(data)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.Validate()).To(MatchError(ContainSubstring("redisAddr")))
+	})
+
+	It("GAP-08 (#1505) rejects an unknown replay cache backend", func() {
+		data := []byte(`
+auth:
+  issuerURL: "https://sso.example.com/realms/kubernaut"
+  audience: "apifrontend"
+  replayCache:
+    backend: memcached
+`)
+		cfg, err := config.Load(data)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.Validate()).To(MatchError(ContainSubstring(`backend must be one of`)))
+	})
+
+	It("GAP-08 (#1505) treats a nil replayCache block as not distributed", func() {
+		var rc *config.ReplayCacheConfig
+		Expect(rc.IsDistributed()).To(BeFalse())
+	})
+
 	It("UT-AF-1247-001 loads allowInsecureIssuers field", func() {
 		data := []byte(`
 auth:
