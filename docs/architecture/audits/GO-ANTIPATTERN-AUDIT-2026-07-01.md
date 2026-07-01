@@ -1,5 +1,6 @@
 # Go Anti-Pattern & Complexity Audit — GA Readiness
 
+**Tracking issue**: [#1520](https://github.com/jordigilh/kubernaut/issues/1520)
 **Date**: 2026-07-01
 **Branch**: `feat/1505-gap-01-cosign-ci-signing` (base: `feature/multi-cluster-federation`)
 **Commit**: `d0bc884f7`
