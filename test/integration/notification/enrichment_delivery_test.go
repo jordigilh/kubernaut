@@ -99,7 +99,7 @@ func buildTestOrchestrator(channels map[string]delivery.Service, enrich *enrichm
 }
 
 // noopCallback helpers for DeliverToChannels
-func itAlreadySucceeded(_ *notificationv1alpha1.NotificationRequest, _ string) bool { return false }
+func itAlreadySucceeded(_ *notificationv1alpha1.NotificationRequest, _ string) bool  { return false }
 func itHasPermanentError(_ *notificationv1alpha1.NotificationRequest, _ string) bool { return false }
 func itGetAttemptCount(_ *notificationv1alpha1.NotificationRequest, _ string) int    { return 0 }
 func itAuditSent(_ context.Context, _ *notificationv1alpha1.NotificationRequest, _ string) error {
@@ -129,8 +129,13 @@ var _ = Describe("#553: Workflow Name Enrichment — Delivery Pipeline Integrati
 				context.Background(), nr,
 				[]notificationv1alpha1.Channel{"console"},
 				policy,
-				itAlreadySucceeded, itHasPermanentError, itGetAttemptCount,
-				itAuditSent, itAuditFailed, nil,
+				delivery.DeliveryCallbacks{
+					ChannelAlreadySucceeded:  itAlreadySucceeded,
+					HasChannelPermanentError: itHasPermanentError,
+					GetChannelAttemptCount:   itGetAttemptCount,
+					AuditMessageSent:         itAuditSent,
+					AuditMessageFailed:       itAuditFailed,
+				},
 			)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -157,8 +162,13 @@ var _ = Describe("#553: Workflow Name Enrichment — Delivery Pipeline Integrati
 				context.Background(), nr,
 				[]notificationv1alpha1.Channel{"console"},
 				policy,
-				itAlreadySucceeded, itHasPermanentError, itGetAttemptCount,
-				itAuditSent, itAuditFailed, nil,
+				delivery.DeliveryCallbacks{
+					ChannelAlreadySucceeded:  itAlreadySucceeded,
+					HasChannelPermanentError: itHasPermanentError,
+					GetChannelAttemptCount:   itGetAttemptCount,
+					AuditMessageSent:         itAuditSent,
+					AuditMessageFailed:       itAuditFailed,
+				},
 			)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.FailureCount).To(Equal(0))
@@ -187,8 +197,13 @@ var _ = Describe("#553: Workflow Name Enrichment — Delivery Pipeline Integrati
 				context.Background(), nr,
 				[]notificationv1alpha1.Channel{"console", "log"},
 				policy,
-				itAlreadySucceeded, itHasPermanentError, itGetAttemptCount,
-				itAuditSent, itAuditFailed, nil,
+				delivery.DeliveryCallbacks{
+					ChannelAlreadySucceeded:  itAlreadySucceeded,
+					HasChannelPermanentError: itHasPermanentError,
+					GetChannelAttemptCount:   itGetAttemptCount,
+					AuditMessageSent:         itAuditSent,
+					AuditMessageFailed:       itAuditFailed,
+				},
 			)
 			Expect(err).NotTo(HaveOccurred())
 

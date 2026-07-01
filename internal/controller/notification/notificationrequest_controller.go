@@ -58,12 +58,12 @@ type NotificationRequestReconciler struct {
 	FileService    *delivery.FileDeliveryService // E2E testing only (DD-NOT-002)
 
 	// BR-NOT-104: Per-receiver credential resolution for delivery channels
-	CredentialResolver       *credentials.Resolver
-	registeredSlackKeys      []string
-	registeredPagerDutyKeys  []string // #60: Per-receiver PagerDuty delivery keys
-	registeredTeamsKeys      []string // #593: Per-receiver Teams delivery keys
-	deliveryKeysMu           sync.Mutex // #244: Protects registered*Keys during concurrent routing reloads
-	DeliveryTimeout          time.Duration // HTTP timeout for webhook-based delivery channels (Slack, PagerDuty, Teams)
+	CredentialResolver      *credentials.Resolver
+	registeredSlackKeys     []string
+	registeredPagerDutyKeys []string      // #60: Per-receiver PagerDuty delivery keys
+	registeredTeamsKeys     []string      // #593: Per-receiver Teams delivery keys
+	deliveryKeysMu          sync.Mutex    // #244: Protects registered*Keys during concurrent routing reloads
+	DeliveryTimeout         time.Duration // HTTP timeout for webhook-based delivery channels (Slack, PagerDuty, Teams)
 
 	// ========================================
 	// DELIVERY ORCHESTRATOR (Pattern 3 - P0)
@@ -267,8 +267,8 @@ func (r *NotificationRequestReconciler) Reconcile(ctx context.Context, req ctrl.
 		var lastFailedAttempt *notificationv1alpha1.DeliveryAttempt
 		for i := len(notification.Status.DeliveryAttempts) - 1; i >= 0; i-- {
 			attempt := &notification.Status.DeliveryAttempts[i]
-		if attempt.Status == notificationv1alpha1.DeliveryAttemptStatusFailed {
-			lastFailedAttempt = attempt
+			if attempt.Status == notificationv1alpha1.DeliveryAttemptStatusFailed {
+				lastFailedAttempt = attempt
 				break
 			}
 		}
@@ -498,7 +498,6 @@ func (r *NotificationRequestReconciler) auditMessageFailed(ctx context.Context, 
 	return nil
 }
 
-
 // auditMessageAcknowledged audits notification acknowledgment (non-blocking).
 // Emitted when a notification transitions to Sent (all deliveries succeeded).
 func (r *NotificationRequestReconciler) auditMessageAcknowledged(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
@@ -594,7 +593,6 @@ func (r *NotificationRequestReconciler) ExportedAuditMessageAcknowledged(ctx con
 func (r *NotificationRequestReconciler) ExportedAuditMessageEscalated(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
 	return r.auditMessageEscalated(ctx, notification)
 }
-
 
 // ========================================
 // AUDIT EVENT IDEMPOTENCY (NT-BUG-001 Fix)
@@ -852,13 +850,14 @@ func (r *NotificationRequestReconciler) handleDeliveryLoop(
 		notification,
 		channels,
 		policy,
-		// Callbacks for controller-specific logic
-		r.channelAlreadySucceeded,
-		r.hasChannelPermanentError,
-		r.getChannelAttemptCount,
-		r.auditMessageSent,
-		r.auditMessageFailed,
-		r.checkBeforeDelivery, // DD-EVENT-001 v1.1: Circuit breaker check + CircuitBreakerOpen event
+		delivery.DeliveryCallbacks{
+			ChannelAlreadySucceeded:  r.channelAlreadySucceeded,
+			HasChannelPermanentError: r.hasChannelPermanentError,
+			GetChannelAttemptCount:   r.getChannelAttemptCount,
+			AuditMessageSent:         r.auditMessageSent,
+			AuditMessageFailed:       r.auditMessageFailed,
+			CheckBeforeDelivery:      r.checkBeforeDelivery, // DD-EVENT-001 v1.1: Circuit breaker check + CircuitBreakerOpen event
+		},
 	)
 	if err != nil {
 		return nil, err

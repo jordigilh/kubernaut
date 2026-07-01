@@ -192,19 +192,39 @@ func (o *Orchestrator) SetEnricher(e *enrichment.Enricher) {
 //
 // BR-NOT-055: Retry logic with permanent error classification
 // BR-NOT-053: Idempotent delivery (skip already-succeeded channels)
+// DeliveryCallbacks groups the controller-specific callback functions that
+// DeliverToChannels uses to check delivery state and record outcomes.
+// Extracted per AGENTS.md's 8+-param Options-pattern rule.
+type DeliveryCallbacks struct {
+	// ChannelAlreadySucceeded reports whether a channel already has a
+	// successful delivery recorded (idempotent delivery).
+	ChannelAlreadySucceeded func(*notificationv1alpha1.NotificationRequest, string) bool
+
+	// HasChannelPermanentError reports whether a channel has a permanent
+	// (non-retryable) error recorded. BR-NOT-055.
+	HasChannelPermanentError func(*notificationv1alpha1.NotificationRequest, string) bool
+
+	// GetChannelAttemptCount returns the total attempt count for a channel.
+	GetChannelAttemptCount func(*notificationv1alpha1.NotificationRequest, string) int
+
+	// AuditMessageSent records a successful delivery audit event.
+	AuditMessageSent func(context.Context, *notificationv1alpha1.NotificationRequest, string) error
+
+	// AuditMessageFailed records a failed delivery audit event.
+	AuditMessageFailed func(context.Context, *notificationv1alpha1.NotificationRequest, string, error) error
+
+	// CheckBeforeDelivery is an optional pre-delivery check (e.g. circuit
+	// breaker). If it returns an error, delivery is skipped and treated as
+	// a failure. DD-EVENT-001 v1.1.
+	CheckBeforeDelivery func(*notificationv1alpha1.NotificationRequest, string) error
+}
+
 func (o *Orchestrator) DeliverToChannels(
 	ctx context.Context,
 	notification *notificationv1alpha1.NotificationRequest,
 	channels []notificationv1alpha1.Channel,
 	policy *notificationv1alpha1.RetryPolicy,
-	// Callback functions for controller-specific logic
-	channelAlreadySucceeded func(*notificationv1alpha1.NotificationRequest, string) bool,
-	hasChannelPermanentError func(*notificationv1alpha1.NotificationRequest, string) bool,
-	getChannelAttemptCount func(*notificationv1alpha1.NotificationRequest, string) int,
-	auditMessageSent func(context.Context, *notificationv1alpha1.NotificationRequest, string) error,
-	auditMessageFailed func(context.Context, *notificationv1alpha1.NotificationRequest, string, error) error,
-	// Optional: check before delivery (e.g. circuit breaker). If returns error, delivery is skipped and treated as failure.
-	checkBeforeDelivery func(*notificationv1alpha1.NotificationRequest, string) error,
+	callbacks DeliveryCallbacks,
 ) (*DeliveryResult, error) {
 	log := o.logger.WithValues("notification", notification.Name, "namespace", notification.Namespace)
 
@@ -231,7 +251,7 @@ func (o *Orchestrator) DeliverToChannels(
 	// Process each channel
 	for _, channel := range channels {
 		// Skip if channel already succeeded (idempotent delivery)
-		if channelAlreadySucceeded(notification, string(channel)) {
+		if callbacks.ChannelAlreadySucceeded(notification, string(channel)) {
 			log.Info("Channel already delivered successfully, skipping", "channel", channel)
 			// NT-BUG-004 Fix: Count already-successful channels as successes
 			result.DeliveryResults[string(channel)] = nil // nil = success
@@ -239,7 +259,7 @@ func (o *Orchestrator) DeliverToChannels(
 		}
 
 		// BR-NOT-055: Check if channel has permanent error (skip retries for 4xx errors)
-		if hasChannelPermanentError(notification, string(channel)) {
+		if callbacks.HasChannelPermanentError(notification, string(channel)) {
 			log.Info("Channel has permanent error, skipping retries", "channel", channel)
 			result.DeliveryResults[string(channel)] = fmt.Errorf("permanent error - not retryable")
 			result.FailureCount++
@@ -253,7 +273,7 @@ func (o *Orchestrator) DeliverToChannels(
 		// reservation is visible to all others via GetTotalAttemptCount.
 		o.incrementInFlightAttempts(string(notification.UID), string(channel))
 
-		attemptCount := getChannelAttemptCount(notification, string(channel))
+		attemptCount := callbacks.GetChannelAttemptCount(notification, string(channel))
 		if attemptCount > policy.MaxAttempts {
 			// Over-reserved: another concurrent reconcile already claimed
 			// the last slot. Release our reservation and skip.
@@ -268,8 +288,8 @@ func (o *Orchestrator) DeliverToChannels(
 		}
 
 		// DD-EVENT-001 v1.1: Optional pre-delivery check (e.g. circuit breaker)
-		if checkBeforeDelivery != nil {
-			if checkErr := checkBeforeDelivery(notification, string(channel)); checkErr != nil {
+		if callbacks.CheckBeforeDelivery != nil {
+			if checkErr := callbacks.CheckBeforeDelivery(notification, string(channel)); checkErr != nil {
 				o.decrementInFlightAttempts(string(notification.UID), string(channel))
 				log.Info("Pre-delivery check failed, skipping channel", "channel", channel, "error", checkErr)
 				now := metav1.Now()
@@ -281,7 +301,7 @@ func (o *Orchestrator) DeliverToChannels(
 					Error:           checkErr.Error(),
 					DurationSeconds: 0,
 				}
-				if auditErr := auditMessageFailed(ctx, notification, string(channel), checkErr); auditErr != nil {
+				if auditErr := callbacks.AuditMessageFailed(ctx, notification, string(channel), checkErr); auditErr != nil {
 					log.Error(auditErr, "CRITICAL: Failed to audit message.failed (ADR-032 §1)")
 					return nil, fmt.Errorf("audit failure (ADR-032 §1): %w", auditErr)
 				}
@@ -320,37 +340,37 @@ func (o *Orchestrator) DeliverToChannels(
 		}
 
 		if deliveryErr != nil {
-		attempt.Status = notificationv1alpha1.DeliveryAttemptStatusFailed
-		attempt.Error = deliveryErr.Error()
+			attempt.Status = notificationv1alpha1.DeliveryAttemptStatusFailed
+			attempt.Error = deliveryErr.Error()
 
-		// BR-NOT-055: Permanent Error Classification
-		isPermanent := !IsRetryableError(deliveryErr)
-		if isPermanent {
-			log.Error(deliveryErr, "Delivery failed with permanent error (will NOT retry)")
-			attempt.Error = fmt.Sprintf("permanent failure: %s", deliveryErr.Error())
+			// BR-NOT-055: Permanent Error Classification
+			isPermanent := !IsRetryableError(deliveryErr)
+			if isPermanent {
+				log.Error(deliveryErr, "Delivery failed with permanent error (will NOT retry)")
+				attempt.Error = fmt.Sprintf("permanent failure: %s", deliveryErr.Error())
+			} else {
+				log.Error(deliveryErr, "Delivery failed with retryable error")
+			}
+
+			// AUDIT: Failed delivery (ADR-032 §1: MANDATORY)
+			// Audit calls don't trigger reconciles, so they're safe to call immediately
+			if auditErr := callbacks.AuditMessageFailed(ctx, notification, string(channel), deliveryErr); auditErr != nil {
+				log.Error(auditErr, "CRITICAL: Failed to audit message.failed (ADR-032 §1)")
+				return nil, fmt.Errorf("audit failure (ADR-032 §1): %w", auditErr)
+			}
+
+			// Update metrics (DD-METRICS-001: Use injected metrics recorder)
+			o.metrics.RecordDeliveryAttempt(notification.Namespace, string(channel), "failed")
+			result.DeliveryResults[string(channel)] = deliveryErr
+			result.FailureCount++
 		} else {
-			log.Error(deliveryErr, "Delivery failed with retryable error")
-		}
-
-		// AUDIT: Failed delivery (ADR-032 §1: MANDATORY)
-		// Audit calls don't trigger reconciles, so they're safe to call immediately
-		if auditErr := auditMessageFailed(ctx, notification, string(channel), deliveryErr); auditErr != nil {
-			log.Error(auditErr, "CRITICAL: Failed to audit message.failed (ADR-032 §1)")
-			return nil, fmt.Errorf("audit failure (ADR-032 §1): %w", auditErr)
-		}
-
-		// Update metrics (DD-METRICS-001: Use injected metrics recorder)
-		o.metrics.RecordDeliveryAttempt(notification.Namespace, string(channel), "failed")
-		result.DeliveryResults[string(channel)] = deliveryErr
-		result.FailureCount++
-	} else {
-		attempt.Status = notificationv1alpha1.DeliveryAttemptStatusSuccess
+			attempt.Status = notificationv1alpha1.DeliveryAttemptStatusSuccess
 			attempt.Error = ""
 
 			log.Info("Delivery successful", "channel", channel)
 
 			// AUDIT: Successful delivery (ADR-032 §1: MANDATORY)
-			if auditErr := auditMessageSent(ctx, notification, string(channel)); auditErr != nil {
+			if auditErr := callbacks.AuditMessageSent(ctx, notification, string(channel)); auditErr != nil {
 				log.Error(auditErr, "CRITICAL: Failed to audit message.sent (ADR-032 §1)")
 				return nil, fmt.Errorf("audit failure (ADR-032 §1): %w", auditErr)
 			}
@@ -373,10 +393,10 @@ func (o *Orchestrator) DeliverToChannels(
 // DD-NOT-008: Concurrent delivery deduplication (singleflight)
 //
 // Production-grade concurrency control:
-// - singleflight prevents duplicate deliveries when multiple reconciliations
-//   attempt delivery to the same notification+channel concurrently
-// - Key format: "{notificationUID}:{channel}" ensures per-notification-channel deduplication
-// - Only ONE goroutine executes delivery; others wait and receive same result
+//   - singleflight prevents duplicate deliveries when multiple reconciliations
+//     attempt delivery to the same notification+channel concurrently
+//   - Key format: "{notificationUID}:{channel}" ensures per-notification-channel deduplication
+//   - Only ONE goroutine executes delivery; others wait and receive same result
 //
 // This fixes the "6 attempts instead of 5" bug where stale cache caused
 // concurrent reconciliations to all think attemptCount < MaxAttempts.
