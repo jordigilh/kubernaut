@@ -848,7 +848,70 @@ data:
 	}
 	_, _ = fmt.Fprintln(writer, "    ✅ Gateway restarted with fleet scope checking enabled")
 
+	// ── Phase 5b: Enable fleet scope checking in RemediationOrchestrator ─
+	// Without this, RO's fleet.NewScopeChecker factory (cmd/remediationorchestrator/main.go)
+	// falls back to the plain (non-federated) scope.Manager, which unconditionally
+	// rejects any ClusterID-scoped resource with "local Manager cannot resolve
+	// remote cluster; use a fleet adapter" — blocking every fleet RR at the
+	// CheckUnmanagedResource pre-analysis gate (routing/blocking.go).
+	_, _ = fmt.Fprintln(writer, "\n  🔧 Phase 5b: Patching RemediationOrchestrator config with fleet scope checking...")
+	if err := patchRemediationOrchestratorConfigForFleet(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("remediationorchestrator-config fleet patch failed: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "    ✅ RemediationOrchestrator restarted with fleet scope checking enabled")
+
 	_, _ = fmt.Fprintln(writer, "✅ Fleet E2E infrastructure deployed (~388 MB)")
+	return nil
+}
+
+// patchRemediationOrchestratorConfigForFleet appends a `fleet:` section to RO's
+// existing remediationorchestrator.yaml ConfigMap data (owned by the shared
+// hybrid E2E infra) so that fleet.NewScopeChecker wraps RO's local scope.Manager
+// in a FederatedScopeChecker backed by FMC, instead of leaving ClusterID-scoped
+// resources permanently unresolvable (ADR-068).
+func patchRemediationOrchestratorConfigForFleet(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	getCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"get", "configmap", "remediationorchestrator-config", "-n", namespace,
+		"-o", "jsonpath={.data.remediationorchestrator\\.yaml}")
+	currentConfig, err := getCmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to read existing remediationorchestrator-config: %w", err)
+	}
+
+	fleetBlock := fmt.Sprintf(`
+fleet:
+  enabled: true
+  backend: fleetmetadatacache
+  endpoint: "http://fleetmetadatacache-service.%s.svc.cluster.local:8080"
+`, namespace)
+	patchedConfig := string(currentConfig) + fleetBlock
+
+	patchPayload, err := json.Marshal(map[string]interface{}{
+		"data": map[string]string{
+			"remediationorchestrator.yaml": patchedConfig,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal remediationorchestrator-config patch: %w", err)
+	}
+
+	patchCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"patch", "configmap", "remediationorchestrator-config", "-n", namespace,
+		"--type", "merge", "-p", string(patchPayload))
+	patchCmd.Stdout = writer
+	patchCmd.Stderr = writer
+	if err := patchCmd.Run(); err != nil {
+		return fmt.Errorf("failed to patch remediationorchestrator-config: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "    Restarting RemediationOrchestrator to pick up fleet config...")
+	if err := runKubectl(ctx, kubeconfigPath, writer,
+		"rollout", "restart", "deployment/remediationorchestrator-controller", "-n", namespace); err != nil {
+		return fmt.Errorf("remediationorchestrator restart failed: %w", err)
+	}
+	if err := waitForDeployment(ctx, "remediationorchestrator-controller", namespace, kubeconfigPath, 120*time.Second, writer); err != nil {
+		return fmt.Errorf("remediationorchestrator rollout after fleet config patch failed: %w", err)
+	}
 	return nil
 }
 
