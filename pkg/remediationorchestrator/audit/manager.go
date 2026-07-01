@@ -513,19 +513,28 @@ type ApprovalData struct {
 	ConfidenceStr string `json:"confidence,omitempty"`
 }
 
+// ApprovalEventContext carries the audit-event envelope shared by the
+// approval-related Build*Event builders (correlation, resource scoping, and
+// RAR identity). Extracted per AGENTS.md's 8+-param Options-pattern rule.
+type ApprovalEventContext struct {
+	CorrelationID string
+	Namespace     string
+	RRName        string
+	ClusterName   string
+	RARName       string
+}
+
 // BuildApprovalRequestedEvent builds an audit event for approval requested.
 // Related to ADR-040 (RemediationApprovalRequest)
 // DD-AUDIT-002 V2.0: Uses OpenAPI types directly
 func (m *Manager) BuildApprovalRequestedEvent(
-	correlationID string,
-	namespace string,
-	rrName string,
-	clusterName string,
-	rarName string,
+	evtCtx ApprovalEventContext,
 	workflowID string,
 	confidence string,
 	requiredBy time.Time,
 ) (*api.AuditEventRequest, error) {
+	correlationID, namespace, rrName, clusterName, rarName :=
+		evtCtx.CorrelationID, evtCtx.Namespace, evtCtx.RRName, evtCtx.ClusterName, evtCtx.RARName
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
@@ -564,15 +573,14 @@ func (m *Manager) BuildApprovalRequestedEvent(
 // REFACTOR-RO-AUD-001: Refactored to use ApprovalDecisionMapping type (eliminates triple switch)
 // REFACTOR-RO-AUD-002: Refactored to use DetermineActor helper
 func (m *Manager) BuildApprovalDecisionEvent(
-	correlationID string,
-	namespace string,
-	rrName string,
-	clusterName string,
-	rarName string,
+	evtCtx ApprovalEventContext,
 	decision string,
 	decidedBy string,
 	message string,
 ) (*api.AuditEventRequest, error) {
+	correlationID, namespace, rrName, clusterName, rarName :=
+		evtCtx.CorrelationID, evtCtx.Namespace, evtCtx.RRName, evtCtx.ClusterName, evtCtx.RARName
+
 	// REFACTOR-RO-AUD-001: Get decision mapping (replaces triple switch statement)
 	mapping, _ := GetApprovalDecisionMapping(decision)
 
