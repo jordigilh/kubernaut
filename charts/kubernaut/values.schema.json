@@ -372,7 +372,17 @@
                 "maxConcurrentRequests": { "type": "integer", "default": 100, "description": "Maximum concurrent request limit" },
                 "readTimeout": { "type": "string", "default": "30s", "description": "Server read timeout" },
                 "corsAllowedOrigins": { "type": "array", "items": { "type": "string" }, "description": "#1048 Phase 4 / AC-4: CORS allowed origins" },
-                "signerCertDir": { "type": "string", "default": "/etc/certs", "description": "#1048 Phase 5 / AU-9: Directory containing signing cert (tls.crt, tls.key)" }
+                "signerCertDir": { "type": "string", "default": "/etc/certs", "description": "#1048 Phase 5 / AU-9: Directory containing signing cert (tls.crt, tls.key)" },
+                "rateLimit": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "description": "GAP-09 (Issue #1505) / SC-5: Per-IP rate limiting for the DS HTTP API. Disabled by default.",
+                  "properties": {
+                    "enabled": { "type": "boolean", "default": false },
+                    "requestsPerSecond": { "type": "number", "default": 50, "description": "Sustained per-IP requests/second" },
+                    "burst": { "type": "integer", "default": 100, "description": "Per-IP token bucket burst size" }
+                  }
+                }
               }
             },
             "database": {
@@ -414,6 +424,16 @@
                 "interval": { "type": "string", "default": "24h", "description": "How often the retention worker runs" },
                 "batchSize": { "type": "integer", "default": 1000, "description": "Max rows per DELETE batch" },
                 "defaultDays": { "type": "integer", "default": 2555, "description": "Application-level default retention in days (ADR-034: 7 years)" }
+              }
+            },
+            "auditHashKey": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "GAP-05 (Issue #1505) / AU-9: Optional keyed HMAC-SHA256 audit hash chain",
+              "properties": {
+                "enabled": { "type": "boolean", "default": false, "description": "Enable keyed HMAC-SHA256 hash chaining (requires a pre-created Secret)" },
+                "existingSecret": { "type": "string", "default": "", "description": "Pre-created Secret name; defaults to datastorage-audit-hmac-key when unset" },
+                "secretKey": { "type": "string", "default": "hmacKey", "description": "Key name within the secret's audit-hmac-key.yaml file" }
               }
             }
           }
@@ -1115,6 +1135,15 @@
                         }
                       }
                     }
+                  }
+                },
+                "replayCache": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "description": "GAP-08 (Issue #1505): distributed jti replay-detection backend, shared across all APIFrontend replicas via the cluster's Valkey instance. Disabled by default (legacy in-memory, single-process cache).",
+                  "properties": {
+                    "enabled": { "type": "boolean", "default": false },
+                    "redisDB": { "type": "integer", "default": 1, "description": "Valkey logical DB index used for replay cache keys" }
                   }
                 }
               }
