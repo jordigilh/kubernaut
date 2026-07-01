@@ -37,16 +37,16 @@ import (
 //
 // Example:
 //
-//	err := NewOperationError(
-//	    "create_remediation_request",
-//	    "crd_creation",
-//	    "abc123",
-//	    "default",
-//	    "rr-pod-crash-abc123",
-//	    3,
-//	    startTime,
-//	    kubernetesErr,
-//	)
+//	err := NewOperationError(OperationErrorParams{
+//	    Operation:     "create_remediation_request",
+//	    Phase:         "crd_creation",
+//	    Fingerprint:   "abc123",
+//	    Namespace:     "default",
+//	    CorrelationID: "rr-pod-crash-abc123",
+//	    Attempts:      3,
+//	    StartTime:     startTime,
+//	    Err:           kubernetesErr,
+//	})
 type OperationError struct {
 	Operation     string        // Operation name (e.g., "create_remediation_request")
 	Phase         string        // Processing phase (e.g., "deduplication", "crd_creation")
@@ -78,19 +78,34 @@ func (e *OperationError) Unwrap() error {
 	return e.Underlying
 }
 
+// OperationErrorParams groups the operation/phase/timing/correlation fields
+// shared by NewOperationError and its specializations (NewCRDCreationError,
+// NewDeduplicationError). Extracted per AGENTS.md's 8+-param Options-pattern
+// rule.
+type OperationErrorParams struct {
+	Operation     string
+	Phase         string
+	Fingerprint   string
+	Namespace     string
+	CorrelationID string
+	Attempts      int
+	StartTime     time.Time
+	Err           error
+}
+
 // NewOperationError creates a new operation error with automatic duration calculation.
-// Duration is calculated as time.Since(startTime).
-func NewOperationError(operation, phase, fingerprint, namespace, correlationID string, attempts int, startTime time.Time, err error) *OperationError {
+// Duration is calculated as time.Since(p.StartTime).
+func NewOperationError(p OperationErrorParams) *OperationError {
 	return &OperationError{
-		Operation:     operation,
-		Phase:         phase,
-		Fingerprint:   fingerprint,
-		Namespace:     namespace,
-		Attempts:      attempts,
-		Duration:      time.Since(startTime),
-		StartTime:     startTime,
-		CorrelationID: correlationID,
-		Underlying:    err,
+		Operation:     p.Operation,
+		Phase:         p.Phase,
+		Fingerprint:   p.Fingerprint,
+		Namespace:     p.Namespace,
+		Attempts:      p.Attempts,
+		Duration:      time.Since(p.StartTime),
+		StartTime:     p.StartTime,
+		CorrelationID: p.CorrelationID,
+		Underlying:    p.Err,
 	}
 }
 
@@ -100,26 +115,39 @@ type CRDCreationError struct {
 	*OperationError
 	CRDName    string // RemediationRequest name
 	SignalType string // Signal type (alert/event)
-	SignalName  string // Alert name (if applicable)
+	SignalName string // Alert name (if applicable)
+}
+
+// CRDCreationErrorParams groups the context needed to build a CRDCreationError.
+// Extracted per AGENTS.md's 8+-param Options-pattern rule.
+type CRDCreationErrorParams struct {
+	Fingerprint string
+	Namespace   string
+	CRDName     string
+	SignalType  string
+	SignalName  string
+	Attempts    int
+	StartTime   time.Time
+	Err         error
 }
 
 // NewCRDCreationError creates a CRD creation error with full context.
 // Automatically sets operation to "create_remediation_request" and phase to "crd_creation".
-func NewCRDCreationError(fingerprint, namespace, crdName, signalType, alertName string, attempts int, startTime time.Time, err error) *CRDCreationError {
+func NewCRDCreationError(p CRDCreationErrorParams) *CRDCreationError {
 	return &CRDCreationError{
-		OperationError: NewOperationError(
-			"create_remediation_request",
-			"crd_creation",
-			fingerprint,
-			namespace,
-			crdName, // Use CRD name as correlation ID
-			attempts,
-			startTime,
-			err,
-		),
-		CRDName:    crdName,
-		SignalType: signalType,
-		SignalName:  alertName,
+		OperationError: NewOperationError(OperationErrorParams{
+			Operation:     "create_remediation_request",
+			Phase:         "crd_creation",
+			Fingerprint:   p.Fingerprint,
+			Namespace:     p.Namespace,
+			CorrelationID: p.CRDName, // Use CRD name as correlation ID
+			Attempts:      p.Attempts,
+			StartTime:     p.StartTime,
+			Err:           p.Err,
+		}),
+		CRDName:    p.CRDName,
+		SignalType: p.SignalType,
+		SignalName: p.SignalName,
 	}
 }
 
@@ -141,16 +169,16 @@ type DeduplicationError struct {
 // Automatically sets operation to "check_deduplication" and phase to "deduplication".
 func NewDeduplicationError(fingerprint, namespace, dedupeStatus string, attempts int, startTime time.Time, err error) *DeduplicationError {
 	return &DeduplicationError{
-		OperationError: NewOperationError(
-			"check_deduplication",
-			"deduplication",
-			fingerprint,
-			namespace,
-			fingerprint, // Use fingerprint as correlation ID
-			attempts,
-			startTime,
-			err,
-		),
+		OperationError: NewOperationError(OperationErrorParams{
+			Operation:     "check_deduplication",
+			Phase:         "deduplication",
+			Fingerprint:   fingerprint,
+			Namespace:     namespace,
+			CorrelationID: fingerprint, // Use fingerprint as correlation ID
+			Attempts:      attempts,
+			StartTime:     startTime,
+			Err:           err,
+		}),
 		DedupeStatus: dedupeStatus,
 	}
 }

@@ -58,7 +58,7 @@ type RetryObserver interface {
 // - Example: rr-b157a3a9e42f-1c2b5576
 // - Reason: Human-readable fingerprint prefix + UUID suffix for zero collision risk
 type CRDCreator struct {
-	k8sClient           k8s.ClientInterface  // TDD GREEN: Interface supports circuit breaker (BR-GATEWAY-093)
+	k8sClient           k8s.ClientInterface   // TDD GREEN: Interface supports circuit breaker (BR-GATEWAY-093)
 	logger              logr.Logger           // DD-005: logr.Logger for unified logging
 	metrics             *metrics.Metrics      // Day 9 Phase 6B Option C1: Centralized metrics
 	retryConfig         *config.RetrySettings // BR-GATEWAY-111: Retry configuration
@@ -137,6 +137,7 @@ func NewCRDCreatorWithClock(k8sClient k8s.ClientInterface, logger logr.Logger, m
 //   - BR-GATEWAY-112: Error Classification (retryable vs non-retryable)
 //   - BR-GATEWAY-113: Exponential Backoff with jitter (shared utility)
 //   - BR-GATEWAY-114: Retry Metrics
+//
 // ========================================
 func (c *CRDCreator) createCRDWithRetry(ctx context.Context, rr *remediationv1alpha1.RemediationRequest, signal *types.NormalizedSignal) error {
 	startTime := c.clock.Now()
@@ -193,8 +194,8 @@ func (c *CRDCreator) createCRDWithRetry(ctx context.Context, rr *remediationv1al
 // GAP-10: Simplified error classification without external dependencies.
 // errorPattern defines a pattern to match against error strings
 type errorPattern struct {
-	patterns []string // Patterns to match (case-insensitive)
-	errorType string  // Error type to return if matched
+	patterns  []string // Patterns to match (case-insensitive)
+	errorType string   // Error type to return if matched
 }
 
 // errorPatterns defines the mapping of error patterns to error types
@@ -330,10 +331,10 @@ func (c *CRDCreator) CreateRemediationRequest(
 				"app.kubernetes.io/managed-by": "gateway-service",
 				"app.kubernetes.io/component":  "remediation",
 			},
-		Annotations: map[string]string{
-			// Timestamp for audit trail (RFC3339 format)
-			"kubernaut.ai/created-at": c.clock.Now().UTC().Format(time.RFC3339),
-		},
+			Annotations: map[string]string{
+				// Timestamp for audit trail (RFC3339 format)
+				"kubernaut.ai/created-at": c.clock.Now().UTC().Format(time.RFC3339),
+			},
 		},
 		Spec: remediationv1alpha1.RemediationRequestSpec{
 			// Core signal identification
@@ -411,16 +412,16 @@ func (c *CRDCreator) CreateRemediationRequest(
 
 			if fetchErr != nil {
 				c.metrics.CRDCreationErrors.WithLabelValues("fetch_existing_failed").Inc()
-				return nil, NewCRDCreationError(
-					signal.Fingerprint,
-					c.controllerNamespace,
-					crdName,
-					signal.SourceType,
-					signal.SignalName,
-					maxFetchAttempts,
-					startTime,
-					fmt.Errorf("CRD exists but failed to fetch after %d attempts: %w", maxFetchAttempts, fetchErr),
-				)
+				return nil, NewCRDCreationError(CRDCreationErrorParams{
+					Fingerprint: signal.Fingerprint,
+					Namespace:   c.controllerNamespace,
+					CRDName:     crdName,
+					SignalType:  signal.SourceType,
+					SignalName:  signal.SignalName,
+					Attempts:    maxFetchAttempts,
+					StartTime:   startTime,
+					Err:         fmt.Errorf("CRD exists but failed to fetch after %d attempts: %w", maxFetchAttempts, fetchErr),
+				})
 			}
 
 			c.logger.Info("Reusing existing RemediationRequest CRD (Redis TTL expired)",
@@ -444,16 +445,16 @@ func (c *CRDCreator) CreateRemediationRequest(
 			"namespace", c.controllerNamespace,
 			"fingerprint", signal.Fingerprint)
 
-		return nil, NewCRDCreationError(
-			signal.Fingerprint,
-			c.controllerNamespace,
-			crdName,
-			signal.SourceType,
-			signal.SignalName,
-			c.retryConfig.MaxAttempts,
-			startTime,
-			err,
-		)
+		return nil, NewCRDCreationError(CRDCreationErrorParams{
+			Fingerprint: signal.Fingerprint,
+			Namespace:   c.controllerNamespace,
+			CRDName:     crdName,
+			SignalType:  signal.SourceType,
+			SignalName:  signal.SignalName,
+			Attempts:    c.retryConfig.MaxAttempts,
+			StartTime:   startTime,
+			Err:         err,
+		})
 	}
 
 	// Record success metric
@@ -781,4 +782,3 @@ func (c *CRDCreator) waitWithBackoff(ctx context.Context, attempt int, err error
 		return ctx.Err()
 	}
 }
-
