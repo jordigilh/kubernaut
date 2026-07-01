@@ -45,6 +45,7 @@ rules:
   - kubernaut.ai
   resources:
   - aianalyses
+  - effectivenessassessments
   - notificationrequests
   - signalprocessings
   - workflowexecutions
@@ -69,6 +70,7 @@ rules:
   - kubernaut.ai
   resources:
   - aianalyses/status
+  - effectivenessassessments/status
   - investigationsessions/status
   - notificationrequests/status
   - signalprocessings/status
