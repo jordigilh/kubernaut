@@ -60,7 +60,7 @@ type JWTValidator struct {
 	providers    map[string]*providerRuntime
 	cache        *JWKSCache
 	reviewer     *TokenReviewer
-	replayCache  *ReplayCache
+	replayCache  ReplayCacheStore
 	httpClient   *http.Client
 	cbTimeout    time.Duration
 	cbGauge      *prometheus.GaugeVec
@@ -91,8 +91,9 @@ func WithCBMetrics(g *prometheus.GaugeVec) JWTValidatorOption {
 	return func(v *JWTValidator) { v.cbGauge = g }
 }
 
-// WithReplayCache enables jti-based token replay detection.
-func WithReplayCache(rc *ReplayCache) JWTValidatorOption {
+// WithReplayCache enables jti-based token replay detection using the given
+// store — either the in-memory ReplayCache or the distributed ValkeyReplayCache.
+func WithReplayCache(rc ReplayCacheStore) JWTValidatorOption {
 	return func(v *JWTValidator) { v.replayCache = rc }
 }
 
