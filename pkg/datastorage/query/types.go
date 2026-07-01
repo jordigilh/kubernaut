@@ -24,6 +24,11 @@ import (
 
 // RemediationAuditResult is used for scanning from database
 // This is an internal type that gets converted to models.RemediationAudit
+//
+// Wide DTO by design: reviewed in GO-ANTIPATTERN-AUDIT-2026-07-01 §4a (God Structs).
+// It mirrors a DB row scan target field-for-field with models.RemediationAudit;
+// splitting it would fragment the persistence boundary for no behavioral gain,
+// so it is intentionally not decomposed.
 type RemediationAuditResult struct {
 	ID                   int64      `db:"id"`
 	Name                 string     `db:"name"`
