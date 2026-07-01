@@ -2397,11 +2397,13 @@ func (r *Reconciler) emitApprovalRequestedAudit(ctx context.Context, rr *remedia
 
 	// Build event using audit manager's build method (refactored per TODO comment)
 	event, err := r.auditManager.BuildApprovalRequestedEvent(
-		correlationID,
-		rr.Namespace,
-		rr.Name,
-		rr.Spec.ClusterID,
-		rarName,
+		roaudit.ApprovalEventContext{
+			CorrelationID: correlationID,
+			Namespace:     rr.Namespace,
+			RRName:        rr.Name,
+			ClusterName:   rr.Spec.ClusterID,
+			RARName:       rarName,
+		},
 		workflowID,
 		fmt.Sprintf("%.2f", confidence),
 		requiredBy,
