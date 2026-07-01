@@ -35,7 +35,6 @@ import (
 	"sync"
 	"time"
 
-
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -55,29 +54,29 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	roconfig "github.com/jordigilh/kubernaut/internal/config/remediationorchestrator"
 	"github.com/jordigilh/kubernaut/pkg/audit"
-	"github.com/jordigilh/kubernaut/pkg/fleet"
-	"github.com/jordigilh/kubernaut/pkg/shared/events"
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	"github.com/jordigilh/kubernaut/pkg/fleet"
 	"github.com/jordigilh/kubernaut/pkg/remediationapprovalrequest"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/aggregator"
 	roaudit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"
-	roconfig "github.com/jordigilh/kubernaut/internal/config/remediationorchestrator"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/config"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/handler"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/helpers"
+	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/locking"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/override"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/phase"
-	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/locking"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/routing"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/status"
 	"github.com/jordigilh/kubernaut/pkg/remediationrequest"
-	"github.com/jordigilh/kubernaut/pkg/shared/scope"
-	"github.com/jordigilh/kubernaut/pkg/shared/k8serrors"
-	k8sutil "github.com/jordigilh/kubernaut/pkg/shared/k8s"
+	"github.com/jordigilh/kubernaut/pkg/shared/events"
 	canonicalhash "github.com/jordigilh/kubernaut/pkg/shared/hash"
+	k8sutil "github.com/jordigilh/kubernaut/pkg/shared/k8s"
+	"github.com/jordigilh/kubernaut/pkg/shared/k8serrors"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
 // Sentinel errors for phase-conflict detection during status updates.
@@ -194,6 +193,20 @@ type TimeoutConfig struct {
 	MaxAnalyzing     time.Duration // Default: 45 minutes (DD-INTERACTIVE-002: hard cap for interactive sessions)
 }
 
+// ReconcilerDeps groups the injected dependencies for NewReconciler,
+// separate from the variadic optional eaCreator argument. Extracted per
+// AGENTS.md's 8+-param Options-pattern rule.
+type ReconcilerDeps struct {
+	Client        client.Client
+	APIReader     client.Reader
+	Scheme        *runtime.Scheme
+	AuditStore    audit.AuditStore
+	Recorder      record.EventRecorder
+	Metrics       *metrics.Metrics
+	Timeouts      TimeoutConfig
+	RoutingEngine routing.Engine
+}
+
 // NewReconciler creates a new Reconciler with all dependencies.
 // Per ADR-032 §1: Audit is MANDATORY for RemediationOrchestrator (P0 service).
 // The auditStore parameter must be non-nil; the service will crash at startup
@@ -202,7 +215,10 @@ type TimeoutConfig struct {
 // The timeouts parameter configures all timeout durations (global and per-phase).
 // Zero values use defaults: Global=1h, Processing=5m, Analyzing=10m, Executing=30m.
 // DD-STATUS-001: apiReader parameter added for cache-bypassed status refetch in atomic updates.
-func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, auditStore audit.AuditStore, recorder record.EventRecorder, m *metrics.Metrics, timeouts TimeoutConfig, routingEngine routing.Engine, eaCreator ...*creator.EffectivenessAssessmentCreator) *Reconciler {
+func NewReconciler(deps ReconcilerDeps, eaCreator ...*creator.EffectivenessAssessmentCreator) *Reconciler {
+	c, apiReader, s, auditStore, recorder, m, timeouts, routingEngine :=
+		deps.Client, deps.APIReader, deps.Scheme, deps.AuditStore, deps.Recorder, deps.Metrics, deps.Timeouts, deps.RoutingEngine
+
 	// DD-METRICS-001: Metrics are REQUIRED (dependency injection pattern)
 	// Metrics are initialized in main.go via rometrics.NewMetrics()
 	// If nil is passed here, it's a programming error in main.go
@@ -287,9 +303,9 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 		Metrics:             m,
 		Recorder:            recorder,
 		StatusManager:       statusManager,       // DD-PERF-001: Atomic status updates
-		apiReader:           apiReader,            // DD-EM-002: Uncached reader for pre-remediation hash
-		retentionPeriod:     24 * time.Hour,       // #265: Default CRD TTL
-		phaseRegistry:       phase.NewRegistry(),  // Issue #666: Phase handler registry
+		apiReader:           apiReader,           // DD-EM-002: Uncached reader for pre-remediation hash
+		retentionPeriod:     24 * time.Hour,      // #265: Default CRD TTL
+		phaseRegistry:       phase.NewRegistry(), // Issue #666: Phase handler registry
 	}
 
 	// ADR-EM-001: Wire optional EA creator (variadic for backward compatibility)
@@ -318,16 +334,20 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 	}))
 	wfeCallbacks := WFECreationCallbacks{
 		EmitWorkflowCreatedAudit: r.emitWorkflowCreatedAudit,
-		CreateWFE:                func(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) (string, error) { return r.weCreator.Create(ctx, rr, ai) },
-		ResolveWorkflowDisplay:   r.resolveWorkflowDisplay,
+		CreateWFE: func(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) (string, error) {
+			return r.weCreator.Create(ctx, rr, ai)
+		},
+		ResolveWorkflowDisplay: r.resolveWorkflowDisplay,
 	}
 	r.phaseRegistry.MustRegister(NewAnalyzingHandler(c, m, AnalyzingCallbacks{
 		AtomicStatusUpdate: func(ctx context.Context, rr *remediationv1.RemediationRequest, fn func() error) error {
 			return r.StatusManager.AtomicStatusUpdate(ctx, rr, fn)
 		},
-		IsWorkflowNotNeeded:            handler.IsWorkflowNotNeeded,
-		HandleWorkflowNotNeeded:        r.aiAnalysisHandler.HandleAIAnalysisStatus,
-		CreateApproval:                 func(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) (string, error) { return r.approvalCreator.Create(ctx, rr, ai) },
+		IsWorkflowNotNeeded:     handler.IsWorkflowNotNeeded,
+		HandleWorkflowNotNeeded: r.aiAnalysisHandler.HandleAIAnalysisStatus,
+		CreateApproval: func(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) (string, error) {
+			return r.approvalCreator.Create(ctx, rr, ai)
+		},
 		HandleAIAnalysisStatus:         r.aiAnalysisHandler.HandleAIAnalysisStatus,
 		HandleRemediationTargetMissing: r.aiAnalysisHandler.HandleRemediationTargetMissing,
 		EmitApprovalRequestedAudit:     r.emitApprovalRequestedAudit,
@@ -374,8 +394,8 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 				return nil
 			})
 		},
-		IsDryRun:      r.isDryRun,
-		WFECallbacks:  wfeCallbacks,
+		IsDryRun:     r.isDryRun,
+		WFECallbacks: wfeCallbacks,
 	}))
 	r.phaseRegistry.MustRegister(NewAwaitingApprovalHandler(c, m, AwaitingApprovalCallbacks{
 		RecordEvent: func(rr *remediationv1.RemediationRequest, eventType, reason, message string) {
@@ -468,7 +488,7 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 				return r.client.Status().Update(ctx, rar)
 			})
 		},
-		WFECallbacks:       wfeCallbacks,
+		WFECallbacks: wfeCallbacks,
 	}))
 	r.phaseRegistry.MustRegister(NewVerifyingHandler(c, m, timeouts, VerifyingCallbacks{
 		EnsureNotificationsCreated:            r.ensureNotificationsCreated,
@@ -801,46 +821,46 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			rr.Status.OverallPhase = phase.Pending
 			rr.Status.StartTime = &metav1.Time{Time: startTime}
 
-		// Gap #8: Initialize TimeoutConfig with controller defaults
-		// REFACTOR: Delegated to populateTimeoutDefaults() for validation + reusability
-		r.populateTimeoutDefaults(ctx, rr)
+			// Gap #8: Initialize TimeoutConfig with controller defaults
+			// REFACTOR: Delegated to populateTimeoutDefaults() for validation + reusability
+			r.populateTimeoutDefaults(ctx, rr)
 
-		return nil
-	}); err != nil {
-		if errors.Is(err, errPhaseAlreadySet) {
-			logger.V(1).Info("Initialization aborted (phase set during TOCTOU window)",
-				"name", rr.Name, "phase", rr.Status.OverallPhase)
-			return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
+			return nil
+		}); err != nil {
+			if errors.Is(err, errPhaseAlreadySet) {
+				logger.V(1).Info("Initialization aborted (phase set during TOCTOU window)",
+					"name", rr.Name, "phase", rr.Status.OverallPhase)
+				return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
+			}
+			logger.Error(err, "Failed to initialize RemediationRequest status")
+			return ctrl.Result{}, err
 		}
-		logger.Error(err, "Failed to initialize RemediationRequest status")
-		return ctrl.Result{}, err
-	}
 
-	// RO-AUDIT-IDEMPOTENCY: Safe to emit — the apiReader refetch above confirmed this
-	// reconcile is the sole initializer. AtomicStatusUpdate handles optimistic locking
-	// conflicts via RetryOnConflict, but the phase transition is guaranteed to have
-	// been performed by this reconcile (not a stale-cache duplicate).
-	r.emitLifecycleStartedAudit(ctx, rr)
+		// RO-AUDIT-IDEMPOTENCY: Safe to emit — the apiReader refetch above confirmed this
+		// reconcile is the sole initializer. AtomicStatusUpdate handles optimistic locking
+		// conflicts via RetryOnConflict, but the phase transition is guaranteed to have
+		// been performed by this reconcile (not a stale-cache duplicate).
+		r.emitLifecycleStartedAudit(ctx, rr)
 
-	// Gap #8: NO REFETCH NEEDED - AtomicStatusUpdate already updated rr in-memory
-	// The rr object passed to AtomicStatusUpdate is updated with the persisted status
-	// (including TimeoutConfig) by the Status().Update() call inside AtomicStatusUpdate.
-	// Refetching here would risk getting a cached/stale version.
+		// Gap #8: NO REFETCH NEEDED - AtomicStatusUpdate already updated rr in-memory
+		// The rr object passed to AtomicStatusUpdate is updated with the persisted status
+		// (including TimeoutConfig) by the Status().Update() call inside AtomicStatusUpdate.
+		// Refetching here would risk getting a cached/stale version.
 
-	// Gap #8: Emit orchestrator.lifecycle.created event with TimeoutConfig
-	// Per BR-AUDIT-005 Gap #8: Capture initial TimeoutConfig for RR reconstruction
-	// This happens AFTER status initialization to capture actual defaults
-	r.emitRemediationCreatedAudit(ctx, rr)
+		// Gap #8: Emit orchestrator.lifecycle.created event with TimeoutConfig
+		// Per BR-AUDIT-005 Gap #8: Capture initial TimeoutConfig for RR reconstruction
+		// This happens AFTER status initialization to capture actual defaults
+		r.emitRemediationCreatedAudit(ctx, rr)
 
-	// DD-EVENT-001: Emit K8s event for new RR acceptance (BR-ORCH-095)
-	if r.Recorder != nil {
-		r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonRemediationCreated,
-			fmt.Sprintf("RemediationRequest accepted for signal %s", rr.Spec.SignalName))
-	}
+		// DD-EVENT-001: Emit K8s event for new RR acceptance (BR-ORCH-095)
+		if r.Recorder != nil {
+			r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonRemediationCreated,
+				fmt.Sprintf("RemediationRequest accepted for signal %s", rr.Spec.SignalName))
+		}
 
-	// Requeue after short delay to process the Pending phase
-	// Using RequeueAfter instead of deprecated Requeue field
-	return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
+		// Requeue after short delay to process the Pending phase
+		// Using RequeueAfter instead of deprecated Requeue field
+		return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
 	}
 
 	// Terminal-phase housekeeping (Issue #88, #265)
@@ -3413,4 +3433,3 @@ func resolveConfigMapHashes(
 
 	return configMapHashes
 }
-

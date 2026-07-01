@@ -59,7 +59,16 @@ var _ = Describe("Controller (BR-ORCH-025, BR-ORCH-026)", func() {
 		// Audit store is nil for unit tests (DD-AUDIT-003 compliant - audit is optional)
 		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 		recorder := record.NewFakeRecorder(20) // DD-EVENT-001: FakeRecorder for K8s event assertions
-		reconciler = controller.NewReconciler(fakeClient, fakeClient, scheme, nil, recorder, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()), controller.TimeoutConfig{}, nil)
+		reconciler = controller.NewReconciler(controller.ReconcilerDeps{
+			Client:        fakeClient,
+			APIReader:     fakeClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			Timeouts:      controller.TimeoutConfig{},
+			RoutingEngine: nil,
+		})
 	})
 
 	Describe("Reconciler", func() {
@@ -103,7 +112,16 @@ var _ = Describe("Controller (BR-ORCH-025, BR-ORCH-026)", func() {
 					WithObjects(rr).
 					WithStatusSubresource(rr).
 					Build()
-				testReconciler := controller.NewReconciler(fakeClient, fakeClient, scheme, nil, record.NewFakeRecorder(20), rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()), controller.TimeoutConfig{}, nil)
+				testReconciler := controller.NewReconciler(controller.ReconcilerDeps{
+					Client:        fakeClient,
+					APIReader:     fakeClient,
+					Scheme:        scheme,
+					AuditStore:    nil,
+					Recorder:      record.NewFakeRecorder(20),
+					Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+					Timeouts:      controller.TimeoutConfig{},
+					RoutingEngine: nil,
+				})
 
 				result, err := testReconciler.Reconcile(ctx, reconcile.Request{
 					NamespacedName: types.NamespacedName{
@@ -153,7 +171,16 @@ var _ = Describe("Controller (BR-ORCH-025, BR-ORCH-026)", func() {
 					WithObjects(rr).
 					WithStatusSubresource(rr).
 					Build()
-				testReconciler := controller.NewReconciler(fakeClient, fakeClient, scheme, nil, record.NewFakeRecorder(20), rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()), controller.TimeoutConfig{}, nil)
+				testReconciler := controller.NewReconciler(controller.ReconcilerDeps{
+					Client:        fakeClient,
+					APIReader:     fakeClient,
+					Scheme:        scheme,
+					AuditStore:    nil,
+					Recorder:      record.NewFakeRecorder(20),
+					Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+					Timeouts:      controller.TimeoutConfig{},
+					RoutingEngine: nil,
+				})
 
 				result, err := testReconciler.Reconcile(ctx, reconcile.Request{
 					NamespacedName: types.NamespacedName{
@@ -203,7 +230,16 @@ var _ = Describe("Controller (BR-ORCH-025, BR-ORCH-026)", func() {
 					WithObjects(rr).
 					WithStatusSubresource(rr).
 					Build()
-				testReconciler := controller.NewReconciler(fakeClient, fakeClient, scheme, nil, record.NewFakeRecorder(20), rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()), controller.TimeoutConfig{}, nil)
+				testReconciler := controller.NewReconciler(controller.ReconcilerDeps{
+					Client:        fakeClient,
+					APIReader:     fakeClient,
+					Scheme:        scheme,
+					AuditStore:    nil,
+					Recorder:      record.NewFakeRecorder(20),
+					Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+					Timeouts:      controller.TimeoutConfig{},
+					RoutingEngine: nil,
+				})
 
 				result, err := testReconciler.Reconcile(ctx, reconcile.Request{
 					NamespacedName: types.NamespacedName{

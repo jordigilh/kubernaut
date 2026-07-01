@@ -130,21 +130,21 @@ var _ = Describe("RAR Status.Expired and Status.TimeRemaining (Bug Fix 3 & 4)", 
 
 				mockRouting := &MockRoutingEngine{}
 				recorder := record.NewFakeRecorder(20)
-				reconciler = prodcontroller.NewReconciler(
-					fakeClient,
-					fakeClient,
-					scheme,
-					nil,
-					recorder,
-					rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-					prodcontroller.TimeoutConfig{
+				reconciler = prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+					Client:     fakeClient,
+					APIReader:  fakeClient,
+					Scheme:     scheme,
+					AuditStore: nil,
+					Recorder:   recorder,
+					Metrics:    rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+					Timeouts: prodcontroller.TimeoutConfig{
 						Global:     1 * time.Hour,
 						Processing: 5 * time.Minute,
 						Analyzing:  10 * time.Minute,
 						Executing:  30 * time.Minute,
 					},
-					mockRouting,
-				)
+					RoutingEngine: mockRouting,
+				})
 
 				// When: Reconcile the RR (triggers handleAwaitingApprovalPhase timeout path)
 				_, err := reconciler.Reconcile(ctx, ctrl.Request{
@@ -183,12 +183,16 @@ var _ = Describe("RAR Status.Expired and Status.TimeRemaining (Bug Fix 3 & 4)", 
 
 				mockRouting := &MockRoutingEngine{}
 				recorder := record.NewFakeRecorder(20)
-				reconciler = prodcontroller.NewReconciler(
-					fakeClient, fakeClient, scheme, nil, recorder,
-					rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-					prodcontroller.TimeoutConfig{Global: 1 * time.Hour, Processing: 5 * time.Minute, Analyzing: 10 * time.Minute, Executing: 30 * time.Minute},
-					mockRouting,
-				)
+				reconciler = prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+					Client:        fakeClient,
+					APIReader:     fakeClient,
+					Scheme:        scheme,
+					AuditStore:    nil,
+					Recorder:      recorder,
+					Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+					Timeouts:      prodcontroller.TimeoutConfig{Global: 1 * time.Hour, Processing: 5 * time.Minute, Analyzing: 10 * time.Minute, Executing: 30 * time.Minute},
+					RoutingEngine: mockRouting,
+				})
 
 				_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: "default"}})
 				Expect(err).ToNot(HaveOccurred())
@@ -220,12 +224,16 @@ var _ = Describe("RAR Status.Expired and Status.TimeRemaining (Bug Fix 3 & 4)", 
 
 				mockRouting := &MockRoutingEngine{}
 				recorder := record.NewFakeRecorder(20)
-				reconciler = prodcontroller.NewReconciler(
-					fakeClient, fakeClient, scheme, nil, recorder,
-					rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-					prodcontroller.TimeoutConfig{Global: 1 * time.Hour, Processing: 5 * time.Minute, Analyzing: 10 * time.Minute, Executing: 30 * time.Minute},
-					mockRouting,
-				)
+				reconciler = prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+					Client:        fakeClient,
+					APIReader:     fakeClient,
+					Scheme:        scheme,
+					AuditStore:    nil,
+					Recorder:      recorder,
+					Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+					Timeouts:      prodcontroller.TimeoutConfig{Global: 1 * time.Hour, Processing: 5 * time.Minute, Analyzing: 10 * time.Minute, Executing: 30 * time.Minute},
+					RoutingEngine: mockRouting,
+				})
 
 				_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: "default"}})
 				Expect(err).ToNot(HaveOccurred())
@@ -265,12 +273,16 @@ var _ = Describe("RAR Status.Expired and Status.TimeRemaining (Bug Fix 3 & 4)", 
 
 				mockRouting := &MockRoutingEngine{}
 				recorder := record.NewFakeRecorder(20)
-				reconciler = prodcontroller.NewReconciler(
-					fakeClient, fakeClient, scheme, nil, recorder,
-					rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-					prodcontroller.TimeoutConfig{Global: 1 * time.Hour, Processing: 5 * time.Minute, Analyzing: 10 * time.Minute, Executing: 30 * time.Minute},
-					mockRouting,
-				)
+				reconciler = prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+					Client:        fakeClient,
+					APIReader:     fakeClient,
+					Scheme:        scheme,
+					AuditStore:    nil,
+					Recorder:      recorder,
+					Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+					Timeouts:      prodcontroller.TimeoutConfig{Global: 1 * time.Hour, Processing: 5 * time.Minute, Analyzing: 10 * time.Minute, Executing: 30 * time.Minute},
+					RoutingEngine: mockRouting,
+				})
 
 				// When: Reconcile (RAR is pending, not expired)
 				_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: "default"}})

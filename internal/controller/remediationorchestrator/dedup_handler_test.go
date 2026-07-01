@@ -110,13 +110,16 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler := prodcontroller.NewReconciler(
-				fakeClient, fakeClient, scheme, nil,
-				record.NewFakeRecorder(20),
-				rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
-				&MockRoutingEngine{},
-			)
+			reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+				Client:        fakeClient,
+				APIReader:     fakeClient,
+				Scheme:        scheme,
+				AuditStore:    nil,
+				Recorder:      record.NewFakeRecorder(20),
+				Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				Timeouts:      prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
+				RoutingEngine: &MockRoutingEngine{},
+			})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "prop-rr-005", Namespace: "default"},
@@ -152,13 +155,16 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler := prodcontroller.NewReconciler(
-				fakeClient, fakeClient, scheme, nil,
-				record.NewFakeRecorder(20),
-				rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
-				&MockRoutingEngine{},
-			)
+			reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+				Client:        fakeClient,
+				APIReader:     fakeClient,
+				Scheme:        scheme,
+				AuditStore:    nil,
+				Recorder:      record.NewFakeRecorder(20),
+				Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				Timeouts:      prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
+				RoutingEngine: &MockRoutingEngine{},
+			})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "prop-rr-006", Namespace: "default"},
@@ -192,13 +198,16 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler := prodcontroller.NewReconciler(
-				fakeClient, fakeClient, scheme, nil,
-				record.NewFakeRecorder(20),
-				rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
-				&MockRoutingEngine{},
-			)
+			reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+				Client:        fakeClient,
+				APIReader:     fakeClient,
+				Scheme:        scheme,
+				AuditStore:    nil,
+				Recorder:      record.NewFakeRecorder(20),
+				Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				Timeouts:      prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
+				RoutingEngine: &MockRoutingEngine{},
+			})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "prop-rr-011", Namespace: "default"},
@@ -233,13 +242,16 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler := prodcontroller.NewReconciler(
-				fakeClient, fakeClient, scheme, nil,
-				record.NewFakeRecorder(20),
-				rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
-				&MockRoutingEngine{},
-			)
+			reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+				Client:        fakeClient,
+				APIReader:     fakeClient,
+				Scheme:        scheme,
+				AuditStore:    nil,
+				Recorder:      record.NewFakeRecorder(20),
+				Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				Timeouts:      prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
+				RoutingEngine: &MockRoutingEngine{},
+			})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "prop-rr-012", Namespace: "default"},
@@ -275,13 +287,16 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler := prodcontroller.NewReconciler(
-				fakeClient, fakeClient, scheme, nil,
-				fakeRecorder,
-				rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
-				&MockRoutingEngine{},
-			)
+			reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+				Client:        fakeClient,
+				APIReader:     fakeClient,
+				Scheme:        scheme,
+				AuditStore:    nil,
+				Recorder:      fakeRecorder,
+				Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				Timeouts:      prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
+				RoutingEngine: &MockRoutingEngine{},
+			})
 
 			result1, err1 := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "prop-rr-016", Namespace: "default"},
@@ -324,13 +339,16 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler := prodcontroller.NewReconciler(
-				fakeClient, fakeClient, scheme, nil,
-				fakeRecorder,
-				rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
-				&MockRoutingEngine{},
-			)
+			reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+				Client:        fakeClient,
+				APIReader:     fakeClient,
+				Scheme:        scheme,
+				AuditStore:    nil,
+				Recorder:      fakeRecorder,
+				Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				Timeouts:      prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
+				RoutingEngine: &MockRoutingEngine{},
+			})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "prop-rr-015", Namespace: "default"},
@@ -377,13 +395,16 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 				}).
 				Build()
 
-			reconciler := prodcontroller.NewReconciler(
-				fakeClient, fakeClient, scheme, nil,
-				record.NewFakeRecorder(20),
-				rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
-				&MockRoutingEngine{},
-			)
+			reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+				Client:        fakeClient,
+				APIReader:     fakeClient,
+				Scheme:        scheme,
+				AuditStore:    nil,
+				Recorder:      record.NewFakeRecorder(20),
+				Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				Timeouts:      prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
+				RoutingEngine: &MockRoutingEngine{},
+			})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "prop-rr-019", Namespace: "default"},
@@ -422,13 +443,16 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler := prodcontroller.NewReconciler(
-				fakeClient, fakeClient, scheme, nil,
-				fakeRecorder,
-				rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
-				&MockRoutingEngine{},
-			)
+			reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+				Client:        fakeClient,
+				APIReader:     fakeClient,
+				Scheme:        scheme,
+				AuditStore:    nil,
+				Recorder:      fakeRecorder,
+				Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				Timeouts:      prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
+				RoutingEngine: &MockRoutingEngine{},
+			})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "prop-rr-017", Namespace: "default"},
@@ -466,13 +490,16 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler := prodcontroller.NewReconciler(
-				fakeClient, fakeClient, scheme, nil,
-				record.NewFakeRecorder(20),
-				rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
-				&MockRoutingEngine{},
-			)
+			reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+				Client:        fakeClient,
+				APIReader:     fakeClient,
+				Scheme:        scheme,
+				AuditStore:    nil,
+				Recorder:      record.NewFakeRecorder(20),
+				Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				Timeouts:      prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
+				RoutingEngine: &MockRoutingEngine{},
+			})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "prop-rr-018", Namespace: "default"},
@@ -507,13 +534,16 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler := prodcontroller.NewReconciler(
-				fakeClient, fakeClient, scheme, nil,
-				record.NewFakeRecorder(20),
-				rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
-				&MockRoutingEngine{},
-			)
+			reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+				Client:        fakeClient,
+				APIReader:     fakeClient,
+				Scheme:        scheme,
+				AuditStore:    nil,
+				Recorder:      record.NewFakeRecorder(20),
+				Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				Timeouts:      prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
+				RoutingEngine: &MockRoutingEngine{},
+			})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "prop-rr-013", Namespace: "default"},
@@ -549,13 +579,16 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler := prodcontroller.NewReconciler(
-				fakeClient, fakeClient, scheme, nil,
-				record.NewFakeRecorder(20),
-				rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
-				&MockRoutingEngine{},
-			)
+			reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+				Client:        fakeClient,
+				APIReader:     fakeClient,
+				Scheme:        scheme,
+				AuditStore:    nil,
+				Recorder:      record.NewFakeRecorder(20),
+				Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				Timeouts:      prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
+				RoutingEngine: &MockRoutingEngine{},
+			})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "prop-rr-014", Namespace: "default"},

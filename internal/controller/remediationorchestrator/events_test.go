@@ -94,13 +94,16 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 			WithStatusSubresource(&remediationv1.RemediationRequest{}).
 			Build()
 
-		reconciler := prodcontroller.NewReconciler(
-			fakeClient, fakeClient, scheme,
-			nil, recorder,
-			rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			prodcontroller.TimeoutConfig{},
-			&MockRoutingEngine{},
-		)
+		reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+			Client:        fakeClient,
+			APIReader:     fakeClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			Timeouts:      prodcontroller.TimeoutConfig{},
+			RoutingEngine: &MockRoutingEngine{},
+		})
 
 		// When: First reconcile initializes the RR
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
@@ -137,13 +140,16 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 			WithStatusSubresource(&remediationv1.RemediationRequest{}).
 			Build()
 
-		reconciler := prodcontroller.NewReconciler(
-			fakeClient, fakeClient, scheme,
-			nil, recorder,
-			rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			prodcontroller.TimeoutConfig{},
-			&MockRoutingEngine{},
-		)
+		reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+			Client:        fakeClient,
+			APIReader:     fakeClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			Timeouts:      prodcontroller.TimeoutConfig{},
+			RoutingEngine: &MockRoutingEngine{},
+		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: "test-rr-completed", Namespace: "default"},
@@ -178,13 +184,16 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 			WithStatusSubresource(&remediationv1.RemediationRequest{}).
 			Build()
 
-		reconciler := prodcontroller.NewReconciler(
-			fakeClient, fakeClient, scheme,
-			nil, recorder,
-			rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			prodcontroller.TimeoutConfig{},
-			&MockRoutingEngine{},
-		)
+		reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+			Client:        fakeClient,
+			APIReader:     fakeClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			Timeouts:      prodcontroller.TimeoutConfig{},
+			RoutingEngine: &MockRoutingEngine{},
+		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: "test-rr-failed", Namespace: "default"},
@@ -214,13 +223,16 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 			WithStatusSubresource(&remediationv1.RemediationRequest{}).
 			Build()
 
-		reconciler := prodcontroller.NewReconciler(
-			fakeClient, fakeClient, scheme,
-			nil, recorder,
-			rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
-			&MockRoutingEngine{},
-		)
+		reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+			Client:        fakeClient,
+			APIReader:     fakeClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			Timeouts:      prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
+			RoutingEngine: &MockRoutingEngine{},
+		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: "test-rr-timeout", Namespace: "default"},
@@ -258,13 +270,16 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 			).
 			Build()
 
-		reconciler := prodcontroller.NewReconciler(
-			fakeClient, fakeClient, scheme,
-			nil, recorder,
-			rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			prodcontroller.TimeoutConfig{},
-			&MockRoutingEngine{},
-		)
+		reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+			Client:        fakeClient,
+			APIReader:     fakeClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			Timeouts:      prodcontroller.TimeoutConfig{},
+			RoutingEngine: &MockRoutingEngine{},
+		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: "test-rr-approval", Namespace: "default"},
@@ -302,13 +317,16 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 			).
 			Build()
 
-		reconciler := prodcontroller.NewReconciler(
-			fakeClient, fakeClient, scheme,
-			nil, recorder,
-			rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			prodcontroller.TimeoutConfig{},
-			&MockRoutingEngine{},
-		)
+		reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+			Client:        fakeClient,
+			APIReader:     fakeClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			Timeouts:      prodcontroller.TimeoutConfig{},
+			RoutingEngine: &MockRoutingEngine{},
+		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: "test-rr-granted", Namespace: "default"},
@@ -345,13 +363,16 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 			).
 			Build()
 
-		reconciler := prodcontroller.NewReconciler(
-			fakeClient, fakeClient, scheme,
-			nil, recorder,
-			rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			prodcontroller.TimeoutConfig{},
-			&MockRoutingEngine{},
-		)
+		reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+			Client:        fakeClient,
+			APIReader:     fakeClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			Timeouts:      prodcontroller.TimeoutConfig{},
+			RoutingEngine: &MockRoutingEngine{},
+		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: "test-rr-rejected", Namespace: "default"},
@@ -388,13 +409,16 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 			).
 			Build()
 
-		reconciler := prodcontroller.NewReconciler(
-			fakeClient, fakeClient, scheme,
-			nil, recorder,
-			rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			prodcontroller.TimeoutConfig{},
-			&MockRoutingEngine{},
-		)
+		reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+			Client:        fakeClient,
+			APIReader:     fakeClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			Timeouts:      prodcontroller.TimeoutConfig{},
+			RoutingEngine: &MockRoutingEngine{},
+		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: "test-rr-expired", Namespace: "default"},
@@ -430,13 +454,16 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 			WithStatusSubresource(&remediationv1.RemediationRequest{}).
 			Build()
 
-		reconciler := prodcontroller.NewReconciler(
-			fakeClient, fakeClient, scheme,
-			nil, recorder,
-			rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			prodcontroller.TimeoutConfig{},
-			&MockRoutingEngine{},
-		)
+		reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+			Client:        fakeClient,
+			APIReader:     fakeClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			Timeouts:      prodcontroller.TimeoutConfig{},
+			RoutingEngine: &MockRoutingEngine{},
+		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: "test-rr-escalated", Namespace: "default"},
@@ -466,13 +493,16 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 			WithStatusSubresource(&remediationv1.RemediationRequest{}).
 			Build()
 
-		reconciler := prodcontroller.NewReconciler(
-			fakeClient, fakeClient, scheme,
-			nil, recorder,
-			rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
-			&MockRoutingEngine{},
-		)
+		reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+			Client:        fakeClient,
+			APIReader:     fakeClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			Timeouts:      prodcontroller.TimeoutConfig{Global: 1 * time.Hour},
+			RoutingEngine: &MockRoutingEngine{},
+		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: "test-rr-notif", Namespace: "default"},
@@ -515,13 +545,16 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 			},
 		}
 
-		reconciler := prodcontroller.NewReconciler(
-			fakeClient, fakeClient, scheme,
-			nil, recorder,
-			rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			prodcontroller.TimeoutConfig{},
-			mockRouting,
-		)
+		reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+			Client:        fakeClient,
+			APIReader:     fakeClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			Timeouts:      prodcontroller.TimeoutConfig{},
+			RoutingEngine: mockRouting,
+		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: "test-rr-cooldown", Namespace: "default"},
@@ -562,13 +595,16 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 			},
 		}
 
-		reconciler := prodcontroller.NewReconciler(
-			fakeClient, fakeClient, scheme,
-			nil, recorder,
-			rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			prodcontroller.TimeoutConfig{},
-			mockRouting,
-		)
+		reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+			Client:        fakeClient,
+			APIReader:     fakeClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			Timeouts:      prodcontroller.TimeoutConfig{},
+			RoutingEngine: mockRouting,
+		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: "test-rr-consec", Namespace: "default"},
@@ -598,13 +634,16 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 			WithStatusSubresource(&remediationv1.RemediationRequest{}).
 			Build()
 
-		reconciler := prodcontroller.NewReconciler(
-			fakeClient, fakeClient, scheme,
-			nil, recorder,
-			rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			prodcontroller.TimeoutConfig{},
-			&MockRoutingEngine{},
-		)
+		reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+			Client:        fakeClient,
+			APIReader:     fakeClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			Timeouts:      prodcontroller.TimeoutConfig{},
+			RoutingEngine: &MockRoutingEngine{},
+		})
 
 		// When: Reconcile transitions Pending -> Processing
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{

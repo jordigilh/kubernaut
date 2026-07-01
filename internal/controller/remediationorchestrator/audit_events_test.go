@@ -107,32 +107,32 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 		// Create fake client with status subresource
 		fakeClient = fake.NewClientBuilder().
 			WithScheme(scheme).
-		WithStatusSubresource(
-			&remediationv1.RemediationRequest{},
-			&remediationv1.RemediationApprovalRequest{},
-			&signalprocessingv1.SignalProcessing{},
-			&aianalysisv1.AIAnalysis{},
-			&workflowexecutionv1.WorkflowExecution{},
-		).
-		Build()
+			WithStatusSubresource(
+				&remediationv1.RemediationRequest{},
+				&remediationv1.RemediationApprovalRequest{},
+				&signalprocessingv1.SignalProcessing{},
+				&aianalysisv1.AIAnalysis{},
+				&workflowexecutionv1.WorkflowExecution{},
+			).
+			Build()
 
 		// Create reconciler with mock audit store
 		recorder := record.NewFakeRecorder(20) // DD-EVENT-001: FakeRecorder for K8s event assertions
-		reconciler = prodcontroller.NewReconciler(
-			fakeClient,
-			fakeClient,     // apiReader (same as client for tests)
-			scheme,
-			mockAuditStore, // Use mock audit store
-			recorder,       // DD-EVENT-001: FakeRecorder for K8s event assertions
-			rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()), // DD-METRICS-001: required
-			prodcontroller.TimeoutConfig{
+		reconciler = prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+			Client:     fakeClient,
+			APIReader:  fakeClient, // apiReader (same as client for tests)
+			Scheme:     scheme,
+			AuditStore: mockAuditStore,                                             // Use mock audit store
+			Recorder:   recorder,                                                   // DD-EVENT-001: FakeRecorder for K8s event assertions
+			Metrics:    rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()), // DD-METRICS-001: required
+			Timeouts: prodcontroller.TimeoutConfig{
 				Global:     1 * time.Hour,
 				Processing: 5 * time.Minute,
 				Analyzing:  10 * time.Minute,
 				Executing:  30 * time.Minute,
 			},
-			mockRoutingEngine, // Use mock routing engine
-		)
+			RoutingEngine: mockRoutingEngine, // Use mock routing engine
+		})
 	})
 
 	Context("Phase 3: Audit Event Emission Tests", func() {
@@ -141,22 +141,22 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 			rr := newRemediationRequest("test-rr", "default", "")
 			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
 
-		// Reconcile to initialize phase
-		result, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: "default"},
-		})
-		Expect(err).ToNot(HaveOccurred())
-		Expect(result.RequeueAfter).To(BeNumerically(">", 0))
+			// Reconcile to initialize phase
+			result, err := reconciler.Reconcile(ctx, ctrl.Request{
+				NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: "default"},
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.RequeueAfter).To(BeNumerically(">", 0))
 
-		// Verify lifecycle.started audit event was emitted
-		// Note: Gap #8 also emits lifecycle.created, so filter by event type
-		lifecycleStartedEvents := mockAuditStore.GetEventsByType(roaudit.EventTypeLifecycleStarted)
-		Expect(lifecycleStartedEvents).To(HaveLen(1), "Expected exactly one lifecycle.started event")
-		event := lifecycleStartedEvents[0]
-		Expect(event.EventType).To(Equal(roaudit.EventTypeLifecycleStarted))
-		Expect(event.EventAction).To(Equal("started"))
-		// Use enum type comparison, not string
-		Expect(string(event.EventOutcome)).To(Equal("pending"))
+			// Verify lifecycle.started audit event was emitted
+			// Note: Gap #8 also emits lifecycle.created, so filter by event type
+			lifecycleStartedEvents := mockAuditStore.GetEventsByType(roaudit.EventTypeLifecycleStarted)
+			Expect(lifecycleStartedEvents).To(HaveLen(1), "Expected exactly one lifecycle.started event")
+			event := lifecycleStartedEvents[0]
+			Expect(event.EventType).To(Equal(roaudit.EventTypeLifecycleStarted))
+			Expect(event.EventAction).To(Equal("started"))
+			// Use enum type comparison, not string
+			Expect(string(event.EventOutcome)).To(Equal("pending"))
 		})
 
 		It("AE-7.2: Should emit phase transition event on Pending→Processing", func() {
@@ -398,29 +398,29 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 			// Don't set StartTime - let reconciler initialize it
 			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
 
-		// First reconcile: initializes phase to Pending and emits lifecycle.started + lifecycle.created
-		result, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: "default"},
-		})
-		Expect(err).ToNot(HaveOccurred())
-		Expect(result.RequeueAfter).To(BeNumerically(">", 0))
+			// First reconcile: initializes phase to Pending and emits lifecycle.started + lifecycle.created
+			result, err := reconciler.Reconcile(ctx, ctrl.Request{
+				NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: "default"},
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.RequeueAfter).To(BeNumerically(">", 0))
 
-		// Verify lifecycle.started event was emitted (Gap #8 also emits lifecycle.created)
-		lifecycleStartedEvents := mockAuditStore.GetEventsByType(roaudit.EventTypeLifecycleStarted)
-		Expect(lifecycleStartedEvents).To(HaveLen(1), "Expected lifecycle.started event after initialization")
+			// Verify lifecycle.started event was emitted (Gap #8 also emits lifecycle.created)
+			lifecycleStartedEvents := mockAuditStore.GetEventsByType(roaudit.EventTypeLifecycleStarted)
+			Expect(lifecycleStartedEvents).To(HaveLen(1), "Expected lifecycle.started event after initialization")
 
-		// Second reconcile: transitions from Pending to Processing and emits phase.transitioned
-		result, err = reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: "default"},
-		})
-		Expect(err).ToNot(HaveOccurred())
-		Expect(result.RequeueAfter).To(Equal(5 * time.Second))
+			// Second reconcile: transitions from Pending to Processing and emits phase.transitioned
+			result, err = reconciler.Reconcile(ctx, ctrl.Request{
+				NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: "default"},
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(5 * time.Second))
 
-		// Per DD-AUDIT-003: Should have these events now:
-		// 1. orchestrator.lifecycle.started (first reconcile)
-		// 2. orchestrator.lifecycle.created (first reconcile - Gap #8)
-		// 3. orchestrator.phase.transitioned (Pending→Processing - second reconcile)
-		Expect(mockAuditStore.Events).To(HaveLen(3), "Expected lifecycle.started + lifecycle.created + phase.transitioned events")
+			// Per DD-AUDIT-003: Should have these events now:
+			// 1. orchestrator.lifecycle.started (first reconcile)
+			// 2. orchestrator.lifecycle.created (first reconcile - Gap #8)
+			// 3. orchestrator.phase.transitioned (Pending→Processing - second reconcile)
+			Expect(mockAuditStore.Events).To(HaveLen(3), "Expected lifecycle.started + lifecycle.created + phase.transitioned events")
 		})
 	})
 

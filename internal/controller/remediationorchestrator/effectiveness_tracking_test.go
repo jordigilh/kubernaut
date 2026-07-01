@@ -62,12 +62,16 @@ var _ = Describe("Effectiveness Assessment Tracking (ADR-EM-001, GAP-RO-2)", fun
 	reconcileAndVerify := func(fakeClient client.WithWatch, rrName, namespace string) (ctrl.Result, error) {
 		roMetrics := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
 		recorder := record.NewFakeRecorder(20)
-		reconciler := controller.NewReconciler(
-			fakeClient, fakeClient, scheme,
-			nil, recorder, roMetrics,
-			controller.TimeoutConfig{},
-			&MockRoutingEngine{},
-		)
+		reconciler := controller.NewReconciler(controller.ReconcilerDeps{
+			Client:        fakeClient,
+			APIReader:     fakeClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       roMetrics,
+			Timeouts:      controller.TimeoutConfig{},
+			RoutingEngine: &MockRoutingEngine{},
+		})
 		return reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: rrName, Namespace: namespace},
 		})

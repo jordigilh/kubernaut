@@ -38,14 +38,14 @@ var _ = Describe("RO Config Hot-Reload (#835, DD-INFRA-001)", func() {
 	BeforeEach(func() {
 		scheme := setupScheme()
 		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-		reconciler = controller.NewReconciler(
-			fakeClient,
-			fakeClient,
-			scheme,
-			nil, // audit store
-			nil, // recorder
-			rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			controller.TimeoutConfig{
+		reconciler = controller.NewReconciler(controller.ReconcilerDeps{
+			Client:     fakeClient,
+			APIReader:  fakeClient,
+			Scheme:     scheme,
+			AuditStore: nil, // audit store
+			Recorder:   nil, // recorder
+			Metrics:    rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			Timeouts: controller.TimeoutConfig{
 				Global:           1 * time.Hour,
 				Processing:       5 * time.Minute,
 				Analyzing:        10 * time.Minute,
@@ -53,9 +53,8 @@ var _ = Describe("RO Config Hot-Reload (#835, DD-INFRA-001)", func() {
 				AwaitingApproval: 15 * time.Minute,
 				Verifying:        30 * time.Minute,
 			},
-			&MockRoutingEngine{},
-			nil, // eaCreator
-		)
+			RoutingEngine: &MockRoutingEngine{},
+		}, nil) // eaCreator
 	})
 
 	Context("Thread-safety (UT-RO-835-TS)", func() {

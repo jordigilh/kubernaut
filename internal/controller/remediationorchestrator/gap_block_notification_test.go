@@ -84,13 +84,16 @@ var _ = Describe("BR-ORCH-036 GAP-6: Block reason notifications (#810)", func() 
 			},
 		}
 
-		reconciler := prodcontroller.NewReconciler(
-			fakeClient, fakeClient, scheme,
-			nil, recorder,
-			rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			prodcontroller.TimeoutConfig{},
-			mockRouting,
-		)
+		reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+			Client:        fakeClient,
+			APIReader:     fakeClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			Timeouts:      prodcontroller.TimeoutConfig{},
+			RoutingEngine: mockRouting,
+		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: rrName, Namespace: "default"},
@@ -141,13 +144,16 @@ var _ = Describe("BR-ORCH-036 GAP-6: Block reason notifications (#810)", func() 
 			},
 		}
 
-		reconciler := prodcontroller.NewReconciler(
-			fakeClient, fakeClient, scheme,
-			nil, recorder,
-			rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			prodcontroller.TimeoutConfig{},
-			mockRouting,
-		)
+		reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+			Client:        fakeClient,
+			APIReader:     fakeClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			Timeouts:      prodcontroller.TimeoutConfig{},
+			RoutingEngine: mockRouting,
+		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: rrName, Namespace: "default"},
@@ -194,13 +200,16 @@ var _ = Describe("BR-ORCH-036 GAP-6: Block reason notifications (#810)", func() 
 			},
 		}
 
-		reconciler := prodcontroller.NewReconciler(
-			fakeClient, fakeClient, scheme,
-			nil, recorder,
-			rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			prodcontroller.TimeoutConfig{},
-			mockRouting,
-		)
+		reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+			Client:        fakeClient,
+			APIReader:     fakeClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			Timeouts:      prodcontroller.TimeoutConfig{},
+			RoutingEngine: mockRouting,
+		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: rrName, Namespace: "default"},
@@ -243,13 +252,16 @@ var _ = Describe("BR-ORCH-036 GAP-6: Block reason notifications (#810)", func() 
 			},
 		}
 
-		reconciler := prodcontroller.NewReconciler(
-			fakeClient, fakeClient, scheme,
-			nil, recorder,
-			rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			prodcontroller.TimeoutConfig{},
-			mockRouting,
-		)
+		reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+			Client:        fakeClient,
+			APIReader:     fakeClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			Timeouts:      prodcontroller.TimeoutConfig{},
+			RoutingEngine: mockRouting,
+		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: rrName, Namespace: "default"},
@@ -295,13 +307,16 @@ var _ = Describe("BR-ORCH-036 GAP-6: Block reason notifications (#810)", func() 
 			},
 		}
 
-		reconciler := prodcontroller.NewReconciler(
-			fakeClient, fakeClient, scheme,
-			nil, recorder,
-			rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			prodcontroller.TimeoutConfig{},
-			mockRouting,
-		)
+		reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+			Client:        fakeClient,
+			APIReader:     fakeClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			Timeouts:      prodcontroller.TimeoutConfig{},
+			RoutingEngine: mockRouting,
+		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: rrName, Namespace: "default"},
@@ -346,13 +361,16 @@ var _ = Describe("BR-ORCH-036 GAP-6: Block reason notifications (#810)", func() 
 			},
 		}
 
-		reconciler := prodcontroller.NewReconciler(
-			fakeClient, fakeClient, scheme,
-			nil, recorder,
-			rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			prodcontroller.TimeoutConfig{},
-			mockRouting,
-		)
+		reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+			Client:        fakeClient,
+			APIReader:     fakeClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			Timeouts:      prodcontroller.TimeoutConfig{},
+			RoutingEngine: mockRouting,
+		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: rrName, Namespace: "default"},
@@ -401,13 +419,16 @@ var _ = Describe("BR-ORCH-036 GAP-6: Block reason notifications (#810)", func() 
 			},
 		}
 
-		reconciler := prodcontroller.NewReconciler(
-			fakeClient, fakeClient, scheme,
-			nil, recorder,
-			rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			prodcontroller.TimeoutConfig{},
-			mockRouting,
-		)
+		reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+			Client:        fakeClient,
+			APIReader:     fakeClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			Timeouts:      prodcontroller.TimeoutConfig{},
+			RoutingEngine: mockRouting,
+		})
 
 		// First reconcile
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{

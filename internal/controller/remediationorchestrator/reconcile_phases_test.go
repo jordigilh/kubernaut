@@ -100,21 +100,21 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			// Routing logic is tested separately in integration tests (defense-in-depth)
 			mockRouting := &MockRoutingEngine{}
 			recorder := record.NewFakeRecorder(20) // DD-EVENT-001: FakeRecorder for K8s event assertions
-			reconciler := prodcontroller.NewReconciler(
-				fakeClient,
-				fakeClient, // apiReader (same as client for tests)
-				scheme,
-				nil,      // Audit store is nil for unit tests (DD-AUDIT-003 compliant)
-				recorder, // DD-EVENT-001: FakeRecorder for K8s event assertions
-				rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()), // DD-METRICS-001: required
-				prodcontroller.TimeoutConfig{
+			reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+				Client:     fakeClient,
+				APIReader:  fakeClient, // apiReader (same as client for tests)
+				Scheme:     scheme,
+				AuditStore: nil,                                                        // Audit store is nil for unit tests (DD-AUDIT-003 compliant)
+				Recorder:   recorder,                                                   // DD-EVENT-001: FakeRecorder for K8s event assertions
+				Metrics:    rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()), // DD-METRICS-001: required
+				Timeouts: prodcontroller.TimeoutConfig{
 					Global:     1 * time.Hour,
 					Processing: 5 * time.Minute,
 					Analyzing:  10 * time.Minute,
 					Executing:  30 * time.Minute,
 				},
-				mockRouting, // Mock routing engine for unit tests
-			)
+				RoutingEngine: mockRouting, // Mock routing engine for unit tests
+			})
 
 			// When: Reconcile the RemediationRequest
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
@@ -808,21 +808,21 @@ var _ = Describe("UT-RO-214-010: CapturePreRemediationHash API error soft-fail (
 
 		mockRouting := &MockRoutingEngine{}
 		recorder := record.NewFakeRecorder(20)
-		reconciler := prodcontroller.NewReconciler(
-			fakeClient,
-			apiReader,
-			scheme,
-			nil,
-			recorder,
-			rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			prodcontroller.TimeoutConfig{
+		reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+			Client:     fakeClient,
+			APIReader:  apiReader,
+			Scheme:     scheme,
+			AuditStore: nil,
+			Recorder:   recorder,
+			Metrics:    rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			Timeouts: prodcontroller.TimeoutConfig{
 				Global:     1 * time.Hour,
 				Processing: 5 * time.Minute,
 				Analyzing:  10 * time.Minute,
 				Executing:  30 * time.Minute,
 			},
-			mockRouting,
-		)
+			RoutingEngine: mockRouting,
+		})
 		reconciler.SetRESTMapper(newTestRESTMapper())
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{

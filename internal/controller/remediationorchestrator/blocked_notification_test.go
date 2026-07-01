@@ -79,13 +79,16 @@ var _ = Describe("Issue #803: handleBlocked NotificationRequest Creation", Label
 			},
 		}
 
-		reconciler := prodcontroller.NewReconciler(
-			fakeClient, fakeClient, scheme,
-			nil, recorder,
-			rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			prodcontroller.TimeoutConfig{},
-			mockRouting,
-		)
+		reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+			Client:        fakeClient,
+			APIReader:     fakeClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			Timeouts:      prodcontroller.TimeoutConfig{},
+			RoutingEngine: mockRouting,
+		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: "test-rr-803-003", Namespace: "default"},
@@ -144,13 +147,16 @@ var _ = Describe("Issue #803: handleBlocked NotificationRequest Creation", Label
 			},
 		}
 
-		reconciler := prodcontroller.NewReconciler(
-			fakeClient, fakeClient, scheme,
-			nil, recorder,
-			rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			prodcontroller.TimeoutConfig{},
-			mockRouting,
-		)
+		reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+			Client:        fakeClient,
+			APIReader:     fakeClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			Timeouts:      prodcontroller.TimeoutConfig{},
+			RoutingEngine: mockRouting,
+		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: "test-rr-803-004", Namespace: "default"},
@@ -191,13 +197,16 @@ var _ = Describe("Issue #803: handleBlocked NotificationRequest Creation", Label
 			},
 		}
 
-		reconciler := prodcontroller.NewReconciler(
-			fakeClient, fakeClient, scheme,
-			nil, recorder,
-			rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			prodcontroller.TimeoutConfig{},
-			mockRouting,
-		)
+		reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+			Client:        fakeClient,
+			APIReader:     fakeClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			Timeouts:      prodcontroller.TimeoutConfig{},
+			RoutingEngine: mockRouting,
+		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: "test-rr-803-005", Namespace: "default"},
@@ -242,13 +251,16 @@ var _ = Describe("Issue #803: handleBlocked NotificationRequest Creation", Label
 			},
 		}
 
-		reconciler := prodcontroller.NewReconciler(
-			fakeClient, fakeClient, scheme,
-			nil, recorder,
-			rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			prodcontroller.TimeoutConfig{},
-			mockRouting,
-		)
+		reconciler := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+			Client:        fakeClient,
+			APIReader:     fakeClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			Timeouts:      prodcontroller.TimeoutConfig{},
+			RoutingEngine: mockRouting,
+		})
 
 		// First reconcile
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
