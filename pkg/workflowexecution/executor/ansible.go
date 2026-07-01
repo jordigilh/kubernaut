@@ -59,24 +59,44 @@ type CredentialTypeInjectors struct {
 	Env  map[string]string `json:"env,omitempty"`
 }
 
-// AWXClient defines the interface for AWX/AAP REST API operations.
-// Mocked in unit tests; real implementation provided by AWXHTTPClient.
-type AWXClient interface {
+// AWXJobClient defines AWX/AAP job-template operations: launching jobs
+// (with or without injected credentials), polling/cancelling, and template
+// lookup. Split out from AWXClient for ISP (GO-ANTIPATTERN-AUDIT-2026-07-01
+// Phase 5).
+type AWXJobClient interface {
 	LaunchJobTemplate(ctx context.Context, templateID int, extraVars map[string]interface{}) (int, error)
+	LaunchJobTemplateWithCreds(ctx context.Context, templateID int, extraVars map[string]interface{}, credentialIDs []int) (int, error)
 	GetJobStatus(ctx context.Context, jobID int) (*AWXJobStatus, error)
 	CancelJob(ctx context.Context, jobID int) error
 	FindJobTemplateByName(ctx context.Context, name string) (int, error)
+}
 
-	// Credential lifecycle for dependencies.secrets injection (BR-WE-015).
-	// The executor dynamically creates AWX credential types per unique K8s Secret name,
-	// then creates ephemeral credentials per WFE execution and cleans them up after completion.
+// AWXCredentialClient defines AWX/AAP credential-type and credential
+// lifecycle operations for dependencies.secrets injection (BR-WE-015). The
+// executor dynamically creates AWX credential types per unique K8s Secret
+// name, then creates ephemeral credentials per WFE execution and cleans
+// them up after completion. Split out from AWXClient for ISP
+// (GO-ANTIPATTERN-AUDIT-2026-07-01 Phase 5).
+type AWXCredentialClient interface {
 	CreateCredentialType(ctx context.Context, name string, inputs CredentialTypeInputs, injectors CredentialTypeInjectors) (int, error)
 	FindCredentialTypeByName(ctx context.Context, name string) (int, error)
 	FindCredentialTypeByKind(ctx context.Context, kind string, managed bool) (int, error)
 	CreateCredential(ctx context.Context, name string, credTypeID, orgID int, inputs map[string]string) (int, error)
 	DeleteCredential(ctx context.Context, credentialID int) error
-	LaunchJobTemplateWithCreds(ctx context.Context, templateID int, extraVars map[string]interface{}, credentialIDs []int) (int, error)
 	GetJobTemplateCredentials(ctx context.Context, templateID int) ([]int, error)
+}
+
+// AWXClient composes the job and credential role interfaces for
+// AnsibleExecutor's single AWXClient dependency (AWXHTTPClient in
+// production). Kept as a named union — rather than inlining the two
+// interfaces at the call site — so existing implementers/mocks (which
+// already implement every method) need no changes
+// (GO-ANTIPATTERN-AUDIT-2026-07-01 Phase 5; see docs/architecture/audits
+// for rationale). Mocked in unit tests; real implementation provided by
+// AWXHTTPClient.
+type AWXClient interface {
+	AWXJobClient
+	AWXCredentialClient
 }
 
 // AWXJobStatus represents the status response from AWX GET /api/v2/jobs/{id}/
