@@ -57,14 +57,17 @@ const MaxObservationContentLen = 4096
 // shadow evaluations must continue using the parent context so WaitForCompletion
 // can collect results.
 type Observer struct {
-	evaluator        *Evaluator
-	correlationID    string
-	logger           logr.Logger
-	mu               sync.Mutex
-	observations     []Observation
-	wg               sync.WaitGroup
-	stepIdx          atomic.Int64
-	sem              chan struct{}
+	evaluator     *Evaluator
+	correlationID string
+	logger        logr.Logger
+	mu            sync.Mutex
+	observations  []Observation
+	wg            sync.WaitGroup
+	stepIdx       atomic.Int64
+	sem           chan struct{}
+	//nolint:containedctx // ARCH-3: decouples shadow-evaluation cancellation from the
+	// parent investigation context on purpose — reviewed and accepted in
+	// GO-ANTIPATTERN-AUDIT-2026-07-01 §6 (context.Context Stored in Struct Fields).
 	evalCtx          context.Context
 	onSuspicious     func()
 	suspiciousOnce   sync.Once
