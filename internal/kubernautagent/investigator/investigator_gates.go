@@ -35,12 +35,10 @@ func (inv *Investigator) sameKindValidationGate(
 	result *katypes.InvestigationResult,
 	signal katypes.SignalContext,
 	history []llm.Message,
-	tokens *TokenAccumulator,
-	correlationID string,
-	client llm.Client,
-	modelName string,
-	runtimeParams llm.RuntimeParams,
+	llmCtx LLMInvocationContext,
 ) *katypes.InvestigationResult {
+	tokens, correlationID, client, modelName, runtimeParams :=
+		llmCtx.Tokens, llmCtx.CorrelationID, llmCtx.Client, llmCtx.ModelName, llmCtx.RuntimeParams
 	if signal.ResourceKind == "" || result.RemediationTarget.Kind == "" {
 		return result
 	}
@@ -151,12 +149,10 @@ func (inv *Investigator) apiVersionValidationGate(
 	ctx context.Context,
 	result *katypes.InvestigationResult,
 	history []llm.Message,
-	tokens *TokenAccumulator,
-	correlationID string,
-	client llm.Client,
-	modelName string,
-	runtimeParams llm.RuntimeParams,
+	llmCtx LLMInvocationContext,
 ) *katypes.InvestigationResult {
+	tokens, correlationID, client, modelName, runtimeParams :=
+		llmCtx.Tokens, llmCtx.CorrelationID, llmCtx.Client, llmCtx.ModelName, llmCtx.RuntimeParams
 	if inv.scopeResolver == nil {
 		return result
 	}
