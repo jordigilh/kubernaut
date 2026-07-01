@@ -251,6 +251,25 @@ Added `internal/controller/remediationorchestrator/audit_coverage_gaps_test.go` 
 
 ---
 
+## 7d. Phase 3a: `reconciler.go` File Split — ✅ RESOLVED
+
+Split `internal/controller/remediationorchestrator/reconciler.go` (3,435 lines) into 7 same-package files, in leaf-first order, one commit per file, verified after each extraction with `go build ./...`, `go vet ./...` (repo-wide), the full RO Ginkgo suite (376 specs), `gofmt -l`, and `golangci-lint run`. Pure structural moves — zero behavior change, zero public-API change, no test files touched (same-package moves are invisible to Go's symbol resolution).
+
+| File | Contents | Lines |
+|---|---|---|
+| `reconciler.go` (trimmed) | `Reconciler` struct, `TimeoutConfig`/`ReconcilerDeps`, `errPhaseAlreadySet`, `NewReconciler`, `Reconcile`, `SetupWithManager` | 1,023 |
+| `terminal_transitions.go` | `errPhaseConflict`, `transitionToInheritedCompleted`, `transitionToCompletedWithoutVerification`, `transitionToInheritedFailed`, `handleBlocked`, `transitionPhase`, `VerificationDeadlineBuffer`, `transitionToVerifying`, `transitionToFailed`, `handleGlobalTimeout`, `createEffectivenessAssessmentIfNeeded` | 985 |
+| `audit_events.go` | All 14 `emit*Audit` methods (DD-AUDIT-003) + `resolveWorkflowDisplay` | 651 |
+| `timeout_management.go` | Timeout defaults/validation, effective-timeout resolution, phase-timeout detection/handling, `validateTimeoutConfig` | 389 |
+| `notification_creation.go` | `hasNotificationRef`, `ensureNotificationsCreated`, `buildNotificationRef`, `buildTimeoutContext`, `createPhaseTimeoutNotification` | 260 |
+| `pre_remediation_hash.go` | `resolveDualTargets`, `formatRemediationTargetString`, `CapturePreRemediationHash` (exported, cross-package consumer), `resolveConfigMapHashes` | 204 |
+| `config_accessors.go` | `IsTerminalPhase` + `Set*`/`Get*Exported` test-exposure shims | 142 |
+| **Total** | | **3,654** |
+
+**Result**: `reconciler.go` shrank from 3,435 → 1,023 lines (largest remaining file across the split is `terminal_transitions.go` at 985). All 376 Ginkgo specs pass identically before and after every one of the 6 extraction commits; `go build ./...`, `go vet ./...` (repo-wide), `gofmt -l`, and `golangci-lint run` all report zero issues on the final layout. Gateway `server.go` split (Phase 3b) tracked separately below.
+
+---
+
 ## 8. Variable Shadowing — 120 found, mostly low-risk
 
 114/120 are `err` shadowing (`if err := f(); err != nil` repeated in the same scope — the single most common and least dangerous shadow pattern in Go, which is exactly why `govet -shadow` isn't part of default `go vet`). 1 `ctx` shadow, 1 `result`, 1 `username`, 1 `ok`, 1 `isString`. **No goroutine-closure-captures-loop-variable pattern was found** (the genuinely dangerous shadow bug) — none of the 120 hits are in a `for ... go func()` or `for ... defer func()` body.
@@ -279,7 +298,8 @@ Per AGENTS.md, REFACTOR-phase cleanup must not introduce new types/components, m
 | 1 | Mechanical, zero-behavior-change: `prealloc` (13), safe `err`-shadow renames if desired | Very low | 0.5 day | ✅ Done |
 | 2 | Options-pattern extraction for all 21 real 8+-param functions (corrected scope, see §7b) | Low-medium (touches call sites, needs UT re-run) | 2-3 days | ✅ Done |
 | 2.5 | Coverage gate before Phase 3: audit-emission gap closure on `reconciler.go` (see §7c) | Low (additive tests only) | 0.5 day | ✅ Done |
-| 3 | Split `reconciler.go` (3,414→?) and `pkg/gateway/server.go` (2,511→?) into cohesive files following the existing `*_handler.go` pattern already used in RemediationOrchestrator | Medium (large diff, no logic change) | 3-4 days | 🔴 Not started |
+| 3a | Split `reconciler.go` (3,435→1,023 across 7 files, see §7d) into cohesive files following the existing `*_handler.go` pattern already used in RemediationOrchestrator | Medium (large diff, no logic change) | 3-4 days | ✅ Done |
+| 3b | Split `pkg/gateway/server.go` (2,552→?) into cohesive files (HTTP plumbing/construction/audit emission, mirroring the `processing/`/`adapters/`/`k8s/`/`middleware/` subpackage split already in Gateway) | Medium (large diff, no logic change) | 1-2 days | 🔴 Not started |
 | 4 | Decompose the top complexity offenders: `buildEventData` (88), `HandleWatch` (cognitive 133), `Config.Validate` ×2, `main()` in `cmd/kubernautagent` and `cmd/apifrontend` | Medium-high (behavior-preserving refactor of dense logic, needs careful UT coverage first) | 5-7 days | 🔴 Not started |
 | 5 | Interface segregation for `AutonomousSessionManager` (13 methods) and `AWXClient` (11 methods) | Medium (ripples to all implementers/mocks) | 2-3 days | 🔴 Not started |
 
