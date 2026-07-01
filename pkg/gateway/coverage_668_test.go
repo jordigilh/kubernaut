@@ -326,10 +326,16 @@ var _ = Describe("UT-GW-668-006: Gateway Processing Errors (BR-GATEWAY-012)", fu
 		startTime := time.Now().Add(-50 * time.Millisecond)
 		underlying := errors.New("conflict")
 
-		crdErr := processing.NewCRDCreationError(
-			"fp-xyz", "prod-ns", "rr-pod-crash-xyz", "prometheus-alert", "HighMemory",
-			3, startTime, underlying,
-		)
+		crdErr := processing.NewCRDCreationError(processing.CRDCreationErrorParams{
+			Fingerprint: "fp-xyz",
+			Namespace:   "prod-ns",
+			CRDName:     "rr-pod-crash-xyz",
+			SignalType:  "prometheus-alert",
+			SignalName:  "HighMemory",
+			Attempts:    3,
+			StartTime:   startTime,
+			Err:         underlying,
+		})
 		Expect(crdErr.Error()).To(ContainSubstring("create_remediation_request failed"))
 		Expect(crdErr.Error()).To(ContainSubstring("crd_name=rr-pod-crash-xyz"))
 		Expect(crdErr.Error()).To(ContainSubstring("signal_type=prometheus-alert"))
