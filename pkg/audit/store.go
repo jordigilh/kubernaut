@@ -100,17 +100,20 @@ type DataStorageClient interface {
 // DD-AUDIT-002 V2.0: Updated to use OpenAPI types directly
 // DD-AUDIT-002 V3.0: Removed client-side DLQ (over-engineered, server-side DLQ sufficient)
 type BufferedAuditStore struct {
-	buffer     chan *ogenclient.AuditEventRequest
-	flushChan  chan chan error // Channel to signal flush request and receive completion
-	client     DataStorageClient
-	logger     logr.Logger
-	config     Config
-	metrics    MetricsLabels
-	done       chan struct{}
-	wg         sync.WaitGroup
-	closed     int32 // Atomic flag to prevent double-close
-	ctx        context.Context    // Store-scoped context for retry loop cancellation
-	ctxCancel  context.CancelFunc // Cancel function for store-scoped context
+	buffer    chan *ogenclient.AuditEventRequest
+	flushChan chan chan error // Channel to signal flush request and receive completion
+	client    DataStorageClient
+	logger    logr.Logger
+	config    Config
+	metrics   MetricsLabels
+	done      chan struct{}
+	wg        sync.WaitGroup
+	closed    int32 // Atomic flag to prevent double-close
+	//nolint:containedctx // store-scoped lifecycle context for the background retry/flush
+	// loop, not a request-scoped context — reviewed and accepted in
+	// GO-ANTIPATTERN-AUDIT-2026-07-01 §6 (context.Context Stored in Struct Fields).
+	ctx       context.Context
+	ctxCancel context.CancelFunc // Cancel function for store-scoped context
 
 	// Metrics (atomic counters for thread-safe access)
 	bufferedCount    int64
@@ -415,17 +418,17 @@ func (s *BufferedAuditStore) backgroundWriter() {
 				bufferUtilizationBeforeFlush := len(s.buffer)
 				timeSinceLastFlush := time.Since(lastFlushTime)
 
-			s.logger.V(2).Info("📦 Batch-full flush triggered",
-				"batch_size", batchSizeBeforeFlush,
-				"buffer_utilization", bufferUtilizationBeforeFlush,
-				"time_since_last_flush", timeSinceLastFlush)
-			s.writeBatchWithRetry(batch)
-			lastFlushTime = time.Now()
-			batch = batch[:0] // Reset batch
-			s.logger.V(2).Info("✅ Batch-full flush completed",
-				"flushed_count", batchSizeBeforeFlush,
-				"batch_size_after_flush", len(batch),
-				"buffer_utilization_after_flush", len(s.buffer))
+				s.logger.V(2).Info("📦 Batch-full flush triggered",
+					"batch_size", batchSizeBeforeFlush,
+					"buffer_utilization", bufferUtilizationBeforeFlush,
+					"time_since_last_flush", timeSinceLastFlush)
+				s.writeBatchWithRetry(batch)
+				lastFlushTime = time.Now()
+				batch = batch[:0] // Reset batch
+				s.logger.V(2).Info("✅ Batch-full flush completed",
+					"flushed_count", batchSizeBeforeFlush,
+					"batch_size_after_flush", len(batch),
+					"buffer_utilization_after_flush", len(s.buffer))
 			}
 
 		case tickTime := <-ticker.C:
@@ -600,19 +603,19 @@ func (s *BufferedAuditStore) writeBatchWithRetry(batch []*ogenclient.AuditEventR
 				continue
 			}
 
-		// Final failure after max retries
-		atomic.AddInt64(&s.failedBatchCount, 1)
+			// Final failure after max retries
+			atomic.AddInt64(&s.failedBatchCount, 1)
 
-		// DD-AUDIT-002 V3.0: Transport failures indicate infrastructure problem
-		// Server-side DLQ (in DataStorage) handles persistence failures
-		// Client-side audit loss is acceptable for transport failures (fix infrastructure)
-		s.logger.Error(err, "AUDIT DATA LOSS: Dropping batch after max retries (infrastructure unavailable)",
-			"batch_size", len(batch),
-			"max_retries", s.config.MaxRetries,
-			"error_type", "transport_failure",
-			"mitigation", "Fix DataStorage connectivity - ensure service is running and reachable",
-		)
-		return
+			// DD-AUDIT-002 V3.0: Transport failures indicate infrastructure problem
+			// Server-side DLQ (in DataStorage) handles persistence failures
+			// Client-side audit loss is acceptable for transport failures (fix infrastructure)
+			s.logger.Error(err, "AUDIT DATA LOSS: Dropping batch after max retries (infrastructure unavailable)",
+				"batch_size", len(batch),
+				"max_retries", s.config.MaxRetries,
+				"error_type", "transport_failure",
+				"mitigation", "Fix DataStorage connectivity - ensure service is running and reachable",
+			)
+			return
 		}
 
 		// Success
