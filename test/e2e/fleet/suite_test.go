@@ -118,20 +118,39 @@ func postWithFleetAuth(url, contentType string, body io.Reader) (*http.Response,
 	return http.DefaultClient.Do(req)
 }
 
+// fmcSyncTimeout bounds the retry window for postFleetAlertUntilAccepted.
+//
+// Root cause (Issue #54 SOC2 gap RCA, CI run 28495045499): every fleet E2E
+// alert carries a non-empty cluster label, so Gateway's scope check
+// (pkg/gateway/server.go validateScope) routes through
+// pkg/fleet.FederatedScopeChecker.IsManagedResource, which for non-empty
+// ClusterID ALWAYS delegates to the remote FleetMetadataCache (FMC) HTTP
+// backend (pkg/fleet/fmc/http_client.go) -- never the local K8s informer
+// cache (pkg/shared/scope/manager.go), which only applies to empty
+// ClusterID (hub-local) signals.
+//
+// FMC does not watch resources live: pkg/fleet/fmc/syncer.go polls every
+// registered cluster (via MCP tools, one List call per resource kind) on a
+// fixed ticker and writes results to Valkey; the HTTP scope-check endpoint
+// only ever answers from that cache. The e2e fleetmetadatacache-config
+// ConfigMap (test/infrastructure/fleet_e2e.go) sets sync.interval=10s, so a
+// resource created/labeled by a test immediately before posting an alert is
+// only guaranteed to be visible to FMC's scope-check endpoint after the next
+// full sync tick. Because syncAll() iterates every registered cluster
+// (loopback-cluster, prod-east, prod-west) x 6 resource kinds sequentially,
+// a single cycle can itself take non-trivial wall time, so worst-case
+// staleness exceeds the nominal 10s interval. 45s gives ~2 sync cycles of
+// margin; a 15s window (the previous value) was measured insufficient and
+// caused persistent "resource not managed by Kubernaut" rejections for the
+// full retry window. Rejected responses have no side effects (no RR is
+// created), so retrying the POST is safe.
+const fmcSyncTimeout = 45 * time.Second
+
 // postFleetAlertUntilAccepted posts a Prometheus alert payload to the Gateway and
 // retries while the response status is not one of acceptableStatus (defaults to
-// 201 Created).
-//
-// Issue #54 flakiness fix: this absorbs the eventual-consistency window between a
-// test creating/labeling a target resource via k8sClient and Gateway's own
-// watch-based informer cache (BR-SCOPE-001, ADR-053) observing that write.
-// Gateway's scope check (pkg/shared/scope/manager.go) reads from its cache, not
-// directly from the API server, so a signal sent immediately after fixture
-// creation can transiently see a stale (pre-creation/pre-label) cache and reject
-// a correctly-labeled resource with "unmanaged_resource" (HTTP 200) until the
-// watch event propagates -- typically well under a second, but not bounded.
-// Rejected responses have no side effects (no RR is created), so retrying the
-// POST is safe.
+// 201 Created). See fmcSyncTimeout for why the retry window must exceed FMC's
+// sync interval.
+
 func postFleetAlertUntilAccepted(gatewayURL string, payload []byte, acceptableStatus ...int) (int, []byte) {
 	if len(acceptableStatus) == 0 {
 		acceptableStatus = []int{http.StatusCreated}
@@ -151,7 +170,7 @@ func postFleetAlertUntilAccepted(gatewayURL string, payload []byte, acceptableSt
 		statusCode, respBody = resp.StatusCode, body
 		g.Expect(acceptableStatus).To(ContainElement(resp.StatusCode),
 			"Gateway should accept the alert (body: %s)", string(body))
-	}, 15*time.Second, 500*time.Millisecond).Should(Succeed())
+	}, fmcSyncTimeout, 1*time.Second).Should(Succeed())
 	return statusCode, respBody
 }
 
