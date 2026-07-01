@@ -1030,15 +1030,18 @@ func waitForAuthenticatedMCPGateway(writer io.Writer) error {
 // call against the loopback-cluster MCPServerRegistration, returning nil only on
 // a genuinely successful (non-error) MCP response.
 //
-// Queries Node (cluster-scoped, unfiltered) rather than mirroring FMC's actual
-// kubernaut.ai/managed=true-filtered queries: this probe runs during
+// Queries Pod across all namespaces (unfiltered) rather than mirroring FMC's
+// actual kubernaut.ai/managed=true-filtered queries: this probe runs during
 // infrastructure setup, before any test has labeled a resource, so a
 // label-filtered query would legitimately return zero items. kube-mcp-server
 // (with --list-output=yaml) omits structuredContent for empty result sets, and
 // pkg/fleet/mcpclient.Client.List requires it -- an empty-but-successful result
 // would otherwise be indistinguishable from an unconverged AuthPolicy here.
-// Node always has at least one item (the Kind control-plane node) and exercises
-// the identical OAuth2 -> Kuadrant -> kube-mcp-server round trip FMC depends on.
+// Pod is always non-empty in a Kind cluster (kube-system's coredns/kube-proxy)
+// and, unlike Node, is included in kube-mcp-server's bound "view" ClusterRole
+// (the built-in "view" role does not grant list access to cluster-scoped Node
+// resources -- confirmed by a prior run of this probe against Node, which
+// failed with a clear RBAC "forbidden" error, not a convergence timeout).
 func probeAuthenticatedResourcesList(tokenCfg DexFleetTokenConfig) error {
 	token, err := GetDexClientCredentialsToken(tokenCfg)
 	if err != nil {
@@ -1063,12 +1066,12 @@ func probeAuthenticatedResourcesList(tokenCfg DexFleetTokenConfig) error {
 	defer func() { _ = mcpConn.Close() }()
 
 	list := &unstructured.UnstructuredList{}
-	list.SetGroupVersionKind(schema.GroupVersionKind{Version: "v1", Kind: "NodeList"})
+	list.SetGroupVersionKind(schema.GroupVersionKind{Version: "v1", Kind: "PodList"})
 	if err := mcpConn.List(ctx, list); err != nil {
 		return fmt.Errorf("authenticated resources_list call: %w", err)
 	}
 	if len(list.Items) == 0 {
-		return fmt.Errorf("authenticated resources_list call: succeeded but returned zero Nodes (unexpected)")
+		return fmt.Errorf("authenticated resources_list call: succeeded but returned zero Pods (unexpected)")
 	}
 	return nil
 }
