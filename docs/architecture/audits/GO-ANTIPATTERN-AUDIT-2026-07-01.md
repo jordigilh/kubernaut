@@ -116,7 +116,9 @@ Top 20 by **cognitive complexity** (closer to human-perceived difficulty than cy
 
 `Config.Validate` appearing twice in the top 10 (DataStorage and KubernautAgent) suggests the same anti-pattern repeated: one big validation function instead of composing smaller per-field/per-section validators.
 
-Full ranked list (149 functions over complexity 15): `/tmp/gocyclo_report.txt` (regenerate with the command in Methodology).
+**✅ RESOLVED (Phase 4, see §7f)** for the 5 functions actually in Phase 4's approved scope: `buildEventData` 88→2 (registry pattern, DD-AUDIT-008), `HandleWatch` 51→18, `main` (KubernautAgent) 70→43, and both `Config.Validate` implementations decomposed into per-section validators (DataStorage 56→9, KubernautAgent 47→8). `run` (apifrontend, not in this table but decomposed alongside KubernautAgent's `main` per the roadmap's Phase 4 description) 50→41. `HandleInvestigationMCPWithRegistry`, `newPhaseGuard`, `handleSubscribe`, `validateParameters`, `MergeAuditData`, `reconcilePending`, and `(*Reconciler).Reconcile` were **not** in Phase 4's approved scope and remain open — none of them dropped below complexity 30 as a side effect (see §7f's re-run table).
+
+Full ranked list (149 functions over complexity 15): `/tmp/gocyclo_report.txt` (regenerate with the command in Methodology; now stale post-Phase-4 — see §7f for current top offenders).
 
 ---
 
@@ -288,6 +290,43 @@ Split `pkg/gateway/server.go` (2,552 lines) into 6 same-package files, in leaf-f
 
 ---
 
+## 7f. Phase 4: Decompose the Top Complexity Offenders — ✅ RESOLVED
+
+Per AGENTS.md's Wiring-First TDD / coverage-before-refactor mandate, each target was preceded by a coverage check; two had real gaps that were closed with new UT before the refactor (§7f-0). All five decompositions are pure extract-method/extract-type refactors — no behavior change, no new exported types beyond what each target needed for its own decomposition, and no production wiring changed (`cmd/` entry points still call the same functions with the same signatures externally).
+
+### 7f-0. Coverage gate: DataStorage `(*Config).Validate`
+
+`pkg/datastorage/config/config.go`'s `Validate()` sat at 61.8% coverage (`-coverpkg=./pkg/datastorage/config/...`), with the production-only (`Environment: "production"`) branches for SC-8 (TLS enforcement) and AC-4 (auth-token requirement), the Redis TLS `CAFile`-exists check, and 7 duration-parse error branches all unexercised. Added `pkg/datastorage/config_production_security_test.go` with new Ginkgo specs mapped to **SC-8**, **AC-4**, and **SI-10** control objectives (per BR-AUDIT-005/ADR-034's control-mapping mandate), each asserting the specific business rule (e.g. "production + TLS disabled → rejected", "production + no auth token configured → rejected", "Redis TLS enabled + CAFile path does not exist → rejected") rather than just executing the line. Coverage rose to 80.6% (`go test ./pkg/datastorage/ -run TestDataStorageUnit -coverpkg=./pkg/datastorage/config/...`); KubernautAgent's `(*Config).Validate` already had adequate existing coverage and needed no new tests.
+
+### 7f-1. `(*Config).Validate` ×2 — decomposed into per-section validators
+
+| Function | File | Before | After |
+|---|---|---|---|
+| `(*Config).Validate` | `pkg/datastorage/config/config.go` | cyclomatic 56 | 9 (dispatches to `validateServer`, `validateDatabase`, `validateRedis`, `validateAudit`, `validateProduction`(SC-8/AC-4), `validateReconstruction`) |
+| `(*Config).Validate` | `internal/kubernautagent/config/config.go` | cyclomatic 47 | 8 (dispatches to 5 per-section validators covering LLM/tools/session/audit/production settings) |
+
+Each private validator returns a plain `error`; `Validate()` itself is now a flat sequence of `if err := v.validateX(); err != nil { return err }` calls — identical error messages and ordering preserved (characterization-tested by the pre-existing + new §7f-0 specs, all of which pass unchanged).
+
+### 7f-2. `buildEventData` — registry pattern (DD-AUDIT-008)
+
+`internal/kubernautagent/audit/ds_store.go`'s `buildEventData` (cyclomatic 88, cognitive 117 — the single worst function in the repo) was a 29-case type-switch mapping `AuditEvent.EventType` to one of 29 typed `ogenclient.AuditEventRequestEventData` payload variants. Per user decision (registry pattern over "extract helpers, keep the switch"), replaced the switch with an `eventDataBuilders map[string]eventDataBuilder` lookup table plus 29 extracted `build<EventType>Payload` functions — one per case, each a flat struct-literal builder with zero branching. `buildEventData` itself is now a 2-line map lookup (complexity 2). Full design rationale, alternatives considered, and consequences documented in [DD-AUDIT-008](../decisions/DD-AUDIT-008-audit-event-builder-registry-pattern.md). All 139 existing tests in the package pass unchanged; coverage held at 92%.
+
+### 7f-3. `HandleWatch` — `watchLoopState` + per-event-type handler methods
+
+`pkg/apifrontend/tools/crd_tools.go`'s `HandleWatch` (cyclomatic 51, cognitive 133 — highest cognitive complexity in the repo) ran a `for { select { ... } }` loop over 4 channels (context-done, RemediationRequest watch, RemediationApprovalRequest watch, lazily-started EffectivenessAssessment watch), each case body inlined. Extracted a private `watchLoopState` struct holding the loop's mutable state (`events`, `lastSeenPhase`, `eaCh`, `eaWatcher`, etc.) and three methods — `handleRREvent`, `handleRAREvent`, `handleEAEvent` — one per watched-resource-type case. The lazily-created `eaWatcher`'s lifecycle, previously stopped ad-hoc wherever the loop returned, is now guaranteed via a single `defer state.stopEAWatcher()` right after `state` is constructed. `HandleWatch` complexity: 51→18; no extracted method exceeds 19. Full `pkg/apifrontend` suite passes (one unrelated flaky timing test in `launcher/active_context_registry_test.go` was confirmed pre-existing and unrelated by isolated re-run).
+
+### 7f-4. `cmd/kubernautagent main()` — 4 named builder functions
+
+`main()` (cyclomatic 70) inlined LLM client construction, the shadow-agent alignment stack, the investigation runner (investigator + session store/manager + OGEN server), and hot-reload watcher wiring (certs, LLM runtime config, CA file) into one function body. Extracted `buildLLMClients`, `buildAlignmentStack`, `buildInvestigationRunner` (via an `investigationRunnerParams` struct — the block has too many cross-dependencies for a flat param list, consistent with AGENTS.md's Options-pattern rule), and `wireHotReload`, the last of which returns a single combined cleanup closure `defer`red once in `main()` (same pattern as §7f-3's `stopEAWatcher`). `main()`: 70→43; largest extracted helper (`buildInvestigationRunner`) at 17. Critical `os.Exit(1)`-on-error semantics and all `defer` ordering preserved exactly. Full package test suite passes.
+
+### 7f-5. `cmd/apifrontend run()` — `buildRouterAndServers`
+
+`run()` (cyclomatic 50) inlined chi-router construction, TLS configuration (including hot-reloadable cert and CA-file watchers), and the API/health/metrics `*http.Server` construction. Extracted `buildRouterAndServers` (with a `routerBuildParams` struct, mirroring §7f-4's pattern) which logs the identical failure messages the inline code used to on error and returns them to `run()`, which just does `return 1` (no duplicate logging) — and returns a single cleanup closure stopping both the cert and CA-file watchers, `defer`red once in `run()`. `run()`: 50→41. All 6 existing `cmd/apifrontend` test files pass unchanged.
+
+**Repo-wide verification (Phase 4 exit gate)**: `go build ./...`, `go vet ./...`, `golangci-lint run ./...` (0 new issues — the 7 pre-existing `docs/spikes/` findings predate Phase 4 and are unrelated to any Phase 4 file), and `make test` (full unit-test tier across all services) all green. The one `make test` failure, `test-unit-spike-mcp-stream`, is a pre-existing empty Ginkgo suite in `cmd/spike-mcp-stream` (no `_test.go` files exist in that directory) — unrelated to and untouched by Phase 4. Re-running `gocyclo -over 30` repo-wide post-Phase-4 shows every hand-written function from the original top-20 table that was in scope now below the top offenders; the current top-30 list is dominated entirely by generated ogen client/server code (`pkg/datastorage/ogen-client/*_gen.go`, `pkg/agentclient/*_gen.go` — out of scope, not hand-written) plus a handful of `test/infrastructure/*.go` E2E setup functions and the intentionally-out-of-scope `reconcilePending`/`(*Reconciler).Reconcile`/`newPhaseGuard`/`HandleInvestigationMCPWithRegistry`. Phase 4 is now complete.
+
+---
+
 ## 8. Variable Shadowing — 120 found, mostly low-risk
 
 114/120 are `err` shadowing (`if err := f(); err != nil` repeated in the same scope — the single most common and least dangerous shadow pattern in Go, which is exactly why `govet -shadow` isn't part of default `go vet`). 1 `ctx` shadow, 1 `result`, 1 `username`, 1 `ok`, 1 `isString`. **No goroutine-closure-captures-loop-variable pattern was found** (the genuinely dangerous shadow bug) — none of the 120 hits are in a `for ... go func()` or `for ... defer func()` body.
@@ -318,7 +357,7 @@ Per AGENTS.md, REFACTOR-phase cleanup must not introduce new types/components, m
 | 2.5 | Coverage gate before Phase 3: audit-emission gap closure on `reconciler.go` (see §7c) | Low (additive tests only) | 0.5 day | ✅ Done |
 | 3a | Split `reconciler.go` (3,435→1,023 across 7 files, see §7d) into cohesive files following the existing `*_handler.go` pattern already used in RemediationOrchestrator | Medium (large diff, no logic change) | 3-4 days | ✅ Done |
 | 3b | Split `pkg/gateway/server.go` (2,552→633 across 6 files, see §7e) into cohesive files (HTTP plumbing/construction/audit emission, mirroring the `processing/`/`adapters/`/`k8s/`/`middleware/` subpackage split already in Gateway) | Medium (large diff, no logic change) | 1-2 days | ✅ Done |
-| 4 | Decompose the top complexity offenders: `buildEventData` (88), `HandleWatch` (cognitive 133), `Config.Validate` ×2, `main()` in `cmd/kubernautagent` and `cmd/apifrontend` | Medium-high (behavior-preserving refactor of dense logic, needs careful UT coverage first) | 5-7 days | 🔴 Not started |
+| 4 | Decompose the top complexity offenders: `buildEventData` (88), `HandleWatch` (cognitive 133), `Config.Validate` ×2, `main()` in `cmd/kubernautagent` and `cmd/apifrontend` | Medium-high (behavior-preserving refactor of dense logic, needs careful UT coverage first) | 5-7 days | ✅ Done (see §7f) |
 | 5 | Interface segregation for `AutonomousSessionManager` (13 methods) and `AWXClient` (11 methods) | Medium (ripples to all implementers/mocks) | 2-3 days | 🔴 Not started |
 
 **Not recommended for action**: DTO/data-model "god structs" (category 4a), `context.Context` struct fields (both documented), `any`/`interface{}` usage (spot-checked — the ~849 raw hits are overwhelmingly idiomatic JSON-decoding, `sync.Map`/`singleflight` third-party API signatures, and generic-JSON-passthrough code; no material violations found beyond one worth a look: `BuildTriagePrompt(input TriageInput, rules interface{})` in `pkg/apifrontend/severity/types.go:113`).
