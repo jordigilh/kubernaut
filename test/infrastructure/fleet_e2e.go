@@ -333,6 +333,15 @@ spec:
         - "--toolsets=core"
         - "--stateless"
         - "--list-output=yaml"
+        # Issue #54 RCA (kube-mcp-server intermittently fails all in-cluster K8s
+        # API calls with "the server has asked for the client to provide
+        # credentials" partway through the E2E fleet run -- reproducible in CI
+        # but NOT reproducible locally against an isolated cluster with the same
+        # image, OIDC-patched API server, or matching session-churn load).
+        # --log-level=6 surfaces client-go's REST request/response detail so the
+        # next occurrence's must-gather capture can show the actual HTTP status
+        # and headers behind the generic error instead of just the summary line.
+        - "--log-level=6"
         ports:
         - name: http
           containerPort: 8080
@@ -350,11 +359,11 @@ spec:
           periodSeconds: 10
         resources:
           requests:
-            memory: "16Mi"
-            cpu: "25m"
-          limits:
             memory: "32Mi"
-            cpu: "100m"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "250m"
 ---
 apiVersion: v1
 kind: Service
