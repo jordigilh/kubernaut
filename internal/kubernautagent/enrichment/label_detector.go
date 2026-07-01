@@ -43,16 +43,16 @@ var (
 
 // cnvKinds lists Kubernetes kinds that indicate a CNV/KubeVirt workload.
 var cnvKinds = map[string]bool{
-	"VirtualMachine":                 true,
-	"VirtualMachineInstance":         true,
+	"VirtualMachine":                  true,
+	"VirtualMachineInstance":          true,
 	"VirtualMachineInstanceMigration": true,
-	"DataVolume":                     true,
+	"DataVolume":                      true,
 }
 
 // provisionerToBackend maps known CSI provisioner strings to canonical backend names.
 var provisionerToBackend = map[string]string{
-	"topolvm.io":                     "lvms",
-	"kubernetes.io/no-provisioner":   "local",
+	"topolvm.io":                   "lvms",
+	"kubernetes.io/no-provisioner": "local",
 }
 
 // LabelDetector detects cluster infrastructure characteristics for a resource.
@@ -113,7 +113,13 @@ func (d *LabelDetector) DetectLabels(ctx context.Context, kind, name, namespace 
 	d.detectNetworkPolicy(ctx, rootNS, result, &failed)
 	quotaSummary := d.detectResourceQuota(ctx, rootNS, result, &failed)
 
-	d.detectCNV(ctx, kind, ownerChain, rootKind, rootName, rootNS, result, &failed)
+	d.detectCNV(ctx, cnvDetectionTarget{
+		TargetKind: kind,
+		OwnerChain: ownerChain,
+		RootKind:   rootKind,
+		RootName:   rootName,
+		RootNS:     rootNS,
+	}, result, &failed)
 
 	if len(failed) > 0 {
 		result.FailedDetections = failed
@@ -477,23 +483,33 @@ func (d *LabelDetector) detectResourceQuota(ctx context.Context, namespace strin
 	return summarizeQuotas(list.Items)
 }
 
+// cnvDetectionTarget groups the owner-chain identifiers needed by detectCNV.
+// Extracted per AGENTS.md's 8+-param Options-pattern rule.
+type cnvDetectionTarget struct {
+	TargetKind string
+	OwnerChain []OwnerChainEntry
+	RootKind   string
+	RootName   string
+	RootNS     string
+}
+
 // detectCNV orchestrates CNV/KubeVirt label detection (#1378). A RESTMapper
 // pre-check verifies that the VirtualMachine CRD is registered; if not, all
 // 4 CNV detections are skipped without adding FailedDetections entries (CRD
 // absence is expected on non-CNV clusters).
-func (d *LabelDetector) detectCNV(ctx context.Context, targetKind string, ownerChain []OwnerChainEntry, rootKind, rootName, rootNS string, result *DetectedLabels, failed *[]string) {
+func (d *LabelDetector) detectCNV(ctx context.Context, target cnvDetectionTarget, result *DetectedLabels, failed *[]string) {
 	if !d.cnvAvailable() {
 		return
 	}
 
-	detectVirtualMachine(targetKind, ownerChain, result)
+	detectVirtualMachine(target.TargetKind, target.OwnerChain, result)
 	if !result.VirtualMachine {
 		return
 	}
 
-	d.detectLiveMigratable(ctx, rootKind, rootName, rootNS, result, failed)
+	d.detectLiveMigratable(ctx, target.RootKind, target.RootName, target.RootNS, result, failed)
 
-	pvcs := d.listNamespacePVCs(ctx, rootNS, failed)
+	pvcs := d.listNamespacePVCs(ctx, target.RootNS, failed)
 	detectCDIManaged(pvcs, result)
 	d.detectStorageBackend(ctx, pvcs, result, failed)
 }

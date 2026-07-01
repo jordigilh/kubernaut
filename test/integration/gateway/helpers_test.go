@@ -1345,7 +1345,11 @@ func createGatewayServer(cfg *config.ServerConfig, testLogger logr.Logger, k8sCl
 	// The sharedAuditStore has continuous background flusher across all tests
 	// BR-SCOPE-013: Real scope manager — deny-by-default when nil (integration tests
 	// must label namespaces/resources as managed for signals to be accepted)
-	return gateway.NewServerForTesting(cfg, testLogger, metricsInstance, k8sClient, sharedAuditStore, scope.NewManager(k8sClient), suiteAuthenticator, suiteAuthorizer)
+	return gateway.NewServerForTesting(gateway.ServerTestDeps{
+		Config: cfg, Logger: testLogger, MetricsInstance: metricsInstance,
+		CtrlClient: k8sClient, AuditStore: sharedAuditStore, ScopeChecker: scope.NewManager(k8sClient),
+		Authenticator: suiteAuthenticator, Authorizer: suiteAuthorizer,
+	})
 }
 
 // SignalBuilder provides optional fields for creating test signals
@@ -1515,7 +1519,11 @@ func createGatewayServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger
 	// DD-AUTH-014 + DD-AUDIT-003: Use SHARED audit store from suite_test.go
 	// The sharedAuditStore has continuous background flusher across all tests
 	// BR-SCOPE-013: Real scope manager — deny-by-default when nil
-	return gateway.NewServerForTesting(cfg, logger, metricsInstance, k8sClient, sharedAuditStore, scope.NewManager(k8sClient), suiteAuthenticator, suiteAuthorizer)
+	return gateway.NewServerForTesting(gateway.ServerTestDeps{
+		Config: cfg, Logger: logger, MetricsInstance: metricsInstance,
+		CtrlClient: k8sClient, AuditStore: sharedAuditStore, ScopeChecker: scope.NewManager(k8sClient),
+		Authenticator: suiteAuthenticator, Authorizer: suiteAuthorizer,
+	})
 }
 
 // createPrometheusAlert creates a Prometheus AlertManager webhook payload

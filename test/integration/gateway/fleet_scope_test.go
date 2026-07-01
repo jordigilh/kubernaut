@@ -89,7 +89,11 @@ var _ = Describe("GW Fleet Scope Dispatch (BR-INTEGRATION-065, ADR-065)", Ordere
 		gwConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 		testRegistry := prometheus.NewRegistry()
 		metricsInstance := metrics.NewMetricsWithRegistry(testRegistry)
-		gwServer, err = gateway.NewServerForTesting(gwConfig, testLogger, metricsInstance, k8sClient, sharedAuditStore, federatedChecker, suiteAuthenticator, suiteAuthorizer)
+		gwServer, err = gateway.NewServerForTesting(gateway.ServerTestDeps{
+			Config: gwConfig, Logger: testLogger, MetricsInstance: metricsInstance,
+			CtrlClient: k8sClient, AuditStore: sharedAuditStore, ScopeChecker: federatedChecker,
+			Authenticator: suiteAuthenticator, Authorizer: suiteAuthorizer,
+		})
 		Expect(err).ToNot(HaveOccurred(), "Failed to create Gateway server")
 	})
 
