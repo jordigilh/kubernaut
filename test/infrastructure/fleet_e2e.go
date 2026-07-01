@@ -304,6 +304,36 @@ subjects:
   name: kube-mcp-server
   namespace: %[1]s
 ---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kube-mcp-server-config
+  namespace: %[1]s
+  labels:
+    app: kube-mcp-server
+    component: fleet
+data:
+  # Issue #54 RCA: kube-mcp-server v0.0.63 defaults cluster_auth_mode to
+  # "passthrough", which forwards any incoming Authorization: Bearer header
+  # straight to the Kubernetes API. FMC's syncer authenticates to the Kuadrant
+  # MCP Gateway with a DEX-issued OAuth2 client_credentials JWT (Boundary 1,
+  # ADR-068); Kuadrant/Authorino does not strip that header before proxying to
+  # this backend, so kube-mcp-server was mis-using the gateway-scoped JWT as a
+  # Kubernetes credential, which the API server correctly rejects with 401
+  # ("the server has asked for the client to provide credentials") -- starving
+  # FMC's managed-resource discovery and failing every clusterID-scoped E2E
+  # fleet signal with "not managed by Kubernaut".
+  #
+  # ADR-068 Decision #9 / "Boundary 2: MCP Gateway -> Backend MCP Server"
+  # (docs/architecture/decisions/ADR-068-fleet-federation-architecture.md)
+  # mandates exactly the fix below: "No token delegation -- user/service
+  # identity stops at the gateway; backends act with fixed SA." Setting
+  # cluster_auth_mode=kubeconfig makes kube-mcp-server always use its own
+  # ServiceAccount (bound to ClusterRole "view" above) and ignore any
+  # caller-forwarded Authorization header, matching the documented design.
+  config.toml: |
+    cluster_auth_mode = "kubeconfig"
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -333,18 +363,18 @@ spec:
         - "--toolsets=core"
         - "--stateless"
         - "--list-output=yaml"
-        # Issue #54 RCA (kube-mcp-server intermittently fails all in-cluster K8s
-        # API calls with "the server has asked for the client to provide
-        # credentials" partway through the E2E fleet run -- reproducible in CI
-        # but NOT reproducible locally against an isolated cluster with the same
-        # image, OIDC-patched API server, or matching session-churn load).
-        # --log-level=6 surfaces client-go's REST request/response detail so the
-        # next occurrence's must-gather capture can show the actual HTTP status
-        # and headers behind the generic error instead of just the summary line.
+        - "--config=/etc/kubernetes-mcp-server/config.toml"
+        # --log-level=6 surfaces client-go's REST request/response detail in
+        # must-gather captures, which was instrumental in diagnosing the
+        # passthrough-401 root cause above (Issue #54 RCA).
         - "--log-level=6"
         ports:
         - name: http
           containerPort: 8080
+        volumeMounts:
+        - name: config
+          mountPath: /etc/kubernetes-mcp-server
+          readOnly: true
         readinessProbe:
           httpGet:
             path: /healthz
@@ -364,6 +394,10 @@ spec:
           limits:
             memory: "128Mi"
             cpu: "250m"
+      volumes:
+      - name: config
+        configMap:
+          name: kube-mcp-server-config
 ---
 apiVersion: v1
 kind: Service
