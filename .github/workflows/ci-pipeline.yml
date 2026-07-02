@@ -39,6 +39,13 @@ name: CI Pipeline
 #   - Individual jobs for heterogeneous jobs (E2E with different infra)
 #   - Fail-fast disabled for comprehensive feedback
 #   - Registry image reuse eliminates duplicate builds
+#   - Generated code (controller-gen deepcopy + ogen OpenAPI clients) is
+#     cached via actions/cache, keyed on a hash of its source inputs
+#     (api/**, openapi specs, Makefile). Every job that needs generated code
+#     restores from cache instead of paying the ~25-30s codegen cost, while
+#     staying fully parallel (no shared upstream job / no new critical-path
+#     dependency). First job per commit to reach the step still generates and
+#     seeds the cache for the rest.
 #
 # Authority: [TODO] Create ADR-CI-001 from docs/handoff/TRIAGE_GITHUB_WORKFLOW_OPTIMIZATION_REQUIREMENTS.md
 
@@ -131,7 +138,21 @@ jobs:
           go-version: '1.26.4'
           cache: true
 
-      - name: Generate Go code
+      - name: Cache generated code
+        id: gen-cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            api/*/v1alpha1/zz_generated.deepcopy.go
+            pkg/shared/types/zz_generated.deepcopy.go
+            pkg/agentclient/oas_*.go
+            pkg/datastorage/ogen-client/oas_*.go
+            pkg/datastorage/server/middleware/openapi_spec_data.yaml
+            pkg/audit/openapi_spec_data.yaml
+          key: generated-code-v1-${{ hashFiles('api/**/*.go', 'pkg/shared/types/**/*.go', 'api/openapi/**', 'internal/kubernautagent/api/openapi.json', 'pkg/agentclient/generate.go', 'pkg/datastorage/ogen-client/gen.go', 'Makefile') }}
+
+      - name: Generate Go code (cache miss)
+        if: steps.gen-cache.outputs.cache-hit != 'true'
         run: |
           echo "🔄 Generating Go code (required for linting)..."
           export PATH="${{ github.workspace }}/bin:$PATH"
@@ -246,7 +267,21 @@ jobs:
           go-version: '1.26.4'
           cache: true
 
-      - name: Generate Go code
+      - name: Cache generated code
+        id: gen-cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            api/*/v1alpha1/zz_generated.deepcopy.go
+            pkg/shared/types/zz_generated.deepcopy.go
+            pkg/agentclient/oas_*.go
+            pkg/datastorage/ogen-client/oas_*.go
+            pkg/datastorage/server/middleware/openapi_spec_data.yaml
+            pkg/audit/openapi_spec_data.yaml
+          key: generated-code-v1-${{ hashFiles('api/**/*.go', 'pkg/shared/types/**/*.go', 'api/openapi/**', 'internal/kubernautagent/api/openapi.json', 'pkg/agentclient/generate.go', 'pkg/datastorage/ogen-client/gen.go', 'Makefile') }}
+
+      - name: Generate Go code (cache miss)
+        if: steps.gen-cache.outputs.cache-hit != 'true'
         run: |
           echo "🔄 Generating Go code for tests..."
           export PATH="${{ github.workspace }}/bin:$PATH"
@@ -377,7 +412,21 @@ jobs:
           go-version: '1.26.4'
           cache: true
 
-      - name: Generate required files
+      - name: Cache generated code
+        id: gen-cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            api/*/v1alpha1/zz_generated.deepcopy.go
+            pkg/shared/types/zz_generated.deepcopy.go
+            pkg/agentclient/oas_*.go
+            pkg/datastorage/ogen-client/oas_*.go
+            pkg/datastorage/server/middleware/openapi_spec_data.yaml
+            pkg/audit/openapi_spec_data.yaml
+          key: generated-code-v1-${{ hashFiles('api/**/*.go', 'pkg/shared/types/**/*.go', 'api/openapi/**', 'internal/kubernautagent/api/openapi.json', 'pkg/agentclient/generate.go', 'pkg/datastorage/ogen-client/gen.go', 'Makefile') }}
+
+      - name: Generate required files (cache miss)
+        if: steps.gen-cache.outputs.cache-hit != 'true'
         run: |
           echo "🔄 Generating OpenAPI specs and required files for Docker builds..."
           export PATH="${{ github.workspace }}/bin:$PATH"
@@ -526,7 +575,21 @@ jobs:
           go-version: '1.26.4'
           cache: true
 
-      - name: Generate required files
+      - name: Cache generated code
+        id: gen-cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            api/*/v1alpha1/zz_generated.deepcopy.go
+            pkg/shared/types/zz_generated.deepcopy.go
+            pkg/agentclient/oas_*.go
+            pkg/datastorage/ogen-client/oas_*.go
+            pkg/datastorage/server/middleware/openapi_spec_data.yaml
+            pkg/audit/openapi_spec_data.yaml
+          key: generated-code-v1-${{ hashFiles('api/**/*.go', 'pkg/shared/types/**/*.go', 'api/openapi/**', 'internal/kubernautagent/api/openapi.json', 'pkg/agentclient/generate.go', 'pkg/datastorage/ogen-client/gen.go', 'Makefile') }}
+
+      - name: Generate required files (cache miss)
+        if: steps.gen-cache.outputs.cache-hit != 'true'
         run: |
           echo "🔄 Generating OpenAPI specs and required files for Docker builds..."
           export PATH="${{ github.workspace }}/bin:$PATH"
@@ -738,7 +801,20 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: '1.26.4'
-      - name: Generate OpenAPI specs
+      - name: Cache generated code
+        id: gen-cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            api/*/v1alpha1/zz_generated.deepcopy.go
+            pkg/shared/types/zz_generated.deepcopy.go
+            pkg/agentclient/oas_*.go
+            pkg/datastorage/ogen-client/oas_*.go
+            pkg/datastorage/server/middleware/openapi_spec_data.yaml
+            pkg/audit/openapi_spec_data.yaml
+          key: generated-code-v1-${{ hashFiles('api/**/*.go', 'pkg/shared/types/**/*.go', 'api/openapi/**', 'internal/kubernautagent/api/openapi.json', 'pkg/agentclient/generate.go', 'pkg/datastorage/ogen-client/gen.go', 'Makefile') }}
+      - name: Generate OpenAPI specs (cache miss)
+        if: steps.gen-cache.outputs.cache-hit != 'true'
         run: make generate
       - name: Install Podman
         run: |
@@ -931,7 +1007,20 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: '1.26.4'
-      - name: Generate OpenAPI specs
+      - name: Cache generated code
+        id: gen-cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            api/*/v1alpha1/zz_generated.deepcopy.go
+            pkg/shared/types/zz_generated.deepcopy.go
+            pkg/agentclient/oas_*.go
+            pkg/datastorage/ogen-client/oas_*.go
+            pkg/datastorage/server/middleware/openapi_spec_data.yaml
+            pkg/audit/openapi_spec_data.yaml
+          key: generated-code-v1-${{ hashFiles('api/**/*.go', 'pkg/shared/types/**/*.go', 'api/openapi/**', 'internal/kubernautagent/api/openapi.json', 'pkg/agentclient/generate.go', 'pkg/datastorage/ogen-client/gen.go', 'Makefile') }}
+      - name: Generate OpenAPI specs (cache miss)
+        if: steps.gen-cache.outputs.cache-hit != 'true'
         run: make generate
       - name: Install Podman
         run: |
