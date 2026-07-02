@@ -427,10 +427,11 @@ var _ = Describe("Audit Export Integration Tests - SOC2", func() {
 				// Manually calculate what the hash should be
 				// Hash = SHA256(previous_hash + event_json)
 				// For first event, previous_hash is empty string
-				eventForHashing := *created
-				eventForHashing.EventHash = ""
-				eventForHashing.PreviousEventHash = ""
-				eventForHashing.EventDate = repository.DateOnly{} // Clear generated field
+				//
+				// GAP-05: must use PrepareEventForHashing (not hand-rolled field
+				// clearing) so HashAlgorithm is excluded from the payload exactly
+				// like the production hashing path does.
+				eventForHashing := repository.PrepareEventForHashing(created)
 
 				eventJSON, err := json.Marshal(eventForHashing)
 				Expect(err).ToNot(HaveOccurred())
@@ -488,11 +489,10 @@ var _ = Describe("Audit Export Integration Tests - SOC2", func() {
 				second, err := auditRepo.Create(ctx, event2)
 				Expect(err).ToNot(HaveOccurred())
 
-				// Manually calculate second event's hash
-				eventForHashing := *second
-				eventForHashing.EventHash = ""
-				eventForHashing.PreviousEventHash = ""
-				eventForHashing.EventDate = repository.DateOnly{}
+				// Manually calculate second event's hash.
+				// GAP-05: use PrepareEventForHashing so HashAlgorithm is excluded
+				// from the payload exactly like the production hashing path does.
+				eventForHashing := repository.PrepareEventForHashing(second)
 
 				eventJSON, err := json.Marshal(eventForHashing)
 				Expect(err).ToNot(HaveOccurred())
