@@ -257,6 +257,34 @@ stringData:
 	return caPEMPath, nil
 }
 
+// ReplicateInterServiceCAConfigMap creates the "inter-service-ca" ConfigMap in
+// a cluster from a CA PEM that was already generated elsewhere (e.g. by
+// GenerateInterServiceTLS in the primary cluster) and copied to this
+// cluster's kubeconfig-adjacent path via InterServiceCAPath. Used by remote
+// clusters that must trust inter-service TLS certs signed by the primary
+// cluster's CA without re-running key generation (DD-TEST-013).
+func ReplicateInterServiceCAConfigMap(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) error {
+	caPEMPath := InterServiceCAPath(kubeconfigPath)
+	caPEM, err := os.ReadFile(caPEMPath)
+	if err != nil {
+		return fmt.Errorf("read CA PEM from %s: %w", caPEMPath, err)
+	}
+
+	caConfigMap := fmt.Sprintf(`apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: inter-service-ca
+data:
+  ca.crt: |
+%s`, indentPEM(string(caPEM), 4))
+
+	if err := kubectlApply(ctx, kubeconfigPath, namespace, caConfigMap, writer); err != nil {
+		return fmt.Errorf("create inter-service-ca ConfigMap: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "  ✅ inter-service-ca ConfigMap replicated")
+	return nil
+}
+
 // NewTLSAwareClient creates an HTTP client that trusts the inter-service CA.
 // Used by host-side E2E test code to call HTTPS NodePort endpoints.
 //

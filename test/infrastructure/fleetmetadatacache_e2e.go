@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 )
@@ -55,8 +56,14 @@ const keycloakHostPortFMC = 30557
 // (test/infrastructure/fleet_e2e.go DeployFleetInfra) still uses Dex, since
 // Dex does not implement RFC 8693 Standard Token Exchange.
 //
-// Authority: Issue #54, ADR-068, BR-INTEGRATION-065.
-func SetupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) (fmcImage string, err error) {
+// The returned remoteKubeconfigPath is the second, independent Kind
+// cluster's kubeconfig (DD-TEST-013, Spike S19) backing the "prod-east"
+// registration -- callers (suite_test.go) must populate
+// shared.Harness.RemoteKubeconfigPath/RemoteK8sClient from it and tear that
+// cluster down alongside the primary one in SynchronizedAfterSuite.
+//
+// Authority: Issue #54, ADR-068, BR-INTEGRATION-065, DD-TEST-013.
+func SetupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) (fmcImage, remoteKubeconfigPath string, err error) {
 	return setupFMCE2EInfrastructure(ctx, clusterName, kubeconfigPath, registry.GatewayKuadrant, writer)
 }
 
@@ -72,11 +79,11 @@ func SetupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 // Uses kind-fleetmetadatacache-eaigw-config.yaml (a separate, isolated Kind
 // cluster) so this lane can run alongside the Kuadrant lane in CI without
 // port collisions.
-func SetupFMCE2EInfrastructureEAIGW(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) (fmcImage string, err error) {
+func SetupFMCE2EInfrastructureEAIGW(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) (fmcImage, remoteKubeconfigPath string, err error) {
 	return setupFMCE2EInfrastructure(ctx, clusterName, kubeconfigPath, registry.GatewayEAIGW, writer)
 }
 
-func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath string, gatewayType registry.MCPGatewayType, writer io.Writer) (fmcImage string, err error) {
+func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath string, gatewayType registry.MCPGatewayType, writer io.Writer) (fmcImage, remoteKubeconfigPath string, err error) {
 	gatewayLabel := "Kuadrant MCP Gateway"
 	kindConfigPath := "test/infrastructure/kind-fleetmetadatacache-config.yaml"
 	mcpGatewayNodePort := 31975
@@ -112,7 +119,7 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 	}
 	fmcImage, err = BuildImageForKind(buildCfg, writer)
 	if err != nil {
-		return "", fmt.Errorf("fleetmetadatacache image build failed: %w", err)
+		return "", "", fmt.Errorf("fleetmetadatacache image build failed: %w", err)
 	}
 	_, _ = fmt.Fprintf(writer, "  ✅ FleetMetadataCache image built: %s\n", fmcImage)
 
@@ -129,17 +136,17 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 		ProjectRootAsWorkingDir: true, // DD-TEST-007: For ./coverdata resolution
 	}
 	if clusterErr := CreateKindClusterWithConfig(opts, writer); clusterErr != nil {
-		return "", fmt.Errorf("failed to create Kind cluster: %w", clusterErr)
+		return "", "", fmt.Errorf("failed to create Kind cluster: %w", clusterErr)
 	}
 
 	if nsErr := createTestNamespace(namespace, kubeconfigPath, writer); nsErr != nil {
-		return "", fmt.Errorf("failed to create namespace: %w", nsErr)
+		return "", "", fmt.Errorf("failed to create namespace: %w", nsErr)
 	}
 
 	// ── Phase 3: Load image into Kind ────────────────────────────────────
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 3: Loading image into Kind...")
 	if loadErr := LoadImageToKind(fmcImage, "fleetmetadatacache", clusterName, writer); loadErr != nil {
-		return "", fmt.Errorf("failed to load fleetmetadatacache image: %w", loadErr)
+		return "", "", fmt.Errorf("failed to load fleetmetadatacache image: %w", loadErr)
 	}
 
 	// ── Phase 4: Inter-service TLS (must precede Keycloak) ───────────────
@@ -148,13 +155,13 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 	// not deploy DataStorage (FMC is audit-exempt, DD-AUDIT-003).
 	_, _ = fmt.Fprintln(writer, "\n🔐 PHASE 4: Generating inter-service TLS...")
 	if _, tlsErr := GenerateInterServiceTLS(ctx, kubeconfigPath, namespace, writer); tlsErr != nil {
-		return "", fmt.Errorf("failed to generate inter-service TLS: %w", tlsErr)
+		return "", "", fmt.Errorf("failed to generate inter-service TLS: %w", tlsErr)
 	}
 
 	// ── Phase 5: Keycloak OIDC + token-exchange provider (must be ready before API server OIDC patch) ─
 	_, _ = fmt.Fprintln(writer, "\n🔑 PHASE 5: Deploying Keycloak OIDC provider...")
 	if kcErr := DeployKeycloakInfra(ctx, namespace, kubeconfigPath, keycloakHostPortFMC, writer); kcErr != nil {
-		return "", fmt.Errorf("failed to deploy Keycloak: %w", kcErr)
+		return "", "", fmt.Errorf("failed to deploy Keycloak: %w", kcErr)
 	}
 
 	// ── Phase 6: Patch API server for OIDC (needs Keycloak already running) ──
@@ -171,7 +178,34 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 		UsernamePrefix: "keycloak:",
 	}
 	if oidcErr := patchAPIServerForOIDCConfig(ctx, clusterName, kubeconfigPath, oidcCfg, writer); oidcErr != nil {
-		return "", fmt.Errorf("API server OIDC patching failed: %w", oidcErr)
+		return "", "", fmt.Errorf("API server OIDC patching failed: %w", oidcErr)
+	}
+
+	// ── Phase 6b: Provision remote cluster for cross-cluster isolation ──
+	// Backs "prod-east" with a genuinely separate Kubernetes control plane
+	// (DD-TEST-013, Spike S19) instead of the loopback pattern every other
+	// registered cluster uses. Must run after Phase 5 (Keycloak up) and
+	// Phase 6 (primary cluster exists, for its node bridge IP), and before
+	// Phase 7 builds the primary's kube-mcp-server auth config with
+	// RemoteBridge set.
+	_, _ = fmt.Fprintln(writer, "\n🌍 PHASE 6b: Provisioning remote cluster (cross-cluster isolation, DD-TEST-013)...")
+	remoteClusterName := clusterName + "-remote"
+	remoteKubeconfigPath = filepath.Join(filepath.Dir(kubeconfigPath), remoteClusterName+"-config")
+	remoteKubeMCPAuthConfig := KubeMCPServerAuthConfig{
+		Mode:             KubeMCPServerAuthModePassthrough,
+		GatewayType:      gatewayType,
+		RequireOAuth:     true,
+		AuthorizationURL: "https://keycloak:8443/realms/kubernaut-fleet",
+		OAuthAudience:    "kube-mcp-server",
+		StsClientID:      "kube-mcp-server",
+		StsClientSecret:  "e2e-kube-mcp-server-secret",
+		StsAudience:      "k8s-api",
+		StsScopes:        []string{"k8s-api-audience"},
+		CAFilePath:       "/etc/tls-ca/ca.crt",
+	}
+	remoteBridge, remoteErr := SetupRemoteClusterForFMC(ctx, clusterName, kubeconfigPath, remoteClusterName, remoteKubeconfigPath, namespace, oidcCfg.IssuerURL, keycloakHostPortFMC, remoteKubeMCPAuthConfig, writer)
+	if remoteErr != nil {
+		return "", "", fmt.Errorf("remote cluster provisioning failed: %w", remoteErr)
 	}
 
 	// ── Phase 7: Fleet core (Istio + Kuadrant + kube-mcp-server + Valkey + FMC) ─
@@ -205,6 +239,7 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 		StsAudience:      "k8s-api",
 		StsScopes:        []string{"k8s-api-audience"},
 		CAFilePath:       "/etc/tls-ca/ca.crt",
+		RemoteBridge:     remoteBridge,
 	}
 
 	// Only Kuadrant needs a static broker credential: its broker maintains
@@ -221,13 +256,13 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 			Scopes:        fmcOAuth2Config.Scopes,
 		})
 		if brokerCredErr != nil {
-			return "", fmt.Errorf("failed to obtain Kuadrant broker's kube-mcp-server discovery credential: %w", brokerCredErr)
+			return "", "", fmt.Errorf("failed to obtain Kuadrant broker's kube-mcp-server discovery credential: %w", brokerCredErr)
 		}
 		kubeMCPAuthConfig.BrokerCredentialToken = brokerCredToken
 	}
 
 	if coreErr := DeployFleetCoreInfra(ctx, namespace, kubeconfigPath, fmcImage, kubeMCPAuthConfig, fmcOAuth2Config, writer); coreErr != nil {
-		return "", fmt.Errorf("fleet-core infra deployment failed: %w", coreErr)
+		return "", "", fmt.Errorf("fleet-core infra deployment failed: %w", coreErr)
 	}
 
 	// ── Phase 7b: RBAC for the token-exchange-preserved FMC identity ────
@@ -238,7 +273,7 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 	// under cluster_auth_mode=kubeconfig.
 	_, _ = fmt.Fprintln(writer, "\n🔑 PHASE 7b: Creating RBAC for the exchanged FMC identity...")
 	if rbacErr := applyExchangedIdentityRBAC(ctx, kubeconfigPath, writer); rbacErr != nil {
-		return "", fmt.Errorf("exchanged-identity RBAC creation failed: %w", rbacErr)
+		return "", "", fmt.Errorf("exchanged-identity RBAC creation failed: %w", rbacErr)
 	}
 
 	// Keycloak-based token func for the readiness probe's authenticated
@@ -252,7 +287,7 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 		})
 	}
 	if readyErr := WaitForFleetReady(keycloakFleetReadTokenFunc, mcpGatewayNodePort, loopbackToolPrefix, writer); readyErr != nil {
-		return "", fmt.Errorf("fleet readiness check failed: %w", readyErr)
+		return "", "", fmt.Errorf("fleet readiness check failed: %w", readyErr)
 	}
 
 	// ── Phase 8: Expose FMC's own API via NodePort ───────────────────────
@@ -281,7 +316,7 @@ spec:
     nodePort: 30150
 `, namespace)
 	if npErr := kubectlApplyManifest(ctx, kubeconfigPath, writer, fmcNodePortManifest); npErr != nil {
-		return "", fmt.Errorf("failed to expose FMC API via NodePort: %w", npErr)
+		return "", "", fmt.Errorf("failed to expose FMC API via NodePort: %w", npErr)
 	}
 	_, _ = fmt.Fprintln(writer, "    ✅ FMC API reachable at http://localhost:8150")
 
@@ -290,9 +325,10 @@ spec:
 	_, _ = fmt.Fprintln(writer, "  FMC API:      http://localhost:8150")
 	_, _ = fmt.Fprintf(writer, "  MCP Gateway:  http://localhost:%d/mcp (%s)\n", mcpGatewayNodePort, gatewayLabel)
 	_, _ = fmt.Fprintln(writer, "  Keycloak:     https://localhost:30557/realms/kubernaut-fleet")
+	_, _ = fmt.Fprintf(writer, "  Remote cluster (prod-east): %s\n", remoteClusterName)
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	return fmcImage, nil
+	return fmcImage, remoteKubeconfigPath, nil
 }
 
 // applyExchangedIdentityRBAC binds the K8s identity that survives kube-mcp-server's

@@ -1,0 +1,32 @@
+# Kind cluster configuration for the FMC E2E "remote" cluster (DD-TEST-013).
+#
+# Backs the "prod-east" registration with a genuinely separate Kubernetes
+# control plane, bridged to the primary FMC E2E cluster's real Keycloak over
+# the shared podman "kind" bridge network (no service mesh, no VPN --
+# validated in Spike S19). Shared by both the Kuadrant lane
+# (kind-fleetmetadatacache-config.yaml) and the EAIGW lane
+# (kind-fleetmetadatacache-eaigw-config.yaml) -- each passes its own
+# cluster name (e.g. "fmc-e2e-remote" / "fmc-eaigw-e2e-remote") via
+# KindClusterOptions.ClusterName, so this file needs no per-lane variant.
+#
+# No extraPortMappings: unlike the primary cluster, nothing on the host
+# needs to reach this cluster directly -- all traffic flows node-bridge-IP
+# to node-bridge-IP (KindNodeBridgeIP / CreateServiceBridge in
+# kind_bridge.go), in both directions (Keycloak bridge into this cluster,
+# kube-mcp-server bridge back out of it).
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+  image: kindest/node:v1.34.0@sha256:7416a61b42b1662ca6ca89f02028ac133a309a2a30ba309614e8ec94d976dc5a  # K8s 1.34.0 with containerd 2.1.3 (avoids v2.2.0 mount-manager regression)
+  kubeadmConfigPatches:
+  - |
+    kind: ClusterConfiguration
+    apiServer:
+      extraArgs:
+        max-requests-inflight: "800"
+        max-mutating-requests-inflight: "400"
+    controllerManager:
+      extraArgs:
+        kube-api-qps: "100"
+        kube-api-burst: "200"
