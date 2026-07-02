@@ -222,7 +222,7 @@ explicit `loopback_cluster_`; `WaitForFleetReady` was parameterized by both
 **Result: 11/11 specs GREEN** (`make test-e2e-fleetmetadatacache-eaigw`,
 ~9m40s wall clock), zero regressions in the Kuadrant FMC lane (shared
 `WaitForFleetReady`/`fleet_e2e.go` code paths re-verified via
-`make test-e2e-fleetmetadatacache`).
+`make test-e2e-fleetmetadatacache-kuadrant`).
 
 ## Outcome
 

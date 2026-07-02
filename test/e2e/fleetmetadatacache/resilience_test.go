@@ -63,7 +63,7 @@ func readyzStatus(g Gomega) int {
 // confirms FMC reconnects and resumes writing fresh cache entries once Valkey is
 // scaled back up, WITHOUT requiring FMC's own restart (CP-10: auto-reconstitution).
 //
-// Serial: this suite runs with --procs>1 (Makefile test-e2e-fleetmetadatacache) against
+// Serial: this suite runs with --procs>1 (Makefile test-e2e-fleetmetadatacache-kuadrant) against
 // one shared Kind cluster. Taking Valkey down would corrupt any concurrently-running
 // spec in E2E-FMC-054-010/011 that depends on cache continuity, so this Describe is
 // marked Serial to guarantee no other spec runs while Valkey is down.

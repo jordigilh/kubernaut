@@ -34,7 +34,7 @@ Two interchangeable gateway options sit in the same slot:
 
 | Gateway | Status | Broker component | Registration CRD |
 |---|---|---|---|
-| **Kuadrant MCP Gateway** | Fully automated (`make test-e2e-fleetmetadatacache`) | `mcp-gateway-controller` + `mcp-gateway` (broker) Deployments | `MCPServerRegistration` (`mcp.kuadrant.io/v1alpha1`) |
+| **Kuadrant MCP Gateway** | Fully automated (`make test-e2e-fleetmetadatacache-kuadrant`) | `mcp-gateway-controller` + `mcp-gateway` (broker) Deployments | `MCPServerRegistration` (`mcp.kuadrant.io/v1alpha1`) |
 | **Envoy AI Gateway (EAIGW)** | Fully automated (`make test-e2e-fleetmetadatacache-eaigw`, Spike S18) | None — `MCPRoute.spec.backendRefs` aggregates natively | `Backend` (`gateway.envoyproxy.io/v1alpha1`) + `MCPRoute` (`aigateway.envoyproxy.io/v1beta1`) |
 
 Both variants reuse the **same Keycloak realm** and the **same kube-mcp-server
@@ -61,7 +61,7 @@ what CI runs. This is the fastest way to get a working stack:
 
 ```bash
 # Kuadrant variant — runs the full FMC E2E suite AND leaves the Kind cluster running afterward
-PRESERVE_E2E_CLUSTER=true make test-e2e-fleetmetadatacache
+PRESERVE_E2E_CLUSTER=true make test-e2e-fleetmetadatacache-kuadrant
 
 # Envoy AI Gateway variant — same journeys, EAIGW instead of Kuadrant, separate Kind cluster
 PRESERVE_E2E_CLUSTER=true make test-e2e-fleetmetadatacache-eaigw

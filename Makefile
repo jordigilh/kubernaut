@@ -808,21 +808,21 @@ test-e2e-fleet: ginkgo ensure-coverage-dirs ## Run fleet E2E tests (multi-cluste
 # kube-mcp-server sync pipeline was previously only exercised indirectly via
 # Gateway/RO fleet tests gated behind FLEET_E2E=true (never set in CI).
 # Requires ~450MB RAM (substantially lighter than the "fleet" suite's ~6.1GB).
-.PHONY: test-e2e-fleetmetadatacache
-test-e2e-fleetmetadatacache: ginkgo ensure-coverage-dirs ## Run Fleet Metadata Cache E2E tests (Kind cluster, ~10 min)
+.PHONY: test-e2e-fleetmetadatacache-kuadrant
+test-e2e-fleetmetadatacache-kuadrant: ginkgo ensure-coverage-dirs ## Run Fleet Metadata Cache E2E tests -- Kuadrant variant (Kind cluster, ~10 min)
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 Fleet Metadata Cache E2E Tests (Issue #54)"
+	@echo "🧪 Fleet Metadata Cache E2E Tests -- Kuadrant variant (Issue #54)"
 	@echo "   DataStorage + Keycloak + Fleet Core (Istio/Kuadrant/kube-mcp-server/Valkey/FMC)"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@$(GINKGO) -v --race --timeout=25m --procs=$(TEST_PROCS) ./test/e2e/fleetmetadatacache
-	@echo "✅ Fleet Metadata Cache E2E tests completed!"
+	@echo "✅ Fleet Metadata Cache E2E tests (Kuadrant) completed!"
 
 # Fleet Metadata Cache (FMC) E2E -- Envoy AI Gateway (EAIGW) variant (Issue #54, Spike S18)
-# Sibling of test-e2e-fleetmetadatacache: same DataStorage + Keycloak + FMC
-# journeys, but kube-mcp-server is fronted by Envoy AI Gateway (Envoy Gateway
-# + AI Gateway controller, Backend/MCPRoute CRDs) instead of Kuadrant. Runs in
-# its own Kind cluster (NodePort 31976, DD-TEST-001) so both lanes can run
-# concurrently in CI without port collisions. Nested under
+# Sibling of test-e2e-fleetmetadatacache-kuadrant: same DataStorage + Keycloak
+# + FMC journeys, but kube-mcp-server is fronted by Envoy AI Gateway (Envoy
+# Gateway + AI Gateway controller, Backend/MCPRoute CRDs) instead of Kuadrant.
+# Runs in its own Kind cluster (NodePort 31976, DD-TEST-001) so both lanes can
+# run concurrently in CI without port collisions. Nested under
 # test/e2e/fleetmetadatacache/eaigw/ (not a hyphenated sibling dir) to make
 # the sibling relationship explicit in the package layout -- note the target
 # above deliberately omits the "/..." recursive suffix so it doesn't also
@@ -840,6 +840,9 @@ test-e2e-fleetmetadatacache-eaigw: ginkgo ensure-coverage-dirs ## Run Fleet Meta
 
 .PHONY: test-gateway
 test-gateway: test-integration-gateway ## Legacy alias for Gateway integration tests
+
+.PHONY: test-e2e-fleetmetadatacache
+test-e2e-fleetmetadatacache: test-e2e-fleetmetadatacache-kuadrant ## Legacy alias for the Kuadrant-variant FMC E2E suite (renamed for symmetry with test-e2e-fleetmetadatacache-eaigw)
 
 .PHONY: test
 test: test-tier-unit ## Legacy alias: Run all unit tests
