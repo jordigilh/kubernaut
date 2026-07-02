@@ -45,9 +45,10 @@ limitations under the License.
 //
 //	ginkgo -v ./test/e2e/fleetmetadatacache/eaigw/...
 //
-// Memory footprint: ~2.0-2.8GB (DataStorage + Keycloak + fleet-core w/
-// EAIGW; EAIGW's own footprint (~316MB, Spike S18) is comparable to or
-// lighter than Kuadrant's Istio+controller+broker stack).
+// Memory footprint: ~1.3-1.8GB (Keycloak + fleet-core w/ EAIGW; no
+// DataStorage -- FMC is audit-exempt per DD-AUDIT-003. EAIGW's own footprint
+// (~316MB, Spike S18) is comparable to or lighter than Kuadrant's
+// Istio+controller+broker stack).
 package eaigw
 
 import (
@@ -68,13 +69,11 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
+	"github.com/jordigilh/kubernaut/test/e2e/fleetmetadatacache/shared"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
 const (
-	timeout  = 60 * time.Second
-	interval = 2 * time.Second
-
 	clusterName = "fmc-eaigw-e2e"
 	namespace   = "kubernaut-system"
 
@@ -87,15 +86,15 @@ const (
 	fmcAPIBaseURL = "http://localhost:8150"
 )
 
+// harness carries the state every shared FMC scenario needs (see
+// shared.Harness); its fields are populated below in SynchronizedBeforeSuite.
+var harness = &shared.Harness{
+	Namespace:     namespace,
+	FMCAPIBaseURL: fmcAPIBaseURL,
+}
+
 var (
-	ctx    context.Context
 	cancel context.CancelFunc
-
-	kubeconfigPath string
-
-	k8sClient client.Client
-
-	fmcHTTPClient *http.Client
 
 	anyTestFailed bool
 )
@@ -128,15 +127,15 @@ var _ = SynchronizedBeforeSuite(
 		return []byte(tempKubeconfigPath)
 	},
 	func(data []byte) {
-		kubeconfigPath = string(data)
-		ctx, cancel = context.WithCancel(context.TODO())
+		harness.KubeconfigPath = string(data)
+		harness.Ctx, cancel = context.WithCancel(context.TODO())
 
 		GinkgoWriter.Printf("FMC EAIGW E2E - Setup (Process %d)\n", GinkgoParallelProcess())
 
 		By("Setting KUBECONFIG")
-		Expect(os.Setenv("KUBECONFIG", kubeconfigPath)).To(Succeed())
+		Expect(os.Setenv("KUBECONFIG", harness.KubeconfigPath)).To(Succeed())
 
-		tlsTransport, tlsErr := infrastructure.NewTLSAwareTransport(kubeconfigPath)
+		tlsTransport, tlsErr := infrastructure.NewTLSAwareTransport(harness.KubeconfigPath)
 		Expect(tlsErr).ToNot(HaveOccurred(), "Failed to create TLS-aware transport (Issue #785)")
 		http.DefaultTransport = tlsTransport
 
@@ -145,11 +144,11 @@ var _ = SynchronizedBeforeSuite(
 		Expect(cfgErr).ToNot(HaveOccurred())
 
 		var clientErr error
-		k8sClient, clientErr = client.New(cfg, client.Options{Scheme: scheme.Scheme})
+		harness.K8sClient, clientErr = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 		Expect(clientErr).ToNot(HaveOccurred())
 
 		By("Setting up FMC HTTP client (NodePort 30150, host 8150 per DD-TEST-001)")
-		fmcHTTPClient = &http.Client{Timeout: 20 * time.Second}
+		harness.FMCHTTPClient = &http.Client{Timeout: 20 * time.Second}
 
 		GinkgoWriter.Printf("FMC EAIGW E2E Setup Complete - Process %d ready\n", GinkgoParallelProcess())
 	},
@@ -171,20 +170,20 @@ var _ = SynchronizedAfterSuite(
 	func() {
 		By("Cleaning up FMC EAIGW E2E environment")
 
-		setupFailed := kubeconfigPath == ""
+		setupFailed := harness.KubeconfigPath == ""
 		anyFailure := setupFailed || anyTestFailed || infrastructure.CheckTestFailure(clusterName)
 		defer infrastructure.CleanupFailureMarker(clusterName)
 		preserveCluster := os.Getenv("PRESERVE_E2E_CLUSTER") == "true" || os.Getenv("KEEP_CLUSTER") == "true"
 
 		if preserveCluster {
 			GinkgoWriter.Println("CLUSTER PRESERVED FOR DEBUGGING")
-			GinkgoWriter.Printf("   To access: export KUBECONFIG=%s\n", kubeconfigPath)
+			GinkgoWriter.Printf("   To access: export KUBECONFIG=%s\n", harness.KubeconfigPath)
 			GinkgoWriter.Printf("   To delete: kind delete cluster --name %s\n", clusterName)
 			return
 		}
 
 		if anyFailure && !setupFailed {
-			infrastructure.MustGatherPodLogs(clusterName, kubeconfigPath, namespace, "fleetmetadatacache", GinkgoWriter)
+			infrastructure.MustGatherPodLogs(clusterName, harness.KubeconfigPath, namespace, "fleetmetadatacache", GinkgoWriter)
 
 			// Envoy Gateway (envoy-gateway-system) and the AI Gateway
 			// controller (envoy-ai-gateway-system) are deployed by
@@ -193,7 +192,7 @@ var _ = SynchronizedAfterSuite(
 			// them -- mirrors the Kuadrant lane's mcp-system/gateway-system/
 			// istio-system must-gather (see suite_test.go there).
 			for _, ns := range []string{"envoy-gateway-system", "envoy-ai-gateway-system"} {
-				infrastructure.MustGatherPodLogs(clusterName, kubeconfigPath, ns, "fleetmetadatacache", GinkgoWriter)
+				infrastructure.MustGatherPodLogs(clusterName, harness.KubeconfigPath, ns, "fleetmetadatacache", GinkgoWriter)
 			}
 		}
 
@@ -203,7 +202,7 @@ var _ = SynchronizedAfterSuite(
 				ClusterName:    clusterName,
 				DeploymentName: "fleetmetadatacache",
 				Namespace:      namespace,
-				KubeconfigPath: kubeconfigPath,
+				KubeconfigPath: harness.KubeconfigPath,
 			}, GinkgoWriter); covErr != nil {
 				GinkgoWriter.Printf("Coverage collection failed (non-fatal): %v\n", covErr)
 			}
@@ -215,11 +214,11 @@ var _ = SynchronizedAfterSuite(
 		}
 
 		By("Removing isolated kubeconfig file")
-		if kubeconfigPath != "" {
+		if harness.KubeconfigPath != "" {
 			defaultConfig := os.ExpandEnv("$HOME/.kube/config")
-			if kubeconfigPath != defaultConfig {
-				_ = os.Remove(kubeconfigPath)
-				GinkgoWriter.Printf("Removed kubeconfig: %s\n", kubeconfigPath)
+			if harness.KubeconfigPath != defaultConfig {
+				_ = os.Remove(harness.KubeconfigPath)
+				GinkgoWriter.Printf("Removed kubeconfig: %s\n", harness.KubeconfigPath)
 			}
 		}
 

@@ -117,7 +117,20 @@ target the *same* `HTTPRoute`/backend (single physical Kind cluster), differenti
 only by MCP tool-name prefix. This validates the multi-cluster *code path* but cannot
 prove genuine cross-cluster data isolation (a resource "leaking" as managed across two
 truly separate API servers). A dedicated second Kind cluster with real cross-cluster
-networking would be required to close that specific gap; deferred as a follow-up.
+networking would be required to close that specific gap; deferred as a follow-up
+(feasibility already assessed as resource-wise viable -- ~1.1-1.3GB vs. the `fleet`
+suite's 6.1GB budget -- with the open question being Kuadrant's same-cluster-backend
+assumption, which needs a NodePort + cross-cluster Service/EndpointSlice bridge; the
+Keycloak-migration precondition for this follow-up spike is now satisfied).
+
+**Shared scenario implementation**: the Kuadrant and EAIGW lanes' Describe/It bodies
+are gateway-agnostic and live once in `test/e2e/fleetmetadatacache/shared/`
+(`sync_journey.go`, `least_privilege.go`, `resilience.go`,
+`dynamic_registration.go`, `token_exchange.go`), parameterized by a `shared.Variant`
+implementation per lane. Each `*_test.go` file listed in the tables below is a thin
+(~5-line) wiring file that registers the shared scenario with that lane's variant;
+the only gateway-specific code lives in each lane's own `variant.go` (dynamic
+cluster-resource CRD factory + RBAC checks).
 
 ---
 
@@ -125,8 +138,9 @@ networking would be required to close that specific gap; deferred as a follow-up
 
 `test/e2e/fleetmetadatacache/eaigw/` is the Envoy AI Gateway sibling of the Kuadrant
 FMC E2E lane above (Spike S18, `docs/spikes/multi-cluster-mcp-gateway/spike-s18-envoy-ai-gateway-e2e/`):
-same DataStorage + Keycloak + kube-mcp-server + Valkey + FMC stack and the same
-passthrough+STS RFC 8693 token-exchange design, but kube-mcp-server is fronted by
+same Keycloak + kube-mcp-server + Valkey + FMC stack (no DataStorage -- FMC is
+audit-exempt per DD-AUDIT-003) and the same passthrough+STS RFC 8693 token-exchange
+design, but kube-mcp-server is fronted by
 Envoy AI Gateway (Envoy Gateway + AI Gateway layer, `Backend`/`MCPRoute` CRDs) instead
 of Kuadrant (Istio + controller + broker + `MCPServerRegistration`). The RFC 8693
 exchange itself lives entirely inside kube-mcp-server and needed zero gateway-specific
