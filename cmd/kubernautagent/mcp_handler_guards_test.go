@@ -43,25 +43,25 @@ func TestBuildMCPHandler_Guards(t *testing.T) {
 	}{
 		{
 			name:   "nil infra",
-			params: mcpHandlerParams{ctx: context.Background(), infra: nil, authMw: validAuthMw, inv: validInv, logger: logr.Discard()},
+			params: mcpHandlerParams{infra: nil, authMw: validAuthMw, inv: validInv, logger: logr.Discard()},
 		},
 		{
 			name:   "infra with nil kubeConfig",
-			params: mcpHandlerParams{ctx: context.Background(), infra: &k8sInfra{}, authMw: validAuthMw, inv: validInv, logger: logr.Discard()},
+			params: mcpHandlerParams{infra: &k8sInfra{}, authMw: validAuthMw, inv: validInv, logger: logr.Discard()},
 		},
 		{
 			name:   "nil auth middleware (DD-AUTH-MCP-001)",
-			params: mcpHandlerParams{ctx: context.Background(), infra: validInfra, authMw: nil, inv: validInv, logger: logr.Discard()},
+			params: mcpHandlerParams{infra: validInfra, authMw: nil, inv: validInv, logger: logr.Discard()},
 		},
 		{
 			name:   "nil investigator (SEC-05)",
-			params: mcpHandlerParams{ctx: context.Background(), infra: validInfra, authMw: validAuthMw, inv: nil, logger: logr.Discard()},
+			params: mcpHandlerParams{infra: validInfra, authMw: validAuthMw, inv: nil, logger: logr.Discard()},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handler, drainer := buildMCPHandler(tt.params)
+			handler, drainer := buildMCPHandler(context.Background(), tt.params)
 			if handler != nil {
 				t.Errorf("expected nil handler, got %v", handler)
 			}

@@ -324,9 +324,9 @@ func main() {
 	// This leads to 10-15 second delay between test creation and first reconciliation.
 	// Solution: Custom check that verifies manager's cache sync status.
 	cacheSyncCheck := func(_ *http.Request) error {
-		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		checkCtx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 		defer cancel()
-		if synced := mgr.GetCache().WaitForCacheSync(ctx); !synced {
+		if synced := mgr.GetCache().WaitForCacheSync(checkCtx); !synced {
 			return fmt.Errorf("controller caches not yet synced")
 		}
 		return nil

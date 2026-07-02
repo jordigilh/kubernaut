@@ -319,7 +319,7 @@ func (c *Config) LoadSecrets() error {
 	// Optional: Override username from secret if key specified
 	if c.Database.UsernameKey != "" {
 		if username, ok := dbSecrets[c.Database.UsernameKey]; ok {
-			if usernameStr, isString := username.(string); isString {
+			if usernameStr, usernameIsString := username.(string); usernameIsString {
 				c.Database.User = usernameStr
 			} else {
 				return fmt.Errorf("database username key '%s' in secret file is not a string",
