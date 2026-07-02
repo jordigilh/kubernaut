@@ -90,9 +90,9 @@ func (s *pinSubmitClient) Close() error { return nil }
 
 var _ = Describe("PinDecorator — C-1 LLMProxy Bypass Fix", func() {
 	var (
-		signal   katypes.SignalContext
-		store    *gateRecordingAuditStore
-		logger   = logr.Discard()
+		signal katypes.SignalContext
+		store  *gateRecordingAuditStore
+		logger = logr.Discard()
 	)
 
 	BeforeEach(func() {
