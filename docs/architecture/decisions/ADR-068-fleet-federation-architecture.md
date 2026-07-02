@@ -1451,9 +1451,10 @@ fields for services that need remote K8s reads via the MCP Gateway.
 - Spike S8: Real K8s MCP Server with envtest
 - Spike S9: ScopeChecker interface redesign
 - Spike S10: K8s MCP Server CRD support
-- Spike S11: Envoy AI Gateway evaluation (2026-06-25) — validated `__` prefix convention, standalone mode, memory footprint, CEL auth
 - Spike S15: Kuadrant tool discovery (2026-06-27) — validated `discover_tools`/`select_tools` response format, `--discovery-tool-threshold` behavior, tool prefix conventions. Designed `GatewayDiscoverer` interface for two-phase LLM-efficient tool discovery.
 - Spike S16: structuredContent validation (2026-06-29) — validated kube-mcp-server PR #1232 `structuredContent` against live Kind cluster with Kuadrant MCP Gateway. Established `--list-output=yaml` as hard deployment requirement (Decision #12).
+- Spike S17: Live Keycloak Standard Token Exchange Validation (2026-07-01) — proved single-realm/single-instance RFC 8693 exchange against Keycloak 26.6.4, confirming `kube-mcp-server`'s existing `keycloak-v1` strategy wire shape.
+- Spike S18: Envoy AI Gateway real Kind E2E validation (2026-07-02, `docs/spikes/multi-cluster-mcp-gateway/spike-s18-envoy-ai-gateway-e2e/`) — validated Helm-installed EAIGW controller (`GatewayClass`/`Gateway`/`Backend`/`MCPRoute`/`SecurityPolicy.oauth`) end-to-end against Keycloak + kube-mcp-server, multi-backend tool-prefix aggregation, and dynamic generated-Service resolution. Supersedes the standalone-container EAIGW evaluation previously (and incorrectly) cited here as "Spike S11" — that label collides with the unrelated `spike-s11-we-remote-execution`; the standalone-container coverage lives on as `IT-FLEET-EAIGW-001`.
 
 ### Backend-Specific Documentation
 

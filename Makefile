@@ -814,8 +814,27 @@ test-e2e-fleetmetadatacache: ginkgo ensure-coverage-dirs ## Run Fleet Metadata C
 	@echo "🧪 Fleet Metadata Cache E2E Tests (Issue #54)"
 	@echo "   DataStorage + Keycloak + Fleet Core (Istio/Kuadrant/kube-mcp-server/Valkey/FMC)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v --race --timeout=25m --procs=$(TEST_PROCS) ./test/e2e/fleetmetadatacache/...
+	@$(GINKGO) -v --race --timeout=25m --procs=$(TEST_PROCS) ./test/e2e/fleetmetadatacache
 	@echo "✅ Fleet Metadata Cache E2E tests completed!"
+
+# Fleet Metadata Cache (FMC) E2E -- Envoy AI Gateway (EAIGW) variant (Issue #54, Spike S18)
+# Sibling of test-e2e-fleetmetadatacache: same DataStorage + Keycloak + FMC
+# journeys, but kube-mcp-server is fronted by Envoy AI Gateway (Envoy Gateway
+# + AI Gateway controller, Backend/MCPRoute CRDs) instead of Kuadrant. Runs in
+# its own Kind cluster (NodePort 31976, DD-TEST-001) so both lanes can run
+# concurrently in CI without port collisions. Nested under
+# test/e2e/fleetmetadatacache/eaigw/ (not a hyphenated sibling dir) to make
+# the sibling relationship explicit in the package layout -- note the target
+# above deliberately omits the "/..." recursive suffix so it doesn't also
+# pick up this nested suite.
+.PHONY: test-e2e-fleetmetadatacache-eaigw
+test-e2e-fleetmetadatacache-eaigw: ginkgo ensure-coverage-dirs ## Run Fleet Metadata Cache E2E tests with Envoy AI Gateway (Kind cluster, ~10 min)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 Fleet Metadata Cache E2E Tests -- Envoy AI Gateway variant (Issue #54)"
+	@echo "   DataStorage + Keycloak + Fleet Core (Envoy AI Gateway/kube-mcp-server/Valkey/FMC)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@$(GINKGO) -v --race --timeout=25m --procs=$(TEST_PROCS) ./test/e2e/fleetmetadatacache/eaigw/...
+	@echo "✅ Fleet Metadata Cache E2E tests (Envoy AI Gateway) completed!"
 
 ##@ Legacy Aliases (Backward Compatibility)
 

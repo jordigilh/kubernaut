@@ -54,7 +54,7 @@ Tests in this plan provide behavioral assurance for the following NIST 800-53 co
 | UT-FLEET-SCOPE-002 | UT | [SC-8] Token request includes only the configured scopes and correct grant type, preventing credential scope escalation | SC-8 | BR-INTEGRATION-054 | `pkg/fleet/mcpclient/auth_scope_test.go` |
 | IT-SP-054-OAuth2 | IT | [SC-7] SP authenticates to the MCP Gateway before accessing remote cluster data, proving boundary protection is enforced for every cross-cluster call | SC-7 | BR-INTEGRATION-054 | `test/integration/signalprocessing/fleet/sp_fleet_auth_test.go` |
 | IT-FLEET-006 | IT | [AC-6] Service scopes are operator-configurable (not hardcoded), enabling least-privilege enforcement per deployment | AC-6 | BR-INTEGRATION-065 | `test/integration/kubernautagent/fleet/fleet_wiring_test.go` |
-| IT-FLEET-EAIGW-001 | IT | [SC-7] All remote cluster tool calls are routed through the gateway chokepoint with per-cluster namespace isolation | SC-7 | BR-INTEGRATION-054 | `test/integration/kubernautagent/fleet/fleet_eaigw_test.go` |
+| IT-FLEET-EAIGW-001 | IT | [SC-7] All remote cluster tool calls are routed through the gateway chokepoint with per-cluster namespace isolation | SC-7 | BR-INTEGRATION-054 | `test/integration/fleetmetadatacache/fleet_eaigw_test.go` |
 | IT-FLEET-DEXCC-001 | IT | [AC-3] IdP issues service identity tokens with role-bearing claims that distinguish read-only from write-capable services | AC-3 | BR-INTEGRATION-054 | `test/integration/kubernautagent/fleet/fleet_dex_cc_test.go` |
 | IT-FLEET-AUTH-REJECT-001 | IT | [AC-3] Unauthorized callers are rejected at the gateway boundary and the client surfaces the denial (not silent pass-through) | AC-3 | BR-INTEGRATION-065 | `test/integration/kubernautagent/fleet/fleet_wiring_test.go` |
 | E2E-FLEET-SP-001 | E2E | [SC-7] Fleet infrastructure deploys with the gateway as the sole entry point for remote cluster access | SC-7 | BR-INTEGRATION-054 | `test/e2e/signalprocessing/fleet_infra_test.go` |
@@ -121,6 +121,31 @@ networking would be required to close that specific gap; deferred as a follow-up
 
 ---
 
+### Fleet Metadata Cache (FMC) E2E Lane -- Envoy AI Gateway (EAIGW) variant
+
+`test/e2e/fleetmetadatacache/eaigw/` is the Envoy AI Gateway sibling of the Kuadrant
+FMC E2E lane above (Spike S18, `docs/spikes/multi-cluster-mcp-gateway/spike-s18-envoy-ai-gateway-e2e/`):
+same DataStorage + Keycloak + kube-mcp-server + Valkey + FMC stack and the same
+passthrough+STS RFC 8693 token-exchange design, but kube-mcp-server is fronted by
+Envoy AI Gateway (Envoy Gateway + AI Gateway layer, `Backend`/`MCPRoute` CRDs) instead
+of Kuadrant (Istio + controller + broker + `MCPServerRegistration`). The RFC 8693
+exchange itself lives entirely inside kube-mcp-server and needed zero gateway-specific
+changes -- only the edge routing/OAuth validation layer differs (ADR-068 Decision #9).
+
+Runs in its own isolated Kind cluster
+(`test/infrastructure/kind-fleetmetadatacache-eaigw-config.yaml`, NodePort 31976 per
+DD-TEST-001) so both lanes can run in CI without port collisions.
+
+| ID | Tier | Business-Level Behavior Description | Control | BR | Test File |
+|----|------|-------------------------------------|---------|-----|-----------|
+| E2E-FMC-EAIGW-054-010 | E2E | [SC-7, AC-3] FMC discovers `loopback-cluster`/`prod-east`/`prod-west` via real `Backend` CRD discovery and marks a `kubernaut.ai/managed=true` Service as managed after a real Keycloak+EnvoyAIGateway+kube-mcp-server (RFC 8693 token exchange) sync cycle | SC-7, AC-3 | BR-INTEGRATION-065 | `test/e2e/fleetmetadatacache/eaigw/sync_journey_test.go` |
+| E2E-FMC-EAIGW-054-011 | E2E | [SC-7, AC-6] FMC's scope-check API fails closed for unlabeled resources and unregistered clusters, stops reporting a resource as managed once its label is removed and the cache entry lapses, and FMC's own ServiceAccount is restricted to read-only `gateway.envoyproxy.io/backends` RBAC | SC-7, AC-6 | BR-INTEGRATION-065 | `test/e2e/fleetmetadatacache/eaigw/least_privilege_test.go` |
+| E2E-FMC-EAIGW-054-012 | E2E | [SI-4, CP-10] FMC's `/readyz` genuinely degrades to 503 when the real Valkey dependency fails, then auto-recovers and resumes writing fresh cache entries once Valkey self-heals, without requiring FMC's own restart | SI-4, CP-10 | BR-INTEGRATION-065 | `test/e2e/fleetmetadatacache/eaigw/resilience_test.go` |
+| E2E-FMC-EAIGW-054-013 | E2E | [SI-4, CM-6] FMC's cluster registry reacts live to a real `Backend` CRD being created and deleted (no `MCPRoute`/broker indirection), without disturbing the fixed cluster set | SI-4, CM-6 | BR-INTEGRATION-065 | `test/e2e/fleetmetadatacache/eaigw/dynamic_registration_test.go` |
+| E2E-FMC-EAIGW-054-014 | E2E | [AC-6] kube-mcp-server performs a real RFC 8693 Standard Token Exchange against Keycloak (subject token audienced for kube-mcp-server -> exchanged token audienced for k8s-api), and the real Kubernetes API server honors the exchanged token while rejecting the un-exchanged subject token, proving the exchange step is a real security boundary rather than an inert passthrough | AC-6 | BR-INTEGRATION-065 | `test/e2e/fleetmetadatacache/eaigw/token_exchange_test.go` |
+
+---
+
 ## Coverage Targets
 
 | Tier | Target | Projected |
@@ -136,15 +161,15 @@ networking would be required to close that specific gap; deferred as a follow-up
 
 | Control | Covered By |
 |---------|-----------|
-| AC-3 (Access enforcement) | IT-FLEET-DEXCC-001, IT-FLEET-AUTH-REJECT-001, UT-FLEET-RES-006, UT-WE-054-003, E2E-FMC-054-010 |
-| AC-6 (Least privilege) | IT-FLEET-006, E2E-FMC-054-011, E2E-FMC-054-014 |
+| AC-3 (Access enforcement) | IT-FLEET-DEXCC-001, IT-FLEET-AUTH-REJECT-001, UT-FLEET-RES-006, UT-WE-054-003, E2E-FMC-054-010, E2E-FMC-EAIGW-054-010 |
+| AC-6 (Least privilege) | IT-FLEET-006, E2E-FMC-054-011, E2E-FMC-054-014, E2E-FMC-EAIGW-054-011, E2E-FMC-EAIGW-054-014 |
 | AU-3 (Audit content) | E2E-SP-054-REMOTE |
-| CM-6 (Configuration change) | E2E-FMC-054-013 |
-| CP-10 (Auto-reconstitution) | E2E-FMC-054-012 |
+| CM-6 (Configuration change) | E2E-FMC-054-013, E2E-FMC-EAIGW-054-013 |
+| CP-10 (Auto-reconstitution) | E2E-FMC-054-012, E2E-FMC-EAIGW-054-012 |
 | IA-5 (Authenticator management) | UT-FLEET-SCOPE-001, UT-SP-054-CFG-001, UT-WE-054-CFG-001, UT-KA-054-CFG-001, UT-FLEET-AUTH-006 |
-| SC-7 (Boundary protection) | IT-SP-054-OAuth2, IT-FLEET-EAIGW-001, E2E-FLEET-SP-001, E2E-SP-054-REMOTE, UT-FLEET-TOOL-001, E2E-FMC-054-010, E2E-FMC-054-011 |
+| SC-7 (Boundary protection) | IT-SP-054-OAuth2, IT-FLEET-EAIGW-001, E2E-FLEET-SP-001, E2E-SP-054-REMOTE, UT-FLEET-TOOL-001, E2E-FMC-054-010, E2E-FMC-054-011, E2E-FMC-EAIGW-054-010, E2E-FMC-EAIGW-054-011 |
 | SC-8 (Transmission confidentiality) | UT-FLEET-SCOPE-002 |
-| SI-4 (Monitoring) | E2E-SP-054-REMOTE, E2E-FMC-054-012, E2E-FMC-054-013 |
+| SI-4 (Monitoring) | E2E-SP-054-REMOTE, E2E-FMC-054-012, E2E-FMC-054-013, E2E-FMC-EAIGW-054-012, E2E-FMC-EAIGW-054-013 |
 | SI-10 (Input validation) | UT-FLEET-PARSE-001, UT-FLEET-PARSE-002 |
 
 ---
