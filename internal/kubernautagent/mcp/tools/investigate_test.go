@@ -79,11 +79,11 @@ func (m *mockSessionManager) getReleased() (string, string) {
 }
 
 type mockInvestigatorRunner struct {
-	response               string
-	err                    error
-	rcaResult              *katypes.InvestigationResult
+	response                string
+	err                     error
+	rcaResult               *katypes.InvestigationResult
 	workflowDiscoveryResult *katypes.InvestigationResult
-	capturedCtx            context.Context
+	capturedCtx             context.Context
 }
 
 func (m *mockInvestigatorRunner) RunInteractiveTurn(ctx context.Context, _ []mcptools.LLMMessage, _ string) (string, error) {
