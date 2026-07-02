@@ -35,8 +35,8 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/metrics"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
-	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 )
 
 // InvestigationRunner abstracts the investigation entry point so that
@@ -638,12 +638,47 @@ func synthesizeNilResult(sess *session.Session) *katypes.InvestigationResult {
 
 func mapInvestigationResultToResponse(log logr.Logger, r *katypes.InvestigationResult, incidentID string) *agentclient.IncidentResponse {
 	resp := &agentclient.IncidentResponse{
-		IncidentID: incidentID,
-		Analysis:   r.RCASummary,
-		Confidence: r.Confidence,
-		Timestamp:  time.Now().UTC().Format(time.RFC3339),
+		IncidentID:        incidentID,
+		Analysis:          r.RCASummary,
+		Confidence:        r.Confidence,
+		Timestamp:         time.Now().UTC().Format(time.RFC3339),
+		RootCauseAnalysis: buildRootCauseAnalysis(r),
 	}
 
+	applyHumanReviewFields(resp, log, r)
+
+	if r.WorkflowID != "" {
+		resp.SelectedWorkflow.SetTo(buildSelectedWorkflow(r))
+	}
+
+	if r.IsActionable != nil {
+		resp.IsActionable.SetTo(*r.IsActionable)
+	}
+	resp.Warnings = buildResponseWarnings(r)
+
+	if len(r.DetectedLabels) > 0 {
+		resp.DetectedLabels.SetTo(buildDetectedLabelsResponse(r))
+	}
+
+	if len(r.AlternativeWorkflows) > 0 {
+		resp.AlternativeWorkflows = buildAlternativeWorkflowsResponse(r)
+	}
+
+	if len(r.ValidationAttemptsHistory) > 0 {
+		resp.ValidationAttemptsHistory = buildValidationAttemptsResponse(r)
+	}
+
+	if r.AlignmentVerdict != nil {
+		resp.AlignmentVerdict.SetTo(buildAlignmentVerdictResponse(r))
+	}
+
+	return resp
+}
+
+// buildRootCauseAnalysis maps the RCA-related InvestigationResult fields into
+// the wire-format RootCauseAnalysis map, omitting any field that was never
+// populated by the investigator.
+func buildRootCauseAnalysis(r *katypes.InvestigationResult) agentclient.IncidentResponseRootCauseAnalysis {
 	rca := agentclient.IncidentResponseRootCauseAnalysis{}
 	if r.RCASummary != "" {
 		summaryRaw, _ := json.Marshal(r.RCASummary)
@@ -673,145 +708,160 @@ func mapInvestigationResultToResponse(log logr.Logger, r *katypes.InvestigationR
 		ddRaw, _ := json.Marshal(r.DueDiligence)
 		rca["due_diligence"] = jx.Raw(ddRaw)
 	}
-	resp.RootCauseAnalysis = rca
+	return rca
+}
 
-	if r.HumanReviewNeeded {
-		resp.NeedsHumanReview.SetTo(true)
-		reason := r.HumanReviewReason
-		if reason == "" {
-			reason = r.Reason
-		}
-		mapped, isDefault := mapHumanReviewReason(reason)
-		if isDefault && reason != "" {
-			log.Info("unrecognized human review reason, falling back to investigation_inconclusive",
-				"original_reason", reason)
-		}
-		resp.HumanReviewReason.SetTo(mapped)
-	} else {
+// applyHumanReviewFields sets resp.NeedsHumanReview and, when review is
+// needed, maps the (possibly LLM-provided, possibly unrecognized) reason
+// string to the response's HumanReviewReason enum.
+func applyHumanReviewFields(resp *agentclient.IncidentResponse, log logr.Logger, r *katypes.InvestigationResult) {
+	if !r.HumanReviewNeeded {
 		resp.NeedsHumanReview.SetTo(false)
+		return
 	}
+	resp.NeedsHumanReview.SetTo(true)
+	reason := r.HumanReviewReason
+	if reason == "" {
+		reason = r.Reason
+	}
+	mapped, isDefault := mapHumanReviewReason(reason)
+	if isDefault && reason != "" {
+		log.Info("unrecognized human review reason, falling back to investigation_inconclusive",
+			"original_reason", reason)
+	}
+	resp.HumanReviewReason.SetTo(mapped)
+}
 
-	if r.WorkflowID != "" {
-		sw := agentclient.IncidentResponseSelectedWorkflow{}
-		wfIDRaw, _ := json.Marshal(r.WorkflowID)
-		sw["workflow_id"] = jx.Raw(wfIDRaw)
-		if len(r.Parameters) > 0 {
-			paramsRaw, _ := json.Marshal(r.Parameters)
-			sw["parameters"] = jx.Raw(paramsRaw)
-		}
-		confRaw, _ := json.Marshal(r.Confidence)
-		sw["confidence"] = jx.Raw(confRaw)
-		if r.ExecutionBundle != "" {
-			ebRaw, _ := json.Marshal(r.ExecutionBundle)
-			sw["execution_bundle"] = jx.Raw(ebRaw)
-		}
-		if r.ExecutionBundleDigest != "" {
-			ebdRaw, _ := json.Marshal(r.ExecutionBundleDigest)
-			sw["execution_bundle_digest"] = jx.Raw(ebdRaw)
-		}
-		if r.ExecutionEngine != "" {
-			eeRaw, _ := json.Marshal(r.ExecutionEngine)
-			sw["execution_engine"] = jx.Raw(eeRaw)
-		}
-		if r.ServiceAccountName != "" {
-			saRaw, _ := json.Marshal(r.ServiceAccountName)
-			sw["service_account_name"] = jx.Raw(saRaw)
-		}
-		if r.WorkflowVersion != "" {
-			vRaw, _ := json.Marshal(r.WorkflowVersion)
-			sw["version"] = jx.Raw(vRaw)
-		}
-		if r.WorkflowRationale != "" {
-			rRaw, _ := json.Marshal(r.WorkflowRationale)
-			sw["rationale"] = jx.Raw(rRaw)
-		}
-		resp.SelectedWorkflow.SetTo(sw)
+// buildSelectedWorkflow maps the selected-workflow fields of r into the
+// wire-format SelectedWorkflow map. Callers must check r.WorkflowID != "".
+func buildSelectedWorkflow(r *katypes.InvestigationResult) agentclient.IncidentResponseSelectedWorkflow {
+	sw := agentclient.IncidentResponseSelectedWorkflow{}
+	wfIDRaw, _ := json.Marshal(r.WorkflowID)
+	sw["workflow_id"] = jx.Raw(wfIDRaw)
+	if len(r.Parameters) > 0 {
+		paramsRaw, _ := json.Marshal(r.Parameters)
+		sw["parameters"] = jx.Raw(paramsRaw)
 	}
+	confRaw, _ := json.Marshal(r.Confidence)
+	sw["confidence"] = jx.Raw(confRaw)
+	if r.ExecutionBundle != "" {
+		ebRaw, _ := json.Marshal(r.ExecutionBundle)
+		sw["execution_bundle"] = jx.Raw(ebRaw)
+	}
+	if r.ExecutionBundleDigest != "" {
+		ebdRaw, _ := json.Marshal(r.ExecutionBundleDigest)
+		sw["execution_bundle_digest"] = jx.Raw(ebdRaw)
+	}
+	if r.ExecutionEngine != "" {
+		eeRaw, _ := json.Marshal(r.ExecutionEngine)
+		sw["execution_engine"] = jx.Raw(eeRaw)
+	}
+	if r.ServiceAccountName != "" {
+		saRaw, _ := json.Marshal(r.ServiceAccountName)
+		sw["service_account_name"] = jx.Raw(saRaw)
+	}
+	if r.WorkflowVersion != "" {
+		vRaw, _ := json.Marshal(r.WorkflowVersion)
+		sw["version"] = jx.Raw(vRaw)
+	}
+	if r.WorkflowRationale != "" {
+		rRaw, _ := json.Marshal(r.WorkflowRationale)
+		sw["rationale"] = jx.Raw(rRaw)
+	}
+	return sw
+}
 
-	if r.IsActionable != nil {
-		resp.IsActionable.SetTo(*r.IsActionable)
-	}
+// buildResponseWarnings returns r.Warnings verbatim when set, a synthesized
+// human-review warning (BR-HAPI-197) when review is needed but no warning
+// was set, or an empty (non-nil) slice otherwise.
+func buildResponseWarnings(r *katypes.InvestigationResult) []string {
 	if len(r.Warnings) > 0 {
-		resp.Warnings = r.Warnings
-	} else if r.HumanReviewNeeded {
-		resp.Warnings = []string{synthesizeHumanReviewWarning(r)}
-	} else {
-		resp.Warnings = []string{}
+		return r.Warnings
 	}
-
-	if len(r.DetectedLabels) > 0 {
-		dl := make(agentclient.IncidentResponseDetectedLabels, len(r.DetectedLabels))
-		for k, v := range r.DetectedLabels {
-			raw, _ := json.Marshal(v)
-			dl[k] = jx.Raw(raw)
-		}
-		resp.DetectedLabels.SetTo(dl)
+	if r.HumanReviewNeeded {
+		return []string{synthesizeHumanReviewWarning(r)}
 	}
+	return []string{}
+}
 
-	if len(r.AlternativeWorkflows) > 0 {
-		alts := make([]agentclient.AlternativeWorkflow, 0, len(r.AlternativeWorkflows))
-		for _, aw := range r.AlternativeWorkflows {
-			alt := agentclient.AlternativeWorkflow{
-				WorkflowID: aw.WorkflowID,
-				Confidence: aw.Confidence,
-				Rationale:  aw.Rationale,
-			}
-			if aw.ExecutionBundle != "" {
-				alt.ExecutionBundle.SetTo(aw.ExecutionBundle)
-			}
-			alts = append(alts, alt)
-		}
-		resp.AlternativeWorkflows = alts
+// buildDetectedLabelsResponse maps r.DetectedLabels into the wire format.
+// Callers must check len(r.DetectedLabels) > 0.
+func buildDetectedLabelsResponse(r *katypes.InvestigationResult) agentclient.IncidentResponseDetectedLabels {
+	dl := make(agentclient.IncidentResponseDetectedLabels, len(r.DetectedLabels))
+	for k, v := range r.DetectedLabels {
+		raw, _ := json.Marshal(v)
+		dl[k] = jx.Raw(raw)
 	}
+	return dl
+}
 
-	if len(r.ValidationAttemptsHistory) > 0 {
-		attempts := make([]agentclient.ValidationAttempt, 0, len(r.ValidationAttemptsHistory))
-		for _, va := range r.ValidationAttemptsHistory {
-			attempt := agentclient.ValidationAttempt{
-				Attempt:   va.Attempt,
-				IsValid:   va.IsValid,
-				Errors:    va.Errors,
-				Timestamp: va.Timestamp,
-			}
-			if va.WorkflowID != "" {
-				attempt.WorkflowID.SetTo(va.WorkflowID)
-			}
-			attempts = append(attempts, attempt)
+// buildAlternativeWorkflowsResponse maps r.AlternativeWorkflows into the wire
+// format. Callers must check len(r.AlternativeWorkflows) > 0.
+func buildAlternativeWorkflowsResponse(r *katypes.InvestigationResult) []agentclient.AlternativeWorkflow {
+	alts := make([]agentclient.AlternativeWorkflow, 0, len(r.AlternativeWorkflows))
+	for _, aw := range r.AlternativeWorkflows {
+		alt := agentclient.AlternativeWorkflow{
+			WorkflowID: aw.WorkflowID,
+			Confidence: aw.Confidence,
+			Rationale:  aw.Rationale,
 		}
-		resp.ValidationAttemptsHistory = attempts
+		if aw.ExecutionBundle != "" {
+			alt.ExecutionBundle.SetTo(aw.ExecutionBundle)
+		}
+		alts = append(alts, alt)
 	}
+	return alts
+}
 
-	if r.AlignmentVerdict != nil {
-		av := agentclient.AlignmentVerdict{
-			Result:  agentclient.AlignmentVerdictResult(r.AlignmentVerdict.Result),
-			Flagged: r.AlignmentVerdict.Flagged,
-			Total:   r.AlignmentVerdict.Total,
+// buildValidationAttemptsResponse maps r.ValidationAttemptsHistory into the
+// wire format. Callers must check len(r.ValidationAttemptsHistory) > 0.
+func buildValidationAttemptsResponse(r *katypes.InvestigationResult) []agentclient.ValidationAttempt {
+	attempts := make([]agentclient.ValidationAttempt, 0, len(r.ValidationAttemptsHistory))
+	for _, va := range r.ValidationAttemptsHistory {
+		attempt := agentclient.ValidationAttempt{
+			Attempt:   va.Attempt,
+			IsValid:   va.IsValid,
+			Errors:    va.Errors,
+			Timestamp: va.Timestamp,
 		}
-		if r.AlignmentVerdict.CircuitBreakerActivated {
-			av.CircuitBreakerActivated.SetTo(true)
+		if va.WorkflowID != "" {
+			attempt.WorkflowID.SetTo(va.WorkflowID)
 		}
-		if r.AlignmentVerdict.Summary != "" {
-			av.Summary.SetTo(r.AlignmentVerdict.Summary)
-		}
-		if len(r.AlignmentVerdict.Findings) > 0 {
-			findings := make([]agentclient.AlignmentFinding, 0, len(r.AlignmentVerdict.Findings))
-			for _, f := range r.AlignmentVerdict.Findings {
-				finding := agentclient.AlignmentFinding{
-					StepIndex:   f.StepIndex,
-					StepKind:    agentclient.AlignmentFindingStepKind(f.StepKind),
-					Explanation: f.Explanation,
-				}
-				if f.Tool != "" {
-					finding.Tool.SetTo(f.Tool)
-				}
-				findings = append(findings, finding)
-			}
-			av.Findings = findings
-		}
-		resp.AlignmentVerdict.SetTo(av)
+		attempts = append(attempts, attempt)
 	}
+	return attempts
+}
 
-	return resp
+// buildAlignmentVerdictResponse maps r.AlignmentVerdict into the wire format.
+// Callers must check r.AlignmentVerdict != nil.
+func buildAlignmentVerdictResponse(r *katypes.InvestigationResult) agentclient.AlignmentVerdict {
+	av := agentclient.AlignmentVerdict{
+		Result:  agentclient.AlignmentVerdictResult(r.AlignmentVerdict.Result),
+		Flagged: r.AlignmentVerdict.Flagged,
+		Total:   r.AlignmentVerdict.Total,
+	}
+	if r.AlignmentVerdict.CircuitBreakerActivated {
+		av.CircuitBreakerActivated.SetTo(true)
+	}
+	if r.AlignmentVerdict.Summary != "" {
+		av.Summary.SetTo(r.AlignmentVerdict.Summary)
+	}
+	if len(r.AlignmentVerdict.Findings) > 0 {
+		findings := make([]agentclient.AlignmentFinding, 0, len(r.AlignmentVerdict.Findings))
+		for _, f := range r.AlignmentVerdict.Findings {
+			finding := agentclient.AlignmentFinding{
+				StepIndex:   f.StepIndex,
+				StepKind:    agentclient.AlignmentFindingStepKind(f.StepKind),
+				Explanation: f.Explanation,
+			}
+			if f.Tool != "" {
+				finding.Tool.SetTo(f.Tool)
+			}
+			findings = append(findings, finding)
+		}
+		av.Findings = findings
+	}
+	return av
 }
 
 // synthesizeHumanReviewWarning generates a warning when human review is required
