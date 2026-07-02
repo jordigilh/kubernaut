@@ -190,11 +190,16 @@ func StartGenericContainer(cfg GenericContainerConfig, writer io.Writer) (*Conta
 		args = append(args, "--add-host", host)
 	}
 
-	// Add port mappings
+	// Add port mappings. Podman rejects "-p" combined with "--network host"
+	// ("cannot set port bindings when using host network mode") -- under
+	// host networking the container's own ports already are the host ports,
+	// so cfg.Ports is just bookkeeping for ContainerInstance.Ports in that case.
 	// cfg.Ports format: map[containerPort]hostPort (e.g., 8080: 18120)
 	// Podman format: hostPort:containerPort (e.g., 18120:8080)
-	for containerPort, hostPort := range cfg.Ports {
-		args = append(args, "-p", fmt.Sprintf("%d:%d", hostPort, containerPort))
+	if cfg.Network != "host" {
+		for containerPort, hostPort := range cfg.Ports {
+			args = append(args, "-p", fmt.Sprintf("%d:%d", hostPort, containerPort))
+		}
 	}
 
 	// Add environment variables

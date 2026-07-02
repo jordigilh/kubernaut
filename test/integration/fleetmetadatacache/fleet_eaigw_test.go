@@ -18,6 +18,7 @@ package fleetmetadatacache_test
 
 import (
 	"context"
+	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -86,7 +87,11 @@ var _ = Describe("IT-FLEET-EAIGW-001 [SC-7]: All remote cluster tool calls are r
 		eaigw, err = infrastructure.StartEAIGWContainer(servers, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred(), "EAIGW container should start successfully")
 
-		eaigwURL := "http://127.0.0.1:19750/mcp"
+		// The MCP port's host-reachable mapping differs by platform (Linux CI
+		// uses --network=host with no remapping; macOS uses bridge + a fixed
+		// mapped port) -- always read it back from the container instance
+		// rather than hardcoding it.
+		eaigwURL := fmt.Sprintf("http://127.0.0.1:%d/mcp", eaigw.Ports[infrastructure.EAIGWMCPPort])
 		client, err := mcpclient.New(ctx, eaigwURL)
 		Expect(err).ToNot(HaveOccurred(), "should connect to EAIGW MCP endpoint")
 		defer client.Close()

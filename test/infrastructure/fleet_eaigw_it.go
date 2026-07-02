@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -47,28 +48,52 @@ type eaigwMCPConfig struct {
 	MCPServers map[string]eaigwMCPServerConfig `json:"mcpServers"`
 }
 
+// EAIGWMCPPort and EAIGWAdminPort are aigw's fixed internal listen ports
+// (not configurable via flags/env -- only --admin-port exists, and this
+// suite keeps the default to match the spike's validated behavior).
+const (
+	EAIGWMCPPort   = 1975
+	EAIGWAdminPort = 1064
+)
+
 // StartEAIGWContainer starts an EAIGW container configured to proxy to the
 // specified MCP backend servers. The config is written as a JSON file mounted
-// into the container.
+// into the container. The returned ContainerInstance.Ports maps
+// EAIGWMCPPort/EAIGWAdminPort to the actual host-reachable ports -- callers
+// must not hardcode a mapped port, since it differs by platform (see below).
 //
 // Per spike findings: EAIGW uses `--mcp-config <json-file>` for standalone mode.
 // Tool names are prefixed with `{backendName}__` (e.g., cluster-a__resources_get).
+//
+// Platform-specific networking (same DD-AUTH-014 pattern as
+// datastorage_bootstrap.go): backend hosts are typically an httptest.Server
+// bound to 127.0.0.1 on the *host* test process, which is only reachable
+// from inside a container's own network namespace in specific ways:
+//   - Linux (CI): --network=host shares the host's net namespace directly,
+//     so "127.0.0.1" inside the container IS the host's loopback -- no
+//     rewrite needed, but the container's fixed ports (1975/1064) become
+//     the actual host ports too (no remapping possible under host network).
+//   - macOS: Podman machine's VM proxies "host.containers.internal" through
+//     to the host's loopback specifically (a courtesy the VM provides for
+//     this exact case) -- true --network=host doesn't work in the Podman
+//     VM, so bridge networking + the host.containers.internal rewrite +
+//     conventional port mapping is used instead.
 func StartEAIGWContainer(servers []EAIGWMCPServerEntry, writer io.Writer) (*ContainerInstance, error) {
+	useHostNetwork := runtime.GOOS == "linux"
+
+	mcpServers := make(map[string]eaigwMCPServerConfig, len(servers))
+	for _, s := range servers {
+		host := s.Host
+		if !useHostNetwork {
+			host = strings.Replace(host, "127.0.0.1", "host.containers.internal", 1)
+			host = strings.Replace(host, "localhost", "host.containers.internal", 1)
+		}
+		mcpServers[s.Name] = eaigwMCPServerConfig{Type: "http", URL: host}
+	}
 	// aigw's --mcp-config expects the canonical mcpServers object format
 	// (https://aigateway.envoyproxy.io/docs/cli/aigwrun/), not a bare array --
 	// a bare array unmarshals with "Mismatch type autoconfig.MCPServers with
 	// value array".
-	// Backend hosts are typically an httptest.Server bound to 127.0.0.1 on
-	// the *host* (test process), not reachable as "127.0.0.1" from inside
-	// the container's own network namespace. Rewrite to host.containers.internal
-	// (mapped to the host via the ExtraHosts entry below), the same pattern
-	// used by serviceaccount.go for other host-process backends.
-	mcpServers := make(map[string]eaigwMCPServerConfig, len(servers))
-	for _, s := range servers {
-		host := strings.Replace(s.Host, "127.0.0.1", "host.containers.internal", 1)
-		host = strings.Replace(host, "localhost", "host.containers.internal", 1)
-		mcpServers[s.Name] = eaigwMCPServerConfig{Type: "http", URL: host}
-	}
 	configJSON, err := json.MarshalIndent(eaigwMCPConfig{MCPServers: mcpServers}, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("marshal EAIGW config: %w", err)
@@ -100,19 +125,30 @@ func StartEAIGWContainer(servers []EAIGWMCPServerEntry, writer io.Writer) (*Cont
 	cfg := GenericContainerConfig{
 		Name:  "fleet_mcp_gateway_it",
 		Image: EAIGWImage,
-		Ports: map[int]int{
-			1975: 19750,
-			1064: 11064,
-		},
 		Volumes: map[string]string{
 			tmpFile.Name(): "/etc/aigw/mcp-servers.json",
 		},
-		Cmd:        []string{"run", "--mcp-config", "/etc/aigw/mcp-servers.json", "--run-id=0"},
-		ExtraHosts: []string{"host.containers.internal:host-gateway"},
-		HealthCheck: &HealthCheckConfig{
-			URL:     "http://127.0.0.1:11064/health",
-			Timeout: 45 * time.Second,
-		},
+		Cmd: []string{"run", "--mcp-config", "/etc/aigw/mcp-servers.json", "--run-id=0"},
+	}
+
+	var healthPort int
+	if useHostNetwork {
+		cfg.Network = "host"
+		// No port mapping under --network=host: the container's fixed
+		// ports ARE the host ports. Still recorded in cfg.Ports (ignored by
+		// StartGenericContainer's -p flag emission when Network=="host" has
+		// no effect either way) purely so ContainerInstance.Ports reports
+		// the right value back to callers.
+		cfg.Ports = map[int]int{EAIGWMCPPort: EAIGWMCPPort, EAIGWAdminPort: EAIGWAdminPort}
+		healthPort = EAIGWAdminPort
+	} else {
+		cfg.Ports = map[int]int{EAIGWMCPPort: 19750, EAIGWAdminPort: 11064}
+		cfg.ExtraHosts = []string{"host.containers.internal:host-gateway"}
+		healthPort = 11064
+	}
+	cfg.HealthCheck = &HealthCheckConfig{
+		URL:     fmt.Sprintf("http://127.0.0.1:%d/health", healthPort),
+		Timeout: 45 * time.Second,
 	}
 
 	return StartGenericContainer(cfg, writer)
