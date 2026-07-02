@@ -275,7 +275,7 @@ var _ = SynchronizedAfterSuite(
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		setupFailed := !setupSucceeded
-		anyFailure := setupFailed || anyTestFailed || infrastructure.CheckTestFailure(clusterName)
+		anyFailure := infrastructure.ResolveAnyFailure(clusterName, setupFailed, anyTestFailed, GinkgoWriter)
 		defer infrastructure.CleanupFailureMarker(clusterName)
 		preserveCluster := os.Getenv("KEEP_CLUSTER") == "true"
 

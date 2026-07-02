@@ -155,7 +155,7 @@ var _ = SynchronizedAfterSuite(
 		_, _ = fmt.Fprintln(GinkgoWriter, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		setupFailed := !setupSucceeded
-		anyFailure := setupFailed || anyTestFailed || kinfra.CheckTestFailure(e2eClusterName)
+		anyFailure := kinfra.ResolveAnyFailure(e2eClusterName, setupFailed, anyTestFailed, GinkgoWriter)
 		defer kinfra.CleanupFailureMarker(e2eClusterName)
 
 		if anyFailure {

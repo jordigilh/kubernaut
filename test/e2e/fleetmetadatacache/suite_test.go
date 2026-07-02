@@ -190,7 +190,7 @@ var _ = SynchronizedAfterSuite(
 		By("Cleaning up FMC E2E environment")
 
 		setupFailed := harness.KubeconfigPath == ""
-		anyFailure := setupFailed || anyTestFailed || infrastructure.CheckTestFailure(clusterName)
+		anyFailure := infrastructure.ResolveAnyFailure(clusterName, setupFailed, anyTestFailed, GinkgoWriter)
 		defer infrastructure.CleanupFailureMarker(clusterName)
 		preserveCluster := os.Getenv("PRESERVE_E2E_CLUSTER") == "true" || os.Getenv("KEEP_CLUSTER") == "true"
 

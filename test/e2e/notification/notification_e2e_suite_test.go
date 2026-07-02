@@ -342,7 +342,7 @@ var _ = SynchronizedAfterSuite(
 		}
 
 		// Determine test results for log export decision
-		anyFailure := setupFailed || anyTestFailed || infrastructure.CheckTestFailure(clusterName)
+		anyFailure := infrastructure.ResolveAnyFailure(clusterName, setupFailed, anyTestFailed, GinkgoWriter)
 		defer infrastructure.CleanupFailureMarker(clusterName)
 		preserveCluster := os.Getenv("KEEP_CLUSTER") == "true"
 

@@ -103,6 +103,30 @@ func CleanupFailureMarker(clusterName string) {
 	_ = os.Remove(filepath.Join("/tmp/kubernaut-e2e-failures", clusterName))
 }
 
+// ResolveAnyFailure computes whether the E2E suite should be treated as failed
+// (setup failure, a failure local to process 1, or a failure reported by any
+// other parallel Ginkgo process via the marker file) and unconditionally logs
+// each input.
+//
+// Rationale: on 2026-07-02 a workflowexecution E2E run had a spec genuinely
+// fail (E2E-WE-015-001), yet the resulting anyFailure computation evaluated to
+// false, so MustGatherPodLogs never ran and the CI pipeline fell back to a
+// nearly useless `kind export logs` (kube-system only, no application pod
+// logs). A standalone repro of the SynchronizedAfterSuite + ReportAfterEach +
+// marker-file pattern could not reproduce the defect in isolation across 30+
+// runs, so the exact trigger remains unconfirmed. Logging every input
+// unconditionally (not just when a mismatch is suspected) ensures the next
+// occurrence is directly diagnosable from CI output instead of requiring
+// forensic timeline reconstruction across must-gather artifacts.
+func ResolveAnyFailure(clusterName string, setupFailed, anyTestFailed bool, writer io.Writer) bool {
+	checkTestFailure := CheckTestFailure(clusterName)
+	anyFailure := setupFailed || anyTestFailed || checkTestFailure
+	_, _ = fmt.Fprintf(writer,
+		"🔎 Failure detection: cluster=%s setupFailed=%v anyTestFailed(local)=%v checkTestFailure(marker)=%v => anyFailure=%v\n",
+		clusterName, setupFailed, anyTestFailed, checkTestFailure, anyFailure)
+	return anyFailure
+}
+
 // - clusterName: Name of the Kind cluster (used for kubeconfig context)
 // - kubeconfigPath: Path to the kubeconfig file
 // - namespace: Kubernetes namespace to collect logs from (e.g., "kubernaut-system")

@@ -276,7 +276,7 @@ var _ = SynchronizedAfterSuite(
 		}
 
 		// Determine cleanup strategy
-		anyFailure := setupFailed || anyTestFailed || infrastructure.CheckTestFailure(clusterName)
+		anyFailure := infrastructure.ResolveAnyFailure(clusterName, setupFailed, anyTestFailed, GinkgoWriter)
 		defer infrastructure.CleanupFailureMarker(clusterName)
 
 		// Collect pod logs BEFORE coverage collection, which scales the
