@@ -934,13 +934,15 @@ jobs:
           else
             echo "⚠️  AppArmor rsyslog profile not found or already removed (non-fatal)"
           fi
+      # Note: previously wrapped in nick-fields/retry@v4 (max_attempts: 3). Retries
+      # mask flakes AND destroy diagnostics: a retry tears down the failing attempt's
+      # cluster and stands up a fresh one, so the "Collect must-gather logs on failure"
+      # step below only ever sees the LAST attempt's (often mid-bootstrap) cluster
+      # instead of the one that actually failed. A single attempt gets the full
+      # matrix.timeout budget (job-level timeout-minutes below), which is more time
+      # than any individual retry attempt got before.
       - name: Run ${{ matrix.service }} E2E tests
-        uses: nick-fields/retry@v4
-        with:
-          timeout_minutes: ${{ matrix.timeout }}
-          max_attempts: 3
-          retry_on: error
-          command: make test-e2e-${{ matrix.service }}
+        run: make test-e2e-${{ matrix.service }}
       
       - name: Calculate and save E2E coverage
         if: always()
