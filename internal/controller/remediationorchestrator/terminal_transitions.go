@@ -20,29 +20,21 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
-	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
-	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/helpers"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/phase"
-	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/routing"
 	"github.com/jordigilh/kubernaut/pkg/remediationrequest"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
-	k8sutil "github.com/jordigilh/kubernaut/pkg/shared/k8s"
 )
 
 // errPhaseConflict is returned when a concurrent reconcile changed the phase
@@ -216,168 +208,6 @@ func (r *Reconciler) transitionToInheritedFailed(ctx context.Context, rr *remedi
 	logger.Info("RR inherited Failed",
 		"inheritedFrom", sourceRef, "sourceKind", sourceKind, "reason", failureReason)
 	return ctrl.Result{}, nil
-}
-
-// handleBlocked updates RR status when routing is blocked and requeues appropriately.
-// This function is called when CheckBlockingConditions() finds a blocking condition.
-//
-// Reference: DD-RO-002 (Centralized Routing), DD-RO-002-ADDENDUM (Blocked Phase Semantics)
-func (r *Reconciler) handleBlocked(
-	ctx context.Context,
-	rr *remediationv1.RemediationRequest,
-	blocked *routing.BlockingCondition,
-	fromPhase string,
-	workflowID string,
-) (ctrl.Result, error) {
-	logger := log.FromContext(ctx).WithValues(
-		"remediationRequest", rr.Name,
-		"blockReason", blocked.Reason,
-		"blockMessage", blocked.Message,
-	)
-
-	// Emit routing blocked audit event (DD-RO-002, ADR-032 §1)
-	r.emitRoutingBlockedAudit(ctx, rr, fromPhase, blocked, workflowID)
-
-	// DD-EVENT-001: Emit K8s event based on blocking reason (BR-ORCH-095)
-	if r.Recorder != nil {
-		switch remediationv1.BlockReason(blocked.Reason) {
-		case remediationv1.BlockReasonRecentlyRemediated, remediationv1.BlockReasonExponentialBackoff:
-			r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonCooldownActive,
-				fmt.Sprintf("Remediation deferred: %s", blocked.Message))
-		case remediationv1.BlockReasonConsecutiveFailures:
-			r.Recorder.Event(rr, corev1.EventTypeWarning, events.EventReasonConsecutiveFailureBlocked,
-				fmt.Sprintf("Target blocked: %s", blocked.Message))
-		case remediationv1.BlockReasonIneffectiveChain:
-			r.Recorder.Event(rr, corev1.EventTypeWarning, "IneffectiveChainDetected",
-				fmt.Sprintf("Escalating to manual review: %s", blocked.Message))
-		}
-	}
-
-	// Issue #803: Create ManualReview NotificationRequest for IneffectiveChain blocks (BR-ORCH-036).
-	// Previously, this relied on a non-existent "notification controller watching for ManualReviewRequired".
-	if remediationv1.BlockReason(blocked.Reason) == remediationv1.BlockReasonIneffectiveChain {
-		logger.Info("Ineffective chain detected - escalating to manual review",
-			"remediationRequest", rr.Name)
-
-		nrName := fmt.Sprintf("nr-manual-review-%s", rr.Name)
-		if !hasNotificationRef(rr, nrName) {
-			reviewCtx := &creator.ManualReviewContext{
-				Source:  notificationv1.ReviewSourceRoutingEngine,
-				Reason:  "IneffectiveChain",
-				Message: blocked.Message,
-			}
-			notifName, notifErr := r.notificationCreator.CreateManualReviewNotification(ctx, rr, reviewCtx)
-			if notifErr != nil {
-				logger.Error(notifErr, "Failed to create manual review notification for IneffectiveChain block")
-			} else {
-				logger.Info("Created manual review notification for IneffectiveChain block", "notification", notifName)
-				ref := r.buildNotificationRef(ctx, notifName, rr.Namespace)
-				if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
-					rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
-					return nil
-				}); refErr != nil {
-					logger.Error(refErr, "Failed to persist IneffectiveChain NR ref (non-critical)", "notification", notifName)
-				}
-				if r.Recorder != nil {
-					r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonNotificationCreated,
-						fmt.Sprintf("Manual review notification created: %s", notifName))
-				}
-			}
-		}
-	}
-
-	// GAP-6 / #810: Create block notification for non-IneffectiveChain block reasons (BR-ORCH-036, BR-ORCH-042.5).
-	if remediationv1.BlockReason(blocked.Reason) != remediationv1.BlockReasonIneffectiveChain {
-		blockNRName := fmt.Sprintf("nr-block-%s-%s", strings.ToLower(blocked.Reason), rr.Name)
-		if !hasNotificationRef(rr, blockNRName) {
-			blockCtx := &creator.BlockNotificationContext{
-				BlockReason:  blocked.Reason,
-				BlockMessage: blocked.Message,
-			}
-			notifName, notifErr := r.notificationCreator.CreateBlockNotification(ctx, rr, blockCtx)
-			if notifErr != nil {
-				logger.Error(notifErr, "Failed to create block notification (non-critical)", "blockReason", blocked.Reason)
-			} else {
-				logger.Info("Created block notification", "notification", notifName, "blockReason", blocked.Reason)
-				ref := r.buildNotificationRef(ctx, notifName, rr.Namespace)
-				if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
-					rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
-					return nil
-				}); refErr != nil {
-					logger.Error(refErr, "Failed to persist block NR ref (non-critical)", "notification", notifName)
-				}
-				if r.Recorder != nil {
-					r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonNotificationCreated,
-						fmt.Sprintf("Block notification created: %s", notifName))
-				}
-			}
-		}
-	}
-
-	// Update RR status to Blocked phase (REFACTOR-RO-001: using retry helper)
-	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
-		rr.Status.OverallPhase = remediationv1.PhaseBlocked
-		rr.Status.BlockReason = remediationv1.BlockReason(blocked.Reason)
-		rr.Status.BlockMessage = blocked.Message
-
-		// Set time-based block fields
-		if blocked.BlockedUntil != nil {
-			rr.Status.BlockedUntil = &metav1.Time{Time: *blocked.BlockedUntil}
-		} else {
-			rr.Status.BlockedUntil = nil // Clear if not set
-		}
-
-		// Set WFE-based block fields
-		if blocked.BlockingWorkflowExecution != "" {
-			rr.Status.BlockingWorkflowExecution = blocked.BlockingWorkflowExecution
-		} else {
-			rr.Status.BlockingWorkflowExecution = "" // Clear if not set
-		}
-
-		// Set duplicate tracking
-		if blocked.DuplicateOf != "" {
-			rr.Status.DuplicateOf = blocked.DuplicateOf
-		} else {
-			rr.Status.DuplicateOf = "" // Clear if not set
-		}
-
-		// Issue #214: Set ManualReviewRequired for IneffectiveChain blocks
-		if remediationv1.BlockReason(blocked.Reason) == remediationv1.BlockReasonIneffectiveChain {
-			rr.Status.Outcome = "ManualReviewRequired"
-			rr.Status.RequiresManualReview = true
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		logger.Error(err, "Failed to update blocked status")
-		return ctrl.Result{}, fmt.Errorf("failed to update blocked status: %w", err)
-	}
-
-	// BR-ORCH-042: Track blocking metrics (DD-METRICS-001)
-	// Metric expects: []string{"namespace", "reason"}
-	r.Metrics.BlockedTotal.WithLabelValues(rr.Namespace, blocked.Reason).Inc()
-
-	// BR-ORCH-044: Track duplicate skips specifically
-	if blocked.DuplicateOf != "" {
-		r.Metrics.DuplicatesSkippedTotal.WithLabelValues(rr.Namespace, rr.Spec.SignalFingerprint).Inc()
-	}
-
-	// Emit metric (using existing metrics package)
-	// V1.0: Basic counter, future enhancement: add duration histogram
-	r.Metrics.PhaseTransitionsTotal.WithLabelValues(
-		string(rr.Status.OverallPhase),     // from_phase
-		string(remediationv1.PhaseBlocked), // to_phase
-		rr.Namespace,
-	).Inc()
-
-	logger.Info("RemediationRequest blocked",
-		"reason", blocked.Reason,
-		"requeueAfter", blocked.RequeueAfter)
-
-	// Requeue after specified duration
-	return ctrl.Result{RequeueAfter: blocked.RequeueAfter}, nil
 }
 
 // transitionPhase transitions the RR to a new phase.
@@ -587,23 +417,7 @@ func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.R
 	}
 
 	// BR-ORCH-042: Log consecutive failures for observability
-	// NOTE: This RR transitions to Failed (terminal state).
-	// FUTURE RRs with same fingerprint will be blocked in Pending phase (routing check).
-	if failurePhase != remediationv1.FailurePhaseBlocked {
-		// Count consecutive failures BEFORE this one (current failure not yet recorded)
-		consecutiveFailures := r.countConsecutiveFailures(ctx, rr.Spec.SignalFingerprint)
-
-		// +1 for this failure (not yet in status)
-		if consecutiveFailures+1 >= r.getConsecutiveFailureThreshold() {
-			logger.Info("Consecutive failure threshold reached, future RRs will be blocked",
-				"consecutiveFailures", consecutiveFailures+1,
-				"threshold", r.getConsecutiveFailureThreshold(),
-				"fingerprint", rr.Spec.SignalFingerprint,
-			)
-			// Do NOT transition this RR to Blocked - it failed and should go to Failed.
-			// The routing engine will block FUTURE RRs for this fingerprint.
-		}
-	}
+	r.logConsecutiveFailureThresholdReached(ctx, rr, failurePhase, logger)
 
 	// RO-AUDIT-IDEMPOTENCY: Refetch via apiReader (cache-bypassed) before the phase
 	// check. The informer cache is eventually consistent — a second reconcile may
@@ -621,32 +435,7 @@ func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.R
 	}
 
 	// GAP-4 / #808: Create escalation NR for terminal failures (BR-ORCH-036).
-	// Guard: skip if caller already created a ManualReview or Escalation NR.
-	manualReviewNR := fmt.Sprintf("nr-manual-review-%s", rr.Name)
-	escalationNR := fmt.Sprintf("nr-escalation-%s", rr.Name)
-	if !hasNotificationRef(rr, manualReviewNR) && !hasNotificationRef(rr, escalationNR) {
-		escCtx := &creator.EscalationContext{
-			FailurePhase:  string(failurePhase),
-			FailureReason: failureReason,
-		}
-		notifName, notifErr := r.notificationCreator.CreateEscalationNotification(ctx, rr, escCtx)
-		if notifErr != nil {
-			logger.Error(notifErr, "Failed to create escalation notification (non-critical)")
-		} else {
-			logger.Info("Created escalation notification for terminal failure", "notification", notifName)
-			ref := r.buildNotificationRef(ctx, notifName, rr.Namespace)
-			if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
-				rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
-				return nil
-			}); refErr != nil {
-				logger.Error(refErr, "Failed to persist escalation NR ref (non-critical)", "notification", notifName)
-			}
-			if r.Recorder != nil {
-				r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonNotificationCreated,
-					fmt.Sprintf("Escalation notification created: %s", notifName))
-			}
-		}
-	}
+	r.createEscalationNotificationIfNeeded(ctx, rr, failurePhase, failureReason, logger)
 
 	// Capture old phase for metrics and audit
 	oldPhaseBeforeTransition := rr.Status.OverallPhase
@@ -719,267 +508,58 @@ func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.R
 	return ctrl.Result{}, nil
 }
 
-// handleGlobalTimeout transitions the RR to TimedOut phase when global timeout exceeded.
-// BR-ORCH-027: Global Timeout Management
-// Business Value: Prevents stuck remediations from consuming resources indefinitely
-// Default timeout: 1 hour from CreationTimestamp
-func (r *Reconciler) handleGlobalTimeout(ctx context.Context, rr *remediationv1.RemediationRequest) (ctrl.Result, error) {
-	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
-
-	timeoutPhase := remediationv1.RemediationPhase(rr.Status.OverallPhase)
-	oldPhase := rr.Status.OverallPhase
-
-	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
-		rr.Status.OverallPhase = remediationv1.PhaseTimedOut
-		now := metav1.Now()
-		rr.Status.TimeoutTime = &now
-		rr.Status.TimeoutPhase = &timeoutPhase
-		rr.Status.CompletedAt = &now // #265 F3: CompletedAt on all terminal transitions
-
-		// BR-ORCH-043: Set Ready condition (terminal timeout)
-		remediationrequest.SetReady(rr, false, remediationrequest.ReasonRemediationTimedOut, "Remediation timed out", r.Metrics)
-
-		return nil
-	})
-	if err != nil {
-		logger.Error(err, "Failed to transition to TimedOut")
-		return ctrl.Result{}, fmt.Errorf("failed to transition to TimedOut: %w", err)
+// logConsecutiveFailureThresholdReached logs (observability only, no state
+// change) when this failure would push the fingerprint's consecutive-failure
+// count to or past the routing engine's blocking threshold (BR-ORCH-042).
+// NOTE: This RR still transitions to Failed (terminal state); the routing
+// engine blocks FUTURE RRs with the same fingerprint, not this one. Extracted
+// from transitionToFailed per GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 2 (issue #1520).
+func (r *Reconciler) logConsecutiveFailureThresholdReached(ctx context.Context, rr *remediationv1.RemediationRequest, failurePhase remediationv1.FailurePhase, logger logr.Logger) {
+	if failurePhase == remediationv1.FailurePhaseBlocked {
+		return
 	}
-
-	// Record metrics (BR-ORCH-044)
-	if r.Metrics != nil {
-		r.Metrics.PhaseTransitionsTotal.WithLabelValues(string(oldPhase), string(remediationv1.PhaseTimedOut), rr.Namespace).Inc()
-		r.Metrics.TimeoutsTotal.WithLabelValues(rr.Namespace, string(timeoutPhase)).Inc()
+	// Count consecutive failures BEFORE this one (current failure not yet recorded)
+	consecutiveFailures := r.countConsecutiveFailures(ctx, rr.Spec.SignalFingerprint)
+	// +1 for this failure (not yet in status)
+	if consecutiveFailures+1 >= r.getConsecutiveFailureThreshold() {
+		logger.Info("Consecutive failure threshold reached, future RRs will be blocked",
+			"consecutiveFailures", consecutiveFailures+1,
+			"threshold", r.getConsecutiveFailureThreshold(),
+			"fingerprint", rr.Spec.SignalFingerprint,
+		)
 	}
-
-	// Per DD-AUDIT-003: Emit timeout event (lifecycle.completed with outcome=failure)
-	if rr.Status.StartTime != nil {
-		durationMs := time.Since(rr.Status.StartTime.Time).Milliseconds()
-		r.emitTimeoutAudit(ctx, rr, "global", string(timeoutPhase), durationMs)
-	}
-
-	// DD-EVENT-001: Emit K8s event for global timeout (BR-ORCH-095)
-	if r.Recorder != nil {
-		r.Recorder.Event(rr, corev1.EventTypeWarning, events.EventReasonRemediationTimeout,
-			fmt.Sprintf("Global timeout exceeded during %s phase", string(timeoutPhase)))
-	}
-
-	logger.Info("Remediation timed out (global timeout exceeded)",
-		"timeoutPhase", timeoutPhase,
-		"creationTimestamp", rr.CreationTimestamp)
-
-	// ========================================
-	// CREATE TIMEOUT NOTIFICATION (BR-ORCH-027)
-	// Business Value: Operators notified for manual intervention
-	// ========================================
-
-	// Create notification for timeout escalation
-	notificationName := fmt.Sprintf("timeout-%s", rr.Name)
-	nr := &notificationv1.NotificationRequest{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      notificationName,
-			Namespace: rr.Namespace,
-		},
-		Spec: notificationv1.NotificationRequestSpec{
-			RemediationRequestRef: &corev1.ObjectReference{
-				APIVersion: remediationv1.GroupVersion.String(),
-				Kind:       "RemediationRequest",
-				Name:       rr.Name,
-				Namespace:  rr.Namespace,
-				UID:        rr.UID,
-			},
-			Type:     notificationv1.NotificationTypeEscalation,
-			Priority: notificationv1.NotificationPriorityCritical,
-			Severity: rr.Spec.Severity,
-			Subject:  fmt.Sprintf("Remediation Timeout: %s", rr.Spec.SignalName),
-			Body: r.notificationCreator.BuildGlobalTimeoutBody(
-				rr.Spec.SignalName,
-				rr.Name,
-				string(timeoutPhase),
-				r.getEffectiveGlobalTimeout(rr).String(),
-				rr.Status.StartTime.Format(time.RFC3339),
-				rr.Status.TimeoutTime.Format(time.RFC3339),
-			),
-			Context: buildTimeoutContext(rr.Name, string(timeoutPhase), "", rr.Spec.TargetResource),
-		},
-	}
-
-	// Validate RemediationRequest has required metadata for owner reference (defensive programming)
-	if rr.UID == "" {
-		logger.Error(nil, "RemediationRequest has empty UID, cannot set owner reference on timeout notification")
-		// Continue without notification - timeout transition is primary goal
-		return ctrl.Result{}, nil
-	}
-
-	// Set owner reference for cascade deletion (BR-ORCH-031)
-	if err := controllerutil.SetControllerReference(rr, nr, r.scheme); err != nil {
-		logger.Error(err, "Failed to set owner reference on timeout notification")
-		// Log error but don't fail timeout transition - timeout is primary goal
-		return ctrl.Result{}, nil
-	}
-
-	// Create notification (non-blocking - timeout transition is primary goal)
-	if err := r.client.Create(ctx, nr); err != nil {
-		if apierrors.IsAlreadyExists(err) {
-			logger.Info("Timeout notification already exists (concurrent create), continuing", "notificationName", notificationName)
-		} else {
-			logger.Error(err, "Failed to create timeout notification",
-				"notificationName", notificationName)
-			return ctrl.Result{}, nil
-		}
-	}
-
-	logger.Info("Created timeout notification",
-		"notificationName", notificationName,
-		"priority", nr.Spec.Priority,
-		"timeoutPhase", timeoutPhase)
-
-	// DD-EVENT-001: Emit K8s event for notification creation (BR-ORCH-095)
-	if r.Recorder != nil {
-		r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonNotificationCreated,
-			fmt.Sprintf("Timeout notification created: %s", notificationName))
-	}
-
-	// Track notification in status (Recommendation #2, BR-ORCH-035)
-	// REFACTOR-RO-001: Using retry helper
-	err = helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
-		// Add notification to tracking list (BR-ORCH-035)
-		notifRef := corev1.ObjectReference{
-			Kind:       "NotificationRequest",
-			Namespace:  nr.Namespace,
-			Name:       nr.Name,
-			UID:        nr.UID,
-			APIVersion: "notification.kubernaut.ai/v1alpha1",
-		}
-		rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, notifRef)
-		return nil
-	})
-
-	if err != nil {
-		logger.Error(err, "Failed to track notification in status (non-critical)",
-			"notificationName", notificationName)
-		// Don't fail - notification was created successfully, tracking is best-effort
-	} else {
-		logger.V(1).Info("Tracked notification in status",
-			"notificationName", notificationName,
-			"totalNotifications", len(rr.Status.NotificationRequestRefs)+1)
-	}
-
-	// Issue #240: EA is NOT created on global timeout. See transitionToVerifying.
-
-	return ctrl.Result{}, nil
 }
 
-// createEffectivenessAssessmentIfNeeded creates an EA CRD if the eaCreator is wired.
-// ADR-EM-001: EA creation is ALWAYS non-fatal. The terminal phase transition must succeed
-// even if EA creation fails. Errors are logged but not propagated.
-// BR-HAPI-191: Resolves the target from AIAnalysis.RemediationTarget when available,
-// so the EA assesses the resource the workflow actually modified (not the signal Pod).
-// Batch 3: After creating the EA, persists the EffectivenessAssessmentRef on the RR status
-// so that trackEffectivenessStatus can find the EA for condition tracking.
-func (r *Reconciler) createEffectivenessAssessmentIfNeeded(ctx context.Context, rr *remediationv1.RemediationRequest) {
-	if r.eaCreator == nil {
+// createEscalationNotificationIfNeeded creates an escalation
+// NotificationRequest for a terminal failure (GAP-4 / Issue #808,
+// BR-ORCH-036), unless the caller already created a ManualReview or
+// Escalation NR for this RR. Extracted from transitionToFailed per
+// GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 2 (issue #1520).
+func (r *Reconciler) createEscalationNotificationIfNeeded(ctx context.Context, rr *remediationv1.RemediationRequest, failurePhase remediationv1.FailurePhase, failureReason string, logger logr.Logger) {
+	manualReviewNR := fmt.Sprintf("nr-manual-review-%s", rr.Name)
+	escalationNR := fmt.Sprintf("nr-escalation-%s", rr.Name)
+	if hasNotificationRef(rr, manualReviewNR) || hasNotificationRef(rr, escalationNR) {
 		return
 	}
-
-	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
-
-	// DD-EM-003: Resolve dual targets for the EA.
-	// Signal target: from RR (always available).
-	// Remediation target: from AIAnalysis RemediationTarget (when available), else RR fallback.
-	var dualTarget *creator.DualTarget
-	var isGitOpsManaged bool
-	var ai *aianalysisv1.AIAnalysis
-	if rr.Status.AIAnalysisRef != nil {
-		ai = &aianalysisv1.AIAnalysis{}
-		if err := r.client.Get(ctx, client.ObjectKey{
-			Name:      rr.Status.AIAnalysisRef.Name,
-			Namespace: rr.Status.AIAnalysisRef.Namespace,
-		}, ai); err != nil {
-			logger.V(1).Info("Could not fetch AIAnalysis for target resolution (non-fatal), using RR target",
-				"error", err)
-			ai = nil
-		} else {
-			dualTarget = resolveDualTargets(rr, ai)
-			// DD-EM-004, BR-RO-103.2: Read GitOps detection from RCA pipeline.
-			if ai.Status.PostRCAContext != nil &&
-				ai.Status.PostRCAContext.DetectedLabels != nil &&
-				ai.Status.PostRCAContext.DetectedLabels.GitOpsManaged {
-				isGitOpsManaged = true
-			}
-		}
+	escCtx := &creator.EscalationContext{
+		FailurePhase:  string(failurePhase),
+		FailureReason: failureReason,
 	}
-
-	// DD-EM-004 v2.0, BR-RO-103, Issue #253, #277: Detect async-managed targets.
-	// Compute Duration-based hashComputeDelay for the EA Config.
-	var hashComputeDelay *metav1.Duration
-	remediationKind := rr.Spec.TargetResource.Kind
-	if dualTarget != nil {
-		remediationKind = dualTarget.Remediation.Kind
-	}
-
-	isCRD := false
-	gvk, err := k8sutil.ResolveGVKForKind(r.restMapper, remediationKind)
-	if err != nil {
-		logger.V(1).Info("Cannot resolve GVK for kind, treating as sync target for hash timing",
-			"kind", remediationKind, "error", err)
-	} else if !creator.IsBuiltInGroup(gvk.Group) {
-		isCRD = true
-	}
-
-	asyncCfg := r.getAsyncPropagation()
-	propagationDelay := asyncCfg.ComputePropagationDelay(isGitOpsManaged, isCRD)
-	if propagationDelay > 0 {
-		hashComputeDelay = &metav1.Duration{Duration: propagationDelay}
-		logger.Info("Async-managed target detected, setting hash check delay",
-			"kind", remediationKind,
-			"gitOps", isGitOpsManaged,
-			"isCRD", isCRD,
-			"hashComputeDelay", propagationDelay)
-	}
-
-	// #277: Detect proactive signals via AIAnalysis.Spec.AnalysisRequest.SignalContext.SignalMode.
-	// Proactive alerts (e.g. predict_linear) need extra time to resolve.
-	var alertCheckDelay *metav1.Duration
-	if ai != nil && ai.Spec.AnalysisRequest.SignalContext.SignalMode == "proactive" {
-		if asyncCfg.ProactiveAlertDelay > 0 {
-			alertCheckDelay = &metav1.Duration{Duration: asyncCfg.ProactiveAlertDelay}
-			logger.Info("Proactive signal detected, setting alert check delay",
-				"signalMode", ai.Spec.AnalysisRequest.SignalContext.SignalMode,
-				"alertCheckDelay", asyncCfg.ProactiveAlertDelay)
-		}
-	}
-
-	name, err := r.eaCreator.CreateEffectivenessAssessment(ctx, rr, dualTarget, hashComputeDelay, alertCheckDelay)
-	if err != nil {
-		logger.Error(err, "Failed to create EffectivenessAssessment (non-fatal per ADR-EM-001)")
+	notifName, notifErr := r.notificationCreator.CreateEscalationNotification(ctx, rr, escCtx)
+	if notifErr != nil {
+		logger.Error(notifErr, "Failed to create escalation notification (non-critical)")
 		return
 	}
-	logger.Info("EffectivenessAssessment created", "eaName", name, "rrPhase", rr.Status.OverallPhase)
-
-	// #277: Emit orchestrator.ea.created audit event with propagation delay breakdown.
-	r.emitEACreatedAudit(ctx, rr, name, hashComputeDelay, alertCheckDelay, isGitOpsManaged, isCRD)
-
-	// ADR-EM-001, Batch 3: Persist EA ref on RR status for trackEffectivenessStatus.
-	// Uses helpers.UpdateRemediationRequestStatus for atomic persistence (same pattern
-	// as NT ref tracking in handleGlobalTimeout).
-	// GAP-2 (ADR-EM-001 Section 9.4.15): Also set initial EffectivenessAssessed=False /
-	// AssessmentInProgress so operators can distinguish "no EA yet" from "EA in progress."
+	logger.Info("Created escalation notification for terminal failure", "notification", notifName)
+	ref := r.buildNotificationRef(ctx, notifName, rr.Namespace)
 	if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
-		rr.Status.EffectivenessAssessmentRef = &corev1.ObjectReference{
-			Kind:       "EffectivenessAssessment",
-			Name:       name,
-			Namespace:  rr.Namespace,
-			APIVersion: eav1.GroupVersion.String(),
-		}
-		meta.SetStatusCondition(&rr.Status.Conditions, metav1.Condition{
-			Type:    ConditionEffectivenessAssessed,
-			Status:  metav1.ConditionFalse,
-			Reason:  "AssessmentInProgress",
-			Message: fmt.Sprintf("EffectivenessAssessment %s created, assessment in progress", name),
-		})
+		rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
 		return nil
 	}); refErr != nil {
-		logger.Error(refErr, "Failed to persist EA ref on RR status (non-critical)", "eaName", name)
+		logger.Error(refErr, "Failed to persist escalation NR ref (non-critical)", "notification", notifName)
+	}
+	if r.Recorder != nil {
+		r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonNotificationCreated,
+			fmt.Sprintf("Escalation notification created: %s", notifName))
 	}
 }

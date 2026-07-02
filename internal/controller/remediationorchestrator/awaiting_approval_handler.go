@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-logr/logr"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -40,20 +41,20 @@ import (
 //
 // Reference: Issue #666, TP-666-v1 §8.5
 type AwaitingApprovalCallbacks struct {
-	RecordEvent        func(rr *remediationv1.RemediationRequest, eventType, reason, message string)
-	UpdateRARConditions func(ctx context.Context, rr *remediationv1.RemediationRequest, rar *remediationv1.RemediationApprovalRequest, decision string) error
-	ResolveWorkflow    func(ctx context.Context, wo *remediationv1.WorkflowOverride, sw *aianalysisv1.SelectedWorkflow, ns string) (*aianalysisv1.SelectedWorkflow, bool, error)
-	CheckResourceBusy  func(ctx context.Context, rr *remediationv1.RemediationRequest, targetResource string) (*routing.BlockingCondition, error)
-	HandleBlocked      func(ctx context.Context, rr *remediationv1.RemediationRequest, bc *routing.BlockingCondition, fromPhase, workflowID string) (ctrl.Result, error)
-	AcquireLock        func(ctx context.Context, target string) (bool, error)
-	ReleaseLock        func(ctx context.Context, target string) error
+	RecordEvent               func(rr *remediationv1.RemediationRequest, eventType, reason, message string)
+	UpdateRARConditions       func(ctx context.Context, rr *remediationv1.RemediationRequest, rar *remediationv1.RemediationApprovalRequest, decision string) error
+	ResolveWorkflow           func(ctx context.Context, wo *remediationv1.WorkflowOverride, sw *aianalysisv1.SelectedWorkflow, ns string) (*aianalysisv1.SelectedWorkflow, bool, error)
+	CheckResourceBusy         func(ctx context.Context, rr *remediationv1.RemediationRequest, targetResource string) (*routing.BlockingCondition, error)
+	HandleBlocked             func(ctx context.Context, rr *remediationv1.RemediationRequest, bc *routing.BlockingCondition, fromPhase, workflowID string) (ctrl.Result, error)
+	AcquireLock               func(ctx context.Context, target string) (bool, error)
+	ReleaseLock               func(ctx context.Context, target string) error
 	CapturePreRemediationHash func(ctx context.Context, kind, name, namespace, clusterID string) (hash string, degradedReason string, err error)
-	ResolveDualTargets func(rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) DualTargetResult
-	PersistPreHash     func(ctx context.Context, rr *remediationv1.RemediationRequest, preHash string) error
-	TransitionToFailed func(ctx context.Context, rr *remediationv1.RemediationRequest, fp remediationv1.FailurePhase, err error) (ctrl.Result, error)
-	ExpireRAR          func(ctx context.Context, rar *remediationv1.RemediationApprovalRequest) error
-	UpdateRARTimeRemaining func(ctx context.Context, rar *remediationv1.RemediationApprovalRequest) error
-	WFECallbacks       WFECreationCallbacks
+	ResolveDualTargets        func(rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) DualTargetResult
+	PersistPreHash            func(ctx context.Context, rr *remediationv1.RemediationRequest, preHash string) error
+	TransitionToFailed        func(ctx context.Context, rr *remediationv1.RemediationRequest, fp remediationv1.FailurePhase, err error) (ctrl.Result, error)
+	ExpireRAR                 func(ctx context.Context, rar *remediationv1.RemediationApprovalRequest) error
+	UpdateRARTimeRemaining    func(ctx context.Context, rar *remediationv1.RemediationApprovalRequest) error
+	WFECallbacks              WFECreationCallbacks
 }
 
 // AwaitingApprovalHandler encapsulates the reconcile logic for the AwaitingApproval phase.
@@ -123,19 +124,60 @@ func (h *AwaitingApprovalHandler) handleApproved(ctx context.Context, rr *remedi
 		logger.Error(err, "Failed to update RAR conditions")
 	}
 
+	ai, resolvedAI, fetchIntent, done, err := h.resolveApprovedWorkflow(ctx, rr, rar, logger)
+	if done {
+		return fetchIntent, err
+	}
+
+	preHash := h.capturePostApprovalHash(ctx, rr, ai, logger)
+
+	// Lock scope must span from acquisition through WFE creation (prevents a
+	// concurrent reconcile from creating a duplicate WFE for the same target
+	// resource) — the lock is therefore acquired/released here rather than
+	// inside checkApprovalTargetBusy.
+	approvalTargetResource := formatRemediationTargetString(ai)
+	if approvalTargetResource != "" {
+		acquired, lockErr := h.callbacks.AcquireLock(ctx, approvalTargetResource)
+		if lockErr != nil {
+			logger.Error(lockErr, "Distributed lock acquisition failed (approval path)")
+			return phase.Requeue(config.RequeueGenericError, "lock acquisition failed"), nil
+		}
+		if !acquired {
+			logger.V(1).Info("Lock contention on target resource (approval path), requeuing")
+			return phase.Requeue(5*time.Second, "lock contention"), nil
+		}
+		defer func() {
+			if releaseErr := h.callbacks.ReleaseLock(ctx, approvalTargetResource); releaseErr != nil {
+				logger.Error(releaseErr, "Failed to release distributed lock (approval path)")
+			}
+		}()
+
+		if intent, blocked, err := h.checkApprovalTargetBusy(ctx, rr, approvalTargetResource, logger); blocked {
+			return intent, err
+		}
+	}
+
+	return CreateWFEAndTransition(ctx, h.k8sClient, h.m, rr, resolvedAI, preHash, h.callbacks.WFECallbacks)
+}
+
+// resolveApprovedWorkflow fetches the AIAnalysis backing an approved RR and
+// resolves any operator-supplied WorkflowOverride against it (ADR-040
+// invariant: AIAnalysisRef must be set once Approving is reached). Extracted
+// from handleApproved per GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 2 (issue #1520).
+// Returns done=true when the caller must return (intent, err) immediately.
+func (h *AwaitingApprovalHandler) resolveApprovedWorkflow(ctx context.Context, rr *remediationv1.RemediationRequest, rar *remediationv1.RemediationApprovalRequest, logger logr.Logger) (*aianalysisv1.AIAnalysis, *aianalysisv1.AIAnalysis, phase.TransitionIntent, bool, error) {
 	if rr.Status.AIAnalysisRef == nil {
 		logger.Error(nil, "AIAnalysisRef not set on RemediationRequest (ADR-040 invariant)")
-		return phase.Requeue(config.RequeueGenericError, "AIAnalysisRef nil"), nil
+		return nil, nil, phase.Requeue(config.RequeueGenericError, "AIAnalysisRef nil"), true, nil
 	}
 
 	ai := &aianalysisv1.AIAnalysis{}
-	err := h.k8sClient.Get(ctx, client.ObjectKey{
+	if err := h.k8sClient.Get(ctx, client.ObjectKey{
 		Name:      rr.Status.AIAnalysisRef.Name,
 		Namespace: rr.Status.AIAnalysisRef.Namespace,
-	}, ai)
-	if err != nil {
+	}, ai); err != nil {
 		logger.Error(err, "Failed to fetch AIAnalysis CRD")
-		return phase.Requeue(config.RequeueGenericError, "AI fetch failed"), nil
+		return nil, nil, phase.Requeue(config.RequeueGenericError, "AI fetch failed"), true, nil
 	}
 
 	resolvedWorkflow, overrideApplied, resolveErr := h.callbacks.ResolveWorkflow(
@@ -147,12 +189,12 @@ func (h *AwaitingApprovalHandler) handleApproved(ctx context.Context, rr *remedi
 				fmt.Sprintf("Override workflow not found: %v", resolveErr))
 			result, err := h.callbacks.TransitionToFailed(ctx, rr, remediationv1.FailurePhaseApproval, resolveErr)
 			if err != nil {
-				return phase.TransitionIntent{}, err
+				return nil, nil, phase.TransitionIntent{}, true, err
 			}
-			return resultToIntent(result, "override not found"), nil
+			return nil, nil, resultToIntent(result, "override not found"), true, nil
 		}
 		logger.Error(resolveErr, "Failed to resolve operator workflow override")
-		return phase.Requeue(config.RequeueGenericError, "override resolution failed"), nil
+		return nil, nil, phase.Requeue(config.RequeueGenericError, "override resolution failed"), true, nil
 	}
 
 	resolvedAI := ai.DeepCopy()
@@ -163,6 +205,15 @@ func (h *AwaitingApprovalHandler) handleApproved(ctx context.Context, rr *remedi
 		h.m.OverrideAppliedTotal.WithLabelValues(classifyOverride(rar.Status.WorkflowOverride), rr.Namespace).Inc()
 	}
 
+	return ai, resolvedAI, phase.TransitionIntent{}, false, nil
+}
+
+// capturePostApprovalHash captures the pre-remediation resource hash after
+// approval. All failure modes here are non-fatal (best-effort): a failed or
+// degraded capture is logged/recorded but does not block WFE creation.
+// Extracted from handleApproved per GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 2
+// (issue #1520).
+func (h *AwaitingApprovalHandler) capturePostApprovalHash(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis, logger logr.Logger) string {
 	remTarget := h.callbacks.ResolveDualTargets(rr, ai).Remediation
 	preHash, degradedReason, hashErr := h.callbacks.CapturePreRemediationHash(
 		ctx, remTarget.Kind, remTarget.Name, remTarget.Namespace, rr.Spec.ClusterID)
@@ -181,40 +232,30 @@ func (h *AwaitingApprovalHandler) handleApproved(ctx context.Context, rr *remedi
 			logger.Error(err, "Failed to persist pre-remediation hash (non-fatal)")
 		}
 	}
+	return preHash
+}
 
-	approvalTargetResource := formatRemediationTargetString(ai)
-	if approvalTargetResource != "" {
-		acquired, lockErr := h.callbacks.AcquireLock(ctx, approvalTargetResource)
-		if lockErr != nil {
-			logger.Error(lockErr, "Distributed lock acquisition failed (approval path)")
-			return phase.Requeue(config.RequeueGenericError, "lock acquisition failed"), nil
-		}
-		if !acquired {
-			logger.V(1).Info("Lock contention on target resource (approval path), requeuing")
-			return phase.Requeue(5*time.Second, "lock contention"), nil
-		}
-		defer func() {
-			if releaseErr := h.callbacks.ReleaseLock(ctx, approvalTargetResource); releaseErr != nil {
-				logger.Error(releaseErr, "Failed to release distributed lock (approval path)")
-			}
-		}()
-
-		busyBlock, busyErr := h.callbacks.CheckResourceBusy(ctx, rr, approvalTargetResource)
-		if busyErr != nil {
-			logger.Error(busyErr, "Failed to check resource busy (approval path)")
-			return phase.Requeue(config.RequeueGenericError, "resource busy check failed"), nil
-		}
-		if busyBlock != nil {
-			logger.Info("Target resource busy after approval - blocking")
-			result, err := h.callbacks.HandleBlocked(ctx, rr, busyBlock, string(remediationv1.PhaseAwaitingApproval), "")
-			if err != nil {
-				return phase.TransitionIntent{}, err
-			}
-			return resultToIntent(result, "resource busy"), nil
-		}
+// checkApprovalTargetBusy checks whether the approval target resource is
+// busy (under an already-held distributed lock) and blocks the RR if so.
+// Extracted from handleApproved per GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 2
+// (issue #1520). The caller is responsible for the lock's acquire/release
+// scope (must span through WFE creation). Returns blocked=true when the
+// caller must return (intent, err) immediately.
+func (h *AwaitingApprovalHandler) checkApprovalTargetBusy(ctx context.Context, rr *remediationv1.RemediationRequest, approvalTargetResource string, logger logr.Logger) (phase.TransitionIntent, bool, error) {
+	busyBlock, busyErr := h.callbacks.CheckResourceBusy(ctx, rr, approvalTargetResource)
+	if busyErr != nil {
+		logger.Error(busyErr, "Failed to check resource busy (approval path)")
+		return phase.Requeue(config.RequeueGenericError, "resource busy check failed"), true, nil
 	}
-
-	return CreateWFEAndTransition(ctx, h.k8sClient, h.m, rr, resolvedAI, preHash, h.callbacks.WFECallbacks)
+	if busyBlock != nil {
+		logger.Info("Target resource busy after approval - blocking")
+		result, err := h.callbacks.HandleBlocked(ctx, rr, busyBlock, string(remediationv1.PhaseAwaitingApproval), "")
+		if err != nil {
+			return phase.TransitionIntent{}, true, err
+		}
+		return resultToIntent(result, "resource busy"), true, nil
+	}
+	return phase.TransitionIntent{}, false, nil
 }
 
 func (h *AwaitingApprovalHandler) handleRejected(ctx context.Context, rr *remediationv1.RemediationRequest, rar *remediationv1.RemediationApprovalRequest) (phase.TransitionIntent, error) {

@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-logr/logr"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -216,39 +217,116 @@ func (h *AnalyzingHandler) handleApprovalRequired(ctx context.Context, rr *remed
 func (h *AnalyzingHandler) handleDirectExecution(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) (phase.TransitionIntent, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
 
-	// Stale-cache guard: refetch RR from API server
-	freshRR, err := h.callbacks.FetchFreshRR(ctx, client.ObjectKeyFromObject(rr))
-	if err == nil {
-		if freshRR.Status.OverallPhase != phase.Analyzing {
-			logger.Info("Phase already advanced past Analyzing (stale cache), no-op",
-				"freshPhase", freshRR.Status.OverallPhase)
-			return phase.NoOp("stale cache"), nil
-		}
-		if freshRR.Status.WorkflowExecutionRef != nil {
-			logger.Info("WFE already created but phase still Analyzing, completing transition",
-				"wfeName", freshRR.Status.WorkflowExecutionRef.Name)
-			return phase.Advance(phase.Executing, "WFE already exists"), nil
-		}
+	if intent, handled := h.checkStaleAnalyzingCache(ctx, rr, logger); handled {
+		return intent, nil
 	}
 
-	// Validate RemediationTarget
-	if ai.Status.RootCauseAnalysis == nil ||
-		ai.Status.RootCauseAnalysis.RemediationTarget == nil ||
-		ai.Status.RootCauseAnalysis.RemediationTarget.Kind == "" ||
-		ai.Status.RootCauseAnalysis.RemediationTarget.Name == "" {
-		logger.Error(fmt.Errorf("RCA RemediationTarget missing on completed AIAnalysis"),
-			"Failing RR with ManualReviewRequired per DD-HAPI-006 v1.2 / BR-ORCH-036 v4.0",
-			"aianalysis", ai.Name)
-		h.callbacks.RecordEvent(rr, "Warning", "EscalatedToManualReview",
-			"RemediationTarget missing on completed AIAnalysis - manual investigation required")
-		result, err := h.callbacks.HandleRemediationTargetMissing(ctx, rr, ai)
+	if intent, handled, err := h.failIfRemediationTargetMissing(ctx, rr, ai, logger); handled {
+		return intent, err
+	}
+
+	hashCtx, hashIntent, done, err := h.capturePreRemediationHashStep(ctx, rr, ai, logger)
+	if done {
+		return hashIntent, err
+	}
+
+	// Lock acquisition
+	acquired, lockErr := h.callbacks.AcquireLock(ctx, hashCtx.targetResource)
+	if lockErr != nil {
+		logger.Error(lockErr, "Distributed lock acquisition failed", "target", hashCtx.targetResource)
+		return phase.Requeue(config.RequeueGenericError, "lock acquisition failed"), nil
+	}
+	if !acquired {
+		logger.V(1).Info("Lock contention on target resource, requeuing", "target", hashCtx.targetResource)
+		return phase.Requeue(5*time.Second, "lock contention"), nil
+	}
+	defer func() {
+		if releaseErr := h.callbacks.ReleaseLock(ctx, hashCtx.targetResource); releaseErr != nil {
+			logger.Error(releaseErr, "Failed to release distributed lock", "target", hashCtx.targetResource)
+		}
+	}()
+
+	// Routing checks
+	blocked, err := h.callbacks.CheckPostAnalysisConditions(ctx, rr, hashCtx.workflowID, hashCtx.targetResource, hashCtx.preHash, hashCtx.actionType)
+	if err != nil {
+		logger.Error(err, "Failed to check routing conditions")
+		return phase.Requeue(config.RequeueGenericError, "routing check failed"), nil
+	}
+	if blocked != nil {
+		logger.Info("Routing blocked - will not create WorkflowExecution",
+			"reason", blocked.Reason, "message", blocked.Message)
+		result, err := h.callbacks.HandleBlocked(ctx, rr, blocked, string(remediationv1.PhaseAnalyzing), hashCtx.workflowID)
 		if err != nil {
 			return phase.TransitionIntent{}, err
 		}
-		return resultToIntent(result, "remediationTargetMissing"), nil
+		return resultToIntent(result, "routing blocked"), nil
 	}
 
-	// Capture pre-remediation hash
+	logger.Info("Routing checks passed, creating WorkflowExecution")
+	return CreateWFEAndTransition(ctx, h.k8sClient, h.m, rr, ai, hashCtx.preHash, h.callbacks.WFECallbacks)
+}
+
+// checkStaleAnalyzingCache guards against acting on a stale informer-cache
+// view of an RR that another reconcile has already advanced past Analyzing.
+// Extracted from handleDirectExecution per GO-ANTIPATTERN-AUDIT-2026-07-01
+// Wave 2 (issue #1520).
+func (h *AnalyzingHandler) checkStaleAnalyzingCache(ctx context.Context, rr *remediationv1.RemediationRequest, logger logr.Logger) (phase.TransitionIntent, bool) {
+	freshRR, err := h.callbacks.FetchFreshRR(ctx, client.ObjectKeyFromObject(rr))
+	if err != nil {
+		return phase.TransitionIntent{}, false
+	}
+	if freshRR.Status.OverallPhase != phase.Analyzing {
+		logger.Info("Phase already advanced past Analyzing (stale cache), no-op",
+			"freshPhase", freshRR.Status.OverallPhase)
+		return phase.NoOp("stale cache"), true
+	}
+	if freshRR.Status.WorkflowExecutionRef != nil {
+		logger.Info("WFE already created but phase still Analyzing, completing transition",
+			"wfeName", freshRR.Status.WorkflowExecutionRef.Name)
+		return phase.Advance(phase.Executing, "WFE already exists"), true
+	}
+	return phase.TransitionIntent{}, false
+}
+
+// failIfRemediationTargetMissing escalates to manual review when the
+// completed AIAnalysis has no usable RemediationTarget (DD-HAPI-006 v1.2,
+// BR-ORCH-036 v4.0). Extracted from handleDirectExecution per
+// GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 2 (issue #1520).
+func (h *AnalyzingHandler) failIfRemediationTargetMissing(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis, logger logr.Logger) (phase.TransitionIntent, bool, error) {
+	rca := ai.Status.RootCauseAnalysis
+	if rca != nil && rca.RemediationTarget != nil && rca.RemediationTarget.Kind != "" && rca.RemediationTarget.Name != "" {
+		return phase.TransitionIntent{}, false, nil
+	}
+	logger.Error(fmt.Errorf("RCA RemediationTarget missing on completed AIAnalysis"),
+		"Failing RR with ManualReviewRequired per DD-HAPI-006 v1.2 / BR-ORCH-036 v4.0",
+		"aianalysis", ai.Name)
+	h.callbacks.RecordEvent(rr, "Warning", "EscalatedToManualReview",
+		"RemediationTarget missing on completed AIAnalysis - manual investigation required")
+	result, err := h.callbacks.HandleRemediationTargetMissing(ctx, rr, ai)
+	if err != nil {
+		return phase.TransitionIntent{}, true, err
+	}
+	return resultToIntent(result, "remediationTargetMissing"), true, nil
+}
+
+// preRemediationHashContext bundles the values handleDirectExecution needs
+// after pre-remediation hash capture: the hash itself plus the workflow
+// identifiers used by subsequent routing checks and WFE creation. Extracted
+// per GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 2 (issue #1520).
+type preRemediationHashContext struct {
+	preHash        string
+	workflowID     string
+	actionType     string
+	targetResource string
+}
+
+// capturePreRemediationHashStep captures the pre-remediation resource hash
+// (needed for later effectiveness assessment), failing the RR terminally if
+// the target resource state cannot be determined, or recording a degraded
+// (non-fatal) capture otherwise. Extracted from handleDirectExecution per
+// GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 2 (issue #1520).
+// Returns done=true when the caller must return (intent, err) immediately.
+func (h *AnalyzingHandler) capturePreRemediationHashStep(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis, logger logr.Logger) (preRemediationHashContext, phase.TransitionIntent, bool, error) {
 	var workflowID, actionType string
 	if ai.Status.SelectedWorkflow != nil {
 		workflowID = ai.Status.SelectedWorkflow.WorkflowID
@@ -268,9 +346,9 @@ func (h *AnalyzingHandler) handleDirectExecution(ctx context.Context, rr *remedi
 			return nil
 		}); updateErr != nil {
 			logger.Error(updateErr, "Failed to update RR to Failed after hash error")
-			return phase.TransitionIntent{}, updateErr
+			return preRemediationHashContext{}, phase.TransitionIntent{}, true, updateErr
 		}
-		return phase.Fail(remediationv1.FailurePhaseAIAnalysis, hashErr, "pre-hash computation failed"), nil
+		return preRemediationHashContext{}, phase.Fail(remediationv1.FailurePhaseAIAnalysis, hashErr, "pre-hash computation failed"), true, nil
 	}
 	if degradedReason != "" {
 		logger.Info("Pre-remediation hash capture degraded, EA may be non-functional",
@@ -285,40 +363,12 @@ func (h *AnalyzingHandler) handleDirectExecution(ctx context.Context, rr *remedi
 		}
 	}
 
-	// Lock acquisition
-	acquired, lockErr := h.callbacks.AcquireLock(ctx, targetResource)
-	if lockErr != nil {
-		logger.Error(lockErr, "Distributed lock acquisition failed", "target", targetResource)
-		return phase.Requeue(config.RequeueGenericError, "lock acquisition failed"), nil
-	}
-	if !acquired {
-		logger.V(1).Info("Lock contention on target resource, requeuing", "target", targetResource)
-		return phase.Requeue(5*time.Second, "lock contention"), nil
-	}
-	defer func() {
-		if releaseErr := h.callbacks.ReleaseLock(ctx, targetResource); releaseErr != nil {
-			logger.Error(releaseErr, "Failed to release distributed lock", "target", targetResource)
-		}
-	}()
-
-	// Routing checks
-	blocked, err := h.callbacks.CheckPostAnalysisConditions(ctx, rr, workflowID, targetResource, preHash, actionType)
-	if err != nil {
-		logger.Error(err, "Failed to check routing conditions")
-		return phase.Requeue(config.RequeueGenericError, "routing check failed"), nil
-	}
-	if blocked != nil {
-		logger.Info("Routing blocked - will not create WorkflowExecution",
-			"reason", blocked.Reason, "message", blocked.Message)
-		result, err := h.callbacks.HandleBlocked(ctx, rr, blocked, string(remediationv1.PhaseAnalyzing), workflowID)
-		if err != nil {
-			return phase.TransitionIntent{}, err
-		}
-		return resultToIntent(result, "routing blocked"), nil
-	}
-
-	logger.Info("Routing checks passed, creating WorkflowExecution")
-	return CreateWFEAndTransition(ctx, h.k8sClient, h.m, rr, ai, preHash, h.callbacks.WFECallbacks)
+	return preRemediationHashContext{
+		preHash:        preHash,
+		workflowID:     workflowID,
+		actionType:     actionType,
+		targetResource: targetResource,
+	}, phase.TransitionIntent{}, false, nil
 }
 
 func (h *AnalyzingHandler) handleFailed(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) (phase.TransitionIntent, error) {

@@ -31,8 +31,8 @@ import (
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
-	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/override"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // TDD Phase: RED — Issue #594 RO Merge Logic Tests

@@ -29,9 +29,11 @@ import (
 // Business Requirement: BR-EM-012 — alertScore=0 must NOT yield Remediated
 //
 // DeriveOutcomeFromEA logic:
-//   alertAssessed && alertScore == 0 → "Inconclusive" (alert still firing)
-//   alertAssessed && alertScore > 0  → "Remediated" (alert resolved)
-//   !alertAssessed                   → "Remediated" (fail-open, AM unavailable)
+//
+//	alertAssessed && alertScore == 0 → "Inconclusive" (alert still firing)
+//	alertAssessed && alertScore > 0  → "Remediated" (alert resolved)
+//	!alertAssessed                   → "Remediated" (fail-open, AM unavailable)
+//
 // ============================================================================
 var _ = Describe("Score-Aware Outcome Derivation (Issue #722, BR-EM-012)", func() {
 

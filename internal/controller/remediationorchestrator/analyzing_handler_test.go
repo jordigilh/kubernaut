@@ -45,7 +45,7 @@ import (
 
 func noopAnalyzingCallbacks() prodcontroller.AnalyzingCallbacks {
 	return prodcontroller.AnalyzingCallbacks{
-		AtomicStatusUpdate: func(_ context.Context, _ *remediationv1.RemediationRequest, fn func() error) error { return fn() },
+		AtomicStatusUpdate:  func(_ context.Context, _ *remediationv1.RemediationRequest, fn func() error) error { return fn() },
 		IsWorkflowNotNeeded: func(_ *aianalysisv1.AIAnalysis) bool { return false },
 		HandleWorkflowNotNeeded: func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
 			return ctrl.Result{}, nil
@@ -70,8 +70,8 @@ func noopAnalyzingCallbacks() prodcontroller.AnalyzingCallbacks {
 		HandleBlocked: func(_ context.Context, _ *remediationv1.RemediationRequest, _ *routing.BlockingCondition, _, _ string) (ctrl.Result, error) {
 			return ctrl.Result{}, nil
 		},
-		AcquireLock: func(_ context.Context, _ string) (bool, error) { return true, nil },
-		ReleaseLock: func(_ context.Context, _ string) error { return nil },
+		AcquireLock:               func(_ context.Context, _ string) (bool, error) { return true, nil },
+		ReleaseLock:               func(_ context.Context, _ string) error { return nil },
 		CapturePreRemediationHash: func(_ context.Context, _, _, _, _ string) (string, string, error) { return "", "", nil },
 		ResolveDualTargets: func(_ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) prodcontroller.DualTargetResult {
 			return prodcontroller.DualTargetResult{
@@ -82,8 +82,10 @@ func noopAnalyzingCallbacks() prodcontroller.AnalyzingCallbacks {
 		IsDryRun:       func() bool { return false },
 		WFECallbacks: prodcontroller.WFECreationCallbacks{
 			EmitWorkflowCreatedAudit: func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis, _ string) {},
-			CreateWFE:                func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) (string, error) { return "wfe-test", nil },
-			ResolveWorkflowDisplay:   func(_ context.Context, _ string) (string, string) { return "TestAction", "test-wf" },
+			CreateWFE: func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) (string, error) {
+				return "wfe-test", nil
+			},
+			ResolveWorkflowDisplay: func(_ context.Context, _ string) (string, string) { return "TestAction", "test-wf" },
 		},
 	}
 }

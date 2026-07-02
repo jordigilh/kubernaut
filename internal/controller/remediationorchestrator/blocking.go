@@ -226,7 +226,9 @@ func (r *Reconciler) transitionToFailedTerminal(ctx context.Context, rr *remedia
 
 // handleUnmanagedResourceExpiry re-validates scope when an UnmanagedResource block expires.
 // If still unmanaged: re-block via handleBlocked (emits routing.blocked audit, updates status)
-//   with incremented ConsecutiveFailureCount for backoff progression.
+//
+//	with incremented ConsecutiveFailureCount for backoff progression.
+//
 // If now managed: clear block fields, transition to Pending, emit phase transition audit.
 //
 // Reference: BR-SCOPE-010, ADR-053 (Resource Scope Management), Bug #266

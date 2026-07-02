@@ -53,7 +53,7 @@ import (
 // REFACTOR Phase: Enhanced with metrics integration and structured logging.
 type RARReconciler struct {
 	client       client.Client
-	apiReader    client.Reader      // DD-STATUS-001: Cache-bypassed reads for idempotency guard
+	apiReader    client.Reader // DD-STATUS-001: Cache-bypassed reads for idempotency guard
 	scheme       *runtime.Scheme
 	auditStore   audit.AuditStore
 	auditManager *roaudit.Manager
@@ -146,7 +146,7 @@ func (r *RARReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	// Build approval audit event using RO audit manager (DD-AUDIT-003 v2.2: ClusterID from RAR spec)
 	event, err := r.auditManager.BuildApprovalDecisionEvent(
 		roaudit.ApprovalEventContext{
-			CorrelationID: parentRRName,       // correlation_id = parent RR name
+			CorrelationID: parentRRName, // correlation_id = parent RR name
 			Namespace:     rar.Namespace,
 			RRName:        parentRRName,
 			ClusterName:   rar.Spec.ClusterID, // DD-AUDIT-003 v2.2

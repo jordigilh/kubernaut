@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-logr/logr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -89,30 +90,7 @@ func (h *BlockedHandler) Handle(ctx context.Context, rr *remediationv1.Remediati
 	}
 
 	if time.Now().After(rr.Status.BlockedUntil.Time) {
-		if remediationv1.BlockReason(rr.Status.BlockReason) == remediationv1.BlockReasonUnmanagedResource {
-			result, err := h.callbacks.HandleUnmanagedResourceExpiry(ctx, rr)
-			if err != nil {
-				return phase.TransitionIntent{}, err
-			}
-			return resultToIntent(result, "unmanagedResourceExpiry"), nil
-		}
-
-		logger.Info("Blocked cooldown expired, transitioning to terminal Failed")
-		if h.m != nil {
-			h.m.CurrentBlockedGauge.WithLabelValues(rr.Namespace).Dec()
-		}
-
-		blockReason := "unknown"
-		if rr.Status.BlockReason != "" {
-			blockReason = string(rr.Status.BlockReason)
-		}
-
-		result, err := h.callbacks.TransitionToFailedTerminal(ctx, rr, remediationv1.FailurePhaseBlocked,
-			fmt.Errorf("cooldown expired after blocking due to %s", blockReason))
-		if err != nil {
-			return phase.TransitionIntent{}, err
-		}
-		return resultToIntent(result, "cooldown expired"), nil
+		return h.handleCooldownExpired(ctx, rr, logger)
 	}
 
 	requeueAfter := time.Until(rr.Status.BlockedUntil.Time)
@@ -120,6 +98,37 @@ func (h *BlockedHandler) Handle(ctx context.Context, rr *remediationv1.Remediati
 		"blockedUntil", rr.Status.BlockedUntil.Format(time.RFC3339),
 		"requeueAfter", requeueAfter)
 	return phase.Requeue(requeueAfter, "blocked cooldown active"), nil
+}
+
+// handleCooldownExpired handles a BlockedUntil deadline that has passed:
+// UnmanagedResource blocks get a dedicated expiry re-check, while all other
+// block reasons transition the RR to terminal Failed. Extracted from Handle
+// per GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 2 (issue #1520).
+func (h *BlockedHandler) handleCooldownExpired(ctx context.Context, rr *remediationv1.RemediationRequest, logger logr.Logger) (phase.TransitionIntent, error) {
+	if remediationv1.BlockReason(rr.Status.BlockReason) == remediationv1.BlockReasonUnmanagedResource {
+		result, err := h.callbacks.HandleUnmanagedResourceExpiry(ctx, rr)
+		if err != nil {
+			return phase.TransitionIntent{}, err
+		}
+		return resultToIntent(result, "unmanagedResourceExpiry"), nil
+	}
+
+	logger.Info("Blocked cooldown expired, transitioning to terminal Failed")
+	if h.m != nil {
+		h.m.CurrentBlockedGauge.WithLabelValues(rr.Namespace).Dec()
+	}
+
+	blockReason := "unknown"
+	if rr.Status.BlockReason != "" {
+		blockReason = string(rr.Status.BlockReason)
+	}
+
+	result, err := h.callbacks.TransitionToFailedTerminal(ctx, rr, remediationv1.FailurePhaseBlocked,
+		fmt.Errorf("cooldown expired after blocking due to %s", blockReason))
+	if err != nil {
+		return phase.TransitionIntent{}, err
+	}
+	return resultToIntent(result, "cooldown expired"), nil
 }
 
 // resultToIntent converts a ctrl.Result from a legacy callback into a TransitionIntent.
