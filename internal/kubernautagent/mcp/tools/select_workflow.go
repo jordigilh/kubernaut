@@ -210,47 +210,12 @@ func (t *SelectWorkflowTool) Handle(ctx context.Context, input SelectWorkflowInp
 		defer mu.Unlock()
 	}
 
-	if !t.sessions.IsDriverActive(input.RRID) {
-		return SelectWorkflowOutput{}, ErrCodeNoSession
+	driver, driverErr := t.authorizeSelectionDriver(input, user)
+	if driverErr != nil {
+		return SelectWorkflowOutput{}, driverErr
 	}
 
-	driver, err := t.sessions.GetDriver(input.RRID)
-	if err != nil || driver == nil {
-		return SelectWorkflowOutput{}, ErrCodeNoSession
-	}
-
-	if driver.ActingUser.Username != user.Username {
-		return SelectWorkflowOutput{}, ErrCodeNotDriver
-	}
-
-	// v1.5 strict gating: require prior discover_workflows call.
-	if driver.DiscoveryResult == nil {
-		return SelectWorkflowOutput{}, ErrCodeDiscoveryRequired
-	}
-
-	// v1.5 strict validation: workflow_id must be from the discovery results.
-	if !isWorkflowInDiscoveryResult(input.WorkflowID, driver.DiscoveryResult) {
-		return SelectWorkflowOutput{}, ErrCodeInvalidWorkflow
-	}
-
-	// Backfill target resource fields from the stored RCA when the caller
-	// (AF's LLM) omits them. The RCA already identified the target during
-	// investigation — no reason to require the caller to repeat it.
-	if driver.RCAResult != nil {
-		target := driver.RCAResult.RemediationTarget
-		if input.Kind == "" {
-			input.Kind = target.Kind
-		}
-		if input.Name == "" {
-			input.Name = target.Name
-		}
-		if input.Namespace == "" {
-			input.Namespace = target.Namespace
-		}
-		if input.APIVersion == "" {
-			input.APIVersion = target.APIVersion
-		}
-	}
+	backfillTargetFromRCA(&input, driver)
 
 	pctx := &PreSelectionContext{}
 	for _, hook := range t.preSelectionHooks {
@@ -268,35 +233,7 @@ func (t *SelectWorkflowTool) Handle(ctx context.Context, input SelectWorkflowInp
 	// write to HTTP session store, and release the MCP lease. Deferred to a
 	// goroutine so the tool response reaches the caller before session teardown
 	// closes the transport (fixes "incomplete chunked read" in kagenti).
-	if t.httpCompleter != nil && driver.RCAResult != nil {
-		finalResult := buildFinalResult(driver.RCAResult, workflow, driver.DiscoveryResult)
-		if finalResult.Parameters == nil && driver.DiscoveryResult != nil {
-			t.logger.V(1).Info("no discovered parameters resolved for selected workflow",
-				"rr_id", input.RRID, "workflow_id", input.WorkflowID)
-		}
-		sessionID := driver.SessionID
-		rrID := input.RRID
-		logger := t.logger
-		completer := t.httpCompleter
-		sessions := t.sessions
-		mutexProvider := t.mutexProvider
-		go func() {
-			// KA-HIGH-3: Re-acquire the session mutex to prevent TOCTOU
-			// between response delivery and HTTP/lease cleanup.
-			if mutexProvider != nil {
-				mu := mutexProvider.GetSessionMutex(rrID)
-				mu.Lock()
-				defer mu.Unlock()
-			}
-			CompleteHTTPSession(completer, rrID, finalResult, logger, "select_workflow")
-
-			if releaseErr := sessions.Release(sessionID, "workflow_selected"); releaseErr != nil {
-				if !errors.Is(releaseErr, mcpinternal.ErrSessionNotFound) {
-					logger.Error(releaseErr, "failed to release MCP lease", "session_id", sessionID)
-				}
-			}
-		}()
-	}
+	t.completeSelectionAsync(input, driver, workflow)
 
 	return SelectWorkflowOutput{
 		Status:     "workflow_selected",
@@ -305,6 +242,99 @@ func (t *SelectWorkflowTool) Handle(ctx context.Context, input SelectWorkflowInp
 		Confidence: 1.0,
 		Rationale:  "User-selected via interactive mode",
 	}, nil
+}
+
+// authorizeSelectionDriver verifies the requesting user is the active driver
+// of an interactive session that has already completed discover_workflows
+// for a workflow_id present in the discovery result (v1.5 strict gating).
+func (t *SelectWorkflowTool) authorizeSelectionDriver(input SelectWorkflowInput, user mcpinternal.UserInfo) (*mcpinternal.InteractiveSession, error) {
+	if !t.sessions.IsDriverActive(input.RRID) {
+		return nil, ErrCodeNoSession
+	}
+
+	driver, err := t.sessions.GetDriver(input.RRID)
+	if err != nil || driver == nil {
+		return nil, ErrCodeNoSession
+	}
+
+	if driver.ActingUser.Username != user.Username {
+		return nil, ErrCodeNotDriver
+	}
+
+	// v1.5 strict gating: require prior discover_workflows call.
+	if driver.DiscoveryResult == nil {
+		return nil, ErrCodeDiscoveryRequired
+	}
+
+	// v1.5 strict validation: workflow_id must be from the discovery results.
+	if !isWorkflowInDiscoveryResult(input.WorkflowID, driver.DiscoveryResult) {
+		return nil, ErrCodeInvalidWorkflow
+	}
+
+	return driver, nil
+}
+
+// backfillTargetFromRCA fills empty target-resource fields on input from the
+// stored RCA when the caller (AF's LLM) omits them. The RCA already
+// identified the target during investigation — no reason to require the
+// caller to repeat it.
+func backfillTargetFromRCA(input *SelectWorkflowInput, driver *mcpinternal.InteractiveSession) {
+	if driver.RCAResult == nil {
+		return
+	}
+	target := driver.RCAResult.RemediationTarget
+	if input.Kind == "" {
+		input.Kind = target.Kind
+	}
+	if input.Name == "" {
+		input.Name = target.Name
+	}
+	if input.Namespace == "" {
+		input.Namespace = target.Namespace
+	}
+	if input.APIVersion == "" {
+		input.APIVersion = target.APIVersion
+	}
+}
+
+// completeSelectionAsync builds the final InvestigationResult from the RCA +
+// selected workflow, then writes it to the HTTP session store and releases
+// the MCP lease in a background goroutine. Deferring to a goroutine lets the
+// tool response reach the caller before session teardown closes the
+// transport (fixes "incomplete chunked read" in kagenti). No-op when the
+// HTTP completer or RCA result is unavailable.
+func (t *SelectWorkflowTool) completeSelectionAsync(input SelectWorkflowInput, driver *mcpinternal.InteractiveSession, workflow *CatalogWorkflow) {
+	if t.httpCompleter == nil || driver.RCAResult == nil {
+		return
+	}
+
+	finalResult := buildFinalResult(driver.RCAResult, workflow, driver.DiscoveryResult)
+	if finalResult.Parameters == nil && driver.DiscoveryResult != nil {
+		t.logger.V(1).Info("no discovered parameters resolved for selected workflow",
+			"rr_id", input.RRID, "workflow_id", input.WorkflowID)
+	}
+	sessionID := driver.SessionID
+	rrID := input.RRID
+	logger := t.logger
+	completer := t.httpCompleter
+	sessions := t.sessions
+	mutexProvider := t.mutexProvider
+	go func() {
+		// KA-HIGH-3: Re-acquire the session mutex to prevent TOCTOU
+		// between response delivery and HTTP/lease cleanup.
+		if mutexProvider != nil {
+			mu := mutexProvider.GetSessionMutex(rrID)
+			mu.Lock()
+			defer mu.Unlock()
+		}
+		CompleteHTTPSession(completer, rrID, finalResult, logger, "select_workflow")
+
+		if releaseErr := sessions.Release(sessionID, "workflow_selected"); releaseErr != nil {
+			if !errors.Is(releaseErr, mcpinternal.ErrSessionNotFound) {
+				logger.Error(releaseErr, "failed to release MCP lease", "session_id", sessionID)
+			}
+		}
+	}()
 }
 
 // isWorkflowInDiscoveryResult checks if the given workflow_id is in the
@@ -327,31 +357,7 @@ func isWorkflowInDiscoveryResult(workflowID string, dr *mcpinternal.WorkflowDisc
 func buildFinalResult(rca *katypes.InvestigationResult, workflow *CatalogWorkflow, discovery *mcpinternal.WorkflowDiscoveryResult) *katypes.InvestigationResult {
 	result := *rca
 
-	// Phase 3 (FullResult) is authoritative for post-RCA fields populated during
-	// workflow discovery: RemediationTarget (K8s-verified vs LLM-parsed), confidence,
-	// labels, warnings, outcome, and actionability. Override Phase 2 values only
-	// when Phase 3 provides non-zero/non-nil replacements.
-	if discovery != nil && discovery.FullResult != nil {
-		fr := discovery.FullResult
-		if fr.RemediationTarget.Kind != "" {
-			result.RemediationTarget = fr.RemediationTarget
-		}
-		if fr.Confidence > 0 {
-			result.Confidence = fr.Confidence
-		}
-		if len(fr.DetectedLabels) > 0 {
-			result.DetectedLabels = fr.DetectedLabels
-		}
-		if len(fr.Warnings) > 0 {
-			result.Warnings = fr.Warnings
-		}
-		if fr.IsActionable != nil {
-			result.IsActionable = fr.IsActionable
-		}
-		if fr.InvestigationOutcome != "" {
-			result.InvestigationOutcome = fr.InvestigationOutcome
-		}
-	}
+	applyDiscoveryFullResult(&result, discovery)
 
 	// KA-HIGH-1: Use Phase 3 confidence when a discovery recommendation exists,
 	// since Phase 3 has additional workflow-specific scoring context.
@@ -359,15 +365,7 @@ func buildFinalResult(rca *katypes.InvestigationResult, workflow *CatalogWorkflo
 		result.Confidence = discovery.Recommended.Confidence
 	}
 
-	if workflow != nil {
-		result.WorkflowID = workflow.WorkflowID
-		result.ExecutionEngine = workflow.ExecutionEngine
-		result.ExecutionBundle = workflow.ExecutionBundle
-		result.ExecutionBundleDigest = workflow.ExecutionBundleDigest
-		result.ServiceAccountName = workflow.ServiceAccountName
-		result.WorkflowVersion = workflow.Version
-		result.WorkflowRationale = "User-selected via interactive mode"
-	}
+	applySelectedWorkflow(&result, workflow)
 
 	if discovery != nil && workflow != nil {
 		if params, found := lookupDiscoveredParameters(workflow.WorkflowID, discovery); found {
@@ -377,25 +375,79 @@ func buildFinalResult(rca *katypes.InvestigationResult, workflow *CatalogWorkflo
 
 	// KA-MED-2: Propagate alternative workflows from discovery so AA and the
 	// operator have visibility into what other options were available.
-	if discovery != nil && len(discovery.Alternatives) > 0 {
-		alts := make([]katypes.AlternativeWorkflow, 0, len(discovery.Alternatives))
-		for _, alt := range discovery.Alternatives {
-			alts = append(alts, katypes.AlternativeWorkflow{
-				WorkflowID:      alt.WorkflowID,
-				ExecutionBundle: alt.ExecutionBundle,
-				Confidence:      alt.Confidence,
-				Rationale:       alt.Rationale,
-				Parameters:      cloneParameterMap(alt.Parameters),
-			})
-		}
-		result.AlternativeWorkflows = alts
-	}
+	result.AlternativeWorkflows = discoveryAlternativeWorkflows(discovery)
 
 	// Re-inject KA-managed target resource parameters after the discovery
 	// merge, which may have replaced the RCA parameter map entirely.
 	investigator.InjectTargetResourceParameters(&result)
 
 	return &result
+}
+
+// applyDiscoveryFullResult overlays the Phase 3 (FullResult) fields onto
+// result. Phase 3 is authoritative for post-RCA fields populated during
+// workflow discovery: RemediationTarget (K8s-verified vs LLM-parsed),
+// confidence, labels, warnings, outcome, and actionability. Overrides Phase 2
+// values only when Phase 3 provides non-zero/non-nil replacements.
+func applyDiscoveryFullResult(result *katypes.InvestigationResult, discovery *mcpinternal.WorkflowDiscoveryResult) {
+	if discovery == nil || discovery.FullResult == nil {
+		return
+	}
+	fr := discovery.FullResult
+	if fr.RemediationTarget.Kind != "" {
+		result.RemediationTarget = fr.RemediationTarget
+	}
+	if fr.Confidence > 0 {
+		result.Confidence = fr.Confidence
+	}
+	if len(fr.DetectedLabels) > 0 {
+		result.DetectedLabels = fr.DetectedLabels
+	}
+	if len(fr.Warnings) > 0 {
+		result.Warnings = fr.Warnings
+	}
+	if fr.IsActionable != nil {
+		result.IsActionable = fr.IsActionable
+	}
+	if fr.InvestigationOutcome != "" {
+		result.InvestigationOutcome = fr.InvestigationOutcome
+	}
+}
+
+// applySelectedWorkflow copies the catalog-resolved workflow identity/version
+// fields onto result.
+func applySelectedWorkflow(result *katypes.InvestigationResult, workflow *CatalogWorkflow) {
+	if workflow == nil {
+		return
+	}
+	result.WorkflowID = workflow.WorkflowID
+	result.ExecutionEngine = workflow.ExecutionEngine
+	result.ExecutionBundle = workflow.ExecutionBundle
+	result.ExecutionBundleDigest = workflow.ExecutionBundleDigest
+	result.ServiceAccountName = workflow.ServiceAccountName
+	result.WorkflowVersion = workflow.Version
+	result.WorkflowRationale = "User-selected via interactive mode"
+}
+
+// discoveryAlternativeWorkflows converts the discovery result's alternative
+// workflows into the katypes wire format, returning nil when there are none
+// (preserving the original nil-vs-empty-slice semantics for callers that
+// serialize this field).
+func discoveryAlternativeWorkflows(discovery *mcpinternal.WorkflowDiscoveryResult) []katypes.AlternativeWorkflow {
+	if discovery == nil || len(discovery.Alternatives) == 0 {
+		return nil
+	}
+	alts := make([]katypes.AlternativeWorkflow, 0, len(discovery.Alternatives))
+	for _, alt := range discovery.Alternatives {
+		alts = append(alts, katypes.AlternativeWorkflow{
+			WorkflowID:      alt.WorkflowID,
+			ExecutionBundle: alt.ExecutionBundle,
+			Confidence:      alt.Confidence,
+			Rationale:       alt.Rationale,
+			Parameters:      cloneParameterMap(alt.Parameters),
+		})
+	}
+	return alts
 }
 
 // lookupDiscoveredParameters finds the parameter map for a given workflow_id
