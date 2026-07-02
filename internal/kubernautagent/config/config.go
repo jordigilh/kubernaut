@@ -97,18 +97,17 @@ type FleetOAuth2 struct {
 	Scopes               []string `yaml:"scopes,omitempty"`
 }
 
-
 // LLMRuntimeConfig holds hot-reloadable LLM settings that can change without restart.
 // This struct maps to a separate ConfigMap (kubernaut-agent-llm-runtime) watched by
 // the FileWatcher.
 type LLMRuntimeConfig struct {
-	Model          string                       `yaml:"model"`
-	Endpoint       string                       `yaml:"endpoint"`
-	APIKeyFile     string                       `yaml:"apiKeyFile,omitempty"`
-	Temperature    float64                      `yaml:"temperature"`
-	MaxRetries     int                          `yaml:"maxRetries"`
-	TimeoutSeconds int                          `yaml:"timeoutSeconds"`
-	CustomHeaders  []types.LLMHeaderDef `yaml:"customHeaders,omitempty"`
+	Model          string                        `yaml:"model"`
+	Endpoint       string                        `yaml:"endpoint"`
+	APIKeyFile     string                        `yaml:"apiKeyFile,omitempty"`
+	Temperature    float64                       `yaml:"temperature"`
+	MaxRetries     int                           `yaml:"maxRetries"`
+	TimeoutSeconds int                           `yaml:"timeoutSeconds"`
+	CustomHeaders  []types.LLMHeaderDef          `yaml:"customHeaders,omitempty"`
 	PhaseModels    map[string]*LLMOverrideConfig `yaml:"phaseModels,omitempty"`
 	// Resolved at runtime from APIKeyFile. Not serialized.
 	APIKey string `yaml:"-"`
@@ -163,11 +162,10 @@ func (r *LLMRuntimeConfig) EffectivePhaseConfig(phase string, baseLLM types.LLMC
 	return staticOut, runtimeOut
 }
 
-
 type DataStorageConfig struct {
-	URL            string              `yaml:"url"`
-	SATokenPath    string              `yaml:"saTokenPath"`
-	TLS            sharedtls.TLSConfig `yaml:"tls,omitempty"`
+	URL            string                  `yaml:"url"`
+	SATokenPath    string                  `yaml:"saTokenPath"`
+	TLS            sharedtls.TLSConfig     `yaml:"tls,omitempty"`
 	CircuitBreaker types.LLMCircuitBreaker `yaml:"circuitBreaker,omitempty"`
 }
 
@@ -194,8 +192,8 @@ type RateLimitConfig struct {
 }
 
 type SessionConfig struct {
-	TTL                        time.Duration `yaml:"ttl"`
-	MaxConcurrentInvestigations int          `yaml:"maxConcurrentInvestigations"`
+	TTL                         time.Duration `yaml:"ttl"`
+	MaxConcurrentInvestigations int           `yaml:"maxConcurrentInvestigations"`
 }
 
 type AuditConfig struct {
@@ -217,14 +215,14 @@ type MCPConfig struct {
 // When Enabled=true, KA exposes an SSE-based MCP endpoint for user-driven
 // investigations. Feature is gated off by default.
 type InteractiveConfig struct {
-	Enabled                bool                `yaml:"enabled"`
-	SessionTTL             time.Duration       `yaml:"sessionTTL"`
-	InactivityTimeout      time.Duration       `yaml:"inactivityTimeout"`
-	MaxConcurrentSessions  int                 `yaml:"maxConcurrentSessions"`
-	RateLimitPerUser       int                 `yaml:"rateLimitPerUser"`
-	MaxAnalyzingTimeout    time.Duration       `yaml:"maxAnalyzingTimeout"`
-	DisconnectGracePeriod  time.Duration       `yaml:"disconnectGracePeriod"`
-	JWTProviders []JWTProviderConfig `yaml:"jwtProviders,omitempty"`
+	Enabled               bool                `yaml:"enabled"`
+	SessionTTL            time.Duration       `yaml:"sessionTTL"`
+	InactivityTimeout     time.Duration       `yaml:"inactivityTimeout"`
+	MaxConcurrentSessions int                 `yaml:"maxConcurrentSessions"`
+	RateLimitPerUser      int                 `yaml:"rateLimitPerUser"`
+	MaxAnalyzingTimeout   time.Duration       `yaml:"maxAnalyzingTimeout"`
+	DisconnectGracePeriod time.Duration       `yaml:"disconnectGracePeriod"`
+	JWTProviders          []JWTProviderConfig `yaml:"jwtProviders,omitempty"`
 
 	// MCPKeepAlive is the server-side ping interval for MCP sessions (#1387).
 	// Keeps SSE streams alive through OCP router idle timeouts.
@@ -286,39 +284,52 @@ func (ic *InteractiveConfig) validateJWTProviders() error {
 		if name == "" {
 			name = fmt.Sprintf("jwtProviders[%d]", i)
 		}
-
-		if p.Issuer == "" {
-			return fmt.Errorf("interactive.%s: issuer is required", name)
+		if err := validateJWTProviderFields(p, name, seenIssuers); err != nil {
+			return err
 		}
-		if len(p.Issuer) > maxURLLength {
-			return fmt.Errorf("interactive.%s: issuer exceeds maximum length of %d characters", name, maxURLLength)
-		}
-		if p.JWKSURL == "" {
-			return fmt.Errorf("interactive.%s: jwksURL is required", name)
-		}
-		if len(p.JWKSURL) > maxURLLength {
-			return fmt.Errorf("interactive.%s: jwksURL exceeds maximum length of %d characters", name, maxURLLength)
-		}
-		if err := validateJWKSURL(p.JWKSURL); err != nil {
-			return fmt.Errorf("interactive.%s: %w", name, err)
-		}
-		if p.Audience == "" {
-			return fmt.Errorf("interactive.%s: audience is required", name)
-		}
-
-		if prev, dup := seenIssuers[p.Issuer]; dup {
-			return fmt.Errorf("interactive.jwtProviders: duplicate issuer %q in providers %q and %q", p.Issuer, prev, name)
-		}
-		seenIssuers[p.Issuer] = name
-
-		if p.ClaimMappings.Username == "" {
-			p.ClaimMappings.Username = "preferred_username"
-		}
-		if p.ClaimMappings.Groups == "" {
-			p.ClaimMappings.Groups = "groups"
-		}
+		applyJWTClaimMappingDefaults(p)
 	}
 	return nil
+}
+
+// validateJWTProviderFields validates a single JWT provider entry's
+// required fields, length limits, JWKS URL well-formedness, and issuer
+// uniqueness against seenIssuers (which it updates on success).
+func validateJWTProviderFields(p *JWTProviderConfig, name string, seenIssuers map[string]string) error {
+	if p.Issuer == "" {
+		return fmt.Errorf("interactive.%s: issuer is required", name)
+	}
+	if len(p.Issuer) > maxURLLength {
+		return fmt.Errorf("interactive.%s: issuer exceeds maximum length of %d characters", name, maxURLLength)
+	}
+	if p.JWKSURL == "" {
+		return fmt.Errorf("interactive.%s: jwksURL is required", name)
+	}
+	if len(p.JWKSURL) > maxURLLength {
+		return fmt.Errorf("interactive.%s: jwksURL exceeds maximum length of %d characters", name, maxURLLength)
+	}
+	if err := validateJWKSURL(p.JWKSURL); err != nil {
+		return fmt.Errorf("interactive.%s: %w", name, err)
+	}
+	if p.Audience == "" {
+		return fmt.Errorf("interactive.%s: audience is required", name)
+	}
+	if prev, dup := seenIssuers[p.Issuer]; dup {
+		return fmt.Errorf("interactive.jwtProviders: duplicate issuer %q in providers %q and %q", p.Issuer, prev, name)
+	}
+	seenIssuers[p.Issuer] = name
+	return nil
+}
+
+// applyJWTClaimMappingDefaults fills in the standard OIDC claim names for
+// any claim mapping the provider config left unset.
+func applyJWTClaimMappingDefaults(p *JWTProviderConfig) {
+	if p.ClaimMappings.Username == "" {
+		p.ClaimMappings.Username = "preferred_username"
+	}
+	if p.ClaimMappings.Groups == "" {
+		p.ClaimMappings.Groups = "groups"
+	}
 }
 
 // validateJWKSURL checks that the JWKS URL is syntactically valid and uses
@@ -404,14 +415,14 @@ const (
 
 // AlignmentCheckConfig holds settings for the shadow agent alignment checker (#601).
 type AlignmentCheckConfig struct {
-	Enabled        bool                 `yaml:"enabled"`
-	Mode           AlignmentMode        `yaml:"mode"`
-	LLM            *LLMOverrideConfig   `yaml:"llm"`
-	Timeout        time.Duration        `yaml:"timeout"`
-	MaxStepTokens  int                  `yaml:"maxStepTokens"`
-	MaxRetries     int                  `yaml:"maxRetries"`
-	VerdictTimeout time.Duration        `yaml:"verdictTimeout"`
-	Canary         CanaryConfig         `yaml:"canary"`
+	Enabled         bool                  `yaml:"enabled"`
+	Mode            AlignmentMode         `yaml:"mode"`
+	LLM             *LLMOverrideConfig    `yaml:"llm"`
+	Timeout         time.Duration         `yaml:"timeout"`
+	MaxStepTokens   int                   `yaml:"maxStepTokens"`
+	MaxRetries      int                   `yaml:"maxRetries"`
+	VerdictTimeout  time.Duration         `yaml:"verdictTimeout"`
+	Canary          CanaryConfig          `yaml:"canary"`
 	GroundingReview GroundingReviewConfig `yaml:"groundingReview"`
 }
 
@@ -497,16 +508,20 @@ func LoadLLMRuntime(data []byte) (*LLMRuntimeConfig, error) {
 }
 
 // Validate checks that the LLM runtime config has the minimum required fields.
+// providersWithoutEndpointRequirement lists providers that resolve their
+// endpoint implicitly (via SDK defaults or region config), so an explicit
+// runtime.endpoint is not required for them.
+var providersWithoutEndpointRequirement = map[string]bool{
+	"bedrock": true, "huggingface": true, "anthropic": true,
+	"openai": true, "vertex": true, "vertex_ai": true,
+}
+
 func (r *LLMRuntimeConfig) Validate(provider string) error {
 	if r.Model == "" {
 		return fmt.Errorf("model is required")
 	}
-	switch provider {
-	case "bedrock", "huggingface", "anthropic", "openai", "vertex", "vertex_ai":
-	default:
-		if r.Endpoint == "" {
-			return fmt.Errorf("endpoint is required for provider %q", provider)
-		}
+	if !providersWithoutEndpointRequirement[provider] && r.Endpoint == "" {
+		return fmt.Errorf("endpoint is required for provider %q", provider)
 	}
 	if len(r.CustomHeaders) > 0 {
 		if err := pkgconfig.ValidateHeaderSources(r.CustomHeaders); err != nil {
@@ -517,14 +532,20 @@ func (r *LLMRuntimeConfig) Validate(provider string) error {
 		if !ValidPhaseNames[phase] {
 			return fmt.Errorf("phaseModels: unknown phase %q", phase)
 		}
-		if override == nil || (override.Provider == "" && override.Endpoint == "" &&
-			override.Model == "" && override.APIKeyFile == "" &&
-			override.AzureAPIVersion == "" && override.VertexProject == "" &&
-			override.VertexLocation == "" && override.BedrockRegion == "") {
+		if isEmptyPhaseOverride(override) {
 			return fmt.Errorf("phaseModels[%q]: at least one override field must be set", phase)
 		}
 	}
 	return nil
+}
+
+// isEmptyPhaseOverride reports whether a phase-model override sets none of
+// its fields (or is nil), which is rejected as a no-op configuration error.
+func isEmptyPhaseOverride(override *LLMOverrideConfig) bool {
+	return override == nil || (override.Provider == "" && override.Endpoint == "" &&
+		override.Model == "" && override.APIKeyFile == "" &&
+		override.AzureAPIVersion == "" && override.VertexProject == "" &&
+		override.VertexLocation == "" && override.BedrockRegion == "")
 }
 
 // Validate checks required fields and value constraints for the static config.
@@ -721,10 +742,10 @@ func DefaultConfig() *Config {
 		Runtime: RuntimeConfig{
 			Logging: internalconfig.DefaultLoggingConfig(),
 			Server: ServerConfig{
-			Address: "0.0.0.0", Port: 8443, HealthAddr: ":8081", MetricsAddr: ":9090",
-			DisableProfiling:      true,
-			DisableAdminEndpoints: true,
-			MaxConcurrentRequests: 100,
+				Address: "0.0.0.0", Port: 8443, HealthAddr: ":8081", MetricsAddr: ":9090",
+				DisableProfiling:      true,
+				DisableAdminEndpoints: true,
+				MaxConcurrentRequests: 100,
 				RateLimit: RateLimitConfig{
 					RequestsPerSecond: 5,
 					Burst:             10,
@@ -767,11 +788,11 @@ func DefaultConfig() *Config {
 				},
 			},
 			Safety: SafetyConfig{
-			Sanitization: SanitizationConfig{
-				InjectionPatternsEnabled: true,
-				CredentialScrubEnabled:   true,
-				SecretRedactionEnabled:   true,
-			},
+				Sanitization: SanitizationConfig{
+					InjectionPatternsEnabled: true,
+					CredentialScrubEnabled:   true,
+					SecretRedactionEnabled:   true,
+				},
 				Anomaly: AnomalyConfig{
 					MaxToolCallsPerTool: 10,
 					MaxTotalToolCalls:   30,
