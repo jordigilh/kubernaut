@@ -171,32 +171,10 @@ func (inv *Investigator) apiVersionValidationGate(
 		return result
 	}
 	if !ambiguous {
-		// #1051: auto-resolve apiVersion for non-ambiguous kinds using the
-		// REST mapper. This guarantees RemediationTarget.APIVersion is always
-		// populated after RCA, enabling GVK-format workflow component matching.
-		// PROD-2: when len(gvrs) > 1 but not ambiguous (multiple versions in
-		// the same group, e.g. v1 and v1beta1), we skip auto-resolve because
-		// the preferred version is not deterministic. The fallback in custom
-		// tools will use lowercase kind for discovery in this edge case.
-		if len(gvrs) == 1 {
-			result.RemediationTarget.APIVersion = gvrToAPIVersion(gvrs[0])
-			inv.logger.Info("apiVersionValidationGate: auto-resolved apiVersion for non-ambiguous kind",
-				"kind", kind,
-				"api_version", result.RemediationTarget.APIVersion,
-				"correlation_id", correlationID)
-		}
-		return result
+		return inv.autoResolveNonAmbiguousAPIVersion(result, gvrs, kind, correlationID)
 	}
 
-	groupNames := make([]string, 0, len(gvrs))
-	seen := make(map[string]struct{})
-	for _, gvr := range gvrs {
-		if _, ok := seen[gvr.Group]; !ok {
-			groupNames = append(groupNames, gvr.Group)
-			seen[gvr.Group] = struct{}{}
-		}
-	}
-	groupList := strings.Join(groupNames, ", ")
+	groupList := conflictingGroupList(gvrs)
 
 	inv.logger.Info("apiVersionValidationGate triggered: ambiguous kind missing api_version",
 		"kind", kind, "conflicting_groups", groupList, "correlation_id", correlationID)
@@ -211,6 +189,58 @@ func (inv *Investigator) apiVersionValidationGate(
 	gateEvent.Data["conflicting_groups"] = groupList
 	audit.StoreBestEffort(ctx, inv.auditStore, gateEvent, inv.auditLog())
 
+	return inv.retryForAPIVersion(ctx, result, history, client, runtimeParams, tokens, kind, groupList, correlationID, gateEvent)
+}
+
+// autoResolveNonAmbiguousAPIVersion auto-resolves apiVersion for a
+// non-ambiguous kind using the REST mapper (#1051), guaranteeing
+// RemediationTarget.APIVersion is populated after RCA so GVK-format workflow
+// component matching can proceed. PROD-2: when len(gvrs) > 1 but not
+// ambiguous (multiple versions in the same group, e.g. v1 and v1beta1),
+// auto-resolve is skipped because the preferred version is not
+// deterministic; the fallback in custom tools uses lowercase kind for
+// discovery in this edge case.
+func (inv *Investigator) autoResolveNonAmbiguousAPIVersion(result *katypes.InvestigationResult, gvrs []schema.GroupVersionResource, kind, correlationID string) *katypes.InvestigationResult {
+	if len(gvrs) == 1 {
+		result.RemediationTarget.APIVersion = gvrToAPIVersion(gvrs[0])
+		inv.logger.Info("apiVersionValidationGate: auto-resolved apiVersion for non-ambiguous kind",
+			"kind", kind,
+			"api_version", result.RemediationTarget.APIVersion,
+			"correlation_id", correlationID)
+	}
+	return result
+}
+
+// conflictingGroupList returns the deduplicated, comma-joined list of API
+// groups an ambiguous kind was found in, for use in the LLM correction
+// message and audit event.
+func conflictingGroupList(gvrs []schema.GroupVersionResource) string {
+	groupNames := make([]string, 0, len(gvrs))
+	seen := make(map[string]struct{})
+	for _, gvr := range gvrs {
+		if _, ok := seen[gvr.Group]; !ok {
+			groupNames = append(groupNames, gvr.Group)
+			seen[gvr.Group] = struct{}{}
+		}
+	}
+	return strings.Join(groupNames, ", ")
+}
+
+// retryForAPIVersion re-submits the RCA request with a correction message
+// asking the LLM to disambiguate the API group for kind, and parses the
+// retry response. Falls back to apiVersionGateExhaustion (forcing human
+// review) at every failure point: LLM error, empty response, parse error, or
+// a retry result that still lacks api_version.
+func (inv *Investigator) retryForAPIVersion(
+	ctx context.Context,
+	result *katypes.InvestigationResult,
+	history []llm.Message,
+	client llm.Client,
+	runtimeParams llm.RuntimeParams,
+	tokens *TokenAccumulator,
+	kind, groupList, correlationID string,
+	gateEvent *audit.AuditEvent,
+) *katypes.InvestigationResult {
 	correctionMsg := fmt.Sprintf(
 		`Your remediation_target.kind is %q, which exists in multiple API groups: %s. `+
 			`Without an explicit api_version, the system cannot determine the correct API group `+
