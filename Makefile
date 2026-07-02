@@ -802,25 +802,28 @@ test-e2e-fleet: ginkgo ensure-coverage-dirs ## Run fleet E2E tests (multi-cluste
 	@echo "✅ Fleet E2E tests completed!"
 
 # Fleet Metadata Cache (FMC) E2E: FMC's own journeys in isolation (Issue #54)
-# Deploys ONLY DataStorage + DEX + fleet-core (Istio/Kuadrant/kube-mcp-server/
-# Valkey/FMC) -- NOT the other 10+ Kubernaut services the "fleet" suite deploys.
-# Closes a pyramid-invariant gap: FMC's real DEX OAuth2 + Kuadrant discovery +
+# Deploys ONLY Keycloak + fleet-core (Istio/Kuadrant/kube-mcp-server/
+# Valkey/FMC) -- NOT the other 10+ Kubernaut services the "fleet" suite deploys,
+# and NOT DataStorage (FMC is audit-exempt per DD-AUDIT-003, never calls
+# DataStorage's API).
+# Closes a pyramid-invariant gap: FMC's real Keycloak OAuth2 + Kuadrant discovery +
 # kube-mcp-server sync pipeline was previously only exercised indirectly via
 # Gateway/RO fleet tests gated behind FLEET_E2E=true (never set in CI).
-# Requires ~450MB RAM (substantially lighter than the "fleet" suite's ~6.1GB).
+# Requires ~1.0-1.5GB RAM (substantially lighter than the "fleet" suite's ~6.1GB).
 .PHONY: test-e2e-fleetmetadatacache-kuadrant
 test-e2e-fleetmetadatacache-kuadrant: ginkgo ensure-coverage-dirs ## Run Fleet Metadata Cache E2E tests -- Kuadrant variant (Kind cluster, ~10 min)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 Fleet Metadata Cache E2E Tests -- Kuadrant variant (Issue #54)"
-	@echo "   DataStorage + Keycloak + Fleet Core (Istio/Kuadrant/kube-mcp-server/Valkey/FMC)"
+	@echo "   Keycloak + Fleet Core (Istio/Kuadrant/kube-mcp-server/Valkey/FMC)"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@$(GINKGO) -v --race --timeout=25m --procs=$(TEST_PROCS) ./test/e2e/fleetmetadatacache
 	@echo "✅ Fleet Metadata Cache E2E tests (Kuadrant) completed!"
 
 # Fleet Metadata Cache (FMC) E2E -- Envoy AI Gateway (EAIGW) variant (Issue #54, Spike S18)
-# Sibling of test-e2e-fleetmetadatacache-kuadrant: same DataStorage + Keycloak
-# + FMC journeys, but kube-mcp-server is fronted by Envoy AI Gateway (Envoy
-# Gateway + AI Gateway controller, Backend/MCPRoute CRDs) instead of Kuadrant.
+# Sibling of test-e2e-fleetmetadatacache-kuadrant: same Keycloak + FMC journeys
+# (no DataStorage, see above), but kube-mcp-server is fronted by Envoy AI
+# Gateway (Envoy Gateway + AI Gateway controller, Backend/MCPRoute CRDs)
+# instead of Kuadrant.
 # Runs in its own Kind cluster (NodePort 31976, DD-TEST-001) so both lanes can
 # run concurrently in CI without port collisions. Nested under
 # test/e2e/fleetmetadatacache/eaigw/ (not a hyphenated sibling dir) to make
@@ -831,7 +834,7 @@ test-e2e-fleetmetadatacache-kuadrant: ginkgo ensure-coverage-dirs ## Run Fleet M
 test-e2e-fleetmetadatacache-eaigw: ginkgo ensure-coverage-dirs ## Run Fleet Metadata Cache E2E tests with Envoy AI Gateway (Kind cluster, ~10 min)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 Fleet Metadata Cache E2E Tests -- Envoy AI Gateway variant (Issue #54)"
-	@echo "   DataStorage + Keycloak + Fleet Core (Envoy AI Gateway/kube-mcp-server/Valkey/FMC)"
+	@echo "   Keycloak + Fleet Core (Envoy AI Gateway/kube-mcp-server/Valkey/FMC)"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@$(GINKGO) -v --race --timeout=25m --procs=$(TEST_PROCS) ./test/e2e/fleetmetadatacache/eaigw/...
 	@echo "✅ Fleet Metadata Cache E2E tests (Envoy AI Gateway) completed!"

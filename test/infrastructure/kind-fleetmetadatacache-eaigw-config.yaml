@@ -3,17 +3,19 @@
 # Reference: DD-TEST-001 Port Allocation Strategy
 #
 # This is the EAIGW sibling of kind-fleetmetadatacache-config.yaml (Kuadrant
-# lane): same FMC/DataStorage/Keycloak stack and the same passthrough+STS
-# kube-mcp-server token-exchange config (Spike S17/S18), but fronted by Envoy
-# AI Gateway (Envoy Gateway + AI Gateway layer, deployEnvoyAIGatewayInfra)
-# instead of Kuadrant's Istio+controller+broker stack. Runs in its own
-# isolated Kind cluster network -- no port collision with the Kuadrant lane
-# even though most NodePorts are numerically identical.
+# lane): same FMC/Keycloak stack and the same passthrough+STS kube-mcp-server
+# token-exchange config (Spike S17/S18), but fronted by Envoy AI Gateway
+# (Envoy Gateway + AI Gateway layer, deployEnvoyAIGatewayInfra) instead of
+# Kuadrant's Istio+controller+broker stack. Runs in its own isolated Kind
+# cluster network -- no port collision with the Kuadrant lane even though
+# most NodePorts are numerically identical.
+#
+# No DataStorage/PostgreSQL/Redis: FMC is audit-exempt (DD-AUDIT-003) and
+# never calls DataStorage's API, so unlike other E2E lanes this one has no
+# audit-trail dependency to satisfy.
 #
 # Port Allocation (from DD-TEST-001):
 #   FMC API:               hostPort 8150,  NodePort 30150 (same as Kuadrant lane)
-#   Data Storage API:      hostPort 30081, NodePort 30081 (same as Kuadrant lane)
-#   Data Storage Health:   hostPort 30281, NodePort 30281 (same as Kuadrant lane)
 #   Keycloak OIDC:         hostPort 30557, NodePort 30557 (same as Kuadrant lane)
 #   Envoy AI Gateway MCP:  hostPort 31976, NodePort 31976 (NEW -- next in the
 #                          Kuadrant-31975 NodePort block, Spike S18 Phase B)
@@ -23,11 +25,9 @@
 # runners (same rationale as kind-fleetmetadatacache-config.yaml).
 #
 # Dependencies:
-#   - PostgreSQL (in-cluster) - Data Storage persistence
-#   - Redis (in-cluster) - Data Storage DLQ
-#   - Data Storage (port 30081) - Audit events
 #   - Keycloak (port 30557) - OIDC IdP + RFC 8693 token exchange for FMC,
-#     kube-mcp-server (passthrough auth), and API server OIDC
+#     kube-mcp-server (passthrough auth), and API server OIDC (runs in
+#     start-dev mode with embedded H2 storage -- no external DB)
 #   - Envoy AI Gateway (port 31976) - MCP entry point, proxies to kube-mcp-server
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
@@ -43,13 +43,6 @@ nodes:
   # NodePort over kubectl port-forward for E2E test stability.
   - containerPort: 30150  # FMC API NodePort
     hostPort: 8150        # DD-TEST-001: FMC API (mirrors production port 8150)
-    protocol: TCP
-  # Data Storage dependency (audit trail - AGENTS.md SOC2/FedRAMP mandate)
-  - containerPort: 30081  # Data Storage NodePort in cluster
-    hostPort: 30081       # DD-TEST-001: DataStorage API
-    protocol: TCP
-  - containerPort: 30281  # Data Storage health NodePort (Issue #753)
-    hostPort: 30281       # DD-TEST-001: DataStorage health
     protocol: TCP
   # Keycloak OIDC + RFC 8693 token exchange (client_credentials IdP for FMC,
   # STS provider for kube-mcp-server passthrough auth, API server OIDC discovery)

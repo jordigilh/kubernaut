@@ -32,10 +32,13 @@ import (
 const keycloakHostPortFMC = 30557
 
 // SetupFMCE2EInfrastructure deploys the dedicated Fleet Metadata Cache (FMC)
-// E2E stack: DataStorage (audit trail dependency, per AGENTS.md) + Keycloak
-// (OIDC IdP + RFC 8693 token exchange) + the fleet-core stack (Istio +
-// Kuadrant MCP Gateway + kube-mcp-server + Valkey + FMC) via
+// E2E stack: Keycloak (OIDC IdP + RFC 8693 token exchange) + the fleet-core
+// stack (Istio + Kuadrant MCP Gateway + kube-mcp-server + Valkey + FMC) via
 // DeployFleetCoreInfra.
+//
+// DataStorage is deliberately NOT deployed here: FMC is audit-exempt
+// (DD-AUDIT-003) and never calls DataStorage's API, so unlike other E2E
+// lanes this one has no audit-trail dependency to satisfy.
 //
 // Unlike the "fleet" E2E suite (test/e2e/fleet/), this lane does NOT deploy
 // Gateway, RemediationOrchestrator, or the other 8+ Kubernaut services --
@@ -58,10 +61,10 @@ func SetupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 }
 
 // SetupFMCE2EInfrastructureEAIGW is the Envoy AI Gateway (EAIGW) sibling of
-// SetupFMCE2EInfrastructure (Spike S18, Phase B): identical Phases 1-7
-// (images, Kind cluster, TLS, DataStorage, Keycloak, API server OIDC patch)
-// and the same passthrough+STS kube-mcp-server token-exchange design, but
-// Phase 8 fronts kube-mcp-server with Envoy AI Gateway instead of Kuadrant
+// SetupFMCE2EInfrastructure (Spike S18, Phase B): identical Phases 1-6
+// (image, Kind cluster, TLS, Keycloak, API server OIDC patch) and the same
+// passthrough+STS kube-mcp-server token-exchange design, but Phase 7 fronts
+// kube-mcp-server with Envoy AI Gateway instead of Kuadrant
 // (deployEnvoyAIGatewayInfra/deployEnvoyAIGatewayRegistrations in
 // fleet_e2e.go) -- see the "Key design decision" section of the EAIGW plan
 // doc for why the RFC 8693 exchange itself needs no gateway-specific changes.
@@ -92,71 +95,26 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "🚀 Fleet Metadata Cache (FMC) E2E Infrastructure")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	_, _ = fmt.Fprintf(writer, "  Deploys: DataStorage + Keycloak + Fleet Core (%s/kube-mcp-server/Valkey/FMC)\n", gatewayLabel)
+	_, _ = fmt.Fprintf(writer, "  Deploys: Keycloak + Fleet Core (%s/kube-mcp-server/Valkey/FMC)\n", gatewayLabel)
 	_, _ = fmt.Fprintln(writer, "  Skips: Gateway, RemediationOrchestrator, and other Kubernaut services")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	namespace := "kubernaut-system"
 
-	// ── Phase 1: Build images in parallel (before cluster creation) ─────
-	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Building fleetmetadatacache + datastorage images (NO CLUSTER YET)...")
-
-	type buildResult struct {
-		name      string
-		imageName string
-		err       error
+	// ── Phase 1: Build fleetmetadatacache image (before cluster creation) ──
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Building fleetmetadatacache image (NO CLUSTER YET)...")
+	buildCfg := E2EImageConfig{
+		ServiceName:      "fleetmetadatacache",
+		ImageName:        "fleetmetadatacache",
+		DockerfilePath:   "docker/fleetmetadatacache.Dockerfile",
+		BuildContextPath: "",
+		EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
 	}
-	buildResults := make(chan buildResult, 2)
-
-	go func() {
-		cfg := E2EImageConfig{
-			ServiceName:      "fleetmetadatacache",
-			ImageName:        "fleetmetadatacache",
-			DockerfilePath:   "docker/fleetmetadatacache.Dockerfile",
-			BuildContextPath: "",
-			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
-		}
-		imageName, buildErr := BuildImageForKind(cfg, writer)
-		if buildErr != nil {
-			buildErr = fmt.Errorf("fleetmetadatacache image build failed: %w", buildErr)
-		}
-		buildResults <- buildResult{name: "FleetMetadataCache", imageName: imageName, err: buildErr}
-	}()
-
-	go func() {
-		cfg := E2EImageConfig{
-			ServiceName:      "datastorage",
-			ImageName:        "kubernaut/datastorage",
-			DockerfilePath:   "docker/data-storage.Dockerfile",
-			BuildContextPath: "",
-			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
-		}
-		imageName, buildErr := BuildImageForKind(cfg, writer)
-		if buildErr != nil {
-			buildErr = fmt.Errorf("datastorage image build failed: %w", buildErr)
-		}
-		buildResults <- buildResult{name: "DataStorage", imageName: imageName, err: buildErr}
-	}()
-
-	var dsImage string
-	var buildErrs []string
-	for i := 0; i < 2; i++ {
-		r := <-buildResults
-		if r.err != nil {
-			buildErrs = append(buildErrs, r.err.Error())
-			continue
-		}
-		_, _ = fmt.Fprintf(writer, "  ✅ %s image built: %s\n", r.name, r.imageName)
-		switch r.name {
-		case "FleetMetadataCache":
-			fmcImage = r.imageName
-		case "DataStorage":
-			dsImage = r.imageName
-		}
+	fmcImage, err = BuildImageForKind(buildCfg, writer)
+	if err != nil {
+		return "", fmt.Errorf("fleetmetadatacache image build failed: %w", err)
 	}
-	if len(buildErrs) > 0 {
-		return "", fmt.Errorf("image build(s) failed: %s", joinErrs(buildErrs))
-	}
+	_, _ = fmt.Fprintf(writer, "  ✅ FleetMetadataCache image built: %s\n", fmcImage)
 
 	// ── Phase 2: Create Kind cluster + namespace ─────────────────────────
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 2: Creating Kind cluster + namespace...")
@@ -178,43 +136,34 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 		return "", fmt.Errorf("failed to create namespace: %w", nsErr)
 	}
 
-	// ── Phase 3: Load images into Kind ───────────────────────────────────
-	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 3: Loading images into Kind...")
+	// ── Phase 3: Load image into Kind ────────────────────────────────────
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 3: Loading image into Kind...")
 	if loadErr := LoadImageToKind(fmcImage, "fleetmetadatacache", clusterName, writer); loadErr != nil {
 		return "", fmt.Errorf("failed to load fleetmetadatacache image: %w", loadErr)
 	}
-	if loadErr := LoadImageToKind(dsImage, "datastorage", clusterName, writer); loadErr != nil {
-		return "", fmt.Errorf("failed to load datastorage image: %w", loadErr)
-	}
 
-	// ── Phase 4: TLS + signing certs (must precede DEX and DataStorage) ─
-	_, _ = fmt.Fprintln(writer, "\n🔐 PHASE 4: Generating inter-service TLS + audit signing certs...")
+	// ── Phase 4: Inter-service TLS (must precede Keycloak) ───────────────
+	// No audit signing cert here (GenerateSigningCertSecret): that secret is
+	// only consumed by DataStorage's hash-chain signing, and this lane does
+	// not deploy DataStorage (FMC is audit-exempt, DD-AUDIT-003).
+	_, _ = fmt.Fprintln(writer, "\n🔐 PHASE 4: Generating inter-service TLS...")
 	if _, tlsErr := GenerateInterServiceTLS(ctx, kubeconfigPath, namespace, writer); tlsErr != nil {
 		return "", fmt.Errorf("failed to generate inter-service TLS: %w", tlsErr)
 	}
-	if signErr := GenerateSigningCertSecret(ctx, kubeconfigPath, namespace, writer); signErr != nil {
-		return "", fmt.Errorf("failed to generate signing certificate: %w", signErr)
-	}
 
-	// ── Phase 5: DataStorage (audit trail dependency) ────────────────────
-	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 5: Deploying DataStorage...")
-	if dsErr := DeployDataStorageTestServices(ctx, namespace, kubeconfigPath, dsImage, writer); dsErr != nil {
-		return "", fmt.Errorf("failed to deploy DataStorage: %w", dsErr)
-	}
-
-	// ── Phase 6: Keycloak OIDC + token-exchange provider (must be ready before API server OIDC patch) ─
-	_, _ = fmt.Fprintln(writer, "\n🔑 PHASE 6: Deploying Keycloak OIDC provider...")
+	// ── Phase 5: Keycloak OIDC + token-exchange provider (must be ready before API server OIDC patch) ─
+	_, _ = fmt.Fprintln(writer, "\n🔑 PHASE 5: Deploying Keycloak OIDC provider...")
 	if kcErr := DeployKeycloakInfra(ctx, namespace, kubeconfigPath, keycloakHostPortFMC, writer); kcErr != nil {
 		return "", fmt.Errorf("failed to deploy Keycloak: %w", kcErr)
 	}
 
-	// ── Phase 7: Patch API server for OIDC (needs Keycloak already running) ──
+	// ── Phase 6: Patch API server for OIDC (needs Keycloak already running) ──
 	// ClientID is "k8s-api", NOT "kubernaut-fleet-read": the API server must
 	// validate the *exchanged* token's audience (kube-mcp-server presents it
 	// after RFC 8693 exchange), not the original caller's token audience.
 	// UsernameClaim=preferred_username: Spike S18 proved this claim survives
 	// the exchange unchanged, preserving FMC's identity for RBAC purposes.
-	_, _ = fmt.Fprintln(writer, "\n🔑 PHASE 7: Patching API server for OIDC (Keycloak issuer, k8s-api audience)...")
+	_, _ = fmt.Fprintln(writer, "\n🔑 PHASE 6: Patching API server for OIDC (Keycloak issuer, k8s-api audience)...")
 	oidcCfg := OIDCPatchConfig{
 		IssuerURL:      "https://keycloak:8443/realms/kubernaut-fleet",
 		ClientID:       "k8s-api",
@@ -225,13 +174,13 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 		return "", fmt.Errorf("API server OIDC patching failed: %w", oidcErr)
 	}
 
-	// ── Phase 8: Fleet core (Istio + Kuadrant + kube-mcp-server + Valkey + FMC) ─
+	// ── Phase 7: Fleet core (Istio + Kuadrant + kube-mcp-server + Valkey + FMC) ─
 	// kube-mcp-server runs in passthrough mode with RFC 8693 token exchange
 	// (Spike S17/S18): it forwards FMC's incoming Bearer token, exchanges it
 	// for a token scoped to the "k8s-api" audience, and presents that
 	// exchanged token to the Kubernetes API server -- validating the real
 	// production token-exchange wiring end-to-end (E2E-FMC-054-014).
-	_, _ = fmt.Fprintln(writer, "\n🌐 PHASE 8: Deploying fleet-core infrastructure (kube-mcp-server: passthrough + token exchange)...")
+	_, _ = fmt.Fprintln(writer, "\n🌐 PHASE 7: Deploying fleet-core infrastructure (kube-mcp-server: passthrough + token exchange)...")
 
 	// FMC's own client_credentials grant now goes to Keycloak instead of DEX
 	// (Keycloak replaces DEX in this lane -- Spike S17/S18).
@@ -281,13 +230,13 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 		return "", fmt.Errorf("fleet-core infra deployment failed: %w", coreErr)
 	}
 
-	// ── Phase 8b: RBAC for the token-exchange-preserved FMC identity ────
+	// ── Phase 7b: RBAC for the token-exchange-preserved FMC identity ────
 	// kube-mcp-server's exchanged token carries FMC's original identity
 	// (service-account-kubernaut-fleet-read, Spike S18), not kube-mcp-server's
 	// own. Bind that identity directly to "view" so the exchanged calls
 	// authorize the same way FMC's own dedicated ServiceAccount would have
 	// under cluster_auth_mode=kubeconfig.
-	_, _ = fmt.Fprintln(writer, "\n🔑 PHASE 8b: Creating RBAC for the exchanged FMC identity...")
+	_, _ = fmt.Fprintln(writer, "\n🔑 PHASE 7b: Creating RBAC for the exchanged FMC identity...")
 	if rbacErr := applyExchangedIdentityRBAC(ctx, kubeconfigPath, writer); rbacErr != nil {
 		return "", fmt.Errorf("exchanged-identity RBAC creation failed: %w", rbacErr)
 	}
@@ -306,12 +255,12 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 		return "", fmt.Errorf("fleet readiness check failed: %w", readyErr)
 	}
 
-	// ── Phase 9: Expose FMC's own API via NodePort ───────────────────────
+	// ── Phase 8: Expose FMC's own API via NodePort ───────────────────────
 	// DD-TEST-001 mandates NodePort over kubectl port-forward for E2E test
 	// stability. DeployFleetCoreInfra only creates a ClusterIP Service for
 	// FMC (fleetmetadatacache-service, for in-cluster GW/RO callers), so this
 	// is an additive Service selecting the same pods -- no shared-code change.
-	_, _ = fmt.Fprintln(writer, "\n🔌 PHASE 9: Exposing FMC API via NodePort (DD-TEST-001)...")
+	_, _ = fmt.Fprintln(writer, "\n🔌 PHASE 8: Exposing FMC API via NodePort (DD-TEST-001)...")
 	fmcNodePortManifest := fmt.Sprintf(`---
 apiVersion: v1
 kind: Service
@@ -340,7 +289,6 @@ spec:
 	_, _ = fmt.Fprintln(writer, "✅ FMC E2E Infrastructure READY")
 	_, _ = fmt.Fprintln(writer, "  FMC API:      http://localhost:8150")
 	_, _ = fmt.Fprintf(writer, "  MCP Gateway:  http://localhost:%d/mcp (%s)\n", mcpGatewayNodePort, gatewayLabel)
-	_, _ = fmt.Fprintln(writer, "  DataStorage:  https://localhost:30081")
 	_, _ = fmt.Fprintln(writer, "  Keycloak:     https://localhost:30557/realms/kubernaut-fleet")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
@@ -376,12 +324,4 @@ subjects:
 	}
 	_, _ = fmt.Fprintln(writer, "  ✅ RBAC created for keycloak:service-account-kubernaut-fleet-read (view)")
 	return nil
-}
-
-func joinErrs(errs []string) string {
-	out := errs[0]
-	for _, e := range errs[1:] {
-		out += "; " + e
-	}
-	return out
 }
