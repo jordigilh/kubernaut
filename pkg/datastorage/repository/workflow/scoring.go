@@ -77,6 +77,43 @@ var detectedLabelWeights = map[string]float64{
 	"storage_backend":  0.05,
 }
 
+// appendBoolBoostCase appends a boost CASE expression for a simple boolean
+// detected-label field (no wildcard semantics) when present is true.
+// Extracted from buildDetectedLabelsBoostSQL (GO-ANTIPATTERN-AUDIT-2026-07-01
+// Wave 3) — pure code motion, no behavior change.
+func appendBoolBoostCase(cases []string, present bool, jsonKey string, weight float64) []string {
+	if !present {
+		return cases
+	}
+	return append(cases, fmt.Sprintf("CASE WHEN detected_labels->>'%s' = 'true' THEN %.2f ELSE 0.0 END", jsonKey, weight))
+}
+
+// appendWildcardStringBoostCase appends a bidirectional-wildcard boost CASE
+// expression (#215 Gap 2 fix) for a string detected-label field: a literal
+// "*" query value matches any non-empty workflow value at half boost;
+// otherwise the query value (validated against allowedValues) matches
+// exactly at full boost, or a workflow-side "*" at half boost. Extracted from
+// buildDetectedLabelsBoostSQL (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 3) — pure
+// code motion, no behavior change.
+func appendWildcardStringBoostCase(cases []string, value, jsonKey string, weight float64, allowedValues []string) []string {
+	if value == "" {
+		return cases
+	}
+	if value == "*" {
+		// Query-side wildcard: match any workflow with a non-empty value → half boost
+		return append(cases, fmt.Sprintf(
+			"CASE WHEN detected_labels->>'%s' IS NOT NULL AND detected_labels->>'%s' != '' THEN %.2f ELSE 0.0 END",
+			jsonKey, jsonKey, weight/2))
+	}
+	sanitized := sanitizeEnumValue(value, allowedValues)
+	if sanitized == "" {
+		return cases
+	}
+	return append(cases, fmt.Sprintf(
+		"CASE WHEN detected_labels->>'%s' = '%s' THEN %.2f WHEN detected_labels->>'%s' = '*' THEN %.2f ELSE 0.0 END",
+		jsonKey, sanitized, weight, jsonKey, weight/2))
+}
+
 // buildDetectedLabelsBoostSQL generates SQL for detected label boost scoring.
 // Checks the WORKFLOW side for exact and wildcard matches against the query values.
 //
@@ -90,122 +127,18 @@ func buildDetectedLabelsBoostSQL(dl *models.DetectedLabels) string {
 	}
 
 	boostCases := []string{}
-
-	// GitOpsManaged (boolean -- no wildcard for booleans)
-	if dl.GitOpsManaged {
-		weight := detectedLabelWeights["git_ops_managed"]
-		boostCases = append(boostCases,
-			fmt.Sprintf("CASE WHEN detected_labels->>'gitOpsManaged' = 'true' THEN %.2f ELSE 0.0 END", weight))
-	}
-
-	// GitOpsTool (string -- bidirectional wildcard: #215 Gap 2 fix)
-	if dl.GitOpsTool != "" {
-		weight := detectedLabelWeights["git_ops_tool"]
-		if dl.GitOpsTool == "*" {
-			// Query-side wildcard: match any workflow with a non-empty gitOpsTool → half boost
-			boostCases = append(boostCases,
-				fmt.Sprintf("CASE WHEN detected_labels->>'gitOpsTool' IS NOT NULL AND detected_labels->>'gitOpsTool' != '' THEN %.2f ELSE 0.0 END",
-					weight/2))
-		} else {
-			tool := sanitizeEnumValue(dl.GitOpsTool, []string{"argocd", "flux"})
-			if tool != "" {
-				boostCases = append(boostCases,
-					fmt.Sprintf("CASE WHEN detected_labels->>'gitOpsTool' = '%s' THEN %.2f WHEN detected_labels->>'gitOpsTool' = '*' THEN %.2f ELSE 0.0 END",
-						tool, weight, weight/2))
-			}
-		}
-	}
-
-	// PDBProtected (boolean)
-	if dl.PDBProtected {
-		weight := detectedLabelWeights["pdb_protected"]
-		boostCases = append(boostCases,
-			fmt.Sprintf("CASE WHEN detected_labels->>'pdbProtected' = 'true' THEN %.2f ELSE 0.0 END", weight))
-	}
-
-	// ServiceMesh (string -- bidirectional wildcard: #215 Gap 2 fix)
-	if dl.ServiceMesh != "" {
-		weight := detectedLabelWeights["service_mesh"]
-		if dl.ServiceMesh == "*" {
-			// Query-side wildcard: match any workflow with a non-empty serviceMesh → half boost
-			boostCases = append(boostCases,
-				fmt.Sprintf("CASE WHEN detected_labels->>'serviceMesh' IS NOT NULL AND detected_labels->>'serviceMesh' != '' THEN %.2f ELSE 0.0 END",
-					weight/2))
-		} else {
-			mesh := sanitizeEnumValue(dl.ServiceMesh, []string{"istio", "linkerd"})
-			if mesh != "" {
-				boostCases = append(boostCases,
-					fmt.Sprintf("CASE WHEN detected_labels->>'serviceMesh' = '%s' THEN %.2f WHEN detected_labels->>'serviceMesh' = '*' THEN %.2f ELSE 0.0 END",
-						mesh, weight, weight/2))
-			}
-		}
-	}
-
-	// NetworkIsolated (boolean)
-	if dl.NetworkIsolated {
-		weight := detectedLabelWeights["network_isolated"]
-		boostCases = append(boostCases,
-			fmt.Sprintf("CASE WHEN detected_labels->>'networkIsolated' = 'true' THEN %.2f ELSE 0.0 END", weight))
-	}
-
-	// HelmManaged (boolean)
-	if dl.HelmManaged {
-		weight := detectedLabelWeights["helm_managed"]
-		boostCases = append(boostCases,
-			fmt.Sprintf("CASE WHEN detected_labels->>'helmManaged' = 'true' THEN %.2f ELSE 0.0 END", weight))
-	}
-
-	// Stateful (boolean)
-	if dl.Stateful {
-		weight := detectedLabelWeights["stateful"]
-		boostCases = append(boostCases,
-			fmt.Sprintf("CASE WHEN detected_labels->>'stateful' = 'true' THEN %.2f ELSE 0.0 END", weight))
-	}
-
-	// HPAEnabled (boolean)
-	if dl.HPAEnabled {
-		weight := detectedLabelWeights["hpa_enabled"]
-		boostCases = append(boostCases,
-			fmt.Sprintf("CASE WHEN detected_labels->>'hpaEnabled' = 'true' THEN %.2f ELSE 0.0 END", weight))
-	}
-
-	// VirtualMachine (boolean)
-	if dl.VirtualMachine {
-		weight := detectedLabelWeights["virtual_machine"]
-		boostCases = append(boostCases,
-			fmt.Sprintf("CASE WHEN detected_labels->>'virtualMachine' = 'true' THEN %.2f ELSE 0.0 END", weight))
-	}
-
-	// LiveMigratable (boolean)
-	if dl.LiveMigratable {
-		weight := detectedLabelWeights["live_migratable"]
-		boostCases = append(boostCases,
-			fmt.Sprintf("CASE WHEN detected_labels->>'liveMigratable' = 'true' THEN %.2f ELSE 0.0 END", weight))
-	}
-
-	// CDIManaged (boolean)
-	if dl.CDIManaged {
-		weight := detectedLabelWeights["cdi_managed"]
-		boostCases = append(boostCases,
-			fmt.Sprintf("CASE WHEN detected_labels->>'cdiManaged' = 'true' THEN %.2f ELSE 0.0 END", weight))
-	}
-
-	// StorageBackend (string -- bidirectional wildcard)
-	if dl.StorageBackend != "" {
-		weight := detectedLabelWeights["storage_backend"]
-		if dl.StorageBackend == "*" {
-			boostCases = append(boostCases,
-				fmt.Sprintf("CASE WHEN detected_labels->>'storageBackend' IS NOT NULL AND detected_labels->>'storageBackend' != '' THEN %.2f ELSE 0.0 END",
-					weight/2))
-		} else {
-			backend := sanitizeEnumValue(dl.StorageBackend, []string{"odf-ceph", "lvms", "local"})
-			if backend != "" {
-				boostCases = append(boostCases,
-					fmt.Sprintf("CASE WHEN detected_labels->>'storageBackend' = '%s' THEN %.2f WHEN detected_labels->>'storageBackend' = '*' THEN %.2f ELSE 0.0 END",
-						backend, weight, weight/2))
-			}
-		}
-	}
+	boostCases = appendBoolBoostCase(boostCases, dl.GitOpsManaged, "gitOpsManaged", detectedLabelWeights["git_ops_managed"])
+	boostCases = appendWildcardStringBoostCase(boostCases, dl.GitOpsTool, "gitOpsTool", detectedLabelWeights["git_ops_tool"], []string{"argocd", "flux"})
+	boostCases = appendBoolBoostCase(boostCases, dl.PDBProtected, "pdbProtected", detectedLabelWeights["pdb_protected"])
+	boostCases = appendWildcardStringBoostCase(boostCases, dl.ServiceMesh, "serviceMesh", detectedLabelWeights["service_mesh"], []string{"istio", "linkerd"})
+	boostCases = appendBoolBoostCase(boostCases, dl.NetworkIsolated, "networkIsolated", detectedLabelWeights["network_isolated"])
+	boostCases = appendBoolBoostCase(boostCases, dl.HelmManaged, "helmManaged", detectedLabelWeights["helm_managed"])
+	boostCases = appendBoolBoostCase(boostCases, dl.Stateful, "stateful", detectedLabelWeights["stateful"])
+	boostCases = appendBoolBoostCase(boostCases, dl.HPAEnabled, "hpaEnabled", detectedLabelWeights["hpa_enabled"])
+	boostCases = appendBoolBoostCase(boostCases, dl.VirtualMachine, "virtualMachine", detectedLabelWeights["virtual_machine"])
+	boostCases = appendBoolBoostCase(boostCases, dl.LiveMigratable, "liveMigratable", detectedLabelWeights["live_migratable"])
+	boostCases = appendBoolBoostCase(boostCases, dl.CDIManaged, "cdiManaged", detectedLabelWeights["cdi_managed"])
+	boostCases = appendWildcardStringBoostCase(boostCases, dl.StorageBackend, "storageBackend", detectedLabelWeights["storage_backend"], []string{"odf-ceph", "lvms", "local"})
 
 	if len(boostCases) == 0 {
 		return "0.0"

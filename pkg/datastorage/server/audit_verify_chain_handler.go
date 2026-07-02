@@ -145,6 +145,53 @@ func (s *Server) verifyHashChain(ctx context.Context, correlationID string) (*Ve
 		return nil, fmt.Errorf("failed to count NULL-hash events: %w", err)
 	}
 
+	events, err := s.queryVerifyChainEvents(ctx, correlationID)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(events) > MaxVerifyChainEvents {
+		return nil, fmt.Errorf("correlation_id has more than %d hashed events; use export/offline verification", MaxVerifyChainEvents)
+	}
+
+	response := &VerifyChainResponse{
+		CorrelationID:    correlationID,
+		IsValid:          true,
+		TotalEvents:      len(events),
+		VerifiedEvents:   0,
+		SkippedNullHash:  skippedNullHash,
+		TamperedEvents:   []TamperedEvent{},
+		VerificationTime: time.Now().UTC(),
+	}
+
+	if len(events) == 0 {
+		response.Message = "No events found for correlation_id"
+		return response, nil
+	}
+
+	// Verify each event's hash (GAP-05: algorithm-aware, honors each event's own hash_algorithm)
+	if err := verifyEventChain(response, events, s.auditEventsRepo.HMACKey()); err != nil {
+		return nil, err
+	}
+
+	if response.IsValid {
+		response.Message = "Hash chain verified successfully: no tampering detected"
+	} else {
+		response.Message = "Hash chain verification FAILED: tampering detected"
+	}
+	if skippedNullHash > 0 {
+		response.Message += fmt.Sprintf(" (%d events without hashes were excluded from verification)", skippedNullHash)
+	}
+
+	return response, nil
+}
+
+// queryVerifyChainEvents queries the (up to MaxVerifyChainEvents+1) hashed
+// audit events for correlationID, ordered oldest-first, and scans each row
+// into a repository.AuditEvent. Extracted from verifyHashChain
+// (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 3) — pure code motion, no behavior
+// change.
+func (s *Server) queryVerifyChainEvents(ctx context.Context, correlationID string) ([]*repository.AuditEvent, error) {
 	query := `
 		SELECT
 			event_id, event_timestamp, event_type,
@@ -175,108 +222,111 @@ func (s *Server) verifyHashChain(ctx context.Context, correlationID string) (*Ve
 
 	var events []*repository.AuditEvent
 	for rows.Next() {
-		event := &repository.AuditEvent{}
-		var eventDataJSON []byte
-
-		// Nullable columns must use sql.Null* types; ToNullStringValue("")
-		// stores empty strings as SQL NULL, so scanning into a bare
-		// Go string/int would fail with "converting NULL to <type>".
-		var (
-			namespace    sql.NullString
-			clusterName  sql.NullString
-			actorIP      sql.NullString
-			severity     sql.NullString
-			durationMs   sql.NullInt32
-			errorCode    sql.NullString
-			errorMessage sql.NullString
-		)
-
-		err := rows.Scan(
-			&event.EventID,
-			&event.EventTimestamp,
-			&event.EventType,
-			&event.EventCategory,
-			&event.EventAction,
-			&event.EventOutcome,
-			&event.CorrelationID,
-			&event.ParentEventID,
-			&event.ParentEventDate,
-			&event.ResourceType,
-			&event.ResourceID,
-			&namespace,
-			&clusterName,
-			&event.ActorID,
-			&event.ActorType,
-			&actorIP,
-			&severity,
-			&durationMs,
-			&errorCode,
-			&errorMessage,
-			&event.RetentionDays,
-			&event.IsSensitive,
-			&eventDataJSON,
-			&event.EventHash,
-			&event.PreviousEventHash,
-			&event.HashAlgorithm,
-			&event.Version,
-		)
+		event, err := scanVerifyChainEvent(rows)
 		if err != nil {
 			return nil, err
 		}
-
-		event.ResourceNamespace = namespace.String
-		event.ClusterID = clusterName.String
-		event.ActorIP = actorIP.String
-		event.Severity = severity.String
-		event.DurationMs = int(durationMs.Int32)
-		event.ErrorCode = errorCode.String
-		event.ErrorMessage = errorMessage.String
-
-		// CRITICAL: Force timestamp to UTC for hash consistency
-		// PostgreSQL timestamptz stores in UTC but Go reads them with local timezone.
-		// Must match the write-time JSON representation for correct hash verification.
-		event.EventTimestamp = event.EventTimestamp.UTC()
-
-		// Unmarshal event_data
-		if len(eventDataJSON) > 0 {
-			if err := json.Unmarshal(eventDataJSON, &event.EventData); err != nil {
-				return nil, err
-			}
-		}
-
 		events = append(events, event)
 	}
-
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 
-	if len(events) > MaxVerifyChainEvents {
-		return nil, fmt.Errorf("correlation_id has more than %d hashed events; use export/offline verification", MaxVerifyChainEvents)
+	return events, nil
+}
+
+// scanVerifyChainEvent scans a single audit_events row into a
+// repository.AuditEvent, applying the sql.Null* -> Go type conversions and
+// forcing the timestamp to UTC for hash-consistency (write-time JSON was
+// computed against a UTC timestamp). Extracted from verifyHashChain
+// (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 3) — pure code motion, no behavior
+// change.
+func scanVerifyChainEvent(rows *sql.Rows) (*repository.AuditEvent, error) {
+	event := &repository.AuditEvent{}
+	var eventDataJSON []byte
+
+	// Nullable columns must use sql.Null* types; ToNullStringValue("")
+	// stores empty strings as SQL NULL, so scanning into a bare
+	// Go string/int would fail with "converting NULL to <type>".
+	var (
+		namespace    sql.NullString
+		clusterName  sql.NullString
+		actorIP      sql.NullString
+		severity     sql.NullString
+		durationMs   sql.NullInt32
+		errorCode    sql.NullString
+		errorMessage sql.NullString
+	)
+
+	err := rows.Scan(
+		&event.EventID,
+		&event.EventTimestamp,
+		&event.EventType,
+		&event.EventCategory,
+		&event.EventAction,
+		&event.EventOutcome,
+		&event.CorrelationID,
+		&event.ParentEventID,
+		&event.ParentEventDate,
+		&event.ResourceType,
+		&event.ResourceID,
+		&namespace,
+		&clusterName,
+		&event.ActorID,
+		&event.ActorType,
+		&actorIP,
+		&severity,
+		&durationMs,
+		&errorCode,
+		&errorMessage,
+		&event.RetentionDays,
+		&event.IsSensitive,
+		&eventDataJSON,
+		&event.EventHash,
+		&event.PreviousEventHash,
+		&event.HashAlgorithm,
+		&event.Version,
+	)
+	if err != nil {
+		return nil, err
 	}
 
-	response := &VerifyChainResponse{
-		CorrelationID:    correlationID,
-		IsValid:          true,
-		TotalEvents:      len(events),
-		VerifiedEvents:   0,
-		SkippedNullHash:  skippedNullHash,
-		TamperedEvents:   []TamperedEvent{},
-		VerificationTime: time.Now().UTC(),
+	event.ResourceNamespace = namespace.String
+	event.ClusterID = clusterName.String
+	event.ActorIP = actorIP.String
+	event.Severity = severity.String
+	event.DurationMs = int(durationMs.Int32)
+	event.ErrorCode = errorCode.String
+	event.ErrorMessage = errorMessage.String
+
+	// CRITICAL: Force timestamp to UTC for hash consistency
+	// PostgreSQL timestamptz stores in UTC but Go reads them with local timezone.
+	// Must match the write-time JSON representation for correct hash verification.
+	event.EventTimestamp = event.EventTimestamp.UTC()
+
+	// Unmarshal event_data
+	if len(eventDataJSON) > 0 {
+		if err := json.Unmarshal(eventDataJSON, &event.EventData); err != nil {
+			return nil, err
+		}
 	}
 
-	if len(events) == 0 {
-		response.Message = "No events found for correlation_id"
-		return response, nil
-	}
+	return event, nil
+}
 
-	// Verify each event's hash (GAP-05: algorithm-aware, honors each event's own hash_algorithm)
-	hmacKey := s.auditEventsRepo.HMACKey()
+// verifyEventChain walks events in order, recomputing each event's expected
+// hash (GAP-05: algorithm-aware, honors each event's own hash_algorithm) and
+// comparing it against the stored hash and previous_event_hash link,
+// appending any mismatches to response.TamperedEvents and updating
+// response.IsValid/VerifiedEvents in place. Extracted from verifyHashChain
+// (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 3) — pure code motion, no behavior
+// change.
+func verifyEventChain(response *VerifyChainResponse, events []*repository.AuditEvent, hmacKey []byte) error {
 	previousHash := ""
 	for _, event := range events {
 		expectedHash, err := repository.CalculateHashForVerification(hmacKey, previousHash, event)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		// Verify previous_event_hash matches
@@ -310,15 +360,5 @@ func (s *Server) verifyHashChain(ctx context.Context, correlationID string) (*Ve
 		// Update previous hash for next iteration
 		previousHash = event.EventHash
 	}
-
-	if response.IsValid {
-		response.Message = "Hash chain verified successfully: no tampering detected"
-	} else {
-		response.Message = "Hash chain verification FAILED: tampering detected"
-	}
-	if skippedNullHash > 0 {
-		response.Message += fmt.Sprintf(" (%d events without hashes were excluded from verification)", skippedNullHash)
-	}
-
-	return response, nil
+	return nil
 }

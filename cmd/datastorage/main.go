@@ -162,6 +162,33 @@ func main() {
 	//   + health/metrics shutdown (2s each) = ~50s, with 10s headroom.
 	// GetShutdownTimeout clamps to [30s, 120s] for safety.
 	// terminationGracePeriodSeconds in deployment.yaml must be >= this value + buffer (90s).
+	shutdownTimeout := logEffectiveServerConfig(cfg, logger)
+
+	// Issue #283/#753: Dedicated Prometheus metrics + health probe servers
+	// on standardised ports (CONFIG_STANDARDS.md).
+	obs := startObservabilityServers(cfg, srv, logger)
+
+	// Issue #748/#756/#875: TLS security profile + CA-cert and log-level hot-reload watchers.
+	stopHotReload := wireHotReload(ctx, cfg, cfgPath, atomicLevel, logger)
+	defer stopHotReload()
+
+	runAndWaitForShutdown(ctx, cfg, srv, obs, shutdownTimeout, logger)
+
+	logger.Info("Data Storage service stopped (ADR-030 + DD-007)")
+}
+
+// logEffectiveServerConfig logs clamp warnings for shutdownTimeout/maxBodySize,
+// the CORS wildcard warning, and the final startup summary, returning the
+// effective (clamped) shutdown timeout for use by the caller. Extracted from
+// main() (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 3) — pure code motion, no
+// behavior change.
+func logEffectiveServerConfig(cfg *config.Config, logger logr.Logger) time.Duration {
+	// DD-007: Graceful shutdown timeout — read from config file (ADR-030).
+	// Default 60s accommodates internal budgets:
+	//   endpoint propagation (5s) + HTTP drain (30s) + DLQ drain (10s) + resource close (~1s)
+	//   + health/metrics shutdown (2s each) = ~50s, with 10s headroom.
+	// GetShutdownTimeout clamps to [30s, 120s] for safety.
+	// terminationGracePeriodSeconds in deployment.yaml must be >= this value + buffer (90s).
 	shutdownTimeout := cfg.Server.GetShutdownTimeout()
 	if cfg.Server.ShutdownTimeout != "" && cfg.Server.ShutdownTimeout != shutdownTimeout.String() {
 		logger.Info("Configured shutdownTimeout was clamped to safe range",
@@ -203,15 +230,15 @@ func main() {
 		"cors_allowed_origins", corsOrigins,
 	)
 
-	// Issue #283/#753: Dedicated Prometheus metrics + health probe servers
-	// on standardised ports (CONFIG_STANDARDS.md).
-	obs := startObservabilityServers(cfg, srv, logger)
+	return shutdownTimeout
+}
 
-	// Issue #748/#756/#875: TLS security profile + CA-cert and log-level hot-reload watchers.
-	stopHotReload := wireHotReload(ctx, cfg, cfgPath, atomicLevel, logger)
-	defer stopHotReload()
-
-	// Start API server in goroutine
+// runAndWaitForShutdown starts the API server in a background goroutine, then
+// blocks until either a server/observability error or an OS shutdown signal
+// is received, running the DD-007 graceful shutdown sequence in response.
+// Extracted from main() (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 3) — pure code
+// motion, no behavior change.
+func runAndWaitForShutdown(ctx context.Context, cfg *config.Config, srv *server.Server, obs *observabilityServers, shutdownTimeout time.Duration, logger logr.Logger) {
 	serverErrors := make(chan error, 1)
 	go func() {
 		addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
@@ -277,8 +304,6 @@ func main() {
 		defer shutdownCancel()
 		gracefulShutdown(shutdownCtx)
 	}
-
-	logger.Info("Data Storage service stopped (ADR-030 + DD-007)")
 }
 
 // loadDataStorageConfig loads the YAML config file (ADR-030), loads secrets
@@ -622,34 +647,8 @@ func wireHotReload(
 		stopFns = append(stopFns, caWatcher.Stop)
 	}
 
-	// Issue #875: Log level hot-reload via FileWatcher
-	if cfgPath != "" {
-		logLevelWatcher, logWatchErr := hotreload.NewFileWatcher(
-			cfgPath,
-			func(newContent string) error {
-				var partial struct {
-					Logging struct {
-						Level string `yaml:"level"`
-					} `yaml:"logging"`
-				}
-				if err := yaml.Unmarshal([]byte(newContent), &partial); err != nil {
-					return fmt.Errorf("failed to parse config for log level reload: %w", err)
-				}
-				lvl := internalconfig.LoggingConfig{Level: strings.ToUpper(partial.Logging.Level)}
-				return internalconfig.ParseAndSetLevel(atomicLevel, lvl.Level)
-			},
-			logger.WithName("log-level-watcher"),
-		)
-		if logWatchErr != nil {
-			logger.Error(logWatchErr, "Failed to create log level file watcher")
-		} else {
-			if err := logLevelWatcher.Start(ctx); err != nil {
-				logger.Info("Log level file watcher failed to start", "error", err)
-			} else {
-				logger.Info("Log level hot-reload watcher started", "path", cfgPath)
-				stopFns = append(stopFns, logLevelWatcher.Stop)
-			}
-		}
+	if stop := wireLogLevelHotReload(ctx, cfgPath, atomicLevel, logger); stop != nil {
+		stopFns = append(stopFns, stop)
 	}
 
 	return func() {
@@ -657,4 +656,44 @@ func wireHotReload(
 			stop()
 		}
 	}
+}
+
+// wireLogLevelHotReload starts the Issue #875 config-file watcher that
+// hot-reloads the log level on change, returning its Stop function (or nil if
+// cfgPath is empty or the watcher failed to start). Extracted from
+// wireHotReload (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 3) — pure code motion,
+// no behavior change.
+func wireLogLevelHotReload(ctx context.Context, cfgPath string, atomicLevel zaplog.AtomicLevel, logger logr.Logger) func() {
+	if cfgPath == "" {
+		return nil
+	}
+
+	logLevelWatcher, logWatchErr := hotreload.NewFileWatcher(
+		cfgPath,
+		func(newContent string) error {
+			var partial struct {
+				Logging struct {
+					Level string `yaml:"level"`
+				} `yaml:"logging"`
+			}
+			if err := yaml.Unmarshal([]byte(newContent), &partial); err != nil {
+				return fmt.Errorf("failed to parse config for log level reload: %w", err)
+			}
+			lvl := internalconfig.LoggingConfig{Level: strings.ToUpper(partial.Logging.Level)}
+			return internalconfig.ParseAndSetLevel(atomicLevel, lvl.Level)
+		},
+		logger.WithName("log-level-watcher"),
+	)
+	if logWatchErr != nil {
+		logger.Error(logWatchErr, "Failed to create log level file watcher")
+		return nil
+	}
+
+	if err := logLevelWatcher.Start(ctx); err != nil {
+		logger.Info("Log level file watcher failed to start", "error", err)
+		return nil
+	}
+
+	logger.Info("Log level hot-reload watcher started", "path", cfgPath)
+	return logLevelWatcher.Stop
 }

@@ -390,6 +390,26 @@ type DetectedLabelsSchema struct {
 // UnmarshalYAML implements custom YAML unmarshaling for DetectedLabelsSchema.
 // Iterates over the raw YAML map to track which fields were explicitly declared
 // (PopulatedFields) while assigning values to typed struct fields.
+// detectedLabelsFieldSetters maps each known detectedLabels field name to a
+// setter that assigns the raw YAML scalar value to the corresponding struct
+// field. Registry pattern used by UnmarshalYAML in place of a large switch
+// statement (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 3) — pure code motion, no
+// behavior change.
+var detectedLabelsFieldSetters = map[string]func(*DetectedLabelsSchema, string){
+	"gitOpsManaged":   func(d *DetectedLabelsSchema, v string) { d.GitOpsManaged = v },
+	"gitOpsTool":      func(d *DetectedLabelsSchema, v string) { d.GitOpsTool = v },
+	"pdbProtected":    func(d *DetectedLabelsSchema, v string) { d.PDBProtected = v },
+	"hpaEnabled":      func(d *DetectedLabelsSchema, v string) { d.HPAEnabled = v },
+	"stateful":        func(d *DetectedLabelsSchema, v string) { d.Stateful = v },
+	"helmManaged":     func(d *DetectedLabelsSchema, v string) { d.HelmManaged = v },
+	"networkIsolated": func(d *DetectedLabelsSchema, v string) { d.NetworkIsolated = v },
+	"serviceMesh":     func(d *DetectedLabelsSchema, v string) { d.ServiceMesh = v },
+	"virtualMachine":  func(d *DetectedLabelsSchema, v string) { d.VirtualMachine = v },
+	"liveMigratable":  func(d *DetectedLabelsSchema, v string) { d.LiveMigratable = v },
+	"cdiManaged":      func(d *DetectedLabelsSchema, v string) { d.CDIManaged = v },
+	"storageBackend":  func(d *DetectedLabelsSchema, v string) { d.StorageBackend = v },
+}
+
 func (d *DetectedLabelsSchema) UnmarshalYAML(value *yaml.Node) error {
 	if value.Kind != yaml.MappingNode {
 		return fmt.Errorf("detectedLabels must be a mapping, got %v", value.Kind)
@@ -402,40 +422,14 @@ func (d *DetectedLabelsSchema) UnmarshalYAML(value *yaml.Node) error {
 		valNode := value.Content[i+1]
 		key := keyNode.Value
 
-		if _, known := detectedLabelsFieldSpecs[key]; !known {
+		setter, known := detectedLabelsFieldSetters[key]
+		if !known {
 			return NewSchemaValidationError("detectedLabels."+key,
 				fmt.Sprintf("unknown field %q in detectedLabels", key))
 		}
 
 		d.PopulatedFields = append(d.PopulatedFields, key)
-
-		val := valNode.Value
-		switch key {
-		case "gitOpsManaged":
-			d.GitOpsManaged = val
-		case "gitOpsTool":
-			d.GitOpsTool = val
-		case "pdbProtected":
-			d.PDBProtected = val
-		case "hpaEnabled":
-			d.HPAEnabled = val
-		case "stateful":
-			d.Stateful = val
-		case "helmManaged":
-			d.HelmManaged = val
-		case "networkIsolated":
-			d.NetworkIsolated = val
-		case "serviceMesh":
-			d.ServiceMesh = val
-		case "virtualMachine":
-			d.VirtualMachine = val
-		case "liveMigratable":
-			d.LiveMigratable = val
-		case "cdiManaged":
-			d.CDIManaged = val
-		case "storageBackend":
-			d.StorageBackend = val
-		}
+		setter(d, valNode.Value)
 	}
 
 	return nil

@@ -36,12 +36,12 @@ import (
 // EffectivenessScoreResponse is the response for GET /api/v1/effectiveness/{correlation_id}.
 // Per ADR-EM-001 Principle 5 and DD-017 v2.1 scoring formula.
 type EffectivenessScoreResponse struct {
-	CorrelationID    string                   `json:"correlation_id"`
-	Score            *float64                 `json:"score"`
-	Components       EffectivenessComponents  `json:"components"`
-	HashComparison   HashComparisonData       `json:"hash_comparison,omitempty"`
-	AssessmentStatus string                   `json:"assessment_status"`
-	ComputedAt       time.Time                `json:"computed_at"`
+	CorrelationID    string                  `json:"correlation_id"`
+	Score            *float64                `json:"score"`
+	Components       EffectivenessComponents `json:"components"`
+	HashComparison   HashComparisonData      `json:"hash_comparison,omitempty"`
+	AssessmentStatus string                  `json:"assessment_status"`
+	ComputedAt       time.Time               `json:"computed_at"`
 }
 
 // EffectivenessComponents holds individual component assessment scores.
@@ -115,6 +115,17 @@ func ComputeWeightedScore(c *EffectivenessComponents) *float64 {
 // RESPONSE BUILDER
 // ============================================================================
 
+// effectivenessEventAppliers dispatches BuildEffectivenessResponse's per-event
+// merging by event_type (registry pattern), replacing a large switch statement.
+// Unknown event types have no entry and are ignored.
+var effectivenessEventAppliers = map[string]func(*EffectivenessScoreResponse, map[string]interface{}){
+	"effectiveness.health.assessed":      applyHealthAssessedEvent,
+	"effectiveness.alert.assessed":       applyAlertAssessedEvent,
+	"effectiveness.metrics.assessed":     applyMetricsAssessedEvent,
+	"effectiveness.hash.computed":        applyHashComputedEvent,
+	"effectiveness.assessment.completed": applyAssessmentCompletedEvent,
+}
+
 // BuildEffectivenessResponse constructs the response from audit events.
 // This is pure logic (no I/O) - extracts component scores from event payloads
 // and applies the DD-017 v2.1 weighted scoring formula.
@@ -133,8 +144,6 @@ func BuildEffectivenessResponse(correlationID string, events []*EffectivenessEve
 		return resp
 	}
 
-	components := &resp.Components
-
 	for _, event := range events {
 		eventData := event.EventData
 		if eventData == nil {
@@ -142,69 +151,98 @@ func BuildEffectivenessResponse(correlationID string, events []*EffectivenessEve
 		}
 
 		eventType, _ := eventData["event_type"].(string)
-
-		switch eventType {
-		case "effectiveness.health.assessed":
-			if assessed, ok := eventData["assessed"].(bool); ok && assessed {
-				components.HealthAssessed = true
-			}
-			if score, ok := eventData["score"].(float64); ok {
-				components.HealthScore = &score
-			}
-			if details, ok := eventData["details"].(string); ok {
-				components.HealthDetails = details
-			}
-
-		case "effectiveness.alert.assessed":
-			if assessed, ok := eventData["assessed"].(bool); ok && assessed {
-				components.AlertAssessed = true
-			}
-			if score, ok := eventData["score"].(float64); ok {
-				components.AlertScore = &score
-			}
-			if details, ok := eventData["details"].(string); ok {
-				components.AlertDetails = details
-			}
-
-		case "effectiveness.metrics.assessed":
-			if assessed, ok := eventData["assessed"].(bool); ok && assessed {
-				components.MetricsAssessed = true
-			}
-			if score, ok := eventData["score"].(float64); ok {
-				components.MetricsScore = &score
-			}
-			if details, ok := eventData["details"].(string); ok {
-				components.MetricsDetails = details
-			}
-
-		case "effectiveness.hash.computed":
-			var hashData HashComparisonData
-			if postHash, ok := eventData["post_remediation_spec_hash"].(string); ok {
-				hashData.PostHash = postHash
-			}
-			if preHash, ok := eventData["pre_remediation_spec_hash"].(string); ok {
-				hashData.PreHash = preHash
-			}
-			if match, ok := eventData["hash_match"].(bool); ok {
-				hashData.Match = &match
-			}
-			if hashData.PreHash != "" || hashData.PostHash != "" {
-				resp.HashComparison = hashData
-			}
-
-		case "effectiveness.assessment.completed":
-			if reason, ok := eventData["reason"].(string); ok {
-				// DD-EM-002 v1.1: SpecDrift is terminal and takes priority over
-				// all other reasons. When multiple completed events exist (e.g.,
-				// "Full" followed by "SpecDrift" after EA re-assessment), SpecDrift
-				// must not be overwritten by an earlier reason that sorts later.
-				if resp.AssessmentStatus != eav1.AssessmentReasonSpecDrift {
-					resp.AssessmentStatus = reason
-				}
-			}
+		if applier, ok := effectivenessEventAppliers[eventType]; ok {
+			applier(resp, eventData)
 		}
 	}
 
+	return finalizeEffectivenessResponse(resp)
+}
+
+// applyHealthAssessedEvent merges an "effectiveness.health.assessed" event's
+// payload into the response's health component.
+func applyHealthAssessedEvent(resp *EffectivenessScoreResponse, eventData map[string]interface{}) {
+	c := &resp.Components
+	if assessed, ok := eventData["assessed"].(bool); ok && assessed {
+		c.HealthAssessed = true
+	}
+	if score, ok := eventData["score"].(float64); ok {
+		c.HealthScore = &score
+	}
+	if details, ok := eventData["details"].(string); ok {
+		c.HealthDetails = details
+	}
+}
+
+// applyAlertAssessedEvent merges an "effectiveness.alert.assessed" event's
+// payload into the response's alert component.
+func applyAlertAssessedEvent(resp *EffectivenessScoreResponse, eventData map[string]interface{}) {
+	c := &resp.Components
+	if assessed, ok := eventData["assessed"].(bool); ok && assessed {
+		c.AlertAssessed = true
+	}
+	if score, ok := eventData["score"].(float64); ok {
+		c.AlertScore = &score
+	}
+	if details, ok := eventData["details"].(string); ok {
+		c.AlertDetails = details
+	}
+}
+
+// applyMetricsAssessedEvent merges an "effectiveness.metrics.assessed"
+// event's payload into the response's metrics component.
+func applyMetricsAssessedEvent(resp *EffectivenessScoreResponse, eventData map[string]interface{}) {
+	c := &resp.Components
+	if assessed, ok := eventData["assessed"].(bool); ok && assessed {
+		c.MetricsAssessed = true
+	}
+	if score, ok := eventData["score"].(float64); ok {
+		c.MetricsScore = &score
+	}
+	if details, ok := eventData["details"].(string); ok {
+		c.MetricsDetails = details
+	}
+}
+
+// applyHashComputedEvent merges an "effectiveness.hash.computed" event's
+// payload into the response's hash comparison data.
+func applyHashComputedEvent(resp *EffectivenessScoreResponse, eventData map[string]interface{}) {
+	var hashData HashComparisonData
+	if postHash, ok := eventData["post_remediation_spec_hash"].(string); ok {
+		hashData.PostHash = postHash
+	}
+	if preHash, ok := eventData["pre_remediation_spec_hash"].(string); ok {
+		hashData.PreHash = preHash
+	}
+	if match, ok := eventData["hash_match"].(bool); ok {
+		hashData.Match = &match
+	}
+	if hashData.PreHash != "" || hashData.PostHash != "" {
+		resp.HashComparison = hashData
+	}
+}
+
+// applyAssessmentCompletedEvent merges an "effectiveness.assessment.completed"
+// event's reason into the response's assessment status.
+//
+// DD-EM-002 v1.1: SpecDrift is terminal and takes priority over all other
+// reasons. When multiple completed events exist (e.g., "Full" followed by
+// "SpecDrift" after EA re-assessment), SpecDrift must not be overwritten by
+// an earlier reason that sorts later.
+func applyAssessmentCompletedEvent(resp *EffectivenessScoreResponse, eventData map[string]interface{}) {
+	reason, ok := eventData["reason"].(string)
+	if !ok {
+		return
+	}
+	if resp.AssessmentStatus != eav1.AssessmentReasonSpecDrift {
+		resp.AssessmentStatus = reason
+	}
+}
+
+// finalizeEffectivenessResponse applies the DD-017 v2.1 weighted scoring
+// formula (or the DD-EM-002 v1.1 spec-drift short-circuit) and derives the
+// assessment status when no "assessment.completed" event set it explicitly.
+func finalizeEffectivenessResponse(resp *EffectivenessScoreResponse) *EffectivenessScoreResponse {
 	// DD-EM-002 v1.1: Spec drift means remediation was unsuccessful.
 	// Short-circuit to score 0.0 — component scores are unreliable because
 	// the target resource spec was modified (likely by another remediation).
@@ -214,13 +252,11 @@ func BuildEffectivenessResponse(correlationID string, events []*EffectivenessEve
 		return resp
 	}
 
-	// Compute weighted score from available components
-	resp.Score = ComputeWeightedScore(components)
+	resp.Score = ComputeWeightedScore(&resp.Components)
 
-	// Determine assessment status if not already set by completed event
 	if resp.AssessmentStatus == "no_data" {
-		anyAssessed := components.HealthAssessed || components.AlertAssessed || components.MetricsAssessed
-		if anyAssessed {
+		c := resp.Components
+		if c.HealthAssessed || c.AlertAssessed || c.MetricsAssessed {
 			resp.AssessmentStatus = "in_progress"
 		}
 	}
