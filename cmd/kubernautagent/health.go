@@ -146,13 +146,30 @@ func configHandler(cfg *kaconfig.Config, swappable *llm.SwappableClient) http.Ha
 	}
 }
 
+// healthServersParams groups the dependencies needed to build and start the
+// health/readiness/metrics HTTP servers. Extracted per AGENTS.md's 8+-param
+// Options-pattern rule.
+type healthServersParams struct {
+	Config               *kaconfig.Config
+	AtomicLevel          zap.AtomicLevel
+	Swappable            *llm.SwappableClient
+	DS                   *dsClients
+	InteractiveReadiness *karbac.InteractiveReadiness
+	ShutdownFlag         *int32
+	APIServerReady       *int32
+	Logger               logr.Logger
+}
+
 // startHealthAndMetricsServers builds and starts (in background goroutines)
 // the health/readiness/config/admin HTTP server and the Prometheus metrics
 // server. These are started before API route setup so liveness/readiness
 // probes are served even while the JWKS pre-warm (up to 15s) blocks inside
 // newAuthMiddleware — otherwise the liveness probe kills the pod before the
 // health server ever starts.
-func startHealthAndMetricsServers(cfg *kaconfig.Config, atomicLevel zap.AtomicLevel, swappable *llm.SwappableClient, ds *dsClients, interactiveReadiness *karbac.InteractiveReadiness, shutdownFlag, apiServerReady *int32, logger logr.Logger) (*http.Server, *http.Server) {
+func startHealthAndMetricsServers(p healthServersParams) (*http.Server, *http.Server) {
+	cfg, atomicLevel, swappable, ds, interactiveReadiness, shutdownFlag, apiServerReady, logger :=
+		p.Config, p.AtomicLevel, p.Swappable, p.DS, p.InteractiveReadiness, p.ShutdownFlag, p.APIServerReady, p.Logger
+
 	healthMux := http.NewServeMux()
 	healthMux.HandleFunc("/healthz", healthHandler)
 	healthMux.HandleFunc("/readyz", readinessHandler(shutdownFlag, apiServerReady, swappable, ds, interactiveReadiness))

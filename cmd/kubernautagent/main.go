@@ -190,7 +190,11 @@ func main() {
 	// for requests sent right after Kubernetes reports the pod Ready.
 	var apiServerReady int32
 
-	healthServer, metricsServer := startHealthAndMetricsServers(cfg, atomicLevel, swappable, ds, interactiveReadiness, &shutdownFlag, &apiServerReady, logger)
+	healthServer, metricsServer := startHealthAndMetricsServers(healthServersParams{
+		Config: cfg, AtomicLevel: atomicLevel, Swappable: swappable, DS: ds,
+		InteractiveReadiness: interactiveReadiness, ShutdownFlag: &shutdownFlag,
+		APIServerReady: &apiServerReady, Logger: logger,
+	})
 
 	sessionDrainer, authCleanup := registerAPIRoutes(r, ctx, apiRoutesParams{
 		cfg: cfg, infra: k8sInfra, ds: ds, inv: inv, enricher: enricher,
