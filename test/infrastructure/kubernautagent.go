@@ -284,7 +284,7 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 	if err := deployDexInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy DEX: %w", err)
 	}
-	if err := waitForDexReady(writer); err != nil {
+	if err := waitForDexReady(5556, writer); err != nil {
 		return fmt.Errorf("DEX not ready: %w", err)
 	}
 	if err := createDexUserRBAC(ctx, namespace, kubeconfigPath, writer); err != nil {
@@ -875,9 +875,10 @@ func DeployKubernautAgentOnly(clusterName, kubeconfigPath, namespace, imageTag s
 	if enableJWT {
 		jwtConfigSection = `      jwtProviders:
         - name: dex-e2e
-          issuer: "http://dex:5556/dex"
-          jwksURL: "http://dex:5556/dex/keys"
+          issuer: "https://dex:5556/dex"
+          jwksURL: "https://dex:5556/dex/keys"
           audience: "kubernaut-agent"
+          tlsCaFile: /etc/tls-ca/ca.crt
           claimMappings:
             username: "email"
             groups: "groups"`

@@ -74,7 +74,7 @@ var _ = Describe("KA-KA Integration Parity — Detected Labels (TP-433-PARITY)",
 
 	var (
 		invLogger  logr.Logger
-		auditStore *recordingAuditStore
+		auditStore *capturingAuditStore
 		builder    *prompt.Builder
 		rp         *parser.ResultParser
 		phaseTools katypes.PhaseToolMap
@@ -82,7 +82,7 @@ var _ = Describe("KA-KA Integration Parity — Detected Labels (TP-433-PARITY)",
 
 	BeforeEach(func() {
 		invLogger = logr.Discard()
-		auditStore = &recordingAuditStore{}
+		auditStore = newCapturingAuditStore(suiteAuditStore)
 		builder, _ = prompt.NewBuilder()
 		rp = parser.NewResultParser()
 		phaseTools = investigator.DefaultPhaseToolMap()
@@ -115,13 +115,12 @@ var _ = Describe("KA-KA Integration Parity — Detected Labels (TP-433-PARITY)",
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, deploy, hpa)
 			ld := enrichment.NewLabelDetector(dynClient, newItTestMapper(), invLogger)
 
-			k8sClient := &fakeK8sClient{
+			k8sClient := &k8sFixtureClient{
 				ownerChain: []enrichment.OwnerChainEntry{
 					{Kind: "Deployment", Name: "api-server", Namespace: "production"},
 				},
 			}
-			dsClient := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, invLogger).WithLabelDetector(ld)
+			enricher := enrichment.NewEnricher(k8sClient, suiteDSAdapter, auditStore, invLogger).WithLabelDetector(ld)
 
 			mockClient := &mockLLMClient{
 				responses: []llm.ChatResponse{
@@ -174,13 +173,12 @@ var _ = Describe("KA-KA Integration Parity — Detected Labels (TP-433-PARITY)",
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, deploy)
 			ld := enrichment.NewLabelDetector(dynClient, newItTestMapper(), invLogger)
 
-			k8sClient := &fakeK8sClient{
+			k8sClient := &k8sFixtureClient{
 				ownerChain: []enrichment.OwnerChainEntry{
 					{Kind: "Deployment", Name: "api-server", Namespace: "production"},
 				},
 			}
-			dsClient := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, invLogger).WithLabelDetector(ld)
+			enricher := enrichment.NewEnricher(k8sClient, suiteDSAdapter, auditStore, invLogger).WithLabelDetector(ld)
 
 			mockClient := &mockLLMClient{
 				responses: []llm.ChatResponse{
@@ -235,13 +233,12 @@ var _ = Describe("KA-KA Integration Parity — Detected Labels (TP-433-PARITY)",
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, deploy)
 			ld := enrichment.NewLabelDetector(dynClient, newItTestMapper(), invLogger)
 
-			k8sClient := &fakeK8sClient{
+			k8sClient := &k8sFixtureClient{
 				ownerChain: []enrichment.OwnerChainEntry{
 					{Kind: "Deployment", Name: "api-server", Namespace: "production"},
 				},
 			}
-			dsClient := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, invLogger).WithLabelDetector(ld)
+			enricher := enrichment.NewEnricher(k8sClient, suiteDSAdapter, auditStore, invLogger).WithLabelDetector(ld)
 
 			mockClient := &mockLLMClient{
 				responses: []llm.ChatResponse{
@@ -299,13 +296,12 @@ var _ = Describe("KA-KA Integration Parity — Detected Labels (TP-433-PARITY)",
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, deploy)
 			ld := enrichment.NewLabelDetector(dynClient, newItTestMapper(), invLogger)
 
-			k8sClient := &fakeK8sClient{
+			k8sClient := &k8sFixtureClient{
 				ownerChain: []enrichment.OwnerChainEntry{
 					{Kind: "Deployment", Name: "web-app", Namespace: "production"},
 				},
 			}
-			dsClient := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, invLogger).WithLabelDetector(ld)
+			enricher := enrichment.NewEnricher(k8sClient, suiteDSAdapter, auditStore, invLogger).WithLabelDetector(ld)
 
 			mockClient := &mockLLMClient{
 				responses: []llm.ChatResponse{
@@ -361,13 +357,12 @@ var _ = Describe("KA-KA Integration Parity — Detected Labels (TP-433-PARITY)",
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, deploy)
 			ld := enrichment.NewLabelDetector(dynClient, newItTestMapper(), invLogger)
 
-			k8sClient := &fakeK8sClient{
+			k8sClient := &k8sFixtureClient{
 				ownerChain: []enrichment.OwnerChainEntry{
 					{Kind: "Deployment", Name: "meshed-app", Namespace: "production"},
 				},
 			}
-			dsClient := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, invLogger).WithLabelDetector(ld)
+			enricher := enrichment.NewEnricher(k8sClient, suiteDSAdapter, auditStore, invLogger).WithLabelDetector(ld)
 
 			mockClient := &mockLLMClient{
 				responses: []llm.ChatResponse{
@@ -426,13 +421,12 @@ var _ = Describe("KA-KA Integration Parity — Detected Labels (TP-433-PARITY)",
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, deploy, quota)
 			ld := enrichment.NewLabelDetector(dynClient, newItTestMapper(), invLogger)
 
-			k8sClient := &fakeK8sClient{
+			k8sClient := &k8sFixtureClient{
 				ownerChain: []enrichment.OwnerChainEntry{
 					{Kind: "Deployment", Name: "web-app", Namespace: "constrained"},
 				},
 			}
-			dsClient := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, invLogger).WithLabelDetector(ld)
+			enricher := enrichment.NewEnricher(k8sClient, suiteDSAdapter, auditStore, invLogger).WithLabelDetector(ld)
 
 			result, err := enricher.Enrich(context.Background(), "Pod", "web-app-xyz", "constrained", "", "", "inc-1")
 			Expect(err).NotTo(HaveOccurred())

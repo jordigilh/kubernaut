@@ -23,13 +23,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
-// ScopeChecker is an alias for the shared scope.ScopeChecker interface.
-// Both Gateway and RO use the same interface for scope validation DI.
-//
-// BR-SCOPE-002: Gateway Signal Filtering
-// ADR-053: Resource Scope Management Architecture
-type ScopeChecker = scope.ScopeChecker
-
 // StatusRejected indicates the signal was rejected because the resource is not managed.
 // BR-SCOPE-002: Gateway rejects signals from unmanaged resources.
 const StatusRejected = "rejected"

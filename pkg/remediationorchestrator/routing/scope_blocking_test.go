@@ -31,6 +31,7 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/routing"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
 
@@ -302,15 +303,15 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking", func() {
 	})
 })
 
-// capturingScopeChecker captures the namespace parameter for assertion.
+// capturingScopeChecker captures the resource identity for assertion.
 type capturingScopeChecker struct {
 	managed bool
 	onCall  func(namespace, kind, name string)
 }
 
-func (c *capturingScopeChecker) IsManaged(_ context.Context, namespace, kind, name string) (bool, error) {
+func (c *capturingScopeChecker) IsManagedResource(_ context.Context, resource scope.ResourceIdentity) (bool, error) {
 	if c.onCall != nil {
-		c.onCall(namespace, kind, name)
+		c.onCall(resource.Namespace, resource.Kind, resource.Name)
 	}
 	return c.managed, nil
 }

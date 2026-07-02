@@ -40941,13 +40941,20 @@ func (s *ReconstructionResponse) encodeFields(e *jx.Encoder) {
 			s.CorrelationID.Encode(e)
 		}
 	}
+	{
+		if s.ClusterName.Set {
+			e.FieldStart("cluster_name")
+			s.ClusterName.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfReconstructionResponse = [4]string{
+var jsonFieldsNameOfReconstructionResponse = [5]string{
 	0: "remediation_request_yaml",
 	1: "validation",
 	2: "reconstructed_at",
 	3: "correlation_id",
+	4: "cluster_name",
 }
 
 // Decode decodes ReconstructionResponse from json.
@@ -41000,6 +41007,16 @@ func (s *ReconstructionResponse) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"correlation_id\"")
+			}
+		case "cluster_name":
+			if err := func() error {
+				s.ClusterName.Reset()
+				if err := s.ClusterName.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"cluster_name\"")
 			}
 		default:
 			return d.Skip()

@@ -183,6 +183,7 @@ type AuditEvent struct {
 	CorrelationID string
 	SessionID     string
 	ActingUser    string
+	ClusterName   string
 	ParentEventID *uuid.UUID
 	Data          map[string]interface{}
 	ActorID       string
@@ -236,6 +237,23 @@ func ActorFromContext(ctx context.Context) (actorID, actorType string, ok bool) 
 	return v.ID, v.Type, true
 }
 
+type clusterNameContextKey struct{}
+
+// WithClusterName returns a context carrying the cluster name for audit events (DD-AUDIT-003 v2.2).
+// All audit events emitted via StoreBestEffort on this context will inherit the cluster name.
+func WithClusterName(ctx context.Context, clusterName string) context.Context {
+	if clusterName == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, clusterNameContextKey{}, clusterName)
+}
+
+// ClusterNameFromContext extracts the cluster name from the context.
+func ClusterNameFromContext(ctx context.Context) (string, bool) {
+	v, ok := ctx.Value(clusterNameContextKey{}).(string)
+	return v, ok
+}
+
 // NewEvent creates an AuditEvent with the correct event_category and a unique event_id.
 func NewEvent(eventType string, correlationID string, opts ...EventOption) *AuditEvent {
 	data := make(map[string]interface{})
@@ -267,6 +285,11 @@ func StoreBestEffort(ctx context.Context, store AuditStore, event *AuditEvent, l
 			if event.ActorType == "" {
 				event.ActorType = typ
 			}
+		}
+	}
+	if event.ClusterName == "" {
+		if cn, ok := ClusterNameFromContext(ctx); ok {
+			event.ClusterName = cn
 		}
 	}
 	if err := store.StoreAudit(ctx, event); err != nil {

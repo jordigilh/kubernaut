@@ -17,8 +17,8 @@ var _ scope.ScopeChecker = (*ErrorScopeChecker)(nil)
 // should pass through.
 type AlwaysManagedScopeChecker struct{}
 
-// IsManaged always returns (true, nil).
-func (m *AlwaysManagedScopeChecker) IsManaged(_ context.Context, _, _, _ string) (bool, error) {
+// IsManagedResource always returns (true, nil).
+func (m *AlwaysManagedScopeChecker) IsManagedResource(_ context.Context, _ scope.ResourceIdentity) (bool, error) {
 	return true, nil
 }
 
@@ -26,8 +26,8 @@ func (m *AlwaysManagedScopeChecker) IsManaged(_ context.Context, _, _, _ string)
 // Use in tests that specifically validate unmanaged resource blocking.
 type NeverManagedScopeChecker struct{}
 
-// IsManaged always returns (false, nil).
-func (m *NeverManagedScopeChecker) IsManaged(_ context.Context, _, _, _ string) (bool, error) {
+// IsManagedResource always returns (false, nil).
+func (m *NeverManagedScopeChecker) IsManagedResource(_ context.Context, _ scope.ResourceIdentity) (bool, error) {
 	return false, nil
 }
 
@@ -37,8 +37,8 @@ type ErrorScopeChecker struct {
 	Err error
 }
 
-// IsManaged always returns (false, error).
-func (m *ErrorScopeChecker) IsManaged(_ context.Context, _, _, _ string) (bool, error) {
+// IsManagedResource always returns (false, error).
+func (m *ErrorScopeChecker) IsManagedResource(_ context.Context, _ scope.ResourceIdentity) (bool, error) {
 	if m.Err != nil {
 		return false, m.Err
 	}

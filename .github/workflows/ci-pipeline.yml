@@ -2,17 +2,19 @@ name: CI Pipeline
 
 # 4-Stage CI Pipeline with Registry-Aware Image Reuse
 #
-# Stage 1: Lint, License Scan & Unit Tests (parallel: 1 lint + 1 license scan + 10 unit test jobs) ~1-2 min
+# Stage 1: Lint, License Scan & Unit Tests (parallel: 1 lint + 1 license scan + 13 unit test jobs) ~1-2 min
 # Stage 2: Build & Push Images
-#   - 2a: amd64 images (parallel matrix: 13 images, multi-stage Dockerfile) ~5 min
-#   - 2b: arm64 images (parallel matrix: 11 Go services, native cross-compile) ~5 min
-#   - 2c: Multi-arch manifests (single job, loop over 11 Go services) ~1 min
-# Stage 3: Integration Tests (parallel matrix: 11 services) ~15 min
-# Stage 4: E2E Tests (parallel jobs: 12 services, when enabled) ~30 min each
+#   - 2a: Go service images (parallel matrix: 12 services × 2 arches) ~5 min
+#        amd64: full multi-stage Dockerfile (native, coverage-instrumented)
+#        arm64: native Go cross-compile + scratch runtime Dockerfile (no QEMU)
+#   - 2a-infra: infra images (parallel matrix: 2 images — db-migrate, mock-llm, amd64 only) ~5 min
+#   - 2b: Multi-arch manifests (single job, loop over 12 Go services) ~1 min
+# Stage 3: Integration Tests (parallel matrix: 12 services) ~15 min
+# Stage 4: E2E Tests (parallel jobs: 13 services, when enabled) ~30 min each
 #
 # CI/CD Optimization (Registry-Aware):
 #   - All images pushed to ghcr.io after unit tests pass
-#   - arm64 images built via native Go cross-compile (no QEMU, no extra time)
+#   - arm64 images built via native Go cross-compile in same matrix (no QEMU)
 #   - Multi-arch manifests enable transparent arch-aware pulls (Issue #1500)
 #   - Integration tests pull dependency images (DataStorage, KA, Mock LLM) from registry
 #   - E2E tests pull service images from registry
@@ -105,7 +107,7 @@ jobs:
 
   # ========================================
   # STAGE 1: LINT, LICENSE SCAN & UNIT TESTS (ALL PARALLEL)
-  # 12 parallel jobs (1 lint + 1 license scan + 10 unit tests) ~2 min total
+  # 15 parallel jobs (1 lint + 1 license scan + 13 unit tests) ~2 min total
   # Note: Code compilation happens in Stage 2 (image builds)
   # Skipped for docs-only PRs (detect-changes.code_changed == false)
   # ========================================
@@ -121,6 +123,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           submodules: true
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -151,8 +154,7 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           version: v2.9.0
-          args: cmd/... pkg/... internal/... test/...
-          only-new-issues: true
+          args: --timeout=10m --new-from-merge-base=origin/${{ github.base_ref }} --whole-files cmd/... pkg/... internal/... test/...
 
       - name: Dependency vulnerability scan (govulncheck)
         run: |
@@ -223,6 +225,7 @@ jobs:
           - authwebhook
           - datastorage
           - effectivenessmonitor
+          - fleetmetadatacache
           - gateway
           - kubernautagent
           - notification
@@ -294,14 +297,182 @@ jobs:
 
   # ========================================
   # STAGE 2: BUILD & PUSH IMAGES (ghcr.io)
-  # Matrix job: Build all service images and push to GitHub Container Registry
+  # Matrix job: Build 12 Go service images for amd64 + arm64 and push to
+  # GitHub Container Registry.
+  #   - amd64: full multi-stage Dockerfile (native on runner, coverage-instrumented)
+  #   - arm64: native Go cross-compile + scratch runtime Dockerfile (no QEMU)
   # Purpose: Integration & E2E tests pull from registry (saves ~60% disk space)
   # Retention: Images auto-cleanup after 14 days (GitHub policy)
   # Production: NOT used for production (Quay.io for production releases)
+  # Authority: Issue #1500
   # ========================================
 
   build-and-push-images:
-    name: Build & Push (${{ matrix.service }})
+    name: "Build & Push (${{ matrix.service }}/${{ matrix.arch }})"
+    needs: [detect-changes]
+    if: needs.detect-changes.outputs.code_changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write  # Required for ghcr.io push
+    env:
+      IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}/kubernaut
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - aianalysis
+          - apifrontend
+          - authwebhook
+          - datastorage
+          - effectivenessmonitor
+          - fleetmetadatacache
+          - gateway
+          - kubernautagent
+          - notification
+          - remediationorchestrator
+          - signalprocessing
+          - workflowexecution
+        arch:
+          - amd64
+          - arm64
+        include:
+          - service: aianalysis
+            dockerfile: docker/aianalysis.Dockerfile
+          - service: apifrontend
+            dockerfile: docker/apifrontend.Dockerfile
+          - service: authwebhook
+            dockerfile: docker/authwebhook.Dockerfile
+          - service: datastorage
+            dockerfile: docker/data-storage.Dockerfile
+          - service: effectivenessmonitor
+            dockerfile: docker/effectivenessmonitor-controller.Dockerfile
+          - service: fleetmetadatacache
+            dockerfile: docker/fleetmetadatacache.Dockerfile
+          - service: gateway
+            dockerfile: docker/gateway.Dockerfile
+          - service: kubernautagent
+            dockerfile: docker/kubernautagent.Dockerfile
+          - service: notification
+            dockerfile: docker/notification-controller.Dockerfile
+          - service: remediationorchestrator
+            dockerfile: docker/remediationorchestrator-controller.Dockerfile
+          - service: signalprocessing
+            dockerfile: docker/signalprocessing-controller.Dockerfile
+          - service: workflowexecution
+            dockerfile: docker/workflowexecution-controller.Dockerfile
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          submodules: true
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.4'
+          cache: true
+
+      - name: Generate required files
+        run: |
+          echo "🔄 Generating OpenAPI specs and required files for Docker builds..."
+          export PATH="${{ github.workspace }}/bin:$PATH"
+          make generate
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate image tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            echo "tag=pr-${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=main-${{ github.sha }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Compute image reference
+        id: image-ref
+        run: |
+          TAG=${{ steps.tag.outputs.tag }}
+          if [ "${{ matrix.arch }}" == "arm64" ]; then
+            echo "full_tag=${TAG}-arm64" >> $GITHUB_OUTPUT
+          else
+            echo "full_tag=${TAG}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build and push amd64 image
+        if: matrix.arch == 'amd64'
+        run: |
+          IMAGE="${IMAGE_REGISTRY}/${{ matrix.service }}:${{ steps.image-ref.outputs.full_tag }}"
+          
+          echo "🔨 Building ${{ matrix.service }} image (amd64, multi-stage)..."
+          echo "   Image: ${IMAGE}"
+          echo "   Dockerfile: ${{ matrix.dockerfile }}"
+          
+          docker build \
+            --build-arg GOFLAGS=-cover \
+            -t "${IMAGE}" \
+            -f ${{ matrix.dockerfile }} \
+            .
+          
+          echo "📤 Pushing to ghcr.io..."
+          docker push "${IMAGE}"
+          echo "✅ Image pushed successfully!"
+
+      - name: Cross-compile binary for arm64 (native, no QEMU)
+        if: matrix.arch == 'arm64'
+        run: |
+          echo "Cross-compiling ${{ matrix.service }} for arm64 (native)..."
+          make cross-build-${{ matrix.service }} IMAGE_ARCH=arm64
+
+      - name: Build and push arm64 runtime image
+        if: matrix.arch == 'arm64'
+        env:
+          IMAGE_TAG: ${{ steps.tag.outputs.tag }}
+          IMAGE_ARCH: arm64
+          CONTAINER_TOOL: docker
+        run: |
+          IMAGE="${IMAGE_REGISTRY}/${{ matrix.service }}:${{ steps.image-ref.outputs.full_tag }}"
+          echo "Building runtime image ${IMAGE} (no QEMU)..."
+          make image-runtime-${{ matrix.service }}
+          echo "📤 Pushing ${IMAGE}..."
+          docker push "${IMAGE}"
+          echo "✅ Image pushed successfully!"
+
+      - name: Scan image for CVEs (Trivy)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE_REGISTRY }}/${{ matrix.service }}:${{ steps.image-ref.outputs.full_tag }}
+          format: table
+          exit-code: 1
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+
+      - name: Generate SBOM (CycloneDX)
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          image: ${{ env.IMAGE_REGISTRY }}/${{ matrix.service }}:${{ steps.image-ref.outputs.full_tag }}
+          format: cyclonedx-json
+          output-file: sbom-${{ matrix.service }}-${{ matrix.arch }}.cdx.json
+          artifact-name: sbom-${{ matrix.service }}-${{ matrix.arch }}
+
+  # ========================================
+  # STAGE 2a-infra: BUILD & PUSH INFRA IMAGES (ghcr.io)
+  # Matrix job: Build infrastructure and test fixture images.
+  # Separated from service images so downstream jobs can depend on
+  # service images without waiting for infra builds (and vice versa).
+  # ========================================
+
+  build-infra-images:
+    name: Build Infra (${{ matrix.service }})
     needs: [detect-changes]
     if: needs.detect-changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
@@ -315,42 +486,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Go Services (8)
-          - service: datastorage
-            dockerfile: docker/data-storage.Dockerfile
-            image_name: datastorage
-          - service: gateway
-            dockerfile: docker/gateway.Dockerfile
-            image_name: gateway
-          - service: aianalysis
-            dockerfile: docker/aianalysis.Dockerfile
-            image_name: aianalysis
-          - service: authwebhook
-            dockerfile: docker/authwebhook.Dockerfile
-            image_name: authwebhook
-          - service: notification
-            dockerfile: docker/notification-controller.Dockerfile
-            image_name: notification  # Operator SDK convention: image name without -controller suffix
-          - service: remediationorchestrator
-            dockerfile: docker/remediationorchestrator-controller.Dockerfile
-            image_name: remediationorchestrator  # Operator SDK convention: image name without -controller suffix
-          - service: signalprocessing
-            dockerfile: docker/signalprocessing-controller.Dockerfile
-            image_name: signalprocessing  # Operator SDK convention: image name without -controller suffix
-          - service: workflowexecution
-            dockerfile: docker/workflowexecution-controller.Dockerfile
-            image_name: workflowexecution  # Operator SDK convention: image name without -controller suffix
-          - service: effectivenessmonitor
-            dockerfile: docker/effectivenessmonitor-controller.Dockerfile
-            image_name: effectivenessmonitor  # Operator SDK convention: image name without -controller suffix
-          # Kubernaut Agent (Go, replaces Python HAPI v1.2)
-          - service: kubernautagent
-            dockerfile: docker/kubernautagent.Dockerfile
-            image_name: kubernautagent
-          # Frontend (1)
-          - service: apifrontend
-            dockerfile: docker/apifrontend.Dockerfile
-            image_name: apifrontend
           # Infrastructure (1)
           - service: db-migrate
             dockerfile: docker/db-migrate.Dockerfile
@@ -434,117 +569,16 @@ jobs:
           artifact-name: sbom-${{ matrix.image_name }}
 
   # ========================================
-  # STAGE 2b: BUILD & PUSH arm64 IMAGES (ghcr.io)
-  # Cross-compile 11 Go services for arm64 (native, no QEMU).
-  # Uses make cross-build-% + make image-runtime-% (scratch-based).
-  # Enables developers to pull CI images on Apple Silicon for local testing.
-  # Authority: Issue #1500
-  # ========================================
-
-  build-arm64-images:
-    name: "Build & Push arm64 (${{ matrix.service }})"
-    needs: [detect-changes]
-    if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: read
-      packages: write
-    outputs:
-      tag: ${{ steps.tag.outputs.tag }}
-    strategy:
-      fail-fast: false
-      matrix:
-        service:
-          - datastorage
-          - gateway
-          - aianalysis
-          - authwebhook
-          - notification
-          - remediationorchestrator
-          - signalprocessing
-          - workflowexecution
-          - effectivenessmonitor
-          - kubernautagent
-          - apifrontend
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
-        with:
-          submodules: true
-
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version: '1.26.4'
-          cache: true
-
-      - name: Generate required files
-        run: |
-          export PATH="${{ github.workspace }}/bin:$PATH"
-          make generate
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Generate image tag
-        id: tag
-        run: |
-          if [ "${{ github.event_name }}" == "pull_request" ]; then
-            echo "tag=pr-${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
-          else
-            echo "tag=main-${{ github.sha }}" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Cross-compile binary (native, no QEMU)
-        run: |
-          echo "Cross-compiling ${{ matrix.service }} for arm64 (native)..."
-          make cross-build-${{ matrix.service }} IMAGE_ARCH=arm64
-
-      - name: Build and push arm64 runtime image
-        env:
-          IMAGE_TAG: ${{ steps.tag.outputs.tag }}
-          IMAGE_ARCH: arm64
-          CONTAINER_TOOL: docker
-        run: |
-          IMAGE="${IMAGE_REGISTRY}/${{ matrix.service }}:${IMAGE_TAG}-arm64"
-          echo "Building runtime image ${IMAGE} (no QEMU)..."
-          make image-runtime-${{ matrix.service }}
-          echo "Pushing ${IMAGE}..."
-          docker push "${IMAGE}"
-
-      - name: Scan arm64 image for CVEs (Trivy)
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          image-ref: ${{ env.IMAGE_REGISTRY }}/${{ matrix.service }}:${{ steps.tag.outputs.tag }}-arm64
-          format: table
-          exit-code: 1
-          severity: CRITICAL,HIGH
-          ignore-unfixed: true
-
-      - name: Generate arm64 SBOM (CycloneDX)
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
-        with:
-          image: ${{ env.IMAGE_REGISTRY }}/${{ matrix.service }}:${{ steps.tag.outputs.tag }}-arm64
-          format: cyclonedx-json
-          output-file: sbom-${{ matrix.service }}-arm64.cdx.json
-          artifact-name: sbom-${{ matrix.service }}-arm64
-
-  # ========================================
-  # STAGE 2c: MULTI-ARCH MANIFESTS (ghcr.io)
+  # STAGE 2b: MULTI-ARCH MANIFESTS (ghcr.io)
   # Creates manifest lists so docker/podman pull resolves the correct
-  # arch automatically. Only covers the 11 Go services that have both
+  # arch automatically. Only covers the 12 Go services that have both
   # amd64 and arm64 images. Single job with loop (fast API calls only).
   # Authority: Issue #1500
   # ========================================
 
   create-ci-manifests:
     name: "Multi-Arch Manifests"
-    needs: [detect-changes, build-and-push-images, build-arm64-images]
+    needs: [detect-changes, build-and-push-images]
     if: needs.detect-changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -563,7 +597,7 @@ jobs:
         env:
           IMAGE_TAG: ${{ needs.build-and-push-images.outputs.tag }}
         run: |
-          SERVICES="datastorage gateway aianalysis authwebhook notification remediationorchestrator signalprocessing workflowexecution effectivenessmonitor kubernautagent apifrontend"
+          SERVICES="datastorage gateway aianalysis authwebhook notification remediationorchestrator signalprocessing workflowexecution effectivenessmonitor kubernautagent apifrontend fleetmetadatacache"
 
           for svc in ${SERVICES}; do
             BASE="${IMAGE_REGISTRY}/${svc}"
@@ -578,7 +612,7 @@ jobs:
           done
 
           echo ""
-          echo "All 11 multi-arch manifests created and pushed."
+          echo "All 12 multi-arch manifests created and pushed."
 
   # ========================================
   # STAGE 3: INTEGRATION TESTS
@@ -600,7 +634,7 @@ jobs:
 
   integration-tests:
     name: Integration (${{ matrix.service }})
-    needs: [detect-changes, unit-tests, build-and-push-images]
+    needs: [detect-changes, unit-tests, build-and-push-images, build-infra-images]
     if: needs.detect-changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: ${{ matrix.timeout }}
@@ -610,7 +644,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [signalprocessing, aianalysis, authwebhook, workflowexecution, remediationorchestrator, notification, gateway, datastorage, effectivenessmonitor, kubernautagent, apifrontend]
+        service: [signalprocessing, aianalysis, authwebhook, workflowexecution, remediationorchestrator, notification, gateway, datastorage, effectivenessmonitor, kubernautagent, apifrontend, fleetmetadatacache]
         include:
           - service: signalprocessing
             service_name: "Signal Processing"
@@ -618,6 +652,9 @@ jobs:
           - service: aianalysis
             service_name: "AI Analysis"
             timeout: 15
+          - service: fleetmetadatacache
+            service_name: "Fleet Metadata Cache"
+            timeout: 10
           - service: authwebhook
             service_name: "Auth Webhook"
             timeout: 10
@@ -763,7 +800,7 @@ jobs:
 
   e2e-tests:
     name: E2E (${{ matrix.service }})
-    needs: [detect-changes, unit-tests, build-and-push-images]
+    needs: [detect-changes, unit-tests, build-and-push-images, build-infra-images]
     if: needs.detect-changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: ${{ matrix.timeout }}
@@ -778,7 +815,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [signalprocessing, aianalysis, authwebhook, workflowexecution, remediationorchestrator, notification, gateway, datastorage, effectivenessmonitor, kubernautagent, apifrontend, fullpipeline]
+        service: [signalprocessing, aianalysis, authwebhook, workflowexecution, remediationorchestrator, notification, gateway, datastorage, effectivenessmonitor, kubernautagent, apifrontend, fullpipeline, fleet, fleetmetadatacache-kuadrant, fleetmetadatacache-eaigw]
         include:
           - service: signalprocessing
             service_name: "Signal Processing"
@@ -816,18 +853,35 @@ jobs:
           - service: fullpipeline
             service_name: "Full Pipeline"
             timeout: 20
+          - service: fleet
+            service_name: "Fleet Multi-Cluster"
+            timeout: 35
+          - service: fleetmetadatacache-kuadrant
+            service_name: "Fleet Metadata Cache (Kuadrant)"
+            timeout: 15
+          - service: fleetmetadatacache-eaigw
+            service_name: "Fleet Metadata Cache (EAIGW)"
+            timeout: 20
     steps:
       - uses: actions/checkout@v7
         with:
           submodules: true
 
-      - name: Free disk space (AWX-heavy E2E jobs)
-        if: matrix.service == 'workflowexecution' || matrix.service == 'fullpipeline'
+      - name: Free disk space (E2E jobs need headroom for Kind + images)
+        if: matrix.service == 'workflowexecution' || matrix.service == 'fullpipeline' || matrix.service == 'fleet'
         run: |
           echo "Disk before cleanup:"
           df -h /
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          sudo apt-get purge -y \
+            google-cloud-cli azure-cli microsoft-edge-stable google-chrome-stable \
+            dotnet-sdk-* powershell mono-devel 2>/dev/null || true
+          sudo apt-get autoremove -y 2>/dev/null || true
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /usr/share/swift /opt/hostedtoolcache/CodeQL \
+            /usr/local/share/chromium /usr/local/share/powershell \
+            /usr/local/share/edge_driver /opt/microsoft 2>/dev/null || true
           sudo docker image prune -a -f 2>/dev/null || true
+          sudo podman system prune -a -f 2>/dev/null || true
           echo "Disk after cleanup:"
           df -h /
 
@@ -850,6 +904,11 @@ jobs:
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind
           kind version
+      - name: Install Helm (fleet/fleetmetadatacache-kuadrant/fleetmetadatacache-eaigw E2E deploy Istio/Kuadrant/Envoy AI Gateway via helm)
+        if: matrix.service == 'fleet' || matrix.service == 'fleetmetadatacache-kuadrant' || matrix.service == 'fleetmetadatacache-eaigw'
+        run: |
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+          helm version
       - name: Install Tekton CLI (tkn)
         run: |
           TKN_VERSION="0.40.0"
@@ -865,7 +924,7 @@ jobs:
           sudo mv tkn /usr/local/bin/tkn
           tkn version
       - name: Disable AppArmor rsyslog profile (for AWX)
-        if: matrix.service == 'workflowexecution' || matrix.service == 'fullpipeline'
+        if: matrix.service == 'workflowexecution' || matrix.service == 'fullpipeline' || matrix.service == 'fleet'
         run: |
           # Issue #440: AWX rsyslog sidecar crash-loops on Ubuntu runners because
           # AppArmor denies rsyslogd read access to /var/lib/awx/rsyslog/rsyslog.conf.
@@ -875,13 +934,15 @@ jobs:
           else
             echo "⚠️  AppArmor rsyslog profile not found or already removed (non-fatal)"
           fi
+      # Note: previously wrapped in nick-fields/retry@v4 (max_attempts: 3). Retries
+      # mask flakes AND destroy diagnostics: a retry tears down the failing attempt's
+      # cluster and stands up a fresh one, so the "Collect must-gather logs on failure"
+      # step below only ever sees the LAST attempt's (often mid-bootstrap) cluster
+      # instead of the one that actually failed. A single attempt gets the full
+      # matrix.timeout budget (job-level timeout-minutes below), which is more time
+      # than any individual retry attempt got before.
       - name: Run ${{ matrix.service }} E2E tests
-        uses: nick-fields/retry@v4
-        with:
-          timeout_minutes: ${{ matrix.timeout }}
-          max_attempts: 3
-          retry_on: error
-          command: make test-e2e-${{ matrix.service }}
+        run: make test-e2e-${{ matrix.service }}
       
       - name: Calculate and save E2E coverage
         if: always()
@@ -994,7 +1055,7 @@ jobs:
 
   helm-smoke-test:
     name: Helm Smoke Tests (Kind)
-    needs: [detect-changes, build-and-push-images, unit-tests]
+    needs: [detect-changes, build-and-push-images, build-infra-images, unit-tests]
     if: needs.detect-changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -1111,7 +1172,7 @@ jobs:
   # ========================================
   summary:
     name: Test Suite Summary
-    needs: [detect-changes, lint-go, unit-tests, build-and-push-images, build-arm64-images, create-ci-manifests, integration-tests, e2e-tests, helm-smoke-test]
+    needs: [detect-changes, lint-go, unit-tests, build-and-push-images, build-infra-images, create-ci-manifests, integration-tests, e2e-tests, helm-smoke-test]
     if: always() && needs.detect-changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -1264,20 +1325,20 @@ jobs:
           echo ""
           echo "STAGE 1 - Lint & Unit Tests (All Parallel):"
           echo "  Lint (Go):        ${{ needs.lint-go.result }}"
-          echo "  Unit Tests (11):  ${{ needs.unit-tests.result }}"
+          echo "  Unit Tests (13):  ${{ needs.unit-tests.result }}"
           echo ""
           echo "STAGE 2 - Build & Push Images (Parallel Matrix):"
-          echo "  amd64 Images (13 services): ${{ needs.build-and-push-images.result }}"
-          echo "  arm64 Images (11 Go svcs):  ${{ needs.build-arm64-images.result }}"
+          echo "  Go Services (12×2 arch):    ${{ needs.build-and-push-images.result }}"
+          echo "  Infra Images (2, amd64):    ${{ needs.build-infra-images.result }}"
           echo "  Multi-Arch Manifests:       ${{ needs.create-ci-manifests.result }}"
           echo "  Registry: ghcr.io (CI/CD ephemeral images, 14-day retention)"
           echo ""
           echo "STAGE 3 - Integration Tests (Parallel Matrix):"
-          echo "  All Services (10 services): ${{ needs.integration-tests.result }}"
+          echo "  All Services (12 services): ${{ needs.integration-tests.result }}"
           echo "  Image Strategy: Pull from ghcr.io (DataStorage, KA, Mock LLM)"
           echo ""
           echo "STAGE 4 - E2E Tests (Parallel Matrix):"
-          echo "  All Services (11 services): ${{ needs.e2e-tests.result }}"
+          echo "  All Services (13 services): ${{ needs.e2e-tests.result }}"
           echo "  Image Strategy: Pull from ghcr.io (all service images)"
           echo ""
           echo "Helm Smoke Tests (parallel with Stage 3+4):"
@@ -1291,13 +1352,13 @@ jobs:
           echo "  ✅ Sequential stages ensure images ready before use"
           echo ""
           echo "Optimizations:"
-          echo "  ✅ Stage 1: All parallel (1 lint + 11 unit tests)"
+          echo "  ✅ Stage 1: All parallel (1 lint + 13 unit tests)"
           echo "  ✅ No redundant builds (code compiled once in image builds)"
-          echo "  ✅ Parallel image builds & push to ghcr.io (matrix: 12 images)"
+          echo "  ✅ Parallel image builds & push to ghcr.io (matrix: 12 services × 2 arches + 2 infra)"
           echo "  ✅ Integration tests reuse registry images (saves ~60% disk, ~30% time)"
-          echo "  ✅ Parallel integration tests (matrix: 10 services)"
+          echo "  ✅ Parallel integration tests (matrix: 12 services)"
           echo "  ✅ E2E tests reuse registry images (saves ~60% disk, ~30% time)"
-          echo "  ✅ Parallel E2E tests (matrix: 11 services)"
+          echo "  ✅ Parallel E2E tests (matrix: 13 services)"
           echo "  ✅ Automatic fallback to local build if registry pull fails"
           echo "═══════════════════════════════════════════════════════════"
 
@@ -1404,8 +1465,8 @@ jobs:
     name: Merge Gate
     if: always()
     needs: [detect-changes, lint-go, license-scan, unit-tests, build-and-push-images,
-            build-arm64-images, create-ci-manifests, integration-tests, e2e-tests,
-            helm-smoke-test, summary]
+            build-infra-images, create-ci-manifests,
+            integration-tests, e2e-tests, helm-smoke-test, summary]
     runs-on: ubuntu-latest
     steps:
       - name: Evaluate CI results
@@ -1422,7 +1483,7 @@ jobs:
           echo "  license-scan:         ${{ needs.license-scan.result }}"
           echo "  unit-tests:           ${{ needs.unit-tests.result }}"
           echo "  build-and-push:       ${{ needs.build-and-push-images.result }}"
-          echo "  build-arm64:          ${{ needs.build-arm64-images.result }}"
+          echo "  build-infra:          ${{ needs.build-infra-images.result }}"
           echo "  multi-arch-manifests: ${{ needs.create-ci-manifests.result }}"
           echo "  integration-tests:    ${{ needs.integration-tests.result }}"
           echo "  e2e-tests:            ${{ needs.e2e-tests.result }}"

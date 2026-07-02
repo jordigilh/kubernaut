@@ -101,6 +101,7 @@ jobs:
           - effectivenessmonitor
           - kubernautagent
           - apifrontend
+          - fleetmetadatacache
           - must-gather
           - db-migrate
     steps:
@@ -178,6 +179,7 @@ jobs:
           - effectivenessmonitor
           - kubernautagent
           - apifrontend
+          - fleetmetadatacache
     steps:
       - name: Checkout code
         uses: actions/checkout@v7

@@ -181,6 +181,9 @@ func (h *Handler) ReconstructRemediationRequest(
 		ReconstructedAt: ogenclient.NewOptDateTime(reconstructedAt),
 		CorrelationID:   ogenclient.NewOptString(correlationID),
 	}
+	if rrFields.Spec.ClusterID != "" {
+		response.ClusterName = ogenclient.NewOptString(rrFields.Spec.ClusterID)
+	}
 
 	h.logger.V(2).Info("RemediationRequest reconstruction successful (ogen handler)",
 		"correlation_id", correlationID,

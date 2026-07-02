@@ -56,6 +56,7 @@ import (
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
+	"github.com/jordigilh/kubernaut/pkg/fleet"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/remediationapprovalrequest"
@@ -121,6 +122,10 @@ type Reconciler struct {
 	// DD-EM-002: Uncached API reader for pre-remediation hash capture
 	apiReader client.Reader
 
+	// BR-FLEET-054: Fleet reader factory for remote cluster reads.
+	// nil = local-only mode (all reads go through apiReader).
+	readerFactory fleet.ReaderFactory
+
 	// DD-EM-004 v2.0, Issue #253: Config-driven async propagation delays.
 	// Used by createEffectivenessAssessmentIfNeeded to compute HashComputeDelay
 	// from gitOpsSyncDelay/operatorReconcileDelay instead of stabilization window.
@@ -135,6 +140,9 @@ type Reconciler struct {
 	// Prevents duplicate WFEs when concurrent reconciles target the same resource.
 	// nil = locking disabled (single-replica deployments).
 	lockManager *locking.DistributedLockManager
+
+	// ADR-068: Fleet config for federated scope checking in default routing engine fallback.
+	fleetConfig fleet.FleetConfig
 
 	// #835: Guards hot-reloadable config fields. Setters acquire write lock,
 	// getters acquire read lock. Per DD-INFRA-001 thread-safety requirement.
@@ -246,8 +254,13 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 		routingNamespace := ""
 		// BR-SCOPE-010: Create scope manager using cached client for metadata-only informers (ADR-053)
 		scopeMgr := scope.NewManager(c)
+		// ADR-068: Wrap local scope manager with fleet-aware checker if fleet is configured.
+		scopeChecker, scopeErr := fleet.NewScopeChecker(scopeMgr, fleet.FleetConfig{}, log.Log)
+		if scopeErr != nil {
+			scopeChecker = scopeMgr
+		}
 		// DD-STATUS-001: Pass apiReader for cache-bypassed routing queries
-		routingEngine = routing.NewRoutingEngine(c, apiReader, routingNamespace, routingConfig, scopeMgr)
+		routingEngine = routing.NewRoutingEngine(c, apiReader, routingNamespace, routingConfig, scopeChecker)
 	}
 
 	// ========================================
@@ -342,8 +355,12 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 			}
 			return r.lockManager.ReleaseLock(ctx, target)
 		},
-		CapturePreRemediationHash: func(ctx context.Context, kind, name, namespace string) (string, string, error) {
-			return CapturePreRemediationHash(ctx, r.apiReader, r.restMapper, kind, name, namespace)
+		CapturePreRemediationHash: func(ctx context.Context, kind, name, namespace, clusterID string) (string, string, error) {
+			reader, err := r.readerForHash(ctx, clusterID)
+			if err != nil {
+				return "", "", fmt.Errorf("failed to get reader for cluster %s: %w", clusterID, err)
+			}
+			return CapturePreRemediationHash(ctx, reader, r.restMapper, kind, name, namespace)
 		},
 		ResolveDualTargets: func(rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) DualTargetResult {
 			dt := resolveDualTargets(rr, ai)
@@ -403,8 +420,12 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 			}
 			return r.lockManager.ReleaseLock(ctx, target)
 		},
-		CapturePreRemediationHash: func(ctx context.Context, kind, name, namespace string) (string, string, error) {
-			return CapturePreRemediationHash(ctx, r.apiReader, r.restMapper, kind, name, namespace)
+		CapturePreRemediationHash: func(ctx context.Context, kind, name, namespace, clusterID string) (string, string, error) {
+			reader, err := r.readerForHash(ctx, clusterID)
+			if err != nil {
+				return "", "", fmt.Errorf("failed to get reader for cluster %s: %w", clusterID, err)
+			}
+			return CapturePreRemediationHash(ctx, reader, r.restMapper, kind, name, namespace)
 		},
 		ResolveDualTargets: func(rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) DualTargetResult {
 			dt := resolveDualTargets(rr, ai)
@@ -1935,6 +1956,7 @@ func (r *Reconciler) emitRemediationCreatedAudit(ctx context.Context, rr *remedi
 		correlationID,
 		rr.Namespace,
 		rr.Name,
+		rr.Spec.ClusterID,
 		auditTimeoutConfig,
 	)
 	if err != nil {
@@ -1980,7 +2002,7 @@ func (r *Reconciler) emitWorkflowCreatedAudit(ctx context.Context, rr *remediati
 	}
 
 	event, err := r.auditManager.BuildRemediationWorkflowCreatedEvent(
-		correlationID, rr.Namespace, rr.Name,
+		correlationID, rr.Namespace, rr.Name, rr.Spec.ClusterID,
 		roaudit.RemediationWorkflowCreatedData{
 			PreRemediationSpecHash: preHash,
 			TargetResource:         targetResource,
@@ -2030,7 +2052,7 @@ func (r *Reconciler) emitEACreatedAudit(ctx context.Context, rr *remediationv1.R
 		data.OperatorReconcileDelay = auditAsyncCfg.OperatorReconcileDelay
 	}
 
-	event, err := r.auditManager.BuildEACreatedEvent(rr.Name, rr.Namespace, rr.Name, data)
+	event, err := r.auditManager.BuildEACreatedEvent(rr.Name, rr.Namespace, rr.Name, rr.Spec.ClusterID, data)
 	if err != nil {
 		logger.Error(err, "Failed to build EA created audit event")
 		return
@@ -2069,6 +2091,7 @@ func (r *Reconciler) emitLifecycleStartedAudit(ctx context.Context, rr *remediat
 		correlationID,
 		rr.Namespace,
 		rr.Name,
+		rr.Spec.ClusterID,
 	)
 	if err != nil {
 		logger.Error(err, "Failed to build lifecycle started audit event")
@@ -2088,7 +2111,7 @@ func (r *Reconciler) emitVerifyingStartedAudit(ctx context.Context, rr *remediat
 		return
 	}
 
-	event, err := r.auditManager.BuildLifecycleVerifyingStartedEvent(rr.Name, rr.Namespace, rr.Name)
+	event, err := r.auditManager.BuildLifecycleVerifyingStartedEvent(rr.Name, rr.Namespace, rr.Name, rr.Spec.ClusterID)
 	if err != nil {
 		logger.Error(err, "Failed to build verifying_started audit event")
 		return
@@ -2112,7 +2135,7 @@ func (r *Reconciler) emitVerificationCompletedAudit(ctx context.Context, rr *rem
 	}
 	durationMs := time.Since(rr.CreationTimestamp.Time).Milliseconds()
 	event, err := r.auditManager.BuildLifecycleVerificationCompletedEvent(
-		rr.Name, rr.Namespace, rr.Name, eaName, rr.Status.Outcome, durationMs)
+		rr.Name, rr.Namespace, rr.Name, rr.Spec.ClusterID, eaName, rr.Status.Outcome, durationMs)
 	if err != nil {
 		logger.Error(err, "Failed to build verification_completed audit event")
 		return
@@ -2136,7 +2159,7 @@ func (r *Reconciler) emitVerificationTimedOutAudit(ctx context.Context, rr *reme
 	}
 	durationMs := time.Since(rr.CreationTimestamp.Time).Milliseconds()
 	event, err := r.auditManager.BuildLifecycleVerificationTimedOutEvent(
-		rr.Name, rr.Namespace, rr.Name, eaName, durationMs)
+		rr.Name, rr.Namespace, rr.Name, rr.Spec.ClusterID, eaName, durationMs)
 	if err != nil {
 		logger.Error(err, "Failed to build verification_timed_out audit event")
 		return
@@ -2176,6 +2199,7 @@ func (r *Reconciler) emitPhaseTransitionAudit(ctx context.Context, rr *remediati
 		correlationID,
 		rr.Namespace,
 		rr.Name,
+		rr.Spec.ClusterID,
 		fromPhase,
 		toPhase,
 	)
@@ -2217,6 +2241,7 @@ func (r *Reconciler) emitCompletionAudit(ctx context.Context, rr *remediationv1.
 		correlationID,
 		rr.Namespace,
 		rr.Name,
+		rr.Spec.ClusterID,
 		outcome,
 		durationMs,
 	)
@@ -2259,6 +2284,7 @@ func (r *Reconciler) emitFailureAudit(ctx context.Context, rr *remediationv1.Rem
 		correlationID,
 		rr.Namespace,
 		rr.Name,
+		rr.Spec.ClusterID,
 		string(failurePhase),
 		failureErr,
 		durationMs,
@@ -2330,6 +2356,7 @@ func (r *Reconciler) emitRoutingBlockedAudit(ctx context.Context, rr *remediatio
 		correlationID,
 		rr.Namespace,
 		rr.Name,
+		rr.Spec.ClusterID,
 		fromPhase,
 		blockData,
 	)
@@ -2373,6 +2400,7 @@ func (r *Reconciler) emitApprovalRequestedAudit(ctx context.Context, rr *remedia
 		correlationID,
 		rr.Namespace,
 		rr.Name,
+		rr.Spec.ClusterID,
 		rarName,
 		workflowID,
 		fmt.Sprintf("%.2f", confidence),
@@ -2419,6 +2447,10 @@ func (r *Reconciler) emitTimeoutAudit(ctx context.Context, rr *remediationv1.Rem
 	audit.SetResource(event, "RemediationRequest", rr.Name)
 	audit.SetCorrelationID(event, correlationID)
 	audit.SetNamespace(event, rr.Namespace)
+	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
+	if rr.Spec.ClusterID != "" {
+		audit.SetClusterName(event, rr.Spec.ClusterID)
+	}
 	audit.SetDuration(event, int(durationMs))
 
 	// Build payload using ogen types (timeout is represented as failure)
@@ -2473,6 +2505,10 @@ func (r *Reconciler) emitRetentionCleanupAudit(ctx context.Context, rr *remediat
 	audit.SetResource(event, "RemediationRequest", rr.Name)
 	audit.SetCorrelationID(event, correlationID)
 	audit.SetNamespace(event, rr.Namespace)
+	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
+	if rr.Spec.ClusterID != "" {
+		audit.SetClusterName(event, rr.Spec.ClusterID)
+	}
 
 	payload := api.RemediationOrchestratorAuditPayload{
 		EventType: api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleCompleted,
@@ -3125,6 +3161,23 @@ func (r *Reconciler) SetRESTMapper(mapper meta.RESTMapper) {
 	r.restMapper = mapper
 }
 
+// SetReaderFactory configures fleet-aware target reads (BR-FLEET-054).
+// When set, CapturePreRemediationHash routes reads to the remote cluster
+// via ReaderFactory for RRs with a non-empty ClusterID.
+func (r *Reconciler) SetReaderFactory(rf fleet.ReaderFactory) {
+	r.readerFactory = rf
+}
+
+// readerForHash returns the appropriate client.Reader for pre-remediation
+// hash capture. Uses apiReader (uncached, direct API) for local clusters,
+// and the fleet reader for remote clusters (BR-FLEET-054).
+func (r *Reconciler) readerForHash(ctx context.Context, clusterID string) (client.Reader, error) {
+	if clusterID == "" || r.readerFactory == nil {
+		return r.apiReader, nil
+	}
+	return r.readerFactory.ReaderFor(ctx, clusterID)
+}
+
 // SetAsyncPropagation configures propagation delays for async-managed targets.
 // DD-EM-004 v2.0, Issue #253: Called from cmd/remediationorchestrator/main.go.
 // Thread-safe: acquires configMu write lock (#835, DD-INFRA-001).
@@ -3179,6 +3232,16 @@ func (r *Reconciler) SetClusterIdentity(name, uuid string) {
 // nil = locking disabled (single-replica deployments).
 func (r *Reconciler) SetLockManager(lm *locking.DistributedLockManager) {
 	r.lockManager = lm
+}
+
+// SetFleetConfig configures the fleet settings for federated scope checking.
+// ADR-068: Used in the default routing engine fallback path (routingEngine == nil)
+// to wrap the local scope.Manager with fleet.NewScopeChecker.
+// Called from cmd/remediationorchestrator/main.go.
+func (r *Reconciler) SetFleetConfig(cfg fleet.FleetConfig) {
+	r.configMu.Lock()
+	r.fleetConfig = cfg
+	r.configMu.Unlock()
 }
 
 // resolveDualTargets resolves both signal and remediation targets for the EA (DD-EM-003).

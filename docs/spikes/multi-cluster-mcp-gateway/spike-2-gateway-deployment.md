@@ -1,5 +1,9 @@
 # Spike 2: MCP Gateway Deployment + Registration
 
+> **Superseded**: This spike evaluated Kuadrant MCP Gateway. The project has since
+> switched to **Envoy AI Gateway** (see ADR-068, Alternative I). Kuadrant was rejected
+> due to its Istio dependency. This document is preserved as historical spike data.
+
 **Date**: 2026-06-04
 **Status**: Complete (manifests produced; cluster validation deferred to lab environment)
 **Objective**: Deploy the MCP Gateway and register an OCP MCP server through it.

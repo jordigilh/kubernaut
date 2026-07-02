@@ -1,0 +1,71 @@
+# Kind cluster configuration for Fleet Metadata Cache (FMC) E2E tests --
+# Envoy AI Gateway (EAIGW) variant.
+# Reference: DD-TEST-001 Port Allocation Strategy
+#
+# This is the EAIGW sibling of kind-fleetmetadatacache-config.yaml (Kuadrant
+# lane): same FMC/Keycloak stack and the same passthrough+STS kube-mcp-server
+# token-exchange config (Spike S17/S18), but fronted by Envoy AI Gateway
+# (Envoy Gateway + AI Gateway layer, deployEnvoyAIGatewayInfra) instead of
+# Kuadrant's Istio+controller+broker stack. Runs in its own isolated Kind
+# cluster network -- no port collision with the Kuadrant lane even though
+# most NodePorts are numerically identical.
+#
+# No DataStorage/PostgreSQL/Redis: FMC is audit-exempt (DD-AUDIT-003) and
+# never calls DataStorage's API, so unlike other E2E lanes this one has no
+# audit-trail dependency to satisfy.
+#
+# Port Allocation (from DD-TEST-001):
+#   FMC API:               hostPort 8150,  NodePort 30150 (same as Kuadrant lane)
+#   Keycloak OIDC:         hostPort 30557, NodePort 30557 (same as Kuadrant lane)
+#   Envoy AI Gateway MCP:  hostPort 31976, NodePort 31976 (NEW -- next in the
+#                          Kuadrant-31975 NodePort block, Spike S18 Phase B)
+#
+# Safe to reuse the Kuadrant lane's NodePorts verbatim: each Kind cluster is
+# its own isolated network namespace and CI matrix jobs run on separate
+# runners (same rationale as kind-fleetmetadatacache-config.yaml).
+#
+# Dependencies:
+#   - Keycloak (port 30557) - OIDC IdP + RFC 8693 token exchange for FMC,
+#     kube-mcp-server (passthrough auth), and API server OIDC (runs in
+#     start-dev mode with embedded H2 storage -- no external DB)
+#   - Envoy AI Gateway (port 31976) - MCP entry point, proxies to kube-mcp-server
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+  image: kindest/node:v1.34.0@sha256:7416a61b42b1662ca6ca89f02028ac133a309a2a30ba309614e8ec94d976dc5a  # K8s 1.34.0 with containerd 2.1.3 (avoids v2.2.0 mount-manager regression)
+  extraMounts:
+  - hostPath: ./coverdata
+    containerPath: /coverdata
+    readOnly: false
+  extraPortMappings:
+  # FMC's own API (scope check + cluster listing) -- DD-TEST-001 mandates
+  # NodePort over kubectl port-forward for E2E test stability.
+  - containerPort: 30150  # FMC API NodePort
+    hostPort: 8150        # DD-TEST-001: FMC API (mirrors production port 8150)
+    protocol: TCP
+  # Keycloak OIDC + RFC 8693 token exchange (client_credentials IdP for FMC,
+  # STS provider for kube-mcp-server passthrough auth, API server OIDC discovery)
+  - containerPort: 30557  # Keycloak NodePort
+    hostPort: 30557       # DD-TEST-001: Keycloak OIDC
+    protocol: TCP
+  # Fleet: Envoy AI Gateway (multi-cluster tool routing entry point, Spike S18)
+  - containerPort: 31976  # Envoy AI Gateway generated-Service MCP NodePort
+    hostPort: 31976       # DD-TEST-001: EAIGW MCP Gateway
+    protocol: TCP
+  # OIDC for fleet: configured post-deploy by patchAPIServerForOIDCConfig()
+  # in fleet_e2e.go (Keycloak must be running before the API server can
+  # perform OIDC discovery)
+  kubeadmConfigPatches:
+  - |
+    kind: ClusterConfiguration
+    apiServer:
+      extraArgs:
+        # Increase API server rate limits for parallel integration testing
+        max-requests-inflight: "800"
+        max-mutating-requests-inflight: "400"
+    controllerManager:
+      extraArgs:
+        # Increase controller manager QPS for CRD operations
+        kube-api-qps: "100"
+        kube-api-burst: "200"

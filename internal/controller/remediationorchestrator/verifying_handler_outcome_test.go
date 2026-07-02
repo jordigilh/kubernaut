@@ -196,6 +196,7 @@ var _ = Describe("Issue #1033 Gap 1: VerifyingHandler completion audit outcome (
 					"corr-"+outcome,
 					"default",
 					"rr-"+outcome,
+					"",
 					outcome,
 					5000,
 				)
@@ -222,6 +223,7 @@ var _ = Describe("Issue #1033 Gap 1: VerifyingHandler completion audit outcome (
 				"corr-compat",
 				"default",
 				"rr-compat",
+				"",
 				"VerificationTimedOut",
 				5000,
 			)
@@ -250,6 +252,7 @@ var _ = Describe("Issue #1033 Gap 1: VerifyingHandler completion audit outcome (
 				"corr-empty",
 				"default",
 				"rr-empty",
+				"",
 				"",
 				5000,
 			)
@@ -287,6 +290,7 @@ var _ = Describe("Issue #1033 Gap 1: VerifyingHandler completion audit outcome (
 						"corr-concurrent",
 						"default",
 						"rr-concurrent",
+						"",
 						o,
 						int64(idx*1000),
 					)
@@ -324,6 +328,7 @@ var _ = Describe("Issue #1033 Gap 1: VerifyingHandler completion audit outcome (
 					"corr-adversarial",
 					"default",
 					"rr-adversarial",
+					"",
 					tc.outcome,
 					5000,
 				)

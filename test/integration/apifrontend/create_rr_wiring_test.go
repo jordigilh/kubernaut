@@ -258,6 +258,68 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 		Expect(instruction).To(ContainSubstring("namespace is the workload namespace"))
 	})
 
+	It("IT-FLEET-004: HandleCreateRR with ClusterID produces RR with cluster fields in envtest (BR-INTEGRATION-065)", func() {
+		ctx := context.Background()
+
+		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: "default"}, &tools.CreateRRArgs{
+			Namespace:   "default",
+			Kind:        "Deployment",
+			Name:        "web-fleet-004-" + uuid.New().String()[:6],
+			Description: "fleet cluster wiring IT",
+			ClusterID:   "prod-east-1",
+			ClusterName: "Production US-East",
+		}, "fleet-user")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.RRID).To(HavePrefix("rr-"))
+
+		created, getErr := dynamicClient.Resource(rrGVR).Namespace("default").Get(ctx, result.RRID, metav1.GetOptions{})
+		Expect(getErr).NotTo(HaveOccurred())
+
+		clusterID, _, _ := unstructured.NestedString(created.Object, "spec", "clusterID")
+		Expect(clusterID).To(Equal("prod-east-1"),
+			"ClusterID must be persisted on the RR CRD via envtest K8s API")
+		clusterName, _, _ := unstructured.NestedString(created.Object, "spec", "clusterName")
+		Expect(clusterName).To(Equal("Production US-East"),
+			"ClusterName must be persisted on the RR CRD via envtest K8s API")
+
+		DeferCleanup(func() {
+			_ = dynamicClient.Resource(rrGVR).Namespace("default").Delete(ctx, result.RRID, metav1.DeleteOptions{})
+		})
+	})
+
+	It("IT-FLEET-005: same resource on different clusters produces distinct RRs in envtest (BR-INTEGRATION-065)", func() {
+		ctx := context.Background()
+		baseName := "web-fleet-005-" + uuid.New().String()[:6]
+
+		result1, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: "default"}, &tools.CreateRRArgs{
+			Namespace:   "default",
+			Kind:        "Deployment",
+			Name:        baseName,
+			Description: "east cluster",
+			ClusterID:   "cluster-east",
+		}, "fleet-user")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result1.AlreadyExists).To(BeFalse())
+
+		result2, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: "default"}, &tools.CreateRRArgs{
+			Namespace:   "default",
+			Kind:        "Deployment",
+			Name:        baseName,
+			Description: "west cluster",
+			ClusterID:   "cluster-west",
+		}, "fleet-user")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result2.AlreadyExists).To(BeFalse(),
+			"same resource on a different cluster must NOT be deduplicated (ADR-065)")
+		Expect(result2.RRID).NotTo(Equal(result1.RRID),
+			"different clusters must produce different RR IDs")
+
+		DeferCleanup(func() {
+			_ = dynamicClient.Resource(rrGVR).Namespace("default").Delete(ctx, result1.RRID, metav1.DeleteOptions{})
+			_ = dynamicClient.Resource(rrGVR).Namespace("default").Delete(ctx, result2.RRID, metav1.DeleteOptions{})
+		})
+	})
+
 	It("IT-AF-1282-W06: audit events emitted on RR creation in envtest", func() {
 		ctx := context.Background()
 		auditRecorder.Reset()

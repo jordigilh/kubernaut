@@ -176,6 +176,10 @@ func (m *Manager) RecordComponentAssessed(ctx context.Context, ea *eav1.Effectiv
 	pkgaudit.SetResource(event, "EffectivenessAssessment", ea.Name)
 	pkgaudit.SetCorrelationID(event, ea.Spec.CorrelationID)
 	event.Namespace = ogenclient.NewOptNilString(ea.Namespace)
+	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
+	if ea.Spec.ClusterID != "" {
+		pkgaudit.SetClusterName(event, ea.Spec.ClusterID)
+	}
 	event.EventData = cfg.newEventDataFn(payload)
 
 	if err := m.store.StoreAudit(ctx, event); err != nil {
@@ -350,6 +354,10 @@ func (m *Manager) RecordAlertDecayDetected(ctx context.Context, ea *eav1.Effecti
 	pkgaudit.SetResource(event, "EffectivenessAssessment", ea.Name)
 	pkgaudit.SetCorrelationID(event, ea.Spec.CorrelationID)
 	event.Namespace = ogenclient.NewOptNilString(ea.Namespace)
+	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
+	if ea.Spec.ClusterID != "" {
+		pkgaudit.SetClusterName(event, ea.Spec.ClusterID)
+	}
 	event.EventData = cfg.newEventDataFn(payload)
 
 	if err := m.store.StoreAudit(ctx, event); err != nil {
@@ -449,6 +457,10 @@ func (m *Manager) storeEvent(ctx context.Context, cfg componentEventConfig, ea *
 	pkgaudit.SetResource(event, "EffectivenessAssessment", ea.Name)
 	pkgaudit.SetCorrelationID(event, ea.Spec.CorrelationID)
 	event.Namespace = ogenclient.NewOptNilString(ea.Namespace)
+	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
+	if ea.Spec.ClusterID != "" {
+		pkgaudit.SetClusterName(event, ea.Spec.ClusterID)
+	}
 	event.EventData = cfg.newEventDataFn(payload)
 
 	if err := m.store.StoreAudit(ctx, event); err != nil {
@@ -530,6 +542,10 @@ func (m *Manager) RecordHashComputed(ctx context.Context, ea *eav1.Effectiveness
 	pkgaudit.SetResource(event, "EffectivenessAssessment", ea.Name)
 	pkgaudit.SetCorrelationID(event, ea.Spec.CorrelationID)
 	event.Namespace = ogenclient.NewOptNilString(ea.Namespace)
+	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
+	if ea.Spec.ClusterID != "" {
+		pkgaudit.SetClusterName(event, ea.Spec.ClusterID)
+	}
 	event.EventData = cfg.newEventDataFn(payload)
 
 	if err := m.store.StoreAudit(ctx, event); err != nil {
@@ -601,6 +617,10 @@ func (m *Manager) RecordAssessmentScheduled(ctx context.Context, ea *eav1.Effect
 	pkgaudit.SetResource(event, "EffectivenessAssessment", ea.Name)
 	pkgaudit.SetCorrelationID(event, ea.Spec.CorrelationID)
 	event.Namespace = ogenclient.NewOptNilString(ea.Namespace)
+	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
+	if ea.Spec.ClusterID != "" {
+		pkgaudit.SetClusterName(event, ea.Spec.ClusterID)
+	}
 	event.EventData = ogenclient.NewAuditEventRequestEventDataEffectivenessAssessmentScheduledAuditEventRequestEventData(payload)
 
 	if err := m.store.StoreAudit(ctx, event); err != nil {
@@ -693,6 +713,10 @@ func (m *Manager) RecordAssessmentCompleted(ctx context.Context, ea *eav1.Effect
 	pkgaudit.SetResource(event, "EffectivenessAssessment", ea.Name)
 	pkgaudit.SetCorrelationID(event, ea.Spec.CorrelationID)
 	event.Namespace = ogenclient.NewOptNilString(ea.Namespace)
+	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
+	if ea.Spec.ClusterID != "" {
+		pkgaudit.SetClusterName(event, ea.Spec.ClusterID)
+	}
 	event.EventData = ogenclient.NewAuditEventRequestEventDataEffectivenessAssessmentCompletedAuditEventRequestEventData(payload)
 
 	if err := m.store.StoreAudit(ctx, event); err != nil {

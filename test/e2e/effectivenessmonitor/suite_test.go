@@ -232,7 +232,7 @@ var _ = SynchronizedAfterSuite(
 		By("Cleaning up test environment")
 
 		setupFailed := k8sClient == nil
-		anyFailure := setupFailed || anyTestFailed || infrastructure.CheckTestFailure(clusterName)
+		anyFailure := infrastructure.ResolveAnyFailure(clusterName, setupFailed, anyTestFailed, GinkgoWriter)
 		defer infrastructure.CleanupFailureMarker(clusterName)
 		preserveCluster := os.Getenv("PRESERVE_E2E_CLUSTER") == "true" || os.Getenv("KEEP_CLUSTER") == "true"
 
@@ -241,6 +241,10 @@ var _ = SynchronizedAfterSuite(
 			GinkgoWriter.Printf("    To access: export KUBECONFIG=%s\n", kubeconfigPath)
 			GinkgoWriter.Printf("    To delete: kind delete cluster --name %s\n", clusterName)
 			return
+		}
+
+		if anyFailure && !setupFailed {
+			infrastructure.MustGatherPodLogs(clusterName, kubeconfigPath, "kubernaut-system", "effectivenessmonitor", GinkgoWriter)
 		}
 
 		// DD-TEST-007: Collect E2E binary coverage BEFORE cluster deletion

@@ -600,6 +600,56 @@ var _ = Describe("AlignmentCheck EffectiveLLM merge — BR-AI-601", func() {
 	})
 })
 
+var _ = Describe("FleetConfig.AlignmentCheck — BR-AI-601", func() {
+	Describe("UT-SA-601-FLEET-010: fleet alignment check YAML round-trip", func() {
+		It("should parse fleet-specific alignment check from YAML", func() {
+			yamlData := []byte(`
+integrations:
+  fleet:
+    endpoint: "https://mcp-gw.example.com"
+    gatewayType: "eaigw"
+    alignmentCheck:
+      enabled: true
+      mode: enforce
+      timeout: 15s
+      maxStepTokens: 800
+      maxRetries: 2
+      verdictTimeout: 45s
+      llm:
+        provider: anthropic
+        model: claude-3-haiku
+        endpoint: "https://api.anthropic.com/v1"
+`)
+			cfg, err := config.Load(yamlData)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(cfg.Integrations.Fleet.AlignmentCheck).NotTo(BeNil())
+			Expect(cfg.Integrations.Fleet.AlignmentCheck.Enabled).To(BeTrue())
+			Expect(cfg.Integrations.Fleet.AlignmentCheck.Mode).To(Equal(config.AlignmentModeEnforce))
+			Expect(cfg.Integrations.Fleet.AlignmentCheck.Timeout).To(Equal(15 * time.Second))
+			Expect(cfg.Integrations.Fleet.AlignmentCheck.MaxStepTokens).To(Equal(800))
+			Expect(cfg.Integrations.Fleet.AlignmentCheck.MaxRetries).To(Equal(2))
+			Expect(cfg.Integrations.Fleet.AlignmentCheck.VerdictTimeout).To(Equal(45 * time.Second))
+			Expect(cfg.Integrations.Fleet.AlignmentCheck.LLM).NotTo(BeNil())
+			Expect(cfg.Integrations.Fleet.AlignmentCheck.LLM.Provider).To(Equal("anthropic"))
+			Expect(cfg.Integrations.Fleet.AlignmentCheck.LLM.Model).To(Equal("claude-3-haiku"))
+		})
+	})
+
+	Describe("UT-SA-601-FLEET-011: fleet alignment check defaults to nil (inherits global)", func() {
+		It("should leave AlignmentCheck nil when not specified in fleet config", func() {
+			yamlData := []byte(`
+integrations:
+  fleet:
+    endpoint: "https://mcp-gw.example.com"
+    gatewayType: "eaigw"
+`)
+			cfg, err := config.Load(yamlData)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(cfg.Integrations.Fleet.AlignmentCheck).To(BeNil())
+		})
+	})
+})
+
 var _ = Describe("ShutdownConfig — BR-PLATFORM-1329", func() {
 
 	Describe("UT-KA-1329-001: runtime.shutdown.drainSeconds YAML round-trip (CM-6)", func() {
@@ -741,5 +791,150 @@ var _ = Describe("Config.Validate — GAP-C3 (#954)", func() {
 	It("should accept DefaultConfig as valid", func() {
 		cfg := config.DefaultConfig()
 		Expect(cfg.Validate()).To(Succeed())
+	})
+
+	Context("UT-KA-054-CFG-001 [IA-5]: KA FleetOAuth2 config parses scopes and validates (BR-INTEGRATION-054)", func() {
+		It("rejects fleet OAuth2 enabled without tokenURL", func() {
+			cfg := config.DefaultConfig()
+			cfg.Integrations.Fleet.OAuth2.Enabled = true
+			cfg.Integrations.Fleet.OAuth2.CredentialsSecretRef = "fleet-creds"
+			err := cfg.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("tokenURL"))
+		})
+
+		It("rejects fleet OAuth2 enabled without credentialsSecretRef", func() {
+			cfg := config.DefaultConfig()
+			cfg.Integrations.Fleet.OAuth2.Enabled = true
+			cfg.Integrations.Fleet.OAuth2.TokenURL = "https://dex.local/token"
+			err := cfg.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("credentialsSecretRef"))
+		})
+
+		It("accepts fleet OAuth2 enabled with all required fields", func() {
+			cfg := config.DefaultConfig()
+			cfg.Integrations.Fleet.OAuth2.Enabled = true
+			cfg.Integrations.Fleet.OAuth2.TokenURL = "https://dex.local/token"
+			cfg.Integrations.Fleet.OAuth2.CredentialsSecretRef = "fleet-creds"
+			Expect(cfg.Validate()).To(Succeed())
+		})
+
+		It("parses Scopes from YAML config", func() {
+			yamlContent := `
+runtime:
+  server:
+    port: 9443
+    maxConcurrentRequests: 20
+    rateLimit:
+      requestsPerSecond: 10.0
+      burst: 20
+  session:
+    ttl: 30m
+    maxConcurrentInvestigations: 5
+  audit:
+    enabled: false
+    bufferSize: 100
+    batchSize: 10
+    flushInterval: 5s
+  logging:
+    level: info
+ai:
+  investigation:
+    maxTurns: 25
+  summarizer:
+    maxToolOutputSize: 4096
+  enrichment:
+    maxRetries: 3
+  safety:
+    anomaly:
+      maxToolCallsPerTool: 10
+      maxTotalToolCalls: 50
+      maxRepeatedFailures: 3
+  llm:
+    provider: openai
+  alignmentCheck:
+    enabled: false
+integrations:
+  fleet:
+    endpoint: "http://mcp-gateway:1975/mcp"
+    oauth2:
+      enabled: true
+      tokenURL: "https://dex.local/token"
+      credentialsSecretRef: "fleet-creds"
+      scopes:
+        - openid
+        - groups
+        - fleet-read
+`
+			cfg, err := config.Load([]byte(yamlContent))
+			Expect(err).ToNot(HaveOccurred())
+			Expect(cfg.Integrations.Fleet.OAuth2.Scopes).To(Equal([]string{"openid", "groups", "fleet-read"}))
+		})
+	})
+
+	Describe("KA FleetConfig.GatewayType (CM-6, ADR-068 #11)", func() {
+		It("UT-KA-CFG-001: FleetConfig parses gatewayType from YAML", func() {
+			yamlContent := `
+runtime:
+  server:
+    port: 8443
+    rateLimit:
+      requestsPerSecond: 5
+      burst: 10
+  session:
+    ttl: 30m
+    maxConcurrentInvestigations: 10
+  shutdown:
+    drainSeconds: 30
+ai:
+  investigation:
+    maxTurns: 40
+  safety:
+    anomaly:
+      maxToolCallsPerTool: 10
+      maxTotalToolCalls: 30
+      maxRepeatedFailures: 3
+integrations:
+  fleet:
+    endpoint: "http://mcp-gateway:1975/mcp"
+    gatewayType: "kuadrant"
+`
+			cfg, err := config.Load([]byte(yamlContent))
+			Expect(err).ToNot(HaveOccurred())
+			Expect(cfg.Integrations.Fleet.GatewayType).To(Equal("kuadrant"),
+				"gatewayType must be parsed from YAML")
+		})
+
+		It("UT-KA-CFG-002: FleetConfig with empty gatewayType means fleet disabled", func() {
+			yamlContent := `
+runtime:
+  server:
+    port: 8443
+    rateLimit:
+      requestsPerSecond: 5
+      burst: 10
+  session:
+    ttl: 30m
+    maxConcurrentInvestigations: 10
+  shutdown:
+    drainSeconds: 30
+ai:
+  investigation:
+    maxTurns: 40
+  safety:
+    anomaly:
+      maxToolCallsPerTool: 10
+      maxTotalToolCalls: 30
+      maxRepeatedFailures: 3
+integrations:
+  fleet:
+    endpoint: "http://mcp-gateway:1975/mcp"
+`
+			cfg, err := config.Load([]byte(yamlContent))
+			Expect(err).ToNot(HaveOccurred())
+			Expect(cfg.Integrations.Fleet.GatewayType).To(BeEmpty(),
+				"empty gatewayType means fleet is disabled")
+		})
 	})
 })

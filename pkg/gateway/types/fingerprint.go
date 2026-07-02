@@ -40,8 +40,8 @@ import (
 //   - err: non-nil when the signal must be dropped
 //
 // Algorithm:
-//  1. If resolver is nil -> (CalculateOwnerFingerprint(resource), resource, nil)
-//  2. If resolver succeeds -> (CalculateOwnerFingerprint(owner), owner, nil)
+//  1. If resolver is nil -> (CalculateClusterAwareFingerprint(clusterID, resource), resource, nil)
+//  2. If resolver succeeds -> (CalculateClusterAwareFingerprint(clusterID, owner), owner, nil)
 //  3. If resolver fails -> ("", zero, error) — caller must drop the signal
 //  4. If resolver returns empty fields -> ("", zero, error)
 //
@@ -50,8 +50,15 @@ import (
 // that would break deduplication. The stale alert will resolve naturally when
 // Prometheus stops seeing the deleted pod's metrics.
 func ResolveFingerprint(ctx context.Context, resolver OwnerResolver, resource ResourceIdentifier, logger logr.Logger) (string, ResourceIdentifier, error) {
+	return ResolveFingerprintWithCluster(ctx, "", resolver, resource, logger)
+}
+
+// ResolveFingerprintWithCluster is the cluster-aware variant of ResolveFingerprint.
+// It includes clusterID in the fingerprint hash for multi-cluster deduplication (BR-INTEGRATION-065).
+// When clusterID is empty, behavior is identical to ResolveFingerprint.
+func ResolveFingerprintWithCluster(ctx context.Context, clusterID string, resolver OwnerResolver, resource ResourceIdentifier, logger logr.Logger) (string, ResourceIdentifier, error) {
 	if resolver == nil {
-		return CalculateOwnerFingerprint(resource), resource, nil
+		return CalculateClusterAwareFingerprint(clusterID, resource), resource, nil
 	}
 
 	ownerKind, ownerName, err := resolver.ResolveTopLevelOwner(
@@ -73,7 +80,7 @@ func ResolveFingerprint(ctx context.Context, resolver OwnerResolver, resource Re
 		Kind:      ownerKind,
 		Name:      ownerName,
 	}
-	fp := CalculateOwnerFingerprint(owner)
+	fp := CalculateClusterAwareFingerprint(clusterID, owner)
 	logger.V(1).Info("Owner resolution succeeded",
 		"resource", resource.String(), "owner", owner.String(), "fingerprint", fp[:12])
 	return fp, owner, nil
@@ -93,13 +100,39 @@ func ResolveFingerprint(ctx context.Context, resolver OwnerResolver, resource Re
 //   - Pod crash event: SHA256("prod:Deployment:payment-api")
 //   - OOM event from same deployment: SHA256("prod:Deployment:payment-api") -- same!
 func CalculateOwnerFingerprint(resource ResourceIdentifier) string {
-	input := fmt.Sprintf("%s:%s:%s",
-		resource.Namespace,
-		resource.Kind,
-		resource.Name,
-	)
+	return CalculateClusterAwareFingerprint("", resource)
+}
+
+// ClusterLabelKey is the label key used by Thanos/Alertmanager to identify the source cluster.
+// Prometheus federation (Thanos) adds this as an external label on all metrics.
+const ClusterLabelKey = "cluster"
+
+// CalculateClusterAwareFingerprint generates a fingerprint that includes the cluster dimension
+// for multi-cluster federation (BR-INTEGRATION-065).
+//
+// When clusterID is empty, the result is identical to CalculateOwnerFingerprint (backward compatible).
+// When clusterID is non-empty, it is prepended to produce a unique hash per cluster.
+//
+// Algorithm:
+//   - clusterID == "": SHA256("namespace:kind:name") — same as legacy
+//   - clusterID != "": SHA256("clusterID:namespace:kind:name") — cluster-aware
+func CalculateClusterAwareFingerprint(clusterID string, resource ResourceIdentifier) string {
+	var input string
+	if clusterID == "" {
+		input = fmt.Sprintf("%s:%s:%s",
+			resource.Namespace,
+			resource.Kind,
+			resource.Name,
+		)
+	} else {
+		input = fmt.Sprintf("%s:%s:%s:%s",
+			clusterID,
+			resource.Namespace,
+			resource.Kind,
+			resource.Name,
+		)
+	}
 
 	hash := sha256.Sum256([]byte(input))
-
 	return fmt.Sprintf("%x", hash)
 }

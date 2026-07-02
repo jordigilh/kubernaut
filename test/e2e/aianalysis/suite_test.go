@@ -349,7 +349,7 @@ var _ = SynchronizedAfterSuite(
 		// Pass true for testsFailed if EITHER setup failed OR any test failed.
 		// CheckTestFailure bridges multi-process Ginkgo runs where the failing
 		// spec may execute on a process other than process 1.
-		anyFailure := setupFailed || anyTestFailed || infrastructure.CheckTestFailure(clusterName)
+		anyFailure := infrastructure.ResolveAnyFailure(clusterName, setupFailed, anyTestFailed, GinkgoWriter)
 		defer infrastructure.CleanupFailureMarker(clusterName)
 		logger.Info("🗑️  Cleaning up cluster...")
 		err := infrastructure.DeleteAIAnalysisCluster(clusterName, kubeconfigPath, anyFailure, GinkgoWriter)

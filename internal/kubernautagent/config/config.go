@@ -74,6 +74,27 @@ type IntegrationsConfig struct {
 	DataStorage DataStorageConfig `yaml:"dataStorage"`
 	Tools       ToolsConfig       `yaml:"tools"`
 	MCP         MCPConfig         `yaml:"mcp"`
+	Fleet       FleetConfig       `yaml:"fleet"`
+}
+
+// FleetConfig configures multi-cluster fleet access via MCP Gateway.
+// When Endpoint is non-empty, KA discovers remote cluster tools via
+// tools/list and registers them as BridgeTools (additive to local tools).
+// GatewayType selects the discovery strategy: "eaigw" or "kuadrant".
+// When GatewayType is empty, fleet is disabled regardless of Endpoint.
+type FleetConfig struct {
+	Endpoint       string                `yaml:"endpoint"`
+	GatewayType    string                `yaml:"gatewayType"`
+	OAuth2         FleetOAuth2           `yaml:"oauth2"`
+	AlignmentCheck *AlignmentCheckConfig `yaml:"alignmentCheck,omitempty"`
+}
+
+// FleetOAuth2 holds OAuth2 client credentials for MCP Gateway authentication.
+type FleetOAuth2 struct {
+	Enabled              bool     `yaml:"enabled"`
+	TokenURL             string   `yaml:"tokenURL"`
+	CredentialsSecretRef string   `yaml:"credentialsSecretRef"`
+	Scopes               []string `yaml:"scopes,omitempty"`
 }
 
 
@@ -224,10 +245,14 @@ const (
 // identity from verified claims. Multiple providers support KEP-3331
 // multi-issuer architecture (v1.5: Keycloak, v1.6: + SPIRE).
 type JWTProviderConfig struct {
-	Name          string        `yaml:"name"`
-	Issuer        string        `yaml:"issuer"`
-	JWKSURL       string        `yaml:"jwksURL"`
-	Audience      string        `yaml:"audience"`
+	Name     string `yaml:"name"`
+	Issuer   string `yaml:"issuer"`
+	JWKSURL  string `yaml:"jwksURL"`
+	Audience string `yaml:"audience"`
+	// TLSCaFile is an optional path to a PEM-encoded CA bundle used to verify
+	// the JWKSURL's TLS certificate when signed by a private CA (e.g. an
+	// in-cluster inter-service CA). Empty uses the system trust store.
+	TLSCaFile     string        `yaml:"tlsCaFile,omitempty"`
 	ClaimMappings ClaimMappings `yaml:"claimMappings,omitempty"`
 }
 
@@ -573,6 +598,14 @@ func (c *Config) Validate() error {
 	}
 	if err := validateTLSCertPair("ai.llm", c.AI.LLM.TLSCertFile, c.AI.LLM.TLSKeyFile, c.AI.LLM.TLSCaFile); err != nil {
 		return err
+	}
+	if c.Integrations.Fleet.OAuth2.Enabled {
+		if c.Integrations.Fleet.OAuth2.TokenURL == "" {
+			return fmt.Errorf("integrations.fleet.oauth2.tokenURL is required when oauth2.enabled=true")
+		}
+		if c.Integrations.Fleet.OAuth2.CredentialsSecretRef == "" {
+			return fmt.Errorf("integrations.fleet.oauth2.credentialsSecretRef is required when oauth2.enabled=true")
+		}
 	}
 	if c.Runtime.Server.RateLimit.RequestsPerSecond <= 0 {
 		return fmt.Errorf("runtime.server.rateLimit.requestsPerSecond must be positive, got %v", c.Runtime.Server.RateLimit.RequestsPerSecond)

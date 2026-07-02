@@ -1,0 +1,84 @@
+{{- if .Values.mcpGateway.enabled }}
+---
+# AuthPolicy: JWT-based auth enforcement on the MCP Gateway.
+# Validates Keycloak JWTs and enforces role-based tool access.
+# - mcp-read role: allows tools/list and read-only tools/call
+# - mcp-write role: required for write tools (resources_create_or_update, resources_delete, etc.)
+#
+# Authority: Issue #54 (Multi-cluster federation), WS6 (Auth/Security)
+# Spike: Authorino + OPA policy validated on OCP 4.21 dev cluster
+apiVersion: authorino.kuadrant.io/v1beta3
+kind: AuthPolicy
+metadata:
+  name: {{ include "kubernaut.fullname" . }}-mcp-auth
+  namespace: {{ .Values.mcpGateway.namespace | default "mcp-system" }}
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mcp-gateway
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: {{ .Values.mcpGateway.httpRouteName | default "mcp-gateway" }}
+  rules:
+    authentication:
+      keycloak-jwt:
+        jwt:
+          issuerUrl: {{ .Values.mcpGateway.auth.issuerURL | quote }}
+          {{- if .Values.mcpGateway.auth.jwksURL }}
+          jwksUrl: {{ .Values.mcpGateway.auth.jwksURL | quote }}
+          {{- end }}
+          audiences:
+            {{- toYaml .Values.mcpGateway.auth.audiences | nindent 12 }}
+        {{- if .Values.mcpGateway.auth.clusterCASecret }}
+        overrides:
+          tls:
+            certSecretRef:
+              name: {{ .Values.mcpGateway.auth.clusterCASecret }}
+        {{- end }}
+    authorization:
+      mcp-write-policy:
+        opa:
+          rego: |
+            package mcp_authz
+
+            import rego.v1
+
+            default allow := false
+
+            # Read operations are allowed with mcp-read role
+            allow if {
+              input.context.request.http.method == "POST"
+              not is_write_tool
+              has_role("mcp-read")
+            }
+
+            # Write operations require mcp-write role
+            allow if {
+              is_write_tool
+              has_role("mcp-write")
+            }
+
+            # tools/list is always allowed with any MCP role
+            allow if {
+              is_tools_list
+              has_role("mcp-read")
+            }
+
+            is_write_tool if {
+              tool_name := input.context.request.http.headers["mcp-name"]
+              write_prefixes := ["resources_create_or_update", "resources_delete", "job_templates_launch_create", "jobs_cancel_create"]
+              some prefix in write_prefixes
+              startswith(tool_name, prefix)
+            }
+
+            is_tools_list if {
+              input.context.request.http.headers["mcp-method"] == "tools/list"
+            }
+
+            has_role(role) if {
+              roles := input.auth.identity.resource_access.kubernaut.roles
+              role in roles
+            }
+          allValues: true
+{{- end }}

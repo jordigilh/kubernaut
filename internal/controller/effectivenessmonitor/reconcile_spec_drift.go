@@ -46,14 +46,14 @@ func (r *Reconciler) handleSpecDrift(ctx context.Context, rctx *reconcileContext
 
 	logger := log.FromContext(ctx)
 
-	functionalState, spec, _ := r.getTargetFunctionalState(ctx, ea.Spec.RemediationTarget)
+	functionalState, spec, _ := r.getTargetFunctionalState(ctx, rctx.targetReader, ea.Spec.RemediationTarget)
 	fingerprint, fpErr := canonicalhash.CanonicalResourceFingerprint(functionalState)
 	if fpErr != nil {
 		logger.Error(fpErr, "Failed to compute current resource fingerprint for drift check")
 		return ctrl.Result{}, false, nil
 	}
 
-	driftConfigMapHashes := r.resolveConfigMapHashes(ctx, spec, ea.Spec.RemediationTarget)
+	driftConfigMapHashes := r.resolveConfigMapHashes(ctx, rctx.targetReader, spec, ea.Spec.RemediationTarget)
 	if len(driftConfigMapHashes) > 0 {
 		logger.V(2).Info("Drift guard resolved ConfigMap hashes",
 			"configMapCount", len(driftConfigMapHashes),

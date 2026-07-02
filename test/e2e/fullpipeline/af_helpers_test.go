@@ -2,7 +2,6 @@ package fullpipeline
 
 import (
 	"bytes"
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -19,6 +18,7 @@ import (
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	gwtypes "github.com/jordigilh/kubernaut/pkg/gateway/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -182,9 +182,20 @@ func fpWaitForRRWithTargetNS(nameSubstring, targetNS string, timeout time.Durati
 
 // rrFingerprint computes the signal fingerprint for a target resource, matching
 // the production logic in HandleCreateRR (pkg/apifrontend/tools/af_create_rr.go).
+//
+// Issue #54 bug fix: this previously hashed "namespace/kind/name" with '/'
+// separators, but production (rrFingerprintWithCluster ->
+// gwtypes.CalculateClusterAwareFingerprint) hashes "namespace:kind:name" with
+// ':' separators. The mismatch meant this helper could never match a real RR's
+// spec.signalFingerprint, so fpWaitForRRByFingerprint always timed out even
+// when AF successfully created the RR (E2E-FP-1189-002). Delegating directly
+// to the production function eliminates any future drift.
 func rrFingerprint(namespace, kind, name string) string {
-	h := sha256.Sum256([]byte(namespace + "/" + kind + "/" + name))
-	return fmt.Sprintf("%x", h)
+	return gwtypes.CalculateClusterAwareFingerprint("", gwtypes.ResourceIdentifier{
+		Namespace: namespace,
+		Kind:      kind,
+		Name:      name,
+	})
 }
 
 // fpWaitForRRByFingerprint polls for a RemediationRequest whose spec.signalFingerprint

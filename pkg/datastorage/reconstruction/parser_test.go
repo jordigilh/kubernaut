@@ -97,10 +97,110 @@ var _ = Describe("Audit Event Parser", func() {
 		})
 	})
 
-	// NOTE: Additional event type tests (workflow, webhook, errors) will be added
-	// during GREEN phase implementation when we understand the actual audit payload structure
+	// ========================================
+	// PARSER-RO-COMPLETED: Parse orchestrator.lifecycle.completed events [CC8.1]
+	// BR-AUDIT-005 v2.0: RR reconstruction completeness
+	// ========================================
+	Context("PARSER-RO-COMPLETED: Parse orchestrator.lifecycle.completed events (CC8.1)", func() {
+		It("should extract outcome and duration from completion event", func() {
+			event := ogenclient.AuditEvent{
+				EventType:     "orchestrator.lifecycle.completed",
+				EventTimestamp: testTimestamp,
+				CorrelationID: "test-rr-name",
+				EventData: ogenclient.AuditEventEventData{
+					RemediationOrchestratorAuditPayload: ogenclient.RemediationOrchestratorAuditPayload{
+						Outcome:    ogenclient.NewOptRemediationOrchestratorAuditPayloadOutcome(ogenclient.RemediationOrchestratorAuditPayloadOutcomeSuccess),
+						DurationMs: ogenclient.NewOptInt64(45000),
+					},
+				},
+			}
 
-	// NOTE: Additional event type tests will be added during GREEN phase implementation
+			parsedData, err := reconstructionpkg.ParseAuditEvent(event)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(parsedData.Outcome).To(Equal("Success"),
+				"CC8.1: Parser must extract outcome for RR status reconstruction")
+			Expect(parsedData.DurationMs).To(Equal(int64(45000)),
+				"CC8.1: Parser must extract duration for RR status reconstruction")
+		})
+	})
+
+	// ========================================
+	// PARSER-RO-FAILED: Parse orchestrator.lifecycle.failed events [CC8.1]
+	// BR-AUDIT-005 v2.0 Gap #7: Standardized error_details
+	// ========================================
+	Context("PARSER-RO-FAILED: Parse orchestrator.lifecycle.failed events (CC8.1)", func() {
+		It("should extract error_details from failure event", func() {
+			event := ogenclient.AuditEvent{
+				EventType:     "orchestrator.lifecycle.failed",
+				EventTimestamp: testTimestamp,
+				CorrelationID: "test-rr-name",
+				EventData: ogenclient.AuditEventEventData{
+					RemediationOrchestratorAuditPayload: ogenclient.RemediationOrchestratorAuditPayload{
+						Outcome:      ogenclient.NewOptRemediationOrchestratorAuditPayloadOutcome(ogenclient.RemediationOrchestratorAuditPayloadOutcomeFailed),
+						FailurePhase: ogenclient.NewOptRemediationOrchestratorAuditPayloadFailurePhase(ogenclient.RemediationOrchestratorAuditPayloadFailurePhaseWorkflowExecution),
+						DurationMs:   ogenclient.NewOptInt64(120000),
+						ErrorDetails: ogenclient.NewOptErrorDetails(ogenclient.ErrorDetails{
+							Message:   "workflow execution timed out",
+							Code:      "ERR_TIMEOUT_WORKFLOW",
+							Component: ogenclient.ErrorDetailsComponentWorkflowexecution,
+						}),
+					},
+				},
+			}
+
+			parsedData, err := reconstructionpkg.ParseAuditEvent(event)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(parsedData.Outcome).To(Equal("Failed"),
+				"CC8.1: Failed events must have failure outcome")
+			Expect(parsedData.FailurePhase).To(Equal("WorkflowExecution"),
+				"CC8.1: Parser must extract failure phase")
+			Expect(parsedData.ErrorDetails).ToNot(BeNil(),
+				"CC8.1: Parser must extract error_details for RR reconstruction")
+			Expect(parsedData.ErrorDetails.Message).To(Equal("workflow execution timed out"))
+			Expect(parsedData.ErrorDetails.Code).To(Equal("ERR_TIMEOUT_WORKFLOW"))
+		})
+	})
+
+	// ========================================
+	// PARSER-CLUSTER-01: ClusterName extraction from event envelope [AU-2, CC8.1]
+	// BR-AUDIT-005 v2.0 / DD-AUDIT-003 v2.2: Fleet cluster-scoped audit
+	// ========================================
+	Context("PARSER-CLUSTER-01: Extract ClusterName from event envelope (DD-AUDIT-003 v2.2)", func() {
+		It("should extract ClusterName from gateway.signal.received event [CC8.1]", func() {
+			event := createGatewaySignalReceivedEvent(testTimestamp, testUUID)
+			event.ClusterName.SetTo("prod-east")
+
+			parsedData, err := reconstructionpkg.ParseAuditEvent(event)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(parsedData.ClusterName).To(Equal("prod-east"),
+				"CC8.1: Parser must extract cluster_name from event envelope for fleet reconstruction")
+		})
+
+		It("should extract ClusterName from orchestrator.lifecycle.created event [CC8.1]", func() {
+			event := createOrchestratorLifecycleCreatedEvent(testTimestamp, testUUID)
+			event.ClusterName.SetTo("prod-west")
+
+			parsedData, err := reconstructionpkg.ParseAuditEvent(event)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(parsedData.ClusterName).To(Equal("prod-west"),
+				"CC8.1: Parser must extract cluster_name for orchestrator events")
+		})
+
+		It("should return empty ClusterName for single-cluster events (backward compat)", func() {
+			event := createGatewaySignalReceivedEvent(testTimestamp, testUUID)
+			// ClusterName intentionally NOT set (single-cluster deployment)
+
+			parsedData, err := reconstructionpkg.ParseAuditEvent(event)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(parsedData.ClusterName).To(BeEmpty(),
+				"Single-cluster events must have empty ClusterName for backward compatibility")
+		})
+	})
 })
 
 // Test fixture factories - MINIMAL approach

@@ -5,17 +5,24 @@ metadata:
   namespace: kubernaut-system
 data:
   config.yaml: |
-    issuer: http://dex.kubernaut-system.svc:5556/dex
+    issuer: https://dex:5556/dex
 
     storage:
       type: memory
 
     web:
-      http: 0.0.0.0:5556
+      https: 0.0.0.0:5556
+      tlsCert: /etc/dex/tls/tls.crt
+      tlsKey: /etc/dex/tls/tls.key
 
     oauth2:
       skipApprovalScreen: true
       passwordConnector: local
+      grantTypes:
+        - authorization_code
+        - password
+        - client_credentials
+        - refresh_token
       responseTypes: ["code", "token", "id_token"]
 
     staticClients:
@@ -24,6 +31,23 @@ data:
         secret: e2e-client-secret
         redirectURIs:
           - "http://localhost:18443/callback"
+      - id: kubernaut-fleet-read
+        name: "Kubernaut Fleet Read (E2E)"
+        secret: e2e-fleet-secret
+        grantTypes:
+          - client_credentials
+        clientCredentialsClaims:
+          groups:
+            - mcp-read
+      - id: kubernaut-fleet-write
+        name: "Kubernaut Fleet Write (E2E)"
+        secret: e2e-fleet-secret
+        grantTypes:
+          - client_credentials
+        clientCredentialsClaims:
+          groups:
+            - mcp-write
+            - mcp-read
 
     enablePasswordDB: true
     staticPasswords:
@@ -80,7 +104,7 @@ spec:
   selector:
     app.kubernetes.io/name: dex
   ports:
-    - name: http
+    - name: https
       port: 5556
       targetPort: 5556
       nodePort: 30556
@@ -114,10 +138,10 @@ spec:
           type: RuntimeDefault
       containers:
         - name: dex
-          image: ghcr.io/dexidp/dex:v2.45.1
+          image: ghcr.io/dexidp/dex:latest
           command: ["dex", "serve", "/etc/dex/config.yaml"]
           ports:
-            - name: http
+            - name: https
               containerPort: 5556
               protocol: TCP
           securityContext:
@@ -129,6 +153,7 @@ spec:
             httpGet:
               path: /dex/healthz
               port: 5556
+              scheme: HTTPS
             initialDelaySeconds: 5
             periodSeconds: 5
           resources:
@@ -142,11 +167,17 @@ spec:
             - name: config
               mountPath: /etc/dex
               readOnly: true
+            - name: tls-certs
+              mountPath: /etc/dex/tls
+              readOnly: true
             - name: tmp
               mountPath: /tmp
       volumes:
         - name: config
           configMap:
             name: dex-config
+        - name: tls-certs
+          secret:
+            secretName: dex-tls
         - name: tmp
           emptyDir: {}

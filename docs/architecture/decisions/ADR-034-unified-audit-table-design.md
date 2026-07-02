@@ -772,4 +772,5 @@ In v1.3 (issue [#433](https://github.com/jordigilh/kubernaut/issues/433)), the *
 | 2025-11-08 | Initial ADR approved | Architecture Team |
 | 2026-03-04 | Added `aiagent.response.failed` to `aiagent` event category | #442, PR #443 |
 | 2026-03-25 | Added `aiagent.enrichment.completed` and `aiagent.enrichment.failed` to `aiagent` event category for Phase 2 enrichment audit trail (SOC2 CC8.1) | #533 |
+| 2026-06-29 | **Decision**: `cluster_name` MUST be populated for fleet-path events. Schema column remains nullable for single-cluster backward compatibility. Empty value indicates local hub cluster (ADR-065). `ReconstructionResponse` MUST include `cluster_name` when present. Authority: DD-AUDIT-003 v2.2, BR-AUDIT-005 v2.0, SOC2 CC8.1. | Issue #54 |
 

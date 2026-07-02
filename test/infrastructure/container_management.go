@@ -3,6 +3,7 @@ package infrastructure
 import (
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -120,7 +121,7 @@ func StartGenericContainer(cfg GenericContainerConfig, writer io.Writer) (*Conta
 	registry := os.Getenv("IMAGE_REGISTRY")
 	tag := os.Getenv("IMAGE_TAG")
 
-	if registry != "" && tag != "" {
+	if registry != "" && tag != "" && !isExternalImage(cfg.Image, registry) {
 		_, _ = fmt.Fprintf(writer, "   🔄 Registry mode detected (IMAGE_REGISTRY + IMAGE_TAG set)\n")
 
 		// Extract service name from image name
@@ -190,11 +191,16 @@ func StartGenericContainer(cfg GenericContainerConfig, writer io.Writer) (*Conta
 		args = append(args, "--add-host", host)
 	}
 
-	// Add port mappings
+	// Add port mappings. Podman rejects "-p" combined with "--network host"
+	// ("cannot set port bindings when using host network mode") -- under
+	// host networking the container's own ports already are the host ports,
+	// so cfg.Ports is just bookkeeping for ContainerInstance.Ports in that case.
 	// cfg.Ports format: map[containerPort]hostPort (e.g., 8080: 18120)
 	// Podman format: hostPort:containerPort (e.g., 18120:8080)
-	for containerPort, hostPort := range cfg.Ports {
-		args = append(args, "-p", fmt.Sprintf("%d:%d", hostPort, containerPort))
+	if cfg.Network != "host" {
+		for containerPort, hostPort := range cfg.Ports {
+			args = append(args, "-p", fmt.Sprintf("%d:%d", hostPort, containerPort))
+		}
 	}
 
 	// Add environment variables
@@ -284,6 +290,28 @@ func StopGenericContainer(instance *ContainerInstance, writer io.Writer) error {
 	return nil
 }
 
+// isExternalImage returns true if the image is from an external registry that
+// should not be overridden with IMAGE_REGISTRY/IMAGE_TAG. Third-party images
+// (e.g. ghcr.io/containers/kubernetes-mcp-server) have their own versioning
+// and should be used as-is.
+//
+// Compares the full registry path prefix (not just hostname) because
+// images from the same host but different orgs (e.g. ghcr.io/containers/
+// vs ghcr.io/jordigilh/) are external to each other.
+func isExternalImage(image, registry string) bool {
+	if strings.HasPrefix(image, "localhost/") || !strings.Contains(image, "/") {
+		return false
+	}
+	if strings.HasPrefix(image, registry+"/") {
+		return false
+	}
+	imageHost := strings.SplitN(image, "/", 2)[0]
+	if strings.Contains(imageHost, ".") || strings.Contains(imageHost, ":") {
+		return true
+	}
+	return false
+}
+
 // extractServiceNameFromImage extracts the service name from various image name formats
 //
 // Handles:
@@ -371,4 +399,34 @@ func waitForContainerHealth(check *HealthCheckConfig, writer io.Writer) error {
 	}
 
 	return fmt.Errorf("timeout waiting for %s after %v", check.URL, check.Timeout)
+}
+
+// WaitForTCPPort polls a TCP address until a connection succeeds or the
+// timeout elapses. Some containers (e.g. EAIGW's aigw process) expose an
+// admin/health HTTP endpoint that becomes ready before the actual data-plane
+// listener finishes binding -- an HTTP-based HealthCheckConfig alone is
+// insufficient in that case, since it can report "healthy" while the real
+// port a caller needs (e.g. the MCP data-plane port) still refuses
+// connections. Callers with such a two-stage startup should poll the
+// data-plane port with this helper after StartGenericContainer returns.
+func WaitForTCPPort(address string, timeout time.Duration, writer io.Writer) error {
+	deadline := time.Now().Add(timeout)
+	dialer := &net.Dialer{Timeout: 2 * time.Second}
+
+	for time.Now().Before(deadline) {
+		conn, err := dialer.Dial("tcp", address)
+		if err == nil {
+			_ = conn.Close()
+			return nil
+		}
+
+		elapsed := timeout - time.Until(deadline)
+		if elapsed.Seconds() > 0 && int(elapsed.Seconds())%5 == 0 {
+			_, _ = fmt.Fprintf(writer, "   Still waiting for TCP port %s... (%.0fs elapsed)\n", address, elapsed.Seconds())
+		}
+
+		time.Sleep(1 * time.Second)
+	}
+
+	return fmt.Errorf("timeout waiting for TCP port %s after %v", address, timeout)
 }

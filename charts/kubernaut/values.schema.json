@@ -340,7 +340,17 @@
         "affinity": { "$ref": "#/definitions/affinity" },
         "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
         "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
-        "tolerations": { "$ref": "#/definitions/tolerations" }
+        "tolerations": { "$ref": "#/definitions/tolerations" },
+        "fleet": {
+          "type": "object",
+          "description": "Multi-cluster fleet configuration (BR-INTEGRATION-065, ADR-068)",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": false },
+            "backend": { "type": "string", "default": "", "description": "Backend adapter: fleetmetadatacache or acm" },
+            "endpoint": { "type": "string", "default": "", "description": "Endpoint for the selected backend" }
+          }
+        }
       }
     },
     "datastorage": {
@@ -594,7 +604,17 @@
         "affinity": { "$ref": "#/definitions/affinity" },
         "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
         "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
-        "tolerations": { "$ref": "#/definitions/tolerations" }
+        "tolerations": { "$ref": "#/definitions/tolerations" },
+        "fleet": {
+          "type": "object",
+          "description": "Multi-cluster fleet configuration (BR-INTEGRATION-065, ADR-068)",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": false },
+            "backend": { "type": "string", "default": "", "description": "Backend adapter: fleetmetadatacache or acm" },
+            "endpoint": { "type": "string", "default": "", "description": "Endpoint for the selected backend" }
+          }
+        }
       }
     },
     "workflowexecution": {
@@ -845,6 +865,25 @@
               }
             }
           }
+        },
+        "fleet": {
+          "type": "object",
+          "description": "Multi-cluster fleet configuration (ADR-065)",
+          "additionalProperties": false,
+          "properties": {
+            "endpoint": { "type": "string", "default": "", "description": "MCP Gateway endpoint URL" },
+            "oauth2": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean", "default": false },
+                "tokenURL": { "type": "string", "default": "" },
+                "clientID": { "type": "string", "default": "" },
+                "clientSecretFile": { "type": "string", "default": "" },
+                "credentialsSecretRef": { "type": "string", "default": "", "description": "K8s Secret with keys: client-id, client-secret" }
+              }
+            }
+          }
         }
       }
     },
@@ -963,6 +1002,40 @@
         "resources": { "$ref": "#/definitions/resources" },
         "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
         "tolerations": { "$ref": "#/definitions/tolerations" }
+      }
+    },
+    "fleetmetadatacache": {
+      "type": "object",
+      "description": "FleetMetadataCache: Fleet Metadata Cache service (BR-INTEGRATION-065, ADR-068)",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean", "default": false },
+        "replicas": { "type": "integer", "default": 1 },
+        "image": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "repository": { "type": "string", "default": "quay.io/kubernaut-ai/fleetmetadatacache" },
+            "tag": { "type": "string", "default": "v1.6.0" },
+            "pullPolicy": { "type": "string", "default": "IfNotPresent" }
+          }
+        },
+        "syncInterval": { "type": "string", "default": "30s" },
+        "keyTTL": { "type": "string", "default": "45s" },
+        "mcpGatewayEndpoint": { "type": "string", "default": "" },
+        "gatewayType": { "type": "string", "enum": ["eaigw", "kuadrant"], "default": "eaigw", "description": "MCP Gateway type: eaigw (Envoy AI Gateway) or kuadrant (Kuadrant MCP Gateway)" },
+        "valkeyAddr": { "type": "string", "default": "" },
+        "namespace": { "type": "string", "default": "kubernaut-system" },
+        "oauth2": {
+          "type": "object",
+          "description": "OAuth2 client_credentials for MCP Gateway authentication. Required when fleetmetadatacache.enabled=true — there is no unauthenticated fallback.",
+          "additionalProperties": false,
+          "properties": {
+            "tokenURL": { "type": "string", "default": "", "description": "OAuth2 token endpoint URL (REQUIRED)" },
+            "credentialsSecretRef": { "type": "string", "default": "", "description": "Secret with client-id and client-secret keys (REQUIRED)" }
+          }
+        },
+        "resources": { "$ref": "#/definitions/resources" }
       }
     },
     "apifrontend": {

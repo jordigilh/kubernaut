@@ -21,6 +21,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -347,4 +348,28 @@ func LoadImagesAndCleanup(clusterName string, tarFiles map[string]string, writer
 	LogDiskSpace("AFTER_CLEANUP", writer)
 
 	return nil
+}
+
+// cleanStaleTarFiles removes leftover image tar files from /tmp that may
+// survive across CI retry attempts (max_attempts: 3). A failed first attempt
+// can leave multi-GB files (*-e2e.tar, preload-*.tar) that eat into the
+// limited runner disk before the retry even starts building images.
+func cleanStaleTarFiles(writer io.Writer) {
+	patterns := []string{"/tmp/*-e2e.tar", "/tmp/preload-*.tar"}
+	var removed int
+	for _, pattern := range patterns {
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			continue
+		}
+		for _, f := range matches {
+			if err := os.Remove(f); err == nil {
+				removed++
+				_, _ = fmt.Fprintf(writer, "  🗑️  Removed stale tar: %s\n", f)
+			}
+		}
+	}
+	if removed > 0 {
+		_, _ = fmt.Fprintf(writer, "  ✅ Cleaned %d stale tar file(s)\n", removed)
+	}
 }

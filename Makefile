@@ -283,6 +283,19 @@ test-unit-gateway: ginkgo ensure-coverage-dirs ## Run gateway unit tests (coverp
 		go tool cover -func=coverage_unit_gateway.out | grep total || echo "No coverage data"; \
 	fi
 
+# Fleet Metadata Cache unit tests: code lives at pkg/fleet/fmc/
+.PHONY: test-unit-fleetmetadatacache
+test-unit-fleetmetadatacache: ginkgo ensure-coverage-dirs ## Run Fleet Metadata Cache unit tests (coverpkg: pkg/fleet/fmc)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 fleetmetadatacache - Unit Tests ($(TEST_PROCS) procs)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@$(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_fleetmetadatacache.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/fleet/fmc/... ./pkg/fleet/fmc/...
+	@if [ -f coverage_unit_fleetmetadatacache.out ]; then \
+		echo ""; \
+		echo "📊 Coverage report generated: coverage_unit_fleetmetadatacache.out"; \
+		go tool cover -func=coverage_unit_fleetmetadatacache.out | grep total || echo "No coverage data"; \
+	fi
+
 # Shared packages unit tests: tests for pkg/audit, pkg/cache, pkg/http, pkg/k8sutil, pkg/shared
 # These packages are not standalone services (no cmd/ entry), so they have no service-level
 # test target. This consolidated target runs all shared infrastructure package tests.
@@ -775,10 +788,64 @@ test-e2e-fullpipeline: ginkgo ensure-coverage-dirs ## Run full pipeline E2E test
 	@$(GINKGO) -v --race --timeout=50m --procs=$(TEST_PROCS) ./test/e2e/fullpipeline/...
 	@echo "✅ Full Pipeline E2E tests completed!"
 
+# Fleet E2E: Full pipeline + EAIGW + K8s MCP Server (loopback pattern)
+# Validates multi-cluster remediation via MCP gateway (Issue #54, ADR-068)
+# Requires ~6GB RAM (fullpipeline + ~66MB fleet infra)
+.PHONY: test-e2e-fleet
+test-e2e-fleet: ginkgo ensure-coverage-dirs ## Run fleet E2E tests (multi-cluster, Kind cluster, ~35 min)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 Fleet E2E Tests (Issue #54)"
+	@echo "   Full pipeline + EAIGW + K8s MCP Server (loopback pattern)"
+	@echo "   Alert → GW → SP(MCP enrich) → RO → WE(MCP dispatch) → EM"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@FLEET_E2E=true $(GINKGO) -v --race --timeout=50m --procs=$(TEST_PROCS) ./test/e2e/fleet/...
+	@echo "✅ Fleet E2E tests completed!"
+
+# Fleet Metadata Cache (FMC) E2E: FMC's own journeys in isolation (Issue #54)
+# Deploys ONLY Keycloak + fleet-core (Istio/Kuadrant/kube-mcp-server/
+# Valkey/FMC) -- NOT the other 10+ Kubernaut services the "fleet" suite deploys,
+# and NOT DataStorage (FMC is audit-exempt per DD-AUDIT-003, never calls
+# DataStorage's API).
+# Closes a pyramid-invariant gap: FMC's real Keycloak OAuth2 + Kuadrant discovery +
+# kube-mcp-server sync pipeline was previously only exercised indirectly via
+# Gateway/RO fleet tests gated behind FLEET_E2E=true (never set in CI).
+# Requires ~1.0-1.5GB RAM (substantially lighter than the "fleet" suite's ~6.1GB).
+.PHONY: test-e2e-fleetmetadatacache-kuadrant
+test-e2e-fleetmetadatacache-kuadrant: ginkgo ensure-coverage-dirs ## Run Fleet Metadata Cache E2E tests -- Kuadrant variant (Kind cluster, ~10 min)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 Fleet Metadata Cache E2E Tests -- Kuadrant variant (Issue #54)"
+	@echo "   Keycloak + Fleet Core (Istio/Kuadrant/kube-mcp-server/Valkey/FMC)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@$(GINKGO) -v --race --timeout=25m --procs=$(TEST_PROCS) ./test/e2e/fleetmetadatacache
+	@echo "✅ Fleet Metadata Cache E2E tests (Kuadrant) completed!"
+
+# Fleet Metadata Cache (FMC) E2E -- Envoy AI Gateway (EAIGW) variant (Issue #54, Spike S18)
+# Sibling of test-e2e-fleetmetadatacache-kuadrant: same Keycloak + FMC journeys
+# (no DataStorage, see above), but kube-mcp-server is fronted by Envoy AI
+# Gateway (Envoy Gateway + AI Gateway controller, Backend/MCPRoute CRDs)
+# instead of Kuadrant.
+# Runs in its own Kind cluster (NodePort 31976, DD-TEST-001) so both lanes can
+# run concurrently in CI without port collisions. Nested under
+# test/e2e/fleetmetadatacache/eaigw/ (not a hyphenated sibling dir) to make
+# the sibling relationship explicit in the package layout -- note the target
+# above deliberately omits the "/..." recursive suffix so it doesn't also
+# pick up this nested suite.
+.PHONY: test-e2e-fleetmetadatacache-eaigw
+test-e2e-fleetmetadatacache-eaigw: ginkgo ensure-coverage-dirs ## Run Fleet Metadata Cache E2E tests with Envoy AI Gateway (Kind cluster, ~10 min)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 Fleet Metadata Cache E2E Tests -- Envoy AI Gateway variant (Issue #54)"
+	@echo "   Keycloak + Fleet Core (Envoy AI Gateway/kube-mcp-server/Valkey/FMC)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@$(GINKGO) -v --race --timeout=25m --procs=$(TEST_PROCS) ./test/e2e/fleetmetadatacache/eaigw/...
+	@echo "✅ Fleet Metadata Cache E2E tests (Envoy AI Gateway) completed!"
+
 ##@ Legacy Aliases (Backward Compatibility)
 
 .PHONY: test-gateway
 test-gateway: test-integration-gateway ## Legacy alias for Gateway integration tests
+
+.PHONY: test-e2e-fleetmetadatacache
+test-e2e-fleetmetadatacache: test-e2e-fleetmetadatacache-kuadrant ## Legacy alias for the Kuadrant-variant FMC E2E suite (renamed for symmetry with test-e2e-fleetmetadatacache-eaigw)
 
 .PHONY: test
 test: test-tier-unit ## Legacy alias: Run all unit tests
@@ -890,7 +957,7 @@ endef
 ##@ Cursor Rule Compliance
 
 .PHONY: lint-rules
-lint-rules: lint-test-patterns lint-business-integration lint-tdd-compliance lint-naming-convention lint-openapi-crd-drift ## Run all cursor rule compliance checks
+lint-rules: lint-test-patterns lint-business-integration lint-tdd-compliance lint-naming-convention lint-openapi-crd-drift lint-acm-schema-drift ## Run all cursor rule compliance checks
 
 .PHONY: lint-naming-convention
 lint-naming-convention: ## Check for legacy holmesgpt-api references (#691)
@@ -923,6 +990,11 @@ lint-openapi-crd-drift: manifests ## Check CRD-to-OpenAPI enum alignment (Issue 
 	@echo "🔍 Checking CRD-to-OpenAPI enum drift..."
 	@go run ./scripts/validation/check-openapi-crd-enum-drift/...
 
+.PHONY: lint-acm-schema-drift
+lint-acm-schema-drift: ## Check vendored ACM Search GraphQL schema against upstream (BR-INTEGRATION-065)
+	@echo "🔍 Checking ACM Search schema drift..."
+	@./scripts/check-acm-schema-drift.sh
+
 ##@ Image Build & Push
 
 # Registry, tag, and architecture (override via env or CLI)
@@ -941,7 +1013,7 @@ BUILD_DATE  ?= $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
 LDFLAGS ?= -ldflags "-X github.com/jordigilh/kubernaut/internal/version.Version=$(APP_VERSION) -X github.com/jordigilh/kubernaut/internal/version.GitCommit=$(GIT_COMMIT) -X github.com/jordigilh/kubernaut/internal/version.BuildDate=$(BUILD_DATE)"
 
 # All Go services with their Dockerfile mappings
-IMAGE_SERVICES := datastorage gateway aianalysis authwebhook notification remediationorchestrator signalprocessing workflowexecution effectivenessmonitor kubernautagent apifrontend db-migrate
+IMAGE_SERVICES := datastorage gateway aianalysis authwebhook notification remediationorchestrator signalprocessing workflowexecution effectivenessmonitor kubernautagent apifrontend fleetmetadatacache db-migrate
 IMAGE_DOCKERFILES_datastorage := docker/data-storage.Dockerfile
 IMAGE_DOCKERFILES_gateway := docker/gateway.Dockerfile
 IMAGE_DOCKERFILES_aianalysis := docker/aianalysis.Dockerfile
@@ -953,6 +1025,7 @@ IMAGE_DOCKERFILES_workflowexecution := docker/workflowexecution-controller.Docke
 IMAGE_DOCKERFILES_effectivenessmonitor := docker/effectivenessmonitor-controller.Dockerfile
 IMAGE_DOCKERFILES_kubernautagent := docker/kubernautagent.Dockerfile
 IMAGE_DOCKERFILES_apifrontend := docker/apifrontend.Dockerfile
+IMAGE_DOCKERFILES_fleetmetadatacache := docker/fleetmetadatacache.Dockerfile
 IMAGE_DOCKERFILES_db-migrate := docker/db-migrate.Dockerfile
 
 # IMAGE_TARGET: Dockerfile --target stage to build. Empty = last stage (development).
@@ -1048,9 +1121,10 @@ BINARY_NAME_workflowexecution := workflowexecution
 BINARY_NAME_effectivenessmonitor := effectivenessmonitor-controller
 BINARY_NAME_kubernautagent := kubernautagent
 BINARY_NAME_apifrontend := apifrontend
+BINARY_NAME_fleetmetadatacache := fleetmetadatacache
 
 # Go services that support host-native cross-compilation (excludes db-migrate, must-gather)
-CROSS_SERVICES := datastorage gateway aianalysis authwebhook notification remediationorchestrator signalprocessing workflowexecution effectivenessmonitor kubernautagent apifrontend
+CROSS_SERVICES := datastorage gateway aianalysis authwebhook notification remediationorchestrator signalprocessing workflowexecution effectivenessmonitor kubernautagent apifrontend fleetmetadatacache
 
 # Runtime Dockerfile mapping (production scratch images for pre-built binaries)
 RUNTIME_DOCKERFILES_datastorage := docker/data-storage.runtime.Dockerfile
@@ -1064,6 +1138,7 @@ RUNTIME_DOCKERFILES_workflowexecution := docker/workflowexecution-controller.run
 RUNTIME_DOCKERFILES_effectivenessmonitor := docker/effectivenessmonitor-controller.runtime.Dockerfile
 RUNTIME_DOCKERFILES_kubernautagent := docker/kubernautagent.runtime.Dockerfile
 RUNTIME_DOCKERFILES_apifrontend := docker/apifrontend.runtime.Dockerfile
+RUNTIME_DOCKERFILES_fleetmetadatacache := docker/fleetmetadatacache.runtime.Dockerfile
 
 .PHONY: cross-build-%
 cross-build-%: ## Cross-compile a Go service binary for target arch (no container, no QEMU)

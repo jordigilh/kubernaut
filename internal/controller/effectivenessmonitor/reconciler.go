@@ -46,6 +46,7 @@ import (
 
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/alert"
+	"github.com/jordigilh/kubernaut/pkg/fleet"
 	emaudit "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/audit"
 	emclient "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/client"
 	emconfig "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/config"
@@ -81,6 +82,17 @@ type Reconciler struct {
 	restMapper meta.RESTMapper
 	// apiReader bypasses the informer cache for direct API server reads (DD-EM-002, #396).
 	apiReader client.Reader
+
+	// targetReader is the client.Reader used by target-facing K8s read methods
+	// (getTargetHealthStatus, listActivePodNames, getTargetFunctionalState).
+	// Defaults to the embedded client.Client (local cached reads).
+	// BR-FLEET-054: When fleet is enabled, swapped per-request via readerFor()
+	// to route reads to the correct cluster via ReaderFactory.
+	targetReader client.Reader
+
+	// readerFactory provides cluster-specific client.Reader instances for fleet.
+	// nil = local-only mode (all reads go through targetReader).
+	readerFactory fleet.ReaderFactory
 
 	// Configuration
 	Config ReconcilerConfig
@@ -139,6 +151,7 @@ func NewReconciler(
 	return &Reconciler{
 		Client:             c,
 		apiReader:          apiReader,
+		targetReader:       c,
 		Scheme:             s,
 		Recorder:           recorder,
 		Metrics:            m,
@@ -193,9 +206,16 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, nil
 	}
 
+	reader, err := r.ReaderFor(ctx, ea.Spec.ClusterID)
+	if err != nil {
+		logger.Error(err, "Failed to get reader for cluster", "clusterID", ea.Spec.ClusterID)
+		return ctrl.Result{RequeueAfter: r.Config.RequeueGenericError}, err
+	}
+
 	rctx := &reconcileContext{
 		ea:           ea,
 		currentPhase: currentPhase,
+		targetReader: reader,
 	}
 	return r.reconcileActive(ctx, rctx)
 }
@@ -242,4 +262,21 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager, maxConcurrentReconciles 
 // to the manager's discovery-backed mapper.
 func (r *Reconciler) SetRESTMapper(rm meta.RESTMapper) {
 	r.restMapper = rm
+}
+
+// SetReaderFactory configures fleet-aware target reads (BR-FLEET-054).
+// When set, target-facing methods route reads through ReaderFor() which
+// returns a cluster-specific client.Reader for remote clusters.
+func (r *Reconciler) SetReaderFactory(rf fleet.ReaderFactory) {
+	r.readerFactory = rf
+}
+
+// ReaderFor returns the appropriate client.Reader for the given clusterID.
+// Empty clusterID returns the local targetReader (cached client).
+// Non-empty clusterID delegates to the ReaderFactory for remote reads.
+func (r *Reconciler) ReaderFor(ctx context.Context, clusterID string) (client.Reader, error) {
+	if clusterID == "" || r.readerFactory == nil {
+		return r.targetReader, nil
+	}
+	return r.readerFactory.ReaderFor(ctx, clusterID)
 }

@@ -292,6 +292,12 @@ type WorkloadDetails struct {
 //
 // DD-CONTRACT-002: Type-safe structured data shared across SP, AA, and KA.
 type KubernetesContext struct {
+	// ClusterID identifies the cluster this context was enriched from.
+	// Empty string indicates the local hub cluster.
+	// BR-INTEGRATION-054: Propagated from SignalData.ClusterID so downstream
+	// consumers know which cluster the enrichment data came from.
+	// +optional
+	ClusterID string `json:"clusterID,omitempty"`
 	// Namespace context (nil for cluster-scoped resources like Node)
 	Namespace *NamespaceContext `json:"namespace,omitempty"`
 	// Target workload context (kind, name, labels, annotations)

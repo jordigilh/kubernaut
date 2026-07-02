@@ -192,8 +192,9 @@ var _ = Describe("Audit Events Schema Integration Tests", func() {
 
 	// ================================================================
 	// BEHAVIOR: Parent-child relationships are enforced (immutability)
+	// AU-9: Protection of Audit Information — FK prevents cascade deletion
 	// ================================================================
-	It("should prevent deletion of parent events with children (immutability)", func() {
+	It("should prevent deletion of parent events with children (immutability) [AU-9]", func() {
 		// Use unique correlation ID per test run for parallel execution safety
 		correlationID := fmt.Sprintf("test-aes-immutability-%s", uuid.New().String()[:8])
 		parentID := uuid.New().String()

@@ -58,6 +58,7 @@ type ReconstructionResponse struct {
 	Validation             ValidationResult  `json:"validation"`
 	ReconstructedAt        string            `json:"reconstructed_at"`
 	CorrelationID          string            `json:"correlation_id"`
+	ClusterName            string            `json:"cluster_name,omitempty"` // DD-AUDIT-003 v2.2: fleet provenance (CC8.1)
 }
 
 // ValidationResult matches the OpenAPI schema
@@ -102,6 +103,7 @@ func (s *Server) handleReconstructRemediationRequestWrapper(w http.ResponseWrite
 			},
 			ReconstructedAt: resp.ReconstructedAt.Value.Format(time.RFC3339),
 			CorrelationID:   resp.CorrelationID.Value,
+			ClusterName:     resp.ClusterName.Value,
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)

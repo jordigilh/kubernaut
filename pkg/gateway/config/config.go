@@ -25,6 +25,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	sharedconfig "github.com/jordigilh/kubernaut/internal/config"
+	"github.com/jordigilh/kubernaut/pkg/fleet"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 )
 
@@ -56,6 +57,10 @@ type ServerConfig struct {
 	// TLSProfile selects the TLS security profile (Old/Intermediate/Modern).
 	// Issue #748: OCP-only — set by kubernaut-operator from the cluster APIServer CR.
 	TLSProfile string `yaml:"tlsProfile,omitempty"`
+
+	// Fleet enables multi-cluster federation scope checking (ADR-065, ADR-068).
+	// When enabled, GW uses FederatedScopeChecker via the configured backend adapter.
+	Fleet fleet.FleetConfig `yaml:"fleet,omitempty"`
 }
 
 // CORSConfig contains CORS settings for the Gateway HTTP API.

@@ -371,4 +371,44 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 			Expect(payload.SessionOwner.Value).To(Equal("sa-initiator"))
 		})
 	})
+
+	Describe("DD-AUDIT-003 v2.2: DSAuditStore ClusterName propagation (CC8.1)", func() {
+		It("UT-KA-DS-FLEET-001: sets ClusterName on AuditEventRequest when event has ClusterName", func() {
+			recorder := &fakeOgenClient{}
+			store := audit.NewDSAuditStore(recorder)
+
+			event := &audit.AuditEvent{
+				EventType:     audit.EventTypeLLMRequest,
+				EventCategory: audit.EventCategory,
+				CorrelationID: "corr-fleet-ds",
+				ClusterName:   "prod-east",
+			}
+			err := store.StoreAudit(context.Background(), event)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(recorder.calls).To(HaveLen(1))
+
+			req := recorder.calls[0]
+			Expect(req.ClusterName.IsSet()).To(BeTrue(),
+				"CC8.1: DSAuditStore must set ClusterName on AuditEventRequest")
+			Expect(req.ClusterName.Value).To(Equal("prod-east"))
+		})
+
+		It("UT-KA-DS-FLEET-002: leaves ClusterName unset when event has empty ClusterName", func() {
+			recorder := &fakeOgenClient{}
+			store := audit.NewDSAuditStore(recorder)
+
+			event := &audit.AuditEvent{
+				EventType:     audit.EventTypeLLMRequest,
+				EventCategory: audit.EventCategory,
+				CorrelationID: "corr-no-fleet",
+			}
+			err := store.StoreAudit(context.Background(), event)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(recorder.calls).To(HaveLen(1))
+
+			req := recorder.calls[0]
+			Expect(req.ClusterName.IsSet()).To(BeFalse(),
+				"Single-cluster events must not set ClusterName")
+		})
+	})
 })

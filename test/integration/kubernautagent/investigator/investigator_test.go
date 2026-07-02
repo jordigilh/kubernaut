@@ -48,15 +48,6 @@ func (f *staticCatalogFetcher) FetchValidator(_ context.Context) (*parser.Valida
 	return f.validator, nil
 }
 
-type recordingAuditStore struct {
-	events []*audit.AuditEvent
-}
-
-func (r *recordingAuditStore) StoreAudit(_ context.Context, event *audit.AuditEvent) error {
-	r.events = append(r.events, event)
-	return nil
-}
-
 type mockLLMClient struct {
 	calls     []llm.ChatRequest
 	responses []llm.ChatResponse
@@ -88,43 +79,38 @@ func (m *mockLLMClient) Chat(_ context.Context, req llm.ChatRequest) (llm.ChatRe
 	}, nil
 }
 
-type fakeK8sClient struct {
+// k8sFixtureClient provides deterministic owner chains for testing investigator
+// logic that depends on enrichment context. This is a TEST FIXTURE provider —
+// not a DataStorage mock. The real K8s adapter is available as suiteK8sAdapter
+// for tests that don't need controlled owner chains.
+type k8sFixtureClient struct {
 	ownerChain []enrichment.OwnerChainEntry
 	err        error
 }
 
-func (f *fakeK8sClient) GetOwnerChain(_ context.Context, _, _, _, _ string) ([]enrichment.OwnerChainEntry, error) {
+func (f *k8sFixtureClient) GetOwnerChain(_ context.Context, _, _, _, _ string) ([]enrichment.OwnerChainEntry, error) {
 	return f.ownerChain, f.err
 }
 
-func (f *fakeK8sClient) GetSpecHash(_ context.Context, _, _, _, _ string) (string, error) {
-	return "", nil
+func (f *k8sFixtureClient) GetSpecHash(_ context.Context, _, _, _, _ string) (string, error) {
+	return "sha256:fixture-hash", nil
 }
 
-// resourceAwareK8sClient returns different owner chains based on the resource name.
-// Used by IT-KA-433-AP-020 to test cross-target label contamination.
-type resourceAwareK8sClient struct {
+// resourceAwareFixtureClient returns different owner chains based on resource name.
+// Used for tests that exercise cross-target re-enrichment logic.
+type resourceAwareFixtureClient struct {
 	chains map[string][]enrichment.OwnerChainEntry
 }
 
-func (r *resourceAwareK8sClient) GetOwnerChain(_ context.Context, _, name, _, _ string) ([]enrichment.OwnerChainEntry, error) {
+func (r *resourceAwareFixtureClient) GetOwnerChain(_ context.Context, _, name, _, _ string) ([]enrichment.OwnerChainEntry, error) {
 	if chain, ok := r.chains[name]; ok {
 		return chain, nil
 	}
 	return nil, nil
 }
 
-func (r *resourceAwareK8sClient) GetSpecHash(_ context.Context, _, _, _, _ string) (string, error) {
-	return "", nil
-}
-
-type fakeDataStorageClient struct {
-	history *enrichment.RemediationHistoryResult
-	err     error
-}
-
-func (f *fakeDataStorageClient) GetRemediationHistory(_ context.Context, _, _, _, _ string) (*enrichment.RemediationHistoryResult, error) {
-	return f.history, f.err
+func (r *resourceAwareFixtureClient) GetSpecHash(_ context.Context, _, _, _, _ string) (string, error) {
+	return "sha256:fixture-hash", nil
 }
 
 type fakeTool struct {
@@ -154,7 +140,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 
 	var (
 		invLogger  logr.Logger
-		auditStore *recordingAuditStore
+		auditStore *capturingAuditStore
 		mockClient *mockLLMClient
 		builder    *prompt.Builder
 		rp         *parser.ResultParser
@@ -164,24 +150,11 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 
 	BeforeEach(func() {
 		invLogger = logr.Discard()
-		auditStore = &recordingAuditStore{}
+		auditStore = newCapturingAuditStore(suiteAuditStore)
 		mockClient = &mockLLMClient{}
 		builder, _ = prompt.NewBuilder()
 		rp = parser.NewResultParser()
-		k8sClient := &fakeK8sClient{
-			ownerChain: []enrichment.OwnerChainEntry{
-				{Kind: "Deployment", Name: "api-server", Namespace: "production"},
-				{Kind: "ReplicaSet", Name: "api-server-abc", Namespace: "production"},
-			},
-		}
-		dsClient := &fakeDataStorageClient{
-			history: &enrichment.RemediationHistoryResult{
-				Tier1: []enrichment.Tier1Entry{
-					{RemediationUID: "oom-increase-memory", Outcome: "success"},
-				},
-			},
-		}
-		enricher = enrichment.NewEnricher(k8sClient, dsClient, auditStore, invLogger)
+		enricher = enrichment.NewEnricher(suiteK8sAdapter, suiteDSAdapter, auditStore, invLogger)
 		phaseTools = investigator.DefaultPhaseToolMap()
 	})
 
@@ -386,11 +359,46 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 
 	Describe("IT-KA-433W-005: Investigation prompt excludes enrichment, workflow selection includes it", func() {
 		It("should NOT include enrichment in RCA prompt; remediation history appears in Phase 3 only", func() {
+			By("Seeding remediation history into PostgreSQL so the real DS returns it")
+			testCtx := context.Background()
+			specHash := "sha256:fixture-hash"
+			corrID := "oom-increase-memory"
+			target := "production/Pod/api-server-abc"
+			now := time.Now()
+			seedAuditEvent(testCtx, "remediation.workflow_created", "remediation", corrID,
+				map[string]interface{}{
+					"target_resource":           target,
+					"pre_remediation_spec_hash": specHash,
+					"action_type":               "IncreaseMemory",
+					"signal_type":               "OOMKilled",
+					"signal_fingerprint":        "fp-test-433w005",
+					"outcome":                   "success",
+				}, now.Add(-30*time.Minute))
+			seedAuditEvent(testCtx, "effectiveness.hash.computed", "effectiveness", corrID,
+				map[string]interface{}{
+					"pre_remediation_spec_hash":  specHash,
+					"post_remediation_spec_hash": "sha256:post-fixture",
+				}, now.Add(-25*time.Minute))
+			DeferCleanup(func() {
+				_, _ = seedDB.ExecContext(testCtx,
+					"DELETE FROM audit_events WHERE correlation_id = $1", corrID)
+			})
+
+			By("Using k8sFixtureClient so enrichment succeeds with controlled data")
+			fixtureK8s := &k8sFixtureClient{
+				ownerChain: []enrichment.OwnerChainEntry{
+					{Kind: "Pod", Name: "api-server-abc", Namespace: "production"},
+					{Kind: "ReplicaSet", Name: "api-server-rs", Namespace: "production"},
+					{Kind: "Deployment", Name: "api-server", Namespace: "production"},
+				},
+			}
+			fixtureEnricher := enrichment.NewEnricher(fixtureK8s, suiteDSAdapter, auditStore, invLogger)
+
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"Memory pressure detected"}`}},
 				wfToolResp(`{"workflow_id":"oom-increase-memory","confidence":0.9}`),
 			}
-			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools})
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: fixtureEnricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name:        "api-server-abc",
 				Namespace:   "production",
@@ -537,11 +545,19 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 
 	Describe("IT-KA-433-009: Investigation emits audit events", func() {
 		It("should emit audit events at correct investigation points", func() {
+			fixtureK8s := &k8sFixtureClient{
+				ownerChain: []enrichment.OwnerChainEntry{
+					{Kind: "Pod", Name: "api-server", Namespace: "production"},
+					{Kind: "Deployment", Name: "api-server", Namespace: "production"},
+				},
+			}
+			fixtureEnricher := enrichment.NewEnricher(fixtureK8s, suiteDSAdapter, auditStore, invLogger)
+
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"found issue"}`}},
 				wfToolResp(`{"workflow_id":"oom-increase-memory","confidence":0.85}`),
 			}
-			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools})
+			inv := investigator.New(investigator.Config{Client: mockClient, Builder: builder, ResultParser: rp, Enricher: fixtureEnricher, AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools})
 			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
 				Name: "api-server", Namespace: "production", Severity: "critical", Message: "OOMKilled",
 				Environment: "Production", Priority: "P0",
@@ -561,7 +577,7 @@ var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() 
 
 	var (
 		invLogger  logr.Logger
-		auditStore *recordingAuditStore
+		auditStore *capturingAuditStore
 		mockClient *mockLLMClient
 		builder    *prompt.Builder
 		rp         *parser.ResultParser
@@ -570,7 +586,7 @@ var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() 
 
 	BeforeEach(func() {
 		invLogger = logr.Discard()
-		auditStore = &recordingAuditStore{}
+		auditStore = newCapturingAuditStore(suiteAuditStore)
 		mockClient = &mockLLMClient{}
 		builder, _ = prompt.NewBuilder()
 		rp = parser.NewResultParser()
@@ -579,7 +595,7 @@ var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() 
 
 	Describe("UT-KA-693-005: Workflow selection prompt shows re-enriched target", func() {
 		It("should include the RCA-identified Deployment name in workflow selection prompt", func() {
-			k8s := &resourceAwareK8sClient{
+			k8s := &resourceAwareFixtureClient{
 				chains: map[string][]enrichment.OwnerChainEntry{
 					"worker-77784c6cf7-l27g4": {
 						{Kind: "ReplicaSet", Name: "worker-77784c6cf7", Namespace: "demo-crashloop"},
@@ -588,8 +604,7 @@ var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() 
 					"worker": {}, // Deployment is root, empty chain
 				},
 			}
-			ds := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			enricher := enrichment.NewEnricher(k8s, ds, auditStore, invLogger)
+						enricher := enrichment.NewEnricher(k8s, suiteDSAdapter, auditStore, invLogger)
 
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled in worker deployment","remediation_target":{"kind":"Deployment","name":"worker","namespace":"demo-crashloop"}}`}},
@@ -626,14 +641,13 @@ var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() 
 
 	Describe("UT-KA-693-006: No re-enrichment leaves signal unchanged", func() {
 		It("should preserve original signal when RCA returns same target", func() {
-			k8s := &fakeK8sClient{
+			k8s := &k8sFixtureClient{
 				ownerChain: []enrichment.OwnerChainEntry{
 					{Kind: "ReplicaSet", Name: "worker-77784c6cf7", Namespace: "demo-crashloop"},
 					{Kind: "Deployment", Name: "worker", Namespace: "demo-crashloop"},
 				},
 			}
-			ds := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			enricher := enrichment.NewEnricher(k8s, ds, auditStore, invLogger)
+						enricher := enrichment.NewEnricher(k8s, suiteDSAdapter, auditStore, invLogger)
 
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"CrashLoop in worker pod"}`}},
@@ -667,7 +681,7 @@ var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() 
 
 	Describe("UT-KA-693-007: Injection receives same signal identity as prompt", func() {
 		It("should produce remediation target consistent with prompt identity after re-enrichment", func() {
-			k8s := &resourceAwareK8sClient{
+			k8s := &resourceAwareFixtureClient{
 				chains: map[string][]enrichment.OwnerChainEntry{
 					"worker-77784c6cf7-l27g4": {
 						{Kind: "ReplicaSet", Name: "worker-77784c6cf7", Namespace: "demo-crashloop"},
@@ -676,8 +690,7 @@ var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() 
 					"worker": {}, // Deployment is root, empty chain
 				},
 			}
-			ds := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			enricher := enrichment.NewEnricher(k8s, ds, auditStore, invLogger)
+						enricher := enrichment.NewEnricher(k8s, suiteDSAdapter, auditStore, invLogger)
 
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled targeting Deployment worker","remediation_target":{"kind":"Deployment","name":"worker","namespace":"demo-crashloop"}}`}},
@@ -714,9 +727,8 @@ var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() 
 			// Signal is a Node, RCA also names Node → same-kind gate fires.
 			// Retry response (fallback) has no remediation_target.
 			// Approach D defensive check must preserve the original Node target.
-			k8s := &fakeK8sClient{ownerChain: nil, err: nil}
-			ds := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			localEnricher := enrichment.NewEnricher(k8s, ds, auditStore, invLogger)
+			k8s := &k8sFixtureClient{ownerChain: nil, err: nil}
+			localEnricher := enrichment.NewEnricher(k8s, suiteDSAdapter, auditStore, invLogger)
 
 			mockClient.responses = []llm.ChatResponse{
 				// Phase 1 RCA: same kind as signal (Node == Node) → gate triggers
@@ -767,12 +779,11 @@ var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() 
 			// proceed to workflow selection). Use InternalError to test rca_incomplete
 			// for genuine API failures that still trigger HardFail.
 			apiErr := apierrors.NewInternalError(fmt.Errorf("etcd timeout"))
-			k8s := &fakeK8sClient{
+			k8s := &k8sFixtureClient{
 				ownerChain: nil,
 				err:        apiErr,
 			}
-			ds := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			enricher := enrichment.NewEnricher(k8s, ds, auditStore, invLogger).
+			enricher := enrichment.NewEnricher(k8s, suiteDSAdapter, auditStore, invLogger).
 				WithRetryConfig(enrichment.RetryConfig{
 					MaxRetries:  3,
 					BaseBackoff: 1 * time.Millisecond,
@@ -860,7 +871,7 @@ var _ = Describe("F5/F6: RunWorkflowDiscoveryFromRCA enrichment parity (#1374)",
 
 	var (
 		invLogger  logr.Logger
-		auditStore *recordingAuditStore
+		auditStore *capturingAuditStore
 		mockClient *mockLLMClient
 		builder    *prompt.Builder
 		rp         *parser.ResultParser
@@ -869,7 +880,7 @@ var _ = Describe("F5/F6: RunWorkflowDiscoveryFromRCA enrichment parity (#1374)",
 
 	BeforeEach(func() {
 		invLogger = logr.Discard()
-		auditStore = &recordingAuditStore{}
+		auditStore = newCapturingAuditStore(suiteAuditStore)
 		mockClient = &mockLLMClient{}
 		builder, _ = prompt.NewBuilder()
 		rp = parser.NewResultParser()
@@ -878,7 +889,7 @@ var _ = Describe("F5/F6: RunWorkflowDiscoveryFromRCA enrichment parity (#1374)",
 
 	Describe("IT-KA-1374-F5-001: RunWorkflowDiscoveryFromRCA resolves enrichment when enricher is wired [BR-INTERACTIVE-010]", func() {
 		It("should include owner chain in workflow selection prompt", func() {
-			k8s := &resourceAwareK8sClient{
+			k8s := &resourceAwareFixtureClient{
 				chains: map[string][]enrichment.OwnerChainEntry{
 					"api-server": {
 						{Kind: "ReplicaSet", Name: "api-server-7f8c9d", Namespace: "production"},
@@ -886,8 +897,7 @@ var _ = Describe("F5/F6: RunWorkflowDiscoveryFromRCA enrichment parity (#1374)",
 					},
 				},
 			}
-			ds := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			enricher := enrichment.NewEnricher(k8s, ds, auditStore, invLogger)
+						enricher := enrichment.NewEnricher(k8s, suiteDSAdapter, auditStore, invLogger)
 
 			mockClient.responses = []llm.ChatResponse{
 				wfToolResp(`{"workflow_id":"oom-fix","confidence":0.9,"remediation_target":{"kind":"Deployment","name":"api-server","namespace":"production","api_version":"apps/v1"}}`),
@@ -974,7 +984,7 @@ var _ = Describe("F5/F6: RunWorkflowDiscoveryFromRCA enrichment parity (#1374)",
 
 	Describe("IT-KA-1374-F5-003: RunWorkflowDiscoveryFromRCA post-RCA re-enrichment [BR-INTERACTIVE-010, BR-HAPI-261]", func() {
 		It("should re-enrich when RCA target differs from signal", func() {
-			k8s := &resourceAwareK8sClient{
+			k8s := &resourceAwareFixtureClient{
 				chains: map[string][]enrichment.OwnerChainEntry{
 					"worker-pod-abc": {
 						{Kind: "ReplicaSet", Name: "worker-7f8c9d", Namespace: "production"},
@@ -983,8 +993,7 @@ var _ = Describe("F5/F6: RunWorkflowDiscoveryFromRCA enrichment parity (#1374)",
 					"worker": {},
 				},
 			}
-			ds := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			enricher := enrichment.NewEnricher(k8s, ds, auditStore, invLogger)
+						enricher := enrichment.NewEnricher(k8s, suiteDSAdapter, auditStore, invLogger)
 
 			mockClient.responses = []llm.ChatResponse{
 				wfToolResp(`{"workflow_id":"oom-fix","confidence":0.9,"remediation_target":{"kind":"Deployment","name":"worker","namespace":"production","api_version":"apps/v1"}}`),

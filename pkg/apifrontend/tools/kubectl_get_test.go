@@ -81,7 +81,7 @@ var _ = Describe("kubectl_get", func() {
 			newUnstructuredService("prod", "web-svc", "10.0.0.1"),
 		)
 
-		result, err := tools.HandleKubectlGet(context.Background(), client, nil, tools.KubectlGetArgs{
+		result, err := tools.HandleKubectlGet(context.Background(), &tools.DynamicResourceReader{Client: client}, nil, tools.KubectlGetArgs{
 			Kind:      "Service",
 			Name:      "web-svc",
 			Namespace: "prod",
@@ -97,7 +97,7 @@ var _ = Describe("kubectl_get", func() {
 		scheme := runtime.NewScheme()
 		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, kubectlGVRs)
 
-		_, err := tools.HandleKubectlGet(context.Background(), client, nil, tools.KubectlGetArgs{
+		_, err := tools.HandleKubectlGet(context.Background(), &tools.DynamicResourceReader{Client: client}, nil, tools.KubectlGetArgs{
 			Kind:      "Service",
 			Name:      "ghost",
 			Namespace: "prod",
@@ -112,7 +112,7 @@ var _ = Describe("kubectl_get", func() {
 			newUnstructuredSecret("prod", "db-creds"),
 		)
 
-		result, err := tools.HandleKubectlGet(context.Background(), client, nil, tools.KubectlGetArgs{
+		result, err := tools.HandleKubectlGet(context.Background(), &tools.DynamicResourceReader{Client: client}, nil, tools.KubectlGetArgs{
 			Kind:      "Secret",
 			Name:      "db-creds",
 			Namespace: "prod",
@@ -133,7 +133,7 @@ var _ = Describe("kubectl_get", func() {
 		scheme := runtime.NewScheme()
 		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, kubectlGVRs)
 
-		_, err := tools.HandleKubectlGet(context.Background(), client, nil, tools.KubectlGetArgs{
+		_, err := tools.HandleKubectlGet(context.Background(), &tools.DynamicResourceReader{Client: client}, nil, tools.KubectlGetArgs{
 			Kind:      "",
 			Name:      "web-svc",
 			Namespace: "prod",
@@ -145,7 +145,7 @@ var _ = Describe("kubectl_get", func() {
 		scheme := runtime.NewScheme()
 		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, kubectlGVRs)
 
-		_, err := tools.HandleKubectlGet(context.Background(), client, nil, tools.KubectlGetArgs{
+		_, err := tools.HandleKubectlGet(context.Background(), &tools.DynamicResourceReader{Client: client}, nil, tools.KubectlGetArgs{
 			Kind:      "Service",
 			Name:      "",
 			Namespace: "prod",
@@ -157,7 +157,7 @@ var _ = Describe("kubectl_get", func() {
 		scheme := runtime.NewScheme()
 		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, kubectlGVRs)
 
-		_, err := tools.HandleKubectlGet(context.Background(), client, nil, tools.KubectlGetArgs{
+		_, err := tools.HandleKubectlGet(context.Background(), &tools.DynamicResourceReader{Client: client}, nil, tools.KubectlGetArgs{
 			Kind:      "Service",
 			Name:      "web-svc",
 			Namespace: "../etc",
@@ -193,7 +193,7 @@ var _ = Describe("kubectl_get", func() {
 		scheme := runtime.NewScheme()
 		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, kubectlGVRs, secret)
 
-		result, err := tools.HandleKubectlGet(context.Background(), client, nil, tools.KubectlGetArgs{
+		result, err := tools.HandleKubectlGet(context.Background(), &tools.DynamicResourceReader{Client: client}, nil, tools.KubectlGetArgs{
 			Kind:      "Secret",
 			Name:      "inline-creds",
 			Namespace: "prod",
@@ -213,7 +213,7 @@ var _ = Describe("kubectl_get", func() {
 		scheme := runtime.NewScheme()
 		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, kubectlGVRs)
 
-		_, err := tools.HandleKubectlGet(context.Background(), client, nil, tools.KubectlGetArgs{
+		_, err := tools.HandleKubectlGet(context.Background(), &tools.DynamicResourceReader{Client: client}, nil, tools.KubectlGetArgs{
 			Kind:      "FooBarBaz",
 			Name:      "test",
 			Namespace: "prod",
@@ -230,7 +230,7 @@ var _ = Describe("kubectl_get", func() {
 			}),
 		)
 
-		result, err := tools.HandleKubectlGet(context.Background(), client, nil, tools.KubectlGetArgs{
+		result, err := tools.HandleKubectlGet(context.Background(), &tools.DynamicResourceReader{Client: client}, nil, tools.KubectlGetArgs{
 			Kind:      "Endpoints",
 			Name:      "web-svc",
 			Namespace: "prod",

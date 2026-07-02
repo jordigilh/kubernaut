@@ -224,6 +224,7 @@ func (c *ApprovalCreator) buildApprovalRequest(
 			AIAnalysisRef: remediationv1.ObjectRef{
 				Name: ai.Name,
 			},
+			ClusterID:  rr.Spec.ClusterID,
 			Confidence:           confidence,
 			ConfidenceLevel:      confidenceLevel,
 			Reason:               ai.Status.ApprovalReason,

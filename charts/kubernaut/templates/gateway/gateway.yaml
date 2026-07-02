@@ -51,6 +51,18 @@ data:
         maxAttempts: 3
         initialBackoff: 100ms
         maxBackoff: 5s
+    {{- if .Values.gateway.fleet.enabled }}
+    fleet:
+      enabled: true
+      {{- if .Values.gateway.fleet.backend }}
+      backend: {{ .Values.gateway.fleet.backend | quote }}
+      {{- end }}
+      {{- if .Values.gateway.fleet.endpoint }}
+      endpoint: {{ .Values.gateway.fleet.endpoint | quote }}
+      {{- else if eq (default "fleetmetadatacache" .Values.gateway.fleet.backend) "fleetmetadatacache" }}
+      endpoint: {{ include "kubernaut.fleetmetadatacache.url" . | quote }}
+      {{- end }}
+    {{- end }}
 ---
 apiVersion: v1
 kind: ServiceAccount

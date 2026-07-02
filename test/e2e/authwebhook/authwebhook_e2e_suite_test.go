@@ -325,7 +325,7 @@ var _ = SynchronizedAfterSuite(
 
 		// Determine test results
 		setupFailed := k8sClient == nil
-		anyFailure := anyTestFailed || setupFailed || infrastructure.CheckTestFailure(clusterName)
+		anyFailure := infrastructure.ResolveAnyFailure(clusterName, setupFailed, anyTestFailed, GinkgoWriter)
 		defer infrastructure.CleanupFailureMarker(clusterName)
 
 		// Preserve cluster only if KEEP_CLUSTER is explicitly set (manual debugging)

@@ -405,7 +405,7 @@ rules:
   resources: ["remediationrequests"]
   verbs: ["get", "list", "watch"]
 - apiGroups: [""]
-  resources: ["pods"]
+  resources: ["pods", "configmaps"]
   verbs: ["get", "list", "watch"]
 - apiGroups: ["apps"]
   resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]

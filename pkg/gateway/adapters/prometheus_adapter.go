@@ -28,6 +28,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/prometheus/client_golang/prometheus"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/jordigilh/kubernaut/pkg/gateway/middleware"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
@@ -79,11 +80,19 @@ var PrometheusReservedLabels = map[string]bool{
 type PrometheusAdapter struct {
 	ownerResolver types.OwnerResolver
 	registry      *APIResourceRegistry
+	readerFactory readerFactory // BR-INTEGRATION-065: optional, for remote owner chain resolution
 	logger        logr.Logger
 
 	ownerResolutionMetric *prometheus.CounterVec // {kind, outcome} — optional (#1029)
 	parseDroppedMetric    *prometheus.CounterVec // {reason} — optional (#1032)
 }
+
+// readerFactory abstracts fleet.ReaderFactory to avoid importing pkg/fleet.
+// Structurally compatible with fleet.ReaderFactory.
+type readerFactory interface {
+	ReaderFor(ctx context.Context, clusterID string) (client.Reader, error)
+}
+
 
 // NewPrometheusAdapter creates a new Prometheus adapter.
 //
@@ -112,6 +121,31 @@ func (a *PrometheusAdapter) SetOwnerResolutionMetric(c *prometheus.CounterVec) {
 // SetParseDroppedMetric injects the counter that tracks alerts dropped during batch parsing.
 func (a *PrometheusAdapter) SetParseDroppedMetric(c *prometheus.CounterVec) {
 	a.parseDroppedMetric = c
+}
+
+// SetReaderFactory injects a fleet.ReaderFactory for remote owner chain resolution.
+// When set and a signal carries a non-empty clusterID, Parse/ParseBatch construct
+// a remote K8sOwnerResolver backed by the reader for that cluster.
+func (a *PrometheusAdapter) SetReaderFactory(rf readerFactory) {
+	a.readerFactory = rf
+}
+
+// resolverForCluster returns the appropriate owner resolver for the given clusterID.
+// For local signals (empty clusterID) or when no readerFactory is configured,
+// it returns the local resolver. For remote signals, it constructs a
+// K8sOwnerResolver backed by a remote client.Reader from the factory.
+// On error, it falls back to the local resolver with a logged warning.
+func (a *PrometheusAdapter) resolverForCluster(ctx context.Context, clusterID string) types.OwnerResolver {
+	if clusterID == "" || a.readerFactory == nil {
+		return a.ownerResolver
+	}
+	reader, err := a.readerFactory.ReaderFor(ctx, clusterID)
+	if err != nil {
+		a.logger.Error(err, "Failed to obtain remote reader, falling back to local resolver",
+			"cluster", clusterID)
+		return a.ownerResolver
+	}
+	return NewK8sOwnerResolver(reader, a.logger)
 }
 
 // Name returns the adapter identifier
@@ -223,7 +257,12 @@ func (a *PrometheusAdapter) Parse(ctx context.Context, rawData []byte) (*types.N
 			Namespace: ns,
 		}
 
-		fingerprint, resolvedResource, err := types.ResolveFingerprint(ctx, a.ownerResolver, resource, a.logger)
+		// BR-INTEGRATION-065: Extract cluster label from commonLabels (Thanos federation)
+		clusterID := webhook.CommonLabels[types.ClusterLabelKey]
+
+		resolver := a.resolverForCluster(ctx, clusterID)
+
+		fingerprint, resolvedResource, err := types.ResolveFingerprintWithCluster(ctx, clusterID, resolver, resource, a.logger)
 		if err != nil {
 			lastErr = err
 			a.logger.Info("Skipping stale alert in batch",
@@ -247,6 +286,7 @@ func (a *PrometheusAdapter) Parse(ctx context.Context, rawData []byte) (*types.N
 
 		return &types.NormalizedSignal{
 			Fingerprint:  fingerprint,
+			ClusterID:    clusterID,
 			SignalName:    alert.Labels["alertname"],
 			Severity:     severity,
 			Namespace:    resolvedResource.Namespace,
@@ -300,7 +340,12 @@ func (a *PrometheusAdapter) ParseBatch(ctx context.Context, rawData []byte) ([]*
 			Namespace: ns,
 		}
 
-		fingerprint, resolvedResource, err := types.ResolveFingerprint(ctx, a.ownerResolver, resource, a.logger)
+		// BR-INTEGRATION-065: Extract cluster label from commonLabels (Thanos federation)
+		clusterID := webhook.CommonLabels[types.ClusterLabelKey]
+
+		resolver := a.resolverForCluster(ctx, clusterID)
+
+		fingerprint, resolvedResource, err := types.ResolveFingerprintWithCluster(ctx, clusterID, resolver, resource, a.logger)
 		if err != nil {
 			a.logger.Info("Alert failed owner resolution in batch, skipping",
 				"alert", i, "resource", resource.String(), "error", err)
@@ -326,6 +371,7 @@ func (a *PrometheusAdapter) ParseBatch(ctx context.Context, rawData []byte) ([]*
 
 		signals = append(signals, &types.NormalizedSignal{
 			Fingerprint:  fingerprint,
+			ClusterID:    clusterID,
 			SignalName:   alert.Labels["alertname"],
 			Severity:     severity,
 			Namespace:    resolvedResource.Namespace,

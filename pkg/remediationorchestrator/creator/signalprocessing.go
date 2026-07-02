@@ -104,6 +104,7 @@ func (c *SignalProcessingCreator) Create(ctx context.Context, rr *remediationv1.
 				Severity:       rr.Spec.Severity,
 				Type:           rr.Spec.SignalType,
 				Source:         rr.Spec.SignalSource,
+				ClusterID:      rr.Spec.ClusterID,
 				TargetType:     rr.Spec.TargetType,
 				Labels:         rr.Spec.SignalLabels,
 				Annotations:    rr.Spec.SignalAnnotations,

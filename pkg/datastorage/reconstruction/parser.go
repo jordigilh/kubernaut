@@ -30,6 +30,7 @@ type ParsedAuditData struct {
 	// Metadata
 	EventType     string
 	CorrelationID string
+	ClusterName   string // DD-AUDIT-003 v2.2: cluster provenance for fleet reconstruction (CC8.1)
 
 	// Gateway fields (from gateway.signal.received)
 	SignalType        string
@@ -41,6 +42,12 @@ type ParsedAuditData struct {
 
 	// Orchestrator fields (from orchestrator.lifecycle.created)
 	TimeoutConfig *TimeoutConfigData
+
+	// Orchestrator completion/failure fields (from orchestrator.lifecycle.completed/failed)
+	Outcome      string            // "success" or "failure"
+	DurationMs   int64             // orchestration duration in milliseconds
+	FailurePhase string            // phase where failure occurred
+	ErrorDetails *ErrorDetailsData // DD-ERROR-001 standardized error details
 
 	// AI Analysis fields (Gap #4)
 	ProviderData string // from aianalysis.analysis.completed (stored as JSON string)
@@ -74,23 +81,49 @@ type ExecutionRefData struct {
 	Namespace  string
 }
 
+// ErrorDetailsData represents standardized error details extracted from failed audit events (DD-ERROR-001).
+type ErrorDetailsData struct {
+	Message       string
+	Code          string
+	Component     string
+	RetryPossible bool
+}
+
 // ParseAuditEvent extracts structured data from an audit event for RR reconstruction.
 // TDD GREEN: Minimal implementation to pass current tests.
 func ParseAuditEvent(event ogenclient.AuditEvent) (*ParsedAuditData, error) {
+	var parsed *ParsedAuditData
+	var err error
+
 	switch event.EventType {
 	case "gateway.signal.received":
-		return parseGatewaySignalReceived(event)
+		parsed, err = parseGatewaySignalReceived(event)
 	case "orchestrator.lifecycle.created":
-		return parseOrchestratorLifecycleCreated(event)
+		parsed, err = parseOrchestratorLifecycleCreated(event)
+	case "orchestrator.lifecycle.completed":
+		parsed, err = parseOrchestratorLifecycleCompleted(event)
+	case "orchestrator.lifecycle.failed":
+		parsed, err = parseOrchestratorLifecycleFailed(event)
 	case "aianalysis.analysis.completed":
-		return parseAIAnalysisCompleted(event)
+		parsed, err = parseAIAnalysisCompleted(event)
 	case "workflowexecution.selection.completed":
-		return parseWorkflowSelectionCompleted(event)
+		parsed, err = parseWorkflowSelectionCompleted(event)
 	case "workflowexecution.execution.started":
-		return parseExecutionWorkflowStarted(event)
+		parsed, err = parseExecutionWorkflowStarted(event)
 	default:
 		return nil, fmt.Errorf("unsupported event type: %s", event.EventType)
 	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	// DD-AUDIT-003 v2.2: Extract cluster_name from event envelope (top-level column, not event_data)
+	if event.ClusterName.IsSet() && !event.ClusterName.Null {
+		parsed.ClusterName = event.ClusterName.Value
+	}
+
+	return parsed, nil
 }
 
 func parseGatewaySignalReceived(event ogenclient.AuditEvent) (*ParsedAuditData, error) {
@@ -149,6 +182,58 @@ func parseOrchestratorLifecycleCreated(event ogenclient.AuditEvent) (*ParsedAudi
 			Processing: getOptString(tc.Processing),
 			Analyzing:  getOptString(tc.Analyzing),
 			Executing:  getOptString(tc.Executing),
+		}
+	}
+
+	return data, nil
+}
+
+// parseOrchestratorLifecycleCompleted extracts outcome/duration from orchestrator.lifecycle.completed event.
+// BR-AUDIT-005 v2.0: RR status reconstruction (CC8.1)
+func parseOrchestratorLifecycleCompleted(event ogenclient.AuditEvent) (*ParsedAuditData, error) {
+	payload := event.EventData.RemediationOrchestratorAuditPayload
+
+	data := &ParsedAuditData{
+		EventType:     event.EventType,
+		CorrelationID: event.CorrelationID,
+	}
+
+	if payload.Outcome.IsSet() {
+		data.Outcome = string(payload.Outcome.Value)
+	}
+	if payload.DurationMs.IsSet() {
+		data.DurationMs = payload.DurationMs.Value
+	}
+
+	return data, nil
+}
+
+// parseOrchestratorLifecycleFailed extracts error_details from orchestrator.lifecycle.failed event.
+// BR-AUDIT-005 v2.0 Gap #7: Standardized error_details for RR reconstruction (CC8.1)
+func parseOrchestratorLifecycleFailed(event ogenclient.AuditEvent) (*ParsedAuditData, error) {
+	payload := event.EventData.RemediationOrchestratorAuditPayload
+
+	data := &ParsedAuditData{
+		EventType:     event.EventType,
+		CorrelationID: event.CorrelationID,
+	}
+
+	if payload.Outcome.IsSet() {
+		data.Outcome = string(payload.Outcome.Value)
+	}
+	if payload.DurationMs.IsSet() {
+		data.DurationMs = payload.DurationMs.Value
+	}
+	if payload.FailurePhase.IsSet() {
+		data.FailurePhase = string(payload.FailurePhase.Value)
+	}
+	if payload.ErrorDetails.IsSet() {
+		ed := payload.ErrorDetails.Value
+		data.ErrorDetails = &ErrorDetailsData{
+			Message:       ed.Message,
+			Code:          ed.Code,
+			Component:     string(ed.Component),
+			RetryPossible: ed.RetryPossible,
 		}
 	}
 

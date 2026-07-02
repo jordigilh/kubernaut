@@ -346,6 +346,9 @@ func (c *CRDCreator) CreateRemediationRequest(
 			SignalSource: signal.Source,
 			TargetType:   "kubernetes",
 
+			// BR-INTEGRATION-065: Multi-cluster federation
+			ClusterID: signal.ClusterID,
+
 			// Target resource identification (BR-GATEWAY-TARGET-RESOURCE)
 			// Business Outcome: SignalProcessing and RO can access resource info directly
 			// without parsing ProviderData JSON

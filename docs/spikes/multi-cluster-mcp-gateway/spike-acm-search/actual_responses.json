@@ -1,0 +1,123 @@
+{
+  "metadata": {
+    "cluster": "OCP 4.21.5 (parodos.dev)",
+    "acm_version": "2.17.0",
+    "date": "2026-06-22",
+    "api_endpoint": "https://search-search-api.open-cluster-management.svc:4010/searchapi/graphql"
+  },
+  "s2_scope_check_positive": {
+    "query": "query scopeCheck($input: [SearchInput]) { searchResult: search(input: $input) { count } }",
+    "variables": {
+      "input": [
+        {
+          "filters": [
+            { "property": "kind", "values": ["Deployment"] },
+            { "property": "name", "values": ["nginx"] },
+            { "property": "namespace", "values": ["spike-acm-test"] },
+            { "property": "cluster", "values": ["local-cluster"] },
+            { "property": "label", "values": ["kubernaut.ai/managed=true"] }
+          ],
+          "limit": 1
+        }
+      ]
+    },
+    "response": {
+      "data": {
+        "searchResult": [
+          { "count": 1 }
+        ]
+      }
+    }
+  },
+  "s3_scope_check_negative_nonexistent": {
+    "query": "query scopeCheck($input: [SearchInput]) { searchResult: search(input: $input) { count } }",
+    "variables": {
+      "input": [
+        {
+          "filters": [
+            { "property": "kind", "values": ["Deployment"] },
+            { "property": "name", "values": ["nonexistent"] },
+            { "property": "namespace", "values": ["spike-acm-test"] },
+            { "property": "cluster", "values": ["local-cluster"] }
+          ],
+          "limit": 1
+        }
+      ]
+    },
+    "response": {
+      "data": {
+        "searchResult": [
+          { "count": 0 }
+        ]
+      }
+    }
+  },
+  "s3_scope_check_negative_unknown_cluster": {
+    "query": "query scopeCheck($input: [SearchInput]) { searchResult: search(input: $input) { count } }",
+    "variables": {
+      "input": [
+        {
+          "filters": [
+            { "property": "kind", "values": ["Deployment"] },
+            { "property": "name", "values": ["nginx"] },
+            { "property": "namespace", "values": ["spike-acm-test"] },
+            { "property": "cluster", "values": ["unknown-cluster"] }
+          ],
+          "limit": 1
+        }
+      ]
+    },
+    "response": {
+      "data": {
+        "searchResult": [
+          { "count": 0 }
+        ]
+      }
+    }
+  },
+  "s4_cluster_listing": {
+    "query": "query listClusters($input: [SearchInput]) { searchResult: search(input: $input) { items } }",
+    "variables": {
+      "input": [
+        {
+          "filters": [
+            { "property": "kind", "values": ["Cluster"] }
+          ]
+        }
+      ]
+    },
+    "response": {
+      "data": {
+        "searchResult": [
+          {
+            "items": [
+              {
+                "HubAcceptedManagedCluster": "True",
+                "ManagedClusterConditionAvailable": "True",
+                "ManagedClusterConditionClockSynced": "True",
+                "ManagedClusterImportSucceeded": "True",
+                "ManagedClusterJoined": "True",
+                "_hubClusterResource": "true",
+                "_uid": "cluster__local-cluster",
+                "addon": "application-manager=true; cert-policy-controller=true; cluster-proxy=true; config-policy-controller=true; governance-policy-framework=true; iam-policy-controller=false; observability-controller=false; search-collector=false; work-manager=true",
+                "apiEndpoint": "https://api.dev.redhat-internal.com:6443",
+                "apigroup": "internal.open-cluster-management.io",
+                "cluster": "local-cluster",
+                "consoleURL": "https://console-openshift-console.apps.dev.redhat-internal.com",
+                "cpu": "58",
+                "created": "2026-06-22T18:00:52Z",
+                "kind": "Cluster",
+                "kind_plural": "managedclusterinfos",
+                "kubernetesVersion": "v1.34.4",
+                "label": "cloud=Other; cluster.open-cluster-management.io/clusterset=default; clusterID=df1bf24d-f545-4ce5-9859-9cb0df1e800b; feature.open-cluster-management.io/addon-application-manager=available; feature.open-cluster-management.io/addon-cert-policy-controller=available; feature.open-cluster-management.io/addon-cluster-proxy=available; feature.open-cluster-management.io/addon-config-policy-controller=available; feature.open-cluster-management.io/addon-governance-policy-framework=available; feature.open-cluster-management.io/addon-hypershift-addon=available; feature.open-cluster-management.io/addon-managed-serviceaccount=available; feature.open-cluster-management.io/addon-work-manager=available; local-cluster=true; name=local-cluster; openshiftVersion=4.21.5; openshiftVersion-major=4; openshiftVersion-major-minor=4.21; velero.io/exclude-from-backup=true; vendor=OpenShift",
+                "memory": "205612548Ki",
+                "name": "local-cluster",
+                "nodes": "4"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

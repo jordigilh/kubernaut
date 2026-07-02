@@ -155,6 +155,14 @@ type WorkflowExecutionSpec struct {
 	// Example: "payment/deployment/payment-api", "node/worker-node-1"
 	TargetResource string `json:"targetResource"`
 
+	// ClusterID identifies the target cluster for remote execution.
+	// When empty, execution runs on the local (hub) cluster.
+	// When set, execution resources (Jobs, PipelineRuns) are created on the
+	// remote cluster via the MCP Gateway (BR-FLEET-054).
+	// Propagated from RemediationRequest.Spec.ClusterID by the RO creator.
+	// +optional
+	ClusterID string `json:"clusterID,omitempty"`
+
 	// Parameters from LLM selection (per DD-WORKFLOW-003)
 	// Keys are UPPER_SNAKE_CASE for Tekton PipelineRun params
 	// +optional

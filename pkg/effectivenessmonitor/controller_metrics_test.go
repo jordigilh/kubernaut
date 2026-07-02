@@ -47,7 +47,7 @@ var _ = Describe("Controller Metrics (BR-EM-009, DD-METRICS-001)", func() {
 				m.RecordComponentAssessment("health", "success", nil)
 				m.RecordAssessmentCompleted("Full")
 				m.RecordExternalCallError("test", "op", "err")
-				m.RecordValidityExpiration()
+				m.RecordValidityExpiration("")
 			}).ToNot(Panic(), "all metric collectors should accept observations without panic")
 
 			families, err := registry.Gather()
@@ -120,7 +120,7 @@ var _ = Describe("Controller Metrics (BR-EM-009, DD-METRICS-001)", func() {
 
 		It("RecordValidityExpiration should not panic", func() {
 			Expect(func() {
-				m.RecordValidityExpiration()
+				m.RecordValidityExpiration("")
 			}).ToNot(Panic())
 		})
 	})

@@ -42,6 +42,7 @@ type Step struct {
 	Index         int      `json:"index"`
 	Kind          StepKind `json:"kind"`
 	Tool          string   `json:"tool,omitempty"`
+	ClusterID     string   `json:"cluster_id,omitempty"`
 	Content       string   `json:"content"`
 	CorrelationID string   `json:"correlation_id,omitempty"`
 }

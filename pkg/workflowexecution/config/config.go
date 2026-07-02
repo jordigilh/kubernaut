@@ -51,12 +51,32 @@ type Config struct {
 	DataStorage sharedconfig.DataStorageConfig `yaml:"datastorage"`
 	Controller  ControllerConfig             `yaml:"controller" validate:"required"`
 
+	// Fleet holds MCP Gateway connectivity settings for remote cluster execution.
+	// BR-FLEET-054: Optional -- when Endpoint is empty, WE operates in local-only mode.
+	Fleet FleetConfig `yaml:"fleet"`
+
 	// Logging configuration (Issue #875: config-file-only log level with hot-reload)
 	Logging sharedconfig.LoggingConfig `yaml:"logging"`
 
 	// TLSProfile selects the TLS security profile (Old/Intermediate/Modern).
 	// Issue #748: OCP-only — set by kubernaut-operator from the cluster APIServer CR.
 	TLSProfile string `yaml:"tlsProfile,omitempty"`
+}
+
+// FleetConfig holds MCP Gateway connectivity settings for multi-cluster
+// workflow execution. BR-FLEET-054: When Endpoint is empty, WE operates
+// in local-only mode (same as pre-fleet behavior).
+type FleetConfig struct {
+	Endpoint string      `yaml:"endpoint"`
+	OAuth2   FleetOAuth2 `yaml:"oauth2"`
+}
+
+// FleetOAuth2 holds OAuth2 credentials for MCP Gateway authentication.
+type FleetOAuth2 struct {
+	Enabled              bool     `yaml:"enabled"`
+	TokenURL             string   `yaml:"tokenURL"`
+	CredentialsSecretRef string   `yaml:"credentialsSecretRef"`
+	Scopes               []string `yaml:"scopes,omitempty"`
 }
 
 // TektonConfig controls Tekton Pipelines engine registration (Issue #868).
@@ -199,6 +219,15 @@ func (c *Config) Validate() error {
 	// DataStorage uses shared validation (ADR-030)
 	if err := sharedconfig.ValidateDataStorageConfig(&c.DataStorage); err != nil {
 		return err
+	}
+
+	if c.Fleet.OAuth2.Enabled {
+		if c.Fleet.OAuth2.TokenURL == "" {
+			return fmt.Errorf("fleet.oauth2.tokenURL is required when oauth2.enabled=true")
+		}
+		if c.Fleet.OAuth2.CredentialsSecretRef == "" {
+			return fmt.Errorf("fleet.oauth2.credentialsSecretRef is required when oauth2.enabled=true")
+		}
 	}
 
 	// Issue #875: Logging validation

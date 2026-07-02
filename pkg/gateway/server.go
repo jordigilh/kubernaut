@@ -66,6 +66,7 @@ import (
 	kubecors "github.com/jordigilh/kubernaut/pkg/http/cors"  // BR-HTTP-015: Shared CORS library
 	"github.com/jordigilh/kubernaut/pkg/shared/sanitization" // DD-005: Shared sanitization library
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"        // BR-SCOPE-002: Resource scope management
+	"github.com/jordigilh/kubernaut/pkg/fleet" // ADR-068: Federated scope checking factory
 )
 
 // Gateway Audit Event Type Constants (from OpenAPI spec)
@@ -144,7 +145,7 @@ type Server struct {
 	phaseChecker  *processing.PhaseBasedDeduplicationChecker // Phase-based deduplication logic
 	crdCreator    *processing.CRDCreator
 	lockManager   *processing.DistributedLockManager // BR-GATEWAY-190: K8s Lease-based distributed locking
-	scopeChecker  ScopeChecker                       // BR-SCOPE-002: nil = no scope filtering (backward compat)
+	scopeChecker  scope.ScopeChecker            // BR-SCOPE-002 + ADR-068: nil = no scope filtering (backward compat)
 
 	// ADR-057: Controller namespace where all CRDs are created and queried
 	controllerNamespace string
@@ -285,7 +286,7 @@ func newAuthMiddleware(authenticator auth.Authenticator, authorizer auth.Authori
 //
 // USAGE: Unit tests only - allows testing audit failure scenarios
 // PRODUCTION: Use NewServer() or NewServerWithK8sClient() instead
-func NewServerForTesting(cfg *config.ServerConfig, logger logr.Logger, metricsInstance *metrics.Metrics, ctrlClient client.Client, auditStore audit.AuditStore, scopeChecker ScopeChecker, authenticator auth.Authenticator, authorizer auth.Authorizer) (*Server, error) {
+func NewServerForTesting(cfg *config.ServerConfig, logger logr.Logger, metricsInstance *metrics.Metrics, ctrlClient client.Client, auditStore audit.AuditStore, scopeChecker scope.ScopeChecker, authenticator auth.Authenticator, authorizer auth.Authorizer) (*Server, error) {
 	// Use provided Kubernetes client
 	k8sClient := k8s.NewClient(ctrlClient)
 
@@ -466,6 +467,38 @@ func NewServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger, metricsI
 		}); err != nil {
 		cancel()
 		return nil, fmt.Errorf("failed to create fingerprint field index: %w", err)
+	}
+
+	// Issue #54 SOC2 gap fix: eagerly start informers for scope/owner-resolution kinds
+	// (Deployment, Namespace, Pod, etc. — see adapters.OwnerChainCacheObjects) so the
+	// WaitForCacheSync call below also gates readiness on them.
+	//
+	// Without this, these informers are created LAZILY on the first scope-check or
+	// owner-resolution request after Gateway (re)starts. pkg/shared/scope/manager.go's
+	// Get() call blocks until that informer's cache is synced, bounded by a defensive
+	// scopeLookupTimeout (5s) to avoid hanging forever when RBAC is missing. Under CI/
+	// production load the FIRST-ever List+Watch establishment for a kind can exceed 5s,
+	// so the defensive timeout fires, checkResourceLabel/checkNamespaceLabel silently
+	// fall through as "not found", and a correctly-labeled resource gets misclassified
+	// as unmanaged (BR-SCOPE-001) until the informer catches up. Eagerly starting these
+	// informers here — and covering them with the existing 30s WaitForCacheSync —
+	// ensures the readiness probe does not report ready until scope checks are reliable.
+	//
+	// ConfigMap and Secret are intentionally excluded: RBAC for these two kinds is not
+	// consistently granted cluster-wide across deployment manifests (the Helm chart
+	// grants ConfigMap only namespace-scoped via a separate Role, and Secret access was
+	// deliberately removed entirely — Issue #673 H-3, "gateway has no business need for
+	// secret access"). Eagerly starting their informers would make WaitForCacheSync hang
+	// until timeout wherever that narrower RBAC applies, crash-looping Gateway. They keep
+	// their pre-existing lazy-informer behavior.
+	for obj := range byObject {
+		if kind := obj.GetObjectKind().GroupVersionKind().Kind; kind == "ConfigMap" || kind == "Secret" {
+			continue
+		}
+		if _, err := k8sCache.GetInformer(ctx, obj); err != nil {
+			cancel()
+			return nil, fmt.Errorf("failed to start informer for %T: %w", obj, err)
+		}
 	}
 
 	// Start cache in background
@@ -658,6 +691,16 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 	// prevent duplicate CRDs and lock races), scope checking tolerates informer sync delay.
 	scopeMgr := scope.NewManager(ctrlClient)
 
+	// ADR-068: Federated scope checking via fleet.NewScopeChecker factory.
+	scopeCheckerInstance, err := fleet.NewScopeChecker(scopeMgr, cfg.Fleet, logger)
+	if err != nil {
+		return nil, fmt.Errorf("fleet scope checker: %w", err)
+	}
+	if cfg.Fleet.Enabled && cfg.Fleet.EffectiveEndpoint() != "" {
+		logger.Info("ADR-068: Federated scope checker enabled",
+			"backend", cfg.Fleet.Backend, "endpoint", cfg.Fleet.EffectiveEndpoint())
+	}
+
 	authMW := newAuthMiddleware(authenticator, authorizer, controllerNS, logger)
 	if authMW != nil {
 		logger.Info("BR-GATEWAY-036/037: Auth middleware enabled",
@@ -677,7 +720,7 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 		ctrlClient:          ctrlClient,
 		apiReader:           apiReader, // ADR-057: Used for readiness K8s check (bypasses cache)
 		auditStore:          auditStore,
-		scopeChecker:        scopeMgr,     // BR-SCOPE-002: Label-based scope filtering
+		scopeChecker:        scopeCheckerInstance, // BR-SCOPE-002 + ADR-065: Label-based scope filtering (federated when fleet enabled)
 		controllerNamespace: controllerNS, // Issue #195: Used by ShouldDeduplicate
 		authMiddleware:      authMW,
 		metricsInstance:     metricsInstance,
@@ -1502,7 +1545,12 @@ func (s *Server) validateScope(ctx context.Context, signal *types.NormalizedSign
 		return NewRejectedResponse(signal.Namespace, signal.Resource.Kind, signal.Resource.Name), nil
 	}
 
-	managed, err := s.scopeChecker.IsManaged(ctx, signal.Namespace, signal.Resource.Kind, signal.Resource.Name)
+	managed, err := s.scopeChecker.IsManagedResource(ctx, scope.ResourceIdentity{
+		ClusterID: signal.ClusterID,
+		Kind:      signal.Resource.Kind,
+		Namespace: signal.Namespace,
+		Name:      signal.Resource.Name,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("scope validation failed: %w", err)
 	}
@@ -1955,6 +2003,10 @@ func (s *Server) emitSignalReceivedAudit(ctx context.Context, signal *types.Norm
 	audit.SetResource(event, "Signal", signal.Fingerprint)
 	audit.SetCorrelationID(event, rrName) // Use RR name as correlation
 	audit.SetNamespace(event, signal.Namespace)
+	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
+	if signal.ClusterID != "" {
+		audit.SetClusterName(event, signal.ClusterID)
+	}
 
 	// Event data with Gateway-specific fields + RR reconstruction fields
 	//
@@ -2036,6 +2088,10 @@ func (s *Server) emitSignalDeduplicatedAudit(ctx context.Context, signal *types.
 	audit.SetResource(event, "Signal", signal.Fingerprint)
 	audit.SetCorrelationID(event, rrName)
 	audit.SetNamespace(event, signal.Namespace)
+	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
+	if signal.ClusterID != "" {
+		audit.SetClusterName(event, signal.ClusterID)
+	}
 
 	// Event data with RR reconstruction fields (same as signal.received for consistency)
 	// Extract RR reconstruction fields with defensive nil handling (REFACTOR phase)
@@ -2097,6 +2153,10 @@ func (s *Server) emitCRDCreatedAudit(ctx context.Context, signal *types.Normaliz
 	audit.SetResource(event, "RemediationRequest", fmt.Sprintf("%s/%s", rrNamespace, rrName))
 	audit.SetCorrelationID(event, rrName) // Use RR name as correlation
 	audit.SetNamespace(event, signal.Namespace)
+	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
+	if signal.ClusterID != "" {
+		audit.SetClusterName(event, signal.ClusterID)
+	}
 
 	// Use structured audit payload (eliminates map[string]interface{})
 	// Per DD-AUDIT-004: Zero unstructured data in audit events
@@ -2170,6 +2230,10 @@ func (s *Server) emitCRDCreationFailedAudit(ctx context.Context, signal *types.N
 	audit.SetResource(event, "RemediationRequest", correlationID)
 	audit.SetCorrelationID(event, correlationID)
 	audit.SetNamespace(event, signal.Namespace)
+	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
+	if signal.ClusterID != "" {
+		audit.SetClusterName(event, signal.ClusterID)
+	}
 
 	// BR-AUDIT-005 Gap #7: Standardized error_details
 	// GW-INT-AUD-019 (BR-GATEWAY-093): Detect circuit breaker errors for audit compliance

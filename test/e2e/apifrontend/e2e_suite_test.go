@@ -100,7 +100,7 @@ var _ = SynchronizedBeforeSuite(
 		kubeconfigPath = string(data)
 		baseURL = "https://localhost:18443"
 		caCertPath = filepath.Join(os.TempDir(), "apifrontend-e2e-certs", "ca.crt")
-		dexURL = "http://localhost:5556/dex"
+		dexURL = "https://localhost:5556/dex"
 		clientID = "kubernaut-apifrontend"
 		clientSecret = "e2e-client-secret"
 		username = "e2e-user@kubernaut.ai"
@@ -155,7 +155,7 @@ var _ = SynchronizedAfterSuite(
 		_, _ = fmt.Fprintln(GinkgoWriter, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		setupFailed := !setupSucceeded
-		anyFailure := setupFailed || anyTestFailed || kinfra.CheckTestFailure(e2eClusterName)
+		anyFailure := kinfra.ResolveAnyFailure(e2eClusterName, setupFailed, anyTestFailed, GinkgoWriter)
 		defer kinfra.CleanupFailureMarker(e2eClusterName)
 
 		if anyFailure {

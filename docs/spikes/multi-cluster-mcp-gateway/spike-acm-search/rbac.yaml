@@ -1,0 +1,111 @@
+# Production RBAC for Kubernaut ACM Search adapter
+#
+# Validated: OCP 4.21.5, ACM 2.17.0, 2026-06-22
+# For the full production setup guide, see ADR-068 "ACM Search Production Setup Guide".
+#
+# Prerequisites:
+#   1. Enable fine-grained RBAC via MCH component (NOT Search CR annotation/spec):
+#      oc patch mch multiclusterhub -n open-cluster-management --type json \
+#        -p '[{"op":"replace","path":"/spec/overrides/components/<INDEX>/enabled","value":true}]'
+#      (where <INDEX> is the array position of the "fine-grained-rbac" component)
+#
+# Validation findings (2026-06-22):
+#   - FineGrainedRbac: false (default): only cluster-admin users see results
+#   - FineGrainedRbac: true: RBAC-based result filtering via userpermissions API
+#   - userpermissions API (ocm-proxyserver) only recognizes well-known K8s aggregate
+#     roles (admin, view, edit) bound in managed cluster namespaces — custom roles
+#     return empty items
+#   - MulticlusterRoleAssignment CRD (v1beta1) works for creating ClusterPermissions
+#     but does NOT affect userpermissions API visibility
+#   - The "view" RoleBinding in the managed cluster namespace is the validated
+#     mechanism for granting search result visibility
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kubernaut-fleet-reader
+  namespace: kubernaut-system
+
+---
+# Step 1: Grant access to the Search API endpoint
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubernaut-search-api-access
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: global-search-user
+subjects:
+  - kind: ServiceAccount
+    name: kubernaut-fleet-reader
+    namespace: kubernaut-system
+
+---
+# Step 2: Grant userpermissions API access (required for fine-grained RBAC)
+# Without this, search-api returns "unable to resolve query because of error
+# while refreshing user permissions"
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubernaut-search-userpermissions
+rules:
+  - apiGroups: ["clusterview.open-cluster-management.io"]
+    resources: ["userpermissions"]
+    verbs: ["list"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubernaut-search-userpermissions
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kubernaut-search-userpermissions
+subjects:
+  - kind: ServiceAccount
+    name: kubernaut-fleet-reader
+    namespace: kubernaut-system
+
+---
+# Step 3: Grant managed cluster visibility via "view" RoleBinding.
+# This is the ONLY validated mechanism for making the SA visible to the
+# userpermissions API. Repeat for each managed cluster namespace.
+#
+# NOTE: Custom ClusterRoles bound in the managed cluster namespace do NOT
+# work — the userpermissions API ignores them. Only admin/view/edit are recognized.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kubernaut-fleet-reader-view
+  namespace: local-cluster    # ← change to each managed cluster namespace
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: view
+subjects:
+  - kind: ServiceAccount
+    name: kubernaut-fleet-reader
+    namespace: kubernaut-system
+
+---
+# TLS configuration for in-cluster access:
+#
+# The Search API uses an OpenShift service-serving certificate:
+#   - Server cert CN: search-search-api.open-cluster-management.svc
+#   - Issuer: openshift-service-serving-signer
+#
+# Inject the CA bundle into a ConfigMap:
+#
+# apiVersion: v1
+# kind: ConfigMap
+# metadata:
+#   name: acm-search-ca
+#   namespace: kubernaut-system
+#   annotations:
+#     service.beta.openshift.io/inject-cabundle: "true"
+# data: {}
+#
+# Mount it and set fleet.acm.caBundle to the injected CA path.

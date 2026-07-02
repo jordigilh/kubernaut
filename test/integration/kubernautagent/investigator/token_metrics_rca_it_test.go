@@ -37,7 +37,7 @@ var _ = Describe("KA-KA Integration Parity — Token Usage (TP-433-PARITY)", fun
 
 	var (
 		invLogger  logr.Logger
-		auditStore *recordingAuditStore
+		auditStore *capturingAuditStore
 		builder    *prompt.Builder
 		rp         *parser.ResultParser
 		enricher   *enrichment.Enricher
@@ -46,12 +46,11 @@ var _ = Describe("KA-KA Integration Parity — Token Usage (TP-433-PARITY)", fun
 
 	BeforeEach(func() {
 		invLogger = logr.Discard()
-		auditStore = &recordingAuditStore{}
+		auditStore = newCapturingAuditStore(suiteAuditStore)
 		builder, _ = prompt.NewBuilder()
 		rp = parser.NewResultParser()
-		k8sClient := &fakeK8sClient{ownerChain: []enrichment.OwnerChainEntry{}}
-		dsClient := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-		enricher = enrichment.NewEnricher(k8sClient, dsClient, auditStore, invLogger)
+		k8sClient := &k8sFixtureClient{ownerChain: []enrichment.OwnerChainEntry{}}
+		enricher = enrichment.NewEnricher(k8sClient, suiteDSAdapter, auditStore, invLogger)
 		phaseTools = investigator.DefaultPhaseToolMap()
 	})
 
@@ -107,7 +106,7 @@ var _ = Describe("KA-KA Integration Parity — LLM Metrics (TP-433-PARITY)", fun
 
 	var (
 		invLogger  logr.Logger
-		auditStore *recordingAuditStore
+		auditStore *capturingAuditStore
 		builder    *prompt.Builder
 		rp         *parser.ResultParser
 		enricher   *enrichment.Enricher
@@ -116,12 +115,11 @@ var _ = Describe("KA-KA Integration Parity — LLM Metrics (TP-433-PARITY)", fun
 
 	BeforeEach(func() {
 		invLogger = logr.Discard()
-		auditStore = &recordingAuditStore{}
+		auditStore = newCapturingAuditStore(suiteAuditStore)
 		builder, _ = prompt.NewBuilder()
 		rp = parser.NewResultParser()
-		k8sClient := &fakeK8sClient{ownerChain: []enrichment.OwnerChainEntry{}}
-		dsClient := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-		enricher = enrichment.NewEnricher(k8sClient, dsClient, auditStore, invLogger)
+		k8sClient := &k8sFixtureClient{ownerChain: []enrichment.OwnerChainEntry{}}
+		enricher = enrichment.NewEnricher(k8sClient, suiteDSAdapter, auditStore, invLogger)
 		phaseTools = investigator.DefaultPhaseToolMap()
 	})
 
@@ -198,7 +196,7 @@ var _ = Describe("KA-KA Integration Parity — RCA (TP-433-PARITY)", func() {
 
 	var (
 		invLogger  logr.Logger
-		auditStore *recordingAuditStore
+		auditStore *capturingAuditStore
 		builder    *prompt.Builder
 		rp         *parser.ResultParser
 		enricher   *enrichment.Enricher
@@ -207,16 +205,15 @@ var _ = Describe("KA-KA Integration Parity — RCA (TP-433-PARITY)", func() {
 
 	BeforeEach(func() {
 		invLogger = logr.Discard()
-		auditStore = &recordingAuditStore{}
+		auditStore = newCapturingAuditStore(suiteAuditStore)
 		builder, _ = prompt.NewBuilder()
 		rp = parser.NewResultParser()
-		k8sClient := &fakeK8sClient{
+		k8sClient := &k8sFixtureClient{
 			ownerChain: []enrichment.OwnerChainEntry{
 				{Kind: "Deployment", Name: "api-server", Namespace: "production"},
 			},
 		}
-		dsClient := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-		enricher = enrichment.NewEnricher(k8sClient, dsClient, auditStore, invLogger)
+		enricher = enrichment.NewEnricher(k8sClient, suiteDSAdapter, auditStore, invLogger)
 		phaseTools = investigator.DefaultPhaseToolMap()
 	})
 

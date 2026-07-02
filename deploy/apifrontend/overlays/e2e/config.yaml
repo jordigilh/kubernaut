@@ -37,10 +37,10 @@ agentCard:
   url: "https://apifrontend.kubernaut-system.svc:8443"
 
 auth:
-  issuerURL: "http://dex.kubernaut-system.svc:5556/dex"
-  jwksURL: "http://dex.kubernaut-system.svc:5556/dex/keys"
+  issuerURL: "https://dex:5556/dex"
+  jwksURL: "https://dex:5556/dex/keys"
   audience: "kubernaut-apifrontend"
-  allowInsecureIssuers: true
+  oidcCaFile: /etc/apifrontend/inter-service-ca/ca.crt
 
 rbac:
   groupMapping:

@@ -521,7 +521,8 @@ var _ = SynchronizedAfterSuite(
 		// The safest approach: always export logs if ANY process reported failures
 		// We'll check this by looking at the captured anyTestFailed flag from process cleanup
 		// Also check for setup failures (BeforeSuite failures)
-		suiteFailed := setupFailed || anyTestFailed || infrastructure.CheckTestFailure(clusterName) || keepCluster == "true" || keepCluster == "always"
+		suiteFailed := infrastructure.ResolveAnyFailure(clusterName, setupFailed, anyTestFailed, GinkgoWriter) ||
+			keepCluster == "true" || keepCluster == "always"
 		defer infrastructure.CleanupFailureMarker(clusterName)
 
 		// Export cluster logs BEFORE coverage collection when tests fail.

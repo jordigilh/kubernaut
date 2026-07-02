@@ -32,6 +32,7 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/routing"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
 
@@ -1656,4 +1657,74 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 			Expect(blocked.Reason).To(Equal(string(remediationv1.BlockReasonConsecutiveFailures)))
 		})
 	})
+
+	Describe("UT-FLEET-RO-001 [AC-4]: cluster-aware CheckUnmanagedResource", func() {
+		It("routes to remote scope check when RR has non-empty ClusterID, enforcing cross-cluster information flow control", func() {
+			scheme := runtime.NewScheme()
+			Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
+			Expect(workflowexecutionv1.AddToScheme(scheme)).To(Succeed())
+
+			rr := &remediationv1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "rr-remote-scope",
+					Namespace: "kubernaut-system",
+				},
+				Spec: remediationv1.RemediationRequestSpec{
+					ClusterID: "prod-east",
+					TargetResource: remediationv1.ResourceIdentifier{
+						Kind:      "Deployment",
+						Name:      "nginx",
+						Namespace: "default",
+					},
+					SignalType: "alert",
+					TargetType: "kubernetes",
+				},
+			}
+
+			spy := &spyFederatedScopeChecker{
+				localManaged: true,
+			}
+
+			k8sClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(rr).
+				Build()
+
+			cfg := routing.Config{
+				ConsecutiveFailureThreshold: 3,
+				ConsecutiveFailureCooldown:  3600,
+				RecentlyRemediatedCooldown:  300,
+			}
+			engine := routing.NewRoutingEngine(k8sClient, k8sClient, "kubernaut-system", cfg, spy)
+
+			result := engine.CheckUnmanagedResource(ctx, rr)
+
+			Expect(spy.calledRemote).To(BeTrue(),
+				"RO must route to remote scope check when ClusterID is non-empty (AC-4: cross-cluster information flow)")
+			Expect(spy.capturedClusterID).To(Equal("prod-east"),
+				"clusterID from RR spec must be passed to IsManagedResource")
+			Expect(result).To(BeNil(),
+				"managed remote resource should not be blocked")
+		})
+	})
 })
+
+// spyFederatedScopeChecker is a test double that satisfies scope.ScopeChecker
+// and records whether IsManagedResource was called with a remote clusterID.
+type spyFederatedScopeChecker struct {
+	localManaged      bool
+	remoteManaged     bool
+	calledRemote      bool
+	capturedClusterID string
+}
+
+var _ scope.ScopeChecker = (*spyFederatedScopeChecker)(nil)
+
+func (s *spyFederatedScopeChecker) IsManagedResource(_ context.Context, resource scope.ResourceIdentity) (bool, error) {
+	if resource.ClusterID != "" {
+		s.calledRemote = true
+		s.capturedClusterID = resource.ClusterID
+		return s.remoteManaged || s.localManaged, nil
+	}
+	return s.localManaged, nil
+}

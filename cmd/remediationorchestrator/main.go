@@ -49,6 +49,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 	scope "github.com/jordigilh/kubernaut/pkg/shared/scope"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
+	"github.com/jordigilh/kubernaut/pkg/fleet"
 	config "github.com/jordigilh/kubernaut/internal/config/remediationorchestrator"
 	controller "github.com/jordigilh/kubernaut/internal/controller/remediationorchestrator"
 	"github.com/jordigilh/kubernaut/pkg/audit"
@@ -278,7 +279,19 @@ func main() {
 		IneffectiveTimeWindow:       cfg.Routing.IneffectiveTimeWindow,
 	}
 	scopeMgr := scope.NewManager(mgr.GetClient())
-	routingEngine := routing.NewRoutingEngine(mgr.GetClient(), mgr.GetAPIReader(), "", routingCfg, scopeMgr)
+
+	// ADR-068: Federated scope checking via fleet.NewScopeChecker factory.
+	scopeCheckerInstance, err := fleet.NewScopeChecker(scopeMgr, cfg.Fleet, setupLog)
+	if err != nil {
+		setupLog.Error(err, "Failed to create fleet scope checker")
+		os.Exit(1)
+	}
+	if cfg.Fleet.Enabled && cfg.Fleet.EffectiveEndpoint() != "" {
+		setupLog.Info("ADR-068: Federated scope checker enabled",
+			"backend", cfg.Fleet.Backend, "endpoint", cfg.Fleet.EffectiveEndpoint())
+	}
+
+	routingEngine := routing.NewRoutingEngine(mgr.GetClient(), mgr.GetAPIReader(), "", routingCfg, scopeCheckerInstance)
 
 	// Issue #214: Wire DataStorage history querier for ineffective chain detection.
 	dsHistoryAdapter, err := routing.NewDSHistoryAdapterFromConfig(cfg.DataStorage.URL, cfg.DataStorage.Timeout)
@@ -354,6 +367,8 @@ func main() {
 		setupLog.Info("Distributed lock manager configured", "holderID", podName, "namespace", controllerNS)
 	}
 
+	// ADR-068: Wire fleet config for federated scope fallback path
+	roReconciler.SetFleetConfig(cfg.Fleet)
 	// #265: Wire CRD retention period for TTL enforcement
 	roReconciler.SetRetentionPeriod(cfg.Retention.Period)
 	// #712, #736: Wire dry-run mode configuration

@@ -359,7 +359,13 @@ func fetchDEXToken(dexURL, clientID, clientSecret, username, password string) (s
 		"scope":         {"openid email profile groups"},
 	}
 
-	resp, err := http.PostForm(tokenURL, data)
+	tlsClient := &http.Client{
+		Timeout: 10 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // G402: E2E self-signed certs
+		},
+	}
+	resp, err := tlsClient.PostForm(tokenURL, data)
 	if err != nil {
 		return "", fmt.Errorf("token request: %w", err)
 	}

@@ -96,6 +96,15 @@ gateway:
     #       serviceAccount: alertmanager-kube-prometheus-stack-alertmanager
     #       namespace: monitoring
     signalSources: []
+  # -- Multi-cluster fleet configuration (BR-INTEGRATION-065, ADR-068).
+  # When enabled, GW includes clusterID in signal fingerprints and populates
+  # spec.clusterID on RemediationRequests. The backend adapter handles federated scope checks.
+  fleet:
+    enabled: false
+    # -- Backend adapter: "fleetmetadatacache" (FMC HTTP API) or "acm" (ACM Search). Defaults to "fleetmetadatacache".
+    backend: ""
+    # -- Endpoint for the selected backend. Auto-derived for fleetmetadatacache; required for acm.
+    endpoint: ""
 
 # -- DataStorage service (audit trail, workflow catalog)
 datastorage:
@@ -247,6 +256,15 @@ remediationorchestrator:
       notifySelfResolved: false
     retention:
       period: "24h"  # Issue #265: CRD retention TTL before automatic cleanup
+  # -- Multi-cluster fleet configuration (BR-INTEGRATION-065, ADR-068).
+  # When enabled, RO performs federated scope checks before accepting
+  # RemediationRequests with non-empty clusterID. Backend adapter selected by backend field.
+  fleet:
+    enabled: false
+    # -- Backend adapter: "fleetmetadatacache" (FMC HTTP API) or "acm" (ACM Search). Defaults to "fleetmetadatacache".
+    backend: ""
+    # -- Endpoint for the selected backend. Auto-derived for fleetmetadatacache; required for acm.
+    endpoint: ""
 
 # -- WorkflowExecution controller
 workflowexecution:
@@ -424,6 +442,18 @@ kubernautAgent:
     #   model: "gpt-4o-mini"
     #   endpoint: ""
     #   apiKey: ""
+  # -- Multi-cluster fleet configuration (ADR-065).
+  # When enabled, KA discovers remote cluster tools via the MCP Gateway's
+  # tools/list and registers them as BridgeTools alongside local K8s tools.
+  # Requires an external MCP Gateway (Envoy AI Gateway) to be deployed separately.
+  fleet:
+    # -- MCP Gateway endpoint URL. Empty disables fleet integration.
+    endpoint: ""  # e.g., "http://envoy-ai-gateway.kubernaut-system.svc:8080"
+    # -- OAuth2 client credentials for MCP Gateway authentication.
+    oauth2:
+      enabled: false
+      tokenURL: ""              # e.g., "https://dex.kubernaut-system.svc/token"
+      credentialsSecretRef: ""  # K8s Secret with keys: client-id, client-secret
 
 # -- AuthWebhook admission controller
 authwebhook:
@@ -495,6 +525,33 @@ valkey:
       cpu: 100m
     limits:
       memory: 256Mi
+      cpu: 200m
+
+# -- FleetMetadataCache: Fleet Metadata Cache service (BR-INTEGRATION-065, ADR-068).
+# Polls remote clusters via MCP Gateway and caches managed resource metadata in Valkey.
+# Serves an HTTP API for federated scope checking consumed by GW and RO.
+fleetmetadatacache:
+  enabled: false
+  replicas: 1
+  image:
+    repository: quay.io/kubernaut-ai/fleetmetadatacache
+    tag: v1.6.0
+    pullPolicy: IfNotPresent
+  syncInterval: "30s"
+  keyTTL: "45s"
+  mcpGatewayEndpoint: ""  # e.g., "http://envoy-ai-gateway.kubernaut-system.svc:8080/mcp"
+  gatewayType: "eaigw"  # MCP Gateway type: "eaigw" (Envoy AI Gateway) or "kuadrant" (Kuadrant MCP Gateway)
+  valkeyAddr: ""  # e.g., "valkey:6379" — uses shared Valkey instance
+  namespace: "kubernaut-system"  # namespace to watch for MCP Gateway CRDs
+  oauth2:
+    tokenURL: ""  # REQUIRED — e.g., "https://dex.kubernaut-system.svc:5556/token"
+    credentialsSecretRef: ""  # REQUIRED — Secret containing keys: client-id, client-secret
+  resources:
+    requests:
+      memory: 64Mi
+      cpu: 50m
+    limits:
+      memory: 128Mi
       cpu: 200m
 
 # -- Hooks (post-install Jobs)

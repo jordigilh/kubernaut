@@ -87,6 +87,8 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/summarizer"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	wfclient "github.com/jordigilh/kubernaut/pkg/workflowexecution/client"
+	fleetclient "github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
+	fleetregistry "github.com/jordigilh/kubernaut/pkg/fleet/registry"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/client-go/rest"
 	metricsclient "k8s.io/metrics/pkg/client/clientset/versioned"
@@ -274,6 +276,10 @@ func main() {
 		os.Exit(1)
 	}
 	reg := buildToolRegistry(cfg, logger, k8sInfra, ds)
+	fleetClient, fleetToolNames := registerFleetTools(context.Background(), cfg, reg, logger)
+	if len(fleetToolNames) > 0 {
+		investigator.AppendFleetToolsToRCA(phaseTools, fleetToolNames)
+	}
 	enricher := buildEnricher(cfg, ds, k8sInfra, auditStore, logger)
 	sanitizer := buildSanitizationPipeline(cfg, logger)
 	anomalyDetector := buildAnomalyDetector(cfg, logger)
@@ -293,13 +299,14 @@ func main() {
 	var effectiveReg registry.ToolRegistry = reg
 	var alignEvaluator *alignment.Evaluator
 
-	if cfg.AI.AlignmentCheck.Enabled {
+	alignCfg := resolveAlignmentCheckConfig(cfg)
+	if alignCfg.Enabled {
 		var shadowClient llm.Client
-		if cfg.AI.AlignmentCheck.LLM == nil {
+		if alignCfg.LLM == nil {
 			shadowClient = instrumentedLLM
 			logger.Error(nil, "shadow agent shares investigation LLM client — shadow requests will compete with primary investigation; configure ai.alignmentCheck.llm for dedicated shadow model")
 		} else {
-			alignStaticCfg, alignRtCfg := cfg.AI.AlignmentCheck.EffectiveLLM(cfg.AI.LLM, *llmRuntime)
+			alignStaticCfg, alignRtCfg := alignCfg.EffectiveLLM(cfg.AI.LLM, *llmRuntime)
 			raw, alignErr := buildLLMClientFromConfig(context.Background(), mergeLLMConfig(alignStaticCfg, &alignRtCfg))
 			if alignErr != nil {
 				logger.Error(alignErr, "alignment check LLM client failed (fail-closed): alignment is enabled but shadow client unavailable")
@@ -311,17 +318,13 @@ func main() {
 		}
 		if shadowClient != nil {
 			alignEvaluator = alignment.NewEvaluator(shadowClient, alignment.EvaluatorConfig{
-				Timeout:               cfg.AI.AlignmentCheck.Timeout,
-				MaxStepTokens:         cfg.AI.AlignmentCheck.MaxStepTokens,
-				MaxRetries:            cfg.AI.AlignmentCheck.MaxRetries,
-				MaxConversationTokens: cfg.AI.AlignmentCheck.GroundingReview.MaxConversationTokens,
+				Timeout:               alignCfg.Timeout,
+				MaxStepTokens:         alignCfg.MaxStepTokens,
+				MaxRetries:            alignCfg.MaxRetries,
+				MaxConversationTokens: alignCfg.GroundingReview.MaxConversationTokens,
 			}, alignprompt.SystemPrompt(), alignment.WithLogger(logger), alignment.WithAuditStore(auditStore))
 			effectiveLLM = alignment.NewLLMProxy(instrumentedLLM)
 			effectiveReg = alignment.NewToolProxy(reg)
-			// #1059: Shadow audit emits aiagent.shadow.llm.request/response events.
-			// data-storage must deploy the updated OpenAPI schema (ShadowLLMRequestPayload,
-			// ShadowLLMResponsePayload) BEFORE this kubernaut-agent version is rolled out,
-			// otherwise DS will reject the unknown event_type discriminator values.
 			logger.Info("shadow agent alignment check enabled (shadow LLM audit active: request/response events will be emitted per step)")
 		}
 	}
@@ -378,12 +381,12 @@ func main() {
 		wrapper, wrapErr := alignment.NewInvestigatorWrapper(alignment.InvestigatorWrapperConfig{
 			Inner:                 inv,
 			Evaluator:             alignEvaluator,
-			VerdictTimeout:        cfg.AI.AlignmentCheck.VerdictTimeout,
+			VerdictTimeout:        alignCfg.VerdictTimeout,
 			AuditStore:            instrumentedAudit,
 			Logger:                logger,
-			Mode:                  cfg.AI.AlignmentCheck.Mode,
-			CanaryForceEscalation: cfg.AI.AlignmentCheck.Canary.ForceEscalation,
-			GroundingEnabled:      cfg.AI.AlignmentCheck.GroundingReview.Enabled,
+			Mode:                  alignCfg.Mode,
+			CanaryForceEscalation: alignCfg.Canary.ForceEscalation,
+			GroundingEnabled:      alignCfg.GroundingReview.Enabled,
 		})
 		if wrapErr != nil {
 			logger.Error(wrapErr, "failed to create alignment wrapper")
@@ -430,6 +433,66 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	// Start health/metrics servers BEFORE the route setup closure so that
+	// liveness/readiness probes are served even while the JWKS pre-warm
+	// (up to 15 s) blocks inside newAuthMiddleware. Without this, the
+	// liveness probe kills the pod before the health server ever starts.
+	var shutdownFlag int32
+
+	// apiServerReady is set to 1 only once the main API server (port 8443/8080)
+	// goroutine is about to start listening. Without this gate, /readyz would
+	// report ready as soon as the health server starts (immediately), while
+	// the main API server is still blocked behind the JWKS pre-warm inside the
+	// route-setup closure below -- causing clients to see "connection reset"
+	// for requests sent right after Kubernetes reports the pod Ready.
+	var apiServerReady int32
+
+	healthMux := http.NewServeMux()
+	healthMux.HandleFunc("/healthz", healthHandler)
+	healthMux.HandleFunc("/readyz", readinessHandler(&shutdownFlag, &apiServerReady, swappable, ds, interactiveReadiness))
+	healthMux.HandleFunc("/config", configHandler(cfg, swappable))
+	if !cfg.Runtime.Server.DisableAdminEndpoints {
+		healthMux.Handle("/admin/loglevel", atomicLevel)
+	}
+	healthMux.HandleFunc("/openapi.json", kaapi.SpecHandler())
+	if !cfg.Runtime.Server.DisableProfiling {
+		healthMux.HandleFunc("/debug/pprof/", pprof.Index)
+		healthMux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+		healthMux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+		healthMux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+		healthMux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	}
+	healthServer := &http.Server{
+		Addr:              cfg.Runtime.Server.HealthAddr,
+		Handler:           healthMux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
+	}
+	metricsMux := http.NewServeMux()
+	metricsMux.Handle("/metrics", promhttp.Handler())
+	metricsServer := &http.Server{
+		Addr:              cfg.Runtime.Server.MetricsAddr,
+		Handler:           metricsMux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       5 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       30 * time.Second,
+	}
+
+	go func() {
+		logger.Info("health server listening", "addr", cfg.Runtime.Server.HealthAddr)
+		if err := healthServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Error(err, "health server error")
+		}
+	}()
+	go func() {
+		logger.Info("metrics server listening", "addr", cfg.Runtime.Server.MetricsAddr)
+		if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Error(err, "metrics server error")
+		}
+	}()
 
 	var sessionDrainer *mcpkg.SessionDrainer
 
@@ -528,42 +591,6 @@ func main() {
 		}
 	}
 
-	var shutdownFlag int32
-
-	// Dedicated health server (plain HTTP, never TLS). /config moved here from API port (SEC-4).
-	healthMux := http.NewServeMux()
-	healthMux.HandleFunc("/healthz", healthHandler)
-	healthMux.HandleFunc("/readyz", readinessHandler(&shutdownFlag, swappable, ds, interactiveReadiness))
-	healthMux.HandleFunc("/config", configHandler(cfg, swappable))
-	if !cfg.Runtime.Server.DisableAdminEndpoints {
-		healthMux.Handle("/admin/loglevel", atomicLevel)
-	}
-	healthMux.HandleFunc("/openapi.json", kaapi.SpecHandler())
-	if !cfg.Runtime.Server.DisableProfiling {
-		healthMux.HandleFunc("/debug/pprof/", pprof.Index)
-		healthMux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
-		healthMux.HandleFunc("/debug/pprof/profile", pprof.Profile)
-		healthMux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
-		healthMux.HandleFunc("/debug/pprof/trace", pprof.Trace)
-	}
-	healthServer := &http.Server{
-		Addr:              cfg.Runtime.Server.HealthAddr,
-		Handler:           healthMux,
-		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       10 * time.Second,
-		WriteTimeout:      10 * time.Second,
-	}
-	metricsMux := http.NewServeMux()
-	metricsMux.Handle("/metrics", promhttp.Handler())
-	metricsServer := &http.Server{
-		Addr:              cfg.Runtime.Server.MetricsAddr,
-		Handler:           metricsMux,
-		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       5 * time.Second,
-		WriteTimeout:      10 * time.Second,
-		IdleTimeout:       30 * time.Second,
-	}
-
 	// Issue #756: Wire FileWatcher for server cert hot-reload
 	if certReloader != nil {
 		certWatcher, watchErr := hotreload.NewFileWatcher(
@@ -619,19 +646,10 @@ func main() {
 
 	store.StartCleanupLoop(ctx, cfg.Runtime.Session.TTL/2)
 
-	// Issue #753: Start dedicated health and metrics servers
-	go func() {
-		logger.Info("health server listening", "addr", cfg.Runtime.Server.HealthAddr)
-		if err := healthServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Error(err, "health server error")
-		}
-	}()
-	go func() {
-		logger.Info("metrics server listening", "addr", cfg.Runtime.Server.MetricsAddr)
-		if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Error(err, "metrics server error")
-		}
-	}()
+	// Route setup (including the JWKS pre-warm inside newAuthMiddleware) has
+	// completed by this point; only the network bind remains. Mark the API
+	// server ready now so /readyz does not report ready any earlier than this.
+	atomic.StoreInt32(&apiServerReady, 1)
 
 	go func() {
 		logger.Info("HTTP server listening", "addr", addr)
@@ -664,6 +682,10 @@ func main() {
 	shutdownServer(shutdownCtx, metricsServer, "metrics", logger)
 
 	eventEmitter.Shutdown()
+	if fleetClient != nil {
+		_ = fleetClient.Close()
+		logger.Info("fleet MCP client closed")
+	}
 	logger.Info("flushing audit store...")
 	auditCleanup()
 }
@@ -693,6 +715,11 @@ func healthHandler(w http.ResponseWriter, _ *http.Request) {
 // dependency checks instead of returning a static 200. Checks:
 //   - shutdownFlag: set after SIGTERM/SIGINT received; makes probe fail
 //     so k8s stops routing traffic during graceful shutdown.
+//   - apiServerReady: set once the main API server goroutine is about to
+//     start listening. Guards against the readiness probe reporting ready
+//     before the main API server (auth middleware + JWKS pre-warm) has
+//     finished initializing, which would otherwise let traffic hit a port
+//     that isn't accepting connections yet.
 //   - swappable: verifies the LLM client has a non-empty model name
 //     (proxy for "LLM client was successfully initialized").
 //   - ds: if non-nil, verifies the ogen client is initialized (DS is
@@ -700,7 +727,7 @@ func healthHandler(w http.ResponseWriter, _ *http.Request) {
 //   - interactive: reports the interactive mode status (#891). This is
 //     informational (does not fail the probe) since autonomous mode
 //     continues to function even when interactive is soft-disabled.
-func readinessHandler(shutdownFlag *int32, swappable *llm.SwappableClient, ds *dsClients, interactive *karbac.InteractiveReadiness) http.HandlerFunc {
+func readinessHandler(shutdownFlag, apiServerReady *int32, swappable *llm.SwappableClient, ds *dsClients, interactive *karbac.InteractiveReadiness) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
@@ -709,6 +736,15 @@ func readinessHandler(shutdownFlag *int32, swappable *llm.SwappableClient, ds *d
 			_ = json.NewEncoder(w).Encode(map[string]string{
 				"status": "not_ready",
 				"reason": "shutting_down",
+			})
+			return
+		}
+
+		if atomic.LoadInt32(apiServerReady) == 0 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"status": "not_ready",
+				"reason": "api_server_starting",
 			})
 			return
 		}
@@ -1101,6 +1137,86 @@ func buildToolRegistry(cfg *kaconfig.Config, logger logr.Logger, infra *k8sInfra
 	return reg
 }
 
+// resolveAlignmentCheckConfig returns the effective AlignmentCheckConfig.
+// When fleet mode is active and defines its own alignment check, the fleet
+// override takes precedence over the global ai.alignmentCheck. This allows
+// operators to enforce cross-model shadow evaluation specifically for
+// multi-cluster investigations where prompt injection risk is higher.
+func resolveAlignmentCheckConfig(cfg *kaconfig.Config) kaconfig.AlignmentCheckConfig {
+	fleetCfg := cfg.Integrations.Fleet
+	if fleetCfg.GatewayType != "" && fleetCfg.Endpoint != "" && fleetCfg.AlignmentCheck != nil {
+		return *fleetCfg.AlignmentCheck
+	}
+	return cfg.AI.AlignmentCheck
+}
+
+// registerFleetTools connects to the MCP Gateway, creates a GatewayDiscoverer
+// for the configured gateway type, pre-scopes tools for the target cluster,
+// and registers list_clusters + list_tools_for_cluster for LLM-driven discovery.
+// Returns the fleet client (must be closed on shutdown) and the registered tool names,
+// or nil if fleet is disabled.
+//
+// Authority: ADR-068 decision #11
+func registerFleetTools(ctx context.Context, cfg *kaconfig.Config, reg *registry.Registry, logger logr.Logger) (*fleetclient.ResilientClient, []string) {
+	gatewayType := cfg.Integrations.Fleet.GatewayType
+	endpoint := cfg.Integrations.Fleet.Endpoint
+	if gatewayType == "" || endpoint == "" {
+		return nil, nil
+	}
+
+	fleetLog := logger.WithName("fleet")
+	fleetLog.Info("connecting to MCP Gateway for fleet tool discovery",
+		"endpoint", endpoint, "gatewayType", gatewayType)
+
+	var opts []fleetclient.Option
+	if cfg.Integrations.Fleet.OAuth2.Enabled {
+		basePath := "/etc/kubernautagent/fleet-oauth2"
+		if cfg.Integrations.Fleet.OAuth2.CredentialsSecretRef != "" {
+			basePath = "/etc/kubernautagent/" + cfg.Integrations.Fleet.OAuth2.CredentialsSecretRef
+		}
+		reloadCfg := fleetclient.ReloadableOAuth2Config{
+			TokenURL:         cfg.Integrations.Fleet.OAuth2.TokenURL,
+			ClientIDPath:     basePath + "/client-id",
+			ClientSecretPath: basePath + "/client-secret",
+			Scopes:           fleetclient.DefaultFleetScopes(cfg.Integrations.Fleet.OAuth2.Scopes),
+			TokenTimeout:     10 * time.Second,
+		}
+		opts = append(opts, fleetclient.WithReloadableOAuth2Transport(reloadCfg, fleetLog))
+		fleetLog.Info("fleet OAuth2 authentication configured (hot-reloadable)",
+			"tokenURL", cfg.Integrations.Fleet.OAuth2.TokenURL,
+			"secretPath", basePath)
+	}
+
+	resilienceCfg := fleetclient.DefaultResilienceConfig()
+	resilientClient, err := fleetclient.NewResilient(ctx, endpoint, resilienceCfg, fleetLog, opts...)
+	if err != nil {
+		fleetLog.Error(err, "failed to connect to MCP Gateway — fleet tools unavailable")
+		return nil, nil
+	}
+
+	session := resilientClient.Session()
+
+	discoverer, err := fleetclient.NewDiscoverer(fleetregistry.MCPGatewayType(gatewayType), session)
+	if err != nil {
+		fleetLog.Error(err, "failed to create GatewayDiscoverer", "gatewayType", gatewayType)
+		_ = resilientClient.Close()
+		return nil, nil
+	}
+
+	listClustersTool := fleetclient.NewListClustersTool(discoverer)
+	listToolsTool := fleetclient.NewListToolsForClusterTool(discoverer, reg, session)
+
+	reg.Register(listClustersTool)
+	reg.Register(listToolsTool)
+
+	var toolNames []string
+	toolNames = append(toolNames, listClustersTool.Name(), listToolsTool.Name())
+
+	fleetLog.Info("registered fleet discovery tools",
+		"tools", toolNames, "endpoint", endpoint, "gatewayType", gatewayType)
+	return resilientClient, toolNames
+}
+
 func registerK8sTools(reg *registry.Registry, infra *k8sInfra, logger logr.Logger) {
 	kindIndex, err := k8stools.BuildKindIndex(infra.clientset.Discovery())
 	if err != nil {
@@ -1238,6 +1354,7 @@ func newAuthMiddleware(infra *k8sInfra, interactiveCfg kaconfig.InteractiveConfi
 				Audience:      p.Audience,
 				UsernameClaim: p.ClaimMappings.Username,
 				GroupsClaim:   p.ClaimMappings.Groups,
+				TLSCAFile:     p.TLSCaFile,
 			}
 		}
 

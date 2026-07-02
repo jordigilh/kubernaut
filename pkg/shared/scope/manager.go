@@ -41,11 +41,12 @@ limitations under the License.
 // alert volume. The Manager implements the ScopeChecker interface for DI (see checker.go).
 //
 //	mgr := scope.NewManager(cachedClient) // Gateway + RO: informer-backed reads
-//	managed, err := mgr.IsManaged(ctx, "production", "Deployment", "payment-api")
+//	managed, err := mgr.IsManagedResource(ctx, scope.ResourceIdentity{Namespace: "production", Kind: "Deployment", Name: "payment-api"})
 package scope
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -141,7 +142,7 @@ func NewManager(c client.Reader) *Manager {
 	return &Manager{client: c}
 }
 
-// IsManaged checks whether a Kubernetes resource is managed by Kubernaut.
+// IsManagedResource checks whether a Kubernetes resource is managed by Kubernaut.
 //
 // The 2-level hierarchy (ADR-053):
 //  1. Check resource label: "true" → managed, "false" → unmanaged, missing/invalid → continue
@@ -151,16 +152,18 @@ func NewManager(c client.Reader) *Manager {
 // Resource not found: falls through to namespace check.
 // Namespace not found: returns false, nil (unmanaged, not an error).
 //
-// Parameters:
-//   - namespace: the resource's namespace (empty for cluster-scoped resources like Node, PV)
-//   - kind: the Kubernetes resource kind (e.g., "Pod", "Deployment", "Node")
-//   - name: the resource instance name
-func (m *Manager) IsManaged(ctx context.Context, namespace, kind, name string) (bool, error) {
+// ClusterID must be empty — the local Manager cannot resolve remote clusters.
+// For remote checks, use a fleet adapter (e.g., FederatedScopeChecker).
+func (m *Manager) IsManagedResource(ctx context.Context, resource ResourceIdentity) (bool, error) {
+	if resource.ClusterID != "" {
+		return false, fmt.Errorf("scope: local Manager cannot resolve remote cluster %q; use a fleet adapter", resource.ClusterID)
+	}
+
+	namespace, kind, name := resource.Namespace, resource.Kind, resource.Name
 	logger := log.FromContext(ctx).WithName("scope").WithValues(
 		"namespace", namespace, "kind", kind, "name", name,
 	)
 
-	// Step 1: Check resource label (Level 1)
 	resourceManaged, found, err := m.checkResourceLabel(ctx, namespace, kind, name)
 	if err != nil {
 		logger.Error(err, "Failed to check resource label")
@@ -171,13 +174,11 @@ func (m *Manager) IsManaged(ctx context.Context, namespace, kind, name string) (
 		return resourceManaged, nil
 	}
 
-	// Step 2: For cluster-scoped resources (namespace==""), no namespace fallback
 	if isClusterScoped(kind) || namespace == "" {
 		logger.V(1).Info("Cluster-scoped resource without label — unmanaged (safe default)")
 		return false, nil
 	}
 
-	// Step 3: Check namespace label (Level 2)
 	nsManaged, found, err := m.checkNamespaceLabel(ctx, namespace)
 	if err != nil {
 		logger.Error(err, "Failed to check namespace label")
@@ -188,7 +189,6 @@ func (m *Manager) IsManaged(ctx context.Context, namespace, kind, name string) (
 		return nsManaged, nil
 	}
 
-	// Step 4: Default — unmanaged (safe default per ADR-053)
 	logger.V(1).Info("No scope labels found — unmanaged (safe default)")
 	return false, nil
 }
@@ -211,7 +211,7 @@ func (m *Manager) checkResourceLabel(ctx context.Context, namespace, kind, name 
 		return false, false, nil
 	}
 
-	gvk := kindToGVK(kind)
+	gvk := InferGVK(kind)
 
 	obj := &metav1.PartialObjectMetadata{}
 	obj.SetGroupVersionKind(gvk)
@@ -279,8 +279,12 @@ func checkLabelValue(labels map[string]string) (bool, bool, error) {
 	}
 }
 
-// kindToGVK resolves a Kubernetes resource kind string to its GroupVersionKind.
-func kindToGVK(kind string) schema.GroupVersionKind {
+// InferGVK resolves a Kubernetes resource kind string to its GroupVersionKind
+// using the static kindToGroup mapping. Exported so that other ScopeChecker
+// implementations (e.g. pkg/fleet/scopecache.Client) can honor the
+// ResourceIdentity contract documented on checker.go: Group/Version are
+// optional and MUST be inferred from Kind when empty.
+func InferGVK(kind string) schema.GroupVersionKind {
 	group := ""
 	if g, ok := kindToGroup[kind]; ok {
 		group = g

@@ -18,6 +18,7 @@ package infrastructure
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -29,23 +30,36 @@ import (
 )
 
 // dexImage is the DEX OIDC provider image used for E2E JWT testing.
-// v2.45.1 includes groups/preferred_username support for static passwords.
-const dexImage = "ghcr.io/dexidp/dex:v2.45.1"
+// latest (master) includes client_credentials grant support (PR #4583)
+// for service-to-service fleet authentication (BR-INTEGRATION-054).
+// No official release contains this yet (v2.45.1 is latest release).
+const dexImage = "ghcr.io/dexidp/dex:latest"
 
 // DexE2EConfig holds the DEX E2E user credentials for token acquisition.
 type DexE2EConfig struct {
-	TokenEndpoint string // e.g. http://localhost:5556/dex/token
+	TokenEndpoint string       // e.g. https://localhost:5556/dex/token
 	ClientID      string
 	ClientSecret  string
-	Username      string // email for static password user
+	Username      string       // email for static password user
 	Password      string
+	HTTPClient    *http.Client // optional TLS-aware client; defaults to InsecureSkipVerify for HTTPS
+}
+
+// DexFleetTokenConfig holds configuration for obtaining a client_credentials
+// token from DEX for fleet service-to-service authentication.
+type DexFleetTokenConfig struct {
+	TokenEndpoint string       // e.g. https://localhost:5556/dex/token
+	ClientID      string       // e.g. kubernaut-fleet-read
+	ClientSecret  string       // e.g. e2e-fleet-secret
+	Scopes        []string     // e.g. ["openid", "groups"]
+	HTTPClient    *http.Client // optional TLS-aware client; defaults to InsecureSkipVerify for HTTPS
 }
 
 // DefaultDexE2EConfig returns the default DEX config matching the static
 // passwords and clients deployed by deployDexInNamespace.
 func DefaultDexE2EConfig() DexE2EConfig {
 	return DexE2EConfig{
-		TokenEndpoint: "http://localhost:5556/dex/token",
+		TokenEndpoint: "https://localhost:5556/dex/token",
 		ClientID:      "kubernaut-agent",
 		ClientSecret:  "e2e-client-secret",
 		Username:      "e2e-user@kubernaut.test",
@@ -65,7 +79,8 @@ func GetDexIDToken(cfg DexE2EConfig) (string, error) {
 		"client_secret": {cfg.ClientSecret},
 	}
 
-	resp, err := http.PostForm(cfg.TokenEndpoint, data)
+	client := dexHTTPClient(cfg.HTTPClient)
+	resp, err := client.PostForm(cfg.TokenEndpoint, data)
 	if err != nil {
 		return "", fmt.Errorf("DEX token request failed: %w", err)
 	}
@@ -93,6 +108,71 @@ func GetDexIDToken(cfg DexE2EConfig) (string, error) {
 	return tokenResp.IDToken, nil
 }
 
+// DefaultDexFleetReadConfig returns the default DEX fleet-read client config
+// matching the static clients deployed by deployDexInNamespace.
+func DefaultDexFleetReadConfig() DexFleetTokenConfig {
+	return DexFleetTokenConfig{
+		TokenEndpoint: "https://localhost:5556/dex/token",
+		ClientID:      "kubernaut-fleet-read",
+		ClientSecret:  "e2e-fleet-secret",
+		Scopes:        []string{"openid", "groups"},
+	}
+}
+
+// GetDexClientCredentialsToken obtains an access_token from DEX using the
+// OAuth2 client_credentials grant. This is the service-to-service auth flow
+// used by fleet services to authenticate to the MCP Gateway.
+func GetDexClientCredentialsToken(cfg DexFleetTokenConfig) (string, error) {
+	data := url.Values{
+		"grant_type":    {"client_credentials"},
+		"scope":         {strings.Join(cfg.Scopes, " ")},
+		"client_id":     {cfg.ClientID},
+		"client_secret": {cfg.ClientSecret},
+	}
+
+	client := dexHTTPClient(cfg.HTTPClient)
+	resp, err := client.PostForm(cfg.TokenEndpoint, data)
+	if err != nil {
+		return "", fmt.Errorf("DEX client_credentials token request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("read DEX token response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("DEX token endpoint returned %d: %s", resp.StatusCode, string(body))
+	}
+
+	var tokenResp struct {
+		AccessToken string `json:"access_token"`
+		TokenType   string `json:"token_type"`
+	}
+	if err := json.Unmarshal(body, &tokenResp); err != nil {
+		return "", fmt.Errorf("parse DEX token response: %w", err)
+	}
+	if tokenResp.AccessToken == "" {
+		return "", fmt.Errorf("DEX token response missing access_token: %s", string(body))
+	}
+
+	return tokenResp.AccessToken, nil
+}
+
+// DeployDexInfra deploys DEX and waits for it to be ready. This is the
+// exported entry point for E2E suites that need OIDC/JWT authentication
+// (fleet OAuth2 client_credentials, AF password grant).
+//
+// hostPort must match the Kind extraPortMappings host port for the Dex
+// NodePort (30556) in the caller's Kind config -- see waitForDexReady.
+func DeployDexInfra(ctx context.Context, namespace, kubeconfigPath string, hostPort int, writer io.Writer) error {
+	if err := deployDexInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return err
+	}
+	return waitForDexReady(hostPort, writer)
+}
+
 // deployDexInNamespace deploys DEX as an OIDC provider in the Kind cluster
 // for E2E JWT/OIDC testing. DEX is configured with:
 //   - Static password user (e2e-user@kubernaut.test)
@@ -113,14 +193,21 @@ metadata:
   namespace: %s
 data:
   config.yaml: |
-    issuer: http://dex:5556/dex
+    issuer: https://dex:5556/dex
     storage:
       type: memory
     web:
-      http: 0.0.0.0:5556
+      https: 0.0.0.0:5556
+      tlsCert: /etc/dex/tls/tls.crt
+      tlsKey: /etc/dex/tls/tls.key
     enablePasswordDB: true
     oauth2:
       passwordConnector: local
+      grantTypes:
+        - authorization_code
+        - password
+        - client_credentials
+        - refresh_token
       responseTypes: ["code", "token", "id_token"]
       skipApprovalScreen: true
     staticPasswords:
@@ -134,6 +221,27 @@ data:
           - 'http://localhost/callback'
         name: 'Kubernaut Agent E2E'
         secret: e2e-client-secret
+        grantTypes:
+          - authorization_code
+          - password
+          - client_credentials
+      - id: kubernaut-fleet-read
+        name: 'Kubernaut Fleet Read (E2E)'
+        secret: e2e-fleet-secret
+        grantTypes:
+          - client_credentials
+        clientCredentialsClaims:
+          groups:
+            - mcp-read
+      - id: kubernaut-fleet-write
+        name: 'Kubernaut Fleet Write (E2E)'
+        secret: e2e-fleet-secret
+        grantTypes:
+          - client_credentials
+        clientCredentialsClaims:
+          groups:
+            - mcp-write
+            - mcp-read
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -155,22 +263,27 @@ spec:
         image: %s
         command: ["dex", "serve", "/etc/dex/config.yaml"]
         ports:
-        - name: http
+        - name: https
           containerPort: 5556
         volumeMounts:
         - name: config
           mountPath: /etc/dex
           readOnly: true
+        - name: tls-certs
+          mountPath: /etc/dex/tls
+          readOnly: true
         readinessProbe:
           httpGet:
             path: /dex/healthz
             port: 5556
+            scheme: HTTPS
           initialDelaySeconds: 3
           periodSeconds: 5
         livenessProbe:
           httpGet:
             path: /dex/healthz
             port: 5556
+            scheme: HTTPS
           initialDelaySeconds: 5
           periodSeconds: 10
         resources:
@@ -184,6 +297,9 @@ spec:
       - name: config
         configMap:
           name: dex-config
+      - name: tls-certs
+        secret:
+          secretName: dex-tls
 ---
 apiVersion: v1
 kind: Service
@@ -193,7 +309,7 @@ metadata:
 spec:
   type: NodePort
   ports:
-  - name: http
+  - name: https
     port: 5556
     targetPort: 5556
     nodePort: 30556
@@ -225,16 +341,33 @@ spec:
 }
 
 // waitForDexReady polls the DEX health endpoint via NodePort until it responds
-// or the timeout is reached.
-func waitForDexReady(writer io.Writer) error {
-	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for DEX OIDC endpoint to be reachable...")
+// or the timeout is reached. Uses a TLS-skipping client because the inter-service
+// CA may not yet be available at this point (health check runs during deployment).
+//
+// hostPort is the Kind extraPortMappings host port that maps to the Dex
+// NodePort (30556) in the running cluster. Kind configs are inconsistent here:
+// kind-kubernautagent-config.yaml maps host 5556, while kind-fullpipeline-config.yaml
+// and kind-fleetmetadatacache-config.yaml map host 30556 directly (matching the
+// NodePort number). Callers must pass the value used in their own Kind config.
+func waitForDexReady(hostPort int, writer io.Writer) error {
+	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for DEX OIDC endpoint to be reachable (HTTPS)...")
 
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true, //nolint:gosec // G402: health check during deployment
+			},
+		},
+	}
+
+	healthzURL := fmt.Sprintf("https://localhost:%d/dex/healthz", hostPort)
 	deadline := time.Now().Add(90 * time.Second)
 	for time.Now().Before(deadline) {
-		resp, err := http.Get("http://localhost:5556/dex/healthz")
+		resp, err := client.Get(healthzURL)
 		if err == nil && resp.StatusCode == http.StatusOK {
 			_ = resp.Body.Close()
-			_, _ = fmt.Fprintln(writer, "  ✅ DEX OIDC endpoint reachable")
+			_, _ = fmt.Fprintln(writer, "  ✅ DEX OIDC endpoint reachable (HTTPS)")
 			return nil
 		}
 		if resp != nil {
@@ -294,6 +427,22 @@ subjects:
 	}
 	_, _ = fmt.Fprintln(writer, "  ✅ DEX E2E user RBAC created")
 	return nil
+}
+
+// dexHTTPClient returns the provided client if non-nil, or a default HTTPS client
+// that skips TLS verification (for E2E test token endpoints using self-signed certs).
+func dexHTTPClient(c *http.Client) *http.Client {
+	if c != nil {
+		return c
+	}
+	return &http.Client{
+		Timeout: 10 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true, //nolint:gosec // G402: E2E test with self-signed certs
+			},
+		},
+	}
 }
 
 // PreloadDexImage pulls the DEX image and loads it into the Kind cluster.

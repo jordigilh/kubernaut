@@ -50,7 +50,7 @@ var _ = Describe("IT-KA-1052: DetectedLabels wiring from investigator to DS tool
 
 	var (
 		invLogger  logr.Logger
-		auditStore *recordingAuditStore
+		auditStore *capturingAuditStore
 		builder    *prompt.Builder
 		rp         *parser.ResultParser
 		phaseTools katypes.PhaseToolMap
@@ -58,7 +58,7 @@ var _ = Describe("IT-KA-1052: DetectedLabels wiring from investigator to DS tool
 
 	BeforeEach(func() {
 		invLogger = logr.Discard()
-		auditStore = &recordingAuditStore{}
+		auditStore = newCapturingAuditStore(suiteAuditStore)
 		builder, _ = prompt.NewBuilder()
 		rp = parser.NewResultParser()
 		phaseTools = investigator.DefaultPhaseToolMap()
@@ -92,13 +92,12 @@ var _ = Describe("IT-KA-1052: DetectedLabels wiring from investigator to DS tool
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, deploy, ns)
 			ld := enrichment.NewLabelDetector(dynClient, newItTestMapper(), invLogger)
 
-			k8sClient := &fakeK8sClient{
+			k8sClient := &k8sFixtureClient{
 				ownerChain: []enrichment.OwnerChainEntry{
 					{Kind: "Deployment", Name: "api-server", Namespace: "production"},
 				},
 			}
-			dsClient := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, invLogger).
+			enricher := enrichment.NewEnricher(k8sClient, suiteDSAdapter, auditStore, invLogger).
 				WithLabelDetector(ld)
 
 			mockClient := &mockLLMClient{
@@ -174,14 +173,13 @@ var _ = Describe("IT-KA-1052: DetectedLabels wiring from investigator to DS tool
 			// Return different owner chains per resource name:
 			// - "api-server" -> known chain (initial enrichment succeeds)
 			// - "worker-pod" -> empty chain (re-enrichment, labels will all fail)
-			k8sClient := &resourceAwareK8sClient{
+			k8sClient := &resourceAwareFixtureClient{
 				chains: map[string][]enrichment.OwnerChainEntry{
 					"api-server": {{Kind: "Deployment", Name: "api-server", Namespace: "production"}},
 					"worker-pod": {{Kind: "Pod", Name: "worker-pod", Namespace: "production"}},
 				},
 			}
-			dsClient := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
-			enricher := enrichment.NewEnricher(k8sClient, dsClient, auditStore, invLogger).
+			enricher := enrichment.NewEnricher(k8sClient, suiteDSAdapter, auditStore, invLogger).
 				WithLabelDetector(ld)
 
 			// RCA returns a different remediation target to trigger re-enrichment

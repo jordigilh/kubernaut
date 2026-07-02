@@ -601,6 +601,44 @@ var _ = Describe("AIAnalysisCreator", func() {
 		})
 	})
 
+	Describe("BR-FLEET-054: ClusterID propagation from RR to AIAnalysis", func() {
+		It("UT-AA-054-PROP-001 [AC-4]: should propagate ClusterID from RR to AIAnalysis spec", func() {
+			completedSP := helpers.NewCompletedSignalProcessing("sp-fleet-test", "default")
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
+				WithStatusSubresource(completedSP).Build()
+			aiCreator := creator.NewAIAnalysisCreator(fakeClient, scheme, nil)
+			rr := helpers.NewRemediationRequest("fleet-test", "default", helpers.RemediationRequestOpts{
+				ClusterID: "prod-east",
+			})
+
+			name, err := aiCreator.Create(ctx, rr, completedSP)
+
+			Expect(err).ToNot(HaveOccurred())
+			createdAI := &aianalysisv1.AIAnalysis{}
+			err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, createdAI)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(createdAI.Spec.ClusterID).To(Equal("prod-east"),
+				"AC-4: AIAnalysis must carry ClusterID for remote cluster provenance")
+		})
+
+		It("UT-AA-054-PROP-002 [AC-4]: should leave ClusterID empty for local-cluster RR", func() {
+			completedSP := helpers.NewCompletedSignalProcessing("sp-local-test", "default")
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
+				WithStatusSubresource(completedSP).Build()
+			aiCreator := creator.NewAIAnalysisCreator(fakeClient, scheme, nil)
+			rr := helpers.NewRemediationRequest("local-test", "default")
+
+			name, err := aiCreator.Create(ctx, rr, completedSP)
+
+			Expect(err).ToNot(HaveOccurred())
+			createdAI := &aianalysisv1.AIAnalysis{}
+			err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, createdAI)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(createdAI.Spec.ClusterID).To(BeEmpty(),
+				"AC-4: Local-cluster RR should produce AIAnalysis with empty ClusterID")
+		})
+	})
+
 	Describe("#462: SignalAnnotations forwarding from RR to AIAnalysis", func() {
 		It("UT-RO-462-001: should propagate SignalAnnotations from RR to AIAnalysis CRD", func() {
 			completedSP := helpers.NewCompletedSignalProcessing("sp-annot-test", "default")

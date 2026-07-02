@@ -423,6 +423,66 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 		Expect(mockAuditStore.Events).To(HaveLen(3), "Expected lifecycle.started + lifecycle.created + phase.transitioned events")
 		})
 	})
+
+	Context("DD-AUDIT-003 v2.2: Fleet ClusterName in audit events (CC8.1)", func() {
+		It("IT-RO-FLEET-001: lifecycle.started event includes ClusterName for fleet RRs [CC8.1, AU-3]", func() {
+			rr := newRemediationRequest("fleet-rr", "default", "")
+			rr.Spec.ClusterID = "prod-east"
+			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
+
+			_, err := reconciler.Reconcile(ctx, ctrl.Request{
+				NamespacedName: types.NamespacedName{Name: "fleet-rr", Namespace: "default"},
+			})
+			Expect(err).ToNot(HaveOccurred())
+
+			lifecycleEvents := mockAuditStore.GetEventsByType(roaudit.EventTypeLifecycleStarted)
+			Expect(lifecycleEvents).ToNot(BeEmpty(), "Expected lifecycle.started event")
+			event := lifecycleEvents[0]
+			Expect(event.ClusterName.IsSet()).To(BeTrue(),
+				"CC8.1: Fleet RR lifecycle event must include ClusterName")
+			Expect(event.ClusterName.Value).To(Equal("prod-east"),
+				"CC8.1: ClusterName must match RR.Spec.ClusterID")
+		})
+
+		It("IT-RO-FLEET-002: lifecycle.started event has no ClusterName for hub-only RRs", func() {
+			rr := newRemediationRequest("hub-rr", "default", "")
+			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
+
+			mockAuditStore.Reset()
+
+			_, err := reconciler.Reconcile(ctx, ctrl.Request{
+				NamespacedName: types.NamespacedName{Name: "hub-rr", Namespace: "default"},
+			})
+			Expect(err).ToNot(HaveOccurred())
+
+			lifecycleEvents := mockAuditStore.GetEventsByType(roaudit.EventTypeLifecycleStarted)
+			Expect(lifecycleEvents).ToNot(BeEmpty(), "Expected lifecycle.started event")
+			event := lifecycleEvents[0]
+			Expect(event.ClusterName.IsSet()).To(BeFalse(),
+				"Hub-only RRs must not set ClusterName (backward compat)")
+		})
+
+		It("IT-RO-FLEET-003: phase transition event includes ClusterName for fleet RRs [CC8.1]", func() {
+			rr := newRemediationRequest("fleet-phase-rr", "default", remediationv1.PhasePending)
+			rr.Spec.ClusterID = "prod-west"
+			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
+			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
+
+			mockAuditStore.Reset()
+
+			_, err := reconciler.Reconcile(ctx, ctrl.Request{
+				NamespacedName: types.NamespacedName{Name: "fleet-phase-rr", Namespace: "default"},
+			})
+			Expect(err).ToNot(HaveOccurred())
+
+			transitionEvents := mockAuditStore.GetEventsByType(roaudit.EventTypeLifecycleTransitioned)
+			Expect(transitionEvents).ToNot(BeEmpty(), "Expected lifecycle.transitioned event")
+			event := transitionEvents[0]
+			Expect(event.ClusterName.IsSet()).To(BeTrue(),
+				"CC8.1: Phase transition events must include ClusterName for fleet RRs")
+			Expect(event.ClusterName.Value).To(Equal("prod-west"))
+		})
+	})
 })
 
 // Helper function to create string pointer

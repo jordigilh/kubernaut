@@ -1,0 +1,230 @@
+{{- if .Values.fleetmetadatacache.enabled }}
+{{- if not .Values.fleetmetadatacache.oauth2.tokenURL }}
+{{- fail "fleetmetadatacache.oauth2.tokenURL is required when fleetmetadatacache.enabled=true — MCP Gateway requires OAuth2 authentication" }}
+{{- end }}
+{{- if not .Values.fleetmetadatacache.oauth2.credentialsSecretRef }}
+{{- fail "fleetmetadatacache.oauth2.credentialsSecretRef is required when fleetmetadatacache.enabled=true (Secret must contain keys: client-id, client-secret)" }}
+{{- end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fleetmetadatacache-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: fleetmetadatacache
+    app.kubernetes.io/component: fleet-metadata-cache
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+data:
+  config.yaml: |
+    server:
+      apiAddr: ":8080"
+      metricsAddr: ":8081"
+    mcpGateway:
+      endpoint: {{ .Values.fleetmetadatacache.mcpGatewayEndpoint | quote }}
+      gatewayType: {{ .Values.fleetmetadatacache.gatewayType | quote }}
+      namespace: {{ .Values.fleetmetadatacache.namespace | quote }}
+    valkey:
+      addr: {{ .Values.fleetmetadatacache.valkeyAddr | quote }}
+    sync:
+      interval: {{ .Values.fleetmetadatacache.syncInterval | quote }}
+      keyTtl: {{ .Values.fleetmetadatacache.keyTTL | quote }}
+    oauth2:
+      tokenUrl: {{ .Values.fleetmetadatacache.oauth2.tokenURL | quote }}
+      credentialsDir: "/etc/fleetmetadatacache/fleet-oauth2"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fleetmetadatacache
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: fleetmetadatacache
+    app.kubernetes.io/component: fleet-metadata-cache
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  replicas: {{ .Values.fleetmetadatacache.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: fleetmetadatacache
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: fleetmetadatacache
+        app.kubernetes.io/component: fleet-metadata-cache
+    spec:
+      serviceAccountName: fleetmetadatacache
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: fleetmetadatacache
+          image: "{{ .Values.fleetmetadatacache.image.repository }}:{{ .Values.fleetmetadatacache.image.tag }}"
+          imagePullPolicy: {{ .Values.fleetmetadatacache.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          args:
+            - "--config=/etc/fleetmetadatacache/config.yaml"
+          ports:
+            - name: api
+              containerPort: 8080
+              protocol: TCP
+            - name: metrics
+              containerPort: 8081
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: api
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: api
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.fleetmetadatacache.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/fleetmetadatacache
+              readOnly: true
+            - name: oauth2-credentials
+              mountPath: /etc/fleetmetadatacache/fleet-oauth2
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: fleetmetadatacache-config
+        - name: oauth2-credentials
+          secret:
+            secretName: {{ .Values.fleetmetadatacache.oauth2.credentialsSecretRef }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fleetmetadatacache-service
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: fleetmetadatacache
+    app.kubernetes.io/component: fleet-metadata-cache
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: fleetmetadatacache
+  ports:
+    - name: api
+      port: 8080
+      targetPort: api
+      protocol: TCP
+    - name: metrics
+      port: 8081
+      targetPort: metrics
+      protocol: TCP
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fleetmetadatacache
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: fleetmetadatacache
+    app.kubernetes.io/component: fleet-metadata-cache
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: fleetmetadatacache
+  labels:
+    app.kubernetes.io/name: fleetmetadatacache
+rules:
+{{- if eq .Values.fleetmetadatacache.gatewayType "kuadrant" }}
+  - apiGroups: ["mcp.kuadrant.io"]
+    resources: ["mcpserverregistrations"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["gateways", "httproutes"]
+    verbs: ["get", "list", "watch"]
+{{- else }}
+  - apiGroups: ["gateway.envoyproxy.io"]
+    resources: ["backends"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["aigateway.envoyproxy.io"]
+    resources: ["mcproutes"]
+    verbs: ["get", "list", "watch"]
+{{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: fleetmetadatacache
+  labels:
+    app.kubernetes.io/name: fleetmetadatacache
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: fleetmetadatacache
+subjects:
+  - kind: ServiceAccount
+    name: fleetmetadatacache
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: fleetmetadatacache
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: fleetmetadatacache
+    app.kubernetes.io/component: fleet-metadata-cache
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: fleetmetadatacache
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: gateway
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: remediationorchestrator
+      ports:
+        - protocol: TCP
+          port: 8080
+    - from:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 8081
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: valkey
+      ports:
+        - protocol: TCP
+          port: 6379
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 8080
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+{{- end }}

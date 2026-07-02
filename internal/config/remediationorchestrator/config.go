@@ -24,6 +24,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	sharedconfig "github.com/jordigilh/kubernaut/internal/config"
+	"github.com/jordigilh/kubernaut/pkg/fleet"
 )
 
 // DefaultConfigPath is the standard Kubernetes ConfigMap mount path for this service.
@@ -82,6 +83,10 @@ type Config struct {
 	// TLSProfile selects the TLS security profile (Old/Intermediate/Modern).
 	// Issue #748: OCP-only — set by kubernaut-operator from the cluster APIServer CR.
 	TLSProfile string `yaml:"tlsProfile,omitempty"`
+
+	// Fleet enables multi-cluster federation scope checking (ADR-065, ADR-068).
+	// When enabled, RO uses FederatedScopeChecker via the configured backend adapter.
+	Fleet fleet.FleetConfig `yaml:"fleet,omitempty"`
 }
 
 // RetentionConfig controls how long terminal RemediationRequest CRDs persist

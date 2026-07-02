@@ -186,6 +186,45 @@ type WorkflowExecutionReconciler struct {
 	DependencyValidator dsvalidation.DependencyValidator
 }
 
+// ReconcilerOptions groups the business-specific dependencies for the
+// WorkflowExecution reconciler. Fields extracted from ctrl.Manager (Client,
+// APIReader, Scheme, Recorder) are populated automatically by NewReconciler.
+type ReconcilerOptions struct {
+	ExecutionNamespace  string
+	CooldownPeriod      time.Duration
+	Metrics             *metrics.Metrics
+	StatusManager       *status.Manager
+	AuditStore          audit.AuditStore
+	PhaseManager        *wephase.Manager
+	AuditManager        *weaudit.Manager
+	ExecutorRegistry    *weexecutor.Registry
+	WorkflowQuerier     weclient.WorkflowQuerier
+	DependencyValidator dsvalidation.DependencyValidator
+}
+
+// NewReconciler creates a WorkflowExecutionReconciler, extracting
+// infrastructure fields (Client, APIReader, Scheme, Recorder) from the manager
+// and business fields from opts. This reduces the parameter count at the call
+// site from ~13 fields to 2 (mgr + opts).
+func NewReconciler(mgr ctrl.Manager, opts ReconcilerOptions) *WorkflowExecutionReconciler {
+	return &WorkflowExecutionReconciler{
+		Client:              mgr.GetClient(),
+		APIReader:           mgr.GetAPIReader(),
+		Scheme:              mgr.GetScheme(),
+		Recorder:            mgr.GetEventRecorderFor("workflowexecution-controller"),
+		Metrics:             opts.Metrics,
+		StatusManager:       opts.StatusManager,
+		ExecutionNamespace:  opts.ExecutionNamespace,
+		CooldownPeriod:      opts.CooldownPeriod,
+		AuditStore:          opts.AuditStore,
+		PhaseManager:        opts.PhaseManager,
+		AuditManager:        opts.AuditManager,
+		ExecutorRegistry:    opts.ExecutorRegistry,
+		WorkflowQuerier:     opts.WorkflowQuerier,
+		DependencyValidator: opts.DependencyValidator,
+	}
+}
+
 // resolveSchemaMetadata fetches all workflow catalog artifacts from DS in a
 // single call (F6: consolidation of 3 DS round-trips into 1).
 // Returns nil metadata (not an error) when no querier is configured or when
@@ -1102,7 +1141,7 @@ func (r *WorkflowExecutionReconciler) handleJobAlreadyExists(
 		return nil, false, false, ""
 	}
 
-	completed, checkErr := jobExec.IsCompleted(ctx, wfe.Spec.TargetResource, r.ExecutionNamespace)
+	completed, checkErr := jobExec.IsCompleted(ctx, wfe.Spec.ClusterID, wfe.Spec.TargetResource, r.ExecutionNamespace)
 	if checkErr != nil {
 		logger.V(1).Info("Could not check existing Job state (may have been deleted)", "error", checkErr)
 		return nil, false, false, ""

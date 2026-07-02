@@ -1,0 +1,167 @@
+"""
+Copyright Contributors to the Open Cluster Management project.
+
+Search Query API.
+"""
+schema { 
+  query: Query
+  subscription: Subscription
+}
+
+"""
+Subscriptions implemented by the Search Query API.
+"""
+type Subscription {
+  """
+  This subscription is experimental and must not be used by clients at this time.
+  Returns a stream of `SearchResult` objects.
+  """
+  experimentalSearch(input: [SearchInput]): [SearchResult]
+}
+
+"""
+Queries supported by the Search Query API.
+"""
+type Query {
+  """
+  Search for resources and their relationships. 
+  *[PLACEHOLDER] Results only include kubernetes resources for which the authenticated user has list permission.*
+
+  For more information see the feature spec.
+  """
+  search(input: [SearchInput]): [SearchResult]
+  
+  """
+  Query all values for the given property.  
+  Optionally, a query can be included to filter the results.  
+  For example, if we want to get the names of all resources in the namespace foo, we can pass a query with the filter `{property: namespace, values:['foo']}`
+  
+  **Default limit is** 1,000  
+  A value of -1 will remove the limit. Use carefully because it may impact the service.
+  """
+  searchComplete(property: String!, query: SearchInput, limit: Int): [String]
+
+  """
+  Returns all properties from resources currently in the index.
+  """
+  searchSchema: Map
+
+  """
+  Additional information about the service status or conditions found while processing the query.  
+  This is similar to the errors query, but without implying that there was a problem processing the query.
+  """
+  messages: [Message]
+}
+
+"""
+Defines a key/value to filter results.  
+When multiple values are provided for a property, it is interpreted as an OR operation.
+"""
+input SearchFilter {
+    """
+    Name of the property (key).
+    """
+    property: String!
+    """
+    Values for the property. Multiple values per property are interpreted as an OR operation.
+    Optionally one of these operations `=,!,!=,>,>=,<,<=` can be included at the beginning of the value.
+    By default the equality operation is used. 
+    The values available for datetime fields (Ex: `created`, `startedAt`) are `hour`, `day`, `week`, `month` and `year`.
+    Property `kind`, if included in the filter, will be matched using a case-insensitive comparison.
+    For example, `kind:Pod` and `kind:pod` will bring up all pods. This is to maintain compatibility with Search V1.
+    """
+    values: [String]!
+  }
+
+"""
+Input options to the search query.
+"""
+input SearchInput {
+    """
+    List of strings to match resources.  
+    Will match resources containing any of the keywords in any text field.  
+    When multiple keywords are provided, it is interpreted as an AND operation.  
+    Matches are case insensitive.
+    """
+    keywords: [String]
+
+    """
+    List of SearchFilter, which is a key(property) and values.  
+    When multiple filters are provided, results will match all filters (AND operation).
+    """
+    filters: [SearchFilter]
+    
+    """
+    Max number of results returned by the query.  
+    **Default is** 10,000  
+    A value of -1 will remove the limit. Use carefully because it may impact the service.
+    """
+    limit: Int
+
+    """
+    Filter relationships to the specified kinds.  
+    If empty, all relationships will be included.  
+    This filter is used with the 'related' field on SearchResult.
+    """
+    relatedKinds: [String]
+  }
+
+"""
+Data returned by the search query.
+"""
+type SearchResult {
+    """
+    Total number of resources matching the query.  
+    **NOTE:** Should not use count in combination with items. If items are requested, the count is simply the size of items.
+    """
+    count: Int
+    """
+    Resources matching the search query.
+    """
+    items: [Map]
+    """
+    Resources related to the query results (items).  
+    For example, if searching for deployments, this will return the related pod resources.
+    """
+    related: [SearchRelatedResult]
+  }
+
+"""
+Resources related to the items resolved from the search query.
+"""
+type SearchRelatedResult {
+    kind: String!
+    """
+    Total number of related resources.  
+    **NOTE:** Should not use count in combination with items. If items are requested, the count is simply the size of items.
+    """
+    count: Int
+    """
+    Resources matched by the query.
+    """
+    items: [Map]
+  }
+
+"""
+A message is used to communicate conditions detected while executing a query on the server.
+"""
+type Message {
+    """
+    Unique identifier to be used by clients to process the message independently of locale or grammatical changes.
+    """
+    id: String!
+    """
+    Message type. 
+    **Values:** information, warning, error.
+    """
+    kind: String
+    """
+    Message text.
+    """
+    description: String
+}
+
+"""
+Map of strings. Used to hold data for a result item.
+"""
+scalar Map

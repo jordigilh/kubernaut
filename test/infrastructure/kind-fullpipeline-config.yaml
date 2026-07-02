@@ -17,7 +17,7 @@
 #   Path: ~/.kube/fullpipeline-e2e-config
 #   Cluster Name: fullpipeline-e2e
 #
-# Memory Budget: ~5.7GB total
+# Memory Budget: ~6.1GB total (fullpipeline base + fleet components)
 #   - Kind cluster overhead: ~1.5GB
 #   - PostgreSQL: ~256MB
 #   - DataStorage: ~128MB
@@ -32,6 +32,11 @@
 #   - Prometheus: ~128MB
 #   - AlertManager: ~64MB
 #   - Memory Eater Pod: ~256MB (target workload)
+#   - Fleet: Istio (istiod + gateway proxy): ~250MB
+#   - Fleet: Kuadrant (broker + controller): ~60MB
+#   - Fleet: kube-mcp-server: ~16MB
+#   - Fleet: Valkey: ~30MB
+#   - Fleet: FMC: ~32MB
 #   - Buffer: ~1.5GB
 #
 # Usage:
@@ -78,10 +83,16 @@ nodes:
   - containerPort: 30556  # DEX NodePort
     hostPort: 30556       # DD-TEST-001: DEX for AF
     protocol: TCP
+  # Fleet: Kuadrant MCP Gateway (multi-cluster tool routing, Issue #54)
+  - containerPort: 31975  # Kuadrant Istio gateway MCP NodePort
+    hostPort: 31975       # DD-TEST-001: MCP Gateway
+    protocol: TCP
   # Extra mounts for coverage data collection (DD-TEST-007) and notification output
   # Note: ALL extraMounts are added programmatically in SetupFullPipelineInfrastructure
   # based on OS (macOS vs Linux) to handle path differences between environments
   # Increase API server rate limits for parallel integration testing
+  # OIDC for fleet: configured post-deploy by patchAPIServerForOIDC() in fleet_e2e.go
+  # (Dex must be running before the API server can perform OIDC discovery)
   kubeadmConfigPatches:
   - |
     kind: ClusterConfiguration

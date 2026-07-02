@@ -19,6 +19,7 @@ package alignment
 import (
 	"context"
 	"encoding/json"
+	"strings"
 
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
@@ -51,18 +52,30 @@ func (p *ToolProxy) Execute(ctx context.Context, name string, args json.RawMessa
 // SubmitToolStep sends a post-pipeline tool result to the shadow agent for
 // alignment evaluation. Called by the investigator after sanitize/summarize/
 // truncate so the shadow evaluates the same content the primary LLM sees.
+// For fleet tools using the "{clusterID}__tool" convention, the cluster ID
+// is extracted and attached to the step for cluster-origin attribution.
 func SubmitToolStep(ctx context.Context, name, content string) {
 	obs := ObserverFromContext(ctx)
 	if obs == nil || content == "" {
 		return
 	}
 	step := Step{
-		Index:   obs.NextStepIndex(),
-		Kind:    StepKindToolResult,
-		Tool:    name,
-		Content: content,
+		Index:     obs.NextStepIndex(),
+		Kind:      StepKindToolResult,
+		Tool:      name,
+		ClusterID: parseClusterIDFromToolName(name),
+		Content:   content,
 	}
 	obs.SubmitAsync(ctx, step)
+}
+
+// parseClusterIDFromToolName extracts the cluster ID from a tool name following
+// the "{clusterID}__tool_name" EAIGW convention. Returns empty for local tools.
+func parseClusterIDFromToolName(name string) string {
+	if idx := strings.Index(name, "__"); idx > 0 {
+		return name[:idx]
+	}
+	return ""
 }
 
 // NotifyRCAComplete triggers the full-context grounding review (#1096).

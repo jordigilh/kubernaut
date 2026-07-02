@@ -96,7 +96,7 @@ func (r *Reconciler) runHashCheck(ctx context.Context, rctx *reconcileContext) (
 		return ctrl.Result{RequeueAfter: r.capRequeueAtDeadline(ea, deferral.RequeueAfter)}, true, nil
 	}
 
-	result := r.assessHash(ctx, ea)
+	result := r.assessHash(ctx, rctx.targetReader, ea)
 	ea.Status.Components.HashComputed = result.Component.Assessed
 	ea.Status.Components.PostRemediationSpecHash = result.Hash
 	ea.Status.Components.CurrentSpecHash = result.Hash
@@ -133,7 +133,7 @@ func (r *Reconciler) runHealthCheck(ctx context.Context, rctx *reconcileContext)
 		return
 	}
 
-	healthResult := r.assessHealth(ctx, ea)
+	healthResult := r.assessHealth(ctx, rctx.targetReader, ea)
 	ea.Status.Components.HealthAssessed = healthResult.Component.Assessed
 	ea.Status.Components.HealthScore = healthResult.Component.Score
 	rctx.componentsChanged = true
@@ -183,7 +183,7 @@ func (r *Reconciler) runAlertCheck(ctx context.Context, rctx *reconcileContext) 
 				"remaining", rctx.alertDeferred.RequeueAfter)
 			r.Metrics.RecordComponentAssessment("alert", "deferred", nil)
 		} else {
-			alertResult := r.assessAlert(ctx, ea)
+			alertResult := r.assessAlert(ctx, rctx.targetReader, ea)
 
 			if r.isAlertDecay(ea, alertResult) {
 				if ea.Status.Components.AlertDecayRetries == 0 {

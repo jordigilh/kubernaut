@@ -22,6 +22,7 @@ import (
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
@@ -41,14 +42,14 @@ type healthAssessResult struct {
 }
 
 // assessHealth evaluates the target resource's health via K8s API (BR-EM-001).
-func (r *Reconciler) assessHealth(ctx context.Context, ea *eav1.EffectivenessAssessment) healthAssessResult {
+func (r *Reconciler) assessHealth(ctx context.Context, reader client.Reader, ea *eav1.EffectivenessAssessment) healthAssessResult {
 	logger := log.FromContext(ctx)
 
 	// Build target status from K8s API (DD-EM-003: health uses RemediationTarget).
 	// The remediation target (e.g. Deployment) survives rolling restarts, whereas the
 	// signal target (e.g. the original Pod) may be deleted and replaced (#275).
 	// Pass RemediationCreatedAt so restarts can be counted relative to remediation time (#246).
-	status := r.getTargetHealthStatus(ctx, ea.Spec.RemediationTarget, ea.Spec.RemediationCreatedAt)
+	status := r.getTargetHealthStatus(ctx, reader, ea.Spec.RemediationTarget, ea.Spec.RemediationCreatedAt)
 
 	result := r.healthScorer.Score(ctx, status)
 	logger.Info("Health assessment complete",
@@ -61,10 +62,10 @@ func (r *Reconciler) assessHealth(ctx context.Context, ea *eav1.EffectivenessAss
 
 // assessHash computes the resource fingerprint and compares
 // with the pre-remediation hash (BR-EM-004, DD-EM-002 v2.0, #765).
-func (r *Reconciler) assessHash(ctx context.Context, ea *eav1.EffectivenessAssessment) hash.ComputeResult {
+func (r *Reconciler) assessHash(ctx context.Context, reader client.Reader, ea *eav1.EffectivenessAssessment) hash.ComputeResult {
 	logger := log.FromContext(ctx)
 
-	functionalState, spec, postHashDegradedReason := r.getTargetFunctionalState(ctx, ea.Spec.RemediationTarget)
+	functionalState, spec, postHashDegradedReason := r.getTargetFunctionalState(ctx, reader, ea.Spec.RemediationTarget)
 
 	if postHashDegradedReason != "" {
 		conditions.SetCondition(ea, conditions.ConditionPostHashCaptured,
@@ -82,7 +83,7 @@ func (r *Reconciler) assessHash(ctx context.Context, ea *eav1.EffectivenessAsses
 		preHash = r.queryPreRemediationHash(ctx, ea.Spec.CorrelationID)
 	}
 
-	configMapHashes := r.resolveConfigMapHashes(ctx, spec, ea.Spec.RemediationTarget)
+	configMapHashes := r.resolveConfigMapHashes(ctx, reader, spec, ea.Spec.RemediationTarget)
 
 	result := r.hashComputer.Compute(hash.SpecHashInput{
 		FunctionalState: functionalState,
@@ -109,7 +110,7 @@ type alertAssessResult struct {
 	ResolutionTimeSeconds *float64
 }
 
-func (r *Reconciler) assessAlert(ctx context.Context, ea *eav1.EffectivenessAssessment) alertAssessResult {
+func (r *Reconciler) assessAlert(ctx context.Context, reader client.Reader, ea *eav1.EffectivenessAssessment) alertAssessResult {
 	logger := log.FromContext(ctx)
 
 	// OBS-1: Use SignalName (the actual alert name) when available,
@@ -125,7 +126,7 @@ func (r *Reconciler) assessAlert(ctx context.Context, ea *eav1.EffectivenessAsse
 
 	// #269: Resolve active pod names from SignalTarget so the scorer can filter
 	// out stale alerts for pods deleted during rolling restarts.
-	if podNames := r.listActivePodNames(ctx, ea.Spec.SignalTarget); podNames != nil {
+	if podNames := r.listActivePodNames(ctx, reader, ea.Spec.SignalTarget); podNames != nil {
 		alertCtx.ActivePodNames = podNames
 		logger.V(1).Info("Alert pod correlation enabled",
 			"signalTarget", ea.Spec.SignalTarget.Name, "activePods", len(podNames))

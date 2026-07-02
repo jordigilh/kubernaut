@@ -22,6 +22,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
@@ -42,6 +43,10 @@ type reconcileContext struct {
 	componentsChanged   bool
 	alertDeferred       alert.AlertDeferralResult
 	scope               assessmentScope
+	// targetReader is the client.Reader resolved for this reconciliation cycle.
+	// For local-cluster EAs, this is r.targetReader (cached client).
+	// For fleet EAs (non-empty ClusterID), this is the fleet reader from ReaderFactory.
+	targetReader client.Reader
 }
 
 // reconcileActive is the main orchestration method for non-terminal EAs.

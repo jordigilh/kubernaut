@@ -57,6 +57,8 @@ docker-compose*.yml
 # Coverage reports
 coverage.out
 coverage.html
+coverdata/
+**/coverdata/
 
 # Vendor directory (ephemeral, use -mod=mod for builds)
 vendor/

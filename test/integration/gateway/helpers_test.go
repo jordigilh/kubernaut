@@ -1360,6 +1360,7 @@ type SignalBuilder struct {
 	Source       string // Source adapter name
 	Labels       map[string]string
 	Annotations  map[string]string
+	ClusterID    string
 }
 
 // createNormalizedSignal creates a NormalizedSignal for integration tests
@@ -1410,6 +1411,7 @@ func createNormalizedSignal(builder SignalBuilder) *types.NormalizedSignal {
 		SignalName:  builder.AlertName,
 		Severity:    builder.Severity,
 		Namespace:   builder.Namespace,
+		ClusterID:   builder.ClusterID,
 		Resource: types.ResourceIdentifier{
 			Kind:      builder.ResourceKind,
 			Name:      builder.ResourceName,

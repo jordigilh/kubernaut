@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"crypto/sha256"
 	"fmt"
 
 	"github.com/go-logr/logr"
@@ -16,6 +15,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
+	gwtypes "github.com/jordigilh/kubernaut/pkg/gateway/types"
 )
 
 // ToolDeps groups infrastructure dependencies shared by tool handler functions.
@@ -51,6 +51,12 @@ type CreateRRArgs struct {
 	// directly as the RR spec.signalName. Used by kubernaut_investigate_alert
 	// where the alert name is the definitive signal (#1372).
 	SignalNameOverride string `json:"-"`
+	// ClusterID is the cluster identifier from Thanos external_labels.
+	// Empty string indicates local hub cluster (ADR-065).
+	ClusterID string `json:"cluster_id,omitempty"`
+	// ClusterName is the human-readable display name for the cluster.
+	// Populated from the MCP Gateway Backend CRD displayName (ADR-065).
+	ClusterName string `json:"cluster_name,omitempty"`
 }
 
 // CreateRRResult is the output of RR creation.
@@ -72,8 +78,18 @@ type CreateRRResult struct {
 var rrCreateGroup singleflight.Group
 
 func rrFingerprint(namespace, kind, name string) string {
-	h := sha256.Sum256([]byte(namespace + "/" + kind + "/" + name))
-	return fmt.Sprintf("%x", h)
+	return rrFingerprintWithCluster("", namespace, kind, name)
+}
+
+// rrFingerprintWithCluster generates a dedup fingerprint that includes the cluster
+// context. Delegates to gwtypes.CalculateClusterAwareFingerprint to ensure GW and
+// AF produce identical fingerprints for the same resource (CC4.2: audit trail consistency).
+func rrFingerprintWithCluster(clusterID, namespace, kind, name string) string {
+	return gwtypes.CalculateClusterAwareFingerprint(clusterID, gwtypes.ResourceIdentifier{
+		Namespace: namespace,
+		Kind:      kind,
+		Name:      name,
+	})
 }
 
 // checkExistingRRByFingerprint checks for an existing non-terminal RR by fingerprint.
@@ -165,7 +181,7 @@ func HandleCreateRR(ctx context.Context, d *ToolDeps, args *CreateRRArgs, userna
 	if signalName == "" {
 		signalName = deriveSignalName(ctx, d.DynClient, args.Namespace, args, triageResult)
 	}
-	fingerprint := rrFingerprint(args.Namespace, args.Kind, args.Name)
+	fingerprint := rrFingerprintWithCluster(args.ClusterID, args.Namespace, args.Kind, args.Name)
 
 	result, err, _ := rrCreateGroup.Do(fingerprint, func() (interface{}, error) {
 		existing, checkErr := checkExistingRRByFingerprint(ctx, d.Client, d.ControllerNS, fingerprint)
@@ -204,6 +220,8 @@ func HandleCreateRR(ctx context.Context, d *ToolDeps, args *CreateRRArgs, userna
 				ReceivedTime:      nowTime,
 				TargetType:        "kubernetes",
 				TargetResource:    buildTypedTargetResource(args),
+				ClusterID:         args.ClusterID,
+				ClusterName:       args.ClusterName,
 			},
 		}
 
@@ -248,8 +266,9 @@ func HandleCreateRR(ctx context.Context, d *ToolDeps, args *CreateRRArgs, userna
 	if d.Auditor != nil {
 		if res.AlreadyExists {
 			d.Auditor.Emit(ctx, &audit.Event{
-				Type:   audit.EventRRDeduplicated,
-				UserID: username,
+				Type:        audit.EventRRDeduplicated,
+				UserID:      username,
+				ClusterName: args.ClusterName,
 				Detail: map[string]string{
 					"namespace":   d.ControllerNS,
 					"kind":        args.Kind,
@@ -259,8 +278,9 @@ func HandleCreateRR(ctx context.Context, d *ToolDeps, args *CreateRRArgs, userna
 			})
 		} else {
 			d.Auditor.Emit(ctx, &audit.Event{
-				Type:   audit.EventRRCreated,
-				UserID: username,
+				Type:        audit.EventRRCreated,
+				UserID:      username,
+				ClusterName: args.ClusterName,
 				Detail: map[string]string{
 					"namespace": d.ControllerNS,
 					"kind":      args.Kind,

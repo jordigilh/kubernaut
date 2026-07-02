@@ -112,7 +112,7 @@ func (m *Manager) StartInvestigation(ctx context.Context, fn InvestigateFunc, me
 		startExtra = append(startExtra, "created_by", v)
 	}
 
-	return m.launchInvestigation(ctx, id, fn, correlationID, metadata["signal_name"], metadata["severity"], startExtra)
+	return m.launchInvestigation(ctx, id, fn, correlationID, metadata["signal_name"], metadata["severity"], "", startExtra)
 }
 
 // StartInvestigationWithContext creates a new session with typed SessionContext
@@ -148,18 +148,19 @@ func (m *Manager) StartInvestigationWithContext(ctx context.Context, fn Investig
 		startExtra = append(startExtra, "created_by", sctx.CreatedBy)
 	}
 
-	return m.launchInvestigation(ctx, id, fn, correlationID, sctx.Signal.Name, sctx.Signal.Severity, startExtra)
+	return m.launchInvestigation(ctx, id, fn, correlationID, sctx.Signal.Name, sctx.Signal.Severity, sctx.Signal.ClusterName, startExtra)
 }
 
 // launchInvestigation is the shared goroutine launcher used by both
 // StartInvestigation and StartInvestigationWithContext. It wires the cancel
 // context, lazy sink, emits the started audit event, and spawns the goroutine.
-func (m *Manager) launchInvestigation(ctx context.Context, id string, fn InvestigateFunc, correlationID, signalName, severity string, startExtra []string) (string, error) {
+func (m *Manager) launchInvestigation(ctx context.Context, id string, fn InvestigateFunc, correlationID, signalName, severity, clusterName string, startExtra []string) (string, error) {
 	bgCtx, cancelFn := context.WithCancel(context.Background())
 
 	ls := &LazySink{}
 	bgCtx = WithLazySink(bgCtx, ls)
 	bgCtx = WithSessionID(bgCtx, id)
+	bgCtx = audit.WithClusterName(bgCtx, clusterName)
 
 	m.store.mu.Lock()
 	sess := m.store.sessions[id]
@@ -320,7 +321,7 @@ func (m *Manager) LaunchDeferredInvestigation(id string) error {
 		startExtra = append(startExtra, "remediation_id", v)
 	}
 
-	_, err := m.launchInvestigation(context.Background(), id, fn, correlationID, signalName, severity, startExtra)
+	_, err := m.launchInvestigation(context.Background(), id, fn, correlationID, signalName, severity, "", startExtra)
 	return err
 }
 

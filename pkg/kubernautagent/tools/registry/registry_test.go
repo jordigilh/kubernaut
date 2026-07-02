@@ -19,6 +19,8 @@ package registry_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"sync"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -134,6 +136,82 @@ var _ = Describe("Kubernaut Agent Tool Registry — #433", func() {
 		})
 	})
 
+	Describe("Registry Concurrency Safety (SC-5)", func() {
+		It("UT-REG-CONC-001: Concurrent Register and Get do not race", func() {
+			reg := registry.New()
+			var wg sync.WaitGroup
+
+			for i := 0; i < 100; i++ {
+				wg.Add(2)
+				go func(id int) {
+					defer wg.Done()
+					defer GinkgoRecover()
+					reg.Register(&stubTool{name: fmt.Sprintf("tool-%d", id)})
+				}(i)
+				go func(id int) {
+					defer wg.Done()
+					defer GinkgoRecover()
+					_, _ = reg.Get(fmt.Sprintf("tool-%d", id))
+				}(i)
+			}
+			wg.Wait()
+
+			all := reg.All()
+			Expect(len(all)).To(BeNumerically(">=", 1),
+				"registry must contain tools after concurrent registration")
+		})
+
+		It("UT-REG-CONC-002: Concurrent Register and Execute do not race", func() {
+			reg := registry.New()
+			reg.Register(&stubTool{name: "existing-tool"})
+
+			var wg sync.WaitGroup
+			for i := 0; i < 50; i++ {
+				wg.Add(2)
+				go func(id int) {
+					defer wg.Done()
+					defer GinkgoRecover()
+					reg.Register(&stubTool{name: fmt.Sprintf("new-tool-%d", id)})
+				}(i)
+				go func() {
+					defer wg.Done()
+					defer GinkgoRecover()
+					result, err := reg.Execute(context.Background(), "existing-tool", json.RawMessage(`{}`))
+					Expect(err).ToNot(HaveOccurred())
+					Expect(result).To(Equal("stub-result"))
+				}()
+			}
+			wg.Wait()
+		})
+
+		It("UT-REG-CONC-003: Concurrent Register and ToolsForPhase do not race", func() {
+			reg := registry.New()
+			reg.Register(&stubTool{name: "kubectl_describe"})
+			reg.Register(&stubTool{name: "kubectl_logs"})
+
+			phaseTools := katypes.PhaseToolMap{
+				katypes.PhaseRCA: {"kubectl_describe", "kubectl_logs"},
+			}
+
+			var wg sync.WaitGroup
+			for i := 0; i < 50; i++ {
+				wg.Add(2)
+				go func(id int) {
+					defer wg.Done()
+					defer GinkgoRecover()
+					reg.Register(&stubTool{name: fmt.Sprintf("dynamic-tool-%d", id)})
+				}(i)
+				go func() {
+					defer wg.Done()
+					defer GinkgoRecover()
+					result := reg.ToolsForPhase(katypes.PhaseRCA, phaseTools)
+					Expect(len(result)).To(BeNumerically(">=", 1))
+				}()
+			}
+			wg.Wait()
+		})
+	})
+
 	Describe("UT-KA-433-630: Full tool registry count matches production wiring", func() {
 		It("should register exactly 37 tools matching main.go wiring", func() {
 			expectedTotal := len(k8s.AllToolNames) + len(k8s.MetricsToolNames) + 8 + 5 + 1 + 1
@@ -150,3 +228,16 @@ func toolNames(tt []tools.Tool) []string {
 	}
 	return names
 }
+
+type stubTool struct {
+	name string
+}
+
+func (s *stubTool) Name() string               { return s.name }
+func (s *stubTool) Description() string         { return "stub tool for concurrency tests" }
+func (s *stubTool) Parameters() json.RawMessage { return json.RawMessage(`{}`) }
+func (s *stubTool) Execute(_ context.Context, _ json.RawMessage) (string, error) {
+	return "stub-result", nil
+}
+
+var _ tools.Tool = (*stubTool)(nil)

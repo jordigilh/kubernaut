@@ -21,7 +21,6 @@ package gateway
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -43,17 +42,9 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
 	"github.com/jordigilh/kubernaut/pkg/gateway/config"
 	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
-	sharedscope "github.com/jordigilh/kubernaut/pkg/shared/scope"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
-// alwaysManagedScope is a mock ScopeChecker that always returns managed=true.
-type alwaysManagedScope struct{}
-
-func (a *alwaysManagedScope) IsManaged(_ context.Context, _, _, _ string) (bool, error) {
-	return true, nil
-}
-
-var _ sharedscope.ScopeChecker = &alwaysManagedScope{}
 
 var _ = Describe("Issue #673 C-ADV-2: Generic Processing Error (BR-GATEWAY-182)", Ordered, ContinueOnFailure, func() {
 
@@ -79,7 +70,10 @@ var _ = Describe("Issue #673 C-ADV-2: Generic Processing Error (BR-GATEWAY-182)"
 		Expect(corev1.AddToScheme(scheme)).To(Succeed())
 
 		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: "kubernaut-system"},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   "kubernaut-system",
+				Labels: map[string]string{"kubernaut.ai/managed": "true"},
+			},
 		}
 
 		brokenClient := fake.NewClientBuilder().
@@ -110,10 +104,10 @@ var _ = Describe("Issue #673 C-ADV-2: Generic Processing Error (BR-GATEWAY-182)"
 			logr.Discard(),
 			metricsInstance,
 			brokenClient,
-			nil,                     // audit store
-			&alwaysManagedScope{},   // scope always returns managed
-			nil,                     // no auth
-			nil,                     // no authz
+			nil,
+			scope.NewManager(brokenClient),
+			nil,
+			nil,
 		)
 		Expect(err).ToNot(HaveOccurred())
 

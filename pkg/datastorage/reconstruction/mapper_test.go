@@ -20,6 +20,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	reconstructionpkg "github.com/jordigilh/kubernaut/pkg/datastorage/reconstruction"
 )
 
@@ -188,6 +189,225 @@ var _ = Describe("Audit Event Mapper", func() {
 		})
 	})
 
-	// NOTE: Additional mapper tests for Gaps #4-7 will be added during GREEN phase
-	// when we implement workflow, AI provider, and error data mapping
+	// ========================================
+	// MAPPER-CLUSTER-01: ClusterName → Spec.ClusterID mapping [CC8.1]
+	// BR-AUDIT-005 v2.0 / DD-AUDIT-003 v2.2: Fleet cluster-scoped audit
+	// ========================================
+	Context("MAPPER-CLUSTER-01: Map ClusterName to RR Spec.ClusterID (DD-AUDIT-003 v2.2)", func() {
+		It("should map ClusterName from gateway event to Spec.ClusterID [CC8.1]", func() {
+			parsedData := &reconstructionpkg.ParsedAuditData{
+				EventType:        "gateway.signal.received",
+				SignalType:       "alert",
+				SignalName:        "HighCPU",
+				SignalFingerprint: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+				SignalLabels:     map[string]string{"alertname": "HighCPU"},
+				ClusterName:      "prod-east",
+			}
+
+			rrFields, err := reconstructionpkg.MapToRRFields(parsedData)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(rrFields.Spec.ClusterID).To(Equal("prod-east"),
+				"CC8.1: Mapper must set Spec.ClusterID from ClusterName for fleet reconstruction")
+		})
+
+		It("should leave Spec.ClusterID empty for single-cluster events (backward compat)", func() {
+			parsedData := &reconstructionpkg.ParsedAuditData{
+				EventType:        "gateway.signal.received",
+				SignalType:       "alert",
+				SignalName:        "HighCPU",
+				SignalFingerprint: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+				SignalLabels:     map[string]string{"alertname": "HighCPU"},
+				// ClusterName intentionally empty (single-cluster)
+			}
+
+			rrFields, err := reconstructionpkg.MapToRRFields(parsedData)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(rrFields.Spec.ClusterID).To(BeEmpty(),
+				"Single-cluster events must not populate Spec.ClusterID")
+		})
+	})
+
+	Context("MAPPER-MERGE-CLUSTER-01: ClusterName survives merge (DD-AUDIT-003 v2.2)", func() {
+		It("should preserve ClusterName through merge of gateway + orchestrator events [CC8.1]", func() {
+			gatewayData := &reconstructionpkg.ParsedAuditData{
+				EventType:        "gateway.signal.received",
+				SignalType:       "alert",
+				SignalName:        "HighMemory",
+				SignalFingerprint: "b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3",
+				SignalLabels:     map[string]string{"alertname": "HighMemory"},
+				ClusterName:      "prod-west",
+			}
+
+			orchestratorData := &reconstructionpkg.ParsedAuditData{
+				EventType: "orchestrator.lifecycle.created",
+				TimeoutConfig: &reconstructionpkg.TimeoutConfigData{
+					Global: "2h0m0s",
+				},
+				ClusterName: "prod-west",
+			}
+
+			rrFields, err := reconstructionpkg.MergeAuditData(
+				[]reconstructionpkg.ParsedAuditData{*gatewayData, *orchestratorData},
+			)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(rrFields.Spec.ClusterID).To(Equal("prod-west"),
+				"CC8.1: ClusterName must survive merge for fleet RR reconstruction")
+		})
+	})
+
+	// ========================================
+	// MAPPER-RO-COMPLETED: orchestrator.lifecycle.completed → Status mapping [CC8.1]
+	// BR-AUDIT-005 v2.0: Outcome mapping for completed lifecycle events
+	// ========================================
+	Context("MAPPER-RO-COMPLETED: Map orchestrator.lifecycle.completed to RR Status [CC8.1]", func() {
+		It("should map Outcome to Status.Outcome [CC8.1]", func() {
+			parsedData := &reconstructionpkg.ParsedAuditData{
+				EventType:  "orchestrator.lifecycle.completed",
+				Outcome:    "success",
+				DurationMs: 45000,
+			}
+
+			rrFields, err := reconstructionpkg.MapToRRFields(parsedData)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(rrFields).ToNot(BeNil())
+			Expect(rrFields.Status).ToNot(BeNil())
+			Expect(rrFields.Status.Outcome).To(Equal("success"),
+				"CC8.1: Mapper must set Status.Outcome from completed event Outcome")
+		})
+
+		It("should not map DurationMs to any RR field (metadata only) [CC8.1]", func() {
+			parsedData := &reconstructionpkg.ParsedAuditData{
+				EventType:  "orchestrator.lifecycle.completed",
+				Outcome:    "success",
+				DurationMs: 120000,
+			}
+
+			rrFields, err := reconstructionpkg.MapToRRFields(parsedData)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(rrFields).ToNot(BeNil())
+			Expect(rrFields.Status.Outcome).To(Equal("success"),
+				"CC8.1: Outcome must still be mapped even when DurationMs is present")
+			Expect(rrFields.Status.FailurePhase).To(BeNil(),
+				"CC8.1: Completed event must not set FailurePhase")
+			Expect(rrFields.Status.FailureReason).To(BeNil(),
+				"CC8.1: Completed event must not set FailureReason")
+		})
+	})
+
+	// ========================================
+	// MAPPER-RO-FAILED: orchestrator.lifecycle.failed → Status mapping [CC8.1]
+	// BR-AUDIT-005 v2.0: Failure fields mapping for failed lifecycle events
+	// ========================================
+	Context("MAPPER-RO-FAILED: Map orchestrator.lifecycle.failed to RR Status [CC8.1]", func() {
+		It("should map FailurePhase to Status.FailurePhase pointer [CC8.1]", func() {
+			parsedData := &reconstructionpkg.ParsedAuditData{
+				EventType:    "orchestrator.lifecycle.failed",
+				Outcome:      "failure",
+				FailurePhase: "execution",
+			}
+
+			rrFields, err := reconstructionpkg.MapToRRFields(parsedData)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(rrFields).ToNot(BeNil())
+			Expect(rrFields.Status).ToNot(BeNil())
+			Expect(rrFields.Status.FailurePhase).ToNot(BeNil(),
+				"CC8.1: Mapper must set Status.FailurePhase pointer from failed event")
+			Expect(*rrFields.Status.FailurePhase).To(Equal(remediationv1.FailurePhase("execution")),
+				"CC8.1: Status.FailurePhase must match parsed FailurePhase value")
+		})
+
+		It("should map ErrorDetails.Message to Status.FailureReason pointer [CC8.1]", func() {
+			parsedData := &reconstructionpkg.ParsedAuditData{
+				EventType:    "orchestrator.lifecycle.failed",
+				Outcome:      "failure",
+				FailurePhase: "analysis",
+				ErrorDetails: &reconstructionpkg.ErrorDetailsData{
+					Message:       "AI analysis timed out after 15m",
+					Code:          "TIMEOUT",
+					Component:     "ai-analysis",
+					RetryPossible: true,
+				},
+			}
+
+			rrFields, err := reconstructionpkg.MapToRRFields(parsedData)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(rrFields).ToNot(BeNil())
+			Expect(rrFields.Status.FailureReason).ToNot(BeNil(),
+				"CC8.1: Mapper must set Status.FailureReason pointer from ErrorDetails.Message")
+			Expect(*rrFields.Status.FailureReason).To(Equal("AI analysis timed out after 15m"),
+				"CC8.1: Status.FailureReason must match ErrorDetails.Message")
+		})
+
+		It("should map Outcome to Status.Outcome [CC8.1]", func() {
+			parsedData := &reconstructionpkg.ParsedAuditData{
+				EventType:    "orchestrator.lifecycle.failed",
+				Outcome:      "failure",
+				FailurePhase: "execution",
+				ErrorDetails: &reconstructionpkg.ErrorDetailsData{
+					Message: "remediation script returned non-zero exit code",
+				},
+			}
+
+			rrFields, err := reconstructionpkg.MapToRRFields(parsedData)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(rrFields.Status.Outcome).To(Equal("failure"),
+				"CC8.1: Mapper must set Status.Outcome from failed event Outcome")
+		})
+	})
+
+	// ========================================
+	// MAPPER-MERGE-FAILURE: FailurePhase/FailureReason survive merge [CC8.1]
+	// BR-AUDIT-005 v2.0: Failure fields must be preserved through merge
+	// ========================================
+	Context("MAPPER-MERGE-FAILURE: FailurePhase/FailureReason survive merge [CC8.1]", func() {
+		It("should preserve FailurePhase and FailureReason through merge of gateway + failed orchestrator events [CC8.1]", func() {
+			gatewayData := &reconstructionpkg.ParsedAuditData{
+				EventType:        "gateway.signal.received",
+				SignalType:       "alert",
+				SignalName:        "HighCPU",
+				SignalFingerprint: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+				SignalLabels:     map[string]string{"alertname": "HighCPU"},
+			}
+
+			failedData := &reconstructionpkg.ParsedAuditData{
+				EventType:    "orchestrator.lifecycle.failed",
+				Outcome:      "failure",
+				FailurePhase: "verification",
+				ErrorDetails: &reconstructionpkg.ErrorDetailsData{
+					Message: "post-remediation verification failed: service still unhealthy",
+				},
+			}
+
+			rrFields, err := reconstructionpkg.MergeAuditData(
+				[]reconstructionpkg.ParsedAuditData{*gatewayData, *failedData},
+			)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(rrFields).ToNot(BeNil())
+
+			// Validate gateway spec data survived merge
+			Expect(rrFields.Spec.SignalName).To(Equal("HighCPU"),
+				"CC8.1: Gateway spec data must survive merge with failed event")
+
+			// Validate failure fields survived merge
+			Expect(rrFields.Status.Outcome).To(Equal("failure"),
+				"CC8.1: Outcome must survive merge from failed orchestrator event")
+			Expect(rrFields.Status.FailurePhase).ToNot(BeNil(),
+				"CC8.1: FailurePhase must survive merge from failed orchestrator event")
+			Expect(*rrFields.Status.FailurePhase).To(Equal(remediationv1.FailurePhase("verification")),
+				"CC8.1: FailurePhase value must be preserved through merge")
+			Expect(rrFields.Status.FailureReason).ToNot(BeNil(),
+				"CC8.1: FailureReason must survive merge from failed orchestrator event")
+			Expect(*rrFields.Status.FailureReason).To(Equal("post-remediation verification failed: service still unhealthy"),
+				"CC8.1: FailureReason value must be preserved through merge")
+		})
+	})
 })

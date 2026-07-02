@@ -109,7 +109,7 @@ var _ = Describe("Audit Manager", func() {
 	Describe("NewManager", func() {
 		It("should create manager with correct service name", func() {
 			m := prodaudit.NewManager("test-service")
-			event, err := m.BuildLifecycleStartedEvent("corr-1", "ns", "rr-1")
+			event, err := m.BuildLifecycleStartedEvent("corr-1", "ns", "rr-1", "")
 			Expect(err).ToNot(HaveOccurred(), "Manager must be functional after construction")
 			Expect(event.Version).To(Equal("1.0"))
 		})
@@ -126,6 +126,7 @@ var _ = Describe("Audit Manager", func() {
 				"correlation-123",
 				"default",
 				"rr-test-001",
+				"",
 			)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -158,6 +159,7 @@ var _ = Describe("Audit Manager", func() {
 				"correlation-456",
 				"production",
 				"rr-prod-001",
+				"",
 			)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -184,7 +186,7 @@ var _ = Describe("Audit Manager", func() {
 	Describe("BuildLifecycleVerifyingStartedEvent (#280)", func() {
 		It("should build event with correct type and F-3 discriminator consistency", func() {
 			event, err := manager.BuildLifecycleVerifyingStartedEvent(
-				"corr-verify-001", "default", "rr-verify-001",
+				"corr-verify-001", "default", "rr-verify-001", "",
 			)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(event.EventType).To(Equal(prodaudit.EventTypeLifecycleVerifyingStarted))
@@ -196,7 +198,7 @@ var _ = Describe("Audit Manager", func() {
 	Describe("BuildLifecycleVerificationCompletedEvent (#280)", func() {
 		It("should build event with correct type and F-3 discriminator consistency", func() {
 			event, err := manager.BuildLifecycleVerificationCompletedEvent(
-				"corr-verify-002", "default", "rr-verify-002", "ea-verify-002", "Verified", 5000,
+				"corr-verify-002", "default", "rr-verify-002", "", "ea-verify-002", "Verified", 5000,
 			)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(event.EventType).To(Equal(prodaudit.EventTypeLifecycleVerificationCompleted))
@@ -208,7 +210,7 @@ var _ = Describe("Audit Manager", func() {
 	Describe("BuildLifecycleVerificationTimedOutEvent (#280)", func() {
 		It("should build event with correct type and F-3 discriminator consistency", func() {
 			event, err := manager.BuildLifecycleVerificationTimedOutEvent(
-				"corr-verify-003", "default", "rr-verify-003", "ea-verify-003", 30000,
+				"corr-verify-003", "default", "rr-verify-003", "", "ea-verify-003", 30000,
 			)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(event.EventType).To(Equal(prodaudit.EventTypeLifecycleVerificationTimedOut))
@@ -228,6 +230,7 @@ var _ = Describe("Audit Manager", func() {
 				"correlation-123",
 				"default",
 				"rr-test-001",
+				"",
 				"Analyzing",
 				"Executing",
 			)
@@ -267,6 +270,7 @@ var _ = Describe("Audit Manager", func() {
 					"correlation-123",
 					"default",
 					"rr-test-001",
+					"",
 					t.from,
 					t.to,
 				)
@@ -298,6 +302,7 @@ var _ = Describe("Audit Manager", func() {
 				"correlation-123",
 				"default",
 				"rr-test-001",
+				"",
 				"Remediated",
 				5000,
 			)
@@ -326,6 +331,7 @@ var _ = Describe("Audit Manager", func() {
 				"correlation-456",
 				"production",
 				"rr-prod-001",
+				"",
 				"NoActionRequired",
 				12345,
 			)
@@ -361,6 +367,7 @@ var _ = Describe("Audit Manager", func() {
 				"correlation-123",
 				"default",
 				"rr-test-001",
+				"",
 				string(remediationv1.FailurePhaseWorkflowExecution),
 				apierrors.NewForbidden(gr, "rr-test-001", fmt.Errorf("RBAC permission denied")),
 				5000,
@@ -398,6 +405,7 @@ var _ = Describe("Audit Manager", func() {
 				"correlation-789",
 				"production",
 				"rr-prod-002",
+				"",
 				string(remediationv1.FailurePhaseSignalProcessing),
 				apierrors.NewTimeoutError("timeout while enriching alert", 30),
 				15000,
@@ -438,6 +446,7 @@ var _ = Describe("Audit Manager", func() {
 				"correlation-456",
 				"production",
 				"rr-prod-001",
+				"",
 				string(remediationv1.FailurePhaseSignalProcessing),
 				apierrors.NewTimeoutError("Enrichment timeout", 30),
 				10000,
@@ -479,6 +488,7 @@ var _ = Describe("Audit Manager", func() {
 					"correlation-001",
 					"default",
 					"rr-test",
+					"",
 					string(remediationv1.FailurePhaseConfiguration),
 					apierrors.NewInvalid(gk, "rr-test", nil),
 					1000,
@@ -501,6 +511,7 @@ var _ = Describe("Audit Manager", func() {
 					"correlation-002",
 					"default",
 					"rr-test",
+					"",
 					string(remediationv1.FailurePhaseSignalProcessing),
 					apierrors.NewForbidden(gr, "sp-test", fmt.Errorf("RBAC denied")),
 					1000,
@@ -521,6 +532,7 @@ var _ = Describe("Audit Manager", func() {
 					"correlation-003",
 					"default",
 					"rr-test",
+					"",
 					"unknown",
 					fmt.Errorf("unexpected panic in reconciler"),
 					1000,
@@ -543,6 +555,7 @@ var _ = Describe("Audit Manager", func() {
 					"correlation-004",
 					"default",
 					"rr-test",
+					"",
 					string(remediationv1.FailurePhaseWorkflowExecution),
 					apierrors.NewNotFound(gr, "wfe-test"),
 					1000,
@@ -577,6 +590,7 @@ var _ = Describe("Audit Manager", func() {
 				"correlation-123",
 				"default",
 				"rr-test-001",
+				"",
 				"rar-rr-test-001",
 				"wf-scale-deployment",
 				"85%",
@@ -613,6 +627,7 @@ var _ = Describe("Audit Manager", func() {
 				"correlation-123",
 				"default",
 				"rr-test-001",
+				"",
 				"rar-rr-test-001",
 				"Approved",
 				"operator@example.com",
@@ -628,6 +643,7 @@ var _ = Describe("Audit Manager", func() {
 				"correlation-123",
 				"default",
 				"rr-test-001",
+				"",
 				"rar-rr-test-001",
 				"Rejected",
 				"admin@example.com",
@@ -643,6 +659,7 @@ var _ = Describe("Audit Manager", func() {
 				"correlation-123",
 				"default",
 				"rr-test-001",
+				"",
 				"rar-rr-test-001",
 				"Expired",
 				"system",
@@ -660,6 +677,7 @@ var _ = Describe("Audit Manager", func() {
 				"correlation-123",
 				"default",
 				"rr-test-001",
+				"",
 				"rar-rr-test-001",
 				"Approved",
 				"operator@example.com",
@@ -675,6 +693,7 @@ var _ = Describe("Audit Manager", func() {
 				"correlation-123",
 				"default",
 				"rr-test-001",
+				"",
 				"rar-rr-test-001",
 				"Expired",
 				"system",
@@ -696,6 +715,7 @@ var _ = Describe("Audit Manager", func() {
 				"correlation-123",
 				"default",
 				"rr-test-001",
+				"",
 				"WorkflowResolutionFailed",
 				"NoMatchingWorkflow",
 				"nr-manual-review-001",
@@ -709,6 +729,7 @@ var _ = Describe("Audit Manager", func() {
 				"correlation-123",
 				"default",
 				"rr-test-001",
+				"",
 				"InvestigationInconclusive",
 				"LLMUncertain",
 				"nr-manual-review-001",
@@ -722,6 +743,7 @@ var _ = Describe("Audit Manager", func() {
 				"correlation-123",
 				"default",
 				"rr-test-001",
+				"",
 				"ExhaustedRetries",
 				"MaxRetriesReached",
 				"nr-manual-review-001",
@@ -736,6 +758,7 @@ var _ = Describe("Audit Manager", func() {
 				"correlation-123",
 				"default",
 				"rr-test-001",
+				"",
 				"WorkflowResolutionFailed",
 				"MultipleWorkflowsMatched",
 				"nr-manual-review-001",
@@ -772,6 +795,7 @@ var _ = Describe("Audit Manager", func() {
 					"corr-routing-001",
 					"production",
 					"rr-blocked-001",
+					"",
 					"Pending",
 					blockData,
 				)
@@ -839,6 +863,7 @@ var _ = Describe("Audit Manager", func() {
 				"correlation-hash-001",
 				"default",
 				"rr-hash-001",
+				"",
 				prodaudit.RemediationWorkflowCreatedData{
 					PreRemediationSpecHash: "sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
 					TargetResource:         "default/Deployment/nginx",
@@ -856,6 +881,7 @@ var _ = Describe("Audit Manager", func() {
 				"correlation-hash-002",
 				"production",
 				"rr-hash-002",
+				"",
 				prodaudit.RemediationWorkflowCreatedData{
 					PreRemediationSpecHash: "sha256:1111111111111111111111111111111111111111111111111111111111111111",
 					TargetResource:         "production/Deployment/api-server",
@@ -882,6 +908,7 @@ var _ = Describe("Audit Manager", func() {
 				"correlation-hash-003",
 				"default",
 				"rr-hash-003",
+				"",
 				prodaudit.RemediationWorkflowCreatedData{
 					PreRemediationSpecHash: "sha256:abcdef",
 					TargetResource:         "default/Pod/test",
@@ -902,6 +929,7 @@ var _ = Describe("Audit Manager", func() {
 				"correlation-hash-004",
 				"default",
 				"rr-hash-004",
+				"",
 				prodaudit.RemediationWorkflowCreatedData{
 					PreRemediationSpecHash: "sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
 					TargetResource:         "default/Deployment/nginx",
@@ -937,7 +965,7 @@ var _ = Describe("Audit Manager", func() {
 				{
 					name: "LifecycleStarted",
 					build: func() error {
-						_, err := manager.BuildLifecycleStartedEvent("corr", "ns", "rr")
+						_, err := manager.BuildLifecycleStartedEvent("corr", "ns", "rr", "")
 						if err != nil {
 							return err
 						}
@@ -949,7 +977,7 @@ var _ = Describe("Audit Manager", func() {
 				{
 					name: "PhaseTransition",
 					build: func() error {
-						_, err := manager.BuildPhaseTransitionEvent("corr", "ns", "rr", "Pending", "Processing")
+						_, err := manager.BuildPhaseTransitionEvent("corr", "ns", "rr", "", "Pending", "Processing")
 						if err != nil {
 							return err
 						}
@@ -961,7 +989,7 @@ var _ = Describe("Audit Manager", func() {
 				{
 					name: "Completion",
 					build: func() error {
-						_, err := manager.BuildCompletionEvent("corr", "ns", "rr", "Remediated", 1000)
+						_, err := manager.BuildCompletionEvent("corr", "ns", "rr", "", "Remediated", 1000)
 						if err != nil {
 							return err
 						}
@@ -973,7 +1001,7 @@ var _ = Describe("Audit Manager", func() {
 				{
 					name: "Failure",
 					build: func() error {
-						_, err := manager.BuildFailureEvent("corr", "ns", "rr", "phase", fmt.Errorf("reason"), 1000)
+						_, err := manager.BuildFailureEvent("corr", "ns", "rr", "", "phase", fmt.Errorf("reason"), 1000)
 						if err != nil {
 							return err
 						}
@@ -985,7 +1013,7 @@ var _ = Describe("Audit Manager", func() {
 				{
 					name: "ApprovalRequested",
 					build: func() error {
-						_, err := manager.BuildApprovalRequestedEvent("corr", "ns", "rr", "rar", "wf", "85%", time.Now())
+						_, err := manager.BuildApprovalRequestedEvent("corr", "ns", "rr", "", "rar", "wf", "85%", time.Now())
 						if err != nil {
 							return err
 						}
@@ -997,7 +1025,7 @@ var _ = Describe("Audit Manager", func() {
 				{
 					name: "ApprovalDecision",
 					build: func() error {
-						_, err := manager.BuildApprovalDecisionEvent("corr", "ns", "rr", "rar", "Approved", "user", "msg")
+						_, err := manager.BuildApprovalDecisionEvent("corr", "ns", "rr", "", "rar", "Approved", "user", "msg")
 						if err != nil {
 							return err
 						}
@@ -1009,7 +1037,7 @@ var _ = Describe("Audit Manager", func() {
 				{
 					name: "ManualReview",
 					build: func() error {
-						_, err := manager.BuildManualReviewEvent("corr", "ns", "rr", "reason", "sub", "notif")
+						_, err := manager.BuildManualReviewEvent("corr", "ns", "rr", "", "reason", "sub", "notif")
 						if err != nil {
 							return err
 						}
@@ -1027,7 +1055,7 @@ var _ = Describe("Audit Manager", func() {
 							FromPhase:    "Pending",
 							ToPhase:      "Blocked",
 						}
-						_, err := manager.BuildRoutingBlockedEvent("corr", "ns", "rr", "Pending", blockData)
+						_, err := manager.BuildRoutingBlockedEvent("corr", "ns", "rr", "", "Pending", blockData)
 						if err != nil {
 							return err
 						}
@@ -1037,7 +1065,7 @@ var _ = Describe("Audit Manager", func() {
 				{
 					name: "RemediationWorkflowCreated",
 					build: func() error {
-						_, err := manager.BuildRemediationWorkflowCreatedEvent("corr", "ns", "rr", prodaudit.RemediationWorkflowCreatedData{
+						_, err := manager.BuildRemediationWorkflowCreatedEvent("corr", "ns", "rr", "", prodaudit.RemediationWorkflowCreatedData{
 							PreRemediationSpecHash: "sha256:abc",
 							TargetResource:         "ns/Deploy/x",
 							WorkflowID:             "wf",
@@ -1069,6 +1097,7 @@ var _ = Describe("Audit Manager", func() {
 				"corr-722-004",
 				"default",
 				"rr-722-004",
+				"",
 				prodaudit.RemediationWorkflowCreatedData{
 					PreRemediationSpecHash: "sha256:prehash",
 					TargetResource:         "default/Deployment/api-server",
@@ -1096,6 +1125,7 @@ var _ = Describe("Audit Manager", func() {
 				"corr-722-005",
 				"default",
 				"rr-722-005",
+				"",
 				"Inconclusive",
 				12000,
 			)

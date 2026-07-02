@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"time"
 
 	"gopkg.in/yaml.v3"
 	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
@@ -48,6 +49,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/controller/workflowexecution"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	dsvalidation "github.com/jordigilh/kubernaut/pkg/datastorage/validation"
+	fleetclient "github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	weaudit "github.com/jordigilh/kubernaut/pkg/workflowexecution/audit"
 	weclient "github.com/jordigilh/kubernaut/pkg/workflowexecution/client"
 	weconfig "github.com/jordigilh/kubernaut/pkg/workflowexecution/config"
@@ -277,14 +279,69 @@ func main() {
 	}
 
 	// ========================================
+	// BR-FLEET-054: ClientFactory for local/remote cluster routing
+	// If fleet MCP Gateway is configured, create an mcpClientFactory
+	// that can route executor operations to remote clusters.
+	// Otherwise, use localClientFactory (pre-fleet behavior).
+	// ========================================
+	var clientFactory weexecutor.ClientFactory
+	var fleetResilientClient *fleetclient.ResilientClient
+	if cfg.Fleet.Endpoint != "" {
+		setupLog.Info("Fleet MCP Gateway configured, connecting for remote execution...",
+			"endpoint", cfg.Fleet.Endpoint,
+			"oauth2Enabled", cfg.Fleet.OAuth2.Enabled)
+
+		fleetLog := ctrl.Log.WithName("fleet-oauth2")
+		fleetOpts := []fleetclient.Option{}
+		if cfg.Fleet.OAuth2.Enabled {
+			basePath := "/etc/workflowexecution/fleet-oauth2"
+			if cfg.Fleet.OAuth2.CredentialsSecretRef != "" {
+				basePath = "/etc/workflowexecution/" + cfg.Fleet.OAuth2.CredentialsSecretRef
+			}
+			reloadCfg := fleetclient.ReloadableOAuth2Config{
+				TokenURL:         cfg.Fleet.OAuth2.TokenURL,
+				ClientIDPath:     basePath + "/client-id",
+				ClientSecretPath: basePath + "/client-secret",
+				Scopes:           fleetclient.DefaultFleetScopes(cfg.Fleet.OAuth2.Scopes),
+				TokenTimeout:     10 * time.Second,
+			}
+			fleetOpts = append(fleetOpts,
+				fleetclient.WithReloadableOAuth2Transport(reloadCfg, fleetLog),
+			)
+			setupLog.Info("fleet OAuth2 authentication configured (hot-reloadable)",
+				"tokenURL", cfg.Fleet.OAuth2.TokenURL,
+				"secretPath", basePath)
+		}
+
+		resilienceCfg := fleetclient.DefaultResilienceConfig()
+		var fleetErr error
+		fleetResilientClient, fleetErr = fleetclient.NewResilient(
+			ctx, cfg.Fleet.Endpoint, resilienceCfg,
+			ctrl.Log.WithName("fleet-client"), fleetOpts...,
+		)
+		if fleetErr != nil {
+			setupLog.Error(fleetErr, "Fleet MCP Gateway connection failed, remote execution disabled",
+				"endpoint", cfg.Fleet.Endpoint)
+			clientFactory = weexecutor.NewLocalClientFactory(mgr.GetClient())
+		} else {
+			clientFactory = weexecutor.NewMCPClientFactory(mgr.GetClient(), fleetResilientClient.Session())
+			setupLog.Info("Fleet MCP Gateway connected, remote execution enabled",
+				"endpoint", cfg.Fleet.Endpoint)
+		}
+	} else {
+		clientFactory = weexecutor.NewLocalClientFactory(mgr.GetClient())
+	}
+
+	// ========================================
 	// BR-WE-014: Executor Registry (Strategy Pattern)
 	// Issue #868: Engines are registered based on availability:
 	//   - job: always (core batch/v1 API)
 	//   - tekton: CRD auto-discovery or explicit config
 	//   - ansible: config-gated (unchanged)
+	// BR-FLEET-054: Executors use ClientFactory for cluster routing.
 	// ========================================
 	executorRegistry := weexecutor.NewRegistry()
-	executorRegistry.Register("job", weexecutor.NewJobExecutor(mgr.GetClient()))
+	executorRegistry.Register("job", weexecutor.NewJobExecutorWithFactory(clientFactory))
 
 	var knownOptionalEngines []string
 
@@ -292,7 +349,7 @@ func main() {
 	knownOptionalEngines = append(knownOptionalEngines, "tekton")
 	if cfg.TektonEnabled() {
 		if tektonCRDsAvailable(mgr.GetRESTMapper()) {
-			executorRegistry.Register("tekton", weexecutor.NewTektonExecutor(mgr.GetClient()))
+			executorRegistry.Register("tekton", weexecutor.NewTektonExecutorWithFactory(clientFactory))
 			setupLog.Info("Tekton executor registered (CRDs discovered)")
 		} else {
 			setupLog.Info("Tekton executor not registered (CRDs not found)",
@@ -353,23 +410,22 @@ func main() {
 	// Reuses the controller-runtime client from the manager.
 	depValidator := dsvalidation.NewK8sDependencyValidator(mgr.GetClient())
 
-	// Setup WorkflowExecution controller
-	if err = (&workflowexecution.WorkflowExecutionReconciler{
-		Client:              mgr.GetClient(),
-		APIReader:           mgr.GetAPIReader(), // DD-STATUS-001: Cache-bypassed reads for race condition prevention
-		Scheme:              mgr.GetScheme(),
-		Recorder:            mgr.GetEventRecorderFor("workflowexecution-controller"),
-		Metrics:             weMetrics,     // DD-METRICS-001: Injected metrics (P0 requirement)
-		StatusManager:       statusManager, // DD-PERF-001: Atomic status updates
+	// Setup WorkflowExecution controller using NewReconciler constructor
+	// which extracts infrastructure fields (Client, APIReader, Scheme, Recorder)
+	// from the manager automatically.
+	reconciler := workflowexecution.NewReconciler(mgr, workflowexecution.ReconcilerOptions{
 		ExecutionNamespace:  cfg.Execution.Namespace,
 		CooldownPeriod:      cfg.Execution.CooldownPeriod,
-		AuditStore:          auditStore,   // DD-AUDIT-003: Audit store for BR-WE-005
-		PhaseManager:        phaseManager, // P0: Phase State Machine (validated transitions)
-		AuditManager:        auditManager,    // P3: Audit Manager (typed audit methods)
-		ExecutorRegistry:    executorRegistry, // BR-WE-014: Strategy pattern dispatch
-		WorkflowQuerier:     workflowQuerier,  // DD-WE-006: DS workflow dependency fetcher
-		DependencyValidator: depValidator,     // DD-WE-006: Execution-time validation
-	}).SetupWithManager(mgr); err != nil {
+		Metrics:             weMetrics,
+		StatusManager:       statusManager,
+		AuditStore:          auditStore,
+		PhaseManager:        phaseManager,
+		AuditManager:        auditManager,
+		ExecutorRegistry:    executorRegistry,
+		WorkflowQuerier:     workflowQuerier,
+		DependencyValidator: depValidator,
+	})
+	if err = reconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "WorkflowExecution")
 		os.Exit(1)
 	}
@@ -429,6 +485,16 @@ func main() {
 				setupLog.Error(closeErr, "Failed to close audit store")
 			} else {
 				setupLog.Info("Audit store closed successfully")
+			}
+		}()
+	}
+
+	// BR-FLEET-054: Graceful shutdown for fleet MCP client
+	if fleetResilientClient != nil {
+		defer func() {
+			setupLog.Info("Closing fleet MCP Gateway connection")
+			if err := fleetResilientClient.Close(); err != nil {
+				setupLog.Error(err, "Failed to close fleet MCP client gracefully")
 			}
 		}()
 	}
