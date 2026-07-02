@@ -99,37 +99,44 @@ func NewCompleteNoActionTool(sessions mcpinternal.SessionManager, opts ...Comple
 }
 
 // Handle validates the session and completes the investigation with no workflow.
-func (t *CompleteNoActionTool) Handle(_ context.Context, input CompleteNoActionInput, user mcpinternal.UserInfo) (CompleteNoActionOutput, error) {
+// validateCompleteNoActionInput validates the request-level fields of a
+// complete_no_action call: rr_id must be present, and when supplied,
+// escalation_reason must be non-blank and within the length limit.
+func validateCompleteNoActionInput(input CompleteNoActionInput) error {
 	if input.RRID == "" {
-		return CompleteNoActionOutput{}, fmt.Errorf("rr_id is required")
+		return fmt.Errorf("rr_id is required")
 	}
 	if input.EscalationReason != "" && strings.TrimSpace(input.EscalationReason) == "" {
-		return CompleteNoActionOutput{}, fmt.Errorf("escalation_reason must not be whitespace-only")
+		return fmt.Errorf("escalation_reason must not be whitespace-only")
 	}
 	if input.EscalationReason != "" && len(input.EscalationReason) > 1024 {
-		return CompleteNoActionOutput{}, fmt.Errorf("escalation_reason exceeds maximum length of 1024")
+		return fmt.Errorf("escalation_reason exceeds maximum length of 1024")
 	}
+	return nil
+}
 
-	if t.mutexProvider != nil {
-		mu := t.mutexProvider.GetSessionMutex(input.RRID)
-		mu.Lock()
-		defer mu.Unlock()
+// authorizeCompleteNoActionDriver verifies there is an active interactive
+// session for rrID and that user is its current driver.
+func (t *CompleteNoActionTool) authorizeCompleteNoActionDriver(rrID string, user mcpinternal.UserInfo) (*mcpinternal.InteractiveSession, error) {
+	if !t.sessions.IsDriverActive(rrID) {
+		return nil, fmt.Errorf("no active interactive session for rr_id")
 	}
-
-	if !t.sessions.IsDriverActive(input.RRID) {
-		return CompleteNoActionOutput{}, fmt.Errorf("no active interactive session for rr_id")
-	}
-
-	driver, err := t.sessions.GetDriver(input.RRID)
+	driver, err := t.sessions.GetDriver(rrID)
 	if err != nil || driver == nil {
-		return CompleteNoActionOutput{}, fmt.Errorf("no active interactive session for rr_id")
+		return nil, fmt.Errorf("no active interactive session for rr_id")
 	}
-
 	if driver.ActingUser.Username != user.Username {
-		return CompleteNoActionOutput{}, fmt.Errorf("caller is not the active driver for this session")
+		return nil, fmt.Errorf("caller is not the active driver for this session")
 	}
+	return driver, nil
+}
 
-	// Build InvestigationResult: use RCA if available, otherwise minimal result.
+// buildNoActionResult constructs the final InvestigationResult for a
+// complete_no_action call, branching on whether the caller is escalating
+// (operator_escalation, human review required) or dismissing (not
+// actionable, no human review needed). Starts from the driver's RCA result
+// when available, or a minimal placeholder otherwise.
+func buildNoActionResult(driver *mcpinternal.InteractiveSession, input CompleteNoActionInput) *katypes.InvestigationResult {
 	var finalResult *katypes.InvestigationResult
 	if driver.RCAResult != nil {
 		result := *driver.RCAResult
@@ -140,14 +147,11 @@ func (t *CompleteNoActionTool) Handle(_ context.Context, input CompleteNoActionI
 		}
 	}
 
-	// Branch: escalation vs dismiss
 	if input.EscalationReason != "" {
-		// Escalation path: signal ManualReviewRequired via HumanReviewNeeded
 		finalResult.HumanReviewNeeded = true
 		finalResult.HumanReviewReason = "operator_escalation"
 		finalResult.Reason = input.EscalationReason
 	} else {
-		// Dismiss path: signal WorkflowNotNeeded via IsActionable=false
 		finalResult.HumanReviewNeeded = false
 		finalResult.HumanReviewReason = ""
 		finalResult.Reason = input.Reason
@@ -158,6 +162,27 @@ func (t *CompleteNoActionTool) Handle(_ context.Context, input CompleteNoActionI
 		finalResult.IsActionable = &notActionable
 		finalResult.Warnings = append(finalResult.Warnings, "Alert not actionable")
 	}
+
+	return finalResult
+}
+
+func (t *CompleteNoActionTool) Handle(_ context.Context, input CompleteNoActionInput, user mcpinternal.UserInfo) (CompleteNoActionOutput, error) {
+	if err := validateCompleteNoActionInput(input); err != nil {
+		return CompleteNoActionOutput{}, err
+	}
+
+	if t.mutexProvider != nil {
+		mu := t.mutexProvider.GetSessionMutex(input.RRID)
+		mu.Lock()
+		defer mu.Unlock()
+	}
+
+	driver, err := t.authorizeCompleteNoActionDriver(input.RRID, user)
+	if err != nil {
+		return CompleteNoActionOutput{}, err
+	}
+
+	finalResult := buildNoActionResult(driver, input)
 
 	if t.timeoutTracker != nil {
 		t.timeoutTracker.StopTracking(driver.SessionID)
