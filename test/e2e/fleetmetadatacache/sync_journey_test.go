@@ -77,12 +77,15 @@ func listClusters(g Gomega) []fmc.ClusterInfoResponse {
 
 // E2E-FMC-054-010: Proves FMC's real sync journey end to end -- the one
 // journey no unit or integration test can prove, since IT-FLEET-VALKEY-004
-// manually seeds Valkey keys instead of exercising the real DEX OAuth2 ->
-// Kuadrant MCP Gateway -> kube-mcp-server -> Valkey pipeline.
+// manually seeds Valkey keys instead of exercising the real Keycloak OAuth2 ->
+// Kuadrant MCP Gateway -> kube-mcp-server (RFC 8693 token exchange) -> Valkey
+// pipeline. See token_exchange_test.go (E2E-FMC-054-014) for a test that
+// drives the token-exchange mechanics directly rather than only indirectly
+// through this journey's success.
 //
 // Authority: Issue #54, ADR-068 (SC-7 boundary protection, AC-3 access
 // enforcement), BR-INTEGRATION-065.
-var _ = Describe("E2E-FMC-054-010: FMC discovers managed resources via the real DEX+Kuadrant+kube-mcp-server pipeline", Ordered, func() {
+var _ = Describe("E2E-FMC-054-010: FMC discovers managed resources via the real Keycloak+Kuadrant+kube-mcp-server pipeline", Ordered, func() {
 	var testNS *corev1.Namespace
 
 	BeforeAll(func() {

@@ -50,7 +50,7 @@ func InterServiceCAPath(kubeconfigPath string) string {
 // leaf certificates, creates the corresponding Kubernetes Secrets and ConfigMap,
 // and writes the CA PEM to the deterministic path from InterServiceCAPath.
 //
-// Services: data-storage-service, gateway-service, kubernaut-agent, apifrontend, dex
+// Services: data-storage-service, gateway-service, kubernaut-agent, apifrontend, dex, keycloak
 //
 // Issue #753 (S-4): Uses ECDSA P-256 instead of RSA 2048.
 // Issue #753 (C-2): Returns caPEMPath for host-side TLS-aware test clients.
@@ -185,6 +185,22 @@ data:
 				fmt.Sprintf("dex.%s", namespace),
 				fmt.Sprintf("dex.%s.svc", namespace),
 				fmt.Sprintf("dex.%s.svc.cluster.local", namespace),
+			},
+			ipAddrs: []net.IP{net.IPv4(127, 0, 0, 1)},
+		},
+		{
+			// Keycloak replaces Dex in the FMC E2E lane only (Spike S17/S18);
+			// the "fleet" full-pipeline suite still uses Dex. Generating both
+			// leaf certs unconditionally here is harmless (unused certs cost
+			// nothing) and keeps GenerateInterServiceTLS's signature stable.
+			name:       "keycloak",
+			secretName: "keycloak-tls",
+			dnsNames: []string{
+				"localhost",
+				"keycloak",
+				fmt.Sprintf("keycloak.%s", namespace),
+				fmt.Sprintf("keycloak.%s.svc", namespace),
+				fmt.Sprintf("keycloak.%s.svc.cluster.local", namespace),
 			},
 			ipAddrs: []net.IP{net.IPv4(127, 0, 0, 1)},
 		},

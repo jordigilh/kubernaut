@@ -21,13 +21,18 @@ limitations under the License.
 // services to validate the end-to-end remediation journey through Gateway and
 // RemediationOrchestrator, this suite deploys ONLY the fleet-core stack
 // (Istio + Kuadrant MCP Gateway + kube-mcp-server + Valkey + FMC) plus
-// DataStorage + DEX, and directly validates FMC's own HTTP API contract:
+// DataStorage + Keycloak, and directly validates FMC's own HTTP API contract:
 //
-//   - Real DEX OAuth2 client_credentials token acquisition
+//   - Real Keycloak OAuth2 client_credentials token acquisition
 //   - Real MCPServerRegistration discovery via the Kuadrant MCP Gateway
-//   - Real resource sync (kubernaut.ai/managed=true label) via kube-mcp-server
+//   - Real resource sync (kubernaut.ai/managed=true label) via kube-mcp-server,
+//     which runs in passthrough mode and performs a real RFC 8693 Standard
+//     Token Exchange against Keycloak to reach the Kubernetes API server
+//     (Spike S17/S18) -- not the "fleet" suite's kubeconfig/fixed-SA mode
 //   - FMC's /api/v1/clusters and /api/v1/scope/check REST endpoints
-//   - AC-6 least privilege: FMC's ServiceAccount RBAC surface
+//   - AC-6 least privilege: FMC's ServiceAccount RBAC surface, and that the
+//     token-exchange step is a real security boundary (an un-exchanged
+//     token is rejected by the API server, not silently accepted)
 //   - SC-7 boundary re-closure: a de-labeled resource stops being reported
 //     managed once its cache entry lapses (real resync, not a seeded key)
 //   - SI-4/CP-10 resilience: /readyz genuinely degrades and auto-recovers
@@ -41,20 +46,26 @@ limitations under the License.
 // coverage that unit/integration tests cannot prove: real OAuth2 + real
 // Kuadrant discovery + real kube-mcp-server calls).
 //
+// Keycloak replaces DEX in this lane only: DEX does not implement RFC 8693
+// Standard Token Exchange, which kube-mcp-server's production passthrough
+// auth mode relies on. The "fleet" full-pipeline suite still uses DEX.
+//
 // Test scenarios: E2E-FMC-054-010 (sync_journey_test.go), E2E-FMC-054-011
 // (least_privilege_test.go), E2E-FMC-054-012 (resilience_test.go),
-// E2E-FMC-054-013 (dynamic_registration_test.go). See
-// docs/testing/BR-INTEGRATION-054/TEST_PLAN.md for the full scenario
-// inventory and FedRAMP control coverage matrix.
+// E2E-FMC-054-013 (dynamic_registration_test.go), E2E-FMC-054-014
+// (token_exchange_test.go). See docs/testing/BR-INTEGRATION-054/TEST_PLAN.md
+// for the full scenario inventory and FedRAMP control coverage matrix.
 //
-// Authority: Issue #54, ADR-068, BR-INTEGRATION-065.
+// Authority: Issue #54, ADR-068, Spike S17/S18, BR-INTEGRATION-065.
 //
 // Test Execution:
 //
 //	ginkgo -v ./test/e2e/fleetmetadatacache/...
 //
-// Memory footprint: ~450MB (DataStorage + DEX + fleet-core), substantially
-// lighter than the full "fleet" suite (~6.1GB).
+// Memory footprint: ~1.7-2.5GB (DataStorage + Keycloak + fleet-core; Keycloak
+// costs substantially more than DEX's ~64MB, accepted to validate the real
+// production token-exchange wiring end-to-end), still lighter than the full
+// "fleet" suite (~6.1GB).
 package fleetmetadatacache
 
 import (

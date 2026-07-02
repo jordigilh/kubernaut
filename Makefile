@@ -812,7 +812,7 @@ test-e2e-fleet: ginkgo ensure-coverage-dirs ## Run fleet E2E tests (multi-cluste
 test-e2e-fleetmetadatacache: ginkgo ensure-coverage-dirs ## Run Fleet Metadata Cache E2E tests (Kind cluster, ~10 min)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 Fleet Metadata Cache E2E Tests (Issue #54)"
-	@echo "   DataStorage + DEX + Fleet Core (Istio/Kuadrant/kube-mcp-server/Valkey/FMC)"
+	@echo "   DataStorage + Keycloak + Fleet Core (Istio/Kuadrant/kube-mcp-server/Valkey/FMC)"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@$(GINKGO) -v --race --timeout=25m --procs=$(TEST_PROCS) ./test/e2e/fleetmetadatacache/...
 	@echo "✅ Fleet Metadata Cache E2E tests completed!"

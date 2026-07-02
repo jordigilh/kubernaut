@@ -86,7 +86,7 @@ Integration and E2E tests require running multiple services (PostgreSQL, Redis, 
 | **Fleet Metadata Cache (FMC) E2E** | — | — | — | — | — | — | `test/infrastructure/kind-fleetmetadatacache-config.yaml` |
 | &nbsp;&nbsp;→ FMC API | 8150 | 30150 | — | — | — | — | (Scope check + cluster listing REST API, `pkg/fleet/fmc/handler.go`; NodePort Service created by `SetupFMCE2EInfrastructure`, additive to the ClusterIP Service from `DeployFleetCoreInfra`) |
 | &nbsp;&nbsp;→ Data Storage | 30081 | 30081 | 30281 | 30281 | — | — | (Audit trail dependency, AGENTS.md SOC2/FedRAMP mandate) |
-| &nbsp;&nbsp;→ DEX OIDC | 30556 | 30556 | — | — | — | — | (OAuth2 client_credentials IdP for FMC + API server OIDC discovery) |
+| &nbsp;&nbsp;→ Keycloak OIDC | 30557 | 30557 | — | — | — | — | (OAuth2 client_credentials IdP + RFC 8693 token exchange for FMC, kube-mcp-server passthrough auth, API server OIDC discovery; replaces DEX in this lane only -- Spike S17/S18, DEX does not implement Standard Token Exchange) |
 | &nbsp;&nbsp;→ Kuadrant MCP Gateway | 31975 | 31975 | — | — | — | — | (MCP entry point, proxies to kube-mcp-server) |
 
 **Note**:
@@ -327,10 +327,14 @@ Data Storage (Dependency):
   NodePort: 30081 / 30281
   Purpose: Audit trail dependency (AGENTS.md SOC2/FedRAMP mandate)
 
-DEX OIDC (Dependency):
-  Host Port: 30556
-  NodePort: 30556
-  Purpose: OAuth2 client_credentials IdP for FMC + API server OIDC discovery
+Keycloak OIDC + RFC 8693 Token Exchange (Dependency):
+  Host Port: 30557
+  NodePort: 30557
+  Purpose: OAuth2 client_credentials IdP for FMC, RFC 8693 Standard Token
+    Exchange STS for kube-mcp-server passthrough auth, API server OIDC
+    discovery. Replaces DEX in this lane only (Spike S17/S18: DEX does not
+    implement Standard Token Exchange) -- the "fleet" full pipeline suite
+    still uses DEX (port 30556).
 
 Kuadrant MCP Gateway (Dependency):
   Host Port: 31975
@@ -345,16 +349,20 @@ Kuadrant MCP Gateway (Dependency):
 - `test/infrastructure/fleet_e2e.go` - `DeployFleetCoreInfra` (Phases 1-4 of `DeployFleetInfra`, shared with the "fleet" suite)
 - `test/e2e/fleetmetadatacache/suite_test.go` - Test suite setup
 
-**Infrastructure**: Kind cluster deploying ONLY DataStorage + DEX + fleet-core
+**Infrastructure**: Kind cluster deploying ONLY DataStorage + Keycloak + fleet-core
 (Istio + Kuadrant MCP Gateway + kube-mcp-server + Valkey + FMC) -- NOT the
 other 10+ Kubernaut services deployed by the "fleet" (full pipeline) E2E
-suite. ~450MB memory footprint vs ~6.1GB for the full "fleet" suite.
+suite. ~1.7-2.5GB memory footprint (Keycloak ~768Mi-1.5Gi vs DEX's ~64Mi;
+accepted trade-off to validate real RFC 8693 token exchange -- Spike S17/S18)
+vs ~6.1GB for the full "fleet" suite.
 
 **Pattern**: Ginkgo `SynchronizedBeforeSuite` calling `SetupFMCE2EInfrastructure`,
 which composes existing E2E infra helpers (`DeployDataStorageTestServices`,
-`DeployDexInfra`, `GenerateInterServiceTLS`, `GenerateSigningCertSecret`,
-`patchAPIServerForOIDC`, `DeployFleetCoreInfra`, `WaitForFleetReady`) --
-no duplicated deployment logic with the "fleet" suite.
+`DeployKeycloakInfra`, `GenerateInterServiceTLS`, `GenerateSigningCertSecret`,
+`patchAPIServerForOIDCConfig`, `DeployFleetCoreInfra` with a passthrough +
+token-exchange `KubeMCPServerAuthConfig`, `WaitForFleetReady`) -- no
+duplicated deployment logic with the "fleet" suite (which still uses DEX +
+kubeconfig-mode auth via `patchAPIServerForOIDC`/`DefaultKubeMCPServerAuthConfig`).
 
 **Port Allocation Rationale**:
 - **FMC API 30150 (host 8150)**: New allocation mirroring FMC's production port
@@ -362,10 +370,13 @@ no duplicated deployment logic with the "fleet" suite.
   this was stale (no FMC E2E lane existed yet to require host access).
   Per DD-TEST-001 policy (NodePort mandatory over `kubectl port-forward`),
   a NodePort Service is created additively by `SetupFMCE2EInfrastructure`.
-- **Data Storage 30081/30281, DEX 30556**: Reused verbatim from other isolated
-  Kind clusters (gateway/RO/WE/EM/fullpipeline for DS; KA/AF for DEX). Safe
-  because each Kind cluster is its own isolated Docker network namespace and
-  CI matrix jobs run on separate runners.
+- **Data Storage 30081/30281**: Reused verbatim from other isolated Kind
+  clusters (gateway/RO/WE/EM/fullpipeline). Safe because each Kind cluster is
+  its own isolated Docker network namespace and CI matrix jobs run on
+  separate runners.
+- **Keycloak 30557**: Dedicated allocation, distinct from DEX's 30556 used by
+  the "fleet"/KA/AF clusters -- this lane runs Keycloak instead of DEX (Spike
+  S17/S18: DEX does not implement RFC 8693 Standard Token Exchange).
 - **Kuadrant MCP Gateway 31975**: Reused from `kind-fullpipeline-config.yaml`
   (documented retroactively below -- this port was already in use by the
   "fleet" E2E suite before this DD entry was added).
@@ -1026,7 +1037,7 @@ var _ = SynchronizedBeforeSuite(
 | **RemediationOrchestrator** | N/A | N/A | N/A | Data Storage: 8089 |
 | **WorkflowExecution** | N/A | N/A | N/A | Data Storage: 8092, AWX: 30095 |
 | **Auth Webhook** | 25442 | 26386 | N/A | Data Storage: 28099 |
-| **Fleet Metadata Cache** | N/A | N/A | 30150 (host 8150) | Data Storage: 30081/30281, DEX: 30556, Kuadrant MCP: 31975 |
+| **Fleet Metadata Cache** | N/A | N/A | 30150 (host 8150) | Data Storage: 30081/30281, Keycloak: 30557, Kuadrant MCP: 31975 |
 
 ✅ **No Conflicts** - All services can run E2E tests in parallel
 
@@ -1079,6 +1090,7 @@ ginkgo -p -procs=4 test/e2e/datastorage/
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 3.6 | 2026-07-01 | AI Assistant | **FMC E2E KEYCLOAK MIGRATION (Spike S17/S18, RFC 8693 token exchange)**: Replaced DEX with Keycloak in the FMC E2E lane only (`kind-fleetmetadatacache-config.yaml`, `test/infrastructure/keycloak_e2e.go`) to validate kube-mcp-server's real passthrough + RFC 8693 Standard Token Exchange wiring end-to-end -- DEX does not implement Standard Token Exchange. Reallocated the lane's OIDC NodePort from DEX's 30556 to Keycloak's dedicated 30557 (the "fleet" full-pipeline suite is unaffected and still uses DEX 30556). Parameterized `patchAPIServerForOIDC`/`DeployFleetCoreInfra` (`fleet_e2e.go`) into `patchAPIServerForOIDCConfig`/`KubeMCPServerAuthConfig` so both suites share the same deployment code with different auth backends. Added E2E-FMC-054-014 proving the exchange. Memory footprint for this lane increases from ~450MB to ~1.7-2.5GB (Keycloak vs DEX), accepted trade-off for full production-wiring coverage. |
 | 3.5 | 2026-06-29 | AI Assistant | **FMC E2E LANE (Issue #54, pyramid invariant)**: Added a dedicated Fleet Metadata Cache (FMC) E2E test lane (`test/e2e/fleetmetadatacache/`) to close a pyramid-invariant gap -- FMC's own journeys (real DEX OAuth2 -> Kuadrant MCP Gateway -> kube-mcp-server discovery, scope-check API) were previously only exercised indirectly through Gateway/RO fleet tests gated behind `FLEET_E2E=true`, which is never set in CI; New Kind config `kind-fleetmetadatacache-config.yaml` deploys only DataStorage + DEX + fleet-core (not the other 10+ Kubernaut services); Allocated FMC API NodePort 30150 (host 8150), correcting the stale "ClusterIP only" entry in the Stateless Services table (previously accurate only in the absence of an FMC E2E lane); Retroactively documented the Kuadrant MCP Gateway NodePort 31975 (already in use by `kind-fullpipeline-config.yaml`/the "fleet" suite but not previously listed in the authoritative table); Reused DS (30081/30281) and DEX (30556) NodePorts verbatim from other isolated Kind clusters; Extracted `DeployFleetCoreInfra` (Phases 1-4) from `DeployFleetInfra` in `test/infrastructure/fleet_e2e.go` to share deployment logic between the "fleet" and "fleetmetadatacache" E2E suites without duplication; Updated E2E Port Collision Matrix |
 | 3.4 | 2026-06-29 | AI Assistant | **FMC INTEGRATION (BR-FLEET-002, ADR-068)**: Added Fleet Metadata Cache (FMC) integration test port allocations; kube-mcp-server containers use `--network=host` with dedicated ports 18150 (table) and 18151 (yaml) to eliminate bridge-network routing issues on rootless podman in CI; Valkey on 16391; New range 18150-18159 for FMC; Updated Port Collision Matrix; Migrated from prior 18090/18091 which collided with Data Storage range |
 | 3.3 | 2026-05-18 | AI Assistant | **API Frontend E2E (Issue #1184)**: Added AF port allocations for monorepo E2E; HTTPS NodePort 30443 (host 18443), Health NodePort 30081 (host 18081), Prometheus NodePort 30190 (host 9190); AF shares Kind cluster with KA (`kind-kubernautagent-config.yaml`); No conflicts within cluster — 30081 only used by DS in separate clusters (gateway, RO, WE, fullpipeline); Added AF to NodePort Summary and authoritative table |

@@ -23,23 +23,32 @@ import (
 	"os"
 )
 
-// dexHostPortFMC is the Kind extraPortMappings host port for Dex in
-// kind-fleetmetadatacache-config.yaml. Matches the NodePort (30556) directly,
-// following the fullpipeline/fleet convention rather than the KA/AF one
-// (which maps host 5556) -- see waitForDexReady in dex_e2e.go.
-const dexHostPortFMC = 30556
+// keycloakHostPortFMC is the Kind extraPortMappings host port for Keycloak in
+// kind-fleetmetadatacache-config.yaml. Matches the NodePort (30557) directly,
+// following the Dex convention this lane previously used -- see
+// waitForKeycloakReady in keycloak_e2e.go.
+const keycloakHostPortFMC = 30557
 
 // SetupFMCE2EInfrastructure deploys the dedicated Fleet Metadata Cache (FMC)
-// E2E stack: DataStorage (audit trail dependency, per AGENTS.md) + DEX (OAuth2
-// IdP) + the fleet-core stack (Istio + Kuadrant MCP Gateway + kube-mcp-server +
-// Valkey + FMC) via DeployFleetCoreInfra.
+// E2E stack: DataStorage (audit trail dependency, per AGENTS.md) + Keycloak
+// (OIDC IdP + RFC 8693 token exchange) + the fleet-core stack (Istio +
+// Kuadrant MCP Gateway + kube-mcp-server + Valkey + FMC) via
+// DeployFleetCoreInfra.
 //
 // Unlike the "fleet" E2E suite (test/e2e/fleet/), this lane does NOT deploy
 // Gateway, RemediationOrchestrator, or the other 8+ Kubernaut services --
 // it proves FMC's own journeys in isolation (BR-INTEGRATION-065):
-//   - Real OAuth2 client_credentials token acquisition from DEX
+//   - Real OAuth2 client_credentials token acquisition from Keycloak
 //   - Real discovery of MCPServerRegistrations via the Kuadrant MCP Gateway
 //   - Real Valkey-backed scope resolution served by FMC's HTTP API
+//   - Real RFC 8693 Standard Token Exchange: kube-mcp-server runs in
+//     passthrough mode and exchanges FMC's token for a K8s-API-scoped token,
+//     preserving FMC's identity end-to-end (Spike S17/S18; see
+//     docs/testing/BR-INTEGRATION-054/TEST_PLAN.md E2E-FMC-054-014).
+//
+// Keycloak replaces Dex in this lane only -- the full "fleet" suite
+// (test/infrastructure/fleet_e2e.go DeployFleetInfra) still uses Dex, since
+// Dex does not implement RFC 8693 Standard Token Exchange.
 //
 // Authority: Issue #54, ADR-068, BR-INTEGRATION-065.
 func SetupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) (fmcImage string, err error) {
@@ -156,25 +165,103 @@ func SetupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 		return "", fmt.Errorf("failed to deploy DataStorage: %w", dsErr)
 	}
 
-	// ── Phase 6: DEX OIDC provider (must be ready before API server OIDC patch) ─
-	_, _ = fmt.Fprintln(writer, "\n🔑 PHASE 6: Deploying DEX OIDC provider...")
-	if dexErr := DeployDexInfra(ctx, namespace, kubeconfigPath, dexHostPortFMC, writer); dexErr != nil {
-		return "", fmt.Errorf("failed to deploy DEX: %w", dexErr)
+	// ── Phase 6: Keycloak OIDC + token-exchange provider (must be ready before API server OIDC patch) ─
+	_, _ = fmt.Fprintln(writer, "\n🔑 PHASE 6: Deploying Keycloak OIDC provider...")
+	if kcErr := DeployKeycloakInfra(ctx, namespace, kubeconfigPath, keycloakHostPortFMC, writer); kcErr != nil {
+		return "", fmt.Errorf("failed to deploy Keycloak: %w", kcErr)
 	}
 
-	// ── Phase 7: Patch API server for OIDC (needs DEX already running) ──
-	_, _ = fmt.Fprintln(writer, "\n🔑 PHASE 7: Patching API server for OIDC...")
-	if oidcErr := patchAPIServerForOIDC(ctx, clusterName, kubeconfigPath, writer); oidcErr != nil {
+	// ── Phase 7: Patch API server for OIDC (needs Keycloak already running) ──
+	// ClientID is "k8s-api", NOT "kubernaut-fleet-read": the API server must
+	// validate the *exchanged* token's audience (kube-mcp-server presents it
+	// after RFC 8693 exchange), not the original caller's token audience.
+	// UsernameClaim=preferred_username: Spike S18 proved this claim survives
+	// the exchange unchanged, preserving FMC's identity for RBAC purposes.
+	_, _ = fmt.Fprintln(writer, "\n🔑 PHASE 7: Patching API server for OIDC (Keycloak issuer, k8s-api audience)...")
+	oidcCfg := OIDCPatchConfig{
+		IssuerURL:      "https://keycloak:8443/realms/kubernaut-fleet",
+		ClientID:       "k8s-api",
+		UsernameClaim:  "preferred_username",
+		UsernamePrefix: "keycloak:",
+	}
+	if oidcErr := patchAPIServerForOIDCConfig(ctx, clusterName, kubeconfigPath, oidcCfg, writer); oidcErr != nil {
 		return "", fmt.Errorf("API server OIDC patching failed: %w", oidcErr)
 	}
 
 	// ── Phase 8: Fleet core (Istio + Kuadrant + kube-mcp-server + Valkey + FMC) ─
-	_, _ = fmt.Fprintln(writer, "\n🌐 PHASE 8: Deploying fleet-core infrastructure...")
-	if coreErr := DeployFleetCoreInfra(ctx, namespace, kubeconfigPath, fmcImage, writer); coreErr != nil {
+	// kube-mcp-server runs in passthrough mode with RFC 8693 token exchange
+	// (Spike S17/S18): it forwards FMC's incoming Bearer token, exchanges it
+	// for a token scoped to the "k8s-api" audience, and presents that
+	// exchanged token to the Kubernetes API server -- validating the real
+	// production token-exchange wiring end-to-end (E2E-FMC-054-014).
+	_, _ = fmt.Fprintln(writer, "\n🌐 PHASE 8: Deploying fleet-core infrastructure (kube-mcp-server: passthrough + token exchange)...")
+
+	// FMC's own client_credentials grant now goes to Keycloak instead of DEX
+	// (Keycloak replaces DEX in this lane -- Spike S17/S18).
+	fmcOAuth2Config := FMCOAuth2Config{
+		TokenURL:     "https://keycloak:8443/realms/kubernaut-fleet/protocol/openid-connect/token",
+		ClientID:     "kubernaut-fleet-read",
+		ClientSecret: "e2e-fleet-secret",
+		// Keycloak's kubernaut-fleet-read client has no "openid"/"groups"
+		// scope assigned (pkg/fleet/fmc/config's DEX-flavored default);
+		// request the audience-mapper scope instead (Spike S17/S18).
+		Scopes: []string{"kube-mcp-server-audience"},
+	}
+
+	// The Kuadrant MCP Gateway broker keeps its own upstream tool-discovery
+	// connection to kube-mcp-server, separate from per-request tools/call
+	// proxying. With RequireOAuth=true that connection needs its own static
+	// credential (MCPServerRegistration.credentialRef) carrying the
+	// "kube-mcp-server" audience -- reuse the same client/scope FMC itself
+	// uses (see KubeMCPServerAuthConfig.BrokerCredentialToken doc comment).
+	brokerCredToken, brokerCredErr := GetKeycloakClientCredentialsToken(KeycloakFleetTokenConfig{
+		TokenEndpoint: fmt.Sprintf("https://localhost:%d/realms/kubernaut-fleet/protocol/openid-connect/token", keycloakHostPortFMC),
+		ClientID:      fmcOAuth2Config.ClientID,
+		ClientSecret:  fmcOAuth2Config.ClientSecret,
+		Scopes:        fmcOAuth2Config.Scopes,
+	})
+	if brokerCredErr != nil {
+		return "", fmt.Errorf("failed to obtain Kuadrant broker's kube-mcp-server discovery credential: %w", brokerCredErr)
+	}
+
+	kubeMCPAuthConfig := KubeMCPServerAuthConfig{
+		Mode:                  KubeMCPServerAuthModePassthrough,
+		RequireOAuth:          true,
+		AuthorizationURL:      "https://keycloak:8443/realms/kubernaut-fleet",
+		OAuthAudience:         "kube-mcp-server",
+		StsClientID:           "kube-mcp-server",
+		StsClientSecret:       "e2e-kube-mcp-server-secret",
+		StsAudience:           "k8s-api",
+		StsScopes:             []string{"k8s-api-audience"},
+		CAFilePath:            "/etc/tls-ca/ca.crt",
+		BrokerCredentialToken: brokerCredToken,
+	}
+	if coreErr := DeployFleetCoreInfra(ctx, namespace, kubeconfigPath, fmcImage, kubeMCPAuthConfig, fmcOAuth2Config, writer); coreErr != nil {
 		return "", fmt.Errorf("fleet-core infra deployment failed: %w", coreErr)
 	}
 
-	if readyErr := WaitForFleetReady(writer); readyErr != nil {
+	// ── Phase 8b: RBAC for the token-exchange-preserved FMC identity ────
+	// kube-mcp-server's exchanged token carries FMC's original identity
+	// (service-account-kubernaut-fleet-read, Spike S18), not kube-mcp-server's
+	// own. Bind that identity directly to "view" so the exchanged calls
+	// authorize the same way FMC's own dedicated ServiceAccount would have
+	// under cluster_auth_mode=kubeconfig.
+	_, _ = fmt.Fprintln(writer, "\n🔑 PHASE 8b: Creating RBAC for the exchanged FMC identity...")
+	if rbacErr := applyExchangedIdentityRBAC(ctx, kubeconfigPath, writer); rbacErr != nil {
+		return "", fmt.Errorf("exchanged-identity RBAC creation failed: %w", rbacErr)
+	}
+
+	// Keycloak-based token func for the readiness probe's authenticated
+	// tools/call, matching FMC's own runtime OAuth2 config above.
+	keycloakFleetReadTokenFunc := func() (string, error) {
+		return GetKeycloakClientCredentialsToken(KeycloakFleetTokenConfig{
+			TokenEndpoint: fmt.Sprintf("https://localhost:%d/realms/kubernaut-fleet/protocol/openid-connect/token", keycloakHostPortFMC),
+			ClientID:      fmcOAuth2Config.ClientID,
+			ClientSecret:  fmcOAuth2Config.ClientSecret,
+			Scopes:        fmcOAuth2Config.Scopes,
+		})
+	}
+	if readyErr := WaitForFleetReady(keycloakFleetReadTokenFunc, writer); readyErr != nil {
 		return "", fmt.Errorf("fleet readiness check failed: %w", readyErr)
 	}
 
@@ -213,10 +300,41 @@ spec:
 	_, _ = fmt.Fprintln(writer, "  FMC API:      http://localhost:8150")
 	_, _ = fmt.Fprintln(writer, "  MCP Gateway:  http://localhost:31975/mcp")
 	_, _ = fmt.Fprintln(writer, "  DataStorage:  https://localhost:30081")
-	_, _ = fmt.Fprintln(writer, "  DEX:          https://localhost:30556/dex")
+	_, _ = fmt.Fprintln(writer, "  Keycloak:     https://localhost:30557/realms/kubernaut-fleet")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	return fmcImage, nil
+}
+
+// applyExchangedIdentityRBAC binds the K8s identity that survives kube-mcp-server's
+// RFC 8693 token exchange (Spike S18: preferred_username=service-account-kubernaut-fleet-read,
+// namespaced by --oidc-username-prefix=keycloak: in patchAPIServerForOIDCConfig)
+// to the "view" ClusterRole, matching the read-only scope FMC's dedicated
+// ServiceAccount would have under cluster_auth_mode=kubeconfig.
+func applyExchangedIdentityRBAC(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
+	rbacManifest := `---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: fmc-exchanged-identity-binding
+  labels:
+    app: fleetmetadatacache
+    component: fleet-e2e
+    authorization: token-exchange-spike-s17-s18
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: view
+subjects:
+- kind: User
+  name: "keycloak:service-account-kubernaut-fleet-read"
+  apiGroup: rbac.authorization.k8s.io
+`
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, rbacManifest); err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintln(writer, "  ✅ RBAC created for keycloak:service-account-kubernaut-fleet-read (view)")
+	return nil
 }
 
 func joinErrs(errs []string) string {
