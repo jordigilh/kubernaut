@@ -22,7 +22,9 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/go-logr/logr"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jmoiron/sqlx"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	sqlbuilder "github.com/jordigilh/kubernaut/pkg/datastorage/repository/sql"
 )
@@ -190,6 +192,52 @@ func (r *Repository) SupersedeAndCreate(ctx context.Context, oldID, oldVersion, 
 		}
 	}()
 
+	if err = supersedeWorkflowVersion(ctx, tx, r.logger, oldID, oldVersion, reason); err != nil {
+		return err
+	}
+
+	if newWorkflow.IsLatestVersion {
+		if err = demoteExistingLatestVersion(ctx, tx, newWorkflow.WorkflowName); err != nil {
+			return err
+		}
+	}
+
+	insertQuery, args := buildSupersedeInsert(newWorkflow)
+
+	var confirmedID string
+	var reactivated bool
+	confirmedID, reactivated, err = insertOrReactivateWorkflow(ctx, tx, newWorkflow, insertQuery, args)
+	if err != nil {
+		return err
+	}
+	newWorkflow.WorkflowID = confirmedID
+
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	if reactivated {
+		r.logger.Info("workflow re-activated from Superseded state (PK collision recovery)",
+			"workflow_id", newWorkflow.WorkflowID,
+			"workflow_name", newWorkflow.WorkflowName,
+			"version", newWorkflow.Version)
+	} else {
+		r.logger.Info("workflow superseded and new version created",
+			"old_workflow_id", oldID,
+			"new_workflow_id", newWorkflow.WorkflowID,
+			"workflow_name", newWorkflow.WorkflowName,
+			"version", newWorkflow.Version)
+	}
+
+	return nil
+}
+
+// supersedeWorkflowVersion marks the workflow at (oldID, oldVersion) as
+// Superseded within tx. A zero-rows-affected result is non-fatal (logged
+// only) since the target may already have been superseded by a concurrent
+// request. Extracted from SupersedeAndCreate (GO-ANTIPATTERN-AUDIT-2026-07-01
+// Wave 3) — pure code motion, no behavior change.
+func supersedeWorkflowVersion(ctx context.Context, tx *sqlx.Tx, logger logr.Logger, oldID, oldVersion, reason string) error {
 	supersedeQuery := `
 		UPDATE remediation_workflow_catalog
 		SET status = $1, status_reason = $2, updated_at = NOW()
@@ -201,21 +249,35 @@ func (r *Repository) SupersedeAndCreate(ctx context.Context, oldID, oldVersion, 
 	}
 	rowsAffected, _ := result.RowsAffected()
 	if rowsAffected == 0 {
-		r.logger.Info("WARNING: supersede target not found",
+		logger.Info("WARNING: supersede target not found",
 			"workflow_id", oldID, "version", oldVersion)
 	}
+	return nil
+}
 
-	if newWorkflow.IsLatestVersion {
-		latestQuery := `
-			UPDATE remediation_workflow_catalog
-			SET is_latest_version = false, updated_at = NOW()
-			WHERE workflow_name = $1 AND is_latest_version = true
-		`
-		if _, err = tx.ExecContext(ctx, latestQuery, newWorkflow.WorkflowName); err != nil {
-			return fmt.Errorf("failed to update previous versions: %w", err)
-		}
+// demoteExistingLatestVersion clears is_latest_version on any other workflow
+// row sharing workflowName, so the new version can become the sole latest.
+// Extracted from SupersedeAndCreate (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 3)
+// — pure code motion, no behavior change.
+func demoteExistingLatestVersion(ctx context.Context, tx *sqlx.Tx, workflowName string) error {
+	latestQuery := `
+		UPDATE remediation_workflow_catalog
+		SET is_latest_version = false, updated_at = NOW()
+		WHERE workflow_name = $1 AND is_latest_version = true
+	`
+	if _, err := tx.ExecContext(ctx, latestQuery, workflowName); err != nil {
+		return fmt.Errorf("failed to update previous versions: %w", err)
 	}
+	return nil
+}
 
+// buildSupersedeInsert builds the INSERT INTO remediation_workflow_catalog
+// statement and its positional args for newWorkflow, using the
+// workflow_id-included variant when newWorkflow.WorkflowID is pre-populated
+// (deterministic UUID) and the DB-generated variant otherwise. Extracted from
+// SupersedeAndCreate (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 3) — pure code
+// motion, no behavior change.
+func buildSupersedeInsert(newWorkflow *models.RemediationWorkflow) (string, []interface{}) {
 	var insertQuery string
 	var args []interface{}
 
@@ -283,24 +345,33 @@ func (r *Repository) SupersedeAndCreate(ctx context.Context, oldID, oldVersion, 
 		}
 	}
 
+	return insertQuery, args
+}
+
+// insertOrReactivateWorkflow runs insertQuery within tx, using a SAVEPOINT to
+// recover from a PK collision on the deterministic workflow_id: if the same
+// content was previously registered and its row still exists in the
+// Superseded state, it is re-activated in place instead of failing the
+// request. Extracted from SupersedeAndCreate (GO-ANTIPATTERN-AUDIT-2026-07-01
+// Wave 3) — pure code motion, no behavior change.
+func insertOrReactivateWorkflow(ctx context.Context, tx *sqlx.Tx, newWorkflow *models.RemediationWorkflow, insertQuery string, args []interface{}) (string, bool, error) {
 	// SAVEPOINT allows recovery from PK collision without aborting the whole
 	// transaction. PostgreSQL marks a tx as aborted after any statement error;
 	// ROLLBACK TO SAVEPOINT clears that state so subsequent statements can run.
-	if _, err = tx.ExecContext(ctx, "SAVEPOINT before_insert"); err != nil {
-		return fmt.Errorf("failed to set savepoint: %w", err)
+	if _, err := tx.ExecContext(ctx, "SAVEPOINT before_insert"); err != nil {
+		return "", false, fmt.Errorf("failed to set savepoint: %w", err)
 	}
 
 	var confirmedID string
-	reactivated := false
-	if err = tx.QueryRowContext(ctx, insertQuery, args...).Scan(&confirmedID); err != nil {
+	if err := tx.QueryRowContext(ctx, insertQuery, args...).Scan(&confirmedID); err != nil {
 		var pgErr *pgconn.PgError
 		if !errors.As(err, &pgErr) || pgErr.Code != "23505" || pgErr.ConstraintName != "remediation_workflow_catalog_pkey" {
-			return fmt.Errorf("failed to create workflow: %w", err)
+			return "", false, fmt.Errorf("failed to create workflow: %w", err)
 		}
 
 		// Roll back to the savepoint to clear the aborted transaction state.
-		if _, err = tx.ExecContext(ctx, "ROLLBACK TO SAVEPOINT before_insert"); err != nil {
-			return fmt.Errorf("failed to rollback to savepoint: %w", err)
+		if _, err := tx.ExecContext(ctx, "ROLLBACK TO SAVEPOINT before_insert"); err != nil {
+			return "", false, fmt.Errorf("failed to rollback to savepoint: %w", err)
 		}
 
 		// PK collision on deterministic UUID: the same content was previously registered
@@ -311,41 +382,19 @@ func (r *Repository) SupersedeAndCreate(ctx context.Context, oldID, oldVersion, 
 			    status_reason = 'reactivated: re-registered via CRD'
 			WHERE workflow_id = $2 AND status = 'Superseded'
 		`
-		var result sql.Result
-		result, err = tx.ExecContext(ctx, reactivateQuery, newWorkflow.IsLatestVersion, newWorkflow.WorkflowID)
+		result, err := tx.ExecContext(ctx, reactivateQuery, newWorkflow.IsLatestVersion, newWorkflow.WorkflowID)
 		if err != nil {
-			return fmt.Errorf("failed to re-activate workflow %s: %w", newWorkflow.WorkflowID, err)
+			return "", false, fmt.Errorf("failed to re-activate workflow %s: %w", newWorkflow.WorkflowID, err)
 		}
 		rowsReactivated, _ := result.RowsAffected()
 		if rowsReactivated == 0 {
-			err = fmt.Errorf("PK collision on workflow_id=%s but row is not Superseded — cannot re-activate", newWorkflow.WorkflowID)
-			return err
+			return "", false, fmt.Errorf("PK collision on workflow_id=%s but row is not Superseded — cannot re-activate", newWorkflow.WorkflowID)
 		}
 
-		confirmedID = newWorkflow.WorkflowID
-		reactivated = true
-		err = nil
-	}
-	newWorkflow.WorkflowID = confirmedID
-
-	if err = tx.Commit(); err != nil {
-		return fmt.Errorf("failed to commit transaction: %w", err)
+		return newWorkflow.WorkflowID, true, nil
 	}
 
-	if reactivated {
-		r.logger.Info("workflow re-activated from Superseded state (PK collision recovery)",
-			"workflow_id", newWorkflow.WorkflowID,
-			"workflow_name", newWorkflow.WorkflowName,
-			"version", newWorkflow.Version)
-	} else {
-		r.logger.Info("workflow superseded and new version created",
-			"old_workflow_id", oldID,
-			"new_workflow_id", newWorkflow.WorkflowID,
-			"workflow_name", newWorkflow.WorkflowName,
-			"version", newWorkflow.Version)
-	}
-
-	return nil
+	return confirmedID, false, nil
 }
 
 // ========================================

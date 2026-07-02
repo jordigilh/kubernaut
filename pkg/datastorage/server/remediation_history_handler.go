@@ -31,9 +31,11 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"time"
 
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
@@ -42,9 +44,18 @@ import (
 
 // Default lookback windows per DD-HAPI-016 v1.1.
 const (
-	defaultTier1Window = 24 * time.Hour        // 24 hours
-	defaultTier2Window = 2160 * time.Hour      // 90 days
+	defaultTier1Window = 24 * time.Hour   // 24 hours
+	defaultTier2Window = 2160 * time.Hour // 90 days
 )
+
+// remediationHistoryRequest holds the parsed and validated request
+// parameters for HandleGetRemediationHistoryContext.
+type remediationHistoryRequest struct {
+	targetResource  string
+	currentSpecHash string
+	tier1Window     time.Duration
+	tier2Window     time.Duration
+}
 
 // HandleGetRemediationHistoryContext handles GET /api/v1/remediation-history/context.
 //
@@ -58,9 +69,61 @@ const (
 //   - tier1Window: Tier 1 lookback duration (default "24h")
 //   - tier2Window: Tier 2 lookback duration (default "2160h")
 func (h *Handler) HandleGetRemediationHistoryContext(w http.ResponseWriter, r *http.Request) {
+	req, ok := h.parseRemediationHistoryRequest(w, r)
+	if !ok {
+		return
+	}
+
+	now := time.Now()
+	ctx := r.Context()
+
+	h.logger.V(1).Info("Querying remediation history context",
+		"target_resource", req.targetResource,
+		"current_spec_hash", req.currentSpecHash,
+		"tier1_window", req.tier1Window.String(),
+		"tier2_window", req.tier2Window.String())
+
+	tier1Entries, tier1Since, ok := h.queryTier1History(w, ctx, req, now)
+	if !ok {
+		return
+	}
+
+	// DD-HAPI-016 v1.1: preRemediation hash match detects regression from Tier 1.
+	regressionDetected := DetectRegression(tier1Entries)
+
+	// GAP-DS-1: Tier 2 runs regardless of Tier 1 results — regression can be
+	// detected from Tier 2 alone when Tier 1 is empty but historical events exist.
+	tier2Summaries := h.queryTier2History(ctx, req, now, tier1Since)
+	if !regressionDetected && len(tier2Summaries) > 0 {
+		regressionDetected = DetectRegressionFromTier2(tier2Summaries)
+	}
+
+	// Ensure non-nil slices for JSON serialization ([] not null)
+	if tier1Entries == nil {
+		tier1Entries = []api.RemediationHistoryEntry{}
+	}
+	if tier2Summaries == nil {
+		tier2Summaries = []api.RemediationHistorySummary{}
+	}
+
+	h.logger.Info("Remediation history context served",
+		"target_resource", req.targetResource,
+		"tier1_count", len(tier1Entries),
+		"tier2_count", len(tier2Summaries),
+		"regression_detected", regressionDetected)
+
+	h.writeRemediationHistoryResponse(w, req, tier1Entries, tier2Summaries, regressionDetected)
+}
+
+// parseRemediationHistoryRequest parses and validates the required/optional
+// query parameters for HandleGetRemediationHistoryContext, writing an
+// RFC 7807 error response and returning ok=false on any validation failure.
+// Extracted from HandleGetRemediationHistoryContext
+// (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 3) — pure code motion, no behavior
+// change.
+func (h *Handler) parseRemediationHistoryRequest(w http.ResponseWriter, r *http.Request) (remediationHistoryRequest, bool) {
 	q := r.URL.Query()
 
-	// Step 1: Parse and validate required parameters
 	targetKind := q.Get("targetKind")
 	targetName := q.Get("targetName")
 	targetNamespace := q.Get("targetNamespace")
@@ -70,52 +133,35 @@ func (h *Handler) HandleGetRemediationHistoryContext(w http.ResponseWriter, r *h
 		response.WriteRFC7807Error(w, http.StatusBadRequest,
 			"missing-parameter", "Missing Required Parameter",
 			"targetKind query parameter is required", h.logger)
-		return
+		return remediationHistoryRequest{}, false
 	}
 	if targetName == "" {
 		response.WriteRFC7807Error(w, http.StatusBadRequest,
 			"missing-parameter", "Missing Required Parameter",
 			"targetName query parameter is required", h.logger)
-		return
+		return remediationHistoryRequest{}, false
 	}
 	// targetNamespace may be empty for cluster-scoped resources (#762)
 	if currentSpecHash == "" {
 		response.WriteRFC7807Error(w, http.StatusBadRequest,
 			"missing-parameter", "Missing Required Parameter",
 			"currentSpecHash query parameter is required", h.logger)
-		return
+		return remediationHistoryRequest{}, false
 	}
 
-	// Step 2: Parse optional window durations
-	tier1Window := defaultTier1Window
-	if v := q.Get("tier1Window"); v != "" {
-		parsed, err := time.ParseDuration(v)
-		if err != nil {
-			response.WriteRFC7807Error(w, http.StatusBadRequest,
-				"invalid-parameter", "Invalid Parameter",
-				"tier1Window must be a valid duration string (e.g. '24h', '7d')", h.logger)
-			return
-		}
-		tier1Window = parsed
+	tier1Window, ok := h.parseHistoryWindow(w, q, "tier1Window", defaultTier1Window)
+	if !ok {
+		return remediationHistoryRequest{}, false
+	}
+	tier2Window, ok := h.parseHistoryWindow(w, q, "tier2Window", defaultTier2Window)
+	if !ok {
+		return remediationHistoryRequest{}, false
 	}
 
-	tier2Window := defaultTier2Window
-	if v := q.Get("tier2Window"); v != "" {
-		parsed, err := time.ParseDuration(v)
-		if err != nil {
-			response.WriteRFC7807Error(w, http.StatusBadRequest,
-				"invalid-parameter", "Invalid Parameter",
-				"tier2Window must be a valid duration string (e.g. '24h', '7d')", h.logger)
-			return
-		}
-		tier2Window = parsed
-	}
-
-	// Validate window durations
 	if detail, ok := validateWindows(tier1Window, tier2Window); !ok {
 		response.WriteRFC7807Error(w, http.StatusBadRequest,
 			"invalid-parameter", "Invalid Parameter", detail, h.logger)
-		return
+		return remediationHistoryRequest{}, false
 	}
 
 	// Build target resource string: "{namespace}/{kind}/{name}" or "{kind}/{name}" for cluster-scoped (#762)
@@ -125,28 +171,51 @@ func (h *Handler) HandleGetRemediationHistoryContext(w http.ResponseWriter, r *h
 	} else {
 		targetResource = fmt.Sprintf("%s/%s", targetKind, targetName)
 	}
-	now := time.Now()
-	ctx := r.Context()
 
-	h.logger.V(1).Info("Querying remediation history context",
-		"target_resource", targetResource,
-		"current_spec_hash", currentSpecHash,
-		"tier1_window", tier1Window.String(),
-		"tier2_window", tier2Window.String())
+	return remediationHistoryRequest{
+		targetResource:  targetResource,
+		currentSpecHash: currentSpecHash,
+		tier1Window:     tier1Window,
+		tier2Window:     tier2Window,
+	}, true
+}
 
-	// Step 3: Query Tier 1 RO events by spec hash (DD-HAPI-016 v1.4, Issue #586)
-	tier1Since := now.Add(-tier1Window)
-	roEvents, err := h.remediationHistoryRepo.QueryROEventsBySpecHash(ctx, currentSpecHash, tier1Since, now)
+// parseHistoryWindow parses an optional duration query parameter, falling
+// back to defaultValue when absent, and writing an RFC 7807 error (returning
+// ok=false) when present but not a valid duration string.
+func (h *Handler) parseHistoryWindow(w http.ResponseWriter, q url.Values, param string, defaultValue time.Duration) (time.Duration, bool) {
+	v := q.Get(param)
+	if v == "" {
+		return defaultValue, true
+	}
+	parsed, err := time.ParseDuration(v)
+	if err != nil {
+		response.WriteRFC7807Error(w, http.StatusBadRequest,
+			"invalid-parameter", "Invalid Parameter",
+			fmt.Sprintf("%s must be a valid duration string (e.g. '24h', '7d')", param), h.logger)
+		return 0, false
+	}
+	return parsed, true
+}
+
+// queryTier1History executes DD-HAPI-016 v1.4 Tier 1 query steps: query RO
+// events by spec hash (Issue #586), batch query EM events by correlation_id,
+// and correlate into detailed Tier 1 entries. Returns ok=false (after writing
+// the RFC 7807 error response) on any query failure. Extracted from
+// HandleGetRemediationHistoryContext (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 3)
+// — pure code motion, no behavior change.
+func (h *Handler) queryTier1History(w http.ResponseWriter, ctx context.Context, req remediationHistoryRequest, now time.Time) ([]api.RemediationHistoryEntry, time.Time, bool) {
+	tier1Since := now.Add(-req.tier1Window)
+	roEvents, err := h.remediationHistoryRepo.QueryROEventsBySpecHash(ctx, req.currentSpecHash, tier1Since, now)
 	if err != nil {
 		h.logger.Error(err, "Failed to query Tier 1 RO events",
-			"spec_hash", currentSpecHash, "since", tier1Since, "until", now)
+			"spec_hash", req.currentSpecHash, "since", tier1Since, "until", now)
 		response.WriteRFC7807Error(w, http.StatusInternalServerError,
 			"query-error", "Internal Server Error",
 			"Failed to query remediation history", h.logger)
-		return
+		return nil, tier1Since, false
 	}
 
-	// Step 4: Batch query EM events by correlation_id (DD-HAPI-016 v1.1 Step 2)
 	var emEvents map[string][]*EffectivenessEvent
 	if len(roEvents) > 0 {
 		correlationIDs := make([]string, 0, len(roEvents))
@@ -161,68 +230,58 @@ func (h *Handler) HandleGetRemediationHistoryContext(w http.ResponseWriter, r *h
 			response.WriteRFC7807Error(w, http.StatusInternalServerError,
 				"query-error", "Internal Server Error",
 				"Failed to query effectiveness events", h.logger)
-			return
+			return nil, tier1Since, false
 		}
 	}
 
-	// Step 5: Correlate into Tier 1 entries (DD-HAPI-016 v1.1 Step 3)
-	tier1Entries := CorrelateTier1Chain(roEvents, emEvents, currentSpecHash)
+	return CorrelateTier1Chain(roEvents, emEvents, req.currentSpecHash), tier1Since, true
+}
 
-	// Step 6: Detect regression from Tier 1 (DD-HAPI-016 v1.1: preRemediation hash match)
-	regressionDetected := DetectRegression(tier1Entries)
-
-	// Step 7: Always query Tier 2 by spec hash (GAP-DS-1: Tier 2 runs regardless of Tier 1 results)
-	// Regression can be detected from Tier 2 alone when Tier 1 is empty but historical events exist.
-	var tier2Summaries []api.RemediationHistorySummary
-	tier2Since := now.Add(-tier2Window)
-	tier2RO, err := h.remediationHistoryRepo.QueryROEventsBySpecHash(ctx, currentSpecHash, tier2Since, tier1Since)
+// queryTier2History executes the GAP-DS-1 Tier 2 query: always query by spec
+// hash regardless of Tier 1 results, batch query EM events, and build
+// summaries. Errors are non-fatal (logged, continuing with an empty Tier 2)
+// since Tier 2 is supplementary context. Extracted from
+// HandleGetRemediationHistoryContext (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 3)
+// — pure code motion, no behavior change.
+func (h *Handler) queryTier2History(ctx context.Context, req remediationHistoryRequest, now, tier1Since time.Time) []api.RemediationHistorySummary {
+	tier2Since := now.Add(-req.tier2Window)
+	tier2RO, err := h.remediationHistoryRepo.QueryROEventsBySpecHash(ctx, req.currentSpecHash, tier2Since, tier1Since)
 	if err != nil {
-		// Non-fatal: Tier 2 is supplementary context. Log and continue with empty Tier 2.
 		h.logger.Error(err, "Failed to query Tier 2 events (non-fatal, continuing with empty Tier 2)",
-			"spec_hash", currentSpecHash, "since", tier2Since, "until", tier1Since)
-	} else if len(tier2RO) > 0 {
-		// Batch query EM events for Tier 2
-		t2CorrelationIDs := make([]string, 0, len(tier2RO))
-		for _, ro := range tier2RO {
-			t2CorrelationIDs = append(t2CorrelationIDs, ro.CorrelationID)
-		}
-		t2EMEvents, err := h.remediationHistoryRepo.QueryEffectivenessEventsBatch(ctx, t2CorrelationIDs)
-		if err != nil {
-			h.logger.Error(err, "Failed to query Tier 2 EM events (non-fatal)",
-				"correlation_id_count", len(t2CorrelationIDs))
-		}
-		tier2Summaries = BuildTier2Summaries(tier2RO, t2EMEvents, currentSpecHash)
-		// GAP-DS-1: Also detect regression from Tier 2 results
-		if !regressionDetected {
-			regressionDetected = DetectRegressionFromTier2(tier2Summaries)
-		}
+			"spec_hash", req.currentSpecHash, "since", tier2Since, "until", tier1Since)
+		return nil
+	}
+	if len(tier2RO) == 0 {
+		return nil
 	}
 
-	// Build response
-	// Ensure non-nil slices for JSON serialization ([] not null)
-	if tier1Entries == nil {
-		tier1Entries = []api.RemediationHistoryEntry{}
+	t2CorrelationIDs := make([]string, 0, len(tier2RO))
+	for _, ro := range tier2RO {
+		t2CorrelationIDs = append(t2CorrelationIDs, ro.CorrelationID)
 	}
-	if tier2Summaries == nil {
-		tier2Summaries = []api.RemediationHistorySummary{}
+	t2EMEvents, err := h.remediationHistoryRepo.QueryEffectivenessEventsBatch(ctx, t2CorrelationIDs)
+	if err != nil {
+		h.logger.Error(err, "Failed to query Tier 2 EM events (non-fatal)",
+			"correlation_id_count", len(t2CorrelationIDs))
 	}
+	return BuildTier2Summaries(tier2RO, t2EMEvents, req.currentSpecHash)
+}
 
-	h.logger.Info("Remediation history context served",
-		"target_resource", targetResource,
-		"tier1_count", len(tier1Entries),
-		"tier2_count", len(tier2Summaries),
-		"regression_detected", regressionDetected)
-
+// writeRemediationHistoryResponse encodes and writes the JSON response body
+// for HandleGetRemediationHistoryContext. Extracted from
+// HandleGetRemediationHistoryContext (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 3)
+// — pure code motion, no behavior change.
+func (h *Handler) writeRemediationHistoryResponse(w http.ResponseWriter, req remediationHistoryRequest, tier1Entries []api.RemediationHistoryEntry, tier2Summaries []api.RemediationHistorySummary, regressionDetected bool) {
 	resp := map[string]interface{}{
-		"targetResource":     targetResource,
-		"currentSpecHash":    currentSpecHash,
+		"targetResource":     req.targetResource,
+		"currentSpecHash":    req.currentSpecHash,
 		"regressionDetected": regressionDetected,
 		"tier1": map[string]interface{}{
-			"window": tier1Window.String(),
+			"window": req.tier1Window.String(),
 			"chain":  tier1Entries,
 		},
 		"tier2": map[string]interface{}{
-			"window": tier2Window.String(),
+			"window": req.tier2Window.String(),
 			"chain":  tier2Summaries,
 		},
 	}
@@ -230,7 +289,7 @@ func (h *Handler) HandleGetRemediationHistoryContext(w http.ResponseWriter, r *h
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(resp); err != nil {
 		h.logger.Error(err, "Failed to encode remediation history response",
-			"target_resource", targetResource)
+			"target_resource", req.targetResource)
 		response.WriteRFC7807Error(w, http.StatusInternalServerError,
 			"encoding-error", "Internal Server Error",
 			"Failed to serialize remediation history response", h.logger)
