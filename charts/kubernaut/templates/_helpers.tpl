@@ -120,6 +120,19 @@ When using external Valkey, falls through to the external settings.
 {{- end }}
 
 {{/*
+Return the Secret name for the DataStorage audit hash-chain HMAC key
+(GAP-05, Issue #1505). Only relevant when datastorage.config.auditHashKey.enabled.
+Precedence: datastorage.config.auditHashKey.existingSecret > "datastorage-audit-hmac-key".
+*/}}
+{{- define "kubernaut.datastorage.auditHashKeySecretName" -}}
+{{- if .Values.datastorage.config.auditHashKey.existingSecret -}}
+{{- .Values.datastorage.config.auditHashKey.existingSecret -}}
+{{- else -}}
+  datastorage-audit-hmac-key
+{{- end -}}
+{{- end }}
+
+{{/*
 Return the PostgreSQL host.
 Uses in-chart service DNS when postgresql.enabled, otherwise externalPostgresql.host.
 */}}

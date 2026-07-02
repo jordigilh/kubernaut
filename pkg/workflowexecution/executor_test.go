@@ -1035,7 +1035,8 @@ var _ = Describe("Job Executor Dependencies (DD-WE-006)", func() {
 		var job batchv1.Job
 		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: result.ResourceName, Namespace: "kubernaut-workflows"}, &job)).To(Succeed())
 
-		Expect(job.Spec.Template.Spec.Volumes).To(HaveLen(2))
+		// BR-WE-018: an extra "tmp" scratch-space volume is always present alongside dependency volumes.
+		Expect(job.Spec.Template.Spec.Volumes).To(HaveLen(3))
 		Expect(job.Spec.Template.Spec.Volumes).To(ContainElement(
 			HaveField("Name", "secret-gitea-repo-creds"),
 		))
@@ -1044,7 +1045,7 @@ var _ = Describe("Job Executor Dependencies (DD-WE-006)", func() {
 		))
 
 		container := job.Spec.Template.Spec.Containers[0]
-		Expect(container.VolumeMounts).To(HaveLen(2))
+		Expect(container.VolumeMounts).To(HaveLen(3))
 		Expect(container.VolumeMounts).To(ContainElement(And(
 			HaveField("Name", "secret-gitea-repo-creds"),
 			HaveField("MountPath", "/run/kubernaut/secrets/gitea-repo-creds"),
@@ -1057,7 +1058,7 @@ var _ = Describe("Job Executor Dependencies (DD-WE-006)", func() {
 		)))
 	})
 
-	It("UT-WE-006-023: should create Job without volumes when no dependencies", func() {
+	It("UT-WE-006-023: should create Job with only the tmp scratch volume when no dependencies", func() {
 		wfe := newTestWFE("test-wfe-nodeps", "default", "default/deployment/nodeps-app",
 			"restart", "ghcr.io/kubernaut/workflows/restart:v1.0.0", nil)
 
@@ -1067,9 +1068,10 @@ var _ = Describe("Job Executor Dependencies (DD-WE-006)", func() {
 		var job batchv1.Job
 		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: result.ResourceName, Namespace: "kubernaut-workflows"}, &job)).To(Succeed())
 
-		Expect(job.Spec.Template.Spec.Volumes).To(BeEmpty())
+		// BR-WE-018: no dependency volumes, but the "tmp" scratch-space volume is always present.
+		Expect(job.Spec.Template.Spec.Volumes).To(ConsistOf(HaveField("Name", "tmp")))
 		container := job.Spec.Template.Spec.Containers[0]
-		Expect(container.VolumeMounts).To(BeEmpty())
+		Expect(container.VolumeMounts).To(ConsistOf(HaveField("Name", "tmp")))
 	})
 })
 

@@ -285,6 +285,12 @@ var _ = SynchronizedAfterSuite(
 		if anyFailure {
 			infrastructure.MustGatherPodLogs(clusterName, kubeconfigPath,
 				controllerNamespace, "workflowexecution", GinkgoWriter)
+			// BR-WE-018: spawned Job/Tekton execution pods run in a separate
+			// namespace from the controller; without this, failures in the
+			// spawned pods themselves (e.g. SecurityContext rejections) are
+			// invisible in the must-gather artifact.
+			infrastructure.MustGatherPodLogs(clusterName, kubeconfigPath,
+				"kubernaut-workflows", "workflowexecution", GinkgoWriter)
 		}
 
 		// DD-TEST-007: Collect E2E binary coverage AFTER log export but BEFORE cluster deletion

@@ -241,10 +241,16 @@ func main() {
 				var partial struct {
 					Logging internalconfig.LoggingConfig `yaml:"logging"`
 				}
-				if err := yaml.Unmarshal([]byte(newContent), &partial); err != nil {
-					return fmt.Errorf("failed to parse config for log level reload: %w", err)
-				}
-				return internalconfig.ParseAndSetLevel(atomicLevel, partial.Logging.Level)
+				reloadErr := func() error {
+					if err := yaml.Unmarshal([]byte(newContent), &partial); err != nil {
+						return fmt.Errorf("failed to parse config for log level reload: %w", err)
+					}
+					return internalconfig.ParseAndSetLevel(atomicLevel, partial.Logging.Level)
+				}()
+				// GAP-11 (Issue #1505): audit every log-level hot-reload attempt,
+				// success or rejection (SOC2 CC7.2 change management).
+				srv.EmitConfigReloadAudit(serverCtx, "log_level", reloadErr)
+				return reloadErr
 			},
 			logger.WithName("log-level-watcher"),
 		)
@@ -261,7 +267,10 @@ func main() {
 	}
 
 	// Issue #756: Start CA file watcher for client-side TLS hot-reload
-	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(serverCtx, logger)
+	// GAP-11 (Issue #1505): audit every CA-cert hot-reload attempt.
+	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(serverCtx, logger, func(reloadErr error) {
+		srv.EmitConfigReloadAudit(serverCtx, "ca_cert", reloadErr)
+	})
 	if caWatchErr != nil {
 		logger.Error(caWatchErr, "Failed to start CA file watcher")
 		os.Exit(1)

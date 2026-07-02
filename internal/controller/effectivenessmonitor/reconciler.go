@@ -168,6 +168,13 @@ func NewReconciler(
 	}
 }
 
+// +kubebuilder:rbac:groups=kubernaut.ai,resources=effectivenessassessments,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=kubernaut.ai,resources=effectivenessassessments/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=configmaps,verbs=get
+// +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+// +kubebuilder:rbac:groups=apps,resources=deployments;replicasets;statefulsets;daemonsets,verbs=get;list;watch
+
 // Reconcile handles a single reconciliation of an EffectivenessAssessment.
 // This is the main entry point called by controller-runtime. Steps 1-2 run here;
 // the active reconciliation flow is delegated to reconcileActive (reconcile_orchestrate.go).

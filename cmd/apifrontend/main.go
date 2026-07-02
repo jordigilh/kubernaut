@@ -17,6 +17,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	adksession "google.golang.org/adk/session"
@@ -1094,6 +1095,83 @@ func bridgeMetricsFrom(reg *metrics.Registry) *handler.MCPBridgeMetrics {
 	}
 }
 
+// replayCacheTTL matches (and slightly exceeds) the maximum expected token
+// lifetime so replayed tokens cannot outlive their own cache entry.
+const replayCacheTTL = 10 * time.Minute
+
+// buildReplayCache constructs the jti replay-detection store selected by
+// cfg (GAP-08, #1505). When cfg specifies a distributed "redis"/"valkey"
+// backend, replay state is shared across all APIFrontend replicas via Valkey;
+// if that backend cannot be constructed (bad address, unreadable credentials),
+// it falls back to the legacy single-process in-memory cache rather than
+// disabling replay protection outright — logged loudly so the HA degradation
+// is observable. legacyEnable preserves the pre-GAP-08 boolean toggle for
+// configs that predate the structured auth.replayCache block.
+func buildReplayCache(cfg *config.ReplayCacheConfig, legacyEnable bool, logger logr.Logger) auth.ReplayCacheStore {
+	if cfg == nil {
+		if legacyEnable {
+			return auth.NewReplayCache(replayCacheTTL)
+		}
+		return nil
+	}
+	if !cfg.IsDistributed() {
+		return auth.NewReplayCache(replayCacheTTL)
+	}
+	rc, err := newValkeyReplayCache(cfg, logger)
+	if err != nil {
+		logger.Error(err, "failed to initialize valkey replay cache; falling back to in-memory cache (HA replay detection degraded)",
+			"redisAddr", cfg.RedisAddr)
+		return auth.NewReplayCache(replayCacheTTL)
+	}
+	logger.Info("auth mode: distributed replay cache (valkey)", "redisAddr", cfg.RedisAddr, "redisDB", cfg.RedisDB)
+	return rc
+}
+
+// newValkeyReplayCache builds a Redis client from cfg and wraps it in a
+// ValkeyReplayCache. Credentials are optional: an empty CredentialsPath
+// connects without authentication (dev/test Valkey instances).
+func newValkeyReplayCache(cfg *config.ReplayCacheConfig, logger logr.Logger) (*auth.ValkeyReplayCache, error) {
+	password, err := loadReplayCachePassword(cfg.CredentialsPath)
+	if err != nil {
+		return nil, fmt.Errorf("load replay cache credentials: %w", err)
+	}
+	client := redis.NewClient(&redis.Options{
+		Addr:     cfg.RedisAddr,
+		Password: password,
+		DB:       cfg.RedisDB,
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := client.Ping(ctx).Err(); err != nil {
+		_ = client.Close()
+		return nil, fmt.Errorf("ping valkey at %s: %w", cfg.RedisAddr, err)
+	}
+	return auth.NewValkeyReplayCache(client, replayCacheTTL, logger), nil
+}
+
+// loadReplayCachePassword reads the "password" key from a YAML credentials
+// file mounted from a Kubernetes Secret (same "password" key convention as
+// DataStorage's valkey-secrets.yaml projection). Returns "" without error
+// when path is empty (unauthenticated Valkey).
+func loadReplayCachePassword(path string) (string, error) {
+	if path == "" {
+		return "", nil
+	}
+	data, err := os.ReadFile(path) //nolint:gosec // path from trusted, operator-controlled config
+	if err != nil {
+		return "", fmt.Errorf("read %s: %w", path, err)
+	}
+	var secrets map[string]string
+	if err := yaml.Unmarshal(data, &secrets); err != nil {
+		return "", fmt.Errorf("parse %s: %w", path, err)
+	}
+	password, ok := secrets["password"]
+	if !ok {
+		return "", fmt.Errorf(`%s: missing required "password" key`, path)
+	}
+	return password, nil
+}
+
 func buildAuthMiddleware(cfg *config.Config, reg *metrics.Registry, auditor audit.Emitter, logger logr.Logger) (func(http.Handler) http.Handler, handler.ReadyChecker) {
 	alwaysReady := handler.ReadyChecker(func() bool { return true })
 
@@ -1140,8 +1218,8 @@ func buildAuthMiddleware(cfg *config.Config, reg *metrics.Registry, auditor audi
 			validatorOpts = append(validatorOpts, auth.WithHTTPClient(httpClient))
 			logger.Info("OIDC JWKS fetcher configured with custom CA", "caFile", cfg.Auth.OIDCCaFile)
 		}
-		if cfg.Auth.EnableReplayProtection {
-			validatorOpts = append(validatorOpts, auth.WithReplayCache(auth.NewReplayCache(10*time.Minute)))
+		if rc := buildReplayCache(cfg.Auth.ReplayCache, cfg.Auth.EnableReplayProtection, logger); rc != nil {
+			validatorOpts = append(validatorOpts, auth.WithReplayCache(rc))
 		}
 		logger.Info("auth mode: OIDC/JWKS", "providers", len(authCfg.JWT))
 	}

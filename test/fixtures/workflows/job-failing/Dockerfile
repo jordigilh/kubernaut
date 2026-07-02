@@ -18,6 +18,11 @@ FROM registry.access.redhat.com/ubi10/ubi-minimal:latest
 ENV TARGET_RESOURCE="test/deployment/failing" \
     FAILURE_MESSAGE="Intentional test failure"
 
+# BR-WE-018: spawned Job pods enforce runAsNonRoot; ubi-minimal has no USER
+# directive by default and runs as root, which kubelet rejects outright
+# (CreateContainerConfigError) once the pod-level SecurityContext applies.
+USER 1001
+
 ENTRYPOINT ["/bin/sh", "-c", "\
 echo '============================================' && \
 echo 'Kubernaut Failure Test Job' && \

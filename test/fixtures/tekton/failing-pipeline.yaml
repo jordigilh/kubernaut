@@ -46,6 +46,12 @@ spec:
         steps:
           - name: fail
             image: registry.access.redhat.com/ubi10/ubi-minimal:latest
+            # BR-WE-018: WE controller enforces runAsNonRoot at the pod level for
+            # every Tekton PipelineRun; ubi-minimal has no USER directive and
+            # defaults to root, which kubelet rejects (CreateContainerConfigError)
+            # without this explicit non-root override.
+            securityContext:
+              runAsUser: 1001
             script: |
               #!/bin/sh
               echo "============================================"

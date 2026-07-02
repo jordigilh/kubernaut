@@ -5,15 +5,28 @@ import (
 	"time"
 )
 
+// ReplayCacheStore is the interface implemented by both the in-memory
+// ReplayCache and the distributed ValkeyReplayCache (GAP-08, kubernaut#1505),
+// letting JWTValidator remain agnostic to the backing store.
+type ReplayCacheStore interface {
+	// MissingJTI returns true if jti enforcement is active and the token
+	// lacks a jti claim needed for replay protection.
+	MissingJTI(jti string) bool
+	// Seen atomically records jti as observed and reports whether it was
+	// already present (a replay attempt).
+	Seen(jti string) bool
+	// Stop releases any background resources held by the cache.
+	Stop()
+}
+
 // ReplayCache tracks seen JWT IDs (jti claims) to prevent token replay attacks.
 // It uses an in-memory map with periodic eviction of expired entries.
 //
 // HA Limitation: This implementation is per-process. In multi-replica deployments,
-// a token replayed against a different replica will not be detected. To close this
-// gap at FedRAMP High, replace with a distributed cache (Redis SETEX with jti as
-// key and TTL matching token expiry). The interface is designed to be swap-compatible:
-// implement MissingJTI(string) bool and Seen(string) bool against Redis.
-// See: https://github.com/jordigilh/kubernaut/issues (origin:apifrontend)
+// a token replayed against a different replica will not be detected. Deployments
+// running more than one APIFrontend replica should use ValkeyReplayCache instead
+// (auth.replayCache.backend: redis in config), which shares replay state across
+// all replicas via the cluster's Valkey/Redis instance (GAP-08, kubernaut#1505).
 type ReplayCache struct {
 	mu       sync.RWMutex
 	entries  map[string]time.Time

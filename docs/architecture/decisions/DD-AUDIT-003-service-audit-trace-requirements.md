@@ -246,6 +246,8 @@ Kubernaut consists of 12 microservices with different responsibilities. Not all 
 | `gateway.signal.deduplicated` | Duplicate signal detected | P0 |
 | `gateway.crd.created` | RemediationRequest CRD created | P0 |
 | `gateway.crd.creation_failed` | CRD creation failed | P0 |
+| `gateway.config.reloaded` | Hot-reloadable config accepted (log level, CA cert) — GAP-11, Issue #1505 | P2 |
+| `gateway.config.rejected` | Hot-reloadable config rejected, previous config kept — GAP-11, Issue #1505 | P2 |
 
 **Industry Precedent**: AWS EventBridge, Google Cloud Pub/Sub, Azure Event Grid
 

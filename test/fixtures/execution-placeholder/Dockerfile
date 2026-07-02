@@ -8,4 +8,8 @@
 #     --manifest quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0 \
 #     -f Dockerfile .
 FROM busybox:1.36
+# BR-WE-018: spawned Job pods enforce runAsNonRoot; busybox's default image
+# has no USER directive and runs as root, which kubelet rejects outright
+# (CreateContainerConfigError) once that pod-level SecurityContext applies.
+USER 1000
 CMD ["echo", "kubernaut placeholder execution bundle"]

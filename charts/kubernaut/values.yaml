@@ -126,6 +126,13 @@ datastorage:
       corsAllowedOrigins: []
       # #1048 Phase 5 / AU-9: Directory containing signing cert (tls.crt, tls.key).
       signerCertDir: "/etc/certs"
+      # GAP-09 (Issue #1505) / SC-5: Per-IP rate limiting for the DS HTTP API.
+      # Disabled by default — existing deployments may already rate limit at
+      # an external ingress/proxy. Denials are self-audited (datastorage.ratelimit.denied).
+      rateLimit:
+        enabled: false
+        requestsPerSecond: 50
+        burst: 100
     database:
       sslMode: "disable"
       maxOpenConns: 100
@@ -147,6 +154,17 @@ datastorage:
       interval: "24h"
       batchSize: 1000
       defaultDays: 2555
+    # GAP-05 (Issue #1505) / AU-9: Optional keyed HMAC-SHA256 audit hash chain.
+    # When disabled (default), audit events use the legacy unkeyed SHA256
+    # algorithm for backward compatibility with existing deployments. Enable
+    # once the audit HMAC key Secret has been pre-created (see README.md) to
+    # raise the bar against a DB-privileged attacker forging hash chain
+    # entries — an unkeyed hash can be recomputed by anyone with DB access,
+    # a keyed HMAC hash cannot be forged without the key.
+    auditHashKey:
+      enabled: false
+      existingSecret: ""    # defaults to "datastorage-audit-hmac-key" when enabled and unset
+      secretKey: "hmacKey"  # key name within the secret's audit-hmac-key.yaml file
   resources:
     requests:
       memory: 256Mi
@@ -672,6 +690,16 @@ apifrontend:
       #     issuerURL: "https://oidc-discovery-provider.example.com"
       #     jwksURL: "https://spire-spiffe-oidc-discovery-provider.zero-trust-workload-identity-manager.svc:443/keys"
       #     audiences: ["spiffe://trust-domain/ns/kubernaut-system/sa/apifrontend"]
+      # GAP-08 (Issue #1505): jti replay-detection backend. When disabled
+      # (default), APIFrontend uses the legacy in-memory cache — a token
+      # replayed against a different replica in a multi-replica deployment is
+      # not detected. Enable to share replay state across all replicas via the
+      # cluster's shared Valkey instance (same instance/secret used by
+      # DataStorage). Requires enableReplayProtection to be effectively
+      # replaced by this block; leave `enabled: false` to keep the legacy
+      # single-process behavior when replicas=1.
+      replayCache:
+        enabled: false
     rbac:
       sarCacheTTL: "30s"
       personas:

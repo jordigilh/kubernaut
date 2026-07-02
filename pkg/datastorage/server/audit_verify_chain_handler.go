@@ -18,16 +18,14 @@ package server
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
 
-	dsmiddleware "github.com/jordigilh/kubernaut/pkg/datastorage/server/middleware"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
+	dsmiddleware "github.com/jordigilh/kubernaut/pkg/datastorage/server/middleware"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server/response"
 )
 
@@ -66,12 +64,12 @@ type VerifyChainResponse struct {
 
 // TamperedEvent contains details about a tampered event
 type TamperedEvent struct {
-	EventID          string    `json:"event_id"`
-	EventTimestamp   time.Time `json:"event_timestamp"`
-	ExpectedHash     string    `json:"expected_hash"`
-	ActualHash       string    `json:"actual_hash"`
-	PreviousHash     string    `json:"previous_hash"`
-	Message          string    `json:"message"`
+	EventID        string    `json:"event_id"`
+	EventTimestamp time.Time `json:"event_timestamp"`
+	ExpectedHash   string    `json:"expected_hash"`
+	ActualHash     string    `json:"actual_hash"`
+	PreviousHash   string    `json:"previous_hash"`
+	Message        string    `json:"message"`
 }
 
 // HandleVerifyChain verifies the hash chain integrity for a correlation_id
@@ -156,7 +154,7 @@ func (s *Server) verifyHashChain(ctx context.Context, correlationID string) (*Ve
 			actor_id, actor_type, actor_ip,
 			severity, duration_ms, error_code, error_message,
 			retention_days, is_sensitive, event_data,
-			event_hash, previous_event_hash,
+			event_hash, previous_event_hash, hash_algorithm,
 			event_version
 		FROM audit_events
 		WHERE correlation_id = $1
@@ -219,6 +217,7 @@ func (s *Server) verifyHashChain(ctx context.Context, correlationID string) (*Ve
 			&eventDataJSON,
 			&event.EventHash,
 			&event.PreviousEventHash,
+			&event.HashAlgorithm,
 			&event.Version,
 		)
 		if err != nil {
@@ -271,11 +270,11 @@ func (s *Server) verifyHashChain(ctx context.Context, correlationID string) (*Ve
 		return response, nil
 	}
 
-	// Verify each event's hash
+	// Verify each event's hash (GAP-05: algorithm-aware, honors each event's own hash_algorithm)
+	hmacKey := s.auditEventsRepo.HMACKey()
 	previousHash := ""
 	for _, event := range events {
-		// Calculate expected hash
-		expectedHash, err := calculateExpectedHash(previousHash, event)
+		expectedHash, err := repository.CalculateHashForVerification(hmacKey, previousHash, event)
 		if err != nil {
 			return nil, err
 		}
@@ -323,25 +322,3 @@ func (s *Server) verifyHashChain(ctx context.Context, correlationID string) (*Ve
 
 	return response, nil
 }
-
-// calculateExpectedHash computes the expected SHA256 hash for verification.
-// Uses repository.PrepareEventForHashing to ensure identical field-clearing
-// logic as write-time, preventing false-positive tampering detections.
-func calculateExpectedHash(previousHash string, event *repository.AuditEvent) (string, error) {
-	eventForHashing := repository.PrepareEventForHashing(event)
-
-	eventJSON, err := json.Marshal(eventForHashing)
-	if err != nil {
-		return "", err
-	}
-
-	hasher := sha256.New()
-	hasher.Write([]byte(previousHash))
-	hasher.Write(eventJSON)
-	hashBytes := hasher.Sum(nil)
-
-	return hex.EncodeToString(hashBytes), nil
-}
-
-
-

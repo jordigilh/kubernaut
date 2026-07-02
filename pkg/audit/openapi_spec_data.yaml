@@ -2597,7 +2597,7 @@ components:
           type: string
           minLength: 1
           maxLength: 50
-          enum: [gateway, notification, analysis, aiagent, signalprocessing, workflow, workflowexecution, orchestration, approval, effectiveness, actiontype, apifrontend]
+          enum: [gateway, notification, analysis, aiagent, signalprocessing, workflow, workflowexecution, orchestration, approval, effectiveness, actiontype, apifrontend, security]
           description: |
             Domain-level event category (ADR-034 v1.8, Issue #306).
             Per convention: event_category identifies the business domain of the event.
@@ -2615,6 +2615,7 @@ components:
             - effectiveness: Effectiveness assessment and monitoring events
             - actiontype: ActionType taxonomy lifecycle events (Issue #300)
             - apifrontend: API Frontend service — triage, session, delegation, and user decision events (Issue #1021)
+            - security: Cross-cutting security control events at the HTTP layer (e.g. rate-limit denials) not tied to a single business domain (GAP-09, Issue #1505)
           example: gateway
         event_action:
           type: string
@@ -2731,6 +2732,7 @@ components:
             - $ref: '#/components/schemas/AIAgentInteractiveStartedPayload'
             - $ref: '#/components/schemas/AIAgentInteractiveCompletedPayload'
             - $ref: '#/components/schemas/AIAgentInteractiveK8sCallPayload'
+            - $ref: '#/components/schemas/AIAgentSecretAccessedPayload'
             - $ref: '#/components/schemas/AIAgentSessionObservedPayload'
             - $ref: '#/components/schemas/AIAgentSessionAccessDeniedPayload'
             - $ref: '#/components/schemas/AIAgentInvestigationCancelledPayload'
@@ -2781,6 +2783,9 @@ components:
             - $ref: '#/components/schemas/ApifrontendSeverityTriageFailedPayload'
             - $ref: '#/components/schemas/ApifrontendConfigReloadedPayload'
             - $ref: '#/components/schemas/ApifrontendConfigRejectedPayload'
+            - $ref: '#/components/schemas/DatastorageRatelimitDeniedPayload'
+            - $ref: '#/components/schemas/GatewayConfigReloadedPayload'
+            - $ref: '#/components/schemas/GatewayConfigRejectedPayload'
           discriminator:
             propertyName: event_type
             mapping:
@@ -2862,6 +2867,7 @@ components:
               'aiagent.interactive.started': '#/components/schemas/AIAgentInteractiveStartedPayload'
               'aiagent.interactive.completed': '#/components/schemas/AIAgentInteractiveCompletedPayload'
               'aiagent.interactive.k8s_call': '#/components/schemas/AIAgentInteractiveK8sCallPayload'
+              'aiagent.secret.accessed': '#/components/schemas/AIAgentSecretAccessedPayload'
               'aiagent.session.observed': '#/components/schemas/AIAgentSessionObservedPayload'
               'aiagent.session.access_denied': '#/components/schemas/AIAgentSessionAccessDeniedPayload'
               'aiagent.investigation.cancelled': '#/components/schemas/AIAgentInvestigationCancelledPayload'
@@ -2872,6 +2878,9 @@ components:
               'aiagent.ratelimit.denied': '#/components/schemas/AIAgentRatelimitDeniedPayload'
               'aiagent.auth.failure': '#/components/schemas/AIAgentAuthFailurePayload'
               'aiagent.auth.denied': '#/components/schemas/AIAgentAuthDeniedPayload'
+              'datastorage.ratelimit.denied': '#/components/schemas/DatastorageRatelimitDeniedPayload'
+              'gateway.config.reloaded': '#/components/schemas/GatewayConfigReloadedPayload'
+              'gateway.config.rejected': '#/components/schemas/GatewayConfigRejectedPayload'
               'effectiveness.health.assessed': '#/components/schemas/EffectivenessAssessmentAuditPayload'
               'effectiveness.hash.computed': '#/components/schemas/EffectivenessAssessmentAuditPayload'
               'effectiveness.alert.assessed': '#/components/schemas/EffectivenessAssessmentAuditPayload'
@@ -6219,6 +6228,35 @@ components:
           type: string
           description: Correlation ID linking to the parent remediation request
 
+    AIAgentSecretAccessedPayload:
+      type: object
+      required: [event_type, event_id, verb]
+      description: KubernautAgent Secret access audit payload (aiagent.secret.accessed) — detective control emitted for every K8s Secret Get/List performed by the autonomous investigator's resource resolver, regardless of outcome (GAP-13, Issue #1505). KubernautAgent intentionally retains broad read RBAC on Secrets for investigation completeness; this event is the compensating detective control rather than a narrowed RBAC grant.
+      properties:
+        event_type:
+          type: string
+          enum: ['aiagent.secret.accessed']
+          description: Event type for discriminator (matches parent event_type)
+        event_id:
+          type: string
+          description: Unique event identifier
+        verb:
+          type: string
+          enum: ['get', 'list']
+          description: K8s API verb performed against the Secret resource
+        namespace:
+          type: string
+          description: K8s namespace of the target Secret (empty for a cluster-wide list)
+        secret_name:
+          type: string
+          description: Name of the specific Secret (empty for list operations)
+        tool_name:
+          type: string
+          description: Name of the KubernautAgent tool that triggered the access (e.g. kubectl_get_by_name)
+        outcome_detail:
+          type: string
+          description: Error message when the access failed (e.g. not found, forbidden); empty on success
+
     AIAgentSessionObservedPayload:
       type: object
       required: [event_type, event_id, session_id]
@@ -7500,6 +7538,60 @@ components:
         event_type:
           type: string
           enum: ['aiagent.ratelimit.denied']
+          description: Event type for discriminator (matches parent event_type)
+        event_id:
+          type: string
+          description: Unique event identifier
+        source_ip:
+          type: string
+          description: Source IP address of the rate-limited request
+        path:
+          type: string
+          description: HTTP request path
+        method:
+          type: string
+          description: HTTP request method
+
+    GatewayConfigReloadedPayload:
+      type: object
+      required: [event_type, component]
+      description: Gateway config reloaded event payload (gateway.config.reloaded) — hot-reload configuration accepted (SOC2 CC7.2, GAP-11 Issue #1505)
+      properties:
+        event_type:
+          type: string
+          enum: ['gateway.config.reloaded']
+          description: Event type for discriminator (matches parent event_type)
+        component:
+          type: string
+          description: Hot-reloadable component that was reloaded (e.g. log_level, ca_cert)
+        config_version:
+          type: string
+          description: New configuration version or hash
+
+    GatewayConfigRejectedPayload:
+      type: object
+      required: [event_type, component, rejection_reason]
+      description: Gateway config rejected event payload (gateway.config.rejected) — hot-reload configuration rejected, previous configuration kept (SOC2 CC7.2, GAP-11 Issue #1505)
+      properties:
+        event_type:
+          type: string
+          enum: ['gateway.config.rejected']
+          description: Event type for discriminator (matches parent event_type)
+        component:
+          type: string
+          description: Hot-reloadable component whose reload was rejected (e.g. log_level, ca_cert)
+        rejection_reason:
+          type: string
+          description: Reason configuration was rejected
+
+    DatastorageRatelimitDeniedPayload:
+      type: object
+      required: [event_type, event_id]
+      description: Data Storage rate limit denied event payload (datastorage.ratelimit.denied) — request rejected by per-IP rate limiter on the DS HTTP API (FedRAMP AU-12, GAP-09 Issue #1505)
+      properties:
+        event_type:
+          type: string
+          enum: ['datastorage.ratelimit.denied']
           description: Event type for discriminator (matches parent event_type)
         event_id:
           type: string

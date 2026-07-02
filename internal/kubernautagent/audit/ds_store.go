@@ -89,12 +89,12 @@ func buildEventData(event *AuditEvent) (ogenclient.AuditEventRequestEventData, b
 	switch event.EventType {
 	case EventTypeEnrichmentCompleted:
 		payload := ogenclient.AIAgentEnrichmentCompletedPayload{
-			EventType:  ogenclient.AIAgentEnrichmentCompletedPayloadEventTypeAiagentEnrichmentCompleted,
-			EventID:    dataString(event.Data, "event_id"),
-			IncidentID: dataString(event.Data, "incident_id"),
-			RootOwnerKind:   dataString(event.Data, "root_owner_kind"),
-			RootOwnerName:   dataString(event.Data, "root_owner_name"),
-			OwnerChainLength: dataInt(event.Data, "owner_chain_length"),
+			EventType:                 ogenclient.AIAgentEnrichmentCompletedPayloadEventTypeAiagentEnrichmentCompleted,
+			EventID:                   dataString(event.Data, "event_id"),
+			IncidentID:                dataString(event.Data, "incident_id"),
+			RootOwnerKind:             dataString(event.Data, "root_owner_kind"),
+			RootOwnerName:             dataString(event.Data, "root_owner_name"),
+			OwnerChainLength:          dataInt(event.Data, "owner_chain_length"),
 			RemediationHistoryFetched: dataBool(event.Data, "remediation_history_fetched"),
 		}
 		if ns := dataString(event.Data, "root_owner_namespace"); ns != "" {
@@ -104,11 +104,11 @@ func buildEventData(event *AuditEvent) (ogenclient.AuditEventRequestEventData, b
 
 	case EventTypeEnrichmentFailed:
 		payload := ogenclient.AIAgentEnrichmentFailedPayload{
-			EventType:  ogenclient.AIAgentEnrichmentFailedPayloadEventTypeAiagentEnrichmentFailed,
-			EventID:    dataString(event.Data, "event_id"),
-			IncidentID: dataString(event.Data, "incident_id"),
-			Reason:     dataString(event.Data, "reason"),
-			Detail:     dataString(event.Data, "detail"),
+			EventType:            ogenclient.AIAgentEnrichmentFailedPayloadEventTypeAiagentEnrichmentFailed,
+			EventID:              dataString(event.Data, "event_id"),
+			IncidentID:           dataString(event.Data, "incident_id"),
+			Reason:               dataString(event.Data, "reason"),
+			Detail:               dataString(event.Data, "detail"),
 			AffectedResourceKind: dataString(event.Data, "affected_resource_kind"),
 			AffectedResourceName: dataString(event.Data, "affected_resource_name"),
 		}
@@ -429,6 +429,30 @@ func buildEventData(event *AuditEvent) (ogenclient.AuditEventRequestEventData, b
 		}
 		return ogenclient.NewAIAgentInteractiveK8sCallPayloadAuditEventRequestEventData(payload), true
 
+	case EventTypeSecretAccessed:
+		verb := ogenclient.AIAgentSecretAccessedPayloadVerbGet
+		if dataString(event.Data, "verb") == "list" {
+			verb = ogenclient.AIAgentSecretAccessedPayloadVerbList
+		}
+		payload := ogenclient.AIAgentSecretAccessedPayload{
+			EventType: ogenclient.AIAgentSecretAccessedPayloadEventTypeAiagentSecretAccessed,
+			EventID:   dataString(event.Data, "event_id"),
+			Verb:      verb,
+		}
+		if ns := dataString(event.Data, "namespace"); ns != "" {
+			payload.Namespace.SetTo(ns)
+		}
+		if name := dataString(event.Data, "secret_name"); name != "" {
+			payload.SecretName.SetTo(name)
+		}
+		if toolName := dataString(event.Data, "tool_name"); toolName != "" {
+			payload.ToolName.SetTo(toolName)
+		}
+		if detail := dataString(event.Data, "outcome_detail"); detail != "" {
+			payload.OutcomeDetail.SetTo(detail)
+		}
+		return ogenclient.NewAIAgentSecretAccessedPayloadAuditEventRequestEventData(payload), true
+
 	case EventTypeShadowLLMRequest:
 		payload := ogenclient.ShadowLLMRequestPayload{
 			EventType:    ogenclient.ShadowLLMRequestPayloadEventTypeAiagentShadowLlmRequest,
@@ -604,20 +628,20 @@ func toJxRawMap(s string) ogenclient.LLMToolCallPayloadToolArguments {
 }
 
 type investigationResultJSON struct {
-	RCASummary           string                       `json:"rca_summary"`
-	Severity             string                       `json:"severity"`
-	ContributingFactors  []string                     `json:"contributing_factors"`
-	WorkflowID           string                       `json:"workflow_id"`
-	ExecutionBundle      string                       `json:"execution_bundle"`
-	Confidence           float64                      `json:"confidence"`
-	NeedsHumanReview     bool                         `json:"needs_human_review"`
-	HumanReviewReason    string                       `json:"human_review_reason"`
-	Warnings             []string                     `json:"warnings"`
-	Parameters           map[string]interface{}        `json:"parameters"`
-	AlternativeWorkflows []altWorkflowJSON            `json:"alternative_workflows"`
-	RemediationTarget    *remediationTargetJSON       `json:"remediation_target"`
-	CausalChain          []string                     `json:"causal_chain"`
-	DueDiligence         *dueDiligenceJSON            `json:"due_diligence"`
+	RCASummary           string                 `json:"rca_summary"`
+	Severity             string                 `json:"severity"`
+	ContributingFactors  []string               `json:"contributing_factors"`
+	WorkflowID           string                 `json:"workflow_id"`
+	ExecutionBundle      string                 `json:"execution_bundle"`
+	Confidence           float64                `json:"confidence"`
+	NeedsHumanReview     bool                   `json:"needs_human_review"`
+	HumanReviewReason    string                 `json:"human_review_reason"`
+	Warnings             []string               `json:"warnings"`
+	Parameters           map[string]interface{} `json:"parameters"`
+	AlternativeWorkflows []altWorkflowJSON      `json:"alternative_workflows"`
+	RemediationTarget    *remediationTargetJSON `json:"remediation_target"`
+	CausalChain          []string               `json:"causal_chain"`
+	DueDiligence         *dueDiligenceJSON      `json:"due_diligence"`
 }
 
 type dueDiligenceJSON struct {
@@ -659,8 +683,8 @@ func toIncidentResponseData(responseDataJSON string, incidentID string) ogenclie
 		Confidence: float32(ir.Confidence),
 		Timestamp:  time.Now().UTC(),
 		RootCauseAnalysis: ogenclient.IncidentResponseDataRootCauseAnalysis{
-			Summary:            ir.RCASummary,
-			Severity:           mapSeverity(ir.Severity),
+			Summary:             ir.RCASummary,
+			Severity:            mapSeverity(ir.Severity),
 			ContributingFactors: ir.ContributingFactors,
 		},
 	}
@@ -790,7 +814,7 @@ var validHumanReviewReasons = map[string]ogenclient.IncidentResponseDataHumanRev
 	"llm_parsing_error":           ogenclient.IncidentResponseDataHumanReviewReasonLlmParsingError,
 	"investigation_inconclusive":  ogenclient.IncidentResponseDataHumanReviewReasonInvestigationInconclusive,
 	"rca_incomplete":              ogenclient.IncidentResponseDataHumanReviewReasonRcaIncomplete,
-	"alignment_check_failed": ogenclient.IncidentResponseDataHumanReviewReasonAlignmentCheckFailed,
+	"alignment_check_failed":      ogenclient.IncidentResponseDataHumanReviewReasonAlignmentCheckFailed,
 }
 
 // validHumanReviewReason returns the ogen enum value if the string is a recognised

@@ -62,6 +62,7 @@ Binds `kubernaut-agent-investigator` to `kubernaut-agent-sa`.
 - **Least privilege**: Read-only verbs for workload resources; write access limited to `events` for investigation lifecycle tracking
 - **Dynamic client awareness**: The LLM may request any resource kind via `kubectl_*` tools — missing RBAC causes degraded RCA quality (silent tool failures)
 - **Explicit exclusions**: RBAC enumeration (`rbac.authorization.k8s.io/*`) is intentionally excluded for security; `leases`, `limitranges`, `priorityclasses` excluded for low investigation value
+- **Secrets — detective control, not RBAC narrowing** (BR-AUDIT-011, GAP-13, Issue #1505): the broad `secrets` grant above is deliberately *not* narrowed, since a missing permission degrades RCA quality silently. Instead, every Get/List that resolves to the core `Secret` resource emits a dedicated `aiagent.secret.accessed` audit event (verb, namespace, secret name, outcome), independent of the generic `aiagent.llm.tool_call` event already emitted for every tool call — see [BR-AUDIT-011](../../../requirements/BR-AUDIT-011-kubernautagent-secret-read-audit.md).
 
 ---
 

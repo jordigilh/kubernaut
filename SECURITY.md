@@ -40,6 +40,59 @@ Kubernaut operates with elevated Kubernetes RBAC permissions to perform remediat
 - Restrict access to the DataStorage and HAPI APIs
 - Rotate LLM provider credentials regularly
 
+## Supply Chain Security
+
+All container images built by Kubernaut's CI and Release pipelines are signed keylessly with [Cosign](https://github.com/sigstore/cosign) using GitHub Actions OIDC as the signing identity (no long-lived private keys). SBOMs (CycloneDX format) are generated for every image and, for Release images, cryptographically bound to the image digest via Cosign attestation.
+
+| Pipeline | Workflow | Registry | Lifecycle |
+|---|---|---|---|
+| CI | `.github/workflows/ci-pipeline.yml` | `ghcr.io/jordigilh/kubernaut/*` | Ephemeral (14-day retention), used by integration/E2E tests |
+| Release | `.github/workflows/release.yml` | `quay.io/kubernaut-ai/*` | Production, tagged `v*` releases |
+
+### Verifying image signatures
+
+Verify a CI image (signed on every push/PR build):
+
+```bash
+cosign verify \
+  --certificate-identity-regexp "^https://github.com/jordigilh/kubernaut/\.github/workflows/ci-pipeline\.yml@.*$" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  ghcr.io/jordigilh/kubernaut/<service>:<tag>
+```
+
+Verify a Release image (signed on `v*` tag push):
+
+```bash
+cosign verify \
+  --certificate-identity-regexp "^https://github.com/jordigilh/kubernaut/\.github/workflows/release\.yml@.*$" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  quay.io/kubernaut-ai/<service>:<version>
+```
+
+### Verifying SBOM provenance
+
+Release images carry their CycloneDX SBOM as a Cosign attestation, bound to the image digest:
+
+```bash
+cosign verify-attestation \
+  --type cyclonedx \
+  --certificate-identity-regexp "^https://github.com/jordigilh/kubernaut/\.github/workflows/release\.yml@.*$" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  quay.io/kubernaut-ai/<service>:<version>
+```
+
+### Verifying SLSA build provenance
+
+Release images also carry SLSA v1.0 build provenance:
+
+```bash
+cosign verify-attestation \
+  --type slsaprovenance \
+  --certificate-identity-regexp "^https://github.com/jordigilh/kubernaut/\.github/workflows/release\.yml@.*$" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  quay.io/kubernaut-ai/<service>:<version>
+```
+
 ## Disclosure Policy
 
 We follow coordinated disclosure. We ask that you give us reasonable time to address the vulnerability before public disclosure.

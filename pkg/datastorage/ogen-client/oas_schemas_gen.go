@@ -1698,6 +1698,174 @@ func (s *AIAgentResponsePayloadEventType) UnmarshalText(data []byte) error {
 	}
 }
 
+// KubernautAgent Secret access audit payload (aiagent.secret.accessed) — detective control emitted
+// for every K8s Secret Get/List performed by the autonomous investigator's resource resolver,
+// regardless of outcome (GAP-13, Issue.
+// Ref: #/components/schemas/AIAgentSecretAccessedPayload
+type AIAgentSecretAccessedPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType AIAgentSecretAccessedPayloadEventType `json:"event_type"`
+	// Unique event identifier.
+	EventID string `json:"event_id"`
+	// K8s API verb performed against the Secret resource.
+	Verb AIAgentSecretAccessedPayloadVerb `json:"verb"`
+	// K8s namespace of the target Secret (empty for a cluster-wide list).
+	Namespace OptString `json:"namespace"`
+	// Name of the specific Secret (empty for list operations).
+	SecretName OptString `json:"secret_name"`
+	// Name of the KubernautAgent tool that triggered the access (e.g. kubectl_get_by_name).
+	ToolName OptString `json:"tool_name"`
+	// Error message when the access failed (e.g. not found, forbidden); empty on success.
+	OutcomeDetail OptString `json:"outcome_detail"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *AIAgentSecretAccessedPayload) GetEventType() AIAgentSecretAccessedPayloadEventType {
+	return s.EventType
+}
+
+// GetEventID returns the value of EventID.
+func (s *AIAgentSecretAccessedPayload) GetEventID() string {
+	return s.EventID
+}
+
+// GetVerb returns the value of Verb.
+func (s *AIAgentSecretAccessedPayload) GetVerb() AIAgentSecretAccessedPayloadVerb {
+	return s.Verb
+}
+
+// GetNamespace returns the value of Namespace.
+func (s *AIAgentSecretAccessedPayload) GetNamespace() OptString {
+	return s.Namespace
+}
+
+// GetSecretName returns the value of SecretName.
+func (s *AIAgentSecretAccessedPayload) GetSecretName() OptString {
+	return s.SecretName
+}
+
+// GetToolName returns the value of ToolName.
+func (s *AIAgentSecretAccessedPayload) GetToolName() OptString {
+	return s.ToolName
+}
+
+// GetOutcomeDetail returns the value of OutcomeDetail.
+func (s *AIAgentSecretAccessedPayload) GetOutcomeDetail() OptString {
+	return s.OutcomeDetail
+}
+
+// SetEventType sets the value of EventType.
+func (s *AIAgentSecretAccessedPayload) SetEventType(val AIAgentSecretAccessedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetEventID sets the value of EventID.
+func (s *AIAgentSecretAccessedPayload) SetEventID(val string) {
+	s.EventID = val
+}
+
+// SetVerb sets the value of Verb.
+func (s *AIAgentSecretAccessedPayload) SetVerb(val AIAgentSecretAccessedPayloadVerb) {
+	s.Verb = val
+}
+
+// SetNamespace sets the value of Namespace.
+func (s *AIAgentSecretAccessedPayload) SetNamespace(val OptString) {
+	s.Namespace = val
+}
+
+// SetSecretName sets the value of SecretName.
+func (s *AIAgentSecretAccessedPayload) SetSecretName(val OptString) {
+	s.SecretName = val
+}
+
+// SetToolName sets the value of ToolName.
+func (s *AIAgentSecretAccessedPayload) SetToolName(val OptString) {
+	s.ToolName = val
+}
+
+// SetOutcomeDetail sets the value of OutcomeDetail.
+func (s *AIAgentSecretAccessedPayload) SetOutcomeDetail(val OptString) {
+	s.OutcomeDetail = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type AIAgentSecretAccessedPayloadEventType string
+
+const (
+	AIAgentSecretAccessedPayloadEventTypeAiagentSecretAccessed AIAgentSecretAccessedPayloadEventType = "aiagent.secret.accessed"
+)
+
+// AllValues returns all AIAgentSecretAccessedPayloadEventType values.
+func (AIAgentSecretAccessedPayloadEventType) AllValues() []AIAgentSecretAccessedPayloadEventType {
+	return []AIAgentSecretAccessedPayloadEventType{
+		AIAgentSecretAccessedPayloadEventTypeAiagentSecretAccessed,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AIAgentSecretAccessedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case AIAgentSecretAccessedPayloadEventTypeAiagentSecretAccessed:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AIAgentSecretAccessedPayloadEventType) UnmarshalText(data []byte) error {
+	switch AIAgentSecretAccessedPayloadEventType(data) {
+	case AIAgentSecretAccessedPayloadEventTypeAiagentSecretAccessed:
+		*s = AIAgentSecretAccessedPayloadEventTypeAiagentSecretAccessed
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// K8s API verb performed against the Secret resource.
+type AIAgentSecretAccessedPayloadVerb string
+
+const (
+	AIAgentSecretAccessedPayloadVerbGet  AIAgentSecretAccessedPayloadVerb = "get"
+	AIAgentSecretAccessedPayloadVerbList AIAgentSecretAccessedPayloadVerb = "list"
+)
+
+// AllValues returns all AIAgentSecretAccessedPayloadVerb values.
+func (AIAgentSecretAccessedPayloadVerb) AllValues() []AIAgentSecretAccessedPayloadVerb {
+	return []AIAgentSecretAccessedPayloadVerb{
+		AIAgentSecretAccessedPayloadVerbGet,
+		AIAgentSecretAccessedPayloadVerbList,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AIAgentSecretAccessedPayloadVerb) MarshalText() ([]byte, error) {
+	switch s {
+	case AIAgentSecretAccessedPayloadVerbGet:
+		return []byte(s), nil
+	case AIAgentSecretAccessedPayloadVerbList:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AIAgentSecretAccessedPayloadVerb) UnmarshalText(data []byte) error {
+	switch AIAgentSecretAccessedPayloadVerb(data) {
+	case AIAgentSecretAccessedPayloadVerbGet:
+		*s = AIAgentSecretAccessedPayloadVerbGet
+		return nil
+	case AIAgentSecretAccessedPayloadVerbList:
+		*s = AIAgentSecretAccessedPayloadVerbList
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Session access denied event payload (aiagent.session.access_denied) - Emitted when a user attempts
 // to access a session they do not own (SOC2 CC8.1, BR-AUDIT-070).
 // Ref: #/components/schemas/AIAgentSessionAccessDeniedPayload
@@ -7910,7 +8078,9 @@ type AuditEvent struct {
 	// - effectiveness: Effectiveness assessment and monitoring events
 	// - actiontype: ActionType taxonomy lifecycle events (Issue #300)
 	// - apifrontend: API Frontend service — triage, session, delegation, and user decision events
-	// (Issue #1021).
+	// (Issue #1021)
+	// - security: Cross-cutting security control events at the HTTP layer (e.g. rate-limit denials) not
+	// tied to a single business domain (GAP-09, Issue #1505).
 	EventCategory AuditEventEventCategory `json:"event_category"`
 	// Action performed (ADR-034).
 	EventAction string `json:"event_action"`
@@ -8280,7 +8450,9 @@ func (s *AuditEvent) SetLegalHoldPlacedAt(val OptNilDateTime) {
 // - effectiveness: Effectiveness assessment and monitoring events
 // - actiontype: ActionType taxonomy lifecycle events (Issue #300)
 // - apifrontend: API Frontend service — triage, session, delegation, and user decision events
-// (Issue #1021).
+// (Issue #1021)
+// - security: Cross-cutting security control events at the HTTP layer (e.g. rate-limit denials) not
+// tied to a single business domain (GAP-09, Issue #1505).
 type AuditEventEventCategory string
 
 const (
@@ -8296,6 +8468,7 @@ const (
 	AuditEventEventCategoryEffectiveness     AuditEventEventCategory = "effectiveness"
 	AuditEventEventCategoryActiontype        AuditEventEventCategory = "actiontype"
 	AuditEventEventCategoryApifrontend       AuditEventEventCategory = "apifrontend"
+	AuditEventEventCategorySecurity          AuditEventEventCategory = "security"
 )
 
 // AllValues returns all AuditEventEventCategory values.
@@ -8313,6 +8486,7 @@ func (AuditEventEventCategory) AllValues() []AuditEventEventCategory {
 		AuditEventEventCategoryEffectiveness,
 		AuditEventEventCategoryActiontype,
 		AuditEventEventCategoryApifrontend,
+		AuditEventEventCategorySecurity,
 	}
 }
 
@@ -8342,6 +8516,8 @@ func (s AuditEventEventCategory) MarshalText() ([]byte, error) {
 	case AuditEventEventCategoryActiontype:
 		return []byte(s), nil
 	case AuditEventEventCategoryApifrontend:
+		return []byte(s), nil
+	case AuditEventEventCategorySecurity:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -8386,6 +8562,9 @@ func (s *AuditEventEventCategory) UnmarshalText(data []byte) error {
 		return nil
 	case AuditEventEventCategoryApifrontend:
 		*s = AuditEventEventCategoryApifrontend
+		return nil
+	case AuditEventEventCategorySecurity:
+		*s = AuditEventEventCategorySecurity
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -8438,6 +8617,7 @@ type AuditEventEventData struct {
 	AIAgentInteractiveStartedPayload             AIAgentInteractiveStartedPayload
 	AIAgentInteractiveCompletedPayload           AIAgentInteractiveCompletedPayload
 	AIAgentInteractiveK8sCallPayload             AIAgentInteractiveK8sCallPayload
+	AIAgentSecretAccessedPayload                 AIAgentSecretAccessedPayload
 	AIAgentSessionObservedPayload                AIAgentSessionObservedPayload
 	AIAgentSessionAccessDeniedPayload            AIAgentSessionAccessDeniedPayload
 	AIAgentInvestigationCancelledPayload         AIAgentInvestigationCancelledPayload
@@ -8488,6 +8668,9 @@ type AuditEventEventData struct {
 	ApifrontendSeverityTriageFailedPayload       ApifrontendSeverityTriageFailedPayload
 	ApifrontendConfigReloadedPayload             ApifrontendConfigReloadedPayload
 	ApifrontendConfigRejectedPayload             ApifrontendConfigRejectedPayload
+	DatastorageRatelimitDeniedPayload            DatastorageRatelimitDeniedPayload
+	GatewayConfigReloadedPayload                 GatewayConfigReloadedPayload
+	GatewayConfigRejectedPayload                 GatewayConfigRejectedPayload
 }
 
 // AuditEventEventDataType is oneOf type of AuditEventEventData.
@@ -8568,6 +8751,7 @@ const (
 	AIAgentInteractiveStartedPayloadAuditEventEventData                              AuditEventEventDataType = "aiagent.interactive.started"
 	AIAgentInteractiveCompletedPayloadAuditEventEventData                            AuditEventEventDataType = "aiagent.interactive.completed"
 	AIAgentInteractiveK8sCallPayloadAuditEventEventData                              AuditEventEventDataType = "aiagent.interactive.k8s_call"
+	AIAgentSecretAccessedPayloadAuditEventEventData                                  AuditEventEventDataType = "aiagent.secret.accessed"
 	AIAgentSessionObservedPayloadAuditEventEventData                                 AuditEventEventDataType = "aiagent.session.observed"
 	AIAgentSessionAccessDeniedPayloadAuditEventEventData                             AuditEventEventDataType = "aiagent.session.access_denied"
 	AIAgentInvestigationCancelledPayloadAuditEventEventData                          AuditEventEventDataType = "aiagent.investigation.cancelled"
@@ -8632,6 +8816,9 @@ const (
 	ApifrontendSeverityTriageFailedPayloadAuditEventEventData                        AuditEventEventDataType = "apifrontend.severity_triage.failed"
 	ApifrontendConfigReloadedPayloadAuditEventEventData                              AuditEventEventDataType = "apifrontend.config.reloaded"
 	ApifrontendConfigRejectedPayloadAuditEventEventData                              AuditEventEventDataType = "apifrontend.config.rejected"
+	DatastorageRatelimitDeniedPayloadAuditEventEventData                             AuditEventEventDataType = "datastorage.ratelimit.denied"
+	GatewayConfigReloadedPayloadAuditEventEventData                                  AuditEventEventDataType = "gateway.config.reloaded"
+	GatewayConfigRejectedPayloadAuditEventEventData                                  AuditEventEventDataType = "gateway.config.rejected"
 )
 
 // IsGatewayAuditPayload reports whether AuditEventEventData is GatewayAuditPayload.
@@ -8867,6 +9054,11 @@ func (s AuditEventEventData) IsAIAgentInteractiveCompletedPayload() bool {
 // IsAIAgentInteractiveK8sCallPayload reports whether AuditEventEventData is AIAgentInteractiveK8sCallPayload.
 func (s AuditEventEventData) IsAIAgentInteractiveK8sCallPayload() bool {
 	return s.Type == AIAgentInteractiveK8sCallPayloadAuditEventEventData
+}
+
+// IsAIAgentSecretAccessedPayload reports whether AuditEventEventData is AIAgentSecretAccessedPayload.
+func (s AuditEventEventData) IsAIAgentSecretAccessedPayload() bool {
+	return s.Type == AIAgentSecretAccessedPayloadAuditEventEventData
 }
 
 // IsAIAgentSessionObservedPayload reports whether AuditEventEventData is AIAgentSessionObservedPayload.
@@ -9132,6 +9324,21 @@ func (s AuditEventEventData) IsApifrontendConfigReloadedPayload() bool {
 // IsApifrontendConfigRejectedPayload reports whether AuditEventEventData is ApifrontendConfigRejectedPayload.
 func (s AuditEventEventData) IsApifrontendConfigRejectedPayload() bool {
 	return s.Type == ApifrontendConfigRejectedPayloadAuditEventEventData
+}
+
+// IsDatastorageRatelimitDeniedPayload reports whether AuditEventEventData is DatastorageRatelimitDeniedPayload.
+func (s AuditEventEventData) IsDatastorageRatelimitDeniedPayload() bool {
+	return s.Type == DatastorageRatelimitDeniedPayloadAuditEventEventData
+}
+
+// IsGatewayConfigReloadedPayload reports whether AuditEventEventData is GatewayConfigReloadedPayload.
+func (s AuditEventEventData) IsGatewayConfigReloadedPayload() bool {
+	return s.Type == GatewayConfigReloadedPayloadAuditEventEventData
+}
+
+// IsGatewayConfigRejectedPayload reports whether AuditEventEventData is GatewayConfigRejectedPayload.
+func (s AuditEventEventData) IsGatewayConfigRejectedPayload() bool {
+	return s.Type == GatewayConfigRejectedPayloadAuditEventEventData
 }
 
 // SetGatewayAuditPayload sets AuditEventEventData to GatewayAuditPayload.
@@ -10220,6 +10427,27 @@ func (s AuditEventEventData) GetAIAgentInteractiveK8sCallPayload() (v AIAgentInt
 func NewAIAgentInteractiveK8sCallPayloadAuditEventEventData(v AIAgentInteractiveK8sCallPayload) AuditEventEventData {
 	var s AuditEventEventData
 	s.SetAIAgentInteractiveK8sCallPayload(v)
+	return s
+}
+
+// SetAIAgentSecretAccessedPayload sets AuditEventEventData to AIAgentSecretAccessedPayload.
+func (s *AuditEventEventData) SetAIAgentSecretAccessedPayload(v AIAgentSecretAccessedPayload) {
+	s.Type = AIAgentSecretAccessedPayloadAuditEventEventData
+	s.AIAgentSecretAccessedPayload = v
+}
+
+// GetAIAgentSecretAccessedPayload returns AIAgentSecretAccessedPayload and true boolean if AuditEventEventData is AIAgentSecretAccessedPayload.
+func (s AuditEventEventData) GetAIAgentSecretAccessedPayload() (v AIAgentSecretAccessedPayload, ok bool) {
+	if !s.IsAIAgentSecretAccessedPayload() {
+		return v, false
+	}
+	return s.AIAgentSecretAccessedPayload, true
+}
+
+// NewAIAgentSecretAccessedPayloadAuditEventEventData returns new AuditEventEventData from AIAgentSecretAccessedPayload.
+func NewAIAgentSecretAccessedPayloadAuditEventEventData(v AIAgentSecretAccessedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetAIAgentSecretAccessedPayload(v)
 	return s
 }
 
@@ -11383,6 +11611,69 @@ func NewApifrontendConfigRejectedPayloadAuditEventEventData(v ApifrontendConfigR
 	return s
 }
 
+// SetDatastorageRatelimitDeniedPayload sets AuditEventEventData to DatastorageRatelimitDeniedPayload.
+func (s *AuditEventEventData) SetDatastorageRatelimitDeniedPayload(v DatastorageRatelimitDeniedPayload) {
+	s.Type = DatastorageRatelimitDeniedPayloadAuditEventEventData
+	s.DatastorageRatelimitDeniedPayload = v
+}
+
+// GetDatastorageRatelimitDeniedPayload returns DatastorageRatelimitDeniedPayload and true boolean if AuditEventEventData is DatastorageRatelimitDeniedPayload.
+func (s AuditEventEventData) GetDatastorageRatelimitDeniedPayload() (v DatastorageRatelimitDeniedPayload, ok bool) {
+	if !s.IsDatastorageRatelimitDeniedPayload() {
+		return v, false
+	}
+	return s.DatastorageRatelimitDeniedPayload, true
+}
+
+// NewDatastorageRatelimitDeniedPayloadAuditEventEventData returns new AuditEventEventData from DatastorageRatelimitDeniedPayload.
+func NewDatastorageRatelimitDeniedPayloadAuditEventEventData(v DatastorageRatelimitDeniedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetDatastorageRatelimitDeniedPayload(v)
+	return s
+}
+
+// SetGatewayConfigReloadedPayload sets AuditEventEventData to GatewayConfigReloadedPayload.
+func (s *AuditEventEventData) SetGatewayConfigReloadedPayload(v GatewayConfigReloadedPayload) {
+	s.Type = GatewayConfigReloadedPayloadAuditEventEventData
+	s.GatewayConfigReloadedPayload = v
+}
+
+// GetGatewayConfigReloadedPayload returns GatewayConfigReloadedPayload and true boolean if AuditEventEventData is GatewayConfigReloadedPayload.
+func (s AuditEventEventData) GetGatewayConfigReloadedPayload() (v GatewayConfigReloadedPayload, ok bool) {
+	if !s.IsGatewayConfigReloadedPayload() {
+		return v, false
+	}
+	return s.GatewayConfigReloadedPayload, true
+}
+
+// NewGatewayConfigReloadedPayloadAuditEventEventData returns new AuditEventEventData from GatewayConfigReloadedPayload.
+func NewGatewayConfigReloadedPayloadAuditEventEventData(v GatewayConfigReloadedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetGatewayConfigReloadedPayload(v)
+	return s
+}
+
+// SetGatewayConfigRejectedPayload sets AuditEventEventData to GatewayConfigRejectedPayload.
+func (s *AuditEventEventData) SetGatewayConfigRejectedPayload(v GatewayConfigRejectedPayload) {
+	s.Type = GatewayConfigRejectedPayloadAuditEventEventData
+	s.GatewayConfigRejectedPayload = v
+}
+
+// GetGatewayConfigRejectedPayload returns GatewayConfigRejectedPayload and true boolean if AuditEventEventData is GatewayConfigRejectedPayload.
+func (s AuditEventEventData) GetGatewayConfigRejectedPayload() (v GatewayConfigRejectedPayload, ok bool) {
+	if !s.IsGatewayConfigRejectedPayload() {
+		return v, false
+	}
+	return s.GatewayConfigRejectedPayload, true
+}
+
+// NewGatewayConfigRejectedPayloadAuditEventEventData returns new AuditEventEventData from GatewayConfigRejectedPayload.
+func NewGatewayConfigRejectedPayloadAuditEventEventData(v GatewayConfigRejectedPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetGatewayConfigRejectedPayload(v)
+	return s
+}
+
 // Result of the event.
 type AuditEventEventOutcome string
 
@@ -11456,7 +11747,9 @@ type AuditEventRequest struct {
 	// - effectiveness: Effectiveness assessment and monitoring events
 	// - actiontype: ActionType taxonomy lifecycle events (Issue #300)
 	// - apifrontend: API Frontend service — triage, session, delegation, and user decision events
-	// (Issue #1021).
+	// (Issue #1021)
+	// - security: Cross-cutting security control events at the HTTP layer (e.g. rate-limit denials) not
+	// tied to a single business domain (GAP-09, Issue #1505).
 	EventCategory AuditEventRequestEventCategory `json:"event_category"`
 	// Action performed (ADR-034).
 	EventAction string `json:"event_action"`
@@ -11736,7 +12029,9 @@ func (s *AuditEventRequest) SetEventData(val AuditEventRequestEventData) {
 // - effectiveness: Effectiveness assessment and monitoring events
 // - actiontype: ActionType taxonomy lifecycle events (Issue #300)
 // - apifrontend: API Frontend service — triage, session, delegation, and user decision events
-// (Issue #1021).
+// (Issue #1021)
+// - security: Cross-cutting security control events at the HTTP layer (e.g. rate-limit denials) not
+// tied to a single business domain (GAP-09, Issue #1505).
 type AuditEventRequestEventCategory string
 
 const (
@@ -11752,6 +12047,7 @@ const (
 	AuditEventRequestEventCategoryEffectiveness     AuditEventRequestEventCategory = "effectiveness"
 	AuditEventRequestEventCategoryActiontype        AuditEventRequestEventCategory = "actiontype"
 	AuditEventRequestEventCategoryApifrontend       AuditEventRequestEventCategory = "apifrontend"
+	AuditEventRequestEventCategorySecurity          AuditEventRequestEventCategory = "security"
 )
 
 // AllValues returns all AuditEventRequestEventCategory values.
@@ -11769,6 +12065,7 @@ func (AuditEventRequestEventCategory) AllValues() []AuditEventRequestEventCatego
 		AuditEventRequestEventCategoryEffectiveness,
 		AuditEventRequestEventCategoryActiontype,
 		AuditEventRequestEventCategoryApifrontend,
+		AuditEventRequestEventCategorySecurity,
 	}
 }
 
@@ -11798,6 +12095,8 @@ func (s AuditEventRequestEventCategory) MarshalText() ([]byte, error) {
 	case AuditEventRequestEventCategoryActiontype:
 		return []byte(s), nil
 	case AuditEventRequestEventCategoryApifrontend:
+		return []byte(s), nil
+	case AuditEventRequestEventCategorySecurity:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -11842,6 +12141,9 @@ func (s *AuditEventRequestEventCategory) UnmarshalText(data []byte) error {
 		return nil
 	case AuditEventRequestEventCategoryApifrontend:
 		*s = AuditEventRequestEventCategoryApifrontend
+		return nil
+	case AuditEventRequestEventCategorySecurity:
+		*s = AuditEventRequestEventCategorySecurity
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -11894,6 +12196,7 @@ type AuditEventRequestEventData struct {
 	AIAgentInteractiveStartedPayload             AIAgentInteractiveStartedPayload
 	AIAgentInteractiveCompletedPayload           AIAgentInteractiveCompletedPayload
 	AIAgentInteractiveK8sCallPayload             AIAgentInteractiveK8sCallPayload
+	AIAgentSecretAccessedPayload                 AIAgentSecretAccessedPayload
 	AIAgentSessionObservedPayload                AIAgentSessionObservedPayload
 	AIAgentSessionAccessDeniedPayload            AIAgentSessionAccessDeniedPayload
 	AIAgentInvestigationCancelledPayload         AIAgentInvestigationCancelledPayload
@@ -11944,6 +12247,9 @@ type AuditEventRequestEventData struct {
 	ApifrontendSeverityTriageFailedPayload       ApifrontendSeverityTriageFailedPayload
 	ApifrontendConfigReloadedPayload             ApifrontendConfigReloadedPayload
 	ApifrontendConfigRejectedPayload             ApifrontendConfigRejectedPayload
+	DatastorageRatelimitDeniedPayload            DatastorageRatelimitDeniedPayload
+	GatewayConfigReloadedPayload                 GatewayConfigReloadedPayload
+	GatewayConfigRejectedPayload                 GatewayConfigRejectedPayload
 }
 
 // AuditEventRequestEventDataType is oneOf type of AuditEventRequestEventData.
@@ -12024,6 +12330,7 @@ const (
 	AIAgentInteractiveStartedPayloadAuditEventRequestEventData                                     AuditEventRequestEventDataType = "aiagent.interactive.started"
 	AIAgentInteractiveCompletedPayloadAuditEventRequestEventData                                   AuditEventRequestEventDataType = "aiagent.interactive.completed"
 	AIAgentInteractiveK8sCallPayloadAuditEventRequestEventData                                     AuditEventRequestEventDataType = "aiagent.interactive.k8s_call"
+	AIAgentSecretAccessedPayloadAuditEventRequestEventData                                         AuditEventRequestEventDataType = "aiagent.secret.accessed"
 	AIAgentSessionObservedPayloadAuditEventRequestEventData                                        AuditEventRequestEventDataType = "aiagent.session.observed"
 	AIAgentSessionAccessDeniedPayloadAuditEventRequestEventData                                    AuditEventRequestEventDataType = "aiagent.session.access_denied"
 	AIAgentInvestigationCancelledPayloadAuditEventRequestEventData                                 AuditEventRequestEventDataType = "aiagent.investigation.cancelled"
@@ -12088,6 +12395,9 @@ const (
 	ApifrontendSeverityTriageFailedPayloadAuditEventRequestEventData                               AuditEventRequestEventDataType = "apifrontend.severity_triage.failed"
 	ApifrontendConfigReloadedPayloadAuditEventRequestEventData                                     AuditEventRequestEventDataType = "apifrontend.config.reloaded"
 	ApifrontendConfigRejectedPayloadAuditEventRequestEventData                                     AuditEventRequestEventDataType = "apifrontend.config.rejected"
+	DatastorageRatelimitDeniedPayloadAuditEventRequestEventData                                    AuditEventRequestEventDataType = "datastorage.ratelimit.denied"
+	GatewayConfigReloadedPayloadAuditEventRequestEventData                                         AuditEventRequestEventDataType = "gateway.config.reloaded"
+	GatewayConfigRejectedPayloadAuditEventRequestEventData                                         AuditEventRequestEventDataType = "gateway.config.rejected"
 )
 
 // IsGatewayAuditPayload reports whether AuditEventRequestEventData is GatewayAuditPayload.
@@ -12323,6 +12633,11 @@ func (s AuditEventRequestEventData) IsAIAgentInteractiveCompletedPayload() bool 
 // IsAIAgentInteractiveK8sCallPayload reports whether AuditEventRequestEventData is AIAgentInteractiveK8sCallPayload.
 func (s AuditEventRequestEventData) IsAIAgentInteractiveK8sCallPayload() bool {
 	return s.Type == AIAgentInteractiveK8sCallPayloadAuditEventRequestEventData
+}
+
+// IsAIAgentSecretAccessedPayload reports whether AuditEventRequestEventData is AIAgentSecretAccessedPayload.
+func (s AuditEventRequestEventData) IsAIAgentSecretAccessedPayload() bool {
+	return s.Type == AIAgentSecretAccessedPayloadAuditEventRequestEventData
 }
 
 // IsAIAgentSessionObservedPayload reports whether AuditEventRequestEventData is AIAgentSessionObservedPayload.
@@ -12588,6 +12903,21 @@ func (s AuditEventRequestEventData) IsApifrontendConfigReloadedPayload() bool {
 // IsApifrontendConfigRejectedPayload reports whether AuditEventRequestEventData is ApifrontendConfigRejectedPayload.
 func (s AuditEventRequestEventData) IsApifrontendConfigRejectedPayload() bool {
 	return s.Type == ApifrontendConfigRejectedPayloadAuditEventRequestEventData
+}
+
+// IsDatastorageRatelimitDeniedPayload reports whether AuditEventRequestEventData is DatastorageRatelimitDeniedPayload.
+func (s AuditEventRequestEventData) IsDatastorageRatelimitDeniedPayload() bool {
+	return s.Type == DatastorageRatelimitDeniedPayloadAuditEventRequestEventData
+}
+
+// IsGatewayConfigReloadedPayload reports whether AuditEventRequestEventData is GatewayConfigReloadedPayload.
+func (s AuditEventRequestEventData) IsGatewayConfigReloadedPayload() bool {
+	return s.Type == GatewayConfigReloadedPayloadAuditEventRequestEventData
+}
+
+// IsGatewayConfigRejectedPayload reports whether AuditEventRequestEventData is GatewayConfigRejectedPayload.
+func (s AuditEventRequestEventData) IsGatewayConfigRejectedPayload() bool {
+	return s.Type == GatewayConfigRejectedPayloadAuditEventRequestEventData
 }
 
 // SetGatewayAuditPayload sets AuditEventRequestEventData to GatewayAuditPayload.
@@ -13676,6 +14006,27 @@ func (s AuditEventRequestEventData) GetAIAgentInteractiveK8sCallPayload() (v AIA
 func NewAIAgentInteractiveK8sCallPayloadAuditEventRequestEventData(v AIAgentInteractiveK8sCallPayload) AuditEventRequestEventData {
 	var s AuditEventRequestEventData
 	s.SetAIAgentInteractiveK8sCallPayload(v)
+	return s
+}
+
+// SetAIAgentSecretAccessedPayload sets AuditEventRequestEventData to AIAgentSecretAccessedPayload.
+func (s *AuditEventRequestEventData) SetAIAgentSecretAccessedPayload(v AIAgentSecretAccessedPayload) {
+	s.Type = AIAgentSecretAccessedPayloadAuditEventRequestEventData
+	s.AIAgentSecretAccessedPayload = v
+}
+
+// GetAIAgentSecretAccessedPayload returns AIAgentSecretAccessedPayload and true boolean if AuditEventRequestEventData is AIAgentSecretAccessedPayload.
+func (s AuditEventRequestEventData) GetAIAgentSecretAccessedPayload() (v AIAgentSecretAccessedPayload, ok bool) {
+	if !s.IsAIAgentSecretAccessedPayload() {
+		return v, false
+	}
+	return s.AIAgentSecretAccessedPayload, true
+}
+
+// NewAIAgentSecretAccessedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from AIAgentSecretAccessedPayload.
+func NewAIAgentSecretAccessedPayloadAuditEventRequestEventData(v AIAgentSecretAccessedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetAIAgentSecretAccessedPayload(v)
 	return s
 }
 
@@ -14839,6 +15190,69 @@ func NewApifrontendConfigRejectedPayloadAuditEventRequestEventData(v Apifrontend
 	return s
 }
 
+// SetDatastorageRatelimitDeniedPayload sets AuditEventRequestEventData to DatastorageRatelimitDeniedPayload.
+func (s *AuditEventRequestEventData) SetDatastorageRatelimitDeniedPayload(v DatastorageRatelimitDeniedPayload) {
+	s.Type = DatastorageRatelimitDeniedPayloadAuditEventRequestEventData
+	s.DatastorageRatelimitDeniedPayload = v
+}
+
+// GetDatastorageRatelimitDeniedPayload returns DatastorageRatelimitDeniedPayload and true boolean if AuditEventRequestEventData is DatastorageRatelimitDeniedPayload.
+func (s AuditEventRequestEventData) GetDatastorageRatelimitDeniedPayload() (v DatastorageRatelimitDeniedPayload, ok bool) {
+	if !s.IsDatastorageRatelimitDeniedPayload() {
+		return v, false
+	}
+	return s.DatastorageRatelimitDeniedPayload, true
+}
+
+// NewDatastorageRatelimitDeniedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from DatastorageRatelimitDeniedPayload.
+func NewDatastorageRatelimitDeniedPayloadAuditEventRequestEventData(v DatastorageRatelimitDeniedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetDatastorageRatelimitDeniedPayload(v)
+	return s
+}
+
+// SetGatewayConfigReloadedPayload sets AuditEventRequestEventData to GatewayConfigReloadedPayload.
+func (s *AuditEventRequestEventData) SetGatewayConfigReloadedPayload(v GatewayConfigReloadedPayload) {
+	s.Type = GatewayConfigReloadedPayloadAuditEventRequestEventData
+	s.GatewayConfigReloadedPayload = v
+}
+
+// GetGatewayConfigReloadedPayload returns GatewayConfigReloadedPayload and true boolean if AuditEventRequestEventData is GatewayConfigReloadedPayload.
+func (s AuditEventRequestEventData) GetGatewayConfigReloadedPayload() (v GatewayConfigReloadedPayload, ok bool) {
+	if !s.IsGatewayConfigReloadedPayload() {
+		return v, false
+	}
+	return s.GatewayConfigReloadedPayload, true
+}
+
+// NewGatewayConfigReloadedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from GatewayConfigReloadedPayload.
+func NewGatewayConfigReloadedPayloadAuditEventRequestEventData(v GatewayConfigReloadedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetGatewayConfigReloadedPayload(v)
+	return s
+}
+
+// SetGatewayConfigRejectedPayload sets AuditEventRequestEventData to GatewayConfigRejectedPayload.
+func (s *AuditEventRequestEventData) SetGatewayConfigRejectedPayload(v GatewayConfigRejectedPayload) {
+	s.Type = GatewayConfigRejectedPayloadAuditEventRequestEventData
+	s.GatewayConfigRejectedPayload = v
+}
+
+// GetGatewayConfigRejectedPayload returns GatewayConfigRejectedPayload and true boolean if AuditEventRequestEventData is GatewayConfigRejectedPayload.
+func (s AuditEventRequestEventData) GetGatewayConfigRejectedPayload() (v GatewayConfigRejectedPayload, ok bool) {
+	if !s.IsGatewayConfigRejectedPayload() {
+		return v, false
+	}
+	return s.GatewayConfigRejectedPayload, true
+}
+
+// NewGatewayConfigRejectedPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from GatewayConfigRejectedPayload.
+func NewGatewayConfigRejectedPayloadAuditEventRequestEventData(v GatewayConfigRejectedPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetGatewayConfigRejectedPayload(v)
+	return s
+}
+
 // Result of the event.
 type AuditEventRequestEventOutcome string
 
@@ -15861,6 +16275,107 @@ func (s *CustomLabels) init() CustomLabels {
 		*s = m
 	}
 	return m
+}
+
+// Data Storage rate limit denied event payload (datastorage.ratelimit.denied) — request rejected
+// by per-IP rate limiter on the DS HTTP API (FedRAMP AU-12, GAP-09 Issue.
+// Ref: #/components/schemas/DatastorageRatelimitDeniedPayload
+type DatastorageRatelimitDeniedPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType DatastorageRatelimitDeniedPayloadEventType `json:"event_type"`
+	// Unique event identifier.
+	EventID string `json:"event_id"`
+	// Source IP address of the rate-limited request.
+	SourceIP OptString `json:"source_ip"`
+	// HTTP request path.
+	Path OptString `json:"path"`
+	// HTTP request method.
+	Method OptString `json:"method"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *DatastorageRatelimitDeniedPayload) GetEventType() DatastorageRatelimitDeniedPayloadEventType {
+	return s.EventType
+}
+
+// GetEventID returns the value of EventID.
+func (s *DatastorageRatelimitDeniedPayload) GetEventID() string {
+	return s.EventID
+}
+
+// GetSourceIP returns the value of SourceIP.
+func (s *DatastorageRatelimitDeniedPayload) GetSourceIP() OptString {
+	return s.SourceIP
+}
+
+// GetPath returns the value of Path.
+func (s *DatastorageRatelimitDeniedPayload) GetPath() OptString {
+	return s.Path
+}
+
+// GetMethod returns the value of Method.
+func (s *DatastorageRatelimitDeniedPayload) GetMethod() OptString {
+	return s.Method
+}
+
+// SetEventType sets the value of EventType.
+func (s *DatastorageRatelimitDeniedPayload) SetEventType(val DatastorageRatelimitDeniedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetEventID sets the value of EventID.
+func (s *DatastorageRatelimitDeniedPayload) SetEventID(val string) {
+	s.EventID = val
+}
+
+// SetSourceIP sets the value of SourceIP.
+func (s *DatastorageRatelimitDeniedPayload) SetSourceIP(val OptString) {
+	s.SourceIP = val
+}
+
+// SetPath sets the value of Path.
+func (s *DatastorageRatelimitDeniedPayload) SetPath(val OptString) {
+	s.Path = val
+}
+
+// SetMethod sets the value of Method.
+func (s *DatastorageRatelimitDeniedPayload) SetMethod(val OptString) {
+	s.Method = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type DatastorageRatelimitDeniedPayloadEventType string
+
+const (
+	DatastorageRatelimitDeniedPayloadEventTypeDatastorageRatelimitDenied DatastorageRatelimitDeniedPayloadEventType = "datastorage.ratelimit.denied"
+)
+
+// AllValues returns all DatastorageRatelimitDeniedPayloadEventType values.
+func (DatastorageRatelimitDeniedPayloadEventType) AllValues() []DatastorageRatelimitDeniedPayloadEventType {
+	return []DatastorageRatelimitDeniedPayloadEventType{
+		DatastorageRatelimitDeniedPayloadEventTypeDatastorageRatelimitDenied,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s DatastorageRatelimitDeniedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case DatastorageRatelimitDeniedPayloadEventTypeDatastorageRatelimitDenied:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *DatastorageRatelimitDeniedPayloadEventType) UnmarshalText(data []byte) error {
+	switch DatastorageRatelimitDeniedPayloadEventType(data) {
+	case DatastorageRatelimitDeniedPayloadEventTypeDatastorageRatelimitDenied:
+		*s = DatastorageRatelimitDeniedPayloadEventTypeDatastorageRatelimitDenied
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 type DeprecateWorkflowBadRequest RFC7807Problem
@@ -18021,6 +18536,160 @@ func (s *GatewayAuditPayloadSignalType) UnmarshalText(data []byte) error {
 	switch GatewayAuditPayloadSignalType(data) {
 	case GatewayAuditPayloadSignalTypeAlert:
 		*s = GatewayAuditPayloadSignalTypeAlert
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Gateway config rejected event payload (gateway.config.rejected) — hot-reload configuration
+// rejected, previous configuration kept (SOC2 CC7.2, GAP-11 Issue.
+// Ref: #/components/schemas/GatewayConfigRejectedPayload
+type GatewayConfigRejectedPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType GatewayConfigRejectedPayloadEventType `json:"event_type"`
+	// Hot-reloadable component whose reload was rejected (e.g. log_level, ca_cert).
+	Component string `json:"component"`
+	// Reason configuration was rejected.
+	RejectionReason string `json:"rejection_reason"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *GatewayConfigRejectedPayload) GetEventType() GatewayConfigRejectedPayloadEventType {
+	return s.EventType
+}
+
+// GetComponent returns the value of Component.
+func (s *GatewayConfigRejectedPayload) GetComponent() string {
+	return s.Component
+}
+
+// GetRejectionReason returns the value of RejectionReason.
+func (s *GatewayConfigRejectedPayload) GetRejectionReason() string {
+	return s.RejectionReason
+}
+
+// SetEventType sets the value of EventType.
+func (s *GatewayConfigRejectedPayload) SetEventType(val GatewayConfigRejectedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetComponent sets the value of Component.
+func (s *GatewayConfigRejectedPayload) SetComponent(val string) {
+	s.Component = val
+}
+
+// SetRejectionReason sets the value of RejectionReason.
+func (s *GatewayConfigRejectedPayload) SetRejectionReason(val string) {
+	s.RejectionReason = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type GatewayConfigRejectedPayloadEventType string
+
+const (
+	GatewayConfigRejectedPayloadEventTypeGatewayConfigRejected GatewayConfigRejectedPayloadEventType = "gateway.config.rejected"
+)
+
+// AllValues returns all GatewayConfigRejectedPayloadEventType values.
+func (GatewayConfigRejectedPayloadEventType) AllValues() []GatewayConfigRejectedPayloadEventType {
+	return []GatewayConfigRejectedPayloadEventType{
+		GatewayConfigRejectedPayloadEventTypeGatewayConfigRejected,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s GatewayConfigRejectedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case GatewayConfigRejectedPayloadEventTypeGatewayConfigRejected:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *GatewayConfigRejectedPayloadEventType) UnmarshalText(data []byte) error {
+	switch GatewayConfigRejectedPayloadEventType(data) {
+	case GatewayConfigRejectedPayloadEventTypeGatewayConfigRejected:
+		*s = GatewayConfigRejectedPayloadEventTypeGatewayConfigRejected
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Gateway config reloaded event payload (gateway.config.reloaded) — hot-reload configuration
+// accepted (SOC2 CC7.2, GAP-11 Issue.
+// Ref: #/components/schemas/GatewayConfigReloadedPayload
+type GatewayConfigReloadedPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType GatewayConfigReloadedPayloadEventType `json:"event_type"`
+	// Hot-reloadable component that was reloaded (e.g. log_level, ca_cert).
+	Component string `json:"component"`
+	// New configuration version or hash.
+	ConfigVersion OptString `json:"config_version"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *GatewayConfigReloadedPayload) GetEventType() GatewayConfigReloadedPayloadEventType {
+	return s.EventType
+}
+
+// GetComponent returns the value of Component.
+func (s *GatewayConfigReloadedPayload) GetComponent() string {
+	return s.Component
+}
+
+// GetConfigVersion returns the value of ConfigVersion.
+func (s *GatewayConfigReloadedPayload) GetConfigVersion() OptString {
+	return s.ConfigVersion
+}
+
+// SetEventType sets the value of EventType.
+func (s *GatewayConfigReloadedPayload) SetEventType(val GatewayConfigReloadedPayloadEventType) {
+	s.EventType = val
+}
+
+// SetComponent sets the value of Component.
+func (s *GatewayConfigReloadedPayload) SetComponent(val string) {
+	s.Component = val
+}
+
+// SetConfigVersion sets the value of ConfigVersion.
+func (s *GatewayConfigReloadedPayload) SetConfigVersion(val OptString) {
+	s.ConfigVersion = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type GatewayConfigReloadedPayloadEventType string
+
+const (
+	GatewayConfigReloadedPayloadEventTypeGatewayConfigReloaded GatewayConfigReloadedPayloadEventType = "gateway.config.reloaded"
+)
+
+// AllValues returns all GatewayConfigReloadedPayloadEventType values.
+func (GatewayConfigReloadedPayloadEventType) AllValues() []GatewayConfigReloadedPayloadEventType {
+	return []GatewayConfigReloadedPayloadEventType{
+		GatewayConfigReloadedPayloadEventTypeGatewayConfigReloaded,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s GatewayConfigReloadedPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case GatewayConfigReloadedPayloadEventTypeGatewayConfigReloaded:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *GatewayConfigReloadedPayloadEventType) UnmarshalText(data []byte) error {
+	switch GatewayConfigReloadedPayloadEventType(data) {
+	case GatewayConfigReloadedPayloadEventTypeGatewayConfigReloaded:
+		*s = GatewayConfigReloadedPayloadEventTypeGatewayConfigReloaded
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
