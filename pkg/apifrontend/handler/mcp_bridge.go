@@ -18,9 +18,9 @@ import (
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
-	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ds"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	prom "github.com/jordigilh/kubernaut/pkg/apifrontend/prometheus"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ratelimit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/security"
@@ -117,6 +117,10 @@ func (c *MCPBridgeConfig) GetMaxConcurrentTools() int64 {
 	return defaultMaxConcurrentTool
 }
 
+// toolGate reports whether a session-dependent tool should be registered,
+// given cfg.InteractiveEnabled (#1366).
+type toolGate func(name string) bool
+
 // RegisterTools registers all MCP domain tools on the server with the real dispatch handlers.
 // When cfg.InteractiveEnabled is false, session-dependent tools (those in
 // tools.SessionDependentTools) are skipped (#1366).
@@ -131,8 +135,20 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 		cfg.Logger = logr.Discard()
 	}
 	sem := semaphore.NewWeighted(cfg.GetMaxConcurrentTools())
+	shouldRegister := newToolGate(cfg)
 
-	shouldRegister := func(name string) bool {
+	registerCRDTools(srv, cfg, sem, shouldRegister)
+	registerInvestigationTool(srv, cfg, sem, shouldRegister)
+	registerKAMCPTools(srv, cfg, sem, shouldRegister)
+	registerDSTools(srv, cfg, sem)
+	registerInteractiveTools(srv, cfg, sem, shouldRegister)
+	registerAlertTools(srv, cfg, sem)
+}
+
+// newToolGate builds the shouldRegister predicate used to skip session-dependent
+// tools (those in tools.SessionDependentTools) when interactive mode is disabled.
+func newToolGate(cfg *MCPBridgeConfig) toolGate {
+	return func(name string) bool {
 		if cfg.InteractiveEnabled {
 			return true
 		}
@@ -142,9 +158,11 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 		}
 		return true
 	}
+}
 
-	// K8s CRD tools (ADR-022: all use AF's ServiceAccount)
-	// Namespace is always injected server-side — never exposed to LLM.
+// registerCRDTools registers the K8s CRD tools (ADR-022: all use AF's ServiceAccount).
+// Namespace is always injected server-side — never exposed to LLM.
+func registerCRDTools(srv *mcp.Server, cfg *MCPBridgeConfig, sem *semaphore.Weighted, shouldRegister toolGate) {
 	registerTool(srv, cfg, sem, "kubernaut_list_remediations", "List active and recent remediations",
 		func(ctx context.Context, args tools.ListRemediationsArgs) (any, error) {
 			args.Namespace = cfg.Namespace
@@ -195,37 +213,42 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 				return tools.HandleAwaitSession(ctx, cfg.TypedClient, args)
 			})
 	}
+}
 
-	// KA investigation tool (MCP-only, non-blocking).
-	// Uses KADedicatedClient (SDKMCPClient) which creates dedicated non-pooled
-	// sessions for StartInvestigation. PooledMCPClient does not support StartInvestigation.
-	if shouldRegister("kubernaut_investigate") {
-		dedicatedClient := cfg.KADedicatedClient
-		if dedicatedClient == nil {
-			dedicatedClient = cfg.KAMCPClient
-		}
-		isSignaler := buildISSignaler(cfg)
-		var onInvestigateStarted tools.SessionStartedHook
-		if isSignaler == nil {
-			onInvestigateStarted = buildSessionStartedHook(cfg)
-		}
-		registerTool(srv, cfg, sem, "kubernaut_investigate", "Investigate an infrastructure incident",
-			func(ctx context.Context, args tools.InvestigateMCPArgs) (any, error) {
-				ctx = tools.ContextWithRESTMapper(ctx, cfg.RESTMapper)
-				return tools.HandleInvestigationMCPWithRegistry(ctx, &tools.InvestigateConfig{
-					MCPClient: dedicatedClient,
-					Client:    cfg.TypedClient,
-					Namespace: cfg.Namespace,
-					Auditor:   cfg.Auditor,
-					Registry:  cfg.InvestigationRegistry,
-					OnStarted: onInvestigateStarted,
-					Signaler:  isSignaler,
-					Triager:   cfg.Triager,
-				}, args, false, "")
-			})
+// registerInvestigationTool registers the KA investigation tool (MCP-only, non-blocking).
+// Uses KADedicatedClient (SDKMCPClient) which creates dedicated non-pooled
+// sessions for StartInvestigation. PooledMCPClient does not support StartInvestigation.
+func registerInvestigationTool(srv *mcp.Server, cfg *MCPBridgeConfig, sem *semaphore.Weighted, shouldRegister toolGate) {
+	if !shouldRegister("kubernaut_investigate") {
+		return
 	}
+	dedicatedClient := cfg.KADedicatedClient
+	if dedicatedClient == nil {
+		dedicatedClient = cfg.KAMCPClient
+	}
+	isSignaler := buildISSignaler(cfg)
+	var onInvestigateStarted tools.SessionStartedHook
+	if isSignaler == nil {
+		onInvestigateStarted = buildSessionStartedHook(cfg)
+	}
+	registerTool(srv, cfg, sem, "kubernaut_investigate", "Investigate an infrastructure incident",
+		func(ctx context.Context, args tools.InvestigateMCPArgs) (any, error) {
+			ctx = tools.ContextWithRESTMapper(ctx, cfg.RESTMapper)
+			return tools.HandleInvestigationMCPWithRegistry(ctx, &tools.InvestigateConfig{
+				MCPClient: dedicatedClient,
+				Client:    cfg.TypedClient,
+				Namespace: cfg.Namespace,
+				Auditor:   cfg.Auditor,
+				Registry:  cfg.InvestigationRegistry,
+				OnStarted: onInvestigateStarted,
+				Signaler:  isSignaler,
+				Triager:   cfg.Triager,
+			}, args, false, "")
+		})
+}
 
-	// KA MCP tools
+// registerKAMCPTools registers the workflow-selection/discovery/decision KA MCP tools.
+func registerKAMCPTools(srv *mcp.Server, cfg *MCPBridgeConfig, sem *semaphore.Weighted, shouldRegister toolGate) {
 	if shouldRegister("kubernaut_select_workflow") {
 		registerTool(srv, cfg, sem, "kubernaut_select_workflow", "Select a workflow for an investigation",
 			func(ctx context.Context, args tools.SelectWorkflowArgs) (any, error) {
@@ -252,8 +275,11 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 				return tools.HandlePresentDecision(args), nil
 			})
 	}
+}
 
-	// DS tools
+// registerDSTools registers the DataStorage-backed read-only query tools.
+// These are always registered regardless of InteractiveEnabled.
+func registerDSTools(srv *mcp.Server, cfg *MCPBridgeConfig, sem *semaphore.Weighted) {
 	registerTool(srv, cfg, sem, "kubernaut_list_workflows", "List available workflows",
 		func(ctx context.Context, args tools.ListWorkflowsArgs) (any, error) {
 			if cfg.DSClient == nil {
@@ -285,8 +311,15 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 			}
 			return tools.HandleGetAuditTrail(ctx, cfg.DSClient, args)
 		})
+}
 
-	// Interactive investigation tools (G1: 4-phase journey)
+// registerInteractiveTools registers the interactive investigation tools (G1: 4-phase journey).
+//
+// Internal triage tools (kubectl_get, kubectl_list, kubectl_list_events,
+// kubernaut_check_existing_remediation, kubernaut_remediate) are available
+// only to AF's LLM agent (ADK path) and are not exposed via MCP.
+// Stream investigation tool removed — merged into kubernaut_investigate.
+func registerInteractiveTools(srv *mcp.Server, cfg *MCPBridgeConfig, sem *semaphore.Weighted, shouldRegister toolGate) {
 	if shouldRegister("kubernaut_message") {
 		registerTool(srv, cfg, sem, "kubernaut_message", "Send a message to an active investigation session",
 			func(ctx context.Context, args tools.InteractiveActionArgs) (any, error) {
@@ -298,11 +331,7 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 		registerTool(srv, cfg, sem, "kubernaut_complete", "Complete an investigation session",
 			func(ctx context.Context, args tools.InteractiveActionArgs) (any, error) {
 				result, err := tools.HandleComplete(ctx, cfg.KAMCPClient, args, cfg.Auditor)
-				if err == nil && cfg.SessionFinalizer != nil {
-					if fErr := cfg.SessionFinalizer.FinalizeSessionByRR(ctx, cfg.Namespace, args.RRID, isv1alpha1.SessionPhaseCompleted); fErr != nil {
-						cfg.Logger.Error(fErr, "IS CRD phase finalization failed", "rr_id", args.RRID, "phase", "Completed")
-					}
-				}
+				finalizeSessionPhase(ctx, cfg, args.RRID, isv1alpha1.SessionPhaseCompleted, err)
 				return result, err
 			})
 	}
@@ -311,11 +340,7 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 		registerTool(srv, cfg, sem, "kubernaut_cancel", "Cancel an active investigation session",
 			func(ctx context.Context, args tools.InteractiveActionArgs) (any, error) {
 				result, err := tools.HandleCancel(ctx, cfg.KAMCPClient, args, cfg.Auditor)
-				if err == nil && cfg.SessionFinalizer != nil {
-					if fErr := cfg.SessionFinalizer.FinalizeSessionByRR(ctx, cfg.Namespace, args.RRID, isv1alpha1.SessionPhaseCancelled); fErr != nil {
-						cfg.Logger.Error(fErr, "IS CRD phase finalization failed", "rr_id", args.RRID, "phase", "Cancelled")
-					}
-				}
+				finalizeSessionPhase(ctx, cfg, args.RRID, isv1alpha1.SessionPhaseCancelled, err)
 				return result, err
 			})
 	}
@@ -324,11 +349,7 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 		registerTool(srv, cfg, sem, "kubernaut_complete_no_action", "Complete an investigation without selecting a workflow — dismiss or escalate to a human team",
 			func(ctx context.Context, args tools.CompleteNoActionArgs) (any, error) {
 				result, err := tools.HandleCompleteNoAction(ctx, cfg.KAMCPClient, args, cfg.Auditor)
-				if err == nil && cfg.SessionFinalizer != nil {
-					if fErr := cfg.SessionFinalizer.FinalizeSessionByRR(ctx, cfg.Namespace, args.RRID, isv1alpha1.SessionPhaseCompleted); fErr != nil {
-						cfg.Logger.Error(fErr, "IS CRD phase finalization failed", "rr_id", args.RRID, "phase", "Completed")
-					}
-				}
+				finalizeSessionPhase(ctx, cfg, args.RRID, isv1alpha1.SessionPhaseCompleted, err)
 				if err == nil && cfg.ActiveContextRegistry != nil {
 					if username := usernameFromCtx(ctx); username != "system" {
 						cfg.ActiveContextRegistry.Clear(username)
@@ -351,20 +372,30 @@ func RegisterTools(srv *mcp.Server, cfg *MCPBridgeConfig) {
 				return tools.HandleReconnect(ctx, cfg.KAMCPClient, cfg.TypedClient, cfg.Namespace, args, cfg.Auditor)
 			})
 	}
+}
 
-	// Stream investigation tool removed — merged into kubernaut_investigate above.
-
-	// Internal triage tools (kubectl_get, kubectl_list, kubectl_list_events,
-	// kubernaut_check_existing_remediation, kubernaut_remediate) are available
-	// only to AF's LLM agent (ADK path) and are not exposed via MCP.
-
-	// Alert observation tools (#1412) — registered when Prometheus/Thanos is configured.
-	if cfg.PromClient != nil {
-		registerTool(srv, cfg, sem, "kubernaut_list_alerts", "List currently firing or pending Prometheus/Thanos alerts, optionally filtered by namespace, severity, or state",
-			func(ctx context.Context, args tools.ListAlertsArgs) (any, error) {
-				return tools.HandleListAlerts(ctx, cfg.PromClient, args)
-			})
+// finalizeSessionPhase transitions the IS CRD to the given terminal phase after
+// a successful interactive-action handler call, logging (not failing the tool
+// call) if finalization itself errors.
+func finalizeSessionPhase(ctx context.Context, cfg *MCPBridgeConfig, rrID string, phase isv1alpha1.SessionPhase, handlerErr error) {
+	if handlerErr != nil || cfg.SessionFinalizer == nil {
+		return
 	}
+	if fErr := cfg.SessionFinalizer.FinalizeSessionByRR(ctx, cfg.Namespace, rrID, phase); fErr != nil {
+		cfg.Logger.Error(fErr, "IS CRD phase finalization failed", "rr_id", rrID, "phase", phase)
+	}
+}
+
+// registerAlertTools registers alert observation tools (#1412) — only when
+// Prometheus/Thanos is configured.
+func registerAlertTools(srv *mcp.Server, cfg *MCPBridgeConfig, sem *semaphore.Weighted) {
+	if cfg.PromClient == nil {
+		return
+	}
+	registerTool(srv, cfg, sem, "kubernaut_list_alerts", "List currently firing or pending Prometheus/Thanos alerts, optionally filtered by namespace, severity, or state",
+		func(ctx context.Context, args tools.ListAlertsArgs) (any, error) {
+			return tools.HandleListAlerts(ctx, cfg.PromClient, args)
+		})
 }
 
 // registerTool is a generic helper that registers a single tool with all cross-cutting concerns:
