@@ -45,10 +45,12 @@ limitations under the License.
 //
 //	ginkgo -v ./test/e2e/fleetmetadatacache/eaigw/...
 //
-// Memory footprint: ~1.3-1.8GB (Keycloak + fleet-core w/ EAIGW; no
-// DataStorage -- FMC is audit-exempt per DD-AUDIT-003. EAIGW's own footprint
-// (~316MB, Spike S18) is comparable to or lighter than Kuadrant's
-// Istio+controller+broker stack).
+// Memory footprint: ~1.5-2.0GB (Keycloak + fleet-core w/ EAIGW in the primary
+// cluster, plus a second, minimal Kind cluster running only kube-mcp-server
+// for the cross-cluster isolation bridge, DD-TEST-013; no DataStorage -- FMC
+// is audit-exempt per DD-AUDIT-003. EAIGW's own footprint (~316MB, Spike
+// S18) is comparable to or lighter than Kuadrant's Istio+controller+broker
+// stack).
 package eaigw
 
 import (
@@ -57,6 +59,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 	"time"
 
@@ -64,6 +67,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -116,7 +120,7 @@ var _ = SynchronizedBeforeSuite(
 
 		By("Setting up FMC EAIGW E2E infrastructure (Issue #54, Spike S18)")
 		bgCtx := context.Background()
-		fmcImage, setupErr := infrastructure.SetupFMCE2EInfrastructureEAIGW(bgCtx, clusterName, tempKubeconfigPath, GinkgoWriter)
+		fmcImage, remoteKubeconfigPath, setupErr := infrastructure.SetupFMCE2EInfrastructureEAIGW(bgCtx, clusterName, tempKubeconfigPath, GinkgoWriter)
 		Expect(setupErr).ToNot(HaveOccurred(), "FMC EAIGW E2E infrastructure setup failed")
 		_ = fmcImage
 
@@ -124,10 +128,12 @@ var _ = SynchronizedBeforeSuite(
 		Expect(os.Setenv("KUBECONFIG", tempKubeconfigPath)).To(Succeed())
 
 		GinkgoWriter.Println("FMC EAIGW E2E infrastructure ready (Process 1)")
-		return []byte(tempKubeconfigPath)
+		return []byte(tempKubeconfigPath + "\n" + remoteKubeconfigPath)
 	},
 	func(data []byte) {
-		harness.KubeconfigPath = string(data)
+		parts := strings.SplitN(string(data), "\n", 2)
+		harness.KubeconfigPath = parts[0]
+		harness.RemoteKubeconfigPath = parts[1]
 		harness.Ctx, cancel = context.WithCancel(context.TODO())
 
 		GinkgoWriter.Printf("FMC EAIGW E2E - Setup (Process %d)\n", GinkgoParallelProcess())
@@ -145,6 +151,12 @@ var _ = SynchronizedBeforeSuite(
 
 		var clientErr error
 		harness.K8sClient, clientErr = client.New(cfg, client.Options{Scheme: scheme.Scheme})
+		Expect(clientErr).ToNot(HaveOccurred())
+
+		By("Creating remote cluster's Kubernetes client (DD-TEST-013, Spike S19)")
+		remoteCfg, remoteCfgErr := clientcmd.BuildConfigFromFlags("", harness.RemoteKubeconfigPath)
+		Expect(remoteCfgErr).ToNot(HaveOccurred(), "failed to build remote cluster kubeconfig")
+		harness.RemoteK8sClient, clientErr = client.New(remoteCfg, client.Options{Scheme: scheme.Scheme})
 		Expect(clientErr).ToNot(HaveOccurred())
 
 		By("Setting up FMC HTTP client (NodePort 30150, host 8150 per DD-TEST-001)")
@@ -175,10 +187,14 @@ var _ = SynchronizedAfterSuite(
 		defer infrastructure.CleanupFailureMarker(clusterName)
 		preserveCluster := os.Getenv("PRESERVE_E2E_CLUSTER") == "true" || os.Getenv("KEEP_CLUSTER") == "true"
 
+		remoteClusterName := clusterName + "-remote"
+
 		if preserveCluster {
 			GinkgoWriter.Println("CLUSTER PRESERVED FOR DEBUGGING")
 			GinkgoWriter.Printf("   To access: export KUBECONFIG=%s\n", harness.KubeconfigPath)
 			GinkgoWriter.Printf("   To delete: kind delete cluster --name %s\n", clusterName)
+			GinkgoWriter.Printf("   Remote cluster (prod-east, DD-TEST-013): export KUBECONFIG=%s\n", harness.RemoteKubeconfigPath)
+			GinkgoWriter.Printf("   To delete: kind delete cluster --name %s\n", remoteClusterName)
 			return
 		}
 
@@ -193,6 +209,13 @@ var _ = SynchronizedAfterSuite(
 			// istio-system must-gather (see suite_test.go there).
 			for _, ns := range []string{"envoy-gateway-system", "envoy-ai-gateway-system"} {
 				infrastructure.MustGatherPodLogs(clusterName, harness.KubeconfigPath, ns, "fleetmetadatacache", GinkgoWriter)
+			}
+
+			// Remote cluster (DD-TEST-013, Spike S19): only kube-mcp-server
+			// runs there, but it's the component the "prod-east" cross-cluster
+			// isolation scenario depends on most heavily.
+			if harness.RemoteKubeconfigPath != "" {
+				infrastructure.MustGatherPodLogs(remoteClusterName, harness.RemoteKubeconfigPath, namespace, "fleetmetadatacache", GinkgoWriter)
 			}
 		}
 
@@ -211,6 +234,11 @@ var _ = SynchronizedAfterSuite(
 		By("Deleting Kind cluster")
 		if delErr := infrastructure.DeleteCluster(clusterName, "fleetmetadatacache-eaigw", anyFailure, GinkgoWriter); delErr != nil {
 			GinkgoWriter.Printf("Warning: Failed to delete cluster: %v\n", delErr)
+		}
+
+		By("Deleting remote Kind cluster (DD-TEST-013, Spike S19)")
+		if delErr := infrastructure.TeardownRemoteClusterForFMC(remoteClusterName, harness.RemoteKubeconfigPath, "fleetmetadatacache-eaigw", anyFailure, GinkgoWriter); delErr != nil {
+			GinkgoWriter.Printf("Warning: Failed to delete remote cluster: %v\n", delErr)
 		}
 
 		By("Removing isolated kubeconfig file")

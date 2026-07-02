@@ -78,4 +78,13 @@ type Harness struct {
 
 	FMCHTTPClient *http.Client
 	FMCAPIBaseURL string
+
+	// RemoteK8sClient/RemoteKubeconfigPath target the second, independent
+	// Kind cluster backing the "prod-east" registration (DD-TEST-013, Spike
+	// S19). Used by the cross-cluster isolation scenario to create/verify
+	// resources directly against the remote control plane, proving genuine
+	// isolation from loopback-cluster/prod-west (which share the primary
+	// cluster's API server).
+	RemoteK8sClient      client.Client
+	RemoteKubeconfigPath string
 }
