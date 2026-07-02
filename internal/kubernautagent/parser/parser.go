@@ -156,48 +156,72 @@ func extractBalancedJSON(content string) string {
 		}
 		start += pos
 
-		if start+1 < len(content) {
-			next := content[start+1]
-			if next != '"' && next != '\n' && next != '\r' && next != ' ' && next != '\t' && next != '{' && next != '}' {
-				pos = start + 1
-				continue
-			}
+		if !looksLikeJSONObjectStart(content, start) {
+			pos = start + 1
+			continue
 		}
 
-		depth := 0
-		inString := false
-		escaped := false
-
-		for i := start; i < len(content); i++ {
-			ch := content[i]
-			if escaped {
-				escaped = false
-				continue
-			}
-			if ch == '\\' && inString {
-				escaped = true
-				continue
-			}
-			if ch == '"' {
-				inString = !inString
-				continue
-			}
-			if inString {
-				continue
-			}
-			switch ch {
-			case '{':
-				depth++
-			case '}':
-				depth--
-				if depth == 0 {
-					return content[start : i+1]
-				}
-			}
+		if end := scanToBalancedClose(content, start); end != -1 {
+			return content[start:end]
 		}
 		pos = start + 1
 	}
 	return ""
+}
+
+// looksLikeJSONObjectStart reports whether the '{' at content[start] is
+// plausibly the start of a JSON object, rather than a stray brace embedded
+// in prose (e.g. "the {foo} placeholder"). A real JSON object's opening
+// brace is followed by a quote, whitespace, or another brace.
+func looksLikeJSONObjectStart(content string, start int) bool {
+	if start+1 >= len(content) {
+		return true
+	}
+	switch content[start+1] {
+	case '"', '\n', '\r', ' ', '\t', '{', '}':
+		return true
+	default:
+		return false
+	}
+}
+
+// scanToBalancedClose scans content starting at the opening brace index
+// start, tracking string-literal state and escape sequences, and returns the
+// index one past the matching closing brace (i.e. a valid content[start:end]
+// slice bound). Returns -1 if the braces never balance before EOF.
+func scanToBalancedClose(content string, start int) int {
+	depth := 0
+	inString := false
+	escaped := false
+
+	for i := start; i < len(content); i++ {
+		ch := content[i]
+		if escaped {
+			escaped = false
+			continue
+		}
+		if ch == '\\' && inString {
+			escaped = true
+			continue
+		}
+		if ch == '"' {
+			inString = !inString
+			continue
+		}
+		if inString {
+			continue
+		}
+		switch ch {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return i + 1
+			}
+		}
+	}
+	return -1
 }
 
 const notActionableWarning = "Alert not actionable — no remediation warranted"
@@ -326,64 +350,9 @@ func coerceKnownFields(rawJSON string) string {
 		return rawJSON
 	}
 
-	changed := false
-	for _, key := range []string{"confidence"} {
-		val, ok := raw[key]
-		if !ok {
-			continue
-		}
-		var s string
-		if json.Unmarshal(val, &s) != nil {
-			continue
-		}
-		s = strings.TrimSpace(s)
-		if _, err := strconv.ParseFloat(s, 64); err == nil {
-			raw[key] = json.RawMessage(s)
-		} else {
-			delete(raw, key)
-		}
-		changed = true
-	}
-	for _, key := range []string{"actionable"} {
-		val, ok := raw[key]
-		if !ok {
-			continue
-		}
-		var s string
-		if json.Unmarshal(val, &s) != nil {
-			continue
-		}
-		s = strings.TrimSpace(s)
-		if s == "true" || s == "false" {
-			raw[key] = json.RawMessage(s)
-		} else {
-			delete(raw, key)
-		}
-		changed = true
-	}
-
-	if nested, ok := raw["selected_workflow"]; ok {
-		var wf map[string]json.RawMessage
-		if json.Unmarshal(nested, &wf) == nil {
-			wfChanged := false
-			if confVal, ok := wf["confidence"]; ok {
-				var s string
-				if json.Unmarshal(confVal, &s) == nil {
-					s = strings.TrimSpace(s)
-					if _, err := strconv.ParseFloat(s, 64); err == nil {
-						wf["confidence"] = json.RawMessage(s)
-						wfChanged = true
-					}
-				}
-			}
-			if wfChanged {
-				if fixed, err := json.Marshal(wf); err == nil {
-					raw["selected_workflow"] = json.RawMessage(fixed)
-					changed = true
-				}
-			}
-		}
-	}
+	changed := coerceStringifiedNumberField(raw, "confidence")
+	changed = coerceStringifiedBoolField(raw, "actionable") || changed
+	changed = coerceNestedWorkflowConfidence(raw) || changed
 
 	if !changed {
 		return rawJSON
@@ -395,12 +364,153 @@ func coerceKnownFields(rawJSON string) string {
 	return string(fixed)
 }
 
+// coerceStringifiedNumberField unquotes raw[key] in place when it holds a
+// quoted numeric string (e.g. "0.92"), or deletes the key when the quoted
+// value doesn't parse as a number. Reports whether raw was touched.
+func coerceStringifiedNumberField(raw map[string]json.RawMessage, key string) bool {
+	val, ok := raw[key]
+	if !ok {
+		return false
+	}
+	var s string
+	if json.Unmarshal(val, &s) != nil {
+		return false
+	}
+	s = strings.TrimSpace(s)
+	if _, err := strconv.ParseFloat(s, 64); err == nil {
+		raw[key] = json.RawMessage(s)
+	} else {
+		delete(raw, key)
+	}
+	return true
+}
+
+// coerceStringifiedBoolField unquotes raw[key] in place when it holds a
+// quoted "true"/"false" string, or deletes the key otherwise. Reports
+// whether raw was touched.
+func coerceStringifiedBoolField(raw map[string]json.RawMessage, key string) bool {
+	val, ok := raw[key]
+	if !ok {
+		return false
+	}
+	var s string
+	if json.Unmarshal(val, &s) != nil {
+		return false
+	}
+	s = strings.TrimSpace(s)
+	if s == "true" || s == "false" {
+		raw[key] = json.RawMessage(s)
+	} else {
+		delete(raw, key)
+	}
+	return true
+}
+
+// coerceNestedWorkflowConfidence applies the same stringified-number fix to
+// selected_workflow.confidence, re-marshaling the nested object back into
+// raw when changed. Reports whether raw was touched.
+func coerceNestedWorkflowConfidence(raw map[string]json.RawMessage) bool {
+	nested, ok := raw["selected_workflow"]
+	if !ok {
+		return false
+	}
+	var wf map[string]json.RawMessage
+	if json.Unmarshal(nested, &wf) != nil {
+		return false
+	}
+	if !coerceStringifiedNumberFieldIfQuoted(wf, "confidence") {
+		return false
+	}
+	fixed, err := json.Marshal(wf)
+	if err != nil {
+		return false
+	}
+	raw["selected_workflow"] = json.RawMessage(fixed)
+	return true
+}
+
+// coerceStringifiedNumberFieldIfQuoted mirrors coerceStringifiedNumberField's
+// unquote behavior but only reports a change when the field was present,
+// quoted, and successfully parsed as a number — it leaves unparsable values
+// in place rather than deleting them (matching the original nested-workflow
+// coercion, which only ever touched confidence on a successful parse).
+func coerceStringifiedNumberFieldIfQuoted(raw map[string]json.RawMessage, key string) bool {
+	val, ok := raw[key]
+	if !ok {
+		return false
+	}
+	var s string
+	if json.Unmarshal(val, &s) != nil {
+		return false
+	}
+	s = strings.TrimSpace(s)
+	if _, err := strconv.ParseFloat(s, 64); err != nil {
+		return false
+	}
+	raw[key] = json.RawMessage(s)
+	return true
+}
+
 // flatLLMFields captures top-level fields that may appear alongside the flat
 // InvestigationResult format (rca_summary, workflow_id, confidence, etc.).
 type flatLLMFields struct {
 	Severity             string `json:"severity,omitempty"`
 	Actionable           *bool  `json:"actionable,omitempty"`
 	InvestigationOutcome string `json:"investigation_outcome,omitempty"`
+}
+
+// applyLLMRCA copies the resolved RCA fields (whichever of snake_case /
+// camelCase the LLM used) onto result, logging when the remediation target
+// is missing its required api_version.
+func applyLLMRCA(result *katypes.InvestigationResult, rca *llmRCA, logger logr.Logger) {
+	if rca == nil {
+		return
+	}
+	result.RCASummary = rca.Summary
+	result.Severity = rca.Severity
+	result.SignalName = rca.SignalName
+	result.ContributingFactors = rca.ContributingFactors
+	result.InvestigationAnalysis = rca.InvestigationAnalysis
+	result.CausalChain = rca.CausalChain
+	result.DueDiligence = rca.DueDiligence
+
+	t := rca.resolvedTarget()
+	if t == nil {
+		return
+	}
+	if t.APIVersion == "" && t.Kind != "" {
+		logger.Info("LLM omitted required api_version for remediation_target, resolution will use heuristic fallback",
+			"kind", t.Kind, "name", t.Name, "namespace", t.Namespace)
+	}
+	result.RemediationTarget = katypes.RemediationTarget{
+		Kind:       t.Kind,
+		Name:       t.Name,
+		Namespace:  t.Namespace,
+		APIVersion: t.APIVersion,
+	}
+}
+
+// applyLLMWorkflow copies the selected-workflow fields onto result, merging
+// (rather than replacing) any parameters already present.
+func applyLLMWorkflow(result *katypes.InvestigationResult, wf *llmWorkflow) {
+	if wf == nil {
+		return
+	}
+	result.WorkflowID = wf.WorkflowID
+	result.ExecutionBundle = wf.ExecutionBundle
+	result.Confidence = wf.Confidence
+	result.Reason = wf.Rationale
+	result.WorkflowRationale = wf.Rationale
+	result.ExecutionEngine = wf.ExecutionEngine
+	if wf.Parameters == nil {
+		return
+	}
+	if result.Parameters == nil {
+		result.Parameters = make(map[string]interface{})
+	}
+	for k, v := range wf.Parameters {
+		result.Parameters[k] = v
+	}
 }
 
 // parseLLMFormat parses the nested LLM response format and converts
@@ -415,28 +525,8 @@ func parseLLMFormat(jsonStr string, logger logr.Logger) (*katypes.InvestigationR
 	}
 
 	result := &katypes.InvestigationResult{}
-	rca := resp.resolvedRCA()
-	if rca != nil {
-		result.RCASummary = rca.Summary
-		result.Severity = rca.Severity
-		result.SignalName = rca.SignalName
-		result.ContributingFactors = rca.ContributingFactors
-		result.InvestigationAnalysis = rca.InvestigationAnalysis
-		result.CausalChain = rca.CausalChain
-		result.DueDiligence = rca.DueDiligence
-		if t := rca.resolvedTarget(); t != nil {
-			if t.APIVersion == "" && t.Kind != "" {
-				logger.Info("LLM omitted required api_version for remediation_target, resolution will use heuristic fallback",
-					"kind", t.Kind, "name", t.Name, "namespace", t.Namespace)
-			}
-			result.RemediationTarget = katypes.RemediationTarget{
-				Kind:       t.Kind,
-				Name:       t.Name,
-				Namespace:  t.Namespace,
-				APIVersion: t.APIVersion,
-			}
-		}
-	}
+	applyLLMRCA(result, resp.resolvedRCA(), logger)
+
 	// Top-level severity takes precedence over nested (allows Mock LLM to set both)
 	if resp.Severity != "" {
 		result.Severity = resp.Severity
@@ -446,22 +536,7 @@ func parseLLMFormat(jsonStr string, logger logr.Logger) (*katypes.InvestigationR
 	if resp.Confidence > 0 {
 		result.Confidence = resp.Confidence
 	}
-	if resp.Workflow != nil {
-		result.WorkflowID = resp.Workflow.WorkflowID
-		result.ExecutionBundle = resp.Workflow.ExecutionBundle
-		result.Confidence = resp.Workflow.Confidence
-		result.Reason = resp.Workflow.Rationale
-		result.WorkflowRationale = resp.Workflow.Rationale
-		result.ExecutionEngine = resp.Workflow.ExecutionEngine
-		if resp.Workflow.Parameters != nil {
-			if result.Parameters == nil {
-				result.Parameters = make(map[string]interface{})
-			}
-			for k, v := range resp.Workflow.Parameters {
-				result.Parameters[k] = v
-			}
-		}
-	}
+	applyLLMWorkflow(result, resp.Workflow)
 
 	for _, alt := range resp.AlternativeWorkflows {
 		result.AlternativeWorkflows = append(result.AlternativeWorkflows, katypes.AlternativeWorkflow{
@@ -530,29 +605,7 @@ func parseSectionHeaders(content string, logger logr.Logger) (*katypes.Investiga
 		if body == "" {
 			continue
 		}
-
-		// Arrays (e.g. alternative_workflows) must be preserved as-is.
-		// extractJSON only finds objects, so it would strip the enclosing [].
-		if body[0] == '[' {
-			assembled[header] = json.RawMessage(body)
-			continue
-		}
-
-		jsonBody := extractJSON(body)
-		if jsonBody != "" {
-			assembled[header] = json.RawMessage(jsonBody)
-			continue
-		}
-		// Scalar values: numbers ("0.95"), booleans ("true"/"false"), or strings ("critical")
-		quotedOrRaw := body
-		if quotedOrRaw != "true" && quotedOrRaw != "false" && quotedOrRaw != "null" {
-			if len(quotedOrRaw) > 0 && quotedOrRaw[0] != '"' {
-				if _, err := json.Number(quotedOrRaw).Float64(); err != nil {
-					quotedOrRaw = `"` + strings.ReplaceAll(quotedOrRaw, `"`, `\"`) + `"`
-				}
-			}
-		}
-		assembled[header] = json.RawMessage(quotedOrRaw)
+		assembled[header] = sectionBodyToJSON(body)
 	}
 
 	if len(assembled) == 0 {
@@ -565,6 +618,33 @@ func parseSectionHeaders(content string, logger logr.Logger) (*katypes.Investiga
 	}
 
 	return parseLLMFormat(string(compositeJSON), logger)
+}
+
+// sectionBodyToJSON converts a single trimmed, non-empty section body into
+// its JSON representation: arrays and embedded JSON objects are preserved
+// as-is, and bare scalars (numbers, "true"/"false"/"null", or unquoted
+// strings like "critical") are coerced into valid JSON.
+func sectionBodyToJSON(body string) json.RawMessage {
+	// Arrays (e.g. alternative_workflows) must be preserved as-is.
+	// extractJSON only finds objects, so it would strip the enclosing [].
+	if body[0] == '[' {
+		return json.RawMessage(body)
+	}
+
+	if jsonBody := extractJSON(body); jsonBody != "" {
+		return json.RawMessage(jsonBody)
+	}
+
+	// Scalar values: numbers ("0.95"), booleans ("true"/"false"), or strings ("critical")
+	quotedOrRaw := body
+	if quotedOrRaw != "true" && quotedOrRaw != "false" && quotedOrRaw != "null" {
+		if len(quotedOrRaw) > 0 && quotedOrRaw[0] != '"' {
+			if _, err := json.Number(quotedOrRaw).Float64(); err != nil {
+				quotedOrRaw = `"` + strings.ReplaceAll(quotedOrRaw, `"`, `\"`) + `"`
+			}
+		}
+	}
+	return json.RawMessage(quotedOrRaw)
 }
 
 // extractSections splits content on lines matching "# <header_name>" and returns
