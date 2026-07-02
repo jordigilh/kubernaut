@@ -165,7 +165,7 @@ type TimeoutTracker interface {
 // actions unrelated to autonomous session management (start, message, etc.).
 type NopAutonomousManager struct{}
 
-func (NopAutonomousManager) FindByRemediationID(string) (string, bool)                  { return "", false }
+func (NopAutonomousManager) FindByRemediationID(string) (string, bool)                   { return "", false }
 func (NopAutonomousManager) CancelInvestigation(string) error                            { return nil }
 func (NopAutonomousManager) SuspendInvestigation(string) error                           { return nil }
 func (NopAutonomousManager) TransitionToUserDriving(string, string, []string) error      { return nil }
@@ -173,7 +173,9 @@ func (NopAutonomousManager) ForceTransitionToUserDriving(string, string, []strin
 func (NopAutonomousManager) UpgradeToInteractive(string, string, []string) error         { return nil }
 func (NopAutonomousManager) FindPendingByRemediationID(string) (string, bool)            { return "", false }
 func (NopAutonomousManager) LaunchDeferredInvestigation(string) error                    { return nil }
-func (NopAutonomousManager) GetLatestRCASummaryByRemediationID(string) (string, bool)    { return "", false }
+func (NopAutonomousManager) GetLatestRCASummaryByRemediationID(string) (string, bool) {
+	return "", false
+}
 func (NopAutonomousManager) GetLatestRCAResultByRemediationID(string) (*katypes.InvestigationResult, bool) {
 	return nil, false
 }
@@ -189,22 +191,22 @@ func (NopAutonomousManager) GetSessionLazySink(string) (*session.LazySink, bool)
 // start, message, complete, cancel, takeover, discover_workflows.
 // BR-INTERACTIVE-001, BR-INTERACTIVE-004.
 type InvestigateTool struct {
-	sessions        mcpinternal.SessionManager
-	runner          InvestigatorRunner
-	recon           mcpinternal.ContextReconstructor
-	autoMgr         AutonomousSessionManager
-	httpCompleter   HTTPSessionCompleter
-	signalResolver  SignalContextResolver
-	rrChecker       RRExistenceChecker
-	catalog         WorkflowCatalog
-	metrics         ToolMetrics
-	rateLimiter     MessageRateLimiter
-	timeoutTracker  TimeoutTracker
-	auditStore      audit.AuditStore
-	logger          logr.Logger
-	notifyFn        func(sessionID, msg string) // optional: delivers timeout warnings to client
-	sessionMu       sync.Map                    // rrID -> *sync.Mutex (per-session serialization)
-	reconHistory    sync.Map                    // rrID -> []LLMMessage (reconstructed context for LLM)
+	sessions       mcpinternal.SessionManager
+	runner         InvestigatorRunner
+	recon          mcpinternal.ContextReconstructor
+	autoMgr        AutonomousSessionManager
+	httpCompleter  HTTPSessionCompleter
+	signalResolver SignalContextResolver
+	rrChecker      RRExistenceChecker
+	catalog        WorkflowCatalog
+	metrics        ToolMetrics
+	rateLimiter    MessageRateLimiter
+	timeoutTracker TimeoutTracker
+	auditStore     audit.AuditStore
+	logger         logr.Logger
+	notifyFn       func(sessionID, msg string) // optional: delivers timeout warnings to client
+	sessionMu      sync.Map                    // rrID -> *sync.Mutex (per-session serialization)
+	reconHistory   sync.Map                    // rrID -> []LLMMessage (reconstructed context for LLM)
 }
 
 // InvestigateOption configures optional dependencies for InvestigateTool.
@@ -393,59 +395,11 @@ func (t *InvestigateTool) handleStart(ctx context.Context, input InvestigateInpu
 	// When launched, the investigation will self-transition to StatusUserDriving
 	// via InteractiveHold — skip TransitionToUserDriving below to avoid cancelling
 	// the RCA goroutine prematurely.
-	var launchedPending bool
-	var investigationSessionID string
+	launchedPending, investigationSessionID := t.launchPendingInteractiveSession(input)
 
-	pendingID := input.SessionID
-	hasPending := pendingID != ""
-	if !hasPending {
-		pendingID, hasPending = t.autoMgr.FindPendingByRemediationID(input.RRID)
-	}
-	if hasPending {
-		if launchErr := t.autoMgr.LaunchDeferredInvestigation(pendingID); launchErr != nil {
-			t.logger.Error(launchErr, "start: failed to launch deferred investigation",
-				"rr_id", input.RRID, "pending_session_id", pendingID)
-		} else {
-			launchedPending = true
-			investigationSessionID = pendingID
-		}
-	}
-
-	sess, err := t.sessions.Takeover(ctx, input.RRID, user)
-	if err != nil {
-		if errors.Is(err, mcpinternal.ErrLeaseHeld) {
-			if t.metrics != nil {
-				t.metrics.RecordInteractiveLeaseContention()
-				t.metrics.RecordInteractiveTakeover("start_failed")
-			}
-			driver, _ := t.sessions.GetDriver(input.RRID)
-			driverName := "unknown"
-			if driver != nil {
-				driverName = driver.ActingUser.Username
-			}
-			return InvestigateOutput{}, ErrCodeSessionActive.WithDetail("driver", driverName)
-		}
-		if errors.Is(err, mcpinternal.ErrMaxSessionsReached) {
-			if t.metrics != nil {
-				t.metrics.RecordInteractiveTakeover("start_failed")
-			}
-			return InvestigateOutput{}, &MCPError{Code: "max_sessions", Message: "Maximum concurrent sessions reached"}
-		}
-		if t.metrics != nil {
-			t.metrics.RecordInteractiveTakeover("start_failed")
-		}
-		return InvestigateOutput{}, fmt.Errorf("start session: %w", err)
-	}
-
-	if sess.Reconnected {
-		return InvestigateOutput{}, &MCPError{
-			Code:    "session_active",
-			Message: "You already have an active session for this investigation; use action=reconnect to rejoin",
-			Details: map[string]string{
-				"driver":     user.Username,
-				"session_id": sess.SessionID,
-			},
-		}
+	sess, startErr := t.startInteractiveSession(ctx, input, user)
+	if startErr != nil {
+		return InvestigateOutput{}, startErr
 	}
 
 	// #1390: Upgrade running autonomous session in-place (Jump In) instead of
@@ -455,41 +409,7 @@ func (t *InvestigateTool) handleStart(ctx context.Context, input InvestigateInpu
 	// Skip when we just launched a pending session — its RCA goroutine will
 	// self-transition via InteractiveHold once complete.
 	if !launchedPending {
-		autoSessionID, found := t.autoMgr.FindByRemediationID(input.RRID)
-		if found {
-			if upgradeErr := t.autoMgr.UpgradeToInteractive(autoSessionID, user.Username, user.Groups); upgradeErr != nil {
-				if errors.Is(upgradeErr, session.ErrSessionTerminal) {
-					if forceErr := t.autoMgr.ForceTransitionToUserDriving(input.RRID, user.Username, user.Groups); forceErr != nil {
-						t.logger.Error(forceErr, "start: force-transition to user-driving failed (session terminal)",
-							"rr_id", input.RRID, "auto_session_id", autoSessionID)
-					}
-					// #1440 SC-24: Terminal session — create fresh interactive session
-					// so the user always has an investigation to drive.
-					freshID := t.createFallbackSession(ctx, input.RRID, user)
-					if freshID != "" {
-						investigationSessionID = freshID
-					} else {
-						investigationSessionID = autoSessionID
-					}
-				} else {
-					t.logger.Error(upgradeErr, "start: upgrade autonomous session to interactive",
-						"rr_id", input.RRID, "auto_session_id", autoSessionID)
-					investigationSessionID = autoSessionID
-				}
-			} else {
-				investigationSessionID = autoSessionID
-			}
-		} else {
-			// #1440 SC-24: No session exists for this RR — create fresh interactive
-			// session so the user is never left with a lease but no investigation.
-			freshID := t.createFallbackSession(ctx, input.RRID, user)
-			if freshID != "" {
-				investigationSessionID = freshID
-			} else if forceErr := t.autoMgr.ForceTransitionToUserDriving(input.RRID, user.Username, user.Groups); forceErr != nil {
-				t.logger.Error(forceErr, "start: force-transition to user-driving (no running session found)",
-					"rr_id", input.RRID)
-			}
-		}
+		investigationSessionID = t.upgradeOrCreateInteractiveSession(ctx, input, user)
 	}
 
 	if t.metrics != nil {
@@ -508,6 +428,178 @@ func (t *InvestigateTool) handleStart(ctx context.Context, input InvestigateInpu
 	}, nil
 }
 
+// launchPendingInteractiveSession launches a previously-deferred interactive
+// investigation, if one is pending for this session/RR. Returns whether a
+// pending session was launched and, when so, its session ID (used as the
+// InvestigationSessionID so the caller skips the autonomous-session upgrade
+// path below, since the deferred RCA goroutine self-transitions via
+// InteractiveHold once complete).
+func (t *InvestigateTool) launchPendingInteractiveSession(input InvestigateInput) (bool, string) {
+	pendingID := input.SessionID
+	hasPending := pendingID != ""
+	if !hasPending {
+		pendingID, hasPending = t.autoMgr.FindPendingByRemediationID(input.RRID)
+	}
+	if !hasPending {
+		return false, ""
+	}
+	if launchErr := t.autoMgr.LaunchDeferredInvestigation(pendingID); launchErr != nil {
+		t.logger.Error(launchErr, "start: failed to launch deferred investigation",
+			"rr_id", input.RRID, "pending_session_id", pendingID)
+		return false, ""
+	}
+	return true, pendingID
+}
+
+// acquireInteractiveLease takes over the interactive lease for rrID and maps
+// each failure mode (lease held, max sessions reached, or a generic takeover
+// error) to the appropriate MCP error and metric. raceLostMetric is recorded
+// when another driver holds the lease; failedMetric is recorded for every
+// other failure. genericErrPrefix labels the wrapped error text for the
+// generic-failure case (callers use distinct prefixes for start vs takeover).
+// Does not evaluate sess.Reconnected — callers handle the reconnect case
+// differently (handleStart rejects it, handleTakeover treats it as a
+// successful rejoin).
+func (t *InvestigateTool) acquireInteractiveLease(ctx context.Context, rrID string, user mcpinternal.UserInfo, raceLostMetric, failedMetric, genericErrPrefix string) (*mcpinternal.InteractiveSession, error) {
+	sess, err := t.sessions.Takeover(ctx, rrID, user)
+	if err == nil {
+		return sess, nil
+	}
+
+	if errors.Is(err, mcpinternal.ErrLeaseHeld) {
+		if t.metrics != nil {
+			t.metrics.RecordInteractiveLeaseContention()
+			t.metrics.RecordInteractiveTakeover(raceLostMetric)
+		}
+		driver, _ := t.sessions.GetDriver(rrID)
+		driverName := "unknown"
+		if driver != nil {
+			driverName = driver.ActingUser.Username
+		}
+		return nil, ErrCodeSessionActive.WithDetail("driver", driverName)
+	}
+	if errors.Is(err, mcpinternal.ErrMaxSessionsReached) {
+		if t.metrics != nil {
+			t.metrics.RecordInteractiveTakeover(failedMetric)
+		}
+		return nil, &MCPError{Code: "max_sessions", Message: "Maximum concurrent sessions reached"}
+	}
+	if t.metrics != nil {
+		t.metrics.RecordInteractiveTakeover(failedMetric)
+	}
+	return nil, fmt.Errorf("%s: %w", genericErrPrefix, err)
+}
+
+// startInteractiveSession takes over the interactive lease for the RR and
+// records the appropriate metrics/error mapping for each failure mode
+// (lease held, max sessions reached, reconnect-in-progress, or a generic
+// takeover error).
+func (t *InvestigateTool) startInteractiveSession(ctx context.Context, input InvestigateInput, user mcpinternal.UserInfo) (*mcpinternal.InteractiveSession, error) {
+	sess, err := t.acquireInteractiveLease(ctx, input.RRID, user, "start_failed", "start_failed", "start session")
+	if err != nil {
+		return nil, err
+	}
+
+	if sess.Reconnected {
+		return nil, &MCPError{
+			Code:    "session_active",
+			Message: "You already have an active session for this investigation; use action=reconnect to rejoin",
+			Details: map[string]string{
+				"driver":     user.Username,
+				"session_id": sess.SessionID,
+			},
+		}
+	}
+
+	return sess, nil
+}
+
+// upgradeOrCreateInteractiveSession upgrades the running autonomous session
+// for this RR in-place (Jump In), or — when no autonomous session exists, or
+// the existing one is terminal — creates a fresh interactive session so the
+// user is never left with a lease but no investigation to drive (#1440
+// SC-24). Returns the resulting investigation session ID.
+func (t *InvestigateTool) upgradeOrCreateInteractiveSession(ctx context.Context, input InvestigateInput, user mcpinternal.UserInfo) string {
+	autoSessionID, found := t.autoMgr.FindByRemediationID(input.RRID)
+	if !found {
+		// No session exists for this RR — create fresh interactive session so
+		// the user is never left with a lease but no investigation.
+		if freshID := t.createFallbackSession(ctx, input.RRID, user); freshID != "" {
+			return freshID
+		}
+		if forceErr := t.autoMgr.ForceTransitionToUserDriving(input.RRID, user.Username, user.Groups); forceErr != nil {
+			t.logger.Error(forceErr, "start: force-transition to user-driving (no running session found)",
+				"rr_id", input.RRID)
+		}
+		return ""
+	}
+
+	upgradeErr := t.autoMgr.UpgradeToInteractive(autoSessionID, user.Username, user.Groups)
+	if upgradeErr == nil {
+		return autoSessionID
+	}
+	if !errors.Is(upgradeErr, session.ErrSessionTerminal) {
+		t.logger.Error(upgradeErr, "start: upgrade autonomous session to interactive",
+			"rr_id", input.RRID, "auto_session_id", autoSessionID)
+		return autoSessionID
+	}
+
+	if forceErr := t.autoMgr.ForceTransitionToUserDriving(input.RRID, user.Username, user.Groups); forceErr != nil {
+		t.logger.Error(forceErr, "start: force-transition to user-driving failed (session terminal)",
+			"rr_id", input.RRID, "auto_session_id", autoSessionID)
+	}
+	// #1440 SC-24: Terminal session — create fresh interactive session so the
+	// user always has an investigation to drive.
+	if freshID := t.createFallbackSession(ctx, input.RRID, user); freshID != "" {
+		return freshID
+	}
+	return autoSessionID
+}
+
+// transitionAutonomousToUserDriving transitions the running autonomous
+// session for rrID to user-driven (#774: TransitionToUserDriving replaces
+// SuspendInvestigation so the session enters StatusUserDriving — pollable,
+// not terminal — with identity written to session metadata for the AA poll
+// response's Rego input.identity). When no autonomous session is found by RR
+// ID, retries ForceTransitionToUserDriving briefly to allow for the race
+// between MCP takeover and AA reconcile. Returns a non-nil error only for a
+// non-terminal TransitionToUserDriving failure; terminal-session and
+// not-found cases are logged and treated as best-effort.
+func (t *InvestigateTool) transitionAutonomousToUserDriving(rrID string, user mcpinternal.UserInfo) error {
+	autoSessionID, found := t.autoMgr.FindByRemediationID(rrID)
+	if !found {
+		// No running session found by RR ID. The AA session submit may still
+		// be in-flight (race between MCP takeover and AA reconcile). Retry
+		// briefly to allow the session to appear before giving up.
+		var forceErr error
+		for attempt := 0; attempt < 5; attempt++ {
+			forceErr = t.autoMgr.ForceTransitionToUserDriving(rrID, user.Username, user.Groups)
+			if forceErr == nil || !errors.Is(forceErr, session.ErrSessionNotFound) {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		if forceErr != nil {
+			t.logger.Error(forceErr, "takeover: force-transition to user-driving failed after retries",
+				"rr_id", rrID)
+		}
+		return nil
+	}
+
+	err := t.autoMgr.TransitionToUserDriving(autoSessionID, user.Username, user.Groups)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, session.ErrSessionTerminal) {
+		return fmt.Errorf("transition autonomous session to user-driving: %w", err)
+	}
+	if forceErr := t.autoMgr.ForceTransitionToUserDriving(rrID, user.Username, user.Groups); forceErr != nil {
+		t.logger.Error(forceErr, "takeover: force-transition to user-driving failed",
+			"rr_id", rrID, "auto_session_id", autoSessionID)
+	}
+	return nil
+}
+
 func (t *InvestigateTool) handleTakeover(ctx context.Context, input InvestigateInput, user mcpinternal.UserInfo) (InvestigateOutput, error) {
 	mu := t.getSessionMutex(input.RRID)
 	mu.Lock()
@@ -516,30 +608,9 @@ func (t *InvestigateTool) handleTakeover(ctx context.Context, input InvestigateI
 	// H4: Acquire the interactive Lease BEFORE suspending autonomous. This ensures
 	// that if Takeover fails (lease contention, max sessions), the autonomous
 	// investigation is NOT irreversibly cancelled.
-	sess, err := t.sessions.Takeover(ctx, input.RRID, user)
+	sess, err := t.acquireInteractiveLease(ctx, input.RRID, user, "takeover_race_lost", "takeover_failed", "takeover session")
 	if err != nil {
-		if errors.Is(err, mcpinternal.ErrLeaseHeld) {
-			if t.metrics != nil {
-				t.metrics.RecordInteractiveLeaseContention()
-				t.metrics.RecordInteractiveTakeover("takeover_race_lost")
-			}
-			driver, _ := t.sessions.GetDriver(input.RRID)
-			driverName := "unknown"
-			if driver != nil {
-				driverName = driver.ActingUser.Username
-			}
-			return InvestigateOutput{}, ErrCodeSessionActive.WithDetail("driver", driverName)
-		}
-		if errors.Is(err, mcpinternal.ErrMaxSessionsReached) {
-			if t.metrics != nil {
-				t.metrics.RecordInteractiveTakeover("takeover_failed")
-			}
-			return InvestigateOutput{}, &MCPError{Code: "max_sessions", Message: "Maximum concurrent sessions reached"}
-		}
-		if t.metrics != nil {
-			t.metrics.RecordInteractiveTakeover("takeover_failed")
-		}
-		return InvestigateOutput{}, fmt.Errorf("takeover session: %w", err)
+		return InvestigateOutput{}, err
 	}
 
 	if sess.Reconnected {
@@ -553,41 +624,11 @@ func (t *InvestigateTool) handleTakeover(ctx context.Context, input InvestigateI
 	}
 
 	// Lease acquired — now safe to transition autonomous investigation to user-driven.
-	// #774: TransitionToUserDriving replaces SuspendInvestigation so that:
-	// 1. The session enters StatusUserDriving (pollable, not terminal)
-	// 2. Identity (username + groups) is written to session metadata
-	// 3. AA poll response carries identity → Rego input.identity
-	autoSessionID, found := t.autoMgr.FindByRemediationID(input.RRID)
-	if found {
-		if err := t.autoMgr.TransitionToUserDriving(autoSessionID, user.Username, user.Groups); err != nil {
-			if errors.Is(err, session.ErrSessionTerminal) {
-				if forceErr := t.autoMgr.ForceTransitionToUserDriving(input.RRID, user.Username, user.Groups); forceErr != nil {
-					t.logger.Error(forceErr, "takeover: force-transition to user-driving failed",
-						"rr_id", input.RRID, "auto_session_id", autoSessionID)
-				}
-			} else {
-				if t.metrics != nil {
-					t.metrics.RecordInteractiveTakeover("takeover_failed")
-				}
-				return InvestigateOutput{}, fmt.Errorf("transition autonomous session to user-driving: %w", err)
-			}
+	if transitionErr := t.transitionAutonomousToUserDriving(input.RRID, user); transitionErr != nil {
+		if t.metrics != nil {
+			t.metrics.RecordInteractiveTakeover("takeover_failed")
 		}
-	} else {
-		// No running session found by RR ID. The AA session submit may still
-		// be in-flight (race between MCP takeover and AA reconcile). Retry
-		// briefly to allow the session to appear before giving up.
-		var forceErr error
-		for attempt := 0; attempt < 5; attempt++ {
-			forceErr = t.autoMgr.ForceTransitionToUserDriving(input.RRID, user.Username, user.Groups)
-			if forceErr == nil || !errors.Is(forceErr, session.ErrSessionNotFound) {
-				break
-			}
-			time.Sleep(100 * time.Millisecond)
-		}
-		if forceErr != nil {
-			t.logger.Error(forceErr, "takeover: force-transition to user-driving failed after retries",
-				"rr_id", input.RRID)
-		}
+		return InvestigateOutput{}, transitionErr
 	}
 
 	if t.metrics != nil {
@@ -613,23 +654,9 @@ func (t *InvestigateTool) handleMessage(ctx context.Context, input InvestigateIn
 	mu.Lock()
 	defer mu.Unlock()
 
-	if !t.sessions.IsDriverActive(input.RRID) {
-		return InvestigateOutput{}, ErrCodeNotDriving
-	}
-
-	sess, err := t.sessions.GetDriver(input.RRID)
-	if err != nil {
-		if errors.Is(err, mcpinternal.ErrSessionExpired) {
-			return InvestigateOutput{}, ErrCodeSessionExpired
-		}
-		return InvestigateOutput{}, ErrCodeNotDriving
-	}
-	if sess == nil {
-		return InvestigateOutput{}, ErrCodeNotDriving
-	}
-
-	if sess.ActingUser.Username != user.Username {
-		return InvestigateOutput{}, ErrCodeSessionActive.WithDetail("driver", sess.ActingUser.Username)
+	sess, authErr := t.authorizeActiveDriver(input.RRID, user)
+	if authErr != nil {
+		return InvestigateOutput{}, authErr
 	}
 
 	// SEC-HIGH-01: Enforce per-session message rate limit before processing.
@@ -788,23 +815,9 @@ func (t *InvestigateTool) handleStatus(input InvestigateInput, user mcpinternal.
 }
 
 func (t *InvestigateTool) handleReconnect(input InvestigateInput, user mcpinternal.UserInfo) (InvestigateOutput, error) {
-	if !t.sessions.IsDriverActive(input.RRID) {
-		return InvestigateOutput{}, ErrCodeNotDriving
-	}
-
-	sess, err := t.sessions.GetDriver(input.RRID)
-	if err != nil {
-		if errors.Is(err, mcpinternal.ErrSessionExpired) {
-			return InvestigateOutput{}, ErrCodeSessionExpired
-		}
-		return InvestigateOutput{}, ErrCodeNotDriving
-	}
-	if sess == nil {
-		return InvestigateOutput{}, ErrCodeNotDriving
-	}
-
-	if sess.ActingUser.Username != user.Username {
-		return InvestigateOutput{}, ErrCodeSessionActive.WithDetail("driver", sess.ActingUser.Username)
+	sess, authErr := t.authorizeActiveDriver(input.RRID, user)
+	if authErr != nil {
+		return InvestigateOutput{}, authErr
 	}
 
 	t.sessions.TouchActivity(input.RRID)
@@ -823,25 +836,10 @@ func (t *InvestigateTool) handleDiscoverWorkflows(ctx context.Context, input Inv
 	mu.Lock()
 	defer mu.Unlock()
 
-	if !t.sessions.IsDriverActive(input.RRID) {
-		return InvestigateOutput{}, ErrCodeNotDriving
+	sess, authErr := t.authorizeActiveDriver(input.RRID, user)
+	if authErr != nil {
+		return InvestigateOutput{}, authErr
 	}
-
-	sess, err := t.sessions.GetDriver(input.RRID)
-	if err != nil {
-		if errors.Is(err, mcpinternal.ErrSessionExpired) {
-			return InvestigateOutput{}, ErrCodeSessionExpired
-		}
-		return InvestigateOutput{}, ErrCodeNotDriving
-	}
-	if sess == nil {
-		return InvestigateOutput{}, ErrCodeNotDriving
-	}
-
-	if sess.ActingUser.Username != user.Username {
-		return InvestigateOutput{}, ErrCodeSessionActive.WithDetail("driver", sess.ActingUser.Username)
-	}
-
 	if t.catalog == nil {
 		return InvestigateOutput{}, fmt.Errorf("workflow catalog not configured: cannot enrich discovery names")
 	}
@@ -853,85 +851,20 @@ func (t *InvestigateTool) handleDiscoverWorkflows(ctx context.Context, input Inv
 	}
 
 	// Step 1: Obtain the structured RCA result for Phase 3 workflow discovery.
-	//
-	// Preferred path: reuse the full InvestigationResult already produced by the
-	// autonomous Phase 1 RCA and stored in the session manager. This preserves
-	// the complete RemediationTarget (Kind, APIVersion, Name, Namespace) that
-	// the LLM emitted during the original investigation.
-	//
-	// Fallback: if no stored result exists (e.g. pure interactive session),
-	// reconstruct conversation from audit traces and re-extract RCA.
-	var rcaResult *katypes.InvestigationResult
-	if storedResult, ok := t.autoMgr.GetLatestRCAResultByRemediationID(input.RRID); ok && storedResult != nil {
-		rcaResult = storedResult
-		t.logger.Info("discover_workflows: using stored RCA result from autonomous investigation",
-			"rr_id", input.RRID,
-			"rca_target_kind", storedResult.RemediationTarget.Kind,
-			"rca_target_api_version", storedResult.RemediationTarget.APIVersion,
-			"rca_target_name", storedResult.RemediationTarget.Name)
-	} else {
-		messages := t.buildMessagesWithContext(input.RRID, "")
-		if len(messages) > 0 && messages[len(messages)-1].Content == "" {
-			messages = messages[:len(messages)-1]
-		}
-		if len(messages) == 0 {
-			reconCount := t.storeReconstructedContext(ctx, input.RRID, sess.SessionID)
-			t.logger.Info("discover_workflows: reconHistory was empty, reconstructed from audit traces",
-				"rr_id", input.RRID, "recon_turns", reconCount)
-			messages = t.buildMessagesWithContext(input.RRID, "")
-			if len(messages) > 0 && messages[len(messages)-1].Content == "" {
-				messages = messages[:len(messages)-1]
-			}
-		}
-
-		if len(messages) == 0 {
-			t.logger.Info("discover_workflows: no conversation context available after reconstruction",
-				"rr_id", input.RRID)
-			return InvestigateOutput{}, fmt.Errorf("rca extraction failed: no conversation context available — investigation audit traces not found in data storage")
-		}
-
-		var err error
-		rcaResult, err = t.runner.RunRCAExtraction(ctx, messages, input.RRID)
-		if err != nil {
-			return InvestigateOutput{}, fmt.Errorf("rca extraction failed: %w", err)
-		}
-
-		// Phase 2 extraction from conversation reconstructs a best-effort RCA,
-		// but its RemediationTarget is unreliable: the conversation messages lack
-		// the system prompt (with signal name/resource), so the LLM may fall back
-		// to a generic target. Clear it so RunWorkflowDiscoveryFromRCA preserves
-		// the signal resolver's authoritative identity instead of overwriting it
-		// via SyncSignalFromRCA with the extraction's guess.
-		rcaResult.RemediationTarget = katypes.RemediationTarget{}
+	rcaResult, err := t.resolveRCAForDiscovery(ctx, input.RRID, sess.SessionID)
+	if err != nil {
+		return InvestigateOutput{}, err
 	}
 
-	// Step 2: Resolve signal context for Phase 3.
-	// Enrichment is handled internally by the investigator's enrichment pipeline
-	// (F5 #1374), so we only resolve the signal here.
-	var signal katypes.SignalContext
-	if t.signalResolver != nil {
-		resolved, resolveErr := t.signalResolver.ResolveSignalContext(ctx, input.RRID)
-		if resolveErr != nil {
-			t.logger.V(1).Info("signal context resolution failed, using empty context",
-				"rr_id", input.RRID, "error", resolveErr)
-		} else if resolved != nil {
-			signal = *resolved
-		}
-	}
+	// Step 2: Resolve signal context for Phase 3. Enrichment is handled
+	// internally by the investigator's enrichment pipeline (F5 #1374), so we
+	// only resolve the signal here.
+	signal := t.resolveDiscoverySignal(ctx, input.RRID)
 
 	// Step 3: Enrich context with the HTTP investigation session so that
 	// workflow discovery can emit audit events with session_id and stream
 	// events to the subscriber (#1384: Bug A fix).
-	if t.httpCompleter != nil {
-		if httpSessionID, found := t.httpCompleter.FindUserDrivingByRemediationID(input.RRID); found {
-			ctx = session.WithSessionID(ctx, httpSessionID)
-			if ls, ok := t.autoMgr.GetSessionLazySink(httpSessionID); ok {
-				ctx = session.WithLazySink(ctx, ls)
-			}
-			t.logger.V(1).Info("discover_workflows: enriched context with HTTP session",
-				"rr_id", input.RRID, "http_session_id", httpSessionID)
-		}
-	}
+	ctx = t.enrichDiscoveryContext(ctx, input.RRID)
 
 	// Step 4: Run Phase 3 workflow discovery using the structured RCA.
 	// The investigator resolves enrichment internally when its enricher is wired,
@@ -946,29 +879,7 @@ func (t *InvestigateTool) handleDiscoverWorkflows(ctx context.Context, input Inv
 	sess.DiscoveryResult = extractDiscoveryResult(workflowResult)
 
 	// Step 6: Populate discovery target visibility fields (#1437).
-	// SignalTarget is always the original alert resource (captured before RunWorkflowDiscovery).
-	// SearchedTarget is the resource actually searched against the catalog — sourced from
-	// workflowResult.RemediationTarget (set by SyncSignalFromRCA inside the investigator).
-	// Falls back to signal when RemediationTarget is empty (e.g., fallback RCA path).
-	signalTarget := &mcpinternal.DiscoveryTargetInfo{
-		APIVersion: signal.ResourceAPIVersion,
-		Kind:       signal.ResourceKind,
-		Name:       signal.ResourceName,
-		Namespace:  signal.Namespace,
-	}
-	sess.DiscoveryResult.SignalTarget = signalTarget
-
-	rt := workflowResult.RemediationTarget
-	if rt.Kind != "" {
-		sess.DiscoveryResult.SearchedTarget = &mcpinternal.DiscoveryTargetInfo{
-			APIVersion: rt.APIVersion,
-			Kind:       rt.Kind,
-			Name:       rt.Name,
-			Namespace:  rt.Namespace,
-		}
-	} else {
-		sess.DiscoveryResult.SearchedTarget = signalTarget
-	}
+	populateDiscoveryTargets(sess.DiscoveryResult, signal, workflowResult.RemediationTarget)
 
 	// Enrich workflow names from catalog.
 	t.enrichDiscoveryNames(ctx, sess.DiscoveryResult)
@@ -990,6 +901,153 @@ func (t *InvestigateTool) handleDiscoverWorkflows(ctx context.Context, input Inv
 		Status:    "workflows_discovered",
 		Response:  string(discoveryJSON),
 	}, nil
+}
+
+// authorizeActiveDriver verifies the requesting user is the active driver of
+// the interactive session for rrID, returning ErrCodeNotDriving /
+// ErrCodeSessionExpired / ErrCodeSessionActive as appropriate. Shared by the
+// message/reconnect/discover_workflows actions, which all reject non-drivers
+// identically.
+func (t *InvestigateTool) authorizeActiveDriver(rrID string, user mcpinternal.UserInfo) (*mcpinternal.InteractiveSession, error) {
+	if !t.sessions.IsDriverActive(rrID) {
+		return nil, ErrCodeNotDriving
+	}
+
+	sess, err := t.sessions.GetDriver(rrID)
+	if err != nil {
+		if errors.Is(err, mcpinternal.ErrSessionExpired) {
+			return nil, ErrCodeSessionExpired
+		}
+		return nil, ErrCodeNotDriving
+	}
+	if sess == nil {
+		return nil, ErrCodeNotDriving
+	}
+
+	if sess.ActingUser.Username != user.Username {
+		return nil, ErrCodeSessionActive.WithDetail("driver", sess.ActingUser.Username)
+	}
+
+	return sess, nil
+}
+
+// resolveRCAForDiscovery obtains the structured RCA result used for Phase 3
+// workflow discovery.
+//
+// Preferred path: reuse the full InvestigationResult already produced by the
+// autonomous Phase 1 RCA and stored in the session manager. This preserves
+// the complete RemediationTarget (Kind, APIVersion, Name, Namespace) that
+// the LLM emitted during the original investigation.
+//
+// Fallback: if no stored result exists (e.g. pure interactive session),
+// reconstruct conversation from audit traces and re-extract RCA.
+func (t *InvestigateTool) resolveRCAForDiscovery(ctx context.Context, rrID, sessionID string) (*katypes.InvestigationResult, error) {
+	if storedResult, ok := t.autoMgr.GetLatestRCAResultByRemediationID(rrID); ok && storedResult != nil {
+		t.logger.Info("discover_workflows: using stored RCA result from autonomous investigation",
+			"rr_id", rrID,
+			"rca_target_kind", storedResult.RemediationTarget.Kind,
+			"rca_target_api_version", storedResult.RemediationTarget.APIVersion,
+			"rca_target_name", storedResult.RemediationTarget.Name)
+		return storedResult, nil
+	}
+
+	messages := t.buildMessagesWithContext(rrID, "")
+	if len(messages) > 0 && messages[len(messages)-1].Content == "" {
+		messages = messages[:len(messages)-1]
+	}
+	if len(messages) == 0 {
+		reconCount := t.storeReconstructedContext(ctx, rrID, sessionID)
+		t.logger.Info("discover_workflows: reconHistory was empty, reconstructed from audit traces",
+			"rr_id", rrID, "recon_turns", reconCount)
+		messages = t.buildMessagesWithContext(rrID, "")
+		if len(messages) > 0 && messages[len(messages)-1].Content == "" {
+			messages = messages[:len(messages)-1]
+		}
+	}
+
+	if len(messages) == 0 {
+		t.logger.Info("discover_workflows: no conversation context available after reconstruction",
+			"rr_id", rrID)
+		return nil, fmt.Errorf("rca extraction failed: no conversation context available — investigation audit traces not found in data storage")
+	}
+
+	rcaResult, err := t.runner.RunRCAExtraction(ctx, messages, rrID)
+	if err != nil {
+		return nil, fmt.Errorf("rca extraction failed: %w", err)
+	}
+
+	// Phase 2 extraction from conversation reconstructs a best-effort RCA,
+	// but its RemediationTarget is unreliable: the conversation messages lack
+	// the system prompt (with signal name/resource), so the LLM may fall back
+	// to a generic target. Clear it so RunWorkflowDiscoveryFromRCA preserves
+	// the signal resolver's authoritative identity instead of overwriting it
+	// via SyncSignalFromRCA with the extraction's guess.
+	rcaResult.RemediationTarget = katypes.RemediationTarget{}
+	return rcaResult, nil
+}
+
+// resolveDiscoverySignal resolves the signal context for Phase 3 workflow
+// discovery, logging (but not failing) on resolution errors.
+func (t *InvestigateTool) resolveDiscoverySignal(ctx context.Context, rrID string) katypes.SignalContext {
+	var signal katypes.SignalContext
+	if t.signalResolver == nil {
+		return signal
+	}
+	resolved, resolveErr := t.signalResolver.ResolveSignalContext(ctx, rrID)
+	if resolveErr != nil {
+		t.logger.V(1).Info("signal context resolution failed, using empty context",
+			"rr_id", rrID, "error", resolveErr)
+	} else if resolved != nil {
+		signal = *resolved
+	}
+	return signal
+}
+
+// enrichDiscoveryContext attaches the HTTP investigation session ID (and its
+// lazy audit sink, when available) to ctx so workflow discovery emits audit
+// events with session_id and streams events to the subscriber (#1384: Bug A
+// fix).
+func (t *InvestigateTool) enrichDiscoveryContext(ctx context.Context, rrID string) context.Context {
+	if t.httpCompleter == nil {
+		return ctx
+	}
+	httpSessionID, found := t.httpCompleter.FindUserDrivingByRemediationID(rrID)
+	if !found {
+		return ctx
+	}
+	ctx = session.WithSessionID(ctx, httpSessionID)
+	if ls, ok := t.autoMgr.GetSessionLazySink(httpSessionID); ok {
+		ctx = session.WithLazySink(ctx, ls)
+	}
+	t.logger.V(1).Info("discover_workflows: enriched context with HTTP session",
+		"rr_id", rrID, "http_session_id", httpSessionID)
+	return ctx
+}
+
+// populateDiscoveryTargets fills in the SignalTarget/SearchedTarget
+// visibility fields on dr (#1437). SignalTarget is always the original alert
+// resource. SearchedTarget is the resource actually searched against the
+// catalog — sourced from the RCA-resolved remediation target, falling back
+// to the signal target when empty (e.g. fallback RCA path).
+func populateDiscoveryTargets(dr *mcpinternal.WorkflowDiscoveryResult, signal katypes.SignalContext, rt katypes.RemediationTarget) {
+	signalTarget := &mcpinternal.DiscoveryTargetInfo{
+		APIVersion: signal.ResourceAPIVersion,
+		Kind:       signal.ResourceKind,
+		Name:       signal.ResourceName,
+		Namespace:  signal.Namespace,
+	}
+	dr.SignalTarget = signalTarget
+
+	if rt.Kind == "" {
+		dr.SearchedTarget = signalTarget
+		return
+	}
+	dr.SearchedTarget = &mcpinternal.DiscoveryTargetInfo{
+		APIVersion: rt.APIVersion,
+		Kind:       rt.Kind,
+		Name:       rt.Name,
+		Namespace:  rt.Namespace,
+	}
 }
 
 // extractDiscoveryResult builds a WorkflowDiscoveryResult from the Phase 3
