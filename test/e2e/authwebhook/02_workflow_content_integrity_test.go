@@ -57,7 +57,7 @@ func buildRemediationWorkflowCRD(crdName, version, description string) *rwv1alph
 			},
 			Execution: rwv1alpha1.RemediationWorkflowExecution{
 				Engine: "job",
-				Bundle: "quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:2a07b572d7c2d16845da11ea01ff24198bd2ff366580c81a8d2fbc6ae6b78389",
+				Bundle: "quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:377de4244cfeffcbb898a7e7cd388dd1266dd680cef43b17147b876845df29cd",
 			},
 			Parameters: []rwv1alpha1.RemediationWorkflowParameter{
 				{
