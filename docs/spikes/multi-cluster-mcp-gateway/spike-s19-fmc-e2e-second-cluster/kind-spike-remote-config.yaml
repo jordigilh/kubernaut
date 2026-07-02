@@ -1,0 +1,16 @@
+# SPIKE config -- second Kind cluster for the cross-cluster bridge design
+# (Phase 0 of the FMC E2E second-Kind-cluster plan). Validated end-to-end on
+# 2026-07-02 (all 4 spike phases passed). Kept intentionally in case the
+# design needs to be revisited -- not wired into any real E2E lane.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+  image: kindest/node:v1.34.0@sha256:7416a61b42b1662ca6ca89f02028ac133a309a2a30ba309614e8ec94d976dc5a
+  extraPortMappings:
+  # Spike-only: lets the host-side test process curl kube-mcp-server-2
+  # directly for verification. NOT needed for the real cross-cluster path
+  # (that goes node-bridge-IP to node-bridge-IP, no host mapping required).
+  - containerPort: 30180
+    hostPort: 8180
+    protocol: TCP
