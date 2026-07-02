@@ -124,10 +124,12 @@ type DiscoveredWorkflow struct {
 	Parameters      map[string]interface{} `json:"parameters,omitempty"`
 }
 
-// SessionManager manages interactive session lifecycle: takeover, release, and
-// driver querying. Backed by K8s coordination/v1 Lease for single-driver guarantee.
-// Adapts the pattern from pkg/remediationorchestrator/locking/distributed_lock.go.
-type SessionManager interface {
+// SessionLifecycle manages interactive session takeover/release: the
+// Lease-backed, single-driver-guaranteeing mutations. Split out from
+// SessionManager for ISP (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 0b) — e.g.
+// SelectWorkflowTool only ever needs SessionQuerier below, never mutates
+// session lifecycle.
+type SessionLifecycle interface {
 	// Takeover acquires the Lease for the given RR, cancels autonomous mode,
 	// and creates an interactive session for the user.
 	// Returns lease_held error if another driver is active.
@@ -136,7 +138,12 @@ type SessionManager interface {
 	// Release ends the interactive session, releases the Lease, and signals
 	// autonomous reconstruction. Reason: "disconnect", "timeout", "explicit".
 	Release(sessionID string, reason string) error
+}
 
+// SessionQuerier provides read-only driver/activity queries for interactive
+// sessions. Split out from SessionManager for ISP
+// (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 0b).
+type SessionQuerier interface {
 	// GetDriver returns the current driver session for an RR, or nil if autonomous.
 	GetDriver(rrID string) (*InteractiveSession, error)
 
@@ -146,6 +153,19 @@ type SessionManager interface {
 	// TouchActivity updates the last activity timestamp for a session (SEC-04).
 	// Called by tool handlers on each interaction to reset the inactivity timer.
 	TouchActivity(rrID string)
+}
+
+// SessionManager manages interactive session lifecycle: takeover, release, and
+// driver querying. Backed by K8s coordination/v1 Lease for single-driver guarantee.
+// Adapts the pattern from pkg/remediationorchestrator/locking/distributed_lock.go.
+// Kept as a named union of SessionLifecycle + SessionQuerier — rather than
+// inlining both at call sites — so existing implementers (LeaseSessionManager)
+// and mocks (which already implement every method) need no changes
+// (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 0b; see docs/architecture/audits for
+// rationale).
+type SessionManager interface {
+	SessionLifecycle
+	SessionQuerier
 }
 
 // ConversationTurn represents a single LLM turn reconstructed from DS audit events.

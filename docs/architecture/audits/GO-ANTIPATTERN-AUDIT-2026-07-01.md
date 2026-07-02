@@ -32,15 +32,15 @@ None of the audit-only linters (`funlen`, `gocognit`, `nestif`, `maintidx`, `cyc
 |---|---|---|---|
 | Functions with 8+ parameters | **32** (2 have 12) — corrected to **21** real production functions after `revive argument-limit` re-verification | 8+ params → Options pattern | ✅ RESOLVED (Phase 2) |
 | God structs (15+ fields) | **30** | 15+ fields → decompose | 🟡 Mixed (some are legit DTOs) |
-| Interface pollution (5+ methods) | **16** | 5+ methods → split into role interfaces | 🟡 Needs review |
+| Interface pollution (5+ methods) | **16** | 5+ methods → split into role interfaces | ✅ 5/16 split (Phase 5 + Wave 0b), 1 flagged dead-code, 1 deferred to Wave 1, 9 reclassified cohesive |
 | `context.Context` stored in struct | **2** | Pass as first param | 🟡 Both have documented rationale |
-| Functions over cyclomatic complexity 15 | **149** (25 over 20, worst = 88) | N/A (project convention) | 🔴 Needs fixing |
-| Functions over cognitive complexity 20 | **161** (worst = 133) | N/A (project convention) | 🔴 Needs fixing |
-| Functions over 80 lines / 60 statements | **54** | Visual inspection / nesting | 🔴 Needs fixing |
-| Deeply nested (`nestif`, complexity ≥5) | **111** | Unnecessary nesting (>3 levels) | 🔴 Needs fixing |
+| Functions over cyclomatic complexity 15 | **149** (25 over 20, worst = 88) → **145** post-Phase-4/re-scan, minus 6 `cmd/*/main.go` (Wave 0) | N/A (project convention) | 🟡 In progress (Phase 6+, Wave 0 done) |
+| Functions over cognitive complexity 20 | **161** (worst = 133) | N/A (project convention) | 🟡 In progress (Phase 6+) |
+| Functions over 80 lines / 60 statements | **54** | Visual inspection / nesting | 🟡 In progress (Phase 6+) |
+| Deeply nested (`nestif`, complexity ≥5) | **111** | Unnecessary nesting (>3 levels) | 🟡 In progress (Phase 6+) |
 | Low maintainability index (<20) | included above via funlen/gocognit overlap | N/A | — |
-| Missing slice/map pre-allocation | **13** | Inefficient pre-allocation | 🟢 Small, easy fix |
-| Variable shadowing | **120** (114 are `err`, low-risk) | Shadowing → rename | 🟢 Mostly benign, low priority |
+| Missing slice/map pre-allocation | **13** | Inefficient pre-allocation | ✅ RESOLVED (Phase 1) |
+| Variable shadowing | **120** (114 are `err`, low-risk) | Shadowing → rename | 🟢 `err`/`ok` lint-excluded (pre-declared); 6 outliers rename pass prototyped, not yet committed |
 | Ignored errors (`errcheck`) | **0** | Never ignore errors | ✅ Clean |
 | Error string format (`revive error-strings`) | **0** | lowercase, no punctuation | ✅ Clean |
 | Naked returns (`revive bare-return`) | **0** | Explicit returns | ✅ Clean |
@@ -185,6 +185,10 @@ Two distinct sub-categories, **treated differently**:
 `AutonomousSessionManager` (13 methods) and `AWXClient` (11 methods) are the two clearest candidates — both mix lifecycle management, querying, and mutation in one interface. Recommended split: separate read-only query interfaces from lifecycle/mutation interfaces (ISP — Interface Segregation Principle), consistent with AGENTS.md's "split into focused role interfaces."
 
 **✅ RESOLVED (Phase 5, see §7g)**: both split into focused role interfaces, composed back under their original names for the existing single consumer of each.
+
+**✅ RESOLVED (Phase 6 Wave 0b, see §7h)**: `Engine`, `ClusterRegistry`, and `SessionManager` split the same way, after a preflight confirmed each had a real query-vs-lifecycle usage split among its consumers (not just a hypothetical one). `Client` (notification) has **zero consumers repo-wide** — flagged as a dead-code question, not an ISP fix (see §7h). `MCPClient` is deferred to Wave 1 (APIFrontend) — its 2 implementers are not method-uniform and its ~10+ call sites each use only one method, so the real ISP value requires call-site narrowing disproportionate to a "quick win" wave.
+
+**Reclassified as assessed, no fix needed**: the remaining 9 interfaces (`AuditClientInterface`, `WorkflowQuerier`, `RemediationHistoryQuerier`, `SignalAdapter`, `Builder`, `WorkflowContentIntegrityRepository`, `AgentClientInterface`, `ToolMetrics`, `PolicyEvaluator`) were spot-checked and found to be genuinely cohesive — pure builders, deliberate ADR-060 consolidation, or single-lifecycle facades with no mixed query/mutation concern to split. No further action tracked for these.
 
 ---
 
@@ -348,6 +352,48 @@ Preflight mapped both interfaces to exactly **one** production consumer and **on
 
 ---
 
+## 7h. Phase 6 Wave 0: `cmd/*/main.go` Decomposition + 3-Interface ISP Split — ✅ RESOLVED
+
+Phase 4 (§7f-4/7f-5) decomposed `main()`/`run()` for `cmd/kubernautagent` and `cmd/apifrontend` only. A post-Phase-5 re-scan (tracked as "Phase 6+ Complexity and File-Size Burndown", Wave 0 of a 7-wave plan) found the other 6 services' `cmd/*/main.go` had the exact same "wire everything inline" shape, all with **zero existing test coverage** (unlike KubernautAgent, which had 7 characterization tests before Phase 4). Wave 0 closed both gaps: characterization tests first (per AGENTS.md's TDD-before-refactor mandate), then mechanical `build*`/`wire*`/`register*` helper extraction, mirroring the Phase 4f pattern.
+
+### 7h-1. `main()` decomposition — 6 services
+
+| Service | `main()` before | `main()` after | New helpers | New characterization tests |
+|---|---|---|---|---|
+| `cmd/gateway` | 30 | 13 | `buildAPIRegistry`, `registerAdapters`, `wireHotReload` | `TestRegisterAdapters_FleetDisabled`, `TestRegisterAdapters_FleetEnabledUnreachable` |
+| `cmd/remediationorchestrator` | 40 | 15 | `buildManager`, `buildAuditStore`, `buildRoutingEngine`, `buildReconciler`, `wireTLSHotReload` | `TestBuildAuditStore_ValidConfig`, `TestBuildAuditStore_EmptyDataStorageURL` |
+| `cmd/notification` | >40 | 13 | `buildManager`, `buildDeliveryServices`, `buildAuditStore`, `buildDeliveryOrchestrator`, `wireHotReload` | `TestBuildAuditStore_ValidConfig`, `TestBuildDeliveryServices_Defaults`, `TestBuildDeliveryServices_FileDeliveryEnabled`, `TestBuildDeliveryServices_FileDeliveryUnwritableDir` |
+| `cmd/datastorage` | 45 | 19 | `loadDataStorageConfig`, `buildK8sAuthDeps`, `buildDependencyValidator`, `buildServerWithRetry`, `startObservabilityServers`, `wireHotReload` | `TestLoadDataStorageConfig_MissingFile`, `TestLoadDataStorageConfig_ValidConfigWithSecrets`, `TestLoadDataStorageConfig_MissingSecretsFile` |
+| `cmd/workflowexecution` | 40 | 10 | `loadWorkflowExecutionConfig`, `buildManager`, `buildAuditStore`, `wireTLS`, `buildClientFactory`, `buildExecutorRegistry`, `registerAnsibleExecutor`, `registerHealthChecks`, `wireShutdownHooks`, `wireLogLevelHotReload` | `TestLoadWorkflowExecutionConfig_{DefaultsWhenPathEmpty,MissingFile,AppliesLogLevelAndValidates}`, `TestBuildAuditStore_{ValidConfig,EmptyDataStorageURL}`, `TestRegisterAnsibleExecutor_{NilConfigIsNoop,MissingTokenSecretRefIsNoop}` |
+| `cmd/effectivenessmonitor` | 34 | 13 | `loadEffectivenessMonitorConfig`, `buildManager`, `buildAuditStore`, `waitForCAFile`, `buildExternalHTTPClient`, `buildExternalClients`, `registerHealthChecks`, `wireHotReload` | `TestLoadEffectivenessMonitorConfig_{DefaultsWhenPathEmpty,MissingFile,AppliesLogLevel}`, `TestBuildAuditStore_{ValidConfig,EmptyDataStorageURL}`, `TestWaitForCAFile_{ReturnsImmediatelyWhenPresent,TimesOutWhenMissing}`, `TestBuildExternalClients_{DisabledReturnsNilClients,EnabledReturnsNonNilClients}` |
+
+Two files needed extra care preserving non-trivial control flow (flagged in preflight, both landed without incident):
+
+- **`cmd/effectivenessmonitor/main.go`**: the external-client wiring block has a blocking retry/poll loop (`waitForCAFile`) waiting for the OCP service-ca operator to populate a ConfigMap-mounted CA bundle, with a timeout deadline and a fatal exit on failure — extracted as a standalone, independently-testable function rather than inlined into the larger `buildExternalHTTPClient` helper.
+- **`cmd/workflowexecution/main.go`**: the executor registry block has CRD-discovery branching (REST-mapper probe for Tekton) plus an optional Ansible/AWX secret read, with `knownOptionalEngines` availability bookkeeping threaded through — `buildExecutorRegistry` carries that state correctly, and the Ansible-specific guard clauses were further split into `registerAnsibleExecutor` to keep both extracted functions well under the complexity budget.
+
+Every extraction is a pure behavior-preserving move: no `os.Exit`/`defer` ordering changed, no new exported types beyond the params/result structs each helper needed for its own signature, and no production wiring changed externally (each `cmd/<service>/main.go` still starts the same manager, registers the same controller, and serves the same health/metrics endpoints).
+
+### 7h-2. Interface ISP split — `Engine`, `ClusterRegistry`, `SessionManager`
+
+A companion spot-check of the 14 interfaces not already resolved in Phase 5 found 5 genuine mixed-concern candidates (query methods mixed with lifecycle/mutation methods, the same shape as `AutonomousSessionManager`/`AWXClient`). Preflight narrowed the "quick win" scope to 3 by checking blast radius (implementers, consumers, existing mocks) for each:
+
+| Interface | Location | Split into | Blast radius |
+|---|---|---|---|
+| `Engine` | `pkg/remediationorchestrator/routing/blocking.go` | `BlockingConditionChecker` (routing decision logic) + `EngineConfigProvider` (config/backoff calculations) | 1 implementer (`RoutingEngine`), ~4 consumer call sites in one package, 2 existing hand-written mocks already implementing all methods |
+| `ClusterRegistry` | `pkg/fleet/registry/types.go` | `ClusterQuerier` (read-only) + `ClusterRegistryLifecycle` (watcher lifecycle) | 2 implementers (`EAIGWRegistry`, `KuadrantRegistry`); 4 of 5 consumers are query-only, only `cmd/fleetmetadatacache/main.go` needs lifecycle — real evidence the split reflects actual usage |
+| `SessionManager` | `internal/kubernautagent/mcp/interfaces.go` | `SessionLifecycle` (takeover/release) + `SessionQuerier` (read-only) | 1 implementer (`LeaseSessionManager`), 3 tool-struct consumers (one, `SelectWorkflowTool`, is query-only today) |
+
+All three follow the `io.ReadWriter`-style composition pattern already used for `AutonomousSessionManager`/`AWXClient` in Phase 5 — the original interface name is preserved as a composition of the two new role interfaces, so every implementer, mock, and call site needed **zero** changes.
+
+**Not fixed, flagged separately**:
+- `Client` (`pkg/notification/client.go`) has **zero consumers anywhere in the repo** — `notification.NewClient` is never called (confirmed via repo-wide search); `pkg/remediationorchestrator/creator/notification.go` uses the raw controller-runtime client instead. This is a dead-code question, not an ISP violation (nothing depends on the fat interface), so it is **not** split. Follow-up recommendation: either remove `pkg/notification/client.go` entirely or find the missing wiring that was supposed to use it — outside this audit's scope to decide which.
+- `MCPClient` (`pkg/apifrontend/ka/mcp_client.go`) is deferred to Wave 1 (APIFrontend) — 2 implementers are not method-uniform (`PooledMCPClient.Investigate`/`.StartInvestigation` are stubs) and ~10+ consumer call sites each use only one method; splitting the interface itself is mechanically safe, but the real ISP value needs those call sites narrowed too, which is materially more churn than the other three combined.
+
+**Verification (Wave 0 exit gate)**: `go build ./...`, `go vet ./...` (both repo-wide), `golangci-lint run ./...` (0 new issues — the 7 pre-existing `docs/spikes/` findings predate this wave), `gofmt -l`/`goimports -l` clean on every touched file, and `make test` (full unit-test tier across all services) green. Each of the 6 `main()` decompositions was individually gated with `gocyclo`, `go vet`, `golangci-lint`, and its new characterization tests before moving to the next service. Wave 0 is now complete; Waves 1-6 (APIFrontend, RemediationOrchestrator/WorkflowExecution/SignalProcessing, DataStorage, KubernautAgent remainder, Notification/AIAnalysis/EffectivenessMonitor/Gateway batch, final sweep) remain open and each require a fresh preflight + confidence gate before starting, per the Phase 6+ plan.
+
+---
+
 ## 8. Variable Shadowing — 120 found, mostly low-risk
 
 114/120 are `err` shadowing (`if err := f(); err != nil` repeated in the same scope — the single most common and least dangerous shadow pattern in Go, which is exactly why `govet -shadow` isn't part of default `go vet`). 1 `ctx` shadow, 1 `result`, 1 `username`, 1 `ok`, 1 `isString`. **No goroutine-closure-captures-loop-variable pattern was found** (the genuinely dangerous shadow bug) — none of the 120 hits are in a `for ... go func()` or `for ... defer func()` body.
@@ -355,6 +401,8 @@ Preflight mapped both interfaces to exactly **one** production consumer and **on
 **Recommendation**: low priority. Worth a mechanical rename pass only if the team wants `go vet -shadow` enabled permanently in CI; otherwise not worth the diff churn on its own.
 
 **✅ Annotated**: rather than 114 scattered inline suppressions, `.golangci.yml` gained one `issues.exclusions.rules` entry excluding the `govet` `shadow: declaration of "(err|ok)" shadows declaration` message text. `govet`'s `shadow` analyzer is not in `settings.govet.enable` today, so this rule is inert until someone opts in — at which point the reviewed, idiomatic `err`/`ok` re-declarations are pre-excluded while shadowing of any other identifier still fails the build.
+
+**Follow-up (not yet committed)**: a mechanical rename pass for the 6 non-`err`/`ok` outliers (`ctx`, 2×`result`, `username`, `isString`, plus a related `ctx`-as-struct-field cleanup in `cmd/kubernautagent/main.go`'s `mcpHandlerParams`), together with actually enabling `govet.shadow`/`prealloc`/`revive`/`containedctx` in `.golangci.yml` (vs. today's "pre-declared, inert" state), was prototyped and verified clean (`golangci-lint run ./...` 0 new issues) but deliberately held back from this commit pending a separate decision on enabling new repo-wide lint gates.
 
 ---
 
@@ -382,6 +430,8 @@ Per AGENTS.md, REFACTOR-phase cleanup must not introduce new types/components, m
 | 3b | Split `pkg/gateway/server.go` (2,552→633 across 6 files, see §7e) into cohesive files (HTTP plumbing/construction/audit emission, mirroring the `processing/`/`adapters/`/`k8s/`/`middleware/` subpackage split already in Gateway) | Medium (large diff, no logic change) | 1-2 days | ✅ Done |
 | 4 | Decompose the top complexity offenders: `buildEventData` (88), `HandleWatch` (cognitive 133), `Config.Validate` ×2, `main()` in `cmd/kubernautagent` and `cmd/apifrontend` | Medium-high (behavior-preserving refactor of dense logic, needs careful UT coverage first) | 5-7 days | ✅ Done (see §7f) |
 | 5 | Interface segregation for `AutonomousSessionManager` (13 methods) and `AWXClient` (11 methods) | Medium (ripples to all implementers/mocks) | 2-3 days | ✅ Done (see §7g) |
+| 6 (Wave 0) | `cmd/*/main.go` decomposition for the 6 remaining services + ISP split for `Engine`/`ClusterRegistry`/`SessionManager` (see §7h) | Low | 3-4 days | ✅ Done (see §7h) |
+| 6 (Wave 1-6) | APIFrontend, RemediationOrchestrator/WorkflowExecution/SignalProcessing, DataStorage, KubernautAgent remainder, Notification/AIAnalysis/EffectivenessMonitor/Gateway batch, final sweep — remaining complexity (145 functions) + oversized files (34) burndown | Medium-High (per-wave) | ~22-28 days remaining | 🔲 Not started — tracked in the "Phase 6+ Complexity and File-Size Burndown" plan, each wave requires its own preflight + confidence gate |
 
 **Not recommended for action**: DTO/data-model "god structs" (category 4a), `context.Context` struct fields (both documented), `any`/`interface{}` usage (spot-checked — the ~849 raw hits are overwhelmingly idiomatic JSON-decoding, `sync.Map`/`singleflight` third-party API signatures, and generic-JSON-passthrough code; no material violations found beyond one worth a look: `BuildTriagePrompt(input TriageInput, rules interface{})` in `pkg/apifrontend/severity/types.go:113`).
 

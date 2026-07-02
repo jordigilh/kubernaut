@@ -24,7 +24,9 @@ import (
 	"os"
 	"time"
 
+	"github.com/go-logr/logr"
 	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
+	zaplog "go.uber.org/zap"
 	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -107,29 +109,17 @@ func main() {
 	)
 
 	// Load configuration (file if provided, otherwise defaults)
-	var cfg *weconfig.Config
-	var err error
-	if configPath != "" {
-		cfg, err = weconfig.LoadFromFile(configPath)
-		if err != nil {
-			setupLog.Error(err, "Failed to load configuration file", "path", configPath)
-			os.Exit(1)
-		}
-		setupLog.Info("Configuration loaded from file", "path", configPath)
-	} else {
-		cfg = weconfig.DefaultConfig()
-		setupLog.Info("Using default configuration (no config file provided)")
-	}
-
-	// Issue #875: Apply config-driven log level
-	atomicLevel.SetLevel(cfg.Logging.ZapLevel())
-	setupLog.Info("Log level configured from config file", "level", cfg.Logging.Level)
-
-	// Validate configuration
-	if err := cfg.Validate(); err != nil {
-		setupLog.Error(err, "Configuration validation failed")
+	cfg, err := loadWorkflowExecutionConfig(configPath, atomicLevel)
+	if err != nil {
+		setupLog.Error(err, "Failed to load WorkflowExecution configuration")
 		os.Exit(1)
 	}
+	if configPath != "" {
+		setupLog.Info("Configuration loaded from file", "path", configPath)
+	} else {
+		setupLog.Info("Using default configuration (no config file provided)")
+	}
+	setupLog.Info("Log level configured from config file", "level", cfg.Logging.Level)
 
 	// ADR-057: Discover controller namespace for CRD watch restriction
 	// Note: PipelineRun and Job (Tekton/K8s) are watched in kubernaut-workflows - not restricted
@@ -139,36 +129,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	execNS := cfg.Execution.Namespace
-
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme: scheme,
-		Cache: cache.Options{
-			ByObject: map[client.Object]cache.ByObject{
-				&workflowexecutionv1alpha1.WorkflowExecution{}: {
-					Namespaces: map[string]cache.Config{
-						controllerNS: {},
-					},
-				},
-				&corev1.Secret{}: {
-					Namespaces: map[string]cache.Config{
-						execNS: {},
-					},
-				},
-				&corev1.ConfigMap{}: {
-					Namespaces: map[string]cache.Config{
-						execNS: {},
-					},
-				},
-			},
-		},
-		Metrics: metricsserver.Options{
-			BindAddress: cfg.Controller.MetricsAddr,
-		},
-		HealthProbeBindAddress: cfg.Controller.HealthProbeAddr,
-		LeaderElection:         cfg.Controller.LeaderElection,
-		LeaderElectionID:       cfg.Controller.LeaderElectionID,
-	})
+	mgr, err := buildManager(cfg, controllerNS)
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
@@ -192,40 +153,20 @@ func main() {
 		"dataStorageURL", cfg.DataStorage.URL,
 	)
 
-	// Create OpenAPI client for Data Storage Service (DD-API-001 + DD-AUDIT-002 V2.0)
-	// Uses generated OpenAPI client for type safety and contract validation
-	dsClient, err := audit.NewOpenAPIClientAdapter(cfg.DataStorage.URL, cfg.DataStorage.Timeout)
+	// Audit is MANDATORY per ADR-032 §2 - controller MUST crash if audit unavailable.
+	// Per ADR-032 §3: WorkflowExecution is P0 (Business-Critical) - NO graceful degradation.
+	// Rationale: Audit unavailability is a deployment/configuration error, not a transient
+	// failure. The correct response is to crash and let Kubernetes orchestration detect the
+	// misconfiguration.
+	auditStore, err := buildAuditStore(cfg)
 	if err != nil {
-		setupLog.Error(err, "FATAL: failed to create Data Storage client - DD-API-001 compliance required")
-		os.Exit(1)
-	}
-
-	// Create buffered audit store using shared library (DD-AUDIT-002)
-	// ADR-030: Audit buffer config from YAML (not RecommendedConfig)
-	auditConfig := audit.Config{
-		BufferSize:    cfg.DataStorage.Buffer.BufferSize,
-		BatchSize:     cfg.DataStorage.Buffer.BatchSize,
-		FlushInterval: cfg.DataStorage.Buffer.FlushInterval,
-		MaxRetries:    cfg.DataStorage.Buffer.MaxRetries,
-	}
-	auditStore, err := audit.NewBufferedStore(
-		dsClient,
-		auditConfig,
-		"workflowexecution",
-		ctrl.Log.WithName("audit"),
-	)
-	if err != nil {
-		// Audit is MANDATORY per ADR-032 §2 - controller MUST crash if audit unavailable
-		// Per ADR-032 §3: WorkflowExecution is P0 (Business-Critical) - NO graceful degradation
-		// Rationale: Audit unavailability is a deployment/configuration error, not a transient failure
-		// The correct response is to crash and let Kubernetes orchestration detect the misconfiguration
 		setupLog.Error(err, "FATAL: failed to create audit store - audit is MANDATORY per ADR-032 §2")
 		os.Exit(1) // Crash on init failure - NO RECOVERY ALLOWED
 	}
 	setupLog.Info("Audit store initialized successfully",
-		"buffer_size", auditConfig.BufferSize,
-		"batch_size", auditConfig.BatchSize,
-		"flush_interval", auditConfig.FlushInterval,
+		"buffer_size", cfg.DataStorage.Buffer.BufferSize,
+		"batch_size", cfg.DataStorage.Buffer.BatchSize,
+		"flush_interval", cfg.DataStorage.Buffer.FlushInterval,
 	)
 
 	// ========================================
@@ -263,139 +204,20 @@ func main() {
 	// is constructed.
 	ctx := ctrl.SetupSignalHandler()
 
-	if err := sharedtls.SetDefaultSecurityProfileFromConfig(cfg.TLSProfile); err != nil {
-		setupLog.Error(err, "Invalid TLS security profile in config, using default TLS 1.2")
-	} else if cfg.TLSProfile != "" {
-		setupLog.Info("TLS security profile active", "profile", cfg.TLSProfile)
-	}
+	stopTLSWatcher := wireTLS(ctx, cfg, setupLog)
+	defer stopTLSWatcher()
 
-	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, setupLog)
-	if caWatchErr != nil {
-		setupLog.Error(caWatchErr, "Failed to start CA file watcher")
-		os.Exit(1)
-	}
-	if caWatcher != nil {
-		defer caWatcher.Stop()
-	}
+	// BR-FLEET-054: ClientFactory for local/remote cluster routing. If fleet
+	// MCP Gateway is configured, create an mcpClientFactory that can route
+	// executor operations to remote clusters. Otherwise, use
+	// localClientFactory (pre-fleet behavior).
+	clientFactory, fleetResilientClient := buildClientFactory(ctx, cfg, mgr, setupLog)
 
-	// ========================================
-	// BR-FLEET-054: ClientFactory for local/remote cluster routing
-	// If fleet MCP Gateway is configured, create an mcpClientFactory
-	// that can route executor operations to remote clusters.
-	// Otherwise, use localClientFactory (pre-fleet behavior).
-	// ========================================
-	var clientFactory weexecutor.ClientFactory
-	var fleetResilientClient *fleetclient.ResilientClient
-	if cfg.Fleet.Endpoint != "" {
-		setupLog.Info("Fleet MCP Gateway configured, connecting for remote execution...",
-			"endpoint", cfg.Fleet.Endpoint,
-			"oauth2Enabled", cfg.Fleet.OAuth2.Enabled)
-
-		fleetLog := ctrl.Log.WithName("fleet-oauth2")
-		fleetOpts := []fleetclient.Option{}
-		if cfg.Fleet.OAuth2.Enabled {
-			basePath := "/etc/workflowexecution/fleet-oauth2"
-			if cfg.Fleet.OAuth2.CredentialsSecretRef != "" {
-				basePath = "/etc/workflowexecution/" + cfg.Fleet.OAuth2.CredentialsSecretRef
-			}
-			reloadCfg := fleetclient.ReloadableOAuth2Config{
-				TokenURL:         cfg.Fleet.OAuth2.TokenURL,
-				ClientIDPath:     basePath + "/client-id",
-				ClientSecretPath: basePath + "/client-secret",
-				Scopes:           fleetclient.DefaultFleetScopes(cfg.Fleet.OAuth2.Scopes),
-				TokenTimeout:     10 * time.Second,
-			}
-			fleetOpts = append(fleetOpts,
-				fleetclient.WithReloadableOAuth2Transport(reloadCfg, fleetLog),
-			)
-			setupLog.Info("fleet OAuth2 authentication configured (hot-reloadable)",
-				"tokenURL", cfg.Fleet.OAuth2.TokenURL,
-				"secretPath", basePath)
-		}
-
-		resilienceCfg := fleetclient.DefaultResilienceConfig()
-		var fleetErr error
-		fleetResilientClient, fleetErr = fleetclient.NewResilient(
-			ctx, cfg.Fleet.Endpoint, resilienceCfg,
-			ctrl.Log.WithName("fleet-client"), fleetOpts...,
-		)
-		if fleetErr != nil {
-			setupLog.Error(fleetErr, "Fleet MCP Gateway connection failed, remote execution disabled",
-				"endpoint", cfg.Fleet.Endpoint)
-			clientFactory = weexecutor.NewLocalClientFactory(mgr.GetClient())
-		} else {
-			clientFactory = weexecutor.NewMCPClientFactory(mgr.GetClient(), fleetResilientClient.Session())
-			setupLog.Info("Fleet MCP Gateway connected, remote execution enabled",
-				"endpoint", cfg.Fleet.Endpoint)
-		}
-	} else {
-		clientFactory = weexecutor.NewLocalClientFactory(mgr.GetClient())
-	}
-
-	// ========================================
-	// BR-WE-014: Executor Registry (Strategy Pattern)
-	// Issue #868: Engines are registered based on availability:
-	//   - job: always (core batch/v1 API)
-	//   - tekton: CRD auto-discovery or explicit config
-	//   - ansible: config-gated (unchanged)
-	// BR-FLEET-054: Executors use ClientFactory for cluster routing.
-	// ========================================
-	executorRegistry := weexecutor.NewRegistry()
-	executorRegistry.Register("job", weexecutor.NewJobExecutorWithFactory(clientFactory))
-
-	knownOptionalEngines := make([]string, 0, 2)
-
-	// Tekton: auto-discover CRDs unless explicitly disabled (Issue #868)
-	knownOptionalEngines = append(knownOptionalEngines, "tekton")
-	if cfg.TektonEnabled() {
-		if tektonCRDsAvailable(mgr.GetRESTMapper()) {
-			executorRegistry.Register("tekton", weexecutor.NewTektonExecutorWithFactory(clientFactory))
-			setupLog.Info("Tekton executor registered (CRDs discovered)")
-		} else {
-			setupLog.Info("Tekton executor not registered (CRDs not found)",
-				"group", "tekton.dev", "kind", "PipelineRun", "version", "v1")
-		}
-	} else {
-		setupLog.Info("Tekton executor disabled by configuration")
-	}
-
-	// BR-WE-015: Conditionally register Ansible executor if configured.
-	// Uses a direct clientset (not the cached mgr.GetClient()) because the
-	// controller-runtime cache is not started until mgr.Start().
-	knownOptionalEngines = append(knownOptionalEngines, "ansible")
-	if cfg.Ansible != nil && cfg.Ansible.TokenSecretRef != nil {
-		ns := cfg.Ansible.TokenSecretRef.Namespace
-		if ns == "" {
-			ns = controllerNS
-		}
-		directClientset, csErr := kubernetes.NewForConfig(mgr.GetConfig())
-		if csErr != nil {
-			setupLog.Error(csErr, "Failed to create direct clientset for AWX token read")
-		} else {
-			token, readErr := readSecretKeyDirect(directClientset, ns, cfg.Ansible.TokenSecretRef.Name, cfg.Ansible.TokenSecretRef.Key)
-			if readErr != nil {
-				setupLog.Error(readErr, "Failed to read AWX token secret, ansible executor not available")
-			} else {
-				awxClient, awxErr := weexecutor.NewAWXHTTPClient(cfg.Ansible.APIURL, token)
-				if awxErr != nil {
-					setupLog.Error(awxErr, "Failed to create AWX client")
-				} else {
-					orgID := cfg.Ansible.OrganizationID
-					if orgID <= 0 {
-						orgID = 1
-					}
-					executorRegistry.Register("ansible", weexecutor.NewAnsibleExecutor(awxClient, mgr.GetClient(), directClientset, orgID, ctrl.Log.WithName("ansible-executor")))
-					setupLog.Info("Ansible executor registered", "awxURL", cfg.Ansible.APIURL, "organizationID", orgID)
-				}
-			}
-		}
-	} else if cfg.Ansible != nil {
-		setupLog.Info("Ansible config present but tokenSecretRef not set, ansible executor will not be available")
-	}
-
-	// Issue #868: Log engine availability summary at startup
-	available, unavailable := executorRegistry.EngineAvailability(knownOptionalEngines)
-	setupLog.Info("Executor registry initialized", "available", available, "unavailable", unavailable)
+	// BR-WE-014: Executor Registry (Strategy Pattern). Issue #868: engines
+	// are registered based on availability (job always, tekton via CRD
+	// auto-discovery, ansible config-gated). BR-FLEET-054: executors use
+	// ClientFactory for cluster routing.
+	executorRegistry := buildExecutorRegistry(cfg, mgr, controllerNS, clientFactory, setupLog)
 
 	// DD-WE-006: Create WorkflowQuerier for fetching dependencies from DS
 	workflowQuerier, err := weclient.NewOgenWorkflowQuerierFromConfig(cfg.DataStorage.URL, cfg.DataStorage.Timeout)
@@ -431,73 +253,18 @@ func main() {
 	}
 	//+kubebuilder:scaffold:builder
 
-	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
-		setupLog.Error(err, "unable to set up health check")
-		os.Exit(1)
-	}
-	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
-		setupLog.Error(err, "unable to set up ready check")
-		os.Exit(1)
-	}
-	// Issue #868: Report engine availability via readyz sub-check.
-	// The job engine is always registered, so this passes in normal operation
-	// but provides a clear signal if the registry is misconfigured.
-	if err := mgr.AddReadyzCheck("engines", healthz.Checker(func(_ *http.Request) error {
-		if len(executorRegistry.Engines()) == 0 {
-			return fmt.Errorf("no execution engines available")
-		}
-		return nil
-	})); err != nil {
-		setupLog.Error(err, "unable to set up engines readyz check")
+	if err := registerHealthChecks(mgr, executorRegistry); err != nil {
+		setupLog.Error(err, "unable to set up health checks")
 		os.Exit(1)
 	}
 
 	// Issue #875: Log level hot-reload via FileWatcher
-	logLevelWatcher, logWatchErr := hotreload.NewFileWatcher(
-		configPath,
-		func(newContent string) error {
-			var partial struct {
-				Logging internalconfig.LoggingConfig `yaml:"logging"`
-			}
-			if err := yaml.Unmarshal([]byte(newContent), &partial); err != nil {
-				return fmt.Errorf("failed to parse config for log level reload: %w", err)
-			}
-			return internalconfig.ParseAndSetLevel(atomicLevel, partial.Logging.Level)
-		},
-		setupLog.WithName("log-level-watcher"),
-	)
-	if logWatchErr != nil {
-		setupLog.Error(logWatchErr, "Failed to create log level file watcher")
-	} else {
-		if err := logLevelWatcher.Start(ctx); err != nil {
-			setupLog.Info("Log level file watcher failed to start", "error", err)
-		} else {
-			setupLog.Info("Log level hot-reload watcher started", "path", configPath)
-			defer logLevelWatcher.Stop()
-		}
-	}
+	stopLogLevelWatcher := wireLogLevelHotReload(ctx, configPath, atomicLevel, setupLog)
+	defer stopLogLevelWatcher()
 
-	// DD-AUDIT-002: Flush audit events on any exit path (including os.Exit via mgr.Start failure).
-	if auditStore != nil {
-		defer func() {
-			setupLog.Info("Flushing audit events on shutdown (DD-AUDIT-002)")
-			if closeErr := auditStore.Close(); closeErr != nil {
-				setupLog.Error(closeErr, "Failed to close audit store")
-			} else {
-				setupLog.Info("Audit store closed successfully")
-			}
-		}()
-	}
-
-	// BR-FLEET-054: Graceful shutdown for fleet MCP client
-	if fleetResilientClient != nil {
-		defer func() {
-			setupLog.Info("Closing fleet MCP Gateway connection")
-			if err := fleetResilientClient.Close(); err != nil {
-				setupLog.Error(err, "Failed to close fleet MCP client gracefully")
-			}
-		}()
-	}
+	// DD-AUDIT-002 + BR-FLEET-054: flush audit events and close the fleet
+	// MCP client on any exit path (including os.Exit via mgr.Start failure).
+	defer wireShutdownHooks(auditStore, fleetResilientClient, setupLog)()
 
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctx); err != nil {
@@ -516,4 +283,322 @@ func readSecretKeyDirect(clientset kubernetes.Interface, namespace, name, key st
 		return "", fmt.Errorf("key %q not found in secret %s/%s", key, namespace, name)
 	}
 	return string(val), nil
+}
+
+// loadWorkflowExecutionConfig loads the controller configuration from
+// configPath (or defaults if empty), applies the config-driven log level
+// (Issue #875) to atomicLevel, and validates the result.
+func loadWorkflowExecutionConfig(configPath string, atomicLevel zaplog.AtomicLevel) (*weconfig.Config, error) {
+	var cfg *weconfig.Config
+	var err error
+	if configPath != "" {
+		cfg, err = weconfig.LoadFromFile(configPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load configuration file %q: %w", configPath, err)
+		}
+	} else {
+		cfg = weconfig.DefaultConfig()
+	}
+
+	// Issue #875: Apply config-driven log level
+	atomicLevel.SetLevel(cfg.Logging.ZapLevel())
+
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("configuration validation failed: %w", err)
+	}
+	return cfg, nil
+}
+
+// buildManager constructs the controller-runtime manager, restricting the
+// WorkflowExecution CRD watch to controllerNS (ADR-057) and Secret/ConfigMap
+// watches to the configured execution namespace.
+func buildManager(cfg *weconfig.Config, controllerNS string) (ctrl.Manager, error) {
+	execNS := cfg.Execution.Namespace
+
+	return ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+		Scheme: scheme,
+		Cache: cache.Options{
+			ByObject: map[client.Object]cache.ByObject{
+				&workflowexecutionv1alpha1.WorkflowExecution{}: {
+					Namespaces: map[string]cache.Config{
+						controllerNS: {},
+					},
+				},
+				&corev1.Secret{}: {
+					Namespaces: map[string]cache.Config{
+						execNS: {},
+					},
+				},
+				&corev1.ConfigMap{}: {
+					Namespaces: map[string]cache.Config{
+						execNS: {},
+					},
+				},
+			},
+		},
+		Metrics: metricsserver.Options{
+			BindAddress: cfg.Controller.MetricsAddr,
+		},
+		HealthProbeBindAddress: cfg.Controller.HealthProbeAddr,
+		LeaderElection:         cfg.Controller.LeaderElection,
+		LeaderElectionID:       cfg.Controller.LeaderElectionID,
+	})
+}
+
+// buildAuditStore constructs the DD-AUDIT-002 buffered audit store backed by
+// the Data Storage Service. Per ADR-032 §2/§3, audit is mandatory for
+// WorkflowExecution (P0, Business-Critical) - callers MUST treat a non-nil
+// error as fatal.
+func buildAuditStore(cfg *weconfig.Config) (audit.AuditStore, error) {
+	// Create OpenAPI client for Data Storage Service (DD-API-001 + DD-AUDIT-002 V2.0)
+	// Uses generated OpenAPI client for type safety and contract validation
+	dsClient, err := audit.NewOpenAPIClientAdapter(cfg.DataStorage.URL, cfg.DataStorage.Timeout)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create data storage client (url=%s): %w", cfg.DataStorage.URL, err)
+	}
+
+	// Create buffered audit store using shared library (DD-AUDIT-002)
+	// ADR-030: Audit buffer config from YAML (not RecommendedConfig)
+	auditConfig := audit.Config{
+		BufferSize:    cfg.DataStorage.Buffer.BufferSize,
+		BatchSize:     cfg.DataStorage.Buffer.BatchSize,
+		FlushInterval: cfg.DataStorage.Buffer.FlushInterval,
+		MaxRetries:    cfg.DataStorage.Buffer.MaxRetries,
+	}
+	auditStore, err := audit.NewBufferedStore(
+		dsClient,
+		auditConfig,
+		"workflowexecution",
+		ctrl.Log.WithName("audit"),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create buffered audit store: %w", err)
+	}
+	return auditStore, nil
+}
+
+// wireTLS applies the config-driven TLS security profile and starts the
+// shared CA file watcher (Issue #902). Callers must invoke the returned stop
+// function on shutdown.
+func wireTLS(ctx context.Context, cfg *weconfig.Config, logger logr.Logger) func() {
+	if err := sharedtls.SetDefaultSecurityProfileFromConfig(cfg.TLSProfile); err != nil {
+		logger.Error(err, "Invalid TLS security profile in config, using default TLS 1.2")
+	} else if cfg.TLSProfile != "" {
+		logger.Info("TLS security profile active", "profile", cfg.TLSProfile)
+	}
+
+	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, logger)
+	if caWatchErr != nil {
+		logger.Error(caWatchErr, "Failed to start CA file watcher")
+		os.Exit(1)
+	}
+	if caWatcher != nil {
+		return caWatcher.Stop
+	}
+	return func() {}
+}
+
+// buildClientFactory constructs the BR-FLEET-054 ClientFactory used for
+// local/remote cluster routing. When cfg.Fleet.Endpoint is configured, it
+// attempts to connect to the Fleet MCP Gateway and returns an MCP-routed
+// factory; on connection failure (or when Fleet is unconfigured), it falls
+// back to a local factory. The returned *fleetclient.ResilientClient is nil
+// unless a Fleet connection was established, and callers should Close() it
+// on shutdown.
+func buildClientFactory(ctx context.Context, cfg *weconfig.Config, mgr ctrl.Manager, logger logr.Logger) (weexecutor.ClientFactory, *fleetclient.ResilientClient) {
+	if cfg.Fleet.Endpoint == "" {
+		return weexecutor.NewLocalClientFactory(mgr.GetClient()), nil
+	}
+
+	logger.Info("Fleet MCP Gateway configured, connecting for remote execution...",
+		"endpoint", cfg.Fleet.Endpoint,
+		"oauth2Enabled", cfg.Fleet.OAuth2.Enabled)
+
+	fleetLog := ctrl.Log.WithName("fleet-oauth2")
+	fleetOpts := []fleetclient.Option{}
+	if cfg.Fleet.OAuth2.Enabled {
+		basePath := "/etc/workflowexecution/fleet-oauth2"
+		if cfg.Fleet.OAuth2.CredentialsSecretRef != "" {
+			basePath = "/etc/workflowexecution/" + cfg.Fleet.OAuth2.CredentialsSecretRef
+		}
+		reloadCfg := fleetclient.ReloadableOAuth2Config{
+			TokenURL:         cfg.Fleet.OAuth2.TokenURL,
+			ClientIDPath:     basePath + "/client-id",
+			ClientSecretPath: basePath + "/client-secret",
+			Scopes:           fleetclient.DefaultFleetScopes(cfg.Fleet.OAuth2.Scopes),
+			TokenTimeout:     10 * time.Second,
+		}
+		fleetOpts = append(fleetOpts,
+			fleetclient.WithReloadableOAuth2Transport(reloadCfg, fleetLog),
+		)
+		logger.Info("fleet OAuth2 authentication configured (hot-reloadable)",
+			"tokenURL", cfg.Fleet.OAuth2.TokenURL,
+			"secretPath", basePath)
+	}
+
+	resilienceCfg := fleetclient.DefaultResilienceConfig()
+	fleetResilientClient, fleetErr := fleetclient.NewResilient(
+		ctx, cfg.Fleet.Endpoint, resilienceCfg,
+		ctrl.Log.WithName("fleet-client"), fleetOpts...,
+	)
+	if fleetErr != nil {
+		logger.Error(fleetErr, "Fleet MCP Gateway connection failed, remote execution disabled",
+			"endpoint", cfg.Fleet.Endpoint)
+		return weexecutor.NewLocalClientFactory(mgr.GetClient()), nil
+	}
+
+	logger.Info("Fleet MCP Gateway connected, remote execution enabled",
+		"endpoint", cfg.Fleet.Endpoint)
+	return weexecutor.NewMCPClientFactory(mgr.GetClient(), fleetResilientClient.Session()), fleetResilientClient
+}
+
+// buildExecutorRegistry wires up the BR-WE-014 executor registry (Strategy
+// Pattern). Issue #868: engines are registered based on availability - job
+// always, tekton via CRD auto-discovery (or explicit config), ansible
+// config-gated. BR-FLEET-054: executors use clientFactory for cluster
+// routing.
+func buildExecutorRegistry(cfg *weconfig.Config, mgr ctrl.Manager, controllerNS string, clientFactory weexecutor.ClientFactory, logger logr.Logger) *weexecutor.Registry {
+	executorRegistry := weexecutor.NewRegistry()
+	executorRegistry.Register("job", weexecutor.NewJobExecutorWithFactory(clientFactory))
+
+	knownOptionalEngines := make([]string, 0, 2)
+
+	// Tekton: auto-discover CRDs unless explicitly disabled (Issue #868)
+	knownOptionalEngines = append(knownOptionalEngines, "tekton")
+	if cfg.TektonEnabled() {
+		if tektonCRDsAvailable(mgr.GetRESTMapper()) {
+			executorRegistry.Register("tekton", weexecutor.NewTektonExecutorWithFactory(clientFactory))
+			logger.Info("Tekton executor registered (CRDs discovered)")
+		} else {
+			logger.Info("Tekton executor not registered (CRDs not found)",
+				"group", "tekton.dev", "kind", "PipelineRun", "version", "v1")
+		}
+	} else {
+		logger.Info("Tekton executor disabled by configuration")
+	}
+
+	// BR-WE-015: Conditionally register Ansible executor if configured.
+	knownOptionalEngines = append(knownOptionalEngines, "ansible")
+	registerAnsibleExecutor(cfg, mgr, controllerNS, executorRegistry, logger)
+
+	// Issue #868: Log engine availability summary at startup
+	available, unavailable := executorRegistry.EngineAvailability(knownOptionalEngines)
+	logger.Info("Executor registry initialized", "available", available, "unavailable", unavailable)
+
+	return executorRegistry
+}
+
+// registerAnsibleExecutor conditionally registers the Ansible/AWX executor.
+// Uses a direct clientset (not the cached mgr.GetClient()) because the
+// controller-runtime cache is not started until mgr.Start().
+func registerAnsibleExecutor(cfg *weconfig.Config, mgr ctrl.Manager, controllerNS string, executorRegistry *weexecutor.Registry, logger logr.Logger) {
+	if cfg.Ansible == nil || cfg.Ansible.TokenSecretRef == nil {
+		if cfg.Ansible != nil {
+			logger.Info("Ansible config present but tokenSecretRef not set, ansible executor will not be available")
+		}
+		return
+	}
+
+	ns := cfg.Ansible.TokenSecretRef.Namespace
+	if ns == "" {
+		ns = controllerNS
+	}
+	directClientset, csErr := kubernetes.NewForConfig(mgr.GetConfig())
+	if csErr != nil {
+		logger.Error(csErr, "Failed to create direct clientset for AWX token read")
+		return
+	}
+	token, readErr := readSecretKeyDirect(directClientset, ns, cfg.Ansible.TokenSecretRef.Name, cfg.Ansible.TokenSecretRef.Key)
+	if readErr != nil {
+		logger.Error(readErr, "Failed to read AWX token secret, ansible executor not available")
+		return
+	}
+	awxClient, awxErr := weexecutor.NewAWXHTTPClient(cfg.Ansible.APIURL, token)
+	if awxErr != nil {
+		logger.Error(awxErr, "Failed to create AWX client")
+		return
+	}
+	orgID := cfg.Ansible.OrganizationID
+	if orgID <= 0 {
+		orgID = 1
+	}
+	executorRegistry.Register("ansible", weexecutor.NewAnsibleExecutor(awxClient, mgr.GetClient(), directClientset, orgID, ctrl.Log.WithName("ansible-executor")))
+	logger.Info("Ansible executor registered", "awxURL", cfg.Ansible.APIURL, "organizationID", orgID)
+}
+
+// registerHealthChecks wires the standard healthz/readyz probes plus the
+// Issue #868 "engines" readyz sub-check, which reports execution engine
+// availability (the job engine is always registered, so this passes in
+// normal operation but provides a clear signal if the registry is
+// misconfigured).
+func registerHealthChecks(mgr ctrl.Manager, executorRegistry *weexecutor.Registry) error {
+	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
+		return fmt.Errorf("unable to set up health check: %w", err)
+	}
+	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
+		return fmt.Errorf("unable to set up ready check: %w", err)
+	}
+	if err := mgr.AddReadyzCheck("engines", healthz.Checker(func(_ *http.Request) error {
+		if len(executorRegistry.Engines()) == 0 {
+			return fmt.Errorf("no execution engines available")
+		}
+		return nil
+	})); err != nil {
+		return fmt.Errorf("unable to set up engines readyz check: %w", err)
+	}
+	return nil
+}
+
+// wireShutdownHooks returns a single cleanup function that flushes the
+// DD-AUDIT-002 buffered audit store and closes the BR-FLEET-054 fleet MCP
+// client (when present). Callers should defer the returned function
+// immediately so it runs on any exit path, including os.Exit via
+// mgr.Start failure.
+func wireShutdownHooks(auditStore audit.AuditStore, fleetResilientClient *fleetclient.ResilientClient, logger logr.Logger) func() {
+	return func() {
+		if auditStore != nil {
+			logger.Info("Flushing audit events on shutdown (DD-AUDIT-002)")
+			if closeErr := auditStore.Close(); closeErr != nil {
+				logger.Error(closeErr, "Failed to close audit store")
+			} else {
+				logger.Info("Audit store closed successfully")
+			}
+		}
+		if fleetResilientClient != nil {
+			logger.Info("Closing fleet MCP Gateway connection")
+			if err := fleetResilientClient.Close(); err != nil {
+				logger.Error(err, "Failed to close fleet MCP client gracefully")
+			}
+		}
+	}
+}
+
+// wireLogLevelHotReload starts the Issue #875 FileWatcher that applies
+// config-driven log level changes to atomicLevel without a restart. The
+// returned stop function is safe to call even if the watcher failed to
+// start.
+func wireLogLevelHotReload(ctx context.Context, configPath string, atomicLevel zaplog.AtomicLevel, logger logr.Logger) func() {
+	logLevelWatcher, err := hotreload.NewFileWatcher(
+		configPath,
+		func(newContent string) error {
+			var partial struct {
+				Logging internalconfig.LoggingConfig `yaml:"logging"`
+			}
+			if err := yaml.Unmarshal([]byte(newContent), &partial); err != nil {
+				return fmt.Errorf("failed to parse config for log level reload: %w", err)
+			}
+			return internalconfig.ParseAndSetLevel(atomicLevel, partial.Logging.Level)
+		},
+		logger.WithName("log-level-watcher"),
+	)
+	if err != nil {
+		logger.Error(err, "Failed to create log level file watcher")
+		return func() {}
+	}
+	if err := logLevelWatcher.Start(ctx); err != nil {
+		logger.Info("Log level file watcher failed to start", "error", err)
+		return func() {}
+	}
+	logger.Info("Log level hot-reload watcher started", "path", configPath)
+	return logLevelWatcher.Stop
 }
