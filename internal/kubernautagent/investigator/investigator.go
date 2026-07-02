@@ -773,7 +773,7 @@ func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContex
 	var content string
 	switch r := loopRes.(type) {
 	case *CancelledResult:
-		result := &katypes.InvestigationResult{
+		cancelledResult := &katypes.InvestigationResult{
 			Cancelled:           true,
 			CancelledPhase:      string(katypes.PhaseRCA),
 			CancelledAtTurn:     r.Turn,
@@ -781,13 +781,13 @@ func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContex
 		}
 		if r.Tokens != nil {
 			s := r.Tokens.Summary()
-			result.TokenUsage = &katypes.TokenUsageSummary{
+			cancelledResult.TokenUsage = &katypes.TokenUsageSummary{
 				PromptTokens:     s.PromptTokens,
 				CompletionTokens: s.CompletionTokens,
 				TotalTokens:      s.TotalTokens,
 			}
 		}
-		return result, nil
+		return cancelledResult, nil
 	case *ExhaustedResult:
 		return &katypes.InvestigationResult{
 			HumanReviewNeeded: true,
@@ -991,7 +991,7 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 	var content string
 	switch r := loopRes.(type) {
 	case *CancelledResult:
-		result := &katypes.InvestigationResult{
+		cancelledResult := &katypes.InvestigationResult{
 			RCASummary:          rcaSummary,
 			Cancelled:           true,
 			CancelledPhase:      string(katypes.PhaseWorkflowDiscovery),
@@ -1000,13 +1000,13 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 		}
 		if r.Tokens != nil {
 			s := r.Tokens.Summary()
-			result.TokenUsage = &katypes.TokenUsageSummary{
+			cancelledResult.TokenUsage = &katypes.TokenUsageSummary{
 				PromptTokens:     s.PromptTokens,
 				CompletionTokens: s.CompletionTokens,
 				TotalTokens:      s.TotalTokens,
 			}
 		}
-		return result, nil
+		return cancelledResult, nil
 	case *ExhaustedResult:
 		return &katypes.InvestigationResult{
 			RCASummary:        rcaSummary,

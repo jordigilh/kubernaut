@@ -408,8 +408,8 @@ func main() {
 
 		if cfg.Interactive.Enabled {
 			var mcpHandler http.Handler
-			mcpHandler, sessionDrainer = buildMCPHandler(mcpHandlerParams{
-				ctx: ctx, cfg: cfg, infra: k8sInfra, ds: ds, inv: inv, enricher: enricher,
+			mcpHandler, sessionDrainer = buildMCPHandler(ctx, mcpHandlerParams{
+				cfg: cfg, infra: k8sInfra, ds: ds, inv: inv, enricher: enricher,
 				autoMgr: mgr, authMw: authMw, agentMetrics: agentMetrics,
 				auditStore: instrumentedAudit, logger: logger,
 			})
@@ -1579,7 +1579,6 @@ func newAuthMiddleware(infra *k8sInfra, interactiveCfg kaconfig.InteractiveConfi
 // interactive-mode HTTP handler. Extracted per AGENTS.md's 8+-param
 // Options-pattern rule.
 type mcpHandlerParams struct {
-	ctx          context.Context
 	cfg          *kaconfig.Config
 	infra        *k8sInfra
 	ds           *dsClients
@@ -1592,9 +1591,9 @@ type mcpHandlerParams struct {
 	logger       logr.Logger
 }
 
-func buildMCPHandler(p mcpHandlerParams) (http.Handler, *mcpkg.SessionDrainer) {
-	ctx, cfg, infra, ds, inv, enricher, autoMgr, authMw, agentMetrics, auditStore, logger :=
-		p.ctx, p.cfg, p.infra, p.ds, p.inv, p.enricher, p.autoMgr, p.authMw, p.agentMetrics, p.auditStore, p.logger
+func buildMCPHandler(ctx context.Context, p mcpHandlerParams) (http.Handler, *mcpkg.SessionDrainer) {
+	cfg, infra, ds, inv, enricher, autoMgr, authMw, agentMetrics, auditStore, logger :=
+		p.cfg, p.infra, p.ds, p.inv, p.enricher, p.autoMgr, p.authMw, p.agentMetrics, p.auditStore, p.logger
 
 	if infra == nil || infra.kubeConfig == nil {
 		logger.Error(nil, "MCP interactive mode: K8s infrastructure unavailable")
