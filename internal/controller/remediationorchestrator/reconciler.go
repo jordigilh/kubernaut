@@ -30,46 +30,29 @@ package controller
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 	"time"
 
-	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
-	k8sretry "k8s.io/client-go/util/retry"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
-	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
-	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
-	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	roconfig "github.com/jordigilh/kubernaut/internal/config/remediationorchestrator"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/fleet"
-	"github.com/jordigilh/kubernaut/pkg/remediationapprovalrequest"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/aggregator"
 	roaudit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"
-	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/config"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/handler"
-	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/helpers"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/locking"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
-	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/override"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/phase"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/routing"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/status"
-	"github.com/jordigilh/kubernaut/pkg/remediationrequest"
-	"github.com/jordigilh/kubernaut/pkg/shared/events"
-	"github.com/jordigilh/kubernaut/pkg/shared/k8serrors"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
@@ -215,59 +198,14 @@ func NewReconciler(deps ReconcilerDeps, eaCreator ...*creator.EffectivenessAsses
 	// If nil is passed here, it's a programming error in main.go
 
 	// Set default timeouts if not specified (BR-ORCH-027/028)
-	if timeouts.Global == 0 {
-		timeouts.Global = 1 * time.Hour
-	}
-	if timeouts.Processing == 0 {
-		timeouts.Processing = 5 * time.Minute
-	}
-	if timeouts.Analyzing == 0 {
-		timeouts.Analyzing = 10 * time.Minute
-	}
-	if timeouts.Executing == 0 {
-		timeouts.Executing = 30 * time.Minute
-	}
-	if timeouts.AwaitingApproval == 0 {
-		timeouts.AwaitingApproval = 15 * time.Minute
-	}
-	if timeouts.Verifying == 0 {
-		timeouts.Verifying = 30 * time.Minute
-	}
-	if timeouts.MaxAnalyzing == 0 {
-		timeouts.MaxAnalyzing = 45 * time.Minute
-	}
+	applyTimeoutDefaults(&timeouts)
 
 	nc := creator.NewNotificationCreator(c, s, m)
 
 	// Initialize routing engine if not provided (DD-RO-002, DD-WE-004)
-	// If routingEngine is nil, create default routing engine for production use
 	// Unit tests can pass a mock routing engine to test orchestration logic in isolation
 	if routingEngine == nil {
-		routingConfig := routing.Config{
-			ConsecutiveFailureThreshold: 3,                                    // BR-ORCH-042
-			ConsecutiveFailureCooldown:  int64(1 * time.Hour / time.Second),   // 3600 seconds (1 hour)
-			RecentlyRemediatedCooldown:  int64(5 * time.Minute / time.Second), // 300 seconds (5 minutes)
-			// Exponential backoff (DD-WE-004, V1.0)
-			ExponentialBackoffBase:        int64(1 * time.Minute / time.Second),  // 60 seconds (1 minute)
-			ExponentialBackoffMax:         int64(10 * time.Minute / time.Second), // 600 seconds (10 minutes)
-			ExponentialBackoffMaxExponent: 4,                                     // 2^4 = 16x multiplier
-			// Scope validation backoff (ADR-053 Decision #4, BR-SCOPE-010)
-			ScopeBackoffBase: 5,   // 5 seconds initial
-			ScopeBackoffMax:  300, // 5 minutes max
-			// NoActionRequired suppression (Issue #314)
-			NoActionRequiredDelayHours: 24, // 24 hours
-		}
-		// ADR-057: All CRDs live in the controller namespace; empty string is correct.
-		routingNamespace := ""
-		// BR-SCOPE-010: Create scope manager using cached client for metadata-only informers (ADR-053)
-		scopeMgr := scope.NewManager(c)
-		// ADR-068: Wrap local scope manager with fleet-aware checker if fleet is configured.
-		scopeChecker, scopeErr := fleet.NewScopeChecker(scopeMgr, fleet.FleetConfig{}, log.Log)
-		if scopeErr != nil {
-			scopeChecker = scopeMgr
-		}
-		// DD-STATUS-001: Pass apiReader for cache-bypassed routing queries
-		routingEngine = routing.NewRoutingEngine(c, apiReader, routingNamespace, routingConfig, scopeChecker)
+		routingEngine = newDefaultRoutingEngine(c, apiReader)
 	}
 
 	// ========================================
@@ -342,144 +280,33 @@ func NewReconciler(deps ReconcilerDeps, eaCreator ...*creator.EffectivenessAsses
 		HandleAIAnalysisStatus:         r.aiAnalysisHandler.HandleAIAnalysisStatus,
 		HandleRemediationTargetMissing: r.aiAnalysisHandler.HandleRemediationTargetMissing,
 		EmitApprovalRequestedAudit:     r.emitApprovalRequestedAudit,
-		RecordEvent: func(rr *remediationv1.RemediationRequest, eventType, reason, message string) {
-			if r.Recorder != nil {
-				r.Recorder.Event(rr, eventType, reason, message)
-			}
-		},
-		FetchFreshRR: func(ctx context.Context, key client.ObjectKey) (*remediationv1.RemediationRequest, error) {
-			freshRR := &remediationv1.RemediationRequest{}
-			err := r.apiReader.Get(ctx, key, freshRR)
-			return freshRR, err
-		},
-		CheckPostAnalysisConditions: r.routingEngine.CheckPostAnalysisConditions,
-		HandleBlocked:               r.handleBlocked,
-		AcquireLock: func(ctx context.Context, target string) (bool, error) {
-			if r.lockManager == nil {
-				return true, nil
-			}
-			return r.lockManager.AcquireLock(ctx, target)
-		},
-		ReleaseLock: func(ctx context.Context, target string) error {
-			if r.lockManager == nil {
-				return nil
-			}
-			return r.lockManager.ReleaseLock(ctx, target)
-		},
-		CapturePreRemediationHash: func(ctx context.Context, kind, name, namespace, clusterID string) (string, string, error) {
-			reader, err := r.readerForHash(ctx, clusterID)
-			if err != nil {
-				return "", "", fmt.Errorf("failed to get reader for cluster %s: %w", clusterID, err)
-			}
-			return CapturePreRemediationHash(ctx, reader, r.restMapper, kind, name, namespace)
-		},
-		ResolveDualTargets: func(rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) DualTargetResult {
-			dt := resolveDualTargets(rr, ai)
-			return DualTargetResult{Remediation: TargetRef{Kind: dt.Remediation.Kind, Name: dt.Remediation.Name, Namespace: dt.Remediation.Namespace}}
-		},
-		PersistPreHash: func(ctx context.Context, rr *remediationv1.RemediationRequest, preHash string) error {
-			return helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
-				rr.Status.PreRemediationSpecHash = preHash
-				remediationrequest.SetPreRemediationHashCaptured(rr, true,
-					"Pre-remediation hash captured", r.Metrics)
-				return nil
-			})
-		},
-		IsDryRun:     r.isDryRun,
-		WFECallbacks: wfeCallbacks,
+		RecordEvent:                    r.recordEvent,
+		FetchFreshRR:                   r.fetchFreshRR,
+		CheckPostAnalysisConditions:    r.routingEngine.CheckPostAnalysisConditions,
+		HandleBlocked:                  r.handleBlocked,
+		AcquireLock:                    r.acquireLock,
+		ReleaseLock:                    r.releaseLock,
+		CapturePreRemediationHash:      r.capturePreRemediationHashForCallback,
+		ResolveDualTargets:             resolveDualTargetsForCallback,
+		PersistPreHash:                 r.persistPreRemediationHash,
+		IsDryRun:                       r.isDryRun,
+		WFECallbacks:                   wfeCallbacks,
 	}))
 	r.phaseRegistry.MustRegister(NewAwaitingApprovalHandler(c, m, AwaitingApprovalCallbacks{
-		RecordEvent: func(rr *remediationv1.RemediationRequest, eventType, reason, message string) {
-			if r.Recorder != nil {
-				r.Recorder.Event(rr, eventType, reason, message)
-			}
-		},
-		UpdateRARConditions: func(ctx context.Context, _ *remediationv1.RemediationRequest, rar *remediationv1.RemediationApprovalRequest, decision string) error {
-			return k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
-				if err := r.client.Get(ctx, client.ObjectKeyFromObject(rar), rar); err != nil {
-					return err
-				}
-				remediationapprovalrequest.SetApprovalPending(rar, false, "Decision received", r.Metrics)
-				switch decision {
-				case "approved":
-					remediationapprovalrequest.SetApprovalDecided(rar, true,
-						remediationapprovalrequest.ReasonApproved,
-						fmt.Sprintf("Approved by %s", rar.Status.DecidedBy), r.Metrics)
-				case "rejected":
-					remediationapprovalrequest.SetApprovalDecided(rar, true,
-						remediationapprovalrequest.ReasonRejected,
-						fmt.Sprintf("Rejected by %s: %s", rar.Status.DecidedBy, rar.Status.DecisionMessage), r.Metrics)
-				}
-				remediationapprovalrequest.SetReady(rar, true, remediationapprovalrequest.ReasonReady, "Approval decided", r.Metrics)
-				return r.client.Status().Update(ctx, rar)
-			})
-		},
-		ResolveWorkflow: func(ctx context.Context, wo *remediationv1.WorkflowOverride, sw *aianalysisv1.SelectedWorkflow, ns string) (*aianalysisv1.SelectedWorkflow, bool, error) {
-			return override.ResolveWorkflow(ctx, r.apiReader, wo, sw, ns)
-		},
-		CheckResourceBusy: r.routingEngine.CheckResourceBusy,
-		HandleBlocked:     r.handleBlocked,
-		AcquireLock: func(ctx context.Context, target string) (bool, error) {
-			if r.lockManager == nil {
-				return true, nil
-			}
-			return r.lockManager.AcquireLock(ctx, target)
-		},
-		ReleaseLock: func(ctx context.Context, target string) error {
-			if r.lockManager == nil {
-				return nil
-			}
-			return r.lockManager.ReleaseLock(ctx, target)
-		},
-		CapturePreRemediationHash: func(ctx context.Context, kind, name, namespace, clusterID string) (string, string, error) {
-			reader, err := r.readerForHash(ctx, clusterID)
-			if err != nil {
-				return "", "", fmt.Errorf("failed to get reader for cluster %s: %w", clusterID, err)
-			}
-			return CapturePreRemediationHash(ctx, reader, r.restMapper, kind, name, namespace)
-		},
-		ResolveDualTargets: func(rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) DualTargetResult {
-			dt := resolveDualTargets(rr, ai)
-			return DualTargetResult{Remediation: TargetRef{Kind: dt.Remediation.Kind, Name: dt.Remediation.Name, Namespace: dt.Remediation.Namespace}}
-		},
-		PersistPreHash: func(ctx context.Context, rr *remediationv1.RemediationRequest, preHash string) error {
-			return helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
-				rr.Status.PreRemediationSpecHash = preHash
-				remediationrequest.SetPreRemediationHashCaptured(rr, true,
-					"Pre-remediation hash captured", r.Metrics)
-				return nil
-			})
-		},
-		TransitionToFailed: r.transitionToFailed,
-		ExpireRAR: func(ctx context.Context, rar *remediationv1.RemediationApprovalRequest) error {
-			return k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
-				if err := r.client.Get(ctx, client.ObjectKeyFromObject(rar), rar); err != nil {
-					return err
-				}
-				remediationapprovalrequest.SetApprovalPending(rar, false, "Expired without decision", r.Metrics)
-				remediationapprovalrequest.SetApprovalExpired(rar, true,
-					fmt.Sprintf("Expired after %v without decision",
-						time.Since(rar.ObjectMeta.CreationTimestamp.Time).Round(time.Minute)), r.Metrics)
-				remediationapprovalrequest.SetReady(rar, false, remediationapprovalrequest.ReasonNotReady, "Approval expired", r.Metrics)
-				rar.Status.Decision = remediationv1.ApprovalDecisionExpired
-				rar.Status.DecidedBy = "system"
-				rar.Status.Expired = true
-				rar.Status.TimeRemaining = remediationapprovalrequest.ComputeTimeRemaining(rar.Spec.RequiredBy.Time, time.Now())
-				now := metav1.Now()
-				rar.Status.DecidedAt = &now
-				return r.client.Status().Update(ctx, rar)
-			})
-		},
-		UpdateRARTimeRemaining: func(ctx context.Context, rar *remediationv1.RemediationApprovalRequest) error {
-			return k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
-				if err := r.client.Get(ctx, client.ObjectKeyFromObject(rar), rar); err != nil {
-					return err
-				}
-				rar.Status.TimeRemaining = remediationapprovalrequest.ComputeTimeRemaining(rar.Spec.RequiredBy.Time, time.Now())
-				return r.client.Status().Update(ctx, rar)
-			})
-		},
-		WFECallbacks: wfeCallbacks,
+		RecordEvent:               r.recordEvent,
+		UpdateRARConditions:       r.updateRARConditionsOnDecision,
+		ResolveWorkflow:           r.resolveWorkflowOverride,
+		CheckResourceBusy:         r.routingEngine.CheckResourceBusy,
+		HandleBlocked:             r.handleBlocked,
+		AcquireLock:               r.acquireLock,
+		ReleaseLock:               r.releaseLock,
+		CapturePreRemediationHash: r.capturePreRemediationHashForCallback,
+		ResolveDualTargets:        resolveDualTargetsForCallback,
+		PersistPreHash:            r.persistPreRemediationHash,
+		TransitionToFailed:        r.transitionToFailed,
+		ExpireRAR:                 r.expireRARWithoutDecision,
+		UpdateRARTimeRemaining:    r.updateRARTimeRemaining,
+		WFECallbacks:              wfeCallbacks,
 	}))
 	r.phaseRegistry.MustRegister(NewVerifyingHandler(c, m, timeouts, VerifyingCallbacks{
 		EnsureNotificationsCreated:            r.ensureNotificationsCreated,
@@ -493,531 +320,62 @@ func NewReconciler(deps ReconcilerDeps, eaCreator ...*creator.EffectivenessAsses
 	return r
 }
 
-// SetWorkflowResolver wires the DS-backed workflow display resolver.
-// Must be called after NewReconciler in production (cmd/remediationorchestrator/main.go).
-// nil is safe — resolveWorkflowDisplay falls back to the raw UUID.
-func (r *Reconciler) SetWorkflowResolver(resolver routing.WorkflowDisplayResolver) {
-	r.workflowResolver = resolver
-}
-
-// SetRetentionPeriod configures how long terminal RemediationRequest CRDs persist
-// before automatic cleanup. Default: 24h. Issue #265.
-// Thread-safe: acquires configMu write lock (#835, DD-INFRA-001).
-func (r *Reconciler) SetRetentionPeriod(d time.Duration) {
-	if d > 0 {
-		r.configMu.Lock()
-		r.retentionPeriod = d
-		r.configMu.Unlock()
+// applyTimeoutDefaults populates zero-valued timeout fields with controller
+// defaults (BR-ORCH-027/028). Extracted from NewReconciler per
+// GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 2 (issue #1520).
+func applyTimeoutDefaults(timeouts *TimeoutConfig) {
+	if timeouts.Global == 0 {
+		timeouts.Global = 1 * time.Hour
+	}
+	if timeouts.Processing == 0 {
+		timeouts.Processing = 5 * time.Minute
+	}
+	if timeouts.Analyzing == 0 {
+		timeouts.Analyzing = 10 * time.Minute
+	}
+	if timeouts.Executing == 0 {
+		timeouts.Executing = 30 * time.Minute
+	}
+	if timeouts.AwaitingApproval == 0 {
+		timeouts.AwaitingApproval = 15 * time.Minute
+	}
+	if timeouts.Verifying == 0 {
+		timeouts.Verifying = 30 * time.Minute
+	}
+	if timeouts.MaxAnalyzing == 0 {
+		timeouts.MaxAnalyzing = 45 * time.Minute
 	}
 }
 
-// getRetentionPeriod returns the current retention TTL for terminal RRs.
-// Thread-safe: acquires configMu read lock (#835).
-func (r *Reconciler) getRetentionPeriod() time.Duration {
-	r.configMu.RLock()
-	defer r.configMu.RUnlock()
-	return r.retentionPeriod
-}
-
-// SetDSClient wires the DataStorage history querier into the routing engine.
-// Must be called after NewReconciler if the default routing engine is used in production.
-// Issue #214: Enables CheckIneffectiveRemediationChain to query real DS data.
-func (r *Reconciler) SetDSClient(dsClient routing.RemediationHistoryQuerier) {
-	if re, ok := r.routingEngine.(*routing.RoutingEngine); ok {
-		re.SetDSClient(dsClient)
-	} else {
-		log.Log.Info("SetDSClient skipped: routing engine is not *routing.RoutingEngine (mock or custom implementation)")
+// newDefaultRoutingEngine builds the production routing engine used when
+// ReconcilerDeps.RoutingEngine is not supplied (DD-RO-002, DD-WE-004).
+// Extracted from NewReconciler per GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 2
+// (issue #1520). Unit tests pass a mock routing engine instead, bypassing
+// this constructor entirely.
+func newDefaultRoutingEngine(c client.Client, apiReader client.Reader) routing.Engine {
+	routingConfig := routing.Config{
+		ConsecutiveFailureThreshold: 3,                                    // BR-ORCH-042
+		ConsecutiveFailureCooldown:  int64(1 * time.Hour / time.Second),   // 3600 seconds (1 hour)
+		RecentlyRemediatedCooldown:  int64(5 * time.Minute / time.Second), // 300 seconds (5 minutes)
+		// Exponential backoff (DD-WE-004, V1.0)
+		ExponentialBackoffBase:        int64(1 * time.Minute / time.Second),  // 60 seconds (1 minute)
+		ExponentialBackoffMax:         int64(10 * time.Minute / time.Second), // 600 seconds (10 minutes)
+		ExponentialBackoffMaxExponent: 4,                                     // 2^4 = 16x multiplier
+		// Scope validation backoff (ADR-053 Decision #4, BR-SCOPE-010)
+		ScopeBackoffBase: 5,   // 5 seconds initial
+		ScopeBackoffMax:  300, // 5 minutes max
+		// NoActionRequired suppression (Issue #314)
+		NoActionRequiredDelayHours: 24, // 24 hours
 	}
-}
-
-// SetDryRun configures dry-run mode for the RO reconciler.
-// When enabled, the pipeline stops after AI analysis without creating WFE or EA.
-// holdPeriod controls how long the Gateway suppresses re-triggering for the same fingerprint.
-// #712, #736: Called from cmd/remediationorchestrator/main.go.
-// Thread-safe: acquires configMu write lock (#835, DD-INFRA-001).
-func (r *Reconciler) SetDryRun(enabled bool, holdPeriod time.Duration) {
-	r.configMu.Lock()
-	r.dryRun = enabled
-	r.dryRunHoldPeriod = holdPeriod
-	r.configMu.Unlock()
-}
-
-// isDryRun returns whether dry-run mode is enabled.
-// Thread-safe: acquires configMu read lock (#835).
-func (r *Reconciler) isDryRun() bool {
-	r.configMu.RLock()
-	defer r.configMu.RUnlock()
-	return r.dryRun
-}
-
-// getDryRunHoldPeriod returns the current dry-run suppression window.
-// Thread-safe: acquires configMu read lock (#835).
-func (r *Reconciler) getDryRunHoldPeriod() time.Duration {
-	r.configMu.RLock()
-	defer r.configMu.RUnlock()
-	return r.dryRunHoldPeriod
-}
-
-// ========================================
-// TIMEOUT CONFIGURATION INITIALIZATION
-// BR-ORCH-027/028, BR-AUDIT-005 Gap #8
-// ========================================
-
-// populateTimeoutDefaults populates status.timeoutConfig with controller defaults.
-// This is a pure function that modifies the RR in-place without performing status updates.
-// Designed to be called from within AtomicStatusUpdate callbacks (DD-PERF-001).
-//
-// Per Gap #8 (BR-AUDIT-005): RO owns timeout initialization, operators can override later.
-// This ensures:
-// - Fresh RRs get controller defaults immediately
-// - Operator modifications are preserved across reconciles
-// - Audit trail can track initial configuration (Gap #8: orchestrator.lifecycle.created)
-//
-// Validation (REFACTOR enhancement):
-// - Ensures all timeouts are positive (>0)
-// - Logs warnings for unusual timeout values
-// - Per-phase timeouts should not exceed global timeout
-//
-// Reference:
-// - BR-ORCH-027 (Global timeout)
-// - BR-ORCH-028 (Per-phase timeouts)
-// - Gap #8: TimeoutConfig moved to status for operator mutability
-// - DD-PERF-001: No status updates in helper methods
-//
-// Parameters:
-// - ctx: Context for logging
-// - rr: RemediationRequest to populate (modified in-place)
-//
-// Returns:
-// - bool: true if TimeoutConfig was populated, false if already initialized
-// Reconcile implements the reconciliation loop for RemediationRequest.
-// It handles phase transitions and delegates to appropriate handlers.
-func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	logger := log.FromContext(ctx).WithValues("remediationRequest", req.NamespacedName)
-	startTime := time.Now()
-
-	// Fetch the RemediationRequest
-	rr := &remediationv1.RemediationRequest{}
-	if err := r.client.Get(ctx, req.NamespacedName, rr); err != nil {
-		if apierrors.IsNotFound(err) {
-			logger.V(1).Info("RemediationRequest not found, likely deleted")
-			return ctrl.Result{}, nil
-		}
-		logger.Error(err, "Failed to fetch RemediationRequest")
-		return ctrl.Result{}, err
+	// ADR-057: All CRDs live in the controller namespace; empty string is correct.
+	routingNamespace := ""
+	// BR-SCOPE-010: Create scope manager using cached client for metadata-only informers (ADR-053)
+	scopeMgr := scope.NewManager(c)
+	// ADR-068: Wrap local scope manager with fleet-aware checker if fleet is configured.
+	scopeChecker, scopeErr := fleet.NewScopeChecker(scopeMgr, fleet.FleetConfig{}, log.Log)
+	if scopeErr != nil {
+		scopeChecker = scopeMgr
 	}
-
-	// Record reconcile duration on exit (only if metrics are available)
-	defer func() {
-		r.Metrics.ReconcileDurationSeconds.WithLabelValues(
-			rr.Namespace,
-			string(rr.Status.OverallPhase),
-		).Observe(time.Since(startTime).Seconds())
-	}()
-
-	// BR-AUDIT-005 Gap #7: Validate timeout configuration (fail fast on invalid config)
-	// Per test requirement: Negative timeouts should be rejected with ERR_INVALID_TIMEOUT_CONFIG
-	if err := r.validateTimeoutConfig(rr); err != nil {
-		logger.Error(err, "Invalid timeout configuration, transitioning to Failed")
-		return r.transitionToFailed(ctx, rr, remediationv1.FailurePhaseConfiguration, err)
-	}
-
-	// ========================================
-	// OBSERVED GENERATION CHECK (DD-CONTROLLER-001 Pattern B - Phase-Aware)
-	// Per OBSERVED_GENERATION_DEEP_ANALYSIS_JAN_01_2026.md
-	// ========================================
-	// Phase-Aware Pattern: Parent Controllers with Active Orchestration
-	// - Remove GenerationChangedPredicate (allow child status updates) ✅ Already done
-	// - Add phase-aware ObservedGeneration check (balance idempotency with orchestration)
-	//
-	// The Challenge:
-	// - Annotation changes: Generation unchanged, should skip (wasteful)
-	// - Child status updates: Generation unchanged, MUST reconcile (critical!)
-	// - Polling checks: Generation unchanged, MUST reconcile (critical!)
-	// → Generation-based check CANNOT distinguish these events!
-	//
-	// The Solution: Phase-Aware Skip Logic
-	// Skip reconcile ONLY when we're NOT actively orchestrating:
-	// 1. Initial state (OverallPhase == "") → Allow (initialization)
-	// 2. Pending phase → Skip (not yet orchestrating, wasteful)
-	// 3. Processing/Analyzing/Executing → Allow (active orchestration of child CRDs)
-	// 4. Terminal phases (Completed/Failed) → Allow (owned-resource housekeeping: Issue #88)
-	//    Terminal RRs must still process NT delivery status and EA completion events.
-	//    Guard2 (below) handles terminal phases with a dedicated housekeeping block.
-	//
-	// Tradeoff: Accepts extra reconciles during active and terminal phases
-	// Benefit: Allows critical polling, child status updates, and terminal housekeeping
-	if rr.Status.ObservedGeneration == rr.Generation &&
-		rr.Status.OverallPhase == phase.Pending &&
-		rr.Status.SignalProcessingRef != nil {
-		logger.V(1).Info("⏭️  SKIPPED: No orchestration needed in Pending phase",
-			"phase", rr.Status.OverallPhase,
-			"generation", rr.Generation,
-			"observedGeneration", rr.Status.ObservedGeneration,
-			"reason", "ObservedGeneration matches, phase is Pending, and SP already created")
-		return ctrl.Result{}, nil
-	}
-
-	// Log when we proceed during active orchestration (helps understand behavior)
-	if rr.Status.ObservedGeneration == rr.Generation &&
-		rr.Status.OverallPhase != "" &&
-		!phase.IsTerminal(phase.Phase(rr.Status.OverallPhase)) {
-		logger.V(1).Info("✅ PROCEEDING: Active orchestration phase",
-			"phase", rr.Status.OverallPhase,
-			"generation", rr.Generation,
-			"reason", "Child orchestration requires reconciliation")
-	}
-
-	// Initialize phase if empty (new RemediationRequest from Gateway)
-	// Per DD-GATEWAY-011: RO owns status.overallPhase, Gateway creates instances without status
-	if rr.Status.OverallPhase == "" {
-		// RO-AUDIT-IDEMPOTENCY: Refetch via apiReader (cache-bypassed) to confirm the
-		// phase is genuinely empty. The informer cache is eventually consistent — a second
-		// reconcile may start with stale cache showing OverallPhase=="" even after a
-		// previous reconcile already set it to Pending in etcd. Without this check, both
-		// reconciles enter the initialization block and emit duplicate audit events.
-		if err := r.apiReader.Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
-			logger.Error(err, "Failed to refetch RemediationRequest via apiReader")
-			return ctrl.Result{}, err
-		}
-		if rr.Status.OverallPhase != "" {
-			// Cache was stale — another reconcile already initialized this RR.
-			// Requeue to proceed with the now-initialized phase.
-			logger.V(1).Info("Skipped duplicate initialization (stale cache)",
-				"name", rr.Name, "phase", rr.Status.OverallPhase)
-			return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
-		}
-
-		logger.Info("Initializing new RemediationRequest", "name", rr.Name)
-
-		// ========================================
-		// DD-PERF-001: ATOMIC STATUS UPDATE
-		// Initialize phase + StartTime + TimeoutConfig in single API call
-		// DD-CONTROLLER-001: ObservedGeneration NOT set here - only after processing phase
-		// Gap #8: Initialize TimeoutConfig defaults on first reconcile
-		// REFACTOR: Use extracted helper method for timeout initialization
-		// ========================================
-		if err := r.StatusManager.AtomicStatusUpdate(ctx, rr, func() error {
-			// TOCTOU guard: AtomicStatusUpdate refetches the RR internally.
-			// Between the apiReader check above and this refetch, a concurrent
-			// reconcile or status update may have already set the phase.
-			if rr.Status.OverallPhase != "" {
-				return errPhaseAlreadySet
-			}
-			rr.Status.OverallPhase = phase.Pending
-			rr.Status.StartTime = &metav1.Time{Time: startTime}
-
-			// Gap #8: Initialize TimeoutConfig with controller defaults
-			// REFACTOR: Delegated to populateTimeoutDefaults() for validation + reusability
-			r.populateTimeoutDefaults(ctx, rr)
-
-			return nil
-		}); err != nil {
-			if errors.Is(err, errPhaseAlreadySet) {
-				logger.V(1).Info("Initialization aborted (phase set during TOCTOU window)",
-					"name", rr.Name, "phase", rr.Status.OverallPhase)
-				return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
-			}
-			logger.Error(err, "Failed to initialize RemediationRequest status")
-			return ctrl.Result{}, err
-		}
-
-		// RO-AUDIT-IDEMPOTENCY: Safe to emit — the apiReader refetch above confirmed this
-		// reconcile is the sole initializer. AtomicStatusUpdate handles optimistic locking
-		// conflicts via RetryOnConflict, but the phase transition is guaranteed to have
-		// been performed by this reconcile (not a stale-cache duplicate).
-		r.emitLifecycleStartedAudit(ctx, rr)
-
-		// Gap #8: NO REFETCH NEEDED - AtomicStatusUpdate already updated rr in-memory
-		// The rr object passed to AtomicStatusUpdate is updated with the persisted status
-		// (including TimeoutConfig) by the Status().Update() call inside AtomicStatusUpdate.
-		// Refetching here would risk getting a cached/stale version.
-
-		// Gap #8: Emit orchestrator.lifecycle.created event with TimeoutConfig
-		// Per BR-AUDIT-005 Gap #8: Capture initial TimeoutConfig for RR reconstruction
-		// This happens AFTER status initialization to capture actual defaults
-		r.emitRemediationCreatedAudit(ctx, rr)
-
-		// DD-EVENT-001: Emit K8s event for new RR acceptance (BR-ORCH-095)
-		if r.Recorder != nil {
-			r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonRemediationCreated,
-				fmt.Sprintf("RemediationRequest accepted for signal %s", rr.Spec.SignalName))
-		}
-
-		// Requeue after short delay to process the Pending phase
-		// Using RequeueAfter instead of deprecated Requeue field
-		return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
-	}
-
-	// Terminal-phase housekeeping (Issue #88, #265)
-	// Handles: TTL enforcement (stamp RetentionExpiryTime, delete expired CRDs),
-	// Ready safety net, notification tracking, effectiveness assessment tracking.
-	if phase.IsTerminal(phase.Phase(rr.Status.OverallPhase)) {
-		logger.V(1).Info("Terminal-phase housekeeping", "phase", rr.Status.OverallPhase)
-
-		// #265: TTL enforcement — delete expired CRDs or stamp expiry for future cleanup.
-		// Expired CRDs are deleted immediately (before housekeeping).
-		// Non-expired terminal RRs proceed through housekeeping, then requeue at expiry.
-		if rr.Status.RetentionExpiryTime != nil && time.Now().After(rr.Status.RetentionExpiryTime.Time) {
-			r.emitRetentionCleanupAudit(ctx, rr)
-			if err := r.client.Delete(ctx, rr); err != nil {
-				if !apierrors.IsNotFound(err) {
-					logger.Error(err, "Failed to delete expired RemediationRequest")
-					return ctrl.Result{}, err
-				}
-			}
-			logger.Info("Deleted expired RemediationRequest (#265)",
-				"retentionExpiryTime", rr.Status.RetentionExpiryTime.Format(time.RFC3339))
-			return ctrl.Result{}, nil
-		}
-
-		// Stamp expiry on first terminal reconcile (non-blocking — housekeeping continues)
-		retention := r.getRetentionPeriod()
-		retentionRequeue := retention
-		if rr.Status.RetentionExpiryTime == nil {
-			expiry := metav1.NewTime(time.Now().Add(retention))
-			if err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
-				rr.Status.RetentionExpiryTime = &expiry
-				return nil
-			}); err != nil {
-				logger.Error(err, "Failed to set RetentionExpiryTime")
-			} else {
-				logger.Info("RetentionExpiryTime set (#265)", "expiry", expiry.Format(time.RFC3339))
-			}
-		} else {
-			retentionRequeue = time.Until(rr.Status.RetentionExpiryTime.Time)
-		}
-
-		// Issue #79 Phase 7c: Safety net for terminal RRs without Ready condition (e.g., externally cancelled)
-		readyCondition := remediationrequest.GetCondition(rr, remediationrequest.ConditionReady)
-		if readyCondition == nil {
-			isSuccess := rr.Status.OverallPhase == remediationv1.PhaseCompleted || rr.Status.OverallPhase == remediationv1.PhaseSkipped
-			if isSuccess {
-				if updateErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
-					remediationrequest.SetReady(rr, true, remediationrequest.ReasonReady, "Terminal phase: "+string(rr.Status.OverallPhase), r.Metrics)
-					return nil
-				}); updateErr != nil {
-					logger.Error(updateErr, "Failed to set Ready safety net")
-				}
-			} else {
-				if updateErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
-					remediationrequest.SetReady(rr, false, remediationrequest.ReasonNotReady, "Terminal phase: "+string(rr.Status.OverallPhase), r.Metrics)
-					return nil
-				}); updateErr != nil {
-					logger.Error(updateErr, "Failed to set Ready safety net")
-				}
-			}
-		}
-
-		// BR-ORCH-029/030: Track notification delivery status for terminal RRs
-		if err := r.trackNotificationStatus(ctx, rr); err != nil {
-			logger.Error(err, "Failed to track notification status in terminal phase")
-			// Non-fatal: continue to return
-		}
-
-		// ADR-EM-001, GAP-RO-2: Track effectiveness assessment status for terminal RRs
-		if err := r.trackEffectivenessStatus(ctx, rr); err != nil {
-			logger.Error(err, "Failed to track effectiveness assessment status in terminal phase")
-			// Non-fatal: continue to return
-		}
-
-		// #1421: Cascade terminal phase to non-terminal child CRDs.
-		// Kubernetes-native parent-manages-children: RO is responsible for
-		// transitioning children to a terminal state when the parent RR terminates.
-		if err := r.cascadeTerminalToChildren(ctx, rr); err != nil {
-			logger.Error(err, "Failed to cascade terminal phase to children")
-			// Non-fatal: continue to return
-		}
-
-		// BR-ORCH-044: Track routing decision - no action needed
-		r.Metrics.NoActionNeededTotal.WithLabelValues(string(rr.Status.OverallPhase), rr.Namespace).Inc()
-
-		// #265: Requeue for TTL cleanup at expiry time
-		return ctrl.Result{RequeueAfter: retentionRequeue}, nil
-	}
-
-	// Check for global timeout (BR-ORCH-027)
-	// Supports per-RR override via spec.timeoutConfig.global (AC-027-4)
-	// Business Value: Prevents stuck remediations from consuming resources indefinitely
-	// Note: Uses status.StartTime (not CreationTimestamp) as StartTime is explicitly set by controller
-	if rr.Status.StartTime != nil {
-		globalTimeout := r.getEffectiveGlobalTimeout(rr)
-		timeSinceStart := time.Since(rr.Status.StartTime.Time)
-		if timeSinceStart > globalTimeout {
-			logger.Info("RemediationRequest exceeded global timeout",
-				"timeSinceStart", timeSinceStart,
-				"globalTimeout", globalTimeout,
-				"overridden", rr.Status.TimeoutConfig != nil && rr.Status.TimeoutConfig.Global != nil,
-				"startTime", rr.Status.StartTime.Time)
-			return r.handleGlobalTimeout(ctx, rr)
-		}
-	}
-
-	// Check for per-phase timeouts (BR-ORCH-028)
-	// Enables faster detection of stuck phases without waiting for global timeout
-	if err := r.checkPhaseTimeouts(ctx, rr); err != nil {
-		return ctrl.Result{}, err
-	}
-
-	// Track notification status (BR-ORCH-029/030)
-	// Updates RR status based on NotificationRequest phase changes
-	if err := r.trackNotificationStatus(ctx, rr); err != nil {
-		logger.Error(err, "Failed to track notification status")
-		// Non-fatal: Continue with reconciliation
-	}
-
-	// Issue #666: Check phase handler registry first
-	currentPhase := phase.Phase(rr.Status.OverallPhase)
-	if h, ok := r.phaseRegistry.Lookup(currentPhase); ok {
-		intent, err := h.Handle(ctx, rr)
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("phase handler %s: %w", currentPhase, err)
-		}
-		return r.ApplyTransition(ctx, rr, intent)
-	}
-
-	// All phase handlers are now registered in the registry. If we reach
-	// here, the phase is genuinely unknown.
-	logger.Info("Unknown phase", "phase", rr.Status.OverallPhase)
-	return ctrl.Result{RequeueAfter: config.RequeueResourceBusy}, nil // REFACTOR-RO-003
-}
-
-// SetupWithManager sets up the controller with the Manager.
-// Creates field index on spec.signalFingerprint for O(1) consecutive failure lookups.
-// Reference: BR-ORCH-042, BR-GATEWAY-185 v1.1
-func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
-	// BR-ORCH-042, BR-GATEWAY-185 v1.1: Create field index on spec.signalFingerprint
-	// Uses immutable spec field (64 chars) instead of mutable labels (63 chars max)
-	if err := mgr.GetFieldIndexer().IndexField(
-		context.Background(),
-		&remediationv1.RemediationRequest{},
-		FingerprintFieldIndex, // "spec.signalFingerprint"
-		func(obj client.Object) []string {
-			rr := obj.(*remediationv1.RemediationRequest)
-			if rr.Spec.SignalFingerprint == "" {
-				return nil
-			}
-			return []string{rr.Spec.SignalFingerprint}
-		},
-	); err != nil {
-		return fmt.Errorf("failed to create field index on spec.signalFingerprint: %w", err)
-	}
-
-	// ========================================
-	// V1.0: FIELD INDEX FOR CENTRALIZED ROUTING (DD-RO-002)
-	// Index WorkflowExecution by spec.targetResource for efficient routing queries
-	// Reference: DD-RO-002, V1.0 Implementation Plan Day 1
-	// ========================================
-	// Create field index on WorkflowExecution.Spec.TargetResource for O(1) routing lookups
-	// Used by RO routing logic to find recent/active WFEs for same target
-	// Enables efficient queries: "Find all WFEs targeting deployment/my-app"
-	// Pattern from WE controller (lines 508-518)
-	//
-	// NOTE: This index may already exist if WE controller was set up first.
-	// If the index already exists, we can safely ignore the "indexer conflict" error
-	// since both controllers need the same index for the same purpose.
-	if err := mgr.GetFieldIndexer().IndexField(
-		context.Background(),
-		&workflowexecutionv1.WorkflowExecution{},
-		"spec.targetResource", // Field to index
-		func(obj client.Object) []string {
-			wfe := obj.(*workflowexecutionv1.WorkflowExecution)
-			if wfe.Spec.TargetResource == "" {
-				return nil
-			}
-			return []string{wfe.Spec.TargetResource}
-		},
-	); err != nil {
-		// Ignore "indexer conflict" error - means WE controller already created this index
-		// Both controllers need this index, so if it exists, we're good
-		if !k8serrors.IsIndexerConflict(err) {
-			return fmt.Errorf("failed to create field index on WorkflowExecution.spec.targetResource: %w", err)
-		}
-		// Index already exists - safe to continue
-	}
-
-	// Issue #91: Register field indexes on child CRDs for spec.remediationRequestRef.name
-	// Enables MatchingFields queries and kubectl --field-selector for child lookups by parent RR
-	childCRDIndexes := []struct {
-		obj       client.Object
-		extractor func(client.Object) []string
-	}{
-		{
-			obj: &aianalysisv1.AIAnalysis{},
-			extractor: func(obj client.Object) []string {
-				aa := obj.(*aianalysisv1.AIAnalysis)
-				if aa.Spec.RemediationRequestRef.Name == "" {
-					return nil
-				}
-				return []string{aa.Spec.RemediationRequestRef.Name}
-			},
-		},
-		{
-			obj: &notificationv1.NotificationRequest{},
-			extractor: func(obj client.Object) []string {
-				nr := obj.(*notificationv1.NotificationRequest)
-				if nr.Spec.RemediationRequestRef == nil || nr.Spec.RemediationRequestRef.Name == "" {
-					return nil
-				}
-				return []string{nr.Spec.RemediationRequestRef.Name}
-			},
-		},
-		{
-			obj: &signalprocessingv1.SignalProcessing{},
-			extractor: func(obj client.Object) []string {
-				sp := obj.(*signalprocessingv1.SignalProcessing)
-				if sp.Spec.RemediationRequestRef.Name == "" {
-					return nil
-				}
-				return []string{sp.Spec.RemediationRequestRef.Name}
-			},
-		},
-		{
-			obj: &remediationv1.RemediationApprovalRequest{},
-			extractor: func(obj client.Object) []string {
-				rar := obj.(*remediationv1.RemediationApprovalRequest)
-				if rar.Spec.RemediationRequestRef.Name == "" {
-					return nil
-				}
-				return []string{rar.Spec.RemediationRequestRef.Name}
-			},
-		},
-		{
-			obj: &workflowexecutionv1.WorkflowExecution{},
-			extractor: func(obj client.Object) []string {
-				wfe := obj.(*workflowexecutionv1.WorkflowExecution)
-				if wfe.Spec.RemediationRequestRef.Name == "" {
-					return nil
-				}
-				return []string{wfe.Spec.RemediationRequestRef.Name}
-			},
-		},
-	}
-
-	for _, idx := range childCRDIndexes {
-		if err := mgr.GetFieldIndexer().IndexField(
-			context.Background(),
-			idx.obj,
-			RemediationRequestRefNameIndex,
-			idx.extractor,
-		); err != nil {
-			if !k8serrors.IsIndexerConflict(err) {
-				return fmt.Errorf("failed to create field index %s on %T: %w", RemediationRequestRefNameIndex, idx.obj, err)
-			}
-		}
-	}
-
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&remediationv1.RemediationRequest{}).
-		Owns(&signalprocessingv1.SignalProcessing{}).
-		Owns(&aianalysisv1.AIAnalysis{}).
-		Owns(&workflowexecutionv1.WorkflowExecution{}).
-		Owns(&remediationv1.RemediationApprovalRequest{}).
-		Owns(&notificationv1.NotificationRequest{}). // BR-ORCH-029/030: Watch notification lifecycle
-		Owns(&eav1.EffectivenessAssessment{}).       // ADR-EM-001, GAP-RO-3: Watch EA for EffectivenessAssessed condition
-		// V1.0 P1 FIX: GenerationChangedPredicate removed to allow child CRD status changes
-		// Previous optimization filtered status updates, breaking integration tests (RO_INTEGRATION_CRITICAL_BUG_JAN_01_2026.md)
-		// Rationale: Correctness > Performance for P0 orchestration service
-		// WithEventFilter(predicate.GenerationChangedPredicate{}). // ❌ REMOVED - breaks integration tests
-		Complete(r)
+	// DD-STATUS-001: Pass apiReader for cache-bypassed routing queries
+	return routing.NewRoutingEngine(c, apiReader, routingNamespace, routingConfig, scopeChecker)
 }

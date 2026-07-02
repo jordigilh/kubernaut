@@ -230,10 +230,10 @@ func newAIAnalysisCompleted(name, namespace, rrName string, confidence float64, 
 	now := metav1.Now()
 	ai.Status.CompletedAt = &now
 	ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-		WorkflowID:     workflowID,
-		Version:        "v1",
+		WorkflowID:      workflowID,
+		Version:         "v1",
 		ExecutionBundle: "test-image:latest",
-		Confidence:     confidence,
+		Confidence:      confidence,
 	}
 	ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 		Summary:  "Test root cause",

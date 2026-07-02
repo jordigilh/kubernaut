@@ -90,9 +90,9 @@ func CreateWFEAndTransition(
 		}
 		if ai.Status.SelectedWorkflow != nil {
 			rr.Status.SelectedWorkflowRef = &remediationv1.WorkflowReference{
-				WorkflowID:           ai.Status.SelectedWorkflow.WorkflowID,
-				Version:              ai.Status.SelectedWorkflow.Version,
-				ExecutionBundle:      ai.Status.SelectedWorkflow.ExecutionBundle,
+				WorkflowID:            ai.Status.SelectedWorkflow.WorkflowID,
+				Version:               ai.Status.SelectedWorkflow.Version,
+				ExecutionBundle:       ai.Status.SelectedWorkflow.ExecutionBundle,
 				ExecutionBundleDigest: ai.Status.SelectedWorkflow.ExecutionBundleDigest,
 			}
 			rr.Status.WorkflowDisplayName = workflowDisplayName
