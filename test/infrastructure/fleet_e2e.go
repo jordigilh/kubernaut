@@ -142,6 +142,36 @@ type KubeMCPServerAuthConfig struct {
 	// for the lifetime of the cluster -- see accessTokenLifespan in
 	// keycloak-realm-fleet.json).
 	BrokerCredentialToken string
+
+	// RemoteBridge, when non-nil, makes the "prod-east" registration target
+	// a genuinely separate Kind cluster's kube-mcp-server via a
+	// Service+Endpoints bridge (DD-TEST-013, Spike S19) instead of the
+	// local loopback kube-mcp-server every other registration uses. Nil
+	// (the default, zero value) preserves the original loopback-only
+	// behavior for every existing caller -- only the FMC E2E lanes
+	// (fleetmetadatacache_e2e.go) set this field.
+	RemoteBridge *RemoteClusterBridgeConfig
+}
+
+// RemoteClusterBridgeConfig describes the bridge Service that makes a
+// second, independent Kind cluster's kube-mcp-server reachable from the
+// primary cluster's MCP Gateway, backing the "prod-east" registration with
+// a genuinely separate Kubernetes control plane (DD-TEST-013). Built by
+// SetupRemoteClusterForFMC.
+type RemoteClusterBridgeConfig struct {
+	// BridgeServiceName is the Service name to create in the PRIMARY
+	// cluster (e.g. "kube-mcp-server-remote"), used as the "prod-east"
+	// backend hostname in place of the local kube-mcp-server Service.
+	BridgeServiceName string
+	// BridgeServicePort is the port in-cluster Gateway clients dial --
+	// must match the remote kube-mcp-server's container port (8080).
+	BridgeServicePort int
+	// RemoteNodeIP is the remote cluster's control-plane node's IP on the
+	// shared podman "kind" bridge network (see KindNodeBridgeIP).
+	RemoteNodeIP string
+	// RemoteNodePort is the NodePort exposing kube-mcp-server on the
+	// remote cluster.
+	RemoteNodePort int
 }
 
 // DefaultKubeMCPServerAuthConfig returns the "fleet" full-pipeline E2E
@@ -849,6 +879,21 @@ func deployEnvoyAIGatewayRegistrations(ctx context.Context, namespace, kubeconfi
 	keycloakHostname := fmt.Sprintf("keycloak.%s.svc.cluster.local", namespace)
 	jwksURI := authConfig.AuthorizationURL + "/protocol/openid-connect/certs"
 
+	// prod-east's Backend targets a genuinely separate Kind cluster's
+	// kube-mcp-server via a Service+Endpoints bridge when RemoteBridge is
+	// set (DD-TEST-013, Spike S19); otherwise it shares the loopback
+	// hostname like every other Backend -- the original, unmodified
+	// behavior for any caller that leaves RemoteBridge nil.
+	prodEastHostname, prodEastPort := kubeMCPHostname, 8080
+	if rb := authConfig.RemoteBridge; rb != nil {
+		_, _ = fmt.Fprintln(writer, "    Bridging prod-east to remote cluster's kube-mcp-server (DD-TEST-013)...")
+		if err := CreateServiceBridge(ctx, kubeconfigPath, namespace, rb.BridgeServiceName, rb.BridgeServicePort, rb.RemoteNodeIP, rb.RemoteNodePort, writer); err != nil {
+			return fmt.Errorf("prod-east remote bridge Service creation failed: %w", err)
+		}
+		prodEastHostname = fmt.Sprintf("%s.%s.svc.cluster.local", rb.BridgeServiceName, namespace)
+		prodEastPort = rb.BridgeServicePort
+	}
+
 	manifest := fmt.Sprintf(`---
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: Backend
@@ -901,8 +946,8 @@ metadata:
 spec:
   endpoints:
   - fqdn:
-      hostname: %[3]s
-      port: 8080
+      hostname: %[8]s
+      port: %[9]d
 ---
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: Backend
@@ -962,7 +1007,7 @@ spec:
             port: 8443
       protectedResourceMetadata:
         resource: %[7]q
-`, namespace, keycloakHostname, kubeMCPHostname, authConfig.AuthorizationURL, authConfig.OAuthAudience, jwksURI, mcpGatewayEndpoint)
+`, namespace, keycloakHostname, kubeMCPHostname, authConfig.AuthorizationURL, authConfig.OAuthAudience, jwksURI, mcpGatewayEndpoint, prodEastHostname, prodEastPort)
 
 	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, manifest); err != nil {
 		return fmt.Errorf("backend/MCPRoute creation failed: %w", err)
@@ -977,6 +1022,29 @@ spec:
 // selected by authConfig.GatewayType: Kuadrant's HTTPRoute+MCPServerRegistration
 // or EAIGW's Backend+MCPRoute (Spike S18).
 func deployKubeMCPServerAndRegister(ctx context.Context, namespace, kubeconfigPath, mcpGatewayEndpoint string, authConfig KubeMCPServerAuthConfig, writer io.Writer) error {
+	if err := deployKubeMCPServer(ctx, namespace, kubeconfigPath, authConfig, writer); err != nil {
+		return err
+	}
+
+	if authConfig.GatewayType == registry.GatewayEAIGW {
+		return deployEnvoyAIGatewayRegistrations(ctx, namespace, kubeconfigPath, mcpGatewayEndpoint, authConfig, writer)
+	}
+	return deployKuadrantRegistrations(ctx, namespace, kubeconfigPath, authConfig, writer)
+}
+
+// deployKubeMCPServer deploys the gateway-agnostic kube-mcp-server
+// Deployment+Service (ServiceAccount, RBAC, ConfigMap, Deployment, Service)
+// into the given cluster/namespace and waits for its rollout, without
+// creating any gateway registration (HTTPRoute/MCPServerRegistration or
+// Backend/MCPRoute -- see deployKubeMCPServerAndRegister for that).
+//
+// Extracted so SetupRemoteClusterForFMC (DD-TEST-013) can deploy a second,
+// independent kube-mcp-server into a remote Kind cluster using the exact
+// same manifest/auth-config logic as the primary cluster's loopback
+// instance, without registering it as a local Gateway backend (the primary
+// cluster's registration functions bridge to it instead -- see
+// KubeMCPServerAuthConfig.RemoteBridge).
+func deployKubeMCPServer(ctx context.Context, namespace, kubeconfigPath string, authConfig KubeMCPServerAuthConfig, writer io.Writer) error {
 	// Issue #54 RCA background: kube-mcp-server v0.0.63 defaults
 	// cluster_auth_mode to "passthrough", which forwards any incoming
 	// Authorization: Bearer header straight to the Kubernetes API. FMC's
@@ -1119,11 +1187,7 @@ spec:
 		return fmt.Errorf("kube-mcp-server rollout failed: %w", err)
 	}
 	_, _ = fmt.Fprintln(writer, "    ✅ kube-mcp-server ready")
-
-	if authConfig.GatewayType == registry.GatewayEAIGW {
-		return deployEnvoyAIGatewayRegistrations(ctx, namespace, kubeconfigPath, mcpGatewayEndpoint, authConfig, writer)
-	}
-	return deployKuadrantRegistrations(ctx, namespace, kubeconfigPath, authConfig, writer)
+	return nil
 }
 
 // deployKuadrantRegistrations creates the HTTPRoute + three
@@ -1160,7 +1224,40 @@ stringData:
 		brokerCredRefYAML = "  credentialRef:\n    name: kube-mcp-server-broker-cred\n"
 	}
 
-	routeManifest := fmt.Sprintf(`%[2]s---
+	// prod-east routes through a dedicated HTTPRoute bridged to a genuinely
+	// separate Kind cluster's kube-mcp-server when RemoteBridge is set
+	// (DD-TEST-013, Spike S19); otherwise it shares the loopback HTTPRoute
+	// like every other registration -- the original, unmodified behavior
+	// for the "fleet" suite and any other caller that leaves RemoteBridge nil.
+	prodEastRouteName := "kube-mcp-server-route"
+	var remoteRouteManifest string
+	if rb := authConfig.RemoteBridge; rb != nil {
+		_, _ = fmt.Fprintln(writer, "    Bridging prod-east to remote cluster's kube-mcp-server (DD-TEST-013)...")
+		if err := CreateServiceBridge(ctx, kubeconfigPath, namespace, rb.BridgeServiceName, rb.BridgeServicePort, rb.RemoteNodeIP, rb.RemoteNodePort, writer); err != nil {
+			return fmt.Errorf("prod-east remote bridge Service creation failed: %w", err)
+		}
+		prodEastRouteName = "kube-mcp-server-remote-route"
+		remoteRouteManifest = fmt.Sprintf(`---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: %[3]s
+  namespace: %[1]s
+spec:
+  hostnames:
+  - kube-mcp-server-remote.127-0-0-1.sslip.io
+  parentRefs:
+  - name: mcp-gateway
+    namespace: gateway-system
+    sectionName: mcp
+  rules:
+  - backendRefs:
+    - name: %[2]s
+      port: %[4]d
+`, namespace, rb.BridgeServiceName, prodEastRouteName, rb.BridgeServicePort)
+	}
+
+	routeManifest := fmt.Sprintf(`%[2]s%[5]s---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -1205,7 +1302,7 @@ spec:
 %[3]s  targetRef:
     group: gateway.networking.k8s.io
     kind: HTTPRoute
-    name: kube-mcp-server-route
+    name: %[4]s
     namespace: %[1]s
 ---
 apiVersion: mcp.kuadrant.io/v1alpha1
@@ -1222,7 +1319,7 @@ spec:
     kind: HTTPRoute
     name: kube-mcp-server-route
     namespace: %[1]s
-`, namespace, brokerCredSecretManifest, brokerCredRefYAML)
+`, namespace, brokerCredSecretManifest, brokerCredRefYAML, prodEastRouteName, remoteRouteManifest)
 
 	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, routeManifest); err != nil {
 		return fmt.Errorf("httpRoute/MCPServerRegistration creation failed: %w", err)
