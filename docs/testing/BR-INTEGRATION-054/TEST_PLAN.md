@@ -110,27 +110,31 @@ scope is therefore narrower than the full fleet-architecture set above.
 | E2E-FMC-054-012 | E2E | [SI-4, CP-10] FMC's `/readyz` genuinely degrades to 503 when the real Valkey dependency fails, then auto-recovers and resumes writing fresh cache entries once Valkey self-heals, without requiring FMC's own restart | SI-4, CP-10 | BR-INTEGRATION-065 | `test/e2e/fleetmetadatacache/resilience_test.go` |
 | E2E-FMC-054-013 | E2E | [SI-4, CM-6] FMC's cluster registry reacts live to a real MCPServerRegistration CRD being created and deleted, without disturbing the fixed cluster set | SI-4, CM-6 | BR-INTEGRATION-065 | `test/e2e/fleetmetadatacache/dynamic_registration_test.go` |
 | E2E-FMC-054-014 | E2E | [AC-6] kube-mcp-server performs a real RFC 8693 Standard Token Exchange against Keycloak (subject token audienced for kube-mcp-server -> exchanged token audienced for k8s-api), and the real Kubernetes API server honors the exchanged token while rejecting the un-exchanged subject token, proving the exchange step is a real security boundary rather than an inert passthrough (Spike S17/S18) | AC-6 | BR-INTEGRATION-065 | `test/e2e/fleetmetadatacache/token_exchange_test.go` |
+| E2E-FMC-054-015 | E2E | [AC-4] `prod-east` is backed by a genuinely separate Kubernetes control plane (a second, independent Kind cluster bridged over the shared podman network, DD-TEST-013): a resource created only in the remote cluster is reported managed via `prod-east` but never via `loopback-cluster`/`prod-west`, and a resource created only in the primary cluster is reported managed via `loopback-cluster`/`prod-west` but never via `prod-east` | AC-4 | BR-INTEGRATION-065 | `test/e2e/fleetmetadatacache/cross_cluster_isolation_test.go` |
 
-**Note on cross-cluster isolation**: the 3 fixed clusters (`loopback-cluster`,
-`prod-east`, `prod-west`) are a loopback pattern -- all 3 `MCPServerRegistration`s
-target the *same* `HTTPRoute`/backend (single physical Kind cluster), differentiated
-only by MCP tool-name prefix. This validates the multi-cluster *code path* but cannot
-prove genuine cross-cluster data isolation (a resource "leaking" as managed across two
-truly separate API servers). A dedicated second Kind cluster with real cross-cluster
-networking would be required to close that specific gap; deferred as a follow-up
-(feasibility already assessed as resource-wise viable -- ~1.1-1.3GB vs. the `fleet`
-suite's 6.1GB budget -- with the open question being Kuadrant's same-cluster-backend
-assumption, which needs a NodePort + cross-cluster Service/EndpointSlice bridge; the
-Keycloak-migration precondition for this follow-up spike is now satisfied).
+**Cross-cluster isolation architecture (DD-TEST-013)**: `loopback-cluster` and
+`prod-west` remain a loopback pattern (both `MCPServerRegistration`s/`Backend`s target
+the same physical primary-cluster `kube-mcp-server`, differentiated only by MCP
+tool-name prefix). `prod-east` is now bridged to a second, independent Kind cluster
+(`SetupRemoteClusterForFMC`) running its own `kube-mcp-server` and performing the same
+RFC 8693 exchange against the same (bridged) Keycloak instance -- proving genuine
+cross-cluster data isolation, not just the multi-cluster code path. The bridge uses
+plain `Service`+`Endpoints` objects over the shared podman `kind` network (no service
+mesh, no VPN); see
+[DD-TEST-013](../../architecture/decisions/DD-TEST-013-fmc-e2e-cross-cluster-bridge.md)
+and
+[Spike S19](../../spikes/multi-cluster-mcp-gateway/spike-s19-fmc-e2e-second-cluster/README.md)
+for the full design and empirical validation. `KubeMCPServerAuthConfig.RemoteBridge` is
+nil-safe and opt-in -- the "fleet" full-pipeline suite is unaffected.
 
 **Shared scenario implementation**: the Kuadrant and EAIGW lanes' Describe/It bodies
 are gateway-agnostic and live once in `test/e2e/fleetmetadatacache/shared/`
 (`sync_journey.go`, `least_privilege.go`, `resilience.go`,
-`dynamic_registration.go`, `token_exchange.go`), parameterized by a `shared.Variant`
-implementation per lane. Each `*_test.go` file listed in the tables below is a thin
-(~5-line) wiring file that registers the shared scenario with that lane's variant;
-the only gateway-specific code lives in each lane's own `variant.go` (dynamic
-cluster-resource CRD factory + RBAC checks).
+`dynamic_registration.go`, `token_exchange.go`, `cross_cluster_isolation.go`),
+parameterized by a `shared.Variant` implementation per lane. Each `*_test.go` file
+listed in the tables below is a thin (~5-line) wiring file that registers the shared
+scenario with that lane's variant; the only gateway-specific code lives in each lane's
+own `variant.go` (dynamic cluster-resource CRD factory + RBAC checks).
 
 ---
 
@@ -157,6 +161,7 @@ DD-TEST-001) so both lanes can run in CI without port collisions.
 | E2E-FMC-EAIGW-054-012 | E2E | [SI-4, CP-10] FMC's `/readyz` genuinely degrades to 503 when the real Valkey dependency fails, then auto-recovers and resumes writing fresh cache entries once Valkey self-heals, without requiring FMC's own restart | SI-4, CP-10 | BR-INTEGRATION-065 | `test/e2e/fleetmetadatacache/eaigw/resilience_test.go` |
 | E2E-FMC-EAIGW-054-013 | E2E | [SI-4, CM-6] FMC's cluster registry reacts live to a real `Backend` CRD being created and deleted (no `MCPRoute`/broker indirection), without disturbing the fixed cluster set | SI-4, CM-6 | BR-INTEGRATION-065 | `test/e2e/fleetmetadatacache/eaigw/dynamic_registration_test.go` |
 | E2E-FMC-EAIGW-054-014 | E2E | [AC-6] kube-mcp-server performs a real RFC 8693 Standard Token Exchange against Keycloak (subject token audienced for kube-mcp-server -> exchanged token audienced for k8s-api), and the real Kubernetes API server honors the exchanged token while rejecting the un-exchanged subject token, proving the exchange step is a real security boundary rather than an inert passthrough | AC-6 | BR-INTEGRATION-065 | `test/e2e/fleetmetadatacache/eaigw/token_exchange_test.go` |
+| E2E-FMC-EAIGW-054-015 | E2E | [AC-4] `prod-east` is backed by a genuinely separate Kubernetes control plane (a second, independent Kind cluster bridged over the shared podman network, DD-TEST-013): a resource created only in the remote cluster is reported managed via `prod-east` but never via `loopback-cluster`/`prod-west`, and a resource created only in the primary cluster is reported managed via `loopback-cluster`/`prod-west` but never via `prod-east` | AC-4 | BR-INTEGRATION-065 | `test/e2e/fleetmetadatacache/eaigw/cross_cluster_isolation_test.go` |
 
 ---
 
@@ -176,6 +181,7 @@ DD-TEST-001) so both lanes can run in CI without port collisions.
 | Control | Covered By |
 |---------|-----------|
 | AC-3 (Access enforcement) | IT-FLEET-DEXCC-001, IT-FLEET-AUTH-REJECT-001, UT-FLEET-RES-006, UT-WE-054-003, E2E-FMC-054-010, E2E-FMC-EAIGW-054-010 |
+| AC-4 (Information flow enforcement) | E2E-FMC-054-015, E2E-FMC-EAIGW-054-015 |
 | AC-6 (Least privilege) | IT-FLEET-006, E2E-FMC-054-011, E2E-FMC-054-014, E2E-FMC-EAIGW-054-011, E2E-FMC-EAIGW-054-014 |
 | AU-3 (Audit content) | E2E-SP-054-REMOTE |
 | CM-6 (Configuration change) | E2E-FMC-054-013, E2E-FMC-EAIGW-054-013 |
@@ -200,5 +206,7 @@ DD-TEST-001) so both lanes can run in CI without port collisions.
 
 - [ADR-068: Fleet Federation Architecture](../../architecture/decisions/ADR-068-fleet-federation-architecture.md)
 - [ADR-065: Fleet Cluster Identity on RR](../../architecture/decisions/ADR-065-fleet-cluster-identity-on-rr.md)
+- [DD-TEST-013: FMC E2E Cross-Cluster Bridge](../../architecture/decisions/DD-TEST-013-fmc-e2e-cross-cluster-bridge.md)
 - Issue #54: Multi-cluster federation
 - Spike S11: WE Remote Execution via MCP Gateway
+- [Spike S19: FMC E2E second Kind cluster](../../spikes/multi-cluster-mcp-gateway/spike-s19-fmc-e2e-second-cluster/README.md)
