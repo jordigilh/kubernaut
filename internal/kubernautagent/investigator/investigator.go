@@ -340,23 +340,7 @@ func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal
 
 	inv.pipeline.AnomalyDetector.Reset()
 
-	// Auto-resolve apiVersion when the LLM omitted it (parity with the
-	// autonomous apiVersionValidationGate in runRCA). Uses the REST mapper
-	// via scopeResolver: if the kind maps to exactly one API group, we can
-	// infer the apiVersion deterministically.
-	if rcaResult.RemediationTarget.APIVersion == "" && rcaResult.RemediationTarget.Kind != "" && inv.scopeResolver != nil {
-		ambiguous, gvrs, err := inv.scopeResolver.IsAmbiguousKind(rcaResult.RemediationTarget.Kind)
-		if err != nil {
-			inv.logger.Error(err, "RunWorkflowDiscoveryFromRCA: IsAmbiguousKind failed, skipping apiVersion auto-resolve",
-				"kind", rcaResult.RemediationTarget.Kind, "correlation_id", correlationID)
-		} else if !ambiguous && len(gvrs) == 1 {
-			rcaResult.RemediationTarget.APIVersion = gvrToAPIVersion(gvrs[0])
-			inv.logger.Info("RunWorkflowDiscoveryFromRCA: auto-resolved apiVersion for non-ambiguous kind",
-				"kind", rcaResult.RemediationTarget.Kind,
-				"api_version", rcaResult.RemediationTarget.APIVersion,
-				"correlation_id", correlationID)
-		}
-	}
+	inv.autoResolveRCATargetAPIVersion(rcaResult, correlationID)
 
 	preKind := signal.ResourceKind
 	signal = SyncSignalFromRCA(signal, rcaResult.RemediationTarget)
@@ -372,73 +356,21 @@ func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal
 		"correlation_id", correlationID)
 
 	// F5 (#1374): Resolve enrichment when the enricher is wired, mirroring
-	// the autonomous path (Investigate L414-500). Pre-RCA enrichment uses
-	// the signal target; post-RCA re-enrichment uses the RCA-identified
-	// target when it differs (cross-resource RCA).
-	var rawEnrichData *enrichment.EnrichmentResult
-	if inv.enricher != nil {
-		enrichmentCache := make(map[string]*enrichment.EnrichmentResult)
-		signalKind, signalName, signalNS := ResolveEnrichmentTarget(signal, nil)
-		signalNS = inv.normalizeNamespace(signalKind, signalNS)
-		rawEnrichData = inv.resolveEnrichmentCached(ctx, enrichmentCache, signalKind, signalName, signalNS, signal.IncidentID)
-
-		postRCAKind, postRCAName, postRCANS := ResolveEnrichmentTarget(signal, rcaResult)
-		postRCANS = inv.normalizeNamespace(postRCAKind, postRCANS)
-		if postRCAKind != signalKind || postRCAName != signalName || postRCANS != signalNS {
-			inv.logger.Info("RunWorkflowDiscoveryFromRCA: re-enriching with RCA target",
-				"signal", signalKind+"/"+signalName,
-				"rca_target", postRCAKind+"/"+postRCAName,
-				"correlation_id", correlationID)
-			reEnriched := inv.resolveEnrichmentCached(ctx, enrichmentCache, postRCAKind, postRCAName, postRCANS, signal.IncidentID)
-
-			if reEnriched != nil && reEnriched.HardFail {
-				inv.logger.Error(reEnriched.OwnerChainError,
-					"RunWorkflowDiscoveryFromRCA: enrichment hard-failed, triggering rca_incomplete",
-					"correlation_id", correlationID)
-				rcaResult.HumanReviewNeeded = true
-				rcaResult.HumanReviewReason = "rca_incomplete"
-				backfillSeverity(rcaResult, signal)
-				attachDetectedLabels(rcaResult, rawEnrichData)
-				InjectRemediationTarget(rcaResult, signal, rawEnrichData)
-				InjectTargetResourceParameters(rcaResult)
-				return rcaResult, nil
-			} else if reEnriched != nil && reEnriched.TargetResourceDeleted {
-				rcaResult.Warnings = append(rcaResult.Warnings,
-					deletedResourceWarning(postRCAKind, postRCAName, postRCANS))
-			}
-
-			if reEnriched != nil && !reEnriched.HardFail && !allLabelDetectionsFailed(reEnriched.DetectedLabels) {
-				rawEnrichData = reEnriched
-			} else if reEnriched != nil && !reEnriched.HardFail {
-				inv.logger.Info("RunWorkflowDiscoveryFromRCA: re-enrichment labels all failed, preserving signal-target labels",
-					"rca_target", postRCAKind+"/"+postRCAName, "correlation_id", correlationID)
-			}
-		} else if rawEnrichData != nil && rawEnrichData.TargetResourceDeleted {
-			rcaResult.Warnings = append(rcaResult.Warnings,
-				deletedResourceWarning(signalKind, signalName, signalNS))
-		}
-
+	// the autonomous path (Investigate). Pre-RCA enrichment uses the signal
+	// target; post-RCA re-enrichment uses the RCA-identified target when it
+	// differs (cross-resource RCA).
+	rawEnrichData, enricherWired, hardFailResult := inv.resolveRCAWorkflowDiscoveryEnrichment(ctx, signal, rcaResult, correlationID)
+	if hardFailResult != nil {
+		return hardFailResult, nil
+	}
+	if enricherWired {
 		enrichData = toPromptEnrichment(rawEnrichData)
 	}
 
 	// F6 (#1374): Attach DetectedLabelsJSON to the signal so workflow
 	// discovery tools forward labels to DS catalog queries, activating
-	// GitOps-aware scoring (parity with autonomous path L521-537).
-	if rawEnrichData != nil && rawEnrichData.DetectedLabels != nil {
-		if dlJSON, err := json.Marshal(rawEnrichData.DetectedLabels); err == nil {
-			signal.DetectedLabelsJSON = string(dlJSON)
-			dl := rawEnrichData.DetectedLabels
-			trueCount := countTrueLabels(dl.GitOpsManaged, dl.PDBProtected, dl.HPAEnabled,
-				dl.Stateful, dl.HelmManaged, dl.NetworkIsolated, dl.ResourceQuotaConstrained)
-			inv.logger.V(1).Info("RunWorkflowDiscoveryFromRCA: detected labels attached for workflow scoring",
-				"correlation_id", correlationID,
-				"true_label_count", trueCount,
-				"gitops_tool", dl.GitOpsTool)
-		} else {
-			inv.logger.Error(err, "RunWorkflowDiscoveryFromRCA: failed to marshal detected labels",
-				"correlation_id", correlationID)
-		}
-	}
+	// GitOps-aware scoring (parity with autonomous path).
+	inv.attachRCADetectedLabelsJSON(&signal, rawEnrichData, correlationID)
 
 	client, modelName, runtimeParams := inv.resolveForPhase(katypes.PhaseWorkflowDiscovery)
 
@@ -455,6 +387,110 @@ func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal
 
 	FinalizeWorkflowResult(workflowResult, signal, rcaResult, rawEnrichData)
 	return workflowResult, nil
+}
+
+// autoResolveRCATargetAPIVersion auto-resolves rcaResult.RemediationTarget.APIVersion
+// when the LLM omitted it, mirroring the autonomous apiVersionValidationGate in
+// runRCA. It mutates rcaResult in place. Uses the REST mapper via
+// scopeResolver: if the kind maps to exactly one API group, the apiVersion
+// can be inferred deterministically without an extra LLM turn.
+func (inv *Investigator) autoResolveRCATargetAPIVersion(rcaResult *katypes.InvestigationResult, correlationID string) {
+	if rcaResult.RemediationTarget.APIVersion != "" || rcaResult.RemediationTarget.Kind == "" || inv.scopeResolver == nil {
+		return
+	}
+	ambiguous, gvrs, err := inv.scopeResolver.IsAmbiguousKind(rcaResult.RemediationTarget.Kind)
+	if err != nil {
+		inv.logger.Error(err, "RunWorkflowDiscoveryFromRCA: IsAmbiguousKind failed, skipping apiVersion auto-resolve",
+			"kind", rcaResult.RemediationTarget.Kind, "correlation_id", correlationID)
+		return
+	}
+	if !ambiguous && len(gvrs) == 1 {
+		rcaResult.RemediationTarget.APIVersion = gvrToAPIVersion(gvrs[0])
+		inv.logger.Info("RunWorkflowDiscoveryFromRCA: auto-resolved apiVersion for non-ambiguous kind",
+			"kind", rcaResult.RemediationTarget.Kind,
+			"api_version", rcaResult.RemediationTarget.APIVersion,
+			"correlation_id", correlationID)
+	}
+}
+
+// resolveRCAWorkflowDiscoveryEnrichment resolves (and, when the RCA target
+// differs from the signal target, re-resolves) enrichment for the interactive
+// workflow-discovery path. enricherWired is false when inv.enricher is nil,
+// signaling that the caller must leave its own enrichData parameter
+// untouched. hardFailResult is non-nil when re-enrichment hard-failed; the
+// caller must return it immediately (it is already fully finalized).
+func (inv *Investigator) resolveRCAWorkflowDiscoveryEnrichment(ctx context.Context, signal katypes.SignalContext, rcaResult *katypes.InvestigationResult, correlationID string) (rawEnrichData *enrichment.EnrichmentResult, enricherWired bool, hardFailResult *katypes.InvestigationResult) {
+	if inv.enricher == nil {
+		return nil, false, nil
+	}
+
+	enrichmentCache := make(map[string]*enrichment.EnrichmentResult)
+	signalKind, signalName, signalNS := ResolveEnrichmentTarget(signal, nil)
+	signalNS = inv.normalizeNamespace(signalKind, signalNS)
+	rawEnrichData = inv.resolveEnrichmentCached(ctx, enrichmentCache, signalKind, signalName, signalNS, signal.IncidentID)
+
+	postRCAKind, postRCAName, postRCANS := ResolveEnrichmentTarget(signal, rcaResult)
+	postRCANS = inv.normalizeNamespace(postRCAKind, postRCANS)
+	if postRCAKind != signalKind || postRCAName != signalName || postRCANS != signalNS {
+		inv.logger.Info("RunWorkflowDiscoveryFromRCA: re-enriching with RCA target",
+			"signal", signalKind+"/"+signalName,
+			"rca_target", postRCAKind+"/"+postRCAName,
+			"correlation_id", correlationID)
+		reEnriched := inv.resolveEnrichmentCached(ctx, enrichmentCache, postRCAKind, postRCAName, postRCANS, signal.IncidentID)
+
+		if reEnriched != nil && reEnriched.HardFail {
+			inv.logger.Error(reEnriched.OwnerChainError,
+				"RunWorkflowDiscoveryFromRCA: enrichment hard-failed, triggering rca_incomplete",
+				"correlation_id", correlationID)
+			rcaResult.HumanReviewNeeded = true
+			rcaResult.HumanReviewReason = "rca_incomplete"
+			backfillSeverity(rcaResult, signal)
+			attachDetectedLabels(rcaResult, rawEnrichData)
+			InjectRemediationTarget(rcaResult, signal, rawEnrichData)
+			InjectTargetResourceParameters(rcaResult)
+			return rawEnrichData, true, rcaResult
+		} else if reEnriched != nil && reEnriched.TargetResourceDeleted {
+			rcaResult.Warnings = append(rcaResult.Warnings,
+				deletedResourceWarning(postRCAKind, postRCAName, postRCANS))
+		}
+
+		if reEnriched != nil && !reEnriched.HardFail && !allLabelDetectionsFailed(reEnriched.DetectedLabels) {
+			rawEnrichData = reEnriched
+		} else if reEnriched != nil && !reEnriched.HardFail {
+			inv.logger.Info("RunWorkflowDiscoveryFromRCA: re-enrichment labels all failed, preserving signal-target labels",
+				"rca_target", postRCAKind+"/"+postRCAName, "correlation_id", correlationID)
+		}
+	} else if rawEnrichData != nil && rawEnrichData.TargetResourceDeleted {
+		rcaResult.Warnings = append(rcaResult.Warnings,
+			deletedResourceWarning(signalKind, signalName, signalNS))
+	}
+
+	return rawEnrichData, true, nil
+}
+
+// attachRCADetectedLabelsJSON marshals rawEnrichData's DetectedLabels onto
+// signal.DetectedLabelsJSON so workflow discovery tools forward labels to DS
+// catalog queries, activating GitOps-aware scoring (parity with the
+// autonomous Investigate path). No-op when rawEnrichData or its labels are
+// unset (which is always the case when the enricher is not wired).
+func (inv *Investigator) attachRCADetectedLabelsJSON(signal *katypes.SignalContext, rawEnrichData *enrichment.EnrichmentResult, correlationID string) {
+	if rawEnrichData == nil || rawEnrichData.DetectedLabels == nil {
+		return
+	}
+	dlJSON, err := json.Marshal(rawEnrichData.DetectedLabels)
+	if err != nil {
+		inv.logger.Error(err, "RunWorkflowDiscoveryFromRCA: failed to marshal detected labels",
+			"correlation_id", correlationID)
+		return
+	}
+	signal.DetectedLabelsJSON = string(dlJSON)
+	dl := rawEnrichData.DetectedLabels
+	trueCount := countTrueLabels(dl.GitOpsManaged, dl.PDBProtected, dl.HPAEnabled,
+		dl.Stateful, dl.HelmManaged, dl.NetworkIsolated, dl.ResourceQuotaConstrained)
+	inv.logger.V(1).Info("RunWorkflowDiscoveryFromRCA: detected labels attached for workflow scoring",
+		"correlation_id", correlationID,
+		"true_label_count", trueCount,
+		"gitops_tool", dl.GitOpsTool)
 }
 
 // Investigate runs the two-invocation investigation and returns the result.
@@ -509,22 +545,12 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 	// BR-INTERACTIVE-010 / #1390: When interactive (either via signal or runtime
 	// upgrade flag), skip Phase 2+3 and return with InteractiveHold=true.
 	if signal.Interactive || session.InteractiveUpgradeFromContext(ctx) {
-		backfillSeverity(rcaResult, signal)
-		attachDetectedLabels(rcaResult, enrichData)
-		InjectRemediationTarget(rcaResult, signal, enrichData)
-		InjectTargetResourceParameters(rcaResult)
 		rcaResult.InteractiveHold = true
-		inv.emitResponseComplete(ctx, rcaResult, tokens, correlationID)
-		return rcaResult, nil
+		return inv.finalizeAndEmitRCAOnlyResult(ctx, rcaResult, signal, enrichData, tokens, correlationID), nil
 	}
 
 	if rcaResult.HumanReviewNeeded {
-		backfillSeverity(rcaResult, signal)
-		attachDetectedLabels(rcaResult, enrichData)
-		InjectRemediationTarget(rcaResult, signal, enrichData)
-		InjectTargetResourceParameters(rcaResult)
-		inv.emitResponseComplete(ctx, rcaResult, tokens, correlationID)
-		return rcaResult, nil
+		return inv.finalizeAndEmitRCAOnlyResult(ctx, rcaResult, signal, enrichData, tokens, correlationID), nil
 	}
 
 	// #1430 / BR-HAPI-200: When the RCA concludes no action is required
@@ -535,96 +561,18 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 		inv.logger.Info("skipping workflow discovery: RCA concluded not actionable",
 			"investigation_outcome", rcaResult.InvestigationOutcome,
 			"correlation_id", correlationID)
-		backfillSeverity(rcaResult, signal)
-		attachDetectedLabels(rcaResult, enrichData)
-		InjectRemediationTarget(rcaResult, signal, enrichData)
-		InjectTargetResourceParameters(rcaResult)
-		inv.emitResponseComplete(ctx, rcaResult, tokens, correlationID)
-		return rcaResult, nil
+		return inv.finalizeAndEmitRCAOnlyResult(ctx, rcaResult, signal, enrichData, tokens, correlationID), nil
 	}
 
-	// GAP-001 / ADR-056: Re-enrich using RCA-identified remediation target if different.
-	// H3-fix: retain pre-RCA enrichment if re-enrichment fails.
-	workflowSignal := signal
-	postRCAKind, postRCAName, postRCANS := ResolveEnrichmentTarget(signal, rcaResult)
-	postRCANS = inv.normalizeNamespace(postRCAKind, postRCANS)
-	if postRCAKind != signalKind || postRCAName != signalName || postRCANS != signalNS {
-		inv.logger.Info("re-enriching with RCA remediation target",
-			"signal", signalKind+"/"+signalName,
-			"rca_target", postRCAKind+"/"+postRCAName,
-		)
-		reEnriched := inv.resolveEnrichmentCached(ctx, enrichmentCache, postRCAKind, postRCAName, postRCANS, signal.IncidentID)
-
-		// BR-HAPI-261 AC#7 / #704: check HardFail BEFORE label merge
-		// to prevent the merge from silently dropping the failure signal.
-		// Use enrichData (initial enrichment) for labels because the failed
-		// re-enrichment has empty/all-failed detections — preserving signal-level
-		// labels (e.g. pdbProtected) matches pre-#704 behaviour where
-		// allLabelDetectionsFailed() fell through to keep initial labels.
-		if reEnriched != nil && reEnriched.HardFail {
-			inv.logger.Error(reEnriched.OwnerChainError, "enrichment owner chain hard-failed, triggering rca_incomplete")
-			rcaResult.HumanReviewNeeded = true
-			rcaResult.HumanReviewReason = "rca_incomplete"
-			backfillSeverity(rcaResult, signal)
-			attachDetectedLabels(rcaResult, enrichData)
-			InjectRemediationTarget(rcaResult, workflowSignal, enrichData)
-			InjectTargetResourceParameters(rcaResult)
-			inv.emitResponseComplete(ctx, rcaResult, tokens, correlationID)
-			return rcaResult, nil
-		}
-
-		if reEnriched != nil && reEnriched.TargetResourceDeleted {
-			rcaResult.Warnings = append(rcaResult.Warnings,
-				deletedResourceWarning(postRCAKind, postRCAName, postRCANS))
-		}
-
-		if reEnriched != nil && !allLabelDetectionsFailed(reEnriched.DetectedLabels) {
-			enrichData = reEnriched
-		} else if reEnriched != nil {
-			inv.logger.Info("re-enrichment labels all failed (RCA target not found), preserving signal-target labels",
-				"rca_target", postRCAKind+"/"+postRCAName)
-		} else {
-			inv.logger.Info("re-enrichment returned nil, retaining pre-RCA enrichment data")
-		}
-		promptEnrichment = toPromptEnrichment(enrichData)
-
-		workflowSignal.ResourceKind = postRCAKind
-		workflowSignal.ResourceName = postRCAName
-		workflowSignal.Namespace = postRCANS
-	} else if enrichData != nil && enrichData.TargetResourceDeleted {
-		rcaResult.Warnings = append(rcaResult.Warnings,
-			deletedResourceWarning(signalKind, signalName, signalNS))
+	// GAP-001 / ADR-056: Re-enrich using RCA-identified remediation target if
+	// different. H3-fix: retain pre-RCA enrichment if re-enrichment fails.
+	workflowSignal, enrichData, hardFailed := inv.reEnrichWorkflowTarget(
+		ctx, signal, rcaResult, enrichData, enrichmentCache, signalKind, signalName, signalNS)
+	if hardFailed {
+		return inv.finalizeAndEmitRCAOnlyResult(ctx, rcaResult, signal, enrichData, tokens, correlationID), nil
 	}
-
-	// #1051: propagate RCA-resolved apiVersion to workflowSignal so
-	// ComponentGVK() returns the correct GVK for DS catalog queries.
-	// When APIVersion is empty but the RCA changed the target kind,
-	// clear any stale ResourceAPIVersion to prevent an invalid GVK
-	// combination (old apiVersion + new kind).
-	if rcaResult.RemediationTarget.APIVersion != "" {
-		workflowSignal.ResourceAPIVersion = rcaResult.RemediationTarget.APIVersion
-	} else if workflowSignal.ResourceKind != signal.ResourceKind {
-		workflowSignal.ResourceAPIVersion = ""
-	}
-
-	// #1052 / BR-AI-056: Marshal enrichment DetectedLabels into the signal context
-	// so workflow discovery tools forward them to DS catalog queries, activating
-	// GitOps-aware scoring.
-	if enrichData != nil && enrichData.DetectedLabels != nil {
-		if dlJSON, err := json.Marshal(enrichData.DetectedLabels); err == nil {
-			workflowSignal.DetectedLabelsJSON = string(dlJSON)
-			dl := enrichData.DetectedLabels
-			trueCount := countTrueLabels(dl.GitOpsManaged, dl.PDBProtected, dl.HPAEnabled,
-				dl.Stateful, dl.HelmManaged, dl.NetworkIsolated, dl.ResourceQuotaConstrained)
-			inv.logger.V(1).Info("detected labels attached for workflow discovery scoring",
-				"correlation_id", correlationID,
-				"true_label_count", trueCount,
-				"gitops_tool", dl.GitOpsTool)
-		} else {
-			inv.logger.Error(err, "failed to marshal detected labels for workflow discovery, scoring will be inactive",
-				"correlation_id", correlationID)
-		}
-	}
+	promptEnrichment = toPromptEnrichment(enrichData)
+	workflowSignal = inv.enrichWorkflowSignalForDiscovery(workflowSignal, signal, rcaResult, enrichData, correlationID)
 
 	inv.pipeline.AnomalyDetector.Reset()
 
@@ -648,6 +596,113 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 		return workflowResult, nil
 	}
 
+	return inv.mergeAndFinalizeWorkflowResult(ctx, workflowResult, rcaResult, signal, workflowSignal, enrichData, p1Ctx, tokens, correlationID), nil
+}
+
+// finalizeAndEmitRCAOnlyResult applies the common Phase-1-only finalization
+// steps (severity backfill, label attachment, remediation-target injection,
+// audit emission) shared by every early-return path in Investigate: the
+// interactive-hold, human-review-needed, not-actionable, and re-enrichment
+// hard-fail branches. Callers set any branch-specific fields on rcaResult
+// before invoking this helper.
+func (inv *Investigator) finalizeAndEmitRCAOnlyResult(ctx context.Context, rcaResult *katypes.InvestigationResult, signal katypes.SignalContext, enrichData *enrichment.EnrichmentResult, tokens *TokenAccumulator, correlationID string) *katypes.InvestigationResult {
+	backfillSeverity(rcaResult, signal)
+	attachDetectedLabels(rcaResult, enrichData)
+	InjectRemediationTarget(rcaResult, signal, enrichData)
+	InjectTargetResourceParameters(rcaResult)
+	inv.emitResponseComplete(ctx, rcaResult, tokens, correlationID)
+	return rcaResult
+}
+
+// reEnrichWorkflowTarget re-enriches using the RCA-identified remediation
+// target when it differs from the pre-RCA signal target (GAP-001/ADR-056).
+// hardFailed is true when the re-enrichment owner-chain lookup hard-failed;
+// callers must treat rcaResult (already marked HumanReviewNeeded/rca_incomplete
+// by this function) as the final result in that case.
+func (inv *Investigator) reEnrichWorkflowTarget(ctx context.Context, signal katypes.SignalContext, rcaResult *katypes.InvestigationResult, enrichData *enrichment.EnrichmentResult, enrichmentCache map[string]*enrichment.EnrichmentResult, signalKind, signalName, signalNS string) (workflowSignal katypes.SignalContext, updatedEnrichData *enrichment.EnrichmentResult, hardFailed bool) {
+	workflowSignal = signal
+	postRCAKind, postRCAName, postRCANS := ResolveEnrichmentTarget(signal, rcaResult)
+	postRCANS = inv.normalizeNamespace(postRCAKind, postRCANS)
+	if postRCAKind != signalKind || postRCAName != signalName || postRCANS != signalNS {
+		inv.logger.Info("re-enriching with RCA remediation target",
+			"signal", signalKind+"/"+signalName,
+			"rca_target", postRCAKind+"/"+postRCAName,
+		)
+		reEnriched := inv.resolveEnrichmentCached(ctx, enrichmentCache, postRCAKind, postRCAName, postRCANS, signal.IncidentID)
+
+		// BR-HAPI-261 AC#7 / #704: check HardFail BEFORE label merge
+		// to prevent the merge from silently dropping the failure signal.
+		// Use enrichData (initial enrichment) for labels because the failed
+		// re-enrichment has empty/all-failed detections — preserving signal-level
+		// labels (e.g. pdbProtected) matches pre-#704 behaviour where
+		// allLabelDetectionsFailed() fell through to keep initial labels.
+		if reEnriched != nil && reEnriched.HardFail {
+			inv.logger.Error(reEnriched.OwnerChainError, "enrichment owner chain hard-failed, triggering rca_incomplete")
+			rcaResult.HumanReviewNeeded = true
+			rcaResult.HumanReviewReason = "rca_incomplete"
+			return workflowSignal, enrichData, true
+		}
+
+		if reEnriched != nil && reEnriched.TargetResourceDeleted {
+			rcaResult.Warnings = append(rcaResult.Warnings,
+				deletedResourceWarning(postRCAKind, postRCAName, postRCANS))
+		}
+
+		if reEnriched != nil && !allLabelDetectionsFailed(reEnriched.DetectedLabels) {
+			enrichData = reEnriched
+		} else if reEnriched != nil {
+			inv.logger.Info("re-enrichment labels all failed (RCA target not found), preserving signal-target labels",
+				"rca_target", postRCAKind+"/"+postRCAName)
+		} else {
+			inv.logger.Info("re-enrichment returned nil, retaining pre-RCA enrichment data")
+		}
+
+		workflowSignal.ResourceKind = postRCAKind
+		workflowSignal.ResourceName = postRCAName
+		workflowSignal.Namespace = postRCANS
+	} else if enrichData != nil && enrichData.TargetResourceDeleted {
+		rcaResult.Warnings = append(rcaResult.Warnings,
+			deletedResourceWarning(signalKind, signalName, signalNS))
+	}
+	return workflowSignal, enrichData, false
+}
+
+// enrichWorkflowSignalForDiscovery propagates the RCA-resolved apiVersion and
+// detected-label JSON onto workflowSignal so that ComponentGVK() and DS
+// catalog queries see the correct, GitOps-aware target for Phase 3 (#1051,
+// #1052 / BR-AI-056).
+func (inv *Investigator) enrichWorkflowSignalForDiscovery(workflowSignal, signal katypes.SignalContext, rcaResult *katypes.InvestigationResult, enrichData *enrichment.EnrichmentResult, correlationID string) katypes.SignalContext {
+	// When APIVersion is empty but the RCA changed the target kind, clear any
+	// stale ResourceAPIVersion to prevent an invalid GVK combination (old
+	// apiVersion + new kind).
+	if rcaResult.RemediationTarget.APIVersion != "" {
+		workflowSignal.ResourceAPIVersion = rcaResult.RemediationTarget.APIVersion
+	} else if workflowSignal.ResourceKind != signal.ResourceKind {
+		workflowSignal.ResourceAPIVersion = ""
+	}
+
+	if enrichData != nil && enrichData.DetectedLabels != nil {
+		if dlJSON, err := json.Marshal(enrichData.DetectedLabels); err == nil {
+			workflowSignal.DetectedLabelsJSON = string(dlJSON)
+			dl := enrichData.DetectedLabels
+			trueCount := countTrueLabels(dl.GitOpsManaged, dl.PDBProtected, dl.HPAEnabled,
+				dl.Stateful, dl.HelmManaged, dl.NetworkIsolated, dl.ResourceQuotaConstrained)
+			inv.logger.V(1).Info("detected labels attached for workflow discovery scoring",
+				"correlation_id", correlationID,
+				"true_label_count", trueCount,
+				"gitops_tool", dl.GitOpsTool)
+		} else {
+			inv.logger.Error(err, "failed to marshal detected labels for workflow discovery, scoring will be inactive",
+				"correlation_id", correlationID)
+		}
+	}
+	return workflowSignal
+}
+
+// mergeAndFinalizeWorkflowResult merges Phase 1 (RCA) fallback fields into
+// the Phase 3 workflow-selection result, then applies the same finalization
+// steps as finalizeAndEmitRCAOnlyResult before emitting the audit trail.
+func (inv *Investigator) mergeAndFinalizeWorkflowResult(ctx context.Context, workflowResult, rcaResult *katypes.InvestigationResult, signal, workflowSignal katypes.SignalContext, enrichData *enrichment.EnrichmentResult, p1Ctx *prompt.Phase1Data, tokens *TokenAccumulator, correlationID string) *katypes.InvestigationResult {
 	if workflowResult.RCASummary == "" {
 		workflowResult.RCASummary = rcaResult.RCASummary
 	}
@@ -671,7 +726,7 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 	}
 	InjectTargetResourceParameters(workflowResult)
 	inv.emitResponseComplete(ctx, workflowResult, tokens, correlationID)
-	return workflowResult, nil
+	return workflowResult
 }
 
 func deletedResourceWarning(kind, name, ns string) string {
@@ -988,7 +1043,29 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 		return nil, err
 	}
 
-	var content string
+	content, early, err := inv.handleWorkflowSelectionLoopResult(ctx, loopRes, rcaSummary, messages, llmCtx)
+	if early != nil || err != nil {
+		return early, err
+	}
+
+	result, parseErr := inv.resultParser.Parse(content)
+	if parseErr != nil {
+		return inv.workflowSelectionRetryOrHumanReview(ctx, content, messages, rcaSummary, llmCtx, parseErr,
+			fmt.Sprintf("workflow selection: LLM did not produce parseable result: %s", parseErr)), nil
+	}
+
+	if inv.pipeline.CatalogFetcher == nil {
+		return result, nil
+	}
+	return inv.selfCorrectWorkflowSelection(ctx, result, content, messages, rcaSummary, correlationID, llmCtx)
+}
+
+// handleWorkflowSelectionLoopResult classifies the runLLMLoop outcome for
+// PhaseWorkflowDiscovery. When early is non-nil, the caller must return it
+// (and err) immediately without further parsing. Otherwise content holds the
+// tool-call (or text) payload to parse into an InvestigationResult.
+func (inv *Investigator) handleWorkflowSelectionLoopResult(ctx context.Context, loopRes LoopResult, rcaSummary string, messages []llm.Message, llmCtx LLMInvocationContext) (content string, early *katypes.InvestigationResult, err error) {
+	correlationID := llmCtx.CorrelationID
 	switch r := loopRes.(type) {
 	case *CancelledResult:
 		cancelledResult := &katypes.InvestigationResult{
@@ -1006,9 +1083,9 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 				TotalTokens:      s.TotalTokens,
 			}
 		}
-		return cancelledResult, nil
+		return "", cancelledResult, nil
 	case *ExhaustedResult:
-		return &katypes.InvestigationResult{
+		return "", &katypes.InvestigationResult{
 			RCASummary:        rcaSummary,
 			HumanReviewNeeded: true,
 			Reason:            fmt.Sprintf("%s during workflow selection (maxTurns=%d)", r.Reason, inv.maxTurns),
@@ -1016,16 +1093,16 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 	case *SubmitNoWorkflowResult:
 		inv.logger.Info("submit_result_no_workflow sentinel: classifying as no_matching_workflows",
 			"correlation_id", correlationID)
-		return &katypes.InvestigationResult{
+		return "", &katypes.InvestigationResult{
 			RCASummary:        rcaSummary,
 			HumanReviewNeeded: true,
 			HumanReviewReason: "no_matching_workflows",
 			Reason:            "LLM explicitly declined workflow selection via submit_result_no_workflow",
 		}, nil
 	case *SubmitWithWorkflowResult:
-		content = r.Content
+		return r.Content, nil, nil
 	case *SubmitResult:
-		content = r.Content
+		return r.Content, nil, nil
 	case *TextResult:
 		// #760 v2: LLM returned text instead of a tool call. Try parsing
 		// first — the text may contain a valid investigation result (e.g.
@@ -1035,131 +1112,127 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 		if _, textErr := inv.resultParser.Parse(r.Content); textErr == nil {
 			inv.logger.Info("workflow selection: parsed text response directly (no tool call)",
 				"correlation_id", correlationID)
-			content = r.Content
-		} else {
-			retryResult := inv.retryWorkflowSubmit(ctx, r.Content, messages, rcaSummary, llmCtx)
-			if retryResult != nil {
-				return retryResult, nil
-			}
-			if ctx.Err() != nil {
-				return &katypes.InvestigationResult{
-					RCASummary:     rcaSummary,
-					Cancelled:      true,
-					CancelledPhase: string(katypes.PhaseWorkflowDiscovery),
-				}, nil
-			}
-			inv.logger.Info("workflow selection: all retries exhausted, classifying as no_matching_workflows",
-				"correlation_id", correlationID)
+			return r.Content, nil, nil
+		}
+		return "", inv.workflowSelectionRetryOrHumanReview(ctx, r.Content, messages, rcaSummary, llmCtx, nil,
+			"workflow selection: LLM did not use submit tool after retries"), nil
+	}
+	return "", nil, nil
+}
+
+// workflowSelectionRetryOrHumanReview performs one retryWorkflowSubmit
+// attempt and, on exhaustion, classifies the investigation as
+// no_matching_workflows (or cancelled, if the context ended). Shared by the
+// "LLM returned unparseable text" and "LLM's tool payload failed structural
+// parsing" branches of runWorkflowSelection. When parseErr is non-nil the
+// exhaustion is logged at Error level (a real parse failure); otherwise at
+// Info level (the LLM simply never called a submit tool).
+func (inv *Investigator) workflowSelectionRetryOrHumanReview(ctx context.Context, lastContent string, messages []llm.Message, rcaSummary string, llmCtx LLMInvocationContext, parseErr error, failureReason string) *katypes.InvestigationResult {
+	retryResult := inv.retryWorkflowSubmit(ctx, lastContent, messages, rcaSummary, llmCtx)
+	if retryResult != nil {
+		return retryResult
+	}
+	if ctx.Err() != nil {
+		return &katypes.InvestigationResult{
+			RCASummary:     rcaSummary,
+			Cancelled:      true,
+			CancelledPhase: string(katypes.PhaseWorkflowDiscovery),
+		}
+	}
+	if parseErr != nil {
+		inv.logger.Error(parseErr, "workflow selection parse failed after retries, classifying as no_matching_workflows",
+			"correlation_id", llmCtx.CorrelationID)
+	} else {
+		inv.logger.Info("workflow selection: all retries exhausted, classifying as no_matching_workflows",
+			"correlation_id", llmCtx.CorrelationID)
+	}
+	return &katypes.InvestigationResult{
+		RCASummary:        rcaSummary,
+		HumanReviewNeeded: true,
+		HumanReviewReason: "no_matching_workflows",
+		Reason:            failureReason,
+	}
+}
+
+// selfCorrectWorkflowSelection runs the catalog-validated self-correction
+// loop (up to maxSelfCorrectionAttempts) for the parsed workflow-selection
+// result, then applies catalog enrichment and target-alignment checks to the
+// final accepted (or exhausted) result.
+func (inv *Investigator) selfCorrectWorkflowSelection(ctx context.Context, result *katypes.InvestigationResult, content string, messages []llm.Message, rcaSummary, correlationID string, llmCtx LLMInvocationContext) (*katypes.InvestigationResult, error) {
+	validator, fetchErr := inv.pipeline.CatalogFetcher.FetchValidator(ctx)
+	if fetchErr != nil {
+		inv.logger.Error(fetchErr, "workflow catalog unavailable, requiring human review")
+		result.HumanReviewNeeded = true
+		result.HumanReviewReason = "catalog_unavailable"
+		result.Reason = fmt.Sprintf("workflow catalog unavailable: %s", fetchErr)
+		return result, nil
+	}
+
+	attempt := 0
+	correctionFn := func(r *katypes.InvestigationResult, validationErr error) (*katypes.InvestigationResult, error) {
+		attempt++
+		var errStrs []string
+		if validationErr != nil {
+			errStrs = []string{validationErr.Error()}
+		}
+		inv.emitValidationEvent(ctx, attempt, maxSelfCorrectionAttempts, false, errStrs, r.WorkflowID, correlationID)
+
+		correctionMsg, renderErr := inv.renderCorrectionMessage(validationErr, attempt, maxSelfCorrectionAttempts)
+		if renderErr != nil {
+			inv.logger.Error(renderErr, "failed to render validation error template, using fallback")
+			correctionMsg = fmt.Sprintf("Validation failed: %s. Please select a valid workflow.", validationErr)
+		}
+		messages = append(messages, llm.Message{Role: "assistant", Content: content})
+		messages = append(messages, llm.Message{Role: "user", Content: correctionMsg})
+
+		corrLoopRes, corrErr := inv.runLLMLoop(ctx, messages, katypes.PhaseWorkflowDiscovery, llmCtx)
+		if corrErr != nil {
+			return nil, corrErr
+		}
+		switch cr := corrLoopRes.(type) {
+		case *CancelledResult:
+			return nil, context.Canceled
+		case *ExhaustedResult:
+			r.HumanReviewNeeded = true
+			r.Reason = fmt.Sprintf("self-correction: %s", cr.Reason)
+			return r, nil
+		case *SubmitNoWorkflowResult:
 			return &katypes.InvestigationResult{
 				RCASummary:        rcaSummary,
 				HumanReviewNeeded: true,
 				HumanReviewReason: "no_matching_workflows",
-				Reason:            "workflow selection: LLM did not use submit tool after retries",
+				Reason:            "LLM declined workflow during self-correction via submit_result_no_workflow",
 			}, nil
+		case *SubmitWithWorkflowResult:
+			content = cr.Content
+		case *SubmitResult:
+			content = cr.Content
+		case *TextResult:
+			content = cr.Content
 		}
+		return inv.resultParser.Parse(content)
 	}
 
-	result, parseErr := inv.resultParser.Parse(content)
-	if parseErr != nil {
-		retryResult := inv.retryWorkflowSubmit(ctx, content, messages, rcaSummary, llmCtx)
-		if retryResult != nil {
-			return retryResult, nil
-		}
-		if ctx.Err() != nil {
+	corrected, corrErr := validator.SelfCorrect(result, maxSelfCorrectionAttempts, correctionFn)
+	if corrErr != nil {
+		if errors.Is(corrErr, context.Canceled) || errors.Is(corrErr, context.DeadlineExceeded) {
 			return &katypes.InvestigationResult{
 				RCASummary:     rcaSummary,
 				Cancelled:      true,
 				CancelledPhase: string(katypes.PhaseWorkflowDiscovery),
 			}, nil
 		}
-		inv.logger.Error(parseErr, "workflow selection parse failed after retries, classifying as no_matching_workflows",
-			"correlation_id", correlationID)
-		return &katypes.InvestigationResult{
-			RCASummary:        rcaSummary,
-			HumanReviewNeeded: true,
-			HumanReviewReason: "no_matching_workflows",
-			Reason:            fmt.Sprintf("workflow selection: LLM did not produce parseable result: %s", parseErr),
-		}, nil
+		return nil, fmt.Errorf("validation self-correction failed: %w", corrErr)
 	}
-
-	if inv.pipeline.CatalogFetcher != nil {
-		validator, fetchErr := inv.pipeline.CatalogFetcher.FetchValidator(ctx)
-		if fetchErr != nil {
-			inv.logger.Error(fetchErr, "workflow catalog unavailable, requiring human review")
-			result.HumanReviewNeeded = true
-			result.HumanReviewReason = "catalog_unavailable"
-			result.Reason = fmt.Sprintf("workflow catalog unavailable: %s", fetchErr)
-			return result, nil
-		}
-
-		attempt := 0
-		correctionFn := func(r *katypes.InvestigationResult, validationErr error) (*katypes.InvestigationResult, error) {
-			attempt++
-			var errStrs []string
-			if validationErr != nil {
-				errStrs = []string{validationErr.Error()}
-			}
-			inv.emitValidationEvent(ctx, attempt, maxSelfCorrectionAttempts, false, errStrs, r.WorkflowID, correlationID)
-
-			correctionMsg, renderErr := inv.renderCorrectionMessage(validationErr, attempt, maxSelfCorrectionAttempts)
-			if renderErr != nil {
-				inv.logger.Error(renderErr, "failed to render validation error template, using fallback")
-				correctionMsg = fmt.Sprintf("Validation failed: %s. Please select a valid workflow.", validationErr)
-			}
-			messages = append(messages, llm.Message{Role: "assistant", Content: content})
-			messages = append(messages, llm.Message{Role: "user", Content: correctionMsg})
-
-			corrLoopRes, corrErr := inv.runLLMLoop(ctx, messages, katypes.PhaseWorkflowDiscovery, llmCtx)
-			if corrErr != nil {
-				return nil, corrErr
-			}
-			switch cr := corrLoopRes.(type) {
-			case *CancelledResult:
-				return nil, context.Canceled
-			case *ExhaustedResult:
-				r.HumanReviewNeeded = true
-				r.Reason = fmt.Sprintf("self-correction: %s", cr.Reason)
-				return r, nil
-			case *SubmitNoWorkflowResult:
-				return &katypes.InvestigationResult{
-					RCASummary:        rcaSummary,
-					HumanReviewNeeded: true,
-					HumanReviewReason: "no_matching_workflows",
-					Reason:            "LLM declined workflow during self-correction via submit_result_no_workflow",
-				}, nil
-			case *SubmitWithWorkflowResult:
-				content = cr.Content
-			case *SubmitResult:
-				content = cr.Content
-			case *TextResult:
-				content = cr.Content
-			}
-			return inv.resultParser.Parse(content)
-		}
-
-		corrected, corrErr := validator.SelfCorrect(result, maxSelfCorrectionAttempts, correctionFn)
-		if corrErr != nil {
-			if errors.Is(corrErr, context.Canceled) || errors.Is(corrErr, context.DeadlineExceeded) {
-				return &katypes.InvestigationResult{
-					RCASummary:     rcaSummary,
-					Cancelled:      true,
-					CancelledPhase: string(katypes.PhaseWorkflowDiscovery),
-				}, nil
-			}
-			return nil, fmt.Errorf("validation self-correction failed: %w", corrErr)
-		}
-		isValid := !corrected.HumanReviewNeeded
-		var finalErrors []string
-		if !isValid {
-			finalErrors = []string{"validation exhausted all attempts"}
-		}
-		inv.emitValidationEvent(ctx, attempt+1, maxSelfCorrectionAttempts, isValid, finalErrors, corrected.WorkflowID, correlationID)
-		enrichFromCatalog(corrected, validator)
-		CheckWorkflowTargetAlignment(ctx, corrected, validator, correlationID, inv.auditStore, inv.logger)
-		return corrected, nil
+	isValid := !corrected.HumanReviewNeeded
+	var finalErrors []string
+	if !isValid {
+		finalErrors = []string{"validation exhausted all attempts"}
 	}
-
-	return result, nil
+	inv.emitValidationEvent(ctx, attempt+1, maxSelfCorrectionAttempts, isValid, finalErrors, corrected.WorkflowID, correlationID)
+	enrichFromCatalog(corrected, validator)
+	CheckWorkflowTargetAlignment(ctx, corrected, validator, correlationID, inv.auditStore, inv.logger)
+	return corrected, nil
 }
 
 const maxParseRetries = 2
