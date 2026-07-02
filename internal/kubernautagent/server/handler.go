@@ -473,41 +473,48 @@ func (h *Handler) SessionStreamAPIV1IncidentSessionSessionIDStreamGet(
 	}
 
 	pr, pw := io.Pipe()
-	go func() {
-		// CloseWithError(nil) behaves like Close but makes the intent explicit:
-		// the pipe writer is always closed when the goroutine exits, regardless
-		// of the exit path. The reader sees io.EOF. (#54 defer error handling)
-		defer func() { _ = pw.CloseWithError(nil) }()
-		defer func() {
-			if r := recover(); r != nil {
-				h.logger.Error(fmt.Errorf("panic: %v", r), "SSE writer panic recovered", "session_id", params.SessionID)
-			}
-		}()
-		seq := 1
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case ev, ok := <-ch:
-				if !ok {
-					return
-				}
-				data, err := json.Marshal(ev)
-				if err != nil {
-					h.logger.Error(err, "SSE event marshal failed, skipping frame",
-						"session_id", params.SessionID, "event_type", ev.Type)
-					continue
-				}
-				frame := fmt.Sprintf("id: %d\nevent: %s\ndata: %s\n\n", seq, ev.Type, string(data))
-				if _, writeErr := pw.Write([]byte(frame)); writeErr != nil {
-					return
-				}
-				seq++
-			}
-		}
-	}()
+	go h.streamSessionEvents(ctx, params.SessionID, ch, pw)
 
 	return &agentclient.SessionStreamAPIV1IncidentSessionSessionIDStreamGetOK{Data: pr}, nil
+}
+
+// streamSessionEvents drains ch and writes each event to pw as an SSE frame
+// until ctx is cancelled or ch is closed. Intended to run in its own
+// goroutine (spawned by the stream handler); always closes pw on exit so the
+// paired reader observes io.EOF, and recovers from panics so a single
+// malformed event cannot crash the process.
+func (h *Handler) streamSessionEvents(ctx context.Context, sessionID string, ch <-chan session.InvestigationEvent, pw *io.PipeWriter) {
+	// CloseWithError(nil) behaves like Close but makes the intent explicit:
+	// the pipe writer is always closed when the goroutine exits, regardless
+	// of the exit path. The reader sees io.EOF. (#54 defer error handling)
+	defer func() { _ = pw.CloseWithError(nil) }()
+	defer func() {
+		if r := recover(); r != nil {
+			h.logger.Error(fmt.Errorf("panic: %v", r), "SSE writer panic recovered", "session_id", sessionID)
+		}
+	}()
+	seq := 1
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case ev, ok := <-ch:
+			if !ok {
+				return
+			}
+			data, err := json.Marshal(ev)
+			if err != nil {
+				h.logger.Error(err, "SSE event marshal failed, skipping frame",
+					"session_id", sessionID, "event_type", ev.Type)
+				continue
+			}
+			frame := fmt.Sprintf("id: %d\nevent: %s\ndata: %s\n\n", seq, ev.Type, string(data))
+			if _, writeErr := pw.Write([]byte(frame)); writeErr != nil {
+				return
+			}
+			seq++
+		}
+	}
 }
 
 // terminalSessionSSE returns an SSE stream with a synthetic complete event
@@ -881,30 +888,34 @@ func synthesizeHumanReviewWarning(r *katypes.InvestigationResult) string {
 // mapHumanReviewReason maps free-form investigator reason strings to valid
 // HumanReviewReason enum values. Returns the mapped enum and whether the
 // default fallback was used (M4: enables caller logging of unrecognized reasons).
-func mapHumanReviewReason(reason string) (agentclient.HumanReviewReason, bool) {
-	switch reason {
-	case "rca_incomplete":
-		return agentclient.HumanReviewReasonRcaIncomplete, false
-	case "investigation_inconclusive":
-		return agentclient.HumanReviewReasonInvestigationInconclusive, false
-	case "workflow_not_found":
-		return agentclient.HumanReviewReasonWorkflowNotFound, false
-	case "no_matching_workflows":
-		return agentclient.HumanReviewReasonNoMatchingWorkflows, false
-	case "image_mismatch":
-		return agentclient.HumanReviewReasonImageMismatch, false
-	case "parameter_validation_failed":
-		return agentclient.HumanReviewReasonParameterValidationFailed, false
-	case "low_confidence":
-		return agentclient.HumanReviewReasonLowConfidence, false
-	case "llm_parsing_error":
-		return agentclient.HumanReviewReasonLlmParsingError, false
-	case "alignment_check_failed":
-		return agentclient.HumanReviewReasonAlignmentCheckFailed, false
-	case "operator_escalation":
-		return agentclient.HumanReviewReasonOperatorEscalation, false
-	}
+// exactHumanReviewReasons maps the canonical (already-normalized)
+// HumanReviewReason string values emitted by the investigator to their
+// OpenAPI enum. Kept as a package-level map (rather than a switch) so
+// mapHumanReviewReason stays a simple two-step lookup.
+var exactHumanReviewReasons = map[string]agentclient.HumanReviewReason{
+	"rca_incomplete":              agentclient.HumanReviewReasonRcaIncomplete,
+	"investigation_inconclusive":  agentclient.HumanReviewReasonInvestigationInconclusive,
+	"workflow_not_found":          agentclient.HumanReviewReasonWorkflowNotFound,
+	"no_matching_workflows":       agentclient.HumanReviewReasonNoMatchingWorkflows,
+	"image_mismatch":              agentclient.HumanReviewReasonImageMismatch,
+	"parameter_validation_failed": agentclient.HumanReviewReasonParameterValidationFailed,
+	"low_confidence":              agentclient.HumanReviewReasonLowConfidence,
+	"llm_parsing_error":           agentclient.HumanReviewReasonLlmParsingError,
+	"alignment_check_failed":      agentclient.HumanReviewReasonAlignmentCheckFailed,
+	"operator_escalation":         agentclient.HumanReviewReasonOperatorEscalation,
+}
 
+func mapHumanReviewReason(reason string) (agentclient.HumanReviewReason, bool) {
+	if mapped, ok := exactHumanReviewReasons[reason]; ok {
+		return mapped, false
+	}
+	return mapHumanReviewReasonHeuristic(reason)
+}
+
+// mapHumanReviewReasonHeuristic falls back to substring matching for
+// free-form reason strings (e.g. raw error messages) that don't match one of
+// the canonical exactHumanReviewReasons values.
+func mapHumanReviewReasonHeuristic(reason string) (agentclient.HumanReviewReason, bool) {
 	switch {
 	case strings.Contains(reason, "exhausted during RCA"):
 		return agentclient.HumanReviewReasonRcaIncomplete, false
