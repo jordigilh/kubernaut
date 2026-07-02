@@ -394,6 +394,38 @@ All three follow the `io.ReadWriter`-style composition pattern already used for 
 
 ---
 
+## 7i. Phase 6 Wave 1: APIFrontend Complexity + File-Size Burndown — ✅ RESOLVED
+
+Preflight + a time-boxed spike (per the user-approved "preflight/spike checkpoint before each wave" process) reached 91% confidence before starting; the user explicitly approved proceeding. Scope: the 5 highest-complexity APIFrontend functions left open after Phase 4 (§7f) plus the 3 largest APIFrontend files (`ka_investigate_mcp.go`, `crd_tools.go`, `cmd/apifrontend/main.go`).
+
+### 7i-1. Function decomposition — 5 functions
+
+| Function | File | Cyclomatic before → after | Technique |
+|---|---|---|---|
+| `buildEventData` | `pkg/apifrontend/audit/store_adapter.go` | 38 → **2** | Registry pattern (`map[EventType]eventDataBuilder`), reusing the same DD-AUDIT-008 approach already applied to KubernautAgent's `buildEventData` in Phase 4 (§7f-2) |
+| `RegisterTools` | `pkg/apifrontend/handler/mcp_bridge.go` | 37 → **4** | Decomposed into domain-specific `register<Domain>Tools` helpers (CRD, investigation, KAMCP, DS, interactive, alert) orchestrated by a thin dispatcher; extracted `newToolGate`/`toolGate` and `finalizeSessionPhase` helpers |
+| `newPhaseGuard` | `pkg/apifrontend/agent/phase_guard.go` | 43 → **1** | Extracted the `BeforeToolCallback`/`AfterToolCallback` closure bodies into standalone named functions (`phaseGuardBefore`, `phaseGuardAfter`, `driverIsActive`, `injectStoredRRID`, `toolCallSucceeded`, `refreshActiveContext`, `recordDriverEntryState`, `syncActiveContextRegistry`) |
+| `handleSubscribe` | `pkg/apifrontend/handler/status_handler.go` | 40 → **7** | Extracted `subscribeStreamState` (mutable loop state) + `subscribeCleanup` (LIFO cleanup-closure list, mimicking `defer` across extracted methods) + `runSubscribeLoop`/`handleRRWatchEvent`/`handleEAWatchEvent`/`bootstrapEAWatch` |
+| `HandleInvestigationMCPWithRegistry` | `pkg/apifrontend/tools/ka_investigate_mcp.go` | 67 → **10** | Extracted `resolveInvestigationRR`, `createRRForInvestigation`, `resolveClusterScoped`, `signalInteractiveSession`, `awaitInvestigationReady`, `startKAInvestigation`, `finalizeInvestigationStart`, `runBlockingInvestigation`, `handoffOrCloseSession`, `startNonBlockingBridge` |
+
+`handleSubscribe` was the one target with materially low pre-existing test coverage (SSE streaming handler); per AGENTS.md's coverage-before-refactor mandate, the existing `test/integration/apifrontend/status_subscribe_test.go` suite (12 specs) was run and confirmed passing before and after the decomposition, with a targeted isolated re-run of a `--focus`ed spec (`IT-AF-1460-014`) to rule out a transient 3-spec failure that traced to a pre-existing test-infrastructure flake (namespace-name collisions from `time.Now().UnixNano()%100000` seeding, unrelated to this refactor) — not a regression.
+
+A mid-decomposition `golangci-lint` pass (repo config) surfaced 4 new `revive argument-limit` violations introduced by the extraction itself (helper functions inheriting too many of the original function's locals as parameters): `runSubscribeLoop` (11 args), `handleRRWatchEvent` (10 args), `handleEAWatchEvent` (10 args) in `status_handler.go`, and `runBlockingInvestigation` (8 args) in `ka_investigate_mcp.go`. Fixed with the same Options-pattern used throughout Phase 2 (§7b): a `subscribeLoopCtx` struct grouping the request-scoped SSE dependencies (writer, flusher, request, RR list, object key, logger, cleanup) cut the three `status_handler.go` functions to 5 args each; a `blockingInvestigationParams` struct cut `runBlockingInvestigation` to 3 args. Re-run of `golangci-lint run ./pkg/apifrontend/... ./cmd/apifrontend/...` after the fix: 0 issues.
+
+### 7i-2. File splits — 3 files
+
+| File | Lines before | Split into | Lines after (max) |
+|---|---|---|---|
+| `pkg/apifrontend/tools/ka_investigate_mcp.go` | 1,111 | `ka_investigate_mcp.go` (core handler + helpers, 685), `ka_investigate_bridge.go` (event bridging/RCA emission, 388), `ka_investigate_registry.go` (`MonitorRegistry`, 84) | 685 |
+| `pkg/apifrontend/tools/crd_tools.go` | 1,144 | `crd_tools.go` (list/get/approve/cancel CRD tools, 606), `crd_tools_watch.go` (`kubernaut_watch` + `watchLoopState`, 355), `crd_tools_session.go` (`kubernaut_await_session` + `AwaitISPhaseActive`, 215) | 606 |
+| `cmd/apifrontend/main.go` | 1,701 | `main.go` (bootstrap/lifecycle: `main`/`run`/router+server construction/shutdown, 609), `backend_deps.go` (backend client wiring + LLM-triager routing + resilient-transport helper, 493), `auth_wiring.go` (JWT/replay-cache/OIDC wiring, 259), `session_infra.go` (session controller manager + preflight RBAC/CRD checks, 253), `mcp_a2a_handlers.go` (MCP/A2A handler construction, 165) | 609 |
+
+All three splits are pure structural moves within the same package (`tools`/`main`) — zero behavior change, zero exported-API change, no test files touched. `goimports -w` regenerated each new file's import block mechanically after the move (avoiding manual import-list transcription errors); `gofmt -l` confirmed no formatting drift beyond pre-existing, untouched files.
+
+**Verification (Wave 1 exit gate)**: `go build ./...`, `go vet ./...` (both repo-wide, clean), `golangci-lint run ./pkg/apifrontend/... ./cmd/apifrontend/...` (0 issues after the argument-limit fix above), and the full `pkg/apifrontend/...` + `cmd/apifrontend/...` unit-test tiers (all packages green, including the 88s `tools` suite and the 4.9s `cmd/apifrontend` suite) all pass. `gocyclo -over 5` re-scan of every touched file confirms no function above cyclomatic 41 remains (the new high-water mark, `run()` in `main.go`, is itself the pre-existing Phase 4-decomposed value — untouched by Wave 1). Wave 1 is now complete; Waves 2-6 (RemediationOrchestrator/WorkflowExecution/SignalProcessing, DataStorage, KubernautAgent remainder, Notification/AIAnalysis/EffectivenessMonitor/Gateway batch, final sweep) remain open per the Phase 6+ plan.
+
+---
+
 ## 8. Variable Shadowing — 120 found, mostly low-risk
 
 114/120 are `err` shadowing (`if err := f(); err != nil` repeated in the same scope — the single most common and least dangerous shadow pattern in Go, which is exactly why `govet -shadow` isn't part of default `go vet`). 1 `ctx` shadow, 1 `result`, 1 `username`, 1 `ok`, 1 `isString`. **No goroutine-closure-captures-loop-variable pattern was found** (the genuinely dangerous shadow bug) — none of the 120 hits are in a `for ... go func()` or `for ... defer func()` body.
@@ -431,7 +463,8 @@ Per AGENTS.md, REFACTOR-phase cleanup must not introduce new types/components, m
 | 4 | Decompose the top complexity offenders: `buildEventData` (88), `HandleWatch` (cognitive 133), `Config.Validate` ×2, `main()` in `cmd/kubernautagent` and `cmd/apifrontend` | Medium-high (behavior-preserving refactor of dense logic, needs careful UT coverage first) | 5-7 days | ✅ Done (see §7f) |
 | 5 | Interface segregation for `AutonomousSessionManager` (13 methods) and `AWXClient` (11 methods) | Medium (ripples to all implementers/mocks) | 2-3 days | ✅ Done (see §7g) |
 | 6 (Wave 0) | `cmd/*/main.go` decomposition for the 6 remaining services + ISP split for `Engine`/`ClusterRegistry`/`SessionManager` (see §7h) | Low | 3-4 days | ✅ Done (see §7h) |
-| 6 (Wave 1-6) | APIFrontend, RemediationOrchestrator/WorkflowExecution/SignalProcessing, DataStorage, KubernautAgent remainder, Notification/AIAnalysis/EffectivenessMonitor/Gateway batch, final sweep — remaining complexity (145 functions) + oversized files (34) burndown | Medium-High (per-wave) | ~22-28 days remaining | 🔲 Not started — tracked in the "Phase 6+ Complexity and File-Size Burndown" plan, each wave requires its own preflight + confidence gate |
+| 6 (Wave 1) | APIFrontend: 5 highest-complexity functions + 3 largest files (see §7i) | Medium | 3-4 days | ✅ Done (see §7i) |
+| 6 (Wave 2-6) | RemediationOrchestrator/WorkflowExecution/SignalProcessing, DataStorage, KubernautAgent remainder, Notification/AIAnalysis/EffectivenessMonitor/Gateway batch, final sweep — remaining complexity (~140 functions) + oversized files (~31) burndown | Medium-High (per-wave) | ~18-24 days remaining | 🔲 Not started — tracked in the "Phase 6+ Complexity and File-Size Burndown" plan, each wave requires its own preflight + confidence gate |
 
 **Not recommended for action**: DTO/data-model "god structs" (category 4a), `context.Context` struct fields (both documented), `any`/`interface{}` usage (spot-checked — the ~849 raw hits are overwhelmingly idiomatic JSON-decoding, `sync.Map`/`singleflight` third-party API signatures, and generic-JSON-passthrough code; no material violations found beyond one worth a look: `BuildTriagePrompt(input TriageInput, rules interface{})` in `pkg/apifrontend/severity/types.go:113`).
 
