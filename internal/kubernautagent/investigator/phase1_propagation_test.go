@@ -109,6 +109,98 @@ var _ = Describe("Phase 1 → Phase 3 forensic field propagation — #847", func
 			investigator.MergePhase1Fallbacks(result, p1)
 			Expect(result.CausalChain).To(Equal(phase3Chain))
 		})
+
+		// GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 4 §7l-1: MergePhase1Fallbacks
+		// characterization tests for branches not exercised above, written
+		// before decomposing the function (cyclomatic 17).
+		It("should be a no-op when result is nil", func() {
+			p1 := &prompt.Phase1Data{Severity: "critical"}
+			Expect(func() { investigator.MergePhase1Fallbacks(nil, p1) }).NotTo(Panic())
+		})
+
+		It("should be a no-op when p1 is nil", func() {
+			result := &katypes.InvestigationResult{Severity: "warning"}
+			investigator.MergePhase1Fallbacks(result, nil)
+			Expect(result.Severity).To(Equal("warning"))
+		})
+
+		It("should fill Severity from Phase 1 when Phase 3 has none", func() {
+			p1 := &prompt.Phase1Data{Severity: "critical"}
+			result := &katypes.InvestigationResult{}
+			investigator.MergePhase1Fallbacks(result, p1)
+			Expect(result.Severity).To(Equal("critical"))
+		})
+
+		It("should NOT overwrite Phase 3 Severity if already set", func() {
+			p1 := &prompt.Phase1Data{Severity: "critical"}
+			result := &katypes.InvestigationResult{Severity: "warning"}
+			investigator.MergePhase1Fallbacks(result, p1)
+			Expect(result.Severity).To(Equal("warning"))
+		})
+
+		It("should fill ContributingFactors from Phase 1 when Phase 3 has none", func() {
+			factors := []string{"disk pressure", "memory leak"}
+			p1 := &prompt.Phase1Data{ContributingFactors: factors}
+			result := &katypes.InvestigationResult{}
+			investigator.MergePhase1Fallbacks(result, p1)
+			Expect(result.ContributingFactors).To(Equal(factors))
+		})
+
+		It("should fill Confidence from Phase 1 when Phase 3 has zero value", func() {
+			p1 := &prompt.Phase1Data{Confidence: 0.75}
+			result := &katypes.InvestigationResult{}
+			investigator.MergePhase1Fallbacks(result, p1)
+			Expect(result.Confidence).To(Equal(0.75))
+		})
+
+		It("should NOT overwrite a non-zero Phase 3 Confidence", func() {
+			p1 := &prompt.Phase1Data{Confidence: 0.75}
+			result := &katypes.InvestigationResult{Confidence: 0.9}
+			investigator.MergePhase1Fallbacks(result, p1)
+			Expect(result.Confidence).To(Equal(0.9))
+		})
+
+		It("should fill InvestigationOutcome from Phase 1 and apply its side effects", func() {
+			p1 := &prompt.Phase1Data{InvestigationOutcome: "predictive_no_action"}
+			result := &katypes.InvestigationResult{}
+			investigator.MergePhase1Fallbacks(result, p1)
+			Expect(result.InvestigationOutcome).To(Equal("predictive_no_action"))
+			Expect(result.IsActionable).NotTo(BeNil(),
+				"ApplyInvestigationOutcome must run as a side effect of filling InvestigationOutcome")
+			Expect(*result.IsActionable).To(BeFalse())
+		})
+
+		It("should clear a contradictory HumanReviewNeeded when Phase 1 outcome is problem_resolved (#301)", func() {
+			p1 := &prompt.Phase1Data{InvestigationOutcome: "problem_resolved"}
+			result := &katypes.InvestigationResult{
+				HumanReviewNeeded: true,
+				HumanReviewReason: "no_matching_workflows",
+			}
+			investigator.MergePhase1Fallbacks(result, p1)
+			Expect(result.HumanReviewNeeded).To(BeFalse(),
+				"#301: problem_resolved outcome from Phase 1 must override a contradictory Phase 3 HumanReviewNeeded")
+			Expect(result.HumanReviewReason).To(BeEmpty())
+		})
+
+		It("should NOT overwrite an existing Phase 3 InvestigationOutcome", func() {
+			p1 := &prompt.Phase1Data{InvestigationOutcome: "problem_resolved"}
+			result := &katypes.InvestigationResult{
+				InvestigationOutcome: "actionable",
+				HumanReviewNeeded:    true,
+			}
+			investigator.MergePhase1Fallbacks(result, p1)
+			Expect(result.InvestigationOutcome).To(Equal("actionable"))
+			Expect(result.HumanReviewNeeded).To(BeTrue(),
+				"the problem_resolved override only applies when Phase 3's outcome is actually filled from Phase 1")
+		})
+
+		It("should NOT overwrite Phase 3 DueDiligence if already set", func() {
+			phase3DD := &katypes.DueDiligenceReview{CausalCompleteness: "phase 3"}
+			p1 := &prompt.Phase1Data{DueDiligence: &katypes.DueDiligenceReview{CausalCompleteness: "phase 1"}}
+			result := &katypes.InvestigationResult{DueDiligence: phase3DD}
+			investigator.MergePhase1Fallbacks(result, p1)
+			Expect(result.DueDiligence).To(Equal(phase3DD))
+		})
 	})
 
 	Describe("UT-KA-847-012: ResultToAuditJSON includes forensic fields in audit event", func() {
