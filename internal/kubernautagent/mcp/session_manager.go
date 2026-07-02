@@ -194,28 +194,55 @@ func (m *LeaseSessionManager) Takeover(ctx context.Context, rrID string, user Us
 	// session, allow reconnect (e.g., after network loss) by returning the
 	// existing session with a refreshed activity timestamp. A different user
 	// gets ErrLeaseHeld with holder context.
-	if existingSessionID, ok := m.rrIndex.Load(rrID); ok {
-		if raw, found := m.sessions.Load(existingSessionID); found {
-			entry := raw.(*sessionEntry)
-			if entry.session.ActingUser.Username == user.Username {
-				entry.lastActivity.Store(time.Now())
-				entry.session.Reconnected = true
-				m.logger.Info("interactive session reconnected (same user)",
-					"session_id", entry.session.SessionID,
-					"rr_id", rrID,
-					"user", user.Username,
-				)
-				if m.onReconnect != nil {
-					m.onReconnect(entry.session.SessionID)
-				}
-				return entry.session, nil
-			}
-			return nil, fmt.Errorf("%w: held by %q since %s",
-				ErrLeaseHeld, entry.session.ActingUser.Username, entry.session.StartedAt.Format(time.RFC3339))
-		}
-		return nil, ErrLeaseHeld
+	if sess, err, handled := m.reconnectOrRejectExistingLease(rrID, user); handled {
+		return sess, err
 	}
 
+	sessionID, err := m.acquireLease(ctx, rrID)
+	if err != nil {
+		return nil, err
+	}
+
+	return m.registerNewInteractiveSession(sessionID, rrID, user), nil
+}
+
+// reconnectOrRejectExistingLease checks whether rrID already has an active
+// lease. When held by the same user, it refreshes activity and returns the
+// existing session (reconnect). When held by a different user, or the local
+// index is inconsistent with session state, it returns ErrLeaseHeld. The
+// third return value reports whether the takeover request was fully handled
+// here (true) or should fall through to lease acquisition (false, meaning no
+// existing lease was found).
+func (m *LeaseSessionManager) reconnectOrRejectExistingLease(rrID string, user UserInfo) (*InteractiveSession, error, bool) {
+	existingSessionID, ok := m.rrIndex.Load(rrID)
+	if !ok {
+		return nil, nil, false
+	}
+	raw, found := m.sessions.Load(existingSessionID)
+	if !found {
+		return nil, ErrLeaseHeld, true
+	}
+	entry := raw.(*sessionEntry)
+	if entry.session.ActingUser.Username != user.Username {
+		return nil, fmt.Errorf("%w: held by %q since %s",
+			ErrLeaseHeld, entry.session.ActingUser.Username, entry.session.StartedAt.Format(time.RFC3339)), true
+	}
+	entry.lastActivity.Store(time.Now())
+	entry.session.Reconnected = true
+	m.logger.Info("interactive session reconnected (same user)",
+		"session_id", entry.session.SessionID,
+		"rr_id", rrID,
+		"user", user.Username,
+	)
+	if m.onReconnect != nil {
+		m.onReconnect(entry.session.SessionID)
+	}
+	return entry.session, nil, true
+}
+
+// acquireLease creates a new coordination.k8s.io Lease for rrID, reclaiming
+// an expired lease and retrying once if the lease name is already taken.
+func (m *LeaseSessionManager) acquireLease(ctx context.Context, rrID string) (string, error) {
 	sessionID := uuid.New().String()
 	leaseName := leaseName(rrID)
 	leaseDuration := int32(m.sessionTTL.Seconds())
@@ -235,20 +262,25 @@ func (m *LeaseSessionManager) Takeover(ctx context.Context, rrID string, user Us
 		},
 	}
 
-	if err := m.client.Create(ctx, lease); err != nil {
-		if apierrors.IsAlreadyExists(err) {
-			if reclaimed := m.tryReclaimExpiredLease(ctx, leaseName, rrID); reclaimed {
-				if retryErr := m.client.Create(ctx, lease); retryErr != nil {
-					return nil, fmt.Errorf("create lease after reclaim for rr %q: %w", rrID, retryErr)
-				}
-			} else {
-				return nil, ErrLeaseHeld
-			}
-		} else {
-			return nil, fmt.Errorf("create lease for rr %q: %w", rrID, err)
-		}
+	err := m.client.Create(ctx, lease)
+	if err == nil {
+		return sessionID, nil
 	}
+	if !apierrors.IsAlreadyExists(err) {
+		return "", fmt.Errorf("create lease for rr %q: %w", rrID, err)
+	}
+	if !m.tryReclaimExpiredLease(ctx, leaseName, rrID) {
+		return "", ErrLeaseHeld
+	}
+	if retryErr := m.client.Create(ctx, lease); retryErr != nil {
+		return "", fmt.Errorf("create lease after reclaim for rr %q: %w", rrID, retryErr)
+	}
+	return sessionID, nil
+}
 
+// registerNewInteractiveSession builds the InteractiveSession for a freshly
+// acquired lease and records it in the manager's session/rrID indexes.
+func (m *LeaseSessionManager) registerNewInteractiveSession(sessionID, rrID string, user UserInfo) *InteractiveSession {
 	session := &InteractiveSession{
 		SessionID:     sessionID,
 		CorrelationID: rrID,
@@ -268,7 +300,7 @@ func (m *LeaseSessionManager) Takeover(ctx context.Context, rrID string, user Us
 		"user", user.Username,
 	)
 
-	return session, nil
+	return session
 }
 
 func (m *LeaseSessionManager) Release(sessionID string, reason string) error {
