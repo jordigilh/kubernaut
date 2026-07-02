@@ -17,12 +17,14 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"net/http"
 	"os"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	zaplog "go.uber.org/zap"
 	"gopkg.in/yaml.v3"
@@ -38,11 +40,10 @@ import (
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	internalconfig "github.com/jordigilh/kubernaut/internal/config"
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
-	"github.com/jordigilh/kubernaut/internal/version"
-	scope "github.com/jordigilh/kubernaut/pkg/shared/scope"
 	"github.com/jordigilh/kubernaut/internal/controller/notification"
+	"github.com/jordigilh/kubernaut/internal/version"
 	"github.com/jordigilh/kubernaut/pkg/audit"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	notificationaudit "github.com/jordigilh/kubernaut/pkg/notification/audit"
 	notificationconfig "github.com/jordigilh/kubernaut/pkg/notification/config"
@@ -55,6 +56,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/circuitbreaker"
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 	"github.com/jordigilh/kubernaut/pkg/shared/sanitization"
+	scope "github.com/jordigilh/kubernaut/pkg/shared/scope"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls" // Issue #678: Inter-service TLS
 	//+kubebuilder:scaffold:imports
 )
@@ -187,24 +189,7 @@ func main() {
 
 	// ADR-030: Use configuration values for controller manager
 	// #244: ConfigMap cache removed — routing config now loaded via FileWatcher
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme: scheme,
-		Cache: cache.Options{
-			ByObject: map[client.Object]cache.ByObject{
-				&notificationv1alpha1.NotificationRequest{}: {
-					Namespaces: map[string]cache.Config{
-						controllerNS: {},
-					},
-				},
-			},
-		},
-		Metrics: metricsserver.Options{
-			BindAddress: cfg.Controller.MetricsAddr,
-		},
-		HealthProbeBindAddress: cfg.Controller.HealthProbeAddr,
-		LeaderElection:         cfg.Controller.LeaderElection,
-		LeaderElectionID:       cfg.Controller.LeaderElectionID,
-	})
+	mgr, err := buildManager(cfg, controllerNS)
 	if err != nil {
 		logger.Error(err, "Unable to start manager")
 		os.Exit(1)
@@ -213,55 +198,10 @@ func main() {
 	// ========================================
 	// Initialize Delivery Services (ADR-030)
 	// ========================================
-
-	// Console delivery (always enabled)
-	consoleService := delivery.NewConsoleDeliveryService()
-	logger.Info("Console delivery service initialized",
-		"enabled", cfg.Delivery.Console.Enabled)
-
-	// BR-NOT-104: Initialize credential resolver for per-receiver Slack delivery
-	credResolver, err := credentials.NewResolver(cfg.Delivery.Credentials.Dir, logger)
+	ds, err := buildDeliveryServices(cfg, logger)
 	if err != nil {
-		logger.Info("Credential resolver initialization failed (Slack delivery disabled until credentials available)",
-			"error", err,
-			"dir", cfg.Delivery.Credentials.Dir)
-		credResolver = nil
-	} else {
-		logger.Info("Credential resolver initialized",
-			"dir", cfg.Delivery.Credentials.Dir,
-			"credentialCount", credResolver.Count())
-	}
-
-	// ========================================
-	// File Delivery Service (ADR-030 Configuration)
-	// DD-NOT-006: Production feature for audit trails
-	// ========================================
-	var fileService *delivery.FileDeliveryService
-	if cfg.Delivery.File.OutputDir != "" {
-		// Validate directory is writable at startup
-		if err := validateFileOutputDirectory(cfg.Delivery.File.OutputDir); err != nil {
-			logger.Error(err, "File output directory validation failed",
-				"directory", cfg.Delivery.File.OutputDir)
-			os.Exit(1)
-		}
-		fileService = delivery.NewFileDeliveryService(cfg.Delivery.File.OutputDir, cfg.Delivery.File.Format, cfg.Delivery.File.Timeout)
-		logger.Info("File delivery service initialized",
-			"output_dir", cfg.Delivery.File.OutputDir,
-			"format", cfg.Delivery.File.Format,
-			"timeout", cfg.Delivery.File.Timeout)
-	}
-
-	// ========================================
-	// Log Delivery Service (ADR-030 Configuration)
-	// DD-NOT-006: Production feature for observability
-	// BR-NOT-053: Structured log delivery to stdout
-	// ========================================
-	var logService *delivery.LogDeliveryService
-	if cfg.Delivery.Log.Enabled {
-		logService = delivery.NewLogDeliveryService(cfg.Delivery.Log.Format)
-		logger.Info("Log delivery service initialized",
-			"enabled", cfg.Delivery.Log.Enabled,
-			"format", cfg.Delivery.Log.Format)
+		logger.Error(err, "Failed to initialize delivery services")
+		os.Exit(1)
 	}
 
 	// Initialize data sanitization
@@ -273,37 +213,7 @@ func main() {
 	// BR-NOT-063: Graceful Audit Degradation
 	// ADR-030: Configuration from YAML (data_storage_url)
 	// ========================================
-
-	// Create Data Storage client with OpenAPI generated client (DD-API-001)
-	// ADR-030: Use data_storage_url from configuration (required by Validate)
-	dataStorageClient, err := audit.NewOpenAPIClientAdapter(
-		cfg.DataStorage.URL,
-		cfg.DataStorage.Timeout)
-	if err != nil {
-		logger.Error(err, "Failed to create Data Storage client",
-			"url", cfg.DataStorage.URL)
-		os.Exit(1)
-	}
-
-	// Create buffered audit store (fire-and-forget pattern, ADR-038)
-	// ADR-030: Use buffer config from YAML ConfigMap
-	auditConfig := audit.Config{
-		BufferSize:    cfg.DataStorage.Buffer.BufferSize,
-		BatchSize:     cfg.DataStorage.Buffer.BatchSize,
-		FlushInterval: cfg.DataStorage.Buffer.FlushInterval,
-		MaxRetries:    cfg.DataStorage.Buffer.MaxRetries,
-	}
-
-	// Create zap logger for audit store, then convert to logr.Logger via zapr adapter
-	// DD-005 v2.0: pkg/audit uses logr.Logger for unified logging interface
-	zapLogger, err := zaplog.NewProduction()
-	if err != nil {
-		logger.Error(err, "Failed to create zap logger for audit store")
-		os.Exit(1)
-	}
-	auditLogger := zapr.NewLogger(zapLogger.Named("audit"))
-
-	auditStore, err := audit.NewBufferedStore(dataStorageClient, auditConfig, "notification-controller", auditLogger)
+	auditStore, err := buildAuditStore(cfg)
 	if err != nil {
 		logger.Error(err, "Failed to create audit store")
 		os.Exit(1)
@@ -313,136 +223,37 @@ func main() {
 	auditManager := notificationaudit.NewManager("notification-controller")
 
 	logger.Info("Audit store initialized",
-		"buffer_size", auditConfig.BufferSize,
-		"batch_size", auditConfig.BatchSize)
+		"buffer_size", cfg.DataStorage.Buffer.BufferSize,
+		"batch_size", cfg.DataStorage.Buffer.BatchSize)
 
 	// ========================================
-	// DD-METRICS-001: Metrics Dependency Injection
-	// See: docs/architecture/decisions/DD-METRICS-001-controller-metrics-wiring-pattern.md
+	// DD-METRICS-001 / Pattern 2 / BR-NOT-055 / Pattern 3 / #553:
+	// Metrics, Status Manager, Circuit Breaker, Delivery Orchestrator,
+	// channel registration, and workflow-name enrichment.
 	// ========================================
-	// Create metrics recorder for dependency injection (DD-METRICS-001 compliance)
-	metricsRecorder := notificationmetrics.NewMetrics()
-
-	// Initialize metrics with zero values to ensure they appear in Prometheus immediately
-	// This is critical for E2E metrics validation tests
-	metricsRecorder.UpdatePhaseCount(controllerNS, "Pending", 0)
-	metricsRecorder.RecordDeliveryAttempt(controllerNS, "console", "success")
-	metricsRecorder.RecordDeliveryDuration(controllerNS, "console", 0)
-	logger.Info("Notification metrics initialized (DD-METRICS-001 compliant)")
-
-	// ========================================
-	// Pattern 2: Status Manager (P1 - Quick Win)
-	// See: docs/architecture/patterns/CONTROLLER_REFACTORING_PATTERN_LIBRARY.md §4
-	// ========================================
-	// Create status manager for centralized status updates with retry logic
-	// Replaces controller's custom updateStatusWithRetry() method (~100 lines saved)
-	statusManager := notificationstatus.NewManager(mgr.GetClient(), mgr.GetAPIReader())
-	logger.Info("Status Manager initialized (Pattern 2 - P1)")
-
-	// ========================================
-	// Circuit Breaker for Graceful Degradation (BR-NOT-055)
-	// DD-EVENT-001 v1.1: Must be created before channel registration (CircuitBreakerService)
-	// ========================================
-	// Initialize circuit breaker with github.com/sony/gobreaker
-	// Provides per-channel isolation (Slack, console, webhooks)
-	//
-	// Circuit Breaker Configuration:
-	// - Failure threshold: 3 consecutive failures trigger open state
-	// - Recovery timeout: 30s before testing recovery (half-open state)
-	// - Success threshold: 2 successful calls in half-open close circuit
-	//
-	// See: docs/services/crd-controllers/06-notification/README.md#circuit-breaker
-	// ========================================
-	circuitBreakerManager := circuitbreaker.NewManager(circuitbreaker.ManagerConfig{
-		MaxRequests:                 2,
-		Interval:                   10 * time.Second,
-		Timeout:                    30 * time.Second,
-		ConsecutiveFailureThreshold: 3,
-		OnStateChange: func(name string, from, to circuitbreaker.State) {
-			logger.Info("Circuit breaker state changed",
-				"channel", name,
-				"from", stateToString(from),
-				"to", stateToString(to))
-
-			if metricsRecorder != nil {
-				metricsRecorder.UpdateCircuitBreakerState(name, int(to))
-			}
-		},
-	})
-	logger.Info("Circuit Breaker Manager initialized",
-		"failure_threshold", 3,
-		"recovery_timeout", "30s",
-		"half_open_max_requests", 2)
-
-	// ========================================
-	// Pattern 3: Delivery Orchestrator (P0 - High Impact)
-	// See: docs/architecture/patterns/CONTROLLER_REFACTORING_PATTERN_LIBRARY.md §3
-	// ========================================
-	deliveryOrchestrator := delivery.NewOrchestrator(
-		sanitizer,
-		metricsRecorder,
-		statusManager,
-		ctrl.Log.WithName("delivery-orchestrator"),
-	)
-
-	// DD-NOT-007: Register non-credential channels at startup
-	// BR-NOT-104: Slack channels registered per-receiver on routing config load (not at startup)
-	deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelConsole), consoleService)
-	deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelFile), fileService)
-	deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelLog), logService)
-
-	// #244: Per-receiver Slack channels are registered dynamically by
-	// ReloadRoutingFromContent (triggered by FileWatcher).
-	startupChannels := []string{"console", "file", "log"}
-	logger.Info("Delivery Orchestrator initialized with registration pattern (DD-NOT-007)")
-	logger.Info("Registered startup channels (per-receiver Slack registered on routing config load)",
-		"channels", startupChannels)
-
-	// ========================================
-	// #553: Workflow Name Enrichment
-	// Resolves workflow UUIDs to human-readable names in notification bodies
-	// before delivery. Uses the DataStorage catalog API.
-	// ========================================
-	// Issue #853: Wrapped with RetryTransport for transient failure resilience.
-	dsBaseTransport, err := sharedtls.DefaultBaseTransportWithRetry()
+	ob, err := buildDeliveryOrchestrator(mgr, cfg, ds, sanitizer, controllerNS, logger)
 	if err != nil {
-		logger.Error(err, "Failed to create TLS-aware base transport for DS enrichment client")
+		logger.Error(err, "Failed to build delivery orchestrator")
 		os.Exit(1)
 	}
-	dsOgenClient, err := ogenclient.NewClient(
-		cfg.DataStorage.URL,
-		ogenclient.WithClient(&http.Client{
-			Timeout:   cfg.DataStorage.Timeout,
-			Transport: auth.NewAuthTransport(auth.NewDefaultTokenSource(), dsBaseTransport),
-		}),
-	)
-	if err != nil {
-		logger.Error(err, "Failed to create DataStorage ogen client for workflow name resolution")
-		os.Exit(1)
-	}
-
-	dsResolver := enrichment.NewDataStorageResolver(dsOgenClient, ctrl.Log.WithName("workflow-resolver"))
-	notifEnricher := enrichment.NewEnricher(dsResolver, ctrl.Log.WithName("notification-enricher"))
-	deliveryOrchestrator.SetEnricher(notifEnricher)
-	logger.Info("Notification enricher initialized (#553: workflow name resolution)")
 
 	// Setup controller with delivery services + sanitization + audit + metrics + EventRecorder + statusManager + deliveryOrchestrator + circuitBreaker
 	reconciler := &notification.NotificationRequestReconciler{
 		Client:               mgr.GetClient(),
-		APIReader:            mgr.GetAPIReader(),                                 // DD-STATUS-001: Cache-bypassed reader
+		APIReader:            mgr.GetAPIReader(), // DD-STATUS-001: Cache-bypassed reader
 		Scheme:               mgr.GetScheme(),
-		ConsoleService:       consoleService,
-		FileService:          fileService,          // DD-NOT-006: File delivery
-		DeliveryOrchestrator: deliveryOrchestrator, // Pattern 3: Delivery Orchestrator (P0)
-		CredentialResolver:   credResolver,         // BR-NOT-104: Per-receiver credential resolution
-		DeliveryTimeout:      cfg.Delivery.Slack.Timeout,                        // HTTP timeout for webhook delivery channels
+		ConsoleService:       ds.console,
+		FileService:          ds.file,                    // DD-NOT-006: File delivery
+		DeliveryOrchestrator: ob.orchestrator,            // Pattern 3: Delivery Orchestrator (P0)
+		CredentialResolver:   ds.credResolver,            // BR-NOT-104: Per-receiver credential resolution
+		DeliveryTimeout:      cfg.Delivery.Slack.Timeout, // HTTP timeout for webhook delivery channels
 		Sanitizer:            sanitizer,
-		CircuitBreaker:       circuitBreakerManager,                              // BR-NOT-055: Circuit breaker with gobreaker
-		Metrics:              metricsRecorder,                                    // DD-METRICS-001: Injected metrics
+		CircuitBreaker:       ob.circuitBreaker,                                  // BR-NOT-055: Circuit breaker with gobreaker
+		Metrics:              ob.metrics,                                         // DD-METRICS-001: Injected metrics
 		Recorder:             mgr.GetEventRecorderFor("notification-controller"), // P1: EventRecorder
 		AuditStore:           auditStore,                                         // ADR-032: Audit store
 		AuditManager:         auditManager,                                       // Direct audit manager (no wrapper)
-		StatusManager:        statusManager,                                      // Pattern 2: Status Manager (P1)
+		StatusManager:        ob.statusManager,                                   // Pattern 2: Status Manager (P1)
 	}
 	if err = reconciler.SetupWithManager(mgr); err != nil {
 		logger.Error(err, "Unable to create controller", "controller", "NotificationRequest")
@@ -464,86 +275,16 @@ func main() {
 	// Setup signal handler for graceful shutdown
 	ctx := ctrl.SetupSignalHandler()
 
-	// BR-NOT-104-002: Start credential hot-reload watcher before routing watcher
-	if credResolver != nil {
-		if err := credResolver.StartWatching(ctx); err != nil {
-			logger.Error(err, "Failed to start credential watcher (hot-reload disabled)")
-		} else {
-			logger.Info("Credential file watcher started (BR-NOT-104-002)")
-		}
-		defer func() {
-			if err := credResolver.Close(); err != nil {
-				logger.Error(err, "Failed to close credential resolver")
-			}
-		}()
-	}
-
-	// #244: FileWatcher for routing config hot-reload (replaces ConfigMap informer)
-	// Startup order: credResolver.StartWatching → routingWatcher.Start → mgr.Start
-	routingConfigPath := "/etc/notification-routing/routing.yaml"
-	if envPath := os.Getenv("ROUTING_CONFIG_PATH"); envPath != "" {
-		routingConfigPath = envPath
-	}
-	routingWatcher, err := hotreload.NewFileWatcher(
-		routingConfigPath,
-		func(newContent string) error {
-			return reconciler.ReloadRoutingFromContent(newContent)
-		},
-		ctrl.Log.WithName("routing-watcher"),
-	)
-	if err != nil {
-		logger.Error(err, "Failed to create routing file watcher")
-		os.Exit(1)
-	}
-	if err := routingWatcher.Start(ctx); err != nil {
-		logger.Error(err, "Routing file watcher failed to start -- aborting startup")
-		os.Exit(1)
-	} else {
-		logger.Info("Routing file watcher started (#244)", "path", routingConfigPath)
-		defer routingWatcher.Stop()
-	}
-
-	// Issue #878: Log level hot-reload via FileWatcher
-	logLevelWatcher, logWatchErr := hotreload.NewFileWatcher(
-		configPath,
-		func(newContent string) error {
-			var partial struct {
-				Logging internalconfig.LoggingConfig `yaml:"logging"`
-			}
-			if err := yaml.Unmarshal([]byte(newContent), &partial); err != nil {
-				return fmt.Errorf("failed to parse config for log level reload: %w", err)
-			}
-			return internalconfig.ParseAndSetLevel(atomicLevel, partial.Logging.Level)
-		},
-		logger.WithName("log-level-watcher"),
-	)
-	if logWatchErr != nil {
-		logger.Error(logWatchErr, "Failed to create log level file watcher")
-	} else {
-		if err := logLevelWatcher.Start(ctx); err != nil {
-			logger.Info("Log level file watcher failed to start", "error", err)
-		} else {
-			logger.Info("Log level hot-reload watcher started", "path", configPath)
-			defer logLevelWatcher.Stop()
-		}
-	}
-
-	// Issue #748: Load OCP TLS security profile from config before any TLS setup
-	if err := sharedtls.SetDefaultSecurityProfileFromConfig(cfg.TLSProfile); err != nil {
-		logger.Error(err, "Invalid TLS security profile in config, using default TLS 1.2")
-	} else if cfg.TLSProfile != "" {
-		logger.Info("TLS security profile active", "profile", cfg.TLSProfile)
-	}
-
-	// Issue #756: Start CA file watcher for client-side TLS hot-reload
-	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, logger)
-	if caWatchErr != nil {
-		logger.Error(caWatchErr, "Failed to start CA file watcher")
-		os.Exit(1)
-	}
-	if caWatcher != nil {
-		defer caWatcher.Stop()
-	}
+	// BR-NOT-104-002/#244/#878/#748/#756: credential, routing, log-level
+	// hot-reload watchers plus TLS security profile + CA-cert hot-reload.
+	stopHotReload := wireHotReload(ctx, hotReloadParams{
+		cfg:          cfg,
+		configPath:   configPath,
+		atomicLevel:  atomicLevel,
+		credResolver: ds.credResolver,
+		reconciler:   reconciler,
+	}, logger)
+	defer stopHotReload()
 
 	if err := mgr.Start(ctx); err != nil {
 		logger.Error(err, "Problem running manager")
@@ -560,4 +301,368 @@ func main() {
 		os.Exit(1)
 	}
 	logger.Info("Audit store closed successfully, all events flushed")
+}
+
+// buildManager constructs the controller-runtime manager with the
+// namespace-restricted NotificationRequest cache (ADR-057) and
+// metrics/health-probe/leader election settings from cfg. Extracted from
+// main() (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 0a) — pure code motion, no
+// behavior change.
+func buildManager(cfg *notificationconfig.Config, controllerNS string) (ctrl.Manager, error) {
+	return ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+		Scheme: scheme,
+		Cache: cache.Options{
+			ByObject: map[client.Object]cache.ByObject{
+				&notificationv1alpha1.NotificationRequest{}: {
+					Namespaces: map[string]cache.Config{
+						controllerNS: {},
+					},
+				},
+			},
+		},
+		Metrics: metricsserver.Options{
+			BindAddress: cfg.Controller.MetricsAddr,
+		},
+		HealthProbeBindAddress: cfg.Controller.HealthProbeAddr,
+		LeaderElection:         cfg.Controller.LeaderElection,
+		LeaderElectionID:       cfg.Controller.LeaderElectionID,
+	})
+}
+
+// deliveryServices groups the notification delivery channels + credential
+// resolver built at startup (Options-pattern result struct, AGENTS.md's
+// 8+-param rule mirrored for return values to avoid a 4-value return).
+type deliveryServices struct {
+	console      *delivery.ConsoleDeliveryService
+	file         *delivery.FileDeliveryService
+	log          *delivery.LogDeliveryService
+	credResolver *credentials.Resolver
+}
+
+// buildDeliveryServices constructs the console (always-on), file (DD-NOT-006),
+// and log (BR-NOT-053) delivery services, plus the BR-NOT-104 per-receiver
+// credential resolver (degrades gracefully to nil — Slack delivery disabled
+// — rather than failing startup). Extracted from main()
+// (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 0a) — pure code motion, no behavior
+// change.
+func buildDeliveryServices(cfg *notificationconfig.Config, logger logr.Logger) (*deliveryServices, error) {
+	ds := &deliveryServices{
+		console: delivery.NewConsoleDeliveryService(),
+	}
+	logger.Info("Console delivery service initialized",
+		"enabled", cfg.Delivery.Console.Enabled)
+
+	// BR-NOT-104: Initialize credential resolver for per-receiver Slack delivery
+	credResolver, err := credentials.NewResolver(cfg.Delivery.Credentials.Dir, logger)
+	if err != nil {
+		logger.Info("Credential resolver initialization failed (Slack delivery disabled until credentials available)",
+			"error", err,
+			"dir", cfg.Delivery.Credentials.Dir)
+	} else {
+		ds.credResolver = credResolver
+		logger.Info("Credential resolver initialized",
+			"dir", cfg.Delivery.Credentials.Dir,
+			"credentialCount", credResolver.Count())
+	}
+
+	// ========================================
+	// File Delivery Service (ADR-030 Configuration)
+	// DD-NOT-006: Production feature for audit trails
+	// ========================================
+	if cfg.Delivery.File.OutputDir != "" {
+		// Validate directory is writable at startup
+		if err := validateFileOutputDirectory(cfg.Delivery.File.OutputDir); err != nil {
+			return nil, fmt.Errorf("file output directory validation failed (directory=%s): %w",
+				cfg.Delivery.File.OutputDir, err)
+		}
+		ds.file = delivery.NewFileDeliveryService(cfg.Delivery.File.OutputDir, cfg.Delivery.File.Format, cfg.Delivery.File.Timeout)
+		logger.Info("File delivery service initialized",
+			"output_dir", cfg.Delivery.File.OutputDir,
+			"format", cfg.Delivery.File.Format,
+			"timeout", cfg.Delivery.File.Timeout)
+	}
+
+	// ========================================
+	// Log Delivery Service (ADR-030 Configuration)
+	// DD-NOT-006: Production feature for observability
+	// BR-NOT-053: Structured log delivery to stdout
+	// ========================================
+	if cfg.Delivery.Log.Enabled {
+		ds.log = delivery.NewLogDeliveryService(cfg.Delivery.Log.Format)
+		logger.Info("Log delivery service initialized",
+			"enabled", cfg.Delivery.Log.Enabled,
+			"format", cfg.Delivery.Log.Format)
+	}
+
+	return ds, nil
+}
+
+// buildAuditStore constructs the DataStorage-backed, buffered audit store
+// (ADR-032, BR-NOT-062, BR-NOT-063, ADR-038) used for fire-and-forget audit
+// event emission. Extracted from main() (GO-ANTIPATTERN-AUDIT-2026-07-01
+// Wave 0a) — pure code motion, no behavior change.
+func buildAuditStore(cfg *notificationconfig.Config) (audit.AuditStore, error) {
+	// Create Data Storage client with OpenAPI generated client (DD-API-001)
+	// ADR-030: Use data_storage_url from configuration (required by Validate)
+	dataStorageClient, err := audit.NewOpenAPIClientAdapter(
+		cfg.DataStorage.URL,
+		cfg.DataStorage.Timeout)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create data storage client (url=%s): %w", cfg.DataStorage.URL, err)
+	}
+
+	// Create buffered audit store (fire-and-forget pattern, ADR-038)
+	// ADR-030: Use buffer config from YAML ConfigMap
+	auditConfig := audit.Config{
+		BufferSize:    cfg.DataStorage.Buffer.BufferSize,
+		BatchSize:     cfg.DataStorage.Buffer.BatchSize,
+		FlushInterval: cfg.DataStorage.Buffer.FlushInterval,
+		MaxRetries:    cfg.DataStorage.Buffer.MaxRetries,
+	}
+
+	// Create zap logger for audit store, then convert to logr.Logger via zapr adapter
+	// DD-005 v2.0: pkg/audit uses logr.Logger for unified logging interface
+	zapLogger, err := zaplog.NewProduction()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create zap logger for audit store: %w", err)
+	}
+	auditLogger := zapr.NewLogger(zapLogger.Named("audit"))
+
+	auditStore, err := audit.NewBufferedStore(dataStorageClient, auditConfig, "notification-controller", auditLogger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create buffered audit store: %w", err)
+	}
+	return auditStore, nil
+}
+
+// orchestratorBundle groups the delivery orchestrator and its collaborators
+// built together in buildDeliveryOrchestrator (Options-pattern result
+// struct, mirrors deliveryServices above).
+type orchestratorBundle struct {
+	orchestrator   *delivery.Orchestrator
+	metrics        *notificationmetrics.Metrics
+	statusManager  *notificationstatus.Manager
+	circuitBreaker *circuitbreaker.Manager
+}
+
+// buildDeliveryOrchestrator wires DD-METRICS-001 metrics, the Pattern-2
+// status manager, the BR-NOT-055 per-channel circuit breaker, the Pattern-3
+// delivery orchestrator (with DD-NOT-007 startup channel registration), and
+// the #553 DataStorage-backed workflow-name enricher. Extracted from main()
+// (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 0a) — pure code motion, no behavior
+// change.
+func buildDeliveryOrchestrator(
+	mgr ctrl.Manager,
+	cfg *notificationconfig.Config,
+	ds *deliveryServices,
+	sanitizer *sanitization.Sanitizer,
+	controllerNS string,
+	logger logr.Logger,
+) (*orchestratorBundle, error) {
+	// Create metrics recorder for dependency injection (DD-METRICS-001 compliance)
+	metricsRecorder := notificationmetrics.NewMetrics()
+
+	// Initialize metrics with zero values to ensure they appear in Prometheus immediately
+	// This is critical for E2E metrics validation tests
+	metricsRecorder.UpdatePhaseCount(controllerNS, "Pending", 0)
+	metricsRecorder.RecordDeliveryAttempt(controllerNS, "console", "success")
+	metricsRecorder.RecordDeliveryDuration(controllerNS, "console", 0)
+	logger.Info("Notification metrics initialized (DD-METRICS-001 compliant)")
+
+	// Create status manager for centralized status updates with retry logic
+	// Replaces controller's custom updateStatusWithRetry() method (~100 lines saved)
+	statusManager := notificationstatus.NewManager(mgr.GetClient(), mgr.GetAPIReader())
+	logger.Info("Status Manager initialized (Pattern 2 - P1)")
+
+	// Initialize circuit breaker with github.com/sony/gobreaker
+	// Provides per-channel isolation (Slack, console, webhooks)
+	//
+	// Circuit Breaker Configuration:
+	// - Failure threshold: 3 consecutive failures trigger open state
+	// - Recovery timeout: 30s before testing recovery (half-open state)
+	// - Success threshold: 2 successful calls in half-open close circuit
+	//
+	// See: docs/services/crd-controllers/06-notification/README.md#circuit-breaker
+	circuitBreakerManager := circuitbreaker.NewManager(circuitbreaker.ManagerConfig{
+		MaxRequests:                 2,
+		Interval:                    10 * time.Second,
+		Timeout:                     30 * time.Second,
+		ConsecutiveFailureThreshold: 3,
+		OnStateChange: func(name string, from, to circuitbreaker.State) {
+			logger.Info("Circuit breaker state changed",
+				"channel", name,
+				"from", stateToString(from),
+				"to", stateToString(to))
+
+			if metricsRecorder != nil {
+				metricsRecorder.UpdateCircuitBreakerState(name, int(to))
+			}
+		},
+	})
+	logger.Info("Circuit Breaker Manager initialized",
+		"failure_threshold", 3,
+		"recovery_timeout", "30s",
+		"half_open_max_requests", 2)
+
+	// Pattern 3: Delivery Orchestrator (P0 - High Impact)
+	deliveryOrchestrator := delivery.NewOrchestrator(
+		sanitizer,
+		metricsRecorder,
+		statusManager,
+		ctrl.Log.WithName("delivery-orchestrator"),
+	)
+
+	// DD-NOT-007: Register non-credential channels at startup
+	// BR-NOT-104: Slack channels registered per-receiver on routing config load (not at startup)
+	deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelConsole), ds.console)
+	deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelFile), ds.file)
+	deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelLog), ds.log)
+
+	// #244: Per-receiver Slack channels are registered dynamically by
+	// ReloadRoutingFromContent (triggered by FileWatcher).
+	startupChannels := []string{"console", "file", "log"}
+	logger.Info("Delivery Orchestrator initialized with registration pattern (DD-NOT-007)")
+	logger.Info("Registered startup channels (per-receiver Slack registered on routing config load)",
+		"channels", startupChannels)
+
+	// #553: Workflow Name Enrichment — resolves workflow UUIDs to
+	// human-readable names in notification bodies before delivery, via the
+	// DataStorage catalog API.
+	// Issue #853: Wrapped with RetryTransport for transient failure resilience.
+	dsBaseTransport, err := sharedtls.DefaultBaseTransportWithRetry()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create TLS-aware base transport for DS enrichment client: %w", err)
+	}
+	dsOgenClient, err := ogenclient.NewClient(
+		cfg.DataStorage.URL,
+		ogenclient.WithClient(&http.Client{
+			Timeout:   cfg.DataStorage.Timeout,
+			Transport: auth.NewAuthTransport(auth.NewDefaultTokenSource(), dsBaseTransport),
+		}),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create datastorage ogen client for workflow name resolution: %w", err)
+	}
+
+	dsResolver := enrichment.NewDataStorageResolver(dsOgenClient, ctrl.Log.WithName("workflow-resolver"))
+	notifEnricher := enrichment.NewEnricher(dsResolver, ctrl.Log.WithName("notification-enricher"))
+	deliveryOrchestrator.SetEnricher(notifEnricher)
+	logger.Info("Notification enricher initialized (#553: workflow name resolution)")
+
+	return &orchestratorBundle{
+		orchestrator:   deliveryOrchestrator,
+		metrics:        metricsRecorder,
+		statusManager:  statusManager,
+		circuitBreaker: circuitBreakerManager,
+	}, nil
+}
+
+// hotReloadParams groups wireHotReload's dependencies (Options pattern,
+// AGENTS.md's 8+-param rule).
+type hotReloadParams struct {
+	cfg          *notificationconfig.Config
+	configPath   string
+	atomicLevel  zaplog.AtomicLevel
+	credResolver *credentials.Resolver
+	reconciler   *notification.NotificationRequestReconciler
+}
+
+// wireHotReload starts the BR-NOT-104-002 credential watcher, the #244
+// routing-config watcher, the #878 log-level watcher, and the #748/#756 TLS
+// security profile + CA-cert watcher, in the same startup order as the
+// original inline code (credentials → routing → log-level → TLS/CA).
+// Returns a combined stop function the caller should defer. Exits the
+// process if the routing watcher fails to start, matching main()'s original
+// fail-fast behavior (routing config is required for delivery). Extracted
+// from main() (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 0a) — pure code motion,
+// no behavior change.
+func wireHotReload(ctx context.Context, p hotReloadParams, logger logr.Logger) func() {
+	stopFns := make([]func(), 0, 4)
+
+	// BR-NOT-104-002: Start credential hot-reload watcher before routing watcher
+	if p.credResolver != nil {
+		if err := p.credResolver.StartWatching(ctx); err != nil {
+			logger.Error(err, "Failed to start credential watcher (hot-reload disabled)")
+		} else {
+			logger.Info("Credential file watcher started (BR-NOT-104-002)")
+		}
+		stopFns = append(stopFns, func() {
+			if err := p.credResolver.Close(); err != nil {
+				logger.Error(err, "Failed to close credential resolver")
+			}
+		})
+	}
+
+	// #244: FileWatcher for routing config hot-reload (replaces ConfigMap informer)
+	// Startup order: credResolver.StartWatching → routingWatcher.Start → mgr.Start
+	routingConfigPath := "/etc/notification-routing/routing.yaml"
+	if envPath := os.Getenv("ROUTING_CONFIG_PATH"); envPath != "" {
+		routingConfigPath = envPath
+	}
+	routingWatcher, err := hotreload.NewFileWatcher(
+		routingConfigPath,
+		func(newContent string) error {
+			return p.reconciler.ReloadRoutingFromContent(newContent)
+		},
+		ctrl.Log.WithName("routing-watcher"),
+	)
+	if err != nil {
+		logger.Error(err, "Failed to create routing file watcher")
+		os.Exit(1)
+	}
+	if err := routingWatcher.Start(ctx); err != nil {
+		logger.Error(err, "Routing file watcher failed to start -- aborting startup")
+		os.Exit(1)
+	} else {
+		logger.Info("Routing file watcher started (#244)", "path", routingConfigPath)
+		stopFns = append(stopFns, routingWatcher.Stop)
+	}
+
+	// Issue #878: Log level hot-reload via FileWatcher
+	logLevelWatcher, logWatchErr := hotreload.NewFileWatcher(
+		p.configPath,
+		func(newContent string) error {
+			var partial struct {
+				Logging internalconfig.LoggingConfig `yaml:"logging"`
+			}
+			if err := yaml.Unmarshal([]byte(newContent), &partial); err != nil {
+				return fmt.Errorf("failed to parse config for log level reload: %w", err)
+			}
+			return internalconfig.ParseAndSetLevel(p.atomicLevel, partial.Logging.Level)
+		},
+		logger.WithName("log-level-watcher"),
+	)
+	if logWatchErr != nil {
+		logger.Error(logWatchErr, "Failed to create log level file watcher")
+	} else {
+		if err := logLevelWatcher.Start(ctx); err != nil {
+			logger.Info("Log level file watcher failed to start", "error", err)
+		} else {
+			logger.Info("Log level hot-reload watcher started", "path", p.configPath)
+			stopFns = append(stopFns, logLevelWatcher.Stop)
+		}
+	}
+
+	// Issue #748: Load OCP TLS security profile from config before any TLS setup
+	if err := sharedtls.SetDefaultSecurityProfileFromConfig(p.cfg.TLSProfile); err != nil {
+		logger.Error(err, "Invalid TLS security profile in config, using default TLS 1.2")
+	} else if p.cfg.TLSProfile != "" {
+		logger.Info("TLS security profile active", "profile", p.cfg.TLSProfile)
+	}
+
+	// Issue #756: Start CA file watcher for client-side TLS hot-reload
+	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, logger)
+	if caWatchErr != nil {
+		logger.Error(caWatchErr, "Failed to start CA file watcher")
+		os.Exit(1)
+	}
+	if caWatcher != nil {
+		stopFns = append(stopFns, caWatcher.Stop)
+	}
+
+	return func() {
+		for _, stop := range stopFns {
+			stop()
+		}
+	}
 }

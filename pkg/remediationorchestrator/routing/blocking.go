@@ -32,18 +32,40 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-// Engine is the interface for routing decision logic.
-// Allows mocking in unit tests while using real implementation in integration tests.
+// BlockingConditionChecker defines the routing-decision checks that determine
+// whether a RemediationRequest should be blocked. Split out from Engine for
+// ISP (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 0b) — these methods share one
+// concern (evaluate a blocking condition), separate from the config/backoff
+// accessors below.
 //
 // Issue #165: Split API separates pre-AA checks (fingerprint-based, no AI data)
 // from post-AA checks (all checks including resource-level with AI-resolved target).
-type Engine interface {
+type BlockingConditionChecker interface {
 	CheckPreAnalysisConditions(ctx context.Context, rr *remediationv1.RemediationRequest) (*BlockingCondition, error)
 	CheckPostAnalysisConditions(ctx context.Context, rr *remediationv1.RemediationRequest, workflowID string, targetResource string, preRemediationSpecHash string, actionType string) (*BlockingCondition, error)
 	CheckResourceBusy(ctx context.Context, rr *remediationv1.RemediationRequest, targetResource string) (*BlockingCondition, error)
 	CheckUnmanagedResource(ctx context.Context, rr *remediationv1.RemediationRequest) *BlockingCondition
+}
+
+// EngineConfigProvider exposes the routing engine's configuration and derived
+// backoff calculations. Split out from Engine for ISP
+// (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 0b) — unlike the blocking-condition
+// checks above, these are plain accessors/utility math, not decision logic.
+type EngineConfigProvider interface {
 	Config() Config
 	CalculateExponentialBackoff(consecutiveFailures int32) time.Duration
+}
+
+// Engine composes the condition-checking and config/backoff role interfaces
+// for RoutingEngine's callers. Kept as a named union — rather than inlining
+// the two interfaces at call sites — so existing implementers/mocks (which
+// already implement every method) need no changes
+// (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 0b; see docs/architecture/audits for
+// rationale). Allows mocking in unit tests while using the real
+// implementation (RoutingEngine) in integration tests.
+type Engine interface {
+	BlockingConditionChecker
+	EngineConfigProvider
 }
 
 // RoutingEngine makes routing decisions for RemediationRequests.
