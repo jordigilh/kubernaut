@@ -185,6 +185,33 @@ func (m *Manager) launchInvestigation(ctx context.Context, p investigationLaunch
 	id, fn, correlationID, signalName, severity, clusterName, startExtra :=
 		p.ID, p.Fn, p.CorrelationID, p.SignalName, p.Severity, p.ClusterName, p.StartExtra
 
+	// The cancel func returned here is also stored on the session entry by
+	// attachInvestigationContext, so cancellation (e.g. session abandonment)
+	// is driven from there rather than from this call site.
+	bgCtx, _ := m.attachInvestigationContext(id, correlationID, clusterName)
+
+	if updateErr := m.store.Update(id, StatusRunning, nil, nil); updateErr != nil {
+		m.logger.Error(updateErr, "failed to update session",
+			"session_id", id, "target_status", string(StatusRunning))
+	}
+
+	m.emitSessionEvent(ctx, sessionEventParams{
+		EventType: audit.EventTypeSessionStarted, Action: audit.ActionSessionStarted,
+		Outcome: audit.OutcomeSuccess, SessionID: id, CorrelationID: correlationID,
+	}, nil, startExtra...)
+	m.metrics.RecordSessionStarted(signalName, severity)
+
+	go m.runInvestigation(bgCtx, id, correlationID, fn)
+
+	return id, nil
+}
+
+// attachInvestigationContext builds the background context an investigation
+// runs under (independent of the request context, carrying session ID,
+// cluster name, correlation ID, and a lazily-attached event sink) and wires
+// its cancel func + sink onto the session store entry so later operations
+// (cancellation, interactive upgrade) can reach them.
+func (m *Manager) attachInvestigationContext(id, correlationID, clusterName string) (context.Context, context.CancelFunc) {
 	bgCtx, cancelFn := context.WithCancel(context.Background())
 
 	ls := &LazySink{}
@@ -207,70 +234,80 @@ func (m *Manager) launchInvestigation(ctx context.Context, p investigationLaunch
 		"has_deferred_fn", sess.deferredFn != nil)
 	m.store.mu.Unlock()
 
-	if updateErr := m.store.Update(id, StatusRunning, nil, nil); updateErr != nil {
-		m.logger.Error(updateErr, "failed to update session",
-			"session_id", id, "target_status", string(StatusRunning))
+	return bgCtx, cancelFn
+}
+
+// runInvestigation executes fn in the background, then reconciles the
+// session's terminal status (failed/completed/user-driving) and emits the
+// corresponding lifecycle audit event. Runs as its own goroutine; panics are
+// recovered and session/duration metrics are always recorded.
+func (m *Manager) runInvestigation(bgCtx context.Context, id, correlationID string, fn InvestigateFunc) {
+	start := time.Now()
+	defer m.recordSessionMetrics(id, start)
+	defer m.recoverPanic(id, correlationID)
+
+	result, fnErr := fn(bgCtx)
+	m.emitCompleteEvent(id)
+	if fnErr != nil {
+		m.handleInvestigationFailure(bgCtx, id, correlationID, result, fnErr)
+		return
 	}
+	m.handleInvestigationSuccess(bgCtx, id, correlationID, result)
+}
 
-	m.emitSessionEvent(ctx, sessionEventParams{
-		EventType: audit.EventTypeSessionStarted, Action: audit.ActionSessionStarted,
+// handleInvestigationFailure marks the session failed and emits the
+// SessionFailed audit event, falling back to storing a partial result when
+// the status update is rejected (e.g. the session was cancelled/superseded)
+// and the background context was itself cancelled.
+func (m *Manager) handleInvestigationFailure(bgCtx context.Context, id, correlationID string, result *katypes.InvestigationResult, fnErr error) {
+	m.logger.Error(fnErr, "investigation failed", "session_id", id)
+	if updateErr := m.store.Update(id, StatusFailed, nil, fnErr); updateErr != nil {
+		m.logger.Info("post-investigation status update rejected",
+			"session_id", id,
+			"attempted_status", string(StatusFailed),
+			"reason", updateErr.Error())
+		if bgCtx.Err() != nil {
+			m.storePartialResult(id, result)
+		}
+		return
+	}
+	m.closeEventChan(id)
+	m.emitSessionEvent(context.Background(), sessionEventParams{
+		EventType: audit.EventTypeSessionFailed, Action: audit.ActionSessionFailed,
+		Outcome: audit.OutcomeFailure, SessionID: id, CorrelationID: correlationID,
+	}, fnErr)
+}
+
+// handleInvestigationSuccess determines the session's terminal status from
+// the result (completed, or user-driving when the investigation handed off
+// to an interactive hold), updates the store, and emits the SessionCompleted
+// audit event. Falls back to storing a partial result when the status
+// update is rejected and the background context was cancelled.
+func (m *Manager) handleInvestigationSuccess(bgCtx context.Context, id, correlationID string, result *katypes.InvestigationResult) {
+	targetStatus := StatusCompleted
+	if result != nil && result.InteractiveHold {
+		targetStatus = StatusUserDriving
+	}
+	if result != nil && result.HumanReviewNeeded && result.HumanReviewReason == katypes.HumanReviewReasonAlignmentCheckFailed {
+		targetStatus = StatusCompleted
+	}
+	if updateErr := m.store.Update(id, targetStatus, result, nil); updateErr != nil {
+		m.logger.Info("post-investigation status update rejected",
+			"session_id", id,
+			"attempted_status", string(targetStatus),
+			"reason", updateErr.Error())
+		if bgCtx.Err() != nil {
+			m.storePartialResult(id, result)
+		}
+		return
+	}
+	if targetStatus != StatusUserDriving {
+		m.closeEventChan(id)
+	}
+	m.emitSessionEvent(context.Background(), sessionEventParams{
+		EventType: audit.EventTypeSessionCompleted, Action: audit.ActionSessionCompleted,
 		Outcome: audit.OutcomeSuccess, SessionID: id, CorrelationID: correlationID,
-	}, nil, startExtra...)
-	m.metrics.RecordSessionStarted(signalName, severity)
-
-	go func() {
-		start := time.Now()
-		defer m.recordSessionMetrics(id, start)
-		defer m.recoverPanic(id, correlationID)
-
-		result, fnErr := fn(bgCtx)
-		m.emitCompleteEvent(id)
-		if fnErr != nil {
-			m.logger.Error(fnErr, "investigation failed", "session_id", id)
-			if updateErr := m.store.Update(id, StatusFailed, nil, fnErr); updateErr != nil {
-				m.logger.Info("post-investigation status update rejected",
-					"session_id", id,
-					"attempted_status", string(StatusFailed),
-					"reason", updateErr.Error())
-				if bgCtx.Err() != nil {
-					m.storePartialResult(id, result)
-				}
-			} else {
-				m.closeEventChan(id)
-				m.emitSessionEvent(context.Background(), sessionEventParams{
-					EventType: audit.EventTypeSessionFailed, Action: audit.ActionSessionFailed,
-					Outcome: audit.OutcomeFailure, SessionID: id, CorrelationID: correlationID,
-				}, fnErr)
-			}
-			return
-		}
-		targetStatus := StatusCompleted
-		if result != nil && result.InteractiveHold {
-			targetStatus = StatusUserDriving
-		}
-		if result != nil && result.HumanReviewNeeded && result.HumanReviewReason == katypes.HumanReviewReasonAlignmentCheckFailed {
-			targetStatus = StatusCompleted
-		}
-		if updateErr := m.store.Update(id, targetStatus, result, nil); updateErr != nil {
-			m.logger.Info("post-investigation status update rejected",
-				"session_id", id,
-				"attempted_status", string(targetStatus),
-				"reason", updateErr.Error())
-			if bgCtx.Err() != nil {
-				m.storePartialResult(id, result)
-			}
-		} else {
-			if targetStatus != StatusUserDriving {
-				m.closeEventChan(id)
-			}
-			m.emitSessionEvent(context.Background(), sessionEventParams{
-				EventType: audit.EventTypeSessionCompleted, Action: audit.ActionSessionCompleted,
-				Outcome: audit.OutcomeSuccess, SessionID: id, CorrelationID: correlationID,
-			}, nil)
-		}
-	}()
-
-	return id, nil
+	}, nil)
 }
 
 // StartInteractiveSession creates a new session in StatusPending without
