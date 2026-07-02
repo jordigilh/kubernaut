@@ -760,70 +760,18 @@ func toIncidentResponseData(responseDataJSON string, incidentID string) ogenclie
 	}
 
 	if ir.RemediationTarget != nil {
-		var rt ogenclient.IncidentResponseDataRootCauseAnalysisRemediationTarget
-		if ir.RemediationTarget.Kind != "" {
-			rt.Kind.SetTo(ir.RemediationTarget.Kind)
-		}
-		if ir.RemediationTarget.Name != "" {
-			rt.Name.SetTo(ir.RemediationTarget.Name)
-		}
-		if ir.RemediationTarget.Namespace != "" {
-			rt.Namespace.SetTo(ir.RemediationTarget.Namespace)
-		}
-		data.RootCauseAnalysis.RemediationTarget.SetTo(rt)
+		data.RootCauseAnalysis.RemediationTarget.SetTo(toRemediationTargetResponse(ir.RemediationTarget))
 	}
 
 	if len(ir.CausalChain) > 0 {
 		data.RootCauseAnalysis.CausalChain = ir.CausalChain
 	}
 	if ir.DueDiligence != nil {
-		dd := ogenclient.IncidentResponseDataRootCauseAnalysisDueDiligence{}
-		if ir.DueDiligence.CausalCompleteness != "" {
-			dd.CausalCompleteness.SetTo(ir.DueDiligence.CausalCompleteness)
-		}
-		if ir.DueDiligence.TargetAccuracy != "" {
-			dd.TargetAccuracy.SetTo(ir.DueDiligence.TargetAccuracy)
-		}
-		if ir.DueDiligence.EvidenceSufficiency != "" {
-			dd.EvidenceSufficiency.SetTo(ir.DueDiligence.EvidenceSufficiency)
-		}
-		if ir.DueDiligence.AlternativeHypotheses != "" {
-			dd.AlternativeHypotheses.SetTo(ir.DueDiligence.AlternativeHypotheses)
-		}
-		if ir.DueDiligence.ScopeCompleteness != "" {
-			dd.ScopeCompleteness.SetTo(ir.DueDiligence.ScopeCompleteness)
-		}
-		if ir.DueDiligence.Proportionality != "" {
-			dd.Proportionality.SetTo(ir.DueDiligence.Proportionality)
-		}
-		if ir.DueDiligence.RegressionAwareness != "" {
-			dd.RegressionAwareness.SetTo(ir.DueDiligence.RegressionAwareness)
-		}
-		if ir.DueDiligence.ConfidenceCalibration != "" {
-			dd.ConfidenceCalibration.SetTo(ir.DueDiligence.ConfidenceCalibration)
-		}
-		data.RootCauseAnalysis.DueDiligence.SetTo(dd)
+		data.RootCauseAnalysis.DueDiligence.SetTo(toDueDiligenceResponse(ir.DueDiligence))
 	}
 
 	if ir.WorkflowID != "" {
-		sw := ogenclient.IncidentResponseDataSelectedWorkflow{}
-		sw.WorkflowId.SetTo(ir.WorkflowID)
-		if ir.ExecutionBundle != "" {
-			sw.ExecutionBundle.SetTo(ir.ExecutionBundle)
-		}
-		sw.Confidence.SetTo(float32(ir.Confidence))
-		if len(ir.Parameters) > 0 {
-			params := make(ogenclient.IncidentResponseDataSelectedWorkflowParameters, len(ir.Parameters))
-			for k, v := range ir.Parameters {
-				b, err := json.Marshal(v)
-				if err != nil {
-					continue
-				}
-				params[k] = jx.Raw(b)
-			}
-			sw.Parameters.SetTo(params)
-		}
-		data.SelectedWorkflow.SetTo(sw)
+		data.SelectedWorkflow.SetTo(toSelectedWorkflowResponse(ir))
 	}
 
 	if ir.NeedsHumanReview {
@@ -840,7 +788,88 @@ func toIncidentResponseData(responseDataJSON string, incidentID string) ogenclie
 		data.Warnings = []string{}
 	}
 
-	for _, alt := range ir.AlternativeWorkflows {
+	if len(ir.AlternativeWorkflows) > 0 {
+		data.AlternativeWorkflows = toAlternativeWorkflowsResponse(ir.AlternativeWorkflows)
+	}
+
+	return data
+}
+
+// toRemediationTargetResponse maps the audit-record RemediationTarget into
+// the ogen wire format, omitting any field that was never populated.
+func toRemediationTargetResponse(rt *remediationTargetJSON) ogenclient.IncidentResponseDataRootCauseAnalysisRemediationTarget {
+	var out ogenclient.IncidentResponseDataRootCauseAnalysisRemediationTarget
+	if rt.Kind != "" {
+		out.Kind.SetTo(rt.Kind)
+	}
+	if rt.Name != "" {
+		out.Name.SetTo(rt.Name)
+	}
+	if rt.Namespace != "" {
+		out.Namespace.SetTo(rt.Namespace)
+	}
+	return out
+}
+
+// toDueDiligenceResponse maps the audit-record DueDiligence review into the
+// ogen wire format, omitting any field that was never populated.
+func toDueDiligenceResponse(dd *dueDiligenceJSON) ogenclient.IncidentResponseDataRootCauseAnalysisDueDiligence {
+	out := ogenclient.IncidentResponseDataRootCauseAnalysisDueDiligence{}
+	if dd.CausalCompleteness != "" {
+		out.CausalCompleteness.SetTo(dd.CausalCompleteness)
+	}
+	if dd.TargetAccuracy != "" {
+		out.TargetAccuracy.SetTo(dd.TargetAccuracy)
+	}
+	if dd.EvidenceSufficiency != "" {
+		out.EvidenceSufficiency.SetTo(dd.EvidenceSufficiency)
+	}
+	if dd.AlternativeHypotheses != "" {
+		out.AlternativeHypotheses.SetTo(dd.AlternativeHypotheses)
+	}
+	if dd.ScopeCompleteness != "" {
+		out.ScopeCompleteness.SetTo(dd.ScopeCompleteness)
+	}
+	if dd.Proportionality != "" {
+		out.Proportionality.SetTo(dd.Proportionality)
+	}
+	if dd.RegressionAwareness != "" {
+		out.RegressionAwareness.SetTo(dd.RegressionAwareness)
+	}
+	if dd.ConfidenceCalibration != "" {
+		out.ConfidenceCalibration.SetTo(dd.ConfidenceCalibration)
+	}
+	return out
+}
+
+// toSelectedWorkflowResponse maps the selected-workflow fields of ir into the
+// ogen wire format. Callers must check ir.WorkflowID != "".
+func toSelectedWorkflowResponse(ir investigationResultJSON) ogenclient.IncidentResponseDataSelectedWorkflow {
+	sw := ogenclient.IncidentResponseDataSelectedWorkflow{}
+	sw.WorkflowId.SetTo(ir.WorkflowID)
+	if ir.ExecutionBundle != "" {
+		sw.ExecutionBundle.SetTo(ir.ExecutionBundle)
+	}
+	sw.Confidence.SetTo(float32(ir.Confidence))
+	if len(ir.Parameters) > 0 {
+		params := make(ogenclient.IncidentResponseDataSelectedWorkflowParameters, len(ir.Parameters))
+		for k, v := range ir.Parameters {
+			b, err := json.Marshal(v)
+			if err != nil {
+				continue
+			}
+			params[k] = jx.Raw(b)
+		}
+		sw.Parameters.SetTo(params)
+	}
+	return sw
+}
+
+// toAlternativeWorkflowsResponse maps the audit-record AlternativeWorkflows
+// list into the ogen wire format.
+func toAlternativeWorkflowsResponse(alts []altWorkflowJSON) []ogenclient.IncidentResponseDataAlternativeWorkflowsItem {
+	out := make([]ogenclient.IncidentResponseDataAlternativeWorkflowsItem, 0, len(alts))
+	for _, alt := range alts {
 		item := ogenclient.IncidentResponseDataAlternativeWorkflowsItem{}
 		if alt.WorkflowID != "" {
 			item.WorkflowId.SetTo(alt.WorkflowID)
@@ -854,10 +883,9 @@ func toIncidentResponseData(responseDataJSON string, incidentID string) ogenclie
 		if alt.Confidence > 0 {
 			item.Confidence.SetTo(float32(alt.Confidence))
 		}
-		data.AlternativeWorkflows = append(data.AlternativeWorkflows, item)
+		out = append(out, item)
 	}
-
-	return data
+	return out
 }
 
 func mapSeverity(s string) ogenclient.IncidentResponseDataRootCauseAnalysisSeverity {
