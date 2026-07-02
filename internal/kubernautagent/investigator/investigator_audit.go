@@ -23,8 +23,8 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
-	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 func (inv *Investigator) emitResponseComplete(ctx context.Context, result *katypes.InvestigationResult, tokens *TokenAccumulator, correlationID string) {
@@ -68,6 +68,32 @@ func ResultToAuditJSON(r *katypes.InvestigationResult) map[string]interface{} {
 		"confidence":         r.Confidence,
 		"needs_human_review": r.HumanReviewNeeded,
 	}
+	applyWorkflowIdentityFields(m, r)
+	applyReviewReasonFields(m, r)
+	applyCollectionFields(m, r)
+
+	if r.RemediationTarget.Kind != "" {
+		m["remediation_target"] = map[string]interface{}{
+			"kind":      r.RemediationTarget.Kind,
+			"name":      r.RemediationTarget.Name,
+			"namespace": r.RemediationTarget.Namespace,
+		}
+	}
+	if len(r.AlternativeWorkflows) > 0 {
+		m["alternative_workflows"] = alternativeWorkflowsToAuditJSON(r.AlternativeWorkflows)
+	}
+	if len(r.CausalChain) > 0 {
+		m["causal_chain"] = r.CausalChain
+	}
+	if r.DueDiligence != nil {
+		m["due_diligence"] = dueDiligenceToAuditJSON(r.DueDiligence)
+	}
+	return m
+}
+
+// applyWorkflowIdentityFields sets the workflow-identity fields on m,
+// omitting each one that is empty on r.
+func applyWorkflowIdentityFields(m map[string]interface{}, r *katypes.InvestigationResult) {
 	if r.WorkflowID != "" {
 		m["workflow_id"] = r.WorkflowID
 	}
@@ -80,6 +106,12 @@ func ResultToAuditJSON(r *katypes.InvestigationResult) map[string]interface{} {
 	if r.ExecutionEngine != "" {
 		m["execution_engine"] = r.ExecutionEngine
 	}
+}
+
+// applyReviewReasonFields sets the human-review/reason/actionability fields
+// on m. human_review_reason falls back to r.Reason when HumanReviewReason is
+// unset, so a caller-facing reason is always surfaced when either is present.
+func applyReviewReasonFields(m map[string]interface{}, r *katypes.InvestigationResult) {
 	if len(r.ContributingFactors) > 0 {
 		m["contributing_factors"] = r.ContributingFactors
 	}
@@ -97,6 +129,11 @@ func ResultToAuditJSON(r *katypes.InvestigationResult) map[string]interface{} {
 	if r.SignalName != "" {
 		m["signal_name"] = r.SignalName
 	}
+}
+
+// applyCollectionFields sets the collection-valued (slice/map) fields on m,
+// omitting each one that is nil/empty on r.
+func applyCollectionFields(m map[string]interface{}, r *katypes.InvestigationResult) {
 	if r.DetectedLabels != nil {
 		m["detected_labels"] = r.DetectedLabels
 	}
@@ -109,46 +146,41 @@ func ResultToAuditJSON(r *katypes.InvestigationResult) map[string]interface{} {
 	if len(r.Parameters) > 0 {
 		m["parameters"] = r.Parameters
 	}
-	if r.RemediationTarget.Kind != "" {
-		m["remediation_target"] = map[string]interface{}{
-			"kind":      r.RemediationTarget.Kind,
-			"name":      r.RemediationTarget.Name,
-			"namespace": r.RemediationTarget.Namespace,
+}
+
+// alternativeWorkflowsToAuditJSON converts alternative workflows to the
+// audit-log map representation, omitting empty optional fields.
+func alternativeWorkflowsToAuditJSON(alts []katypes.AlternativeWorkflow) []map[string]interface{} {
+	out := make([]map[string]interface{}, len(alts))
+	for i, alt := range alts {
+		a := map[string]interface{}{
+			"workflow_id": alt.WorkflowID,
+			"confidence":  alt.Confidence,
 		}
-	}
-	if len(r.AlternativeWorkflows) > 0 {
-		alts := make([]map[string]interface{}, len(r.AlternativeWorkflows))
-		for i, alt := range r.AlternativeWorkflows {
-			a := map[string]interface{}{
-				"workflow_id": alt.WorkflowID,
-				"confidence":  alt.Confidence,
-			}
-			if alt.Rationale != "" {
-				a["rationale"] = alt.Rationale
-			}
-			if alt.ExecutionBundle != "" {
-				a["execution_bundle"] = alt.ExecutionBundle
-			}
-			alts[i] = a
+		if alt.Rationale != "" {
+			a["rationale"] = alt.Rationale
 		}
-		m["alternative_workflows"] = alts
-	}
-	if len(r.CausalChain) > 0 {
-		m["causal_chain"] = r.CausalChain
-	}
-	if r.DueDiligence != nil {
-		m["due_diligence"] = map[string]interface{}{
-			"causal_completeness":    r.DueDiligence.CausalCompleteness,
-			"target_accuracy":        r.DueDiligence.TargetAccuracy,
-			"evidence_sufficiency":   r.DueDiligence.EvidenceSufficiency,
-			"alternative_hypotheses": r.DueDiligence.AlternativeHypotheses,
-			"scope_completeness":     r.DueDiligence.ScopeCompleteness,
-			"proportionality":        r.DueDiligence.Proportionality,
-			"regression_awareness":   r.DueDiligence.RegressionAwareness,
-			"confidence_calibration": r.DueDiligence.ConfidenceCalibration,
+		if alt.ExecutionBundle != "" {
+			a["execution_bundle"] = alt.ExecutionBundle
 		}
+		out[i] = a
 	}
-	return m
+	return out
+}
+
+// dueDiligenceToAuditJSON converts a DueDiligenceReview to the audit-log map
+// representation.
+func dueDiligenceToAuditJSON(dd *katypes.DueDiligenceReview) map[string]interface{} {
+	return map[string]interface{}{
+		"causal_completeness":    dd.CausalCompleteness,
+		"target_accuracy":        dd.TargetAccuracy,
+		"evidence_sufficiency":   dd.EvidenceSufficiency,
+		"alternative_hypotheses": dd.AlternativeHypotheses,
+		"scope_completeness":     dd.ScopeCompleteness,
+		"proportionality":        dd.Proportionality,
+		"regression_awareness":   dd.RegressionAwareness,
+		"confidence_calibration": dd.ConfidenceCalibration,
+	}
 }
 
 func (inv *Investigator) emitValidationEvent(ctx context.Context, attempt, maxAttempts int, isValid bool, errors []string, workflowID, correlationID string) {
