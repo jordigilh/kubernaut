@@ -60,7 +60,20 @@ var _ = Describe("IT-FLEET-EAIGW-001 [SC-7]: All remote cluster tool calls are r
 	})
 
 	It("routes tool calls through real EAIGW container to mock backend", func() {
-		mockBackend = mockgw.NewMockGateway(mockgw.WithMultiCluster("cluster-a"))
+		mockBackend = mockgw.NewMockGateway(
+			// Plain (unprefixed) tool names: a real kube-mcp-server backend
+			// exposes "resources_get" etc. un-prefixed -- EAIGW itself
+			// applies the "{backendName}__" prefix at the routing layer
+			// (unlike WithMultiCluster, which bakes the prefix into the
+			// backend's own tool names to simulate a Kuadrant-style
+			// pre-namespaced registration).
+			mockgw.WithKuadrantCluster("cluster-a", ""),
+			// The real EAIGW container reaches this mock backend via
+			// host.containers.internal (not 127.0.0.1) since it runs in its
+			// own network namespace -- disable the MCP SDK's DNS-rebinding
+			// Host-header check accordingly (test-only mock, no real risk).
+			mockgw.WithExternalContainerAccess(),
+		)
 
 		backendURL := mockBackend.URL()
 		GinkgoWriter.Printf("Mock backend started at: %s\n", backendURL)

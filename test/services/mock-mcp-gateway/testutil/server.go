@@ -60,10 +60,11 @@ type discoverableCluster struct {
 }
 
 type gatewayConfig struct {
-	tools                []toolDef
-	clusterEntries       []clusterEntry
-	discoverableClusters []discoverableCluster
-	structuredContent    []map[string]any
+	tools                        []toolDef
+	clusterEntries               []clusterEntry
+	discoverableClusters         []discoverableCluster
+	structuredContent            []map[string]any
+	allowExternalContainerAccess bool
 }
 
 // WithTool registers a static tool on the mock gateway.
@@ -85,6 +86,19 @@ func WithMultiCluster(clusters ...string) Option {
 		for _, c := range clusters {
 			cfg.clusterEntries = append(cfg.clusterEntries, clusterEntry{id: c, prefix: c + "__"})
 		}
+	}
+}
+
+// WithExternalContainerAccess disables the MCP SDK's DNS-rebinding protection
+// (Host-header validation) on the mock gateway's StreamableHTTPHandler. The
+// gateway binds to 127.0.0.1 via httptest.NewServer, so by default any
+// request whose Host header isn't a loopback address (e.g. a real container
+// connecting via "host.containers.internal" instead of "127.0.0.1") is
+// rejected with 403 Forbidden. Use this only when a real out-of-process
+// container (not another in-process Go client) must reach the mock gateway.
+func WithExternalContainerAccess() Option {
+	return func(cfg *gatewayConfig) {
+		cfg.allowExternalContainerAccess = true
 	}
 }
 
@@ -170,7 +184,7 @@ func NewMockGateway(opts ...Option) *MockGateway {
 
 	gw.handler = mcp.NewStreamableHTTPHandler(
 		func(_ *http.Request) *mcp.Server { return gw.server },
-		nil,
+		&mcp.StreamableHTTPOptions{DisableLocalhostProtection: cfg.allowExternalContainerAccess},
 	)
 	gw.httpServer = httptest.NewServer(gw.handler)
 	return gw
