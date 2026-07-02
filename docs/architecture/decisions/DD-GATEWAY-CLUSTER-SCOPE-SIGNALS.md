@@ -2,8 +2,8 @@
 
 **Status**: Proposed
 **Decision Date**: 2026-07-01
-**Version**: 1.0
-**Confidence**: 90%
+**Version**: 1.1
+**Confidence**: 92%
 **Deciders**: Architecture Team
 **Applies To**: Gateway (GW), SignalProcessing (SP), Kubernaut Agent (KA), Remediation Orchestrator (RO)
 
@@ -16,6 +16,7 @@
 
 **Related Design Decisions**:
 - ADR-053: Resource Scope Management Architecture
+- ADR-057: CRD Namespace Consolidation (controller namespace convention used as the opt-in anchor)
 
 **Related Issues**:
 - #1521: Cluster-Scoped Signal Support (planning/tracking issue)
@@ -29,6 +30,7 @@
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 1.1 | 2026-07-01 | Architecture Team | Review feedback: (1) made explicit that the opt-in scope-check is read-only and must never be assigned to `rr.Spec.TargetResource` or any downstream struct -- `ClusterScope`/`<alertname>` remains the uniform identity RO/SP/KA react on; (2) moved the opt-in anchor from `Namespace/kube-system` to Kubernaut's own controller namespace (ADR-057), since Kubernaut fully owns and controls that namespace (no vendor/cloud-provider labels, no unrelated system workloads), it requires zero new RBAC, and it sidesteps any conceptual overlap with a namespace that can carry genuine unrelated alerts. |
 | 1.0 | 2026-07-01 | Architecture Team | Initial design: `ClusterScope` pseudo-Kind detection/representation/fingerprint (from issue #1521), plus the cluster-wide opt-in mechanism (label + allowlist annotation on `kube-system`) closing a gap not covered in the original issue. |
 
 ---
@@ -108,15 +110,15 @@ This is a smaller change than "support across all services" initially sounded li
 
 `ClusterScope` pseudo-resources have no backing K8s object and frequently no namespace. `scope.Manager.IsManagedResource` has nothing to check a label on: `checkResourceLabel` skips unknown kinds (`kind` not in `kindToGroup`), and `namespace == ""` immediately short-circuits to the cluster-scoped-unmanaged-default branch (`pkg/shared/scope/manager.go:177-180`). Under Alternatives 1B/2B alone, there is no way for an operator to opt a cluster into `ClusterScope` signals at all -- every one would be rejected as unmanaged, defeating the purpose of admitting them in the first place.
 
-#### Alternative 3A: Reuse `kubernaut.ai/managed` on `Namespace/kube-system` -- REJECTED
+#### Alternative 3A: Reuse `kubernaut.ai/managed` on a well-known namespace (`kube-system` or the controller namespace) -- REJECTED
 
-**Approach**: When `Kind == "ClusterScope"`, substitute the identity check to `{Kind: "Namespace", Name: "kube-system"}` and reuse the existing `kubernaut.ai/managed` label/hierarchy unchanged.
+**Approach**: When `Kind == "ClusterScope"`, substitute the identity check to a fixed namespace object and reuse the existing `kubernaut.ai/managed` label/hierarchy unchanged.
 
-**Pros**: Zero new label key, zero new code path -- `Manager.IsManagedResource` already handles `Namespace` as a first-class kind. `kube-system` is a guaranteed-to-exist, undeletable, cluster-scoped singleton in every conformant Kubernetes cluster.
+**Pros**: Zero new label key, zero new code path -- `Manager.IsManagedResource` already handles `Namespace` as a first-class kind.
 
-**Cons**: `kube-system` is a **real** namespace running real system workloads (CoreDNS, kube-proxy, etc.). ADR-053's 2-level hierarchy treats a namespace label as inheritance for every unlabeled resource in that namespace. Labeling `kube-system` as `kubernaut.ai/managed=true` would silently make every unlabeled system pod in it eligible for automated remediation -- a scope expansion the operator almost certainly did not intend when opting into `Watchdog`-style cluster alerts.
+**Cons**: Regardless of which namespace is chosen, it is a **real** namespace running real workloads (system pods in `kube-system`; Kubernaut's own controllers in the controller namespace). ADR-053's 2-level hierarchy treats a namespace label as inheritance for every unlabeled resource in that namespace. Setting `kubernaut.ai/managed=true` on it would silently make every unlabeled workload in it eligible for automated remediation -- a scope expansion the operator almost certainly did not intend when opting into `Watchdog`-style cluster alerts.
 
-**Confidence**: 10% (rejected -- unacceptable blast radius)
+**Confidence**: 10% (rejected -- unacceptable blast radius, independent of anchor choice)
 
 #### Alternative 3B: Dedicated kubernaut-owned cluster-scoped CRD singleton -- DEFERRED
 
@@ -145,7 +147,7 @@ This is a smaller change than "support across all services" initially sounded li
 | Master switch | Label | `kubernaut.ai/cluster-scope-signals=true` | Necessary but not sufficient |
 | Allowlist | Annotation | `kubernaut.ai/cluster-scope-alerts` | **Mandatory** once the switch is `true`. Comma-separated `alertname` values, or the literal wildcard `"*"` |
 
-Both live on `Namespace/kube-system`, read via a new, narrow function (`Manager.IsClusterScopeSignalAllowed(ctx, alertname)`) that is **not** part of the `IsManagedResource` 2-level hierarchy and has zero effect on namespace-inheritance for real workloads in `kube-system`.
+Both live on a fixed, well-known `Namespace` object (see Anchor Choice below), read via a new, narrow, **read-only** function (`Manager.IsClusterScopeSignalAllowed(ctx, alertname)`) that is **not** part of the `IsManagedResource` 2-level hierarchy and has zero effect on namespace-inheritance for real workloads in that namespace.
 
 **Precedence** (deny-by-default at every step):
 1. Switch label absent or `!= "true"` -> reject (unchanged 400 rejection path, same UX as today)
@@ -153,43 +155,71 @@ Both live on `Namespace/kube-system`, read via a new, narrow function (`Manager.
 3. Switch `true`, annotation `== "*"` -> admit any `ClusterScope` `alertname` (explicit, auditable opt-in to everything -- the operator consciously typed the wildcard; it is never a default)
 4. Switch `true`, annotation `== "Watchdog,ClusterNotUpgradeable"` (etc.) -> admit only listed `alertname` values; anything else rejected even with the switch on
 
-```bash
-# Enable only Watchdog (safe heartbeat, never resolves a real target)
-kubectl label namespace kube-system kubernaut.ai/cluster-scope-signals=true
-kubectl annotate namespace kube-system kubernaut.ai/cluster-scope-alerts="Watchdog"
-
-# Opt into everything explicitly
-kubectl annotate namespace kube-system kubernaut.ai/cluster-scope-alerts="*" --overwrite
-```
-
 **Pros**:
 - Deny-by-default at every layer -- no accidental blanket admission
 - Fine-grained control over exactly which alert names are trusted to potentially reach real remediation, vs. notification-only heartbeats
 - Avoids the Kubernetes label-value constraint -- label values must be <=63 characters and may only contain alphanumerics, `-`, `_`, `.` (no commas), per the [official Kubernetes labels documentation](https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set) -- by putting the variable-length list in an annotation. Annotation values have no character-set restriction and a combined 256 KiB budget per object, per the [official Kubernetes annotations documentation](https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/) -- effectively unlimited headroom for a list of alert names.
-- Loses no functionality versus a label-only design: the lookup is always a direct `client.Get(Namespace{Name: "kube-system"})`, never a label-selector `List()`/`Watch()`, so there is no need for the allowlist to be selector-queryable.
+- Loses no functionality versus a label-only design: the lookup is always a direct `client.Get()` on a single, fixed `Namespace`, never a label-selector `List()`/`Watch()`, so there is no need for the allowlist to be selector-queryable.
 - `kubernaut.ai/cluster-scope-signals` naming stays scoped to this feature, leaving `kubernaut.ai/cluster-managed` free for a future broader wildcard-remediation mode under a different name.
-- No new CRD, no new controller, no new install-time object. Zero new RBAC: both Gateway's `ClusterRole` (`deploy/gateway/01-rbac.yaml:35-43`) and the shared-manager `ClusterRole` (`config/rbac/role.yaml:6-17`, generated from `internal/controller/signalprocessing/signalprocessing_controller.go:109`) already grant cluster-wide `get;list;watch` on `namespaces`.
+- No new CRD, no new controller, no new install-time object.
 
 **Cons**:
 - Two fields to document/reason about instead of one -- mitigated: switch + allowlist is a well-understood two-tier pattern, and omitting the annotation entirely is the correct fail-safe (nothing is ever admitted)
 - Annotation values aren't validated by the K8s API schema (any string is legal) -- Gateway must defensively parse the CSV/wildcard and reject malformed values with a clear error rather than silently failing open or closed
 
-**Confidence**: 90%
+**Confidence**: 92%
 
-**Grounding for `kube-system` as the cluster-scoped anchor** (validated against primary sources):
+**⚠️ Critical implementation boundary**: `IsClusterScopeSignalAllowed` is a **read-only permission check**. Its result (`bool, error`) is the *only* thing that crosses back into the admission path. The namespace identity used internally to perform the lookup (`kube-system` or the controller namespace, per the Anchor Choice below) must **never** be assigned to `rr.Spec.TargetResource`, `SignalContext`, the KA prompt, or any other downstream struct. `RemediationTarget.Kind` stays `"ClusterScope"` (Alternative 2B) everywhere in the pipeline -- RR, SP, KA, RO all react on the same uniform identity, never on the anchor namespace. This must be enforced with a code comment at the call site and covered by IT-GW-CLS-005 (assert `rr.Spec.TargetResource.Namespace` is unaffected by the scope check).
+
+#### Anchor Choice: Which Namespace Backs the Opt-In Check?
+
+##### Anchor Option i: `Namespace/kube-system` -- REJECTED
+
+**Pros**: Guaranteed to exist even in a cluster where Kubernaut was just installed; well-established community convention for "the cluster as a singleton object" (see grounding below).
+
+**Cons**: `kube-system` is not owned by Kubernaut -- it is shared with cloud-provider/vendor tooling and runs real system workloads (CoreDNS, kube-proxy, etc.). Anchoring an unrelated Kubernaut feature flag to a namespace outside Kubernaut's administrative control is a design smell flagged in review: it invites confusion about whether an alert is "about kube-system" versus "a cluster-wide condition happening to be checked via kube-system," even though the decoupled label/annotation keys (Alternative 3D) make this safe at the *code* level. Requires cluster-wide `namespaces` RBAC beyond what Gateway would otherwise need for this specific feature (though Gateway already has it for BR-SCOPE-001 namespace-label checks).
+
+**Confidence**: 30% (rejected in favor of a self-owned anchor)
+
+##### Anchor Option ii: Kubernaut's own controller namespace (ADR-057) -- CHOSEN
+
+**Approach**: Anchor to `g.controllerNamespace` (`pkg/gateway/server.go:145`), the namespace where Gateway/RO are deployed and where all Kubernaut CRDs are created per ADR-057 (typically `kubernaut-system`). Discovered dynamically at startup from `/var/run/secrets/kubernetes.io/serviceaccount/namespace` -- never hardcoded as a literal string.
+
+**Pros**:
+- Fully Kubernaut-owned -- no vendor/cloud-provider labels, no unrelated system workloads sharing the object
+- Self-referential guarantee: if Gateway/RO are running at all, their own controller namespace obviously exists -- no external-convention argument needed
+- Zero new RBAC: Gateway's `ClusterRole` (`deploy/gateway/01-rbac.yaml:35-43`) and the shared-manager `ClusterRole` (`config/rbac/role.yaml:6-17`, generated from `internal/controller/signalprocessing/signalprocessing_controller.go:109`) already grant `get;list;watch` on `namespaces` cluster-wide; the controller namespace is additionally read/written constantly for CRD operations per ADR-057
+- Eliminates the "real alert about this namespace vs. cluster-wide condition" ambiguity raised in review -- the anchor is Kubernaut's own operational namespace, not a generic system namespace with independent meaning to operators
+- Reuses an existing, already-discovered value (`controllerNamespace`) instead of introducing a new hardcoded namespace literal
+
+**Cons**: Loses the "exists even before Kubernaut is installed" property from the community `kube-system` convention -- but that property solves a different problem (external tooling establishing cluster identity before knowing anything about the workload running on it). Here, the check only ever executes from inside Gateway/RO's own process, where the controller namespace is available by definition.
+
+**Confidence**: 92%
+
+```bash
+# Enable only Watchdog (safe heartbeat, never resolves a real target)
+# <controller-ns> is wherever ADR-057's controller namespace is configured, commonly kubernaut-system
+kubectl label namespace <controller-ns> kubernaut.ai/cluster-scope-signals=true
+kubectl annotate namespace <controller-ns> kubernaut.ai/cluster-scope-alerts="Watchdog"
+
+# Opt into everything explicitly
+kubectl annotate namespace <controller-ns> kubernaut.ai/cluster-scope-alerts="*" --overwrite
+```
+
+**Grounding for the general pattern** (a well-known, always-present `Namespace` object as a singleton anchor is a recognized, sound convention -- validated against primary sources, even though Kubernaut's specific implementation anchors to its own controller namespace rather than `kube-system`):
 
 1. **Kubernetes upstream** ([`kubernetes/kubernetes#77487`](https://github.com/kubernetes/kubernetes/issues/77487), 2019): API-machinery lead Daniel Smith (`@lavalamp`) -- *"Current best practice is to use the kube-system UID"* -- in direct response to "Is there a way to find a unique id for kubernetes cluster?"
 2. **OpenTelemetry semantic conventions** (ratified spec, [`k8s.cluster.uid`](https://opentelemetry.io/docs/specs/semconv/resource/k8s/)): *"A pseudo-ID for the cluster, set to the UID of the `kube-system` namespace... will exist for the lifetime of the cluster... will only change if the cluster is rebuilt."*
 3. **Production implementation** ([`open-telemetry/opentelemetry-collector-contrib#21974`](https://github.com/open-telemetry/opentelemetry-collector-contrib/issues/21974) -> merged PR #23668): the `k8sattributes` processor ships this convention in real deployments, sourced explicitly from #1 and #2.
-4. **Independent adopter confirmation** ([`PrefectHQ/prefect#9851`](https://github.com/PrefectHQ/prefect/issues/9851)): confirms the same rationale ("`kube-system` namespace always exists -- cannot be deleted -- and has a unique ID"), citing a public endorsement from Kubernetes networking SIG lead Tim Hockin (`@thockin`). Also documents an RBAC failure mode (`namespaces "kube-system" is forbidden`) independently verified **not** to apply to Kubernaut, since both `ClusterRole`s above already grant cluster-wide `namespaces` access.
+4. **Independent adopter confirmation** ([`PrefectHQ/prefect#9851`](https://github.com/PrefectHQ/prefect/issues/9851)): confirms the same rationale ("`kube-system` namespace always exists -- cannot be deleted -- and has a unique ID"), citing a public endorsement from Kubernetes networking SIG lead Tim Hockin (`@thockin`).
 
-None of these sources describe *labeling* `kube-system` for feature opt-in specifically -- that pattern (Alternative 3D) is Kubernaut's own design. What they establish is the narrower, load-bearing fact this decision depends on: `kube-system` is the community-recognized, upstream-endorsed proxy for "the cluster as a singleton object," which is the property that makes it a valid label/annotation anchor.
+These sources establish that anchoring a cluster-identity concept to a well-known, always-present `Namespace` object is sound engineering practice -- not that `kube-system` specifically must be the anchor. For Kubernaut, ADR-057's controller namespace satisfies the same load-bearing property (guaranteed-to-exist singleton) while additionally being self-owned, which none of the cited external tools had the luxury of assuming (they needed cluster identity *before* their own workload was necessarily running).
 
 ---
 
 ## Decision
 
-**Chosen: Alternative 1B (typed detection) + Alternative 2B (`ClusterScope` pseudo-Kind) + Alternative 3D (master switch label + mandatory allowlist annotation on `kube-system`).**
+**Chosen: Alternative 1B (typed detection) + Alternative 2B (`ClusterScope` pseudo-Kind) + Alternative 3D (master switch label + mandatory allowlist annotation) anchored to Kubernaut's own controller namespace (Anchor Option ii, ADR-057).**
 
 ### Scope Boundary: WFE Is Conditionally Reachable, Not Categorically Excluded
 
@@ -225,9 +255,13 @@ Construct pseudo-resource: Kind="ClusterScope",
     │
     ▼
 Scope check: IsClusterScopeSignalAllowed(ctx, alertname)  [Alternative 3D]
-    │  reads Namespace/kube-system:
+    │  read-only lookup on Namespace/<controller-namespace> (ADR-057):
     │    label  kubernaut.ai/cluster-scope-signals
     │    annot  kubernaut.ai/cluster-scope-alerts
+    │  Returns (bool, error) ONLY -- the anchor namespace identity
+    │  is never assigned to rr.Spec.TargetResource or any downstream
+    │  struct. ClusterScope/<alertname> remains the identity everywhere
+    │  below this point.
     │
     ├─ not allowed -> reject (400, same path as today's validateResourceInfo)
     │
@@ -272,8 +306,9 @@ RO WFE-creation gate: workflow-schema-aware guard      [defense-in-depth layer 2
 1. `Watchdog`/`ClusterNotUpgradeable`-style alerts gain a real, collision-free admission path instead of being silently dropped
 2. No new CRD fields, no new fingerprint formula -- reuses `CalculateClusterAwareFingerprint` and the existing `ResourceIdentifier` schema
 3. Cluster-wide opt-in is deny-by-default at every layer (Kind resolution, scope check, workflow-schema gate) -- no path silently expands remediation scope
-4. Zero new RBAC required for the opt-in check (existing `ClusterRole`s already grant cluster-wide `namespaces` access)
-5. `kubernaut.ai/managed` semantics for real workloads in `kube-system` remain completely unaffected
+4. Zero new RBAC required for the opt-in check (existing `ClusterRole`s already grant cluster-wide `namespaces` access, and the controller namespace is already read/written constantly per ADR-057)
+5. `kubernaut.ai/managed` semantics for real workloads in the controller namespace (or `kube-system`) remain completely unaffected
+6. `RemediationTarget.Kind` stays `"ClusterScope"` uniformly across RR/SP/KA/RO -- the opt-in anchor namespace is never exposed to the LLM or persisted as the signal's identity
 
 ### Negative Consequences
 
@@ -319,6 +354,8 @@ RO WFE-creation gate: workflow-schema-aware guard      [defense-in-depth layer 2
 - #524: Conditional `TARGET_RESOURCE_*` parameter injection based on workflow-schema declaration
 - #1110 / BR-SP-112: Cluster-scoped label exposure for known Kinds
 - `pkg/shared/scope/manager.go`: existing 2-level scope hierarchy (ADR-053)
+- `pkg/gateway/server.go:145`: `controllerNamespace` field (ADR-057), the opt-in anchor
+- ADR-057: CRD Namespace Consolidation -- controller namespace discovery and ownership
 - `deploy/gateway/01-rbac.yaml:35-43`, `config/rbac/role.yaml:6-17`: existing cluster-wide `namespaces` RBAC grants
 - [Kubernetes Labels and Selectors -- syntax and character set](https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set)
 - [Kubernetes Annotations -- syntax and character set](https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/)
@@ -329,5 +366,5 @@ RO WFE-creation gate: workflow-schema-aware guard      [defense-in-depth layer 2
 
 ---
 
-**Document Version**: 1.0
+**Document Version**: 1.1
 **Last Updated**: 2026-07-01
