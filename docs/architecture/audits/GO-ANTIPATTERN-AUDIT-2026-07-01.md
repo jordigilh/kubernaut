@@ -426,6 +426,56 @@ All three splits are pure structural moves within the same package (`tools`/`mai
 
 ---
 
+## 7j. Phase 6 Wave 2: RemediationOrchestrator/WorkflowExecution/SignalProcessing Complexity + File-Size Burndown — ✅ RESOLVED
+
+Preflight + a time-boxed spike (re-scanning `gocyclo`/`gocognit` against current `main`, since the Phase 3a/7d file split had already changed line numbers referenced by the original audit) reached >90% confidence before starting; the user explicitly approved proceeding, with an explicit directive to close the pre-existing unit-test coverage gap on WorkflowExecution's `reconcilePending` orchestration logic (cooldown enforcement, audit idempotency, collision handling) with characterization tests tied to FedRAMP/SOC2 control objectives (SC-5 DoS protection via cooldown, AU-2/AU-3 audit content, CC8.1 audit completeness via idempotency) before decomposing it. Scope: the highest-complexity `Reconcile`-family functions and the largest files remaining in the three P0 CRD controllers.
+
+### 7j-1. WorkflowExecution: `reconcilePending` decomposition (Wave 2c)
+
+New Ginkgo characterization specs were added first (targeting the orchestration branches — cooldown block, audit-idempotency skip, collision handling — that had no direct unit coverage despite the black-box `Reconcile()` suites in `pkg/workflowexecution/...`), confirmed green against the pre-refactor implementation, then kept green through the decomposition below.
+
+| Function | Cyclomatic before → after | Technique |
+|---|---|---|
+| `reconcilePending` | 49 → **7** | Extracted into 7 named steps, each independently testable: `refetchFreshPendingWFE` (5), `validateAndAnnouncePendingSpec` (3), `resolvePendingSchemaAndEngine` (13), `checkPendingCooldownOrBlock` (6), `recordPendingSelectionAudit` (13), `createPendingExecutionResource` (10), `finalizePendingToRunning` (5) |
+
+A behavior-preservation bug was caught during extraction: `checkPendingCooldownOrBlock`'s original signature (`(ctrl.Result, bool)`) silently dropped a `TransitionTo`/`Status().Update()` error instead of propagating it. Fixed by adding the missing `error` return before merging. A `golangci-lint` variable-shadowing warning on the call site (`result`/`err` re-declared per branch) was fixed by renaming each branch's locals (`schemaResult`, `cooldownResult`, `auditResult`, `createResourceResult`).
+
+**File split**: `workflowexecution_controller.go` (1,979 lines post-decomposition) → `workflowexecution_controller.go` (526, core dispatcher + `NewReconciler` + `ValidateSpec`), `workflowexecution_pending.go` (477, `reconcilePending` + helpers), `workflowexecution_status_marking.go` (487, `MarkCompleted`/`MarkFailed`/status helpers), `workflowexecution_lifecycle.go` (379, `reconcileRunning`/`ReconcileTerminal`/`ReconcileDelete`), `workflowexecution_collision.go` (193, `HandleAlreadyExists`/`FindWFEForOwnedResource`), `workflowexecution_catalog.go` (111, catalog/engine resolution).
+
+### 7j-2. SignalProcessing: `Reconcile`/`reconcileEnriching`/`reconcileClassifying` decomposition (Wave 2b)
+
+| Function | Cyclomatic before → after | Technique |
+|---|---|---|
+| `Reconcile` | 23 → **15** | Extracted `initializeNewSignalProcessing` (3) and `dispatchPhase` (5); further extracted the duplicate-generation guard into `isDuplicateGenerationReconcile` (4) to bring the dispatcher itself under the threshold after the first pass left it at 18 |
+| `reconcileEnriching` | 38 → **3** | Extracted `checkEnrichingIdempotencyGuard`, `warnIfUnsupportedTargetType`, `performK8sEnrichment`, `applyEnrichmentCustomLabels`, `buildEnrichmentMessage`, `finalizeEnrichment` |
+| `reconcileClassifying` | 36 → **8** | Extracted `checkClassifyingIdempotencyGuard`, `refreshClassifyingContext`, `failClassifyingPhase`, `evaluateSeverityOrFail`, `resolveSignalMode`, `buildClassificationMessage`, `finalizeClassification` |
+
+**File split**: `signalprocessing_controller.go` (1,336 lines post-decomposition) → `signalprocessing_controller.go` (427, core dispatcher + `Reconcile`/`reconcilePending`/backoff helpers), `signalprocessing_enriching.go` (319), `signalprocessing_classifying.go` (373), `signalprocessing_categorizing.go` (226, unchanged `reconcileCategorizing`), `signalprocessing_audit.go` (68, audit-emission helpers).
+
+### 7j-3. RemediationOrchestrator: constructor/dispatcher decomposition + 2 file splits (Wave 2a)
+
+`NewReconciler`'s inflated cyclomatic score (inherited from inline `AnalyzingCallbacks`/`AwaitingApprovalCallbacks` closures) and `Reconcile`'s pending-phase bootstrap and terminal-phase housekeeping were extracted into named methods:
+
+| Function | Cyclomatic before → after | Technique |
+|---|---|---|
+| `NewReconciler` | closures inflated the constructor's score | Extracted `applyTimeoutDefaults`, `newDefaultRoutingEngine`, `recordEvent`, and the RAR/lock/hash callback closures into standalone `(r *Reconciler)` methods |
+| `Reconcile` | — → **14** | Extracted `shouldSkipPendingReconcile` (7), `initializeNewRemediationRequest` (7), `handleTerminalPhaseHousekeeping` (6) |
+
+**File splits** (both discovered post-decomposition, once `reconciler.go` and `terminal_transitions.go` re-crossed the 700-line threshold after the Phase 3a/7d split had already reduced them once):
+
+- `reconciler.go` (1,148 lines) → `reconciler.go` (381, struct/`NewReconciler`/timeout+routing-engine construction), `reconciler_callbacks.go` (254, event/lock/RAR/hash callback helpers + config accessors), `reconcile_loop.go` (556, `Reconcile`/pending-bootstrap/terminal-housekeeping/`SetupWithManager`/field indexes).
+- `terminal_transitions.go` (1,032 lines) → `terminal_transitions.go` (565, inherited-completion/failure transitions, `transitionPhase`, `transitionToVerifying`/`transitionToFailed`), `blocked_transitions.go` (235, `handleBlocked` + escalation/notification/metrics helpers), `timeout_handling.go` (312, `handleGlobalTimeout` + `createEffectivenessAssessmentIfNeeded`).
+
+An orphaned doc comment block (a stale `populateTimeoutDefaults` docstring left behind from an earlier refactor that had already moved the function to `timeout_management.go`, with no attached code) was deleted as part of the `reconciler.go` split — a zero-behavior-change cleanup, confirmed by `grep` showing the real implementation already lived elsewhere.
+
+**Residual RO offenders (not in Wave 2 scope, carried to a future wave)**: `ApplyTransition` (19), `createEffectivenessAssessmentIfNeeded` (16), `transitionPhase` (16), `RARReconciler.Reconcile` (15) remain mildly over the cyclomatic-15 convention threshold; none were part of the `Reconcile`-family decomposition targeted this wave. Similarly in WorkflowExecution: `MarkFailed` (22) and `mapTektonReasonToFailureReason` (18) remain open. These are tracked for Wave 3+.
+
+### 7j-4. Verification (Wave 2 exit gate)
+
+`go build ./...` and `go vet ./...` (both repo-wide) clean. `golangci-lint run ./...` (repo-wide): 0 new issues — the 7 pre-existing `docs/spikes/` findings (4 `errcheck`, 1 `gosec`, 2 `unused`) predate this wave and are outside its scope. `gofmt -l`/`go vet` clean on every touched file. Unit tests: `internal/controller/{remediationorchestrator,signalprocessing,workflowexecution}/...` and their `pkg/...` counterparts all green, plus a full `make test` repo-wide run (one unrelated, timing-sensitive flake in `pkg/apifrontend/launcher` — `UT-AF-1446-002` — reproduced as green in isolation and on a second full-suite run, attributed to host CPU contention flagged mid-session, not a regression from this wave; `test-unit-spike-mcp-stream` fails on a pre-existing empty-test-suite gap in `cmd/spike-mcp-stream`, last touched May 29 2026, unrelated to this wave). Integration tests: `make test-integration-signalprocessing` (84+3 specs, 0 failed) and `make test-integration-workflowexecution` (104 specs, 0 failed) both pass, confirming the file splits and behavior-preservation fixes (cooldown error propagation, variable-shadowing renames) did not regress wiring. All touched files in all three services are now under the 700-line convention threshold. Wave 2 is now complete; Waves 3-6 (DataStorage, KubernautAgent remainder, Notification/AIAnalysis/EffectivenessMonitor/Gateway batch, final sweep) remain open per the Phase 6+ plan.
+
+---
+
 ## 8. Variable Shadowing — 120 found, mostly low-risk
 
 114/120 are `err` shadowing (`if err := f(); err != nil` repeated in the same scope — the single most common and least dangerous shadow pattern in Go, which is exactly why `govet -shadow` isn't part of default `go vet`). 1 `ctx` shadow, 1 `result`, 1 `username`, 1 `ok`, 1 `isString`. **No goroutine-closure-captures-loop-variable pattern was found** (the genuinely dangerous shadow bug) — none of the 120 hits are in a `for ... go func()` or `for ... defer func()` body.
@@ -464,7 +514,8 @@ Per AGENTS.md, REFACTOR-phase cleanup must not introduce new types/components, m
 | 5 | Interface segregation for `AutonomousSessionManager` (13 methods) and `AWXClient` (11 methods) | Medium (ripples to all implementers/mocks) | 2-3 days | ✅ Done (see §7g) |
 | 6 (Wave 0) | `cmd/*/main.go` decomposition for the 6 remaining services + ISP split for `Engine`/`ClusterRegistry`/`SessionManager` (see §7h) | Low | 3-4 days | ✅ Done (see §7h) |
 | 6 (Wave 1) | APIFrontend: 5 highest-complexity functions + 3 largest files (see §7i) | Medium | 3-4 days | ✅ Done (see §7i) |
-| 6 (Wave 2-6) | RemediationOrchestrator/WorkflowExecution/SignalProcessing, DataStorage, KubernautAgent remainder, Notification/AIAnalysis/EffectivenessMonitor/Gateway batch, final sweep — remaining complexity (~140 functions) + oversized files (~31) burndown | Medium-High (per-wave) | ~18-24 days remaining | 🔲 Not started — tracked in the "Phase 6+ Complexity and File-Size Burndown" plan, each wave requires its own preflight + confidence gate |
+| 6 (Wave 2) | RemediationOrchestrator/WorkflowExecution/SignalProcessing: `Reconcile`-family decomposition (`reconcilePending`, `reconcileEnriching`, `reconcileClassifying`, `Reconcile` ×2, `NewReconciler`) + 4 oversized files split into 13 (see §7j) | Medium-High | 3-4 days | ✅ Done (see §7j) |
+| 6 (Wave 3-6) | DataStorage, KubernautAgent remainder, Notification/AIAnalysis/EffectivenessMonitor/Gateway batch, final sweep — remaining complexity (~130 functions, including RO/WE residuals noted in §7j-3) + oversized files (~27) burndown | Medium-High (per-wave) | ~15-20 days remaining | 🔲 Not started — tracked in the "Phase 6+ Complexity and File-Size Burndown" plan, each wave requires its own preflight + confidence gate |
 
 **Not recommended for action**: DTO/data-model "god structs" (category 4a), `context.Context` struct fields (both documented), `any`/`interface{}` usage (spot-checked — the ~849 raw hits are overwhelmingly idiomatic JSON-decoding, `sync.Map`/`singleflight` third-party API signatures, and generic-JSON-passthrough code; no material violations found beyond one worth a look: `BuildTriagePrompt(input TriageInput, rules interface{})` in `pkg/apifrontend/severity/types.go:113`).
 
