@@ -3,6 +3,7 @@ package infrastructure
 import (
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -398,4 +399,34 @@ func waitForContainerHealth(check *HealthCheckConfig, writer io.Writer) error {
 	}
 
 	return fmt.Errorf("timeout waiting for %s after %v", check.URL, check.Timeout)
+}
+
+// WaitForTCPPort polls a TCP address until a connection succeeds or the
+// timeout elapses. Some containers (e.g. EAIGW's aigw process) expose an
+// admin/health HTTP endpoint that becomes ready before the actual data-plane
+// listener finishes binding -- an HTTP-based HealthCheckConfig alone is
+// insufficient in that case, since it can report "healthy" while the real
+// port a caller needs (e.g. the MCP data-plane port) still refuses
+// connections. Callers with such a two-stage startup should poll the
+// data-plane port with this helper after StartGenericContainer returns.
+func WaitForTCPPort(address string, timeout time.Duration, writer io.Writer) error {
+	deadline := time.Now().Add(timeout)
+	dialer := &net.Dialer{Timeout: 2 * time.Second}
+
+	for time.Now().Before(deadline) {
+		conn, err := dialer.Dial("tcp", address)
+		if err == nil {
+			_ = conn.Close()
+			return nil
+		}
+
+		elapsed := timeout - time.Until(deadline)
+		if elapsed.Seconds() > 0 && int(elapsed.Seconds())%5 == 0 {
+			_, _ = fmt.Fprintf(writer, "   Still waiting for TCP port %s... (%.0fs elapsed)\n", address, elapsed.Seconds())
+		}
+
+		time.Sleep(1 * time.Second)
+	}
+
+	return fmt.Errorf("timeout waiting for TCP port %s after %v", address, timeout)
 }

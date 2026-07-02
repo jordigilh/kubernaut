@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"runtime"
 	"strings"
 	"time"
@@ -131,7 +132,7 @@ func StartEAIGWContainer(servers []EAIGWMCPServerEntry, writer io.Writer) (*Cont
 		Cmd: []string{"run", "--mcp-config", "/etc/aigw/mcp-servers.json", "--run-id=0"},
 	}
 
-	var healthPort int
+	var healthPort, mcpPort int
 	if useHostNetwork {
 		cfg.Network = "host"
 		// No port mapping under --network=host: the container's fixed
@@ -141,17 +142,43 @@ func StartEAIGWContainer(servers []EAIGWMCPServerEntry, writer io.Writer) (*Cont
 		// the right value back to callers.
 		cfg.Ports = map[int]int{EAIGWMCPPort: EAIGWMCPPort, EAIGWAdminPort: EAIGWAdminPort}
 		healthPort = EAIGWAdminPort
+		mcpPort = EAIGWMCPPort
 	} else {
 		cfg.Ports = map[int]int{EAIGWMCPPort: 19750, EAIGWAdminPort: 11064}
 		cfg.ExtraHosts = []string{"host.containers.internal:host-gateway"}
 		healthPort = 11064
+		mcpPort = 19750
 	}
 	cfg.HealthCheck = &HealthCheckConfig{
 		URL:     fmt.Sprintf("http://127.0.0.1:%d/health", healthPort),
 		Timeout: 45 * time.Second,
 	}
 
-	return StartGenericContainer(cfg, writer)
+	instance, err := StartGenericContainer(cfg, writer)
+	if err != nil {
+		return nil, err
+	}
+
+	// aigw's admin HTTP server (health endpoint) comes up before its Envoy
+	// data-plane listener finishes binding -- the HealthCheck above only
+	// proves the former. Callers dial the MCP port (mcpPort) immediately
+	// after this returns, so block here until it actually accepts
+	// connections too, or "initialize" intermittently fails with
+	// "connection refused" (observed in CI where the two-stage startup gap
+	// is a couple of seconds).
+	mcpAddr := fmt.Sprintf("127.0.0.1:%d", mcpPort)
+	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for MCP data-plane port: %s\n", mcpAddr)
+	if err := WaitForTCPPort(mcpAddr, 30*time.Second, writer); err != nil {
+		logsCmd := exec.Command("podman", "logs", cfg.Name)
+		logsCmd.Stdout = writer
+		logsCmd.Stderr = writer
+		_ = logsCmd.Run()
+		_ = StopGenericContainer(instance, writer)
+		return nil, fmt.Errorf("MCP data-plane port never became ready: %w", err)
+	}
+	_, _ = fmt.Fprintf(writer, "   ✅ MCP data-plane port ready\n")
+
+	return instance, nil
 }
 
 // StopEAIGWContainer stops and removes the EAIGW IT container.
