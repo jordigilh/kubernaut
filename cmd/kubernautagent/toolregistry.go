@@ -1,0 +1,342 @@
+/*
+Copyright 2026 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package main
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/go-logr/logr"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	metricsclient "k8s.io/metrics/pkg/client/clientset/versioned"
+
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	auth "github.com/jordigilh/kubernaut/pkg/shared/auth"
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
+
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
+	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/tools/custom"
+	dsschema "github.com/jordigilh/kubernaut/pkg/datastorage/schema"
+	fleetclient "github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
+	fleetregistry "github.com/jordigilh/kubernaut/pkg/fleet/registry"
+	amtools "github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/alertmanager"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/investigation"
+	k8stools "github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/k8s"
+	logtools "github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/logs"
+	promtools "github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/prometheus"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
+)
+
+// buildToolRegistry creates and populates the tool registry with all available tool sets.
+func buildToolRegistry(cfg *kaconfig.Config, logger logr.Logger, infra *k8sInfra, ds *dsClients, auditStore audit.AuditStore) *registry.Registry {
+	reg := registry.New()
+
+	if infra != nil {
+		registerK8sTools(reg, infra, logger, auditStore)
+	}
+
+	if cfg.Integrations.Tools.Prometheus.URL != "" {
+		promCfg := promtools.ClientConfig{
+			URL:       cfg.Integrations.Tools.Prometheus.URL,
+			Timeout:   cfg.Integrations.Tools.Prometheus.Timeout,
+			SizeLimit: cfg.Integrations.Tools.Prometheus.SizeLimit,
+		}
+		if cfg.Integrations.Tools.Prometheus.TLSCaFile != "" {
+			promBase, promTLSErr := sharedtls.NewTLSTransport(cfg.Integrations.Tools.Prometheus.TLSCaFile)
+			if promTLSErr != nil {
+				logger.Error(promTLSErr, "failed to create Prometheus TLS transport", "ca_file", cfg.Integrations.Tools.Prometheus.TLSCaFile)
+			} else {
+				promCfg.Transport = auth.NewAuthTransport(auth.NewDefaultTokenSource(), promBase)
+				logger.Info("Prometheus client configured with TLS + SA bearer auth", "ca_file", cfg.Integrations.Tools.Prometheus.TLSCaFile)
+			}
+		}
+		promClient, promErr := promtools.NewClient(promCfg)
+		if promErr != nil {
+			logger.Error(promErr, "failed to create Prometheus client")
+		} else {
+			for _, t := range promtools.NewAllTools(promClient) {
+				reg.Register(t)
+			}
+			logger.Info("registered Prometheus tools", "count", len(promtools.AllToolNames))
+		}
+	}
+
+	if cfg.Integrations.Tools.Alertmanager.URL != "" {
+		amCfg := amtools.ClientConfig{
+			URL:       cfg.Integrations.Tools.Alertmanager.URL,
+			Timeout:   cfg.Integrations.Tools.Alertmanager.Timeout,
+			SizeLimit: cfg.Integrations.Tools.Alertmanager.SizeLimit,
+		}
+		if cfg.Integrations.Tools.Alertmanager.TLSCaFile != "" {
+			amBase, amTLSErr := sharedtls.NewTLSTransport(cfg.Integrations.Tools.Alertmanager.TLSCaFile)
+			if amTLSErr != nil {
+				logger.Error(amTLSErr, "failed to create Alertmanager TLS transport", "ca_file", cfg.Integrations.Tools.Alertmanager.TLSCaFile)
+			} else {
+				amCfg.Transport = auth.NewAuthTransport(auth.NewDefaultTokenSource(), amBase)
+				logger.Info("Alertmanager client configured with TLS + SA bearer auth", "ca_file", cfg.Integrations.Tools.Alertmanager.TLSCaFile)
+			}
+		}
+		amClient, amErr := amtools.NewClient(amCfg)
+		if amErr != nil {
+			logger.Error(amErr, "failed to create Alertmanager client")
+		} else {
+			for _, t := range amtools.NewAllTools(amClient) {
+				reg.Register(t)
+			}
+			logger.Info("registered Alertmanager tools", "count", len(amtools.AllToolNames))
+		}
+	}
+
+	if ds != nil {
+		custom.RegisterAll(reg, ds.ogenClient, ds.dsAdapter, ds.k8sAdapter, logger)
+		logger.Info("registered custom tools", "count", len(custom.AllToolNames))
+	}
+
+	reg.Register(investigation.NewTodoWriteTool())
+	logger.Info("registered TodoWrite tool")
+
+	logger.Info("tool registry ready", "total_tools", len(reg.All()))
+	return reg
+}
+
+// resolveAlignmentCheckConfig returns the effective AlignmentCheckConfig.
+// When fleet mode is active and defines its own alignment check, the fleet
+// override takes precedence over the global ai.alignmentCheck. This allows
+// operators to enforce cross-model shadow evaluation specifically for
+// multi-cluster investigations where prompt injection risk is higher.
+func resolveAlignmentCheckConfig(cfg *kaconfig.Config) kaconfig.AlignmentCheckConfig {
+	fleetCfg := cfg.Integrations.Fleet
+	if fleetCfg.GatewayType != "" && fleetCfg.Endpoint != "" && fleetCfg.AlignmentCheck != nil {
+		return *fleetCfg.AlignmentCheck
+	}
+	return cfg.AI.AlignmentCheck
+}
+
+// registerFleetTools connects to the MCP Gateway, creates a GatewayDiscoverer
+// for the configured gateway type, pre-scopes tools for the target cluster,
+// and registers list_clusters + list_tools_for_cluster for LLM-driven discovery.
+// Returns the fleet client (must be closed on shutdown) and the registered tool names,
+// or nil if fleet is disabled.
+//
+// Authority: ADR-068 decision #11
+func registerFleetTools(ctx context.Context, cfg *kaconfig.Config, reg *registry.Registry, logger logr.Logger) (*fleetclient.ResilientClient, []string) {
+	gatewayType := cfg.Integrations.Fleet.GatewayType
+	endpoint := cfg.Integrations.Fleet.Endpoint
+	if gatewayType == "" || endpoint == "" {
+		return nil, nil
+	}
+
+	fleetLog := logger.WithName("fleet")
+	fleetLog.Info("connecting to MCP Gateway for fleet tool discovery",
+		"endpoint", endpoint, "gatewayType", gatewayType)
+
+	var opts []fleetclient.Option
+	if cfg.Integrations.Fleet.OAuth2.Enabled {
+		basePath := "/etc/kubernautagent/fleet-oauth2"
+		if cfg.Integrations.Fleet.OAuth2.CredentialsSecretRef != "" {
+			basePath = "/etc/kubernautagent/" + cfg.Integrations.Fleet.OAuth2.CredentialsSecretRef
+		}
+		reloadCfg := fleetclient.ReloadableOAuth2Config{
+			TokenURL:         cfg.Integrations.Fleet.OAuth2.TokenURL,
+			ClientIDPath:     basePath + "/client-id",
+			ClientSecretPath: basePath + "/client-secret",
+			Scopes:           fleetclient.DefaultFleetScopes(cfg.Integrations.Fleet.OAuth2.Scopes),
+			TokenTimeout:     10 * time.Second,
+		}
+		opts = append(opts, fleetclient.WithReloadableOAuth2Transport(reloadCfg, fleetLog))
+		fleetLog.Info("fleet OAuth2 authentication configured (hot-reloadable)",
+			"tokenURL", cfg.Integrations.Fleet.OAuth2.TokenURL,
+			"secretPath", basePath)
+	}
+
+	resilienceCfg := fleetclient.DefaultResilienceConfig()
+	resilientClient, err := fleetclient.NewResilient(ctx, endpoint, resilienceCfg, fleetLog, opts...)
+	if err != nil {
+		fleetLog.Error(err, "failed to connect to MCP Gateway — fleet tools unavailable")
+		return nil, nil
+	}
+
+	session := resilientClient.Session()
+
+	discoverer, err := fleetclient.NewDiscoverer(fleetregistry.MCPGatewayType(gatewayType), session)
+	if err != nil {
+		fleetLog.Error(err, "failed to create GatewayDiscoverer", "gatewayType", gatewayType)
+		_ = resilientClient.Close()
+		return nil, nil
+	}
+
+	listClustersTool := fleetclient.NewListClustersTool(discoverer)
+	listToolsTool := fleetclient.NewListToolsForClusterTool(discoverer, reg, session)
+
+	reg.Register(listClustersTool)
+	reg.Register(listToolsTool)
+
+	toolNames := make([]string, 0, 2)
+	toolNames = append(toolNames, listClustersTool.Name(), listToolsTool.Name())
+
+	fleetLog.Info("registered fleet discovery tools",
+		"tools", toolNames, "endpoint", endpoint, "gatewayType", gatewayType)
+	return resilientClient, toolNames
+}
+
+func registerK8sTools(reg *registry.Registry, infra *k8sInfra, logger logr.Logger, auditStore audit.AuditStore) {
+	kindIndex, err := k8stools.BuildKindIndex(infra.clientset.Discovery())
+	if err != nil {
+		logger.Info("failed to build kind index, using empty index", "error", err)
+		kindIndex = make(map[string]schema.GroupKind)
+	}
+	resolver := k8stools.NewDynamicResolver(infra.dynClient, infra.mapper, kindIndex, logger.WithName("k8s-resolver"),
+		k8stools.WithSecretAccessObserver(newSecretAccessObserver(auditStore, logger.WithName("secret-access-audit"))))
+
+	for _, t := range k8stools.NewAllTools(infra.clientset, resolver) {
+		reg.Register(t)
+	}
+	logger.Info("registered K8s tools", "count", len(k8stools.AllToolNames))
+
+	reg.Register(logtools.NewFetchPodLogsTool(infra.clientset))
+	logger.Info("registered fetch_pod_logs tool")
+
+	mc, mcErr := metricsclient.NewForConfig(infra.kubeConfig)
+	if mcErr != nil {
+		logger.Error(mcErr, "failed to create metrics client, metrics tools will not be registered")
+	} else {
+		for _, t := range k8stools.NewMetricsTools(k8stools.NewMetricsClient(mc)) {
+			reg.Register(t)
+		}
+		logger.Info("registered metrics tools", "count", len(k8stools.MetricsToolNames))
+	}
+
+	npc := k8stools.NewNodeProxyClient(infra.clientset)
+	for _, t := range k8stools.NewNodeProxyTools(npc, 30000) {
+		reg.Register(t)
+	}
+	logger.Info("registered node proxy tools", "count", len(k8stools.NodeProxyToolNames))
+}
+
+// newSecretAccessObserver builds the k8stools.SecretAccessObserver wired into
+// the K8s resource resolver (GAP-13, Issue #1505). It is the detective
+// control compensating for KubernautAgent's intentionally broad read RBAC on
+// Secrets (see docs/services/stateless/kubernaut-agent/security-configuration.md):
+// every Secret Get/List — success or failure — becomes an independently
+// queryable aiagent.secret.accessed audit event, correlated to the
+// investigation via the correlationID set on ctx by
+// session.Manager.launchInvestigation.
+func newSecretAccessObserver(auditStore audit.AuditStore, logger logr.Logger) func(ctx context.Context, verb, name, namespace string, err error) {
+	return func(ctx context.Context, verb, name, namespace string, accessErr error) {
+		if auditStore == nil {
+			return
+		}
+		correlationID, _ := audit.CorrelationIDFromContext(ctx)
+
+		event := audit.NewEvent(audit.EventTypeSecretAccessed, correlationID)
+		event.EventAction = audit.ActionSecretAccessed
+		event.EventOutcome = audit.OutcomeSuccess
+		event.Data["verb"] = verb
+		if namespace != "" {
+			event.Data["namespace"] = namespace
+		}
+		if name != "" {
+			event.Data["secret_name"] = name
+		}
+		if accessErr != nil {
+			event.EventOutcome = audit.OutcomeFailure
+			event.Data["outcome_detail"] = accessErr.Error()
+		}
+		audit.StoreBestEffort(ctx, auditStore, event, logger)
+	}
+}
+
+// dsCatalogFetcher implements investigator.CatalogFetcher by querying
+// DataStorage on every call. This removes the boot-time blocking fetch
+// that caused #665 (CrashLoopBackOff when the catalog was not yet seeded).
+//
+// Per DD-HAPI-002 (v1.1+), KA is the sole workflow validator. The catalog
+// is fetched per-request so KA always validates against the current catalog
+// without needing a restart when workflows are added/removed.
+type dsCatalogFetcher struct {
+	ds     *dsClients
+	logger logr.Logger
+}
+
+func newDSCatalogFetcher(ds *dsClients, logger logr.Logger) *dsCatalogFetcher {
+	return &dsCatalogFetcher{ds: ds, logger: logger}
+}
+
+func (f *dsCatalogFetcher) FetchValidator(ctx context.Context) (*parser.Validator, error) {
+	fetchCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	resp, err := f.ds.ogenClient.ListWorkflows(fetchCtx, ogenclient.ListWorkflowsParams{})
+	if err != nil {
+		return nil, fmt.Errorf("ListWorkflows call failed: %w", err)
+	}
+
+	wlr, ok := resp.(*ogenclient.WorkflowListResponse)
+	if !ok {
+		return nil, fmt.Errorf("unexpected ListWorkflows response type %T", resp)
+	}
+
+	ids := make([]string, 0, len(wlr.Workflows))
+	for _, w := range wlr.Workflows {
+		if w.WorkflowId.Set {
+			ids = append(ids, w.WorkflowId.Value.String())
+		}
+	}
+	if len(ids) == 0 {
+		return nil, fmt.Errorf("workflow catalog returned 0 workflows")
+	}
+
+	validator := parser.NewValidator(ids)
+	schemaParser := dsschema.NewParser()
+	for _, w := range wlr.Workflows {
+		if !w.WorkflowId.Set {
+			continue
+		}
+		wfID := w.WorkflowId.Value.String()
+		meta := parser.WorkflowMeta{
+			ExecutionEngine: w.ExecutionEngine,
+			Version:         w.Version,
+			Component:       append([]string(nil), w.Labels.GetComponent()...),
+		}
+		if w.ExecutionBundle.Set {
+			meta.ExecutionBundle = w.ExecutionBundle.Value
+		}
+		if w.ExecutionBundleDigest.Set {
+			meta.ExecutionBundleDigest = w.ExecutionBundleDigest.Value
+		}
+		if w.ServiceAccountName.Set {
+			meta.ServiceAccountName = w.ServiceAccountName.Value
+		}
+		if w.Content != "" {
+			parsed, err := schemaParser.Parse(w.Content)
+			if err != nil {
+				f.logger.Error(err, "failed to parse workflow schema Content, parameter validation will strip all LLM params (fail-closed)",
+					"workflow_id", wfID)
+			} else {
+				meta.Parameters = parsed.Parameters
+			}
+		}
+		validator.SetWorkflowMeta(wfID, meta)
+	}
+
+	f.logger.Info("workflow catalog fetched (DD-HAPI-002: per-request validation)",
+		"allowed_workflows", len(ids))
+	return validator, nil
+}
