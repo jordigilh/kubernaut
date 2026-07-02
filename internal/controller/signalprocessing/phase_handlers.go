@@ -34,4 +34,3 @@ package signalprocessing
 //
 // Estimated effort: 3-4 days
 // Expected benefits: ~400 lines removed from main controller file, improved testability
-

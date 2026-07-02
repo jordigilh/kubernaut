@@ -41,4 +41,3 @@ type PolicyEvaluator interface {
 	EvaluateCustomLabels(ctx context.Context, input evaluator.PolicyInput) (map[string][]string, error)
 	GetPolicyHash() string
 }
-
