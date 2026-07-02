@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+
+	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 )
 
 // keycloakHostPortFMC is the Kind extraPortMappings host port for Keycloak in
@@ -52,10 +54,45 @@ const keycloakHostPortFMC = 30557
 //
 // Authority: Issue #54, ADR-068, BR-INTEGRATION-065.
 func SetupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) (fmcImage string, err error) {
+	return setupFMCE2EInfrastructure(ctx, clusterName, kubeconfigPath, registry.GatewayKuadrant, writer)
+}
+
+// SetupFMCE2EInfrastructureEAIGW is the Envoy AI Gateway (EAIGW) sibling of
+// SetupFMCE2EInfrastructure (Spike S18, Phase B): identical Phases 1-7
+// (images, Kind cluster, TLS, DataStorage, Keycloak, API server OIDC patch)
+// and the same passthrough+STS kube-mcp-server token-exchange design, but
+// Phase 8 fronts kube-mcp-server with Envoy AI Gateway instead of Kuadrant
+// (deployEnvoyAIGatewayInfra/deployEnvoyAIGatewayRegistrations in
+// fleet_e2e.go) -- see the "Key design decision" section of the EAIGW plan
+// doc for why the RFC 8693 exchange itself needs no gateway-specific changes.
+//
+// Uses kind-fleetmetadatacache-eaigw-config.yaml (a separate, isolated Kind
+// cluster) so this lane can run alongside the Kuadrant lane in CI without
+// port collisions.
+func SetupFMCE2EInfrastructureEAIGW(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) (fmcImage string, err error) {
+	return setupFMCE2EInfrastructure(ctx, clusterName, kubeconfigPath, registry.GatewayEAIGW, writer)
+}
+
+func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath string, gatewayType registry.MCPGatewayType, writer io.Writer) (fmcImage string, err error) {
+	gatewayLabel := "Kuadrant MCP Gateway"
+	kindConfigPath := "test/infrastructure/kind-fleetmetadatacache-config.yaml"
+	mcpGatewayNodePort := 31975
+	loopbackToolPrefix := "loopback_cluster_"
+	if gatewayType == registry.GatewayEAIGW {
+		gatewayLabel = "Envoy AI Gateway (EAIGW)"
+		kindConfigPath = "test/infrastructure/kind-fleetmetadatacache-eaigw-config.yaml"
+		mcpGatewayNodePort = eaigwGatewayNodePort
+		// EAIGW does not support an explicit tool-name prefix (unlike Kuadrant's
+		// MCPServerRegistration.spec.prefix) -- it auto-derives "<Backend name>__"
+		// from the Backend, confirmed against the Backend named "loopback-cluster"
+		// registered in deployEnvoyAIGatewayRegistrations (Spike S18).
+		loopbackToolPrefix = "loopback-cluster__"
+	}
+
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "🚀 Fleet Metadata Cache (FMC) E2E Infrastructure")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	_, _ = fmt.Fprintln(writer, "  Deploys: DataStorage + DEX + Fleet Core (Istio/Kuadrant/kube-mcp-server/Valkey/FMC)")
+	_, _ = fmt.Fprintf(writer, "  Deploys: DataStorage + Keycloak + Fleet Core (%s/kube-mcp-server/Valkey/FMC)\n", gatewayLabel)
 	_, _ = fmt.Fprintln(writer, "  Skips: Gateway, RemediationOrchestrator, and other Kubernaut services")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
@@ -126,7 +163,7 @@ func SetupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 	opts := KindClusterOptions{
 		ClusterName:             clusterName,
 		KubeconfigPath:          kubeconfigPath,
-		ConfigPath:              "test/infrastructure/kind-fleetmetadatacache-config.yaml",
+		ConfigPath:              kindConfigPath,
 		WaitTimeout:             "5m",
 		DeleteExisting:          false,
 		ReuseExisting:           false,
@@ -208,34 +245,38 @@ func SetupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 		Scopes: []string{"kube-mcp-server-audience"},
 	}
 
-	// The Kuadrant MCP Gateway broker keeps its own upstream tool-discovery
-	// connection to kube-mcp-server, separate from per-request tools/call
-	// proxying. With RequireOAuth=true that connection needs its own static
-	// credential (MCPServerRegistration.credentialRef) carrying the
-	// "kube-mcp-server" audience -- reuse the same client/scope FMC itself
-	// uses (see KubeMCPServerAuthConfig.BrokerCredentialToken doc comment).
-	brokerCredToken, brokerCredErr := GetKeycloakClientCredentialsToken(KeycloakFleetTokenConfig{
-		TokenEndpoint: fmt.Sprintf("https://localhost:%d/realms/kubernaut-fleet/protocol/openid-connect/token", keycloakHostPortFMC),
-		ClientID:      fmcOAuth2Config.ClientID,
-		ClientSecret:  fmcOAuth2Config.ClientSecret,
-		Scopes:        fmcOAuth2Config.Scopes,
-	})
-	if brokerCredErr != nil {
-		return "", fmt.Errorf("failed to obtain Kuadrant broker's kube-mcp-server discovery credential: %w", brokerCredErr)
+	kubeMCPAuthConfig := KubeMCPServerAuthConfig{
+		Mode:             KubeMCPServerAuthModePassthrough,
+		GatewayType:      gatewayType,
+		RequireOAuth:     true,
+		AuthorizationURL: "https://keycloak:8443/realms/kubernaut-fleet",
+		OAuthAudience:    "kube-mcp-server",
+		StsClientID:      "kube-mcp-server",
+		StsClientSecret:  "e2e-kube-mcp-server-secret",
+		StsAudience:      "k8s-api",
+		StsScopes:        []string{"k8s-api-audience"},
+		CAFilePath:       "/etc/tls-ca/ca.crt",
 	}
 
-	kubeMCPAuthConfig := KubeMCPServerAuthConfig{
-		Mode:                  KubeMCPServerAuthModePassthrough,
-		RequireOAuth:          true,
-		AuthorizationURL:      "https://keycloak:8443/realms/kubernaut-fleet",
-		OAuthAudience:         "kube-mcp-server",
-		StsClientID:           "kube-mcp-server",
-		StsClientSecret:       "e2e-kube-mcp-server-secret",
-		StsAudience:           "k8s-api",
-		StsScopes:             []string{"k8s-api-audience"},
-		CAFilePath:            "/etc/tls-ca/ca.crt",
-		BrokerCredentialToken: brokerCredToken,
+	// Only Kuadrant needs a static broker credential: its broker maintains
+	// its own upstream tool-discovery connection to kube-mcp-server,
+	// separate from per-request tools/call proxying, and that connection is
+	// itself subject to kube-mcp-server's RequireOAuth check. EAIGW has no
+	// separate broker component (MCPRoute.backendRefs aggregates natively),
+	// so there is no discovery connection needing its own credential.
+	if gatewayType != registry.GatewayEAIGW {
+		brokerCredToken, brokerCredErr := GetKeycloakClientCredentialsToken(KeycloakFleetTokenConfig{
+			TokenEndpoint: fmt.Sprintf("https://localhost:%d/realms/kubernaut-fleet/protocol/openid-connect/token", keycloakHostPortFMC),
+			ClientID:      fmcOAuth2Config.ClientID,
+			ClientSecret:  fmcOAuth2Config.ClientSecret,
+			Scopes:        fmcOAuth2Config.Scopes,
+		})
+		if brokerCredErr != nil {
+			return "", fmt.Errorf("failed to obtain Kuadrant broker's kube-mcp-server discovery credential: %w", brokerCredErr)
+		}
+		kubeMCPAuthConfig.BrokerCredentialToken = brokerCredToken
 	}
+
 	if coreErr := DeployFleetCoreInfra(ctx, namespace, kubeconfigPath, fmcImage, kubeMCPAuthConfig, fmcOAuth2Config, writer); coreErr != nil {
 		return "", fmt.Errorf("fleet-core infra deployment failed: %w", coreErr)
 	}
@@ -261,7 +302,7 @@ func SetupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 			Scopes:        fmcOAuth2Config.Scopes,
 		})
 	}
-	if readyErr := WaitForFleetReady(keycloakFleetReadTokenFunc, writer); readyErr != nil {
+	if readyErr := WaitForFleetReady(keycloakFleetReadTokenFunc, mcpGatewayNodePort, loopbackToolPrefix, writer); readyErr != nil {
 		return "", fmt.Errorf("fleet readiness check failed: %w", readyErr)
 	}
 
@@ -298,7 +339,7 @@ spec:
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "✅ FMC E2E Infrastructure READY")
 	_, _ = fmt.Fprintln(writer, "  FMC API:      http://localhost:8150")
-	_, _ = fmt.Fprintln(writer, "  MCP Gateway:  http://localhost:31975/mcp")
+	_, _ = fmt.Fprintf(writer, "  MCP Gateway:  http://localhost:%d/mcp (%s)\n", mcpGatewayNodePort, gatewayLabel)
 	_, _ = fmt.Fprintln(writer, "  DataStorage:  https://localhost:30081")
 	_, _ = fmt.Fprintln(writer, "  Keycloak:     https://localhost:30557/realms/kubernaut-fleet")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")

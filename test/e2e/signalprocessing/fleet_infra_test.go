@@ -56,7 +56,7 @@ var _ = Describe("E2E-FLEET-SP-001 [SC-7]: Fleet infrastructure deploys with the
 		err := infrastructure.DeployFleetInfra(ctx, namespace, kubeconfigPath, fmcImage, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred(), "Fleet infrastructure should deploy successfully")
 
-		err = infrastructure.WaitForFleetReady(infrastructure.DefaultDexFleetReadTokenFunc(), GinkgoWriter)
+		err = infrastructure.WaitForFleetReady(infrastructure.DefaultDexFleetReadTokenFunc(), 31975, "loopback_cluster_", GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred(), "EAIGW health endpoint should be reachable")
 
 		eaigwURL := "http://localhost:31975/mcp"

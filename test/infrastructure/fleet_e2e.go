@@ -33,6 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
+	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 )
 
 // KubeMCPServerImage is the Go-native K8s MCP server image.
@@ -47,6 +48,20 @@ const (
 	kuadrantCRDsKustomize    = "https://github.com/Kuadrant/mcp-gateway/config/crd?ref=v0.7.1"
 	kuadrantOverlayKustomize = "https://github.com/Kuadrant/mcp-gateway/config/mcp-gateway/overlays/mcp-system?ref=v0.7.1"
 	istioHelmRepoURL         = "https://istio-release.storage.googleapis.com/charts"
+
+	// Envoy AI Gateway (EAIGW): two separate Helm installs layered on CNCF
+	// Envoy Gateway, per Spike S18. ai-gateway-helm v1.0.0 requires exactly
+	// Envoy Gateway v1.8.1 (mismatched versions crash-loop the AI Gateway
+	// controller) and does NOT bundle its own CRDs (a separate
+	// ai-gateway-crds-helm chart is required).
+	envoyGatewayHelmChart   = "oci://docker.io/envoyproxy/gateway-helm"
+	envoyGatewayHelmVersion = "v1.8.1"
+	aiGatewayCRDsHelmChart  = "oci://docker.io/envoyproxy/ai-gateway-crds-helm"
+	aiGatewayHelmChart      = "oci://docker.io/envoyproxy/ai-gateway-helm"
+	aiGatewayHelmVersion    = "v1.0.0"
+	// eaigwGatewayNodePort is the DD-TEST-001-allocated NodePort for the
+	// EAIGW FMC E2E lane's Gateway listener (next in the Kuadrant-31975 block).
+	eaigwGatewayNodePort = 31976
 
 	// KubeMCPServerAuthModeKubeconfig makes kube-mcp-server ignore any
 	// caller-forwarded Authorization header and always use its own
@@ -68,6 +83,14 @@ type KubeMCPServerAuthConfig struct {
 	// Mode is KubeMCPServerAuthModeKubeconfig or KubeMCPServerAuthModePassthrough.
 	// Empty defaults to KubeMCPServerAuthModeKubeconfig.
 	Mode string
+
+	// GatewayType selects which MCP Gateway implementation fronts
+	// kube-mcp-server: registry.GatewayKuadrant (default, zero value) or
+	// registry.GatewayEAIGW (Spike S17/S18). The RFC 8693 token-exchange
+	// wiring below (StsClientID etc.) lives entirely inside kube-mcp-server
+	// and is identical for both gateways -- only the edge routing/OAuth
+	// validation layer differs (ADR-068 Decision #9).
+	GatewayType registry.MCPGatewayType
 
 	// The following fields only apply when Mode == KubeMCPServerAuthModePassthrough.
 
@@ -244,7 +267,7 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 		return builtImages, seededUUIDs, afRemediateNS, fmt.Errorf("fleet infra deployment failed: %w", deployErr)
 	}
 
-	if readyErr := WaitForFleetReady(DefaultDexFleetReadTokenFunc(), writer); readyErr != nil {
+	if readyErr := WaitForFleetReady(DefaultDexFleetReadTokenFunc(), 31975, "loopback_cluster_", writer); readyErr != nil {
 		return builtImages, seededUUIDs, afRemediateNS, fmt.Errorf("fleet readiness check failed: %w", readyErr)
 	}
 
@@ -443,6 +466,41 @@ subjects:
 func DeployFleetCoreInfra(ctx context.Context, namespace, kubeconfigPath, fmcImage string, authConfig KubeMCPServerAuthConfig, fmcOAuth2Config FMCOAuth2Config, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "🚀 Deploying Fleet Core E2E Infrastructure...")
 
+	// ── Phase 1-2: Gateway (Kuadrant or Envoy AI Gateway) ────────────────
+	if authConfig.GatewayType == "" {
+		authConfig.GatewayType = registry.GatewayKuadrant // backward-compatible default
+	}
+	var mcpGatewayEndpoint string
+	switch authConfig.GatewayType {
+	case registry.GatewayEAIGW:
+		_, _ = fmt.Fprintln(writer, "\n  🌐 Phase 1-2: Deploying Envoy AI Gateway (EAIGW, Spike S18)...")
+		svcFQDN, eaigwErr := deployEnvoyAIGatewayInfra(ctx, namespace, kubeconfigPath, writer)
+		if eaigwErr != nil {
+			return fmt.Errorf("envoy AI Gateway deployment failed: %w", eaigwErr)
+		}
+		mcpGatewayEndpoint = fmt.Sprintf("http://%s:8080/mcp", svcFQDN)
+	default:
+		if kuadrantErr := deployKuadrantGatewayInfra(ctx, kubeconfigPath, writer); kuadrantErr != nil {
+			return fmt.Errorf("kuadrant gateway deployment failed: %w", kuadrantErr)
+		}
+		mcpGatewayEndpoint = "http://mcp-gateway-istio.gateway-system.svc:8080/mcp"
+	}
+
+	// ── Phase 3: Backend MCP Server ─────────────────────────────────────
+	_, _ = fmt.Fprintln(writer, "\n  🔌 Phase 3: Deploying kube-mcp-server backend...")
+	if err := deployKubeMCPServerAndRegister(ctx, namespace, kubeconfigPath, mcpGatewayEndpoint, authConfig, writer); err != nil {
+		return err
+	}
+
+	// ── Phase 4: FMC Stack (Valkey + FMC) ───────────────────────────────
+	return deployValkeyAndFMC(ctx, namespace, kubeconfigPath, fmcImage, mcpGatewayEndpoint, authConfig, fmcOAuth2Config, writer)
+}
+
+// deployKuadrantGatewayInfra installs the Istio-based Kuadrant MCP Gateway
+// stack (CRDs, controller, broker) -- the default/original gateway for the
+// FMC E2E lane. See deployEnvoyAIGatewayInfra for the EAIGW alternative
+// (Spike S18).
+func deployKuadrantGatewayInfra(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
 	// ── Phase 1: CRDs and Istio ─────────────────────────────────────────
 	_, _ = fmt.Fprintln(writer, "\n  📋 Phase 1: Installing CRDs and Istio control plane...")
 
@@ -592,10 +650,333 @@ spec:
 		return fmt.Errorf("kuadrant broker rollout failed: %w", err)
 	}
 	_, _ = fmt.Fprintln(writer, "    ✅ Kuadrant MCP Gateway ready")
+	return nil
+}
 
-	// ── Phase 3: Backend MCP Server ─────────────────────────────────────
-	_, _ = fmt.Fprintln(writer, "\n  🔌 Phase 3: Deploying kube-mcp-server backend...")
+// deployEnvoyAIGatewayInfra installs the Envoy AI Gateway (EAIGW) stack --
+// CNCF Envoy Gateway + the AI Gateway layer on top -- as an alternative to
+// Kuadrant, per Spike S18 (Phase A spike + Phase B mini-spike). Returns the
+// in-cluster FQDN of Envoy Gateway's dynamically-named generated Service
+// (envoy-<gw-namespace>-<gw-name>-<8-char-hash>, discovered via label
+// selector -- there is no static Service name to hardcode, unlike Kuadrant's
+// Istio-provisioned mcp-gateway-istio).
+func deployEnvoyAIGatewayInfra(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) (string, error) {
+	const (
+		egNamespace   = "envoy-gateway-system"
+		aiegNamespace = "envoy-ai-gateway-system"
+		gatewayName   = "mcp-gateway"
+	)
 
+	// Envoy Gateway's Helm chart bundles the Gateway API CRDs by default
+	// (v1.8.x), so -- unlike Kuadrant -- no separate gatewayAPICRDsURL apply
+	// is needed here.
+	_, _ = fmt.Fprintln(writer, "    Installing Envoy Gateway (bundles Gateway API CRDs)...")
+	if err := runHelmUpgradeInstall(ctx, kubeconfigPath, writer, "eg", envoyGatewayHelmChart, egNamespace,
+		"--version", envoyGatewayHelmVersion); err != nil {
+		return "", fmt.Errorf("envoy gateway helm install failed: %w", err)
+	}
+	if err := waitForDeployment(ctx, "envoy-gateway", egNamespace, kubeconfigPath, 180*time.Second, writer); err != nil {
+		return "", fmt.Errorf("envoy-gateway controller rollout failed: %w", err)
+	}
+
+	// ai-gateway-helm v1.0.0 does NOT bundle its own CRDs (Spike S18 gap #2)
+	// -- the CRDs chart must be installed explicitly first.
+	_, _ = fmt.Fprintln(writer, "    Installing Envoy AI Gateway CRDs + controller...")
+	if err := runHelmUpgradeInstall(ctx, kubeconfigPath, writer, "aieg-crds", aiGatewayCRDsHelmChart, aiegNamespace,
+		"--version", aiGatewayHelmVersion); err != nil {
+		return "", fmt.Errorf("ai-gateway CRDs helm install failed: %w", err)
+	}
+	if err := runHelmUpgradeInstall(ctx, kubeconfigPath, writer, "aieg", aiGatewayHelmChart, aiegNamespace,
+		"--version", aiGatewayHelmVersion); err != nil {
+		return "", fmt.Errorf("ai-gateway helm install failed: %w", err)
+	}
+	if err := waitForDeployment(ctx, "ai-gateway-controller", aiegNamespace, kubeconfigPath, 180*time.Second, writer); err != nil {
+		return "", fmt.Errorf("ai-gateway-controller rollout failed: %w", err)
+	}
+
+	// Spike S18 mini-spike gap #5: neither Helm chart grants the
+	// envoy-gateway ServiceAccount RBAC to watch MCPRoute, even though
+	// extensionManager.resources (below) declares it as a watched extension
+	// resource. Without this, the envoy-gateway controller's cache sync
+	// never completes and the data-plane pod never becomes ready.
+	_, _ = fmt.Fprintln(writer, "    Granting envoy-gateway RBAC for MCPRoute (Spike S18 gap #5)...")
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, fmt.Sprintf(`
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: envoy-gateway-mcproute-reader
+rules:
+- apiGroups: ["aigateway.envoyproxy.io"]
+  resources: ["mcproutes", "mcproutes/status"]
+  verbs: ["get", "list", "watch", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: envoy-gateway-mcproute-reader-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: envoy-gateway-mcproute-reader
+subjects:
+- kind: ServiceAccount
+  name: envoy-gateway
+  namespace: %[1]s
+`, egNamespace)); err != nil {
+		return "", fmt.Errorf("envoy-gateway MCPRoute RBAC creation failed: %w", err)
+	}
+
+	// Spike S18 gap #3 (Phase A) + gap #6 (Phase B mini-spike): the
+	// extensionManager needs enableBackend, the AI Gateway controller's
+	// extension-server address, AND a full xdsTranslator.translation block
+	// (not just hooks.xdsTranslator.post) -- omitting the translation block
+	// reproduces the exact 192.0.2.42:9856 connection_timeout symptom even
+	// with RBAC fixed, because the placeholder cluster address the MCP
+	// sidecar starts with is never rewritten to 127.0.0.1:9856.
+	_, _ = fmt.Fprintln(writer, "    Configuring envoy-gateway-config extensionManager (Spike S18 gap #3/#6)...")
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, fmt.Sprintf(`
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: envoy-gateway-config
+  namespace: %[1]s
+data:
+  envoy-gateway.yaml: |
+    apiVersion: gateway.envoyproxy.io/v1alpha1
+    kind: EnvoyGateway
+    provider:
+      type: Kubernetes
+    extensionApis:
+      enableEnvoyPatchPolicy: true
+      enableBackend: true
+    extensionManager:
+      hooks:
+        xdsTranslator:
+          translation:
+            listener: {includeAll: true}
+            route: {includeAll: true}
+            cluster: {includeAll: true}
+            secret: {includeAll: true}
+          post: [Translation, Cluster, Route]
+      service:
+        fqdn:
+          hostname: ai-gateway-controller.%[2]s.svc.cluster.local
+          port: 1063
+      resources:
+      - group: aigateway.envoyproxy.io
+        version: v1beta1
+        kind: MCPRoute
+    gateway:
+      controllerName: gateway.envoyproxy.io/gatewayclass-controller
+    logging:
+      level:
+        default: info
+`, egNamespace, aiegNamespace)); err != nil {
+		return "", fmt.Errorf("envoy-gateway-config patch failed: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "    Restarting envoy-gateway to pick up extensionManager config...")
+	if err := runKubectl(ctx, kubeconfigPath, writer, "rollout", "restart", "deployment/envoy-gateway", "-n", egNamespace); err != nil {
+		return "", fmt.Errorf("envoy-gateway restart failed: %w", err)
+	}
+	if err := waitForDeployment(ctx, "envoy-gateway", egNamespace, kubeconfigPath, 120*time.Second, writer); err != nil {
+		return "", fmt.Errorf("envoy-gateway rollout (post-restart) failed: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "    Creating GatewayClass + Gateway...")
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, fmt.Sprintf(`
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: envoy-ai-gateway
+spec:
+  controllerName: gateway.envoyproxy.io/gatewayclass-controller
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: %[2]s
+  namespace: %[1]s
+spec:
+  gatewayClassName: envoy-ai-gateway
+  listeners:
+  - name: mcp
+    port: 8080
+    protocol: HTTP
+`, namespace, gatewayName)); err != nil {
+		return "", fmt.Errorf("GatewayClass/Gateway creation failed: %w", err)
+	}
+
+	// Spike S18 mini-spike finding: Envoy Gateway's own generated Service
+	// name (envoy-<gw-namespace>-<gw-name>-<8-char-hash>) cannot be
+	// predicted ahead of time -- discover it via the owning-gateway labels
+	// Envoy Gateway stamps on it, always created in egNamespace regardless
+	// of which namespace the Gateway itself lives in.
+	_, _ = fmt.Fprintln(writer, "    Discovering generated Gateway Service...")
+	svcName, err := waitForLabeledService(ctx, kubeconfigPath, egNamespace,
+		fmt.Sprintf("gateway.envoyproxy.io/owning-gateway-name=%s,gateway.envoyproxy.io/owning-gateway-namespace=%s", gatewayName, namespace),
+		120*time.Second)
+	if err != nil {
+		return "", fmt.Errorf("gateway service discovery failed: %w", err)
+	}
+
+	_, _ = fmt.Fprintf(writer, "    Patching NodePort to %d on generated service %s...\n", eaigwGatewayNodePort, svcName)
+	if err := runKubectl(ctx, kubeconfigPath, writer,
+		"patch", "service", svcName, "-n", egNamespace,
+		"--type=json",
+		fmt.Sprintf(`-p=[{"op":"replace","path":"/spec/type","value":"NodePort"},{"op":"replace","path":"/spec/ports/0/nodePort","value":%d}]`, eaigwGatewayNodePort),
+	); err != nil {
+		return "", fmt.Errorf("gateway service NodePort patch failed: %w", err)
+	}
+
+	svcFQDN := fmt.Sprintf("%s.%s.svc.cluster.local", svcName, egNamespace)
+	_, _ = fmt.Fprintf(writer, "    ✅ Envoy AI Gateway ready (service: %s)\n", svcFQDN)
+	return svcFQDN, nil
+}
+
+// deployEnvoyAIGatewayRegistrations creates the three Backends
+// (loopback-cluster, prod-east, prod-west) plus the single shared MCPRoute
+// that aggregates them -- EAIGW's equivalent of Kuadrant's HTTPRoute +
+// MCPServerRegistrations. EAIGW has no separate broker component:
+// MCPRoute.spec.backendRefs natively aggregates multiple Backends, and each
+// backend's tools are auto-prefixed "{backendRefs[].name}__{toolName}" with
+// zero extra config (Spike S18 mini-spike, confirmed for 3 simultaneous
+// backends).
+func deployEnvoyAIGatewayRegistrations(ctx context.Context, namespace, kubeconfigPath, mcpGatewayEndpoint string, authConfig KubeMCPServerAuthConfig, writer io.Writer) error {
+	_, _ = fmt.Fprintln(writer, "    Creating Backends + MCPRoute (with OAuth SecurityPolicy)...")
+
+	kubeMCPHostname := fmt.Sprintf("kube-mcp-server.%s.svc.cluster.local", namespace)
+	keycloakHostname := fmt.Sprintf("keycloak.%s.svc.cluster.local", namespace)
+	jwksURI := authConfig.AuthorizationURL + "/protocol/openid-connect/certs"
+
+	manifest := fmt.Sprintf(`---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: Backend
+metadata:
+  name: keycloak-jwks
+  namespace: %[1]s
+spec:
+  endpoints:
+  - fqdn:
+      hostname: %[2]s
+      port: 8443
+---
+apiVersion: gateway.networking.k8s.io/v1alpha3
+kind: BackendTLSPolicy
+metadata:
+  name: keycloak-jwks-tls
+  namespace: %[1]s
+spec:
+  targetRefs:
+  - group: gateway.envoyproxy.io
+    kind: Backend
+    name: keycloak-jwks
+  validation:
+    caCertificateRefs:
+    - name: inter-service-ca
+      group: ""
+      kind: ConfigMap
+    hostname: keycloak
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: Backend
+metadata:
+  name: loopback-cluster
+  namespace: %[1]s
+  labels:
+    kubernaut.ai/managed: "true"
+spec:
+  endpoints:
+  - fqdn:
+      hostname: %[3]s
+      port: 8080
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: Backend
+metadata:
+  name: prod-east
+  namespace: %[1]s
+  labels:
+    kubernaut.ai/managed: "true"
+spec:
+  endpoints:
+  - fqdn:
+      hostname: %[3]s
+      port: 8080
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: Backend
+metadata:
+  name: prod-west
+  namespace: %[1]s
+  labels:
+    kubernaut.ai/managed: "true"
+spec:
+  endpoints:
+  - fqdn:
+      hostname: %[3]s
+      port: 8080
+---
+apiVersion: aigateway.envoyproxy.io/v1beta1
+kind: MCPRoute
+metadata:
+  name: kube-mcp-server-route
+  namespace: %[1]s
+spec:
+  parentRefs:
+  - name: mcp-gateway
+  path: /mcp
+  # forwardHeaders is mandatory per backend: EAIGW's mcp-proxy does NOT
+  # forward the client's validated Authorization header to backend MCP
+  # servers by default (securityPolicy.oauth only authenticates the
+  # downstream/edge hop) -- without it, kube-mcp-server's passthrough+STS
+  # mode 401s with "Bearer token required" on every backend session the
+  # proxy establishes (Spike S18 gap #7).
+  backendRefs:
+  - group: gateway.envoyproxy.io
+    kind: Backend
+    name: loopback-cluster
+    forwardHeaders:
+    - name: Authorization
+  - group: gateway.envoyproxy.io
+    kind: Backend
+    name: prod-east
+    forwardHeaders:
+    - name: Authorization
+  - group: gateway.envoyproxy.io
+    kind: Backend
+    name: prod-west
+    forwardHeaders:
+    - name: Authorization
+  securityPolicy:
+    oauth:
+      issuer: %[4]q
+      audiences: [%[5]q]
+      jwks:
+        remoteJWKS:
+          uri: %[6]q
+          backendRefs:
+          - group: gateway.envoyproxy.io
+            kind: Backend
+            name: keycloak-jwks
+            port: 8443
+      protectedResourceMetadata:
+        resource: %[7]q
+`, namespace, keycloakHostname, kubeMCPHostname, authConfig.AuthorizationURL, authConfig.OAuthAudience, jwksURI, mcpGatewayEndpoint)
+
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, manifest); err != nil {
+		return fmt.Errorf("backend/MCPRoute creation failed: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "    ✅ Backends + MCPRoute created (loopback-cluster, prod-east, prod-west)")
+	return nil
+}
+
+// deployKubeMCPServerAndRegister deploys kube-mcp-server (gateway-agnostic)
+// and then registers it as three managed clusters (loopback-cluster,
+// prod-east, prod-west) via the gateway-specific registration mechanism
+// selected by authConfig.GatewayType: Kuadrant's HTTPRoute+MCPServerRegistration
+// or EAIGW's Backend+MCPRoute (Spike S18).
+func deployKubeMCPServerAndRegister(ctx context.Context, namespace, kubeconfigPath, mcpGatewayEndpoint string, authConfig KubeMCPServerAuthConfig, writer io.Writer) error {
 	// Issue #54 RCA background: kube-mcp-server v0.0.63 defaults
 	// cluster_auth_mode to "passthrough", which forwards any incoming
 	// Authorization: Bearer header straight to the Kubernetes API. FMC's
@@ -739,6 +1120,16 @@ spec:
 	}
 	_, _ = fmt.Fprintln(writer, "    ✅ kube-mcp-server ready")
 
+	if authConfig.GatewayType == registry.GatewayEAIGW {
+		return deployEnvoyAIGatewayRegistrations(ctx, namespace, kubeconfigPath, mcpGatewayEndpoint, authConfig, writer)
+	}
+	return deployKuadrantRegistrations(ctx, namespace, kubeconfigPath, authConfig, writer)
+}
+
+// deployKuadrantRegistrations creates the HTTPRoute + three
+// MCPServerRegistrations (loopback-cluster, prod-east, prod-west) that
+// register kube-mcp-server with the Kuadrant MCP Gateway broker.
+func deployKuadrantRegistrations(ctx context.Context, namespace, kubeconfigPath string, authConfig KubeMCPServerAuthConfig, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "    Creating HTTPRoute + MCPServerRegistration...")
 
 	// The broker maintains its own upstream tool-discovery/session-management
@@ -837,7 +1228,13 @@ spec:
 		return fmt.Errorf("httpRoute/MCPServerRegistration creation failed: %w", err)
 	}
 	_, _ = fmt.Fprintln(writer, "    ✅ MCPServerRegistrations created (loopback-cluster, prod-east, prod-west)")
+	return nil
+}
 
+// deployValkeyAndFMC deploys Valkey and FMC itself, wiring FMC's
+// mcpGateway.endpoint/gatewayType to whichever gateway was deployed in
+// Phase 1-2.
+func deployValkeyAndFMC(ctx context.Context, namespace, kubeconfigPath, fmcImage, mcpGatewayEndpoint string, authConfig KubeMCPServerAuthConfig, fmcOAuth2Config FMCOAuth2Config, writer io.Writer) error {
 	// ── Phase 4: FMC Stack (Valkey + FMC) ───────────────────────────────
 	_, _ = fmt.Fprintln(writer, "\n  💾 Phase 4: Deploying FMC stack (Valkey + FMC)...")
 
@@ -917,6 +1314,25 @@ spec:
 		fmcOAuth2ScopesYAML = b.String()
 	}
 
+	// FMC's ClusterRole is scoped to the specific gateway CRD it watches
+	// (registry.MCPGatewayType, discovery.go): Kuadrant's
+	// MCPServerRegistration+Gateway/HTTPRoute, or EAIGW's Backend
+	// (gateway.envoyproxy.io/v1alpha1, eaigw_registry.go BackendGVR --
+	// MCPRoute itself is not watched by FMC, only Backends).
+	fmcGatewayRBACRules := `
+- apiGroups: ["mcp.kuadrant.io"]
+  resources: ["mcpserverregistrations"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["gateway.networking.k8s.io"]
+  resources: ["gateways", "httproutes"]
+  verbs: ["get", "list", "watch"]`
+	if authConfig.GatewayType == registry.GatewayEAIGW {
+		fmcGatewayRBACRules = `
+- apiGroups: ["gateway.envoyproxy.io"]
+  resources: ["backends"]
+  verbs: ["get", "list", "watch"]`
+	}
+
 	fmcManifest := fmt.Sprintf(`---
 apiVersion: v1
 kind: ServiceAccount
@@ -933,13 +1349,7 @@ metadata:
   name: fleetmetadatacache
   labels:
     app: fleetmetadatacache
-rules:
-- apiGroups: ["mcp.kuadrant.io"]
-  resources: ["mcpserverregistrations"]
-  verbs: ["get", "list", "watch"]
-- apiGroups: ["gateway.networking.k8s.io"]
-  resources: ["gateways", "httproutes"]
-  verbs: ["get", "list", "watch"]
+rules:%[9]s
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -970,8 +1380,8 @@ data:
       apiAddr: ":8080"
       metricsAddr: ":8081"
     mcpGateway:
-      endpoint: "http://mcp-gateway-istio.gateway-system.svc:8080/mcp"
-      gatewayType: "kuadrant"
+      endpoint: "%[7]s"
+      gatewayType: "%[8]s"
       namespace: "%[1]s"
     valkey:
       addr: "valkey.%[1]s.svc:6379"
@@ -1083,7 +1493,7 @@ spec:
     targetPort: metrics
   selector:
     app: fleetmetadatacache
-`, namespace, fmcImage, fmcOAuth2Config.TokenURL, fmcOAuth2Config.ClientID, fmcOAuth2Config.ClientSecret, fmcOAuth2ScopesYAML)
+`, namespace, fmcImage, fmcOAuth2Config.TokenURL, fmcOAuth2Config.ClientID, fmcOAuth2Config.ClientSecret, fmcOAuth2ScopesYAML, mcpGatewayEndpoint, string(authConfig.GatewayType), fmcGatewayRBACRules)
 
 	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, fmcManifest); err != nil {
 		return fmt.Errorf("fmc deployment failed: %w", err)
@@ -1160,14 +1570,19 @@ func DefaultDexFleetReadTokenFunc() func() (string, error) {
 	}
 }
 
-// WaitForFleetReady verifies the Kuadrant MCP Gateway is reachable via NodePort
-// by performing an MCP initialize handshake, then a real authenticated
-// tools/call using tokenFunc (DEX for the "fleet" suite, Keycloak for the FMC
-// E2E lane -- see DefaultDexFleetReadTokenFunc and the FMC lane's own
-// Keycloak-based token func in fleetmetadatacache_e2e.go).
-func WaitForFleetReady(tokenFunc func() (string, error), writer io.Writer) error {
+// WaitForFleetReady verifies the MCP Gateway (Kuadrant or EAIGW) is reachable
+// via NodePort by performing an MCP initialize handshake, then a real
+// authenticated tools/call using tokenFunc (DEX for the "fleet" suite,
+// Keycloak for the FMC E2E lane -- see DefaultDexFleetReadTokenFunc and the
+// FMC lane's own Keycloak-based token func in fleetmetadatacache_e2e.go).
+// nodePort/toolPrefix select the gateway-specific NodePort (Kuadrant 31975 /
+// EAIGW 31976 per DD-TEST-001) and loopback-cluster tool-name prefix
+// (Kuadrant's MCPServerRegistration "loopback_cluster_" vs EAIGW's
+// auto-generated "loopback-cluster__", Spike S18).
+func WaitForFleetReady(tokenFunc func() (string, error), nodePort int, toolPrefix string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "  ⏳ Verifying MCP Gateway reachability via NodePort...")
 
+	gatewayURL := fmt.Sprintf("http://localhost:%d/mcp", nodePort)
 	deadline := time.Now().Add(120 * time.Second)
 	client := &http.Client{Timeout: 5 * time.Second}
 
@@ -1187,22 +1602,28 @@ func WaitForFleetReady(tokenFunc func() (string, error), writer io.Writer) error
 	body, _ := json.Marshal(initReq)
 
 	for time.Now().Before(deadline) {
-		req, _ := http.NewRequest("POST", "http://localhost:31975/mcp", bytes.NewReader(body))
+		req, _ := http.NewRequest("POST", gatewayURL, bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Accept", "application/json, text/event-stream")
 
 		resp, err := client.Do(req)
-		if err == nil && resp.StatusCode == http.StatusOK {
-			_ = resp.Body.Close()
-			_, _ = fmt.Fprintln(writer, "  ✅ MCP Gateway reachable (initialize → 200 OK)")
-			return waitForAuthenticatedMCPGateway(tokenFunc, writer)
-		}
-		if resp != nil {
+		if err == nil {
+			// EAIGW's SecurityPolicy.oauth enforces auth on the entire MCPRoute,
+			// including the `initialize` handshake (unlike Kuadrant's AuthPolicy,
+			// which lets an unauthenticated `initialize` through) -- a 401 here
+			// still proves the Gateway is up and the route has converged (Spike
+			// S18); the authenticated tools/call probe below is the real
+			// convergence check in both cases.
+			if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusUnauthorized {
+				_ = resp.Body.Close()
+				_, _ = fmt.Fprintf(writer, "  ✅ MCP Gateway reachable (initialize → %d)\n", resp.StatusCode)
+				return waitForAuthenticatedMCPGateway(tokenFunc, gatewayURL, toolPrefix, writer)
+			}
 			_ = resp.Body.Close()
 		}
 		time.Sleep(3 * time.Second)
 	}
-	return fmt.Errorf("mcp gateway not responsive at http://localhost:31975/mcp after 120 seconds")
+	return fmt.Errorf("mcp gateway not responsive at %s after 120 seconds", gatewayURL)
 }
 
 // waitForAuthenticatedMCPGateway performs a real authenticated tools/call against
@@ -1224,21 +1645,21 @@ func WaitForFleetReady(tokenFunc func() (string, error), writer io.Writer) error
 // This probe mirrors the real call FMC's syncer makes (pkg/fleet/fmc/syncer.go):
 // an OAuth2 client_credentials token via tokenFunc, then a tools/call against
 // the "loopback-cluster" MCPServerRegistration created earlier in Phase 3.
-func waitForAuthenticatedMCPGateway(tokenFunc func() (string, error), writer io.Writer) error {
-	_, _ = fmt.Fprintln(writer, "  ⏳ Verifying authenticated tools/call succeeds (Kuadrant AuthPolicy convergence)...")
+func waitForAuthenticatedMCPGateway(tokenFunc func() (string, error), gatewayURL, toolPrefix string, writer io.Writer) error {
+	_, _ = fmt.Fprintln(writer, "  ⏳ Verifying authenticated tools/call succeeds (gateway AuthPolicy/SecurityPolicy convergence)...")
 
 	deadline := time.Now().Add(90 * time.Second)
 	var lastErr error
 	for time.Now().Before(deadline) {
-		if err := probeAuthenticatedResourcesList(tokenFunc); err != nil {
+		if err := probeAuthenticatedResourcesList(tokenFunc, gatewayURL, toolPrefix); err != nil {
 			lastErr = err
 			time.Sleep(3 * time.Second)
 			continue
 		}
-		_, _ = fmt.Fprintln(writer, "  ✅ Authenticated tools/call succeeded (Kuadrant AuthPolicy converged)")
+		_, _ = fmt.Fprintln(writer, "  ✅ Authenticated tools/call succeeded (gateway AuthPolicy/SecurityPolicy converged)")
 		return nil
 	}
-	return fmt.Errorf("authenticated MCP tools/call did not succeed within 90s (Kuadrant AuthPolicy convergence failure): %w", lastErr)
+	return fmt.Errorf("authenticated MCP tools/call did not succeed within 90s (gateway convergence failure): %w", lastErr)
 }
 
 // probeAuthenticatedResourcesList performs a single authenticated resources_list
@@ -1257,7 +1678,7 @@ func waitForAuthenticatedMCPGateway(tokenFunc func() (string, error), writer io.
 // (the built-in "view" role does not grant list access to cluster-scoped Node
 // resources -- confirmed by a prior run of this probe against Node, which
 // failed with a clear RBAC "forbidden" error, not a convergence timeout).
-func probeAuthenticatedResourcesList(tokenFunc func() (string, error)) error {
+func probeAuthenticatedResourcesList(tokenFunc func() (string, error), gatewayURL, toolPrefix string) error {
 	token, err := tokenFunc()
 	if err != nil {
 		return fmt.Errorf("acquire IdP token: %w", err)
@@ -1271,8 +1692,8 @@ func probeAuthenticatedResourcesList(tokenFunc func() (string, error)) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	mcpConn, err := mcpclient.New(ctx, "http://localhost:31975/mcp",
-		mcpclient.WithToolPrefix("loopback_cluster_"),
+	mcpConn, err := mcpclient.New(ctx, gatewayURL,
+		mcpclient.WithToolPrefix(toolPrefix),
 		mcpclient.WithHTTPClient(authClient),
 	)
 	if err != nil {
@@ -1475,12 +1896,31 @@ func patchAPIServerPodHostsForIssuer(ctx context.Context, nodeName, kubeconfigPa
 	}
 	host := u.Hostname()
 
-	svcIPCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
-		"get", "svc", host, "-n", "kubernaut-system", "-o", "jsonpath={.spec.clusterIP}")
-	svcIPOut, err := svcIPCmd.Output()
-	clusterIP := strings.TrimSpace(string(svcIPOut))
-	if err != nil || clusterIP == "" {
-		return fmt.Errorf("failed to resolve ClusterIP for issuer service %q: %w", host, err)
+	// Retry: immediately after the API server static pod restarts (to pick
+	// up the OIDC flags), there is a brief window where the freshly-started
+	// process serves requests but its RBAC authorizer cache has not yet
+	// synced ClusterRoleBindings from etcd, so even kubernetes-admin
+	// (group kubeadm:cluster-admins) can transiently get a Forbidden on an
+	// ordinary read. This resolves within a few seconds without any
+	// intervention, so poll instead of failing on the first attempt.
+	var clusterIP string
+	svcDeadline := time.Now().Add(30 * time.Second)
+	var svcErr error
+	for time.Now().Before(svcDeadline) {
+		svcIPCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+			"get", "svc", host, "-n", "kubernaut-system", "-o", "jsonpath={.spec.clusterIP}")
+		svcIPOut, err := svcIPCmd.Output()
+		clusterIP = strings.TrimSpace(string(svcIPOut))
+		if err == nil && clusterIP != "" {
+			svcErr = nil
+			break
+		}
+		svcErr = err
+		clusterIP = ""
+		time.Sleep(2 * time.Second)
+	}
+	if clusterIP == "" {
+		return fmt.Errorf("failed to resolve ClusterIP for issuer service %q: %w", host, svcErr)
 	}
 
 	// The manifest edit can trigger more than one kubelet restart cycle
@@ -1565,6 +2005,43 @@ func runHelmTemplateApply(ctx context.Context, kubeconfigPath string, writer io.
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	return cmd.Run()
+}
+
+// runHelmUpgradeInstall runs a real `helm upgrade --install` (as opposed to
+// runHelmTemplateApply's render-only approach) -- required for the EAIGW
+// Helm charts, which rely on Helm-native install ordering/CRD handling
+// (Spike S18) rather than being safe to just template-and-apply.
+func runHelmUpgradeInstall(ctx context.Context, kubeconfigPath string, writer io.Writer, releaseName, chart, namespace string, extraArgs ...string) error {
+	args := append([]string{
+		"upgrade", "--install", releaseName, chart,
+		"--kubeconfig", kubeconfigPath,
+		"-n", namespace, "--create-namespace",
+	}, extraArgs...)
+	cmd := exec.CommandContext(ctx, "helm", args...)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	return cmd.Run()
+}
+
+// waitForLabeledService polls until exactly one Service matching the given
+// label selector exists in namespace, returning its name. Used to discover
+// Envoy Gateway's hash-suffixed generated Service
+// (envoy-<gw-namespace>-<gw-name>-<8-char-hash>), which cannot be predicted
+// ahead of time (Spike S18 mini-spike finding).
+func waitForLabeledService(ctx context.Context, kubeconfigPath, namespace, labelSelector string, timeout time.Duration) (string, error) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		cmd := exec.CommandContext(ctx, "kubectl", "get", "service",
+			"-n", namespace, "--kubeconfig", kubeconfigPath,
+			"-l", labelSelector, "-o", "jsonpath={.items[0].metadata.name}")
+		var out strings.Builder
+		cmd.Stdout = &out
+		if err := cmd.Run(); err == nil && out.String() != "" {
+			return out.String(), nil
+		}
+		time.Sleep(3 * time.Second)
+	}
+	return "", fmt.Errorf("no service matching label %q found in %s within %v", labelSelector, namespace, timeout)
 }
 
 // waitForDeployment polls until a deployment exists and then waits for rollout.
