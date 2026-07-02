@@ -84,6 +84,7 @@
 | DD-GATEWAY-014 | Service-Level Circuit Breaker Deferral | ⏸️ Deferred | 2025-12-13 | [DD-GATEWAY-014-circuit-breaker-deferral.md](decisions/DD-GATEWAY-014-circuit-breaker-deferral.md) |
 | DD-GATEWAY-015 | Storm Detection Logic Removal | ✅ IMPLEMENTED | 2025-12-13 | [DD-GATEWAY-015-storm-detection-removal.md](decisions/DD-GATEWAY-015-storm-detection-removal.md) |
 | DD-GATEWAY-016 | Kubernetes API Circuit Breaker Implementation | ✅ IMPLEMENTED | 2026-01-03 | [DD-GATEWAY-016-k8s-api-circuit-breaker.md](decisions/DD-GATEWAY-016-k8s-api-circuit-breaker.md) |
+| DD-GATEWAY-CLUSTER-SCOPE-SIGNALS | Cluster-Scoped Signal Support (`ClusterScope` pseudo-Kind + opt-in mechanism) | 📋 Proposed | 2026-07-01 | [DD-GATEWAY-CLUSTER-SCOPE-SIGNALS.md](decisions/DD-GATEWAY-CLUSTER-SCOPE-SIGNALS.md) |
 | DD-HOLMESGPT-005 | Test Strategy Validation | ✅ Validated | [Date] | [DD-HOLMESGPT-005-Test-Strategy-Validation.md](decisions/DD-HOLMESGPT-005-Test-Strategy-Validation.md) |
 | DD-HOLMESGPT-006 | Implementation Plan Quality Gate | ✅ Approved | [Date] | [DD-HOLMESGPT-006-Implementation-Plan-Quality-Gate.md](decisions/DD-HOLMESGPT-006-Implementation-Plan-Quality-Gate.md) |
 | DD-HOLMESGPT-007 | Service Boundaries Clarification | ✅ Approved | [Date] | [DD-HOLMESGPT-007-Service-Boundaries-Clarification.md](decisions/DD-HOLMESGPT-007-Service-Boundaries-Clarification.md) |
