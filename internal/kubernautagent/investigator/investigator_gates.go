@@ -189,7 +189,10 @@ func (inv *Investigator) apiVersionValidationGate(
 	gateEvent.Data["conflicting_groups"] = groupList
 	audit.StoreBestEffort(ctx, inv.auditStore, gateEvent, inv.auditLog())
 
-	return inv.retryForAPIVersion(ctx, result, history, client, runtimeParams, tokens, kind, groupList, correlationID, gateEvent)
+	return inv.retryForAPIVersion(ctx, retryForAPIVersionParams{
+		Result: result, History: history, Client: client, RuntimeParams: runtimeParams, Tokens: tokens,
+		Kind: kind, GroupList: groupList, CorrelationID: correlationID, GateEvent: gateEvent,
+	})
 }
 
 // autoResolveNonAmbiguousAPIVersion auto-resolves apiVersion for a
@@ -226,21 +229,26 @@ func conflictingGroupList(gvrs []schema.GroupVersionResource) string {
 	return strings.Join(groupNames, ", ")
 }
 
+// retryForAPIVersionParams groups the fields needed by retryForAPIVersion.
+// Extracted per AGENTS.md's 8+-param Options-pattern rule.
+type retryForAPIVersionParams struct {
+	Result                         *katypes.InvestigationResult
+	History                        []llm.Message
+	Client                         llm.Client
+	RuntimeParams                  llm.RuntimeParams
+	Tokens                         *TokenAccumulator
+	Kind, GroupList, CorrelationID string
+	GateEvent                      *audit.AuditEvent
+}
+
 // retryForAPIVersion re-submits the RCA request with a correction message
 // asking the LLM to disambiguate the API group for kind, and parses the
 // retry response. Falls back to apiVersionGateExhaustion (forcing human
 // review) at every failure point: LLM error, empty response, parse error, or
 // a retry result that still lacks api_version.
-func (inv *Investigator) retryForAPIVersion(
-	ctx context.Context,
-	result *katypes.InvestigationResult,
-	history []llm.Message,
-	client llm.Client,
-	runtimeParams llm.RuntimeParams,
-	tokens *TokenAccumulator,
-	kind, groupList, correlationID string,
-	gateEvent *audit.AuditEvent,
-) *katypes.InvestigationResult {
+func (inv *Investigator) retryForAPIVersion(ctx context.Context, p retryForAPIVersionParams) *katypes.InvestigationResult {
+	result, history, client, runtimeParams, tokens := p.Result, p.History, p.Client, p.RuntimeParams, p.Tokens
+	kind, groupList, correlationID, gateEvent := p.Kind, p.GroupList, p.CorrelationID, p.GateEvent
 	correctionMsg := fmt.Sprintf(
 		`Your remediation_target.kind is %q, which exists in multiple API groups: %s. `+
 			`Without an explicit api_version, the system cannot determine the correct API group `+

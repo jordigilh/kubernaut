@@ -299,7 +299,10 @@ func (e *Enricher) Enrich(ctx context.Context, kind, name, namespace, apiVersion
 		result.RemediationHistory = histResult
 	}
 
-	e.emitEnrichmentAuditEvent(ctx, kind, name, namespace, incidentID, result, ownerErr, histErr)
+	e.emitEnrichmentAuditEvent(ctx, enrichmentAuditParams{
+		Kind: kind, Name: name, Namespace: namespace, IncidentID: incidentID,
+		Result: result, OwnerErr: ownerErr, HistErr: histErr,
+	})
 
 	return result, nil
 }
@@ -377,10 +380,20 @@ func (e *Enricher) populateDetectedLabels(ctx context.Context, kind, name, names
 	return nil
 }
 
+// enrichmentAuditParams groups the fields needed to emit the enrichment
+// audit event. Extracted per AGENTS.md's 8+-param Options-pattern rule.
+type enrichmentAuditParams struct {
+	Kind, Name, Namespace, IncidentID string
+	Result                            *EnrichmentResult
+	OwnerErr, HistErr                 error
+}
+
 // emitEnrichmentAuditEvent records a best-effort audit event summarizing the
 // enrichment outcome: failure when both the owner-chain and history lookups
 // errored, success (with any partial error detail) otherwise.
-func (e *Enricher) emitEnrichmentAuditEvent(ctx context.Context, kind, name, namespace, incidentID string, result *EnrichmentResult, ownerErr, histErr error) {
+func (e *Enricher) emitEnrichmentAuditEvent(ctx context.Context, p enrichmentAuditParams) {
+	kind, name, namespace, incidentID := p.Kind, p.Name, p.Namespace, p.IncidentID
+	result, ownerErr, histErr := p.Result, p.OwnerErr, p.HistErr
 	eventID := uuid.New().String()
 	correlationID := incidentID
 	if correlationID == "" {

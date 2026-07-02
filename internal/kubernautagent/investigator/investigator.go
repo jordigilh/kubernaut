@@ -390,8 +390,10 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 
 	// GAP-001 / ADR-056: Re-enrich using RCA-identified remediation target if
 	// different. H3-fix: retain pre-RCA enrichment if re-enrichment fails.
-	workflowSignal, enrichData, hardFailed := inv.reEnrichWorkflowTarget(
-		ctx, signal, rcaResult, enrichData, enrichmentCache, signalKind, signalName, signalNS)
+	workflowSignal, enrichData, hardFailed := inv.reEnrichWorkflowTarget(ctx, reEnrichWorkflowTargetParams{
+		Signal: signal, RCAResult: rcaResult, EnrichData: enrichData, EnrichmentCache: enrichmentCache,
+		SignalKind: signalKind, SignalName: signalName, SignalNS: signalNS,
+	})
 	if hardFailed {
 		return inv.finalizeAndEmitRCAOnlyResult(ctx, rcaResult, signal, enrichData, tokens, correlationID), nil
 	}
@@ -420,7 +422,10 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 		return workflowResult, nil
 	}
 
-	return inv.mergeAndFinalizeWorkflowResult(ctx, workflowResult, rcaResult, signal, workflowSignal, enrichData, p1Ctx, tokens, correlationID), nil
+	return inv.mergeAndFinalizeWorkflowResult(ctx, mergeAndFinalizeWorkflowResultParams{
+		WorkflowResult: workflowResult, RCAResult: rcaResult, Signal: signal, WorkflowSignal: workflowSignal,
+		EnrichData: enrichData, P1Ctx: p1Ctx, Tokens: tokens, CorrelationID: correlationID,
+	}), nil
 }
 
 // finalizeAndEmitRCAOnlyResult applies the common Phase-1-only finalization
@@ -438,12 +443,26 @@ func (inv *Investigator) finalizeAndEmitRCAOnlyResult(ctx context.Context, rcaRe
 	return rcaResult
 }
 
+// reEnrichWorkflowTargetParams groups the fields needed by
+// reEnrichWorkflowTarget. Extracted per AGENTS.md's 8+-param
+// Options-pattern rule.
+type reEnrichWorkflowTargetParams struct {
+	Signal                           katypes.SignalContext
+	RCAResult                        *katypes.InvestigationResult
+	EnrichData                       *enrichment.EnrichmentResult
+	EnrichmentCache                  map[string]*enrichment.EnrichmentResult
+	SignalKind, SignalName, SignalNS string
+}
+
 // reEnrichWorkflowTarget re-enriches using the RCA-identified remediation
 // target when it differs from the pre-RCA signal target (GAP-001/ADR-056).
 // hardFailed is true when the re-enrichment owner-chain lookup hard-failed;
 // callers must treat rcaResult (already marked HumanReviewNeeded/rca_incomplete
 // by this function) as the final result in that case.
-func (inv *Investigator) reEnrichWorkflowTarget(ctx context.Context, signal katypes.SignalContext, rcaResult *katypes.InvestigationResult, enrichData *enrichment.EnrichmentResult, enrichmentCache map[string]*enrichment.EnrichmentResult, signalKind, signalName, signalNS string) (workflowSignal katypes.SignalContext, updatedEnrichData *enrichment.EnrichmentResult, hardFailed bool) {
+func (inv *Investigator) reEnrichWorkflowTarget(ctx context.Context, p reEnrichWorkflowTargetParams) (workflowSignal katypes.SignalContext, updatedEnrichData *enrichment.EnrichmentResult, hardFailed bool) {
+	signal, rcaResult, enrichData := p.Signal, p.RCAResult, p.EnrichData
+	enrichmentCache := p.EnrichmentCache
+	signalKind, signalName, signalNS := p.SignalKind, p.SignalName, p.SignalNS
 	workflowSignal = signal
 	postRCAKind, postRCAName, postRCANS := ResolveEnrichmentTarget(signal, rcaResult)
 	postRCANS = inv.normalizeNamespace(postRCAKind, postRCANS)
@@ -523,10 +542,25 @@ func (inv *Investigator) enrichWorkflowSignalForDiscovery(workflowSignal, signal
 	return workflowSignal
 }
 
+// mergeAndFinalizeWorkflowResultParams groups the fields needed by
+// mergeAndFinalizeWorkflowResult. Extracted per AGENTS.md's 8+-param
+// Options-pattern rule.
+type mergeAndFinalizeWorkflowResultParams struct {
+	WorkflowResult, RCAResult *katypes.InvestigationResult
+	Signal, WorkflowSignal    katypes.SignalContext
+	EnrichData                *enrichment.EnrichmentResult
+	P1Ctx                     *prompt.Phase1Data
+	Tokens                    *TokenAccumulator
+	CorrelationID             string
+}
+
 // mergeAndFinalizeWorkflowResult merges Phase 1 (RCA) fallback fields into
 // the Phase 3 workflow-selection result, then applies the same finalization
 // steps as finalizeAndEmitRCAOnlyResult before emitting the audit trail.
-func (inv *Investigator) mergeAndFinalizeWorkflowResult(ctx context.Context, workflowResult, rcaResult *katypes.InvestigationResult, signal, workflowSignal katypes.SignalContext, enrichData *enrichment.EnrichmentResult, p1Ctx *prompt.Phase1Data, tokens *TokenAccumulator, correlationID string) *katypes.InvestigationResult {
+func (inv *Investigator) mergeAndFinalizeWorkflowResult(ctx context.Context, p mergeAndFinalizeWorkflowResultParams) *katypes.InvestigationResult {
+	workflowResult, rcaResult := p.WorkflowResult, p.RCAResult
+	signal, workflowSignal := p.Signal, p.WorkflowSignal
+	enrichData, p1Ctx, tokens, correlationID := p.EnrichData, p.P1Ctx, p.Tokens, p.CorrelationID
 	if workflowResult.RCASummary == "" {
 		workflowResult.RCASummary = rcaResult.RCASummary
 	}

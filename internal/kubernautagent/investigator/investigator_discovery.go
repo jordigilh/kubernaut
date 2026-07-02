@@ -144,8 +144,24 @@ func (inv *Investigator) resolveRCAWorkflowDiscoveryEnrichment(ctx context.Conte
 		return rawEnrichData, true, nil
 	}
 
-	return inv.reEnrichForRCATargetShift(ctx, enrichmentCache, signal, rcaResult, rawEnrichData,
-		signalKind, signalName, postRCAKind, postRCAName, postRCANS, correlationID)
+	return inv.reEnrichForRCATargetShift(ctx, reEnrichForRCATargetShiftParams{
+		EnrichmentCache: enrichmentCache, Signal: signal, RCAResult: rcaResult, RawEnrichData: rawEnrichData,
+		SignalKind: signalKind, SignalName: signalName,
+		PostRCAKind: postRCAKind, PostRCAName: postRCAName, PostRCANS: postRCANS,
+		CorrelationID: correlationID,
+	})
+}
+
+// reEnrichForRCATargetShiftParams groups the fields needed by
+// reEnrichForRCATargetShift. Extracted per AGENTS.md's 8+-param
+// Options-pattern rule.
+type reEnrichForRCATargetShiftParams struct {
+	EnrichmentCache                                    map[string]*enrichment.EnrichmentResult
+	Signal                                             katypes.SignalContext
+	RCAResult                                          *katypes.InvestigationResult
+	RawEnrichData                                      *enrichment.EnrichmentResult
+	SignalKind, SignalName                             string
+	PostRCAKind, PostRCAName, PostRCANS, CorrelationID string
 }
 
 // reEnrichForRCATargetShift re-runs enrichment against the RCA-resolved
@@ -154,14 +170,10 @@ func (inv *Investigator) resolveRCAWorkflowDiscoveryEnrichment(ctx context.Conte
 // cause). Returns a non-nil hardFailResult when the re-enrichment
 // hard-fails, in which case rcaResult has already been mutated to request
 // human review with the rca_incomplete reason.
-func (inv *Investigator) reEnrichForRCATargetShift(
-	ctx context.Context,
-	enrichmentCache map[string]*enrichment.EnrichmentResult,
-	signal katypes.SignalContext,
-	rcaResult *katypes.InvestigationResult,
-	rawEnrichData *enrichment.EnrichmentResult,
-	signalKind, signalName, postRCAKind, postRCAName, postRCANS, correlationID string,
-) (*enrichment.EnrichmentResult, bool, *katypes.InvestigationResult) {
+func (inv *Investigator) reEnrichForRCATargetShift(ctx context.Context, p reEnrichForRCATargetShiftParams) (*enrichment.EnrichmentResult, bool, *katypes.InvestigationResult) {
+	enrichmentCache, signal, rcaResult, rawEnrichData := p.EnrichmentCache, p.Signal, p.RCAResult, p.RawEnrichData
+	signalKind, signalName := p.SignalKind, p.SignalName
+	postRCAKind, postRCAName, postRCANS, correlationID := p.PostRCAKind, p.PostRCAName, p.PostRCANS, p.CorrelationID
 	inv.logger.Info("RunWorkflowDiscoveryFromRCA: re-enriching with RCA target",
 		"signal", signalKind+"/"+signalName,
 		"rca_target", postRCAKind+"/"+postRCAName,
