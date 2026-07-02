@@ -35,6 +35,7 @@ import (
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-logr/logr"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.uber.org/zap"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -107,85 +108,10 @@ func main() {
 	flag.Parse()
 
 	// Bootstrap logger at INFO for startup; replaced after config is loaded (#875).
-	logger := kubelog.NewLogger(kubelog.Options{Level: 0, ServiceName: "kubernaut-agent"})
+	bootstrapLogger := kubelog.NewLogger(kubelog.Options{Level: 0, ServiceName: "kubernaut-agent"})
 
-	cfgData, err := os.ReadFile(configPath)
-	if err != nil {
-		logger.Error(err, "failed to read config", "path", configPath)
-		os.Exit(1)
-	}
-	cfg, err := kaconfig.Load(cfgData)
-	if err != nil {
-		logger.Error(err, "failed to parse config")
-		os.Exit(1)
-	}
-
-	atomicLevel := cfg.Runtime.Logging.NewAtomicLevel()
-	logger = kubelog.NewLoggerWithAtomicLevel(kubelog.Options{
-		ServiceName: "kubernaut-agent",
-		Development: cfg.Runtime.Logging.IsConsoleFormat(),
-	}, atomicLevel)
+	cfg, llmRuntime, logger, atomicLevel := loadStartupConfig(configPath, llmRuntimePath, bootstrapLogger)
 	defer kubelog.Sync(logger)
-
-	logger.Info("logging configured",
-		"level", cfg.Runtime.Logging.Level,
-		"format", cfg.Runtime.Logging.Format,
-	)
-
-	llmRtData, err := os.ReadFile(llmRuntimePath)
-	if err != nil {
-		logger.Error(err, "failed to read llm runtime config", "path", llmRuntimePath)
-		os.Exit(1)
-	}
-	llmRuntime, err := kaconfig.LoadLLMRuntime(llmRtData)
-	if err != nil {
-		logger.Error(err, "failed to parse llm runtime config")
-		os.Exit(1)
-	}
-
-	// Resolve API key: static config apiKeyFile -> runtime apiKeyFile -> credentials dir
-	if err := cfg.AI.LLM.ResolveAPIKey(); err != nil {
-		logger.Info("static apiKeyFile resolution failed", "error", err)
-	}
-	if llmRuntime.APIKeyFile != "" {
-		data, readErr := os.ReadFile(llmRuntime.APIKeyFile)
-		if readErr != nil {
-			logger.Info("apiKeyFile resolution failed, falling back to credentials dir",
-				"error", readErr, "apiKeyFile", llmRuntime.APIKeyFile)
-		} else {
-			llmRuntime.APIKey = strings.TrimSpace(string(data))
-		}
-	}
-	if cfg.AI.LLM.APIKey == "" && llmRuntime.APIKey == "" {
-		const credDir = "/etc/kubernaut-agent/credentials" // pre-commit:allow-sensitive (mount path)
-		llmRuntime.APIKey = credentials.ResolveCredentialsFile(cfg.AI.LLM.Provider, credDir, logger)
-	}
-
-	switch cfg.AI.LLM.Provider {
-	case "vertex", "vertex_ai":
-		if llmRuntime.APIKey == "" {
-			logger.Info("GCP provider configured without credentials — requests will use ambient ADC if available",
-				"provider", cfg.AI.LLM.Provider)
-		}
-	}
-
-	if cfg.AI.LLM.OAuth2.Enabled {
-		if err := cfg.AI.LLM.OAuth2.ResolveOAuth2Credentials(); err != nil {
-			logger.Error(err, "failed to resolve OAuth2 credentials from mounted Secret")
-			os.Exit(1)
-		}
-		logger.Info("OAuth2 credentials resolved from mounted Secret",
-			"credentialsDir", cfg.AI.LLM.OAuth2.CredentialsDir)
-	}
-
-	if err := cfg.Validate(); err != nil {
-		logger.Error(err, "invalid configuration")
-		os.Exit(1)
-	}
-	if err := llmRuntime.Validate(cfg.AI.LLM.Provider); err != nil {
-		logger.Error(err, "invalid llm runtime configuration")
-		os.Exit(1)
-	}
 
 	if addr == "" {
 		addr = fmt.Sprintf("%s:%d", cfg.Runtime.Server.Address, cfg.Runtime.Server.Port)
@@ -287,15 +213,6 @@ func main() {
 
 	r := chi.NewRouter()
 
-	// authCleanupRef is set inside the chi route-setup closure and deferred here
-	// in the main scope so the JWKS cache goroutines live for the server's lifetime.
-	var authCleanupRef func()
-	defer func() {
-		if authCleanupRef != nil {
-			authCleanupRef()
-		}
-	}()
-
 	const maxRequestBodySize int64 = 1 << 20 // 1 MiB
 
 	apiRateLimiter := kaserver.NewRateLimiter(kaserver.RateLimitConfig{
@@ -324,127 +241,20 @@ func main() {
 	// for requests sent right after Kubernetes reports the pod Ready.
 	var apiServerReady int32
 
-	healthMux := http.NewServeMux()
-	healthMux.HandleFunc("/healthz", healthHandler)
-	healthMux.HandleFunc("/readyz", readinessHandler(&shutdownFlag, &apiServerReady, swappable, ds, interactiveReadiness))
-	healthMux.HandleFunc("/config", configHandler(cfg, swappable))
-	if !cfg.Runtime.Server.DisableAdminEndpoints {
-		healthMux.Handle("/admin/loglevel", atomicLevel)
-	}
-	healthMux.HandleFunc("/openapi.json", kaapi.SpecHandler())
-	if !cfg.Runtime.Server.DisableProfiling {
-		healthMux.HandleFunc("/debug/pprof/", pprof.Index)
-		healthMux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
-		healthMux.HandleFunc("/debug/pprof/profile", pprof.Profile)
-		healthMux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
-		healthMux.HandleFunc("/debug/pprof/trace", pprof.Trace)
-	}
-	healthServer := &http.Server{
-		Addr:              cfg.Runtime.Server.HealthAddr,
-		Handler:           healthMux,
-		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       10 * time.Second,
-		WriteTimeout:      10 * time.Second,
-	}
-	metricsMux := http.NewServeMux()
-	metricsMux.Handle("/metrics", promhttp.Handler())
-	metricsServer := &http.Server{
-		Addr:              cfg.Runtime.Server.MetricsAddr,
-		Handler:           metricsMux,
-		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       5 * time.Second,
-		WriteTimeout:      10 * time.Second,
-		IdleTimeout:       30 * time.Second,
-	}
+	healthServer, metricsServer := startHealthAndMetricsServers(cfg, atomicLevel, swappable, ds, interactiveReadiness, &shutdownFlag, &apiServerReady, logger)
 
-	go func() {
-		logger.Info("health server listening", "addr", cfg.Runtime.Server.HealthAddr)
-		if err := healthServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Error(err, "health server error")
-		}
-	}()
-	go func() {
-		logger.Info("metrics server listening", "addr", cfg.Runtime.Server.MetricsAddr)
-		if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Error(err, "metrics server error")
-		}
-	}()
-
-	var sessionDrainer *mcpkg.SessionDrainer
-
-	r.Route("/api/v1", func(r chi.Router) {
-		r.Use(func(next http.Handler) http.Handler {
-			return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-				req.Body = http.MaxBytesReader(w, req.Body, maxRequestBodySize)
-				next.ServeHTTP(w, req)
-			})
-		})
-		if cfg.Runtime.Server.MaxConcurrentRequests > 0 {
-			logger.Info("concurrency throttling enabled",
-				"max_concurrent_requests", cfg.Runtime.Server.MaxConcurrentRequests)
-			r.Use(chimiddleware.Throttle(cfg.Runtime.Server.MaxConcurrentRequests))
-		}
-		r.Use(kaserver.HTTPMetricsMiddleware(agentMetrics))
-		r.Use(apiRateLimiter.Middleware)
-
-		authMw, authCleanup := newAuthMiddleware(k8sInfra, cfg.Interactive, logger)
-		if authCleanup != nil {
-			// authCleanup is captured and deferred in the outer main() scope below
-			// (not here — this is a chi route-setup closure that returns immediately).
-			authCleanupRef = authCleanup
-		}
-		if authMw != nil {
-			r.Use(func(next http.Handler) http.Handler {
-				return kaserver.AuditAuthMiddleware(authMw.Handler(next), instrumentedAudit, logger)
-			})
-			logger.Info("auth middleware enabled (DD-AUTH-014)",
-				"resource", "services",
-				"resourceName", "kubernaut-agent",
-				"verb", "create",
-			)
-		} else {
-			logger.Info("auth middleware DISABLED (no in-cluster K8s config)")
-		}
-
-		if cfg.Interactive.Enabled {
-			var mcpHandler http.Handler
-			mcpHandler, sessionDrainer = buildMCPHandler(ctx, mcpHandlerParams{
-				cfg: cfg, infra: k8sInfra, ds: ds, inv: inv, enricher: enricher,
-				autoMgr: mgr, authMw: authMw, agentMetrics: agentMetrics,
-				auditStore: instrumentedAudit, logger: logger,
-			})
-			if mcpHandler != nil {
-				// SEC-02: Per-user rate limiting for MCP interactive endpoint.
-				userRL := kaserver.NewUserRateLimiter(
-					kaserver.DefaultUserRateLimitConfig(cfg.Interactive.RateLimitPerUser),
-					agentMetrics.HTTPRateLimitedTotal,
-				)
-				defer userRL.Stop()
-
-				r.Route("/mcp", func(mcpRouter chi.Router) {
-					mcpRouter.Use(userRL.Middleware)
-					mcpRouter.Handle("/", kaserver.SSEHeadersMiddleware(mcpHandler))
-					mcpRouter.Handle("/*", kaserver.SSEHeadersMiddleware(mcpHandler))
-				})
-				interactiveReadiness.SetEnabled()
-				if eventEmitter != nil {
-					eventEmitter.EmitInteractiveEnabled()
-				}
-				logger.Info("MCP interactive route mounted",
-					"path", "/api/v1/mcp",
-					"rateLimitPerUser", cfg.Interactive.RateLimitPerUser,
-				)
-			} else {
-				interactiveReadiness.SetSoftDisabled("handler construction failed (check preceding errors)")
-				if eventEmitter != nil {
-					eventEmitter.EmitInteractiveSoftDisabled("MCP handler construction failed")
-				}
-				logger.Error(nil, "MCP interactive mode enabled but handler construction failed (check preceding errors)")
-			}
-		}
-
-		r.Handle("/*", kaserver.SSEHeadersMiddleware(ogenSrv))
+	sessionDrainer, authCleanup := registerAPIRoutes(r, ctx, apiRoutesParams{
+		cfg: cfg, infra: k8sInfra, ds: ds, inv: inv, enricher: enricher,
+		mgr: mgr, agentMetrics: agentMetrics, instrumentedAudit: instrumentedAudit,
+		ogenSrv: ogenSrv, eventEmitter: eventEmitter, interactiveReadiness: interactiveReadiness,
+		apiRateLimiter: apiRateLimiter, maxRequestBodySize: maxRequestBodySize, logger: logger,
 	})
+	// authCleanup releases the JWKS cache goroutines; deferred here in the main
+	// scope so they live for the server's lifetime (registerAPIRoutes returns
+	// immediately after chi route registration).
+	if authCleanup != nil {
+		defer authCleanup()
+	}
 
 	httpServer := &http.Server{
 		Addr:              addr,
@@ -503,6 +313,99 @@ func main() {
 	}
 	logger.Info("flushing audit store...")
 	auditCleanup()
+}
+
+// loadStartupConfig reads and validates the static config and hot-reloadable
+// LLM runtime config from disk, resolves LLM API key/OAuth2 credentials, and
+// builds the atomic-level-aware logger used for the remainder of the process
+// lifetime. Terminates the process (os.Exit(1)) on unrecoverable failures,
+// matching the original inline main() behavior.
+func loadStartupConfig(configPath, llmRuntimePath string, bootstrapLogger logr.Logger) (*kaconfig.Config, *kaconfig.LLMRuntimeConfig, logr.Logger, zap.AtomicLevel) {
+	cfgData, err := os.ReadFile(configPath)
+	if err != nil {
+		bootstrapLogger.Error(err, "failed to read config", "path", configPath)
+		os.Exit(1)
+	}
+	cfg, err := kaconfig.Load(cfgData)
+	if err != nil {
+		bootstrapLogger.Error(err, "failed to parse config")
+		os.Exit(1)
+	}
+
+	atomicLevel := cfg.Runtime.Logging.NewAtomicLevel()
+	logger := kubelog.NewLoggerWithAtomicLevel(kubelog.Options{
+		ServiceName: "kubernaut-agent",
+		Development: cfg.Runtime.Logging.IsConsoleFormat(),
+	}, atomicLevel)
+
+	logger.Info("logging configured",
+		"level", cfg.Runtime.Logging.Level,
+		"format", cfg.Runtime.Logging.Format,
+	)
+
+	llmRtData, err := os.ReadFile(llmRuntimePath)
+	if err != nil {
+		logger.Error(err, "failed to read llm runtime config", "path", llmRuntimePath)
+		os.Exit(1)
+	}
+	llmRuntime, err := kaconfig.LoadLLMRuntime(llmRtData)
+	if err != nil {
+		logger.Error(err, "failed to parse llm runtime config")
+		os.Exit(1)
+	}
+
+	resolveLLMCredentials(cfg, llmRuntime, logger)
+
+	if err := cfg.Validate(); err != nil {
+		logger.Error(err, "invalid configuration")
+		os.Exit(1)
+	}
+	if err := llmRuntime.Validate(cfg.AI.LLM.Provider); err != nil {
+		logger.Error(err, "invalid llm runtime configuration")
+		os.Exit(1)
+	}
+
+	return cfg, llmRuntime, logger, atomicLevel
+}
+
+// resolveLLMCredentials resolves the LLM API key via static config
+// apiKeyFile -> runtime apiKeyFile -> credentials dir, then resolves OAuth2
+// credentials when enabled. Terminates the process (os.Exit(1)) on OAuth2
+// resolution failure, matching the original inline main() behavior.
+func resolveLLMCredentials(cfg *kaconfig.Config, llmRuntime *kaconfig.LLMRuntimeConfig, logger logr.Logger) {
+	if err := cfg.AI.LLM.ResolveAPIKey(); err != nil {
+		logger.Info("static apiKeyFile resolution failed", "error", err)
+	}
+	if llmRuntime.APIKeyFile != "" {
+		data, readErr := os.ReadFile(llmRuntime.APIKeyFile)
+		if readErr != nil {
+			logger.Info("apiKeyFile resolution failed, falling back to credentials dir",
+				"error", readErr, "apiKeyFile", llmRuntime.APIKeyFile)
+		} else {
+			llmRuntime.APIKey = strings.TrimSpace(string(data))
+		}
+	}
+	if cfg.AI.LLM.APIKey == "" && llmRuntime.APIKey == "" {
+		const credDir = "/etc/kubernaut-agent/credentials" // pre-commit:allow-sensitive (mount path)
+		llmRuntime.APIKey = credentials.ResolveCredentialsFile(cfg.AI.LLM.Provider, credDir, logger)
+	}
+
+	switch cfg.AI.LLM.Provider {
+	case "vertex", "vertex_ai":
+		if llmRuntime.APIKey == "" {
+			logger.Info("GCP provider configured without credentials — requests will use ambient ADC if available",
+				"provider", cfg.AI.LLM.Provider)
+		}
+	}
+
+	if cfg.AI.LLM.OAuth2.Enabled {
+		if err := cfg.AI.LLM.OAuth2.ResolveOAuth2Credentials(); err != nil {
+			logger.Error(err, "failed to resolve OAuth2 credentials from mounted Secret")
+			os.Exit(1)
+		}
+		logger.Info("OAuth2 credentials resolved from mounted Secret",
+			"credentialsDir", cfg.AI.LLM.OAuth2.CredentialsDir)
+	}
 }
 
 // buildLLMClients constructs the primary SwappableClient plus any per-phase
@@ -939,6 +842,62 @@ func configHandler(cfg *kaconfig.Config, swappable *llm.SwappableClient) http.Ha
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(sanitized)
 	}
+}
+
+// startHealthAndMetricsServers builds and starts (in background goroutines)
+// the health/readiness/config/admin HTTP server and the Prometheus metrics
+// server. These are started before API route setup so liveness/readiness
+// probes are served even while the JWKS pre-warm (up to 15s) blocks inside
+// newAuthMiddleware — otherwise the liveness probe kills the pod before the
+// health server ever starts.
+func startHealthAndMetricsServers(cfg *kaconfig.Config, atomicLevel zap.AtomicLevel, swappable *llm.SwappableClient, ds *dsClients, interactiveReadiness *karbac.InteractiveReadiness, shutdownFlag, apiServerReady *int32, logger logr.Logger) (*http.Server, *http.Server) {
+	healthMux := http.NewServeMux()
+	healthMux.HandleFunc("/healthz", healthHandler)
+	healthMux.HandleFunc("/readyz", readinessHandler(shutdownFlag, apiServerReady, swappable, ds, interactiveReadiness))
+	healthMux.HandleFunc("/config", configHandler(cfg, swappable))
+	if !cfg.Runtime.Server.DisableAdminEndpoints {
+		healthMux.Handle("/admin/loglevel", atomicLevel)
+	}
+	healthMux.HandleFunc("/openapi.json", kaapi.SpecHandler())
+	if !cfg.Runtime.Server.DisableProfiling {
+		healthMux.HandleFunc("/debug/pprof/", pprof.Index)
+		healthMux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+		healthMux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+		healthMux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+		healthMux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	}
+	healthServer := &http.Server{
+		Addr:              cfg.Runtime.Server.HealthAddr,
+		Handler:           healthMux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
+	}
+	metricsMux := http.NewServeMux()
+	metricsMux.Handle("/metrics", promhttp.Handler())
+	metricsServer := &http.Server{
+		Addr:              cfg.Runtime.Server.MetricsAddr,
+		Handler:           metricsMux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       5 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       30 * time.Second,
+	}
+
+	go func() {
+		logger.Info("health server listening", "addr", cfg.Runtime.Server.HealthAddr)
+		if err := healthServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Error(err, "health server error")
+		}
+	}()
+	go func() {
+		logger.Info("metrics server listening", "addr", cfg.Runtime.Server.MetricsAddr)
+		if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Error(err, "metrics server error")
+		}
+	}()
+
+	return healthServer, metricsServer
 }
 
 // detectNamespace reads the pod's namespace from the mounted ServiceAccount.
@@ -1578,6 +1537,116 @@ func newAuthMiddleware(infra *k8sInfra, interactiveCfg kaconfig.InteractiveConfi
 // mcpHandlerParams groups the dependencies needed to build the MCP
 // interactive-mode HTTP handler. Extracted per AGENTS.md's 8+-param
 // Options-pattern rule.
+// apiRoutesParams groups the dependencies needed to register the /api/v1
+// route tree (body-size limiting, throttling, metrics, rate limiting, auth,
+// the optional MCP interactive endpoint, and the ogen-generated REST API).
+type apiRoutesParams struct {
+	cfg                  *kaconfig.Config
+	infra                *k8sInfra
+	ds                   *dsClients
+	inv                  *investigator.Investigator
+	enricher             *enrichment.Enricher
+	mgr                  *session.Manager
+	agentMetrics         *kametrics.Metrics
+	instrumentedAudit    audit.AuditStore
+	ogenSrv              http.Handler
+	eventEmitter         *karbac.EventEmitter
+	interactiveReadiness *karbac.InteractiveReadiness
+	apiRateLimiter       *kaserver.RateLimiter
+	maxRequestBodySize   int64
+	logger               logr.Logger
+}
+
+// registerAPIRoutes mounts the /api/v1 route tree onto r: request body-size
+// limiting, optional concurrency throttling, HTTP metrics, API rate limiting,
+// auth middleware (DD-AUTH-014), the optional MCP interactive endpoint, and
+// the ogen-generated REST API as the catch-all. Returns the MCP session
+// drainer (nil when interactive mode is disabled or handler construction
+// failed) and the auth middleware's JWKS cache cleanup func (nil when auth
+// is disabled), both intended to be handled by the caller after this
+// function returns.
+func registerAPIRoutes(r chi.Router, ctx context.Context, p apiRoutesParams) (*mcpkg.SessionDrainer, func()) {
+	var sessionDrainer *mcpkg.SessionDrainer
+	var authCleanupRef func()
+
+	r.Route("/api/v1", func(r chi.Router) {
+		r.Use(func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				req.Body = http.MaxBytesReader(w, req.Body, p.maxRequestBodySize)
+				next.ServeHTTP(w, req)
+			})
+		})
+		if p.cfg.Runtime.Server.MaxConcurrentRequests > 0 {
+			p.logger.Info("concurrency throttling enabled",
+				"max_concurrent_requests", p.cfg.Runtime.Server.MaxConcurrentRequests)
+			r.Use(chimiddleware.Throttle(p.cfg.Runtime.Server.MaxConcurrentRequests))
+		}
+		r.Use(kaserver.HTTPMetricsMiddleware(p.agentMetrics))
+		r.Use(p.apiRateLimiter.Middleware)
+
+		authMw, authCleanup := newAuthMiddleware(p.infra, p.cfg.Interactive, p.logger)
+		if authCleanup != nil {
+			// authCleanupRef is returned to the caller and deferred in main()'s
+			// scope (not here — this is a chi route-setup closure that returns
+			// immediately).
+			authCleanupRef = authCleanup
+		}
+		if authMw != nil {
+			r.Use(func(next http.Handler) http.Handler {
+				return kaserver.AuditAuthMiddleware(authMw.Handler(next), p.instrumentedAudit, p.logger)
+			})
+			p.logger.Info("auth middleware enabled (DD-AUTH-014)",
+				"resource", "services",
+				"resourceName", "kubernaut-agent",
+				"verb", "create",
+			)
+		} else {
+			p.logger.Info("auth middleware DISABLED (no in-cluster K8s config)")
+		}
+
+		if p.cfg.Interactive.Enabled {
+			var mcpHandler http.Handler
+			mcpHandler, sessionDrainer = buildMCPHandler(ctx, mcpHandlerParams{
+				cfg: p.cfg, infra: p.infra, ds: p.ds, inv: p.inv, enricher: p.enricher,
+				autoMgr: p.mgr, authMw: authMw, agentMetrics: p.agentMetrics,
+				auditStore: p.instrumentedAudit, logger: p.logger,
+			})
+			if mcpHandler != nil {
+				// SEC-02: Per-user rate limiting for MCP interactive endpoint.
+				userRL := kaserver.NewUserRateLimiter(
+					kaserver.DefaultUserRateLimitConfig(p.cfg.Interactive.RateLimitPerUser),
+					p.agentMetrics.HTTPRateLimitedTotal,
+				)
+				defer userRL.Stop()
+
+				r.Route("/mcp", func(mcpRouter chi.Router) {
+					mcpRouter.Use(userRL.Middleware)
+					mcpRouter.Handle("/", kaserver.SSEHeadersMiddleware(mcpHandler))
+					mcpRouter.Handle("/*", kaserver.SSEHeadersMiddleware(mcpHandler))
+				})
+				p.interactiveReadiness.SetEnabled()
+				if p.eventEmitter != nil {
+					p.eventEmitter.EmitInteractiveEnabled()
+				}
+				p.logger.Info("MCP interactive route mounted",
+					"path", "/api/v1/mcp",
+					"rateLimitPerUser", p.cfg.Interactive.RateLimitPerUser,
+				)
+			} else {
+				p.interactiveReadiness.SetSoftDisabled("handler construction failed (check preceding errors)")
+				if p.eventEmitter != nil {
+					p.eventEmitter.EmitInteractiveSoftDisabled("MCP handler construction failed")
+				}
+				p.logger.Error(nil, "MCP interactive mode enabled but handler construction failed (check preceding errors)")
+			}
+		}
+
+		r.Handle("/*", kaserver.SSEHeadersMiddleware(p.ogenSrv))
+	})
+
+	return sessionDrainer, authCleanupRef
+}
+
 type mcpHandlerParams struct {
 	cfg          *kaconfig.Config
 	infra        *k8sInfra
