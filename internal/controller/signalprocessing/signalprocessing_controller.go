@@ -55,11 +55,8 @@ import (
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/audit"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/classifier"
-	"github.com/jordigilh/kubernaut/pkg/signalprocessing/evaluator"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/status"
-
 	// BR-SP-110: Kubernetes Conditions
-	spconditions "github.com/jordigilh/kubernaut/pkg/signalprocessing"
 )
 
 // SignalProcessingReconciler reconciles a SignalProcessing object.
@@ -68,7 +65,7 @@ import (
 type SignalProcessingReconciler struct {
 	client.Client
 	Scheme       *runtime.Scheme
-	AuditManager *audit.Manager      // BR-SP-090: Audit Manager (Phase 3 refactoring - 2026-01-22)
+	AuditManager *audit.Manager // BR-SP-090: Audit Manager (Phase 3 refactoring - 2026-01-22)
 
 	// V1.0 Maturity Requirements (per SERVICE_MATURITY_REQUIREMENTS.md)
 	Metrics  *metrics.Metrics     // DD-005: Observability - metrics wired to controller
@@ -137,14 +134,9 @@ func (r *SignalProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return ctrl.Result{}, fmt.Errorf("PolicyEvaluator is nil - SP controller misconfigured (should be caught by SetupWithManager)")
 	}
 
-	// ========================================
-	// OBSERVED GENERATION CHECK (DD-CONTROLLER-001)
-	// ========================================
-	// Skip reconcile if we've already processed this generation AND not in terminal phase
-	if sp.Status.ObservedGeneration == sp.Generation &&
-		sp.Status.Phase != "" &&
-		sp.Status.Phase != signalprocessingv1alpha1.PhaseCompleted &&
-		sp.Status.Phase != signalprocessingv1alpha1.PhaseFailed {
+	// OBSERVED GENERATION CHECK (DD-CONTROLLER-001): skip reconcile if we've
+	// already processed this generation AND not in a terminal phase.
+	if isDuplicateGenerationReconcile(sp) {
 		logger.V(1).Info("✅ DUPLICATE RECONCILE PREVENTED: Generation already processed",
 			"generation", sp.Generation,
 			"observedGeneration", sp.Status.ObservedGeneration,
@@ -154,30 +146,8 @@ func (r *SignalProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 	// Initialize status if needed
 	if sp.Status.Phase == "" {
-		// ========================================
-		// DD-PERF-001: ATOMIC STATUS UPDATE
-		// Initialize phase + timestamp in single API call
-		// DD-CONTROLLER-001: ObservedGeneration NOT set here - only after processing phase
-		// ========================================
-		err := r.StatusManager.AtomicStatusUpdate(ctx, sp, func() error {
-			sp.Status.Phase = signalprocessingv1alpha1.PhasePending
-			sp.Status.StartTime = &metav1.Time{Time: time.Now()}
-			return nil
-	})
-	if err != nil {
-		logger.Error(err, "Failed to initialize status")
-		return ctrl.Result{}, err
+		return r.initializeNewSignalProcessing(ctx, sp, logger)
 	}
-
-	// O2 (BR-SP-090): Record phase transition audit for "" → Pending
-	// ADR-032: Audit is MANDATORY - return error if not configured
-	if err := r.recordPhaseTransitionAudit(ctx, sp, "", string(signalprocessingv1alpha1.PhasePending)); err != nil {
-		logger.Error(err, "Failed to record initial phase transition audit")
-		return ctrl.Result{}, err
-	}
-
-	return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
-}
 
 	// Skip if already completed or failed
 	if sp.Status.Phase == signalprocessingv1alpha1.PhaseCompleted ||
@@ -185,31 +155,8 @@ func (r *SignalProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return ctrl.Result{}, nil
 	}
 
-	// Process based on current phase
-	var result ctrl.Result
-	var err error
-
-	switch sp.Status.Phase {
-	case signalprocessingv1alpha1.PhasePending:
-		result, err = r.reconcilePending(ctx, sp, logger)
-	case signalprocessingv1alpha1.PhaseEnriching:
-		result, err = r.reconcileEnriching(ctx, sp, logger)
-	case signalprocessingv1alpha1.PhaseClassifying:
-		result, err = r.reconcileClassifying(ctx, sp, logger)
-	case signalprocessingv1alpha1.PhaseCategorizing:
-		result, err = r.reconcileCategorizing(ctx, sp, logger)
-	default:
-		// SP-BUG-005: Unexpected phase encountered
-		// All valid phases are handled above. If we reach here, it indicates:
-		// 1. Phase value was corrupted
-		// 2. Race condition in K8s cache
-		// 3. Test created resource with invalid phase
-		// Log error and requeue without emitting audit event (prevents extra transitions)
-		logger.Error(fmt.Errorf("unexpected phase: %s", sp.Status.Phase),
-			"Unknown phase encountered - requeueing without transition",
-			"phase", sp.Status.Phase,
-			"resourceVersion", sp.ResourceVersion,
-			"generation", sp.Generation)
+	result, err := r.dispatchPhase(ctx, sp, logger)
+	if errors.Is(err, errUnknownPhase) {
 		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}
 
@@ -228,6 +175,79 @@ func (r *SignalProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	}
 
 	return result, err
+}
+
+// isDuplicateGenerationReconcile reports whether sp's current generation was
+// already observed by a prior reconcile while sp is not in a terminal phase
+// (DD-CONTROLLER-001). Extracted from Reconcile per
+// GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 2 (issue #1520).
+func isDuplicateGenerationReconcile(sp *signalprocessingv1alpha1.SignalProcessing) bool {
+	return sp.Status.ObservedGeneration == sp.Generation &&
+		sp.Status.Phase != "" &&
+		sp.Status.Phase != signalprocessingv1alpha1.PhaseCompleted &&
+		sp.Status.Phase != signalprocessingv1alpha1.PhaseFailed
+}
+
+// errUnknownPhase is a sentinel returned by dispatchPhase when sp.Status.Phase
+// doesn't match any known phase handler (SP-BUG-005). Reconcile treats it as
+// a requeue-without-transition signal rather than a propagated error.
+var errUnknownPhase = errors.New("unexpected signalprocessing phase")
+
+// initializeNewSignalProcessing sets the initial Pending phase + StartTime
+// (DD-PERF-001 atomic update) for a freshly created SignalProcessing, and
+// records the "" → Pending audit transition (BR-SP-090, ADR-032 mandatory
+// audit). Extracted from Reconcile per GO-ANTIPATTERN-AUDIT-2026-07-01
+// Wave 2 (issue #1520).
+func (r *SignalProcessingReconciler) initializeNewSignalProcessing(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, logger logr.Logger) (ctrl.Result, error) {
+	err := r.StatusManager.AtomicStatusUpdate(ctx, sp, func() error {
+		sp.Status.Phase = signalprocessingv1alpha1.PhasePending
+		sp.Status.StartTime = &metav1.Time{Time: time.Now()}
+		return nil
+	})
+	if err != nil {
+		logger.Error(err, "Failed to initialize status")
+		return ctrl.Result{}, err
+	}
+
+	// O2 (BR-SP-090): Record phase transition audit for "" → Pending
+	// ADR-032: Audit is MANDATORY - return error if not configured
+	if err := r.recordPhaseTransitionAudit(ctx, sp, "", string(signalprocessingv1alpha1.PhasePending)); err != nil {
+		logger.Error(err, "Failed to record initial phase transition audit")
+		return ctrl.Result{}, err
+	}
+
+	return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
+}
+
+// dispatchPhase routes to the reconcile handler for sp's current phase.
+// Extracted from Reconcile per GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 2
+// (issue #1520). Returns errUnknownPhase (SP-BUG-005) for a phase value that
+// doesn't match any known handler (corrupted status, cache race, or a test
+// fixture with an invalid phase) — all valid phases are handled explicitly.
+func (r *SignalProcessingReconciler) dispatchPhase(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, logger logr.Logger) (ctrl.Result, error) {
+	switch sp.Status.Phase {
+	case signalprocessingv1alpha1.PhasePending:
+		return r.reconcilePending(ctx, sp, logger)
+	case signalprocessingv1alpha1.PhaseEnriching:
+		return r.reconcileEnriching(ctx, sp, logger)
+	case signalprocessingv1alpha1.PhaseClassifying:
+		return r.reconcileClassifying(ctx, sp, logger)
+	case signalprocessingv1alpha1.PhaseCategorizing:
+		return r.reconcileCategorizing(ctx, sp, logger)
+	default:
+		// SP-BUG-005: Unexpected phase encountered
+		// All valid phases are handled above. If we reach here, it indicates:
+		// 1. Phase value was corrupted
+		// 2. Race condition in K8s cache
+		// 3. Test created resource with invalid phase
+		// Log error and requeue without emitting audit event (prevents extra transitions)
+		logger.Error(fmt.Errorf("unexpected phase: %s", sp.Status.Phase),
+			"Unknown phase encountered - requeueing without transition",
+			"phase", sp.Status.Phase,
+			"resourceVersion", sp.ResourceVersion,
+			"generation", sp.Generation)
+		return ctrl.Result{}, errUnknownPhase
+	}
 }
 
 // reconcilePending transitions from Pending to Enriching.
@@ -272,746 +292,6 @@ func (r *SignalProcessingReconciler) reconcilePending(ctx context.Context, sp *s
 	r.Metrics.IncrementProcessingTotal("pending", "success")
 	// Requeue quickly to continue to next phase
 	return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
-}
-
-// reconcileEnriching performs context enrichment based on the signal's target type.
-//
-// BR-SP-001: K8s Context Enrichment
-// BR-SP-100: Owner Chain Traversal
-// ADR-056: BR-SP-101 (Detected Labels) relocated to KA post-RCA
-//
-// ========================================
-// V2.0 EXTENSIBILITY POINT: Multi-Provider Support
-// ========================================
-//
-// Currently, this function only supports Kubernetes enrichment (targetType: "kubernetes").
-// The CRD field `spec.signal.targetType` (enum: kubernetes|aws|azure|gcp|datadog) is already
-// present and validated, providing the routing discriminator for future multi-provider support.
-//
-// When Kubernaut evolves to a full-stack AIOps platform, extend this function with:
-//
-//	switch sp.Spec.Signal.TargetType {
-//	case "kubernetes":
-//	    return r.enrichKubernetesContext(ctx, sp, logger)  // Current implementation
-//	case "aws":
-//	    return r.enrichAWSContext(ctx, sp, logger)         // CloudWatch, CloudTrail, EC2, EKS
-//	case "azure":
-//	    return r.enrichAzureContext(ctx, sp, logger)       // Azure Monitor, Activity Log, AKS
-//	case "gcp":
-//	    return r.enrichGCPContext(ctx, sp, logger)         // Cloud Monitoring, GKE
-//	case "datadog":
-//	    return r.enrichDatadogContext(ctx, sp, logger)     // Datadog API context
-//	}
-//
-// Each provider enricher should:
-// 1. Call provider-specific APIs to gather context
-// 2. Populate the appropriate status fields (may require CRD status extension)
-// 3. Handle provider-specific error scenarios and degraded mode
-// 4. Set conditions with provider-specific reasons
-//
-// Related fields in spec.signal:
-// - targetType: The platform to enrich from (routing discriminator)
-// - type: Signal source (prometheus, kubernetes-event, aws-cloudwatch, etc.)
-// - source: Gateway adapter that ingested the signal
-//
-// See: docs/architecture/decisions/DD-SP-003-multi-provider-extensibility.md (TODO: create when V2.0 begins)
-// ========================================
-func (r *SignalProcessingReconciler) reconcileEnriching(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, logger logr.Logger) (ctrl.Result, error) {
-	logger.V(1).Info("Processing Enriching phase")
-
-	// SP-BUG-PHASE-TRANSITION-001: Idempotency guard to prevent duplicate phase transitions
-	// Use non-cached APIReader to get FRESH phase data (cached client may be stale)
-	currentPhase, err := r.StatusManager.GetCurrentPhase(ctx, sp)
-	if err != nil {
-		logger.Error(err, "Failed to fetch current phase for idempotency check, proceeding with caution")
-		// Fail-safe: continue processing, but log the error
-	} else if currentPhase == signalprocessingv1alpha1.PhaseClassifying ||
-		currentPhase == signalprocessingv1alpha1.PhaseCategorizing ||
-		currentPhase == signalprocessingv1alpha1.PhaseCompleted ||
-		currentPhase == signalprocessingv1alpha1.PhaseFailed {
-		logger.V(1).Info("Skipping Enriching phase - already transitioned (non-cached check)",
-			"current_phase", currentPhase)
-		return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
-	}
-
-	// DD-005: Track phase processing attempt
-	r.Metrics.IncrementProcessingTotal("enriching", "attempt")
-
-	// RF-SP-003: Track enrichment duration for audit metrics
-	enrichmentStart := time.Now()
-
-	signal := &sp.Spec.Signal
-
-	// Issue #419 / V2.0: Only "kubernetes" enrichment is implemented. Non-kubernetes target
-	// types are accepted by CRD validation but enrichment runs in degraded mode (no context).
-	if signal.TargetType != "" && signal.TargetType != "kubernetes" {
-		logger.Info("Non-kubernetes targetType received; enrichment will run in degraded mode",
-			"targetType", signal.TargetType)
-		// E3: Guard against nil Recorder
-		if r.Recorder != nil {
-			r.Recorder.Eventf(sp, corev1.EventTypeWarning, events.EventReasonUnsupportedTargetType,
-				"targetType %q is not yet supported for enrichment (V2.0); proceeding in degraded mode", signal.TargetType)
-		}
-	}
-
-	targetNs := signal.TargetResource.Namespace
-	targetKind := signal.TargetResource.Kind
-	targetName := signal.TargetResource.Name
-
-	// BR-SP-001: K8sEnricher is MANDATORY - fail loudly if not wired or fails
-	// No fallback path - enrichment failure should stop processing
-	if r.K8sEnricher == nil {
-		return ctrl.Result{}, fmt.Errorf("K8sEnricher is nil - this is a startup configuration error")
-	}
-
-	k8sCtx, err := r.K8sEnricher.Enrich(ctx, signal)
-	if err != nil {
-		logger.Error(err, "K8sEnricher failed", "targetKind", targetKind, "targetName", targetName)
-		r.Metrics.IncrementProcessingTotal("enriching", "failure")
-		r.Metrics.ObserveProcessingDuration("enriching", time.Since(enrichmentStart).Seconds())
-
-		// BR-SP-110: Set EnrichmentComplete=False condition (best-effort, survives refetch)
-		if updateErr := r.StatusManager.AtomicStatusUpdate(ctx, sp, func() error {
-			spconditions.SetEnrichmentComplete(sp, false, spconditions.ReasonEnrichmentFailed, err.Error())
-			return nil
-		}); updateErr != nil {
-			logger.Error(updateErr, "Failed to persist EnrichmentComplete=False condition")
-		}
-
-		if r.AuditManager != nil {
-			if auditErr := r.AuditManager.RecordError(ctx, sp, "Enriching", err); auditErr != nil {
-				logger.Error(auditErr, "Failed to record enrichment error audit event",
-					"name", sp.Name, "namespace", sp.Namespace, "phase", "Enriching")
-			}
-		}
-
-		// O6 (DD-EVENT-001): Emit Warning K8s event on hard enrichment failure
-		if r.Recorder != nil {
-			var enrichFailMsg string
-			if targetNs == "" {
-				enrichFailMsg = fmt.Sprintf("K8s enrichment failed for %s %s: %v", targetKind, targetName, err)
-			} else {
-				enrichFailMsg = fmt.Sprintf("K8s enrichment failed for %s %s/%s: %v", targetKind, targetNs, targetName, err)
-			}
-			r.Recorder.Event(sp, corev1.EventTypeWarning, events.EventReasonEnrichmentFailed, enrichFailMsg)
-		}
-
-		return ctrl.Result{}, fmt.Errorf("enrichment failed: %w", err)
-	}
-
-	// 4. Custom labels (BR-SP-102) - ADR-060: Unified evaluator
-	customLabels := make(map[string][]string)
-	if r.PolicyEvaluator != nil {
-		policyInput := evaluator.BuildInput(k8sCtx, signal)
-		labels, err := r.PolicyEvaluator.EvaluateCustomLabels(ctx, policyInput)
-		if err != nil {
-			logger.V(1).Info("Custom labels evaluation failed, using fallback", "error", err)
-		} else {
-			customLabels = labels
-		}
-	}
-
-	// BLAST-A2 (BR-SP-112 R2): Fallback label source — namespace first, then workload.
-	if len(customLabels) == 0 {
-		fallbackLabels := extractBusinessLabels(k8sCtx)
-		if team, ok := fallbackLabels["kubernaut.ai/team"]; ok && team != "" {
-			customLabels["team"] = []string{team}
-		}
-		if tier, ok := fallbackLabels["kubernaut.ai/tier"]; ok && tier != "" {
-			customLabels["tier"] = []string{tier}
-		}
-		if cost, ok := fallbackLabels["kubernaut.ai/cost-center"]; ok && cost != "" {
-			customLabels["cost-center"] = []string{cost}
-		}
-		if region, ok := fallbackLabels["kubernaut.ai/region"]; ok && region != "" {
-			customLabels["region"] = []string{region}
-		}
-	}
-
-	if len(customLabels) > 0 {
-		k8sCtx.CustomLabels = customLabels
-	}
-
-	// BR-SP-110: Prepare enrichment condition (will be set inside atomic update)
-	var enrichmentReason, enrichmentMessage string
-	if k8sCtx.DegradedMode {
-		// Degraded mode - enrichment succeeded but with partial context
-		enrichmentReason = spconditions.ReasonDegradedMode
-		// BLAST-B2: Use clean format for cluster-scoped resources (no empty namespace prefix)
-		if targetNs == "" {
-			enrichmentMessage = fmt.Sprintf("Enrichment completed in degraded mode: %s %s (K8s API unavailable)",
-				targetKind, targetName)
-		} else {
-			enrichmentMessage = fmt.Sprintf("Enrichment completed in degraded mode: %s %s/%s (K8s API unavailable)",
-				targetKind, targetNs, targetName)
-		}
-	} else {
-		enrichmentReason = ""
-		if targetNs == "" {
-			enrichmentMessage = fmt.Sprintf("K8s context enriched: %s %s",
-				targetKind, targetName)
-		} else {
-			enrichmentMessage = fmt.Sprintf("K8s context enriched: %s %s/%s",
-				targetKind, targetNs, targetName)
-		}
-	}
-
-	// ========================================
-	// DD-PERF-001: ATOMIC STATUS UPDATE
-	// Consolidate: KubernetesContext + Phase + Conditions → 1 API call
-	// BEFORE: 4 separate fields in 1 update (but refetch+update pattern)
-	// AFTER: Atomic refetch → apply all → single Status().Update()
-	// ========================================
-	oldPhase := sp.Status.Phase
-	// SP-BUG-ENRICHMENT-001: Check if enrichment already completed BEFORE status update
-	// This prevents duplicate audit events when controller reconciles same enrichment twice
-	enrichmentAlreadyCompleted := spconditions.IsConditionTrue(sp, spconditions.ConditionEnrichmentComplete)
-
-	updateErr := r.StatusManager.AtomicStatusUpdate(ctx, sp, func() error {
-		// Apply enrichment updates after refetch
-		// DD-CONTROLLER-001: ObservedGeneration NOT set here - will be set by Classifying handler after processing
-		sp.Status.KubernetesContext = k8sCtx
-		sp.Status.Phase = signalprocessingv1alpha1.PhaseClassifying
-		// BR-SP-110: Set condition AFTER refetch to prevent wipe
-		spconditions.SetEnrichmentComplete(sp, true, enrichmentReason, enrichmentMessage)
-		return nil
-	})
-	if updateErr != nil {
-		// DD-005: Track phase processing failure
-		r.Metrics.IncrementProcessingTotal("enriching", "failure")
-		r.Metrics.ObserveProcessingDuration("enriching", time.Since(enrichmentStart).Seconds())
-		return ctrl.Result{}, updateErr
-	}
-
-	// DD-EVENT-001 v1.1: K8s events for enrichment observability
-	// SP-BUG-ENRICHMENT-001: Only emit events if enrichment wasn't already completed
-	if r.Recorder != nil && !enrichmentAlreadyCompleted {
-		if k8sCtx.DegradedMode {
-			r.Recorder.Event(sp, corev1.EventTypeWarning, events.EventReasonEnrichmentDegraded,
-				enrichmentMessage)
-		} else {
-			r.Recorder.Event(sp, corev1.EventTypeNormal, events.EventReasonSignalEnriched,
-				enrichmentMessage)
-		}
-	}
-
-	// Record enrichment completion audit event (BR-SP-090)
-	// ADR-032: Audit is MANDATORY - return error if not configured
-	// RF-SP-003: Track actual enrichment duration for audit metrics
-	// SP-BUG-ENRICHMENT-001: Only emit audit if enrichment wasn't already completed
-	enrichmentDuration := int(time.Since(enrichmentStart).Milliseconds())
-	if err := r.recordEnrichmentCompleteAudit(ctx, sp, k8sCtx, enrichmentDuration, enrichmentAlreadyCompleted); err != nil {
-		// DD-005: Track phase processing failure (audit failure)
-		r.Metrics.IncrementProcessingTotal("enriching", "failure")
-		r.Metrics.ObserveProcessingDuration("enriching", time.Since(enrichmentStart).Seconds())
-		return ctrl.Result{}, err
-	}
-
-	// Record phase transition audit event (BR-SP-090)
-	// ADR-032: Audit is MANDATORY - return error if not configured
-	if err := r.recordPhaseTransitionAudit(ctx, sp, string(oldPhase), string(signalprocessingv1alpha1.PhaseClassifying)); err != nil {
-		// DD-005: Track phase processing failure
-		r.Metrics.IncrementProcessingTotal("enriching", "failure")
-		return ctrl.Result{}, err
-	}
-
-	// DD-EVENT-001 v1.1: PhaseTransition K8s event for observability
-	if r.Recorder != nil {
-		r.Recorder.Event(sp, corev1.EventTypeNormal, events.EventReasonPhaseTransition,
-			fmt.Sprintf("Phase transition: %s → %s", oldPhase, signalprocessingv1alpha1.PhaseClassifying))
-	}
-
-	// DD-005: Track phase processing success and duration
-	r.Metrics.IncrementProcessingTotal("enriching", "success")
-	r.Metrics.ObserveProcessingDuration("enriching", time.Since(enrichmentStart).Seconds())
-
-	// Requeue quickly to continue to next phase
-	return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
-}
-
-// reconcileClassifying performs environment and priority classification.
-// BR-SP-051-053: Environment Classification
-// BR-SP-070-072: Priority Assignment
-func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, logger logr.Logger) (ctrl.Result, error) {
-	logger.V(1).Info("Processing Classifying phase")
-
-	// SP-BUG-PHASE-TRANSITION-002: Idempotency guard to prevent duplicate classification.decision events
-	// Use non-cached APIReader to get FRESH phase data (cached client may be stale)
-	currentPhase, err := r.StatusManager.GetCurrentPhase(ctx, sp)
-	if err != nil {
-		logger.Error(err, "Failed to fetch current phase for idempotency check, proceeding with caution")
-		// Fail-safe: continue processing, but log the error
-	} else if currentPhase == signalprocessingv1alpha1.PhaseCategorizing ||
-		currentPhase == signalprocessingv1alpha1.PhaseCompleted ||
-		currentPhase == signalprocessingv1alpha1.PhaseFailed {
-		logger.V(1).Info("Skipping Classifying phase - already transitioned (non-cached check)",
-			"current_phase", currentPhase)
-		return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
-	}
-
-	// Issue #437 / SP-CACHE-002: Refetch sp via APIReader to get fresh status data.
-	// The informer cache (r.Get in Reconcile) may be stale when the enriching phase
-	// completes quickly (e.g., degraded mode with non-existent target). Without this,
-	// KubernetesContext (set by enriching) can be nil, causing environment=unknown.
-	if err := r.StatusManager.FreshGet(ctx, client.ObjectKeyFromObject(sp), sp); err != nil {
-		logger.Error(err, "Failed to refetch SP for fresh KubernetesContext")
-		return ctrl.Result{}, err
-	}
-
-	// Issue #437: Defensive guard — requeue if enrichment data not yet visible.
-	// KubernetesContext and EnrichmentComplete are set in the same AtomicStatusUpdate
-	// by the enriching phase. If KubernetesContext is nil or Namespace is nil after
-	// FreshGet, enrichment data hasn't propagated to the API server yet.
-	k8sCtx := sp.Status.KubernetesContext
-	// BLAST-A3 (BR-SP-112 R3): nil Namespace is valid for cluster-scoped resources (e.g., Node).
-	// Only apply the #437 guard when namespace is expected (namespace-scoped kinds).
-	isClusterScoped := sp.Spec.Signal.TargetResource.Namespace == ""
-	if k8sCtx == nil || (!isClusterScoped && k8sCtx.Namespace == nil) {
-		enrichmentDone := spconditions.IsConditionTrue(sp, spconditions.ConditionEnrichmentComplete)
-		if !enrichmentDone {
-			safetyValveExceeded := sp.Status.StartTime != nil && time.Since(sp.Status.StartTime.Time) > 30*time.Second
-			if safetyValveExceeded {
-				logger.Error(nil, "Issue #437: KubernetesContext incomplete after 30s safety valve, proceeding with defaults",
-					"k8sCtx_nil", k8sCtx == nil,
-					"sp", sp.Name)
-			} else {
-				logger.Info("Issue #437: KubernetesContext not yet available after FreshGet, requeuing",
-					"k8sCtx_nil", k8sCtx == nil,
-					"namespace_nil", k8sCtx == nil || k8sCtx.Namespace == nil,
-					"sp", sp.Name)
-				return ctrl.Result{RequeueAfter: 500 * time.Millisecond}, nil
-			}
-		} else {
-			logger.Error(nil, "Issue #437: EnrichmentComplete=True but KubernetesContext incomplete, proceeding with defaults",
-				"k8sCtx_nil", k8sCtx == nil,
-				"sp", sp.Name)
-		}
-	}
-
-	// DD-005: Track phase processing attempt and duration
-	r.Metrics.IncrementProcessingTotal("classifying", "attempt")
-	classifyingStart := time.Now()
-
-	signal := &sp.Spec.Signal
-
-	// Issue #437: Diagnostic logging — capture namespace labels for classification debugging.
-	if k8sCtx != nil && k8sCtx.Namespace != nil {
-		logger.V(1).Info("Classification input",
-			"namespace", k8sCtx.Namespace.Name,
-			"labels", k8sCtx.Namespace.Labels,
-			"degradedMode", k8sCtx.DegradedMode,
-			"sp", sp.Name)
-	}
-
-	// ADR-060: Build unified policy input once, reuse across all evaluations
-	policyInput := evaluator.BuildInput(k8sCtx, signal)
-
-	// 1. Environment Classification (BR-SP-051-053) - MANDATORY
-	envClass, err := r.classifyEnvironment(ctx, policyInput, logger)
-	if err != nil {
-		r.Metrics.IncrementProcessingTotal("classifying", "failure")
-		r.Metrics.ObserveProcessingDuration("classifying", time.Since(classifyingStart).Seconds())
-
-		// S2: Non-transient classification errors transition to PhaseFailed
-		if updateErr := r.StatusManager.AtomicStatusUpdate(ctx, sp, func() error {
-			sp.Status.ObservedGeneration = sp.Generation
-			sp.Status.Phase = signalprocessingv1alpha1.PhaseFailed
-			sp.Status.Error = fmt.Sprintf("environment classification failed: %v", err)
-			spconditions.SetClassificationComplete(sp, false, spconditions.ReasonClassificationFailed, err.Error())
-			spconditions.SetCategorizationComplete(sp, false, spconditions.ReasonCategorizationFailed, "Skipped due to classification failure")
-			spconditions.SetProcessingComplete(sp, false, spconditions.ReasonProcessingFailed, "Signal processing failed during classification")
-			spconditions.SetReady(sp, false, spconditions.ReasonNotReady, "Signal processing failed")
-			return nil
-		}); updateErr != nil {
-			logger.Error(updateErr, "Failed to transition to PhaseFailed on environment classification error")
-			return ctrl.Result{}, updateErr
-		}
-		r.Metrics.IncrementProcessingTotal("completed", "failure")
-		return ctrl.Result{}, nil
-	}
-
-	// 2. Priority Assignment (BR-SP-070-072) - MANDATORY
-	priorityAssignment, err := r.assignPriority(ctx, policyInput, logger)
-	if err != nil {
-		r.Metrics.IncrementProcessingTotal("classifying", "failure")
-		r.Metrics.ObserveProcessingDuration("classifying", time.Since(classifyingStart).Seconds())
-
-		// S2: Non-transient priority errors transition to PhaseFailed
-		if updateErr := r.StatusManager.AtomicStatusUpdate(ctx, sp, func() error {
-			sp.Status.ObservedGeneration = sp.Generation
-			sp.Status.Phase = signalprocessingv1alpha1.PhaseFailed
-			sp.Status.Error = fmt.Sprintf("priority assignment failed: %v", err)
-			spconditions.SetClassificationComplete(sp, false, spconditions.ReasonClassificationFailed, err.Error())
-			spconditions.SetCategorizationComplete(sp, false, spconditions.ReasonCategorizationFailed, "Skipped due to classification failure")
-			spconditions.SetProcessingComplete(sp, false, spconditions.ReasonProcessingFailed, "Signal processing failed during classification")
-			spconditions.SetReady(sp, false, spconditions.ReasonNotReady, "Signal processing failed")
-			return nil
-		}); updateErr != nil {
-			logger.Error(updateErr, "Failed to transition to PhaseFailed on priority assignment error")
-			return ctrl.Result{}, updateErr
-		}
-		r.Metrics.IncrementProcessingTotal("completed", "failure")
-		return ctrl.Result{}, nil
-	}
-
-	// 3. Severity Determination (BR-SP-105, DD-SEVERITY-001) - MANDATORY
-	var severityResult *evaluator.SeverityResult
-	if r.PolicyEvaluator != nil {
-		severityResult, err = r.PolicyEvaluator.EvaluateSeverity(ctx, policyInput)
-		if err != nil {
-			r.Metrics.IncrementProcessingTotal("classifying", "failure")
-			r.Metrics.ObserveProcessingDuration("classifying", time.Since(classifyingStart).Seconds())
-			// O3: Record terminal failure at the "completed" level for dashboard rollup
-			r.Metrics.IncrementProcessingTotal("completed", "failure")
-			logger.Error(err, "Severity determination failed - transitioning to Failed phase",
-				"externalSeverity", signal.Severity,
-				"hint", "Check Rego policy has else clause for unmapped values")
-
-			updateErr := r.StatusManager.AtomicStatusUpdate(ctx, sp, func() error {
-				sp.Status.ObservedGeneration = sp.Generation
-				sp.Status.Phase = signalprocessingv1alpha1.PhaseFailed
-				sp.Status.Error = fmt.Sprintf("policy evaluation failed: %v", err)
-				spconditions.SetClassificationComplete(sp, false, spconditions.ReasonRegoEvaluationError, err.Error())
-				// S1 (DD-SP-002): Set all downstream conditions to False on terminal failure
-				spconditions.SetCategorizationComplete(sp, false, spconditions.ReasonCategorizationFailed, "Skipped due to classification failure")
-				spconditions.SetProcessingComplete(sp, false, spconditions.ReasonProcessingFailed, "Signal processing failed during classification")
-				spconditions.SetReady(sp, false, spconditions.ReasonNotReady, "Signal processing failed")
-				return nil
-			})
-			if updateErr != nil {
-				logger.Error(updateErr, "Failed to update status to Failed phase")
-				return ctrl.Result{}, updateErr
-			}
-
-			if r.Recorder != nil {
-				r.Recorder.Event(sp, corev1.EventTypeWarning, events.EventReasonPolicyEvaluationFailed,
-					fmt.Sprintf("Rego policy evaluation failed for external severity %q: %v", signal.Severity, err))
-			}
-
-			// O1 (BR-SP-090): Emit error audit event on classification failure
-			if r.AuditManager != nil {
-				if auditErr := r.AuditManager.RecordError(ctx, sp, "Classifying", err); auditErr != nil {
-					logger.Error(auditErr, "Failed to record classification error audit event",
-						"name", sp.Name, "namespace", sp.Namespace, "phase", "Classifying")
-				}
-			}
-
-			return ctrl.Result{}, nil
-		}
-	}
-
-	// 4. Signal Mode Classification (BR-SP-106, ADR-054) - OPTIONAL (defaults to reactive)
-	// Determines if the signal is proactive or reactive, and normalizes the signal name
-	// for downstream workflow catalog matching.
-	var signalModeResult classifier.SignalModeResult
-	if r.SignalModeClassifier != nil {
-		signalModeResult = r.SignalModeClassifier.Classify(signal.Name)
-	} else {
-		// Default: reactive mode, name unchanged (backwards compatible)
-		signalModeResult = classifier.SignalModeResult{
-			SignalMode:       "reactive",
-			SignalName:       signal.Name,
-			SourceSignalName: "",
-		}
-	}
-	logger.V(1).Info("Signal mode classified",
-		"signalMode", signalModeResult.SignalMode,
-		"signalName", signalModeResult.SignalName,
-		"sourceSignalName", signalModeResult.SourceSignalName)
-
-	// BR-SP-110: Prepare classification condition message (will be set inside atomic update)
-	classificationMessage := fmt.Sprintf("Classified: environment=%s (source=%s), priority=%s (source=%s)",
-		envClass.Environment, envClass.Source,
-		priorityAssignment.Priority, priorityAssignment.Source)
-
-	// Add severity to classification message if determined
-	if severityResult != nil {
-		classificationMessage = fmt.Sprintf("Classified: environment=%s (source=%s), priority=%s (source=%s), severity=%s (source=%s)",
-			envClass.Environment, envClass.Source,
-			priorityAssignment.Priority, priorityAssignment.Source,
-			severityResult.Severity, severityResult.Source)
-	}
-
-	// Add signal mode to classification message
-	if signalModeResult.SignalMode == "proactive" {
-		classificationMessage += fmt.Sprintf(", signalMode=proactive (normalized: %s → %s)",
-			signalModeResult.SourceSignalName, signalModeResult.SignalName)
-	}
-
-	// ========================================
-	// DD-PERF-001: ATOMIC STATUS UPDATE
-	// Consolidate: EnvironmentClassification + PriorityAssignment + Severity + Phase + Conditions → 1 API call
-	// ========================================
-	oldPhase := sp.Status.Phase
-	updateErr := r.StatusManager.AtomicStatusUpdate(ctx, sp, func() error {
-		// DD-CONTROLLER-001: ObservedGeneration NOT set here - will be set by Categorizing handler after processing
-		// Apply classification updates after refetch
-		sp.Status.EnvironmentClassification = envClass
-		sp.Status.PriorityAssignment = priorityAssignment
-		// DD-SEVERITY-001: Set normalized severity
-		if severityResult != nil {
-			sp.Status.Severity = severityResult.Severity
-		}
-		// ADR-060: Unified policy hash covers all rules
-		if r.PolicyEvaluator != nil {
-			sp.Status.PolicyHash = r.PolicyEvaluator.GetPolicyHash()
-		}
-		// BR-SP-106: Set signal mode and normalized signal name (ADR-054)
-		// SignalType is set for ALL signals (not just proactive) — it is the
-		// authoritative signal name for all downstream consumers (RO, AA, KA).
-		sp.Status.SignalMode = signalModeResult.SignalMode
-		sp.Status.SignalName = signalModeResult.SignalName
-		sp.Status.SourceSignalName = signalModeResult.SourceSignalName
-		sp.Status.Phase = signalprocessingv1alpha1.PhaseCategorizing
-		// BR-SP-110: Set condition AFTER refetch to prevent wipe
-		spconditions.SetClassificationComplete(sp, true, "", classificationMessage)
-		return nil
-	})
-	if updateErr != nil {
-		// DD-005: Track phase processing failure
-		r.Metrics.IncrementProcessingTotal("classifying", "failure")
-		r.Metrics.ObserveProcessingDuration("classifying", time.Since(classifyingStart).Seconds())
-		return ctrl.Result{}, updateErr
-	}
-
-	// Record classification decision audit event (BR-SP-105, DD-SEVERITY-001)
-	// Must be called after atomic status update to include normalized severity
-	// **Refactoring**: 2026-01-22 - Phase 3: Use AuditManager
-	if r.AuditManager != nil && severityResult != nil {
-		durationMs := int(time.Since(classifyingStart).Milliseconds())
-		if auditErr := r.AuditManager.RecordClassificationDecision(ctx, sp, durationMs); auditErr != nil {
-			logger.Error(auditErr, "Failed to record classification decision audit event",
-				"name", sp.Name, "namespace", sp.Namespace, "phase", "Classifying")
-		}
-	}
-
-	// Record phase transition audit event (BR-SP-090)
-	// ADR-032: Audit is MANDATORY - return error if not configured
-	if err := r.recordPhaseTransitionAudit(ctx, sp, string(oldPhase), string(signalprocessingv1alpha1.PhaseCategorizing)); err != nil {
-		// DD-005: Track phase processing failure (audit failure)
-		r.Metrics.IncrementProcessingTotal("classifying", "failure")
-		r.Metrics.ObserveProcessingDuration("classifying", time.Since(classifyingStart).Seconds())
-		return ctrl.Result{}, err
-	}
-
-	// DD-EVENT-001 v1.1: PhaseTransition K8s event for observability
-	if r.Recorder != nil {
-		r.Recorder.Event(sp, corev1.EventTypeNormal, events.EventReasonPhaseTransition,
-			fmt.Sprintf("Phase transition: %s → %s", oldPhase, signalprocessingv1alpha1.PhaseCategorizing))
-	}
-
-	// DD-005: Track phase processing success and duration
-	r.Metrics.IncrementProcessingTotal("classifying", "success")
-	r.Metrics.ObserveProcessingDuration("classifying", time.Since(classifyingStart).Seconds())
-
-	// Requeue quickly to continue to next phase
-	return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
-}
-
-// reconcileCategorizing performs business classification and completes processing.
-// BR-SP-080, BR-SP-081: Business Classification
-func (r *SignalProcessingReconciler) reconcileCategorizing(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, logger logr.Logger) (ctrl.Result, error) {
-	logger.V(1).Info("Processing Categorizing phase")
-
-	// SP-BUG-PHASE-TRANSITION-003: Idempotency guard to prevent duplicate audit events
-	// Use non-cached APIReader to get FRESH phase data (cached client may be stale)
-	currentPhase, err := r.StatusManager.GetCurrentPhase(ctx, sp)
-	if err != nil {
-		logger.Error(err, "Failed to fetch current phase for idempotency check, proceeding with caution")
-		// Fail-safe: continue processing, but log the error
-	} else if currentPhase == signalprocessingv1alpha1.PhaseCompleted ||
-		currentPhase == signalprocessingv1alpha1.PhaseFailed {
-		logger.V(1).Info("Skipping Categorizing phase - already transitioned (non-cached check)",
-			"current_phase", currentPhase)
-		return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
-	}
-
-	// SP-CACHE-002: Refetch sp via APIReader for fresh status data (same rationale as classifying).
-	if err := r.StatusManager.FreshGet(ctx, client.ObjectKeyFromObject(sp), sp); err != nil {
-		logger.Error(err, "Failed to refetch SP for fresh classification data")
-		return ctrl.Result{}, err
-	}
-
-	// DD-005: Track phase processing attempt and duration
-	r.Metrics.IncrementProcessingTotal("categorizing", "attempt")
-	categorizingStart := time.Now()
-
-	k8sCtx := sp.Status.KubernetesContext
-	envClass := sp.Status.EnvironmentClassification
-	priorityAssignment := sp.Status.PriorityAssignment
-
-	// Business classification
-	bizClass := r.classifyBusiness(k8sCtx, envClass, logger)
-
-	// BR-SP-110: Prepare condition messages (will be set inside atomic update)
-	categorizationMessage := fmt.Sprintf("Categorized: businessUnit=%s, criticality=%s, sla=%s",
-		bizClass.BusinessUnit, bizClass.Criticality, bizClass.SLARequirement)
-
-	var duration float64
-	if sp.Status.StartTime != nil {
-		duration = time.Since(sp.Status.StartTime.Time).Seconds()
-	}
-	var priorityStr, envStr string
-	if priorityAssignment != nil {
-		priorityStr = string(priorityAssignment.Priority)
-	}
-	if envClass != nil {
-		envStr = string(envClass.Environment)
-	}
-	processingMessage := fmt.Sprintf("Signal processed successfully in %.2fs: %s %s alert ready for remediation",
-		duration, priorityStr, envStr)
-
-	// ========================================
-	// DD-PERF-001: ATOMIC STATUS UPDATE
-	// Consolidate: BusinessClassification + Phase + CompletionTime + 2 Conditions → 1 API call
-	// BEFORE: 5 status fields in 1 update (but refetch+update pattern)
-	// AFTER: Atomic refetch → apply all → single Status().Update()
-	// ========================================
-	oldPhase := sp.Status.Phase
-	updateErr := r.StatusManager.AtomicStatusUpdate(ctx, sp, func() error {
-		sp.Status.ObservedGeneration = sp.Generation // DD-CONTROLLER-001: inside callback so it survives refetch
-		sp.Status.BusinessClassification = bizClass
-		sp.Status.Phase = signalprocessingv1alpha1.PhaseCompleted
-		now := metav1.Now()
-		sp.Status.CompletionTime = &now
-		spconditions.SetCategorizationComplete(sp, true, "", categorizationMessage)
-		spconditions.SetProcessingComplete(sp, true, "", processingMessage)
-		spconditions.SetReady(sp, true, spconditions.ReasonReady, "Signal processing completed")
-		return nil
-	})
-	if updateErr != nil {
-		// DD-005: Track phase processing failure
-		r.Metrics.IncrementProcessingTotal("categorizing", "failure")
-		r.Metrics.ObserveProcessingDuration("categorizing", time.Since(categorizingStart).Seconds())
-		return ctrl.Result{}, updateErr
-	}
-
-	// Record phase transition audit event (BR-SP-090)
-	// ADR-032: Audit is MANDATORY - return error if not configured
-	if err := r.recordPhaseTransitionAudit(ctx, sp, string(oldPhase), string(signalprocessingv1alpha1.PhaseCompleted)); err != nil {
-		// DD-005: Track phase processing failure (audit failure)
-		r.Metrics.IncrementProcessingTotal("categorizing", "failure")
-		r.Metrics.ObserveProcessingDuration("categorizing", time.Since(categorizingStart).Seconds())
-		return ctrl.Result{}, err
-	}
-
-	// DD-EVENT-001 v1.1: PhaseTransition K8s event for observability
-	if r.Recorder != nil {
-		r.Recorder.Event(sp, corev1.EventTypeNormal, events.EventReasonPhaseTransition,
-			fmt.Sprintf("Phase transition: %s → %s", oldPhase, signalprocessingv1alpha1.PhaseCompleted))
-	}
-
-	// BR-SP-090: Record audit event on completion
-	// ADR-032: Audit is MANDATORY - not optional. AuditClient must be wired up.
-	// DD-PERF-001: After atomic update, sp object has all persisted status including BusinessClassification
-	if err := r.recordCompletionAudit(ctx, sp); err != nil {
-		// DD-005: Track phase processing failure (audit failure)
-		r.Metrics.IncrementProcessingTotal("categorizing", "failure")
-		r.Metrics.ObserveProcessingDuration("categorizing", time.Since(categorizingStart).Seconds())
-		return ctrl.Result{}, err
-	}
-
-	// DD-EVENT-001 v1.1: SignalProcessed K8s event when enrichment and classification complete successfully
-	if r.Recorder != nil {
-		r.Recorder.Event(sp, corev1.EventTypeNormal, events.EventReasonSignalProcessed, processingMessage)
-	}
-
-	// DD-005: Track phase processing success and duration
-	r.Metrics.IncrementProcessingTotal("categorizing", "success")
-	r.Metrics.ObserveProcessingDuration("categorizing", time.Since(categorizingStart).Seconds())
-
-	// DD-005: Track overall signal processing completion
-	r.Metrics.IncrementProcessingTotal("completed", "success")
-	if sp.Status.StartTime != nil {
-		totalDuration := time.Since(sp.Status.StartTime.Time).Seconds()
-		r.Metrics.ObserveProcessingDuration("completed", totalDuration)
-	}
-
-	return ctrl.Result{}, nil
-}
-
-// classifyEnvironment determines the environment classification via unified evaluator.
-// ADR-060: Uses PolicyEvaluator.EvaluateEnvironment instead of separate EnvironmentClassifier.
-func (r *SignalProcessingReconciler) classifyEnvironment(ctx context.Context, input evaluator.PolicyInput, logger logr.Logger) (*signalprocessingv1alpha1.EnvironmentClassification, error) {
-	if r.PolicyEvaluator == nil {
-		return nil, fmt.Errorf("PolicyEvaluator is nil - this is a startup configuration error")
-	}
-
-	result, err := r.PolicyEvaluator.EvaluateEnvironment(ctx, input)
-	if err != nil {
-		logger.Error(err, "Environment classification failed")
-		return nil, fmt.Errorf("environment classification failed: %w", err)
-	}
-
-	return result, nil
-}
-
-// assignPriority determines the priority via unified evaluator.
-// ADR-060: Uses PolicyEvaluator.EvaluatePriority. Priority references environment
-// internally within Rego -- no envClass parameter needed from Go.
-func (r *SignalProcessingReconciler) assignPriority(ctx context.Context, input evaluator.PolicyInput, logger logr.Logger) (*signalprocessingv1alpha1.PriorityAssignment, error) {
-	if r.PolicyEvaluator == nil {
-		return nil, fmt.Errorf("PolicyEvaluator is nil - this is a startup configuration error")
-	}
-
-	result, err := r.PolicyEvaluator.EvaluatePriority(ctx, input)
-	if err != nil {
-		logger.Error(err, "Priority assignment failed")
-		return nil, fmt.Errorf("priority assignment failed: %w", err)
-	}
-
-	return result, nil
-}
-
-// classifyBusiness performs business classification.
-// BR-SP-080, BR-SP-081: Business Classification
-func (r *SignalProcessingReconciler) classifyBusiness(k8sCtx *signalprocessingv1alpha1.KubernetesContext, envClass *signalprocessingv1alpha1.EnvironmentClassification, logger logr.Logger) *signalprocessingv1alpha1.BusinessClassification {
-	result := &signalprocessingv1alpha1.BusinessClassification{
-		Criticality:    signalprocessingv1alpha1.CriticalityMedium,
-		SLARequirement: signalprocessingv1alpha1.SLARequirementBronze,
-	}
-
-	// BLAST-A1 (BR-SP-112 R1): Extract business unit from namespace labels first,
-	// then fall back to workload labels for cluster-scoped resources (e.g., Node).
-	if k8sCtx != nil {
-		labels := extractBusinessLabels(k8sCtx)
-		if bu, ok := labels["kubernaut.ai/business-unit"]; ok {
-			result.BusinessUnit = bu
-		} else if team, ok := labels["kubernaut.ai/team"]; ok {
-			result.BusinessUnit = team
-		}
-		if owner, ok := labels["kubernaut.ai/service-owner"]; ok {
-			result.ServiceOwner = owner
-		}
-	}
-
-	if envClass != nil {
-		switch envClass.Environment {
-		case signalprocessingv1alpha1.EnvironmentProduction:
-			result.Criticality = signalprocessingv1alpha1.CriticalityHigh
-			result.SLARequirement = signalprocessingv1alpha1.SLARequirementGold
-		case signalprocessingv1alpha1.EnvironmentStaging:
-			result.Criticality = signalprocessingv1alpha1.CriticalityMedium
-			result.SLARequirement = signalprocessingv1alpha1.SLARequirementSilver
-		case signalprocessingv1alpha1.EnvironmentDevelopment:
-			result.Criticality = signalprocessingv1alpha1.CriticalityLow
-			result.SLARequirement = signalprocessingv1alpha1.SLARequirementBronze
-		}
-	}
-
-	return result
-}
-
-// extractBusinessLabels returns the best available labels for business classification.
-// Namespace labels take priority; workload labels are used as fallback for cluster-scoped resources.
-func extractBusinessLabels(k8sCtx *signalprocessingv1alpha1.KubernetesContext) map[string]string {
-	if k8sCtx.Namespace != nil && len(k8sCtx.Namespace.Labels) > 0 {
-		return k8sCtx.Namespace.Labels
-	}
-	if k8sCtx.Workload != nil && len(k8sCtx.Workload.Labels) > 0 {
-		return k8sCtx.Workload.Labels
-	}
-	return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -1144,52 +424,4 @@ func isTransientError(err error) bool {
 	}
 
 	return false
-}
-
-// ========================================
-// ADR-032 COMPLIANT AUDIT FUNCTIONS
-// ========================================
-// ADR-032 §2: "No Audit Loss" - Audit writes are MANDATORY, not best-effort
-// Services MUST NOT implement "graceful degradation" that silently skips audit
-// Services MUST return error if audit client is nil
-
-// recordPhaseTransitionAudit records a phase transition audit event.
-// ADR-032: Returns error if AuditManager is nil (no silent skip allowed).
-// SP-BUG-002: Prevents duplicate audit events when phase hasn't actually changed (race condition mitigation).
-//
-// **Refactoring**: 2026-01-22 - Phase 3: Delegates to AuditManager for ADR-032 enforcement
-func (r *SignalProcessingReconciler) recordPhaseTransitionAudit(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, oldPhase, newPhase string) error {
-	if r.AuditManager == nil {
-		return fmt.Errorf("AuditManager is nil - audit is MANDATORY per ADR-032")
-	}
-	return r.AuditManager.RecordPhaseTransition(ctx, sp, oldPhase, newPhase)
-}
-
-// recordEnrichmentCompleteAudit records an enrichment completion audit event.
-// ADR-032: Returns error if AuditManager is nil (no silent skip allowed).
-// RF-SP-003: Now tracks actual enrichment duration for audit metrics.
-// SP-BUG-ENRICHMENT-001: Prevents duplicate audit events when enrichment already completed (race condition mitigation).
-//
-// **Refactoring**: 2026-01-22 - Phase 3: Delegates to AuditManager for ADR-032 enforcement
-func (r *SignalProcessingReconciler) recordEnrichmentCompleteAudit(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, k8sCtx *signalprocessingv1alpha1.KubernetesContext, durationMs int, alreadyCompleted bool) error {
-	if r.AuditManager == nil {
-		return fmt.Errorf("AuditManager is nil - audit is MANDATORY per ADR-032")
-	}
-
-	// Create a temporary SP with enriched context for audit
-	auditSP := sp.DeepCopy()
-	auditSP.Status.KubernetesContext = k8sCtx
-	return r.AuditManager.RecordEnrichmentComplete(ctx, auditSP, durationMs, alreadyCompleted)
-}
-
-// recordCompletionAudit records the final signal processed and classification decision audit events.
-// ADR-032: Returns error if AuditManager is nil (no silent skip allowed).
-// AUDIT-06: Now also emits business.classified event for granular audit trail.
-//
-// **Refactoring**: 2026-01-22 - Phase 3: Delegates to AuditManager for ADR-032 enforcement
-func (r *SignalProcessingReconciler) recordCompletionAudit(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing) error {
-	if r.AuditManager == nil {
-		return fmt.Errorf("AuditManager is nil - audit is MANDATORY per ADR-032")
-	}
-	return r.AuditManager.RecordCompletion(ctx, sp)
 }
