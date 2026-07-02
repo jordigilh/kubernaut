@@ -476,6 +476,55 @@ An orphaned doc comment block (a stale `populateTimeoutDefaults` docstring left 
 
 ---
 
+## 7k. Phase 6 Wave 3: DataStorage Complexity + File-Size Burndown — ✅ RESOLVED
+
+Preflight re-scan (`gocyclo`/`gocognit` against current `main`, since Waves 0-2 had already changed unrelated line numbers) confirmed DataStorage's Rank-3 findings from the Executive Summary (§"Findings by Service") were still current: 59 combined `funlen`/`gocognit`/`gocyclo`/`nestif`/`argument-limit` hits, headlined by `workflow_handlers.go` at 1,714 lines and `(*Config).Validate` at cyclomatic 56 (already resolved in Phase 4, §7f-1 — the remaining Wave 3 scope was the *other* DataStorage offenders: `QueryAuditEventsForReconstruction`, `AuditEventsRepository.{CreateBatch,Export,Query,Create}`, `BuildEffectivenessResponse`, `MergeAuditData`, `MapToRRFields`, `Parser.Validate`, `NewServer`, `handleCreateAuditEventsBatch`, `ConvertAuditEventRequest`, 19 lower-priority 16-22 offenders, and 5 oversized files). Per AGENTS.md's coverage-before-refactor mandate, three compliance-critical functions with weak existing coverage (`QueryAuditEventsForReconstruction`, `CreateBatch`, `Export` — all on the SOC2 CC8.1 / BR-AUDIT-005 audit-reconstruction path) got new characterization unit tests before any decomposition began.
+
+### 7k-1. Coverage gate: audit-reconstruction path
+
+New characterization Ginkgo specs pinned existing behavior of `QueryAuditEventsForReconstruction` (event-type-specific JSON decoding across the ~15 `AuditEvent.EventType` variants), `AuditEventsRepository.CreateBatch` (correlation-ID-sorted hash-chain batch insert, `SAVEPOINT`-based PK-collision retry), and `Export` (streaming CSV/JSON export with pagination) prior to any structural change, so that the subsequent decomposition (§7k-2) had a regression safety net for exactly the functions SOC2 CC8.1's "complete remediation request reconstruction from audit traces" control objective depends on.
+
+### 7k-2. Function decomposition — registry pattern + per-concern extraction
+
+| Function | File | Before → after | Technique |
+|---|---|---|---|
+| `QueryAuditEventsForReconstruction` | `pkg/datastorage/reconstruction/*.go` | cyclomatic 35 → low single digits | Event-type decoder registry (`map[string]eventDataDecoder`), same DD-AUDIT-008 pattern used for KubernautAgent's `buildEventData` (§7f-2) and APIFrontend's `buildEventData` (§7i-1) |
+| `AuditEventsRepository.CreateBatch` | `pkg/datastorage/repository/audit_events_batch.go` | 25 → low single digits | Extracted `normalizeBatchEvents`/`normalizeBatchEventIdentity`/`normalizeBatchEventData`/`resetBatchHashFields`/`insertBatchByCorrelation`/`insertBatchEvent` |
+| `AuditEventsRepository.Export` | `pkg/datastorage/repository/*.go` | 25 → low single digits | Extracted per-format/per-page helpers |
+| `AuditEventsRepository.Query` | `pkg/datastorage/repository/audit_events_query.go` | 33 → low single digits | Extracted `scanQueryRow`/`applyQueryNullableColumns`/`applyQueryIdentityColumns`/`applyQueryAuditMetadataColumns`/`buildQueryPagination` |
+| `AuditEventsRepository.Create` | `pkg/datastorage/repository/audit_events_create.go` | 18 → low single digits | Extracted `normalizeCreateEvent`/`execCreateInsert` |
+| `BuildEffectivenessResponse` | `pkg/datastorage/*.go` | 24+ → resolved | Extracted per-field/per-section builder helpers |
+| `MergeAuditData` | `pkg/datastorage/reconstruction/mapper.go` | 27 (cognitive 70, flagged in §2's top-20 table) → resolved | Per-source-field merge helpers |
+| `MapToRRFields` | `pkg/datastorage/reconstruction/*.go` | 24+ → resolved | `rrFieldMappers` registry, same pattern as §7k-2's other registries |
+| `Parser.Validate` | `pkg/datastorage/schema/parser.go` | 24+ → resolved | Per-schema-section validators, mirroring Phase 4's `Config.Validate` pattern (§7f-1) |
+| `NewServer` | `pkg/datastorage/server/server_construction.go` | 24+ → resolved | `validateServerDeps`/`connectAndPreparePostgres`/`connectServerRedis`/`buildAuditWriteDependencies`/`buildWorkflowCatalogDependencies`/`buildRESTHandler`/`buildIPRateLimiter` |
+| `handleCreateAuditEventsBatch` | `pkg/datastorage/server/audit_events_batch_handler.go` | 24+ → resolved | Extracted request-parsing/validation/persistence steps |
+| `ConvertAuditEventRequest` | `pkg/datastorage/*.go` | 24+ → resolved | Field-group conversion helpers |
+
+A follow-up pass (per user's explicit "continue_all" directive) closed the remaining 19 lower-priority (16-22) complexity offenders across `workflow_handlers.go` (×7), `config.go` (×2), `cmd/datastorage/main.go`, `actiontype_handlers.go` (×2), `remediation_history` logic (×2), `verifyHashChain`, `scoring.go`, `SupersedeAndCreate`, `UnmarshalYAML`, and `forceDisableOnce`, each via the same extract-method/registry techniques used throughout Phase 4-6 — no new exported types beyond what each decomposition needed for its own signature, no production wiring changed.
+
+### 7k-3. File splits — 5 oversized files
+
+All five splits are pure structural moves within the same package — zero behavior change, zero exported-API change, no test files touched (same-package moves are invisible to Go's symbol resolution). Each split was verified individually with `go build ./pkg/datastorage/...`, `go vet ./pkg/datastorage/...`, and `go test ./pkg/datastorage/...` before moving to the next file.
+
+| File | Lines before | Split into | Lines after (max) |
+|---|---|---|---|
+| `pkg/datastorage/server/workflow_handlers.go` | 1,687 | `workflow_create_handlers.go` (create + validation), `workflow_duplicate_handlers.go` (duplicate detection, content integrity, re-enablement), `workflow_query_handlers.go` (list/get), `workflow_update_lifecycle_handlers.go` (update + enable/deprecate/disable lifecycle), `workflow_discovery_handlers.go` (3-step discovery protocol) | 505 |
+| `pkg/datastorage/repository/audit_events_repository.go` | 1,204 | `audit_events_repository.go` (trimmed: `AuditEvent` model + constructor), `audit_events_hashchain.go` (hash-chain algorithm + verification), `audit_events_create.go` (`Create`), `audit_events_batch.go` (`CreateBatch`), `audit_events_query.go` (`Query` + row scanning + `HealthCheck`) | ~370 |
+| `pkg/datastorage/server/server.go` | 1,111 | `server.go` (trimmed: `Server` struct + `ServerDeps`), `server_construction.go` (`NewServer` + dependency wiring), `server_routes.go` (`Handler()` + chi route table), `server_lifecycle.go` (`Start`/`Shutdown` + graceful-shutdown steps) | 456 |
+| `pkg/datastorage/dlq/client.go` | 973 | `client.go` (trimmed: `Client` struct, producer methods, health check), `client_consumer.go` (Redis consumer-group read/claim/ack), `client_drain.go` (graceful-shutdown DLQ drain) | 403 |
+| `pkg/datastorage/config/config.go` | 814 | `config.go` (trimmed: struct family + `LoadFromFile`), `config_secrets.go` (`LoadSecrets` + per-source loaders), `config_validate.go` (`Validate` + per-section validators), `config_accessors.go` (`Get*` derived-value accessors) | 288 |
+
+Two defects surfaced and fixed during the splits (both caught by the per-file build/vet gate, neither reaching a commit): a missing `net/http` import in the newly created `workflow_duplicate_handlers.go` (the moved duplicate-detection handlers reference `http.StatusOK`/`StatusCreated`/`StatusConflict`), and an unused `github.com/jordigilh/kubernaut/pkg/cert` import left in `server_construction.go` after `loadSigningCertificate` (the import's only consumer) moved to `server_lifecycle.go`.
+
+### 7k-4. Verification (Wave 3 exit gate)
+
+`go build ./pkg/datastorage/...` and repo-wide `go build ./...` both clean. `go vet ./pkg/datastorage/...` clean. `golangci-lint run ./pkg/datastorage/...` (repo config): **0 issues**. `gofmt -l`/`goimports -l ./pkg/datastorage/...`: clean on every file touched by this wave (two pre-existing, untouched files — `config_test.go`'s two occurrences — were confirmed via `git status` to predate Wave 3 and are out of scope). `go test ./pkg/datastorage/... -count=1`: all packages green (25 specs in `repository/sql`, 24 in `repository/sqlutil`, 9 in `repository/workflow`, plus every other subpackage — zero regressions). Post-wave `gocyclo -over 15 ./pkg/datastorage/... ./cmd/datastorage/...` (excluding generated `ogen-client/`): **zero hand-written functions remain over cyclomatic complexity 15** — every offender flagged for DataStorage in §2 and the Rank-3 row of "Findings by Service" is now resolved. File-size re-scan shows all five Wave-3-scoped files now well under the 700-line threshold; one file outside Wave 3's explicit scope, `pkg/datastorage/repository/workflow/crud.go` (739 lines), is marginally over and is carried to a future wave rather than opportunistically split now (scope discipline — it was not part of the audit's original DataStorage findings and splitting it was not covered by this wave's characterization tests).
+
+**Caveat**: `make test-integration-datastorage` could not be run in this environment (no `docker`/`podman` available for the Postgres/Redis test dependencies). All five file splits are same-package, pure code-motion changes (no behavior change, no signature change at any package boundary), and the full unit-test tier — which exercises the same decomposed logic directly — passed with zero regressions; the integration-test gap is a process caveat, not a known or suspected defect. Wave 3 is now complete; Waves 4-6 (KubernautAgent remainder, Notification/AIAnalysis/EffectivenessMonitor/Gateway batch, final sweep) remain open per the Phase 6+ plan.
+
+---
+
 ## 8. Variable Shadowing — 120 found, mostly low-risk
 
 114/120 are `err` shadowing (`if err := f(); err != nil` repeated in the same scope — the single most common and least dangerous shadow pattern in Go, which is exactly why `govet -shadow` isn't part of default `go vet`). 1 `ctx` shadow, 1 `result`, 1 `username`, 1 `ok`, 1 `isString`. **No goroutine-closure-captures-loop-variable pattern was found** (the genuinely dangerous shadow bug) — none of the 120 hits are in a `for ... go func()` or `for ... defer func()` body.
@@ -515,7 +564,8 @@ Per AGENTS.md, REFACTOR-phase cleanup must not introduce new types/components, m
 | 6 (Wave 0) | `cmd/*/main.go` decomposition for the 6 remaining services + ISP split for `Engine`/`ClusterRegistry`/`SessionManager` (see §7h) | Low | 3-4 days | ✅ Done (see §7h) |
 | 6 (Wave 1) | APIFrontend: 5 highest-complexity functions + 3 largest files (see §7i) | Medium | 3-4 days | ✅ Done (see §7i) |
 | 6 (Wave 2) | RemediationOrchestrator/WorkflowExecution/SignalProcessing: `Reconcile`-family decomposition (`reconcilePending`, `reconcileEnriching`, `reconcileClassifying`, `Reconcile` ×2, `NewReconciler`) + 4 oversized files split into 13 (see §7j) | Medium-High | 3-4 days | ✅ Done (see §7j) |
-| 6 (Wave 3-6) | DataStorage, KubernautAgent remainder, Notification/AIAnalysis/EffectivenessMonitor/Gateway batch, final sweep — remaining complexity (~130 functions, including RO/WE residuals noted in §7j-3) + oversized files (~27) burndown | Medium-High (per-wave) | ~15-20 days remaining | 🔲 Not started — tracked in the "Phase 6+ Complexity and File-Size Burndown" plan, each wave requires its own preflight + confidence gate |
+| 6 (Wave 3) | DataStorage: audit-reconstruction coverage gate + 12 named complexity offenders + 19 lower-priority (16-22) offenders + 5 oversized files split into 20 (see §7k) | Medium-High | 4-5 days | ✅ Done (see §7k) |
+| 6 (Wave 4-6) | KubernautAgent remainder, Notification/AIAnalysis/EffectivenessMonitor/Gateway batch, final sweep — remaining complexity (~118 functions, including RO/WE residuals noted in §7j-3) + oversized files (~26, including the `crud.go` residual noted in §7k-4) burndown | Medium-High (per-wave) | ~12-16 days remaining | 🔲 Not started — tracked in the "Phase 6+ Complexity and File-Size Burndown" plan, each wave requires its own preflight + confidence gate |
 
 **Not recommended for action**: DTO/data-model "god structs" (category 4a), `context.Context` struct fields (both documented), `any`/`interface{}` usage (spot-checked — the ~849 raw hits are overwhelmingly idiomatic JSON-decoding, `sync.Map`/`singleflight` third-party API signatures, and generic-JSON-passthrough code; no material violations found beyond one worth a look: `BuildTriagePrompt(input TriageInput, rules interface{})` in `pkg/apifrontend/severity/types.go:113`).
 
