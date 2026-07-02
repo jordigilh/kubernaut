@@ -93,29 +93,69 @@ func (e *Evaluator) EvaluateStep(ctx context.Context, step Step) Observation {
 		}
 	}
 
-	rawContent := step.Content
+	token, guardObs := e.checkBoundaryGuard(step)
+	if guardObs != nil {
+		return *guardObs
+	}
 
+	req, userMsgLen := e.buildStepRequest(step, token)
+
+	emitAudit := e.auditStore != nil && step.CorrelationID != ""
+	if emitAudit {
+		e.emitShadowRequest(ctx, step, userMsgLen)
+	}
+
+	var lastErr error
+	attempts := e.config.MaxRetries
+	if attempts < 1 {
+		attempts = 1
+	}
+
+	for attempt := 0; attempt < attempts; attempt++ {
+		obs, err := e.evaluateStepAttempt(ctx, step, req, emitAudit, attempt)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		return *obs
+	}
+
+	return Observation{
+		Step:        step,
+		Suspicious:  true,
+		Explanation: fmt.Sprintf("evaluator_unavailable (fail-closed): %v", lastErr),
+	}
+}
+
+// checkBoundaryGuard generates the boundary token and rejects content that
+// already contains an escape sequence for it. Returns a non-nil Observation
+// (fail-closed) when either check fails.
+func (e *Evaluator) checkBoundaryGuard(step Step) (string, *Observation) {
 	token, genErr := boundary.Generate()
 	if genErr != nil {
-		return Observation{
+		return "", &Observation{
 			Step:        step,
 			Suspicious:  true,
 			Explanation: fmt.Sprintf("boundary generation failed (fail-closed): %v", genErr),
 		}
 	}
 
-	if boundary.ContainsEscape(rawContent, token) {
-		return Observation{
+	if boundary.ContainsEscape(step.Content, token) {
+		return "", &Observation{
 			Step:        step,
 			Suspicious:  true,
 			Explanation: "boundary escape detected in raw content (fail-closed): content contains closing boundary marker",
 		}
 	}
 
-	// Step 3: Truncate
-	content := truncateHeadTail(rawContent, e.config.MaxStepTokens)
+	return token, nil
+}
 
-	// Step 4: Wrap in boundary
+// buildStepRequest truncates and boundary-wraps the step content, then
+// assembles the shadow-evaluator chat request. Returns the request and the
+// rune length of the user message (used for audit request-size reporting).
+func (e *Evaluator) buildStepRequest(step Step, token string) (llm.ChatRequest, int) {
+	content := truncateHeadTail(step.Content, e.config.MaxStepTokens)
 	wrapped := boundary.Wrap(content, token)
 
 	userMsg := fmt.Sprintf("Step %d [%s]", step.Index, step.Kind)
@@ -134,88 +174,73 @@ func (e *Evaluator) EvaluateStep(ctx context.Context, step Step) Observation {
 		messages = append([]llm.Message{{Role: "system", Content: e.prompt}}, messages...)
 	}
 
-	req := llm.ChatRequest{
+	return llm.ChatRequest{
 		Messages: messages,
 		Options:  llm.ChatOptions{JSONMode: true},
+	}, len([]rune(userMsg))
+}
+
+// evaluateStepAttempt performs one shadow-LLM call and interprets the
+// response. Returns a non-nil Observation when the outcome is final —
+// success, a malformed-response fail-closed, or a missing-field fail-closed
+// — or a non-nil error when the caller should retry (transport failure or
+// unparseable response).
+func (e *Evaluator) evaluateStepAttempt(ctx context.Context, step Step, req llm.ChatRequest, emitAudit bool, attempt int) (*Observation, error) {
+	evalCtx, cancel := context.WithTimeout(ctx, e.config.Timeout)
+	resp, err := e.client.Chat(evalCtx, req)
+	cancel()
+	if err != nil {
+		return nil, err
 	}
 
-	emitAudit := e.auditStore != nil && step.CorrelationID != ""
-	if emitAudit {
-		e.emitShadowRequest(ctx, step, len([]rune(userMsg)))
-	}
-
-	var lastErr error
-	attempts := e.config.MaxRetries
-	if attempts < 1 {
-		attempts = 1
-	}
-
-	for attempt := 0; attempt < attempts; attempt++ {
-		evalCtx, cancel := context.WithTimeout(ctx, e.config.Timeout)
-		resp, err := e.client.Chat(evalCtx, req)
-		cancel()
-
-		if err != nil {
-			lastErr = err
-			continue
-		}
-
-		respContent := resp.Message.Content
-		if hasDuplicateSuspiciousKey(respContent) {
-			if emitAudit {
-				e.emitShadowResponse(ctx, step, resp.Usage, attempt+1, "malformed_response")
-			}
-			return Observation{
-				Step:        step,
-				Suspicious:  true,
-				Explanation: "duplicate_key_attack (fail-closed): shadow LLM response contains duplicate 'suspicious' key",
-				Usage:       resp.Usage,
-			}
-		}
-
-		var parsed evalResponse
-		content := extractJSON(respContent)
-		if jsonErr := json.Unmarshal([]byte(content), &parsed); jsonErr != nil {
-			lastErr = fmt.Errorf("parse evaluator response: %w", jsonErr)
-			continue
-		}
-
-		if parsed.Suspicious == nil {
-			if emitAudit {
-				e.emitShadowResponse(ctx, step, resp.Usage, attempt+1, "missing_field")
-			}
-			obs := Observation{
-				Step:        step,
-				Suspicious:  true,
-				Explanation: "evaluator_unavailable (fail-closed): shadow LLM response missing 'suspicious' field",
-				Usage:       resp.Usage,
-			}
-			e.debugLog("step evaluated: missing suspicious field",
-				"step_index", step.Index, "kind", string(step.Kind),
-				"suspicious", true)
-			return obs
-		}
-
+	respContent := resp.Message.Content
+	if hasDuplicateSuspiciousKey(respContent) {
 		if emitAudit {
-			e.emitShadowResponse(ctx, step, resp.Usage, attempt+1, "success")
+			e.emitShadowResponse(ctx, step, resp.Usage, attempt+1, "malformed_response")
 		}
-		e.debugLog("step evaluated",
-			"step_index", step.Index, "kind", string(step.Kind),
-			"tool", step.Tool, "suspicious", *parsed.Suspicious,
-			"attempt", attempt+1)
-		return Observation{
+		return &Observation{
 			Step:        step,
-			Suspicious:  *parsed.Suspicious,
-			Explanation: parsed.Explanation,
+			Suspicious:  true,
+			Explanation: "duplicate_key_attack (fail-closed): shadow LLM response contains duplicate 'suspicious' key",
+			Usage:       resp.Usage,
+		}, nil
+	}
+
+	var parsed evalResponse
+	content := extractJSON(respContent)
+	if jsonErr := json.Unmarshal([]byte(content), &parsed); jsonErr != nil {
+		return nil, fmt.Errorf("parse evaluator response: %w", jsonErr)
+	}
+
+	if parsed.Suspicious == nil {
+		if emitAudit {
+			e.emitShadowResponse(ctx, step, resp.Usage, attempt+1, "missing_field")
+		}
+		obs := &Observation{
+			Step:        step,
+			Suspicious:  true,
+			Explanation: "evaluator_unavailable (fail-closed): shadow LLM response missing 'suspicious' field",
 			Usage:       resp.Usage,
 		}
+		e.debugLog("step evaluated: missing suspicious field",
+			"step_index", step.Index, "kind", string(step.Kind),
+			"suspicious", true)
+		return obs, nil
 	}
 
-	return Observation{
-		Step:        step,
-		Suspicious:  true,
-		Explanation: fmt.Sprintf("evaluator_unavailable (fail-closed): %v", lastErr),
+	if emitAudit {
+		e.emitShadowResponse(ctx, step, resp.Usage, attempt+1, "success")
 	}
+	e.debugLog("step evaluated",
+		"step_index", step.Index, "kind", string(step.Kind),
+		"tool", step.Tool, "suspicious", *parsed.Suspicious,
+		"attempt", attempt+1)
+	return &Observation{
+		Step:        step,
+		Suspicious:  *parsed.Suspicious,
+		Explanation: parsed.Explanation,
+		Usage:       resp.Usage,
+	}, nil
 }
 
 // markdownFenceRe matches ```json ... ``` or ``` ... ``` blocks, with
