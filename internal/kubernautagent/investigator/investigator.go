@@ -431,41 +431,67 @@ func (inv *Investigator) resolveRCAWorkflowDiscoveryEnrichment(ctx context.Conte
 
 	postRCAKind, postRCAName, postRCANS := ResolveEnrichmentTarget(signal, rcaResult)
 	postRCANS = inv.normalizeNamespace(postRCAKind, postRCANS)
-	if postRCAKind != signalKind || postRCAName != signalName || postRCANS != signalNS {
-		inv.logger.Info("RunWorkflowDiscoveryFromRCA: re-enriching with RCA target",
-			"signal", signalKind+"/"+signalName,
-			"rca_target", postRCAKind+"/"+postRCAName,
-			"correlation_id", correlationID)
-		reEnriched := inv.resolveEnrichmentCached(ctx, enrichmentCache, postRCAKind, postRCAName, postRCANS, signal.IncidentID)
-
-		if reEnriched != nil && reEnriched.HardFail {
-			inv.logger.Error(reEnriched.OwnerChainError,
-				"RunWorkflowDiscoveryFromRCA: enrichment hard-failed, triggering rca_incomplete",
-				"correlation_id", correlationID)
-			rcaResult.HumanReviewNeeded = true
-			rcaResult.HumanReviewReason = "rca_incomplete"
-			backfillSeverity(rcaResult, signal)
-			attachDetectedLabels(rcaResult, rawEnrichData)
-			InjectRemediationTarget(rcaResult, signal, rawEnrichData)
-			InjectTargetResourceParameters(rcaResult)
-			return rawEnrichData, true, rcaResult
-		} else if reEnriched != nil && reEnriched.TargetResourceDeleted {
+	if postRCAKind == signalKind && postRCAName == signalName && postRCANS == signalNS {
+		if rawEnrichData != nil && rawEnrichData.TargetResourceDeleted {
 			rcaResult.Warnings = append(rcaResult.Warnings,
-				deletedResourceWarning(postRCAKind, postRCAName, postRCANS))
+				deletedResourceWarning(signalKind, signalName, signalNS))
 		}
-
-		if reEnriched != nil && !reEnriched.HardFail && !allLabelDetectionsFailed(reEnriched.DetectedLabels) {
-			rawEnrichData = reEnriched
-		} else if reEnriched != nil && !reEnriched.HardFail {
-			inv.logger.Info("RunWorkflowDiscoveryFromRCA: re-enrichment labels all failed, preserving signal-target labels",
-				"rca_target", postRCAKind+"/"+postRCAName, "correlation_id", correlationID)
-		}
-	} else if rawEnrichData != nil && rawEnrichData.TargetResourceDeleted {
-		rcaResult.Warnings = append(rcaResult.Warnings,
-			deletedResourceWarning(signalKind, signalName, signalNS))
+		return rawEnrichData, true, nil
 	}
 
-	return rawEnrichData, true, nil
+	return inv.reEnrichForRCATargetShift(ctx, enrichmentCache, signal, rcaResult, rawEnrichData,
+		signalKind, signalName, postRCAKind, postRCAName, postRCANS, correlationID)
+}
+
+// reEnrichForRCATargetShift re-runs enrichment against the RCA-resolved
+// remediation target when it differs from the signal's original target
+// (e.g. the LLM identified a different owning resource as the true root
+// cause). Returns a non-nil hardFailResult when the re-enrichment
+// hard-fails, in which case rcaResult has already been mutated to request
+// human review with the rca_incomplete reason.
+func (inv *Investigator) reEnrichForRCATargetShift(
+	ctx context.Context,
+	enrichmentCache map[string]*enrichment.EnrichmentResult,
+	signal katypes.SignalContext,
+	rcaResult *katypes.InvestigationResult,
+	rawEnrichData *enrichment.EnrichmentResult,
+	signalKind, signalName, postRCAKind, postRCAName, postRCANS, correlationID string,
+) (*enrichment.EnrichmentResult, bool, *katypes.InvestigationResult) {
+	inv.logger.Info("RunWorkflowDiscoveryFromRCA: re-enriching with RCA target",
+		"signal", signalKind+"/"+signalName,
+		"rca_target", postRCAKind+"/"+postRCAName,
+		"correlation_id", correlationID)
+	reEnriched := inv.resolveEnrichmentCached(ctx, enrichmentCache, postRCAKind, postRCAName, postRCANS, signal.IncidentID)
+
+	if reEnriched != nil && reEnriched.HardFail {
+		inv.logger.Error(reEnriched.OwnerChainError,
+			"RunWorkflowDiscoveryFromRCA: enrichment hard-failed, triggering rca_incomplete",
+			"correlation_id", correlationID)
+		rcaResult.HumanReviewNeeded = true
+		rcaResult.HumanReviewReason = "rca_incomplete"
+		backfillSeverity(rcaResult, signal)
+		attachDetectedLabels(rcaResult, rawEnrichData)
+		InjectRemediationTarget(rcaResult, signal, rawEnrichData)
+		InjectTargetResourceParameters(rcaResult)
+		return rawEnrichData, true, rcaResult
+	}
+
+	if reEnriched == nil {
+		return rawEnrichData, true, nil
+	}
+
+	if reEnriched.TargetResourceDeleted {
+		rcaResult.Warnings = append(rcaResult.Warnings,
+			deletedResourceWarning(postRCAKind, postRCAName, postRCANS))
+	}
+
+	if allLabelDetectionsFailed(reEnriched.DetectedLabels) {
+		inv.logger.Info("RunWorkflowDiscoveryFromRCA: re-enrichment labels all failed, preserving signal-target labels",
+			"rca_target", postRCAKind+"/"+postRCAName, "correlation_id", correlationID)
+		return rawEnrichData, true, nil
+	}
+
+	return reEnriched, true, nil
 }
 
 // attachRCADetectedLabelsJSON marshals rawEnrichData's DetectedLabels onto
