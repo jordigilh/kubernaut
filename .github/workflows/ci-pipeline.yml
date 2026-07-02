@@ -815,7 +815,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [signalprocessing, aianalysis, authwebhook, workflowexecution, remediationorchestrator, notification, gateway, datastorage, effectivenessmonitor, kubernautagent, apifrontend, fullpipeline, fleet, fleetmetadatacache]
+        service: [signalprocessing, aianalysis, authwebhook, workflowexecution, remediationorchestrator, notification, gateway, datastorage, effectivenessmonitor, kubernautagent, apifrontend, fullpipeline, fleet, fleetmetadatacache, fleetmetadatacache-eaigw]
         include:
           - service: signalprocessing
             service_name: "Signal Processing"
@@ -859,6 +859,9 @@ jobs:
           - service: fleetmetadatacache
             service_name: "Fleet Metadata Cache"
             timeout: 15
+          - service: fleetmetadatacache-eaigw
+            service_name: "Fleet Metadata Cache (EAIGW)"
+            timeout: 20
     steps:
       - uses: actions/checkout@v7
         with:
@@ -901,8 +904,8 @@ jobs:
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind
           kind version
-      - name: Install Helm (fleet/fleetmetadatacache E2E deploy Istio via helm template)
-        if: matrix.service == 'fleet' || matrix.service == 'fleetmetadatacache'
+      - name: Install Helm (fleet/fleetmetadatacache E2E deploy Istio/Envoy AI Gateway via helm)
+        if: matrix.service == 'fleet' || matrix.service == 'fleetmetadatacache' || matrix.service == 'fleetmetadatacache-eaigw'
         run: |
           curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
           helm version

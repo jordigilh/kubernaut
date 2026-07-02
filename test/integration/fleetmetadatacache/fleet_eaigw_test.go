@@ -14,11 +14,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package fleet_test
+package fleetmetadatacache_test
 
 import (
 	"context"
-	"os"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -28,6 +27,18 @@ import (
 	mockgw "github.com/jordigilh/kubernaut/test/services/mock-mcp-gateway/testutil"
 )
 
+// IT-FLEET-EAIGW-001 proves EAIGW's raw tools/list + tool-name-prefixing
+// behavior against a real standalone EAIGW container -- a fast, always-on
+// complement to the heavier CRD-based E2E coverage in
+// test/e2e/fleetmetadatacache/eaigw/ (which drives EAIGW through its actual
+// Helm-installed controller, GatewayClass/Gateway, and Backend/MCPRoute
+// CRDs, Spike S18). This container-only test previously lived in
+// test/integration/kubernautagent/fleet/ gated behind FLEET_IT_CONTAINERS
+// (never set in CI); relocated here (the package that already owns EAIGW's
+// Backend-CRD registry wiring, pkg/fleet/registry/eaigw_registry.go) and
+// un-gated -- it is a single lightweight container, consistent with this
+// package's existing --network=host kube-mcp-server containers
+// (fmc_e2e_test.go).
 var _ = Describe("IT-FLEET-EAIGW-001 [SC-7]: All remote cluster tool calls are routed through the gateway chokepoint with per-cluster namespace isolation (BR-INTEGRATION-054)", Label("container"), func() {
 	var (
 		ctx         context.Context
@@ -36,9 +47,6 @@ var _ = Describe("IT-FLEET-EAIGW-001 [SC-7]: All remote cluster tool calls are r
 	)
 
 	BeforeEach(func() {
-		if os.Getenv("FLEET_IT_CONTAINERS") != "true" {
-			Skip("FLEET_IT_CONTAINERS=true required for container-based IT tests")
-		}
 		ctx = context.Background()
 	})
 
