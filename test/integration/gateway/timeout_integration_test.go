@@ -99,10 +99,10 @@ var _ = Describe("Issue #673 L-3: K8s API Timeout (BR-GATEWAY-102)", Ordered, Co
 
 			cfg := &config.ServerConfig{
 				Server: config.ServerSettings{
-					ListenAddr:       "127.0.0.1:0",
-					ReadTimeout:      5 * time.Second,
-					WriteTimeout:     10 * time.Second,
-					IdleTimeout:      120 * time.Second,
+					ListenAddr:        "127.0.0.1:0",
+					ReadTimeout:       5 * time.Second,
+					WriteTimeout:      10 * time.Second,
+					IdleTimeout:       120 * time.Second,
 					K8sRequestTimeout: 50 * time.Millisecond, // Very short -- will trigger before 200ms List delay
 				},
 				Processing: config.ProcessingSettings{
@@ -116,16 +116,10 @@ var _ = Describe("Issue #673 L-3: K8s API Timeout (BR-GATEWAY-102)", Ordered, Co
 			registry := prometheus.NewRegistry()
 			metricsInstance := metrics.NewMetricsWithRegistry(registry)
 
-			gwServer, err := gateway.NewServerForTesting(
-				cfg,
-				logr.Discard(),
-				metricsInstance,
-				slowClient,
-				nil,
-				scope.NewManager(slowClient),
-				nil,
-				nil,
-			)
+			gwServer, err := gateway.NewServerForTesting(gateway.ServerTestDeps{
+				Config: cfg, Logger: logr.Discard(), MetricsInstance: metricsInstance,
+				CtrlClient: slowClient, ScopeChecker: scope.NewManager(slowClient),
+			})
 			Expect(err).ToNot(HaveOccurred())
 
 			prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
@@ -254,10 +248,10 @@ var _ = Describe("Issue #673 L-3: K8s API Timeout (BR-GATEWAY-102)", Ordered, Co
 
 			cfg := &config.ServerConfig{
 				Server: config.ServerSettings{
-					ListenAddr:       "127.0.0.1:0",
-					ReadTimeout:      5 * time.Second,
-					WriteTimeout:     10 * time.Second,
-					IdleTimeout:      120 * time.Second,
+					ListenAddr:        "127.0.0.1:0",
+					ReadTimeout:       5 * time.Second,
+					WriteTimeout:      10 * time.Second,
+					IdleTimeout:       120 * time.Second,
 					K8sRequestTimeout: 15 * time.Second, // Default production value -- plenty of headroom
 				},
 				Processing: config.ProcessingSettings{
@@ -271,16 +265,10 @@ var _ = Describe("Issue #673 L-3: K8s API Timeout (BR-GATEWAY-102)", Ordered, Co
 			registry := prometheus.NewRegistry()
 			metricsInstance := metrics.NewMetricsWithRegistry(registry)
 
-			gwServer, err := gateway.NewServerForTesting(
-				cfg,
-				logr.Discard(),
-				metricsInstance,
-				normalClient,
-				nil,
-				scope.NewManager(normalClient),
-				nil,
-				nil,
-			)
+			gwServer, err := gateway.NewServerForTesting(gateway.ServerTestDeps{
+				Config: cfg, Logger: logr.Discard(), MetricsInstance: metricsInstance,
+				CtrlClient: normalClient, ScopeChecker: scope.NewManager(normalClient),
+			})
 			Expect(err).ToNot(HaveOccurred())
 
 			prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
@@ -321,4 +309,3 @@ var _ = Describe("Issue #673 L-3: K8s API Timeout (BR-GATEWAY-102)", Ordered, Co
 		})
 	})
 })
-

@@ -28,6 +28,11 @@ import (
 // Business Requirements:
 // - BR-STORAGE-001: Complete audit trail with no data loss
 // - DD-009: Dead Letter Queue pattern for error recovery
+//
+// Wide DTO by design: reviewed in GO-ANTIPATTERN-AUDIT-2026-07-01 §4a (God Structs).
+// It mirrors the unified audit_events table schema field-for-field; splitting it
+// would fragment the persistence/serialization boundary for no behavioral gain,
+// so it is intentionally not decomposed.
 type AuditEvent struct {
 	// ========================================
 	// EVENT IDENTITY

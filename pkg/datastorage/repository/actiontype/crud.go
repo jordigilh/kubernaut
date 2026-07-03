@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jmoiron/sqlx"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository/txretry"
 )
@@ -228,26 +229,9 @@ func (r *Repository) disableOnce(ctx context.Context, actionType string, disable
 		return &DisableResult{Disabled: true}, nil
 	}
 
-	rows, err := tx.QueryxContext(ctx,
-		`SELECT workflow_name FROM remediation_workflow_catalog
-		 WHERE action_type = $1 AND status = 'Active'`,
-		actionType,
-	)
+	names, err := queryRemainingActiveWorkflows(ctx, tx, actionType)
 	if err != nil {
-		return nil, fmt.Errorf("count active workflows for %q: %w", actionType, err)
-	}
-	var names []string
-	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
-			_ = rows.Close()
-			return nil, fmt.Errorf("scan workflow name: %w", err)
-		}
-		names = append(names, name)
-	}
-	_ = rows.Close()
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate workflow rows: %w", err)
+		return nil, err
 	}
 
 	if len(names) > 0 {
@@ -261,19 +245,8 @@ func (r *Repository) disableOnce(ctx context.Context, actionType string, disable
 		}, nil
 	}
 
-	now := time.Now().UTC()
-	_, err = tx.ExecContext(ctx,
-		`UPDATE action_type_taxonomy
-		 SET status = 'Disabled', disabled_at = $2, disabled_by = $3
-		 WHERE action_type = $1 AND status = 'Active'`,
-		actionType, now, disabledBy,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("disable action type %q: %w", actionType, err)
-	}
-
-	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("commit disable: %w", err)
+	if err := commitActionTypeDisable(ctx, tx, actionType, disabledBy, "disable"); err != nil {
+		return nil, err
 	}
 	return &DisableResult{Disabled: true}, nil
 }
@@ -326,41 +299,15 @@ func (r *Repository) forceDisableOnce(ctx context.Context, actionType string, di
 
 	// Disable only the named orphaned workflows (scoped cleanup).
 	if len(orphanedWorkflows) > 0 {
-		now := time.Now().UTC()
-		_, err = tx.ExecContext(ctx,
-			`UPDATE remediation_workflow_catalog
-			 SET status = 'Disabled', disabled_at = $2, disabled_by = $3,
-			     disabled_reason = 'orphan cleanup (#512)', status_reason = 'orphan cleanup (#512)'
-			 WHERE action_type = $1 AND status = 'Active'
-			   AND workflow_name = ANY($4)`,
-			actionType, now, disabledBy, orphanedWorkflows,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("disable orphaned workflows for %q: %w", actionType, err)
+		if err := disableOrphanedWorkflows(ctx, tx, actionType, disabledBy, orphanedWorkflows); err != nil {
+			return nil, err
 		}
 	}
 
 	// Check for remaining active workflows after orphan cleanup.
-	rows, err := tx.QueryxContext(ctx,
-		`SELECT workflow_name FROM remediation_workflow_catalog
-		 WHERE action_type = $1 AND status = 'Active'`,
-		actionType,
-	)
+	remaining, err := queryRemainingActiveWorkflows(ctx, tx, actionType)
 	if err != nil {
-		return nil, fmt.Errorf("count remaining active workflows for %q: %w", actionType, err)
-	}
-	var remaining []string
-	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
-			_ = rows.Close()
-			return nil, fmt.Errorf("scan workflow name: %w", err)
-		}
-		remaining = append(remaining, name)
-	}
-	_ = rows.Close()
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate remaining workflow rows: %w", err)
+		return nil, err
 	}
 
 	if len(remaining) > 0 {
@@ -374,21 +321,83 @@ func (r *Repository) forceDisableOnce(ctx context.Context, actionType string, di
 		}, nil
 	}
 
+	if err := commitActionTypeDisable(ctx, tx, actionType, disabledBy, "force-disable"); err != nil {
+		return nil, err
+	}
+	return &DisableResult{Disabled: true}, nil
+}
+
+// commitActionTypeDisable marks actionType's taxonomy row Disabled and
+// commits tx. opName customizes the commit-failure error message
+// ("disable"/"force-disable"). Extracted from disableOnce/forceDisableOnce
+// (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 3) — pure code motion, no behavior
+// change.
+func commitActionTypeDisable(ctx context.Context, tx *sqlx.Tx, actionType, disabledBy, opName string) error {
 	now := time.Now().UTC()
-	_, err = tx.ExecContext(ctx,
+	_, err := tx.ExecContext(ctx,
 		`UPDATE action_type_taxonomy
 		 SET status = 'Disabled', disabled_at = $2, disabled_by = $3
 		 WHERE action_type = $1 AND status = 'Active'`,
 		actionType, now, disabledBy,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("disable action type %q: %w", actionType, err)
+		return fmt.Errorf("disable action type %q: %w", actionType, err)
 	}
 
 	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("commit force-disable: %w", err)
+		return fmt.Errorf("commit %s: %w", opName, err)
 	}
-	return &DisableResult{Disabled: true}, nil
+	return nil
+}
+
+// disableOrphanedWorkflows disables the named orphaned workflows for
+// actionType within tx (scoped cleanup, #512). Extracted from
+// forceDisableOnce (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 3) — pure code
+// motion, no behavior change.
+func disableOrphanedWorkflows(ctx context.Context, tx *sqlx.Tx, actionType, disabledBy string, orphanedWorkflows []string) error {
+	now := time.Now().UTC()
+	_, err := tx.ExecContext(ctx,
+		`UPDATE remediation_workflow_catalog
+		 SET status = 'Disabled', disabled_at = $2, disabled_by = $3,
+		     disabled_reason = 'orphan cleanup (#512)', status_reason = 'orphan cleanup (#512)'
+		 WHERE action_type = $1 AND status = 'Active'
+		   AND workflow_name = ANY($4)`,
+		actionType, now, disabledBy, orphanedWorkflows,
+	)
+	if err != nil {
+		return fmt.Errorf("disable orphaned workflows for %q: %w", actionType, err)
+	}
+	return nil
+}
+
+// queryRemainingActiveWorkflows returns the names of workflows still Active
+// for actionType within tx, used to detect whether force-disable can proceed
+// after orphan cleanup. Extracted from forceDisableOnce
+// (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 3) — pure code motion, no behavior
+// change.
+func queryRemainingActiveWorkflows(ctx context.Context, tx *sqlx.Tx, actionType string) ([]string, error) {
+	rows, err := tx.QueryxContext(ctx,
+		`SELECT workflow_name FROM remediation_workflow_catalog
+		 WHERE action_type = $1 AND status = 'Active'`,
+		actionType,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("count remaining active workflows for %q: %w", actionType, err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var remaining []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, fmt.Errorf("scan workflow name: %w", err)
+		}
+		remaining = append(remaining, name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate remaining workflow rows: %w", err)
+	}
+	return remaining, nil
 }
 
 // CountActiveWorkflows returns the count and names of active workflows referencing this action type.

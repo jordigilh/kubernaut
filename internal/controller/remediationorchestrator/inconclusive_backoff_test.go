@@ -64,12 +64,16 @@ var _ = Describe("Inconclusive Backoff (BR-ORCH-042.6, Issue #1091)", func() {
 	reconcileVerifying := func(fakeClient client.WithWatch, rrName, namespace string) (ctrl.Result, error) {
 		roMetrics := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
 		recorder := record.NewFakeRecorder(20)
-		reconciler := controller.NewReconciler(
-			fakeClient, fakeClient, scheme,
-			nil, recorder, roMetrics,
-			controller.TimeoutConfig{},
-			&MockRoutingEngine{},
-		)
+		reconciler := controller.NewReconciler(controller.ReconcilerDeps{
+			Client:        fakeClient,
+			APIReader:     fakeClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       roMetrics,
+			Timeouts:      controller.TimeoutConfig{},
+			RoutingEngine: &MockRoutingEngine{},
+		})
 		return reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: rrName, Namespace: namespace},
 		})

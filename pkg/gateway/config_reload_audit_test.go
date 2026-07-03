@@ -88,7 +88,10 @@ var _ = Describe("GAP-11: Gateway config reload audit events", func() {
 		metricsInstance := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
 
 		var err error
-		server, err = gatewaypkg.NewServerForTesting(cfg, logr.Discard(), metricsInstance, k8sClient, mockAudit, nil, nil, nil)
+		server, err = gatewaypkg.NewServerForTesting(gatewaypkg.ServerTestDeps{
+			Config: cfg, Logger: logr.Discard(), MetricsInstance: metricsInstance,
+			CtrlClient: k8sClient, AuditStore: mockAudit,
+		})
 		Expect(err).NotTo(HaveOccurred())
 	})
 
@@ -133,15 +136,17 @@ var _ = Describe("GAP-11: Gateway config reload audit events", func() {
 
 	Context("when no audit store is configured", func() {
 		It("does not panic and does not attempt to store an event", func() {
-			serverWithoutAudit, err := gatewaypkg.NewServerForTesting(
-				&config.ServerConfig{
+			serverWithoutAudit, err := gatewaypkg.NewServerForTesting(gatewaypkg.ServerTestDeps{
+				Config: &config.ServerConfig{
 					Server: config.ServerSettings{ListenAddr: "127.0.0.1:0"},
 					Processing: config.ProcessingSettings{
 						Retry: config.RetrySettings{MaxAttempts: 1, InitialBackoff: time.Millisecond, MaxBackoff: time.Millisecond},
 					},
 				},
-				logr.Discard(), metrics.NewMetricsWithRegistry(prometheus.NewRegistry()), fake.NewClientBuilder().WithScheme(scheme).Build(), nil, nil, nil, nil,
-			)
+				Logger:          logr.Discard(),
+				MetricsInstance: metrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				CtrlClient:      fake.NewClientBuilder().WithScheme(scheme).Build(),
+			})
 			Expect(err).NotTo(HaveOccurred())
 
 			Expect(func() {

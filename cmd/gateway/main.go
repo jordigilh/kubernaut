@@ -25,6 +25,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/go-logr/logr"
+	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
 
 	internalconfig "github.com/jordigilh/kubernaut/internal/config"
@@ -113,20 +115,85 @@ func main() {
 
 	// Issue #1029: Dynamic API resource registry — replaces static kindToGroup +
 	// resourceCandidates + LabelFilter with fully dynamic discovery.
+	apiRegistry, err := buildAPIRegistry(serverCtx, srv, logger)
+	if err != nil {
+		logger.Error(err, "Failed to initialize API resource registry")
+		os.Exit(1)
+	}
+
+	// Register adapters (BR-GATEWAY-001, BR-GATEWAY-002) and optionally wire the
+	// Fleet MCP Gateway for remote owner chain resolution (BR-INTEGRATION-065).
+	fleetResilientClient, err := registerAdapters(serverCtx, srv, apiRegistry, serverCfg, logger)
+	if err != nil {
+		logger.Error(err, "Failed to register adapters")
+		os.Exit(1)
+	}
+
+	// Start server in goroutine
+	errChan := make(chan error, 1)
+
+	// Issue #748/#877/#756: TLS security profile + log-level and CA-cert hot-reload watchers.
+	stopHotReload := wireHotReload(serverCtx, serverCfg, configPath, atomicLevel, srv, logger)
+	defer stopHotReload()
+
+	go func() {
+		logger.Info("Gateway server starting", "address", serverCfg.Server.ListenAddr)
+		if err := srv.Start(serverCtx); err != nil {
+			errChan <- err
+		}
+	}()
+
+	// Setup signal handling for graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+
+	// Wait for shutdown signal or server error
+	select {
+	case err := <-errChan:
+		logger.Error(err, "Gateway server failed")
+		os.Exit(1)
+	case sig := <-sigChan:
+		logger.Info("Shutdown signal received", "signal", sig.String())
+	}
+
+	// Graceful shutdown with 30-second timeout
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer shutdownCancel()
+
+	// BR-INTEGRATION-054: Graceful shutdown for fleet MCP client
+	if fleetResilientClient != nil {
+		logger.Info("Closing fleet MCP Gateway connection")
+		if err := fleetResilientClient.Close(); err != nil {
+			logger.Error(err, "Failed to close fleet MCP client gracefully")
+		}
+	}
+
+	// DD-GATEWAY-012: Redis close REMOVED - Gateway is now Redis-free
+	logger.Info("Initiating graceful shutdown...")
+	if err := srv.Stop(shutdownCtx); err != nil {
+		logger.Error(err, "Graceful shutdown failed")
+		os.Exit(1)
+	}
+
+	logger.Info("Gateway server shutdown complete")
+}
+
+// buildAPIRegistry builds the dynamic API resource registry (Issue #1029)
+// used for discovery-driven owner-chain resolution, and starts its
+// background refresh loop. Extracted from main() (GO-ANTIPATTERN-AUDIT-2026-07-01
+// Wave 0a) — pure code motion, no behavior change.
+func buildAPIRegistry(ctx context.Context, srv *gateway.Server, logger logr.Logger) (*adapters.APIResourceRegistry, error) {
 	kubeConfig, err := ctrl.GetConfig()
 	if err != nil {
-		logger.Error(err, "Failed to get Kubernetes config for API discovery")
-		os.Exit(1)
+		return nil, fmt.Errorf("failed to get kubernetes config for API discovery: %w", err)
 	}
 	k8sClientset, err := kubernetes.NewForConfig(kubeConfig)
 	if err != nil {
-		logger.Error(err, "Failed to create Kubernetes clientset for API discovery")
-		os.Exit(1)
+		return nil, fmt.Errorf("failed to create kubernetes clientset for API discovery: %w", err)
 	}
 	dynClient, err := dynamic.NewForConfig(kubeConfig)
 	if err != nil {
-		logger.Error(err, "Failed to create dynamic Kubernetes client for existence checks")
-		os.Exit(1)
+		return nil, fmt.Errorf("failed to create dynamic kubernetes client for existence checks: %w", err)
 	}
 	apiRegistry, err := adapters.NewAPIResourceRegistry(
 		k8sClientset.Discovery(),
@@ -137,16 +204,27 @@ func main() {
 		adapters.WithRefreshErrorCounter(srv.GetMetrics().DiscoveryRefreshErrorsTotal),
 	)
 	if err != nil {
-		logger.Error(err, "Failed to initialize API resource registry — dynamic resource "+
-			"discovery is unavailable; verify ServiceAccount RBAC for system:discovery")
-		os.Exit(1)
+		return nil, fmt.Errorf("dynamic resource discovery is unavailable; verify ServiceAccount RBAC for "+
+			"system:discovery: %w", err)
 	}
-	apiRegistry.StartRefreshLoop(serverCtx)
+	apiRegistry.StartRefreshLoop(ctx)
+	return apiRegistry, nil
+}
 
-	// Register adapters (BR-GATEWAY-001, BR-GATEWAY-002)
-	// BR-GATEWAY-004: Owner chain resolution for signal deduplication (Issue #63).
-	// Uses the same ctrlClient as scope management (ADR-053) — metadata-only informer
-	// cache, zero additional API calls. Shared across all adapters.
+// registerAdapters builds and registers the Prometheus and Kubernetes-Event
+// signal adapters (BR-GATEWAY-001, BR-GATEWAY-002), including owner-chain
+// resolution (BR-GATEWAY-004) and the optional Fleet MCP Gateway wiring for
+// remote owner resolution (BR-INTEGRATION-065). Returns the Fleet resilient
+// client (nil if Fleet isn't configured) so the caller can close it on
+// shutdown. Extracted from main() (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 0a)
+// — pure code motion, no behavior change.
+func registerAdapters(
+	ctx context.Context,
+	srv *gateway.Server,
+	apiRegistry *adapters.APIResourceRegistry,
+	serverCfg *config.ServerConfig,
+	logger logr.Logger,
+) (*fleetclient.ResilientClient, error) {
 	ownerResolver := adapters.NewK8sOwnerResolver(
 		srv.GetCachedClient(),
 		logger.WithName("owner-resolver"),
@@ -191,7 +269,7 @@ func main() {
 		resilienceCfg := fleetclient.DefaultResilienceConfig()
 		var fleetErr error
 		fleetResilientClient, fleetErr = fleetclient.NewResilient(
-			serverCtx, serverCfg.Fleet.MCPGatewayEndpoint, resilienceCfg,
+			ctx, serverCfg.Fleet.MCPGatewayEndpoint, resilienceCfg,
 			logger.WithName("fleet-client"), fleetOpts...,
 		)
 		if fleetErr != nil {
@@ -206,25 +284,38 @@ func main() {
 	}
 
 	if err := srv.RegisterAdapter(prometheusAdapter); err != nil {
-		logger.Error(err, "Failed to register Prometheus adapter")
-		os.Exit(1)
+		return fleetResilientClient, fmt.Errorf("failed to register prometheus adapter: %w", err)
 	}
 
 	// Kubernetes Event webhook adapter
 	k8sEventAdapter := adapters.NewKubernetesEventAdapter(ownerResolver)
 	k8sEventAdapter.SetLogger(logger)
 	if err := srv.RegisterAdapter(k8sEventAdapter); err != nil {
-		logger.Error(err, "Failed to register K8s Event adapter")
-		os.Exit(1)
+		return fleetResilientClient, fmt.Errorf("failed to register k8s event adapter: %w", err)
 	}
 
 	logger.Info("Registered all adapters",
 		"adapter_count", 2,
 		"adapters", []string{"prometheus", "kubernetes-event"})
 
-	// Start server in goroutine
-	errChan := make(chan error, 1)
+	return fleetResilientClient, nil
+}
 
+// wireHotReload sets the initial TLS security profile and starts the
+// log-level and CA-cert hot-reload file watchers (Issues #748, #877, #756).
+// Returns a combined stop function the caller should defer. Exits the
+// process on an invalid TLS profile or CA-watcher startup failure, matching
+// main()'s original fail-fast behavior. Extracted from main()
+// (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 0a) — pure code motion, no behavior
+// change.
+func wireHotReload(
+	ctx context.Context,
+	serverCfg *config.ServerConfig,
+	configPath string,
+	atomicLevel zap.AtomicLevel,
+	srv *gateway.Server,
+	logger logr.Logger,
+) func() {
 	// Issue #748: Load OCP TLS security profile from config before any TLS setup
 	if err := sharedtls.SetDefaultSecurityProfileFromConfig(serverCfg.TLSProfile); err != nil {
 		logger.Error(err, "Invalid TLS security profile in config — refusing to start with wrong TLS posture")
@@ -232,6 +323,8 @@ func main() {
 	} else if serverCfg.TLSProfile != "" {
 		logger.Info("TLS security profile active", "profile", serverCfg.TLSProfile)
 	}
+
+	stopFns := make([]func(), 0, 2)
 
 	// Issue #877: Log level hot-reload via FileWatcher
 	if configPath != "" {
@@ -249,7 +342,7 @@ func main() {
 				}()
 				// GAP-11 (Issue #1505): audit every log-level hot-reload attempt,
 				// success or rejection (SOC2 CC7.2 change management).
-				srv.EmitConfigReloadAudit(serverCtx, "log_level", reloadErr)
+				srv.EmitConfigReloadAudit(ctx, "log_level", reloadErr)
 				return reloadErr
 			},
 			logger.WithName("log-level-watcher"),
@@ -257,66 +350,31 @@ func main() {
 		if watchErr != nil {
 			logger.Error(watchErr, "Failed to create log level file watcher")
 		} else {
-			if err := logLevelWatcher.Start(serverCtx); err != nil {
+			if err := logLevelWatcher.Start(ctx); err != nil {
 				logger.Info("Log level file watcher failed to start", "error", err)
 			} else {
 				logger.Info("Log level hot-reload watcher started", "path", configPath)
-				defer logLevelWatcher.Stop()
+				stopFns = append(stopFns, logLevelWatcher.Stop)
 			}
 		}
 	}
 
 	// Issue #756: Start CA file watcher for client-side TLS hot-reload
 	// GAP-11 (Issue #1505): audit every CA-cert hot-reload attempt.
-	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(serverCtx, logger, func(reloadErr error) {
-		srv.EmitConfigReloadAudit(serverCtx, "ca_cert", reloadErr)
+	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, logger, func(reloadErr error) {
+		srv.EmitConfigReloadAudit(ctx, "ca_cert", reloadErr)
 	})
 	if caWatchErr != nil {
 		logger.Error(caWatchErr, "Failed to start CA file watcher")
 		os.Exit(1)
 	}
 	if caWatcher != nil {
-		defer caWatcher.Stop()
+		stopFns = append(stopFns, caWatcher.Stop)
 	}
 
-	go func() {
-		logger.Info("Gateway server starting", "address", serverCfg.Server.ListenAddr)
-		if err := srv.Start(serverCtx); err != nil {
-			errChan <- err
-		}
-	}()
-
-	// Setup signal handling for graceful shutdown
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-
-	// Wait for shutdown signal or server error
-	select {
-	case err := <-errChan:
-		logger.Error(err, "Gateway server failed")
-		os.Exit(1)
-	case sig := <-sigChan:
-		logger.Info("Shutdown signal received", "signal", sig.String())
-	}
-
-	// Graceful shutdown with 30-second timeout
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer shutdownCancel()
-
-	// BR-INTEGRATION-054: Graceful shutdown for fleet MCP client
-	if fleetResilientClient != nil {
-		logger.Info("Closing fleet MCP Gateway connection")
-		if err := fleetResilientClient.Close(); err != nil {
-			logger.Error(err, "Failed to close fleet MCP client gracefully")
+	return func() {
+		for _, stop := range stopFns {
+			stop()
 		}
 	}
-
-	// DD-GATEWAY-012: Redis close REMOVED - Gateway is now Redis-free
-	logger.Info("Initiating graceful shutdown...")
-	if err := srv.Stop(shutdownCtx); err != nil {
-		logger.Error(err, "Graceful shutdown failed")
-		os.Exit(1)
-	}
-
-	logger.Info("Gateway server shutdown complete")
 }

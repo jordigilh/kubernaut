@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/jordigilh/kubernaut/pkg/shared/backoff"
+
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
@@ -100,17 +102,20 @@ type DataStorageClient interface {
 // DD-AUDIT-002 V2.0: Updated to use OpenAPI types directly
 // DD-AUDIT-002 V3.0: Removed client-side DLQ (over-engineered, server-side DLQ sufficient)
 type BufferedAuditStore struct {
-	buffer     chan *ogenclient.AuditEventRequest
-	flushChan  chan chan error // Channel to signal flush request and receive completion
-	client     DataStorageClient
-	logger     logr.Logger
-	config     Config
-	metrics    MetricsLabels
-	done       chan struct{}
-	wg         sync.WaitGroup
-	closed     int32 // Atomic flag to prevent double-close
-	ctx        context.Context    // Store-scoped context for retry loop cancellation
-	ctxCancel  context.CancelFunc // Cancel function for store-scoped context
+	buffer    chan *ogenclient.AuditEventRequest
+	flushChan chan chan error // Channel to signal flush request and receive completion
+	client    DataStorageClient
+	logger    logr.Logger
+	config    Config
+	metrics   MetricsLabels
+	done      chan struct{}
+	wg        sync.WaitGroup
+	closed    int32 // Atomic flag to prevent double-close
+	//nolint:containedctx // store-scoped lifecycle context for the background retry/flush
+	// loop, not a request-scoped context — reviewed and accepted in
+	// GO-ANTIPATTERN-AUDIT-2026-07-01 §6 (context.Context Stored in Struct Fields).
+	ctx       context.Context
+	ctxCancel context.CancelFunc // Cancel function for store-scoped context
 
 	// Metrics (atomic counters for thread-safe access)
 	bufferedCount    int64
@@ -415,17 +420,17 @@ func (s *BufferedAuditStore) backgroundWriter() {
 				bufferUtilizationBeforeFlush := len(s.buffer)
 				timeSinceLastFlush := time.Since(lastFlushTime)
 
-			s.logger.V(2).Info("📦 Batch-full flush triggered",
-				"batch_size", batchSizeBeforeFlush,
-				"buffer_utilization", bufferUtilizationBeforeFlush,
-				"time_since_last_flush", timeSinceLastFlush)
-			s.writeBatchWithRetry(batch)
-			lastFlushTime = time.Now()
-			batch = batch[:0] // Reset batch
-			s.logger.V(2).Info("✅ Batch-full flush completed",
-				"flushed_count", batchSizeBeforeFlush,
-				"batch_size_after_flush", len(batch),
-				"buffer_utilization_after_flush", len(s.buffer))
+				s.logger.V(2).Info("📦 Batch-full flush triggered",
+					"batch_size", batchSizeBeforeFlush,
+					"buffer_utilization", bufferUtilizationBeforeFlush,
+					"time_since_last_flush", timeSinceLastFlush)
+				s.writeBatchWithRetry(batch)
+				lastFlushTime = time.Now()
+				batch = batch[:0] // Reset batch
+				s.logger.V(2).Info("✅ Batch-full flush completed",
+					"flushed_count", batchSizeBeforeFlush,
+					"batch_size_after_flush", len(batch),
+					"buffer_utilization_after_flush", len(s.buffer))
 			}
 
 		case tickTime := <-ticker.C:
@@ -531,18 +536,30 @@ func (s *BufferedAuditStore) backgroundWriter() {
 	}
 }
 
-// writeBatchWithRetry writes a batch with exponential backoff retry logic.
+// writeBatchWithRetryBackoff configures the exponential backoff (with jitter)
+// applied between retry attempts in writeBatchWithRetry.
+//
+// DD-AUDIT-003: This is application-level retry, intentionally NOT wrapped by
+// pkg/shared/transport.RetryTransport (see pkg/shared/tls/tls.go) to avoid
+// multiplying attempts across two retry layers.
+var writeBatchWithRetryBackoff = backoff.Config{
+	BasePeriod:    1 * time.Second,
+	MaxPeriod:     30 * time.Second,
+	Multiplier:    2.0,
+	JitterPercent: 10, // Anti-thundering-herd: avoids every replica retrying DataStorage in lockstep
+}
+
+// writeBatchWithRetry writes a batch with exponential backoff (+ jitter) retry logic.
 //
 // Retry strategy (GAP-10/GAP-11: Error differentiation):
 // - 4xx errors (client errors): Do NOT retry - indicates invalid data
 // - 5xx errors (server errors): Retry with exponential backoff
 // - Network errors: Retry with exponential backoff
 //
-// Retry timing:
+// Retry timing (pkg/shared/backoff.Config, BasePeriod=1s, Multiplier=2.0, ±10% jitter):
 // - Attempt 1: Immediate
-// - Attempt 2: 1 second delay
-// - Attempt 3: 4 seconds delay
-// - Attempt 4: 9 seconds delay
+// - Attempt 2: ~1 second delay
+// - Attempt 3: ~2 second delay
 // - After MaxRetries: Drop batch and log
 func (s *BufferedAuditStore) writeBatchWithRetry(batch []*ogenclient.AuditEventRequest) {
 	start := time.Now()
@@ -583,11 +600,10 @@ func (s *BufferedAuditStore) writeBatchWithRetry(batch []*ogenclient.AuditEventR
 			}
 
 			if attempt < s.config.MaxRetries {
-				// Exponential backoff: 1s, 4s, 9s
-				backoff := time.Duration(attempt*attempt) * time.Second
+				delay := writeBatchWithRetryBackoff.Calculate(int32(attempt))
 				// Context-aware sleep: abort retry if store is shutting down
 				select {
-				case <-time.After(backoff):
+				case <-time.After(delay):
 				case <-s.ctx.Done():
 					// Shutdown requested, drop remaining retries
 					s.logger.Info("Shutdown during retry backoff, dropping batch",
@@ -600,19 +616,19 @@ func (s *BufferedAuditStore) writeBatchWithRetry(batch []*ogenclient.AuditEventR
 				continue
 			}
 
-		// Final failure after max retries
-		atomic.AddInt64(&s.failedBatchCount, 1)
+			// Final failure after max retries
+			atomic.AddInt64(&s.failedBatchCount, 1)
 
-		// DD-AUDIT-002 V3.0: Transport failures indicate infrastructure problem
-		// Server-side DLQ (in DataStorage) handles persistence failures
-		// Client-side audit loss is acceptable for transport failures (fix infrastructure)
-		s.logger.Error(err, "AUDIT DATA LOSS: Dropping batch after max retries (infrastructure unavailable)",
-			"batch_size", len(batch),
-			"max_retries", s.config.MaxRetries,
-			"error_type", "transport_failure",
-			"mitigation", "Fix DataStorage connectivity - ensure service is running and reachable",
-		)
-		return
+			// DD-AUDIT-002 V3.0: Transport failures indicate infrastructure problem
+			// Server-side DLQ (in DataStorage) handles persistence failures
+			// Client-side audit loss is acceptable for transport failures (fix infrastructure)
+			s.logger.Error(err, "AUDIT DATA LOSS: Dropping batch after max retries (infrastructure unavailable)",
+				"batch_size", len(batch),
+				"max_retries", s.config.MaxRetries,
+				"error_type", "transport_failure",
+				"mitigation", "Fix DataStorage connectivity - ensure service is running and reachable",
+			)
+			return
 		}
 
 		// Success

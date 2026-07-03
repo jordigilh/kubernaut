@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-logr/logr"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -175,52 +176,77 @@ func (r *Reconciler) runAlertCheck(ctx context.Context, rctx *reconcileContext) 
 
 	logger := log.FromContext(ctx)
 
-	if r.Config.AlertManagerEnabled && r.AlertManagerClient != nil {
-		rctx.alertDeferred = alert.CheckAlertDeferral(ea)
-		if rctx.alertDeferred.ShouldDefer {
-			logger.V(1).Info("Alert check deferred (proactive signal, #277)",
-				"alertManagerCheckAfter", ea.Status.AlertManagerCheckAfter,
-				"remaining", rctx.alertDeferred.RequeueAfter)
-			r.Metrics.RecordComponentAssessment("alert", "deferred", nil)
-		} else {
-			alertResult := r.assessAlert(ctx, rctx.targetReader, ea)
-
-			if r.isAlertDecay(ea, alertResult) {
-				if ea.Status.Components.AlertDecayRetries == 0 {
-					r.emitAlertDecayEvent(ctx, ea, alertResult)
-				}
-				ea.Status.Components.AlertDecayRetries++
-				alertResult.Component.Assessed = false
-				ea.Status.Components.HealthAssessed = false
-
-				conditions.SetCondition(ea, conditions.ConditionAlertDecayDetected,
-					metav1.ConditionTrue, conditions.ReasonDecayActive,
-					fmt.Sprintf("Alert decay suspected: health=%.1f, alert still firing, retries=%d",
-						*ea.Status.Components.HealthScore, ea.Status.Components.AlertDecayRetries))
-
-				logger.Info("Alert decay suspected: deferring alert assessment, scheduling health re-probe",
-					"healthScore", ea.Status.Components.HealthScore,
-					"alertScore", alertResult.Component.Score,
-					"retries", ea.Status.Components.AlertDecayRetries)
-			} else {
-				if ea.Status.Components.AlertDecayRetries > 0 {
-					conditions.SetCondition(ea, conditions.ConditionAlertDecayDetected,
-						metav1.ConditionFalse, conditions.ReasonDecayResolved,
-						"Alert decay monitoring resolved: alert is no longer considered decaying")
-				}
-				r.emitAlertEvent(ctx, ea, alertResult)
-			}
-
-			ea.Status.Components.AlertAssessed = alertResult.Component.Assessed
-			ea.Status.Components.AlertScore = alertResult.Component.Score
-			r.Metrics.RecordComponentAssessment("alert", resultStatus(alertResult.Component), alertResult.Component.Score)
-			rctx.componentsChanged = true
-		}
-	} else {
+	if !r.Config.AlertManagerEnabled || r.AlertManagerClient == nil {
 		ea.Status.Components.AlertAssessed = true
 		r.Metrics.RecordComponentAssessment("alert", "skipped", nil)
 		rctx.componentsChanged = true
+		return
 	}
+
+	rctx.alertDeferred = alert.CheckAlertDeferral(ea)
+	if rctx.alertDeferred.ShouldDefer {
+		logger.V(1).Info("Alert check deferred (proactive signal, #277)",
+			"alertManagerCheckAfter", ea.Status.AlertManagerCheckAfter,
+			"remaining", rctx.alertDeferred.RequeueAfter)
+		r.Metrics.RecordComponentAssessment("alert", "deferred", nil)
+		return
+	}
+
+	r.evaluateAlertCheckResult(ctx, rctx, logger)
+}
+
+// evaluateAlertCheckResult assesses the alert component, routes the result
+// through the alert-decay-vs-resolved branch, and updates rctx/ea status
+// accordingly. Extracted from runAlertCheck (Wave 6 6a GREEN: nestif
+// remediation) — pure code motion, no behavior change.
+func (r *Reconciler) evaluateAlertCheckResult(ctx context.Context, rctx *reconcileContext, logger logr.Logger) {
+	ea := rctx.ea
+	alertResult := r.assessAlert(ctx, rctx.targetReader, ea)
+
+	if r.isAlertDecay(ea, alertResult) {
+		r.handleAlertDecaySuspected(ctx, ea, &alertResult, logger)
+	} else {
+		r.handleAlertNotDecaying(ctx, ea, alertResult)
+	}
+
+	ea.Status.Components.AlertAssessed = alertResult.Component.Assessed
+	ea.Status.Components.AlertScore = alertResult.Component.Score
+	r.Metrics.RecordComponentAssessment("alert", resultStatus(alertResult.Component), alertResult.Component.Score)
+	rctx.componentsChanged = true
+}
+
+// handleAlertDecaySuspected records the alert-decay condition/event and
+// forces a health re-probe. Extracted from runAlertCheck (Wave 6 6a GREEN:
+// nestif remediation) — pure code motion, no behavior change.
+func (r *Reconciler) handleAlertDecaySuspected(ctx context.Context, ea *eav1.EffectivenessAssessment, alertResult *alertAssessResult, logger logr.Logger) {
+	if ea.Status.Components.AlertDecayRetries == 0 {
+		r.emitAlertDecayEvent(ctx, ea, *alertResult)
+	}
+	ea.Status.Components.AlertDecayRetries++
+	alertResult.Component.Assessed = false
+	ea.Status.Components.HealthAssessed = false
+
+	conditions.SetCondition(ea, conditions.ConditionAlertDecayDetected,
+		metav1.ConditionTrue, conditions.ReasonDecayActive,
+		fmt.Sprintf("Alert decay suspected: health=%.1f, alert still firing, retries=%d",
+			*ea.Status.Components.HealthScore, ea.Status.Components.AlertDecayRetries))
+
+	logger.Info("Alert decay suspected: deferring alert assessment, scheduling health re-probe",
+		"healthScore", ea.Status.Components.HealthScore,
+		"alertScore", alertResult.Component.Score,
+		"retries", ea.Status.Components.AlertDecayRetries)
+}
+
+// handleAlertNotDecaying clears any prior alert-decay condition and emits
+// the normal alert-assessment event. Extracted from runAlertCheck (Wave 6
+// 6a GREEN: nestif remediation) — pure code motion, no behavior change.
+func (r *Reconciler) handleAlertNotDecaying(ctx context.Context, ea *eav1.EffectivenessAssessment, alertResult alertAssessResult) {
+	if ea.Status.Components.AlertDecayRetries > 0 {
+		conditions.SetCondition(ea, conditions.ConditionAlertDecayDetected,
+			metav1.ConditionFalse, conditions.ReasonDecayResolved,
+			"Alert decay monitoring resolved: alert is no longer considered decaying")
+	}
+	r.emitAlertEvent(ctx, ea, alertResult)
 }
 
 // runMetricsCheck executes the metrics component check.

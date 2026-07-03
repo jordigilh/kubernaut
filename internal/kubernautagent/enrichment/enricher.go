@@ -275,69 +275,125 @@ func (e *Enricher) Enrich(ctx context.Context, kind, name, namespace, apiVersion
 		ResourceNamespace: namespace,
 	}
 
-	if specHash == "" {
-		computed, err := e.k8s.GetSpecHash(ctx, kind, name, namespace, apiVersion)
-		if err != nil {
-			if isForbiddenError(err) {
-				return nil, fmt.Errorf("%w: GetSpecHash %s/%s in %s: %v", ErrRBACForbidden, kind, name, namespace, err)
-			}
-			e.logger.Error(err, "enrichment: specHash auto-computation failed, proceeding with empty",
-				"resource", namespace+"/"+kind+"/"+name,
-			)
-		} else {
-			specHash = computed
-		}
-	}
-
-	var ownerErr, histErr error
-
-	chain, ownerErr := e.resolveOwnerChainWithRetry(ctx, kind, name, namespace, apiVersion)
-	if ownerErr != nil {
-		if isForbiddenError(ownerErr) {
-			return nil, fmt.Errorf("%w: GetOwnerChain %s/%s in %s: %v", ErrRBACForbidden, kind, name, namespace, ownerErr)
-		}
-		result.OwnerChainError = ownerErr
-		if IsNotFoundError(ownerErr) {
-			result.TargetResourceDeleted = true
-		} else if e.retryConfig.MaxRetries > 0 && !IsNoMatchError(ownerErr) {
-			result.HardFail = true
-		}
-		e.logger.Error(ownerErr, "enrichment: owner chain resolution failed",
-			"resource", namespace+"/"+kind+"/"+name,
-			"target_resource_deleted", result.TargetResourceDeleted,
-		)
-	} else {
-		result.OwnerChain = chain
-	}
-
-	if e.labelDetector != nil {
-		labels, quotaDetails, labelErr := e.labelDetector.DetectLabels(ctx, kind, name, namespace, result.OwnerChain)
-		if labelErr != nil {
-			if isForbiddenError(labelErr) {
-				return nil, fmt.Errorf("%w: DetectLabels %s/%s in %s: %v", ErrRBACForbidden, kind, name, namespace, labelErr)
-			}
-			e.logger.Error(labelErr, "enrichment: label detection failed",
-				"resource", namespace+"/"+kind+"/"+name,
-			)
-		}
-		if labels != nil {
-			result.DetectedLabels = labels
-		}
-		if len(quotaDetails) > 0 {
-			result.QuotaDetails = quotaDetails
-		}
-	}
-
-	histResult, err := e.ds.GetRemediationHistory(ctx, kind, name, namespace, specHash)
+	resolvedSpecHash, err := e.resolveSpecHash(ctx, kind, name, namespace, apiVersion, specHash)
 	if err != nil {
-		histErr = err
-		e.logger.Error(err, "enrichment: remediation history fetch failed",
+		return nil, err
+	}
+	specHash = resolvedSpecHash
+
+	ownerErr, hardErr := e.populateOwnerChain(ctx, kind, name, namespace, apiVersion, result)
+	if hardErr != nil {
+		return nil, hardErr
+	}
+
+	if labelErr := e.populateDetectedLabels(ctx, kind, name, namespace, result); labelErr != nil {
+		return nil, labelErr
+	}
+
+	histResult, histErr := e.ds.GetRemediationHistory(ctx, kind, name, namespace, specHash)
+	if histErr != nil {
+		e.logger.Error(histErr, "enrichment: remediation history fetch failed",
 			"resource", namespace+"/"+name,
 		)
 	} else {
 		result.RemediationHistory = histResult
 	}
 
+	e.emitEnrichmentAuditEvent(ctx, enrichmentAuditParams{
+		Kind: kind, Name: name, Namespace: namespace, IncidentID: incidentID,
+		Result: result, OwnerErr: ownerErr, HistErr: histErr,
+	})
+
+	return result, nil
+}
+
+// resolveSpecHash returns specHash unchanged if already provided, otherwise
+// auto-computes it from the live resource. A forbidden error is returned to
+// the caller as a hard failure; any other computation error is logged and
+// enrichment proceeds with an empty specHash.
+func (e *Enricher) resolveSpecHash(ctx context.Context, kind, name, namespace, apiVersion, specHash string) (string, error) {
+	if specHash != "" {
+		return specHash, nil
+	}
+	computed, err := e.k8s.GetSpecHash(ctx, kind, name, namespace, apiVersion)
+	if err != nil {
+		if isForbiddenError(err) {
+			return "", fmt.Errorf("%w: GetSpecHash %s/%s in %s: %v", ErrRBACForbidden, kind, name, namespace, err)
+		}
+		e.logger.Error(err, "enrichment: specHash auto-computation failed, proceeding with empty",
+			"resource", namespace+"/"+kind+"/"+name,
+		)
+		return "", nil
+	}
+	return computed, nil
+}
+
+// populateOwnerChain resolves the resource's owner chain and stores it (or
+// the resulting error state) on result. Returns ownerErr — the raw
+// resolution error, used later for audit reporting — and a separate hardErr
+// which is non-nil only for a forbidden error, signaling the caller to abort
+// enrichment entirely.
+func (e *Enricher) populateOwnerChain(ctx context.Context, kind, name, namespace, apiVersion string, result *EnrichmentResult) (ownerErr, hardErr error) {
+	chain, ownerErr := e.resolveOwnerChainWithRetry(ctx, kind, name, namespace, apiVersion)
+	if ownerErr == nil {
+		result.OwnerChain = chain
+		return nil, nil
+	}
+	if isForbiddenError(ownerErr) {
+		return ownerErr, fmt.Errorf("%w: GetOwnerChain %s/%s in %s: %v", ErrRBACForbidden, kind, name, namespace, ownerErr)
+	}
+	result.OwnerChainError = ownerErr
+	if IsNotFoundError(ownerErr) {
+		result.TargetResourceDeleted = true
+	} else if e.retryConfig.MaxRetries > 0 && !IsNoMatchError(ownerErr) {
+		result.HardFail = true
+	}
+	e.logger.Error(ownerErr, "enrichment: owner chain resolution failed",
+		"resource", namespace+"/"+kind+"/"+name,
+		"target_resource_deleted", result.TargetResourceDeleted,
+	)
+	return ownerErr, nil
+}
+
+// populateDetectedLabels runs label detection (when a detector is wired) and
+// stores the results on result. Returns a non-nil error only for a forbidden
+// error, signaling the caller to abort enrichment entirely.
+func (e *Enricher) populateDetectedLabels(ctx context.Context, kind, name, namespace string, result *EnrichmentResult) error {
+	if e.labelDetector == nil {
+		return nil
+	}
+	labels, quotaDetails, labelErr := e.labelDetector.DetectLabels(ctx, kind, name, namespace, result.OwnerChain)
+	if labelErr != nil {
+		if isForbiddenError(labelErr) {
+			return fmt.Errorf("%w: DetectLabels %s/%s in %s: %v", ErrRBACForbidden, kind, name, namespace, labelErr)
+		}
+		e.logger.Error(labelErr, "enrichment: label detection failed",
+			"resource", namespace+"/"+kind+"/"+name,
+		)
+	}
+	if labels != nil {
+		result.DetectedLabels = labels
+	}
+	if len(quotaDetails) > 0 {
+		result.QuotaDetails = quotaDetails
+	}
+	return nil
+}
+
+// enrichmentAuditParams groups the fields needed to emit the enrichment
+// audit event. Extracted per AGENTS.md's 8+-param Options-pattern rule.
+type enrichmentAuditParams struct {
+	Kind, Name, Namespace, IncidentID string
+	Result                            *EnrichmentResult
+	OwnerErr, HistErr                 error
+}
+
+// emitEnrichmentAuditEvent records a best-effort audit event summarizing the
+// enrichment outcome: failure when both the owner-chain and history lookups
+// errored, success (with any partial error detail) otherwise.
+func (e *Enricher) emitEnrichmentAuditEvent(ctx context.Context, p enrichmentAuditParams) {
+	kind, name, namespace, incidentID := p.Kind, p.Name, p.Namespace, p.IncidentID
+	result, ownerErr, histErr := p.Result, p.OwnerErr, p.HistErr
 	eventID := uuid.New().String()
 	correlationID := incidentID
 	if correlationID == "" {
@@ -356,30 +412,29 @@ func (e *Enricher) Enrich(ctx context.Context, kind, name, namespace, apiVersion
 		event.Data["affected_resource_name"] = name
 		event.Data["affected_resource_namespace"] = namespace
 		audit.StoreBestEffort(ctx, e.auditStore, event, e.logger)
-	} else {
-		event := audit.NewEvent(audit.EventTypeEnrichmentCompleted, correlationID)
-		event.EventAction = audit.ActionEnriched
-		event.EventOutcome = "success"
-		event.Data["event_id"] = eventID
-		event.Data["incident_id"] = incidentID
-
-		rootKind, rootName, rootNS := resolveRootOwner(kind, name, namespace, result.OwnerChain)
-		event.Data["root_owner_kind"] = rootKind
-		event.Data["root_owner_name"] = rootName
-		event.Data["root_owner_namespace"] = rootNS
-		event.Data["owner_chain_length"] = len(result.OwnerChain)
-		event.Data["remediation_history_fetched"] = histErr == nil
-
-		if ownerErr != nil {
-			event.Data["owner_error"] = ownerErr.Error()
-		}
-		if histErr != nil {
-			event.Data["history_error"] = histErr.Error()
-		}
-		audit.StoreBestEffort(ctx, e.auditStore, event, e.logger)
+		return
 	}
 
-	return result, nil
+	event := audit.NewEvent(audit.EventTypeEnrichmentCompleted, correlationID)
+	event.EventAction = audit.ActionEnriched
+	event.EventOutcome = "success"
+	event.Data["event_id"] = eventID
+	event.Data["incident_id"] = incidentID
+
+	rootKind, rootName, rootNS := resolveRootOwner(kind, name, namespace, result.OwnerChain)
+	event.Data["root_owner_kind"] = rootKind
+	event.Data["root_owner_name"] = rootName
+	event.Data["root_owner_namespace"] = rootNS
+	event.Data["owner_chain_length"] = len(result.OwnerChain)
+	event.Data["remediation_history_fetched"] = histErr == nil
+
+	if ownerErr != nil {
+		event.Data["owner_error"] = ownerErr.Error()
+	}
+	if histErr != nil {
+		event.Data["history_error"] = histErr.Error()
+	}
+	audit.StoreBestEffort(ctx, e.auditStore, event, e.logger)
 }
 
 func resolveRootOwner(kind, name, namespace string, chain []OwnerChainEntry) (string, string, string) {

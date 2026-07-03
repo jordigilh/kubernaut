@@ -82,10 +82,7 @@ func (e *Evaluator) EvaluateGrounding(ctx context.Context, conversation []llm.Me
 			Explanation: fmt.Sprintf("grounding_review_failed (fail-closed): %v", err),
 			Duration:    time.Since(start),
 		}
-		if emitAudit {
-			e.emitGroundingResponse(ctx, correlationID, obs, "error")
-		}
-		return obs
+		return e.finalizeGroundingObservation(ctx, obs, correlationID, emitAudit, "error")
 	}
 
 	if hasDuplicateGroundedKey(resp.Message.Content) {
@@ -95,10 +92,7 @@ func (e *Evaluator) EvaluateGrounding(ctx context.Context, conversation []llm.Me
 			Usage:       resp.Usage,
 			Duration:    time.Since(start),
 		}
-		if emitAudit {
-			e.emitGroundingResponse(ctx, correlationID, obs, "malformed_response")
-		}
-		return obs
+		return e.finalizeGroundingObservation(ctx, obs, correlationID, emitAudit, "malformed_response")
 	}
 
 	content := extractJSON(resp.Message.Content)
@@ -110,10 +104,7 @@ func (e *Evaluator) EvaluateGrounding(ctx context.Context, conversation []llm.Me
 			Usage:       resp.Usage,
 			Duration:    time.Since(start),
 		}
-		if emitAudit {
-			e.emitGroundingResponse(ctx, correlationID, obs, "parse_error")
-		}
-		return obs
+		return e.finalizeGroundingObservation(ctx, obs, correlationID, emitAudit, "parse_error")
 	}
 
 	if parsed.Grounded == nil {
@@ -123,10 +114,7 @@ func (e *Evaluator) EvaluateGrounding(ctx context.Context, conversation []llm.Me
 			Usage:       resp.Usage,
 			Duration:    time.Since(start),
 		}
-		if emitAudit {
-			e.emitGroundingResponse(ctx, correlationID, obs, "missing_field")
-		}
-		return obs
+		return e.finalizeGroundingObservation(ctx, obs, correlationID, emitAudit, "missing_field")
 	}
 
 	obs := GroundingObservation{
@@ -135,17 +123,23 @@ func (e *Evaluator) EvaluateGrounding(ctx context.Context, conversation []llm.Me
 		Usage:       resp.Usage,
 		Duration:    time.Since(start),
 	}
-	if emitAudit {
-		result := "grounded"
-		if !obs.Grounded {
-			result = "ungrounded"
-		}
-		e.emitGroundingResponse(ctx, correlationID, obs, result)
+	result := "grounded"
+	if !obs.Grounded {
+		result = "ungrounded"
 	}
 	e.debugLog("grounding review completed",
 		"correlation_id", correlationID,
 		"grounded", obs.Grounded,
 		"conversation_messages", len(conversation))
+	return e.finalizeGroundingObservation(ctx, obs, correlationID, emitAudit, result)
+}
+
+// finalizeGroundingObservation emits the grounding-response audit event
+// (when auditing is enabled for this call) and returns obs unchanged.
+func (e *Evaluator) finalizeGroundingObservation(ctx context.Context, obs GroundingObservation, correlationID string, emitAudit bool, outcome string) GroundingObservation {
+	if emitAudit {
+		e.emitGroundingResponse(ctx, correlationID, obs, outcome)
+	}
 	return obs
 }
 

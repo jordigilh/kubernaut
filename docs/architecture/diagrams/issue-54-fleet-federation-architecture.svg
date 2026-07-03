@@ -1,0 +1,174 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1900 1120" width="1900" height="1120" font-family="Arial, Helvetica, sans-serif">
+  <defs>
+    <marker id="arrowSolid" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#444"/>
+    </marker>
+    <marker id="arrowAuth" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#9c2f7a"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1900" height="1120" fill="#ffffff"/>
+
+  <!-- Title -->
+  <text x="950" y="30" font-size="24" font-weight="700" text-anchor="middle" fill="#12233d">Kubernaut Multi-Cluster Fleet Federation &#8212; Issue #54</text>
+  <text x="950" y="52" font-size="14" text-anchor="middle" fill="#5a6472">Consolidated architecture &#183; ADR-068 (Implemented, MVP) &#183; feature/multi-cluster-federation &#183; as of 2026-06-30</text>
+
+  <!-- Thanos -->
+  <rect x="160" y="70" width="260" height="50" rx="8" fill="#fff4e5" stroke="#b5651d" stroke-width="1.5"/>
+  <text x="172" y="90" font-size="12.5" font-weight="700" fill="#7a4415">Thanos Querier</text>
+  <text x="172" y="106" font-size="10" font-style="italic" fill="#7a4415">federated Prometheus &#8212; alert carries `cluster` label</text>
+  <path d="M290,120 L290,180" stroke="#444" stroke-width="2" fill="none" marker-end="url(#arrowSolid)"/>
+
+  <!-- Hub outer -->
+  <rect x="70" y="145" width="1760" height="150" rx="14" fill="#eef4ff" stroke="#2c5aa0" stroke-width="2"/>
+  <text x="95" y="167" font-size="17" font-weight="700" fill="#12233d">Management (Hub) Cluster</text>
+  <text x="1810" y="167" font-size="10.5" text-anchor="end" fill="#5a6472">Engine = remediation lifecycle &#183; FMC = fleet scope only</text>
+
+  <!-- Kubernaut Engine / Control Plane (squashed single card) -->
+  <rect x="95" y="180" width="1120" height="100" rx="12" fill="#e3edfd" stroke="#2c5aa0" stroke-width="1.8"/>
+  <text x="110" y="200" font-size="13.5" font-weight="700" fill="#12233d">Kubernaut Engine / Control Plane</text>
+  <text x="110" y="218" font-size="10.5" fill="#333">GW &#183; SP &#183; RO &#183; AA &#183; KA &#183; WE[R+W] &#183; AF &#183; EM &#183; DS</text>
+  <text x="110" y="234" font-size="10" font-style="italic" fill="#3a4a63">signal &#8594; investigation &#8594; remediation &#8594; audit &#183; mcp-read (all) + mcp-write (WE only)</text>
+  <text x="110" y="250" font-size="10" fill="#333">auth via Identity Provider (Boundary 1) &#183; scope checks delegated to FMC &#8594;</text>
+
+  <!-- Engine -> FMC scope-check arrow -->
+  <path d="M1215,225 L1253,225" stroke="#444" stroke-width="1.8" fill="none" marker-end="url(#arrowSolid)"/>
+  <text x="1234" y="213" font-size="9" font-style="italic" text-anchor="middle" fill="#333">scope check</text>
+
+  <!-- Fleet Control Plane (FMC) -->
+  <rect x="1255" y="180" width="560" height="100" rx="12" fill="#fdf3e3" stroke="#b5651d" stroke-width="1.8"/>
+  <text x="1270" y="200" font-size="13.5" font-weight="700" fill="#7a4415">Fleet Control Plane (FMC)</text>
+  <text x="1270" y="218" font-size="10.5" font-style="italic" fill="#7a4415">is resource X on cluster Y managed?</text>
+  <text x="1270" y="234" font-size="10" fill="#333">FleetMetadataCache + Valkey (default) &#183; REST scope API, p95&lt;1ms</text>
+  <text x="1270" y="250" font-size="9.5" font-style="italic" fill="#7a4415">pluggable: ACM Search / Rancher / Clusterpedia / local</text>
+
+  <!-- Identity Provider (NEW) -->
+  <rect x="1670" y="340" width="200" height="170" rx="12" fill="#fde8f3" stroke="#9c2f7a" stroke-width="1.8"/>
+  <text x="1685" y="362" font-size="13" font-weight="700" fill="#7a1258">Identity Provider</text>
+  <text x="1685" y="379" font-size="11" fill="#7a1258">(Keycloak / DEX)</text>
+  <text x="1685" y="402" font-size="10" font-weight="700" fill="#333">Boundary 1</text>
+  <text x="1685" y="416" font-size="9.5" fill="#333">issues JWT via OAuth2</text>
+  <text x="1685" y="429" font-size="9.5" fill="#333">client-credentials grant</text>
+  <text x="1685" y="451" font-size="10" font-weight="700" fill="#333">Boundary 2</text>
+  <text x="1685" y="465" font-size="9.5" fill="#333">Gateway calls IdP (RFC 8693)</text>
+  <text x="1685" y="478" font-size="9.5" fill="#333">to exchange broad JWT for a</text>
+  <text x="1685" y="491" font-size="9.5" fill="#333">per-backend scoped token</text>
+
+  <!-- Hub -> IdP (token issuance, Boundary 1) -->
+  <path d="M1800,282 L1670,340" stroke="#9c2f7a" stroke-width="1.6" stroke-dasharray="6,4" fill="none" marker-end="url(#arrowAuth)"/>
+  <text x="1745" y="302" font-size="8.5" font-style="italic" text-anchor="middle" fill="#7a1258">1: client-credentials</text>
+  <text x="1745" y="314" font-size="8.5" font-style="italic" text-anchor="middle" fill="#7a1258">&#8594; JWT (Engine+FMC)</text>
+
+  <!-- IdP -> Gateway (token exchange, Boundary 2) -->
+  <path d="M1670,368 L1600,392" stroke="#9c2f7a" stroke-width="1.6" stroke-dasharray="6,4" fill="none" marker-end="url(#arrowAuth)"/>
+  <text x="1633" y="352" font-size="8.5" font-style="italic" text-anchor="middle" fill="#7a1258">2: Gateway exchanges</text>
+  <text x="1633" y="364" font-size="8.5" font-style="italic" text-anchor="middle" fill="#7a1258">via RFC 8693</text>
+
+  <!-- Hub -> Gateway arrows (main data path) -->
+  <path d="M655,280 L655,390" stroke="#444" stroke-width="2.5" fill="none" marker-end="url(#arrowSolid)"/>
+  <path d="M1535,280 L1535,390" stroke="#444" stroke-width="2.5" fill="none" marker-end="url(#arrowSolid)"/>
+  <text x="1095" y="330" font-size="10.5" font-weight="700" text-anchor="middle" fill="#333">tools/call via MCP Gateway</text>
+  <text x="1095" y="344" font-size="9.5" text-anchor="middle" fill="#333">mcp-read: Engine + FMC services &#183; mcp-write: WE</text>
+
+  <!-- MCP Gateway outer -->
+  <rect x="245" y="390" width="1400" height="210" rx="14" fill="#f5eefc" stroke="#7b3fb8" stroke-width="2"/>
+  <text x="945" y="413" font-size="16" font-weight="700" text-anchor="middle" fill="#3d1f66">MCP Gateway &#8212; Envoy AI Gateway (EAIGW)  or  Kuadrant + Istio</text>
+  <text x="945" y="431" font-size="11" font-style="italic" text-anchor="middle" fill="#5a4570">external infrastructure &#183; unified chokepoint for ALL remote-cluster access (read + write)</text>
+
+  <!-- Left subbox: AuthN/AuthZ -->
+  <rect x="280" y="446" width="640" height="140" rx="8" fill="#ffffff" stroke="#7b3fb8" stroke-width="1.3"/>
+  <text x="295" y="464" font-size="12.5" font-weight="700" fill="#3d1f66">AuthN / AuthZ  (Boundary 1 &amp; 2)</text>
+  <text x="295" y="478" font-size="10.5" fill="#333">&#8226; JWT: Keycloak / DEX (Identity Provider, see box &#8594;)</text>
+  <text x="295" y="492" font-size="10.5" fill="#333">&#8226; EAIGW: OAuth2 + CEL authorization</text>
+  <text x="295" y="506" font-size="10.5" fill="#333">&#8226; Kuadrant: Authorino + OPA Rego</text>
+  <text x="295" y="520" font-size="10.5" fill="#333">&#8226; Per-cluster gate: kubernaut_allowed_clusters claim</text>
+  <text x="295" y="534" font-size="10.5" font-weight="700" fill="#7a1258">&#8226; Boundary 2: Gateway performs RFC 8693 exchange</text>
+  <text x="295" y="548" font-size="10.5" fill="#7a1258">   with IdP &#8594; forwards per-backend scoped token</text>
+
+  <!-- Right subbox: Cluster Registry -->
+  <rect x="960" y="446" width="640" height="140" rx="8" fill="#ffffff" stroke="#7b3fb8" stroke-width="1.3"/>
+  <text x="975" y="464" font-size="12.5" font-weight="700" fill="#3d1f66">Cluster Registry  (read-only, source of truth)</text>
+  <text x="975" y="478" font-size="10.5" fill="#333">&#8226; EAIGW: MCPRoute + Backend CRDs</text>
+  <text x="975" y="492" font-size="10.5" fill="#333">&#8226; Kuadrant: MCPServerRegistration CRD</text>
+  <text x="975" y="506" font-size="10.5" fill="#333">&#8226; CRDWatcher &#8212; watches only, never creates</text>
+  <text x="975" y="520" font-size="10.5" fill="#333">&#8226; GatewayDiscoverer: list_clusters /</text>
+  <text x="975" y="534" font-size="10.5" fill="#333">   tools_for_cluster (2-phase, LLM-facing)</text>
+
+  <!-- Gateway -> Managed clusters fan -->
+  <path d="M945,600 L350,640" stroke="#444" stroke-width="2" fill="none" marker-end="url(#arrowSolid)"/>
+  <path d="M945,600 L945,640" stroke="#444" stroke-width="2" fill="none" marker-end="url(#arrowSolid)"/>
+  <path d="M945,600 L1550,640" stroke="#444" stroke-width="2" fill="none" marker-end="url(#arrowSolid)"/>
+  <text x="945" y="616" font-size="10" font-style="italic" text-anchor="middle" fill="#666">routed by tool-name / backend prefix (e.g. prod_east__resources_get)</text>
+  <text x="945" y="629" font-size="9" font-style="italic" text-anchor="middle" fill="#7a1258">backend receives an RFC 8693 scoped token &#8212; never the caller's raw JWT</text>
+
+  <!-- Managed Cluster A -->
+  <rect x="70" y="640" width="560" height="230" rx="14" fill="#eafaf0" stroke="#237a45" stroke-width="2"/>
+  <text x="95" y="670" font-size="15" font-weight="700" fill="#164a2c">Managed Cluster A  (K8s)</text>
+  <rect x="95" y="685" width="510" height="100" rx="8" fill="#ffffff" stroke="#237a45" stroke-width="1.3"/>
+  <text x="110" y="705" font-size="12" font-weight="700" fill="#164a2c">K8s MCP Server</text>
+  <text x="110" y="721" font-size="10.5" fill="#333">SA: mcp-operator (read+write verbs;</text>
+  <text x="110" y="735" font-size="10.5" fill="#333">table or yaml --list-output supported)</text>
+  <text x="110" y="749" font-size="10" fill="#7a1258">auth: RFC 8693 scoped token (from Gateway)</text>
+  <text x="95" y="800" font-size="10.5" font-style="italic" fill="#444">Prometheus  &#8594;  Thanos (signal source)</text>
+
+  <!-- Managed Cluster B -->
+  <rect x="670" y="640" width="560" height="230" rx="14" fill="#eafaf0" stroke="#237a45" stroke-width="2"/>
+  <text x="695" y="670" font-size="15" font-weight="700" fill="#164a2c">Managed Cluster B  (K8s)</text>
+  <rect x="695" y="685" width="510" height="100" rx="8" fill="#ffffff" stroke="#237a45" stroke-width="1.3"/>
+  <text x="710" y="705" font-size="12" font-weight="700" fill="#164a2c">K8s MCP Server</text>
+  <text x="710" y="721" font-size="10.5" fill="#333">SA: mcp-operator (read+write verbs;</text>
+  <text x="710" y="735" font-size="10.5" fill="#333">table or yaml --list-output supported)</text>
+  <text x="710" y="749" font-size="10" fill="#7a1258">auth: RFC 8693 scoped token (from Gateway)</text>
+  <text x="695" y="800" font-size="10.5" font-style="italic" fill="#444">Prometheus  &#8594;  Thanos (signal source)</text>
+
+  <!-- Managed Cluster C -->
+  <rect x="1270" y="640" width="560" height="230" rx="14" fill="#eafaf0" stroke="#237a45" stroke-width="2"/>
+  <text x="1295" y="670" font-size="15" font-weight="700" fill="#164a2c">Managed Cluster C  (K8s + AAP)</text>
+  <rect x="1295" y="685" width="245" height="100" rx="8" fill="#ffffff" stroke="#237a45" stroke-width="1.3"/>
+  <text x="1307" y="703" font-size="11.5" font-weight="700" fill="#164a2c">K8s MCP Server</text>
+  <text x="1307" y="718" font-size="10" fill="#333">SA: mcp-operator</text>
+  <text x="1307" y="731" font-size="10" fill="#333">(read + write)</text>
+  <text x="1307" y="744" font-size="9.5" fill="#7a1258">scoped token (RFC 8693)</text>
+  <rect x="1560" y="685" width="245" height="100" rx="8" fill="#ffffff" stroke="#237a45" stroke-width="1.3"/>
+  <text x="1572" y="703" font-size="11.5" font-weight="700" fill="#164a2c">AAP MCP Server</text>
+  <text x="1572" y="718" font-size="10" fill="#333">Ansible execution</text>
+  <text x="1572" y="731" font-size="10" fill="#333">path (AWX / AAP)</text>
+  <text x="1572" y="744" font-size="9.5" fill="#7a1258">scoped token (RFC 8693)</text>
+  <text x="1295" y="800" font-size="10.5" font-style="italic" fill="#444">Prometheus &#8594; Thanos &#183; Tekton/Job/Ansible target</text>
+
+  <!-- Pluggable ScopeChecker backends legend -->
+  <rect x="70" y="900" width="1760" height="110" rx="10" fill="#fafafa" stroke="#999" stroke-width="1.3"/>
+  <text x="950" y="928" font-size="13.5" font-weight="700" text-anchor="middle" fill="#333">Pluggable ScopeChecker Backends &#8212; FMC is the default; GW / RO select one via `fleet.backend` config</text>
+
+  <rect x="90" y="950" width="331" height="42" rx="8" fill="#ffffff" stroke="#666" stroke-width="1"/>
+  <text x="255" y="968" font-size="11" font-weight="700" text-anchor="middle" fill="#222">FMC + Valkey</text>
+  <text x="255" y="982" font-size="9.5" text-anchor="middle" fill="#666">default &#183; p95 &lt; 1ms, no federated CP needed</text>
+
+  <rect x="437" y="950" width="331" height="42" rx="8" fill="#ffffff" stroke="#666" stroke-width="1"/>
+  <text x="602" y="968" font-size="11" font-weight="700" text-anchor="middle" fill="#222">ACM Search GraphQL</text>
+  <text x="602" y="982" font-size="9.5" text-anchor="middle" fill="#666">Red Hat ACM / Open Cluster Management</text>
+
+  <rect x="784" y="950" width="331" height="42" rx="8" fill="#ffffff" stroke="#666" stroke-width="1"/>
+  <text x="949" y="968" font-size="11" font-weight="700" text-anchor="middle" fill="#222">Rancher v3 API</text>
+  <text x="949" y="982" font-size="9.5" text-anchor="middle" fill="#666">Rancher-managed fleets</text>
+
+  <rect x="1131" y="950" width="331" height="42" rx="8" fill="#ffffff" stroke="#666" stroke-width="1"/>
+  <text x="1296" y="968" font-size="11" font-weight="700" text-anchor="middle" fill="#222">Clusterpedia</text>
+  <text x="1296" y="982" font-size="9.5" text-anchor="middle" fill="#666">Aggregated API</text>
+
+  <rect x="1478" y="950" width="331" height="42" rx="8" fill="#ffffff" stroke="#666" stroke-width="1"/>
+  <text x="1643" y="968" font-size="11" font-weight="700" text-anchor="middle" fill="#222">local</text>
+  <text x="1643" y="982" font-size="9.5" text-anchor="middle" fill="#666">single-cluster &#183; zero regression, no fleet config</text>
+
+  <!-- Style legend -->
+  <rect x="70" y="1025" width="1500" height="65" rx="8" fill="#ffffff" stroke="#999" stroke-width="1"/>
+  <path d="M84,1043 L124,1043" stroke="#444" stroke-width="2" fill="none" marker-end="url(#arrowSolid)"/>
+  <text x="132" y="1047" font-size="10.5" fill="#333">MCP tools/call (control-plane path); arrowhead = request direction</text>
+  <path d="M84,1059 L124,1059" stroke="#9c2f7a" stroke-width="1.6" stroke-dasharray="6,4" fill="none" marker-end="url(#arrowAuth)"/>
+  <text x="132" y="1063" font-size="10.5" fill="#333">auth/token flow &#8212; JWT issuance (1) and RFC 8693 exchange (2)</text>
+  <text x="84" y="1080" font-size="10" font-style="italic" fill="#777">Blue = Kubernaut Engine &#183; orange = Fleet Control Plane/FMC &#183; magenta = Identity Provider &#183; purple = MCP Gateway &#183; green = managed clusters. Only WE holds mcp-write.</text>
+
+  <!-- Footer -->
+  <text x="70" y="1108" font-size="10" fill="#888">Sources: Issue #54 &#183; ADR-068 (Status: Implemented/MVP) &#183; ADR-065 &#183; DD-FLEET-001/002 &#183; pkg/fleet/, cmd/fleetmetadatacache/ (branch: feature/multi-cluster-federation)</text>
+</svg>

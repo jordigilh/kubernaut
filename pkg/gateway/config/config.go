@@ -90,6 +90,117 @@ type ServerSettings struct {
 	TLS                   sharedtls.TLSConfig `yaml:"tls,omitempty"`           // Issue #493: Optional TLS
 }
 
+// validateAddrAndConcurrency checks the listen address and throttle bounds.
+// Extracted from ServerConfig.Validate to keep its cyclomatic complexity low.
+func (s *ServerSettings) validateAddrAndConcurrency() error {
+	if s.ListenAddr == "" {
+		err := NewConfigError(
+			"server.listenAddr",
+			"(empty)",
+			"is required",
+			"Use ':8080' or '0.0.0.0:8080'",
+		)
+		err.Impact = "Gateway server will fail to start"
+		err.Documentation = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
+		return err
+	}
+
+	// MaxConcurrentRequests validation (0 = unlimited, >0 = throttle enabled)
+	// ADR-048-ADDENDUM-001: Defense-in-depth with Nginx/HAProxy
+	if s.MaxConcurrentRequests < 0 {
+		err := NewConfigError(
+			"server.maxConcurrentRequests",
+			fmt.Sprintf("%d", s.MaxConcurrentRequests),
+			"must be >= 0",
+			"Use 100 (recommended), 0 for unlimited",
+		)
+		err.Impact = "Invalid throttle configuration"
+		err.Documentation = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
+		return err
+	}
+	if s.MaxConcurrentRequests > 10000 {
+		err := NewConfigError(
+			"server.maxConcurrentRequests",
+			fmt.Sprintf("%d", s.MaxConcurrentRequests),
+			"exceeds recommended maximum (10000)",
+			"Use 100-1000 for production (recommended: 100)",
+		)
+		err.Impact = "May not provide effective overload protection"
+		err.Documentation = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
+		return err
+	}
+	return nil
+}
+
+// validateTimeouts checks HTTP server timeouts and the BR-GATEWAY-102 K8s
+// request timeout invariant (must leave room for a 504 to be written before
+// WriteTimeout kills the connection). Extracted from ServerConfig.Validate to
+// keep its cyclomatic complexity low.
+func (s *ServerSettings) validateTimeouts() error {
+	if s.ReadTimeout > 0 && s.ReadTimeout < 5*time.Second {
+		err := NewConfigError(
+			"server.readTimeout",
+			s.ReadTimeout.String(),
+			"is too low (< 5s)",
+			"Use 30s (recommended) to prevent webhook timeouts",
+		)
+		err.Impact = "Webhook requests may timeout prematurely"
+		err.Documentation = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
+		return err
+	}
+	if s.WriteTimeout > 0 && s.WriteTimeout < 5*time.Second {
+		err := NewConfigError(
+			"server.writeTimeout",
+			s.WriteTimeout.String(),
+			"is too low (< 5s)",
+			"Use 30s (recommended) to prevent response failures",
+		)
+		err.Impact = "Response writes may fail prematurely"
+		err.Documentation = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
+		return err
+	}
+	if s.IdleTimeout > 0 && s.IdleTimeout < 30*time.Second {
+		err := NewConfigError(
+			"server.idleTimeout",
+			s.IdleTimeout.String(),
+			"is too low (< 30s)",
+			"Use 120s (recommended) to reduce connection churn",
+		)
+		err.Impact = "May increase connection establishment overhead"
+		err.Documentation = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
+		return err
+	}
+
+	// BR-GATEWAY-102: K8s request timeout validation
+	// Must be > 0 (0 disables the safety control) and < WriteTimeout (to allow writing 504 before connection kill)
+	if s.K8sRequestTimeout <= 0 {
+		return nil
+	}
+	if s.K8sRequestTimeout < 1*time.Second {
+		err := NewConfigError(
+			"server.k8sRequestTimeout",
+			s.K8sRequestTimeout.String(),
+			"is too low (< 1s)",
+			"Use 15s (recommended) to allow K8s API operations to complete",
+		)
+		err.Impact = "K8s operations will fail prematurely with 504"
+		err.Documentation = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
+		return err
+	}
+	if s.WriteTimeout > 0 && s.K8sRequestTimeout >= s.WriteTimeout {
+		err := NewConfigError(
+			"server.k8sRequestTimeout",
+			s.K8sRequestTimeout.String(),
+			fmt.Sprintf("must be less than writeTimeout (%s)", s.WriteTimeout),
+			"K8s timeout must leave room for the 504 response to be written",
+		)
+		err.Impact = "Server may kill connection before 504 error reaches client"
+		err.Documentation = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
+		return err
+	}
+	return nil
+}
+
 // MiddlewareSettings contains middleware configuration.
 // Single Responsibility: Request processing middleware
 //
@@ -187,7 +298,15 @@ func DefaultRetrySettings() RetrySettings {
 // GAP-8: Enhanced Configuration Validation (Reliability-First Design)
 // Provides comprehensive validation with actionable error messages using structured errors
 func (r *RetrySettings) Validate() error {
-	// MaxAttempts validation with reasonable range
+	if err := r.validateMaxAttempts(); err != nil {
+		return err
+	}
+	return r.validateBackoffBounds()
+}
+
+// validateMaxAttempts checks the retry attempt count is within a sane
+// production range. Extracted from RetrySettings.Validate (funlen).
+func (r *RetrySettings) validateMaxAttempts() error {
 	if r.MaxAttempts < 1 {
 		err := NewConfigError(
 			"processing.retry.maxAttempts",
@@ -210,8 +329,13 @@ func (r *RetrySettings) Validate() error {
 		err.Documentation = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
 		return err
 	}
+	return nil
+}
 
-	// Initial backoff validation
+// validateBackoffBounds checks the initial/max exponential backoff bounds
+// are sane and internally consistent. Extracted from RetrySettings.Validate
+// (funlen).
+func (r *RetrySettings) validateBackoffBounds() error {
 	if r.InitialBackoff < 0 {
 		err := NewConfigError(
 			"processing.retry.initialBackoff",
@@ -235,7 +359,6 @@ func (r *RetrySettings) Validate() error {
 		return err
 	}
 
-	// Max backoff validation
 	if r.MaxBackoff < r.InitialBackoff {
 		err := NewConfigError(
 			"processing.retry.maxBackoff",
@@ -340,104 +463,11 @@ func (c *ServerConfig) LoadFromEnv() {
 // GAP-8: Enhanced Configuration Validation (Production-Ready)
 // Provides comprehensive validation with actionable error messages using structured errors
 func (c *ServerConfig) Validate() error {
-	// Server validation with comprehensive timeout checks
-	if c.Server.ListenAddr == "" {
-		err := NewConfigError(
-			"server.listenAddr",
-			"(empty)",
-			"is required",
-			"Use ':8080' or '0.0.0.0:8080'",
-		)
-		err.Impact = "Gateway server will fail to start"
-		err.Documentation = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
+	if err := c.Server.validateAddrAndConcurrency(); err != nil {
 		return err
 	}
-
-	// MaxConcurrentRequests validation (0 = unlimited, >0 = throttle enabled)
-	// ADR-048-ADDENDUM-001: Defense-in-depth with Nginx/HAProxy
-	if c.Server.MaxConcurrentRequests < 0 {
-		err := NewConfigError(
-			"server.maxConcurrentRequests",
-			fmt.Sprintf("%d", c.Server.MaxConcurrentRequests),
-			"must be >= 0",
-			"Use 100 (recommended), 0 for unlimited",
-		)
-		err.Impact = "Invalid throttle configuration"
-		err.Documentation = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
+	if err := c.Server.validateTimeouts(); err != nil {
 		return err
-	}
-	if c.Server.MaxConcurrentRequests > 10000 {
-		err := NewConfigError(
-			"server.maxConcurrentRequests",
-			fmt.Sprintf("%d", c.Server.MaxConcurrentRequests),
-			"exceeds recommended maximum (10000)",
-			"Use 100-1000 for production (recommended: 100)",
-		)
-		err.Impact = "May not provide effective overload protection"
-		err.Documentation = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
-		return err
-	}
-
-	// Server timeout validation (prevent misconfiguration)
-	if c.Server.ReadTimeout > 0 && c.Server.ReadTimeout < 5*time.Second {
-		err := NewConfigError(
-			"server.readTimeout",
-			c.Server.ReadTimeout.String(),
-			"is too low (< 5s)",
-			"Use 30s (recommended) to prevent webhook timeouts",
-		)
-		err.Impact = "Webhook requests may timeout prematurely"
-		err.Documentation = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
-		return err
-	}
-	if c.Server.WriteTimeout > 0 && c.Server.WriteTimeout < 5*time.Second {
-		err := NewConfigError(
-			"server.writeTimeout",
-			c.Server.WriteTimeout.String(),
-			"is too low (< 5s)",
-			"Use 30s (recommended) to prevent response failures",
-		)
-		err.Impact = "Response writes may fail prematurely"
-		err.Documentation = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
-		return err
-	}
-	if c.Server.IdleTimeout > 0 && c.Server.IdleTimeout < 30*time.Second {
-		err := NewConfigError(
-			"server.idleTimeout",
-			c.Server.IdleTimeout.String(),
-			"is too low (< 30s)",
-			"Use 120s (recommended) to reduce connection churn",
-		)
-		err.Impact = "May increase connection establishment overhead"
-		err.Documentation = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
-		return err
-	}
-
-	// BR-GATEWAY-102: K8s request timeout validation
-	// Must be > 0 (0 disables the safety control) and < WriteTimeout (to allow writing 504 before connection kill)
-	if c.Server.K8sRequestTimeout > 0 {
-		if c.Server.K8sRequestTimeout < 1*time.Second {
-			err := NewConfigError(
-				"server.k8sRequestTimeout",
-				c.Server.K8sRequestTimeout.String(),
-				"is too low (< 1s)",
-				"Use 15s (recommended) to allow K8s API operations to complete",
-			)
-			err.Impact = "K8s operations will fail prematurely with 504"
-			err.Documentation = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
-			return err
-		}
-		if c.Server.WriteTimeout > 0 && c.Server.K8sRequestTimeout >= c.Server.WriteTimeout {
-			err := NewConfigError(
-				"server.k8sRequestTimeout",
-				c.Server.K8sRequestTimeout.String(),
-				fmt.Sprintf("must be less than writeTimeout (%s)", c.Server.WriteTimeout),
-				"K8s timeout must leave room for the 504 response to be written",
-			)
-			err.Impact = "Server may kill connection before 504 error reaches client"
-			err.Documentation = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
-			return err
-		}
 	}
 
 	// ADR-030: Validate DataStorage section

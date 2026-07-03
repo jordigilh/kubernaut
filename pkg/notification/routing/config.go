@@ -367,35 +367,45 @@ func (r *Route) FindReceivers(attrs map[string]string) []string {
 	var matched []string
 	seen := make(map[string]bool)
 	for _, childRoute := range r.Routes {
-		if childRoute.matchesAttributes(attrs) {
-			if len(childRoute.Routes) > 0 {
-				sub := childRoute.FindReceivers(attrs)
-				if len(sub) > 0 {
-					for _, s := range sub {
-						if !seen[s] {
-							matched = append(matched, s)
-							seen[s] = true
-						}
-					}
-					if !childRoute.Continue {
-						return matched
-					}
-					continue
-				}
+		if !childRoute.matchesAttributes(attrs) {
+			continue
+		}
+		names, stop := childRoute.matchedChildReceivers(attrs)
+		for _, name := range names {
+			if !seen[name] {
+				matched = append(matched, name)
+				seen[name] = true
 			}
-			if childRoute.Receiver != "" && !seen[childRoute.Receiver] {
-				matched = append(matched, childRoute.Receiver)
-				seen[childRoute.Receiver] = true
-			}
-			if !childRoute.Continue {
-				return matched
-			}
+		}
+		if stop {
+			return matched
 		}
 	}
 	if len(matched) == 0 && r.Receiver != "" {
 		return []string{r.Receiver}
 	}
 	return matched
+}
+
+// matchedChildReceivers resolves the receiver names contributed by a single
+// already-matched child route. Sub-route fanout takes priority — per
+// Alertmanager semantics, children take over from their parent — falling
+// back to the child's own Receiver field only when no sub-routes matched.
+// The returned bool reports whether sibling route evaluation should stop
+// (mirrors the child's Continue flag: stop when Continue is false).
+// Extracted from FindReceivers (Wave 6 6b GREEN: gocognit/nestif
+// remediation) — pure code motion, no behavior change.
+func (r *Route) matchedChildReceivers(attrs map[string]string) ([]string, bool) {
+	stop := !r.Continue
+	if len(r.Routes) > 0 {
+		if sub := r.FindReceivers(attrs); len(sub) > 0 {
+			return sub, stop
+		}
+	}
+	if r.Receiver != "" {
+		return []string{r.Receiver}, stop
+	}
+	return nil, stop
 }
 
 // FindReceiver finds the first matching receiver for the given routing attributes.

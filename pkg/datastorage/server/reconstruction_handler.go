@@ -54,11 +54,11 @@ import (
 // ReconstructionResponse matches the OpenAPI schema
 // Implements BR-AUDIT-006 reconstruction API response
 type ReconstructionResponse struct {
-	RemediationRequestYAML string            `json:"remediation_request_yaml"`
-	Validation             ValidationResult  `json:"validation"`
-	ReconstructedAt        string            `json:"reconstructed_at"`
-	CorrelationID          string            `json:"correlation_id"`
-	ClusterName            string            `json:"cluster_name,omitempty"` // DD-AUDIT-003 v2.2: fleet provenance (CC8.1)
+	RemediationRequestYAML string           `json:"remediation_request_yaml"`
+	Validation             ValidationResult `json:"validation"`
+	ReconstructedAt        string           `json:"reconstructed_at"`
+	CorrelationID          string           `json:"correlation_id"`
+	ClusterName            string           `json:"cluster_name,omitempty"` // DD-AUDIT-003 v2.2: fleet provenance (CC8.1)
 }
 
 // ValidationResult matches the OpenAPI schema
@@ -92,24 +92,7 @@ func (s *Server) handleReconstructRemediationRequestWrapper(w http.ResponseWrite
 	// Handle response types
 	switch resp := result.(type) {
 	case *ogenclient.ReconstructionResponse:
-		// Success - write JSON response
-		responseData := ReconstructionResponse{
-			RemediationRequestYAML: resp.RemediationRequestYaml,
-			Validation: ValidationResult{
-				IsValid:      resp.Validation.IsValid,
-				Completeness: resp.Validation.Completeness,
-				Errors:       resp.Validation.Errors,
-				Warnings:     resp.Validation.Warnings,
-			},
-			ReconstructedAt: resp.ReconstructedAt.Value.Format(time.RFC3339),
-			CorrelationID:   resp.CorrelationID.Value,
-			ClusterName:     resp.ClusterName.Value,
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		if err := json.NewEncoder(w).Encode(responseData); err != nil {
-			s.logger.Error(err, "Failed to encode response")
-		}
+		s.writeReconstructionSuccessResponse(w, resp)
 
 	case *ogenclient.ReconstructRemediationRequestBadRequest:
 		// 400 error
@@ -145,5 +128,30 @@ func (s *Server) handleReconstructRemediationRequestWrapper(w http.ResponseWrite
 			"reconstruction/unknown-response",
 			"Unknown Response Type",
 			unknownErr, s.logger)
+	}
+}
+
+// writeReconstructionSuccessResponse writes the 200 OK JSON body for a
+// successful reconstruction, converting the ogen-generated response type
+// into the handler's REST API response shape. Extracted from
+// handleReconstructRemediationRequestWrapper (Wave 6 6f GREEN: funlen
+// remediation) — pure code motion, no behavior change.
+func (s *Server) writeReconstructionSuccessResponse(w http.ResponseWriter, resp *ogenclient.ReconstructionResponse) {
+	responseData := ReconstructionResponse{
+		RemediationRequestYAML: resp.RemediationRequestYaml,
+		Validation: ValidationResult{
+			IsValid:      resp.Validation.IsValid,
+			Completeness: resp.Validation.Completeness,
+			Errors:       resp.Validation.Errors,
+			Warnings:     resp.Validation.Warnings,
+		},
+		ReconstructedAt: resp.ReconstructedAt.Value.Format(time.RFC3339),
+		CorrelationID:   resp.CorrelationID.Value,
+		ClusterName:     resp.ClusterName.Value,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(responseData); err != nil {
+		s.logger.Error(err, "Failed to encode response")
 	}
 }

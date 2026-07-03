@@ -64,57 +64,75 @@ func EventFreshnessValidator(tolerance time.Duration) func(http.Handler) http.Ha
 				next.ServeHTTP(w, r)
 				return
 			}
-
-			// Issue #673 C-ADV-1: Cap body read to prevent unbounded memory allocation.
-			bodyReader := http.MaxBytesReader(nil, r.Body, MaxRequestBodySize)
-			bodyBytes, err := io.ReadAll(bodyReader)
-			if err != nil {
-				var maxBytesErr *http.MaxBytesError
-				if errors.As(err, &maxBytesErr) {
-					respondPayloadTooLarge(w)
-					return
-				}
-				respondFreshnessError(w, "failed to read request body")
-				return
-			}
-			// Always rewind body for downstream handlers
-			r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
-
-			// Extract timestamps from body
-			var ts eventTimestamps
-			if err := json.Unmarshal(bodyBytes, &ts); err != nil {
-				// Can't parse JSON - let downstream handler deal with it
-				next.ServeHTTP(w, r)
-				return
-			}
-
-			// Determine the most relevant timestamp (prefer lastTimestamp)
-			var eventTime time.Time
-			if ts.LastTimestamp != nil && !ts.LastTimestamp.IsZero() {
-				eventTime = *ts.LastTimestamp
-			} else if ts.FirstTimestamp != nil && !ts.FirstTimestamp.IsZero() {
-				eventTime = *ts.FirstTimestamp
-			} else {
-				respondFreshnessError(w, "event missing lastTimestamp and firstTimestamp")
-				return
-			}
-
-			// Validate freshness
-			now := time.Now()
-			age := now.Sub(eventTime)
-			if age > tolerance {
-				respondFreshnessError(w, "event timestamp too old: possible stale event")
-				return
-			}
-			if eventTime.After(now.Add(2 * time.Minute)) {
-				respondFreshnessError(w, "event timestamp in future: possible clock skew")
-				return
-			}
-
-			// Event is fresh - continue to next handler
-			next.ServeHTTP(w, r)
+			validateEventBodyFreshness(w, r, next, tolerance)
 		})
 	}
+}
+
+// validateEventBodyFreshness reads the Kubernetes Event body, extracts its
+// freshness timestamp, and validates it against tolerance. Extracted from
+// EventFreshnessValidator to keep the outer closure's cognitive complexity low.
+func validateEventBodyFreshness(w http.ResponseWriter, r *http.Request, next http.Handler, tolerance time.Duration) {
+	// Issue #673 C-ADV-1: Cap body read to prevent unbounded memory allocation.
+	bodyReader := http.MaxBytesReader(nil, r.Body, MaxRequestBodySize)
+	bodyBytes, err := io.ReadAll(bodyReader)
+	if err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			respondPayloadTooLarge(w)
+			return
+		}
+		respondFreshnessError(w, "failed to read request body")
+		return
+	}
+	// Always rewind body for downstream handlers
+	r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+
+	var ts eventTimestamps
+	if err := json.Unmarshal(bodyBytes, &ts); err != nil {
+		// Can't parse JSON - let downstream handler deal with it
+		next.ServeHTTP(w, r)
+		return
+	}
+
+	eventTime, ok := mostRelevantEventTimestamp(ts)
+	if !ok {
+		respondFreshnessError(w, "event missing lastTimestamp and firstTimestamp")
+		return
+	}
+
+	if err := validateEventFreshnessWindow(eventTime, tolerance); err != nil {
+		respondFreshnessError(w, err.Error())
+		return
+	}
+
+	next.ServeHTTP(w, r)
+}
+
+// mostRelevantEventTimestamp determines the most relevant timestamp for
+// freshness validation, preferring lastTimestamp (recurring events have a
+// more recent lastTimestamp) over firstTimestamp. ok=false when neither is set.
+func mostRelevantEventTimestamp(ts eventTimestamps) (time.Time, bool) {
+	if ts.LastTimestamp != nil && !ts.LastTimestamp.IsZero() {
+		return *ts.LastTimestamp, true
+	}
+	if ts.FirstTimestamp != nil && !ts.FirstTimestamp.IsZero() {
+		return *ts.FirstTimestamp, true
+	}
+	return time.Time{}, false
+}
+
+// validateEventFreshnessWindow rejects events older than tolerance (stale
+// replay) or with a future timestamp beyond the clock-skew allowance.
+func validateEventFreshnessWindow(eventTime time.Time, tolerance time.Duration) error {
+	now := time.Now()
+	if age := now.Sub(eventTime); age > tolerance {
+		return errors.New("event timestamp too old: possible stale event")
+	}
+	if eventTime.After(now.Add(2 * time.Minute)) {
+		return errors.New("event timestamp in future: possible clock skew")
+	}
+	return nil
 }
 
 // respondFreshnessError writes an RFC 7807 compliant error response for event freshness failures.

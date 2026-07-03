@@ -156,13 +156,16 @@ var _ = Describe("NotificationRequest Retry (#281)", func() {
 		roMetrics := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
 		recorder := record.NewFakeRecorder(20)
 		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, stabilizationWindow)
-		reconciler := controller.NewReconciler(
-			k8sClient, k8sClient, scheme,
-			nil, recorder, roMetrics,
-			controller.TimeoutConfig{Verifying: 30 * time.Minute},
-			&MockRoutingEngine{},
-			eaCreator,
-		)
+		reconciler := controller.NewReconciler(controller.ReconcilerDeps{
+			Client:        k8sClient,
+			APIReader:     k8sClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       roMetrics,
+			Timeouts:      controller.TimeoutConfig{Verifying: 30 * time.Minute},
+			RoutingEngine: &MockRoutingEngine{},
+		}, eaCreator)
 
 		// First reconcile: notification creation fails (transient), but RR stays in Verifying
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
@@ -314,13 +317,16 @@ var _ = Describe("NotificationRequest Retry (#281)", func() {
 		roMetrics := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
 		recorder := record.NewFakeRecorder(20)
 		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, stabilizationWindow)
-		reconciler := controller.NewReconciler(
-			k8sClient, k8sClient, scheme,
-			nil, recorder, roMetrics,
-			controller.TimeoutConfig{Verifying: 30 * time.Minute},
-			&MockRoutingEngine{},
-			eaCreator,
-		)
+		reconciler := controller.NewReconciler(controller.ReconcilerDeps{
+			Client:        k8sClient,
+			APIReader:     k8sClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       roMetrics,
+			Timeouts:      controller.TimeoutConfig{Verifying: 30 * time.Minute},
+			RoutingEngine: &MockRoutingEngine{},
+		}, eaCreator)
 
 		// First reconcile: bulk notification creation fails (transient)
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
@@ -486,13 +492,16 @@ var _ = Describe("NotificationRequest Retry (#281)", func() {
 		roMetrics := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
 		recorder := record.NewFakeRecorder(20)
 		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, stabilizationWindow)
-		reconciler := controller.NewReconciler(
-			k8sClient, k8sClient, scheme,
-			nil, recorder, roMetrics,
-			controller.TimeoutConfig{Verifying: 30 * time.Minute},
-			&MockRoutingEngine{},
-			eaCreator,
-		)
+		reconciler := controller.NewReconciler(controller.ReconcilerDeps{
+			Client:        k8sClient,
+			APIReader:     k8sClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       roMetrics,
+			Timeouts:      controller.TimeoutConfig{Verifying: 30 * time.Minute},
+			RoutingEngine: &MockRoutingEngine{},
+		}, eaCreator)
 
 		// Reconcile with all notifications already tracked
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
@@ -624,13 +633,16 @@ var _ = Describe("Completion Notification Verification Context (#318)", func() {
 		roMetrics := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
 		recorder := record.NewFakeRecorder(20)
 		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, stabilizationWindow)
-		reconciler := controller.NewReconciler(
-			k8sClient, k8sClient, scheme,
-			nil, recorder, roMetrics,
-			controller.TimeoutConfig{Verifying: 30 * time.Minute},
-			&MockRoutingEngine{},
-			eaCreator,
-		)
+		reconciler := controller.NewReconciler(controller.ReconcilerDeps{
+			Client:        k8sClient,
+			APIReader:     k8sClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       roMetrics,
+			Timeouts:      controller.TimeoutConfig{Verifying: 30 * time.Minute},
+			RoutingEngine: &MockRoutingEngine{},
+		}, eaCreator)
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: rrName, Namespace: namespace},
@@ -708,13 +720,16 @@ var _ = Describe("Completion Notification Verification Context (#318)", func() {
 		roMetrics := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
 		recorder := record.NewFakeRecorder(20)
 		eaCreator := creator.NewEffectivenessAssessmentCreator(k8sClient, scheme, roMetrics, recorder, stabilizationWindow)
-		reconciler := controller.NewReconciler(
-			k8sClient, k8sClient, scheme,
-			nil, recorder, roMetrics,
-			controller.TimeoutConfig{Verifying: 30 * time.Minute},
-			&MockRoutingEngine{},
-			eaCreator,
-		)
+		reconciler := controller.NewReconciler(controller.ReconcilerDeps{
+			Client:        k8sClient,
+			APIReader:     k8sClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       roMetrics,
+			Timeouts:      controller.TimeoutConfig{Verifying: 30 * time.Minute},
+			RoutingEngine: &MockRoutingEngine{},
+		}, eaCreator)
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: rrName, Namespace: namespace},

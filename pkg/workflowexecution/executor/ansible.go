@@ -59,24 +59,44 @@ type CredentialTypeInjectors struct {
 	Env  map[string]string `json:"env,omitempty"`
 }
 
-// AWXClient defines the interface for AWX/AAP REST API operations.
-// Mocked in unit tests; real implementation provided by AWXHTTPClient.
-type AWXClient interface {
+// AWXJobClient defines AWX/AAP job-template operations: launching jobs
+// (with or without injected credentials), polling/cancelling, and template
+// lookup. Split out from AWXClient for ISP (GO-ANTIPATTERN-AUDIT-2026-07-01
+// Phase 5).
+type AWXJobClient interface {
 	LaunchJobTemplate(ctx context.Context, templateID int, extraVars map[string]interface{}) (int, error)
+	LaunchJobTemplateWithCreds(ctx context.Context, templateID int, extraVars map[string]interface{}, credentialIDs []int) (int, error)
 	GetJobStatus(ctx context.Context, jobID int) (*AWXJobStatus, error)
 	CancelJob(ctx context.Context, jobID int) error
 	FindJobTemplateByName(ctx context.Context, name string) (int, error)
+}
 
-	// Credential lifecycle for dependencies.secrets injection (BR-WE-015).
-	// The executor dynamically creates AWX credential types per unique K8s Secret name,
-	// then creates ephemeral credentials per WFE execution and cleans them up after completion.
+// AWXCredentialClient defines AWX/AAP credential-type and credential
+// lifecycle operations for dependencies.secrets injection (BR-WE-015). The
+// executor dynamically creates AWX credential types per unique K8s Secret
+// name, then creates ephemeral credentials per WFE execution and cleans
+// them up after completion. Split out from AWXClient for ISP
+// (GO-ANTIPATTERN-AUDIT-2026-07-01 Phase 5).
+type AWXCredentialClient interface {
 	CreateCredentialType(ctx context.Context, name string, inputs CredentialTypeInputs, injectors CredentialTypeInjectors) (int, error)
 	FindCredentialTypeByName(ctx context.Context, name string) (int, error)
 	FindCredentialTypeByKind(ctx context.Context, kind string, managed bool) (int, error)
 	CreateCredential(ctx context.Context, name string, credTypeID, orgID int, inputs map[string]string) (int, error)
 	DeleteCredential(ctx context.Context, credentialID int) error
-	LaunchJobTemplateWithCreds(ctx context.Context, templateID int, extraVars map[string]interface{}, credentialIDs []int) (int, error)
 	GetJobTemplateCredentials(ctx context.Context, templateID int) ([]int, error)
+}
+
+// AWXClient composes the job and credential role interfaces for
+// AnsibleExecutor's single AWXClient dependency (AWXHTTPClient in
+// production). Kept as a named union — rather than inlining the two
+// interfaces at the call site — so existing implementers/mocks (which
+// already implement every method) need no changes
+// (GO-ANTIPATTERN-AUDIT-2026-07-01 Phase 5; see docs/architecture/audits
+// for rationale). Mocked in unit tests; real implementation provided by
+// AWXHTTPClient.
+type AWXClient interface {
+	AWXJobClient
+	AWXCredentialClient
 }
 
 // AWXJobStatus represents the status response from AWX GET /api/v2/jobs/{id}/
@@ -221,27 +241,61 @@ func (a *AnsibleExecutor) Create(
 		return nil, fmt.Errorf("resolve AWX job template: %w", err)
 	}
 
+	extraVars := a.buildAnsibleExtraVars(wfe, opts)
+
+	if err := a.injectDependencyConfigMaps(ctx, opts.Dependencies, namespace, extraVars); err != nil {
+		return nil, fmt.Errorf("inject dependency configmaps: %w", err)
+	}
+
+	credentialIDs, warnings, err := a.resolveAnsibleCredentials(ctx, wfe, namespace, opts, templateID)
+	if err != nil {
+		return nil, err
+	}
+
+	jobID, err := a.launchAnsibleJob(ctx, wfe, cfg, templateID, extraVars, credentialIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	return &CreateResult{
+		ResourceName: fmt.Sprintf("awx-job-%d", jobID),
+		Warnings:     warnings,
+	}, nil
+}
+
+// buildAnsibleExtraVars filters the WFE's declared parameters into AWX
+// extra_vars and unconditionally overwrites the WFE_*/RR_* execution
+// context keys AFTER filtering, intentionally taking precedence over any
+// user-supplied values with the same keys to prevent spoofing of execution
+// context metadata via schema params. Extracted from Create (Wave 6 6e-ii
+// GREEN: funlen remediation) — pure code motion, no behavior change.
+func (a *AnsibleExecutor) buildAnsibleExtraVars(wfe *workflowexecutionv1alpha1.WorkflowExecution, opts CreateOptions) map[string]interface{} {
 	filterLogger := a.Logger.WithValues("wfe", wfe.Name, "workflowID", wfe.Spec.WorkflowRef.WorkflowID)
 	filteredParams := FilterDeclaredParameters(wfe.Spec.Parameters, opts.DeclaredParameterNames, filterLogger)
 	extraVars := BuildExtraVars(filteredParams)
 	if extraVars == nil {
 		extraVars = make(map[string]interface{})
 	}
-	// System-injected extra_vars. These are set unconditionally AFTER parameter
-	// filtering, intentionally overwriting any user-supplied values with the same
-	// keys. This prevents spoofing of execution context metadata via schema params.
 	extraVars["WFE_NAME"] = wfe.Name
 	extraVars["WFE_NAMESPACE"] = wfe.Namespace
 	extraVars["RR_NAME"] = wfe.Spec.RemediationRequestRef.Name
 	extraVars["RR_NAMESPACE"] = wfe.Spec.RemediationRequestRef.Namespace
+	return extraVars
+}
 
-	if err := a.injectDependencyConfigMaps(ctx, opts.Dependencies, namespace, extraVars); err != nil {
-		return nil, fmt.Errorf("inject dependency configmaps: %w", err)
-	}
-
+// resolveAnsibleCredentials injects dependency secrets and the per-workflow
+// K8s credential (Issue #501: TokenRequest when Status.ServiceAccountName is
+// set, falling back to in-cluster creds otherwise), then merges in any
+// credentials already attached to the AWX job template so the launch call
+// carries the full credential set. A K8s credential injection failure is
+// fatal only when the operator explicitly requested per-workflow
+// credentials; otherwise it degrades to a warning (playbooks using
+// kubernetes.core simply won't authenticate). Extracted from Create (Wave 6
+// 6e-ii GREEN: funlen remediation) — pure code motion, no behavior change.
+func (a *AnsibleExecutor) resolveAnsibleCredentials(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, namespace string, opts CreateOptions, templateID int) ([]int, []Warning, error) {
 	credentialIDs, err := a.injectDependencySecrets(ctx, opts.Dependencies, namespace, wfe.Name)
 	if err != nil {
-		return nil, fmt.Errorf("inject dependency secrets: %w", err)
+		return nil, nil, fmt.Errorf("inject dependency secrets: %w", err)
 	}
 
 	// Issue #501: injectK8sCredential now uses TokenRequest when
@@ -251,7 +305,7 @@ func (a *AnsibleExecutor) Create(
 	if k8sErr != nil {
 		if wfe.Status.ServiceAccountName != "" {
 			// Hard failure: operator explicitly requested per-workflow credentials.
-			return nil, fmt.Errorf("inject per-workflow K8s credential: %w", k8sErr)
+			return nil, nil, fmt.Errorf("inject per-workflow K8s credential: %w", k8sErr)
 		}
 		a.Logger.Error(k8sErr, "Failed to inject K8s credential — playbooks using kubernetes.core will not authenticate",
 			"wfe", wfe.Name)
@@ -270,6 +324,16 @@ func (a *AnsibleExecutor) Create(
 		}
 	}
 
+	return credentialIDs, warnings, nil
+}
+
+// launchAnsibleJob launches the AWX job template (with or without ephemeral
+// credentials attached), cleaning up any already-created ephemeral
+// credentials if the launch itself fails, and persists the credential IDs
+// onto the WFE status for later cleanup on success. Extracted from Create
+// (Wave 6 6e-ii GREEN: funlen remediation) — pure code motion, no behavior
+// change.
+func (a *AnsibleExecutor) launchAnsibleJob(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, cfg *models.AnsibleEngineConfig, templateID int, extraVars map[string]interface{}, credentialIDs []int) (int, error) {
 	a.Logger.Info("Launching AWX job",
 		"templateID", templateID,
 		"playbookPath", cfg.PlaybookPath,
@@ -278,21 +342,20 @@ func (a *AnsibleExecutor) Create(
 	)
 
 	var jobID int
+	var err error
 	if len(credentialIDs) > 0 {
 		jobID, err = a.AWXClient.LaunchJobTemplateWithCreds(ctx, templateID, extraVars, credentialIDs)
 	} else {
 		jobID, err = a.AWXClient.LaunchJobTemplate(ctx, templateID, extraVars)
 	}
 	if err != nil {
-		if len(credentialIDs) > 0 {
-			for _, credID := range credentialIDs {
-				if delErr := a.AWXClient.DeleteCredential(ctx, credID); delErr != nil {
-					a.Logger.Error(delErr, "Failed to cleanup ephemeral credential after launch failure",
-						"credentialID", credID, "wfe", wfe.Name)
-				}
+		for _, credID := range credentialIDs {
+			if delErr := a.AWXClient.DeleteCredential(ctx, credID); delErr != nil {
+				a.Logger.Error(delErr, "Failed to cleanup ephemeral credential after launch failure",
+					"credentialID", credID, "wfe", wfe.Name)
 			}
 		}
-		return nil, fmt.Errorf("launch AWX job template %d: %w", templateID, err)
+		return 0, fmt.Errorf("launch AWX job template %d: %w", templateID, err)
 	}
 
 	if len(credentialIDs) > 0 {
@@ -302,10 +365,7 @@ func (a *AnsibleExecutor) Create(
 		}
 	}
 
-	return &CreateResult{
-		ResourceName: fmt.Sprintf("awx-job-%d", jobID),
-		Warnings:     warnings,
-	}, nil
+	return jobID, nil
 }
 
 // injectDependencySecrets reads K8s Secrets declared in dependencies, creates

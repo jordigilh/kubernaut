@@ -36,40 +36,7 @@ func ConvertFromAuditEvent(event *audit.AuditEvent) (*AuditEvent, error) {
 		return nil, fmt.Errorf("failed to unmarshal event_data: %w", err)
 	}
 
-	resourceNamespace := ""
-	if event.Namespace != nil {
-		resourceNamespace = *event.Namespace
-	}
-
-	clusterID := ""
-	if event.ClusterName != nil {
-		clusterID = *event.ClusterName
-	}
-
-	severity := "info"
-	if event.Severity != nil {
-		severity = *event.Severity
-	}
-
-	durationMs := 0
-	if event.DurationMs != nil {
-		durationMs = *event.DurationMs
-	}
-
-	retentionDays := event.RetentionDays
-	if retentionDays <= 0 {
-		retentionDays = 2555
-	}
-
-	errorCode := ""
-	if event.ErrorCode != nil {
-		errorCode = *event.ErrorCode
-	}
-
-	errorMessage := ""
-	if event.ErrorMessage != nil {
-		errorMessage = *event.ErrorMessage
-	}
+	fields := convertAuditEventOptionalFields(event)
 
 	return &AuditEvent{
 		EventID:           event.EventID,
@@ -85,19 +52,64 @@ func ConvertFromAuditEvent(event *audit.AuditEvent) (*AuditEvent, error) {
 		ParentEventDate:   event.ParentEventDate,
 		ResourceType:      event.ResourceType,
 		ResourceID:        event.ResourceID,
-		ResourceNamespace: resourceNamespace,
-		ClusterID:         clusterID,
-		Severity:          severity,
-		DurationMs:        durationMs,
-		ErrorCode:         errorCode,
-		ErrorMessage:      errorMessage,
+		ResourceNamespace: fields.resourceNamespace,
+		ClusterID:         fields.clusterID,
+		Severity:          fields.severity,
+		DurationMs:        fields.durationMs,
+		ErrorCode:         fields.errorCode,
+		ErrorMessage:      fields.errorMessage,
 		ActorID:           event.ActorID,
 		ActorType:         event.ActorType,
 		ActorIP:           ptrStringOrEmpty(event.ActorIP),
 		EventData:         eventDataMap,
-		RetentionDays:     retentionDays,
+		RetentionDays:     fields.retentionDays,
 		IsSensitive:       event.IsSensitive,
 	}, nil
+}
+
+// convertAuditEventOptionalFieldsResult holds the defaulted/dereferenced
+// values for audit.AuditEvent's optional (pointer) fields, computed by
+// convertAuditEventOptionalFields.
+type convertAuditEventOptionalFieldsResult struct {
+	resourceNamespace string
+	clusterID         string
+	severity          string
+	durationMs        int
+	retentionDays     int
+	errorCode         string
+	errorMessage      string
+}
+
+// convertAuditEventOptionalFields dereferences event's optional pointer
+// fields, applying the same defaults ConvertFromAuditEvent has always used
+// (empty string, "info" severity, 2555-day/7-year retention floor).
+// Extracted from ConvertFromAuditEvent (Wave 6 6f GREEN: funlen remediation)
+// — pure code motion, no behavior change.
+func convertAuditEventOptionalFields(event *audit.AuditEvent) convertAuditEventOptionalFieldsResult {
+	retentionDays := event.RetentionDays
+	if retentionDays <= 0 {
+		retentionDays = 2555
+	}
+
+	severity := "info"
+	if event.Severity != nil {
+		severity = *event.Severity
+	}
+
+	durationMs := 0
+	if event.DurationMs != nil {
+		durationMs = *event.DurationMs
+	}
+
+	return convertAuditEventOptionalFieldsResult{
+		resourceNamespace: ptrStringOrEmpty(event.Namespace),
+		clusterID:         ptrStringOrEmpty(event.ClusterName),
+		severity:          severity,
+		durationMs:        durationMs,
+		retentionDays:     retentionDays,
+		errorCode:         ptrStringOrEmpty(event.ErrorCode),
+		errorMessage:      ptrStringOrEmpty(event.ErrorMessage),
+	}
 }
 
 func ptrStringOrEmpty(p *string) string {

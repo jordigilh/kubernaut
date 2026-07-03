@@ -60,8 +60,8 @@ var _ = Describe("EM Scheduled Event Timing (#573, ADR-EM-001 section 9.2.0)", f
 					},
 				},
 				Status: eav1.EffectivenessAssessmentStatus{
-					Phase:             eav1.PhaseAssessing,
-					ValidityDeadline:  &deadline,
+					Phase:            eav1.PhaseAssessing,
+					ValidityDeadline: &deadline,
 				},
 			}
 
@@ -72,13 +72,17 @@ var _ = Describe("EM Scheduled Event Timing (#573, ADR-EM-001 section 9.2.0)", f
 				Build()
 
 			fakeRecorder := record.NewFakeRecorder(10)
-			reconciler := controller.NewReconciler(
-				fakeClient, fakeClient, s,
-				fakeRecorder,
-				emmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				nil, nil, nil, nil,
-				controller.DefaultReconcilerConfig(),
-			)
+			reconciler := controller.NewReconciler(controller.ReconcilerDeps{
+				Client:             fakeClient,
+				APIReader:          fakeClient,
+				Scheme:             s,
+				Recorder:           fakeRecorder,
+				Metrics:            emmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				PrometheusClient:   nil,
+				AlertManagerClient: nil,
+				AuditManager:       nil,
+				DSQuerier:          nil,
+			}, controller.DefaultReconcilerConfig())
 
 			_, err := reconciler.Reconcile(context.Background(), ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "ea-already-scheduled", Namespace: "default"},
@@ -137,13 +141,17 @@ var _ = Describe("EM Scheduled Event Timing (#573, ADR-EM-001 section 9.2.0)", f
 				Build()
 
 			fakeRecorder := record.NewFakeRecorder(10)
-			reconciler := controller.NewReconciler(
-				fakeClient, fakeClient, s,
-				fakeRecorder,
-				emmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-				nil, nil, nil, nil,
-				controller.DefaultReconcilerConfig(),
-			)
+			reconciler := controller.NewReconciler(controller.ReconcilerDeps{
+				Client:             fakeClient,
+				APIReader:          fakeClient,
+				Scheme:             s,
+				Recorder:           fakeRecorder,
+				Metrics:            emmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				PrometheusClient:   nil,
+				AlertManagerClient: nil,
+				AuditManager:       nil,
+				DSQuerier:          nil,
+			}, controller.DefaultReconcilerConfig())
 
 			_, err := reconciler.Reconcile(context.Background(), ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "ea-wfp-scheduled", Namespace: "default"},

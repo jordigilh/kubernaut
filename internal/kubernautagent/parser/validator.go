@@ -60,11 +60,11 @@ var kaManagedParams = map[string]bool{
 
 // ParameterValidationResult captures the outcome of parameter schema validation.
 type ParameterValidationResult struct {
-	IsValid       bool
-	Errors        []string
-	Warnings      []string
+	IsValid        bool
+	Errors         []string
+	Warnings       []string
 	StrippedParams []string
-	SchemaHint    string
+	SchemaHint     string
 }
 
 // ParameterValidationError wraps a ParameterValidationResult as an error,
@@ -213,27 +213,9 @@ func (v *Validator) ValidateParameters(params map[string]interface{}, schema []m
 func (v *Validator) validateParameters(params map[string]interface{}, schema []models.WorkflowParameter, compiledPatterns map[string]*regexp.Regexp) *ParameterValidationResult {
 	result := &ParameterValidationResult{IsValid: true}
 
-	declared := make(map[string]bool, len(schema))
-	for _, p := range schema {
-		declared[p.Name] = true
-	}
+	stripUndeclaredParameters(params, schema, result)
 
-	// Strip undeclared parameters (KA-managed are always preserved)
-	var toDelete []string
-	for k := range params {
-		if kaManagedParams[k] {
-			continue
-		}
-		if !declared[k] {
-			toDelete = append(toDelete, k)
-		}
-	}
-	for _, k := range toDelete {
-		delete(params, k)
-		result.StrippedParams = append(result.StrippedParams, k)
-	}
-
-	// Validate each declared parameter
+	// Validate each declared parameter (BR-HAPI-191: 8 constraint checks).
 	for _, p := range schema {
 		if kaManagedParams[p.Name] {
 			continue
@@ -257,69 +239,10 @@ func (v *Validator) validateParameters(params map[string]interface{}, schema []m
 			continue // skip further checks if type is wrong
 		}
 
-		// 3-4. Minimum / Maximum (numeric types only)
-		if numVal, ok := toFloat64(val); ok {
-			if p.Minimum != nil && numVal < *p.Minimum {
-				result.Errors = append(result.Errors,
-					fmt.Sprintf("%s: value %v is below minimum %v", p.Name, numVal, *p.Minimum))
-			}
-			if p.Maximum != nil && numVal > *p.Maximum {
-				result.Errors = append(result.Errors,
-					fmt.Sprintf("%s: value %v exceeds maximum %v", p.Name, numVal, *p.Maximum))
-			}
-		}
-
-		// 5. Enum check (string type)
-		if len(p.Enum) > 0 {
-			if strVal, ok := val.(string); ok {
-				found := false
-				for _, allowed := range p.Enum {
-					if strVal == allowed {
-						found = true
-						break
-					}
-				}
-				if !found {
-					result.Errors = append(result.Errors,
-						fmt.Sprintf("%s: value %q not in enum [%s]", p.Name, strVal, strings.Join(p.Enum, ", ")))
-				}
-			}
-		}
-
-		// 6. Pattern check (string type)
-		if p.Pattern != "" {
-			if strVal, ok := val.(string); ok {
-				if len(p.Pattern) > maxPatternLength {
-					result.Warnings = append(result.Warnings,
-						fmt.Sprintf("%s: pattern exceeds %d chars, skipping pattern validation", p.Name, maxPatternLength))
-				} else {
-					re := compiledPatterns[p.Name]
-					if re == nil {
-						var err error
-						re, err = regexp.Compile(p.Pattern)
-						if err != nil {
-							result.Warnings = append(result.Warnings,
-								fmt.Sprintf("%s: invalid regex pattern %q, skipping pattern validation", p.Name, p.Pattern))
-							re = nil
-						}
-					}
-					if re != nil && !re.MatchString(strVal) {
-						result.Errors = append(result.Errors,
-							fmt.Sprintf("%s: value %q does not match pattern %q", p.Name, strVal, p.Pattern))
-					}
-				}
-			}
-		}
-
-		// 7. DependsOn check
-		if len(p.DependsOn) > 0 {
-			for _, dep := range p.DependsOn {
-				if _, depExists := params[dep]; !depExists {
-					result.Errors = append(result.Errors,
-						fmt.Sprintf("%s: depends on %q which is not present", p.Name, dep))
-				}
-			}
-		}
+		validateNumericBounds(val, p, result)                  // 3-4. Minimum / Maximum
+		validateEnumMembership(val, p, result)                 // 5. Enum check
+		validatePatternMatch(val, p, compiledPatterns, result) // 6. Pattern check
+		validateDependsOn(params, p, result)                   // 7. DependsOn check
 	}
 
 	if len(result.Errors) > 0 {
@@ -328,6 +251,107 @@ func (v *Validator) validateParameters(params map[string]interface{}, schema []m
 	}
 
 	return result
+}
+
+// stripUndeclaredParameters removes any params entry not present in schema
+// (KA-managed parameters are always preserved), recording each stripped key
+// on result for LLM feedback.
+func stripUndeclaredParameters(params map[string]interface{}, schema []models.WorkflowParameter, result *ParameterValidationResult) {
+	declared := make(map[string]bool, len(schema))
+	for _, p := range schema {
+		declared[p.Name] = true
+	}
+
+	var toDelete []string
+	for k := range params {
+		if kaManagedParams[k] {
+			continue
+		}
+		if !declared[k] {
+			toDelete = append(toDelete, k)
+		}
+	}
+	for _, k := range toDelete {
+		delete(params, k)
+		result.StrippedParams = append(result.StrippedParams, k)
+	}
+}
+
+// validateNumericBounds checks p.Minimum/p.Maximum for numeric-typed values.
+func validateNumericBounds(val interface{}, p models.WorkflowParameter, result *ParameterValidationResult) {
+	numVal, ok := toFloat64(val)
+	if !ok {
+		return
+	}
+	if p.Minimum != nil && numVal < *p.Minimum {
+		result.Errors = append(result.Errors,
+			fmt.Sprintf("%s: value %v is below minimum %v", p.Name, numVal, *p.Minimum))
+	}
+	if p.Maximum != nil && numVal > *p.Maximum {
+		result.Errors = append(result.Errors,
+			fmt.Sprintf("%s: value %v exceeds maximum %v", p.Name, numVal, *p.Maximum))
+	}
+}
+
+// validateEnumMembership checks p.Enum membership for string-typed values.
+func validateEnumMembership(val interface{}, p models.WorkflowParameter, result *ParameterValidationResult) {
+	if len(p.Enum) == 0 {
+		return
+	}
+	strVal, ok := val.(string)
+	if !ok {
+		return
+	}
+	for _, allowed := range p.Enum {
+		if strVal == allowed {
+			return
+		}
+	}
+	result.Errors = append(result.Errors,
+		fmt.Sprintf("%s: value %q not in enum [%s]", p.Name, strVal, strings.Join(p.Enum, ", ")))
+}
+
+// validatePatternMatch checks p.Pattern against string-typed values,
+// compiling (but, matching pre-refactor behavior, not caching back into)
+// compiledPatterns on demand.
+func validatePatternMatch(val interface{}, p models.WorkflowParameter, compiledPatterns map[string]*regexp.Regexp, result *ParameterValidationResult) {
+	if p.Pattern == "" {
+		return
+	}
+	strVal, ok := val.(string)
+	if !ok {
+		return
+	}
+	if len(p.Pattern) > maxPatternLength {
+		result.Warnings = append(result.Warnings,
+			fmt.Sprintf("%s: pattern exceeds %d chars, skipping pattern validation", p.Name, maxPatternLength))
+		return
+	}
+	re := compiledPatterns[p.Name]
+	if re == nil {
+		var err error
+		re, err = regexp.Compile(p.Pattern)
+		if err != nil {
+			result.Warnings = append(result.Warnings,
+				fmt.Sprintf("%s: invalid regex pattern %q, skipping pattern validation", p.Name, p.Pattern))
+			return
+		}
+	}
+	if !re.MatchString(strVal) {
+		result.Errors = append(result.Errors,
+			fmt.Sprintf("%s: value %q does not match pattern %q", p.Name, strVal, p.Pattern))
+	}
+}
+
+// validateDependsOn checks that every parameter p.DependsOn names is present
+// in params.
+func validateDependsOn(params map[string]interface{}, p models.WorkflowParameter, result *ParameterValidationResult) {
+	for _, dep := range p.DependsOn {
+		if _, depExists := params[dep]; !depExists {
+			result.Errors = append(result.Errors,
+				fmt.Sprintf("%s: depends on %q which is not present", p.Name, dep))
+		}
+	}
 }
 
 // FormatSchemaHint produces a human-readable schema description for LLM feedback.

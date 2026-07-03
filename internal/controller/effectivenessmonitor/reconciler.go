@@ -46,7 +46,6 @@ import (
 
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/alert"
-	"github.com/jordigilh/kubernaut/pkg/fleet"
 	emaudit "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/audit"
 	emclient "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/client"
 	emconfig "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/config"
@@ -55,6 +54,7 @@ import (
 	emmetrics "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/metrics"
 	"github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/phase"
 	"github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/validity"
+	"github.com/jordigilh/kubernaut/pkg/fleet"
 )
 
 // Reconciler reconciles EffectivenessAssessment objects.
@@ -133,32 +133,36 @@ func DefaultReconcilerConfig() ReconcilerConfig {
 	}
 }
 
+// ReconcilerDeps groups the injected dependencies for NewReconciler,
+// separate from ReconcilerConfig's runtime tuning knobs. Extracted per
+// AGENTS.md's 8+-param Options-pattern rule.
+type ReconcilerDeps struct {
+	Client             client.Client
+	APIReader          client.Reader
+	Scheme             *runtime.Scheme
+	Recorder           record.EventRecorder
+	Metrics            *emmetrics.Metrics
+	PrometheusClient   emclient.PrometheusQuerier
+	AlertManagerClient emclient.AlertManagerClient
+	AuditManager       *emaudit.Manager
+	DSQuerier          emclient.DataStorageQuerier
+}
+
 // NewReconciler creates a new Reconciler with all dependencies injected.
 // Per DD-METRICS-001: Metrics wired via dependency injection.
 // Per DD-AUDIT-003: AuditManager wired via dependency injection (Pattern 2).
-func NewReconciler(
-	c client.Client,
-	apiReader client.Reader,
-	s *runtime.Scheme,
-	recorder record.EventRecorder,
-	m *emmetrics.Metrics,
-	promClient emclient.PrometheusQuerier,
-	amClient emclient.AlertManagerClient,
-	auditMgr *emaudit.Manager,
-	dsQuerier emclient.DataStorageQuerier,
-	cfg ReconcilerConfig,
-) *Reconciler {
+func NewReconciler(deps ReconcilerDeps, cfg ReconcilerConfig) *Reconciler {
 	return &Reconciler{
-		Client:             c,
-		apiReader:          apiReader,
-		targetReader:       c,
-		Scheme:             s,
-		Recorder:           recorder,
-		Metrics:            m,
-		PrometheusClient:   promClient,
-		AlertManagerClient: amClient,
-		AuditManager:       auditMgr,
-		DSQuerier:          dsQuerier,
+		Client:             deps.Client,
+		apiReader:          deps.APIReader,
+		targetReader:       deps.Client,
+		Scheme:             deps.Scheme,
+		Recorder:           deps.Recorder,
+		Metrics:            deps.Metrics,
+		PrometheusClient:   deps.PrometheusClient,
+		AlertManagerClient: deps.AlertManagerClient,
+		AuditManager:       deps.AuditManager,
+		DSQuerier:          deps.DSQuerier,
 		healthScorer:       health.NewScorer(),
 		alertScorer:        alert.NewScorer(),
 		metricScorer:       emmetrics.NewScorer(),

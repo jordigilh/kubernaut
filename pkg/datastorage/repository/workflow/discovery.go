@@ -24,6 +24,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/go-logr/logr"
+
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
 
@@ -58,7 +60,22 @@ func (r *Repository) ListActions(ctx context.Context, filters *models.WorkflowDi
 		whereClause = activeFilter
 	}
 
-	// Count query: total distinct action types with matching active workflows
+	totalCount, err := r.countActionTypes(ctx, whereClause, args)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	rows, err := r.selectActionTypeRows(ctx, whereClause, args, offset, limit)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return actionTypeRowsToEntries(rows, r.logger), totalCount, nil
+}
+
+// countActionTypes runs ListActions' count query. Extracted from ListActions
+// (Wave 6 6f GREEN: funlen remediation) — pure code motion, no behavior change.
+func (r *Repository) countActionTypes(ctx context.Context, whereClause string, args []interface{}) (int, error) {
 	countQuery := fmt.Sprintf(`
 		SELECT COUNT(DISTINCT t.action_type)
 		FROM action_type_taxonomy t
@@ -67,14 +84,24 @@ func (r *Repository) ListActions(ctx context.Context, filters *models.WorkflowDi
 	`, whereClause)
 
 	var totalCount int
-	err := r.db.GetContext(ctx, &totalCount, countQuery, args...)
-	if err != nil {
+	if err := r.db.GetContext(ctx, &totalCount, countQuery, args...); err != nil {
 		r.logger.Error(err, "failed to count action types")
-		return nil, 0, fmt.Errorf("failed to count action types: %w", err)
+		return 0, fmt.Errorf("failed to count action types: %w", err)
 	}
+	return totalCount, nil
+}
 
-	// Main query: action types with workflow counts, paginated
-	// Use positional parameters for offset and limit
+// actionTypeRow is the raw DB projection for ListActions' main query.
+type actionTypeRow struct {
+	ActionType    string          `db:"action_type"`
+	Description   json.RawMessage `db:"description"`
+	WorkflowCount int             `db:"workflow_count"`
+}
+
+// selectActionTypeRows runs ListActions' paginated main query. Extracted from
+// ListActions (Wave 6 6f GREEN: funlen remediation) — pure code motion, no
+// behavior change.
+func (r *Repository) selectActionTypeRows(ctx context.Context, whereClause string, args []interface{}, offset, limit int) ([]actionTypeRow, error) {
 	mainQuery := fmt.Sprintf(`
 		SELECT
 			t.action_type,
@@ -88,27 +115,26 @@ func (r *Repository) ListActions(ctx context.Context, filters *models.WorkflowDi
 		OFFSET $%d LIMIT $%d
 	`, whereClause, len(args)+1, len(args)+2)
 
-	args = append(args, offset, limit)
-
-	type actionTypeRow struct {
-		ActionType    string          `db:"action_type"`
-		Description   json.RawMessage `db:"description"`
-		WorkflowCount int             `db:"workflow_count"`
-	}
+	queryArgs := append(args, offset, limit) //nolint:gocritic // args is a locally-built slice, not reused by the caller
 
 	var rows []actionTypeRow
-	err = r.db.SelectContext(ctx, &rows, mainQuery, args...)
-	if err != nil {
+	if err := r.db.SelectContext(ctx, &rows, mainQuery, queryArgs...); err != nil {
 		r.logger.Error(err, "failed to list action types")
-		return nil, 0, fmt.Errorf("failed to list action types: %w", err)
+		return nil, fmt.Errorf("failed to list action types: %w", err)
 	}
+	return rows, nil
+}
 
-	// Convert to response entries
+// actionTypeRowsToEntries converts raw DB rows to response entries, tolerating
+// malformed per-row description JSON without failing the whole request.
+// Extracted from ListActions (Wave 6 6f GREEN: funlen remediation) — pure code
+// motion, no behavior change.
+func actionTypeRowsToEntries(rows []actionTypeRow, logger logr.Logger) []models.ActionTypeEntry {
 	entries := make([]models.ActionTypeEntry, 0, len(rows))
 	for _, row := range rows {
 		var desc models.ActionTypeDescription
 		if err := json.Unmarshal(row.Description, &desc); err != nil {
-			r.logger.Error(err, "failed to unmarshal action type description",
+			logger.Error(err, "failed to unmarshal action type description",
 				"action_type", row.ActionType)
 			// Use empty description rather than failing the entire request
 			desc = models.ActionTypeDescription{}
@@ -119,8 +145,7 @@ func (r *Repository) ListActions(ctx context.Context, filters *models.WorkflowDi
 			WorkflowCount: row.WorkflowCount,
 		})
 	}
-
-	return entries, totalCount, nil
+	return entries
 }
 
 // ListWorkflowsByActionType returns active workflows matching the specified action type
@@ -156,6 +181,33 @@ func (r *Repository) ListWorkflowsByActionType(ctx context.Context, actionType s
 		return nil, 0, fmt.Errorf("failed to count workflows by action type: %w", err)
 	}
 
+	scoredResults, err := r.selectScoredWorkflows(ctx, whereClause, args, filters, offset, limit, actionType)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	workflows := make([]models.RemediationWorkflow, len(scoredResults))
+	for i, sr := range scoredResults {
+		workflows[i] = sr.RemediationWorkflow
+	}
+
+	return workflows, totalCount, nil
+}
+
+// workflowWithScore is the raw DB projection for ListWorkflowsByActionType's
+// scoring subquery.
+type workflowWithScore struct {
+	models.RemediationWorkflow
+	DetectedLabelBoost float64 `db:"detected_label_boost"`
+	CustomLabelBoost   float64 `db:"custom_label_boost"`
+	LabelPenalty       float64 `db:"label_penalty"`
+	FinalScore         float64 `db:"final_score"`
+}
+
+// selectScoredWorkflows builds and runs ListWorkflowsByActionType's #220
+// final_score scoring query. Extracted from ListWorkflowsByActionType (Wave 6
+// 6f GREEN: funlen remediation) — pure code motion, no behavior change.
+func (r *Repository) selectScoredWorkflows(ctx context.Context, whereClause string, args []interface{}, filters *models.WorkflowDiscoveryFilters, offset, limit int, actionType string) ([]workflowWithScore, error) {
 	// #220: Build scoring SQL using shared functions from scoring.go
 	var dl *models.DetectedLabels
 	var customLabels map[string][]string
@@ -188,30 +240,15 @@ func (r *Repository) ListWorkflowsByActionType(ctx context.Context, actionType s
 		detectedBoostSQL, customBoostSQL, penaltySQL,
 		whereClause, len(args)+1, len(args)+2)
 
-	args = append(args, offset, limit)
-
-	type workflowWithScore struct {
-		models.RemediationWorkflow
-		DetectedLabelBoost float64 `db:"detected_label_boost"`
-		CustomLabelBoost   float64 `db:"custom_label_boost"`
-		LabelPenalty       float64 `db:"label_penalty"`
-		FinalScore         float64 `db:"final_score"`
-	}
+	queryArgs := append(args, offset, limit) //nolint:gocritic // args is a locally-built slice, not reused by the caller
 
 	var scoredResults []workflowWithScore
-	err = r.db.SelectContext(ctx, &scoredResults, mainQuery, args...)
-	if err != nil {
+	if err := r.db.SelectContext(ctx, &scoredResults, mainQuery, queryArgs...); err != nil {
 		r.logger.Error(err, "failed to list workflows by action type",
 			"action_type", actionType)
-		return nil, 0, fmt.Errorf("failed to list workflows by action type: %w", err)
+		return nil, fmt.Errorf("failed to list workflows by action type: %w", err)
 	}
-
-	workflows := make([]models.RemediationWorkflow, len(scoredResults))
-	for i, sr := range scoredResults {
-		workflows[i] = sr.RemediationWorkflow
-	}
-
-	return workflows, totalCount, nil
+	return scoredResults, nil
 }
 
 // GetWorkflowWithContextFilters retrieves a workflow by ID with an additional
@@ -277,6 +314,21 @@ func buildContextFilterSQL(filters *models.WorkflowDiscoveryFilters) (string, []
 	var args []interface{}
 	argIdx := 1
 
+	conditions, args, argIdx = appendMandatoryLabelConditions(filters, conditions, args, argIdx)
+	conditions, args = appendDetectedLabelConditions(filters.DetectedLabels, conditions, args, argIdx)
+
+	if len(conditions) == 0 {
+		return "", nil
+	}
+
+	return strings.Join(conditions, " AND "), args
+}
+
+// appendMandatoryLabelConditions appends buildContextFilterSQL's severity/
+// component/environment/priority JSONB conditions. Extracted from
+// buildContextFilterSQL (Wave 6 6f GREEN: funlen remediation) — pure code
+// motion, no behavior change.
+func appendMandatoryLabelConditions(filters *models.WorkflowDiscoveryFilters, conditions []string, args []interface{}, argIdx int) ([]string, []interface{}, int) {
 	// Mandatory label filters (JSONB queries on labels column)
 	// DD-WORKFLOW-001 v2.9: Case-insensitive array matching via EXISTS/jsonb_array_elements_text/LOWER (Issue #595)
 	// DD-WORKFLOW-001 v2.8: severity supports "*" wildcard (like environment/priority)
@@ -324,58 +376,61 @@ func buildContextFilterSQL(filters *models.WorkflowDiscoveryFilters) (string, []
 		argIdx++
 	}
 
-	// Issue #197: DetectedLabels filtering per DD-WORKFLOW-001 v2.7
-	if filters.DetectedLabels != nil {
-		dl := filters.DetectedLabels
+	return conditions, args, argIdx
+}
 
-		// Boolean fields: when true, match workflows that require it OR have no requirement (absent)
-		boolFields := []struct {
-			jsonKey string
-			value   bool
-		}{
-			{"gitOpsManaged", dl.GitOpsManaged},
-			{"pdbProtected", dl.PDBProtected},
-			{"hpaEnabled", dl.HPAEnabled},
-			{"stateful", dl.Stateful},
-			{"helmManaged", dl.HelmManaged},
-			{"networkIsolated", dl.NetworkIsolated},
-			{"virtualMachine", dl.VirtualMachine},
-			{"liveMigratable", dl.LiveMigratable},
-			{"cdiManaged", dl.CDIManaged},
-		}
-		for _, f := range boolFields {
-			if f.value {
-				conditions = append(conditions, fmt.Sprintf(
-					"(detected_labels->>'%s' = $%d OR detected_labels->>'%s' IS NULL)",
-					f.jsonKey, argIdx, f.jsonKey))
-				args = append(args, "true")
-				argIdx++
-			}
-		}
+// appendDetectedLabelConditions appends buildContextFilterSQL's Issue #197
+// DetectedLabels conditions (DD-WORKFLOW-001 v2.7). Extracted from
+// buildContextFilterSQL (Wave 6 6f GREEN: funlen remediation) — pure code
+// motion, no behavior change.
+func appendDetectedLabelConditions(dl *models.DetectedLabels, conditions []string, args []interface{}, argIdx int) ([]string, []interface{}) {
+	if dl == nil {
+		return conditions, args
+	}
 
-		// String fields: exact match, wildcard "*", or absent (no requirement)
-		stringFields := []struct {
-			jsonKey string
-			value   string
-		}{
-			{"gitOpsTool", dl.GitOpsTool},
-			{"serviceMesh", dl.ServiceMesh},
-			{"storageBackend", dl.StorageBackend},
-		}
-		for _, f := range stringFields {
-			if f.value != "" {
-				conditions = append(conditions, fmt.Sprintf(
-					"(detected_labels->>'%s' = $%d OR detected_labels->>'%s' = '*' OR detected_labels->>'%s' IS NULL)",
-					f.jsonKey, argIdx, f.jsonKey, f.jsonKey))
-				args = append(args, f.value)
-				argIdx++
-			}
+	// Boolean fields: when true, match workflows that require it OR have no requirement (absent)
+	boolFields := []struct {
+		jsonKey string
+		value   bool
+	}{
+		{"gitOpsManaged", dl.GitOpsManaged},
+		{"pdbProtected", dl.PDBProtected},
+		{"hpaEnabled", dl.HPAEnabled},
+		{"stateful", dl.Stateful},
+		{"helmManaged", dl.HelmManaged},
+		{"networkIsolated", dl.NetworkIsolated},
+		{"virtualMachine", dl.VirtualMachine},
+		{"liveMigratable", dl.LiveMigratable},
+		{"cdiManaged", dl.CDIManaged},
+	}
+	for _, f := range boolFields {
+		if f.value {
+			conditions = append(conditions, fmt.Sprintf(
+				"(detected_labels->>'%s' = $%d OR detected_labels->>'%s' IS NULL)",
+				f.jsonKey, argIdx, f.jsonKey))
+			args = append(args, "true")
+			argIdx++
 		}
 	}
 
-	if len(conditions) == 0 {
-		return "", nil
+	// String fields: exact match, wildcard "*", or absent (no requirement)
+	stringFields := []struct {
+		jsonKey string
+		value   string
+	}{
+		{"gitOpsTool", dl.GitOpsTool},
+		{"serviceMesh", dl.ServiceMesh},
+		{"storageBackend", dl.StorageBackend},
+	}
+	for _, f := range stringFields {
+		if f.value != "" {
+			conditions = append(conditions, fmt.Sprintf(
+				"(detected_labels->>'%s' = $%d OR detected_labels->>'%s' = '*' OR detected_labels->>'%s' IS NULL)",
+				f.jsonKey, argIdx, f.jsonKey, f.jsonKey))
+			args = append(args, f.value)
+			argIdx++
+		}
 	}
 
-	return strings.Join(conditions, " AND "), args
+	return conditions, args
 }

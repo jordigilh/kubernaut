@@ -81,47 +81,50 @@ func NewScorer() Scorer {
 //   - 0.5: Partial readiness (some pods ready, some not)
 //   - 0.0: No pods ready or target resource not found
 func (s *scorer) Score(_ context.Context, status TargetStatus) types.ComponentResult {
-	result := types.ComponentResult{
-		Component: types.ComponentHealth,
-		Assessed:  true,
+	if degraded, ok := scoreDegradedOrAbsentTarget(status); ok {
+		return degraded
 	}
+	return scoreReadyTarget(status)
+}
 
-	// Non-pod-owning resource (ConfigMap, Secret, Node, etc.) → N/A
-	// Health scoring only applies to resources that own pods.
-	// Assessed=true (we evaluated and determined N/A), Score=nil (no score to give).
-	if status.HealthNotApplicable {
-		result.Score = nil
+// scoreDegradedOrAbsentTarget covers the cases where the target resource
+// cannot be meaningfully health-scored, or is unhealthy before reaching
+// "all pods ready": not applicable, not found, 0 desired replicas,
+// CrashLoopBackOff, 0 pods ready, or partial readiness. Returns
+// ok=false when none apply (i.e. all pods are ready and scoreReadyTarget
+// should run next). Extracted from Score (Wave 6 6a GREEN: funlen
+// remediation) — pure code motion, no behavior change.
+func scoreDegradedOrAbsentTarget(status TargetStatus) (types.ComponentResult, bool) {
+	result := types.ComponentResult{Component: types.ComponentHealth, Assessed: true}
+
+	switch {
+	case status.HealthNotApplicable:
+		// Non-pod-owning resource (ConfigMap, Secret, Node, etc.) → N/A.
+		// Assessed=true (we evaluated and determined N/A), Score=nil (no score to give).
 		result.Details = "health not applicable for target resource kind"
-		return result
-	}
+		return result, true
 
-	// Target not found -> 0.0
-	if !status.TargetExists {
+	case !status.TargetExists:
 		score := 0.0
 		result.Score = &score
 		result.Details = "target resource not found"
-		return result
-	}
+		return result, true
 
-	// Zero total replicas (scaled down) -> 0.0
-	if status.TotalReplicas == 0 {
+	case status.TotalReplicas == 0:
 		score := 0.0
 		result.Score = &score
 		result.Details = "target has 0 desired replicas"
-		return result
-	}
+		return result, true
 
-	// CrashLoopBackOff detected -> 0.0 (most severe, DD-017 v2.5)
-	if status.CrashLoops {
+	case status.CrashLoops:
+		// Most severe condition (DD-017 v2.5).
 		score := 0.0
 		result.Score = &score
 		result.Details = fmt.Sprintf("CrashLoopBackOff detected (%d/%d pods ready, %d restarts)",
 			status.ReadyReplicas, status.TotalReplicas, status.RestartsSinceRemediation)
-		return result
-	}
+		return result, true
 
-	// No pods ready -> 0.0
-	if status.ReadyReplicas == 0 {
+	case status.ReadyReplicas == 0:
 		score := 0.0
 		result.Score = &score
 		if status.PendingCount > 0 {
@@ -129,11 +132,9 @@ func (s *scorer) Score(_ context.Context, status TargetStatus) types.ComponentRe
 		} else {
 			result.Details = fmt.Sprintf("0/%d pods ready", status.TotalReplicas)
 		}
-		return result
-	}
+		return result, true
 
-	// Partial readiness -> 0.5
-	if status.ReadyReplicas < status.TotalReplicas {
+	case status.ReadyReplicas < status.TotalReplicas:
 		score := 0.5
 		result.Score = &score
 		if status.PendingCount > 0 {
@@ -141,10 +142,20 @@ func (s *scorer) Score(_ context.Context, status TargetStatus) types.ComponentRe
 		} else {
 			result.Details = fmt.Sprintf("%d/%d pods ready (partial)", status.ReadyReplicas, status.TotalReplicas)
 		}
-		return result
-	}
+		return result, true
 
-	// All pods ready — check for OOMKilled (DD-017 v2.5)
+	default:
+		return types.ComponentResult{}, false
+	}
+}
+
+// scoreReadyTarget scores a target whose pods are all ready, distinguishing
+// OOMKilled (0.25), restarts-since-remediation (0.75), and fully healthy
+// (1.0, DD-017 v2.5). Extracted from Score (Wave 6 6a GREEN: funlen
+// remediation) — pure code motion, no behavior change.
+func scoreReadyTarget(status TargetStatus) types.ComponentResult {
+	result := types.ComponentResult{Component: types.ComponentHealth, Assessed: true}
+
 	if status.OOMKilled {
 		// OOMKilled with all pods ready -> 0.25 (pods recovered but memory pressure is a concern)
 		score := 0.25
@@ -154,7 +165,6 @@ func (s *scorer) Score(_ context.Context, status TargetStatus) types.ComponentRe
 		return result
 	}
 
-	// All pods ready, no OOMKilled
 	if status.RestartsSinceRemediation > 0 {
 		// All ready but restarts detected -> 0.75
 		score := 0.75

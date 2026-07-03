@@ -24,8 +24,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -49,9 +49,9 @@ import (
 // ErrorRoutingEngine returns configurable errors/blocks from routing methods.
 type ErrorRoutingEngine struct {
 	MockRoutingEngine
-	PreAnalysisErr       error
-	PostAnalysisErr      error
-	PostAnalysisBlock    *routing.BlockingCondition
+	PreAnalysisErr    error
+	PostAnalysisErr   error
+	PostAnalysisBlock *routing.BlockingCondition
 }
 
 func (e *ErrorRoutingEngine) CheckPreAnalysisConditions(_ context.Context, _ *remediationv1.RemediationRequest) (*routing.BlockingCondition, error) {
@@ -89,16 +89,16 @@ func newCharTimeouts() prodcontroller.TimeoutConfig {
 
 func newCharReconciler(c client.Client, apiReader client.Reader, scheme *runtime.Scheme, routingEngine routing.Engine) (*prodcontroller.Reconciler, *record.FakeRecorder) {
 	recorder := record.NewFakeRecorder(20)
-	r := prodcontroller.NewReconciler(
-		c,
-		apiReader,
-		scheme,
-		nil,
-		recorder,
-		rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-		newCharTimeouts(),
-		routingEngine,
-	)
+	r := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+		Client:        c,
+		APIReader:     apiReader,
+		Scheme:        scheme,
+		AuditStore:    nil,
+		Recorder:      recorder,
+		Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+		Timeouts:      newCharTimeouts(),
+		RoutingEngine: routingEngine,
+	})
 	return r, recorder
 }
 
@@ -138,7 +138,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 			})
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result.RequeueAfter).To(Equal(5 * time.Second), "should requeue after RequeueGenericError (5s)")
+			Expect(result.RequeueAfter).To(Equal(5*time.Second), "should requeue after RequeueGenericError (5s)")
 
 			var finalRR remediationv1.RemediationRequest
 			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "pnd001", Namespace: "default"}, &finalRR)).To(Succeed())
@@ -175,7 +175,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 			})
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result.RequeueAfter).To(Equal(5 * time.Second), "should requeue after RequeueGenericError (5s)")
+			Expect(result.RequeueAfter).To(Equal(5*time.Second), "should requeue after RequeueGenericError (5s)")
 
 			var finalRR remediationv1.RemediationRequest
 			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "pnd002", Namespace: "default"}, &finalRR)).To(Succeed())
@@ -249,7 +249,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 			})
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result.RequeueAfter).To(Equal(5 * time.Second), "should requeue after RequeueGenericError (5s)")
+			Expect(result.RequeueAfter).To(Equal(5*time.Second), "should requeue after RequeueGenericError (5s)")
 		})
 	})
 
@@ -314,7 +314,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 			})
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result.RequeueAfter).To(Equal(5 * time.Second), "should requeue after RequeueGenericError (5s)")
+			Expect(result.RequeueAfter).To(Equal(5*time.Second), "should requeue after RequeueGenericError (5s)")
 
 			var finalRR remediationv1.RemediationRequest
 			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "prc002", Namespace: "default"}, &finalRR)).To(Succeed())

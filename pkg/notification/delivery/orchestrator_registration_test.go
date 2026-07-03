@@ -265,12 +265,13 @@ var _ = Describe("Orchestrator Channel Registration (DD-NOT-007)", func() {
 				notification,
 				[]notificationv1alpha1.Channel{notificationv1alpha1.ChannelConsole},
 				policy,
-				func(*notificationv1alpha1.NotificationRequest, string) bool { return false },
-				func(*notificationv1alpha1.NotificationRequest, string) bool { return false },
-				func(*notificationv1alpha1.NotificationRequest, string) int { return 0 },
-				func(context.Context, *notificationv1alpha1.NotificationRequest, string) error { return nil },
-				func(context.Context, *notificationv1alpha1.NotificationRequest, string, error) error { return nil },
-				nil,
+				delivery.DeliveryCallbacks{
+					ChannelAlreadySucceeded:  func(*notificationv1alpha1.NotificationRequest, string) bool { return false },
+					HasChannelPermanentError: func(*notificationv1alpha1.NotificationRequest, string) bool { return false },
+					GetChannelAttemptCount:   func(*notificationv1alpha1.NotificationRequest, string) int { return 0 },
+					AuditMessageSent:         func(context.Context, *notificationv1alpha1.NotificationRequest, string) error { return nil },
+					AuditMessageFailed:       func(context.Context, *notificationv1alpha1.NotificationRequest, string, error) error { return nil },
+				},
 			)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.DeliveryAttempts).To(HaveLen(1))
@@ -290,12 +291,13 @@ var _ = Describe("Orchestrator Channel Registration (DD-NOT-007)", func() {
 				notification,
 				[]notificationv1alpha1.Channel{notificationv1alpha1.ChannelConsole},
 				policy,
-				func(*notificationv1alpha1.NotificationRequest, string) bool { return false },
-				func(*notificationv1alpha1.NotificationRequest, string) bool { return false },
-				func(*notificationv1alpha1.NotificationRequest, string) int { return 0 },
-				func(context.Context, *notificationv1alpha1.NotificationRequest, string) error { return nil },
-				func(context.Context, *notificationv1alpha1.NotificationRequest, string, error) error { return nil },
-				nil,
+				delivery.DeliveryCallbacks{
+					ChannelAlreadySucceeded:  func(*notificationv1alpha1.NotificationRequest, string) bool { return false },
+					HasChannelPermanentError: func(*notificationv1alpha1.NotificationRequest, string) bool { return false },
+					GetChannelAttemptCount:   func(*notificationv1alpha1.NotificationRequest, string) int { return 0 },
+					AuditMessageSent:         func(context.Context, *notificationv1alpha1.NotificationRequest, string) error { return nil },
+					AuditMessageFailed:       func(context.Context, *notificationv1alpha1.NotificationRequest, string, error) error { return nil },
+				},
 			)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.DeliveryAttempts).To(HaveLen(1))

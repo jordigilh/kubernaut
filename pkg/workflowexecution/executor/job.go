@@ -327,12 +327,11 @@ func buildDependencyVolumes(deps *models.WorkflowDependencies) ([]corev1.Volume,
 // Also adds TARGET_RESOURCE for consistency with Tekton pipelines.
 // #243: Accepts pre-filtered params (filtering is done in buildJob).
 func buildEnvVars(targetResource string, params map[string]string) []corev1.EnvVar {
-	envVars := []corev1.EnvVar{
-		{
-			Name:  "TARGET_RESOURCE",
-			Value: targetResource,
-		},
-	}
+	envVars := make([]corev1.EnvVar, 0, 1+len(params))
+	envVars = append(envVars, corev1.EnvVar{
+		Name:  "TARGET_RESOURCE",
+		Value: targetResource,
+	})
 
 	for key, value := range params {
 		envVars = append(envVars, corev1.EnvVar{

@@ -74,22 +74,27 @@ func MergePhase1Fallbacks(result *katypes.InvestigationResult, p1 *prompt.Phase1
 		result.Confidence = p1.Confidence
 	}
 	if result.InvestigationOutcome == "" && p1.InvestigationOutcome != "" {
-		result.InvestigationOutcome = p1.InvestigationOutcome
-		parser.ApplyInvestigationOutcome(result, p1.InvestigationOutcome)
-		// #301 defense-in-depth: Phase 1 problem_resolved overrides
-		// contradictory HumanReviewNeeded set by Phase 3 (e.g. the
-		// SubmitNoWorkflowResult branch hardcodes HumanReviewNeeded=true,
-		// but that should not apply when the investigation is resolved).
-		if p1.InvestigationOutcome == "problem_resolved" && result.HumanReviewNeeded {
-			result.HumanReviewNeeded = false
-			result.HumanReviewReason = ""
-		}
+		mergePhase1InvestigationOutcome(result, p1.InvestigationOutcome)
 	}
 	if len(result.CausalChain) == 0 && len(p1.CausalChain) > 0 {
 		result.CausalChain = p1.CausalChain
 	}
 	if result.DueDiligence == nil && p1.DueDiligence != nil {
 		result.DueDiligence = p1.DueDiligence
+	}
+}
+
+// mergePhase1InvestigationOutcome applies the Phase 1 investigation outcome
+// fallback and its downstream effects: outcome-derived field defaults, and
+// (#301 defense-in-depth) clearing a contradictory HumanReviewNeeded when
+// Phase 1 determined the problem was already resolved — overriding branches
+// like SubmitNoWorkflowResult that hardcode HumanReviewNeeded=true.
+func mergePhase1InvestigationOutcome(result *katypes.InvestigationResult, outcome string) {
+	result.InvestigationOutcome = outcome
+	parser.ApplyInvestigationOutcome(result, outcome)
+	if outcome == "problem_resolved" && result.HumanReviewNeeded {
+		result.HumanReviewNeeded = false
+		result.HumanReviewReason = ""
 	}
 }
 

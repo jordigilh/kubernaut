@@ -128,10 +128,10 @@ func NewErrorClassifier(logger logr.Logger) *ErrorClassifier {
 	return &ErrorClassifier{
 		log: logger,
 		backoffConfig: backoff.Config{
-			BasePeriod:    1 * time.Second,  // Fast initial retry for transient API errors
-			MaxPeriod:     5 * time.Minute,  // Cap at 5 minutes
-			Multiplier:    2.0,              // Standard exponential (power-of-2)
-			JitterPercent: 10,               // ±10% variance (production anti-thundering herd)
+			BasePeriod:    1 * time.Second, // Fast initial retry for transient API errors
+			MaxPeriod:     5 * time.Minute, // Cap at 5 minutes
+			Multiplier:    2.0,             // Standard exponential (power-of-2)
+			JitterPercent: 10,              // ±10% variance (production anti-thundering herd)
 		},
 		maxRetries: 5,
 	}
@@ -161,65 +161,12 @@ func (ec *ErrorClassifier) ClassifyError(err error) ErrorClassification {
 		}
 	}
 
-	// Check for context cancellation (caller-initiated abort: shutdown, user cancel)
-	if errors.Is(err, context.Canceled) {
-		return ErrorClassification{
-			ErrorType:     ErrorTypePermanent,
-			IsRetryable:   false,
-			ShouldAlert:   false,
-			RetryAfter:    -1,
-			Message:       "Request canceled by caller",
-			OriginalError: err,
-		}
+	if classification, matched := classifyContextError(err); matched {
+		return classification
 	}
 
-	// Check for timeout errors (deadline exceeded is retryable)
-	if errors.Is(err, context.DeadlineExceeded) {
-		return ErrorClassification{
-			ErrorType:     ErrorTypeTimeout,
-			IsRetryable:   true,
-			ShouldAlert:   false,
-			RetryAfter:    ec.backoffConfig.BasePeriod,
-			Message:       "Request timed out",
-			OriginalError: err,
-		}
-	}
-
-	// Check for DNS resolution errors (before generic net.Error)
-	// *net.DNSError implements net.Error, so check this first for better classification
-	var dnsErr *net.DNSError
-	if errors.As(err, &dnsErr) {
-		return ErrorClassification{
-			ErrorType:     ErrorTypeNetwork,
-			IsRetryable:   true,
-			ShouldAlert:   true, // DNS errors might indicate configuration issues
-			RetryAfter:    ec.backoffConfig.BasePeriod,
-			Message:       fmt.Sprintf("DNS resolution failed: %s", dnsErr.Name),
-			OriginalError: err,
-		}
-	}
-
-	// Check for network errors
-	var netErr net.Error
-	if errors.As(err, &netErr) {
-		if netErr.Timeout() {
-			return ErrorClassification{
-				ErrorType:     ErrorTypeTimeout,
-				IsRetryable:   true,
-				ShouldAlert:   false,
-				RetryAfter:    ec.backoffConfig.BasePeriod,
-				Message:       "Network timeout",
-				OriginalError: err,
-			}
-		}
-		return ErrorClassification{
-			ErrorType:     ErrorTypeNetwork,
-			IsRetryable:   true,
-			ShouldAlert:   false,
-			RetryAfter:    ec.backoffConfig.BasePeriod,
-			Message:       "Network connectivity error",
-			OriginalError: err,
-		}
+	if classification, matched := ec.classifyNetworkError(err); matched {
+		return classification
 	}
 
 	// Check for API errors (HTTP status codes)
@@ -251,66 +198,102 @@ func (ec *ErrorClassifier) ClassifyError(err error) ErrorClassification {
 	}
 }
 
-// classifyHTTPError classifies HTTP status code errors
-func (ec *ErrorClassifier) classifyHTTPError(apiErr *agentclient.APIError) ErrorClassification {
-	switch apiErr.StatusCode {
-	// 401 Unauthorized - Authentication error
-	case 401:
-		return ErrorClassification{
-			ErrorType:     ErrorTypeAuthentication,
-			IsRetryable:   false,
-			ShouldAlert:   true,
-			RetryAfter:    -1,
-			Message:       fmt.Sprintf("Authentication failed: %s", apiErr.Message),
-			OriginalError: apiErr,
-		}
-
-	// 403 Forbidden - Authorization error
-	case 403:
-		return ErrorClassification{
-			ErrorType:     ErrorTypeAuthorization,
-			IsRetryable:   false,
-			ShouldAlert:   true,
-			RetryAfter:    -1,
-			Message:       fmt.Sprintf("Authorization failed: %s", apiErr.Message),
-			OriginalError: apiErr,
-		}
-
-	// 404 Not Found - Configuration error
-	case 404:
-		return ErrorClassification{
-			ErrorType:     ErrorTypeConfiguration,
-			IsRetryable:   false,
-			ShouldAlert:   true,
-			RetryAfter:    -1,
-			Message:       fmt.Sprintf("Resource not found: %s", apiErr.Message),
-			OriginalError: apiErr,
-		}
-
-	// 422 Unprocessable Entity - Validation error (permanent)
-	case 422:
+// classifyContextError classifies context.Canceled (caller-initiated abort:
+// shutdown, user cancel). The returned bool reports whether err matched.
+// Extracted from ClassifyError (Wave 6 6c GREEN: funlen remediation) — pure
+// code motion, no behavior change.
+func classifyContextError(err error) (ErrorClassification, bool) {
+	if errors.Is(err, context.Canceled) {
 		return ErrorClassification{
 			ErrorType:     ErrorTypePermanent,
 			IsRetryable:   false,
-			ShouldAlert:   true,
+			ShouldAlert:   false,
 			RetryAfter:    -1,
-			Message:       fmt.Sprintf("Client error (HTTP 422): %s", apiErr.Message),
-			OriginalError: apiErr,
-		}
+			Message:       "Request canceled by caller",
+			OriginalError: err,
+		}, true
+	}
+	return ErrorClassification{}, false
+}
 
-	// 429 Too Many Requests - Rate limit error
-	case 429:
+// classifyNetworkError classifies DNS resolution errors and generic
+// net.Error values (timeout vs. general connectivity failure). *net.DNSError
+// implements net.Error, so it is checked first for a more specific
+// classification. The returned bool reports whether err matched a network
+// error type. Extracted from ClassifyError (Wave 6 6c GREEN: funlen
+// remediation) — pure code motion, no behavior change.
+func (ec *ErrorClassifier) classifyNetworkError(err error) (ErrorClassification, bool) {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return ErrorClassification{
+			ErrorType:     ErrorTypeTimeout,
+			IsRetryable:   true,
+			ShouldAlert:   false,
+			RetryAfter:    ec.backoffConfig.BasePeriod,
+			Message:       "Request timed out",
+			OriginalError: err,
+		}, true
+	}
+
+	// Check for DNS resolution errors (before generic net.Error)
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return ErrorClassification{
+			ErrorType:     ErrorTypeNetwork,
+			IsRetryable:   true,
+			ShouldAlert:   true, // DNS errors might indicate configuration issues
+			RetryAfter:    ec.backoffConfig.BasePeriod,
+			Message:       fmt.Sprintf("DNS resolution failed: %s", dnsErr.Name),
+			OriginalError: err,
+		}, true
+	}
+
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		if netErr.Timeout() {
+			return ErrorClassification{
+				ErrorType:     ErrorTypeTimeout,
+				IsRetryable:   true,
+				ShouldAlert:   false,
+				RetryAfter:    ec.backoffConfig.BasePeriod,
+				Message:       "Network timeout",
+				OriginalError: err,
+			}, true
+		}
+		return ErrorClassification{
+			ErrorType:     ErrorTypeNetwork,
+			IsRetryable:   true,
+			ShouldAlert:   false,
+			RetryAfter:    ec.backoffConfig.BasePeriod,
+			Message:       "Network connectivity error",
+			OriginalError: err,
+		}, true
+	}
+
+	return ErrorClassification{}, false
+}
+
+// classifyHTTPError classifies HTTP status code errors. Dispatches to one
+// helper per classification family; the switch itself stays a thin lookup.
+func (ec *ErrorClassifier) classifyHTTPError(apiErr *agentclient.APIError) ErrorClassification {
+	switch apiErr.StatusCode {
+	case 401: // Authentication error
+		return ec.prefixedErrorClassification(apiErr, ErrorTypeAuthentication, "Authentication failed")
+	case 403: // Authorization error
+		return ec.prefixedErrorClassification(apiErr, ErrorTypeAuthorization, "Authorization failed")
+	case 404: // Configuration error
+		return ec.prefixedErrorClassification(apiErr, ErrorTypeConfiguration, "Resource not found")
+	case 422: // Unprocessable Entity - Validation error (permanent)
+		return ec.prefixedErrorClassification(apiErr, ErrorTypePermanent, "Client error (HTTP 422)")
+	case 429: // Too Many Requests - Rate limit error
 		return ErrorClassification{
 			ErrorType:     ErrorTypeRateLimit,
 			IsRetryable:   true,
-			ShouldAlert:   false, // Rate limiting is expected behavior
+			ShouldAlert:   false,                           // Rate limiting is expected behavior
 			RetryAfter:    ec.backoffConfig.BasePeriod * 2, // Wait longer for rate limits
 			Message:       fmt.Sprintf("Rate limit exceeded: %s", apiErr.Message),
 			OriginalError: apiErr,
 		}
-
-	// 5xx Server Errors - Transient errors
-	case 500, 502, 503, 504:
+	case 500, 502, 503, 504: // Server Errors - Transient errors
 		return ErrorClassification{
 			ErrorType:     ErrorTypeTransient,
 			IsRetryable:   true,
@@ -319,23 +302,13 @@ func (ec *ErrorClassifier) classifyHTTPError(apiErr *agentclient.APIError) Error
 			Message:       fmt.Sprintf("Server error (HTTP %d): %s", apiErr.StatusCode, apiErr.Message),
 			OriginalError: apiErr,
 		}
-
-	// 400 Bad Request - Permanent error (invalid request data)
-	case 400:
-		return ErrorClassification{
-			ErrorType:     ErrorTypePermanent,
-			IsRetryable:   false,
-			ShouldAlert:   true,
-			RetryAfter:    -1,
-			Message:       fmt.Sprintf("Client error (HTTP 400): %s", apiErr.Message),
-			OriginalError: apiErr,
-		}
-
-	// 4xx Client Errors (other than explicitly handled) - Treat as Transient with alert
-	// Rationale: Unknown 4xx codes might be temporary issues or misconfigurations
-	// that could be resolved, so give them a chance to recover
+	case 400: // Bad Request - Permanent error (invalid request data)
+		return ec.prefixedErrorClassification(apiErr, ErrorTypePermanent, "Client error (HTTP 400)")
 	default:
-		// All unknown status codes (4xx, 5xx, or other) - treat as transient
+		// 4xx Client Errors (other than explicitly handled) and any other
+		// unknown status code - Treat as Transient with alert. Rationale:
+		// unknown codes might be temporary issues or misconfigurations that
+		// could be resolved, so give them a chance to recover.
 		return ErrorClassification{
 			ErrorType:     ErrorTypeTransient,
 			IsRetryable:   true,
@@ -344,6 +317,22 @@ func (ec *ErrorClassifier) classifyHTTPError(apiErr *agentclient.APIError) Error
 			Message:       fmt.Sprintf("Unknown HTTP status %d: %s", apiErr.StatusCode, apiErr.Message),
 			OriginalError: apiErr,
 		}
+	}
+}
+
+// prefixedErrorClassification builds the common shape shared by the
+// non-retryable HTTP error classifications (401/403/404/422/400): message is
+// "<prefix>: <apiErr.Message>", never retryable, always alerts. Extracted
+// from classifyHTTPError (Wave 6 6c GREEN: funlen remediation) — pure code
+// motion, no behavior change.
+func (ec *ErrorClassifier) prefixedErrorClassification(apiErr *agentclient.APIError, errType ErrorType, prefix string) ErrorClassification {
+	return ErrorClassification{
+		ErrorType:     errType,
+		IsRetryable:   false,
+		ShouldAlert:   true,
+		RetryAfter:    -1,
+		Message:       fmt.Sprintf("%s: %s", prefix, apiErr.Message),
+		OriginalError: apiErr,
 	}
 }
 

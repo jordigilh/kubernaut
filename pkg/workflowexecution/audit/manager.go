@@ -251,25 +251,7 @@ func (m *Manager) RecordExecutionWorkflowStarted(
 	// Gap #6: Use structured audit payload (eliminates map[string]interface{})
 	// Per DD-AUDIT-004: Zero unstructured data in audit events
 	// Per OGEN-MIGRATION: Use ogen-generated type + union constructor
-	// Handle empty phase (defaults to "Pending" per OpenAPI schema requirement)
-	phase := wfe.Status.Phase
-	if phase == "" {
-		phase = "Pending" // Default phase when execution starts but WFE phase not yet set
-	}
-	payload := api.WorkflowExecutionAuditPayload{
-		WorkflowID:      wfe.Spec.WorkflowRef.WorkflowID,
-		WorkflowVersion: wfe.Spec.WorkflowRef.Version,
-		ContainerImage:  wfe.Spec.WorkflowRef.ExecutionBundle,
-		ExecutionName:   wfe.Name,
-		Phase:           api.WorkflowExecutionAuditPayloadPhase(phase),
-		TargetResource:  wfe.Spec.TargetResource, // Already a string per CRD definition
-	}
-	payload.PipelinerunName.SetTo(pipelineRunName)
-
-	// Add execution parameters for SOC2 chain of custody (Issue #103)
-	if len(wfe.Spec.Parameters) > 0 {
-		payload.Parameters.SetTo(api.WorkflowExecutionAuditPayloadParameters(wfe.Spec.Parameters))
-	}
+	payload := buildExecutionStartedPayload(wfe, pipelineRunName)
 
 	// Use proper Gap #6 constructor (added to OpenAPI spec discriminator)
 	event.EventData = api.NewAuditEventRequestEventDataWorkflowexecutionExecutionStartedAuditEventRequestEventData(payload)
@@ -289,6 +271,35 @@ func (m *Manager) RecordExecutionWorkflowStarted(
 		"outcome", "success",
 	)
 	return nil
+}
+
+// buildExecutionStartedPayload builds the WorkflowExecutionAuditPayload for
+// an execution.workflow.started event (Gap #6), defaulting Phase to
+// "Pending" when the WFE phase is not yet set and including execution
+// parameters for SOC2 chain of custody (Issue #103). Extracted from
+// RecordExecutionWorkflowStarted (Wave 6 6e-ii GREEN: funlen remediation) —
+// pure code motion, no behavior change.
+func buildExecutionStartedPayload(wfe *workflowexecutionv1alpha1.WorkflowExecution, pipelineRunName string) api.WorkflowExecutionAuditPayload {
+	// Handle empty phase (defaults to "Pending" per OpenAPI schema requirement)
+	phase := wfe.Status.Phase
+	if phase == "" {
+		phase = "Pending" // Default phase when execution starts but WFE phase not yet set
+	}
+	payload := api.WorkflowExecutionAuditPayload{
+		WorkflowID:      wfe.Spec.WorkflowRef.WorkflowID,
+		WorkflowVersion: wfe.Spec.WorkflowRef.Version,
+		ContainerImage:  wfe.Spec.WorkflowRef.ExecutionBundle,
+		ExecutionName:   wfe.Name,
+		Phase:           api.WorkflowExecutionAuditPayloadPhase(phase),
+		TargetResource:  wfe.Spec.TargetResource, // Already a string per CRD definition
+	}
+	payload.PipelinerunName.SetTo(pipelineRunName)
+
+	// Add execution parameters for SOC2 chain of custody (Issue #103)
+	if len(wfe.Spec.Parameters) > 0 {
+		payload.Parameters.SetTo(api.WorkflowExecutionAuditPayloadParameters(wfe.Spec.Parameters))
+	}
+	return payload
 }
 
 // recordAuditEvent is the internal implementation for recording audit events.
@@ -327,17 +338,7 @@ func (m *Manager) recordAuditEvent(
 	eventAction := parts[len(parts)-1] // Get last part after final dot
 	audit.SetEventAction(event, eventAction)
 
-	// Map outcome string to OpenAPI enum
-	switch outcome {
-	case "success":
-		audit.SetEventOutcome(event, audit.OutcomeSuccess)
-	case "failure":
-		audit.SetEventOutcome(event, audit.OutcomeFailure)
-	case "pending":
-		audit.SetEventOutcome(event, audit.OutcomePending)
-	default:
-		audit.SetEventOutcome(event, audit.OutcomeSuccess) // default to success
-	}
+	audit.SetEventOutcome(event, mapOutcomeToOgen(outcome))
 
 	audit.SetActor(event, "service", ServiceName)
 	audit.SetResource(event, "WorkflowExecution", wfe.Name)
@@ -358,6 +359,60 @@ func (m *Manager) recordAuditEvent(
 	// Build structured event data (type-safe per DD-AUDIT-004)
 	// Eliminates map[string]interface{} per 02-go-coding-standards.mdc
 	// Per OGEN-MIGRATION: Use ogen-generated type + union constructor
+	payload := buildWorkflowExecutionAuditPayload(wfe)
+
+	// Set event data using ogen union constructor based on action
+	// Per OGEN-MIGRATION: Direct assignment with union constructor for type safety
+	switch action {
+	case EventTypeFailed:
+		event.EventData = api.NewAuditEventRequestEventDataWorkflowexecutionWorkflowFailedAuditEventRequestEventData(payload)
+	default:
+		// EventTypeCompleted and any other action default to "completed" (preserves prior behavior)
+		event.EventData = api.NewAuditEventRequestEventDataWorkflowexecutionWorkflowCompletedAuditEventRequestEventData(payload)
+	}
+
+	// Store audit event - MANDATORY per ADR-032
+	// ADR-032: "Write Verification - audit write failures must be detected and handled"
+	if err := m.store.StoreAudit(ctx, event); err != nil {
+		m.logger.Error(err, "CRITICAL: Failed to store mandatory audit event",
+			"action", action,
+			"wfe", wfe.Name,
+		)
+		// Return error per ADR-032 "No Audit Loss" - audit writes are MANDATORY
+		return fmt.Errorf("mandatory audit write failed per ADR-032: %w", err)
+	}
+
+	m.logger.V(2).Info("Audit event recorded",
+		"action", action,
+		"wfe", wfe.Name,
+		"outcome", outcome,
+	)
+	return nil
+}
+
+// mapOutcomeToOgen maps the internal outcome string ("success", "failure",
+// "pending") to the ogen-generated audit outcome enum, defaulting to
+// success for any unrecognized value (preserves prior recordAuditEvent
+// behavior). Extracted from recordAuditEvent (Wave 6 6e-ii GREEN: funlen
+// remediation) — pure code motion, no behavior change.
+func mapOutcomeToOgen(outcome string) api.AuditEventRequestEventOutcome {
+	switch outcome {
+	case "failure":
+		return audit.OutcomeFailure
+	case "pending":
+		return audit.OutcomePending
+	default:
+		return audit.OutcomeSuccess
+	}
+}
+
+// buildWorkflowExecutionAuditPayload builds the common WorkflowExecutionAuditPayload
+// fields shared by recordAuditEvent and recordFailureAuditWithDetails: identity
+// (workflow/version/target/phase/image/name), timing (started/completed/duration),
+// failure summary, PipelineRun linkage, and SOC2 chain-of-custody parameters
+// (Issue #103). Extracted from recordAuditEvent (Wave 6 6e-ii GREEN: funlen
+// remediation) — pure code motion, no behavior change.
+func buildWorkflowExecutionAuditPayload(wfe *workflowexecutionv1alpha1.WorkflowExecution) api.WorkflowExecutionAuditPayload {
 	payload := api.WorkflowExecutionAuditPayload{
 		WorkflowID:      wfe.Spec.WorkflowRef.WorkflowID,
 		WorkflowVersion: wfe.Spec.WorkflowRef.Version,
@@ -393,35 +448,62 @@ func (m *Manager) recordAuditEvent(
 	if len(wfe.Spec.Parameters) > 0 {
 		payload.Parameters.SetTo(api.WorkflowExecutionAuditPayloadParameters(wfe.Spec.Parameters))
 	}
+	return payload
+}
 
-	// Set event data using ogen union constructor based on action
-	// Per OGEN-MIGRATION: Direct assignment with union constructor for type safety
-	switch action {
-	case EventTypeCompleted:
-		event.EventData = api.NewAuditEventRequestEventDataWorkflowexecutionWorkflowCompletedAuditEventRequestEventData(payload)
-	case EventTypeFailed:
-		event.EventData = api.NewAuditEventRequestEventDataWorkflowexecutionWorkflowFailedAuditEventRequestEventData(payload)
-	default:
-		event.EventData = api.NewAuditEventRequestEventDataWorkflowexecutionWorkflowCompletedAuditEventRequestEventData(payload)
-	}
-
-	// Store audit event - MANDATORY per ADR-032
-	// ADR-032: "Write Verification - audit write failures must be detected and handled"
-	if err := m.store.StoreAudit(ctx, event); err != nil {
-		m.logger.Error(err, "CRITICAL: Failed to store mandatory audit event",
-			"action", action,
-			"wfe", wfe.Name,
+// buildFailureErrorDetails constructs the standardized SOC2 error_details
+// (BR-AUDIT-005 Gap #7) from wfe.Status.FailureDetails: a human-readable
+// message assembled from the failed task/step/message, and an error
+// code/retry-possible pair derived from the structured FailureDetails.Reason
+// enum (avoids string matching on the error message). Falls back to a
+// generic "unknown error" detail when FailureDetails is absent (shouldn't
+// happen, but handled gracefully). Extracted from recordFailureAuditWithDetails
+// (Wave 6 6e-ii GREEN: funlen remediation) — pure code motion, no behavior change.
+func buildFailureErrorDetails(wfe *workflowexecutionv1alpha1.WorkflowExecution) *sharedaudit.ErrorDetails {
+	if wfe.Status.FailureDetails == nil {
+		return sharedaudit.NewErrorDetails(
+			"workflowexecution",
+			"ERR_PIPELINE_FAILED",
+			"Workflow execution failed with unknown error",
+			true,
 		)
-		// Return error per ADR-032 "No Audit Loss" - audit writes are MANDATORY
-		return fmt.Errorf("mandatory audit write failed per ADR-032: %w", err)
 	}
 
-	m.logger.V(2).Info("Audit event recorded",
-		"action", action,
-		"wfe", wfe.Name,
-		"outcome", outcome,
+	// Construct error message from Tekton failure details
+	errorMessage := fmt.Sprintf("Pipeline failed at task '%s'", wfe.Status.FailureDetails.FailedTaskName)
+	if wfe.Status.FailureDetails.FailedStepName != "" {
+		errorMessage += fmt.Sprintf(" step '%s'", wfe.Status.FailureDetails.FailedStepName)
+	}
+	if wfe.Status.FailureDetails.Message != "" {
+		errorMessage += ": " + wfe.Status.FailureDetails.Message
+	}
+
+	// Determine error code based on FailureDetails.Reason (structured enum)
+	// Uses Kubernetes-style reason code instead of string matching on error message
+	errorCode := "ERR_PIPELINE_FAILED"
+	retryPossible := true // Pipeline failures may be transient
+
+	switch wfe.Status.FailureDetails.Reason {
+	case "ConfigurationError", "Forbidden":
+		errorCode = "ERR_WORKFLOW_NOT_FOUND"
+		retryPossible = false
+	case "OOMKilled", "ResourceExhausted", "DeadlineExceeded":
+		errorCode = "ERR_PIPELINE_FAILED"
+		retryPossible = true
+	case "ImagePullBackOff":
+		errorCode = "ERR_IMAGE_PULL"
+		retryPossible = true
+	case "TaskFailed":
+		errorCode = "ERR_PIPELINE_FAILED"
+		retryPossible = !wfe.Status.FailureDetails.WasExecutionFailure
+	}
+
+	return sharedaudit.NewErrorDetails(
+		"workflowexecution",
+		errorCode,
+		errorMessage,
+		retryPossible,
 	)
-	return nil
 }
 
 // recordFailureAuditWithDetails records a workflow.failed audit event with standardized error_details.
@@ -442,52 +524,7 @@ func (m *Manager) recordFailureAuditWithDetails(ctx context.Context, wfe *workfl
 	}
 
 	// Build error_details from FailureDetails (Gap #7)
-	var errorDetails *sharedaudit.ErrorDetails
-	if wfe.Status.FailureDetails != nil {
-		// Construct error message from Tekton failure details
-		errorMessage := fmt.Sprintf("Pipeline failed at task '%s'", wfe.Status.FailureDetails.FailedTaskName)
-		if wfe.Status.FailureDetails.FailedStepName != "" {
-			errorMessage += fmt.Sprintf(" step '%s'", wfe.Status.FailureDetails.FailedStepName)
-		}
-		if wfe.Status.FailureDetails.Message != "" {
-			errorMessage += ": " + wfe.Status.FailureDetails.Message
-		}
-
-		// Determine error code based on FailureDetails.Reason (structured enum)
-		// Uses Kubernetes-style reason code instead of string matching on error message
-		errorCode := "ERR_PIPELINE_FAILED"
-		retryPossible := true // Pipeline failures may be transient
-
-		switch wfe.Status.FailureDetails.Reason {
-		case "ConfigurationError", "Forbidden":
-			errorCode = "ERR_WORKFLOW_NOT_FOUND"
-			retryPossible = false
-		case "OOMKilled", "ResourceExhausted", "DeadlineExceeded":
-			errorCode = "ERR_PIPELINE_FAILED"
-			retryPossible = true
-		case "ImagePullBackOff":
-			errorCode = "ERR_IMAGE_PULL"
-			retryPossible = true
-		case "TaskFailed":
-			errorCode = "ERR_PIPELINE_FAILED"
-			retryPossible = !wfe.Status.FailureDetails.WasExecutionFailure
-		}
-
-		errorDetails = sharedaudit.NewErrorDetails(
-			"workflowexecution",
-			errorCode,
-			errorMessage,
-			retryPossible,
-		)
-	} else {
-		// No FailureDetails (shouldn't happen, but handle gracefully)
-		errorDetails = sharedaudit.NewErrorDetails(
-			"workflowexecution",
-			"ERR_PIPELINE_FAILED",
-			"Workflow execution failed with unknown error",
-			true,
-		)
-	}
+	errorDetails := buildFailureErrorDetails(wfe)
 
 	// Build audit event
 	event := audit.NewAuditEventRequest()
@@ -511,14 +548,7 @@ func (m *Manager) recordFailureAuditWithDetails(ctx context.Context, wfe *workfl
 	// Build structured event data (type-safe per DD-AUDIT-004)
 	// Eliminates map[string]interface{} per 02-go-coding-standards.mdc
 	// Per OGEN-MIGRATION: Use ogen-generated type + union constructor
-	payload := api.WorkflowExecutionAuditPayload{
-		WorkflowID:      wfe.Spec.WorkflowRef.WorkflowID,
-		WorkflowVersion: wfe.Spec.WorkflowRef.Version,
-		TargetResource:  wfe.Spec.TargetResource,
-		Phase:           api.WorkflowExecutionAuditPayloadPhase(wfe.Status.Phase),
-		ContainerImage:  wfe.Spec.WorkflowRef.ExecutionBundle,
-		ExecutionName:   wfe.Name,
-	}
+	payload := buildWorkflowExecutionAuditPayload(wfe)
 
 	// BR-AUDIT-005 Gap #7: Standardized error_details for SOC2 compliance
 	// **Refactoring**: 2026-01-22 - Use shared helper for type-safe component enum conversion
@@ -527,32 +557,6 @@ func (m *Manager) recordFailureAuditWithDetails(ctx context.Context, wfe *workfl
 		if details, ok := optErrorDetails.Get(); ok {
 			payload.ErrorDetails.SetTo(details)
 		}
-	}
-
-	if wfe.Status.StartTime != nil {
-		payload.StartedAt.SetTo(wfe.Status.StartTime.Time)
-	}
-	if wfe.Status.CompletionTime != nil {
-		payload.CompletedAt.SetTo(wfe.Status.CompletionTime.Time)
-	}
-	if wfe.Status.Duration != nil {
-		payload.Duration.SetTo(wfe.Status.Duration.Duration.String())
-	}
-
-	if wfe.Status.FailureDetails != nil {
-		payload.FailureReason.SetTo(api.WorkflowExecutionAuditPayloadFailureReason(wfe.Status.FailureDetails.Reason))
-		payload.FailureMessage.SetTo(wfe.Status.FailureDetails.Message)
-		if wfe.Status.FailureDetails.FailedTaskName != "" {
-			payload.FailedTaskName.SetTo(wfe.Status.FailureDetails.FailedTaskName)
-		}
-	}
-
-	if wfe.Status.ExecutionRef != nil {
-		payload.PipelinerunName.SetTo(wfe.Status.ExecutionRef.Name)
-	}
-
-	if len(wfe.Spec.Parameters) > 0 {
-		payload.Parameters.SetTo(api.WorkflowExecutionAuditPayloadParameters(wfe.Spec.Parameters))
 	}
 
 	// Set event data using ogen union constructor - always use "failed" for recordFailureAuditWithDetails

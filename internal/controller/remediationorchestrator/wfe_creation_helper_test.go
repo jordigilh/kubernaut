@@ -76,8 +76,10 @@ var _ = Describe("Issue #666: WFE Creation Helper (TP-666-v1 §8.3)", func() {
 	noopWFECallbacks := func() prodcontroller.WFECreationCallbacks {
 		return prodcontroller.WFECreationCallbacks{
 			EmitWorkflowCreatedAudit: func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis, _ string) {},
-			CreateWFE:                func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) (string, error) { return "wfe-test", nil },
-			ResolveWorkflowDisplay:   func(_ context.Context, workflowID string) (string, string) { return "", workflowID },
+			CreateWFE: func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) (string, error) {
+				return "wfe-test", nil
+			},
+			ResolveWorkflowDisplay: func(_ context.Context, workflowID string) (string, string) { return "", workflowID },
 		}
 	}
 

@@ -242,38 +242,16 @@ func (a *PrometheusAdapter) Parse(ctx context.Context, rawData []byte) (*types.N
 	// from previous scenario runs) must be skipped rather than dropping the entire batch.
 	var lastErr error
 	for i, alert := range webhook.Alerts {
-		ns, nsFound := extractNamespace(alert.Labels)
-		kind, name := extractTargetResource(ctx, alert.Labels, ns, a.registry)
-		if !nsFound {
-			if a.registry != nil && !a.registry.IsNamespacedKind(kind) {
-				ns = ""
-			} else {
-				ns = "default"
-			}
-		}
-		resource := types.ResourceIdentifier{
-			Kind:      kind,
-			Name:      name,
-			Namespace: ns,
-		}
+		resource := a.extractAlertResource(ctx, alert)
 
 		// BR-INTEGRATION-065: Extract cluster label from commonLabels (Thanos federation)
 		clusterID := webhook.CommonLabels[types.ClusterLabelKey]
-
 		resolver := a.resolverForCluster(ctx, clusterID)
 
-		fingerprint, resolvedResource, err := types.ResolveFingerprintWithCluster(ctx, clusterID, resolver, resource, a.logger)
+		fingerprint, resolvedResource, err := a.resolveAlertForParse(ctx, i, resource, clusterID, resolver)
 		if err != nil {
 			lastErr = err
-			a.logger.Info("Skipping stale alert in batch",
-				"alert", i, "resource", resource.String(), "error", err)
-			if a.ownerResolutionMetric != nil {
-				a.ownerResolutionMetric.WithLabelValues(resource.Kind, "failed").Inc()
-			}
 			continue
-		}
-		if a.ownerResolutionMetric != nil {
-			a.ownerResolutionMetric.WithLabelValues(resolvedResource.Kind, "success").Inc()
 		}
 
 		labels := MergeLabels(alert.Labels, webhook.CommonLabels)
@@ -325,65 +303,10 @@ func (a *PrometheusAdapter) ParseBatch(ctx context.Context, rawData []byte) ([]*
 
 	var signals []*types.NormalizedSignal
 	for i, alert := range webhook.Alerts {
-		ns, nsFound := extractNamespace(alert.Labels)
-		kind, name := extractTargetResource(ctx, alert.Labels, ns, a.registry)
-		if !nsFound {
-			if a.registry != nil && !a.registry.IsNamespacedKind(kind) {
-				ns = ""
-			} else {
-				ns = "default"
-			}
+		signal, ok := a.parseOneAlertInBatch(ctx, i, alert, webhook, rawData)
+		if ok {
+			signals = append(signals, signal)
 		}
-		resource := types.ResourceIdentifier{
-			Kind:      kind,
-			Name:      name,
-			Namespace: ns,
-		}
-
-		// BR-INTEGRATION-065: Extract cluster label from commonLabels (Thanos federation)
-		clusterID := webhook.CommonLabels[types.ClusterLabelKey]
-
-		resolver := a.resolverForCluster(ctx, clusterID)
-
-		fingerprint, resolvedResource, err := types.ResolveFingerprintWithCluster(ctx, clusterID, resolver, resource, a.logger)
-		if err != nil {
-			a.logger.Info("Alert failed owner resolution in batch, skipping",
-				"alert", i, "resource", resource.String(), "error", err)
-			if a.ownerResolutionMetric != nil {
-				a.ownerResolutionMetric.WithLabelValues(resource.Kind, "failed").Inc()
-			}
-			if a.parseDroppedMetric != nil {
-				a.parseDroppedMetric.WithLabelValues("owner_resolution_failed").Inc()
-			}
-			continue
-		}
-		if a.ownerResolutionMetric != nil {
-			a.ownerResolutionMetric.WithLabelValues(resolvedResource.Kind, "success").Inc()
-		}
-
-		labels := MergeLabels(alert.Labels, webhook.CommonLabels)
-		annotations := MergeAnnotations(alert.Annotations, webhook.CommonAnnotations)
-
-		severity := alert.Labels["severity"]
-		if severity == "" {
-			severity = "unknown"
-		}
-
-		signals = append(signals, &types.NormalizedSignal{
-			Fingerprint:  fingerprint,
-			ClusterID:    clusterID,
-			SignalName:   alert.Labels["alertname"],
-			Severity:     severity,
-			Namespace:    resolvedResource.Namespace,
-			Resource:     resolvedResource,
-			Labels:       labels,
-			Annotations:  annotations,
-			FiringTime:   alert.StartsAt,
-			ReceivedTime: time.Now(),
-			SourceType:   SourceTypePrometheusAlert,
-			Source:       a.GetSourceService(),
-			RawPayload:   rawData,
-		})
 	}
 
 	if len(signals) == 0 {
@@ -391,6 +314,130 @@ func (a *PrometheusAdapter) ParseBatch(ctx context.Context, rawData []byte) ([]*
 	}
 
 	return signals, nil
+}
+
+// parseOneAlertInBatch converts a single AlertManager alert into a
+// NormalizedSignal, independent of the rest of the batch (#1032). Returns
+// ok=false when owner resolution fails for this alert, so the caller can skip
+// it without affecting other alerts in the batch. Extracted from ParseBatch
+// to keep its cognitive complexity low.
+// extractAlertResource resolves the target ResourceIdentifier (kind/name/namespace)
+// for a single alert. Extracted from parseOneAlertInBatch (funlen).
+func (a *PrometheusAdapter) extractAlertResource(ctx context.Context, alert AlertManagerAlert) types.ResourceIdentifier {
+	ns, nsFound := extractNamespace(alert.Labels)
+	kind, name := extractTargetResource(ctx, alert.Labels, ns, a.registry)
+	if !nsFound {
+		if a.registry != nil && !a.registry.IsNamespacedKind(kind) {
+			ns = ""
+		} else {
+			ns = "default"
+		}
+	}
+	return types.ResourceIdentifier{
+		Kind:      kind,
+		Name:      name,
+		Namespace: ns,
+	}
+}
+
+// resolveAlertForParse resolves the owner-chain fingerprint for a single
+// alert during Parse's "first successfully-resolved alert wins" scan (#451).
+// A non-nil error means the caller should skip this alert (e.g., stale alert
+// from a deleted pod) and continue to the next one. Extracted from Parse
+// (funlen). Distinct from resolveAlertFingerprint (used by ParseBatch, #1032)
+// because Parse tracks lastErr instead of a parseDroppedMetric.
+func (a *PrometheusAdapter) resolveAlertForParse(
+	ctx context.Context,
+	alertIndex int,
+	resource types.ResourceIdentifier,
+	clusterID string,
+	resolver types.OwnerResolver,
+) (fingerprint string, resolvedResource types.ResourceIdentifier, err error) {
+	fingerprint, resolvedResource, err = types.ResolveFingerprintWithCluster(ctx, clusterID, resolver, resource, a.logger)
+	if err != nil {
+		a.logger.Info("Skipping stale alert in batch",
+			"alert", alertIndex, "resource", resource.String(), "error", err)
+		if a.ownerResolutionMetric != nil {
+			a.ownerResolutionMetric.WithLabelValues(resource.Kind, "failed").Inc()
+		}
+		return "", types.ResourceIdentifier{}, err
+	}
+	if a.ownerResolutionMetric != nil {
+		a.ownerResolutionMetric.WithLabelValues(resolvedResource.Kind, "success").Inc()
+	}
+	return fingerprint, resolvedResource, nil
+}
+
+// resolveAlertFingerprint resolves the owner-chain fingerprint for a single
+// alert's target resource, recording success/failure metrics. ok=false means
+// the caller must skip this alert (owner resolution failed) without treating
+// it as a batch-level error. Extracted from parseOneAlertInBatch (funlen).
+func (a *PrometheusAdapter) resolveAlertFingerprint(
+	ctx context.Context,
+	alertIndex int,
+	resource types.ResourceIdentifier,
+	clusterID string,
+	resolver types.OwnerResolver,
+) (fingerprint string, resolvedResource types.ResourceIdentifier, ok bool) {
+	fingerprint, resolvedResource, err := types.ResolveFingerprintWithCluster(ctx, clusterID, resolver, resource, a.logger)
+	if err != nil {
+		a.logger.Info("Alert failed owner resolution in batch, skipping",
+			"alert", alertIndex, "resource", resource.String(), "error", err)
+		if a.ownerResolutionMetric != nil {
+			a.ownerResolutionMetric.WithLabelValues(resource.Kind, "failed").Inc()
+		}
+		if a.parseDroppedMetric != nil {
+			a.parseDroppedMetric.WithLabelValues("owner_resolution_failed").Inc()
+		}
+		return "", types.ResourceIdentifier{}, false
+	}
+	if a.ownerResolutionMetric != nil {
+		a.ownerResolutionMetric.WithLabelValues(resolvedResource.Kind, "success").Inc()
+	}
+	return fingerprint, resolvedResource, true
+}
+
+func (a *PrometheusAdapter) parseOneAlertInBatch(
+	ctx context.Context,
+	alertIndex int,
+	alert AlertManagerAlert,
+	webhook AlertManagerWebhook,
+	rawData []byte,
+) (*types.NormalizedSignal, bool) {
+	resource := a.extractAlertResource(ctx, alert)
+
+	// BR-INTEGRATION-065: Extract cluster label from commonLabels (Thanos federation)
+	clusterID := webhook.CommonLabels[types.ClusterLabelKey]
+	resolver := a.resolverForCluster(ctx, clusterID)
+
+	fingerprint, resolvedResource, ok := a.resolveAlertFingerprint(ctx, alertIndex, resource, clusterID, resolver)
+	if !ok {
+		return nil, false
+	}
+
+	labels := MergeLabels(alert.Labels, webhook.CommonLabels)
+	annotations := MergeAnnotations(alert.Annotations, webhook.CommonAnnotations)
+
+	severity := alert.Labels["severity"]
+	if severity == "" {
+		severity = "unknown"
+	}
+
+	return &types.NormalizedSignal{
+		Fingerprint:  fingerprint,
+		ClusterID:    clusterID,
+		SignalName:   alert.Labels["alertname"],
+		Severity:     severity,
+		Namespace:    resolvedResource.Namespace,
+		Resource:     resolvedResource,
+		Labels:       labels,
+		Annotations:  annotations,
+		FiringTime:   alert.StartsAt,
+		ReceivedTime: time.Now(),
+		SourceType:   SourceTypePrometheusAlert,
+		Source:       a.GetSourceService(),
+		RawPayload:   rawData,
+	}, true
 }
 
 // Validate checks if the parsed signal meets minimum requirements

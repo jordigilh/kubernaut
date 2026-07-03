@@ -119,78 +119,15 @@ func (m *Manager) AtomicStatusUpdate(
 		}
 
 		// 3. Validate phase transition (if phase is changing)
-		if notification.Status.Phase != newPhase {
-			if !isValidPhaseTransition(notification.Status.Phase, newPhase) {
-				return fmt.Errorf("invalid phase transition from %s to %s", notification.Status.Phase, newPhase)
-			}
-
-			notification.Status.Phase = newPhase
-			notification.Status.Reason = notificationv1alpha1.NotificationStatusReason(reason)
-			notification.Status.Message = message
-
-			// Issue #118 Gap 6+7: Set lifecycle timestamps on phase transitions
-			now := metav1.Now()
-			if newPhase == notificationv1alpha1.NotificationPhasePending && notification.Status.QueuedAt == nil {
-				notification.Status.QueuedAt = &now
-			}
-			if newPhase == notificationv1alpha1.NotificationPhaseSending && notification.Status.ProcessingStartedAt == nil {
-				notification.Status.ProcessingStartedAt = &now
-			}
-
-			if isTerminalPhase(newPhase) {
-				notification.Status.CompletionTime = &now
-			}
+		if err := applyPhaseTransition(notification, newPhase, reason, message); err != nil {
+			return err
 		}
 
-		// 4. Record all delivery attempts atomically
-		// De-duplicate attempts to prevent concurrent reconciles from recording the same attempt twice
-		// BUG FIX (Jan 22, 2026): Relaxed deduplication to only reject truly identical attempts
-		// Previous logic rejected legitimate failed attempts with same attempt# due to API propagation lag
-		for _, attempt := range attempts {
-			// Check if this exact attempt already exists (same channel, timestamp, status, and error message)
-			// We NO LONGER check attempt number because concurrent reconciles can assign the same attempt#
-			// before the previous status update propagates (even with apiReader cache bypass).
-			alreadyExists := false
-			for _, existing := range notification.Status.DeliveryAttempts {
-				if existing.Channel == attempt.Channel &&
-					existing.Status == attempt.Status &&
-					existing.Error == attempt.Error &&
-					abs(existing.Timestamp.Sub(attempt.Timestamp.Time)) < time.Second {
-					// Truly identical attempt (same error message at same time)
-					alreadyExists = true
-					break
-				}
-			}
-
-			if alreadyExists {
-				continue // Skip this attempt, it's already recorded
-			}
-
-			notification.Status.DeliveryAttempts = append(notification.Status.DeliveryAttempts, attempt)
-			notification.Status.TotalAttempts++
-		}
+		// 4. Record all delivery attempts atomically (de-duplicated)
+		mergeNewDeliveryAttempts(notification, attempts)
 
 		// BR-NOT-051: Calculate counters based on UNIQUE CHANNELS, not total attempts
-		// DD-E2E-003: SuccessfulDeliveries/FailedDeliveries track channel state, not attempt count
-		// Example: 1 console success + 5 file failures = SuccessfulDeliveries=1, FailedDeliveries=1
-		successfulChannels := make(map[string]bool)
-		failedChannels := make(map[string]bool)
-
-		for _, attempt := range notification.Status.DeliveryAttempts {
-			switch attempt.Status {
-			case notificationv1alpha1.DeliveryAttemptStatusSuccess:
-				successfulChannels[string(attempt.Channel)] = true
-				delete(failedChannels, string(attempt.Channel)) // Remove from failed if it later succeeds
-			case notificationv1alpha1.DeliveryAttemptStatusFailed:
-				// Only count as failed if the channel never succeeded
-				if !successfulChannels[string(attempt.Channel)] {
-					failedChannels[string(attempt.Channel)] = true
-				}
-			}
-		}
-
-		notification.Status.SuccessfulDeliveries = len(successfulChannels)
-		notification.Status.FailedDeliveries = len(failedChannels)
+		recalculateDeliveryCounters(notification)
 
 		// DD-CONTROLLER-001: Track processed generation to prevent duplicate reconciles
 		notification.Status.ObservedGeneration = notification.Generation
@@ -202,6 +139,104 @@ func (m *Manager) AtomicStatusUpdate(
 
 		return nil
 	})
+}
+
+// applyPhaseTransition validates and (if changing) applies the new phase,
+// reason, message, and Issue #118 lifecycle timestamps (QueuedAt,
+// ProcessingStartedAt, CompletionTime) to the notification's status.
+// No-op when the phase is unchanged. Extracted from AtomicStatusUpdate
+// (Wave 6 6b GREEN: gocognit remediation) — pure code motion, no behavior
+// change.
+func applyPhaseTransition(notification *notificationv1alpha1.NotificationRequest, newPhase notificationv1alpha1.NotificationPhase, reason, message string) error {
+	if notification.Status.Phase == newPhase {
+		return nil
+	}
+	if !isValidPhaseTransition(notification.Status.Phase, newPhase) {
+		return fmt.Errorf("invalid phase transition from %s to %s", notification.Status.Phase, newPhase)
+	}
+
+	notification.Status.Phase = newPhase
+	notification.Status.Reason = notificationv1alpha1.NotificationStatusReason(reason)
+	notification.Status.Message = message
+
+	// Issue #118 Gap 6+7: Set lifecycle timestamps on phase transitions
+	now := metav1.Now()
+	if newPhase == notificationv1alpha1.NotificationPhasePending && notification.Status.QueuedAt == nil {
+		notification.Status.QueuedAt = &now
+	}
+	if newPhase == notificationv1alpha1.NotificationPhaseSending && notification.Status.ProcessingStartedAt == nil {
+		notification.Status.ProcessingStartedAt = &now
+	}
+	if isTerminalPhase(newPhase) {
+		notification.Status.CompletionTime = &now
+	}
+	return nil
+}
+
+// mergeNewDeliveryAttempts appends the given attempts to the notification's
+// status, de-duplicating against already-recorded attempts to prevent
+// concurrent reconciles from double-recording the same attempt.
+//
+// BUG FIX (Jan 22, 2026): Relaxed deduplication to only reject truly
+// identical attempts (same channel, status, error, and timestamp within 1s).
+// We no longer check attempt number because concurrent reconciles can assign
+// the same attempt# before the previous status update propagates (even with
+// apiReader cache bypass).
+//
+// Extracted from AtomicStatusUpdate (Wave 6 6b GREEN: gocognit
+// remediation) — pure code motion, no behavior change.
+func mergeNewDeliveryAttempts(notification *notificationv1alpha1.NotificationRequest, attempts []notificationv1alpha1.DeliveryAttempt) {
+	for _, attempt := range attempts {
+		if isDuplicateStatusAttempt(notification.Status.DeliveryAttempts, attempt) {
+			continue
+		}
+		notification.Status.DeliveryAttempts = append(notification.Status.DeliveryAttempts, attempt)
+		notification.Status.TotalAttempts++
+	}
+}
+
+// isDuplicateStatusAttempt checks whether an exact duplicate of attempt
+// (same channel, status, and error message at the same time, within 1s)
+// already exists in the recorded attempts. Extracted from
+// mergeNewDeliveryAttempts (Wave 6 6b GREEN: gocognit remediation) — pure
+// code motion, no behavior change.
+func isDuplicateStatusAttempt(existing []notificationv1alpha1.DeliveryAttempt, attempt notificationv1alpha1.DeliveryAttempt) bool {
+	for _, e := range existing {
+		if e.Channel == attempt.Channel &&
+			e.Status == attempt.Status &&
+			e.Error == attempt.Error &&
+			abs(e.Timestamp.Sub(attempt.Timestamp.Time)) < time.Second {
+			return true
+		}
+	}
+	return false
+}
+
+// recalculateDeliveryCounters recomputes SuccessfulDeliveries/FailedDeliveries
+// based on UNIQUE CHANNELS rather than total attempts (BR-NOT-051,
+// DD-E2E-003). Example: 1 console success + 5 file failures yields
+// SuccessfulDeliveries=1, FailedDeliveries=1. Extracted from
+// AtomicStatusUpdate (Wave 6 6b GREEN: gocognit remediation) — pure code
+// motion, no behavior change.
+func recalculateDeliveryCounters(notification *notificationv1alpha1.NotificationRequest) {
+	successfulChannels := make(map[string]bool)
+	failedChannels := make(map[string]bool)
+
+	for _, attempt := range notification.Status.DeliveryAttempts {
+		switch attempt.Status {
+		case notificationv1alpha1.DeliveryAttemptStatusSuccess:
+			successfulChannels[string(attempt.Channel)] = true
+			delete(failedChannels, string(attempt.Channel)) // Remove from failed if it later succeeds
+		case notificationv1alpha1.DeliveryAttemptStatusFailed:
+			// Only count as failed if the channel never succeeded
+			if !successfulChannels[string(attempt.Channel)] {
+				failedChannels[string(attempt.Channel)] = true
+			}
+		}
+	}
+
+	notification.Status.SuccessfulDeliveries = len(successfulChannels)
+	notification.Status.FailedDeliveries = len(failedChannels)
 }
 
 // UpdatePhase updates the NotificationRequest phase with validation

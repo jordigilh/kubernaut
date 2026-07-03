@@ -289,106 +289,134 @@ func NewMetricsWithRegistry(namespace, subsystem string, reg prometheus.Register
 	// For production (default registry): Reference existing global promauto metrics
 	// For testing (custom registry): Create new isolated metrics
 	if reg == prometheus.DefaultRegisterer {
-		m.AuditLagSeconds = AuditLagSeconds
-		m.WriteDuration = WriteDuration
-		m.ValidationFailures = ValidationFailures
-		m.DLQValidationFailures = DLQValidationFailures
-		m.DLQStreamXAddTotal = DLQStreamXAddTotal
-		m.WorkflowValidationDuration = WorkflowValidationDuration
-		m.DLQDrainBatchTotal = DLQDrainBatchTotal
-		m.RetentionPurgeTotal = RetentionPurgeTotal
-		m.DLQPelPending = DLQPelPending
-		m.ShutdownDLQDrainError = ShutdownDLQDrainError
-		m.RetentionEnabled = RetentionEnabled
+		assignGlobalMetrics(m)
 	} else {
-		// Testing: Create isolated metrics with custom registry
-		// Testing: Create isolated metrics with full names (DD-005 V3.0: Pattern B)
-		m.AuditLagSeconds = prometheus.NewHistogramVec(
-			prometheus.HistogramOpts{
-				Name:    MetricNameAuditLagSeconds, // DD-005 V3.0: Use constant
-				Help:    "Time lag between event occurrence and audit write in seconds",
-				Buckets: []float64{.1, .5, 1, 2, 5, 10, 30, 60},
-			},
-			[]string{"service"},
-		)
-
-		m.WriteDuration = prometheus.NewHistogramVec(
-			prometheus.HistogramOpts{
-				Name:    MetricNameWriteDuration, // DD-005 V3.0: Use constant
-				Help:    "Duration of write operations in seconds",
-				Buckets: prometheus.DefBuckets,
-			},
-			[]string{"table"},
-		)
-
-		m.ValidationFailures = prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameValidationFailures,
-				Help: "Total number of request validation failures",
-			},
-			[]string{"source", "reason"},
-		)
-
-		m.DLQValidationFailures = prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameDLQValidationFailures,
-				Help: "Total number of DLQ message validation failures during replay",
-			},
-			[]string{"audit_type", "reason"},
-		)
-
-		m.DLQStreamXAddTotal = prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameDLQStreamXAddTotal,
-				Help: "Total XADD operations per stream (each may trigger MAXLEN~ trim)",
-			},
-			[]string{"stream"},
-		)
-
-		m.WorkflowValidationDuration = prometheus.NewHistogramVec(
-			prometheus.HistogramOpts{
-				Name:    MetricNameWorkflowValidationDuration,
-				Help:    "Duration of workflow validation phases in seconds",
-				Buckets: []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5},
-			},
-			[]string{"phase", "result"},
-		)
-
-		m.DLQDrainBatchTotal = prometheus.NewCounter(prometheus.CounterOpts{
-			Name: MetricNameDLQDrainBatchTotal,
-			Help: "Total DLQ drain batch operations during shutdown",
-		})
-		m.RetentionPurgeTotal = prometheus.NewCounter(prometheus.CounterOpts{
-			Name: MetricNameRetentionPurgeTotal,
-			Help: "Total retention purge operations",
-		})
-		m.DLQPelPending = prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: MetricNameDLQPelPending,
-			Help: "Number of pending entries in the DLQ PEL",
-		})
-		m.ShutdownDLQDrainError = prometheus.NewCounter(prometheus.CounterOpts{
-			Name: MetricNameShutdownDLQDrainError,
-			Help: "Total DLQ drain errors during shutdown",
-		})
-		m.RetentionEnabled = prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: MetricNameRetentionEnabled,
-			Help: "1 when retention worker is enabled, 0 when disabled",
-		})
-
-		reg.MustRegister(
-			m.AuditLagSeconds,
-			m.WriteDuration,
-			m.ValidationFailures,
-			m.DLQValidationFailures,
-			m.DLQStreamXAddTotal,
-			m.WorkflowValidationDuration,
-			m.DLQDrainBatchTotal,
-			m.RetentionPurgeTotal,
-			m.DLQPelPending,
-			m.ShutdownDLQDrainError,
-			m.RetentionEnabled,
-		)
+		newIsolatedMetrics(m, reg)
 	}
 
 	return m
+}
+
+// assignGlobalMetrics points m's fields at the package-level promauto-registered
+// global metrics (production path: DefaultRegisterer, already registered on
+// package init). Extracted from NewMetricsWithRegistry (Wave 6 6f GREEN:
+// funlen remediation) — pure code motion, no behavior change.
+func assignGlobalMetrics(m *Metrics) {
+	m.AuditLagSeconds = AuditLagSeconds
+	m.WriteDuration = WriteDuration
+	m.ValidationFailures = ValidationFailures
+	m.DLQValidationFailures = DLQValidationFailures
+	m.DLQStreamXAddTotal = DLQStreamXAddTotal
+	m.WorkflowValidationDuration = WorkflowValidationDuration
+	m.DLQDrainBatchTotal = DLQDrainBatchTotal
+	m.RetentionPurgeTotal = RetentionPurgeTotal
+	m.DLQPelPending = DLQPelPending
+	m.ShutdownDLQDrainError = ShutdownDLQDrainError
+	m.RetentionEnabled = RetentionEnabled
+}
+
+// newIsolatedMetrics creates fresh, isolated metric instances on m and
+// registers them against reg (testing path: a custom registry, to avoid
+// duplicate-registration panics against the global DefaultRegisterer).
+// Extracted from NewMetricsWithRegistry (Wave 6 6f GREEN: funlen
+// remediation) — pure code motion, no behavior change.
+func newIsolatedMetrics(m *Metrics, reg prometheus.Registerer) {
+	newIsolatedHistogramMetrics(m)
+	newIsolatedCounterAndGaugeMetrics(m)
+
+	reg.MustRegister(
+		m.AuditLagSeconds,
+		m.WriteDuration,
+		m.ValidationFailures,
+		m.DLQValidationFailures,
+		m.DLQStreamXAddTotal,
+		m.WorkflowValidationDuration,
+		m.DLQDrainBatchTotal,
+		m.RetentionPurgeTotal,
+		m.DLQPelPending,
+		m.ShutdownDLQDrainError,
+		m.RetentionEnabled,
+	)
+}
+
+// newIsolatedHistogramMetrics creates the isolated-registry histogram
+// metrics. Extracted from newIsolatedMetrics (Wave 6 6f GREEN: funlen
+// remediation) — pure code motion, no behavior change.
+func newIsolatedHistogramMetrics(m *Metrics) {
+	m.AuditLagSeconds = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    MetricNameAuditLagSeconds, // DD-005 V3.0: Use constant
+			Help:    "Time lag between event occurrence and audit write in seconds",
+			Buckets: []float64{.1, .5, 1, 2, 5, 10, 30, 60},
+		},
+		[]string{"service"},
+	)
+
+	m.WriteDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    MetricNameWriteDuration, // DD-005 V3.0: Use constant
+			Help:    "Duration of write operations in seconds",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"table"},
+	)
+
+	m.WorkflowValidationDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    MetricNameWorkflowValidationDuration,
+			Help:    "Duration of workflow validation phases in seconds",
+			Buckets: []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5},
+		},
+		[]string{"phase", "result"},
+	)
+}
+
+// newIsolatedCounterAndGaugeMetrics creates the isolated-registry counter and
+// gauge metrics. Extracted from newIsolatedMetrics (Wave 6 6f GREEN: funlen
+// remediation) — pure code motion, no behavior change.
+func newIsolatedCounterAndGaugeMetrics(m *Metrics) {
+	m.ValidationFailures = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: MetricNameValidationFailures,
+			Help: "Total number of request validation failures",
+		},
+		[]string{"source", "reason"},
+	)
+
+	m.DLQValidationFailures = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: MetricNameDLQValidationFailures,
+			Help: "Total number of DLQ message validation failures during replay",
+		},
+		[]string{"audit_type", "reason"},
+	)
+
+	m.DLQStreamXAddTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: MetricNameDLQStreamXAddTotal,
+			Help: "Total XADD operations per stream (each may trigger MAXLEN~ trim)",
+		},
+		[]string{"stream"},
+	)
+
+	m.DLQDrainBatchTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: MetricNameDLQDrainBatchTotal,
+		Help: "Total DLQ drain batch operations during shutdown",
+	})
+	m.RetentionPurgeTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: MetricNameRetentionPurgeTotal,
+		Help: "Total retention purge operations",
+	})
+	m.DLQPelPending = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: MetricNameDLQPelPending,
+		Help: "Number of pending entries in the DLQ PEL",
+	})
+	m.ShutdownDLQDrainError = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: MetricNameShutdownDLQDrainError,
+		Help: "Total DLQ drain errors during shutdown",
+	})
+	m.RetentionEnabled = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: MetricNameRetentionEnabled,
+		Help: "1 when retention worker is enabled, 0 when disabled",
+	})
 }

@@ -71,14 +71,17 @@ var _ = Describe("Golden Snapshot — WFP Path (UT-EM-254-001, #254)", func() {
 		cfg.PrometheusEnabled = false
 		cfg.AlertManagerEnabled = false
 
-		r := controller.NewReconciler(
-			fakeClient, fakeClient,
-			s, recorder,
-			emmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			nil, nil,
-			nil, nil,
-			cfg,
-		)
+		r := controller.NewReconciler(controller.ReconcilerDeps{
+			Client:             fakeClient,
+			APIReader:          fakeClient,
+			Scheme:             s,
+			Recorder:           recorder,
+			Metrics:            emmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			PrometheusClient:   nil,
+			AlertManagerClient: nil,
+			AuditManager:       nil,
+			DSQuerier:          nil,
+		}, cfg)
 		return r, fakeClient
 	}
 

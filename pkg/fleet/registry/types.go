@@ -61,8 +61,11 @@ type ToolPrefixResolver interface {
 	ToolPrefixFor(clusterID string) string
 }
 
-// ClusterRegistry provides access to discovered managed clusters.
-type ClusterRegistry interface {
+// ClusterQuerier provides read-only access to discovered managed clusters.
+// Split out from ClusterRegistry for ISP (GO-ANTIPATTERN-AUDIT-2026-07-01
+// Wave 0b) — most consumers (tools, config resolvers) only ever query the
+// registry and never manage its watcher lifecycle.
+type ClusterQuerier interface {
 	// List returns all currently known managed clusters.
 	List() []ClusterInfo
 	// Get returns info for a specific cluster by ID, or false if not found.
@@ -72,8 +75,26 @@ type ClusterRegistry interface {
 	WatchClusters() <-chan ClusterEvent
 	// Ready reports whether the registry has completed at least one successful sync.
 	Ready() bool
+}
+
+// ClusterRegistryLifecycle manages the registry's background watcher. Split
+// out from ClusterRegistry for ISP (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 0b)
+// — only the owning binary (e.g. cmd/fleetmetadatacache) starts/stops the
+// watcher; every other consumer only needs ClusterQuerier.
+type ClusterRegistryLifecycle interface {
 	// Start begins watching for MCP Gateway CRDs.
 	Start(ctx context.Context) error
 	// Stop halts the watcher and closes subscriber channels.
 	Stop()
+}
+
+// ClusterRegistry provides access to discovered managed clusters and
+// manages the underlying watcher lifecycle. Kept as a named union — rather
+// than inlining the two interfaces at call sites — so existing implementers
+// (EAIGWRegistry, KuadrantRegistry) and mocks (which already implement
+// every method) need no changes (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 0b;
+// see docs/architecture/audits for rationale).
+type ClusterRegistry interface {
+	ClusterQuerier
+	ClusterRegistryLifecycle
 }

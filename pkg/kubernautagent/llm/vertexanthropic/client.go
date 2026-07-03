@@ -194,48 +194,50 @@ func (c *Client) buildParams(req llm.ChatRequest) anthropic.MessageNewParams {
 		params.Temperature = anthropic.Float(*req.Options.Temperature)
 	}
 
+	system, messages := convertMessagesToAnthropic(req.Messages)
+	params.System = system
+	params.Messages = messages
+
+	if len(req.Tools) > 0 {
+		params.Tools = buildAnthropicTools(req.Tools, c.logger)
+	}
+
+	return params
+}
+
+// convertMessagesToAnthropic translates Kubernaut's role-tagged message
+// history into the Anthropic Messages API's system block + message list.
+// Consecutive "tool" messages are buffered and flushed as a single user
+// message (Anthropic requires all tool_result blocks for one assistant turn
+// to be grouped into one user message), flushing whenever a non-tool message
+// is encountered or at the end of the history.
+func convertMessagesToAnthropic(messages []llm.Message) ([]anthropic.TextBlockParam, []anthropic.MessageParam) {
+	var system []anthropic.TextBlockParam
+	var msgs []anthropic.MessageParam
+
 	var pendingToolResults []anthropic.ContentBlockParamUnion
 	flushToolResults := func() {
 		if len(pendingToolResults) > 0 {
-			params.Messages = append(params.Messages,
-				anthropic.NewUserMessage(pendingToolResults...))
+			msgs = append(msgs, anthropic.NewUserMessage(pendingToolResults...))
 			pendingToolResults = nil
 		}
 	}
 
-	for _, m := range req.Messages {
+	for _, m := range messages {
 		if m.Role != "tool" {
 			flushToolResults()
 		}
 		switch m.Role {
 		case "system":
-			params.System = []anthropic.TextBlockParam{
+			system = []anthropic.TextBlockParam{
 				{Text: m.Content},
 			}
 		case "user":
-			params.Messages = append(params.Messages,
-				anthropic.NewUserMessage(anthropic.NewTextBlock(m.Content)))
+			msgs = append(msgs, anthropic.NewUserMessage(anthropic.NewTextBlock(m.Content)))
 		case "assistant":
-			if len(m.ToolCalls) > 0 {
-				var parts []anthropic.ContentBlockParamUnion
-				if m.Content != "" {
-					parts = append(parts, anthropic.NewTextBlock(m.Content))
-				}
-				for _, tc := range m.ToolCalls {
-					var input any
-					if tc.Arguments != "" {
-						input = json.RawMessage(tc.Arguments)
-					} else {
-						input = json.RawMessage("{}")
-					}
-					parts = append(parts, anthropic.NewToolUseBlock(tc.ID, input, tc.Name))
-				}
-				params.Messages = append(params.Messages,
-					anthropic.NewAssistantMessage(parts...))
-		} else if m.Content != "" {
-			params.Messages = append(params.Messages,
-				anthropic.NewAssistantMessage(anthropic.NewTextBlock(m.Content)))
-		}
+			if am, ok := convertAssistantMessage(m); ok {
+				msgs = append(msgs, am)
+			}
 		case "tool":
 			pendingToolResults = append(pendingToolResults,
 				anthropic.NewToolResultBlock(m.ToolCallID, m.Content, false))
@@ -243,22 +245,52 @@ func (c *Client) buildParams(req llm.ChatRequest) anthropic.MessageNewParams {
 	}
 	flushToolResults()
 
-	if len(req.Tools) > 0 {
-		var tools []anthropic.ToolUnionParam
-		for _, td := range req.Tools {
-			schema := parseInputSchema(td.Parameters, c.logger)
-			tools = append(tools, anthropic.ToolUnionParam{
-				OfTool: &anthropic.ToolParam{
-					Name:        td.Name,
-					Description: anthropic.String(td.Description),
-					InputSchema: schema,
-				},
-			})
-		}
-		params.Tools = tools
-	}
+	return system, msgs
+}
 
-	return params
+// convertAssistantMessage builds the Anthropic assistant message for a
+// single Kubernaut assistant-role message (text and/or tool_use blocks).
+// Returns ok=false when there is nothing to emit (no content, no tool calls).
+func convertAssistantMessage(m llm.Message) (anthropic.MessageParam, bool) {
+	if len(m.ToolCalls) > 0 {
+		var parts []anthropic.ContentBlockParamUnion
+		if m.Content != "" {
+			parts = append(parts, anthropic.NewTextBlock(m.Content))
+		}
+		for _, tc := range m.ToolCalls {
+			var input any
+			if tc.Arguments != "" {
+				input = json.RawMessage(tc.Arguments)
+			} else {
+				input = json.RawMessage("{}")
+			}
+			parts = append(parts, anthropic.NewToolUseBlock(tc.ID, input, tc.Name))
+		}
+		return anthropic.NewAssistantMessage(parts...), true
+	}
+	if m.Content != "" {
+		return anthropic.NewAssistantMessage(anthropic.NewTextBlock(m.Content)), true
+	}
+	return anthropic.MessageParam{}, false
+}
+
+// buildAnthropicTools translates Kubernaut's provider-agnostic tool
+// definitions into Anthropic's ToolUnionParam list, tolerating malformed
+// parameter schemas (logged, falls back to an empty schema) rather than
+// failing the whole request.
+func buildAnthropicTools(toolDefs []llm.ToolDefinition, logger logr.Logger) []anthropic.ToolUnionParam {
+	tools := make([]anthropic.ToolUnionParam, 0, len(toolDefs))
+	for _, td := range toolDefs {
+		schema := parseInputSchema(td.Parameters, logger)
+		tools = append(tools, anthropic.ToolUnionParam{
+			OfTool: &anthropic.ToolParam{
+				Name:        td.Name,
+				Description: anthropic.String(td.Description),
+				InputSchema: schema,
+			},
+		})
+	}
+	return tools
 }
 
 func parseInputSchema(raw json.RawMessage, logger logr.Logger) anthropic.ToolInputSchemaParam {

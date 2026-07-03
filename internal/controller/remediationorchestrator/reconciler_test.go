@@ -67,9 +67,18 @@ var _ = Describe("BR-ORCH-025: RemediationOrchestrator Controller", func() {
 		// Create fake client and reconciler
 		// Audit store is nil for unit tests (DD-AUDIT-003 compliant - audit is optional)
 		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-		timeoutConfig := prodcontroller.TimeoutConfig{}                                                                                                                                                                       // Use default timeout config
-		recorder := record.NewFakeRecorder(20)                                                                                                                                                                                 // DD-EVENT-001: FakeRecorder for K8s event assertions
-		reconciler = prodcontroller.NewReconciler(fakeClient, fakeClient, scheme, nil, recorder, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()), timeoutConfig, nil) // Use default routing (will be created)
+		timeoutConfig := prodcontroller.TimeoutConfig{} // Use default timeout config
+		recorder := record.NewFakeRecorder(20)          // DD-EVENT-001: FakeRecorder for K8s event assertions
+		reconciler = prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+			Client:        fakeClient,
+			APIReader:     fakeClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			Timeouts:      timeoutConfig,
+			RoutingEngine: nil,
+		}) // Use default routing (will be created)
 	})
 
 	Describe("NewReconciler", func() {

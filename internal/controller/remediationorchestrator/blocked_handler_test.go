@@ -37,10 +37,18 @@ import (
 
 func noopBlockedCallbacks() prodcontroller.BlockedCallbacks {
 	return prodcontroller.BlockedCallbacks{
-		RecheckResourceBusyBlock:      func(_ context.Context, _ *remediationv1.RemediationRequest) (ctrl.Result, error) { return ctrl.Result{}, nil },
-		RecheckDuplicateBlock:         func(_ context.Context, _ *remediationv1.RemediationRequest) (ctrl.Result, error) { return ctrl.Result{}, nil },
-		HandleUnmanagedResourceExpiry: func(_ context.Context, _ *remediationv1.RemediationRequest) (ctrl.Result, error) { return ctrl.Result{}, nil },
-		TransitionToFailedTerminal:    func(_ context.Context, _ *remediationv1.RemediationRequest, _ remediationv1.FailurePhase, _ error) (ctrl.Result, error) { return ctrl.Result{}, nil },
+		RecheckResourceBusyBlock: func(_ context.Context, _ *remediationv1.RemediationRequest) (ctrl.Result, error) {
+			return ctrl.Result{}, nil
+		},
+		RecheckDuplicateBlock: func(_ context.Context, _ *remediationv1.RemediationRequest) (ctrl.Result, error) {
+			return ctrl.Result{}, nil
+		},
+		HandleUnmanagedResourceExpiry: func(_ context.Context, _ *remediationv1.RemediationRequest) (ctrl.Result, error) {
+			return ctrl.Result{}, nil
+		},
+		TransitionToFailedTerminal: func(_ context.Context, _ *remediationv1.RemediationRequest, _ remediationv1.FailurePhase, _ error) (ctrl.Result, error) {
+			return ctrl.Result{}, nil
+		},
 	}
 }
 

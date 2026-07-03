@@ -87,7 +87,7 @@ var defaultCurves = []tls.CurveID{
 // OldProfile returns the "Old" TLS security profile (TLS 1.0+, broad cipher set).
 // This matches OpenShift's Old profile for backward-compatible environments.
 func OldProfile() *SecurityProfile {
-	ciphers := make([]uint16, len(intermediateCiphers))
+	ciphers := make([]uint16, len(intermediateCiphers), len(intermediateCiphers)+9)
 	copy(ciphers, intermediateCiphers)
 	ciphers = append(ciphers,
 		tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256,

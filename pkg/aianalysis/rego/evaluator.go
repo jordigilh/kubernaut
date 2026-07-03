@@ -150,8 +150,34 @@ func NewEvaluator(cfg Config, logger logr.Logger) *Evaluator {
 // BR-AI-014: Graceful degradation on errors
 // ADR-050: Uses cached compiled policy (no file I/O or compilation overhead)
 func (e *Evaluator) Evaluate(ctx context.Context, input *PolicyInput) (*PolicyResult, error) {
-	// ✅ REFACTOR: Use cached compiled policy (per ADR-050)
-	// Eliminates 2-5ms overhead (file I/O + compilation) per call
+	query, degradedResult := e.resolveCompiledQuery(ctx)
+	if degradedResult != nil {
+		return degradedResult, nil
+	}
+
+	inputMap := buildRegoInputMap(input)
+
+	results, err := query.Eval(ctx, rego.EvalInput(inputMap))
+	if err != nil {
+		// BR-AI-014: Graceful degradation - evaluation error
+		return &PolicyResult{
+			ApprovalRequired: true,
+			Reason:           fmt.Sprintf("Policy evaluation error: %v - defaulting to manual approval", err),
+			Degraded:         true,
+		}, nil
+	}
+
+	return extractPolicyResult(results), nil
+}
+
+// resolveCompiledQuery returns the cached compiled policy (per ADR-050),
+// eliminating 2-5ms of file I/O + compilation overhead per call. If no
+// policy is cached (StartHotReload() was not called, e.g. legacy tests),
+// it falls back to reading and compiling the policy file inline. On
+// failure, it returns a non-nil degraded PolicyResult per BR-AI-014
+// graceful degradation. Extracted from Evaluate (Wave 6 6c GREEN: funlen
+// remediation) — pure code motion, no behavior change.
+func (e *Evaluator) resolveCompiledQuery(ctx context.Context) (rego.PreparedEvalQuery, *PolicyResult) {
 	e.mu.RLock()
 	query := e.compiledQuery
 	e.mu.RUnlock()
@@ -159,33 +185,40 @@ func (e *Evaluator) Evaluate(ctx context.Context, input *PolicyInput) (*PolicyRe
 	// BR-AI-014: Graceful degradation if no policy loaded
 	// This can only happen if StartHotReload() was not called
 	// (e.g., in legacy tests that don't use hot-reload)
-	if query == (rego.PreparedEvalQuery{}) {
-		// Fallback: Read policy file (legacy behavior for backward compatibility)
-		policyContent, err := os.ReadFile(e.policyPath)
-		if err != nil {
-			return &PolicyResult{
-				ApprovalRequired: true,
-				Reason:           fmt.Sprintf("Policy file not found: %v - defaulting to manual approval", err),
-				Degraded:         true,
-			}, nil
-		}
+	if query != (rego.PreparedEvalQuery{}) {
+		return query, nil
+	}
 
-		// Compile policy (legacy path - only for backward compatibility)
-		query, err = rego.New(
-			rego.Query("data.aianalysis.approval"),
-			rego.Module("approval.rego", string(policyContent)),
-		).PrepareForEval(ctx)
-
-		if err != nil {
-			return &PolicyResult{
-				ApprovalRequired: true,
-				Reason:           fmt.Sprintf("Policy compilation failed: %v - defaulting to manual approval", err),
-				Degraded:         true,
-			}, nil
+	// Fallback: Read policy file (legacy behavior for backward compatibility)
+	policyContent, err := os.ReadFile(e.policyPath)
+	if err != nil {
+		return query, &PolicyResult{
+			ApprovalRequired: true,
+			Reason:           fmt.Sprintf("Policy file not found: %v - defaulting to manual approval", err),
+			Degraded:         true,
 		}
 	}
 
-	// Build input map for Rego (matches PolicyInput JSON tags)
+	// Compile policy (legacy path - only for backward compatibility)
+	query, err = rego.New(
+		rego.Query("data.aianalysis.approval"),
+		rego.Module("approval.rego", string(policyContent)),
+	).PrepareForEval(ctx)
+	if err != nil {
+		return query, &PolicyResult{
+			ApprovalRequired: true,
+			Reason:           fmt.Sprintf("Policy compilation failed: %v - defaulting to manual approval", err),
+			Degraded:         true,
+		}
+	}
+
+	return query, nil
+}
+
+// buildRegoInputMap builds the Rego evaluation input map (matches
+// PolicyInput JSON tags). Extracted from Evaluate (Wave 6 6c GREEN: funlen
+// remediation) — pure code motion, no behavior change.
+func buildRegoInputMap(input *PolicyInput) map[string]interface{} {
 	inputMap := map[string]interface{}{
 		// Signal context
 		"signal_type":       input.SignalType,
@@ -228,17 +261,15 @@ func (e *Evaluator) Evaluate(ctx context.Context, input *PolicyInput) (*PolicyRe
 		}
 	}
 
-	// Evaluate policy
-	results, err := query.Eval(ctx, rego.EvalInput(inputMap))
-	if err != nil {
-		// BR-AI-014: Graceful degradation - evaluation error
-		return &PolicyResult{
-			ApprovalRequired: true,
-			Reason:           fmt.Sprintf("Policy evaluation error: %v - defaulting to manual approval", err),
-			Degraded:         true,
-		}, nil
-	}
+	return inputMap
+}
 
+// extractPolicyResult extracts the approval decision from the raw Rego
+// evaluation results, applying BR-AI-014 graceful-degradation defaults
+// when the result shape is missing or unexpected. Extracted from Evaluate
+// (Wave 6 6c GREEN: funlen remediation) — pure code motion, no behavior
+// change.
+func extractPolicyResult(results rego.ResultSet) *PolicyResult {
 	// Check for results
 	if len(results) == 0 || len(results[0].Expressions) == 0 {
 		// BR-AI-014: Graceful degradation - no result
@@ -246,7 +277,7 @@ func (e *Evaluator) Evaluate(ctx context.Context, input *PolicyInput) (*PolicyRe
 			ApprovalRequired: true,
 			Reason:           "No policy result - defaulting to manual approval",
 			Degraded:         true,
-		}, nil
+		}
 	}
 
 	// Extract result map
@@ -257,7 +288,7 @@ func (e *Evaluator) Evaluate(ctx context.Context, input *PolicyInput) (*PolicyRe
 			ApprovalRequired: true,
 			Reason:           fmt.Sprintf("Invalid policy result format (got %T) - defaulting to manual approval", results[0].Expressions[0].Value),
 			Degraded:         true,
-		}, nil
+		}
 	}
 
 	// Extract approval decision
@@ -280,7 +311,7 @@ func (e *Evaluator) Evaluate(ctx context.Context, input *PolicyInput) (*PolicyRe
 		ApprovalRequired: approvalRequired,
 		Reason:           reason,
 		Degraded:         false,
-	}, nil
+	}
 }
 
 // ========================================

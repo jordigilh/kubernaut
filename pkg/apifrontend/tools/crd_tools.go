@@ -8,24 +8,17 @@ import (
 	"time"
 
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/watch"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
 
-	"github.com/go-logr/logr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	aiav1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
-	eav1alpha1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
-	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
-	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
 )
-
 
 // ListRemediationsArgs defines the input for kubernaut_list_remediations.
 type ListRemediationsArgs struct {
@@ -185,14 +178,14 @@ type ListApprovalRequestsResult struct {
 
 // ApprovalRequestSummary is a compact view of a RemediationApprovalRequest.
 type ApprovalRequestSummary struct {
-	Name                string  `json:"name"`
-	Namespace           string  `json:"namespace"`
-	Decision            string  `json:"decision"`
-	RemediationRequest  string  `json:"remediation_request"`
-	Confidence          float64 `json:"confidence"`
-	ConfidenceLevel     string  `json:"confidence_level"`
-	TimeRemaining       string  `json:"time_remaining,omitempty"`
-	RequiredBy          string  `json:"required_by,omitempty"`
+	Name               string  `json:"name"`
+	Namespace          string  `json:"namespace"`
+	Decision           string  `json:"decision"`
+	RemediationRequest string  `json:"remediation_request"`
+	Confidence         float64 `json:"confidence"`
+	ConfidenceLevel    string  `json:"confidence_level"`
+	TimeRemaining      string  `json:"time_remaining,omitempty"`
+	RequiredBy         string  `json:"required_by,omitempty"`
 }
 
 // HandleListApprovalRequests implements the kubernaut_list_approval_requests logic.
@@ -293,25 +286,25 @@ func (a GetApprovalRequestArgs) AuditFields() map[string]string {
 
 // GetApprovalRequestResult is the detailed output of kubernaut_get_approval_request.
 type GetApprovalRequestResult struct {
-	Name                   string                      `json:"name"`
-	Namespace              string                      `json:"namespace"`
-	RemediationRequest     string                      `json:"remediation_request"`
-	AIAnalysis             string                      `json:"ai_analysis"`
-	Confidence             float64                     `json:"confidence"`
-	ConfidenceLevel        string                      `json:"confidence_level"`
-	Reason                 string                      `json:"reason"`
-	InvestigationSummary   string                      `json:"investigation_summary"`
-	WhyApprovalRequired    string                      `json:"why_approval_required"`
-	RecommendedWorkflow    RecommendedWorkflowInfo     `json:"recommended_workflow"`
-	RecommendedActions     []RecommendedActionSummary  `json:"recommended_actions"`
-	EvidenceCollected      []string                    `json:"evidence_collected"`
-	AlternativesConsidered []AlternativeSummary        `json:"alternatives_considered"`
-	RequiredBy             string                      `json:"required_by,omitempty"`
-	Decision               string                      `json:"decision"`
-	DecidedBy              string                      `json:"decided_by,omitempty"`
-	DecidedAt              string                      `json:"decided_at,omitempty"`
-	TimeRemaining          string                      `json:"time_remaining,omitempty"`
-	Expired                bool                        `json:"expired"`
+	Name                   string                     `json:"name"`
+	Namespace              string                     `json:"namespace"`
+	RemediationRequest     string                     `json:"remediation_request"`
+	AIAnalysis             string                     `json:"ai_analysis"`
+	Confidence             float64                    `json:"confidence"`
+	ConfidenceLevel        string                     `json:"confidence_level"`
+	Reason                 string                     `json:"reason"`
+	InvestigationSummary   string                     `json:"investigation_summary"`
+	WhyApprovalRequired    string                     `json:"why_approval_required"`
+	RecommendedWorkflow    RecommendedWorkflowInfo    `json:"recommended_workflow"`
+	RecommendedActions     []RecommendedActionSummary `json:"recommended_actions"`
+	EvidenceCollected      []string                   `json:"evidence_collected"`
+	AlternativesConsidered []AlternativeSummary       `json:"alternatives_considered"`
+	RequiredBy             string                     `json:"required_by,omitempty"`
+	Decision               string                     `json:"decision"`
+	DecidedBy              string                     `json:"decided_by,omitempty"`
+	DecidedAt              string                     `json:"decided_at,omitempty"`
+	TimeRemaining          string                     `json:"time_remaining,omitempty"`
+	Expired                bool                       `json:"expired"`
 }
 
 // RecommendedWorkflowInfo is a compact view of a recommended workflow in an approval request.
@@ -610,490 +603,4 @@ func NewCancelRemediationTool(client crclient.Client, controllerNS string) (tool
 		args.Namespace = controllerNS
 		return HandleCancelRemediation(ctx, client, args)
 	})
-}
-
-// WatchArgs defines the input for kubernaut_watch.
-type WatchArgs struct {
-	Namespace string `json:"-"`
-	RRID      string `json:"rr_id,omitempty"`
-	Name      string `json:"name,omitempty"`
-}
-
-// WatchEvent represents a single status change event.
-type WatchEvent struct {
-	Timestamp string `json:"timestamp"`
-	Resource  string `json:"resource"`
-	Phase     string `json:"phase"`
-	Message   string `json:"message,omitempty"`
-}
-
-// WatchResult is the output of kubernaut_watch.
-type WatchResult struct {
-	Events  []WatchEvent `json:"events"`
-	Status  string       `json:"status"`
-	Outcome string       `json:"outcome,omitempty"`
-	Message string       `json:"message,omitempty"`
-}
-
-// maxWatchDuration is the maximum time HandleWatch will block before returning.
-const maxWatchDuration = 15 * time.Minute
-
-// HandleWatch implements the kubernaut_watch logic with progressive SSE
-// updates via EventBridge and RAR approval lifecycle tracking.
-// typedClient is the controller-runtime client for typed CRD operations (EA);
-// may be nil (graceful degradation — EA metadata omitted).
-func HandleWatch(ctx context.Context, client crclient.WithWatch, args WatchArgs) (WatchResult, error) {
-	if client == nil {
-		return WatchResult{}, ErrK8sUnavailable
-	}
-	ns, name, err := ParseRRID(args.RRID, args.Namespace, args.Name)
-	if err != nil {
-		return WatchResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
-	}
-	args.Namespace = ns
-	args.Name = name
-	if err := validate.Namespace(args.Namespace); err != nil {
-		return WatchResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
-	}
-	if err := validate.ResourceName(args.Name); err != nil {
-		return WatchResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
-	}
-
-	logger := logr.FromContextOrDiscard(ctx)
-
-	var rrCheck remediationv1.RemediationRequest
-	if err := client.Get(ctx, crclient.ObjectKey{Namespace: args.Namespace, Name: args.Name}, &rrCheck); err != nil {
-		return WatchResult{}, ToUserFriendlyError(err)
-	}
-
-	watchCtx, cancel := context.WithTimeout(ctx, maxWatchDuration)
-	defer cancel()
-
-	rrWatcher, err := client.Watch(watchCtx, &remediationv1.RemediationRequestList{},
-		crclient.InNamespace(args.Namespace),
-		crclient.MatchingFields{"metadata.name": args.Name})
-	if err != nil {
-		return WatchResult{}, ToUserFriendlyError(err)
-	}
-	defer rrWatcher.Stop()
-
-	rarName := fmt.Sprintf("rar-%s", args.Name)
-	var rarCh <-chan watch.Event
-	rarWatcher, rarErr := client.Watch(watchCtx, &remediationv1.RemediationApprovalRequestList{},
-		crclient.InNamespace(args.Namespace),
-		crclient.MatchingFields{"metadata.name": rarName})
-	if rarErr != nil {
-		logger.V(1).Info("RAR watch unavailable, continuing with RR-only watch",
-			"rar_name", rarName, "error", rarErr)
-	} else {
-		defer rarWatcher.Stop()
-		rarCh = rarWatcher.ResultChan()
-	}
-
-	var (
-		events             []WatchEvent
-		lastSeenPhase      string
-		lastRARDecision    string
-		startedAt          = time.Now().UTC().Format(time.RFC3339)
-		eaCh               <-chan watch.Event
-		prevEA             *eav1alpha1.EffectivenessAssessment
-		verifyingStartedAt time.Time
-	)
-
-	_ = launcher.EmitStatusSafe(ctx, "Watching remediation progress...\n")
-
-	for {
-		select {
-		case <-ctx.Done():
-			return WatchResult{Events: events, Status: "cancelled"}, nil
-
-		case evt, ok := <-rrWatcher.ResultChan():
-			if !ok {
-				return WatchResult{Events: events, Status: "completed"}, nil
-			}
-			if evt.Type != watch.Modified && evt.Type != watch.Added {
-				continue
-			}
-			rrObj, ok := evt.Object.(*remediationv1.RemediationRequest)
-			if !ok {
-				continue
-			}
-			phase := string(rrObj.Status.OverallPhase)
-			if phase == lastSeenPhase {
-				continue
-			}
-			lastSeenPhase = phase
-			launcher.UpdatePhaseSafe(ctx, phase)
-			msg := fmt.Sprintf("Phase changed to %s", phase)
-			events = append(events, WatchEvent{
-				Timestamp: time.Now().UTC().Format(time.RFC3339),
-				Resource:  "RemediationRequest",
-				Phase:     phase,
-				Message:   msg,
-			})
-			if phase == "Verifying" {
-				verifyingStartedAt = time.Now().UTC()
-				eaName := ResolveEAName(rrObj)
-				timing := FetchEATimingMetadata(ctx, client, nil, args.Namespace, eaName)
-
-				statusMeta := map[string]any{"type": launcher.MetaTypeStatus}
-				if timing.StabilizationWindow != "" {
-					statusMeta["stabilization_window"] = timing.StabilizationWindow
-					statusMeta["started_at"] = verifyingStartedAt.Format(time.RFC3339)
-				}
-				if timing.ValidityDeadline != "" {
-					statusMeta["validity_deadline"] = timing.ValidityDeadline
-				}
-				_ = launcher.EmitStatusWithMetaSafe(ctx, fmt.Sprintf("Remediation phase: %s\n", phase), statusMeta)
-
-				if eaCh == nil {
-					eaList := &eav1alpha1.EffectivenessAssessmentList{}
-					eaWatcher, eaErr := client.Watch(watchCtx, eaList,
-						crclient.InNamespace(args.Namespace),
-						crclient.MatchingFields{"metadata.name": eaName})
-					if eaErr != nil {
-						logger.V(1).Info("EA watch unavailable, verification_step events will not be emitted",
-							"ea_name", eaName, "error", eaErr)
-					} else {
-						defer eaWatcher.Stop()
-						eaCh = eaWatcher.ResultChan()
-					}
-				}
-			} else {
-				_ = launcher.EmitStatusSafe(ctx, fmt.Sprintf("Remediation phase: %s\n", phase))
-			}
-
-			completedAt := ""
-			if IsTerminalPhase(phase) {
-				completedAt = time.Now().UTC().Format(time.RFC3339)
-			}
-			progressMeta := map[string]any{"type": "execution_progress"}
-			if phase == "Verifying" {
-				eaName := ResolveEAName(rrObj)
-				timing := FetchEATimingMetadata(ctx, client, nil, args.Namespace, eaName)
-				if timing.StabilizationWindow != "" {
-					progressMeta["stabilization_window"] = timing.StabilizationWindow
-				}
-			}
-			snapshot := BuildProgressSnapshot(phase, args.Name, startedAt, completedAt)
-			_ = launcher.EmitArtifactSafe(ctx, snapshot, fmt.Sprintf("Progress: %s", phase), progressMeta)
-
-			if IsTerminalPhase(phase) {
-				return WatchResult{Events: events, Status: "completed", Outcome: rrObj.Status.Outcome, Message: rrObj.Status.Message}, nil
-			}
-			if phase == "AwaitingApproval" {
-				var rarObj remediationv1.RemediationApprovalRequest
-				getErr := client.Get(ctx, crclient.ObjectKey{Namespace: args.Namespace, Name: rarName}, &rarObj)
-				if getErr == nil {
-					if payload, mErr := MarshalApprovalRequestPayload(&rarObj); mErr == nil {
-						_ = launcher.EmitStructuredMetaSafe(ctx, payload, map[string]any{"type": launcher.MetaTypeApprovalRequest})
-					}
-					if rarObj.Status.Decision != "" {
-						if resolved, mErr := MarshalApprovalResolvedPayload(&rarObj); mErr == nil {
-							_ = launcher.EmitStructuredMetaSafe(ctx, resolved, map[string]any{"type": launcher.MetaTypeApprovalRequestResolved})
-						}
-					}
-				} else {
-					logger.V(1).Info("RAR GET for structured event failed, continuing with text-only",
-						"rar_name", rarName, "error", getErr)
-				}
-				return WatchResult{Events: events, Status: "awaiting_approval"}, nil
-			}
-
-		case evt, ok := <-rarCh:
-			if !ok {
-				rarCh = nil
-				continue
-			}
-			if evt.Type != watch.Modified && evt.Type != watch.Added {
-				continue
-			}
-			rarObj, ok := evt.Object.(*remediationv1.RemediationApprovalRequest)
-			if !ok {
-				continue
-			}
-			decision := string(rarObj.Status.Decision)
-			if decision == lastRARDecision {
-				continue
-			}
-			lastRARDecision = decision
-
-			var rarMsg string
-			switch decision {
-			case "":
-				rarMsg = "Approval requested — awaiting human decision"
-			case "Approved":
-				if rarObj.Status.DecidedBy != "" {
-					rarMsg = fmt.Sprintf("Approval granted by %s", rarObj.Status.DecidedBy)
-				} else {
-					rarMsg = "Approval granted"
-				}
-			case "Rejected":
-				if rarObj.Status.DecidedBy != "" {
-					rarMsg = fmt.Sprintf("Approval rejected by %s", rarObj.Status.DecidedBy)
-				} else {
-					rarMsg = "Approval rejected"
-				}
-			case "Expired":
-				rarMsg = "Approval expired"
-			default:
-				rarMsg = fmt.Sprintf("Approval status: %s", decision)
-			}
-
-			events = append(events, WatchEvent{
-				Timestamp: time.Now().UTC().Format(time.RFC3339),
-				Resource:  "RemediationApprovalRequest",
-				Phase:     decision,
-				Message:   rarMsg,
-			})
-			_ = launcher.EmitStatusSafe(ctx, rarMsg+"\n")
-			if resolved, mErr := MarshalApprovalResolvedPayload(rarObj); mErr == nil {
-				_ = launcher.EmitStructuredMetaSafe(ctx, resolved, map[string]any{"type": launcher.MetaTypeApprovalRequestResolved})
-			}
-
-		case evt, ok := <-eaCh:
-			if !ok {
-				eaCh = nil
-				continue
-			}
-			if evt.Type != watch.Modified && evt.Type != watch.Added {
-				continue
-			}
-			currEA, ok := evt.Object.(*eav1alpha1.EffectivenessAssessment)
-			if !ok {
-				continue
-			}
-			steps := DiffEASteps(prevEA, currEA)
-			for _, step := range steps {
-				stepMeta := map[string]any{
-					"type": launcher.MetaTypeVerificationStep,
-					"step": step.Step,
-				}
-				for k, v := range step.Data {
-					stepMeta[k] = v
-				}
-				if !verifyingStartedAt.IsZero() {
-					stepMeta["elapsed_s"] = int(time.Since(verifyingStartedAt).Seconds())
-				}
-				_ = launcher.EmitStatusWithMetaSafe(ctx, step.Message+"\n", stepMeta)
-				events = append(events, WatchEvent{
-					Timestamp: time.Now().UTC().Format(time.RFC3339),
-					Resource:  "EffectivenessAssessment",
-					Phase:     step.Step,
-					Message:   step.Message,
-				})
-			}
-			prevEA = currEA.DeepCopy()
-		}
-	}
-}
-
-// NewWatchTool creates the kubernaut_watch tool.
-func NewWatchTool(client crclient.WithWatch, controllerNS string) (tool.Tool, error) {
-	return functiontool.New(functiontool.Config{
-		Name:        "kubernaut_watch",
-		Description: "Stream live status updates for a remediation and its related resources",
-	}, func(ctx tool.Context, args WatchArgs) (WatchResult, error) {
-		args.Namespace = controllerNS
-		return HandleWatch(ctx, client, args)
-	})
-}
-
-// ========================================
-// kubernaut_await_session: Wait for KA investigation session readiness
-// BR-INTERACTIVE-010: AF waits for AA to submit to KA before connecting
-// ========================================
-
-
-// AwaitSessionArgs defines the input for kubernaut_await_session.
-type AwaitSessionArgs struct {
-	Namespace string `json:"-"`
-	RRName    string `json:"rr_name"`
-}
-
-// AwaitSessionResult is the output of kubernaut_await_session.
-type AwaitSessionResult struct {
-	SessionID string `json:"session_id,omitempty"`
-	Status    string `json:"status"`
-	Message   string `json:"message,omitempty"`
-}
-
-// AwaitSessionTimeout is the maximum duration HandleAwaitSession waits for an
-// AIAnalysis CRD with a session ID. In production the AA controller may take
-// minutes to process an RR; in E2E tests this can be shortened.
-// Exported so that tests can override it without modifying production code.
-var AwaitSessionTimeout = 3 * time.Minute
-
-const awaitSessionPollInterval = 3 * time.Second
-
-// HandleAwaitSession waits for an AIAnalysis resource (matching the given RR) to have
-// a non-empty status.investigationSession.id. Returns the session ID when ready, or
-// times out after AwaitSessionTimeout.
-func HandleAwaitSession(ctx context.Context, client crclient.Client, args AwaitSessionArgs) (AwaitSessionResult, error) {
-	if client == nil {
-		return AwaitSessionResult{}, ErrK8sUnavailable
-	}
-	if err := validate.Namespace(args.Namespace); err != nil {
-		return AwaitSessionResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
-	}
-	if args.RRName == "" {
-		return AwaitSessionResult{}, fmt.Errorf("%w: rr_name is required", ErrInvalidInput)
-	}
-
-	if sessionID := findSessionIDByList(ctx, client, args); sessionID != "" {
-		return AwaitSessionResult{SessionID: sessionID, Status: "ready"}, nil
-	}
-
-	watchCtx, cancel := context.WithTimeout(ctx, AwaitSessionTimeout)
-	defer cancel()
-
-	wc, ok := client.(crclient.WithWatch)
-	if !ok {
-		return pollForSessionID(watchCtx, client, args)
-	}
-
-	var aiaList aiav1alpha1.AIAnalysisList
-	watcher, err := wc.Watch(watchCtx, &aiaList, crclient.InNamespace(args.Namespace))
-	if err != nil {
-		return pollForSessionID(watchCtx, client, args)
-	}
-	defer watcher.Stop()
-
-	for {
-		select {
-		case <-watchCtx.Done():
-			return AwaitSessionResult{Status: "timeout", Message: "KA session not ready within timeout"}, nil
-		case evt, ok := <-watcher.ResultChan():
-			if !ok {
-				return AwaitSessionResult{Status: "timeout", Message: "watch closed unexpectedly"}, nil
-			}
-			if evt.Type == watch.Modified || evt.Type == watch.Added {
-				aia, ok := evt.Object.(*aiav1alpha1.AIAnalysis)
-				if !ok {
-					continue
-				}
-				if aia.Spec.RemediationRequestRef.Name != args.RRName {
-					continue
-				}
-				if aia.Status.KASession != nil && aia.Status.KASession.ID != "" {
-					return AwaitSessionResult{SessionID: aia.Status.KASession.ID, Status: "ready"}, nil
-				}
-			}
-		}
-	}
-}
-
-// pollForSessionID is a fallback that polls AIAnalysis resources until session ID appears.
-func pollForSessionID(ctx context.Context, client crclient.Client, args AwaitSessionArgs) (AwaitSessionResult, error) {
-	ticker := time.NewTicker(awaitSessionPollInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return AwaitSessionResult{Status: "timeout", Message: "KA session not ready within timeout"}, nil
-		case <-ticker.C:
-			if sessionID := findSessionIDByList(ctx, client, args); sessionID != "" {
-				return AwaitSessionResult{SessionID: sessionID, Status: "ready"}, nil
-			}
-		}
-	}
-}
-
-// findSessionIDByList lists AIAnalysis for the given RR and returns the first non-empty session ID.
-func findSessionIDByList(ctx context.Context, client crclient.Client, args AwaitSessionArgs) string {
-	var list aiav1alpha1.AIAnalysisList
-	if err := client.List(ctx, &list, crclient.InNamespace(args.Namespace)); err != nil {
-		return ""
-	}
-	for i := range list.Items {
-		item := &list.Items[i]
-		if item.Spec.RemediationRequestRef.Name != args.RRName {
-			continue
-		}
-		if item.Status.KASession != nil && item.Status.KASession.ID != "" {
-			return item.Status.KASession.ID
-		}
-	}
-	return ""
-}
-
-// NewAwaitSessionTool creates the kubernaut_await_session tool.
-func NewAwaitSessionTool(client crclient.Client, controllerNS string) (tool.Tool, error) {
-	return functiontool.New(functiontool.Config{
-		Name:        "kubernaut_await_session",
-		Description: "Wait for the AI investigation session to become ready for a given remediation request. Returns the KA session ID when available.",
-	}, func(ctx tool.Context, args AwaitSessionArgs) (AwaitSessionResult, error) {
-		args.Namespace = controllerNS
-		return HandleAwaitSession(ctx, client, args)
-	})
-}
-
-// ========================================
-// AwaitISPhaseActive: Poll IS CRD until AA sets Phase=Active
-// BR-INTERACTIVE-010: AF waits for AA to acknowledge the interactive session
-// ========================================
-
-
-const (
-	isPhaseInitialInterval = 500 * time.Millisecond
-	isPhaseMaxInterval     = 2 * time.Second
-	isPhaseDefaultTimeout  = 30 * time.Second
-)
-
-// AwaitISPhaseActive polls the IS CRD for the given RR name until its phase
-// becomes Active (set by the AA controller). Uses exponential backoff starting
-// at 500ms, capping at 2s. Returns true when Active is detected, false on
-// timeout. Errors from the API are silently retried (best-effort).
-// The poll respects the parent context deadline, capping at isPhaseDefaultTimeout.
-func AwaitISPhaseActive(ctx context.Context, client crclient.Client, namespace, rrName string) bool {
-	if client == nil || namespace == "" || rrName == "" {
-		return false
-	}
-
-	timeout := isPhaseDefaultTimeout
-	if deadline, ok := ctx.Deadline(); ok {
-		if remaining := time.Until(deadline); remaining < timeout {
-			timeout = remaining
-		}
-	}
-	pollCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	interval := isPhaseInitialInterval
-	for {
-		if isActivePhasePresent(pollCtx, client, namespace, rrName) {
-			return true
-		}
-
-		select {
-		case <-pollCtx.Done():
-			return false
-		case <-time.After(interval):
-		}
-
-		interval = interval * 2
-		if interval > isPhaseMaxInterval {
-			interval = isPhaseMaxInterval
-		}
-	}
-}
-
-// isActivePhasePresent lists IS CRDs in the namespace and returns true if any
-// non-terminal IS for the given RR has Phase=Active.
-func isActivePhasePresent(ctx context.Context, client crclient.Client, namespace, rrName string) bool {
-	var list isv1alpha1.InvestigationSessionList
-	if err := client.List(ctx, &list, crclient.InNamespace(namespace)); err != nil {
-		return false
-	}
-	for i := range list.Items {
-		item := &list.Items[i]
-		if item.Spec.RemediationRequestRef.Name != rrName {
-			continue
-		}
-		if item.Status.Phase == isv1alpha1.SessionPhaseActive {
-			return true
-		}
-	}
-	return false
 }

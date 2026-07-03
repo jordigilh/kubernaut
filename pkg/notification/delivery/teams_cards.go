@@ -81,13 +81,18 @@ func BuildTeamsPayload(notification *notificationv1alpha1.NotificationRequest) T
 }
 
 func buildCardBody(notification *notificationv1alpha1.NotificationRequest) []CardElement {
-	var elements []CardElement
+	header := buildHeaderSection(notification)
+	body := buildBodySection(notification)
+	facts := buildFactsSection(notification)
+	typeSpecific := buildTypeSpecificSection(notification)
+	correlation := buildCorrelationSection(notification)
 
-	elements = append(elements, buildHeaderSection(notification)...)
-	elements = append(elements, buildBodySection(notification)...)
-	elements = append(elements, buildFactsSection(notification)...)
-	elements = append(elements, buildTypeSpecificSection(notification)...)
-	elements = append(elements, buildCorrelationSection(notification)...)
+	elements := make([]CardElement, 0, len(header)+len(body)+len(facts)+len(typeSpecific)+len(correlation))
+	elements = append(elements, header...)
+	elements = append(elements, body...)
+	elements = append(elements, facts...)
+	elements = append(elements, typeSpecific...)
+	elements = append(elements, correlation...)
 
 	return elements
 }

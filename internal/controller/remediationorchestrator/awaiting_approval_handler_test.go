@@ -57,20 +57,24 @@ func noopAwaitingCallbacks() prodcontroller.AwaitingApprovalCallbacks {
 		HandleBlocked: func(_ context.Context, _ *remediationv1.RemediationRequest, _ *routing.BlockingCondition, _, _ string) (ctrl.Result, error) {
 			return ctrl.Result{}, nil
 		},
-		AcquireLock: func(_ context.Context, _ string) (bool, error) { return true, nil },
-		ReleaseLock: func(_ context.Context, _ string) error { return nil },
+		AcquireLock:               func(_ context.Context, _ string) (bool, error) { return true, nil },
+		ReleaseLock:               func(_ context.Context, _ string) error { return nil },
 		CapturePreRemediationHash: func(_ context.Context, _, _, _, _ string) (string, string, error) { return "", "", nil },
 		ResolveDualTargets: func(_ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) prodcontroller.DualTargetResult {
 			return prodcontroller.DualTargetResult{Remediation: prodcontroller.TargetRef{Kind: "Deployment", Name: "app", Namespace: "default"}}
 		},
-		PersistPreHash:     func(_ context.Context, _ *remediationv1.RemediationRequest, _ string) error { return nil },
-		TransitionToFailed: func(_ context.Context, _ *remediationv1.RemediationRequest, _ remediationv1.FailurePhase, _ error) (ctrl.Result, error) { return ctrl.Result{}, nil },
-		ExpireRAR:          func(_ context.Context, _ *remediationv1.RemediationApprovalRequest) error { return nil },
+		PersistPreHash: func(_ context.Context, _ *remediationv1.RemediationRequest, _ string) error { return nil },
+		TransitionToFailed: func(_ context.Context, _ *remediationv1.RemediationRequest, _ remediationv1.FailurePhase, _ error) (ctrl.Result, error) {
+			return ctrl.Result{}, nil
+		},
+		ExpireRAR:              func(_ context.Context, _ *remediationv1.RemediationApprovalRequest) error { return nil },
 		UpdateRARTimeRemaining: func(_ context.Context, _ *remediationv1.RemediationApprovalRequest) error { return nil },
 		WFECallbacks: prodcontroller.WFECreationCallbacks{
 			EmitWorkflowCreatedAudit: func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis, _ string) {},
-			CreateWFE:                func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) (string, error) { return "wfe-test", nil },
-			ResolveWorkflowDisplay:   func(_ context.Context, _ string) (string, string) { return "TestAction", "test-wf" },
+			CreateWFE: func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) (string, error) {
+				return "wfe-test", nil
+			},
+			ResolveWorkflowDisplay: func(_ context.Context, _ string) (string, string) { return "TestAction", "test-wf" },
 		},
 	}
 }

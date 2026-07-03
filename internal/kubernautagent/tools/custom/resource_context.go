@@ -72,11 +72,22 @@ func computeSpecHash(ctx context.Context, logger logr.Logger, k8s enrichment.K8s
 	return computed
 }
 
-func fetchRemediationHistory(ctx context.Context, logger logr.Logger, ds enrichment.DataStorageClient, kind, name, namespace, specHash, toolName string) *enrichment.RemediationHistoryResult {
-	result, err := ds.GetRemediationHistory(ctx, kind, name, namespace, specHash)
+// remediationHistoryQuery groups the lookup key and logging context for
+// fetchRemediationHistory. Extracted per AGENTS.md's 8+-param Options-pattern
+// rule.
+type remediationHistoryQuery struct {
+	Kind      string
+	Name      string
+	Namespace string
+	SpecHash  string
+	ToolName  string
+}
+
+func fetchRemediationHistory(ctx context.Context, logger logr.Logger, ds enrichment.DataStorageClient, q remediationHistoryQuery) *enrichment.RemediationHistoryResult {
+	result, err := ds.GetRemediationHistory(ctx, q.Kind, q.Name, q.Namespace, q.SpecHash)
 	if err != nil {
-		logger.Info(toolName+": remediation history fetch failed",
-			"kind", kind, "name", name, "namespace", namespace, "error", err)
+		logger.Info(q.ToolName+": remediation history fetch failed",
+			"kind", q.Kind, "name", q.Name, "namespace", q.Namespace, "error", err)
 	}
 	if result == nil {
 		result = &enrichment.RemediationHistoryResult{}
@@ -136,7 +147,10 @@ func (t *namespacedResourceContextTool) Execute(ctx context.Context, args json.R
 	}
 
 	specHash := computeSpecHash(ctx, t.logger, t.k8s, rootOwner.Kind, rootOwner.Name, rootOwner.Namespace, "get_namespaced_resource_context")
-	histResult := fetchRemediationHistory(ctx, t.logger, t.ds, rootOwner.Kind, rootOwner.Name, rootOwner.Namespace, specHash, "get_namespaced_resource_context")
+	histResult := fetchRemediationHistory(ctx, t.logger, t.ds, remediationHistoryQuery{
+		Kind: rootOwner.Kind, Name: rootOwner.Name, Namespace: rootOwner.Namespace,
+		SpecHash: specHash, ToolName: "get_namespaced_resource_context",
+	})
 
 	resp := namespacedResponse{
 		RootOwner:          rootOwner,
@@ -180,7 +194,10 @@ func (t *clusterResourceContextTool) Execute(ctx context.Context, args json.RawM
 	}
 
 	specHash := computeSpecHash(ctx, t.logger, t.k8s, params.Kind, params.Name, "", "get_cluster_resource_context")
-	histResult := fetchRemediationHistory(ctx, t.logger, t.ds, params.Kind, params.Name, "", specHash, "get_cluster_resource_context")
+	histResult := fetchRemediationHistory(ctx, t.logger, t.ds, remediationHistoryQuery{
+		Kind: params.Kind, Name: params.Name, SpecHash: specHash,
+		ToolName: "get_cluster_resource_context",
+	})
 
 	resp := clusterResponse{
 		RootOwner: rootOwnerResponse{

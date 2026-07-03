@@ -74,6 +74,29 @@ func CreateWFEAndTransition(
 
 	m.ChildCRDCreationsTotal.WithLabelValues("WorkflowExecution", rr.Namespace).Inc()
 
+	if err := persistWFERefAndDisplay(ctx, k8sClient, m, rr, ai, weName, cbs); err != nil {
+		logger.Error(err, "Failed to set WorkflowExecutionRef in status")
+		return phase.Requeue(config.RequeueGenericError, "WFE status update failed"), nil
+	}
+	logger.V(1).Info("Set WorkflowExecutionRef in status", "weName", weName)
+
+	return phase.Advance(phase.Executing, "WFE created"), nil
+}
+
+// persistWFERefAndDisplay records the newly created WorkflowExecution CRD on
+// rr.Status along with the selected-workflow and remediation-target display
+// fields (BR-ORCH-025/031), and marks WorkflowExecutionReady=true. Extracted
+// from CreateWFEAndTransition (Wave 6 6e-i GREEN: funlen remediation) — pure
+// code motion, no behavior change.
+func persistWFERefAndDisplay(
+	ctx context.Context,
+	k8sClient client.Client,
+	m *metrics.Metrics,
+	rr *remediationv1.RemediationRequest,
+	ai *aianalysisv1.AIAnalysis,
+	weName string,
+	cbs WFECreationCallbacks,
+) error {
 	var workflowDisplayName, confidence string
 	if ai.Status.SelectedWorkflow != nil {
 		actionType, workflowName := cbs.ResolveWorkflowDisplay(ctx, ai.Status.SelectedWorkflow.WorkflowID)
@@ -81,7 +104,7 @@ func CreateWFEAndTransition(
 		confidence = remediationrequest.FormatConfidence(ai.Status.SelectedWorkflow.Confidence)
 	}
 
-	err = helpers.UpdateRemediationRequestStatus(ctx, k8sClient, rr, func(rr *remediationv1.RemediationRequest) error {
+	return helpers.UpdateRemediationRequestStatus(ctx, k8sClient, rr, func(rr *remediationv1.RemediationRequest) error {
 		rr.Status.WorkflowExecutionRef = &corev1.ObjectReference{
 			APIVersion: workflowexecutionv1.GroupVersion.String(),
 			Kind:       "WorkflowExecution",
@@ -90,9 +113,9 @@ func CreateWFEAndTransition(
 		}
 		if ai.Status.SelectedWorkflow != nil {
 			rr.Status.SelectedWorkflowRef = &remediationv1.WorkflowReference{
-				WorkflowID:           ai.Status.SelectedWorkflow.WorkflowID,
-				Version:              ai.Status.SelectedWorkflow.Version,
-				ExecutionBundle:      ai.Status.SelectedWorkflow.ExecutionBundle,
+				WorkflowID:            ai.Status.SelectedWorkflow.WorkflowID,
+				Version:               ai.Status.SelectedWorkflow.Version,
+				ExecutionBundle:       ai.Status.SelectedWorkflow.ExecutionBundle,
 				ExecutionBundleDigest: ai.Status.SelectedWorkflow.ExecutionBundleDigest,
 			}
 			rr.Status.WorkflowDisplayName = workflowDisplayName
@@ -114,11 +137,4 @@ func CreateWFEAndTransition(
 			fmt.Sprintf("WorkflowExecution CRD %s created successfully", weName), m)
 		return nil
 	})
-	if err != nil {
-		logger.Error(err, "Failed to set WorkflowExecutionRef in status")
-		return phase.Requeue(config.RequeueGenericError, "WFE status update failed"), nil
-	}
-	logger.V(1).Info("Set WorkflowExecutionRef in status", "weName", weName)
-
-	return phase.Advance(phase.Executing, "WFE created"), nil
 }

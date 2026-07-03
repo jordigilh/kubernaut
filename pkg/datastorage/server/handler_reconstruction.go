@@ -23,6 +23,7 @@ import (
 
 	"sigs.k8s.io/yaml"
 
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/reconstruction"
 )
@@ -54,105 +55,16 @@ func (h *Handler) ReconstructRemediationRequest(
 	h.logger.V(2).Info("Handling RemediationRequest reconstruction via ogen handler",
 		"correlation_id", correlationID)
 
-	// Step 1: Query audit events from database
-	events, err := reconstruction.QueryAuditEventsForReconstruction(ctx, h.sqlDB, h.logger, correlationID)
-	if err != nil {
-		h.logger.Error(err, "Failed to query audit events for reconstruction",
-			"correlation_id", correlationID)
-		return &ogenclient.ReconstructRemediationRequestInternalServerError{
-			Type:   "https://kubernaut.ai/problems/reconstruction/query-failed",
-			Title:  "Reconstruction Query Failed", // string (not OptString)
-			Status: 500,                           // int32
-			Detail: ogenclient.NewOptString("An internal error occurred. Check server logs for details."),
-		}, nil // Return error response as success (ogen pattern)
+	// Steps 1-2: Query audit events and parse them into structured data
+	parsedData, errRes := h.fetchAndParseAuditEvents(ctx, correlationID)
+	if errRes != nil {
+		return errRes, nil
 	}
 
-	if len(events) == 0 {
-		h.logger.V(1).Info("No audit events found for correlation ID",
-			"correlation_id", correlationID)
-		return &ogenclient.ReconstructRemediationRequestNotFound{
-			Type:   "https://kubernaut.ai/problems/audit/correlation-not-found",
-			Title:  "Audit Events Not Found", // string (not OptString)
-			Status: 404,                      // int32
-			Detail: ogenclient.NewOptString(fmt.Sprintf("No audit events found for correlation_id: %s", correlationID)),
-		}, nil // Return 404 as success (ogen pattern)
-	}
-
-	// Step 2: Parse audit events to extract structured data
-	parsedData := make([]reconstruction.ParsedAuditData, 0, len(events))
-	for _, event := range events {
-		parsed, err := reconstruction.ParseAuditEvent(event)
-		if err != nil {
-			h.logger.Error(err, "Failed to parse audit event",
-				"correlation_id", correlationID,
-				"event_id", event.EventID)
-			// Continue with other events - partial reconstruction is acceptable
-			continue
-		}
-		parsedData = append(parsedData, *parsed)
-	}
-
-	if len(parsedData) == 0 {
-		h.logger.V(1).Info("No parseable audit events found",
-			"correlation_id", correlationID)
-		return &ogenclient.ReconstructRemediationRequestBadRequest{
-			Type:   "https://kubernaut.ai/problems/reconstruction/no-parseable-events",
-			Title:  "Reconstruction Failed", // string (not OptString)
-			Status: 400,                     // int32
-			Detail: ogenclient.NewOptString("No parseable audit events found for reconstruction"),
-		}, nil // Return 400 as success (ogen pattern)
-	}
-
-	// Step 3: Map parsed data to RR Spec/Status fields
-	rrFields, err := reconstruction.MergeAuditData(parsedData)
-	if err != nil {
-		h.logger.Error(err, "Failed to merge audit data",
-			"correlation_id", correlationID)
-		return &ogenclient.ReconstructRemediationRequestBadRequest{
-			Type:   "https://kubernaut.ai/problems/reconstruction/missing-gateway-event",
-			Title:  "Reconstruction Failed",
-			Status: 400,
-			Detail: ogenclient.NewOptString("Required audit events are missing or incomplete for reconstruction"),
-		}, nil // Return 400 as success (ogen pattern); SEC-M2: generic detail, full error in logs
-	}
-
-	// Step 4: Build complete RemediationRequest CRD
-	rr, err := reconstruction.BuildRemediationRequest(correlationID, rrFields)
-	if err != nil {
-		h.logger.Error(err, "Failed to build RemediationRequest",
-			"correlation_id", correlationID)
-		return &ogenclient.ReconstructRemediationRequestBadRequest{
-			Type:   "https://kubernaut.ai/problems/reconstruction/unprocessable",
-			Title:  "Build Failed",
-			Status: 422,
-			Detail: ogenclient.NewOptString("Audit data present but RemediationRequest cannot be assembled"),
-		}, nil
-	}
-
-	// Step 5: Validate reconstructed RR
-	validationResult, err := reconstruction.ValidateReconstructedRR(rr)
-	if err != nil {
-		h.logger.Error(err, "Failed to validate RemediationRequest",
-			"correlation_id", correlationID)
-		return &ogenclient.ReconstructRemediationRequestBadRequest{
-			Type:   "https://kubernaut.ai/problems/reconstruction/unprocessable",
-			Title:  "Validation Failed",
-			Status: 422,
-			Detail: ogenclient.NewOptString("Reconstructed RemediationRequest does not pass validation rules"),
-		}, nil
-	}
-
-	// If completeness < 50%, return 400 error
-	if validationResult.Completeness < 50 {
-		h.logger.V(1).Info("Reconstruction incomplete",
-			"correlation_id", correlationID,
-			"completeness", validationResult.Completeness)
-		return &ogenclient.ReconstructRemediationRequestBadRequest{
-			Type:   "https://kubernaut.ai/problems/reconstruction/incomplete-data",
-			Title:  "Incomplete Reconstruction",
-			Status: 400,
-			Detail: ogenclient.NewOptString(fmt.Sprintf("Reconstructed RR is only %d%% complete", validationResult.Completeness)),
-		}, nil // Return 400 as success (ogen pattern)
+	// Steps 3-5: Merge, build, and validate the reconstructed RemediationRequest
+	rr, rrFields, validationResult, errRes := h.buildAndValidateReconstructedRR(correlationID, parsedData)
+	if errRes != nil {
+		return errRes, nil
 	}
 
 	// Step 6: Convert RR to YAML
@@ -192,4 +104,129 @@ func (h *Handler) ReconstructRemediationRequest(
 		"errors", len(validationResult.Errors))
 
 	return response, nil
+}
+
+// fetchAndParseAuditEvents implements steps 1-2 of ReconstructRemediationRequest:
+// query the audit trail for correlationID and parse each event into
+// structured reconstruction data. Partial parse failures are tolerated
+// (partial reconstruction is acceptable); a nil errRes means at least one
+// event parsed successfully. Extracted from ReconstructRemediationRequest
+// (Wave 6 6f GREEN: funlen remediation) — pure code motion, no behavior
+// change.
+func (h *Handler) fetchAndParseAuditEvents(ctx context.Context, correlationID string) ([]reconstruction.ParsedAuditData, ogenclient.ReconstructRemediationRequestRes) {
+	// Step 1: Query audit events from database
+	events, err := reconstruction.QueryAuditEventsForReconstruction(ctx, h.sqlDB, h.logger, correlationID)
+	if err != nil {
+		h.logger.Error(err, "Failed to query audit events for reconstruction",
+			"correlation_id", correlationID)
+		return nil, &ogenclient.ReconstructRemediationRequestInternalServerError{
+			Type:   "https://kubernaut.ai/problems/reconstruction/query-failed",
+			Title:  "Reconstruction Query Failed", // string (not OptString)
+			Status: 500,                           // int32
+			Detail: ogenclient.NewOptString("An internal error occurred. Check server logs for details."),
+		} // Return error response as success (ogen pattern)
+	}
+
+	if len(events) == 0 {
+		h.logger.V(1).Info("No audit events found for correlation ID",
+			"correlation_id", correlationID)
+		return nil, &ogenclient.ReconstructRemediationRequestNotFound{
+			Type:   "https://kubernaut.ai/problems/audit/correlation-not-found",
+			Title:  "Audit Events Not Found", // string (not OptString)
+			Status: 404,                      // int32
+			Detail: ogenclient.NewOptString(fmt.Sprintf("No audit events found for correlation_id: %s", correlationID)),
+		} // Return 404 as success (ogen pattern)
+	}
+
+	// Step 2: Parse audit events to extract structured data
+	parsedData := make([]reconstruction.ParsedAuditData, 0, len(events))
+	for _, event := range events {
+		parsed, err := reconstruction.ParseAuditEvent(event)
+		if err != nil {
+			h.logger.Error(err, "Failed to parse audit event",
+				"correlation_id", correlationID,
+				"event_id", event.EventID)
+			// Continue with other events - partial reconstruction is acceptable
+			continue
+		}
+		parsedData = append(parsedData, *parsed)
+	}
+
+	if len(parsedData) == 0 {
+		h.logger.V(1).Info("No parseable audit events found",
+			"correlation_id", correlationID)
+		return nil, &ogenclient.ReconstructRemediationRequestBadRequest{
+			Type:   "https://kubernaut.ai/problems/reconstruction/no-parseable-events",
+			Title:  "Reconstruction Failed", // string (not OptString)
+			Status: 400,                     // int32
+			Detail: ogenclient.NewOptString("No parseable audit events found for reconstruction"),
+		} // Return 400 as success (ogen pattern)
+	}
+
+	return parsedData, nil
+}
+
+// buildAndValidateReconstructedRR implements steps 3-5 of
+// ReconstructRemediationRequest: merge parsed audit data into RR fields,
+// build the complete RemediationRequest CRD, and validate it (rejecting
+// reconstructions under 50% completeness). Extracted from
+// ReconstructRemediationRequest (Wave 6 6f GREEN: funlen remediation) — pure
+// code motion, no behavior change.
+func (h *Handler) buildAndValidateReconstructedRR(
+	correlationID string,
+	parsedData []reconstruction.ParsedAuditData,
+) (*remediationv1.RemediationRequest, *reconstruction.ReconstructedRRFields, *reconstruction.ValidationResult, ogenclient.ReconstructRemediationRequestRes) {
+	// Step 3: Map parsed data to RR Spec/Status fields
+	rrFields, err := reconstruction.MergeAuditData(parsedData)
+	if err != nil {
+		h.logger.Error(err, "Failed to merge audit data",
+			"correlation_id", correlationID)
+		return nil, nil, nil, &ogenclient.ReconstructRemediationRequestBadRequest{
+			Type:   "https://kubernaut.ai/problems/reconstruction/missing-gateway-event",
+			Title:  "Reconstruction Failed",
+			Status: 400,
+			Detail: ogenclient.NewOptString("Required audit events are missing or incomplete for reconstruction"),
+		} // Return 400 as success (ogen pattern); SEC-M2: generic detail, full error in logs
+	}
+
+	// Step 4: Build complete RemediationRequest CRD
+	rr, err := reconstruction.BuildRemediationRequest(correlationID, rrFields)
+	if err != nil {
+		h.logger.Error(err, "Failed to build RemediationRequest",
+			"correlation_id", correlationID)
+		return nil, nil, nil, &ogenclient.ReconstructRemediationRequestBadRequest{
+			Type:   "https://kubernaut.ai/problems/reconstruction/unprocessable",
+			Title:  "Build Failed",
+			Status: 422,
+			Detail: ogenclient.NewOptString("Audit data present but RemediationRequest cannot be assembled"),
+		}
+	}
+
+	// Step 5: Validate reconstructed RR
+	validationResult, err := reconstruction.ValidateReconstructedRR(rr)
+	if err != nil {
+		h.logger.Error(err, "Failed to validate RemediationRequest",
+			"correlation_id", correlationID)
+		return nil, nil, nil, &ogenclient.ReconstructRemediationRequestBadRequest{
+			Type:   "https://kubernaut.ai/problems/reconstruction/unprocessable",
+			Title:  "Validation Failed",
+			Status: 422,
+			Detail: ogenclient.NewOptString("Reconstructed RemediationRequest does not pass validation rules"),
+		}
+	}
+
+	// If completeness < 50%, return 400 error
+	if validationResult.Completeness < 50 {
+		h.logger.V(1).Info("Reconstruction incomplete",
+			"correlation_id", correlationID,
+			"completeness", validationResult.Completeness)
+		return nil, nil, nil, &ogenclient.ReconstructRemediationRequestBadRequest{
+			Type:   "https://kubernaut.ai/problems/reconstruction/incomplete-data",
+			Title:  "Incomplete Reconstruction",
+			Status: 400,
+			Detail: ogenclient.NewOptString(fmt.Sprintf("Reconstructed RR is only %d%% complete", validationResult.Completeness)),
+		} // Return 400 as success (ogen pattern)
+	}
+
+	return rr, rrFields, validationResult, nil
 }

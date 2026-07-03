@@ -17,12 +17,12 @@ limitations under the License.
 package investigator
 
 import (
-	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/alertmanager"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/investigation"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/k8s"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/logs"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/prometheus"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 var resourceContextTools = []string{

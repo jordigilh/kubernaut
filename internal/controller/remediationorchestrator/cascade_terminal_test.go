@@ -40,19 +40,21 @@ import (
 // ============================================================================
 // CASCADE TERMINAL UNIT TESTS (#1421)
 // FedRAMP Control Objectives:
-//   IR-4 (Incident Handling): When a remediation is cancelled, ALL downstream
-//     processing (signal analysis, AI investigation, workflow execution) MUST
-//     terminate promptly. Orphaned child CRDs represent uncontrolled incident
-//     handling resources that violate IR-4(1) automated response mechanisms.
-//   AC-6 (Least Privilege): Active child CRDs hold cluster access (AI sessions,
-//     workflow PipelineRuns); cancellation must revoke these to enforce minimal
-//     necessary privilege duration.
-//   SI-4 (Information System Monitoring): State transitions in the remediation
-//     chain must be fully observable; a cancelled RR with active children creates
-//     monitoring blind spots.
-//   CM-3 (Configuration Change Control): Cascade is idempotent and handles
-//     missing/already-terminal children — no configuration drift from repeated
-//     reconciles.
+//
+//	IR-4 (Incident Handling): When a remediation is cancelled, ALL downstream
+//	  processing (signal analysis, AI investigation, workflow execution) MUST
+//	  terminate promptly. Orphaned child CRDs represent uncontrolled incident
+//	  handling resources that violate IR-4(1) automated response mechanisms.
+//	AC-6 (Least Privilege): Active child CRDs hold cluster access (AI sessions,
+//	  workflow PipelineRuns); cancellation must revoke these to enforce minimal
+//	  necessary privilege duration.
+//	SI-4 (Information System Monitoring): State transitions in the remediation
+//	  chain must be fully observable; a cancelled RR with active children creates
+//	  monitoring blind spots.
+//	CM-3 (Configuration Change Control): Cascade is idempotent and handles
+//	  missing/already-terminal children — no configuration drift from repeated
+//	  reconciles.
+//
 // ============================================================================
 var _ = Describe("Cascade Terminal to Children (#1421) [IR-4, AC-6, SI-4, CM-3]", func() {
 
@@ -68,12 +70,16 @@ var _ = Describe("Cascade Terminal to Children (#1421) [IR-4, AC-6, SI-4, CM-3]"
 	reconcileTerminalRR := func(fakeClient client.WithWatch, rrName, namespace string) (ctrl.Result, error) {
 		roMetrics := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
 		recorder := record.NewFakeRecorder(20)
-		reconciler := controller.NewReconciler(
-			fakeClient, fakeClient, scheme,
-			nil, recorder, roMetrics,
-			controller.TimeoutConfig{},
-			&MockRoutingEngine{},
-		)
+		reconciler := controller.NewReconciler(controller.ReconcilerDeps{
+			Client:        fakeClient,
+			APIReader:     fakeClient,
+			Scheme:        scheme,
+			AuditStore:    nil,
+			Recorder:      recorder,
+			Metrics:       roMetrics,
+			Timeouts:      controller.TimeoutConfig{},
+			RoutingEngine: &MockRoutingEngine{},
+		})
 		return reconciler.Reconcile(ctx, ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: rrName, Namespace: namespace},
 		})

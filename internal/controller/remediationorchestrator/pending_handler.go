@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -106,27 +107,51 @@ func (h *PendingHandler) Handle(ctx context.Context, rr *remediationv1.Remediati
 
 	spName, err := h.spCreator.Create(ctx, rr)
 	if err != nil {
-		if k8serrors.IsNamespaceTerminating(err) {
-			logger.V(1).Info("Namespace is terminating, skipping reconciliation",
-				"namespace", rr.Namespace, "reason", "async_cleanup")
-			return phase.NoOp("namespace terminating"), nil
-		}
-
-		logger.Error(err, "Failed to create SignalProcessing CRD")
-		if updateErr := h.statusManager.AtomicStatusUpdate(ctx, rr, func() error {
-			remediationrequest.SetSignalProcessingReady(rr, false,
-				fmt.Sprintf("Failed to create SignalProcessing: %v", err), h.metrics)
-			return nil
-		}); updateErr != nil {
-			logger.Error(updateErr, "Failed to update SignalProcessingReady condition")
-		}
-		return phase.Requeue(config.RequeueGenericError, "SP creation failed"), nil
+		return h.handleSignalProcessingCreationError(ctx, rr, err, logger)
 	}
 	logger.Info("Created SignalProcessing CRD", "spName", spName)
 
 	h.metrics.ChildCRDCreationsTotal.WithLabelValues("SignalProcessing", rr.Namespace).Inc()
 
-	err = helpers.UpdateRemediationRequestStatus(ctx, h.client, rr, func(rr *remediationv1.RemediationRequest) error {
+	if err := h.persistSignalProcessingRef(ctx, rr, spName); err != nil {
+		logger.Error(err, "Failed to set SignalProcessingRef in status")
+		return phase.Requeue(config.RequeueGenericError, "SP ref update failed"), nil
+	}
+	logger.V(1).Info("Set SignalProcessingRef in status", "spName", spName)
+
+	return phase.Advance(phase.Processing, "SignalProcessing created"), nil
+}
+
+// handleSignalProcessingCreationError classifies a SignalProcessing creation
+// failure: a terminating namespace is treated as a benign no-op (async
+// cleanup will remove the RR), otherwise the SignalProcessingReady condition
+// is set to False (best-effort) and reconciliation is requeued. Extracted
+// from Handle (Wave 6 6e-i GREEN: funlen remediation) — pure code motion, no
+// behavior change.
+func (h *PendingHandler) handleSignalProcessingCreationError(ctx context.Context, rr *remediationv1.RemediationRequest, err error, logger logr.Logger) (phase.TransitionIntent, error) {
+	if k8serrors.IsNamespaceTerminating(err) {
+		logger.V(1).Info("Namespace is terminating, skipping reconciliation",
+			"namespace", rr.Namespace, "reason", "async_cleanup")
+		return phase.NoOp("namespace terminating"), nil
+	}
+
+	logger.Error(err, "Failed to create SignalProcessing CRD")
+	if updateErr := h.statusManager.AtomicStatusUpdate(ctx, rr, func() error {
+		remediationrequest.SetSignalProcessingReady(rr, false,
+			fmt.Sprintf("Failed to create SignalProcessing: %v", err), h.metrics)
+		return nil
+	}); updateErr != nil {
+		logger.Error(updateErr, "Failed to update SignalProcessingReady condition")
+	}
+	return phase.Requeue(config.RequeueGenericError, "SP creation failed"), nil
+}
+
+// persistSignalProcessingRef records the newly created SignalProcessing CRD
+// on rr.Status and marks SignalProcessingReady=true. Extracted from Handle
+// (Wave 6 6e-i GREEN: funlen remediation) — pure code motion, no behavior
+// change.
+func (h *PendingHandler) persistSignalProcessingRef(ctx context.Context, rr *remediationv1.RemediationRequest, spName string) error {
+	return helpers.UpdateRemediationRequestStatus(ctx, h.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		rr.Status.SignalProcessingRef = &corev1.ObjectReference{
 			APIVersion: signalprocessingv1.GroupVersion.String(),
 			Kind:       "SignalProcessing",
@@ -136,11 +161,4 @@ func (h *PendingHandler) Handle(ctx context.Context, rr *remediationv1.Remediati
 		remediationrequest.SetSignalProcessingReady(rr, true, fmt.Sprintf("SignalProcessing CRD %s created successfully", spName), h.metrics)
 		return nil
 	})
-	if err != nil {
-		logger.Error(err, "Failed to set SignalProcessingRef in status")
-		return phase.Requeue(config.RequeueGenericError, "SP ref update failed"), nil
-	}
-	logger.V(1).Info("Set SignalProcessingRef in status", "spName", spName)
-
-	return phase.Advance(phase.Processing, "SignalProcessing created"), nil
 }

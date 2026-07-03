@@ -67,8 +67,8 @@ type actionTypeDisableRequest struct {
 	DisabledBy string `json:"disabledBy"`
 	// Force enables orphan recovery (#512): disable only the named workflows
 	// before attempting to disable the action type.
-	Force              bool     `json:"force,omitempty"`
-	OrphanedWorkflows  []string `json:"orphanedWorkflows,omitempty"`
+	Force             bool     `json:"force,omitempty"`
+	OrphanedWorkflows []string `json:"orphanedWorkflows,omitempty"`
 }
 
 // actionTypeDisableResponse is the response for PATCH /api/v1/action-types/{name}/disable.
@@ -93,26 +93,8 @@ func (h *Handler) HandleCreateActionType(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	var req actionTypeCreateRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		if dsmiddleware.IsMaxBytesError(err) {
-			dsmiddleware.WriteMaxBytesExceeded(w, h.logger)
-			return
-		}
-		h.logger.Error(err, "Failed to decode action type create request")
-		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request",
-			"Bad Request", "request body is not valid JSON", h.logger)
-		return
-	}
-
-	if req.Name == "" {
-		response.WriteRFC7807Error(w, http.StatusBadRequest, "validation-error",
-			"Validation Error", "name is required", h.logger)
-		return
-	}
-	if req.Description.What == "" || req.Description.WhenToUse == "" {
-		response.WriteRFC7807Error(w, http.StatusBadRequest, "validation-error",
-			"Validation Error", "description.what and description.whenToUse are required", h.logger)
+	req, ok := h.decodeAndValidateActionTypeCreateRequest(w, r)
+	if !ok {
 		return
 	}
 
@@ -152,27 +134,68 @@ func (h *Handler) HandleCreateActionType(w http.ResponseWriter, r *http.Request)
 		"was_reenabled", result.WasReenabled,
 	)
 
-	// Emit audit (only for state changes: created or reenabled, NOT for NOOP)
-	if h.auditStore != nil && result.Status != "exists" {
+	h.auditActionTypeCreate(req, result)
+}
+
+// decodeAndValidateActionTypeCreateRequest decodes and validates the request
+// body for HandleCreateActionType. On any failure it writes the appropriate
+// RFC 7807 error response itself and returns ok=false. Extracted from
+// HandleCreateActionType (Wave 6 6f GREEN: funlen remediation) — pure code
+// motion, no behavior change.
+func (h *Handler) decodeAndValidateActionTypeCreateRequest(w http.ResponseWriter, r *http.Request) (actionTypeCreateRequest, bool) {
+	var req actionTypeCreateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if dsmiddleware.IsMaxBytesError(err) {
+			dsmiddleware.WriteMaxBytesExceeded(w, h.logger)
+			return req, false
+		}
+		h.logger.Error(err, "Failed to decode action type create request")
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request",
+			"Bad Request", "request body is not valid JSON", h.logger)
+		return req, false
+	}
+
+	if req.Name == "" {
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "validation-error",
+			"Validation Error", "name is required", h.logger)
+		return req, false
+	}
+	if req.Description.What == "" || req.Description.WhenToUse == "" {
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "validation-error",
+			"Validation Error", "description.what and description.whenToUse are required", h.logger)
+		return req, false
+	}
+
+	return req, true
+}
+
+// auditActionTypeCreate emits the created/reenabled audit event for
+// HandleCreateActionType (only for state changes, NOT for the "exists" NOOP
+// case). Extracted from HandleCreateActionType (GO-ANTIPATTERN-AUDIT-2026-07-01
+// Wave 3) — pure code motion, no behavior change.
+func (h *Handler) auditActionTypeCreate(req actionTypeCreateRequest, result *actiontyperepo.CreateResult) {
+	if h.auditStore == nil || result.Status == "exists" {
+		return
+	}
+
+	var auditEvent *api.AuditEventRequest
+	var auditErr error
+	if result.WasReenabled && result.ActionType != nil {
+		disabledAt := time.Time{}
+		disabledBy := ""
+		if result.ActionType.DisabledAt != nil {
+			disabledAt = *result.ActionType.DisabledAt
+		}
+		if result.ActionType.DisabledBy != nil {
+			disabledBy = *result.ActionType.DisabledBy
+		}
+		auditEvent, auditErr = dsaudit.NewActionTypeReenabledAuditEvent(req.Name, req.RegisteredBy, disabledAt, disabledBy)
+	} else {
 		desc := toDescPayload(req.Description)
-		var auditEvent *api.AuditEventRequest
-		var auditErr error
-		if result.WasReenabled && result.ActionType != nil {
-			disabledAt := time.Time{}
-			disabledBy := ""
-			if result.ActionType.DisabledAt != nil {
-				disabledAt = *result.ActionType.DisabledAt
-			}
-			if result.ActionType.DisabledBy != nil {
-				disabledBy = *result.ActionType.DisabledBy
-			}
-			auditEvent, auditErr = dsaudit.NewActionTypeReenabledAuditEvent(req.Name, req.RegisteredBy, disabledAt, disabledBy)
-		} else {
-			auditEvent, auditErr = dsaudit.NewActionTypeCreatedAuditEvent(req.Name, desc, req.RegisteredBy, false)
-		}
-		if auditErr == nil && auditEvent != nil {
-			h.emitAuditEventsAsync([]*api.AuditEventRequest{auditEvent}, "action_type", req.Name)
-		}
+		auditEvent, auditErr = dsaudit.NewActionTypeCreatedAuditEvent(req.Name, desc, req.RegisteredBy, false)
+	}
+	if auditErr == nil && auditEvent != nil {
+		h.emitAuditEventsAsync([]*api.AuditEventRequest{auditEvent}, "action_type", req.Name)
 	}
 }
 
@@ -212,18 +235,7 @@ func (h *Handler) HandleUpdateActionType(w http.ResponseWriter, r *http.Request)
 
 	result, err := h.actionTypeRepo.UpdateDescription(r.Context(), name, req.Description)
 	if err != nil {
-		h.logger.Error(err, "Failed to update action type", "name", name)
-		if errors.Is(err, actiontyperepo.ErrActionTypeNotFound) {
-			response.WriteRFC7807Error(w, http.StatusNotFound, "not-found",
-				"Not Found", fmt.Sprintf("Action type %q not found", name), h.logger)
-			return
-		}
-		if errors.Is(err, actiontyperepo.ErrActionTypeDisabled) {
-			response.WriteRFC7807Error(w, http.StatusConflict, "action-type-disabled",
-				"Action Type Disabled", fmt.Sprintf("Action type %q is disabled and cannot be updated", name), h.logger)
-			return
-		}
-		response.WriteRFC7807InternalError(w, "database-error", "Database Error", err, h.logger)
+		h.writeActionTypeUpdateError(w, name, err)
 		return
 	}
 
@@ -245,17 +257,45 @@ func (h *Handler) HandleUpdateActionType(w http.ResponseWriter, r *http.Request)
 		"updated_fields", result.UpdatedFields,
 	)
 
-	if h.auditStore != nil {
-		auditEvent, auditErr := dsaudit.NewActionTypeUpdatedAuditEvent(
-			name,
-			toDescPayload(result.OldDescription),
-			toDescPayload(result.NewDescription),
-			req.UpdatedBy,
-			result.UpdatedFields,
-		)
-		if auditErr == nil && auditEvent != nil {
-			h.emitAuditEventsAsync([]*api.AuditEventRequest{auditEvent}, "action_type", name)
-		}
+	h.auditActionTypeUpdate(name, req.UpdatedBy, result)
+}
+
+// writeActionTypeUpdateError logs and maps an UpdateDescription error to the
+// appropriate RFC 7807 response. Extracted from HandleUpdateActionType
+// (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 3) — pure code motion, no behavior
+// change.
+func (h *Handler) writeActionTypeUpdateError(w http.ResponseWriter, name string, err error) {
+	h.logger.Error(err, "Failed to update action type", "name", name)
+	if errors.Is(err, actiontyperepo.ErrActionTypeNotFound) {
+		response.WriteRFC7807Error(w, http.StatusNotFound, "not-found",
+			"Not Found", fmt.Sprintf("Action type %q not found", name), h.logger)
+		return
+	}
+	if errors.Is(err, actiontyperepo.ErrActionTypeDisabled) {
+		response.WriteRFC7807Error(w, http.StatusConflict, "action-type-disabled",
+			"Action Type Disabled", fmt.Sprintf("Action type %q is disabled and cannot be updated", name), h.logger)
+		return
+	}
+	response.WriteRFC7807InternalError(w, "database-error", "Database Error", err, h.logger)
+}
+
+// auditActionTypeUpdate emits the updated audit event for
+// HandleUpdateActionType. Extracted from HandleUpdateActionType
+// (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 3) — pure code motion, no behavior
+// change.
+func (h *Handler) auditActionTypeUpdate(name, updatedBy string, result *actiontyperepo.UpdateDescriptionResult) {
+	if h.auditStore == nil {
+		return
+	}
+	auditEvent, auditErr := dsaudit.NewActionTypeUpdatedAuditEvent(
+		name,
+		toDescPayload(result.OldDescription),
+		toDescPayload(result.NewDescription),
+		updatedBy,
+		result.UpdatedFields,
+	)
+	if auditErr == nil && auditEvent != nil {
+		h.emitAuditEventsAsync([]*api.AuditEventRequest{auditEvent}, "action_type", name)
 	}
 }
 
@@ -287,51 +327,13 @@ func (h *Handler) HandleDisableActionType(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	var (
-		result *actiontyperepo.DisableResult
-		disableErr error
-	)
-	if req.Force && len(req.OrphanedWorkflows) > 0 {
-		result, disableErr = h.actionTypeRepo.ForceDisable(r.Context(), name, req.DisabledBy, req.OrphanedWorkflows)
-	} else {
-		result, disableErr = h.actionTypeRepo.Disable(r.Context(), name, req.DisabledBy)
-	}
-	if disableErr != nil {
-		h.logger.Error(disableErr, "Failed to disable action type", "name", name, "force", req.Force)
-		if errors.Is(disableErr, actiontyperepo.ErrActionTypeNotFound) {
-			response.WriteRFC7807Error(w, http.StatusNotFound, "not-found",
-				"Not Found", fmt.Sprintf("Action type %q not found", name), h.logger)
-			return
-		}
-		response.WriteRFC7807InternalError(w, "database-error", "Database Error", disableErr, h.logger)
+	result, ok := h.resolveActionTypeDisable(w, r, name, req)
+	if !ok {
 		return
 	}
 
 	if !result.Disabled {
-		resp := actionTypeDisableDeniedResponse{
-			ActionType:             name,
-			DependentWorkflowCount: result.DependentWorkflowCount,
-			DependentWorkflows:     result.DependentWorkflows,
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusConflict)
-		if err := json.NewEncoder(w).Encode(resp); err != nil {
-			h.logger.Error(err, "Failed to encode disable denied response")
-		}
-		h.logger.Info("Action type disable denied — active workflows exist",
-			"name", name,
-			"dependent_count", result.DependentWorkflowCount,
-			"dependent_workflows", result.DependentWorkflows,
-		)
-
-		if h.auditStore != nil {
-			auditEvent, auditErr := dsaudit.NewActionTypeDisableDeniedAuditEvent(
-				name, req.DisabledBy, result.DependentWorkflowCount, result.DependentWorkflows,
-			)
-			if auditErr == nil && auditEvent != nil {
-				h.emitAuditEventsAsync([]*api.AuditEventRequest{auditEvent}, "action_type", name)
-			}
-		}
+		h.writeActionTypeDisableDenied(w, name, req.DisabledBy, result)
 		return
 	}
 
@@ -352,6 +354,66 @@ func (h *Handler) HandleDisableActionType(w http.ResponseWriter, r *http.Request
 
 	if h.auditStore != nil {
 		auditEvent, auditErr := dsaudit.NewActionTypeDisabledAuditEvent(name, req.DisabledBy, time.Now())
+		if auditErr == nil && auditEvent != nil {
+			h.emitAuditEventsAsync([]*api.AuditEventRequest{auditEvent}, "action_type", name)
+		}
+	}
+}
+
+// resolveActionTypeDisable dispatches to ForceDisable or Disable depending on
+// the request, and maps any error to an RFC 7807 response (returning ok=false
+// if the caller should stop). Extracted from HandleDisableActionType
+// (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 3) — pure code motion, no behavior
+// change.
+func (h *Handler) resolveActionTypeDisable(w http.ResponseWriter, r *http.Request, name string, req actionTypeDisableRequest) (*actiontyperepo.DisableResult, bool) {
+	var (
+		result     *actiontyperepo.DisableResult
+		disableErr error
+	)
+	if req.Force && len(req.OrphanedWorkflows) > 0 {
+		result, disableErr = h.actionTypeRepo.ForceDisable(r.Context(), name, req.DisabledBy, req.OrphanedWorkflows)
+	} else {
+		result, disableErr = h.actionTypeRepo.Disable(r.Context(), name, req.DisabledBy)
+	}
+	if disableErr != nil {
+		h.logger.Error(disableErr, "Failed to disable action type", "name", name, "force", req.Force)
+		if errors.Is(disableErr, actiontyperepo.ErrActionTypeNotFound) {
+			response.WriteRFC7807Error(w, http.StatusNotFound, "not-found",
+				"Not Found", fmt.Sprintf("Action type %q not found", name), h.logger)
+			return nil, false
+		}
+		response.WriteRFC7807InternalError(w, "database-error", "Database Error", disableErr, h.logger)
+		return nil, false
+	}
+	return result, true
+}
+
+// writeActionTypeDisableDenied writes the 409 response and audit event for a
+// disable request that was denied because active workflows still depend on
+// the action type. Extracted from HandleDisableActionType
+// (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 3) — pure code motion, no behavior
+// change.
+func (h *Handler) writeActionTypeDisableDenied(w http.ResponseWriter, name, disabledBy string, result *actiontyperepo.DisableResult) {
+	resp := actionTypeDisableDeniedResponse{
+		ActionType:             name,
+		DependentWorkflowCount: result.DependentWorkflowCount,
+		DependentWorkflows:     result.DependentWorkflows,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusConflict)
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		h.logger.Error(err, "Failed to encode disable denied response")
+	}
+	h.logger.Info("Action type disable denied — active workflows exist",
+		"name", name,
+		"dependent_count", result.DependentWorkflowCount,
+		"dependent_workflows", result.DependentWorkflows,
+	)
+
+	if h.auditStore != nil {
+		auditEvent, auditErr := dsaudit.NewActionTypeDisableDeniedAuditEvent(
+			name, disabledBy, result.DependentWorkflowCount, result.DependentWorkflows,
+		)
 		if auditErr == nil && auditEvent != nil {
 			h.emitAuditEventsAsync([]*api.AuditEventRequest{auditEvent}, "action_type", name)
 		}

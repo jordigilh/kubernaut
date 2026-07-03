@@ -75,7 +75,40 @@ type ExportResult struct {
 // Export retrieves audit events matching the filters and verifies hash chain integrity
 // BR-AUDIT-007: Audit export with tamper-evident hash chain verification
 func (r *AuditEventsRepository) Export(ctx context.Context, filters ExportFilters) (*ExportResult, error) {
-	// Build dynamic query based on filters
+	query, args := buildExportQuery(filters)
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		r.logger.Error(err, "Failed to query audit events for export")
+		return nil, fmt.Errorf("failed to query audit events: %w", err)
+	}
+	defer func() {
+		if err := rows.Close(); err != nil {
+			r.logger.Error(err, "Failed to close database rows")
+		}
+	}()
+
+	var events []*AuditEvent
+	for rows.Next() {
+		event, err := scanExportRow(rows)
+		if err != nil {
+			r.logger.Error(err, "Failed to scan audit event row for export")
+			return nil, err
+		}
+		events = append(events, event)
+	}
+	if err := rows.Err(); err != nil {
+		r.logger.Error(err, "Error iterating audit event rows")
+		return nil, fmt.Errorf("error iterating audit events: %w", err)
+	}
+
+	return r.verifyExportChains(events)
+}
+
+// buildExportQuery constructs Export's dynamic SELECT and positional args
+// from filters (time range, correlation_id, event_category, pagination).
+// Limit defaults to 1000 when unset.
+func buildExportQuery(filters ExportFilters) (string, []interface{}) {
 	query := `
 		SELECT
 			event_id, event_version, event_type, event_timestamp,
@@ -92,35 +125,29 @@ func (r *AuditEventsRepository) Export(ctx context.Context, filters ExportFilter
 	args := make([]interface{}, 0)
 	argIndex := 1
 
-	// Apply filters
 	if filters.StartTime != nil {
 		query += fmt.Sprintf(" AND event_timestamp >= $%d", argIndex)
 		args = append(args, *filters.StartTime)
 		argIndex++
 	}
-
 	if filters.EndTime != nil {
 		query += fmt.Sprintf(" AND event_timestamp <= $%d", argIndex)
 		args = append(args, *filters.EndTime)
 		argIndex++
 	}
-
 	if filters.CorrelationID != "" {
 		query += fmt.Sprintf(" AND correlation_id = $%d", argIndex)
 		args = append(args, filters.CorrelationID)
 		argIndex++
 	}
-
 	if filters.EventCategory != "" {
 		query += fmt.Sprintf(" AND event_category = $%d", argIndex)
 		args = append(args, filters.EventCategory)
 		argIndex++
 	}
 
-	// Order by timestamp for consistent export
 	query += " ORDER BY event_timestamp ASC, event_id ASC"
 
-	// Apply pagination (default limit to 1000 if not specified)
 	limit := filters.Limit
 	if limit == 0 {
 		limit = 1000 // Default page size
@@ -128,121 +155,108 @@ func (r *AuditEventsRepository) Export(ctx context.Context, filters ExportFilter
 	query += fmt.Sprintf(" LIMIT $%d OFFSET $%d", argIndex, argIndex+1)
 	args = append(args, limit, filters.Offset)
 
-	// Execute query
-	rows, err := r.db.QueryContext(ctx, query, args...)
+	return query, args
+}
+
+// scanExportRow scans one Export result row into an *AuditEvent, converting
+// nullable SQL columns to plain-typed fields (NULL -> zero value, matching
+// the `omitempty` JSON tags used during hash calculation) and unmarshaling
+// the event_data JSONB payload.
+// exportRowNullableColumns groups the sql.Null* scan intermediates for
+// scanExportRow's nullable columns, so assignExportNullableFields can take
+// them as a single argument.
+type exportRowNullableColumns struct {
+	resourceType, resourceID, resourceNamespace, clusterID         sql.NullString
+	actorID, actorType, actorIP, severity, errorCode, errorMessage sql.NullString
+	durationMs                                                     sql.NullInt64
+	legalHold                                                      bool
+}
+
+func scanExportRow(rows *sql.Rows) (*AuditEvent, error) {
+	event := &AuditEvent{}
+	var eventDataJSON []byte
+	var cols exportRowNullableColumns
+
+	err := rows.Scan(
+		&event.EventID,
+		&event.Version,
+		&event.EventType,
+		&event.EventTimestamp,
+		&event.EventCategory,
+		&event.EventAction,
+		&event.EventOutcome,
+		&event.CorrelationID,
+		&event.ParentEventID,
+		&event.ParentEventDate,
+		&cols.resourceType,
+		&cols.resourceID,
+		&cols.resourceNamespace,
+		&cols.clusterID,
+		&cols.actorID,
+		&cols.actorType,
+		&cols.actorIP,
+		&cols.severity,
+		&cols.durationMs,
+		&cols.errorCode,
+		&cols.errorMessage,
+		&event.RetentionDays,
+		&event.IsSensitive,
+		&eventDataJSON,
+		&event.EventHash,
+		&event.PreviousEventHash,
+		&event.HashAlgorithm,
+		&cols.legalHold,
+	)
 	if err != nil {
-		r.logger.Error(err, "Failed to query audit events for export")
-		return nil, fmt.Errorf("failed to query audit events: %w", err)
-	}
-	defer func() {
-		if err := rows.Close(); err != nil {
-			r.logger.Error(err, "Failed to close database rows")
-		}
-	}()
-
-	var events []*AuditEvent
-	for rows.Next() {
-		event := &AuditEvent{}
-		var eventDataJSON []byte
-		var legalHold bool
-
-		// Use sql.NullString for nullable string columns and sql.NullInt64 for nullable int columns
-		// to handle NULL values from database
-		var resourceType, resourceID, resourceNamespace, clusterID sql.NullString
-		var actorID, actorType, actorIP, severity, errorCode, errorMessage sql.NullString
-		var durationMs sql.NullInt64
-
-		err := rows.Scan(
-			&event.EventID,
-			&event.Version,
-			&event.EventType,
-			&event.EventTimestamp,
-			&event.EventCategory,
-			&event.EventAction,
-			&event.EventOutcome,
-			&event.CorrelationID,
-			&event.ParentEventID,
-			&event.ParentEventDate,
-			&resourceType,
-			&resourceID,
-			&resourceNamespace,
-			&clusterID,
-			&actorID,
-			&actorType,
-			&actorIP,
-			&severity,
-			&durationMs,
-			&errorCode,
-			&errorMessage,
-			&event.RetentionDays,
-			&event.IsSensitive,
-			&eventDataJSON,
-			&event.EventHash,
-			&event.PreviousEventHash,
-			&event.HashAlgorithm,
-			&legalHold,
-		)
-		if err != nil {
-			r.logger.Error(err, "Failed to scan audit event row")
-			return nil, fmt.Errorf("failed to scan audit event: %w", err)
-		}
-
-		// CRITICAL: Force timestamp to UTC for hash consistency
-		// PostgreSQL timestamptz stores in UTC but Go reads them with local timezone.
-		// JSON marshaling includes timezone offset in local time (e.g., "2026-01-08T13:03:22.383251-05:00").
-		// But during INSERT, timestamps are marshaled as UTC (e.g., "2026-01-08T18:03:22.383251Z").
-		// To ensure hash verification works, we must convert to UTC here.
-		event.EventTimestamp = event.EventTimestamp.UTC()
-
-		// Convert sql.NullString to regular strings
-		// NULL → empty string, which will be omitted by `omitempty` JSON tags during hash calculation
-		// This preserves the original JSON structure for hash verification
-		event.ResourceType = resourceType.String
-		event.ResourceID = resourceID.String
-		event.ResourceNamespace = resourceNamespace.String
-		event.ClusterID = clusterID.String
-		event.ActorID = actorID.String
-		event.ActorType = actorType.String
-		event.ActorIP = actorIP.String
-		event.Severity = severity.String
-		event.ErrorCode = errorCode.String
-		event.ErrorMessage = errorMessage.String
-
-		// Convert sql.NullInt64 to int
-		// NULL → 0, which will be omitted by `omitempty` JSON tag during hash calculation
-		event.DurationMs = int(durationMs.Int64)
-
-		// Set legal_hold flag from scanned value
-		event.LegalHold = legalHold
-
-		// Unmarshal event_data JSON
-		// Note: Numbers will be float64 (Go's default for JSON numbers), which matches
-		// the normalized representation created during INSERT in audit_events_repository.go
-		if len(eventDataJSON) > 0 {
-			if err := json.Unmarshal(eventDataJSON, &event.EventData); err != nil {
-				r.logger.Error(err, "Failed to unmarshal event_data", "event_id", event.EventID)
-				return nil, fmt.Errorf("failed to unmarshal event_data: %w", err)
-			}
-		}
-
-		events = append(events, event)
+		return nil, fmt.Errorf("failed to scan audit event: %w", err)
 	}
 
-	if err := rows.Err(); err != nil {
-		r.logger.Error(err, "Error iterating audit event rows")
-		return nil, fmt.Errorf("error iterating audit events: %w", err)
+	// CRITICAL: Force timestamp to UTC for hash consistency. PostgreSQL
+	// timestamptz stores in UTC but Go reads it with local timezone; without
+	// this conversion, JSON marshaling would produce a different string than
+	// the UTC form used at INSERT time, breaking hash verification.
+	event.EventTimestamp = event.EventTimestamp.UTC()
+
+	assignExportNullableFields(event, cols)
+
+	if len(eventDataJSON) > 0 {
+		if err := json.Unmarshal(eventDataJSON, &event.EventData); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal event_data: %w", err)
+		}
 	}
 
-	// Verify hash chains
-	// Initialize TamperedEventIDs as pointer to empty slice (not nil)
-	// This ensures JSON serialization produces [] instead of null, matching OpenAPI client expectations
+	return event, nil
+}
+
+// assignExportNullableFields copies the scanned sql.Null* intermediates onto
+// event's plain Go fields. Extracted from scanExportRow (Wave 6 6f GREEN:
+// funlen remediation) — pure code motion, no behavior change.
+func assignExportNullableFields(event *AuditEvent, cols exportRowNullableColumns) {
+	event.ResourceType = cols.resourceType.String
+	event.ResourceID = cols.resourceID.String
+	event.ResourceNamespace = cols.resourceNamespace.String
+	event.ClusterID = cols.clusterID.String
+	event.ActorID = cols.actorID.String
+	event.ActorType = cols.actorType.String
+	event.ActorIP = cols.actorIP.String
+	event.Severity = cols.severity.String
+	event.ErrorCode = cols.errorCode.String
+	event.ErrorMessage = cols.errorMessage.String
+	event.DurationMs = int(cols.durationMs.Int64)
+	event.LegalHold = cols.legalHold
+}
+
+// verifyExportChains groups events by correlation_id and verifies each
+// correlation's hash chain (GAP-05: algorithm-aware), building the final
+// ExportResult with per-event validity flags and aggregate statistics.
+func (r *AuditEventsRepository) verifyExportChains(events []*AuditEvent) (*ExportResult, error) {
+	// TamperedEventIDs is a pointer to an empty (not nil) slice so JSON
+	// serialization produces [] instead of null, matching the OpenAPI client.
 	tamperedIDs := make([]string, 0)
 	result := &ExportResult{
 		Events:                make([]*ExportEvent, 0, len(events)),
-		TotalEventsQueried:    len(events),
-		ValidChainEvents:      0,
-		BrokenChainEvents:     0,
 		TamperedEventIDs:      &tamperedIDs,
+		TotalEventsQueried:    len(events),
 		VerificationTimestamp: time.Now().UTC(),
 	}
 
@@ -251,84 +265,31 @@ func (r *AuditEventsRepository) Export(ctx context.Context, filters ExportFilter
 		return result, nil
 	}
 
-	// Group events by correlation_id for chain verification
 	eventsByCorrelation := make(map[string][]*AuditEvent)
 	for _, event := range events {
 		eventsByCorrelation[event.CorrelationID] = append(eventsByCorrelation[event.CorrelationID], event)
 	}
 
-	// Verify each correlation_id's hash chain
+	// Events within each correlation_id are already ordered by the query
+	// (ORDER BY event_timestamp ASC, event_id ASC).
 	for correlationID, corrEvents := range eventsByCorrelation {
-		// Sort by timestamp (should already be sorted from query, but ensure)
-		// Events are already ordered by query: ORDER BY event_timestamp ASC, event_id ASC
-
 		previousHash := ""
 		for i, event := range corrEvents {
-			exportEvent := &ExportEvent{
-				AuditEvent:     event,
-				HashChainValid: true, // Assume valid until proven otherwise
+			exportEvent, err := r.verifyExportEvent(correlationID, previousHash, i == 0, event)
+			if err != nil {
+				return nil, err
 			}
-
-			// Skip verification if no hash data (legacy events)
-			if event.EventHash == "" && event.PreviousEventHash == "" {
-				exportEvent.HashChainValid = true // Legacy events are not considered tampered
-				result.Events = append(result.Events, exportEvent)
+			if exportEvent.HashChainValid {
 				result.ValidChainEvents++
-				continue
-			}
-
-			// Verify previous_event_hash matches
-			if event.PreviousEventHash != previousHash {
-				exportEvent.HashChainValid = false
+			} else {
 				result.BrokenChainEvents++
 				*result.TamperedEventIDs = append(*result.TamperedEventIDs, event.EventID.String())
-				r.logger.Info("Hash chain broken: previous_event_hash mismatch",
-					"event_id", event.EventID,
-					"correlation_id", correlationID,
-					"expected_previous_hash", previousHash,
-					"actual_previous_hash", event.PreviousEventHash)
-			} else {
-				// Calculate expected hash for this event (GAP-05: algorithm-aware)
-				expectedHash, err := CalculateHashForVerification(r.hmacKey, previousHash, event)
-				if err != nil {
-					r.logger.Error(err, "Failed to calculate expected hash", "event_id", event.EventID)
-					return nil, fmt.Errorf("failed to calculate expected hash: %w", err)
-				}
-
-				// Verify event_hash matches calculated hash
-				if event.EventHash != expectedHash {
-					exportEvent.HashChainValid = false
-					result.BrokenChainEvents++
-					*result.TamperedEventIDs = append(*result.TamperedEventIDs, event.EventID.String())
-					r.logger.Info("Hash chain broken: event_hash mismatch (tampering detected)",
-						"event_id", event.EventID,
-						"correlation_id", correlationID,
-						"expected_hash", expectedHash,
-						"actual_hash", event.EventHash)
-				} else {
-					result.ValidChainEvents++
-				}
-
-				// First event should have empty previous_hash
-				if i == 0 && previousHash != "" {
-					exportEvent.HashChainValid = false
-					result.BrokenChainEvents++
-					*result.TamperedEventIDs = append(*result.TamperedEventIDs, event.EventID.String())
-					r.logger.Info("Hash chain broken: first event has non-empty previous_hash",
-						"event_id", event.EventID,
-						"correlation_id", correlationID,
-						"previous_hash", previousHash)
-				}
 			}
-
 			result.Events = append(result.Events, exportEvent)
-
-			// Update previous hash for next iteration
 			previousHash = event.EventHash
 		}
 	}
 
-	// Calculate chain integrity percentage
 	if result.TotalEventsQueried > 0 {
 		result.ChainIntegrityPercent = float32((float64(result.ValidChainEvents) / float64(result.TotalEventsQueried)) * 100.0)
 	} else {
@@ -342,4 +303,56 @@ func (r *AuditEventsRepository) Export(ctx context.Context, filters ExportFilter
 		"integrity_percent", result.ChainIntegrityPercent)
 
 	return result, nil
+}
+
+// verifyExportEvent verifies one event's position in its correlation_id's
+// hash chain against previousHash (the prior event's event_hash, or "" for
+// the first event / legacy events with no hash data). GAP-05: uses
+// CalculateHashForVerification so the check is algorithm-aware (unkeyed
+// SHA256 vs. keyed HMAC-SHA256) per event.
+func (r *AuditEventsRepository) verifyExportEvent(correlationID, previousHash string, isFirst bool, event *AuditEvent) (*ExportEvent, error) {
+	exportEvent := &ExportEvent{AuditEvent: event, HashChainValid: true}
+
+	// Legacy events (pre-hash-chain) carry no hash data and are never
+	// considered tampered.
+	if event.EventHash == "" && event.PreviousEventHash == "" {
+		return exportEvent, nil
+	}
+
+	if event.PreviousEventHash != previousHash {
+		exportEvent.HashChainValid = false
+		r.logger.Info("Hash chain broken: previous_event_hash mismatch",
+			"event_id", event.EventID,
+			"correlation_id", correlationID,
+			"expected_previous_hash", previousHash,
+			"actual_previous_hash", event.PreviousEventHash)
+		return exportEvent, nil
+	}
+
+	expectedHash, err := CalculateHashForVerification(r.hmacKey, previousHash, event)
+	if err != nil {
+		r.logger.Error(err, "Failed to calculate expected hash", "event_id", event.EventID)
+		return nil, fmt.Errorf("failed to calculate expected hash: %w", err)
+	}
+
+	if event.EventHash != expectedHash {
+		exportEvent.HashChainValid = false
+		r.logger.Info("Hash chain broken: event_hash mismatch (tampering detected)",
+			"event_id", event.EventID,
+			"correlation_id", correlationID,
+			"expected_hash", expectedHash,
+			"actual_hash", event.EventHash)
+		return exportEvent, nil
+	}
+
+	// First event in a chain must have an empty previous_hash.
+	if isFirst && previousHash != "" {
+		exportEvent.HashChainValid = false
+		r.logger.Info("Hash chain broken: first event has non-empty previous_hash",
+			"event_id", event.EventID,
+			"correlation_id", correlationID,
+			"previous_hash", previousHash)
+	}
+
+	return exportEvent, nil
 }

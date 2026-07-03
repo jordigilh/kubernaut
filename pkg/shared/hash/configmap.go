@@ -168,7 +168,7 @@ func extractFromContainerSlice(podSpec map[string]interface{}, key string, seen 
 // are serialized as "key=base64(<bytes>)". All keys are sorted before hashing.
 // Returns "sha256:<64-lowercase-hex>" (71 chars total).
 func ConfigMapDataHash(data map[string]string, binaryData map[string][]byte) (string, error) {
-	var parts []string
+	parts := make([]string, 0, len(data)+len(binaryData))
 
 	keys := make([]string, 0, len(data))
 	for k := range data {

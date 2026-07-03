@@ -45,6 +45,11 @@ const (
 
 // RemediationWorkflow represents a workflow in the catalog
 // Maps to remediation_workflow_catalog table (migration 015)
+//
+// Wide DTO by design: reviewed in GO-ANTIPATTERN-AUDIT-2026-07-01 §4a (God Structs).
+// It mirrors a DB row schema field-for-field; splitting it would fragment the
+// persistence/serialization boundary for no behavioral gain, so it is
+// intentionally not decomposed.
 type RemediationWorkflow struct {
 	// ========================================
 	// IDENTITY (DD-WORKFLOW-002 v3.0, DD-WORKFLOW-012 v2.0)
@@ -344,6 +349,11 @@ type WorkflowSearchResponse struct {
 // DD-WORKFLOW-002 v3.0: FLAT response structure (no nested workflow object)
 // DD-WORKFLOW-004 v1.5: Label-Only Scoring with Wildcard Weighting
 // Authority: CONFIDENCE_ASSESSMENT_REMOVE_EMBEDDINGS.md (92% confidence)
+//
+// Wide DTO by design: reviewed in GO-ANTIPATTERN-AUDIT-2026-07-01 §4a (God Structs).
+// It mirrors an external API response schema field-for-field; splitting it would
+// fragment the JSON serialization boundary for no behavioral gain, so it is
+// intentionally not decomposed.
 type WorkflowSearchResult struct {
 	// ========================================
 	// DD-WORKFLOW-002 v3.0: FLAT RESPONSE STRUCTURE

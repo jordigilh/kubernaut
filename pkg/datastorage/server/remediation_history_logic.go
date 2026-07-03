@@ -255,82 +255,8 @@ func CorrelateTier1Chain(
 	}
 
 	entries := make([]api.RemediationHistoryEntry, 0, len(roEvents))
-
 	for _, ro := range roEvents {
-		entry := api.RemediationHistoryEntry{
-			RemediationUID: ro.CorrelationID,
-			CompletedAt:    ro.EventTimestamp,
-		}
-
-		// Extract RO event_data fields
-		if v, ok := ro.EventData["signal_type"].(string); ok {
-			entry.SignalType = api.OptString{Value: v, Set: true}
-		}
-		if v, ok := ro.EventData["signal_fingerprint"].(string); ok {
-			entry.SignalFingerprint = api.OptString{Value: v, Set: true}
-		}
-		if v, ok := ro.EventData["action_type"].(string); ok {
-			entry.ActionType = api.OptNilString{Value: v, Set: true}
-		}
-		if v, ok := ro.EventData["outcome"].(string); ok {
-			entry.Outcome = api.OptString{Value: v, Set: true}
-		}
-		if v, ok := ro.EventData["pre_remediation_spec_hash"].(string); ok {
-			entry.PreRemediationSpecHash = api.OptString{Value: v, Set: true}
-		}
-
-		// Look up EM events for this correlation_id
-		preHash, _ := ro.EventData["pre_remediation_spec_hash"].(string)
-		postHash := ""
-
-		if emEvts, found := emEvents[ro.CorrelationID]; found && len(emEvts) > 0 {
-			// Shared EM correlation (score, postHash, signalResolved)
-			emResult := correlateEMEvents(ro.CorrelationID, emEvts)
-			entry.EffectivenessScore = emResult.score
-			entry.SignalResolved = emResult.signalResolved
-			postHash = emResult.postHash
-
-			// DD-EM-002 v1.1: Propagate assessmentReason to the response entry.
-			if emResult.assessmentReason != "" {
-				entry.AssessmentReason = api.OptNilRemediationHistoryEntryAssessmentReason{
-					Value: api.RemediationHistoryEntryAssessmentReason(emResult.assessmentReason),
-					Set:   true,
-				}
-			}
-
-			if postHash != "" {
-				entry.PostRemediationSpecHash = api.OptString{Value: postHash, Set: true}
-			}
-
-			// Tier 1-specific: extract typed sub-objects from EM event data
-			for _, evt := range emEvts {
-				if evt.EventData == nil {
-					continue
-				}
-				eventType, _ := evt.EventData["event_type"].(string)
-
-				switch eventType {
-				case "effectiveness.health.assessed":
-					entry.HealthChecks = mapHealthChecks(evt.EventData)
-				case "effectiveness.metrics.assessed":
-					entry.MetricDeltas = mapMetricDeltas(evt.EventData)
-				}
-			}
-		}
-
-		// Compute hash match (three-way comparison).
-		// F2 inference: if preHash does not match currentSpecHash and no EM postHash
-		// data exists, the event was returned via the post-hash SQL subquery path.
-		// Infer postRemediation to reflect the established link.
-		hashMatch := ComputeHashMatch(currentSpecHash, preHash, postHash)
-		if hashMatch == api.RemediationHistoryEntryHashMatchNone && preHash != currentSpecHash && postHash == "" {
-			hashMatch = api.RemediationHistoryEntryHashMatchPostRemediation
-		}
-		entry.HashMatch = api.OptRemediationHistoryEntryHashMatch{Value: hashMatch, Set: true}
-
-		entry.SideEffects = []string{}
-
-		entries = append(entries, entry)
+		entries = append(entries, buildTier1Entry(ro, emEvents, currentSpecHash))
 	}
 
 	// Sort by completedAt ascending per OpenAPI spec (oldest first).
@@ -339,6 +265,105 @@ func CorrelateTier1Chain(
 	})
 
 	return entries
+}
+
+// buildTier1Entry builds a single detailed Tier 1 RemediationHistoryEntry
+// from one RO event, correlating it with EM component events by
+// correlation_id. Extracted from CorrelateTier1Chain
+// (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 3) — pure code motion, no behavior
+// change.
+func buildTier1Entry(ro repository.RawAuditRow, emEvents map[string][]*EffectivenessEvent, currentSpecHash string) api.RemediationHistoryEntry {
+	entry := api.RemediationHistoryEntry{
+		RemediationUID: ro.CorrelationID,
+		CompletedAt:    ro.EventTimestamp,
+	}
+
+	// Extract RO event_data fields
+	if v, ok := ro.EventData["signal_type"].(string); ok {
+		entry.SignalType = api.OptString{Value: v, Set: true}
+	}
+	if v, ok := ro.EventData["signal_fingerprint"].(string); ok {
+		entry.SignalFingerprint = api.OptString{Value: v, Set: true}
+	}
+	if v, ok := ro.EventData["action_type"].(string); ok {
+		entry.ActionType = api.OptNilString{Value: v, Set: true}
+	}
+	if v, ok := ro.EventData["outcome"].(string); ok {
+		entry.Outcome = api.OptString{Value: v, Set: true}
+	}
+	if v, ok := ro.EventData["pre_remediation_spec_hash"].(string); ok {
+		entry.PreRemediationSpecHash = api.OptString{Value: v, Set: true}
+	}
+
+	// Look up EM events for this correlation_id
+	preHash, _ := ro.EventData["pre_remediation_spec_hash"].(string)
+	postHash := ""
+
+	if emEvts, found := emEvents[ro.CorrelationID]; found && len(emEvts) > 0 {
+		postHash = applyTier1EMCorrelation(&entry, ro.CorrelationID, emEvts)
+	}
+
+	hashMatch := computeEntryHashMatch(currentSpecHash, preHash, postHash)
+	entry.HashMatch = api.OptRemediationHistoryEntryHashMatch{Value: hashMatch, Set: true}
+
+	entry.SideEffects = []string{}
+
+	return entry
+}
+
+// applyTier1EMCorrelation applies the shared EM correlation result (score,
+// postHash, signalResolved, assessmentReason) and the Tier 1-specific typed
+// sub-objects (healthChecks, metricDeltas) to entry, returning the resolved
+// postHash. Extracted from buildTier1Entry (GO-ANTIPATTERN-AUDIT-2026-07-01
+// Wave 3) — pure code motion, no behavior change.
+func applyTier1EMCorrelation(entry *api.RemediationHistoryEntry, correlationID string, emEvts []*EffectivenessEvent) string {
+	emResult := correlateEMEvents(correlationID, emEvts)
+	entry.EffectivenessScore = emResult.score
+	entry.SignalResolved = emResult.signalResolved
+	postHash := emResult.postHash
+
+	// DD-EM-002 v1.1: Propagate assessmentReason to the response entry.
+	if emResult.assessmentReason != "" {
+		entry.AssessmentReason = api.OptNilRemediationHistoryEntryAssessmentReason{
+			Value: api.RemediationHistoryEntryAssessmentReason(emResult.assessmentReason),
+			Set:   true,
+		}
+	}
+
+	if postHash != "" {
+		entry.PostRemediationSpecHash = api.OptString{Value: postHash, Set: true}
+	}
+
+	// Tier 1-specific: extract typed sub-objects from EM event data
+	for _, evt := range emEvts {
+		if evt.EventData == nil {
+			continue
+		}
+		eventType, _ := evt.EventData["event_type"].(string)
+
+		switch eventType {
+		case "effectiveness.health.assessed":
+			entry.HealthChecks = mapHealthChecks(evt.EventData)
+		case "effectiveness.metrics.assessed":
+			entry.MetricDeltas = mapMetricDeltas(evt.EventData)
+		}
+	}
+
+	return postHash
+}
+
+// computeEntryHashMatch computes the three-way hash match classification
+// shared by CorrelateTier1Chain and BuildTier2Summaries.
+//
+// F2 inference: if preHash does not match currentSpecHash and no EM postHash
+// data exists, the event was returned via the post-hash SQL subquery path —
+// infer postRemediation to reflect the established link.
+func computeEntryHashMatch(currentSpecHash, preHash, postHash string) api.RemediationHistoryEntryHashMatch {
+	hashMatch := ComputeHashMatch(currentSpecHash, preHash, postHash)
+	if hashMatch == api.RemediationHistoryEntryHashMatchNone && preHash != currentSpecHash && postHash == "" {
+		hashMatch = api.RemediationHistoryEntryHashMatchPostRemediation
+	}
+	return hashMatch
 }
 
 // ============================================================================
@@ -361,54 +386,8 @@ func BuildTier2Summaries(
 	}
 
 	summaries := make([]api.RemediationHistorySummary, 0, len(roEvents))
-
 	for _, ro := range roEvents {
-		summary := api.RemediationHistorySummary{
-			RemediationUID: ro.CorrelationID,
-			CompletedAt:    ro.EventTimestamp,
-		}
-
-		// Extract RO event_data fields
-		if v, ok := ro.EventData["signal_type"].(string); ok {
-			summary.SignalType = api.OptString{Value: v, Set: true}
-		}
-		if v, ok := ro.EventData["action_type"].(string); ok {
-			summary.ActionType = api.OptNilString{Value: v, Set: true}
-		}
-		if v, ok := ro.EventData["outcome"].(string); ok {
-			summary.Outcome = api.OptString{Value: v, Set: true}
-		}
-
-		// Look up EM events for score and hash comparison
-		preHash, _ := ro.EventData["pre_remediation_spec_hash"].(string)
-		postHash := ""
-
-		if emEvts, found := emEvents[ro.CorrelationID]; found && len(emEvts) > 0 {
-			// Shared EM correlation (score, postHash, signalResolved)
-			emResult := correlateEMEvents(ro.CorrelationID, emEvts)
-			summary.EffectivenessScore = emResult.score
-			summary.SignalResolved = emResult.signalResolved
-			postHash = emResult.postHash
-
-			// DD-EM-002 v1.1: Propagate assessmentReason to summary.
-			if emResult.assessmentReason != "" {
-				summary.AssessmentReason = api.OptNilRemediationHistorySummaryAssessmentReason{
-					Value: api.RemediationHistorySummaryAssessmentReason(emResult.assessmentReason),
-					Set:   true,
-				}
-			}
-		}
-
-		// Compute hash match (using summary-specific type).
-		// F2 inference: same logic as CorrelateTier1Chain — infer postRemediation
-		// when preHash != currentSpecHash and no EM postHash data exists.
-		hashMatch := ComputeHashMatch(currentSpecHash, preHash, postHash)
-		if hashMatch == api.RemediationHistoryEntryHashMatchNone && preHash != currentSpecHash && postHash == "" {
-			hashMatch = api.RemediationHistoryEntryHashMatchPostRemediation
-		}
-		summary.HashMatch = toSummaryHashMatch(hashMatch)
-
-		summaries = append(summaries, summary)
+		summaries = append(summaries, buildTier2Summary(ro, emEvents, currentSpecHash))
 	}
 
 	// Sort by completedAt ascending per OpenAPI spec (oldest first).
@@ -417,6 +396,55 @@ func BuildTier2Summaries(
 	})
 
 	return summaries
+}
+
+// buildTier2Summary builds a single Tier 2 RemediationHistorySummary from one
+// RO event, correlating it with EM component events by correlation_id.
+// Extracted from BuildTier2Summaries (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 3)
+// — pure code motion, no behavior change.
+func buildTier2Summary(ro repository.RawAuditRow, emEvents map[string][]*EffectivenessEvent, currentSpecHash string) api.RemediationHistorySummary {
+	summary := api.RemediationHistorySummary{
+		RemediationUID: ro.CorrelationID,
+		CompletedAt:    ro.EventTimestamp,
+	}
+
+	// Extract RO event_data fields
+	if v, ok := ro.EventData["signal_type"].(string); ok {
+		summary.SignalType = api.OptString{Value: v, Set: true}
+	}
+	if v, ok := ro.EventData["action_type"].(string); ok {
+		summary.ActionType = api.OptNilString{Value: v, Set: true}
+	}
+	if v, ok := ro.EventData["outcome"].(string); ok {
+		summary.Outcome = api.OptString{Value: v, Set: true}
+	}
+
+	// Look up EM events for score and hash comparison
+	preHash, _ := ro.EventData["pre_remediation_spec_hash"].(string)
+	postHash := ""
+
+	if emEvts, found := emEvents[ro.CorrelationID]; found && len(emEvts) > 0 {
+		// Shared EM correlation (score, postHash, signalResolved)
+		emResult := correlateEMEvents(ro.CorrelationID, emEvts)
+		summary.EffectivenessScore = emResult.score
+		summary.SignalResolved = emResult.signalResolved
+		postHash = emResult.postHash
+
+		// DD-EM-002 v1.1: Propagate assessmentReason to summary.
+		if emResult.assessmentReason != "" {
+			summary.AssessmentReason = api.OptNilRemediationHistorySummaryAssessmentReason{
+				Value: api.RemediationHistorySummaryAssessmentReason(emResult.assessmentReason),
+				Set:   true,
+			}
+		}
+	}
+
+	// Compute hash match (using summary-specific type). Same logic as
+	// CorrelateTier1Chain — see computeEntryHashMatch.
+	hashMatch := computeEntryHashMatch(currentSpecHash, preHash, postHash)
+	summary.HashMatch = toSummaryHashMatch(hashMatch)
+
+	return summary
 }
 
 // ============================================================================

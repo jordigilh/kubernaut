@@ -64,40 +64,66 @@ func CheckExternalServices(
 	result := ReadinessResult{}
 
 	if cfg.PrometheusEnabled {
-		if cfg.PrometheusURL == "" {
-			result.Error = fmt.Errorf("prometheus is enabled but prometheusUrl is empty")
+		reachable, err := checkPrometheusReadiness(ctx, logger, cfg, promClient)
+		if err != nil {
+			result.Error = err
 			return result
 		}
-		if promClient != nil {
-			if err := promClient.Ready(ctx); err != nil {
-				logger.Info("Prometheus is enabled but unreachable at startup, metrics assessment will retry at query time",
-					"url", cfg.PrometheusURL,
-					"error", err.Error(),
-				)
-			} else {
-				result.PrometheusReachable = true
-				logger.Info("Prometheus connectivity verified", "url", cfg.PrometheusURL)
-			}
-		}
+		result.PrometheusReachable = reachable
 	}
 
 	if cfg.AlertManagerEnabled {
-		if cfg.AlertManagerURL == "" {
-			result.Error = fmt.Errorf("alertManager is enabled but alertManagerUrl is empty")
+		reachable, err := checkAlertManagerReadiness(ctx, logger, cfg, amClient)
+		if err != nil {
+			result.Error = err
 			return result
 		}
-		if amClient != nil {
-			if err := amClient.Ready(ctx); err != nil {
-				logger.Info("AlertManager is enabled but unreachable at startup, alert resolution will retry at query time",
-					"url", cfg.AlertManagerURL,
-					"error", err.Error(),
-				)
-			} else {
-				result.AlertManagerReachable = true
-				logger.Info("AlertManager connectivity verified", "url", cfg.AlertManagerURL)
-			}
-		}
+		result.AlertManagerReachable = reachable
 	}
 
 	return result
+}
+
+// checkPrometheusReadiness verifies the configured Prometheus URL is
+// non-empty and, best-effort, that it is reachable. Extracted from
+// CheckExternalServices (Wave 6 6a GREEN: nestif remediation) — pure code
+// motion, no behavior change.
+func checkPrometheusReadiness(ctx context.Context, logger logr.Logger, cfg ExternalServicesConfig, promClient emclient.PrometheusQuerier) (bool, error) {
+	if cfg.PrometheusURL == "" {
+		return false, fmt.Errorf("prometheus is enabled but prometheusUrl is empty")
+	}
+	if promClient == nil {
+		return false, nil
+	}
+	if err := promClient.Ready(ctx); err != nil {
+		logger.Info("Prometheus is enabled but unreachable at startup, metrics assessment will retry at query time",
+			"url", cfg.PrometheusURL,
+			"error", err.Error(),
+		)
+		return false, nil
+	}
+	logger.Info("Prometheus connectivity verified", "url", cfg.PrometheusURL)
+	return true, nil
+}
+
+// checkAlertManagerReadiness verifies the configured AlertManager URL is
+// non-empty and, best-effort, that it is reachable. Extracted from
+// CheckExternalServices (Wave 6 6a GREEN: nestif remediation) — pure code
+// motion, no behavior change.
+func checkAlertManagerReadiness(ctx context.Context, logger logr.Logger, cfg ExternalServicesConfig, amClient emclient.AlertManagerClient) (bool, error) {
+	if cfg.AlertManagerURL == "" {
+		return false, fmt.Errorf("alertManager is enabled but alertManagerUrl is empty")
+	}
+	if amClient == nil {
+		return false, nil
+	}
+	if err := amClient.Ready(ctx); err != nil {
+		logger.Info("AlertManager is enabled but unreachable at startup, alert resolution will retry at query time",
+			"url", cfg.AlertManagerURL,
+			"error", err.Error(),
+		)
+		return false, nil
+	}
+	logger.Info("AlertManager connectivity verified", "url", cfg.AlertManagerURL)
+	return true, nil
 }

@@ -26,7 +26,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-faster/jx"
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
 
@@ -35,8 +34,8 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/metrics"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
-	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 )
 
 // InvestigationRunner abstracts the investigation entry point so that
@@ -473,41 +472,48 @@ func (h *Handler) SessionStreamAPIV1IncidentSessionSessionIDStreamGet(
 	}
 
 	pr, pw := io.Pipe()
-	go func() {
-		// CloseWithError(nil) behaves like Close but makes the intent explicit:
-		// the pipe writer is always closed when the goroutine exits, regardless
-		// of the exit path. The reader sees io.EOF. (#54 defer error handling)
-		defer func() { _ = pw.CloseWithError(nil) }()
-		defer func() {
-			if r := recover(); r != nil {
-				h.logger.Error(fmt.Errorf("panic: %v", r), "SSE writer panic recovered", "session_id", params.SessionID)
-			}
-		}()
-		seq := 1
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case ev, ok := <-ch:
-				if !ok {
-					return
-				}
-				data, err := json.Marshal(ev)
-				if err != nil {
-					h.logger.Error(err, "SSE event marshal failed, skipping frame",
-						"session_id", params.SessionID, "event_type", ev.Type)
-					continue
-				}
-				frame := fmt.Sprintf("id: %d\nevent: %s\ndata: %s\n\n", seq, ev.Type, string(data))
-				if _, writeErr := pw.Write([]byte(frame)); writeErr != nil {
-					return
-				}
-				seq++
-			}
-		}
-	}()
+	go h.streamSessionEvents(ctx, params.SessionID, ch, pw)
 
 	return &agentclient.SessionStreamAPIV1IncidentSessionSessionIDStreamGetOK{Data: pr}, nil
+}
+
+// streamSessionEvents drains ch and writes each event to pw as an SSE frame
+// until ctx is cancelled or ch is closed. Intended to run in its own
+// goroutine (spawned by the stream handler); always closes pw on exit so the
+// paired reader observes io.EOF, and recovers from panics so a single
+// malformed event cannot crash the process.
+func (h *Handler) streamSessionEvents(ctx context.Context, sessionID string, ch <-chan session.InvestigationEvent, pw *io.PipeWriter) {
+	// CloseWithError(nil) behaves like Close but makes the intent explicit:
+	// the pipe writer is always closed when the goroutine exits, regardless
+	// of the exit path. The reader sees io.EOF. (#54 defer error handling)
+	defer func() { _ = pw.CloseWithError(nil) }()
+	defer func() {
+		if r := recover(); r != nil {
+			h.logger.Error(fmt.Errorf("panic: %v", r), "SSE writer panic recovered", "session_id", sessionID)
+		}
+	}()
+	seq := 1
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case ev, ok := <-ch:
+			if !ok {
+				return
+			}
+			data, err := json.Marshal(ev)
+			if err != nil {
+				h.logger.Error(err, "SSE event marshal failed, skipping frame",
+					"session_id", sessionID, "event_type", ev.Type)
+				continue
+			}
+			frame := fmt.Sprintf("id: %d\nevent: %s\ndata: %s\n\n", seq, ev.Type, string(data))
+			if _, writeErr := pw.Write([]byte(frame)); writeErr != nil {
+				return
+			}
+			seq++
+		}
+	}
 }
 
 // terminalSessionSSE returns an SSE stream with a synthetic complete event
@@ -633,246 +639,5 @@ func synthesizeNilResult(sess *session.Session) *katypes.InvestigationResult {
 			RCASummary: "Investigation completed without result",
 			Confidence: 0,
 		}
-	}
-}
-
-func mapInvestigationResultToResponse(log logr.Logger, r *katypes.InvestigationResult, incidentID string) *agentclient.IncidentResponse {
-	resp := &agentclient.IncidentResponse{
-		IncidentID: incidentID,
-		Analysis:   r.RCASummary,
-		Confidence: r.Confidence,
-		Timestamp:  time.Now().UTC().Format(time.RFC3339),
-	}
-
-	rca := agentclient.IncidentResponseRootCauseAnalysis{}
-	if r.RCASummary != "" {
-		summaryRaw, _ := json.Marshal(r.RCASummary)
-		rca["summary"] = jx.Raw(summaryRaw)
-	}
-	if r.Severity != "" {
-		sevRaw, _ := json.Marshal(r.Severity)
-		rca["severity"] = jx.Raw(sevRaw)
-	}
-	if r.RemediationTarget.Kind != "" {
-		targetRaw, _ := json.Marshal(r.RemediationTarget)
-		rca["remediationTarget"] = jx.Raw(targetRaw)
-	}
-	if r.SignalName != "" {
-		snRaw, _ := json.Marshal(r.SignalName)
-		rca["signal_name"] = jx.Raw(snRaw)
-	}
-	if len(r.ContributingFactors) > 0 {
-		cfRaw, _ := json.Marshal(r.ContributingFactors)
-		rca["contributing_factors"] = jx.Raw(cfRaw)
-	}
-	if len(r.CausalChain) > 0 {
-		ccRaw, _ := json.Marshal(r.CausalChain)
-		rca["causal_chain"] = jx.Raw(ccRaw)
-	}
-	if r.DueDiligence != nil {
-		ddRaw, _ := json.Marshal(r.DueDiligence)
-		rca["due_diligence"] = jx.Raw(ddRaw)
-	}
-	resp.RootCauseAnalysis = rca
-
-	if r.HumanReviewNeeded {
-		resp.NeedsHumanReview.SetTo(true)
-		reason := r.HumanReviewReason
-		if reason == "" {
-			reason = r.Reason
-		}
-		mapped, isDefault := mapHumanReviewReason(reason)
-		if isDefault && reason != "" {
-			log.Info("unrecognized human review reason, falling back to investigation_inconclusive",
-				"original_reason", reason)
-		}
-		resp.HumanReviewReason.SetTo(mapped)
-	} else {
-		resp.NeedsHumanReview.SetTo(false)
-	}
-
-	if r.WorkflowID != "" {
-		sw := agentclient.IncidentResponseSelectedWorkflow{}
-		wfIDRaw, _ := json.Marshal(r.WorkflowID)
-		sw["workflow_id"] = jx.Raw(wfIDRaw)
-		if len(r.Parameters) > 0 {
-			paramsRaw, _ := json.Marshal(r.Parameters)
-			sw["parameters"] = jx.Raw(paramsRaw)
-		}
-		confRaw, _ := json.Marshal(r.Confidence)
-		sw["confidence"] = jx.Raw(confRaw)
-		if r.ExecutionBundle != "" {
-			ebRaw, _ := json.Marshal(r.ExecutionBundle)
-			sw["execution_bundle"] = jx.Raw(ebRaw)
-		}
-		if r.ExecutionBundleDigest != "" {
-			ebdRaw, _ := json.Marshal(r.ExecutionBundleDigest)
-			sw["execution_bundle_digest"] = jx.Raw(ebdRaw)
-		}
-		if r.ExecutionEngine != "" {
-			eeRaw, _ := json.Marshal(r.ExecutionEngine)
-			sw["execution_engine"] = jx.Raw(eeRaw)
-		}
-		if r.ServiceAccountName != "" {
-			saRaw, _ := json.Marshal(r.ServiceAccountName)
-			sw["service_account_name"] = jx.Raw(saRaw)
-		}
-		if r.WorkflowVersion != "" {
-			vRaw, _ := json.Marshal(r.WorkflowVersion)
-			sw["version"] = jx.Raw(vRaw)
-		}
-		if r.WorkflowRationale != "" {
-			rRaw, _ := json.Marshal(r.WorkflowRationale)
-			sw["rationale"] = jx.Raw(rRaw)
-		}
-		resp.SelectedWorkflow.SetTo(sw)
-	}
-
-	if r.IsActionable != nil {
-		resp.IsActionable.SetTo(*r.IsActionable)
-	}
-	if len(r.Warnings) > 0 {
-		resp.Warnings = r.Warnings
-	} else if r.HumanReviewNeeded {
-		resp.Warnings = []string{synthesizeHumanReviewWarning(r)}
-	} else {
-		resp.Warnings = []string{}
-	}
-
-	if len(r.DetectedLabels) > 0 {
-		dl := make(agentclient.IncidentResponseDetectedLabels, len(r.DetectedLabels))
-		for k, v := range r.DetectedLabels {
-			raw, _ := json.Marshal(v)
-			dl[k] = jx.Raw(raw)
-		}
-		resp.DetectedLabels.SetTo(dl)
-	}
-
-	if len(r.AlternativeWorkflows) > 0 {
-		alts := make([]agentclient.AlternativeWorkflow, 0, len(r.AlternativeWorkflows))
-		for _, aw := range r.AlternativeWorkflows {
-			alt := agentclient.AlternativeWorkflow{
-				WorkflowID: aw.WorkflowID,
-				Confidence: aw.Confidence,
-				Rationale:  aw.Rationale,
-			}
-			if aw.ExecutionBundle != "" {
-				alt.ExecutionBundle.SetTo(aw.ExecutionBundle)
-			}
-			alts = append(alts, alt)
-		}
-		resp.AlternativeWorkflows = alts
-	}
-
-	if len(r.ValidationAttemptsHistory) > 0 {
-		attempts := make([]agentclient.ValidationAttempt, 0, len(r.ValidationAttemptsHistory))
-		for _, va := range r.ValidationAttemptsHistory {
-			attempt := agentclient.ValidationAttempt{
-				Attempt:   va.Attempt,
-				IsValid:   va.IsValid,
-				Errors:    va.Errors,
-				Timestamp: va.Timestamp,
-			}
-			if va.WorkflowID != "" {
-				attempt.WorkflowID.SetTo(va.WorkflowID)
-			}
-			attempts = append(attempts, attempt)
-		}
-		resp.ValidationAttemptsHistory = attempts
-	}
-
-	if r.AlignmentVerdict != nil {
-		av := agentclient.AlignmentVerdict{
-			Result:  agentclient.AlignmentVerdictResult(r.AlignmentVerdict.Result),
-			Flagged: r.AlignmentVerdict.Flagged,
-			Total:   r.AlignmentVerdict.Total,
-		}
-		if r.AlignmentVerdict.CircuitBreakerActivated {
-			av.CircuitBreakerActivated.SetTo(true)
-		}
-		if r.AlignmentVerdict.Summary != "" {
-			av.Summary.SetTo(r.AlignmentVerdict.Summary)
-		}
-		if len(r.AlignmentVerdict.Findings) > 0 {
-			findings := make([]agentclient.AlignmentFinding, 0, len(r.AlignmentVerdict.Findings))
-			for _, f := range r.AlignmentVerdict.Findings {
-				finding := agentclient.AlignmentFinding{
-					StepIndex:   f.StepIndex,
-					StepKind:    agentclient.AlignmentFindingStepKind(f.StepKind),
-					Explanation: f.Explanation,
-				}
-				if f.Tool != "" {
-					finding.Tool.SetTo(f.Tool)
-				}
-				findings = append(findings, finding)
-			}
-			av.Findings = findings
-		}
-		resp.AlignmentVerdict.SetTo(av)
-	}
-
-	return resp
-}
-
-// synthesizeHumanReviewWarning generates a warning when human review is required
-// but no explicit warnings were set by the parser. Per BR-HAPI-197, human review
-// responses must include at least one warning explaining why automation is unavailable.
-func synthesizeHumanReviewWarning(r *katypes.InvestigationResult) string {
-	reason := r.HumanReviewReason
-	if reason == "" {
-		reason = r.Reason
-	}
-	if reason != "" {
-		return fmt.Sprintf("Human review required: %s", reason)
-	}
-	return "Human review required: investigation could not determine automated remediation"
-}
-
-// mapHumanReviewReason maps free-form investigator reason strings to valid
-// HumanReviewReason enum values. Returns the mapped enum and whether the
-// default fallback was used (M4: enables caller logging of unrecognized reasons).
-func mapHumanReviewReason(reason string) (agentclient.HumanReviewReason, bool) {
-	switch reason {
-	case "rca_incomplete":
-		return agentclient.HumanReviewReasonRcaIncomplete, false
-	case "investigation_inconclusive":
-		return agentclient.HumanReviewReasonInvestigationInconclusive, false
-	case "workflow_not_found":
-		return agentclient.HumanReviewReasonWorkflowNotFound, false
-	case "no_matching_workflows":
-		return agentclient.HumanReviewReasonNoMatchingWorkflows, false
-	case "image_mismatch":
-		return agentclient.HumanReviewReasonImageMismatch, false
-	case "parameter_validation_failed":
-		return agentclient.HumanReviewReasonParameterValidationFailed, false
-	case "low_confidence":
-		return agentclient.HumanReviewReasonLowConfidence, false
-	case "llm_parsing_error":
-		return agentclient.HumanReviewReasonLlmParsingError, false
-	case "alignment_check_failed":
-		return agentclient.HumanReviewReasonAlignmentCheckFailed, false
-	case "operator_escalation":
-		return agentclient.HumanReviewReasonOperatorEscalation, false
-	}
-
-	switch {
-	case strings.Contains(reason, "exhausted during RCA"):
-		return agentclient.HumanReviewReasonRcaIncomplete, false
-	case strings.Contains(reason, "exhausted during workflow selection"):
-		return agentclient.HumanReviewReasonInvestigationInconclusive, false
-	case strings.Contains(reason, "not found") && strings.Contains(reason, "catalog"):
-		return agentclient.HumanReviewReasonWorkflowNotFound, false
-	case strings.Contains(reason, "no matching"):
-		return agentclient.HumanReviewReasonNoMatchingWorkflows, false
-	case strings.Contains(reason, "mismatch") || strings.Contains(reason, "image"):
-		return agentclient.HumanReviewReasonImageMismatch, false
-	case strings.Contains(reason, "parameter") || strings.Contains(reason, "validation"):
-		return agentclient.HumanReviewReasonParameterValidationFailed, false
-	case strings.Contains(reason, "confidence"):
-		return agentclient.HumanReviewReasonLowConfidence, false
-	case strings.Contains(reason, "parse") || strings.Contains(reason, "parsing"):
-		return agentclient.HumanReviewReasonLlmParsingError, false
-	default:
-		return agentclient.HumanReviewReasonInvestigationInconclusive, true
 	}
 }

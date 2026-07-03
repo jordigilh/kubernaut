@@ -57,59 +57,62 @@ func (r *Reconciler) ApplyTransition(ctx context.Context, rr *remediationv1.Reme
 
 	case phase.TransitionFailed:
 		res, err := r.transitionToFailed(ctx, rr, intent.FailurePhase, intent.FailureErr)
-		if err != nil {
-			return res, fmt.Errorf("applyTransition(%s): %w", intent.Type, err)
-		}
-		return res, nil
+		return wrapTransitionResult(intent.Type, res, err)
 
 	case phase.TransitionBlocked:
 		bc := ToBlockingCondition(intent.Block)
 		res, err := r.handleBlocked(ctx, rr, bc, string(intent.Block.FromPhase), intent.Block.WorkflowID)
-		if err != nil {
-			return res, fmt.Errorf("applyTransition(%s): %w", intent.Type, err)
-		}
-		return res, nil
+		return wrapTransitionResult(intent.Type, res, err)
 
 	case phase.TransitionVerifying:
 		res, err := r.transitionToVerifying(ctx, rr, intent.Outcome)
-		if err != nil {
-			return res, fmt.Errorf("applyTransition(%s): %w", intent.Type, err)
-		}
-		return res, nil
+		return wrapTransitionResult(intent.Type, res, err)
 
 	case phase.TransitionInheritedCompleted:
 		res, err := r.transitionToInheritedCompleted(ctx, rr, intent.SourceRef, intent.SourceKind)
-		if err != nil {
-			return res, fmt.Errorf("applyTransition(%s): %w", intent.Type, err)
-		}
-		return res, nil
+		return wrapTransitionResult(intent.Type, res, err)
 
 	case phase.TransitionInheritedFailed:
 		res, err := r.transitionToInheritedFailed(ctx, rr, intent.FailureErr, intent.SourceRef, intent.SourceKind)
-		if err != nil {
-			return res, fmt.Errorf("applyTransition(%s): %w", intent.Type, err)
-		}
-		return res, nil
+		return wrapTransitionResult(intent.Type, res, err)
 
 	case phase.TransitionCompletedWithoutVerification:
 		res, err := r.transitionToCompletedWithoutVerification(ctx, rr, intent.Reason)
-		if err != nil {
-			return res, fmt.Errorf("applyTransition(%s): %w", intent.Type, err)
-		}
-		return res, nil
+		return wrapTransitionResult(intent.Type, res, err)
 
 	case phase.TransitionNone:
-		if intent.RequeueImmediately {
-			return ctrl.Result{Requeue: true}, nil
-		}
-		if intent.RequeueAfter > 0 {
-			return ctrl.Result{RequeueAfter: intent.RequeueAfter}, nil
-		}
-		return ctrl.Result{}, nil
+		return transitionNoneResult(intent), nil
 
 	default:
 		return ctrl.Result{}, fmt.Errorf("unhandled transition type: %s", intent.Type)
 	}
+}
+
+// wrapTransitionResult wraps a non-nil err with the "applyTransition(<type>)"
+// context prefix shared by every ApplyTransition case except TransitionAdvance
+// (which also includes the target phase). Extracted from ApplyTransition
+// (Wave 6 6e-i GREEN: cyclomatic-complexity remediation) — pure code motion,
+// no behavior change; moves each case's "if err != nil" branch out of
+// ApplyTransition's own cyclomatic count.
+func wrapTransitionResult(transitionType phase.TransitionType, res ctrl.Result, err error) (ctrl.Result, error) {
+	if err != nil {
+		return res, fmt.Errorf("applyTransition(%s): %w", transitionType, err)
+	}
+	return res, nil
+}
+
+// transitionNoneResult implements the TransitionNone case of ApplyTransition:
+// requeue immediately, requeue after a delay, or do neither. Extracted from
+// ApplyTransition (Wave 6 6e-i GREEN: cyclomatic-complexity remediation) —
+// pure code motion, no behavior change.
+func transitionNoneResult(intent phase.TransitionIntent) ctrl.Result {
+	if intent.RequeueImmediately {
+		return ctrl.Result{Requeue: true}
+	}
+	if intent.RequeueAfter > 0 {
+		return ctrl.Result{RequeueAfter: intent.RequeueAfter}
+	}
+	return ctrl.Result{}
 }
 
 // ToBlockingCondition converts a phase.BlockMeta to a routing.BlockingCondition

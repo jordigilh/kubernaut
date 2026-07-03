@@ -587,11 +587,12 @@ var _ = Describe("Audit Manager", func() {
 		It("should build complete orchestrator.approval.requested event with all required fields", func() {
 			requiredBy := time.Now().Add(24 * time.Hour)
 			event, err := manager.BuildApprovalRequestedEvent(
-				"correlation-123",
-				"default",
-				"rr-test-001",
-				"",
-				"rar-rr-test-001",
+				prodaudit.ApprovalEventContext{
+					CorrelationID: "correlation-123",
+					Namespace:     "default",
+					RRName:        "rr-test-001",
+					RARName:       "rar-rr-test-001",
+				},
 				"wf-scale-deployment",
 				"85%",
 				requiredBy,
@@ -624,11 +625,12 @@ var _ = Describe("Audit Manager", func() {
 	Describe("BuildApprovalDecisionEvent", func() {
 		It("should build approved event with correct type", func() {
 			event, err := manager.BuildApprovalDecisionEvent(
-				"correlation-123",
-				"default",
-				"rr-test-001",
-				"",
-				"rar-rr-test-001",
+				prodaudit.ApprovalEventContext{
+					CorrelationID: "correlation-123",
+					Namespace:     "default",
+					RRName:        "rr-test-001",
+					RARName:       "rar-rr-test-001",
+				},
 				"Approved",
 				"operator@example.com",
 				"Looks good",
@@ -640,11 +642,12 @@ var _ = Describe("Audit Manager", func() {
 
 		It("should build rejected event with correct type", func() {
 			event, err := manager.BuildApprovalDecisionEvent(
-				"correlation-123",
-				"default",
-				"rr-test-001",
-				"",
-				"rar-rr-test-001",
+				prodaudit.ApprovalEventContext{
+					CorrelationID: "correlation-123",
+					Namespace:     "default",
+					RRName:        "rr-test-001",
+					RARName:       "rar-rr-test-001",
+				},
 				"Rejected",
 				"admin@example.com",
 				"Too risky",
@@ -656,11 +659,12 @@ var _ = Describe("Audit Manager", func() {
 
 		It("should build expired event with correct type", func() {
 			event, err := manager.BuildApprovalDecisionEvent(
-				"correlation-123",
-				"default",
-				"rr-test-001",
-				"",
-				"rar-rr-test-001",
+				prodaudit.ApprovalEventContext{
+					CorrelationID: "correlation-123",
+					Namespace:     "default",
+					RRName:        "rr-test-001",
+					RARName:       "rar-rr-test-001",
+				},
 				"Expired",
 				"system",
 				"Approval deadline passed",
@@ -674,11 +678,12 @@ var _ = Describe("Audit Manager", func() {
 
 		It("should set actor type to user for non-system decisions", func() {
 			event, err := manager.BuildApprovalDecisionEvent(
-				"correlation-123",
-				"default",
-				"rr-test-001",
-				"",
-				"rar-rr-test-001",
+				prodaudit.ApprovalEventContext{
+					CorrelationID: "correlation-123",
+					Namespace:     "default",
+					RRName:        "rr-test-001",
+					RARName:       "rar-rr-test-001",
+				},
 				"Approved",
 				"operator@example.com",
 				"LGTM",
@@ -690,11 +695,12 @@ var _ = Describe("Audit Manager", func() {
 
 		It("should set actor type to service for system decisions", func() {
 			event, err := manager.BuildApprovalDecisionEvent(
-				"correlation-123",
-				"default",
-				"rr-test-001",
-				"",
-				"rar-rr-test-001",
+				prodaudit.ApprovalEventContext{
+					CorrelationID: "correlation-123",
+					Namespace:     "default",
+					RRName:        "rr-test-001",
+					RARName:       "rar-rr-test-001",
+				},
 				"Expired",
 				"system",
 				"Timeout",
@@ -1013,7 +1019,9 @@ var _ = Describe("Audit Manager", func() {
 				{
 					name: "ApprovalRequested",
 					build: func() error {
-						_, err := manager.BuildApprovalRequestedEvent("corr", "ns", "rr", "", "rar", "wf", "85%", time.Now())
+						_, err := manager.BuildApprovalRequestedEvent(
+							prodaudit.ApprovalEventContext{CorrelationID: "corr", Namespace: "ns", RRName: "rr", RARName: "rar"},
+							"wf", "85%", time.Now())
 						if err != nil {
 							return err
 						}
@@ -1025,7 +1033,9 @@ var _ = Describe("Audit Manager", func() {
 				{
 					name: "ApprovalDecision",
 					build: func() error {
-						_, err := manager.BuildApprovalDecisionEvent("corr", "ns", "rr", "", "rar", "Approved", "user", "msg")
+						_, err := manager.BuildApprovalDecisionEvent(
+							prodaudit.ApprovalEventContext{CorrelationID: "corr", Namespace: "ns", RRName: "rr", RARName: "rar"},
+							"Approved", "user", "msg")
 						if err != nil {
 							return err
 						}

@@ -36,11 +36,11 @@ import (
 
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	controller "github.com/jordigilh/kubernaut/internal/controller/effectivenessmonitor"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	emaudit "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/audit"
 	emclient "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/client"
 	"github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/conditions"
 	emmetrics "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/metrics"
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
 // decayAMClient implements emclient.AlertManagerClient returning configurable alerts.
@@ -107,17 +107,17 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 		cfg.PrometheusEnabled = false
 		cfg.ValidityWindow = 1 * time.Hour
 
-		r := controller.NewReconciler(
-			fakeClient, fakeClient,
-			s,
-			record.NewFakeRecorder(100),
-			emmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			nil,       // Prometheus client (disabled)
-			amClient,
-			auditMgr,
-			nil, // DSQuerier
-			cfg,
-		)
+		r := controller.NewReconciler(controller.ReconcilerDeps{
+			Client:             fakeClient,
+			APIReader:          fakeClient,
+			Scheme:             s,
+			Recorder:           record.NewFakeRecorder(100),
+			Metrics:            emmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			PrometheusClient:   nil, // Prometheus client (disabled)
+			AlertManagerClient: amClient,
+			AuditManager:       auditMgr,
+			DSQuerier:          nil, // DSQuerier
+		}, cfg)
 		return r, fakeClient
 	}
 
@@ -148,9 +148,9 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 				},
 			},
 			Status: eav1.EffectivenessAssessmentStatus{
-				Phase:                 eav1.PhaseAssessing,
-				ValidityDeadline:      &futureDeadline,
-				PrometheusCheckAfter:  &pastCheck,
+				Phase:                  eav1.PhaseAssessing,
+				ValidityDeadline:       &futureDeadline,
+				PrometheusCheckAfter:   &pastCheck,
 				AlertManagerCheckAfter: &pastCheck,
 				Components: eav1.EAComponents{
 					HealthAssessed: true,
@@ -302,15 +302,17 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 			WithStatusSubresource(&eav1.EffectivenessAssessment{}).
 			Build()
 
-		r := controller.NewReconciler(
-			fakeClient, fakeClient,
-			s,
-			record.NewFakeRecorder(100),
-			emmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			nil, firingAMClient(),
-			nil, nil,
-			cfg,
-		)
+		r := controller.NewReconciler(controller.ReconcilerDeps{
+			Client:             fakeClient,
+			APIReader:          fakeClient,
+			Scheme:             s,
+			Recorder:           record.NewFakeRecorder(100),
+			Metrics:            emmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			PrometheusClient:   nil,
+			AlertManagerClient: firingAMClient(),
+			AuditManager:       nil,
+			DSQuerier:          nil,
+		}, cfg)
 
 		_, err := r.Reconcile(context.Background(), ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: name, Namespace: ns},

@@ -186,17 +186,17 @@ func (r *Reconciler) isAlertDecay(ea *eav1.EffectivenessAssessment, ar alertAsse
 // metricsAssessResult contains both the component result and the structured metric deltas
 // for populating the metric_deltas typed sub-object in audit events (DD-017 v2.5).
 type metricsAssessResult struct {
-	Component            emtypes.ComponentResult
-	CPUBefore            *float64
-	CPUAfter             *float64
-	MemoryBefore         *float64
-	MemoryAfter          *float64
-	LatencyP95BeforeMs   *float64
-	LatencyP95AfterMs    *float64
-	ErrorRateBefore      *float64
-	ErrorRateAfter       *float64
-	ThroughputBeforeRPS  *float64
-	ThroughputAfterRPS   *float64
+	Component           emtypes.ComponentResult
+	CPUBefore           *float64
+	CPUAfter            *float64
+	MemoryBefore        *float64
+	MemoryAfter         *float64
+	LatencyP95BeforeMs  *float64
+	LatencyP95AfterMs   *float64
+	ErrorRateBefore     *float64
+	ErrorRateAfter      *float64
+	ThroughputBeforeRPS *float64
+	ThroughputAfterRPS  *float64
 }
 
 // metricQuerySpec defines a PromQL query for a single metric type.
@@ -228,33 +228,7 @@ func (r *Reconciler) assessMetrics(ctx context.Context, ea *eav1.EffectivenessAs
 	end := time.Now()
 	step := 1 * time.Second
 
-	queries := []metricQuerySpec{
-		{
-			Name:          "container_cpu_usage_seconds_total",
-			Query:         fmt.Sprintf(`sum(rate(container_cpu_usage_seconds_total{namespace="%s"}[5m]))`, ns),
-			LowerIsBetter: true,
-		},
-		{
-			Name:          "container_memory_working_set_bytes",
-			Query:         fmt.Sprintf(`sum(container_memory_working_set_bytes{namespace="%s"})`, ns),
-			LowerIsBetter: true,
-		},
-		{
-			Name:          "http_request_duration_p95_ms",
-			Query:         fmt.Sprintf(`histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{namespace="%s"}[5m])) * 1000`, ns),
-			LowerIsBetter: true,
-		},
-		{
-			Name:          "http_error_rate",
-			Query:         fmt.Sprintf(`sum(rate(http_requests_total{namespace="%s",code=~"5.."}[5m])) / sum(rate(http_requests_total{namespace="%s"}[5m]))`, ns, ns),
-			LowerIsBetter: true,
-		},
-		{
-			Name:          "http_throughput_rps",
-			Query:         fmt.Sprintf(`sum(rate(http_requests_total{namespace="%s"}[5m]))`, ns),
-			LowerIsBetter: false,
-		},
-	}
+	queries := buildMetricQuerySpecs(ns)
 
 	queryResults := make([]metricQueryResult, len(queries))
 	for i, spec := range queries {
@@ -292,6 +266,49 @@ func (r *Reconciler) assessMetrics(ctx context.Context, ea *eav1.EffectivenessAs
 	)
 
 	mr := metricsAssessResult{Component: result}
+	populateMetricsAssessResult(&mr, queryResults)
+	return mr
+}
+
+// buildMetricQuerySpecs returns the 5 independent PromQL queries (CPU,
+// memory, latency p95, error rate, throughput) for namespace ns. Extracted
+// from assessMetrics (Wave 6 6a GREEN: funlen remediation) — pure code
+// motion, no behavior change.
+func buildMetricQuerySpecs(ns string) []metricQuerySpec {
+	return []metricQuerySpec{
+		{
+			Name:          "container_cpu_usage_seconds_total",
+			Query:         fmt.Sprintf(`sum(rate(container_cpu_usage_seconds_total{namespace="%s"}[5m]))`, ns),
+			LowerIsBetter: true,
+		},
+		{
+			Name:          "container_memory_working_set_bytes",
+			Query:         fmt.Sprintf(`sum(container_memory_working_set_bytes{namespace="%s"})`, ns),
+			LowerIsBetter: true,
+		},
+		{
+			Name:          "http_request_duration_p95_ms",
+			Query:         fmt.Sprintf(`histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{namespace="%s"}[5m])) * 1000`, ns),
+			LowerIsBetter: true,
+		},
+		{
+			Name:          "http_error_rate",
+			Query:         fmt.Sprintf(`sum(rate(http_requests_total{namespace="%s",code=~"5.."}[5m])) / sum(rate(http_requests_total{namespace="%s"}[5m]))`, ns, ns),
+			LowerIsBetter: true,
+		},
+		{
+			Name:          "http_throughput_rps",
+			Query:         fmt.Sprintf(`sum(rate(http_requests_total{namespace="%s"}[5m]))`, ns),
+			LowerIsBetter: false,
+		},
+	}
+}
+
+// populateMetricsAssessResult fills mr's before/after fields from the
+// available query results, keyed by metric name. Extracted from
+// assessMetrics (Wave 6 6a GREEN: funlen remediation) — pure code motion,
+// no behavior change.
+func populateMetricsAssessResult(mr *metricsAssessResult, queryResults []metricQueryResult) {
 	for _, qr := range queryResults {
 		if !qr.Available {
 			continue
@@ -314,8 +331,6 @@ func (r *Reconciler) assessMetrics(ctx context.Context, ea *eav1.EffectivenessAs
 			mr.ThroughputAfterRPS = &qr.PostValue
 		}
 	}
-
-	return mr
 }
 
 // executeMetricQuery runs a single PromQL range query and extracts before/after values.

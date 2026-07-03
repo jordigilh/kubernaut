@@ -23,7 +23,7 @@ import (
 	"net/http"
 	"time"
 
-
+	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
 	dsclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/query"
@@ -98,66 +98,30 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
-	// 1. Parse request body using OpenAPI type (type-safe, no manual parsing)
-	s.logger.V(2).Info("Parsing request body with OpenAPI types...")
-	var req dsclient.AuditEventRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		if dsmiddleware.IsMaxBytesError(err) {
-			dsmiddleware.WriteMaxBytesExceeded(w, s.logger)
-			return
-		}
-		s.logger.Info("Invalid JSON in request body", "error", err, "remote_addr", r.RemoteAddr)
-		response.WriteRFC7807Error(w, http.StatusBadRequest, "invalid_request", "Invalid Request",
-			"The request body could not be parsed as valid JSON", s.logger)
+	req, auditEvent, repositoryEvent, ok := s.parseAndValidateAuditEventRequest(ctx, w, r)
+	if !ok {
 		return
 	}
 
-	// 2. Validate business rules (OpenAPI already validated required fields, types, and enums)
-	// Gap 1.2 REFACTOR: Enhanced validation (timestamp bounds, field lengths)
-	s.logger.V(2).Info("Validating business rules...")
-	if err := helpers.ValidateAuditEventRequest(&req); err != nil {
-		s.logger.Info("Business validation failed", "error", err)
-		response.WriteRFC7807Error(w, http.StatusBadRequest, "validation-error", "Validation Error", "audit event request failed validation", s.logger)
-		return
-	}
+	s.persistAuditEventWithDLQFallback(ctx, w, r, req, auditEvent, repositoryEvent)
+}
 
-	// 3. Convert OpenAPI request to internal audit event (trusted actor from oauth-proxy header)
-	s.logger.V(2).Info("Converting OpenAPI request to internal type...")
-	authenticatedActorID := r.Header.Get("X-Auth-Request-User")
-	auditEvent, err := helpers.ConvertAuditEventRequest(req, authenticatedActorID)
-	if err != nil {
-		s.logger.Error(err, "Failed to convert audit event request",
-			"event_type", req.EventType,
-			"correlation_id", req.CorrelationID)
-		response.WriteRFC7807InternalError(w, "conversion_error", "Conversion Error", err, s.logger)
-		return
-	}
-
-	// D2/SI-10: Validate EventData size and depth (defense-in-depth, consistent with DLQ replay)
-	if err := dlq.ValidateEventData(auditEvent.EventData); err != nil {
-		s.logger.Info("EventData validation failed", "error", err,
-			"correlation_id", req.CorrelationID)
-		response.WriteRFC7807Error(w, http.StatusBadRequest, "validation-error", "Validation Error",
-			"event_data exceeds size or nesting depth limits", s.logger)
-		return
+// parseAndValidateAuditEventRequest implements steps 1-5 of handleCreateAuditEvent:
+// decode the OpenAPI request body, validate business rules, convert to the
+// internal audit event, resolve the parent_event_id FK, and convert to the
+// repository type. On any failure it writes the RFC 7807 error response
+// itself and returns ok=false. Extracted from handleCreateAuditEvent
+// (Wave 6 6f GREEN: funlen remediation) — pure code motion, no behavior change.
+func (s *Server) parseAndValidateAuditEventRequest(ctx context.Context, w http.ResponseWriter, r *http.Request) (dsclient.AuditEventRequest, *audit.AuditEvent, *repository.AuditEvent, bool) {
+	// 1-3. Decode, validate business rules, and convert to the internal audit event
+	req, auditEvent, ok := s.decodeAndConvertAuditEventRequest(w, r)
+	if !ok {
+		return req, nil, nil, false
 	}
 
 	// 4. Handle parent_event_id FK constraint (query parent's event_date)
-	// DF-C2: Set BOTH ParentEventID and ParentEventDate so the composite FK
-	// (parent_event_id, parent_event_date) is fully satisfied.
-	if req.ParentEventID.IsSet() {
-		parentEventID := req.ParentEventID.Value
-		var parentDate time.Time
-		err = s.db.QueryRowContext(ctx,
-			"SELECT event_date FROM audit_events WHERE event_id = $1",
-			parentEventID).Scan(&parentDate)
-		if err != nil {
-			s.logger.Info("Parent event not found", "error", err, "parent_event_id", parentEventID.String())
-			response.WriteRFC7807Error(w, http.StatusBadRequest, "validation-error", "Validation Error", "parent event does not exist", s.logger)
-			return
-		}
-		auditEvent.ParentEventID = &parentEventID
-		auditEvent.ParentEventDate = &parentDate
+	if !s.resolveParentEventFK(ctx, w, req, auditEvent) {
+		return req, nil, nil, false
 	}
 
 	// 5. Convert to repository type
@@ -169,7 +133,7 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 		s.logger.Info("Invalid event_data format", "error", err)
 		response.WriteRFC7807Error(w, http.StatusBadRequest, "invalid_event_data", "Invalid Event Data",
 			"The event_data field could not be processed; check JSON structure and field types", s.logger)
-		return
+		return req, nil, nil, false
 	}
 
 	s.logger.V(2).Info("Request parsed and validated successfully",
@@ -177,6 +141,94 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 		"event_category", string(req.EventCategory),
 		"correlation_id", req.CorrelationID)
 
+	return req, auditEvent, repositoryEvent, true
+}
+
+// decodeAndConvertAuditEventRequest implements steps 1-3 of handleCreateAuditEvent:
+// decode the OpenAPI request body, validate business rules, convert to the
+// internal audit event, and validate EventData size/depth (SI-10). On any
+// failure it writes the RFC 7807 error response itself and returns ok=false.
+// Extracted from parseAndValidateAuditEventRequest (Wave 6 6f GREEN: funlen
+// remediation) — pure code motion, no behavior change.
+func (s *Server) decodeAndConvertAuditEventRequest(w http.ResponseWriter, r *http.Request) (dsclient.AuditEventRequest, *audit.AuditEvent, bool) {
+	// 1. Parse request body using OpenAPI type (type-safe, no manual parsing)
+	s.logger.V(2).Info("Parsing request body with OpenAPI types...")
+	var req dsclient.AuditEventRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if dsmiddleware.IsMaxBytesError(err) {
+			dsmiddleware.WriteMaxBytesExceeded(w, s.logger)
+			return req, nil, false
+		}
+		s.logger.Info("Invalid JSON in request body", "error", err, "remote_addr", r.RemoteAddr)
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "invalid_request", "Invalid Request",
+			"The request body could not be parsed as valid JSON", s.logger)
+		return req, nil, false
+	}
+
+	// 2. Validate business rules (OpenAPI already validated required fields, types, and enums)
+	// Gap 1.2 REFACTOR: Enhanced validation (timestamp bounds, field lengths)
+	s.logger.V(2).Info("Validating business rules...")
+	if err := helpers.ValidateAuditEventRequest(&req); err != nil {
+		s.logger.Info("Business validation failed", "error", err)
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "validation-error", "Validation Error", "audit event request failed validation", s.logger)
+		return req, nil, false
+	}
+
+	// 3. Convert OpenAPI request to internal audit event (trusted actor from oauth-proxy header)
+	s.logger.V(2).Info("Converting OpenAPI request to internal type...")
+	authenticatedActorID := r.Header.Get("X-Auth-Request-User")
+	auditEvent, err := helpers.ConvertAuditEventRequest(req, authenticatedActorID)
+	if err != nil {
+		s.logger.Error(err, "Failed to convert audit event request",
+			"event_type", req.EventType,
+			"correlation_id", req.CorrelationID)
+		response.WriteRFC7807InternalError(w, "conversion_error", "Conversion Error", err, s.logger)
+		return req, nil, false
+	}
+
+	// D2/SI-10: Validate EventData size and depth (defense-in-depth, consistent with DLQ replay)
+	if err := dlq.ValidateEventData(auditEvent.EventData); err != nil {
+		s.logger.Info("EventData validation failed", "error", err,
+			"correlation_id", req.CorrelationID)
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "validation-error", "Validation Error",
+			"event_data exceeds size or nesting depth limits", s.logger)
+		return req, nil, false
+	}
+
+	return req, auditEvent, true
+}
+
+// resolveParentEventFK implements step 4 of handleCreateAuditEvent: when
+// parent_event_id is set, resolve the parent's event_date so the composite FK
+// (parent_event_id, parent_event_date) is fully satisfied (DF-C2). On failure
+// it writes the RFC 7807 error response itself and returns false. Extracted
+// from parseAndValidateAuditEventRequest (Wave 6 6f GREEN: funlen
+// remediation) — pure code motion, no behavior change.
+func (s *Server) resolveParentEventFK(ctx context.Context, w http.ResponseWriter, req dsclient.AuditEventRequest, auditEvent *audit.AuditEvent) bool {
+	if !req.ParentEventID.IsSet() {
+		return true
+	}
+
+	parentEventID := req.ParentEventID.Value
+	var parentDate time.Time
+	if err := s.db.QueryRowContext(ctx,
+		"SELECT event_date FROM audit_events WHERE event_id = $1",
+		parentEventID).Scan(&parentDate); err != nil {
+		s.logger.Info("Parent event not found", "error", err, "parent_event_id", parentEventID.String())
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "validation-error", "Validation Error", "parent event does not exist", s.logger)
+		return false
+	}
+	auditEvent.ParentEventID = &parentEventID
+	auditEvent.ParentEventDate = &parentDate
+	return true
+}
+
+// persistAuditEventWithDLQFallback implements steps 6-7 of handleCreateAuditEvent:
+// write the audit event to the database, falling back to the DLQ (DD-009) on
+// database failure, and emit the write-duration/audit-lag metrics
+// (BR-STORAGE-019). Extracted from handleCreateAuditEvent (Wave 6 6f GREEN:
+// funlen remediation) — pure code motion, no behavior change.
+func (s *Server) persistAuditEventWithDLQFallback(ctx context.Context, w http.ResponseWriter, r *http.Request, req dsclient.AuditEventRequest, auditEvent *audit.AuditEvent, repositoryEvent *repository.AuditEvent) {
 	// 6. Persist to database via repository
 	s.logger.V(2).Info("Writing audit event to database...")
 
@@ -194,44 +246,7 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 			"event_type", req.EventType,
 			"correlation_id", req.CorrelationID,
 			"duration_seconds", duration)
-
-		// DD-009: DLQ fallback on database errors
-		s.logger.Info("Attempting DLQ fallback for audit event",
-			"event_type", req.EventType,
-			"correlation_id", req.CorrelationID,
-			"db_error", err.Error())
-
-		// Create a FRESH context for DLQ write (not tied to original request timeout)
-		// DD-009: DLQ fallback must succeed even if DB operation timed out
-		dlqCtx, dlqCancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer dlqCancel()
-
-		// Use the internal audit event we already created for DLQ
-		// Note: auditEvent already has EventData as []byte from ConvertAuditEventRequest
-		dlqAuditEvent := auditEvent
-
-		// Attempt to enqueue to DLQ
-		if dlqErr := s.dlqClient.EnqueueAuditEvent(dlqCtx, dlqAuditEvent, err); dlqErr != nil {
-			s.logger.Error(dlqErr, "DLQ fallback also failed - data loss risk",
-				"event_type", req.EventType,
-				"correlation_id", req.CorrelationID,
-				"original_error", err.Error())
-
-			// Both database and DLQ failed - return 500
-			response.WriteRFC7807ErrorWithRequestID(w, http.StatusInternalServerError, "database_error", "Database Error", "Failed to write audit event to database and DLQ", r.URL.Path, s.logger)
-			return
-		}
-
-		s.logger.Info("DLQ fallback succeeded",
-			"event_type", req.EventType,
-			"correlation_id", req.CorrelationID)
-
-		// DLQ success - return 202 Accepted (async processing)
-		acceptedResp := AuditEventAcceptedResponse{
-			Status:  "accepted",
-			Message: "audit event queued for async processing",
-		}
-		response.WriteJSON(w, http.StatusAccepted, acceptedResp, s.logger)
+		s.fallbackAuditEventToDLQ(w, r, req, auditEvent, err)
 		return
 	}
 
@@ -250,14 +265,58 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	response := AuditEventCreatedResponse{
+	responseBody := AuditEventCreatedResponse{
 		EventID:        created.EventID.String(),
 		EventTimestamp: created.EventTimestamp.Format(time.RFC3339), // ADR-034
 		Message:        "Audit event created successfully",
 	}
-	if err := json.NewEncoder(w).Encode(response); err != nil {
+	if err := json.NewEncoder(w).Encode(responseBody); err != nil {
 		s.logger.Error(err, "failed to encode success response")
 	}
+}
+
+// fallbackAuditEventToDLQ implements the DD-009 DLQ fallback path of
+// persistAuditEventWithDLQFallback: on a database write failure, enqueue the
+// audit event to the DLQ using a fresh (non-request-scoped) context so the
+// fallback can still succeed even if the original DB operation timed out.
+// Writes the RFC 7807/202-Accepted response itself. Extracted from
+// persistAuditEventWithDLQFallback (Wave 6 6f GREEN: funlen remediation) —
+// pure code motion, no behavior change.
+func (s *Server) fallbackAuditEventToDLQ(w http.ResponseWriter, r *http.Request, req dsclient.AuditEventRequest, auditEvent *audit.AuditEvent, dbErr error) {
+	// DD-009: DLQ fallback on database errors
+	s.logger.Info("Attempting DLQ fallback for audit event",
+		"event_type", req.EventType,
+		"correlation_id", req.CorrelationID,
+		"db_error", dbErr.Error())
+
+	// Create a FRESH context for DLQ write (not tied to original request timeout)
+	// DD-009: DLQ fallback must succeed even if DB operation timed out
+	dlqCtx, dlqCancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer dlqCancel()
+
+	// Attempt to enqueue to DLQ
+	// Note: auditEvent already has EventData as []byte from ConvertAuditEventRequest
+	if dlqErr := s.dlqClient.EnqueueAuditEvent(dlqCtx, auditEvent, dbErr); dlqErr != nil {
+		s.logger.Error(dlqErr, "DLQ fallback also failed - data loss risk",
+			"event_type", req.EventType,
+			"correlation_id", req.CorrelationID,
+			"original_error", dbErr.Error())
+
+		// Both database and DLQ failed - return 500
+		response.WriteRFC7807ErrorWithRequestID(w, http.StatusInternalServerError, "database_error", "Database Error", "Failed to write audit event to database and DLQ", r.URL.Path, s.logger)
+		return
+	}
+
+	s.logger.Info("DLQ fallback succeeded",
+		"event_type", req.EventType,
+		"correlation_id", req.CorrelationID)
+
+	// DLQ success - return 202 Accepted (async processing)
+	acceptedResp := AuditEventAcceptedResponse{
+		Status:  "accepted",
+		Message: "audit event queued for async processing",
+	}
+	response.WriteJSON(w, http.StatusAccepted, acceptedResp, s.logger)
 }
 
 // ========================================
@@ -314,6 +373,37 @@ func (s *Server) handleQueryAuditEvents(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// 2-3. Build SQL from filters and execute via repository
+	events, pagination, ok := s.buildAndExecuteAuditEventsQuery(ctx, w, r, filters)
+	if !ok {
+		return
+	}
+
+	// 4. Success - return 200 OK with data and pagination metadata
+	s.logger.Info("Audit events queried successfully",
+		"count", len(events),
+		"total", pagination.Total,
+		"limit", pagination.Limit,
+		"offset", pagination.Offset)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	responseBody := AuditEventsQueryResponse{
+		Data:       events,
+		Pagination: pagination,
+	}
+	if err := json.NewEncoder(w).Encode(responseBody); err != nil {
+		s.logger.Error(err, "failed to encode query response")
+	}
+}
+
+// buildAndExecuteAuditEventsQuery implements steps 2-3 of handleQueryAuditEvents:
+// build the SQL query (and its count query) from the parsed filters, then
+// execute both via the repository. On any failure it writes the RFC 7807
+// error response itself and returns ok=false. Extracted from
+// handleQueryAuditEvents (Wave 6 6f GREEN: funlen remediation) — pure code
+// motion, no behavior change.
+func (s *Server) buildAndExecuteAuditEventsQuery(ctx context.Context, w http.ResponseWriter, r *http.Request, filters *queryFilters) ([]*repository.AuditEvent, *repository.PaginationMetadata, bool) {
 	// 2. Build SQL query using AuditEventsQueryBuilder
 	builder := s.buildQueryFromFilters(filters)
 	querySQL, args, err := builder.Build()
@@ -323,7 +413,7 @@ func (s *Server) handleQueryAuditEvents(w http.ResponseWriter, r *http.Request) 
 		writeValidationRFC7807Error(w, validation.NewValidationErrorProblem("query parameters", map[string]string{
 			"pagination": "invalid pagination parameters",
 		}), s)
-		return
+		return nil, nil, false
 	}
 
 	// Build count query
@@ -338,7 +428,7 @@ func (s *Server) handleQueryAuditEvents(w http.ResponseWriter, r *http.Request) 
 			Detail:   "Failed to build count query",
 			Instance: r.URL.Path,
 		}, s)
-		return
+		return nil, nil, false
 	}
 
 	// 3. Execute query via repository
@@ -352,25 +442,10 @@ func (s *Server) handleQueryAuditEvents(w http.ResponseWriter, r *http.Request) 
 			Detail:   "Failed to query audit events from database",
 			Instance: r.URL.Path,
 		}, s)
-		return
+		return nil, nil, false
 	}
 
-	// 4. Success - return 200 OK with data and pagination metadata
-	s.logger.Info("Audit events queried successfully",
-		"count", len(events),
-		"total", pagination.Total,
-		"limit", pagination.Limit,
-		"offset", pagination.Offset)
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	response := AuditEventsQueryResponse{
-		Data:       events,
-		Pagination: pagination,
-	}
-	if err := json.NewEncoder(w).Encode(response); err != nil {
-		s.logger.Error(err, "failed to encode query response")
-	}
+	return events, pagination, true
 }
 
 // parseQueryFilters extracts and validates query parameters from HTTP request

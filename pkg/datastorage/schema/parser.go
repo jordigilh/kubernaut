@@ -17,8 +17,8 @@ limitations under the License.
 package schema
 
 import (
-	"encoding/json"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -119,35 +119,56 @@ func (p *Parser) ParseAndValidate(content string) (*models.WorkflowSchema, error
 // CRD envelope validation (apiVersion, kind) is handled by Parse/validateCRDEnvelope.
 // SchemaVersion is derived from apiVersion and already populated by Parse.
 func (p *Parser) Validate(schema *models.WorkflowSchema) error {
-	// Validate required identification fields
+	if err := validateWorkflowIdentification(schema); err != nil {
+		return err
+	}
+	if err := validateWorkflowParameters(schema); err != nil {
+		return err
+	}
+
+	// Validate dependencies (DD-WE-006)
+	if schema.Dependencies != nil {
+		if err := schema.Dependencies.ValidateDependencies(); err != nil {
+			return err
+		}
+	}
+
+	// Validate detectedLabels (ADR-043 v1.3)
+	if schema.DetectedLabels != nil {
+		if err := schema.DetectedLabels.ValidateDetectedLabels(); err != nil {
+			return err
+		}
+	}
+
+	return validateWorkflowExecution(schema)
+}
+
+// validateWorkflowIdentification validates the required identification
+// fields: name, version, structured description, actionType, and mandatory
+// matching labels.
+func validateWorkflowIdentification(schema *models.WorkflowSchema) error {
 	if schema.WorkflowName == "" {
 		return models.NewSchemaValidationError("metadata.name", "metadata.name is required (provides workflow name)")
 	}
 	if schema.Version == "" {
 		return models.NewSchemaValidationError("version", "version is required")
 	}
-
-	// Validate structured description
 	if err := models.ValidateDescription(&schema.Description); err != nil {
 		return err
 	}
-
-	// Validate ActionType (top-level, required)
 	if schema.ActionType == "" {
 		return models.NewSchemaValidationError("actionType", "actionType is required")
 	}
+	return schema.Labels.ValidateMandatoryLabels()
+}
 
-	// Validate Labels (mandatory matching criteria)
-	if err := schema.Labels.ValidateMandatoryLabels(); err != nil {
-		return err
-	}
-
-	// Validate Parameters (at least one required)
+// validateWorkflowParameters validates that at least one parameter is
+// declared and that each parameter has its required fields set.
+func validateWorkflowParameters(schema *models.WorkflowSchema) error {
 	if len(schema.Parameters) == 0 {
 		return models.NewSchemaValidationError("parameters", "at least one parameter is required")
 	}
 
-	// Validate each parameter has required fields
 	for i, param := range schema.Parameters {
 		if param.Name == "" {
 			return models.NewSchemaValidationError(
@@ -169,21 +190,13 @@ func (p *Parser) Validate(schema *models.WorkflowSchema) error {
 		}
 	}
 
-	// Validate dependencies (DD-WE-006)
-	if schema.Dependencies != nil {
-		if err := schema.Dependencies.ValidateDependencies(); err != nil {
-			return err
-		}
-	}
+	return nil
+}
 
-	// Validate detectedLabels (ADR-043 v1.3)
-	if schema.DetectedLabels != nil {
-		if err := schema.DetectedLabels.ValidateDetectedLabels(); err != nil {
-			return err
-		}
-	}
-
-	// Validate execution section (Issue #89: execution.bundle is mandatory with sha256 digest)
+// validateWorkflowExecution validates the execution section (Issue #89:
+// execution.bundle is mandatory with sha256 digest for tekton/job engines)
+// and, per BR-WE-016, the engine-specific engineConfig discriminator.
+func validateWorkflowExecution(schema *models.WorkflowSchema) error {
 	if schema.Execution == nil {
 		return models.NewSchemaValidationError("execution", "execution section is required")
 	}
@@ -204,27 +217,34 @@ func (p *Parser) Validate(schema *models.WorkflowSchema) error {
 		}
 	}
 
-	// BR-WE-016: Validate engineConfig based on engine discriminator
 	if engine == "ansible" {
-		if schema.Execution.EngineConfig == nil {
-			return models.NewSchemaValidationError("execution.engineConfig",
-				"engineConfig is required when engine is \"ansible\"")
-		}
-		raw, marshalErr := json.Marshal(schema.Execution.EngineConfig)
-		if marshalErr != nil {
-			return models.NewSchemaValidationError("execution.engineConfig",
-				fmt.Sprintf("invalid engineConfig: %v", marshalErr))
-		}
-		parsed, err := models.ParseEngineConfig(engine, raw)
-		if err != nil {
-			return models.NewSchemaValidationError("execution.engineConfig", err.Error())
-		}
-		if _, ok := parsed.(*models.AnsibleEngineConfig); !ok {
-			return models.NewSchemaValidationError("execution.engineConfig.playbookPath",
-				"playbookPath is required for ansible engine")
-		}
+		return validateAnsibleEngineConfig(schema.Execution.EngineConfig)
 	}
 
+	return nil
+}
+
+// validateAnsibleEngineConfig validates the engineConfig discriminator for
+// the ansible engine (BR-WE-016): it must be present, parseable, and produce
+// an AnsibleEngineConfig with a playbookPath.
+func validateAnsibleEngineConfig(engineConfig interface{}) error {
+	if engineConfig == nil {
+		return models.NewSchemaValidationError("execution.engineConfig",
+			"engineConfig is required when engine is \"ansible\"")
+	}
+	raw, marshalErr := json.Marshal(engineConfig)
+	if marshalErr != nil {
+		return models.NewSchemaValidationError("execution.engineConfig",
+			fmt.Sprintf("invalid engineConfig: %v", marshalErr))
+	}
+	parsed, err := models.ParseEngineConfig("ansible", raw)
+	if err != nil {
+		return models.NewSchemaValidationError("execution.engineConfig", err.Error())
+	}
+	if _, ok := parsed.(*models.AnsibleEngineConfig); !ok {
+		return models.NewSchemaValidationError("execution.engineConfig.playbookPath",
+			"playbookPath is required for ansible engine")
+	}
 	return nil
 }
 

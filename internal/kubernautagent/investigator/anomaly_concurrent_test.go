@@ -181,7 +181,7 @@ var _ = Describe("BR-PERFORMANCE-970: AnomalyDetector Thread Safety", func() {
 			wg.Wait()
 
 			totalAttempts := admitted.Load() + rejected.Load()
-			Expect(totalAttempts).To(Equal(int32(numGoroutines * callsPerGoroutine)),
+			Expect(totalAttempts).To(Equal(int32(numGoroutines*callsPerGoroutine)),
 				"all attempts should be accounted for")
 			Expect(admitted.Load()).To(BeNumerically("<=", int32(budget)),
 				"admitted calls should not exceed budget")
@@ -226,7 +226,7 @@ var _ = Describe("BR-PERFORMANCE-970: AnomalyDetector Thread Safety", func() {
 
 			Expect(admitted.Load()).To(Equal(int32(budget)),
 				"exactly %d calls should be admitted (budget integrity)", budget)
-			Expect(rejected.Load()).To(Equal(int32(numGoroutines - budget)),
+			Expect(rejected.Load()).To(Equal(int32(numGoroutines-budget)),
 				"exactly %d calls should be rejected", numGoroutines-budget)
 		})
 	})

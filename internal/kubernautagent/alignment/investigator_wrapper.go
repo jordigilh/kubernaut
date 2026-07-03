@@ -120,59 +120,16 @@ func (w *InvestigatorWrapper) Investigate(ctx context.Context, signal katypes.Si
 
 	correlationID := signalCorrelationID(signal)
 
-	observerOpts := []ObserverOption{
-		WithCorrelationID(correlationID),
-		WithObserverLogger(w.logger),
-		WithGroundingEnabled(w.groundingEnabled),
-	}
-
-	// Circuit breaker: in enforce mode, create a cancellable investigation context.
-	// When the shadow detects suspicious content, the onSuspicious callback cancels
-	// investCtx, which causes the inner investigation to return context.Canceled.
-	// Shadow evaluations use the parent ctx (via WithEvalContext) so they continue.
-	var investCtx context.Context
-	var investCancel context.CancelCauseFunc
-	if w.mode == config.AlignmentModeEnforce {
-		investCtx, investCancel = context.WithCancelCause(ctx)
+	investCtx, investCancel, observer, obsErr := w.setupObservedContext(ctx, signal, correlationID)
+	if investCancel != nil {
 		defer investCancel(nil)
-		observerOpts = append(observerOpts,
-			WithEvalContext(ctx),
-			WithOnSuspicious(func() {
-				investCancel(ErrCircuitBreaker)
-				alignmentCircuitBreakerTotal.WithLabelValues(string(w.mode)).Inc()
-				w.logger.Info("circuit_breaker_triggered",
-					"correlationID", correlationID,
-					"mode", string(w.mode),
-				)
-			}),
-		)
-	} else {
-		investCtx = ctx
 	}
-
-	observer, obsErr := NewObserver(w.evaluator, observerOpts...)
 	if obsErr != nil {
 		return nil, fmt.Errorf("alignment observer: %w", obsErr)
 	}
-	investCtx = WithObserver(investCtx, observer)
 
-	if signalContent := BuildSignalInputContent(signal); signalContent != "" {
-		observer.SubmitAsync(investCtx, Step{
-			Index:   observer.NextStepIndex(),
-			Kind:    StepKindSignalInput,
-			Content: signalContent,
-		})
-	}
-
-	result, err := w.inner.Investigate(investCtx, signal)
-
-	// Check if the error is a circuit breaker cancellation.
-	circuitBroken := err != nil && context.Cause(investCtx) == ErrCircuitBreaker
-	if circuitBroken {
-		if result == nil {
-			result = &katypes.InvestigationResult{}
-		}
-	} else if err != nil {
+	result, circuitBroken, err := w.runInnerInvestigation(investCtx, signal)
+	if err != nil && !circuitBroken {
 		return result, err
 	}
 
@@ -195,57 +152,135 @@ func (w *InvestigatorWrapper) Investigate(ctx context.Context, signal katypes.Si
 		alignmentCanaryTotal.WithLabelValues("pass").Inc()
 	}
 
-	escalateCanary := canaryDegraded && (w.mode == config.AlignmentModeEnforce || w.canaryForceEscalation)
-	escalateVerdict := verdict.Result == VerdictSuspicious && w.mode == config.AlignmentModeEnforce
-
-	if canaryDegraded {
-		if escalateCanary {
-			result.HumanReviewNeeded = true
-			result.HumanReviewReason = "alignment_check_failed"
-			result.Warnings = append(result.Warnings,
-				"Shadow agent canary integrity check failed: shadow model may be compromised — forcing human review")
-		}
-		w.logger.Info("canary degradation",
-			"signal", signal.Name,
-			"namespace", signal.Namespace,
-			"escalated", escalateCanary,
-			"mode", string(w.mode),
-		)
-	}
-
-	if verdict.Result == VerdictSuspicious {
-		if escalateVerdict {
-			result.HumanReviewNeeded = true
-			result.HumanReviewReason = "alignment_check_failed"
-			if circuitBroken {
-				result.Warnings = append(result.Warnings,
-					fmt.Sprintf("Shadow agent circuit breaker activated: %s", verdict.Summary))
-			} else {
-				result.Warnings = append(result.Warnings,
-					fmt.Sprintf("Shadow agent alignment check flagged suspicious content: %s", verdict.Summary))
-			}
-		}
-		w.logger.Info("shadow agent flagged suspicious content",
-			"signal", signal.Name,
-			"namespace", signal.Namespace,
-			"flagged", verdict.Flagged,
-			"total", verdict.Total,
-			"pending", verdict.Pending,
-			"timed_out", verdict.TimedOut,
-			"summary", verdict.Summary,
-			"escalated", escalateVerdict,
-			"circuit_breaker", circuitBroken,
-			"mode", string(w.mode),
-		)
-	} else if !canaryDegraded {
-		w.logger.Info("shadow agent alignment check passed",
-			"signal", signal.Name,
-			"namespace", signal.Namespace,
-			"total", verdict.Total,
-		)
-	}
+	w.escalateOnCanaryDegradation(result, signal, canaryDegraded)
+	w.escalateOnSuspiciousVerdict(result, signal, verdict, circuitBroken, canaryDegraded)
 
 	return result, nil
+}
+
+// setupObservedContext builds the alignment observer for this investigation
+// and, in enforce mode, wraps ctx in a cancellable investigation context
+// whose onSuspicious callback trips the circuit breaker. Shadow evaluations
+// always use the parent ctx (via WithEvalContext) so they continue even
+// after the investigation context is cancelled. The returned cancel func is
+// nil outside enforce mode (nothing to cancel).
+func (w *InvestigatorWrapper) setupObservedContext(ctx context.Context, signal katypes.SignalContext, correlationID string) (context.Context, context.CancelCauseFunc, *Observer, error) {
+	observerOpts := []ObserverOption{
+		WithCorrelationID(correlationID),
+		WithObserverLogger(w.logger),
+		WithGroundingEnabled(w.groundingEnabled),
+	}
+
+	var investCtx context.Context
+	var investCancel context.CancelCauseFunc
+	if w.mode == config.AlignmentModeEnforce {
+		investCtx, investCancel = context.WithCancelCause(ctx)
+		observerOpts = append(observerOpts,
+			WithEvalContext(ctx),
+			WithOnSuspicious(func() {
+				investCancel(ErrCircuitBreaker)
+				alignmentCircuitBreakerTotal.WithLabelValues(string(w.mode)).Inc()
+				w.logger.Info("circuit_breaker_triggered",
+					"correlationID", correlationID,
+					"mode", string(w.mode),
+				)
+			}),
+		)
+	} else {
+		investCtx = ctx
+	}
+
+	observer, obsErr := NewObserver(w.evaluator, observerOpts...)
+	if obsErr != nil {
+		return nil, investCancel, nil, obsErr
+	}
+	investCtx = WithObserver(investCtx, observer)
+
+	if signalContent := BuildSignalInputContent(signal); signalContent != "" {
+		observer.SubmitAsync(investCtx, Step{
+			Index:   observer.NextStepIndex(),
+			Kind:    StepKindSignalInput,
+			Content: signalContent,
+		})
+	}
+
+	return investCtx, investCancel, observer, nil
+}
+
+// runInnerInvestigation delegates to the wrapped investigator and detects
+// whether the returned error is a circuit-breaker cancellation (in which
+// case a non-nil placeholder result is guaranteed so the caller can still
+// attach an alignment verdict) versus a genuine investigation failure.
+func (w *InvestigatorWrapper) runInnerInvestigation(investCtx context.Context, signal katypes.SignalContext) (result *katypes.InvestigationResult, circuitBroken bool, err error) {
+	result, err = w.inner.Investigate(investCtx, signal)
+	circuitBroken = err != nil && context.Cause(investCtx) == ErrCircuitBreaker
+	if circuitBroken && result == nil {
+		result = &katypes.InvestigationResult{}
+	}
+	return result, circuitBroken, err
+}
+
+// escalateOnCanaryDegradation forces human review when the shadow-agent
+// canary integrity check failed and the current mode/config calls for
+// escalation, and logs the degradation either way.
+func (w *InvestigatorWrapper) escalateOnCanaryDegradation(result *katypes.InvestigationResult, signal katypes.SignalContext, canaryDegraded bool) {
+	if !canaryDegraded {
+		return
+	}
+	escalateCanary := w.mode == config.AlignmentModeEnforce || w.canaryForceEscalation
+	if escalateCanary {
+		result.HumanReviewNeeded = true
+		result.HumanReviewReason = "alignment_check_failed"
+		result.Warnings = append(result.Warnings,
+			"Shadow agent canary integrity check failed: shadow model may be compromised — forcing human review")
+	}
+	w.logger.Info("canary degradation",
+		"signal", signal.Name,
+		"namespace", signal.Namespace,
+		"escalated", escalateCanary,
+		"mode", string(w.mode),
+	)
+}
+
+// escalateOnSuspiciousVerdict forces human review when the shadow agent
+// flagged suspicious content in enforce mode, and logs the outcome
+// (suspicious-flagged, or passed when the canary was healthy).
+func (w *InvestigatorWrapper) escalateOnSuspiciousVerdict(result *katypes.InvestigationResult, signal katypes.SignalContext, verdict Verdict, circuitBroken, canaryDegraded bool) {
+	if verdict.Result != VerdictSuspicious {
+		if !canaryDegraded {
+			w.logger.Info("shadow agent alignment check passed",
+				"signal", signal.Name,
+				"namespace", signal.Namespace,
+				"total", verdict.Total,
+			)
+		}
+		return
+	}
+
+	escalateVerdict := w.mode == config.AlignmentModeEnforce
+	if escalateVerdict {
+		result.HumanReviewNeeded = true
+		result.HumanReviewReason = "alignment_check_failed"
+		if circuitBroken {
+			result.Warnings = append(result.Warnings,
+				fmt.Sprintf("Shadow agent circuit breaker activated: %s", verdict.Summary))
+		} else {
+			result.Warnings = append(result.Warnings,
+				fmt.Sprintf("Shadow agent alignment check flagged suspicious content: %s", verdict.Summary))
+		}
+	}
+	w.logger.Info("shadow agent flagged suspicious content",
+		"signal", signal.Name,
+		"namespace", signal.Namespace,
+		"flagged", verdict.Flagged,
+		"total", verdict.Total,
+		"pending", verdict.Pending,
+		"timed_out", verdict.TimedOut,
+		"summary", verdict.Summary,
+		"escalated", escalateVerdict,
+		"circuit_breaker", circuitBroken,
+		"mode", string(w.mode),
+	)
 }
 
 // emitVerdictEvent sends the alignment verdict onto the session event channel.

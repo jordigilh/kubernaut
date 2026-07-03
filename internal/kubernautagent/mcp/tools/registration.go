@@ -48,58 +48,78 @@ func InvestigateRegistration(tool *InvestigateTool, eventStore *mcpinternal.Dele
 			if err != nil {
 				return nil, output, ErrorBoundary(logger, "kubernaut_investigate", err)
 			}
-		if output.SessionID != "" {
-			if eventStore != nil {
-				eventStore.RegisterMCPSession(req.Session.ID(), output.SessionID)
-			}
-			if notifier != nil && (output.Status == "started" || output.Status == "takeover_started" || output.Status == "reconnected") {
-				sess := req.Session
-				notifier.Register(output.SessionID, func(msg string) {
-					if logErr := sess.Log(context.Background(), &mcpsdk.LoggingMessageParams{
-						Level:  "warning",
-						Logger: "kubernaut-interactive",
-						Data:   msg,
-					}); logErr != nil {
-						logger.Error(logErr, "notifier sess.Log failed",
-							"session_id", output.SessionID)
-					}
-				})
-			}
-		}
 
-		// BR-MCP-003: Wire EventLogBridge for action=start with a pending
-		// investigation. Streams investigation events (reasoning, tool calls,
-		// completion) as MCP LoggingMessage notifications to the connected client.
-		if output.InvestigationSessionID != "" && output.Status == "started" {
-			logger.Info("subscribing to investigation events",
-				"investigation_session_id", output.InvestigationSessionID,
-				"mcp_session_id", output.SessionID)
-			eventCh, subErr := tool.SubscribeEvents(ctx, output.InvestigationSessionID)
-			if subErr != nil {
-				logger.Error(subErr, "failed to subscribe to investigation events",
-					"investigation_session_id", output.InvestigationSessionID)
-			} else if eventCh != nil {
-				sess := req.Session
-				bridge := NewEventLogBridge(eventCh, func(level, loggerName string, data json.RawMessage) error {
-					return sess.Log(context.Background(), &mcpsdk.LoggingMessageParams{
-						Level:  mcpsdk.LoggingLevel(level),
-						Logger: loggerName,
-						Data:   data,
-					})
-				}, logger, output.InvestigationSessionID)
-				logger.Info("EventLogBridge wired",
-					"investigation_session_id", output.InvestigationSessionID,
-					"mcp_session_id", req.Session.ID())
-				go bridge.Run(context.Background())
-			} else {
-				logger.Info("subscribe returned nil channel, no events to bridge",
-					"investigation_session_id", output.InvestigationSessionID)
-			}
-		}
+			registerMCPSessionMapping(req.Session, output, eventStore, notifier, logger)
+			wireInvestigationEventBridge(ctx, req.Session, tool, output, logger)
 
-		return nil, output, nil
+			return nil, output, nil
 		})
 	}
+}
+
+// registerMCPSessionMapping registers the MCP→interactive session mapping
+// for disconnect detection (when eventStore is wired) and, for actions that
+// (re)establish an active driver, registers the session's Log method as the
+// interactive notification callback (when notifier is wired). No-op when
+// output carries no session ID.
+func registerMCPSessionMapping(sess *mcpsdk.ServerSession, output InvestigateOutput, eventStore *mcpinternal.DelegatingEventStore, notifier *mcpinternal.SessionNotifier, logger logr.Logger) {
+	if output.SessionID == "" {
+		return
+	}
+	if eventStore != nil {
+		eventStore.RegisterMCPSession(sess.ID(), output.SessionID)
+	}
+	if notifier == nil {
+		return
+	}
+	if output.Status != "started" && output.Status != "takeover_started" && output.Status != "reconnected" {
+		return
+	}
+	notifier.Register(output.SessionID, func(msg string) {
+		if logErr := sess.Log(context.Background(), &mcpsdk.LoggingMessageParams{
+			Level:  "warning",
+			Logger: "kubernaut-interactive",
+			Data:   msg,
+		}); logErr != nil {
+			logger.Error(logErr, "notifier sess.Log failed",
+				"session_id", output.SessionID)
+		}
+	})
+}
+
+// wireInvestigationEventBridge subscribes to the investigation's event
+// stream and bridges it to MCP LoggingMessage notifications (BR-MCP-003),
+// for action=start with a pending investigation. No-op for any other action
+// or status.
+func wireInvestigationEventBridge(ctx context.Context, sess *mcpsdk.ServerSession, tool *InvestigateTool, output InvestigateOutput, logger logr.Logger) {
+	if output.InvestigationSessionID == "" || output.Status != "started" {
+		return
+	}
+	logger.Info("subscribing to investigation events",
+		"investigation_session_id", output.InvestigationSessionID,
+		"mcp_session_id", output.SessionID)
+	eventCh, subErr := tool.SubscribeEvents(ctx, output.InvestigationSessionID)
+	if subErr != nil {
+		logger.Error(subErr, "failed to subscribe to investigation events",
+			"investigation_session_id", output.InvestigationSessionID)
+		return
+	}
+	if eventCh == nil {
+		logger.Info("subscribe returned nil channel, no events to bridge",
+			"investigation_session_id", output.InvestigationSessionID)
+		return
+	}
+	bridge := NewEventLogBridge(eventCh, func(level, loggerName string, data json.RawMessage) error {
+		return sess.Log(context.Background(), &mcpsdk.LoggingMessageParams{
+			Level:  mcpsdk.LoggingLevel(level),
+			Logger: loggerName,
+			Data:   data,
+		})
+	}, logger, output.InvestigationSessionID)
+	logger.Info("EventLogBridge wired",
+		"investigation_session_id", output.InvestigationSessionID,
+		"mcp_session_id", sess.ID())
+	go bridge.Run(context.Background())
 }
 
 // SelectWorkflowRegistration returns a ToolRegistration that registers the

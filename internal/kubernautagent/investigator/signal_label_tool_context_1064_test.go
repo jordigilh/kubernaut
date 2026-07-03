@@ -76,7 +76,7 @@ var _ = Describe("Issue #1064: ApplySignalLabelOverrides — defense-in-depth fo
 			signal := katypes.SignalContext{
 				ResourceKind: "Namespace",
 				ResourceName: "demo-operator",
-				SignalLabels:  nil,
+				SignalLabels: nil,
 			}
 			result := investigator.ApplySignalLabelOverrides(signal)
 			Expect(result.ResourceKind).To(Equal("Namespace"))

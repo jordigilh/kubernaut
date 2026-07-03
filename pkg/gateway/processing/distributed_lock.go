@@ -132,34 +132,7 @@ func (m *DistributedLockManager) AcquireLock(ctx context.Context, fingerprint st
 		if !apierrors.IsNotFound(err) {
 			return false, fmt.Errorf("failed to check for existing lease: %w", err)
 		}
-
-		// Lease doesn't exist - create new lease and acquire lock
-		now := metav1.NowMicro()
-		leaseDuration := int32(LockDurationSeconds)
-
-		lease = &coordinationv1.Lease{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      leaseName,
-				Namespace: m.namespace,
-			},
-			Spec: coordinationv1.LeaseSpec{
-				HolderIdentity:       &m.holderID,
-				LeaseDurationSeconds: &leaseDuration,
-				AcquireTime:          &now,
-				RenewTime:            &now,
-			},
-		}
-
-		if err := m.client.Create(ctx, lease); err != nil {
-			if apierrors.IsAlreadyExists(err) {
-				// Race condition: another pod created lease between Get and Create
-				// This is contention, not an error
-				return false, nil
-			}
-			return false, fmt.Errorf("failed to create lease: %w", err)
-		}
-
-		return true, nil
+		return m.createNewLease(ctx, leaseName)
 	}
 
 	// Lease exists - check if we own it
@@ -168,30 +141,74 @@ func (m *DistributedLockManager) AcquireLock(ctx context.Context, fingerprint st
 		return true, nil
 	}
 
-	// Lease held by another pod - check if expired
-	if lease.Spec.RenewTime != nil && lease.Spec.LeaseDurationSeconds != nil {
-		expiry := lease.Spec.RenewTime.Add(time.Duration(*lease.Spec.LeaseDurationSeconds) * time.Second)
-		if time.Now().After(expiry) {
-			// Lease expired - take it over
-			now := metav1.NowMicro()
-			lease.Spec.HolderIdentity = &m.holderID
-			lease.Spec.RenewTime = &now
-
-			if err := m.client.Update(ctx, lease); err != nil {
-				if apierrors.IsConflict(err) {
-					// Race condition: another pod updated lease between Get and Update
-					// This is contention, not an error
-					return false, nil
-				}
-				return false, fmt.Errorf("failed to take over expired lease: %w", err)
-			}
-
-			return true, nil
-		}
+	if isLeaseExpired(lease) {
+		return m.takeOverExpiredLease(ctx, lease)
 	}
 
 	// Lease held by another pod and not expired - lock contention
 	return false, nil
+}
+
+// createNewLease creates a fresh Lease to acquire the lock, treating a
+// concurrent AlreadyExists (another pod winning the create race) as
+// contention rather than an error. Extracted from AcquireLock.
+func (m *DistributedLockManager) createNewLease(ctx context.Context, leaseName string) (bool, error) {
+	now := metav1.NowMicro()
+	leaseDuration := int32(LockDurationSeconds)
+
+	lease := &coordinationv1.Lease{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      leaseName,
+			Namespace: m.namespace,
+		},
+		Spec: coordinationv1.LeaseSpec{
+			HolderIdentity:       &m.holderID,
+			LeaseDurationSeconds: &leaseDuration,
+			AcquireTime:          &now,
+			RenewTime:            &now,
+		},
+	}
+
+	if err := m.client.Create(ctx, lease); err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			// Race condition: another pod created lease between Get and Create
+			// This is contention, not an error
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to create lease: %w", err)
+	}
+
+	return true, nil
+}
+
+// isLeaseExpired reports whether a Lease's renew deadline has passed,
+// meaning its holder is presumed dead and the lease is eligible for takeover.
+func isLeaseExpired(lease *coordinationv1.Lease) bool {
+	if lease.Spec.RenewTime == nil || lease.Spec.LeaseDurationSeconds == nil {
+		return false
+	}
+	expiry := lease.Spec.RenewTime.Add(time.Duration(*lease.Spec.LeaseDurationSeconds) * time.Second)
+	return time.Now().After(expiry)
+}
+
+// takeOverExpiredLease claims an expired Lease by updating its holder
+// identity, treating a concurrent Conflict (another pod winning the update
+// race) as contention rather than an error. Extracted from AcquireLock.
+func (m *DistributedLockManager) takeOverExpiredLease(ctx context.Context, lease *coordinationv1.Lease) (bool, error) {
+	now := metav1.NowMicro()
+	lease.Spec.HolderIdentity = &m.holderID
+	lease.Spec.RenewTime = &now
+
+	if err := m.client.Update(ctx, lease); err != nil {
+		if apierrors.IsConflict(err) {
+			// Race condition: another pod updated lease between Get and Update
+			// This is contention, not an error
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to take over expired lease: %w", err)
+	}
+
+	return true, nil
 }
 
 // ReleaseLock releases the distributed lock by deleting the Lease.

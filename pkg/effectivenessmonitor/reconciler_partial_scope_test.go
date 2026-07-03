@@ -85,15 +85,17 @@ var _ = Describe("Partial Scope Grace (UT-EM-254-006, #254)", func() {
 		cfg.PrometheusEnabled = false
 		cfg.AlertManagerEnabled = false
 
-		r := controller.NewReconciler(
-			fakeClient, fakeClient,
-			s,
-			record.NewFakeRecorder(100),
-			emmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			nil, nil,
-			nil, dsQuerier,
-			cfg,
-		)
+		r := controller.NewReconciler(controller.ReconcilerDeps{
+			Client:             fakeClient,
+			APIReader:          fakeClient,
+			Scheme:             s,
+			Recorder:           record.NewFakeRecorder(100),
+			Metrics:            emmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			PrometheusClient:   nil,
+			AlertManagerClient: nil,
+			AuditManager:       nil,
+			DSQuerier:          dsQuerier,
+		}, cfg)
 		return r, fakeClient
 	}
 

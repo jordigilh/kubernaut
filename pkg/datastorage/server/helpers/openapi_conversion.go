@@ -72,33 +72,8 @@ func ConvertAuditEventRequest(req ogenclient.AuditEventRequest, authenticatedAct
 		return nil, fmt.Errorf("failed to marshal event_data: %w", err)
 	}
 
-	actorType := "service"
-	actorID := string(req.EventCategory) + "-service"
-
-	isServiceAccount := strings.HasPrefix(authenticatedActorID, "system:serviceaccount:")
-
-	if authenticatedActorID != "" && !isServiceAccount {
-		// SEC-S1 / AU-3: Override actor for human operators to prevent spoofing
-		actorType = "user"
-		actorID = authenticatedActorID
-	} else {
-		if req.ActorType.IsSet() {
-			actorType = req.ActorType.Value
-		}
-		if req.ActorID.IsSet() {
-			actorID = req.ActorID.Value
-		}
-	}
-
-	resourceType := string(req.EventCategory) // Default
-	if req.ResourceType.IsSet() {
-		resourceType = req.ResourceType.Value
-	}
-
-	resourceID := req.CorrelationID // Default
-	if req.ResourceID.IsSet() {
-		resourceID = req.ResourceID.Value
-	}
+	actorType, actorID := resolveAuditEventActor(req, authenticatedActorID)
+	resourceType, resourceID := resolveAuditEventResource(req)
 
 	// Build internal audit event
 	// D1/DF-H1: RetentionDays MUST be set before DLQ serialization so that
@@ -121,29 +96,89 @@ func ConvertAuditEventRequest(req ogenclient.AuditEventRequest, authenticatedAct
 		RetentionDays:  2555, // SOC 2 / ISO 27001 default (7 years)
 	}
 
-	// Optional fields (ogen OptNil types)
+	applyOptionalAuditEventFields(event, req)
+
+	return event, nil
+}
+
+// resolveAuditEventActor determines the actor_type/actor_id to persist.
+//
+// When authenticatedActorID is a human identity (non-ServiceAccount), server-side
+// attribution overrides client body actor fields to prevent spoofing (SEC-S1 / AU-3).
+//
+// When authenticatedActorID is a Kubernetes ServiceAccount (system:serviceaccount:*),
+// the client-submitted actor fields are preserved. Service accounts represent transport
+// credentials, not logical actors — the calling service's self-declared identity
+// (e.g., "signalprocessing-controller") is the meaningful audit actor.
+func resolveAuditEventActor(req ogenclient.AuditEventRequest, authenticatedActorID string) (actorType, actorID string) {
+	actorType = "service"
+	actorID = string(req.EventCategory) + "-service"
+
+	isServiceAccount := strings.HasPrefix(authenticatedActorID, "system:serviceaccount:")
+	if authenticatedActorID != "" && !isServiceAccount {
+		// SEC-S1 / AU-3: Override actor for human operators to prevent spoofing
+		return "user", authenticatedActorID
+	}
+
+	if req.ActorType.IsSet() {
+		actorType = req.ActorType.Value
+	}
+	if req.ActorID.IsSet() {
+		actorID = req.ActorID.Value
+	}
+	return actorType, actorID
+}
+
+// resolveAuditEventResource determines the resource_type/resource_id to
+// persist, defaulting to the event category and correlation_id respectively.
+func resolveAuditEventResource(req ogenclient.AuditEventRequest) (resourceType, resourceID string) {
+	resourceType = string(req.EventCategory)
+	if req.ResourceType.IsSet() {
+		resourceType = req.ResourceType.Value
+	}
+
+	resourceID = req.CorrelationID
+	if req.ResourceID.IsSet() {
+		resourceID = req.ResourceID.Value
+	}
+	return resourceType, resourceID
+}
+
+// applyOptionalAuditEventFields copies the optional (ogen OptNil) request
+// fields onto event, leaving them unset (nil / zero value) when absent.
+func applyOptionalAuditEventFields(event *audit.AuditEvent, req ogenclient.AuditEventRequest) {
+	applyOptionalContextFields(event, req)
+	applyOptionalComplianceFields(event, req)
+}
+
+// applyOptionalContextFields copies the optional contextual/identity fields
+// (parent event linkage, location, severity, duration, actor IP).
+func applyOptionalContextFields(event *audit.AuditEvent, req ogenclient.AuditEventRequest) {
 	if req.ParentEventID.IsSet() {
 		parentUUID := req.ParentEventID.Value
 		event.ParentEventID = &parentUUID
 	}
-
 	if req.Namespace.IsSet() {
 		event.Namespace = &req.Namespace.Value
 	}
-
 	if req.ClusterName.IsSet() {
 		event.ClusterName = &req.ClusterName.Value
 	}
-
 	if req.Severity.IsSet() {
 		event.Severity = &req.Severity.Value
 	}
-
 	if req.DurationMs.IsSet() {
 		durationValue := int(req.DurationMs.Value)
 		event.DurationMs = &durationValue
 	}
+	if req.ActorIP.IsSet() {
+		event.ActorIP = &req.ActorIP.Value
+	}
+}
 
+// applyOptionalComplianceFields copies the optional compliance/error fields
+// (parent event date, error details, retention, sensitivity).
+func applyOptionalComplianceFields(event *audit.AuditEvent, req ogenclient.AuditEventRequest) {
 	if req.ParentEventDate.IsSet() && !req.ParentEventDate.Null {
 		t := req.ParentEventDate.Value
 		event.ParentEventDate = &t
@@ -162,11 +197,6 @@ func ConvertAuditEventRequest(req ogenclient.AuditEventRequest, authenticatedAct
 	if req.IsSensitive.IsSet() && !req.IsSensitive.Null {
 		event.IsSensitive = req.IsSensitive.Value
 	}
-	if req.ActorIP.IsSet() {
-		event.ActorIP = &req.ActorIP.Value
-	}
-
-	return event, nil
 }
 
 // ConvertToRepositoryAuditEvent delegates to repository.ConvertFromAuditEvent.

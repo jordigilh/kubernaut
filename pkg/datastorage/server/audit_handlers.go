@@ -66,13 +66,62 @@ func (s *Server) handleCreateNotificationAudit(w http.ResponseWriter, r *http.Re
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
+	// 1-2. Parse request body and validate business rules
+	audit, ok := s.parseAndValidateNotificationAudit(w, r)
+	if !ok {
+		return
+	}
+
+	// 3. Attempt database write via repository
+	s.logger.V(2).Info("Writing audit record to database...")
+	// GAP-10: Measure write duration
+	writeStart := time.Now()
+	created, err := s.repository.Create(ctx, &audit)
+	writeDuration := time.Since(writeStart).Seconds()
+
+	if err != nil {
+		s.logger.Error(err, "Database write failed",
+			"notification_id", audit.NotificationID,
+			"write_duration_seconds", writeDuration)
+		s.fallbackNotificationAuditToDLQ(w, &audit, err)
+		return
+	}
+
+	// 4. Success - return 201 Created with created record
+	s.logger.Info("Audit record created successfully",
+		"id", created.ID,
+		"notification_id", created.NotificationID,
+		"remediation_id", created.RemediationID)
+
+	// GAP-10: Emit success metrics
+	// Audit lag (time between event and write)
+	auditLag := time.Since(audit.SentAt).Seconds()
+	s.metrics.AuditLagSeconds.WithLabelValues(dsmetrics.ServiceNotification).Observe(auditLag)
+
+	// Write duration
+	s.metrics.WriteDuration.WithLabelValues("notification_audit").Observe(writeDuration)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	if err := json.NewEncoder(w).Encode(created); err != nil {
+		s.logger.Error(err, "failed to encode success response")
+	}
+}
+
+// parseAndValidateNotificationAudit implements steps 1-2 of
+// handleCreateNotificationAudit: decode the request body JSON and validate
+// business rules. On any failure it writes the RFC 7807 error response
+// itself and returns ok=false. Extracted from handleCreateNotificationAudit
+// (Wave 6 6f GREEN: funlen remediation) — pure code motion, no behavior
+// change.
+func (s *Server) parseAndValidateNotificationAudit(w http.ResponseWriter, r *http.Request) (models.NotificationAudit, bool) {
 	// 1. Parse request body
 	s.logger.V(2).Info("Parsing request body...")
 	var audit models.NotificationAudit
 	if err := json.NewDecoder(r.Body).Decode(&audit); err != nil {
 		if dsmiddleware.IsMaxBytesError(err) {
 			dsmiddleware.WriteMaxBytesExceeded(w, s.logger)
-			return
+			return audit, false
 		}
 		s.logger.Info("Invalid JSON in request body",
 			"error", err,
@@ -82,7 +131,7 @@ func (s *Server) handleCreateNotificationAudit(w http.ResponseWriter, r *http.Re
 			"notification_audit",
 			map[string]string{"body": "request body is not valid JSON"},
 		), s)
-		return
+		return audit, false
 	}
 	s.logger.V(2).Info("Request body parsed successfully",
 		"notification_id", audit.NotificationID,
@@ -109,91 +158,69 @@ func (s *Server) handleCreateNotificationAudit(w http.ResponseWriter, r *http.Re
 			"notification_audit",
 			fieldErrors,
 		), s)
+		return audit, false
+	}
+
+	return audit, true
+}
+
+// fallbackNotificationAuditToDLQ implements steps 3's error path of
+// handleCreateNotificationAudit: known RFC 7807 errors are passed through
+// as-is; unknown database errors fall back to the DLQ (DD-009) using a fresh
+// (non-request-scoped) context so the fallback can still succeed even if the
+// original DB operation timed out. Writes the response itself in all cases.
+// Extracted from handleCreateNotificationAudit (Wave 6 6f GREEN: funlen
+// remediation) — pure code motion, no behavior change.
+func (s *Server) fallbackNotificationAuditToDLQ(w http.ResponseWriter, notificationAudit *models.NotificationAudit, dbErr error) {
+	// Check if it's a known RFC 7807 error type (validation, conflict, not found)
+	var rfc7807Err *validation.RFC7807Problem
+	if errors.As(dbErr, &rfc7807Err) {
+		s.logger.Info("Database write returned RFC 7807 error",
+			"error_type", rfc7807Err.Type,
+			"status", rfc7807Err.Status,
+			"notification_id", notificationAudit.NotificationID)
+		writeValidationRFC7807Error(w, rfc7807Err, s)
 		return
 	}
 
-	// 3. Attempt database write via repository
-	s.logger.V(2).Info("Writing audit record to database...")
-	// GAP-10: Measure write duration
-	writeStart := time.Now()
-	created, err := s.repository.Create(ctx, &audit)
-	writeDuration := time.Since(writeStart).Seconds()
+	// DD-009: Unknown database error → DLQ fallback
+	s.logger.Error(dbErr, "Database write failed, using DLQ fallback",
+		"notification_id", notificationAudit.NotificationID,
+		"remediation_id", notificationAudit.RemediationID)
 
-	if err != nil {
-		s.logger.Error(err, "Database write failed",
-			"notification_id", audit.NotificationID,
-			"write_duration_seconds", writeDuration)
-		// Check if it's a known RFC 7807 error type (validation, conflict, not found)
-		var rfc7807Err *validation.RFC7807Problem
-		if errors.As(err, &rfc7807Err) {
-			s.logger.Info("Database write returned RFC 7807 error",
-				"error_type", rfc7807Err.Type,
-				"status", rfc7807Err.Status,
-				"notification_id", audit.NotificationID)
-			writeValidationRFC7807Error(w, rfc7807Err, s)
-			return
-		}
+	// Attempt to enqueue to DLQ
+	// Create a FRESH context for DLQ write (not tied to original request timeout)
+	// DD-009: DLQ fallback must succeed even if DB operation timed out
+	dlqCtx, dlqCancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer dlqCancel()
 
-		// DD-009: Unknown database error → DLQ fallback
-		s.logger.Error(err, "Database write failed, using DLQ fallback",
-			"notification_id", audit.NotificationID,
-			"remediation_id", audit.RemediationID)
+	s.logger.Info("Attempting DLQ fallback",
+		"notification_id", notificationAudit.NotificationID,
+		"db_error", dbErr.Error())
 
-		// Attempt to enqueue to DLQ
-		// Create a FRESH context for DLQ write (not tied to original request timeout)
-		// DD-009: DLQ fallback must succeed even if DB operation timed out
-		dlqCtx, dlqCancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer dlqCancel()
-
-		s.logger.Info("Attempting DLQ fallback",
-			"notification_id", audit.NotificationID,
-			"db_error", err.Error())
-
-		if dlqErr := s.dlqClient.EnqueueNotificationAudit(dlqCtx, &audit, err); dlqErr != nil {
-			s.logger.Error(dlqErr, "DLQ fallback also failed - data loss risk",
-				"notification_id", audit.NotificationID,
-				"original_error", err.Error())
-			writeValidationRFC7807Error(w, validation.NewServiceUnavailableProblem(
-				"database and DLQ both unavailable - please retry"), s)
-			return
-		}
-
-		s.logger.Info("DLQ fallback succeeded",
-			"notification_id", audit.NotificationID)
-
-		// DLQ success - return 202 Accepted (async processing)
-		s.logger.Info("Audit record queued to DLQ for async processing",
-			"notification_id", audit.NotificationID)
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusAccepted)
-		if err := json.NewEncoder(w).Encode(map[string]string{
-			"status":  "accepted",
-			"message": "audit record queued for processing",
-		}); err != nil {
-			s.logger.Error(err, "failed to encode DLQ response")
-		}
+	if dlqErr := s.dlqClient.EnqueueNotificationAudit(dlqCtx, notificationAudit, dbErr); dlqErr != nil {
+		s.logger.Error(dlqErr, "DLQ fallback also failed - data loss risk",
+			"notification_id", notificationAudit.NotificationID,
+			"original_error", dbErr.Error())
+		writeValidationRFC7807Error(w, validation.NewServiceUnavailableProblem(
+			"database and DLQ both unavailable - please retry"), s)
 		return
 	}
 
-	// 4. Success - return 201 Created with created record
-	s.logger.Info("Audit record created successfully",
-		"id", created.ID,
-		"notification_id", created.NotificationID,
-		"remediation_id", created.RemediationID)
+	s.logger.Info("DLQ fallback succeeded",
+		"notification_id", notificationAudit.NotificationID)
 
-	// GAP-10: Emit success metrics
-	// Audit lag (time between event and write)
-	auditLag := time.Since(audit.SentAt).Seconds()
-	s.metrics.AuditLagSeconds.WithLabelValues(dsmetrics.ServiceNotification).Observe(auditLag)
-
-	// Write duration
-	s.metrics.WriteDuration.WithLabelValues("notification_audit").Observe(writeDuration)
+	// DLQ success - return 202 Accepted (async processing)
+	s.logger.Info("Audit record queued to DLQ for async processing",
+		"notification_id", notificationAudit.NotificationID)
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	if err := json.NewEncoder(w).Encode(created); err != nil {
-		s.logger.Error(err, "failed to encode success response")
+	w.WriteHeader(http.StatusAccepted)
+	if err := json.NewEncoder(w).Encode(map[string]string{
+		"status":  "accepted",
+		"message": "audit record queued for processing",
+	}); err != nil {
+		s.logger.Error(err, "failed to encode DLQ response")
 	}
 }
 

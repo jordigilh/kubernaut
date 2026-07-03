@@ -16,8 +16,32 @@ linters:
     - unused
     - govet
     - gosec      # SAST: detects common Go security issues (Issue #1002)
+    - prealloc   # Flags slices that could be pre-allocated with a known/derivable
+                 # capacity (100 Go Mistakes #57). Verified 0 findings in production
+                 # code as of GO-ANTIPATTERN-AUDIT-2026-07-01 follow-up; test-only
+                 # findings are excluded below (perf of test setup code is not
+                 # worth the churn).
+    - revive     # Scoped to argument-limit only (see settings below) — other
+                 # revive rules are not vetted for this codebase and are left off
+                 # to avoid an unreviewed wall of new findings.
+    - containedctx # Flags context.Context stored as a struct field outside of a
+                   # single call scope (100 Go Mistakes #57/AGENTS.md). Verified 0
+                   # findings in production code; two pre-existing, reviewed
+                   # exceptions carry //nolint:containedctx (DD-scoped lifecycle
+                   # contexts). Test-double interface embeddings are excluded below.
 
   settings:
+    govet:
+      enable:
+        - shadow  # Variable shadowing (100 Go Mistakes / AGENTS.md anti-pattern
+                  # checklist). Verified 0 non-idiomatic findings as of
+                  # GO-ANTIPATTERN-AUDIT-2026-07-01 follow-up; the benign `err`/`ok`
+                  # re-declaration idiom remains excluded below.
+    revive:
+      rules:
+        - name: argument-limit
+          arguments: [7]  # AGENTS.md Go Anti-Pattern Checklist: 8+ params -> Options pattern
+          severity: warning
     forbidigo:
       # ANTI-PATTERN DETECTION: Per TESTING_GUIDELINES.md and NT_TEST_ANTI_PATTERN_TRIAGE_DEC_17_2025.md
       forbid:
@@ -109,6 +133,35 @@ linters:
           - gosec
         text: "G404"
         path: "pkg/shared/backoff/"
+      # govet shadow: the ~114 `if err := ...; err != nil` idiomatic re-declarations
+      # reviewed and accepted in GO-ANTIPATTERN-AUDIT-2026-07-01 §8 (Variable
+      # Shadowing) are excluded here. Only the benign `err`/`ok` re-declaration
+      # pattern is excluded; shadowing of other identifiers still fails CI.
+      - linters:
+          - govet
+        text: 'shadow: declaration of "(err|ok)" shadows declaration'
+      # govet shadow: Ginkgo BDD suites idiomatically re-declare suite-scoped
+      # variables (ctx, client, logger, recorder, etc.) inside BeforeEach/It
+      # closures for readability. This is an accepted, pervasive pattern in
+      # this codebase's ~2000 Ginkgo test files; shadowing still fails CI for
+      # production (non-test) code.
+      - path: (_test\.go|^test/)
+        linters:
+          - govet
+        text: "shadow:"
+      # prealloc/argument-limit: test setup code duplicates slices/params for
+      # readability and isn't worth churn to pre-allocate or restructure.
+      - path: (_test\.go|^test/)
+        linters:
+          - prealloc
+          - revive
+        text: "Consider preallocating|argument-limit"
+      # containedctx: test doubles that embed context.Context to satisfy an
+      # interface (e.g. tool.Context, agent.ReadonlyContext fakes) are not the
+      # long-lived-context anti-pattern this linter targets.
+      - path: _test\.go
+        linters:
+          - containedctx
 
 issues:
   max-issues-per-linter: 0

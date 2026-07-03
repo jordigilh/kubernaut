@@ -99,69 +99,13 @@ var (
 // NewAllTools creates the 8 Prometheus tools backed by the given client.
 func NewAllTools(client *Client) []tools.Tool {
 	return []tools.Tool{
-		&promTool{client: client, toolName: "execute_prometheus_instant_query", desc: "Execute a PromQL instant query", schema: instantQuerySchema,
-			exec: func(ctx context.Context, c *Client, args json.RawMessage) (string, error) {
-				var a struct{ Query string `json:"query"` }
-				if err := json.Unmarshal(args, &a); err != nil {
-					return "", fmt.Errorf("parsing args: %w", err)
-				}
-				return c.doGet(ctx, "/api/v1/query", url.Values{"query": {a.Query}})
-			},
-		},
-		&promTool{client: client, toolName: "execute_prometheus_range_query", desc: "Execute a PromQL range query", schema: rangeQuerySchema,
-			exec: func(ctx context.Context, c *Client, args json.RawMessage) (string, error) {
-				var a struct {
-					Query string `json:"query"`
-					Start string `json:"start"`
-					End   string `json:"end"`
-					Step  string `json:"step"`
-				}
-				if err := json.Unmarshal(args, &a); err != nil {
-					return "", fmt.Errorf("parsing args: %w", err)
-				}
-				params := url.Values{"query": {a.Query}, "start": {a.Start}, "end": {a.End}, "step": {a.Step}}
-				return c.doGet(ctx, "/api/v1/query_range", params)
-			},
-		},
-		&promTool{client: client, toolName: "get_metric_names", desc: "Get available metric names. Optionally filter by match[] selector (e.g. {__name__=~\".*fs.*\"}).", schema: metricNamesSchema,
-			exec: func(ctx context.Context, c *Client, args json.RawMessage) (string, error) {
-				var a struct {
-					Match string `json:"match"`
-				}
-				if len(args) > 0 {
-					_ = json.Unmarshal(args, &a)
-				}
-				var params url.Values
-				if a.Match != "" {
-					params = url.Values{"match[]": {a.Match}}
-				}
-				return c.doGet(ctx, "/api/v1/label/__name__/values", params)
-			},
-		},
-		&promTool{client: client, toolName: "get_label_values", desc: "Get values for a label", schema: labelValuesSchema,
-			exec: func(ctx context.Context, c *Client, args json.RawMessage) (string, error) {
-				var a struct{ Label string `json:"label"` }
-				if err := json.Unmarshal(args, &a); err != nil {
-					return "", fmt.Errorf("parsing args: %w", err)
-				}
-				return c.doGet(ctx, fmt.Sprintf("/api/v1/label/%s/values", a.Label), nil)
-			},
-		},
-		&promTool{client: client, toolName: "get_all_labels", desc: "Get all label names", schema: allLabelsSchema,
-			exec: func(ctx context.Context, c *Client, _ json.RawMessage) (string, error) {
-				return c.doGet(ctx, "/api/v1/labels", nil)
-			},
-		},
-		&promTool{client: client, toolName: "get_metric_metadata", desc: "Get metric metadata (help, type)", schema: metricMetadataSchema,
-			exec: func(ctx context.Context, c *Client, _ json.RawMessage) (string, error) {
-				return c.doGet(ctx, "/api/v1/metadata", nil)
-			},
-		},
-		&promTool{client: client, toolName: "list_prometheus_rules", desc: "List Prometheus alerting and recording rules", schema: rulesSchema,
-			exec: func(ctx context.Context, c *Client, _ json.RawMessage) (string, error) {
-				return c.doGet(ctx, "/api/v1/rules", nil)
-			},
-		},
+		&promTool{client: client, toolName: "execute_prometheus_instant_query", desc: "Execute a PromQL instant query", schema: instantQuerySchema, exec: execInstantQuery},
+		&promTool{client: client, toolName: "execute_prometheus_range_query", desc: "Execute a PromQL range query", schema: rangeQuerySchema, exec: execRangeQuery},
+		&promTool{client: client, toolName: "get_metric_names", desc: "Get available metric names. Optionally filter by match[] selector (e.g. {__name__=~\".*fs.*\"}).", schema: metricNamesSchema, exec: execMetricNames},
+		&promTool{client: client, toolName: "get_label_values", desc: "Get values for a label", schema: labelValuesSchema, exec: execLabelValues},
+		&promTool{client: client, toolName: "get_all_labels", desc: "Get all label names", schema: allLabelsSchema, exec: execAllLabels},
+		&promTool{client: client, toolName: "get_metric_metadata", desc: "Get metric metadata (help, type)", schema: metricMetadataSchema, exec: execMetricMetadata},
+		&promTool{client: client, toolName: "list_prometheus_rules", desc: "List Prometheus alerting and recording rules", schema: rulesSchema, exec: execRules},
 		&promTool{client: client, toolName: "get_series",
 			desc: "Get time series label sets matching a selector via /api/v1/series. " +
 				"SLOWER than other discovery methods — use only when you need full label sets. " +
@@ -169,44 +113,106 @@ func NewAllTools(client *Client) []tools.Tool {
 					client.config.MetadataLimit, client.config.MetadataLimit) +
 				"By default returns series active in the last 1 hour.",
 			schema: seriesSchema,
-			exec: func(ctx context.Context, c *Client, args json.RawMessage) (string, error) {
-				var a struct {
-					Match string `json:"match"`
-					Start string `json:"start"`
-					End   string `json:"end"`
-				}
-				if err := json.Unmarshal(args, &a); err != nil {
-					return "", fmt.Errorf("parsing args: %w", err)
-				}
-				if a.Match == "" {
-					return "", fmt.Errorf("match parameter is required")
-				}
-
-				params := url.Values{
-					"match[]": {a.Match},
-					"limit":   {strconv.Itoa(c.config.MetadataLimit)},
-				}
-
-				now := time.Now().Unix()
-				if a.End != "" {
-					params.Set("end", a.End)
-				} else {
-					params.Set("end", strconv.FormatInt(now, 10))
-				}
-				if a.Start != "" {
-					params.Set("start", a.Start)
-				} else {
-					params.Set("start", strconv.FormatInt(now-int64(c.config.MetadataTimeWindowHrs)*3600, 10))
-				}
-
-				result, err := c.doGet(ctx, "/api/v1/series", params)
-				if err != nil {
-					return result, err
-				}
-				return applyMetadataTruncationHint(result, c.config.MetadataLimit), nil
-			},
+			exec:   execSeries,
 		},
 	}
+}
+
+func execInstantQuery(ctx context.Context, c *Client, args json.RawMessage) (string, error) {
+	var a struct {
+		Query string `json:"query"`
+	}
+	if err := json.Unmarshal(args, &a); err != nil {
+		return "", fmt.Errorf("parsing args: %w", err)
+	}
+	return c.doGet(ctx, "/api/v1/query", url.Values{"query": {a.Query}})
+}
+
+func execRangeQuery(ctx context.Context, c *Client, args json.RawMessage) (string, error) {
+	var a struct {
+		Query string `json:"query"`
+		Start string `json:"start"`
+		End   string `json:"end"`
+		Step  string `json:"step"`
+	}
+	if err := json.Unmarshal(args, &a); err != nil {
+		return "", fmt.Errorf("parsing args: %w", err)
+	}
+	params := url.Values{"query": {a.Query}, "start": {a.Start}, "end": {a.End}, "step": {a.Step}}
+	return c.doGet(ctx, "/api/v1/query_range", params)
+}
+
+func execMetricNames(ctx context.Context, c *Client, args json.RawMessage) (string, error) {
+	var a struct {
+		Match string `json:"match"`
+	}
+	if len(args) > 0 {
+		_ = json.Unmarshal(args, &a)
+	}
+	var params url.Values
+	if a.Match != "" {
+		params = url.Values{"match[]": {a.Match}}
+	}
+	return c.doGet(ctx, "/api/v1/label/__name__/values", params)
+}
+
+func execLabelValues(ctx context.Context, c *Client, args json.RawMessage) (string, error) {
+	var a struct {
+		Label string `json:"label"`
+	}
+	if err := json.Unmarshal(args, &a); err != nil {
+		return "", fmt.Errorf("parsing args: %w", err)
+	}
+	return c.doGet(ctx, fmt.Sprintf("/api/v1/label/%s/values", a.Label), nil)
+}
+
+func execAllLabels(ctx context.Context, c *Client, _ json.RawMessage) (string, error) {
+	return c.doGet(ctx, "/api/v1/labels", nil)
+}
+
+func execMetricMetadata(ctx context.Context, c *Client, _ json.RawMessage) (string, error) {
+	return c.doGet(ctx, "/api/v1/metadata", nil)
+}
+
+func execRules(ctx context.Context, c *Client, _ json.RawMessage) (string, error) {
+	return c.doGet(ctx, "/api/v1/rules", nil)
+}
+
+func execSeries(ctx context.Context, c *Client, args json.RawMessage) (string, error) {
+	var a struct {
+		Match string `json:"match"`
+		Start string `json:"start"`
+		End   string `json:"end"`
+	}
+	if err := json.Unmarshal(args, &a); err != nil {
+		return "", fmt.Errorf("parsing args: %w", err)
+	}
+	if a.Match == "" {
+		return "", fmt.Errorf("match parameter is required")
+	}
+
+	params := url.Values{
+		"match[]": {a.Match},
+		"limit":   {strconv.Itoa(c.config.MetadataLimit)},
+	}
+
+	now := time.Now().Unix()
+	if a.End != "" {
+		params.Set("end", a.End)
+	} else {
+		params.Set("end", strconv.FormatInt(now, 10))
+	}
+	if a.Start != "" {
+		params.Set("start", a.Start)
+	} else {
+		params.Set("start", strconv.FormatInt(now-int64(c.config.MetadataTimeWindowHrs)*3600, 10))
+	}
+
+	result, err := c.doGet(ctx, "/api/v1/series", params)
+	if err != nil {
+		return result, err
+	}
+	return applyMetadataTruncationHint(result, c.config.MetadataLimit), nil
 }
 
 // promTool wraps a Client + function-pointer to implement the Tool interface.
@@ -218,7 +224,7 @@ type promTool struct {
 	exec     func(ctx context.Context, c *Client, args json.RawMessage) (string, error)
 }
 
-func (t *promTool) Name() string               { return t.toolName }
+func (t *promTool) Name() string                { return t.toolName }
 func (t *promTool) Description() string         { return t.desc }
 func (t *promTool) Parameters() json.RawMessage { return t.schema }
 

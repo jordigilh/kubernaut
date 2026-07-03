@@ -19,16 +19,12 @@ package investigator
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"sync/atomic"
-	"time"
 
 	"github.com/go-logr/logr"
-	"golang.org/x/sync/errgroup"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
-	"github.com/jordigilh/kubernaut/internal/kubernautagent/alignment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/metrics"
@@ -198,10 +194,10 @@ type Investigator struct {
 	pipeline      Pipeline
 	modelName     string
 	scopeResolver ScopeResolver
-	swappable      *llm.SwappableClient
-	metrics        *metrics.Metrics
-	pinDecorator   func(llm.Client) llm.Client
-	phaseResolver  PhaseClientResolver
+	swappable     *llm.SwappableClient
+	metrics       *metrics.Metrics
+	pinDecorator  func(llm.Client) llm.Client
+	phaseResolver PhaseClientResolver
 }
 
 func (inv *Investigator) auditLog() logr.Logger {
@@ -256,10 +252,10 @@ func New(cfg Config) *Investigator {
 		pipeline:      pipeline,
 		modelName:     cfg.ModelName,
 		scopeResolver: cfg.ScopeResolver,
-		swappable:      cfg.Swappable,
-		metrics:        cfg.Metrics,
-		pinDecorator:   cfg.PinDecorator,
-		phaseResolver:  cfg.PhaseResolver,
+		swappable:     cfg.Swappable,
+		metrics:       cfg.Metrics,
+		pinDecorator:  cfg.PinDecorator,
+		phaseResolver: cfg.PhaseResolver,
 	}
 }
 
@@ -268,7 +264,12 @@ func New(cfg Config) *Investigator {
 // Uses PhaseRCA tool set. Streaming works via LazySink on context.
 func (inv *Investigator) RunInteractiveTurn(ctx context.Context, messages []llm.Message, correlationID string) (LoopResult, error) {
 	client, modelName, runtimeParams := inv.resolveForPhase(katypes.PhaseRCA)
-	return inv.runLLMLoop(ctx, messages, katypes.PhaseRCA, nil, correlationID, client, modelName, runtimeParams)
+	return inv.runLLMLoop(ctx, messages, katypes.PhaseRCA, LLMInvocationContext{
+		CorrelationID: correlationID,
+		Client:        client,
+		ModelName:     modelName,
+		RuntimeParams: runtimeParams,
+	})
 }
 
 // RunRCAExtractionFromConversation appends a submit-RCA prompt to an existing
@@ -316,137 +317,6 @@ func (inv *Investigator) RunRCAExtractionFromConversation(ctx context.Context, m
 	return result, nil
 }
 
-// RunWorkflowDiscoveryFromRCA executes Phase 3 (workflow selection) using a
-// structured RCA result. This reuses the exact autonomous Phase 3 pipeline
-// (BuildPhase1Context + runWorkflowSelection) so that interactive and
-// autonomous workflow discovery produce consistent results.
-//
-// F5/F6 (#1374): When the investigator has an enricher wired, this function
-// resolves enrichment internally (pre-RCA + post-RCA re-enrichment), mirroring
-// the autonomous Investigate() pipeline. The caller-provided enrichData is used
-// as fallback only when the enricher is nil.
-func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal katypes.SignalContext, rcaResult *katypes.InvestigationResult, enrichData *prompt.EnrichmentData, correlationID string) (*katypes.InvestigationResult, error) {
-	if rcaResult == nil {
-		return nil, fmt.Errorf("RunWorkflowDiscoveryFromRCA: rcaResult must not be nil")
-	}
-
-	rcaCopy := *rcaResult
-	rcaResult = &rcaCopy
-
-	inv.pipeline.AnomalyDetector.Reset()
-
-	// Auto-resolve apiVersion when the LLM omitted it (parity with the
-	// autonomous apiVersionValidationGate in runRCA). Uses the REST mapper
-	// via scopeResolver: if the kind maps to exactly one API group, we can
-	// infer the apiVersion deterministically.
-	if rcaResult.RemediationTarget.APIVersion == "" && rcaResult.RemediationTarget.Kind != "" && inv.scopeResolver != nil {
-		ambiguous, gvrs, err := inv.scopeResolver.IsAmbiguousKind(rcaResult.RemediationTarget.Kind)
-		if err != nil {
-			inv.logger.Error(err, "RunWorkflowDiscoveryFromRCA: IsAmbiguousKind failed, skipping apiVersion auto-resolve",
-				"kind", rcaResult.RemediationTarget.Kind, "correlation_id", correlationID)
-		} else if !ambiguous && len(gvrs) == 1 {
-			rcaResult.RemediationTarget.APIVersion = gvrToAPIVersion(gvrs[0])
-			inv.logger.Info("RunWorkflowDiscoveryFromRCA: auto-resolved apiVersion for non-ambiguous kind",
-				"kind", rcaResult.RemediationTarget.Kind,
-				"api_version", rcaResult.RemediationTarget.APIVersion,
-				"correlation_id", correlationID)
-		}
-	}
-
-	preKind := signal.ResourceKind
-	signal = SyncSignalFromRCA(signal, rcaResult.RemediationTarget)
-	signal.Namespace = inv.normalizeNamespace(signal.ResourceKind, signal.Namespace)
-
-	inv.logger.Info("RunWorkflowDiscoveryFromRCA: RCA target state",
-		"rca_target_kind", rcaResult.RemediationTarget.Kind,
-		"rca_target_api_version", rcaResult.RemediationTarget.APIVersion,
-		"signal_kind_before", preKind,
-		"signal_kind", signal.ResourceKind,
-		"signal_api_version", signal.ResourceAPIVersion,
-		"signal_namespace", signal.Namespace,
-		"correlation_id", correlationID)
-
-	// F5 (#1374): Resolve enrichment when the enricher is wired, mirroring
-	// the autonomous path (Investigate L414-500). Pre-RCA enrichment uses
-	// the signal target; post-RCA re-enrichment uses the RCA-identified
-	// target when it differs (cross-resource RCA).
-	var rawEnrichData *enrichment.EnrichmentResult
-	if inv.enricher != nil {
-		enrichmentCache := make(map[string]*enrichment.EnrichmentResult)
-		signalKind, signalName, signalNS := ResolveEnrichmentTarget(signal, nil)
-		signalNS = inv.normalizeNamespace(signalKind, signalNS)
-		rawEnrichData = inv.resolveEnrichmentCached(ctx, enrichmentCache, signalKind, signalName, signalNS, signal.IncidentID)
-
-		postRCAKind, postRCAName, postRCANS := ResolveEnrichmentTarget(signal, rcaResult)
-		postRCANS = inv.normalizeNamespace(postRCAKind, postRCANS)
-		if postRCAKind != signalKind || postRCAName != signalName || postRCANS != signalNS {
-			inv.logger.Info("RunWorkflowDiscoveryFromRCA: re-enriching with RCA target",
-				"signal", signalKind+"/"+signalName,
-				"rca_target", postRCAKind+"/"+postRCAName,
-				"correlation_id", correlationID)
-			reEnriched := inv.resolveEnrichmentCached(ctx, enrichmentCache, postRCAKind, postRCAName, postRCANS, signal.IncidentID)
-
-			if reEnriched != nil && reEnriched.HardFail {
-				inv.logger.Error(reEnriched.OwnerChainError,
-					"RunWorkflowDiscoveryFromRCA: enrichment hard-failed, triggering rca_incomplete",
-					"correlation_id", correlationID)
-				rcaResult.HumanReviewNeeded = true
-				rcaResult.HumanReviewReason = "rca_incomplete"
-				backfillSeverity(rcaResult, signal)
-				attachDetectedLabels(rcaResult, rawEnrichData)
-				InjectRemediationTarget(rcaResult, signal, rawEnrichData)
-				InjectTargetResourceParameters(rcaResult)
-				return rcaResult, nil
-			} else if reEnriched != nil && reEnriched.TargetResourceDeleted {
-				rcaResult.Warnings = append(rcaResult.Warnings,
-					deletedResourceWarning(postRCAKind, postRCAName, postRCANS))
-			}
-
-			if reEnriched != nil && !reEnriched.HardFail && !allLabelDetectionsFailed(reEnriched.DetectedLabels) {
-				rawEnrichData = reEnriched
-			} else if reEnriched != nil && !reEnriched.HardFail {
-				inv.logger.Info("RunWorkflowDiscoveryFromRCA: re-enrichment labels all failed, preserving signal-target labels",
-					"rca_target", postRCAKind+"/"+postRCAName, "correlation_id", correlationID)
-			}
-		} else if rawEnrichData != nil && rawEnrichData.TargetResourceDeleted {
-			rcaResult.Warnings = append(rcaResult.Warnings,
-				deletedResourceWarning(signalKind, signalName, signalNS))
-		}
-
-		enrichData = toPromptEnrichment(rawEnrichData)
-	}
-
-	// F6 (#1374): Attach DetectedLabelsJSON to the signal so workflow
-	// discovery tools forward labels to DS catalog queries, activating
-	// GitOps-aware scoring (parity with autonomous path L521-537).
-	if rawEnrichData != nil && rawEnrichData.DetectedLabels != nil {
-		if dlJSON, err := json.Marshal(rawEnrichData.DetectedLabels); err == nil {
-			signal.DetectedLabelsJSON = string(dlJSON)
-			dl := rawEnrichData.DetectedLabels
-			trueCount := countTrueLabels(dl.GitOpsManaged, dl.PDBProtected, dl.HPAEnabled,
-				dl.Stateful, dl.HelmManaged, dl.NetworkIsolated, dl.ResourceQuotaConstrained)
-			inv.logger.V(1).Info("RunWorkflowDiscoveryFromRCA: detected labels attached for workflow scoring",
-				"correlation_id", correlationID,
-				"true_label_count", trueCount,
-				"gitops_tool", dl.GitOpsTool)
-		} else {
-			inv.logger.Error(err, "RunWorkflowDiscoveryFromRCA: failed to marshal detected labels",
-				"correlation_id", correlationID)
-		}
-	}
-
-	client, modelName, runtimeParams := inv.resolveForPhase(katypes.PhaseWorkflowDiscovery)
-
-	p1Ctx := BuildPhase1Context(rcaResult)
-	workflowResult, err := inv.runWorkflowSelection(ctx, signal, rcaResult.RCASummary, enrichData, p1Ctx, nil, correlationID, client, modelName, runtimeParams)
-	if err != nil {
-		return nil, err
-	}
-
-	FinalizeWorkflowResult(workflowResult, signal, rcaResult, rawEnrichData)
-	return workflowResult, nil
-}
-
 // Investigate runs the two-invocation investigation and returns the result.
 // Per BR-AUDIT-005, all audit events use signal.RemediationID as correlation ID
 // so that DataStorage queries by remediation_id return the full investigation trail.
@@ -478,7 +348,13 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 	promptEnrichment := toPromptEnrichment(enrichData)
 	tokens := &TokenAccumulator{}
 
-	rcaResult, err := inv.runRCA(ctx, signal, promptEnrichment, tokens, correlationID, rcaClient, rcaModelName, rcaRuntimeParams)
+	rcaResult, err := inv.runRCA(ctx, signal, promptEnrichment, LLMInvocationContext{
+		Tokens:        tokens,
+		CorrelationID: correlationID,
+		Client:        rcaClient,
+		ModelName:     rcaModelName,
+		RuntimeParams: rcaRuntimeParams,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("RCA invocation: %w", err)
 	}
@@ -493,22 +369,12 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 	// BR-INTERACTIVE-010 / #1390: When interactive (either via signal or runtime
 	// upgrade flag), skip Phase 2+3 and return with InteractiveHold=true.
 	if signal.Interactive || session.InteractiveUpgradeFromContext(ctx) {
-		backfillSeverity(rcaResult, signal)
-		attachDetectedLabels(rcaResult, enrichData)
-		InjectRemediationTarget(rcaResult, signal, enrichData)
-		InjectTargetResourceParameters(rcaResult)
 		rcaResult.InteractiveHold = true
-		inv.emitResponseComplete(ctx, rcaResult, tokens, correlationID)
-		return rcaResult, nil
+		return inv.finalizeAndEmitRCAOnlyResult(ctx, rcaResult, signal, enrichData, tokens, correlationID), nil
 	}
 
 	if rcaResult.HumanReviewNeeded {
-		backfillSeverity(rcaResult, signal)
-		attachDetectedLabels(rcaResult, enrichData)
-		InjectRemediationTarget(rcaResult, signal, enrichData)
-		InjectTargetResourceParameters(rcaResult)
-		inv.emitResponseComplete(ctx, rcaResult, tokens, correlationID)
-		return rcaResult, nil
+		return inv.finalizeAndEmitRCAOnlyResult(ctx, rcaResult, signal, enrichData, tokens, correlationID), nil
 	}
 
 	// #1430 / BR-HAPI-200: When the RCA concludes no action is required
@@ -519,17 +385,85 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 		inv.logger.Info("skipping workflow discovery: RCA concluded not actionable",
 			"investigation_outcome", rcaResult.InvestigationOutcome,
 			"correlation_id", correlationID)
-		backfillSeverity(rcaResult, signal)
-		attachDetectedLabels(rcaResult, enrichData)
-		InjectRemediationTarget(rcaResult, signal, enrichData)
-		InjectTargetResourceParameters(rcaResult)
-		inv.emitResponseComplete(ctx, rcaResult, tokens, correlationID)
-		return rcaResult, nil
+		return inv.finalizeAndEmitRCAOnlyResult(ctx, rcaResult, signal, enrichData, tokens, correlationID), nil
 	}
 
-	// GAP-001 / ADR-056: Re-enrich using RCA-identified remediation target if different.
-	// H3-fix: retain pre-RCA enrichment if re-enrichment fails.
-	workflowSignal := signal
+	// GAP-001 / ADR-056: Re-enrich using RCA-identified remediation target if
+	// different. H3-fix: retain pre-RCA enrichment if re-enrichment fails.
+	workflowSignal, enrichData, hardFailed := inv.reEnrichWorkflowTarget(ctx, reEnrichWorkflowTargetParams{
+		Signal: signal, RCAResult: rcaResult, EnrichData: enrichData, EnrichmentCache: enrichmentCache,
+		SignalKind: signalKind, SignalName: signalName, SignalNS: signalNS,
+	})
+	if hardFailed {
+		return inv.finalizeAndEmitRCAOnlyResult(ctx, rcaResult, signal, enrichData, tokens, correlationID), nil
+	}
+	promptEnrichment = toPromptEnrichment(enrichData)
+	workflowSignal = inv.enrichWorkflowSignalForDiscovery(workflowSignal, signal, rcaResult, enrichData, correlationID)
+
+	inv.pipeline.AnomalyDetector.Reset()
+
+	wfClient, wfModelName, wfRuntimeParams := inv.resolveForPhase(katypes.PhaseWorkflowDiscovery)
+
+	p1Ctx := BuildPhase1Context(rcaResult)
+
+	workflowResult, err := inv.runWorkflowSelection(ctx, workflowSignal, rcaResult.RCASummary, promptEnrichment, p1Ctx, LLMInvocationContext{
+		Tokens:        tokens,
+		CorrelationID: correlationID,
+		Client:        wfClient,
+		ModelName:     wfModelName,
+		RuntimeParams: wfRuntimeParams,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("workflow selection invocation: %w", err)
+	}
+
+	if workflowResult.Cancelled {
+		inv.emitCancellationAudit(ctx, workflowResult, correlationID)
+		return workflowResult, nil
+	}
+
+	return inv.mergeAndFinalizeWorkflowResult(ctx, mergeAndFinalizeWorkflowResultParams{
+		WorkflowResult: workflowResult, RCAResult: rcaResult, Signal: signal, WorkflowSignal: workflowSignal,
+		EnrichData: enrichData, P1Ctx: p1Ctx, Tokens: tokens, CorrelationID: correlationID,
+	}), nil
+}
+
+// finalizeAndEmitRCAOnlyResult applies the common Phase-1-only finalization
+// steps (severity backfill, label attachment, remediation-target injection,
+// audit emission) shared by every early-return path in Investigate: the
+// interactive-hold, human-review-needed, not-actionable, and re-enrichment
+// hard-fail branches. Callers set any branch-specific fields on rcaResult
+// before invoking this helper.
+func (inv *Investigator) finalizeAndEmitRCAOnlyResult(ctx context.Context, rcaResult *katypes.InvestigationResult, signal katypes.SignalContext, enrichData *enrichment.EnrichmentResult, tokens *TokenAccumulator, correlationID string) *katypes.InvestigationResult {
+	backfillSeverity(rcaResult, signal)
+	attachDetectedLabels(rcaResult, enrichData)
+	InjectRemediationTarget(rcaResult, signal, enrichData)
+	InjectTargetResourceParameters(rcaResult)
+	inv.emitResponseComplete(ctx, rcaResult, tokens, correlationID)
+	return rcaResult
+}
+
+// reEnrichWorkflowTargetParams groups the fields needed by
+// reEnrichWorkflowTarget. Extracted per AGENTS.md's 8+-param
+// Options-pattern rule.
+type reEnrichWorkflowTargetParams struct {
+	Signal                           katypes.SignalContext
+	RCAResult                        *katypes.InvestigationResult
+	EnrichData                       *enrichment.EnrichmentResult
+	EnrichmentCache                  map[string]*enrichment.EnrichmentResult
+	SignalKind, SignalName, SignalNS string
+}
+
+// reEnrichWorkflowTarget re-enriches using the RCA-identified remediation
+// target when it differs from the pre-RCA signal target (GAP-001/ADR-056).
+// hardFailed is true when the re-enrichment owner-chain lookup hard-failed;
+// callers must treat rcaResult (already marked HumanReviewNeeded/rca_incomplete
+// by this function) as the final result in that case.
+func (inv *Investigator) reEnrichWorkflowTarget(ctx context.Context, p reEnrichWorkflowTargetParams) (workflowSignal katypes.SignalContext, updatedEnrichData *enrichment.EnrichmentResult, hardFailed bool) {
+	signal, rcaResult, enrichData := p.Signal, p.RCAResult, p.EnrichData
+	enrichmentCache := p.EnrichmentCache
+	signalKind, signalName, signalNS := p.SignalKind, p.SignalName, p.SignalNS
+	workflowSignal = signal
 	postRCAKind, postRCAName, postRCANS := ResolveEnrichmentTarget(signal, rcaResult)
 	postRCANS = inv.normalizeNamespace(postRCAKind, postRCANS)
 	if postRCAKind != signalKind || postRCAName != signalName || postRCANS != signalNS {
@@ -549,12 +483,7 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 			inv.logger.Error(reEnriched.OwnerChainError, "enrichment owner chain hard-failed, triggering rca_incomplete")
 			rcaResult.HumanReviewNeeded = true
 			rcaResult.HumanReviewReason = "rca_incomplete"
-			backfillSeverity(rcaResult, signal)
-			attachDetectedLabels(rcaResult, enrichData)
-			InjectRemediationTarget(rcaResult, workflowSignal, enrichData)
-			InjectTargetResourceParameters(rcaResult)
-			inv.emitResponseComplete(ctx, rcaResult, tokens, correlationID)
-			return rcaResult, nil
+			return workflowSignal, enrichData, true
 		}
 
 		if reEnriched != nil && reEnriched.TargetResourceDeleted {
@@ -570,7 +499,6 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 		} else {
 			inv.logger.Info("re-enrichment returned nil, retaining pre-RCA enrichment data")
 		}
-		promptEnrichment = toPromptEnrichment(enrichData)
 
 		workflowSignal.ResourceKind = postRCAKind
 		workflowSignal.ResourceName = postRCAName
@@ -579,21 +507,23 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 		rcaResult.Warnings = append(rcaResult.Warnings,
 			deletedResourceWarning(signalKind, signalName, signalNS))
 	}
+	return workflowSignal, enrichData, false
+}
 
-	// #1051: propagate RCA-resolved apiVersion to workflowSignal so
-	// ComponentGVK() returns the correct GVK for DS catalog queries.
-	// When APIVersion is empty but the RCA changed the target kind,
-	// clear any stale ResourceAPIVersion to prevent an invalid GVK
-	// combination (old apiVersion + new kind).
+// enrichWorkflowSignalForDiscovery propagates the RCA-resolved apiVersion and
+// detected-label JSON onto workflowSignal so that ComponentGVK() and DS
+// catalog queries see the correct, GitOps-aware target for Phase 3 (#1051,
+// #1052 / BR-AI-056).
+func (inv *Investigator) enrichWorkflowSignalForDiscovery(workflowSignal, signal katypes.SignalContext, rcaResult *katypes.InvestigationResult, enrichData *enrichment.EnrichmentResult, correlationID string) katypes.SignalContext {
+	// When APIVersion is empty but the RCA changed the target kind, clear any
+	// stale ResourceAPIVersion to prevent an invalid GVK combination (old
+	// apiVersion + new kind).
 	if rcaResult.RemediationTarget.APIVersion != "" {
 		workflowSignal.ResourceAPIVersion = rcaResult.RemediationTarget.APIVersion
 	} else if workflowSignal.ResourceKind != signal.ResourceKind {
 		workflowSignal.ResourceAPIVersion = ""
 	}
 
-	// #1052 / BR-AI-056: Marshal enrichment DetectedLabels into the signal context
-	// so workflow discovery tools forward them to DS catalog queries, activating
-	// GitOps-aware scoring.
 	if enrichData != nil && enrichData.DetectedLabels != nil {
 		if dlJSON, err := json.Marshal(enrichData.DetectedLabels); err == nil {
 			workflowSignal.DetectedLabelsJSON = string(dlJSON)
@@ -609,23 +539,28 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 				"correlation_id", correlationID)
 		}
 	}
+	return workflowSignal
+}
 
-	inv.pipeline.AnomalyDetector.Reset()
+// mergeAndFinalizeWorkflowResultParams groups the fields needed by
+// mergeAndFinalizeWorkflowResult. Extracted per AGENTS.md's 8+-param
+// Options-pattern rule.
+type mergeAndFinalizeWorkflowResultParams struct {
+	WorkflowResult, RCAResult *katypes.InvestigationResult
+	Signal, WorkflowSignal    katypes.SignalContext
+	EnrichData                *enrichment.EnrichmentResult
+	P1Ctx                     *prompt.Phase1Data
+	Tokens                    *TokenAccumulator
+	CorrelationID             string
+}
 
-	wfClient, wfModelName, wfRuntimeParams := inv.resolveForPhase(katypes.PhaseWorkflowDiscovery)
-
-	p1Ctx := BuildPhase1Context(rcaResult)
-
-	workflowResult, err := inv.runWorkflowSelection(ctx, workflowSignal, rcaResult.RCASummary, promptEnrichment, p1Ctx, tokens, correlationID, wfClient, wfModelName, wfRuntimeParams)
-	if err != nil {
-		return nil, fmt.Errorf("workflow selection invocation: %w", err)
-	}
-
-	if workflowResult.Cancelled {
-		inv.emitCancellationAudit(ctx, workflowResult, correlationID)
-		return workflowResult, nil
-	}
-
+// mergeAndFinalizeWorkflowResult merges Phase 1 (RCA) fallback fields into
+// the Phase 3 workflow-selection result, then applies the same finalization
+// steps as finalizeAndEmitRCAOnlyResult before emitting the audit trail.
+func (inv *Investigator) mergeAndFinalizeWorkflowResult(ctx context.Context, p mergeAndFinalizeWorkflowResultParams) *katypes.InvestigationResult {
+	workflowResult, rcaResult := p.WorkflowResult, p.RCAResult
+	signal, workflowSignal := p.Signal, p.WorkflowSignal
+	enrichData, p1Ctx, tokens, correlationID := p.EnrichData, p.P1Ctx, p.Tokens, p.CorrelationID
 	if workflowResult.RCASummary == "" {
 		workflowResult.RCASummary = rcaResult.RCASummary
 	}
@@ -649,7 +584,7 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 	}
 	InjectTargetResourceParameters(workflowResult)
 	inv.emitResponseComplete(ctx, workflowResult, tokens, correlationID)
-	return workflowResult, nil
+	return workflowResult
 }
 
 func deletedResourceWarning(kind, name, ns string) string {
@@ -714,794 +649,15 @@ func (inv *Investigator) resolveEnrichment(ctx context.Context, kind, name, name
 	return result
 }
 
-func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContext, enrichData *prompt.EnrichmentData, tokens *TokenAccumulator, correlationID string, client llm.Client, modelName string, runtimeParams llm.RuntimeParams) (result *katypes.InvestigationResult, retErr error) {
-	promptSignal := SignalToPrompt(signal)
-	LogLabelOverrideOrRejection(inv.logger, signal, promptSignal, correlationID, "RCA")
-	systemPrompt, err := inv.builder.RenderInvestigation(promptSignal)
-	if err != nil {
-		return nil, fmt.Errorf("rendering investigation prompt: %w", err)
-	}
-
-	messages := []llm.Message{
-		{Role: "system", Content: systemPrompt},
-		{Role: "user", Content: fmt.Sprintf("Investigate: %s %s in %s — %s", signal.Severity, signal.Name, signal.Namespace, signal.Message)},
-	}
-
-	loopRes, err := inv.runLLMLoop(ctx, messages, katypes.PhaseRCA, tokens, correlationID, client, modelName, runtimeParams)
-	if err != nil {
-		return nil, err
-	}
-
-	alignment.NotifyRCAComplete(ctx, messages)
-
-	var content string
-	switch r := loopRes.(type) {
-	case *CancelledResult:
-		result := &katypes.InvestigationResult{
-			Cancelled:           true,
-			CancelledPhase:      string(katypes.PhaseRCA),
-			CancelledAtTurn:     r.Turn,
-			AccumulatedMessages: messagesToAuditFormat(r.Messages),
-		}
-		if r.Tokens != nil {
-			s := r.Tokens.Summary()
-			result.TokenUsage = &katypes.TokenUsageSummary{
-				PromptTokens:     s.PromptTokens,
-				CompletionTokens: s.CompletionTokens,
-				TotalTokens:      s.TotalTokens,
-			}
-		}
-		return result, nil
-	case *ExhaustedResult:
-		return &katypes.InvestigationResult{
-			HumanReviewNeeded: true,
-			Reason:            fmt.Sprintf("%s during RCA (maxTurns=%d)", r.Reason, inv.maxTurns),
-		}, nil
-	case *SubmitResult:
-		content = r.Content
-	case *TextResult:
-		content = r.Content
-	default:
-		content = ""
-	}
-
-	result, parseErr := inv.resultParser.Parse(content)
-	if parseErr != nil {
-		if retried := inv.retryRCASubmit(ctx, content, messages, tokens, correlationID, client, modelName, runtimeParams); retried != nil {
-			result = retried
-			parseErr = nil
-		}
-	}
-	if parseErr != nil && ctx.Err() != nil {
-		return &katypes.InvestigationResult{
-			Cancelled:      true,
-			CancelledPhase: string(katypes.PhaseRCA),
-		}, nil
-	}
-	if parseErr != nil {
-		inv.logger.Info("RCA parse failed after retry, treating as summary",
-			"error", parseErr.Error(),
-			"correlation_id", correlationID)
-		return &katypes.InvestigationResult{
-			RCASummary: content,
-		}, nil
-	}
-
-	// Same-kind sentinel validation gate (Issue #847): when the LLM's
-	// remediation_target.kind matches the signal's resource_kind, the LLM may
-	// be targeting the symptom reporter instead of the actual root cause.
-	// Inject a single correction message and re-run. Max 1 retry.
-	result = inv.sameKindValidationGate(ctx, result, signal, messages, tokens, correlationID, client, modelName, runtimeParams)
-
-	// Defense-in-depth: RCA phase must never abort the pipeline via
-	// needs_human_review from the parser. Only gate-level exhaustion (#1044)
-	// is a valid RCA abort. Clear parser-set values BEFORE running the
-	// apiVersion gate so the gate's decision is authoritative.
-	// Aligned with HAPI v1.2.1 where needs_human_review is parser-driven in Phase 3.
-	if result.HumanReviewNeeded {
-		inv.logger.Info("clearing parser-set HumanReviewNeeded during RCA (Phase 3 only)",
-			"reason", result.HumanReviewReason,
-			"correlation_id", correlationID)
-		result.HumanReviewNeeded = false
-		result.HumanReviewReason = ""
-	}
-
-	// apiVersion validation gate (Issue #1044): when the remediation target kind
-	// exists in multiple API groups and api_version is missing, the gate retries
-	// once. On exhaustion it sets HumanReviewNeeded=true — a valid RCA abort.
-	// Runs after clearing so its decision is authoritative and not cleared.
-	result = inv.apiVersionValidationGate(ctx, result, messages, tokens, correlationID, client, modelName, runtimeParams)
-
-	return result, nil
-}
-
-const maxRCAParseRetries = 1
-
-// retryRCASubmit performs a single correction attempt when the RCA parse fails
-// (e.g. double-serialized JSON that wasn't caught by the unwrap heuristic, or
-// garbage fields). Mirrors retryWorkflowSubmit but scoped to the RCA phase.
-func (inv *Investigator) retryRCASubmit(ctx context.Context, lastContent string, history []llm.Message, tokens *TokenAccumulator, correlationID string, client llm.Client, modelName string, runtimeParams llm.RuntimeParams) *katypes.InvestigationResult {
-	submitOnlyTools := []llm.ToolDefinition{
-		{
-			Name:        SubmitResultToolName,
-			Description: "Submit root cause analysis result.",
-			Parameters:  parser.RCAResultSchema(),
-		},
-	}
-
-	correctionMsg := `Your response could not be parsed. You MUST call submit_result with a JSON object like:
-{"root_cause_analysis":{"summary":"...","severity":"critical","signal_name":"SignalName","contributing_factors":["factor1"],"remediation_target":{"kind":"Deployment","name":"resource","namespace":"ns","api_version":"apps/v1"}},"confidence":0.9}
-
-CRITICAL: root_cause_analysis must be a JSON object, NOT a string. Do NOT wrap it in quotes.`
-
-	retryMessages := make([]llm.Message, len(history))
-	copy(retryMessages, history)
-	retryMessages = append(retryMessages,
-		llm.Message{Role: "assistant", Content: lastContent},
-	)
-
-	for attempt := 0; attempt < maxRCAParseRetries; attempt++ {
-		if ctx.Err() != nil {
-			return nil
-		}
-		inv.logger.Info("parse-level retry for RCA submit",
-			"attempt", attempt+1,
-			"max", maxRCAParseRetries,
-			"correlation_id", correlationID)
-
-		retryMessages = append(retryMessages,
-			llm.Message{Role: "user", Content: correctionMsg},
-		)
-
-		retryEvent := audit.NewEvent(audit.EventTypeLLMRequest, correlationID)
-		retryEvent.EventAction = audit.ActionLLMRequest
-		retryEvent.EventOutcome = audit.OutcomeSuccess
-		retryEvent.Data["model"] = modelName
-		retryEvent.Data["prompt_length"] = totalPromptLength(retryMessages)
-		retryEvent.Data["prompt_preview"] = lastUserMessage(retryMessages, 500)
-		retryEvent.Data["retry_attempt"] = attempt + 1
-		retryEvent.Data["retry_max"] = maxRCAParseRetries
-		retryEvent.Data["phase"] = string(katypes.PhaseRCA)
-		retryEvent.Data["retry_reason"] = "rca_parse_correction"
-		audit.StoreBestEffort(ctx, inv.auditStore, retryEvent, inv.auditLog())
-
-		resp, err := inv.chatOrStream(ctx, client, llm.ChatRequest{
-			Messages: retryMessages,
-			Tools:    submitOnlyTools,
-			Options:  llm.ChatOptions{JSONMode: true, OutputSchema: parser.RCAResultSchema()},
-		}, attempt+1, string(katypes.PhaseRCA), modelName, runtimeParams)
-		if err != nil {
-			inv.logger.Error(err, "RCA retry LLM call failed",
-				"correlation_id", correlationID)
-			continue
-		}
-		if tokens != nil {
-			tokens.Add(resp.Usage)
-		}
-
-		emitToSink(ctx, session.EventTypeReasoningDelta, attempt+1, string(katypes.PhaseRCA), map[string]interface{}{
-			"content":       resp.Message.Content,
-			"retry_attempt": attempt + 1,
-		})
-
-		for _, tc := range resp.ToolCalls {
-			if tc.Name == SubmitResultToolName {
-				result, parseErr := inv.resultParser.Parse(tc.Arguments)
-				if parseErr != nil {
-					inv.logger.Error(parseErr, "RCA retry parse still failed",
-						"correlation_id", correlationID)
-					retryMessages = append(retryMessages, resp.Message)
-					continue
-				}
-				inv.logger.Info("RCA retry succeeded",
-					"correlation_id", correlationID)
-				return result
-			}
-		}
-
-		if resp.Message.Content != "" {
-			result, parseErr := inv.resultParser.Parse(resp.Message.Content)
-			if parseErr == nil {
-				inv.logger.Info("RCA retry succeeded from message content",
-					"correlation_id", correlationID)
-				return result
-			}
-		}
-
-		retryMessages = append(retryMessages, resp.Message)
-	}
-	return nil
-}
-
-
-func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katypes.SignalContext, rcaSummary string, enrichData *prompt.EnrichmentData, p1Ctx *prompt.Phase1Data, tokens *TokenAccumulator, correlationID string, client llm.Client, modelName string, runtimeParams llm.RuntimeParams) (result *katypes.InvestigationResult, retErr error) {
-	// Apply signal label overrides (target_resource_kind / target_resource_name)
-	// before attaching to context. This ensures workflow discovery tools
-	// (list_available_actions, list_workflows) filter by the correct component.
-	// Defense-in-depth for #1064/#1065: even if enrichment resolved a container
-	// kind (e.g. Namespace), the label override corrects it for tool context.
-	overriddenSignal := ApplySignalLabelOverrides(signal)
-	ctx = katypes.WithSignalContext(ctx, overriddenSignal)
-	inv.logger.Info("runWorkflowSelection: post-override signal",
-		"component_gvk", overriddenSignal.ComponentGVK(),
-		"resource_kind", overriddenSignal.ResourceKind,
-		"resource_api_version", overriddenSignal.ResourceAPIVersion,
-		"correlation_id", correlationID)
-
-	wfPromptSignal := SignalToPrompt(signal)
-	LogLabelOverrideOrRejection(inv.logger, signal, wfPromptSignal, correlationID, "workflow selection")
-	systemPrompt, err := inv.builder.RenderWorkflowSelection(prompt.WorkflowSelectionInput{
-		Signal:     wfPromptSignal,
-		RCASummary: rcaSummary,
-		EnrichData: enrichData,
-		Phase1:     p1Ctx,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("rendering workflow selection prompt: %w", err)
-	}
-
-	messages := []llm.Message{
-		{Role: "system", Content: systemPrompt},
-		{Role: "user", Content: fmt.Sprintf("RCA findings: %s\n\nSelect the appropriate remediation workflow.", rcaSummary)},
-	}
-
-	loopRes, err := inv.runLLMLoop(ctx, messages, katypes.PhaseWorkflowDiscovery, tokens, correlationID, client, modelName, runtimeParams)
-	if err != nil {
-		return nil, err
-	}
-
-	var content string
-	switch r := loopRes.(type) {
-	case *CancelledResult:
-		result := &katypes.InvestigationResult{
-			RCASummary:          rcaSummary,
-			Cancelled:           true,
-			CancelledPhase:      string(katypes.PhaseWorkflowDiscovery),
-			CancelledAtTurn:     r.Turn,
-			AccumulatedMessages: messagesToAuditFormat(r.Messages),
-		}
-		if r.Tokens != nil {
-			s := r.Tokens.Summary()
-			result.TokenUsage = &katypes.TokenUsageSummary{
-				PromptTokens:     s.PromptTokens,
-				CompletionTokens: s.CompletionTokens,
-				TotalTokens:      s.TotalTokens,
-			}
-		}
-		return result, nil
-	case *ExhaustedResult:
-		return &katypes.InvestigationResult{
-			RCASummary:        rcaSummary,
-			HumanReviewNeeded: true,
-			Reason:            fmt.Sprintf("%s during workflow selection (maxTurns=%d)", r.Reason, inv.maxTurns),
-		}, nil
-	case *SubmitNoWorkflowResult:
-		inv.logger.Info("submit_result_no_workflow sentinel: classifying as no_matching_workflows",
-			"correlation_id", correlationID)
-		return &katypes.InvestigationResult{
-			RCASummary:        rcaSummary,
-			HumanReviewNeeded: true,
-			HumanReviewReason: "no_matching_workflows",
-			Reason:            "LLM explicitly declined workflow selection via submit_result_no_workflow",
-		}, nil
-	case *SubmitWithWorkflowResult:
-		content = r.Content
-	case *SubmitResult:
-		content = r.Content
-	case *TextResult:
-		// #760 v2: LLM returned text instead of a tool call. Try parsing
-		// first — the text may contain a valid investigation result (e.g.
-		// problem_resolved or predictive_no_action where no workflow is
-		// expected). Only fall through to parse-level retry when the
-		// content cannot be parsed at all.
-		if _, textErr := inv.resultParser.Parse(r.Content); textErr == nil {
-			inv.logger.Info("workflow selection: parsed text response directly (no tool call)",
-				"correlation_id", correlationID)
-			content = r.Content
-		} else {
-			retryResult := inv.retryWorkflowSubmit(ctx, r.Content, messages, rcaSummary, tokens, correlationID, client, modelName, runtimeParams)
-			if retryResult != nil {
-				return retryResult, nil
-			}
-			if ctx.Err() != nil {
-				return &katypes.InvestigationResult{
-					RCASummary:     rcaSummary,
-					Cancelled:      true,
-					CancelledPhase: string(katypes.PhaseWorkflowDiscovery),
-				}, nil
-			}
-			inv.logger.Info("workflow selection: all retries exhausted, classifying as no_matching_workflows",
-				"correlation_id", correlationID)
-			return &katypes.InvestigationResult{
-				RCASummary:        rcaSummary,
-				HumanReviewNeeded: true,
-				HumanReviewReason: "no_matching_workflows",
-				Reason:            "workflow selection: LLM did not use submit tool after retries",
-			}, nil
-		}
-	}
-
-	result, parseErr := inv.resultParser.Parse(content)
-	if parseErr != nil {
-		retryResult := inv.retryWorkflowSubmit(ctx, content, messages, rcaSummary, tokens, correlationID, client, modelName, runtimeParams)
-		if retryResult != nil {
-			return retryResult, nil
-		}
-		if ctx.Err() != nil {
-			return &katypes.InvestigationResult{
-				RCASummary:     rcaSummary,
-				Cancelled:      true,
-				CancelledPhase: string(katypes.PhaseWorkflowDiscovery),
-			}, nil
-		}
-		inv.logger.Error(parseErr, "workflow selection parse failed after retries, classifying as no_matching_workflows",
-			"correlation_id", correlationID)
-		return &katypes.InvestigationResult{
-			RCASummary:        rcaSummary,
-			HumanReviewNeeded: true,
-			HumanReviewReason: "no_matching_workflows",
-			Reason:            fmt.Sprintf("workflow selection: LLM did not produce parseable result: %s", parseErr),
-		}, nil
-	}
-
-	if inv.pipeline.CatalogFetcher != nil {
-		validator, fetchErr := inv.pipeline.CatalogFetcher.FetchValidator(ctx)
-		if fetchErr != nil {
-			inv.logger.Error(fetchErr, "workflow catalog unavailable, requiring human review")
-			result.HumanReviewNeeded = true
-			result.HumanReviewReason = "catalog_unavailable"
-			result.Reason = fmt.Sprintf("workflow catalog unavailable: %s", fetchErr)
-			return result, nil
-		}
-
-		attempt := 0
-		correctionFn := func(r *katypes.InvestigationResult, validationErr error) (*katypes.InvestigationResult, error) {
-			attempt++
-			var errStrs []string
-			if validationErr != nil {
-				errStrs = []string{validationErr.Error()}
-			}
-			inv.emitValidationEvent(ctx, attempt, maxSelfCorrectionAttempts, false, errStrs, r.WorkflowID, correlationID)
-
-			correctionMsg, renderErr := inv.renderCorrectionMessage(validationErr, attempt, maxSelfCorrectionAttempts)
-			if renderErr != nil {
-				inv.logger.Error(renderErr, "failed to render validation error template, using fallback")
-				correctionMsg = fmt.Sprintf("Validation failed: %s. Please select a valid workflow.", validationErr)
-			}
-			messages = append(messages, llm.Message{Role: "assistant", Content: content})
-			messages = append(messages, llm.Message{Role: "user", Content: correctionMsg})
-
-			corrLoopRes, corrErr := inv.runLLMLoop(ctx, messages, katypes.PhaseWorkflowDiscovery, tokens, correlationID, client, modelName, runtimeParams)
-			if corrErr != nil {
-				return nil, corrErr
-			}
-			switch cr := corrLoopRes.(type) {
-			case *CancelledResult:
-				return nil, context.Canceled
-			case *ExhaustedResult:
-				r.HumanReviewNeeded = true
-				r.Reason = fmt.Sprintf("self-correction: %s", cr.Reason)
-				return r, nil
-			case *SubmitNoWorkflowResult:
-				return &katypes.InvestigationResult{
-					RCASummary:        rcaSummary,
-					HumanReviewNeeded: true,
-					HumanReviewReason: "no_matching_workflows",
-					Reason:            "LLM declined workflow during self-correction via submit_result_no_workflow",
-				}, nil
-			case *SubmitWithWorkflowResult:
-				content = cr.Content
-			case *SubmitResult:
-				content = cr.Content
-			case *TextResult:
-				content = cr.Content
-			}
-			return inv.resultParser.Parse(content)
-		}
-
-		corrected, corrErr := validator.SelfCorrect(result, maxSelfCorrectionAttempts, correctionFn)
-		if corrErr != nil {
-			if errors.Is(corrErr, context.Canceled) || errors.Is(corrErr, context.DeadlineExceeded) {
-				return &katypes.InvestigationResult{
-					RCASummary:     rcaSummary,
-					Cancelled:      true,
-					CancelledPhase: string(katypes.PhaseWorkflowDiscovery),
-				}, nil
-			}
-			return nil, fmt.Errorf("validation self-correction failed: %w", corrErr)
-		}
-		isValid := !corrected.HumanReviewNeeded
-		var finalErrors []string
-		if !isValid {
-			finalErrors = []string{"validation exhausted all attempts"}
-		}
-		inv.emitValidationEvent(ctx, attempt+1, maxSelfCorrectionAttempts, isValid, finalErrors, corrected.WorkflowID, correlationID)
-		enrichFromCatalog(corrected, validator)
-		CheckWorkflowTargetAlignment(ctx, corrected, validator, correlationID, inv.auditStore, inv.logger)
-		return corrected, nil
-	}
-
-	return result, nil
-}
-
-const maxParseRetries = 2
-
-// retryWorkflowSubmit performs up to maxParseRetries correction attempts when
-// the LLM returns text or unparseable JSON instead of calling a submit tool.
-// Each retry sends a correction message with examples of both submit tools,
-// with only the two submit tools available (prevents re-investigation).
-// Returns non-nil *InvestigationResult on success or nil when retries exhaust.
-func (inv *Investigator) retryWorkflowSubmit(ctx context.Context, lastContent string, history []llm.Message, rcaSummary string, tokens *TokenAccumulator, correlationID string, client llm.Client, modelName string, runtimeParams llm.RuntimeParams) *katypes.InvestigationResult {
-	submitOnlyTools := []llm.ToolDefinition{
-		{
-			Name:        SubmitResultWithWorkflowToolName,
-			Description: "Submit investigation result WITH a selected workflow.",
-			Parameters:  parser.WithWorkflowResultSchema(),
-		},
-		{
-			Name:        SubmitResultNoWorkflowToolName,
-			Description: "Submit investigation result when NO matching workflow exists.",
-			Parameters:  parser.NoWorkflowResultSchema(),
-		},
-	}
-
-	correctionTemplate := `Your response could not be parsed. You MUST call one of these tools:
-
-1. If a workflow matches: call submit_result_with_workflow with JSON like:
-   {"root_cause_analysis":{"summary":"..."},"selected_workflow":{"workflow_id":"...","confidence":0.9},"confidence":0.9}
-
-2. If NO workflow matches: call submit_result_no_workflow with JSON like:
-   {"root_cause_analysis":{"summary":"..."},"reasoning":"explanation why no workflow applies"}
-
-Do NOT respond with plain text. You MUST call one of the above tools.`
-
-	retryMessages := make([]llm.Message, len(history))
-	copy(retryMessages, history)
-	retryMessages = append(retryMessages,
-		llm.Message{Role: "assistant", Content: lastContent},
-	)
-
-	for attempt := 0; attempt < maxParseRetries; attempt++ {
-		if ctx.Err() != nil {
-			return nil
-		}
-		inv.logger.Info("parse-level retry for workflow submit",
-			"attempt", attempt+1,
-			"max", maxParseRetries,
-			"correlation_id", correlationID)
-
-		retryMessages = append(retryMessages,
-			llm.Message{Role: "user", Content: correctionTemplate},
-		)
-
-		retryEvent := audit.NewEvent(audit.EventTypeLLMRequest, correlationID)
-		retryEvent.EventAction = audit.ActionLLMRequest
-		retryEvent.EventOutcome = audit.OutcomeSuccess
-		retryEvent.Data["model"] = modelName
-		retryEvent.Data["prompt_length"] = totalPromptLength(retryMessages)
-		retryEvent.Data["prompt_preview"] = lastUserMessage(retryMessages, 500)
-		retryEvent.Data["retry_attempt"] = attempt + 1
-		retryEvent.Data["retry_max"] = maxParseRetries
-		retryEvent.Data["phase"] = string(katypes.PhaseWorkflowDiscovery)
-		retryEvent.Data["retry_reason"] = "parse_level_correction"
-		audit.StoreBestEffort(ctx, inv.auditStore, retryEvent, inv.auditLog())
-
-		resp, err := inv.chatOrStream(ctx, client, llm.ChatRequest{
-			Messages: retryMessages,
-			Tools:    submitOnlyTools,
-			Options:  llm.ChatOptions{JSONMode: true, OutputSchema: parser.InvestigationResultSchema()},
-		}, attempt+1, string(katypes.PhaseWorkflowDiscovery), modelName, runtimeParams)
-		if err != nil {
-			inv.logger.Error(err, "retry LLM call failed",
-				"correlation_id", correlationID)
-			continue
-		}
-		if tokens != nil {
-			tokens.Add(resp.Usage)
-		}
-
-		emitToSink(ctx, session.EventTypeReasoningDelta, attempt+1, string(katypes.PhaseWorkflowDiscovery), map[string]interface{}{
-			"content":       resp.Message.Content,
-			"retry_attempt": attempt + 1,
-		})
-
-		if len(resp.ToolCalls) > 0 {
-			for _, tc := range resp.ToolCalls {
-				switch tc.Name {
-				case SubmitResultNoWorkflowToolName:
-					inv.logger.Info("retry succeeded: submit_result_no_workflow",
-						"correlation_id", correlationID)
-					return &katypes.InvestigationResult{
-						RCASummary:        rcaSummary,
-						HumanReviewNeeded: true,
-						HumanReviewReason: "no_matching_workflows",
-						Reason:            "LLM used submit_result_no_workflow after retry",
-					}
-				case SubmitResultWithWorkflowToolName:
-					inv.logger.Info("retry succeeded: submit_result_with_workflow",
-						"correlation_id", correlationID)
-					result, parseErr := inv.resultParser.Parse(tc.Arguments)
-					if parseErr != nil {
-						inv.logger.Error(parseErr, "retry submit_result_with_workflow parse failed",
-							"correlation_id", correlationID)
-						retryMessages = append(retryMessages, resp.Message)
-						continue
-					}
-					return result
-				}
-			}
-		}
-
-		retryMessages = append(retryMessages, resp.Message)
-	}
-	return nil
-}
-
-func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message, phase katypes.Phase, tokens *TokenAccumulator, correlationID string, client llm.Client, modelName string, runtimeParams llm.RuntimeParams) (LoopResult, error) {
-	toolDefs := inv.toolDefinitionsForPhase(phase)
-	loopStart := time.Now()
-	truncationRetried := false
-	maxTokens := 0
-
-	for turn := 0; turn < inv.maxTurns; turn++ {
-		if ctx.Err() != nil {
-			emitToSink(ctx, session.EventTypeCancelled, turn, string(phase), nil)
-			return &CancelledResult{
-				Messages: messages,
-				Turn:     turn,
-				Phase:    string(phase),
-				Tokens:   tokens,
-			}, nil
-		}
-
-		reqEvent := audit.NewEvent(audit.EventTypeLLMRequest, correlationID)
-		reqEvent.EventAction = audit.ActionLLMRequest
-		reqEvent.EventOutcome = audit.OutcomeSuccess
-		reqEvent.Data["model"] = modelName
-		reqEvent.Data["prompt_length"] = totalPromptLength(messages)
-		reqEvent.Data["prompt_preview"] = lastUserMessage(messages, 500)
-		reqEvent.Data["toolsets_enabled"] = toolNames(toolDefs)
-		reqEvent.Data["messages"] = messagesToAuditFormat(messages)
-		audit.StoreBestEffort(ctx, inv.auditStore, reqEvent, inv.auditLog())
-
-		chatReq := llm.ChatRequest{
-			Messages: messages,
-			Tools:    toolDefs,
-			Options:  llm.ChatOptions{JSONMode: true, OutputSchema: submitResultSchemaForPhase(phase), MaxTokens: maxTokens},
-		}
-		resp, err := inv.chatOrStream(ctx, client, chatReq, turn, string(phase), modelName, runtimeParams)
-		if err != nil {
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				emitToSink(ctx, session.EventTypeCancelled, turn, string(phase), nil)
-				return &CancelledResult{
-					Messages: messages,
-					Turn:     turn,
-					Phase:    string(phase),
-					Tokens:   tokens,
-				}, nil
-			}
-			failEvent := audit.NewEvent(audit.EventTypeResponseFailed, correlationID)
-			failEvent.EventAction = audit.ActionResponseFailed
-			failEvent.EventOutcome = audit.OutcomeFailure
-			failEvent.Data["error_message"] = err.Error()
-			failEvent.Data["phase"] = string(phase)
-			failEvent.Data["duration_seconds"] = time.Since(loopStart).Seconds()
-			audit.StoreBestEffort(ctx, inv.auditStore, failEvent, inv.auditLog())
-			return nil, fmt.Errorf("%s LLM call turn %d: %w", phase, turn, err)
-		}
-
-		if tokens != nil {
-			tokens.Add(resp.Usage)
-		}
-
-		respEvent := audit.NewEvent(audit.EventTypeLLMResponse, correlationID)
-		respEvent.EventAction = audit.ActionLLMResponse
-		respEvent.EventOutcome = audit.OutcomeSuccess
-		respEvent.Data["prompt_tokens"] = resp.Usage.PromptTokens
-		respEvent.Data["completion_tokens"] = resp.Usage.CompletionTokens
-		respEvent.Data["total_tokens"] = resp.Usage.TotalTokens
-		respEvent.Data["has_analysis"] = resp.Message.Content != ""
-		respEvent.Data["analysis_length"] = len(resp.Message.Content)
-		respEvent.Data["analysis_preview"] = truncatePreview(resp.Message.Content, 500)
-		respEvent.Data["analysis_full"] = resp.Message.Content
-		respEvent.Data["analysis_content"] = resp.Message.Content
-		respEvent.Data["tool_call_count"] = len(resp.ToolCalls)
-		respEvent.Data["finish_reason"] = resp.FinishReason
-		audit.StoreBestEffort(ctx, inv.auditStore, respEvent, inv.auditLog())
-
-		emitToSink(ctx, session.EventTypeReasoningDelta, turn, string(phase), map[string]interface{}{
-			"content_preview": truncatePreview(resp.Message.Content, 200),
-			"tool_call_count": len(resp.ToolCalls),
-		})
-
-		if len(resp.ToolCalls) > 0 {
-			for _, tc := range resp.ToolCalls {
-				if sr := sentinelResult(tc); sr != nil {
-					inv.logger.Info("sentinel detected",
-						"tool", tc.Name,
-						"phase", string(phase),
-						"correlation_id", correlationID)
-					return sr, nil
-				}
-			}
-
-			assistantMsg := resp.Message
-			assistantMsg.ToolCalls = resp.ToolCalls
-			messages = append(messages, assistantMsg)
-
-			toolResults := make([]string, len(resp.ToolCalls))
-			var g errgroup.Group
-			for i, tc := range resp.ToolCalls {
-				emitToSink(ctx, session.EventTypeToolCallStart, turn, string(phase), map[string]interface{}{
-					"tool_name":  tc.Name,
-					"tool_index": i,
-				})
-				g.Go(func() error {
-					toolResults[i] = inv.executeTool(ctx, tc.Name, json.RawMessage(tc.Arguments))
-					return nil
-				})
-			}
-			_ = g.Wait()
-
-			for i, tc := range resp.ToolCalls {
-				emitToSink(ctx, session.EventTypeToolResult, turn, string(phase), map[string]interface{}{
-					"tool_name":      tc.Name,
-					"tool_index":     i,
-					"result_preview": truncatePreview(toolResults[i], 200),
-				})
-
-				tcEvent := audit.NewEvent(audit.EventTypeLLMToolCall, correlationID)
-				tcEvent.EventAction = audit.ActionToolExecution
-				tcEvent.EventOutcome = audit.OutcomeSuccess
-				tcEvent.Data["tool_call_index"] = i
-				tcEvent.Data["tool_name"] = tc.Name
-				tcEvent.Data["tool_arguments"] = tc.Arguments
-				tcEvent.Data["tool_result"] = toolResults[i]
-				tcEvent.Data["tool_result_preview"] = truncatePreview(toolResults[i], 500)
-				audit.StoreBestEffort(ctx, inv.auditStore, tcEvent, inv.auditLog())
-
-				messages = append(messages, llm.Message{
-					Role:       "tool",
-					Content:    toolResults[i],
-					ToolCallID: tc.ID,
-					ToolName:   tc.Name,
-				})
-			}
-			if inv.pipeline.AnomalyDetector.TotalExceeded() {
-				return &ExhaustedResult{Reason: "tool budget exhausted"}, nil
-			}
-			continue
-		}
-
-		if resp.FinishReason == llm.FinishReasonLength && !truncationRetried {
-			truncationRetried = true
-			maxTokens = escalateMaxTokens(resp.Usage.CompletionTokens)
-			inv.logger.Info("LLM response truncated, retrying with escalated MaxTokens",
-				"phase", string(phase),
-				"escalated_max_tokens", maxTokens,
-				"correlation_id", correlationID)
-
-			truncEvent := audit.NewEvent(audit.EventTypeLLMResponse, correlationID)
-			truncEvent.EventAction = "truncation_detected"
-			truncEvent.EventOutcome = audit.OutcomeFailure
-			truncEvent.Data["has_analysis"] = resp.Message.Content != ""
-			truncEvent.Data["analysis_length"] = len(resp.Message.Content)
-			truncEvent.Data["analysis_preview"] = truncatePreview(resp.Message.Content, 500)
-			truncEvent.Data["finish_reason"] = resp.FinishReason
-			truncEvent.Data["escalated_max_tokens"] = maxTokens
-			truncEvent.Data["truncated_content_length"] = len(resp.Message.Content)
-			audit.StoreBestEffort(ctx, inv.auditStore, truncEvent, inv.auditLog())
-
-			messages = append(messages, resp.Message)
-			messages = append(messages, llm.Message{
-				Role:    "user",
-				Content: "Your previous response was truncated (output token limit reached). Please provide your complete response. Use the submit_result tool to deliver your structured result.",
-			})
-			continue
-		}
-
-		return &TextResult{Content: resp.Message.Content}, nil
-	}
-
-	return &ExhaustedResult{Reason: "max turns exhausted"}, nil
-}
-
-// escalateMaxTokens computes a higher MaxTokens value for truncation recovery.
-// If the truncated response used N completion tokens, we request 2x. Falls back
-// to a default of 8192 if the usage data is unavailable.
-func (inv *Investigator) chatOrStream(ctx context.Context, client llm.Client, req llm.ChatRequest, turn int, phase string, modelName string, runtimeParams llm.RuntimeParams) (llm.ChatResponse, error) {
-	sink := session.EventSinkFromContext(ctx)
-	if sink == nil {
-		inv.logger.Info("chatOrStream: sink is nil, falling back to non-streaming Chat",
-			"turn", turn, "phase", phase,
-			"session_id", session.SessionIDFromContext(ctx))
-		return llm.ChatWithParams(ctx, client, req, runtimeParams)
-	}
-	inv.logger.Info("chatOrStream: sink active, using streaming",
-		"turn", turn, "phase", phase,
-		"session_id", session.SessionIDFromContext(ctx),
-		"sink_ptr", fmt.Sprintf("%p", sink),
-		"diag_sent", diagSendOK.Load(),
-		"diag_dropped", diagSendDrop.Load(),
-		"diag_nil", diagSinkNil.Load())
-
-	temp := runtimeParams.Temperature
-	req.Options.Temperature = &temp
-
-	callCtx := ctx
-	var cancel context.CancelFunc
-	if runtimeParams.TimeoutSeconds > 0 {
-		callCtx, cancel = context.WithTimeout(ctx, time.Duration(runtimeParams.TimeoutSeconds)*time.Second)
-		defer cancel()
-	}
-
-	return client.StreamChat(callCtx, req, func(evt llm.ChatStreamEvent) error {
-		if evt.Delta != "" {
-			emitToSink(ctx, session.EventTypeTokenDelta, turn, phase, map[string]interface{}{
-				"delta": evt.Delta,
-			})
-		}
-		return nil
-	})
-}
-
-// emitToSink sends an InvestigationEvent to the context-carried event sink
-// using non-blocking send semantics. If the sink is nil (no subscriber) or
-// the channel buffer is full, the event is silently dropped. This ensures
-// the investigation loop is never blocked by a slow SSE consumer.
-func emitToSink(ctx context.Context, eventType string, turn int, phase string, data map[string]interface{}) {
-	sink := session.EventSinkFromContext(ctx)
-	if sink == nil {
-		diagSinkNil.Add(1)
-		return
-	}
-	var raw json.RawMessage
-	if data != nil {
-		var err error
-		raw, err = json.Marshal(data)
-		if err != nil {
-			return
-		}
-	}
-	event := session.InvestigationEvent{
-		Type:  eventType,
-		Turn:  turn,
-		Phase: phase,
-		Data:  raw,
-	}
-	select {
-	case sink <- event:
-		diagSendOK.Add(1)
-	default:
-		diagSendDrop.Add(1)
-	}
-}
-
-// emitCancellationAudit emits an investigation-level cancellation event
-// carrying the phase, turn, token usage, and accumulated messages at the point
-// of cancellation. Enriched per COR-2 (token cost attribution), AUD-4
-// (session cross-reference), AUD-6 (messages for forensic RAG), and SEC-1
-// (content cap at 64KB). The context may already be cancelled so we use
-// context.Background() for the audit store call (fire-and-forget per ADR-038).
-func (inv *Investigator) emitCancellationAudit(ctx context.Context, result *katypes.InvestigationResult, correlationID string) {
-	event := audit.NewEvent(audit.EventTypeInvestigationCancelled, correlationID, audit.WithSessionID(session.SessionIDFromContext(ctx)))
-	event.EventAction = audit.ActionInvestigationCancelled
-	event.EventOutcome = audit.OutcomeFailure
-	event.Data["cancelled_phase"] = result.CancelledPhase
-	event.Data["cancelled_at_turn"] = result.CancelledAtTurn
-	if result.TokenUsage != nil {
-		event.Data["total_prompt_tokens"] = result.TokenUsage.PromptTokens
-		event.Data["total_completion_tokens"] = result.TokenUsage.CompletionTokens
-		event.Data["total_tokens"] = result.TokenUsage.TotalTokens
-	}
-	if len(result.AccumulatedMessages) > 0 {
-		if b, err := json.Marshal(result.AccumulatedMessages); err == nil {
-			s := string(b)
-			if len(s) > maxForensicPayloadBytes {
-				s = s[:maxForensicPayloadBytes]
-			}
-			event.Data["accumulated_messages"] = s
-		}
-	}
-	audit.StoreBestEffort(context.Background(), inv.auditStore, event, inv.logger)
+// LLMInvocationContext groups the LLM call parameters shared by the
+// investigation pipeline's internal phase-runner and retry-gate methods:
+// token accounting, correlation, the resolved client/model for the current
+// phase, and runtime params. Extracted per AGENTS.md's 8+-param
+// Options-pattern rule.
+type LLMInvocationContext struct {
+	Tokens        *TokenAccumulator
+	CorrelationID string
+	Client        llm.Client
+	ModelName     string
+	RuntimeParams llm.RuntimeParams
 }

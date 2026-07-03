@@ -117,14 +117,14 @@ var _ = Describe("DS Store — Shadow LLM Audit Event Mapping (#1059)", func() {
 				EventAction:   audit.ActionAlignmentVerdict,
 				EventOutcome:  audit.OutcomeSuccess,
 				Data: map[string]interface{}{
-					"event_id":                  "evt-003",
-					"result":                    "aligned",
-					"summary":                   "all steps passed",
-					"flagged":                   0,
-					"total":                     5,
-					"shadow_prompt_tokens":      150,
-					"shadow_completion_tokens":  250,
-					"shadow_total_tokens":       400,
+					"event_id":                 "evt-003",
+					"result":                   "aligned",
+					"summary":                  "all steps passed",
+					"flagged":                  0,
+					"total":                    5,
+					"shadow_prompt_tokens":     150,
+					"shadow_completion_tokens": 250,
+					"shadow_total_tokens":      400,
 				},
 			}
 			err := store.StoreAudit(context.Background(), event)

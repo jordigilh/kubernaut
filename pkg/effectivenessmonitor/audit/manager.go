@@ -654,6 +654,48 @@ func (m *Manager) RecordAssessmentCompleted(ctx context.Context, ea *eav1.Effect
 		return nil
 	}
 
+	payload := buildAssessmentCompletedPayload(ea, reason)
+	assessed := payload.ComponentsAssessed
+
+	event := pkgaudit.NewAuditEventRequest()
+	event.Version = "1.0"
+	pkgaudit.SetEventType(event, string(emtypes.AuditAssessmentCompleted))
+	pkgaudit.SetEventCategory(event, CategoryEffectiveness)
+	pkgaudit.SetEventAction(event, ActionAssessed)
+	pkgaudit.SetEventOutcome(event, pkgaudit.OutcomeSuccess)
+	pkgaudit.SetActor(event, "service", ServiceName)
+	pkgaudit.SetResource(event, "EffectivenessAssessment", ea.Name)
+	pkgaudit.SetCorrelationID(event, ea.Spec.CorrelationID)
+	event.Namespace = ogenclient.NewOptNilString(ea.Namespace)
+	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
+	if ea.Spec.ClusterID != "" {
+		pkgaudit.SetClusterName(event, ea.Spec.ClusterID)
+	}
+	event.EventData = ogenclient.NewAuditEventRequestEventDataEffectivenessAssessmentCompletedAuditEventRequestEventData(payload)
+
+	if err := m.store.StoreAudit(ctx, event); err != nil {
+		m.logger.Error(err, "Failed to store assessment completed audit event",
+			"correlationID", ea.Spec.CorrelationID,
+			"reason", reason)
+		return err
+	}
+
+	m.logger.V(2).Info("Assessment completed audit event stored",
+		"correlationID", ea.Spec.CorrelationID,
+		"reason", reason,
+		"signalName", ea.Spec.SignalName,
+		"componentsAssessed", assessed,
+	)
+	return nil
+}
+
+// buildAssessmentCompletedPayload builds the EffectivenessAssessmentAuditPayload
+// for an assessment-completed event, populating all 5 ADR-EM-001 Batch 3
+// enrichment fields (signal_name, components_assessed, completed_at,
+// assessment_duration_seconds, details). Extracted from
+// RecordAssessmentCompleted (Wave 6 6a GREEN: funlen remediation) — pure
+// code motion, no behavior change.
+func buildAssessmentCompletedPayload(ea *eav1.EffectivenessAssessment, reason string) ogenclient.EffectivenessAssessmentAuditPayload {
 	payload := ogenclient.EffectivenessAssessmentAuditPayload{
 		EventType:     ogenclient.EffectivenessAssessmentAuditPayloadEventTypeEffectivenessAssessmentCompleted,
 		CorrelationID: ea.Spec.CorrelationID,
@@ -666,8 +708,6 @@ func (m *Manager) RecordAssessmentCompleted(ctx context.Context, ea *eav1.Effect
 
 	// Set details with the assessment reason
 	payload.Details = ogenclient.NewOptString(fmt.Sprintf("Assessment completed: %s", reason))
-
-	// ADR-EM-001, Batch 3: Populate all 5 audit payload gaps.
 
 	// 1. signal_name: Original signal name from the parent RemediationRequest.
 	//    OBS-1: Uses ea.Spec.SignalName (set by the RO creator from rr.Spec.SignalName),
@@ -703,34 +743,5 @@ func (m *Manager) RecordAssessmentCompleted(ctx context.Context, ea *eav1.Effect
 		payload.AssessmentDurationSeconds = ogenclient.NewOptNilFloat64(duration)
 	}
 
-	event := pkgaudit.NewAuditEventRequest()
-	event.Version = "1.0"
-	pkgaudit.SetEventType(event, string(emtypes.AuditAssessmentCompleted))
-	pkgaudit.SetEventCategory(event, CategoryEffectiveness)
-	pkgaudit.SetEventAction(event, ActionAssessed)
-	pkgaudit.SetEventOutcome(event, pkgaudit.OutcomeSuccess)
-	pkgaudit.SetActor(event, "service", ServiceName)
-	pkgaudit.SetResource(event, "EffectivenessAssessment", ea.Name)
-	pkgaudit.SetCorrelationID(event, ea.Spec.CorrelationID)
-	event.Namespace = ogenclient.NewOptNilString(ea.Namespace)
-	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
-	if ea.Spec.ClusterID != "" {
-		pkgaudit.SetClusterName(event, ea.Spec.ClusterID)
-	}
-	event.EventData = ogenclient.NewAuditEventRequestEventDataEffectivenessAssessmentCompletedAuditEventRequestEventData(payload)
-
-	if err := m.store.StoreAudit(ctx, event); err != nil {
-		m.logger.Error(err, "Failed to store assessment completed audit event",
-			"correlationID", ea.Spec.CorrelationID,
-			"reason", reason)
-		return err
-	}
-
-	m.logger.V(2).Info("Assessment completed audit event stored",
-		"correlationID", ea.Spec.CorrelationID,
-		"reason", reason,
-		"signalName", ea.Spec.SignalName,
-		"componentsAssessed", assessed,
-	)
-	return nil
+	return payload
 }

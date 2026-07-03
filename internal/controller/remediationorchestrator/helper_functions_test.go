@@ -60,35 +60,35 @@ var _ = Describe("BR-ORCH-HELPERS: Helper Function Tests", func() {
 		// Create fake client with status subresource
 		fakeClient = fake.NewClientBuilder().
 			WithScheme(scheme).
-		WithStatusSubresource(
-			&remediationv1.RemediationRequest{},
-			&remediationv1.RemediationApprovalRequest{},
-			&signalprocessingv1.SignalProcessing{},
-			&aianalysisv1.AIAnalysis{},
-			&workflowexecutionv1.WorkflowExecution{},
-		).
-		Build()
+			WithStatusSubresource(
+				&remediationv1.RemediationRequest{},
+				&remediationv1.RemediationApprovalRequest{},
+				&signalprocessingv1.SignalProcessing{},
+				&aianalysisv1.AIAnalysis{},
+				&workflowexecutionv1.WorkflowExecution{},
+			).
+			Build()
 
 		// Create mock audit store
 		mockAuditStore := &MockAuditStore{}
 
 		// Create reconciler
 		recorder := record.NewFakeRecorder(20) // DD-EVENT-001: FakeRecorder for K8s event assertions
-		reconciler = prodcontroller.NewReconciler(
-			fakeClient,
-			fakeClient,     // apiReader (same as client for tests)
-			scheme,
-			mockAuditStore, // Use MockAuditStore for helper tests
-			recorder,       // DD-EVENT-001: FakeRecorder for K8s event assertions
-			metrics.NewMetricsWithRegistry(prometheus.NewRegistry()), // DD-METRICS-001: required
-			prodcontroller.TimeoutConfig{
+		reconciler = prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+			Client:     fakeClient,
+			APIReader:  fakeClient, // apiReader (same as client for tests)
+			Scheme:     scheme,
+			AuditStore: mockAuditStore,                                           // Use MockAuditStore for helper tests
+			Recorder:   recorder,                                                 // DD-EVENT-001: FakeRecorder for K8s event assertions
+			Metrics:    metrics.NewMetricsWithRegistry(prometheus.NewRegistry()), // DD-METRICS-001: required
+			Timeouts: prodcontroller.TimeoutConfig{
 				Global:     1 * time.Hour,
 				Processing: 5 * time.Minute,
 				Analyzing:  10 * time.Minute,
 				Executing:  30 * time.Minute,
 			},
-			mockRoutingEngine,
-		)
+			RoutingEngine: mockRoutingEngine,
+		})
 	})
 
 	Context("Phase 4: Helper Function Tests", func() {

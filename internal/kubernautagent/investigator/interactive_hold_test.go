@@ -29,8 +29,8 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
-	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 // interactiveHoldMockClient returns an RCA result on the first call (Phase 1)
@@ -54,8 +54,8 @@ func (m *interactiveHoldMockClient) Chat(_ context.Context, _ llm.ChatRequest) (
 
 	rcaJSON, _ := json.Marshal(map[string]interface{}{
 		"investigation_outcome": "root_cause_identified",
-		"rca_summary":          "OOMKilled due to memory limit breach in api-server container",
-		"severity":             "critical",
+		"rca_summary":           "OOMKilled due to memory limit breach in api-server container",
+		"severity":              "critical",
 		"remediation_target": map[string]string{
 			"kind":      "Deployment",
 			"name":      "api-server",
