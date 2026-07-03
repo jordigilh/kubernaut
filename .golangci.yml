@@ -158,8 +158,12 @@ linters:
         text: "Consider preallocating|argument-limit"
       # containedctx: test doubles that embed context.Context to satisfy an
       # interface (e.g. tool.Context, agent.ReadonlyContext fakes) are not the
-      # long-lived-context anti-pattern this linter targets.
-      - path: _test\.go
+      # long-lived-context anti-pattern this linter targets. Also covers
+      # non-_test.go suite harnesses under test/ (e.g. Ginkgo Harness structs
+      # populated in SynchronizedBeforeSuite and read by It() closures across
+      # the whole suite lifetime) — same idiom as the govet-shadow/prealloc/
+      # revive test exclusions above.
+      - path: (_test\.go|^test/)
         linters:
           - containedctx
 

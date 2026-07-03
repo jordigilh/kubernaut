@@ -19,7 +19,6 @@ package datastorage
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -38,21 +37,26 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/oci"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/schema"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
-	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/test/testutil"
 )
 
 // ========================================
-// DD-WE-006: Schema-Declared Dependency Validation (Registration-Time)
+// Issue #1481: Registration No Longer Pre-Flight-Validates Dependencies
 // ========================================
-// Authority: DD-WE-006, BR-WORKFLOW-004
-// Tests: Dependency validation during workflow registration via DS HTTP API
+// Authority: BR-PLATFORM-054, Issue #1481
+// Supersedes: DD-WE-006 registration-time (Level 2) dependency validation,
+// which required Secrets/ConfigMaps to exist (with non-empty data) in the
+// execution namespace *before* a workflow could be registered. Issue #1481
+// removed the K8sDependencyValidator pre-flight check entirely: dependency
+// existence is now validated exclusively at runtime by Kubernetes when the
+// WorkflowExecution's Job/PipelineRun attempts to mount the volume/workspace
+// (BR-WORKFLOW-008 covers the resulting fail-fast/observability guarantees).
 //
 // Pattern: In-process httptest.Server with MockImagePuller (controlled schema)
-// + envtest K8s client (real K8s API) + real PostgreSQL/Redis
-// Per TESTING_GUIDELINES.md: Integration tests use envtest for K8s
+// + real PostgreSQL/Redis. No K8s client is needed any more for these tests
+// since dependency existence is never checked at registration time.
 // ========================================
 
 const depTestNamespace = "kubernaut-workflows"
@@ -61,8 +65,8 @@ func depTestBaseSchemaUnique() string {
 	uniqueID := fmt.Sprintf("dep-test-workflow-%d-%s", GinkgoParallelProcess(), uuid.New().String())
 	crd := testutil.NewTestWorkflowCRD(uniqueID, "RestartPod", "job")
 	crd.Spec.Description = sharedtypes.StructuredDescription{
-		What:      "Integration test workflow for dependency validation",
-		WhenToUse: "When testing DD-WE-006",
+		What:      "Integration test workflow for dependency validation removal (#1481)",
+		WhenToUse: "When testing Issue #1481",
 	}
 	crd.Spec.Labels.Severity = []string{"critical"}
 	crd.Spec.Labels.Environment = []string{"*"}
@@ -75,11 +79,21 @@ func depTestBaseSchemaUnique() string {
 	return testutil.MarshalWorkflowCRD(crd)
 }
 
-func depTestSchemaWithSecrets(secretNames ...string) string {
-	crd := testutil.NewTestWorkflowCRD("dep-test-workflow", "RestartPod", "job")
+// depTestUniqueWorkflowName generates a per-process, per-call unique workflow
+// name (GinkgoParallelProcess() + UUID), matching the convention used
+// throughout this suite (see suite_test.go's uniqueTestID, workflow_repository_
+// and workflow_discovery_repository_test.go) to let specs run safely across
+// parallel Ginkgo processes without colliding on the catalog's
+// workflow_name/version uniqueness constraint.
+func depTestUniqueWorkflowName(suffix string) string {
+	return fmt.Sprintf("dep-test-workflow-%s-%d-%s", suffix, GinkgoParallelProcess(), uuid.New().String())
+}
+
+func depTestSchemaWithSecrets(workflowName string, secretNames ...string) string {
+	crd := testutil.NewTestWorkflowCRD(workflowName, "RestartPod", "job")
 	crd.Spec.Description = sharedtypes.StructuredDescription{
-		What:      "Integration test workflow for dependency validation",
-		WhenToUse: "When testing DD-WE-006",
+		What:      "Integration test workflow for dependency validation removal (#1481)",
+		WhenToUse: "When testing Issue #1481",
 	}
 	crd.Spec.Labels.Severity = []string{"critical"}
 	crd.Spec.Labels.Environment = []string{"*"}
@@ -99,11 +113,11 @@ func depTestSchemaWithSecrets(secretNames ...string) string {
 	return testutil.MarshalWorkflowCRD(crd)
 }
 
-func depTestSchemaWithConfigMaps(cmNames ...string) string {
-	crd := testutil.NewTestWorkflowCRD("dep-test-workflow", "RestartPod", "job")
+func depTestSchemaWithConfigMaps(workflowName string, cmNames ...string) string {
+	crd := testutil.NewTestWorkflowCRD(workflowName, "RestartPod", "job")
 	crd.Spec.Description = sharedtypes.StructuredDescription{
-		What:      "Integration test workflow for dependency validation",
-		WhenToUse: "When testing DD-WE-006",
+		What:      "Integration test workflow for dependency validation removal (#1481)",
+		WhenToUse: "When testing Issue #1481",
 	}
 	crd.Spec.Labels.Severity = []string{"critical"}
 	crd.Spec.Labels.Environment = []string{"*"}
@@ -123,8 +137,9 @@ func depTestSchemaWithConfigMaps(cmNames ...string) string {
 	return testutil.MarshalWorkflowCRD(crd)
 }
 
-// createDepTestServer creates an in-process DS server with dependency validation enabled.
-// Uses the suite's envtest k8sClient for real K8s API validation of Secrets/ConfigMaps.
+// createDepTestServer creates an in-process DS server. Issue #1481: no
+// dependency validator is wired any more — schema-declared dependencies flow
+// straight into the catalog without any existence check.
 func createDepTestServer(schemaYAML string) (*httptest.Server, *server.Server) {
 	serverCfg := &server.Config{
 		Port:         18090,
@@ -177,7 +192,6 @@ func createDepTestServer(schemaYAML string) (*httptest.Server, *server.Server) {
 
 	mockPuller := oci.NewMockImagePuller(schemaYAML)
 	schemaExtractor := oci.NewSchemaExtractor(mockPuller, schema.NewParser())
-	depValidator := validation.NewK8sDependencyValidator(k8sClient)
 
 	srv, err := server.NewServer(server.ServerDeps{
 		DBConnStr:     dbConnStr,
@@ -192,7 +206,6 @@ func createDepTestServer(schemaYAML string) (*httptest.Server, *server.Server) {
 		AuthNamespace: "datastorage-test",
 		HandlerOpts: []server.HandlerOption{
 			server.WithSchemaExtractor(schemaExtractor),
-			server.WithDependencyValidator(depValidator, depTestNamespace),
 		},
 	})
 	Expect(err).ToNot(HaveOccurred(), "Server creation should succeed")
@@ -222,15 +235,11 @@ func jsonEscapeDepTest(s string) string {
 	return string(b)
 }
 
-var _ = Describe("Schema-Declared Dependency Validation (DD-WE-006)", Label("integration", "dd-we-006"), func() {
+var _ = Describe("Issue #1481: Dependency Validation Removed from Registration", Label("integration", "issue-1481"), func() {
 
-	Context("Registration-time K8s validation", func() {
+	Context("Registration no longer checks K8s for dependency existence", func() {
 
-		BeforeEach(func() {
-			_, _ = db.ExecContext(ctx, "DELETE FROM remediation_workflow_catalog WHERE workflow_name = $1", "dep-test-workflow")
-		})
-
-		It("IT-DS-006-001: should accept workflow when all declared secrets exist with data", func() {
+		It("IT-DS-1481-001: should accept workflow when all declared secrets exist with data", func() {
 			secret := &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{Name: "it-gitea-creds-001", Namespace: depTestNamespace},
 				Data:       map[string][]byte{"username": []byte("kubernaut"), "password": []byte("s3cret")},
@@ -238,7 +247,7 @@ var _ = Describe("Schema-Declared Dependency Validation (DD-WE-006)", Label("int
 			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
 			defer deleteK8sObject(secret)
 
-			schemaYAML := depTestSchemaWithSecrets("it-gitea-creds-001")
+			schemaYAML := depTestSchemaWithSecrets(depTestUniqueWorkflowName("001"), "it-gitea-creds-001")
 			testServer, srv := createDepTestServer(schemaYAML)
 			defer testServer.Close()
 			defer func() { _ = srv.Shutdown(ctx) }()
@@ -251,8 +260,8 @@ var _ = Describe("Schema-Declared Dependency Validation (DD-WE-006)", Label("int
 				"registration should succeed when declared secret exists with data")
 		})
 
-		It("IT-DS-006-002: should reject workflow when declared Secret is missing", func() {
-			schemaYAML := depTestSchemaWithSecrets("it-missing-secret-002")
+		It("IT-DS-1481-002: should accept workflow even when declared Secret does not exist (#1481)", func() {
+			schemaYAML := depTestSchemaWithSecrets(depTestUniqueWorkflowName("002"), "it-missing-secret-002")
 			testServer, srv := createDepTestServer(schemaYAML)
 			defer testServer.Close()
 			defer func() { _ = srv.Shutdown(ctx) }()
@@ -261,29 +270,12 @@ var _ = Describe("Schema-Declared Dependency Validation (DD-WE-006)", Label("int
 			Expect(err).ToNot(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
 
-			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest),
-				"registration should fail when declared secret does not exist")
-
-			body, _ := io.ReadAll(resp.Body)
-			var errResp map[string]interface{}
-			Expect(json.Unmarshal(body, &errResp)).To(Succeed())
-			detail, _ := errResp["detail"].(string)
-			Expect(detail).To(ContainSubstring("dependency not satisfied"),
-				"error should indicate dependency not satisfied")
-			errType, _ := errResp["type"].(string)
-			Expect(errType).To(ContainSubstring("dependency-validation-error"),
-				"#1070: RFC 7807 type must identify dependency validation failure")
+			Expect(resp.StatusCode).To(Equal(http.StatusCreated),
+				"#1481: a missing Secret must no longer block registration; K8s validates at runtime")
 		})
 
-		It("IT-DS-006-003: should reject workflow when declared Secret has empty data", func() {
-			secret := &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{Name: "it-empty-secret-003", Namespace: depTestNamespace},
-				Data:       map[string][]byte{},
-			}
-			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
-			defer deleteK8sObject(secret)
-
-			schemaYAML := depTestSchemaWithSecrets("it-empty-secret-003")
+		It("IT-DS-1481-003: should accept workflow even when declared ConfigMap does not exist (#1481)", func() {
+			schemaYAML := depTestSchemaWithConfigMaps(depTestUniqueWorkflowName("003"), "it-missing-cm-003")
 			testServer, srv := createDepTestServer(schemaYAML)
 			defer testServer.Close()
 			defer func() { _ = srv.Shutdown(ctx) }()
@@ -292,76 +284,11 @@ var _ = Describe("Schema-Declared Dependency Validation (DD-WE-006)", Label("int
 			Expect(err).ToNot(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
 
-			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest),
-				"registration should fail when declared secret has empty data")
-
-			body, _ := io.ReadAll(resp.Body)
-			var errResp map[string]interface{}
-			Expect(json.Unmarshal(body, &errResp)).To(Succeed())
-			detail, _ := errResp["detail"].(string)
-			Expect(detail).To(ContainSubstring("dependency not satisfied"),
-				"error should indicate dependency not satisfied")
-			errType, _ := errResp["type"].(string)
-			Expect(errType).To(ContainSubstring("dependency-validation-error"),
-				"#1070: RFC 7807 type must identify dependency validation failure")
+			Expect(resp.StatusCode).To(Equal(http.StatusCreated),
+				"#1481: a missing ConfigMap must no longer block registration; K8s validates at runtime")
 		})
 
-		It("IT-DS-006-004: should reject workflow when declared ConfigMap is missing", func() {
-			schemaYAML := depTestSchemaWithConfigMaps("it-missing-cm-004")
-			testServer, srv := createDepTestServer(schemaYAML)
-			defer testServer.Close()
-			defer func() { _ = srv.Shutdown(ctx) }()
-
-			resp, err := registerWorkflow(testServer.URL, schemaYAML)
-			Expect(err).ToNot(HaveOccurred())
-			defer func() { _ = resp.Body.Close() }()
-
-			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest),
-				"registration should fail when declared configMap does not exist")
-
-			body, _ := io.ReadAll(resp.Body)
-			var errResp map[string]interface{}
-			Expect(json.Unmarshal(body, &errResp)).To(Succeed())
-			detail, _ := errResp["detail"].(string)
-			Expect(detail).To(ContainSubstring("dependency not satisfied"),
-				"error should indicate dependency not satisfied")
-			errType, _ := errResp["type"].(string)
-			Expect(errType).To(ContainSubstring("dependency-validation-error"),
-				"#1070: RFC 7807 type must identify dependency validation failure")
-		})
-
-		It("IT-DS-006-005: should reject workflow when declared ConfigMap has empty data", func() {
-			cm := &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{Name: "it-empty-cm-005", Namespace: depTestNamespace},
-				Data:       map[string]string{},
-			}
-			Expect(k8sClient.Create(ctx, cm)).To(Succeed())
-			defer deleteK8sObject(cm)
-
-			schemaYAML := depTestSchemaWithConfigMaps("it-empty-cm-005")
-			testServer, srv := createDepTestServer(schemaYAML)
-			defer testServer.Close()
-			defer func() { _ = srv.Shutdown(ctx) }()
-
-			resp, err := registerWorkflow(testServer.URL, schemaYAML)
-			Expect(err).ToNot(HaveOccurred())
-			defer func() { _ = resp.Body.Close() }()
-
-			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest),
-				"registration should fail when declared configMap has empty data")
-
-			body, _ := io.ReadAll(resp.Body)
-			var errResp map[string]interface{}
-			Expect(json.Unmarshal(body, &errResp)).To(Succeed())
-			detail, _ := errResp["detail"].(string)
-			Expect(detail).To(ContainSubstring("dependency not satisfied"),
-				"error should indicate dependency not satisfied")
-			errType, _ := errResp["type"].(string)
-			Expect(errType).To(ContainSubstring("dependency-validation-error"),
-				"#1070: RFC 7807 type must identify dependency validation failure")
-		})
-
-		It("IT-DS-006-006: should accept workflow without dependencies section", func() {
+		It("IT-DS-1481-004: should accept workflow without dependencies section", func() {
 			schemaYAML := depTestBaseSchemaUnique()
 			testServer, srv := createDepTestServer(schemaYAML)
 			defer testServer.Close()

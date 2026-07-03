@@ -42,7 +42,6 @@ import (
 	"github.com/jordigilh/kubernaut/internal/controller/workflowexecution"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
-	dsvalidation "github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
 	"github.com/jordigilh/kubernaut/pkg/workflowexecution/audit"
 	weclient "github.com/jordigilh/kubernaut/pkg/workflowexecution/client"
@@ -342,7 +341,7 @@ var _ = Describe("WorkflowExecution Controller Observability [Issue #659]", func
 		evtRecorder = record.NewFakeRecorder(20)
 	})
 
-	buildReconciler := func(fakeClient client.Client, querier weclient.WorkflowQuerier, depValidator dsvalidation.DependencyValidator, registry *weexecutor.Registry) *workflowexecution.WorkflowExecutionReconciler {
+	buildReconciler := func(fakeClient client.Client, querier weclient.WorkflowQuerier, registry *weexecutor.Registry) *workflowexecution.WorkflowExecutionReconciler {
 		as := &mockAuditStore{events: make([]*ogenclient.AuditEventRequest, 0)}
 		am := audit.NewManager(as, logr.Discard())
 		sm := status.NewManager(fakeClient)
@@ -350,19 +349,18 @@ var _ = Describe("WorkflowExecution Controller Observability [Issue #659]", func
 		pm := wephase.NewManager()
 
 		return &workflowexecution.WorkflowExecutionReconciler{
-			Client:              fakeClient,
-			APIReader:           fakeClient,
-			Scheme:              evtScheme,
-			Recorder:            evtRecorder,
-			ExecutionNamespace:  "kubernaut-workflows",
-			AuditStore:          as,
-			Metrics:             tm,
-			StatusManager:       sm,
-			AuditManager:        am,
-			PhaseManager:        pm,
-			WorkflowQuerier:     querier,
-			DependencyValidator: depValidator,
-			ExecutorRegistry:    registry,
+			Client:             fakeClient,
+			APIReader:          fakeClient,
+			Scheme:             evtScheme,
+			Recorder:           evtRecorder,
+			ExecutionNamespace: "kubernaut-workflows",
+			AuditStore:         as,
+			Metrics:            tm,
+			StatusManager:      sm,
+			AuditManager:       am,
+			PhaseManager:       pm,
+			WorkflowQuerier:    querier,
+			ExecutorRegistry:   registry,
 		}
 	}
 
@@ -385,41 +383,45 @@ var _ = Describe("WorkflowExecution Controller Observability [Issue #659]", func
 		}
 	}
 
-	Context("UT-WE-659-001 (P0): Dependency validation failure emits WorkflowValidationFailed", func() {
-		It("should emit WorkflowValidationFailed event when dependency validation fails", func() {
-			wfe := buildPendingWFE("wfe-659-dep-fail")
+	// BR-WORKFLOW-008: without pre-flight dependency validation (#1481), the
+	// only place a missing-dependency detail becomes visible outside the WFE
+	// status/audit trail is the K8s Event emitted by MarkFailed. It must carry
+	// both the classification reason AND the specific failure message so
+	// `kubectl get events` / `describe wfe` surfaces e.g. which Secret was
+	// missing, not just a generic "Unknown" reason.
+	Context("UT-WE-1481-005 [BR-WORKFLOW-008]: MarkFailed event message enrichment", func() {
+		It("should include FailureDetails.Message alongside the reason in the emitted WorkflowFailed event", func() {
+			wfe := buildPendingWFE("wfe-dep-failed-event")
+			now := metav1.Now()
+			wfe.Status.StartTime = &now
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(evtScheme).
 				WithObjects(wfe).
 				WithStatusSubresource(wfe).
 				Build()
 
-			querier := &mockCatalogQuerier{
-				meta: &weclient.WorkflowCatalogMetadata{
-					ExecutionEngine: "tekton",
-					WorkflowName:    "cert-renewal",
-					ExecutionBundle: "ghcr.io/test/exec:v1",
-					Dependencies: &models.WorkflowDependencies{
-						Secrets: []models.ResourceDependency{{Name: "missing-secret"}},
-					},
-				},
-			}
-			depValidator := &mockDependencyValidator{err: fmt.Errorf("secret missing-secret not found in namespace kubernaut-workflows")}
-			tektonExec := weexecutor.NewTektonExecutor(fakeClient)
-			registry := weexecutor.NewRegistry()
-			registry.Register(tektonExec.Engine(), tektonExec)
-
-			reconciler := buildReconciler(fakeClient, querier, depValidator, registry)
+			reconciler := buildReconciler(fakeClient, nil, nil)
 			drainFakeRecorderEvents(evtRecorder)
 
-			_, err := reconciler.Reconcile(evtCtx, reconcile.Request{
-				NamespacedName: types.NamespacedName{Name: wfe.Name, Namespace: wfe.Namespace},
-			})
+			const enrichedMessage = `secret "my-creds" not found`
+			summary := &workflowexecutionv1alpha1.ExecutionStatusSummary{
+				Reason:  "DeadlineExceeded",
+				Message: enrichedMessage,
+			}
+
+			_, err := reconciler.MarkFailed(evtCtx, wfe, nil, summary)
 			Expect(err).ToNot(HaveOccurred())
 
 			evts := drainFakeRecorderEvents(evtRecorder)
-			Expect(hasEventMatch(evts, "Warning", events.EventReasonWorkflowValidationFailed)).
-				To(BeTrue(), "Dependency validation failure must emit WorkflowValidationFailed, got: %v", evts)
+			Expect(evts).ToNot(BeEmpty())
+			found := false
+			for _, e := range evts {
+				if strings.Contains(e, "WorkflowFailed") && strings.Contains(e, enrichedMessage) {
+					found = true
+				}
+			}
+			Expect(found).To(BeTrue(),
+				"BR-WORKFLOW-008: WorkflowFailed event must include the specific failure message, got: %v", evts)
 		})
 	})
 
@@ -446,7 +448,7 @@ var _ = Describe("WorkflowExecution Controller Observability [Issue #659]", func
 			registry := weexecutor.NewRegistry()
 			registry.Register(tektonExec.Engine(), tektonExec)
 
-			reconciler := buildReconciler(fakeClient, querier, nil, registry)
+			reconciler := buildReconciler(fakeClient, querier, registry)
 			drainFakeRecorderEvents(evtRecorder)
 
 			_, err := reconciler.Reconcile(evtCtx, reconcile.Request{
@@ -474,7 +476,7 @@ var _ = Describe("WorkflowExecution Controller Observability [Issue #659]", func
 			}
 			registry := weexecutor.NewRegistry()
 
-			reconciler := buildReconciler(fakeClient, querier, nil, registry)
+			reconciler := buildReconciler(fakeClient, querier, registry)
 			drainFakeRecorderEvents(evtRecorder)
 
 			_, err := reconciler.Reconcile(evtCtx, reconcile.Request{
@@ -498,7 +500,7 @@ var _ = Describe("WorkflowExecution Controller Observability [Issue #659]", func
 				WithStatusSubresource(wfe).
 				Build()
 
-			reconciler := buildReconciler(fakeClient, nil, nil, nil)
+			reconciler := buildReconciler(fakeClient, nil, nil)
 			drainFakeRecorderEvents(evtRecorder)
 
 			_, err := reconciler.Reconcile(evtCtx, reconcile.Request{
@@ -526,7 +528,7 @@ var _ = Describe("WorkflowExecution Controller Observability [Issue #659]", func
 				WithStatusSubresource(wfe).
 				Build()
 
-			reconciler := buildReconciler(fakeClient, nil, nil, nil)
+			reconciler := buildReconciler(fakeClient, nil, nil)
 			drainFakeRecorderEvents(evtRecorder)
 
 			_, err := reconciler.Reconcile(evtCtx, reconcile.Request{
@@ -586,15 +588,6 @@ func (m *mockCatalogQuerier) GetWorkflowSchemaMetadata(_ context.Context, _ stri
 		}, m.err
 	}
 	return nil, m.err
-}
-
-// mockDependencyValidator implements dsvalidation.DependencyValidator for testing.
-type mockDependencyValidator struct {
-	err error
-}
-
-func (m *mockDependencyValidator) ValidateDependencies(_ context.Context, _ string, _ *models.WorkflowDependencies) error {
-	return m.err
 }
 
 // Suppress unused import warning

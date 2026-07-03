@@ -51,7 +51,6 @@ import (
 	workflowexecution "github.com/jordigilh/kubernaut/internal/controller/workflowexecution"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
-	dsvalidation "github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 	weaudit "github.com/jordigilh/kubernaut/pkg/workflowexecution/audit"
 	weclient "github.com/jordigilh/kubernaut/pkg/workflowexecution/client"
 	weexecutor "github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
@@ -409,24 +408,23 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	executorRegistry.Register("tekton", weexecutor.NewTektonExecutor(k8sManager.GetClient()))
 	executorRegistry.Register("job", weexecutor.NewJobExecutor(k8sManager.GetClient()))
 
-	// DD-WE-006: Create dependency validator using the envtest K8s client.
-	// The WorkflowQuerier is set per-test via testWorkflowQuerier (see dependency_resolution_integration_test.go).
-	depValidator := dsvalidation.NewK8sDependencyValidator(k8sManager.GetClient())
-
+	// Issue #1481: DependencyValidator pre-flight check removed. Dependency
+	// existence is now validated exclusively at runtime by Kubernetes when the
+	// Job/PipelineRun attempts to mount the volume (BR-WORKFLOW-008 covers the
+	// resulting fail-fast/observability guarantees, see dependency_resolution_integration_test.go).
 	reconciler = &workflowexecution.WorkflowExecutionReconciler{
-		Client:                 k8sManager.GetClient(),
-		APIReader:              k8sManager.GetAPIReader(), // DD-STATUS-001: Cache-bypassed reads for race condition prevention
-		Scheme:                 k8sManager.GetScheme(),
-		Recorder:               k8sManager.GetEventRecorderFor("workflowexecution-controller"),
-		ExecutionNamespace:     WorkflowExecutionNS,
-		CooldownPeriod:         10 * time.Second, // Short cooldown for integration tests (default 5min too long)
-		AuditStore:             auditStore,       // REAL audit store for integration tests
-		Metrics:                testMetrics,       // Test-isolated metrics (DD-METRICS-001)
-		StatusManager:          statusManager,     // DD-PERF-001: Atomic status updates
-		AuditManager:           auditManager,      // P3: Audit Manager pattern
-		ExecutorRegistry:       executorRegistry,   // BR-WE-014: Strategy pattern dispatch
-		WorkflowQuerier:        &testWorkflowQuerier, // DD-WE-006: Configurable per-test (default: nil deps)
-		DependencyValidator:    depValidator,          // DD-WE-006: Real K8s validation via envtest
+		Client:             k8sManager.GetClient(),
+		APIReader:          k8sManager.GetAPIReader(), // DD-STATUS-001: Cache-bypassed reads for race condition prevention
+		Scheme:             k8sManager.GetScheme(),
+		Recorder:           k8sManager.GetEventRecorderFor("workflowexecution-controller"),
+		ExecutionNamespace: WorkflowExecutionNS,
+		CooldownPeriod:     10 * time.Second, // Short cooldown for integration tests (default 5min too long)
+		AuditStore:         auditStore,       // REAL audit store for integration tests
+		Metrics:            testMetrics,      // Test-isolated metrics (DD-METRICS-001)
+		StatusManager:      statusManager,    // DD-PERF-001: Atomic status updates
+		AuditManager:       auditManager,     // P3: Audit Manager pattern
+		ExecutorRegistry:   executorRegistry, // BR-WE-014: Strategy pattern dispatch
+		WorkflowQuerier:    &testWorkflowQuerier, // DD-WE-006: Configurable per-test (default: nil deps)
 	}
 	err = reconciler.SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
@@ -757,6 +755,76 @@ func simulateJobCompletion(job *batchv1.Job, succeeded bool) error {
 			},
 		)
 	}
+	return k8sClient.Status().Update(ctx, job)
+}
+
+// simulateJobFailureWithMissingDependency simulates the runtime failure a real
+// cluster would produce when a Job's Pod cannot mount a missing Secret/ConfigMap
+// (BR-WORKFLOW-008). EnvTest runs neither kube-controller-manager nor kubelet,
+// so neither the Pod nor the FailedMount Event are created automatically: this
+// helper creates both synthetically, then marks the Job Failed (as it would be
+// once ActiveDeadlineSeconds elapses), so JobExecutor.GetStatus() has real Pod
+// events to inspect and enrich the WFE failure message from.
+func simulateJobFailureWithMissingDependency(job *batchv1.Job, eventReason, eventMessage string) error {
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			GenerateName: job.Name + "-",
+			Namespace:    job.Namespace,
+			Labels:       map[string]string{"job-name": job.Name},
+		},
+		Spec: corev1.PodSpec{
+			RestartPolicy: corev1.RestartPolicyNever,
+			Containers: []corev1.Container{
+				{Name: "workflow", Image: "busybox:latest"},
+			},
+		},
+	}
+	if err := k8sClient.Create(ctx, pod); err != nil {
+		return fmt.Errorf("failed to create synthetic pod: %w", err)
+	}
+
+	event := &corev1.Event{
+		ObjectMeta: metav1.ObjectMeta{
+			GenerateName: pod.Name + "-",
+			Namespace:    job.Namespace,
+		},
+		InvolvedObject: corev1.ObjectReference{
+			Kind:      "Pod",
+			Name:      pod.Name,
+			Namespace: pod.Namespace,
+			UID:       pod.UID,
+		},
+		Reason:         eventReason,
+		Message:        eventMessage,
+		Type:           corev1.EventTypeWarning,
+		FirstTimestamp: metav1.Now(),
+		LastTimestamp:  metav1.Now(),
+		Count:          1,
+	}
+	if err := k8sClient.Create(ctx, event); err != nil {
+		return fmt.Errorf("failed to create synthetic pod event: %w", err)
+	}
+
+	now := metav1.Now()
+	job.Status.StartTime = &now
+	job.Status.Failed = 1
+	job.Status.Active = 0
+	job.Status.Conditions = append(job.Status.Conditions,
+		batchv1.JobCondition{
+			Type:               "FailureTarget",
+			Status:             corev1.ConditionTrue,
+			LastTransitionTime: now,
+			Reason:             "DeadlineExceeded",
+			Message:            "Job was active longer than specified deadline",
+		},
+		batchv1.JobCondition{
+			Type:               batchv1.JobFailed,
+			Status:             corev1.ConditionTrue,
+			LastTransitionTime: now,
+			Reason:             "DeadlineExceeded",
+			Message:            "Job was active longer than specified deadline",
+		},
+	)
 	return k8sClient.Status().Update(ctx, job)
 }
 

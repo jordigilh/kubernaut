@@ -4,8 +4,19 @@
 **Version**: 1.0
 **Created**: 2026-02-24
 **Author**: AI Assistant + Jordi Gil
-**Status**: Draft
+**Status**: Historical — registration/execution-time pre-flight validation sections superseded by Issue #1481 (see notice below)
 **Branch**: `main`
+
+> **Historical notice (Issue #1481, 2026-07)**: the registration-time
+> (`pkg/datastorage/validation/`) and execution-time defense-in-depth
+> pre-flight K8s existence checks described in this plan were removed.
+> Dependency existence is now validated exclusively at runtime by
+> Kubernetes; see `docs/architecture/decisions/DD-WE-006-schema-declared-dependencies.md`
+> for the superseded-scope notice and
+> `docs/requirements/BR-WORKFLOW-008-workflow-execution-runtime-dependency-failure.md`
+> for the replacement fail-fast/observability behavior. The dependency
+> *parsing*, volume-mount, and workspace-binding test coverage described
+> below remains accurate and unaffected.
 
 **Authority**:
 - [DD-WE-006](../../../docs/architecture/decisions/DD-WE-006-schema-declared-dependencies.md): Schema-Declared Infrastructure Dependencies

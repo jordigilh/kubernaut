@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"time"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -34,7 +35,24 @@ import (
 const (
 	SecretMountBasePath    = "/run/kubernaut/secrets"
 	ConfigMapMountBasePath = "/run/kubernaut/configmaps"
+
+	// defaultJobActiveDeadline is the fallback ActiveDeadlineSeconds applied to
+	// the Job (BR-WORKFLOW-008) when the WFE does not declare an explicit
+	// ExecutionConfig.Timeout. Matches the 30-minute default already used for
+	// Tekton executions and RemediationOrchestrator's Executing-phase safety
+	// net (BR-ORCH-028), so a Pod unable to mount a missing dependency reaches
+	// a terminal JobFailed condition instead of hanging indefinitely.
+	defaultJobActiveDeadline = 30 * time.Minute
 )
+
+// podMountFailureReasons are the kubelet Event reasons that indicate a Pod
+// could not start because a referenced Secret/ConfigMap dependency is missing
+// or misconfigured (BR-WORKFLOW-008). Used by GetStatus to enrich the generic
+// Job condition message with the specific missing resource.
+var podMountFailureReasons = map[string]bool{
+	"FailedMount":                true,
+	"CreateContainerConfigError": true,
+}
 
 // JobExecutor implements the Executor interface for Kubernetes Jobs.
 // DD-WE-005 v2.0: SA is read from WFE spec at execution time, not from executor config.
@@ -124,10 +142,19 @@ func (j *JobExecutor) GetStatus(ctx context.Context, wfe *workflowexecutionv1alp
 			}
 		case batchv1.JobFailed:
 			if condition.Status == corev1.ConditionTrue {
+				message := condition.Message
+				if enriched := j.enrichFailureMessage(ctx, c, &job); enriched != "" {
+					message = enriched
+				}
+				// BR-WORKFLOW-008: MarkFailed persists FailureDetails.Message from
+				// summary.Message (not this result's top-level Message), so the
+				// enrichment must also be reflected there or the specific missing
+				// dependency detail never reaches the WFE status / K8s Event.
+				summary.Message = message
 				return &ExecutionResult{
 					Phase:   workflowexecutionv1alpha1.PhaseFailed,
 					Reason:  condition.Reason,
-					Message: condition.Message,
+					Message: message,
 					Summary: summary,
 				}, nil
 			}
@@ -141,6 +168,72 @@ func (j *JobExecutor) GetStatus(ctx context.Context, wfe *workflowexecutionv1alp
 		Message: fmt.Sprintf("Job running (%d/%d pods active)", job.Status.Active, pointerInt32(job.Spec.Completions, 1)),
 		Summary: summary,
 	}, nil
+}
+
+// jobPodNameSuffixLength is the length of the random suffix Kubernetes
+// appends to a GenerateName-created Pod's name (k8s.io/apiserver's
+// names.SimpleNameGenerator), e.g. "<job-name>-x7k2m". Used to attribute an
+// Event to this Job's Pod(s) by name prefix without requiring the Pod object
+// to still exist (see enrichFailureMessage).
+const jobPodNameSuffixLength = 5
+
+// enrichFailureMessage inspects Events involving the failed Job's Pod(s) for
+// a FailedMount or CreateContainerConfigError reason and, if found, returns
+// its message in place of the generic Job condition message
+// (BR-WORKFLOW-008). Since dependency existence is no longer pre-flight
+// validated (#1481), this is the only place the specific missing
+// Secret/ConfigMap name surfaces.
+//
+// Deliberately does NOT list the Job's Pods first: Kubernetes' job-controller
+// deletes a Job's active Pods as soon as ActiveDeadlineSeconds is exceeded —
+// before the next reconcile typically observes the JobFailed condition — so
+// by the time this runs the Pod is usually already gone and only its Events
+// (independent TTL, ~1h default) remain. Instead, Events are attributed to
+// this Job by matching the Pod-name-prefix convention ("<job-name>-<5-char
+// suffix>") that both the real job-controller and buildJob's Pod template use.
+//
+// Returns "" (caller keeps the original message) if no matching Event or a
+// list error is encountered — this is best-effort enrichment, never a hard
+// failure of status reporting.
+func (j *JobExecutor) enrichFailureMessage(ctx context.Context, c ExecutorClient, job *batchv1.Job) string {
+	logger := log.FromContext(ctx).WithValues("job", job.Name, "namespace", job.Namespace)
+
+	var events corev1.EventList
+	if err := c.List(ctx, &events, client.InNamespace(job.Namespace)); err != nil {
+		logger.V(1).Info("failed to list events for job failure enrichment", "error", err)
+		return ""
+	}
+
+	podNamePrefix := job.Name + "-"
+	for _, evt := range events.Items {
+		if evt.InvolvedObject.Kind != "Pod" || !isJobPodName(evt.InvolvedObject.Name, podNamePrefix) {
+			continue
+		}
+		if podMountFailureReasons[evt.Reason] {
+			return evt.Message
+		}
+	}
+	return ""
+}
+
+// isJobPodName reports whether podName was generated for a Pod owned by the
+// Job whose name produces the given "<job-name>-" prefix.
+func isJobPodName(podName, jobNamePrefix string) bool {
+	return len(podName) == len(jobNamePrefix)+jobPodNameSuffixLength &&
+		podName[:len(jobNamePrefix)] == jobNamePrefix
+}
+
+// activeDeadlineSecondsFor resolves the Job's ActiveDeadlineSeconds
+// (BR-WORKFLOW-008) from the WFE's ExecutionConfig.Timeout, falling back to
+// defaultJobActiveDeadline when unset. This bounds how long a Pod can remain
+// unable to start (e.g. stuck mounting a missing dependency) before the Job
+// reaches a terminal JobFailed condition.
+func activeDeadlineSecondsFor(wfe *workflowexecutionv1alpha1.WorkflowExecution) int64 {
+	timeout := defaultJobActiveDeadline
+	if wfe.Spec.ExecutionConfig != nil && wfe.Spec.ExecutionConfig.Timeout != nil && wfe.Spec.ExecutionConfig.Timeout.Duration > 0 {
+		timeout = wfe.Spec.ExecutionConfig.Timeout.Duration
+	}
+	return int64(timeout.Seconds())
 }
 
 // IsCompleted checks whether the existing Job for the given target resource is
@@ -232,6 +325,7 @@ func (j *JobExecutor) buildJob(ctx context.Context, wfe *workflowexecutionv1alph
 
 	var backoffLimit int32 = 0
 	var ttlSeconds int32 = 600
+	activeDeadlineSeconds := activeDeadlineSecondsFor(wfe)
 
 	return &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
@@ -251,6 +345,7 @@ func (j *JobExecutor) buildJob(ctx context.Context, wfe *workflowexecutionv1alph
 		Spec: batchv1.JobSpec{
 			BackoffLimit:            &backoffLimit,
 			TTLSecondsAfterFinished: &ttlSeconds,
+			ActiveDeadlineSeconds:   &activeDeadlineSeconds,
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{

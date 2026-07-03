@@ -2,9 +2,35 @@
 
 **Version**: 2.0
 **Date**: 2026-02-24
-**Status**: APPROVED
+**Status**: PARTIALLY SUPERSEDED (see notice below)
 **Author**: WorkflowExecution Team
 **Reviewers**: Platform Team, HAPI Team
+
+---
+
+> **Partially superseded (Issue #1481, 2026-07)**: the "dual validation" model
+> described below — Data Storage validating dependency existence at
+> registration time (`K8sDependencyValidator`), in addition to the WFE at
+> execution time — has been removed. Issue #1481 found the registration-time
+> pre-flight check to be redundant with, and often stale relative to,
+> Kubernetes' own admission-time enforcement (a Job's Pod simply fails to
+> mount a missing Secret/ConfigMap). Dependency existence is now validated
+> **exclusively at runtime by Kubernetes**.
+>
+> This does **not** change the schema contract (`dependencies.secrets` /
+> `dependencies.configMaps`) or the volume-mount/workspace-binding mechanics
+> described below — those remain as designed. Only the registration-time
+> existence check is removed.
+>
+> **BR-WORKFLOW-008** ("WorkflowExecution runtime dependency-failure
+> observability") closes the resulting fail-fast/observability gap: the Job
+> now carries an `ActiveDeadlineSeconds` so a Pod stuck unable to mount a
+> missing dependency reaches a terminal `JobFailed` condition instead of
+> hanging, and `JobExecutor.GetStatus()` inspects the Pod's `FailedMount` /
+> `CreateContainerConfigError` Events to surface the specific missing
+> resource in `WorkflowExecution.status.failureDetails.message` and the
+> emitted `WorkflowFailed` K8s Event. See
+> `docs/requirements/BR-WORKFLOW-008-workflow-execution-runtime-dependency-failure.md`.
 
 ---
 

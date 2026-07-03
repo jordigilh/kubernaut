@@ -280,7 +280,7 @@ func buildWorkflowCatalogDependencies(db *sql.DB, logger logr.Logger) *workflowC
 
 // buildRESTHandler assembles the READ API Handler from the audit write and
 // workflow catalog dependencies plus any caller-provided options (e.g.
-// WithDependencyValidator for DD-WE-006).
+// WithSchemaExtractor).
 //
 // BR-AUDIT-006: Pass sqlDB for reconstruction queries.
 // GAP-WF-1: WithWorkflowLifecycleRepository enables enable/disable/deprecate handlers.

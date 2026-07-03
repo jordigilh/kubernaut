@@ -18,9 +18,6 @@ package datastorage_test
 
 import (
 	"context"
-
-	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
-	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 )
 
 // mockActionTypeValidator implements server.ActionTypeValidator for testing.
@@ -35,16 +32,3 @@ func (m *mockActionTypeValidator) ActionTypeExists(ctx context.Context, actionTy
 	}
 	return true, nil // default: all types valid
 }
-
-// mockDependencyValidator implements validation.DependencyValidator for testing.
-// Shared across workflow handler test files to avoid implicit coupling.
-type mockDependencyValidator struct {
-	err error
-}
-
-func (m *mockDependencyValidator) ValidateDependencies(_ context.Context, _ string, _ *models.WorkflowDependencies) error {
-	return m.err
-}
-
-// Compile-time assertions that mocks satisfy their interfaces.
-var _ validation.DependencyValidator = &mockDependencyValidator{}

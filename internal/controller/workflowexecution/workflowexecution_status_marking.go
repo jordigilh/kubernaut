@@ -265,13 +265,21 @@ func (r *WorkflowExecutionReconciler) MarkFailed(ctx context.Context, wfe *workf
 
 	// V1.0: Consecutive failures gauge removed - RO handles routing (DD-RO-002)
 
-	// Emit event
+	// Emit event.
+	// BR-WORKFLOW-008: include FailureDetails.Message alongside the reason so
+	// a specific missing-dependency detail (e.g. from Pod FailedMount event
+	// enrichment) is visible via `kubectl get events` / `describe wfe`, not
+	// just the audit trace or WFE status YAML.
 	reason := "Unknown"
+	message := "no additional details"
 	if wfe.Status.FailureDetails != nil {
 		reason = wfe.Status.FailureDetails.Reason
+		if wfe.Status.FailureDetails.Message != "" {
+			message = wfe.Status.FailureDetails.Message
+		}
 	}
 	r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonWorkflowFailed,
-		fmt.Sprintf("Workflow %s failed: %s", wfe.Spec.WorkflowRef.WorkflowID, reason))
+		fmt.Sprintf("Workflow %s failed: %s - %s", wfe.Spec.WorkflowRef.WorkflowID, reason, message))
 
 	// DD-EVENT-001 v1.1: PhaseTransition breadcrumb for Running → Failed
 	r.emitPhaseTransition(wfe, "Running", "Failed")

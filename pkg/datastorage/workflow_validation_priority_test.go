@@ -27,7 +27,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/oci"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/schema"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
@@ -47,14 +46,18 @@ import (
 //   Step 3:  Schema validation         → type = validation-error
 //   Step 5a: Action-type taxonomy      → type = validation-error
 //   Step 5b: Bundle-exists (OCI)       → type = bundle-not-found
-//   Step 5c: Dependency validation     → type = dependency-validation-error
 //
-// These tests wire all validators so every step *would* fail,
+// Issue #1481: Step 5c (dependency validation) was removed — schema-declared
+// dependencies are no longer checked for existence at registration time;
+// Kubernetes validates them at runtime when the WorkflowExecution's Job/
+// PipelineRun attempts to mount the volume/workspace (BR-WORKFLOW-008).
+//
+// These tests wire all remaining validators so every step *would* fail,
 // then assert only the highest-priority error is returned.
 // ========================================
 
-// validSchemaForPriorityTests returns a well-formed schema YAML with dependencies
-// and a known action type, used as the baseline for priority tests.
+// validSchemaForPriorityTests returns a well-formed schema YAML with a known
+// action type, used as the baseline for priority tests.
 func validSchemaForPriorityTests() string {
 	crd := testutil.NewTestWorkflowCRD("priority-test-wf", "RestartPod", "job")
 	crd.Spec.Description = sharedtypes.StructuredDescription{
@@ -62,9 +65,6 @@ func validSchemaForPriorityTests() string {
 		WhenToUse: "When testing validation priority (#1070)",
 	}
 	crd.Spec.Execution.Bundle = "quay.io/kubernaut/priority-test:v1.0.0@sha256:f313b9632f3a8d0ffd41150b12715a43a41c6c8e7871bb830fd82c09b5988cc4"
-	crd.Spec.Dependencies = &models.WorkflowDependencies{
-		Secrets: []models.ResourceDependency{{Name: "missing-secret"}},
-	}
 	return testutil.MarshalWorkflowCRD(crd)
 }
 
@@ -103,10 +103,6 @@ var _ = Describe("Issue #1070: HandleCreateWorkflow Validation Error Priority", 
 			handler := server.NewHandler(
 				server.WithActionTypeValidator(rejectingActionTypeValidator()),
 				server.WithSchemaExtractor(extractor),
-				server.WithDependencyValidator(
-					&mockDependencyValidator{err: fmt.Errorf("secret missing-secret not found")},
-					"test-ns",
-				),
 			)
 
 			req := makeRequest("invalid yaml {{{")
@@ -120,7 +116,7 @@ var _ = Describe("Issue #1070: HandleCreateWorkflow Validation Error Priority", 
 				"Schema validation must be the first error, regardless of downstream failures")
 		})
 
-		It("UT-WF-1070-002: action-type error beats bundle-not-found and dependency errors", func() {
+		It("UT-WF-1070-002: action-type error beats bundle-not-found", func() {
 			schemaYAML := validSchemaForPriorityTests()
 			failingPuller := oci.NewMockImagePullerWithFailingExists(schemaYAML, fmt.Errorf("bundle not found"))
 			extractor := oci.NewSchemaExtractor(failingPuller, schema.NewParser())
@@ -128,10 +124,6 @@ var _ = Describe("Issue #1070: HandleCreateWorkflow Validation Error Priority", 
 			handler := server.NewHandler(
 				server.WithActionTypeValidator(rejectingActionTypeValidator()),
 				server.WithSchemaExtractor(extractor),
-				server.WithDependencyValidator(
-					&mockDependencyValidator{err: fmt.Errorf("secret missing-secret not found")},
-					"test-ns",
-				),
 			)
 
 			req := makeRequest(schemaYAML)
@@ -142,12 +134,12 @@ var _ = Describe("Issue #1070: HandleCreateWorkflow Validation Error Priority", 
 			Expect(rr.Code).To(Equal(http.StatusBadRequest))
 			problem := parseRFC7807(rr)
 			Expect(problem["type"]).To(Equal("https://kubernaut.ai/problems/validation-error"),
-				"Action-type rejection must take priority over bundle and dependency errors")
+				"Action-type rejection must take priority over bundle-not-found errors")
 			Expect(problem["detail"]).To(ContainSubstring("action_type"),
 				"Error detail should mention action_type")
 		})
 
-		It("UT-WF-1070-003: bundle-not-found beats dependency-validation-error", func() {
+		It("UT-WF-1070-003: bundle-not-found surfaces when no higher-priority failures exist", func() {
 			schemaYAML := validSchemaForPriorityTests()
 			failingPuller := oci.NewMockImagePullerWithFailingExists(schemaYAML, fmt.Errorf("bundle image not in registry"))
 			extractor := oci.NewSchemaExtractor(failingPuller, schema.NewParser())
@@ -161,10 +153,6 @@ var _ = Describe("Issue #1070: HandleCreateWorkflow Validation Error Priority", 
 			handler := server.NewHandler(
 				server.WithActionTypeValidator(acceptingValidator),
 				server.WithSchemaExtractor(extractor),
-				server.WithDependencyValidator(
-					&mockDependencyValidator{err: fmt.Errorf("secret missing-secret not found")},
-					"test-ns",
-				),
 			)
 
 			req := makeRequest(schemaYAML)
@@ -175,10 +163,10 @@ var _ = Describe("Issue #1070: HandleCreateWorkflow Validation Error Priority", 
 			Expect(rr.Code).To(Equal(http.StatusBadRequest))
 			problem := parseRFC7807(rr)
 			Expect(problem["type"]).To(Equal("https://kubernaut.ai/problems/bundle-not-found"),
-				"Bundle-not-found must take priority over dependency validation error")
+				"Bundle-not-found should surface when action-type passes")
 		})
 
-		It("UT-WF-1070-004: dependency-validation-error returned when no higher-priority failures", func() {
+		It("UT-WF-1070-004: all validations pass — no error returned", func() {
 			schemaYAML := validSchemaForPriorityTests()
 			mockPuller := oci.NewMockImagePuller(schemaYAML)
 			extractor := oci.NewSchemaExtractor(mockPuller, schema.NewParser())
@@ -192,41 +180,6 @@ var _ = Describe("Issue #1070: HandleCreateWorkflow Validation Error Priority", 
 			handler := server.NewHandler(
 				server.WithActionTypeValidator(acceptingValidator),
 				server.WithSchemaExtractor(extractor),
-				server.WithDependencyValidator(
-					&mockDependencyValidator{err: fmt.Errorf("secret missing-secret not found")},
-					"test-ns",
-				),
-			)
-
-			req := makeRequest(schemaYAML)
-			rr := httptest.NewRecorder()
-
-			handler.HandleCreateWorkflow(rr, req)
-
-			Expect(rr.Code).To(Equal(http.StatusBadRequest))
-			problem := parseRFC7807(rr)
-			Expect(problem["type"]).To(Equal("https://kubernaut.ai/problems/dependency-validation-error"),
-				"Dependency error should surface when no higher-priority validation fails")
-		})
-
-		It("UT-WF-1070-005: all validations pass — no error returned", func() {
-			schemaYAML := validSchemaForPriorityTests()
-			mockPuller := oci.NewMockImagePuller(schemaYAML)
-			extractor := oci.NewSchemaExtractor(mockPuller, schema.NewParser())
-
-			acceptingValidator := &mockActionTypeValidator{
-				existsFn: func(_ context.Context, _ string) (bool, error) {
-					return true, nil
-				},
-			}
-
-			handler := server.NewHandler(
-				server.WithActionTypeValidator(acceptingValidator),
-				server.WithSchemaExtractor(extractor),
-				server.WithDependencyValidator(
-					&mockDependencyValidator{err: nil},
-					"test-ns",
-				),
 			)
 
 			req := makeRequest(schemaYAML)
@@ -239,4 +192,3 @@ var _ = Describe("Issue #1070: HandleCreateWorkflow Validation Error Priority", 
 		})
 	})
 })
-
