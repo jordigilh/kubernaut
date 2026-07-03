@@ -35,16 +35,21 @@ import (
 )
 
 // ========================================
-// DD-WE-006: Schema-Declared Dependency Injection E2E Tests
+// DD-WE-006 / Issue #1481: Schema-Declared Dependency Injection E2E Tests
 // ========================================
-// Authority: DD-WE-006, BR-WE-014, BR-WORKFLOW-004
+// Authority: DD-WE-006, BR-WE-014, BR-WORKFLOW-004, BR-WORKFLOW-008
 // Test Plan: docs/testing/DD-WE-006/TEST_PLAN.md
 //
 // These tests validate the full DS → WFE dependency injection pipeline:
 // 1. Workflow registered in DS with dependencies in schema
 // 2. WFE controller fetches dependencies from DS via WorkflowQuerier
-// 3. DependencyValidator confirms resources exist in execution namespace
-// 4. Executor creates Job/PipelineRun with correct volume mounts/workspace bindings
+// 3. Executor creates Job/PipelineRun with correct volume mounts/workspace bindings
+// 4. Issue #1481: no pre-flight/execution-time existence check is performed —
+//    a missing Secret/ConfigMap is discovered only when the real kubelet
+//    fails to mount the volume. BR-WORKFLOW-008 bounds this with
+//    ActiveDeadlineSeconds and enriches the failure message from the Pod's
+//    FailedMount event (see E2E-WE-006-002 below, which exercises this against
+//    a real Kind cluster/kubelet — no simulation needed, unlike the envtest IT).
 //
 // Prerequisites (created in infrastructure setup):
 // - Secret "e2e-dep-secret" in kubernaut-workflows namespace (Job tests)
@@ -56,7 +61,7 @@ import (
 var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 
 	Context("E2E-WE-006-001/002: Job dependency injection success and post-registration drift failure", func() {
-		It("should mount declared secret in Job, then fail with ConfigurationError when secret is deleted", func() {
+		It("should mount declared secret in Job, then fail fast (BR-WORKFLOW-008) with an enriched message when the secret is deleted", func() {
 			depSecretJobUUID := infrastructure.RegisteredWorkflowUUIDs["test-dep-secret-job"]
 			Expect(depSecretJobUUID).ToNot(BeEmpty(),
 				"test-dep-secret-job UUID should have been captured during workflow registration")
@@ -182,6 +187,14 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 							infrastructure.TestWorkflowBundleRegistry, infrastructure.TestWorkflowBundleVersion),
 					},
 					TargetResource: targetResource2,
+					// BR-WORKFLOW-008: Issue #1481 removed the pre-flight dependency
+					// check, so a missing Secret is now only discovered when the
+					// real kubelet fails to mount the volume. A short explicit
+					// timeout keeps this test fast instead of waiting out the
+					// (30m) default ActiveDeadlineSeconds.
+					ExecutionConfig: &workflowexecutionv1alpha1.ExecutionConfig{
+						Timeout: &metav1.Duration{Duration: 20 * time.Second},
+					},
 				},
 			}
 
@@ -190,23 +203,23 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 			By("E2E-WE-006-002: Creating a WFE whose declared secret no longer exists")
 			Expect(k8sClient.Create(ctx, wfe2)).To(Succeed())
 
-			By("E2E-WE-006-002: Waiting for WFE to transition to Failed (dependency validation error)")
+			By("E2E-WE-006-002 [BR-WORKFLOW-008]: Waiting for the Job's ActiveDeadlineSeconds to elapse and WFE to transition to Failed")
 			Eventually(func() string {
 				updated, _ := getWFEDirect(wfe2.Name, wfe2.Namespace)
 				if updated != nil {
 					return updated.Status.Phase
 				}
 				return ""
-			}, 60*time.Second, 2*time.Second).Should(Equal(workflowexecutionv1alpha1.PhaseFailed))
+			}, 90*time.Second, 2*time.Second).Should(Equal(workflowexecutionv1alpha1.PhaseFailed))
 
-			By("E2E-WE-006-002: Verifying failure reason is ConfigurationError")
+			By("E2E-WE-006-002 [BR-WORKFLOW-008]: Verifying the failure message names the missing secret (enriched from the Pod's FailedMount event)")
 			failed, err := getWFE(wfe2.Name, wfe2.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(failed.Status.FailureDetails).ToNot(BeNil(), "FailureDetails should be populated")
-			Expect(failed.Status.FailureDetails.Reason).To(Equal(workflowexecutionv1alpha1.FailureReasonConfigurationError),
-				"Failure reason should be ConfigurationError for missing dependency")
+			Expect(failed.Status.FailureDetails.Message).To(ContainSubstring("e2e-dep-secret"),
+				"BR-WORKFLOW-008: failure message should name the missing secret, enriched from the Pod's FailedMount event")
 
-			GinkgoWriter.Printf("E2E-WE-006-002: Missing dependency correctly detected\n")
+			GinkgoWriter.Printf("E2E-WE-006-002: Missing dependency correctly detected via runtime Job/Pod failure\n")
 			GinkgoWriter.Printf("   Failure reason: %s\n", failed.Status.FailureDetails.Reason)
 			GinkgoWriter.Printf("   Failure message: %s\n", failed.Status.FailureDetails.Message)
 		})
