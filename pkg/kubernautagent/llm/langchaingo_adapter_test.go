@@ -33,6 +33,12 @@ import (
 	openaitypes "github.com/jordigilh/kubernaut/pkg/shared/types/openai"
 )
 
+// roundTripperFunc adapts a function to http.RoundTripper for spying on
+// outgoing requests without needing a full custom transport type.
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
+
 var _ = Describe("LangChainGo Adapter — #433", func() {
 
 	Describe("New() provider selection", func() {
@@ -135,6 +141,57 @@ var _ = Describe("LangChainGo Adapter — #433", func() {
 			)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(adapter).NotTo(BeNil())
+		})
+	})
+
+	Describe("UT-KA-433-220: WithHTTPClient wiring (SC-8 secure transport passthrough)", func() {
+		// WithHTTPClient exists so callers can chain custom transports for
+		// TLS trust and auth header injection (see adapter.go godoc). This
+		// characterizes that the option is actually honored end-to-end by
+		// the openai provider branch of newModel, not just accepted and
+		// silently discarded.
+		It("should route Chat() HTTP requests through the injected custom transport", func() {
+			var receivedAuthHeader string
+			content := "ok"
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				receivedAuthHeader = r.Header.Get("X-Chained-Auth")
+				resp := openaitypes.ChatCompletionResponse{
+					ID:      "chatcmpl-httpclient",
+					Object:  openaitypes.ObjectChatCompletion,
+					Created: openaitypes.FixedCreatedTime,
+					Model:   "mock-model",
+					Choices: []openaitypes.Choice{
+						{Index: 0, Message: openaitypes.Message{Role: "assistant", Content: &content}, FinishReason: "stop"},
+					},
+				}
+				w.Header().Set("Content-Type", "application/json")
+				Expect(json.NewEncoder(w).Encode(resp)).To(Succeed())
+			}))
+			defer server.Close()
+
+			var roundTripCount int
+			customClient := &http.Client{
+				Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+					roundTripCount++
+					req.Header.Set("X-Chained-Auth", "chained-token")
+					return http.DefaultTransport.RoundTrip(req)
+				}),
+			}
+
+			adapter, err := langchaingo.New("openai", server.URL, "mock-model", "sk-test",
+				langchaingo.WithHTTPClient(customClient),
+			)
+			Expect(err).NotTo(HaveOccurred())
+
+			_, err = adapter.Chat(context.Background(), llm.ChatRequest{
+				Messages: []llm.Message{{Role: "user", Content: "test"}},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(roundTripCount).To(BeNumerically(">", 0),
+				"the custom http.Client passed via WithHTTPClient must carry the LLM request")
+			Expect(receivedAuthHeader).To(Equal("chained-token"),
+				"SC-8: a custom transport chained via WithHTTPClient must be able to inject auth headers on outgoing LLM requests")
 		})
 	})
 
