@@ -96,7 +96,8 @@ func main() {
 	}
 	cfg, err := loadDataStorageConfig(cfgPath, logger)
 	if err != nil {
-		logger.Error(err, "Failed to load Data Storage configuration (ADR-030)", "config_path", cfgPath)
+		// loadDataStorageConfig already logs the specific failure (file load,
+		// secrets, or validation) before returning.
 		os.Exit(1)
 	}
 
@@ -319,17 +320,22 @@ func loadDataStorageConfig(cfgPath string, logger logr.Logger) (*config.Config, 
 
 	cfg, err := config.LoadFromFile(cfgPath)
 	if err != nil {
+		logger.Error(err, "Failed to load configuration file (ADR-030)",
+			"config_path", cfgPath,
+		)
 		return nil, fmt.Errorf("failed to load configuration file (config_path=%s): %w", cfgPath, err)
 	}
 
 	// ADR-030 Section 6: Load secrets from mounted files
 	logger.Info("Loading secrets from mounted files (ADR-030 Section 6)")
 	if err := cfg.LoadSecrets(); err != nil {
+		logger.Error(err, "Failed to load secrets (ADR-030 Section 6)")
 		return nil, fmt.Errorf("failed to load secrets (ADR-030 Section 6): %w", err)
 	}
 
 	// Validate configuration (after secrets are loaded)
 	if err := cfg.Validate(); err != nil {
+		logger.Error(err, "Invalid configuration (ADR-030)")
 		return nil, fmt.Errorf("invalid configuration (ADR-030): %w", err)
 	}
 

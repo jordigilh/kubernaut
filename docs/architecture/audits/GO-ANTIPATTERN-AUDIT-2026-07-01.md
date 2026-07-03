@@ -1011,6 +1011,20 @@ This section classifies every item in the Recommended Remediation Plan (Phases 1
 
 ---
 
+## 11. CI Verification — PR #1537 Regression Found and Fixed
+
+The Wave 3 MVP-Placeholder caveat (item above, `make test-integration-datastorage` not runnable locally — no container runtime) was resolved by the PR's own CI run, which has `docker`/`podman` available. CI surfaced one genuine regression from the Wave 0a `cmd/datastorage main()` decomposition (§7h-1), invisible to unit tests because it only manifests in the compiled binary's process-level log output.
+
+**Failure**: `Integration (datastorage)` — 3 of 241 specs failed in `test/integration/datastorage/config_integration_test.go` (`should fail to start if config file doesn't exist`, `should fail to start if database secret file is missing`, `should fail to start if config is invalid`). These specs build and exec the real `cmd/datastorage` binary and assert on `CombinedOutput()` containing specific capitalized log messages (`"Failed to load configuration file"`, `"Failed to load secrets"`, `"Invalid configuration"`).
+
+**Root cause**: the Wave 0a extraction of `loadDataStorageConfig` (pure code motion, per the wave's own record) moved the three failure branches out of `main()` but replaced the original `logger.Error(err, "Failed to load configuration file (ADR-030)", ...)` / `"Failed to load secrets (ADR-030 Section 6)"` / `"Invalid configuration (ADR-030)"` calls with plain `fmt.Errorf(...)` returns (lowercase, correctly per the Go anti-pattern checklist's error-string convention) and a single generic caller-side log line (`"Failed to load Data Storage configuration (ADR-030)"`). The specific capitalized messages the integration tests grep for were never logged, only the lowercase text embedded inside the wrapped error's `%w` chain — a `logr`/zap-encoded error field, not the message the tests substring-match against. This was a genuine (if narrow) behavior change slipping through the "pure code motion" claim, caught only by an integration test that exercises the actual process stdout/stderr — outside what any unit test (which calls the Go function directly and only checks the returned `error` value) could observe.
+
+**Fix**: restored the original `logger.Error(err, "<original capitalized message>")` call at each of the three failure sites inside `loadDataStorageConfig` (so the specific, test-visible message is still emitted before returning), and removed the now-redundant generic log line at the `main()` call site to avoid double-logging. The returned `fmt.Errorf` wrapping (lowercase, `%w`-chained) is preserved for Go-idiomatic error handling. Verified via `go build` + manual exec of all 4 config-integration scenarios (missing `CONFIG_PATH`, missing config file, missing secrets file, invalid config) reproducing the exact log lines the Ginkgo specs assert on, plus `golangci-lint run cmd/datastorage/...` (0 issues, `funlen` still satisfied — the fix only adds 3 log calls, no new branching).
+
+**Lesson for future waves**: when decomposing `main()`/CLI entrypoints, "pure code motion" verification must include a check for observable side effects (log message text, exit codes, stdout/stderr content) captured by process-level integration tests, not just the Go-level return value/signature. Unit tests on the extracted helper's error return are necessary but insufficient for CLI entrypoints whose contract includes specific log output.
+
+---
+
 ## Raw Data
 
 Reproducible via the commands in Methodology; intermediate files used to build this report (not committed, regenerate as needed):
