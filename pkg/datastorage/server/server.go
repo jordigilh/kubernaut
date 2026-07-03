@@ -152,7 +152,7 @@ type ServerDeps struct {
 	Authenticator auth.Authenticator // Token validator (DD-AUTH-014)
 	Authorizer    auth.Authorizer    // Permission checker (DD-AUTH-014)
 	AuthNamespace string             // Namespace for SAR checks (DD-AUTH-014)
-	HandlerOpts   []HandlerOption    // Optional handler options (e.g. WithDependencyValidator for DD-WE-006)
+	HandlerOpts   []HandlerOption    // Optional handler options (e.g. WithSchemaExtractor)
 }
 
 // startupCleanups accumulates resource-release closures during NewServer so

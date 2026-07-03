@@ -11,8 +11,17 @@
 **Version**: 1.0
 **Created**: 2026-04-09
 **Author**: AI Assistant
-**Status**: Draft
+**Status**: Partially historical — dependency-validation scenarios superseded by Issue #1481 (see notice below)
 **Branch**: `development/v1.3` (or feature branch for #659)
+
+> **Historical notice (Issue #1481, 2026-07)**: the `DependencyValidator`
+> pre-flight check referenced throughout this plan (e.g. objective 4,
+> `UT-WE-659-001`) was removed — dependency existence is now validated
+> exclusively at runtime by Kubernetes (see
+> `docs/architecture/decisions/DD-WE-006-schema-declared-dependencies.md`
+> and `docs/requirements/BR-WORKFLOW-008-workflow-execution-runtime-dependency-failure.md`).
+> The `WorkflowValidationFailed` event scenarios for catalog resolution and
+> spec validation failures (unaffected by #1481) remain accurate.
 
 ---
 

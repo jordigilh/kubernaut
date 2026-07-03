@@ -68,20 +68,18 @@ var _ = Describe("Issue #1070: Concurrent HandleCreateWorkflow Safety", Label("u
 		mockPuller := oci.NewMockImagePuller(schemaYAML)
 		extractor := oci.NewSchemaExtractor(mockPuller, schema.NewParser())
 
-		acceptingValidator := &mockActionTypeValidator{
+		// Issue #1481: dependency validation removed from registration; use a
+		// rejecting action-type validator instead to keep this test exercising
+		// a deterministic, concurrency-safe validation-error path.
+		rejectingValidator := &mockActionTypeValidator{
 			existsFn: func(_ context.Context, _ string) (bool, error) {
-				return true, nil
+				return false, nil
 			},
 		}
 
-		depValidator := &mockDependencyValidator{
-			err: fmt.Errorf("secret test-secret not found"),
-		}
-
 		handler := server.NewHandler(
-			server.WithActionTypeValidator(acceptingValidator),
+			server.WithActionTypeValidator(rejectingValidator),
 			server.WithSchemaExtractor(extractor),
-			server.WithDependencyValidator(depValidator, "test-ns"),
 		)
 
 		type result struct {
@@ -124,7 +122,7 @@ var _ = Describe("Issue #1070: Concurrent HandleCreateWorkflow Safety", Label("u
 				fmt.Sprintf("request %d: expected valid HTTP status, got %d", i, r.code))
 			Expect(r.code).To(BeNumerically("<", 600),
 				fmt.Sprintf("request %d: HTTP status %d out of valid range", i, r.code))
-			Expect(r.rfc7807).To(Equal("https://kubernaut.ai/problems/dependency-validation-error"),
+			Expect(r.rfc7807).To(Equal("https://kubernaut.ai/problems/validation-error"),
 				fmt.Sprintf("request %d: all concurrent requests with identical input must return the same RFC 7807 type", i))
 		}
 	})

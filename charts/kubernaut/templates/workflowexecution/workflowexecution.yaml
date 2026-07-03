@@ -47,9 +47,15 @@ rules:
   - apiGroups: ["batch"]
     resources: ["jobs"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # BR-WORKFLOW-008 (Issue #1481): "watch" is required even though the
+  # reconciler only calls List() on Events (to enrich WFE failure messages
+  # from FailedMount/CreateContainerConfigError Events) -- the manager's
+  # cached client establishes an Informer for any type it reads, and that
+  # Informer needs list+watch to sync, regardless of which verb application
+  # code exercises directly.
   - apiGroups: [""]
     resources: ["events"]
-    verbs: ["create", "patch"]
+    verbs: ["create", "patch", "get", "list", "watch"]
   # Issue #637: TokenRequest API for per-workflow SA tokens (Ansible engine)
   - apiGroups: [""]
     resources: ["serviceaccounts/token"]
@@ -333,6 +339,45 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: workflowexecution-awx-token-reader
+subjects:
+  - kind: ServiceAccount
+    name: workflowexecution-controller
+    namespace: {{ .Release.Namespace }}
+---
+# BR-WORKFLOW-008 (Issue #1481): the Ansible engine reads schema-declared
+# Secret/ConfigMap dependencies from the execution namespace to build
+# ephemeral AWX credentials and extra_vars (see AnsibleExecutor.Create in
+# pkg/workflowexecution/executor/ansible.go). This is independent of the
+# removed pre-flight DependencyValidator -- Kubernetes now validates
+# dependency existence at runtime, but the Ansible engine still needs to
+# read the *content* of declared Secrets/ConfigMaps to inject them. list+watch
+# are required (not just get) because the manager's cached client establishes
+# a namespace-scoped Informer for these types.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: workflowexecution-dependency-reader
+  namespace: {{ include "kubernaut.workflowNamespace" . }}
+  labels:
+    app: workflowexecution-controller
+    {{- include "kubernaut.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets", "configmaps"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: workflowexecution-dependency-reader
+  namespace: {{ include "kubernaut.workflowNamespace" . }}
+  labels:
+    app: workflowexecution-controller
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: workflowexecution-dependency-reader
 subjects:
   - kind: ServiceAccount
     name: workflowexecution-controller

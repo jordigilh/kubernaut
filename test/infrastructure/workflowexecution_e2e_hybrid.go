@@ -1216,8 +1216,12 @@ rules:
   resources: ["jobs"]
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 - apiGroups: [""]
+  # BR-WORKFLOW-008 (Issue #1481): "watch" is required even though the
+  # reconciler only calls List() on Events -- the manager's cached client
+  # establishes an Informer for any type it reads, and that Informer needs
+  # list+watch to sync regardless of which verb application code exercises.
   resources: ["events"]
-  verbs: ["create", "patch"]
+  verbs: ["create", "patch", "get", "list", "watch"]
 - apiGroups: ["coordination.k8s.io"]
   resources: ["leases"]
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
@@ -1230,30 +1234,6 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: workflowexecution-controller
-subjects:
-- kind: ServiceAccount
-  name: workflowexecution-controller
-  namespace: %[1]s
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: workflowexecution-dep-reader
-  namespace: %[2]s
-rules:
-- apiGroups: [""]
-  resources: ["secrets", "configmaps"]
-  verbs: ["get", "list", "watch"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: workflowexecution-dep-reader
-  namespace: %[2]s
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: workflowexecution-dep-reader
 subjects:
 - kind: ServiceAccount
   name: workflowexecution-controller
@@ -1278,6 +1258,35 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: workflowexecution-secret-reader
+subjects:
+- kind: ServiceAccount
+  name: workflowexecution-controller
+  namespace: %[1]s
+---
+# BR-WORKFLOW-008 (Issue #1481): the Ansible engine reads schema-declared
+# Secret/ConfigMap dependencies from the execution namespace to build
+# ephemeral AWX credentials and extra_vars. Independent of the removed
+# pre-flight DependencyValidator. list+watch are required because the
+# manager's cached client establishes a namespace-scoped Informer.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: workflowexecution-dependency-reader
+  namespace: %[2]s
+rules:
+- apiGroups: [""]
+  resources: ["secrets", "configmaps"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: workflowexecution-dependency-reader
+  namespace: %[2]s
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: workflowexecution-dependency-reader
 subjects:
 - kind: ServiceAccount
   name: workflowexecution-controller

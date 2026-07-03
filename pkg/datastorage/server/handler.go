@@ -28,7 +28,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/oci"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 	actiontyperepo "github.com/jordigilh/kubernaut/pkg/datastorage/repository/actiontype"
-	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 )
 
 // WorkflowLifecycleRepository defines the data access interface for workflow
@@ -86,8 +85,6 @@ type Handler struct {
 	actionTypeValidator     ActionTypeValidator                // GAP-4: DD-WORKFLOW-016 taxonomy validation
 	auditStore              audit.AuditStore                  // BR-AUDIT-023: Workflow search audit
 	schemaExtractor         *oci.SchemaExtractor              // DD-WE-006: OCI bundle validation (ValidateBundleExists)
-	dependencyValidator     validation.DependencyValidator     // DD-WE-006: Schema-declared dependency validation
-	executionNamespace      string                            // DD-WE-006: Namespace where dependencies are provisioned
 	remediationHistoryRepo  RemediationHistoryQuerier         // BR-HAPI-016: Remediation history context (DD-HAPI-016 v1.1)
 	actionTypeRepo          *actiontyperepo.Repository        // BR-WORKFLOW-007: ActionType CRD lifecycle
 }
@@ -149,16 +146,6 @@ func WithAuditStore(store audit.AuditStore) HandlerOption {
 func WithSchemaExtractor(extractor *oci.SchemaExtractor) HandlerOption {
 	return func(h *Handler) {
 		h.schemaExtractor = extractor
-	}
-}
-
-// WithDependencyValidator sets the dependency validator for registration-time checks.
-// DD-WE-006: Validates that declared Secrets/ConfigMaps exist with non-empty data
-// in the execution namespace before storing the workflow in the catalog.
-func WithDependencyValidator(v validation.DependencyValidator, executionNamespace string) HandlerOption {
-	return func(h *Handler) {
-		h.dependencyValidator = v
-		h.executionNamespace = executionNamespace
 	}
 }
 
