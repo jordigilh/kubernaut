@@ -70,31 +70,8 @@ func (s *Server) HandleExportAuditEvents(w http.ResponseWriter, r *http.Request)
 
 	ctx := r.Context()
 
-	// Authentication: Require X-Auth-Request-User header (SOC2 CC8.1)
-	exportedBy := r.Header.Get("X-Auth-Request-User")
-	if exportedBy == "" {
-		s.logger.Info("Export request rejected: missing X-Auth-Request-User header")
-		response.WriteRFC7807Error(w, http.StatusUnauthorized,
-			"export/unauthorized", "Unauthorized",
-			"X-Auth-Request-User header required for audit export", s.logger)
-		return
-	}
-
-	// Parse query parameters
-	filters, err := parseExportFilters(r)
-	if err != nil {
-		s.logger.Error(err, "Invalid export query parameters")
-		response.WriteRFC7807Error(w, http.StatusBadRequest,
-			"export/invalid-parameters", "Validation Error",
-			"invalid query parameters", s.logger)
-		return
-	}
-
-	// Validate limit
-	if filters.Limit > maxExportLimit {
-		response.WriteRFC7807Error(w, http.StatusRequestEntityTooLarge,
-			"export/limit-exceeded", "Payload Too Large",
-			fmt.Sprintf("Export limit exceeds maximum of %d events. Use pagination.", maxExportLimit), s.logger)
+	exportedBy, filters, ok := s.authenticateAndParseExportRequest(w, r)
+	if !ok {
 		return
 	}
 
@@ -142,6 +119,44 @@ func (s *Server) HandleExportAuditEvents(w http.ResponseWriter, r *http.Request)
 		"format", format,
 		"total_events", exportResult.TotalEventsQueried,
 		"integrity_percent", exportResult.ChainIntegrityPercent)
+}
+
+// authenticateAndParseExportRequest implements the auth-and-parse prologue of
+// HandleExportAuditEvents: require X-Auth-Request-User (SOC2 CC8.1), parse
+// the export query filters, and enforce the max-export-limit guard. On any
+// failure it writes the RFC 7807 error response itself and returns ok=false.
+// Extracted from HandleExportAuditEvents (Wave 6 6f GREEN: funlen
+// remediation) — pure code motion, no behavior change.
+func (s *Server) authenticateAndParseExportRequest(w http.ResponseWriter, r *http.Request) (string, repository.ExportFilters, bool) {
+	// Authentication: Require X-Auth-Request-User header (SOC2 CC8.1)
+	exportedBy := r.Header.Get("X-Auth-Request-User")
+	if exportedBy == "" {
+		s.logger.Info("Export request rejected: missing X-Auth-Request-User header")
+		response.WriteRFC7807Error(w, http.StatusUnauthorized,
+			"export/unauthorized", "Unauthorized",
+			"X-Auth-Request-User header required for audit export", s.logger)
+		return "", repository.ExportFilters{}, false
+	}
+
+	// Parse query parameters
+	filters, err := parseExportFilters(r)
+	if err != nil {
+		s.logger.Error(err, "Invalid export query parameters")
+		response.WriteRFC7807Error(w, http.StatusBadRequest,
+			"export/invalid-parameters", "Validation Error",
+			"invalid query parameters", s.logger)
+		return "", repository.ExportFilters{}, false
+	}
+
+	// Validate limit
+	if filters.Limit > maxExportLimit {
+		response.WriteRFC7807Error(w, http.StatusRequestEntityTooLarge,
+			"export/limit-exceeded", "Payload Too Large",
+			fmt.Sprintf("Export limit exceeds maximum of %d events. Use pagination.", maxExportLimit), s.logger)
+		return "", repository.ExportFilters{}, false
+	}
+
+	return exportedBy, filters, true
 }
 
 // parseExportFilters parses query parameters into ExportFilters
@@ -220,6 +235,48 @@ func (s *Server) buildExportResponse(
 
 	// Build response using JSON marshaling/unmarshaling to match generated types exactly
 	// This avoids complex inline struct matching issues
+	intermediateResponse := buildExportIntermediateResponse(exportResult, filters, format, signature, algorithm, certFingerprint, exportedBy, exportTimestamp)
+
+	// Marshal intermediate response and unmarshal into generated type
+	jsonBytes, err := json.Marshal(intermediateResponse)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal intermediate response: %w", err)
+	}
+
+	var response ogenclient.AuditExportResponse
+	if err := json.Unmarshal(jsonBytes, &response); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal into generated type: %w", err)
+	}
+
+	// SOC2 Day 10.2: Apply PII redaction if requested
+	// Redaction happens AFTER hash chain verification to maintain integrity
+	if filters.RedactPII {
+		s.logger.V(1).Info("Applying PII redaction to audit export", "exported_by", exportedBy)
+		if err := s.applyPIIRedaction(&response); err != nil {
+			return nil, fmt.Errorf("failed to apply PII redaction: %w", err)
+		}
+	}
+
+	// Add detached signature if requested
+	if includeDetachedSignature {
+		detachedSig := s.buildDetachedSignature(signature, algorithm, certFingerprint)
+		response.DetachedSignature.SetTo(detachedSig)
+	}
+
+	return &response, nil
+}
+
+// buildExportIntermediateResponse assembles the intermediate map[string]interface{}
+// representation of the export (metadata, hash-chain verification, and
+// converted events) that is later marshaled/unmarshaled into the generated
+// ogenclient.AuditExportResponse type. Extracted from buildExportResponse
+// (Wave 6 6f GREEN: funlen remediation) — pure code motion, no behavior change.
+func buildExportIntermediateResponse(
+	exportResult *repository.ExportResult,
+	filters repository.ExportFilters,
+	format, signature, algorithm, certFingerprint, exportedBy string,
+	exportTimestamp time.Time,
+) map[string]interface{} {
 	intermediateResponse := map[string]interface{}{
 		"export_metadata": map[string]interface{}{
 			"export_timestamp":        exportTimestamp,
@@ -264,9 +321,18 @@ func (s *Server) buildExportResponse(
 		intermediateResponse["hash_chain_verification"].(map[string]interface{})["tampered_event_ids"] = *exportResult.TamperedEventIDs
 	}
 
-	// Convert repository events
-	events := intermediateResponse["events"].([]map[string]interface{})
-	for _, exportEvent := range exportResult.Events {
+	intermediateResponse["events"] = convertExportEvents(exportResult.Events)
+
+	return intermediateResponse
+}
+
+// convertExportEvents converts repository export events into the
+// map[string]interface{} shape expected by the intermediate export response.
+// Extracted from buildExportResponse (Wave 6 6f GREEN: funlen remediation) —
+// pure code motion, no behavior change.
+func convertExportEvents(exportEvents []*repository.ExportEvent) []map[string]interface{} {
+	events := make([]map[string]interface{}, 0, len(exportEvents))
+	for _, exportEvent := range exportEvents {
 		event := map[string]interface{}{
 			"event_id":            exportEvent.EventID.String(),
 			"version":             exportEvent.Version,
@@ -289,35 +355,7 @@ func (s *Server) buildExportResponse(
 
 		events = append(events, event)
 	}
-	intermediateResponse["events"] = events
-
-	// Marshal intermediate response and unmarshal into generated type
-	jsonBytes, err := json.Marshal(intermediateResponse)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal intermediate response: %w", err)
-	}
-
-	var response ogenclient.AuditExportResponse
-	if err := json.Unmarshal(jsonBytes, &response); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal into generated type: %w", err)
-	}
-
-	// SOC2 Day 10.2: Apply PII redaction if requested
-	// Redaction happens AFTER hash chain verification to maintain integrity
-	if filters.RedactPII {
-		s.logger.V(1).Info("Applying PII redaction to audit export", "exported_by", exportedBy)
-		if err := s.applyPIIRedaction(&response); err != nil {
-			return nil, fmt.Errorf("failed to apply PII redaction: %w", err)
-		}
-	}
-
-	// Add detached signature if requested
-	if includeDetachedSignature {
-		detachedSig := s.buildDetachedSignature(signature, algorithm, certFingerprint)
-		response.DetachedSignature.SetTo(detachedSig)
-	}
-
-	return &response, nil
+	return events
 }
 
 // signExport signs the export data with x509 certificate
@@ -424,4 +462,3 @@ func (s *Server) applyPIIRedaction(response *ogenclient.AuditExportResponse) err
 
 	return nil
 }
-

@@ -291,13 +291,7 @@ func scanVerifyChainEvent(rows *sql.Rows) (*repository.AuditEvent, error) {
 		return nil, err
 	}
 
-	event.ResourceNamespace = namespace.String
-	event.ClusterID = clusterName.String
-	event.ActorIP = actorIP.String
-	event.Severity = severity.String
-	event.DurationMs = int(durationMs.Int32)
-	event.ErrorCode = errorCode.String
-	event.ErrorMessage = errorMessage.String
+	assignVerifyChainNullableFields(event, namespace, clusterName, actorIP, severity, durationMs, errorCode, errorMessage)
 
 	// CRITICAL: Force timestamp to UTC for hash consistency
 	// PostgreSQL timestamptz stores in UTC but Go reads them with local timezone.
@@ -312,6 +306,25 @@ func scanVerifyChainEvent(rows *sql.Rows) (*repository.AuditEvent, error) {
 	}
 
 	return event, nil
+}
+
+// assignVerifyChainNullableFields copies the sql.Null* columns scanned by
+// scanVerifyChainEvent onto event's plain Go-typed fields (NULL -> zero
+// value). Extracted from scanVerifyChainEvent (Wave 6 6f GREEN: funlen
+// remediation) — pure code motion, no behavior change.
+func assignVerifyChainNullableFields(
+	event *repository.AuditEvent,
+	namespace, clusterName, actorIP, severity sql.NullString,
+	durationMs sql.NullInt32,
+	errorCode, errorMessage sql.NullString,
+) {
+	event.ResourceNamespace = namespace.String
+	event.ClusterID = clusterName.String
+	event.ActorIP = actorIP.String
+	event.Severity = severity.String
+	event.DurationMs = int(durationMs.Int32)
+	event.ErrorCode = errorCode.String
+	event.ErrorMessage = errorMessage.String
 }
 
 // verifyEventChain walks events in order, recomputing each event's expected
