@@ -35,6 +35,9 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tlswiring"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
+	"github.com/jordigilh/kubernaut/pkg/fleet"
+	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
+	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
@@ -61,6 +64,24 @@ type backendDeps struct {
 	K8sCB                 *resilience.K8sCircuitBreaker
 	InvestigationRegistry *tools.MonitorRegistry
 	Mapper                meta.RESTMapper
+	// FleetReaderFactory routes kubectl_get/kubectl_list tool calls with a
+	// non-empty cluster_id to remote fleet clusters via the MCP Gateway
+	// (BR-FLEET-054). Nil when fleet federation is disabled.
+	FleetReaderFactory tools.ResourceReaderFactory
+	// FleetClusterRegistry backs the list_clusters tool (BR-FLEET-054). Nil
+	// when fleet federation is disabled.
+	FleetClusterRegistry registry.ClusterRegistry
+	// fleetResilientClient is the underlying MCP Gateway connection; closed
+	// on shutdown by run() when non-nil.
+	fleetResilientClient *mcpclient.ResilientClient
+}
+
+// FleetResilientClient returns the MCP Gateway connection backing
+// FleetReaderFactory, or nil when fleet federation is disabled or its
+// endpoint was unreachable at startup. Callers must check for nil before
+// closing.
+func (d *backendDeps) FleetResilientClient() *mcpclient.ResilientClient {
+	return d.fleetResilientClient
 }
 
 // K8sClient returns the pod service-account scoped dynamic K8s client,
@@ -335,7 +356,92 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 			"podResolverEnabled", deps.k8sDynClient != nil)
 	}
 
+	if err := buildFleetReaderDeps(ctx, cfg, deps, logger); err != nil {
+		return nil, fmt.Errorf("fleet reader wiring: %w", err)
+	}
+
 	return deps, nil
+}
+
+// buildFleetReaderDeps wires BR-FLEET-054 multi-cluster kubectl routing when
+// fleet federation is enabled: connects to the MCP Gateway, discovers
+// managed clusters via ClusterRegistry, and adapts the resulting
+// fleet.ReaderFactory (client.Reader) into a tools.ResourceReaderFactory
+// (dynamic-style ResourceReader) for kubectl_get/kubectl_list/list_clusters.
+// A connectivity failure degrades gracefully to single-cluster mode (mirrors
+// GW's registerAdapters contract, cmd/gateway/main.go:246-284) rather than
+// blocking AF startup — Fleet MCP Gateway connections are lazy/async.
+func buildFleetReaderDeps(ctx context.Context, cfg *config.Config, deps *backendDeps, logger logr.Logger) error {
+	if !cfg.Fleet.Enabled || cfg.Fleet.MCPGatewayEndpoint == "" {
+		return nil
+	}
+	if deps.k8sDynClient == nil {
+		logger.Info("K8s dynamic client unavailable, fleet cluster routing disabled")
+		return nil
+	}
+
+	fleetLog := logger.WithName("fleet-mcp")
+	var opts []mcpclient.Option
+	if cfg.Fleet.OAuth2.Enabled {
+		basePath := "/etc/apifrontend/fleet-oauth2"
+		if cfg.Fleet.OAuth2.CredentialsSecretRef != "" {
+			basePath = "/etc/apifrontend/" + cfg.Fleet.OAuth2.CredentialsSecretRef
+		}
+		reloadCfg := mcpclient.ReloadableOAuth2Config{
+			TokenURL:         cfg.Fleet.OAuth2.TokenURL,
+			ClientIDPath:     basePath + "/client-id",
+			ClientSecretPath: basePath + "/client-secret",
+			Scopes:           cfg.Fleet.OAuth2.Scopes,
+		}
+		opts = append(opts, mcpclient.WithReloadableOAuth2Transport(reloadCfg, fleetLog))
+	}
+
+	resilienceCfg := mcpclient.DefaultResilienceConfig()
+	mcpFleetClient, err := mcpclient.NewResilient(ctx, cfg.Fleet.MCPGatewayEndpoint, resilienceCfg, fleetLog, opts...)
+	if err != nil {
+		logger.Error(err, "Fleet MCP Gateway connection failed, remote cluster routing disabled",
+			"endpoint", cfg.Fleet.MCPGatewayEndpoint)
+		return nil
+	}
+	deps.fleetResilientClient = mcpFleetClient
+
+	clusterRegistry, err := registry.NewClusterRegistry(
+		registry.MCPGatewayType(cfg.Fleet.EffectiveMCPGatewayType()),
+		deps.k8sDynClient,
+		registry.RegistryConfig{},
+		registry.NewMetrics(),
+		fleetLog,
+	)
+	if err != nil {
+		return fmt.Errorf("create fleet cluster registry (gatewayType=%s): %w", cfg.Fleet.MCPGatewayType, err)
+	}
+	if err := clusterRegistry.Start(ctx); err != nil {
+		return fmt.Errorf("start fleet cluster registry: %w", err)
+	}
+	deps.FleetClusterRegistry = clusterRegistry
+
+	readerFactory := mcpclient.NewMCPReaderFactoryWithProvider(
+		deps.k8sTypedClient, mcpFleetClient.SessionProvider(), registry.NewToolPrefixAdapter(clusterRegistry))
+	deps.FleetReaderFactory = adaptFleetReaderFactory(readerFactory)
+
+	logger.Info("Fleet MCP Gateway connected, multi-cluster kubectl routing enabled",
+		"endpoint", cfg.Fleet.MCPGatewayEndpoint, "gatewayType", cfg.Fleet.MCPGatewayType)
+	return nil
+}
+
+// adaptFleetReaderFactory adapts a fleet.ReaderFactory (client.Reader) into a
+// tools.ResourceReaderFactory (dynamic-style ResourceReader) so kubectl_get/
+// kubectl_list can consume BR-FLEET-054 remote cluster reads. Only ever
+// invoked with a non-empty clusterID: AF's kubectl tools call the local
+// dynamic client directly for local reads (see tools.NewKubectlGetTool).
+func adaptFleetReaderFactory(rf fleet.ReaderFactory) tools.ResourceReaderFactory {
+	return func(ctx context.Context, clusterID string) (tools.ResourceReader, error) {
+		r, err := rf.ReaderFor(ctx, clusterID)
+		if err != nil {
+			return nil, err
+		}
+		return &tools.ClientResourceReader{Reader: r}, nil
+	}
 }
 
 // newLLMTriagerFromConfig creates a provider-aware LLMTriager based on the resolved

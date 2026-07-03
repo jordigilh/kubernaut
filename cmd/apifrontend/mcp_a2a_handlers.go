@@ -125,6 +125,8 @@ func buildA2AHandler(ctx context.Context, d *handlerDeps) (http.Handler, error) 
 		ActiveContextRegistry: d.ActiveCtxRegistry,
 		InteractiveEnabled:    d.Cfg.Interactive.Enabled,
 		PromClient:            d.Backends.PromClient,
+		FleetReaderFactory:    d.Backends.FleetReaderFactory,
+		ClusterRegistry:       d.Backends.FleetClusterRegistry,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create root agent: %w", err)

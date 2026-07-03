@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jordigilh/kubernaut/pkg/fleet"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
 	"gopkg.in/yaml.v3"
@@ -32,6 +33,11 @@ type Config struct {
 	SeverityTriage SeverityTriageConfig `yaml:"severityTriage"`
 	Session        SessionConfig        `yaml:"session"`
 	Interactive    InteractiveConfig    `yaml:"interactive"`
+	// Fleet holds multi-cluster federation settings (BR-FLEET-054). When
+	// Enabled and MCPGatewayEndpoint is set, kubectl_get/kubectl_list/
+	// list_clusters tools route to remote managed clusters via the MCP
+	// Gateway. Mirrors GW/RO/SP/WE/KA's fleet.FleetConfig embedding.
+	Fleet fleet.FleetConfig `yaml:"fleet"`
 }
 
 // InteractiveConfig controls whether session-dependent MCP tools are registered.
@@ -383,6 +389,9 @@ func (c *Config) Validate() error {
 		return err
 	}
 	if err := c.validateSession(); err != nil {
+		return err
+	}
+	if err := c.Fleet.Validate(); err != nil {
 		return err
 	}
 	return nil

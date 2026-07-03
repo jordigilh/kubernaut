@@ -50,6 +50,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/version"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/fleet"
+	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/locking"
 	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
@@ -136,6 +137,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Issue #615/BR-FLEET-054: Signal context created early (mirrors EM's
+	// pattern, cmd/effectivenessmonitor/main.go) so buildReconciler's fleet
+	// MCP Gateway connection attempt respects graceful shutdown/cancellation
+	// instead of running against an unbounded context.Background().
+	ctx := ctrl.SetupSignalHandler()
+
 	// ========================================
 	// AUDIT STORE INITIALIZATION (DD-AUDIT-003, DD-API-001)
 	// ========================================
@@ -194,7 +201,7 @@ func main() {
 
 	// Setup RemediationOrchestrator controller with audit store and comprehensive timeout config
 	// ADR-030: Timeouts from YAML config (not CLI flags)
-	roReconciler, stopConfigWatcher, err := buildReconciler(reconcilerParams{
+	roReconciler, stopConfigWatcher, err := buildReconciler(ctx, reconcilerParams{
 		cfg:           cfg,
 		mgr:           mgr,
 		auditStore:    auditStore,
@@ -241,9 +248,6 @@ func main() {
 	}
 
 	setupLog.Info("starting manager")
-
-	// Setup signal handler for graceful shutdown
-	ctx := ctrl.SetupSignalHandler()
 
 	// Issue #748/#756/#875: TLS security profile + CA-cert and log-level hot-reload watchers.
 	stopHotReload := wireTLSHotReload(ctx, cfg, configPath, atomicLevel, setupLog)
@@ -430,7 +434,7 @@ type reconcilerParams struct {
 // caller must defer it. Extracted from main()
 // (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 0a) — pure code motion, no behavior
 // change.
-func buildReconciler(p reconcilerParams, logger logr.Logger) (*controller.Reconciler, func(), error) {
+func buildReconciler(ctx context.Context, p reconcilerParams, logger logr.Logger) (*controller.Reconciler, func(), error) {
 	noop := func() {}
 	cfg, mgr := p.cfg, p.mgr
 
@@ -462,6 +466,18 @@ func buildReconciler(p reconcilerParams, logger logr.Logger) (*controller.Reconc
 
 	// DD-EM-002: Set REST mapper for pre-remediation hash Kind resolution
 	roReconciler.SetRESTMapper(mgr.GetRESTMapper())
+
+	// BR-FLEET-054: Wire fleet-aware target reads for CapturePreRemediationHash.
+	// Independent of the Backend/Endpoint scope checker wired into
+	// buildRoutingEngine above — this is the MCPGatewayEndpoint capability.
+	readerFactory, fleetResilientClient, err := buildFleetReaderFactory(ctx, mgr.GetClient(), cfg, logger)
+	if err != nil {
+		return nil, noop, fmt.Errorf("fleet reader wiring: %w", err)
+	}
+	if readerFactory != nil {
+		roReconciler.SetReaderFactory(readerFactory)
+	}
+
 	// DD-EM-004 v2.0, Issue #253: Wire config-driven async propagation delays
 	roReconciler.SetAsyncPropagation(cfg.AsyncPropagation)
 	// BR-ORCH-037 AC-037-08, Issue #590: Wire self-resolved notification toggle
@@ -519,8 +535,68 @@ func buildReconciler(p reconcilerParams, logger logr.Logger) (*controller.Reconc
 			}
 		}
 	}
+	if fleetResilientClient != nil {
+		innerStop := stop
+		stop = func() {
+			innerStop()
+			logger.Info("Closing fleet MCP Gateway connection")
+			if closeErr := fleetResilientClient.Close(); closeErr != nil {
+				logger.Error(closeErr, "failed to close fleet MCP client gracefully")
+			}
+		}
+	}
 
 	return roReconciler, stop, nil
+}
+
+// buildFleetReaderFactory wires BR-FLEET-054 multi-cluster target reads when
+// fleet federation is enabled: connects to the MCP Gateway and returns a
+// fleet.ReaderFactory for Reconciler.SetReaderFactory. Without this wiring,
+// readerForHash(ctx, clusterID) silently falls back to the local hub
+// cluster reader (config_accessors.go:71-76), so CapturePreRemediationHash
+// computes the pre-remediation resource fingerprint against the wrong
+// cluster for fleet-routed RemediationRequests. This is independent of the
+// Backend/Endpoint federated scope checker wired via fleet.NewScopeChecker
+// in buildRoutingEngine — RO needs both capabilities (see ADR-068). A
+// connectivity failure degrades gracefully to hub-only mode (mirrors GW's
+// registerAdapters and EM's buildFleetReaderFactory contracts) rather than
+// blocking RO startup. localClient is pre-built by the caller (independently
+// testable with fakes). The returned *mcpclient.ResilientClient is non-nil
+// whenever the reader factory is wired, so the caller can close it on
+// graceful shutdown.
+func buildFleetReaderFactory(ctx context.Context, localClient client.Client, cfg *config.Config, logger logr.Logger) (fleet.ReaderFactory, *mcpclient.ResilientClient, error) {
+	if !cfg.Fleet.Enabled || cfg.Fleet.MCPGatewayEndpoint == "" {
+		return nil, nil, nil
+	}
+
+	fleetLog := logger.WithName("fleet-mcp")
+	var opts []mcpclient.Option
+	if cfg.Fleet.OAuth2.Enabled {
+		basePath := "/etc/remediationorchestrator/fleet-oauth2"
+		if cfg.Fleet.OAuth2.CredentialsSecretRef != "" {
+			basePath = "/etc/remediationorchestrator/" + cfg.Fleet.OAuth2.CredentialsSecretRef
+		}
+		reloadCfg := mcpclient.ReloadableOAuth2Config{
+			TokenURL:         cfg.Fleet.OAuth2.TokenURL,
+			ClientIDPath:     basePath + "/client-id",
+			ClientSecretPath: basePath + "/client-secret",
+			Scopes:           cfg.Fleet.OAuth2.Scopes,
+		}
+		opts = append(opts, mcpclient.WithReloadableOAuth2Transport(reloadCfg, fleetLog))
+	}
+
+	resilienceCfg := mcpclient.DefaultResilienceConfig()
+	mcpFleetClient, err := mcpclient.NewResilient(ctx, cfg.Fleet.MCPGatewayEndpoint, resilienceCfg, fleetLog, opts...)
+	if err != nil {
+		logger.Error(err, "Fleet MCP Gateway connection failed, remote pre-remediation hash reads disabled",
+			"endpoint", cfg.Fleet.MCPGatewayEndpoint)
+		return nil, nil, nil
+	}
+
+	logger.Info("Fleet MCP Gateway connected, remote pre-remediation hash reads enabled",
+		"endpoint", cfg.Fleet.MCPGatewayEndpoint, "gatewayType", cfg.Fleet.MCPGatewayType)
+	readerFactory := mcpclient.NewMCPReaderFactoryWithProvider(localClient, mcpFleetClient.SessionProvider())
+	return readerFactory, mcpFleetClient, nil
 }
 
 // wireTLSHotReload sets the initial TLS security profile (Issue #748) and

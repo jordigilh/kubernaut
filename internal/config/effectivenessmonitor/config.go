@@ -24,6 +24,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	sharedconfig "github.com/jordigilh/kubernaut/internal/config"
+	"github.com/jordigilh/kubernaut/pkg/fleet"
 )
 
 // DefaultConfigPath is the standard Kubernetes ConfigMap mount path for this service.
@@ -52,6 +53,12 @@ type Config struct {
 	// TLSProfile selects the TLS security profile (Old/Intermediate/Modern).
 	// Issue #748: OCP-only — set by kubernaut-operator from the cluster APIServer CR.
 	TLSProfile string `yaml:"tlsProfile,omitempty"`
+
+	// Fleet holds multi-cluster federation settings (BR-FLEET-054). When
+	// Enabled and MCPGatewayEndpoint is set, EA reconciliation reads the
+	// remediation's target cluster via the MCP Gateway instead of silently
+	// falling back to the local hub cluster.
+	Fleet fleet.FleetConfig `yaml:"fleet"`
 }
 
 // AssessmentConfig defines assessment behavior.
@@ -218,6 +225,10 @@ func (c *Config) Validate() error {
 	}
 	if c.Assessment.MaxConcurrentReconciles < 1 {
 		return fmt.Errorf("assessment.maxConcurrentReconciles must be at least 1, got %d", c.Assessment.MaxConcurrentReconciles)
+	}
+
+	if err := c.Fleet.Validate(); err != nil {
+		return err
 	}
 
 	return nil

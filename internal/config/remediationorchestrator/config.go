@@ -446,5 +446,18 @@ func (c *Config) Validate() error {
 		}
 	}
 
+	// ADR-068/BR-FLEET-054: When fleet is enabled, RO needs BOTH the
+	// Backend/Endpoint scope-check adapter (fleet.NewScopeChecker,
+	// buildRoutingEngine) AND MCPGatewayEndpoint (CapturePreRemediationHash
+	// remote reads, buildFleetReaderFactory). Configuring only one silently
+	// degrades RO to local-only behavior for fleet-routed
+	// RemediationRequests.
+	if err := c.Fleet.Validate(); err != nil {
+		return err
+	}
+	if err := c.Fleet.ValidateFullFederation(); err != nil {
+		return err
+	}
+
 	return nil
 }

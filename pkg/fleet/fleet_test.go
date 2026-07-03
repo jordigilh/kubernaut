@@ -234,6 +234,81 @@ var _ = Describe("FleetConfig MCPGatewayType (MCP Gateway Adapter)", func() {
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("mcpGatewayType is required when fleet is enabled"))
 	})
+
+	// IT-AF-054-005/IT-EM-054-004 regression: AF and EM only ever set
+	// MCPGatewayEndpoint (remote K8s reads) — they never call the Backend/
+	// Endpoint federated scope-check adapter (that's GW/RO's job; AF/EM
+	// discover clusters directly via ClusterRegistry watching Backend CRDs).
+	// Before this fix, Validate() unconditionally required Backend+Endpoint
+	// whenever Enabled=true, which would have broken AF/EM startup the
+	// moment an operator enabled fleet MCP routing without also configuring
+	// an unused FMC/ACM backend.
+	It("UT-FLEET-CFG-036 [CM-6]: Validate accepts MCPGatewayEndpoint-only config without Backend/Endpoint", func() {
+		cfg := fleet.FleetConfig{
+			Enabled:            true,
+			MCPGatewayEndpoint: "http://gw:8080/mcp",
+			MCPGatewayType:     fleet.GatewayEAIGW,
+		}
+		Expect(cfg.Validate()).ToNot(HaveOccurred(),
+			"AF/EM only need MCPGatewayEndpoint for remote reads; requiring an unused Backend/Endpoint blocks their startup")
+	})
+
+	It("UT-FLEET-CFG-037 [CM-6]: Validate rejects Enabled=true with neither Backend/Endpoint nor MCPGatewayEndpoint configured", func() {
+		cfg := fleet.FleetConfig{
+			Enabled: true,
+		}
+		err := cfg.Validate()
+		Expect(err).To(HaveOccurred(),
+			"enabling fleet without configuring either capability is a misconfiguration")
+	})
+})
+
+// GW and RO each rely on BOTH FleetConfig capabilities to operate correctly:
+// Backend/Endpoint (federated scope-check: "is this resource managed?") and
+// MCPGatewayEndpoint (remote reads: GW's owner-chain metadata, RO's
+// pre-remediation spec hash). Configuring only one leaves them silently
+// degraded to local-only behavior for fleet-routed resources — exactly the
+// class of bug this investigation started with. ValidateFullFederation is a
+// stricter, opt-in check services like GW/RO call in addition to Validate().
+var _ = Describe("FleetConfig.ValidateFullFederation — GW/RO dual-capability requirement", func() {
+	It("UT-FLEET-CFG-040: accepts disabled fleet without either capability", func() {
+		cfg := fleet.FleetConfig{Enabled: false}
+		Expect(cfg.ValidateFullFederation()).ToNot(HaveOccurred())
+	})
+
+	It("UT-FLEET-CFG-041: rejects Enabled=true with only Backend/Endpoint configured (no MCPGatewayEndpoint)", func() {
+		cfg := fleet.FleetConfig{
+			Enabled:  true,
+			Backend:  "fleetmetadatacache",
+			Endpoint: "http://fmc:8080",
+		}
+		err := cfg.ValidateFullFederation()
+		Expect(err).To(HaveOccurred(),
+			"GW/RO cannot operate without degradation unless both capabilities are configured")
+		Expect(err.Error()).To(ContainSubstring("mcpGatewayEndpoint"))
+	})
+
+	It("UT-FLEET-CFG-042: rejects Enabled=true with only MCPGatewayEndpoint configured (no Backend/Endpoint)", func() {
+		cfg := fleet.FleetConfig{
+			Enabled:            true,
+			MCPGatewayEndpoint: "http://gw:8080/mcp",
+			MCPGatewayType:     fleet.GatewayEAIGW,
+		}
+		err := cfg.ValidateFullFederation()
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("backend"))
+	})
+
+	It("UT-FLEET-CFG-043: accepts Enabled=true with both capabilities fully configured", func() {
+		cfg := fleet.FleetConfig{
+			Enabled:            true,
+			Backend:            "fleetmetadatacache",
+			Endpoint:           "http://fmc:8080",
+			MCPGatewayEndpoint: "http://gw:8080/mcp",
+			MCPGatewayType:     fleet.GatewayEAIGW,
+		}
+		Expect(cfg.ValidateFullFederation()).ToNot(HaveOccurred())
+	})
 })
 
 var _ = Describe("FleetConfig FMC endpoint auto-derivation (BR-INTEGRATION-065)", func() {

@@ -1723,11 +1723,20 @@ func patchRemediationOrchestratorConfigForFleet(ctx context.Context, namespace, 
 		return fmt.Errorf("failed to read existing remediationorchestrator-config: %w", err)
 	}
 
+	// ValidateFullFederation (pkg/fleet/config.go) requires BOTH the
+	// backend/endpoint scope-check adapter AND mcpGatewayEndpoint when fleet
+	// is enabled: RO needs the former to determine a resource is
+	// fleet-managed and the latter to read the resource's real spec for
+	// CapturePreRemediationHash. Omitting mcpGatewayEndpoint here would fail
+	// RO's config validation at startup. Reuses the same Kuadrant MCP
+	// Gateway wired for GW above (gatewayConfigPatch).
 	fleetBlock := fmt.Sprintf(`
 fleet:
   enabled: true
   backend: fleetmetadatacache
-  endpoint: "http://fleetmetadatacache-service.%s.svc.cluster.local:8080"
+  endpoint: "http://fleetmetadatacache-service.%[1]s.svc.cluster.local:8080"
+  mcpGatewayEndpoint: "http://mcp-gateway-istio.gateway-system.svc:8080/mcp"
+  mcpGatewayType: kuadrant
 `, namespace)
 	patchedConfig := string(currentConfig) + fleetBlock
 

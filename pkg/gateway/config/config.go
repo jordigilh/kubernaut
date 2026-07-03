@@ -489,5 +489,17 @@ func (c *ServerConfig) Validate() error {
 		return err
 	}
 
+	// ADR-068/BR-INTEGRATION-065: When fleet is enabled, GW needs BOTH the
+	// Backend/Endpoint scope-check adapter (owner-chain resolution needs to
+	// know a resource is fleet-managed) AND MCPGatewayEndpoint (to actually
+	// read remote owner-chain metadata). Configuring only one silently
+	// degrades GW to local-only behavior for fleet-routed signals.
+	if err := c.Fleet.Validate(); err != nil {
+		return err
+	}
+	if err := c.Fleet.ValidateFullFederation(); err != nil {
+		return err
+	}
+
 	return nil
 }

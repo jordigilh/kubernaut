@@ -165,6 +165,14 @@ func run() int {
 			w.watcher.Stop()
 		}
 	}()
+	defer func() {
+		if fc := deps.FleetResilientClient(); fc != nil {
+			logger.Info("Closing fleet MCP Gateway connection")
+			if err := fc.Close(); err != nil {
+				logger.Error(err, "failed to close fleet MCP client gracefully")
+			}
+		}
+	}()
 
 	// AF-HIGH-2: Schedule periodic idle session eviction to prevent pool growth.
 	evictStop := make(chan struct{})
