@@ -219,7 +219,11 @@ func NewReconciler(mgr ctrl.Manager, opts ReconcilerOptions) *WorkflowExecutionR
 //+kubebuilder:rbac:groups=kubernaut.ai,resources=workflowexecutions/finalizers,verbs=update
 //+kubebuilder:rbac:groups=tekton.dev,resources=pipelineruns,verbs=get;list;watch;create;delete
 //+kubebuilder:rbac:groups=tekton.dev,resources=taskruns,verbs=get;list;watch
-//+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+//+kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups="",resources=events,verbs=create;patch;get;list
+// BR-WORKFLOW-008 (Issue #1481): inspect a failed Job's Pods to enrich the
+// WFE failure message from FailedMount/CreateContainerConfigError Events.
+//+kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
 
 // Reconcile handles WorkflowExecution reconciliation
 // Phase-based reconciliation per implementation plan
@@ -521,6 +525,11 @@ func mapExecutorReasonToCRDEnum(reason string) string {
 		return workflowexecutionv1alpha1.FailureReasonTaskFailed
 	case "JobFailed":
 		return workflowexecutionv1alpha1.FailureReasonTaskFailed
+	case "DeadlineExceeded":
+		// BR-WORKFLOW-008: a Job's ActiveDeadlineSeconds elapsing (e.g. because
+		// a Pod could never mount a missing Secret/ConfigMap dependency, #1481)
+		// surfaces here as the Job condition reason.
+		return workflowexecutionv1alpha1.FailureReasonDeadlineExceeded
 	default:
 		return workflowexecutionv1alpha1.FailureReasonUnknown
 	}

@@ -19,6 +19,7 @@ package executor_test
 import (
 	"context"
 	"fmt"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -211,6 +212,47 @@ var _ = Describe("UT-WE-054-JOB: JobExecutor", func() {
 			Expect(containerSC.Capabilities.Drop).To(ConsistOf(corev1.Capability("ALL")))
 		})
 
+		// BR-WORKFLOW-008: without pre-flight dependency validation (#1481), a Job
+		// referencing a missing Secret/ConfigMap must still reach a terminal state
+		// instead of hanging in Pending forever.
+		It("UT-WE-054-JOB-016 [BR-WORKFLOW-008]: should default ActiveDeadlineSeconds to 30m when ExecutionConfig.Timeout is unset", func() {
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			factory := &mockClientFactory{client: fakeClient}
+			je := executor.NewJobExecutorWithFactory(factory)
+			wfe := newTestWFE("wfe-deadline-default", "default/deployment/nginx", "")
+
+			result, err := je.Create(ctx, wfe, namespace, executor.CreateOptions{})
+			Expect(err).ToNot(HaveOccurred())
+
+			var job batchv1.Job
+			Expect(fakeClient.Get(ctx, client.ObjectKey{Name: result.ResourceName, Namespace: namespace}, &job)).To(Succeed())
+
+			Expect(job.Spec.ActiveDeadlineSeconds).ToNot(BeNil(),
+				"BR-WORKFLOW-008: Job must have a deadline so it reaches JobFailed instead of hanging on a missing dependency")
+			Expect(*job.Spec.ActiveDeadlineSeconds).To(Equal(int64(30*60)),
+				"default deadline should be 30 minutes when WFE does not declare an explicit timeout")
+		})
+
+		It("UT-WE-054-JOB-017 [BR-WORKFLOW-008]: should source ActiveDeadlineSeconds from ExecutionConfig.Timeout when set", func() {
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			factory := &mockClientFactory{client: fakeClient}
+			je := executor.NewJobExecutorWithFactory(factory)
+			wfe := newTestWFE("wfe-deadline-custom", "default/deployment/nginx", "")
+			wfe.Spec.ExecutionConfig = &workflowexecutionv1alpha1.ExecutionConfig{
+				Timeout: &metav1.Duration{Duration: 5 * time.Minute},
+			}
+
+			result, err := je.Create(ctx, wfe, namespace, executor.CreateOptions{})
+			Expect(err).ToNot(HaveOccurred())
+
+			var job batchv1.Job
+			Expect(fakeClient.Get(ctx, client.ObjectKey{Name: result.ResourceName, Namespace: namespace}, &job)).To(Succeed())
+
+			Expect(job.Spec.ActiveDeadlineSeconds).ToNot(BeNil())
+			Expect(*job.Spec.ActiveDeadlineSeconds).To(Equal(int64(5*60)),
+				"deadline should be sourced from WFE ExecutionConfig.Timeout when declared")
+		})
+
 		It("UT-WE-054-JOB-015: should mount a writable /tmp scratch volume for readOnlyRootFilesystem compatibility", func() {
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 			factory := &mockClientFactory{client: fakeClient}
@@ -300,6 +342,89 @@ var _ = Describe("UT-WE-054-JOB: JobExecutor", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.Phase).To(Equal(workflowexecutionv1alpha1.PhaseFailed))
 			Expect(result.Reason).To(Equal("BackoffLimitExceeded"))
+		})
+
+		// BR-WORKFLOW-008: since dependency existence is no longer pre-flight
+		// validated (#1481), the failure reason for a missing Secret/ConfigMap now
+		// surfaces only via the Job's Pod events (kubelet-emitted FailedMount /
+		// CreateContainerConfigError). GetStatus must inspect these and enrich
+		// the generic Job condition message with the specific missing resource.
+		It("UT-WE-054-JOB-018 [BR-WORKFLOW-008]: should enrich Failed message with FailedMount Pod event detail", func() {
+			jobName := executor.ExecutionResourceName("default/deployment/dep-missing")
+			job := &batchv1.Job{
+				ObjectMeta: metav1.ObjectMeta{Name: jobName, Namespace: namespace},
+				Status: batchv1.JobStatus{
+					Failed: 1,
+					Conditions: []batchv1.JobCondition{
+						{
+							Type:    batchv1.JobFailed,
+							Status:  corev1.ConditionTrue,
+							Reason:  "DeadlineExceeded",
+							Message: "Job was active longer than specified deadline",
+						},
+					},
+				},
+			}
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      jobName + "-abcde",
+					Namespace: namespace,
+					Labels:    map[string]string{"job-name": jobName},
+				},
+			}
+			evt := &corev1.Event{
+				ObjectMeta: metav1.ObjectMeta{Name: "evt-failedmount", Namespace: namespace},
+				InvolvedObject: corev1.ObjectReference{
+					Kind:      "Pod",
+					Name:      pod.Name,
+					Namespace: namespace,
+				},
+				Reason:  "FailedMount",
+				Message: `MountVolume.SetUp failed for volume "secret-my-creds" : secret "my-creds" not found`,
+				Type:    corev1.EventTypeWarning,
+			}
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(job, pod, evt).Build()
+			factory := &mockClientFactory{client: fakeClient}
+			je := executor.NewJobExecutorWithFactory(factory)
+
+			wfe := newTestWFE("wfe-dep-missing", "default/deployment/dep-missing", "")
+			wfe.Status.ExecutionRef = &corev1.LocalObjectReference{Name: jobName}
+
+			result, err := je.GetStatus(ctx, wfe, namespace)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.Phase).To(Equal(workflowexecutionv1alpha1.PhaseFailed))
+			Expect(result.Message).To(ContainSubstring(`secret "my-creds" not found`),
+				"BR-WORKFLOW-008: message should be enriched with the specific missing dependency from the Pod event")
+		})
+
+		It("UT-WE-054-JOB-019 [BR-WORKFLOW-008]: should fall back to the generic Job condition message when no matching Pod event exists", func() {
+			jobName := executor.ExecutionResourceName("default/deployment/no-events")
+			job := &batchv1.Job{
+				ObjectMeta: metav1.ObjectMeta{Name: jobName, Namespace: namespace},
+				Status: batchv1.JobStatus{
+					Failed: 1,
+					Conditions: []batchv1.JobCondition{
+						{
+							Type:    batchv1.JobFailed,
+							Status:  corev1.ConditionTrue,
+							Reason:  "BackoffLimitExceeded",
+							Message: "Job has reached the specified backoff limit",
+						},
+					},
+				},
+			}
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(job).Build()
+			factory := &mockClientFactory{client: fakeClient}
+			je := executor.NewJobExecutorWithFactory(factory)
+
+			wfe := newTestWFE("wfe-no-events", "default/deployment/no-events", "")
+			wfe.Status.ExecutionRef = &corev1.LocalObjectReference{Name: jobName}
+
+			result, err := je.GetStatus(ctx, wfe, namespace)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.Phase).To(Equal(workflowexecutionv1alpha1.PhaseFailed))
+			Expect(result.Message).To(Equal("Job has reached the specified backoff limit"),
+				"should preserve the generic Job condition message when no enriching Pod event is found")
 		})
 
 		It("UT-WE-054-JOB-007: should return Running when Job has no terminal condition", func() {

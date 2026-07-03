@@ -1217,7 +1217,12 @@ rules:
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 - apiGroups: [""]
   resources: ["events"]
-  verbs: ["create", "patch"]
+  verbs: ["create", "patch", "get", "list"]
+- apiGroups: [""]
+  # BR-WORKFLOW-008 (Issue #1481): inspect a failed Job's Pods to enrich the
+  # failure message from FailedMount/CreateContainerConfigError Events.
+  resources: ["pods"]
+  verbs: ["get", "list", "watch"]
 - apiGroups: ["coordination.k8s.io"]
   resources: ["leases"]
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]

@@ -49,7 +49,14 @@ rules:
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: [""]
     resources: ["events"]
-    verbs: ["create", "patch"]
+    verbs: ["create", "patch", "get", "list"]
+  # BR-WORKFLOW-008 (Issue #1481): inspect a failed Job's Pods to enrich the
+  # WFE failure message from FailedMount/CreateContainerConfigError Events
+  # (dependency existence is no longer pre-flight validated — Kubernetes
+  # validates it at runtime when the Pod tries to mount the volume).
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
   # Issue #637: TokenRequest API for per-workflow SA tokens (Ansible engine)
   - apiGroups: [""]
     resources: ["serviceaccounts/token"]

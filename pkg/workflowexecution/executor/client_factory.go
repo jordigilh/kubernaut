@@ -32,6 +32,10 @@ import (
 // Defining this avoids requiring the full client.Client interface for MCP.
 type ExecutorClient interface {
 	Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error
+	// List is used by BR-WORKFLOW-008 to inspect a failed Job's Pods and their
+	// FailedMount/CreateContainerConfigError Events for missing-dependency
+	// message enrichment (see JobExecutor.GetStatus in job.go).
+	List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error
 	Create(ctx context.Context, obj client.Object, opts ...client.CreateOption) error
 	Delete(ctx context.Context, obj client.Object, opts ...client.DeleteOption) error
 }
@@ -118,6 +122,10 @@ type remoteClient struct {
 
 func (r *remoteClient) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
 	return r.reader.Get(ctx, key, obj, opts...)
+}
+
+func (r *remoteClient) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	return r.reader.List(ctx, list, opts...)
 }
 
 func (r *remoteClient) Create(ctx context.Context, obj client.Object, opts ...client.CreateOption) error {

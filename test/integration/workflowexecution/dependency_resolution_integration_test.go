@@ -29,14 +29,25 @@ import (
 )
 
 // ========================================
-// DD-WE-006: Dependency Resolution Integration Tests
+// DD-WE-006 / Issue #1481: Dependency Resolution Integration Tests
 // ========================================
-// Authority: DD-WE-006, BR-WE-014, BR-WORKFLOW-004
-// Pattern: Real envtest K8s API + real DependencyValidator
-// + configurable testWorkflowQuerier + real executor
+// Authority: DD-WE-006, BR-WE-014, BR-WORKFLOW-004, BR-WORKFLOW-008
+// Pattern: Real envtest K8s API + configurable testWorkflowQuerier + real executor
 //
 // These tests verify the full reconciler→resolveSchemaMetadata→executor
 // pipeline with real K8s objects (Secrets, ConfigMaps) in envtest.
+//
+// Issue #1481 removed the K8sDependencyValidator pre-flight check: a
+// schema-declared Secret/ConfigMap dependency that doesn't exist no longer
+// blocks the WFE from creating its Job. Instead, BR-WORKFLOW-008 guarantees
+// the Job still fails fast and observably:
+//  1. ActiveDeadlineSeconds bounds how long a Pod can sit unable to mount the
+//     missing volume (envtest has no kubelet, so this is unit-tested in
+//     pkg/workflowexecution/executor/job_test.go — verified below only via
+//     the Job spec field, not real enforcement).
+//  2. JobExecutor.GetStatus() inspects Pod FailedMount/CreateContainerConfigError
+//     events to enrich the generic Job condition message with the specific
+//     missing resource.
 // ========================================
 
 var _ = Describe("DD-WE-006: Dependency Resolution", Label("integration", "dd-we-006"), func() {
@@ -122,49 +133,43 @@ var _ = Describe("DD-WE-006: Dependency Resolution", Label("integration", "dd-we
 			)), "Container should mount configMap at convention path, read-only")
 		})
 
-		It("IT-WE-006-003: should mark WFE Failed with ConfigurationError when dependency Secret is missing", func() {
+		It("IT-WE-1481-001 [BR-WORKFLOW-008]: should create the Job despite a missing Secret dependency, set ActiveDeadlineSeconds, and enrich the Failed message from the Pod's FailedMount event", func() {
 			testWorkflowQuerier.Deps = &models.WorkflowDependencies{
-				Secrets: []models.ResourceDependency{{Name: "nonexistent-secret-003"}},
+				Secrets: []models.ResourceDependency{{Name: "nonexistent-secret-1481"}},
 			}
 
-			wfe := createUniqueJobWFE("depres-003", "default/deployment/dep-test-003")
+			wfe := createUniqueJobWFE("depres-1481-001", "default/deployment/dep-test-1481-001")
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 			defer cleanupJobWFE(wfe)
 
+			// Issue #1481: registration/admission-time dependency check is gone —
+			// the Job must still be created even though the Secret doesn't exist.
+			job, err := waitForJobCreation(wfe.Name, 15*time.Second)
+			Expect(err).ToNot(HaveOccurred(), "Job must be created even though the declared Secret dependency is missing (#1481)")
+
+			// BR-WORKFLOW-008 (1): Job must carry a deadline so a Pod stuck unable
+			// to mount the missing Secret reaches a terminal state instead of
+			// hanging in Pending forever.
+			Expect(job.Spec.ActiveDeadlineSeconds).ToNot(BeNil(),
+				"BR-WORKFLOW-008: Job must have ActiveDeadlineSeconds set")
+			Expect(*job.Spec.ActiveDeadlineSeconds).To(BeNumerically(">", 0))
+
+			// EnvTest has no kubelet/job-controller: simulate the FailedMount Pod
+			// event + terminal JobFailed condition a real cluster would produce
+			// once the deadline elapses.
+			const missingSecretMessage = `MountVolume.SetUp failed for volume "secret-nonexistent-secret-1481" : secret "nonexistent-secret-1481" not found`
+			Expect(simulateJobFailureWithMissingDependency(job, "FailedMount", missingSecretMessage)).To(Succeed())
+
+			// BR-WORKFLOW-008 (2)+(3): GetStatus() must enrich the generic Job
+			// condition message with the specific missing-dependency detail from
+			// the Pod event, and MarkFailed must persist it to FailureDetails.
 			failedWFE, err := waitForWFEPhase(wfe.Name, wfe.Namespace, "Failed", 15*time.Second)
-			Expect(err).ToNot(HaveOccurred(), "WFE should transition to Failed when dependency is missing")
+			Expect(err).ToNot(HaveOccurred(), "WFE should reach Failed once the Job reaches a terminal JobFailed condition")
 
 			Expect(failedWFE.Status.Phase).To(Equal(workflowexecutionv1alpha1.PhaseFailed))
-			Expect(failedWFE.Status.FailureDetails.Reason).To(Equal(workflowexecutionv1alpha1.FailureReasonConfigurationError),
-				"failure reason should be ConfigurationError for missing dependency")
-			Expect(failedWFE.Status.FailureDetails.Message).To(ContainSubstring("nonexistent-secret-003"),
-				"failure message should name the missing resource")
-		})
-
-		It("IT-WE-006-004: should mark WFE Failed when dependency Secret has empty data", func() {
-			emptySecret := &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "it-empty-secret-004",
-					Namespace: WorkflowExecutionNS,
-				},
-				Data: map[string][]byte{},
-			}
-			Expect(k8sClient.Create(ctx, emptySecret)).To(Succeed())
-			defer func() { _ = k8sClient.Delete(ctx, emptySecret) }()
-
-			testWorkflowQuerier.Deps = &models.WorkflowDependencies{
-				Secrets: []models.ResourceDependency{{Name: "it-empty-secret-004"}},
-			}
-
-			wfe := createUniqueJobWFE("depres-004", "default/deployment/dep-test-004")
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
-			defer cleanupJobWFE(wfe)
-
-			failedWFE, err := waitForWFEPhase(wfe.Name, wfe.Namespace, "Failed", 15*time.Second)
-			Expect(err).ToNot(HaveOccurred(), "WFE should transition to Failed when dependency has empty data")
-
-			Expect(failedWFE.Status.Phase).To(Equal(workflowexecutionv1alpha1.PhaseFailed))
-			Expect(failedWFE.Status.FailureDetails.Reason).To(Equal(workflowexecutionv1alpha1.FailureReasonConfigurationError))
+			Expect(failedWFE.Status.FailureDetails).ToNot(BeNil())
+			Expect(failedWFE.Status.FailureDetails.Message).To(ContainSubstring("nonexistent-secret-1481"),
+				"BR-WORKFLOW-008: failure message should name the missing resource from the Pod's FailedMount event")
 		})
 
 		It("IT-WE-006-005: should create Job without dependency volumes when querier returns nil", func() {
