@@ -66,7 +66,6 @@ import (
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
-	dsvalidation "github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
 	"github.com/jordigilh/kubernaut/pkg/shared/k8serrors"
 	weaudit "github.com/jordigilh/kubernaut/pkg/workflowexecution/audit"
@@ -172,27 +171,21 @@ type WorkflowExecutionReconciler struct {
 	// DD-WE-006: WorkflowQuerier fetches workflow dependencies from DS on demand.
 	// Optional: nil disables dependency injection (workflows run without mounted deps).
 	WorkflowQuerier weclient.WorkflowQuerier
-
-	// DD-WE-006: DependencyValidator validates that declared dependencies exist
-	// with non-empty data in the execution namespace (defense in depth).
-	// Optional: nil disables execution-time validation.
-	DependencyValidator dsvalidation.DependencyValidator
 }
 
 // ReconcilerOptions groups the business-specific dependencies for the
 // WorkflowExecution reconciler. Fields extracted from ctrl.Manager (Client,
 // APIReader, Scheme, Recorder) are populated automatically by NewReconciler.
 type ReconcilerOptions struct {
-	ExecutionNamespace  string
-	CooldownPeriod      time.Duration
-	Metrics             *metrics.Metrics
-	StatusManager       *status.Manager
-	AuditStore          audit.AuditStore
-	PhaseManager        *wephase.Manager
-	AuditManager        *weaudit.Manager
-	ExecutorRegistry    *weexecutor.Registry
-	WorkflowQuerier     weclient.WorkflowQuerier
-	DependencyValidator dsvalidation.DependencyValidator
+	ExecutionNamespace string
+	CooldownPeriod     time.Duration
+	Metrics            *metrics.Metrics
+	StatusManager      *status.Manager
+	AuditStore         audit.AuditStore
+	PhaseManager       *wephase.Manager
+	AuditManager       *weaudit.Manager
+	ExecutorRegistry   *weexecutor.Registry
+	WorkflowQuerier    weclient.WorkflowQuerier
 }
 
 // NewReconciler creates a WorkflowExecutionReconciler, extracting
@@ -201,20 +194,19 @@ type ReconcilerOptions struct {
 // site from ~13 fields to 2 (mgr + opts).
 func NewReconciler(mgr ctrl.Manager, opts ReconcilerOptions) *WorkflowExecutionReconciler {
 	return &WorkflowExecutionReconciler{
-		Client:              mgr.GetClient(),
-		APIReader:           mgr.GetAPIReader(),
-		Scheme:              mgr.GetScheme(),
-		Recorder:            mgr.GetEventRecorderFor("workflowexecution-controller"),
-		Metrics:             opts.Metrics,
-		StatusManager:       opts.StatusManager,
-		ExecutionNamespace:  opts.ExecutionNamespace,
-		CooldownPeriod:      opts.CooldownPeriod,
-		AuditStore:          opts.AuditStore,
-		PhaseManager:        opts.PhaseManager,
-		AuditManager:        opts.AuditManager,
-		ExecutorRegistry:    opts.ExecutorRegistry,
-		WorkflowQuerier:     opts.WorkflowQuerier,
-		DependencyValidator: opts.DependencyValidator,
+		Client:             mgr.GetClient(),
+		APIReader:          mgr.GetAPIReader(),
+		Scheme:             mgr.GetScheme(),
+		Recorder:           mgr.GetEventRecorderFor("workflowexecution-controller"),
+		Metrics:            opts.Metrics,
+		StatusManager:      opts.StatusManager,
+		ExecutionNamespace: opts.ExecutionNamespace,
+		CooldownPeriod:     opts.CooldownPeriod,
+		AuditStore:         opts.AuditStore,
+		PhaseManager:       opts.PhaseManager,
+		AuditManager:       opts.AuditManager,
+		ExecutorRegistry:   opts.ExecutorRegistry,
+		WorkflowQuerier:    opts.WorkflowQuerier,
 	}
 }
 
@@ -227,7 +219,12 @@ func NewReconciler(mgr ctrl.Manager, opts ReconcilerOptions) *WorkflowExecutionR
 //+kubebuilder:rbac:groups=kubernaut.ai,resources=workflowexecutions/finalizers,verbs=update
 //+kubebuilder:rbac:groups=tekton.dev,resources=pipelineruns,verbs=get;list;watch;create;delete
 //+kubebuilder:rbac:groups=tekton.dev,resources=taskruns,verbs=get;list;watch
-//+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+//+kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
+// BR-WORKFLOW-008 (Issue #1481): "watch" is required even though the
+// reconciler only calls List() -- the manager's cached client establishes
+// an Informer for any type it reads, and that Informer needs list+watch to
+// sync, regardless of which verb application code exercises directly.
+//+kubebuilder:rbac:groups="",resources=events,verbs=create;patch;get;list;watch
 
 // Reconcile handles WorkflowExecution reconciliation
 // Phase-based reconciliation per implementation plan
@@ -529,6 +526,11 @@ func mapExecutorReasonToCRDEnum(reason string) string {
 		return workflowexecutionv1alpha1.FailureReasonTaskFailed
 	case "JobFailed":
 		return workflowexecutionv1alpha1.FailureReasonTaskFailed
+	case "DeadlineExceeded":
+		// BR-WORKFLOW-008: a Job's ActiveDeadlineSeconds elapsing (e.g. because
+		// a Pod could never mount a missing Secret/ConfigMap dependency, #1481)
+		// surfaces here as the Job condition reason.
+		return workflowexecutionv1alpha1.FailureReasonDeadlineExceeded
 	default:
 		return workflowexecutionv1alpha1.FailureReasonUnknown
 	}

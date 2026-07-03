@@ -31,12 +31,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	zaplog "go.uber.org/zap"
 
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"gopkg.in/yaml.v3"
 
@@ -44,7 +41,6 @@ import (
 	"github.com/jordigilh/kubernaut/internal/version"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/config"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
-	dsvalidation "github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 	"github.com/jordigilh/kubernaut/pkg/shared/health"
@@ -131,26 +127,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	// DD-WE-006: Dependency validator using a controller-runtime client built
-	// from the same rest.Config used for auth.
-	executionNamespace := "kubernaut-workflows"
-	depValidator, err := buildDependencyValidator(authDeps.k8sConfig, logger)
-	if err != nil {
-		logger.Error(err, "Failed to build dependency validator (DD-WE-006)")
-		os.Exit(1)
-	}
-	logger.Info("Dependency validator initialized (DD-WE-006)",
-		"executionNamespace", executionNamespace,
-	)
-
 	// Create HTTP server with database connection + Redis for DLQ (SOC2 Gap #9),
 	// retrying while PostgreSQL/Redis become ready (E2E timing issue fix).
 	srv, err := buildServerWithRetry(serverParams{
-		cfg:                cfg,
-		dbConnStr:          dbConnStr,
-		authDeps:           authDeps,
-		depValidator:       depValidator,
-		executionNamespace: executionNamespace,
+		cfg:       cfg,
+		dbConnStr: dbConnStr,
+		authDeps:  authDeps,
 	}, logger)
 	if err != nil {
 		logger.Error(err, "Failed to create server after all retries")
@@ -472,30 +454,12 @@ func buildK8sAuthDeps(logger logr.Logger) (*k8sAuthDeps, error) {
 	}, nil
 }
 
-// buildDependencyValidator builds the DD-WE-006 controller-runtime client +
-// K8s dependency validator, reusing the rest.Config already created for
-// auth. Extracted from main() (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 0a) —
-// pure code motion, no behavior change.
-func buildDependencyValidator(k8sConfig *rest.Config, logger logr.Logger) (*dsvalidation.K8sDependencyValidator, error) {
-	crScheme := runtime.NewScheme()
-	if err := corev1.AddToScheme(crScheme); err != nil {
-		return nil, fmt.Errorf("failed to add core/v1 to scheme for dependency validator: %w", err)
-	}
-	crClient, err := client.New(k8sConfig, client.Options{Scheme: crScheme})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create controller-runtime client for dependency validation (DD-WE-006): %w", err)
-	}
-	return dsvalidation.NewK8sDependencyValidator(crClient), nil
-}
-
 // serverParams groups buildServerWithRetry's dependencies (Options pattern,
 // AGENTS.md's 8+-param rule).
 type serverParams struct {
-	cfg                *config.Config
-	dbConnStr          string
-	authDeps           *k8sAuthDeps
-	depValidator       *dsvalidation.K8sDependencyValidator
-	executionNamespace string
+	cfg       *config.Config
+	dbConnStr string
+	authDeps  *k8sAuthDeps
 }
 
 // buildServerWithRetry constructs the DataStorage HTTP server, retrying the
@@ -538,9 +502,6 @@ func buildServerWithRetry(p serverParams, logger logr.Logger) (*server.Server, e
 			Authenticator: p.authDeps.authenticator,
 			Authorizer:    p.authDeps.authorizer,
 			AuthNamespace: p.authDeps.authNamespace,
-			HandlerOpts: []server.HandlerOption{
-				server.WithDependencyValidator(p.depValidator, p.executionNamespace),
-			},
 		})
 		if err == nil {
 			logger.Info("Successfully connected to PostgreSQL and Redis",

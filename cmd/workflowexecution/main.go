@@ -48,7 +48,6 @@ import (
 	"github.com/jordigilh/kubernaut/internal/controller/workflowexecution"
 	"github.com/jordigilh/kubernaut/internal/version"
 	"github.com/jordigilh/kubernaut/pkg/audit"
-	dsvalidation "github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 	fleetclient "github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 	scope "github.com/jordigilh/kubernaut/pkg/shared/scope"
@@ -228,24 +227,24 @@ func main() {
 		setupLog.Info("Workflow querier initialized (DD-WE-006)", "dataStorageURL", cfg.DataStorage.URL)
 	}
 
-	// DD-WE-006: Create DependencyValidator for execution-time validation (defense in depth).
-	// Reuses the controller-runtime client from the manager.
-	depValidator := dsvalidation.NewK8sDependencyValidator(mgr.GetClient())
-
 	// Setup WorkflowExecution controller using NewReconciler constructor
 	// which extracts infrastructure fields (Client, APIReader, Scheme, Recorder)
 	// from the manager automatically.
+	//
+	// Issue #1481: DependencyValidator pre-flight/execution-time check removed.
+	// Dependency existence is now validated exclusively at runtime by
+	// Kubernetes when the Job/PipelineRun attempts to mount the volume
+	// (BR-WORKFLOW-008 covers the resulting fail-fast/observability guarantees).
 	reconciler := workflowexecution.NewReconciler(mgr, workflowexecution.ReconcilerOptions{
-		ExecutionNamespace:  cfg.Execution.Namespace,
-		CooldownPeriod:      cfg.Execution.CooldownPeriod,
-		Metrics:             weMetrics,
-		StatusManager:       statusManager,
-		AuditStore:          auditStore,
-		PhaseManager:        phaseManager,
-		AuditManager:        auditManager,
-		ExecutorRegistry:    executorRegistry,
-		WorkflowQuerier:     workflowQuerier,
-		DependencyValidator: depValidator,
+		ExecutionNamespace: cfg.Execution.Namespace,
+		CooldownPeriod:     cfg.Execution.CooldownPeriod,
+		Metrics:            weMetrics,
+		StatusManager:      statusManager,
+		AuditStore:         auditStore,
+		PhaseManager:       phaseManager,
+		AuditManager:       auditManager,
+		ExecutorRegistry:   executorRegistry,
+		WorkflowQuerier:    workflowQuerier,
 	})
 	if err = reconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "WorkflowExecution")
