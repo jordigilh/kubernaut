@@ -48,8 +48,15 @@ import (
 // single call (F6: consolidation of 3 DS round-trips into 1).
 // Returns nil metadata (not an error) when no querier is configured or when
 // the DS call fails — graceful degradation preserves execution without
-// filtering, engine config, or dependency validation.
-// Returns a hard error only when dependency validation explicitly fails.
+// filtering or engine config.
+//
+// Issue #1481: dependency existence is no longer validated here (or anywhere
+// pre-execution) — a schema-declared Secret/ConfigMap dependency is mounted
+// as-is and Kubernetes validates its existence at runtime when the Job/
+// PipelineRun attempts to mount the volume (BR-WORKFLOW-008 covers the
+// resulting fail-fast/observability guarantees). The error return is kept
+// for signature stability at the call site (resolvePendingSchemaAndEngine);
+// it is currently always nil.
 func (r *WorkflowExecutionReconciler) resolveSchemaMetadata(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (*weclient.SchemaMetadata, weexecutor.CreateOptions, error) {
 	opts := weexecutor.CreateOptions{}
 	if r.WorkflowQuerier == nil {
@@ -68,14 +75,6 @@ func (r *WorkflowExecutionReconciler) resolveSchemaMetadata(ctx context.Context,
 	}
 	if meta == nil {
 		return nil, opts, nil
-	}
-
-	if meta.Dependencies != nil && r.DependencyValidator != nil {
-		if valErr := r.DependencyValidator.ValidateDependencies(ctx, r.ExecutionNamespace, meta.Dependencies); valErr != nil {
-			logger.Error(valErr, "Workflow dependency validation failed",
-				"workflowID", wfe.Spec.WorkflowRef.WorkflowID)
-			return meta, opts, valErr
-		}
 	}
 
 	opts.Dependencies = meta.Dependencies

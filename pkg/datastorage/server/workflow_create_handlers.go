@@ -91,7 +91,7 @@ func (h *Handler) HandleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 	// Typed-result-slot pattern: each check writes to its own error slot,
 	// then we check slots in priority order so callers always see the same
 	// RFC 7807 error type regardless of goroutine completion order.
-	if err := h.validateExternalChecks(r.Context(), schemaParser, parsedSchema, workflow); err != nil {
+	if err := h.validateExternalChecks(r.Context(), workflow); err != nil {
 		err.writeTo(w, h.logger)
 		return
 	}
@@ -291,9 +291,9 @@ func (ve *validationError) writeTo(w http.ResponseWriter, logger logr.Logger) {
 	response.WriteRFC7807Error(w, ve.status, ve.errorType, ve.title, ve.detail, logger)
 }
 
-// validateExternalChecks runs Steps 5a–5c (action-type, bundle-exists,
-// dependency validation) in parallel and returns the highest-priority
-// error, preserving the original sequential error contract.
+// validateExternalChecks runs Steps 5a–5b (action-type, bundle-exists)
+// in parallel and returns the highest-priority error, preserving the
+// original sequential error contract.
 //
 // A 10-second timeout budget bounds the total wall-clock time for all
 // external calls, preventing a degraded backend from consuming the
@@ -301,16 +301,18 @@ func (ve *validationError) writeTo(w http.ResponseWriter, logger logr.Logger) {
 //
 // Issue #1070: Typed-result-slot pattern — each goroutine writes to its
 // own slot; after all goroutines complete we check slots in priority order.
+//
+// Issue #1481: Step 5c (schema-declared dependency existence check,
+// DD-WE-006) was removed — Kubernetes now validates dependency existence
+// exclusively at runtime when the WorkflowExecution's Job/PipelineRun
+// attempts to mount the volume/workspace (BR-WORKFLOW-008).
 func (h *Handler) validateExternalChecks(
 	ctx context.Context,
-	schemaParser *schema.Parser,
-	parsedSchema *models.WorkflowSchema,
 	workflow *models.RemediationWorkflow,
 ) *validationError {
 	const (
 		slotActionType = iota
 		slotBundle
-		slotDependency
 		slotCount
 
 		validationTimeout = 10 * time.Second
@@ -333,10 +335,9 @@ func (h *Handler) validateExternalChecks(
 		mu.Unlock()
 	}
 
-	h.launchExternalValidationGoroutines(ctx, &wg, schemaParser, parsedSchema, workflow, setSlot, validationSlots{
+	h.launchExternalValidationGoroutines(ctx, &wg, workflow, setSlot, validationSlots{
 		actionType: slotActionType,
 		bundle:     slotBundle,
-		dependency: slotDependency,
 	})
 
 	wg.Wait()
@@ -358,19 +359,16 @@ func (h *Handler) validateExternalChecks(
 type validationSlots struct {
 	actionType int
 	bundle     int
-	dependency int
 }
 
-// launchExternalValidationGoroutines fires steps 5a-5c of validateExternalChecks
-// (action-type, bundle-exists, dependency validation) as parallel goroutines
-// against wg, each reporting into its typed result slot via setSlot.
-// Extracted from validateExternalChecks (Wave 6 6f GREEN: funlen
-// remediation) — pure code motion, no behavior change.
+// launchExternalValidationGoroutines fires steps 5a-5b of validateExternalChecks
+// (action-type, bundle-exists) as parallel goroutines against wg, each
+// reporting into its typed result slot via setSlot. Extracted from
+// validateExternalChecks (Wave 6 6f GREEN: funlen remediation) — pure code
+// motion, no behavior change.
 func (h *Handler) launchExternalValidationGoroutines(
 	ctx context.Context,
 	wg *sync.WaitGroup,
-	schemaParser *schema.Parser,
-	parsedSchema *models.WorkflowSchema,
 	workflow *models.RemediationWorkflow,
 	setSlot func(idx int, ve *validationError),
 	slots validationSlots,
@@ -393,18 +391,6 @@ func (h *Handler) launchExternalValidationGoroutines(
 			defer wg.Done()
 			h.validateBundleExistsSlot(ctx, bundleRef, func(ve *validationError) { setSlot(slots.bundle, ve) })
 		}()
-	}
-
-	// 5c: Validate schema-declared dependencies exist in execution namespace (DD-WE-006)
-	if h.dependencyValidator != nil && parsedSchema.Dependencies != nil {
-		deps := schemaParser.ExtractDependencies(parsedSchema)
-		if deps != nil {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				h.validateDependenciesSlot(ctx, deps, func(ve *validationError) { setSlot(slots.dependency, ve) })
-			}()
-		}
 	}
 }
 
@@ -463,30 +449,6 @@ func (h *Handler) validateBundleExistsSlot(ctx context.Context, bundleRef string
 		return
 	}
 	dsmetrics.WorkflowValidationDuration.WithLabelValues("bundle_exists", "ok").Observe(time.Since(start).Seconds())
-}
-
-// validateDependenciesSlot implements step 5c of validateExternalChecks:
-// validate that schema-declared dependencies exist in the execution
-// namespace (DD-WE-006), reporting the result via setSlot. Extracted from
-// validateExternalChecks (Wave 6 6f GREEN: funlen remediation) — pure code
-// motion, no behavior change.
-func (h *Handler) validateDependenciesSlot(ctx context.Context, deps *models.WorkflowDependencies, setSlot func(*validationError)) {
-	start := time.Now()
-	if err := h.dependencyValidator.ValidateDependencies(ctx, h.executionNamespace, deps); err != nil {
-		dsmetrics.WorkflowValidationDuration.WithLabelValues("dependency", "error").Observe(time.Since(start).Seconds())
-		h.logger.Error(err, "Dependency validation failed",
-			"execution_namespace", h.executionNamespace,
-		)
-		setSlot(&validationError{
-			status:    http.StatusBadRequest,
-			errorType: "dependency-validation-error",
-			title:     "Dependency Validation Error",
-			detail: fmt.Sprintf("Schema-declared dependency not satisfied in namespace %q; "+
-				"ensure all dependencies are provisioned before registering the workflow (DD-WE-006)", h.executionNamespace),
-		})
-		return
-	}
-	dsmetrics.WorkflowValidationDuration.WithLabelValues("dependency", "ok").Observe(time.Since(start).Seconds())
 }
 
 // contentIntegrityError is returned when an active workflow with the same

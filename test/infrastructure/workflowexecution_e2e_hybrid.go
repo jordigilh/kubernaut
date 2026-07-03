@@ -1238,30 +1238,6 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: workflowexecution-dep-reader
-  namespace: %[2]s
-rules:
-- apiGroups: [""]
-  resources: ["secrets", "configmaps"]
-  verbs: ["get", "list", "watch"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: workflowexecution-dep-reader
-  namespace: %[2]s
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: workflowexecution-dep-reader
-subjects:
-- kind: ServiceAccount
-  name: workflowexecution-controller
-  namespace: %[1]s
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
   name: workflowexecution-secret-reader
   namespace: %[1]s
 rules:
