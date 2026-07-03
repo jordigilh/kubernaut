@@ -169,10 +169,11 @@ func (w *EAIGWRegistry) Start(ctx context.Context) error {
 
 	w.mu.Lock()
 	w.ready = true
+	clusterCount := len(w.clusters)
 	w.mu.Unlock()
 
 	w.metrics.NilSafeIncReconcile()
-	w.logger.Info("EAIGWRegistry started and synced", "clusters", len(w.clusters))
+	w.logger.Info("EAIGWRegistry started and synced", "clusters", clusterCount)
 	return nil
 }
 
