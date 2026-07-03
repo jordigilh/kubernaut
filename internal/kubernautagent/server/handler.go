@@ -394,6 +394,11 @@ func MapIncidentRequestToSignal(req *agentclient.IncidentRequest) katypes.Signal
 	if v, ok := req.SignalMode.Get(); ok {
 		sc.SignalMode = strings.ToLower(string(v))
 	}
+	// BR-FLEET-003 (#1511): optional cluster business classification. Get()
+	// on OptNilString returns ok=false for both absent and explicit null.
+	if v, ok := req.Cluster.Get(); ok {
+		sc.ClusterClassification = v
+	}
 	if v, ok := req.FiringTime.Get(); ok {
 		sc.FiringTime = v
 	}

@@ -155,6 +155,12 @@ func (t *listActionsTool) Execute(ctx context.Context, args json.RawMessage) (st
 	if signal.DetectedLabelsJSON != "" {
 		params.DetectedLabels = ogenclient.NewOptString(signal.DetectedLabelsJSON)
 	}
+	// BR-FLEET-003 (#1511): forward the optional cluster business classification.
+	// Omitted entirely (not sent as empty string) for non-fleet deployments so DS
+	// applies no cluster filter at all -- backward compatible (R6.1).
+	if signal.ClusterClassification != "" {
+		params.Cluster = ogenclient.NewOptString(signal.ClusterClassification)
+	}
 	if a.Page != "" && a.Cursor != "" {
 		offset, limit := decodeCursor(a.Cursor)
 		params.Offset = ogenclient.NewOptInt(offset)
@@ -218,6 +224,12 @@ func (t *listWorkflowsTool) Execute(ctx context.Context, args json.RawMessage) (
 	}
 	if signal.DetectedLabelsJSON != "" {
 		params.DetectedLabels = ogenclient.NewOptString(signal.DetectedLabelsJSON)
+	}
+	// BR-FLEET-003 (#1511): forward the optional cluster business classification.
+	// Omitted entirely (not sent as empty string) for non-fleet deployments so DS
+	// applies no cluster filter at all -- backward compatible (R6.1).
+	if signal.ClusterClassification != "" {
+		params.Cluster = ogenclient.NewOptString(signal.ClusterClassification)
 	}
 	if a.Page != "" && a.Cursor != "" {
 		offset, limit := decodeCursor(a.Cursor)

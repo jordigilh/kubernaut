@@ -1147,6 +1147,18 @@
             "title": "Cluster Name",
             "description": "Kubernetes cluster name"
           },
+          "cluster": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cluster",
+            "description": "Optional cluster business classification (e.g. 'production', 'staging-eu') derived by SignalProcessing's Rego policy from fleet cluster-registration labels (BR-FLEET-003, #1511). Distinct from cluster_name (the raw cluster identifier). Empty/absent for non-fleet deployments or unregistered clusters. Used as a DataStorage workflow-discovery filter dimension."
+          },
           "is_duplicate": {
             "anyOf": [
               {
