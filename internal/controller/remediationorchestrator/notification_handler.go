@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-logr/logr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -115,6 +116,17 @@ func (h *NotificationHandler) HandleNotificationRequestDeletion(
 	}
 
 	// Case 2: User-initiated cancellation (NotificationRequest deleted independently)
+	h.applyUserCancellation(rr, logger)
+	return nil
+}
+
+// applyUserCancellation marks rr's notification tracking as Cancelled when a
+// NotificationRequest is deleted independently by the user (BR-ORCH-029).
+// Only notification-tracking fields are touched — overallPhase must never be
+// mutated (DD-RO-001 Alternative 3), verified defensively at the end.
+// Extracted from HandleNotificationRequestDeletion (Wave 6 6e-i GREEN:
+// funlen remediation) — pure code motion, no behavior change.
+func (h *NotificationHandler) applyUserCancellation(rr *remediationv1.RemediationRequest, logger logr.Logger) {
 	logger.Info("NotificationRequest deleted by user (cancellation)",
 		"notificationRefs", len(rr.Status.NotificationRequestRefs),
 		"previousStatus", rr.Status.NotificationStatus,
@@ -147,8 +159,6 @@ func (h *NotificationHandler) HandleNotificationRequestDeletion(
 			"designDecision", "DD-RO-001 Alternative 3",
 		)
 	}
-
-	return nil
 }
 
 // UpdateNotificationStatus updates RemediationRequest status based on NotificationRequest phase.
@@ -188,7 +198,34 @@ func (h *NotificationHandler) UpdateNotificationStatus(
 	phaseBefore := rr.Status.OverallPhase
 	previousStatus := rr.Status.NotificationStatus
 
-	// Map NotificationRequest phase to RemediationRequest status
+	if !h.applyNotificationPhase(rr, notif, startTime, logger) {
+		return nil
+	}
+
+	logger.V(1).Info("Notification status updated",
+		"previousStatus", previousStatus,
+		"newStatus", rr.Status.NotificationStatus,
+		"statusChanged", previousStatus != rr.Status.NotificationStatus,
+	)
+
+	// Defensive: verify this function did not accidentally mutate overallPhase
+	if rr.Status.OverallPhase != phaseBefore {
+		logger.Error(nil, "CRITICAL BUG: overallPhase was mutated by notification status update",
+			"before", phaseBefore,
+			"after", rr.Status.OverallPhase,
+			"designDecision", "DD-RO-001 Alternative 3",
+		)
+	}
+
+	return nil
+}
+
+// applyNotificationPhase maps notif's delivery phase onto rr's notification
+// tracking status and NotificationDelivered condition (BR-ORCH-030),
+// returning false when the phase is unrecognized (no status update
+// performed). Extracted from UpdateNotificationStatus (Wave 6 6e-i GREEN:
+// funlen remediation) — pure code motion, no behavior change.
+func (h *NotificationHandler) applyNotificationPhase(rr *remediationv1.RemediationRequest, notif *notificationv1.NotificationRequest, startTime time.Time, logger logr.Logger) bool {
 	switch notif.Status.Phase {
 	case notificationv1.NotificationPhasePending:
 		rr.Status.NotificationStatus = "Pending"
@@ -231,23 +268,8 @@ func (h *NotificationHandler) UpdateNotificationStatus(
 		logger.V(1).Info("Unknown NotificationRequest phase, no status update",
 			"unexpectedPhase", notif.Status.Phase,
 		)
-		return nil
+		return false
 	}
 
-	logger.V(1).Info("Notification status updated",
-		"previousStatus", previousStatus,
-		"newStatus", rr.Status.NotificationStatus,
-		"statusChanged", previousStatus != rr.Status.NotificationStatus,
-	)
-
-	// Defensive: verify this function did not accidentally mutate overallPhase
-	if rr.Status.OverallPhase != phaseBefore {
-		logger.Error(nil, "CRITICAL BUG: overallPhase was mutated by notification status update",
-			"before", phaseBefore,
-			"after", rr.Status.OverallPhase,
-			"designDecision", "DD-RO-001 Alternative 3",
-		)
-	}
-
-	return nil
+	return true
 }

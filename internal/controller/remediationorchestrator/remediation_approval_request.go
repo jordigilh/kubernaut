@@ -33,6 +33,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
 	k8sretry "k8s.io/client-go/util/retry"
@@ -42,6 +43,7 @@ import (
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	rarconditions "github.com/jordigilh/kubernaut/pkg/remediationapprovalrequest"
 	roaudit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"
 	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
@@ -106,16 +108,11 @@ func (r *RARReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		return ctrl.Result{}, nil
 	}
 
-	// DD-STATUS-001: Refetch via apiReader (cache-bypassed) to confirm AuditRecorded
-	// condition is genuinely absent. The informer cache is eventually consistent — a
-	// second reconcile may start before the first reconcile's Status().Update() for
-	// AuditRecorded is reflected in the cache, causing duplicate audit emission.
-	if err := r.apiReader.Get(ctx, req.NamespacedName, rar); err != nil {
+	skip, err := r.shouldSkipRARAudit(ctx, req, rar)
+	if err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
-
-	auditCondition := meta.FindStatusCondition(rar.Status.Conditions, rarconditions.ConditionAuditRecorded)
-	if auditCondition != nil && auditCondition.Status == "True" {
+	if skip {
 		return ctrl.Result{}, nil
 	}
 
@@ -126,14 +123,48 @@ func (r *RARReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		return ctrl.Result{}, nil
 	}
 
-	// Build approval decision audit event
+	event, auditErr, built := r.buildAndStoreApprovalAudit(ctx, rar, parentRRName, logger)
+	if !built {
+		// Fire-and-forget: event build failed, nothing to persist.
+		return ctrl.Result{}, nil
+	}
+
+	r.persistAuditRecordedCondition(ctx, req, rar, event, auditErr, logger)
+
+	return ctrl.Result{}, nil
+}
+
+// shouldSkipRARAudit refetches rar via apiReader (cache-bypassed) to confirm
+// the AuditRecorded condition is genuinely absent before emitting an audit
+// event. DD-STATUS-001: the informer cache is eventually consistent — a
+// second reconcile may start before the first reconcile's Status().Update()
+// for AuditRecorded is reflected in the cache, causing duplicate audit
+// emission without this guard. Extracted from Reconcile (Wave 6 6e-i GREEN:
+// funlen remediation) — pure code motion, no behavior change.
+func (r *RARReconciler) shouldSkipRARAudit(ctx context.Context, req ctrl.Request, rar *remediationv1.RemediationApprovalRequest) (bool, error) {
+	if err := r.apiReader.Get(ctx, req.NamespacedName, rar); err != nil {
+		return false, err
+	}
+
+	auditCondition := meta.FindStatusCondition(rar.Status.Conditions, rarconditions.ConditionAuditRecorded)
+	return auditCondition != nil && auditCondition.Status == "True", nil
+}
+
+// buildAndStoreApprovalAudit records the approval-decision business metric,
+// builds the approval audit event (DD-AUDIT-003 v2.2: ClusterID from RAR
+// spec), and stores it fire-and-forget (audit failures never fail
+// reconciliation). Returns the built event (nil if build failed) and the
+// store error (nil on success) for the caller to persist onto
+// AuditRecorded. Extracted from Reconcile (Wave 6 6e-i GREEN: funlen
+// remediation) — pure code motion, no behavior change.
+func (r *RARReconciler) buildAndStoreApprovalAudit(ctx context.Context, rar *remediationv1.RemediationApprovalRequest, parentRRName string, logger logr.Logger) (event *ogenclient.AuditEventRequest, auditErr error, built bool) {
 	decision := string(rar.Status.Decision)
 	decidedBy := rar.Status.DecidedBy
 
 	// REFACTOR: Record approval decision for business analytics
 	// Business Value: Track approval/rejection rates for compliance reporting
 	if r.metrics != nil {
-		r.metrics.RecordApprovalDecision(string(decision), rar.Namespace)
+		r.metrics.RecordApprovalDecision(decision, rar.Namespace)
 	}
 
 	logger.Info("Emitting approval decision audit event",
@@ -143,7 +174,6 @@ func (r *RARReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		"correlationID", parentRRName,
 		"namespace", rar.Namespace)
 
-	// Build approval audit event using RO audit manager (DD-AUDIT-003 v2.2: ClusterID from RAR spec)
 	event, err := r.auditManager.BuildApprovalDecisionEvent(
 		roaudit.ApprovalEventContext{
 			CorrelationID: parentRRName, // correlation_id = parent RR name
@@ -156,17 +186,13 @@ func (r *RARReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		decidedBy,                  // decided_by (from AuthWebhook)
 		rar.Status.DecisionMessage, // decision_message
 	)
-
 	if err != nil {
 		logger.Error(err, "Failed to build approval audit event", "rar", rar.Name)
 		// Fire-and-forget: Don't fail reconciliation on audit errors
-		return ctrl.Result{}, nil
+		return nil, nil, false
 	}
 
-	// Store audit event (fire-and-forget)
-	auditErr := r.auditStore.StoreAudit(ctx, event)
-
-	// Log the audit outcome
+	auditErr = r.auditStore.StoreAudit(ctx, event)
 	if auditErr != nil {
 		logger.Error(auditErr, "Failed to store approval audit event",
 			"rar", rar.Name,
@@ -183,11 +209,18 @@ func (r *RARReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 			"namespace", rar.Namespace)
 	}
 
-	// Persist AuditRecorded condition with conflict retry.
-	// The main RO reconciler concurrently updates RAR status conditions
-	// (ApprovalPending/Decided/Ready), which can cause optimistic concurrency
-	// conflicts. Without retry, a lost Status().Update() leaves AuditRecorded
-	// unset, causing duplicate audit emission on the next reconciliation.
+	return event, auditErr, true
+}
+
+// persistAuditRecordedCondition persists the AuditRecorded condition with
+// conflict retry. The main RO reconciler concurrently updates RAR status
+// conditions (ApprovalPending/Decided/Ready), which can cause optimistic
+// concurrency conflicts; without retry, a lost Status().Update() leaves
+// AuditRecorded unset, causing duplicate audit emission on the next
+// reconciliation. event may be nil (build failed upstream) — the failure
+// path is still recorded via auditErr. Extracted from Reconcile (Wave 6
+// 6e-i GREEN: funlen remediation) — pure code motion, no behavior change.
+func (r *RARReconciler) persistAuditRecordedCondition(ctx context.Context, req ctrl.Request, rar *remediationv1.RemediationApprovalRequest, event *ogenclient.AuditEventRequest, auditErr error, logger logr.Logger) {
 	if err := k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
 		if err := r.client.Get(ctx, req.NamespacedName, rar); err != nil {
 			return err
@@ -211,8 +244,6 @@ func (r *RARReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	}); err != nil {
 		logger.Error(err, "Failed to persist AuditRecorded condition", "rar", rar.Name)
 	}
-
-	return ctrl.Result{}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

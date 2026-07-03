@@ -252,6 +252,44 @@ func NewReconciler(deps ReconcilerDeps, eaCreator ...*creator.EffectivenessAsses
 	r.aiAnalysisHandler = handler.NewAIAnalysisHandler(c, s, nc, m, r.transitionToFailed, noActionDelay)
 
 	// Issue #666: Register phase handlers in the registry
+	r.registerPhaseHandlers(phaseHandlerDeps{
+		client:        c,
+		apiReader:     apiReader,
+		statusManager: statusManager,
+		metrics:       m,
+		notifCreator:  nc,
+		recorder:      recorder,
+		routingEngine: routingEngine,
+		timeouts:      timeouts,
+	})
+
+	return r
+}
+
+// phaseHandlerDeps groups the dependencies needed to construct and register
+// every phase handler, keeping registerPhaseHandlers under the 7-param
+// argument-limit (AGENTS.md Go Anti-Pattern Checklist).
+type phaseHandlerDeps struct {
+	client        client.Client
+	apiReader     client.Reader
+	statusManager *status.Manager
+	metrics       *metrics.Metrics
+	notifCreator  *creator.NotificationCreator
+	recorder      record.EventRecorder
+	routingEngine routing.Engine
+	timeouts      TimeoutConfig
+}
+
+// registerPhaseHandlers wires and registers every phase handler (Pending,
+// Processing, Executing, Blocked, Analyzing, AwaitingApproval, Verifying)
+// into r.phaseRegistry (Issue #666: Phase Handler Registry). Extracted from
+// NewReconciler (Wave 6 6e-i GREEN: funlen remediation) — pure code motion,
+// no behavior change.
+func (r *Reconciler) registerPhaseHandlers(deps phaseHandlerDeps) {
+	c, apiReader, statusManager, m, nc, recorder, routingEngine, timeouts :=
+		deps.client, deps.apiReader, deps.statusManager, deps.metrics,
+		deps.notifCreator, deps.recorder, deps.routingEngine, deps.timeouts
+
 	r.phaseRegistry.MustRegister(NewPendingHandler(c, routingEngine, r.spCreator, statusManager, m))
 	r.phaseRegistry.MustRegister(NewProcessingHandler(c, r.aiAnalysisCreator, statusManager, m))
 	r.phaseRegistry.MustRegister(NewExecutingHandler(c, apiReader, r.statusAggregator, statusManager, m, nc, recorder))
@@ -261,6 +299,23 @@ func NewReconciler(deps ReconcilerDeps, eaCreator ...*creator.EffectivenessAsses
 		HandleUnmanagedResourceExpiry: r.handleUnmanagedResourceExpiry,
 		TransitionToFailedTerminal:    r.transitionToFailedTerminal,
 	}))
+	r.registerWorkflowPhaseHandlers(c, m)
+	r.phaseRegistry.MustRegister(NewVerifyingHandler(c, m, timeouts, VerifyingCallbacks{
+		EnsureNotificationsCreated:            r.ensureNotificationsCreated,
+		CreateEffectivenessAssessmentIfNeeded: r.createEffectivenessAssessmentIfNeeded,
+		TrackEffectivenessStatus:              r.trackEffectivenessStatus,
+		EmitVerificationTimedOutAudit:         r.emitVerificationTimedOutAudit,
+		EmitVerificationCompletedAudit:        r.emitVerificationCompletedAudit,
+		EmitCompletionAudit:                   r.emitCompletionAudit,
+	}))
+}
+
+// registerWorkflowPhaseHandlers registers the Analyzing and AwaitingApproval
+// phase handlers, which share a single WFECreationCallbacks instance for
+// workflow-execution-CRD creation. Extracted from registerPhaseHandlers
+// (Wave 6 6e-i GREEN: funlen remediation) — pure code motion, no behavior
+// change.
+func (r *Reconciler) registerWorkflowPhaseHandlers(c client.Client, m *metrics.Metrics) {
 	wfeCallbacks := WFECreationCallbacks{
 		EmitWorkflowCreatedAudit: r.emitWorkflowCreatedAudit,
 		CreateWFE: func(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) (string, error) {
@@ -308,16 +363,6 @@ func NewReconciler(deps ReconcilerDeps, eaCreator ...*creator.EffectivenessAsses
 		UpdateRARTimeRemaining:    r.updateRARTimeRemaining,
 		WFECallbacks:              wfeCallbacks,
 	}))
-	r.phaseRegistry.MustRegister(NewVerifyingHandler(c, m, timeouts, VerifyingCallbacks{
-		EnsureNotificationsCreated:            r.ensureNotificationsCreated,
-		CreateEffectivenessAssessmentIfNeeded: r.createEffectivenessAssessmentIfNeeded,
-		TrackEffectivenessStatus:              r.trackEffectivenessStatus,
-		EmitVerificationTimedOutAudit:         r.emitVerificationTimedOutAudit,
-		EmitVerificationCompletedAudit:        r.emitVerificationCompletedAudit,
-		EmitCompletionAudit:                   r.emitCompletionAudit,
-	}))
-
-	return r
 }
 
 // applyTimeoutDefaults populates zero-valued timeout fields with controller

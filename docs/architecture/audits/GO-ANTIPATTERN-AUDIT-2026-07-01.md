@@ -710,6 +710,44 @@ Sub-wave 6f is complete — all `funlen`/`nestif` offenders in `pkg/datastorage`
 
 ---
 
+## 7o. Phase 6 Wave 6, sub-wave 6e-i: RemediationOrchestrator Complexity Burndown (residual) — ✅ RESOLVED
+
+Executed as sub-wave 3/8 of the approved Wave 6 Burndown Plan, closing the `funlen`/`nestif`/`gocyclo` offenders left in `internal/controller/remediationorchestrator` after Wave 2 (§7j-3).
+
+### 7o-1. RED phase: coverage gate on `RARReconciler.Reconcile`
+
+Confirmed `RARReconciler.Reconcile` (approval-decision audit emission, BR-AUDIT-006) had 0% test coverage and `gocyclo` 15 before touching it — a SOC2 CC8.1/AU-2 audit-emission path is not a safe decomposition target without characterization tests pinning its behavior first. Added `internal/controller/remediationorchestrator/remediation_approval_request_test.go` with an `erroringAuditStore` test double and 8 Ginkgo specs covering: RAR not found, pending decision (no-op), already-audited idempotency guard, missing parent RR reference, approved/rejected decision audit emission, audit store failure (fire-and-forget, condition still persisted as `AuditFailed`), and a `SetupWithManager` smoke test. All 8 pass against the pre-refactor implementation.
+
+### 7o-2. GREEN phase: decomposition of all offenders
+
+| File | Function(s) | Technique |
+|---|---|---|
+| `terminal_transitions.go` | `transitionPhase` (`gocyclo` 16, `funlen` 82), `transitionToFailed` (`funlen` 70) | Extracted `applyPhaseTransitionFields`/`requeueDelayForPhase` and `applyFailedTransitionFields` — the phase-transition and failure-status mutation logic moved out of the `UpdateRemediationRequestStatus` closures into named helpers |
+| `effectiveness_tracking.go` | `trackEffectivenessStatus` (`funlen` 96) | Split into `effectivenessTrackingRef` (ref/idempotency guard), `fetchEffectivenessAssessmentForTracking` (EA fetch + not-found handling), `applyEffectivenessAssessmentOutcome` (terminal-phase condition + verification completion) |
+| `notification_creation.go` | `createCompletionNotification` (`nestif`), `createPhaseTimeoutNotification` (`funlen` 70) | Extracted `fetchEAForCompletionSummary` (graceful-degradation EA fetch) and `buildPhaseTimeoutNotificationRequest` (NotificationRequest object construction) |
+| `blocking.go` | `transitionToFailedTerminal` (`nestif`) | Extracted `createCooldownEscalationNotificationIfNeeded` (idempotent escalation-NR creation) |
+| `notification_handler.go` | `HandleNotificationRequestDeletion` (`funlen` 64), `UpdateNotificationStatus` (`funlen` 87) | Extracted `applyUserCancellation` and `applyNotificationPhase` (phase-to-status mapping switch) |
+| `notification_tracking.go` | `trackNotificationStatus` (`funlen` 70) | Extracted `trackSingleNotificationRef` (per-ref fetch/deletion/update dispatch) from the tracking loop body |
+| `pending_handler.go` | `Handle` (`funlen` 66) | Extracted `handleSignalProcessingCreationError` and `persistSignalProcessingRef` |
+| `reconcile_loop.go` | `Reconcile` (`funlen` 68), `registerChildCRDIndexes` (`funlen` 69) | Extracted `checkGlobalTimeout` (BR-ORCH-027 timeout evaluation) and `childCRDIndexDefinitions` (index-table literal moved to its own function) |
+| `reconciler.go` | `NewReconciler` (`funlen` 105) | Extracted `registerPhaseHandlers`/`registerWorkflowPhaseHandlers`, grouping constructor dependencies into a `phaseHandlerDeps` struct to stay under the 7-param `revive argument-limit` |
+| `remediation_approval_request.go` | `RARReconciler.Reconcile` (`funlen` 96) | Extracted `shouldSkipRARAudit` (DD-STATUS-001 idempotency refetch), `buildAndStoreApprovalAudit` (event build + fire-and-forget store), `persistAuditRecordedCondition` (conflict-retry condition persistence) |
+| `wfe_creation_helper.go` | `CreateWFEAndTransition` (`funlen` 67) | Extracted `persistWFERefAndDisplay` (status-update closure body) |
+
+All changes are pure code motion (extract-method / struct-grouping); no behavior change. `gocyclo -over 15` confirms 0 remaining hits in this package after the `transitionPhase`/`ApplyTransition` decomposition (the `ApplyTransition` gocyclo-19 offender from an earlier pass in this sub-wave was resolved via `wrapTransitionResult`/`transitionNoneResult` helpers).
+
+### 7o-3. REFACTOR phase: exit gate
+
+- `go build ./...` (repo-wide): clean.
+- `golangci-lint run --timeout=5m ./internal/controller/remediationorchestrator/...` (full default linter set, including `funlen`/`nestif`/`gocyclo`/`gocognit`/`revive argument-limit`): **0 issues**.
+- `go test ./internal/controller/remediationorchestrator/...`: all specs green (including the new 8-spec `remediation_approval_request_test.go` characterization suite), zero regressions.
+- `go vet ./test/integration/remediationorchestrator/...`: clean (integration test compilation unaffected by the refactor).
+- `gofmt -l` clean on every touched file.
+
+Sub-wave 6e-i is complete. Remaining Wave 6 sub-waves (6e-ii WorkflowExecution, 6e-iii SignalProcessing, 6b Notification, 6c AIAnalysis, 6a EffectivenessMonitor) proceed independently.
+
+---
+
 ## 8. Variable Shadowing — 120 found, mostly low-risk
 
 114/120 are `err` shadowing (`if err := f(); err != nil` repeated in the same scope — the single most common and least dangerous shadow pattern in Go, which is exactly why `govet -shadow` isn't part of default `go vet`). 1 `ctx` shadow, 1 `result`, 1 `username`, 1 `ok`, 1 `isString`. **No goroutine-closure-captures-loop-variable pattern was found** (the genuinely dangerous shadow bug) — none of the 120 hits are in a `for ... go func()` or `for ... defer func()` body.
@@ -752,7 +790,7 @@ Per AGENTS.md, REFACTOR-phase cleanup must not introduce new types/components, m
 | 6 (Wave 3) | DataStorage: audit-reconstruction coverage gate + 12 named complexity offenders + 19 lower-priority (16-22) offenders + 5 oversized files split into 20 (see §7k) | Medium-High | 4-5 days | ✅ Done (see §7k) |
 | 6 (Wave 4) | KubernautAgent remainder: 5 characterization tests + ~20 named complexity offenders across investigator/tools/parser/enrichment/alignment/session/config + 8 oversized files split into 27 (see §7l) | Medium-High | 4-5 days | ✅ Done (see §7l) |
 | 6 (Wave 5) | KubernautAgent's 11 deferred offenders (§7l-1): coverage-before-refactor gate (11 characterization tests, `runLLMLoop`→100% UT, `buildMCPHandler` 9.1%→92%) + Extract-Method decomposition of all 11 (see §7l-4, §7l-5) | Medium-High | ~3 days | ✅ Done (see §7l-5) |
-| 6 (Wave 6) | Notification/AIAnalysis/EffectivenessMonitor/Gateway batch, final sweep — remaining complexity (~118 functions, including RO/WE residuals noted in §7j-3) + oversized files (~26, including the `crud.go` residual noted in §7k-4) burndown | Medium-High (per-wave) | ~10-14 days remaining | 🟡 In progress — sub-wave 6d (Gateway) ✅ Done (see §7m); sub-wave 6f (DataStorage) ✅ Done (see §7n); 6/8 sub-waves remaining, tracked in the Wave 6 Burndown Plan, each requiring its own RED→GREEN→REFACTOR checkpoint |
+| 6 (Wave 6) | Notification/AIAnalysis/EffectivenessMonitor/Gateway batch, final sweep — remaining complexity (~118 functions, including RO/WE residuals noted in §7j-3) + oversized files (~26, including the `crud.go` residual noted in §7k-4) burndown | Medium-High (per-wave) | ~10-14 days remaining | 🟡 In progress — sub-wave 6d (Gateway) ✅ Done (see §7m); sub-wave 6f (DataStorage) ✅ Done (see §7n); sub-wave 6e-i (RemediationOrchestrator) ✅ Done (see §7o); 5/8 sub-waves remaining, tracked in the Wave 6 Burndown Plan, each requiring its own RED→GREEN→REFACTOR checkpoint |
 
 **Not recommended for action**: DTO/data-model "god structs" (category 4a), `context.Context` struct fields (both documented), `any`/`interface{}` usage (spot-checked — the ~849 raw hits are overwhelmingly idiomatic JSON-decoding, `sync.Map`/`singleflight` third-party API signatures, and generic-JSON-passthrough code; no material violations found beyond one worth a look: `BuildTriagePrompt(input TriageInput, rules interface{})` in `pkg/apifrontend/severity/types.go:113`).
 

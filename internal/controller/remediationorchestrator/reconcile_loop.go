@@ -100,20 +100,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	}
 
 	// Check for global timeout (BR-ORCH-027)
-	// Supports per-RR override via spec.timeoutConfig.global (AC-027-4)
-	// Business Value: Prevents stuck remediations from consuming resources indefinitely
-	// Note: Uses status.StartTime (not CreationTimestamp) as StartTime is explicitly set by controller
-	if rr.Status.StartTime != nil {
-		globalTimeout := r.getEffectiveGlobalTimeout(rr)
-		timeSinceStart := time.Since(rr.Status.StartTime.Time)
-		if timeSinceStart > globalTimeout {
-			logger.Info("RemediationRequest exceeded global timeout",
-				"timeSinceStart", timeSinceStart,
-				"globalTimeout", globalTimeout,
-				"overridden", rr.Status.TimeoutConfig != nil && rr.Status.TimeoutConfig.Global != nil,
-				"startTime", rr.Status.StartTime.Time)
-			return r.handleGlobalTimeout(ctx, rr)
-		}
+	if res, err, timedOut := r.checkGlobalTimeout(ctx, rr, logger); timedOut {
+		return res, err
 	}
 
 	// Check for per-phase timeouts (BR-ORCH-028)
@@ -143,6 +131,33 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	// here, the phase is genuinely unknown.
 	logger.Info("Unknown phase", "phase", rr.Status.OverallPhase)
 	return ctrl.Result{RequeueAfter: config.RequeueResourceBusy}, nil // REFACTOR-RO-003
+}
+
+// checkGlobalTimeout evaluates BR-ORCH-027's global remediation timeout
+// (supporting the per-RR override in spec.timeoutConfig.global, AC-027-4)
+// against status.StartTime (not CreationTimestamp, since StartTime is
+// explicitly set by the controller). Returns timedOut=true (with the result
+// of handleGlobalTimeout) when the timeout has been exceeded; the caller
+// should return immediately in that case. Extracted from Reconcile (Wave 6
+// 6e-i GREEN: funlen remediation) — pure code motion, no behavior change.
+func (r *Reconciler) checkGlobalTimeout(ctx context.Context, rr *remediationv1.RemediationRequest, logger logr.Logger) (ctrl.Result, error, bool) {
+	if rr.Status.StartTime == nil {
+		return ctrl.Result{}, nil, false
+	}
+
+	globalTimeout := r.getEffectiveGlobalTimeout(rr)
+	timeSinceStart := time.Since(rr.Status.StartTime.Time)
+	if timeSinceStart <= globalTimeout {
+		return ctrl.Result{}, nil, false
+	}
+
+	logger.Info("RemediationRequest exceeded global timeout",
+		"timeSinceStart", timeSinceStart,
+		"globalTimeout", globalTimeout,
+		"overridden", rr.Status.TimeoutConfig != nil && rr.Status.TimeoutConfig.Global != nil,
+		"startTime", rr.Status.StartTime.Time)
+	res, err := r.handleGlobalTimeout(ctx, rr)
+	return res, err, true
 }
 
 // shouldSkipPendingReconcile implements the OBSERVED GENERATION CHECK
@@ -478,13 +493,15 @@ func registerWFETargetResourceIndex(mgr ctrl.Manager) error {
 	return nil
 }
 
-// registerChildCRDIndexes registers field indexes on all child CRDs for
-// spec.remediationRequestRef.name (Issue #91), enabling MatchingFields
-// queries and `kubectl --field-selector` for child lookups by parent RR.
-// Extracted from SetupWithManager per GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 2
-// (issue #1520).
-func registerChildCRDIndexes(mgr ctrl.Manager) error {
-	childCRDIndexes := []struct {
+// childCRDIndexDefinitions returns the child-CRD-to-extractor table used by
+// registerChildCRDIndexes to index spec.remediationRequestRef.name across
+// every child CRD kind. Extracted from registerChildCRDIndexes (Wave 6 6e-i
+// GREEN: funlen remediation) — pure code motion, no behavior change.
+func childCRDIndexDefinitions() []struct {
+	obj       client.Object
+	extractor func(client.Object) []string
+} {
+	return []struct {
 		obj       client.Object
 		extractor func(client.Object) []string
 	}{
@@ -539,8 +556,15 @@ func registerChildCRDIndexes(mgr ctrl.Manager) error {
 			},
 		},
 	}
+}
 
-	for _, idx := range childCRDIndexes {
+// registerChildCRDIndexes registers field indexes on all child CRDs for
+// spec.remediationRequestRef.name (Issue #91), enabling MatchingFields
+// queries and `kubectl --field-selector` for child lookups by parent RR.
+// Extracted from SetupWithManager per GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 2
+// (issue #1520).
+func registerChildCRDIndexes(mgr ctrl.Manager) error {
+	for _, idx := range childCRDIndexDefinitions() {
 		if err := mgr.GetFieldIndexer().IndexField(
 			context.Background(),
 			idx.obj,

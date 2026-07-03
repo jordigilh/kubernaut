@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -53,6 +54,37 @@ import (
 func (r *Reconciler) handleGlobalTimeout(ctx context.Context, rr *remediationv1.RemediationRequest) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
 
+	timeoutPhase, err := r.transitionToTimedOut(ctx, rr)
+	if err != nil {
+		logger.Error(err, "Failed to transition to TimedOut")
+		return ctrl.Result{}, fmt.Errorf("failed to transition to TimedOut: %w", err)
+	}
+
+	// ========================================
+	// CREATE TIMEOUT NOTIFICATION (BR-ORCH-027)
+	// Business Value: Operators notified for manual intervention
+	// ========================================
+	nr, ok := r.createTimeoutNotification(ctx, rr, timeoutPhase, logger)
+	if !ok {
+		// Notification creation/wiring failed non-fatally - timeout transition is primary goal.
+		return ctrl.Result{}, nil
+	}
+
+	r.trackTimeoutNotification(ctx, rr, nr, logger)
+
+	// Issue #240: EA is NOT created on global timeout. See transitionToVerifying.
+
+	return ctrl.Result{}, nil
+}
+
+// transitionToTimedOut implements handleGlobalTimeout's status-transition
+// step: mark the RR TimedOut, record metrics/audit/K8s-event side effects,
+// and return the phase the RR was in when the timeout fired (needed by the
+// notification body built later in handleGlobalTimeout). Extracted from
+// handleGlobalTimeout (Wave 6 6e-i GREEN: funlen remediation) — pure code
+// motion, no behavior change.
+func (r *Reconciler) transitionToTimedOut(ctx context.Context, rr *remediationv1.RemediationRequest) (remediationv1.RemediationPhase, error) {
+	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
 	timeoutPhase := remediationv1.RemediationPhase(rr.Status.OverallPhase)
 	oldPhase := rr.Status.OverallPhase
 
@@ -69,8 +101,7 @@ func (r *Reconciler) handleGlobalTimeout(ctx context.Context, rr *remediationv1.
 		return nil
 	})
 	if err != nil {
-		logger.Error(err, "Failed to transition to TimedOut")
-		return ctrl.Result{}, fmt.Errorf("failed to transition to TimedOut: %w", err)
+		return timeoutPhase, err
 	}
 
 	// Record metrics (BR-ORCH-044)
@@ -95,14 +126,64 @@ func (r *Reconciler) handleGlobalTimeout(ctx context.Context, rr *remediationv1.
 		"timeoutPhase", timeoutPhase,
 		"creationTimestamp", rr.CreationTimestamp)
 
-	// ========================================
-	// CREATE TIMEOUT NOTIFICATION (BR-ORCH-027)
-	// Business Value: Operators notified for manual intervention
-	// ========================================
+	return timeoutPhase, nil
+}
 
-	// Create notification for timeout escalation
+// createTimeoutNotification implements handleGlobalTimeout's
+// notification-creation step (BR-ORCH-027): build the escalation
+// NotificationRequest, set its owner reference, and create it. Any failure
+// here (missing UID, owner-ref error, create error other than
+// AlreadyExists) is non-fatal to the timeout transition and reported via
+// ok=false so the caller returns early without failing reconciliation.
+// Extracted from handleGlobalTimeout (Wave 6 6e-i GREEN: funlen remediation)
+// — pure code motion, no behavior change.
+func (r *Reconciler) createTimeoutNotification(ctx context.Context, rr *remediationv1.RemediationRequest, timeoutPhase remediationv1.RemediationPhase, logger logr.Logger) (*notificationv1.NotificationRequest, bool) {
 	notificationName := fmt.Sprintf("timeout-%s", rr.Name)
-	nr := &notificationv1.NotificationRequest{
+	nr := r.buildTimeoutNotificationRequest(rr, notificationName, timeoutPhase)
+
+	// Validate RemediationRequest has required metadata for owner reference (defensive programming)
+	if rr.UID == "" {
+		logger.Error(nil, "RemediationRequest has empty UID, cannot set owner reference on timeout notification")
+		return nil, false
+	}
+
+	// Set owner reference for cascade deletion (BR-ORCH-031)
+	if err := controllerutil.SetControllerReference(rr, nr, r.scheme); err != nil {
+		logger.Error(err, "Failed to set owner reference on timeout notification")
+		return nil, false
+	}
+
+	// Create notification (non-blocking - timeout transition is primary goal)
+	if err := r.client.Create(ctx, nr); err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			logger.Info("Timeout notification already exists (concurrent create), continuing", "notificationName", notificationName)
+		} else {
+			logger.Error(err, "Failed to create timeout notification",
+				"notificationName", notificationName)
+			return nil, false
+		}
+	}
+
+	logger.Info("Created timeout notification",
+		"notificationName", notificationName,
+		"priority", nr.Spec.Priority,
+		"timeoutPhase", timeoutPhase)
+
+	// DD-EVENT-001: Emit K8s event for notification creation (BR-ORCH-095)
+	if r.Recorder != nil {
+		r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonNotificationCreated,
+			fmt.Sprintf("Timeout notification created: %s", notificationName))
+	}
+
+	return nr, true
+}
+
+// buildTimeoutNotificationRequest constructs the escalation
+// NotificationRequest object (not yet persisted) for handleGlobalTimeout's
+// timeout notification. Extracted from createTimeoutNotification (Wave 6
+// 6e-i GREEN: funlen remediation) — pure code motion, no behavior change.
+func (r *Reconciler) buildTimeoutNotificationRequest(rr *remediationv1.RemediationRequest, notificationName string, timeoutPhase remediationv1.RemediationPhase) *notificationv1.NotificationRequest {
+	return &notificationv1.NotificationRequest{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      notificationName,
 			Namespace: rr.Namespace,
@@ -130,47 +211,16 @@ func (r *Reconciler) handleGlobalTimeout(ctx context.Context, rr *remediationv1.
 			Context: buildTimeoutContext(rr.Name, string(timeoutPhase), "", rr.Spec.TargetResource),
 		},
 	}
+}
 
-	// Validate RemediationRequest has required metadata for owner reference (defensive programming)
-	if rr.UID == "" {
-		logger.Error(nil, "RemediationRequest has empty UID, cannot set owner reference on timeout notification")
-		// Continue without notification - timeout transition is primary goal
-		return ctrl.Result{}, nil
-	}
-
-	// Set owner reference for cascade deletion (BR-ORCH-031)
-	if err := controllerutil.SetControllerReference(rr, nr, r.scheme); err != nil {
-		logger.Error(err, "Failed to set owner reference on timeout notification")
-		// Log error but don't fail timeout transition - timeout is primary goal
-		return ctrl.Result{}, nil
-	}
-
-	// Create notification (non-blocking - timeout transition is primary goal)
-	if err := r.client.Create(ctx, nr); err != nil {
-		if apierrors.IsAlreadyExists(err) {
-			logger.Info("Timeout notification already exists (concurrent create), continuing", "notificationName", notificationName)
-		} else {
-			logger.Error(err, "Failed to create timeout notification",
-				"notificationName", notificationName)
-			return ctrl.Result{}, nil
-		}
-	}
-
-	logger.Info("Created timeout notification",
-		"notificationName", notificationName,
-		"priority", nr.Spec.Priority,
-		"timeoutPhase", timeoutPhase)
-
-	// DD-EVENT-001: Emit K8s event for notification creation (BR-ORCH-095)
-	if r.Recorder != nil {
-		r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonNotificationCreated,
-			fmt.Sprintf("Timeout notification created: %s", notificationName))
-	}
-
-	// Track notification in status (Recommendation #2, BR-ORCH-035)
-	// REFACTOR-RO-001: Using retry helper
-	err = helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
-		// Add notification to tracking list (BR-ORCH-035)
+// trackTimeoutNotification implements handleGlobalTimeout's best-effort
+// status-tracking step (Recommendation #2, BR-ORCH-035): append nr to
+// rr.Status.NotificationRequestRefs. Failure is logged but not propagated —
+// the notification was already created successfully, so tracking is
+// best-effort. Extracted from handleGlobalTimeout (Wave 6 6e-i GREEN: funlen
+// remediation) — pure code motion, no behavior change.
+func (r *Reconciler) trackTimeoutNotification(ctx context.Context, rr *remediationv1.RemediationRequest, nr *notificationv1.NotificationRequest, logger logr.Logger) {
+	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		notifRef := corev1.ObjectReference{
 			Kind:       "NotificationRequest",
 			Namespace:  nr.Namespace,
@@ -184,17 +234,12 @@ func (r *Reconciler) handleGlobalTimeout(ctx context.Context, rr *remediationv1.
 
 	if err != nil {
 		logger.Error(err, "Failed to track notification in status (non-critical)",
-			"notificationName", notificationName)
-		// Don't fail - notification was created successfully, tracking is best-effort
+			"notificationName", nr.Name)
 	} else {
 		logger.V(1).Info("Tracked notification in status",
-			"notificationName", notificationName,
+			"notificationName", nr.Name,
 			"totalNotifications", len(rr.Status.NotificationRequestRefs)+1)
 	}
-
-	// Issue #240: EA is NOT created on global timeout. See transitionToVerifying.
-
-	return ctrl.Result{}, nil
 }
 
 // createEffectivenessAssessmentIfNeeded creates an EA CRD if the eaCreator is wired.
@@ -211,71 +256,8 @@ func (r *Reconciler) createEffectivenessAssessmentIfNeeded(ctx context.Context, 
 
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
 
-	// DD-EM-003: Resolve dual targets for the EA.
-	// Signal target: from RR (always available).
-	// Remediation target: from AIAnalysis RemediationTarget (when available), else RR fallback.
-	var dualTarget *creator.DualTarget
-	var isGitOpsManaged bool
-	var ai *aianalysisv1.AIAnalysis
-	if rr.Status.AIAnalysisRef != nil {
-		ai = &aianalysisv1.AIAnalysis{}
-		if err := r.client.Get(ctx, client.ObjectKey{
-			Name:      rr.Status.AIAnalysisRef.Name,
-			Namespace: rr.Status.AIAnalysisRef.Namespace,
-		}, ai); err != nil {
-			logger.V(1).Info("Could not fetch AIAnalysis for target resolution (non-fatal), using RR target",
-				"error", err)
-			ai = nil
-		} else {
-			dualTarget = resolveDualTargets(rr, ai)
-			// DD-EM-004, BR-RO-103.2: Read GitOps detection from RCA pipeline.
-			if ai.Status.PostRCAContext != nil &&
-				ai.Status.PostRCAContext.DetectedLabels != nil &&
-				ai.Status.PostRCAContext.DetectedLabels.GitOpsManaged {
-				isGitOpsManaged = true
-			}
-		}
-	}
-
-	// DD-EM-004 v2.0, BR-RO-103, Issue #253, #277: Detect async-managed targets.
-	// Compute Duration-based hashComputeDelay for the EA Config.
-	var hashComputeDelay *metav1.Duration
-	remediationKind := rr.Spec.TargetResource.Kind
-	if dualTarget != nil {
-		remediationKind = dualTarget.Remediation.Kind
-	}
-
-	isCRD := false
-	gvk, err := k8sutil.ResolveGVKForKind(r.restMapper, remediationKind)
-	if err != nil {
-		logger.V(1).Info("Cannot resolve GVK for kind, treating as sync target for hash timing",
-			"kind", remediationKind, "error", err)
-	} else if !creator.IsBuiltInGroup(gvk.Group) {
-		isCRD = true
-	}
-
-	asyncCfg := r.getAsyncPropagation()
-	propagationDelay := asyncCfg.ComputePropagationDelay(isGitOpsManaged, isCRD)
-	if propagationDelay > 0 {
-		hashComputeDelay = &metav1.Duration{Duration: propagationDelay}
-		logger.Info("Async-managed target detected, setting hash check delay",
-			"kind", remediationKind,
-			"gitOps", isGitOpsManaged,
-			"isCRD", isCRD,
-			"hashComputeDelay", propagationDelay)
-	}
-
-	// #277: Detect proactive signals via AIAnalysis.Spec.AnalysisRequest.SignalContext.SignalMode.
-	// Proactive alerts (e.g. predict_linear) need extra time to resolve.
-	var alertCheckDelay *metav1.Duration
-	if ai != nil && ai.Spec.AnalysisRequest.SignalContext.SignalMode == "proactive" {
-		if asyncCfg.ProactiveAlertDelay > 0 {
-			alertCheckDelay = &metav1.Duration{Duration: asyncCfg.ProactiveAlertDelay}
-			logger.Info("Proactive signal detected, setting alert check delay",
-				"signalMode", ai.Spec.AnalysisRequest.SignalContext.SignalMode,
-				"alertCheckDelay", asyncCfg.ProactiveAlertDelay)
-		}
-	}
+	dualTarget, isGitOpsManaged, ai := r.resolveEATargets(ctx, rr, logger)
+	hashComputeDelay, alertCheckDelay, isCRD := r.computeEADelays(rr, dualTarget, ai, isGitOpsManaged, logger)
 
 	name, err := r.eaCreator.CreateEffectivenessAssessment(ctx, rr, dualTarget, hashComputeDelay, alertCheckDelay)
 	if err != nil {
@@ -309,4 +291,80 @@ func (r *Reconciler) createEffectivenessAssessmentIfNeeded(ctx context.Context, 
 	}); refErr != nil {
 		logger.Error(refErr, "Failed to persist EA ref on RR status (non-critical)", "eaName", name)
 	}
+}
+
+// resolveEATargets implements DD-EM-003's dual-target resolution step of
+// createEffectivenessAssessmentIfNeeded: the signal target always comes from
+// rr, while the remediation target comes from AIAnalysis.RemediationTarget
+// when the AIAnalysis is fetchable, falling back to the RR target otherwise
+// (non-fatal — a fetch error just means dualTarget/ai stay nil). Also
+// surfaces GitOps-managed detection from the RCA pipeline (DD-EM-004,
+// BR-RO-103.2). Extracted from createEffectivenessAssessmentIfNeeded (Wave 6
+// 6e-i GREEN: cyclomatic-complexity remediation) — pure code motion, no
+// behavior change.
+func (r *Reconciler) resolveEATargets(ctx context.Context, rr *remediationv1.RemediationRequest, logger logr.Logger) (dualTarget *creator.DualTarget, isGitOpsManaged bool, ai *aianalysisv1.AIAnalysis) {
+	if rr.Status.AIAnalysisRef == nil {
+		return nil, false, nil
+	}
+
+	ai = &aianalysisv1.AIAnalysis{}
+	if err := r.client.Get(ctx, client.ObjectKey{
+		Name:      rr.Status.AIAnalysisRef.Name,
+		Namespace: rr.Status.AIAnalysisRef.Namespace,
+	}, ai); err != nil {
+		logger.V(1).Info("Could not fetch AIAnalysis for target resolution (non-fatal), using RR target",
+			"error", err)
+		return nil, false, nil
+	}
+
+	dualTarget = resolveDualTargets(rr, ai)
+	if ai.Status.PostRCAContext != nil &&
+		ai.Status.PostRCAContext.DetectedLabels != nil &&
+		ai.Status.PostRCAContext.DetectedLabels.GitOpsManaged {
+		isGitOpsManaged = true
+	}
+	return dualTarget, isGitOpsManaged, ai
+}
+
+// computeEADelays implements the Duration-delay computation steps of
+// createEffectivenessAssessmentIfNeeded: DD-EM-004 v2.0/BR-RO-103/#253/#277's
+// async-managed-target hash-compute delay, and #277's proactive-signal alert
+// check delay. Extracted from createEffectivenessAssessmentIfNeeded (Wave 6
+// 6e-i GREEN: cyclomatic-complexity remediation) — pure code motion, no
+// behavior change.
+func (r *Reconciler) computeEADelays(rr *remediationv1.RemediationRequest, dualTarget *creator.DualTarget, ai *aianalysisv1.AIAnalysis, isGitOpsManaged bool, logger logr.Logger) (hashComputeDelay, alertCheckDelay *metav1.Duration, isCRD bool) {
+	remediationKind := rr.Spec.TargetResource.Kind
+	if dualTarget != nil {
+		remediationKind = dualTarget.Remediation.Kind
+	}
+
+	gvk, err := k8sutil.ResolveGVKForKind(r.restMapper, remediationKind)
+	if err != nil {
+		logger.V(1).Info("Cannot resolve GVK for kind, treating as sync target for hash timing",
+			"kind", remediationKind, "error", err)
+	} else if !creator.IsBuiltInGroup(gvk.Group) {
+		isCRD = true
+	}
+
+	asyncCfg := r.getAsyncPropagation()
+	propagationDelay := asyncCfg.ComputePropagationDelay(isGitOpsManaged, isCRD)
+	if propagationDelay > 0 {
+		hashComputeDelay = &metav1.Duration{Duration: propagationDelay}
+		logger.Info("Async-managed target detected, setting hash check delay",
+			"kind", remediationKind,
+			"gitOps", isGitOpsManaged,
+			"isCRD", isCRD,
+			"hashComputeDelay", propagationDelay)
+	}
+
+	// #277: Detect proactive signals via AIAnalysis.Spec.AnalysisRequest.SignalContext.SignalMode.
+	// Proactive alerts (e.g. predict_linear) need extra time to resolve.
+	if ai != nil && ai.Spec.AnalysisRequest.SignalContext.SignalMode == "proactive" && asyncCfg.ProactiveAlertDelay > 0 {
+		alertCheckDelay = &metav1.Duration{Duration: asyncCfg.ProactiveAlertDelay}
+		logger.Info("Proactive signal detected, setting alert check delay",
+			"signalMode", ai.Spec.AnalysisRequest.SignalContext.SignalMode,
+			"alertCheckDelay", asyncCfg.ProactiveAlertDelay)
+	}
+
+	return hashComputeDelay, alertCheckDelay, isCRD
 }

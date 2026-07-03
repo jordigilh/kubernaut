@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-logr/logr"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -64,35 +66,59 @@ func (r *Reconciler) trackEffectivenessStatus(ctx context.Context, rr *remediati
 		"namespace", rr.Namespace,
 	)
 
-	// If no EA ref, nothing to track
-	if rr.Status.EffectivenessAssessmentRef == nil {
-		logger.V(1).Info("No EffectivenessAssessmentRef to track")
+	ref, ok := effectivenessTrackingRef(rr, logger)
+	if !ok {
 		return nil
 	}
 
+	ea, err := r.fetchEffectivenessAssessmentForTracking(ctx, ref, logger)
+	if err != nil || ea == nil {
+		return err
+	}
+
+	return r.applyEffectivenessAssessmentOutcome(ctx, rr, ea, logger)
+}
+
+// effectivenessTrackingRef resolves the EA ref to track and reports whether
+// tracking should proceed: false is returned when there is no ref, the ref
+// is malformed, or a terminal EffectivenessAssessed condition is already set
+// (idempotency — a terminal reason, once set, is never overwritten, but the
+// initial "AssessmentInProgress" reason (GAP-2) may still transition).
+// Extracted from trackEffectivenessStatus (Wave 6 6e-i GREEN: funlen
+// remediation) — pure code motion, no behavior change.
+func effectivenessTrackingRef(rr *remediationv1.RemediationRequest, logger logr.Logger) (*corev1.ObjectReference, bool) {
 	ref := rr.Status.EffectivenessAssessmentRef
+	if ref == nil {
+		logger.V(1).Info("No EffectivenessAssessmentRef to track")
+		return nil, false
+	}
+
 	if ref.Name == "" || ref.Namespace == "" {
 		logger.Info("Invalid EffectivenessAssessmentRef, skipping tracking",
 			"refName", ref.Name,
 			"refNamespace", ref.Namespace,
 		)
-		return nil
+		return nil, false
 	}
 
-	// Check if condition already set with a terminal reason (idempotency).
-	// Allow transitioning from the initial "AssessmentInProgress" (GAP-2) to a
-	// terminal reason (AssessmentCompleted/AssessmentFailed), but do not overwrite
-	// a terminal reason once set.
 	existingCondition := meta.FindStatusCondition(rr.Status.Conditions, ConditionEffectivenessAssessed)
 	if existingCondition != nil && existingCondition.Reason != "AssessmentInProgress" {
 		logger.V(1).Info("EffectivenessAssessed condition already set with terminal reason, skipping",
 			"status", existingCondition.Status,
 			"reason", existingCondition.Reason,
 		)
-		return nil
+		return nil, false
 	}
 
-	// Fetch the EA CRD
+	return ref, true
+}
+
+// fetchEffectivenessAssessmentForTracking fetches the EA CRD referenced by
+// ref. A nil EA with a nil error is returned when the EA is not found
+// (deleted) or the fetch failed non-fatally — both cases mean "nothing more
+// to do this reconcile". Extracted from trackEffectivenessStatus (Wave 6
+// 6e-i GREEN: funlen remediation) — pure code motion, no behavior change.
+func (r *Reconciler) fetchEffectivenessAssessmentForTracking(ctx context.Context, ref *corev1.ObjectReference, logger logr.Logger) (*eav1.EffectivenessAssessment, error) {
 	ea := &eav1.EffectivenessAssessment{}
 	err := r.client.Get(ctx, client.ObjectKey{
 		Name:      ref.Name,
@@ -101,13 +127,21 @@ func (r *Reconciler) trackEffectivenessStatus(ctx context.Context, rr *remediati
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			logger.V(1).Info("EffectivenessAssessment not found (deleted)", "eaName", ref.Name)
-			return nil
+			return nil, nil
 		}
 		logger.Error(err, "Failed to fetch EffectivenessAssessment", "eaName", ref.Name)
-		return nil // Non-fatal: don't block reconciliation
+		return nil, nil // Non-fatal: don't block reconciliation
 	}
+	return ea, nil
+}
 
-	// Only set condition for terminal EA phases
+// applyEffectivenessAssessmentOutcome sets the EffectivenessAssessed
+// condition on the RR once the EA reaches a terminal phase (Completed or
+// Failed) and, per #280/#722, completes a Verifying RR with a score-aware
+// outcome. Non-terminal EA phases (Pending/Assessing) are a no-op. Extracted
+// from trackEffectivenessStatus (Wave 6 6e-i GREEN: funlen remediation) —
+// pure code motion, no behavior change.
+func (r *Reconciler) applyEffectivenessAssessmentOutcome(ctx context.Context, rr *remediationv1.RemediationRequest, ea *eav1.EffectivenessAssessment, logger logr.Logger) error {
 	switch ea.Status.Phase {
 	case eav1.PhaseCompleted:
 		reason := "AssessmentCompleted"

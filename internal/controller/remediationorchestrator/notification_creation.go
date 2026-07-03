@@ -97,25 +97,7 @@ func (r *Reconciler) createCompletionNotification(ctx context.Context, rr *remed
 	}
 
 	// #318: Fetch EA for verification summary (graceful degradation: nil if unavailable)
-	var ea *eav1.EffectivenessAssessment
-	if rr.Status.EffectivenessAssessmentRef != nil {
-		eaObj := &eav1.EffectivenessAssessment{}
-		eaKey := client.ObjectKey{
-			Name:      rr.Status.EffectivenessAssessmentRef.Name,
-			Namespace: rr.Namespace,
-		}
-		if err := r.client.Get(ctx, eaKey, eaObj); err != nil {
-			if apierrors.IsNotFound(err) {
-				logger.Info("EA not found for verification summary, notification will show 'not available'",
-					"ea", eaKey.Name)
-			} else {
-				logger.Error(err, "Failed to fetch EA for verification summary, notification will show 'not available'",
-					"ea", eaKey.Name)
-			}
-		} else {
-			ea = eaObj
-		}
-	}
+	ea := r.fetchEAForCompletionSummary(ctx, rr, logger)
 
 	notifName, notifErr := r.notificationCreator.CreateCompletionNotification(ctx, rr, ai, executionEngine, ea)
 	if notifErr != nil {
@@ -134,6 +116,36 @@ func (r *Reconciler) createCompletionNotification(ctx context.Context, rr *remed
 		r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonNotificationCreated,
 			fmt.Sprintf("Completion notification created: %s", notifName))
 	}
+}
+
+// fetchEAForCompletionSummary fetches the EffectivenessAssessment referenced
+// by rr (if any) for inclusion in the completion notification's verification
+// summary. Returns nil (graceful degradation) when there is no ref, the EA
+// is not found, or the fetch fails — the notification then shows "not
+// available" for verification data instead of blocking creation. Extracted
+// from createCompletionNotification (Wave 6 6e-i GREEN: nestif remediation)
+// — pure code motion, no behavior change.
+func (r *Reconciler) fetchEAForCompletionSummary(ctx context.Context, rr *remediationv1.RemediationRequest, logger logr.Logger) *eav1.EffectivenessAssessment {
+	if rr.Status.EffectivenessAssessmentRef == nil {
+		return nil
+	}
+
+	eaObj := &eav1.EffectivenessAssessment{}
+	eaKey := client.ObjectKey{
+		Name:      rr.Status.EffectivenessAssessmentRef.Name,
+		Namespace: rr.Namespace,
+	}
+	if err := r.client.Get(ctx, eaKey, eaObj); err != nil {
+		if apierrors.IsNotFound(err) {
+			logger.Info("EA not found for verification summary, notification will show 'not available'",
+				"ea", eaKey.Name)
+		} else {
+			logger.Error(err, "Failed to fetch EA for verification summary, notification will show 'not available'",
+				"ea", eaKey.Name)
+		}
+		return nil
+	}
+	return eaObj
 }
 
 // createBulkDuplicateNotification creates the bulk-duplicate-signal
@@ -199,22 +211,12 @@ func buildTimeoutContext(rrName, timeoutPhase, phaseTimeout string, target remed
 	return ctx
 }
 
-func (r *Reconciler) createPhaseTimeoutNotification(ctx context.Context, rr *remediationv1.RemediationRequest, phase remediationv1.RemediationPhase, timeout time.Duration) {
-	logger := log.FromContext(ctx)
-
-	// Defensive: Refresh RR to get latest status (including TimeoutTime)
-	latest := &remediationv1.RemediationRequest{}
-	if err := r.client.Get(ctx, client.ObjectKeyFromObject(rr), latest); err != nil {
-		logger.Error(err, "Failed to refresh RR for phase timeout notification")
-		return
-	}
-	rr = latest // Use refreshed version
-
-	// Kubernetes names must be lowercase RFC 1123
-	phaseLower := strings.ToLower(string(phase))
-	notificationName := fmt.Sprintf("phase-timeout-%s-%s", phaseLower, rr.Name)
-
-	nr := &notificationv1.NotificationRequest{
+// buildPhaseTimeoutNotificationRequest constructs the NotificationRequest
+// object for a per-phase timeout escalation (BR-ORCH-035). Extracted from
+// createPhaseTimeoutNotification (Wave 6 6e-i GREEN: funlen remediation) —
+// pure code motion, no behavior change.
+func (r *Reconciler) buildPhaseTimeoutNotificationRequest(rr *remediationv1.RemediationRequest, phase remediationv1.RemediationPhase, timeout time.Duration, notificationName string) *notificationv1.NotificationRequest {
+	return &notificationv1.NotificationRequest{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      notificationName,
 			Namespace: rr.Namespace,
@@ -243,6 +245,23 @@ func (r *Reconciler) createPhaseTimeoutNotification(ctx context.Context, rr *rem
 			Context: buildTimeoutContext(rr.Name, string(phase), timeout.String(), rr.Spec.TargetResource),
 		},
 	}
+}
+
+func (r *Reconciler) createPhaseTimeoutNotification(ctx context.Context, rr *remediationv1.RemediationRequest, phase remediationv1.RemediationPhase, timeout time.Duration) {
+	logger := log.FromContext(ctx)
+
+	// Defensive: Refresh RR to get latest status (including TimeoutTime)
+	latest := &remediationv1.RemediationRequest{}
+	if err := r.client.Get(ctx, client.ObjectKeyFromObject(rr), latest); err != nil {
+		logger.Error(err, "Failed to refresh RR for phase timeout notification")
+		return
+	}
+	rr = latest // Use refreshed version
+
+	// Kubernetes names must be lowercase RFC 1123
+	phaseLower := strings.ToLower(string(phase))
+	notificationName := fmt.Sprintf("phase-timeout-%s-%s", phaseLower, rr.Name)
+	nr := r.buildPhaseTimeoutNotificationRequest(rr, phase, timeout, notificationName)
 
 	// Set owner reference
 	if err := controllerutil.SetControllerReference(rr, nr, r.scheme); err != nil {

@@ -248,34 +248,7 @@ func (r *Reconciler) transitionPhase(ctx context.Context, rr *remediationv1.Reme
 			return fmt.Errorf("%w: expected %s, got %s", errPhaseConflict,
 				oldPhase, rr.Status.OverallPhase)
 		}
-		// Update only RO-owned fields (preserves Gateway fields per DD-GATEWAY-011)
-		rr.Status.OverallPhase = newPhase
-		rr.Status.ObservedGeneration = rr.Generation // DD-CONTROLLER-001: Track processed generation
-		now := metav1.Now()
-
-		// Set phase start times
-		switch newPhase {
-		case phase.Processing:
-			rr.Status.ProcessingStartTime = &now
-		case phase.Analyzing:
-			rr.Status.AnalyzingStartTime = &now
-		case phase.Executing:
-			rr.Status.ExecutingStartTime = &now
-		}
-
-		// Issue #636: Set Ready condition with phase-specific reason so that
-		// `kubectl get rr` REASON column reflects the current pipeline stage.
-		switch newPhase {
-		case phase.Processing:
-			remediationrequest.SetReady(rr, false, remediationrequest.ReasonProcessing, "Signal processing in progress", r.Metrics)
-		case phase.Analyzing:
-			remediationrequest.SetReady(rr, false, remediationrequest.ReasonAnalyzing, "AI analysis in progress", r.Metrics)
-		case phase.AwaitingApproval:
-			remediationrequest.SetReady(rr, false, remediationrequest.ReasonAwaitingApproval, "Waiting for human approval", r.Metrics)
-		case phase.Executing:
-			remediationrequest.SetReady(rr, false, remediationrequest.ReasonExecuting, "Workflow execution in progress", r.Metrics)
-		}
-
+		r.applyPhaseTransitionFields(rr, newPhase)
 		return nil
 	})
 	if err != nil {
@@ -307,19 +280,56 @@ func (r *Reconciler) transitionPhase(ctx context.Context, rr *remediationv1.Reme
 
 	logger.Info("Phase transition successful", "from", oldPhase, "to", newPhase)
 
-	// Requeue with delay to check progress of child CRDs
-	// Different phases have different check intervals
-	var requeueAfter time.Duration
+	// Requeue with delay to check progress of child CRDs (different phases
+	// have different check intervals).
+	return ctrl.Result{RequeueAfter: requeueDelayForPhase(newPhase)}, nil
+}
+
+// applyPhaseTransitionFields updates the RO-owned status fields for a phase
+// transition (preserving Gateway-owned fields per DD-GATEWAY-011): the new
+// phase, observed generation (DD-CONTROLLER-001), the phase-specific start
+// time, and the phase-specific Ready condition reason (Issue #636, so
+// `kubectl get rr` REASON reflects the current pipeline stage). Extracted
+// from transitionPhase (Wave 6 6e-i GREEN: cyclomatic-complexity
+// remediation) — pure code motion, no behavior change.
+func (r *Reconciler) applyPhaseTransitionFields(rr *remediationv1.RemediationRequest, newPhase phase.Phase) {
+	rr.Status.OverallPhase = newPhase
+	rr.Status.ObservedGeneration = rr.Generation
+	now := metav1.Now()
+
 	switch newPhase {
-	case phase.Processing, phase.Analyzing, phase.Executing:
-		// Check child CRD progress every 5 seconds
-		requeueAfter = 5 * time.Second
-	default:
-		// Quick requeue for other phases (using RequeueAfter instead of deprecated Requeue)
-		return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
+	case phase.Processing:
+		rr.Status.ProcessingStartTime = &now
+	case phase.Analyzing:
+		rr.Status.AnalyzingStartTime = &now
+	case phase.Executing:
+		rr.Status.ExecutingStartTime = &now
 	}
 
-	return ctrl.Result{RequeueAfter: requeueAfter}, nil
+	switch newPhase {
+	case phase.Processing:
+		remediationrequest.SetReady(rr, false, remediationrequest.ReasonProcessing, "Signal processing in progress", r.Metrics)
+	case phase.Analyzing:
+		remediationrequest.SetReady(rr, false, remediationrequest.ReasonAnalyzing, "AI analysis in progress", r.Metrics)
+	case phase.AwaitingApproval:
+		remediationrequest.SetReady(rr, false, remediationrequest.ReasonAwaitingApproval, "Waiting for human approval", r.Metrics)
+	case phase.Executing:
+		remediationrequest.SetReady(rr, false, remediationrequest.ReasonExecuting, "Workflow execution in progress", r.Metrics)
+	}
+}
+
+// requeueDelayForPhase returns transitionPhase's post-transition requeue
+// delay: child-CRD-progress phases (Processing/Analyzing/Executing) get a
+// 5s check interval, all other phases get a quick 100ms requeue. Extracted
+// from transitionPhase (Wave 6 6e-i GREEN: cyclomatic-complexity
+// remediation) — pure code motion, no behavior change.
+func requeueDelayForPhase(newPhase phase.Phase) time.Duration {
+	switch newPhase {
+	case phase.Processing, phase.Analyzing, phase.Executing:
+		return 5 * time.Second
+	default:
+		return 100 * time.Millisecond
+	}
 }
 
 // transitionToVerifying transitions the RR to Verifying phase (#280).
@@ -443,36 +453,7 @@ func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.R
 
 	// REFACTOR-RO-001: Using retry helper
 	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
-		rr.Status.OverallPhase = phase.Failed
-		rr.Status.ObservedGeneration = rr.Generation // DD-CONTROLLER-001: Track final generation
-		rr.Status.FailurePhase = &failurePhase
-		rr.Status.FailureReason = &failureReason
-		now := metav1.Now()
-		rr.Status.CompletedAt = &now // #265 F3: CompletedAt on all terminal transitions
-
-		// BR-ORCH-043: Set Ready condition (terminal failure)
-		remediationrequest.SetReady(rr, false, remediationrequest.ReasonRemediationFailed, "Remediation failed", r.Metrics)
-
-		// DD-WE-004 V1.0: Set exponential backoff for pre-execution failures
-		// Only applies when BELOW consecutive failure threshold (at threshold → 1-hour fixed block)
-		// Increment consecutive failures (this happens for all failures, not just pre-execution)
-		rr.Status.ConsecutiveFailureCount++
-
-		// Calculate and set exponential backoff if below threshold
-		// (At threshold, routing engine's CheckConsecutiveFailures will block with fixed cooldown)
-		if rr.Status.ConsecutiveFailureCount < int32(r.routingEngine.Config().ConsecutiveFailureThreshold) {
-			// Calculate backoff: 1min → 2min → 4min → 8min → 10min (capped)
-			backoff := r.routingEngine.CalculateExponentialBackoff(rr.Status.ConsecutiveFailureCount)
-			if backoff > 0 {
-				nextAllowed := metav1.NewTime(time.Now().Add(backoff))
-				rr.Status.NextAllowedExecution = &nextAllowed
-				logger.Info("Set exponential backoff for failure",
-					"consecutiveFailures", rr.Status.ConsecutiveFailureCount,
-					"backoff", backoff.Round(time.Second),
-					"nextAllowedExecution", nextAllowed.Format(time.RFC3339))
-			}
-		}
-
+		r.applyFailedTransitionFields(rr, failurePhase, failureReason, logger)
 		return nil
 	})
 	if err != nil {
@@ -506,6 +487,44 @@ func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.R
 
 	logger.Info("Remediation failed", "failurePhase", failurePhase, "reason", failureReason)
 	return ctrl.Result{}, nil
+}
+
+// applyFailedTransitionFields updates the RR status fields for a Failed
+// transition: overall phase/observed generation/failure phase+reason/
+// CompletedAt, the terminal-failure Ready condition (BR-ORCH-043), and
+// DD-WE-004 V1.0's exponential backoff for pre-execution failures (only set
+// below the routing engine's consecutive-failure threshold — at or above
+// threshold, the routing engine's CheckConsecutiveFailures blocks with a
+// fixed cooldown instead). Extracted from transitionToFailed (Wave 6 6e-i
+// GREEN: funlen remediation) — pure code motion, no behavior change.
+func (r *Reconciler) applyFailedTransitionFields(rr *remediationv1.RemediationRequest, failurePhase remediationv1.FailurePhase, failureReason string, logger logr.Logger) {
+	rr.Status.OverallPhase = phase.Failed
+	rr.Status.ObservedGeneration = rr.Generation // DD-CONTROLLER-001: Track final generation
+	rr.Status.FailurePhase = &failurePhase
+	rr.Status.FailureReason = &failureReason
+	now := metav1.Now()
+	rr.Status.CompletedAt = &now // #265 F3: CompletedAt on all terminal transitions
+
+	// BR-ORCH-043: Set Ready condition (terminal failure)
+	remediationrequest.SetReady(rr, false, remediationrequest.ReasonRemediationFailed, "Remediation failed", r.Metrics)
+
+	// Increment consecutive failures (this happens for all failures, not just pre-execution)
+	rr.Status.ConsecutiveFailureCount++
+
+	// Calculate and set exponential backoff if below threshold
+	// (At threshold, routing engine's CheckConsecutiveFailures will block with fixed cooldown)
+	if rr.Status.ConsecutiveFailureCount < int32(r.routingEngine.Config().ConsecutiveFailureThreshold) {
+		// Calculate backoff: 1min → 2min → 4min → 8min → 10min (capped)
+		backoff := r.routingEngine.CalculateExponentialBackoff(rr.Status.ConsecutiveFailureCount)
+		if backoff > 0 {
+			nextAllowed := metav1.NewTime(time.Now().Add(backoff))
+			rr.Status.NextAllowedExecution = &nextAllowed
+			logger.Info("Set exponential backoff for failure",
+				"consecutiveFailures", rr.Status.ConsecutiveFailureCount,
+				"backoff", backoff.Round(time.Second),
+				"nextAllowedExecution", nextAllowed.Format(time.RFC3339))
+		}
+	}
 }
 
 // logConsecutiveFailureThresholdReached logs (observability only, no state

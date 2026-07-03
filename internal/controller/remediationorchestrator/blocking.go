@@ -39,6 +39,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -154,6 +155,44 @@ func (r *Reconciler) countConsecutiveFailures(ctx context.Context, fingerprint s
 // handleBlockedPhase is now handled by BlockedHandler via the phase registry.
 // See blocked_handler.go (Issue #666, TP-666-v1 §8.2).
 
+// createCooldownEscalationNotificationIfNeeded creates the escalation
+// notification for a cooldown-expired terminal failure (GAP-5 / #809,
+// BR-ORCH-036), skipping creation if a notification with the deterministic
+// name is already tracked (idempotency across reconciles). Extracted from
+// transitionToFailedTerminal (Wave 6 6e-i GREEN: nestif remediation) — pure
+// code motion, no behavior change.
+func (r *Reconciler) createCooldownEscalationNotificationIfNeeded(ctx context.Context, rr *remediationv1.RemediationRequest, failurePhase remediationv1.FailurePhase, failureReason string, logger logr.Logger) {
+	escalationNR := fmt.Sprintf("nr-escalation-%s", rr.Name)
+	if hasNotificationRef(rr, escalationNR) {
+		return
+	}
+
+	escCtx := &creator.EscalationContext{
+		FailurePhase:  string(failurePhase),
+		FailureReason: failureReason,
+		BlockReason:   string(rr.Status.BlockReason),
+		Message:       "Cooldown expired after blocking period",
+	}
+	notifName, notifErr := r.notificationCreator.CreateEscalationNotification(ctx, rr, escCtx)
+	if notifErr != nil {
+		logger.Error(notifErr, "Failed to create escalation notification for terminal failure (non-critical)")
+		return
+	}
+
+	logger.Info("Created escalation notification for terminal failure", "notification", notifName)
+	ref := r.buildNotificationRef(ctx, notifName, rr.Namespace)
+	if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
+		rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
+		return nil
+	}); refErr != nil {
+		logger.Error(refErr, "Failed to persist escalation NR ref (non-critical)", "notification", notifName)
+	}
+	if r.Recorder != nil {
+		r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonNotificationCreated,
+			fmt.Sprintf("Escalation notification created: %s", notifName))
+	}
+}
+
 // transitionToFailedTerminal is the terminal Failed transition that skips blocking check.
 // Used when transitioning from Blocked after cooldown expiry.
 // This prevents infinite loops: Failed -> Blocked -> Failed -> Blocked...
@@ -167,32 +206,7 @@ func (r *Reconciler) transitionToFailedTerminal(ctx context.Context, rr *remedia
 	}
 
 	// GAP-5 / #809: Create escalation NR for cooldown-expired terminal failures (BR-ORCH-036).
-	escalationNR := fmt.Sprintf("nr-escalation-%s", rr.Name)
-	if !hasNotificationRef(rr, escalationNR) {
-		escCtx := &creator.EscalationContext{
-			FailurePhase:  string(failurePhase),
-			FailureReason: failureReason,
-			BlockReason:   string(rr.Status.BlockReason),
-			Message:       "Cooldown expired after blocking period",
-		}
-		notifName, notifErr := r.notificationCreator.CreateEscalationNotification(ctx, rr, escCtx)
-		if notifErr != nil {
-			logger.Error(notifErr, "Failed to create escalation notification for terminal failure (non-critical)")
-		} else {
-			logger.Info("Created escalation notification for terminal failure", "notification", notifName)
-			ref := r.buildNotificationRef(ctx, notifName, rr.Namespace)
-			if refErr := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
-				rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
-				return nil
-			}); refErr != nil {
-				logger.Error(refErr, "Failed to persist escalation NR ref (non-critical)", "notification", notifName)
-			}
-			if r.Recorder != nil {
-				r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonNotificationCreated,
-					fmt.Sprintf("Escalation notification created: %s", notifName))
-			}
-		}
-	}
+	r.createCooldownEscalationNotificationIfNeeded(ctx, rr, failurePhase, failureReason, logger)
 
 	// REFACTOR-RO-001: Using retry helper
 	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
