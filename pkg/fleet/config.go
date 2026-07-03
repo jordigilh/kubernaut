@@ -96,6 +96,17 @@ type FleetOAuth2Config struct {
 	Scopes               []string `yaml:"scopes,omitempty"`
 }
 
+// MCPGatewayConfig holds MCP Gateway connectivity settings shared by services
+// that discover managed clusters via a registry.ClusterRegistry (FMC,
+// SignalProcessing). Promoted from the FMC-private MCPGatewayConfig
+// (BR-FLEET-003, #1511) so every fleet-aware service configures the
+// endpoint/gatewayType/namespace triad identically instead of duplicating it.
+type MCPGatewayConfig struct {
+	Endpoint    string `yaml:"endpoint"`
+	GatewayType string `yaml:"gatewayType"`
+	Namespace   string `yaml:"namespace"`
+}
+
 // Validate checks that FleetConfig has all required fields when enabled.
 func (c FleetConfig) Validate() error {
 	if !c.Enabled {

@@ -33,6 +33,8 @@ import (
 	"gopkg.in/yaml.v3"
 
 	sharedconfig "github.com/jordigilh/kubernaut/internal/config"
+	"github.com/jordigilh/kubernaut/pkg/fleet"
+	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 )
 
 // DefaultConfigPath is the standard Kubernetes ConfigMap mount path for this service.
@@ -42,10 +44,10 @@ const DefaultConfigPath = "/etc/signalprocessing/config.yaml"
 // Config holds the complete configuration for the SignalProcessing controller.
 // ADR-030: YAML-based configuration with camelCase field names.
 type Config struct {
-	Enrichment  EnrichmentConfig              `yaml:"enrichment"`
-	Classifier  ClassifierConfig              `yaml:"classifier"`
+	Enrichment  EnrichmentConfig               `yaml:"enrichment"`
+	Classifier  ClassifierConfig               `yaml:"classifier"`
 	DataStorage sharedconfig.DataStorageConfig `yaml:"datastorage"`
-	Controller  ControllerConfig              `yaml:"controller"`
+	Controller  ControllerConfig               `yaml:"controller"`
 
 	// Fleet configuration for multi-cluster enrichment via MCP Gateway.
 	// BR-INTEGRATION-054: When Endpoint is set, SP connects to MCP Gateway
@@ -63,8 +65,19 @@ type Config struct {
 // FleetConfig holds MCP Gateway connectivity settings for multi-cluster support.
 // BR-INTEGRATION-054: Optional -- when Endpoint is empty, SP operates in local-only mode.
 type FleetConfig struct {
-	Endpoint string     `yaml:"endpoint"`
+	Endpoint string      `yaml:"endpoint"`
 	OAuth2   FleetOAuth2 `yaml:"oauth2"`
+
+	// MCPGatewayType selects the MCP Gateway CRD implementation ("eaigw" or
+	// "kuadrant") used to construct a ClusterRegistry for cluster
+	// classification label lookups (BR-FLEET-003, #1511). Optional -- when
+	// empty, SP does not construct a ClusterRegistry and the `cluster`
+	// classification dimension is never evaluated (non-fleet deployments).
+	MCPGatewayType fleet.MCPGatewayType `yaml:"mcpGatewayType,omitempty"`
+
+	// Namespace restricts the ClusterRegistry's CRD watch to a specific
+	// namespace. Empty means watch all namespaces (BR-FLEET-003, #1511).
+	Namespace string `yaml:"namespace,omitempty"`
 }
 
 // FleetOAuth2 holds OAuth2 credentials for MCP Gateway authentication.
@@ -171,6 +184,13 @@ func (c *Config) Validate() error {
 		if c.Fleet.OAuth2.CredentialsSecretRef == "" {
 			return fmt.Errorf("fleet.oauth2.credentialsSecretRef is required when oauth2.enabled=true")
 		}
+	}
+
+	// BR-FLEET-003 (#1511): mcpGatewayType, when set, must be a supported gateway.
+	// Optional overall -- an empty value simply means SP does not construct a
+	// ClusterRegistry (no cluster classification dimension).
+	if c.Fleet.MCPGatewayType != "" && !registry.SupportedGateways[c.Fleet.MCPGatewayType] {
+		return fmt.Errorf("fleet.mcpGatewayType %q is unsupported; must be one of: eaigw, kuadrant", c.Fleet.MCPGatewayType)
 	}
 
 	// Issue #875: Logging validation
