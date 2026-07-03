@@ -93,26 +93,8 @@ func (h *Handler) HandleCreateActionType(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	var req actionTypeCreateRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		if dsmiddleware.IsMaxBytesError(err) {
-			dsmiddleware.WriteMaxBytesExceeded(w, h.logger)
-			return
-		}
-		h.logger.Error(err, "Failed to decode action type create request")
-		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request",
-			"Bad Request", "request body is not valid JSON", h.logger)
-		return
-	}
-
-	if req.Name == "" {
-		response.WriteRFC7807Error(w, http.StatusBadRequest, "validation-error",
-			"Validation Error", "name is required", h.logger)
-		return
-	}
-	if req.Description.What == "" || req.Description.WhenToUse == "" {
-		response.WriteRFC7807Error(w, http.StatusBadRequest, "validation-error",
-			"Validation Error", "description.what and description.whenToUse are required", h.logger)
+	req, ok := h.decodeAndValidateActionTypeCreateRequest(w, r)
+	if !ok {
 		return
 	}
 
@@ -153,6 +135,38 @@ func (h *Handler) HandleCreateActionType(w http.ResponseWriter, r *http.Request)
 	)
 
 	h.auditActionTypeCreate(req, result)
+}
+
+// decodeAndValidateActionTypeCreateRequest decodes and validates the request
+// body for HandleCreateActionType. On any failure it writes the appropriate
+// RFC 7807 error response itself and returns ok=false. Extracted from
+// HandleCreateActionType (Wave 6 6f GREEN: funlen remediation) — pure code
+// motion, no behavior change.
+func (h *Handler) decodeAndValidateActionTypeCreateRequest(w http.ResponseWriter, r *http.Request) (actionTypeCreateRequest, bool) {
+	var req actionTypeCreateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if dsmiddleware.IsMaxBytesError(err) {
+			dsmiddleware.WriteMaxBytesExceeded(w, h.logger)
+			return req, false
+		}
+		h.logger.Error(err, "Failed to decode action type create request")
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "bad-request",
+			"Bad Request", "request body is not valid JSON", h.logger)
+		return req, false
+	}
+
+	if req.Name == "" {
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "validation-error",
+			"Validation Error", "name is required", h.logger)
+		return req, false
+	}
+	if req.Description.What == "" || req.Description.WhenToUse == "" {
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "validation-error",
+			"Validation Error", "description.what and description.whenToUse are required", h.logger)
+		return req, false
+	}
+
+	return req, true
 }
 
 // auditActionTypeCreate emits the created/reenabled audit event for

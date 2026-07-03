@@ -275,12 +275,11 @@ func (h *Handler) buildWorkflowFromInlineSchema(
 	return h.buildWorkflowCommon(schemaParser, parsedSchema, rawContent)
 }
 
-// buildWorkflowCommon is the shared workflow builder for both OCI and inline registration.
-func (h *Handler) buildWorkflowCommon(
-	schemaParser *schema.Parser,
-	parsedSchema *models.WorkflowSchema,
-	rawContent string,
-) (*models.RemediationWorkflow, error) {
+// buildWrappedWorkflowParameters extracts the schema's parameters and wraps
+// them in the `{"schema":{"parameters":...}}` envelope expected by
+// downstream consumers. Extracted from buildWorkflowCommon (Wave 6 6f
+// GREEN: funlen remediation) — pure code motion, no behavior change.
+func buildWrappedWorkflowParameters(schemaParser *schema.Parser, parsedSchema *models.WorkflowSchema) (json.RawMessage, error) {
 	extractedParams, err := schemaParser.ExtractParameters(parsedSchema)
 	if err != nil {
 		return nil, fmt.Errorf("extract parameters: %w", err)
@@ -294,13 +293,41 @@ func (h *Handler) buildWorkflowCommon(
 	if err != nil {
 		return nil, fmt.Errorf("marshal parameters: %w", err)
 	}
-	rawParams := json.RawMessage(wrappedJSON)
+	return json.RawMessage(wrappedJSON), nil
+}
 
-	labelsJSON, err := schemaParser.ExtractLabels(parsedSchema)
+// buildWorkflowCommon is the shared workflow builder for both OCI and inline registration.
+func (h *Handler) buildWorkflowCommon(
+	schemaParser *schema.Parser,
+	parsedSchema *models.WorkflowSchema,
+	rawContent string,
+) (*models.RemediationWorkflow, error) {
+	rawParams, err := buildWrappedWorkflowParameters(schemaParser, parsedSchema)
 	if err != nil {
-		return nil, fmt.Errorf("extract labels: %w", err)
+		return nil, err
 	}
 
+	workflow, err := buildWorkflowCore(schemaParser, parsedSchema, rawContent, rawParams)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := applyWorkflowLabels(schemaParser, parsedSchema, workflow); err != nil {
+		return nil, err
+	}
+
+	workflow.CustomLabels = schemaParser.ExtractCustomLabels(parsedSchema)
+	workflow.ContentHash = computeContentHash(rawContent)
+
+	return workflow, nil
+}
+
+// buildWorkflowCore constructs the RemediationWorkflow's core fields
+// (description, execution engine, execution bundle/digest, engine config,
+// service account) that do not depend on label extraction. Extracted from
+// buildWorkflowCommon (Wave 6 6f GREEN: funlen remediation) — pure code
+// motion, no behavior change.
+func buildWorkflowCore(schemaParser *schema.Parser, parsedSchema *models.WorkflowSchema, rawContent string, rawParams json.RawMessage) (*models.RemediationWorkflow, error) {
 	desc := models.StructuredDescription{
 		What:          parsedSchema.Description.What,
 		WhenToUse:     parsedSchema.Description.WhenToUse,
@@ -334,18 +361,27 @@ func (h *Handler) buildWorkflowCommon(
 	workflow.EngineConfig = schemaParser.ExtractEngineConfig(parsedSchema)
 	workflow.ServiceAccountName = schemaParser.ExtractServiceAccountName(parsedSchema)
 
+	return workflow, nil
+}
+
+// applyWorkflowLabels extracts and unmarshals the schema's labels and
+// detected-labels onto workflow. Extracted from buildWorkflowCommon
+// (Wave 6 6f GREEN: funlen remediation) — pure code motion, no behavior
+// change.
+func applyWorkflowLabels(schemaParser *schema.Parser, parsedSchema *models.WorkflowSchema, workflow *models.RemediationWorkflow) error {
+	labelsJSON, err := schemaParser.ExtractLabels(parsedSchema)
+	if err != nil {
+		return fmt.Errorf("extract labels: %w", err)
+	}
 	if err := json.Unmarshal(labelsJSON, &workflow.Labels); err != nil {
-		return nil, fmt.Errorf("unmarshal labels: %w", err)
+		return fmt.Errorf("unmarshal labels: %w", err)
 	}
 
 	detectedLabels, err := schemaParser.ExtractDetectedLabels(parsedSchema)
 	if err != nil {
-		return nil, fmt.Errorf("extract detected labels: %w", err)
+		return fmt.Errorf("extract detected labels: %w", err)
 	}
 	workflow.DetectedLabels = *detectedLabels
 
-	workflow.CustomLabels = schemaParser.ExtractCustomLabels(parsedSchema)
-	workflow.ContentHash = computeContentHash(rawContent)
-
-	return workflow, nil
+	return nil
 }

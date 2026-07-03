@@ -34,32 +34,7 @@ func QueryAuditEventsForReconstruction(
 		return nil, fmt.Errorf("database connection is nil")
 	}
 
-	// Query all reconstruction-relevant audit events for this correlation ID
-	// Per ADR-034: Use unified audit_events table
-	// Order by timestamp ASC for chronological reconstruction
-	query := `
-		SELECT
-			event_id, event_version, event_type, event_category, event_action,
-			correlation_id, event_timestamp, event_outcome, severity,
-			resource_type, resource_id, actor_type, actor_id, parent_event_id,
-			event_data, event_date, namespace, cluster_name,
-			duration_ms, error_code, error_message
-		FROM audit_events
-		WHERE correlation_id = $1
-		  AND event_type IN (
-			  'gateway.signal.received',
-			  'aianalysis.analysis.completed',
-			  'workflowexecution.selection.completed',
-			  'workflowexecution.execution.started',
-			  'orchestrator.lifecycle.created',
-			  'orchestrator.lifecycle.completed',
-			  'orchestrator.lifecycle.failed'
-		  )
-		ORDER BY event_timestamp ASC, event_id ASC
-		LIMIT 1000
-	`
-
-	rows, err := db.QueryContext(ctx, query, correlationID)
+	rows, err := db.QueryContext(ctx, reconstructionEventsQuery, correlationID)
 	if err != nil {
 		logger.Error(err, "Failed to query audit events for RR reconstruction",
 			"correlationID", correlationID)
@@ -71,6 +46,48 @@ func QueryAuditEventsForReconstruction(
 		}
 	}()
 
+	events, err := scanReconstructionRows(rows, logger, correlationID)
+	if err != nil {
+		return nil, err
+	}
+
+	logger.V(1).Info("Successfully queried audit events for RR reconstruction",
+		"correlationID", correlationID,
+		"eventCount", len(events))
+
+	return events, nil
+}
+
+// reconstructionEventsQuery selects all reconstruction-relevant audit events
+// for a correlation ID. Per ADR-034: use the unified audit_events table,
+// ordered by timestamp ASC for chronological reconstruction.
+const reconstructionEventsQuery = `
+	SELECT
+		event_id, event_version, event_type, event_category, event_action,
+		correlation_id, event_timestamp, event_outcome, severity,
+		resource_type, resource_id, actor_type, actor_id, parent_event_id,
+		event_data, event_date, namespace, cluster_name,
+		duration_ms, error_code, error_message
+	FROM audit_events
+	WHERE correlation_id = $1
+	  AND event_type IN (
+		  'gateway.signal.received',
+		  'aianalysis.analysis.completed',
+		  'workflowexecution.selection.completed',
+		  'workflowexecution.execution.started',
+		  'orchestrator.lifecycle.created',
+		  'orchestrator.lifecycle.completed',
+		  'orchestrator.lifecycle.failed'
+	  )
+	ORDER BY event_timestamp ASC, event_id ASC
+	LIMIT 1000
+`
+
+// scanReconstructionRows iterates over the query result set, scanning and
+// decoding each row via scanReconstructionEvent. Extracted from
+// QueryAuditEventsForReconstruction (Wave 6 6f GREEN: funlen remediation) —
+// pure code motion, no behavior change.
+func scanReconstructionRows(rows *sql.Rows, logger logr.Logger, correlationID string) ([]ogenclient.AuditEvent, error) {
 	var events []ogenclient.AuditEvent
 	for rows.Next() {
 		event, include, err := scanReconstructionEvent(rows, logger, correlationID)
@@ -88,10 +105,6 @@ func QueryAuditEventsForReconstruction(
 			"correlationID", correlationID)
 		return nil, fmt.Errorf("failed to iterate audit events: %w", err)
 	}
-
-	logger.V(1).Info("Successfully queried audit events for RR reconstruction",
-		"correlationID", correlationID,
-		"eventCount", len(events))
 
 	return events, nil
 }

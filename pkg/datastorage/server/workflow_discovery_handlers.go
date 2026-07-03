@@ -134,41 +134,10 @@ func (h *Handler) HandleListWorkflowsByActionType(w http.ResponseWriter, r *http
 	// Parse pagination
 	offset, limit := ParsePagination(r)
 
-	// Execute query (GAP-WF-6: measure duration for audit payload)
-	startList := time.Now()
-	workflows, totalCount, err := h.workflowRepo.ListWorkflowsByActionType(r.Context(), actionType, filters, offset, limit)
-	durationMs := time.Since(startList).Milliseconds()
-	if err != nil {
-		h.logger.Error(err, "Failed to list workflows by action type",
-			"action_type", actionType)
-		response.WriteRFC7807Error(w, http.StatusInternalServerError, "internal-error", "Internal Server Error",
-			"Failed to list workflows by action type", h.logger)
+	// Execute query and convert to discovery entries (GAP-WF-6: measure duration for audit payload)
+	discoveryEntries, totalCount, durationMs, ok := h.listWorkflowsByActionTypeEntries(w, r, actionType, filters, offset, limit)
+	if !ok {
 		return
-	}
-
-	// Convert to discovery entries
-	// DD-HAPI-017 v1.1: ActualSuccessRate and TotalExecutions excluded from
-	// LLM-facing response — global aggregates are misleading for per-incident selection.
-	discoveryEntries := make([]models.WorkflowDiscoveryEntry, 0, len(workflows))
-	for _, wf := range workflows {
-		entry := models.WorkflowDiscoveryEntry{
-			WorkflowID:      wf.WorkflowID,
-			WorkflowName:    wf.WorkflowName,
-			Name:            wf.Name,
-			Description:     wf.Description,
-			Version:         wf.Version,
-			ExecutionEngine: string(wf.ExecutionEngine),
-		}
-		if wf.SchemaImage != nil {
-			entry.SchemaImage = *wf.SchemaImage
-		}
-		if wf.ExecutionBundle != nil {
-			entry.ExecutionBundle = *wf.ExecutionBundle
-		}
-		if wf.ServiceAccountName != nil {
-			entry.ServiceAccountName = *wf.ServiceAccountName
-		}
-		discoveryEntries = append(discoveryEntries, entry)
 	}
 
 	// Build response
@@ -205,6 +174,61 @@ func (h *Handler) HandleListWorkflowsByActionType(w http.ResponseWriter, r *http
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		h.logger.Error(err, "Failed to encode workflows list response")
 	}
+}
+
+// listWorkflowsByActionTypeEntries executes the repository query for step 2
+// of the discovery protocol and converts the results into discovery
+// entries. On failure it writes the RFC 7807 error response itself and
+// returns ok=false. Extracted from HandleListWorkflowsByActionType
+// (Wave 6 6f GREEN: funlen remediation) — pure code motion, no behavior
+// change.
+func (h *Handler) listWorkflowsByActionTypeEntries(
+	w http.ResponseWriter, r *http.Request,
+	actionType string, filters *models.WorkflowDiscoveryFilters, offset, limit int,
+) ([]models.WorkflowDiscoveryEntry, int, int64, bool) {
+	startList := time.Now()
+	workflows, totalCount, err := h.workflowRepo.ListWorkflowsByActionType(r.Context(), actionType, filters, offset, limit)
+	durationMs := time.Since(startList).Milliseconds()
+	if err != nil {
+		h.logger.Error(err, "Failed to list workflows by action type",
+			"action_type", actionType)
+		response.WriteRFC7807Error(w, http.StatusInternalServerError, "internal-error", "Internal Server Error",
+			"Failed to list workflows by action type", h.logger)
+		return nil, 0, 0, false
+	}
+
+	return convertWorkflowsToDiscoveryEntries(workflows), totalCount, durationMs, true
+}
+
+// convertWorkflowsToDiscoveryEntries converts repository workflow records
+// into the LLM-facing discovery entry shape. DD-HAPI-017 v1.1:
+// ActualSuccessRate and TotalExecutions are intentionally excluded — global
+// aggregates are misleading for per-incident selection. Extracted from
+// HandleListWorkflowsByActionType (Wave 6 6f GREEN: funlen remediation) —
+// pure code motion, no behavior change.
+func convertWorkflowsToDiscoveryEntries(workflows []models.RemediationWorkflow) []models.WorkflowDiscoveryEntry {
+	discoveryEntries := make([]models.WorkflowDiscoveryEntry, 0, len(workflows))
+	for _, wf := range workflows {
+		entry := models.WorkflowDiscoveryEntry{
+			WorkflowID:      wf.WorkflowID,
+			WorkflowName:    wf.WorkflowName,
+			Name:            wf.Name,
+			Description:     wf.Description,
+			Version:         wf.Version,
+			ExecutionEngine: string(wf.ExecutionEngine),
+		}
+		if wf.SchemaImage != nil {
+			entry.SchemaImage = *wf.SchemaImage
+		}
+		if wf.ExecutionBundle != nil {
+			entry.ExecutionBundle = *wf.ExecutionBundle
+		}
+		if wf.ServiceAccountName != nil {
+			entry.ServiceAccountName = *wf.ServiceAccountName
+		}
+		discoveryEntries = append(discoveryEntries, entry)
+	}
+	return discoveryEntries
 }
 
 // ParseDiscoveryFilters extracts WorkflowDiscoveryFilters from query parameters.

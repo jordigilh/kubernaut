@@ -235,7 +235,14 @@ func (s *Server) buildExportResponse(
 
 	// Build response using JSON marshaling/unmarshaling to match generated types exactly
 	// This avoids complex inline struct matching issues
-	intermediateResponse := buildExportIntermediateResponse(exportResult, filters, format, signature, algorithm, certFingerprint, exportedBy, exportTimestamp)
+	intermediateResponse := buildExportIntermediateResponse(exportResult, filters, exportResponseMetadata{
+		format:          format,
+		signature:       signature,
+		algorithm:       algorithm,
+		certFingerprint: certFingerprint,
+		exportedBy:      exportedBy,
+		exportTimestamp: exportTimestamp,
+	})
 
 	// Marshal intermediate response and unmarshal into generated type
 	jsonBytes, err := json.Marshal(intermediateResponse)
@@ -266,6 +273,19 @@ func (s *Server) buildExportResponse(
 	return &response, nil
 }
 
+// exportResponseMetadata groups the export-response scalar fields that
+// don't come from repository.ExportResult/ExportFilters, so
+// buildExportIntermediateResponse stays within the 7-argument limit
+// (100go.co anti-pattern: functions with 8+ parameters).
+type exportResponseMetadata struct {
+	format          string
+	signature       string
+	algorithm       string
+	certFingerprint string
+	exportedBy      string
+	exportTimestamp time.Time
+}
+
 // buildExportIntermediateResponse assembles the intermediate map[string]interface{}
 // representation of the export (metadata, hash-chain verification, and
 // converted events) that is later marshaled/unmarshaled into the generated
@@ -274,18 +294,17 @@ func (s *Server) buildExportResponse(
 func buildExportIntermediateResponse(
 	exportResult *repository.ExportResult,
 	filters repository.ExportFilters,
-	format, signature, algorithm, certFingerprint, exportedBy string,
-	exportTimestamp time.Time,
+	meta exportResponseMetadata,
 ) map[string]interface{} {
 	intermediateResponse := map[string]interface{}{
 		"export_metadata": map[string]interface{}{
-			"export_timestamp":        exportTimestamp,
-			"export_format":           format,
+			"export_timestamp":        meta.exportTimestamp,
+			"export_format":           meta.format,
 			"total_events":            exportResult.TotalEventsQueried,
-			"signature":               signature,
-			"signature_algorithm":     algorithm,
-			"certificate_fingerprint": certFingerprint,
-			"exported_by":             exportedBy,
+			"signature":               meta.signature,
+			"signature_algorithm":     meta.algorithm,
+			"certificate_fingerprint": meta.certFingerprint,
+			"exported_by":             meta.exportedBy,
 			"query_filters": map[string]interface{}{
 				"offset": filters.Offset,
 				"limit":  filters.Limit,

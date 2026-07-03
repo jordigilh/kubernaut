@@ -162,13 +162,20 @@ func buildExportQuery(filters ExportFilters) (string, []interface{}) {
 // nullable SQL columns to plain-typed fields (NULL -> zero value, matching
 // the `omitempty` JSON tags used during hash calculation) and unmarshaling
 // the event_data JSONB payload.
+// exportRowNullableColumns groups the sql.Null* scan intermediates for
+// scanExportRow's nullable columns, so assignExportNullableFields can take
+// them as a single argument.
+type exportRowNullableColumns struct {
+	resourceType, resourceID, resourceNamespace, clusterID         sql.NullString
+	actorID, actorType, actorIP, severity, errorCode, errorMessage sql.NullString
+	durationMs                                                     sql.NullInt64
+	legalHold                                                      bool
+}
+
 func scanExportRow(rows *sql.Rows) (*AuditEvent, error) {
 	event := &AuditEvent{}
 	var eventDataJSON []byte
-	var legalHold bool
-	var resourceType, resourceID, resourceNamespace, clusterID sql.NullString
-	var actorID, actorType, actorIP, severity, errorCode, errorMessage sql.NullString
-	var durationMs sql.NullInt64
+	var cols exportRowNullableColumns
 
 	err := rows.Scan(
 		&event.EventID,
@@ -181,24 +188,24 @@ func scanExportRow(rows *sql.Rows) (*AuditEvent, error) {
 		&event.CorrelationID,
 		&event.ParentEventID,
 		&event.ParentEventDate,
-		&resourceType,
-		&resourceID,
-		&resourceNamespace,
-		&clusterID,
-		&actorID,
-		&actorType,
-		&actorIP,
-		&severity,
-		&durationMs,
-		&errorCode,
-		&errorMessage,
+		&cols.resourceType,
+		&cols.resourceID,
+		&cols.resourceNamespace,
+		&cols.clusterID,
+		&cols.actorID,
+		&cols.actorType,
+		&cols.actorIP,
+		&cols.severity,
+		&cols.durationMs,
+		&cols.errorCode,
+		&cols.errorMessage,
 		&event.RetentionDays,
 		&event.IsSensitive,
 		&eventDataJSON,
 		&event.EventHash,
 		&event.PreviousEventHash,
 		&event.HashAlgorithm,
-		&legalHold,
+		&cols.legalHold,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan audit event: %w", err)
@@ -210,18 +217,7 @@ func scanExportRow(rows *sql.Rows) (*AuditEvent, error) {
 	// the UTC form used at INSERT time, breaking hash verification.
 	event.EventTimestamp = event.EventTimestamp.UTC()
 
-	event.ResourceType = resourceType.String
-	event.ResourceID = resourceID.String
-	event.ResourceNamespace = resourceNamespace.String
-	event.ClusterID = clusterID.String
-	event.ActorID = actorID.String
-	event.ActorType = actorType.String
-	event.ActorIP = actorIP.String
-	event.Severity = severity.String
-	event.ErrorCode = errorCode.String
-	event.ErrorMessage = errorMessage.String
-	event.DurationMs = int(durationMs.Int64)
-	event.LegalHold = legalHold
+	assignExportNullableFields(event, cols)
 
 	if len(eventDataJSON) > 0 {
 		if err := json.Unmarshal(eventDataJSON, &event.EventData); err != nil {
@@ -230,6 +226,24 @@ func scanExportRow(rows *sql.Rows) (*AuditEvent, error) {
 	}
 
 	return event, nil
+}
+
+// assignExportNullableFields copies the scanned sql.Null* intermediates onto
+// event's plain Go fields. Extracted from scanExportRow (Wave 6 6f GREEN:
+// funlen remediation) — pure code motion, no behavior change.
+func assignExportNullableFields(event *AuditEvent, cols exportRowNullableColumns) {
+	event.ResourceType = cols.resourceType.String
+	event.ResourceID = cols.resourceID.String
+	event.ResourceNamespace = cols.resourceNamespace.String
+	event.ClusterID = cols.clusterID.String
+	event.ActorID = cols.actorID.String
+	event.ActorType = cols.actorType.String
+	event.ActorIP = cols.actorIP.String
+	event.Severity = cols.severity.String
+	event.ErrorCode = cols.errorCode.String
+	event.ErrorMessage = cols.errorMessage.String
+	event.DurationMs = int(cols.durationMs.Int64)
+	event.LegalHold = cols.legalHold
 }
 
 // verifyExportChains groups events by correlation_id and verifies each

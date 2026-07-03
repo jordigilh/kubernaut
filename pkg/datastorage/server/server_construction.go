@@ -380,6 +380,15 @@ func buildServerBackgroundWorkers(db *sql.DB, appCfg *config.Config, auditDeps *
 	return dlqRetryWorker, retentionWorker, ipLimiter
 }
 
+// serverBackgroundWorkers groups the background workers produced by
+// buildServerBackgroundWorkers, so assembleServer can take them as a single
+// argument (100go.co anti-pattern: functions with 8+ parameters).
+type serverBackgroundWorkers struct {
+	dlqRetryWorker  *DLQRetryWorker
+	retentionWorker *retention.Worker
+	ipLimiter       *dsmiddleware.IPLimiter
+}
+
 // assembleServer builds the Server struct from its constructed dependencies.
 // DS-FLAKY-003 FIX: handler is assigned directly on httpServer here (not
 // deferred to Start()) so graceful shutdown works in both Start() and
@@ -392,9 +401,7 @@ func assembleServer(
 	auditDeps *auditWriteDeps,
 	signer *cert.Signer,
 	openapiValidator *dsmiddleware.OpenAPIValidator,
-	dlqRetryWorker *DLQRetryWorker,
-	retentionWorker *retention.Worker,
-	ipLimiter *dsmiddleware.IPLimiter,
+	workers serverBackgroundWorkers,
 ) *Server {
 	appCfg := deps.AppConfig
 	serverCfg := deps.ServerConfig
@@ -415,8 +422,8 @@ func assembleServer(
 		auditStore:               auditDeps.auditStore,
 		metrics:                  auditDeps.metrics,
 		signer:                   signer,
-		dlqRetryWorker:           dlqRetryWorker,                                  // DD-009 V1.0: DLQ retry worker
-		retentionWorker:          retentionWorker,                                 // #1048 Phase 5 / AU-11: retention purge
+		dlqRetryWorker:           workers.dlqRetryWorker,                          // DD-009 V1.0: DLQ retry worker
+		retentionWorker:          workers.retentionWorker,                         // #1048 Phase 5 / AU-11: retention purge
 		authenticator:            deps.Authenticator,                              // DD-AUTH-014: Injected at runtime
 		authorizer:               deps.Authorizer,                                 // DD-AUTH-014: Injected at runtime
 		authNamespace:            deps.AuthNamespace,                              // DD-AUTH-014: Dynamic namespace for SAR checks
@@ -425,7 +432,7 @@ func assembleServer(
 		openapiValidator:         openapiValidator,
 		corsAllowedOrigins:       appCfg.Server.GetCORSAllowedOrigins(),
 		maxBodySize:              appCfg.Server.GetMaxBodySize(),
-		ipLimiter:                ipLimiter, // GAP-09 (Issue #1505): nil when disabled
+		ipLimiter:                workers.ipLimiter, // GAP-09 (Issue #1505): nil when disabled
 	}
 }
 
@@ -479,7 +486,11 @@ func NewServer(deps ServerDeps) (*Server, error) {
 
 	dlqRetryWorker, retentionWorker, ipLimiter := buildServerBackgroundWorkers(db, appCfg, auditDeps, logger, cleanups)
 
-	srv := assembleServer(deps, db, handler, auditDeps, signer, openapiValidator, dlqRetryWorker, retentionWorker, ipLimiter)
+	srv := assembleServer(deps, db, handler, auditDeps, signer, openapiValidator, serverBackgroundWorkers{
+		dlqRetryWorker:  dlqRetryWorker,
+		retentionWorker: retentionWorker,
+		ipLimiter:       ipLimiter,
+	})
 
 	// DS-FLAKY-003 FIX: Assign handler immediately so Shutdown() can work
 	srv.httpServer.Handler = srv.Handler()

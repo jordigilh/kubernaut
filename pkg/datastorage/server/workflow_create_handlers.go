@@ -165,39 +165,57 @@ func (h *Handler) parseCreateWorkflowRequest(w http.ResponseWriter, r *http.Requ
 // re-enable-on-conflict semantics otherwise. Returns ok=false after writing
 // the RFC 7807 error response for any failure.
 func (h *Handler) persistCreatedWorkflow(w http.ResponseWriter, r *http.Request, workflow *models.RemediationWorkflow) (*models.RemediationWorkflow, int, bool) {
-	statusCode := http.StatusCreated
-
 	if h.workflowIntegrityRepo != nil {
-		result, integrityErr := h.handleDuplicateWorkflow(r.Context(), workflow)
-		if integrityErr != nil {
-			var cie *contentIntegrityError
-			if errors.As(integrityErr, &cie) {
-				h.logger.Info("Content integrity violation: same version with different content",
-					"workflow_name", cie.WorkflowName,
-					"version", cie.Version,
-				)
-				response.WriteRFC7807Error(w, http.StatusConflict, "content-integrity-violation",
-					"Content Changed Without Version Bump", cie.Error(), h.logger)
-				return nil, 0, false
-			}
-			h.logger.Error(integrityErr, "Content integrity check failed",
-				"workflow_name", workflow.WorkflowName,
-				"version", workflow.Version,
-			)
-			response.WriteRFC7807Error(w, http.StatusInternalServerError, "internal-error", "Internal Server Error",
-				"Failed to process workflow registration", h.logger)
-			return nil, 0, false
-		}
-		if result != nil {
-			workflow = result.workflow
-			statusCode = result.statusCode
-		}
-		return workflow, statusCode, true
+		return h.persistCreatedWorkflowWithIntegrityCheck(w, r, workflow)
 	}
 
 	if h.workflowRepo == nil {
-		return workflow, statusCode, true
+		return workflow, http.StatusCreated, true
 	}
+
+	return h.persistCreatedWorkflowLegacy(w, r, workflow)
+}
+
+// persistCreatedWorkflowWithIntegrityCheck implements the content-integrity-aware
+// persistence path of persistCreatedWorkflow (BR-WORKFLOW-006 ContentHash
+// duplicate detection). Extracted from persistCreatedWorkflow (Wave 6 6f
+// GREEN: funlen remediation) — pure code motion, no behavior change.
+func (h *Handler) persistCreatedWorkflowWithIntegrityCheck(w http.ResponseWriter, r *http.Request, workflow *models.RemediationWorkflow) (*models.RemediationWorkflow, int, bool) {
+	statusCode := http.StatusCreated
+
+	result, integrityErr := h.handleDuplicateWorkflow(r.Context(), workflow)
+	if integrityErr != nil {
+		var cie *contentIntegrityError
+		if errors.As(integrityErr, &cie) {
+			h.logger.Info("Content integrity violation: same version with different content",
+				"workflow_name", cie.WorkflowName,
+				"version", cie.Version,
+			)
+			response.WriteRFC7807Error(w, http.StatusConflict, "content-integrity-violation",
+				"Content Changed Without Version Bump", cie.Error(), h.logger)
+			return nil, 0, false
+		}
+		h.logger.Error(integrityErr, "Content integrity check failed",
+			"workflow_name", workflow.WorkflowName,
+			"version", workflow.Version,
+		)
+		response.WriteRFC7807Error(w, http.StatusInternalServerError, "internal-error", "Internal Server Error",
+			"Failed to process workflow registration", h.logger)
+		return nil, 0, false
+	}
+	if result != nil {
+		workflow = result.workflow
+		statusCode = result.statusCode
+	}
+	return workflow, statusCode, true
+}
+
+// persistCreatedWorkflowLegacy implements the plain-Create-with-re-enable-on-conflict
+// persistence path of persistCreatedWorkflow (used when no content-integrity
+// repo is configured). Extracted from persistCreatedWorkflow (Wave 6 6f
+// GREEN: funlen remediation) — pure code motion, no behavior change.
+func (h *Handler) persistCreatedWorkflowLegacy(w http.ResponseWriter, r *http.Request, workflow *models.RemediationWorkflow) (*models.RemediationWorkflow, int, bool) {
+	statusCode := http.StatusCreated
 
 	if err := h.workflowRepo.Create(r.Context(), workflow); err != nil {
 		var pgErr *pgconn.PgError
@@ -315,91 +333,11 @@ func (h *Handler) validateExternalChecks(
 		mu.Unlock()
 	}
 
-	// 5a: Validate action_type against taxonomy (GAP-4, DD-WORKFLOW-016)
-	if h.actionTypeValidator != nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			start := time.Now()
-			exists, err := h.actionTypeValidator.ActionTypeExists(ctx, workflow.ActionType)
-			if err != nil {
-				dsmetrics.WorkflowValidationDuration.WithLabelValues("action_type", "error").Observe(time.Since(start).Seconds())
-				h.logger.Error(err, "Failed to validate action_type against taxonomy",
-					"action_type", workflow.ActionType,
-				)
-				setSlot(slotActionType, &validationError{
-					status:    http.StatusInternalServerError,
-					errorType: "internal-error",
-					title:     "Internal Server Error",
-					detail:    "Failed to validate action type",
-				})
-				return
-			}
-			if !exists {
-				dsmetrics.WorkflowValidationDuration.WithLabelValues("action_type", "error").Observe(time.Since(start).Seconds())
-				setSlot(slotActionType, &validationError{
-					status:    http.StatusBadRequest,
-					errorType: "validation-error",
-					title:     "Validation Error",
-					detail:    fmt.Sprintf("action_type '%s' is not in the action type taxonomy (DD-WORKFLOW-016)", workflow.ActionType),
-				})
-				return
-			}
-			dsmetrics.WorkflowValidationDuration.WithLabelValues("action_type", "ok").Observe(time.Since(start).Seconds())
-		}()
-	}
-
-	// 5b: Validate execution bundle image exists in the registry (skip for ansible — Git repo)
-	if workflow.ExecutionBundle != nil && *workflow.ExecutionBundle != "" &&
-		workflow.ExecutionEngine != models.ExecutionEngineAnsible && h.schemaExtractor != nil {
-		bundleRef := *workflow.ExecutionBundle
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			start := time.Now()
-			if err := h.schemaExtractor.ValidateBundleExists(ctx, bundleRef); err != nil {
-				dsmetrics.WorkflowValidationDuration.WithLabelValues("bundle_exists", "error").Observe(time.Since(start).Seconds())
-				h.logger.Error(err, "Execution bundle image not found in registry",
-					"execution_bundle", bundleRef,
-				)
-				setSlot(slotBundle, &validationError{
-					status:    http.StatusBadRequest,
-					errorType: "bundle-not-found",
-					title:     "Execution Bundle Not Found",
-					detail:    "execution.bundle image could not be resolved; verify the image reference is correct",
-				})
-				return
-			}
-			dsmetrics.WorkflowValidationDuration.WithLabelValues("bundle_exists", "ok").Observe(time.Since(start).Seconds())
-		}()
-	}
-
-	// 5c: Validate schema-declared dependencies exist in execution namespace (DD-WE-006)
-	if h.dependencyValidator != nil && parsedSchema.Dependencies != nil {
-		deps := schemaParser.ExtractDependencies(parsedSchema)
-		if deps != nil {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				start := time.Now()
-				if err := h.dependencyValidator.ValidateDependencies(ctx, h.executionNamespace, deps); err != nil {
-					dsmetrics.WorkflowValidationDuration.WithLabelValues("dependency", "error").Observe(time.Since(start).Seconds())
-					h.logger.Error(err, "Dependency validation failed",
-						"execution_namespace", h.executionNamespace,
-					)
-					setSlot(slotDependency, &validationError{
-						status:    http.StatusBadRequest,
-						errorType: "dependency-validation-error",
-						title:     "Dependency Validation Error",
-						detail: fmt.Sprintf("Schema-declared dependency not satisfied in namespace %q; "+
-							"ensure all dependencies are provisioned before registering the workflow (DD-WE-006)", h.executionNamespace),
-					})
-					return
-				}
-				dsmetrics.WorkflowValidationDuration.WithLabelValues("dependency", "ok").Observe(time.Since(start).Seconds())
-			}()
-		}
-	}
+	h.launchExternalValidationGoroutines(ctx, &wg, schemaParser, parsedSchema, workflow, setSlot, validationSlots{
+		actionType: slotActionType,
+		bundle:     slotBundle,
+		dependency: slotDependency,
+	})
 
 	wg.Wait()
 
@@ -412,6 +350,143 @@ func (h *Handler) validateExternalChecks(
 	}
 	dsmetrics.WorkflowValidationDuration.WithLabelValues("total", "ok").Observe(time.Since(totalStart).Seconds())
 	return nil
+}
+
+// validationSlots groups the typed-result-slot indices (Issue #1070) used by
+// launchExternalValidationGoroutines, so the function stays within the
+// 7-argument limit (100go.co anti-pattern: functions with 8+ parameters).
+type validationSlots struct {
+	actionType int
+	bundle     int
+	dependency int
+}
+
+// launchExternalValidationGoroutines fires steps 5a-5c of validateExternalChecks
+// (action-type, bundle-exists, dependency validation) as parallel goroutines
+// against wg, each reporting into its typed result slot via setSlot.
+// Extracted from validateExternalChecks (Wave 6 6f GREEN: funlen
+// remediation) — pure code motion, no behavior change.
+func (h *Handler) launchExternalValidationGoroutines(
+	ctx context.Context,
+	wg *sync.WaitGroup,
+	schemaParser *schema.Parser,
+	parsedSchema *models.WorkflowSchema,
+	workflow *models.RemediationWorkflow,
+	setSlot func(idx int, ve *validationError),
+	slots validationSlots,
+) {
+	// 5a: Validate action_type against taxonomy (GAP-4, DD-WORKFLOW-016)
+	if h.actionTypeValidator != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			h.validateActionTypeSlot(ctx, workflow, func(ve *validationError) { setSlot(slots.actionType, ve) })
+		}()
+	}
+
+	// 5b: Validate execution bundle image exists in the registry (skip for ansible — Git repo)
+	if workflow.ExecutionBundle != nil && *workflow.ExecutionBundle != "" &&
+		workflow.ExecutionEngine != models.ExecutionEngineAnsible && h.schemaExtractor != nil {
+		bundleRef := *workflow.ExecutionBundle
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			h.validateBundleExistsSlot(ctx, bundleRef, func(ve *validationError) { setSlot(slots.bundle, ve) })
+		}()
+	}
+
+	// 5c: Validate schema-declared dependencies exist in execution namespace (DD-WE-006)
+	if h.dependencyValidator != nil && parsedSchema.Dependencies != nil {
+		deps := schemaParser.ExtractDependencies(parsedSchema)
+		if deps != nil {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				h.validateDependenciesSlot(ctx, deps, func(ve *validationError) { setSlot(slots.dependency, ve) })
+			}()
+		}
+	}
+}
+
+// validateActionTypeSlot implements step 5a of validateExternalChecks:
+// validate workflow.ActionType against the action-type taxonomy
+// (GAP-4, DD-WORKFLOW-016), reporting the result via setSlot. Extracted
+// from validateExternalChecks (Wave 6 6f GREEN: funlen remediation) — pure
+// code motion, no behavior change.
+func (h *Handler) validateActionTypeSlot(ctx context.Context, workflow *models.RemediationWorkflow, setSlot func(*validationError)) {
+	start := time.Now()
+	exists, err := h.actionTypeValidator.ActionTypeExists(ctx, workflow.ActionType)
+	if err != nil {
+		dsmetrics.WorkflowValidationDuration.WithLabelValues("action_type", "error").Observe(time.Since(start).Seconds())
+		h.logger.Error(err, "Failed to validate action_type against taxonomy",
+			"action_type", workflow.ActionType,
+		)
+		setSlot(&validationError{
+			status:    http.StatusInternalServerError,
+			errorType: "internal-error",
+			title:     "Internal Server Error",
+			detail:    "Failed to validate action type",
+		})
+		return
+	}
+	if !exists {
+		dsmetrics.WorkflowValidationDuration.WithLabelValues("action_type", "error").Observe(time.Since(start).Seconds())
+		setSlot(&validationError{
+			status:    http.StatusBadRequest,
+			errorType: "validation-error",
+			title:     "Validation Error",
+			detail:    fmt.Sprintf("action_type '%s' is not in the action type taxonomy (DD-WORKFLOW-016)", workflow.ActionType),
+		})
+		return
+	}
+	dsmetrics.WorkflowValidationDuration.WithLabelValues("action_type", "ok").Observe(time.Since(start).Seconds())
+}
+
+// validateBundleExistsSlot implements step 5b of validateExternalChecks:
+// validate that the execution bundle image resolves in the registry,
+// reporting the result via setSlot. Extracted from validateExternalChecks
+// (Wave 6 6f GREEN: funlen remediation) — pure code motion, no behavior
+// change.
+func (h *Handler) validateBundleExistsSlot(ctx context.Context, bundleRef string, setSlot func(*validationError)) {
+	start := time.Now()
+	if err := h.schemaExtractor.ValidateBundleExists(ctx, bundleRef); err != nil {
+		dsmetrics.WorkflowValidationDuration.WithLabelValues("bundle_exists", "error").Observe(time.Since(start).Seconds())
+		h.logger.Error(err, "Execution bundle image not found in registry",
+			"execution_bundle", bundleRef,
+		)
+		setSlot(&validationError{
+			status:    http.StatusBadRequest,
+			errorType: "bundle-not-found",
+			title:     "Execution Bundle Not Found",
+			detail:    "execution.bundle image could not be resolved; verify the image reference is correct",
+		})
+		return
+	}
+	dsmetrics.WorkflowValidationDuration.WithLabelValues("bundle_exists", "ok").Observe(time.Since(start).Seconds())
+}
+
+// validateDependenciesSlot implements step 5c of validateExternalChecks:
+// validate that schema-declared dependencies exist in the execution
+// namespace (DD-WE-006), reporting the result via setSlot. Extracted from
+// validateExternalChecks (Wave 6 6f GREEN: funlen remediation) — pure code
+// motion, no behavior change.
+func (h *Handler) validateDependenciesSlot(ctx context.Context, deps *models.WorkflowDependencies, setSlot func(*validationError)) {
+	start := time.Now()
+	if err := h.dependencyValidator.ValidateDependencies(ctx, h.executionNamespace, deps); err != nil {
+		dsmetrics.WorkflowValidationDuration.WithLabelValues("dependency", "error").Observe(time.Since(start).Seconds())
+		h.logger.Error(err, "Dependency validation failed",
+			"execution_namespace", h.executionNamespace,
+		)
+		setSlot(&validationError{
+			status:    http.StatusBadRequest,
+			errorType: "dependency-validation-error",
+			title:     "Dependency Validation Error",
+			detail: fmt.Sprintf("Schema-declared dependency not satisfied in namespace %q; "+
+				"ensure all dependencies are provisioned before registering the workflow (DD-WE-006)", h.executionNamespace),
+		})
+		return
+	}
+	dsmetrics.WorkflowValidationDuration.WithLabelValues("dependency", "ok").Observe(time.Since(start).Seconds())
 }
 
 // contentIntegrityError is returned when an active workflow with the same

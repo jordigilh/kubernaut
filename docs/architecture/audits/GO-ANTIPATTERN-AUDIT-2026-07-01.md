@@ -680,6 +680,36 @@ Sub-wave 6d is complete. Remaining Wave 6 sub-waves (6f DataStorage, 6e-i/ii/iii
 
 ---
 
+## 7n. Phase 6 Wave 6, sub-wave 6f: DataStorage Complexity Burndown (residual) — ✅ RESOLVED
+
+Executed as sub-wave 2/8 of the approved Wave 6 Burndown Plan, closing the 26 `funlen`/`nestif` offenders left in `pkg/datastorage` after Wave 3 (§7k) plus a further 7 discovered mid-wave.
+
+### 7n-1. RED phase: coverage gate on `repository/workflow/crud.go`
+
+Confirmed 3 previously-0%-covered functions in `pkg/datastorage/repository/workflow` before touching them: `GetByID`, `GetVersionsByName`, `UpdateSuccessMetrics`. Added `pkg/datastorage/workflow_crud_business_test.go` (characterization tests, BR-STORAGE-012) proving not-found-vs-real-error semantics on `GetByID`/`GetVersionsByName` and the divide-by-zero guard in `UpdateSuccessMetrics`'s success-rate calculation, all passing against the pre-refactor implementation.
+
+### 7n-2. GREEN phase: decomposition of all 33 offenders across 3 batches
+
+| Batch | Files | Technique |
+|---|---|---|
+| Partial (workflow/dlq/metrics) | `repository/workflow/crud.go` (`Create`, `List`), `repository/workflow/discovery.go` (`ListActions`, `buildContextFilterSQL`, `ListWorkflowsByActionType`), `dlq/client_drain.go` (`DrainWithTimeout`), `metrics/metrics.go` (`NewMetricsWithRegistry`) | Extract-method split along existing numbered-comment step boundaries; `NewMetricsWithRegistry` split into `assignGlobalMetrics`/`newIsolatedMetrics`/`newIsolatedHistogramMetrics`/`newIsolatedCounterAndGaugeMetrics` |
+| Batch 1 (server handlers) | `audit_events_handler.go`, `audit_export_handler.go`, `audit_handlers.go`, `audit_verify_chain_handler.go`, `handler_reconstruction.go`, `legal_hold_handler.go` | Each HTTP handler split into its natural request-processing steps (parse/validate, DB write + DLQ fallback, response encode) |
+| Batch 2 (server construction/routing) | `reconstruction_handler.go`, `server_construction.go` (`NewServer` → `initSignerAndOpenAPIValidator`/`buildServerBackgroundWorkers`/`assembleServer`), `server_routes.go` (`Handler` → `registerGlobalMiddleware`/`registerAPIV1AuthMiddleware`/`registerAuditRoutes`/`registerWorkflowRoutes`) | Extract-method along construction/routing phases |
+| Batch 3 (remaining server handlers + repository/reconstruction) | `actiontype_handlers.go` (`HandleCreateActionType`), `workflow_create_handlers.go` (`persistCreatedWorkflow`, `validateExternalChecks`), `workflow_discovery_handlers.go` (`HandleListWorkflowsByActionType`), `workflow_duplicate_handlers.go` (`buildWorkflowCommon`), `workflow_query_handlers.go` (`HandleGetWorkflowByID`, also the wave's one `nestif` offender), `reconstruction/query.go` (`QueryAuditEventsForReconstruction`), `reconstruction/validator.go` (`ValidateReconstructedRR`), `repository/audit_events_batch.go` (`CreateBatch`, `insertBatchEvent`), `repository/audit_export.go` (`scanExportRow`), `repository/conversion.go` (`ConvertFromAuditEvent`) | Extract-method; `ValidateReconstructedRR`'s 7 near-identical optional-field checks collapsed into a table-driven loop (`validateOptionalRRFields`) rather than one helper per field |
+
+Batch 3 additionally surfaced 4 new `revive argument-limit` findings (8-9 params) created by Batch 1/2's own extracted helpers (`buildExportIntermediateResponse`, `assignVerifyChainNullableFields`, `assembleServer`, `launchExternalValidationGoroutines`) — each closed by grouping the related scalar parameters into a small local config struct (`exportResponseMetadata`, `verifyChainNullableColumns`, `serverBackgroundWorkers`, `validationSlots`), consistent with the Options-pattern resolution already used repo-wide in Phase 2 (§7b). All changes are pure code motion; no behavior change.
+
+### 7n-3. REFACTOR phase: exit gate
+
+- `go build ./...` (repo-wide): clean.
+- `golangci-lint run --timeout=5m ./pkg/datastorage/...` (full default linter set, including `funlen`/`nestif`/`revive argument-limit`): **0 issues**.
+- `go test ./pkg/datastorage/...`: all packages green (25 sub-packages, including the new `workflow_crud_business_test.go` specs), zero regressions.
+- `gofmt -l` clean on every touched file.
+
+Sub-wave 6f is complete — all `funlen`/`nestif` offenders in `pkg/datastorage` (33 total across this sub-wave, spanning the initial 26 plus 7 discovered mid-wave) are resolved, and no oversized files remained in scope after Wave 3's split (§7k). Remaining Wave 6 sub-waves (6e-i/ii/iii RO/WE/SP residuals, 6b Notification, 6c AIAnalysis) proceed independently.
+
+---
+
 ## 8. Variable Shadowing — 120 found, mostly low-risk
 
 114/120 are `err` shadowing (`if err := f(); err != nil` repeated in the same scope — the single most common and least dangerous shadow pattern in Go, which is exactly why `govet -shadow` isn't part of default `go vet`). 1 `ctx` shadow, 1 `result`, 1 `username`, 1 `ok`, 1 `isString`. **No goroutine-closure-captures-loop-variable pattern was found** (the genuinely dangerous shadow bug) — none of the 120 hits are in a `for ... go func()` or `for ... defer func()` body.
@@ -722,7 +752,7 @@ Per AGENTS.md, REFACTOR-phase cleanup must not introduce new types/components, m
 | 6 (Wave 3) | DataStorage: audit-reconstruction coverage gate + 12 named complexity offenders + 19 lower-priority (16-22) offenders + 5 oversized files split into 20 (see §7k) | Medium-High | 4-5 days | ✅ Done (see §7k) |
 | 6 (Wave 4) | KubernautAgent remainder: 5 characterization tests + ~20 named complexity offenders across investigator/tools/parser/enrichment/alignment/session/config + 8 oversized files split into 27 (see §7l) | Medium-High | 4-5 days | ✅ Done (see §7l) |
 | 6 (Wave 5) | KubernautAgent's 11 deferred offenders (§7l-1): coverage-before-refactor gate (11 characterization tests, `runLLMLoop`→100% UT, `buildMCPHandler` 9.1%→92%) + Extract-Method decomposition of all 11 (see §7l-4, §7l-5) | Medium-High | ~3 days | ✅ Done (see §7l-5) |
-| 6 (Wave 6) | Notification/AIAnalysis/EffectivenessMonitor/Gateway batch, final sweep — remaining complexity (~118 functions, including RO/WE residuals noted in §7j-3) + oversized files (~26, including the `crud.go` residual noted in §7k-4) burndown | Medium-High (per-wave) | ~10-14 days remaining | 🟡 In progress — sub-wave 6d (Gateway) ✅ Done (see §7m); 7/8 sub-waves remaining, tracked in the Wave 6 Burndown Plan, each requiring its own RED→GREEN→REFACTOR checkpoint |
+| 6 (Wave 6) | Notification/AIAnalysis/EffectivenessMonitor/Gateway batch, final sweep — remaining complexity (~118 functions, including RO/WE residuals noted in §7j-3) + oversized files (~26, including the `crud.go` residual noted in §7k-4) burndown | Medium-High (per-wave) | ~10-14 days remaining | 🟡 In progress — sub-wave 6d (Gateway) ✅ Done (see §7m); sub-wave 6f (DataStorage) ✅ Done (see §7n); 6/8 sub-waves remaining, tracked in the Wave 6 Burndown Plan, each requiring its own RED→GREEN→REFACTOR checkpoint |
 
 **Not recommended for action**: DTO/data-model "god structs" (category 4a), `context.Context` struct fields (both documented), `any`/`interface{}` usage (spot-checked — the ~849 raw hits are overwhelmingly idiomatic JSON-decoding, `sync.Map`/`singleflight` third-party API signatures, and generic-JSON-passthrough code; no material violations found beyond one worth a look: `BuildTriagePrompt(input TriageInput, rules interface{})` in `pkg/apifrontend/severity/types.go:113`).
 

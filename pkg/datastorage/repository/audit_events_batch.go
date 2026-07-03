@@ -81,35 +81,10 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 	var createdEvents []*AuditEvent
 
 	err := txretry.WithSerializableRetry(ctx, 3, func() error {
-		// Reset hash fields so they are recalculated from the current chain head.
-		resetBatchHashFields(events)
-
-		tx, txErr := r.db.BeginTx(ctx, nil)
+		result, txErr := r.runBatchInsertTransaction(ctx, events, sortedCorrIDs, eventsByCorrelation)
 		if txErr != nil {
-			return fmt.Errorf("failed to begin transaction: %w", txErr)
-		}
-		defer func() {
-			if txErr != nil {
-				_ = tx.Rollback()
-			}
-		}()
-
-		stmt, txErr := tx.PrepareContext(ctx, insertAuditEventBatchSQL)
-		if txErr != nil {
-			return fmt.Errorf("failed to prepare statement: %w", txErr)
-		}
-		defer func() { _ = stmt.Close() }()
-
-		result, insertErr := r.insertBatchByCorrelation(ctx, tx, stmt, sortedCorrIDs, eventsByCorrelation, len(events))
-		if insertErr != nil {
-			txErr = insertErr
 			return txErr
 		}
-
-		if txErr = tx.Commit(); txErr != nil {
-			return fmt.Errorf("failed to commit batch transaction: %w", txErr)
-		}
-
 		createdEvents = result
 		return nil
 	})
@@ -123,6 +98,51 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 	)
 
 	return createdEvents, nil
+}
+
+// runBatchInsertTransaction runs one attempt of the batch insert: reset the
+// hash-chain fields, open a transaction, prepare the batch insert statement,
+// insert every event (grouped by correlation_id, in sortedCorrIDs order),
+// and commit. Called from within txretry.WithSerializableRetry, so a
+// transient PostgreSQL deadlock (40P01) surfaces as a returned error and is
+// retried by the caller. Extracted from CreateBatch (Wave 6 6f GREEN: funlen
+// remediation) — pure code motion, no behavior change.
+func (r *AuditEventsRepository) runBatchInsertTransaction(
+	ctx context.Context,
+	events []*AuditEvent,
+	sortedCorrIDs []string,
+	eventsByCorrelation map[string][]indexedAuditEvent,
+) (createdEvents []*AuditEvent, txErr error) {
+	// Reset hash fields so they are recalculated from the current chain head.
+	resetBatchHashFields(events)
+
+	tx, txErr := r.db.BeginTx(ctx, nil)
+	if txErr != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", txErr)
+	}
+	defer func() {
+		if txErr != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	stmt, txErr := tx.PrepareContext(ctx, insertAuditEventBatchSQL)
+	if txErr != nil {
+		return nil, fmt.Errorf("failed to prepare statement: %w", txErr)
+	}
+	defer func() { _ = stmt.Close() }()
+
+	result, insertErr := r.insertBatchByCorrelation(ctx, tx, stmt, sortedCorrIDs, eventsByCorrelation, len(events))
+	if insertErr != nil {
+		txErr = insertErr
+		return nil, txErr
+	}
+
+	if txErr = tx.Commit(); txErr != nil {
+		return nil, fmt.Errorf("failed to commit batch transaction: %w", txErr)
+	}
+
+	return result, nil
 }
 
 // indexedAuditEvent pairs a batch event with its position in the caller's
@@ -264,58 +284,74 @@ func (r *AuditEventsRepository) insertBatchByCorrelation(
 // stamps it onto event, and executes the prepared batch INSERT. It returns
 // the newly computed event hash (the next event's previousHash) on success.
 func (r *AuditEventsRepository) insertBatchEvent(ctx context.Context, stmt *sql.Stmt, event *AuditEvent, previousHash string) (string, error) {
+	eventDataJSON, eventHash, err := r.stampBatchEventHash(event, previousHash)
+	if err != nil {
+		return "", err
+	}
+
+	var returnedTimestamp time.Time
+	if err := stmt.QueryRowContext(ctx, buildBatchInsertArgs(event, eventDataJSON)...).Scan(&returnedTimestamp); err != nil {
+		return "", fmt.Errorf("failed to insert event %s: %w", event.EventID, err)
+	}
+
+	return eventHash, nil
+}
+
+// stampBatchEventHash marshals event.EventData, computes the hash-chain link
+// from previousHash, and stamps event.EventHash/PreviousEventHash. Returns
+// the marshaled event_data JSON and the computed hash (the next event's
+// previousHash). Extracted from insertBatchEvent (Wave 6 6f GREEN: funlen
+// remediation) — pure code motion, no behavior change.
+func (r *AuditEventsRepository) stampBatchEventHash(event *AuditEvent, previousHash string) ([]byte, string, error) {
 	eventDataJSON, marshalErr := json.Marshal(event.EventData)
 	if marshalErr != nil {
-		return "", fmt.Errorf("failed to marshal event_data for event %s in batch insert: %w", event.EventID, marshalErr)
+		return nil, "", fmt.Errorf("failed to marshal event_data for event %s in batch insert: %w", event.EventID, marshalErr)
 	}
-	eventDate := event.EventTimestamp.Truncate(24 * time.Hour)
 
 	eventHash, hashErr := r.hashEvent(previousHash, event)
 	if hashErr != nil {
-		return "", fmt.Errorf("failed to calculate event hash for event %s: %w", event.EventID, hashErr)
+		return nil, "", fmt.Errorf("failed to calculate event hash for event %s: %w", event.EventID, hashErr)
 	}
 
 	event.EventHash = eventHash
 	event.PreviousEventHash = previousHash
 
-	parentEventID := sqlutil.ToNullUUID(event.ParentEventID)
-	parentEventDate := sqlutil.ToNullTime(event.ParentEventDate)
-	namespace := sqlutil.ToNullStringValue(event.ResourceNamespace)
-	clusterName := sqlutil.ToNullStringValue(event.ClusterID)
-	errorCode := sqlutil.ToNullStringValue(event.ErrorCode)
-	errorMessage := sqlutil.ToNullStringValue(event.ErrorMessage)
-	severity := sqlutil.ToNullStringValue(event.Severity)
-	actorIP := sqlutil.ToNullStringValue(event.ActorIP)
+	return eventDataJSON, eventHash, nil
+}
 
+// buildBatchInsertArgs assembles the positional argument list for
+// insertAuditEventBatchSQL from event, converting nullable fields to their
+// sql.Null* equivalents. Extracted from insertBatchEvent (Wave 6 6f GREEN:
+// funlen remediation) — pure code motion, no behavior change.
+func buildBatchInsertArgs(event *AuditEvent, eventDataJSON []byte) []interface{} {
 	var durationMs sql.NullInt32
 	if event.DurationMs != 0 {
 		durationMs = sql.NullInt32{Int32: int32(event.DurationMs), Valid: true}
 	}
 
-	var returnedTimestamp time.Time
-	err := stmt.QueryRowContext(ctx,
+	return []interface{}{
 		event.EventID,
 		event.Version,
 		event.EventTimestamp,
-		eventDate,
+		event.EventTimestamp.Truncate(24 * time.Hour),
 		event.EventType,
 		event.EventCategory,
 		event.EventAction,
 		event.EventOutcome,
 		event.CorrelationID,
-		parentEventID,
-		parentEventDate,
+		sqlutil.ToNullUUID(event.ParentEventID),
+		sqlutil.ToNullTime(event.ParentEventDate),
 		event.ResourceType,
 		event.ResourceID,
-		namespace,
-		clusterName,
+		sqlutil.ToNullStringValue(event.ResourceNamespace),
+		sqlutil.ToNullStringValue(event.ClusterID),
 		event.ActorID,
 		event.ActorType,
-		actorIP,
-		severity,
+		sqlutil.ToNullStringValue(event.ActorIP),
+		sqlutil.ToNullStringValue(event.Severity),
 		durationMs,
-		errorCode,
-		errorMessage,
+		sqlutil.ToNullStringValue(event.ErrorCode),
+		sqlutil.ToNullStringValue(event.ErrorMessage),
 		event.RetentionDays,
 		event.IsSensitive,
 		eventDataJSON,
@@ -326,10 +362,5 @@ func (r *AuditEventsRepository) insertBatchEvent(ctx context.Context, stmt *sql.
 		sqlutil.ToNullStringValue(event.LegalHoldReason),
 		sqlutil.ToNullStringValue(event.LegalHoldPlacedBy),
 		sqlutil.ToNullTime(event.LegalHoldPlacedAt),
-	).Scan(&returnedTimestamp)
-	if err != nil {
-		return "", fmt.Errorf("failed to insert event %s: %w", event.EventID, err)
 	}
-
-	return eventHash, nil
 }

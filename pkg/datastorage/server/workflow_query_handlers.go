@@ -193,70 +193,13 @@ func (h *Handler) HandleGetWorkflowByID(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	var wf *models.RemediationWorkflow
-
-	// DD-WORKFLOW-016: Use context-filtered query when filters are present (security gate)
-	// GAP-WF-6: Measure query duration for audit payload (DD-WORKFLOW-014 v3.0)
-	startGet := time.Now()
-	if filters.HasContextFilters() {
-		wf, err = h.workflowRepo.GetWorkflowWithContextFilters(r.Context(), workflowID, filters)
-	} else {
-		wf, err = h.workflowRepo.GetByID(r.Context(), workflowID)
-	}
-	durationMs := time.Since(startGet).Milliseconds()
-
-	if err != nil {
-		// Check if workflow not found
-		if err.Error() == fmt.Sprintf("workflow not found: %s", workflowID) {
-			response.WriteRFC7807Error(w, http.StatusNotFound, "workflow-not-found", "Not Found",
-				fmt.Sprintf("Workflow not found: %s", workflowID), h.logger)
-			return
-		}
-
-		h.logger.Error(err, "Failed to get workflow",
-			"workflow_id", workflowID,
-		)
-		response.WriteRFC7807Error(w, http.StatusInternalServerError, "internal-error", "Internal Server Error",
-			"Failed to get workflow", h.logger)
-		return
-	}
-
-	// Check for nil workflow (not found or security gate filtered out)
-	if wf == nil {
-		h.logger.Info("Workflow not found or filtered by security gate",
-			"workflow_id", workflowID,
-			"has_context_filters", filters.HasContextFilters(),
-		)
-		// DD-WORKFLOW-016: Return same 404 for "not found" and "filtered out" (prevent info leakage)
-		response.WriteRFC7807Error(w, http.StatusNotFound, "workflow-not-found", "Not Found",
-			fmt.Sprintf("Workflow not found: %s", workflowID), h.logger)
+	wf, durationMs, ok := h.fetchWorkflowByIDWithGate(w, r, workflowID, filters)
+	if !ok {
 		return
 	}
 
 	// BR-AUDIT-023: Emit discovery audit events when context filters are present.
-	// DD-WORKFLOW-014 v3.0: Context filters indicate KA is validating its selection,
-	// so we emit both workflow_retrieved and selection_validated.
-	if filters.HasContextFilters() && h.auditStore != nil {
-		retrievedEvent, err := dsaudit.NewWorkflowRetrievedAuditEvent(workflowID, filters, durationMs)
-		if err != nil {
-			h.logger.Error(err, "Failed to create workflow_retrieved audit event", "workflow_id", workflowID)
-		}
-		validatedEvent, err := dsaudit.NewSelectionValidatedAuditEvent(workflowID, filters, true, durationMs)
-		if err != nil {
-			h.logger.Error(err, "Failed to create selection_validated audit event", "workflow_id", workflowID)
-		}
-
-		var events []*api.AuditEventRequest
-		if retrievedEvent != nil {
-			events = append(events, retrievedEvent)
-		}
-		if validatedEvent != nil {
-			events = append(events, validatedEvent)
-		}
-		if len(events) > 0 {
-			h.emitAuditEventsAsync(events, "workflow_id", workflowID)
-		}
-	}
+	h.emitWorkflowRetrievedAuditEvents(workflowID, filters, durationMs)
 
 	// Log success
 	h.logger.Info("Workflow retrieved",
@@ -271,5 +214,90 @@ func (h *Handler) HandleGetWorkflowByID(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(wf); err != nil {
 		h.logger.Error(err, "Failed to encode workflow response")
+	}
+}
+
+// fetchWorkflowByIDWithGate implements the query-and-error-handling portion
+// of HandleGetWorkflowByID: run the context-filtered or plain GetByID query
+// (DD-WORKFLOW-016 security gate) and normalize "not found" vs. "filtered
+// out" vs. real errors into a single RFC 7807 404/500 (intentionally not
+// distinguishing "not found" from "filtered out" to prevent info leakage).
+// On any failure it writes the response itself and returns ok=false.
+// Extracted from HandleGetWorkflowByID (Wave 6 6f GREEN: funlen
+// remediation) — pure code motion, no behavior change.
+func (h *Handler) fetchWorkflowByIDWithGate(w http.ResponseWriter, r *http.Request, workflowID string, filters *models.WorkflowDiscoveryFilters) (*models.RemediationWorkflow, int64, bool) {
+	// DD-WORKFLOW-016: Use context-filtered query when filters are present (security gate)
+	// GAP-WF-6: Measure query duration for audit payload (DD-WORKFLOW-014 v3.0)
+	startGet := time.Now()
+	var wf *models.RemediationWorkflow
+	var err error
+	if filters.HasContextFilters() {
+		wf, err = h.workflowRepo.GetWorkflowWithContextFilters(r.Context(), workflowID, filters)
+	} else {
+		wf, err = h.workflowRepo.GetByID(r.Context(), workflowID)
+	}
+	durationMs := time.Since(startGet).Milliseconds()
+
+	if err != nil {
+		// Check if workflow not found
+		if err.Error() == fmt.Sprintf("workflow not found: %s", workflowID) {
+			response.WriteRFC7807Error(w, http.StatusNotFound, "workflow-not-found", "Not Found",
+				fmt.Sprintf("Workflow not found: %s", workflowID), h.logger)
+			return nil, 0, false
+		}
+
+		h.logger.Error(err, "Failed to get workflow",
+			"workflow_id", workflowID,
+		)
+		response.WriteRFC7807Error(w, http.StatusInternalServerError, "internal-error", "Internal Server Error",
+			"Failed to get workflow", h.logger)
+		return nil, 0, false
+	}
+
+	// Check for nil workflow (not found or security gate filtered out)
+	if wf == nil {
+		h.logger.Info("Workflow not found or filtered by security gate",
+			"workflow_id", workflowID,
+			"has_context_filters", filters.HasContextFilters(),
+		)
+		// DD-WORKFLOW-016: Return same 404 for "not found" and "filtered out" (prevent info leakage)
+		response.WriteRFC7807Error(w, http.StatusNotFound, "workflow-not-found", "Not Found",
+			fmt.Sprintf("Workflow not found: %s", workflowID), h.logger)
+		return nil, 0, false
+	}
+
+	return wf, durationMs, true
+}
+
+// emitWorkflowRetrievedAuditEvents emits the workflow_retrieved and
+// selection_validated audit events when context filters are present
+// (DD-WORKFLOW-014 v3.0: context filters indicate KA is validating its
+// selection, so both events are emitted together). No-op when there are no
+// context filters or no audit store configured. Extracted from
+// HandleGetWorkflowByID (Wave 6 6f GREEN: funlen/nestif remediation) — pure
+// code motion, no behavior change.
+func (h *Handler) emitWorkflowRetrievedAuditEvents(workflowID string, filters *models.WorkflowDiscoveryFilters, durationMs int64) {
+	if !filters.HasContextFilters() || h.auditStore == nil {
+		return
+	}
+
+	retrievedEvent, err := dsaudit.NewWorkflowRetrievedAuditEvent(workflowID, filters, durationMs)
+	if err != nil {
+		h.logger.Error(err, "Failed to create workflow_retrieved audit event", "workflow_id", workflowID)
+	}
+	validatedEvent, err := dsaudit.NewSelectionValidatedAuditEvent(workflowID, filters, true, durationMs)
+	if err != nil {
+		h.logger.Error(err, "Failed to create selection_validated audit event", "workflow_id", workflowID)
+	}
+
+	var events []*api.AuditEventRequest
+	if retrievedEvent != nil {
+		events = append(events, retrievedEvent)
+	}
+	if validatedEvent != nil {
+		events = append(events, validatedEvent)
+	}
+	if len(events) > 0 {
+		h.emitAuditEventsAsync(events, "workflow_id", workflowID)
 	}
 }

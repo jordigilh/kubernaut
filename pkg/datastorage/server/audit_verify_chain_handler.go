@@ -248,15 +248,7 @@ func scanVerifyChainEvent(rows *sql.Rows) (*repository.AuditEvent, error) {
 	// Nullable columns must use sql.Null* types; ToNullStringValue("")
 	// stores empty strings as SQL NULL, so scanning into a bare
 	// Go string/int would fail with "converting NULL to <type>".
-	var (
-		namespace    sql.NullString
-		clusterName  sql.NullString
-		actorIP      sql.NullString
-		severity     sql.NullString
-		durationMs   sql.NullInt32
-		errorCode    sql.NullString
-		errorMessage sql.NullString
-	)
+	var cols verifyChainNullableColumns
 
 	err := rows.Scan(
 		&event.EventID,
@@ -270,15 +262,15 @@ func scanVerifyChainEvent(rows *sql.Rows) (*repository.AuditEvent, error) {
 		&event.ParentEventDate,
 		&event.ResourceType,
 		&event.ResourceID,
-		&namespace,
-		&clusterName,
+		&cols.namespace,
+		&cols.clusterName,
 		&event.ActorID,
 		&event.ActorType,
-		&actorIP,
-		&severity,
-		&durationMs,
-		&errorCode,
-		&errorMessage,
+		&cols.actorIP,
+		&cols.severity,
+		&cols.durationMs,
+		&cols.errorCode,
+		&cols.errorMessage,
 		&event.RetentionDays,
 		&event.IsSensitive,
 		&eventDataJSON,
@@ -291,7 +283,7 @@ func scanVerifyChainEvent(rows *sql.Rows) (*repository.AuditEvent, error) {
 		return nil, err
 	}
 
-	assignVerifyChainNullableFields(event, namespace, clusterName, actorIP, severity, durationMs, errorCode, errorMessage)
+	assignVerifyChainNullableFields(event, cols)
 
 	// CRITICAL: Force timestamp to UTC for hash consistency
 	// PostgreSQL timestamptz stores in UTC but Go reads them with local timezone.
@@ -308,23 +300,28 @@ func scanVerifyChainEvent(rows *sql.Rows) (*repository.AuditEvent, error) {
 	return event, nil
 }
 
+// verifyChainNullableColumns groups the sql.Null* scan intermediates for
+// scanVerifyChainEvent's nullable columns, so assignVerifyChainNullableFields
+// can take them as a single argument (100go.co anti-pattern: functions with
+// 8+ parameters).
+type verifyChainNullableColumns struct {
+	namespace, clusterName, actorIP, severity sql.NullString
+	durationMs                                sql.NullInt32
+	errorCode, errorMessage                   sql.NullString
+}
+
 // assignVerifyChainNullableFields copies the sql.Null* columns scanned by
 // scanVerifyChainEvent onto event's plain Go-typed fields (NULL -> zero
 // value). Extracted from scanVerifyChainEvent (Wave 6 6f GREEN: funlen
 // remediation) — pure code motion, no behavior change.
-func assignVerifyChainNullableFields(
-	event *repository.AuditEvent,
-	namespace, clusterName, actorIP, severity sql.NullString,
-	durationMs sql.NullInt32,
-	errorCode, errorMessage sql.NullString,
-) {
-	event.ResourceNamespace = namespace.String
-	event.ClusterID = clusterName.String
-	event.ActorIP = actorIP.String
-	event.Severity = severity.String
-	event.DurationMs = int(durationMs.Int32)
-	event.ErrorCode = errorCode.String
-	event.ErrorMessage = errorMessage.String
+func assignVerifyChainNullableFields(event *repository.AuditEvent, cols verifyChainNullableColumns) {
+	event.ResourceNamespace = cols.namespace.String
+	event.ClusterID = cols.clusterName.String
+	event.ActorIP = cols.actorIP.String
+	event.Severity = cols.severity.String
+	event.DurationMs = int(cols.durationMs.Int32)
+	event.ErrorCode = cols.errorCode.String
+	event.ErrorMessage = cols.errorMessage.String
 }
 
 // verifyEventChain walks events in order, recomputing each event's expected
