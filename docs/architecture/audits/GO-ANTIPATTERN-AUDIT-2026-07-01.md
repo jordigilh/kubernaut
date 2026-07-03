@@ -962,9 +962,11 @@ Per AGENTS.md, REFACTOR-phase cleanup must not introduce new types/components, m
 
 ## 10. Implementation Status Report — Fully-Implemented / MVP-Placeholder / Not-Implemented
 
-This section classifies every item in the Recommended Remediation Plan (Phases 1-5, Waves 0-6) plus the two standalone findings (§8 Variable Shadowing, §9 Already Clean) into one of three buckets, per the AGENTS.md GA Readiness Audit standard of distinguishing genuinely complete work from partial/placeholder work. **Fully-Implemented** means: TDD-gated (RED/GREEN/REFACTOR or direct-refactor-with-coverage-confirmed), `go build`/`go vet`/`golangci-lint` clean in scope, unit tests green with no coverage regression, and — where applicable — integration tests green. **MVP-Placeholder** means the core work is done and verified, but a stated caveat limits full confidence (e.g., an environment gap prevented one verification step, though other evidence covers the same code). **Not-Implemented** means the item was explicitly scoped out, deferred, or prototyped-but-not-committed.
+> **Post-CI correction (see §11)**: this section was originally written before the PR's CI ran to completion, while `make test-integration-datastorage` could not be executed locally (no `docker`/`podman`). At that time, Wave 3 (DataStorage) was marked **MVP-Placeholder** on the theory that its changes were "pure code motion... zero regressions" per unit-test evidence alone. That reasoning was **not fully correct**: CI's actual integration run caught a real regression — not in Wave 3, but in the unrelated, no-caveat "Fully-Implemented" **Wave 0** `cmd/datastorage main()` decomposition (§7h), whose extracted `loadDataStorageConfig` helper had silently changed process-level log-message text that 3 integration specs assert on via `CombinedOutput()`. This was invisible to unit tests (which only check the returned `error`, not stdout/stderr). The regression was fixed (§11) and the full CI suite — every Integration (12 services) and E2E (15 jobs) suite, not just DataStorage's — subsequently passed. The classification below has been updated post-fix to reflect what is now **actually verified by CI**, not just inferred; the MVP-Placeholder item has been promoted to Fully-Implemented accordingly, and Wave 0 now carries an explicit caveat-and-fix note rather than an unqualified claim.
+>
+> This section classifies every item in the Recommended Remediation Plan (Phases 1-5, Waves 0-6) plus the two standalone findings (§8 Variable Shadowing, §9 Already Clean) into one of three buckets, per the AGENTS.md GA Readiness Audit standard of distinguishing genuinely complete work from partial/placeholder work. **Fully-Implemented** means: TDD-gated (RED/GREEN/REFACTOR or direct-refactor-with-coverage-confirmed), `go build`/`go vet`/`golangci-lint` clean in scope, unit tests green with no coverage regression, and — where applicable — integration tests green. **MVP-Placeholder** means the core work is done and verified, but a stated caveat limits full confidence (e.g., an environment gap prevented one verification step, though other evidence covers the same code). **Not-Implemented** means the item was explicitly scoped out, deferred, or prototyped-but-not-committed.
 
-### Fully-Implemented ✅ (24 of 26 items)
+### Fully-Implemented ✅ (25 of 26 items)
 
 | # | Item | Evidence |
 |---|---|---|
@@ -975,10 +977,10 @@ This section classifies every item in the Recommended Remediation Plan (Phases 1
 | Phase 3b | `pkg/gateway/server.go` split (2,552→633 across 6 files) | §7e |
 | Phase 4 | `buildEventData`, `HandleWatch`, `Config.Validate` ×2, `cmd/kubernautagent`+`cmd/apifrontend` `main()`/`run()` | §7f, 5 sub-items all with dedicated coverage gates |
 | Phase 5 | ISP split: `AutonomousSessionManager` (13→role interfaces), `AWXClient` (11→role interfaces) | §7g |
-| Wave 0 | `cmd/*/main.go` decomposition (6 services) + `Engine`/`ClusterRegistry`/`SessionManager` ISP split | §7h |
+| Wave 0 | `cmd/*/main.go` decomposition (6 services) + `Engine`/`ClusterRegistry`/`SessionManager` ISP split | §7h — **one regression found by CI and fixed** (datastorage `main()` log-message text, §11); now confirmed via passing `Integration (datastorage)` (241/241 specs) and `E2E (datastorage)` |
 | Wave 1 | APIFrontend: 5 functions + 3 file splits | §7i |
 | Wave 2 | RemediationOrchestrator/WorkflowExecution/SignalProcessing `Reconcile`-family decomposition + 4→13 file splits | §7j |
-| Wave 3 | DataStorage: coverage gate + 31 complexity offenders + 5→20 file splits | §7k (see MVP-Placeholder note below for the IT caveat) |
+| Wave 3 | DataStorage: coverage gate + 31 complexity offenders + 5→20 file splits | §7k — promoted from MVP-Placeholder (§11): `make test-integration-datastorage` ran in CI post-fix, 241/241 specs green |
 | Wave 4 | KubernautAgent: 5 characterization tests + ~20 offenders + 8→27 file splits | §7l-1 to §7l-3 |
 | Wave 5 | KubernautAgent's 11 deferred offenders, coverage-before-refactor gate | §7l-4, §7l-5 |
 | Wave 6 (6d) | Gateway: 10 named offenders + 2 file splits | §7m — 79 IT specs green |
@@ -993,11 +995,9 @@ This section classifies every item in the Recommended Remediation Plan (Phases 1
 | §9 | 4 AGENTS.md checks confirmed zero-findings | `errcheck`, `error-strings`, `bare-return`, `context-as-argument` — verification only, no remediation needed |
 | Not-recommended items | God structs (4a), `ctx` struct fields, `any`/`interface{}` | Deliberately scoped out after evidence review — correctly classified as "no action needed", not a gap |
 
-### MVP-Placeholder ⚠️ (1 of 26 items)
+### MVP-Placeholder ⚠️ (0 of 26 items)
 
-| # | Item | Gap | Why it's still sound |
-|---|---|---|---|
-| Wave 3 (DataStorage) | `make test-integration-datastorage` | Could not be executed in this environment (no `docker`/`podman` for the Postgres/Redis test dependencies) — documented as a **process caveat**, not a defect | All Wave 3 changes are same-package, pure code-motion (no behavior change, no signature change at any package boundary); the full unit-test tier exercises the identical decomposed logic directly and passed with zero regressions. Recommend re-running `make test-integration-datastorage` in an environment with container runtime access before the next DataStorage-touching release to close this out to Fully-Implemented. |
+None remaining. The one item originally classified here (Wave 3 DataStorage, gated on `make test-integration-datastorage` not being runnable in the local environment) was closed out by the PR's own CI run, which has `docker`/`podman` available — see §11 for the regression that CI's integration run caught (in Wave 0, not Wave 3) and the fix applied. This is the concrete outcome of the "recommend re-running in an environment with container runtime access" note that previously lived here: it was re-run, and it *did* surface a real (if narrow) defect, which is exactly why this caveat existed rather than being waved through.
 
 ### Not-Implemented ⛔ (1 of 26 items)
 
@@ -1007,7 +1007,7 @@ This section classifies every item in the Recommended Remediation Plan (Phases 1
 
 ### Summary
 
-**24/26 (92%) Fully-Implemented, 1/26 (4%) MVP-Placeholder (environment-caveated, not a code gap), 1/26 (4%) Not-Implemented (deliberately deferred, requires separate approval).** No gaps require closing before this PR — the MVP-Placeholder item is a verification-environment limitation with strong compensating unit-test evidence, and the Not-Implemented item is out-of-scope by design (a repo-wide CI policy change, not a code defect).
+**25/26 (96%) Fully-Implemented (confirmed by full CI: build + lint + unit + 12 Integration suites + 15 E2E suites + Helm smoke, all green post-fix), 0/26 MVP-Placeholder, 1/26 (4%) Not-Implemented (deliberately deferred, requires separate approval).** One regression was found and fixed during CI verification (§11) — the report below was corrected after the fact to reflect that outcome rather than the pre-CI inference. The remaining Not-Implemented item is out-of-scope by design (a repo-wide CI policy change, not a code defect), unaffected by CI results.
 
 ---
 
