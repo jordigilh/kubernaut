@@ -4,11 +4,13 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/handler"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/httputil"
@@ -328,6 +330,93 @@ var _ = Describe("Router HTTP Integration (handler/)", func() {
 						"nonexistent RR should return rr_not_found, not a routing error")
 				}
 			}
+		})
+	})
+
+	// DOS-01, SC-5: deterministic proof that trackSSEConnection wiring returns
+	// 503 "too many concurrent connections" once the ConnectionTracker cap is
+	// reached. The Add()/Remove() cap-enforcement LOGIC is already proven at
+	// the unit tier (UT-AF-STREAM04-001/002 in
+	// pkg/apifrontend/streaming/tracker_test.go); this IT proves the router
+	// middleware is correctly WIRED to that logic. Uses its own isolated
+	// router + ConnectionTracker (not the shared routerServer) so this test
+	// is fully deterministic and immune to the cross-process E2E flakiness
+	// that motivated raising the E2E-deployed cap (see
+	// test/e2e/apifrontend/streaming_test.go TC-E2E-SSE-CAP-01).
+	Describe("AC-9: SSE connection cap enforcement (DOS-01, SC-5)", func() {
+		It("IT-AF-SSE-CAP-001: trackSSEConnection returns 503 once the tracker cap is reached", func() {
+			release := make(chan struct{})
+			blockingA2A := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				select {
+				case <-release:
+				case <-r.Context().Done():
+				}
+				w.WriteHeader(http.StatusOK)
+			})
+
+			capTracker := streaming.NewConnectionTracker(
+				prometheus.NewGauge(prometheus.GaugeOpts{Name: "test_af_sse_active_connections_it_sse_cap_001"}),
+				0,
+			)
+			capTracker.MaxConnections = 2
+
+			capRouter, err := handler.NewRouter(handler.RouterConfig{
+				MetricsRegistry:  metricsRegistry,
+				Logger:           logf.Log.WithName("sse-cap-it"),
+				A2AHandler:       blockingA2A,
+				MCPHandler:       http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) }),
+				AgentCardHandler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) }),
+				AuthMiddleware:   func(next http.Handler) http.Handler { return next },
+				ReadyChecker:     func() bool { return true },
+				SSETracker:       capTracker,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			capServer := httptest.NewServer(capRouter)
+			var wg sync.WaitGroup
+			// Deferred cleanup runs LIFO: close(release) unblocks the two
+			// blocking handlers first, then wg.Wait() lets them finish and
+			// close their response bodies, then capServer.Close() can
+			// cleanly wait for the (now-idle) connections to close.
+			defer capServer.Close()
+			defer wg.Wait()
+			defer close(release)
+
+			sendBlocking := func() (*http.Response, error) {
+				req, rerr := http.NewRequest(http.MethodPost, capServer.URL+"/a2a/invoke", strings.NewReader(`{}`))
+				Expect(rerr).NotTo(HaveOccurred())
+				req.Header.Set("Accept", "text/event-stream")
+				return http.DefaultClient.Do(req)
+			}
+
+			// Fill both slots. Each request blocks server-side on `release`,
+			// so the client-side call itself blocks until we signal below --
+			// run each in a goroutine and wait for the tracker to observe it.
+			for i := 0; i < capTracker.MaxConnections; i++ {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					resp, serr := sendBlocking()
+					if serr == nil {
+						_ = resp.Body.Close()
+					}
+				}()
+			}
+			Eventually(capTracker.Count, "2s", "10ms").Should(Equal(2),
+				"both blocking requests must register with the tracker before the overflow attempt")
+
+			overflowReq, err := http.NewRequest(http.MethodPost, capServer.URL+"/a2a/invoke", strings.NewReader(`{}`))
+			Expect(err).NotTo(HaveOccurred())
+			overflowReq.Header.Set("Accept", "text/event-stream")
+			overflowResp, err := http.DefaultClient.Do(overflowReq)
+			Expect(err).NotTo(HaveOccurred())
+			defer overflowResp.Body.Close()
+
+			Expect(overflowResp.StatusCode).To(Equal(http.StatusServiceUnavailable),
+				"third connection must be rejected once the tracker cap (2) is reached")
+			overflowBody, err := io.ReadAll(overflowResp.Body)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(strings.ToLower(string(overflowBody))).To(ContainSubstring("too many concurrent connections"))
 		})
 	})
 })
