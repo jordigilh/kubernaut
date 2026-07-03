@@ -16,24 +16,41 @@ limitations under the License.
 
 // Package fleet contains the Fleet E2E test suite (Issue #54).
 //
-// This suite deploys ALL Kubernaut services plus fleet infrastructure (Kuadrant
-// MCP Gateway + FMC + Valkey + K8s MCP Server + DEX) in a single Kind cluster
-// and validates the complete multi-cluster remediation lifecycle using the
-// loopback pattern:
+// This suite deploys ALL Kubernaut services in a PRIMARY Kind cluster plus
+// fleet infrastructure (Kuadrant MCP Gateway + FMC + Valkey + K8s MCP Server
+// + Keycloak) and a genuinely separate REMOTE Kind cluster (DD-TEST-013),
+// and validates the complete multi-cluster remediation lifecycle:
 //
 //	Alert → GW → SP(MCP enrich) → AA(MCP investigate) → WE(MCP dispatch) → EM → NT
 //
-// The loopback pattern treats the same cluster as both local (hub) and remote
-// (loopback-cluster) by routing MCP calls through Kuadrant → K8s MCP Server.
-// Tool names use the `loopback_cluster_` prefix from MCPServerRegistration.
+// Every registered cluster identity (loopback-cluster, prod-east, prod-west)
+// is backed by the SAME remote bridge to the remote cluster's kube-mcp-server
+// (KubeMCPServerAuthConfig.AllRegistrationsRemote, test/infrastructure/fleet_e2e.go)
+// -- unlike the "loopback" pattern this suite used before, there is no local
+// K8s MCP Server and no cluster identity secretly resolves against the
+// primary cluster. kube-mcp-server runs in passthrough mode with a real RFC
+// 8693 Standard Token Exchange against Keycloak (mirrors the FMC E2E lane;
+// Keycloak replaces DEX here because DEX has no Standard Token Exchange,
+// Spike S17/S20). Tool names use the `loopback_cluster_` prefix from
+// MCPServerRegistration.
 //
-// Authority: Issue #54, ADR-068
+// Because every fleet cluster identity is now remote, any K8s object a test
+// wants Gateway/SP/RO/WE to discover, scope-check, or dispatch against via
+// MCP (the memory-eater fixture, per-test target Deployments, CoreDNS pod
+// discovery for enrichment) must be created against remoteK8sClient, NOT
+// k8sClient. Kubernaut's own CRDs (RemediationRequest, SignalProcessing,
+// AIAnalysis, WorkflowExecution, ...) are reconciled by controllers running
+// in the PRIMARY cluster and stay on k8sClient.
+//
+// Authority: Issue #54, ADR-068, DD-TEST-013, Spike S17/S19/S20
 //
 // Test Execution:
 //
 //	FLEET_E2E=true ginkgo -v ./test/e2e/fleet/...
 //
-// IMPORTANT: This suite requires significant resources (~6.1GB RAM).
+// IMPORTANT: This suite requires significant resources (primary cluster
+// ~6.1GB RAM + remote cluster ~1.7-2.5GB RAM, Keycloak vs DEX's ~64MB
+// accepted to validate the real production token-exchange wiring end-to-end).
 package fleet
 
 import (
@@ -53,6 +70,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -85,10 +103,22 @@ var (
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	kubeconfigPath string
+	kubeconfigPath       string
+	remoteKubeconfigPath string
 
 	k8sClient client.Client
 	apiReader client.Reader
+
+	// remoteK8sClient targets the second Kind cluster (DD-TEST-013) that
+	// backs loopback-cluster/prod-east/prod-west (AllRegistrationsRemote,
+	// see test/infrastructure/fleet_e2e.go). Kubernaut's own CRDs
+	// (RemediationRequest, SignalProcessing, etc.) are reconciled by
+	// controllers running in the PRIMARY cluster and stay on k8sClient;
+	// only the "target" resources a fleet alert claims to remediate (and
+	// anything discovered for MCP enrichment, e.g. a CoreDNS Pod) must live
+	// here, since that's the cluster kube-mcp-server actually reads from
+	// once AllRegistrationsRemote is set.
+	remoteK8sClient client.Client
 
 	dataStorageClient *ogenclient.Client
 	e2eAuthToken      string
@@ -246,12 +276,15 @@ var _ = SynchronizedBeforeSuite(
 			Expect(os.Setenv("KUBECONFIG", tempKubeconfigPath)).To(Succeed())
 			GinkgoWriter.Println("Fleet E2E reuse-cluster ready (Process 1)")
 
-			return []byte(fmt.Sprintf("%s|%s|%s|%s|%s", tempKubeconfigPath, token, "{}", gatewayToken, "{}"))
+			// Deterministic path SetupFleetE2EInfrastructure/SetupRemoteClusterForFMC
+			// always uses -- the remote cluster from the prior run is still up.
+			reuseRemoteKcPath := fmt.Sprintf("%s/.kube/%s-remote-config", homeDir, clusterName)
+			return []byte(fmt.Sprintf("%s|%s|%s|%s|%s|%s", tempKubeconfigPath, token, "{}", gatewayToken, "{}", reuseRemoteKcPath))
 		}
 
 		By("Setting up Fleet E2E infrastructure (Issue #54)")
 		ctx := context.Background()
-		images, seededUUIDs, remediateNS, err := infrastructure.SetupFleetE2EInfrastructure(
+		images, seededUUIDs, remediateNS, remoteKcPath, err := infrastructure.SetupFleetE2EInfrastructure(
 			ctx, clusterName, tempKubeconfigPath, GinkgoWriter,
 		)
 		Expect(err).ToNot(HaveOccurred(), "Fleet E2E infrastructure setup failed")
@@ -279,13 +312,15 @@ var _ = SynchronizedBeforeSuite(
 		gatewayToken, err := infrastructure.GetServiceAccountToken(ctx, namespace, gatewaySAName, tempKubeconfigPath)
 		Expect(err).ToNot(HaveOccurred(), "Failed to get Gateway SA token")
 
-		By("Labeling kubernaut-system namespace as managed (for fleet E2E tests)")
-		labelCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", tempKubeconfigPath,
-			"label", "namespace", namespace, "kubernaut.ai/managed=true", "--overwrite")
-		labelOut, labelErr := labelCmd.CombinedOutput()
-		Expect(labelErr).ToNot(HaveOccurred(), "Failed to label namespace: %s", string(labelOut))
+		By("Labeling kubernaut-system namespace as managed (primary + remote, for fleet E2E tests)")
+		for _, kc := range []string{tempKubeconfigPath, remoteKcPath} {
+			labelCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kc,
+				"label", "namespace", namespace, "kubernaut.ai/managed=true", "--overwrite")
+			labelOut, labelErr := labelCmd.CombinedOutput()
+			Expect(labelErr).ToNot(HaveOccurred(), "Failed to label namespace on %s: %s", kc, string(labelOut))
+		}
 
-		By("Creating per-test remediate namespaces (dynamic, UUID-based)")
+		By("Creating per-test remediate namespaces (dynamic, UUID-based; primary cluster -- Kubernaut CRDs)")
 		for key, ns := range remediateNS {
 			GinkgoWriter.Printf("  Creating namespace %s (scenario: %s)\n", ns, key)
 			createNSCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", tempKubeconfigPath,
@@ -301,8 +336,14 @@ var _ = SynchronizedBeforeSuite(
 			Expect(labelNSErr).ToNot(HaveOccurred(), "Failed to label namespace %s: %s", ns, string(labelNSOut))
 		}
 
-		By("Deploying memory-eater in kubernaut-system for fleet E2E tests")
-		err = infrastructure.DeployMemoryEater(ctx, namespace, tempKubeconfigPath, GinkgoWriter)
+		// The shared "memory-eater" fixture (referenced by clusterID=loopback-cluster/
+		// prod-east/prod-west across 01_signal_ingestion_test.go and
+		// 03_ro_clusterid_routing_test.go) must live on the REMOTE cluster now that
+		// AllRegistrationsRemote backs every registered cluster identity with the
+		// same remote bridge -- kube-mcp-server reads it from there, not the
+		// primary cluster.
+		By("Deploying memory-eater in remote cluster's kubernaut-system for fleet E2E tests")
+		err = infrastructure.DeployMemoryEater(ctx, namespace, remoteKcPath, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred(), "Failed to deploy memory-eater")
 
 		By("Setting KUBECONFIG for all processes")
@@ -315,10 +356,10 @@ var _ = SynchronizedBeforeSuite(
 		Expect(jsonErr).ToNot(HaveOccurred())
 		remediateNSJSON, nsErr := json.Marshal(remediateNS)
 		Expect(nsErr).ToNot(HaveOccurred())
-		return []byte(fmt.Sprintf("%s|%s|%s|%s|%s", tempKubeconfigPath, token, string(uuidsJSON), gatewayToken, string(remediateNSJSON)))
+		return []byte(fmt.Sprintf("%s|%s|%s|%s|%s|%s", tempKubeconfigPath, token, string(uuidsJSON), gatewayToken, string(remediateNSJSON), remoteKcPath))
 	},
 	func(data []byte) {
-		parts := strings.SplitN(string(data), "|", 5)
+		parts := strings.SplitN(string(data), "|", 6)
 		kubeconfigPath = parts[0]
 		if len(parts) > 1 {
 			e2eAuthToken = parts[1]
@@ -333,6 +374,9 @@ var _ = SynchronizedBeforeSuite(
 		if len(parts) > 4 {
 			Expect(json.Unmarshal([]byte(parts[4]), &fpRemediateNS)).To(Succeed(),
 				"Failed to decode remediate namespaces from Process 1")
+		}
+		if len(parts) > 5 {
+			remoteKubeconfigPath = parts[5]
 		}
 
 		ctx, cancel = context.WithCancel(context.TODO())
@@ -364,6 +408,12 @@ var _ = SynchronizedBeforeSuite(
 		Expect(err).ToNot(HaveOccurred())
 
 		apiReader, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Creating remote cluster's Kubernetes client (DD-TEST-013: backs loopback-cluster/prod-east/prod-west)")
+		remoteCfg, remoteCfgErr := clientcmd.BuildConfigFromFlags("", remoteKubeconfigPath)
+		Expect(remoteCfgErr).ToNot(HaveOccurred(), "failed to build remote cluster kubeconfig")
+		remoteK8sClient, err = client.New(remoteCfg, client.Options{Scheme: scheme.Scheme})
 		Expect(err).ToNot(HaveOccurred())
 
 		By("Setting up authenticated DataStorage client (DD-TEST-001: port 30081, Issue #785: HTTPS)")
@@ -412,10 +462,14 @@ var _ = SynchronizedAfterSuite(
 		defer infrastructure.CleanupFailureMarker(clusterName)
 		preserveCluster := os.Getenv("PRESERVE_E2E_CLUSTER") == "true" || os.Getenv("KEEP_CLUSTER") == "true" || os.Getenv("FLEET_E2E_REUSE_CLUSTER") == "true"
 
+		remoteClusterName := clusterName + "-remote"
+
 		if preserveCluster {
 			GinkgoWriter.Println("CLUSTER PRESERVED FOR DEBUGGING")
 			GinkgoWriter.Printf("   To access: export KUBECONFIG=%s\n", kubeconfigPath)
 			GinkgoWriter.Printf("   To delete: kind delete cluster --name %s\n", clusterName)
+			GinkgoWriter.Printf("   Remote cluster (DD-TEST-013, backs loopback-cluster/prod-east/prod-west): export KUBECONFIG=%s\n", remoteKubeconfigPath)
+			GinkgoWriter.Printf("   To delete: kind delete cluster --name %s\n", remoteClusterName)
 			return
 		}
 
@@ -424,6 +478,13 @@ var _ = SynchronizedAfterSuite(
 			kp := fmt.Sprintf("%s/.kube/%s-config", homeDir, clusterName)
 			infrastructure.MustGatherPodLogs(clusterName, kp, "kubernaut-system", "fleet", GinkgoWriter)
 			infrastructure.MustGatherPodLogs(clusterName, kp, "kubernaut-workflows", "fleet", GinkgoWriter)
+
+			for _, ns := range []string{"mcp-system", "gateway-system", "istio-system"} {
+				infrastructure.MustGatherPodLogs(clusterName, kp, ns, "fleet", GinkgoWriter)
+			}
+			if remoteKubeconfigPath != "" {
+				infrastructure.MustGatherPodLogs(remoteClusterName, remoteKubeconfigPath, "kubernaut-system", "fleet", GinkgoWriter)
+			}
 		}
 
 		if !setupFailed {
@@ -453,6 +514,11 @@ var _ = SynchronizedAfterSuite(
 		By("Deleting Kind cluster")
 		if err := infrastructure.DeleteCluster(clusterName, "fleet", anyFailure, GinkgoWriter); err != nil {
 			GinkgoWriter.Printf("Warning: Failed to delete cluster: %v\n", err)
+		}
+
+		By("Deleting remote Kind cluster (DD-TEST-013)")
+		if err := infrastructure.TeardownRemoteClusterForFMC(remoteClusterName, remoteKubeconfigPath, "fleet", anyFailure, GinkgoWriter); err != nil {
+			GinkgoWriter.Printf("Warning: Failed to delete remote cluster: %v\n", err)
 		}
 
 		By("Removing isolated kubeconfig file")

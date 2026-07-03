@@ -38,8 +38,13 @@ var _ = Describe("E2E-FLEET-003 [SI-4]: SP remote enrichment via MCP gateway pop
 		// the target Pod name never resolves and the k8s-enricher permanently
 		// enters degraded mode ("Target pod not found, entering degraded
 		// mode"). Discover an actual running CoreDNS pod name instead.
+		//
+		// Discovered on the REMOTE cluster (DD-TEST-013): ClusterID:
+		// "loopback-cluster" below now resolves through AllRegistrationsRemote's
+		// bridge, so the enricher reads kube-system from the remote cluster,
+		// not the primary one -- their CoreDNS pod names differ.
 		var podList corev1.PodList
-		Expect(k8sClient.List(ctx, &podList,
+		Expect(remoteK8sClient.List(ctx, &podList,
 			client.InNamespace("kube-system"),
 			client.MatchingLabels{"k8s-app": "kube-dns"},
 		)).To(Succeed())

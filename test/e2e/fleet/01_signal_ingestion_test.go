@@ -81,10 +81,14 @@ var _ = Describe("E2E-FLEET-001 [AC-4]: Signal ingestion with cluster_id creates
 				},
 			},
 		}
-		if createErr := k8sClient.Create(ctx, dep); createErr != nil && !apierrors.IsAlreadyExists(createErr) {
+		// Created on the REMOTE cluster (DD-TEST-013): AllRegistrationsRemote
+		// backs prod-east/prod-west with the same remote bridge kube-mcp-server
+		// reads from, so the target Gateway's owner resolution looks up must
+		// live there, not on the primary cluster.
+		if createErr := remoteK8sClient.Create(ctx, dep); createErr != nil && !apierrors.IsAlreadyExists(createErr) {
 			Expect(createErr).NotTo(HaveOccurred(), "Failed to create %s fixture", targetName)
 		}
-		DeferCleanup(func() { _ = k8sClient.Delete(context.Background(), dep) })
+		DeferCleanup(func() { _ = remoteK8sClient.Delete(context.Background(), dep) })
 
 		payload := buildPrometheusAlertWithCluster("FleetSignalIngestion", namespace, "critical",
 			"Deployment", targetName, "prod-east")

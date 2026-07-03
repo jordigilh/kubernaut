@@ -126,10 +126,12 @@ var _ = Describe("E2E-FLEET-1511-001 [AC-4, SC-7]: Cluster-scoped workflow targe
 				},
 			},
 		}
-		if createErr := k8sClient.Create(ctx, dep); createErr != nil && !apierrors.IsAlreadyExists(createErr) {
+		// Created on the REMOTE cluster (DD-TEST-013): see the equivalent note
+		// in 01_signal_ingestion_test.go.
+		if createErr := remoteK8sClient.Create(ctx, dep); createErr != nil && !apierrors.IsAlreadyExists(createErr) {
 			Expect(createErr).NotTo(HaveOccurred(), "Failed to create %s fixture", targetName)
 		}
-		DeferCleanup(func() { _ = k8sClient.Delete(context.Background(), dep) })
+		DeferCleanup(func() { _ = remoteK8sClient.Delete(context.Background(), dep) })
 
 		payload := buildPrometheusAlertWithCluster("FleetClusterScoped", namespace, "critical",
 			"Deployment", targetName, "loopback-cluster")
